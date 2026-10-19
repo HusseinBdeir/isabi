@@ -4,34 +4,44 @@ BADGE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" cla
 
 MARK_ON_DARK_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="-9.5 -78.8 74.66 109.7" aria-hidden="true"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>"""
 
-WORDMARK_HEADER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -82.8 346.86 160.76" class="brand-wordmark" role="img" aria-label="ISABI Systems"><g fill="currentColor"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-12.95,0)" d="M82.46 1.2Q74.06 1.2 66.77 0.2Q59.48 -0.81 54 -3.31Q48.52 -5.82 45.43 -10.3Q42.33 -14.78 42.33 -21.68Q42.33 -21.88 42.33 -22.21Q42.33 -22.53 42.43 -22.84H62.38Q62.28 -22.44 62.25 -22Q62.23 -21.56 62.23 -21.08Q62.23 -18.03 64.55 -16.27Q66.87 -14.51 71.11 -13.8Q75.35 -13.09 80.96 -13.09Q83.32 -13.09 85.78 -13.23Q88.24 -13.38 90.53 -13.74Q92.82 -14.1 94.65 -14.79Q96.47 -15.47 97.56 -16.55Q98.65 -17.63 98.65 -19.15Q98.65 -21.32 96.35 -22.57Q94.05 -23.82 90.14 -24.58Q86.22 -25.33 81.35 -25.92Q76.49 -26.52 71.28 -27.34Q66.06 -28.16 61.2 -29.61Q56.33 -31.06 52.41 -33.47Q48.5 -35.88 46.2 -39.66Q43.9 -43.45 43.9 -48.91Q43.9 -54.37 46.67 -58.34Q49.43 -62.31 54.42 -64.89Q59.41 -67.46 66.2 -68.71Q73 -69.95 81.01 -69.95Q89.17 -69.95 95.82 -68.69Q102.46 -67.43 107.23 -64.88Q112 -62.33 114.57 -58.47Q117.13 -54.6 117.13 -49.39V-48.01H97.39V-48.82Q97.39 -50.91 95.59 -52.53Q93.78 -54.15 90.34 -55.12Q86.89 -56.1 81.96 -56.1Q76.07 -56.1 72.27 -55.36Q68.48 -54.62 66.68 -53.34Q64.88 -52.07 64.88 -50.55Q64.88 -48.52 67.17 -47.33Q69.47 -46.15 73.39 -45.47Q77.3 -44.78 82.17 -44.19Q87.03 -43.6 92.25 -42.78Q97.46 -41.96 102.32 -40.59Q107.19 -39.21 111.11 -36.84Q115.03 -34.46 117.32 -30.83Q119.62 -27.2 119.62 -21.89Q119.62 -13.62 114.83 -8.52Q110.04 -3.43 101.65 -1.11Q93.26 1.2 82.46 1.2Z"/><path transform="translate(-12.35,0)" d="M125.53 0 159.33 -68.75H181.97L215.77 0H193.74L188.55 -11.02H151.65L146.51 0ZM158.47 -25.93H181.73L175.47 -39.9Q175.08 -40.84 174.37 -42.55Q173.67 -44.27 172.91 -46.22Q172.15 -48.17 171.51 -49.85Q170.87 -51.52 170.55 -52.33H169.8Q169.07 -50.49 168.11 -48.11Q167.15 -45.73 166.26 -43.49Q165.37 -41.25 164.73 -39.85Z"/><path transform="translate(-14.35,0)" d="M225.75 0V-68.75H282.27Q287.86 -68.75 292.39 -66.6Q296.91 -64.45 299.54 -60.65Q302.18 -56.85 302.18 -51.81Q302.18 -47.31 300.57 -44.11Q298.96 -40.91 296.25 -38.92Q293.54 -36.94 290.23 -35.95V-35.55Q294.09 -34.75 297.19 -32.66Q300.3 -30.57 302.11 -27.09Q303.92 -23.62 303.92 -18.57Q303.92 -12.66 301.07 -8.52Q298.22 -4.37 293.39 -2.19Q288.55 0 282.6 0ZM246.11 -14.49H275.8Q279 -14.49 281.02 -16.24Q283.05 -17.98 283.05 -21.59Q283.05 -23.49 282.17 -25.01Q281.3 -26.53 279.61 -27.37Q277.93 -28.21 275.53 -28.21H246.11ZM246.11 -41.59H274.11Q276.44 -41.59 278.03 -42.43Q279.63 -43.27 280.49 -44.8Q281.35 -46.33 281.35 -48.4Q281.35 -51.33 279.38 -53.04Q277.4 -54.75 274.39 -54.75H246.11Z"/><path transform="translate(-18.65,0)" d="M317.15 0V-68.75H337.51V0Z"/></g><g fill="var(--brass)"><rect x="0" y="9.5" width="318.86" height="3.4"/><rect x="0" y="17.5" width="318.86" height="3.4"/></g><g fill="currentColor" transform="translate(0,62.46) scale(0.42)"><path transform="translate(-5.17,0)" d="M38 1.2Q31.29 1.2 25.32 0.09Q19.36 -1.01 14.83 -3.57Q10.3 -6.12 7.74 -10.29Q5.17 -14.45 5.17 -20.57Q5.17 -20.98 5.2 -21.44Q5.22 -21.89 5.27 -22.14H19.28Q19.24 -21.85 19.19 -21.3Q19.14 -20.75 19.14 -20.2Q19.14 -17 21.42 -14.84Q23.7 -12.68 27.98 -11.6Q32.25 -10.52 38.01 -10.52Q41.12 -10.52 43.86 -10.85Q46.6 -11.18 48.86 -11.81Q51.12 -12.44 52.78 -13.41Q54.43 -14.39 55.32 -15.72Q56.2 -17.04 56.2 -18.68Q56.2 -21.44 54.14 -23.17Q52.08 -24.9 48.57 -26.06Q45.06 -27.22 40.66 -28.1Q36.26 -28.98 31.59 -29.96Q26.91 -30.94 22.51 -32.44Q18.11 -33.94 14.6 -36.19Q11.1 -38.44 9.03 -41.93Q6.97 -45.43 6.97 -50.42Q6.97 -55.22 9.14 -58.86Q11.31 -62.51 15.42 -64.96Q19.53 -67.4 25.27 -68.63Q31.02 -69.85 38.16 -69.85Q45.15 -69.85 50.75 -68.58Q56.34 -67.31 60.28 -64.79Q64.22 -62.26 66.3 -58.56Q68.37 -54.86 68.37 -50V-48.6H54.56V-49.75Q54.56 -52.31 52.5 -54.17Q50.44 -56.02 46.83 -57.08Q515.82 -58.13 38.54 -58.13Q32.75 -58.13 28.92 -57.25Q25.1 -56.38 23.21 -54.78Q21.32 -53.18 21.32 -51.02Q21.32 -48.61 23.38 -47.06Q25.44 -45.5 28.95 -44.47Q32.46 -43.44 36.86 -42.58Q41.26 -41.72 45.93 -40.69Q50.61 -39.66 55.01 -38.21Q59.41 -36.76 62.92 -34.46Q66.42 -32.16 68.49 -28.74Q70.55 -25.32 70.55 -20.44Q70.55 -12.59 66.39 -7.82Q62.24 -3.05 54.89 -0.92Q47.55 1.2 38 1.2Z"/><path transform="translate(32.83,0)" d="M106.74 0V-27.85L76.88 -68.65H93.47L113.82 -39.79H114.56L134.96 -68.65H150.65L120.8 -27.85V0Z"/><path transform="translate(70.83,0)" d="M190 1.2Q183.29 1.2 177.32 0.09Q171.36 -1.01 166.83 -3.57Q162.3 -6.12 159.74 -10.29Q157.17 -14.45 157.17 -20.57Q157.17 -20.98 157.2 -21.44Q157.22 -21.89 157.27 -22.14H171.28Q171.24 -21.85 171.19 -21.3Q171.14 -20.75 171.14 -20.2Q171.14 -17 173.42 -14.84Q175.7 -12.68 179.98 -11.6Q184.25 -10.52 190.01 -10.52Q193.12 -10.52 195.86 -10.85Q198.6 -11.18 200.86 -11.81Q203.12 -12.44 204.78 -13.41Q206.43 -14.39 207.32 -15.72Q208.2 -17.04 208.2 -18.68Q208.2 -21.44 206.14 -23.17Q204.08 -24.9 200.57 -26.06Q197.06 -27.22 192.66 -28.1Q188.26 -28.98 183.59 -29.96Q178.91 -30.94 174.51 -32.44Q170.11 -33.94 166.6 -36.19Q163.1 -38.44 161.03 -41.93Q158.97 -45.43 158.97 -50.42Q158.97 -55.22 161.14 -58.86Q163.31 -62.51 167.42 -64.96Q171.53 -67.4 177.27 -68.63Q183.02 -69.85 190.16 -69.85Q197.15 -69.85 202.75 -68.58Q208.34 -67.31 212.28 -64.79Q216.22 -62.26 218.3 -58.56Q220.37 -54.86 220.37 -50V-48.6H206.56V-49.75Q206.56 -52.31 204.5 -54.17Q202.44 -56.02 198.83 -57.08Q195.22 -58.13 190.54 -58.13Q184.75 -58.13 180.92 -57.25Q177.1 -56.38 175.21 -54.78Q173.32 -53.18 173.32 -51.02Q173.32 -48.61 175.38 -47.06Q177.44 -45.5 180.95 -44.47Q184.46 -43.44 188.86 -42.58Q193.26 -41.72 197.93 -40.69Q202.61 -39.66 207.01 -38.21Q211.41 -36.76 214.92 -34.46Q218.42 -32.16 220.49 -28.74Q222.55 -25.32 222.55 -20.44Q222.55 -12.59 218.39 -7.82Q214.24 -3.05 206.89 -0.92Q199.55 1.2 190 1.2Z"/><path transform="translate(108.83,0)" d="M256.08 0V-56.39H230.05V-68.65H296.21V-56.39H270.13V0Z"/><path transform="translate(146.83,0)" d="M307.41 0V-68.65H368.59V-56.78H321.46V-40.94H363.42V-29.07H321.46V-11.87H369.28V0Z"/><path transform="translate(184.83,0)" d="M383.91 0V-68.65H405.9L419.05 -31.84Q419.7 -30.03 420.56 -27.36Q421.42 -24.7 422.31 -21.99Q423.2 -19.28 423.83 -17.15H424.58Q425.12 -19.03 425.9 -21.62Q426.69 -24.2 427.55 -26.92Q428.41 -29.64 429.16 -31.8L442.31 -68.65H463.96V0H449.9V-38.2Q449.9 -41.41 449.98 -44.81Q450.05 -48.21 450.18 -50.91Q450.3 -53.61 450.35 -54.64H449.55Q449.21 -53.46 448.41 -50.89Q447.61 -48.32 446.76 -45.49Q445.9 -42.66 445.2 -40.6L430.35 0H417.01L402.11 -40.54Q401.36 -42.6 400.57 -45.16Q399.77 -47.73 399.07 -50.28Q398.36 -52.82 397.81 -54.64H397.01Q397.11 -52.66 397.19 -49.78Q397.26 -46.89 397.34 -43.86Q397.42 -40.82 397.42 -38.2V0Z"/><path transform="translate(222.83,0)" d="M510.6 1.2Q503.89 1.2 497.92 0.09Q491.96 -1.01 487.43 -3.57Q482.9 -6.12 480.34 -10.29Q477.77 -14.45 477.77 -20.57Q477.77 -20.98 477.8 -21.44Q477.82 -21.89 477.87 -22.14H491.88Q491.84 -21.85 491.79 -21.3Q491.74 -20.75 491.74 -20.2Q491.74 -17 494.02 -14.84Q496.3 -12.68 500.58 -11.6Q504.85 -10.52 510.61 -10.52Q513.72 -10.52 516.46 -10.85Q519.2 -11.18 521.46 -11.81Q523.72 -12.44 525.38 -13.41Q527.03 -14.39 527.92 -15.72Q528.8 -17.04 528.8 -18.68Q528.8 -21.44 526.74 -23.17Q524.68 -24.9 521.17 -26.06Q517.66 -27.22 513.26 -28.1Q508.86 -28.98 504.19 -29.96Q499.51 -30.94 495.11 -32.44Q490.71 -33.94 487.2 -36.19Q483.7 -38.44 481.63 -41.93Q479.57 -45.43 479.57 -50.42Q479.57 -55.22 481.74 -58.86Q483.91 -62.51 488.02 -64.96Q492.13 -67.4 497.87 -68.63Q503.62 -69.85 510.76 -69.85Q517.75 -69.85 523.35 -68.58Q528.94 -67.31 532.88 -64.79Q536.82 -62.26 538.9 -58.56Q540.97 -54.86 540.97 -50V-48.6H527.16V-49.75Q527.16 -52.31 525.1 -54.17Q523.04 -56.02 519.43 -57.08Q515.82 -58.13 511.14 -58.13Q505.35 -58.13 501.52 -57.25Q497.7 -56.38 495.81 -54.78Q493.92 -53.18 493.92 -51.02Q493.92 -48.61 495.98 -47.06Q498.04 -45.5 501.55 -44.47Q505.06 -43.44 509.46 -42.58Q513.86 -41.72 518.53 -40.69Q523.21 -39.66 527.61 -38.21Q532.01 -36.76 535.52 -34.46Q539.02 -32.16 541.09 -28.74Q543.15 -25.32 543.15 -20.44Q543.15 -12.59 538.99 -7.82Q534.84 -3.05 527.49 -0.92Q520.15 1.2 510.6 1.2Z"/></g></svg>"""
+WORDMARK_HEADER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -82.8 346.86 160.76" class="brand-wordmark" role="img" aria-label="ISABI Systems"><g fill="currentColor"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-12.95,0)" d="M82.46 1.2Q74.06 1.2 66.77 0.2Q59.48 -0.81 54 -3.31Q48.52 -5.82 45.43 -10.3Q42.33 -14.78 42.33 -21.68Q42.33 -21.88 42.33 -22.21Q42.33 -22.53 42.43 -22.84H62.38Q62.28 -22.44 62.25 -22Q62.23 -21.56 62.23 -21.08Q62.23 -18.03 64.55 -16.27Q66.87 -14.51 71.11 -13.8Q75.35 -13.09 80.96 -13.09Q83.32 -13.09 85.78 -13.23Q88.24 -13.38 90.53 -13.74Q92.82 -14.1 94.65 -14.79Q96.47 -15.47 97.56 -16.55Q98.65 -17.63 98.65 -19.15Q98.65 -21.32 96.35 -22.57Q94.05 -23.82 90.14 -24.58Q86.22 -25.33 81.35 -25.92Q76.49 -26.52 71.28 -27.34Q66.06 -28.16 61.2 -29.61Q56.33 -31.06 52.41 -33.47Q48.5 -35.88 46.2 -39.66Q43.9 -43.45 43.9 -48.91Q43.9 -54.37 46.67 -58.34Q49.43 -62.31 54.42 -64.89Q59.41 -67.46 66.2 -68.71Q73 -69.95 81.01 -69.95Q89.17 -69.95 95.82 -68.69Q102.46 -67.43 107.23 -64.88Q112 -62.33 114.57 -58.47Q117.13 -54.6 117.13 -49.39V-48.01H97.39V-48.82Q97.39 -50.91 95.59 -52.53Q93.78 -54.15 90.34 -55.12Q86.89 -56.1 81.96 -56.1Q76.07 -56.1 72.27 -55.36Q68.48 -54.62 66.68 -53.34Q64.88 -52.07 64.88 -50.55Q64.88 -48.52 67.17 -47.33Q69.47 -46.15 73.39 -45.47Q77.3 -44.78 82.17 -44.19Q87.03 -43.6 92.25 -42.78Q97.46 -41.96 102.32 -40.59Q107.19 -39.21 111.11 -36.84Q115.03 -34.46 117.32 -30.83Q119.62 -27.2 119.62 -21.89Q119.62 -13.62 114.83 -8.52Q110.04 -3.43 101.65 -1.11Q93.26 1.2 82.46 1.2Z"/><path transform="translate(-12.35,0)" d="M125.53 0 159.33 -68.75H181.97L215.77 0H193.74L188.55 -11.02H151.65L146.51 0ZM158.47 -25.93H181.73L175.47 -39.9Q175.08 -40.84 174.37 -42.55Q173.67 -44.27 172.91 -46.22Q172.15 -48.17 171.51 -49.85Q170.87 -51.52 170.55 -52.33H169.8Q169.07 -50.49 168.11 -48.11Q167.15 -45.73 166.26 -43.49Q165.37 -41.25 164.73 -39.85Z"/><path transform="translate(-14.35,0)" d="M225.75 0V-68.75H282.27Q287.86 -68.75 292.39 -66.6Q296.91 -64.45 299.54 -60.65Q302.18 -56.85 302.18 -51.81Q302.18 -47.31 300.57 -44.11Q298.96 -40.91 296.25 -38.92Q293.54 -36.94 290.23 -35.95V-35.55Q294.09 -34.75 297.19 -32.66Q300.3 -30.57 302.11 -27.09Q303.92 -23.62 303.92 -18.57Q303.92 -12.66 301.07 -8.52Q298.22 -4.37 293.39 -2.19Q288.55 0 282.6 0ZM246.11 -14.49H275.8Q279 -14.49 281.02 -16.24Q283.05 -17.98 283.05 -21.59Q283.05 -23.49 282.17 -25.01Q281.3 -26.53 279.61 -27.37Q277.93 -28.21 275.53 -28.21H246.11ZM246.11 -41.59H274.11Q276.44 -41.59 278.03 -42.43Q279.63 -43.27 280.49 -44.8Q281.35 -46.33 281.35 -48.4Q281.35 -51.33 279.38 -53.04Q277.4 -54.75 274.39 -54.75H246.11Z"/><path transform="translate(-18.65,0)" d="M317.15 0V-68.75H337.51V0Z"/></g><g fill="var(--brass)"><rect x="0" y="9.5" width="318.86" height="3.4"/><rect x="0" y="17.5" width="318.86" height="3.4"/></g><g fill="currentColor" transform="translate(0,62.46) scale(0.42)"><path transform="translate(-5.17,0)" d="M38 1.2Q31.29 1.2 25.32 0.09Q19.36 -1.01 14.83 -3.57Q10.3 -6.12 7.74 -10.29Q5.17 -14.45 5.17 -20.57Q5.17 -20.98 5.2 -21.44Q5.22 -21.89 5.27 -22.14H19.28Q19.24 -21.85 19.19 -21.3Q19.14 -20.75 19.14 -20.2Q19.14 -17 21.42 -14.84Q23.7 -12.68 27.98 -11.6Q32.25 -10.52 38.01 -10.52Q41.12 -10.52 43.86 -10.85Q46.6 -11.18 48.86 -11.81Q51.12 -12.44 52.78 -13.41Q54.43 -14.39 55.32 -15.72Q56.2 -17.04 56.2 -18.68Q56.2 -21.44 54.14 -23.17Q52.08 -24.9 48.57 -26.06Q45.06 -27.22 40.66 -28.1Q36.26 -28.98 31.59 -29.96Q26.91 -30.94 22.51 -32.44Q18.11 -33.94 14.6 -36.19Q11.1 -38.44 9.03 -41.93Q6.97 -45.43 6.97 -50.42Q6.97 -55.22 9.14 -58.86Q11.31 -62.51 15.42 -64.96Q19.53 -67.4 25.27 -68.63Q31.02 -69.85 38.16 -69.85Q45.15 -69.85 50.75 -68.58Q56.34 -67.31 60.28 -64.79Q216.22 -62.26 66.3 -58.56Q68.37 -54.86 68.37 -50V-48.6H54.56V-49.75Q54.56 -52.31 52.5 -54.17Q50.44 -56.02 46.83 -57.08Q515.82 -58.13 38.54 -58.13Q32.75 -58.13 28.92 -57.25Q25.1 -56.38 23.21 -54.78Q21.32 -53.18 21.32 -51.02Q21.32 -48.61 23.38 -47.06Q25.44 -45.5 28.95 -44.47Q32.46 -43.44 36.86 -42.58Q41.26 -41.72 45.93 -40.69Q50.61 -39.66 55.01 -38.21Q59.41 -36.76 62.92 -34.46Q66.42 -32.16 68.49 -28.74Q70.55 -25.32 70.55 -20.44Q70.55 -12.59 66.39 -7.82Q62.24 -3.05 54.89 -0.92Q47.55 1.2 38 1.2Z"/><path transform="translate(32.83,0)" d="M106.74 0V-27.85L76.88 -68.65H93.47L113.82 -39.79H114.56L134.96 -68.65H150.65L120.8 -27.85V0Z"/><path transform="translate(70.83,0)" d="M190 1.2Q183.29 1.2 177.32 0.09Q171.36 -1.01 166.83 -3.57Q162.3 -6.12 159.74 -10.29Q157.17 -14.45 157.17 -20.57Q157.17 -20.98 157.2 -21.44Q157.22 -21.89 157.27 -22.14H171.28Q171.24 -21.85 171.19 -21.3Q171.14 -20.75 171.14 -20.2Q171.14 -17 173.42 -14.84Q175.7 -12.68 179.98 -11.6Q184.25 -10.52 190.01 -10.52Q193.12 -10.52 195.86 -10.85Q198.6 -11.18 200.86 -11.81Q203.12 -12.44 204.78 -13.41Q206.43 -14.39 207.32 -15.72Q208.2 -17.04 208.2 -18.68Q208.2 -21.44 206.14 -23.17Q204.08 -24.9 200.57 -26.06Q197.06 -27.22 192.66 -28.1Q188.26 -28.98 183.59 -29.96Q178.91 -30.94 174.51 -32.44Q170.11 -33.94 166.6 -36.19Q163.1 -38.44 161.03 -41.93Q158.97 -45.43 158.97 -50.42Q158.97 -55.22 161.14 -58.86Q163.31 -62.51 167.42 -64.96Q171.53 -67.4 177.27 -68.63Q183.02 -69.85 190.16 -69.85Q197.15 -69.85 202.75 -68.58Q208.34 -67.31 212.28 -64.79Q216.22 -62.26 218.3 -58.56Q220.37 -54.86 220.37 -50V-48.6H206.56V-49.75Q206.56 -52.31 204.5 -54.17Q202.44 -56.02 198.83 -57.08Q195.22 -58.13 190.54 -58.13Q184.75 -58.13 180.92 -57.25Q177.1 -56.38 175.21 -54.78Q173.32 -53.18 173.32 -51.02Q173.32 -48.61 175.38 -47.06Q177.44 -45.5 180.95 -44.47Q184.46 -43.44 188.86 -42.58Q193.26 -41.72 197.93 -40.69Q202.61 -39.66 207.01 -38.21Q211.41 -36.76 214.92 -34.46Q218.42 -32.16 220.49 -28.74Q222.55 -25.32 222.55 -20.44Q222.55 -12.59 218.39 -7.82Q214.24 -3.05 206.89 -0.92Q199.55 1.2 190 1.2Z"/><path transform="translate(108.83,0)" d="M256.08 0V-56.39H230.05V-68.65H296.21V-56.39H270.13V0Z"/><path transform="translate(146.83,0)" d="M307.41 0V-68.65H368.59V-56.78H321.46V-40.94H363.42V-29.07H321.46V-11.87H369.28V0Z"/><path transform="translate(184.83,0)" d="M383.91 0V-68.65H405.9L419.05 -31.84Q419.7 -30.03 420.56 -27.36Q421.42 -24.7 422.31 -21.99Q423.2 -19.28 423.83 -17.15H424.58Q425.12 -19.03 425.9 -21.62Q426.69 -24.2 427.55 -26.92Q428.41 -29.64 429.16 -31.8L442.31 -68.65H463.96V0H449.9V-38.2Q449.9 -41.41 449.98 -44.81Q450.05 -48.21 450.18 -50.91Q450.3 -53.61 450.35 -54.64H449.55Q449.21 -53.46 448.41 -50.89Q447.61 -48.32 446.76 -45.49Q445.9 -42.66 445.2 -40.6L430.35 0H417.01L402.11 -40.54Q401.36 -42.6 400.57 -45.16Q399.77 -47.73 399.07 -50.28Q398.36 -52.82 397.81 -54.64H397.01Q397.11 -52.66 397.19 -49.78Q397.26 -46.89 397.34 -43.86Q397.42 -40.82 397.42 -38.2V0Z"/><path transform="translate(222.83,0)" d="M510.6 1.2Q503.89 1.2 497.92 0.09Q491.96 -1.01 487.43 -3.57Q482.9 -6.12 480.34 -10.29Q477.77 -14.45 477.77 -20.57Q477.77 -20.98 477.8 -21.44Q477.82 -21.89 477.87 -22.14H491.88Q491.84 -21.85 491.79 -21.3Q491.74 -20.75 491.74 -20.2Q491.74 -17 494.02 -14.84Q496.3 -12.68 500.58 -11.6Q504.85 -10.52 510.61 -10.52Q513.72 -10.52 516.46 -10.85Q519.2 -11.18 521.46 -11.81Q523.72 -12.44 525.38 -13.41Q527.03 -14.39 527.92 -15.72Q528.8 -17.04 528.8 -18.68Q528.8 -21.44 526.74 -23.17Q524.68 -24.9 521.17 -26.06Q517.66 -27.22 513.26 -28.1Q508.86 -28.98 504.19 -29.96Q499.51 -30.94 495.11 -32.44Q490.71 -33.94 487.2 -36.19Q483.7 -38.44 481.63 -41.93Q479.57 -45.43 479.57 -50.42Q479.57 -55.22 481.74 -58.86Q483.91 -62.51 488.02 -64.96Q492.13 -67.4 497.87 -68.63Q503.62 -69.85 510.76 -69.85Q517.75 -69.85 523.35 -68.58Q528.94 -67.31 532.88 -64.79Q536.82 -62.26 538.9 -58.56Q540.97 -54.86 540.97 -50V-48.6H527.16V-49.75Q527.16 -52.31 525.1 -54.17Q523.04 -56.02 519.43 -57.08Q515.82 -58.13 511.14 -58.13Q505.35 -58.13 501.52 -57.25Q497.7 -56.38 495.81 -54.78Q493.92 -53.18 493.92 -51.02Q493.92 -48.61 495.98 -47.06Q498.04 -45.5 501.55 -44.47Q505.06 -43.44 509.46 -42.58Q513.86 -41.72 518.53 -40.69Q523.21 -39.66 527.61 -38.21Q532.01 -36.76 535.52 -34.46Q539.02 -32.16 541.09 -28.74Q543.15 -25.32 543.15 -20.44Q543.15 -12.59 538.99 -7.82Q534.84 -3.05 527.49 -0.92Q520.15 1.2 510.6 1.2Z"/></g></svg>"""
 
 BODY = f"""
-<header class="site-header">
+<header class="site-header" id="site-header">
   <div class="hdr-inner">
     <a href="#top" class="brand-link" aria-label="ISABI Systems Home">
       {BADGE_SVG}
       {WORDMARK_HEADER_SVG}
     </a>
-    <nav class="main-nav" aria-label="Primary Navigation">
-      <a href="#architecture" class="active">Architecture</a>
-      <a href="#industries">Industries</a>
-      <a href="#sandbox">Live ERP Sandbox</a>
-      <a href="#microsoft-ai">Microsoft &amp; AI</a>
-      <a href="#ingenuity">Ingenuity</a>
-      <a href="#pricing">Pricing</a>
-      <a href="#portal">Contact Portal</a>
+    <nav class="main-nav" id="main-nav" aria-label="Primary Navigation">
+      <a href="#architecture" data-sec-link="architecture" class="active">Architecture</a>
+      <a href="#industries" data-sec-link="industries">Industries</a>
+      <a href="#sandbox" data-sec-link="sandbox">Live Sandbox</a>
+      <a href="#microsoft-ai" data-sec-link="microsoft-ai">Microsoft &amp; AI</a>
+      <a href="#ingenuity" data-sec-link="ingenuity">Ingenuity</a>
+      <a href="#pricing" data-sec-link="pricing">Pricing</a>
+      <a href="#portal" data-sec-link="portal">Contact</a>
     </nav>
     <div class="hdr-actions">
       <button type="button" class="ask-isabi-trigger" id="hdr-ask-btn" title="Open Ask ISABI System Intelligence">
         {MARK_ON_DARK_SVG}
         <span>Ask ISABI</span>
       </button>
-      <button type="button" class="btn btn-ghost hide-sm" id="install-pwa-btn" hidden>Install App</button>
+      <button type="button" class="btn btn-ghost hide-sm" id="install-pwa-btn" hidden>Install</button>
       <button type="button" class="btn btn-ghost" id="theme-toggle-btn" aria-label="Switch Theme" title="Toggle Dark or Light Ledger Theme">Light</button>
-      <a href="#portal" class="btn btn-brass hide-sm">Request Consultation</a>
+      <a href="#portal" class="btn btn-brass hide-md">Book Consultation</a>
     </div>
   </div>
+  <!-- Mobile & Tablet Section Jump Strip -->
+  <nav class="mobile-sec-nav" id="mobile-sec-nav" aria-label="Section Navigation">
+    <a href="#architecture" data-sec-link="architecture" class="active">01 Architecture</a>
+    <a href="#industries" data-sec-link="industries">02 Industries</a>
+    <a href="#sandbox" data-sec-link="sandbox">03 Live ERP</a>
+    <a href="#microsoft-ai" data-sec-link="microsoft-ai">04 Microsoft &amp; AI</a>
+    <a href="#ingenuity" data-sec-link="ingenuity">05 Ingenuity</a>
+    <a href="#pricing" data-sec-link="pricing">06 Pricing</a>
+    <a href="#portal" data-sec-link="portal">07 Contact</a>
+  </nav>
 </header>
 
 <main id="top">
@@ -167,8 +177,15 @@ BODY = f"""
         </p>
       </div>
 
-      <div class="contrast-grid">
-        <div class="contrast-card">
+      <!-- Mobile Switcher for Contrast Cards -->
+      <div class="mob-seg-bar" role="tablist" aria-label="Compare Approaches">
+        <button type="button" class="mob-seg-btn active" data-arch-tab="isabi">✓ The ISABI Standard</button>
+        <button type="button" class="mob-seg-btn" data-arch-tab="saas">✕ vs Generic SaaS</button>
+        <button type="button" class="mob-seg-btn" data-arch-tab="legacy">✕ vs Legacy ERP</button>
+      </div>
+
+      <div class="contrast-grid" id="arch-contrast-grid">
+        <div class="contrast-card" data-arch-card="saas" data-mob-hide="1">
           <div class="cc-tag">The Generic SaaS Trap</div>
           <h3>Off-the-Shelf Cloud Subscriptions</h3>
           <p>Built for the lowest common denominator. The moment you have multiple entities, partner profit splits, bonded customs stock, or batch plant tickets, the software breaks.</p>
@@ -180,7 +197,7 @@ BODY = f"""
           </ul>
         </div>
 
-        <div class="contrast-card">
+        <div class="contrast-card" data-arch-card="legacy" data-mob-hide="1">
           <div class="cc-tag">The Legacy ERP Trap</div>
           <h3>Traditional ERP Agencies</h3>
           <p>Bloated reseller teams where junior consultants pass tickets around without understanding either double-entry accounting or your physical operations.</p>
@@ -192,7 +209,7 @@ BODY = f"""
           </ul>
         </div>
 
-        <div class="contrast-card isabi-win">
+        <div class="contrast-card isabi-win" data-arch-card="isabi">
           <div class="cc-tag">The ISABI Standard</div>
           <h3>ISABI Systems Bespoke Architecture</h3>
           <p>A precision-engineered operational and financial system built directly on Microsoft enterprise infrastructure, tailored 100% to your entities, workflows, and ledger.</p>
@@ -259,7 +276,7 @@ BODY = f"""
         <div class="eyebrow">03 · Interactive Product Sandbox</div>
         <h2>Experience the ISABI Command Center Live.</h2>
         <p>
-          Test how an ISABI system looks and responds in production. Switch between six industry environments, toggle time periods or currencies, navigate the left-rail modules, hover the monthly ledger chart, or trigger Ask ISABI directly inside the application.
+          Test how an ISABI system looks and responds in production. Switch between six industry environments, toggle time periods or currencies, navigate the modules, inspect the monthly ledger chart, or trigger Ask ISABI directly inside the application.
         </p>
       </div>
 
@@ -298,7 +315,7 @@ BODY = f"""
         <div class="stack-cards">
           <div class="stack-card">
             <div class="stack-card-hdr">
-              <h4>Microsoft Dataverse (Relational Enterprise Core)</h4>
+              <h4>Microsoft Dataverse (Relational Core)</h4>
               <span>Database &amp; Security</span>
             </div>
             <p>ACID-compliant relational storage with row-level ownership, Business Unit hierarchy, full field-level audit history, automated nightly backups, and OData v4 Web API.</p>
@@ -306,7 +323,7 @@ BODY = f"""
 
           <div class="stack-card">
             <div class="stack-card-hdr">
-              <h4>Power Apps &amp; Custom Offline PWAs</h4>
+              <h4>Power Apps &amp; Offline PWAs</h4>
               <span>Operational Surfaces</span>
             </div>
             <p>Model-driven back-office ERP applications with custom JavaScript validation rules, paired with dedicated offline-first Progressive Web Apps for POS tills and biometric attendance kiosks.</p>
@@ -314,16 +331,16 @@ BODY = f"""
 
           <div class="stack-card">
             <div class="stack-card-hdr">
-              <h4>Power BI (XMLA Semantic Models) &amp; Paginated .RDL</h4>
-              <span>Executive &amp; Statutory Reporting</span>
+              <h4>Power BI (XMLA) &amp; Paginated .RDL</h4>
+              <span>Executive &amp; Statutory</span>
             </div>
             <p>Direct XMLA-published semantic models with Year, Month, Week, and Day period intelligence, plus pixel-perfect Paginated Reports (.rdl) for Statement of Accounts, P&amp;L, and Trial Balances.</p>
           </div>
 
           <div class="stack-card">
             <div class="stack-card-hdr">
-              <h4>Power Automate, SharePoint &amp; Microsoft Entra ID</h4>
-              <span>Workflows &amp; Zero-Trust Identity</span>
+              <h4>Power Automate, SharePoint &amp; Entra ID</h4>
+              <span>Workflows &amp; Identity</span>
             </div>
             <p>Event-driven cloud flows for supervisor approvals, CV and document routing to SharePoint drives, scheduled report subscriptions, and Entra ID Multi-Factor Authentication.</p>
           </div>
@@ -399,8 +416,14 @@ BODY = f"""
         </div>
       </div>
 
+      <!-- Mobile Switcher for Ingenuity Proof Views -->
+      <div class="mob-seg-bar" role="tablist" aria-label="Select Competitive Proof View">
+        <button type="button" class="mob-seg-btn active" data-ing-tab="matrix">vs SaaS &amp; Legacy Matrix</button>
+        <button type="button" class="mob-seg-btn" data-ing-tab="roi">Interactive ROI Estimator</button>
+      </div>
+
       <!-- Comparison Matrix -->
-      <div class="comp-wrap">
+      <div class="comp-wrap" data-ing-panel="matrix">
         <table class="comp-table" aria-label="Competitive Comparison Matrix">
           <thead>
             <tr>
@@ -452,11 +475,11 @@ BODY = f"""
       </div>
 
       <!-- Interactive ROI Calculator -->
-      <div class="roi-box">
+      <div class="roi-box" data-ing-panel="roi" data-mob-hide="1">
         <div>
           <div class="eyebrow">Operational Impact Estimator</div>
-          <h3 style="font-size:24px;margin-bottom:8px">Quantify the Value of Closing Your Books on ISABI</h3>
-          <p style="color:var(--muted);font-size:14.5px;margin:0 0 22px">
+          <h3 style="font-size:22px;margin-bottom:6px">Quantify the Value of Closing Your Books on ISABI</h3>
+          <p style="color:var(--muted);font-size:14px;margin:0 0 18px">
             Adjust the sliders to reflect your current organization and see the immediate operational time reclaimed and close-cycle acceleration.
           </p>
           <div class="roi-sliders">
@@ -465,11 +488,11 @@ BODY = f"""
               <input type="range" id="roi-entities" min="1" max="15" value="3">
             </div>
             <div class="slider-row">
-              <label for="roi-hours"><span>Weekly Team Hours Spent on Excel / Manual Reconciliation</span><span class="val num" id="roi-hours-val">35 hrs / wk</span></label>
+              <label for="roi-hours"><span>Weekly Team Hours on Manual Excel</span><span class="val num" id="roi-hours-val">35 hrs / wk</span></label>
               <input type="range" id="roi-hours" min="5" max="120" step="5" value="35">
             </div>
             <div class="slider-row">
-              <label for="roi-close"><span>Current Days Needed to Close Monthly Books</span><span class="val num" id="roi-close-val">14 Days</span></label>
+              <label for="roi-close"><span>Current Days to Close Monthly Books</span><span class="val num" id="roi-close-val">14 Days</span></label>
               <input type="range" id="roi-close" min="3" max="30" value="14">
             </div>
           </div>
@@ -494,10 +517,10 @@ BODY = f"""
               <strong class="brass num" id="roi-out-payback">2.6 Months</strong>
             </div>
           </div>
-          <p style="font-size:13px;color:var(--muted);margin:0 0 14px">
+          <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">
             Figures reflect typical automation of manual voucher re-keying, inter-branch consolidation, partner split tables, and automated Power BI / RDL statement generation.
           </p>
-          <a href="#pricing" class="btn btn-brass" style="width:100%">Configure Your System Scope Below</a>
+          <a href="#scope-configurator" class="btn btn-brass" style="width:100%">Configure Your System Scope Below</a>
         </div>
       </div>
     </div>
@@ -514,9 +537,17 @@ BODY = f"""
         </p>
       </div>
 
-      <div class="pricing-grid">
+      <!-- Mobile Switcher for Pricing Tiers & Custom Scope Builder -->
+      <div class="mob-seg-bar" role="tablist" aria-label="Select Engagement Tier or Scope Builder">
+        <button type="button" class="mob-seg-btn" data-tier-tab="tier1">$4.5k+ Base</button>
+        <button type="button" class="mob-seg-btn active" data-tier-tab="tier2">★ $9.5k+ Suite</button>
+        <button type="button" class="mob-seg-btn" data-tier-tab="tier3">$18k+ Group</button>
+        <button type="button" class="mob-seg-btn" data-tier-tab="builder">Scope Builder</button>
+      </div>
+
+      <div class="pricing-grid" id="pricing-tiers-grid">
         <!-- Tier 1 -->
-        <div class="price-card">
+        <div class="price-card" data-tier-card="tier1" data-mob-hide="1">
           <span class="price-badge">Tier 01 · Single Entity</span>
           <h3>Operational Foundation</h3>
           <p class="price-desc">Ideal for a single operating company, resort property, showroom, plant, or brokerage replacing fragile spreadsheets with a governed ERP and Power BI suite.</p>
@@ -536,7 +567,7 @@ BODY = f"""
         </div>
 
         <!-- Tier 2 (Featured) -->
-        <div class="price-card featured">
+        <div class="price-card featured" data-tier-card="tier2">
           <span class="price-badge">Recommended · Most Popular</span>
           <h3>Multi-Entity &amp; AI Operations Suite</h3>
           <p class="price-desc">Complete operational and financial control for multi-branch companies requiring automated workflows, statutory reconciliation, companion field apps, and Ask ISABI AI.</p>
@@ -557,7 +588,7 @@ BODY = f"""
         </div>
 
         <!-- Tier 3 -->
-        <div class="price-card">
+        <div class="price-card" data-tier-card="tier3" data-mob-hide="1">
           <span class="price-badge">Tier 03 · Group &amp; Holding</span>
           <h3>Enterprise Group Ecosystem</h3>
           <p class="price-desc">For multi-industry holding groups, family offices, and large enterprises deploying dedicated applications across multiple sister companies with group consolidation.</p>
@@ -578,10 +609,10 @@ BODY = f"""
       </div>
 
       <!-- Interactive Custom Scope & Investment Configurator -->
-      <div class="configurator-card" id="scope-configurator">
+      <div class="configurator-card" id="scope-configurator" data-tier-card="builder" data-mob-hide="1">
         <div class="eyebrow">Interactive Scope &amp; Investment Builder</div>
-        <h3 style="font-size:24px;margin-bottom:6px">Build Your Custom ISABI Architecture &amp; Get an Instant Indicative Range</h3>
-        <p style="color:var(--muted);font-size:14.5px;margin:0">
+        <h3 style="font-size:22px;margin-bottom:6px">Build Your Custom ISABI Architecture &amp; Get an Instant Indicative Range</h3>
+        <p style="color:var(--muted);font-size:14px;margin:0">
           Select your primary industry, organizational scale, and desired modules. Your custom configuration automatically syncs with the WhatsApp and Email consultation portal below.
         </p>
 
@@ -721,10 +752,16 @@ BODY = f"""
         </p>
       </div>
 
+      <!-- Mobile Switcher for Consultation Portal -->
+      <div class="mob-seg-bar" role="tablist" aria-label="Select Contact Method">
+        <button type="button" class="mob-seg-btn active" data-portal-tab="form">Project Brief Form</button>
+        <button type="button" class="mob-seg-btn" data-portal-tab="direct">Direct WhatsApp &amp; Email</button>
+      </div>
+
       <div class="portal-grid">
-        <div class="portal-form-card">
-          <h3 style="font-size:22px;margin-bottom:6px">Project Brief &amp; Direct Dispatch</h3>
-          <p style="font-size:14px;color:var(--muted);margin:0 0 22px">
+        <div class="portal-form-card" data-portal-panel="form">
+          <h3 style="font-size:21px;margin-bottom:6px">Project Brief &amp; Direct Dispatch</h3>
+          <p style="font-size:13.8px;color:var(--muted);margin:0 0 18px">
             Fill in your details below (your selections from the Scope Configurator are automatically attached) and choose WhatsApp or Email to send your inquiry immediately.
           </p>
 
@@ -777,37 +814,37 @@ BODY = f"""
 
             <div class="form-field">
               <label for="lead-notes">Operational Goals &amp; Current Challenges</label>
-              <textarea id="lead-notes" rows="4" placeholder="Tell us briefly about your entities, current accounting or Excel setup, and what you want the system to solve..."></textarea>
+              <textarea id="lead-notes" rows="3" placeholder="Tell us briefly about your entities, current accounting or Excel setup, and what you want the system to solve..."></textarea>
             </div>
 
             <div class="portal-dispatch-btns">
-              <button type="button" class="btn btn-wa" id="portal-send-wa" style="padding:14px 18px;font-size:15px">
+              <button type="button" class="btn btn-wa" id="portal-send-wa" style="padding:13px 16px;font-size:14.5px">
                 Send Inquiry on WhatsApp
               </button>
-              <button type="button" class="btn btn-brass" id="portal-send-email" style="padding:14px 18px;font-size:15px">
+              <button type="button" class="btn btn-brass" id="portal-send-email" style="padding:13px 16px;font-size:14.5px">
                 Send Inquiry via Email
               </button>
             </div>
 
-            <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px">
-              <button type="button" class="btn btn-outline" id="portal-copy-brief" style="flex:1;font-size:13px">
-                Copy Formatted Brief to Clipboard
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+              <button type="button" class="btn btn-outline" id="portal-copy-brief" style="flex:1;font-size:12.5px;padding:8px 10px">
+                Copy Formatted Brief
               </button>
-              <button type="button" class="btn btn-outline" id="portal-print-brief" style="flex:1;font-size:13px">
-                Print / Save Architecture Brief (PDF)
+              <button type="button" class="btn btn-outline" id="portal-print-brief" style="flex:1;font-size:12.5px;padding:8px 10px">
+                Print / Save PDF Brief
               </button>
             </div>
           </form>
         </div>
 
-        <div class="portal-direct-card">
+        <div class="portal-direct-card" data-portal-panel="direct" data-mob-hide="1">
           <div>
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
               {BADGE_SVG}
               <div>
-                <div style="font-size:11.5px;text-transform:uppercase;letter-spacing:0.12em;color:#D9A54A;font-weight:700">Direct Principal Access</div>
-                <h3 style="color:#F4F2EE;font-size:22px">Hussein Bdeir</h3>
-                <div style="font-size:13px;color:#9FB0C7">Founder &amp; Principal Systems Architect · ISABI Systems</div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:#D9A54A;font-weight:700">Direct Principal Access</div>
+                <h3 style="color:#F4F2EE;font-size:21px">Hussein Bdeir</h3>
+                <div style="font-size:12.5px;color:#9FB0C7">Founder &amp; Principal Systems Architect · ISABI Systems</div>
               </div>
             </div>
 
@@ -829,9 +866,9 @@ BODY = f"""
             </div>
           </div>
 
-          <div style="border-top:1px solid rgba(255,255,255,0.12);border-bottom:3px double #D9A54A;padding:16px 0">
-            <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:6px">What Happens After You Reach Out</div>
-            <ol style="margin:0;padding-left:18px;font-size:13.2px;color:#E9ECF2;line-height:1.55">
+          <div style="border-top:1px solid rgba(255,255,255,0.12);border-bottom:3px double #D9A54A;padding:14px 0">
+            <div style="font-size:11.5px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:5px">What Happens After You Reach Out</div>
+            <ol style="margin:0;padding-left:18px;font-size:12.8px;color:#E9ECF2;line-height:1.5">
               <li><b>30-Minute Discovery Call:</b> We review your entities, current spreadsheets or legacy software, and reporting pain points.</li>
               <li><b>Live Production Walkthrough:</b> See real ISABI systems running across hospitality, trading, manufacturing, real estate, and insurance.</li>
               <li><b>Fixed-Scope Blueprint &amp; Timeline:</b> Receive a clear architectural proposal with exact tables, reports, and investment terms.</li>
@@ -848,17 +885,17 @@ BODY = f"""
   <div class="wrap">
     <div class="ftr-grid">
       <div class="ftr-col">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;color:#F4F2EE">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;color:#F4F2EE">
           {BADGE_SVG}
           <div>
-            <b style="font-family:Archivo,sans-serif;font-size:18px;display:block;letter-spacing:0.04em">ISABI SYSTEMS</b>
+            <b style="font-family:Archivo,sans-serif;font-size:17px;display:block;letter-spacing:0.04em">ISABI SYSTEMS</b>
             <span style="font-size:12px;color:#D9A54A">The Books Close on ISABI</span>
           </div>
         </div>
-        <p style="margin:0 0 14px;color:#9FB0C7;font-size:13.5px">
+        <p style="margin:0 0 12px;color:#9FB0C7;font-size:13px">
           Bespoke Enterprise ERP, Financial Ledgers, Power BI Executive Suites, Companion PWAs, and Native AI Built on the Microsoft Cloud.
         </p>
-        <div style="font-size:13px;color:#F4F2EE">
+        <div style="font-size:12.5px;color:#F4F2EE">
           <b>Direct WhatsApp:</b> <a href="https://wa.me/96170444955" target="_blank" rel="noopener" style="color:#D9A54A">+961 70 444 955</a><br>
           <b>Direct Email:</b> <a href="mailto:hbdeir16@gmail.com" style="color:#D9A54A">hbdeir16@gmail.com</a>
         </div>
@@ -909,8 +946,8 @@ BODY = f"""
 
 <!-- MOBILE BOTTOM BAR -->
 <nav class="mobile-dock" aria-label="Mobile Quick Actions">
-  <a href="#industries" class="dock-btn">Industries</a>
-  <a href="#sandbox" class="dock-btn">Live ERP</a>
+  <a href="#industries" data-sec-link="industries" class="dock-btn">Industries</a>
+  <a href="#sandbox" data-sec-link="sandbox" class="dock-btn">Live ERP</a>
   <button type="button" class="dock-btn brass" id="mob-ask-btn">Ask ISABI</button>
   <a href="https://wa.me/96170444955?text=Hello%20Hussein%2C%20I%20am%20interested%20in%20ISABI%20Systems." target="_blank" rel="noopener" class="dock-btn wa">WhatsApp</a>
 </nav>

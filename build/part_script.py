@@ -6,6 +6,7 @@ JS = r"""
 
   const WA_NUMBER = '96170444955';
   const EMAIL_ADDR = 'hbdeir16@gmail.com';
+  const SEC_IDS = ['architecture', 'industries', 'sandbox', 'microsoft-ai', 'ingenuity', 'pricing', 'portal'];
 
   const BADGE_MINI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="34" height="34" style="border-radius:7px;flex-shrink:0"><rect width="120" height="120" rx="26" fill="#0B1730"/><g transform="translate(39.52,77.62) scale(0.74)"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>';
   const RAIL_MARK_SVG = '<svg viewBox="-9.5 -78.8 74.66 109.7" height="22"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>';
@@ -508,7 +509,7 @@ JS = r"""
         ['Metro Transit · Spare Parts Depot', 'SI-PRT-1411', '62 Days', '$6,250.00'],
         ['4 Smaller Balances (< $2k each)', 'Multiple', '61-74 Days', '$4,850.00']
       ],
-      total: ['Total Audited Overdue (> 60 Days)', '', '', '$42,300.00'],
+      total: ['Total Audited Overdue (> 60 Days)', '$42,300.00'],
       citation: 'Source: Dataverse Receivables Ledger · Verified 100% against Printable SOA (.rdl)'
     },
     {
@@ -522,7 +523,7 @@ JS = r"""
         ['Concrete & Manufacturing', 'Batch Ticket (m³), Mix Grade & Silo MT', 'Raw material yield & contractor credit gate'],
         ['Real Estate & Insurance', 'Lease Schedule / Policy & Endorsement', 'NOI yield / Carrier commission bordereaux']
       ],
-      total: ['Deployment Timeframe', '', '3 to 6 Weeks to Live Production'],
+      total: ['Deployment Timeframe', '3 to 6 Weeks to Live Production'],
       citation: 'Architecture: Microsoft Dataverse + Model-Driven Apps + XMLA Power BI + Paginated .RDL'
     },
     {
@@ -536,7 +537,7 @@ JS = r"""
         ['03. Variance Engine', 'Power BI & Paginated RDL highlight any discrepancy down to $1', 'Instant root-cause drilldown'],
         ['04. Executive Sign-Off', 'Books close with the double rule once variance equals zero', '100% audit confidence']
       ],
-      total: ['Typical Cutover Variance', '', '$0.00 Unexplained Difference'],
+      total: ['Typical Cutover Variance', '$0.00 Unexplained Difference'],
       citation: 'Proven in live multi-million-dollar trading, manufacturing, and hospitality estates'
     },
     {
@@ -550,25 +551,31 @@ JS = r"""
         ['Paginated .RDL Pack', 'Printable PDF/Excel Statement of Accounts, P&L & Aging', 'Included'],
         ['Ask ISABI + Companion PWA', 'Native AI assistant + Offline POS Till or Attendance Kiosk', 'Included']
       ],
-      total: ['Indicative Complete Suite Investment', '', 'From $9,500 + $650/mo'],
+      total: ['Indicative Complete Suite Investment', 'From $9,500 + $650/mo'],
       citation: 'Every engagement is fixed-scope after a 30-minute discovery call with Hussein Bdeir'
     }
   ];
 
   // ---------------- STATE ----------------
   const state = {
+    activeSec: 'architecture',
     activeInd: 'hospitality',
+    indMobTab: 'modules',
     sboxInd: 'holding',
     sboxNav: 'Overview',
     sboxPeriod: 'mtd',
     sboxCurr: 'USD',
     sboxTheme: 'auto',
+    sboxMobTab: 'chart',
     cfgInd: 'Hospitality & Resorts',
     cfgScale: 2,
     cfgScaleLabel: 'Multi-Branch (2 to 4 Entities)',
     cfgScaleAdd: 2500,
     deferredPrompt: null
   };
+
+  let navScrollLockUntil = 0;
+  let scrollTargetId = null;
 
   // ---------------- HELPERS ----------------
   function showToast(msg) {
@@ -580,24 +587,193 @@ JS = r"""
     showToast._t = setTimeout(() => { el.hidden = true; }, 3800);
   }
 
-  function fmtMoney(n, sym = '$') {
-    return sym + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  // ---------------- NAVIGATION ACTIVE UNDERLINE & EXACT SECTION SCROLL ----------------
+  function setActiveSection(secId) {
+    const resolved = SEC_IDS.includes(secId) ? secId : 'architecture';
+    state.activeSec = resolved;
+    document.querySelectorAll('[data-sec-link]').forEach(link => {
+      const isMatch = link.dataset.secLink === resolved;
+      link.classList.toggle('active', isMatch);
+      if (isMatch && link.closest('#mobile-sec-nav')) {
+        const nav = document.getElementById('mobile-sec-nav');
+        if (nav) {
+          const targetLeft = link.offsetLeft - (nav.clientWidth / 2) + (link.offsetWidth / 2);
+          nav.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
+        }
+      }
+    });
+  }
+
+  function computeExactTargetScrollY(el) {
+    if (!el) return 0;
+    const hdr = document.getElementById('site-header');
+    const hdrH = hdr ? hdr.offsetHeight : 70;
+    const rectTop = el.getBoundingClientRect().top + window.scrollY;
+    if (el.classList.contains('sec')) {
+      // Align section top border 2px underneath the sticky header bottom border so zero pixels of the previous section show
+      return Math.max(0, Math.round(rectTop - hdrH + 2));
+    }
+    return Math.max(0, Math.round(rectTop - hdrH - 14));
+  }
+
+  function activateMobilePricingTab(targetTier) {
+    document.querySelectorAll('[data-tier-tab]').forEach(b => {
+      b.classList.toggle('active', b.dataset.tierTab === targetTier);
+    });
+    const grid = document.getElementById('pricing-tiers-grid');
+    if (grid) {
+      if (targetTier === 'builder') {
+        grid.setAttribute('data-mob-hide', '1');
+      } else {
+        grid.removeAttribute('data-mob-hide');
+      }
+    }
+    document.querySelectorAll('[data-tier-card]').forEach(card => {
+      if (card.dataset.tierCard === targetTier) {
+        card.removeAttribute('data-mob-hide');
+      } else {
+        card.setAttribute('data-mob-hide', '1');
+      }
+    });
+  }
+
+  function activateMobileIngTab(targetKey) {
+    document.querySelectorAll('[data-ing-tab]').forEach(b => {
+      b.classList.toggle('active', b.dataset.ingTab === targetKey);
+    });
+    document.querySelectorAll('[data-ing-panel]').forEach(panel => {
+      if (panel.dataset.ingPanel === targetKey) {
+        panel.removeAttribute('data-mob-hide');
+      } else {
+        panel.setAttribute('data-mob-hide', '1');
+      }
+    });
+  }
+
+  function activateMobilePortalTab(targetKey) {
+    document.querySelectorAll('[data-portal-tab]').forEach(b => {
+      b.classList.toggle('active', b.dataset.portalTab === targetKey);
+    });
+    document.querySelectorAll('[data-portal-panel]').forEach(panel => {
+      if (panel.dataset.portalPanel === targetKey) {
+        panel.removeAttribute('data-mob-hide');
+      } else {
+        panel.setAttribute('data-mob-hide', '1');
+      }
+    });
+  }
+
+  function scrollToTargetId(rawId, updateHash = true, instant = false) {
+    const cleanId = String(rawId || '').replace(/^#/, '');
+    if (!cleanId || cleanId === 'top') {
+      navScrollLockUntil = Date.now() + 900;
+      scrollTargetId = null;
+      setActiveSection('architecture');
+      if (instant) {
+        window.scrollTo(0, 0);
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      if (updateHash && history.replaceState) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      return;
+    }
+
+    if (cleanId === 'scope-configurator') {
+      activateMobilePricingTab('builder');
+    }
+
+    const targetEl = document.getElementById(cleanId);
+    if (!targetEl) return;
+
+    const mappedSec = cleanId === 'scope-configurator' ? 'pricing' : (SEC_IDS.includes(cleanId) ? cleanId : state.activeSec);
+    setActiveSection(mappedSec);
+
+    scrollTargetId = cleanId;
+    navScrollLockUntil = Date.now() + 950;
+    const exactY = computeExactTargetScrollY(targetEl);
+    if (instant) {
+      window.scrollTo(0, exactY);
+    } else {
+      window.scrollTo({ top: exactY, behavior: 'smooth' });
+    }
+
+    if (updateHash && history.replaceState) {
+      history.replaceState(null, '', '#' + cleanId);
+    }
+
+    // Re-verify exact alignment after smooth scroll settles
+    clearTimeout(scrollToTargetId._verifyTimer);
+    scrollToTargetId._verifyTimer = setTimeout(() => {
+      if (scrollTargetId === cleanId) {
+        const currentTarget = document.getElementById(cleanId);
+        if (currentTarget) {
+          const desiredY = computeExactTargetScrollY(currentTarget);
+          if (Math.abs(window.scrollY - desiredY) > 2 && Math.abs(window.scrollY - desiredY) < 120) {
+            window.scrollTo(0, desiredY);
+          }
+        }
+        scrollTargetId = null;
+      }
+    }, 650);
+  }
+
+  function updateActiveNavOnScroll() {
+    if (Date.now() < navScrollLockUntil) return;
+    const hdr = document.getElementById('site-header');
+    const hdrH = hdr ? hdr.offsetHeight : 70;
+    const probeY = window.scrollY + hdrH + 72;
+
+    // If scrolled near the very bottom of the page, highlight portal
+    if ((window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 40)) {
+      if (state.activeSec !== 'portal') setActiveSection('portal');
+      return;
+    }
+
+    let current = SEC_IDS[0];
+    for (let i = 0; i < SEC_IDS.length; i++) {
+      const id = SEC_IDS[i];
+      const el = document.getElementById(id);
+      if (!el) continue;
+      const top = el.offsetTop;
+      if (probeY >= top) {
+        current = id;
+      }
+    }
+    if (current !== state.activeSec) {
+      setActiveSection(current);
+    }
   }
 
   // ---------------- RENDER INDUSTRY BLUEPRINTS ----------------
+  const IND_SHORT_NAMES = {
+    hospitality: 'Hospitality & Resorts',
+    trading: 'Auto & Truck Trading',
+    manufacturing: 'Concrete & Mfg',
+    realestate: 'Real Estate',
+    insurance: 'Insurance Brokerage',
+    holding: 'Holding Groups',
+    pos: 'Offline POS Till PWA',
+    attendance: 'Attendance Kiosk PWA'
+  };
+
   function renderIndustries() {
     const tabsEl = document.getElementById('ind-tabs');
     const detailEl = document.getElementById('ind-detail');
     if (!tabsEl || !detailEl) return;
 
+    const isMobile = window.innerWidth <= 720;
     tabsEl.innerHTML = INDUSTRIES.map(ind => `
       <button type="button" class="ind-tab ${ind.id === state.activeInd ? 'active' : ''}" role="tab" aria-selected="${ind.id === state.activeInd}" data-ind-id="${ind.id}">
-        <b>${ind.name}</b>
+        <b>${isMobile ? (IND_SHORT_NAMES[ind.id] || ind.name) : ind.name}</b>
         <small>${ind.sub}</small>
       </button>
     `).join('');
 
     const cur = INDUSTRIES.find(x => x.id === state.activeInd) || INDUSTRIES[0];
+    const mTab = state.indMobTab || 'modules';
+
     detailEl.innerHTML = `
       <div class="ind-detail-top">
         <div>
@@ -605,22 +781,28 @@ JS = r"""
           <h3>${cur.name}</h3>
           <p class="ind-detail-lead">${cur.lead}</p>
         </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;width:100%">
           <button type="button" class="btn btn-outline" data-load-sandbox="${cur.sandboxKey}">Preview in Live ERP Sandbox</button>
           <button type="button" class="btn btn-brass" data-configure-ind="${cur.cfgName}">Price This Industry System</button>
         </div>
       </div>
 
+      <div class="mob-seg-bar" role="tablist" aria-label="Blueprint Layers">
+        <button type="button" class="mob-seg-btn ${mTab === 'modules' ? 'active' : ''}" data-ind-subtab="modules">Tables (${cur.modules.length})</button>
+        <button type="button" class="mob-seg-btn ${mTab === 'workflows' ? 'active' : ''}" data-ind-subtab="workflows">Workflows (${cur.workflows.length})</button>
+        <button type="button" class="mob-seg-btn ${mTab === 'reports' ? 'active' : ''}" data-ind-subtab="reports">Power BI &amp; RDL (${cur.reports.length})</button>
+      </div>
+
       <div class="ind-cols">
-        <div class="ind-box">
+        <div class="ind-box" data-ind-box="modules" ${mTab !== 'modules' ? 'data-mob-hide="1"' : ''}>
           <h4>Custom Tables &amp; Modules</h4>
           <ul>${cur.modules.map(m => `<li>${m}</li>`).join('')}</ul>
         </div>
-        <div class="ind-box">
+        <div class="ind-box" data-ind-box="workflows" ${mTab !== 'workflows' ? 'data-mob-hide="1"' : ''}>
           <h4>Automated Cloud Workflows</h4>
           <ul>${cur.workflows.map(w => `<li>${w}</li>`).join('')}</ul>
         </div>
-        <div class="ind-box">
+        <div class="ind-box" data-ind-box="reports" ${mTab !== 'reports' ? 'data-mob-hide="1"' : ''}>
           <h4>Power BI &amp; Printable .RDL</h4>
           <ul>${cur.reports.map(r => `<li>${r}</li>`).join('')}</ul>
         </div>
@@ -695,11 +877,11 @@ JS = r"""
     if (!barEl || !mockEl) return;
 
     const sboxChoices = [
-      ['holding', 'Group Holding Overview'],
+      ['holding', 'Group Holding'],
       ['hospitality', 'Hospitality & Resorts'],
       ['trading', 'Auto & Truck Trading'],
-      ['manufacturing', 'Concrete & Manufacturing'],
-      ['realestate', 'Real Estate Portfolio'],
+      ['manufacturing', 'Concrete & Mfg'],
+      ['realestate', 'Real Estate'],
       ['insurance', 'Insurance Brokerage']
     ];
 
@@ -718,8 +900,10 @@ JS = r"""
       const val = k.fixed ? k.v : (k.v * totalMult).toFixed(1);
       return `
         <div class="kpi ${k.books ? 'books' : ''}">
-          <span class="k">${k.k}</span>
-          <span class="v num">${val}<small>${k.unit}</small></span>
+          <div>
+            <span class="k">${k.k}</span>
+            <span class="v num">${val}<small>${k.unit}</small></span>
+          </div>
           <span class="d ${k.cls || ''}">${k.d}</span>
         </div>
       `;
@@ -727,7 +911,7 @@ JS = r"""
 
     const entHtml = d.entities.map(r => {
       const v = (r[1] * totalMult).toFixed(1) + 'k';
-      return `<tr><td><b>${r[0]}</b></td><td class="n">${v}</td><td class="n">${r[2]}</td><td class="mu">${r[3]}</td><td><span class="m-chip ${r[4]}">${r[5]}</span></td></tr>`;
+      return `<tr><td><b>${r[0]}</b></td><td class="n">${v}</td><td class="n">${r[2]}</td><td class="mu hide-xs">${r[3]}</td><td><span class="m-chip ${r[4]}">${r[5]}</span></td></tr>`;
     }).join('');
 
     let totDebit = 0, totCredit = 0;
@@ -737,26 +921,33 @@ JS = r"""
       totDebit += deb;
       totCredit += cred;
       return `<tr>
-        <td class="mu">${r[0]}</td>
+        <td class="mu hide-xs">${r[0]}</td>
         <td class="mono">${r[1]}</td>
-        <td>${r[2]}</td>
+        <td class="hide-xs">${r[2]}</td>
         <td>${r[3]}</td>
         <td class="n">${deb ? deb.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}</td>
         <td class="n">${cred ? cred.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}</td>
       </tr>`;
     }).join('');
 
+    const focusChart = state.sboxNav === 'Sales & Revenue' || state.sboxNav === 'Purchases & Stock';
+    const focusEnt = state.sboxNav === 'Business Units' || state.sboxNav === 'Cash & Treasury';
+    const focusAlerts = state.sboxNav === 'Audit Trail';
+    const focusGl = state.sboxNav === 'General Ledger' || state.sboxNav === 'Paginated .RDL';
+
+    const mTab = state.sboxMobTab || 'chart';
+
     mockEl.innerHTML = `
       <aside class="rail">
         <div class="brand">
           ${RAIL_MARK_SVG}
-          <span style="font-family:Archivo,sans-serif;font-weight:800;letter-spacing:0.06em;font-size:16px">ISABI SYSTEMS</span>
+          <span style="font-family:Archivo,sans-serif;font-weight:800;letter-spacing:0.06em;font-size:15px">ISABI SYSTEMS</span>
         </div>
         <nav aria-label="Sandbox ERP Navigation">
           ${navItems.map(nm => `<button type="button" class="nav-item ${state.sboxNav === nm ? 'on' : ''}" data-sbox-nav="${nm}"><span>${nm}</span></button>`).join('')}
           <div class="grp">Governance</div>
-          <button type="button" class="nav-item" data-sbox-nav="Business Units"><span>Business Units</span></button>
-          <button type="button" class="nav-item" data-sbox-nav="Audit Trail"><span>Audit Trail</span></button>
+          <button type="button" class="nav-item ${state.sboxNav === 'Business Units' ? 'on' : ''}" data-sbox-nav="Business Units"><span>Business Units</span></button>
+          <button type="button" class="nav-item ${state.sboxNav === 'Audit Trail' ? 'on' : ''}" data-sbox-nav="Audit Trail"><span>Audit Trail</span></button>
         </nav>
         <div class="me">
           <span class="av">HB</span>
@@ -789,8 +980,13 @@ JS = r"""
 
         <section class="kpis">${kpisHtml}</section>
 
-        <section class="row2">
-          <div class="panel">
+        <div class="sbox-mob-tabs" role="tablist" aria-label="Mobile Sandbox Views">
+          <button type="button" class="sbox-mob-tab ${mTab === 'chart' ? 'active' : ''}" data-sbox-mobtab="chart">Chart &amp; Entities</button>
+          <button type="button" class="sbox-mob-tab ${mTab === 'ledger' ? 'active' : ''}" data-sbox-mobtab="ledger">General Ledger &amp; Alerts</button>
+        </div>
+
+        <section class="row2" ${mTab !== 'chart' ? 'data-mob-hide="1"' : ''}>
+          <div class="panel ${focusChart ? 'panel-focus' : ''}">
             <div class="ph">
               <h3>Monthly Revenue Trajectory (${cm.sym} thousands)</h3>
               <div class="legend">
@@ -805,41 +1001,44 @@ JS = r"""
             </div>
           </div>
 
-          <div class="panel">
+          <div class="panel ${focusEnt ? 'panel-focus' : ''}">
             <div class="ph">
               <h3>Operating Entities &amp; Books Status</h3>
-              <span style="font-size:11.5px;color:var(--m-steel);font-weight:600">${pm.label}</span>
+              <span style="font-size:11px;color:var(--m-steel);font-weight:600">${pm.label}</span>
             </div>
             <table class="m-grid">
               <thead>
-                <tr><th>Entity / Business Unit</th><th class="n">Revenue</th><th class="n">Margin</th><th>Last Sync</th><th>Books</th></tr>
+                <tr><th>Entity / Business Unit</th><th class="n">Revenue</th><th class="n">Margin</th><th class="hide-xs">Last Sync</th><th>Books</th></tr>
               </thead>
               <tbody>${entHtml}</tbody>
             </table>
           </div>
         </section>
 
-        <section class="row3">
-          <div class="panel">
+        <section class="row3" ${mTab !== 'ledger' ? 'data-mob-hide="1"' : ''}>
+          <div class="panel ${focusAlerts ? 'panel-focus' : ''}">
             <div class="ph"><h3>Executive Exceptions &amp; Watchdogs</h3></div>
             <ul class="att">
               ${d.alerts.map(a => `<li class="${a[0]}"><b>${a[1]}</b><span>${a[2]}</span><button type="button" class="att-act" data-sbox-act="${a[1]}">${a[3]}</button></li>`).join('')}
             </ul>
           </div>
 
-          <div class="panel">
+          <div class="panel ${focusGl ? 'panel-focus' : ''}">
             <div class="ph">
               <h3>Audited General Ledger Stream (Double-Entry)</h3>
-              <span style="font-size:11.5px;color:var(--m-muted)">Closed with the ISABI Double Rule</span>
+              <span style="font-size:11px;color:var(--m-muted)">Closed with the ISABI Double Rule</span>
             </div>
             <table class="m-grid">
               <thead>
-                <tr><th>Date</th><th>Voucher</th><th>Business Unit</th><th>Account</th><th class="n">Debit (${cm.sym})</th><th class="n">Credit (${cm.sym})</th></tr>
+                <tr><th class="hide-xs">Date</th><th>Voucher</th><th class="hide-xs">Business Unit</th><th>Account</th><th class="n">Debit (${cm.sym})</th><th class="n">Credit (${cm.sym})</th></tr>
               </thead>
               <tbody>
                 ${jHtml}
                 <tr class="total">
-                  <td colspan="4">Total Audited Batch</td>
+                  <td class="hide-xs"></td>
+                  <td><b>Total</b></td>
+                  <td class="hide-xs"></td>
+                  <td><b>Audited Batch</b></td>
                   <td class="n">${totDebit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td class="n">${totCredit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 </tr>
@@ -850,20 +1049,25 @@ JS = r"""
       </div>
     `;
 
-    // Bind chart tooltip
+    // Bind chart tooltip (hover + touch tap support)
     const cwrap = document.getElementById('sbox-chart-wrap');
     const tip = document.getElementById('sbox-chart-tip');
     if (cwrap && tip) {
       cwrap.querySelectorAll('.col').forEach(col => {
-        col.addEventListener('mouseenter', () => {
+        const showTip = (clientX) => {
           tip.innerHTML = `<b>${col.dataset.m} · Total ${col.dataset.t}</b><span style="display:block;opacity:0.85;margin-top:2px">${col.dataset.tip}</span>`;
           tip.hidden = false;
-        });
-        col.addEventListener('mousemove', e => {
           const r = cwrap.getBoundingClientRect();
-          const left = Math.min(r.width - 220, Math.max(8, e.clientX - r.left - 80));
+          const relX = (clientX || (r.left + r.width / 2)) - r.left;
+          const left = Math.min(Math.max(8, r.width - 230), Math.max(8, relX - 80));
           tip.style.left = left + 'px';
-          tip.style.top = '12px';
+          tip.style.top = '10px';
+        };
+        col.addEventListener('mouseenter', e => showTip(e.clientX));
+        col.addEventListener('mousemove', e => showTip(e.clientX));
+        col.addEventListener('click', e => {
+          e.stopPropagation();
+          showTip(e.clientX);
         });
         col.addEventListener('mouseleave', () => { tip.hidden = true; });
       });
@@ -872,14 +1076,22 @@ JS = r"""
 
   // ---------------- ASK ISABI AI SIMULATOR ----------------
   function formatAiMessageHTML(item) {
-    const rowsHtml = item.rows.map(r => `
-      <tr>
-        <td><b>${r[0]}</b></td>
-        <td>${r[1]}</td>
-        <td>${r[2]}</td>
-        <td style="text-align:right">${r[3] || ''}</td>
-      </tr>
-    `).join('');
+    const colCount = item.headers.length;
+    const headersHtml = item.headers.map((h, idx) =>
+      `<th${idx === colCount - 1 ? ' style="text-align:right"' : ''}>${h}</th>`
+    ).join('');
+
+    const rowsHtml = item.rows.map(r => {
+      const cells = r.slice(0, colCount).map((c, idx) => {
+        if (idx === 0) return `<td><b>${c}</b></td>`;
+        if (idx === colCount - 1) return `<td style="text-align:right">${c}</td>`;
+        return `<td>${c}</td>`;
+      }).join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
+
+    const totLabel = item.total[0] || 'Total';
+    const totVal = item.total[item.total.length - 1] || '';
 
     return `
       <div class="ai-msg-user">${item.q}</div>
@@ -888,23 +1100,20 @@ JS = r"""
         <div class="ai-bot-bubble">
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:4px">ISABI · ${item.title}</div>
           <p>${item.answer}</p>
-          <table class="ai-bot-table">
-            <thead>
-              <tr>
-                <th>${item.headers[0] || ''}</th>
-                <th>${item.headers[1] || ''}</th>
-                <th>${item.headers[2] || ''}</th>
-                <th style="text-align:right">${item.headers[3] || ''}</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-              <tr class="tot">
-                <td colspan="3">${item.total[0]}</td>
-                <td style="text-align:right">${item.total[3] || item.total[2] || ''}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="ai-bot-table-wrap">
+            <table class="ai-bot-table">
+              <thead>
+                <tr>${headersHtml}</tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+                <tr class="tot">
+                  <td colspan="${Math.max(1, colCount - 1)}">${totLabel}</td>
+                  <td style="text-align:right">${totVal}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <div class="ai-bot-meta">
             <span>${item.citation}</span>
             <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I tested Ask ISABI on your website (' + item.title + ') and would like to discuss building this for our company.')}" target="_blank" rel="noopener" style="color:#D9A54A;font-weight:700">Discuss on WhatsApp</a>
@@ -936,7 +1145,7 @@ JS = r"""
         ['03. Power BI & .RDL', 'XMLA semantic models & printable Statement of Accounts', 'Week 3 to 5', '100% Reconciled'],
         ['04. Ask ISABI AI', 'Native AI wired to your live ledger and operational tables', 'Week 5 to 6', 'Production Go-Live']
       ],
-      total: ['Indicative Investment Range', '', '', '$4,500 to $18,000+'],
+      total: ['Indicative Investment Range', '$4,500 to $18,000+'],
       citation: 'Direct Principal Engineering by Hussein Bdeir · Zero Off-the-Shelf Compromises'
     };
   }
@@ -972,7 +1181,7 @@ JS = r"""
       drawerThread.innerHTML = formatAiMessageHTML(resp);
     }
     const inp = document.getElementById('ai-drawer-input');
-    if (inp) setTimeout(() => inp.focus(), 80);
+    if (inp && window.innerWidth > 720) setTimeout(() => inp.focus(), 80);
   }
 
   // ---------------- ROI CALCULATOR ----------------
@@ -1046,7 +1255,6 @@ JS = r"""
     const maxW = minW + 2;
     weeksEl.textContent = `${minW} to ${maxW} Weeks`;
 
-    // Sync with contact portal industry select
     const indSel = document.getElementById('lead-industry');
     if (indSel) {
       Array.from(indSel.options).forEach(opt => {
@@ -1097,7 +1305,7 @@ JS = r"""
     try { localStorage.setItem('isabi.theme', t); } catch (e) {}
     const btn = document.getElementById('theme-toggle-btn');
     if (btn) {
-      btn.textContent = t === 'light' ? 'Dark Ink' : 'Light Paper';
+      btn.textContent = t === 'light' ? 'Dark' : 'Light';
     }
   }
 
@@ -1112,6 +1320,37 @@ JS = r"""
     updateRoi();
     updateConfigurator();
 
+    // Handle initial hash on page load immediately (zero previous-section bleed)
+    if (window.location.hash && window.location.hash.length > 1) {
+      const initId = window.location.hash.slice(1);
+      scrollToTargetId(initId, false, true);
+      window.addEventListener('load', () => scrollToTargetId(initId, false, true), { once: true });
+    } else {
+      updateActiveNavOnScroll();
+    }
+
+    window.addEventListener('hashchange', () => {
+      if (window.location.hash && window.location.hash.length > 1) {
+        scrollToTargetId(window.location.hash.slice(1), false, false);
+      }
+    });
+
+    // Scroll spy listener
+    let scrollTicking = false;
+    window.addEventListener('scroll', () => {
+      if (!scrollTicking) {
+        window.requestAnimationFrame(() => {
+          updateActiveNavOnScroll();
+          scrollTicking = false;
+        });
+        scrollTicking = true;
+      }
+    }, { passive: true });
+
+    window.addEventListener('resize', () => {
+      renderIndustries();
+    }, { passive: true });
+
     // Theme toggle
     document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
       const cur = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -1120,29 +1359,99 @@ JS = r"""
 
     // Global delegated clicks
     document.addEventListener('click', e => {
+      // 1. Footer / Quick Jump to a specific Industry Blueprint
+      const gotoInd = e.target.closest('[data-goto-ind]');
+      if (gotoInd) {
+        e.preventDefault();
+        state.activeInd = gotoInd.dataset.gotoInd;
+        renderIndustries();
+        scrollToTargetId('industries');
+        return;
+      }
+
+      // 2. Any hash anchor link (<a href="#...">) -> exact section scroll + immediate underline update
+      const hashLink = e.target.closest('a[href^="#"]');
+      if (hashLink && !hashLink.id?.includes('ftr-install-link')) {
+        const href = hashLink.getAttribute('href');
+        if (href && href.startsWith('#')) {
+          e.preventDefault();
+          scrollToTargetId(href.slice(1));
+          return;
+        }
+      }
+
+      // 3. Mobile Section 1 Contrast Card Switcher
+      const archTab = e.target.closest('[data-arch-tab]');
+      if (archTab) {
+        const targetKey = archTab.dataset.archTab;
+        archTab.parentElement.querySelectorAll('[data-arch-tab]').forEach(b => b.classList.toggle('active', b === archTab));
+        document.querySelectorAll('[data-arch-card]').forEach(card => {
+          if (card.dataset.archCard === targetKey) {
+            card.removeAttribute('data-mob-hide');
+          } else {
+            card.setAttribute('data-mob-hide', '1');
+          }
+        });
+        return;
+      }
+
+      // 4. Mobile Section 5 Ingenuity Switcher (Matrix vs ROI)
+      const ingTab = e.target.closest('[data-ing-tab]');
+      if (ingTab) {
+        activateMobileIngTab(ingTab.dataset.ingTab);
+        return;
+      }
+
+      // 5. Mobile Section 6 Pricing Tier & Builder Switcher
+      const tierTab = e.target.closest('[data-tier-tab]');
+      if (tierTab) {
+        activateMobilePricingTab(tierTab.dataset.tierTab);
+        return;
+      }
+
+      // 6. Mobile Section 7 Portal Switcher (Brief Form vs Direct Channels)
+      const portalTab = e.target.closest('[data-portal-tab]');
+      if (portalTab) {
+        activateMobilePortalTab(portalTab.dataset.portalTab);
+        return;
+      }
+
+      // 5. Industry Blueprint Selector Tab
       const indBtn = e.target.closest('[data-ind-id]');
       if (indBtn) {
         state.activeInd = indBtn.dataset.indId;
         renderIndustries();
+        if (window.innerWidth <= 720) {
+          const det = document.getElementById('ind-detail');
+          if (det) {
+            const r = det.getBoundingClientRect();
+            if (r.top > window.innerHeight * 0.7 || r.top < 60) {
+              scrollToTargetId('ind-detail', false);
+            }
+          }
+        }
         return;
       }
 
-      const gotoInd = e.target.closest('[data-goto-ind]');
-      if (gotoInd) {
-        state.activeInd = gotoInd.dataset.gotoInd;
+      // 6. Mobile Industry Detail Sub-Tab (Tables | Workflows | Power BI & RDL)
+      const indSubTab = e.target.closest('[data-ind-subtab]');
+      if (indSubTab) {
+        state.indMobTab = indSubTab.dataset.indSubtab;
         renderIndustries();
         return;
       }
 
+      // 7. Load Industry in Live ERP Sandbox
       const loadSbox = e.target.closest('[data-load-sandbox]');
       if (loadSbox) {
         state.sboxInd = loadSbox.dataset.loadSandbox;
         renderSandbox();
-        document.getElementById('sandbox')?.scrollIntoView({ behavior: 'smooth' });
+        scrollToTargetId('sandbox');
         showToast('Loaded ' + state.sboxInd.toUpperCase() + ' environment in Live ERP Sandbox');
         return;
       }
 
+      // 8. Configure Industry Scope & Price
       const cfgIndJump = e.target.closest('[data-configure-ind]');
       if (cfgIndJump) {
         state.cfgInd = cfgIndJump.dataset.configureInd;
@@ -1150,10 +1459,11 @@ JS = r"""
           b.classList.toggle('active', b.dataset.cfgInd === state.cfgInd);
         });
         updateConfigurator();
-        document.getElementById('scope-configurator')?.scrollIntoView({ behavior: 'smooth' });
+        scrollToTargetId('scope-configurator');
         return;
       }
 
+      // 9. Sandbox Industry Switcher
       const sboxIndBtn = e.target.closest('[data-sbox-ind]');
       if (sboxIndBtn) {
         state.sboxInd = sboxIndBtn.dataset.sboxInd;
@@ -1161,11 +1471,25 @@ JS = r"""
         return;
       }
 
+      // 10. Sandbox Left-Rail Module Navigation
       const sboxNavBtn = e.target.closest('[data-sbox-nav]');
       if (sboxNavBtn) {
         state.sboxNav = sboxNavBtn.dataset.sboxNav;
+        if (state.sboxNav === 'General Ledger' || state.sboxNav === 'Audit Trail' || state.sboxNav === 'Paginated .RDL') {
+          state.sboxMobTab = 'ledger';
+        } else {
+          state.sboxMobTab = 'chart';
+        }
         renderSandbox();
-        showToast('Switched ERP module view to: ' + state.sboxNav);
+        showToast('Viewing ERP module: ' + state.sboxNav);
+        return;
+      }
+
+      // 11. Mobile Sandbox View Switcher (Chart & Entities | General Ledger & Alerts)
+      const sboxMobTabBtn = e.target.closest('[data-sbox-mobtab]');
+      if (sboxMobTabBtn) {
+        state.sboxMobTab = sboxMobTabBtn.dataset.sboxMobtab;
+        renderSandbox();
         return;
       }
 
@@ -1203,8 +1527,10 @@ JS = r"""
         const tier = tierBtn.dataset.selectTier;
         const bSel = document.getElementById('lead-budget');
         if (bSel) bSel.value = tier;
-        document.getElementById('portal')?.scrollIntoView({ behavior: 'smooth' });
-        document.getElementById('lead-name')?.focus();
+        scrollToTargetId('portal');
+        if (window.innerWidth > 720) {
+          setTimeout(() => document.getElementById('lead-name')?.focus(), 500);
+        }
         showToast('Selected ' + tier + '. Complete your details below to connect with Hussein.');
         return;
       }
@@ -1278,8 +1604,10 @@ JS = r"""
       if (notesEl && cfg && !notesEl.value.trim()) {
         notesEl.value = `Configured Scope: ${cfg.industry} (${cfg.scale}). Modules: ${cfg.modules.join(', ')}. Indicative Range: ${cfg.range}.`;
       }
-      document.getElementById('portal')?.scrollIntoView({ behavior: 'smooth' });
-      document.getElementById('lead-name')?.focus();
+      scrollToTargetId('portal');
+      if (window.innerWidth > 720) {
+        setTimeout(() => document.getElementById('lead-name')?.focus(), 500);
+      }
       showToast('Scope loaded into Consultation Portal');
     });
 
@@ -1340,9 +1668,11 @@ JS = r"""
       triggerInstall();
     });
 
-    // Register Service Worker
+    // Register Service Worker with immediate update check
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
+        reg.update().catch(() => {});
+      }).catch(() => {});
     }
   }
 

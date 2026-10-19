@@ -1,4 +1,4 @@
-const CACHE_NAME = 'isabi-systems-pwa-v1.0';
+const CACHE_NAME = 'isabi-systems-pwa-v2.0';
 const ASSETS = [
   './',
   './index.html',
@@ -45,7 +45,7 @@ self.addEventListener('fetch', event => {
 
   if (url.origin === self.location.origin) {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-cache' })
         .then(res => {
           if (res && res.status === 200) {
             const copy = res.clone();

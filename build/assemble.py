@@ -41,7 +41,7 @@ HEAD = """<!DOCTYPE html>
 def main():
     full_html = f"{HEAD}<style>{CSS}</style>\n</head>\n<body>\n{BODY}\n<script>{JS}</script>\n</body>\n</html>\n"
 
-    # Check deliverable rules: no em dashes or unicode arrows
+    # Check deliverable rules: no em dashes or unicode/ascii arrows in visible text
     for forbidden, label in [('\u2014', 'em dash'), ('\u2192', 'unicode arrow'), ('&mdash;', 'mdash entity'), ('&rarr;', 'rarr entity')]:
         if forbidden in full_html:
             print(f"ERROR: Found forbidden {label} ({forbidden!r}) in output HTML", file=sys.stderr)
@@ -60,6 +60,13 @@ def main():
     if res.returncode != 0:
         print("JS SYNTAX ERROR:", res.stderr, file=sys.stderr)
         sys.exit(1)
+
+    # Sync OneDrive mirror if present
+    mirror_dir = os.path.join(os.path.expanduser('~'), 'OneDrive - BHFIRMS', 'System', 'System', 'ISABI', 'Website')
+    if os.path.isdir(mirror_dir):
+        import shutil
+        shutil.copy2(OUT_HTML, os.path.join(mirror_dir, 'index.html'))
+        shutil.copy2(os.path.join(ROOT, 'sw.js'), os.path.join(mirror_dir, 'sw.js'))
 
     print(f"OK: Generated {OUT_HTML} ({len(full_html):,} bytes, JS syntax verified, 0 em-dashes/arrows)")
 

@@ -55,7 +55,7 @@
   --shadow-sm: 0 4px 16px rgba(4, 10, 22, 0.28);
   --shadow-md: 0 14px 38px rgba(4, 10, 22, 0.42);
   --shadow-lg: 0 24px 64px rgba(3, 8, 18, 0.58);
-  --hdr-h: 72px;
+  --hdr-h: 70px;
 
   /* Dashboard Sandbox Tokens (Dark default) */
   --m-bg: #0E1A2E;
@@ -166,8 +166,7 @@
 }
 
 html {
-  scroll-behavior: smooth;
-  scroll-padding-top: calc(var(--hdr-h) + 20px);
+  scroll-padding-top: calc(var(--hdr-h) - 2px);
   -webkit-text-size-adjust: 100%;
 }
 
@@ -178,7 +177,7 @@ body {
   font-family: "Instrument Sans", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   font-size: 15.5px;
   line-height: 1.6;
-  overflow-x: hidden;
+  overflow-x: clip;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
@@ -234,8 +233,7 @@ button {
   position: sticky;
   top: 0;
   z-index: 100;
-  height: var(--hdr-h);
-  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
@@ -243,33 +241,33 @@ button {
 
 .hdr-inner {
   max-width: 1260px;
-  height: 100%;
+  height: var(--hdr-h);
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
 }
 
 .brand-link {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 4px 0;
   flex-shrink: 0;
 }
 
 .brand-badge {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
   flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 .brand-wordmark {
-  height: 34px;
+  height: 31px;
   width: auto;
   display: block;
 }
@@ -277,12 +275,13 @@ button {
 .main-nav {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  min-width: 0;
 }
 
 .main-nav a {
-  padding: 8px 12px;
-  font-size: 14px;
+  padding: 7px 10px;
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--muted);
   border-radius: 6px;
@@ -291,21 +290,60 @@ button {
   white-space: nowrap;
 }
 
-.main-nav a:hover, .main-nav a.active {
+.main-nav a:hover {
   color: var(--ink);
-  background: var(--brass-tint);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme="light"] .main-nav a:hover {
+  background: rgba(15, 30, 56, 0.05);
 }
 
 .main-nav a.active {
+  color: var(--ink);
+  background: var(--brass-tint);
   border-bottom-color: var(--brass);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .hdr-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
+}
+
+/* Mobile Horizontal Section Strip inside Header */
+.mobile-sec-nav {
+  display: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg-alt) 92%, transparent);
+  padding: 0 12px;
+  gap: 4px;
+}
+
+.mobile-sec-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-sec-nav a {
+  flex-shrink: 0;
+  padding: 8px 10px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.mobile-sec-nav a.active {
+  color: var(--brass);
+  border-bottom-color: var(--brass);
+  font-weight: 700;
 }
 
 .btn {
@@ -313,9 +351,9 @@ button {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 9px 16px;
+  padding: 9px 15px;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   border: 1px solid transparent;
   transition: transform 0.12s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
@@ -353,7 +391,8 @@ button {
   background: transparent;
   color: var(--muted);
   border-color: var(--line);
-  padding: 8px 11px;
+  padding: 7px 10px;
+  font-size: 12.5px;
 }
 
 .btn-ghost:hover {
@@ -376,14 +415,15 @@ button {
   background: var(--plate);
   color: #F4F2EE;
   border: 1px solid var(--brass);
-  padding: 8px 14px;
+  padding: 7px 12px;
   border-radius: 6px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: 13px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
 }
 
 :root[data-theme="light"] .ask-isabi-trigger {
@@ -398,14 +438,15 @@ button {
 }
 
 .ask-isabi-trigger svg {
-  height: 16px;
+  height: 15px;
   width: auto;
+  flex-shrink: 0;
 }
 
 /* ---------- Hero Section ---------- */
 .hero-section {
   position: relative;
-  padding: 68px 0 56px;
+  padding: 56px 0 48px;
   border-bottom: 1px solid var(--line);
   background:
     radial-gradient(900px 420px at 85% 10%, var(--brass-tint), transparent 70%),
@@ -416,7 +457,7 @@ button {
 .hero-grid {
   display: grid;
   grid-template-columns: 1.15fr 0.85fr;
-  gap: 44px;
+  gap: 40px;
   align-items: center;
 }
 
@@ -424,23 +465,23 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--brass);
   background: var(--brass-tint);
   border: 1px solid var(--brass-border);
-  padding: 5px 12px;
+  padding: 5px 11px;
   border-radius: 4px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .hero-title {
-  font-size: clamp(34px, 4.4vw, 54px);
+  font-size: clamp(32px, 4.2vw, 52px);
   font-weight: 800;
   line-height: 1.06;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .hero-title span.brass-text {
@@ -448,30 +489,30 @@ button {
 }
 
 .hero-lead {
-  font-size: 17.5px;
+  font-size: 17px;
   color: var(--muted);
   max-width: 62ch;
-  margin: 0 0 28px;
-  line-height: 1.62;
+  margin: 0 0 24px;
+  line-height: 1.6;
 }
 
 .hero-cta-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 32px;
+  gap: 10px;
+  margin-bottom: 28px;
 }
 
 .hero-cta-row .btn {
-  padding: 13px 22px;
-  font-size: 15px;
+  padding: 12px 20px;
+  font-size: 14.5px;
 }
 
 .hero-trust-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
-  padding-top: 20px;
+  padding-top: 18px;
   border-top: 1px solid var(--line);
 }
 
@@ -503,10 +544,11 @@ button {
 .hlc-top {
   background: #081223;
   color: #F4F2EE;
-  padding: 16px 20px;
+  padding: 14px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -514,26 +556,32 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .hlc-brand span {
-  font-size: 12px;
+  font-size: 11.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(244, 242, 238, 0.7);
+  color: rgba(244, 242, 238, 0.75);
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hlc-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   color: #3DB36A;
   background: rgba(61, 179, 106, 0.14);
   padding: 4px 10px;
   border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .hlc-status i {
@@ -545,42 +593,42 @@ button {
 }
 
 .hlc-body {
-  padding: 20px;
+  padding: 18px;
 }
 
 .hlc-kpis {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-bottom: 18px;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
 .hlc-kpi {
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 12px 14px;
+  padding: 11px 13px;
 }
 
 .hlc-kpi small {
   display: block;
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .hlc-kpi strong {
   display: block;
   font-family: "Archivo", sans-serif;
-  font-size: 22px;
+  font-size: 21px;
   font-weight: 800;
   color: var(--ink);
 }
 
 .hlc-kpi span {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--good);
   font-weight: 600;
 }
@@ -588,27 +636,28 @@ button {
 .hlc-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
-  margin-bottom: 16px;
+  font-size: 12.8px;
+  margin-bottom: 14px;
 }
 
 .hlc-table th {
   text-align: left;
-  font-size: 11px;
+  font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
-  padding: 6px 8px;
+  padding: 6px 7px;
   border-bottom: 1px solid var(--line);
 }
 
 .hlc-table td {
-  padding: 8px;
+  padding: 7px;
   border-bottom: 1px solid var(--line);
 }
 
 .hlc-table td.r, .hlc-table th.r {
   text-align: right;
+  white-space: nowrap;
 }
 
 .hlc-table tr.tot td {
@@ -616,20 +665,20 @@ button {
   color: var(--ink);
   border-top: 1px solid var(--ink);
   border-bottom: 3px double var(--brass);
-  padding-top: 10px;
-  padding-bottom: 10px;
+  padding-top: 9px;
+  padding-bottom: 9px;
 }
 
 .hlc-ai-strip {
   background: var(--brass-tint);
   border: 1px solid var(--brass-border);
   border-radius: 6px;
-  padding: 11px 14px;
+  padding: 10px 13px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
+  gap: 10px;
+  font-size: 12.5px;
 }
 
 .hlc-ai-strip b {
@@ -649,17 +698,17 @@ button {
 }
 
 .metric-cell {
-  padding: 24px 22px;
+  padding: 20px 20px;
   border-right: 1px solid var(--line);
 }
 
 .metric-cell .m-val {
   font-family: "Archivo", sans-serif;
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 800;
   color: var(--ink);
   line-height: 1.1;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .metric-cell .m-val span {
@@ -674,15 +723,16 @@ button {
 }
 
 .metric-cell .m-sub {
-  font-size: 13px;
+  font-size: 12.8px;
   color: var(--muted);
   line-height: 1.4;
 }
 
 /* ---------- Generic Section Layout ---------- */
 .sec {
-  padding: 84px 0;
+  padding: 58px 0 64px;
   border-bottom: 1px solid var(--line);
+  scroll-margin-top: calc(var(--hdr-h) - 1px);
 }
 
 .sec-alt {
@@ -691,21 +741,52 @@ button {
 
 .sec-head {
   max-width: 780px;
-  margin-bottom: 44px;
+  margin-bottom: 34px;
 }
 
 .sec-head h2 {
-  font-size: clamp(26px, 3.2vw, 38px);
+  font-size: clamp(25px, 3.1vw, 36px);
   font-weight: 800;
   line-height: 1.12;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .sec-head p {
-  font-size: 16.5px;
+  font-size: 16px;
   color: var(--muted);
   margin: 0;
-  line-height: 1.6;
+  line-height: 1.58;
+}
+
+/* Mobile-only Segmented Switchers (Hidden on Desktop) */
+.mob-seg-bar {
+  display: none;
+  gap: 6px;
+  margin-bottom: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.mob-seg-btn {
+  flex: 1;
+  padding: 8px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.mob-seg-btn.active {
+  background: var(--brass-tint);
+  border-color: var(--brass);
+  color: var(--ink);
+  font-weight: 700;
 }
 
 /* ---------- Section 1: Customization & 4-Layer Architecture ---------- */
@@ -713,14 +794,14 @@ button {
   display: grid;
   grid-template-columns: 1fr 1fr 1.15fr;
   gap: 20px;
-  margin-bottom: 44px;
+  margin-bottom: 36px;
 }
 
 .contrast-card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 26px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
 }
@@ -732,12 +813,12 @@ button {
 }
 
 .cc-tag {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--muted);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .contrast-card.isabi-win .cc-tag {
@@ -745,14 +826,14 @@ button {
 }
 
 .contrast-card h3 {
-  font-size: 20px;
-  margin-bottom: 12px;
+  font-size: 19px;
+  margin-bottom: 10px;
 }
 
 .contrast-card p {
-  font-size: 14.5px;
+  font-size: 14px;
   color: var(--muted);
-  margin: 0 0 16px;
+  margin: 0 0 14px;
 }
 
 .cc-list {
@@ -760,15 +841,15 @@ button {
   padding: 0;
   margin: auto 0 0;
   border-top: 1px solid var(--line);
-  padding-top: 14px;
+  padding-top: 12px;
 }
 
 .cc-list li {
   font-size: 13.5px;
-  padding: 6px 0;
+  padding: 5px 0;
   display: flex;
   align-items: flex-start;
-  gap: 9px;
+  gap: 8px;
   color: var(--muted);
 }
 
@@ -780,7 +861,7 @@ button {
 .layers-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 18px;
+  gap: 16px;
 }
 
 .layer-card {
@@ -788,26 +869,26 @@ button {
   border: 1px solid var(--line);
   border-top: 3px solid var(--brass);
   border-radius: 6px;
-  padding: 22px;
+  padding: 20px;
 }
 
 .layer-num {
   font-family: "Archivo", sans-serif;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 800;
   letter-spacing: 0.12em;
   color: var(--brass);
   text-transform: uppercase;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .layer-card h4 {
-  font-size: 17px;
-  margin-bottom: 10px;
+  font-size: 16.5px;
+  margin-bottom: 8px;
 }
 
 .layer-card p {
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--muted);
   margin: 0;
 }
@@ -815,19 +896,19 @@ button {
 /* ---------- Section 2: Interactive Industry Blueprints ---------- */
 .ind-layout {
   display: grid;
-  grid-template-columns: 310px 1fr;
-  gap: 24px;
+  grid-template-columns: 300px 1fr;
+  gap: 22px;
   align-items: start;
 }
 
 .ind-tabs {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 10px;
+  padding: 8px;
 }
 
 .ind-tab {
@@ -835,7 +916,7 @@ button {
   background: transparent;
   border: 1px solid transparent;
   border-left: 3px solid transparent;
-  padding: 12px 14px;
+  padding: 9px 12px;
   border-radius: 6px;
   display: flex;
   flex-direction: column;
@@ -855,21 +936,27 @@ button {
 
 .ind-tab b {
   font-family: "Archivo", sans-serif;
-  font-size: 14.5px;
+  font-size: 13.8px;
   color: var(--ink);
+  line-height: 1.25;
 }
 
 .ind-tab small {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ind-detail {
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  padding: 32px;
+  padding: 28px;
   box-shadow: var(--shadow-md);
+  position: sticky;
+  top: calc(var(--hdr-h) + 14px);
 }
 
 .ind-detail-top {
@@ -878,14 +965,14 @@ button {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  padding-bottom: 22px;
+  padding-bottom: 18px;
   border-bottom: 1px solid var(--line);
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .ind-badge-pill {
   display: inline-block;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -894,16 +981,16 @@ button {
   border: 1px solid var(--brass-border);
   padding: 4px 10px;
   border-radius: 4px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .ind-detail h3 {
-  font-size: 26px;
-  margin-bottom: 8px;
+  font-size: 24px;
+  margin-bottom: 6px;
 }
 
 .ind-detail-lead {
-  font-size: 15.5px;
+  font-size: 15px;
   color: var(--muted);
   max-width: 68ch;
   margin: 0;
@@ -912,24 +999,24 @@ button {
 .ind-cols {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  margin-bottom: 24px;
+  gap: 16px;
+  margin-bottom: 20px;
 }
 
 .ind-box {
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 18px;
+  padding: 16px;
 }
 
 .ind-box h4 {
-  font-size: 13px;
+  font-size: 12.5px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--brass);
-  margin-bottom: 12px;
-  padding-bottom: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 7px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -940,10 +1027,11 @@ button {
 }
 
 .ind-box li {
-  font-size: 13.5px;
+  font-size: 13px;
   color: var(--ink);
-  padding: 5px 0;
+  padding: 4.5px 0;
   border-bottom: 1px dashed var(--line);
+  line-height: 1.42;
 }
 
 .ind-box li:last-child {
@@ -954,24 +1042,24 @@ button {
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 16px 20px;
+  padding: 14px 18px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 14px;
   border-bottom: 3px double var(--brass);
 }
 
 .ind-metrics-mini {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
+  gap: 22px;
 }
 
 .ind-metrics-mini div small {
   display: block;
-  font-size: 11px;
+  font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
@@ -979,7 +1067,7 @@ button {
 
 .ind-metrics-mini div b {
   font-family: "Archivo", sans-serif;
-  font-size: 18px;
+  font-size: 17px;
   color: var(--ink);
 }
 
@@ -989,8 +1077,8 @@ button {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
 .sbox-ind-bar {
@@ -1000,9 +1088,9 @@ button {
 }
 
 .sbox-ind-btn {
-  padding: 8px 14px;
+  padding: 8px 13px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 12.8px;
   font-weight: 600;
   background: var(--surface);
   color: var(--muted);
@@ -1019,17 +1107,17 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--muted);
 }
 
 .sbox-theme-btn {
-  padding: 6px 11px;
+  padding: 6px 10px;
   border-radius: 4px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 .sbox-theme-btn.active {
@@ -1041,15 +1129,15 @@ button {
 .sandbox-wrap {
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  overflow-x: auto;
+  overflow: hidden;
   background: var(--m-bg);
   box-shadow: var(--shadow-lg);
 }
 
 .mock {
-  min-width: 980px;
+  width: 100%;
   display: grid;
-  grid-template-columns: 196px 1fr;
+  grid-template-columns: 186px 1fr;
   background: var(--m-bg);
   color: var(--m-ink);
   font-size: 12.5px;
@@ -1061,21 +1149,21 @@ button {
   color: #F4F2EE;
   display: flex;
   flex-direction: column;
-  padding: 18px 0 14px;
+  padding: 16px 0 12px;
 }
 
 .rail .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 20px 18px;
+  gap: 10px;
+  padding: 0 16px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .rail nav {
   display: flex;
   flex-direction: column;
-  padding: 12px 10px;
+  padding: 10px 8px;
   flex: 1;
 }
 
@@ -1084,14 +1172,15 @@ button {
   background: transparent;
   border: 0;
   border-left: 3px solid transparent;
-  padding: 9px 12px;
+  padding: 8px 10px;
   border-radius: 4px;
   color: rgba(244, 242, 238, 0.76);
   margin: 1px 0;
-  font-size: 13px;
+  font-size: 12.5px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  white-space: nowrap;
 }
 
 .rail nav button.nav-item:hover {
@@ -1107,38 +1196,39 @@ button {
 }
 
 .rail nav .grp {
-  font-size: 10.5px;
+  font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(244, 242, 238, 0.45);
-  padding: 16px 12px 6px;
+  padding: 14px 10px 5px;
 }
 
 .rail .me {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 20px 0;
+  gap: 9px;
+  padding: 10px 16px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 .rail .me small {
   display: block;
   color: rgba(244, 242, 238, 0.55);
-  font-size: 11px;
+  font-size: 10.5px;
 }
 
 .rail .av {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: var(--m-brass);
   color: #0B1730;
   display: grid;
   place-items: center;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 11.5px;
+  flex-shrink: 0;
 }
 
 .mock .main {
@@ -1151,21 +1241,23 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 24px;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 18px;
   background: var(--m-surface);
   border-bottom: 1px solid var(--m-line);
 }
 
 .mock .crumb span {
   display: block;
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--m-muted);
 }
 
 .mock .crumb b {
   font-family: "Archivo", sans-serif;
   font-stretch: 112%;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--m-ink);
 }
@@ -1173,7 +1265,8 @@ button {
 .mock .tools {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 
 .mock .pill-select {
@@ -1181,8 +1274,8 @@ button {
   background: var(--m-bg);
   color: var(--m-ink);
   border-radius: 4px;
-  padding: 5px 10px;
-  font-size: 12.5px;
+  padding: 5px 9px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -1192,10 +1285,11 @@ button {
   color: #0B1730;
   border: 0;
   border-radius: 4px;
-  padding: 7px 14px;
+  padding: 6px 12px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-size: 12px;
 }
 
 .mock .kpis {
@@ -1206,11 +1300,12 @@ button {
 }
 
 .mock .kpi {
-  padding: 16px 20px;
+  padding: 13px 16px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   border-right: 1px solid var(--m-line);
+  min-width: 0;
 }
 
 .mock .kpi:last-child {
@@ -1218,28 +1313,31 @@ button {
 }
 
 .mock .kpi .k {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--m-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .mock .kpi .v {
   font-family: "Archivo", sans-serif;
   font-stretch: 112%;
   font-weight: 700;
-  font-size: 26px;
+  font-size: 24px;
   line-height: 1.1;
   color: var(--m-ink);
 }
 
 .mock .kpi .v small {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--m-muted);
   margin-left: 2px;
 }
 
 .mock .kpi .d {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--m-muted);
 }
 
@@ -1257,10 +1355,34 @@ button {
   background: color-mix(in srgb, var(--m-brass) 9%, var(--m-surface));
 }
 
+.sbox-mob-tabs {
+  display: none;
+  gap: 6px;
+  padding: 10px 12px 0;
+}
+
+.sbox-mob-tab {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--m-line);
+  background: var(--m-surface);
+  color: var(--m-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sbox-mob-tab.active {
+  border-color: var(--m-brass);
+  background: color-mix(in srgb, var(--m-brass) 16%, var(--m-surface));
+  color: var(--m-ink);
+  font-weight: 700;
+}
+
 .mock .row2, .mock .row3 {
   display: grid;
   gap: 12px;
-  padding: 12px 16px 0;
+  padding: 12px 14px 0;
 }
 
 .mock .row2 {
@@ -1269,7 +1391,7 @@ button {
 
 .mock .row3 {
   grid-template-columns: 0.78fr 1.48fr;
-  padding-bottom: 16px;
+  padding-bottom: 14px;
 }
 
 .mock .panel {
@@ -1278,38 +1400,46 @@ button {
   border-radius: 6px;
   min-width: 0;
   overflow-x: auto;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.mock .panel.panel-focus {
+  border-color: var(--m-brass);
+  box-shadow: 0 0 0 1px var(--m-brass);
 }
 
 .mock .ph {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 11px 12px 7px;
-  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px 6px;
+  gap: 6px;
 }
 
 .mock .ph h3 {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--m-ink);
 }
 
 .mock .legend {
   display: flex;
-  gap: 10px;
-  font-size: 11.5px;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
   color: var(--m-muted);
 }
 
 .mock .legend span {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .mock .sw-box {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   border-radius: 2px;
   display: inline-block;
 }
@@ -1371,7 +1501,7 @@ table.m-grid th {
 }
 
 table.m-grid td {
-  padding: 6.5px 7px;
+  padding: 6px 7px;
   font-size: 11.5px;
   border-bottom: 1px solid var(--m-line);
   white-space: nowrap;
@@ -1383,7 +1513,7 @@ table.m-grid tr:last-child td {
 
 table.m-grid .n { text-align: right; }
 table.m-grid .mu { color: var(--m-muted); }
-table.m-grid .mono { font-family: Consolas, "Cascadia Mono", ui-monospace, monospace; font-size: 12px; }
+table.m-grid .mono { font-family: Consolas, "Cascadia Mono", ui-monospace, monospace; font-size: 11.5px; }
 
 table.m-grid tr.total td {
   font-weight: 700;
@@ -1393,9 +1523,9 @@ table.m-grid tr.total td {
 
 .m-chip {
   display: inline-block;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 999px;
   background: var(--m-chip);
   color: var(--m-muted);
@@ -1413,14 +1543,14 @@ table.m-grid tr.total td {
 .att li {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 2px 12px;
-  padding: 9px 16px 9px 18px;
+  gap: 2px 10px;
+  padding: 8px 14px 8px 16px;
   border-left: 3px solid var(--m-line);
-  margin: 0 0 6px;
+  margin: 0 0 5px;
 }
 
-.att li b { font-weight: 600; font-size: 13px; color: var(--m-ink); }
-.att li span { grid-column: 1; color: var(--m-muted); font-size: 12px; }
+.att li b { font-weight: 600; font-size: 12.5px; color: var(--m-ink); }
+.att li span { grid-column: 1; color: var(--m-muted); font-size: 11.5px; }
 .att li button.att-act {
   grid-row: 1 / 3;
   grid-column: 2;
@@ -1428,10 +1558,10 @@ table.m-grid tr.total td {
   background: transparent;
   border: 1px solid var(--m-line);
   border-radius: 4px;
-  padding: 4px 9px;
+  padding: 4px 8px;
   color: var(--m-steel);
   font-weight: 600;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 .att li.crit { border-left-color: var(--crit); }
 .att li.warn { border-left-color: var(--warn); }
@@ -1441,7 +1571,7 @@ table.m-grid tr.total td {
 .ms-ai-grid {
   display: grid;
   grid-template-columns: 1fr 1.05fr;
-  gap: 28px;
+  gap: 24px;
   align-items: stretch;
 }
 
@@ -1456,7 +1586,7 @@ table.m-grid tr.total td {
   border: 1px solid var(--line);
   border-left: 3px solid var(--steel);
   border-radius: 6px;
-  padding: 16px 18px;
+  padding: 15px 18px;
   transition: border-color 0.15s, background 0.15s;
 }
 
@@ -1469,26 +1599,29 @@ table.m-grid tr.total td {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  gap: 8px;
+  margin-bottom: 5px;
 }
 
 .stack-card-hdr h4 {
-  font-size: 16px;
+  font-size: 15.5px;
 }
 
 .stack-card-hdr span {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--steel);
   background: var(--steel-tint);
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .stack-card p {
-  font-size: 13.8px;
+  font-size: 13.5px;
   color: var(--muted);
   margin: 0;
 }
@@ -1506,40 +1639,42 @@ table.m-grid tr.total td {
 }
 
 .ai-console-hdr {
-  padding: 16px 20px;
+  padding: 14px 18px;
   background: #0B1730;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
 }
 
 .ai-console-title {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 11px;
+  min-width: 0;
 }
 
 .ai-console-title b {
   display: block;
   font-family: "Archivo", sans-serif;
-  font-size: 16px;
+  font-size: 15.5px;
   color: #F4F2EE;
 }
 
 .ai-console-title small {
   display: block;
-  font-size: 12px;
+  font-size: 11.5px;
   color: #9FB0C7;
 }
 
 .ai-prompt-pills {
-  padding: 14px 20px;
+  padding: 12px 18px;
   background: rgba(255, 255, 255, 0.02);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
 }
 
 .ai-pill-btn {
@@ -1547,8 +1682,9 @@ table.m-grid tr.total td {
   color: #E9ECF2;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
-  padding: 6px 12px;
-  font-size: 12.5px;
+  padding: 6px 11px;
+  font-size: 12px;
+  text-align: left;
   transition: background 0.15s, border-color 0.15s;
 }
 
@@ -1559,28 +1695,27 @@ table.m-grid tr.total td {
 }
 
 .ai-thread {
-  padding: 20px;
+  padding: 18px;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  min-height: 320px;
+  gap: 14px;
 }
 
 .ai-msg-user {
   align-self: flex-end;
   background: #1B315E;
   color: #FFFFFF;
-  padding: 10px 15px;
+  padding: 9px 14px;
   border-radius: 10px 10px 2px 10px;
-  font-size: 13.5px;
-  max-width: 85%;
+  font-size: 13px;
+  max-width: 88%;
 }
 
 .ai-msg-bot {
   display: grid;
-  grid-template-columns: 36px 1fr;
-  gap: 12px;
+  grid-template-columns: 34px 1fr;
+  gap: 10px;
   align-items: start;
 }
 
@@ -1588,34 +1723,40 @@ table.m-grid tr.total td {
   background: #11203D;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 2px 10px 10px 10px;
-  padding: 16px;
-  font-size: 13.5px;
+  padding: 15px;
+  font-size: 13px;
   color: #E9ECF2;
+  min-width: 0;
 }
 
 .ai-bot-bubble p {
-  margin: 0 0 12px;
+  margin: 0 0 10px;
+}
+
+.ai-bot-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin: 8px 0 10px;
 }
 
 .ai-bot-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
-  margin: 10px 0 12px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
 .ai-bot-table th {
   text-align: left;
   color: #9FB0C7;
-  font-size: 11px;
+  font-size: 10.5px;
   text-transform: uppercase;
-  padding: 5px 8px;
+  padding: 5px 6px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .ai-bot-table td {
-  padding: 6px 8px;
+  padding: 6px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -1626,11 +1767,13 @@ table.m-grid tr.total td {
 }
 
 .ai-bot-meta {
-  font-size: 11.5px;
+  font-size: 11px;
   color: #9FB0C7;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -1639,34 +1782,34 @@ table.m-grid tr.total td {
 .ingenuity-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
-  margin-bottom: 44px;
+  gap: 18px;
+  margin-bottom: 36px;
 }
 
 .ing-card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 26px;
+  padding: 22px;
   position: relative;
 }
 
 .ing-card .ing-kicker {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--brass);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .ing-card h3 {
-  font-size: 20px;
-  margin-bottom: 10px;
+  font-size: 19px;
+  margin-bottom: 8px;
 }
 
 .ing-card p {
-  font-size: 14.5px;
+  font-size: 14px;
   color: var(--muted);
   margin: 0;
 }
@@ -1676,26 +1819,25 @@ table.m-grid tr.total td {
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  overflow-x: auto;
-  margin-bottom: 44px;
+  overflow: hidden;
+  margin-bottom: 36px;
 }
 
 .comp-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 720px;
 }
 
 .comp-table th, .comp-table td {
-  padding: 14px 18px;
+  padding: 13px 16px;
   text-align: left;
   border-bottom: 1px solid var(--line);
-  font-size: 14px;
+  font-size: 13.5px;
 }
 
 .comp-table th {
   font-family: "Archivo", sans-serif;
-  font-size: 13px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   background: var(--surface-2);
@@ -1717,31 +1859,33 @@ table.m-grid tr.total td {
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  padding: 32px;
+  padding: 28px;
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
-  gap: 32px;
+  gap: 28px;
   align-items: center;
 }
 
 .roi-sliders {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .slider-row label {
   display: flex;
   justify-content: space-between;
+  gap: 10px;
   font-weight: 600;
-  font-size: 14px;
-  margin-bottom: 8px;
+  font-size: 13.5px;
+  margin-bottom: 6px;
 }
 
 .slider-row label span.val {
   color: var(--brass);
   font-family: "Archivo", sans-serif;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .slider-row input[type="range"] {
@@ -1755,29 +1899,29 @@ table.m-grid tr.total td {
   background: var(--bg);
   border: 1px solid var(--brass-border);
   border-radius: 8px;
-  padding: 24px;
+  padding: 22px;
 }
 
 .roi-res-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 18px;
-  padding-bottom: 18px;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
   border-bottom: 3px double var(--brass);
 }
 
 .roi-stat small {
   display: block;
-  font-size: 11.5px;
+  font-size: 11px;
   text-transform: uppercase;
   color: var(--muted);
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .roi-stat strong {
   font-family: "Archivo", sans-serif;
-  font-size: 28px;
+  font-size: 25px;
   font-weight: 800;
   color: var(--ink);
 }
@@ -1790,8 +1934,8 @@ table.m-grid tr.total td {
 .pricing-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 22px;
-  margin-bottom: 48px;
+  gap: 20px;
+  margin-bottom: 40px;
   align-items: stretch;
 }
 
@@ -1799,7 +1943,7 @@ table.m-grid tr.total td {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 30px 26px;
+  padding: 26px 24px;
   display: flex;
   flex-direction: column;
 }
@@ -1813,7 +1957,7 @@ table.m-grid tr.total td {
 .price-badge {
   display: inline-block;
   align-self: flex-start;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -1821,7 +1965,7 @@ table.m-grid tr.total td {
   border-radius: 4px;
   background: var(--surface-2);
   color: var(--muted);
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .price-card.featured .price-badge {
@@ -1830,39 +1974,39 @@ table.m-grid tr.total td {
 }
 
 .price-card h3 {
-  font-size: 22px;
-  margin-bottom: 8px;
+  font-size: 21px;
+  margin-bottom: 6px;
 }
 
 .price-card .price-desc {
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--muted);
-  margin: 0 0 20px;
+  margin: 0 0 16px;
 }
 
 .price-block {
-  padding: 16px 0;
-  margin-bottom: 20px;
+  padding: 14px 0;
+  margin-bottom: 16px;
   border-top: 1px solid var(--line);
   border-bottom: 3px double var(--brass);
 }
 
 .price-val {
   font-family: "Archivo", sans-serif;
-  font-size: 34px;
+  font-size: 32px;
   font-weight: 800;
   color: var(--ink);
   line-height: 1.1;
 }
 
 .price-val small {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--muted);
 }
 
 .price-retainer {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--brass);
   font-weight: 600;
   margin-top: 4px;
@@ -1871,13 +2015,13 @@ table.m-grid tr.total td {
 .price-features {
   list-style: none;
   padding: 0;
-  margin: 0 0 26px;
+  margin: 0 0 22px;
   flex: 1;
 }
 
 .price-features li {
-  font-size: 13.8px;
-  padding: 7px 0;
+  font-size: 13.2px;
+  padding: 6px 0;
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: flex-start;
@@ -1899,42 +2043,43 @@ table.m-grid tr.total td {
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  padding: 32px;
+  padding: 28px;
   box-shadow: var(--shadow-md);
+  scroll-margin-top: calc(var(--hdr-h) + 14px);
 }
 
 .cfg-grid {
   display: grid;
   grid-template-columns: 1.25fr 0.75fr;
-  gap: 32px;
-  margin-top: 24px;
+  gap: 28px;
+  margin-top: 20px;
 }
 
 .cfg-group {
-  margin-bottom: 22px;
+  margin-bottom: 18px;
 }
 
 .cfg-group h4 {
-  font-size: 14px;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--brass);
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .cfg-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
 }
 
 .cfg-pill {
   background: var(--surface-2);
   border: 1px solid var(--line);
   color: var(--ink);
-  padding: 9px 14px;
+  padding: 8px 12px;
   border-radius: 6px;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
   transition: all 0.15s;
 }
@@ -1950,17 +2095,17 @@ table.m-grid tr.total td {
 .cfg-checks {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: 9px;
 }
 
 .cfg-check {
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 9px;
   cursor: pointer;
   text-align: left;
 }
@@ -1977,12 +2122,12 @@ table.m-grid tr.total td {
 
 .cfg-check b {
   display: block;
-  font-size: 13.5px;
+  font-size: 13px;
 }
 
 .cfg-check small {
   display: block;
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--muted);
 }
 
@@ -1990,7 +2135,7 @@ table.m-grid tr.total td {
   background: var(--bg);
   border: 1px solid var(--line-strong);
   border-radius: 8px;
-  padding: 24px;
+  padding: 22px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -1999,61 +2144,62 @@ table.m-grid tr.total td {
 .cfg-sum-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
-  margin: 14px 0 18px;
+  font-size: 13px;
+  margin: 12px 0 16px;
 }
 
 .cfg-sum-table td {
-  padding: 7px 0;
+  padding: 6px 0;
   border-bottom: 1px solid var(--line);
 }
 
 .cfg-sum-table td.r {
   text-align: right;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .cfg-sum-table tr.tot td {
   font-family: "Archivo", sans-serif;
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 800;
   color: var(--brass);
   border-top: 1px solid var(--ink);
   border-bottom: 3px double var(--brass);
-  padding: 10px 0;
+  padding: 9px 0;
 }
 
 /* ---------- Section 7: Direct Contact & Lead Portal ---------- */
 .portal-grid {
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
-  gap: 32px;
+  gap: 28px;
 }
 
 .portal-form-card {
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  padding: 32px;
+  padding: 28px;
   box-shadow: var(--shadow-md);
 }
 
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 14px;
+  margin-bottom: 14px;
 }
 
 .form-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 16px;
+  gap: 5px;
+  margin-bottom: 14px;
 }
 
 .form-field label {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--ink);
 }
@@ -2062,7 +2208,7 @@ table.m-grid tr.total td {
   background: var(--bg);
   border: 1px solid var(--line-strong);
   border-radius: 6px;
-  padding: 11px 14px;
+  padding: 10px 13px;
   font-size: 15px;
   color: var(--ink);
   outline: none;
@@ -2076,8 +2222,8 @@ table.m-grid tr.total td {
 .portal-dispatch-btns {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-top: 18px;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .portal-direct-card {
@@ -2085,7 +2231,7 @@ table.m-grid tr.total td {
   color: #F4F2EE;
   border: 1px solid var(--brass-border);
   border-radius: 10px;
-  padding: 32px;
+  padding: 28px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -2095,30 +2241,30 @@ table.m-grid tr.total td {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  padding: 18px 20px;
-  margin-bottom: 14px;
+  padding: 16px 18px;
+  margin-bottom: 12px;
 }
 
 .direct-channel-box small {
   display: block;
-  font-size: 11px;
+  font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: #D9A54A;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .direct-channel-box strong {
   display: block;
   font-family: "Archivo", sans-serif;
-  font-size: 20px;
-  margin-bottom: 6px;
+  font-size: 19px;
+  margin-bottom: 5px;
 }
 
 .direct-channel-box p {
-  font-size: 13.5px;
+  font-size: 13px;
   color: #9FB0C7;
-  margin: 0 0 12px;
+  margin: 0 0 10px;
 }
 
 /* ---------- Slide-Over Ask ISABI Drawer ---------- */
@@ -2144,25 +2290,26 @@ table.m-grid tr.total td {
 }
 
 .ai-drawer-hdr {
-  padding: 18px 20px;
+  padding: 16px 18px;
   background: #0B1730;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
 }
 
 .ai-drawer-body {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .ai-drawer-ftr {
-  padding: 14px 20px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
   background: #0B1730;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
@@ -2174,33 +2321,34 @@ table.m-grid tr.total td {
   background: #132342;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 6px;
-  padding: 10px 14px;
+  padding: 10px 13px;
   color: #FFFFFF;
   font-size: 15px;
+  min-width: 0;
 }
 
 /* ---------- Footer ---------- */
 .site-footer {
   background: #060E1C;
   color: #9FB0C7;
-  padding: 56px 0 96px;
+  padding: 48px 0 92px;
   border-top: 3px double var(--brass);
-  font-size: 14px;
+  font-size: 13.5px;
 }
 
 .ftr-grid {
   display: grid;
   grid-template-columns: 1.4fr 1fr 1fr 1fr;
-  gap: 32px;
-  margin-bottom: 36px;
+  gap: 28px;
+  margin-bottom: 30px;
 }
 
 .ftr-col h4 {
   color: #F4F2EE;
-  font-size: 13px;
+  font-size: 12.5px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .ftr-col ul {
@@ -2210,7 +2358,7 @@ table.m-grid tr.total td {
 }
 
 .ftr-col li {
-  margin-bottom: 8px;
+  margin-bottom: 7px;
 }
 
 .ftr-col a:hover {
@@ -2218,13 +2366,13 @@ table.m-grid tr.total td {
 }
 
 .ftr-bottom {
-  padding-top: 24px;
+  padding-top: 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
+  gap: 10px;
+  font-size: 12.5px;
 }
 
 /* ---------- Mobile Dock & Toast ---------- */
@@ -2237,21 +2385,28 @@ table.m-grid tr.total td {
   z-index: 150;
   background: rgba(8, 18, 35, 0.96);
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid var(--brass-border);
-  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  padding: 7px 10px calc(7px + env(safe-area-inset-bottom, 0px));
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
 
 .dock-btn {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
   padding: 8px 4px;
   color: #F4F2EE;
   font-size: 11.5px;
   font-weight: 600;
   text-align: center;
+}
+
+.dock-btn.active {
+  border-color: var(--brass);
+  background: rgba(217, 165, 74, 0.18);
+  color: #D9A54A;
 }
 
 .dock-btn.wa {
@@ -2271,16 +2426,18 @@ table.m-grid tr.total td {
 .toast {
   position: fixed;
   bottom: 84px;
-  right: 24px;
+  right: 20px;
+  left: auto;
+  max-width: min(380px, calc(100vw - 32px));
   z-index: 400;
   background: #0B1730;
   color: #F4F2EE;
   border: 1px solid var(--brass);
   border-bottom: 3px double var(--brass);
-  padding: 12px 18px;
+  padding: 11px 16px;
   border-radius: 6px;
   box-shadow: var(--shadow-lg);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -2289,78 +2446,556 @@ table.m-grid tr.total td {
 }
 
 /* ---------- Responsive Rules ---------- */
+@media (max-width: 1220px) {
+  .hdr-actions .hide-md {
+    display: none;
+  }
+  .main-nav a {
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+}
+
 @media (max-width: 1080px) {
-  .main-nav { display: none; }
+  :root {
+    --hdr-h: 96px;
+  }
+  .hdr-inner {
+    height: 56px;
+    padding: 0 16px;
+  }
+  .main-nav {
+    display: none;
+  }
+  .mobile-sec-nav {
+    display: flex;
+    height: 40px;
+    align-items: center;
+  }
   .hero-grid, .ind-layout, .ms-ai-grid, .roi-box, .cfg-grid, .portal-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ind-detail {
+    position: static;
   }
   .contrast-grid, .pricing-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .layers-grid, .metrics-grid, .ftr-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .ind-tabs {
-    flex-direction: row;
-    overflow-x: auto;
-    max-width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px;
   }
   .ind-tab {
-    min-width: 210px;
+    padding: 8px 10px;
+  }
+  /* Responsive Sandbox on Tablet / Narrow Laptop */
+  .mock {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rail {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    gap: 10px;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .rail .brand {
+    padding: 0;
+    border-bottom: 0;
+    flex-shrink: 0;
+  }
+  .rail nav {
+    flex-direction: row;
+    overflow-x: auto;
+    min-width: 0;
+    flex: 1;
+    padding: 0;
+    gap: 4px;
+    scrollbar-width: none;
+  }
+  .rail nav::-webkit-scrollbar {
+    display: none;
+  }
+  .rail nav .grp, .rail .me {
+    display: none;
+  }
+  .rail nav button.nav-item {
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .rail nav button.nav-item.on {
+    border-bottom-color: var(--m-brass);
+  }
+  .mock .row2, .mock .row3 {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 720px) {
-  html, body {
-    max-width: 100vw;
-    overflow-x: hidden;
-  }
-  .wrap, .hdr-inner {
-    padding-left: 16px;
-    padding-right: 16px;
+  .wrap {
+    padding-left: 14px;
+    padding-right: 14px;
   }
   .brand-badge {
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
   }
   .brand-wordmark {
-    height: 26px;
+    height: 24px;
   }
   .ask-isabi-trigger {
     padding: 6px 10px;
-    font-size: 12.5px;
-  }
-  #theme-toggle-btn {
-    padding: 6px 9px;
     font-size: 12px;
   }
-  .hero-section {
-    padding: 36px 0 40px;
-  }
-  .hero-title {
-    font-size: 32px;
-  }
-  .hero-lead {
-    font-size: 15.5px;
-  }
-  .hero-cta-row {
-    flex-direction: column;
-  }
-  .hero-cta-row .btn {
-    width: 100%;
-  }
-  .ind-detail, .configurator-card, .portal-form-card, .portal-direct-card, .roi-box {
-    padding: 20px 16px;
-  }
-  .sec { padding: 52px 0; }
-  .layers-grid, .metrics-grid, .ind-cols, .ingenuity-grid, .cfg-checks, .form-row, .portal-dispatch-btns, .ftr-grid, .hero-trust-strip {
-    grid-template-columns: 1fr;
-  }
-  .mobile-dock {
-    display: grid;
+  #theme-toggle-btn {
+    padding: 6px 8px;
+    font-size: 11.5px;
   }
   .hdr-actions .hide-sm {
     display: none;
+  }
+
+  /* Compact Phone Hero */
+  .hero-section {
+    padding: 22px 0 26px;
+  }
+  .eyebrow {
+    font-size: 10.5px;
+    padding: 4px 9px;
+    margin-bottom: 10px;
+  }
+  .hero-title {
+    font-size: 28px;
+    margin-bottom: 10px;
+  }
+  .hero-lead {
+    font-size: 14px;
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+  .hero-cta-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+  .hero-cta-row .btn {
+    padding: 10px 10px;
+    font-size: 13px;
+    width: 100%;
+  }
+  .hero-cta-row .btn-wa {
+    grid-column: 1 / -1;
+  }
+  .hero-trust-strip {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding-top: 12px;
+  }
+  .trust-item b {
+    font-size: 12px;
+  }
+  .trust-item span {
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  .hlc-top {
+    padding: 10px 12px;
+  }
+  .hlc-body {
+    padding: 12px;
+  }
+  .hlc-kpi {
+    padding: 9px 10px;
+  }
+  .hlc-kpi strong {
+    font-size: 18px;
+  }
+  .hlc-table th, .hlc-table td {
+    padding: 5px 4px;
+    font-size: 11.5px;
+  }
+  .hlc-ai-strip {
+    padding: 8px 10px;
+    font-size: 11.5px;
+  }
+
+  /* Compact 2x2 Proof Metrics Band on Phone */
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+    border-left: 0;
+  }
+  .metric-cell {
+    padding: 14px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .metric-cell .m-val {
+    font-size: 22px;
+    margin-bottom: 2px;
+  }
+  .metric-cell .m-lbl {
+    font-size: 12.5px;
+  }
+  .metric-cell .m-sub {
+    font-size: 11px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Compact Sections on Phone */
+  .sec {
+    padding: 34px 0 38px;
+  }
+  .sec-head {
+    margin-bottom: 18px;
+  }
+  .sec-head h2 {
+    font-size: 22px;
+    margin-bottom: 8px;
+  }
+  .sec-head p {
+    font-size: 13.8px;
+    line-height: 1.48;
+  }
+
+  /* Enable Mobile Segmented Switchers on Phone */
+  .mob-seg-bar {
+    display: flex;
+  }
+
+  /* Section 1: Contrast Switcher + 2x2 Layers on Phone */
+  .contrast-grid {
+    margin-bottom: 20px;
+  }
+  .contrast-card[data-mob-hide="1"] {
+    display: none;
+  }
+  .contrast-card {
+    padding: 16px;
+  }
+  .contrast-card h3 {
+    font-size: 17px;
+  }
+  .contrast-card p {
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+  .cc-list li {
+    font-size: 12.5px;
+    padding: 4px 0;
+  }
+  .layers-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .layer-card {
+    padding: 13px 12px;
+    min-width: 0;
+  }
+  .layer-num {
+    font-size: 10px;
+  }
+  .layer-card h4 {
+    font-size: 14px;
+    margin-bottom: 5px;
+  }
+  .layer-card p {
+    font-size: 12px;
+    line-height: 1.38;
+  }
+
+  /* Section 2: All 8 Industries Visible in 2x4 Grid + Tabbed Detail on Phone */
+  .ind-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 6px;
+  }
+  .ind-tab {
+    padding: 8px 9px;
+    min-width: 0;
+  }
+  .ind-tab b {
+    font-size: 12.5px;
+  }
+  .ind-tab small {
+    display: none;
+  }
+  .ind-detail {
+    padding: 16px 14px;
+  }
+  .ind-detail h3 {
+    font-size: 19px;
+  }
+  .ind-detail-lead {
+    font-size: 13.2px;
+    line-height: 1.45;
+  }
+  .ind-detail-top {
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    gap: 10px;
+  }
+  .ind-detail-top .btn {
+    padding: 8px 11px;
+    font-size: 12px;
+    flex: 1;
+  }
+  .ind-cols {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .ind-box[data-mob-hide="1"] {
+    display: none;
+  }
+  .ind-box {
+    padding: 13px;
+  }
+  .ind-ledger-strip {
+    padding: 12px;
+    gap: 10px;
+  }
+  .ind-metrics-mini {
+    gap: 14px;
+    width: 100%;
+    justify-content: space-between;
+  }
+  .ind-metrics-mini div b {
+    font-size: 14.5px;
+  }
+  .ind-ledger-strip .btn-wa {
+    width: 100%;
+  }
+
+  /* Section 3: 100% Phone-Native Live ERP Sandbox (Zero Hidden Parts!) */
+  .sbox-ind-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 5px;
+  }
+  .sbox-ind-btn {
+    padding: 7px 8px;
+    font-size: 11.5px;
+    text-align: center;
+  }
+  .sbox-theme-bar {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .rail .brand span {
+    display: none;
+  }
+  .mock .top {
+    padding: 10px 12px;
+  }
+  .mock .crumb b {
+    font-size: 14.5px;
+  }
+  .mock .tools {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .mock .pill-select {
+    flex: 1;
+    font-size: 11.5px;
+    padding: 5px 6px;
+  }
+  .mock .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mock .kpi {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--m-line);
+    min-width: 0;
+  }
+  .mock .kpi:nth-child(2n) {
+    border-right: 0;
+  }
+  .mock .kpi.books {
+    grid-column: 1 / -1;
+    border-right: 0;
+    border-bottom: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .mock .kpi .v {
+    font-size: 20px;
+  }
+  .sbox-mob-tabs {
+    display: flex;
+  }
+  .mock .row2[data-mob-hide="1"],
+  .mock .row3[data-mob-hide="1"] {
+    display: none;
+  }
+  .mock .row2, .mock .row3 {
+    padding: 10px 10px 12px;
+    gap: 10px;
+  }
+  table.m-grid th, table.m-grid td {
+    padding: 5px 5px;
+    font-size: 11px;
+    white-space: normal;
+  }
+  table.m-grid .hide-xs {
+    display: none;
+  }
+
+  /* Section 4: 2x2 Stack Cards + Full-Width AI Console on Phone */
+  .stack-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .stack-card {
+    padding: 12px;
+    min-width: 0;
+  }
+  .stack-card-hdr {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .stack-card-hdr h4 {
+    font-size: 13.5px;
+    line-height: 1.25;
+  }
+  .stack-card p {
+    font-size: 11.5px;
+    line-height: 1.35;
+  }
+  .ai-console-hdr, .ai-prompt-pills, .ai-thread {
+    padding: 12px;
+  }
+  .ai-thread {
+    max-height: 350px;
+    overflow-y: auto;
+  }
+  .ai-msg-bot {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ai-msg-bot > svg {
+    display: none;
+  }
+  .ai-bot-bubble {
+    padding: 12px;
+  }
+  .ai-bot-table th, .ai-bot-table td {
+    padding: 4px 5px;
+    font-size: 11px;
+  }
+
+  /* Section 5: 2x2 Ingenuity Cards + Tabbed Matrix / ROI on Phone */
+  .ingenuity-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .ing-card {
+    padding: 13px 12px;
+    min-width: 0;
+  }
+  .ing-card .ing-kicker {
+    font-size: 9.5px;
+  }
+  .ing-card h3 {
+    font-size: 14px;
+    margin-bottom: 5px;
+  }
+  .ing-card p {
+    font-size: 11.5px;
+    line-height: 1.36;
+  }
+  .comp-wrap[data-mob-hide="1"],
+  .roi-box[data-mob-hide="1"] {
+    display: none;
+  }
+  .comp-wrap {
+    margin-bottom: 0;
+  }
+  .comp-table th, .comp-table td {
+    padding: 8px 7px;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  .comp-table th:nth-child(4),
+  .comp-table td:nth-child(4) {
+    display: none;
+  }
+  .roi-box {
+    padding: 16px 14px;
+    gap: 16px;
+  }
+  .roi-results {
+    padding: 14px;
+  }
+  .roi-stat strong {
+    font-size: 20px;
+  }
+
+  /* Section 6: Tier & Scope Builder Switcher on Phone */
+  .pricing-grid {
+    margin-bottom: 0;
+  }
+  .pricing-grid[data-mob-hide="1"],
+  .price-card[data-mob-hide="1"],
+  .configurator-card[data-mob-hide="1"] {
+    display: none;
+  }
+  .price-card {
+    padding: 20px 16px;
+  }
+  .configurator-card, .portal-form-card, .portal-direct-card {
+    padding: 18px 14px;
+  }
+  .cfg-checks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .cfg-check {
+    padding: 8px 9px;
+    min-width: 0;
+  }
+  .cfg-check b {
+    font-size: 12px;
+  }
+  .cfg-check small {
+    display: none;
+  }
+
+  /* Section 7: Tabbed Portal Form vs Direct WhatsApp/Email on Phone */
+  .portal-form-card[data-mob-hide="1"],
+  .portal-direct-card[data-mob-hide="1"] {
+    display: none;
+  }
+  .form-row, .portal-dispatch-btns, .ftr-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ftr-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+  }
+  .ftr-grid .ftr-col:first-child {
+    grid-column: 1 / -1;
+  }
+  .mobile-dock {
+    display: grid;
   }
 }
 
@@ -2381,31 +3016,41 @@ table.m-grid tr.total td {
 </head>
 <body>
 
-<header class="site-header">
+<header class="site-header" id="site-header">
   <div class="hdr-inner">
     <a href="#top" class="brand-link" aria-label="ISABI Systems Home">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="brand-badge" role="img" aria-label="ISABI Systems Badge"><rect width="120" height="120" rx="26" fill="#0B1730"/><g transform="translate(39.52,77.62) scale(0.74)"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -82.8 346.86 160.76" class="brand-wordmark" role="img" aria-label="ISABI Systems"><g fill="currentColor"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-12.95,0)" d="M82.46 1.2Q74.06 1.2 66.77 0.2Q59.48 -0.81 54 -3.31Q48.52 -5.82 45.43 -10.3Q42.33 -14.78 42.33 -21.68Q42.33 -21.88 42.33 -22.21Q42.33 -22.53 42.43 -22.84H62.38Q62.28 -22.44 62.25 -22Q62.23 -21.56 62.23 -21.08Q62.23 -18.03 64.55 -16.27Q66.87 -14.51 71.11 -13.8Q75.35 -13.09 80.96 -13.09Q83.32 -13.09 85.78 -13.23Q88.24 -13.38 90.53 -13.74Q92.82 -14.1 94.65 -14.79Q96.47 -15.47 97.56 -16.55Q98.65 -17.63 98.65 -19.15Q98.65 -21.32 96.35 -22.57Q94.05 -23.82 90.14 -24.58Q86.22 -25.33 81.35 -25.92Q76.49 -26.52 71.28 -27.34Q66.06 -28.16 61.2 -29.61Q56.33 -31.06 52.41 -33.47Q48.5 -35.88 46.2 -39.66Q43.9 -43.45 43.9 -48.91Q43.9 -54.37 46.67 -58.34Q49.43 -62.31 54.42 -64.89Q59.41 -67.46 66.2 -68.71Q73 -69.95 81.01 -69.95Q89.17 -69.95 95.82 -68.69Q102.46 -67.43 107.23 -64.88Q112 -62.33 114.57 -58.47Q117.13 -54.6 117.13 -49.39V-48.01H97.39V-48.82Q97.39 -50.91 95.59 -52.53Q93.78 -54.15 90.34 -55.12Q86.89 -56.1 81.96 -56.1Q76.07 -56.1 72.27 -55.36Q68.48 -54.62 66.68 -53.34Q64.88 -52.07 64.88 -50.55Q64.88 -48.52 67.17 -47.33Q69.47 -46.15 73.39 -45.47Q77.3 -44.78 82.17 -44.19Q87.03 -43.6 92.25 -42.78Q97.46 -41.96 102.32 -40.59Q107.19 -39.21 111.11 -36.84Q115.03 -34.46 117.32 -30.83Q119.62 -27.2 119.62 -21.89Q119.62 -13.62 114.83 -8.52Q110.04 -3.43 101.65 -1.11Q93.26 1.2 82.46 1.2Z"/><path transform="translate(-12.35,0)" d="M125.53 0 159.33 -68.75H181.97L215.77 0H193.74L188.55 -11.02H151.65L146.51 0ZM158.47 -25.93H181.73L175.47 -39.9Q175.08 -40.84 174.37 -42.55Q173.67 -44.27 172.91 -46.22Q172.15 -48.17 171.51 -49.85Q170.87 -51.52 170.55 -52.33H169.8Q169.07 -50.49 168.11 -48.11Q167.15 -45.73 166.26 -43.49Q165.37 -41.25 164.73 -39.85Z"/><path transform="translate(-14.35,0)" d="M225.75 0V-68.75H282.27Q287.86 -68.75 292.39 -66.6Q296.91 -64.45 299.54 -60.65Q302.18 -56.85 302.18 -51.81Q302.18 -47.31 300.57 -44.11Q298.96 -40.91 296.25 -38.92Q293.54 -36.94 290.23 -35.95V-35.55Q294.09 -34.75 297.19 -32.66Q300.3 -30.57 302.11 -27.09Q303.92 -23.62 303.92 -18.57Q303.92 -12.66 301.07 -8.52Q298.22 -4.37 293.39 -2.19Q288.55 0 282.6 0ZM246.11 -14.49H275.8Q279 -14.49 281.02 -16.24Q283.05 -17.98 283.05 -21.59Q283.05 -23.49 282.17 -25.01Q281.3 -26.53 279.61 -27.37Q277.93 -28.21 275.53 -28.21H246.11ZM246.11 -41.59H274.11Q276.44 -41.59 278.03 -42.43Q279.63 -43.27 280.49 -44.8Q281.35 -46.33 281.35 -48.4Q281.35 -51.33 279.38 -53.04Q277.4 -54.75 274.39 -54.75H246.11Z"/><path transform="translate(-18.65,0)" d="M317.15 0V-68.75H337.51V0Z"/></g><g fill="var(--brass)"><rect x="0" y="9.5" width="318.86" height="3.4"/><rect x="0" y="17.5" width="318.86" height="3.4"/></g><g fill="currentColor" transform="translate(0,62.46) scale(0.42)"><path transform="translate(-5.17,0)" d="M38 1.2Q31.29 1.2 25.32 0.09Q19.36 -1.01 14.83 -3.57Q10.3 -6.12 7.74 -10.29Q5.17 -14.45 5.17 -20.57Q5.17 -20.98 5.2 -21.44Q5.22 -21.89 5.27 -22.14H19.28Q19.24 -21.85 19.19 -21.3Q19.14 -20.75 19.14 -20.2Q19.14 -17 21.42 -14.84Q23.7 -12.68 27.98 -11.6Q32.25 -10.52 38.01 -10.52Q41.12 -10.52 43.86 -10.85Q46.6 -11.18 48.86 -11.81Q51.12 -12.44 52.78 -13.41Q54.43 -14.39 55.32 -15.72Q56.2 -17.04 56.2 -18.68Q56.2 -21.44 54.14 -23.17Q52.08 -24.9 48.57 -26.06Q45.06 -27.22 40.66 -28.1Q36.26 -28.98 31.59 -29.96Q26.91 -30.94 22.51 -32.44Q18.11 -33.94 14.6 -36.19Q11.1 -38.44 9.03 -41.93Q6.97 -45.43 6.97 -50.42Q6.97 -55.22 9.14 -58.86Q11.31 -62.51 15.42 -64.96Q19.53 -67.4 25.27 -68.63Q31.02 -69.85 38.16 -69.85Q45.15 -69.85 50.75 -68.58Q56.34 -67.31 60.28 -64.79Q64.22 -62.26 66.3 -58.56Q68.37 -54.86 68.37 -50V-48.6H54.56V-49.75Q54.56 -52.31 52.5 -54.17Q50.44 -56.02 46.83 -57.08Q515.82 -58.13 38.54 -58.13Q32.75 -58.13 28.92 -57.25Q25.1 -56.38 23.21 -54.78Q21.32 -53.18 21.32 -51.02Q21.32 -48.61 23.38 -47.06Q25.44 -45.5 28.95 -44.47Q32.46 -43.44 36.86 -42.58Q41.26 -41.72 45.93 -40.69Q50.61 -39.66 55.01 -38.21Q59.41 -36.76 62.92 -34.46Q66.42 -32.16 68.49 -28.74Q70.55 -25.32 70.55 -20.44Q70.55 -12.59 66.39 -7.82Q62.24 -3.05 54.89 -0.92Q47.55 1.2 38 1.2Z"/><path transform="translate(32.83,0)" d="M106.74 0V-27.85L76.88 -68.65H93.47L113.82 -39.79H114.56L134.96 -68.65H150.65L120.8 -27.85V0Z"/><path transform="translate(70.83,0)" d="M190 1.2Q183.29 1.2 177.32 0.09Q171.36 -1.01 166.83 -3.57Q162.3 -6.12 159.74 -10.29Q157.17 -14.45 157.17 -20.57Q157.17 -20.98 157.2 -21.44Q157.22 -21.89 157.27 -22.14H171.28Q171.24 -21.85 171.19 -21.3Q171.14 -20.75 171.14 -20.2Q171.14 -17 173.42 -14.84Q175.7 -12.68 179.98 -11.6Q184.25 -10.52 190.01 -10.52Q193.12 -10.52 195.86 -10.85Q198.6 -11.18 200.86 -11.81Q203.12 -12.44 204.78 -13.41Q206.43 -14.39 207.32 -15.72Q208.2 -17.04 208.2 -18.68Q208.2 -21.44 206.14 -23.17Q204.08 -24.9 200.57 -26.06Q197.06 -27.22 192.66 -28.1Q188.26 -28.98 183.59 -29.96Q178.91 -30.94 174.51 -32.44Q170.11 -33.94 166.6 -36.19Q163.1 -38.44 161.03 -41.93Q158.97 -45.43 158.97 -50.42Q158.97 -55.22 161.14 -58.86Q163.31 -62.51 167.42 -64.96Q171.53 -67.4 177.27 -68.63Q183.02 -69.85 190.16 -69.85Q197.15 -69.85 202.75 -68.58Q208.34 -67.31 212.28 -64.79Q216.22 -62.26 218.3 -58.56Q220.37 -54.86 220.37 -50V-48.6H206.56V-49.75Q206.56 -52.31 204.5 -54.17Q202.44 -56.02 198.83 -57.08Q195.22 -58.13 190.54 -58.13Q184.75 -58.13 180.92 -57.25Q177.1 -56.38 175.21 -54.78Q173.32 -53.18 173.32 -51.02Q173.32 -48.61 175.38 -47.06Q177.44 -45.5 180.95 -44.47Q184.46 -43.44 188.86 -42.58Q193.26 -41.72 197.93 -40.69Q202.61 -39.66 207.01 -38.21Q211.41 -36.76 214.92 -34.46Q218.42 -32.16 220.49 -28.74Q222.55 -25.32 222.55 -20.44Q222.55 -12.59 218.39 -7.82Q214.24 -3.05 206.89 -0.92Q199.55 1.2 190 1.2Z"/><path transform="translate(108.83,0)" d="M256.08 0V-56.39H230.05V-68.65H296.21V-56.39H270.13V0Z"/><path transform="translate(146.83,0)" d="M307.41 0V-68.65H368.59V-56.78H321.46V-40.94H363.42V-29.07H321.46V-11.87H369.28V0Z"/><path transform="translate(184.83,0)" d="M383.91 0V-68.65H405.9L419.05 -31.84Q419.7 -30.03 420.56 -27.36Q421.42 -24.7 422.31 -21.99Q423.2 -19.28 423.83 -17.15H424.58Q425.12 -19.03 425.9 -21.62Q426.69 -24.2 427.55 -26.92Q428.41 -29.64 429.16 -31.8L442.31 -68.65H463.96V0H449.9V-38.2Q449.9 -41.41 449.98 -44.81Q450.05 -48.21 450.18 -50.91Q450.3 -53.61 450.35 -54.64H449.55Q449.21 -53.46 448.41 -50.89Q447.61 -48.32 446.76 -45.49Q445.9 -42.66 445.2 -40.6L430.35 0H417.01L402.11 -40.54Q401.36 -42.6 400.57 -45.16Q399.77 -47.73 399.07 -50.28Q398.36 -52.82 397.81 -54.64H397.01Q397.11 -52.66 397.19 -49.78Q397.26 -46.89 397.34 -43.86Q397.42 -40.82 397.42 -38.2V0Z"/><path transform="translate(222.83,0)" d="M510.6 1.2Q503.89 1.2 497.92 0.09Q491.96 -1.01 487.43 -3.57Q482.9 -6.12 480.34 -10.29Q477.77 -14.45 477.77 -20.57Q477.77 -20.98 477.8 -21.44Q477.82 -21.89 477.87 -22.14H491.88Q491.84 -21.85 491.79 -21.3Q491.74 -20.75 491.74 -20.2Q491.74 -17 494.02 -14.84Q496.3 -12.68 500.58 -11.6Q504.85 -10.52 510.61 -10.52Q513.72 -10.52 516.46 -10.85Q519.2 -11.18 521.46 -11.81Q523.72 -12.44 525.38 -13.41Q527.03 -14.39 527.92 -15.72Q528.8 -17.04 528.8 -18.68Q528.8 -21.44 526.74 -23.17Q524.68 -24.9 521.17 -26.06Q517.66 -27.22 513.26 -28.1Q508.86 -28.98 504.19 -29.96Q499.51 -30.94 495.11 -32.44Q490.71 -33.94 487.2 -36.19Q483.7 -38.44 481.63 -41.93Q479.57 -45.43 479.57 -50.42Q479.57 -55.22 481.74 -58.86Q483.91 -62.51 488.02 -64.96Q492.13 -67.4 497.87 -68.63Q503.62 -69.85 510.76 -69.85Q517.75 -69.85 523.35 -68.58Q528.94 -67.31 532.88 -64.79Q536.82 -62.26 538.9 -58.56Q540.97 -54.86 540.97 -50V-48.6H527.16V-49.75Q527.16 -52.31 525.1 -54.17Q523.04 -56.02 519.43 -57.08Q515.82 -58.13 511.14 -58.13Q505.35 -58.13 501.52 -57.25Q497.7 -56.38 495.81 -54.78Q493.92 -53.18 493.92 -51.02Q493.92 -48.61 495.98 -47.06Q498.04 -45.5 501.55 -44.47Q505.06 -43.44 509.46 -42.58Q513.86 -41.72 518.53 -40.69Q523.21 -39.66 527.61 -38.21Q532.01 -36.76 535.52 -34.46Q539.02 -32.16 541.09 -28.74Q543.15 -25.32 543.15 -20.44Q543.15 -12.59 538.99 -7.82Q534.84 -3.05 527.49 -0.92Q520.15 1.2 510.6 1.2Z"/></g></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -82.8 346.86 160.76" class="brand-wordmark" role="img" aria-label="ISABI Systems"><g fill="currentColor"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-12.95,0)" d="M82.46 1.2Q74.06 1.2 66.77 0.2Q59.48 -0.81 54 -3.31Q48.52 -5.82 45.43 -10.3Q42.33 -14.78 42.33 -21.68Q42.33 -21.88 42.33 -22.21Q42.33 -22.53 42.43 -22.84H62.38Q62.28 -22.44 62.25 -22Q62.23 -21.56 62.23 -21.08Q62.23 -18.03 64.55 -16.27Q66.87 -14.51 71.11 -13.8Q75.35 -13.09 80.96 -13.09Q83.32 -13.09 85.78 -13.23Q88.24 -13.38 90.53 -13.74Q92.82 -14.1 94.65 -14.79Q96.47 -15.47 97.56 -16.55Q98.65 -17.63 98.65 -19.15Q98.65 -21.32 96.35 -22.57Q94.05 -23.82 90.14 -24.58Q86.22 -25.33 81.35 -25.92Q76.49 -26.52 71.28 -27.34Q66.06 -28.16 61.2 -29.61Q56.33 -31.06 52.41 -33.47Q48.5 -35.88 46.2 -39.66Q43.9 -43.45 43.9 -48.91Q43.9 -54.37 46.67 -58.34Q49.43 -62.31 54.42 -64.89Q59.41 -67.46 66.2 -68.71Q73 -69.95 81.01 -69.95Q89.17 -69.95 95.82 -68.69Q102.46 -67.43 107.23 -64.88Q112 -62.33 114.57 -58.47Q117.13 -54.6 117.13 -49.39V-48.01H97.39V-48.82Q97.39 -50.91 95.59 -52.53Q93.78 -54.15 90.34 -55.12Q86.89 -56.1 81.96 -56.1Q76.07 -56.1 72.27 -55.36Q68.48 -54.62 66.68 -53.34Q64.88 -52.07 64.88 -50.55Q64.88 -48.52 67.17 -47.33Q69.47 -46.15 73.39 -45.47Q77.3 -44.78 82.17 -44.19Q87.03 -43.6 92.25 -42.78Q97.46 -41.96 102.32 -40.59Q107.19 -39.21 111.11 -36.84Q115.03 -34.46 117.32 -30.83Q119.62 -27.2 119.62 -21.89Q119.62 -13.62 114.83 -8.52Q110.04 -3.43 101.65 -1.11Q93.26 1.2 82.46 1.2Z"/><path transform="translate(-12.35,0)" d="M125.53 0 159.33 -68.75H181.97L215.77 0H193.74L188.55 -11.02H151.65L146.51 0ZM158.47 -25.93H181.73L175.47 -39.9Q175.08 -40.84 174.37 -42.55Q173.67 -44.27 172.91 -46.22Q172.15 -48.17 171.51 -49.85Q170.87 -51.52 170.55 -52.33H169.8Q169.07 -50.49 168.11 -48.11Q167.15 -45.73 166.26 -43.49Q165.37 -41.25 164.73 -39.85Z"/><path transform="translate(-14.35,0)" d="M225.75 0V-68.75H282.27Q287.86 -68.75 292.39 -66.6Q296.91 -64.45 299.54 -60.65Q302.18 -56.85 302.18 -51.81Q302.18 -47.31 300.57 -44.11Q298.96 -40.91 296.25 -38.92Q293.54 -36.94 290.23 -35.95V-35.55Q294.09 -34.75 297.19 -32.66Q300.3 -30.57 302.11 -27.09Q303.92 -23.62 303.92 -18.57Q303.92 -12.66 301.07 -8.52Q298.22 -4.37 293.39 -2.19Q288.55 0 282.6 0ZM246.11 -14.49H275.8Q279 -14.49 281.02 -16.24Q283.05 -17.98 283.05 -21.59Q283.05 -23.49 282.17 -25.01Q281.3 -26.53 279.61 -27.37Q277.93 -28.21 275.53 -28.21H246.11ZM246.11 -41.59H274.11Q276.44 -41.59 278.03 -42.43Q279.63 -43.27 280.49 -44.8Q281.35 -46.33 281.35 -48.4Q281.35 -51.33 279.38 -53.04Q277.4 -54.75 274.39 -54.75H246.11Z"/><path transform="translate(-18.65,0)" d="M317.15 0V-68.75H337.51V0Z"/></g><g fill="var(--brass)"><rect x="0" y="9.5" width="318.86" height="3.4"/><rect x="0" y="17.5" width="318.86" height="3.4"/></g><g fill="currentColor" transform="translate(0,62.46) scale(0.42)"><path transform="translate(-5.17,0)" d="M38 1.2Q31.29 1.2 25.32 0.09Q19.36 -1.01 14.83 -3.57Q10.3 -6.12 7.74 -10.29Q5.17 -14.45 5.17 -20.57Q5.17 -20.98 5.2 -21.44Q5.22 -21.89 5.27 -22.14H19.28Q19.24 -21.85 19.19 -21.3Q19.14 -20.75 19.14 -20.2Q19.14 -17 21.42 -14.84Q23.7 -12.68 27.98 -11.6Q32.25 -10.52 38.01 -10.52Q41.12 -10.52 43.86 -10.85Q46.6 -11.18 48.86 -11.81Q51.12 -12.44 52.78 -13.41Q54.43 -14.39 55.32 -15.72Q56.2 -17.04 56.2 -18.68Q56.2 -21.44 54.14 -23.17Q52.08 -24.9 48.57 -26.06Q45.06 -27.22 40.66 -28.1Q36.26 -28.98 31.59 -29.96Q26.91 -30.94 22.51 -32.44Q18.11 -33.94 14.6 -36.19Q11.1 -38.44 9.03 -41.93Q6.97 -45.43 6.97 -50.42Q6.97 -55.22 9.14 -58.86Q11.31 -62.51 15.42 -64.96Q19.53 -67.4 25.27 -68.63Q31.02 -69.85 38.16 -69.85Q45.15 -69.85 50.75 -68.58Q56.34 -67.31 60.28 -64.79Q216.22 -62.26 66.3 -58.56Q68.37 -54.86 68.37 -50V-48.6H54.56V-49.75Q54.56 -52.31 52.5 -54.17Q50.44 -56.02 46.83 -57.08Q515.82 -58.13 38.54 -58.13Q32.75 -58.13 28.92 -57.25Q25.1 -56.38 23.21 -54.78Q21.32 -53.18 21.32 -51.02Q21.32 -48.61 23.38 -47.06Q25.44 -45.5 28.95 -44.47Q32.46 -43.44 36.86 -42.58Q41.26 -41.72 45.93 -40.69Q50.61 -39.66 55.01 -38.21Q59.41 -36.76 62.92 -34.46Q66.42 -32.16 68.49 -28.74Q70.55 -25.32 70.55 -20.44Q70.55 -12.59 66.39 -7.82Q62.24 -3.05 54.89 -0.92Q47.55 1.2 38 1.2Z"/><path transform="translate(32.83,0)" d="M106.74 0V-27.85L76.88 -68.65H93.47L113.82 -39.79H114.56L134.96 -68.65H150.65L120.8 -27.85V0Z"/><path transform="translate(70.83,0)" d="M190 1.2Q183.29 1.2 177.32 0.09Q171.36 -1.01 166.83 -3.57Q162.3 -6.12 159.74 -10.29Q157.17 -14.45 157.17 -20.57Q157.17 -20.98 157.2 -21.44Q157.22 -21.89 157.27 -22.14H171.28Q171.24 -21.85 171.19 -21.3Q171.14 -20.75 171.14 -20.2Q171.14 -17 173.42 -14.84Q175.7 -12.68 179.98 -11.6Q184.25 -10.52 190.01 -10.52Q193.12 -10.52 195.86 -10.85Q198.6 -11.18 200.86 -11.81Q203.12 -12.44 204.78 -13.41Q206.43 -14.39 207.32 -15.72Q208.2 -17.04 208.2 -18.68Q208.2 -21.44 206.14 -23.17Q204.08 -24.9 200.57 -26.06Q197.06 -27.22 192.66 -28.1Q188.26 -28.98 183.59 -29.96Q178.91 -30.94 174.51 -32.44Q170.11 -33.94 166.6 -36.19Q163.1 -38.44 161.03 -41.93Q158.97 -45.43 158.97 -50.42Q158.97 -55.22 161.14 -58.86Q163.31 -62.51 167.42 -64.96Q171.53 -67.4 177.27 -68.63Q183.02 -69.85 190.16 -69.85Q197.15 -69.85 202.75 -68.58Q208.34 -67.31 212.28 -64.79Q216.22 -62.26 218.3 -58.56Q220.37 -54.86 220.37 -50V-48.6H206.56V-49.75Q206.56 -52.31 204.5 -54.17Q202.44 -56.02 198.83 -57.08Q195.22 -58.13 190.54 -58.13Q184.75 -58.13 180.92 -57.25Q177.1 -56.38 175.21 -54.78Q173.32 -53.18 173.32 -51.02Q173.32 -48.61 175.38 -47.06Q177.44 -45.5 180.95 -44.47Q184.46 -43.44 188.86 -42.58Q193.26 -41.72 197.93 -40.69Q202.61 -39.66 207.01 -38.21Q211.41 -36.76 214.92 -34.46Q218.42 -32.16 220.49 -28.74Q222.55 -25.32 222.55 -20.44Q222.55 -12.59 218.39 -7.82Q214.24 -3.05 206.89 -0.92Q199.55 1.2 190 1.2Z"/><path transform="translate(108.83,0)" d="M256.08 0V-56.39H230.05V-68.65H296.21V-56.39H270.13V0Z"/><path transform="translate(146.83,0)" d="M307.41 0V-68.65H368.59V-56.78H321.46V-40.94H363.42V-29.07H321.46V-11.87H369.28V0Z"/><path transform="translate(184.83,0)" d="M383.91 0V-68.65H405.9L419.05 -31.84Q419.7 -30.03 420.56 -27.36Q421.42 -24.7 422.31 -21.99Q423.2 -19.28 423.83 -17.15H424.58Q425.12 -19.03 425.9 -21.62Q426.69 -24.2 427.55 -26.92Q428.41 -29.64 429.16 -31.8L442.31 -68.65H463.96V0H449.9V-38.2Q449.9 -41.41 449.98 -44.81Q450.05 -48.21 450.18 -50.91Q450.3 -53.61 450.35 -54.64H449.55Q449.21 -53.46 448.41 -50.89Q447.61 -48.32 446.76 -45.49Q445.9 -42.66 445.2 -40.6L430.35 0H417.01L402.11 -40.54Q401.36 -42.6 400.57 -45.16Q399.77 -47.73 399.07 -50.28Q398.36 -52.82 397.81 -54.64H397.01Q397.11 -52.66 397.19 -49.78Q397.26 -46.89 397.34 -43.86Q397.42 -40.82 397.42 -38.2V0Z"/><path transform="translate(222.83,0)" d="M510.6 1.2Q503.89 1.2 497.92 0.09Q491.96 -1.01 487.43 -3.57Q482.9 -6.12 480.34 -10.29Q477.77 -14.45 477.77 -20.57Q477.77 -20.98 477.8 -21.44Q477.82 -21.89 477.87 -22.14H491.88Q491.84 -21.85 491.79 -21.3Q491.74 -20.75 491.74 -20.2Q491.74 -17 494.02 -14.84Q496.3 -12.68 500.58 -11.6Q504.85 -10.52 510.61 -10.52Q513.72 -10.52 516.46 -10.85Q519.2 -11.18 521.46 -11.81Q523.72 -12.44 525.38 -13.41Q527.03 -14.39 527.92 -15.72Q528.8 -17.04 528.8 -18.68Q528.8 -21.44 526.74 -23.17Q524.68 -24.9 521.17 -26.06Q517.66 -27.22 513.26 -28.1Q508.86 -28.98 504.19 -29.96Q499.51 -30.94 495.11 -32.44Q490.71 -33.94 487.2 -36.19Q483.7 -38.44 481.63 -41.93Q479.57 -45.43 479.57 -50.42Q479.57 -55.22 481.74 -58.86Q483.91 -62.51 488.02 -64.96Q492.13 -67.4 497.87 -68.63Q503.62 -69.85 510.76 -69.85Q517.75 -69.85 523.35 -68.58Q528.94 -67.31 532.88 -64.79Q536.82 -62.26 538.9 -58.56Q540.97 -54.86 540.97 -50V-48.6H527.16V-49.75Q527.16 -52.31 525.1 -54.17Q523.04 -56.02 519.43 -57.08Q515.82 -58.13 511.14 -58.13Q505.35 -58.13 501.52 -57.25Q497.7 -56.38 495.81 -54.78Q493.92 -53.18 493.92 -51.02Q493.92 -48.61 495.98 -47.06Q498.04 -45.5 501.55 -44.47Q505.06 -43.44 509.46 -42.58Q513.86 -41.72 518.53 -40.69Q523.21 -39.66 527.61 -38.21Q532.01 -36.76 535.52 -34.46Q539.02 -32.16 541.09 -28.74Q543.15 -25.32 543.15 -20.44Q543.15 -12.59 538.99 -7.82Q534.84 -3.05 527.49 -0.92Q520.15 1.2 510.6 1.2Z"/></g></svg>
     </a>
-    <nav class="main-nav" aria-label="Primary Navigation">
-      <a href="#architecture" class="active">Architecture</a>
-      <a href="#industries">Industries</a>
-      <a href="#sandbox">Live ERP Sandbox</a>
-      <a href="#microsoft-ai">Microsoft &amp; AI</a>
-      <a href="#ingenuity">Ingenuity</a>
-      <a href="#pricing">Pricing</a>
-      <a href="#portal">Contact Portal</a>
+    <nav class="main-nav" id="main-nav" aria-label="Primary Navigation">
+      <a href="#architecture" data-sec-link="architecture" class="active">Architecture</a>
+      <a href="#industries" data-sec-link="industries">Industries</a>
+      <a href="#sandbox" data-sec-link="sandbox">Live Sandbox</a>
+      <a href="#microsoft-ai" data-sec-link="microsoft-ai">Microsoft &amp; AI</a>
+      <a href="#ingenuity" data-sec-link="ingenuity">Ingenuity</a>
+      <a href="#pricing" data-sec-link="pricing">Pricing</a>
+      <a href="#portal" data-sec-link="portal">Contact</a>
     </nav>
     <div class="hdr-actions">
       <button type="button" class="ask-isabi-trigger" id="hdr-ask-btn" title="Open Ask ISABI System Intelligence">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="-9.5 -78.8 74.66 109.7" aria-hidden="true"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>
         <span>Ask ISABI</span>
       </button>
-      <button type="button" class="btn btn-ghost hide-sm" id="install-pwa-btn" hidden>Install App</button>
+      <button type="button" class="btn btn-ghost hide-sm" id="install-pwa-btn" hidden>Install</button>
       <button type="button" class="btn btn-ghost" id="theme-toggle-btn" aria-label="Switch Theme" title="Toggle Dark or Light Ledger Theme">Light</button>
-      <a href="#portal" class="btn btn-brass hide-sm">Request Consultation</a>
+      <a href="#portal" class="btn btn-brass hide-md">Book Consultation</a>
     </div>
   </div>
+  <!-- Mobile & Tablet Section Jump Strip -->
+  <nav class="mobile-sec-nav" id="mobile-sec-nav" aria-label="Section Navigation">
+    <a href="#architecture" data-sec-link="architecture" class="active">01 Architecture</a>
+    <a href="#industries" data-sec-link="industries">02 Industries</a>
+    <a href="#sandbox" data-sec-link="sandbox">03 Live ERP</a>
+    <a href="#microsoft-ai" data-sec-link="microsoft-ai">04 Microsoft &amp; AI</a>
+    <a href="#ingenuity" data-sec-link="ingenuity">05 Ingenuity</a>
+    <a href="#pricing" data-sec-link="pricing">06 Pricing</a>
+    <a href="#portal" data-sec-link="portal">07 Contact</a>
+  </nav>
 </header>
 
 <main id="top">
@@ -2541,8 +3186,15 @@ table.m-grid tr.total td {
         </p>
       </div>
 
-      <div class="contrast-grid">
-        <div class="contrast-card">
+      <!-- Mobile Switcher for Contrast Cards -->
+      <div class="mob-seg-bar" role="tablist" aria-label="Compare Approaches">
+        <button type="button" class="mob-seg-btn active" data-arch-tab="isabi">✓ The ISABI Standard</button>
+        <button type="button" class="mob-seg-btn" data-arch-tab="saas">✕ vs Generic SaaS</button>
+        <button type="button" class="mob-seg-btn" data-arch-tab="legacy">✕ vs Legacy ERP</button>
+      </div>
+
+      <div class="contrast-grid" id="arch-contrast-grid">
+        <div class="contrast-card" data-arch-card="saas" data-mob-hide="1">
           <div class="cc-tag">The Generic SaaS Trap</div>
           <h3>Off-the-Shelf Cloud Subscriptions</h3>
           <p>Built for the lowest common denominator. The moment you have multiple entities, partner profit splits, bonded customs stock, or batch plant tickets, the software breaks.</p>
@@ -2554,7 +3206,7 @@ table.m-grid tr.total td {
           </ul>
         </div>
 
-        <div class="contrast-card">
+        <div class="contrast-card" data-arch-card="legacy" data-mob-hide="1">
           <div class="cc-tag">The Legacy ERP Trap</div>
           <h3>Traditional ERP Agencies</h3>
           <p>Bloated reseller teams where junior consultants pass tickets around without understanding either double-entry accounting or your physical operations.</p>
@@ -2566,7 +3218,7 @@ table.m-grid tr.total td {
           </ul>
         </div>
 
-        <div class="contrast-card isabi-win">
+        <div class="contrast-card isabi-win" data-arch-card="isabi">
           <div class="cc-tag">The ISABI Standard</div>
           <h3>ISABI Systems Bespoke Architecture</h3>
           <p>A precision-engineered operational and financial system built directly on Microsoft enterprise infrastructure, tailored 100% to your entities, workflows, and ledger.</p>
@@ -2633,7 +3285,7 @@ table.m-grid tr.total td {
         <div class="eyebrow">03 · Interactive Product Sandbox</div>
         <h2>Experience the ISABI Command Center Live.</h2>
         <p>
-          Test how an ISABI system looks and responds in production. Switch between six industry environments, toggle time periods or currencies, navigate the left-rail modules, hover the monthly ledger chart, or trigger Ask ISABI directly inside the application.
+          Test how an ISABI system looks and responds in production. Switch between six industry environments, toggle time periods or currencies, navigate the modules, inspect the monthly ledger chart, or trigger Ask ISABI directly inside the application.
         </p>
       </div>
 
@@ -2672,7 +3324,7 @@ table.m-grid tr.total td {
         <div class="stack-cards">
           <div class="stack-card">
             <div class="stack-card-hdr">
-              <h4>Microsoft Dataverse (Relational Enterprise Core)</h4>
+              <h4>Microsoft Dataverse (Relational Core)</h4>
               <span>Database &amp; Security</span>
             </div>
             <p>ACID-compliant relational storage with row-level ownership, Business Unit hierarchy, full field-level audit history, automated nightly backups, and OData v4 Web API.</p>
@@ -2680,7 +3332,7 @@ table.m-grid tr.total td {
 
           <div class="stack-card">
             <div class="stack-card-hdr">
-              <h4>Power Apps &amp; Custom Offline PWAs</h4>
+              <h4>Power Apps &amp; Offline PWAs</h4>
               <span>Operational Surfaces</span>
             </div>
             <p>Model-driven back-office ERP applications with custom JavaScript validation rules, paired with dedicated offline-first Progressive Web Apps for POS tills and biometric attendance kiosks.</p>
@@ -2688,16 +3340,16 @@ table.m-grid tr.total td {
 
           <div class="stack-card">
             <div class="stack-card-hdr">
-              <h4>Power BI (XMLA Semantic Models) &amp; Paginated .RDL</h4>
-              <span>Executive &amp; Statutory Reporting</span>
+              <h4>Power BI (XMLA) &amp; Paginated .RDL</h4>
+              <span>Executive &amp; Statutory</span>
             </div>
             <p>Direct XMLA-published semantic models with Year, Month, Week, and Day period intelligence, plus pixel-perfect Paginated Reports (.rdl) for Statement of Accounts, P&amp;L, and Trial Balances.</p>
           </div>
 
           <div class="stack-card">
             <div class="stack-card-hdr">
-              <h4>Power Automate, SharePoint &amp; Microsoft Entra ID</h4>
-              <span>Workflows &amp; Zero-Trust Identity</span>
+              <h4>Power Automate, SharePoint &amp; Entra ID</h4>
+              <span>Workflows &amp; Identity</span>
             </div>
             <p>Event-driven cloud flows for supervisor approvals, CV and document routing to SharePoint drives, scheduled report subscriptions, and Entra ID Multi-Factor Authentication.</p>
           </div>
@@ -2773,8 +3425,14 @@ table.m-grid tr.total td {
         </div>
       </div>
 
+      <!-- Mobile Switcher for Ingenuity Proof Views -->
+      <div class="mob-seg-bar" role="tablist" aria-label="Select Competitive Proof View">
+        <button type="button" class="mob-seg-btn active" data-ing-tab="matrix">vs SaaS &amp; Legacy Matrix</button>
+        <button type="button" class="mob-seg-btn" data-ing-tab="roi">Interactive ROI Estimator</button>
+      </div>
+
       <!-- Comparison Matrix -->
-      <div class="comp-wrap">
+      <div class="comp-wrap" data-ing-panel="matrix">
         <table class="comp-table" aria-label="Competitive Comparison Matrix">
           <thead>
             <tr>
@@ -2826,11 +3484,11 @@ table.m-grid tr.total td {
       </div>
 
       <!-- Interactive ROI Calculator -->
-      <div class="roi-box">
+      <div class="roi-box" data-ing-panel="roi" data-mob-hide="1">
         <div>
           <div class="eyebrow">Operational Impact Estimator</div>
-          <h3 style="font-size:24px;margin-bottom:8px">Quantify the Value of Closing Your Books on ISABI</h3>
-          <p style="color:var(--muted);font-size:14.5px;margin:0 0 22px">
+          <h3 style="font-size:22px;margin-bottom:6px">Quantify the Value of Closing Your Books on ISABI</h3>
+          <p style="color:var(--muted);font-size:14px;margin:0 0 18px">
             Adjust the sliders to reflect your current organization and see the immediate operational time reclaimed and close-cycle acceleration.
           </p>
           <div class="roi-sliders">
@@ -2839,11 +3497,11 @@ table.m-grid tr.total td {
               <input type="range" id="roi-entities" min="1" max="15" value="3">
             </div>
             <div class="slider-row">
-              <label for="roi-hours"><span>Weekly Team Hours Spent on Excel / Manual Reconciliation</span><span class="val num" id="roi-hours-val">35 hrs / wk</span></label>
+              <label for="roi-hours"><span>Weekly Team Hours on Manual Excel</span><span class="val num" id="roi-hours-val">35 hrs / wk</span></label>
               <input type="range" id="roi-hours" min="5" max="120" step="5" value="35">
             </div>
             <div class="slider-row">
-              <label for="roi-close"><span>Current Days Needed to Close Monthly Books</span><span class="val num" id="roi-close-val">14 Days</span></label>
+              <label for="roi-close"><span>Current Days to Close Monthly Books</span><span class="val num" id="roi-close-val">14 Days</span></label>
               <input type="range" id="roi-close" min="3" max="30" value="14">
             </div>
           </div>
@@ -2868,10 +3526,10 @@ table.m-grid tr.total td {
               <strong class="brass num" id="roi-out-payback">2.6 Months</strong>
             </div>
           </div>
-          <p style="font-size:13px;color:var(--muted);margin:0 0 14px">
+          <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px">
             Figures reflect typical automation of manual voucher re-keying, inter-branch consolidation, partner split tables, and automated Power BI / RDL statement generation.
           </p>
-          <a href="#pricing" class="btn btn-brass" style="width:100%">Configure Your System Scope Below</a>
+          <a href="#scope-configurator" class="btn btn-brass" style="width:100%">Configure Your System Scope Below</a>
         </div>
       </div>
     </div>
@@ -2888,9 +3546,17 @@ table.m-grid tr.total td {
         </p>
       </div>
 
-      <div class="pricing-grid">
+      <!-- Mobile Switcher for Pricing Tiers & Custom Scope Builder -->
+      <div class="mob-seg-bar" role="tablist" aria-label="Select Engagement Tier or Scope Builder">
+        <button type="button" class="mob-seg-btn" data-tier-tab="tier1">$4.5k+ Base</button>
+        <button type="button" class="mob-seg-btn active" data-tier-tab="tier2">★ $9.5k+ Suite</button>
+        <button type="button" class="mob-seg-btn" data-tier-tab="tier3">$18k+ Group</button>
+        <button type="button" class="mob-seg-btn" data-tier-tab="builder">Scope Builder</button>
+      </div>
+
+      <div class="pricing-grid" id="pricing-tiers-grid">
         <!-- Tier 1 -->
-        <div class="price-card">
+        <div class="price-card" data-tier-card="tier1" data-mob-hide="1">
           <span class="price-badge">Tier 01 · Single Entity</span>
           <h3>Operational Foundation</h3>
           <p class="price-desc">Ideal for a single operating company, resort property, showroom, plant, or brokerage replacing fragile spreadsheets with a governed ERP and Power BI suite.</p>
@@ -2910,7 +3576,7 @@ table.m-grid tr.total td {
         </div>
 
         <!-- Tier 2 (Featured) -->
-        <div class="price-card featured">
+        <div class="price-card featured" data-tier-card="tier2">
           <span class="price-badge">Recommended · Most Popular</span>
           <h3>Multi-Entity &amp; AI Operations Suite</h3>
           <p class="price-desc">Complete operational and financial control for multi-branch companies requiring automated workflows, statutory reconciliation, companion field apps, and Ask ISABI AI.</p>
@@ -2931,7 +3597,7 @@ table.m-grid tr.total td {
         </div>
 
         <!-- Tier 3 -->
-        <div class="price-card">
+        <div class="price-card" data-tier-card="tier3" data-mob-hide="1">
           <span class="price-badge">Tier 03 · Group &amp; Holding</span>
           <h3>Enterprise Group Ecosystem</h3>
           <p class="price-desc">For multi-industry holding groups, family offices, and large enterprises deploying dedicated applications across multiple sister companies with group consolidation.</p>
@@ -2952,10 +3618,10 @@ table.m-grid tr.total td {
       </div>
 
       <!-- Interactive Custom Scope & Investment Configurator -->
-      <div class="configurator-card" id="scope-configurator">
+      <div class="configurator-card" id="scope-configurator" data-tier-card="builder" data-mob-hide="1">
         <div class="eyebrow">Interactive Scope &amp; Investment Builder</div>
-        <h3 style="font-size:24px;margin-bottom:6px">Build Your Custom ISABI Architecture &amp; Get an Instant Indicative Range</h3>
-        <p style="color:var(--muted);font-size:14.5px;margin:0">
+        <h3 style="font-size:22px;margin-bottom:6px">Build Your Custom ISABI Architecture &amp; Get an Instant Indicative Range</h3>
+        <p style="color:var(--muted);font-size:14px;margin:0">
           Select your primary industry, organizational scale, and desired modules. Your custom configuration automatically syncs with the WhatsApp and Email consultation portal below.
         </p>
 
@@ -3095,10 +3761,16 @@ table.m-grid tr.total td {
         </p>
       </div>
 
+      <!-- Mobile Switcher for Consultation Portal -->
+      <div class="mob-seg-bar" role="tablist" aria-label="Select Contact Method">
+        <button type="button" class="mob-seg-btn active" data-portal-tab="form">Project Brief Form</button>
+        <button type="button" class="mob-seg-btn" data-portal-tab="direct">Direct WhatsApp &amp; Email</button>
+      </div>
+
       <div class="portal-grid">
-        <div class="portal-form-card">
-          <h3 style="font-size:22px;margin-bottom:6px">Project Brief &amp; Direct Dispatch</h3>
-          <p style="font-size:14px;color:var(--muted);margin:0 0 22px">
+        <div class="portal-form-card" data-portal-panel="form">
+          <h3 style="font-size:21px;margin-bottom:6px">Project Brief &amp; Direct Dispatch</h3>
+          <p style="font-size:13.8px;color:var(--muted);margin:0 0 18px">
             Fill in your details below (your selections from the Scope Configurator are automatically attached) and choose WhatsApp or Email to send your inquiry immediately.
           </p>
 
@@ -3151,37 +3823,37 @@ table.m-grid tr.total td {
 
             <div class="form-field">
               <label for="lead-notes">Operational Goals &amp; Current Challenges</label>
-              <textarea id="lead-notes" rows="4" placeholder="Tell us briefly about your entities, current accounting or Excel setup, and what you want the system to solve..."></textarea>
+              <textarea id="lead-notes" rows="3" placeholder="Tell us briefly about your entities, current accounting or Excel setup, and what you want the system to solve..."></textarea>
             </div>
 
             <div class="portal-dispatch-btns">
-              <button type="button" class="btn btn-wa" id="portal-send-wa" style="padding:14px 18px;font-size:15px">
+              <button type="button" class="btn btn-wa" id="portal-send-wa" style="padding:13px 16px;font-size:14.5px">
                 Send Inquiry on WhatsApp
               </button>
-              <button type="button" class="btn btn-brass" id="portal-send-email" style="padding:14px 18px;font-size:15px">
+              <button type="button" class="btn btn-brass" id="portal-send-email" style="padding:13px 16px;font-size:14.5px">
                 Send Inquiry via Email
               </button>
             </div>
 
-            <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px">
-              <button type="button" class="btn btn-outline" id="portal-copy-brief" style="flex:1;font-size:13px">
-                Copy Formatted Brief to Clipboard
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+              <button type="button" class="btn btn-outline" id="portal-copy-brief" style="flex:1;font-size:12.5px;padding:8px 10px">
+                Copy Formatted Brief
               </button>
-              <button type="button" class="btn btn-outline" id="portal-print-brief" style="flex:1;font-size:13px">
-                Print / Save Architecture Brief (PDF)
+              <button type="button" class="btn btn-outline" id="portal-print-brief" style="flex:1;font-size:12.5px;padding:8px 10px">
+                Print / Save PDF Brief
               </button>
             </div>
           </form>
         </div>
 
-        <div class="portal-direct-card">
+        <div class="portal-direct-card" data-portal-panel="direct" data-mob-hide="1">
           <div>
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="brand-badge" role="img" aria-label="ISABI Systems Badge"><rect width="120" height="120" rx="26" fill="#0B1730"/><g transform="translate(39.52,77.62) scale(0.74)"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>
               <div>
-                <div style="font-size:11.5px;text-transform:uppercase;letter-spacing:0.12em;color:#D9A54A;font-weight:700">Direct Principal Access</div>
-                <h3 style="color:#F4F2EE;font-size:22px">Hussein Bdeir</h3>
-                <div style="font-size:13px;color:#9FB0C7">Founder &amp; Principal Systems Architect · ISABI Systems</div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:#D9A54A;font-weight:700">Direct Principal Access</div>
+                <h3 style="color:#F4F2EE;font-size:21px">Hussein Bdeir</h3>
+                <div style="font-size:12.5px;color:#9FB0C7">Founder &amp; Principal Systems Architect · ISABI Systems</div>
               </div>
             </div>
 
@@ -3203,9 +3875,9 @@ table.m-grid tr.total td {
             </div>
           </div>
 
-          <div style="border-top:1px solid rgba(255,255,255,0.12);border-bottom:3px double #D9A54A;padding:16px 0">
-            <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:6px">What Happens After You Reach Out</div>
-            <ol style="margin:0;padding-left:18px;font-size:13.2px;color:#E9ECF2;line-height:1.55">
+          <div style="border-top:1px solid rgba(255,255,255,0.12);border-bottom:3px double #D9A54A;padding:14px 0">
+            <div style="font-size:11.5px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:5px">What Happens After You Reach Out</div>
+            <ol style="margin:0;padding-left:18px;font-size:12.8px;color:#E9ECF2;line-height:1.5">
               <li><b>30-Minute Discovery Call:</b> We review your entities, current spreadsheets or legacy software, and reporting pain points.</li>
               <li><b>Live Production Walkthrough:</b> See real ISABI systems running across hospitality, trading, manufacturing, real estate, and insurance.</li>
               <li><b>Fixed-Scope Blueprint &amp; Timeline:</b> Receive a clear architectural proposal with exact tables, reports, and investment terms.</li>
@@ -3222,17 +3894,17 @@ table.m-grid tr.total td {
   <div class="wrap">
     <div class="ftr-grid">
       <div class="ftr-col">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;color:#F4F2EE">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;color:#F4F2EE">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="brand-badge" role="img" aria-label="ISABI Systems Badge"><rect width="120" height="120" rx="26" fill="#0B1730"/><g transform="translate(39.52,77.62) scale(0.74)"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>
           <div>
-            <b style="font-family:Archivo,sans-serif;font-size:18px;display:block;letter-spacing:0.04em">ISABI SYSTEMS</b>
+            <b style="font-family:Archivo,sans-serif;font-size:17px;display:block;letter-spacing:0.04em">ISABI SYSTEMS</b>
             <span style="font-size:12px;color:#D9A54A">The Books Close on ISABI</span>
           </div>
         </div>
-        <p style="margin:0 0 14px;color:#9FB0C7;font-size:13.5px">
+        <p style="margin:0 0 12px;color:#9FB0C7;font-size:13px">
           Bespoke Enterprise ERP, Financial Ledgers, Power BI Executive Suites, Companion PWAs, and Native AI Built on the Microsoft Cloud.
         </p>
-        <div style="font-size:13px;color:#F4F2EE">
+        <div style="font-size:12.5px;color:#F4F2EE">
           <b>Direct WhatsApp:</b> <a href="https://wa.me/96170444955" target="_blank" rel="noopener" style="color:#D9A54A">+961 70 444 955</a><br>
           <b>Direct Email:</b> <a href="mailto:hbdeir16@gmail.com" style="color:#D9A54A">hbdeir16@gmail.com</a>
         </div>
@@ -3283,8 +3955,8 @@ table.m-grid tr.total td {
 
 <!-- MOBILE BOTTOM BAR -->
 <nav class="mobile-dock" aria-label="Mobile Quick Actions">
-  <a href="#industries" class="dock-btn">Industries</a>
-  <a href="#sandbox" class="dock-btn">Live ERP</a>
+  <a href="#industries" data-sec-link="industries" class="dock-btn">Industries</a>
+  <a href="#sandbox" data-sec-link="sandbox" class="dock-btn">Live ERP</a>
   <button type="button" class="dock-btn brass" id="mob-ask-btn">Ask ISABI</button>
   <a href="https://wa.me/96170444955?text=Hello%20Hussein%2C%20I%20am%20interested%20in%20ISABI%20Systems." target="_blank" rel="noopener" class="dock-btn wa">WhatsApp</a>
 </nav>
@@ -3324,6 +3996,7 @@ table.m-grid tr.total td {
 
   const WA_NUMBER = '96170444955';
   const EMAIL_ADDR = 'hbdeir16@gmail.com';
+  const SEC_IDS = ['architecture', 'industries', 'sandbox', 'microsoft-ai', 'ingenuity', 'pricing', 'portal'];
 
   const BADGE_MINI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="34" height="34" style="border-radius:7px;flex-shrink:0"><rect width="120" height="120" rx="26" fill="#0B1730"/><g transform="translate(39.52,77.62) scale(0.74)"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>';
   const RAIL_MARK_SVG = '<svg viewBox="-9.5 -78.8 74.66 109.7" height="22"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>';
@@ -3826,7 +4499,7 @@ table.m-grid tr.total td {
         ['Metro Transit · Spare Parts Depot', 'SI-PRT-1411', '62 Days', '$6,250.00'],
         ['4 Smaller Balances (< $2k each)', 'Multiple', '61-74 Days', '$4,850.00']
       ],
-      total: ['Total Audited Overdue (> 60 Days)', '', '', '$42,300.00'],
+      total: ['Total Audited Overdue (> 60 Days)', '$42,300.00'],
       citation: 'Source: Dataverse Receivables Ledger · Verified 100% against Printable SOA (.rdl)'
     },
     {
@@ -3840,7 +4513,7 @@ table.m-grid tr.total td {
         ['Concrete & Manufacturing', 'Batch Ticket (m³), Mix Grade & Silo MT', 'Raw material yield & contractor credit gate'],
         ['Real Estate & Insurance', 'Lease Schedule / Policy & Endorsement', 'NOI yield / Carrier commission bordereaux']
       ],
-      total: ['Deployment Timeframe', '', '3 to 6 Weeks to Live Production'],
+      total: ['Deployment Timeframe', '3 to 6 Weeks to Live Production'],
       citation: 'Architecture: Microsoft Dataverse + Model-Driven Apps + XMLA Power BI + Paginated .RDL'
     },
     {
@@ -3854,7 +4527,7 @@ table.m-grid tr.total td {
         ['03. Variance Engine', 'Power BI & Paginated RDL highlight any discrepancy down to $1', 'Instant root-cause drilldown'],
         ['04. Executive Sign-Off', 'Books close with the double rule once variance equals zero', '100% audit confidence']
       ],
-      total: ['Typical Cutover Variance', '', '$0.00 Unexplained Difference'],
+      total: ['Typical Cutover Variance', '$0.00 Unexplained Difference'],
       citation: 'Proven in live multi-million-dollar trading, manufacturing, and hospitality estates'
     },
     {
@@ -3868,25 +4541,31 @@ table.m-grid tr.total td {
         ['Paginated .RDL Pack', 'Printable PDF/Excel Statement of Accounts, P&L & Aging', 'Included'],
         ['Ask ISABI + Companion PWA', 'Native AI assistant + Offline POS Till or Attendance Kiosk', 'Included']
       ],
-      total: ['Indicative Complete Suite Investment', '', 'From $9,500 + $650/mo'],
+      total: ['Indicative Complete Suite Investment', 'From $9,500 + $650/mo'],
       citation: 'Every engagement is fixed-scope after a 30-minute discovery call with Hussein Bdeir'
     }
   ];
 
   // ---------------- STATE ----------------
   const state = {
+    activeSec: 'architecture',
     activeInd: 'hospitality',
+    indMobTab: 'modules',
     sboxInd: 'holding',
     sboxNav: 'Overview',
     sboxPeriod: 'mtd',
     sboxCurr: 'USD',
     sboxTheme: 'auto',
+    sboxMobTab: 'chart',
     cfgInd: 'Hospitality & Resorts',
     cfgScale: 2,
     cfgScaleLabel: 'Multi-Branch (2 to 4 Entities)',
     cfgScaleAdd: 2500,
     deferredPrompt: null
   };
+
+  let navScrollLockUntil = 0;
+  let scrollTargetId = null;
 
   // ---------------- HELPERS ----------------
   function showToast(msg) {
@@ -3898,24 +4577,193 @@ table.m-grid tr.total td {
     showToast._t = setTimeout(() => { el.hidden = true; }, 3800);
   }
 
-  function fmtMoney(n, sym = '$') {
-    return sym + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  // ---------------- NAVIGATION ACTIVE UNDERLINE & EXACT SECTION SCROLL ----------------
+  function setActiveSection(secId) {
+    const resolved = SEC_IDS.includes(secId) ? secId : 'architecture';
+    state.activeSec = resolved;
+    document.querySelectorAll('[data-sec-link]').forEach(link => {
+      const isMatch = link.dataset.secLink === resolved;
+      link.classList.toggle('active', isMatch);
+      if (isMatch && link.closest('#mobile-sec-nav')) {
+        const nav = document.getElementById('mobile-sec-nav');
+        if (nav) {
+          const targetLeft = link.offsetLeft - (nav.clientWidth / 2) + (link.offsetWidth / 2);
+          nav.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
+        }
+      }
+    });
+  }
+
+  function computeExactTargetScrollY(el) {
+    if (!el) return 0;
+    const hdr = document.getElementById('site-header');
+    const hdrH = hdr ? hdr.offsetHeight : 70;
+    const rectTop = el.getBoundingClientRect().top + window.scrollY;
+    if (el.classList.contains('sec')) {
+      // Align section top border 2px underneath the sticky header bottom border so zero pixels of the previous section show
+      return Math.max(0, Math.round(rectTop - hdrH + 2));
+    }
+    return Math.max(0, Math.round(rectTop - hdrH - 14));
+  }
+
+  function activateMobilePricingTab(targetTier) {
+    document.querySelectorAll('[data-tier-tab]').forEach(b => {
+      b.classList.toggle('active', b.dataset.tierTab === targetTier);
+    });
+    const grid = document.getElementById('pricing-tiers-grid');
+    if (grid) {
+      if (targetTier === 'builder') {
+        grid.setAttribute('data-mob-hide', '1');
+      } else {
+        grid.removeAttribute('data-mob-hide');
+      }
+    }
+    document.querySelectorAll('[data-tier-card]').forEach(card => {
+      if (card.dataset.tierCard === targetTier) {
+        card.removeAttribute('data-mob-hide');
+      } else {
+        card.setAttribute('data-mob-hide', '1');
+      }
+    });
+  }
+
+  function activateMobileIngTab(targetKey) {
+    document.querySelectorAll('[data-ing-tab]').forEach(b => {
+      b.classList.toggle('active', b.dataset.ingTab === targetKey);
+    });
+    document.querySelectorAll('[data-ing-panel]').forEach(panel => {
+      if (panel.dataset.ingPanel === targetKey) {
+        panel.removeAttribute('data-mob-hide');
+      } else {
+        panel.setAttribute('data-mob-hide', '1');
+      }
+    });
+  }
+
+  function activateMobilePortalTab(targetKey) {
+    document.querySelectorAll('[data-portal-tab]').forEach(b => {
+      b.classList.toggle('active', b.dataset.portalTab === targetKey);
+    });
+    document.querySelectorAll('[data-portal-panel]').forEach(panel => {
+      if (panel.dataset.portalPanel === targetKey) {
+        panel.removeAttribute('data-mob-hide');
+      } else {
+        panel.setAttribute('data-mob-hide', '1');
+      }
+    });
+  }
+
+  function scrollToTargetId(rawId, updateHash = true, instant = false) {
+    const cleanId = String(rawId || '').replace(/^#/, '');
+    if (!cleanId || cleanId === 'top') {
+      navScrollLockUntil = Date.now() + 900;
+      scrollTargetId = null;
+      setActiveSection('architecture');
+      if (instant) {
+        window.scrollTo(0, 0);
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      if (updateHash && history.replaceState) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      return;
+    }
+
+    if (cleanId === 'scope-configurator') {
+      activateMobilePricingTab('builder');
+    }
+
+    const targetEl = document.getElementById(cleanId);
+    if (!targetEl) return;
+
+    const mappedSec = cleanId === 'scope-configurator' ? 'pricing' : (SEC_IDS.includes(cleanId) ? cleanId : state.activeSec);
+    setActiveSection(mappedSec);
+
+    scrollTargetId = cleanId;
+    navScrollLockUntil = Date.now() + 950;
+    const exactY = computeExactTargetScrollY(targetEl);
+    if (instant) {
+      window.scrollTo(0, exactY);
+    } else {
+      window.scrollTo({ top: exactY, behavior: 'smooth' });
+    }
+
+    if (updateHash && history.replaceState) {
+      history.replaceState(null, '', '#' + cleanId);
+    }
+
+    // Re-verify exact alignment after smooth scroll settles
+    clearTimeout(scrollToTargetId._verifyTimer);
+    scrollToTargetId._verifyTimer = setTimeout(() => {
+      if (scrollTargetId === cleanId) {
+        const currentTarget = document.getElementById(cleanId);
+        if (currentTarget) {
+          const desiredY = computeExactTargetScrollY(currentTarget);
+          if (Math.abs(window.scrollY - desiredY) > 2 && Math.abs(window.scrollY - desiredY) < 120) {
+            window.scrollTo(0, desiredY);
+          }
+        }
+        scrollTargetId = null;
+      }
+    }, 650);
+  }
+
+  function updateActiveNavOnScroll() {
+    if (Date.now() < navScrollLockUntil) return;
+    const hdr = document.getElementById('site-header');
+    const hdrH = hdr ? hdr.offsetHeight : 70;
+    const probeY = window.scrollY + hdrH + 72;
+
+    // If scrolled near the very bottom of the page, highlight portal
+    if ((window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 40)) {
+      if (state.activeSec !== 'portal') setActiveSection('portal');
+      return;
+    }
+
+    let current = SEC_IDS[0];
+    for (let i = 0; i < SEC_IDS.length; i++) {
+      const id = SEC_IDS[i];
+      const el = document.getElementById(id);
+      if (!el) continue;
+      const top = el.offsetTop;
+      if (probeY >= top) {
+        current = id;
+      }
+    }
+    if (current !== state.activeSec) {
+      setActiveSection(current);
+    }
   }
 
   // ---------------- RENDER INDUSTRY BLUEPRINTS ----------------
+  const IND_SHORT_NAMES = {
+    hospitality: 'Hospitality & Resorts',
+    trading: 'Auto & Truck Trading',
+    manufacturing: 'Concrete & Mfg',
+    realestate: 'Real Estate',
+    insurance: 'Insurance Brokerage',
+    holding: 'Holding Groups',
+    pos: 'Offline POS Till PWA',
+    attendance: 'Attendance Kiosk PWA'
+  };
+
   function renderIndustries() {
     const tabsEl = document.getElementById('ind-tabs');
     const detailEl = document.getElementById('ind-detail');
     if (!tabsEl || !detailEl) return;
 
+    const isMobile = window.innerWidth <= 720;
     tabsEl.innerHTML = INDUSTRIES.map(ind => `
       <button type="button" class="ind-tab ${ind.id === state.activeInd ? 'active' : ''}" role="tab" aria-selected="${ind.id === state.activeInd}" data-ind-id="${ind.id}">
-        <b>${ind.name}</b>
+        <b>${isMobile ? (IND_SHORT_NAMES[ind.id] || ind.name) : ind.name}</b>
         <small>${ind.sub}</small>
       </button>
     `).join('');
 
     const cur = INDUSTRIES.find(x => x.id === state.activeInd) || INDUSTRIES[0];
+    const mTab = state.indMobTab || 'modules';
+
     detailEl.innerHTML = `
       <div class="ind-detail-top">
         <div>
@@ -3923,22 +4771,28 @@ table.m-grid tr.total td {
           <h3>${cur.name}</h3>
           <p class="ind-detail-lead">${cur.lead}</p>
         </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;width:100%">
           <button type="button" class="btn btn-outline" data-load-sandbox="${cur.sandboxKey}">Preview in Live ERP Sandbox</button>
           <button type="button" class="btn btn-brass" data-configure-ind="${cur.cfgName}">Price This Industry System</button>
         </div>
       </div>
 
+      <div class="mob-seg-bar" role="tablist" aria-label="Blueprint Layers">
+        <button type="button" class="mob-seg-btn ${mTab === 'modules' ? 'active' : ''}" data-ind-subtab="modules">Tables (${cur.modules.length})</button>
+        <button type="button" class="mob-seg-btn ${mTab === 'workflows' ? 'active' : ''}" data-ind-subtab="workflows">Workflows (${cur.workflows.length})</button>
+        <button type="button" class="mob-seg-btn ${mTab === 'reports' ? 'active' : ''}" data-ind-subtab="reports">Power BI &amp; RDL (${cur.reports.length})</button>
+      </div>
+
       <div class="ind-cols">
-        <div class="ind-box">
+        <div class="ind-box" data-ind-box="modules" ${mTab !== 'modules' ? 'data-mob-hide="1"' : ''}>
           <h4>Custom Tables &amp; Modules</h4>
           <ul>${cur.modules.map(m => `<li>${m}</li>`).join('')}</ul>
         </div>
-        <div class="ind-box">
+        <div class="ind-box" data-ind-box="workflows" ${mTab !== 'workflows' ? 'data-mob-hide="1"' : ''}>
           <h4>Automated Cloud Workflows</h4>
           <ul>${cur.workflows.map(w => `<li>${w}</li>`).join('')}</ul>
         </div>
-        <div class="ind-box">
+        <div class="ind-box" data-ind-box="reports" ${mTab !== 'reports' ? 'data-mob-hide="1"' : ''}>
           <h4>Power BI &amp; Printable .RDL</h4>
           <ul>${cur.reports.map(r => `<li>${r}</li>`).join('')}</ul>
         </div>
@@ -4013,11 +4867,11 @@ table.m-grid tr.total td {
     if (!barEl || !mockEl) return;
 
     const sboxChoices = [
-      ['holding', 'Group Holding Overview'],
+      ['holding', 'Group Holding'],
       ['hospitality', 'Hospitality & Resorts'],
       ['trading', 'Auto & Truck Trading'],
-      ['manufacturing', 'Concrete & Manufacturing'],
-      ['realestate', 'Real Estate Portfolio'],
+      ['manufacturing', 'Concrete & Mfg'],
+      ['realestate', 'Real Estate'],
       ['insurance', 'Insurance Brokerage']
     ];
 
@@ -4036,8 +4890,10 @@ table.m-grid tr.total td {
       const val = k.fixed ? k.v : (k.v * totalMult).toFixed(1);
       return `
         <div class="kpi ${k.books ? 'books' : ''}">
-          <span class="k">${k.k}</span>
-          <span class="v num">${val}<small>${k.unit}</small></span>
+          <div>
+            <span class="k">${k.k}</span>
+            <span class="v num">${val}<small>${k.unit}</small></span>
+          </div>
           <span class="d ${k.cls || ''}">${k.d}</span>
         </div>
       `;
@@ -4045,7 +4901,7 @@ table.m-grid tr.total td {
 
     const entHtml = d.entities.map(r => {
       const v = (r[1] * totalMult).toFixed(1) + 'k';
-      return `<tr><td><b>${r[0]}</b></td><td class="n">${v}</td><td class="n">${r[2]}</td><td class="mu">${r[3]}</td><td><span class="m-chip ${r[4]}">${r[5]}</span></td></tr>`;
+      return `<tr><td><b>${r[0]}</b></td><td class="n">${v}</td><td class="n">${r[2]}</td><td class="mu hide-xs">${r[3]}</td><td><span class="m-chip ${r[4]}">${r[5]}</span></td></tr>`;
     }).join('');
 
     let totDebit = 0, totCredit = 0;
@@ -4055,26 +4911,33 @@ table.m-grid tr.total td {
       totDebit += deb;
       totCredit += cred;
       return `<tr>
-        <td class="mu">${r[0]}</td>
+        <td class="mu hide-xs">${r[0]}</td>
         <td class="mono">${r[1]}</td>
-        <td>${r[2]}</td>
+        <td class="hide-xs">${r[2]}</td>
         <td>${r[3]}</td>
         <td class="n">${deb ? deb.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}</td>
         <td class="n">${cred ? cred.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}</td>
       </tr>`;
     }).join('');
 
+    const focusChart = state.sboxNav === 'Sales & Revenue' || state.sboxNav === 'Purchases & Stock';
+    const focusEnt = state.sboxNav === 'Business Units' || state.sboxNav === 'Cash & Treasury';
+    const focusAlerts = state.sboxNav === 'Audit Trail';
+    const focusGl = state.sboxNav === 'General Ledger' || state.sboxNav === 'Paginated .RDL';
+
+    const mTab = state.sboxMobTab || 'chart';
+
     mockEl.innerHTML = `
       <aside class="rail">
         <div class="brand">
           ${RAIL_MARK_SVG}
-          <span style="font-family:Archivo,sans-serif;font-weight:800;letter-spacing:0.06em;font-size:16px">ISABI SYSTEMS</span>
+          <span style="font-family:Archivo,sans-serif;font-weight:800;letter-spacing:0.06em;font-size:15px">ISABI SYSTEMS</span>
         </div>
         <nav aria-label="Sandbox ERP Navigation">
           ${navItems.map(nm => `<button type="button" class="nav-item ${state.sboxNav === nm ? 'on' : ''}" data-sbox-nav="${nm}"><span>${nm}</span></button>`).join('')}
           <div class="grp">Governance</div>
-          <button type="button" class="nav-item" data-sbox-nav="Business Units"><span>Business Units</span></button>
-          <button type="button" class="nav-item" data-sbox-nav="Audit Trail"><span>Audit Trail</span></button>
+          <button type="button" class="nav-item ${state.sboxNav === 'Business Units' ? 'on' : ''}" data-sbox-nav="Business Units"><span>Business Units</span></button>
+          <button type="button" class="nav-item ${state.sboxNav === 'Audit Trail' ? 'on' : ''}" data-sbox-nav="Audit Trail"><span>Audit Trail</span></button>
         </nav>
         <div class="me">
           <span class="av">HB</span>
@@ -4107,8 +4970,13 @@ table.m-grid tr.total td {
 
         <section class="kpis">${kpisHtml}</section>
 
-        <section class="row2">
-          <div class="panel">
+        <div class="sbox-mob-tabs" role="tablist" aria-label="Mobile Sandbox Views">
+          <button type="button" class="sbox-mob-tab ${mTab === 'chart' ? 'active' : ''}" data-sbox-mobtab="chart">Chart &amp; Entities</button>
+          <button type="button" class="sbox-mob-tab ${mTab === 'ledger' ? 'active' : ''}" data-sbox-mobtab="ledger">General Ledger &amp; Alerts</button>
+        </div>
+
+        <section class="row2" ${mTab !== 'chart' ? 'data-mob-hide="1"' : ''}>
+          <div class="panel ${focusChart ? 'panel-focus' : ''}">
             <div class="ph">
               <h3>Monthly Revenue Trajectory (${cm.sym} thousands)</h3>
               <div class="legend">
@@ -4123,41 +4991,44 @@ table.m-grid tr.total td {
             </div>
           </div>
 
-          <div class="panel">
+          <div class="panel ${focusEnt ? 'panel-focus' : ''}">
             <div class="ph">
               <h3>Operating Entities &amp; Books Status</h3>
-              <span style="font-size:11.5px;color:var(--m-steel);font-weight:600">${pm.label}</span>
+              <span style="font-size:11px;color:var(--m-steel);font-weight:600">${pm.label}</span>
             </div>
             <table class="m-grid">
               <thead>
-                <tr><th>Entity / Business Unit</th><th class="n">Revenue</th><th class="n">Margin</th><th>Last Sync</th><th>Books</th></tr>
+                <tr><th>Entity / Business Unit</th><th class="n">Revenue</th><th class="n">Margin</th><th class="hide-xs">Last Sync</th><th>Books</th></tr>
               </thead>
               <tbody>${entHtml}</tbody>
             </table>
           </div>
         </section>
 
-        <section class="row3">
-          <div class="panel">
+        <section class="row3" ${mTab !== 'ledger' ? 'data-mob-hide="1"' : ''}>
+          <div class="panel ${focusAlerts ? 'panel-focus' : ''}">
             <div class="ph"><h3>Executive Exceptions &amp; Watchdogs</h3></div>
             <ul class="att">
               ${d.alerts.map(a => `<li class="${a[0]}"><b>${a[1]}</b><span>${a[2]}</span><button type="button" class="att-act" data-sbox-act="${a[1]}">${a[3]}</button></li>`).join('')}
             </ul>
           </div>
 
-          <div class="panel">
+          <div class="panel ${focusGl ? 'panel-focus' : ''}">
             <div class="ph">
               <h3>Audited General Ledger Stream (Double-Entry)</h3>
-              <span style="font-size:11.5px;color:var(--m-muted)">Closed with the ISABI Double Rule</span>
+              <span style="font-size:11px;color:var(--m-muted)">Closed with the ISABI Double Rule</span>
             </div>
             <table class="m-grid">
               <thead>
-                <tr><th>Date</th><th>Voucher</th><th>Business Unit</th><th>Account</th><th class="n">Debit (${cm.sym})</th><th class="n">Credit (${cm.sym})</th></tr>
+                <tr><th class="hide-xs">Date</th><th>Voucher</th><th class="hide-xs">Business Unit</th><th>Account</th><th class="n">Debit (${cm.sym})</th><th class="n">Credit (${cm.sym})</th></tr>
               </thead>
               <tbody>
                 ${jHtml}
                 <tr class="total">
-                  <td colspan="4">Total Audited Batch</td>
+                  <td class="hide-xs"></td>
+                  <td><b>Total</b></td>
+                  <td class="hide-xs"></td>
+                  <td><b>Audited Batch</b></td>
                   <td class="n">${totDebit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td class="n">${totCredit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 </tr>
@@ -4168,20 +5039,25 @@ table.m-grid tr.total td {
       </div>
     `;
 
-    // Bind chart tooltip
+    // Bind chart tooltip (hover + touch tap support)
     const cwrap = document.getElementById('sbox-chart-wrap');
     const tip = document.getElementById('sbox-chart-tip');
     if (cwrap && tip) {
       cwrap.querySelectorAll('.col').forEach(col => {
-        col.addEventListener('mouseenter', () => {
+        const showTip = (clientX) => {
           tip.innerHTML = `<b>${col.dataset.m} · Total ${col.dataset.t}</b><span style="display:block;opacity:0.85;margin-top:2px">${col.dataset.tip}</span>`;
           tip.hidden = false;
-        });
-        col.addEventListener('mousemove', e => {
           const r = cwrap.getBoundingClientRect();
-          const left = Math.min(r.width - 220, Math.max(8, e.clientX - r.left - 80));
+          const relX = (clientX || (r.left + r.width / 2)) - r.left;
+          const left = Math.min(Math.max(8, r.width - 230), Math.max(8, relX - 80));
           tip.style.left = left + 'px';
-          tip.style.top = '12px';
+          tip.style.top = '10px';
+        };
+        col.addEventListener('mouseenter', e => showTip(e.clientX));
+        col.addEventListener('mousemove', e => showTip(e.clientX));
+        col.addEventListener('click', e => {
+          e.stopPropagation();
+          showTip(e.clientX);
         });
         col.addEventListener('mouseleave', () => { tip.hidden = true; });
       });
@@ -4190,14 +5066,22 @@ table.m-grid tr.total td {
 
   // ---------------- ASK ISABI AI SIMULATOR ----------------
   function formatAiMessageHTML(item) {
-    const rowsHtml = item.rows.map(r => `
-      <tr>
-        <td><b>${r[0]}</b></td>
-        <td>${r[1]}</td>
-        <td>${r[2]}</td>
-        <td style="text-align:right">${r[3] || ''}</td>
-      </tr>
-    `).join('');
+    const colCount = item.headers.length;
+    const headersHtml = item.headers.map((h, idx) =>
+      `<th${idx === colCount - 1 ? ' style="text-align:right"' : ''}>${h}</th>`
+    ).join('');
+
+    const rowsHtml = item.rows.map(r => {
+      const cells = r.slice(0, colCount).map((c, idx) => {
+        if (idx === 0) return `<td><b>${c}</b></td>`;
+        if (idx === colCount - 1) return `<td style="text-align:right">${c}</td>`;
+        return `<td>${c}</td>`;
+      }).join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
+
+    const totLabel = item.total[0] || 'Total';
+    const totVal = item.total[item.total.length - 1] || '';
 
     return `
       <div class="ai-msg-user">${item.q}</div>
@@ -4206,23 +5090,20 @@ table.m-grid tr.total td {
         <div class="ai-bot-bubble">
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:4px">ISABI · ${item.title}</div>
           <p>${item.answer}</p>
-          <table class="ai-bot-table">
-            <thead>
-              <tr>
-                <th>${item.headers[0] || ''}</th>
-                <th>${item.headers[1] || ''}</th>
-                <th>${item.headers[2] || ''}</th>
-                <th style="text-align:right">${item.headers[3] || ''}</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-              <tr class="tot">
-                <td colspan="3">${item.total[0]}</td>
-                <td style="text-align:right">${item.total[3] || item.total[2] || ''}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="ai-bot-table-wrap">
+            <table class="ai-bot-table">
+              <thead>
+                <tr>${headersHtml}</tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+                <tr class="tot">
+                  <td colspan="${Math.max(1, colCount - 1)}">${totLabel}</td>
+                  <td style="text-align:right">${totVal}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <div class="ai-bot-meta">
             <span>${item.citation}</span>
             <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I tested Ask ISABI on your website (' + item.title + ') and would like to discuss building this for our company.')}" target="_blank" rel="noopener" style="color:#D9A54A;font-weight:700">Discuss on WhatsApp</a>
@@ -4254,7 +5135,7 @@ table.m-grid tr.total td {
         ['03. Power BI & .RDL', 'XMLA semantic models & printable Statement of Accounts', 'Week 3 to 5', '100% Reconciled'],
         ['04. Ask ISABI AI', 'Native AI wired to your live ledger and operational tables', 'Week 5 to 6', 'Production Go-Live']
       ],
-      total: ['Indicative Investment Range', '', '', '$4,500 to $18,000+'],
+      total: ['Indicative Investment Range', '$4,500 to $18,000+'],
       citation: 'Direct Principal Engineering by Hussein Bdeir · Zero Off-the-Shelf Compromises'
     };
   }
@@ -4290,7 +5171,7 @@ table.m-grid tr.total td {
       drawerThread.innerHTML = formatAiMessageHTML(resp);
     }
     const inp = document.getElementById('ai-drawer-input');
-    if (inp) setTimeout(() => inp.focus(), 80);
+    if (inp && window.innerWidth > 720) setTimeout(() => inp.focus(), 80);
   }
 
   // ---------------- ROI CALCULATOR ----------------
@@ -4364,7 +5245,6 @@ table.m-grid tr.total td {
     const maxW = minW + 2;
     weeksEl.textContent = `${minW} to ${maxW} Weeks`;
 
-    // Sync with contact portal industry select
     const indSel = document.getElementById('lead-industry');
     if (indSel) {
       Array.from(indSel.options).forEach(opt => {
@@ -4415,7 +5295,7 @@ table.m-grid tr.total td {
     try { localStorage.setItem('isabi.theme', t); } catch (e) {}
     const btn = document.getElementById('theme-toggle-btn');
     if (btn) {
-      btn.textContent = t === 'light' ? 'Dark Ink' : 'Light Paper';
+      btn.textContent = t === 'light' ? 'Dark' : 'Light';
     }
   }
 
@@ -4430,6 +5310,37 @@ table.m-grid tr.total td {
     updateRoi();
     updateConfigurator();
 
+    // Handle initial hash on page load immediately (zero previous-section bleed)
+    if (window.location.hash && window.location.hash.length > 1) {
+      const initId = window.location.hash.slice(1);
+      scrollToTargetId(initId, false, true);
+      window.addEventListener('load', () => scrollToTargetId(initId, false, true), { once: true });
+    } else {
+      updateActiveNavOnScroll();
+    }
+
+    window.addEventListener('hashchange', () => {
+      if (window.location.hash && window.location.hash.length > 1) {
+        scrollToTargetId(window.location.hash.slice(1), false, false);
+      }
+    });
+
+    // Scroll spy listener
+    let scrollTicking = false;
+    window.addEventListener('scroll', () => {
+      if (!scrollTicking) {
+        window.requestAnimationFrame(() => {
+          updateActiveNavOnScroll();
+          scrollTicking = false;
+        });
+        scrollTicking = true;
+      }
+    }, { passive: true });
+
+    window.addEventListener('resize', () => {
+      renderIndustries();
+    }, { passive: true });
+
     // Theme toggle
     document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
       const cur = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -4438,29 +5349,99 @@ table.m-grid tr.total td {
 
     // Global delegated clicks
     document.addEventListener('click', e => {
+      // 1. Footer / Quick Jump to a specific Industry Blueprint
+      const gotoInd = e.target.closest('[data-goto-ind]');
+      if (gotoInd) {
+        e.preventDefault();
+        state.activeInd = gotoInd.dataset.gotoInd;
+        renderIndustries();
+        scrollToTargetId('industries');
+        return;
+      }
+
+      // 2. Any hash anchor link (<a href="#...">) -> exact section scroll + immediate underline update
+      const hashLink = e.target.closest('a[href^="#"]');
+      if (hashLink && !hashLink.id?.includes('ftr-install-link')) {
+        const href = hashLink.getAttribute('href');
+        if (href && href.startsWith('#')) {
+          e.preventDefault();
+          scrollToTargetId(href.slice(1));
+          return;
+        }
+      }
+
+      // 3. Mobile Section 1 Contrast Card Switcher
+      const archTab = e.target.closest('[data-arch-tab]');
+      if (archTab) {
+        const targetKey = archTab.dataset.archTab;
+        archTab.parentElement.querySelectorAll('[data-arch-tab]').forEach(b => b.classList.toggle('active', b === archTab));
+        document.querySelectorAll('[data-arch-card]').forEach(card => {
+          if (card.dataset.archCard === targetKey) {
+            card.removeAttribute('data-mob-hide');
+          } else {
+            card.setAttribute('data-mob-hide', '1');
+          }
+        });
+        return;
+      }
+
+      // 4. Mobile Section 5 Ingenuity Switcher (Matrix vs ROI)
+      const ingTab = e.target.closest('[data-ing-tab]');
+      if (ingTab) {
+        activateMobileIngTab(ingTab.dataset.ingTab);
+        return;
+      }
+
+      // 5. Mobile Section 6 Pricing Tier & Builder Switcher
+      const tierTab = e.target.closest('[data-tier-tab]');
+      if (tierTab) {
+        activateMobilePricingTab(tierTab.dataset.tierTab);
+        return;
+      }
+
+      // 6. Mobile Section 7 Portal Switcher (Brief Form vs Direct Channels)
+      const portalTab = e.target.closest('[data-portal-tab]');
+      if (portalTab) {
+        activateMobilePortalTab(portalTab.dataset.portalTab);
+        return;
+      }
+
+      // 5. Industry Blueprint Selector Tab
       const indBtn = e.target.closest('[data-ind-id]');
       if (indBtn) {
         state.activeInd = indBtn.dataset.indId;
         renderIndustries();
+        if (window.innerWidth <= 720) {
+          const det = document.getElementById('ind-detail');
+          if (det) {
+            const r = det.getBoundingClientRect();
+            if (r.top > window.innerHeight * 0.7 || r.top < 60) {
+              scrollToTargetId('ind-detail', false);
+            }
+          }
+        }
         return;
       }
 
-      const gotoInd = e.target.closest('[data-goto-ind]');
-      if (gotoInd) {
-        state.activeInd = gotoInd.dataset.gotoInd;
+      // 6. Mobile Industry Detail Sub-Tab (Tables | Workflows | Power BI & RDL)
+      const indSubTab = e.target.closest('[data-ind-subtab]');
+      if (indSubTab) {
+        state.indMobTab = indSubTab.dataset.indSubtab;
         renderIndustries();
         return;
       }
 
+      // 7. Load Industry in Live ERP Sandbox
       const loadSbox = e.target.closest('[data-load-sandbox]');
       if (loadSbox) {
         state.sboxInd = loadSbox.dataset.loadSandbox;
         renderSandbox();
-        document.getElementById('sandbox')?.scrollIntoView({ behavior: 'smooth' });
+        scrollToTargetId('sandbox');
         showToast('Loaded ' + state.sboxInd.toUpperCase() + ' environment in Live ERP Sandbox');
         return;
       }
 
+      // 8. Configure Industry Scope & Price
       const cfgIndJump = e.target.closest('[data-configure-ind]');
       if (cfgIndJump) {
         state.cfgInd = cfgIndJump.dataset.configureInd;
@@ -4468,10 +5449,11 @@ table.m-grid tr.total td {
           b.classList.toggle('active', b.dataset.cfgInd === state.cfgInd);
         });
         updateConfigurator();
-        document.getElementById('scope-configurator')?.scrollIntoView({ behavior: 'smooth' });
+        scrollToTargetId('scope-configurator');
         return;
       }
 
+      // 9. Sandbox Industry Switcher
       const sboxIndBtn = e.target.closest('[data-sbox-ind]');
       if (sboxIndBtn) {
         state.sboxInd = sboxIndBtn.dataset.sboxInd;
@@ -4479,11 +5461,25 @@ table.m-grid tr.total td {
         return;
       }
 
+      // 10. Sandbox Left-Rail Module Navigation
       const sboxNavBtn = e.target.closest('[data-sbox-nav]');
       if (sboxNavBtn) {
         state.sboxNav = sboxNavBtn.dataset.sboxNav;
+        if (state.sboxNav === 'General Ledger' || state.sboxNav === 'Audit Trail' || state.sboxNav === 'Paginated .RDL') {
+          state.sboxMobTab = 'ledger';
+        } else {
+          state.sboxMobTab = 'chart';
+        }
         renderSandbox();
-        showToast('Switched ERP module view to: ' + state.sboxNav);
+        showToast('Viewing ERP module: ' + state.sboxNav);
+        return;
+      }
+
+      // 11. Mobile Sandbox View Switcher (Chart & Entities | General Ledger & Alerts)
+      const sboxMobTabBtn = e.target.closest('[data-sbox-mobtab]');
+      if (sboxMobTabBtn) {
+        state.sboxMobTab = sboxMobTabBtn.dataset.sboxMobtab;
+        renderSandbox();
         return;
       }
 
@@ -4521,8 +5517,10 @@ table.m-grid tr.total td {
         const tier = tierBtn.dataset.selectTier;
         const bSel = document.getElementById('lead-budget');
         if (bSel) bSel.value = tier;
-        document.getElementById('portal')?.scrollIntoView({ behavior: 'smooth' });
-        document.getElementById('lead-name')?.focus();
+        scrollToTargetId('portal');
+        if (window.innerWidth > 720) {
+          setTimeout(() => document.getElementById('lead-name')?.focus(), 500);
+        }
         showToast('Selected ' + tier + '. Complete your details below to connect with Hussein.');
         return;
       }
@@ -4596,8 +5594,10 @@ table.m-grid tr.total td {
       if (notesEl && cfg && !notesEl.value.trim()) {
         notesEl.value = `Configured Scope: ${cfg.industry} (${cfg.scale}). Modules: ${cfg.modules.join(', ')}. Indicative Range: ${cfg.range}.`;
       }
-      document.getElementById('portal')?.scrollIntoView({ behavior: 'smooth' });
-      document.getElementById('lead-name')?.focus();
+      scrollToTargetId('portal');
+      if (window.innerWidth > 720) {
+        setTimeout(() => document.getElementById('lead-name')?.focus(), 500);
+      }
       showToast('Scope loaded into Consultation Portal');
     });
 
@@ -4658,9 +5658,11 @@ table.m-grid tr.total td {
       triggerInstall();
     });
 
-    // Register Service Worker
+    // Register Service Worker with immediate update check
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
+        reg.update().catch(() => {});
+      }).catch(() => {});
     }
   }
 
