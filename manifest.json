@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "ISABI Systems | Bespoke Enterprise ERP & Native AI",
+  "short_name": "ISABI Systems",
+  "description": "Custom Enterprise ERP, Financial Ledgers, Power BI Executive Suites, and Native AI Systems Built on the Microsoft Cloud.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B1730",
+  "theme_color": "#0B1730",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
