@@ -10,7 +10,7 @@ import urllib.request
 
 EDGE = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 URL = 'file:///C:/Users/HusseinBdeir/bhfirms/isabi/index.html'
-ART_DIR = r'C:\Users\HusseinBdeir\.gemini\antigravity\brain\3ff9f78f-157a-4a92-96b6-3de1d96b436e'
+ART_DIR = r'C:\Users\HusseinBdeir\.gemini\antigravity\brain\3d084823-2e95-4be3-94c1-02b9b86cdca8'
 
 
 def run_dom_and_screenshots():
@@ -44,7 +44,7 @@ def run_dom_and_screenshots():
         if failed:
             sys.exit(1)
 
-        # 2. Create a temporary test harness HTML wrapper or inject diagnostic badge via URL hash to verify geometry on Desktop & Mobile
+        # 2. Create a temporary test harness HTML wrapper to verify geometry on Desktop & Mobile
         diag_html = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '_diag_test.html')
         with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'index.html'), 'r', encoding='utf-8') as f:
             base_html = f.read()
@@ -67,14 +67,14 @@ document.addEventListener('DOMContentLoaded', function() {
     var comp = document.querySelector('.comp-table').getBoundingClientRect();
     var ctaEl = document.querySelector('.hdr-actions .btn-brass');
     var ctaBtn = ctaEl ? ctaEl.getBoundingClientRect() : { right: 0 };
+    var portalCard = document.querySelector('.portal-form-card').getBoundingClientRect();
+    var leadName = document.getElementById('lead-name').getBoundingClientRect();
+    var leadCompany = document.getElementById('lead-company').getBoundingClientRect();
+    var leadIndustry = document.getElementById('lead-industry').getBoundingClientRect();
+    var leadBudget = document.getElementById('lead-budget').getBoundingClientRect();
     var activeMain = Array.from(document.querySelectorAll('#main-nav a.active')).map(function(a){ return a.getAttribute('href'); });
     var activeMob = Array.from(document.querySelectorAll('#mobile-sec-nav a.active')).map(function(a){ return a.getAttribute('href'); });
     var activeDock = Array.from(document.querySelectorAll('.mobile-dock a.active')).map(function(a){ return a.getAttribute('href'); });
-    var secHeights = {};
-    ['architecture','industries','sandbox','ai-platform','ingenuity','pricing','portal'].forEach(function(id) {
-      var el = document.getElementById(id);
-      if (el) secHeights[id] = Math.round(el.getBoundingClientRect().height);
-    });
     var effW = window.innerWidth < 600 ? 390 : window.innerWidth;
     var overflows = [];
     if (effW === 390) {
@@ -86,6 +86,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       });
     }
+    var cardOverflows = [];
+    document.querySelectorAll('.portal-form-card, .portal-direct-card, .configurator-card, .price-card, .roi-box, .hero-ledger-card, .ind-detail').forEach(function(card) {
+      var cr = card.getBoundingClientRect();
+      if (cr.width === 0) return;
+      card.querySelectorAll('*').forEach(function(child) {
+        var r = child.getBoundingClientRect();
+        if (r.width > 0 && (r.right > cr.right + 1 || r.left < cr.left - 1)) {
+          cardOverflows.push((child.tagName + '#' + (child.id || '') + '.' + (child.className || '')) + ' (' + Math.round(r.right) + ' > ' + Math.round(cr.right) + ')');
+        }
+      });
+    });
     var out = {
       vw: effW,
       vh: window.innerHeight,
@@ -99,11 +110,17 @@ document.addEventListener('DOMContentLoaded', function() {
       mockWidth: Math.round(mock.width),
       compWidth: Math.round(comp.width),
       ctaRight: Math.round(ctaBtn.right),
+      portalCardRight: Math.round(portalCard.right),
+      leadNameW: Math.round(leadName.width),
+      leadCompanyW: Math.round(leadCompany.width),
+      leadIndustryW: Math.round(leadIndustry.width),
+      leadBudgetW: Math.round(leadBudget.width),
+      leadBudgetRight: Math.round(leadBudget.right),
       activeMain: activeMain,
       activeMob: activeMob,
       activeDock: activeDock,
-      secHeights: secHeights,
-      overflows: overflows.slice(0, 12)
+      overflows: overflows.slice(0, 12),
+      cardOverflows: cardOverflows.slice(0, 12)
     };
     pre.textContent = JSON.stringify(out);
   } catch (err) {
@@ -118,14 +135,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
         diag_url = 'file:///' + diag_html.replace('\\', '/')
 
-        # Run Desktop test (1440x900) at #industries
+        # Run Desktop test (1366x768) at #industries
         res_desk = subprocess.run(
-            [EDGE, '--headless=new', f'--user-data-dir={ud}', '--window-size=1440,900', '--dump-dom', diag_url + '#industries'],
+            [EDGE, '--headless=new', f'--user-data-dir={ud}', '--window-size=1366,768', '--dump-dom', diag_url + '#industries'],
             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=25
         )
         m_desk = res_desk.stdout.split('<pre id="diag-json">')[1].split('</pre>')[0]
         d_desk = json.loads(m_desk)
-        print('[DESK 1440x900]', json.dumps(d_desk))
+        print('[DESK 1366x768]', json.dumps(d_desk))
 
         # Run Mobile test (390x844) at #industries
         res_mob = subprocess.run(
@@ -145,24 +162,42 @@ document.addEventListener('DOMContentLoaded', function() {
         assert abs(d_desk['indTop'] - d_desk['hdrBottom']) <= 4, f"Section top not aligned to header bottom! indTop={d_desk['indTop']}, hdrBottom={d_desk['hdrBottom']}"
         assert d_desk['ctaRight'] <= d_desk['vw'], f"Header CTA clipped! ctaRight={d_desk['ctaRight']} > vw={d_desk['vw']}"
         assert d_desk['scrollW'] <= d_desk['vw'], f"Desktop horizontal overflow! scrollW={d_desk['scrollW']} > vw={d_desk['vw']}"
+        assert abs(d_desk['leadIndustryW'] - d_desk['leadNameW']) <= 1, f"lead-industry width ({d_desk['leadIndustryW']}) != lead-name width ({d_desk['leadNameW']})"
+        assert abs(d_desk['leadBudgetW'] - d_desk['leadCompanyW']) <= 1, f"lead-budget width ({d_desk['leadBudgetW']}) != lead-company width ({d_desk['leadCompanyW']})"
+        assert d_desk['leadBudgetRight'] <= d_desk['portalCardRight'] - 24, f"lead-budget overflows portal card! {d_desk['leadBudgetRight']} vs {d_desk['portalCardRight']}"
+        assert d_desk['cardOverflows'] == [], f"Desktop card overflows detected: {d_desk['cardOverflows']}"
 
         assert d_mob['scrollW'] <= d_mob['vw'], f"Mobile horizontal overflow! scrollW={d_mob['scrollW']} > vw={d_mob['vw']}"
         assert d_mob['mockWidth'] <= d_mob['vw'], f"Mobile sandbox .mock overflows! mockWidth={d_mob['mockWidth']} > vw={d_mob['vw']}"
         assert d_mob['compWidth'] <= d_mob['vw'], f"Mobile .comp-table overflows! compWidth={d_mob['compWidth']} > vw={d_mob['vw']}"
         assert d_mob['activeMob'] == ['#industries'], f"Mobile section nav active mismatch: {d_mob['activeMob']}"
         assert d_mob['activeDock'] == ['#industries'], f"Mobile bottom dock active mismatch: {d_mob['activeDock']}"
+        assert d_mob['cardOverflows'] == [], f"Mobile card overflows detected: {d_mob['cardOverflows']}"
 
-        # 3. Capture fresh screenshots
-        shot_desk_ind = os.path.join(ART_DIR, 'isabi_desk_industries_fixed.png')
-        shot_mob_hero = os.path.join(ART_DIR, 'isabi_mob_hero_fixed.png')
-        shot_mob_ind = os.path.join(ART_DIR, 'isabi_mob_industries_fixed.png')
-        shot_mob_sbox = os.path.join(ART_DIR, 'isabi_mob_sandbox_fixed.png')
-
-        subprocess.run([EDGE, '--headless=new', f'--user-data-dir={ud}', '--window-size=1440,900', f'--screenshot={shot_desk_ind}', URL + '#industries'], timeout=25)
-        subprocess.run([EDGE, '--headless=new', f'--user-data-dir={ud}', '--window-size=390,844', f'--screenshot={shot_mob_hero}', URL], timeout=25)
-        subprocess.run([EDGE, '--headless=new', f'--user-data-dir={ud}', '--window-size=390,844', f'--screenshot={shot_mob_ind}', URL + '#industries'], timeout=25)
-        subprocess.run([EDGE, '--headless=new', f'--user-data-dir={ud}', '--window-size=390,844', f'--screenshot={shot_mob_sbox}', URL + '#sandbox'], timeout=25)
-        print('ALL GEOMETRY & ACTIVE-NAV ASSERTIONS PASSED + SCREENSHOTS SAVED.')
+        # 3. Capture fresh screenshot of #portal at 1366x768
+        os.makedirs(ART_DIR, exist_ok=True)
+        shot_desk_portal = os.path.join(ART_DIR, 'isabi_desk_portal_fixed.png')
+        shot_html = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '_shot_portal.html')
+        shot_script = """
+<script>
+window.addEventListener('load', function() {
+  var p = document.getElementById('portal');
+  var h = document.querySelector('.site-header');
+  if (p && h) {
+    var offset = p.offsetTop - h.offsetHeight;
+    document.querySelector('main').style.marginTop = (-offset) + 'px';
+    window.scrollTo(0, 0);
+  }
+});
+</script>
+"""
+        with open(shot_html, 'w', encoding='utf-8') as f:
+            f.write(base_html.replace('</body>', shot_script + '</body>'))
+        shot_url = 'file:///' + shot_html.replace('\\', '/')
+        subprocess.run([EDGE, '--headless=new', '--disable-gpu', f'--user-data-dir={ud}', '--window-size=1366,768', f'--screenshot={shot_desk_portal}', shot_url], timeout=25)
+        if os.path.exists(shot_html):
+            os.remove(shot_html)
+        print('ALL GEOMETRY & ACTIVE-NAV ASSERTIONS PASSED + PORTAL SCREENSHOT SAVED.')
     finally:
         shutil.rmtree(ud, ignore_errors=True)
 

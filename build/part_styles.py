@@ -2158,13 +2158,18 @@ table.m-grid tr.total td {
   border-radius: 10px;
   padding: 28px;
   box-shadow: var(--shadow-md);
+  overflow: hidden;
 }
 
 .form-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 14px;
+}
+
+.form-row .form-field {
+  margin-bottom: 0;
 }
 
 .form-field {
@@ -2172,6 +2177,7 @@ table.m-grid tr.total td {
   flex-direction: column;
   gap: 5px;
   margin-bottom: 14px;
+  min-width: 0;
 }
 
 .form-field label {
@@ -2181,13 +2187,17 @@ table.m-grid tr.total td {
 }
 
 .form-field input, .form-field select, .form-field textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   background: var(--bg);
   border: 1px solid var(--line-strong);
   border-radius: 6px;
   padding: 10px 13px;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--ink);
   outline: none;
+  text-overflow: ellipsis;
 }
 
 .form-field input:focus, .form-field select:focus, .form-field textarea:focus {
@@ -2197,7 +2207,7 @@ table.m-grid tr.total td {
 
 .portal-dispatch-btns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   margin-top: 14px;
 }

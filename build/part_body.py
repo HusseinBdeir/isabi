@@ -793,21 +793,21 @@ BODY = f"""
                 <label for="lead-industry">Industry Vertical</label>
                 <select id="lead-industry">
                   <option value="Hospitality & Resorts">Hospitality, Resorts &amp; Beach Clubs</option>
-                  <option value="Automotive & Heavy Equipment Trading">Automotive, Heavy Trucks &amp; Parts Trading</option>
+                  <option value="Automotive & Heavy Equipment Trading">Automotive &amp; Heavy Truck Trading</option>
                   <option value="Concrete, Construction & Manufacturing">Concrete, Construction &amp; Manufacturing</option>
                   <option value="Real Estate & Property Portfolio">Real Estate &amp; Property Management</option>
                   <option value="Insurance Brokerage">Insurance Brokerage &amp; Underwriting</option>
-                  <option value="Multi-Entity Holding Group">Multi-Entity Holding Group / Family Office</option>
-                  <option value="Retail, Distribution & Other">Retail, Distribution or Custom Operations</option>
+                  <option value="Multi-Entity Holding Group">Multi-Entity Holding Group</option>
+                  <option value="Retail, Distribution & Other">Retail, Distribution &amp; Custom</option>
                 </select>
               </div>
               <div class="form-field">
                 <label for="lead-budget">Target Engagement Tier</label>
                 <select id="lead-budget">
-                  <option value="Multi-Entity & AI Operations Suite ($9,500+)">Multi-Entity &amp; AI Operations Suite ($9,500+)</option>
+                  <option value="Multi-Entity & AI Operations Suite ($9,500+)">Multi-Entity &amp; AI Suite ($9,500+)</option>
                   <option value="Operational Foundation ($4,500+)">Operational Foundation ($4,500+)</option>
-                  <option value="Enterprise Group Ecosystem ($18,000+ Custom)">Enterprise Group Ecosystem ($18,000+ Custom)</option>
-                  <option value="Need Pricing Guidance / Custom Quote">Need Pricing Guidance / Custom Quote</option>
+                  <option value="Enterprise Group Ecosystem ($18,000+ Custom)">Enterprise Group ($18,000+ Custom)</option>
+                  <option value="Need Pricing Guidance / Custom Quote">Custom Quote / Pricing Guidance</option>
                 </select>
               </div>
             </div>
