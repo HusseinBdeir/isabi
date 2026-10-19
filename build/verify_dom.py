@@ -34,6 +34,12 @@ def run_dom_and_screenshots():
             ('Mobile Section Nav Present', 'id="mobile-sec-nav"'),
             ('Mobile Segmented Bar Present', 'class="mob-seg-bar"'),
             ('Hash #industries activates Industries nav link', '<a href="#industries" data-sec-link="industries" class="active">Industries</a>'),
+            ('FAQ section rendered', 'id="faq"'),
+            ('FAQ JSON-LD present', '"@type": "FAQPage"'),
+            ('Organization JSON-LD present', '"@type": "ProfessionalService"'),
+            ('Open Graph image tag', 'property="og:image"'),
+            ('Dynamic sandbox period label', '(MTD)</option>'),
+            ('Scroll reveal activated', '<html lang="en" data-theme="dark" class="js-io">'),
         ]
         failed = 0
         for name, needle in checks:

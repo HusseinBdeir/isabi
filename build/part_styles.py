@@ -2985,6 +2985,163 @@ table.m-grid tr.total td {
   }
 }
 
+/* ---------- Skip link & focus ring ---------- */
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  z-index: 1000;
+  background: var(--brass);
+  color: var(--brass-ink);
+  font-weight: 700;
+  padding: 10px 14px;
+  border-radius: 8px;
+  transition: top 0.15s;
+}
+.skip-link:focus {
+  top: 12px;
+}
+:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+.main-nav a:focus-visible, .btn:focus-visible {
+  outline-offset: 1px;
+}
+
+/* ---------- Scroll reveal (only when JS + IntersectionObserver are present) ---------- */
+html.js-io .reveal:not(.in) {
+  opacity: 0;
+  transform: translateY(16px);
+}
+html.js-io .reveal.in:not(.done) {
+  transition: opacity 0.55s ease, transform 0.55s ease;
+}
+html.js-io .reveal.in:not(.done):nth-child(2) { transition-delay: 0.07s; }
+html.js-io .reveal.in:not(.done):nth-child(3) { transition-delay: 0.14s; }
+html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
+@media (prefers-reduced-motion: reduce) {
+  html.js-io .reveal:not(.in) {
+    opacity: 1;
+    transform: none;
+  }
+  html.js-io .reveal.in:not(.done) {
+    transition: none;
+  }
+}
+
+/* ---------- FAQ ---------- */
+.faq-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  align-items: start;
+}
+.faq-item {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.faq-item[open] {
+  border-color: var(--brass-border);
+  box-shadow: var(--shadow-sm);
+}
+.faq-item summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--ink);
+  line-height: 1.35;
+}
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.faq-item summary:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+:root[data-theme="light"] .faq-item summary:hover {
+  background: rgba(15, 30, 56, 0.03);
+}
+.faq-n {
+  font-family: "Archivo", sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--brass);
+  flex-shrink: 0;
+}
+.faq-item summary > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.faq-chev {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.2s;
+  margin-right: 4px;
+}
+.faq-item[open] .faq-chev {
+  transform: rotate(225deg);
+  border-color: var(--brass);
+}
+.faq-a {
+  padding: 0 18px 18px 44px;
+}
+.faq-a p {
+  margin: 0;
+  font-size: 14.2px;
+  color: var(--muted);
+  line-height: 1.6;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.faq-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 26px;
+  padding-top: 20px;
+  border-top: 3px double var(--brass);
+}
+.faq-foot span {
+  font-weight: 700;
+  color: var(--ink);
+  margin-right: auto;
+}
+@media (max-width: 1080px) {
+  .faq-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 720px) {
+  .faq-item summary {
+    padding: 14px 14px;
+    font-size: 14.2px;
+  }
+  .faq-a {
+    padding: 0 14px 14px 14px;
+  }
+  .faq-foot span {
+    width: 100%;
+    margin-right: 0;
+  }
+  .faq-foot .btn {
+    flex: 1;
+  }
+}
+
 @media print {
   .site-header, .mobile-dock, .drawer-backdrop, .sandbox-controls, .sbox-ind-bar {
     display: none !important;
@@ -2996,6 +3153,13 @@ table.m-grid tr.total td {
   .sec {
     padding: 28px 0 !important;
     page-break-inside: avoid;
+  }
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .faq-item {
+    break-inside: avoid;
   }
 }
 """

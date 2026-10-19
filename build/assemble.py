@@ -6,6 +6,7 @@ import sys
 from part_styles import CSS
 from part_body import BODY
 from part_script import JS
+from part_faq import FAQ_JSONLD
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_HTML = os.path.join(ROOT, 'index.html')
@@ -15,8 +16,26 @@ HEAD = """<!DOCTYPE html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>ISABI Systems | Bespoke Enterprise ERP, Power BI &amp; Native AI</title>
-  <meta name="description" content="ISABI Systems engineers customized enterprise ERP applications, financial ledgers, Power BI executive suites, offline PWAs, and native AI assistants on the Microsoft Cloud.">
+  <title>ISABI Systems | Custom ERP, Power BI and Native AI on the Microsoft Cloud</title>
+  <meta name="description" content="ISABI Systems designs custom ERP applications, financial ledgers, Power BI reporting, offline field apps, and the Ask ISABI assistant on the Microsoft Cloud, built around the way your industry operates.">
+  <meta name="author" content="Hussein Bdeir">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="color-scheme" content="dark light">
+  <link rel="canonical" href="https://husseinbdeir.github.io/isabi/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="ISABI Systems">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:url" content="https://husseinbdeir.github.io/isabi/">
+  <meta property="og:title" content="ISABI Systems | Custom ERP, Power BI and Native AI on the Microsoft Cloud">
+  <meta property="og:description" content="The Books Close on ISABI. Custom ERP, financial ledgers, Power BI reporting, offline field apps, and the Ask ISABI assistant, built around your industry and delivered in 3 to 6 weeks.">
+  <meta property="og:image" content="https://husseinbdeir.github.io/isabi/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="ISABI Systems. The Books Close on ISABI.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="ISABI Systems | Custom ERP, Power BI and Native AI on the Microsoft Cloud">
+  <meta name="twitter:description" content="Custom ERP, financial ledgers, Power BI reporting, offline field apps, and the Ask ISABI assistant, built around your industry.">
+  <meta name="twitter:image" content="https://husseinbdeir.github.io/isabi/og-image.png">
   <meta name="theme-color" content="#0B1730">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -36,7 +55,31 @@ HEAD = """<!DOCTYPE html>
       } catch (e) {}
     })();
   </script>
+  <script type="application/ld+json">__ORG_JSONLD__</script>
+  <script type="application/ld+json">__FAQ_JSONLD__</script>
 """
+
+import json as _json
+ORG_JSONLD = _json.dumps({
+    "@context": "https://schema.org",
+    "@type": "ProfessionalService",
+    "@id": "https://husseinbdeir.github.io/isabi/#org",
+    "name": "ISABI Systems",
+    "url": "https://husseinbdeir.github.io/isabi/",
+    "logo": "https://husseinbdeir.github.io/isabi/icon-512.png",
+    "image": "https://husseinbdeir.github.io/isabi/og-image.png",
+    "slogan": "The Books Close on ISABI",
+    "description": "Custom ERP applications, financial ledgers, Power BI reporting, offline field apps, and the Ask ISABI assistant on the Microsoft Cloud.",
+    "email": "hbdeir16@gmail.com",
+    "telephone": "+96170444955",
+    "founder": {"@type": "Person", "name": "Hussein Bdeir", "jobTitle": "Founder and Principal Systems Architect"},
+    "areaServed": ["Lebanon", "Middle East", "Worldwide"],
+    "address": {"@type": "PostalAddress", "addressCountry": "LB"},
+    "knowsAbout": ["Enterprise Resource Planning", "Microsoft Dataverse", "Power BI", "Double-Entry Accounting", "Progressive Web Apps", "AI Assistants"],
+    "contactPoint": [{"@type": "ContactPoint", "contactType": "sales", "telephone": "+96170444955", "email": "hbdeir16@gmail.com", "availableLanguage": ["en"]}],
+    "priceRange": "$4,500 to $18,000+"
+}, ensure_ascii=False)
+HEAD = HEAD.replace("__ORG_JSONLD__", ORG_JSONLD).replace("__FAQ_JSONLD__", FAQ_JSONLD)
 
 def main():
     full_html = f"{HEAD}<style>{CSS}</style>\n</head>\n<body>\n{BODY}\n<script>{JS}</script>\n</body>\n</html>\n"
@@ -67,6 +110,9 @@ def main():
         import shutil
         shutil.copy2(OUT_HTML, os.path.join(mirror_dir, 'index.html'))
         shutil.copy2(os.path.join(ROOT, 'sw.js'), os.path.join(mirror_dir, 'sw.js'))
+        og_png = os.path.join(ROOT, 'og-image.png')
+        if os.path.exists(og_png):
+            shutil.copy2(og_png, os.path.join(mirror_dir, 'og-image.png'))
 
     print(f"OK: Generated {OUT_HTML} ({len(full_html):,} bytes, JS syntax verified, 0 em-dashes/arrows)")
 

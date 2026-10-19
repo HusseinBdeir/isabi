@@ -6,7 +6,15 @@ JS = r"""
 
   const WA_NUMBER = '96170444955';
   const EMAIL_ADDR = 'hbdeir16@gmail.com';
-  const SEC_IDS = ['architecture', 'industries', 'sandbox', 'microsoft-ai', 'ingenuity', 'pricing', 'portal'];
+  const SEC_IDS = ['architecture', 'industries', 'sandbox', 'microsoft-ai', 'ingenuity', 'pricing', 'faq', 'portal'];
+  const NOW = new Date();
+  const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  function dayLabel(offsetDays) {
+    const d = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - offsetDays);
+    return d.getDate() + ' ' + MONTH_ABBR[d.getMonth()];
+  }
+  const DAY_TOKENS = { D0: dayLabel(0), D1: dayLabel(1) };
 
   const BADGE_MINI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="34" height="34" style="border-radius:7px;flex-shrink:0"><rect width="120" height="120" rx="26" fill="#0B1730"/><g transform="translate(39.52,77.62) scale(0.74)"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>';
   const RAIL_MARK_SVG = '<svg viewBox="-9.5 -78.8 74.66 109.7" height="22"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>';
@@ -185,7 +193,7 @@ JS = r"""
       name: 'Multi-Entity Holding Groups & Family Offices',
       sub: 'Group treasury, intercompany eliminations, partner capital & recruitment',
       badge: 'Industry Blueprint 06 · Holding & Group Command',
-      lead: 'The executive crown for business owners and holding groups operating across several industries. Consolidates cash, receivables, profitability, partner capital accounts, and group talent pipelines into a single boardroom cockpit.',
+      lead: 'The group view for owners and holding companies operating across several industries. It consolidates cash, receivables, profitability, partner capital accounts, and recruitment into one boardroom picture.',
       modules: [
         'Holding Root-Level Treasury, Bank Accounts & Multi-Currency Cash Positioning',
         'Intercompany Loan, Management Fee & Cross-Charge Ledger',
@@ -218,7 +226,7 @@ JS = r"""
       name: 'Custom Offline POS Till (Companion PWA)',
       sub: 'Zero-latency cashier till, offline sales queue & Bluetooth thermal printing',
       badge: 'Industry Blueprint 07 · Companion Field PWA',
-      lead: 'When internet drops at a busy beach club, restaurant, or retail counter, cloud web pages freeze. ISABI Systems builds custom offline-first Progressive Web App tills that keep ringing sales, print thermal receipts locally, and sync to Dataverse automatically.',
+      lead: 'When the internet drops at a busy beach club, restaurant, or retail counter, cloud-based tills stop. ISABI Systems builds offline-first web app tills that keep ringing sales, print thermal receipts locally, and sync to the ledger automatically.',
       modules: [
         'Touch-Optimized Cashier Grid with Category Tabs, Modifiers & Fast Search',
         'IndexedDB / Local Offline Transaction Queue (100% functional without internet)',
@@ -251,7 +259,7 @@ JS = r"""
       name: 'Biometric Face & PIN Attendance Kiosk (PWA)',
       sub: 'Tablet gate kiosk, facial verification, offline punch queue & nightly payroll sync',
       badge: 'Industry Blueprint 08 · Workforce & Gate Kiosk PWA',
-      lead: 'Replace proprietary fingerprint hardware that breaks and requires manual USB exports. Our tablet Attendance Kiosk verifies staff via face recognition + PIN, works offline at remote plants or resorts, and computes daily attendance into your ERP every night.',
+      lead: 'Replace proprietary fingerprint hardware that breaks and needs manual USB exports. The tablet kiosk verifies staff by face and PIN, works offline at remote plants and resorts, and posts daily attendance into your ERP every night.',
       modules: [
         'Wall-Mounted Tablet PWA with Live Camera Face Enrolment & Verification',
         'Offline-Capable Punch Queue (Clock-In, Break, Clock-Out) with Photo Audit',
@@ -312,11 +320,11 @@ JS = r"""
         ['good', 'Nightly automation fleet completed', 'Database backup 02:00 · Attendance sync 03:00 · Power BI refresh 07:00', 'Logs']
       ],
       journal: [
-        ['19 Oct', 'SI-2026-0841', 'Auto Dealership', '70100 Vehicle & Parts Sales', 0, 18450.00],
-        ['19 Oct', 'TK-2026-4412', 'Concrete Plant', '70200 Ready-Mix Batch Sales (m³)', 0, 14200.00],
-        ['19 Oct', 'POS-Z-0192', 'Flagship Resort', '70600 Outlet & Cabana Revenue', 0, 9640.00],
-        ['18 Oct', 'RC-2026-1109', 'Group Treasury', '51100 Bank USD Settlement', 32500.00, 0],
-        ['18 Oct', 'PI-2026-0518', 'Concrete Plant', '60110 Bulk Cement Silo Intake', 9790.00, 0]
+        ['D0', 'SI-2026-0841', 'Auto Dealership', '70100 Vehicle & Parts Sales', 0, 18450.00],
+        ['D0', 'TK-2026-4412', 'Concrete Plant', '70200 Ready-Mix Batch Sales (m³)', 0, 14200.00],
+        ['D0', 'POS-Z-0192', 'Flagship Resort', '70600 Outlet & Cabana Revenue', 0, 9640.00],
+        ['D1', 'RC-2026-1109', 'Group Treasury', '51100 Bank USD Settlement', 32500.00, 0],
+        ['D1', 'PI-2026-0518', 'Concrete Plant', '60110 Bulk Cement Silo Intake', 9790.00, 0]
       ]
     },
     hospitality: {
@@ -348,11 +356,11 @@ JS = r"""
         ['good', 'Biometric Attendance Kiosk synced', '118 seasonal & permanent staff shifts verified today', 'Roster']
       ],
       journal: [
-        ['19 Oct', 'POS-Z-0814', 'Flagship Resort', '70610 Beach & Cabana Admissions', 0, 6420.00],
-        ['19 Oct', 'POS-Z-0815', 'Flagship Resort', '70400 Restaurant & Bar TTC', 0, 8910.00],
-        ['19 Oct', 'PI-2026-0392', 'Sunset Bay Club', '60210 F&B Provisions & Beverages', 3180.00, 0],
-        ['18 Oct', 'JV-SOA-0041', 'All Properties', '45100 Partner Profit Split Allocation', 12150.00, 0],
-        ['18 Oct', 'RC-2026-0912', 'Boutique Suites', '70120 Event & Banquet Deposit', 0, 4500.00]
+        ['D0', 'POS-Z-0814', 'Flagship Resort', '70610 Beach & Cabana Admissions', 0, 6420.00],
+        ['D0', 'POS-Z-0815', 'Flagship Resort', '70400 Restaurant & Bar TTC', 0, 8910.00],
+        ['D0', 'PI-2026-0392', 'Sunset Bay Club', '60210 F&B Provisions & Beverages', 3180.00, 0],
+        ['D1', 'JV-SOA-0041', 'All Properties', '45100 Partner Profit Split Allocation', 12150.00, 0],
+        ['D1', 'RC-2026-0912', 'Boutique Suites', '70120 Event & Banquet Deposit', 0, 4500.00]
       ]
     },
     trading: {
@@ -384,11 +392,11 @@ JS = r"""
         ['good', 'Monthly statutory reconciliation verified', 'Operational sales, stock, and cash match statutory trial balance', 'Recon RDL']
       ],
       journal: [
-        ['19 Oct', 'SI-TRK-0419', 'Heavy Truck Div', '70110 Heavy Truck Sales (VIN #8841)', 0, 68500.00],
-        ['19 Oct', 'SI-PRT-1902', 'Spare Parts Depot', '70150 Wholesale Parts Invoicing', 0, 4820.00],
-        ['19 Oct', 'LC-2026-0118', 'Heavy Truck Div', '60120 Customs & Port Clearance', 11400.00, 0],
-        ['18 Oct', 'RC-2026-0774', 'Passenger Div', '51100 Dealer Installment Collection', 61920.00, 0],
-        ['18 Oct', 'SV-2026-0310', 'Service Bay', '70500 Workshop Labor & Overhaul', 0, 2950.00]
+        ['D0', 'SI-TRK-0419', 'Heavy Truck Div', '70110 Heavy Truck Sales (VIN #8841)', 0, 68500.00],
+        ['D0', 'SI-PRT-1902', 'Spare Parts Depot', '70150 Wholesale Parts Invoicing', 0, 4820.00],
+        ['D0', 'LC-2026-0118', 'Heavy Truck Div', '60120 Customs & Port Clearance', 11400.00, 0],
+        ['D1', 'RC-2026-0774', 'Passenger Div', '51100 Dealer Installment Collection', 61920.00, 0],
+        ['D1', 'SV-2026-0310', 'Service Bay', '70500 Workshop Labor & Overhaul', 0, 2950.00]
       ]
     },
     manufacturing: {
@@ -419,11 +427,11 @@ JS = r"""
         ['good', 'Inter-entity transport charges auto-reconciled', 'Mixer fleet trip fees matched to plant cost of sales', 'Interco']
       ],
       journal: [
-        ['19 Oct', 'TK-2026-8821', 'Batch Plant #1', '70100 Ready-Mix C35 Structural (185 m³)', 0, 15725.00],
-        ['19 Oct', 'TK-2026-8822', 'Mixer Fleet', '70300 Concrete Pump Boom Service', 0, 2400.00],
-        ['19 Oct', 'PI-2026-0612', 'Batch Plant #1', '60100 Bulk Cement & Admixture Intake', 8950.00, 0],
-        ['18 Oct', 'JV-DSL-0104', 'Mixer Fleet', '61300 Transit Mixer Diesel Allocation', 1840.00, 0],
-        ['18 Oct', 'RC-2026-1402', 'Construction Div', '51100 Contractor Progress Collection', 22500.00, 0]
+        ['D0', 'TK-2026-8821', 'Batch Plant #1', '70100 Ready-Mix C35 Structural (185 m³)', 0, 15725.00],
+        ['D0', 'TK-2026-8822', 'Mixer Fleet', '70300 Concrete Pump Boom Service', 0, 2400.00],
+        ['D0', 'PI-2026-0612', 'Batch Plant #1', '60100 Bulk Cement & Admixture Intake', 8950.00, 0],
+        ['D1', 'JV-DSL-0104', 'Mixer Fleet', '61300 Transit Mixer Diesel Allocation', 1840.00, 0],
+        ['D1', 'RC-2026-1402', 'Construction Div', '51100 Contractor Progress Collection', 22500.00, 0]
       ]
     },
     realestate: {
@@ -454,10 +462,10 @@ JS = r"""
         ['good', 'Quarterly landlord distribution statement ready', 'Net yield split computed across property co-owners', 'SOA PDF']
       ],
       journal: [
-        ['19 Oct', 'RN-2026-0312', 'Boulevard Center', '70100 Q4 Anchor Retail Lease Billing', 0, 24500.00],
-        ['19 Oct', 'RN-2026-0313', 'Harbor Residences', '70120 Penthouse Annual Lease', 0, 18000.00],
-        ['18 Oct', 'RC-2026-0509', 'Logistics Park', '51100 Tenant Wire Transfer Settlement', 38900.00, 0],
-        ['18 Oct', 'WO-2026-0088', 'Harbor Residences', '61400 Elevator & Generator Service', 3600.00, 0]
+        ['D0', 'RN-2026-0312', 'Boulevard Center', '70100 Q4 Anchor Retail Lease Billing', 0, 24500.00],
+        ['D0', 'RN-2026-0313', 'Harbor Residences', '70120 Penthouse Annual Lease', 0, 18000.00],
+        ['D1', 'RC-2026-0509', 'Logistics Park', '51100 Tenant Wire Transfer Settlement', 38900.00, 0],
+        ['D1', 'WO-2026-0088', 'Harbor Residences', '61400 Elevator & Generator Service', 3600.00, 0]
       ]
     },
     insurance: {
@@ -482,16 +490,16 @@ JS = r"""
         ['Marine, Cargo & Property', 48.0, '18.8%', 'Today 15:50', 'closed', 'Bordereaux Ready']
       ],
       alerts: [
-        ['good', '19 November corporate renewals pre-quoted', 'Comparison sheets & WhatsApp renewal summaries queued', 'Pipeline'],
+        ['good', '19 corporate renewals due next month pre-quoted', 'Comparison sheets & WhatsApp renewal summaries queued', 'Pipeline'],
         ['crit', '6 policy installments past 30-day grace window', 'Client SOA statements generated for account executives', 'Collect'],
         ['warn', '2 motor claims awaiting surveyor repair approval', 'Workshop estimate uploaded to SharePoint claim folder', 'Claims'],
         ['good', 'Monthly carrier net payable reconciled', 'Commission splits verified across 8 underwriting carriers', 'Settlement']
       ],
       journal: [
-        ['19 Oct', 'POL-MED-4102', 'Medical Line', '70100 Corporate Group Medical Policy', 0, 28400.00],
-        ['19 Oct', 'COM-MED-4102', 'Medical Line', '70800 Brokerage Commission Earned', 0, 4260.00],
-        ['19 Oct', 'PAY-CAR-0091', 'Trust Account', '40100 Carrier Net Premium Settlement', 24140.00, 0],
-        ['18 Oct', 'RC-PRM-1820', 'Motor & Fleet', '51100 Fleet Policy Premium Collection', 8520.00, 0]
+        ['D0', 'POL-MED-4102', 'Medical Line', '70100 Corporate Group Medical Policy', 0, 28400.00],
+        ['D0', 'COM-MED-4102', 'Medical Line', '70800 Brokerage Commission Earned', 0, 4260.00],
+        ['D0', 'PAY-CAR-0091', 'Trust Account', '40100 Carrier Net Premium Settlement', 24140.00, 0],
+        ['D1', 'RC-PRM-1820', 'Motor & Fleet', '51100 Fleet Policy Premium Collection', 8520.00, 0]
       ]
     }
   };
@@ -538,7 +546,7 @@ JS = r"""
         ['04. Executive Sign-Off', 'Books close with the double rule once variance equals zero', '100% audit confidence']
       ],
       total: ['Typical Cutover Variance', '$0.00 Unexplained Difference'],
-      citation: 'Proven in live multi-million-dollar trading, manufacturing, and hospitality estates'
+      citation: 'Proven in live trading, manufacturing, and hospitality groups'
     },
     {
       q: 'What would a complete multi-branch system cost and include?',
@@ -820,9 +828,18 @@ JS = r"""
   }
 
   // ---------------- RENDER LIVE ERP SANDBOX ----------------
-  const MONTHS = ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
+  // Rolling 12 months ending in the current month, so the sandbox never looks stale
+  const MONTH_DATES = Array.from({ length: 12 }, (_, i) => new Date(NOW.getFullYear(), NOW.getMonth() - 11 + i, 1));
+  const MONTHS = MONTH_DATES.map(d => MONTH_ABBR[d.getMonth()]);
+  const MONTH_LABELS = MONTH_DATES.map(d => MONTH_ABBR[d.getMonth()] + ' ' + d.getFullYear());
   const CURR_MULT = { USD: { mult: 1, sym: 'USD' }, EUR: { mult: 0.92, sym: 'EUR' }, AED: { mult: 3.67, sym: 'AED' } };
-  const PERIOD_MULT = { mtd: { mult: 1, label: 'October 2026 (MTD)' }, qtd: { mult: 2.85, label: 'Q4 2026 (QTD)' }, ytd: { mult: 9.4, label: 'FY 2026 (YTD)' } };
+  const CUR_Q = Math.floor(NOW.getMonth() / 3) + 1;
+  const PERIOD_MULT = {
+    mtd: { mult: 1, label: MONTH_FULL[NOW.getMonth()] + ' ' + NOW.getFullYear() + ' (MTD)' },
+    qtd: { mult: 2.85, label: 'Q' + CUR_Q + ' ' + NOW.getFullYear() + ' (QTD)' },
+    ytd: { mult: 9.4, label: 'FY ' + NOW.getFullYear() + ' (YTD)' }
+  };
+  const SBOX_LABELS = { holding: 'Group Holding', hospitality: 'Hospitality & Resorts', trading: 'Auto & Truck Trading', manufacturing: 'Concrete & Manufacturing', realestate: 'Real Estate', insurance: 'Insurance Brokerage' };
 
   function buildSandboxChart(d, mult, sym) {
     const W = 660, H = 244, ml = 44, mr = 10, mt = 16, mb = 28;
@@ -859,7 +876,7 @@ JS = r"""
       });
 
       const tip = d.seriesNames.map((nm, idx) => `${nm}: ${sVals[idx]}k`).join(' · ');
-      g += `<g class="col" data-m="${m} 2026" data-t="${total}k ${sym}" data-tip="${tip}">`
+      g += `<g class="col" data-m="${MONTH_LABELS[i]}" data-t="${total}k ${sym}" data-tip="${tip}">`
         + `<rect class="hit" x="${(ml + slot * i).toFixed(1)}" y="${mt}" width="${slot.toFixed(1)}" height="${ph}"/>${seg}</g>`;
       g += `<text class="tick" x="${(x + bw / 2).toFixed(1)}" y="${H - 10}" text-anchor="middle">${m}</text>`;
       if (i === 11) {
@@ -921,7 +938,7 @@ JS = r"""
       totDebit += deb;
       totCredit += cred;
       return `<tr>
-        <td class="mu hide-xs">${r[0]}</td>
+        <td class="mu hide-xs">${DAY_TOKENS[r[0]] || r[0]}</td>
         <td class="mono">${r[1]}</td>
         <td class="hide-xs">${r[2]}</td>
         <td>${r[3]}</td>
@@ -963,9 +980,9 @@ JS = r"""
           </div>
           <div class="tools">
             <select class="pill-select" id="sbox-period-sel" aria-label="Sandbox Period">
-              <option value="mtd" ${state.sboxPeriod === 'mtd' ? 'selected' : ''}>October 2026 (MTD)</option>
-              <option value="qtd" ${state.sboxPeriod === 'qtd' ? 'selected' : ''}>Q4 2026 (QTD)</option>
-              <option value="ytd" ${state.sboxPeriod === 'ytd' ? 'selected' : ''}>FY 2026 (YTD)</option>
+              <option value="mtd" ${state.sboxPeriod === 'mtd' ? 'selected' : ''}>${PERIOD_MULT.mtd.label}</option>
+              <option value="qtd" ${state.sboxPeriod === 'qtd' ? 'selected' : ''}>${PERIOD_MULT.qtd.label}</option>
+              <option value="ytd" ${state.sboxPeriod === 'ytd' ? 'selected' : ''}>${PERIOD_MULT.ytd.label}</option>
             </select>
             <select class="pill-select" id="sbox-curr-sel" aria-label="Sandbox Currency">
               <option value="USD" ${state.sboxCurr === 'USD' ? 'selected' : ''}>USD ($)</option>
@@ -1137,7 +1154,7 @@ JS = r"""
     return {
       q: qText,
       title: 'Custom Architectural Assessment',
-      answer: 'ISABI Systems builds every application directly on <b>Microsoft Dataverse, Power Apps, Power Automate, and Power BI</b>, tailored to your exact entities and chart of accounts. Here is how we structure a bespoke implementation for your query:',
+      answer: 'ISABI Systems builds every application directly on <b>Microsoft Dataverse, Power Apps, Power Automate, and Power BI</b>, tailored to your entities and chart of accounts. Here is how a custom implementation is structured for your question:',
       headers: ['Phase', 'Engineering Deliverable', 'Timeline', 'Verification'],
       rows: [
         ['01. Schema & COA', 'Custom Dataverse tables, Business Units & role security', 'Week 1 to 2', 'Live ERP Forms'],
@@ -1146,7 +1163,7 @@ JS = r"""
         ['04. Ask ISABI AI', 'Native AI wired to your live ledger and operational tables', 'Week 5 to 6', 'Production Go-Live']
       ],
       total: ['Indicative Investment Range', '$4,500 to $18,000+'],
-      citation: 'Direct Principal Engineering by Hussein Bdeir · Zero Off-the-Shelf Compromises'
+      citation: 'Engineered directly by Hussein Bdeir · No off-the-shelf compromises'
     };
   }
 
@@ -1299,6 +1316,26 @@ JS = r"""
     ].join('\n');
   }
 
+  // ---------------- SCROLL REVEAL (progressive, reduced-motion safe) ----------------
+  function initReveal() {
+    const els = document.querySelectorAll('.reveal');
+    if (!els.length || !('IntersectionObserver' in window)) return;
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return;
+    document.documentElement.classList.add('js-io');
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(en => {
+        if (!en.isIntersecting) return;
+        const el = en.target;
+        el.classList.add('in');
+        el.addEventListener('transitionend', () => el.classList.add('done'), { once: true });
+        setTimeout(() => el.classList.add('done'), 1200);
+        io.unobserve(el);
+      });
+    }, { threshold: 0.08, rootMargin: '0px 0px -5% 0px' });
+    els.forEach(el => io.observe(el));
+  }
+
   // ---------------- THEME MANAGEMENT ----------------
   function applyTheme(t) {
     document.documentElement.setAttribute('data-theme', t);
@@ -1319,6 +1356,9 @@ JS = r"""
     renderAiSection(0);
     updateRoi();
     updateConfigurator();
+    initReveal();
+    const yearEl = document.getElementById('ftr-year');
+    if (yearEl) yearEl.textContent = String(NOW.getFullYear());
 
     // Handle initial hash on page load immediately (zero previous-section bleed)
     if (window.location.hash && window.location.hash.length > 1) {
@@ -1447,7 +1487,7 @@ JS = r"""
         state.sboxInd = loadSbox.dataset.loadSandbox;
         renderSandbox();
         scrollToTargetId('sandbox');
-        showToast('Loaded ' + state.sboxInd.toUpperCase() + ' environment in Live ERP Sandbox');
+        showToast('Loaded the ' + (SBOX_LABELS[state.sboxInd] || state.sboxInd) + ' environment in the Live Sandbox');
         return;
       }
 
@@ -1531,7 +1571,7 @@ JS = r"""
         if (window.innerWidth > 720) {
           setTimeout(() => document.getElementById('lead-name')?.focus(), 500);
         }
-        showToast('Selected ' + tier + '. Complete your details below to connect with Hussein.');
+        showToast('Selected ' + tier + '. Add your details below and send the brief to Hussein.');
         return;
       }
 
@@ -1608,7 +1648,7 @@ JS = r"""
       if (window.innerWidth > 720) {
         setTimeout(() => document.getElementById('lead-name')?.focus(), 500);
       }
-      showToast('Scope loaded into Consultation Portal');
+      showToast('Scope loaded into the inquiry form');
     });
 
     // Portal Dispatch Buttons
