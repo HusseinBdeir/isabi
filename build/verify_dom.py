@@ -158,10 +158,31 @@ document.addEventListener('DOMContentLoaded', function() {
     var inlineInp = document.getElementById('ai-inline-input');
     var inlineForm = document.getElementById('ai-inline-form');
 
-    // 1. Test conversational greeting ("Hello")
+    // Verify "ISABI is analyzing..." thinking indicator renders on async submit
+    inlineInp.value = 'how are you';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var hasThinkingBubble = document.getElementById('ai-inline-thread').textContent.indexOf('ISABI is analyzing...') !== -1;
+
+    // Switch to synchronous test mode for deterministic multi-turn DOM assertions
+    window.__ISABI_SYNC_TEST = true;
+    document.getElementById('ai-inline-reset').click();
+
+    // 1. Test conversational greeting ("Hello") and ("how are you") and Arabic/French
     inlineInp.value = 'Hello';
     inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     var helloText = document.getElementById('ai-inline-thread').textContent;
+
+    inlineInp.value = 'how are you';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var howAreYouText = document.getElementById('ai-inline-thread').textContent;
+
+    inlineInp.value = 'كيف حالك';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var arabicHtml = document.getElementById('ai-inline-thread').innerHTML;
+
+    inlineInp.value = 'Bonjour, combien coûte le système ?';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var frenchText = document.getElementById('ai-inline-thread').textContent;
 
     // 2. Test Industry Blueprint query
     inlineInp.value = 'Show the Concrete & Manufacturing blueprint';
@@ -203,7 +224,11 @@ document.addEventListener('DOMContentLoaded', function() {
     out.aiTest = {
       initDrawerUsers: initDrawerUsers,
       hasInitWelcome: initDrawerText.indexOf('Welcome. I am ISABI') !== -1,
+      hasThinkingBubble: hasThinkingBubble,
       hasHelloReply: helloText.indexOf('Welcome · Native System Intelligence') !== -1 && helloText.indexOf('MULTI-ENTITY ENTERPRISE GROUP') === -1,
+      hasHowAreYouReply: howAreYouText.indexOf('I am doing great, thank you for asking!') !== -1 && howAreYouText.indexOf('Custom Architectural Guidance') === -1,
+      hasArabicRtl: arabicHtml.indexOf('dir="rtl"') !== -1 && arabicHtml.indexOf('الذكاء التشغيلي والمالي') !== -1,
+      hasFrenchReply: frenchText.indexOf('Bienvenue') !== -1 || frenchText.indexOf('Investissement Transparent') !== -1,
       afterInlineCount: afterInlineCount,
       hasMfgBlueprint: afterInlineText.indexOf('Industry Blueprint 03') !== -1,
       scopeBarTxt: scopeBarTxt,
@@ -275,13 +300,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
         ai = d_desk['aiTest']
         assert ai['initDrawerUsers'] == 0 and ai['hasInitWelcome'] is True, f"Drawer did not start with clean welcome state: {ai}"
+        assert ai['hasThinkingBubble'] is True, "Async submit did not render 'ISABI is analyzing...' thinking indicator"
         assert ai['hasHelloReply'] is True, "Greeting 'Hello' did not return conversational reply without repeating initial table"
-        assert ai['afterInlineCount'] == 2, f"Expected 2 messages after Hello + blueprint submit, got {ai['afterInlineCount']}"
+        assert ai['hasHowAreYouReply'] is True, "'how are you' did not return conversational status reply"
+        assert ai['hasArabicRtl'] is True, "Arabic query did not render RTL Arabic reply"
+        assert ai['hasFrenchReply'] is True, "French query did not render French reply"
+        assert ai['afterInlineCount'] == 5, f"Expected 5 messages after multilingual + blueprint submits, got {ai['afterInlineCount']}"
         assert ai['hasMfgBlueprint'] is True, "Inline submit did not render Concrete & Manufacturing blueprint"
         assert ai['scopeBarTxt'] == 'Auto & Equipment Trading · EUR · QTD', f"Unexpected scopeBarTxt: {ai['scopeBarTxt']}"
         assert ai['hasEurQtdBriefing'] is True, "Sandbox Ask ISABI click did not render EUR QTD briefing"
         assert ai['hasAlertDrilldown'] is True, "Sandbox alert button click did not render alert drilldown"
-        assert ai['countBeforeReset'] == 5, f"Expected 5 messages in thread before reset, got {ai['countBeforeReset']}"
+        assert ai['countBeforeReset'] == 8, f"Expected 8 messages in thread before reset, got {ai['countBeforeReset']}"
         assert ai['botAfterReset'] == 1 and ai['userAfterReset'] == 0 and ai['inlineUserAfterReset'] == 0 and ai['hasResetWelcome'] is True, f"Reset did not restore clean welcome state: {ai}"
 
         # 3. Capture fresh screenshot of #portal at 1366x768
