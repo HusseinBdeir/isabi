@@ -395,48 +395,197 @@ def clientdata(key, store_id):
                 },
                 "else": {
                     "actions": {
-                        "Log_Entry_Local": {
-                            "type": "Compose",
+                        "If_Ask_Op": {
+                            "type": "If",
                             "runAfter": {},
-                            "inputs": {
-                                "ts": "@utcNow()",
-                                "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
-                                "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
-                                "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
-                                "currency": "@coalesce(outputs('Parse_Body')?['currency'], 'USD')",
-                                "period": "@coalesce(outputs('Parse_Body')?['period'], 'mtd')",
-                                "scale": "@coalesce(outputs('Parse_Body')?['scale'], '')",
-                                "range": "@coalesce(outputs('Parse_Body')?['range'], '')",
-                                "replyTitle": "@coalesce(outputs('Parse_Body')?['replyTitle'], '')",
-                                "mode": "@coalesce(outputs('Parse_Body')?['mode'], 'logged_only')",
+                            "expression": {
+                                "equals": [
+                                    "@coalesce(outputs('Parse_Body')?['op'], 'ask')",
+                                    "ask",
+                                ]
+                            },
+                            "actions": {
+                                "Call_Cloud_LLM": {
+                                    "type": "Http",
+                                    "runAfter": {},
+                                    "inputs": {
+                                        "method": "POST",
+                                        "uri": "https://text.pollinations.ai/openai",
+                                        "headers": {
+                                            "Content-Type": "application/json",
+                                        },
+                                        "body": {
+                                            "model": "openai",
+                                            "response_format": {"type": "json_object"},
+                                            "messages": [
+                                                {
+                                                    "role": "system",
+                                                    "content": "@coalesce(outputs('Parse_Body')?['systemPrompt'], 'You are ISABI, the warm, human conversational assistant for ISABI Systems.')",
+                                                },
+                                                {
+                                                    "role": "user",
+                                                    "content": "@coalesce(outputs('Parse_Body')?['userPrompt'], string(outputs('Parse_Body')?['q']))",
+                                                },
+                                            ],
+                                        },
+                                        "retryPolicy": {"type": "none"},
+                                    },
+                                },
+                                "If_Cloud_LLM_Ok": {
+                                    "type": "If",
+                                    "runAfter": {
+                                        "Call_Cloud_LLM": ["Succeeded", "Failed", "TimedOut"]
+                                    },
+                                    "expression": {
+                                        "equals": [
+                                            "@outputs('Call_Cloud_LLM')?['statusCode']",
+                                            200,
+                                        ]
+                                    },
+                                    "actions": {
+                                        "Cloud_LLM_Text": {
+                                            "type": "Compose",
+                                            "runAfter": {},
+                                            "inputs": "@coalesce(body('Call_Cloud_LLM')?['choices']?[0]?['message']?['content'], '{}')",
+                                        },
+                                        "Log_Entry_Cloud": {
+                                            "type": "Compose",
+                                            "runAfter": {"Cloud_LLM_Text": ["Succeeded"]},
+                                            "inputs": {
+                                                "ts": "@utcNow()",
+                                                "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
+                                                "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
+                                                "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
+                                                "currency": "@coalesce(outputs('Parse_Body')?['currency'], 'USD')",
+                                                "period": "@coalesce(outputs('Parse_Body')?['period'], 'mtd')",
+                                                "scale": "@coalesce(outputs('Parse_Body')?['scale'], '')",
+                                                "range": "@coalesce(outputs('Parse_Body')?['range'], '')",
+                                                "replyTitle": "Cloud AI Reply",
+                                                "mode": "cloud_llm",
+                                            },
+                                        },
+                                        "New_Logs_Cloud": {
+                                            "type": "Compose",
+                                            "runAfter": {"Log_Entry_Cloud": ["Succeeded"]},
+                                            "inputs": "@take(union(createArray(outputs('Log_Entry_Cloud')), outputs('Cur_Logs')), 200)",
+                                        },
+                                        "Save_Store_Cloud": act(
+                                            "UpdateRecord",
+                                            {
+                                                "entityName": "annotations",
+                                                "recordId": store_id,
+                                                "item/filename": WR_NAME,
+                                                "item/mimetype": "application/json",
+                                                "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Cloud')), 'updatedAt', utcNow())))",
+                                            },
+                                            {"New_Logs_Cloud": ["Succeeded"]},
+                                        ),
+                                        "Response_Cloud_LLM": response(
+                                            200,
+                                            {
+                                                "ok": True,
+                                                "mode": "gemini_cloud",
+                                                "provider": "cloud_llm",
+                                                "rawReply": "@outputs('Cloud_LLM_Text')",
+                                                "serverTime": "@utcNow()",
+                                            },
+                                            {"Save_Store_Cloud": ["Succeeded", "Failed"]},
+                                        ),
+                                    },
+                                    "else": {
+                                        "actions": {
+                                            "Log_Entry_Fallback": {
+                                                "type": "Compose",
+                                                "runAfter": {},
+                                                "inputs": {
+                                                    "ts": "@utcNow()",
+                                                    "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
+                                                    "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
+                                                    "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
+                                                    "currency": "@coalesce(outputs('Parse_Body')?['currency'], 'USD')",
+                                                    "period": "@coalesce(outputs('Parse_Body')?['period'], 'mtd')",
+                                                    "scale": "@coalesce(outputs('Parse_Body')?['scale'], '')",
+                                                    "range": "@coalesce(outputs('Parse_Body')?['range'], '')",
+                                                    "replyTitle": "@coalesce(outputs('Parse_Body')?['replyTitle'], '')",
+                                                    "mode": "logged_only",
+                                                },
+                                            },
+                                            "New_Logs_Fallback": {
+                                                "type": "Compose",
+                                                "runAfter": {"Log_Entry_Fallback": ["Succeeded"]},
+                                                "inputs": "@take(union(createArray(outputs('Log_Entry_Fallback')), outputs('Cur_Logs')), 200)",
+                                            },
+                                            "Save_Store_Fallback": act(
+                                                "UpdateRecord",
+                                                {
+                                                    "entityName": "annotations",
+                                                    "recordId": store_id,
+                                                    "item/filename": WR_NAME,
+                                                    "item/mimetype": "application/json",
+                                                    "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Fallback')), 'updatedAt', utcNow())))",
+                                                },
+                                                {"New_Logs_Fallback": ["Succeeded"]},
+                                            ),
+                                            "Response_Fallback": response(
+                                                200,
+                                                {
+                                                    "ok": True,
+                                                    "mode": "logged_only",
+                                                    "serverTime": "@utcNow()",
+                                                },
+                                                {"Save_Store_Fallback": ["Succeeded", "Failed"]},
+                                            ),
+                                        }
+                                    },
+                                },
+                            },
+                            "else": {
+                                "actions": {
+                                    "Log_Entry_Local": {
+                                        "type": "Compose",
+                                        "runAfter": {},
+                                        "inputs": {
+                                            "ts": "@utcNow()",
+                                            "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
+                                            "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
+                                            "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
+                                            "currency": "@coalesce(outputs('Parse_Body')?['currency'], 'USD')",
+                                            "period": "@coalesce(outputs('Parse_Body')?['period'], 'mtd')",
+                                            "scale": "@coalesce(outputs('Parse_Body')?['scale'], '')",
+                                            "range": "@coalesce(outputs('Parse_Body')?['range'], '')",
+                                            "replyTitle": "@coalesce(outputs('Parse_Body')?['replyTitle'], '')",
+                                            "mode": "@coalesce(outputs('Parse_Body')?['mode'], 'logged_only')",
+                                        },
+                                    },
+                                    "New_Logs_Local": {
+                                        "type": "Compose",
+                                        "runAfter": {"Log_Entry_Local": ["Succeeded"]},
+                                        "inputs": "@take(union(createArray(outputs('Log_Entry_Local')), outputs('Cur_Logs')), 200)",
+                                    },
+                                    "Save_Store_Local": act(
+                                        "UpdateRecord",
+                                        {
+                                            "entityName": "annotations",
+                                            "recordId": store_id,
+                                            "item/filename": WR_NAME,
+                                            "item/mimetype": "application/json",
+                                            "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Local')), 'updatedAt', utcNow())))",
+                                        },
+                                        {"New_Logs_Local": ["Succeeded"]},
+                                    ),
+                                    "Response_Logged": response(
+                                        200,
+                                        {
+                                            "ok": True,
+                                            "mode": "logged_only",
+                                            "loggedCount": "@length(outputs('New_Logs_Local'))",
+                                            "serverTime": "@utcNow()",
+                                        },
+                                        {"Save_Store_Local": ["Succeeded", "Failed"]},
+                                    ),
+                                }
                             },
                         },
-                        "New_Logs_Local": {
-                            "type": "Compose",
-                            "runAfter": {"Log_Entry_Local": ["Succeeded"]},
-                            "inputs": "@take(union(createArray(outputs('Log_Entry_Local')), outputs('Cur_Logs')), 200)",
-                        },
-                        "Save_Store_Local": act(
-                            "UpdateRecord",
-                            {
-                                "entityName": "annotations",
-                                "recordId": store_id,
-                                "item/filename": WR_NAME,
-                                "item/mimetype": "application/json",
-                                "item/documentbody": "@base64(string(setProperty(setProperty(outputs('Store_Obj'), 'logs', outputs('New_Logs_Local')), 'updatedAt', utcNow())))",
-                            },
-                            {"New_Logs_Local": ["Succeeded"]},
-                        ),
-                        "Response_Logged": response(
-                            200,
-                            {
-                                "ok": True,
-                                "mode": "logged_only",
-                                "loggedCount": "@length(outputs('New_Logs_Local'))",
-                                "serverTime": "@utcNow()",
-                            },
-                            {"Save_Store_Local": ["Succeeded", "Failed"]},
-                        ),
                     }
                 },
             },
@@ -532,12 +681,19 @@ def write_endpoints_part():
 def test_flow():
     key = api_key()
     url = open(URL_FILE, encoding="utf-8").read().strip()
+    sys_prompt = (
+        "You are ISABI, the warm, human conversational assistant for ISABI Systems "
+        "(founded by Hussein Bdeir in Lebanon, serving clients across the Middle East and worldwide; "
+        "WhatsApp +961 70 444 955, email hbdeir16@gmail.com). Return ONLY valid JSON: "
+        '{"conversational": true, "title": "Short heading", "answer": "1-2 warm natural sentences", '
+        '"promptText": "1 short natural follow-up question", "followUps": ["Q1", "Q2", "Q3"]}'
+    )
     r = requests.post(
         url,
         data=json.dumps({
             "key": key,
-            "op": "log",
-            "q": "[Smoke Test] Ask ISABI Cloud Flow Verification",
+            "op": "ask",
+            "q": "were are you located",
             "lang": "en",
             "industry": "holding",
             "currency": "USD",
@@ -545,12 +701,14 @@ def test_flow():
             "scale": "Multi-Branch (2 to 4 Entities)",
             "range": "$12,300 to $15,000",
             "replyTitle": "System Smoke Test",
-            "mode": "smoke_test",
+            "systemPrompt": sys_prompt,
+            "userPrompt": "Visitor Question: were are you located",
         }),
         headers={"Content-Type": "text/plain;charset=UTF-8"},
         timeout=60,
     )
-    print("POST status:", r.status_code, "CORS:", r.headers.get("Access-Control-Allow-Origin"), r.text[:300])
+    safe_txt = r.text[:400].encode("ascii", "replace").decode("ascii")
+    print("POST status:", r.status_code, "CORS:", r.headers.get("Access-Control-Allow-Origin"), safe_txt)
     assert r.ok and r.json().get("ok"), "Flow POST failed"
     print("E2E Ask ISABI Cloud Flow verified 100%!")
 

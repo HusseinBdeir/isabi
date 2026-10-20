@@ -6684,21 +6684,47 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
       };
     }
 
-    // 14. Contact, Location, Lebanon, Middle East, Hussein Bdeir, WhatsApp
-    if (low.includes('where') || low.includes('lebanon') || low.includes('middle east') || low.includes('hussein') || low.includes('contact') || low.includes('whatsapp') || low.includes('call') || low.includes('demo') || low.includes('walkthrough')) {
+    // 14a. Location, Where are you based, Lebanon, Middle East
+    if (low.includes('where') || low.includes('located') || low.includes('location') || low.includes('based') || low.includes('country') || low.includes('office') || low.includes('lebanon') || low.includes('beirut') || low.includes('middle east')) {
       return {
         q: cleanQ,
+        conversational: true,
+        title: 'Location & Reach',
+        answer: `We are based in <b>Lebanon</b> (founded and led by <b>Hussein Bdeir</b>), and we build and support systems for companies across Lebanon, the Middle East, and internationally.`,
+        promptText: `Since everything deploys directly into your own Microsoft 365 cloud, we can work with your team anywhere. Where is your business based, or what kind of system are you exploring?`,
+        followUps: [
+          'What would a complete multi-branch system cost and include?',
+          'How does ISABI customize the ERP for my specific industry?',
+          'What happens in the first two weeks?'
+        ]
+      };
+    }
+
+    // 14b. About the website / About ISABI Systems / Services overview
+    if (low.includes('website') || low.includes('this site') || low.includes('about isabi') || low.includes('what is isabi') || low.includes('what do you offer') || low.includes('your services') || low.includes('tell me more about')) {
+      return {
+        q: cleanQ,
+        conversational: true,
+        title: 'About ISABI Systems',
+        answer: `This website is an interactive showcase of <b>ISABI Systems</b>. Here you can explore the <b>8 live industry ERP systems</b> we have built, test real multi-currency numbers in the <b>Live Sandbox</b>, or price out a custom setup in the <b>Scope Configurator</b>.`,
+        promptText: `Would you like me to walk you through one of the 8 industries, or tell me what kind of business you run?`,
+        followUps: [
+          'How does ISABI customize the ERP for my specific industry?',
+          'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
+          'What would a complete multi-branch system cost and include?'
+        ]
+      };
+    }
+
+    // 14c. Direct Contact, Hussein Bdeir, WhatsApp, Demo, Walkthrough
+    if (low.includes('hussein') || low.includes('contact') || low.includes('whatsapp') || low.includes('phone') || low.includes('email') || low.includes('call') || low.includes('demo') || low.includes('walkthrough')) {
+      return {
+        q: cleanQ,
+        conversational: true,
         title: 'Direct Principal Access · Hussein Bdeir',
-        answer: `ISABI Systems is founded and led by <b>Hussein Bdeir</b>. Based in Lebanon, we work with owner-led enterprises and multi-entity holding groups across the Middle East and internationally. You work directly with the principal architect who designs your accounting schema and writes your system.`,
-        headers: ['Direct Channel', 'Details', 'Response Window'],
-        rows: [
-          ['WhatsApp & Mobile', '+961 70 444 955', 'Same-Day Direct Reply'],
-          ['Executive Email', 'hbdeir16@gmail.com', 'RFP, COA & Scope Review'],
-          ['Step 01 · Discovery Call', '30-minute architecture & workflow review on Teams/WhatsApp', 'No obligation'],
-          ['Step 02 · Live Walkthrough', 'Production demo of Hospitality, Trading, Mfg, Real Estate & Insurance', 'Fixed-scope proposal']
-        ],
-        total: ['Direct WhatsApp Line', '+961 70 444 955'],
-        citation: 'Source: ISABI Systems Executive Consultation Portal · Section 08',
+        answer: `You work directly with <b>Hussein Bdeir</b>, Founder and Principal Systems Architect. You can message him anytime on WhatsApp at <b>+961 70 444 955</b> or email <b>hbdeir16@gmail.com</b> for a 30-minute walkthrough.`,
+        promptText: `Would you like to open WhatsApp now, or price out your scope on the page first?`,
+        actionCfg: state.cfgInd,
         followUps: [
           'What would a complete multi-branch system cost and include?',
           'What happens in the first two weeks?'
@@ -6963,14 +6989,15 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
 
   function buildGeminiSystemPrompt(lang) {
     return [
-      'You are ISABI, the assistant for ISABI Systems (founded by Hussein Bdeir, WhatsApp +961 70 444 955, email hbdeir16@gmail.com).',
-      'Speak like a warm, sharp, concise human advisor. NEVER sound like a brochure or dump walls of text.',
-      'ISABI Systems builds custom ERP apps, double-entry ledgers, Power BI dashboards, printable statements, and offline field PWAs (POS Till & Biometric Attendance Kiosk) on the Microsoft Cloud in 1 to 2 weeks.',
-      '8 live apps: Hospitality, Auto & Heavy Equipment Trading, Concrete & Manufacturing, Real Estate, Insurance Brokerage, Group Holding, Offline POS PWA, Biometric Attendance PWA.',
-      'Pricing: Single-Entity from $4,500+ (1 week); Multi-Entity & AI from $9,500+ (1 to 2 weeks); Enterprise Holding from $18,000+ (2 weeks). Clients own 100% of their Microsoft 365 tenant and pay $0 per terminal for PWAs. Runs side-by-side with existing accounting software (Dolphin, PIMS, QuickBooks, SAP) to 0.00 variance.',
-      'Formatting rules: NEVER use em-dashes or unicode arrows. Reply in the same language as the user (Detected language: ' + lang + ').',
-      'You always reply in TWO short chat bubbles: (1) "answer": 1 to 2 natural, direct sentences answering the user question; (2) "promptText": 1 short, natural follow-up question inviting the user to continue the conversation.',
-      'Return ONLY valid JSON: {"conversational": true, "title": "Short heading", "answer": "1-2 sentence natural reply", "promptText": "1-sentence natural follow-up question", "headers": [], "rows": [], "total": [], "followUps": ["Short option 1", "Short option 2", "Short option 3"]}. Leave headers/rows/total empty [] unless the user explicitly asks for a numerical table.'
+      'You are ISABI, the warm, human conversational assistant on the ISABI Systems website (https://husseinbdeir.github.io/isabi/).',
+      'Company & Location: ISABI Systems is founded and led by Hussein Bdeir (Principal Systems Architect), based in Lebanon and serving owner-led companies and multi-entity holding groups across Lebanon, the Middle East, and worldwide. Direct WhatsApp: +961 70 444 955. Email: hbdeir16@gmail.com.',
+      'What this website shows: Visitors can explore our 8 live industry ERP blueprints, test real multi-currency double-entry numbers in the Live Sandbox, calculate time savings in the ROI Estimator, or configure a custom quote in the Scope Configurator.',
+      'What we build: Custom Microsoft Dataverse ERP apps, double-entry general ledgers, Power BI executive dashboards, printable .RDL Statements of Account, and offline field PWAs (POS Till & Biometric Attendance Kiosk) delivered inside the client\'s own Microsoft 365 account in 1 to 2 weeks.',
+      '8 live apps: Hospitality & Resorts, Auto & Heavy Equipment Trading, Concrete & Manufacturing, Real Estate Portfolio, Insurance Brokerage, Multi-Entity Holding, Custom Offline POS PWA, Biometric Attendance Kiosk PWA.',
+      'Pricing: Single-Entity Foundation from $4,500+ (1 week); Multi-Entity & AI Suite from $9,500+ (1 to 2 weeks); Enterprise Holding Group from $18,000+ (2 weeks). Clients own 100% of their Microsoft 365 tenant and pay $0 per terminal for PWAs. Runs side-by-side with existing accounting software (Dolphin, PIMS, QuickBooks, SAP) to 0.00 variance.',
+      'Tone & Formatting rules: Speak like a friendly, sharp, natural human in a live chat. NEVER sound like a corporate brochure or dump walls of text. NEVER use em-dashes or unicode arrows. Reply in the same language as the user (Detected language: ' + lang + ').',
+      'You ALWAYS reply in TWO short chat bubbles: (1) "answer": 1 to 2 natural, direct sentences answering what the user asked; (2) "promptText": 1 short, natural follow-up question inviting the user to continue the conversation.',
+      'Return ONLY valid JSON: {"conversational": true, "title": "Short heading", "answer": "1-2 sentence natural human reply", "promptText": "1-sentence natural follow-up question", "headers": [], "rows": [], "total": [], "followUps": ["Short option 1", "Short option 2", "Short option 3"]}. Leave headers/rows/total empty [] unless the user explicitly asks for a numerical table.'
     ].join('\n');
   }
 
@@ -7118,8 +7145,8 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
     state.aiTypingFollowup = false;
     renderAiThreads(true);
 
-    const isFastConversational = Boolean(localResp.conversational) && !localResp.isCustomFallback;
-    if (isFastConversational) {
+    const hasLocalTable = Boolean(localResp.headers && localResp.headers.length);
+    if (hasLocalTable) {
       callAskIsabiCloud(clean, lang, localResp);
       setTimeout(() => {
         if (!state.aiPendingQ || state.aiPendingQ.q !== clean) return;
