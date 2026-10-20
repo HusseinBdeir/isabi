@@ -566,17 +566,440 @@ JS = r"""
     }
   ];
 
+  // ---------------- 18-APP INTERACTIVE ECOSYSTEM (ODOO-STYLE SUITE) ----------------
+  const APP_SUITE = [
+    {
+      id: 'gl', cat: 'finance', emoji: '📒', tone: 'tone-brass',
+      name: 'General Ledger & COA', sub: 'Double-Entry & Class 1 to 7',
+      kicker: 'Core Accounting Module · Microsoft Dataverse',
+      desc: 'Full double-entry institutional accounting with regional Class 1 to 7 charts of accounts, multi-currency journals, and automated voucher numbering.',
+      bullets: [
+        '⚖️ Balanced Debit & Credit validation on every operational posting',
+        '💱 Multi-currency ledger (USD, EUR, AED, LBP) with live FX rates',
+        '🔒 Immutable audit log of who created, edited, or stamped each entry'
+      ],
+      tables: ['bhf_journal', 'bhf_coa', 'bhf_voucher', 'bhf_fiscalperiod'],
+      sbox: 'holding', ask: 'How does the ISABI General Ledger and Class 1 to 7 Chart of Accounts work?'
+    },
+    {
+      id: 'soa', cat: 'finance', emoji: '🧾', tone: 'tone-steel',
+      name: 'Printable SOA & P&L', sub: 'PDF & Excel Paginated .RDL',
+      kicker: 'Statutory & Partner Statements · Paginated .RDL',
+      desc: 'Pixel-perfect printable Statements of Account for customers, suppliers, and equity partners, plus audited Balance Sheet, P&L, and Trial Balance packs.',
+      bullets: [
+        '📄 Running balance Statement of Account with opening & closing rules',
+        '📥 One-click export to print-ready PDF, Word, or formatted Excel',
+        '🤝 Automated monthly partner profit-split and capital statements'
+      ],
+      tables: ['StatementOfAccount.rdl', 'PartnerStatement.rdl', 'TrialBalance.rdl'],
+      sbox: 'holding', ask: 'Tell me about the printable Statements of Account and P&L reports'
+    },
+    {
+      id: 'pbi', cat: 'finance', emoji: '📊', tone: 'tone-good',
+      name: 'Power BI Suite', sub: 'Year / Month / Week / Day',
+      kicker: 'Executive Analytics · XMLA Semantic Models',
+      desc: 'Three governed workspaces per company (Operations, Financial, and Reconciliation) with instant period pickers and month-over-month variance.',
+      bullets: [
+        '📅 Unified Year, Month, Week, and Day slicer across every visual',
+        '📈 Consolidated group view plus per-branch Business Unit security',
+        '⚡ Direct XMLA semantic model refresh on scheduled cloud pipelines'
+      ],
+      tables: ['Operations Workspace', 'Financial Workspace', 'Period Picker DAX'],
+      sbox: 'holding', ask: 'How are the Power BI dashboards structured across Operations and Finance?'
+    },
+    {
+      id: 'ai', cat: 'field', emoji: '🤖', tone: 'tone-brass',
+      name: 'Ask ISABI Native AI', sub: 'Cited Live Ledger Answers',
+      kicker: 'Embedded System Intelligence · Role-Aware',
+      desc: 'Your executive AI analyst wired directly to your live Dataverse ledger, stock, and receivables. Every answer cites the exact vouchers it used.',
+      bullets: [
+        '🔍 Queries live overdue receivables, margin shifts, and stock variances',
+        '🛡️ Respects Entra ID & Business Unit roles so branch data stays private',
+        '💬 Available inside the ERP header bar, Power BI, and WhatsApp'
+      ],
+      tables: ['bhf_isabi_ask_store', 'Live Ledger Context', 'Role-Scoped Citations'],
+      sbox: 'holding', ask: 'How does Ask ISABI treat confidential figures?'
+    },
+    {
+      id: 'ar', cat: 'finance', emoji: '💵', tone: 'tone-coral',
+      name: 'Receivables & Credit', sub: '0-30-60-90d Aging & Gates',
+      kicker: 'Credit Control & Collections · Automated Watchdogs',
+      desc: 'Real-time customer receivable aging across 0 to 30, 31 to 60, 61 to 90, and 90+ day buckets, with form-level credit caps and one-click WhatsApp SOA dispatch.',
+      bullets: [
+        '🚦 Form rules block new sales tickets when a client breaches credit limits',
+        '📉 Live 0-30-60-90+ day aging matrix across all operating branches',
+        '📲 One-click WhatsApp & email payment reminders with attached SOA'
+      ],
+      tables: ['bhf_customer', 'bhf_receivable', 'bhf_creditlimit', 'ARAging.rdl'],
+      sbox: 'trading', ask: 'Why did receivables past 60 days increase this month?'
+    },
+    {
+      id: 'partner', cat: 'finance', emoji: '🤝', tone: 'tone-violet',
+      name: 'Partner Equity Splits', sub: 'Capital & Profit Sharing',
+      kicker: 'Multi-Partner Accounting · Automated Allocation',
+      desc: 'Built for co-owned resorts, real estate developments, and trading joint ventures where each property or venture has custom partner equity percentages.',
+      bullets: [
+        '📐 Per-venue and per-project ownership percentage tables',
+        '💸 Tracks partner drawings, capital injections, and management fees',
+        '🧾 Generates monthly audited partner distribution statements'
+      ],
+      tables: ['bhf_partner', 'bhf_partnersplit', 'bhf_capitalaccount'],
+      sbox: 'hospitality', ask: 'How does ISABI automate partner profit splits and capital accounts?'
+    },
+    {
+      id: 'bridge', cat: 'finance', emoji: '⚖️', tone: 'tone-teal',
+      name: 'Statutory Book Bridge', sub: 'Zero-Variance Parallel Run',
+      kicker: 'Safe Transition Engine · Dual-Entry Verification',
+      desc: 'Runs alongside your existing accounting software during onboarding and compares every account line-by-line until the variance is $0.00.',
+      bullets: [
+        '🔄 Imports monthly trial balances from legacy accounting registers',
+        '🎯 Highlights any discrepancy down to $1 with instant voucher drilldown',
+        '✅ Protects tax and statutory compliance while operations modernize'
+      ],
+      tables: ['bhf_statutoryanchor', 'bhf_variancebridge', 'Reconciliation.pbix'],
+      sbox: 'holding', ask: 'How does dual-entry reconciliation work with our existing accountant software?'
+    },
+    {
+      id: 'treasury', cat: 'finance', emoji: '🏦', tone: 'tone-steel',
+      name: 'Treasury & PDC Vault', sub: 'Banks, Cash & Checks',
+      kicker: 'Multi-Entity Cash Management · Class 5 Treasury',
+      desc: 'Track bank accounts, petty cash safes, wire transfers, and post-dated check (PDC) maturity schedules across every subsidiary in real time.',
+      bullets: [
+        '🏦 Live cash position across USD, EUR, AED, and local bank accounts',
+        '📅 Post-dated check (PDC) maturity radar and deposit alerts',
+        '🔐 Supervisor digital stamp required on inter-vault transfers'
+      ],
+      tables: ['bhf_bankaccount', 'bhf_treasurytransfer', 'bhf_pdccheck'],
+      sbox: 'holding', ask: 'How does ISABI manage multi-currency treasury and post-dated checks?'
+    },
+    {
+      id: 'hosp', cat: 'ops', emoji: '🏖️', tone: 'tone-brass',
+      name: 'Hospitality & Resorts', sub: 'Outlets, Cabanas & F&B',
+      kicker: 'Industry App 01 · Hospitality Operations',
+      desc: 'Complete multi-property resort and F&B operations: daily outlet revenue audits, cabana bookings, supplier F&B provisions, and seasonal payroll.',
+      bullets: [
+        '🍹 Daily outlet close across entrance, cabanas, restaurants, and bars',
+        '🥩 Supplier invoice intake, recipe cost ratios, and beverage stock audits',
+        '👥 Seasonal staff contracts, cash advances, tips, and attendance'
+      ],
+      tables: ['bhf_revenue', 'bhf_expense', 'bhf_supplier', 'bhf_employee'],
+      sbox: 'hospitality', ask: 'Show the Hospitality, Resorts & Beach Clubs blueprint'
+    },
+    {
+      id: 'vin', cat: 'ops', emoji: '🚛', tone: 'tone-steel',
+      name: 'VIN & Equipment Trade', sub: 'Chassis, Customs & Parts',
+      kicker: 'Industry App 02 · Trading & Dealership Operations',
+      desc: 'End-to-end vehicle, heavy equipment, and spare-parts trading from FOB shipment and bonded customs to showroom delivery and after-sales parts.',
+      bullets: [
+        '🔢 Per-VIN chassis registry (In-Transit, Bonded Customs, Showroom, Sold)',
+        '🚢 Full landed cost engine: FOB + Freight + Insurance + Customs Duty',
+        '⚙️ Multi-warehouse spare parts SKU stock and minimum margin locks'
+      ],
+      tables: ['bhf_vehiclevin', 'bhf_landedcost', 'bhf_partssku', 'bhf_salesorder'],
+      sbox: 'trading', ask: 'Show the Automotive, Heavy Equipment & Parts Trading blueprint'
+    },
+    {
+      id: 'concrete', cat: 'ops', emoji: '🏗️', tone: 'tone-good',
+      name: 'Ready-Mix & Plant', sub: 'Batch Tickets m³ & Silos',
+      kicker: 'Industry App 03 · Manufacturing Operations',
+      desc: 'Built for ready-mix concrete plants and construction material producers tracking every cubic meter poured, mix design, pump fee, and cement silo.',
+      bullets: [
+        '🎫 Sales ticket ledger by m³ poured, MPA mix grade, and pump usage',
+        '🌾 Live cement silo, sand, gravel, and admixture depletion vs. batch yield',
+        '🚧 Contractor project billing and automated credit-limit gates'
+      ],
+      tables: ['bhf_salesticket', 'bhf_mixdesign', 'bhf_silostock', 'bhf_project'],
+      sbox: 'manufacturing', ask: 'Show the Concrete & Manufacturing blueprint'
+    },
+    {
+      id: 'fleet', cat: 'ops', emoji: '🚚', tone: 'tone-coral',
+      name: 'Fleet & Fuel Dispatch', sub: 'Mixers, Pumps & Trips',
+      kicker: 'Heavy Transport & Fleet Module · Manufacturing & Logistics',
+      desc: 'Track transit mixers, concrete pumps, and heavy transport trucks with per-trip driver allowances, fuel burn per cubic meter, and maintenance logs.',
+      bullets: [
+        '⛽ Fuel issue tracking and liters-per-m³ efficiency alerts by truck',
+        '🛣️ Automated driver trip bonuses and inter-company transport billing',
+        '🔧 Preventive maintenance schedules, tires, and workshop job cards'
+      ],
+      tables: ['bhf_fleetasset', 'bhf_tripdispatch', 'bhf_fuellog', 'bhf_maintenance'],
+      sbox: 'manufacturing', ask: 'How does ISABI track transit mixer fleets, fuel, and inter-company transport?'
+    },
+    {
+      id: 're', cat: 'ops', emoji: '🏢', tone: 'tone-violet',
+      name: 'Real Estate & Leases', sub: 'Units, Rent & NOI Yield',
+      kicker: 'Industry App 04 · Real Estate Operations',
+      desc: 'Manage commercial and residential towers, retail plazas, and land banks with automated lease escalations, tenant billing, and per-property NOI.',
+      bullets: [
+        '🏙️ Property and unit registry (Occupied, Vacant, Reserved, Refurbishment)',
+        '📑 Lease contracts with 60/30-day renewal alerts and rent escalations',
+        '🛠️ Maintenance work orders tagged automatically to CapEx vs. OpEx'
+      ],
+      tables: ['bhf_property', 'bhf_unit', 'bhf_lease', 'bhf_workorder'],
+      sbox: 'realestate', ask: 'Show the Real Estate & Commercial Property Portfolios blueprint'
+    },
+    {
+      id: 'ins', cat: 'ops', emoji: '🛡️', tone: 'tone-teal',
+      name: 'Insurance Bordereaux', sub: 'Policies, Splits & Claims',
+      kicker: 'Industry App 05 · Insurance Brokerage Operations',
+      desc: 'Policy lifecycle management across motor, medical, marine, and property lines with carrier bordereaux, producer splits, and 90/60/30-day renewals.',
+      bullets: [
+        '📋 Policy & endorsement registry with gross/net/commission split math',
+        '🏦 One-click printable carrier settlement bordereaux and client SOA',
+        '🔔 90/60/30-day expiring book renewal radar and claims tracker'
+      ],
+      tables: ['bhf_policy', 'bhf_endorsement', 'bhf_bordereau', 'bhf_claim'],
+      sbox: 'insurance', ask: 'Show the Insurance Brokerage & Underwriting Operations blueprint'
+    },
+    {
+      id: 'holding', cat: 'ops', emoji: '🏛️', tone: 'tone-brass',
+      name: 'Holding & Board Pack', sub: 'Multi-Company Command',
+      kicker: 'Industry App 06 · Holding Operations',
+      desc: 'Unifies all sister companies into one boardroom console while keeping each subsidiary isolated inside its own Dataverse Business Unit.',
+      bullets: [
+        '🌐 Overnight group consolidation across all operating industries',
+        '🔄 Intercompany loans, management fees, and cross-charge elimination',
+        '📊 Executive board pack with entity-by-entity books-closed status'
+      ],
+      tables: ['bhf_interaction', 'bhf_intercompany', 'bhf_businessunit'],
+      sbox: 'holding', ask: 'Show the Multi-Entity Holding Groups & Family Offices blueprint'
+    },
+    {
+      id: 'pos', cat: 'field', emoji: '🖨️', tone: 'tone-good',
+      name: 'Offline POS Till PWA', sub: '<0.3s Thermal Receipt Till',
+      kicker: 'Companion Field App 07 · Progressive Web App',
+      desc: 'Zero-latency cashier till that keeps ringing sales and printing Bluetooth thermal receipts through internet cuts, then syncs daily totals to Dataverse.',
+      bullets: [
+        '⚡ Sub-300ms local thermal receipt and kitchen order printing (RawBT)',
+        '📴 100% offline IndexedDB sales queue during Wi-Fi or power cuts',
+        '💳 Zero per-terminal SaaS fees across unlimited cashier tablets'
+      ],
+      tables: ['IndexedDB bhfpos', 'RawBT ESC/POS', 'bhf_revenue Sync'],
+      sbox: 'hospitality', ask: 'Tell me about the Offline POS Till PWA'
+    },
+    {
+      id: 'kiosk', cat: 'field', emoji: '📸', tone: 'tone-steel',
+      name: 'Face & PIN Gate Kiosk', sub: '1s Biometric Tablet PWA',
+      kicker: 'Companion Field App 08 · Workforce Attendance PWA',
+      desc: 'Replaces fragile fingerprint boxes with any standard wall-mounted tablet. Verifies staff by face + PIN in 1 second offline and syncs nightly to payroll.',
+      bullets: [
+        '📸 Live camera facial verification + 4-digit PIN with photo audit trail',
+        '📴 Buffers clock-in, break, and clock-out punches offline at remote sites',
+        '🌙 Nightly cloud job pairs shifts, calculates overtime, and posts to HR'
+      ],
+      tables: ['bhf_punch', 'bhf_faceenrolment', 'bhf_attendance'],
+      sbox: 'manufacturing', ask: 'Tell me about the Biometric Face & PIN Attendance Kiosk PWA'
+    },
+    {
+      id: 'hr', cat: 'field', emoji: '🎯', tone: 'tone-violet',
+      name: 'Recruitment & CV Drive', sub: 'Applicant to SharePoint',
+      kicker: 'HR & Talent Pipeline · Automated Cloud Flow',
+      desc: 'Automated applicant intake that routes candidate CVs straight into per-company SharePoint drives and creates structured Dataverse review records.',
+      bullets: [
+        '📥 Public application form auto-routes by target resort, plant, or branch',
+        '📂 Uploads PDF CVs directly into per-Business Unit SharePoint folders',
+        '👥 HR evaluation workflow from screening to one-click employee onboarding'
+      ],
+      tables: ['cr519_recruitment', 'SharePoint Per-BU Drive', 'bhf_employee'],
+      sbox: 'holding', ask: 'How does the automated recruitment and SharePoint CV pipeline work?'
+    }
+  ];
+
+  // ---------------- INDUSTRY EMOJIS, DAY-IN-THE-LIFE TIMELINES & BEFORE/AFTER ----------------
+  const IND_EXTRAS = {
+    hospitality: {
+      emoji: '🏖️',
+      dayFlow: [
+        ['🌅 08:00 AM · Gate & Staff', 'Biometric Shift Check-In', 'Seasonal staff clock in on the tablet kiosk via Face + PIN; kitchen and bar stock deliveries are logged against supplier POs.', '✓ Live Headcount'],
+        ['☀️ 01:30 PM · Peak Service', 'Offline POS Tills Ringing', 'Entrance, cabanas, and beach bars ring orders and print Bluetooth thermal receipts in 0.2s, even if Wi-Fi drops.', '✓ 100% Uptime'],
+        ['🌇 11:30 PM · Shift Close', 'Cash & Card Till Audit', 'Managers count drawers; end-of-day sales totals sync automatically into the Dataverse revenue ledger by outlet.', '✓ $0 Variance'],
+        ['🌙 02:00 AM · Nightly Close', 'Owner Flash & Partner Split', 'Power BI refreshes consolidated TTC revenue, F&B cost ratios, and partner profit-split balances for morning review.', '✓ Books Closed']
+      ],
+      before: [
+        '❌ Cashiers and accountants re-keying paper till slips into 12 separate Excel sheets every morning',
+        '❌ Unexplained variances between F&B supplier deliveries, bar stock, and outlet cash',
+        '❌ Days spent calculating monthly partner profit splits and advances by hand',
+        '❌ Cloud POS terminals freezing whenever beach or resort internet fluctuates'
+      ],
+      after: [
+        '✅ Offline POS tills sync end-of-day sales totals straight into the Dataverse ledger automatically',
+        '✅ Every supplier invoice and petty cash voucher requires a digital supervisor stamp',
+        '✅ Partner Statement of Accounts (.rdl) and profit splits generate in one click',
+        '✅ Owners open one mobile Power BI dashboard to see every property and outlet live'
+      ]
+    },
+    trading: {
+      emoji: '🚛',
+      dayFlow: [
+        ['🌅 08:30 AM · Port & Customs', 'VIN & Landed Cost Intake', 'New shipment arrives: FOB invoice, freight, insurance, and customs duty are allocated per VIN chassis automatically.', '✓ Exact Unit Cost'],
+        ['☀️ 11:45 AM · Showroom Floor', 'Margin-Locked Sales Order', 'Sales rep quotes a heavy truck; form rules verify minimum gross margin and check customer credit before approval.', '✓ Margin Protected'],
+        ['🌇 03:30 PM · Parts Counter', 'SKU Dispatch & Workshop', 'Spare parts counter scans items across bonded and duty-paid depots; reorder alerts fire when stock hits threshold.', '✓ Live SKU Stock'],
+        ['🌙 06:00 PM · Finance Desk', 'Aged SOA & Statutory Match', 'Overdue 30/60/90d installment alerts dispatch printable PDF Statements of Account and reconcile with statutory books.', '✓ Reconciled']
+      ],
+      before: [
+        '❌ Landed cost per vehicle guessed on spreadsheets while customs duties and clearance bills arrive late',
+        '❌ Sales reps giving discounts below true landed cost without management visibility',
+        '❌ Spare parts stock discrepancies across showrooms, bonded warehouses, and service bays',
+        '❌ Overdue dealer and fleet installments noticed weeks after payment dates pass'
+      ],
+      after: [
+        '✅ Every VIN tracks its exact lifecycle (In-Transit, Bonded, Showroom, Sold) and full landed cost',
+        '✅ Automated form gates block under-margin quotes and over-limit credit sales instantly',
+        '✅ Real-time multi-warehouse SKU stock with automated transfer and reorder alerts',
+        '✅ Live 0-30-60-90d receivable aging with one-click printable SOA and statutory book match'
+      ]
+    },
+    manufacturing: {
+      emoji: '🏗️',
+      dayFlow: [
+        ['🌅 06:30 AM · Batch Plant Gate', 'Silo Check & Crew Clock-In', 'Drivers and plant operators verify on the Face + PIN kiosk; cement silo and aggregate levels are confirmed.', '✓ Plant Ready'],
+        ['☀️ 10:15 AM · Dispatch Desk', 'Sales Ticket & Credit Gate', 'Dispatcher keys a 42 m³ C35 pump pour; form rules auto-price mix + pump fee and verify contractor credit cap.', '✓ Credit Verified'],
+        ['🌇 04:00 PM · Fleet & Yard', 'Mixer Trips & Fuel Audit', 'Transit mixer trips, driver allowances, and fuel burn per cubic meter are logged across plant and transport entities.', '✓ Fleet Tracked'],
+        ['🌙 07:00 PM · Plant Close', 'Yield & Project SOA Pack', 'Theoretical vs. actual cement consumption is audited, and customer statements grouped by project site update live.', '✓ Yield Audited']
+      ],
+      before: [
+        '❌ Paper delivery tickets lost between the batch plant, mixer drivers, and back-office billing',
+        '❌ Pouring concrete for contractors who have already exceeded their credit limit',
+        '❌ Cement and aggregate silo shrinkage going unnoticed until month-end physical counts',
+        '❌ Inter-company billing between plant, construction, and transport companies taking weeks to untangle'
+      ],
+      after: [
+        '✅ Every cubic meter batched is captured on a governed Sales Ticket with mix grade and pump rules',
+        '✅ Real-time credit gates alert dispatchers before a truck leaves the yard',
+        '✅ Daily theoretical vs. actual silo depletion and gross margin per m³ in Power BI',
+        '✅ Automated inter-entity ledger and project-grouped customer Statements of Account (.rdl)'
+      ]
+    },
+    realestate: {
+      emoji: '🏢',
+      dayFlow: [
+        ['🌅 09:00 AM · Portfolio Desk', 'Lease & PDC Radar', 'System flags leases 60 days from expiry and lists post-dated checks (PDCs) maturing this week for bank deposit.', '✓ Zero Missed Dates'],
+        ['☀️ 12:00 PM · Tenant Portal', 'Rent & Utility Billing', 'Quarterly rent invoices, escalations, and utility charge-backs generate and post to tenant ledgers automatically.', '✓ Auto-Billed'],
+        ['🌇 03:00 PM · Building Ops', 'Maintenance CapEx vs OpEx', 'Facility manager approves a contractor work order; cost is tagged to the exact building unit and CapEx/OpEx account.', '✓ Unit Costed'],
+        ['🌙 06:30 PM · Owner View', 'Property NOI & Yield Close', 'Co-investors and owners view live occupancy, collection aging, and net operating income (NOI) per property.', '✓ Live NOI']
+      ],
+      before: [
+        '❌ Lease renewals, rent escalation clauses, and post-dated check dates buried in static folders',
+        '❌ Maintenance expenses lumped together with no clarity on unit-level profitability or CapEx vs. OpEx',
+        '❌ Chasing overdue tenant rent without an instant, clean Statement of Account to send',
+        '❌ Co-investor distributions calculated manually on error-prone spreadsheets each quarter'
+      ],
+      after: [
+        '✅ Automated 60/30-day lease expiry, escalation, and PDC deposit alerts',
+        '✅ Every work order and vendor bill is tied to a specific property, unit, and ledger class',
+        '✅ One-click printable Tenant Statement of Account (.rdl) and collection aging dashboard',
+        '✅ Live property-by-property NOI, occupancy roll-forward, and co-investor distribution schedules'
+      ]
+    },
+    insurance: {
+      emoji: '🛡️',
+      dayFlow: [
+        ['🌅 09:00 AM · Underwriting', 'Policy & Endorsement Issue', 'Broker issues a corporate medical policy; gross premium, carrier net payable, and brokerage commission split calculate instantly.', '✓ Auto Split'],
+        ['☀️ 01:00 PM · Retention Desk', '90/60/30d Renewal Pipeline', 'Account executives work the automated renewal radar and send WhatsApp/Email installment reminders to clients.', '✓ High Retention'],
+        ['🌇 04:00 PM · Claims Desk', 'Claim & Survey Tracking', 'Motor and marine claims log survey milestones and reserve statuses linked directly to the client policy record.', '✓ Full History'],
+        ['🌙 06:00 PM · Carrier Close', '1-Click Carrier Bordereaux', 'Finance generates printable carrier settlement bordereaux and producer commission statements with zero manual math.', '✓ Bordereaux Ready']
+      ],
+      before: [
+        '❌ Hours wasted reconciling carrier bordereaux spreadsheets against client premium collections',
+        '❌ Sub-agent and producer commission splits miscalculated on mid-term policy endorsements',
+        '❌ Expiring policies noticed too late, costing the brokerage valuable renewal revenue',
+        '❌ No unified view of uncollected client premiums vs. net payables owed to carriers'
+      ],
+      after: [
+        '✅ Instant calculation of gross premium, carrier net payable, and producer commission on every policy',
+        '✅ Pro-rata endorsement adjustments and credit notes post directly to the ledger',
+        '✅ Automated 90/60/30-day renewal pipeline and client collection aging radar',
+        '✅ One-click printable Carrier Settlement Bordereaux and Client SOA (.rdl)'
+      ]
+    },
+    holding: {
+      emoji: '🏛️',
+      dayFlow: [
+        ['🌅 07:00 AM · Cloud Fleet', 'Overnight Group Sync', 'Scheduled pipelines audit all subsidiary Business Units, verify SharePoint backups, and refresh group semantic models.', '✓ 100% Green'],
+        ['☀️ 10:30 AM · Group Treasury', 'Multi-Entity Cash & Loans', 'CFO reviews consolidated USD/EUR/AED cash positions, intercompany balances, and partner capital accounts.', '✓ Group Visibility'],
+        ['🌇 02:30 PM · HR & Talent', 'Automated CV Routing', 'New job applicants via Tally auto-route CVs into per-company SharePoint folders and Dataverse HR queues.', '✓ Zero Manual Filing'],
+        ['🌙 05:30 PM · Boardroom', 'Ask ISABI Executive Brief', 'Chairman asks ISABI for a cross-industry margin and receivable briefing; every figure cites its underlying subsidiary ledger.', '✓ Board Ready']
+      ],
+      before: [
+        '❌ Waiting 15 to 20 days after month-end for subsidiaries to email incompatible Excel packs',
+        '❌ Intercompany loans and cross-charges out of balance between sister companies',
+        '❌ Branch staff accidentally seeing sensitive figures belonging to other group entities',
+        '❌ Job applicant CVs scattered across WhatsApp chats and personal email inboxes'
+      ],
+      after: [
+        '✅ Real-time group P&L, balance sheet, and cash position across all operating industries',
+        '✅ Governed intercompany ledger and partner equity capital accounts that always balance',
+        '✅ Strict Dataverse Business Unit isolation so every seat sees only its authorized scope',
+        '✅ Automated group-wide recruitment pipeline wired straight to SharePoint and Dataverse'
+      ]
+    },
+    pos: {
+      emoji: '🖨️',
+      dayFlow: [
+        ['🌅 09:00 AM · Cashier Open', 'PIN Unlock & Drawer Float', 'Cashier unlocks the tablet till with a 4-digit PIN (fail-closed lock screen) and logs the opening cash float.', '✓ Till Unlocked'],
+        ['☀️ 02:00 PM · High Volume', '0.2s Offline Receipt Print', 'Internet drops during peak lunch rush; cashier keeps ringing orders and printing thermal receipts via RawBT Bluetooth.', '✓ Zero Lag'],
+        ['🌇 06:00 PM · Reconnect', 'Auto Queue Flush', 'Wi-Fi returns; the local IndexedDB transaction queue flushes pending sales to the cloud with revision safety.', '✓ Auto Synced'],
+        ['🌙 11:00 PM · Shift Close', 'Drawer Count & Ledger Post', 'Supervisor runs the Shift Close Report, reconciles cash + card totals, and posts end-of-day revenue to Dataverse.', '✓ Posted to ERP']
+      ],
+      before: [
+        '❌ Cloud POS systems freezing at the gate or bar the moment internet connectivity flickers',
+        '❌ Paying steep monthly per-terminal SaaS fees for every seasonal cashier tablet',
+        '❌ Slow browser print dialogs and garbled characters on thermal receipt printers',
+        '❌ Re-keying daily till close ribbons into the accounting software by hand'
+      ],
+      after: [
+        '✅ 100% offline-first IndexedDB queue that never drops a single order or receipt',
+        '✅ Direct ESC/POS raster thermal printing over Bluetooth in under 300 milliseconds',
+        '✅ $0 per-terminal licence tax on unlimited iOS, Android, or Windows tablets',
+        '✅ Automated end-of-day sales totals sync straight into `bhf_revenue` and Power BI'
+      ]
+    },
+    attendance: {
+      emoji: '📸',
+      dayFlow: [
+        ['🌅 06:00 AM · Site Gate', '1-Second Face + PIN Punch', 'Staff walk up to the wall tablet, enter their PIN, and the live camera verifies their face in 1 second (even offline).', '✓ Biometric Match'],
+        ['☀️ 12:30 PM · Multi-Site', 'Offline Buffer & Sync', 'Remote plant and resort punches buffer locally in IndexedDB and sync via encrypted HTTP flow to Dataverse.', '✓ Photo Audited'],
+        ['🌇 05:00 PM · HR Console', 'Enrolment & Roster Control', 'HR enrols a new hire face descriptor in 15 seconds on the tablet and assigns their Business Unit and shift.', '✓ Instant Enrol'],
+        ['🌙 03:00 AM · Nightly Job', 'Payroll Shift Derivation', 'Nightly cloud engine pairs clock-in/out punches, flags missing outs, computes overtime, and updates `bhf_attendance`.', '✓ Payroll Ready']
+      ],
+      before: [
+        '❌ Proprietary fingerprint boxes breaking in dusty plants or humid beach resorts',
+        '❌ Buddy-punching with shared swipe cards or unverified paper sign-in sheets',
+        '❌ HR driving to remote sites with a USB stick at month-end to export punch logs',
+        '❌ Days spent manually pairing clock-in and clock-out timestamps in Excel for payroll'
+      ],
+      after: [
+        '✅ Runs on any off-the-shelf Android or iPad tablet mounted at the gate',
+        '✅ Dual Face + PIN verification with confidence score and photo audit on every punch',
+        '✅ Works 100% offline during power/internet cuts and syncs automatically to Dataverse',
+        '✅ Nightly derivation engine turns raw punches into audited shifts, lateness, and overtime'
+      ]
+    }
+  };
+
   // ---------------- STATE ----------------
   const state = {
     activeSec: 'architecture',
+    archView: 'apps',
+    appCat: 'all',
+    activeAppId: 'gl',
     activeInd: 'hospitality',
     indMobTab: 'modules',
+    sboxMode: 'erp',
+    soaDoc: 'soa',
+    posCart: [
+      { name: '🏖️ VIP Cabana Full Day', price: 120, qty: 1 },
+      { name: '🦞 Grilled Lobster Platter', price: 68, qty: 2 },
+      { name: '🍹 Sunset Pitcher', price: 34, qty: 1 }
+    ],
+    posSyncedCount: 142,
+    kioskLastPunch: { name: 'Rami K. · Batch Plant Dispatcher', time: '06:02:14 AM', score: '99.4% Face + PIN Match', status: 'Synced to bhf_punch' },
     sboxInd: 'holding',
     sboxNav: 'Overview',
     sboxPeriod: 'mtd',
     sboxCurr: 'USD',
     sboxTheme: 'auto',
     sboxMobTab: 'chart',
+    msTab: 'all',
     cfgInd: 'Hospitality & Resorts',
     cfgScale: 2,
     cfgScaleLabel: 'Multi-Branch (2 to 4 Entities)',
@@ -607,6 +1030,53 @@ JS = r"""
     showToast._t = setTimeout(() => { el.hidden = true; }, 3800);
   }
 
+  // ---------------- RENDER 18-APP ODOO-STYLE SUITE & SPOTLIGHT ----------------
+  function renderAppSuite() {
+    const gridEl = document.getElementById('app-suite-grid');
+    const spotEl = document.getElementById('app-spotlight');
+    if (!gridEl || !spotEl) return;
+
+    const filtered = state.appCat === 'all'
+      ? APP_SUITE
+      : APP_SUITE.filter(a => a.cat === state.appCat);
+
+    if (!filtered.some(a => a.id === state.activeAppId) && filtered.length) {
+      state.activeAppId = filtered[0].id;
+    }
+
+    gridEl.innerHTML = filtered.map(a => `
+      <button type="button" class="app-tile ${a.id === state.activeAppId ? 'active' : ''}" role="option" aria-selected="${a.id === state.activeAppId}" data-app-id="${a.id}">
+        <span class="app-icon ${a.tone}" aria-hidden="true">${a.emoji}</span>
+        <b>${a.name}</b>
+        <small>${a.sub}</small>
+      </button>
+    `).join('');
+
+    const cur = APP_SUITE.find(a => a.id === state.activeAppId) || APP_SUITE[0];
+    spotEl.innerHTML = `
+      <div class="app-spot-head">
+        <span class="app-icon ${cur.tone}" aria-hidden="true">${cur.emoji}</span>
+        <div>
+          <span class="app-spot-kicker">${cur.kicker}</span>
+          <h3>${cur.name}</h3>
+          <p>${cur.desc}</p>
+        </div>
+      </div>
+      <div class="app-spot-specs">
+        <ul class="app-spot-bullets">
+          ${cur.bullets.map(b => `<li>${b}</li>`).join('')}
+        </ul>
+        <div class="app-spot-tables">
+          ${cur.tables.map(t => `<span>${t}</span>`).join('')}
+        </div>
+      </div>
+      <div class="app-spot-actions">
+        <button type="button" class="btn btn-brass" data-load-sandbox="${cur.sbox}">🎮 Try in Sandbox</button>
+        <button type="button" class="btn btn-outline" data-open-ai="${cur.ask}">🤖 Ask ISABI</button>
+      </div>
+    `;
+  }
+
   // ---------------- NAVIGATION ACTIVE UNDERLINE & EXACT SECTION SCROLL ----------------
   function setActiveSection(secId) {
     const resolved = SEC_IDS.includes(secId) ? secId : 'architecture';
@@ -630,28 +1100,52 @@ JS = r"""
     const hdrH = hdr ? hdr.offsetHeight : 70;
     const rectTop = el.getBoundingClientRect().top + window.scrollY;
     if (el.classList.contains('sec')) {
-      // Align section top border 2px underneath the sticky header bottom border so zero pixels of the previous section show
       return Math.max(0, Math.round(rectTop - hdrH + 2));
     }
     return Math.max(0, Math.round(rectTop - hdrH - 14));
+  }
+
+  function activatePricingView(viewKey) {
+    document.querySelectorAll('[data-price-view]').forEach(b => {
+      b.classList.toggle('active', b.dataset.priceView === viewKey);
+    });
+    document.querySelectorAll('[data-price-panel]').forEach(panel => {
+      if (panel.dataset.pricePanel === viewKey) {
+        panel.removeAttribute('data-panel-hidden');
+        panel.removeAttribute('data-mob-hide');
+      } else {
+        panel.setAttribute('data-panel-hidden', '1');
+      }
+    });
+    if (viewKey === 'builder') {
+      document.querySelectorAll('[data-tier-tab]').forEach(b => {
+        b.classList.toggle('active', b.dataset.tierTab === 'builder');
+      });
+    } else if (viewKey === 'tiers') {
+      document.querySelectorAll('[data-tier-tab]').forEach(b => {
+        b.classList.toggle('active', b.dataset.tierTab === 'tier2');
+      });
+    }
   }
 
   function activateMobilePricingTab(targetTier) {
     document.querySelectorAll('[data-tier-tab]').forEach(b => {
       b.classList.toggle('active', b.dataset.tierTab === targetTier);
     });
+    if (targetTier === 'builder') {
+      activatePricingView('builder');
+      return;
+    }
+    activatePricingView('tiers');
     const grid = document.getElementById('pricing-tiers-grid');
     if (grid) {
-      if (targetTier === 'builder') {
-        grid.setAttribute('data-mob-hide', '1');
-      } else {
-        grid.removeAttribute('data-mob-hide');
-      }
+      grid.removeAttribute('data-mob-hide');
+      grid.removeAttribute('data-panel-hidden');
     }
     document.querySelectorAll('[data-tier-card]').forEach(card => {
       if (card.dataset.tierCard === targetTier) {
         card.removeAttribute('data-mob-hide');
-      } else {
+      } else if (card.dataset.tierCard !== 'builder') {
         card.setAttribute('data-mob-hide', '1');
       }
     });
@@ -663,8 +1157,10 @@ JS = r"""
     });
     document.querySelectorAll('[data-ing-panel]').forEach(panel => {
       if (panel.dataset.ingPanel === targetKey) {
+        panel.removeAttribute('data-panel-hidden');
         panel.removeAttribute('data-mob-hide');
       } else {
+        panel.setAttribute('data-panel-hidden', '1');
         panel.setAttribute('data-mob-hide', '1');
       }
     });
@@ -723,7 +1219,6 @@ JS = r"""
       history.replaceState(null, '', '#' + cleanId);
     }
 
-    // Re-verify exact alignment after smooth scroll settles
     clearTimeout(scrollToTargetId._verifyTimer);
     scrollToTargetId._verifyTimer = setTimeout(() => {
       if (scrollTargetId === cleanId) {
@@ -745,7 +1240,6 @@ JS = r"""
     const hdrH = hdr ? hdr.offsetHeight : 70;
     const probeY = window.scrollY + hdrH + 72;
 
-    // If scrolled near the very bottom of the page, highlight portal
     if ((window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 40)) {
       if (state.activeSec !== 'portal') setActiveSection('portal');
       return;
@@ -766,7 +1260,7 @@ JS = r"""
     }
   }
 
-  // ---------------- RENDER INDUSTRY BLUEPRINTS ----------------
+  // ---------------- RENDER INDUSTRY BLUEPRINTS (WITH 4 DESKTOP & MOBILE TABS) ----------------
   const IND_SHORT_NAMES = {
     hospitality: 'Hospitality & Resorts',
     trading: 'Auto & Equipment Trading',
@@ -784,63 +1278,100 @@ JS = r"""
     if (!tabsEl || !detailEl) return;
 
     const isMobile = window.innerWidth <= 720;
-    tabsEl.innerHTML = INDUSTRIES.map(ind => `
+    tabsEl.innerHTML = INDUSTRIES.map(ind => {
+      const ex = IND_EXTRAS[ind.id] || { emoji: '🏢' };
+      return `
       <button type="button" class="ind-tab ${ind.id === state.activeInd ? 'active' : ''}" role="tab" aria-selected="${ind.id === state.activeInd}" data-ind-id="${ind.id}">
-        <b>${isMobile ? (IND_SHORT_NAMES[ind.id] || ind.name) : ind.name}</b>
+        <b>${ex.emoji} ${isMobile ? (IND_SHORT_NAMES[ind.id] || ind.name) : ind.name}</b>
         <small>${ind.sub}</small>
       </button>
-    `).join('');
+    `;
+    }).join('');
 
     const cur = INDUSTRIES.find(x => x.id === state.activeInd) || INDUSTRIES[0];
+    const ex = IND_EXTRAS[cur.id] || IND_EXTRAS.hospitality;
     const mTab = state.indMobTab || 'modules';
+
+    let bodyContentHtml = '';
+    if (mTab === 'dayflow') {
+      bodyContentHtml = `
+        <div class="ind-flow-grid">
+          ${ex.dayFlow.map(step => `
+            <div class="ind-flow-step">
+              <span class="ind-flow-time">${step[0]}</span>
+              <h4>${step[1]}</h4>
+              <p>${step[2]}</p>
+              <span class="ind-flow-tag">${step[3]}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    } else if (mTab === 'beforeafter') {
+      bodyContentHtml = `
+        <div class="ind-ba-grid">
+          <div class="ind-ba-card before">
+            <h4>😫 Before ISABI (Spreadsheets &amp; Generic Templates)</h4>
+            <ul>${ex.before.map(item => `<li>${item}</li>`).join('')}</ul>
+          </div>
+          <div class="ind-ba-card after">
+            <h4>🚀 After ISABI (Governed Custom Architecture)</h4>
+            <ul>${ex.after.map(item => `<li>${item}</li>`).join('')}</ul>
+          </div>
+        </div>
+      `;
+    } else {
+      bodyContentHtml = `
+        <div class="ind-cols">
+          <div class="ind-box" data-ind-box="modules" ${mTab !== 'modules' ? 'data-mob-hide="1"' : ''}>
+            <h4>📦 Custom Tables &amp; Modules</h4>
+            <ul>${cur.modules.map(m => `<li>${m}</li>`).join('')}</ul>
+          </div>
+          <div class="ind-box" data-ind-box="workflows" ${mTab !== 'workflows' && mTab !== 'modules' ? 'data-mob-hide="1"' : (isMobile && mTab !== 'workflows' ? 'data-mob-hide="1"' : '')}>
+            <h4>⚡ Automated Cloud Workflows</h4>
+            <ul>${cur.workflows.map(w => `<li>${w}</li>`).join('')}</ul>
+          </div>
+          <div class="ind-box" data-ind-box="reports" ${mTab !== 'reports' && mTab !== 'modules' ? 'data-mob-hide="1"' : (isMobile && mTab !== 'reports' ? 'data-mob-hide="1"' : '')}>
+            <h4>📊 Power BI &amp; Printable .RDL</h4>
+            <ul>${cur.reports.map(r => `<li>${r}</li>`).join('')}</ul>
+          </div>
+        </div>
+      `;
+    }
 
     detailEl.innerHTML = `
       <div class="ind-detail-top">
         <div>
-          <span class="ind-badge-pill">${cur.badge}</span>
+          <span class="ind-badge-pill">${ex.emoji} ${cur.badge}</span>
           <h3>${cur.name}</h3>
           <p class="ind-detail-lead">${cur.lead}</p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;width:100%">
-          <button type="button" class="btn btn-outline" data-load-sandbox="${cur.sandboxKey}">Preview in Live ERP Sandbox</button>
-          <button type="button" class="btn btn-brass" data-configure-ind="${cur.cfgName}">Price This Industry System</button>
+          <button type="button" class="btn btn-outline" data-load-sandbox="${cur.sandboxKey}">🎮 Preview in Live ERP Sandbox</button>
+          <button type="button" class="btn btn-brass" data-configure-ind="${cur.cfgName}">🛠️ Price This Industry System</button>
         </div>
       </div>
 
-      <div class="mob-seg-bar" role="tablist" aria-label="Blueprint Layers">
-        <button type="button" class="mob-seg-btn ${mTab === 'modules' ? 'active' : ''}" data-ind-subtab="modules">Tables (${cur.modules.length})</button>
-        <button type="button" class="mob-seg-btn ${mTab === 'workflows' ? 'active' : ''}" data-ind-subtab="workflows">Workflows (${cur.workflows.length})</button>
-        <button type="button" class="mob-seg-btn ${mTab === 'reports' ? 'active' : ''}" data-ind-subtab="reports">Power BI &amp; RDL (${cur.reports.length})</button>
+      <div class="ind-subtabs" role="tablist" aria-label="Blueprint Views">
+        <button type="button" class="ind-subtab-btn ${mTab === 'modules' ? 'active' : ''}" data-ind-subtab="modules">📦 Core Modules (${cur.modules.length})</button>
+        <button type="button" class="ind-subtab-btn ${mTab === 'dayflow' ? 'active' : ''}" data-ind-subtab="dayflow">⏱️ Day-in-the-Life Flow</button>
+        <button type="button" class="ind-subtab-btn ${mTab === 'beforeafter' ? 'active' : ''}" data-ind-subtab="beforeafter">🔄 Before vs. After</button>
+        <button type="button" class="ind-subtab-btn ${mTab === 'reports' ? 'active' : ''}" data-ind-subtab="reports">📊 Reports &amp; Workflows</button>
       </div>
 
-      <div class="ind-cols">
-        <div class="ind-box" data-ind-box="modules" ${mTab !== 'modules' ? 'data-mob-hide="1"' : ''}>
-          <h4>Custom Tables &amp; Modules</h4>
-          <ul>${cur.modules.map(m => `<li>${m}</li>`).join('')}</ul>
-        </div>
-        <div class="ind-box" data-ind-box="workflows" ${mTab !== 'workflows' ? 'data-mob-hide="1"' : ''}>
-          <h4>Automated Cloud Workflows</h4>
-          <ul>${cur.workflows.map(w => `<li>${w}</li>`).join('')}</ul>
-        </div>
-        <div class="ind-box" data-ind-box="reports" ${mTab !== 'reports' ? 'data-mob-hide="1"' : ''}>
-          <h4>Power BI &amp; Printable .RDL</h4>
-          <ul>${cur.reports.map(r => `<li>${r}</li>`).join('')}</ul>
-        </div>
-      </div>
+      ${bodyContentHtml}
 
       <div class="ind-ledger-strip">
         <div class="ind-metrics-mini">
           ${cur.metrics.map(m => `<div><small>${m[0]}</small><b class="num">${m[1]}</b></div>`).join('')}
         </div>
         <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I am interested in an ISABI Systems blueprint for ' + cur.name + '. Can we schedule a quick walkthrough?')}" target="_blank" rel="noopener" class="btn btn-wa" aria-label="Discuss ${cur.name} on WhatsApp">
-          Discuss on WhatsApp
+          💬 Discuss on WhatsApp
         </a>
       </div>
     `;
   }
 
-  // ---------------- RENDER LIVE ERP SANDBOX ----------------
-  // Rolling 12 months ending in the current month, so the sandbox never looks stale
+  // ---------------- RENDER LIVE ERP, SOA & FIELD PWA SANDBOX ----------------
   const MONTH_DATES = Array.from({ length: 12 }, (_, i) => new Date(NOW.getFullYear(), NOW.getMonth() - 11 + i, 1));
   const MONTHS = MONTH_DATES.map(d => MONTH_ABBR[d.getMonth()]);
   const MONTH_LABELS = MONTH_DATES.map(d => MONTH_ABBR[d.getMonth()] + ' ' + d.getFullYear());
@@ -906,12 +1437,12 @@ JS = r"""
     if (!barEl || !mockEl) return;
 
     const sboxChoices = [
-      ['holding', 'Group Holding'],
-      ['hospitality', 'Hospitality & Resorts'],
-      ['trading', 'Auto & Equipment Trading'],
-      ['manufacturing', 'Concrete & Mfg'],
-      ['realestate', 'Real Estate'],
-      ['insurance', 'Insurance Brokerage']
+      ['holding', '🏛️ Group Holding'],
+      ['hospitality', '🏖️ Hospitality & Resorts'],
+      ['trading', '🚛 Auto & Equipment Trading'],
+      ['manufacturing', '🏗️ Concrete & Mfg'],
+      ['realestate', '🏢 Real Estate'],
+      ['insurance', '🛡️ Insurance Brokerage']
     ];
 
     barEl.innerHTML = sboxChoices.map(([k, lbl]) => `
@@ -923,6 +1454,142 @@ JS = r"""
     const pm = PERIOD_MULT[state.sboxPeriod] || PERIOD_MULT.mtd;
     const totalMult = cm.mult * pm.mult;
 
+    // MODE 2: PRINTABLE STATEMENT OF ACCOUNT (.RDL) VIEWER
+    if (state.sboxMode === 'soa') {
+      mockEl.className = 'mock mode-full';
+      const docType = state.soaDoc || 'soa';
+      let rowsHtml = '';
+      let runBal = 18400 * cm.mult;
+      d.journal.forEach((r, idx) => {
+        const deb = r[4] ? (r[4] * cm.mult) : 0;
+        const cred = r[5] ? (r[5] * cm.mult) : 0;
+        runBal += (deb - cred);
+        rowsHtml += `<tr>
+          <td>${DAY_TOKENS[r[0]] || r[0]}</td>
+          <td class="mono">${r[1]}</td>
+          <td>${r[2]}</td>
+          <td>${r[3]}</td>
+          <td class="n">${deb ? deb.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
+          <td class="n">${cred ? cred.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
+          <td class="n"><b>${runBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></td>
+        </tr>`;
+      });
+
+      mockEl.innerHTML = `
+        <div class="soa-viewer">
+          <div class="soa-hdr">
+            <div>
+              <span class="ind-badge-pill">🧾 Paginated .RDL Statement Preview · ${d.groupTitle}</span>
+              <h3 style="font-size:20px;margin:4px 0">Audited Statement of Account &amp; Trial Balance (${cm.sym})</h3>
+              <span style="font-size:12px;color:var(--m-muted)">Period: ${pm.label} · Lebanese / Regional Class 1 to 7 COA · Reconciled to $0.00 Variance</span>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" class="sbox-theme-btn ${docType === 'soa' ? 'active' : ''}" data-soa-doc="soa">📄 Statement of Account</button>
+              <button type="button" class="sbox-theme-btn ${docType === 'tb' ? 'active' : ''}" data-soa-doc="tb">⚖️ Statutory Trial Balance</button>
+              <button type="button" class="primary-mock" data-open-ai="Audit the ${d.groupTitle} Statement of Account in ${cm.sym}">🤖 Ask ISABI to Audit</button>
+            </div>
+          </div>
+
+          <div class="soa-meta-grid">
+            <div class="soa-meta-cell"><small>Opening Balance (${cm.sym})</small><b class="num">${(18400 * cm.mult).toLocaleString('en-US', { minimumFractionDigits: 2 })}</b></div>
+            <div class="soa-meta-cell"><small>Period Debits</small><b class="num">${(42600 * cm.mult).toLocaleString('en-US', { minimumFractionDigits: 2 })}</b></div>
+            <div class="soa-meta-cell"><small>Period Credits</small><b class="num">${(38900 * cm.mult).toLocaleString('en-US', { minimumFractionDigits: 2 })}</b></div>
+            <div class="soa-meta-cell"><small>Statutory Book Variance</small><b class="num" style="color:var(--good)">0.00 (${cm.sym}) ✓</b></div>
+          </div>
+
+          <div class="panel">
+            <table class="m-grid">
+              <thead>
+                <tr><th>Date</th><th>Voucher Ref</th><th>Business Unit</th><th>Class &amp; Account Description</th><th class="n">Debit (${cm.sym})</th><th class="n">Credit (${cm.sym})</th><th class="n">Running Balance (${cm.sym})</th></tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+                <tr class="total">
+                  <td colspan="4"><b>Closing Audited Balance (Closed with the ISABI Double Rule)</b></td>
+                  <td class="n">${(42600 * cm.mult).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                  <td class="n">${(38900 * cm.mult).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                  <td class="n"><b>${runBal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+      updateAiScopeBar();
+      return;
+    }
+
+    // MODE 3: INTERACTIVE OFFLINE POS TILL & BIOMETRIC GATE KIOSK PLAYGROUND
+    if (state.sboxMode === 'pwa') {
+      mockEl.className = 'mock mode-full';
+      const cartTotal = state.posCart.reduce((acc, item) => acc + item.price * item.qty, 0);
+      mockEl.innerHTML = `
+        <div class="pwa-sim-grid">
+          <div class="pwa-sim-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+              <div>
+                <span class="ind-badge-pill">🖨️ Offline Cashier POS Till PWA</span>
+                <h3 style="font-size:17px">Tap Items to Ring an Order &amp; Sync to Ledger</h3>
+              </div>
+              <span class="hlc-status"><i></i>Offline Queue Ready</span>
+            </div>
+            <div class="pos-items-grid">
+              <button type="button" class="pos-item-btn" data-pos-add="🏖️ VIP Cabana|120"><span>🏖️ VIP Cabana</span><b class="num">+$120</b></button>
+              <button type="button" class="pos-item-btn" data-pos-add="🦞 Grilled Lobster|68"><span>🦞 Grilled Lobster</span><b class="num">+$68</b></button>
+              <button type="button" class="pos-item-btn" data-pos-add="🍹 Sunset Pitcher|34"><span>🍹 Sunset Pitcher</span><b class="num">+$34</b></button>
+              <button type="button" class="pos-item-btn" data-pos-add="☕ Double Espresso|8"><span>☕ Double Espresso</span><b class="num">+$8</b></button>
+            </div>
+            <div class="pos-receipt-box">
+              <div style="border-bottom:1px dashed rgba(255,255,255,0.25);padding-bottom:6px;margin-bottom:6px;display:flex;justify-content:space-between">
+                <span>ISABI THERMAL RECEIPT · TILL #01</span>
+                <span>Receipts Synced: ${state.posSyncedCount}</span>
+              </div>
+              ${state.posCart.map(it => `<div style="display:flex;justify-content:space-between"><span>${it.qty}x ${it.name}</span><span>$${(it.price * it.qty).toFixed(2)}</span></div>`).join('')}
+              <div style="border-top:1px solid #D9A54A;border-bottom:3px double #D9A54A;margin-top:8px;padding:5px 0;display:flex;justify-content:space-between;font-weight:700;color:#D9A54A">
+                <span>TOTAL TTC (INCL. VAT)</span>
+                <span>$${cartTotal.toFixed(2)}</span>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" class="btn btn-brass" style="flex:1" data-pos-sync="1">🖨️ Print Receipt &amp; Sync to Dataverse</button>
+              <button type="button" class="btn btn-outline" data-pos-clear="1">Reset Till</button>
+            </div>
+          </div>
+
+          <div class="pwa-sim-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+              <div>
+                <span class="ind-badge-pill">📸 Biometric Face &amp; PIN Gate Kiosk PWA</span>
+                <h3 style="font-size:17px">Tap an Employee to Simulate a 1-Second Gate Punch</h3>
+              </div>
+              <span class="hlc-status"><i></i>Camera + PIN Live</span>
+            </div>
+            <div class="pos-items-grid">
+              <button type="button" class="pos-item-btn" data-kiosk-punch="👷‍♂️ Rami K. · Batch Plant Dispatcher|99.4% Face + PIN"><span>👷‍♂️ Rami K. · Batch Plant</span><b>Clock In</b></button>
+              <button type="button" class="pos-item-btn" data-kiosk-punch="👩‍💼 Maya S. · Resort Front Desk|99.7% Face + PIN"><span>👩‍💼 Maya S. · Front Desk</span><b>Clock In</b></button>
+              <button type="button" class="pos-item-btn" data-kiosk-punch="🔧 Tariq N. · Heavy Equipment Bay|99.1% Face + PIN"><span>🔧 Tariq N. · Service Bay</span><b>Clock In</b></button>
+              <button type="button" class="pos-item-btn" data-kiosk-punch="🚚 Jad M. · Mixer Fleet Driver|99.5% Face + PIN"><span>🚚 Jad M. · Mixer Fleet</span><b>Clock Out</b></button>
+            </div>
+            <div class="pos-receipt-box">
+              <div style="border-bottom:1px dashed rgba(255,255,255,0.25);padding-bottom:6px;margin-bottom:6px;display:flex;justify-content:space-between">
+                <span>BIOMETRIC GATE VERIFICATION LOG</span>
+                <span style="color:#3DB36A">● Verified</span>
+              </div>
+              <div><b>Employee:</b> ${state.kioskLastPunch.name}</div>
+              <div><b>Timestamp:</b> ${state.kioskLastPunch.time}</div>
+              <div><b>Biometric Audit:</b> ${state.kioskLastPunch.score}</div>
+              <div style="color:#D9A54A;margin-top:4px"><b>Cloud Pipeline:</b> ${state.kioskLastPunch.status}</div>
+            </div>
+            <button type="button" class="btn btn-outline" style="width:100%" data-open-ai="How do the Offline POS Till and Biometric Attendance Kiosk PWAs sync to Dataverse?">🤖 Ask ISABI How Offline Sync Works</button>
+          </div>
+        </div>
+      `;
+      updateAiScopeBar();
+      return;
+    }
+
+    // MODE 1 (DEFAULT): 6-INDUSTRY LIVE ERP & POWER BI COMMAND CENTER
+    mockEl.className = 'mock';
     const navItems = ['Overview', 'Sales & Revenue', 'Purchases & Stock', 'Cash & Treasury', 'General Ledger', 'Paginated .RDL'];
 
     const kpisHtml = d.kpis.map(k => {
@@ -1002,7 +1669,7 @@ JS = r"""
               <option value="AED" ${state.sboxCurr === 'AED' ? 'selected' : ''}>AED</option>
             </select>
             <button type="button" class="primary-mock" data-open-ai="Analyze the ${d.groupTitle} dashboard numbers and highlight key action items">
-              <span>Ask ISABI</span>
+              <span>🤖 Ask ISABI</span>
             </button>
           </div>
         </header>
@@ -1010,14 +1677,14 @@ JS = r"""
         <section class="kpis">${kpisHtml}</section>
 
         <div class="sbox-mob-tabs" role="tablist" aria-label="Mobile Sandbox Views">
-          <button type="button" class="sbox-mob-tab ${mTab === 'chart' ? 'active' : ''}" data-sbox-mobtab="chart">Chart &amp; Entities</button>
-          <button type="button" class="sbox-mob-tab ${mTab === 'ledger' ? 'active' : ''}" data-sbox-mobtab="ledger">General Ledger &amp; Alerts</button>
+          <button type="button" class="sbox-mob-tab ${mTab === 'chart' ? 'active' : ''}" data-sbox-mobtab="chart">📈 Chart &amp; Entities</button>
+          <button type="button" class="sbox-mob-tab ${mTab === 'ledger' ? 'active' : ''}" data-sbox-mobtab="ledger">📒 General Ledger &amp; Alerts</button>
         </div>
 
         <section class="row2" ${mTab !== 'chart' ? 'data-mob-hide="1"' : ''}>
           <div class="panel ${focusChart ? 'panel-focus' : ''}">
             <div class="ph">
-              <h3>Monthly Revenue Trajectory (${cm.sym} thousands)</h3>
+              <h3>📊 Monthly Revenue Trajectory (${cm.sym} thousands)</h3>
               <div class="legend">
                 <span><i class="sw-box s-1"></i>${d.seriesNames[0]}</span>
                 <span><i class="sw-box s-2"></i>${d.seriesNames[1]}</span>
@@ -1032,7 +1699,7 @@ JS = r"""
 
           <div class="panel ${focusEnt ? 'panel-focus' : ''}">
             <div class="ph">
-              <h3>Operating Entities &amp; Books Status</h3>
+              <h3>🏢 Operating Entities &amp; Books Status</h3>
               <span style="font-size:11px;color:var(--m-steel);font-weight:600">${pm.label}</span>
             </div>
             <table class="m-grid">
@@ -1046,7 +1713,7 @@ JS = r"""
 
         <section class="row3" ${mTab !== 'ledger' ? 'data-mob-hide="1"' : ''}>
           <div class="panel ${focusAlerts ? 'panel-focus' : ''}">
-            <div class="ph"><h3>Executive Exceptions &amp; Watchdogs</h3></div>
+            <div class="ph"><h3>🔔 Executive Exceptions &amp; Watchdogs</h3></div>
             <ul class="att">
               ${d.alerts.map(a => `<li class="${a[0]}"><b>${a[1]}</b><span>${a[2]}</span><button type="button" class="att-act" data-sbox-act="${a[1]}">${a[3]}</button></li>`).join('')}
             </ul>
@@ -1054,7 +1721,7 @@ JS = r"""
 
           <div class="panel ${focusGl ? 'panel-focus' : ''}">
             <div class="ph">
-              <h3>Audited General Ledger Stream (Double-Entry)</h3>
+              <h3>📒 Audited General Ledger Stream (Double-Entry)</h3>
               <span style="font-size:11px;color:var(--m-muted)">Closed with the ISABI Double Rule</span>
             </div>
             <table class="m-grid">
@@ -2711,6 +3378,7 @@ JS = r"""
     const savedTheme = (() => { try { return localStorage.getItem('isabi.theme.v2'); } catch (e) { return null; } })() || 'light';
     applyTheme(savedTheme, false);
 
+    renderAppSuite();
     renderIndustries();
     renderSandbox();
     renderAiSection(0, true);
@@ -2759,6 +3427,158 @@ JS = r"""
 
     // Global delegated clicks
     document.addEventListener('click', e => {
+      // 0a. Section 01 Architecture View Tabs (18-App Ecosystem | 4-Layer Stack | Why Not Templates?)
+      const archViewBtn = e.target.closest('[data-arch-view]');
+      if (archViewBtn) {
+        const vKey = archViewBtn.dataset.archView;
+        state.archView = vKey;
+        document.querySelectorAll('[data-arch-view]').forEach(b => b.classList.toggle('active', b === archViewBtn));
+        document.querySelectorAll('[data-arch-panel]').forEach(p => {
+          if (p.dataset.archPanel === vKey) {
+            p.removeAttribute('data-panel-hidden');
+          } else {
+            p.setAttribute('data-panel-hidden', '1');
+          }
+        });
+        return;
+      }
+
+      // 0b. 18-App Suite Category Filter Pills
+      const appCatBtn = e.target.closest('[data-app-cat]');
+      if (appCatBtn) {
+        state.appCat = appCatBtn.dataset.appCat;
+        document.querySelectorAll('[data-app-cat]').forEach(b => b.classList.toggle('active', b === appCatBtn));
+        renderAppSuite();
+        return;
+      }
+
+      // 0c. 18-App Suite Tile Click -> Update Spotlight
+      const appTileBtn = e.target.closest('[data-app-id]');
+      if (appTileBtn) {
+        state.activeAppId = appTileBtn.dataset.appId;
+        renderAppSuite();
+        return;
+      }
+
+      // 0d. Section 03 Sandbox Surface Mode Tabs (erp | soa | pwa)
+      const sboxModeBtn = e.target.closest('[data-sbox-mode]');
+      if (sboxModeBtn) {
+        state.sboxMode = sboxModeBtn.dataset.sboxMode;
+        document.querySelectorAll('[data-sbox-mode]').forEach(b => b.classList.toggle('active', b === sboxModeBtn));
+        renderSandbox();
+        return;
+      }
+
+      // 0e. Sandbox SOA Document Sub-Tabs
+      const soaDocBtn = e.target.closest('[data-soa-doc]');
+      if (soaDocBtn) {
+        state.soaDoc = soaDocBtn.dataset.soaDoc;
+        renderSandbox();
+        return;
+      }
+
+      // 0f. Sandbox Interactive POS Till & Biometric Kiosk Playground
+      const posAddBtn = e.target.closest('[data-pos-add]');
+      if (posAddBtn) {
+        const [nm, pr] = posAddBtn.dataset.posAdd.split('|');
+        const price = parseFloat(pr) || 10;
+        const existing = state.posCart.find(x => x.name === nm);
+        if (existing) {
+          existing.qty += 1;
+        } else {
+          state.posCart.push({ name: nm, price, qty: 1 });
+        }
+        renderSandbox();
+        showToast('Added ' + nm + ' to Offline POS Till');
+        return;
+      }
+
+      const posClearBtn = e.target.closest('[data-pos-clear]');
+      if (posClearBtn) {
+        state.posCart = [{ name: '🏖️ VIP Cabana Full Day', price: 120, qty: 1 }];
+        renderSandbox();
+        showToast('POS Till reset');
+        return;
+      }
+
+      const posSyncBtn = e.target.closest('[data-pos-sync]');
+      if (posSyncBtn) {
+        state.posSyncedCount += 1;
+        renderSandbox();
+        showToast('🖨️ Thermal receipt printed (0.2s) & synced to Dataverse bhf_revenue!');
+        return;
+      }
+
+      const kioskPunchBtn = e.target.closest('[data-kiosk-punch]');
+      if (kioskPunchBtn) {
+        const [empName, matchScore] = kioskPunchBtn.dataset.kioskPunch.split('|');
+        const nowStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        state.kioskLastPunch = {
+          name: empName,
+          time: nowStr,
+          score: matchScore + ' Match (0.8s)',
+          status: 'Synced to Dataverse bhf_punch ✓'
+        };
+        renderSandbox();
+        showToast('📸 Verified ' + empName + ' via Face + PIN');
+        return;
+      }
+
+      // 0g. Section 04 Microsoft Stack Pillar Tabs
+      const msTabBtn = e.target.closest('[data-ms-tab]');
+      if (msTabBtn) {
+        const key = msTabBtn.dataset.msTab;
+        state.msTab = key;
+        document.querySelectorAll('[data-ms-tab]').forEach(b => b.classList.toggle('active', b === msTabBtn));
+        document.querySelectorAll('[data-ms-card]').forEach(c => {
+          if (key === 'all' || c.dataset.msCard === key) {
+            c.removeAttribute('data-ms-hidden');
+          } else {
+            c.setAttribute('data-ms-hidden', '1');
+          }
+        });
+        return;
+      }
+
+      // 0h. Section 06 Desktop & Mobile Pricing View Switcher (tiers | builder | guarantee)
+      const priceViewBtn = e.target.closest('[data-price-view]');
+      if (priceViewBtn) {
+        activatePricingView(priceViewBtn.dataset.priceView);
+        return;
+      }
+
+      // 0i. Section 07 FAQ Category Filter Tabs
+      const faqCatBtn = e.target.closest('[data-faq-cat]');
+      if (faqCatBtn) {
+        const cat = faqCatBtn.dataset.faqCat;
+        document.querySelectorAll('[data-faq-cat]').forEach(b => b.classList.toggle('active', b === faqCatBtn));
+        document.querySelectorAll('#faq-grid [data-faq-item]').forEach(item => {
+          const show = cat === 'all'
+            || (cat === 'top' && item.dataset.faqTop === '1')
+            || item.dataset.faqItem === cat;
+          if (show) {
+            item.removeAttribute('data-faq-hidden');
+          } else {
+            item.setAttribute('data-faq-hidden', '1');
+          }
+        });
+        return;
+      }
+
+      // 0j. Section 08 Quick-Fill Project Topic Chips
+      const topicChip = e.target.closest('[data-topic-ind]');
+      if (topicChip) {
+        document.querySelectorAll('[data-topic-ind]').forEach(b => b.classList.toggle('active', b === topicChip));
+        const indVal = topicChip.dataset.topicInd;
+        const noteVal = topicChip.dataset.topicNote;
+        const indSel = document.getElementById('lead-industry');
+        if (indSel) indSel.value = indVal;
+        const notesEl = document.getElementById('lead-notes');
+        if (notesEl) notesEl.value = noteVal;
+        showToast('⚡ Pre-filled project brief for ' + indVal);
+        return;
+      }
+
       // 1. Footer / Quick Jump to a specific Industry Blueprint
       const gotoInd = e.target.closest('[data-goto-ind]');
       if (gotoInd) {
@@ -2795,7 +3615,7 @@ JS = r"""
         return;
       }
 
-      // 4. Mobile Section 5 Ingenuity Switcher (Matrix vs ROI)
+      // 4. Section 5 Ingenuity Switcher (Matrix | ROI | Advantages | Roadmap)
       const ingTab = e.target.closest('[data-ing-tab]');
       if (ingTab) {
         activateMobileIngTab(ingTab.dataset.ingTab);
@@ -2833,7 +3653,7 @@ JS = r"""
         return;
       }
 
-      // 6. Mobile Industry Detail Sub-Tab (Tables | Workflows | Power BI & RDL)
+      // 6. Desktop & Mobile Industry Detail Sub-Tab (Modules | Day-in-the-Life | Before/After | Reports)
       const indSubTab = e.target.closest('[data-ind-subtab]');
       if (indSubTab) {
         state.indMobTab = indSubTab.dataset.indSubtab;
@@ -2846,6 +3666,8 @@ JS = r"""
       if (loadSbox) {
         const bd = document.getElementById('ai-drawer-backdrop');
         if (bd) bd.hidden = true;
+        state.sboxMode = 'erp';
+        document.querySelectorAll('[data-sbox-mode]').forEach(b => b.classList.toggle('active', b.dataset.sboxMode === 'erp'));
         state.sboxInd = loadSbox.dataset.loadSandbox;
         renderSandbox();
         scrollToTargetId('sandbox');
@@ -2863,6 +3685,7 @@ JS = r"""
           b.classList.toggle('active', b.dataset.cfgInd === state.cfgInd);
         });
         updateConfigurator();
+        activatePricingView('builder');
         scrollToTargetId('scope-configurator');
         return;
       }

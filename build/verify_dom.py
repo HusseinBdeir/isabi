@@ -11,7 +11,7 @@ import urllib.request
 
 EDGE = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 URL = 'file:///C:/Users/HusseinBdeir/bhfirms/isabi/index.html'
-ART_DIR = r'C:\Users\HusseinBdeir\.gemini\antigravity\brain\3d084823-2e95-4be3-94c1-02b9b86cdca8'
+ART_DIR = r'C:\Users\HusseinBdeir\.gemini\antigravity\brain\dd68773e-e5d4-4966-9a94-9714e22f9c15'
 
 
 def run_dom_and_screenshots():
@@ -41,6 +41,13 @@ def run_dom_and_screenshots():
             ('Open Graph image tag', 'property="og:image"'),
             ('Dynamic sandbox period label', '(MTD)</option>'),
             ('Scroll reveal activated', '<html lang="en" data-theme="light" class="js-io">'),
+            ('18-App Ecosystem Grid rendered', 'id="app-suite-grid"'),
+            ('App Spotlight Inspector rendered', 'id="app-spotlight"'),
+            ('Sandbox SOA Mode Tab rendered', 'data-sbox-mode="soa"'),
+            ('Sandbox POS & Kiosk Mode Tab rendered', 'data-sbox-mode="pwa"'),
+            ('14-Day Go-Live Sprint Tab rendered', 'data-ing-tab="roadmap"'),
+            ('FAQ Category Filter Tabs rendered', 'data-faq-cat="ai"'),
+            ('Portal Topic Chips rendered', 'class="topic-chips-bar"'),
         ]
         failed = 0
         for name, needle in checks:
@@ -241,6 +248,62 @@ document.addEventListener('DOMContentLoaded', function() {
       inlineUserAfterReset: inlineUserAfterReset,
       hasResetWelcome: resetDrawerText.indexOf('Welcome. I am ISABI') !== -1
     };
+
+    // v4.0 Interactive Tabs & Simulators checks
+    var posTile = document.querySelector('[data-app-id="pos"]');
+    if (posTile) posTile.click();
+    var spotTitle = document.querySelector('#app-spotlight h3') ? document.querySelector('#app-spotlight h3').textContent : '';
+
+    var dfBtn = document.querySelector('[data-ind-subtab="dayflow"]');
+    if (dfBtn) dfBtn.click();
+    var flowCardCount = document.querySelectorAll('.ind-flow-step').length;
+
+    var baBtn = document.querySelector('[data-ind-subtab="beforeafter"]');
+    if (baBtn) baBtn.click();
+    var baCardCount = document.querySelectorAll('.ind-ba-card').length;
+
+    var modBtn = document.querySelector('[data-ind-subtab="modules"]');
+    if (modBtn) modBtn.click();
+
+    var soaModeBtn = document.querySelector('[data-sbox-mode="soa"]');
+    if (soaModeBtn) soaModeBtn.click();
+    var hasSoaViewer = !!document.querySelector('#sandbox-mock .soa-viewer');
+
+    var pwaModeBtn = document.querySelector('[data-sbox-mode="pwa"]');
+    if (pwaModeBtn) pwaModeBtn.click();
+    var posAdd0 = document.querySelector('[data-pos-add]');
+    if (posAdd0) posAdd0.click();
+    var kioskPunchBtn = document.querySelector('[data-kiosk-punch]');
+    if (kioskPunchBtn) kioskPunchBtn.click();
+    var pwaText = document.getElementById('sandbox-mock').textContent;
+    var hasPwaSim = pwaText.indexOf('99.4% Face + PIN') !== -1 && pwaText.indexOf('Offline Queue Ready') !== -1;
+
+    var erpModeBtn = document.querySelector('[data-sbox-mode="erp"]');
+    if (erpModeBtn) erpModeBtn.click();
+
+    var roadTab = document.querySelector('[data-ing-tab="roadmap"]');
+    if (roadTab) roadTab.click();
+    var roadPanel = document.querySelector('[data-ing-panel="roadmap"]');
+    var roadActive = roadPanel ? !roadPanel.hasAttribute('data-panel-hidden') : false;
+
+    var faqAiTab = document.querySelector('[data-faq-cat="ai"]');
+    if (faqAiTab) faqAiTab.click();
+    var visibleFaqs = Array.from(document.querySelectorAll('#faq-grid [data-faq-item]')).filter(function(el){ return !el.hasAttribute('data-faq-hidden'); }).length;
+
+    var topicChip = document.querySelector('[data-topic-ind="Automotive & Heavy Equipment Trading"]');
+    if (topicChip) topicChip.click();
+    var leadIndVal = document.getElementById('lead-industry').value;
+
+    out.v4Test = {
+      spotTitle: spotTitle,
+      flowCardCount: flowCardCount,
+      baCardCount: baCardCount,
+      hasSoaViewer: hasSoaViewer,
+      hasPwaSim: hasPwaSim,
+      roadActive: roadActive,
+      visibleFaqs: visibleFaqs,
+      leadIndVal: leadIndVal
+    };
     pre.textContent = JSON.stringify(out);
   } catch (err) {
     pre.textContent = JSON.stringify({ error: String(err) });
@@ -314,6 +377,16 @@ document.addEventListener('DOMContentLoaded', function() {
         assert ai['hasAlertDrilldown'] is True, "Sandbox alert button click did not render alert drilldown"
         assert ai['countBeforeReset'] == 8, f"Expected 8 messages in thread before reset, got {ai['countBeforeReset']}"
         assert ai['botAfterReset'] == 1 and ai['userAfterReset'] == 0 and ai['inlineUserAfterReset'] == 0 and ai['hasResetWelcome'] is True, f"Reset did not restore clean welcome state: {ai}"
+
+        v4 = d_desk['v4Test']
+        assert 'Offline POS Till' in v4['spotTitle'], f"Expected 'Offline POS Till' in spotlight title, got {v4['spotTitle']}"
+        assert v4['flowCardCount'] == 4, f"Expected 4 Day-in-the-Life flow cards, got {v4['flowCardCount']}"
+        assert v4['baCardCount'] == 2, f"Expected 2 Before/After comparison cards, got {v4['baCardCount']}"
+        assert v4['hasSoaViewer'] is True, "SOA viewer did not render in Sandbox mode 'soa'"
+        assert v4['hasPwaSim'] is True, "POS & Kiosk simulator did not update on interactive click in mode 'pwa'"
+        assert v4['roadActive'] is True, "14-Day Go-Live Sprint tab did not activate #ing-pane-roadmap"
+        assert v4['visibleFaqs'] == 4, f"Expected 4 visible FAQs under 'ai' category filter, got {v4['visibleFaqs']}"
+        assert v4['leadIndVal'] == 'Automotive & Heavy Equipment Trading', f"Topic chip did not select trading industry: {v4['leadIndVal']}"
 
         # 3. Capture fresh screenshot of #portal at 1366x768
         os.makedirs(ART_DIR, exist_ok=True)
