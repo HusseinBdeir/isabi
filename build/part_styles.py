@@ -423,7 +423,11 @@ button {
 /* ---------- Hero Section ---------- */
 .hero-section {
   position: relative;
-  padding: 28px 0 26px;
+  min-height: calc(100vh - var(--hdr-h));
+  min-height: calc(100dvh - var(--hdr-h));
+  display: flex;
+  align-items: center;
+  padding: clamp(32px, 5vh, 56px) 0;
   border-bottom: 1px solid var(--line);
   background:
     radial-gradient(900px 420px at 85% 12%, var(--brass-tint), transparent 72%),
@@ -445,9 +449,10 @@ button {
 }
 
 .hero-grid {
+  width: 100%;
   display: grid;
   grid-template-columns: 1.06fr 0.94fr;
-  gap: 32px;
+  gap: 36px;
   align-items: stretch;
 }
 
@@ -462,23 +467,23 @@ button {
   align-items: center;
   align-self: flex-start;
   gap: 8px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 700;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.135em;
   text-transform: uppercase;
   color: var(--brass);
   background: var(--brass-tint);
   border: 1px solid var(--brass-border);
-  padding: 5px 11px;
+  padding: 6px 13px;
   border-radius: 4px;
-  margin-bottom: 10px;
+  margin-bottom: 16px;
 }
 
 .hero-title {
-  font-size: clamp(30px, 3.1vw, 44px);
+  font-size: clamp(34px, 3.8vw, 50px);
   font-weight: 800;
   line-height: 1.08;
-  margin-bottom: 10px;
+  margin-bottom: 18px;
 }
 
 .hero-title span.brass-text {
@@ -486,29 +491,29 @@ button {
 }
 
 .hero-lead {
-  font-size: 16px;
+  font-size: 17px;
   color: var(--muted);
   max-width: 64ch;
-  margin: 0 0 16px;
-  line-height: 1.56;
+  margin: 0 0 26px;
+  line-height: 1.65;
 }
 
 .hero-cta-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 26px;
 }
 
 .hero-cta-row .btn {
-  padding: 11px 18px;
-  font-size: 14px;
+  padding: 13px 22px;
+  font-size: 14.5px;
 }
 
 .hero-trust-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 14px;
   margin-top: 0;
 }
 
@@ -517,34 +522,34 @@ button {
   border: 1px solid var(--line);
   border-top: 2px solid var(--brass);
   border-radius: 7px;
-  padding: 12px 13px;
+  padding: 18px 16px;
   box-shadow: var(--shadow-sm);
 }
 
 .trust-kicker {
   display: block;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--brass);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .trust-item b {
   display: block;
   font-family: "Archivo", sans-serif;
-  font-size: 13.5px;
+  font-size: 14.5px;
   font-weight: 700;
   color: var(--ink);
-  margin-bottom: 3px;
+  margin-bottom: 6px;
 }
 
 .trust-item span {
-  font-size: 12.4px;
+  font-size: 13px;
   color: var(--muted);
   display: block;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 /* Right Hero Executive Ledger Card */
@@ -561,7 +566,7 @@ button {
 .hlc-top {
   background: #081223;
   color: #F4F2EE;
-  padding: 10px 15px;
+  padding: 15px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -572,20 +577,20 @@ button {
 .hlc-brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   min-width: 0;
 }
 
 .hlc-brand svg {
-  height: 18px;
+  height: 19px;
   width: auto;
   flex-shrink: 0;
   display: block;
 }
 
 .hlc-brand span {
-  font-size: 11.2px;
-  letter-spacing: 0.07em;
+  font-size: 11.5px;
+  letter-spacing: 0.075em;
   text-transform: uppercase;
   color: rgba(244, 242, 238, 0.82);
   font-weight: 600;
@@ -598,11 +603,11 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   color: #3DB36A;
   background: rgba(61, 179, 106, 0.14);
-  padding: 3.5px 9px;
+  padding: 4px 10px;
   border-radius: 999px;
   white-space: nowrap;
   flex-shrink: 0;
@@ -617,7 +622,7 @@ button {
 }
 
 .hlc-body {
-  padding: 12px 15px;
+  padding: 20px 20px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -627,15 +632,15 @@ button {
 .hlc-kpis {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 9px;
+  gap: 14px;
+  margin-bottom: 16px;
 }
 
 .hlc-kpi {
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 8px 11px;
+  padding: 14px 16px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -644,11 +649,11 @@ button {
 
 .hlc-kpi small {
   display: block;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  margin-bottom: 2px;
+  margin-bottom: 5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -657,37 +662,38 @@ button {
 .hlc-kpi strong {
   display: block;
   font-family: "Archivo", sans-serif;
-  font-size: 19.5px;
+  font-size: 24px;
   font-weight: 800;
   color: var(--ink);
-  line-height: 1.15;
+  line-height: 1.2;
 }
 
 .hlc-kpi span {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--good);
   font-weight: 600;
+  margin-top: 2px;
 }
 
 .hlc-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.2px;
-  margin-bottom: 9px;
+  font-size: 13.2px;
+  margin-bottom: 16px;
 }
 
 .hlc-table th {
   text-align: left;
-  font-size: 10px;
+  font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
-  padding: 4px 6px;
+  padding: 8px 8px;
   border-bottom: 1px solid var(--line);
 }
 
 .hlc-table td {
-  padding: 5.5px 6px;
+  padding: 11px 8px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -705,20 +711,20 @@ button {
   color: var(--ink);
   border-top: 1px solid var(--ink);
   border-bottom: 3px double var(--brass);
-  padding-top: 6.5px;
-  padding-bottom: 6.5px;
+  padding-top: 11px;
+  padding-bottom: 11px;
 }
 
 .hlc-ai-strip {
   background: var(--brass-tint);
   border: 1px solid var(--brass-border);
   border-radius: 6px;
-  padding: 8px 11px;
+  padding: 13px 15px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  font-size: 12px;
+  font-size: 12.8px;
 }
 
 .hlc-ai-strip b {
@@ -738,17 +744,17 @@ button {
 }
 
 .metric-cell {
-  padding: 15px 18px;
+  padding: 20px 20px;
   border-right: 1px solid var(--line);
 }
 
 .metric-cell .m-val {
   font-family: "Archivo", sans-serif;
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 800;
   color: var(--ink);
-  line-height: 1.08;
-  margin-bottom: 4px;
+  line-height: 1.1;
+  margin-bottom: 5px;
 }
 
 .metric-cell .m-val span {
@@ -757,15 +763,15 @@ button {
 
 .metric-cell .m-lbl {
   font-weight: 700;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--ink);
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 
 .metric-cell .m-sub {
-  font-size: 12.2px;
+  font-size: 12.6px;
   color: var(--muted);
-  line-height: 1.38;
+  line-height: 1.42;
 }
 
 /* ---------- Generic Section Layout ---------- */
@@ -1885,6 +1891,22 @@ table.m-grid tr.total td {
   margin: 0 0 10px;
 }
 
+.ai-bot-bullets {
+  margin: 6px 0 10px;
+  padding-left: 18px;
+  font-size: 12.6px;
+  color: #D8E1F0;
+  line-height: 1.5;
+}
+
+.ai-bot-bullets li {
+  margin-bottom: 5px;
+}
+
+.ai-bot-bullets li b {
+  color: #F4F2EE;
+}
+
 .ai-bot-table-wrap {
   width: 100%;
   overflow-x: auto;
@@ -2746,6 +2768,8 @@ table.m-grid tr.total td {
 
   /* Compact Phone Hero */
   .hero-section {
+    min-height: auto;
+    display: block;
     padding: 14px 0 18px;
   }
   .hero-grid {

@@ -79,6 +79,7 @@ document.addEventListener('DOMContentLoaded', function() {
     var leadCompany = document.getElementById('lead-company').getBoundingClientRect();
     var leadIndustry = document.getElementById('lead-industry').getBoundingClientRect();
     var leadBudget = document.getElementById('lead-budget').getBoundingClientRect();
+    var heroSec = document.querySelector('.hero-section').getBoundingClientRect();
     var heroLeft = document.querySelector('.hero-grid > div:first-child').getBoundingClientRect();
     var heroCard = document.querySelector('.hero-ledger-card').getBoundingClientRect();
     var indTabs = document.querySelector('.ind-tabs').getBoundingClientRect();
@@ -133,6 +134,7 @@ document.addEventListener('DOMContentLoaded', function() {
       leadIndustryW: Math.round(leadIndustry.width),
       leadBudgetW: Math.round(leadBudget.width),
       leadBudgetRight: Math.round(leadBudget.right),
+      heroSecH: Math.round(heroSec.height),
       heroLeftH: Math.round(heroLeft.height),
       heroCardH: Math.round(heroCard.height),
       indTabsH: Math.round(indTabs.height),
@@ -239,6 +241,7 @@ document.addEventListener('DOMContentLoaded', function() {
         assert d_desk['leadBudgetRight'] <= d_desk['portalCardRight'] - 24, f"lead-budget overflows portal card! {d_desk['leadBudgetRight']} vs {d_desk['portalCardRight']}"
         assert d_desk['cardOverflows'] == [], f"Desktop card overflows detected: {d_desk['cardOverflows']}"
         assert d_desk['hlcSvgCount'] == 1, f"Expected 1 SVG in .hlc-brand (no nested SVG), got {d_desk['hlcSvgCount']}"
+        assert d_desk['heroSecH'] >= d_desk['vh'] - d_desk['hdrBottom'], f"Hero section too short ({d_desk['heroSecH']} < {d_desk['vh'] - d_desk['hdrBottom']}): second section bleeds into first viewport!"
         assert abs(d_desk['heroLeftH'] - d_desk['heroCardH']) <= 2, f"Desktop hero column heights mismatch: {d_desk['heroLeftH']} vs {d_desk['heroCardH']}"
         assert abs(d_desk['indTabsH'] - d_desk['indDetailH']) <= 2, f"Desktop industry tabs/detail heights mismatch: {d_desk['indTabsH']} vs {d_desk['indDetailH']}"
 
