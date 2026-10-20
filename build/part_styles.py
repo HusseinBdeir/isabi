@@ -5735,6 +5735,49 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
   }
 }
 
+/* ---------- Institutional Inline SVG Brand Logos & Vector Icons ---------- */
+svg.ic {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.14em;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+svg.ic-isabi {
+  border-radius: 3.5px;
+  width: 1.08em;
+  height: 1.08em;
+  vertical-align: -0.17em;
+}
+
+svg.ic-good { color: var(--good); }
+svg.ic-warn { color: var(--warn); }
+svg.ic-crit { color: var(--crit); }
+
+.hmc-icon svg.ic {
+  width: 18px;
+  height: 18px;
+}
+
+.app-icon svg.ic {
+  width: 19px;
+  height: 19px;
+}
+
+.app-spot-head .app-icon svg.ic {
+  width: 24px;
+  height: 24px;
+}
+
+.hmc-icon.tone-brass, .app-icon.tone-brass { color: var(--brass); }
+.hmc-icon.tone-green, .app-icon.tone-good { color: var(--good); }
+.hmc-icon.tone-blue, .app-icon.tone-steel { color: var(--steel); }
+.hmc-icon.tone-purple, .app-icon.tone-violet { color: #8B5CF6; }
+.app-icon.tone-coral { color: #E07A5F; }
+.app-icon.tone-teal { color: #14B8A6; }
+
 @media print {
   .site-header, .mobile-dock, .drawer-backdrop, .sandbox-controls, .sbox-ind-bar {
     display: none !important;

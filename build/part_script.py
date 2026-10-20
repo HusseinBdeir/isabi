@@ -20,6 +20,7 @@ JS = r"""
 
   const BADGE_MINI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="34" height="34" style="border-radius:7px;flex-shrink:0"><rect width="120" height="120" rx="26" fill="#0B1730"/><g transform="translate(39.52,77.62) scale(0.74)"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>';
   const RAIL_MARK_SVG = '<svg viewBox="-9.5 -78.8 74.66 109.7" height="22"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>';
+  const ICONS = __ICONS_JSON__;
 
   // ---------------- 8 INDUSTRY BLUEPRINTS ----------------
   const INDUSTRIES = [
@@ -569,409 +570,409 @@ JS = r"""
   // ---------------- 18-APP INTERACTIVE ECOSYSTEM (ODOO-STYLE SUITE) ----------------
   const APP_SUITE = [
     {
-      id: 'gl', cat: 'finance', emoji: '📒', tone: 'tone-brass',
+      id: 'gl', cat: 'finance', emoji: ICONS.ledger, tone: 'tone-brass',
       name: 'General Ledger & COA', sub: 'Double-Entry & Class 1 to 7',
       kicker: 'Core Accounting Module · Microsoft Dataverse',
       desc: 'Full double-entry institutional accounting with regional Class 1 to 7 charts of accounts, multi-currency journals, and automated voucher numbering.',
       bullets: [
-        '⚖️ Balanced Debit & Credit validation on every operational posting',
-        '💱 Multi-currency ledger (USD, EUR, AED, LBP) with live FX rates',
-        '🔒 Immutable audit log of who created, edited, or stamped each entry'
+        ICONS.scale + ' Balanced Debit & Credit validation on every operational posting',
+        ICONS.globe + ' Multi-currency ledger (USD, EUR, AED, LBP) with live FX rates',
+        ICONS.lock + ' Immutable audit log of who created, edited, or stamped each entry'
       ],
       tables: ['bhf_journal', 'bhf_coa', 'bhf_voucher', 'bhf_fiscalperiod'],
       sbox: 'holding', ask: 'How does the ISABI General Ledger and Class 1 to 7 Chart of Accounts work?'
     },
     {
-      id: 'soa', cat: 'finance', emoji: '🧾', tone: 'tone-steel',
+      id: 'soa', cat: 'finance', emoji: ICONS.soa, tone: 'tone-steel',
       name: 'Printable SOA & P&L', sub: 'PDF & Excel Paginated .RDL',
       kicker: 'Statutory & Partner Statements · Paginated .RDL',
       desc: 'Pixel-perfect printable Statements of Account for customers, suppliers, and equity partners, plus audited Balance Sheet, P&L, and Trial Balance packs.',
       bullets: [
-        '📄 Running balance Statement of Account with opening & closing rules',
-        '📥 One-click export to print-ready PDF, Word, or formatted Excel',
-        '🤝 Automated monthly partner profit-split and capital statements'
+        ICONS.soa + ' Running balance Statement of Account with opening & closing rules',
+        ICONS.download + ' One-click export to print-ready PDF, Word, or formatted Excel',
+        ICONS.partner + ' Automated monthly partner profit-split and capital statements'
       ],
       tables: ['StatementOfAccount.rdl', 'PartnerStatement.rdl', 'TrialBalance.rdl'],
       sbox: 'holding', ask: 'Tell me about the printable Statements of Account and P&L reports'
     },
     {
-      id: 'pbi', cat: 'finance', emoji: '📊', tone: 'tone-good',
+      id: 'pbi', cat: 'finance', emoji: ICONS.pbi, tone: 'tone-good',
       name: 'Power BI Suite', sub: 'Year / Month / Week / Day',
       kicker: 'Executive Analytics · XMLA Semantic Models',
       desc: 'Three governed workspaces per company (Operations, Financial, and Reconciliation) with instant period pickers and month-over-month variance.',
       bullets: [
-        '📅 Unified Year, Month, Week, and Day slicer across every visual',
-        '📈 Consolidated group view plus per-branch Business Unit security',
-        '⚡ Direct XMLA semantic model refresh on scheduled cloud pipelines'
+        ICONS.calendar + ' Unified Year, Month, Week, and Day slicer across every visual',
+        ICONS.trend + ' Consolidated group view plus per-branch Business Unit security',
+        ICONS.bolt + ' Direct XMLA semantic model refresh on scheduled cloud pipelines'
       ],
       tables: ['Operations Workspace', 'Financial Workspace', 'Period Picker DAX'],
       sbox: 'holding', ask: 'How are the Power BI dashboards structured across Operations and Finance?'
     },
     {
-      id: 'ai', cat: 'field', emoji: '🤖', tone: 'tone-brass',
+      id: 'ai', cat: 'field', emoji: ICONS.ai, tone: 'tone-brass',
       name: 'Ask ISABI Native AI', sub: 'Cited Live Ledger Answers',
       kicker: 'Embedded System Intelligence · Role-Aware',
       desc: 'Your executive AI analyst wired directly to your live Dataverse ledger, stock, and receivables. Every answer cites the exact vouchers it used.',
       bullets: [
-        '🔍 Queries live overdue receivables, margin shifts, and stock variances',
-        '🛡️ Respects Entra ID & Business Unit roles so branch data stays private',
-        '💬 Available inside the ERP header bar, Power BI, and WhatsApp'
+        ICONS.search + ' Queries live overdue receivables, margin shifts, and stock variances',
+        ICONS.insurance + ' Respects Entra ID & Business Unit roles so branch data stays private',
+        ICONS.ai_mark + ' Available inside the ERP header bar, Power BI, and WhatsApp'
       ],
       tables: ['bhf_isabi_ask_store', 'Live Ledger Context', 'Role-Scoped Citations'],
       sbox: 'holding', ask: 'How does Ask ISABI treat confidential figures?'
     },
     {
-      id: 'ar', cat: 'finance', emoji: '💵', tone: 'tone-coral',
+      id: 'ar', cat: 'finance', emoji: ICONS.ar, tone: 'tone-coral',
       name: 'Receivables & Credit', sub: '0-30-60-90d Aging & Gates',
       kicker: 'Credit Control & Collections · Automated Watchdogs',
       desc: 'Real-time customer receivable aging across 0 to 30, 31 to 60, 61 to 90, and 90+ day buckets, with form-level credit caps and one-click WhatsApp SOA dispatch.',
       bullets: [
-        '🚦 Form rules block new sales tickets when a client breaches credit limits',
-        '📉 Live 0-30-60-90+ day aging matrix across all operating branches',
-        '📲 One-click WhatsApp & email payment reminders with attached SOA'
+        ICONS.lock + ' Form rules block new sales tickets when a client breaches credit limits',
+        ICONS.trend + ' Live 0-30-60-90+ day aging matrix across all operating branches',
+        ICONS.wa + ' One-click WhatsApp & email payment reminders with attached SOA'
       ],
       tables: ['bhf_customer', 'bhf_receivable', 'bhf_creditlimit', 'ARAging.rdl'],
       sbox: 'trading', ask: 'Why did receivables past 60 days increase this month?'
     },
     {
-      id: 'partner', cat: 'finance', emoji: '🤝', tone: 'tone-violet',
+      id: 'partner', cat: 'finance', emoji: ICONS.partner, tone: 'tone-violet',
       name: 'Partner Equity Splits', sub: 'Capital & Profit Sharing',
       kicker: 'Multi-Partner Accounting · Automated Allocation',
       desc: 'Built for co-owned resorts, real estate developments, and trading joint ventures where each property or venture has custom partner equity percentages.',
       bullets: [
-        '📐 Per-venue and per-project ownership percentage tables',
-        '💸 Tracks partner drawings, capital injections, and management fees',
-        '🧾 Generates monthly audited partner distribution statements'
+        ICONS.layers + ' Per-venue and per-project ownership percentage tables',
+        ICONS.ar + ' Tracks partner drawings, capital injections, and management fees',
+        ICONS.soa + ' Generates monthly audited partner distribution statements'
       ],
       tables: ['bhf_partner', 'bhf_partnersplit', 'bhf_capitalaccount'],
       sbox: 'hospitality', ask: 'How does ISABI automate partner profit splits and capital accounts?'
     },
     {
-      id: 'bridge', cat: 'finance', emoji: '⚖️', tone: 'tone-teal',
+      id: 'bridge', cat: 'finance', emoji: ICONS.scale, tone: 'tone-teal',
       name: 'Statutory Book Bridge', sub: 'Zero-Variance Parallel Run',
       kicker: 'Safe Transition Engine · Dual-Entry Verification',
       desc: 'Runs alongside your existing accounting software during onboarding and compares every account line-by-line until the variance is $0.00.',
       bullets: [
-        '🔄 Imports monthly trial balances from legacy accounting registers',
-        '🎯 Highlights any discrepancy down to $1 with instant voucher drilldown',
-        '✅ Protects tax and statutory compliance while operations modernize'
+        ICONS.sync + ' Imports monthly trial balances from legacy accounting registers',
+        ICONS.search + ' Highlights any discrepancy down to $1 with instant voucher drilldown',
+        ICONS.check + ' Protects tax and statutory compliance while operations modernize'
       ],
       tables: ['bhf_statutoryanchor', 'bhf_variancebridge', 'Reconciliation.pbix'],
       sbox: 'holding', ask: 'How does dual-entry reconciliation work with our existing accountant software?'
     },
     {
-      id: 'treasury', cat: 'finance', emoji: '🏦', tone: 'tone-steel',
+      id: 'treasury', cat: 'finance', emoji: ICONS.holding, tone: 'tone-steel',
       name: 'Treasury & PDC Vault', sub: 'Banks, Cash & Checks',
       kicker: 'Multi-Entity Cash Management · Class 5 Treasury',
       desc: 'Track bank accounts, petty cash safes, wire transfers, and post-dated check (PDC) maturity schedules across every subsidiary in real time.',
       bullets: [
-        '🏦 Live cash position across USD, EUR, AED, and local bank accounts',
-        '📅 Post-dated check (PDC) maturity radar and deposit alerts',
-        '🔐 Supervisor digital stamp required on inter-vault transfers'
+        ICONS.holding + ' Live cash position across USD, EUR, AED, and local bank accounts',
+        ICONS.calendar + ' Post-dated check (PDC) maturity radar and deposit alerts',
+        ICONS.lock + ' Supervisor digital stamp required on inter-vault transfers'
       ],
       tables: ['bhf_bankaccount', 'bhf_treasurytransfer', 'bhf_pdccheck'],
       sbox: 'holding', ask: 'How does ISABI manage multi-currency treasury and post-dated checks?'
     },
     {
-      id: 'hosp', cat: 'ops', emoji: '🏖️', tone: 'tone-brass',
+      id: 'hosp', cat: 'ops', emoji: ICONS.hospitality, tone: 'tone-brass',
       name: 'Hospitality & Resorts', sub: 'Outlets, Cabanas & F&B',
       kicker: 'Industry App 01 · Hospitality Operations',
       desc: 'Complete multi-property resort and F&B operations: daily outlet revenue audits, cabana bookings, supplier F&B provisions, and seasonal payroll.',
       bullets: [
-        '🍹 Daily outlet close across entrance, cabanas, restaurants, and bars',
-        '🥩 Supplier invoice intake, recipe cost ratios, and beverage stock audits',
-        '👥 Seasonal staff contracts, cash advances, tips, and attendance'
+        ICONS.pos + ' Daily outlet close across entrance, cabanas, restaurants, and bars',
+        ICONS.box + ' Supplier invoice intake, recipe cost ratios, and beverage stock audits',
+        ICONS.hr + ' Seasonal staff contracts, cash advances, tips, and attendance'
       ],
       tables: ['bhf_revenue', 'bhf_expense', 'bhf_supplier', 'bhf_employee'],
       sbox: 'hospitality', ask: 'Show the Hospitality, Resorts & Beach Clubs blueprint'
     },
     {
-      id: 'vin', cat: 'ops', emoji: '🚛', tone: 'tone-steel',
+      id: 'vin', cat: 'ops', emoji: ICONS.trading, tone: 'tone-steel',
       name: 'VIN & Equipment Trade', sub: 'Chassis, Customs & Parts',
       kicker: 'Industry App 02 · Trading & Dealership Operations',
       desc: 'End-to-end vehicle, heavy equipment, and spare-parts trading from FOB shipment and bonded customs to showroom delivery and after-sales parts.',
       bullets: [
-        '🔢 Per-VIN chassis registry (In-Transit, Bonded Customs, Showroom, Sold)',
-        '🚢 Full landed cost engine: FOB + Freight + Insurance + Customs Duty',
-        '⚙️ Multi-warehouse spare parts SKU stock and minimum margin locks'
+        ICONS.trading + ' Per-VIN chassis registry (In-Transit, Bonded Customs, Showroom, Sold)',
+        ICONS.globe + ' Full landed cost engine: FOB + Freight + Insurance + Customs Duty',
+        ICONS.box + ' Multi-warehouse spare parts SKU stock and minimum margin locks'
       ],
       tables: ['bhf_vehiclevin', 'bhf_landedcost', 'bhf_partssku', 'bhf_salesorder'],
       sbox: 'trading', ask: 'Show the Automotive, Heavy Equipment & Parts Trading blueprint'
     },
     {
-      id: 'concrete', cat: 'ops', emoji: '🏗️', tone: 'tone-good',
+      id: 'concrete', cat: 'ops', emoji: ICONS.manufacturing, tone: 'tone-good',
       name: 'Ready-Mix & Plant', sub: 'Batch Tickets m³ & Silos',
       kicker: 'Industry App 03 · Manufacturing Operations',
       desc: 'Built for ready-mix concrete plants and construction material producers tracking every cubic meter poured, mix design, pump fee, and cement silo.',
       bullets: [
-        '🎫 Sales ticket ledger by m³ poured, MPA mix grade, and pump usage',
-        '🌾 Live cement silo, sand, gravel, and admixture depletion vs. batch yield',
-        '🚧 Contractor project billing and automated credit-limit gates'
+        ICONS.soa + ' Sales ticket ledger by m³ poured, MPA mix grade, and pump usage',
+        ICONS.dataverse + ' Live cement silo, sand, gravel, and admixture depletion vs. batch yield',
+        ICONS.lock + ' Contractor project billing and automated credit-limit gates'
       ],
       tables: ['bhf_salesticket', 'bhf_mixdesign', 'bhf_silostock', 'bhf_project'],
       sbox: 'manufacturing', ask: 'Show the Concrete & Manufacturing blueprint'
     },
     {
-      id: 'fleet', cat: 'ops', emoji: '🚚', tone: 'tone-coral',
+      id: 'fleet', cat: 'ops', emoji: ICONS.fleet, tone: 'tone-coral',
       name: 'Fleet & Fuel Dispatch', sub: 'Mixers, Pumps & Trips',
       kicker: 'Heavy Transport & Fleet Module · Manufacturing & Logistics',
       desc: 'Track transit mixers, concrete pumps, and heavy transport trucks with per-trip driver allowances, fuel burn per cubic meter, and maintenance logs.',
       bullets: [
-        '⛽ Fuel issue tracking and liters-per-m³ efficiency alerts by truck',
-        '🛣️ Automated driver trip bonuses and inter-company transport billing',
-        '🔧 Preventive maintenance schedules, tires, and workshop job cards'
+        ICONS.bolt + ' Fuel issue tracking and liters-per-m³ efficiency alerts by truck',
+        ICONS.fleet + ' Automated driver trip bonuses and inter-company transport billing',
+        ICONS.scope + ' Preventive maintenance schedules, tires, and workshop job cards'
       ],
       tables: ['bhf_fleetasset', 'bhf_tripdispatch', 'bhf_fuellog', 'bhf_maintenance'],
       sbox: 'manufacturing', ask: 'How does ISABI track transit mixer fleets, fuel, and inter-company transport?'
     },
     {
-      id: 're', cat: 'ops', emoji: '🏢', tone: 'tone-violet',
+      id: 're', cat: 'ops', emoji: ICONS.realestate, tone: 'tone-violet',
       name: 'Real Estate & Leases', sub: 'Units, Rent & NOI Yield',
       kicker: 'Industry App 04 · Real Estate Operations',
       desc: 'Manage commercial and residential towers, retail plazas, and land banks with automated lease escalations, tenant billing, and per-property NOI.',
       bullets: [
-        '🏙️ Property and unit registry (Occupied, Vacant, Reserved, Refurbishment)',
-        '📑 Lease contracts with 60/30-day renewal alerts and rent escalations',
-        '🛠️ Maintenance work orders tagged automatically to CapEx vs. OpEx'
+        ICONS.realestate + ' Property and unit registry (Occupied, Vacant, Reserved, Refurbishment)',
+        ICONS.soa + ' Lease contracts with 60/30-day renewal alerts and rent escalations',
+        ICONS.scope + ' Maintenance work orders tagged automatically to CapEx vs. OpEx'
       ],
       tables: ['bhf_property', 'bhf_unit', 'bhf_lease', 'bhf_workorder'],
       sbox: 'realestate', ask: 'Show the Real Estate & Commercial Property Portfolios blueprint'
     },
     {
-      id: 'ins', cat: 'ops', emoji: '🛡️', tone: 'tone-teal',
+      id: 'ins', cat: 'ops', emoji: ICONS.insurance, tone: 'tone-teal',
       name: 'Insurance Bordereaux', sub: 'Policies, Splits & Claims',
       kicker: 'Industry App 05 · Insurance Brokerage Operations',
       desc: 'Policy lifecycle management across motor, medical, marine, and property lines with carrier bordereaux, producer splits, and 90/60/30-day renewals.',
       bullets: [
-        '📋 Policy & endorsement registry with gross/net/commission split math',
-        '🏦 One-click printable carrier settlement bordereaux and client SOA',
-        '🔔 90/60/30-day expiring book renewal radar and claims tracker'
+        ICONS.soa + ' Policy & endorsement registry with gross/net/commission split math',
+        ICONS.holding + ' One-click printable carrier settlement bordereaux and client SOA',
+        ICONS.bell + ' 90/60/30-day expiring book renewal radar and claims tracker'
       ],
       tables: ['bhf_policy', 'bhf_endorsement', 'bhf_bordereau', 'bhf_claim'],
       sbox: 'insurance', ask: 'Show the Insurance Brokerage & Underwriting Operations blueprint'
     },
     {
-      id: 'holding', cat: 'ops', emoji: '🏛️', tone: 'tone-brass',
+      id: 'holding', cat: 'ops', emoji: ICONS.holding, tone: 'tone-brass',
       name: 'Holding & Board Pack', sub: 'Multi-Company Command',
       kicker: 'Industry App 06 · Holding Operations',
       desc: 'Unifies all sister companies into one boardroom console while keeping each subsidiary isolated inside its own Dataverse Business Unit.',
       bullets: [
-        '🌐 Overnight group consolidation across all operating industries',
-        '🔄 Intercompany loans, management fees, and cross-charge elimination',
-        '📊 Executive board pack with entity-by-entity books-closed status'
+        ICONS.globe + ' Overnight group consolidation across all operating industries',
+        ICONS.sync + ' Intercompany loans, management fees, and cross-charge elimination',
+        ICONS.pbi + ' Executive board pack with entity-by-entity books-closed status'
       ],
       tables: ['bhf_interaction', 'bhf_intercompany', 'bhf_businessunit'],
       sbox: 'holding', ask: 'Show the Multi-Entity Holding Groups & Family Offices blueprint'
     },
     {
-      id: 'pos', cat: 'field', emoji: '🖨️', tone: 'tone-good',
+      id: 'pos', cat: 'field', emoji: ICONS.pos, tone: 'tone-good',
       name: 'Offline POS Till PWA', sub: '<0.3s Thermal Receipt Till',
       kicker: 'Companion Field App 07 · Progressive Web App',
       desc: 'Zero-latency cashier till that keeps ringing sales and printing Bluetooth thermal receipts through internet cuts, then syncs daily totals to Dataverse.',
       bullets: [
-        '⚡ Sub-300ms local thermal receipt and kitchen order printing (RawBT)',
-        '📴 100% offline IndexedDB sales queue during Wi-Fi or power cuts',
-        '💳 Zero per-terminal SaaS fees across unlimited cashier tablets'
+        ICONS.bolt + ' Sub-300ms local thermal receipt and kitchen order printing (RawBT)',
+        ICONS.sync + ' 100% offline IndexedDB sales queue during Wi-Fi or power cuts',
+        ICONS.ar + ' Zero per-terminal SaaS fees across unlimited cashier tablets'
       ],
       tables: ['IndexedDB bhfpos', 'RawBT ESC/POS', 'bhf_revenue Sync'],
       sbox: 'hospitality', ask: 'Tell me about the Offline POS Till PWA'
     },
     {
-      id: 'kiosk', cat: 'field', emoji: '📸', tone: 'tone-steel',
+      id: 'kiosk', cat: 'field', emoji: ICONS.kiosk, tone: 'tone-steel',
       name: 'Face & PIN Gate Kiosk', sub: '1s Biometric Tablet PWA',
       kicker: 'Companion Field App 08 · Workforce Attendance PWA',
       desc: 'Replaces fragile fingerprint boxes with any standard wall-mounted tablet. Verifies staff by face + PIN in 1 second offline and syncs nightly to payroll.',
       bullets: [
-        '📸 Live camera facial verification + 4-digit PIN with photo audit trail',
-        '📴 Buffers clock-in, break, and clock-out punches offline at remote sites',
-        '🌙 Nightly cloud job pairs shifts, calculates overtime, and posts to HR'
+        ICONS.kiosk + ' Live camera facial verification + 4-digit PIN with photo audit trail',
+        ICONS.sync + ' Buffers clock-in, break, and clock-out punches offline at remote sites',
+        ICONS.clock + ' Nightly cloud job pairs shifts, calculates overtime, and posts to HR'
       ],
       tables: ['bhf_punch', 'bhf_faceenrolment', 'bhf_attendance'],
       sbox: 'manufacturing', ask: 'Tell me about the Biometric Face & PIN Attendance Kiosk PWA'
     },
     {
-      id: 'hr', cat: 'field', emoji: '🎯', tone: 'tone-violet',
+      id: 'hr', cat: 'field', emoji: ICONS.hr, tone: 'tone-violet',
       name: 'Recruitment & CV Drive', sub: 'Applicant to SharePoint',
       kicker: 'HR & Talent Pipeline · Automated Cloud Flow',
       desc: 'Automated applicant intake that routes candidate CVs straight into per-company SharePoint drives and creates structured Dataverse review records.',
       bullets: [
-        '📥 Public application form auto-routes by target resort, plant, or branch',
-        '📂 Uploads PDF CVs directly into per-Business Unit SharePoint folders',
-        '👥 HR evaluation workflow from screening to one-click employee onboarding'
+        ICONS.download + ' Public application form auto-routes by target resort, plant, or branch',
+        ICONS.folder + ' Uploads PDF CVs directly into per-Business Unit SharePoint folders',
+        ICONS.hr + ' HR evaluation workflow from screening to one-click employee onboarding'
       ],
       tables: ['cr519_recruitment', 'SharePoint Per-BU Drive', 'bhf_employee'],
       sbox: 'holding', ask: 'How does the automated recruitment and SharePoint CV pipeline work?'
     }
   ];
 
-  // ---------------- INDUSTRY EMOJIS, DAY-IN-THE-LIFE TIMELINES & BEFORE/AFTER ----------------
+  // ---------------- INDUSTRY ICONS, DAY-IN-THE-LIFE TIMELINES & BEFORE/AFTER ----------------
   const IND_EXTRAS = {
     hospitality: {
-      emoji: '🏖️',
+      emoji: ICONS.hospitality,
       dayFlow: [
-        ['🌅 08:00 AM · Gate & Staff', 'Biometric Shift Check-In', 'Seasonal staff clock in on the tablet kiosk via Face + PIN; kitchen and bar stock deliveries are logged against supplier POs.', '✓ Live Headcount'],
-        ['☀️ 01:30 PM · Peak Service', 'Offline POS Tills Ringing', 'Entrance, cabanas, and beach bars ring orders and print Bluetooth thermal receipts in 0.2s, even if Wi-Fi drops.', '✓ 100% Uptime'],
-        ['🌇 11:30 PM · Shift Close', 'Cash & Card Till Audit', 'Managers count drawers; end-of-day sales totals sync automatically into the Dataverse revenue ledger by outlet.', '✓ $0 Variance'],
-        ['🌙 02:00 AM · Nightly Close', 'Owner Flash & Partner Split', 'Power BI refreshes consolidated TTC revenue, F&B cost ratios, and partner profit-split balances for morning review.', '✓ Books Closed']
+        [ICONS.clock + ' 08:00 AM · Gate & Staff', 'Biometric Shift Check-In', 'Seasonal staff clock in on the tablet kiosk via Face + PIN; kitchen and bar stock deliveries are logged against supplier POs.', '✓ Live Headcount'],
+        [ICONS.clock + ' 01:30 PM · Peak Service', 'Offline POS Tills Ringing', 'Entrance, cabanas, and beach bars ring orders and print Bluetooth thermal receipts in 0.2s, even if Wi-Fi drops.', '✓ 100% Uptime'],
+        [ICONS.clock + ' 11:30 PM · Shift Close', 'Cash & Card Till Audit', 'Managers count drawers; end-of-day sales totals sync automatically into the Dataverse revenue ledger by outlet.', '✓ $0 Variance'],
+        [ICONS.clock + ' 02:00 AM · Nightly Close', 'Owner Flash & Partner Split', 'Power BI refreshes consolidated TTC revenue, F&B cost ratios, and partner profit-split balances for morning review.', '✓ Books Closed']
       ],
       before: [
-        '❌ Cashiers and accountants re-keying paper till slips into 12 separate Excel sheets every morning',
-        '❌ Unexplained variances between F&B supplier deliveries, bar stock, and outlet cash',
-        '❌ Days spent calculating monthly partner profit splits and advances by hand',
-        '❌ Cloud POS terminals freezing whenever beach or resort internet fluctuates'
+        ICONS.cross + ' Cashiers and accountants re-keying paper till slips into 12 separate Excel sheets every morning',
+        ICONS.cross + ' Unexplained variances between F&B supplier deliveries, bar stock, and outlet cash',
+        ICONS.cross + ' Days spent calculating monthly partner profit splits and advances by hand',
+        ICONS.cross + ' Cloud POS terminals freezing whenever beach or resort internet fluctuates'
       ],
       after: [
-        '✅ Offline POS tills sync end-of-day sales totals straight into the Dataverse ledger automatically',
-        '✅ Every supplier invoice and petty cash voucher requires a digital supervisor stamp',
-        '✅ Partner Statement of Accounts (.rdl) and profit splits generate in one click',
-        '✅ Owners open one mobile Power BI dashboard to see every property and outlet live'
+        ICONS.check + ' Offline POS tills sync end-of-day sales totals straight into the Dataverse ledger automatically',
+        ICONS.check + ' Every supplier invoice and petty cash voucher requires a digital supervisor stamp',
+        ICONS.check + ' Partner Statement of Accounts (.rdl) and profit splits generate in one click',
+        ICONS.check + ' Owners open one mobile Power BI dashboard to see every property and outlet live'
       ]
     },
     trading: {
-      emoji: '🚛',
+      emoji: ICONS.trading,
       dayFlow: [
-        ['🌅 08:30 AM · Port & Customs', 'VIN & Landed Cost Intake', 'New shipment arrives: FOB invoice, freight, insurance, and customs duty are allocated per VIN chassis automatically.', '✓ Exact Unit Cost'],
-        ['☀️ 11:45 AM · Showroom Floor', 'Margin-Locked Sales Order', 'Sales rep quotes a heavy truck; form rules verify minimum gross margin and check customer credit before approval.', '✓ Margin Protected'],
-        ['🌇 03:30 PM · Parts Counter', 'SKU Dispatch & Workshop', 'Spare parts counter scans items across bonded and duty-paid depots; reorder alerts fire when stock hits threshold.', '✓ Live SKU Stock'],
-        ['🌙 06:00 PM · Finance Desk', 'Aged SOA & Statutory Match', 'Overdue 30/60/90d installment alerts dispatch printable PDF Statements of Account and reconcile with statutory books.', '✓ Reconciled']
+        [ICONS.clock + ' 08:30 AM · Port & Customs', 'VIN & Landed Cost Intake', 'New shipment arrives: FOB invoice, freight, insurance, and customs duty are allocated per VIN chassis automatically.', '✓ Exact Unit Cost'],
+        [ICONS.clock + ' 11:45 AM · Showroom Floor', 'Margin-Locked Sales Order', 'Sales rep quotes a heavy truck; form rules verify minimum gross margin and check customer credit before approval.', '✓ Margin Protected'],
+        [ICONS.clock + ' 03:30 PM · Parts Counter', 'SKU Dispatch & Workshop', 'Spare parts counter scans items across bonded and duty-paid depots; reorder alerts fire when stock hits threshold.', '✓ Live SKU Stock'],
+        [ICONS.clock + ' 06:00 PM · Finance Desk', 'Aged SOA & Statutory Match', 'Overdue 30/60/90d installment alerts dispatch printable PDF Statements of Account and reconcile with statutory books.', '✓ Reconciled']
       ],
       before: [
-        '❌ Landed cost per vehicle guessed on spreadsheets while customs duties and clearance bills arrive late',
-        '❌ Sales reps giving discounts below true landed cost without management visibility',
-        '❌ Spare parts stock discrepancies across showrooms, bonded warehouses, and service bays',
-        '❌ Overdue dealer and fleet installments noticed weeks after payment dates pass'
+        ICONS.cross + ' Landed cost per vehicle guessed on spreadsheets while customs duties and clearance bills arrive late',
+        ICONS.cross + ' Sales reps giving discounts below true landed cost without management visibility',
+        ICONS.cross + ' Spare parts stock discrepancies across showrooms, bonded warehouses, and service bays',
+        ICONS.cross + ' Overdue dealer and fleet installments noticed weeks after payment dates pass'
       ],
       after: [
-        '✅ Every VIN tracks its exact lifecycle (In-Transit, Bonded, Showroom, Sold) and full landed cost',
-        '✅ Automated form gates block under-margin quotes and over-limit credit sales instantly',
-        '✅ Real-time multi-warehouse SKU stock with automated transfer and reorder alerts',
-        '✅ Live 0-30-60-90d receivable aging with one-click printable SOA and statutory book match'
+        ICONS.check + ' Every VIN tracks its exact lifecycle (In-Transit, Bonded, Showroom, Sold) and full landed cost',
+        ICONS.check + ' Automated form gates block under-margin quotes and over-limit credit sales instantly',
+        ICONS.check + ' Real-time multi-warehouse SKU stock with automated transfer and reorder alerts',
+        ICONS.check + ' Live 0-30-60-90d receivable aging with one-click printable SOA and statutory book match'
       ]
     },
     manufacturing: {
-      emoji: '🏗️',
+      emoji: ICONS.manufacturing,
       dayFlow: [
-        ['🌅 06:30 AM · Batch Plant Gate', 'Silo Check & Crew Clock-In', 'Drivers and plant operators verify on the Face + PIN kiosk; cement silo and aggregate levels are confirmed.', '✓ Plant Ready'],
-        ['☀️ 10:15 AM · Dispatch Desk', 'Sales Ticket & Credit Gate', 'Dispatcher keys a 42 m³ C35 pump pour; form rules auto-price mix + pump fee and verify contractor credit cap.', '✓ Credit Verified'],
-        ['🌇 04:00 PM · Fleet & Yard', 'Mixer Trips & Fuel Audit', 'Transit mixer trips, driver allowances, and fuel burn per cubic meter are logged across plant and transport entities.', '✓ Fleet Tracked'],
-        ['🌙 07:00 PM · Plant Close', 'Yield & Project SOA Pack', 'Theoretical vs. actual cement consumption is audited, and customer statements grouped by project site update live.', '✓ Yield Audited']
+        [ICONS.clock + ' 06:30 AM · Batch Plant Gate', 'Silo Check & Crew Clock-In', 'Drivers and plant operators verify on the Face + PIN kiosk; cement silo and aggregate levels are confirmed.', '✓ Plant Ready'],
+        [ICONS.clock + ' 10:15 AM · Dispatch Desk', 'Sales Ticket & Credit Gate', 'Dispatcher keys a 42 m³ C35 pump pour; form rules auto-price mix + pump fee and verify contractor credit cap.', '✓ Credit Verified'],
+        [ICONS.clock + ' 04:00 PM · Fleet & Yard', 'Mixer Trips & Fuel Audit', 'Transit mixer trips, driver allowances, and fuel burn per cubic meter are logged across plant and transport entities.', '✓ Fleet Tracked'],
+        [ICONS.clock + ' 07:00 PM · Plant Close', 'Yield & Project SOA Pack', 'Theoretical vs. actual cement consumption is audited, and customer statements grouped by project site update live.', '✓ Yield Audited']
       ],
       before: [
-        '❌ Paper delivery tickets lost between the batch plant, mixer drivers, and back-office billing',
-        '❌ Pouring concrete for contractors who have already exceeded their credit limit',
-        '❌ Cement and aggregate silo shrinkage going unnoticed until month-end physical counts',
-        '❌ Inter-company billing between plant, construction, and transport companies taking weeks to untangle'
+        ICONS.cross + ' Paper delivery tickets lost between the batch plant, mixer drivers, and back-office billing',
+        ICONS.cross + ' Pouring concrete for contractors who have already exceeded their credit limit',
+        ICONS.cross + ' Cement and aggregate silo shrinkage going unnoticed until month-end physical counts',
+        ICONS.cross + ' Inter-company billing between plant, construction, and transport companies taking weeks to untangle'
       ],
       after: [
-        '✅ Every cubic meter batched is captured on a governed Sales Ticket with mix grade and pump rules',
-        '✅ Real-time credit gates alert dispatchers before a truck leaves the yard',
-        '✅ Daily theoretical vs. actual silo depletion and gross margin per m³ in Power BI',
-        '✅ Automated inter-entity ledger and project-grouped customer Statements of Account (.rdl)'
+        ICONS.check + ' Every cubic meter batched is captured on a governed Sales Ticket with mix grade and pump rules',
+        ICONS.check + ' Real-time credit gates alert dispatchers before a truck leaves the yard',
+        ICONS.check + ' Daily theoretical vs. actual silo depletion and gross margin per m³ in Power BI',
+        ICONS.check + ' Automated inter-entity ledger and project-grouped customer Statements of Account (.rdl)'
       ]
     },
     realestate: {
-      emoji: '🏢',
+      emoji: ICONS.realestate,
       dayFlow: [
-        ['🌅 09:00 AM · Portfolio Desk', 'Lease & PDC Radar', 'System flags leases 60 days from expiry and lists post-dated checks (PDCs) maturing this week for bank deposit.', '✓ Zero Missed Dates'],
-        ['☀️ 12:00 PM · Tenant Portal', 'Rent & Utility Billing', 'Quarterly rent invoices, escalations, and utility charge-backs generate and post to tenant ledgers automatically.', '✓ Auto-Billed'],
-        ['🌇 03:00 PM · Building Ops', 'Maintenance CapEx vs OpEx', 'Facility manager approves a contractor work order; cost is tagged to the exact building unit and CapEx/OpEx account.', '✓ Unit Costed'],
-        ['🌙 06:30 PM · Owner View', 'Property NOI & Yield Close', 'Co-investors and owners view live occupancy, collection aging, and net operating income (NOI) per property.', '✓ Live NOI']
+        [ICONS.clock + ' 09:00 AM · Portfolio Desk', 'Lease & PDC Radar', 'System flags leases 60 days from expiry and lists post-dated checks (PDCs) maturing this week for bank deposit.', '✓ Zero Missed Dates'],
+        [ICONS.clock + ' 12:00 PM · Tenant Portal', 'Rent & Utility Billing', 'Quarterly rent invoices, escalations, and utility charge-backs generate and post to tenant ledgers automatically.', '✓ Auto-Billed'],
+        [ICONS.clock + ' 03:00 PM · Building Ops', 'Maintenance CapEx vs OpEx', 'Facility manager approves a contractor work order; cost is tagged to the exact building unit and CapEx/OpEx account.', '✓ Unit Costed'],
+        [ICONS.clock + ' 06:30 PM · Owner View', 'Property NOI & Yield Close', 'Co-investors and owners view live occupancy, collection aging, and net operating income (NOI) per property.', '✓ Live NOI']
       ],
       before: [
-        '❌ Lease renewals, rent escalation clauses, and post-dated check dates buried in static folders',
-        '❌ Maintenance expenses lumped together with no clarity on unit-level profitability or CapEx vs. OpEx',
-        '❌ Chasing overdue tenant rent without an instant, clean Statement of Account to send',
-        '❌ Co-investor distributions calculated manually on error-prone spreadsheets each quarter'
+        ICONS.cross + ' Lease renewals, rent escalation clauses, and post-dated check dates buried in static folders',
+        ICONS.cross + ' Maintenance expenses lumped together with no clarity on unit-level profitability or CapEx vs. OpEx',
+        ICONS.cross + ' Chasing overdue tenant rent without an instant, clean Statement of Account to send',
+        ICONS.cross + ' Co-investor distributions calculated manually on error-prone spreadsheets each quarter'
       ],
       after: [
-        '✅ Automated 60/30-day lease expiry, escalation, and PDC deposit alerts',
-        '✅ Every work order and vendor bill is tied to a specific property, unit, and ledger class',
-        '✅ One-click printable Tenant Statement of Account (.rdl) and collection aging dashboard',
-        '✅ Live property-by-property NOI, occupancy roll-forward, and co-investor distribution schedules'
+        ICONS.check + ' Automated 60/30-day lease expiry, escalation, and PDC deposit alerts',
+        ICONS.check + ' Every work order and vendor bill is tied to a specific property, unit, and ledger class',
+        ICONS.check + ' One-click printable Tenant Statement of Account (.rdl) and collection aging dashboard',
+        ICONS.check + ' Live property-by-property NOI, occupancy roll-forward, and co-investor distribution schedules'
       ]
     },
     insurance: {
-      emoji: '🛡️',
+      emoji: ICONS.insurance,
       dayFlow: [
-        ['🌅 09:00 AM · Underwriting', 'Policy & Endorsement Issue', 'Broker issues a corporate medical policy; gross premium, carrier net payable, and brokerage commission split calculate instantly.', '✓ Auto Split'],
-        ['☀️ 01:00 PM · Retention Desk', '90/60/30d Renewal Pipeline', 'Account executives work the automated renewal radar and send WhatsApp/Email installment reminders to clients.', '✓ High Retention'],
-        ['🌇 04:00 PM · Claims Desk', 'Claim & Survey Tracking', 'Motor and marine claims log survey milestones and reserve statuses linked directly to the client policy record.', '✓ Full History'],
-        ['🌙 06:00 PM · Carrier Close', '1-Click Carrier Bordereaux', 'Finance generates printable carrier settlement bordereaux and producer commission statements with zero manual math.', '✓ Bordereaux Ready']
+        [ICONS.clock + ' 09:00 AM · Underwriting', 'Policy & Endorsement Issue', 'Broker issues a corporate medical policy; gross premium, carrier net payable, and brokerage commission split calculate instantly.', '✓ Auto Split'],
+        [ICONS.clock + ' 01:00 PM · Retention Desk', '90/60/30d Renewal Pipeline', 'Account executives work the automated renewal radar and send WhatsApp/Email installment reminders to clients.', '✓ High Retention'],
+        [ICONS.clock + ' 04:00 PM · Claims Desk', 'Claim & Survey Tracking', 'Motor and marine claims log survey milestones and reserve statuses linked directly to the client policy record.', '✓ Full History'],
+        [ICONS.clock + ' 06:00 PM · Carrier Close', '1-Click Carrier Bordereaux', 'Finance generates printable carrier settlement bordereaux and producer commission statements with zero manual math.', '✓ Bordereaux Ready']
       ],
       before: [
-        '❌ Hours wasted reconciling carrier bordereaux spreadsheets against client premium collections',
-        '❌ Sub-agent and producer commission splits miscalculated on mid-term policy endorsements',
-        '❌ Expiring policies noticed too late, costing the brokerage valuable renewal revenue',
-        '❌ No unified view of uncollected client premiums vs. net payables owed to carriers'
+        ICONS.cross + ' Hours wasted reconciling carrier bordereaux spreadsheets against client premium collections',
+        ICONS.cross + ' Sub-agent and producer commission splits miscalculated on mid-term policy endorsements',
+        ICONS.cross + ' Expiring policies noticed too late, costing the brokerage valuable renewal revenue',
+        ICONS.cross + ' No unified view of uncollected client premiums vs. net payables owed to carriers'
       ],
       after: [
-        '✅ Instant calculation of gross premium, carrier net payable, and producer commission on every policy',
-        '✅ Pro-rata endorsement adjustments and credit notes post directly to the ledger',
-        '✅ Automated 90/60/30-day renewal pipeline and client collection aging radar',
-        '✅ One-click printable Carrier Settlement Bordereaux and Client SOA (.rdl)'
+        ICONS.check + ' Instant calculation of gross premium, carrier net payable, and producer commission on every policy',
+        ICONS.check + ' Pro-rata endorsement adjustments and credit notes post directly to the ledger',
+        ICONS.check + ' Automated 90/60/30-day renewal pipeline and client collection aging radar',
+        ICONS.check + ' One-click printable Carrier Settlement Bordereaux and Client SOA (.rdl)'
       ]
     },
     holding: {
-      emoji: '🏛️',
+      emoji: ICONS.holding,
       dayFlow: [
-        ['🌅 07:00 AM · Cloud Fleet', 'Overnight Group Sync', 'Scheduled pipelines audit all subsidiary Business Units, verify SharePoint backups, and refresh group semantic models.', '✓ 100% Green'],
-        ['☀️ 10:30 AM · Group Treasury', 'Multi-Entity Cash & Loans', 'CFO reviews consolidated USD/EUR/AED cash positions, intercompany balances, and partner capital accounts.', '✓ Group Visibility'],
-        ['🌇 02:30 PM · HR & Talent', 'Automated CV Routing', 'New job applicants via Tally auto-route CVs into per-company SharePoint folders and Dataverse HR queues.', '✓ Zero Manual Filing'],
-        ['🌙 05:30 PM · Boardroom', 'Ask ISABI Executive Brief', 'Chairman asks ISABI for a cross-industry margin and receivable briefing; every figure cites its underlying subsidiary ledger.', '✓ Board Ready']
+        [ICONS.clock + ' 07:00 AM · Cloud Fleet', 'Overnight Group Sync', 'Scheduled pipelines audit all subsidiary Business Units, verify SharePoint backups, and refresh group semantic models.', '✓ 100% Green'],
+        [ICONS.clock + ' 10:30 AM · Group Treasury', 'Multi-Entity Cash & Loans', 'CFO reviews consolidated USD/EUR/AED cash positions, intercompany balances, and partner capital accounts.', '✓ Group Visibility'],
+        [ICONS.clock + ' 02:30 PM · HR & Talent', 'Automated CV Routing', 'New job applicants via Tally auto-route CVs into per-company SharePoint folders and Dataverse HR queues.', '✓ Zero Manual Filing'],
+        [ICONS.clock + ' 05:30 PM · Boardroom', 'Ask ISABI Executive Brief', 'Chairman asks ISABI for a cross-industry margin and receivable briefing; every figure cites its underlying subsidiary ledger.', '✓ Board Ready']
       ],
       before: [
-        '❌ Waiting 15 to 20 days after month-end for subsidiaries to email incompatible Excel packs',
-        '❌ Intercompany loans and cross-charges out of balance between sister companies',
-        '❌ Branch staff accidentally seeing sensitive figures belonging to other group entities',
-        '❌ Job applicant CVs scattered across WhatsApp chats and personal email inboxes'
+        ICONS.cross + ' Waiting 15 to 20 days after month-end for subsidiaries to email incompatible Excel packs',
+        ICONS.cross + ' Intercompany loans and cross-charges out of balance between sister companies',
+        ICONS.cross + ' Branch staff accidentally seeing sensitive figures belonging to other group entities',
+        ICONS.cross + ' Job applicant CVs scattered across WhatsApp chats and personal email inboxes'
       ],
       after: [
-        '✅ Real-time group P&L, balance sheet, and cash position across all operating industries',
-        '✅ Governed intercompany ledger and partner equity capital accounts that always balance',
-        '✅ Strict Dataverse Business Unit isolation so every seat sees only its authorized scope',
-        '✅ Automated group-wide recruitment pipeline wired straight to SharePoint and Dataverse'
+        ICONS.check + ' Real-time group P&L, balance sheet, and cash position across all operating industries',
+        ICONS.check + ' Governed intercompany ledger and partner equity capital accounts that always balance',
+        ICONS.check + ' Strict Dataverse Business Unit isolation so every seat sees only its authorized scope',
+        ICONS.check + ' Automated group-wide recruitment pipeline wired straight to SharePoint and Dataverse'
       ]
     },
     pos: {
-      emoji: '🖨️',
+      emoji: ICONS.pos,
       dayFlow: [
-        ['🌅 09:00 AM · Cashier Open', 'PIN Unlock & Drawer Float', 'Cashier unlocks the tablet till with a 4-digit PIN (fail-closed lock screen) and logs the opening cash float.', '✓ Till Unlocked'],
-        ['☀️ 02:00 PM · High Volume', '0.2s Offline Receipt Print', 'Internet drops during peak lunch rush; cashier keeps ringing orders and printing thermal receipts via RawBT Bluetooth.', '✓ Zero Lag'],
-        ['🌇 06:00 PM · Reconnect', 'Auto Queue Flush', 'Wi-Fi returns; the local IndexedDB transaction queue flushes pending sales to the cloud with revision safety.', '✓ Auto Synced'],
-        ['🌙 11:00 PM · Shift Close', 'Drawer Count & Ledger Post', 'Supervisor runs the Shift Close Report, reconciles cash + card totals, and posts end-of-day revenue to Dataverse.', '✓ Posted to ERP']
+        [ICONS.clock + ' 09:00 AM · Cashier Open', 'PIN Unlock & Drawer Float', 'Cashier unlocks the tablet till with a 4-digit PIN (fail-closed lock screen) and logs the opening cash float.', '✓ Till Unlocked'],
+        [ICONS.clock + ' 02:00 PM · High Volume', '0.2s Offline Receipt Print', 'Internet drops during peak lunch rush; cashier keeps ringing orders and printing thermal receipts via RawBT Bluetooth.', '✓ Zero Lag'],
+        [ICONS.clock + ' 06:00 PM · Reconnect', 'Auto Queue Flush', 'Wi-Fi returns; the local IndexedDB transaction queue flushes pending sales to the cloud with revision safety.', '✓ Auto Synced'],
+        [ICONS.clock + ' 11:00 PM · Shift Close', 'Drawer Count & Ledger Post', 'Supervisor runs the Shift Close Report, reconciles cash + card totals, and posts end-of-day revenue to Dataverse.', '✓ Posted to ERP']
       ],
       before: [
-        '❌ Cloud POS systems freezing at the gate or bar the moment internet connectivity flickers',
-        '❌ Paying steep monthly per-terminal SaaS fees for every seasonal cashier tablet',
-        '❌ Slow browser print dialogs and garbled characters on thermal receipt printers',
-        '❌ Re-keying daily till close ribbons into the accounting software by hand'
+        ICONS.cross + ' Cloud POS systems freezing at the gate or bar the moment internet connectivity flickers',
+        ICONS.cross + ' Paying steep monthly per-terminal SaaS fees for every seasonal cashier tablet',
+        ICONS.cross + ' Slow browser print dialogs and garbled characters on thermal receipt printers',
+        ICONS.cross + ' Re-keying daily till close ribbons into the accounting software by hand'
       ],
       after: [
-        '✅ 100% offline-first IndexedDB queue that never drops a single order or receipt',
-        '✅ Direct ESC/POS raster thermal printing over Bluetooth in under 300 milliseconds',
-        '✅ $0 per-terminal licence tax on unlimited iOS, Android, or Windows tablets',
-        '✅ Automated end-of-day sales totals sync straight into `bhf_revenue` and Power BI'
+        ICONS.check + ' 100% offline-first IndexedDB queue that never drops a single order or receipt',
+        ICONS.check + ' Direct ESC/POS raster thermal printing over Bluetooth in under 300 milliseconds',
+        ICONS.check + ' $0 per-terminal licence tax on unlimited iOS, Android, or Windows tablets',
+        ICONS.check + ' Automated end-of-day sales totals sync straight into `bhf_revenue` and Power BI'
       ]
     },
     attendance: {
-      emoji: '📸',
+      emoji: ICONS.kiosk,
       dayFlow: [
-        ['🌅 06:00 AM · Site Gate', '1-Second Face + PIN Punch', 'Staff walk up to the wall tablet, enter their PIN, and the live camera verifies their face in 1 second (even offline).', '✓ Biometric Match'],
-        ['☀️ 12:30 PM · Multi-Site', 'Offline Buffer & Sync', 'Remote plant and resort punches buffer locally in IndexedDB and sync via encrypted HTTP flow to Dataverse.', '✓ Photo Audited'],
-        ['🌇 05:00 PM · HR Console', 'Enrolment & Roster Control', 'HR enrols a new hire face descriptor in 15 seconds on the tablet and assigns their Business Unit and shift.', '✓ Instant Enrol'],
-        ['🌙 03:00 AM · Nightly Job', 'Payroll Shift Derivation', 'Nightly cloud engine pairs clock-in/out punches, flags missing outs, computes overtime, and updates `bhf_attendance`.', '✓ Payroll Ready']
+        [ICONS.clock + ' 06:00 AM · Site Gate', '1-Second Face + PIN Punch', 'Staff walk up to the wall tablet, enter their PIN, and the live camera verifies their face in 1 second (even offline).', '✓ Biometric Match'],
+        [ICONS.clock + ' 12:30 PM · Multi-Site', 'Offline Buffer & Sync', 'Remote plant and resort punches buffer locally in IndexedDB and sync via encrypted HTTP flow to Dataverse.', '✓ Photo Audited'],
+        [ICONS.clock + ' 05:00 PM · HR Console', 'Enrolment & Roster Control', 'HR enrols a new hire face descriptor in 15 seconds on the tablet and assigns their Business Unit and shift.', '✓ Instant Enrol'],
+        [ICONS.clock + ' 03:00 AM · Nightly Job', 'Payroll Shift Derivation', 'Nightly cloud engine pairs clock-in/out punches, flags missing outs, computes overtime, and updates `bhf_attendance`.', '✓ Payroll Ready']
       ],
       before: [
-        '❌ Proprietary fingerprint boxes breaking in dusty plants or humid beach resorts',
-        '❌ Buddy-punching with shared swipe cards or unverified paper sign-in sheets',
-        '❌ HR driving to remote sites with a USB stick at month-end to export punch logs',
-        '❌ Days spent manually pairing clock-in and clock-out timestamps in Excel for payroll'
+        ICONS.cross + ' Proprietary fingerprint boxes breaking in dusty plants or humid beach resorts',
+        ICONS.cross + ' Buddy-punching with shared swipe cards or unverified paper sign-in sheets',
+        ICONS.cross + ' HR driving to remote sites with a USB stick at month-end to export punch logs',
+        ICONS.cross + ' Days spent manually pairing clock-in and clock-out timestamps in Excel for payroll'
       ],
       after: [
-        '✅ Runs on any off-the-shelf Android or iPad tablet mounted at the gate',
-        '✅ Dual Face + PIN verification with confidence score and photo audit on every punch',
-        '✅ Works 100% offline during power/internet cuts and syncs automatically to Dataverse',
-        '✅ Nightly derivation engine turns raw punches into audited shifts, lateness, and overtime'
+        ICONS.check + ' Runs on any off-the-shelf Android or iPad tablet mounted at the gate',
+        ICONS.check + ' Dual Face + PIN verification with confidence score and photo audit on every punch',
+        ICONS.check + ' Works 100% offline during power/internet cuts and syncs automatically to Dataverse',
+        ICONS.check + ' Nightly derivation engine turns raw punches into audited shifts, lateness, and overtime'
       ]
     }
   };
@@ -992,9 +993,9 @@ JS = r"""
     sboxMode: 'erp',
     soaDoc: 'soa',
     posCart: [
-      { name: '🏖️ VIP Cabana Full Day', price: 120, qty: 1 },
-      { name: '🦞 Grilled Lobster Platter', price: 68, qty: 2 },
-      { name: '🍹 Sunset Pitcher', price: 34, qty: 1 }
+      { name: 'VIP Cabana Full Day', price: 120, qty: 1 },
+      { name: 'Grilled Lobster Platter', price: 68, qty: 2 },
+      { name: 'Sunset Pitcher', price: 34, qty: 1 }
     ],
     posSyncedCount: 142,
     kioskLastPunch: { name: 'Rami K. · Batch Plant Dispatcher', time: '06:02:14 AM', score: '99.4% Face + PIN Match', status: 'Synced to bhf_punch' },
@@ -1043,33 +1044,33 @@ JS = r"""
   };
 
   const HERO_VERTICALS = [
-    { id: 'trading', emoji: '🚛', name: 'Auto & Heavy Equipment', sub: 'VIN Stock, Customs & Parts', val: 524900, pct: 88, color: '#3B82F6', badge: '24% GP', kpi2Lbl: '🚛 Active VIN Inventory', kpi2Val: '184 Units', kpi2Sub: '✓ 100% customs & landed cost tracked' },
-    { id: 'hospitality', emoji: '🏖️', name: 'Hospitality & Resorts', sub: 'Outlets, Cabanas, POS & Splits', val: 418200, pct: 74, color: '#D9A54A', badge: '34% EBITDA', kpi2Lbl: '🏖️ Outlet Till Sync', kpi2Val: '100.0%', kpi2Sub: '✓ All POS closes matched to cash' },
-    { id: 'manufacturing', emoji: '🏗️', name: 'Concrete & Manufacturing', sub: 'Batch Plant m³, Fleet & Silos', val: 361400, pct: 64, color: '#10B981', badge: '29% GP', kpi2Lbl: '⚖️ Weighbridge Volume', kpi2Val: '14,820 m³', kpi2Sub: '✓ Zero unbilled dispatch tickets' },
-    { id: 'realestate', emoji: '🏢', name: 'Real Estate & Insurance', sub: 'Leases, Policies & Commissions', val: 178100, pct: 42, color: '#8B5CF6', badge: '94% Occ.', kpi2Lbl: '🏢 Portfolio Occupancy', kpi2Val: '94.6%', kpi2Sub: '✓ Automated lease & policy SOA' }
+    { id: 'trading', emoji: ICONS.trading, name: 'Auto & Heavy Equipment', sub: 'VIN Stock, Customs & Parts', val: 524900, pct: 88, color: '#3B82F6', badge: '24% GP', kpi2Lbl: ICONS.trading + ' Active VIN Inventory', kpi2Val: '184 Units', kpi2Sub: '✓ 100% customs & landed cost tracked' },
+    { id: 'hospitality', emoji: ICONS.hospitality, name: 'Hospitality & Resorts', sub: 'Outlets, Cabanas, POS & Splits', val: 418200, pct: 74, color: '#D9A54A', badge: '34% EBITDA', kpi2Lbl: ICONS.hospitality + ' Outlet Till Sync', kpi2Val: '100.0%', kpi2Sub: '✓ All POS closes matched to cash' },
+    { id: 'manufacturing', emoji: ICONS.manufacturing, name: 'Concrete & Manufacturing', sub: 'Batch Plant m³, Fleet & Silos', val: 361400, pct: 64, color: '#10B981', badge: '29% GP', kpi2Lbl: ICONS.scale + ' Weighbridge Volume', kpi2Val: '14,820 m³', kpi2Sub: '✓ Zero unbilled dispatch tickets' },
+    { id: 'realestate', emoji: ICONS.realestate, name: 'Real Estate & Insurance', sub: 'Leases, Policies & Commissions', val: 178100, pct: 42, color: '#8B5CF6', badge: '94% Occ.', kpi2Lbl: ICONS.realestate + ' Portfolio Occupancy', kpi2Val: '94.6%', kpi2Sub: '✓ Automated lease & policy SOA' }
   ];
 
   const HERO_AI_TOPICS = {
     ar: {
-      lbl: '🔍 Overdue AR Audit',
+      lbl: ICONS.search + ' Overdue AR Audit',
       q: 'Audit overdue receivables across all Business Units',
       ans: 'Across all 6 Business Units, <b>7 invoices totaling $42,300</b> are past 60 days (led by 2 fleet buyer installments in Trading and 1 contractor account in Concrete). One-click printable Statements of Account are ready for WhatsApp dispatch.',
       cite: 'Cited: bhf_receivable +ARAging.rdl · Reconciled to $0.00'
     },
     margin: {
-      lbl: '📊 Margin by Unit',
+      lbl: ICONS.pbi + ' Margin by Unit',
       q: 'Compare Hospitality vs. Auto & Heavy Equipment margins',
       ans: '<b>Hospitality & Resorts</b> leads net operating margin at <b>34.2% EBITDA</b> ($418.2k MTD), while <b>Auto & Heavy Equipment</b> leads gross volume at <b>$524.9k MTD</b> (24.1% GP after customs & freight capitalization).',
       cite: 'Cited: Consolidated Power BI XMLA Model · Class 6 & 7 Ledger'
     },
     parallel: {
-      lbl: '⚖️ Parallel Run',
+      lbl: ICONS.scale + ' Parallel Run',
       q: 'How does the parallel run guarantee zero variance?',
       ans: 'ISABI runs side-by-side with your existing accounting until every operational sale, stock movement, and bank voucher matches your statutory trial balance to <b>$0.00 variance</b> before cutover.',
       cite: 'Cited: Layer 03 Statutory Bridge & TrialBalance.rdl'
     },
     sprint: {
-      lbl: '🗓️ 14-Day Sprint',
+      lbl: ICONS.calendar + ' 14-Day Sprint',
       q: 'How does the 1 to 2 week go-live sprint work?',
       ans: '<b>Days 1-3:</b> Custom Dataverse tables & COA. <b>Days 4-6:</b> ERP forms, role security & Offline PWAs. <b>Days 7-10:</b> Power BI & printable SOA pack. <b>Days 11-14:</b> Historical data migration & zero-variance go-live.',
       cite: 'Cited: ISABI Code-First Schema & TMDL Compiler'
@@ -1107,20 +1108,20 @@ JS = r"""
       if (winTitle) winTitle.textContent = 'ISABI Field PWAs · POS & Kiosk';
       const cartTotal = state.posCart.reduce((acc, item) => acc + item.price * item.qty, 0);
       const itemCount = state.posCart.reduce((acc, item) => acc + item.qty, 0);
-      if (k1Lbl) k1Lbl.textContent = '🖨️ Live Offline Till Ticket';
+      if (k1Lbl) k1Lbl.innerHTML = `${ICONS.pos} Live Offline Till Ticket`;
       if (k1Val) k1Val.textContent = fmtHeroMoney(cartTotal);
       if (k1Sub) k1Sub.textContent = `${itemCount} items · Synced receipts: ${state.posSyncedCount}`;
-      if (k2Lbl) k2Lbl.textContent = '📸 Biometric Gate Kiosk';
+      if (k2Lbl) k2Lbl.innerHTML = `${ICONS.kiosk} Biometric Gate Kiosk`;
       if (k2Val) k2Val.textContent = '0.8s Match';
       if (k2Sub) k2Sub.textContent = `✓ ${state.kioskLastPunch.name.split('·')[0].trim()} (${state.kioskLastPunch.time})`;
 
       stageEl.innerHTML = `
         <div class="hlc-pos-box">
           <div class="hlc-pos-btns">
-            <button type="button" class="hlc-pos-btn" data-pos-add="🏖️ VIP Cabana|120"><span>🏖️ VIP Cabana</span><b>+${fmtHeroMoney(120)}</b></button>
-            <button type="button" class="hlc-pos-btn" data-pos-add="🦞 Grilled Lobster|68"><span>🦞 Lobster</span><b>+${fmtHeroMoney(68)}</b></button>
-            <button type="button" class="hlc-pos-btn" data-pos-add="🍹 Sunset Pitcher|34"><span>🍹 Pitcher</span><b>+${fmtHeroMoney(34)}</b></button>
-            <button type="button" class="hlc-pos-btn" data-pos-add="☕ Double Espresso|8"><span>☕ Espresso</span><b>+${fmtHeroMoney(8)}</b></button>
+            <button type="button" class="hlc-pos-btn" data-pos-add="VIP Cabana|120"><span>${ICONS.hospitality} VIP Cabana</span><b>+${fmtHeroMoney(120)}</b></button>
+            <button type="button" class="hlc-pos-btn" data-pos-add="Grilled Lobster|68"><span>${ICONS.pos} Lobster</span><b>+${fmtHeroMoney(68)}</b></button>
+            <button type="button" class="hlc-pos-btn" data-pos-add="Sunset Pitcher|34"><span>${ICONS.pos} Pitcher</span><b>+${fmtHeroMoney(34)}</b></button>
+            <button type="button" class="hlc-pos-btn" data-pos-add="Double Espresso|8"><span>${ICONS.pos} Espresso</span><b>+${fmtHeroMoney(8)}</b></button>
           </div>
           <div class="hlc-pos-receipt">
             <div class="hlc-pos-rhead">
@@ -1131,8 +1132,8 @@ JS = r"""
               ${state.posCart.map(it => `<span>${it.qty}x ${it.name} (${fmtHeroMoney(it.price * it.qty)})</span>`).join(' · ')}
             </div>
             <div class="hlc-pos-racts">
-              <button type="button" class="btn btn-brass" style="padding:6px 12px;font-size:12px" data-pos-sync="1">🖨️ Print &amp; Sync to Ledger</button>
-              <button type="button" class="btn btn-outline" style="padding:6px 12px;font-size:12px;background:rgba(255,255,255,0.08);color:#F4F2EE;border-color:rgba(255,255,255,0.2)" data-kiosk-punch="👷‍♂️ Rami K. · Batch Plant|99.6% Face + PIN">📸 Simulate Gate Face Punch</button>
+              <button type="button" class="btn btn-brass" style="padding:6px 12px;font-size:12px" data-pos-sync="1">${ICONS.pos} Print &amp; Sync to Ledger</button>
+              <button type="button" class="btn btn-outline" style="padding:6px 12px;font-size:12px;background:rgba(255,255,255,0.08);color:#F4F2EE;border-color:rgba(255,255,255,0.2)" data-kiosk-punch="Rami K. · Batch Plant|99.6% Face + PIN">${ICONS.kiosk} Simulate Gate Face Punch</button>
             </div>
           </div>
         </div>
@@ -1142,10 +1143,10 @@ JS = r"""
 
     if (state.heroScreen === 'apps') {
       if (winTitle) winTitle.textContent = 'ISABI App Suite · 18 Custom Modules';
-      if (k1Lbl) k1Lbl.textContent = '🧩 Production Modules';
+      if (k1Lbl) k1Lbl.innerHTML = `${ICONS.apps} Production Modules`;
       if (k1Val) k1Val.textContent = '18 Apps';
       if (k1Sub) k1Sub.textContent = '✓ 100% Custom Schema · Zero Templates';
-      if (k2Lbl) k2Lbl.textContent = '⚡ Go-Live Delivery';
+      if (k2Lbl) k2Lbl.innerHTML = `${ICONS.bolt} Go-Live Delivery`;
       if (k2Val) k2Val.textContent = '1 to 2 Wks';
       if (k2Sub) k2Sub.textContent = '✓ Deployed inside your M365 tenant';
 
@@ -1179,10 +1180,10 @@ JS = r"""
 
     if (state.heroScreen === 'ai') {
       if (winTitle) winTitle.textContent = 'Ask ISABI · Cited AI Assistant';
-      if (k1Lbl) k1Lbl.textContent = '🤖 AI Ledger Grounding';
+      if (k1Lbl) k1Lbl.innerHTML = `${ICONS.ai} AI Ledger Grounding`;
       if (k1Val) k1Val.textContent = '100% Cited';
       if (k1Sub) k1Sub.textContent = '✓ Live Dataverse Ledger, Stock & AR';
-      if (k2Lbl) k2Lbl.textContent = '🌐 Multilingual Fluency';
+      if (k2Lbl) k2Lbl.innerHTML = `${ICONS.globe} Multilingual Fluency`;
       if (k2Val) k2Val.textContent = 'EN · AR · FR';
       if (k2Sub) k2Sub.textContent = '✓ Instant Executive Audits 24/7';
 
@@ -1196,7 +1197,7 @@ JS = r"""
           </div>
           <div class="hlc-ai-card">
             <div class="hlc-ai-q"><b>You:</b> "${curTopic.q}"</div>
-            <div class="hlc-ai-a"><b>🤖 Ask ISABI:</b> ${curTopic.ans}</div>
+            <div class="hlc-ai-a"><b>${ICONS.ai} Ask ISABI:</b> ${curTopic.ans}</div>
             <div class="hlc-ai-foot">
               <small>${curTopic.cite}</small>
               <button type="button" class="btn btn-brass" style="padding:5px 10px;font-size:11.5px" data-open-ai="${curTopic.q}">Open Full Chat ▸</button>
@@ -1211,28 +1212,28 @@ JS = r"""
     if (winTitle) winTitle.textContent = 'ISABI Live Command Center';
     const selV = HERO_VERTICALS.find(v => v.id === state.heroInd);
     if (selV) {
-      if (k1Lbl) k1Lbl.textContent = `${selV.emoji} ${selV.name} (MTD)`;
+      if (k1Lbl) k1Lbl.innerHTML = `${selV.emoji} ${selV.name} (MTD)`;
       if (k1Val) k1Val.textContent = fmtHeroMoney(selV.val);
       if (k1Sub) k1Sub.textContent = `▲ ${selV.badge} · ${selV.sub}`;
-      if (k2Lbl) k2Lbl.textContent = selV.kpi2Lbl;
+      if (k2Lbl) k2Lbl.innerHTML = selV.kpi2Lbl;
       if (k2Val) k2Val.textContent = selV.kpi2Val;
       if (k2Sub) k2Sub.textContent = selV.kpi2Sub;
     } else {
-      if (k1Lbl) k1Lbl.textContent = '📈 Consolidated Revenue (MTD)';
+      if (k1Lbl) k1Lbl.innerHTML = `${ICONS.trend} Consolidated Revenue (MTD)`;
       if (k1Val) k1Val.textContent = fmtHeroMoney(1482600);
       if (k1Sub) k1Sub.textContent = '▲ +11.4% vs prior period · 6 Entities';
-      if (k2Lbl) k2Lbl.textContent = '⚖️ Books Reconciled';
+      if (k2Lbl) k2Lbl.innerHTML = `${ICONS.scale} Books Reconciled`;
       if (k2Val) k2Val.textContent = '100.0%';
       if (k2Sub) k2Sub.textContent = '✓ $0.00 statutory variance';
     }
 
     stageEl.innerHTML = `
       <div class="hlc-ind-pills" role="tablist" aria-label="Filter Vertical">
-        <button type="button" class="hlc-ind-pill ${state.heroInd === 'all' ? 'active' : ''}" data-hero-ind="all">🏛️ All Group</button>
-        <button type="button" class="hlc-ind-pill ${state.heroInd === 'hospitality' ? 'active' : ''}" data-hero-ind="hospitality">🏖️ Resorts</button>
-        <button type="button" class="hlc-ind-pill ${state.heroInd === 'trading' ? 'active' : ''}" data-hero-ind="trading">🚛 Auto &amp; Heavy Equipment</button>
-        <button type="button" class="hlc-ind-pill ${state.heroInd === 'manufacturing' ? 'active' : ''}" data-hero-ind="manufacturing">🏗️ Concrete</button>
-        <button type="button" class="hlc-ind-pill ${state.heroInd === 'realestate' ? 'active' : ''}" data-hero-ind="realestate">🏢 Real Estate</button>
+        <button type="button" class="hlc-ind-pill ${state.heroInd === 'all' ? 'active' : ''}" data-hero-ind="all">${ICONS.holding} All Group</button>
+        <button type="button" class="hlc-ind-pill ${state.heroInd === 'hospitality' ? 'active' : ''}" data-hero-ind="hospitality">${ICONS.hospitality} Resorts</button>
+        <button type="button" class="hlc-ind-pill ${state.heroInd === 'trading' ? 'active' : ''}" data-hero-ind="trading">${ICONS.trading} Auto &amp; Heavy Equipment</button>
+        <button type="button" class="hlc-ind-pill ${state.heroInd === 'manufacturing' ? 'active' : ''}" data-hero-ind="manufacturing">${ICONS.manufacturing} Concrete</button>
+        <button type="button" class="hlc-ind-pill ${state.heroInd === 'realestate' ? 'active' : ''}" data-hero-ind="realestate">${ICONS.realestate} Real Estate</button>
       </div>
       <div class="hlc-visual-list">
         ${HERO_VERTICALS.map(v => `
@@ -1291,8 +1292,8 @@ JS = r"""
         </div>
       </div>
       <div class="app-spot-actions">
-        <button type="button" class="btn btn-brass" data-load-sandbox="${cur.sbox}">🎮 Try in Sandbox</button>
-        <button type="button" class="btn btn-outline" data-open-ai="${cur.ask}">🤖 Ask ISABI</button>
+        <button type="button" class="btn btn-brass" data-load-sandbox="${cur.sbox}">${ICONS.erp} Try in Sandbox</button>
+        <button type="button" class="btn btn-outline" data-open-ai="${cur.ask}">${ICONS.ai} Ask ISABI</button>
       </div>
     `;
   }
@@ -1500,7 +1501,7 @@ JS = r"""
 
     const isMobile = window.innerWidth <= 720;
     tabsEl.innerHTML = INDUSTRIES.map(ind => {
-      const ex = IND_EXTRAS[ind.id] || { emoji: '🏢' };
+      const ex = IND_EXTRAS[ind.id] || { emoji: ICONS.realestate };
       return `
       <button type="button" class="ind-tab ${ind.id === state.activeInd ? 'active' : ''}" role="tab" aria-selected="${ind.id === state.activeInd}" data-ind-id="${ind.id}">
         <b>${ex.emoji} ${isMobile ? (IND_SHORT_NAMES[ind.id] || ind.name) : ind.name}</b>
@@ -1531,11 +1532,11 @@ JS = r"""
       bodyContentHtml = `
         <div class="ind-ba-grid">
           <div class="ind-ba-card before">
-            <h4>😫 Before ISABI (Spreadsheets &amp; Generic Templates)</h4>
+            <h4>${ICONS.warn} Before ISABI (Spreadsheets &amp; Generic Templates)</h4>
             <ul>${ex.before.map(item => `<li>${item}</li>`).join('')}</ul>
           </div>
           <div class="ind-ba-card after">
-            <h4>🚀 After ISABI (Governed Custom Architecture)</h4>
+            <h4>${ICONS.check} After ISABI (Governed Custom Architecture)</h4>
             <ul>${ex.after.map(item => `<li>${item}</li>`).join('')}</ul>
           </div>
         </div>
@@ -1544,15 +1545,15 @@ JS = r"""
       bodyContentHtml = `
         <div class="ind-cols">
           <div class="ind-box" data-ind-box="modules" ${mTab !== 'modules' ? 'data-mob-hide="1"' : ''}>
-            <h4>📦 Custom Tables &amp; Modules</h4>
+            <h4>${ICONS.box} Custom Tables &amp; Modules</h4>
             <ul>${cur.modules.map(m => `<li>${m}</li>`).join('')}</ul>
           </div>
           <div class="ind-box" data-ind-box="workflows" ${mTab !== 'workflows' && mTab !== 'modules' ? 'data-mob-hide="1"' : (isMobile && mTab !== 'workflows' ? 'data-mob-hide="1"' : '')}>
-            <h4>⚡ Automated Cloud Workflows</h4>
+            <h4>${ICONS.bolt} Automated Cloud Workflows</h4>
             <ul>${cur.workflows.map(w => `<li>${w}</li>`).join('')}</ul>
           </div>
           <div class="ind-box" data-ind-box="reports" ${mTab !== 'reports' && mTab !== 'modules' ? 'data-mob-hide="1"' : (isMobile && mTab !== 'reports' ? 'data-mob-hide="1"' : '')}>
-            <h4>📊 Power BI &amp; Printable .RDL</h4>
+            <h4>${ICONS.pbi} Power BI &amp; Printable .RDL</h4>
             <ul>${cur.reports.map(r => `<li>${r}</li>`).join('')}</ul>
           </div>
         </div>
@@ -1567,16 +1568,16 @@ JS = r"""
           <p class="ind-detail-lead">${cur.lead}</p>
         </div>
         <div class="ind-detail-acts">
-          <button type="button" class="btn btn-outline" data-load-sandbox="${cur.sandboxKey}">🎮 Preview in Live ERP Sandbox</button>
-          <button type="button" class="btn btn-brass" data-configure-ind="${cur.cfgName}">🛠️ Price This Industry System</button>
+          <button type="button" class="btn btn-outline" data-load-sandbox="${cur.sandboxKey}">${ICONS.erp} Preview in Live ERP Sandbox</button>
+          <button type="button" class="btn btn-brass" data-configure-ind="${cur.cfgName}">${ICONS.scope} Price This Industry System</button>
         </div>
       </div>
 
       <div class="ind-subtabs" role="tablist" aria-label="Blueprint Views">
-        <button type="button" class="ind-subtab-btn ${mTab === 'modules' ? 'active' : ''}" data-ind-subtab="modules">📦 Core Modules (${cur.modules.length})</button>
-        <button type="button" class="ind-subtab-btn ${mTab === 'dayflow' ? 'active' : ''}" data-ind-subtab="dayflow">⏱️ Day-in-the-Life Flow</button>
-        <button type="button" class="ind-subtab-btn ${mTab === 'beforeafter' ? 'active' : ''}" data-ind-subtab="beforeafter">🔄 Before vs. After</button>
-        <button type="button" class="ind-subtab-btn ${mTab === 'reports' ? 'active' : ''}" data-ind-subtab="reports">📊 Reports &amp; Workflows</button>
+        <button type="button" class="ind-subtab-btn ${mTab === 'modules' ? 'active' : ''}" data-ind-subtab="modules">${ICONS.box} Core Modules (${cur.modules.length})</button>
+        <button type="button" class="ind-subtab-btn ${mTab === 'dayflow' ? 'active' : ''}" data-ind-subtab="dayflow">${ICONS.clock} Day-in-the-Life Flow</button>
+        <button type="button" class="ind-subtab-btn ${mTab === 'beforeafter' ? 'active' : ''}" data-ind-subtab="beforeafter">${ICONS.sync} Before vs. After</button>
+        <button type="button" class="ind-subtab-btn ${mTab === 'reports' ? 'active' : ''}" data-ind-subtab="reports">${ICONS.pbi} Reports &amp; Workflows</button>
       </div>
 
       ${bodyContentHtml}
@@ -1586,7 +1587,7 @@ JS = r"""
           ${cur.metrics.map(m => `<div><small>${m[0]}</small><b class="num">${m[1]}</b></div>`).join('')}
         </div>
         <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I am interested in an ISABI Systems blueprint for ' + cur.name + '. Can we schedule a quick walkthrough?')}" target="_blank" rel="noopener" class="btn btn-wa" aria-label="Discuss ${cur.name} on WhatsApp">
-          💬 Discuss on WhatsApp
+          ${ICONS.wa} Discuss on WhatsApp
         </a>
       </div>
     `;
@@ -1658,12 +1659,12 @@ JS = r"""
     if (!barEl || !mockEl) return;
 
     const sboxChoices = [
-      ['holding', '🏛️ Group Holding'],
-      ['hospitality', '🏖️ Hospitality & Resorts'],
-      ['trading', '🚛 Auto & Equipment Trading'],
-      ['manufacturing', '🏗️ Concrete & Mfg'],
-      ['realestate', '🏢 Real Estate'],
-      ['insurance', '🛡️ Insurance Brokerage']
+      ['holding', ICONS.holding + ' Group Holding'],
+      ['hospitality', ICONS.hospitality + ' Hospitality & Resorts'],
+      ['trading', ICONS.trading + ' Auto & Equipment Trading'],
+      ['manufacturing', ICONS.manufacturing + ' Concrete & Mfg'],
+      ['realestate', ICONS.realestate + ' Real Estate'],
+      ['insurance', ICONS.insurance + ' Insurance Brokerage']
     ];
 
     barEl.innerHTML = sboxChoices.map(([k, lbl]) => `
@@ -1700,14 +1701,14 @@ JS = r"""
         <div class="soa-viewer">
           <div class="soa-hdr">
             <div>
-              <span class="ind-badge-pill">🧾 Paginated .RDL Statement Preview · ${d.groupTitle}</span>
+              <span class="ind-badge-pill">${ICONS.soa} Paginated .RDL Statement Preview · ${d.groupTitle}</span>
               <h3 style="font-size:20px;margin:4px 0">Audited Statement of Account &amp; Trial Balance (${cm.sym})</h3>
               <span style="font-size:12px;color:var(--m-muted)">Period: ${pm.label} · Lebanese / Regional Class 1 to 7 COA · Reconciled to $0.00 Variance</span>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button type="button" class="sbox-theme-btn ${docType === 'soa' ? 'active' : ''}" data-soa-doc="soa">📄 Statement of Account</button>
-              <button type="button" class="sbox-theme-btn ${docType === 'tb' ? 'active' : ''}" data-soa-doc="tb">⚖️ Statutory Trial Balance</button>
-              <button type="button" class="primary-mock" data-open-ai="Audit the ${d.groupTitle} Statement of Account in ${cm.sym}">🤖 Ask ISABI to Audit</button>
+              <button type="button" class="sbox-theme-btn ${docType === 'soa' ? 'active' : ''}" data-soa-doc="soa">${ICONS.soa} Statement of Account</button>
+              <button type="button" class="sbox-theme-btn ${docType === 'tb' ? 'active' : ''}" data-soa-doc="tb">${ICONS.scale} Statutory Trial Balance</button>
+              <button type="button" class="primary-mock" data-open-ai="Audit the ${d.groupTitle} Statement of Account in ${cm.sym}">${ICONS.ai} Ask ISABI to Audit</button>
             </div>
           </div>
 
@@ -1749,16 +1750,16 @@ JS = r"""
           <div class="pwa-sim-card">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
               <div>
-                <span class="ind-badge-pill">🖨️ Offline Cashier POS Till PWA</span>
+                <span class="ind-badge-pill">${ICONS.pos} Offline Cashier POS Till PWA</span>
                 <h3 style="font-size:17px">Tap Items to Ring an Order &amp; Sync to Ledger</h3>
               </div>
               <span class="hlc-status"><i></i>Offline Queue Ready</span>
             </div>
             <div class="pos-items-grid">
-              <button type="button" class="pos-item-btn" data-pos-add="🏖️ VIP Cabana|120"><span>🏖️ VIP Cabana</span><b class="num">+$120</b></button>
-              <button type="button" class="pos-item-btn" data-pos-add="🦞 Grilled Lobster|68"><span>🦞 Grilled Lobster</span><b class="num">+$68</b></button>
-              <button type="button" class="pos-item-btn" data-pos-add="🍹 Sunset Pitcher|34"><span>🍹 Sunset Pitcher</span><b class="num">+$34</b></button>
-              <button type="button" class="pos-item-btn" data-pos-add="☕ Double Espresso|8"><span>☕ Double Espresso</span><b class="num">+$8</b></button>
+              <button type="button" class="pos-item-btn" data-pos-add="VIP Cabana|120"><span>${ICONS.hospitality} VIP Cabana</span><b class="num">+$120</b></button>
+              <button type="button" class="pos-item-btn" data-pos-add="Grilled Lobster|68"><span>${ICONS.pos} Grilled Lobster</span><b class="num">+$68</b></button>
+              <button type="button" class="pos-item-btn" data-pos-add="Sunset Pitcher|34"><span>${ICONS.pos} Sunset Pitcher</span><b class="num">+$34</b></button>
+              <button type="button" class="pos-item-btn" data-pos-add="Double Espresso|8"><span>${ICONS.pos} Double Espresso</span><b class="num">+$8</b></button>
             </div>
             <div class="pos-receipt-box">
               <div style="border-bottom:1px dashed rgba(255,255,255,0.25);padding-bottom:6px;margin-bottom:6px;display:flex;justify-content:space-between">
@@ -1772,7 +1773,7 @@ JS = r"""
               </div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button type="button" class="btn btn-brass" style="flex:1" data-pos-sync="1">🖨️ Print Receipt &amp; Sync to Dataverse</button>
+              <button type="button" class="btn btn-brass" style="flex:1" data-pos-sync="1">${ICONS.pos} Print Receipt &amp; Sync to Dataverse</button>
               <button type="button" class="btn btn-outline" data-pos-clear="1">Reset Till</button>
             </div>
           </div>
@@ -1780,16 +1781,16 @@ JS = r"""
           <div class="pwa-sim-card">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
               <div>
-                <span class="ind-badge-pill">📸 Biometric Face &amp; PIN Gate Kiosk PWA</span>
+                <span class="ind-badge-pill">${ICONS.kiosk} Biometric Face &amp; PIN Gate Kiosk PWA</span>
                 <h3 style="font-size:17px">Tap an Employee to Simulate a 1-Second Gate Punch</h3>
               </div>
               <span class="hlc-status"><i></i>Camera + PIN Live</span>
             </div>
             <div class="pos-items-grid">
-              <button type="button" class="pos-item-btn" data-kiosk-punch="👷‍♂️ Rami K. · Batch Plant Dispatcher|99.4% Face + PIN"><span>👷‍♂️ Rami K. · Batch Plant</span><b>Clock In</b></button>
-              <button type="button" class="pos-item-btn" data-kiosk-punch="👩‍💼 Maya S. · Resort Front Desk|99.7% Face + PIN"><span>👩‍💼 Maya S. · Front Desk</span><b>Clock In</b></button>
-              <button type="button" class="pos-item-btn" data-kiosk-punch="🔧 Tariq N. · Heavy Equipment Bay|99.1% Face + PIN"><span>🔧 Tariq N. · Service Bay</span><b>Clock In</b></button>
-              <button type="button" class="pos-item-btn" data-kiosk-punch="🚚 Jad M. · Mixer Fleet Driver|99.5% Face + PIN"><span>🚚 Jad M. · Mixer Fleet</span><b>Clock Out</b></button>
+              <button type="button" class="pos-item-btn" data-kiosk-punch="Rami K. · Batch Plant Dispatcher|99.4% Face + PIN"><span>${ICONS.kiosk} Rami K. · Batch Plant</span><b>Clock In</b></button>
+              <button type="button" class="pos-item-btn" data-kiosk-punch="Maya S. · Resort Front Desk|99.7% Face + PIN"><span>${ICONS.kiosk} Maya S. · Front Desk</span><b>Clock In</b></button>
+              <button type="button" class="pos-item-btn" data-kiosk-punch="Tariq N. · Heavy Equipment Bay|99.1% Face + PIN"><span>${ICONS.scope} Tariq N. · Service Bay</span><b>Clock In</b></button>
+              <button type="button" class="pos-item-btn" data-kiosk-punch="Jad M. · Mixer Fleet Driver|99.5% Face + PIN"><span>${ICONS.fleet} Jad M. · Mixer Fleet</span><b>Clock Out</b></button>
             </div>
             <div class="pos-receipt-box">
               <div style="border-bottom:1px dashed rgba(255,255,255,0.25);padding-bottom:6px;margin-bottom:6px;display:flex;justify-content:space-between">
@@ -1801,7 +1802,7 @@ JS = r"""
               <div><b>Biometric Audit:</b> ${state.kioskLastPunch.score}</div>
               <div style="color:#D9A54A;margin-top:4px"><b>Cloud Pipeline:</b> ${state.kioskLastPunch.status}</div>
             </div>
-            <button type="button" class="btn btn-outline" style="width:100%" data-open-ai="How do the Offline POS Till and Biometric Attendance Kiosk PWAs sync to Dataverse?">🤖 Ask ISABI How Offline Sync Works</button>
+            <button type="button" class="btn btn-outline" style="width:100%" data-open-ai="How do the Offline POS Till and Biometric Attendance Kiosk PWAs sync to Dataverse?">${ICONS.ai} Ask ISABI How Offline Sync Works</button>
           </div>
         </div>
       `;
@@ -1890,7 +1891,7 @@ JS = r"""
               <option value="AED" ${state.sboxCurr === 'AED' ? 'selected' : ''}>AED</option>
             </select>
             <button type="button" class="primary-mock" data-open-ai="Analyze the ${d.groupTitle} dashboard numbers and highlight key action items">
-              <span>🤖 Ask ISABI</span>
+              <span>${ICONS.ai} Ask ISABI</span>
             </button>
           </div>
         </header>
@@ -1898,14 +1899,14 @@ JS = r"""
         <section class="kpis">${kpisHtml}</section>
 
         <div class="sbox-mob-tabs" role="tablist" aria-label="Mobile Sandbox Views">
-          <button type="button" class="sbox-mob-tab ${mTab === 'chart' ? 'active' : ''}" data-sbox-mobtab="chart">📈 Chart &amp; Entities</button>
-          <button type="button" class="sbox-mob-tab ${mTab === 'ledger' ? 'active' : ''}" data-sbox-mobtab="ledger">📒 General Ledger &amp; Alerts</button>
+          <button type="button" class="sbox-mob-tab ${mTab === 'chart' ? 'active' : ''}" data-sbox-mobtab="chart">${ICONS.trend} Chart &amp; Entities</button>
+          <button type="button" class="sbox-mob-tab ${mTab === 'ledger' ? 'active' : ''}" data-sbox-mobtab="ledger">${ICONS.ledger} General Ledger &amp; Alerts</button>
         </div>
 
         <section class="row2" ${mTab !== 'chart' ? 'data-mob-hide="1"' : ''}>
           <div class="panel ${focusChart ? 'panel-focus' : ''}">
             <div class="ph">
-              <h3>📊 Monthly Revenue Trajectory (${cm.sym} thousands)</h3>
+              <h3>${ICONS.pbi} Monthly Revenue Trajectory (${cm.sym} thousands)</h3>
               <div class="legend">
                 <span><i class="sw-box s-1"></i>${d.seriesNames[0]}</span>
                 <span><i class="sw-box s-2"></i>${d.seriesNames[1]}</span>
@@ -1920,7 +1921,7 @@ JS = r"""
 
           <div class="panel ${focusEnt ? 'panel-focus' : ''}">
             <div class="ph">
-              <h3>🏢 Operating Entities &amp; Books Status</h3>
+              <h3>${ICONS.realestate} Operating Entities &amp; Books Status</h3>
               <span style="font-size:11px;color:var(--m-steel);font-weight:600">${pm.label}</span>
             </div>
             <table class="m-grid">
@@ -1934,7 +1935,7 @@ JS = r"""
 
         <section class="row3" ${mTab !== 'ledger' ? 'data-mob-hide="1"' : ''}>
           <div class="panel ${focusAlerts ? 'panel-focus' : ''}">
-            <div class="ph"><h3>🔔 Executive Exceptions &amp; Watchdogs</h3></div>
+            <div class="ph"><h3>${ICONS.bell} Executive Exceptions &amp; Watchdogs</h3></div>
             <ul class="att">
               ${d.alerts.map(a => `<li class="${a[0]}"><b>${a[1]}</b><span>${a[2]}</span><button type="button" class="att-act" data-sbox-act="${a[1]}">${a[3]}</button></li>`).join('')}
             </ul>
@@ -1942,7 +1943,7 @@ JS = r"""
 
           <div class="panel ${focusGl ? 'panel-focus' : ''}">
             <div class="ph">
-              <h3>📒 Audited General Ledger Stream (Double-Entry)</h3>
+              <h3>${ICONS.ledger} Audited General Ledger Stream (Double-Entry)</h3>
               <span style="font-size:11px;color:var(--m-muted)">Closed with the ISABI Double Rule</span>
             </div>
             <table class="m-grid">
@@ -3775,7 +3776,7 @@ JS = r"""
 
       const posClearBtn = e.target.closest('[data-pos-clear]');
       if (posClearBtn) {
-        state.posCart = [{ name: '🏖️ VIP Cabana Full Day', price: 120, qty: 1 }];
+        state.posCart = [{ name: 'VIP Cabana Full Day', price: 120, qty: 1 }];
         renderSandbox();
         renderHeroStage();
         showToast('POS Till reset');
@@ -3787,7 +3788,7 @@ JS = r"""
         state.posSyncedCount += 1;
         renderSandbox();
         renderHeroStage();
-        showToast('🖨️ Thermal receipt printed (0.2s) & synced to Dataverse bhf_revenue!');
+        showToast('Thermal receipt printed (0.2s) & synced to Dataverse bhf_revenue!');
         return;
       }
 
@@ -3803,7 +3804,7 @@ JS = r"""
         };
         renderSandbox();
         renderHeroStage();
-        showToast('📸 Verified ' + empName + ' via Face + PIN');
+        showToast('Verified ' + empName + ' via Face + PIN');
         return;
       }
 
@@ -3861,7 +3862,7 @@ JS = r"""
         if (tierSel && tierVal) tierSel.value = tierVal;
         const notesEl = document.getElementById('lead-notes');
         if (notesEl) notesEl.value = noteVal;
-        showToast('⚡ Pre-filled project brief for ' + indVal);
+        showToast('Pre-filled project brief for ' + indVal);
         return;
       }
 
@@ -4231,5 +4232,11 @@ JS = r"""
 })();
 """
 
+import json  # noqa: E402
 from part_endpoints import ASK_FLOW_U_B64, ASK_FLOW_K_B64  # noqa: E402
-JS = JS.replace('__ASK_FLOW_U_B64__', ASK_FLOW_U_B64).replace('__ASK_FLOW_K_B64__', ASK_FLOW_K_B64)
+from part_icons import ICONS  # noqa: E402
+JS = (
+    JS.replace('__ASK_FLOW_U_B64__', ASK_FLOW_U_B64)
+    .replace('__ASK_FLOW_K_B64__', ASK_FLOW_K_B64)
+    .replace('__ICONS_JSON__', json.dumps(ICONS))
+)
