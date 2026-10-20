@@ -31,13 +31,13 @@ JS = r"""
       lead: 'Designed for multi-property hotel groups, beach resorts, and high-volume F&B venues where daily outlet cash auditing, seasonal staffing, supplier procurement, and partner profit-sharing must reconcile every night.',
       modules: [
         'Multi-Property Business Unit Isolation (Per Resort / Venue)',
-        'Daily Outlet Revenue & Z-Report Auditing (Entrance, Cabanas, F&B, Events)',
+        'Daily Outlet Revenue & End-of-Day Till Close Audit (Entrance, Cabanas, F&B, Events)',
         'Supplier Invoices, Food & Beverage Cost Control & Stock Takes',
         'Partner Statement of Accounts (SOA) & Automated Profit-Split Engine',
         'Seasonal Staff Contracts, Advances, Tips & Biometric Attendance'
       ],
       workflows: [
-        'Offline POS till syncs daily Z-aggregates straight into the revenue ledger',
+        'Offline POS till posts end-of-day sales totals straight into the revenue ledger',
         'Supervisor stamp workflow on petty cash and supplier credit purchases',
         'Automated monthly partner capital & profit distribution statements',
         'Nightly cross-property KPI flash report delivered to owners via Power BI'
@@ -232,7 +232,7 @@ JS = r"""
         'IndexedDB / Local Offline Transaction Queue (100% functional without internet)',
         'Direct RawBT / ESC-POS Thermal Receipt & Kitchen Order Printing',
         'Shift Open / Close Cash Drawer Count & Variance Audit',
-        'Automated Daily Z-Aggregate Sync into Dataverse Revenue Ledger'
+        'Automated End-of-Day Sales Totals Sync into the Dataverse Revenue Ledger'
       ],
       workflows: [
         'Cashier rings order and prints local thermal receipt in under 300ms',
@@ -241,7 +241,7 @@ JS = r"""
         'Zero per-terminal SaaS licensing fees'
       ],
       reports: [
-        'Shift Z-Report & Cashier Cash Variance Log',
+        'Shift Close Report & Cashier Cash Variance Log',
         'Hourly Sales Velocity & Top-Selling Item Mix',
         'Void, Discount & Complimentary Audit Trail',
         'Direct Feed into Group Power BI Revenue Dashboards'
