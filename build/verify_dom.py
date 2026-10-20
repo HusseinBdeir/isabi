@@ -78,6 +78,16 @@ document.addEventListener('DOMContentLoaded', function() {
     var leadCompany = document.getElementById('lead-company').getBoundingClientRect();
     var leadIndustry = document.getElementById('lead-industry').getBoundingClientRect();
     var leadBudget = document.getElementById('lead-budget').getBoundingClientRect();
+    var heroLeft = document.querySelector('.hero-grid > div:first-child').getBoundingClientRect();
+    var heroCard = document.querySelector('.hero-ledger-card').getBoundingClientRect();
+    var indTabs = document.querySelector('.ind-tabs').getBoundingClientRect();
+    var indDetail = document.querySelector('.ind-detail').getBoundingClientRect();
+    var kpis = document.querySelectorAll('.hlc-kpi');
+    var kpi1 = kpis[0].getBoundingClientRect();
+    var kpi2 = kpis[1].getBoundingClientRect();
+    var kpi1Strong = kpis[0].querySelector('strong').getBoundingClientRect();
+    var kpi2Strong = kpis[1].querySelector('strong').getBoundingClientRect();
+    var hlcSvgCount = document.querySelectorAll('.hlc-brand svg').length;
     var activeMain = Array.from(document.querySelectorAll('#main-nav a.active')).map(function(a){ return a.getAttribute('href'); });
     var activeMob = Array.from(document.querySelectorAll('#mobile-sec-nav a.active')).map(function(a){ return a.getAttribute('href'); });
     var activeDock = Array.from(document.querySelectorAll('.mobile-dock a.active')).map(function(a){ return a.getAttribute('href'); });
@@ -122,6 +132,15 @@ document.addEventListener('DOMContentLoaded', function() {
       leadIndustryW: Math.round(leadIndustry.width),
       leadBudgetW: Math.round(leadBudget.width),
       leadBudgetRight: Math.round(leadBudget.right),
+      heroLeftH: Math.round(heroLeft.height),
+      heroCardH: Math.round(heroCard.height),
+      indTabsH: Math.round(indTabs.height),
+      indDetailH: Math.round(indDetail.height),
+      kpi1W: Math.round(kpi1.width),
+      kpi2W: Math.round(kpi2.width),
+      kpi1StrongTop: Math.round(kpi1Strong.top),
+      kpi2StrongTop: Math.round(kpi2Strong.top),
+      hlcSvgCount: hlcSvgCount,
       activeMain: activeMain,
       activeMob: activeMob,
       activeDock: activeDock,
@@ -172,10 +191,15 @@ document.addEventListener('DOMContentLoaded', function() {
         assert abs(d_desk['leadBudgetW'] - d_desk['leadCompanyW']) <= 1, f"lead-budget width ({d_desk['leadBudgetW']}) != lead-company width ({d_desk['leadCompanyW']})"
         assert d_desk['leadBudgetRight'] <= d_desk['portalCardRight'] - 24, f"lead-budget overflows portal card! {d_desk['leadBudgetRight']} vs {d_desk['portalCardRight']}"
         assert d_desk['cardOverflows'] == [], f"Desktop card overflows detected: {d_desk['cardOverflows']}"
+        assert d_desk['hlcSvgCount'] == 1, f"Expected 1 SVG in .hlc-brand (no nested SVG), got {d_desk['hlcSvgCount']}"
+        assert abs(d_desk['heroLeftH'] - d_desk['heroCardH']) <= 2, f"Desktop hero column heights mismatch: {d_desk['heroLeftH']} vs {d_desk['heroCardH']}"
+        assert abs(d_desk['indTabsH'] - d_desk['indDetailH']) <= 2, f"Desktop industry tabs/detail heights mismatch: {d_desk['indTabsH']} vs {d_desk['indDetailH']}"
 
         assert d_mob['scrollW'] <= d_mob['vw'], f"Mobile horizontal overflow! scrollW={d_mob['scrollW']} > vw={d_mob['vw']}"
         assert d_mob['mockWidth'] <= d_mob['vw'], f"Mobile sandbox .mock overflows! mockWidth={d_mob['mockWidth']} > vw={d_mob['vw']}"
         assert d_mob['compWidth'] <= d_mob['vw'], f"Mobile .comp-table overflows! compWidth={d_mob['compWidth']} > vw={d_mob['vw']}"
+        assert abs(d_mob['kpi1W'] - d_mob['kpi2W']) <= 2, f"Mobile .hlc-kpi width mismatch: {d_mob['kpi1W']} vs {d_mob['kpi2W']}"
+        assert abs(d_mob['kpi1StrongTop'] - d_mob['kpi2StrongTop']) <= 2, f"Mobile .hlc-kpi strong baseline mismatch: {d_mob['kpi1StrongTop']} vs {d_mob['kpi2StrongTop']}"
         assert d_mob['activeMob'] == ['#industries'], f"Mobile section nav active mismatch: {d_mob['activeMob']}"
         assert d_mob['activeDock'] == ['#industries'], f"Mobile bottom dock active mismatch: {d_mob['activeDock']}"
         assert d_mob['cardOverflows'] == [], f"Mobile card overflows detected: {d_mob['cardOverflows']}"

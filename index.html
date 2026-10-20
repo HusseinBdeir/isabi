@@ -37,8 +37,12 @@
   <script id="pre-theme">
     (function(){
       try {
+        var d = document.documentElement;
         var t = localStorage.getItem('isabi.theme');
-        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        if (t === 'light' || t === 'dark') d.setAttribute('data-theme', t);
+        if (window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)) {
+          d.classList.add('ios-standalone');
+        }
       } catch (e) {}
     })();
   </script>
@@ -75,7 +79,7 @@
   --shadow-sm: 0 4px 16px rgba(4, 10, 22, 0.28);
   --shadow-md: 0 14px 38px rgba(4, 10, 22, 0.42);
   --shadow-lg: 0 24px 64px rgba(3, 8, 18, 0.58);
-  --hdr-h: 70px;
+  --hdr-h: 64px;
 
   /* Dashboard Sandbox Tokens (Dark default) */
   --m-bg: #0E1A2E;
@@ -186,7 +190,7 @@
 }
 
 html {
-  scroll-padding-top: calc(var(--hdr-h) - 2px);
+  scroll-padding-top: calc(var(--hdr-h) + env(safe-area-inset-top, 0px) - 2px);
   -webkit-text-size-adjust: 100%;
 }
 
@@ -243,9 +247,9 @@ button {
 }
 
 .wrap {
-  max-width: 1260px;
+  max-width: 1340px;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 max(24px, env(safe-area-inset-right, 24px)) 0 max(24px, env(safe-area-inset-left, 24px));
 }
 
 /* ---------- Top Header ---------- */
@@ -253,6 +257,7 @@ button {
   position: sticky;
   top: 0;
   z-index: 100;
+  padding-top: env(safe-area-inset-top, 0px);
   background: color-mix(in srgb, var(--bg) 94%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -260,10 +265,10 @@ button {
 }
 
 .hdr-inner {
-  max-width: 1260px;
+  max-width: 1340px;
   height: var(--hdr-h);
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 max(24px, env(safe-area-inset-right, 24px)) 0 max(24px, env(safe-area-inset-left, 24px));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -466,42 +471,62 @@ button {
 /* ---------- Hero Section ---------- */
 .hero-section {
   position: relative;
-  padding: 56px 0 48px;
+  padding: 28px 0 26px;
   border-bottom: 1px solid var(--line);
   background:
-    radial-gradient(900px 420px at 85% 10%, var(--brass-tint), transparent 70%),
-    radial-gradient(800px 400px at 10% 30%, var(--steel-tint), transparent 70%),
+    radial-gradient(900px 420px at 85% 12%, var(--brass-tint), transparent 72%),
+    radial-gradient(800px 400px at 10% 30%, var(--steel-tint), transparent 72%),
+    linear-gradient(to right, rgba(255, 255, 255, 0.024) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.024) 1px, transparent 1px),
     var(--bg);
+  background-size: auto, auto, 44px 44px, 44px 44px, auto;
+}
+
+:root[data-theme="light"] .hero-section {
+  background:
+    radial-gradient(900px 420px at 85% 12%, var(--brass-tint), transparent 72%),
+    radial-gradient(800px 400px at 10% 30%, var(--steel-tint), transparent 72%),
+    linear-gradient(to right, rgba(15, 30, 56, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 30, 56, 0.035) 1px, transparent 1px),
+    var(--bg);
+  background-size: auto, auto, 44px 44px, 44px 44px, auto;
 }
 
 .hero-grid {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 40px;
-  align-items: center;
+  grid-template-columns: 1.06fr 0.94fr;
+  gap: 32px;
+  align-items: stretch;
+}
+
+.hero-grid > div:first-child {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .eyebrow {
   display: inline-flex;
   align-items: center;
+  align-self: flex-start;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--brass);
   background: var(--brass-tint);
   border: 1px solid var(--brass-border);
   padding: 5px 11px;
   border-radius: 4px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .hero-title {
-  font-size: clamp(32px, 4.2vw, 52px);
+  font-size: clamp(30px, 3.1vw, 44px);
   font-weight: 800;
-  line-height: 1.06;
-  margin-bottom: 16px;
+  line-height: 1.08;
+  margin-bottom: 10px;
 }
 
 .hero-title span.brass-text {
@@ -509,44 +534,62 @@ button {
 }
 
 .hero-lead {
-  font-size: 17px;
+  font-size: 16px;
   color: var(--muted);
-  max-width: 62ch;
-  margin: 0 0 24px;
-  line-height: 1.6;
+  max-width: 64ch;
+  margin: 0 0 16px;
+  line-height: 1.56;
 }
 
 .hero-cta-row {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 28px;
+  margin-bottom: 16px;
 }
 
 .hero-cta-row .btn {
-  padding: 12px 20px;
-  font-size: 14.5px;
+  padding: 11px 18px;
+  font-size: 14px;
 }
 
 .hero-trust-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
+  gap: 12px;
+  margin-top: 0;
+}
+
+.trust-item {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--brass);
+  border-radius: 7px;
+  padding: 12px 13px;
+  box-shadow: var(--shadow-sm);
+}
+
+.trust-kicker {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--brass);
+  margin-bottom: 4px;
 }
 
 .trust-item b {
   display: block;
   font-family: "Archivo", sans-serif;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 700;
   color: var(--ink);
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 
 .trust-item span {
-  font-size: 13px;
+  font-size: 12.4px;
   color: var(--muted);
   display: block;
   line-height: 1.4;
@@ -559,12 +602,14 @@ button {
   border-radius: 10px;
   box-shadow: var(--shadow-lg);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .hlc-top {
   background: #081223;
   color: #F4F2EE;
-  padding: 14px 18px;
+  padding: 10px 15px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -575,15 +620,22 @@ button {
 .hlc-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   min-width: 0;
 }
 
+.hlc-brand svg {
+  height: 18px;
+  width: auto;
+  flex-shrink: 0;
+  display: block;
+}
+
 .hlc-brand span {
-  font-size: 11.5px;
-  letter-spacing: 0.08em;
+  font-size: 11.2px;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: rgba(244, 242, 238, 0.75);
+  color: rgba(244, 242, 238, 0.82);
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -594,11 +646,11 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   color: #3DB36A;
   background: rgba(61, 179, 106, 0.14);
-  padding: 4px 10px;
+  padding: 3.5px 9px;
   border-radius: 999px;
   white-space: nowrap;
   flex-shrink: 0;
@@ -613,42 +665,54 @@ button {
 }
 
 .hlc-body {
-  padding: 18px;
+  padding: 12px 15px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1;
 }
 
 .hlc-kpis {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 9px;
 }
 
 .hlc-kpi {
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 6px;
-  padding: 11px 13px;
+  padding: 8px 11px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .hlc-kpi small {
   display: block;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 3px;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hlc-kpi strong {
   display: block;
   font-family: "Archivo", sans-serif;
-  font-size: 21px;
+  font-size: 19.5px;
   font-weight: 800;
   color: var(--ink);
+  line-height: 1.15;
 }
 
 .hlc-kpi span {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--good);
   font-weight: 600;
 }
@@ -656,23 +720,27 @@ button {
 .hlc-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.8px;
-  margin-bottom: 14px;
+  font-size: 12.2px;
+  margin-bottom: 9px;
 }
 
 .hlc-table th {
   text-align: left;
-  font-size: 10.5px;
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
-  padding: 6px 7px;
+  padding: 4px 6px;
   border-bottom: 1px solid var(--line);
 }
 
 .hlc-table td {
-  padding: 7px;
+  padding: 5.5px 6px;
   border-bottom: 1px solid var(--line);
+}
+
+.hlc-table td:first-child {
+  white-space: nowrap;
 }
 
 .hlc-table td.r, .hlc-table th.r {
@@ -685,20 +753,20 @@ button {
   color: var(--ink);
   border-top: 1px solid var(--ink);
   border-bottom: 3px double var(--brass);
-  padding-top: 9px;
-  padding-bottom: 9px;
+  padding-top: 6.5px;
+  padding-bottom: 6.5px;
 }
 
 .hlc-ai-strip {
   background: var(--brass-tint);
   border: 1px solid var(--brass-border);
   border-radius: 6px;
-  padding: 10px 13px;
+  padding: 8px 11px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  font-size: 12.5px;
+  font-size: 12px;
 }
 
 .hlc-ai-strip b {
@@ -718,17 +786,17 @@ button {
 }
 
 .metric-cell {
-  padding: 20px 20px;
+  padding: 15px 18px;
   border-right: 1px solid var(--line);
 }
 
 .metric-cell .m-val {
   font-family: "Archivo", sans-serif;
-  font-size: 30px;
+  font-size: 26px;
   font-weight: 800;
   color: var(--ink);
-  line-height: 1.1;
-  margin-bottom: 5px;
+  line-height: 1.08;
+  margin-bottom: 4px;
 }
 
 .metric-cell .m-val span {
@@ -737,20 +805,20 @@ button {
 
 .metric-cell .m-lbl {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--ink);
-  margin-bottom: 3px;
+  margin-bottom: 2px;
 }
 
 .metric-cell .m-sub {
-  font-size: 12.8px;
+  font-size: 12.2px;
   color: var(--muted);
-  line-height: 1.4;
+  line-height: 1.38;
 }
 
 /* ---------- Generic Section Layout ---------- */
 .sec {
-  padding: 58px 0 64px;
+  padding: 44px 0 48px;
   border-bottom: 1px solid var(--line);
   scroll-margin-top: calc(var(--hdr-h) - 1px);
 }
@@ -760,22 +828,22 @@ button {
 }
 
 .sec-head {
-  max-width: 780px;
-  margin-bottom: 34px;
+  max-width: 860px;
+  margin-bottom: 24px;
 }
 
 .sec-head h2 {
-  font-size: clamp(25px, 3.1vw, 36px);
+  font-size: clamp(24px, 2.9vw, 34px);
   font-weight: 800;
   line-height: 1.12;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .sec-head p {
-  font-size: 16px;
+  font-size: 15.5px;
   color: var(--muted);
   margin: 0;
-  line-height: 1.58;
+  line-height: 1.56;
 }
 
 /* Mobile-only Segmented Switchers (Hidden on Desktop) */
@@ -814,7 +882,7 @@ button {
   display: grid;
   grid-template-columns: 1fr 1fr 1.15fr;
   gap: 20px;
-  margin-bottom: 36px;
+  margin-bottom: 24px;
 }
 
 .contrast-card {
@@ -918,12 +986,13 @@ button {
   display: grid;
   grid-template-columns: 300px 1fr;
   gap: 22px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .ind-tabs {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   gap: 5px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -973,10 +1042,11 @@ button {
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  padding: 28px;
+  padding: 26px;
   box-shadow: var(--shadow-md);
-  position: sticky;
-  top: calc(var(--hdr-h) + 14px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .ind-detail-top {
@@ -1607,6 +1677,10 @@ table.m-grid tr.total td {
   border-left: 3px solid var(--steel);
   border-radius: 6px;
   padding: 15px 18px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   transition: border-color 0.15s, background 0.15s;
 }
 
@@ -1803,7 +1877,7 @@ table.m-grid tr.total td {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 18px;
-  margin-bottom: 36px;
+  margin-bottom: 24px;
 }
 
 .ing-card {
@@ -1840,7 +1914,7 @@ table.m-grid tr.total td {
   border: 1px solid var(--line-strong);
   border-radius: 10px;
   overflow: hidden;
-  margin-bottom: 36px;
+  margin-bottom: 24px;
 }
 
 .comp-table {
@@ -1955,7 +2029,7 @@ table.m-grid tr.total td {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 20px;
-  margin-bottom: 40px;
+  margin-bottom: 26px;
   align-items: stretch;
 }
 
@@ -2320,7 +2394,7 @@ table.m-grid tr.total td {
 }
 
 .ai-drawer-hdr {
-  padding: 16px 18px;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 18px 14px;
   background: #0B1730;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
@@ -2417,7 +2491,7 @@ table.m-grid tr.total td {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid var(--brass-border);
-  padding: 7px 10px calc(7px + env(safe-area-inset-bottom, 0px));
+  padding: 7px max(10px, env(safe-area-inset-right, 10px)) calc(7px + env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 10px));
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
@@ -2573,9 +2647,25 @@ table.m-grid tr.total td {
 }
 
 @media (max-width: 720px) {
+  html.ios-standalone .site-header {
+    padding-top: max(env(safe-area-inset-top, 0px), 48px);
+  }
+  html.ios-standalone .ai-drawer-hdr {
+    padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 48px));
+  }
+  html.ios-standalone .mobile-dock {
+    padding-bottom: calc(8px + max(env(safe-area-inset-bottom, 0px), 20px));
+  }
   .wrap {
-    padding-left: 14px;
-    padding-right: 14px;
+    padding-left: max(14px, env(safe-area-inset-left, 14px));
+    padding-right: max(14px, env(safe-area-inset-right, 14px));
+  }
+  .hdr-inner {
+    height: 52px;
+    padding: 0 max(14px, env(safe-area-inset-right, 14px)) 0 max(14px, env(safe-area-inset-left, 14px));
+  }
+  .mobile-sec-nav {
+    padding: 0 max(12px, env(safe-area-inset-right, 12px)) 0 max(12px, env(safe-area-inset-left, 12px));
   }
   .brand-badge {
     width: 30px;
@@ -2598,63 +2688,120 @@ table.m-grid tr.total td {
 
   /* Compact Phone Hero */
   .hero-section {
-    padding: 22px 0 26px;
+    padding: 14px 0 18px;
+  }
+  .hero-grid {
+    gap: 14px;
   }
   .eyebrow {
-    font-size: 10.5px;
+    font-size: 9.5px;
+    letter-spacing: 0.065em;
     padding: 4px 9px;
-    margin-bottom: 10px;
+    margin-bottom: 6px;
   }
   .hero-title {
-    font-size: 28px;
-    margin-bottom: 10px;
+    font-size: 25px;
+    line-height: 1.08;
+    margin-bottom: 8px;
   }
   .hero-lead {
-    font-size: 14px;
-    line-height: 1.5;
-    margin-bottom: 16px;
+    font-size: 13.5px;
+    line-height: 1.45;
+    margin-bottom: 12px;
   }
   .hero-cta-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-bottom: 18px;
+    gap: 7px;
+    margin-bottom: 12px;
   }
   .hero-cta-row .btn {
-    padding: 10px 10px;
-    font-size: 13px;
+    padding: 9px 8px;
+    font-size: 12.8px;
     width: 100%;
   }
   .hero-cta-row .btn-wa {
     grid-column: 1 / -1;
   }
   .hero-trust-strip {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    padding-top: 12px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    margin-top: 0;
+  }
+  .trust-kicker {
+    display: none;
+  }
+  .trust-item {
+    padding: 7px 10px;
+    border-top: 1px solid var(--line);
+    border-left: 3px solid var(--brass);
+    line-height: 1.32;
   }
   .trust-item b {
+    display: inline;
     font-size: 12px;
+    margin-right: 4px;
+  }
+  .trust-item b::after {
+    content: "·";
+    color: var(--brass);
+    margin-left: 5px;
   }
   .trust-item span {
-    font-size: 11px;
-    line-height: 1.3;
+    display: inline;
+    font-size: 11.5px;
+    line-height: 1.32;
   }
   .hlc-top {
-    padding: 10px 12px;
+    padding: 8px 10px;
+    gap: 5px;
+  }
+  .hlc-brand {
+    gap: 6px;
+  }
+  .hlc-brand svg {
+    height: 15px;
+  }
+  .hlc-brand span {
+    font-size: 9.6px;
+    letter-spacing: 0.02em;
+  }
+  .hlc-status {
+    font-size: 10px;
+    padding: 3px 7px;
+    gap: 4px;
   }
   .hlc-body {
-    padding: 12px;
+    padding: 11px;
   }
   .hlc-kpi {
-    padding: 9px 10px;
+    padding: 8px 9px;
+  }
+  .hlc-kpi small {
+    font-size: 8.5px;
+    letter-spacing: 0.01em;
   }
   .hlc-kpi strong {
     font-size: 18px;
   }
-  .hlc-table th, .hlc-table td {
+  .hlc-kpi span {
+    font-size: 10.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hlc-table th {
+    padding: 4px 4px;
+    font-size: 9px;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+  .hlc-table td {
     padding: 5px 4px;
     font-size: 11.5px;
+  }
+  .hlc-table td:first-child {
+    white-space: normal;
   }
   .hlc-ai-strip {
     padding: 8px 10px;
@@ -2667,11 +2814,17 @@ table.m-grid tr.total td {
     border-left: 0;
   }
   .metric-cell {
-    padding: 14px 12px;
+    padding: 13px 12px;
     border-bottom: 1px solid var(--line);
   }
+  .metric-cell:nth-child(2n) {
+    border-right: 0;
+  }
+  .metric-cell:nth-child(n+3) {
+    border-bottom: 0;
+  }
   .metric-cell .m-val {
-    font-size: 22px;
+    font-size: 21px;
     margin-bottom: 2px;
   }
   .metric-cell .m-lbl {
@@ -2688,10 +2841,10 @@ table.m-grid tr.total td {
 
   /* Compact Sections on Phone */
   .sec {
-    padding: 34px 0 38px;
+    padding: 28px 0 32px;
   }
   .sec-head {
-    margin-bottom: 18px;
+    margin-bottom: 16px;
   }
   .sec-head h2 {
     font-size: 22px;
@@ -3267,14 +3420,17 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
         </div>
         <div class="hero-trust-strip">
           <div class="trust-item">
+            <small class="trust-kicker">01 · Bespoke Schema</small>
             <b>Built Around Your Operations</b>
             <span>Your tables, approvals, chart of accounts, and multi-currency rules.</span>
           </div>
           <div class="trust-item">
+            <small class="trust-kicker">02 · Your M365 Tenant</small>
             <b>Microsoft Cloud Foundation</b>
             <span>Dataverse, Power Apps, Power Automate, Power BI, and Entra ID security.</span>
           </div>
           <div class="trust-item">
+            <small class="trust-kicker">03 · Cited AI Ledger</small>
             <b>Native AI Intelligence</b>
             <span>Ask ISABI answers from your live ledger, stock, and receivables, and cites the entries it used.</span>
           </div>
@@ -3284,7 +3440,7 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
       <div class="hero-ledger-card" aria-label="Executive Ledger Preview">
         <div class="hlc-top">
           <div class="hlc-brand">
-            <svg viewBox="-9.5 -78.8 74.66 109.7" height="20"><svg xmlns="http://www.w3.org/2000/svg" viewBox="-9.5 -78.8 74.66 109.7" aria-hidden="true"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="-9.5 -78.8 74.66 109.7" aria-hidden="true"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>
             <span>Executive Ledger · Group Live View</span>
           </div>
           <span class="hlc-status"><i></i>All Books Balanced</span>
@@ -3313,22 +3469,22 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
             <tbody>
               <tr>
                 <td><b>Hospitality &amp; Resorts</b></td>
-                <td>Outlets, Cabanas, POS &amp; Partner Splits</td>
+                <td>Outlets, Cabanas, POS &amp; Splits</td>
                 <td class="r num">$418,200</td>
               </tr>
               <tr>
-                <td><b>Automotive &amp; Heavy Trucks</b></td>
-                <td>VIN Stock, Bonded Customs &amp; Parts</td>
+                <td><b>Auto &amp; Heavy Trucks</b></td>
+                <td>VIN Stock, Customs &amp; Parts</td>
                 <td class="r num">$524,900</td>
               </tr>
               <tr>
                 <td><b>Concrete &amp; Manufacturing</b></td>
-                <td>Batch Plant m³, Fleet &amp; Silo Ledger</td>
+                <td>Batch Plant m³, Fleet &amp; Silos</td>
                 <td class="r num">$361,400</td>
               </tr>
               <tr>
                 <td><b>Real Estate &amp; Insurance</b></td>
-                <td>Lease Yields, Policies &amp; Commissions</td>
+                <td>Leases, Policies &amp; Commissions</td>
                 <td class="r num">$178,100</td>
               </tr>
               <tr class="tot">
@@ -3349,22 +3505,22 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
   <!-- PROOF METRICS BAND -->
   <section class="metrics-band" aria-label="Production Proof Metrics">
     <div class="wrap metrics-grid">
-      <div class="metric-cell reveal">
+      <div class="metric-cell">
         <div class="m-val num">8</div>
         <div class="m-lbl">Production Blueprints</div>
         <div class="m-sub">Six industry systems plus offline POS and biometric attendance apps, all running live today.</div>
       </div>
-      <div class="metric-cell reveal">
+      <div class="metric-cell">
         <div class="m-val num">100<span>%</span></div>
         <div class="m-lbl">Custom Data Model</div>
         <div class="m-sub">Every table, form, role, and statement is designed around your business rules, not a vendor template.</div>
       </div>
-      <div class="metric-cell reveal">
+      <div class="metric-cell">
         <div class="m-val num">3 to 6<span> Weeks</span></div>
         <div class="m-lbl">To Go-Live</div>
         <div class="m-sub">Code-generated schemas and reports deliver in weeks what ERP consultancies take a year to configure.</div>
       </div>
-      <div class="metric-cell reveal">
+      <div class="metric-cell">
         <div class="m-val num">1<span> Ledger</span></div>
         <div class="m-lbl">For Operations and Finance</div>
         <div class="m-sub">A parallel run with automated reconciliation proves the system matches your statutory books to the cent before cutover.</div>
@@ -5582,6 +5738,10 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
     if (btn) {
       btn.textContent = t === 'light' ? 'Dark' : 'Light';
     }
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', t === 'light' ? '#F4F2EE' : '#0B1730');
+    }
   }
 
   // ---------------- EVENT LISTENERS & INIT ----------------
@@ -5946,8 +6106,15 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
       triggerInstall();
     });
 
-    // Register Service Worker with immediate update check
+    // Register Service Worker with immediate update check & single-reload controllerchange
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true;
+          location.reload();
+        }
+      });
       navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
         reg.update().catch(() => {});
       }).catch(() => {});

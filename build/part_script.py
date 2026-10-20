@@ -1344,6 +1344,10 @@ JS = r"""
     if (btn) {
       btn.textContent = t === 'light' ? 'Dark' : 'Light';
     }
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', t === 'light' ? '#F4F2EE' : '#0B1730');
+    }
   }
 
   // ---------------- EVENT LISTENERS & INIT ----------------
@@ -1708,8 +1712,15 @@ JS = r"""
       triggerInstall();
     });
 
-    // Register Service Worker with immediate update check
+    // Register Service Worker with immediate update check & single-reload controllerchange
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true;
+          location.reload();
+        }
+      });
       navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
         reg.update().catch(() => {});
       }).catch(() => {});

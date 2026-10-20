@@ -50,8 +50,12 @@ HEAD = """<!DOCTYPE html>
   <script id="pre-theme">
     (function(){
       try {
+        var d = document.documentElement;
         var t = localStorage.getItem('isabi.theme');
-        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        if (t === 'light' || t === 'dark') d.setAttribute('data-theme', t);
+        if (window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)) {
+          d.classList.add('ios-standalone');
+        }
       } catch (e) {}
     })();
   </script>

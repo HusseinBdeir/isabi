@@ -65,14 +65,17 @@ BODY = f"""
         </div>
         <div class="hero-trust-strip">
           <div class="trust-item">
+            <small class="trust-kicker">01 · Bespoke Schema</small>
             <b>Built Around Your Operations</b>
             <span>Your tables, approvals, chart of accounts, and multi-currency rules.</span>
           </div>
           <div class="trust-item">
+            <small class="trust-kicker">02 · Your M365 Tenant</small>
             <b>Microsoft Cloud Foundation</b>
             <span>Dataverse, Power Apps, Power Automate, Power BI, and Entra ID security.</span>
           </div>
           <div class="trust-item">
+            <small class="trust-kicker">03 · Cited AI Ledger</small>
             <b>Native AI Intelligence</b>
             <span>Ask ISABI answers from your live ledger, stock, and receivables, and cites the entries it used.</span>
           </div>
@@ -82,7 +85,7 @@ BODY = f"""
       <div class="hero-ledger-card" aria-label="Executive Ledger Preview">
         <div class="hlc-top">
           <div class="hlc-brand">
-            <svg viewBox="-9.5 -78.8 74.66 109.7" height="20">{MARK_ON_DARK_SVG}</svg>
+            {MARK_ON_DARK_SVG}
             <span>Executive Ledger · Group Live View</span>
           </div>
           <span class="hlc-status"><i></i>All Books Balanced</span>
@@ -111,22 +114,22 @@ BODY = f"""
             <tbody>
               <tr>
                 <td><b>Hospitality &amp; Resorts</b></td>
-                <td>Outlets, Cabanas, POS &amp; Partner Splits</td>
+                <td>Outlets, Cabanas, POS &amp; Splits</td>
                 <td class="r num">$418,200</td>
               </tr>
               <tr>
-                <td><b>Automotive &amp; Heavy Trucks</b></td>
-                <td>VIN Stock, Bonded Customs &amp; Parts</td>
+                <td><b>Auto &amp; Heavy Trucks</b></td>
+                <td>VIN Stock, Customs &amp; Parts</td>
                 <td class="r num">$524,900</td>
               </tr>
               <tr>
                 <td><b>Concrete &amp; Manufacturing</b></td>
-                <td>Batch Plant m³, Fleet &amp; Silo Ledger</td>
+                <td>Batch Plant m³, Fleet &amp; Silos</td>
                 <td class="r num">$361,400</td>
               </tr>
               <tr>
                 <td><b>Real Estate &amp; Insurance</b></td>
-                <td>Lease Yields, Policies &amp; Commissions</td>
+                <td>Leases, Policies &amp; Commissions</td>
                 <td class="r num">$178,100</td>
               </tr>
               <tr class="tot">
@@ -147,22 +150,22 @@ BODY = f"""
   <!-- PROOF METRICS BAND -->
   <section class="metrics-band" aria-label="Production Proof Metrics">
     <div class="wrap metrics-grid">
-      <div class="metric-cell reveal">
+      <div class="metric-cell">
         <div class="m-val num">8</div>
         <div class="m-lbl">Production Blueprints</div>
         <div class="m-sub">Six industry systems plus offline POS and biometric attendance apps, all running live today.</div>
       </div>
-      <div class="metric-cell reveal">
+      <div class="metric-cell">
         <div class="m-val num">100<span>%</span></div>
         <div class="m-lbl">Custom Data Model</div>
         <div class="m-sub">Every table, form, role, and statement is designed around your business rules, not a vendor template.</div>
       </div>
-      <div class="metric-cell reveal">
+      <div class="metric-cell">
         <div class="m-val num">3 to 6<span> Weeks</span></div>
         <div class="m-lbl">To Go-Live</div>
         <div class="m-sub">Code-generated schemas and reports deliver in weeks what ERP consultancies take a year to configure.</div>
       </div>
-      <div class="metric-cell reveal">
+      <div class="metric-cell">
         <div class="m-val num">1<span> Ledger</span></div>
         <div class="m-lbl">For Operations and Finance</div>
         <div class="m-sub">A parallel run with automated reconciliation proves the system matches your statutory books to the cent before cutover.</div>
