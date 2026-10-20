@@ -528,7 +528,7 @@ JS = r"""
       answer: 'Unlike off-the-shelf software that forces every business into generic "Invoice" and "Item" boxes, ISABI Systems engineers a <b>dedicated Dataverse relational schema</b> around your physical unit of operation while sharing a unified institutional accounting core.',
       headers: ['Industry Vertical', 'Custom Operational Unit', 'Automated Ledger Link'],
       rows: [
-        ['Hospitality & Resorts', 'Outlet Z-Report, Cabana & Seasonal Shift', 'Daily TTC revenue & partner split journal'],
+        ['Hospitality & Resorts', 'Outlet Till Close, Cabana & Seasonal Shift', 'Daily TTC revenue & partner split journal'],
         ['Auto & Equipment Trading', 'Vehicle VIN / Chassis & Customs Bill', 'Per-unit landed cost & dealer aging SOA'],
         ['Concrete & Manufacturing', 'Batch Ticket (m³), Mix Grade & Silo MT', 'Raw material yield & contractor credit gate'],
         ['Real Estate & Insurance', 'Lease Schedule / Policy & Endorsement', 'NOI yield / Carrier commission bordereaux']
@@ -1185,7 +1185,7 @@ JS = r"""
         followUps: ['Who owns the system and the data?', 'How do the offline PWAs sync to Dataverse?']
       },
       'Offline POS Tills synchronized (100%)': {
-        title: 'Companion POS Till Z-Report Audit',
+        title: 'Companion POS Till Close Audit',
         answer: `All 6 offline-capable cashier tills across the resort properties closed their shifts and synced 1,420 receipts into the Dataverse Revenue Ledger with zero cash/card variance.`,
         headers: ['Outlet Till', 'Receipts', 'Payment Split', 'Synced TTC (' + s + ')'],
         rows: [
@@ -1194,7 +1194,7 @@ JS = r"""
           ['VIP Lounge & Pool Bar (1 Till)', '162', 'Room Charge + Card', fmtMoney(3140, m, s)]
         ],
         total: ['Total Audited Daily POS Revenue', fmtMoney(18470, m, s)],
-        citation: 'Source: IndexedDB POS Queue to Dataverse bhf_revenue · Z-Reports matched',
+        citation: 'Source: IndexedDB POS Queue to Dataverse bhf_revenue · Till closes matched',
         followUps: ['Tell me about the Offline POS Till PWA', 'Analyze the Hospitality & Resort Operations dashboard numbers']
       },
       'Beverage stock variance check': {
