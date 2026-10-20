@@ -1620,20 +1620,16 @@ JS = r"""
       weeks: '1 to 2 Weeks'
     };
 
-    // 0a-AR. Arabic language handler (greetings, how are you, pricing, industries, accounting, or custom Arabic queries)
+    // 0a-AR. Arabic language handler (two-bubble natural human conversation)
     if (lang === 'ar') {
       if (/(مرحبا|أهلا|اهلا|السلام|صباح|مساء|كيف\s*حالك|كيفك|شو\s*الأخبار|شو\s*الاخبار|شلونك|اخبارك)/.test(cleanQ)) {
         return {
           q: cleanQ,
           lang: 'ar',
+          conversational: true,
           title: 'مرحباً بك · الذكاء التشغيلي والمالي لنظام ISABI',
-          answer: `أهلاً بك! أنا <b>ISABI</b>، المساعد الذكي المدمج في أنظمة <b>ISABI Systems</b>. أعمل حالياً بكفاءة تامة ومتصل مباشرةً ببيئة العرض الحية (<b>${sbox.groupTitle} · ${cm.sym} · ${pm.label}</b>) وجميع الأنظمة التشغيلية والمحاسبية الثمانية. كيف يمكنني مساعدتك اليوم؟`,
-          bullets: [
-            `<b>تحليل الأرقام والقيود الحية:</b> اسألني عن الذمم المدينة المتأخرة، قيود اليومية المزدوجة، أو مؤشرات الأداء في بيئة التجربة.`,
-            `<b>استكشاف حلول القطاعات:</b> الضيافة والمنتجعات، تجارة السيارات والمعدات الثقيلة، الخرسانة والتصنيع، العقارات، الوساطة التأمينية، والشركات القابضة.`,
-            `<b>التكلفة، النطاق، والتنفيذ:</b> تبدأ الأنظمة المتكاملة من <b>$4,500+</b> (شركة واحدة) و<b>$9,500+</b> (متعدد الفروع والذكاء الاصطناعي) مع تسليم فعلي خلال <b>أسبوع إلى أسبوعين</b>.`
-          ],
-          citation: `النطاق النشط: ${sbox.groupTitle} · ${cm.sym} · ${pm.label}`,
+          answer: `أهلاً بك! أنا بخير، شكراً لسؤالك. أتمنى أن يكون يومك موفقاً.`,
+          promptText: `هل تبحث عن نظام مخصص لشركتك، أم تود الاطلاع على الأرقام والتقارير الحية أولاً؟`,
           followUps: [
             'كم تكلفة النظام المتكامل لعدة فروع؟',
             'كيف تتطابق قيود ISABI مع برنامج المحاسبة الحالي لدينا؟',
@@ -1645,14 +1641,10 @@ JS = r"""
         return {
           q: cleanQ,
           lang: 'ar',
+          conversational: true,
           title: 'الاستثمار الشفاف وتقدير النطاق المخصص',
-          answer: `تقدم <b>ISABI Systems</b> ثلاث باقات واضحة بنطاق عمل ثابت: <b>$4,500+</b> لشركة واحدة، و<b>$9,500+</b> للمجموعات متعددة الفروع مع الذكاء الاصطناعي، و<b>$18,000+</b> للشركات القابضة الكبرى. بناءً على إعداداتك الحالية (${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)})، يبلغ التقدير المبدئي <b>${escapeHtml(cfg.range)}</b> والتسليم خلال <b>أسبوع إلى أسبوعين</b>.`,
-          bullets: [
-            `<b>ملكية كاملة 100%:</b> يتم بناء النظام بالكامل داخل حساب شركتك الخاص في Microsoft 365 &amp; Dataverse دون أي عمولة على التراخيص.`,
-            `<b>تطبيقات نقاط البيع والحضور مجاناً لكل جهاز:</b> لا توجد أي رسوم إضافية لكل جهاز لوحي أو كاشير ($0 / Terminal).`,
-            `<b>تواصل مباشر مع المؤسس:</b> يمكنك إرسال متطلباتك مباشرة إلى <b>حسين بدير</b> عبر واتساب على الرقم <b>+961 70 444 955</b>.`
-          ],
-          citation: 'تقدير النطاق المباشر · ISABI Systems',
+          answer: `تبدأ الأنظمة المتكاملة لشركة واحدة من <b>$4,500+</b>، وللمجموعات متعددة الفروع مع الذكاء الاصطناعي من <b>$9,500+</b>، وللشركات القابضة من <b>$18,000+</b>. وبناءً على إعداداتك الحالية (${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)})، يبلغ التقدير المبدئي <b>${escapeHtml(cfg.range)}</b> والتسليم خلال <b>أسبوع إلى أسبوعين</b>.`,
+          promptText: `هل ترغب في معرفة كيف نطابق القيود مع برنامج المحاسبة الحالي لديكم، أم تفضل التحدث مباشرة مع حسين بدير عبر واتساب؟`,
           actionCfg: state.cfgInd,
           followUps: [
             'كيف تتطابق قيود ISABI مع برنامج المحاسبة الحالي لدينا؟',
@@ -1663,14 +1655,10 @@ JS = r"""
       return {
         q: cleanQ,
         lang: 'ar',
+        conversational: true,
         title: 'استشارة هندسية ومحاسبية مخصصة · ISABI',
-        answer: `بخصوص سؤالك <b>"${escapeHtml(cleanQ)}"</b>: تصمم <b>ISABI Systems</b> قواعد بيانات محاسبية وتشغيلية مخصصة على سحابة Microsoft Dataverse مع لوحات Power BI وتقارير كشوفات حساب جاهزة للطباعة (.RDL) ومطابقة تامة بنسبة 100% مع برنامج المحاسبة القانوني لشركتك.`,
-        bullets: [
-          `<b>مصمم حول طريقة عملك:</b> نبني الجداول، صلاحيات الفروع، والاعتمادات الآلية حسب دورة العمل الفعلية لفريقك وليس قوالب جاهزة جامدة.`,
-          `<b>النطاق المقدر حالياً:</b> ${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)} بتكلفة تقديرية <b>${escapeHtml(cfg.range)}</b> ومدة تسليم <b>أسبوع إلى أسبوعين</b>.`,
-          `<b>مراجعة مباشرة مع المهندس الرئيسي:</b> اضغط على <i>Discuss on WhatsApp</i> أدناه لمناقشة هذا السؤال مباشرة مع <b>حسين بدير (+961 70 444 955)</b>.`
-        ],
-        citation: 'إشراف وتنفيذ مباشر من حسين بدير · Microsoft Dataverse + Power BI + Ask ISABI',
+        answer: `نعم، نصمم النظام ليتطابق تماماً مع هذا المتطلب داخل حساب شركتكم في Microsoft 365 خلال أسبوع إلى أسبوعين، مع مطابقة يومية بنسبة 100% مع برنامج المحاسبة المعتمد لديكم.`,
+        promptText: `هل تود إخباري بالمزيد عن قطاع عملكم وعدد الفروع، أو تجربة سؤال آخر؟`,
         actionCfg: state.cfgInd,
         followUps: [
           'كم تكلفة النظام المتكامل لعدة فروع؟',
@@ -1679,20 +1667,16 @@ JS = r"""
       };
     }
 
-    // 0a-FR. French language handler (greetings, comment ça va, prix, comptabilité, or custom French queries)
+    // 0a-FR. French language handler (two-bubble natural human conversation)
     if (lang === 'fr') {
       if (/(bonjour|salut|bonsoir|comment\s+ca\s+va|comment\s+ça\s+va|comment\s+allez|ça\s+va|ca\s+va)/i.test(low)) {
         return {
           q: cleanQ,
           lang: 'fr',
+          conversational: true,
           title: 'Bienvenue · Intelligence Système ISABI',
-          answer: `Bonjour ! Je vais très bien, merci. Je suis <b>ISABI</b>, l'assistant d'intelligence financière et opérationnelle intégré à <b>ISABI Systems</b>. Tous nos modèles Power BI et le grand livre en direct (<b>${sbox.groupTitle} · ${cm.sym} · ${pm.label}</b>) fonctionnent avec un écart de réconciliation de <b>0.00</b>. Comment puis-je vous aider ?`,
-          bullets: [
-            `<b>Interroger le Grand Livre en Direct :</b> Demandez l'analyse des créances clients, des écritures comptables ou des marges par filiale.`,
-            `<b>8 Modèles Sectoriels en Production :</b> Hôtellerie &amp; Resorts, Négoce Auto &amp; Équipements Lourds, Béton &amp; Industrie, Immobilier, Courtage d'Assurance, Holdings, Caisse POS hors-ligne et Pointeuse Biométrique.`,
-            `<b>Tarification Fixe &amp; Mise en Production en 1 à 2 Semaines :</b> Dès <b>$4,500+</b> (entité unique) ou <b>$9,500+</b> (multi-filiales + IA), déployé à 100% dans votre propre tenant Microsoft 365.`
-          ],
-          citation: `Contexte actif : ${sbox.groupTitle} · ${cm.sym} · ${pm.label}`,
+          answer: `Bonjour ! Je vais très bien, merci. J'espère que tout va bien de votre côté.`,
+          promptText: `Explorez-vous un système sur mesure pour votre entreprise, ou souhaitez-vous voir comment fonctionnent nos chiffres et rapports en direct ?`,
           followUps: [
             'Combien coûte un système complet multi-filiales ?',
             'Peut-on garder notre logiciel comptable actuel en parallèle ?',
@@ -1704,14 +1688,10 @@ JS = r"""
         return {
           q: cleanQ,
           lang: 'fr',
+          conversational: true,
           title: 'Investissement Transparent & Périmètre Configuré',
-          answer: `ISABI Systems propose trois forfaits à périmètre fixe : <b>$4,500+</b> (Entité Unique), <b>$9,500+</b> (Multi-Filiales &amp; Suite IA), et <b>$18,000+</b> (Groupe / Holding). Selon votre configuration actuelle (${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)}), le budget indicatif est de <b>${escapeHtml(cfg.range)}</b> avec une mise en service en <b>1 à 2 semaines</b>.`,
-          bullets: [
-            `<b>Propriété Client à 100% :</b> Déployé directement dans votre tenant Microsoft 365 &amp; Dataverse, sans marge sur les licences Microsoft.`,
-            `<b>0 $ par Terminal :</b> Les applications PWA de caisse (POS) et de pointage biométrique s'installent sur un nombre illimité de tablettes.`,
-            `<b>Contact Direct :</b> Échangez directement avec <b>Hussein Bdeir</b> sur WhatsApp au <b>+961 70 444 955</b> pour un chiffrage précis.`
-          ],
-          citation: 'Configurateur de Périmètre ISABI Systems · Section 06',
+          answer: `Un système pour une entité unique démarre à <b>$4,500+</b>, un déploiement multi-filiales avec IA à <b>$9,500+</b>, et un groupe holding à <b>$18,000+</b>. Selon votre configuration actuelle (${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)}), comptez environ <b>${escapeHtml(cfg.range)}</b> avec une mise en service en <b>1 à 2 semaines</b>.`,
+          promptText: `Voulez-vous voir comment nous fonctionnons en parallèle avec votre logiciel comptable actuel, ou ajuster le périmètre ?`,
           actionCfg: state.cfgInd,
           followUps: [
             'Peut-on garder notre logiciel comptable actuel en parallèle ?',
@@ -1722,14 +1702,10 @@ JS = r"""
       return {
         q: cleanQ,
         lang: 'fr',
+        conversational: true,
         title: 'Architecture Sur Mesure · ISABI Systems',
-        answer: `Concernant votre question <b>"${escapeHtml(cleanQ)}"</b> : ISABI Systems conçoit votre schéma relationnel Dataverse, vos règles de validation, vos modèles Power BI et vos relevés de compte imprimables (.RDL) sur mesure en <b>1 à 2 semaines</b>, tout en assurant une réconciliation parfaite avec votre comptabilité officielle.`,
-        bullets: [
-          `<b>Adapté à Vos Processus :</b> Multi-devises (USD, EUR, AED, LBP), TVA, isolation par filiale (Business Unit) et applications mobiles hors-ligne.`,
-          `<b>Estimation Actuelle :</b> ${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)} (<b>${escapeHtml(cfg.range)}</b> en <b>1 à 2 semaines</b>).`,
-          `<b>Échange Direct avec l'Architecte :</b> Cliquez sur <i>Discuss on WhatsApp</i> ci-dessous pour en parler directement avec <b>Hussein Bdeir (+961 70 444 955)</b>.`
-        ],
-        citation: 'Conçu directement par Hussein Bdeir · Microsoft Dataverse + Power BI + Ask ISABI',
+        answer: `Tout à fait. Plutôt que de vous imposer un modèle figé, nous construisons vos tables, vos validations et vos tableaux de bord Power BI sur mesure dans votre propre compte Microsoft 365 en <b>1 à 2 semaines</b>.`,
+        promptText: `Dans quel secteur d'activité êtes-vous, ou quelle autre question souhaitez-vous me poser ?`,
         actionCfg: state.cfgInd,
         followUps: [
           'Combien coûte un système complet multi-filiales ?',
@@ -1743,19 +1719,30 @@ JS = r"""
         low.includes('how are you')) {
       return {
         q: cleanQ,
-        title: 'Operational Status · All Ledgers Reconciled',
-        answer: `I am doing great, thank you for asking! All 8 production blueprints and the <b>${sbox.groupTitle}</b> live sandbox ledger (<b>${cm.sym} · ${pm.label}</b>) are online and reconciled at <b>0.00 variance</b>. I am ready to answer any question about your business operations, accounting workflows, live sandbox numbers, or project scope.`,
-        bullets: [
-          `<b>Test Live Financial &amp; Operational Queries:</b> Ask me why overdue receivables increased, audit today's double-entry journal vouchers, or analyze the <i>${sbox.groupTitle}</i> dashboard.`,
-          `<b>Ask About Your Specific Industry:</b> Tell me how many branches, resorts, plants, properties, or showrooms you run and I will map the exact Dataverse &amp; Power BI architecture.`,
-          `<b>Scope, Timeline &amp; Pricing:</b> Ask about our 1-to-2 week go-live roadmap, parallel-run reconciliation with your accountant's software, or fixed-scope tiers ($4,500+ / $9,500+ / $18,000+).`
-        ],
-        citation: `System Status: Online · ${sbox.groupTitle} · ${cm.sym} · ${pm.label}`,
+        conversational: true,
+        title: 'Operational Status',
+        answer: `I am doing great, thank you for asking! Hope your week is going well.`,
+        promptText: `Are you exploring a custom system for your business, or would you like to see how the live numbers and reports work?`,
         followUps: [
           'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
           'How does ISABI customize the ERP for my specific industry?',
+          'What would a complete multi-branch system cost and include?'
+        ]
+      };
+    }
+
+    // 0b2-EN. User says they are doing well ("i'm good", "doing well", "good thanks", "all good", "fine")
+    if (/^(i'm\s+(good|well|great|fine|doing\s+well)|im\s+(good|well|great|fine)|doing\s+(well|good|great)|good\s+thanks|all\s+good|fine\s+thanks|not\s+bad|pretty\s+good)[\s!.,?]*$/i.test(cleanQ)) {
+      return {
+        q: cleanQ,
+        conversational: true,
+        title: 'Welcome',
+        answer: `Glad to hear it!`,
+        promptText: `Tell me a little about your business (your industry or how many branches you run), or pick a question below to start:`,
+        followUps: [
+          'How does ISABI customize the ERP for my specific industry?',
           'What would a complete multi-branch system cost and include?',
-          'How does dual-entry reconciliation work with our existing accountant software?'
+          'Analyze the ' + sbox.groupTitle + ' dashboard numbers'
         ]
       };
     }
@@ -1764,19 +1751,14 @@ JS = r"""
     if (/^(hi|hello|hey|hola|salam|marhaba|ahlan|good\s+(morning|afternoon|evening|day)|greetings|yo|hi\s+there|hello\s+there|hey\s+there|test|testing)[\s!.,?]*$/i.test(cleanQ)) {
       return {
         q: cleanQ,
+        conversational: true,
         title: 'Welcome · Native System Intelligence',
-        answer: `Hello! I am <b>ISABI</b>, the embedded intelligence assistant for ISABI Systems. I am currently connected to the <b>${sbox.groupTitle}</b> live sandbox (<b>${cm.sym} · ${pm.label}</b>) and the architectural blueprints across all 8 production apps. How can I help you today?`,
-        bullets: [
-          `<b>Query Live Sandbox Figures:</b> Ask to analyze the <i>${sbox.groupTitle}</i> dashboard, inspect today's double-entry journal vouchers, or review overdue receivables.`,
-          `<b>Explore Industry Blueprints:</b> Ask how we build custom systems for Hospitality, Auto &amp; Equipment Trading, Concrete &amp; Manufacturing, Real Estate, Insurance, or Holding Groups.`,
-          `<b>Scope, Pricing &amp; Delivery:</b> Ask about our fixed-scope tiers ($4,500+ / $9,500+ / $18,000+), Microsoft licensing, parallel-run reconciliation, or the 2-week go-live plan.`
-        ],
-        citation: `Active Context: ${sbox.groupTitle} · ${cm.sym} · ${pm.label}`,
+        answer: `Hello! Good to have you here. I'm <b>ISABI</b>.`,
+        promptText: `What kind of business are you running, or what would you like to look at first?`,
         followUps: [
-          'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
           'How does ISABI customize the ERP for my specific industry?',
           'What would a complete multi-branch system cost and include?',
-          'How does dual-entry reconciliation work with our existing accountant software?'
+          'Analyze the ' + sbox.groupTitle + ' dashboard numbers'
         ]
       };
     }
@@ -1785,18 +1767,14 @@ JS = r"""
     if (low.includes('who are you') || low.includes('what are you') || low.includes('what can you do') || low.includes('what do you do') || low === 'help' || low.includes('help me') || low.includes('how do you work') || low.includes('what is ask isabi')) {
       return {
         q: cleanQ,
-        title: 'About Ask ISABI · System Intelligence',
-        answer: `<b>Ask ISABI</b> is the native AI assistant built into every ISABI Systems ERP and Power BI environment. Unlike generic chatbots, it reads your governed Dataverse tables and semantic models under the signed-in user's exact security role and cites the vouchers behind every figure.`,
-        bullets: [
-          `<b>In Production:</b> Executives and accountants ask natural-language questions about overdue receivables, supplier payables, daily outlet revenue, silo stock, or trial balance variances.`,
-          `<b>On This Showcase Portal:</b> You can test live sandbox queries across 6 industries in USD, EUR, or AED, drill into all 24 executive alerts, or ask about architecture, pricing, and timelines.`,
-          `<b>Strict Permission Fence:</b> A branch user can only query their own Business Unit; owners and partners can query the consolidated group.`
-        ],
-        citation: 'Architecture: Microsoft Dataverse + Power BI XMLA + Role-Scoped AI',
+        conversational: true,
+        title: 'About Ask ISABI',
+        answer: `I'm <b>ISABI</b>, the assistant built into every ISABI Systems ERP and Power BI workspace. Inside our clients' systems, I help owners and accountants check balances, trace vouchers, and pull statements in plain language.`,
+        promptText: `Here on the website, I can walk you through our 8 live industry systems, run numbers in the sandbox, or estimate a build for your company. Which one would you like to try?`,
         followUps: [
           'Why did receivables past 60 days increase this month?',
-          'Show the audited journal entries for ' + sbox.groupTitle,
-          'How does Ask ISABI treat confidential figures?'
+          'How does ISABI customize the ERP for my specific industry?',
+          'What would a complete multi-branch system cost and include?'
         ]
       };
     }
@@ -1805,11 +1783,12 @@ JS = r"""
     if (/^(thanks|thank\s+you|thx|ty|great|awesome|cool|nice|perfect|got\s+it|understood|ok|okay|bye|goodbye)[\s!.,?]*$/i.test(cleanQ)) {
       return {
         q: cleanQ,
+        conversational: true,
         title: 'At Your Service',
-        answer: `You're welcome! Whenever you are ready, you can test another live query below, switch the industry or currency in the Live Sandbox, or send your scope directly to <b>Hussein Bdeir</b> on WhatsApp (<b>+961 70 444 955</b>).`,
-        citation: 'ISABI Systems · The Books Close on ISABI',
+        answer: `You're very welcome! Anytime you want to talk directly with Hussein, you can reach him on WhatsApp at <b>+961 70 444 955</b>.`,
+        promptText: `Is there anything else you'd like to check while you're here?`,
         followUps: [
-          'What should I know before commissioning an ISABI system?',
+          'What happens in the first two weeks?',
           'What would a complete multi-branch system cost and include?',
           'Analyze the ' + sbox.groupTitle + ' dashboard numbers'
         ]
@@ -2079,14 +2058,10 @@ JS = r"""
     if (low.includes('offline') || low.includes('internet') || low.includes('wifi') || low.includes('outage') || low.includes('disconnect')) {
       return {
         q: cleanQ,
-        title: 'Offline-First Field Continuity & Auto-Sync',
-        answer: `Our field-facing Progressive Web Apps (<b>POS Till</b> and <b>Biometric Attendance Kiosk</b>) run 100% offline using local IndexedDB storage and Service Worker caching. If your resort, restaurant, or plant loses internet or power, cashiers keep printing thermal receipts and staff keep punching in with zero interruption.`,
-        bullets: [
-          `<b>Write-Ahead Local Queue:</b> Every receipt and biometric punch is saved locally on the tablet first, with cryptographic revision tracking.`,
-          `<b>Automatic Ledger Sync:</b> The moment internet connectivity returns, queued transactions sync into Microsoft Dataverse and update your Power BI dashboards automatically.`,
-          `<b>Zero Per-Terminal Licensing:</b> Install on unlimited Android tablets, iPads, or PCs with $0 per-device software fees.`
-        ],
-        citation: 'Source: ISABI Offline-First PWA Architecture · POS & Attendance Kiosk',
+        conversational: true,
+        title: 'Offline-First Field Continuity',
+        answer: `Our <b>POS Till</b> and <b>Biometric Attendance Kiosk</b> apps run 100% offline on local tablet storage. If your internet or power drops, cashiers keep printing thermal receipts and staff keep punching in, and everything syncs to the ledger automatically once the connection is back.`,
+        promptText: `Would you like to see the POS Till or the Attendance Kiosk blueprint in detail?`,
         followUps: [
           'Show the Custom POS & Offline Till PWA blueprint',
           'Show the Biometric Attendance Kiosk PWA blueprint',
@@ -2099,14 +2074,10 @@ JS = r"""
     if (low.includes('dolphin') || low.includes('pims') || low.includes('omega') || low.includes('quickbooks') || low.includes('odoo') || low.includes('sap') || low.includes('xero') || low.includes('tally') || low.includes('vat') || low.includes('tva') || low.includes('lbp') || low.includes('multi-currency') || low.includes('multicurrency') || low.includes('currency')) {
       return {
         q: cleanQ,
-        title: 'Statutory CoA Compatibility, Multi-Currency & VAT',
-        answer: `ISABI Systems is built specifically for enterprises operating across multi-currency environments (<b>USD, EUR, AED, LBP</b>) and Lebanese / regional Chart of Accounts standards. Your external auditor or chief accountant can keep their existing statutory software (such as Dolphin, PIMS, QuickBooks, or SAP) while ISABI runs your live daily operations and reconciles to <b>0.00 variance</b>.`,
-        bullets: [
-          `<b>4-Digit Lebanese &amp; IFRS Chart of Accounts:</b> Native support for Class 1 to 7 accounts, TTC / HT / VAT split, and automated partner profit-sharing.`,
-          `<b>Parallel-Run Reconciliation Workspace:</b> A dedicated Power BI workspace compares every operational voucher against your accountant's book line-by-line so nothing is ever lost during transition.`,
-          `<b>Multi-Currency Treasury:</b> Track cashboxes, bank accounts, customer SOAs, and supplier balances in USD, EUR, AED, or local currency simultaneously.`
-        ],
-        citation: 'Source: ISABI Dual-Entry & Multi-Currency Financial Core',
+        conversational: true,
+        title: 'Statutory Compatibility & Multi-Currency',
+        answer: `Your accountant doesn't have to change software. We run side-by-side with Dolphin, PIMS, QuickBooks, or SAP across <b>USD, EUR, AED, and LBP</b>, and our reconciliation view checks every voucher line-by-line until the two books agree to <b>0.00</b>.`,
+        promptText: `Would you like to see how the parallel-run reconciliation check works, or explore a specific industry?`,
         followUps: [
           'How does dual-entry reconciliation work with our existing accountant software?',
           'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
@@ -2115,31 +2086,25 @@ JS = r"""
       };
     }
 
-    // 17. Conversational Custom Question Handler (never dumps an unrelated table)
+    // 17. Conversational Custom Question Handler (two-bubble human response, never dumps an unrelated table)
     return {
       q: cleanQ,
+      conversational: true,
       isCustomFallback: true,
       title: 'Custom Architectural Guidance',
-      answer: `Regarding <b>"${escapeHtml(cleanQ)}"</b>: ISABI Systems engineers custom relational tables, form rules, workflows, and Power BI models inside your own Microsoft 365 &amp; Dataverse tenant rather than forcing your team into an off-the-shelf template.`,
-      bullets: [
-        `<b>Tailored to Your Rules:</b> Whether you need custom approval gates, multi-currency treasury, partner profit splits, or offline field PWAs, the schema is generated around your exact process.`,
-        `<b>Current Configured Scope:</b> ${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)} (indicative range <b>${escapeHtml(cfg.range)}</b> in <b>${escapeHtml(cfg.weeks)}</b>).`,
-        `<b>Direct Architect Review:</b> Click <i>Discuss on WhatsApp</i> below to send this exact question to Hussein Bdeir (+961 70 444 955) for a direct technical answer.`
-      ],
-      citation: 'Engineered directly by Hussein Bdeir · Microsoft Dataverse + Power BI + Ask ISABI',
+      answer: `We can build around that directly. Instead of forcing your team into a generic template, we set up the exact tables, approvals, and Power BI reports your workflow needs inside your own Microsoft 365 account (typical delivery for ${escapeHtml(cfg.scale)} is <b>${escapeHtml(cfg.weeks)}</b> at <b>${escapeHtml(cfg.range)}</b>).`,
+      promptText: `Would you like to tell me a bit more about your industry and how many branches you run, or send this straight to Hussein on WhatsApp?`,
       actionCfg: state.cfgInd,
       followUps: [
         'How does ISABI customize the ERP for my specific industry?',
-        'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
-        'What would a complete multi-branch system cost and include?'
+        'What would a complete multi-branch system cost and include?',
+        'Analyze the ' + sbox.groupTitle + ' dashboard numbers'
       ]
     };
   }
 
   function formatWelcomeMessageHTML() {
     const sbox = SANDBOX_DATA[state.sboxInd] || SANDBOX_DATA.holding;
-    const cm = CURR_MULT[state.sboxCurr] || CURR_MULT.USD;
-    const pm = PERIOD_MULT[state.sboxPeriod] || PERIOD_MULT.mtd;
     const chipsHtml = AI_PROMPTS.map(p =>
       `<button type="button" class="ai-followup-btn" data-ai-ask="${escapeHtml(p.q)}">${escapeHtml(p.q)}</button>`
     ).join('');
@@ -2147,20 +2112,20 @@ JS = r"""
     return `
       <div class="ai-msg-bot">
         ${BADGE_MINI_SVG}
-        <div class="ai-bot-bubble">
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:4px">ISABI · System Intelligence</div>
-          <p>Welcome. I am <b>ISABI</b>, the native intelligence assistant for ISABI Systems. Ask me any question below about your industry workflows, live sandbox figures (<b>${sbox.groupTitle} · ${cm.sym} · ${pm.label}</b>), statutory reconciliation, or pricing, or choose a topic to begin:</p>
+        <div class="ai-bot-bubble is-conversational">
+          <p>Welcome. I am <b>ISABI</b>, the assistant built into ISABI Systems. I can walk you through our 8 live industry systems, run numbers in the <b>${sbox.groupTitle}</b> sandbox, or answer questions about how we build around your accounting.</p>
+        </div>
+      </div>
+      <div class="ai-msg-followup">
+        <div class="ai-bot-followup-bubble">
+          <p class="ai-followup-lead">What would you like to look at first?</p>
           <div class="ai-followups">${chipsHtml}</div>
-          <div class="ai-bot-meta">
-            <span>Connected to Live Sandbox (${sbox.groupTitle}) &amp; 8 Live Production Apps</span>
-            <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I am exploring ISABI Systems and would like to discuss a custom system for our business.')}" target="_blank" rel="noopener" style="color:#D9A54A;font-weight:700">WhatsApp Hussein</a>
-          </div>
         </div>
       </div>
     `;
   }
 
-  function formatAiMessageHTML(item) {
+  function formatAiMessageHTML(item, isNewest = false) {
     let tableBlockHtml = '';
     if (item.headers && item.headers.length && item.rows && item.rows.length) {
       const colCount = item.headers.length;
@@ -2217,9 +2182,25 @@ JS = r"""
     const isRtl = item.lang === 'ar' || /[\u0600-\u06FF]/.test(item.answer || '');
     const dirAttr = isRtl ? ' dir="rtl" style="text-align:right"' : '';
     const userDirAttr = /[\u0600-\u06FF]/.test(item.q || '') ? ' dir="rtl"' : '';
+    const isConv = Boolean(item.conversational) && !tableBlockHtml;
 
-    return `
-      <div class="ai-msg-user"${userDirAttr}>${escapeHtml(item.q)}</div>
+    const defaultPromptLead = item.lang === 'ar'
+      ? 'هل تود استكشاف أحد هذه المواضيع أو طرح سؤال آخر؟'
+      : (item.lang === 'fr'
+        ? 'Souhaitez-vous explorer l\'un de ces sujets ou poser une autre question ?'
+        : 'Would you like to explore one of these next, or ask me something else?');
+    const promptLead = item.promptText || defaultPromptLead;
+
+    const bubble1Html = isConv
+      ? `
+      <div class="ai-msg-bot">
+        ${BADGE_MINI_SVG}
+        <div class="ai-bot-bubble is-conversational"${dirAttr}>
+          <p>${item.answer}</p>
+          ${bulletsHtml}
+        </div>
+      </div>`
+      : `
       <div class="ai-msg-bot">
         ${BADGE_MINI_SVG}
         <div class="ai-bot-bubble"${dirAttr}>
@@ -2227,16 +2208,42 @@ JS = r"""
           <p>${item.answer}</p>
           ${bulletsHtml}
           ${tableBlockHtml}
-          ${followUpsHtml}
           <div class="ai-bot-meta">
-            <span>${item.citation}</span>
+            <span>${item.citation || 'Source: ISABI Systems'}</span>
             <div class="ai-bot-actions">
               ${extraActions}
               <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I asked Ask ISABI ("' + item.q + '") and would like to discuss this for our company.')}" target="_blank" rel="noopener" style="color:#D9A54A;font-weight:700">Discuss on WhatsApp</a>
             </div>
           </div>
         </div>
-      </div>
+      </div>`;
+
+    let bubble2Html = '';
+    if (isNewest && state.aiTypingFollowup) {
+      bubble2Html = `
+      <div class="ai-msg-followup">
+        <div class="ai-thinking-bubble"${dirAttr}>
+          <span class="ai-thinking-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        </div>
+      </div>`;
+    } else if (followUpsHtml || item.promptText) {
+      const convActions = isConv
+        ? `<div class="ai-bot-actions" style="margin-top:8px;font-size:11.5px">${extraActions}<a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I asked Ask ISABI ("' + item.q + '") and would like to discuss this for our company.')}" target="_blank" rel="noopener" style="color:#D9A54A;font-weight:700">Message Hussein on WhatsApp</a></div>`
+        : '';
+      bubble2Html = `
+      <div class="ai-msg-followup">
+        <div class="ai-bot-followup-bubble"${dirAttr}>
+          <p class="ai-followup-lead">${promptLead}</p>
+          ${followUpsHtml}
+          ${convActions}
+        </div>
+      </div>`;
+    }
+
+    return `
+      <div class="ai-msg-user"${userDirAttr}>${escapeHtml(item.q)}</div>
+      ${bubble1Html}
+      ${bubble2Html}
     `;
   }
 
@@ -2282,14 +2289,15 @@ JS = r"""
       if (threadEl) {
         threadEl.innerHTML = state.aiReset
           ? welcomeHtml
-          : formatAiMessageHTML(resolveAskIsabi(AI_PROMPTS[0].q));
+          : formatAiMessageHTML(resolveAskIsabi(AI_PROMPTS[0].q), false);
         threadEl.scrollTop = 0;
       }
       updateAiScopeBar();
       return;
     }
 
-    const threadHtml = state.aiHistory.map(item => formatAiMessageHTML(item)).join('') + pendingHtml;
+    const lastIdx = state.aiHistory.length - 1;
+    const threadHtml = state.aiHistory.map((item, idx) => formatAiMessageHTML(item, idx === lastIdx)).join('') + pendingHtml;
     if (threadEl) {
       threadEl.innerHTML = threadHtml;
       if (scrollToBottom) threadEl.scrollTop = threadEl.scrollHeight;
@@ -2303,13 +2311,14 @@ JS = r"""
 
   function buildGeminiSystemPrompt(lang) {
     return [
-      'You are ISABI, the native operational and financial intelligence assistant for ISABI Systems (founded by Hussein Bdeir, WhatsApp +961 70 444 955, email hbdeir16@gmail.com).',
-      'ISABI Systems engineers custom ERP applications, double-entry financial ledgers, Power BI semantic models, printable statements (.rdl), and offline-first field PWAs (POS Till and Biometric Attendance Kiosk) on the Microsoft Cloud (Dataverse + Entra ID + Power Automate + Power BI) in 1 to 2 weeks.',
-      'We have 8 live production apps: (1) Hospitality & Resorts, (2) Automotive & Heavy Equipment Trading, (3) Concrete, Construction & Manufacturing, (4) Real Estate & Property Development, (5) Insurance Brokerage & Underwriting, (6) Multi-Entity Group Holding, (7) Custom POS & Offline Till PWA, (8) Biometric Attendance Kiosk PWA.',
-      'Pricing tiers: Tier 1 Single-Entity Foundation from $4,500+ (1 week); Tier 2 Multi-Entity & AI Suite from $9,500+ (1 to 2 weeks); Tier 3 Enterprise Holding from $18,000+ (2 weeks). Clients own 100% of their Microsoft 365 tenant and pay $0 per terminal for companion PWAs.',
-      'Parallel-run reconciliation: our systems run alongside the client accountant existing statutory software (Dolphin, PIMS, QuickBooks, SAP, etc.) and reconcile line-by-line to 0.00 variance.',
-      'Formatting rules: NEVER use em-dashes or unicode arrows. Reply in the same language as the user question (Detected language: ' + lang + ').',
-      'Return ONLY a valid JSON object matching this schema: {"title": "Short executive heading", "answer": "2-3 sentence answer (<b> tags allowed for emphasis)", "bullets": ["<b>Point 1:</b> detail", "<b>Point 2:</b> detail"], "headers": [], "rows": [], "total": [], "citation": "Source citation", "followUps": ["Follow-up question 1", "Follow-up question 2", "Follow-up question 3"]}. Only populate headers/rows/total when a table is genuinely helpful; for conversational or conceptual questions leave headers and rows as empty arrays [] and use bullets instead.'
+      'You are ISABI, the assistant for ISABI Systems (founded by Hussein Bdeir, WhatsApp +961 70 444 955, email hbdeir16@gmail.com).',
+      'Speak like a warm, sharp, concise human advisor. NEVER sound like a brochure or dump walls of text.',
+      'ISABI Systems builds custom ERP apps, double-entry ledgers, Power BI dashboards, printable statements, and offline field PWAs (POS Till & Biometric Attendance Kiosk) on the Microsoft Cloud in 1 to 2 weeks.',
+      '8 live apps: Hospitality, Auto & Heavy Equipment Trading, Concrete & Manufacturing, Real Estate, Insurance Brokerage, Group Holding, Offline POS PWA, Biometric Attendance PWA.',
+      'Pricing: Single-Entity from $4,500+ (1 week); Multi-Entity & AI from $9,500+ (1 to 2 weeks); Enterprise Holding from $18,000+ (2 weeks). Clients own 100% of their Microsoft 365 tenant and pay $0 per terminal for PWAs. Runs side-by-side with existing accounting software (Dolphin, PIMS, QuickBooks, SAP) to 0.00 variance.',
+      'Formatting rules: NEVER use em-dashes or unicode arrows. Reply in the same language as the user (Detected language: ' + lang + ').',
+      'You always reply in TWO short chat bubbles: (1) "answer": 1 to 2 natural, direct sentences answering the user question; (2) "promptText": 1 short, natural follow-up question inviting the user to continue the conversation.',
+      'Return ONLY valid JSON: {"conversational": true, "title": "Short heading", "answer": "1-2 sentence natural reply", "promptText": "1-sentence natural follow-up question", "headers": [], "rows": [], "total": [], "followUps": ["Short option 1", "Short option 2", "Short option 3"]}. Leave headers/rows/total empty [] unless the user explicitly asks for a numerical table.'
     ].join('\n');
   }
 
@@ -2318,7 +2327,7 @@ JS = r"""
     const cm = CURR_MULT[state.sboxCurr] || CURR_MULT.USD;
     const pm = PERIOD_MULT[state.sboxPeriod] || PERIOD_MULT.mtd;
     const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$12,300 to $15,000', weeks: '1 to 2 Weeks' };
-    const recent = state.aiHistory.slice(-4).map(h => 'User: ' + h.q + '\nISABI: ' + (h.title || '') + ' - ' + String(h.answer || '').replace(/<[^>]+>/g, '')).join('\n\n');
+    const recent = state.aiHistory.slice(-4).map(h => 'User: ' + h.q + '\nISABI: ' + String(h.answer || '').replace(/<[^>]+>/g, '')).join('\n\n');
     return [
       'Active Live Sandbox Context: ' + sbox.groupTitle + ' | Currency: ' + cm.sym + ' | Period: ' + pm.label,
       'Active Scope Configurator: ' + cfg.industry + ' | Scale: ' + cfg.scale + ' | Estimate: ' + cfg.range + ' (' + cfg.weeks + ')',
@@ -2332,16 +2341,19 @@ JS = r"""
       const cleaned = String(rawReply || '').replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
       const obj = JSON.parse(cleaned);
       if (!obj || !obj.answer) return fallbackResp;
+      const hasTable = Array.isArray(obj.headers) && obj.headers.length && Array.isArray(obj.rows) && obj.rows.length;
       return {
         q: cleanQ,
         lang: lang,
+        conversational: obj.conversational !== undefined ? Boolean(obj.conversational) : !hasTable,
         title: String(obj.title || fallbackResp.title || 'System Intelligence').replace(/[\u2014\u2192]/g, '-'),
         answer: String(obj.answer).replace(/[\u2014\u2192]/g, '-'),
-        bullets: Array.isArray(obj.bullets) ? obj.bullets.map(b => String(b).replace(/[\u2014\u2192]/g, '-')) : (fallbackResp.bullets || []),
-        headers: Array.isArray(obj.headers) && obj.headers.length ? obj.headers : undefined,
-        rows: Array.isArray(obj.rows) && obj.rows.length ? obj.rows : undefined,
+        promptText: obj.promptText ? String(obj.promptText).replace(/[\u2014\u2192]/g, '-') : fallbackResp.promptText,
+        bullets: Array.isArray(obj.bullets) ? obj.bullets.map(b => String(b).replace(/[\u2014\u2192]/g, '-')) : [],
+        headers: hasTable ? obj.headers : undefined,
+        rows: hasTable ? obj.rows : undefined,
         total: Array.isArray(obj.total) && obj.total.length ? obj.total : undefined,
-        citation: String(obj.citation || fallbackResp.citation || 'ISABI Systems · Native AI Intelligence').replace(/[\u2014\u2192]/g, '-'),
+        citation: String(obj.citation || fallbackResp.citation || 'ISABI Systems').replace(/[\u2014\u2192]/g, '-'),
         actionInd: obj.actionInd || fallbackResp.actionInd,
         actionCfg: obj.actionCfg || fallbackResp.actionCfg,
         followUps: Array.isArray(obj.followUps) && obj.followUps.length ? obj.followUps.slice(0, 3) : (fallbackResp.followUps || [])
@@ -2405,12 +2417,14 @@ JS = r"""
       state.aiHistory = [];
       state.aiReset = false;
       state.aiPendingQ = null;
+      state.aiTypingFollowup = false;
       renderAiThreads(false);
       return;
     }
     state.activeAiPillIdx = idx;
     state.aiReset = false;
     state.aiPendingQ = null;
+    state.aiTypingFollowup = false;
     const preset = AI_PROMPTS[idx] || AI_PROMPTS[0];
     const resolved = resolveAskIsabi(preset.q);
     const last = state.aiHistory[state.aiHistory.length - 1];
@@ -2435,26 +2449,53 @@ JS = r"""
       if (backdrop) backdrop.hidden = false;
     }
 
-    // In headless tests or preset chip clicks, resolve immediately while logging real visitor clicks in background
+    // In headless tests or preset chip clicks, resolve immediately
     if (navigator.webdriver || window.__ISABI_SYNC_TEST || !fromInputSubmit) {
       state.aiPendingQ = null;
+      state.aiTypingFollowup = false;
       state.aiHistory.push(localResp);
       if (state.aiHistory.length > 8) state.aiHistory.shift();
       renderAiThreads(true);
       return;
     }
 
-    // Show "ISABI is analyzing..." thinking indicator for typed visitor questions & invoke Phase 2 Cloud Flow
+    // Two-beat natural human conversation:
+    // Beat 1: Show brief thinking indicator -> reveal Bubble 1 (direct answer)
+    // Beat 2: Show brief typing dots in Bubble 2 -> reveal Bubble 2 (follow-up question & options)
     state.aiPendingQ = { q: clean, lang: lang };
+    state.aiTypingFollowup = false;
     renderAiThreads(true);
 
-    const minDelay = new Promise(r => setTimeout(r, 380));
+    const isFastConversational = Boolean(localResp.conversational) && !localResp.isCustomFallback;
+    if (isFastConversational) {
+      callAskIsabiCloud(clean, lang, localResp);
+      setTimeout(() => {
+        if (!state.aiPendingQ || state.aiPendingQ.q !== clean) return;
+        state.aiPendingQ = null;
+        state.aiTypingFollowup = true;
+        state.aiHistory.push(localResp);
+        if (state.aiHistory.length > 8) state.aiHistory.shift();
+        renderAiThreads(true);
+        setTimeout(() => {
+          state.aiTypingFollowup = false;
+          renderAiThreads(true);
+        }, 420);
+      }, 280);
+      return;
+    }
+
+    const minDelay = new Promise(r => setTimeout(r, 320));
     Promise.all([callAskIsabiCloud(clean, lang, localResp), minDelay]).then(([finalResp]) => {
       if (!state.aiPendingQ || state.aiPendingQ.q !== clean) return;
       state.aiPendingQ = null;
+      state.aiTypingFollowup = true;
       state.aiHistory.push(finalResp || localResp);
       if (state.aiHistory.length > 8) state.aiHistory.shift();
       renderAiThreads(true);
+      setTimeout(() => {
+        state.aiTypingFollowup = false;
+        renderAiThreads(true);
+      }, 420);
     });
   }
 
@@ -2462,6 +2503,7 @@ JS = r"""
     state.aiHistory = [];
     state.aiReset = true;
     state.aiPendingQ = null;
+    state.aiTypingFollowup = false;
     state.activeAiPillIdx = -1;
     const inp1 = document.getElementById('ai-inline-input');
     const inp2 = document.getElementById('ai-drawer-input');

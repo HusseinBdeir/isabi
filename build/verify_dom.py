@@ -225,10 +225,11 @@ document.addEventListener('DOMContentLoaded', function() {
       initDrawerUsers: initDrawerUsers,
       hasInitWelcome: initDrawerText.indexOf('Welcome. I am ISABI') !== -1,
       hasThinkingBubble: hasThinkingBubble,
-      hasHelloReply: helloText.indexOf('Welcome · Native System Intelligence') !== -1 && helloText.indexOf('MULTI-ENTITY ENTERPRISE GROUP') === -1,
-      hasHowAreYouReply: howAreYouText.indexOf('I am doing great, thank you for asking!') !== -1 && howAreYouText.indexOf('Custom Architectural Guidance') === -1,
-      hasArabicRtl: arabicHtml.indexOf('dir="rtl"') !== -1 && arabicHtml.indexOf('الذكاء التشغيلي والمالي') !== -1,
-      hasFrenchReply: frenchText.indexOf('Bienvenue') !== -1 || frenchText.indexOf('Investissement Transparent') !== -1,
+      hasHelloReply: helloText.indexOf('Hello! Good to have you here.') !== -1 && helloText.indexOf('What kind of business are you running') !== -1 && helloText.indexOf('MULTI-ENTITY ENTERPRISE GROUP') === -1,
+      hasHowAreYouReply: howAreYouText.indexOf('I am doing great, thank you for asking!') !== -1 && howAreYouText.indexOf('Are you exploring a custom system') !== -1,
+      hasArabicRtl: arabicHtml.indexOf('dir="rtl"') !== -1 && arabicHtml.indexOf('أهلاً بك! أنا بخير') !== -1,
+      hasFrenchReply: frenchText.indexOf('Un système pour une entité unique') !== -1 || frenchText.indexOf('Bonjour ! Je vais très bien') !== -1,
+      followupBubbleCount: document.querySelectorAll('#ai-inline-thread .ai-msg-followup').length,
       afterInlineCount: afterInlineCount,
       hasMfgBlueprint: afterInlineText.indexOf('Industry Blueprint 03') !== -1,
       scopeBarTxt: scopeBarTxt,
@@ -305,6 +306,7 @@ document.addEventListener('DOMContentLoaded', function() {
         assert ai['hasHowAreYouReply'] is True, "'how are you' did not return conversational status reply"
         assert ai['hasArabicRtl'] is True, "Arabic query did not render RTL Arabic reply"
         assert ai['hasFrenchReply'] is True, "French query did not render French reply"
+        assert ai['followupBubbleCount'] == 1, f"Expected 1 followup bubble afterReset in inline thread, got {ai['followupBubbleCount']}"
         assert ai['afterInlineCount'] == 5, f"Expected 5 messages after multilingual + blueprint submits, got {ai['afterInlineCount']}"
         assert ai['hasMfgBlueprint'] is True, "Inline submit did not render Concrete & Manufacturing blueprint"
         assert ai['scopeBarTxt'] == 'Auto & Equipment Trading · EUR · QTD', f"Unexpected scopeBarTxt: {ai['scopeBarTxt']}"

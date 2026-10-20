@@ -1905,6 +1905,100 @@ table.m-grid tr.total td {
   margin: 0 0 10px;
 }
 
+.ai-bot-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.ai-bot-bubble.is-conversational {
+  padding: 11px 15px;
+  border-radius: 2px 12px 12px 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.ai-msg-followup {
+  margin-left: 44px;
+  margin-top: -6px;
+  animation: isabiFollowupIn 0.22s ease-out;
+}
+
+.ai-bot-followup-bubble {
+  background: #0E1B34;
+  border: 1px solid rgba(217, 165, 74, 0.26);
+  border-radius: 2px 12px 12px 12px;
+  padding: 11px 14px;
+  font-size: 13px;
+  color: #E9ECF2;
+}
+
+.ai-followup-lead {
+  margin: 0 0 8px;
+  color: #F4F2EE;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ai-bot-followup-bubble .ai-followups {
+  margin: 4px 0 0;
+}
+
+.ai-bot-bubble[dir="rtl"] .ai-bot-bullets,
+.ai-bot-followup-bubble[dir="rtl"] .ai-bot-bullets {
+  padding-left: 0;
+  padding-right: 18px;
+}
+
+.ai-bot-bubble[dir="rtl"] .ai-followup-btn,
+.ai-bot-followup-bubble[dir="rtl"] .ai-followup-btn {
+  text-align: right;
+}
+
+.ai-thinking-bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: #11203D;
+  border: 1px solid rgba(217, 165, 74, 0.35);
+  border-radius: 2px 10px 10px 10px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  color: #D9A54A;
+  font-weight: 600;
+}
+
+.ai-thinking-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-thinking-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #D9A54A;
+  opacity: 0.35;
+  animation: isabiPulseDot 1.1s infinite ease-in-out;
+}
+
+.ai-thinking-dots span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.ai-thinking-dots span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes isabiPulseDot {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1.15); }
+}
+
+@keyframes isabiFollowupIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .ai-bot-bullets {
   margin: 6px 0 10px;
   padding-left: 18px;
