@@ -911,12 +911,19 @@ button {
   gap: 16px;
 }
 
+/* Each card is a 3-row subgrid (eyebrow / headline / body) so the three rows
+   share the same top edges across all four cards whatever wraps. */
 .layer-card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-top: 3px solid var(--brass);
   border-radius: 6px;
   padding: 20px;
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  align-content: start;
 }
 
 .layer-num {
@@ -924,18 +931,22 @@ button {
   font-size: 11.5px;
   font-weight: 800;
   letter-spacing: 0.12em;
+  line-height: 1.4;
   color: var(--brass);
   text-transform: uppercase;
-  margin-bottom: 6px;
+  white-space: nowrap;
+  margin-bottom: 8px;
 }
 
 .layer-card h4 {
   font-size: 16.5px;
-  margin-bottom: 8px;
+  line-height: 1.3;
+  margin-bottom: 10px;
 }
 
 .layer-card p {
   font-size: 13.5px;
+  line-height: 1.55;
   color: var(--muted);
   margin: 0;
 }
@@ -2974,10 +2985,12 @@ table.m-grid tr.total td {
   }
   .layer-num {
     font-size: 10px;
+    white-space: normal;
+    margin-bottom: 6px;
   }
   .layer-card h4 {
     font-size: 14px;
-    margin-bottom: 5px;
+    margin-bottom: 6px;
   }
   .layer-card p {
     font-size: 12px;

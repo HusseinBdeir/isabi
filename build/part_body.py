@@ -232,23 +232,23 @@ BODY = f"""
       <div class="layers-grid">
         <div class="layer-card reveal">
           <div class="layer-num">Layer 01 · Domain Schema</div>
-          <h4>Industry-Specific Tables &amp; Forms</h4>
+          <h4>Tables Built for Your Trade</h4>
           <p>We do not rename generic fields. We design the tables, form logic, and document numbering around the documents your staff already handle every day.</p>
         </div>
         <div class="layer-card reveal">
-          <div class="layer-num">Layer 02 · Security &amp; Hierarchy</div>
-          <h4>Multi-Company &amp; Role Isolation</h4>
+          <div class="layer-num">Layer 02 · Security &amp; Roles</div>
+          <h4>Each Role Sees Its Own Unit</h4>
           <p>Cashiers, plant dispatchers, showroom staff, and branch accountants see only their own Business Unit. Owners and partners see the consolidated group view.</p>
         </div>
         <div class="layer-card reveal">
           <div class="layer-num">Layer 03 · Financial Integrity</div>
           <h4>Real Books, Safe Transition</h4>
-          <p>ISABI keeps full double-entry accounts, not just operational data. When you switch over, it runs side by side with your current accounting until the two agree, so your tax and audit records stay intact throughout.</p>
+          <p>ISABI keeps full double-entry accounts, not just operational data. It runs beside your current accounting until the two agree, so your tax and audit records stay intact.</p>
         </div>
         <div class="layer-card reveal">
           <div class="layer-num">Layer 04 · Executive Output</div>
-          <h4>Reports, Statements &amp; Native AI</h4>
-          <p>Every transaction flows into governed Power BI dashboards and printable financial statements: balance sheet, P&amp;L, cash flow, and statements of account for every customer, supplier, and partner. Ask ISABI answers questions about your own figures in plain language.</p>
+          <h4>Reports, Statements &amp; AI</h4>
+          <p>Every transaction feeds Power BI dashboards and printable statements: balance sheet, P&amp;L, cash flow, and statements of account. Ask ISABI answers questions about your own figures.</p>
         </div>
       </div>
     </div>
