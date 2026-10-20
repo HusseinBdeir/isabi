@@ -207,7 +207,7 @@ document.addEventListener('DOMContentLoaded', function() {
       afterInlineCount: afterInlineCount,
       hasMfgBlueprint: afterInlineText.indexOf('Industry Blueprint 03') !== -1,
       scopeBarTxt: scopeBarTxt,
-      hasEurQtdBriefing: drawerTextAfterSbox.indexOf('Automotive & Heavy Truck Trading') !== -1 && drawerTextAfterSbox.indexOf('EUR') !== -1 && drawerTextAfterSbox.indexOf('QTD') !== -1,
+      hasEurQtdBriefing: drawerTextAfterSbox.indexOf('Automotive & Heavy Equipment Trading') !== -1 && drawerTextAfterSbox.indexOf('EUR') !== -1 && drawerTextAfterSbox.indexOf('QTD') !== -1,
       hasAlertDrilldown: drawerTextAfterAlert.indexOf('Dealership Fleet Receivables & SOA Dispatch') !== -1,
       countBeforeReset: countBeforeReset,
       botAfterReset: botAfterReset,
@@ -278,7 +278,7 @@ document.addEventListener('DOMContentLoaded', function() {
         assert ai['hasHelloReply'] is True, "Greeting 'Hello' did not return conversational reply without repeating initial table"
         assert ai['afterInlineCount'] == 2, f"Expected 2 messages after Hello + blueprint submit, got {ai['afterInlineCount']}"
         assert ai['hasMfgBlueprint'] is True, "Inline submit did not render Concrete & Manufacturing blueprint"
-        assert ai['scopeBarTxt'] == 'Auto & Truck Trading · EUR · QTD', f"Unexpected scopeBarTxt: {ai['scopeBarTxt']}"
+        assert ai['scopeBarTxt'] == 'Auto & Equipment Trading · EUR · QTD', f"Unexpected scopeBarTxt: {ai['scopeBarTxt']}"
         assert ai['hasEurQtdBriefing'] is True, "Sandbox Ask ISABI click did not render EUR QTD briefing"
         assert ai['hasAlertDrilldown'] is True, "Sandbox alert button click did not render alert drilldown"
         assert ai['countBeforeReset'] == 5, f"Expected 5 messages in thread before reset, got {ai['countBeforeReset']}"

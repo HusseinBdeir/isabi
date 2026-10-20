@@ -46,8 +46,8 @@ HTML = f"""<!doctype html>
       <p>Custom ERP, financial ledgers, Power BI reporting, offline field apps, and the Ask ISABI assistant. Built around your industry on the Microsoft Cloud.</p>
     </div>
     <div class="chips">
-      <span class="chip">8 Production Blueprints</span>
-      <span class="chip">3 to 6 Weeks to Go-Live</span>
+      <span class="chip">8 Live Production Apps</span>
+      <span class="chip">1 to 2 Weeks to Go-Live</span>
       <span class="chip">Your Own Microsoft Tenant</span>
       <span class="chip">Native AI</span>
     </div>

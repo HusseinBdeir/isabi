@@ -27,7 +27,7 @@ HEAD = """<!DOCTYPE html>
   <meta property="og:locale" content="en_US">
   <meta property="og:url" content="https://husseinbdeir.github.io/isabi/">
   <meta property="og:title" content="ISABI Systems | Custom ERP, Power BI and Native AI on the Microsoft Cloud">
-  <meta property="og:description" content="The Books Close on ISABI. Custom ERP, financial ledgers, Power BI reporting, offline field apps, and the Ask ISABI assistant, built around your industry and delivered in 3 to 6 weeks.">
+  <meta property="og:description" content="The Books Close on ISABI. Custom ERP, financial ledgers, Power BI reporting, offline field apps, and the Ask ISABI assistant, built around your industry and delivered in 1 to 2 weeks.">
   <meta property="og:image" content="https://husseinbdeir.github.io/isabi/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">

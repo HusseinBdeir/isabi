@@ -58,10 +58,10 @@ JS = r"""
       id: 'trading',
       sandboxKey: 'trading',
       cfgName: 'Automotive & Heavy Equipment Trading',
-      name: 'Automotive, Heavy Trucks & Parts Trading',
+      name: 'Automotive, Heavy Equipment & Parts Trading',
       sub: 'VIN chassis tracking, bonded customs stock, showroom sales & SOA',
       badge: 'Industry Blueprint 02 · Trading & Dealership Operations',
-      lead: 'Built for vehicle importers, heavy truck distributors, and spare-parts wholesalers managing high-value inventory across bonded warehouses, showrooms, and workshop service bays with strict multi-currency accounting.',
+      lead: 'Built for vehicle importers, heavy equipment distributors, and spare-parts wholesalers managing high-value inventory across bonded warehouses, showrooms, and workshop service bays with strict multi-currency accounting.',
       modules: [
         'Vehicle VIN / Chassis Registry (In-Transit, Bonded Customs, Showroom, Sold)',
         'Landed Cost Calculator (FOB, Freight, Insurance, Customs Duty, Clearance)',
@@ -292,7 +292,7 @@ JS = r"""
     holding: {
       groupTitle: 'Multi-Entity Enterprise Group',
       viewTitle: 'Consolidated Group Overview',
-      seriesNames: ['Auto & Trucks', 'Manufacturing', 'Hospitality'],
+      seriesNames: ['Auto & Equipment', 'Manufacturing', 'Hospitality'],
       seriesVals: [
         [165, 172, 158, 184, 162, 179, 195, 208, 214, 226, 238, 249],
         [140, 132, 148, 125, 138, 152, 168, 175, 182, 190, 198, 212],
@@ -306,7 +306,7 @@ JS = r"""
         { k: 'Operating Books', v: '6', unit: ' of 6', d: 'All entities balanced', cls: '', books: true, fixed: true }
       ],
       entities: [
-        ['Auto & Truck Dealership', 249.0, '21.4%', 'Today 17:15', 'closed', 'Balanced'],
+        ['Auto & Equipment Dealership', 249.0, '21.4%', 'Today 17:15', 'closed', 'Balanced'],
         ['Ready-Mix Concrete Plant', 148.0, '28.2%', 'Today 16:50', 'closed', 'Balanced'],
         ['Flagship Beach Resort', 132.0, '58.6%', 'Today 18:10', 'closed', 'Balanced'],
         ['Boutique Hotel & Club', 78.0, '51.2%', 'Today 17:40', 'closed', 'Balanced'],
@@ -364,9 +364,9 @@ JS = r"""
       ]
     },
     trading: {
-      groupTitle: 'Automotive & Heavy Truck Trading',
+      groupTitle: 'Automotive & Heavy Equipment Trading',
       viewTitle: 'Dealership, VIN Stock & SOA Overview',
-      seriesNames: ['Heavy Trucks', 'Passenger & SUV', 'Spare Parts & Service'],
+      seriesNames: ['Heavy Equipment', 'Passenger & SUV', 'Spare Parts & Service'],
       seriesVals: [
         [120, 85, 140, 95, 110, 135, 160, 145, 175, 150, 185, 190],
         [68, 74, 62, 80, 72, 78, 84, 88, 92, 96, 102, 108],
@@ -380,21 +380,21 @@ JS = r"""
         { k: 'Statutory Recon', v: '100', unit: '%', d: '0 variance vs accounting books', cls: '', books: true, fixed: true }
       ],
       entities: [
-        ['Heavy Truck Division', 190.0, '17.5%', 'Today 16:40', 'closed', 'Reconciled'],
+        ['Heavy Equipment Division', 190.0, '17.5%', 'Today 16:40', 'closed', 'Reconciled'],
         ['Passenger & Fleet Division', 108.0, '20.4%', 'Today 17:10', 'closed', 'Reconciled'],
         ['Central Spare Parts Depot', 36.5, '31.2%', 'Today 16:55', 'closed', 'Reconciled'],
         ['Service & Warranty Bay', 14.5, '44.0%', 'Today 15:20', 'closed', 'Reconciled']
       ],
       alerts: [
         ['crit', '5 fleet customer installments past 60 days', 'Automated SOA PDF ready for WhatsApp & Email dispatch', 'Send SOA'],
-        ['good', '3 heavy truck chassis cleared customs today', 'Landed cost allocated · Moved from Bonded to Showroom stock', 'View VINs'],
+        ['good', '3 heavy equipment units cleared customs today', 'Landed cost allocated · Moved from Bonded to Showroom stock', 'View VINs'],
         ['warn', 'Fast-moving brake & filter SKUs below safety stock', 'Suggested supplier reorder batch generated', 'Order List'],
         ['good', 'Monthly statutory reconciliation verified', 'Operational sales, stock, and cash match statutory trial balance', 'Recon RDL']
       ],
       journal: [
-        ['D0', 'SI-TRK-0419', 'Heavy Truck Div', '70110 Heavy Truck Sales (VIN #8841)', 0, 68500.00],
+        ['D0', 'SI-TRK-0419', 'Heavy Equipment Div', '70110 Heavy Equipment Sales (VIN #8841)', 0, 68500.00],
         ['D0', 'SI-PRT-1902', 'Spare Parts Depot', '70150 Wholesale Parts Invoicing', 0, 4820.00],
-        ['D0', 'LC-2026-0118', 'Heavy Truck Div', '60120 Customs & Port Clearance', 11400.00, 0],
+        ['D0', 'LC-2026-0118', 'Heavy Equipment Div', '60120 Customs & Port Clearance', 11400.00, 0],
         ['D1', 'RC-2026-0774', 'Passenger Div', '51100 Dealer Installment Collection', 61920.00, 0],
         ['D1', 'SV-2026-0310', 'Service Bay', '70500 Workshop Labor & Overhaul', 0, 2950.00]
       ]
@@ -513,7 +513,7 @@ JS = r"""
       headers: ['Account / Entity', 'Voucher Ref', 'Days Past Due', 'Balance (USD)'],
       rows: [
         ['Apex Contracting · Concrete Plant', 'TK-2026-3104', '68 Days', '$16,400.00'],
-        ['Levant Logistics · Heavy Truck Div', 'SI-TRK-0298', '64 Days', '$14,800.00'],
+        ['Levant Logistics · Heavy Equipment Div', 'SI-TRK-0298', '64 Days', '$14,800.00'],
         ['Metro Transit · Spare Parts Depot', 'SI-PRT-1411', '62 Days', '$6,250.00'],
         ['4 Smaller Balances (< $2k each)', 'Multiple', '61-74 Days', '$4,850.00']
       ],
@@ -527,11 +527,11 @@ JS = r"""
       headers: ['Industry Vertical', 'Custom Operational Unit', 'Automated Ledger Link'],
       rows: [
         ['Hospitality & Resorts', 'Outlet Z-Report, Cabana & Seasonal Shift', 'Daily TTC revenue & partner split journal'],
-        ['Auto & Truck Trading', 'Vehicle VIN / Chassis & Customs Bill', 'Per-unit landed cost & dealer aging SOA'],
+        ['Auto & Equipment Trading', 'Vehicle VIN / Chassis & Customs Bill', 'Per-unit landed cost & dealer aging SOA'],
         ['Concrete & Manufacturing', 'Batch Ticket (m³), Mix Grade & Silo MT', 'Raw material yield & contractor credit gate'],
         ['Real Estate & Insurance', 'Lease Schedule / Policy & Endorsement', 'NOI yield / Carrier commission bordereaux']
       ],
-      total: ['Deployment Timeframe', '3 to 6 Weeks to Live Production'],
+      total: ['Deployment Timeframe', '1 to 2 Weeks to Live Production'],
       citation: 'Architecture: Microsoft Dataverse + Model-Driven Apps + XMLA Power BI + Paginated .RDL'
     },
     {
@@ -767,7 +767,7 @@ JS = r"""
   // ---------------- RENDER INDUSTRY BLUEPRINTS ----------------
   const IND_SHORT_NAMES = {
     hospitality: 'Hospitality & Resorts',
-    trading: 'Auto & Truck Trading',
+    trading: 'Auto & Equipment Trading',
     manufacturing: 'Concrete & Mfg',
     realestate: 'Real Estate',
     insurance: 'Insurance Brokerage',
@@ -849,7 +849,7 @@ JS = r"""
     qtd: { mult: 2.85, label: 'Q' + CUR_Q + ' ' + NOW.getFullYear() + ' (QTD)' },
     ytd: { mult: 9.4, label: 'FY ' + NOW.getFullYear() + ' (YTD)' }
   };
-  const SBOX_LABELS = { holding: 'Group Holding', hospitality: 'Hospitality & Resorts', trading: 'Auto & Truck Trading', manufacturing: 'Concrete & Manufacturing', realestate: 'Real Estate', insurance: 'Insurance Brokerage' };
+  const SBOX_LABELS = { holding: 'Group Holding', hospitality: 'Hospitality & Resorts', trading: 'Auto & Equipment Trading', manufacturing: 'Concrete & Manufacturing', realestate: 'Real Estate', insurance: 'Insurance Brokerage' };
 
   function buildSandboxChart(d, mult, sym) {
     const W = 660, H = 244, ml = 44, mr = 10, mt = 16, mb = 28;
@@ -906,7 +906,7 @@ JS = r"""
     const sboxChoices = [
       ['holding', 'Group Holding'],
       ['hospitality', 'Hospitality & Resorts'],
-      ['trading', 'Auto & Truck Trading'],
+      ['trading', 'Auto & Equipment Trading'],
       ['manufacturing', 'Concrete & Mfg'],
       ['realestate', 'Real Estate'],
       ['insurance', 'Insurance Brokerage']
@@ -1134,7 +1134,7 @@ JS = r"""
         headers: ['Customer / Entity', 'Voucher', 'Age', 'Balance (' + s + ')'],
         rows: [
           ['Apex Contracting · Concrete Plant', 'TK-2026-3104', '68 Days', fmtMoney(16400, m, s)],
-          ['Levant Logistics · Heavy Truck Div', 'SI-TRK-0298', '64 Days', fmtMoney(14800, m, s)],
+          ['Levant Logistics · Heavy Equipment Div', 'SI-TRK-0298', '64 Days', fmtMoney(14800, m, s)],
           ['Metro Transit · Spare Parts Depot', 'SI-PRT-1411', '62 Days', fmtMoney(6250, m, s)],
           ['4 Smaller Accounts (Auto & Real Estate)', 'Multiple', '61-74 Days', fmtMoney(4850, m, s)]
         ],
@@ -1239,7 +1239,7 @@ JS = r"""
       },
       '5 fleet customer installments past 60 days': {
         title: 'Dealership Fleet Receivables & SOA Dispatch',
-        answer: `Five fleet and commercial truck buyers have installment notes past 60 days totaling <b>${fmtMoney(31400, m, s)}</b>. One-click PDF Statements of Account (.rdl) are ready for WhatsApp and email delivery.`,
+        answer: `Five fleet and commercial equipment buyers have installment notes past 60 days totaling <b>${fmtMoney(31400, m, s)}</b>. One-click PDF Statements of Account (.rdl) are ready for WhatsApp and email delivery.`,
         headers: ['Dealer / Fleet Account', 'Invoice / VIN Ref', 'Days Past Due', 'Overdue (' + s + ')'],
         rows: [
           ['Levant Heavy Haulage', 'SI-TRK-0298 (VIN #8792)', '66 Days', fmtMoney(14800, m, s)],
@@ -1249,11 +1249,11 @@ JS = r"""
         ],
         total: ['Total Dealership Overdue (> 60d)', fmtMoney(31400, m, s)],
         citation: 'Source: Trading Operations Customer Allocation & Aged Receivables RDL',
-        followUps: ['Show the Auto & Truck Trading blueprint', 'How are VIN landed costs calculated?']
+        followUps: ['Show the Auto & Equipment Trading blueprint', 'How are VIN landed costs calculated?']
       },
-      '3 heavy truck chassis cleared customs today': {
+      '3 heavy equipment units cleared customs today': {
         title: 'VIN Customs Clearance & Landed Cost Capitalization',
-        answer: `Three heavy truck chassis moved from <b>Bonded Customs</b> to <b>Showroom Duty-Paid Stock</b> on ${d0}. FOB cost, ocean freight, marine insurance, and customs duty are capitalized per VIN.`,
+        answer: `Three heavy equipment units moved from <b>Bonded Customs</b> to <b>Showroom Duty-Paid Stock</b> on ${d0}. FOB cost, ocean freight, marine insurance, and customs duty are capitalized per VIN.`,
         headers: ['Chassis VIN', 'Model & Spec', 'Customs + Freight', 'Total Landed (' + s + ')'],
         rows: [
           ['VIN #LZGJL484X20268841', '6x4 Tractor Head (430 HP)', fmtMoney(3800, m, s), fmtMoney(54200, m, s)],
@@ -1262,7 +1262,7 @@ JS = r"""
         ],
         total: ['Total Capitalized Showroom Value (3 Units)', fmtMoney(167000, m, s)],
         citation: 'Source: Dataverse Vehicle VIN Registry & Landed Cost Sheet (LC-2026-0118)',
-        followUps: ['Analyze the Automotive & Heavy Truck Trading dashboard', 'Show Trading journal entries']
+        followUps: ['Analyze the Automotive & Heavy Equipment Trading dashboard', 'Show Trading journal entries']
       },
       'Fast-moving brake & filter SKUs below safety stock': {
         title: 'Spare Parts Depot · Reorder Batch Calculation',
@@ -1275,7 +1275,7 @@ JS = r"""
         ],
         total: ['Suggested Supplier Purchase Order Batch', fmtMoney(16400, m, s)],
         citation: 'Source: Trading Multi-Warehouse Stock Balance & Reorder Engine',
-        followUps: ['How does ISABI customize the ERP for Auto & Truck Trading?', 'Configure scope and pricing for Trading']
+        followUps: ['How does ISABI customize the ERP for Auto & Equipment Trading?', 'Configure scope and pricing for Trading']
       },
       'Monthly statutory reconciliation verified': {
         title: 'Trading Operations · Statutory Trial Balance Match',
@@ -1402,7 +1402,7 @@ JS = r"""
         headers: ['Line of Business', 'Policies Expiring', 'Expiring GWP', 'Quoted Renewal (' + s + ')'],
         rows: [
           ['Corporate Group Medical & Life', '7 Policies', fmtMoney(94000, m, s), fmtMoney(98500, m, s)],
-          ['Commercial Motor & Truck Fleets', '8 Policies', fmtMoney(46200, m, s), fmtMoney(47800, m, s)],
+          ['Commercial Motor & Equipment Fleets', '8 Policies', fmtMoney(46200, m, s), fmtMoney(47800, m, s)],
           ['Marine Cargo & All-Risk Property', '4 Policies', fmtMoney(31800, m, s), fmtMoney(32400, m, s)]
         ],
         total: ['Total Pre-Quoted Renewal Book (94.2% Retention)', fmtMoney(178700, m, s)],
@@ -1554,7 +1554,7 @@ JS = r"""
         ['03. Cloud Automation', indObj.workflows[0], indObj.metrics[2][1]],
         ['04. BI & Statements', indObj.reports[0] + ' & ' + indObj.reports[1], '100% Reconciled']
       ],
-      total: ['Typical Turnkey Go-Live Window', '3 to 6 Weeks (Fixed Scope)'],
+      total: ['Typical Turnkey Go-Live Window', '1 to 2 Weeks (Fixed Scope)'],
       citation: `Source: ISABI Production Blueprint (${indObj.name}) · Microsoft Dataverse + Power BI`,
       actionInd: indObj.sandboxKey,
       actionCfg: indObj.cfgName,
@@ -1576,7 +1576,7 @@ JS = r"""
     if (low.includes('hospitality') || low.includes('resort') || low.includes('hotel') || low.includes('beach') || low.includes('cabana') || low.includes('f&b') || low.includes('restaurant')) {
       return INDUSTRIES.find(x => x.id === 'hospitality');
     }
-    if (low.includes('trading') || low.includes('auto') || low.includes('truck') || low.includes('vin') || low.includes('chassis') || low.includes('dealer') || low.includes('customs') || low.includes('spare part')) {
+    if (low.includes('trading') || low.includes('auto') || low.includes('truck') || low.includes('equipment') || low.includes('vin') || low.includes('chassis') || low.includes('dealer') || low.includes('customs') || low.includes('spare part')) {
       return INDUSTRIES.find(x => x.id === 'trading');
     }
     if (low.includes('manufactur') || low.includes('concrete') || low.includes('batch') || low.includes('cement') || low.includes('silo') || low.includes('mixer') || low.includes('pump') || low.includes('precast')) {
@@ -1609,8 +1609,8 @@ JS = r"""
         answer: `Hello! I am <b>ISABI</b>, the embedded intelligence assistant for ISABI Systems. I am currently connected to the <b>${sbox.groupTitle}</b> live sandbox (<b>${cm.sym} · ${pm.label}</b>) and the architectural blueprints across all 8 production apps. How can I help you today?`,
         bullets: [
           `<b>Query Live Sandbox Figures:</b> Ask to analyze the <i>${sbox.groupTitle}</i> dashboard, inspect today's double-entry journal vouchers, or review overdue receivables.`,
-          `<b>Explore Industry Blueprints:</b> Ask how we build custom systems for Hospitality, Auto &amp; Truck Trading, Concrete &amp; Manufacturing, Real Estate, Insurance, or Holding Groups.`,
-          `<b>Scope, Pricing &amp; Delivery:</b> Ask about our fixed-scope tiers ($4,500+ / $9,500+ / $18,000+), Microsoft licensing, parallel-run reconciliation, or the 6-week go-live plan.`
+          `<b>Explore Industry Blueprints:</b> Ask how we build custom systems for Hospitality, Auto &amp; Equipment Trading, Concrete &amp; Manufacturing, Real Estate, Insurance, or Holding Groups.`,
+          `<b>Scope, Pricing &amp; Delivery:</b> Ask about our fixed-scope tiers ($4,500+ / $9,500+ / $18,000+), Microsoft licensing, parallel-run reconciliation, or the 2-week go-live plan.`
         ],
         citation: `Active Context: ${sbox.groupTitle} · ${cm.sym} · ${pm.label}`,
         followUps: [
@@ -1738,7 +1738,7 @@ JS = r"""
         headers: ['Account / Entity', 'Voucher Ref', 'Days Past Due', `Balance (${s})`],
         rows: [
           ['Apex Contracting · Concrete Plant', 'TK-2026-3104', '68 Days', fmtMoney(16400, m, s)],
-          ['Levant Logistics · Heavy Truck Div', 'SI-TRK-0298', '64 Days', fmtMoney(14800, m, s)],
+          ['Levant Logistics · Heavy Equipment Div', 'SI-TRK-0298', '64 Days', fmtMoney(14800, m, s)],
           ['Metro Transit · Spare Parts Depot', 'SI-PRT-1411', '62 Days', fmtMoney(6250, m, s)],
           ['4 Smaller Balances (< $2k each)', 'Multiple', '61-74 Days', fmtMoney(4850, m, s)]
         ],
@@ -1759,7 +1759,7 @@ JS = r"""
         scale: state.cfgScaleLabel,
         modules: ['Core Dataverse ERP & Ledger', 'Power BI Executive Dashboards', 'Printable .RDL Statements & SOA', 'Ask ISABI Native AI Assistant'],
         range: '$12,300 to $15,000',
-        weeks: '5 to 7 Weeks'
+        weeks: '1 to 2 Weeks'
       };
       return {
         q: cleanQ,
@@ -1777,7 +1777,7 @@ JS = r"""
         actionCfg: state.cfgInd,
         followUps: [
           'Do we need to buy Microsoft licences?',
-          'What happens in the first six weeks?',
+          'What happens in the first two weeks?',
           'Can we start small and add modules later?'
         ]
       };
@@ -1790,7 +1790,7 @@ JS = r"""
         followUps: [
           'Show the Statutory vs Operational reconciliation check',
           'Who owns the system and the data?',
-          'What happens in the first six weeks?'
+          'What happens in the first two weeks?'
         ]
       });
     }
@@ -1813,25 +1813,25 @@ JS = r"""
         followUps: [
           'How does dual-entry reconciliation work with our existing accountant software?',
           'What would a complete multi-branch system cost and include?',
-          'What happens in the first six weeks?'
+          'What happens in the first two weeks?'
         ]
       };
     }
 
-    // 11. Commissioning, Timeline, First 6 Weeks, Process ("What should I know before commissioning...")
+    // 11. Commissioning, Timeline, First 2 Weeks, Process ("What should I know before commissioning...")
     if (low.includes('commission') || low.includes('week') || low.includes('timeline') || low.includes('how long') || low.includes('process') || low.includes('first') || low.includes('know before') || low.includes('start') || low.includes('onboard')) {
       return {
         q: cleanQ,
-        title: 'Commissioning & 6-Week Go-Live Roadmap',
+        title: 'Commissioning & 2-Week Go-Live Roadmap',
         answer: `Before commissioning an ISABI system, you only need your current spreadsheets or chart of accounts and a 30-minute walkthrough with Hussein Bdeir. Your accountant does not need to change software, and you can start with one entity and add modules later without rebuilding.`,
         headers: ['Delivery Window', 'Engineering Milestone', 'Client Sign-Off'],
         rows: [
-          ['Weeks 1 to 2', 'Custom Dataverse schema, Chart of Accounts, Business Units & roles', 'Live ERP forms approved'],
-          ['Weeks 2 to 4', 'Automated approvals, SharePoint document routing & POS/Kiosk PWAs', 'Workflows tested end-to-end'],
-          ['Weeks 3 to 5', 'Power BI XMLA models (Year/Month/Week/Day) & printable .RDL statements', 'Historical data migrated'],
-          ['Weeks 5 to 6', 'Ask ISABI wiring, team training, parallel-run reconciliation & go-live', '0.00 variance cutover']
+          ['Days 1 to 3', 'Custom Dataverse schema, Chart of Accounts, Business Units & roles', 'Live ERP forms approved'],
+          ['Days 3 to 6', 'Automated approvals, SharePoint document routing & POS/Kiosk PWAs', 'Workflows tested end-to-end'],
+          ['Days 6 to 10', 'Power BI XMLA models (Year/Month/Week/Day) & printable .RDL statements', 'Historical data migrated'],
+          ['Days 10 to 14', 'Ask ISABI wiring, team training, parallel-run reconciliation & go-live', '0.00 variance cutover']
         ],
-        total: ['Typical End-to-End Delivery', '3 to 6 Weeks to Production'],
+        total: ['Typical End-to-End Delivery', '1 to 2 Weeks to Production'],
         citation: 'Source: ISABI Code-First Compiler Pipeline · Direct Principal Engineering',
         followUps: [
           'What would a complete multi-branch system cost and include?',
@@ -1911,13 +1911,13 @@ JS = r"""
         citation: 'Source: ISABI Systems Executive Consultation Portal · Section 08',
         followUps: [
           'What would a complete multi-branch system cost and include?',
-          'What happens in the first six weeks?'
+          'What happens in the first two weeks?'
         ]
       };
     }
 
     // 15. Conversational Custom Question Handler (never dumps an unrelated table)
-    const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$12,300 to $15,000', weeks: '5 to 7 Weeks' };
+    const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$12,300 to $15,000', weeks: '1 to 2 Weeks' };
     return {
       q: cleanQ,
       title: 'Custom Architectural Guidance',
@@ -1953,7 +1953,7 @@ JS = r"""
           <p>Welcome. I am <b>ISABI</b>, the native intelligence assistant for ISABI Systems. Ask me any question below about your industry workflows, live sandbox figures (<b>${sbox.groupTitle} · ${cm.sym} · ${pm.label}</b>), statutory reconciliation, or pricing, or choose a topic to begin:</p>
           <div class="ai-followups">${chipsHtml}</div>
           <div class="ai-bot-meta">
-            <span>Connected to Live Sandbox (${sbox.groupTitle}) &amp; 8 Production Blueprints</span>
+            <span>Connected to Live Sandbox (${sbox.groupTitle}) &amp; 8 Live Production Apps</span>
             <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I am exploring ISABI Systems and would like to discuss a custom system for our business.')}" target="_blank" rel="noopener" style="color:#D9A54A;font-weight:700">WhatsApp Hussein</a>
           </div>
         </div>
@@ -2206,8 +2206,9 @@ JS = r"""
     const rangeStr = `$${low.toLocaleString('en-US')} to $${high.toLocaleString('en-US')}`;
     totalEl.textContent = rangeStr;
 
-    const minW = Math.max(3, Math.min(8, totalWeeks - 1));
-    const maxW = minW + 2;
+    // Scope points (scale + modules) map to a delivery window: 1 to 2 Weeks for a typical scope, 1 to 3 only for the heaviest full-module enterprise scope.
+    const minW = 1;
+    const maxW = totalWeeks >= 10 ? 3 : 2;
     weeksEl.textContent = `${minW} to ${maxW} Weeks`;
 
     const indSel = document.getElementById('lead-industry');
@@ -2235,7 +2236,7 @@ JS = r"""
     const industry = document.getElementById('lead-industry')?.value || state.cfgInd;
     const budget = document.getElementById('lead-budget')?.value || 'Custom Scope';
     const notes = (document.getElementById('lead-notes')?.value || '').trim() || 'Interested in an architecture walkthrough and custom quotation.';
-    const cfg = state.lastCfgSummary || { scale: state.cfgScaleLabel, modules: ['Core Dataverse ERP & Ledger'], range: '$9,500+', weeks: '4 to 6 Weeks' };
+    const cfg = state.lastCfgSummary || { scale: state.cfgScaleLabel, modules: ['Core Dataverse ERP & Ledger'], range: '$9,500+', weeks: '1 to 2 Weeks' };
 
     return [
       'ISABI SYSTEMS - EXECUTIVE ARCHITECTURE INQUIRY',

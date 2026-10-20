@@ -18,9 +18,9 @@ FAQS = [
     ("How does Ask ISABI treat confidential figures?",
      "Ask ISABI reads data through the same security roles as the signed-in user, so a branch accountant cannot ask about another branch. "
      "Every answer cites the ledger entries or report measures it used, and the assistant runs inside your tenant rather than on a shared public service."),
-    ("What happens in the first six weeks?",
-     "Weeks 1 to 2 set up the chart of accounts, tables, and security roles. Weeks 2 to 4 add the workflows, approvals, and any field apps. "
-     "Weeks 3 to 5 deliver the Power BI models and printable statements. Weeks 5 to 6 wire in Ask ISABI, train the team, and go live."),
+    ("What happens in the first two weeks?",
+     "Days 1 to 3 set up the chart of accounts, tables, and security roles. Days 3 to 6 add the workflows, approvals, and any field apps. "
+     "Days 6 to 10 deliver the Power BI models and printable statements. Days 10 to 14 wire in Ask ISABI, train the team, and go live."),
     ("Can we start small and add modules later?",
      "Yes. Most clients begin with the Operational Foundation for one company and add branches, Power BI workspaces, field apps, or Ask ISABI as they grow. "
      "Because the data model is yours from day one, nothing has to be rebuilt to add a module."),

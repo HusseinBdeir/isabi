@@ -118,7 +118,7 @@ BODY = f"""
                 <td class="r num">$418,200</td>
               </tr>
               <tr>
-                <td><b>Auto &amp; Heavy Trucks</b></td>
+                <td><b>Auto &amp; Heavy Equipment</b></td>
                 <td>VIN Stock, Customs &amp; Parts</td>
                 <td class="r num">$524,900</td>
               </tr>
@@ -151,9 +151,9 @@ BODY = f"""
   <section class="metrics-band" aria-label="Production Proof Metrics">
     <div class="wrap metrics-grid">
       <div class="metric-cell">
-        <div class="m-val num">8</div>
-        <div class="m-lbl">Production Blueprints</div>
-        <div class="m-sub">Six industry systems plus offline POS and biometric attendance apps, all running live today.</div>
+        <div class="m-val num">8<span> Live Apps</span></div>
+        <div class="m-lbl">Running in Production Today</div>
+        <div class="m-sub">Six industry ERP systems plus an offline POS till and a biometric attendance kiosk, each serving a real business right now.</div>
       </div>
       <div class="metric-cell">
         <div class="m-val num">100<span>%</span></div>
@@ -161,9 +161,9 @@ BODY = f"""
         <div class="m-sub">Every table, form, role, and statement is designed around your business rules, not a vendor template.</div>
       </div>
       <div class="metric-cell">
-        <div class="m-val num">3 to 6<span> Weeks</span></div>
+        <div class="m-val num">1 to 2<span> Weeks</span></div>
         <div class="m-lbl">To Go-Live</div>
-        <div class="m-sub">Code-generated schemas and reports deliver in weeks what ERP consultancies take a year to configure.</div>
+        <div class="m-sub">Code-generated schemas and reports deliver in days what ERP consultancies take a year to configure.</div>
       </div>
       <div class="metric-cell">
         <div class="m-val num">1<span> Ledger</span></div>
@@ -459,7 +459,7 @@ BODY = f"""
             </tr>
             <tr>
               <td><b>Deployment Speed</b></td>
-              <td class="isabi-col">3 to 6 weeks, generated from code</td>
+              <td class="isabi-col">1 to 2 weeks, generated from code</td>
               <td>2 to 4 months of configuration compromises</td>
               <td>9 to 18 months of slow manual consulting</td>
             </tr>
@@ -639,7 +639,7 @@ BODY = f"""
               <h4>1. Select Your Primary Industry</h4>
               <div class="cfg-pills" id="cfg-ind-pills">
                 <button type="button" class="cfg-pill active" data-cfg-ind="Hospitality & Resorts">Hospitality &amp; Resorts</button>
-                <button type="button" class="cfg-pill" data-cfg-ind="Automotive & Heavy Equipment Trading">Auto &amp; Truck Trading</button>
+                <button type="button" class="cfg-pill" data-cfg-ind="Automotive & Heavy Equipment Trading">Auto &amp; Equipment Trading</button>
                 <button type="button" class="cfg-pill" data-cfg-ind="Concrete, Construction & Manufacturing">Concrete &amp; Manufacturing</button>
                 <button type="button" class="cfg-pill" data-cfg-ind="Real Estate & Property Portfolio">Real Estate Portfolio</button>
                 <button type="button" class="cfg-pill" data-cfg-ind="Insurance Brokerage">Insurance Brokerage</button>
@@ -741,7 +741,7 @@ BODY = f"""
 
               <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:16px">
                 <span>Estimated Delivery Window:</span>
-                <strong style="color:var(--ink)" id="cfg-out-weeks">4 to 6 Weeks</strong>
+                <strong style="color:var(--ink)" id="cfg-out-weeks">1 to 2 Weeks</strong>
               </div>
               <p style="font-size:12.5px;color:var(--muted);margin:0 0 18px">
                 Final pricing is confirmed after a 30-minute call with Hussein Bdeir to review your chart of accounts, entities, and workflows.
@@ -813,7 +813,7 @@ BODY = f"""
                 <label for="lead-industry">Industry Vertical</label>
                 <select id="lead-industry">
                   <option value="Hospitality & Resorts">Hospitality, Resorts &amp; Beach Clubs</option>
-                  <option value="Automotive & Heavy Equipment Trading">Automotive &amp; Heavy Truck Trading</option>
+                  <option value="Automotive & Heavy Equipment Trading">Automotive &amp; Heavy Equipment Trading</option>
                   <option value="Concrete, Construction & Manufacturing">Concrete, Construction &amp; Manufacturing</option>
                   <option value="Real Estate & Property Portfolio">Real Estate &amp; Property Management</option>
                   <option value="Insurance Brokerage">Insurance Brokerage &amp; Underwriting</option>
@@ -925,7 +925,7 @@ BODY = f"""
         <h4>Industry Verticals</h4>
         <ul>
           <li><a href="#industries" data-goto-ind="hospitality">Hospitality, Resorts &amp; Beach Clubs</a></li>
-          <li><a href="#industries" data-goto-ind="trading">Automotive &amp; Heavy Truck Trading</a></li>
+          <li><a href="#industries" data-goto-ind="trading">Automotive &amp; Heavy Equipment Trading</a></li>
           <li><a href="#industries" data-goto-ind="manufacturing">Ready-Mix Concrete &amp; Manufacturing</a></li>
           <li><a href="#industries" data-goto-ind="realestate">Real Estate &amp; Property Portfolios</a></li>
           <li><a href="#industries" data-goto-ind="insurance">Insurance Brokerage Operations</a></li>
