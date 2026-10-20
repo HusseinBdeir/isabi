@@ -4836,6 +4836,903 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
   .metric-cell .m-val {
     font-size: 19px;
   }
+  .ind-detail-acts {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
+.ind-detail-acts {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.cfg-card-hdr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 10px;
+}
+
+.cfg-card-hdr h3 {
+  font-size: 18.5px;
+  margin: 0;
+}
+
+.cfg-card-hdr p {
+  font-size: 12.6px;
+  color: var(--muted);
+  margin: 0;
+  max-width: 48ch;
+}
+
+.portal-card-hdr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.portal-card-hdr h3 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.portal-card-hdr span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---------- Desktop Full-Screen Fit Rules (Every Page Fits 100% in 1 Viewport) ---------- */
+@media (min-width: 1081px) {
+  .hero-section {
+    padding: clamp(14px, 2.2vh, 26px) 0;
+  }
+  .hero-grid {
+    gap: 26px;
+  }
+  .hero-section .eyebrow {
+    padding: 4px 10px;
+    font-size: 10.8px;
+    margin-bottom: 10px;
+  }
+  .hero-title {
+    font-size: clamp(30px, 3.1vw, 42px);
+    line-height: 1.06;
+    margin-bottom: 10px;
+  }
+  .hero-lead {
+    font-size: 14.5px;
+    line-height: 1.45;
+    margin-bottom: 12px;
+  }
+  .hero-cta-row {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .hero-cta-row .btn {
+    padding: 8px 13px;
+    font-size: 13px;
+  }
+  .hero-launcher-wrap {
+    gap: 7px;
+  }
+  .hero-mode-grid {
+    gap: 8px;
+  }
+  .hero-mode-card {
+    padding: 9px 11px;
+    gap: 2px;
+  }
+  .hmc-icon {
+    width: 26px;
+    height: 26px;
+    font-size: 14px;
+  }
+  .hero-mode-card b {
+    font-size: 13px;
+  }
+  .hero-mode-card small {
+    font-size: 11.2px;
+    line-height: 1.25;
+  }
+  .hlc-top {
+    padding: 9px 14px;
+  }
+  .hlc-body {
+    padding: 10px 14px;
+  }
+  .hlc-screen-tabs {
+    padding: 4px;
+    margin-bottom: 8px;
+  }
+  .hlc-screen-tab {
+    padding: 5px 6px;
+    font-size: 11.2px;
+  }
+  .hlc-kpis {
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .hlc-kpi {
+    padding: 7px 11px;
+  }
+  .hlc-kpi strong {
+    font-size: 18.5px;
+  }
+  .hlc-stage {
+    gap: 7px;
+    margin-bottom: 8px;
+  }
+  .hlc-ind-pill {
+    padding: 3px 8px;
+    font-size: 10.8px;
+  }
+  .hlc-visual-list {
+    gap: 5px;
+  }
+  .hlc-vrow {
+    padding: 6px 10px;
+  }
+  .hlc-vrow-main b {
+    font-size: 12px;
+  }
+  .hlc-vrow-main small {
+    font-size: 10.4px;
+  }
+  .hlc-ai-strip {
+    padding: 6px 10px;
+  }
+
+  /* Compact Proof Metrics Band */
+  .metric-cell {
+    padding: 11px 15px;
+  }
+  .metric-cell .m-val {
+    font-size: 20px;
+  }
+  .metric-cell .m-lbl {
+    font-size: 12.8px;
+  }
+  .metric-cell .m-sub {
+    font-size: 11.4px;
+    margin-bottom: 3px;
+  }
+
+  /* Every Section (01-08) Fits Within One Screen Without Clipping Top or Bottom */
+  .sec {
+    min-height: calc(100vh - var(--hdr-h));
+    min-height: calc(100dvh - var(--hdr-h));
+    padding: 12px 0 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .sec > .wrap {
+    width: 100%;
+  }
+  .sec-head {
+    max-width: 100%;
+    margin-bottom: 9px;
+  }
+  .sec-head .eyebrow {
+    padding: 2.5px 8px;
+    font-size: 10px;
+    margin-bottom: 3px;
+  }
+  .sec-head h2 {
+    font-size: clamp(19px, 1.9vw, 24px);
+    line-height: 1.1;
+    margin-bottom: 2px;
+  }
+  .sec-head p {
+    font-size: 12.6px;
+    line-height: 1.32;
+  }
+  .sec-head-split {
+    flex-wrap: nowrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px 20px;
+  }
+  .sec-head-split > div:first-child {
+    flex: 1;
+    max-width: none;
+    min-width: 0;
+  }
+  .sec-tabs {
+    flex-shrink: 0;
+    padding: 3px;
+    gap: 3px;
+  }
+  .sec-tab {
+    padding: 5px 9px;
+    font-size: 11.5px;
+  }
+
+  /* Section 01: Architecture */
+  .app-cat-bar {
+    margin-bottom: 10px;
+    gap: 6px;
+  }
+  .app-cat-pill {
+    padding: 5px 12px;
+    font-size: 11.8px;
+  }
+  .app-suite-grid {
+    gap: 7px;
+    margin-bottom: 10px;
+  }
+  .app-tile {
+    padding: 8px 5px 7px;
+    gap: 4px;
+  }
+  .app-icon {
+    width: 34px;
+    height: 34px;
+    font-size: 17px;
+  }
+  .app-spotlight {
+    padding: 14px 18px;
+    gap: 16px;
+  }
+  .contrast-grid {
+    gap: 16px;
+    margin-bottom: 0;
+  }
+  .contrast-card {
+    padding: 16px 18px;
+  }
+  .contrast-card h3 {
+    font-size: 17px;
+    margin-bottom: 6px;
+  }
+  .contrast-card p {
+    font-size: 12.8px;
+    margin-bottom: 10px;
+  }
+  .cc-list {
+    padding-top: 8px;
+  }
+  .cc-list li {
+    font-size: 12.4px;
+    padding: 3.5px 0;
+  }
+
+  /* Section 02: Industries */
+  .ind-layout {
+    gap: 14px;
+  }
+  .ind-tabs {
+    padding: 5px;
+    gap: 2px;
+  }
+  .ind-tab {
+    padding: 4px 9px;
+    gap: 0;
+  }
+  .ind-tab b {
+    font-size: 12.2px;
+    line-height: 1.15;
+  }
+  .ind-tab small {
+    font-size: 10px;
+    line-height: 1.15;
+  }
+  .ind-detail {
+    padding: 11px 16px;
+  }
+  .ind-detail-top {
+    flex-wrap: nowrap;
+    align-items: center;
+    padding-bottom: 7px;
+    margin-bottom: 7px;
+    gap: 12px;
+  }
+  .ind-badge-pill {
+    padding: 2px 7px;
+    font-size: 9.8px;
+    margin-bottom: 2px;
+  }
+  .ind-detail h3 {
+    font-size: 18px;
+    margin-bottom: 2px;
+  }
+  .ind-detail-lead {
+    font-size: 12.2px;
+    line-height: 1.3;
+  }
+  .ind-detail-acts .btn {
+    padding: 6px 10px;
+    font-size: 11.6px;
+  }
+  .ind-subtabs {
+    margin-bottom: 7px;
+    padding: 2.5px;
+  }
+  .ind-subtab-btn {
+    padding: 4px 7px;
+    font-size: 11.4px;
+  }
+  .ind-cols {
+    gap: 10px;
+    margin-bottom: 7px;
+  }
+  .ind-box {
+    padding: 8px 10px;
+  }
+  .ind-box h4 {
+    font-size: 10.8px;
+    margin-bottom: 4px;
+    padding-bottom: 3px;
+  }
+  .ind-box li {
+    font-size: 11.4px;
+    padding: 2px 0;
+    line-height: 1.24;
+  }
+  .ind-flow-grid, .ind-ba-grid {
+    gap: 10px;
+    margin-bottom: 7px;
+  }
+  .ind-flow-step, .ind-ba-card {
+    padding: 9px 11px;
+  }
+  .ind-ba-card h4 {
+    font-size: 12.8px;
+    margin-bottom: 6px;
+    padding-bottom: 5px;
+  }
+  .ind-ba-card ul {
+    gap: 4px;
+  }
+  .ind-ba-card li {
+    font-size: 11.8px;
+    line-height: 1.3;
+  }
+  .ind-ledger-strip {
+    padding: 6px 0 2px;
+    gap: 8px 24px;
+  }
+  .ind-metrics-mini div small {
+    font-size: 9.5px;
+  }
+  .ind-metrics-mini div b {
+    font-size: 14px;
+  }
+  .ind-ledger-strip .btn-wa {
+    padding: 5px 11px;
+    font-size: 11.8px;
+  }
+
+  /* Section 03: Live Sandbox */
+  .sandbox-controls {
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .sbox-ind-bar {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+  .sbox-ind-btn {
+    padding: 4px 8px;
+    font-size: 11.4px;
+    white-space: nowrap;
+  }
+  .sbox-theme-btn {
+    padding: 3.5px 7px;
+    font-size: 11px;
+  }
+  .rail {
+    padding: 8px 0 6px;
+  }
+  .rail .brand {
+    padding: 0 10px 6px;
+  }
+  .rail nav {
+    padding: 4px 5px;
+  }
+  .rail nav button.nav-item {
+    padding: 3.5px 7px;
+    font-size: 11.2px;
+  }
+  .rail nav .grp {
+    padding: 5px 7px 2px;
+    font-size: 9px;
+  }
+  .rail .me {
+    padding: 5px 10px 0;
+    font-size: 10.6px;
+  }
+  .mock .top {
+    padding: 4.5px 12px;
+  }
+  .mock .crumb span {
+    font-size: 9.6px;
+  }
+  .mock .crumb b {
+    font-size: 13.5px;
+  }
+  .mock .pill-select {
+    padding: 2.5px 6px;
+    font-size: 11px;
+  }
+  .mock button.primary-mock {
+    padding: 3.5px 9px;
+    font-size: 11px;
+  }
+  .mock .kpi {
+    padding: 4.5px 9px;
+    gap: 0;
+  }
+  .mock .kpi .k {
+    font-size: 9.6px;
+  }
+  .mock .kpi .v {
+    font-size: 16.5px;
+  }
+  .mock .kpi .v small {
+    font-size: 10.5px;
+  }
+  .mock .kpi .d {
+    font-size: 9.8px;
+  }
+  .mock .row2, .mock .row3 {
+    gap: 6px;
+    padding: 5px 7px 0;
+  }
+  .mock .row3 {
+    grid-template-columns: 0.96fr 1.24fr;
+    padding-bottom: 5px;
+  }
+  .mock .ph {
+    padding: 4px 7px 2px;
+  }
+  .mock .ph h3 {
+    font-size: 11.2px;
+  }
+  .mock .legend {
+    font-size: 9.8px;
+  }
+  .chartwrap {
+    padding: 0 5px 2px;
+  }
+  table.m-grid th {
+    padding: 2.2px 5px;
+    font-size: 9px;
+  }
+  table.m-grid td {
+    padding: 2.2px 5px;
+    font-size: 10.2px;
+    line-height: 1.15;
+  }
+  .m-chip {
+    font-size: 9px;
+    padding: 1px 4px;
+  }
+  .att {
+    padding: 1px 0 2px;
+  }
+  .att li {
+    padding: 2.5px 7px 2.5px 9px;
+    margin: 0 0 1.5px;
+  }
+  .att li b {
+    font-size: 10.6px;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .att li span {
+    font-size: 9.8px;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .att li button.att-act {
+    padding: 1.5px 5px;
+    font-size: 9.6px;
+  }
+  .soa-viewer {
+    padding: 10px 14px;
+  }
+  .soa-hdr {
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+  }
+  .soa-meta-grid {
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .soa-meta-cell {
+    padding: 5px 9px;
+  }
+  .soa-meta-cell b {
+    font-size: 13.5px;
+  }
+  .pwa-sim-grid {
+    padding: 10px;
+    gap: 10px;
+  }
+  .pwa-sim-card {
+    padding: 10px;
+    gap: 6px;
+  }
+  .pos-item-btn {
+    padding: 5px 7px;
+    font-size: 11px;
+  }
+  .pos-receipt-box {
+    padding: 6px 9px;
+    font-size: 10.5px;
+    line-height: 1.3;
+  }
+
+  /* Section 04: Microsoft Stack & Ask ISABI */
+  .ms-ai-grid {
+    gap: 18px;
+  }
+  .ms-left-col {
+    gap: 8px;
+  }
+  .ms-pillar-tabs .sec-tab {
+    padding: 5px 6px;
+    font-size: 11.2px;
+  }
+  .stack-cards {
+    gap: 8px;
+  }
+  .stack-card {
+    padding: 10px 12px;
+  }
+  .stack-card-hdr {
+    margin-bottom: 3px;
+  }
+  .stack-card-hdr h4 {
+    font-size: 13.8px;
+  }
+  .stack-card p {
+    font-size: 11.8px;
+    line-height: 1.34;
+  }
+  .stack-tags {
+    margin-top: 5px;
+    gap: 4px;
+  }
+  .stack-tags span {
+    font-size: 10px;
+    padding: 1.5px 6px;
+  }
+  .ai-console-hdr {
+    padding: 8px 14px;
+  }
+  .ai-console-title b {
+    font-size: 14px;
+  }
+  .ai-console-title small {
+    font-size: 10.8px;
+  }
+  .ai-scope-bar {
+    padding: 5px 14px;
+    font-size: 11px;
+  }
+  .ai-prompt-pills {
+    padding: 7px 14px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+  }
+  .ai-pill-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ai-thread {
+    padding: 10px 14px;
+    max-height: 205px;
+    gap: 8px;
+  }
+  .ai-bot-bubble {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+  .ai-bot-table th, .ai-bot-table td {
+    padding: 3.5px 5px;
+    font-size: 11px;
+  }
+  .ai-console-ftr {
+    padding: 8px 14px;
+  }
+  .ai-console-ftr input {
+    padding: 7px 10px;
+    font-size: 13px;
+  }
+
+  /* Section 05: Ingenuity & ROI */
+  .comp-wrap {
+    margin-bottom: 0;
+  }
+  .comp-table th, .comp-table td {
+    padding: 8.5px 14px;
+    font-size: 12.6px;
+  }
+  .roi-box {
+    padding: 18px 22px;
+    gap: 22px;
+  }
+  .roi-sliders {
+    gap: 12px;
+  }
+  .roi-results {
+    padding: 16px;
+  }
+  .ingenuity-grid {
+    gap: 12px;
+    margin-bottom: 0;
+  }
+  .ing-card {
+    padding: 15px 18px;
+  }
+  .ing-card h3 {
+    font-size: 17px;
+    margin-bottom: 5px;
+  }
+  .ing-card p {
+    font-size: 12.8px;
+    line-height: 1.42;
+  }
+  .sprint-grid {
+    gap: 12px;
+  }
+  .sprint-card {
+    padding: 15px 16px;
+  }
+
+  /* Section 06: Pricing & Scope Builder */
+  .pricing-grid {
+    gap: 16px;
+    margin-bottom: 0;
+  }
+  .price-card {
+    padding: 13px 16px;
+  }
+  .price-badge {
+    padding: 2.5px 8px;
+    font-size: 9.8px;
+    margin-bottom: 4px;
+  }
+  .price-card h3 {
+    font-size: 17px;
+    margin-bottom: 2px;
+  }
+  .price-card .price-desc {
+    font-size: 11.8px;
+    line-height: 1.32;
+    margin: 0 0 6px;
+  }
+  .price-block {
+    padding: 6px 0;
+    margin-bottom: 6px;
+  }
+  .price-val {
+    font-size: 24px;
+  }
+  .price-val small {
+    font-size: 12px;
+  }
+  .price-retainer {
+    font-size: 11px;
+    margin-top: 1px;
+    line-height: 1.22;
+  }
+  .price-features {
+    margin: 0 0 8px;
+  }
+  .price-features li {
+    font-size: 11.6px;
+    line-height: 1.26;
+    padding: 3px 0;
+    gap: 6px;
+  }
+  .price-card .btn {
+    padding: 7px 12px;
+    font-size: 12.4px;
+  }
+  .configurator-card {
+    padding: 10px 14px;
+  }
+  .cfg-card-hdr {
+    margin-bottom: 4px;
+  }
+  .cfg-card-hdr .eyebrow {
+    padding: 2px 7px;
+    font-size: 9.5px;
+    margin-bottom: 1px;
+  }
+  .cfg-card-hdr h3 {
+    font-size: 15.5px;
+  }
+  .cfg-card-hdr p {
+    font-size: 11.4px;
+  }
+  .cfg-grid {
+    gap: 14px;
+    margin-top: 6px;
+  }
+  .cfg-group {
+    margin-bottom: 5px;
+  }
+  .cfg-group h4 {
+    font-size: 10.5px;
+    margin-bottom: 3px;
+  }
+  .cfg-pills {
+    gap: 3.5px;
+  }
+  .cfg-pill {
+    padding: 3px 7px;
+    font-size: 10.8px;
+  }
+  .cfg-checks {
+    gap: 4px;
+  }
+  .cfg-check {
+    padding: 3.5px 7px;
+    gap: 5px;
+  }
+  .cfg-check b {
+    font-size: 11.2px;
+    line-height: 1.12;
+  }
+  .cfg-check small {
+    font-size: 9.6px;
+    line-height: 1.12;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cfg-summary {
+    padding: 9px 12px;
+  }
+  .cfg-summary h4 {
+    font-size: 17px !important;
+    margin-bottom: 2px !important;
+  }
+  .cfg-summary p {
+    font-size: 11px !important;
+    margin: 0 0 6px !important;
+    line-height: 1.25;
+  }
+  .cfg-summary .btn {
+    padding: 6px 10px;
+    font-size: 11.8px;
+  }
+  .cfg-sum-table {
+    font-size: 11px;
+    margin: 4px 0 5px;
+  }
+  .cfg-sum-table td {
+    padding: 2px 0;
+  }
+  .cfg-sum-table tr.tot td {
+    font-size: 13.8px;
+    padding: 4px 0;
+  }
+
+  /* Section 07: FAQ */
+  .faq-grid {
+    gap: 8px 14px;
+  }
+  .faq-item summary {
+    padding: 10px 14px;
+    font-size: 13.5px;
+  }
+  .faq-a {
+    padding: 0 14px 10px 38px;
+  }
+  .faq-a p {
+    font-size: 12.6px;
+    line-height: 1.42;
+    padding-top: 7px;
+  }
+  .faq-foot {
+    margin-top: 12px;
+    padding-top: 10px;
+  }
+
+  /* Section 08: Portal */
+  .topic-chips-bar {
+    padding: 4px 8px;
+    margin-bottom: 7px;
+    gap: 4px;
+  }
+  .topic-chip {
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+  .portal-grid {
+    gap: 14px;
+  }
+  .portal-form-card {
+    padding: 8px 24px;
+  }
+  .portal-direct-card {
+    padding: 8px 16px;
+  }
+  .portal-direct-card ol {
+    font-size: 11px !important;
+    line-height: 1.24 !important;
+  }
+  .portal-card-hdr {
+    margin-bottom: 5px;
+    padding-bottom: 4px;
+  }
+  .portal-card-hdr h3 {
+    font-size: 15.5px;
+  }
+  .portal-card-hdr span {
+    font-size: 11px;
+  }
+  .form-row {
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .form-field {
+    gap: 2px;
+    margin-bottom: 4px;
+  }
+  .form-field label {
+    font-size: 10.8px;
+  }
+  .form-field input, .form-field select, .form-field textarea {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  .form-field textarea {
+    height: 40px;
+    min-height: 40px;
+  }
+  .portal-dispatch-btns {
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .portal-dispatch-btns .btn {
+    padding: 7px 10px !important;
+    font-size: 12.2px !important;
+  }
+  .direct-channel-box {
+    padding: 6px 10px;
+    margin-bottom: 5px;
+  }
+  .direct-channel-box small {
+    font-size: 9.8px;
+    margin-bottom: 1px;
+  }
+  .direct-channel-box strong {
+    font-size: 14.5px;
+    margin-bottom: 1px;
+  }
+  .direct-channel-box p {
+    font-size: 11px;
+    margin: 0 0 4px;
+    line-height: 1.24;
+  }
+  .direct-channel-box .btn {
+    padding: 5px 8px;
+    font-size: 11.5px;
+  }
 }
 
 @media print {

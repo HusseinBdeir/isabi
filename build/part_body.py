@@ -812,11 +812,15 @@ BODY = f"""
 
       <!-- Pricing Panel 2: Interactive Custom Scope & Investment Configurator -->
       <div class="configurator-card" id="scope-configurator" data-tier-card="builder" data-price-panel="builder" data-panel-hidden="1" data-mob-hide="1">
-        <div class="eyebrow">🛠️ Interactive Scope &amp; Investment Builder</div>
-        <h3 style="font-size:22px;margin-bottom:6px">Build Your Scope and See an Indicative Range Instantly</h3>
-        <p style="color:var(--muted);font-size:14px;margin:0">
-          Choose your industry, scale, and modules. The configuration is attached automatically to the WhatsApp and email inquiry below.
-        </p>
+        <div class="cfg-card-hdr">
+          <div>
+            <div class="eyebrow">🛠️ Interactive Scope &amp; Investment Builder</div>
+            <h3>Build Your Scope and See an Indicative Range Instantly</h3>
+          </div>
+          <p>
+            Choose your industry, scale, and modules. The configuration attaches automatically to your WhatsApp or email inquiry.
+          </p>
+        </div>
 
         <div class="cfg-grid">
           <div>
@@ -988,12 +992,12 @@ BODY = f"""
       <!-- Quick Project Topic Chips -->
       <div class="topic-chips-bar" role="group" aria-label="Quick Project Topics">
         <span class="topic-lbl">⚡ Quick Fill:</span>
-        <button type="button" class="topic-chip" data-topic-ind="Hospitality & Resorts" data-topic-note="We operate hospitality / F&B venues and want to unify daily outlet closes, POS tills, supplier invoices, and partner profit splits.">🏖️ Hospitality &amp; POS</button>
-        <button type="button" class="topic-chip" data-topic-ind="Automotive & Heavy Equipment Trading" data-topic-note="We trade vehicles, heavy equipment, or spare parts and need per-VIN landed cost, bonded stock, and aged receivable SOA control.">🚛 Auto &amp; VIN Trading</button>
-        <button type="button" class="topic-chip" data-topic-ind="Concrete, Construction & Manufacturing" data-topic-note="We run concrete batch plants, manufacturing, or transport fleets and need ticket-level m³ dispatch, silo stock, and contractor credit gates.">🏗️ Concrete &amp; Mfg</button>
-        <button type="button" class="topic-chip" data-topic-ind="Real Estate & Property Portfolio" data-topic-note="We manage a property portfolio and need unit registries, lease escalations, post-dated check tracking, and property NOI dashboards.">🏢 Real Estate</button>
-        <button type="button" class="topic-chip" data-topic-ind="Insurance Brokerage" data-topic-note="We operate an insurance brokerage and want automated carrier bordereaux, commission splits, 90/60/30-day renewals, and premium aging.">🛡️ Insurance</button>
-        <button type="button" class="topic-chip" data-topic-ind="Multi-Entity Holding Group" data-topic-note="We run a multi-company group and want consolidated Power BI reporting, Business Unit isolation, printable SOAs, and Ask ISABI AI.">🏛️ Holding Group</button>
+        <button type="button" class="topic-chip" data-topic-ind="Hospitality & Resorts" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We operate hospitality / F&B venues and want to unify daily outlet closes, POS tills, supplier invoices, and partner profit splits.">🏖️ Hospitality &amp; POS</button>
+        <button type="button" class="topic-chip" data-topic-ind="Automotive & Heavy Equipment Trading" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We trade vehicles, heavy equipment, or spare parts and need per-VIN landed cost, bonded stock, and aged receivable SOA control.">🚛 Auto &amp; VIN Trading</button>
+        <button type="button" class="topic-chip" data-topic-ind="Concrete, Construction & Manufacturing" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We run concrete batch plants, manufacturing, or transport fleets and need ticket-level m³ dispatch, silo stock, and contractor credit gates.">🏗️ Concrete &amp; Mfg</button>
+        <button type="button" class="topic-chip" data-topic-ind="Real Estate & Property Portfolio" data-topic-tier="Operational Foundation ($4,500+)" data-topic-note="We manage a property portfolio and need unit registries, lease escalations, post-dated check tracking, and property NOI dashboards.">🏢 Real Estate</button>
+        <button type="button" class="topic-chip" data-topic-ind="Insurance Brokerage" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We operate an insurance brokerage and want automated carrier bordereaux, commission splits, 90/60/30-day renewals, and premium aging.">🛡️ Insurance</button>
+        <button type="button" class="topic-chip" data-topic-ind="Multi-Entity Holding Group" data-topic-tier="Enterprise Group Ecosystem ($18,000+ Custom)" data-topic-note="We run a multi-company group and want consolidated Power BI reporting, Business Unit isolation, printable SOAs, and Ask ISABI AI.">🏛️ Holding Group</button>
       </div>
 
       <!-- Mobile Switcher for Consultation Portal -->
@@ -1004,17 +1008,9 @@ BODY = f"""
 
       <div class="portal-grid">
         <div class="portal-form-card" data-portal-panel="form">
-          <h3 style="font-size:21px;margin-bottom:6px">📋 Project Brief</h3>
-          <p style="font-size:13.8px;color:var(--muted);margin:0 0 12px">
-            Pick a quick-fill template below or enter your details directly (your scope configurator selections attach automatically).
-          </p>
-
-          <div class="topic-chips-bar" aria-label="Quick-Fill Project Templates">
-            <button type="button" class="topic-chip" data-topic-ind="Hospitality &amp; Resorts" data-topic-tier="Multi-Entity &amp; AI Operations Suite ($9,500+)" data-topic-note="We operate hospitality / F&amp;B venues and need unified POS till closes, recipe &amp; supplier cost control, and automated partner profit splits.">🏨 Resort &amp; F&amp;B</button>
-            <button type="button" class="topic-chip" data-topic-ind="Automotive &amp; Heavy Equipment Trading" data-topic-tier="Multi-Entity &amp; AI Operations Suite ($9,500+)" data-topic-note="We import and trade vehicles / equipment and need VIN landed-cost tracking, customs clearing, and installment receivables aging.">🚛 Auto &amp; Equipment</button>
-            <button type="button" class="topic-chip" data-topic-ind="Concrete, Construction &amp; Manufacturing" data-topic-tier="Multi-Entity &amp; AI Operations Suite ($9,500+)" data-topic-note="We run batching / manufacturing plants and need weighbridge ticket billing, silo stock control, and fleet fuel vs. trip profitability.">🏗️ Plant &amp; Construction</button>
-            <button type="button" class="topic-chip" data-topic-ind="Real Estate &amp; Property Portfolio" data-topic-tier="Operational Foundation ($4,500+)" data-topic-note="We manage a property portfolio and need automated lease billing, tenant Statements of Account, and maintenance cost tracking.">🏢 Real Estate</button>
-            <button type="button" class="topic-chip" data-topic-ind="Multi-Entity Holding Group" data-topic-tier="Enterprise Group Ecosystem ($18,000+ Custom)" data-topic-note="We operate a multi-company group and want consolidated Power BI dashboards, intercompany elimination, and statutory ledger alignment.">🏛️ Holding Group</button>
+          <div class="portal-card-hdr">
+            <h3>📋 Project Brief</h3>
+            <span>Your scope configurator selections attach automatically</span>
           </div>
 
           <form id="lead-portal-form" novalidate>
@@ -1066,23 +1062,23 @@ BODY = f"""
 
             <div class="form-field">
               <label for="lead-notes">Operational Goals &amp; Current Challenges</label>
-              <textarea id="lead-notes" rows="3" placeholder="Tell us briefly about your entities, current accounting or Excel setup, and what you want the system to solve..."></textarea>
+              <textarea id="lead-notes" rows="2" placeholder="Tell us briefly about your entities, current accounting or Excel setup, and what you want the system to solve..."></textarea>
             </div>
 
             <div class="portal-dispatch-btns">
-              <button type="button" class="btn btn-wa" id="portal-send-wa" style="padding:13px 16px;font-size:14.5px">
+              <button type="button" class="btn btn-wa" id="portal-send-wa" style="padding:9px 14px;font-size:13.2px">
                 💬 Send Inquiry on WhatsApp
               </button>
-              <button type="button" class="btn btn-brass" id="portal-send-email" style="padding:13px 16px;font-size:14.5px">
+              <button type="button" class="btn btn-brass" id="portal-send-email" style="padding:9px 14px;font-size:13.2px">
                 ✉️ Send Inquiry via Email
               </button>
             </div>
 
-            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
-              <button type="button" class="btn btn-outline" id="portal-copy-brief" style="flex:1;font-size:12.5px;padding:8px 10px">
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+              <button type="button" class="btn btn-outline" id="portal-copy-brief" style="flex:1;font-size:12px;padding:6px 10px">
                 📋 Copy Formatted Brief
               </button>
-              <button type="button" class="btn btn-outline" id="portal-print-brief" style="flex:1;font-size:12.5px;padding:8px 10px">
+              <button type="button" class="btn btn-outline" id="portal-print-brief" style="flex:1;font-size:12px;padding:6px 10px">
                 🖨️ Print / Save PDF Brief
               </button>
             </div>
@@ -1091,12 +1087,12 @@ BODY = f"""
 
         <div class="portal-direct-card" data-portal-panel="direct" data-mob-hide="1">
           <div>
-            <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
               {BADGE_SVG}
               <div>
-                <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:#D9A54A;font-weight:700">👨‍💼 Direct Principal Access</div>
-                <h3 style="color:#F4F2EE;font-size:21px">Hussein Bdeir</h3>
-                <div style="font-size:12.5px;color:#9FB0C7">Founder &amp; Principal Systems Architect · ISABI Systems</div>
+                <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.12em;color:#D9A54A;font-weight:700">👨‍💼 Direct Principal Access</div>
+                <h3 style="color:#F4F2EE;font-size:18.5px">Hussein Bdeir</h3>
+                <div style="font-size:11.8px;color:#9FB0C7">Founder &amp; Principal Systems Architect · ISABI Systems</div>
               </div>
             </div>
 
@@ -1118,9 +1114,9 @@ BODY = f"""
             </div>
           </div>
 
-          <div style="border-top:1px solid rgba(255,255,255,0.12);border-bottom:3px double #D9A54A;padding:14px 0">
-            <div style="font-size:11.5px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:5px">🚀 What Happens After You Reach Out</div>
-            <ol style="margin:0;padding-left:18px;font-size:12.8px;color:#E9ECF2;line-height:1.5">
+          <div style="border-top:1px solid rgba(255,255,255,0.12);border-bottom:3px double #D9A54A;padding:9px 0">
+            <div style="font-size:10.8px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:3px">🚀 What Happens After You Reach Out</div>
+            <ol style="margin:0;padding-left:16px;font-size:11.8px;color:#E9ECF2;line-height:1.38">
               <li><b>30-Minute Discovery Call:</b> We review your entities, your current spreadsheets or software, and where reporting hurts.</li>
               <li><b>Live Production Walkthrough:</b> See real ISABI systems running across hospitality, trading, manufacturing, real estate, and insurance.</li>
               <li><b>Fixed-Scope Blueprint &amp; Timeline:</b> You receive a clear proposal listing the exact tables, reports, timeline, and investment.</li>

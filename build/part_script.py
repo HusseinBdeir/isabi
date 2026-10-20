@@ -1420,13 +1420,14 @@ JS = r"""
       activateMobilePricingTab('builder');
     }
 
-    const targetEl = document.getElementById(cleanId);
+    const effectiveScrollId = (cleanId === 'scope-configurator' && window.innerWidth > 720) ? 'pricing' : cleanId;
+    const targetEl = document.getElementById(effectiveScrollId);
     if (!targetEl) return;
 
     const mappedSec = cleanId === 'scope-configurator' ? 'pricing' : (SEC_IDS.includes(cleanId) ? cleanId : state.activeSec);
     setActiveSection(mappedSec);
 
-    scrollTargetId = cleanId;
+    scrollTargetId = effectiveScrollId;
     navScrollLockUntil = Date.now() + 950;
     const exactY = computeExactTargetScrollY(targetEl);
     if (instant) {
@@ -1441,8 +1442,8 @@ JS = r"""
 
     clearTimeout(scrollToTargetId._verifyTimer);
     scrollToTargetId._verifyTimer = setTimeout(() => {
-      if (scrollTargetId === cleanId) {
-        const currentTarget = document.getElementById(cleanId);
+      if (scrollTargetId === effectiveScrollId) {
+        const currentTarget = document.getElementById(effectiveScrollId);
         if (currentTarget) {
           const desiredY = computeExactTargetScrollY(currentTarget);
           if (Math.abs(window.scrollY - desiredY) > 2 && Math.abs(window.scrollY - desiredY) < 120) {
@@ -1565,7 +1566,7 @@ JS = r"""
           <h3>${cur.name}</h3>
           <p class="ind-detail-lead">${cur.lead}</p>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;width:100%">
+        <div class="ind-detail-acts">
           <button type="button" class="btn btn-outline" data-load-sandbox="${cur.sandboxKey}">🎮 Preview in Live ERP Sandbox</button>
           <button type="button" class="btn btn-brass" data-configure-ind="${cur.cfgName}">🛠️ Price This Industry System</button>
         </div>
@@ -1605,7 +1606,7 @@ JS = r"""
   const SBOX_LABELS = { holding: 'Group Holding', hospitality: 'Hospitality & Resorts', trading: 'Auto & Equipment Trading', manufacturing: 'Concrete & Manufacturing', realestate: 'Real Estate', insurance: 'Insurance Brokerage' };
 
   function buildSandboxChart(d, mult, sym) {
-    const W = 660, H = 244, ml = 44, mr = 10, mt = 16, mb = 28;
+    const W = 660, H = 118, ml = 40, mr = 10, mt = 12, mb = 18;
     const pw = W - ml - mr, ph = H - mt - mb;
     const totals = MONTHS.map((_, i) => (d.seriesVals[0][i] + d.seriesVals[1][i] + d.seriesVals[2][i]) * mult);
     const rawMax = Math.max(...totals, 100);
@@ -3853,8 +3854,11 @@ JS = r"""
         document.querySelectorAll('[data-topic-ind]').forEach(b => b.classList.toggle('active', b === topicChip));
         const indVal = topicChip.dataset.topicInd;
         const noteVal = topicChip.dataset.topicNote;
+        const tierVal = topicChip.dataset.topicTier;
         const indSel = document.getElementById('lead-industry');
         if (indSel) indSel.value = indVal;
+        const tierSel = document.getElementById('lead-budget');
+        if (tierSel && tierVal) tierSel.value = tierVal;
         const notesEl = document.getElementById('lead-notes');
         if (notesEl) notesEl.value = noteVal;
         showToast('⚡ Pre-filled project brief for ' + indVal);

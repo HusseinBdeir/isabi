@@ -122,6 +122,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       });
     });
+    var secHeights = {};
+    ['.hero-section', '#architecture', '#industries', '#sandbox', '#microsoft-ai', '#ingenuity', '#pricing', '#faq', '#portal'].forEach(function(sel) {
+      var el = document.querySelector(sel);
+      if (el) secHeights[sel] = Math.round(el.getBoundingClientRect().height);
+    });
     var out = {
       vw: effW,
       vh: window.innerHeight,
@@ -146,6 +151,7 @@ document.addEventListener('DOMContentLoaded', function() {
       heroCardH: Math.round(heroCard.height),
       indTabsH: Math.round(indTabs.height),
       indDetailH: Math.round(indDetail.height),
+      secHeights: secHeights,
       kpi1W: Math.round(kpi1.width),
       kpi2W: Math.round(kpi2.width),
       kpi1StrongTop: Math.round(kpi1Strong.top),
@@ -378,6 +384,9 @@ document.addEventListener('DOMContentLoaded', function() {
         assert d_desk['cardOverflows'] == [], f"Desktop card overflows detected: {d_desk['cardOverflows']}"
         assert d_desk['hlcSvgCount'] == 1, f"Expected 1 SVG in .hlc-brand (no nested SVG), got {d_desk['hlcSvgCount']}"
         assert d_desk['heroSecH'] >= d_desk['vh'] - d_desk['hdrBottom'], f"Hero section too short ({d_desk['heroSecH']} < {d_desk['vh'] - d_desk['hdrBottom']}): second section bleeds into first viewport!"
+        avail_desk_h = d_desk['vh'] - d_desk['hdrBottom']
+        for sec_sel, sec_h in d_desk['secHeights'].items():
+            assert abs(sec_h - avail_desk_h) <= 2, f"Desktop section {sec_sel} height ({sec_h}px) does not fit viewport availH ({avail_desk_h}px)!"
         assert abs(d_desk['heroLeftH'] - d_desk['heroCardH']) <= 2, f"Desktop hero column heights mismatch: {d_desk['heroLeftH']} vs {d_desk['heroCardH']}"
         assert abs(d_desk['indTabsH'] - d_desk['indDetailH']) <= 2, f"Desktop industry tabs/detail heights mismatch: {d_desk['indTabsH']} vs {d_desk['indDetailH']}"
 
