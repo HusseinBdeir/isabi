@@ -1099,16 +1099,18 @@ button {
 }
 
 .ind-ledger-strip {
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 14px 18px;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  gap: 18px;
+  padding: 16px 0 14px;
+  border-top: 1px solid var(--line);
   border-bottom: 3px double var(--brass);
+}
+
+.ind-ledger-strip .btn-wa {
+  white-space: nowrap;
+  justify-self: end;
 }
 
 .ind-metrics-mini {
@@ -3045,8 +3047,9 @@ table.m-grid tr.total td {
     padding: 13px;
   }
   .ind-ledger-strip {
-    padding: 12px;
-    gap: 10px;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px 0 10px;
+    gap: 12px;
   }
   .ind-metrics-mini {
     gap: 14px;
@@ -3058,6 +3061,7 @@ table.m-grid tr.total td {
   }
   .ind-ledger-strip .btn-wa {
     width: 100%;
+    justify-self: stretch;
   }
 
   /* Section 3: 100% Phone-Native Live ERP Sandbox (Zero Hidden Parts!) */
