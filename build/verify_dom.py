@@ -294,6 +294,30 @@ document.addEventListener('DOMContentLoaded', function() {
     if (topicChip) topicChip.click();
     var leadIndVal = document.getElementById('lead-industry').value;
 
+    // Hero Interactive Command Center checks
+    var heroEurBtn = document.querySelector('[data-hero-curr="EUR"]');
+    if (heroEurBtn) heroEurBtn.click();
+    var heroHospBtn = document.querySelector('[data-hero-ind="hospitality"]');
+    if (heroHospBtn) heroHospBtn.click();
+    var heroHospEurVal = document.getElementById('hlc-kpi1-val').textContent;
+
+    var heroPosBtn = document.querySelector('[data-hero-screen="pos"]');
+    if (heroPosBtn) heroPosBtn.click();
+    var hasHeroPos = !!document.querySelector('#hlc-stage .hlc-pos-box');
+
+    var heroAppsBtn = document.querySelector('[data-hero-screen="apps"]');
+    if (heroAppsBtn) heroAppsBtn.click();
+    var hasHeroApps = !!document.querySelector('#hlc-stage .hlc-apps-mini');
+
+    var heroAiBtn = document.querySelector('[data-hero-screen="ai"]');
+    if (heroAiBtn) heroAiBtn.click();
+    var hasHeroAi = !!document.querySelector('#hlc-stage .hlc-ai-box');
+
+    var heroDashBtn = document.querySelector('[data-hero-screen="dashboard"]');
+    if (heroDashBtn) heroDashBtn.click();
+    var heroUsdBtn = document.querySelector('[data-hero-curr="USD"]');
+    if (heroUsdBtn) heroUsdBtn.click();
+
     out.v4Test = {
       spotTitle: spotTitle,
       flowCardCount: flowCardCount,
@@ -302,7 +326,11 @@ document.addEventListener('DOMContentLoaded', function() {
       hasPwaSim: hasPwaSim,
       roadActive: roadActive,
       visibleFaqs: visibleFaqs,
-      leadIndVal: leadIndVal
+      leadIndVal: leadIndVal,
+      heroHospEurVal: heroHospEurVal,
+      hasHeroPos: hasHeroPos,
+      hasHeroApps: hasHeroApps,
+      hasHeroAi: hasHeroAi
     };
     pre.textContent = JSON.stringify(out);
   } catch (err) {
@@ -387,9 +415,15 @@ document.addEventListener('DOMContentLoaded', function() {
         assert v4['roadActive'] is True, "14-Day Go-Live Sprint tab did not activate #ing-pane-roadmap"
         assert v4['visibleFaqs'] == 4, f"Expected 4 visible FAQs under 'ai' category filter, got {v4['visibleFaqs']}"
         assert v4['leadIndVal'] == 'Automotive & Heavy Equipment Trading', f"Topic chip did not select trading industry: {v4['leadIndVal']}"
+        assert '€' in v4['heroHospEurVal'], f"Expected EUR symbol in Hero KPI1 after EUR + Hospitality click, got {v4['heroHospEurVal']}"
+        assert v4['hasHeroPos'] is True, "Hero POS mode did not render .hlc-pos-box"
+        assert v4['hasHeroApps'] is True, "Hero Apps mode did not render .hlc-apps-mini"
+        assert v4['hasHeroAi'] is True, "Hero AI mode did not render .hlc-ai-box"
 
-        # 3. Capture fresh screenshot of #portal at 1366x768
+        # 3. Capture fresh screenshots of Hero & #portal at 1366x768
         os.makedirs(ART_DIR, exist_ok=True)
+        shot_desk_hero = os.path.join(ART_DIR, 'isabi_desk_hero_v41.png')
+        subprocess.run([EDGE, '--headless=new', '--disable-gpu', f'--user-data-dir={ud}', '--window-size=1366,768', f'--screenshot={shot_desk_hero}', URL], timeout=25)
         shot_desk_portal = os.path.join(ART_DIR, 'isabi_desk_portal_fixed.png')
         shot_html = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '_shot_portal.html')
         shot_script = """

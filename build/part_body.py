@@ -53,94 +53,157 @@ BODY = f"""
   <section class="hero-section">
     <div class="wrap hero-grid">
       <div>
-        <div class="eyebrow">✨ ISABI Systems · Custom Enterprise Systems with Native AI</div>
+        <div class="eyebrow">✨ ISABI Systems · Interactive Enterprise Cloud &amp; Native AI</div>
         <h1 class="hero-title">The Books Close on <span class="brass-text">ISABI</span>.</h1>
         <p class="hero-lead">
-          Off-the-shelf software makes your business fit its template. ISABI Systems builds the ERP, the ledger, the Power BI reporting, and the Ask ISABI assistant around the way your company actually runs, on the Microsoft Cloud and inside your own tenant.
+          Custom Microsoft Cloud ERP apps, real-time Power BI dashboards, offline field PWAs, and a cited AI assistant: engineered around how your business actually runs in 1 to 2 weeks.
         </p>
         <div class="hero-cta-row">
-          <a href="#sandbox" class="btn btn-brass">🎮 Explore Live ERP Sandbox</a>
-          <a href="#scope-configurator" class="btn btn-outline">🛠️ Configure Scope &amp; Pricing</a>
+          <a href="#sandbox" class="btn btn-brass">🎮 Launch Live Sandbox</a>
+          <a href="#scope-configurator" class="btn btn-outline">🛠️ Build &amp; Price Scope</a>
           <a href="https://wa.me/96170444955?text=Hello%20Hussein%2C%20I%20visited%20the%20ISABI%20Systems%20portal%20and%20would%20like%20to%20discuss%20building%20a%20custom%20system%20for%20our%20business." target="_blank" rel="noopener" class="btn btn-wa">💬 WhatsApp Direct</a>
         </div>
-        <div class="hero-trust-strip">
-          <div class="trust-item">
-            <small class="trust-kicker">🧩 01 · Bespoke Schema</small>
-            <b>Built Around Your Operations</b>
-            <span>Your tables, approvals, chart of accounts, and multi-currency rules.</span>
+
+        <div class="hero-launcher-wrap">
+          <div class="hero-launcher-hdr">
+            <span>⚡ Click any surface below to test it live on the right</span>
+            <small>4 Interactive Modes</small>
           </div>
-          <div class="trust-item">
-            <small class="trust-kicker">☁️ 02 · Your M365 Tenant</small>
-            <b>Microsoft Cloud Foundation</b>
-            <span>Dataverse, Power Apps, Power Automate, Power BI, and Entra ID security.</span>
-          </div>
-          <div class="trust-item">
-            <small class="trust-kicker">🤖 03 · Cited AI Ledger</small>
-            <b>Native AI Intelligence</b>
-            <span>Ask ISABI answers from your live ledger, stock, and receivables, and cites the entries it used.</span>
+          <div class="hero-mode-grid" role="tablist" aria-label="Interactive Hero Preview Modes">
+            <button type="button" class="hero-mode-card active" role="tab" aria-selected="true" data-hero-screen="dashboard">
+              <div class="hmc-top">
+                <span class="hmc-icon tone-brass">📊</span>
+                <span class="hmc-tag">5 Industries</span>
+              </div>
+              <b>Live Executive Command</b>
+              <small>Click verticals, switch currencies &amp; inspect margins</small>
+            </button>
+
+            <button type="button" class="hero-mode-card" role="tab" aria-selected="false" data-hero-screen="pos">
+              <div class="hmc-top">
+                <span class="hmc-icon tone-green">🖨️</span>
+                <span class="hmc-tag">Tap to Ring</span>
+              </div>
+              <b>Offline POS &amp; Gate Kiosk</b>
+              <small>Ring up till items &amp; test a 1-sec biometric punch</small>
+            </button>
+
+            <button type="button" class="hero-mode-card" role="tab" aria-selected="false" data-hero-screen="apps">
+              <div class="hmc-top">
+                <span class="hmc-icon tone-blue">🧩</span>
+                <span class="hmc-tag">18 Modules</span>
+              </div>
+              <b>Modular App Ecosystem</b>
+              <small>Explore custom Dataverse tables, SOA &amp; workflows</small>
+            </button>
+
+            <button type="button" class="hero-mode-card" role="tab" aria-selected="false" data-hero-screen="ai">
+              <div class="hmc-top">
+                <span class="hmc-icon tone-purple">🤖</span>
+                <span class="hmc-tag">Cited AI</span>
+              </div>
+              <b>Ask ISABI Live Assistant</b>
+              <small>Run instant audits on receivables, stock &amp; P&amp;L</small>
+            </button>
           </div>
         </div>
       </div>
 
-      <div class="hero-ledger-card" aria-label="Executive Ledger Preview">
+      <div class="hero-ledger-card" aria-label="Interactive Command Center Preview">
         <div class="hlc-top">
           <div class="hlc-brand">
+            <span class="hlc-win-dots" aria-hidden="true"><i></i><i></i><i></i></span>
             {MARK_ON_DARK_SVG}
-            <span>Executive Ledger · Group Live View</span>
+            <span id="hlc-window-title">ISABI Live Command Center</span>
           </div>
-          <span class="hlc-status"><i></i>All Books Balanced</span>
+          <div class="hlc-top-right">
+            <div class="hlc-curr-pills" role="group" aria-label="Hero Currency Switcher">
+              <button type="button" class="hlc-curr-btn active" data-hero-curr="USD">USD</button>
+              <button type="button" class="hlc-curr-btn" data-hero-curr="EUR">EUR</button>
+              <button type="button" class="hlc-curr-btn" data-hero-curr="AED">AED</button>
+            </div>
+            <span class="hlc-status"><i></i>Interactive</span>
+          </div>
         </div>
+
         <div class="hlc-body">
+          <div class="hlc-screen-tabs" role="tablist" aria-label="Hero Screen Switcher">
+            <button type="button" class="hlc-screen-tab active" data-hero-screen="dashboard">📊 Dashboard</button>
+            <button type="button" class="hlc-screen-tab" data-hero-screen="pos">🖨️ POS &amp; Kiosk</button>
+            <button type="button" class="hlc-screen-tab" data-hero-screen="apps">🧩 18 Apps</button>
+            <button type="button" class="hlc-screen-tab" data-hero-screen="ai">🤖 Ask AI</button>
+          </div>
+
           <div class="hlc-kpis">
             <div class="hlc-kpi">
-              <small>📈 Consolidated Revenue (MTD)</small>
-              <strong class="num">$1,482,600</strong>
-              <span>+11.4% vs prior period</span>
+              <small id="hlc-kpi1-lbl">📈 Consolidated Revenue (MTD)</small>
+              <strong class="num" id="hlc-kpi1-val">$1,482,600</strong>
+              <span id="hlc-kpi1-sub">▲ +11.4% vs prior period · 6 Entities</span>
             </div>
             <div class="hlc-kpi">
-              <small>⚖️ Books Reconciled</small>
-              <strong class="num">100.0%</strong>
-              <span>0 unallocated variances</span>
+              <small id="hlc-kpi2-lbl">⚖️ Books Reconciled</small>
+              <strong class="num" id="hlc-kpi2-val">100.0%</strong>
+              <span id="hlc-kpi2-sub">✓ $0.00 statutory variance</span>
             </div>
           </div>
-          <table class="hlc-table" aria-label="Live Industry Ledger Sample">
-            <thead>
-              <tr>
-                <th>Operating Vertical</th>
-                <th>Core Unit Tracked</th>
-                <th class="r">Net Position</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><b>🏖️ Hospitality &amp; Resorts</b></td>
-                <td>Outlets, Cabanas, POS &amp; Splits</td>
-                <td class="r num">$418,200</td>
-              </tr>
-              <tr>
-                <td><b>🚛 Auto &amp; Heavy Equipment</b></td>
-                <td>VIN Stock, Customs &amp; Parts</td>
-                <td class="r num">$524,900</td>
-              </tr>
-              <tr>
-                <td><b>🏗️ Concrete &amp; Manufacturing</b></td>
-                <td>Batch Plant m³, Fleet &amp; Silos</td>
-                <td class="r num">$361,400</td>
-              </tr>
-              <tr>
-                <td><b>🏢 Real Estate &amp; Insurance</b></td>
-                <td>Leases, Policies &amp; Commissions</td>
-                <td class="r num">$178,100</td>
-              </tr>
-              <tr class="tot">
-                <td colspan="2">Total Audited Group Position</td>
-                <td class="r num">$1,482,600</td>
-              </tr>
-            </tbody>
-          </table>
+
+          <div class="hlc-stage" id="hlc-stage">
+            <!-- Dynamically rendered interactive screen (hydrated with initial dashboard HTML for instant paint & SEO) -->
+            <div class="hlc-ind-pills" role="tablist" aria-label="Filter Vertical">
+              <button type="button" class="hlc-ind-pill active" data-hero-ind="all">🏛️ All Group</button>
+              <button type="button" class="hlc-ind-pill" data-hero-ind="hospitality">🏖️ Resorts</button>
+              <button type="button" class="hlc-ind-pill" data-hero-ind="trading">🚛 Auto &amp; Heavy Equipment</button>
+              <button type="button" class="hlc-ind-pill" data-hero-ind="manufacturing">🏗️ Concrete</button>
+              <button type="button" class="hlc-ind-pill" data-hero-ind="realestate">🏢 Real Estate</button>
+            </div>
+            <div class="hlc-visual-list">
+              <div class="hlc-vrow" data-hero-ind="trading">
+                <div class="hlc-vrow-main">
+                  <b>🚛 Auto &amp; Heavy Equipment</b>
+                  <small>VIN Stock, Customs &amp; Parts</small>
+                </div>
+                <div class="hlc-vrow-bar"><i style="width:88%;background:#3B82F6"></i></div>
+                <span class="hlc-vrow-badge">24% GP</span>
+                <strong class="num">$524,900</strong>
+              </div>
+              <div class="hlc-vrow" data-hero-ind="hospitality">
+                <div class="hlc-vrow-main">
+                  <b>🏖️ Hospitality &amp; Resorts</b>
+                  <small>Outlets, Cabanas, POS &amp; Splits</small>
+                </div>
+                <div class="hlc-vrow-bar"><i style="width:74%;background:#D9A54A"></i></div>
+                <span class="hlc-vrow-badge">34% EBITDA</span>
+                <strong class="num">$418,200</strong>
+              </div>
+              <div class="hlc-vrow" data-hero-ind="manufacturing">
+                <div class="hlc-vrow-main">
+                  <b>🏗️ Concrete &amp; Manufacturing</b>
+                  <small>Batch Plant m³, Fleet &amp; Silos</small>
+                </div>
+                <div class="hlc-vrow-bar"><i style="width:64%;background:#10B981"></i></div>
+                <span class="hlc-vrow-badge">29% GP</span>
+                <strong class="num">$361,400</strong>
+              </div>
+              <div class="hlc-vrow" data-hero-ind="realestate">
+                <div class="hlc-vrow-main">
+                  <b>🏢 Real Estate &amp; Insurance</b>
+                  <small>Leases, Policies &amp; Commissions</small>
+                </div>
+                <div class="hlc-vrow-bar"><i style="width:42%;background:#8B5CF6"></i></div>
+                <span class="hlc-vrow-badge">94% Occ.</span>
+                <strong class="num">$178,100</strong>
+              </div>
+            </div>
+          </div>
+
           <div class="hlc-ai-strip">
-            <div><b>🤖 Ask ISABI:</b> "Every entry, from the till at the gate to the group trial balance, lives in one governed ledger."</div>
-            <button type="button" class="btn btn-brass" style="padding:6px 12px;font-size:12.5px" data-open-ai="Explain how ISABI Systems customizes the ledger for my industry">Try It</button>
+            <div class="hlc-ai-chips">
+              <b>🤖 Try Live AI:</b>
+              <button type="button" class="hlc-prompt-chip" data-hero-ai-q="Audit overdue receivables across all Business Units">🔍 Overdue AR</button>
+              <button type="button" class="hlc-prompt-chip" data-hero-ai-q="Compare Hospitality vs. Auto &amp; Heavy Equipment margins">📊 Compare Margins</button>
+              <button type="button" class="hlc-prompt-chip" data-hero-ai-q="How does the 1 to 2 week go-live sprint work?">🗓️ 2-Week Plan</button>
+            </div>
+            <button type="button" class="btn btn-brass" style="padding:6px 11px;font-size:12px" data-open-ai="Explain how ISABI Systems customizes the ledger for my industry">Open AI</button>
           </div>
         </div>
       </div>
@@ -150,26 +213,42 @@ BODY = f"""
   <!-- PROOF METRICS BAND -->
   <section class="metrics-band" aria-label="Production Proof Metrics">
     <div class="wrap metrics-grid">
-      <div class="metric-cell">
-        <div class="m-val num">🚀 8<span> Live Apps</span></div>
+      <a href="#architecture" class="metric-cell">
+        <div class="m-top-row">
+          <div class="m-val num">🚀 8<span> Live Apps</span></div>
+          <span class="m-pill good">● In Production</span>
+        </div>
         <div class="m-lbl">Running in Production Today</div>
-        <div class="m-sub">Six industry ERP systems plus an offline POS till and a biometric attendance kiosk serving real operations right now.</div>
-      </div>
-      <div class="metric-cell">
-        <div class="m-val num">🧩 100<span>%</span></div>
+        <div class="m-sub">6 industry ERPs + Offline POS Till + Biometric Kiosk.</div>
+        <span class="m-jump">Explore 18-App Suite ▸</span>
+      </a>
+      <a href="#industries" class="metric-cell">
+        <div class="m-top-row">
+          <div class="m-val num">🧩 100<span>%</span></div>
+          <span class="m-pill blue">Zero Templates</span>
+        </div>
         <div class="m-lbl">Custom Data Model</div>
-        <div class="m-sub">Every table, form, role, and statement is engineered around your exact business rules, not a generic vendor template.</div>
-      </div>
-      <div class="metric-cell">
-        <div class="m-val num">⚡ 1 to 2<span> Weeks</span></div>
+        <div class="m-sub">Engineered around your exact operational units &amp; COA.</div>
+        <span class="m-jump">Inspect 8 Blueprints ▸</span>
+      </a>
+      <a href="#ingenuity" class="metric-cell">
+        <div class="m-top-row">
+          <div class="m-val num">⚡ 1 to 2<span> Weeks</span></div>
+          <span class="m-pill brass">14-Day Sprint</span>
+        </div>
         <div class="m-lbl">To Go-Live</div>
-        <div class="m-sub">Code-generated schemas and semantic models deliver in days what traditional ERP agencies take a year to configure.</div>
-      </div>
-      <div class="metric-cell">
-        <div class="m-val num">⚖️ 1<span> Ledger</span></div>
+        <div class="m-sub">Code-compiled schemas, Power BI &amp; statements in days.</div>
+        <span class="m-jump">See 14-Day Roadmap ▸</span>
+      </a>
+      <a href="#sandbox" class="metric-cell">
+        <div class="m-top-row">
+          <div class="m-val num">⚖️ 1<span> Ledger</span></div>
+          <span class="m-pill good">$0.00 Variance</span>
+        </div>
         <div class="m-lbl">For Operations and Finance</div>
-        <div class="m-sub">A parallel run with automated reconciliation proves the system matches your statutory books to the cent before cutover.</div>
-      </div>
+        <div class="m-sub">Parallel reconciliation proves 100% accuracy before cutover.</div>
+        <span class="m-jump">Test Live Sandbox ▸</span>
+      </a>
     </div>
   </section>
 
