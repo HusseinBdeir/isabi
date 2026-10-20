@@ -1,54 +1,7 @@
 # CSS styles for ISABI Systems PWA (Rev 10 "Ledger" Design System)
 
 CSS = r"""
-:root {
-  --bg: #0B1730;
-  --bg-alt: #0E1D3A;
-  --surface: #132342;
-  --surface-2: #182C52;
-  --surface-elev: #1C325C;
-  --ink: #F4F2EE;
-  --muted: #9FB0C7;
-  --muted-2: #768AA6;
-  --line: #24385E;
-  --line-strong: #324B7A;
-  --plate: #081124;
-  --brass: #D9A54A;
-  --brass-strong: #E5B764;
-  --brass-ink: #0B1730;
-  --brass-tint: rgba(217, 165, 74, 0.12);
-  --brass-border: rgba(217, 165, 74, 0.38);
-  --steel: #4F8FD6;
-  --steel-tint: rgba(79, 143, 214, 0.14);
-  --good: #3DB36A;
-  --good-bg: rgba(61, 179, 106, 0.14);
-  --warn: #F09045;
-  --warn-bg: rgba(240, 144, 69, 0.14);
-  --crit: #E25A61;
-  --crit-bg: rgba(226, 90, 97, 0.15);
-  --wa: #25D366;
-  --wa-ink: #071F10;
-  --shadow-sm: 0 4px 16px rgba(4, 10, 22, 0.28);
-  --shadow-md: 0 14px 38px rgba(4, 10, 22, 0.42);
-  --shadow-lg: 0 24px 64px rgba(3, 8, 18, 0.58);
-  --hdr-h: 64px;
-
-  /* Dashboard Sandbox Tokens (Dark default) */
-  --m-bg: #0E1A2E;
-  --m-surface: #152238;
-  --m-ink: #E9ECF2;
-  --m-muted: #9AA7BA;
-  --m-line: #24344F;
-  --m-rail: #081223;
-  --m-brass: #D9A54A;
-  --m-steel: #4F8FD6;
-  --s1: #4F8FD6;
-  --s2: #D9A54A;
-  --s3: #25A38D;
-  --m-chip: #1E2E48;
-  --m-grid: #22324D;
-}
-
+:root,
 :root[data-theme="light"] {
   --bg: #F4F2EE;
   --bg-alt: #EAE7E0;
@@ -74,10 +27,14 @@ CSS = r"""
   --warn-bg: #FCEBDD;
   --crit: #C8333B;
   --crit-bg: #F9E1E2;
+  --wa: #25D366;
+  --wa-ink: #071F10;
   --shadow-sm: 0 2px 10px rgba(15, 30, 56, 0.06);
   --shadow-md: 0 12px 32px rgba(15, 30, 56, 0.09);
   --shadow-lg: 0 20px 52px rgba(15, 30, 56, 0.14);
+  --hdr-h: 64px;
 
+  /* Dashboard Sandbox Tokens (Light default) */
   --m-bg: #EEEDE9;
   --m-surface: #FFFFFF;
   --m-ink: #0F1E38;
@@ -91,6 +48,50 @@ CSS = r"""
   --s3: #1E9E8A;
   --m-chip: #EEF0F3;
   --m-grid: #E6E8EC;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0B1730;
+  --bg-alt: #0E1D3A;
+  --surface: #132342;
+  --surface-2: #182C52;
+  --surface-elev: #1C325C;
+  --ink: #F4F2EE;
+  --muted: #9FB0C7;
+  --muted-2: #768AA6;
+  --line: #24385E;
+  --line-strong: #324B7A;
+  --plate: #081124;
+  --brass: #D9A54A;
+  --brass-strong: #E5B764;
+  --brass-ink: #0B1730;
+  --brass-tint: rgba(217, 165, 74, 0.12);
+  --brass-border: rgba(217, 165, 74, 0.38);
+  --steel: #4F8FD6;
+  --steel-tint: rgba(79, 143, 214, 0.14);
+  --good: #3DB36A;
+  --good-bg: rgba(61, 179, 106, 0.14);
+  --warn: #F09045;
+  --warn-bg: rgba(240, 144, 69, 0.14);
+  --crit: #E25A61;
+  --crit-bg: rgba(226, 90, 97, 0.15);
+  --shadow-sm: 0 4px 16px rgba(4, 10, 22, 0.28);
+  --shadow-md: 0 14px 38px rgba(4, 10, 22, 0.42);
+  --shadow-lg: 0 24px 64px rgba(3, 8, 18, 0.58);
+
+  --m-bg: #0E1A2E;
+  --m-surface: #152238;
+  --m-ink: #E9ECF2;
+  --m-muted: #9AA7BA;
+  --m-line: #24344F;
+  --m-rail: #081223;
+  --m-brass: #D9A54A;
+  --m-steel: #4F8FD6;
+  --s1: #4F8FD6;
+  --s2: #D9A54A;
+  --s3: #25A38D;
+  --m-chip: #1E2E48;
+  --m-grid: #22324D;
 }
 
 .sandbox-wrap[data-sbox-theme="light"] {

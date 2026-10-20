@@ -1,4 +1,4 @@
-const CACHE_NAME = 'isabi-systems-pwa-v3.5';
+const CACHE_NAME = 'isabi-systems-pwa-v3.7';
 const ASSETS = [
   './',
   './index.html',

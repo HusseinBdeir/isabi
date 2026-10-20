@@ -30,7 +30,7 @@ BODY = f"""
         <span>Ask ISABI</span>
       </button>
       <button type="button" class="btn btn-ghost hide-sm" id="install-pwa-btn" hidden>Install</button>
-      <button type="button" class="btn btn-ghost" id="theme-toggle-btn" aria-label="Switch Theme" title="Toggle Dark or Light Ledger Theme">Light</button>
+      <button type="button" class="btn btn-ghost" id="theme-toggle-btn" aria-label="Switch Theme" title="Toggle Dark or Light Ledger Theme">Dark</button>
       <a href="#portal" class="btn btn-brass hide-md">Book Consultation</a>
     </div>
   </div>
@@ -368,7 +368,7 @@ BODY = f"""
 
           <div class="ai-scope-bar">
             <span>Active Context: <b id="ai-inline-scope">Group Holding · USD · MTD</b></span>
-            <button type="button" class="ai-reset-btn" id="ai-inline-reset" title="Reset conversation">Reset</button>
+            <button type="button" class="ai-reset-btn" id="ai-inline-reset" data-ai-reset="1" title="Reset conversation">Reset</button>
           </div>
 
           <div class="ai-prompt-pills" id="ai-prompt-pills">
@@ -988,10 +988,7 @@ BODY = f"""
     </div>
     <div class="ai-scope-bar">
       <span>Active Context: <b id="ai-drawer-scope">Group Holding · USD · MTD</b></span>
-      <button type="button" class="ai-reset-btn" id="ai-drawer-reset" title="Reset conversation">Reset</button>
-    </div>
-    <div class="ai-prompt-pills" id="drawer-prompt-pills">
-      <!-- Populated by JS -->
+      <button type="button" class="ai-reset-btn" id="ai-drawer-reset" data-ai-reset="1" title="Reset conversation">Reset</button>
     </div>
     <div class="ai-drawer-body" id="ai-drawer-thread">
       <!-- Populated by JS -->

@@ -40,7 +40,7 @@ def run_dom_and_screenshots():
             ('Organization JSON-LD present', '"@type": "ProfessionalService"'),
             ('Open Graph image tag', 'property="og:image"'),
             ('Dynamic sandbox period label', '(MTD)</option>'),
-            ('Scroll reveal activated', '<html lang="en" data-theme="dark" class="js-io">'),
+            ('Scroll reveal activated', '<html lang="en" data-theme="light" class="js-io">'),
         ]
         failed = 0
         for name, needle in checks:
@@ -152,14 +152,24 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 
     // Interactive Ask ISABI functional checks (run after geometry measurement)
+    var initDrawerUsers = document.querySelectorAll('#ai-drawer-thread .ai-msg-user').length;
+    var initDrawerText = document.getElementById('ai-drawer-thread').textContent;
+
     var inlineInp = document.getElementById('ai-inline-input');
     var inlineForm = document.getElementById('ai-inline-form');
+
+    // 1. Test conversational greeting ("Hello")
+    inlineInp.value = 'Hello';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var helloText = document.getElementById('ai-inline-thread').textContent;
+
+    // 2. Test Industry Blueprint query
     inlineInp.value = 'Show the Concrete & Manufacturing blueprint';
     inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     var afterInlineCount = document.querySelectorAll('#ai-inline-thread .ai-msg-bot').length;
     var afterInlineText = document.getElementById('ai-inline-thread').textContent;
 
-    // Switch sandbox to Trading + EUR + QTD, then click Sandbox Ask ISABI button
+    // 3. Switch sandbox to Trading + EUR + QTD, then click Sandbox Ask ISABI button
     var trdBtn = document.querySelector('[data-sbox-ind="trading"]');
     if (trdBtn) trdBtn.click();
     var currSel = document.getElementById('sbox-curr-sel');
@@ -173,28 +183,37 @@ document.addEventListener('DOMContentLoaded', function() {
     if (sboxAiBtn) sboxAiBtn.click();
     var drawerTextAfterSbox = document.getElementById('ai-drawer-thread').textContent;
 
-    // Click a Sandbox watchdog alert button (View VINs on Trading)
+    // 4. Click a Sandbox watchdog alert button (View VINs on Trading)
     var alertBtn = document.querySelector('#sandbox-mock [data-sbox-act]');
     if (alertBtn) alertBtn.click();
     var drawerTextAfterAlert = document.getElementById('ai-drawer-thread').textContent;
 
-    // Click a follow-up chip
+    // 5. Click a follow-up chip
     var followChip = document.querySelector('#ai-drawer-thread .ai-followup-btn');
     if (followChip) followChip.click();
     var countBeforeReset = document.querySelectorAll('#ai-drawer-thread .ai-msg-bot').length;
 
-    // Click Reset
-    document.getElementById('ai-inline-reset').click();
-    var countAfterReset = document.querySelectorAll('#ai-inline-thread .ai-msg-bot').length;
+    // 6. Click Reset in drawer
+    document.getElementById('ai-drawer-reset').click();
+    var botAfterReset = document.querySelectorAll('#ai-drawer-thread .ai-msg-bot').length;
+    var userAfterReset = document.querySelectorAll('#ai-drawer-thread .ai-msg-user').length;
+    var inlineUserAfterReset = document.querySelectorAll('#ai-inline-thread .ai-msg-user').length;
+    var resetDrawerText = document.getElementById('ai-drawer-thread').textContent;
 
     out.aiTest = {
+      initDrawerUsers: initDrawerUsers,
+      hasInitWelcome: initDrawerText.indexOf('Welcome. I am ISABI') !== -1,
+      hasHelloReply: helloText.indexOf('Welcome · Native System Intelligence') !== -1 && helloText.indexOf('MULTI-ENTITY ENTERPRISE GROUP') === -1,
       afterInlineCount: afterInlineCount,
       hasMfgBlueprint: afterInlineText.indexOf('Industry Blueprint 03') !== -1,
       scopeBarTxt: scopeBarTxt,
       hasEurQtdBriefing: drawerTextAfterSbox.indexOf('Automotive & Heavy Truck Trading') !== -1 && drawerTextAfterSbox.indexOf('EUR') !== -1 && drawerTextAfterSbox.indexOf('QTD') !== -1,
       hasAlertDrilldown: drawerTextAfterAlert.indexOf('Dealership Fleet Receivables & SOA Dispatch') !== -1,
       countBeforeReset: countBeforeReset,
-      countAfterReset: countAfterReset
+      botAfterReset: botAfterReset,
+      userAfterReset: userAfterReset,
+      inlineUserAfterReset: inlineUserAfterReset,
+      hasResetWelcome: resetDrawerText.indexOf('Welcome. I am ISABI') !== -1
     };
     pre.textContent = JSON.stringify(out);
   } catch (err) {
@@ -255,13 +274,15 @@ document.addEventListener('DOMContentLoaded', function() {
         assert d_mob['cardOverflows'] == [], f"Mobile card overflows detected: {d_mob['cardOverflows']}"
 
         ai = d_desk['aiTest']
-        assert ai['afterInlineCount'] == 2, f"Expected 2 messages after inline submit, got {ai['afterInlineCount']}"
+        assert ai['initDrawerUsers'] == 0 and ai['hasInitWelcome'] is True, f"Drawer did not start with clean welcome state: {ai}"
+        assert ai['hasHelloReply'] is True, "Greeting 'Hello' did not return conversational reply without repeating initial table"
+        assert ai['afterInlineCount'] == 2, f"Expected 2 messages after Hello + blueprint submit, got {ai['afterInlineCount']}"
         assert ai['hasMfgBlueprint'] is True, "Inline submit did not render Concrete & Manufacturing blueprint"
         assert ai['scopeBarTxt'] == 'Auto & Truck Trading · EUR · QTD', f"Unexpected scopeBarTxt: {ai['scopeBarTxt']}"
         assert ai['hasEurQtdBriefing'] is True, "Sandbox Ask ISABI click did not render EUR QTD briefing"
         assert ai['hasAlertDrilldown'] is True, "Sandbox alert button click did not render alert drilldown"
         assert ai['countBeforeReset'] == 5, f"Expected 5 messages in thread before reset, got {ai['countBeforeReset']}"
-        assert ai['countAfterReset'] == 1, f"Expected 1 message after reset, got {ai['countAfterReset']}"
+        assert ai['botAfterReset'] == 1 and ai['userAfterReset'] == 0 and ai['inlineUserAfterReset'] == 0 and ai['hasResetWelcome'] is True, f"Reset did not restore clean welcome state: {ai}"
 
         # 3. Capture fresh screenshot of #portal at 1366x768
         os.makedirs(ART_DIR, exist_ok=True)

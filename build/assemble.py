@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_HTML = os.path.join(ROOT, 'index.html')
 
 HEAD = """<!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -20,7 +20,7 @@ HEAD = """<!DOCTYPE html>
   <meta name="description" content="ISABI Systems designs custom ERP applications, financial ledgers, Power BI reporting, offline field apps, and the Ask ISABI assistant on the Microsoft Cloud, built around the way your industry operates.">
   <meta name="author" content="Hussein Bdeir">
   <meta name="robots" content="index, follow, max-image-preview:large">
-  <meta name="color-scheme" content="dark light">
+  <meta name="color-scheme" content="light dark">
   <link rel="canonical" href="https://husseinbdeir.github.io/isabi/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="ISABI Systems">
@@ -36,7 +36,7 @@ HEAD = """<!DOCTYPE html>
   <meta name="twitter:title" content="ISABI Systems | Custom ERP, Power BI and Native AI on the Microsoft Cloud">
   <meta name="twitter:description" content="Custom ERP, financial ledgers, Power BI reporting, offline field apps, and the Ask ISABI assistant, built around your industry.">
   <meta name="twitter:image" content="https://husseinbdeir.github.io/isabi/og-image.png">
-  <meta name="theme-color" content="#0B1730">
+  <meta name="theme-color" content="#F4F2EE">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
@@ -51,8 +51,10 @@ HEAD = """<!DOCTYPE html>
     (function(){
       try {
         var d = document.documentElement;
-        var t = localStorage.getItem('isabi.theme');
-        if (t === 'light' || t === 'dark') d.setAttribute('data-theme', t);
+        var t = localStorage.getItem('isabi.theme.v2') === 'dark' ? 'dark' : 'light';
+        d.setAttribute('data-theme', t);
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute('content', t === 'dark' ? '#0B1730' : '#F4F2EE');
         if (window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)) {
           d.classList.add('ios-standalone');
         }
@@ -114,6 +116,7 @@ def main():
         import shutil
         shutil.copy2(OUT_HTML, os.path.join(mirror_dir, 'index.html'))
         shutil.copy2(os.path.join(ROOT, 'sw.js'), os.path.join(mirror_dir, 'sw.js'))
+        shutil.copy2(os.path.join(ROOT, 'manifest.json'), os.path.join(mirror_dir, 'manifest.json'))
         og_png = os.path.join(ROOT, 'og-image.png')
         if os.path.exists(og_png):
             shutil.copy2(og_png, os.path.join(mirror_dir, 'og-image.png'))

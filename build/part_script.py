@@ -1597,13 +1597,81 @@ JS = r"""
   function resolveAskIsabi(qText) {
     const cleanQ = String(qText || '').trim();
     const low = cleanQ.toLowerCase();
+    const sbox = SANDBOX_DATA[state.sboxInd] || SANDBOX_DATA.holding;
+    const cm = CURR_MULT[state.sboxCurr] || CURR_MULT.USD;
+    const pm = PERIOD_MULT[state.sboxPeriod] || PERIOD_MULT.mtd;
+
+    // 0a. Greetings & small talk ("hello", "hi", "hey", "salam", "marhaba", "bonjour", "good morning", "test")
+    if (/^(hi|hello|hey|hola|bonjour|salam|marhaba|good\s+(morning|afternoon|evening)|greetings|yo|hi\s+there|hello\s+there|hey\s+there|test|testing)[\s!.,?]*$/i.test(cleanQ)) {
+      return {
+        q: cleanQ,
+        title: 'Welcome · Native System Intelligence',
+        answer: `Hello! I am <b>ISABI</b>, the embedded intelligence assistant for ISABI Systems. I am currently connected to the <b>${sbox.groupTitle}</b> live sandbox (<b>${cm.sym} · ${pm.label}</b>) and the architectural blueprints across all 8 production apps. How can I help you today?`,
+        bullets: [
+          `<b>Query Live Sandbox Figures:</b> Ask to analyze the <i>${sbox.groupTitle}</i> dashboard, inspect today's double-entry journal vouchers, or review overdue receivables.`,
+          `<b>Explore Industry Blueprints:</b> Ask how we build custom systems for Hospitality, Auto &amp; Truck Trading, Concrete &amp; Manufacturing, Real Estate, Insurance, or Holding Groups.`,
+          `<b>Scope, Pricing &amp; Delivery:</b> Ask about our fixed-scope tiers ($4,500+ / $9,500+ / $18,000+), Microsoft licensing, parallel-run reconciliation, or the 6-week go-live plan.`
+        ],
+        citation: `Active Context: ${sbox.groupTitle} · ${cm.sym} · ${pm.label}`,
+        followUps: [
+          'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
+          'How does ISABI customize the ERP for my specific industry?',
+          'What would a complete multi-branch system cost and include?',
+          'How does dual-entry reconciliation work with our existing accountant software?'
+        ]
+      };
+    }
+
+    // 0b. Identity, Capabilities & Help ("who are you", "what can you do", "help", "how do you work")
+    if (low.includes('who are you') || low.includes('what are you') || low.includes('what can you do') || low.includes('what do you do') || low === 'help' || low.includes('help me') || low.includes('how do you work') || low.includes('what is ask isabi')) {
+      return {
+        q: cleanQ,
+        title: 'About Ask ISABI · System Intelligence',
+        answer: `<b>Ask ISABI</b> is the native AI assistant built into every ISABI Systems ERP and Power BI environment. Unlike generic chatbots, it reads your governed Dataverse tables and semantic models under the signed-in user's exact security role and cites the vouchers behind every figure.`,
+        bullets: [
+          `<b>In Production:</b> Executives and accountants ask natural-language questions about overdue receivables, supplier payables, daily outlet revenue, silo stock, or trial balance variances.`,
+          `<b>On This Showcase Portal:</b> You can test live sandbox queries across 6 industries in USD, EUR, or AED, drill into all 24 executive alerts, or ask about architecture, pricing, and timelines.`,
+          `<b>Strict Permission Fence:</b> A branch user can only query their own Business Unit; owners and partners can query the consolidated group.`
+        ],
+        citation: 'Architecture: Microsoft Dataverse + Power BI XMLA + Role-Scoped AI',
+        followUps: [
+          'Why did receivables past 60 days increase this month?',
+          'Show the audited journal entries for ' + sbox.groupTitle,
+          'How does Ask ISABI treat confidential figures?'
+        ]
+      };
+    }
+
+    // 0c. Polite acknowledgments ("thanks", "thank you", "great", "cool", "ok", "got it")
+    if (/^(thanks|thank\s+you|thx|ty|great|awesome|cool|nice|perfect|got\s+it|understood|ok|okay|bye|goodbye)[\s!.,?]*$/i.test(cleanQ)) {
+      return {
+        q: cleanQ,
+        title: 'At Your Service',
+        answer: `You're welcome! Whenever you are ready, you can test another live query below, switch the industry or currency in the Live Sandbox, or send your scope directly to <b>Hussein Bdeir</b> on WhatsApp (<b>+961 70 444 955</b>).`,
+        citation: 'ISABI Systems · The Books Close on ISABI',
+        followUps: [
+          'What should I know before commissioning an ISABI system?',
+          'What would a complete multi-branch system cost and include?',
+          'Analyze the ' + sbox.groupTitle + ' dashboard numbers'
+        ]
+      };
+    }
+
+    // 0d. Conversational continuation ("yes", "sure", "tell me more", "elaborate", "go ahead")
+    if (/^(yes|yeah|yep|sure|please|tell\s+me\s+more|elaborate|go\s+ahead|more\s+details|explain\s+more|next)[\s!.,?]*$/i.test(cleanQ)) {
+      const prev = state.aiHistory.length ? state.aiHistory[state.aiHistory.length - 1] : null;
+      if (prev && prev.followUps && prev.followUps.length) {
+        return resolveAskIsabi(prev.followUps[0]);
+      }
+      return buildJournalAudit(state.sboxInd || 'holding', cleanQ);
+    }
 
     // 1. Check exact match with the 4 preset prompts
     for (let i = 0; i < AI_PROMPTS.length; i++) {
       if (AI_PROMPTS[i].q.toLowerCase() === low) {
         const copy = Object.assign({}, AI_PROMPTS[i], { q: cleanQ });
         copy.followUps = AI_PROMPTS.filter((_, idx) => idx !== i).slice(0, 2).map(p => p.q);
-        copy.followUps.push('Analyze the ' + (SANDBOX_DATA[state.sboxInd] || SANDBOX_DATA.holding).groupTitle + ' dashboard numbers');
+        copy.followUps.push('Analyze the ' + sbox.groupTitle + ' dashboard numbers');
         return copy;
       }
     }
@@ -1625,15 +1693,17 @@ JS = r"""
 
     // 3. Sandbox Dashboard Analysis ("Analyze the ... dashboard numbers" or KPI/dashboard questions)
     const matchedIndObj = detectIndustryFromQuery(low);
-    if (low.includes('analyze') || low.includes('dashboard') || low.includes('sandbox') || low.includes('kpi') || low.includes('performance') || low.includes('action items') || low.includes('summary')) {
+    if (low.includes('analyze') || low.includes('dashboard') || low.includes('sandbox') || low.includes('kpi') || low.includes('performance') || low.includes('action items') || low.includes('summary') || low.includes('revenue') || low.includes('margin') || low.includes('entities') || low.includes('cash')) {
       const targetSboxKey = matchedIndObj ? matchedIndObj.sandboxKey : state.sboxInd;
       return buildDashboardBriefing(targetSboxKey, cleanQ);
     }
 
     // 4. Journal / General Ledger / Voucher / Debit / Credit / Chart of Accounts queries
-    if (low.includes('journal') || low.includes('voucher') || low.includes('debit') || low.includes('credit') || low.includes('coa') || low.includes('chart of account') || low.includes('trial balance') || low.includes('double-entry') || low.includes('double entry') || low.includes('gl ')) {
-      const targetSboxKey = matchedIndObj ? matchedIndObj.sandboxKey : state.sboxInd;
-      return buildJournalAudit(targetSboxKey, cleanQ);
+    if (low.includes('journal') || low.includes('voucher') || low.includes('debit') || low.includes('credit') || low.includes('coa') || low.includes('chart of account') || low.includes('trial balance') || low.includes('double-entry') || low.includes('double entry') || low.includes('gl ') || low.includes('ledger')) {
+      if (!low.includes('customizes the ledger')) {
+        const targetSboxKey = matchedIndObj ? matchedIndObj.sandboxKey : state.sboxInd;
+        return buildJournalAudit(targetSboxKey, cleanQ);
+      }
     }
 
     // 5. Hero "Try It" ("Explain how ISABI Systems customizes the ledger for my industry") or generic customization question
@@ -1657,9 +1727,8 @@ JS = r"""
       return buildBlueprintResponse(matchedIndObj, cleanQ);
     }
 
-    // 7. Overdue Receivables / Aging / SOA / Collections
-    if (low.includes('receiv') || low.includes('overdue') || low.includes('60') || low.includes('aging') || low.includes('ar ') || low.includes('collect') || low.includes('soa') || low.includes('statement of account')) {
-      const cm = CURR_MULT[state.sboxCurr] || CURR_MULT.USD;
+    // 7. Overdue Receivables / Aging / SOA / Collections / Payables
+    if (low.includes('receiv') || low.includes('overdue') || low.includes('60') || low.includes('aging') || low.includes('ar ') || low.includes('collect') || low.includes('soa') || low.includes('statement of account') || low.includes('payable') || low.includes('supplier') || low.includes('invoice')) {
       const m = cm.mult;
       const s = cm.sym;
       return {
@@ -1676,7 +1745,7 @@ JS = r"""
         total: ['Total Audited Overdue (> 60 Days)', fmtMoney(42300, m, s)],
         citation: 'Source: Dataverse Receivables Ledger · Verified 100% against Printable SOA (.rdl)',
         followUps: [
-          'Analyze the ' + (SANDBOX_DATA[state.sboxInd] || SANDBOX_DATA.holding).groupTitle + ' dashboard numbers',
+          'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
           'How do printable Statements of Account work?',
           'What would a complete multi-branch system cost and include?'
         ]
@@ -1788,7 +1857,7 @@ JS = r"""
         total: ['Report Refresh & Delivery', 'Edit-Driven Auto Refresh + Scheduled PDF Subscriptions'],
         citation: 'Source: Power BI XMLA Pipeline & Shared RDL Institutional Style Engine',
         followUps: [
-          'Analyze the ' + (SANDBOX_DATA[state.sboxInd] || SANDBOX_DATA.holding).groupTitle + ' dashboard numbers',
+          'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
           'Why did receivables past 60 days increase this month?',
           'What would a complete multi-branch system cost and include?'
         ]
@@ -1847,27 +1916,92 @@ JS = r"""
       };
     }
 
-    // 15. Smart Context-Aware Fallback (uses active Sandbox + Scope Configurator state)
-    return buildDashboardBriefing(state.sboxInd || 'holding', cleanQ);
+    // 15. Conversational Custom Question Handler (never dumps an unrelated table)
+    const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$12,300 to $15,000', weeks: '5 to 7 Weeks' };
+    return {
+      q: cleanQ,
+      title: 'Custom Architectural Guidance',
+      answer: `Regarding <b>"${escapeHtml(cleanQ)}"</b>: ISABI Systems engineers custom relational tables, form rules, workflows, and Power BI models inside your own Microsoft 365 &amp; Dataverse tenant rather than forcing your team into an off-the-shelf template.`,
+      bullets: [
+        `<b>Tailored to Your Rules:</b> Whether you need custom approval gates, multi-currency treasury, partner profit splits, or offline field PWAs, the schema is generated around your exact process.`,
+        `<b>Current Configured Scope:</b> ${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)} (indicative range <b>${escapeHtml(cfg.range)}</b> in <b>${escapeHtml(cfg.weeks)}</b>).`,
+        `<b>Direct Architect Review:</b> Click <i>Discuss on WhatsApp</i> below to send this exact question to Hussein Bdeir (+961 70 444 955) for a direct technical answer.`
+      ],
+      citation: 'Engineered directly by Hussein Bdeir · Microsoft Dataverse + Power BI + Ask ISABI',
+      actionCfg: state.cfgInd,
+      followUps: [
+        'How does ISABI customize the ERP for my specific industry?',
+        'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
+        'What would a complete multi-branch system cost and include?'
+      ]
+    };
+  }
+
+  function formatWelcomeMessageHTML() {
+    const sbox = SANDBOX_DATA[state.sboxInd] || SANDBOX_DATA.holding;
+    const cm = CURR_MULT[state.sboxCurr] || CURR_MULT.USD;
+    const pm = PERIOD_MULT[state.sboxPeriod] || PERIOD_MULT.mtd;
+    const chipsHtml = AI_PROMPTS.map(p =>
+      `<button type="button" class="ai-followup-btn" data-ai-ask="${escapeHtml(p.q)}">${escapeHtml(p.q)}</button>`
+    ).join('');
+
+    return `
+      <div class="ai-msg-bot">
+        ${BADGE_MINI_SVG}
+        <div class="ai-bot-bubble">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:4px">ISABI · System Intelligence</div>
+          <p>Welcome. I am <b>ISABI</b>, the native intelligence assistant for ISABI Systems. Ask me any question below about your industry workflows, live sandbox figures (<b>${sbox.groupTitle} · ${cm.sym} · ${pm.label}</b>), statutory reconciliation, or pricing, or choose a topic to begin:</p>
+          <div class="ai-followups">${chipsHtml}</div>
+          <div class="ai-bot-meta">
+            <span>Connected to Live Sandbox (${sbox.groupTitle}) &amp; 8 Production Blueprints</span>
+            <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I am exploring ISABI Systems and would like to discuss a custom system for our business.')}" target="_blank" rel="noopener" style="color:#D9A54A;font-weight:700">WhatsApp Hussein</a>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   function formatAiMessageHTML(item) {
-    const colCount = item.headers.length;
-    const headersHtml = item.headers.map((h, idx) =>
-      `<th${idx === colCount - 1 ? ' style="text-align:right"' : ''}>${h}</th>`
-    ).join('');
+    let tableBlockHtml = '';
+    if (item.headers && item.headers.length && item.rows && item.rows.length) {
+      const colCount = item.headers.length;
+      const headersHtml = item.headers.map((h, idx) =>
+        `<th${idx === colCount - 1 ? ' style="text-align:right"' : ''}>${h}</th>`
+      ).join('');
 
-    const rowsHtml = item.rows.map(r => {
-      const cells = r.slice(0, colCount).map((c, idx) => {
-        if (idx === 0) return `<td><b>${c}</b></td>`;
-        if (idx === colCount - 1) return `<td style="text-align:right">${c}</td>`;
-        return `<td>${c}</td>`;
+      const rowsHtml = item.rows.map(r => {
+        const cells = r.slice(0, colCount).map((c, idx) => {
+          if (idx === 0) return `<td><b>${c}</b></td>`;
+          if (idx === colCount - 1) return `<td style="text-align:right">${c}</td>`;
+          return `<td>${c}</td>`;
+        }).join('');
+        return `<tr>${cells}</tr>`;
       }).join('');
-      return `<tr>${cells}</tr>`;
-    }).join('');
 
-    const totLabel = item.total[0] || 'Total';
-    const totVal = item.total[item.total.length - 1] || '';
+      const totLabel = (item.total && item.total[0]) || 'Total';
+      const totVal = (item.total && item.total[item.total.length - 1]) || '';
+
+      tableBlockHtml = `
+        <div class="ai-bot-table-wrap">
+          <table class="ai-bot-table">
+            <thead>
+              <tr>${headersHtml}</tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+              <tr class="tot">
+                <td colspan="${Math.max(1, colCount - 1)}">${totLabel}</td>
+                <td style="text-align:right">${totVal}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    const bulletsHtml = (item.bullets && item.bullets.length)
+      ? `<ul class="ai-bot-bullets">${item.bullets.map(b => `<li>${b}</li>`).join('')}</ul>`
+      : '';
 
     const followUpsHtml = (item.followUps && item.followUps.length)
       ? `<div class="ai-followups">${item.followUps.map(fq => `<button type="button" class="ai-followup-btn" data-ai-ask="${escapeHtml(fq)}">${escapeHtml(fq)}</button>`).join('')}</div>`
@@ -1888,20 +2022,8 @@ JS = r"""
         <div class="ai-bot-bubble">
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:4px">ISABI · ${item.title}</div>
           <p>${item.answer}</p>
-          <div class="ai-bot-table-wrap">
-            <table class="ai-bot-table">
-              <thead>
-                <tr>${headersHtml}</tr>
-              </thead>
-              <tbody>
-                ${rowsHtml}
-                <tr class="tot">
-                  <td colspan="${Math.max(1, colCount - 1)}">${totLabel}</td>
-                  <td style="text-align:right">${totVal}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          ${bulletsHtml}
+          ${tableBlockHtml}
           ${followUpsHtml}
           <div class="ai-bot-meta">
             <span>${item.citation}</span>
@@ -1918,7 +2040,6 @@ JS = r"""
   function renderAiThreads(scrollToBottom = false) {
     const pillsEl = document.getElementById('ai-prompt-pills');
     const threadEl = document.getElementById('ai-inline-thread');
-    const drawerPills = document.getElementById('drawer-prompt-pills');
     const drawerThread = document.getElementById('ai-drawer-thread');
 
     const pillsHtml = AI_PROMPTS.map((p, i) => `
@@ -1926,10 +2047,21 @@ JS = r"""
     `).join('');
 
     if (pillsEl) pillsEl.innerHTML = pillsHtml;
-    if (drawerPills) drawerPills.innerHTML = pillsHtml;
 
     if (!state.aiHistory.length) {
-      state.aiHistory = [resolveAskIsabi(AI_PROMPTS[0].q)];
+      const welcomeHtml = formatWelcomeMessageHTML();
+      if (drawerThread) {
+        drawerThread.innerHTML = welcomeHtml;
+        drawerThread.scrollTop = 0;
+      }
+      if (threadEl) {
+        threadEl.innerHTML = state.aiReset
+          ? welcomeHtml
+          : formatAiMessageHTML(resolveAskIsabi(AI_PROMPTS[0].q));
+        threadEl.scrollTop = 0;
+      }
+      updateAiScopeBar();
+      return;
     }
 
     const threadHtml = state.aiHistory.map(item => formatAiMessageHTML(item)).join('');
@@ -1944,36 +2076,35 @@ JS = r"""
     updateAiScopeBar();
   }
 
-  function renderAiSection(idx = 0) {
+  function renderAiSection(idx = 0, isInitialLoad = false) {
+    if (isInitialLoad) {
+      state.activeAiPillIdx = 0;
+      state.aiHistory = [];
+      state.aiReset = false;
+      renderAiThreads(false);
+      return;
+    }
     state.activeAiPillIdx = idx;
+    state.aiReset = false;
     const preset = AI_PROMPTS[idx] || AI_PROMPTS[0];
     const resolved = resolveAskIsabi(preset.q);
-    if (!state.aiHistory.length) {
-      state.aiHistory = [resolved];
-      renderAiThreads(false);
-    } else {
-      const last = state.aiHistory[state.aiHistory.length - 1];
-      if (!last || last.q !== resolved.q) {
-        state.aiHistory.push(resolved);
-        if (state.aiHistory.length > 8) state.aiHistory.shift();
-      }
-      renderAiThreads(true);
+    const last = state.aiHistory[state.aiHistory.length - 1];
+    if (!last || last.q !== resolved.q) {
+      state.aiHistory.push(resolved);
+      if (state.aiHistory.length > 8) state.aiHistory.shift();
     }
+    renderAiThreads(true);
   }
 
   function askIsabiQuestion(qText, openDrawer = false) {
     const clean = String(qText || '').trim();
     if (!clean) return;
+    state.aiReset = false;
     const matchIdx = AI_PROMPTS.findIndex(p => p.q.toLowerCase() === clean.toLowerCase());
     state.activeAiPillIdx = matchIdx >= 0 ? matchIdx : -1;
     const resp = resolveAskIsabi(clean);
-    const last = state.aiHistory[state.aiHistory.length - 1];
-    if (!last || last.q !== resp.q || last.title !== resp.title) {
-      state.aiHistory.push(resp);
-      if (state.aiHistory.length > 8) state.aiHistory.shift();
-    } else {
-      state.aiHistory[state.aiHistory.length - 1] = resp;
-    }
+    state.aiHistory.push(resp);
+    if (state.aiHistory.length > 8) state.aiHistory.shift();
     renderAiThreads(true);
     if (openDrawer) {
       const backdrop = document.getElementById('ai-drawer-backdrop');
@@ -1985,9 +2116,14 @@ JS = r"""
 
   function resetAiThread() {
     state.aiHistory = [];
-    state.activeAiPillIdx = 0;
-    renderAiSection(0);
-    showToast('Ask ISABI conversation reset');
+    state.aiReset = true;
+    state.activeAiPillIdx = -1;
+    const inp1 = document.getElementById('ai-inline-input');
+    const inp2 = document.getElementById('ai-drawer-input');
+    if (inp1) inp1.value = '';
+    if (inp2) inp2.value = '';
+    renderAiThreads(false);
+    showToast('Conversation reset');
   }
 
   function openAiDrawer(customQ) {
@@ -1997,7 +2133,7 @@ JS = r"""
     if (customQ) {
       askIsabiQuestion(customQ, true);
     } else {
-      renderAiThreads(true);
+      renderAiThreads(Boolean(state.aiHistory.length));
     }
     const inp = document.getElementById('ai-drawer-input');
     if (inp && window.innerWidth > 720) setTimeout(() => inp.focus(), 80);
@@ -2139,27 +2275,30 @@ JS = r"""
   }
 
   // ---------------- THEME MANAGEMENT ----------------
-  function applyTheme(t) {
-    document.documentElement.setAttribute('data-theme', t);
-    try { localStorage.setItem('isabi.theme', t); } catch (e) {}
+  function applyTheme(t, persist) {
+    const mode = t === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', mode);
+    if (persist) {
+      try { localStorage.setItem('isabi.theme.v2', mode); } catch (e) {}
+    }
     const btn = document.getElementById('theme-toggle-btn');
     if (btn) {
-      btn.textContent = t === 'light' ? 'Dark' : 'Light';
+      btn.textContent = mode === 'light' ? 'Dark' : 'Light';
     }
     const metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) {
-      metaTheme.setAttribute('content', t === 'light' ? '#F4F2EE' : '#0B1730');
+      metaTheme.setAttribute('content', mode === 'light' ? '#F4F2EE' : '#0B1730');
     }
   }
 
   // ---------------- EVENT LISTENERS & INIT ----------------
   function init() {
-    const savedTheme = (() => { try { return localStorage.getItem('isabi.theme'); } catch (e) { return null; } })() || 'dark';
-    applyTheme(savedTheme);
+    const savedTheme = (() => { try { return localStorage.getItem('isabi.theme.v2'); } catch (e) { return null; } })() || 'light';
+    applyTheme(savedTheme, false);
 
     renderIndustries();
     renderSandbox();
-    renderAiSection(0);
+    renderAiSection(0, true);
     updateRoi();
     updateConfigurator();
     initReveal();
@@ -2199,8 +2338,8 @@ JS = r"""
 
     // Theme toggle
     document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
-      const cur = document.documentElement.getAttribute('data-theme') || 'dark';
-      applyTheme(cur === 'dark' ? 'light' : 'dark');
+      const cur = document.documentElement.getAttribute('data-theme') || 'light';
+      applyTheme(cur === 'dark' ? 'light' : 'dark', true);
     });
 
     // Global delegated clicks
@@ -2354,6 +2493,13 @@ JS = r"""
         const t = sboxThemeBtn.dataset.sboxT;
         document.getElementById('sandbox-wrap')?.setAttribute('data-sbox-theme', t);
         document.querySelectorAll('[data-sbox-t]').forEach(b => b.classList.toggle('active', b === sboxThemeBtn));
+        return;
+      }
+
+      const aiResetBtn = e.target.closest('[data-ai-reset]');
+      if (aiResetBtn) {
+        e.preventDefault();
+        resetAiThread();
         return;
       }
 
