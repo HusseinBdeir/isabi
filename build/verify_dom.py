@@ -1,3 +1,4 @@
+import html
 import json
 import os
 import shutil
@@ -147,6 +148,52 @@ document.addEventListener('DOMContentLoaded', function() {
       overflows: overflows.slice(0, 12),
       cardOverflows: cardOverflows.slice(0, 12)
     };
+
+    // Interactive Ask ISABI functional checks (run after geometry measurement)
+    var inlineInp = document.getElementById('ai-inline-input');
+    var inlineForm = document.getElementById('ai-inline-form');
+    inlineInp.value = 'Show the Concrete & Manufacturing blueprint';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var afterInlineCount = document.querySelectorAll('#ai-inline-thread .ai-msg-bot').length;
+    var afterInlineText = document.getElementById('ai-inline-thread').textContent;
+
+    // Switch sandbox to Trading + EUR + QTD, then click Sandbox Ask ISABI button
+    var trdBtn = document.querySelector('[data-sbox-ind="trading"]');
+    if (trdBtn) trdBtn.click();
+    var currSel = document.getElementById('sbox-curr-sel');
+    currSel.value = 'EUR';
+    currSel.dispatchEvent(new Event('change', { bubbles: true }));
+    var perSel = document.getElementById('sbox-period-sel');
+    perSel.value = 'qtd';
+    perSel.dispatchEvent(new Event('change', { bubbles: true }));
+    var scopeBarTxt = document.getElementById('ai-inline-scope').textContent;
+    var sboxAiBtn = document.querySelector('#sandbox-mock [data-open-ai]');
+    if (sboxAiBtn) sboxAiBtn.click();
+    var drawerTextAfterSbox = document.getElementById('ai-drawer-thread').textContent;
+
+    // Click a Sandbox watchdog alert button (View VINs on Trading)
+    var alertBtn = document.querySelector('#sandbox-mock [data-sbox-act]');
+    if (alertBtn) alertBtn.click();
+    var drawerTextAfterAlert = document.getElementById('ai-drawer-thread').textContent;
+
+    // Click a follow-up chip
+    var followChip = document.querySelector('#ai-drawer-thread .ai-followup-btn');
+    if (followChip) followChip.click();
+    var countBeforeReset = document.querySelectorAll('#ai-drawer-thread .ai-msg-bot').length;
+
+    // Click Reset
+    document.getElementById('ai-inline-reset').click();
+    var countAfterReset = document.querySelectorAll('#ai-inline-thread .ai-msg-bot').length;
+
+    out.aiTest = {
+      afterInlineCount: afterInlineCount,
+      hasMfgBlueprint: afterInlineText.indexOf('Industry Blueprint 03') !== -1,
+      scopeBarTxt: scopeBarTxt,
+      hasEurQtdBriefing: drawerTextAfterSbox.indexOf('Automotive & Heavy Truck Trading') !== -1 && drawerTextAfterSbox.indexOf('EUR') !== -1 && drawerTextAfterSbox.indexOf('QTD') !== -1,
+      hasAlertDrilldown: drawerTextAfterAlert.indexOf('Dealership Fleet Receivables & SOA Dispatch') !== -1,
+      countBeforeReset: countBeforeReset,
+      countAfterReset: countAfterReset
+    };
     pre.textContent = JSON.stringify(out);
   } catch (err) {
     pre.textContent = JSON.stringify({ error: String(err) });
@@ -165,7 +212,7 @@ document.addEventListener('DOMContentLoaded', function() {
             [EDGE, '--headless=new', f'--user-data-dir={ud}', '--window-size=1366,768', '--dump-dom', diag_url + '#industries'],
             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=25
         )
-        m_desk = res_desk.stdout.split('<pre id="diag-json">')[1].split('</pre>')[0]
+        m_desk = html.unescape(res_desk.stdout.split('<pre id="diag-json">')[1].split('</pre>')[0])
         d_desk = json.loads(m_desk)
         print('[DESK 1366x768]', json.dumps(d_desk))
 
@@ -174,7 +221,7 @@ document.addEventListener('DOMContentLoaded', function() {
             [EDGE, '--headless=new', f'--user-data-dir={ud}', '--window-size=390,844', '--dump-dom', diag_url + '#industries'],
             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=25
         )
-        m_mob = res_mob.stdout.split('<pre id="diag-json">')[1].split('</pre>')[0]
+        m_mob = html.unescape(res_mob.stdout.split('<pre id="diag-json">')[1].split('</pre>')[0])
         d_mob = json.loads(m_mob)
         print('[MOB 390x844]', json.dumps(d_mob))
 
@@ -203,6 +250,15 @@ document.addEventListener('DOMContentLoaded', function() {
         assert d_mob['activeMob'] == ['#industries'], f"Mobile section nav active mismatch: {d_mob['activeMob']}"
         assert d_mob['activeDock'] == ['#industries'], f"Mobile bottom dock active mismatch: {d_mob['activeDock']}"
         assert d_mob['cardOverflows'] == [], f"Mobile card overflows detected: {d_mob['cardOverflows']}"
+
+        ai = d_desk['aiTest']
+        assert ai['afterInlineCount'] == 2, f"Expected 2 messages after inline submit, got {ai['afterInlineCount']}"
+        assert ai['hasMfgBlueprint'] is True, "Inline submit did not render Concrete & Manufacturing blueprint"
+        assert ai['scopeBarTxt'] == 'Auto & Truck Trading · EUR · QTD', f"Unexpected scopeBarTxt: {ai['scopeBarTxt']}"
+        assert ai['hasEurQtdBriefing'] is True, "Sandbox Ask ISABI click did not render EUR QTD briefing"
+        assert ai['hasAlertDrilldown'] is True, "Sandbox alert button click did not render alert drilldown"
+        assert ai['countBeforeReset'] == 5, f"Expected 5 messages in thread before reset, got {ai['countBeforeReset']}"
+        assert ai['countAfterReset'] == 1, f"Expected 1 message after reset, got {ai['countAfterReset']}"
 
         # 3. Capture fresh screenshot of #portal at 1366x768
         os.makedirs(ART_DIR, exist_ok=True)

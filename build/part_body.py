@@ -366,6 +366,11 @@ BODY = f"""
             <span class="hlc-status"><i></i>Live Sandbox</span>
           </div>
 
+          <div class="ai-scope-bar">
+            <span>Active Context: <b id="ai-inline-scope">Group Holding · USD · MTD</b></span>
+            <button type="button" class="ai-reset-btn" id="ai-inline-reset" title="Reset conversation">Reset</button>
+          </div>
+
           <div class="ai-prompt-pills" id="ai-prompt-pills">
             <!-- Populated by JS -->
           </div>
@@ -373,6 +378,11 @@ BODY = f"""
           <div class="ai-thread" id="ai-inline-thread">
             <!-- Populated by JS -->
           </div>
+
+          <form class="ai-console-ftr" id="ai-inline-form">
+            <input type="text" id="ai-inline-input" placeholder="Ask ISABI about entries, balances, industries, or pricing..." autocomplete="off">
+            <button type="submit" class="btn btn-brass">Ask</button>
+          </form>
         </div>
       </div>
     </div>
@@ -975,6 +985,10 @@ BODY = f"""
         </div>
       </div>
       <button type="button" class="btn btn-ghost" id="close-ai-drawer" style="color:#F4F2EE;border-color:rgba(255,255,255,0.2)">Close</button>
+    </div>
+    <div class="ai-scope-bar">
+      <span>Active Context: <b id="ai-drawer-scope">Group Holding · USD · MTD</b></span>
+      <button type="button" class="ai-reset-btn" id="ai-drawer-reset" title="Reset conversation">Reset</button>
     </div>
     <div class="ai-prompt-pills" id="drawer-prompt-pills">
       <!-- Populated by JS -->

@@ -579,6 +579,8 @@ JS = r"""
     cfgScale: 2,
     cfgScaleLabel: 'Multi-Branch (2 to 4 Entities)',
     cfgScaleAdd: 2500,
+    aiHistory: [],
+    activeAiPillIdx: 0,
     deferredPrompt: null
   };
 
@@ -586,6 +588,14 @@ JS = r"""
   let scrollTargetId = null;
 
   // ---------------- HELPERS ----------------
+  function escapeHtml(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   function showToast(msg) {
     const el = document.getElementById('site-toast');
     if (!el) return;
@@ -1089,9 +1099,758 @@ JS = r"""
         col.addEventListener('mouseleave', () => { tip.hidden = true; });
       });
     }
+    updateAiScopeBar();
   }
 
   // ---------------- ASK ISABI AI SIMULATOR ----------------
+  function fmtMoney(usdVal, mult, sym, decimals = 2) {
+    const v = usdVal * mult;
+    const formatted = v.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    return sym === 'USD' ? ('$' + formatted) : (formatted + ' ' + sym);
+  }
+
+  function updateAiScopeBar() {
+    const indLabel = SBOX_LABELS[state.sboxInd] || 'Group Holding';
+    const currLabel = (CURR_MULT[state.sboxCurr] || CURR_MULT.USD).sym;
+    const perShort = String(state.sboxPeriod || 'mtd').toUpperCase();
+    const txt = `${indLabel} · ${currLabel} · ${perShort}`;
+    const el1 = document.getElementById('ai-inline-scope');
+    const el2 = document.getElementById('ai-drawer-scope');
+    if (el1) el1.textContent = txt;
+    if (el2) el2.textContent = txt;
+  }
+
+  function buildAlertDrilldown(alertTitle) {
+    const cm = CURR_MULT[state.sboxCurr] || CURR_MULT.USD;
+    const m = cm.mult;
+    const s = cm.sym;
+    const d0 = DAY_TOKENS.D0;
+    const d1 = DAY_TOKENS.D1;
+
+    const map = {
+      '7 trade receivables past 60 days': {
+        title: 'Executive Action Plan · Aged Receivables (> 60d)',
+        answer: `Across the 6 operating Business Units, <b>7 invoices totaling ${fmtMoney(42300, m, s)}</b> are past the 60-day credit window. Printable Statements of Account (.rdl) and WhatsApp collection links are staged for dispatch.`,
+        headers: ['Customer / Entity', 'Voucher', 'Age', 'Balance (' + s + ')'],
+        rows: [
+          ['Apex Contracting · Concrete Plant', 'TK-2026-3104', '68 Days', fmtMoney(16400, m, s)],
+          ['Levant Logistics · Heavy Truck Div', 'SI-TRK-0298', '64 Days', fmtMoney(14800, m, s)],
+          ['Metro Transit · Spare Parts Depot', 'SI-PRT-1411', '62 Days', fmtMoney(6250, m, s)],
+          ['4 Smaller Accounts (Auto & Real Estate)', 'Multiple', '61-74 Days', fmtMoney(4850, m, s)]
+        ],
+        total: ['Total Audited Overdue (> 60d)', fmtMoney(42300, m, s)],
+        citation: 'Source: Dataverse Receivables Ledger & Aging RDL · Credit hold active at 85%',
+        followUps: ['Show today\'s journal vouchers', 'How does dual-entry reconciliation work with our existing accountant software?']
+      },
+      'Statutory vs Operational reconciliation check': {
+        title: 'Statutory vs Operational Trial Balance Audit',
+        answer: `The automated reconciliation bridge compared all operational postings across the 6 Business Units against the statutory accounting trial balance. Unallocated variance across all classes (1 to 7) stands at <b>${fmtMoney(0, m, s)}</b>.`,
+        headers: ['Ledger Class', 'Operational Balance', 'Statutory Book', 'Variance'],
+        rows: [
+          ['Class 4 · Third-Party AR / AP', fmtMoney(312400, m, s), fmtMoney(312400, m, s), fmtMoney(0, m, s)],
+          ['Class 5 · Treasury, Vault & Banks', fmtMoney(418500, m, s), fmtMoney(418500, m, s), fmtMoney(0, m, s)],
+          ['Class 6 · Purchases & Operating Cost', fmtMoney(491170, m, s), fmtMoney(491170, m, s), fmtMoney(0, m, s)],
+          ['Class 7 · Consolidated Revenue (TTC)', fmtMoney(671000, m, s), fmtMoney(671000, m, s), fmtMoney(0, m, s)]
+        ],
+        total: ['Net Unexplained Variance', fmtMoney(0, m, s)],
+        citation: 'Source: Statutory Reconciliation Bridge · Verified across 6 Business Units',
+        followUps: ['Does our accountant have to change software?', 'Analyze the Group Holding dashboard numbers']
+      },
+      '2 supplier purchase orders above approval threshold': {
+        title: 'Procurement Stamp Queue · Principal Approval',
+        answer: `Two supplier purchase orders exceed the Business Unit supervisor threshold and are awaiting executive digital stamp before stock intake and payable posting.`,
+        headers: ['PO Reference', 'Business Unit & Vendor', 'GL Account', 'Amount (' + s + ')'],
+        rows: [
+          ['PO-2026-0914', 'Concrete Plant · Holcim Bulk Cement (300 MT)', '60110 Raw Materials', fmtMoney(24600, m, s)],
+          ['PO-2026-0918', 'Flagship Resort · Premium Beverage Import', '60210 F&B Provisions', fmtMoney(11850, m, s)]
+        ],
+        total: ['Total Awaiting Executive Stamp', fmtMoney(36450, m, s)],
+        citation: 'Source: Power Automate Approval Flow & Dataverse Procurement Queue',
+        followUps: ['How does role-based security work?', 'Show the Concrete & Manufacturing blueprint']
+      },
+      'Nightly automation fleet completed': {
+        title: 'Nightly Cloud Automation Fleet Log',
+        answer: `All scheduled Power Automate and Fabric pipelines completed on time with zero failed actions and verified row counts.`,
+        headers: ['Job / Pipeline', 'Run Time', 'Target Store', 'Status'],
+        rows: [
+          ['Ops - Nightly Export to SharePoint', '02:00', '111 CSVs + Manifest Verified', 'Succeeded'],
+          ['Ops - Attendance Kiosk Derivation', '03:00', 'Punches Paired to HR Shifts', 'Succeeded'],
+          ['Ops - Re-root Universal Dimensions', '03:10', 'Shared Master Tables Audited', 'Succeeded'],
+          ['Fabric XMLA Semantic Model Refresh', '07:00', 'Operations & Financial Models', 'Succeeded']
+        ],
+        total: ['Total Automated Fleet Health', '100% Green (0 Errors)'],
+        citation: 'Source: Power Automate Run History & SharePoint DR Sentinel',
+        followUps: ['Who owns the system and the data?', 'How do the offline PWAs sync to Dataverse?']
+      },
+      'Offline POS Tills synchronized (100%)': {
+        title: 'Companion POS Till Z-Report Audit',
+        answer: `All 6 offline-capable cashier tills across the resort properties closed their shifts and synced 1,420 receipts into the Dataverse Revenue Ledger with zero cash/card variance.`,
+        headers: ['Outlet Till', 'Receipts', 'Payment Split', 'Synced TTC (' + s + ')'],
+        rows: [
+          ['Main Gate & Cabana Desk (2 Tills)', '412', 'Cash + Whish + Card', fmtMoney(6420, m, s)],
+          ['Beach Restaurant & Sunset Bar (3 Tills)', '846', 'Cash + POS Terminal', fmtMoney(8910, m, s)],
+          ['VIP Lounge & Pool Bar (1 Till)', '162', 'Room Charge + Card', fmtMoney(3140, m, s)]
+        ],
+        total: ['Total Audited Daily POS Revenue', fmtMoney(18470, m, s)],
+        citation: 'Source: IndexedDB POS Queue to Dataverse bhf_revenue · Z-Reports matched',
+        followUps: ['Tell me about the Offline POS Till PWA', 'Analyze the Hospitality & Resort Operations dashboard numbers']
+      },
+      'Beverage stock variance check': {
+        title: 'F&B Bar Inventory & Theoretical Yield Check',
+        answer: `Sunset Bay Club bar stock count is scheduled for 23:00 shift close. Comparing POS recipe depletion against physical bottle stock flags 2 items for supervisor spot-check.`,
+        headers: ['SKU / Category', 'Theoretical Stock', 'Bar Count', 'Variance (' + s + ')'],
+        rows: [
+          ['Premium Spirits (75cl Bottles)', '48.0 Units', '47.5 Units', fmtMoney(-42, m, s)],
+          ['Imported Draft & Bottled Beer', '320 Units', '320 Units', fmtMoney(0, m, s)],
+          ['Fresh Mixers & Soft Drinks', '540 Units', '538 Units', fmtMoney(-8, m, s)],
+          ['Cellar & Banquet Wine Reserve', '94 Units', '94 Units', fmtMoney(0, m, s)]
+        ],
+        total: ['Net F&B Stock Variance (Within 0.3% Cap)', fmtMoney(-50, m, s)],
+        citation: 'Source: Hospitality Stock Take Ledger & Outlet Gross Margin Model',
+        followUps: ['How does ISABI customize the ERP for Hospitality & Resorts?', 'Show Hospitality supplier payables due']
+      },
+      '4 supplier invoices due for settlement': {
+        title: 'Hospitality Supplier Payables & Partner Split Run',
+        answer: `Four approved F&B and operating vendor invoices are scheduled for Friday settlement. Partner profit-split agreements are automatically applied to the property SOA.`,
+        headers: ['Supplier Account', 'Voucher Ref', 'Property BU', 'Payable (' + s + ')'],
+        rows: [
+          ['Mediterranean Beverage Co.', 'PI-2026-0392', 'Sunset Bay Club', fmtMoney(6480, m, s)],
+          ['Prime Fresh Foodservice', 'PI-2026-0395', 'Flagship Beach Resort', fmtMoney(5920, m, s)],
+          ['Coastal Linen & Laundry', 'PI-2026-0401', 'Boutique Hotel Suites', fmtMoney(3400, m, s)],
+          ['Sound & Lighting Production', 'PI-2026-0404', 'Palms Waterfront', fmtMoney(2400, m, s)]
+        ],
+        total: ['Total Friday Payment Run', fmtMoney(18200, m, s)],
+        citation: 'Source: Dataverse Supplier Payables & Partner Agreement Split Engine',
+        followUps: ['Show Hospitality journal entries', 'How do printable Statements of Account work?']
+      },
+      'Biometric Attendance Kiosk synced': {
+        title: 'Biometric Gate Kiosk · Daily Shift Roster Audit',
+        answer: `The wall-mounted tablet kiosks verified 118 staff punches today using face recognition + PIN and derived shift hours, lateness, and overtime into the ERP Attendance table.`,
+        headers: ['Property / Department', 'Staff Present', 'Overtime Logged', 'Verification'],
+        rows: [
+          ['Flagship Resort · Kitchen & F&B', '54 Staff', '6.5 hrs', '100% Face + PIN'],
+          ['Sunset Bay · Lifeguards & Cabanas', '32 Staff', '2.0 hrs', '100% Face + PIN'],
+          ['Palms Waterfront · Operations', '19 Staff', '0.0 hrs', '100% Face + PIN'],
+          ['Boutique Suites · Front Desk & HK', '13 Staff', '1.5 hrs', '100% Face + PIN']
+        ],
+        total: ['Total Verified Shifts Synced', '118 Shifts (0 Missing Punches)'],
+        citation: 'Source: Attendance Kiosk PWA via Ops - Attendance Kiosk API Flow',
+        followUps: ['Tell me about the Biometric Attendance Kiosk PWA', 'What hardware is needed for the kiosks?']
+      },
+      '5 fleet customer installments past 60 days': {
+        title: 'Dealership Fleet Receivables & SOA Dispatch',
+        answer: `Five fleet and commercial truck buyers have installment notes past 60 days totaling <b>${fmtMoney(31400, m, s)}</b>. One-click PDF Statements of Account (.rdl) are ready for WhatsApp and email delivery.`,
+        headers: ['Dealer / Fleet Account', 'Invoice / VIN Ref', 'Days Past Due', 'Overdue (' + s + ')'],
+        rows: [
+          ['Levant Heavy Haulage', 'SI-TRK-0298 (VIN #8792)', '66 Days', fmtMoney(14800, m, s)],
+          ['Metro Transit Fleet', 'SI-PRT-1411 (Parts Account)', '63 Days', fmtMoney(6250, m, s)],
+          ['Bekaa Quarry Transport', 'SI-TRK-0304 (VIN #8805)', '61 Days', fmtMoney(5400, m, s)],
+          ['2 Regional Workshop Accounts', 'SI-PRT-1420 / 1429', '61-65 Days', fmtMoney(4950, m, s)]
+        ],
+        total: ['Total Dealership Overdue (> 60d)', fmtMoney(31400, m, s)],
+        citation: 'Source: Trading Operations Customer Allocation & Aged Receivables RDL',
+        followUps: ['Show the Auto & Truck Trading blueprint', 'How are VIN landed costs calculated?']
+      },
+      '3 heavy truck chassis cleared customs today': {
+        title: 'VIN Customs Clearance & Landed Cost Capitalization',
+        answer: `Three heavy truck chassis moved from <b>Bonded Customs</b> to <b>Showroom Duty-Paid Stock</b> on ${d0}. FOB cost, ocean freight, marine insurance, and customs duty are capitalized per VIN.`,
+        headers: ['Chassis VIN', 'Model & Spec', 'Customs + Freight', 'Total Landed (' + s + ')'],
+        rows: [
+          ['VIN #LZGJL484X20268841', '6x4 Tractor Head (430 HP)', fmtMoney(3800, m, s), fmtMoney(54200, m, s)],
+          ['VIN #LZGJL484X20268842', '6x4 Tractor Head (430 HP)', fmtMoney(3800, m, s), fmtMoney(54200, m, s)],
+          ['VIN #LZGJL484X20268845', '8x4 Tipper Chassis (400 HP)', fmtMoney(3800, m, s), fmtMoney(58600, m, s)]
+        ],
+        total: ['Total Capitalized Showroom Value (3 Units)', fmtMoney(167000, m, s)],
+        citation: 'Source: Dataverse Vehicle VIN Registry & Landed Cost Sheet (LC-2026-0118)',
+        followUps: ['Analyze the Automotive & Heavy Truck Trading dashboard', 'Show Trading journal entries']
+      },
+      'Fast-moving brake & filter SKUs below safety stock': {
+        title: 'Spare Parts Depot · Reorder Batch Calculation',
+        answer: `The central depot stock watchdog flagged 14 fast-moving service SKUs below their 30-day safety threshold based on workshop and wholesale consumption velocity.`,
+        headers: ['Part Category', 'SKUs Flagged', 'On Hand vs Min', 'Reorder Cost (' + s + ')'],
+        rows: [
+          ['Heavy Duty Air & Oil Filter Kits', '6 SKUs', '18 vs 45 Min', fmtMoney(4200, m, s)],
+          ['Pneumatic Brake Pads & Linings', '5 SKUs', '12 vs 30 Min', fmtMoney(5800, m, s)],
+          ['Clutch Plates & Flywheel Assemblies', '3 SKUs', '4 vs 12 Min', fmtMoney(6400, m, s)]
+        ],
+        total: ['Suggested Supplier Purchase Order Batch', fmtMoney(16400, m, s)],
+        citation: 'Source: Trading Multi-Warehouse Stock Balance & Reorder Engine',
+        followUps: ['How does ISABI customize the ERP for Auto & Truck Trading?', 'Configure scope and pricing for Trading']
+      },
+      'Monthly statutory reconciliation verified': {
+        title: 'Trading Operations · Statutory Trial Balance Match',
+        answer: `Operational sales invoices, customs landed cost sheets, spare parts stock, and customer receipts match the statutory accounting books to the cent.`,
+        headers: ['Reconciled Domain', 'Operational Ledger', 'Statutory Book', 'Variance'],
+        rows: [
+          ['MTD Vehicle & Parts Sales (TTC)', fmtMoney(349000, m, s), fmtMoney(349000, m, s), fmtMoney(0, m, s)],
+          ['Bonded + Showroom VIN Valuation', fmtMoney(1240000, m, s), fmtMoney(1240000, m, s), fmtMoney(0, m, s)],
+          ['Dealer Installment Collections', fmtMoney(61920, m, s), fmtMoney(61920, m, s), fmtMoney(0, m, s)],
+          ['Trade Receivables Past 60d', fmtMoney(31400, m, s), fmtMoney(31400, m, s), fmtMoney(0, m, s)]
+        ],
+        total: ['Parallel-Run Audit Variance', fmtMoney(0, m, s)],
+        citation: 'Source: Trading Parallel-Run Reconciliation RDL · 100% Matched',
+        followUps: ['How does dual-entry reconciliation work with our existing accountant software?', 'Show Trading journal entries']
+      },
+      '142 batch plant delivery tickets verified today': {
+        title: 'Batch Plant Dispatch & Ticket Book Verification',
+        answer: `All 142 ready-mix concrete tickets poured on ${d0} reconciled against batch plant load cells, signed site delivery notes, and sequential ticket book gap checks.`,
+        headers: ['Mix Grade / Service', 'Tickets', 'Volume Batched', 'Billing (' + s + ')'],
+        rows: [
+          ['C35 Structural Ready-Mix Concrete', '84 Tickets', '640 m³', fmtMoney(54400, m, s)],
+          ['C30 Foundation & Slab Mix', '46 Tickets', '380 m³', fmtMoney(29640, m, s)],
+          ['Mobile Boom Pump Service (36m / 42m)', '12 Dispatches', '1,020 m³ Pumped', fmtMoney(4800, m, s)]
+        ],
+        total: ['Total Audited Daily Plant Production', fmtMoney(88840, m, s)],
+        citation: 'Source: Manufacturing Sales Ticket Ledger & Ticket Books Gap Check',
+        followUps: ['Show the Concrete & Manufacturing blueprint', 'How do form rules enforce contractor credit limits?']
+      },
+      '3 contractor accounts reached 85% credit limit': {
+        title: 'Contractor Credit Limit Gate · Dispatch Control',
+        answer: `Form validation rules on the Sales Ticket screen automatically block new mixer dispatch when a contractor exceeds 85% of their approved credit cap without a supervisor override or receipt allocation.`,
+        headers: ['Contractor Account', 'Credit Limit', 'Current Exposure', 'Utilization'],
+        rows: [
+          ['Apex Contracting · Tower Site B', fmtMoney(50000, m, s), fmtMoney(46400, m, s), '92.8% (Hold)'],
+          ['Horizon Civil Works · Highway Lot', fmtMoney(40000, m, s), fmtMoney(35200, m, s), '88.0% (Gate)'],
+          ['Cedars Precast & Foundations', fmtMoney(30000, m, s), fmtMoney(25800, m, s), '86.0% (Gate)']
+        ],
+        total: ['Total Protected Credit Exposure', fmtMoney(107400, m, s)],
+        citation: 'Source: Dataverse Customer Credit Terms & Sales Ticket Form Gate JS',
+        followUps: ['Analyze the Manufacturing, Concrete & Fleet dashboard', 'How does customer receipt allocation work?']
+      },
+      'Silo #2 Portland Cement reorder trigger': {
+        title: 'Bulk Cement Silo Telemetry & Yield Audit',
+        answer: `Silo #2 stands at <b>115 MT</b> after today's pours, crossing the 120 MT reorder threshold. Theoretical recipe consumption vs actual weighbridge intake shows a <b>0.31% variance</b> (well inside the 0.40% tolerance).`,
+        headers: ['Storage Unit', 'Current Level', 'Daily Drawdown', 'Next Intake'],
+        rows: [
+          ['Silo #1 · Sulphate Resistant Cement', '185 MT', '42 MT / day', 'Sufficient (4.4d)'],
+          ['Silo #2 · Ordinary Portland Cement', '115 MT', '68 MT / day', 'Tanker 07:00 (+90 MT)'],
+          ['Silo #3 · GGBS & Fly Ash Blend', '120 MT', '19 MT / day', 'Sufficient (6.3d)'],
+          ['Admixture & Plasticizer IBC Tanks', '6,400 L', '380 L / day', 'Sufficient (16d)']
+        ],
+        total: ['Total Bulk Cement On Hand', '420 MT (Silo #2 Delivery Confirmed)'],
+        citation: 'Source: Manufacturing Raw Material Silo Ledger & Yield Report',
+        followUps: ['Show Manufacturing journal entries', 'Configure scope and pricing for Concrete & Manufacturing']
+      },
+      'Inter-entity transport charges auto-reconciled': {
+        title: 'Inter-Entity Billing · Plant to Construction to Fleet',
+        answer: `Transit mixer trip fees and pump boom charges operated by the Heavy Transport entity are automatically mirrored as cost of sales in the Batch Plant entity, eliminating manual intercompany re-keying.`,
+        headers: ['Intercompany Leg', 'Operational Driver', 'Elimination Account', 'Matched (' + s + ')'],
+        rows: [
+          ['Fleet BU to Batch Plant BU', '142 Mixer Trips + 12 Pump Shifts', '18100 Intercompany Clear', fmtMoney(14680, m, s)],
+          ['Batch Plant BU to Construction BU', '210 m³ Internal Site Supply', '18100 Intercompany Clear', fmtMoney(16800, m, s)],
+          ['Central Workshop to Fleet BU', 'Diesel & Preventive Maintenance', '61300 Fleet Diesel Alloc.', fmtMoney(4320, m, s)]
+        ],
+        total: ['Unreconciled Inter-Entity Difference', fmtMoney(0, m, s)],
+        citation: 'Source: Multi-Business Unit Intercompany Ledger & Consolidated P&L',
+        followUps: ['How does Multi-Business Unit isolation work?', 'Analyze the Multi-Entity Enterprise Group dashboard']
+      },
+      '4 commercial leases renewing in 45 days': {
+        title: 'Commercial Lease Renewal & CPI Escalation Schedule',
+        answer: `Four retail and office leases at Boulevard Commercial Center reach anniversary within 45 days. Renewal addenda with the contractual <b>5% CPI escalation</b> are staged for tenant signature.`,
+        headers: ['Unit & Tenant', 'Expiry Date', 'Current Annual', 'Renewed (+5% ' + s + ')'],
+        rows: [
+          ['Unit G-04 · Anchor Pharmacy', '30 Nov', fmtMoney(48000, m, s), fmtMoney(50400, m, s)],
+          ['Unit G-09 · Specialty Roastery', '05 Dec', fmtMoney(32000, m, s), fmtMoney(33600, m, s)],
+          ['Floor 3-A · Maritime Law Partners', '12 Dec', fmtMoney(42000, m, s), fmtMoney(44100, m, s)],
+          ['Floor 4-B · Engineering Studio', '15 Dec', fmtMoney(28000, m, s), fmtMoney(29400, m, s)]
+        ],
+        total: ['Renewed Annualized Rent Roll (4 Units)', fmtMoney(157500, m, s)],
+        citation: 'Source: Real Estate Lease Registry & Automated 45-Day Escalation Flow',
+        followUps: ['Show the Real Estate & Property Portfolio blueprint', 'Analyze the Real Estate & Property Operations dashboard']
+      },
+      '2 tenant checks due for bank presentation': {
+        title: 'Treasury Post-Dated Check (PDC) Presentation Queue',
+        answer: `Two quarterly tenant checks held in the Escrow Vault mature on Thursday morning and are queued for bank clearing and automatic lease receipt allocation.`,
+        headers: ['Tenant & Property', 'Check Ref', 'Maturity', 'Amount (' + s + ')'],
+        rows: [
+          ['Anchor Retail Group · Boulevard Center', 'CHQ-884120', 'Thursday 09:00', fmtMoney(24500, m, s)],
+          ['Penthouse Suite 12A · Harbor View', 'CHQ-551904', 'Thursday 09:00', fmtMoney(18000, m, s)]
+        ],
+        total: ['Total PDC Clearing Batch', fmtMoney(42500, m, s)],
+        citation: 'Source: Real Estate Customer Receipt & PDC Maturity Calendar',
+        followUps: ['Show Real Estate journal entries', 'How are landlord co-owner distributions calculated?']
+      },
+      'Tower HVAC preventive maintenance completed': {
+        title: 'Property Work Order & Service-Charge Attribution',
+        answer: `Work Order <b>WO-2026-0088</b> (Harbor View Residences chiller & generator overhaul) is signed off with vendor warranty attached in SharePoint and allocated to the building OpEx service-charge pool.`,
+        headers: ['Work Order Component', 'Vendor', 'Classification', 'Cost (' + s + ')'],
+        rows: [
+          ['Rooftop Chiller Compressor Overhaul', 'ClimateTech MEP', 'OpEx · Service Charge', fmtMoney(2150, m, s)],
+          ['Standby Generator Load-Bank Service', 'PowerGrid Lebanon', 'OpEx · Service Charge', fmtMoney(950, m, s)],
+          ['Elevator Safety Brake Certification', 'LiftCorp Inspection', 'OpEx · Statutory', fmtMoney(500, m, s)]
+        ],
+        total: ['Total Audited Work Order (WO-2026-0088)', fmtMoney(3600, m, s)],
+        citation: 'Source: Real Estate Maintenance Work Orders & NOI Yield Model',
+        followUps: ['Show the Real Estate & Property Portfolio blueprint', 'Configure scope and pricing for Real Estate']
+      },
+      'Quarterly landlord distribution statement ready': {
+        title: 'Co-Owner Net Operating Income (NOI) Distribution',
+        answer: `Net Operating Income after maintenance, municipal taxes, and reserve retention is computed per property and split across co-owners according to the universal Partner Ownership registry.`,
+        headers: ['Co-Owner / Partner Share', 'Equity Stake', 'Gross Share', 'Net Payout (' + s + ')'],
+        rows: [
+          ['Principal Holding Partner (55%)', '55.0%', fmtMoney(85800, m, s), fmtMoney(67450, m, s)],
+          ['Co-Investor Partner A (30%)', '30.0%', fmtMoney(46800, m, s), fmtMoney(36790, m, s)],
+          ['Co-Investor Partner B (15%)', '15.0%', fmtMoney(23400, m, s), fmtMoney(18395, m, s)]
+        ],
+        total: ['Total Quarterly Net Distribution (78.6% NOI)', fmtMoney(122635, m, s)],
+        citation: 'Source: Real Estate Ownership Registry (bhf_partner) & Partner SOA RDL',
+        followUps: ['Analyze the Real Estate & Property Operations dashboard', 'How do printable Statements of Account work?']
+      },
+      '19 corporate renewals due next month pre-quoted': {
+        title: 'Insurance Brokerage · 90/60/30-Day Renewal Pipeline',
+        answer: `All 19 corporate group medical, fleet, and property policies expiring next month have comparative carrier quotes generated and WhatsApp renewal summaries queued for account executives.`,
+        headers: ['Line of Business', 'Policies Expiring', 'Expiring GWP', 'Quoted Renewal (' + s + ')'],
+        rows: [
+          ['Corporate Group Medical & Life', '7 Policies', fmtMoney(94000, m, s), fmtMoney(98500, m, s)],
+          ['Commercial Motor & Truck Fleets', '8 Policies', fmtMoney(46200, m, s), fmtMoney(47800, m, s)],
+          ['Marine Cargo & All-Risk Property', '4 Policies', fmtMoney(31800, m, s), fmtMoney(32400, m, s)]
+        ],
+        total: ['Total Pre-Quoted Renewal Book (94.2% Retention)', fmtMoney(178700, m, s)],
+        citation: 'Source: Insurance Operations Renewal Radar & Policy Registry',
+        followUps: ['Show the Insurance Brokerage blueprint', 'Analyze the Insurance Brokerage Operations dashboard']
+      },
+      '6 policy installments past 30-day grace window': {
+        title: 'Uncollected Premium Installments (> 30d Grace)',
+        answer: `Six corporate policy endorsements and installment notes totaling <b>${fmtMoney(14600, m, s)}</b> passed the 30-day carrier grace window. Client SOA PDFs are staged for immediate collection.`,
+        headers: ['Policyholder', 'Endorsement Ref', 'Days Past Grace', 'Premium Due (' + s + ')'],
+        rows: [
+          ['Phoenicia Freight · Marine Open Cover', 'END-MAR-0412', '38 Days', fmtMoney(5400, m, s)],
+          ['MedStar Clinics · Group Medical Add-On', 'END-MED-0889', '35 Days', fmtMoney(4100, m, s)],
+          ['4 Commercial Fleet Endorsements', 'END-MOT-1102..1109', '31-34 Days', fmtMoney(5100, m, s)]
+        ],
+        total: ['Total Premium Past Grace Window', fmtMoney(14600, m, s)],
+        citation: 'Source: Insurance Premium Invoice Aging & Client SOA RDL',
+        followUps: ['How are carrier commissions and net payables calculated?', 'Show Insurance journal entries']
+      },
+      '2 motor claims awaiting surveyor repair approval': {
+        title: 'Claims Intake & Surveyor Approval Tracker',
+        answer: `Two motor fleet accident files have garage repair estimates and accident photos uploaded in their SharePoint claim folders and await underwriter surveyor stamp.`,
+        headers: ['Claim File', 'Policy & Vehicle', 'Workshop Estimate', 'Status'],
+        rows: [
+          ['CLM-2026-0194', 'POL-MOT-2210 · Delivery Van #14', fmtMoney(2850, m, s), 'Surveyor Review Today'],
+          ['CLM-2026-0198', 'POL-MOT-2405 · Executive SUV', fmtMoney(1920, m, s), 'Parts Quote Attached']
+        ],
+        total: ['Total Active Reserve Under Survey', fmtMoney(4770, m, s)],
+        citation: 'Source: Insurance Claims Registry & SharePoint Document Pipeline',
+        followUps: ['Show the Insurance Brokerage blueprint', 'Configure scope and pricing for Insurance Brokerage']
+      },
+      'Monthly carrier net payable reconciled': {
+        title: 'Carrier Settlement Bordereaux & Commission Split',
+        answer: `Gross written premium, brokerage commission (18.4% blended yield), and sub-producer splits across all 8 underwriting carriers are reconciled to the cent.`,
+        headers: ['Settlement Component', 'Accounting Class', 'Share', 'Amount (' + s + ')'],
+        rows: [
+          ['Gross Written Premium (GWP)', '4112 Policyholder Receivable', '100.0%', fmtMoney(187000, m, s)],
+          ['Brokerage Commission Earned', '70800 Commission Revenue', '18.4%', fmtMoney(34408, m, s)],
+          ['Net Payable to Underwriting Carriers', '4017 Insurer Payable Trust', '81.6%', fmtMoney(152592, m, s)]
+        ],
+        total: ['Unreconciled Bordereaux Variance', fmtMoney(0, m, s)],
+        citation: 'Source: Insurance Carrier Bordereaux RDL & Trust Account Ledger',
+        followUps: ['Analyze the Insurance Brokerage Operations dashboard', 'Show Insurance journal entries']
+      }
+    };
+
+    if (map[alertTitle]) return map[alertTitle];
+    for (const k of Object.keys(map)) {
+      if (alertTitle.toLowerCase().includes(k.toLowerCase())) return map[alertTitle] || map[k];
+    }
+    return null;
+  }
+
+  function buildDashboardBriefing(indKey, qText) {
+    const key = SANDBOX_DATA[indKey] ? indKey : (state.sboxInd || 'holding');
+    const d = SANDBOX_DATA[key];
+    const cm = CURR_MULT[state.sboxCurr] || CURR_MULT.USD;
+    const pm = PERIOD_MULT[state.sboxPeriod] || PERIOD_MULT.mtd;
+    const totalMult = cm.mult * pm.mult;
+    const sym = cm.sym;
+
+    const topEnt = d.entities[0];
+    const k0 = d.kpis[0];
+    const k1 = d.kpis[1];
+    const k2 = d.kpis[2];
+    const k3 = d.kpis[3];
+    const revStr = fmtMoney(k0.v * 1000, totalMult, sym, 0);
+    const cashStr = fmtMoney(k2.v * 1000, totalMult, sym, 0);
+    const arStr = fmtMoney(k3.v * 1000, totalMult, sym, 0);
+
+    const rows = d.entities.map(e => [
+      e[0],
+      fmtMoney(e[1] * 1000, totalMult, sym, 0),
+      e[2],
+      e[5] + ' (' + e[3] + ')'
+    ]);
+
+    return {
+      q: qText,
+      title: `${d.groupTitle} · Executive Briefing (${pm.label})`,
+      answer: `Live analysis for <b>${d.groupTitle}</b> in <b>${sym}</b> (${pm.label}): ${k0.k} stands at <b>${revStr}</b> (${k0.d}) with <b>${k1.v}${k1.unit}</b> ${k1.k.toLowerCase()}. Liquid position (${k2.k}) is <b>${cashStr}</b>, while ${k3.k} is <b>${arStr}</b> (${k3.d}). Top contributor is <b>${topEnt[0]}</b> at <b>${topEnt[2]}</b> margin.`,
+      headers: ['Operating Entity / BU', `Revenue (${sym})`, 'Margin', 'Books & Sync'],
+      rows: rows,
+      total: [`Consolidated ${k0.k} (${pm.label})`, revStr],
+      citation: `Source: Live Sandbox (${d.groupTitle} · ${sym} · ${pm.label}) · Priority Action: ${d.alerts[0][1]}`,
+      actionInd: key !== state.sboxInd ? key : null,
+      followUps: [
+        'Provide an executive action plan for: ' + d.alerts[0][1],
+        'Show the audited journal entries for ' + d.groupTitle,
+        'What would a complete multi-branch system cost and include?'
+      ]
+    };
+  }
+
+  function buildJournalAudit(indKey, qText) {
+    const key = SANDBOX_DATA[indKey] ? indKey : (state.sboxInd || 'holding');
+    const d = SANDBOX_DATA[key];
+    const cm = CURR_MULT[state.sboxCurr] || CURR_MULT.USD;
+    const m = cm.mult;
+    const sym = cm.sym;
+
+    let totDeb = 0, totCred = 0;
+    const rows = d.journal.map(r => {
+      const deb = (r[4] || 0) * m;
+      const cred = (r[5] || 0) * m;
+      totDeb += deb;
+      totCred += cred;
+      const amtStr = deb > 0
+        ? ('Dr ' + fmtMoney(r[4], m, sym))
+        : ('Cr ' + fmtMoney(r[5], m, sym));
+      return [
+        `${DAY_TOKENS[r[0]] || r[0]} · ${r[1]}`,
+        r[2],
+        r[3],
+        amtStr
+      ];
+    });
+
+    return {
+      q: qText,
+      title: `${d.groupTitle} · Double-Entry General Ledger Stream`,
+      answer: `Every operational transaction in <b>${d.groupTitle}</b> stamps its Lebanese / International Chart of Accounts code (Classes 1 to 7) automatically from the dimension row. Below is the live audited voucher batch in <b>${sym}</b>:`,
+      headers: ['Date & Voucher', 'Business Unit', 'GL Account', `Posting (${sym})`],
+      rows: rows,
+      total: ['Balanced Double-Rule Batch Total', `Dr ${fmtMoney(totDeb / m, m, sym)} = Cr ${fmtMoney(totCred / m, m, sym)}`],
+      citation: `Source: Dataverse General Ledger & SOA Journal Specification · Column-Level GL Security Active`,
+      followUps: [
+        'Analyze the ' + d.groupTitle + ' dashboard numbers',
+        'How does dual-entry reconciliation work with our existing accountant software?',
+        'How does Ask ISABI treat confidential figures?'
+      ]
+    };
+  }
+
+  function buildBlueprintResponse(indObj, qText) {
+    const sbox = SANDBOX_DATA[indObj.sandboxKey] || SANDBOX_DATA.holding;
+    const cm = CURR_MULT[state.sboxCurr] || CURR_MULT.USD;
+    const pm = PERIOD_MULT[state.sboxPeriod] || PERIOD_MULT.mtd;
+    const rev = fmtMoney(sbox.kpis[0].v * 1000, cm.mult * pm.mult, cm.sym, 0);
+
+    return {
+      q: qText,
+      title: `${indObj.badge}`,
+      answer: `${indObj.lead} In the live sandbox (${pm.label}), <b>${sbox.groupTitle}</b> tracks <b>${rev}</b> across its operating units with automated workflows and printable statements.`,
+      headers: ['Architecture Layer', 'Custom Engineering Specification', 'Production Output'],
+      rows: [
+        ['01. Custom Modules', indObj.modules[0] + ' + ' + indObj.modules[1], indObj.metrics[0][1]],
+        ['02. Operational Control', indObj.modules[2] + ' + ' + indObj.modules[3], indObj.metrics[1][1]],
+        ['03. Cloud Automation', indObj.workflows[0], indObj.metrics[2][1]],
+        ['04. BI & Statements', indObj.reports[0] + ' & ' + indObj.reports[1], '100% Reconciled']
+      ],
+      total: ['Typical Turnkey Go-Live Window', '3 to 6 Weeks (Fixed Scope)'],
+      citation: `Source: ISABI Production Blueprint (${indObj.name}) · Microsoft Dataverse + Power BI`,
+      actionInd: indObj.sandboxKey,
+      actionCfg: indObj.cfgName,
+      followUps: [
+        'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
+        'Show the audited journal entries for ' + sbox.groupTitle,
+        'What would a complete multi-branch system cost and include?'
+      ]
+    };
+  }
+
+  function detectIndustryFromQuery(low) {
+    if (low.includes('pos') || low.includes('till') || low.includes('cashier') || low.includes('thermal') || low.includes('rawbt') || low.includes('receipt print')) {
+      return INDUSTRIES.find(x => x.id === 'pos');
+    }
+    if (low.includes('attendance') || low.includes('kiosk') || low.includes('biometric') || low.includes('face') || low.includes('punch')) {
+      return INDUSTRIES.find(x => x.id === 'attendance');
+    }
+    if (low.includes('hospitality') || low.includes('resort') || low.includes('hotel') || low.includes('beach') || low.includes('cabana') || low.includes('f&b') || low.includes('restaurant')) {
+      return INDUSTRIES.find(x => x.id === 'hospitality');
+    }
+    if (low.includes('trading') || low.includes('auto') || low.includes('truck') || low.includes('vin') || low.includes('chassis') || low.includes('dealer') || low.includes('customs') || low.includes('spare part')) {
+      return INDUSTRIES.find(x => x.id === 'trading');
+    }
+    if (low.includes('manufactur') || low.includes('concrete') || low.includes('batch') || low.includes('cement') || low.includes('silo') || low.includes('mixer') || low.includes('pump') || low.includes('precast')) {
+      return INDUSTRIES.find(x => x.id === 'manufacturing');
+    }
+    if (low.includes('real estate') || low.includes('realestate') || low.includes('property') || low.includes('lease') || low.includes('tenant') || low.includes('rent') || low.includes('pdc') || low.includes('landlord') || low.includes('noi')) {
+      return INDUSTRIES.find(x => x.id === 'realestate');
+    }
+    if (low.includes('insur') || low.includes('broker') || low.includes('policy') || low.includes('policies') || low.includes('bordereau') || low.includes('underwrit') || low.includes('claim') || low.includes('endorsement')) {
+      return INDUSTRIES.find(x => x.id === 'insurance');
+    }
+    if (low.includes('holding') || low.includes('family office') || low.includes('multi-entity') || low.includes('intercompany') || low.includes('group overview')) {
+      return INDUSTRIES.find(x => x.id === 'holding');
+    }
+    return null;
+  }
+
+  function resolveAskIsabi(qText) {
+    const cleanQ = String(qText || '').trim();
+    const low = cleanQ.toLowerCase();
+
+    // 1. Check exact match with the 4 preset prompts
+    for (let i = 0; i < AI_PROMPTS.length; i++) {
+      if (AI_PROMPTS[i].q.toLowerCase() === low) {
+        const copy = Object.assign({}, AI_PROMPTS[i], { q: cleanQ });
+        copy.followUps = AI_PROMPTS.filter((_, idx) => idx !== i).slice(0, 2).map(p => p.q);
+        copy.followUps.push('Analyze the ' + (SANDBOX_DATA[state.sboxInd] || SANDBOX_DATA.holding).groupTitle + ' dashboard numbers');
+        return copy;
+      }
+    }
+
+    // 2. Check all 24 Sandbox Executive Exception / Watchdog buttons
+    if (low.startsWith('provide an executive action plan for:')) {
+      const alertTitle = cleanQ.replace(/^provide an executive action plan for:\s*/i, '').trim();
+      const drill = buildAlertDrilldown(alertTitle);
+      if (drill) return Object.assign({ q: cleanQ }, drill);
+    }
+    for (const k of Object.keys(SANDBOX_DATA)) {
+      for (const a of SANDBOX_DATA[k].alerts) {
+        if (low.includes(a[1].toLowerCase())) {
+          const drill = buildAlertDrilldown(a[1]);
+          if (drill) return Object.assign({ q: cleanQ }, drill);
+        }
+      }
+    }
+
+    // 3. Sandbox Dashboard Analysis ("Analyze the ... dashboard numbers" or KPI/dashboard questions)
+    const matchedIndObj = detectIndustryFromQuery(low);
+    if (low.includes('analyze') || low.includes('dashboard') || low.includes('sandbox') || low.includes('kpi') || low.includes('performance') || low.includes('action items') || low.includes('summary')) {
+      const targetSboxKey = matchedIndObj ? matchedIndObj.sandboxKey : state.sboxInd;
+      return buildDashboardBriefing(targetSboxKey, cleanQ);
+    }
+
+    // 4. Journal / General Ledger / Voucher / Debit / Credit / Chart of Accounts queries
+    if (low.includes('journal') || low.includes('voucher') || low.includes('debit') || low.includes('credit') || low.includes('coa') || low.includes('chart of account') || low.includes('trial balance') || low.includes('double-entry') || low.includes('double entry') || low.includes('gl ')) {
+      const targetSboxKey = matchedIndObj ? matchedIndObj.sandboxKey : state.sboxInd;
+      return buildJournalAudit(targetSboxKey, cleanQ);
+    }
+
+    // 5. Hero "Try It" ("Explain how ISABI Systems customizes the ledger for my industry") or generic customization question
+    if (low.includes('customizes the ledger') || (low.includes('custom') && low.includes('industry') && !matchedIndObj)) {
+      const curInd = INDUSTRIES.find(x => x.id === state.activeInd) || INDUSTRIES[0];
+      return Object.assign({}, AI_PROMPTS[1], {
+        q: cleanQ,
+        answer: `Unlike off-the-shelf software that forces every company into generic "Invoice" and "Item" boxes, ISABI Systems engineers a <b>dedicated Dataverse relational schema</b> around your physical unit of operation while sharing a governed double-entry accounting core. Currently selected blueprint on page: <b>${curInd.name}</b>.`,
+        actionInd: curInd.sandboxKey,
+        actionCfg: curInd.cfgName,
+        followUps: [
+          'Show the ' + curInd.cfgName + ' blueprint in detail',
+          'Analyze the ' + (SANDBOX_DATA[curInd.sandboxKey] || SANDBOX_DATA.holding).groupTitle + ' dashboard numbers',
+          'How does dual-entry reconciliation work with our existing accountant software?'
+        ]
+      });
+    }
+
+    // 6. Specific Industry Blueprint or Companion PWA (Hospitality, Trading, Concrete, Real Estate, Insurance, Holding, POS, Attendance)
+    if (matchedIndObj) {
+      return buildBlueprintResponse(matchedIndObj, cleanQ);
+    }
+
+    // 7. Overdue Receivables / Aging / SOA / Collections
+    if (low.includes('receiv') || low.includes('overdue') || low.includes('60') || low.includes('aging') || low.includes('ar ') || low.includes('collect') || low.includes('soa') || low.includes('statement of account')) {
+      const cm = CURR_MULT[state.sboxCurr] || CURR_MULT.USD;
+      const m = cm.mult;
+      const s = cm.sym;
+      return {
+        q: cleanQ,
+        title: `Live Receivables & SOA Audit (${s})`,
+        answer: `I queried the Receivables Ledger across all active Business Units in <b>${s}</b>. Overdue balances past 60 days stand at <b>${fmtMoney(42300, m, s)}</b> across 7 invoices, with one-click printable Statements of Account (.rdl) ready for WhatsApp or email dispatch.`,
+        headers: ['Account / Entity', 'Voucher Ref', 'Days Past Due', `Balance (${s})`],
+        rows: [
+          ['Apex Contracting · Concrete Plant', 'TK-2026-3104', '68 Days', fmtMoney(16400, m, s)],
+          ['Levant Logistics · Heavy Truck Div', 'SI-TRK-0298', '64 Days', fmtMoney(14800, m, s)],
+          ['Metro Transit · Spare Parts Depot', 'SI-PRT-1411', '62 Days', fmtMoney(6250, m, s)],
+          ['4 Smaller Balances (< $2k each)', 'Multiple', '61-74 Days', fmtMoney(4850, m, s)]
+        ],
+        total: ['Total Audited Overdue (> 60 Days)', fmtMoney(42300, m, s)],
+        citation: 'Source: Dataverse Receivables Ledger · Verified 100% against Printable SOA (.rdl)',
+        followUps: [
+          'Analyze the ' + (SANDBOX_DATA[state.sboxInd] || SANDBOX_DATA.holding).groupTitle + ' dashboard numbers',
+          'How do printable Statements of Account work?',
+          'What would a complete multi-branch system cost and include?'
+        ]
+      };
+    }
+
+    // 8. Pricing, Scope Configurator, Cost, Budget, Tiers, Retainer
+    if (low.includes('price') || low.includes('pricing') || low.includes('cost') || low.includes('budget') || low.includes('tier') || low.includes('how much') || low.includes('quote') || low.includes('retainer') || low.includes('invest') || low.includes('scope')) {
+      const cfg = state.lastCfgSummary || {
+        industry: state.cfgInd,
+        scale: state.cfgScaleLabel,
+        modules: ['Core Dataverse ERP & Ledger', 'Power BI Executive Dashboards', 'Printable .RDL Statements & SOA', 'Ask ISABI Native AI Assistant'],
+        range: '$12,300 to $15,000',
+        weeks: '5 to 7 Weeks'
+      };
+      return {
+        q: cleanQ,
+        title: 'Transparent Investment & Your Configured Scope',
+        answer: `ISABI Systems offers three fixed-scope engagement tiers (<b>$4,500+</b> Single Entity, <b>$9,500+</b> Multi-Entity & AI Suite, and <b>$18,000+</b> Enterprise Group). Based on your current <b>Scope Configurator</b> selection for <b>${cfg.industry}</b> (${cfg.scale}), your estimated turnkey range is <b>${cfg.range}</b> delivered in <b>${cfg.weeks}</b>.`,
+        headers: ['Engagement Option', 'Target Scale & Included Scope', 'Investment'],
+        rows: [
+          ['Your Configured Scope', `${cfg.industry} · ${cfg.scale} (${cfg.modules.length} modules)`, cfg.range],
+          ['Tier 01 · Foundation', 'Single entity ERP, custom schema, roles, Power BI & 2 RDLs', 'From $4,500 (+$350/mo opt.)'],
+          ['Tier 02 · Multi-Entity & AI', 'Multi-BU isolation, 3 PBI workspaces, full SOA pack, Ask ISABI & 1 PWA', 'From $9,500 (+$650/mo opt.)'],
+          ['Tier 03 · Enterprise Group', 'Multi-industry apps, group treasury, partner splits & unlimited PWAs', 'From $18,000+ Custom']
+        ],
+        total: ['Your Live Configured Estimate', `${cfg.range} (${cfg.weeks})`],
+        citation: 'Fixed-scope quotation confirmed after a 30-minute discovery call with Hussein Bdeir',
+        actionCfg: state.cfgInd,
+        followUps: [
+          'Do we need to buy Microsoft licences?',
+          'What happens in the first six weeks?',
+          'Can we start small and add modules later?'
+        ]
+      };
+    }
+
+    // 9. Dual-Entry, Accountant Software, Migration from Excel/Legacy
+    if (low.includes('reconcil') || low.includes('accountant') || low.includes('parallel') || low.includes('dual') || low.includes('statutory') || low.includes('excel') || low.includes('migrat') || low.includes('history') || low.includes('cutover') || low.includes('legacy')) {
+      return Object.assign({}, AI_PROMPTS[2], {
+        q: cleanQ,
+        followUps: [
+          'Show the Statutory vs Operational reconciliation check',
+          'Who owns the system and the data?',
+          'What happens in the first six weeks?'
+        ]
+      });
+    }
+
+    // 10. Microsoft Licensing, Tenant Ownership, Security, Permissions & Confidential Data
+    if (low.includes('licen') || low.includes('own') || low.includes('security') || low.includes('confidential') || low.includes('permission') || low.includes('role') || low.includes('entra') || low.includes('privacy') || low.includes('tenant') || low.includes('who sees')) {
+      return {
+        q: cleanQ,
+        title: 'Tenant Ownership, Licensing & Role Security',
+        answer: `<b>You own 100% of the system and data.</b> Every database table, workflow, Power BI model, and Ask ISABI prompt runs inside your own Microsoft 365 & Dataverse tenant. Microsoft bills your licences directly at cost with zero markup from ISABI Systems and zero per-terminal fees on POS and Attendance PWAs.`,
+        headers: ['Governance Layer', 'How It Is Enforced in Production', 'Client Benefit'],
+        rows: [
+          ['Tenant & Data Ownership', 'Deployed inside your own Microsoft 365 & Entra ID tenant', '100% client-owned forever'],
+          ['Business Unit Isolation', 'Row-level Dataverse ownership per branch, resort, or plant', 'Staff see only their unit'],
+          ['Entry vs Supervisor Roles', 'Entry seats create records; Supervisors audit & approve; GL is column-secured', 'Zero unauthorized edits'],
+          ['Ask ISABI Security Scope', 'Queries execute under the signed-in user\'s exact Dataverse security role', 'Confidential figures protected']
+        ],
+        total: ['Companion POS & Kiosk Terminal Fees', '$0 / Terminal (Unlimited PWA Installs)'],
+        citation: 'Source: Microsoft Entra ID + Dataverse Role & Column-Level Security Architecture',
+        followUps: [
+          'How does dual-entry reconciliation work with our existing accountant software?',
+          'What would a complete multi-branch system cost and include?',
+          'What happens in the first six weeks?'
+        ]
+      };
+    }
+
+    // 11. Commissioning, Timeline, First 6 Weeks, Process ("What should I know before commissioning...")
+    if (low.includes('commission') || low.includes('week') || low.includes('timeline') || low.includes('how long') || low.includes('process') || low.includes('first') || low.includes('know before') || low.includes('start') || low.includes('onboard')) {
+      return {
+        q: cleanQ,
+        title: 'Commissioning & 6-Week Go-Live Roadmap',
+        answer: `Before commissioning an ISABI system, you only need your current spreadsheets or chart of accounts and a 30-minute walkthrough with Hussein Bdeir. Your accountant does not need to change software, and you can start with one entity and add modules later without rebuilding.`,
+        headers: ['Delivery Window', 'Engineering Milestone', 'Client Sign-Off'],
+        rows: [
+          ['Weeks 1 to 2', 'Custom Dataverse schema, Chart of Accounts, Business Units & roles', 'Live ERP forms approved'],
+          ['Weeks 2 to 4', 'Automated approvals, SharePoint document routing & POS/Kiosk PWAs', 'Workflows tested end-to-end'],
+          ['Weeks 3 to 5', 'Power BI XMLA models (Year/Month/Week/Day) & printable .RDL statements', 'Historical data migrated'],
+          ['Weeks 5 to 6', 'Ask ISABI wiring, team training, parallel-run reconciliation & go-live', '0.00 variance cutover']
+        ],
+        total: ['Typical End-to-End Delivery', '3 to 6 Weeks to Production'],
+        citation: 'Source: ISABI Code-First Compiler Pipeline · Direct Principal Engineering',
+        followUps: [
+          'What would a complete multi-branch system cost and include?',
+          'Do we need to buy Microsoft licences?',
+          'Can we start small and add modules later?'
+        ]
+      };
+    }
+
+    // 12. Power BI, Printable Statements (.RDL), Reports
+    if (low.includes('power bi') || low.includes('pbi') || low.includes('rdl') || low.includes('printable') || low.includes('report') || low.includes('xmla')) {
+      return {
+        q: cleanQ,
+        title: 'Power BI Executive Suite & Printable Statements (.RDL)',
+        answer: `Every ISABI implementation pairs interactive <b>Power BI semantic models</b> (with dynamic Year, Month, Week, and Day period pickers) with pixel-perfect <b>Paginated Reports (.rdl)</b> formatted for immediate PDF/Excel export and statutory audit.`,
+        headers: ['Reporting Workspace', 'Audience & Access Gate', 'Included Outputs'],
+        rows: [
+          ['01. Operations Workspace', 'Branch Managers & Department Heads', 'Daily revenue, stock velocity, attendance & ticket books'],
+          ['02. Financial Workspace', 'Owners, Partners & Chief Accountants', 'Consolidated P&L, balance sheet, cashflow & partner splits'],
+          ['03. Printable .RDL Pack', 'In-App Viewer + Automated Email/WhatsApp', 'Customer/Supplier SOA, Aged Trial Balance & Payslips'],
+          ['04. Reconciliation Workspace', 'Parallel-Run Audit Team', 'Line-by-line operational vs statutory variance check']
+        ],
+        total: ['Report Refresh & Delivery', 'Edit-Driven Auto Refresh + Scheduled PDF Subscriptions'],
+        citation: 'Source: Power BI XMLA Pipeline & Shared RDL Institutional Style Engine',
+        followUps: [
+          'Analyze the ' + (SANDBOX_DATA[state.sboxInd] || SANDBOX_DATA.holding).groupTitle + ' dashboard numbers',
+          'Why did receivables past 60 days increase this month?',
+          'What would a complete multi-branch system cost and include?'
+        ]
+      };
+    }
+
+    // 13. ROI, Hours Saved, Payback Calculator
+    if (low.includes('roi') || low.includes('save') || low.includes('hour') || low.includes('payback') || low.includes('close speed')) {
+      const ent = parseInt(document.getElementById('roi-entities')?.value || '3', 10) || 3;
+      const hrs = parseInt(document.getElementById('roi-hours')?.value || '35', 10) || 35;
+      const closeDays = parseInt(document.getElementById('roi-close')?.value || '14', 10) || 14;
+      const annualHours = Math.round(hrs * 52 * 0.78 + ent * 65);
+      const annualVal = annualHours * 30;
+      const estCost = ent === 1 ? 5500 : (ent <= 4 ? 10500 : 18500);
+      const payback = Math.max(1.2, (estCost / (annualVal / 12))).toFixed(1);
+
+      return {
+        q: cleanQ,
+        title: `Quantified ROI & Close-Cycle Impact (${ent} ${ent === 1 ? 'Entity' : 'Entities'})`,
+        answer: `Based on your current ROI Estimator settings (<b>${ent} entities</b>, <b>${hrs} hrs/wk</b> of manual Excel work, and a <b>${closeDays}-day</b> monthly close), automating voucher capture, inter-branch consolidation, and SOA generation reclaims <b>${annualHours.toLocaleString('en-US')} hours per year</b>.`,
+        headers: ['Impact Metric', 'Current Baseline', 'With ISABI Systems'],
+        rows: [
+          ['Manual Excel & Re-Keying', `${hrs} hrs / week`, `${annualHours.toLocaleString('en-US')} hrs/yr reclaimed`],
+          ['Annual Productivity Value ($30/hr)', 'Manual overhead', '$' + annualVal.toLocaleString('en-US') + ' / year saved'],
+          ['Monthly Books Close Cycle', `${closeDays} Calendar Days`, closeDays > 10 ? 'Same-Day / 48h Close' : 'Real-Time Daily Close'],
+          ['Estimated Turnkey Payback', `~$${estCost.toLocaleString('en-US')} build`, `${payback} Months to full payback`]
+        ],
+        total: ['Estimated System Payback Period', `${payback} Months`],
+        citation: 'Source: ISABI Operational Impact Estimator · Section 05',
+        followUps: [
+          'What would a complete multi-branch system cost and include?',
+          'How does dual-entry reconciliation work with our existing accountant software?'
+        ]
+      };
+    }
+
+    // 14. Contact, Location, Lebanon, Middle East, Hussein Bdeir, WhatsApp
+    if (low.includes('where') || low.includes('lebanon') || low.includes('middle east') || low.includes('hussein') || low.includes('contact') || low.includes('whatsapp') || low.includes('call') || low.includes('demo') || low.includes('walkthrough')) {
+      return {
+        q: cleanQ,
+        title: 'Direct Principal Access · Hussein Bdeir',
+        answer: `ISABI Systems is founded and led by <b>Hussein Bdeir</b>. Based in Lebanon, we work with owner-led enterprises and multi-entity holding groups across the Middle East and internationally. You work directly with the principal architect who designs your accounting schema and writes your system.`,
+        headers: ['Direct Channel', 'Details', 'Response Window'],
+        rows: [
+          ['WhatsApp & Mobile', '+961 70 444 955', 'Same-Day Direct Reply'],
+          ['Executive Email', 'hbdeir16@gmail.com', 'RFP, COA & Scope Review'],
+          ['Step 01 · Discovery Call', '30-minute architecture & workflow review on Teams/WhatsApp', 'No obligation'],
+          ['Step 02 · Live Walkthrough', 'Production demo of Hospitality, Trading, Mfg, Real Estate & Insurance', 'Fixed-scope proposal']
+        ],
+        total: ['Direct WhatsApp Line', '+961 70 444 955'],
+        citation: 'Source: ISABI Systems Executive Consultation Portal · Section 08',
+        followUps: [
+          'What would a complete multi-branch system cost and include?',
+          'What happens in the first six weeks?'
+        ]
+      };
+    }
+
+    // 15. Smart Context-Aware Fallback (uses active Sandbox + Scope Configurator state)
+    return buildDashboardBriefing(state.sboxInd || 'holding', cleanQ);
+  }
+
   function formatAiMessageHTML(item) {
     const colCount = item.headers.length;
     const headersHtml = item.headers.map((h, idx) =>
@@ -1110,8 +1869,20 @@ JS = r"""
     const totLabel = item.total[0] || 'Total';
     const totVal = item.total[item.total.length - 1] || '';
 
+    const followUpsHtml = (item.followUps && item.followUps.length)
+      ? `<div class="ai-followups">${item.followUps.map(fq => `<button type="button" class="ai-followup-btn" data-ai-ask="${escapeHtml(fq)}">${escapeHtml(fq)}</button>`).join('')}</div>`
+      : '';
+
+    let extraActions = '';
+    if (item.actionInd && SBOX_LABELS[item.actionInd]) {
+      extraActions += `<button type="button" class="ai-act-link" data-load-sandbox="${escapeHtml(item.actionInd)}">Load ${escapeHtml(SBOX_LABELS[item.actionInd])} in Sandbox</button>`;
+    }
+    if (item.actionCfg) {
+      extraActions += `<button type="button" class="ai-act-link" data-configure-ind="${escapeHtml(item.actionCfg)}">Configure Scope</button>`;
+    }
+
     return `
-      <div class="ai-msg-user">${item.q}</div>
+      <div class="ai-msg-user">${escapeHtml(item.q)}</div>
       <div class="ai-msg-bot">
         ${BADGE_MINI_SVG}
         <div class="ai-bot-bubble">
@@ -1131,71 +1902,102 @@ JS = r"""
               </tbody>
             </table>
           </div>
+          ${followUpsHtml}
           <div class="ai-bot-meta">
             <span>${item.citation}</span>
-            <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I tested Ask ISABI on your website (' + item.title + ') and would like to discuss building this for our company.')}" target="_blank" rel="noopener" style="color:#D9A54A;font-weight:700">Discuss on WhatsApp</a>
+            <div class="ai-bot-actions">
+              ${extraActions}
+              <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I asked Ask ISABI ("' + item.q + '") and would like to discuss this for our company.')}" target="_blank" rel="noopener" style="color:#D9A54A;font-weight:700">Discuss on WhatsApp</a>
+            </div>
           </div>
         </div>
       </div>
     `;
   }
 
-  function matchCustomAiQuestion(qText) {
-    const low = qText.toLowerCase();
-    if (low.includes('price') || low.includes('cost') || low.includes('budget') || low.includes('tier')) {
-      return Object.assign({}, AI_PROMPTS[3], { q: qText });
-    }
-    if (low.includes('reconcil') || low.includes('accountant') || low.includes('parallel') || low.includes('dual')) {
-      return Object.assign({}, AI_PROMPTS[2], { q: qText });
-    }
-    if (low.includes('receiv') || low.includes('overdue') || low.includes('60') || low.includes('aging')) {
-      return Object.assign({}, AI_PROMPTS[0], { q: qText });
-    }
-    return {
-      q: qText,
-      title: 'Custom Architectural Assessment',
-      answer: 'ISABI Systems builds every application directly on <b>Microsoft Dataverse, Power Apps, Power Automate, and Power BI</b>, tailored to your entities and chart of accounts. Here is how a custom implementation is structured for your question:',
-      headers: ['Phase', 'Engineering Deliverable', 'Timeline', 'Verification'],
-      rows: [
-        ['01. Schema & COA', 'Custom Dataverse tables, Business Units & role security', 'Week 1 to 2', 'Live ERP Forms'],
-        ['02. Workflows & PWAs', 'Automated approvals, SOA generators & field POS/Kiosks', 'Week 2 to 4', 'End-to-End Test'],
-        ['03. Power BI & .RDL', 'XMLA semantic models & printable Statement of Accounts', 'Week 3 to 5', '100% Reconciled'],
-        ['04. Ask ISABI AI', 'Native AI wired to your live ledger and operational tables', 'Week 5 to 6', 'Production Go-Live']
-      ],
-      total: ['Indicative Investment Range', '$4,500 to $18,000+'],
-      citation: 'Engineered directly by Hussein Bdeir · No off-the-shelf compromises'
-    };
-  }
-
-  function renderAiSection(idx = 0) {
+  function renderAiThreads(scrollToBottom = false) {
     const pillsEl = document.getElementById('ai-prompt-pills');
     const threadEl = document.getElementById('ai-inline-thread');
     const drawerPills = document.getElementById('drawer-prompt-pills');
     const drawerThread = document.getElementById('ai-drawer-thread');
 
     const pillsHtml = AI_PROMPTS.map((p, i) => `
-      <button type="button" class="ai-pill-btn ${i === idx ? 'active' : ''}" data-ai-idx="${i}">${p.q}</button>
+      <button type="button" class="ai-pill-btn ${i === state.activeAiPillIdx ? 'active' : ''}" data-ai-idx="${i}">${p.q}</button>
     `).join('');
 
     if (pillsEl) pillsEl.innerHTML = pillsHtml;
     if (drawerPills) drawerPills.innerHTML = pillsHtml;
 
-    const item = AI_PROMPTS[idx] || AI_PROMPTS[0];
-    const msgHtml = formatAiMessageHTML(item);
-    if (threadEl) threadEl.innerHTML = msgHtml;
-    if (drawerThread && !drawerThread.innerHTML.trim()) {
-      drawerThread.innerHTML = msgHtml;
+    if (!state.aiHistory.length) {
+      state.aiHistory = [resolveAskIsabi(AI_PROMPTS[0].q)];
     }
+
+    const threadHtml = state.aiHistory.map(item => formatAiMessageHTML(item)).join('');
+    if (threadEl) {
+      threadEl.innerHTML = threadHtml;
+      if (scrollToBottom) threadEl.scrollTop = threadEl.scrollHeight;
+    }
+    if (drawerThread) {
+      drawerThread.innerHTML = threadHtml;
+      if (scrollToBottom) drawerThread.scrollTop = drawerThread.scrollHeight;
+    }
+    updateAiScopeBar();
+  }
+
+  function renderAiSection(idx = 0) {
+    state.activeAiPillIdx = idx;
+    const preset = AI_PROMPTS[idx] || AI_PROMPTS[0];
+    const resolved = resolveAskIsabi(preset.q);
+    if (!state.aiHistory.length) {
+      state.aiHistory = [resolved];
+      renderAiThreads(false);
+    } else {
+      const last = state.aiHistory[state.aiHistory.length - 1];
+      if (!last || last.q !== resolved.q) {
+        state.aiHistory.push(resolved);
+        if (state.aiHistory.length > 8) state.aiHistory.shift();
+      }
+      renderAiThreads(true);
+    }
+  }
+
+  function askIsabiQuestion(qText, openDrawer = false) {
+    const clean = String(qText || '').trim();
+    if (!clean) return;
+    const matchIdx = AI_PROMPTS.findIndex(p => p.q.toLowerCase() === clean.toLowerCase());
+    state.activeAiPillIdx = matchIdx >= 0 ? matchIdx : -1;
+    const resp = resolveAskIsabi(clean);
+    const last = state.aiHistory[state.aiHistory.length - 1];
+    if (!last || last.q !== resp.q || last.title !== resp.title) {
+      state.aiHistory.push(resp);
+      if (state.aiHistory.length > 8) state.aiHistory.shift();
+    } else {
+      state.aiHistory[state.aiHistory.length - 1] = resp;
+    }
+    renderAiThreads(true);
+    if (openDrawer) {
+      const backdrop = document.getElementById('ai-drawer-backdrop');
+      if (backdrop) backdrop.hidden = false;
+      const drawerThread = document.getElementById('ai-drawer-thread');
+      if (drawerThread) drawerThread.scrollTop = drawerThread.scrollHeight;
+    }
+  }
+
+  function resetAiThread() {
+    state.aiHistory = [];
+    state.activeAiPillIdx = 0;
+    renderAiSection(0);
+    showToast('Ask ISABI conversation reset');
   }
 
   function openAiDrawer(customQ) {
     const backdrop = document.getElementById('ai-drawer-backdrop');
-    const drawerThread = document.getElementById('ai-drawer-thread');
-    if (!backdrop || !drawerThread) return;
+    if (!backdrop) return;
     backdrop.hidden = false;
     if (customQ) {
-      const resp = matchCustomAiQuestion(customQ);
-      drawerThread.innerHTML = formatAiMessageHTML(resp);
+      askIsabiQuestion(customQ, true);
+    } else {
+      renderAiThreads(true);
     }
     const inp = document.getElementById('ai-drawer-input');
     if (inp && window.innerWidth > 720) setTimeout(() => inp.focus(), 80);
@@ -1488,6 +2290,8 @@ JS = r"""
       // 7. Load Industry in Live ERP Sandbox
       const loadSbox = e.target.closest('[data-load-sandbox]');
       if (loadSbox) {
+        const bd = document.getElementById('ai-drawer-backdrop');
+        if (bd) bd.hidden = true;
         state.sboxInd = loadSbox.dataset.loadSandbox;
         renderSandbox();
         scrollToTargetId('sandbox');
@@ -1498,6 +2302,8 @@ JS = r"""
       // 8. Configure Industry Scope & Price
       const cfgIndJump = e.target.closest('[data-configure-ind]');
       if (cfgIndJump) {
+        const bd = document.getElementById('ai-drawer-backdrop');
+        if (bd) bd.hidden = true;
         state.cfgInd = cfgIndJump.dataset.configureInd;
         document.querySelectorAll('#cfg-ind-pills .cfg-pill').forEach(b => {
           b.classList.toggle('active', b.dataset.cfgInd === state.cfgInd);
@@ -1555,8 +2361,12 @@ JS = r"""
       if (aiIdxBtn) {
         const idx = parseInt(aiIdxBtn.dataset.aiIdx, 10) || 0;
         renderAiSection(idx);
-        const drawerThread = document.getElementById('ai-drawer-thread');
-        if (drawerThread) drawerThread.innerHTML = formatAiMessageHTML(AI_PROMPTS[idx]);
+        return;
+      }
+
+      const aiAskBtn = e.target.closest('[data-ai-ask]');
+      if (aiAskBtn) {
+        askIsabiQuestion(aiAskBtn.dataset.aiAsk, false);
         return;
       }
 
@@ -1619,11 +2429,28 @@ JS = r"""
     // Header & Mobile Ask ISABI buttons
     document.getElementById('hdr-ask-btn')?.addEventListener('click', () => openAiDrawer());
     document.getElementById('mob-ask-btn')?.addEventListener('click', () => openAiDrawer());
+    document.getElementById('ai-inline-reset')?.addEventListener('click', resetAiThread);
+    document.getElementById('ai-drawer-reset')?.addEventListener('click', resetAiThread);
     document.getElementById('close-ai-drawer')?.addEventListener('click', () => {
       document.getElementById('ai-drawer-backdrop').hidden = true;
     });
     document.getElementById('ai-drawer-backdrop')?.addEventListener('click', e => {
       if (e.target.id === 'ai-drawer-backdrop') e.target.hidden = true;
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        const bd = document.getElementById('ai-drawer-backdrop');
+        if (bd && !bd.hidden) bd.hidden = true;
+      }
+    });
+
+    document.getElementById('ai-inline-form')?.addEventListener('submit', e => {
+      e.preventDefault();
+      const inp = document.getElementById('ai-inline-input');
+      const q = (inp?.value || '').trim();
+      if (!q) return;
+      askIsabiQuestion(q, false);
+      inp.value = '';
     });
 
     document.getElementById('ai-drawer-form')?.addEventListener('submit', e => {
@@ -1631,8 +2458,7 @@ JS = r"""
       const inp = document.getElementById('ai-drawer-input');
       const q = (inp?.value || '').trim();
       if (!q) return;
-      const resp = matchCustomAiQuestion(q);
-      document.getElementById('ai-drawer-thread').innerHTML = formatAiMessageHTML(resp);
+      askIsabiQuestion(q, false);
       inp.value = '';
     });
 

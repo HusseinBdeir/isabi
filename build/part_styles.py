@@ -1743,9 +1743,115 @@ table.m-grid tr.total td {
 .ai-thread {
   padding: 18px;
   flex: 1;
+  max-height: 410px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.ai-scope-bar {
+  padding: 8px 18px;
+  background: rgba(217, 165, 74, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11.5px;
+  color: #9FB0C7;
+}
+
+.ai-scope-bar b {
+  color: #D9A54A;
+}
+
+.ai-reset-btn {
+  background: transparent;
+  color: #9FB0C7;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.ai-reset-btn:hover {
+  color: #F4F2EE;
+  border-color: #D9A54A;
+}
+
+.ai-console-ftr {
+  padding: 12px 18px;
+  background: #0B1730;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  gap: 8px;
+}
+
+.ai-console-ftr input {
+  flex: 1;
+  background: #132342;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  padding: 10px 13px;
+  color: #FFFFFF;
+  font-size: 14.5px;
+  min-width: 0;
+  outline: none;
+}
+
+.ai-console-ftr input:focus, .ai-drawer-ftr input:focus {
+  border-color: #D9A54A;
+  box-shadow: 0 0 0 2px rgba(217, 165, 74, 0.18);
+}
+
+.ai-followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 8px;
+}
+
+.ai-followup-btn {
+  background: rgba(255, 255, 255, 0.05);
+  color: #E9ECF2;
+  border: 1px solid rgba(217, 165, 74, 0.32);
+  border-radius: 999px;
+  padding: 4.5px 10px;
+  font-size: 11.5px;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ai-followup-btn:hover {
+  background: rgba(217, 165, 74, 0.18);
+  border-color: #D9A54A;
+  color: #FFFFFF;
+}
+
+.ai-bot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-act-link {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: #4F8FD6;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ai-act-link:hover {
+  color: #D9A54A;
 }
 
 .ai-msg-user {
@@ -3015,8 +3121,14 @@ table.m-grid tr.total td {
     font-size: 11.5px;
     line-height: 1.35;
   }
-  .ai-console-hdr, .ai-prompt-pills, .ai-thread {
+  .ai-console-hdr, .ai-prompt-pills, .ai-thread, .ai-console-ftr {
     padding: 12px;
+  }
+  .ai-scope-bar {
+    padding: 7px 12px;
+  }
+  .ai-console-ftr input, .ai-drawer-ftr input, .form-field input, .form-field select, .form-field textarea {
+    font-size: 16px;
   }
   .ai-thread {
     max-height: 350px;
