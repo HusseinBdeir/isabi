@@ -42,7 +42,7 @@ HTML = f"""<!doctype html>
   <div class="card">
     <div class="brand">{BADGE_SVG}{WORDMARK_HEADER_SVG}</div>
     <div>
-      <h1>The Books Close on <b>ISABI</b>.</h1>
+      <h1>The ERP Your Group <b>Actually Runs On</b>.</h1>
       <p>Custom ERP, financial ledgers, Power BI reporting, offline field apps, and the Ask ISABI assistant. Built around your industry on the Microsoft Cloud.</p>
     </div>
     <div class="chips">

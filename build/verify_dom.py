@@ -24,7 +24,7 @@ def run_dom_and_screenshots():
         )
         dom = res.stdout
         checks = [
-            ('Hero title', 'The Books Close on'),
+            ('Hero title', 'The ERP Your Group'),
             ('Rendered Industry Tab', 'Hospitality, Resorts'),
             ('Rendered Industry Modules', 'Multi-Property Business Unit Isolation'),
             ('Rendered Sandbox Chart', 'class="chart"'),

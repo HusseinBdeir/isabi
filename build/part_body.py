@@ -54,9 +54,9 @@ BODY = f"""
     <div class="wrap hero-grid">
       <div>
         <div class="eyebrow">✨ ISABI Systems · Interactive Enterprise Cloud &amp; Native AI</div>
-        <h1 class="hero-title">The Books Close on <span class="brass-text">ISABI</span>.</h1>
+        <h1 class="hero-title">The ERP Your Group<br><span class="brass-text">Actually Runs On</span>.</h1>
         <p class="hero-lead">
-          Custom Microsoft Cloud ERP apps, real-time Power BI dashboards, offline field PWAs, and a cited AI assistant: engineered around how your business actually runs in 1 to 2 weeks.
+          Custom Microsoft Cloud ERP apps, real-time Power BI dashboards, offline field PWAs, and a cited AI assistant: engineered around how your business works, live in 1 to 2 weeks.
         </p>
         <div class="hero-cta-row">
           <a href="#sandbox" class="btn btn-brass">🎮 Launch Live Sandbox</a>
@@ -1141,7 +1141,7 @@ BODY = f"""
           {BADGE_SVG}
           <div>
             <b style="font-family:Archivo,sans-serif;font-size:17px;display:block;letter-spacing:0.04em">ISABI SYSTEMS</b>
-            <span style="font-size:12px;color:#D9A54A">The Books Close on ISABI</span>
+            <span style="font-size:12px;color:#D9A54A">The ERP Your Group Actually Runs On</span>
           </div>
         </div>
         <p style="margin:0 0 12px;color:#9FB0C7;font-size:13px">
