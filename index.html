@@ -337,8 +337,23 @@ button {
 .hdr-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
+}
+
+.hdr-signin-btn {
+  padding: 7px 11px;
+  font-size: 13px;
+  gap: 5px;
+}
+
+@media (max-width: 720px) {
+  .hdr-signin-btn {
+    padding: 7px 9px;
+  }
+  .hdr-signin-btn span {
+    display: none;
+  }
 }
 
 /* Mobile Horizontal Section Strip inside Header */
@@ -5257,7 +5272,7 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
   .ind-metrics-mini div b {
     font-size: 14px;
   }
-  .ind-ledger-strip .btn-wa {
+  .ind-ledger-strip .btn-wa, .ind-ledger-strip .ind-portal-btn {
     padding: 5px 11px;
     font-size: 11.8px;
   }
@@ -5875,6 +5890,7 @@ svg.ic-crit { color: var(--crit); }
       </button>
       <button type="button" class="btn btn-ghost hide-sm" id="install-pwa-btn" hidden>Install</button>
       <button type="button" class="btn btn-ghost" id="theme-toggle-btn" aria-label="Switch Theme" title="Toggle Dark or Light Ledger Theme">Dark</button>
+      <a href="app/" class="btn btn-outline hdr-signin-btn" id="hdr-signin-btn" title="Sign in to ISABI Enterprise Command Center"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> <span>Sign In</span></a>
       <a href="#portal" class="btn btn-brass hide-md">Book Consultation</a>
     </div>
   </div>
@@ -5888,6 +5904,7 @@ svg.ic-crit { color: var(--crit); }
     <a href="#pricing" data-sec-link="pricing"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 3 18 3 22 9 12 21 2 9 6 3"/><line x1="2" y1="9" x2="22" y2="9"/></svg> 06 Pricing</a>
     <a href="#faq" data-sec-link="faq"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> 07 FAQ</a>
     <a href="#portal" data-sec-link="portal"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.58 2.81.7A2 2 0 0 1 22 16.92z"/></svg> 08 Contact</a>
+    <a href="app/"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> Sign In</a>
   </nav>
 </header>
 
@@ -5966,7 +5983,7 @@ svg.ic-crit { color: var(--crit); }
               <button type="button" class="hlc-curr-btn" data-hero-curr="EUR">EUR</button>
               <button type="button" class="hlc-curr-btn" data-hero-curr="AED">AED</button>
             </div>
-            <span class="hlc-status"><i></i>Interactive</span>
+            <a href="app/?demo=1&amp;autologin=1" id="hlc-open-portal-link" class="hlc-status" style="text-decoration:none" title="Launch Full 20-Page Power BI &amp; 34-Table Command Portal"><i></i>Full Portal ▸</a>
           </div>
         </div>
 
@@ -8242,6 +8259,11 @@ svg.ic-crit { color: var(--crit); }
     document.querySelectorAll('[data-hero-curr]').forEach(el => {
       el.classList.toggle('active', el.dataset.heroCurr === state.heroCurr);
     });
+    const hlcPortalLink = document.getElementById('hlc-open-portal-link');
+    if (hlcPortalLink) {
+      const indParam = (state.heroInd && state.heroInd !== 'all') ? `&industry=${encodeURIComponent(state.heroInd)}` : '';
+      hlcPortalLink.setAttribute('href', `app/?demo=1&autologin=1${indParam}`);
+    }
 
     if (state.heroScreen === 'pos') {
       if (winTitle) winTitle.textContent = 'ISABI Field PWAs · POS & Kiosk';
@@ -8725,9 +8747,12 @@ svg.ic-crit { color: var(--crit); }
         <div class="ind-metrics-mini">
           ${cur.metrics.map(m => `<div><small>${m[0]}</small><b class="num">${m[1]}</b></div>`).join('')}
         </div>
-        <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I am interested in an ISABI Systems blueprint for ' + cur.name + '. Can we schedule a quick walkthrough?')}" target="_blank" rel="noopener" class="btn btn-wa" aria-label="Discuss ${cur.name} on WhatsApp">
-          ${ICONS.wa} Discuss on WhatsApp
-        </a>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <a href="app/?demo=1&amp;autologin=1&amp;industry=${cur.sandboxKey || cur.id}" class="btn btn-outline ind-portal-btn" title="Launch Full 20-Page Power BI &amp; 34-Table Command Center for ${cur.name}">${ICONS.erp} Open Full Portal ▸</a>
+          <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I am interested in an ISABI Systems blueprint for ' + cur.name + '. Can we schedule a quick walkthrough?')}" target="_blank" rel="noopener" class="btn btn-wa" aria-label="Discuss ${cur.name} on WhatsApp">
+            ${ICONS.wa} Discuss on WhatsApp
+          </a>
+        </div>
       </div>
     `;
   }
@@ -9032,6 +9057,9 @@ svg.ic-crit { color: var(--crit); }
             <button type="button" class="primary-mock" data-open-ai="Analyze the ${d.groupTitle} dashboard numbers and highlight key action items">
               <span>${ICONS.ai} Ask ISABI</span>
             </button>
+            <a href="app/?demo=1&amp;autologin=1&amp;industry=${state.sboxInd}" class="primary-mock sbox-launch-portal hide-xs" style="text-decoration:none" title="Open the full 20-Page Power BI &amp; 34-Table Command Portal for ${d.groupTitle}">
+              <span>${ICONS.erp} Full Portal ▸</span>
+            </a>
           </div>
         </header>
 

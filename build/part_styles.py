@@ -287,8 +287,23 @@ button {
 .hdr-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
+}
+
+.hdr-signin-btn {
+  padding: 7px 11px;
+  font-size: 13px;
+  gap: 5px;
+}
+
+@media (max-width: 720px) {
+  .hdr-signin-btn {
+    padding: 7px 9px;
+  }
+  .hdr-signin-btn span {
+    display: none;
+  }
 }
 
 /* Mobile Horizontal Section Strip inside Header */
@@ -5207,7 +5222,7 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
   .ind-metrics-mini div b {
     font-size: 14px;
   }
-  .ind-ledger-strip .btn-wa {
+  .ind-ledger-strip .btn-wa, .ind-ledger-strip .ind-portal-btn {
     padding: 5px 11px;
     font-size: 11.8px;
   }

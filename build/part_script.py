@@ -1103,6 +1103,11 @@ JS = r"""
     document.querySelectorAll('[data-hero-curr]').forEach(el => {
       el.classList.toggle('active', el.dataset.heroCurr === state.heroCurr);
     });
+    const hlcPortalLink = document.getElementById('hlc-open-portal-link');
+    if (hlcPortalLink) {
+      const indParam = (state.heroInd && state.heroInd !== 'all') ? `&industry=${encodeURIComponent(state.heroInd)}` : '';
+      hlcPortalLink.setAttribute('href', `app/?demo=1&autologin=1${indParam}`);
+    }
 
     if (state.heroScreen === 'pos') {
       if (winTitle) winTitle.textContent = 'ISABI Field PWAs · POS & Kiosk';
@@ -1586,9 +1591,12 @@ JS = r"""
         <div class="ind-metrics-mini">
           ${cur.metrics.map(m => `<div><small>${m[0]}</small><b class="num">${m[1]}</b></div>`).join('')}
         </div>
-        <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I am interested in an ISABI Systems blueprint for ' + cur.name + '. Can we schedule a quick walkthrough?')}" target="_blank" rel="noopener" class="btn btn-wa" aria-label="Discuss ${cur.name} on WhatsApp">
-          ${ICONS.wa} Discuss on WhatsApp
-        </a>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <a href="app/?demo=1&amp;autologin=1&amp;industry=${cur.sandboxKey || cur.id}" class="btn btn-outline ind-portal-btn" title="Launch Full 20-Page Power BI &amp; 34-Table Command Center for ${cur.name}">${ICONS.erp} Open Full Portal ▸</a>
+          <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I am interested in an ISABI Systems blueprint for ' + cur.name + '. Can we schedule a quick walkthrough?')}" target="_blank" rel="noopener" class="btn btn-wa" aria-label="Discuss ${cur.name} on WhatsApp">
+            ${ICONS.wa} Discuss on WhatsApp
+          </a>
+        </div>
       </div>
     `;
   }
@@ -1893,6 +1901,9 @@ JS = r"""
             <button type="button" class="primary-mock" data-open-ai="Analyze the ${d.groupTitle} dashboard numbers and highlight key action items">
               <span>${ICONS.ai} Ask ISABI</span>
             </button>
+            <a href="app/?demo=1&amp;autologin=1&amp;industry=${state.sboxInd}" class="primary-mock sbox-launch-portal hide-xs" style="text-decoration:none" title="Open the full 20-Page Power BI &amp; 34-Table Command Portal for ${d.groupTitle}">
+              <span>${ICONS.erp} Full Portal ▸</span>
+            </a>
           </div>
         </header>
 

@@ -7,6 +7,7 @@ from part_styles import CSS
 from part_body import BODY
 from part_script import JS
 from part_faq import FAQ_JSONLD
+from sync_app import sync_command_app
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_HTML = os.path.join(ROOT, 'index.html')
@@ -109,6 +110,9 @@ def main():
     if res.returncode != 0:
         print("JS SYNTAX ERROR:", res.stderr, file=sys.stderr)
         sys.exit(1)
+
+    # Sync Command Center bundle into /isabi/app/
+    sync_command_app()
 
     # Sync OneDrive mirror if present
     mirror_dir = os.path.join(os.path.expanduser('~'), 'OneDrive - BHFIRMS', 'System', 'System', 'ISABI', 'Website')

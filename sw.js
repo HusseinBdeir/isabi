@@ -1,4 +1,4 @@
-const CACHE_NAME = 'isabi-systems-pwa-v4.4';
+const CACHE_NAME = 'isabi-systems-pwa-v4.5';
 const ASSETS = [
   './',
   './index.html',
@@ -20,7 +20,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k.startsWith('isabi-systems-pwa-') && k !== CACHE_NAME).map(k => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
@@ -29,6 +29,8 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+  // Delegate /app/ (ISABI Command Center PWA) and /api/ to their own service worker / network
+  if (url.pathname.includes('/app/') || url.pathname.endsWith('/app') || url.pathname.includes('/api/')) return;
 
   if (req.mode === 'navigate') {
     event.respondWith(

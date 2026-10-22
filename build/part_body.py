@@ -32,6 +32,7 @@ BODY = f"""
       </button>
       <button type="button" class="btn btn-ghost hide-sm" id="install-pwa-btn" hidden>Install</button>
       <button type="button" class="btn btn-ghost" id="theme-toggle-btn" aria-label="Switch Theme" title="Toggle Dark or Light Ledger Theme">Dark</button>
+      <a href="app/" class="btn btn-outline hdr-signin-btn" id="hdr-signin-btn" title="Sign in to ISABI Enterprise Command Center">{ICONS["lock"]} <span>Sign In</span></a>
       <a href="#portal" class="btn btn-brass hide-md">Book Consultation</a>
     </div>
   </div>
@@ -45,6 +46,7 @@ BODY = f"""
     <a href="#pricing" data-sec-link="pricing">{ICONS["diamond"]} 06 Pricing</a>
     <a href="#faq" data-sec-link="faq">{ICONS["faq"]} 07 FAQ</a>
     <a href="#portal" data-sec-link="portal">{ICONS["phone"]} 08 Contact</a>
+    <a href="app/">{ICONS["lock"]} Sign In</a>
   </nav>
 </header>
 
@@ -123,7 +125,7 @@ BODY = f"""
               <button type="button" class="hlc-curr-btn" data-hero-curr="EUR">EUR</button>
               <button type="button" class="hlc-curr-btn" data-hero-curr="AED">AED</button>
             </div>
-            <span class="hlc-status"><i></i>Interactive</span>
+            <a href="app/?demo=1&amp;autologin=1" id="hlc-open-portal-link" class="hlc-status" style="text-decoration:none" title="Launch Full 20-Page Power BI &amp; 34-Table Command Portal"><i></i>Full Portal ▸</a>
           </div>
         </div>
 
