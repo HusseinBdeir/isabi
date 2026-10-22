@@ -7841,6 +7841,18 @@
       let activeIdx = -1;
       let currentMatches = [];
       let choosing = false;
+      let blurTimer = null;
+
+      const closeOwnMenu = () => {
+        clearTimeout(blurTimer);
+        menu.hidden = true;
+        menu.innerHTML = '';
+        wrap.classList.remove('open');
+      };
+
+      menu.addEventListener('mousedown', ev => {
+        if (!ev.target || !ev.target.closest('input')) ev.preventDefault();
+      });
 
       const getOptions = () => {
         const dlEl = document.getElementById(listId) || body.querySelector('#' + listId);
@@ -7854,7 +7866,7 @@
         choosing = true;
         try {
           el.value = valStr;
-          closeAll(null);
+          closeOwnMenu();
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
         } finally {
@@ -7864,7 +7876,7 @@
 
       const renderMenu = (showAllOnEmpty = false, ignoreExactCurrent = false) => {
         if (el.disabled || el.readOnly || (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id))) {
-          closeAll(null);
+          closeOwnMenu();
           return;
         }
         const all = getOptions();
@@ -7874,7 +7886,7 @@
         let filtered;
         let highlightQuery = q;
         if (!ql || (ignoreExactCurrent && exactHit)) {
-          if (!ql && !showAllOnEmpty) { closeAll(null); return; }
+          if (!ql && !showAllOnEmpty) { closeOwnMenu(); return; }
           filtered = all;
           highlightQuery = '';
         } else {
@@ -7889,7 +7901,7 @@
           filtered = starts.concat(contains);
         }
         if (!filtered.length || (!ignoreExactCurrent && filtered.length === 1 && filtered[0].value === q)) {
-          closeAll(null);
+          closeOwnMenu();
           return;
         }
         const MAX_SHOW = 7;
@@ -7918,6 +7930,7 @@
         menu.querySelectorAll('.pa-suggest-item').forEach(row => {
           row.addEventListener('mousedown', ev => {
             ev.preventDefault();
+            ev.stopPropagation();
             const idx = Number(row.getAttribute('data-suggest-idx'));
             if (currentMatches[idx] != null) choose(currentMatches[idx].value);
           });
@@ -7929,26 +7942,50 @@
       };
 
       el.addEventListener('input', () => {
+        clearTimeout(blurTimer);
         if (choosing) return;
         renderMenu(true, false);
       });
-      el.addEventListener('click', () => renderMenu(true, true));
+      el.addEventListener('focus', () => {
+        clearTimeout(blurTimer);
+        if (choosing || window.__mfgSuppressAutoFocusMenu) return;
+        renderMenu(true, true);
+      });
+      el.addEventListener('mousedown', () => {
+        clearTimeout(blurTimer);
+        if (document.activeElement === el && menu.hidden) {
+          renderMenu(true, true);
+        }
+      });
+      el.addEventListener('click', () => {
+        clearTimeout(blurTimer);
+        if (menu.hidden) {
+          renderMenu(true, true);
+        }
+      });
       caret.addEventListener('mousedown', ev => {
         ev.preventDefault();
+        ev.stopPropagation();
+        clearTimeout(blurTimer);
         if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id)) {
           openAdminUnlockPrompt(el.id);
           return;
         }
         if (!menu.hidden) {
-          closeAll(null);
+          closeOwnMenu();
         } else {
-          try { el.focus({ preventScroll: true }); } catch (_) {}
-          renderMenu(true, true);
+          if (document.activeElement !== el) {
+            try { el.focus({ preventScroll: true }); } catch (_) {}
+          }
+          if (menu.hidden) renderMenu(true, true);
         }
       });
       el.addEventListener('blur', () => {
-        setTimeout(() => {
-          if (document.activeElement !== el) closeAll(null);
+        clearTimeout(blurTimer);
+        blurTimer = setTimeout(() => {
+          if (document.activeElement !== el && !wrap.contains(document.activeElement)) {
+            closeOwnMenu();
+          }
         }, 120);
       });
       el.addEventListener('keydown', ev => {
