@@ -3804,7 +3804,7 @@
       const w = resolveTruckWindow(eq, company, winOpts.date, winOpts);
       if (w) {
         const effCap = Number(w.cap) > 0 ? Number(w.cap) : baseRow.capacity;
-        const winOwn = w.own && norm(w.own) !== 'wtc' && norm(w.own) !== 'bbconstruction' ? w.own : baseRow.supplier;
+        const winOwn = w.own ? (company && norm(w.own) === norm(company) ? '' : w.own) : baseRow.supplier;
         const winDrv = w.drv || baseRow.default_driver;
         return Object.assign({}, baseRow, {
           capacity: effCap,
@@ -10551,7 +10551,7 @@
       else if (c.product && val('f_unitprice') === '') addErr('f_unitprice', 'Unit price is required.');
       else if (c.product && val('f_unitprice') !== '' && c.up === 0 && !notes) addErr('f_notes', 'A free ticket (unit price 0) needs a note.');
       if (c.saleType !== 'Unregistered' && c.transportBy !== 'Company fleet' && val('f_truck') && val('f_truckowner')) {
-        const tRow = equipInfo(val('f_truck'));
+        const tRow = equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'sales', customer: c.customer, site: c.site });
         if (tRow && tRow.supplier && norm(tRow.supplier) !== norm(val('f_truckowner')) && !isFieldAdminUnlocked('f_truckowner')) {
           addErr('f_truckowner', `Truck ${val('f_truck')} is registered to ${tRow.supplier}, not ${val('f_truckowner')}.`);
         }
@@ -10575,7 +10575,7 @@
       if (c.up > 0 && !c.owner) addErr('f_siteowner', 'Quarry site owner (material payee) is required when the material has a cost.');
       if (c.transportBy !== 'Company fleet' && c.tp > 0 && !val('f_truckowner')) addErr('f_truckowner', 'Truck owner (haulage payee) is required for third-party haulage.');
       if (c.transportBy !== 'Company fleet' && val('f_truck') && val('f_truckowner')) {
-        const tRow = equipInfo(val('f_truck'));
+        const tRow = equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'raw', site: c.site });
         if (tRow && tRow.supplier && norm(tRow.supplier) !== norm(val('f_truckowner')) && !isFieldAdminUnlocked('f_truckowner')) {
           addErr('f_truckowner', `Truck ${val('f_truck')} is registered to ${tRow.supplier}, not ${val('f_truckowner')}.`);
         }
