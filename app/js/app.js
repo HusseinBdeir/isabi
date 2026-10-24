@@ -11,6 +11,8 @@
 (function () {
   'use strict';
 
+  const ic = (name, cls) => (window.MFG_ICONS ? window.MFG_ICONS.svg(name, cls) : '');
+
   const SEED = window.MFG_SEED || {};
   SEED.models = SEED.models || {};
   SEED.records = SEED.records || {};
@@ -1852,10 +1854,10 @@
 
       <div class="df-mode-bar">
         <div class="df-tabs" role="tablist" aria-label="Date Picker View">
-          <button type="button" role="tab" aria-selected="${tab === 'day'}" class="df-tab ${tab === 'day' ? 'active' : ''}" data-df-switch-tab="day">📅 Day</button>
-          <button type="button" role="tab" aria-selected="${tab === 'month'}" class="df-tab ${tab === 'month' ? 'active' : ''}" data-df-switch-tab="month">🗓️ Month</button>
-          <button type="button" role="tab" aria-selected="${tab === 'week'}" class="df-tab ${tab === 'week' ? 'active' : ''}" data-df-switch-tab="week">📆 Week</button>
-          <button type="button" role="tab" aria-selected="${tab === 'year'}" class="df-tab ${tab === 'year' ? 'active' : ''}" data-df-switch-tab="year">📊 Year</button>
+          <button type="button" role="tab" aria-selected="${tab === 'day'}" class="df-tab ${tab === 'day' ? 'active' : ''}" data-df-switch-tab="day">${ic('calendar')} Day</button>
+          <button type="button" role="tab" aria-selected="${tab === 'month'}" class="df-tab ${tab === 'month' ? 'active' : ''}" data-df-switch-tab="month">${ic('calendar_grid')} Month</button>
+          <button type="button" role="tab" aria-selected="${tab === 'week'}" class="df-tab ${tab === 'week' ? 'active' : ''}" data-df-switch-tab="week">${ic('calendar_week')} Week</button>
+          <button type="button" role="tab" aria-selected="${tab === 'year'}" class="df-tab ${tab === 'year' ? 'active' : ''}" data-df-switch-tab="year">${ic('pbi')} Year</button>
         </div>
         <div class="df-target-group" role="group" aria-label="Selection Target">
           <button type="button" class="df-target-btn ${tm === 'from' ? 'active' : ''}" data-df-target="from" title="Click picks From Date (Start)">From: <b>${esc(fp.dd)}-${esc(fp.mmm)}-${esc(fp.yyyy)}</b></button>
@@ -3138,7 +3140,7 @@
   }
 
   function exportBtn(panelId, name) {
-    return `<button type="button" class="btn" data-export-csv="${esc(panelId)}" data-export-name="${esc(name)}" title="Download the rows shown as CSV (Excel, UTF-8)">⬇ CSV</button>`;
+    return `<button type="button" class="btn" data-export-csv="${esc(panelId)}" data-export-name="${esc(name)}" title="Download the rows shown as CSV (Excel, UTF-8)">${ic('download')} CSV</button>`;
   }
 
   function searchBox(placeholder) {
@@ -5750,7 +5752,7 @@
             </div>
           </div>
           <div style="display:flex;gap:6px">
-            <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="sales" title="Open Touch Sales Dispatch Kiosk &amp; Bluetooth Thermal Printer">🖨️ Sales Kiosk</button>
+            <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="sales" title="Open Touch Sales Dispatch Kiosk &amp; Bluetooth Thermal Printer">${ic('printer')} Sales Kiosk</button>
             ${exportBtn('salesPanel', 'Sales_Register')}
             ${canEnterForm('sales') ? '<button class="btn btn-primary" data-open-modal="sales">+ New Sales Ticket</button>' : ''}
           </div>
@@ -5828,7 +5830,7 @@
                 return `
                 <tr class="rrow" data-rkey="sales_tickets" data-rid="${esc(r.id)}">
                   <td class="mono">${esc(recordDateDMY(r))}${appCell(r, 'sales_tickets')}</td>
-                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">🖨️</button>${r.overtime ? '<span class="badge badge-warn tkt-ot-badge" title="Overtime load">OT</span>' : ''}</span></td>
+                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${r.overtime ? '<span class="badge badge-warn tkt-ot-badge" title="Overtime load">OT</span>' : ''}</span></td>
                   <td>${coBadge(r.company)}</td>
                   <td>${r.sale_type === 'Unregistered' ? '<span title="Unregistered">Unreg.<span class="sr-only">istered</span></span>' : esc(r.sale_type)}</td>
                   <td>${relLink('customers', r.customer, r.customer, true)}</td>
@@ -6101,7 +6103,7 @@
               <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('fleet', 'Company fleet')}${chip('third', 'Third-party')}${chip('app', 'App-entered')}</div>
             </div>
             <div style="display:flex;gap:6px">
-              <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="raw" title="Open Touch Raw Material Receiving Kiosk &amp; Bluetooth Thermal Printer">🖨️ Raw Kiosk</button>
+              <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="raw" title="Open Touch Raw Material Receiving Kiosk &amp; Bluetooth Thermal Printer">${ic('printer')} Raw Kiosk</button>
               ${exportBtn('rawPanel', 'Raw_Register')}
               ${canEnterForm('raw') ? '<button class="btn btn-primary" data-open-modal="raw">+ New Raw Receipt</button>' : ''}
             </div>
@@ -6158,7 +6160,7 @@
                 ${shown.map(r => `
                   <tr class="rrow" data-rkey="raw_purchases" data-rid="${esc(r.id)}">
                     <td class="mono">${esc(recordDateDMY(r))}${appCell(r, 'raw_purchases')}</td>
-                    <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '(no number)')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="raw" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Raw Ticket #${esc(r.ticket_no || '')}">🖨️</button></span></td>
+                    <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '(no number)')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="raw" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Raw Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button></span></td>
                     <td>${coBadge(r.company)}</td>
                     <td>${relLink('sites', r.site, r.site || '—', true)}</td>
                     <td>${r.site_owner ? relLink('suppliers', r.site_owner) : '—'}</td>
@@ -6405,7 +6407,7 @@
             <div class="chip-bar">${chip('all', `All Intakes (${base.length})`)}${chip('diesel', 'Diesel')}${chip('lube', 'Lubricants')}${chip('flag', `Guard flags (${flagged})`)}${chip('own', `Own Fleet (${ownCount})`)}${chip('transporter', `Transporter (${transCount})`)}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
-            <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="fuel" title="Open Touch Fuel &amp; Lubricants Kiosk">⛽ Fuel Kiosk</button>
+            <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="fuel" title="Open Touch Fuel &amp; Lubricants Kiosk">${ic('fuel')} Fuel Kiosk</button>
             ${exportBtn('fuelPanel', 'Fuel_Intakes')}
             ${canEnterForm('fuel') ? '<button class="btn btn-primary" data-open-modal="fuel">+ New Fuel Ticket</button>' : ''}
           </div>
@@ -6461,7 +6463,7 @@
                 return `
                 <tr class="rrow" data-rkey="fuel_intakes" data-rid="${esc(f.id)}">
                   <td class="mono">${esc(recordDateDMY(f))}${appCell(f, 'fuel_intakes')}</td>
-                  <td class="mono"><button type="button" class="tbl-print-icon" data-print-ticket="fuel" data-rid="${esc(f.id)}" title="Print Thermal Fuel Slip">🖨</button>${esc(f.ticket_no || '—')}</td>
+                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(f.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="fuel" data-print-id="${esc(f.id)}" title="Bluetooth Thermal Print / Preview Fuel Slip #${esc(f.ticket_no || '')}">${ic('printer')}</button></span></td>
                   <td>${coBadge(f.company)}</td>
                   <td class="mono">${relLink('equipment', f.equipment, f.equipment, true)}</td>
                   <td>${f.driver ? relLink('drivers', f.driver) : '—'}</td>
@@ -7728,7 +7730,7 @@
             </div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="10">🖨 Payroll RDL (#10)</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="10">${ic('printer')} Payroll RDL (#10)</button>
             ${canEnterForm('attendance') ? '<button type="button" class="btn btn-ghost-bar" data-open-modal="attendance">+ Log Attendance</button>' : ''}
             ${exportBtn('paySalPanel', 'Salary_Disbursements')}
             ${canEnterForm('salary') ? '<button type="button" class="btn btn-primary" data-open-modal="salary">+ Pay Salary</button>' : ''}
@@ -8611,7 +8613,7 @@
             <div class="chip-bar">${chip('all', `All Legs (${soaAll.length})`)}${chip('soa_sales', 'Sales & Revenue')}${chip('soa_raw', 'Purchases & AP')}${chip('soa_rcpt', 'Customer Receipts')}${chip('soa_pay', 'Supplier Settlements')}${chip('soa_exp', 'Expenses & Payroll')}${chip('soa_treas', 'Treasury & Partners')}</div>
           </div>
           <div style="display:flex;gap:6px">
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="06">🖨 General Journal RDL (#06)</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="06">${ic('printer')} General Journal RDL (#06)</button>
             ${exportBtn('soaPanel', 'SOA_Journal_Stream')}
             ${canEnterForm('treasury') ? '<button type="button" class="btn btn-primary" data-open-modal="treasury">+ New Treasury / Loan</button>' : ''}
           </div>
@@ -9246,7 +9248,7 @@
       <span class="role-posture-pill ${canEnter ? 'on' : 'off'}">${canEnter ? '✓ Enter New Data' : 'Read-Only'}</span>
       <span class="role-posture-pill ${canModify ? 'on' : 'off'}">${canModify ? '✓ Modify Data' : 'No Modify'}</span>
       <span class="role-posture-pill ${canVoidRec ? 'on' : 'off'}">${canVoidRec ? '✓ Void Entries' : 'No Void'}</span>
-      <span class="role-posture-pill ${m.unlockCount ? 'brass' : 'off'}">🔓 ${m.unlockCount}/${m.unlockTotal} Policy Locks</span>
+      <span class="role-posture-pill ${m.unlockCount ? 'brass' : 'off'}">${ic('unlock')} ${m.unlockCount}/${m.unlockTotal} Policy Locks</span>
     `;
   }
 
@@ -9255,9 +9257,9 @@
     const m = countPermissionMetrics(perms, previewUser);
     const isCustomAcc = curAccess === 'custom|custom' || perms.isCustomRole;
     return `
-      <span class="role-posture-pill ${isCustomAcc ? 'brass' : 'linked'}">${isCustomAcc ? '⚙️ Custom Matrix' : '🔗 Linked to Role'}</span>
-      <span class="role-posture-pill ${m.pbiPageCount ? 'on' : 'off'}">📊 ${m.pbiPageCount}/${m.pbiPageTotal} PBI Dashboards</span>
-      <span class="role-posture-pill ${m.stmtCount ? 'on' : 'off'}">📄 ${m.stmtCount}/${m.stmtTotal} A4 Statements</span>
+      <span class="role-posture-pill ${isCustomAcc ? 'brass' : 'linked'}">${isCustomAcc ? `${ic('sliders')} Custom Matrix` : `${ic('link')} Linked to Role`}</span>
+      <span class="role-posture-pill ${m.pbiPageCount ? 'on' : 'off'}">${ic('pbi')} ${m.pbiPageCount}/${m.pbiPageTotal} PBI Dashboards</span>
+      <span class="role-posture-pill ${m.stmtCount ? 'on' : 'off'}">${ic('statements')} ${m.stmtCount}/${m.stmtTotal} A4 Statements</span>
     `;
   }
 
@@ -9271,7 +9273,7 @@
       { key: 'Supervisor + Entry', label: 'Supervisor + Entry' },
       { key: 'Full Access (Owner)', label: 'Admin / Owner' },
       { key: 'Sales', label: 'Sales & AR' },
-      { key: 'Custom', label: '⚙️ Custom Role' }
+      { key: 'Custom', label: 'Custom Role', icon: 'sliders' }
     ];
     if (!isOpen) {
       return `
@@ -9283,8 +9285,8 @@
             </span>
           </div>
           <div class="perm-collapsed-actions">
-            <button type="button" class="btn btn-brass" style="padding:4px 10px;font-size:11px" id="expandPermMatrixBtn">🛡️ Check Role Permissions &amp; Locks</button>
-            <button type="button" class="btn" style="padding:4px 10px;font-size:11px" id="quickSwitchCustomRoleBtn">⚙️ Customize Role</button>
+            <button type="button" class="btn btn-brass" style="padding:4px 10px;font-size:11px" id="expandPermMatrixBtn">${ic('shield')} Check Role Permissions &amp; Locks</button>
+            <button type="button" class="btn" style="padding:4px 10px;font-size:11px" id="quickSwitchCustomRoleBtn">${ic('sliders')} Customize Role</button>
           </div>
         </div>
       `;
@@ -9308,7 +9310,7 @@
             <div class="perm-role-switcher" role="tablist" aria-label="Inspect or switch role preset">
               ${roleTabs.map(rt => `
                 <button type="button" class="perm-role-tab ${perms.roleKey === rt.key ? 'active' : ''} ${rt.key === 'Custom' ? 'custom-tab' : ''}" data-matrix-role="${esc(rt.key)}">
-                  ${esc(rt.label)}
+                  ${rt.icon ? ic(rt.icon) + ' ' : ''}${esc(rt.label)}
                 </button>
               `).join('')}
             </div>
@@ -9396,7 +9398,7 @@
                       <div class="perm-item-title">
                         <b>${esc(item.label)}</b>
                         <span class="perm-rule-code">${esc(item.rule)}</span>
-                        <span class="perm-state-pill ${checked ? 'brass' : 'off'}">${checked ? '🔓 CAN UNLOCK' : '🔒 PIN 2401 REQ'}</span>
+                        <span class="perm-state-pill ${checked ? 'brass' : 'off'}">${checked ? `${ic('unlock')} CAN UNLOCK` : `${ic('lock')} PIN 2401 REQ`}</span>
                       </div>
                       <small>${esc(item.sub)}</small>
                     </div>
@@ -9489,7 +9491,7 @@
               <span class="seat-collapsed-sub">— Check and update Full Name, Login Email, PIN, Role, Assigned Companies (RLS) &amp; Dashboards for any of the ${uCount} current users.</span>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button type="button" class="btn btn-brass" id="openSeatInspectorBtn">✎ Check / Update Current Users (${uCount})</button>
+              <button type="button" class="btn btn-brass" id="openSeatInspectorBtn">${ic('edit')} Check / Update Current Users (${uCount})</button>
               <button type="button" class="btn btn-primary" id="openNewSeatBarBtn">+ New Team Login</button>
             </div>
           </div>
@@ -9574,7 +9576,7 @@
               <div class="field-lbl-with-btn">
                 <label for="nu_role">Role &amp; Permissions *</label>
                 <button type="button" class="role-inspect-btn ${STATE.showRolePermMatrix ? 'active' : ''}" id="checkRolePermsBtn" title="Inspect or customize Read, Enter, Modify, Policy-Lock Unlocks & Executive Access for this role">
-                  ${curRole === 'Custom' ? '⚙️ Configure Custom Matrix' : '🛡️ Check Permissions &amp; Locks'}
+                  ${curRole === 'Custom' ? `${ic('sliders')} Configure Custom Matrix` : `${ic('shield')} Check Permissions &amp; Locks`}
                 </button>
               </div>
               <select id="nu_role">
@@ -9592,7 +9594,7 @@
               <div class="field-lbl-with-btn">
                 <label for="nu_access">Executive Dashboards &amp; Statements</label>
                 <button type="button" class="role-inspect-btn ${STATE.showRolePermMatrix ? 'active' : ''}" id="checkDashAccessBtn" title="Inspect or customize which of the 20 Power BI Dashboards and 22 Printable Statements this seat can open">
-                  📊 Check Dashboards &amp; Statements
+                  ${ic('pbi')} Check Dashboards &amp; Statements
                 </button>
               </div>
               <select id="nu_access">
@@ -9666,7 +9668,7 @@
         <td>
           <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
             <span class="badge badge-brass">${esc(u.role)}</span>
-            <span class="badge badge-info" title="${pm.rightsCount}/${pm.rightsTotal} Data Rights · ${pm.unlockCount}/9 Policy Locks Unlockable">🔓 ${pm.unlockCount}/9</span>
+            <span class="badge badge-info" title="${pm.rightsCount}/${pm.rightsTotal} Data Rights · ${pm.unlockCount}/9 Policy Locks Unlockable">${ic('unlock')} ${pm.unlockCount}/9</span>
           </div>
         </td>
         <td title="${esc(compBadge.fullTitle)}">
@@ -9680,8 +9682,8 @@
         <td class="mono" style="font-size:10.5px">${esc(u.last_login_at || 'Never')}</td>
         <td class="user-actions-cell">
           <div class="user-actions-wrap">
-            ${owner ? `<button type="button" class="btn ${isEditing ? 'btn-primary' : ''}" style="padding:3px 7px;font-size:10px" data-edit-user="${esc(u.id)}" title="Inspect and update ${esc(u.full_name)}'s name, email, PIN, role, companies & dashboard access">✎ Edit</button>` : ''}
-            ${owner ? `<button type="button" class="btn ${isEditing && STATE.showRolePermMatrix ? 'btn-brass' : ''}" style="padding:3px 7px;font-size:10px" data-check-perms="${esc(u.id)}" title="Check & configure ${esc(u.full_name)}'s Role Permissions, Policy-Lock Unlocks & Executive Dashboards">🛡️ Perms</button>` : ''}
+            ${owner ? `<button type="button" class="btn ${isEditing ? 'btn-primary' : ''}" style="padding:3px 7px;font-size:10px" data-edit-user="${esc(u.id)}" title="Inspect and update ${esc(u.full_name)}'s name, email, PIN, role, companies & dashboard access">${ic('edit')} Edit</button>` : ''}
+            ${owner ? `<button type="button" class="btn ${isEditing && STATE.showRolePermMatrix ? 'btn-brass' : ''}" style="padding:3px 7px;font-size:10px" data-check-perms="${esc(u.id)}" title="Check & configure ${esc(u.full_name)}'s Role Permissions, Policy-Lock Unlocks & Executive Dashboards">${ic('shield')} Perms</button>` : ''}
             ${(owner || idx === STATE.activeUserIdx) ? `<button type="button" class="btn ${isTarget ? 'btn-brass' : ''}" style="padding:3px 7px;font-size:10px" data-enrol-user="${esc(u.id)}" title="Enrol or update Face ID for ${esc(u.full_name)}">Face ID</button>` : ''}
             ${owner ? `
               <button type="button" class="btn" style="padding:3px 6px;font-size:10px" data-sim-user="${idx}" title="Open the app as this seat to check their RLS scope">${STATE.activeUserIdx === idx ? '● Active' : 'Impersonate'}</button>
@@ -9991,7 +9993,7 @@
   }
   function fld(label, inner, opts = {}) {
     const lockAttr = opts.lockField ? ` data-policy-lock="${esc(opts.lockField)}" data-lock-reason="${esc(opts.lockReason || 'Locked by business rule')}"` : '';
-    const lockPill = opts.lockField ? `<span class="pa-lock-pill locked" data-lock-pill="${esc(opts.lockField)}" data-toggle-field-lock="${esc(opts.lockField)}" title="${esc(opts.lockReason || 'Locked by policy')}">🔒 LOCKED</span>` : '';
+    const lockPill = opts.lockField ? `<span class="pa-lock-pill locked" data-lock-pill="${esc(opts.lockField)}" data-toggle-field-lock="${esc(opts.lockField)}" title="${esc(opts.lockReason || 'Locked by policy')}">${ic('lock')} LOCKED</span>` : '';
     return `<div class="form-field${opts.span ? ' span-3' : ''}${opts.cls ? ' ' + opts.cls : ''}${opts.lockField ? ' is-policy-locked' : ''}"${opts.id ? ` id="${opts.id}"` : ''}${lockAttr}${opts.hidden ? ' hidden' : ''}><label><span class="pa-fld-lbl">${label}</span>${lockPill}</label>${inner}${opts.afterHtml || ''}${opts.hint != null ? `<span class="hint"${opts.hintId ? ` id="${opts.hintId}"` : ''}>${opts.hint}</span>` : ''}</div>`;
   }
   function inp(id, type, value, attrs = '') {
@@ -10028,7 +10030,7 @@
       id: 'wrap_f_date',
       lockField: 'f_date',
       lockReason: 'Locked to entry date for Cash Flow accuracy — use Reporting Date for report adjustments',
-      afterHtml: `<div class="repdate-bar"><button type="button" class="repdate-toggle-btn" id="toggleRepDateBtn">📅 Different Reporting Date?</button><span class="hint" id="hint_date"></span></div>`
+      afterHtml: `<div class="repdate-bar"><button type="button" class="repdate-toggle-btn" id="toggleRepDateBtn">${ic('calendar')} Different Reporting Date?</button><span class="hint" id="hint_date"></span></div>`
     });
     const repDateField = fld('Reporting Date *', inp('f_repdate', 'date', today, dateAttrs), {
       id: 'wrap_f_repdate',
@@ -10039,7 +10041,7 @@
     const initOt = isOvertimeTime(initTime);
     const timeField = (initCoFleet = true) => fld('Dispatch Time *', inp('f_time', 'time', initTime), {
       id: 'wrap_f_time',
-      afterHtml: `<div class="repdate-bar time-ot-bar"><div id="wrap_f_overtime" class="ot-inline-wrap"${initCoFleet ? '' : ' hidden'}><input type="checkbox" id="f_overtime" ${initCoFleet && initOt ? 'checked' : ''} hidden><button type="button" class="repdate-toggle-btn overtime-toggle-btn${initCoFleet && initOt ? ' active is-overtime' : ''}" id="toggleOvertimeBtn" aria-pressed="${initCoFleet && initOt ? 'true' : 'false'}">${initOt ? '✓ Overtime Registered (18:00–05:59) · × Clear' : '☀️ Day Shift (06:00–17:59) · + Overtime?'}</button></div><span class="hint" id="hint_time"></span></div>`
+      afterHtml: `<div class="repdate-bar time-ot-bar"><div id="wrap_f_overtime" class="ot-inline-wrap"${initCoFleet ? '' : ' hidden'}><input type="checkbox" id="f_overtime" ${initCoFleet && initOt ? 'checked' : ''} hidden><button type="button" class="repdate-toggle-btn overtime-toggle-btn${initCoFleet && initOt ? ' active is-overtime' : ''}" id="toggleOvertimeBtn" aria-pressed="${initCoFleet && initOt ? 'true' : 'false'}">${initOt ? `${ic('check_circle')} Overtime Registered (18:00–05:59) · × Clear` : `${ic('sun')} Day Shift (06:00–17:59) · + Overtime?`}</button></div><span class="hint" id="hint_time"></span></div>`
     });
     const notesField = fld('Notes', inp('f_notes', 'text', '', 'placeholder="Required for back-dated entries or discounts above 20%"'), { id: 'wrap_f_notes', span: true });
     const cockpitHtml = '';
@@ -10317,7 +10319,7 @@
       el.dataset.policyLockedNow = '0';
       if (pill) {
         pill.className = 'pa-lock-pill unlocked';
-        pill.textContent = '🔓 ADMIN OVERRIDE';
+        pill.innerHTML = `${ic('unlock')} ADMIN OVERRIDE`;
         pill.title = 'Unlocked via Admin / Role Privilege — click to re-lock to policy rule';
       }
       return false; // not locked
@@ -10333,7 +10335,7 @@
       el.dataset.lockedValue = el.value;
       if (pill) {
         pill.className = 'pa-lock-pill locked';
-        pill.textContent = isAdmin ? '🔒 LOCKED · Unlock' : (roleCanUnlock ? '🔒 LOCKED · Role' : '🔒 LOCKED');
+        pill.innerHTML = isAdmin ? `${ic('lock')} LOCKED · Unlock` : (roleCanUnlock ? `${ic('lock')} LOCKED · Role` : `${ic('lock')} LOCKED`);
         pill.title = reason + ((isAdmin || roleCanUnlock) ? ' — Click to open Admin Privilege Unlock Process' : ' — Requires Admin PIN (2401)');
       }
       return true; // locked
@@ -10346,7 +10348,7 @@
       el.dataset.policyLockedNow = '0';
       if (pill) {
         pill.className = 'pa-lock-pill auto-open';
-        pill.textContent = '⚡ AUTO-OPEN';
+        pill.innerHTML = `${ic('bolt')} AUTO-OPEN`;
         pill.title = reason;
       }
       return false;
@@ -10407,7 +10409,7 @@
     box.hidden = false;
     box.innerHTML = `
       <div class="pa-admin-unlock-hdr">
-        <strong>🛡️ Admin Privilege Unlock Process · <span id="paUnlockTargetLabel">${esc(target.label)}</span></strong>
+        <strong>${ic('shield')} Admin Privilege Unlock Process · <span id="paUnlockTargetLabel">${esc(target.label)}</span></strong>
         <span class="pa-admin-badge">${canUnlockTarget ? (isAdmin ? 'ADMIN PRIVILEGE VERIFIED · ' + esc(who.full_name) : 'ROLE UNLOCK AUTHORIZED · ' + esc(who.full_name)) : 'PIN AUTHORIZATION REQUIRED (2401)'}</span>
       </div>
       <div class="pa-admin-unlock-desc">
@@ -10422,9 +10424,9 @@
         </select>
         ${!canUnlockTarget ? `<input type="password" id="paAdminPinInput" placeholder="Admin PIN (2401)..." style="max-width:150px">` : ''}
         <input type="text" id="paAdminUnlockNote" value="${esc(FORM_UI.unlockNote || '')}" placeholder="Optional override reason (e.g. GM spot rate)...">
-        <button type="button" class="pa-admin-btn" id="paConfirmFieldUnlockBtn">🔓 Authorize &amp; Unlock "${esc(target.label)}"</button>
-        <button type="button" class="pa-admin-btn" id="paConfirmAllUnlockBtn">🔓 ${isAdmin || roleUnlockableFields.length === fields.length ? `Unlock All Policy Fields (${fields.length})` : (roleUnlockableFields.length ? `Unlock Role-Authorized Fields (${roleUnlockableFields.length})` : `Unlock All Policy Fields (${fields.length})`)}</button>
-        ${unlockedList.length ? `<button type="button" class="pa-admin-btn secondary" id="paRelockAllBtn">🔒 Re-Lock All (${unlockedList.length})</button>` : ''}
+        <button type="button" class="pa-admin-btn" id="paConfirmFieldUnlockBtn">${ic('unlock')} Authorize &amp; Unlock "${esc(target.label)}"</button>
+        <button type="button" class="pa-admin-btn" id="paConfirmAllUnlockBtn">${ic('unlock')} ${isAdmin || roleUnlockableFields.length === fields.length ? `Unlock All Policy Fields (${fields.length})` : (roleUnlockableFields.length ? `Unlock Role-Authorized Fields (${roleUnlockableFields.length})` : `Unlock All Policy Fields (${fields.length})`)}</button>
+        ${unlockedList.length ? `<button type="button" class="pa-admin-btn secondary" id="paRelockAllBtn">${ic('lock')} Re-Lock All (${unlockedList.length})</button>` : ''}
         <button type="button" class="pa-admin-btn secondary" id="paCancelUnlockBtn">Cancel</button>
       </div>
     `;
@@ -10526,7 +10528,7 @@
       setFieldVisible('wrap_f_repdate', showRep);
       const tBtn = $('toggleRepDateBtn');
       if (tBtn) {
-        tBtn.textContent = showRep ? `📅 Reporting Date (${repEl.value})` : '📅 Different Reporting Date?';
+        tBtn.innerHTML = showRep ? `${ic('calendar')} Reporting Date (${esc(repEl.value)})` : `${ic('calendar')} Different Reporting Date?`;
         tBtn.classList.toggle('active', showRep);
       }
       const gap = daysBetween(d, repEl.value);
@@ -10563,14 +10565,14 @@
       otBtn.classList.toggle('is-overtime', isOt);
       otBtn.setAttribute('aria-pressed', isOt ? 'true' : 'false');
       if (isOt) {
-        otBtn.textContent = otByTime
-          ? '✓ Overtime Registered (18:00–05:59) · × Clear'
-          : '✓ Overtime Registered (Manual) · × Clear';
+        otBtn.innerHTML = otByTime
+          ? `${ic('check_circle')} Overtime Registered (18:00–05:59) · × Clear`
+          : `${ic('check_circle')} Overtime Registered (Manual) · × Clear`;
         otBtn.title = 'Overtime driver allowance is registered for this load — click to clear overtime';
       } else {
-        otBtn.textContent = otByTime
-          ? '☀️ No Overtime (Cleared) · + Register Overtime?'
-          : '☀️ Day Shift (06:00–17:59) · + Overtime?';
+        otBtn.innerHTML = otByTime
+          ? `${ic('sun')} No Overtime (Cleared) · + Register Overtime?`
+          : `${ic('sun')} Day Shift (06:00–17:59) · + Overtime?`;
         otBtn.title = 'No overtime allowance on this load — click to register overtime';
       }
     }
@@ -11931,7 +11933,7 @@
 
     const trucksStripHtml = ownerTrucks.length ? `
       <div class="pa-owner-trucks-strip">
-        <span class="pa-owner-trucks-lbl">🚚 <b>${ownerTrucks.length}</b> Registered Truck${ownerTrucks.length === 1 ? '' : 's'} under ${esc(supName)}:</span>
+        <span class="pa-owner-trucks-lbl">${ic('truck')} <b>${ownerTrucks.length}</b> Registered Truck${ownerTrucks.length === 1 ? '' : 's'} under ${esc(supName)}:</span>
         <div class="pa-owner-trucks-badges">
           ${ownerTrucks.slice(0, 14).map(t => {
             const eq = equipInfo(t);
@@ -11959,7 +11961,7 @@
         ${rows.map(r => `
           <div class="pa-owner-drv-chip ${r.staged ? 'is-staged' : ''}">
             <div class="pa-owner-drv-main">
-              <b>👤 ${esc(r.name)}</b>
+              <b>${ic('user')} ${esc(r.name)}</b>
               ${r.truck ? `<span class="badge badge-brass">Truck ${esc(r.truck)}</span>` : ''}
               ${r.phone ? `<span class="muted">${esc(r.phone)}</span>` : ''}
               ${r.staged ? `<span class="badge badge-ok">NEW</span>` : `<span class="badge">REGISTERED</span>`}
@@ -12814,7 +12816,7 @@
         wrap.appendChild(span);
       }
       const existingName = universalMainValue(crKey, dup) || v;
-      span.textContent = `⚠️ "${existingName}" already exists in the Universal ${label} Registry — duplicates are blocked on post.`;
+      span.innerHTML = `${ic('warn')} "${esc(existingName)}" already exists in the Universal ${esc(label)} Registry — duplicates are blocked on post.`;
     } else if (span) {
       span.remove();
     }
@@ -14340,19 +14342,19 @@
           `).join('')}
         </div>
         <div class="pa-cmd-actions">
-          ${canModifyData() ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">✎ Modify Record</button>` : ''}
-          ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">📏 Truck Size Windows (${eqWindows.length})</button>` : ''}
-          ${!row.voided && canVoid() ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">🗑 Void / Delete</button>` : ''}
-          ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">🖨️ Thermal Receipt (80/58mm)</button>` : ''}
+          ${canModifyData() ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} Modify Record</button>` : ''}
+          ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">${ic('ruler')} Truck Size Windows (${eqWindows.length})</button>` : ''}
+          ${!row.voided && canVoid() ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
+          ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
           <button type="button" class="pa-cmd-btn" data-insp-open-hub="${esc(key)}">⊞ Open ${esc(INSPECT_LABELS[key] || key)} Table</button>
-          <button type="button" class="pa-cmd-btn" id="inspPrintBtn">🖨 Print Form</button>
+          <button type="button" class="pa-cmd-btn" id="inspPrintBtn">${ic('printer')} Print Form</button>
         </div>
       </div>
 
       <!-- Inline Record Modification Drawer (Gated by Role Modify Data Permission) -->
       <div class="insp-modify-drawer" id="inspModifyDrawer" hidden>
         <div class="insp-modify-hdr">
-          <strong>✎ Inline Record Modification · Authorized by ${esc(activeUser().role)} (${esc(activeUser().full_name)})</strong>
+          <strong>${ic('edit')} Inline Record Modification · Authorized by ${esc(activeUser().role)} (${esc(activeUser().full_name)})</strong>
           <span class="badge badge-brass">MODIFY DATA PRIVILEGE VERIFIED</span>
         </div>
         <div class="form-grid-3" style="margin-top:8px">
@@ -14377,7 +14379,7 @@
 
       <!-- Live Contextual Notification Bar (Screenshot 2 top bar) -->
       <div class="pa-rec-banner ${esc(banner.tone || '')}" id="inspLiveBanner">
-        <span class="pa-rec-banner-ico">ℹ️</span>
+        <span class="pa-rec-banner-ico">${ic('info')}</span>
         <span>${esc(banner.text)}</span>
       </div>
 
@@ -14457,7 +14459,7 @@
         <div class="pa-subgrid-box" id="subgrid_truck_windows" style="margin-bottom:14px">
           <div class="pa-subgrid-hdr">
             <div>
-              <strong>📏 Truck Size, Owner &amp; Driver Adjustment Windows (Start Date → End Date)</strong>
+              <strong>${ic('ruler')} Truck Size, Owner &amp; Driver Adjustment Windows (Start Date → End Date)</strong>
               <span class="pa-subgrid-sub">Dated capacity (m³), owner, driver &amp; optional Client / Site overrides — tickets automatically resolve the window matching their Transaction / Reporting Date</span>
             </div>
             <span class="badge badge-brass">${fmtNum(eqWindows.length)} Window${eqWindows.length === 1 ? '' : 's'}</span>
@@ -14555,14 +14557,14 @@
       <div class="modal-foot">
         <span class="form-note">${app ? `Posted by <b>${esc(row.entered_by || '—')}</b> · ${esc(row.entered_at || '')}${row.voided ? ' · <b>VOIDED</b>' : ''}` : 'Click any blue lookup pill or related subgrid row to navigate across connected Dataverse records.'}</span>
         <div>
-          ${!row.voided && canVoid() ? `<button type="button" class="btn btn-danger-outline" id="inspectorVoidBtn">🗑 Void / Delete Record</button>` : ''}
+          ${!row.voided && canVoid() ? `<button type="button" class="btn btn-danger-outline" id="inspectorVoidBtn">${ic('trash')} Void / Delete Record</button>` : ''}
           <button type="button" class="btn btn-brass" id="inspectorDoneBtn">Close</button>
         </div>
       </div>
     `;
 
     $('inspectorDoneBtn').addEventListener('click', closeRecordInspector);
-    const wireInspectorVoidBtn = (btn, defaultText) => {
+    const wireInspectorVoidBtn = (btn, defaultHtml) => {
       if (!btn) return;
       btn.addEventListener('click', () => {
         if (btn.dataset.armed === '1') {
@@ -14570,20 +14572,20 @@
           voidRecord(key, row.id || row.name || row.ticket_no || idOrName);
         } else {
           btn.dataset.armed = '1';
-          btn.textContent = '⚠️ Confirm Void / Delete?';
+          btn.innerHTML = `${ic('warn')} Confirm Void / Delete?`;
           btn.classList.add('armed');
           setTimeout(() => {
             if (btn.isConnected) {
               btn.dataset.armed = '';
-              btn.textContent = defaultText;
+              btn.innerHTML = defaultHtml;
               btn.classList.remove('armed');
             }
           }, 4500);
         }
       });
     };
-    wireInspectorVoidBtn($('inspectorVoidBtn'), '🗑 Void / Delete Record');
-    wireInspectorVoidBtn($('inspCmdVoidBtn'), '🗑 Void / Delete');
+    wireInspectorVoidBtn($('inspectorVoidBtn'), `${ic('trash')} Void / Delete Record`);
+    wireInspectorVoidBtn($('inspCmdVoidBtn'), `${ic('trash')} Void / Delete`);
 
     const backBtn = $('inspBackBtn');
     if (backBtn) backBtn.addEventListener('click', () => {
@@ -15554,10 +15556,10 @@
     if (bannerEl) {
       if (FACE_STATE.pending2faUser) {
         bannerEl.hidden = false;
-        if (targetNameEl) targetNameEl.textContent = `🔒 Step 2 of 2: Live Face ID Required for ${FACE_STATE.pending2faUser.full_name} — blink or turn slightly`;
+        if (targetNameEl) targetNameEl.innerHTML = `${ic('lock')} Step 2 of 2: Live Face ID Required for ${esc(FACE_STATE.pending2faUser.full_name)} — blink or turn slightly`;
       } else if (FACE_STATE.pendingPinUser) {
         bannerEl.hidden = false;
-        if (targetNameEl) targetNameEl.textContent = `🔒 Step 2 of 2: Face ID verified for ${FACE_STATE.pendingPinUser.full_name} — enter 4-digit PIN below`;
+        if (targetNameEl) targetNameEl.innerHTML = `${ic('lock')} Step 2 of 2: Face ID verified for ${esc(FACE_STATE.pendingPinUser.full_name)} — enter 4-digit PIN below`;
       } else {
         bannerEl.hidden = true;
       }
@@ -17516,9 +17518,9 @@
     if (demoBtn) {
       demoBtn.hidden = !isOwner(user);
       demoBtn.classList.toggle('active', !!STATE.enterpriseScalePreview);
-      demoBtn.textContent = STATE.enterpriseScalePreview
-        ? '✓ 10 Ind × 150 Co Preview (Reset to 3)'
-        : '⚡ Preview 10 Ind × 150 Co';
+      demoBtn.innerHTML = STATE.enterpriseScalePreview
+        ? `${ic('check_circle')} 10 Ind × 150 Co Preview (Reset to 3)`
+        : `${ic('bolt')} Preview 10 Ind × 150 Co`;
     }
   }
 
@@ -18034,7 +18036,7 @@
     const items = (specs[group] || specs.exec).filter(it => canViewView(it.view, user));
     el.innerHTML = items.map(it => {
       const on = (it.match || [it.view]).includes(v);
-      return `<button type="button" class="m-subnav-pill${on ? ' on' : ''}" data-subnav-view="${esc(it.view)}" title="${esc(it.label)}"><span>${esc(it.label)}</span>${it.pill ? `<em>${esc(it.pill)}</em>` : ''}</button>`;
+      return `<button type="button" class="m-subnav-pill${on ? ' on' : ''}" data-subnav-view="${esc(it.view)}" title="${esc(it.label)}"><i class="m-subnav-ico" aria-hidden="true">${ic(it.view)}</i><span>${esc(it.label)}</span>${it.pill ? `<em>${esc(it.pill)}</em>` : ''}</button>`;
     }).join('');
     el.querySelectorAll('[data-subnav-view]').forEach(btn => btn.addEventListener('click', () => setView(btn.getAttribute('data-subnav-view'))));
 
@@ -18775,10 +18777,10 @@
     const onSiteList = Array.from(latestByStaff.values()).filter(p => p.direction === 'IN');
 
     const kioskTabs = [
-      { id: 'sales', icon: '🚚', title: '1. Sales Dispatch Kiosk', sub: 'Weighbridge Ticket + Bluetooth Invoice / Gate Pass', badge: `${fmtNum(SEED.records.sales_tickets.length)} Tickets` },
-      { id: 'raw', icon: '🪨', title: '2. Raw Material Kiosk', sub: 'Quarry Receiving + Bluetooth 2-Leg Voucher / Slip', badge: `${fmtNum(SEED.records.raw_purchases.length)} Intakes` },
-      { id: 'fuel', icon: '⛽', title: '3. Fuel & Lubricants Kiosk', sub: 'Diesel / Oil / Petrol Dispense + Meter Guard & Refill', badge: `${fmtNum(SEED.records.fuel_intakes.length)} Logs` },
-      { id: 'attendance', icon: '👤', title: '4. Attendance Biometric Kiosk', sub: 'Live 4:3 Face ID + 4-Digit PIN + Smart 16h Shift', badge: `${onSiteList.length} On Site` }
+      { id: 'sales', icon: ic('truck'), title: '1. Sales Dispatch Kiosk', sub: 'Weighbridge Ticket + Bluetooth Invoice / Gate Pass', badge: `${fmtNum(SEED.records.sales_tickets.length)} Tickets` },
+      { id: 'raw', icon: ic('quarry'), title: '2. Raw Material Kiosk', sub: 'Quarry Receiving + Bluetooth 2-Leg Voucher / Slip', badge: `${fmtNum(SEED.records.raw_purchases.length)} Intakes` },
+      { id: 'fuel', icon: ic('fuel'), title: '3. Fuel & Lubricants Kiosk', sub: 'Diesel / Oil / Petrol Dispense + Meter Guard & Refill', badge: `${fmtNum(SEED.records.fuel_intakes.length)} Logs` },
+      { id: 'attendance', icon: ic('kiosks'), title: '4. Attendance Biometric Kiosk', sub: 'Live 4:3 Face ID + 4-Digit PIN + Smart 16h Shift', badge: `${onSiteList.length} On Site` }
     ];
 
     // Quick-preset chips for touch operators
@@ -18790,8 +18792,8 @@
         <div class="kiosk-quick-strip" id="kioskQuickStrip">
           <div class="kiosk-quick-group">
             <span class="kiosk-quick-lbl">Dispatch Mode:</span>
-            <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_saletype" data-kiosk-preset-val="Delivery">🚚 Delivery</button>
-            <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_saletype" data-kiosk-preset-val="Pickup">🏗️ Plant Pickup</button>
+            <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_saletype" data-kiosk-preset-val="Delivery">${ic('truck')} Delivery</button>
+            <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_saletype" data-kiosk-preset-val="Pickup">${ic('plant')} Plant Pickup</button>
           </div>
           <div class="kiosk-quick-group">
             <span class="kiosk-quick-lbl">1-Tap Grade:</span>
@@ -18810,8 +18812,8 @@
         <div class="kiosk-quick-strip" id="kioskQuickStrip">
           <div class="kiosk-quick-group">
             <span class="kiosk-quick-lbl">Haulage Fleet:</span>
-            <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_transportby" data-kiosk-preset-val="Company fleet">🏢 Company Fleet (Own Truck)</button>
-            <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_transportby" data-kiosk-preset-val="Third-party truck">🚛 Third-Party Truck (Hauler)</button>
+            <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_transportby" data-kiosk-preset-val="Company fleet">${ic('building')} Company Fleet (Own Truck)</button>
+            <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_transportby" data-kiosk-preset-val="Third-party truck">${ic('hauler')} Third-Party Truck (Hauler)</button>
           </div>
           <div class="kiosk-quick-group">
             <span class="kiosk-quick-lbl">Quarry Origin Site:</span>
@@ -18828,15 +18830,15 @@
         <div class="kiosk-quick-strip" id="kioskQuickStrip">
           <div class="kiosk-quick-group">
             <span class="kiosk-quick-lbl">Fuel Kiosk Operation:</span>
-            <button type="button" class="kiosk-qchip ${STATE.kioskFuelSubmode !== 'refill' ? 'active' : ''}" data-kiosk-fuel-sub="dispense">⛽ Dispense to Equipment / Truck (Meter Guard)</button>
-            <button type="button" class="kiosk-qchip ${STATE.kioskFuelSubmode === 'refill' ? 'active' : ''}" data-kiosk-fuel-sub="refill">🛢️ Bulk Tank Refill / Lubricant Purchase</button>
+            <button type="button" class="kiosk-qchip ${STATE.kioskFuelSubmode !== 'refill' ? 'active' : ''}" data-kiosk-fuel-sub="dispense">${ic('fuel')} Dispense to Equipment / Truck (Meter Guard)</button>
+            <button type="button" class="kiosk-qchip ${STATE.kioskFuelSubmode === 'refill' ? 'active' : ''}" data-kiosk-fuel-sub="refill">${ic('droplet')} Bulk Tank Refill / Lubricant Purchase</button>
           </div>
           ${STATE.kioskFuelSubmode !== 'refill' ? `
             <div class="kiosk-quick-group">
               <span class="kiosk-quick-lbl">Product Type:</span>
-              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_fueltype" data-kiosk-preset-val="Diesel">⛽ Diesel</button>
-              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_fueltype" data-kiosk-preset-val="Lubricant">🛢️ Lubricant / Oil / Grease</button>
-              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_fueltype" data-kiosk-preset-val="Petrol">⛽ Petrol</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_fueltype" data-kiosk-preset-val="Diesel">${ic('fuel')} Diesel</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_fueltype" data-kiosk-preset-val="Lubricant">${ic('droplet')} Lubricant / Oil / Grease</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_fueltype" data-kiosk-preset-val="Petrol">${ic('fuel')} Petrol</button>
             </div>
             <div class="kiosk-quick-group">
               <span class="kiosk-quick-lbl">Quick Litres:</span>
@@ -18845,8 +18847,8 @@
           ` : `
             <div class="kiosk-quick-group">
               <span class="kiosk-quick-lbl">Bulk Purchase Category:</span>
-              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_category" data-kiosk-preset-val="Fuel">⛽ Bulk Diesel Tank Refill</button>
-              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_category" data-kiosk-preset-val="Oils">🛢️ Drums / Hydraulic &amp; Engine Oils</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_category" data-kiosk-preset-val="Fuel">${ic('fuel')} Bulk Diesel Tank Refill</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_category" data-kiosk-preset-val="Oils">${ic('droplet')} Drums / Hydraulic &amp; Engine Oils</button>
             </div>
           `}
         </div>
@@ -18878,9 +18880,9 @@
             </div>
             <div class="kiosk-att-cam-body">
               <div class="kiosk-att-dir-bar" role="group" aria-label="Punch Direction Mode">
-                <button type="button" class="kiosk-dir-btn ${STATE.kioskAttDir === 'auto' ? 'active' : ''}" data-att-dir="auto">⚡ Auto Smart 16h (${nextDir} Next)</button>
-                <button type="button" class="kiosk-dir-btn in ${STATE.kioskAttDir === 'in' ? 'active' : ''}" data-att-dir="in">🟢 Clock IN</button>
-                <button type="button" class="kiosk-dir-btn out ${STATE.kioskAttDir === 'out' ? 'active' : ''}" data-att-dir="out">🟠 Clock OUT</button>
+                <button type="button" class="kiosk-dir-btn ${STATE.kioskAttDir === 'auto' ? 'active' : ''}" data-att-dir="auto">${ic('bolt')} Auto Smart 16h (${nextDir} Next)</button>
+                <button type="button" class="kiosk-dir-btn in ${STATE.kioskAttDir === 'in' ? 'active' : ''}" data-att-dir="in">${ic('clock_in')} Clock IN</button>
+                <button type="button" class="kiosk-dir-btn out ${STATE.kioskAttDir === 'out' ? 'active' : ''}" data-att-dir="out">${ic('clock_out')} Clock OUT</button>
               </div>
 
               <div class="kiosk-att-viewport" id="kioskAttViewport">
@@ -18903,14 +18905,14 @@
                   ${KIOSK_ATT_STATE.camActive ? '⏹ Stop Camera' : '▶ Start Biometric Camera'}
                 </button>
                 <button type="button" class="btn btn-brass" id="kioskAttInstantFacePunchBtn" title="Verify Face ID for selected seat and record punch">
-                  ⚡ Biometric Face Punch (${esc(selectedStaff.split(' ')[0])})
+                  ${ic('kiosks')} Biometric Face Punch (${esc(selectedStaff.split(' ')[0])})
                 </button>
               </div>
 
               ${lastPunch ? `
                 <div class="kiosk-last-punch-card ${lastPunch.direction === 'IN' ? 'is-in' : 'is-out'}" id="kioskAttLastPunchBox">
                   <div class="kiosk-lp-main">
-                    <span class="badge ${lastPunch.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${esc(lastPunch.direction === 'IN' ? '🟢 CLOCKED IN' : '🟠 CLOCKED OUT')}</span>
+                    <span class="badge ${lastPunch.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${lastPunch.direction === 'IN' ? `${ic('clock_in')} CLOCKED IN` : `${ic('clock_out')} CLOCKED OUT`}</span>
                     <strong>${esc(lastPunch.staff)}</strong>
                     <span class="mono">${esc(lastPunch.time)} · ${esc(lastPunch.date)}</span>
                     <small class="muted">${esc(lastPunch.site)} · via ${esc(lastPunch.method)}${lastPunch.paired_hours != null ? ` · Shift ${lastPunch.paired_hours}h${lastPunch.overtime_hours > 0 ? ' (+' + lastPunch.overtime_hours + 'h OT)' : ''}` : ''}</small>
@@ -18942,7 +18944,7 @@
                   <select id="kioskAttStaffSelect" data-native-select="1">
                     ${staffDir.map(s => {
                       const lp = latestByStaff.get(norm(s.name));
-                      const stTxt = lp && lp.direction === 'IN' ? `🟢 ON SITE (${lp.time})` : '⚪ Off Site';
+                      const stTxt = lp && lp.direction === 'IN' ? `● ON SITE (${lp.time})` : '○ Off Site';
                       return `<option value="${esc(s.name)}" ${norm(s.name) === norm(selectedStaff) ? 'selected' : ''}>${esc(s.name)} — ${stTxt}${IS_DEMO ? ` [PIN ${s.pin}]` : ''}</option>`;
                     }).join('')}
                   </select>
@@ -19030,10 +19032,10 @@
                 Operator: <b>${esc(activeUser().full_name)}</b> · Thermal: <b id="kioskFooterPrintModeLbl">${pCfg.paperWidth}mm · ${pCfg.priceMode === 'unpriced' ? 'Unpriced Gate Pass' : 'Priced Voucher'}</b>
               </div>
               <div class="kiosk-action-btns">
-                <button type="button" class="btn" id="kioskResetFormBtn">🧹 Reset</button>
+                <button type="button" class="btn" id="kioskResetFormBtn">${ic('rotate')} Reset</button>
                 <button type="button" class="btn" id="kioskPostOnlyBtn">✓ Post Only (No Print)</button>
                 <button type="button" class="btn btn-brass kiosk-big-print-btn" id="kioskPostAndPrintBtn">
-                  🖨️ Post &amp; Print ${pCfg.priceMode === 'unpriced' ? 'Gate Pass' : 'Thermal Ticket'} (${pCfg.paperWidth}mm)
+                  ${ic('printer')} Post &amp; Print ${pCfg.priceMode === 'unpriced' ? 'Gate Pass' : 'Thermal Ticket'} (${pCfg.paperWidth}mm)
                 </button>
               </div>
             </div>
@@ -19045,8 +19047,8 @@
               <div class="panel-head">
                 <div class="panel-title"><span>LIVE BLUETOOTH THERMAL ROLL PREVIEW (${pCfg.paperWidth}MM · ${pCfg.priceMode === 'unpriced' ? 'UNPRICED GATE PASS' : 'PRICED'})</span></div>
                 <div style="display:flex;gap:6px">
-                  <button type="button" class="btn btn-ghost-bar" id="kioskOpenModalPreviewBtn" style="padding:3px 8px;font-size:11px">🔍 Expand</button>
-                  <button type="button" class="btn btn-primary" id="kioskPrintDraftBtn" style="padding:3px 9px;font-size:11px">🖨️ Print Preview</button>
+                  <button type="button" class="btn btn-ghost-bar" id="kioskOpenModalPreviewBtn" style="padding:3px 8px;font-size:11px">${ic('expand')} Expand</button>
+                  <button type="button" class="btn btn-primary" id="kioskPrintDraftBtn" style="padding:3px 9px;font-size:11px">${ic('printer')} Print Preview</button>
                 </div>
               </div>
               <div class="kiosk-thermal-meta" id="kioskEscPosByteMeta">
@@ -19082,8 +19084,8 @@
                         <td class="r mono">${kMode === 'fuel' ? `${fmtNum(r.litres, 0)} L` : `${fmtNum(r.qty, 1)} ${esc(r.uom || 'm³')}`}</td>
                         <td class="r mono">${kMode === 'fuel' ? (() => { const em = effectiveFuelMeter(r); return em.reading != null ? fmtNum(em.reading, em.type === 'hours' && em.reading % 1 !== 0 ? 1 : 0) + ' ' + em.unit : '—'; })() : fmtUSD(r.total_ttc != null ? r.total_ttc : r.total, 0)}</td>
                         <td class="kiosk-rec-print-cell">
-                          <button type="button" class="tkt-print-mini" data-print-ticket="${activeDocType}" data-print-id="${esc(r.id)}" data-print-mode="priced" title="Print Priced Invoice / Voucher">💲</button>
-                          <button type="button" class="tkt-print-mini" data-print-ticket="${activeDocType}" data-print-id="${esc(r.id)}" data-print-mode="unpriced" title="Print Unpriced Delivery Gate Pass / Receiving Slip">🚛</button>
+                          <button type="button" class="tkt-print-mini" data-print-ticket="${activeDocType}" data-print-id="${esc(r.id)}" data-print-mode="priced" title="Print Priced Invoice / Voucher">${ic('dollar')}</button>
+                          <button type="button" class="tkt-print-mini" data-print-ticket="${activeDocType}" data-print-id="${esc(r.id)}" data-print-mode="unpriced" title="Print Unpriced Delivery Gate Pass / Receiving Slip">${ic('truck')}</button>
                         </td>
                       </tr>
                     `).join('') || emptyRow(5, 'No recent kiosk tickets')}
@@ -19110,7 +19112,7 @@
           <div class="cockpit-pill"><div class="cockpit-pill-lbl">Staff On Site</div><div class="cockpit-pill-val emerald">${fmtNum(onSiteList.length)}</div></div>
           <div class="cockpit-pill">
             <button type="button" class="btn ${STATE.kioskLocked ? 'btn-brass' : 'btn-ghost-bar'}" id="kioskLockToggleBtn" style="padding:5px 10px;font-size:11px">
-              ${STATE.kioskLocked ? '🔓 Unlock Kiosk Shell (PIN 2401)' : '🔒 Lock Tablet Kiosk Shell'}
+              ${STATE.kioskLocked ? `${ic('unlock')} Unlock Kiosk Shell (PIN 2401)` : `${ic('lock')} Lock Tablet Kiosk Shell`}
             </button>
           </div>
         </div>
@@ -19118,10 +19120,10 @@
 
       ${STATE.kioskUnlockPromptOpen ? `
         <div class="kiosk-unlock-bar" id="kioskUnlockPromptBar">
-          <span>🔒 <b>Tablet Kiosk Shell is Locked</b> — Enter Admin PIN (<b>2401</b>) or your seat PIN to restore full ERP navigation:</span>
+          <span>${ic('lock')} <b>Tablet Kiosk Shell is Locked</b> — Enter Admin PIN (<b>2401</b>) or your seat PIN to restore full ERP navigation:</span>
           <div style="display:flex;gap:8px;align-items:center">
             <input type="password" id="kioskUnlockPinInput" placeholder="PIN (2401)..." style="max-width:140px;padding:5px 9px;border-radius:6px;border:1px solid var(--line-strong)">
-            <button type="button" class="btn btn-primary" id="kioskConfirmUnlockBtn">🔓 Unlock Now</button>
+            <button type="button" class="btn btn-primary" id="kioskConfirmUnlockBtn">${ic('unlock')} Unlock Now</button>
             <button type="button" class="btn" id="kioskCancelUnlockBtn">Cancel</button>
           </div>
         </div>
@@ -19144,23 +19146,23 @@
 
         <div class="kiosk-printer-bar">
           <div class="kiosk-printer-grp">
-            <span class="kiosk-bar-lbl">🖨️ Paper Roll Width:</span>
+            <span class="kiosk-bar-lbl">${ic('printer')} Paper Roll Width:</span>
             <button type="button" class="kiosk-toggle-pill ${pCfg.paperWidth === 80 ? 'active' : ''}" data-kiosk-paper="80">80mm Standard (48 cols)</button>
             <button type="button" class="kiosk-toggle-pill ${pCfg.paperWidth === 58 ? 'active' : ''}" data-kiosk-paper="58">58mm Handheld (32 cols)</button>
           </div>
           <div class="kiosk-printer-grp">
-            <span class="kiosk-bar-lbl">💲 Ticket Price Mode:</span>
-            <button type="button" class="kiosk-toggle-pill ${pCfg.priceMode === 'priced' ? 'active' : ''}" data-kiosk-price-mode="priced">💲 Priced (Invoice / 2-Leg Voucher)</button>
-            <button type="button" class="kiosk-toggle-pill ${pCfg.priceMode === 'unpriced' ? 'active' : ''}" data-kiosk-price-mode="unpriced">🚛 Unpriced (Gate Pass / Scale Slip)</button>
+            <span class="kiosk-bar-lbl">${ic('dollar')} Ticket Price Mode:</span>
+            <button type="button" class="kiosk-toggle-pill ${pCfg.priceMode === 'priced' ? 'active' : ''}" data-kiosk-price-mode="priced">${ic('dollar')} Priced (Invoice / 2-Leg Voucher)</button>
+            <button type="button" class="kiosk-toggle-pill ${pCfg.priceMode === 'unpriced' ? 'active' : ''}" data-kiosk-price-mode="unpriced">${ic('truck')} Unpriced (Gate Pass / Scale Slip)</button>
           </div>
           <div class="kiosk-printer-grp">
-            <span class="kiosk-bar-lbl">📡 Bluetooth Channel:</span>
+            <span class="kiosk-bar-lbl">${ic('bluetooth')} Bluetooth Channel:</span>
             <select id="kioskPrintChannelSelect" data-native-select="1" style="padding:4px 8px;border-radius:6px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font-size:12px">
               <option value="rawbt" ${pCfg.channel === 'rawbt' ? 'selected' : ''}>RawBT Bluetooth ESC/POS</option>
               <option value="web_bluetooth" ${pCfg.channel === 'web_bluetooth' ? 'selected' : ''}>Web Bluetooth GATT (${pCfg.bleDeviceName ? esc(pCfg.bleDeviceName) : 'Direct BLE'})</option>
               <option value="browser" ${pCfg.channel === 'browser' ? 'selected' : ''}>Browser Thermal Dialog</option>
             </select>
-            <button type="button" class="btn btn-ghost-bar" id="kioskPairBleBtn" style="padding:4px 9px;font-size:11px" title="Pair Bluetooth Thermal Printer via Web Bluetooth GATT">📡 Pair BLE</button>
+            <button type="button" class="btn btn-ghost-bar" id="kioskPairBleBtn" style="padding:4px 9px;font-size:11px" title="Pair Bluetooth Thermal Printer via Web Bluetooth GATT">${ic('bluetooth')} Pair BLE</button>
           </div>
         </div>
       </div>
@@ -19451,9 +19453,9 @@
     document.documentElement.setAttribute('data-theme', STATE.theme);
     syncRailCollapseUi();
     const themeBtn = $('themeToggleBtn');
-    if (themeBtn) themeBtn.textContent = STATE.theme === 'dark' ? 'Light' : 'Dark';
+    if (themeBtn) themeBtn.innerHTML = STATE.theme === 'dark' ? `${ic('sun')}<span>Light</span>` : `${ic('moon')}<span>Dark</span>`;
     const mThemeBtn = $('mobileThemeBtn');
-    if (mThemeBtn) mThemeBtn.textContent = STATE.theme === 'dark' ? '☀' : '☾';
+    if (mThemeBtn) mThemeBtn.innerHTML = STATE.theme === 'dark' ? ic('sun') : ic('moon');
     const themeMeta = document.querySelector('meta[name="theme-color"]');
     if (themeMeta) themeMeta.setAttribute('content', STATE.theme === 'dark' ? '#0E1A2E' : '#F4F2EE');
 
@@ -19494,6 +19496,9 @@
 
     document.querySelectorAll('#sidebarNav .nav-item').forEach(btn => {
       const v = btn.getAttribute('data-view');
+      if (!btn.querySelector('.nav-ico') && window.MFG_ICONS) {
+        btn.insertAdjacentHTML('afterbegin', window.MFG_ICONS.nav(v));
+      }
       const isMatch = v === STATE.view || (v === 'customers' && STATE.view === 'ar') || (v === 'suppliers' && STATE.view === 'ap') || (v === 'ledger' && STATE.view === 'gl');
       btn.classList.toggle('on', isMatch);
       const lblSpan = btn.querySelector('span');
@@ -19913,7 +19918,7 @@
     container.querySelectorAll('[data-print-ticket]').forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
       const docType = btn.getAttribute('data-print-ticket') || 'sales';
-      const id = btn.getAttribute('data-print-id');
+      const id = btn.getAttribute('data-print-id') || btn.getAttribute('data-rid');
       const priceMode = btn.getAttribute('data-print-mode') || '';
       const poolKey = docType === 'raw' ? 'raw_purchases' : (docType === 'fuel' ? 'fuel_intakes' : 'sales_tickets');
       const rec = resolveInspectorRecord(poolKey, id);
