@@ -5319,9 +5319,9 @@
         t: ymFull,
         b: `${fmtNum(row.loads)} loads`,
         r: [
-          { l: 'Sales TTC', v: `$${sK.toFixed(1)}k`, c: '#2A6DB5' },
-          { l: 'Raw Material Cost', v: `$${rK.toFixed(1)}k`, c: '#C48A2C' },
-          { l: 'Operating Cash Profit', v: `$${pK.toFixed(1)}k`, c: '#1E9E8A', tot: true }
+          { l: 'Sales TTC', v: `$${sK.toFixed(1)}k`, c: '#1E293B' },
+          { l: 'Raw Material Cost', v: `$${rK.toFixed(1)}k`, c: '#0D9488' },
+          { l: 'Operating Cash Profit', v: `$${pK.toFixed(1)}k`, c: '#10B981', tot: true }
         ]
       });
       g += `<g class="col" data-m="${esc(ymFull)}" data-t="$${sK.toFixed(1)}k Sales" data-tip="${esc(tip)}" data-chart-pop="${esc(popSpec)}">`
@@ -8308,7 +8308,7 @@
                   return `
                   <tr class="rrow" data-rkey="expense_categories" data-rid="${esc(c.id)}">
                     <td>${relLink('expense_categories', c.category, c.category, true)}</td>
-                    <td><span class="badge ${/Production/i.test(c.cost_class) ? 'badge-brass' : (/Capital/i.test(c.cost_class) ? 'badge-capex' : 'badge-info')}">${esc(c.cost_class)}</span></td>
+                    <td><span class="badge ${/Production/i.test(c.cost_class) ? 'badge-cost-prod' : (/Capital/i.test(c.cost_class) ? 'badge-cost-capex' : 'badge-cost-opex')}">${esc(c.cost_class)}</span></td>
                     <td class="r">${fmtNum(c.vouchers)}</td>
                     <td class="r">${fmtNum(c.unit_tagged)}</td>
                     <td class="r">${fmtUSD(c.cash, 2)}</td>
