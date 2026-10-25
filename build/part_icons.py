@@ -25,23 +25,23 @@ ICONS = {
         '-.06-.1-.23-.17-.48-.29z"/></svg>'
     ),
 
-    # 2. Official ISABI / Ask ISABI Rev 10 "II" Double-Rule Badge (replaces cartoon robot 🤖)
+    # 2. Official ISABI / Ask ISABI Architectural Graphite "II" Double-Rule Badge
     "ai": (
         '<svg class="ic ic-isabi" viewBox="0 0 120 120" width="1em" height="1em" aria-hidden="true">'
-        '<rect width="120" height="120" rx="26" fill="#0B1730"/>'
+        '<rect width="120" height="120" rx="26" fill="#111827"/>'
         '<g transform="translate(39.52,77.62) scale(0.74)">'
-        '<g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/>'
+        '<g fill="#F9FAFB"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/>'
         '<path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g>'
-        '<g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/>'
+        '<g fill="#9CA3AF"><rect x="0" y="9.5" width="55.66" height="3.4"/>'
         '<rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>'
     ),
 
-    # Bare ISABI II mark (adapts to button/tab text color + brass double rule)
+    # Bare ISABI II mark (adapts to button/tab text color + platinum-slate double rule)
     "ai_mark": (
         '<svg class="ic ic-isabi-mark" viewBox="-9.5 -78.8 74.66 109.7" width="1em" height="1em" aria-hidden="true">'
         '<g fill="currentColor"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/>'
         '<path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g>'
-        '<g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="4.2"/>'
+        '<g fill="#71717A"><rect x="0" y="9.5" width="55.66" height="4.2"/>'
         '<rect x="0" y="18.5" width="55.66" height="4.2"/></g></svg>'
     ),
 
