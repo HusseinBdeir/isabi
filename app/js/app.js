@@ -115,6 +115,11 @@
     railWidth: clampRailWidth(localStorage.getItem('isabi_mfg_rail_width') || RAIL_DEFAULT_W),
     search: '',
     chipFilter: 'all',
+    cfEntryMode: 'entries',
+    cfFocusDate: '',
+    cfFocusYm: '',
+    cfFocusParty: '',
+    cfChartGrain: 'monthly',
     rawSupFilter: 'all',
     salesHaulFilter: 'all',
     rawSiteFilter: 'expense',
@@ -2110,7 +2115,11 @@
     pay_sal: 'salaries',
     pay_emp: 'employments',
     pay_att: 'attendance',
-    pay_log: 'logistics_allowances'
+    pay_log: 'logistics_allowances',
+    credterm: 'credit_terms',
+    vatinv: 'vat_invoices',
+    tr_loans: 'loans',
+    st17: 'price_rules'
   };
 
   const COL_KEY_ALIASES = {
@@ -2197,7 +2206,21 @@
     unit_price: 'Unit Price ($)',
     is_jv: 'JV 50/50',
     vat_registered: 'VAT (11%)',
-    is_truck_owner: 'Truck Owner?'
+    is_truck_owner: 'Truck Owner?',
+    dir: 'Flow Direction',
+    cat: 'Stream / Category',
+    party: 'Counterparty',
+    detail: 'Details & Notes',
+    ref: 'Reference',
+    in_usd: 'Cash In ($)',
+    out_usd: 'Cash Out ($)',
+    lbp: 'LBP Net (LL)',
+    entries_cnt: 'Entries',
+    open_usd: 'Opening USD ($)',
+    net_usd: 'Net USD ($)',
+    close_usd: 'Closing USD ($)',
+    close_lbp: 'Closing LBP (LL)',
+    close_combined: 'Closing Till 5300 ($)'
   };
 
   const VIEW_COL_DEFS = {
@@ -2365,6 +2388,26 @@
       { key: 'detail', label: 'Counterparty' },
       { key: 'debit', label: 'Debit ($)', kind: 'numeric' },
       { key: 'credit', label: 'Credit ($)', kind: 'numeric' }
+    ],
+    cf_moves: [
+      { key: 'company', label: 'Company' },
+      { key: 'dir', label: 'Direction' },
+      { key: 'cat', label: 'Stream / Category' },
+      { key: 'party', label: 'Counterparty' },
+      { key: 'method', label: 'Method' },
+      { key: 'in_usd', label: 'Cash In ($)', kind: 'numeric' },
+      { key: 'out_usd', label: 'Cash Out ($)', kind: 'numeric' },
+      { key: 'lbp', label: 'LBP Net (LL)', kind: 'numeric' }
+    ],
+    cf_daily: [
+      { key: 'entries_cnt', label: 'Entries', kind: 'numeric' },
+      { key: 'open_usd', label: 'Opening USD ($)', kind: 'numeric' },
+      { key: 'in_usd', label: 'USD In ($)', kind: 'numeric' },
+      { key: 'out_usd', label: 'USD Out ($)', kind: 'numeric' },
+      { key: 'net_usd', label: 'Net USD ($)', kind: 'numeric' },
+      { key: 'close_usd', label: 'Closing USD ($)', kind: 'numeric' },
+      { key: 'close_lbp', label: 'Closing LBP (LL)', kind: 'numeric' },
+      { key: 'close_combined', label: 'Closing Till 5300 ($)', kind: 'numeric' }
     ]
   };
 
@@ -2419,8 +2462,9 @@
 
   function isNumericColKey(colKey) {
     const k = String(colKey || '');
+    if (/^(cost_class|cost_bucket|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg)$/i.test(k)) return false;
     if (isBooleanColKey(k)) return false;
-    return /price|cost|amount|total|vat_amount|^vat$|limit|salary|balance|remaining|haul|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|trips|km_run|debit|credit|earnings|paid|base|ot_hrs|ot_pay|late_hrs|late_ded|absent_days|abs_ded|site_allow|ar_current|ar_60_plus|ap_material|ap_haulage|ap_expense|settlements_paid|sales_ttc|net_sum|tons_sold|qty_sold|trans_rev/i.test(k);
+    return /price|cost|amount|total|vat_amount|^vat$|limit|salary|balance|remaining|haul|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|in_usd|out_usd|net_usd|open_usd|close_usd|in_lbp|out_lbp|net_lbp|close_lbp|close_combined|^lbp$|entries_cnt|overtime_rate|qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|trips|km_run|debit|credit|earnings|paid|base|ot_hrs|ot_pay|late_hrs|late_ded|absent_days|abs_ded|site_allow|ar_current|ar_60_plus|ap_material|ap_haulage|ap_expense|settlements_paid|sales_ttc|net_sum|tons_sold|qty_sold|trans_rev/i.test(k);
   }
 
   function isDefaultDescSortKey(colKey) {
@@ -2626,12 +2670,55 @@
   }
 
   // ---- sorting / paging / table helpers --------------------------------------
+  const _defaultSortBy = {};
+
+  function getSecondaryNumericKeys(tk) {
+    switch (tk) {
+      case 'expense_categories': return ['total_spent', 'expenses_count', 'subcategories_count'];
+      case 'expense_subcategories': return ['total_spent', 'expenses_count'];
+      case 'customers': return ['sales_loads', 'ar_balance', 'sales_ttc', 'active_rules'];
+      case 'credit_terms': return ['ar_balance', 'credit_limit', 'sales_loads', 'credit_days'];
+      case 'suppliers': return ['total_spent', 'ap_balance', 'raw_loads', 'haul_loads', 'expenses_count', 'raw_cost'];
+      case 'equipment':
+      case 'company_equipment': return ['loads_hauled', 'fuel_fills', 'capacity'];
+      case 'drivers':
+      case 'company_drivers': return ['loads_hauled', 'fuel_fills'];
+      case 'sites': return ['sales_loads', 'raw_loads', 'active_rules'];
+      case 'regions': return ['sales_loads', 'sites_count', 'overtime_rate'];
+      case 'products': return ['sales_loads', 'fuel_fills', 'active_rules', 'list_price'];
+      case 'product_types': return ['sales_loads', 'products_count'];
+      case 'uoms': return ['tickets_count', 'products_count'];
+      case 'employments': return ['total_paid', 'salary_usd', 'daily_rate', 'payments_count'];
+      case 'logistics_allowances': return ['daily_usd', 'lbp_amount'];
+      case 'price_rules': return ['matched_tickets', 'unit_price', 'trans_unit_price'];
+      case 'loans': return ['principal', 'settled_amount'];
+      default: return [];
+    }
+  }
+
+  function compareRowTie(ra, rb, primaryKey, view) {
+    const tk = viewToTableKey(view);
+    const secKeys = getSecondaryNumericKeys(tk);
+    for (let i = 0; i < secKeys.length; i++) {
+      const sk = secKeys[i];
+      if (sk === primaryKey) continue;
+      const va = Number(resolveColVal(ra, sk, view) || 0);
+      const vb = Number(resolveColVal(rb, sk, view) || 0);
+      if (Number.isFinite(va) && Number.isFinite(vb) && va !== vb) return vb - va;
+    }
+    const na = String((ra && (ra.name || ra.Customer || ra.Supplier || ra.Product || ra.Site || ra.Equipment || ra.customer || ra.supplier || ra.staff || ra.driver || ra.equipment)) || '');
+    const nb = String((rb && (rb.name || rb.Customer || rb.Supplier || rb.Product || rb.Site || rb.Equipment || rb.customer || rb.supplier || rb.staff || rb.driver || rb.equipment)) || '');
+    return _NUM_COLLATOR.compare(na, nb);
+  }
+
   function sortRows(rows, view, defKey, defDir) {
     const rawPool = Array.isArray(rows) ? rows : [];
     if (view) _tablePoolCache[view] = rawPool;
     const hasColF = Boolean(view && hasActiveColFilters(view));
     const filteredRows = hasColF ? applyColFiltersForView(rawPool, view) : rawPool;
-    const s = STATE.sortBy[view] || { key: defKey, dir: defDir || (isDefaultDescSortKey(defKey) ? 'desc' : 'asc') };
+    const resolvedDefDir = defDir || (isDefaultDescSortKey(defKey) ? 'desc' : 'asc');
+    if (view && defKey) _defaultSortBy[view] = { key: defKey, dir: resolvedDefDir };
+    const s = STATE.sortBy[view] || { key: defKey, dir: resolvedDefDir };
     if (!s.key || filteredRows.length <= 1) return filteredRows;
 
     const rev = SEED._customRev || 0;
@@ -2668,12 +2755,19 @@
         decorated[i] = { r, v, empty, isNum: typeof v === 'number', isBool: typeof v === 'boolean', str: empty ? '' : String(v) };
       }
       decorated.sort((a, b) => {
-        if (a.empty && b.empty) return 0;
+        if (a.empty && b.empty) return compareRowTie(a.r, b.r, s.key, view);
         if (a.empty) return 1;
         if (b.empty) return -1;
-        if (a.isNum && b.isNum) return (a.v - b.v) * dir;
-        if (a.isBool && b.isBool) return ((a.v ? 1 : 0) - (b.v ? 1 : 0)) * dir;
-        return _NUM_COLLATOR.compare(a.str, b.str) * dir;
+        if (a.isNum && b.isNum) {
+          if (a.v !== b.v) return (a.v - b.v) * dir;
+          return compareRowTie(a.r, b.r, s.key, view);
+        }
+        if (a.isBool && b.isBool) {
+          const d = ((a.v ? 1 : 0) - (b.v ? 1 : 0)) * dir;
+          return d !== 0 ? d : compareRowTie(a.r, b.r, s.key, view);
+        }
+        const sc = _NUM_COLLATOR.compare(a.str, b.str) * dir;
+        return sc !== 0 ? sc : compareRowTie(a.r, b.r, s.key, view);
       });
       sorted = new Array(decorated.length);
       for (let i = 0, len = decorated.length; i < len; i++) sorted[i] = decorated[i].r;
@@ -2681,12 +2775,19 @@
       sorted = filteredRows.slice().sort((a, b) => {
         const av = resolveColVal(a, s.key, view);
         const bv = resolveColVal(b, s.key, view);
-        if ((av == null || av === '') && (bv == null || bv === '')) return 0;
+        if ((av == null || av === '') && (bv == null || bv === '')) return compareRowTie(a, b, s.key, view);
         if (av == null || av === '') return 1;
         if (bv == null || bv === '') return -1;
-        if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
-        if (typeof av === 'boolean' && typeof bv === 'boolean') return ((av ? 1 : 0) - (bv ? 1 : 0)) * dir;
-        return _NUM_COLLATOR.compare(String(av), String(bv)) * dir;
+        if (typeof av === 'number' && typeof bv === 'number') {
+          if (av !== bv) return (av - bv) * dir;
+          return compareRowTie(a, b, s.key, view);
+        }
+        if (typeof av === 'boolean' && typeof bv === 'boolean') {
+          const d = ((av ? 1 : 0) - (bv ? 1 : 0)) * dir;
+          return d !== 0 ? d : compareRowTie(a, b, s.key, view);
+        }
+        const sc = _NUM_COLLATOR.compare(String(av), String(bv)) * dir;
+        return sc !== 0 ? sc : compareRowTie(a, b, s.key, view);
       });
     }
 
@@ -2700,7 +2801,7 @@
   const TH_FUNNEL_SVG = '<svg viewBox="0 0 12 12" width="9.5" height="9.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1.2,2 10.8,2 7.1,6.3 7.1,10.2 4.9,9.1 4.9,6.3"/></svg>';
 
   function th(view, label, key, cls) {
-    const s = STATE.sortBy[view] || {};
+    const s = STATE.sortBy[view] || _defaultSortBy[view] || {};
     const on = s.key === key;
     const cf = (STATE.colFilters && STATE.colFilters[view]) || {};
     const hasFilter = Boolean(cf[key] && String(cf[key]).trim());
@@ -5669,7 +5770,8 @@
       filterRecords, buildSentinelItems, exportBtn, nextTicketNo,
       canEnterForm, canAccessPbiPage, allowedCompanyNames,
       SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog,
-      getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, renderDateSegPillHtml
+      getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, renderDateSegPillHtml,
+      buildCashTillMoves, buildDailyTillSheetRows, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic
     });
   }
 
@@ -7026,7 +7128,7 @@
       if (STATE.chipFilter === 'transporter') return !/^own/i.test(ce.ownership || '');
       if (STATE.chipFilter === 'app') return isAppRecord(ce);
       return true;
-    }), 'coeq', 'equipment', 'asc');
+    }), 'coeq', 'loads_hauled', 'desc');
 
     const ownPct = equipAll.length > 0 ? (ownCount / equipAll.length) * 100 : 0;
     const avgIntakeL = fuelRows.length > 0 ? (litres / fuelRows.length) : 0;
@@ -8002,10 +8104,13 @@
       const ck = norm(catName);
       if (!catAggMap.has(ck)) {
         const cm = catMetaMap.get(ck);
+        const derivedCls = (window.MFG_PBI && typeof window.MFG_PBI.deriveExpenseCostClass === 'function')
+          ? window.MFG_PBI.deriveExpenseCostClass(cm || catName)
+          : ((cm && (cm.cost_class || cm.category1)) || r.cost_class || 'Operating Expense');
         catAggMap.set(ck, {
           id: (cm && cm.id) || catName,
           category: catName,
-          cost_class: (cm && (cm.cost_class || cm.category1)) || r.cost_class || 'Operating Overhead',
+          cost_class: derivedCls,
           vouchers: 0,
           unit_tagged: 0,
           cash: 0,
@@ -8193,7 +8298,7 @@
                   return `
                   <tr class="rrow" data-rkey="expense_categories" data-rid="${esc(c.id)}">
                     <td>${relLink('expense_categories', c.category, c.category, true)}</td>
-                    <td><span class="badge badge-info">${esc(c.cost_class)}</span></td>
+                    <td><span class="badge ${/Production/i.test(c.cost_class) ? 'badge-brass' : (/Capital/i.test(c.cost_class) ? 'badge-warn' : 'badge-info')}">${esc(c.cost_class)}</span></td>
                     <td class="r">${fmtNum(c.vouchers)}</td>
                     <td class="r">${fmtNum(c.unit_tagged)}</td>
                     <td class="r">${fmtUSD(c.cash, 2)}</td>
@@ -8313,7 +8418,7 @@
       if (STATE.chipFilter === 'app') return isAppRecord(e);
       return true;
     });
-    const filteredEmp = sortRows(filteredEmpBase, 'pay_emp', 'start_date', 'desc');
+    const filteredEmp = sortRows(filteredEmpBase, 'pay_emp', 'total_paid', 'desc');
     const shownEmp = filteredEmp.slice(0, shownCount('pay_emp'));
     const filteredAttBase = attAll.filter(a => {
       if (subMode !== 'attendance') return true;
@@ -8324,7 +8429,7 @@
     });
     const filteredAtt = sortRows(filteredAttBase, 'pay_att', 'date', 'desc');
     const shownAtt = filteredAtt.slice(0, shownCount('pay_att'));
-    const filteredLog = sortRows(logAll, 'pay_log', 'start_date', 'desc');
+    const filteredLog = sortRows(logAll, 'pay_log', 'daily_usd', 'desc');
     const shownLog = filteredLog.slice(0, shownCount('pay_log'));
     const unmatchedRows = pricing.unmatched_salary_by_staff || [];
     const totalSiteAllow = filteredStaff.reduce((a, r) => a + r.site_allow, 0);
@@ -8705,9 +8810,328 @@
   // ==========================================================================
   // VIEW 9B: CASH FLOW & TILL (DUAL-CURRENCY USD & LBP PLANT TILL)
   // ==========================================================================
+  function cleanLedgerNote(raw) {
+    if (!raw) return '';
+    const s = String(raw)
+      .replace(/\[(?:wb|m\d+|app):[^\]]*\]/gi, '')
+      .replace(/^Category:\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return (s === '-' || s === '—') ? '' : s;
+  }
+
+  function shortVoucherRef(rawName, fallback) {
+    const s = String(rawName || '').trim();
+    if (!s || s === '-') return fallback || '—';
+    const hashHit = s.match(/#([A-Za-z0-9_-]+)\s*$/);
+    if (hashHit) return '#' + hashHit[1];
+    return s.length > 26 ? s.slice(0, 24) + '…' : s;
+  }
+
+  let _cashMovesCacheKey = '';
+  let _cashMovesCacheVal = null;
+
+  function buildCashTillMoves(opts = {}) {
+    const u = opts.user || activeUser();
+    const m = getModel();
+    const cf = (m && m.cash_flow_sheet) || { rate_lbp: 89500 };
+    const rate = Number(cf.rate_lbp || 89500);
+    const fullFin = isOwner(u) || u.pbi_access === 'full' || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const range = opts.ignorePeriod ? null : periodRange(STATE.period);
+    const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
+    const cacheKey = `${STATE.company}|${allowedCompanyNames(u).join(',')}|${range ? (range.from + '..' + range.to) : 'ALL'}|${fullFin ? 1 : 0}|${rate}|${SEED._customRev || 0}|${crCount}`;
+    if (_cashMovesCacheKey === cacheKey && _cashMovesCacheVal) return _cashMovesCacheVal;
+
+    const moves = [];
+    const pushMove = row => {
+      const uVal = round2(Number(row.usd || 0));
+      const lVal = Math.round(Number(row.lbp || 0));
+      if (Math.abs(uVal) < 0.005 && Math.abs(lVal) <= 1) return;
+      const dt = String(row.date || '').slice(0, 10);
+      const isFx = row.stream === 'fx';
+      const dir = isFx ? 'FX' : ((uVal > 0.004 || (Math.abs(uVal) < 0.005 && lVal > 1)) ? 'IN' : 'OUT');
+      moves.push({
+        id: row.id,
+        rkey: row.rkey,
+        date: dt,
+        ym: dt.slice(0, 7),
+        company: row.company || 'WTC',
+        stream: row.stream,
+        dir,
+        cat: row.cat,
+        party: row.party || '—',
+        partyRel: row.partyRel || '',
+        detail: row.detail || '—',
+        ref: row.ref || '—',
+        method: row.method || 'Cash',
+        usd: uVal,
+        in_usd: uVal > 0.004 ? uVal : 0,
+        out_usd: uVal < -0.004 ? round2(-uVal) : 0,
+        lbp: lVal,
+        ticketId: row.ticketId || '',
+        raw: row.raw
+      });
+    };
+
+    // 1. Cash Sales & Cash Sale Returns
+    filterRecords(SEED.records.sales_tickets, { ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), basis: 'tx', user: u }).forEach(s => {
+      if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') {
+        const sgn = ticketSign(s);
+        if (!sgn) return;
+        const net = Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0))) * sgn;
+        const vatL = Math.round(Number(s.vat || 0) * sgn * rate);
+        const qtyStr = s.qty ? `${fmtNum(Number(s.qty), Number(s.qty) % 1 ? 1 : 0)} ${s.uom || 'm³'}` : '';
+        const det = [s.product, qtyStr, s.site ? `→ ${s.site}` : '', s.truck ? `Truck ${s.truck}` : '', cleanLedgerNote(s.notes)].filter(Boolean).join(' · ');
+        pushMove({
+          id: s.id, rkey: 'sales_tickets', date: s.date, company: s.company,
+          stream: 'sales', cat: sgn < 0 ? 'Cash Sale Return' : 'Cash Sale',
+          party: s.customer || 'Walk-in', partyRel: s.customer ? 'customers' : '',
+          detail: det || 'Cash weighbridge dispatch',
+          ref: s.ticket_no ? `#${s.ticket_no}` : shortVoucherRef(s.name),
+          method: s.method, usd: net, lbp: vatL, ticketId: s.ticket_no ? s.id : '', raw: s
+        });
+      }
+    });
+
+    // 2. Customer Receipts (AR Settlements + VAT Received in LBP)
+    filterRecords(SEED.records.receipts, { ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), basis: 'tx', user: u }).forEach(r => {
+      const knd = receiptKind(r);
+      if (knd !== 'Settlement' && knd !== 'VAT received') return;
+      const lbp = Math.round(Number(r.lbp_amount || (knd === 'VAT received' ? Number(r.amount || 0) * rate : 0)));
+      const usd = knd === 'VAT received' ? 0 : (r.lbp_amount ? Number(r.usd_amount || 0) : Number(r.usd_amount != null ? r.usd_amount : r.amount || 0));
+      const det = [r.vat_invoice ? `VAT Inv ${r.vat_invoice}` : '', cleanLedgerNote(r.notes)].filter(Boolean).join(' · ');
+      pushMove({
+        id: r.id, rkey: 'receipts', date: r.date, company: r.company,
+        stream: 'sales', cat: knd === 'VAT received' ? 'Sales VAT (LL)' : 'AR Receipt',
+        party: r.customer || '—', partyRel: r.customer ? 'customers' : '',
+        detail: det || (knd === 'VAT received' ? '11% VAT collection in LBP' : 'Customer account receipt'),
+        ref: shortVoucherRef(r.reference || r.name),
+        method: r.method || 'Payment', usd, lbp, raw: r
+      });
+    });
+
+    // 3. Direct Cash Expenses & Cash Refunds
+    filterRecords(SEED.records.expenses, { ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), basis: 'tx', user: u }).forEach(x => {
+      const sgn = expenseSign(x);
+      if (!sgn || isCreditExpense(x)) return;
+      const lbp = -Math.round(Number(x.lbp_amount || 0) * sgn);
+      const usd = -(x.lbp_amount ? Number(x.usd_amount || 0) : Number(x.usd_amount != null ? x.usd_amount : x.amount || 0)) * sgn;
+      const det = [x.category, (x.subcategory && x.subcategory !== x.category) ? x.subcategory : '', x.equipment ? `Unit ${x.equipment}` : '', cleanLedgerNote(x.notes)].filter(Boolean).join(' · ');
+      pushMove({
+        id: x.id, rkey: 'expenses', date: x.date, company: x.company,
+        stream: 'exp', cat: sgn < 0 ? 'Expense Refund' : 'Cash Expense',
+        party: x.supplier || x.subcategory || x.category || 'Plant', partyRel: x.supplier ? 'suppliers' : '',
+        detail: det || 'Direct plant cash expense',
+        ref: (x.invoice && x.invoice !== '-') ? x.invoice : shortVoucherRef(x.reference || x.name),
+        method: x.method || 'Cash', usd, lbp, raw: x
+      });
+    });
+
+    // 4. Supplier AP Settlements & VAT Paid
+    filterRecords(SEED.records.settlements, { ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), basis: 'tx', user: u }).forEach(s => {
+      const knd = settlementKind(s);
+      if (knd !== 'Payment' && knd !== 'VAT paid') return;
+      const lbp = -Math.round(Number(s.lbp_amount || (knd === 'VAT paid' ? Number(s.amount || 0) * rate : 0)));
+      const usd = knd === 'VAT paid' ? 0 : -(s.lbp_amount ? Number(s.usd_amount || 0) : Number(s.usd_amount != null ? s.usd_amount : s.amount || 0));
+      pushMove({
+        id: s.id, rkey: 'settlements', date: s.date, company: s.company,
+        stream: 'exp', cat: knd === 'VAT paid' ? 'Expense VAT (LL)' : 'AP Settlement',
+        party: s.supplier || '—', partyRel: s.supplier ? 'suppliers' : '',
+        detail: cleanLedgerNote(s.notes) || 'Supplier payable settlement',
+        ref: (s.invoice && s.invoice !== '-') ? s.invoice : shortVoucherRef(s.reference || s.name),
+        method: s.method || 'Payment', usd, lbp, raw: s
+      });
+    });
+
+    // 5–8. Confidential Treasury Sweeps, Staff Salaries & Borrowing/Loans (Owner / Supervisor / read_fin seats only)
+    if (fullFin) {
+      filterRecords(SEED.records.external_movements, { ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), basis: 'tx', user: u }).forEach(ex => {
+        if (/^config$/i.test(String(ex.flow || ex.method || '').trim())) return;
+        const isOut = /out|expense/i.test(String(ex.direction || ex.flow || ''));
+        const lbpMag = Math.round(Math.abs(Number(ex.lbp_amount || 0)));
+        const usdMag = Math.abs(ex.lbp_amount ? Number(ex.usd_amount || 0) : Number(ex.usd_amount != null ? ex.usd_amount : ex.amount || 0));
+        pushMove({
+          id: ex.id, rkey: 'external_movements', date: ex.date, company: ex.company,
+          stream: 'ext', cat: isOut ? 'Treasury Sweep Out' : 'Treasury Funding In',
+          party: ex.counterparty || 'General Treasury', partyRel: '',
+          detail: cleanLedgerNote(ex.notes) || (isOut ? 'Cash sweep / external disbursement' : 'External treasury funding into till'),
+          ref: shortVoucherRef(ex.reference || ex.name),
+          method: isOut ? 'External Out' : 'External In',
+          usd: isOut ? -usdMag : usdMag,
+          lbp: isOut ? -lbpMag : lbpMag,
+          raw: ex
+        });
+      });
+
+      filterRecords(SEED.records.salaries, { ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), basis: 'tx', user: u }).forEach(sa => {
+        const lbpMag = Math.round(Math.abs(Number(sa.lbp_amount || 0)));
+        const usdMag = Math.abs(sa.lbp_amount ? Number(sa.usd_amount || 0) : Number(sa.usd_amount != null ? sa.usd_amount : sa.amount || 0));
+        const det = [sa.payroll_month ? `Payroll ${sa.payroll_month}` : '', cleanLedgerNote(sa.notes)].filter(Boolean).join(' · ');
+        pushMove({
+          id: sa.id, rkey: 'salaries', date: sa.date, company: sa.company,
+          stream: 'sal', cat: 'Salary Paid',
+          party: sa.staff || '—', partyRel: sa.staff ? 'employments' : '',
+          detail: det || 'Staff wage disbursement',
+          ref: shortVoucherRef(sa.reference || sa.name),
+          method: sa.method || 'Cash', usd: -usdMag, lbp: -lbpMag, raw: sa
+        });
+      });
+
+      filterRecords(SEED.records.loans, { ignoreSearch: true, ignorePeriod: true, user: u }).forEach(ln => {
+        const dt = String(ln.date || ln.start_date || '').slice(0, 10);
+        if (!dt) return;
+        if (range && (dt < range.from || dt > range.to)) return;
+        const isBorrowIn = /borrows/i.test(String(ln.direction || ''));
+        const lbpMag = Math.round(Math.abs(Number(ln.lbp_amount || 0)));
+        const usdMag = Math.abs(ln.lbp_amount ? Number(ln.usd_amount || 0) : Number(ln.usd_amount != null ? ln.usd_amount : ln.principal || 0));
+        const det = [ln.direction || '', lbpMag ? `${fmtLBP(lbpMag)} principal` : '', cleanLedgerNote(ln.notes)].filter(Boolean).join(' · ');
+        pushMove({
+          id: ln.id, rkey: 'loans', date: dt, company: ln.company,
+          stream: 'loan', cat: isBorrowIn ? 'Loan Received' : 'Loan / Advance Out',
+          party: ln.lender || ln.counterparty || ln.borrower || '—', partyRel: '',
+          detail: det || 'Loan / staff advance principal',
+          ref: shortVoucherRef(ln.name),
+          method: isBorrowIn ? 'Borrow In' : 'Lend Out',
+          usd: isBorrowIn ? usdMag : -usdMag,
+          lbp: isBorrowIn ? lbpMag : -lbpMag,
+          raw: ln
+        });
+      });
+
+      filterRecords(SEED.records.loan_settlements, { ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), basis: 'tx', user: u }).forEach(ls => {
+        const isIn = /inflow|drawdown/i.test(String(ls.method || ls.type || ''));
+        const lbpMag = Math.round(Math.abs(Number(ls.lbp_amount || 0)));
+        const usdMag = Math.abs(ls.lbp_amount ? Number(ls.usd_amount || 0) : Number(ls.usd_amount != null ? ls.usd_amount : ls.amount || 0));
+        const det = [ls.type || '', cleanLedgerNote(ls.notes)].filter(Boolean).join(' · ');
+        pushMove({
+          id: ls.id, rkey: 'loan_settlements', date: ls.date, company: ls.company,
+          stream: 'loan', cat: isIn ? 'Loan Repayment In' : 'Loan Repayment Out',
+          party: ls.borrower || ls.loan || ls.counterparty || '—', partyRel: '',
+          detail: det || 'Borrowing settlement',
+          ref: shortVoucherRef(ls.name),
+          method: isIn ? 'Inflow' : 'Outflow',
+          usd: isIn ? usdMag : -usdMag,
+          lbp: isIn ? lbpMag : -lbpMag,
+          raw: ls
+        });
+      });
+    }
+
+    // 9. Dual-Currency FX Conversions (USD ↔ LBP)
+    filterRecords(SEED.records.conversions, { ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), basis: 'tx', user: u }).forEach(cv => {
+      const d = convSignedDeltas(cv, rate);
+      const fxPair = d.u2l
+        ? `${fmtUSD(d.usdMag, 2)} → ${fmtLBP(d.lbpMag)}`
+        : `${fmtLBP(d.lbpMag)} → ${fmtUSD(d.usdMag, 2)}`;
+      const det = `${fxPair} @ ${fmtNum(d.rate, 0)} LL/$${cv.notes ? ' · ' + cleanLedgerNote(cv.notes) : ''}`;
+      pushMove({
+        id: cv.id, rkey: 'conversions', date: cv.date, company: cv.company,
+        stream: 'fx', cat: 'FX Conversion',
+        party: d.dirLabel, partyRel: '',
+        detail: det,
+        ref: shortVoucherRef(cv.reference || cv.name),
+        method: `@ ${fmtNum(d.rate, 0)}`,
+        usd: d.usd, lbp: d.lbp, raw: cv
+      });
+    });
+
+    moves.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || _NUM_COLLATOR.compare(String(b.ref || ''), String(a.ref || '')));
+    _cashMovesCacheKey = cacheKey;
+    _cashMovesCacheVal = moves;
+    return moves;
+  }
+
+  function buildDailyTillSheetRows(opts = {}) {
+    const u = opts.user || activeUser();
+    const m = getModel();
+    const cf = (m && m.cash_flow_sheet) || { rate_lbp: 89500, daily: [] };
+    const rate = Number(cf.rate_lbp || 89500);
+    const dailySrc = Array.isArray(cf.daily) ? cf.daily : [];
+    const range = opts.ignorePeriod ? null : periodRange(STATE.period);
+
+    // Count individual entries per date + fold any unseeded app-entered customRecords cash deltas per date
+    const allTimeMoves = buildCashTillMoves({ user: u, ignorePeriod: true });
+    const cntByDate = new Map();
+    const customDeltaByDate = new Map();
+    allTimeMoves.forEach(mv => {
+      if (!mv.date) return;
+      cntByDate.set(mv.date, (cntByDate.get(mv.date) || 0) + 1);
+      if (isAppRecord(mv.raw)) {
+        const cur = customDeltaByDate.get(mv.date) || { iu: 0, ou: 0, il: 0, ol: 0 };
+        if (mv.usd >= 0) cur.iu += mv.usd; else cur.ou += -mv.usd;
+        if (mv.lbp >= 0) cur.il += mv.lbp; else cur.ol += -mv.lbp;
+        customDeltaByDate.set(mv.date, cur);
+      }
+    });
+
+    const dayMap = new Map();
+    dailySrc.forEach(row => {
+      const iso = String(row[0] || '').slice(0, 10);
+      if (!iso) return;
+      dayMap.set(iso, {
+        iu: Number(row[1] || 0),
+        ou: Number(row[2] || 0),
+        il: Number(row[3] || 0),
+        ol: Number(row[4] || 0)
+      });
+    });
+    customDeltaByDate.forEach((cd, iso) => {
+      const cur = dayMap.get(iso) || { iu: 0, ou: 0, il: 0, ol: 0 };
+      cur.iu += cd.iu;
+      cur.ou += cd.ou;
+      cur.il += cd.il;
+      cur.ol += cd.ol;
+      dayMap.set(iso, cur);
+    });
+
+    const sortedDates = Array.from(dayMap.keys()).sort();
+    let runUsd = 0, runLbp = 0;
+    const out = [];
+    for (let i = 0; i < sortedDates.length; i++) {
+      const iso = sortedDates[i];
+      const d = dayMap.get(iso);
+      const openU = Math.abs(runUsd) < 0.005 ? 0 : round2(runUsd);
+      const openL = Math.abs(runLbp) <= 2 ? 0 : Math.round(runLbp);
+      const inU = round2(d.iu);
+      const outU = round2(d.ou);
+      const inL = Math.round(d.il);
+      const outL = Math.round(d.ol);
+      let netU = round2(inU - outU);
+      let netL = Math.round(inL - outL);
+      if (Math.abs(netU) < 0.005) netU = 0;
+      if (Math.abs(netL) <= 2) netL = 0;
+      runUsd = round2(runUsd + (d.iu - d.ou));
+      runLbp = Math.round(runLbp + (d.il - d.ol));
+      const closeU = Math.abs(runUsd) < 0.05 ? 0 : round2(runUsd);
+      const closeL = Math.abs(runLbp) <= 5 ? 0 : Math.round(runLbp);
+      const closeCombinedRaw = round2(closeU + closeL / rate);
+      const closeCombined = Math.abs(closeCombinedRaw) < 0.05 ? 0 : closeCombinedRaw;
+      if (range && (iso < range.from || iso > range.to)) continue;
+      const dowIdx = new Date(iso + 'T00:00:00Z').getUTCDay();
+      out.push({
+        date: iso,
+        ym: iso.slice(0, 7),
+        dow: DOW_SHORT[dowIdx] || '',
+        entries_cnt: cntByDate.get(iso) || 0,
+        open_usd: openU,
+        open_lbp: openL,
+        in_usd: inU,
+        out_usd: outU,
+        net_usd: netU,
+        close_usd: closeU,
+        in_lbp: inL,
+        out_lbp: outL,
+        net_lbp: netL,
+        close_lbp: closeL,
+        close_combined: closeCombined
+      });
+    }
+    out.reverse();
+    return out;
+  }
+
   function renderCashFlowTill() {
     const u = activeUser();
-    const effKey = resolveEffectiveModelKey(STATE.company);
     const m = getModel();
     const k = getKPI();
     const cf = (m && m.cash_flow_sheet) || { rate_lbp: 89500, live_till: { usd: 0, lbp: 0, total: 0, in_usd: 0, out_usd: 0, in_lbp: 0, out_lbp: 0 }, tables: {} };
@@ -8716,61 +9140,79 @@
     const liveLbp = Math.round(Number(k.cash_till_lbp != null ? k.cash_till_lbp : 0));
     const liveTot = Number(k.cash_till != null ? k.cash_till : 0);
     const q = STATE.search.trim().toLowerCase();
-    const fullFin = isOwner(u) || u.pbi_access === 'full' || (u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const fullFin = isOwner(u) || u.pbi_access === 'full' || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
 
     const allowedNames = allowedCompanyNames(u);
     const showGroupSplit = STATE.company === 'manufacturing-group' && allowedNames.includes('WTC') && allowedNames.includes('BBConstruction');
     const wtcK = showGroupSplit ? getKPI('wtc') : null;
     const bbcK = showGroupSplit ? getKPI('bbconstruction') : null;
 
-    // Recent physical cash drawer movements from live registers (scoped to active entity & date window)
-    const cashMoves = [];
-    filterRecords(SEED.records.sales_tickets, { ignoreSearch: true, basis: 'tx' }).forEach(s => {
-      if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') {
-        const sgn = ticketSign(s);
-        if (!sgn) return;
-        const net = Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0))) * sgn;
-        const vatL = Math.round(Number(s.vat || 0) * sgn * rate);
-        cashMoves.push({ id: s.id, rkey: 'sales_tickets', date: s.date, company: s.company, cat: 'Sales (Cash)', party: s.customer || 'Walk-in', ref: s.ticket_no ? `#${s.ticket_no}` : s.name, method: s.method, usd: net, lbp: vatL, raw: s });
-      }
-    });
-    filterRecords(SEED.records.receipts, { ignoreSearch: true, basis: 'tx' }).forEach(r => {
-      const knd = receiptKind(r);
-      if (knd !== 'Settlement' && knd !== 'VAT received') return;
-      const lbp = Math.round(Number(r.lbp_amount || (knd === 'VAT received' ? Number(r.amount || 0) * rate : 0)));
-      const usd = knd === 'VAT received' ? 0 : (r.lbp_amount ? Number(r.usd_amount || 0) : Number(r.amount || 0));
-      cashMoves.push({ id: r.id, rkey: 'receipts', date: r.date, company: r.company, cat: knd === 'VAT received' ? 'Sales VAT (LL)' : 'AR Receipt', party: r.customer || '—', ref: r.reference || r.name, method: r.method || 'Payment', usd, lbp, raw: r });
-    });
-    filterRecords(SEED.records.expenses, { ignoreSearch: true, basis: 'tx' }).forEach(x => {
-      const sgn = expenseSign(x);
-      if (!sgn || isCreditExpense(x)) return;
-      const lbp = -Math.round(Number(x.lbp_amount || 0) * sgn);
-      const usd = -(x.lbp_amount ? Number(x.usd_amount || 0) : Number(x.amount || 0)) * sgn;
-      cashMoves.push({ id: x.id, rkey: 'expenses', date: x.date, company: x.company, cat: 'Cash Expense', party: x.supplier || x.subcategory || x.category || 'Plant', ref: x.invoice || x.reference || x.name, method: x.method || 'Cash', usd, lbp, raw: x });
-    });
-    filterRecords(SEED.records.settlements, { ignoreSearch: true, basis: 'tx' }).forEach(s => {
-      const knd = settlementKind(s);
-      if (knd !== 'Payment' && knd !== 'VAT paid') return;
-      const lbp = -Math.round(Number(s.lbp_amount || (knd === 'VAT paid' ? Number(s.amount || 0) * rate : 0)));
-      const usd = knd === 'VAT paid' ? 0 : -(s.lbp_amount ? Number(s.usd_amount || 0) : Number(s.amount || 0));
-      cashMoves.push({ id: s.id, rkey: 'settlements', date: s.date, company: s.company, cat: knd === 'VAT paid' ? 'Expense VAT (LL)' : 'AP Settlement', party: s.supplier || '—', ref: s.reference || s.name, method: s.method || 'Payment', usd, lbp, raw: s });
-    });
-    filterRecords(SEED.records.conversions, { ignoreSearch: true, basis: 'tx' }).forEach(cv => {
-      const d = convSignedDeltas(cv, rate);
-      cashMoves.push({ id: cv.id, rkey: 'conversions', date: cv.date, company: cv.company, cat: 'FX Conversion', party: d.dirLabel, ref: cv.reference ? `${cv.name} · ${cv.reference}` : cv.name, method: `@ ${fmtNum(d.rate, 0)}`, usd: d.usd, lbp: d.lbp, raw: cv });
+    const allMoves = buildCashTillMoves({ user: u });
+    const allDailyRows = buildDailyTillSheetRows({ user: u });
+    const isDailyMode = STATE.cfEntryMode === 'daily';
+
+    // Apply interactive drill focus (Day, Month, or Counterparty)
+    const focusDate = STATE.cfFocusDate || '';
+    const focusYm = STATE.cfFocusYm || '';
+    const focusParty = STATE.cfFocusParty || '';
+    const focusPartyNorm = norm(focusParty);
+
+    const drillScopedMoves = allMoves.filter(mv => {
+      if (focusDate && mv.date !== focusDate) return false;
+      if (focusYm && mv.ym !== focusYm) return false;
+      if (focusPartyNorm && norm(mv.party) !== focusPartyNorm) return false;
+      return true;
     });
 
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
-    const filteredMoves = cashMoves.filter(mRow => {
-      if (STATE.chipFilter === 'cf_sales' && mRow.cat !== 'Sales (Cash)' && mRow.cat !== 'AR Receipt' && mRow.cat !== 'Sales VAT (LL)') return false;
-      if (STATE.chipFilter === 'cf_exp' && mRow.cat !== 'Cash Expense' && mRow.cat !== 'AP Settlement' && mRow.cat !== 'Expense VAT (LL)') return false;
-      if (STATE.chipFilter === 'cf_fx' && mRow.cat !== 'FX Conversion') return false;
-      if (q && !`${mRow.date} ${mRow.company} ${mRow.cat} ${mRow.party} ${mRow.ref} ${mRow.method}`.toLowerCase().includes(q)) return false;
+
+    const chipFilteredMoves = drillScopedMoves.filter(mRow => {
+      const cfChip = STATE.chipFilter || 'all';
+      if (cfChip === 'cf_in' && mRow.dir !== 'IN') return false;
+      if (cfChip === 'cf_out' && mRow.dir !== 'OUT') return false;
+      if (cfChip === 'cf_sales' && mRow.stream !== 'sales') return false;
+      if (cfChip === 'cf_exp' && mRow.stream !== 'exp') return false;
+      if (cfChip === 'cf_ext' && mRow.stream !== 'ext') return false;
+      if (cfChip === 'cf_sal' && mRow.stream !== 'sal') return false;
+      if (cfChip === 'cf_loan' && mRow.stream !== 'loan') return false;
+      if (cfChip === 'cf_fx' && mRow.stream !== 'fx') return false;
+      if (cfChip === 'cf_lbp' && Math.abs(mRow.lbp) <= 1) return false;
+      if (q && !`${mRow.date} ${fmtDateDMY(mRow.date)} ${mRow.company} ${mRow.cat} ${mRow.party} ${mRow.detail} ${mRow.ref} ${mRow.method}`.toLowerCase().includes(q)) return false;
       return true;
-    }).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-    const shownMoves = filteredMoves.slice(0, shownCount('cf_moves', 30));
-    const mvUsdSum = round2(filteredMoves.reduce((a, r) => a + Number(r.usd || 0), 0));
-    const mvLbpSum = Math.round(filteredMoves.reduce((a, r) => a + Number(r.lbp || 0), 0));
+    });
+    const sortedMoves = sortRows(chipFilteredMoves, 'cf_moves', 'date', 'desc');
+    const shownMoves = sortedMoves.slice(0, shownCount('cf_moves'));
+    let mvInUsd = 0, mvOutUsd = 0, mvLbpSum = 0;
+    for (let i = 0; i < sortedMoves.length; i++) {
+      mvInUsd += sortedMoves[i].in_usd;
+      mvOutUsd += sortedMoves[i].out_usd;
+      mvLbpSum += sortedMoves[i].lbp;
+    }
+    mvInUsd = round2(mvInUsd);
+    mvOutUsd = round2(mvOutUsd);
+    const mvUsdSum = round2(mvInUsd - mvOutUsd);
+    mvLbpSum = Math.round(mvLbpSum);
+
+    const chipFilteredDaily = allDailyRows.filter(dRow => {
+      if (focusYm && dRow.ym !== focusYm) return false;
+      const cfChip = STATE.chipFilter || 'all';
+      if (cfChip === 'cf_day_nonzero' && Math.abs(dRow.close_combined) < 0.05) return false;
+      if (cfChip === 'cf_day_lbp' && Math.abs(dRow.in_lbp) <= 1 && Math.abs(dRow.out_lbp) <= 1 && Math.abs(dRow.close_lbp) <= 5) return false;
+      if (cfChip === 'cf_day_neg' && dRow.close_combined >= -0.05) return false;
+      if (q && !`${dRow.date} ${fmtDateDMY(dRow.date)} ${dRow.dow}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    const sortedDaily = sortRows(chipFilteredDaily, 'cf_daily', 'date', 'desc');
+    const shownDaily = sortedDaily.slice(0, shownCount('cf_daily'));
+    let dyInUsd = 0, dyOutUsd = 0;
+    for (let i = 0; i < sortedDaily.length; i++) {
+      dyInUsd += sortedDaily[i].in_usd;
+      dyOutUsd += sortedDaily[i].out_usd;
+    }
+    dyInUsd = round2(dyInUsd);
+    dyOutUsd = round2(dyOutUsd);
+    const dyNetUsd = round2(dyInUsd - dyOutUsd);
+    const latestDayClose = sortedDaily.length ? sortedDaily[0] : { close_usd: liveUsd, close_lbp: liveLbp, close_combined: liveTot };
 
     const tbls = cf.tables || {};
     const tSales = tbls.sales || { rows: [], totals: { usd: 0, lbp: 0 } };
@@ -8786,21 +9228,28 @@
     const l2uRow = (tConv.rows || []).find(r => /LBP to USD/i.test(r.type)) || { from_amt: 0, to_amt: 0 };
 
     const summaryRows = [
-      { cat: 'Sales & Customer Receipts', inU: tSales.totals.usd, outU: 0, inL: tSales.totals.lbp, outL: 0 },
-      { cat: 'Expenses & Supplier Settlements', inU: 0, outU: tExps.totals.usd, inL: 0, outL: tExps.totals.lbp },
-      { cat: 'Borrowing & Staff Advances', inU: tBor.totals.paid_usd, outU: tBor.totals.rec_usd, inL: tBor.totals.paid_lbp, outL: tBor.totals.rec_lbp },
-      { cat: 'Salary & Workforce Payments', inU: 0, outU: tSal.totals.usd, inL: 0, outL: tSal.totals.lbp },
-      { cat: 'External Treasury', inU: tExt.totals.rev_usd, outU: tExt.totals.exp_usd, inL: tExt.totals.rev_lbp, outL: tExt.totals.exp_lbp },
-      { cat: 'Extended Counterparties', inU: tExtd.totals.usd < 0 ? -tExtd.totals.usd : 0, outU: tExtd.totals.usd > 0 ? tExtd.totals.usd : 0, inL: tExtd.totals.lbp < 0 ? -tExtd.totals.lbp : 0, outL: tExtd.totals.lbp > 0 ? tExtd.totals.lbp : 0 },
-      { cat: 'Currency Conversions (USD ↔ LBP)', inU: l2uRow.to_amt, outU: u2lRow.from_amt, inL: u2lRow.to_amt, outL: l2uRow.from_amt }
+      { cat: 'Sales & Customer Receipts', chipKey: 'cf_sales', inU: tSales.totals.usd, outU: 0, inL: tSales.totals.lbp, outL: 0 },
+      { cat: 'Expenses & Supplier Settlements', chipKey: 'cf_exp', inU: 0, outU: tExps.totals.usd, inL: 0, outL: tExps.totals.lbp },
+      { cat: 'Borrowing & Staff Advances', chipKey: fullFin ? 'cf_loan' : '', inU: tBor.totals.paid_usd, outU: tBor.totals.rec_usd, inL: tBor.totals.paid_lbp, outL: tBor.totals.rec_lbp },
+      { cat: 'Salary & Workforce Payments', chipKey: fullFin ? 'cf_sal' : '', inU: 0, outU: tSal.totals.usd, inL: 0, outL: tSal.totals.lbp },
+      { cat: 'External Treasury', chipKey: fullFin ? 'cf_ext' : '', inU: tExt.totals.rev_usd, outU: tExt.totals.exp_usd, inL: tExt.totals.rev_lbp, outL: tExt.totals.exp_lbp },
+      { cat: 'Extended Counterparties', chipKey: fullFin ? 'cf_ext' : '', inU: tExtd.totals.usd < 0 ? -tExtd.totals.usd : 0, outU: tExtd.totals.usd > 0 ? tExtd.totals.usd : 0, inL: tExtd.totals.lbp < 0 ? -tExtd.totals.lbp : 0, outL: tExtd.totals.lbp > 0 ? tExtd.totals.lbp : 0 },
+      { cat: 'Currency Conversions (USD ↔ LBP)', chipKey: 'cf_fx', inU: l2uRow.to_amt, outU: u2lRow.from_amt, inL: u2lRow.to_amt, outL: l2uRow.from_amt }
     ];
 
-    const salesShown = filtName(tSales.rows || []).slice(0, shownCount('cf_sales_t', 20));
-    const expsShown = filtName(tExps.rows || []).slice(0, shownCount('cf_exps_t', 20));
-    const borShown = filtName(tBor.rows || []).slice(0, shownCount('cf_bor_t', 15));
-    const salShown = filtName(tSal.rows || []).slice(0, shownCount('cf_sal_t', 15));
-    const extShown = filtName(tExt.rows || []).slice(0, shownCount('cf_ext_t', 15));
+    const salesShown = filtName(tSales.rows || []).slice(0, shownCount('cf_sales_t'));
+    const expsShown = filtName(tExps.rows || []).slice(0, shownCount('cf_exps_t'));
+    const borShown = filtName(tBor.rows || []).slice(0, shownCount('cf_bor_t'));
+    const salShown = filtName(tSal.rows || []).slice(0, shownCount('cf_sal_t'));
+    const extShown = filtName(tExt.rows || []).slice(0, shownCount('cf_ext_t'));
     const extdShown = filtName(tExtd.rows || []);
+
+    const hasDrill = Boolean(focusDate || focusYm || focusParty);
+    const fmtYmHuman = ym => {
+      const mHit = String(ym || '').match(/^(\d{4})-(\d{2})$/);
+      if (!mHit) return ym;
+      return `${MONTH_SHORT[(Number(mHit[2]) || 1) - 1]} ${mHit[1]}`;
+    };
 
     return `
       <div class="cockpit-banner has-insights">
@@ -8882,9 +9331,176 @@
         </div>
       </div>` : '')}
 
+      <div class="panel-card" id="tillRecentPanel" style="margin-bottom:14px">
+        <div class="panel-head cf-register-head">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="panel-title"><span>CASH TILL REGISTER &amp; DAILY CASHBOOK (ACCOUNT 5300)</span></div>
+            <div class="cf-mode-switch" role="tablist" aria-label="Cash Till View Mode">
+              <button type="button" class="cf-mode-btn ${!isDailyMode ? 'active' : ''}" data-cf-mode="entries" role="tab" aria-selected="${!isDailyMode}">Individual Entries <span>(${fmtNum(allMoves.length)})</span></button>
+              <button type="button" class="cf-mode-btn ${isDailyMode ? 'active' : ''}" data-cf-mode="daily" role="tab" aria-selected="${isDailyMode}">Daily Till Sheet <span>(${fmtNum(allDailyRows.length)} Days)</span></button>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${canEnterForm('receipt', u) ? '<button type="button" class="btn" data-open-modal="receipt">+ AR Receipt</button>' : ''}
+            ${canEnterForm('expense', u) ? '<button type="button" class="btn" data-open-modal="expense">+ Cash Expense</button>' : ''}
+            ${canEnterForm('settlement', u) ? '<button type="button" class="btn" data-open-modal="settlement">+ AP Payment</button>' : ''}
+            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="conversion">+ FX Conversion</button>' : ''}
+            ${exportBtn('tillRecentPanel', isDailyMode ? 'Daily_Till_Sheet' : 'Cash_Till_Entries')}
+          </div>
+        </div>
+
+        <div class="table-toolbar">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${searchBox(isDailyMode ? 'Search date (DD-MM-YYYY) or weekday...' : 'Search counterparty, note, #ref, ticket, category...')}
+            <div class="chip-bar">
+              ${!isDailyMode ? `
+                ${chip('all', `All (${fmtNum(drillScopedMoves.length)})`)}
+                ${chip('cf_in', '▲ Cash In')}
+                ${chip('cf_out', '▼ Cash Out')}
+                ${chip('cf_sales', 'Sales & AR')}
+                ${chip('cf_exp', 'Expenses & AP')}
+                ${fullFin ? chip('cf_ext', 'Treasury & Sweeps') : ''}
+                ${fullFin ? chip('cf_sal', 'Salaries') : ''}
+                ${fullFin ? chip('cf_loan', 'Loans') : ''}
+                ${chip('cf_fx', '⇄ FX')}
+                ${chip('cf_lbp', 'LBP (LL)')}
+              ` : `
+                ${chip('all', `All Days (${fmtNum(allDailyRows.length)})`)}
+                ${chip('cf_day_nonzero', 'Drawer ≠ $0')}
+                ${chip('cf_day_lbp', 'LBP Active')}
+                ${chip('cf_day_neg', 'Timing Deficit (<$0)')}
+              `}
+            </div>
+          </div>
+          <div class="cf-live-strip" aria-label="Filtered Cash Summary">
+            ${!isDailyMode ? `
+              <span>In: <b class="good">${fmtUSD(mvInUsd, 2)}</b></span>
+              <span>Out: <b class="crit">${fmtUSD(mvOutUsd, 2)}</b></span>
+              <span>Net: <b style="color:${mvUsdSum < -0.005 ? 'var(--crit)' : (mvUsdSum > 0.005 ? 'var(--good)' : 'var(--ink)')}">${fmtSignedUSD(mvUsdSum, 2)}</b></span>
+              ${Math.abs(mvLbpSum) > 1 ? `<span>LBP: <b>${fmtSignedLBP(mvLbpSum)}</b></span>` : ''}
+            ` : `
+              <span>Click any day row to inspect all cash entries of that day →</span>
+            `}
+          </div>
+        </div>
+
+        ${hasDrill ? `
+        <div class="cf-drill-strip" role="status">
+          <span class="cf-drill-lbl">Active Drill Filter:</span>
+          ${focusDate ? `<button type="button" class="cf-active-pill" data-cf-clear-drill="date"><span>Day: <b>${esc(fmtDateDMY(focusDate))}</b></span><span class="cf-pill-x">✕</span></button>` : ''}
+          ${focusYm ? `<button type="button" class="cf-active-pill" data-cf-clear-drill="ym"><span>Month: <b>${esc(fmtYmHuman(focusYm))}</b></span><span class="cf-pill-x">✕</span></button>` : ''}
+          ${focusParty ? `<button type="button" class="cf-active-pill" data-cf-clear-drill="party"><span>Counterparty: <b>${esc(focusParty)}</b></span><span class="cf-pill-x">✕</span></button>` : ''}
+          <button type="button" class="cf-clear-all-btn" data-cf-clear-drill="all">✕ Show All Cash Entries</button>
+        </div>` : ''}
+
+        ${!isDailyMode ? `
+        ${renderColFilterBar('cf_moves')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('cf_moves', 'Date', 'date')}
+                ${th('cf_moves', 'Co.', 'company')}
+                ${th('cf_moves', 'Category', 'cat')}
+                ${th('cf_moves', 'Counterparty', 'party')}
+                ${th('cf_moves', 'Details', 'detail')}
+                ${th('cf_moves', 'Ref', 'ref')}
+                ${th('cf_moves', 'In ($)', 'in_usd', 'r')}
+                ${th('cf_moves', 'Out ($)', 'out_usd', 'r')}
+                ${th('cf_moves', 'LBP (LL)', 'lbp', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownMoves.map(r => {
+                const flowCls = r.dir === 'IN' ? 'in' : (r.dir === 'FX' ? 'fx' : 'out');
+                const flowSym = r.dir === 'IN' ? '▲' : (r.dir === 'FX' ? '⇄' : '▼');
+                const partyHtml = r.partyRel
+                  ? relLink(r.partyRel, r.party, r.party, true)
+                  : `<button type="button" class="cf-party-btn" data-cf-focus-party="${esc(r.party)}" title="Filter all cash entries for ${esc(r.party)}">${esc(r.party)}</button>`;
+                const refHtml = r.ticketId
+                  ? `<span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ref)}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.ticketId)}" title="Preview / Print Ticket ${esc(r.ref)}">${ic('printer')}</button></span> <span class="mu">· ${esc(r.method)}</span>`
+                  : `${esc(r.ref)} <span class="mu">· ${esc(r.method)}</span>`;
+                return `
+                <tr class="rrow" data-rkey="${esc(r.rkey)}" data-rid="${esc(r.id)}">
+                  <td class="mono"><button type="button" class="cf-date-jump" data-cf-focus-date="${esc(r.date)}" title="Filter till sheet to ${esc(fmtDateDMY(r.date))}">${esc(fmtDateDMY(r.date))}</button>${appCell(r.raw, r.rkey)}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td class="cf-cat-cell"><span class="cf-flow-badge ${flowCls}">${flowSym}</span><span class="cf-cat-txt">${esc(r.cat)}</span></td>
+                  <td class="cf-party-cell" title="${esc(r.party)}">${partyHtml}</td>
+                  <td class="cf-detail-cell" title="${esc(r.detail)}">${esc(r.detail)}</td>
+                  <td class="mono cf-ref-cell" title="${esc(r.ref + ' · ' + r.method)}">${refHtml}</td>
+                  <td class="r">${r.in_usd >= 0.005 ? `<strong style="color:var(--good)">+${fmtUSD(r.in_usd, 2)}</strong>` : '—'}</td>
+                  <td class="r">${r.out_usd >= 0.005 ? `<strong style="color:var(--crit)">-${fmtUSD(r.out_usd, 2)}</strong>` : '—'}</td>
+                  <td class="r">${Math.abs(r.lbp) > 1 ? `<strong style="color:${r.lbp < 0 ? 'var(--crit)' : 'var(--good)'}">${fmtSignedLBP(r.lbp)}</strong>` : (r.stream === 'fx' ? '0 LL' : '—')}</td>
+                </tr>`;
+              }).join('') || emptyRow(9, 'No cash till entries match the active filter')}
+              ${showMoreRow('cf_moves', sortedMoves.length, 9)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>FILTERED TOTAL (${fmtNum(sortedMoves.length)} ENTRIES · NET ${fmtSignedUSD(mvUsdSum, 2)})</b></td>
+                <td class="r"><b style="color:var(--good)">+${fmtUSD(mvInUsd, 2)}</b></td>
+                <td class="r"><b style="color:var(--crit)">-${fmtUSD(mvOutUsd, 2)}</b></td>
+                <td class="r"><b style="color:${mvLbpSum < -1 ? 'var(--crit)' : (mvLbpSum > 1 ? 'var(--good)' : 'inherit')}">${fmtSignedLBP(mvLbpSum)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        ` : `
+        ${renderColFilterBar('cf_daily')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('cf_daily', 'Date', 'date')}
+                ${th('cf_daily', 'Entries', 'entries_cnt', 'r')}
+                ${th('cf_daily', 'Open ($)', 'open_usd', 'r')}
+                ${th('cf_daily', 'In ($)', 'in_usd', 'r')}
+                ${th('cf_daily', 'Out ($)', 'out_usd', 'r')}
+                ${th('cf_daily', 'Net ($)', 'net_usd', 'r')}
+                ${th('cf_daily', 'Close ($)', 'close_usd', 'r')}
+                ${th('cf_daily', 'Close (LL)', 'close_lbp', 'r')}
+                ${th('cf_daily', 'Till 5300 ($)', 'close_combined', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownDaily.map(d => {
+                const statusBadge = Math.abs(d.close_combined) < 0.05
+                  ? '<span class="badge badge-ok" style="margin-left:5px">Balanced $0</span>'
+                  : (d.close_combined < 0 ? '<span class="badge badge-warn" style="margin-left:5px">Timing Deficit</span>' : '');
+                return `
+                <tr class="cf-day-row" data-cf-focus-date="${esc(d.date)}" title="Click to inspect ${fmtNum(d.entries_cnt)} cash entries on ${esc(fmtDateDMY(d.date))}">
+                  <td class="mono"><strong>${esc(fmtDateDMY(d.date))}</strong> <span class="mu">${esc(d.dow)}</span></td>
+                  <td class="r"><span class="badge badge-info">${fmtNum(d.entries_cnt)} →</span></td>
+                  <td class="r">${Math.abs(d.open_usd) >= 0.005 ? fmtUSD(d.open_usd, 2) : '$0.00'}</td>
+                  <td class="r">${d.in_usd >= 0.005 ? `<strong style="color:var(--good)">+${fmtUSD(d.in_usd, 2)}</strong>` : '—'}</td>
+                  <td class="r">${d.out_usd >= 0.005 ? `<strong style="color:var(--crit)">-${fmtUSD(d.out_usd, 2)}</strong>` : '—'}</td>
+                  <td class="r"><strong style="color:${d.net_usd < -0.005 ? 'var(--crit)' : (d.net_usd > 0.005 ? 'var(--good)' : 'var(--muted)')}">${fmtSignedUSD(d.net_usd, 2)}</strong></td>
+                  <td class="r"><strong style="color:${d.close_usd < -0.05 ? 'var(--crit)' : 'inherit'}">${fmtUSD(d.close_usd, 2)}</strong></td>
+                  <td class="r">${Math.abs(d.close_lbp) > 5 ? `<strong>${fmtLBP(d.close_lbp)}</strong>` : '0 LL'}</td>
+                  <td class="r"><strong style="color:${d.close_combined < -0.05 ? 'var(--crit)' : (d.close_combined > 0.05 ? 'var(--brass)' : 'var(--good)')}">${fmtUSD(d.close_combined, 2)}</strong>${statusBadge}</td>
+                </tr>`;
+              }).join('') || emptyRow(9, 'No daily till rows match the active filter')}
+              ${showMoreRow('cf_daily', sortedDaily.length, 9)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3"><b>PERIOD DAILY TILL SUMMARY (${fmtNum(sortedDaily.length)} OPERATING DAYS)</b></td>
+                <td class="r"><b style="color:var(--good)">+${fmtUSD(dyInUsd, 2)}</b></td>
+                <td class="r"><b style="color:var(--crit)">-${fmtUSD(dyOutUsd, 2)}</b></td>
+                <td class="r"><b>${fmtSignedUSD(dyNetUsd, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(latestDayClose.close_usd, 2)}</b></td>
+                <td class="r"><b>${fmtLBP(latestDayClose.close_lbp)}</b></td>
+                <td class="r"><b>${fmtUSD(latestDayClose.close_combined, 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        `}
+      </div>
+
       <div class="panel-card" id="tillBridgePanel" style="margin-bottom:14px">
         <div class="panel-head">
-          <div class="panel-title"><span>CUMULATIVE BOOK TILL RECONCILIATION BY CATEGORY (USD &amp; LBP)</span></div>
+          <div class="panel-title"><span>CUMULATIVE BOOK TILL RECONCILIATION BY CATEGORY (USD &amp; LBP · CLICK ANY STREAM TO INSPECT ENTRIES)</span></div>
           <span class="panel-meta">${exportBtn('tillBridgePanel', 'Cash_Till_Reconciliation')}</span>
         </div>
         <div class="table-wrap">
@@ -8904,8 +9520,9 @@
               ${summaryRows.map(sr => {
                 const nU = round2(sr.inU - sr.outU);
                 const nL = Math.round(sr.inL - sr.outL);
+                const clickAttr = sr.chipKey ? `class="cf-bridge-row" data-cf-focus-stream="${esc(sr.chipKey)}" title="Click to filter Cash Till Register above to ${esc(sr.cat)}"` : '';
                 return `
-                  <tr>
+                  <tr ${clickAttr}>
                     <td><strong>${esc(sr.cat)}</strong></td>
                     <td class="r">${sr.inU ? fmtUSD(sr.inU, 2) : '—'}</td>
                     <td class="r">${sr.outU ? fmtUSD(sr.outU, 2) : '—'}</td>
@@ -8942,7 +9559,7 @@
               <thead><tr><th>Customer</th><th class="r">Amount ($)</th><th class="r">Amount (LL)</th></tr></thead>
               <tbody>
                 ${salesShown.map(r => `
-                  <tr>
+                  <tr class="cf-party-row" data-cf-focus-party="${esc(r.name)}" title="Click to filter Cash Till Register above to ${esc(r.name)}">
                     <td><strong>${esc(r.name)}</strong></td>
                     <td class="r">${r.usd ? fmtUSD(r.usd, 2) : '—'}</td>
                     <td class="r">${r.lbp ? fmtLBP(r.lbp) : '—'}</td>
@@ -8970,7 +9587,7 @@
               <thead><tr><th>Supplier</th><th class="r">Expenses ($)</th><th class="r">Expenses (LL)</th></tr></thead>
               <tbody>
                 ${expsShown.map(r => `
-                  <tr>
+                  <tr class="cf-party-row" data-cf-focus-party="${esc(r.name)}" title="Click to filter Cash Till Register above to ${esc(r.name)}">
                     <td><strong>${esc(r.name)}</strong></td>
                     <td class="r">${r.usd ? fmtUSD(r.usd, 2) : '—'}</td>
                     <td class="r">${r.lbp ? fmtLBP(r.lbp) : '—'}</td>
@@ -9001,7 +9618,7 @@
               <thead><tr><th>Borrower</th><th class="r">Rec ($)</th><th class="r">Rec (LL)</th><th class="r">Paid ($)</th><th class="r">Paid (LL)</th></tr></thead>
               <tbody>
                 ${borShown.map(r => `
-                  <tr>
+                  <tr class="cf-party-row" data-cf-focus-party="${esc(r.name)}" title="Click to filter Cash Till Register above to ${esc(r.name)}">
                     <td><strong>${esc(r.name)}</strong></td>
                     <td class="r">${r.rec_usd ? fmtUSD(r.rec_usd, 0) : '—'}</td>
                     <td class="r">${r.rec_lbp ? fmtLBP(r.rec_lbp) : '—'}</td>
@@ -9033,7 +9650,7 @@
               <thead><tr><th>Staff</th><th class="r">Payment ($)</th><th class="r">Payment (LL)</th></tr></thead>
               <tbody>
                 ${salShown.map(r => `
-                  <tr>
+                  <tr class="cf-party-row" data-cf-focus-party="${esc(r.name)}" title="Click to filter Cash Till Register above to ${esc(r.name)}">
                     <td><strong>${esc(r.name)}</strong></td>
                     <td class="r">${r.usd ? fmtUSD(r.usd, 2) : '—'}</td>
                     <td class="r">${r.lbp ? fmtLBP(r.lbp) : '—'}</td>
@@ -9063,7 +9680,7 @@
               <thead><tr><th>Stakeholder</th><th class="r">Exp ($)</th><th class="r">Exp (LL)</th><th class="r">Rev ($)</th><th class="r">Rev (LL)</th></tr></thead>
               <tbody>
                 ${extShown.map(r => `
-                  <tr>
+                  <tr class="cf-party-row" data-cf-focus-party="${esc(r.name)}" title="Click to filter Cash Till Register above to ${esc(r.name)}">
                     <td><strong>${esc(r.name)}</strong></td>
                     <td class="r">${r.exp_usd ? fmtUSD(r.exp_usd, 2) : '—'}</td>
                     <td class="r">${r.exp_lbp ? fmtLBP(r.exp_lbp) : '—'}</td>
@@ -9095,7 +9712,7 @@
               <thead><tr><th>Extended Stakeholder</th><th class="r">Owes ($)</th><th class="r">Owes (LL)</th></tr></thead>
               <tbody>
                 ${extdShown.map(r => `
-                  <tr>
+                  <tr class="cf-party-row" data-cf-focus-party="${esc(r.name)}" title="Click to filter Cash Till Register above to ${esc(r.name)}">
                     <td><strong>${esc(r.name)}</strong></td>
                     <td class="r">${r.usd ? fmtUSD(r.usd, 2) : '—'}</td>
                     <td class="r">${r.lbp ? fmtLBP(r.lbp) : '—'}</td>
@@ -9119,7 +9736,7 @@
                   const uDelta = isU2L ? -Number(r.from_amt || 0) : Number(r.to_amt || 0);
                   const lDelta = isU2L ? Math.round(Number(r.to_amt || 0)) : -Math.round(Number(r.from_amt || 0));
                   return `
-                  <tr>
+                  <tr class="cf-bridge-row" data-cf-focus-stream="cf_fx" title="Click to filter Cash Till Register above to FX Conversions">
                     <td><strong>${isU2L ? 'USD → LBP' : 'LBP → USD'}</strong></td>
                     <td class="r mono"><strong style="color:${uDelta < -0.005 ? 'var(--crit)' : (uDelta > 0.005 ? 'var(--good)' : 'inherit')}">${uDelta ? fmtSignedUSD(uDelta, 2) : '—'}</strong></td>
                     <td class="r mono"><strong style="color:${lDelta < -1 ? 'var(--crit)' : (lDelta > 1 ? 'var(--good)' : 'inherit')}">${lDelta ? fmtSignedLBP(lDelta) : '—'}</strong></td>
@@ -9152,7 +9769,7 @@
                 const uDelta = isU2L ? -Number(r.from_amt || 0) : Number(r.to_amt || 0);
                 const lDelta = isU2L ? Math.round(Number(r.to_amt || 0)) : -Math.round(Number(r.from_amt || 0));
                 return `
-                <tr>
+                <tr class="cf-bridge-row" data-cf-focus-stream="cf_fx" title="Click to filter Cash Till Register above to FX Conversions">
                   <td><strong>${isU2L ? 'USD → LBP' : 'LBP → USD'}</strong></td>
                   <td class="r mono"><strong style="color:${uDelta < -0.005 ? 'var(--crit)' : (uDelta > 0.005 ? 'var(--good)' : 'inherit')}">${uDelta ? fmtSignedUSD(uDelta, 2) : '—'}</strong></td>
                   <td class="r mono"><strong style="color:${lDelta < -1 ? 'var(--crit)' : (lDelta > 1 ? 'var(--good)' : 'inherit')}">${lDelta ? fmtSignedLBP(lDelta) : '—'}</strong></td>
@@ -9170,53 +9787,6 @@
           </table>
         </div>
       </div>`}
-
-      <div class="panel-card" id="tillRecentPanel">
-        <div class="table-toolbar">
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search customer, supplier, ticket #, receipt, conversion...')}
-            <div class="chip-bar">
-              ${chip('all', `All Cash Entries (${fmtNum(cashMoves.length)})`)}
-              ${chip('cf_sales', 'Sales & AR In')}
-              ${chip('cf_exp', 'Expenses & AP Out')}
-              ${chip('cf_fx', 'FX Conversions')}
-            </div>
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            ${exportBtn('tillRecentPanel', 'Daily_Cash_Till_Movements')}
-            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="conversion">+ FX Conversion</button>' : ''}
-          </div>
-        </div>
-        <div class="table-wrap">
-          <table class="ledger-table">
-            <thead>
-              <tr>
-                <th>Date</th><th>Co.</th><th>Category</th><th>Counterparty</th><th>Ref / Method</th><th class="r">USD ($)</th><th class="r">LBP (LL)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${shownMoves.map(r => `
-                <tr class="rrow" data-rkey="${esc(r.rkey)}" data-rid="${esc(r.id)}">
-                  <td class="mono">${esc(fmtDateDMY(r.date))}</td>
-                  <td>${coBadge(r.company)}</td>
-                  <td><span class="badge badge-info">${esc(r.cat)}</span></td>
-                  <td><strong>${esc(r.party)}</strong>${appCell(r.raw, r.rkey)}</td>
-                  <td class="mono">${esc(r.ref || '—')} <span class="mu">· ${esc(r.method)}</span></td>
-                  <td class="r"><strong style="color:${r.usd < -0.005 ? 'var(--crit)' : (r.usd > 0.005 ? 'var(--good)' : 'inherit')}">${Math.abs(r.usd) >= 0.005 ? fmtSignedUSD(r.usd, 2) : '—'}</strong></td>
-                  <td class="r"><strong style="color:${r.lbp < -1 ? 'var(--crit)' : (r.lbp > 1 ? 'var(--good)' : 'inherit')}">${Math.abs(r.lbp) > 1 ? fmtSignedLBP(r.lbp) : '—'}</strong></td>
-                </tr>`).join('') || emptyRow(7, 'No cash movements match the active filter')}
-              ${showMoreRow('cf_moves', filteredMoves.length, 7)}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="5"><b>FILTERED REGISTER TOTAL (${fmtNum(filteredMoves.length)} ENTRIES)</b></td>
-                <td class="r"><b style="color:${mvUsdSum < -0.005 ? 'var(--crit)' : (mvUsdSum > 0.005 ? 'var(--good)' : 'inherit')}">${fmtSignedUSD(mvUsdSum, 2)}</b></td>
-                <td class="r"><b style="color:${mvLbpSum < -1 ? 'var(--crit)' : (mvLbpSum > 1 ? 'var(--good)' : 'inherit')}">${fmtSignedLBP(mvLbpSum)}</b></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
     `;
   }
 
@@ -9439,7 +10009,7 @@
       return true;
     }), 'vatinv', 'date', 'desc');
     const shownVat = vatRows.slice(0, shownCount('vatinv'));
-    const credRows = sortRows(credBase, 'credterm', 'credit_limit', 'desc');
+    const credRows = sortRows(credBase, 'credterm', 'ar_balance', 'desc');
     const shownCred = credRows.slice(0, shownCount('credterm'));
 
     const sumNet = vatRows.reduce((a, r) => a + Number(r.net_amount || 0), 0);
@@ -9979,7 +10549,7 @@
       if (code === '20') bodyHtml += `<p class="form-note">JV entitlement = partner share × the JV site's raw material cost (Stock Entitlement rule, m114). Revenue-side entitlement is not derivable from tickets because the ticket Site is the delivery site — confirm with the accountant before reading this as a debt.</p>`;
     } else if (code === '17') {
       const today = SEED_DATE;
-      const rows = sortRows(filterRecords(SEED.records.price_rules, { ignoreSearch: true, ignorePeriod: true }).filter(r => (!r.end_date || String(r.end_date) >= today) && (!r.start_date || String(r.start_date) <= today)), 'st17', 'customer', 'asc');
+      const rows = sortRows(filterRecords(SEED.records.price_rules, { ignoreSearch: true, ignorePeriod: true }).filter(r => (!r.end_date || String(r.end_date) >= today) && (!r.start_date || String(r.start_date) <= today)), 'st17', 'unit_price', 'desc');
       bodyHtml = stTable([
         { label: 'Agreement', key: 'name', mono: true }, { label: 'Co.', key: 'company' }, { label: 'Customer / Owner', key: 'customer', fmt: (v, r) => `<strong>${esc(v || r.supplier || 'Standard List')}</strong>` }, { label: 'Product', key: 'product', fmt: v => esc(v || '(All Grades)') }, { label: 'Site', key: 'site' }, { label: 'Unit', key: 'unit', mono: true }, { label: 'Unit Price', key: 'unit_price', r: true, fmt: C.usd2 }, { label: 'Transport', key: 'trans_unit_price', r: true, fmt: v => v ? fmtUSD(v, 2) : '—' }, { label: 'Start', key: 'start_date', mono: true }, { label: 'End', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }
       ], rows, [{ v: `${fmtNum(rows.length)} ACTIVE AGREEMENTS AT ${today}`, span: 10 }]);
@@ -9996,7 +10566,9 @@
       const log = filterRecords(SEED.records.logistics_allowances, { ignoreSearch: true, ignorePeriod: true });
       const att = filterRecords(SEED.records.attendance, { ignoreSearch: true });
       const g = groupBy(sal, s => s.staff + '|' + s.payroll_month);
-      const rows = Array.from(g.entries()).map(([key, list]) => ({ staff: list[0].staff, month: list[0].payroll_month, company: list[0].company, payments: list.length, amount: sum(list, 'amount'), last: list.map(x => x.date).sort().pop() })).sort((a, b) => String(b.month).localeCompare(String(a.month)) || String(a.staff).localeCompare(String(b.staff)));
+      const rows = Array.from(g.entries()).map(([key, list]) => ({ staff: list[0].staff, month: list[0].payroll_month, company: list[0].company, payments: list.length, amount: sum(list, 'amount'), last: list.map(x => x.date).sort().pop() })).sort((a, b) => String(b.month).localeCompare(String(a.month)) || (b.amount - a.amount));
+      emp.sort((a, b) => (Number(b.salary_usd || 0) || Number(b.daily_rate || 0) * 26) - (Number(a.salary_usd || 0) || Number(a.daily_rate || 0) * 26));
+      log.sort((a, b) => Number(b.daily_usd || b.usd_amount || 0) - Number(a.daily_usd || a.usd_amount || 0));
       bodyHtml = `
         <div class="live-calc">
           <div><small>Salaries Paid (Book)</small><b>${fmtUSD(k.salaries_paid, 2)}</b></div>
@@ -14963,7 +15535,10 @@
     if (Array.isArray(v)) return v.length ? v.join(', ') : '—';
     if (typeof v === 'object') return JSON.stringify(v);
     if (typeof v === 'number') {
-      if (/price|cost|amount|total|vat|discount|tip|limit|salary|balance|adj|principal|value|change|rate_usd|daily_usd|paid|spent|sales_ttc|raw_cost/.test(key) && !/rate$|pct|factor|ton_factor|exchange|count|loads|days|hours/.test(key)) return fmtUSD(v, 2);
+      if (key === 'lbp_delta') return fmtSignedLBP(v);
+      if (/^lbp_|_lbp$/.test(key)) return fmtLBP(v);
+      if (key === 'usd_delta') return fmtSignedUSD(v, 2);
+      if (/price|cost|amount|total|vat|discount|tip|limit|salary|balance|adj|principal|value|change|rate_usd|daily_usd|paid|spent|sales_ttc|raw_cost/.test(key) && !/rate$|pct|factor|ton_factor|exchange|count|loads|days|hours|cost_class|cost_bucket/.test(key)) return fmtUSD(v, 2);
       return fmtNum(v, Number.isInteger(v) ? 0 : 2);
     }
     if (/date|last_sale|last_purchase/i.test(key)) return fmtDateDMY(v);
@@ -15082,6 +15657,13 @@
       return {
         tone: 'info',
         text: `Product & Grade Master: ${row.name} (${row.type || 'Material'} · Default UoM ${row.uom || 'm³'} · Tonnage Factor ${row.ton_factor || 1.5} t/m³)  |  List Price Benchmark: ${lp != null ? fmtUSD(lp, 2) : '—'}  |  Active Price Agreements: ${rulesCnt}  |  CoA Revenue Account: ${row.revenue_account || '701001'}`
+      };
+    }
+    if (key === 'conversions') {
+      const d = convSignedDeltas(row);
+      return {
+        tone: 'info',
+        text: `FX Conversion (${d.dirLabel}): USD Drawer ${fmtSignedUSD(d.usd, 2)} (${d.u2l ? 'Decreased' : 'Increased'})  |  LBP Drawer ${fmtSignedLBP(d.lbp)} (${d.u2l ? 'Increased' : 'Decreased'})  |  Effective Rate: ${fmtNum(d.rate, 2)} LL/$  |  Entity: ${row.company || 'WTC'}`
       };
     }
     return {
@@ -15204,6 +15786,21 @@
           { lbl: 'MATERIAL & HAULAGE LOADS', tag: `${fmtNum(matLoads.length + haulLoads.length)} TICKETS`, tone: 'info', val: fmtNum(si.raw_loads || (matLoads.length + haulLoads.length)), sub1: `As Site Owner: ${fmtNum(matLoads.length)} · As Hauler: ${fmtNum(haulLoads.length)}`, sub2: `Expenses Billed: ${fmtNum(exps.length)} vouchers`, pct: 80 },
           { lbl: 'SETTLEMENTS DISBURSED', tag: `${fmtNum(spays.length)} PAYMENTS`, tone: 'good', val: fmtUSD(si.settlements_paid || spays.reduce((a, s) => a + Number(s.amount || 0), 0), 0), sub1: `${fmtNum(spays.length)} settlement vouchers in register`, sub2: `IVA Registered: ${row.iva || si.iva ? 'Yes' : 'No'}`, pct: 85 },
           { lbl: 'FLEET & AGREEMENTS', tag: row.is_truck_owner ? 'HAULER FLEET' : 'VENDOR', tone: 'info', val: `${fmtNum(row.trucks_count || (row.trucks || []).length || 0)} Trucks`, sub1: `Drivers Linked: ${fmtNum((row.drivers || []).length)}`, sub2: `Active Price Rules: ${activeRulesCountFor('supplier', name)}`, pct: 70 }
+        ]
+      };
+    }
+
+    if (key === 'conversions') {
+      const d = convSignedDeltas(row);
+      return {
+        bu,
+        title,
+        pill: `${fmtSignedUSD(d.usd, 2)} · ${fmtSignedLBP(d.lbp)}`,
+        cards: [
+          { lbl: 'USD DRAWER CHANGE', tag: d.u2l ? 'USD OUTFLOW' : 'USD INFLOW', tone: d.u2l ? 'crit' : 'good', val: fmtSignedUSD(d.usd, 2), sub1: d.u2l ? 'USD sold from cash till' : 'USD received into cash till', sub2: `Direction: ${d.dirLabel}`, pct: 85 },
+          { lbl: 'LBP DRAWER CHANGE', tag: d.u2l ? 'LBP INFLOW' : 'LBP OUTFLOW', tone: d.u2l ? 'good' : 'crit', val: fmtSignedLBP(d.lbp), sub1: d.u2l ? 'LBP received into cash till' : 'LBP sold from cash till', sub2: `Dual-currency 5300 leg`, pct: 85 },
+          { lbl: 'EFFECTIVE FX RATE', tag: 'LL / USD', tone: 'info', val: `${fmtNum(d.rate, 0)} LL/$`, sub1: `Exact Rate: ${fmtNum(d.rate, 2)} LL/$`, sub2: `Tx Date: ${row.date || '—'}`, pct: 80 },
+          { lbl: 'AUDIT & LEDGER SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'DATAVERSE', tone: 'info', val: isAppRecord(row) ? 'App Entry' : 'Synced Book', sub1: isAppRecord(row) ? `Posted by ${row.entered_by || 'User'}` : `Snapshot ${SEED_DATE}`, sub2: `Cash Till 5300 Reconciled`, pct: 100 }
         ]
       };
     }
@@ -15389,7 +15986,23 @@
     const addGrid = (id, title, shortLabel, relBadge, targetKey, rows, cols, sumCol) => {
       if (!rows) return;
       if (targetKey && !canAccessTable(targetKey)) return;
-      const scoped = rows.filter(r => !r || (!r.voided && (!r.company || allowedCos.includes(r.company))));
+      const scoped = rows.filter(r => !r || (!r.voided && (!r.company || allowedCos.includes(r.company)))).slice();
+      if (scoped.length > 1) {
+        const viewId = targetKey ? ('tbl_' + targetKey) : '';
+        const hasDate = Array.isArray(cols) && cols.includes('date');
+        scoped.sort((a, b) => {
+          if (hasDate) {
+            const da = recordDate(a), db = recordDate(b);
+            if (da !== db) return db < da ? -1 : 1;
+          }
+          if (sumCol) {
+            const va = Number(a[sumCol] != null ? a[sumCol] : (resolveColVal(a, sumCol, viewId) || 0));
+            const vb = Number(b[sumCol] != null ? b[sumCol] : (resolveColVal(b, sumCol, viewId) || 0));
+            if (Number.isFinite(va) && Number.isFinite(vb) && va !== vb) return vb - va;
+          }
+          return compareRowTie(a, b, sumCol || (hasDate ? 'date' : ''), viewId);
+        });
+      }
       const cleanBadge = String(relBadge || '')
         .replace(/^\s*(?:1:N|N:1|N:N)\s*/i, '')
         .replace(/\bbhf_[a-z0-9_]+\b/gi, '')
@@ -15495,7 +16108,15 @@
     else if (key === 'expense_categories' || key === 'expense_subcategories' || key === 'expenses') {
       const cat = row.category || row.name;
       if (key === 'expense_categories') {
-        addGrid('sg_ec_sub', `Subcategories under ${cat}`, 'Subcategories', 'Subcategories', 'expense_subcategories', (rec.expense_subcategories || []).filter(s => norm(s.category) === norm(cat)), ['name', 'category'], null);
+        const relIdx = window.MFG_PBI && window.MFG_PBI.getHubRelIndex ? window.MFG_PBI.getHubRelIndex(SEED) : null;
+        const subRows = (rec.expense_subcategories || []).filter(s => norm(s.category) === norm(cat)).map(s => {
+          const se = relIdx && relIdx.subcatByName ? relIdx.subcatByName[norm(s.name)] : null;
+          return Object.assign({}, s, {
+            expenses_count: se ? se.expenses_count : Number(s.expenses_count || 0),
+            total_spent: se ? se.total_spent : Number(s.total_spent || 0)
+          });
+        });
+        addGrid('sg_ec_sub', `Subcategories under ${cat}`, 'Subcategories', 'Subcategories', 'expense_subcategories', subRows, ['name', 'category', 'expenses_count', 'total_spent'], 'total_spent');
       }
       const matchExps = (rec.expenses || []).filter(x => key === 'expense_subcategories' ? norm(x.subcategory) === norm(row.name) : norm(x.category) === norm(cat));
       addGrid('sg_ec_exp', `Expense Vouchers (${row.subcategory || cat})`, 'Expense Vouchers', 'Expense Vouchers', 'expenses', matchExps, ['date', 'name', 'company', 'category', 'subcategory', 'supplier', 'equipment', 'method', 'amount', 'reference'], 'amount');
@@ -15533,8 +16154,8 @@
     const allKeys = Object.keys(row).filter(k => !hidden.has(k) && row[k] !== '' && row[k] != null && !(typeof row[k] === 'number' && row[k] === 0 && /tip|discount|tier|adj|difference/.test(k)));
 
     const idFields = new Set(['name', 'official_name', 'ticket_no', 'invoice_no', 'date', 'rep_date', 'payroll_month', 'company', 'sale_type', 'rule_type', 'type', 'status', 'customer', 'supplier', 'staff', 'driver', 'partner', 'counterparty', 'mof_no', 'financial_no', 'vat_registered', 'iva', 'phone', 'contact', 'address', 'location']);
-    const opsFields = new Set(['product', 'item', 'input_product', 'site', 'region', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'equipment', 'plate_no', 'ownership', 'capacity', 'default_driver', 'day_operator', 'night_operator', 'working_days', 'start_date', 'end_date', 'latitude', 'longitude', 'is_jv', 'is_truck_owner', 'trucks_count', 'trucks', 'drivers', 'category', 'subcategory', 'category1', 'category2']);
-    const finFields = new Set(['qty', 'uom', 'unit', 'ton_factor', 'litres', 'odometer', 'hours', 'regular_hours', 'overtime_hours', 'late_hours', 'unit_price', 'price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'delivered_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_cost', 'vat', 'vat_amount', 'net_amount', 'total', 'total_ttc', 'amount', 'usd_amount', 'lbp_amount', 'discount', 'salary_usd', 'daily_rate', 'daily_usd', 'rate_usd', 'credit_days', 'credit_limit', 'principal', 'interest_rate', 'exchange_rate', 'percentage', 'ar_balance', 'ap_balance', 'loads', 'raw_loads', 'sales_ttc', 'raw_cost', 'receipts', 'settlements_paid', 'method', 'vat_invoice', 'record_ticket', 'raw_ticket', 'expense_record', 'invoice', 'reference', 'revenue_account', 'purchase_account', 'notes']);
+    const opsFields = new Set(['product', 'item', 'input_product', 'site', 'region', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'equipment', 'plate_no', 'ownership', 'capacity', 'default_driver', 'day_operator', 'night_operator', 'working_days', 'start_date', 'end_date', 'latitude', 'longitude', 'is_jv', 'is_truck_owner', 'trucks_count', 'trucks', 'drivers', 'category', 'subcategory', 'category1', 'category2', 'from_currency', 'to_currency']);
+    const finFields = new Set(['qty', 'uom', 'unit', 'ton_factor', 'litres', 'odometer', 'hours', 'regular_hours', 'overtime_hours', 'late_hours', 'unit_price', 'price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'delivered_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_cost', 'vat', 'vat_amount', 'net_amount', 'total', 'total_ttc', 'amount', 'usd_amount', 'lbp_amount', 'usd_delta', 'lbp_delta', 'discount', 'salary_usd', 'daily_rate', 'daily_usd', 'rate_usd', 'credit_days', 'credit_limit', 'principal', 'interest_rate', 'exchange_rate', 'percentage', 'ar_balance', 'ap_balance', 'loads', 'raw_loads', 'sales_ttc', 'raw_cost', 'receipts', 'settlements_paid', 'method', 'vat_invoice', 'record_ticket', 'raw_ticket', 'expense_record', 'invoice', 'reference', 'revenue_account', 'purchase_account', 'notes']);
 
     const s1 = [], s2 = [], s3 = [];
     allKeys.forEach(k => {
@@ -15562,7 +16183,7 @@
     const renderCell = (k, valOverride) => {
       const v = valOverride !== undefined ? valOverride : row[k];
       const formatted = inspectorValue(k, v);
-      const lkTarget = INSPECT_LOOKUP_FIELD_TARGET[k];
+      const lkTarget = (k === 'type' && key !== 'products') ? null : INSPECT_LOOKUP_FIELD_TARGET[k];
       const canLink = lkTarget && lkTarget !== key && v != null && v !== '' && formatted !== '—';
       const valHtml = canLink
         ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}" title="Open related ${esc(k.replace(/_/g, ' '))}: ${esc(v)}">${esc(formatted)}<span class="rel-arr">↗</span></span>`
@@ -15607,20 +16228,21 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${sg.cols.map(c => `<th class="${/price|cost|amount|total|vat|limit|salary|qty|litres|capacity|hours|days|percentage/.test(c) ? 'r' : ''}">${esc(c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</th>`).join('')}
+                  ${sg.cols.map(c => `<th class="${!/^(cost_class|cost_bucket|working_days)$/i.test(c) && /price|cost|amount|total|vat|limit|salary|qty|litres|capacity|hours|days|percentage|_count$/.test(c) ? 'r' : ''}">${esc(c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</th>`).join('')}
                 </tr>
               </thead>
               <tbody data-sg-tbody="${esc(sg.id)}">
                 ${shown.map(r => `
                   <tr class="rrow" data-rkey="${esc(sg.targetKey)}" data-rid="${esc(r.id || r.name || r.ticket_no)}">
                     ${sg.cols.map((c, ci) => {
-                      let v = r[c];
+                      let v = r[c] !== undefined ? r[c] : resolveColVal(r, c, 'tbl_' + sg.targetKey);
                       if (sg.targetKey === 'price_rules') {
                         if (c === 'indiff_price' && v == null) v = ruleAnyIndiffPrice(r);
                         if (c === 'unit_price' && isMatIndiffRule(r)) v = null;
                       }
-                      const isMoney = /price|cost|amount|total|vat|limit|salary|daily_usd|rate_usd|principal|discount/.test(c) && !/rate$/.test(c);
-                      const isNum = !isMoney && /qty|litres|capacity|hours|days|odometer|percentage/.test(c);
+                      const nonNum = /^(cost_class|cost_bucket|working_days)$/i.test(c);
+                      const isMoney = !nonNum && /price|cost|amount|total|vat|limit|salary|daily_usd|rate_usd|principal|discount/.test(c) && !/rate$/.test(c);
+                      const isNum = !nonNum && !isMoney && /qty|litres|capacity|hours|days|odometer|percentage|_count$/.test(c);
                       let txt = v == null || v === '' ? '—' : String(v);
                       if (isMoney && v != null && v !== '') txt = fmtUSD(v, 2);
                       else if (isNum && v != null && v !== '') txt = fmtNum(v, /qty|capacity|percentage/.test(c) ? 2 : 0);
@@ -20995,7 +21617,7 @@
     switch (STATE.view) {
       case 'overview': wsHtml = renderOverview(); break;
       case 'entities': wsHtml = renderEntitiesComparison(); break;
-      case 'pbi': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, renderDateSegPillHtml }) : renderOverview(); break;
+      case 'pbi': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview(); break;
       case 'tables': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview(); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
       case 'kiosks': wsHtml = renderKiosks(); break;
@@ -21331,6 +21953,82 @@
     }
 
     container.querySelectorAll('[data-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.chipFilter = btn.getAttribute('data-chip'); STATE.shown = {}; renderApp(); }));
+    container.querySelectorAll('[data-cf-mode]').forEach(btn => btn.addEventListener('click', () => {
+      const nextMode = btn.getAttribute('data-cf-mode') || 'entries';
+      if (STATE.cfEntryMode !== nextMode) {
+        STATE.cfEntryMode = nextMode;
+        STATE.chipFilter = 'all';
+        STATE.shown = {};
+      }
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-cf-chart-grain]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.cfChartGrain = btn.getAttribute('data-cf-chart-grain') || 'monthly';
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-cf-focus-date]').forEach(el => el.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const dt = el.getAttribute('data-cf-focus-date') || '';
+      STATE.cfFocusDate = STATE.cfFocusDate === dt ? '' : dt;
+      STATE.cfFocusYm = '';
+      STATE.cfEntryMode = 'entries';
+      if (String(STATE.chipFilter || '').startsWith('cf_day_')) STATE.chipFilter = 'all';
+      STATE.shown = {};
+      renderApp();
+      const target = $('tillRecentPanel') || $('pbiCfEntriesPanel');
+      if (target) scrollWorkspaceTo(target, 10);
+    }));
+    container.querySelectorAll('[data-cf-focus-ym]').forEach(el => el.addEventListener('click', ev => {
+      if (ev.target && ev.target.closest('button:not([data-cf-focus-ym]), a, input, select')) return;
+      ev.stopPropagation();
+      const ym = el.getAttribute('data-cf-focus-ym') || '';
+      STATE.cfFocusYm = STATE.cfFocusYm === ym ? '' : ym;
+      STATE.cfFocusDate = '';
+      STATE.cfEntryMode = 'entries';
+      STATE.shown = {};
+      renderApp();
+      const target = $('pbiCfEntriesPanel') || $('tillRecentPanel');
+      if (target) scrollWorkspaceTo(target, 10);
+    }));
+    container.querySelectorAll('[data-cf-focus-party]').forEach(el => el.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const p = el.getAttribute('data-cf-focus-party') || '';
+      STATE.cfFocusParty = STATE.cfFocusParty === p ? '' : p;
+      STATE.cfEntryMode = 'entries';
+      if (String(STATE.chipFilter || '').startsWith('cf_day_')) STATE.chipFilter = 'all';
+      STATE.shown = {};
+      renderApp();
+      const target = $('tillRecentPanel') || $('pbiCfEntriesPanel');
+      if (target) scrollWorkspaceTo(target, 10);
+    }));
+    container.querySelectorAll('[data-cf-focus-stream]').forEach(el => el.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const sk = el.getAttribute('data-cf-focus-stream') || 'all';
+      STATE.chipFilter = STATE.chipFilter === sk ? 'all' : sk;
+      STATE.cfEntryMode = 'entries';
+      STATE.shown = {};
+      renderApp();
+      const target = $('tillRecentPanel') || $('pbiCfEntriesPanel');
+      if (target) scrollWorkspaceTo(target, 10);
+    }));
+    container.querySelectorAll('[data-cf-clear-drill]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const kind = btn.getAttribute('data-cf-clear-drill') || 'all';
+      if (kind === 'date' || kind === 'all') STATE.cfFocusDate = '';
+      if (kind === 'ym' || kind === 'all') STATE.cfFocusYm = '';
+      if (kind === 'party' || kind === 'all') STATE.cfFocusParty = '';
+      STATE.shown = {};
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
     container.querySelectorAll('[data-rawsup-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.rawSupFilter = btn.getAttribute('data-rawsup-chip'); STATE.shown.rawsup = PAGE; renderApp(); }));
     container.querySelectorAll('[data-saleshaul-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.salesHaulFilter = btn.getAttribute('data-saleshaul-chip'); STATE.shown.saleshaul = PAGE; renderApp(); }));
     container.querySelectorAll('[data-rawsite-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.rawSiteFilter = btn.getAttribute('data-rawsite-chip'); STATE.shown.sites = PAGE; renderApp(); }));
@@ -21433,7 +22131,7 @@
     container.querySelectorAll('th.sortable').forEach(h => h.addEventListener('click', e => {
       if (e.target && e.target.closest('.th-filter-btn, .tbl-col-resizer, .tbl-th-tools')) return;
       const view = h.getAttribute('data-sort-view'), key = h.getAttribute('data-sort-key');
-      const cur = STATE.sortBy[view] || {};
+      const cur = STATE.sortBy[view] || _defaultSortBy[view] || {};
       const defaultDir = !isDefaultDescSortKey(key) ? 'asc' : 'desc';
       STATE.sortBy[view] = { key, dir: cur.key === key ? (cur.dir === 'desc' ? 'asc' : 'desc') : defaultDir };
       renderApp();
