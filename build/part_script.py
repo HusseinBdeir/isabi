@@ -18,8 +18,8 @@ JS = r"""
   }
   const DAY_TOKENS = { D0: dayLabel(0), D1: dayLabel(1) };
 
-  const BADGE_MINI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="34" height="34" style="border-radius:7px;flex-shrink:0"><rect width="120" height="120" rx="26" fill="#111827"/><g transform="translate(39.52,77.62) scale(0.74)"><g fill="#F9FAFB"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#9CA3AF"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>';
-  const RAIL_MARK_SVG = '<svg viewBox="-9.5 -78.8 74.66 109.7" height="22"><g fill="#F9FAFB"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#9CA3AF"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>';
+  const BADGE_MINI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="34" height="34" style="border-radius:7px;flex-shrink:0"><rect width="120" height="120" rx="26" fill="#0B1730"/><g transform="translate(39.52,77.62) scale(0.74)"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>';
+  const RAIL_MARK_SVG = '<svg viewBox="-9.5 -78.8 74.66 109.7" height="22"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>';
   const ICONS = __ICONS_JSON__;
 
   // ---------------- 8 INDUSTRY BLUEPRINTS ----------------
@@ -1044,10 +1044,10 @@ JS = r"""
   };
 
   const HERO_VERTICALS = [
-    { id: 'trading', emoji: ICONS.trading, name: 'Auto & Heavy Equipment', sub: 'VIN Stock, Customs & Parts', val: 524900, pct: 88, color: 'var(--ink)', badge: '24% GP', kpi2Lbl: ICONS.trading + ' Active VIN Inventory', kpi2Val: '184 Units', kpi2Sub: '✓ 100% customs & landed cost tracked' },
-    { id: 'hospitality', emoji: ICONS.hospitality, name: 'Hospitality & Resorts', sub: 'Outlets, Cabanas, POS & Splits', val: 418200, pct: 74, color: '#64748B', badge: '34% EBITDA', kpi2Lbl: ICONS.hospitality + ' Outlet Till Sync', kpi2Val: '100.0%', kpi2Sub: '✓ All POS closes matched to cash' },
-    { id: 'manufacturing', emoji: ICONS.manufacturing, name: 'Concrete & Manufacturing', sub: 'Batch Plant m³, Fleet & Silos', val: 361400, pct: 64, color: 'var(--good)', badge: '29% GP', kpi2Lbl: ICONS.scale + ' Weighbridge Volume', kpi2Val: '14,820 m³', kpi2Sub: '✓ Zero unbilled dispatch tickets' },
-    { id: 'realestate', emoji: ICONS.realestate, name: 'Real Estate & Insurance', sub: 'Leases, Policies & Commissions', val: 178100, pct: 42, color: '#94A3B8', badge: '94% Occ.', kpi2Lbl: ICONS.realestate + ' Portfolio Occupancy', kpi2Val: '94.6%', kpi2Sub: '✓ Automated lease & policy SOA' }
+    { id: 'trading', emoji: ICONS.trading, name: 'Auto & Heavy Equipment', sub: 'VIN Stock, Customs & Parts', val: 524900, pct: 88, color: '#3B82F6', badge: '24% GP', kpi2Lbl: ICONS.trading + ' Active VIN Inventory', kpi2Val: '184 Units', kpi2Sub: '✓ 100% customs & landed cost tracked' },
+    { id: 'hospitality', emoji: ICONS.hospitality, name: 'Hospitality & Resorts', sub: 'Outlets, Cabanas, POS & Splits', val: 418200, pct: 74, color: '#D9A54A', badge: '34% EBITDA', kpi2Lbl: ICONS.hospitality + ' Outlet Till Sync', kpi2Val: '100.0%', kpi2Sub: '✓ All POS closes matched to cash' },
+    { id: 'manufacturing', emoji: ICONS.manufacturing, name: 'Concrete & Manufacturing', sub: 'Batch Plant m³, Fleet & Silos', val: 361400, pct: 64, color: '#10B981', badge: '29% GP', kpi2Lbl: ICONS.scale + ' Weighbridge Volume', kpi2Val: '14,820 m³', kpi2Sub: '✓ Zero unbilled dispatch tickets' },
+    { id: 'realestate', emoji: ICONS.realestate, name: 'Real Estate & Insurance', sub: 'Leases, Policies & Commissions', val: 178100, pct: 42, color: '#8B5CF6', badge: '94% Occ.', kpi2Lbl: ICONS.realestate + ' Portfolio Occupancy', kpi2Val: '94.6%', kpi2Sub: '✓ Automated lease & policy SOA' }
   ];
 
   const HERO_AI_TOPICS = {
@@ -1775,7 +1775,7 @@ JS = r"""
                 <span>Receipts Synced: ${state.posSyncedCount}</span>
               </div>
               ${state.posCart.map(it => `<div style="display:flex;justify-content:space-between"><span>${it.qty}x ${it.name}</span><span>$${(it.price * it.qty).toFixed(2)}</span></div>`).join('')}
-              <div style="border-top:1px solid #6B7280;border-bottom:3px double #6B7280;margin-top:8px;padding:5px 0;display:flex;justify-content:space-between;font-weight:700;color:#F9FAFB">
+              <div style="border-top:1px solid #D9A54A;border-bottom:3px double #D9A54A;margin-top:8px;padding:5px 0;display:flex;justify-content:space-between;font-weight:700;color:#D9A54A">
                 <span>TOTAL TTC (INCL. VAT)</span>
                 <span>$${cartTotal.toFixed(2)}</span>
               </div>
@@ -1808,7 +1808,7 @@ JS = r"""
               <div><b>Employee:</b> ${state.kioskLastPunch.name}</div>
               <div><b>Timestamp:</b> ${state.kioskLastPunch.time}</div>
               <div><b>Biometric Audit:</b> ${state.kioskLastPunch.score}</div>
-              <div style="color:#CBD5E1;margin-top:4px"><b>Cloud Pipeline:</b> ${state.kioskLastPunch.status}</div>
+              <div style="color:#D9A54A;margin-top:4px"><b>Cloud Pipeline:</b> ${state.kioskLastPunch.status}</div>
             </div>
             <button type="button" class="btn btn-outline" style="width:100%" data-open-ai="How do the Offline POS Till and Biometric Attendance Kiosk PWAs sync to Dataverse?">${ICONS.ai} Ask ISABI How Offline Sync Works</button>
           </div>
@@ -3130,7 +3130,7 @@ JS = r"""
       <div class="ai-msg-bot">
         ${BADGE_MINI_SVG}
         <div class="ai-bot-bubble"${dirAttr}>
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);font-weight:700;margin-bottom:4px">ISABI · ${item.title}</div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:4px">ISABI · ${item.title}</div>
           <p>${item.answer}</p>
           ${bulletsHtml}
           ${tableBlockHtml}
@@ -3602,7 +3602,7 @@ JS = r"""
     }
     const metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) {
-      metaTheme.setAttribute('content', mode === 'light' ? '#F7F8FA' : '#0B0D11');
+      metaTheme.setAttribute('content', mode === 'light' ? '#F4F2EE' : '#0B1730');
     }
   }
 

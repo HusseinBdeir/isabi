@@ -18,24 +18,24 @@ HTML = f"""<!doctype html>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,700;125,800&family=Instrument+Sans:wght@400;500;600&display=block">
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  html, body {{ width: 1200px; height: 630px; overflow: hidden; background: #0B0D11; }}
-  body {{ font-family: "Instrument Sans", Arial, sans-serif; color: #F9FAFB; position: relative; }}
+  html, body {{ width: 1200px; height: 630px; overflow: hidden; background: #0B1730; }}
+  body {{ font-family: "Instrument Sans", Arial, sans-serif; color: #F4F2EE; position: relative; }}
   .glow {{ position: absolute; right: -180px; top: -220px; width: 720px; height: 720px; border-radius: 50%;
-           background: radial-gradient(closest-side, rgba(148,163,184,0.14), rgba(148,163,184,0)); }}
+           background: radial-gradient(closest-side, rgba(217,165,74,0.16), rgba(217,165,74,0)); }}
   .grid {{ position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
            linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px); background-size: 60px 60px; }}
   .card {{ position: absolute; inset: 0; padding: 64px 72px; display: flex; flex-direction: column; justify-content: space-between; }}
-  .brand {{ display: flex; align-items: center; gap: 18px; color: #F9FAFB; }}
-  .brand svg.brand-badge {{ width: 64px; height: 64px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.12); }}
-  .brand svg.brand-wordmark {{ height: 56px; width: auto; --brass: #9CA3AF; }}
+  .brand {{ display: flex; align-items: center; gap: 18px; color: #F4F2EE; }}
+  .brand svg.brand-badge {{ width: 64px; height: 64px; border-radius: 14px; }}
+  .brand svg.brand-wordmark {{ height: 56px; width: auto; --brass: #D9A54A; }}
   h1 {{ font-family: "Archivo", Arial, sans-serif; font-weight: 800; font-size: 76px; line-height: 1.02; letter-spacing: -0.01em; max-width: 900px; }}
-  h1 b {{ color: #CBD5E1; font-weight: 800; }}
-  p {{ font-size: 26px; line-height: 1.4; color: #9CA3AF; max-width: 920px; margin-top: 22px; }}
+  h1 b {{ color: #D9A54A; font-weight: 800; }}
+  p {{ font-size: 26px; line-height: 1.4; color: #B9C5D8; max-width: 920px; margin-top: 22px; }}
   .chips {{ display: flex; gap: 12px; flex-wrap: wrap; }}
   .chip {{ font-family: "Archivo", Arial, sans-serif; font-weight: 700; font-size: 17px; letter-spacing: 0.06em; text-transform: uppercase;
-           padding: 12px 18px; border: 1px solid rgba(203,213,225,0.32); border-radius: 999px; color: #E5E7EB; background: rgba(243,244,246,0.07); }}
-  .rule {{ position: absolute; left: 72px; right: 72px; bottom: 44px; border-top: 1.5px solid #6B7280; border-bottom: 1.5px solid #6B7280; height: 7px; }}
-  .url {{ position: absolute; right: 72px; bottom: 60px; font-size: 18px; color: #9CA3AF; letter-spacing: 0.04em; }}
+           padding: 12px 18px; border: 1px solid rgba(217,165,74,0.45); border-radius: 999px; color: #E9D7B0; background: rgba(217,165,74,0.10); }}
+  .rule {{ position: absolute; left: 72px; right: 72px; bottom: 44px; border-top: 1.5px solid #D9A54A; border-bottom: 1.5px solid #D9A54A; height: 7px; }}
+  .url {{ position: absolute; right: 72px; bottom: 60px; font-size: 18px; color: #9FB0C7; letter-spacing: 0.04em; }}
 </style></head>
 <body>
   <div class="glow"></div><div class="grid"></div>
