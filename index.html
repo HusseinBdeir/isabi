@@ -2112,15 +2112,58 @@ button {
 .chart-tip {
   position: absolute;
   pointer-events: none;
-  background: var(--m-ink);
-  color: var(--m-surface);
-  border-radius: 4px;
-  padding: 7px 10px;
+  background: var(--m-surface);
+  color: var(--m-ink);
+  border: 1px solid var(--m-line);
+  border-top: 2.5px solid var(--brass);
+  border-radius: 6px;
+  padding: 10px 12px;
+  min-width: 210px;
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 1.4;
   white-space: nowrap;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 12px 28px rgba(15, 30, 56, 0.14), 0 2px 6px rgba(15, 30, 56, 0.06);
   z-index: 10;
+}
+.chart-tip .sbox-tip-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--m-line);
+  font-weight: 700;
+  color: var(--m-ink);
+}
+.chart-tip .sbox-tip-badge {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1.5px 6px;
+  border-radius: 999px;
+  background: var(--brass-tint);
+  color: var(--brass-deep);
+}
+.chart-tip .sbox-tip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 11.5px;
+  padding: 1.5px 0;
+}
+.chart-tip .sbox-tip-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--m-ink-soft);
+}
+.chart-tip .sbox-tip-val {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
 }
 
 table.m-grid {
@@ -8805,7 +8848,8 @@ svg.ic-crit { color: var(--crit); }
       });
 
       const tip = d.seriesNames.map((nm, idx) => `${nm}: ${sVals[idx]}k`).join(' · ');
-      g += `<g class="col" data-m="${MONTH_LABELS[i]}" data-t="${total}k ${sym}" data-tip="${tip}">`
+      const rowsJson = JSON.stringify(d.seriesNames.map((nm, idx) => ({ n: nm, v: `${sVals[idx]}k ${sym}`, s: idx + 1 }))).replace(/"/g, '&quot;');
+      g += `<g class="col" data-m="${MONTH_LABELS[i]}" data-t="${total}k ${sym}" data-tip="${tip}" data-rows="${rowsJson}">`
         + `<rect class="hit" x="${(ml + slot * i).toFixed(1)}" y="${mt}" width="${slot.toFixed(1)}" height="${ph}"/>${seg}</g>`;
       g += `<text class="tick" x="${(x + bw / 2).toFixed(1)}" y="${H - 10}" text-anchor="middle">${m}</text>`;
       if (i === 11) {
@@ -9140,11 +9184,16 @@ svg.ic-crit { color: var(--crit); }
     if (cwrap && tip) {
       cwrap.querySelectorAll('.col').forEach(col => {
         const showTip = (clientX) => {
-          tip.innerHTML = `<b>${col.dataset.m} · Total ${col.dataset.t}</b><span style="display:block;opacity:0.85;margin-top:2px">${col.dataset.tip}</span>`;
+          let rowsHtml = '';
+          try {
+            const parsed = JSON.parse(col.dataset.rows || '[]');
+            rowsHtml = parsed.map(r => `<div class="sbox-tip-row"><span class="sbox-tip-lbl"><i class="sw-box s-${r.s}"></i>${r.n}</span><span class="sbox-tip-val">${r.v}</span></div>`).join('');
+          } catch (_) {}
+          tip.innerHTML = `<div class="sbox-tip-hdr"><span>${col.dataset.m}</span><span class="sbox-tip-badge">Total ${col.dataset.t}</span></div>${rowsHtml || `<div>${col.dataset.tip}</div>`}`;
           tip.hidden = false;
           const r = cwrap.getBoundingClientRect();
           const relX = (clientX || (r.left + r.width / 2)) - r.left;
-          const left = Math.min(Math.max(8, r.width - 230), Math.max(8, relX - 80));
+          const left = Math.min(Math.max(8, r.width - 235), Math.max(8, relX - 105));
           tip.style.left = left + 'px';
           tip.style.top = '10px';
         };

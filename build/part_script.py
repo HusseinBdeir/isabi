@@ -1649,7 +1649,8 @@ JS = r"""
       });
 
       const tip = d.seriesNames.map((nm, idx) => `${nm}: ${sVals[idx]}k`).join(' · ');
-      g += `<g class="col" data-m="${MONTH_LABELS[i]}" data-t="${total}k ${sym}" data-tip="${tip}">`
+      const rowsJson = JSON.stringify(d.seriesNames.map((nm, idx) => ({ n: nm, v: `${sVals[idx]}k ${sym}`, s: idx + 1 }))).replace(/"/g, '&quot;');
+      g += `<g class="col" data-m="${MONTH_LABELS[i]}" data-t="${total}k ${sym}" data-tip="${tip}" data-rows="${rowsJson}">`
         + `<rect class="hit" x="${(ml + slot * i).toFixed(1)}" y="${mt}" width="${slot.toFixed(1)}" height="${ph}"/>${seg}</g>`;
       g += `<text class="tick" x="${(x + bw / 2).toFixed(1)}" y="${H - 10}" text-anchor="middle">${m}</text>`;
       if (i === 11) {
@@ -1984,11 +1985,16 @@ JS = r"""
     if (cwrap && tip) {
       cwrap.querySelectorAll('.col').forEach(col => {
         const showTip = (clientX) => {
-          tip.innerHTML = `<b>${col.dataset.m} · Total ${col.dataset.t}</b><span style="display:block;opacity:0.85;margin-top:2px">${col.dataset.tip}</span>`;
+          let rowsHtml = '';
+          try {
+            const parsed = JSON.parse(col.dataset.rows || '[]');
+            rowsHtml = parsed.map(r => `<div class="sbox-tip-row"><span class="sbox-tip-lbl"><i class="sw-box s-${r.s}"></i>${r.n}</span><span class="sbox-tip-val">${r.v}</span></div>`).join('');
+          } catch (_) {}
+          tip.innerHTML = `<div class="sbox-tip-hdr"><span>${col.dataset.m}</span><span class="sbox-tip-badge">Total ${col.dataset.t}</span></div>${rowsHtml || `<div>${col.dataset.tip}</div>`}`;
           tip.hidden = false;
           const r = cwrap.getBoundingClientRect();
           const relX = (clientX || (r.left + r.width / 2)) - r.left;
-          const left = Math.min(Math.max(8, r.width - 230), Math.max(8, relX - 80));
+          const left = Math.min(Math.max(8, r.width - 235), Math.max(8, relX - 105));
           tip.style.left = left + 'px';
           tip.style.top = '10px';
         };

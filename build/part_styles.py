@@ -2062,15 +2062,58 @@ button {
 .chart-tip {
   position: absolute;
   pointer-events: none;
-  background: var(--m-ink);
-  color: var(--m-surface);
-  border-radius: 4px;
-  padding: 7px 10px;
+  background: var(--m-surface);
+  color: var(--m-ink);
+  border: 1px solid var(--m-line);
+  border-top: 2.5px solid var(--brass);
+  border-radius: 6px;
+  padding: 10px 12px;
+  min-width: 210px;
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 1.4;
   white-space: nowrap;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 12px 28px rgba(15, 30, 56, 0.14), 0 2px 6px rgba(15, 30, 56, 0.06);
   z-index: 10;
+}
+.chart-tip .sbox-tip-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--m-line);
+  font-weight: 700;
+  color: var(--m-ink);
+}
+.chart-tip .sbox-tip-badge {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1.5px 6px;
+  border-radius: 999px;
+  background: var(--brass-tint);
+  color: var(--brass-deep);
+}
+.chart-tip .sbox-tip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 11.5px;
+  padding: 1.5px 0;
+}
+.chart-tip .sbox-tip-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--m-ink-soft);
+}
+.chart-tip .sbox-tip-val {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--m-ink);
+  font-variant-numeric: tabular-nums;
 }
 
 table.m-grid {
