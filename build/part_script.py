@@ -8,7 +8,7 @@ JS = r"""
   const EMAIL_ADDR = 'hbdeir16@gmail.com';
   const ASK_FLOW_U_B64 = '__ASK_FLOW_U_B64__';
   const ASK_FLOW_K_B64 = '__ASK_FLOW_K_B64__';
-  const SEC_IDS = ['architecture', 'industries', 'sandbox', 'platform-ai', 'ingenuity', 'pricing', 'faq', 'portal'];
+  const SEC_IDS = ['architecture', 'industries', 'sandbox', 'ingenuity', 'pricing', 'portal'];
   const NOW = new Date();
   const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -980,16 +980,12 @@ JS = r"""
   // ---------------- STATE ----------------
   const state = {
     activeSec: 'architecture',
-    archView: 'apps',
+    archView: 'pillars',
     appCat: 'all',
     activeAppId: 'gl',
     activeInd: 'hospitality',
     indMobTab: 'modules',
-    heroScreen: 'dashboard',
-    heroCurr: 'USD',
     heroInd: 'all',
-    heroAppId: 'ledger',
-    heroAiTopic: 'ar',
     sboxMode: 'erp',
     soaDoc: 'soa',
     posCart: [
@@ -1003,9 +999,7 @@ JS = r"""
     sboxNav: 'Overview',
     sboxPeriod: 'mtd',
     sboxCurr: 'USD',
-    sboxTheme: 'auto',
     sboxMobTab: 'chart',
-    msTab: 'all',
     cfgInd: 'Hospitality & Resorts',
     cfgScale: 2,
     cfgScaleLabel: 'Multi-Branch (2 to 4 Entities)',
@@ -1037,12 +1031,6 @@ JS = r"""
   }
 
   // ---------------- RENDER INTERACTIVE HERO COMMAND CENTER ----------------
-  const HERO_CURR_MAP = {
-    USD: { sym: '$', rate: 1, code: 'USD' },
-    EUR: { sym: '€', rate: 0.92, code: 'EUR' },
-    AED: { sym: 'AED ', rate: 3.67, code: 'AED' }
-  };
-
   const HERO_VERTICALS = [
     { id: 'trading', emoji: ICONS.trading, name: 'Auto & Heavy Equipment', sub: 'VIN Stock, Customs & Parts', val: 524900, pct: 88, color: '#3B82F6', badge: '24% GP', kpi2Lbl: ICONS.trading + ' Active VIN Inventory', kpi2Val: '184 Units', kpi2Sub: '✓ 100% customs & landed cost tracked' },
     { id: 'hospitality', emoji: ICONS.hospitality, name: 'Hospitality & Resorts', sub: 'Outlets, Cabanas, POS & Splits', val: 418200, pct: 74, color: '#D9A54A', badge: '34% EBITDA', kpi2Lbl: ICONS.hospitality + ' Outlet Till Sync', kpi2Val: '100.0%', kpi2Sub: '✓ All POS closes matched to cash' },
@@ -1050,37 +1038,8 @@ JS = r"""
     { id: 'realestate', emoji: ICONS.realestate, name: 'Real Estate & Insurance', sub: 'Leases, Policies & Commissions', val: 178100, pct: 42, color: '#8B5CF6', badge: '94% Occ.', kpi2Lbl: ICONS.realestate + ' Portfolio Occupancy', kpi2Val: '94.6%', kpi2Sub: '✓ Automated lease & policy SOA' }
   ];
 
-  const HERO_AI_TOPICS = {
-    ar: {
-      lbl: ICONS.search + ' Overdue AR Audit',
-      q: 'Audit overdue receivables across all Business Units',
-      ans: 'Across all 6 Business Units, <b>7 invoices totaling $42,300</b> are past 60 days (led by 2 fleet buyer installments in Trading and 1 contractor account in Concrete). One-click bilingual Statements of Account are ready for WhatsApp dispatch.',
-      cite: 'Cited: Live Receivables Ledger + Aged Receivables A4 · Reconciled to $0.00'
-    },
-    margin: {
-      lbl: ICONS.analytics + ' Margin by Unit',
-      q: 'Compare Hospitality vs. Auto & Heavy Equipment margins',
-      ans: '<b>Hospitality & Resorts</b> leads net operating margin at <b>34.2% EBITDA</b> ($418.2k MTD), while <b>Auto & Heavy Equipment</b> leads gross volume at <b>$524.9k MTD</b> (24.1% GP after customs & freight capitalization).',
-      cite: 'Cited: Executive Dashboards · Class 6 & 7 Revenue & Cost Ledger'
-    },
-    parallel: {
-      lbl: ICONS.scale + ' Parallel Run',
-      q: 'How does the parallel run guarantee zero variance?',
-      ans: 'ISABI runs side-by-side with your existing accounting until every operational sale, stock movement, and bank voucher matches your statutory trial balance to <b>$0.00 variance</b> before cutover.',
-      cite: 'Cited: Statutory Book Bridge & Printable Trial Balance Pack'
-    },
-    sprint: {
-      lbl: ICONS.calendar + ' 14-Day Sprint',
-      q: 'How does the 1 to 2 week go-live sprint work?',
-      ans: '<b>Days 1-3:</b> Custom workflows, chart of accounts & role permissions. <b>Days 4-6:</b> Daily entry screens, approvals & field kiosks. <b>Days 7-10:</b> Dashboards & printable statements. <b>Days 11-14:</b> Historical data & $0.00-variance go-live.',
-      cite: 'Cited: Direct Principal Delivery · Fixed Scope & Timeline'
-    }
-  };
-
   function fmtHeroMoney(usdVal) {
-    const c = HERO_CURR_MAP[state.heroCurr] || HERO_CURR_MAP.USD;
-    const v = Math.round(usdVal * c.rate);
-    return c.sym + v.toLocaleString('en-US');
+    return '$' + Math.round(usdVal).toLocaleString('en-US');
   }
 
   function renderHeroStage() {
@@ -1093,128 +1052,13 @@ JS = r"""
     const k2Lbl = document.getElementById('hlc-kpi2-lbl');
     const k2Val = document.getElementById('hlc-kpi2-val');
     const k2Sub = document.getElementById('hlc-kpi2-sub');
-    const winTitle = document.getElementById('hlc-window-title');
 
-    document.querySelectorAll('[data-hero-screen]').forEach(el => {
-      const act = el.dataset.heroScreen === state.heroScreen;
-      el.classList.toggle('active', act);
-      if (el.hasAttribute('aria-selected')) el.setAttribute('aria-selected', String(act));
-    });
-    document.querySelectorAll('[data-hero-curr]').forEach(el => {
-      el.classList.toggle('active', el.dataset.heroCurr === state.heroCurr);
-    });
     const hlcPortalLink = document.getElementById('hlc-open-portal-link');
     if (hlcPortalLink) {
       const indParam = (state.heroInd && state.heroInd !== 'all') ? `&industry=${encodeURIComponent(state.heroInd)}` : '';
       hlcPortalLink.setAttribute('href', `app/?demo=1&autologin=1${indParam}`);
     }
 
-    if (state.heroScreen === 'pos') {
-      if (winTitle) winTitle.textContent = 'ISABI Field Kiosks · POS & Attendance';
-      const cartTotal = state.posCart.reduce((acc, item) => acc + item.price * item.qty, 0);
-      const itemCount = state.posCart.reduce((acc, item) => acc + item.qty, 0);
-      if (k1Lbl) k1Lbl.innerHTML = `${ICONS.pos} Live Offline Till Ticket`;
-      if (k1Val) k1Val.textContent = fmtHeroMoney(cartTotal);
-      if (k1Sub) k1Sub.textContent = `${itemCount} items · Synced receipts: ${state.posSyncedCount}`;
-      if (k2Lbl) k2Lbl.innerHTML = `${ICONS.kiosk} Biometric Gate Kiosk`;
-      if (k2Val) k2Val.textContent = '0.8s Match';
-      if (k2Sub) k2Sub.textContent = `✓ ${state.kioskLastPunch.name.split('·')[0].trim()} (${state.kioskLastPunch.time})`;
-
-      stageEl.innerHTML = `
-        <div class="hlc-pos-box">
-          <div class="hlc-pos-btns">
-            <button type="button" class="hlc-pos-btn" data-pos-add="VIP Cabana|120"><span>${ICONS.hospitality} VIP Cabana</span><b>+${fmtHeroMoney(120)}</b></button>
-            <button type="button" class="hlc-pos-btn" data-pos-add="Grilled Lobster|68"><span>${ICONS.pos} Lobster</span><b>+${fmtHeroMoney(68)}</b></button>
-            <button type="button" class="hlc-pos-btn" data-pos-add="Sunset Pitcher|34"><span>${ICONS.pos} Pitcher</span><b>+${fmtHeroMoney(34)}</b></button>
-            <button type="button" class="hlc-pos-btn" data-pos-add="Double Espresso|8"><span>${ICONS.pos} Espresso</span><b>+${fmtHeroMoney(8)}</b></button>
-          </div>
-          <div class="hlc-pos-receipt">
-            <div class="hlc-pos-rhead">
-              <span>THERMAL RECEIPT · TILL #01 (OFFLINE READY)</span>
-              <b>Total: ${fmtHeroMoney(cartTotal)}</b>
-            </div>
-            <div class="hlc-pos-ritems">
-              ${state.posCart.map(it => `<span>${it.qty}x ${it.name} (${fmtHeroMoney(it.price * it.qty)})</span>`).join(' · ')}
-            </div>
-            <div class="hlc-pos-racts">
-              <button type="button" class="btn btn-brass" style="padding:6px 12px;font-size:12px" data-pos-sync="1">${ICONS.pos} Print &amp; Sync to Ledger</button>
-              <button type="button" class="btn btn-outline" style="padding:6px 12px;font-size:12px" data-kiosk-punch="Rami K. · Batch Plant|99.6% Face + PIN">${ICONS.kiosk} Simulate Gate Face Punch</button>
-            </div>
-          </div>
-        </div>
-      `;
-      return;
-    }
-
-    if (state.heroScreen === 'apps') {
-      if (winTitle) winTitle.textContent = 'ISABI App Suite · 18 Custom Modules';
-      if (k1Lbl) k1Lbl.innerHTML = `${ICONS.apps} Production Modules`;
-      if (k1Val) k1Val.textContent = '18 Apps';
-      if (k1Sub) k1Sub.textContent = '✓ Tailored Workflows · Zero Templates';
-      if (k2Lbl) k2Lbl.innerHTML = `${ICONS.bolt} Go-Live Delivery`;
-      if (k2Val) k2Val.textContent = '1 to 2 Wks';
-      if (k2Sub) k2Sub.textContent = '✓ $0 Per-User Fees · 100% Data Ownership';
-
-      const heroApps = APP_SUITE.slice(0, 8);
-      const curApp = APP_SUITE.find(a => a.id === state.heroAppId) || heroApps[0];
-      stageEl.innerHTML = `
-        <div class="hlc-apps-mini">
-          <div class="hlc-apps-grid">
-            ${heroApps.map(a => `
-              <button type="button" class="hlc-app-chip ${a.id === curApp.id ? 'active' : ''}" data-hero-app="${a.id}">
-                <span>${a.emoji}</span>
-                <b>${a.name.split(' ')[0]} ${a.name.split(' ')[1] || ''}</b>
-              </button>
-            `).join('')}
-          </div>
-          <div class="hlc-app-detail">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">
-              <b>${curApp.emoji} ${curApp.name}</b>
-              <span class="hlc-vrow-badge">${curApp.sub}</span>
-            </div>
-            <p>${curApp.desc}</p>
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
-              <div class="hlc-table-tags">${curApp.tables.map(t => `<span>${t}</span>`).join('')}</div>
-              <a href="#architecture" class="btn btn-brass" style="padding:5px 10px;font-size:11.5px">Explore All 18 Apps ▸</a>
-            </div>
-          </div>
-        </div>
-      `;
-      return;
-    }
-
-    if (state.heroScreen === 'ai') {
-      if (winTitle) winTitle.textContent = 'Ask ISABI · Cited AI Assistant';
-      if (k1Lbl) k1Lbl.innerHTML = `${ICONS.ai} AI Ledger Grounding`;
-      if (k1Val) k1Val.textContent = '100% Cited';
-      if (k1Sub) k1Sub.textContent = '✓ Live Ledger, Audit Watchdogs & AR';
-      if (k2Lbl) k2Lbl.innerHTML = `${ICONS.globe} Multilingual Fluency`;
-      if (k2Val) k2Val.textContent = 'EN · AR · FR';
-      if (k2Sub) k2Sub.textContent = '✓ Instant Executive Audits 24/7';
-
-      const curTopic = HERO_AI_TOPICS[state.heroAiTopic] || HERO_AI_TOPICS.ar;
-      stageEl.innerHTML = `
-        <div class="hlc-ai-box">
-          <div class="hlc-ind-pills">
-            ${Object.entries(HERO_AI_TOPICS).map(([k, v]) => `
-              <button type="button" class="hlc-ind-pill ${state.heroAiTopic === k ? 'active' : ''}" data-hero-ai-topic="${k}">${v.lbl}</button>
-            `).join('')}
-          </div>
-          <div class="hlc-ai-card">
-            <div class="hlc-ai-q"><b>You:</b> "${curTopic.q}"</div>
-            <div class="hlc-ai-a"><b>${ICONS.ai} Ask ISABI:</b> ${curTopic.ans}</div>
-            <div class="hlc-ai-foot">
-              <small>${curTopic.cite}</small>
-              <button type="button" class="btn btn-brass" style="padding:5px 10px;font-size:11.5px" data-open-ai="${curTopic.q}">Open Full Chat ▸</button>
-            </div>
-          </div>
-        </div>
-      `;
-      return;
-    }
-
-    // Default: 'dashboard' mode
-    if (winTitle) winTitle.textContent = 'ISABI Live Command Center';
     const selV = HERO_VERTICALS.find(v => v.id === state.heroInd);
     if (selV) {
       if (k1Lbl) k1Lbl.innerHTML = `${selV.emoji} ${selV.name} (MTD)`;
@@ -1233,12 +1077,11 @@ JS = r"""
     }
 
     stageEl.innerHTML = `
-      <div class="hlc-ind-pills" role="tablist" aria-label="Filter Vertical">
-        <button type="button" class="hlc-ind-pill ${state.heroInd === 'all' ? 'active' : ''}" data-hero-ind="all">${ICONS.holding} All Group</button>
-        <button type="button" class="hlc-ind-pill ${state.heroInd === 'hospitality' ? 'active' : ''}" data-hero-ind="hospitality">${ICONS.hospitality} Resorts</button>
-        <button type="button" class="hlc-ind-pill ${state.heroInd === 'trading' ? 'active' : ''}" data-hero-ind="trading">${ICONS.trading} Auto &amp; Heavy Equipment</button>
-        <button type="button" class="hlc-ind-pill ${state.heroInd === 'manufacturing' ? 'active' : ''}" data-hero-ind="manufacturing">${ICONS.manufacturing} Concrete</button>
-        <button type="button" class="hlc-ind-pill ${state.heroInd === 'realestate' ? 'active' : ''}" data-hero-ind="realestate">${ICONS.realestate} Real Estate</button>
+      <div class="hlc-stage-hdr">
+        <span>Group Performance by Vertical</span>
+        ${selV
+          ? `<button type="button" class="hlc-reset-ind" id="hlc-reset-ind" data-hero-ind="all">Show All Group</button>`
+          : `<small id="hlc-stage-hint">Click a vertical to inspect</small>`}
       </div>
       <div class="hlc-visual-list">
         ${HERO_VERTICALS.map(v => `
@@ -1297,8 +1140,7 @@ JS = r"""
         </div>
       </div>
       <div class="app-spot-actions">
-        <button type="button" class="btn btn-brass" data-load-sandbox="${cur.sbox}">${ICONS.erp} Try in Sandbox</button>
-        <button type="button" class="btn btn-outline" data-open-ai="${cur.ask}">${ICONS.ai} Ask ISABI</button>
+        <button type="button" class="btn btn-brass" data-load-sandbox="${cur.sbox}">${ICONS.erp} Try in Live Demo</button>
       </div>
     `;
   }
@@ -1331,6 +1173,20 @@ JS = r"""
     return Math.max(0, Math.round(rectTop - hdrH - 14));
   }
 
+  function activateArchView(viewKey) {
+    state.archView = viewKey;
+    document.querySelectorAll('[data-arch-view]').forEach(b => {
+      b.classList.toggle('active', b.dataset.archView === viewKey);
+    });
+    document.querySelectorAll('[data-arch-panel]').forEach(p => {
+      if (p.dataset.archPanel === viewKey) {
+        p.removeAttribute('data-panel-hidden');
+      } else {
+        p.setAttribute('data-panel-hidden', '1');
+      }
+    });
+  }
+
   function activatePricingView(viewKey) {
     document.querySelectorAll('[data-price-view]').forEach(b => {
       b.classList.toggle('active', b.dataset.priceView === viewKey);
@@ -1343,35 +1199,17 @@ JS = r"""
         panel.setAttribute('data-panel-hidden', '1');
       }
     });
-    if (viewKey === 'builder') {
-      document.querySelectorAll('[data-tier-tab]').forEach(b => {
-        b.classList.toggle('active', b.dataset.tierTab === 'builder');
-      });
-    } else if (viewKey === 'tiers') {
-      document.querySelectorAll('[data-tier-tab]').forEach(b => {
-        b.classList.toggle('active', b.dataset.tierTab === 'tier2');
-      });
-    }
   }
 
   function activateMobilePricingTab(targetTier) {
     document.querySelectorAll('[data-tier-tab]').forEach(b => {
       b.classList.toggle('active', b.dataset.tierTab === targetTier);
     });
-    if (targetTier === 'builder') {
-      activatePricingView('builder');
-      return;
-    }
     activatePricingView('tiers');
-    const grid = document.getElementById('pricing-tiers-grid');
-    if (grid) {
-      grid.removeAttribute('data-mob-hide');
-      grid.removeAttribute('data-panel-hidden');
-    }
     document.querySelectorAll('[data-tier-card]').forEach(card => {
       if (card.dataset.tierCard === targetTier) {
         card.removeAttribute('data-mob-hide');
-      } else if (card.dataset.tierCard !== 'builder') {
+      } else {
         card.setAttribute('data-mob-hide', '1');
       }
     });
@@ -1422,15 +1260,21 @@ JS = r"""
       return;
     }
 
-    if (cleanId === 'scope-configurator') {
-      activateMobilePricingTab('builder');
+    if (cleanId === 'faq') {
+      activateMobileIngTab('faq');
+    } else if (cleanId === 'platform-ai') {
+      activateArchView('pillars');
+    } else if (cleanId === 'scope-configurator') {
+      activatePricingView('builder');
     }
 
-    const effectiveScrollId = (cleanId === 'scope-configurator' && window.innerWidth > 720) ? 'pricing' : cleanId;
+    const aliasMap = { 'faq': 'ingenuity', 'platform-ai': 'architecture' };
+    const resolvedCleanId = aliasMap[cleanId] || cleanId;
+    const effectiveScrollId = (resolvedCleanId === 'scope-configurator' && window.innerWidth > 720) ? 'pricing' : resolvedCleanId;
     const targetEl = document.getElementById(effectiveScrollId);
     if (!targetEl) return;
 
-    const mappedSec = cleanId === 'scope-configurator' ? 'pricing' : (SEC_IDS.includes(cleanId) ? cleanId : state.activeSec);
+    const mappedSec = resolvedCleanId === 'scope-configurator' ? 'pricing' : (SEC_IDS.includes(resolvedCleanId) ? resolvedCleanId : state.activeSec);
     setActiveSection(mappedSec);
 
     scrollTargetId = effectiveScrollId;
@@ -1549,15 +1393,15 @@ JS = r"""
     } else {
       bodyContentHtml = `
         <div class="ind-cols">
-          <div class="ind-box" data-ind-box="modules" ${mTab !== 'modules' ? 'data-mob-hide="1"' : ''}>
+          <div class="ind-box" data-ind-box="modules">
             <h4>${ICONS.box} Custom Modules &amp; Controls</h4>
             <ul>${cur.modules.map(m => `<li>${m}</li>`).join('')}</ul>
           </div>
-          <div class="ind-box" data-ind-box="workflows" ${mTab !== 'workflows' && mTab !== 'modules' ? 'data-mob-hide="1"' : (isMobile && mTab !== 'workflows' ? 'data-mob-hide="1"' : '')}>
+          <div class="ind-box" data-ind-box="workflows">
             <h4>${ICONS.bolt} Automated Approvals &amp; Sync</h4>
             <ul>${cur.workflows.map(w => `<li>${w}</li>`).join('')}</ul>
           </div>
-          <div class="ind-box" data-ind-box="reports" ${mTab !== 'reports' && mTab !== 'modules' ? 'data-mob-hide="1"' : (isMobile && mTab !== 'reports' ? 'data-mob-hide="1"' : '')}>
+          <div class="ind-box" data-ind-box="reports">
             <h4>${ICONS.analytics} Dashboards &amp; Statements</h4>
             <ul>${cur.reports.map(r => `<li>${r}</li>`).join('')}</ul>
           </div>
@@ -1573,16 +1417,14 @@ JS = r"""
           <p class="ind-detail-lead">${cur.lead}</p>
         </div>
         <div class="ind-detail-acts">
-          <button type="button" class="btn btn-outline" data-load-sandbox="${cur.sandboxKey}">${ICONS.erp} Preview in Live ERP Sandbox</button>
-          <button type="button" class="btn btn-brass" data-configure-ind="${cur.cfgName}">${ICONS.scope} Price This Industry System</button>
+          <button type="button" class="btn btn-brass" data-load-sandbox="${cur.sandboxKey}">${ICONS.erp} Preview in Live Demo</button>
         </div>
       </div>
 
       <div class="ind-subtabs" role="tablist" aria-label="Blueprint Views">
-        <button type="button" class="ind-subtab-btn ${mTab === 'modules' ? 'active' : ''}" data-ind-subtab="modules">${ICONS.box} Core Modules (${cur.modules.length})</button>
-        <button type="button" class="ind-subtab-btn ${mTab === 'dayflow' ? 'active' : ''}" data-ind-subtab="dayflow">${ICONS.clock} Day-in-the-Life Flow</button>
+        <button type="button" class="ind-subtab-btn ${mTab === 'modules' ? 'active' : ''}" data-ind-subtab="modules">${ICONS.box} Modules &amp; Reports</button>
+        <button type="button" class="ind-subtab-btn ${mTab === 'dayflow' ? 'active' : ''}" data-ind-subtab="dayflow">${ICONS.clock} Day-in-the-Life</button>
         <button type="button" class="ind-subtab-btn ${mTab === 'beforeafter' ? 'active' : ''}" data-ind-subtab="beforeafter">${ICONS.sync} Before vs. After</button>
-        <button type="button" class="ind-subtab-btn ${mTab === 'reports' ? 'active' : ''}" data-ind-subtab="reports">${ICONS.analytics} Dashboards &amp; Workflows</button>
       </div>
 
       ${bodyContentHtml}
@@ -1717,7 +1559,6 @@ JS = r"""
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button type="button" class="sbox-theme-btn ${docType === 'soa' ? 'active' : ''}" data-soa-doc="soa">${ICONS.soa} Statement of Account</button>
               <button type="button" class="sbox-theme-btn ${docType === 'tb' ? 'active' : ''}" data-soa-doc="tb">${ICONS.scale} Statutory Trial Balance</button>
-              <button type="button" class="primary-mock" data-open-ai="Audit the ${d.groupTitle} Statement of Account in ${cm.sym}">${ICONS.ai} Ask ISABI to Audit</button>
             </div>
           </div>
 
@@ -1811,7 +1652,6 @@ JS = r"""
               <div><b>Face &amp; PIN Audit:</b> ${state.kioskLastPunch.score}</div>
               <div class="pos-receipt-accent"><b>Sync Status:</b> ${state.kioskLastPunch.status}</div>
             </div>
-            <button type="button" class="btn btn-outline" style="width:100%" data-open-ai="How do the Offline POS Till and Field Kiosks keep working during internet cuts?">${ICONS.ai} Ask ISABI How Offline Sync Works</button>
           </div>
         </div>
       `;
@@ -3460,32 +3300,6 @@ JS = r"""
     if (inp && window.innerWidth > 720) setTimeout(() => inp.focus(), 80);
   }
 
-  // ---------------- ROI CALCULATOR ----------------
-  function updateRoi() {
-    const entEl = document.getElementById('roi-entities');
-    const hrsEl = document.getElementById('roi-hours');
-    const clsEl = document.getElementById('roi-close');
-    if (!entEl || !hrsEl || !clsEl) return;
-
-    const ent = parseInt(entEl.value, 10) || 3;
-    const hrs = parseInt(hrsEl.value, 10) || 35;
-    const closeDays = parseInt(clsEl.value, 10) || 14;
-
-    document.getElementById('roi-entities-val').textContent = ent + (ent === 1 ? ' Entity' : ' Entities');
-    document.getElementById('roi-hours-val').textContent = hrs + ' hrs / wk';
-    document.getElementById('roi-close-val').textContent = closeDays + ' Days';
-
-    const annualHoursSaved = Math.round(hrs * 52 * 0.78 + ent * 65);
-    const annualValue = annualHoursSaved * 30;
-    const estCost = ent === 1 ? 5500 : (ent <= 4 ? 10500 : 18500);
-    const paybackMonths = Math.max(1.2, (estCost / (annualValue / 12))).toFixed(1);
-
-    document.getElementById('roi-out-hours').textContent = annualHoursSaved.toLocaleString('en-US') + ' hrs/yr';
-    document.getElementById('roi-out-dollars').textContent = '$' + annualValue.toLocaleString('en-US') + ' / yr';
-    document.getElementById('roi-out-close').textContent = closeDays > 10 ? 'Same-Day / 48h' : 'Real-Time Daily';
-    document.getElementById('roi-out-payback').textContent = paybackMonths + ' Months';
-  }
-
   // ---------------- INTERACTIVE SCOPE & PRICING CONFIGURATOR ----------------
   function updateConfigurator() {
     const rowsEl = document.getElementById('cfg-out-rows');
@@ -3622,7 +3436,6 @@ JS = r"""
     renderIndustries();
     renderSandbox();
     renderAiSection(0, true);
-    updateRoi();
     updateConfigurator();
     initReveal();
     const yearEl = document.getElementById('ftr-year');
@@ -3667,77 +3480,19 @@ JS = r"""
 
     // Global delegated clicks
     document.addEventListener('click', e => {
-      // 00a. Hero Interactive Screen Mode Switcher (dashboard | pos | apps | ai)
-      const heroScreenBtn = e.target.closest('[data-hero-screen]');
-      if (heroScreenBtn) {
-        state.heroScreen = heroScreenBtn.dataset.heroScreen;
-        renderHeroStage();
-        return;
-      }
-
-      // 00b. Hero Currency Switcher (USD | EUR | AED)
-      const heroCurrBtn = e.target.closest('[data-hero-curr]');
-      if (heroCurrBtn) {
-        state.heroCurr = heroCurrBtn.dataset.heroCurr;
-        state.sboxCurr = state.heroCurr;
-        const currSel = document.getElementById('sbox-curr-sel');
-        if (currSel) currSel.value = state.heroCurr;
-        renderHeroStage();
-        renderSandbox();
-        return;
-      }
-
-      // 00c. Hero Vertical Filter Pill or Row Click
+      // 00. Hero Vertical Row or Reset Click
       const heroIndBtn = e.target.closest('[data-hero-ind]');
       if (heroIndBtn) {
-        state.heroInd = heroIndBtn.dataset.heroInd;
+        const clicked = heroIndBtn.dataset.heroInd;
+        state.heroInd = (state.heroInd === clicked && clicked !== 'all') ? 'all' : clicked;
         renderHeroStage();
         return;
       }
 
-      // 00d. Hero Mini App Explorer Chip Click
-      const heroAppBtn = e.target.closest('[data-hero-app]');
-      if (heroAppBtn) {
-        state.heroAppId = heroAppBtn.dataset.heroApp;
-        state.activeAppId = state.heroAppId;
-        renderHeroStage();
-        renderAppSuite();
-        return;
-      }
-
-      // 00e. Hero Ask ISABI Topic Chip Click
-      const heroAiTopicBtn = e.target.closest('[data-hero-ai-topic]');
-      if (heroAiTopicBtn) {
-        state.heroAiTopic = heroAiTopicBtn.dataset.heroAiTopic;
-        renderHeroStage();
-        return;
-      }
-
-      // 00f. Hero Bottom Quick AI Prompt Pill Click -> Switch Hero to AI screen or open drawer
-      const heroAiQBtn = e.target.closest('[data-hero-ai-q]');
-      if (heroAiQBtn) {
-        const q = heroAiQBtn.dataset.heroAiQ || '';
-        if (q.includes('overdue')) state.heroAiTopic = 'ar';
-        else if (q.includes('Compare')) state.heroAiTopic = 'margin';
-        else state.heroAiTopic = 'sprint';
-        state.heroScreen = 'ai';
-        renderHeroStage();
-        return;
-      }
-
-      // 0a. Section 01 Architecture View Tabs (18-App Ecosystem | 4-Layer Stack | Why Not Templates?)
+      // 0a. Section 01 Capabilities vs 18-Module View Tabs
       const archViewBtn = e.target.closest('[data-arch-view]');
       if (archViewBtn) {
-        const vKey = archViewBtn.dataset.archView;
-        state.archView = vKey;
-        document.querySelectorAll('[data-arch-view]').forEach(b => b.classList.toggle('active', b === archViewBtn));
-        document.querySelectorAll('[data-arch-panel]').forEach(p => {
-          if (p.dataset.archPanel === vKey) {
-            p.removeAttribute('data-panel-hidden');
-          } else {
-            p.setAttribute('data-panel-hidden', '1');
-          }
-        });
+        activateArchView(archViewBtn.dataset.archView);
         return;
       }
 
@@ -3826,61 +3581,10 @@ JS = r"""
         return;
       }
 
-      // 0g. Section 04 Platform & AI Pillar Tabs
-      const msTabBtn = e.target.closest('[data-ms-tab]');
-      if (msTabBtn) {
-        const key = msTabBtn.dataset.msTab;
-        state.msTab = key;
-        document.querySelectorAll('[data-ms-tab]').forEach(b => b.classList.toggle('active', b === msTabBtn));
-        document.querySelectorAll('[data-ms-card]').forEach(c => {
-          if (key === 'all' || c.dataset.msCard === key) {
-            c.removeAttribute('data-ms-hidden');
-          } else {
-            c.setAttribute('data-ms-hidden', '1');
-          }
-        });
-        return;
-      }
-
-      // 0h. Section 06 Desktop & Mobile Pricing View Switcher (tiers | builder | guarantee)
+      // 0h. Section 05 Desktop & Mobile Pricing View Switcher (tiers | builder)
       const priceViewBtn = e.target.closest('[data-price-view]');
       if (priceViewBtn) {
         activatePricingView(priceViewBtn.dataset.priceView);
-        return;
-      }
-
-      // 0i. Section 07 FAQ Category Filter Tabs
-      const faqCatBtn = e.target.closest('[data-faq-cat]');
-      if (faqCatBtn) {
-        const cat = faqCatBtn.dataset.faqCat;
-        document.querySelectorAll('[data-faq-cat]').forEach(b => b.classList.toggle('active', b === faqCatBtn));
-        document.querySelectorAll('#faq-grid [data-faq-item]').forEach(item => {
-          const show = cat === 'all'
-            || (cat === 'top' && item.dataset.faqTop === '1')
-            || item.dataset.faqItem === cat;
-          if (show) {
-            item.removeAttribute('data-faq-hidden');
-          } else {
-            item.setAttribute('data-faq-hidden', '1');
-          }
-        });
-        return;
-      }
-
-      // 0j. Section 08 Quick-Fill Project Topic Chips
-      const topicChip = e.target.closest('[data-topic-ind]');
-      if (topicChip) {
-        document.querySelectorAll('[data-topic-ind]').forEach(b => b.classList.toggle('active', b === topicChip));
-        const indVal = topicChip.dataset.topicInd;
-        const noteVal = topicChip.dataset.topicNote;
-        const tierVal = topicChip.dataset.topicTier;
-        const indSel = document.getElementById('lead-industry');
-        if (indSel) indSel.value = indVal;
-        const tierSel = document.getElementById('lead-budget');
-        if (tierSel && tierVal) tierSel.value = tierVal;
-        const notesEl = document.getElementById('lead-notes');
-        if (notesEl) notesEl.value = noteVal;
-        showToast('Pre-filled project brief for ' + indVal);
         return;
       }
 
@@ -4070,6 +3774,8 @@ JS = r"""
         const tier = tierBtn.dataset.selectTier;
         const bSel = document.getElementById('lead-budget');
         if (bSel) bSel.value = tier;
+        const noteSpan = document.getElementById('portal-tier-note');
+        if (noteSpan) noteSpan.textContent = 'Selected: ' + tier;
         scrollToTargetId('portal');
         if (window.innerWidth > 720) {
           setTimeout(() => document.getElementById('lead-name')?.focus(), 500);
@@ -4108,11 +3814,6 @@ JS = r"""
       } else if (e.target.closest('#cfg-mod-checks')) {
         updateConfigurator();
       }
-    });
-
-    // ROI sliders
-    ['roi-entities', 'roi-hours', 'roi-close'].forEach(id => {
-      document.getElementById(id)?.addEventListener('input', updateRoi);
     });
 
     // Header & Mobile Ask ISABI buttons

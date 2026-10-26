@@ -46,9 +46,9 @@ HTML = f"""<!doctype html>
       <p>Custom operations, double-entry accounting, executive dashboards, printable statements, field kiosks, and Ask ISABI AI. Zero per-user fees.</p>
     </div>
     <div class="chips">
-      <span class="chip">8 Live Production Apps</span>
       <span class="chip">Zero Per-User Fees</span>
       <span class="chip">1 to 2 Weeks to Go-Live</span>
+      <span class="chip">$0.00 Variance Parallel Run</span>
       <span class="chip">Field Kiosks &amp; Cited AI</span>
     </div>
   </div>

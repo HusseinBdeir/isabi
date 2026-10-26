@@ -38,18 +38,17 @@ def run_dom_and_screenshots():
         dom = res.stdout
         checks = [
             ('Hero title', 'The ERP Your Group'),
+            ('Hero 3-Point Proof List', 'class="hero-proof-list"'),
             ('Rendered Industry Tab', 'Hospitality, Resorts'),
             ('Rendered Industry Modules', 'Multi-Property Business Unit Isolation'),
             ('Rendered Sandbox Chart', 'class="chart"'),
             ('Rendered Sandbox Ledger Total', '<b>Audited Batch</b>'),
             ('Rendered Ask ISABI Thread', 'Overdue Receivables Audit'),
-            ('Rendered ROI Output', '1,615 hrs/yr'),
             ('Rendered Configurator Total', '$12,300 to $15,000'),
             ('Mobile Section Nav Present', 'id="mobile-sec-nav"'),
             ('Mobile Segmented Bar Present', 'class="mob-seg-bar"'),
             ('Hash #industries activates Industries nav link', '<a href="#industries" data-sec-link="industries" class="active">Industries</a>'),
-            ('Platform & AI section rendered', 'id="platform-ai"'),
-            ('FAQ section rendered', 'id="faq"'),
+            ('FAQ panel rendered in Why ISABI', 'data-ing-panel="faq"'),
             ('FAQ JSON-LD present', '"@type": "FAQPage"'),
             ('Organization JSON-LD present', '"@type": "ProfessionalService"'),
             ('Open Graph image tag', 'property="og:image"'),
@@ -60,13 +59,24 @@ def run_dom_and_screenshots():
             ('Sandbox SOA Mode Tab rendered', 'data-sbox-mode="soa"'),
             ('Sandbox POS & Kiosk Mode Tab rendered', 'data-sbox-mode="pwa"'),
             ('14-Day Go-Live Sprint Tab rendered', 'data-ing-tab="roadmap"'),
-            ('FAQ Category Filter Tabs rendered', 'data-faq-cat="ai"'),
-            ('Portal Topic Chips rendered', 'class="topic-chips-bar"'),
+            ('Pricing Guarantee Strip rendered', 'class="pricing-trust-bar"'),
         ]
         failed = 0
         for name, needle in checks:
             ok = needle in dom
             print(f'[DOM] {name}: {"PASS" if ok else "FAIL"}')
+            if not ok:
+                failed += 1
+        # Verify removed clutter stays absent
+        for removed_lbl, removed_needle in [
+            ('Hero 2x2 Launcher Removed', 'class="hero-mode-grid"'),
+            ('Hero Currency Pills Removed', 'data-hero-curr='),
+            ('Metrics Band Removed', 'class="metrics-band"'),
+            ('ROI Sliders Removed', 'id="roi-entities"'),
+            ('Portal Quick-Fill Chips Removed', 'class="topic-chips-bar"'),
+        ]:
+            ok = removed_needle not in dom
+            print(f'[TRIM] {removed_lbl}: {"PASS" if ok else "FAIL"}')
             if not ok:
                 failed += 1
         if failed:
@@ -100,8 +110,8 @@ document.addEventListener('DOMContentLoaded', function() {
     var portalCard = document.querySelector('.portal-form-card').getBoundingClientRect();
     var leadName = document.getElementById('lead-name').getBoundingClientRect();
     var leadCompany = document.getElementById('lead-company').getBoundingClientRect();
+    var leadContact = document.getElementById('lead-contact').getBoundingClientRect();
     var leadIndustry = document.getElementById('lead-industry').getBoundingClientRect();
-    var leadBudget = document.getElementById('lead-budget').getBoundingClientRect();
     var heroSec = document.querySelector('.hero-section').getBoundingClientRect();
     var heroLeft = document.querySelector('.hero-grid > div:first-child').getBoundingClientRect();
     var heroCard = document.querySelector('.hero-ledger-card').getBoundingClientRect();
@@ -113,6 +123,8 @@ document.addEventListener('DOMContentLoaded', function() {
     var kpi1Strong = kpis[0].querySelector('strong').getBoundingClientRect();
     var kpi2Strong = kpis[1].querySelector('strong').getBoundingClientRect();
     var hlcSvgCount = document.querySelectorAll('.hlc-brand svg').length;
+    var hdrControlCount = Array.from(document.querySelectorAll('#main-nav a, .hdr-actions button, .hdr-actions a')).filter(function(el){ return !el.hidden && getComputedStyle(el).display !== 'none'; }).length;
+    var heroControlCount = Array.from(document.querySelectorAll('.hero-section a, .hero-section button, .hero-section .hlc-vrow')).filter(function(el){ return !el.hidden && getComputedStyle(el).display !== 'none'; }).length;
     var activeMain = Array.from(document.querySelectorAll('#main-nav a.active')).map(function(a){ return a.getAttribute('href'); });
     var activeMob = Array.from(document.querySelectorAll('#mobile-sec-nav a.active')).map(function(a){ return a.getAttribute('href'); });
     var activeDock = Array.from(document.querySelectorAll('.mobile-dock a.active')).map(function(a){ return a.getAttribute('href'); });
@@ -128,7 +140,7 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     }
     var cardOverflows = [];
-    document.querySelectorAll('.portal-form-card, .portal-direct-card, .configurator-card, .price-card, .roi-box, .hero-ledger-card, .ind-detail').forEach(function(card) {
+    document.querySelectorAll('.portal-form-card, .portal-direct-card, .configurator-card, .price-card, .pricing-trust-bar, .hero-ledger-card, .ind-detail').forEach(function(card) {
       var cr = card.getBoundingClientRect();
       if (cr.width === 0) return;
       card.querySelectorAll('*').forEach(function(child) {
@@ -139,19 +151,9 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     });
     var secHeights = {};
-    ['.hero-section', '#architecture', '#industries', '#sandbox', '#platform-ai', '#ingenuity', '#pricing', '#faq', '#portal'].forEach(function(sel) {
+    ['.hero-section', '#architecture', '#industries', '#sandbox', '#ingenuity', '#pricing', '#portal'].forEach(function(sel) {
       var el = document.querySelector(sel);
       if (el) secHeights[sel] = Math.round(el.getBoundingClientRect().height);
-    });
-    var layerBudgets = Array.from(document.querySelectorAll('#architecture .layer-card')).map(function(card) {
-      var eye = card.querySelector('.layer-num');
-      var h4 = card.querySelector('h4');
-      var p = card.querySelector('p');
-      return {
-        eyeLen: eye ? eye.textContent.trim().length : 0,
-        h4Len: h4 ? h4.textContent.trim().length : 0,
-        pLen: p ? p.textContent.trim().length : 0
-      };
     });
     var out = {
       vw: effW,
@@ -169,21 +171,22 @@ document.addEventListener('DOMContentLoaded', function() {
       portalCardRight: Math.round(portalCard.right),
       leadNameW: Math.round(leadName.width),
       leadCompanyW: Math.round(leadCompany.width),
+      leadContactW: Math.round(leadContact.width),
       leadIndustryW: Math.round(leadIndustry.width),
-      leadBudgetW: Math.round(leadBudget.width),
-      leadBudgetRight: Math.round(leadBudget.right),
+      leadIndustryRight: Math.round(leadIndustry.right),
       heroSecH: Math.round(heroSec.height),
       heroLeftH: Math.round(heroLeft.height),
       heroCardH: Math.round(heroCard.height),
       indTabsH: Math.round(indTabs.height),
       indDetailH: Math.round(indDetail.height),
       secHeights: secHeights,
-      layerBudgets: layerBudgets,
       kpi1W: Math.round(kpi1.width),
       kpi2W: Math.round(kpi2.width),
       kpi1StrongTop: Math.round(kpi1Strong.top),
       kpi2StrongTop: Math.round(kpi2Strong.top),
       hlcSvgCount: hlcSvgCount,
+      hdrControlCount: hdrControlCount,
+      heroControlCount: heroControlCount,
       activeMain: activeMain,
       activeMob: activeMob,
       activeDock: activeDock,
@@ -282,11 +285,32 @@ document.addEventListener('DOMContentLoaded', function() {
       hasResetWelcome: resetDrawerText.indexOf('Welcome. I am ISABI') !== -1
     };
 
-    // Interactive Tabs & Simulators checks
+    // Interactive Tabs & Simulators + Secondary Tab Height Checks
+    function parseRgbSum(el) {
+      if (!el) return -1;
+      var cs = getComputedStyle(el);
+      var bg = cs.backgroundColor || '';
+      var img = cs.backgroundImage || '';
+      var m = bg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([0-9.]+))?\\)/);
+      if (m) {
+        var a = m[4] !== undefined ? parseFloat(m[4]) : 1;
+        if (a > 0.2) return parseInt(m[1], 10) + parseInt(m[2], 10) + parseInt(m[3], 10);
+      }
+      var gm = img.match(/rgb\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)/);
+      if (gm) return parseInt(gm[1], 10) + parseInt(gm[2], 10) + parseInt(gm[3], 10);
+      return 765;
+    }
+
+    var appsTabBtn = document.querySelector('[data-arch-view="apps"]');
+    if (appsTabBtn) appsTabBtn.click();
+    var archAppsH = Math.round(document.getElementById('architecture').getBoundingClientRect().height);
     var posTile = document.querySelector('[data-app-id="pos"]');
     if (posTile) posTile.click();
     var spotTitle = document.querySelector('#app-spotlight h3') ? document.querySelector('#app-spotlight h3').textContent : '';
+    var pillarsTabBtn = document.querySelector('[data-arch-view="pillars"]');
+    if (pillarsTabBtn) pillarsTabBtn.click();
 
+    var indSubtabCount = document.querySelectorAll('.ind-subtabs .ind-subtab-btn').length;
     var dfBtn = document.querySelector('[data-ind-subtab="dayflow"]');
     if (dfBtn) dfBtn.click();
     var flowCardCount = document.querySelectorAll('.ind-flow-step').length;
@@ -310,6 +334,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (kioskPunchBtn) kioskPunchBtn.click();
     var pwaText = document.getElementById('sandbox-mock').textContent;
     var hasPwaSim = pwaText.indexOf('99.4% Face + PIN') !== -1 && pwaText.indexOf('Offline Queue Ready') !== -1;
+    document.documentElement.setAttribute('data-theme', 'light');
+    var lightPosReceiptRgb = parseRgbSum(document.querySelector('.pos-receipt-box'));
 
     var erpModeBtn = document.querySelector('[data-sbox-mode="erp"]');
     if (erpModeBtn) erpModeBtn.click();
@@ -318,62 +344,42 @@ document.addEventListener('DOMContentLoaded', function() {
     if (roadTab) roadTab.click();
     var roadPanel = document.querySelector('[data-ing-panel="roadmap"]');
     var roadActive = roadPanel ? !roadPanel.hasAttribute('data-panel-hidden') : false;
+    var ingRoadH = Math.round(document.getElementById('ingenuity').getBoundingClientRect().height);
 
-    var faqAiTab = document.querySelector('[data-faq-cat="ai"]');
-    if (faqAiTab) faqAiTab.click();
-    var visibleFaqs = Array.from(document.querySelectorAll('#faq-grid [data-faq-item]')).filter(function(el){ return !el.hasAttribute('data-faq-hidden'); }).length;
+    var faqTab = document.querySelector('[data-ing-tab="faq"]');
+    if (faqTab) faqTab.click();
+    var faqPanel = document.querySelector('[data-ing-panel="faq"]');
+    var faqActive = faqPanel ? !faqPanel.hasAttribute('data-panel-hidden') : false;
+    var visibleFaqs = document.querySelectorAll('#faq-grid [data-faq-item]').length;
+    var ingFaqH = Math.round(document.getElementById('ingenuity').getBoundingClientRect().height);
+    var matTab = document.querySelector('[data-ing-tab="matrix"]');
+    if (matTab) matTab.click();
 
-    var topicChip = document.querySelector('[data-topic-ind="Automotive & Heavy Equipment Trading"]');
-    if (topicChip) topicChip.click();
-    var leadIndVal = document.getElementById('lead-industry').value;
+    var builderTab = document.querySelector('[data-price-view="builder"]');
+    if (builderTab) builderTab.click();
+    var priceBuilderH = Math.round(document.getElementById('pricing').getBoundingClientRect().height);
+    var tiersTab = document.querySelector('[data-price-view="tiers"]');
+    if (tiersTab) tiersTab.click();
 
-    // Hero Interactive Command Center checks
-    var heroEurBtn = document.querySelector('[data-hero-curr="EUR"]');
-    if (heroEurBtn) heroEurBtn.click();
-    var heroHospBtn = document.querySelector('[data-hero-ind="hospitality"]');
-    if (heroHospBtn) heroHospBtn.click();
-    var heroHospEurVal = document.getElementById('hlc-kpi1-val').textContent;
+    // Tier selection updates hidden budget & portal header note
+    var tierBtn = document.querySelector('[data-select-tier="Operational Foundation ($4,500+)"]');
+    if (tierBtn) tierBtn.click();
+    var tierNoteTxt = document.getElementById('portal-tier-note').textContent;
+    var leadBudgetVal = document.getElementById('lead-budget').value;
 
-    var heroPosBtn = document.querySelector('[data-hero-screen="pos"]');
-    if (heroPosBtn) heroPosBtn.click();
-    var hasHeroPos = !!document.querySelector('#hlc-stage .hlc-pos-box');
-
-    // Audit Light Mode surfaces while Hero POS receipt is mounted
-    function parseRgbSum(el) {
-      if (!el) return -1;
-      var cs = getComputedStyle(el);
-      var bg = cs.backgroundColor || '';
-      var img = cs.backgroundImage || '';
-      var m = bg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([0-9.]+))?\\)/);
-      if (m) {
-        var a = m[4] !== undefined ? parseFloat(m[4]) : 1;
-        if (a > 0.2) return parseInt(m[1], 10) + parseInt(m[2], 10) + parseInt(m[3], 10);
-      }
-      var gm = img.match(/rgb\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)/);
-      if (gm) return parseInt(gm[1], 10) + parseInt(gm[2], 10) + parseInt(gm[3], 10);
-      return 765;
-    }
-
-    document.documentElement.setAttribute('data-theme', 'light');
-    var lightPosReceiptRgb = parseRgbSum(document.querySelector('.hlc-pos-receipt'));
-
-    var heroAppsBtn = document.querySelector('[data-hero-screen="apps"]');
-    if (heroAppsBtn) heroAppsBtn.click();
-    var hasHeroApps = !!document.querySelector('#hlc-stage .hlc-apps-mini');
-
-    var heroAiBtn = document.querySelector('[data-hero-screen="ai"]');
-    if (heroAiBtn) heroAiBtn.click();
-    var hasHeroAi = !!document.querySelector('#hlc-stage .hlc-ai-box');
-
-    var heroDashBtn = document.querySelector('[data-hero-screen="dashboard"]');
-    if (heroDashBtn) heroDashBtn.click();
-    var heroUsdBtn = document.querySelector('[data-hero-curr="USD"]');
-    if (heroUsdBtn) heroUsdBtn.click();
+    // Hero Interactive Vertical Row & Reset checks
+    var heroHospRow = document.querySelector('.hlc-vrow[data-hero-ind="hospitality"]');
+    if (heroHospRow) heroHospRow.click();
+    var heroHospVal = document.getElementById('hlc-kpi1-val').textContent;
+    var hasHeroReset = !!document.getElementById('hlc-reset-ind');
+    var heroResetBtn = document.getElementById('hlc-reset-ind');
+    if (heroResetBtn) heroResetBtn.click();
+    var heroResetVal = document.getElementById('hlc-kpi1-val').textContent;
 
     var lightChecks = {
       askTrigger: parseRgbSum(document.querySelector('.ask-isabi-trigger')),
       hlcTop: parseRgbSum(document.querySelector('.hlc-top')),
-      hlcPosReceipt: lightPosReceiptRgb,
+      sboxPosReceipt: lightPosReceiptRgb,
       sboxRail: parseRgbSum(document.querySelector('.rail')),
       aiConsole: parseRgbSum(document.querySelector('.ai-console')),
       aiConsoleHdr: parseRgbSum(document.querySelector('.ai-console-hdr')),
@@ -408,17 +414,23 @@ document.addEventListener('DOMContentLoaded', function() {
 
     out.v4Test = {
       spotTitle: spotTitle,
+      indSubtabCount: indSubtabCount,
       flowCardCount: flowCardCount,
       baCardCount: baCardCount,
       hasSoaViewer: hasSoaViewer,
       hasPwaSim: hasPwaSim,
       roadActive: roadActive,
+      faqActive: faqActive,
       visibleFaqs: visibleFaqs,
-      leadIndVal: leadIndVal,
-      heroHospEurVal: heroHospEurVal,
-      hasHeroPos: hasHeroPos,
-      hasHeroApps: hasHeroApps,
-      hasHeroAi: hasHeroAi,
+      archAppsH: archAppsH,
+      ingRoadH: ingRoadH,
+      ingFaqH: ingFaqH,
+      priceBuilderH: priceBuilderH,
+      tierNoteTxt: tierNoteTxt,
+      leadBudgetVal: leadBudgetVal,
+      heroHospVal: heroHospVal,
+      hasHeroReset: hasHeroReset,
+      heroResetVal: heroResetVal,
       lightChecks: lightChecks,
       darkBlocksInLight: darkBlocksInLight.slice(0, 10),
       darkChecks: darkChecks,
@@ -447,7 +459,9 @@ document.addEventListener('DOMContentLoaded', function() {
             )
             m_vp = html.unescape(res_vp.stdout.split('<pre id="diag-json">')[1].split('</pre>')[0])
             d_vp = json.loads(m_vp)
-            print(f'[{label} {w}x{h}]', json.dumps({k: d_vp[k] for k in ('vw', 'vh', 'scrollW', 'hdrBottom', 'secHeights', 'cardOverflows', 'overflows') if k in d_vp}))
+            if 'error' in d_vp:
+                raise RuntimeError(f"[{label} {w}x{h}] JS error: {d_vp['error']}")
+            print(f'[{label} {w}x{h}]', json.dumps({k: d_vp[k] for k in ('vw', 'vh', 'scrollW', 'hdrBottom', 'hdrControlCount', 'heroControlCount', 'secHeights', 'cardOverflows', 'overflows') if k in d_vp}))
             return d_vp
 
         d_desk = probe_viewport(1366, 768, 'DESK')
@@ -458,13 +472,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if os.path.exists(diag_html):
             os.remove(diag_html)
 
-        # Layer 01-04 character budget assertions
-        assert len(d_desk['layerBudgets']) == 4, f"Expected 4 layer cards in #architecture, got {len(d_desk['layerBudgets'])}"
-        for idx, lb in enumerate(d_desk['layerBudgets'], 1):
-            assert lb['eyeLen'] <= 30, f"Layer 0{idx} eyebrow > 30 chars: {lb['eyeLen']}"
-            assert lb['h4Len'] <= 27, f"Layer 0{idx} headline > 27 chars: {lb['h4Len']}"
-            assert 147 <= lb['pLen'] <= 179, f"Layer 0{idx} body outside 147-179 char budget: {lb['pLen']}"
-
         # Desktop multi-viewport single-screen assertions (1366x768, 1440x810, 1536x864)
         for vp_lbl, dvp in [('1366x768', d_desk), ('1440x810', d_desk_1440), ('1536x864', d_desk_1536)]:
             assert dvp['scrollW'] <= dvp['vw'], f"{vp_lbl} horizontal overflow! scrollW={dvp['scrollW']} > vw={dvp['vw']}"
@@ -472,15 +479,24 @@ document.addEventListener('DOMContentLoaded', function() {
             avail_h = dvp['vh'] - dvp['hdrBottom']
             for sec_sel, sec_h in dvp['secHeights'].items():
                 assert abs(sec_h - avail_h) <= 2, f"{vp_lbl} section {sec_sel} height ({sec_h}px) != viewport availH ({avail_h}px)!"
+            for alt_tab_lbl, alt_h in [
+                ('arch:apps', dvp['v4Test']['archAppsH']),
+                ('ing:roadmap', dvp['v4Test']['ingRoadH']),
+                ('ing:faq', dvp['v4Test']['ingFaqH']),
+                ('pricing:builder', dvp['v4Test']['priceBuilderH']),
+            ]:
+                assert abs(alt_h - avail_h) <= 2, f"{vp_lbl} secondary tab {alt_tab_lbl} height ({alt_h}px) != viewport availH ({avail_h}px)!"
 
         # Primary Desktop assertions
+        assert d_desk['hdrControlCount'] == 9, f"Expected 9 clean header controls (5 nav + 4 actions), got {d_desk['hdrControlCount']}"
+        assert d_desk['heroControlCount'] == 8, f"Expected 8 clean hero controls (2 CTAs + Full Portal + 4 rows + Demo link), got {d_desk['heroControlCount']}"
         assert d_desk['activeMain'] == ['#industries'], f"Expected activeMain=['#industries'], got {d_desk['activeMain']}"
         assert d_desk['archBottom'] <= d_desk['hdrBottom'] + 1, f"Previous section bled through! archBottom={d_desk['archBottom']} > hdrBottom={d_desk['hdrBottom']}"
         assert abs(d_desk['indTop'] - d_desk['hdrBottom']) <= 4, f"Section top not aligned to header bottom! indTop={d_desk['indTop']}, hdrBottom={d_desk['hdrBottom']}"
         assert d_desk['ctaRight'] <= d_desk['vw'], f"Header CTA clipped! ctaRight={d_desk['ctaRight']} > vw={d_desk['vw']}"
-        assert abs(d_desk['leadIndustryW'] - d_desk['leadNameW']) <= 1, f"lead-industry width ({d_desk['leadIndustryW']}) != lead-name width ({d_desk['leadNameW']})"
-        assert abs(d_desk['leadBudgetW'] - d_desk['leadCompanyW']) <= 1, f"lead-budget width ({d_desk['leadBudgetW']}) != lead-company width ({d_desk['leadCompanyW']})"
-        assert d_desk['leadBudgetRight'] <= d_desk['portalCardRight'] - 24, f"lead-budget overflows portal card! {d_desk['leadBudgetRight']} vs {d_desk['portalCardRight']}"
+        assert abs(d_desk['leadContactW'] - d_desk['leadNameW']) <= 1, f"lead-contact width ({d_desk['leadContactW']}) != lead-name width ({d_desk['leadNameW']})"
+        assert abs(d_desk['leadIndustryW'] - d_desk['leadCompanyW']) <= 1, f"lead-industry width ({d_desk['leadIndustryW']}) != lead-company width ({d_desk['leadCompanyW']})"
+        assert d_desk['leadIndustryRight'] <= d_desk['portalCardRight'] - 24, f"lead-industry overflows portal card! {d_desk['leadIndustryRight']} vs {d_desk['portalCardRight']}"
         assert d_desk['hlcSvgCount'] == 1, f"Expected 1 SVG in .hlc-brand (no nested SVG), got {d_desk['hlcSvgCount']}"
         assert d_desk['heroSecH'] >= d_desk['vh'] - d_desk['hdrBottom'], f"Hero section too short ({d_desk['heroSecH']} < {d_desk['vh'] - d_desk['hdrBottom']})!"
         assert abs(d_desk['heroLeftH'] - d_desk['heroCardH']) <= 2, f"Desktop hero column heights mismatch: {d_desk['heroLeftH']} vs {d_desk['heroCardH']}"
@@ -515,17 +531,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
         v4 = d_desk['v4Test']
         assert 'Offline POS Till' in v4['spotTitle'], f"Expected 'Offline POS Till' in spotlight title, got {v4['spotTitle']}"
+        assert v4['indSubtabCount'] == 3, f"Expected 3 distinct industry sub-tabs, got {v4['indSubtabCount']}"
         assert v4['flowCardCount'] == 4, f"Expected 4 Day-in-the-Life flow cards, got {v4['flowCardCount']}"
         assert v4['baCardCount'] == 2, f"Expected 2 Before/After comparison cards, got {v4['baCardCount']}"
         assert v4['hasSoaViewer'] is True, "SOA viewer did not render in Sandbox mode 'soa'"
         assert v4['hasPwaSim'] is True, "POS & Kiosk simulator did not update on interactive click in mode 'pwa'"
-        assert v4['roadActive'] is True, "14-Day Go-Live Sprint tab did not activate #ing-pane-roadmap"
-        assert v4['visibleFaqs'] == 4, f"Expected 4 visible FAQs under 'ai' category filter, got {v4['visibleFaqs']}"
-        assert v4['leadIndVal'] == 'Automotive & Heavy Equipment Trading', f"Topic chip did not select trading industry: {v4['leadIndVal']}"
-        assert '€' in v4['heroHospEurVal'], f"Expected EUR symbol in Hero KPI1 after EUR + Hospitality click, got {v4['heroHospEurVal']}"
-        assert v4['hasHeroPos'] is True, "Hero POS mode did not render .hlc-pos-box"
-        assert v4['hasHeroApps'] is True, "Hero Apps mode did not render .hlc-apps-mini"
-        assert v4['hasHeroAi'] is True, "Hero AI mode did not render .hlc-ai-box"
+        assert v4['roadActive'] is True, "14-Day Go-Live Sprint tab did not activate roadmap panel"
+        assert v4['faqActive'] is True and v4['visibleFaqs'] == 6, f"Expected 6 visible FAQs in Why ISABI FAQ tab, got {v4['visibleFaqs']}"
+        assert v4['leadBudgetVal'] == 'Operational Foundation ($4,500+)' and 'Operational Foundation' in v4['tierNoteTxt'], f"Tier select did not update portal brief: {v4}"
+        assert v4['heroHospVal'] == '$418,200' and v4['hasHeroReset'] is True and v4['heroResetVal'] == '$1,482,600', f"Hero vertical inspect/reset failed: {v4}"
         assert v4['visibleJargon'] == [], f"Visible technical jargon found in rendered page: {v4['visibleJargon']}"
         for surf_k, surf_rgb in v4['lightChecks'].items():
             assert surf_rgb >= 650, f"Light Mode surface {surf_k} is too dark (RGB sum={surf_rgb} < 650): {v4['lightChecks']}"
@@ -535,30 +549,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
         # 3. Capture fresh screenshots of Hero & #portal at 1366x768
         os.makedirs(ART_DIR, exist_ok=True)
-        shot_desk_hero = os.path.join(ART_DIR, 'isabi_desk_hero_v60.png')
+        shot_desk_hero = os.path.join(ART_DIR, 'isabi_desk_hero_v63.png')
         subprocess.run([EDGE, '--headless=new', '--disable-gpu', f'--user-data-dir={ud}', '--window-size=1366,768', f'--screenshot={shot_desk_hero}', URL], timeout=25)
-        shot_desk_portal = os.path.join(ART_DIR, 'isabi_desk_portal_v60.png')
+        shot_desk_portal = os.path.join(ART_DIR, 'isabi_desk_portal_v63.png')
         shot_html = os.path.join(repo_root, '_shot_portal.html')
-        shot_script = """
-<script>
-window.addEventListener('load', function() {
-  var p = document.getElementById('portal');
-  var h = document.querySelector('.site-header');
-  if (p && h) {
-    var offset = p.offsetTop - h.offsetHeight;
-    document.querySelector('main').style.marginTop = (-offset) + 'px';
-    window.scrollTo(0, 0);
-  }
-});
-</script>
-"""
+        shot_css = "<style>.hero-section,#architecture,#industries,#sandbox,#ingenuity,#pricing{display:none!important;}[data-reveal]{opacity:1!important;transform:none!important;}</style>"
         with open(shot_html, 'w', encoding='utf-8') as f:
-            f.write(base_html.replace('</body>', shot_script + '</body>'))
+            f.write(base_html.replace('</head>', shot_css + '</head>'))
         shot_url = 'file:///' + shot_html.replace('\\', '/')
         subprocess.run([EDGE, '--headless=new', '--disable-gpu', f'--user-data-dir={ud}', '--window-size=1366,768', f'--screenshot={shot_desk_portal}', shot_url], timeout=25)
         if os.path.exists(shot_html):
             os.remove(shot_html)
-        print('ALL GEOMETRY, MULTI-VIEWPORT, LAYER-BUDGET & INTERACTIVE ASSERTIONS PASSED.')
+        print('ALL GEOMETRY, MULTI-VIEWPORT, STREAMLINE & INTERACTIVE ASSERTIONS PASSED.')
     finally:
         shutil.rmtree(ud, ignore_errors=True)
 
