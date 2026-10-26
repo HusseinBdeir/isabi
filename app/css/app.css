@@ -15485,12 +15485,12 @@ svg .cf-chart-bar:hover .cf-bar-hit {
 .cockpit-meter {
   display: flex;
   width: 100%;
-  height: 3.5px;
+  height: 4px;
   border-radius: 999px;
-  background: rgba(35, 86, 168, 0.10);
+  background: rgba(15, 30, 56, 0.08);
   overflow: hidden;
   margin-bottom: 5px;
-  gap: 1.5px;
+  gap: 0;
 }
 :root[data-theme="dark"] .cockpit-meter {
   background: rgba(255, 255, 255, 0.10);
@@ -15498,7 +15498,10 @@ svg .cf-chart-bar:hover .cf-bar-hit {
 .cockpit-meter-fill {
   display: block;
   height: 100%;
-  border-radius: 999px;
+  border-radius: 0 999px 999px 0;
+}
+.cockpit-meter:has(.secondary) .cockpit-meter-fill {
+  border-radius: 0;
 }
 /* Never use black/ink on progress meters or bars — chromatic institutional palette across all tones */
 .cockpit-meter-fill.primary {
@@ -15808,7 +15811,7 @@ tr.rrow:hover .tkt-print-mini,
   border-radius: 999px;
   background: var(--line);
   overflow: hidden;
-  gap: 1px;
+  gap: 0;
   flex-shrink: 0;
   margin-left: 2px;
 }
@@ -16620,7 +16623,7 @@ tr.rrow.is-row-selected > td {
   border-radius: 999px;
   overflow: hidden;
   background: var(--line);
-  gap: 2px;
+  gap: 0;
 }
 .wf-prop-seg {
   height: 100%;

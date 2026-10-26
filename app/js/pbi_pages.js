@@ -2128,7 +2128,14 @@
         .filter(seg => seg.length > 1)
         .map(seg => `<polyline fill="none" stroke="${s.color || C.navy}" stroke-width="2.3" pointer-events="none" points="${seg.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}"/>`)
         .join('');
-      return segHtml +
+      const bridgeHtml = segments.length > 1
+        ? segments.slice(0, -1).map((seg, idx) => {
+            const a = seg[seg.length - 1];
+            const b = segments[idx + 1][0];
+            return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="${s.color || C.navy}" stroke-width="1.6" stroke-dasharray="3.5 2.5" stroke-opacity="0.52" pointer-events="none"/>`;
+          }).join('')
+        : '';
+      return bridgeHtml + segHtml +
         pts.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.4" fill="${s.color || C.navy}" stroke="var(--surface)" stroke-width="1.2" style="cursor:pointer" data-chart-pop="${encodeChartPop(p.popSpec)}" data-series-idx="${si}"/>`).join('');
     }).join('');
 
@@ -5297,10 +5304,10 @@
 
           return `<g class="cf-chart-bar pbi-chart-col${isSel ? ' is-selected' : ''}" ${d.ymIso ? `data-cf-focus-ym="${esc(d.ymIso)}"` : ''} data-chart-pop="${encodeChartPop(popSpec)}">` +
             `<rect class="cf-bar-hit pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${(grpW - 2).toFixed(1)}" height="${plotH + 22}" rx="4" fill="${isSel ? 'rgba(46,116,181,0.12)' : 'transparent'}"/>` +
-            (hOpIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yOpIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpIn.toFixed(1)}" fill="${C.good}" rx="1.5"/>` : '') +
-            (hTrIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yTrIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTrIn.toFixed(1)}" fill="${C.goodSoft}" rx="1.5"/>` : '') +
-            (hOpOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yOpOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpOut.toFixed(1)}" fill="${C.crit}" rx="1.5"/>` : '') +
-            (hTrOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yTrOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTrOut.toFixed(1)}" fill="${C.critSoft}" rx="1.5"/>` : '') +
+            (hTrIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yTrIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${(hOpIn + hTrIn).toFixed(1)}" fill="${C.goodSoft}" rx="1.8"/>` : '') +
+            (hOpIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yOpIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpIn.toFixed(1)}" fill="${C.good}" rx="${hTrIn > 0.4 ? '0' : '1.8'}"/>` : '') +
+            (hTrOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yTrOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${(hOpOut + hTrOut).toFixed(1)}" fill="${C.critSoft}" rx="1.8"/>` : '') +
+            (hOpOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yOpOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpOut.toFixed(1)}" fill="${C.crit}" rx="${hTrOut > 0.4 ? '0' : '1.8'}"/>` : '') +
             `<text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="9.3" font-weight="${isSel ? '800' : '500'}" fill="${isSel ? 'var(--brass)' : 'var(--muted)'}">${esc(shortLbl)}</text>` +
             `</g>`;
         }).join('');
@@ -7133,10 +7140,10 @@
 
         return `<g class="cf-chart-bar pbi-chart-col${isSel ? ' is-selected' : ''}" ${d.ymIso ? `data-cf-focus-ym="${esc(d.ymIso)}"` : ''} data-chart-pop="${encodeChartPop(popSpec)}">` +
           `<rect class="cf-bar-hit pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${(grpW - 2).toFixed(1)}" height="${plotH + 22}" rx="4" fill="${isSel ? 'rgba(46,116,181,0.12)' : 'transparent'}"/>` +
-          (hOpIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yOpIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpIn.toFixed(1)}" fill="${C.good}" rx="1.5"/>` : '') +
-          (hTrIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yTrIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTrIn.toFixed(1)}" fill="${C.goodSoft}" rx="1.5"/>` : '') +
-          (hOpOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yOpOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpOut.toFixed(1)}" fill="${C.crit}" rx="1.5"/>` : '') +
-          (hTrOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yTrOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTrOut.toFixed(1)}" fill="${C.critSoft}" rx="1.5"/>` : '') +
+          (hTrIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yTrIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${(hOpIn + hTrIn).toFixed(1)}" fill="${C.goodSoft}" rx="1.8"/>` : '') +
+          (hOpIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yOpIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpIn.toFixed(1)}" fill="${C.good}" rx="${hTrIn > 0.4 ? '0' : '1.8'}"/>` : '') +
+          (hTrOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yTrOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${(hOpOut + hTrOut).toFixed(1)}" fill="${C.critSoft}" rx="1.8"/>` : '') +
+          (hOpOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yOpOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpOut.toFixed(1)}" fill="${C.crit}" rx="${hTrOut > 0.4 ? '0' : '1.8'}"/>` : '') +
           `<text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="9.3" font-weight="${isSel ? '800' : '500'}" fill="${isSel ? 'var(--brass)' : 'var(--muted)'}">${esc(shortLbl)}</text>` +
           `</g>`;
       }).join('');

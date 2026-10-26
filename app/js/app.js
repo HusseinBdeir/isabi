@@ -3778,7 +3778,7 @@
 
   function insightCard({ label, badge = '', badgeHtml = '', badgeCls = '', badgeChip = '', val, valCls = '', pct = null, pct2 = null, sub = '', tone = 'brass', tone2 = '', id = '' }) {
     const p1 = pct != null ? Math.max(0, Math.min(100, Number(pct) || 0)) : null;
-    const p2 = pct2 != null ? Math.max(0, Math.min(100 - (p1 || 0), Number(pct2) || 0)) : null;
+    const p2 = (tone2 && pct2 != null) ? Math.max(0, Math.min(100 - (p1 || 0), Number(pct2) || 0)) : null;
     const bAttr = badgeChip ? ` data-insight-chip="${esc(badgeChip)}" title="Click to toggle ${esc(badgeChip)} filter"` : '';
     const bActive = badgeChip && STATE.chipFilter === badgeChip ? ' is-active' : '';
     const renderedBadge = badgeHtml || (badge ? `<span class="cockpit-pill-tag ${esc(badgeCls)}${badgeChip ? ' insight-drill' : ''}${bActive}"${bAttr}>${esc(badge)}</span>` : '');
@@ -7716,8 +7716,7 @@
             badgeCls: 'brass',
             val: `${fmtUSD(avgUnitTtc, 2)} <small>/ m³</small>`,
             valCls: 'brass',
-            pct: matRevShare,
-            pct2: trRevShare,
+            pct: 100,
             sub: `Ex-VAT <b>${fmtUSD(avgUnitNet, 2)}/m³</b> · Avg <b>${fmtNum(avgLoadQty, 1)} m³/load</b> · <span class="insight-drill" data-scroll-panel="salesProdPanel" title="Click to jump to Sales by Product &amp; Aggregate Grade"><b>${fmtNum(sumTons, 0)} t ↘</b></span>`,
             tone: 'brass'
           })}
@@ -11049,10 +11048,8 @@
             val: `${curPct.toFixed(1)}% <small>Current (0–10d)</small>`,
             valCls: over60Pct > 25 ? 'amber' : 'brass',
             pct: curPct,
-            pct2: over60Pct,
             sub: `0–10d <b>${fmtUSD(arCur, 0)}</b> · 11–60d <b>${fmtUSD(arMid, 0)}</b> · 60+d <b>${fmtUSD(ar60, 0)}</b>`,
-            tone: 'brass',
-            tone2: 'crit'
+            tone: 'brass'
           })}
           ${insightCard({
             label: '11% Output VAT (4427)',
@@ -11723,10 +11720,8 @@
             val: `${cashExpPct.toFixed(1)}% <small>Cash</small>`,
             valCls: 'emerald',
             pct: cashExpPct,
-            pct2: 100 - cashExpPct,
             sub: `Cash <b>${fmtUSD(sumCashExp, 0)}</b> · Credit AP <b>${fmtUSD(sumCredExp, 0)}</b>`,
-            tone: 'emerald',
-            tone2: 'steel'
+            tone: 'emerald'
           })}
           ${insightCard({
             label: 'Fleet & Plant Attribution',
