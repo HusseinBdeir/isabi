@@ -84,7 +84,7 @@ ORG_JSONLD = _json.dumps({
     "address": {"@type": "PostalAddress", "addressCountry": "LB"},
     "knowsAbout": ["Enterprise Resource Planning", "Multi-Entity Operations", "Executive Dashboards & Reporting", "Double-Entry Accounting", "POS & Gate Kiosks", "Automated Financial Controls"],
     "contactPoint": [{"@type": "ContactPoint", "contactType": "sales", "telephone": "+96170444955", "email": "hbdeir16@gmail.com", "availableLanguage": ["en"]}],
-    "priceRange": "$1,500 to $5,500+ setup + $15 to $35/seat/mo"
+    "priceRange": "$3,000 to $11,000+ setup + $50 to $100/seat/mo"
 }, ensure_ascii=False)
 HEAD = HEAD.replace("__ORG_JSONLD__", ORG_JSONLD).replace("__FAQ_JSONLD__", FAQ_JSONLD)
 

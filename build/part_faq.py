@@ -6,7 +6,7 @@ from part_icons import ICONS
 # Tuple format: (question, answer, icon_key)
 FAQ_ITEMS = [
     ("How do the initial custom setup fee and monthly per-seat pricing work?",
-     "Every engagement combines a one-time custom setup fee (starting at $1,500 to build and tailor your workflows, chart of accounts, dashboards, and historical Excel import) with a simple monthly per-seat fee ($15 to $35 per active user) covering cloud sync, backups, updates, and ongoing support.",
+     "Every engagement combines a one-time custom setup fee (starting at $3,000 to build and tailor your workflows, chart of accounts, dashboards, and historical Excel import) with a simple monthly per-seat fee ($50 to $100 per active user) covering cloud sync, backups, updates, and ongoing support.",
      "key"),
     ("Who owns the system and the data?",
      "You do. Every customer record, ledger entry, dashboard, and printable statement belongs to your company under your administrators, with full export access at any time and zero lock-in.",
