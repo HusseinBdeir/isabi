@@ -5907,7 +5907,7 @@
         ]
       });
       g += `<g class="col" data-m="${esc(ymFull)}" data-t="$${sK.toFixed(1)}k Sales" data-tip="${esc(tip)}" data-chart-pop="${esc(popSpec)}">`
-        + `<rect class="hit" x="${(ml + slot * i).toFixed(1)}" y="${mt}" width="${slot.toFixed(1)}" height="${ph}"/>`
+        + `<rect class="hit" x="${(ml + slot * i).toFixed(1)}" y="${mt}" width="${slot.toFixed(1)}" height="${ph}" fill="transparent"/>`
         + `<line class="pbi-col-guide" x1="${(x0 + bw / 2).toFixed(1)}" x2="${(x0 + bw / 2).toFixed(1)}" y1="${mt}" y2="${mt + ph}"/>`
         + `${bars}</g>`;
       g += `<text class="tick" x="${(x0 + bw / 2).toFixed(1)}" y="${H - 9}" text-anchor="middle">${esc(ymShort.slice(0, 6))}</text>`;
@@ -7581,7 +7581,7 @@
         const q = sgn * ticketMeters(r);
         const rawQ = sgn * Number(r.qty || 0);
         const ttc = sgn * Number(r.total_ttc != null ? r.total_ttc : r.total || 0);
-        const mat = sgn * Number(r.price != null ? r.price : (Number(r.total != null ? r.total : (Number(r.total_ttc || 0) - Number(r.vat || 0))) - Number(r.trans_price || 0)));
+        const net = sgn * Number(r.total != null ? r.total : (Number(r.total_ttc || 0) - Number(r.vat || 0)));
         if (sgn === 1) cur.loads += 1;
         cur.qty_sold += q;
         cur.native_qty_sold += rawQ;
@@ -31807,10 +31807,38 @@
 
     // Unified Institutional Chart Explanation Popover (#mfgChartPopover) for all SVG & bar visuals
     const chartPopEl = $('mfgChartPopover');
+    const wsElForPop = $('workspace');
+    let _wsScrollTimer = null;
+    let _lastWsWheelTs = 0;
     const hideChartPopover = () => {
       if (chartPopEl && !chartPopEl.hidden) chartPopEl.hidden = true;
     };
+    const hideAllChartTooltips = () => {
+      hideChartPopover();
+      const execTipEl = $('execChartTip');
+      if (execTipEl && !execTipEl.hidden) execTipEl.hidden = true;
+    };
+    const markWorkspaceScrolling = e => {
+      if (e && e.isTrusted && wsElForPop) {
+        _lastWsWheelTs = performance.now();
+        wsElForPop.classList.add('is-scrolling');
+        clearTimeout(_wsScrollTimer);
+        _wsScrollTimer = setTimeout(() => {
+          wsElForPop.classList.remove('is-scrolling');
+        }, 140);
+      }
+      hideAllChartTooltips();
+    };
     const showChartPopoverForEvent = e => {
+      if (e && e.isTrusted && wsElForPop) {
+        if (e.type === 'mousemove' && (e.movementX || e.movementY)) {
+          _lastWsWheelTs = 0;
+          if (wsElForPop.classList.contains('is-scrolling')) wsElForPop.classList.remove('is-scrolling');
+        } else if (_lastWsWheelTs && (performance.now() - _lastWsWheelTs) < 140) {
+          hideChartPopover();
+          return;
+        }
+      }
       if (!chartPopEl || !e || !e.target || typeof e.target.closest !== 'function') {
         hideChartPopover();
         return;
@@ -31850,16 +31878,17 @@
       chartPopEl.style.left = `${leftPx}px`;
       chartPopEl.style.top = `${Math.max(10, topPx)}px`;
     };
-    const wsElForPop = $('workspace');
     if (wsElForPop) {
       wsElForPop.addEventListener('mouseover', showChartPopoverForEvent);
       wsElForPop.addEventListener('pointerover', showChartPopoverForEvent);
       wsElForPop.addEventListener('mousemove', showChartPopoverForEvent);
       wsElForPop.addEventListener('focusin', showChartPopoverForEvent);
-      wsElForPop.addEventListener('mouseleave', hideChartPopover);
-      wsElForPop.addEventListener('scroll', hideChartPopover, { passive: true });
+      wsElForPop.addEventListener('mouseleave', hideAllChartTooltips);
+      wsElForPop.addEventListener('wheel', markWorkspaceScrolling, { passive: true });
+      wsElForPop.addEventListener('touchmove', markWorkspaceScrolling, { passive: true });
+      wsElForPop.addEventListener('scroll', hideAllChartTooltips, { passive: true });
     }
-    window.addEventListener('scroll', hideChartPopover, { passive: true });
+    window.addEventListener('scroll', hideAllChartTooltips, { passive: true });
 
     document.querySelectorAll('#sidebarNav .nav-item').forEach(btn => btn.addEventListener('click', () => clickHub(btn.getAttribute('data-hub') || btn.getAttribute('data-view'))));
     document.querySelectorAll('#mobileBottomDock [data-dock-view]').forEach(btn => btn.addEventListener('click', () => {

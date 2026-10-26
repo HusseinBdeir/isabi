@@ -1449,9 +1449,24 @@ a.system-showcase-btn .nav-ico {
 .chart .axis { stroke: var(--line-strong); stroke-width: 1; }
 .chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .chart .lbl { fill: var(--ink); font-family: "Archivo", sans-serif; font-size: 11px; font-weight: 700; }
-.chart .hit { fill: transparent; }
+.chart .hit {
+  fill: rgba(15, 30, 56, 0);
+  fill-opacity: 1;
+  transition: none;
+}
 .chart .col { cursor: pointer; }
-.chart .col:hover .hit { fill: var(--ink); fill-opacity: 0.05; }
+.chart .col:hover .hit {
+  fill: rgba(15, 30, 56, 0.045);
+  fill-opacity: 1;
+}
+:root[data-theme="dark"] .chart .hit {
+  fill: rgba(233, 236, 242, 0);
+  fill-opacity: 1;
+}
+:root[data-theme="dark"] .chart .col:hover .hit {
+  fill: rgba(233, 236, 242, 0.06);
+  fill-opacity: 1;
+}
 
 .chart-tip,
 .mfg-chart-popover {
@@ -1601,36 +1616,62 @@ a.system-showcase-btn .nav-ico {
   cursor: pointer;
 }
 .pbi-chart-col .pbi-col-hit {
-  fill: transparent;
-  transition: fill 0.12s ease;
+  fill: rgba(15, 30, 56, 0);
+  fill-opacity: 1;
+  transition: none;
 }
 .pbi-chart-col:hover .pbi-col-hit,
 .pbi-chart-col.is-hovered .pbi-col-hit {
-  fill: var(--ink, #0F1E38);
-  fill-opacity: 0.045;
+  fill: rgba(15, 30, 56, 0.045);
+  fill-opacity: 1;
+}
+:root[data-theme="dark"] .pbi-chart-col .pbi-col-hit {
+  fill: rgba(233, 236, 242, 0);
+  fill-opacity: 1;
+}
+:root[data-theme="dark"] .pbi-chart-col:hover .pbi-col-hit,
+:root[data-theme="dark"] .pbi-chart-col.is-hovered .pbi-col-hit {
+  fill: rgba(233, 236, 242, 0.06);
+  fill-opacity: 1;
+}
+.workspace.is-scrolling .pbi-chart-col:hover .pbi-col-hit,
+.workspace.is-scrolling .chart .col:hover .hit {
+  fill: rgba(15, 30, 56, 0);
+}
+:root[data-theme="dark"] .workspace.is-scrolling .pbi-chart-col:hover .pbi-col-hit,
+:root[data-theme="dark"] .workspace.is-scrolling .chart .col:hover .hit {
+  fill: rgba(233, 236, 242, 0);
 }
 .pbi-chart-col .pbi-col-guide {
   stroke: var(--brass, #C0892F);
   stroke-width: 1.2;
   stroke-dasharray: 3 3;
   opacity: 0;
-  transition: opacity 0.12s ease;
+  transition: none;
   pointer-events: none;
 }
 .pbi-chart-col:hover .pbi-col-guide,
 .pbi-chart-col.is-hovered .pbi-col-guide {
   opacity: 0.72;
 }
+.workspace.is-scrolling .pbi-chart-col:hover .pbi-col-guide {
+  opacity: 0;
+}
 .pbi-bar-item[data-chart-pop],
 .pbi-cbar-item[data-chart-pop] {
   border-radius: 5px;
   padding: 3px 5px;
   margin: -3px -5px;
-  transition: background 0.12s ease;
+  background: rgba(248, 247, 244, 0);
+  transition: none;
 }
 .pbi-bar-item[data-chart-pop]:hover,
 .pbi-cbar-item[data-chart-pop]:hover {
   background: var(--surface-2, #F8F7F4);
+}
+:root[data-theme="dark"] .pbi-bar-item[data-chart-pop],
+:root[data-theme="dark"] .pbi-cbar-item[data-chart-pop] {
+  background: rgba(26, 43, 70, 0);
 }
 
 /* Institutional Ledger Tables (table.m-grid) */
@@ -14975,8 +15016,13 @@ tr.cf-bridge-row:hover td {
 svg .cf-chart-bar {
   cursor: pointer;
 }
+svg .cf-chart-bar.is-selected .cf-bar-hit {
+  fill: rgba(46, 116, 181, 0.12);
+  fill-opacity: 1;
+}
 svg .cf-chart-bar:hover .cf-bar-hit {
   fill: rgba(192, 137, 47, 0.10);
+  fill-opacity: 1;
 }
 
 @media (max-width: 768px) {

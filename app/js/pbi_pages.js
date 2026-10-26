@@ -1183,7 +1183,7 @@
         : '';
       const popSpec = { title: rawLbl || shortLbl, badge: colBadge, rows: popRows };
       return `<g class="pbi-chart-col" data-chart-pop="${encodeChartPop(popSpec)}">` +
-        `<rect class="pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${Math.max(4, grpW - 2).toFixed(1)}" height="${plotH + 20}" rx="4"/>` +
+        `<rect class="pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${Math.max(4, grpW - 2).toFixed(1)}" height="${plotH + 20}" rx="4" fill="transparent"/>` +
         `${bars}<text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${esc(shortLbl)}</text></g>`;
     }).join('');
 
@@ -1275,7 +1275,7 @@
       }
       const popSpec = { title: rawLbl || shortLbl, badge: colBadge, rows: popRows };
       return `<g class="pbi-chart-col" data-chart-pop="${encodeChartPop(popSpec)}">` +
-        `<rect class="pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${Math.max(4, grpW - 2).toFixed(1)}" height="${plotH + 20}" rx="4"/>` +
+        `<rect class="pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${Math.max(4, grpW - 2).toFixed(1)}" height="${plotH + 20}" rx="4" fill="transparent"/>` +
         `${bars}<text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${esc(shortLbl)}</text></g>`;
     }).join('');
 
@@ -1342,7 +1342,7 @@
       };
       return `
         <g class="pbi-chart-col" data-chart-pop="${encodeChartPop(popSpec)}">
-          <rect class="pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${Math.max(4, grpW - 2).toFixed(1)}" height="${plotH + 20}" rx="4"/>
+          <rect class="pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${Math.max(4, grpW - 2).toFixed(1)}" height="${plotH + 20}" rx="4" fill="transparent"/>
           <rect x="${x}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${color}"/>
           <text x="${cx.toFixed(1)}" y="${lblY.toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="${v < 0 ? '#C8333B' : 'var(--ink)'}">${esc(valLbl)}</text>
           <text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="10" font-weight="600" fill="var(--muted)">${esc(d.label)}</text>
@@ -1421,7 +1421,7 @@
         ? (i === 0 || i === colSpecs.length - 1 ? hitW / 2 + 6 : hitW)
         : plotW;
       return `<g class="pbi-chart-col" data-chart-pop="${encodeChartPop(c.popSpec)}">` +
-        `<rect class="pbi-col-hit" x="${bandX.toFixed(1)}" y="${padT}" width="${Math.max(6, bandW).toFixed(1)}" height="${plotH + 20}" rx="3"/>` +
+        `<rect class="pbi-col-hit" x="${bandX.toFixed(1)}" y="${padT}" width="${Math.max(6, bandW).toFixed(1)}" height="${plotH + 20}" rx="3" fill="transparent"/>` +
         `<line class="pbi-col-guide" x1="${c.x.toFixed(1)}" y1="${padT}" x2="${c.x.toFixed(1)}" y2="${(padT + plotH).toFixed(1)}"/>` +
         `<text x="${c.x.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${esc(c.shortLbl)}</text>` +
         `</g>`;
