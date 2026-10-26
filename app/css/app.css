@@ -35,10 +35,20 @@
   --warn-bg: #FCEBDD;
   --crit: #C8333B;
   --crit-bg: #F9E1E2;
-  --s1: #2A6DB5;
-  --s2: #C48A2C;
-  --s3: #1E9E8A;
-  --m-chip: #EEF0F3;
+  --s1: #162D50;
+  --s2: #7A889B;
+  --s3: #C0892F;
+  --chart-navy: #162D50;
+  --chart-steel: #2E74B5;
+  --chart-brass: #C0892F;
+  --chart-slate: #7A889B;
+  --chart-amber: #C96A22;
+  --chart-plum: #6B5B95;
+  --chart-good: #1F7A4C;
+  --chart-good-soft: #6BA888;
+  --chart-crit: #C8333B;
+  --chart-crit-soft: #DF8A71;
+  --m-chip: #EEF0F4;
   --m-grid: #E6E8EC;
   --shadow-sm: 0 2px 8px rgba(15, 30, 56, 0.05);
   --shadow-md: 0 10px 28px rgba(15, 30, 56, 0.08);
@@ -74,9 +84,19 @@
   --warn-bg: rgba(240, 144, 69, 0.16);
   --crit: #E25A61;
   --crit-bg: rgba(226, 90, 97, 0.18);
-  --s1: #4F8FD6;
-  --s2: #D9A54A;
-  --s3: #25A38D;
+  --s1: #C5D8F0;
+  --s2: #788CA6;
+  --s3: #DFAA4E;
+  --chart-navy: #C5D8F0;
+  --chart-steel: #4F94E0;
+  --chart-brass: #DFAA4E;
+  --chart-slate: #788CA6;
+  --chart-amber: #ED8936;
+  --chart-plum: #A794F7;
+  --chart-good: #3DB36A;
+  --chart-good-soft: #68C78E;
+  --chart-crit: #E25A61;
+  --chart-crit-soft: #EB937E;
   --m-chip: #1E2E48;
   --m-grid: #22324D;
   --shadow-sm: 0 4px 14px rgba(4, 10, 22, 0.30);
@@ -10839,15 +10859,24 @@ table.m-grid tfoot tr td.n {
 }
 table.ledger-table tfoot tr td,
 table.m-grid tfoot tr td {
-  background: color-mix(in srgb, var(--brass) 8%, var(--surface-2));
+  background: #F4F6F9;
   color: var(--ink);
   font-weight: 700;
-  border-top: 2px solid var(--brass);
-  border-bottom: 2px solid var(--brass-border);
+  border-top: 1.5px solid var(--ink);
+  border-bottom: 3px double rgba(192, 137, 47, 0.55);
+  box-shadow: 0 -2px 6px rgba(15, 30, 56, 0.05), 0 4px 0 0 #F4F6F9;
   white-space: nowrap !important;
   overflow-wrap: normal !important;
   word-break: normal !important;
   vertical-align: middle;
+}
+:root[data-theme="dark"] table.ledger-table tfoot tr td,
+:root[data-theme="dark"] table.m-grid tfoot tr td {
+  background: #1B2C47;
+  color: var(--ink);
+  border-top-color: #4A6388;
+  border-bottom-color: rgba(217, 165, 74, 0.55);
+  box-shadow: 0 -2px 8px rgba(4, 10, 22, 0.35), 0 4px 0 0 #1B2C47;
 }
 table.ledger-table tfoot tr td:first-child,
 table.ledger-table tfoot tr td[colspan],
@@ -16967,6 +16996,177 @@ tr.rrow.is-row-selected > td {
 .maint-custody-pill b {
   font-family: var(--font-mono);
   margin-left: 2px;
+}
+
+/* ============================================================================
+   v18.8 — INSTITUTIONAL NAVY, STEEL & RESTRAINED BRASS CHROME DISCIPLINE
+   (LOGO.md §8: Brass rationed strictly to active marker, primary CTA & total
+    double rule; quiet monochrome row/header pills & cool steel data bars)
+   ============================================================================ */
+
+/* 1. Quiet Monochrome Row & Register Pills (Company + Payment Method + Neutral) */
+.badge-neutral {
+  background: #F1F4F8;
+  color: #475569;
+  border: 1px solid #D8E0EB;
+}
+:root[data-theme="dark"] .badge-neutral {
+  background: rgba(148, 163, 184, 0.12);
+  color: #CBD5E1;
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+.badge.co-tbl-badge,
+.sales-recon-head > .badge {
+  background: #F1F4F8;
+  color: #334155;
+  border: 1px solid #D6DEE9;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.badge.co-tbl-badge.co-tbl-bbc,
+.sales-recon-head > .badge.badge-info {
+  background: #ECF2F9;
+  color: #1E3A5F;
+  border: 1px solid #C7D6EA;
+}
+:root[data-theme="dark"] .badge.co-tbl-badge,
+:root[data-theme="dark"] .sales-recon-head > .badge {
+  background: rgba(148, 163, 184, 0.12);
+  color: #CBD5E1;
+  border-color: rgba(148, 163, 184, 0.24);
+}
+:root[data-theme="dark"] .badge.co-tbl-badge.co-tbl-bbc,
+:root[data-theme="dark"] .sales-recon-head > .badge.badge-info {
+  background: rgba(79, 143, 214, 0.14);
+  color: #B6D4F7;
+  border-color: rgba(79, 143, 214, 0.30);
+}
+
+.badge.badge-method-cash {
+  background: #EDF1F7;
+  color: #0F1E38;
+  border: 1px solid #CBD5E1;
+  font-weight: 700;
+}
+.badge.badge-method-credit {
+  background: #F8FAFC;
+  color: #5C6B80;
+  border: 1px solid #DCE3EE;
+  font-weight: 600;
+}
+:root[data-theme="dark"] .badge.badge-method-cash {
+  background: rgba(197, 216, 240, 0.14);
+  color: #E2E8F0;
+  border-color: rgba(197, 216, 240, 0.28);
+}
+:root[data-theme="dark"] .badge.badge-method-credit {
+  background: rgba(148, 163, 184, 0.06);
+  color: #9AA7BA;
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+/* 2. Cool Steel Inline Table Magnitude Data Bars (replacing yellowish brass wash) */
+table.ledger-table tbody td.td-databar {
+  background-image:
+    linear-gradient(90deg, rgba(46, 116, 181, 0.20) var(--bar-pct, 0%), transparent var(--bar-pct, 0%)),
+    linear-gradient(90deg, rgba(46, 116, 181, 0.05) var(--bar-pct, 0%), transparent var(--bar-pct, 0%));
+}
+:root[data-theme="dark"] table.ledger-table tbody td.td-databar {
+  background-image:
+    linear-gradient(90deg, rgba(79, 143, 214, 0.30) var(--bar-pct, 0%), transparent var(--bar-pct, 0%)),
+    linear-gradient(90deg, rgba(79, 143, 214, 0.08) var(--bar-pct, 0%), transparent var(--bar-pct, 0%));
+}
+
+/* 3. Top Header, Sidebar & Subtab Brass Restraint */
+.rail .av {
+  background: #0B1730;
+  color: #F4F2EE;
+  border: 1px solid rgba(217, 165, 74, 0.42);
+}
+:root[data-theme="dark"] .rail .av {
+  background: #1A2C4A;
+  color: #F4F2EE;
+  border-color: rgba(217, 165, 74, 0.45);
+}
+
+.rail-nav button.nav-item:hover,
+.rail-nav a.rail-showcase-link:hover {
+  background: rgba(15, 30, 56, 0.045);
+}
+:root[data-theme="dark"] .rail-nav button.nav-item:hover,
+:root[data-theme="dark"] .rail-nav a.rail-showcase-link:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.rail-nav button.nav-item.on .nav-ico,
+.hub-subtab.active svg.ic {
+  color: var(--ink);
+}
+:root[data-theme="dark"] .rail-nav button.nav-item.on .nav-ico,
+:root[data-theme="dark"] .hub-subtab.active svg.ic {
+  color: var(--brass);
+}
+
+.entity-picker-trigger .ep-seg .ep-seg-kicker,
+.ep-seg-kicker {
+  background: rgba(15, 30, 56, 0.06) !important;
+  color: var(--muted) !important;
+}
+:root[data-theme="dark"] .entity-picker-trigger .ep-seg .ep-seg-kicker,
+:root[data-theme="dark"] .ep-seg-kicker {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--muted) !important;
+}
+
+.grain-btn.active,
+.pbi-grain-btn.active {
+  background: var(--ink);
+  color: var(--surface);
+  box-shadow: 0 1px 2px rgba(15, 30, 56, 0.14);
+}
+:root[data-theme="dark"] .grain-btn.active,
+:root[data-theme="dark"] .pbi-grain-btn.active {
+  background: #2C466E;
+  color: #F4F2EE;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.32);
+}
+
+/* Ask ISABI Trigger: Crisp Ink Plate Emblem (reserving solid Brass for + New Entry CTA) */
+.ask-isabi-trigger {
+  background: #0B1730;
+  color: #F4F2EE;
+  border: 1px solid #0B1730;
+}
+.ask-isabi-trigger svg g[fill="#F4F2EE"] {
+  fill: #F4F2EE;
+}
+.ask-isabi-trigger:hover {
+  background: #162B50;
+  color: #FFFFFF;
+  border-color: #162B50;
+}
+.ask-isabi-trigger:hover svg g[fill="#F4F2EE"] {
+  fill: #FFFFFF;
+}
+
+/* 4. Calm Executive Telemetry Strip (.cockpit-pill.insight-card) */
+.cockpit-pill-tag,
+.cockpit-pill-tag.good,
+.cockpit-pill-tag.brass,
+.cockpit-pill-tag.info {
+  background: var(--m-chip);
+  color: var(--muted);
+}
+.cockpit-pill.insight-card .cockpit-pill-val.emerald,
+.cockpit-pill.insight-card .cockpit-pill-val.brass {
+  color: var(--ink);
+}
+:root[data-theme="dark"] .cockpit-pill.insight-card .cockpit-pill-val.brass {
+  color: var(--brass);
+}
+.tone-emerald .cockpit-meter-fill.primary {
+  background: var(--chart-steel);
 }
 
 /* Shared All-BUs subtle micro-pill inside Domain Table Picker & + New Entry Modal */

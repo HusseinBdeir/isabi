@@ -10,6 +10,131 @@
 (function () {
   'use strict';
 
+  // Institutional Rev 10 Dataviz Palette (Light & Dark CSS-variable backed, zero murky teal or twin near-blacks)
+  const C = {
+    navy: 'var(--chart-navy, #162D50)',
+    steel: 'var(--chart-steel, #2E74B5)',
+    brass: 'var(--chart-brass, #C0892F)',
+    slate: 'var(--chart-slate, #7A889B)',
+    amber: 'var(--chart-amber, #C96A22)',
+    plum: 'var(--chart-plum, #6B5B95)',
+    good: 'var(--chart-good, #1F7A4C)',
+    goodSoft: 'var(--chart-good-soft, #6BA888)',
+    crit: 'var(--chart-crit, #C8333B)',
+    critSoft: 'var(--chart-crit-soft, #DF8A71)'
+  };
+
+  function normKey(v) {
+    return String(v == null ? '' : v).trim().toLowerCase();
+  }
+
+  function pickTopAggregateGrades(prodRows, limit = 4, productsCatalog = null) {
+    const list = Array.isArray(prodRows) ? prodRows : [];
+    const catArr = Array.isArray(productsCatalog)
+      ? productsCatalog
+      : ((typeof window !== 'undefined' && window.SEED && window.SEED.records && window.SEED.records.products) || []);
+    const catMap = new Map();
+    catArr.forEach(c => { if (c && (c.name || c.Product)) catMap.set(normKey(c.name || c.Product), c); });
+    const nonAggRe = /\b(truck|shacman|mixer|pump|excavator|excavation|loader|bulldozer|diesel|oil|grease|benzin|mazout|rent|transportation|commission|discount|vat|insurance|tire|wheel|battery|filter|hammer)\b/i;
+    const agg = list
+      .filter(p => {
+        if (!p || !(Number(p.qty_sold || 0) > 0)) return false;
+        const uomLow = normKey(p.UoM || '');
+        if (uomLow === 'unit' || uomLow === 'litre' || uomLow === 'kg') return false;
+        const cat = catMap.get(normKey(p.Product));
+        if (cat && cat.type) return normKey(cat.type) === 'material';
+        return !nonAggRe.test(`${p.Product || ''} ${p['Material Family'] || ''}`);
+      })
+      .sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0));
+    const volFallback = list
+      .filter(p => Number(p && p.qty_sold || 0) > 0 && !nonAggRe.test(`${(p && p.Product) || ''} ${(p && p['Material Family']) || ''}`))
+      .sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0));
+    const pool = agg.length ? agg : (volFallback.length ? volFallback : [...list].sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0)));
+    return pool.slice(0, limit);
+  }
+
+  const _YM_SHORT_IDX = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
+  function monthRowToYmKey(mRow) {
+    if (!mRow) return '';
+    if (mRow.ym) return String(mRow.ym).slice(0, 7);
+    const ymNo = String(mRow.YearMonthNo || '');
+    if (/^\d{6}$/.test(ymNo)) return `${ymNo.slice(0, 4)}-${ymNo.slice(4, 6)}`;
+    const lbl = String(mRow['Year Month'] || mRow.month || '').trim();
+    if (/^\d{4}-\d{2}/.test(lbl)) return lbl.slice(0, 7);
+    const m = lbl.match(/^([A-Za-z]{3})[a-z]*\s+(\d{4})$/);
+    if (m) {
+      const mm = _YM_SHORT_IDX[m[1].toLowerCase()];
+      if (mm) return `${m[2]}-${mm}`;
+    }
+    return '';
+  }
+
+  function buildMonthlyGradePriceSeries(months, topProds, salesRows, opts = {}) {
+    const colors = opts.colors || [C.navy, C.brass, C.steel, C.amber];
+    const mList = Array.isArray(months) ? months : [];
+    const pList = Array.isArray(topProds) ? topProds : [];
+    const tickets = Array.isArray(salesRows) ? salesRows : [];
+    const basis = opts.basis === 'tx' ? 'tx' : 'rep';
+    const ticketMetersFn = typeof opts.ticketMeters === 'function' ? opts.ticketMeters : null;
+    const ticketSignFn = typeof opts.ticketSign === 'function' ? opts.ticketSign : null;
+    const roundFn = v => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+
+    const ymSet = new Set(mList.map(monthRowToYmKey).filter(Boolean));
+    const prodSet = new Set(pList.map(p => normKey(p && p.Product)).filter(Boolean));
+    const bucketMap = new Map();
+    const prodHasTickets = new Set();
+
+    if (ymSet.size && prodSet.size && tickets.length) {
+      for (let i = 0; i < tickets.length; i++) {
+        const r = tickets[i];
+        if (!r || r.voided) continue;
+        const pk = normKey(r.product);
+        if (!prodSet.has(pk)) continue;
+        let sgn = 1;
+        if (ticketSignFn) {
+          sgn = ticketSignFn(r);
+        } else {
+          const mth = String(r.method || '').trim();
+          if (mth === 'C Return' || mth === 'CR Return' || mth === 'Cash Return' || mth === 'Credit Return') sgn = -1;
+          else if (mth === 'Free' || mth === 'Remove' || mth === 'Config' || mth === 'VATConfig') sgn = 0;
+        }
+        if (sgn === 0) continue;
+        const ym = String((basis === 'tx' ? r.date : (r.rep_date || r.date)) || '').slice(0, 7);
+        if (!ymSet.has(ym)) continue;
+        const qUnit = ticketMetersFn
+          ? ticketMetersFn(r)
+          : (/truck/i.test(String(r.uom || '')) ? Number(r.qty || 0) * 27 : Number(r.qty || 0));
+        const m3 = sgn * qUnit;
+        const mat = sgn * Number(r.price != null ? r.price : (Number(r.total || 0) - Number(r.trans_price || 0)));
+        if (!m3 && !mat) continue;
+        const bKey = `${pk}|${ym}`;
+        const prev = bucketMap.get(bKey);
+        if (prev) { prev.m3 += m3; prev.mat += mat; }
+        else bucketMap.set(bKey, { m3, mat });
+        if (m3 > 0) prodHasTickets.add(pk);
+      }
+    }
+
+    return pList.map((p, idx) => {
+      const pk = normKey(p.Product);
+      const hasTickets = prodHasTickets.has(pk);
+      return {
+        label: p.Product,
+        color: colors[idx % colors.length],
+        get: mRow => {
+          const ym = monthRowToYmKey(mRow);
+          if (hasTickets) {
+            const b = ym ? bucketMap.get(`${pk}|${ym}`) : null;
+            return b && b.m3 > 0.001 ? roundFn(b.mat / b.m3) : null;
+          }
+          if (tickets.length > 0 && bucketMap.size > 0) return null;
+          const fallback = Number(p.avg_price_net || p.avg_price_ttc || 0);
+          return fallback > 0 ? roundFn(fallback) : null;
+        }
+      };
+    });
+  }
+
   const PBI_PAGES = [
     { id: 'p01_overview', num: '01', label: 'Executive Pulse', title: 'Executive P&L, Margin, AR/AP & Fleet Overview' },
     { id: 'p02_companies', num: '02', label: 'Entity Comparison', title: 'Side-by-Side Entity Comparison (WTC · BBConstruction · Lions Transport)' },
@@ -1046,11 +1171,11 @@
           idx: si,
           label: s.label || s.key || 'Series',
           value: fVal,
-          color: s.color || '#1E293B',
+          color: s.color || C.navy,
           tone: val < -0.001 ? 'crit' : ''
         });
         const showTopLbl = opts.labels && Math.abs(val) > maxVal * 0.08 && data.length <= 10;
-        return `<rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${s.color || '#1E293B'}" data-series-idx="${si}"/>` +
+        return `<rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${s.color || C.navy}" data-series-idx="${si}"/>` +
           (showTopLbl ? `<text x="${(Number(x) + barW / 2).toFixed(1)}" y="${Math.max(11, Number(y) - 4)}" text-anchor="middle" font-size="8.8" font-weight="700" fill="var(--ink)">${isMoney ? fmtUSDk(val) : fmtNum(val, 0)}</text>` : '');
       }).join('');
       const colBadge = (r.loads != null && Number(r.loads) > 0 && !series.some(s => /load/i.test(s.label || '')))
@@ -1104,7 +1229,7 @@
         : '';
       return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="rgba(128,138,158,0.18)" stroke-dasharray="3 3"/>
               <text x="${padL - 6}" y="${Number(y) + 3}" text-anchor="end" font-size="9.5" fill="var(--muted)">${lbl}</text>
-              ${rLbl ? `<text x="${W - padR + 5}" y="${Number(y) + 3}" text-anchor="start" font-size="9" fill="${lineSpec.color || '#0D9488'}">${rLbl}</text>` : ''}`;
+              ${rLbl ? `<text x="${W - padR + 5}" y="${Number(y) + 3}" text-anchor="start" font-size="9" fill="${lineSpec.color || C.brass}">${rLbl}</text>` : ''}`;
     }).join('');
 
     const pts = [];
@@ -1125,10 +1250,10 @@
           idx: si,
           label: s.label || s.key || 'Series',
           value: fVal,
-          color: s.color || '#1E293B',
+          color: s.color || C.navy,
           tone: val < -0.001 ? 'crit' : ''
         });
-        return `<rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${s.color || '#1E293B'}" data-series-idx="${si}"/>`;
+        return `<rect x="${x}" y="${y}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${s.color || C.navy}" data-series-idx="${si}"/>`;
       }).join('');
       let colBadge = '';
       if (lineSpec) {
@@ -1140,7 +1265,7 @@
           idx: barSeries.length,
           label: lineSpec.label || lineSpec.key || 'Trend',
           value: lFmt,
-          color: lineSpec.color || '#0D9488',
+          color: lineSpec.color || C.brass,
           line: true,
           isTotal: true,
           tone: lv < -0.0001 ? 'crit' : 'brass'
@@ -1155,8 +1280,8 @@
     }).join('');
 
     const lineSvg = (lineSpec && pts.length > 1)
-      ? `<polyline fill="none" stroke="${lineSpec.color || '#0D9488'}" stroke-width="2.4" pointer-events="none" points="${pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}"/>` +
-        pts.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.6" fill="${lineSpec.color || '#0D9488'}" stroke="var(--surface)" stroke-width="1.2" style="cursor:pointer" data-chart-pop="${encodeChartPop(p.popSpec)}" data-series-idx="${barSeries.length}"/>`).join('')
+      ? `<polyline fill="none" stroke="${lineSpec.color || C.brass}" stroke-width="2.4" pointer-events="none" points="${pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}"/>` +
+        pts.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.6" fill="${lineSpec.color || C.brass}" stroke="var(--surface)" stroke-width="1.2" style="cursor:pointer" data-chart-pop="${encodeChartPop(p.popSpec)}" data-series-idx="${barSeries.length}"/>`).join('')
       : '';
 
     return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">${grid}${cols}${lineSvg}</svg>`;
@@ -1198,7 +1323,7 @@
       const x = (cx - barW / 2).toFixed(1);
       const h = Math.max(Math.abs(v) > 0 ? 3 : 0, (Math.abs(v) / span) * plotH);
       const y = v >= 0 ? (zeroY - h) : zeroY;
-      const color = d.color || (v < 0 ? '#1E7A6E' : '#1E293B');
+      const color = d.color || (v < 0 ? C.slate : C.navy);
       const valLbl = isMoney ? fmtUSDk(v) : fmtNum(v, 0);
       const fullVal = isMoney ? fmtUSD(v, 2) : fmtNum(v, 2);
       const lblY = v >= 0 ? Math.max(12, y - 5) : Math.min(H - 22, y + h + 12);
@@ -1275,7 +1400,7 @@
           idx: si,
           label: s.label || s.key || 'Series',
           value: isMoney ? fmtUSD(v, decimals) : fmtNum(v, decimals),
-          color: s.color || '#1E293B',
+          color: s.color || C.navy,
           line: true
         });
       });
@@ -1304,17 +1429,29 @@
 
     const lines = series.map((s, si) => {
       const pts = [];
+      const segments = [];
+      let curSeg = [];
       data.forEach((r, i) => {
         const raw = typeof s.get === 'function' ? s.get(r) : r[s.key];
-        if (raw == null || raw === '') return;
+        if (raw == null || raw === '') {
+          if (curSeg.length) { segments.push(curSeg); curSeg = []; }
+          return;
+        }
         const v = Number(raw);
         const x = data.length > 1 ? padL + i * stepX : padL + plotW / 2;
         const y = padT + plotH * (1 - (v - minVal) / span);
-        pts.push({ x, y, v, popSpec: colSpecs[i].popSpec });
+        const pt = { x, y, v, popSpec: colSpecs[i].popSpec };
+        pts.push(pt);
+        curSeg.push(pt);
       });
+      if (curSeg.length) segments.push(curSeg);
       if (!pts.length) return '';
-      return `<polyline fill="none" stroke="${s.color || '#1E293B'}" stroke-width="2.3" pointer-events="none" points="${pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}"/>` +
-        pts.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.4" fill="${s.color || '#1E293B'}" stroke="var(--surface)" stroke-width="1.2" style="cursor:pointer" data-chart-pop="${encodeChartPop(p.popSpec)}" data-series-idx="${si}"/>`).join('');
+      const segHtml = segments
+        .filter(seg => seg.length > 1)
+        .map(seg => `<polyline fill="none" stroke="${s.color || C.navy}" stroke-width="2.3" pointer-events="none" points="${seg.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')}"/>`)
+        .join('');
+      return segHtml +
+        pts.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.4" fill="${s.color || C.navy}" stroke="var(--surface)" stroke-width="1.2" style="cursor:pointer" data-chart-pop="${encodeChartPop(p.popSpec)}" data-series-idx="${si}"/>`).join('');
     }).join('');
 
     return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">${grid}${colBands}${lines}</svg>`;
@@ -1335,7 +1472,7 @@
     if (!top.length) return `<div style="padding:18px;text-align:center;color:var(--muted);font-size:12px">No rows for active filter</div>`;
     const max = Math.max(1, ...top.map(r => Math.abs(Number(r[valKey] || 0))));
     const totAbs = top.reduce((a, r) => a + Math.abs(Number(r[valKey] || 0)), 0) || 1;
-    const defaultColor = opts.color === 'brass' ? '#0F766E' : (opts.color === 'crit' ? '#C8333B' : (opts.color || '#1E293B'));
+    const defaultColor = opts.color === 'brass' ? C.brass : (opts.color === 'steel' ? C.steel : (opts.color === 'crit' ? C.crit : (opts.color || C.navy)));
     return `
       <div class="pbi-bar-chart">
         ${top.map((r, i) => {
@@ -1343,7 +1480,7 @@
           const pct = Math.max(3, Math.min(100, Math.round((Math.abs(v) / max) * 100)));
           const sharePct = ((Math.abs(v) / totAbs) * 100).toFixed(1) + '%';
           const sub = opts.subKey && r[opts.subKey] ? ` <small>· ${esc(r[opts.subKey])}</small>` : '';
-          const barColor = v < 0 ? '#C8333B' : (typeof opts.colorFn === 'function' ? opts.colorFn(r, i) : defaultColor);
+          const barColor = v < 0 ? C.crit : (typeof opts.colorFn === 'function' ? opts.colorFn(r, i) : defaultColor);
           const fmtTxt = String(fmtFn(v, r) || '').replace(/<[^>]+>/g, '').trim();
           const popRows = [
             { label: opts.valLabel || 'Amount / Total', value: fmtTxt, color: barColor, tone: v < 0 ? 'crit' : '' }
@@ -1394,7 +1531,7 @@
               idx: si,
               label: s.label || s.key || 'Series',
               value: fTxt,
-              color: v < 0 ? '#C8333B' : (s.color || '#1E293B'),
+              color: v < 0 ? C.crit : (s.color || C.navy),
               tone: v < 0 ? 'crit' : ''
             };
           });
@@ -1412,7 +1549,7 @@
               return `
                 <div class="pbi-cbar-series" data-series-idx="${si}">
                   <span>${esc(s.label)}</span>
-                  <div class="pbi-bar-lane" style="height:11px"><div class="pbi-bar-fill" style="width:${pct}%;background:${v < 0 ? '#C8333B' : (s.color || '#1E293B')}"></div></div>
+                  <div class="pbi-bar-lane" style="height:11px"><div class="pbi-bar-fill" style="width:${pct}%;background:${v < 0 ? C.crit : (s.color || C.navy)}"></div></div>
                   <b class="${v < 0 ? 'pbi-neg' : ''}">${s.fmt ? s.fmt(v, r) : fmtUSD(v, opts.decimals != null ? opts.decimals : 2)}</b>
                 </div>
               `;
@@ -1807,11 +1944,12 @@
         if (!productMeters) return p;
         const m3 = productMeters(p.Product, p.qty_sold, p.UoM);
         const rawM3 = productMeters(p.Product, p.raw_qty, p.UoM);
+        const matRev = p.mat_sales != null ? p.mat_sales : p.net_sales;
         return Object.assign({}, p, {
           qty_sold: round2(m3),
           raw_qty: round2(rawM3),
           avg_price_ttc: m3 > 0 && p.sales_ttc != null ? round2(Number(p.sales_ttc) / m3) : p.avg_price_ttc,
-          avg_price_net: m3 > 0 && p.net_sales != null ? round2(Number(p.net_sales) / m3) : p.avg_price_net,
+          avg_price_net: m3 > 0 && matRev != null ? round2(Number(matRev) / m3) : p.avg_price_net,
           avg_raw_cost: rawM3 > 0 && p.raw_cost != null ? round2(Number(p.raw_cost) / rawM3) : p.avg_raw_cost
         });
       });
@@ -1821,16 +1959,20 @@
         salesPool.forEach(s => {
           const pk = norm(s.product);
           if (!pk) return;
+          const mth = String(s.method || '').trim();
+          const sgn = (mth === 'C Return' || mth === 'CR Return' || mth === 'Cash Return' || mth === 'Credit Return') ? -1
+            : ((mth === 'Free' || mth === 'Remove' || mth === 'Config' || mth === 'VATConfig') ? 0 : 1);
+          if (sgn === 0) return;
           const cur = pMap.get(pk) || { loads: 0, qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
-          const q = ticketMeters ? ticketMeters(s) : Number(s.qty || 0);
-          const ttc = Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
-          const net = Number(s.total != null ? s.total : (ttc - Number(s.vat || 0)));
-          cur.loads += 1;
+          const q = sgn * (ticketMeters ? ticketMeters(s) : Number(s.qty || 0));
+          const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+          const mat = sgn * Number(s.price != null ? s.price : (Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0))) - Number(s.trans_price || 0)));
+          if (sgn === 1) cur.loads += 1;
           cur.qty_sold += q;
-          cur.tons_sold += ticketTons ? ticketTons(s) : (s.uom === 'm³' ? q * 1.5 : q);
+          cur.tons_sold += sgn * (ticketTons ? ticketTons(s) : (s.uom === 'm³' ? Math.abs(q) * 1.5 : Math.abs(q)));
           cur.sales_ttc += ttc;
-          cur.net_sales += net;
-          cur.trans_rev += Number(s.trans_price || 0);
+          cur.net_sales += mat;
+          cur.trans_rev += sgn * Number(s.trans_price || 0);
           pMap.set(pk, cur);
         });
         rawPool.forEach(r => {
@@ -2565,27 +2707,27 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Sales vs costs by month', buildComboChartSvg(months, [
-            { key: 'sales_ttc', label: 'Sales incl. VAT', color: '#1E293B' },
-            { key: 'raw_cost', label: 'Raw material cost', color: '#8A94A6' },
-            { key: 'expenses', label: 'Expenses', color: '#C8333B' }
-          ], { label: 'Operating profit', key: 'operating_profit', color: '#0D9488', isMoney: true }, { shareAxis: true }), {
+            { key: 'sales_ttc', label: 'Sales incl. VAT', color: C.navy },
+            { key: 'raw_cost', label: 'Raw material cost', color: C.slate },
+            { key: 'expenses', label: 'Expenses', color: C.crit }
+          ], { label: 'Operating profit', key: 'operating_profit', color: C.brass, isMoney: true }, { shareAxis: true }), {
             subtitle: 'Monthly Sales TTC vs Raw Material Cost & Operating Expenses with Operating Profit line',
-            legend: [{ label: 'Sales TTC', color: '#1E293B' }, { label: 'Raw Cost', color: '#8A94A6' }, { label: 'Expenses', color: '#C8333B' }, { label: 'Op. Profit', color: '#0D9488', line: true }]
+            legend: [{ label: 'Sales TTC', color: C.navy }, { label: 'Raw Cost', color: C.slate }, { label: 'Expenses', color: C.crit }, { label: 'Op. Profit', color: C.brass, line: true }]
           })}
           ${pbiPanel('Cash in vs cash out by month', buildClusteredColumnSvg(months, [
-            { key: 'cash_in', label: 'Cash In', color: '#1E7A6E' },
-            { key: 'cash_out', label: 'Cash Out', color: '#C8333B' }
+            { key: 'cash_in', label: 'Cash In', color: C.good },
+            { key: 'cash_out', label: 'Cash Out', color: C.crit }
           ]), {
             subtitle: 'All cash inflows (cash sales, receipts, external in) vs outflows (settlements, cash expenses, salaries)',
-            legend: [{ label: 'Cash In', color: '#1E7A6E' }, { label: 'Cash Out', color: '#C8333B' }]
+            legend: [{ label: 'Cash In', color: C.good }, { label: 'Cash Out', color: C.crit }]
           })}
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('Sales by material (Top aggregate grades)', buildHorizontalBarChart(prodRows, 'Product', 'sales_ttc', v => fmtUSD(v, 0), { subKey: 'Material Family', color: '#1E293B' }), {
+          ${pbiPanel('Sales by material (Top aggregate grades)', buildHorizontalBarChart(prodRows, 'Product', 'sales_ttc', v => fmtUSD(v, 0), { subKey: 'Material Family', color: C.navy }), {
             subtitle: 'Ranked by gross revenue incl. VAT (TTC)'
           })}
-          ${pbiPanel('Top customers by sales & open AR', buildHorizontalBarChart(custRows, 'Customer', 'sales_ttc', v => fmtUSD(v, 0), { subKey: 'VAT Registered', color: '#0F766E' }), {
+          ${pbiPanel('Top customers by sales & open AR', buildHorizontalBarChart(custRows, 'Customer', 'sales_ttc', v => fmtUSD(v, 0), { subKey: 'VAT Registered', color: C.steel }), {
             subtitle: 'Ranked by total sales TTC in selected period'
           })}
         </div>
@@ -2682,13 +2824,13 @@
         ])}
         <div class="pbi-grid-2">
           ${pbiPanel('Monthly Sales TTC — WTC vs BBConstruction', buildClusteredColumnSvg(compMonths, [
-            { key: 'wtc_sales', label: 'WTC', color: '#1E293B' },
-            { key: 'bbc_sales', label: 'BBConstruction', color: '#0D9488' }
-          ]), { legend: [{ label: 'WTC', color: '#1E293B' }, { label: 'BBConstruction', color: '#0D9488' }] })}
+            { key: 'wtc_sales', label: 'WTC', color: C.navy },
+            { key: 'bbc_sales', label: 'BBConstruction', color: C.steel }
+          ]), { legend: [{ label: 'WTC', color: C.navy }, { label: 'BBConstruction', color: C.steel }] })}
           ${pbiPanel('Monthly Operating Profit — WTC vs BBConstruction', buildClusteredColumnSvg(compMonths, [
-            { key: 'wtc_profit', label: 'WTC Profit', color: '#1E7A6E' },
-            { key: 'bbc_profit', label: 'BBC Profit', color: '#0F766E' }
-          ]), { legend: [{ label: 'WTC Profit', color: '#1E7A6E' }, { label: 'BBC Profit', color: '#0F766E' }] })}
+            { key: 'wtc_profit', label: 'WTC Profit', color: C.navy },
+            { key: 'bbc_profit', label: 'BBC Profit', color: C.brass }
+          ]), { legend: [{ label: 'WTC Profit', color: C.navy }, { label: 'BBC Profit', color: C.brass }] })}
         </div>
         <div class="pbi-grid-1">
           ${pbiTable('Consolidated Multi-Entity Financial & Operational Matrix', [
@@ -2827,19 +2969,34 @@
     // PAGE 04: SALES & DELIVERIES (m18c_report.py Page 04 — 2 bands + 6 charts + 4 tables)
     // =========================================================================
     else if (activePageId === 'p04_sales') {
-      // Top 4 material products monthly price trend
-      const top4Prods = prodRows.slice(0, 4);
-      const prodColors = ['#0F172A', '#1E293B', '#0D9488', '#1E7A6E'];
-      const priceSeries = top4Prods.map((p, idx) => ({
-        label: p.Product,
-        color: prodColors[idx % prodColors.length],
-        get: mRow => {
-          const base = Number(p.avg_price_net || p.avg_price_ttc || 15);
-          const mAvg = Number(mRow.avg_price_net || 15);
-          const gAvg = Number(k.avg_price_net || 15) || 15;
-          return round2(base * (mAvg / gAvg));
+      // Top 4 material products monthly price trend (excluding non-aggregate equipment/fuel sales)
+      const allCoSalesRows = filterRecords(rec.sales_tickets, { ignorePeriod: true, ignoreSearch: true });
+      const trendSalesPool = !hasAnySlicer ? allCoSalesRows : allCoSalesRows.filter(r => {
+        if (!matchCommon(r)) return false;
+        if (sl.shift) {
+          const isNight = !!r.overtime;
+          if (sl.shift === 'Night' && !isNight) return false;
+          if (sl.shift === 'Day' && isNight) return false;
         }
-      }));
+        if (sl.overtimeFlag === 'Yes' && !r.overtime) return false;
+        if (sl.overtimeFlag === 'No' && r.overtime) return false;
+        return true;
+      });
+      const top4Prods = pickTopAggregateGrades(prodRows, 4, rec.products);
+      const prodColors = [C.navy, C.brass, C.steel, C.amber];
+      const priceSeries = buildMonthlyGradePriceSeries(months, top4Prods, trendSalesPool, {
+        basis: STATE.basis,
+        ticketMeters,
+        colors: prodColors
+      });
+      const volGradeRows = prodRows.filter(p => Number(p && p.qty_sold || 0) > 0);
+      const volM3Sum = volGradeRows.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
+      const volMatAvg = volM3Sum > 0
+        ? round2(volGradeRows.reduce((a, p) => a + Number(p.mat_sales != null ? p.mat_sales : (p.net_sales != null ? p.net_sales : (Number(p.avg_price_net || 0) * Number(p.qty_sold || 0)))), 0) / volM3Sum)
+        : k.avg_price_net;
+      const volTtcAvg = volM3Sum > 0
+        ? round2(volGradeRows.reduce((a, p) => a + Number(p.sales_ttc || 0), 0) / volM3Sum)
+        : k.avg_price_ttc;
 
       bodyHtml = `
         <div class="pbi-overview-bands">
@@ -2857,29 +3014,29 @@
             { label: 'Pick-up Loads', value: fmtNum(sc(k.pickup_loads), 0), sub: 'Material only (customer truck)' },
             { label: 'Quantity Sold (m³)', value: fmtNum(sc(k.qty_sold), 0) + ' m³', sub: 'Converted to m³ (1 Truck = 27 m³)' },
             { label: 'Tons Sold (Converted)', value: fmtNum(sc(k.tons_sold), 0) + ' t', sub: 'Using grade ton_factor', tone: 'good' },
-            { label: 'Avg Realised Price', value: fmtUSD(k.avg_price_ttc, 2), sub: 'Ex-VAT: ' + fmtUSD(k.avg_price_net, 2) + '/m³', tone: 'brass' }
+            { label: 'Avg Realised Price', value: fmtUSD(volTtcAvg, 2), sub: 'Material ex-VAT: ' + fmtUSD(volMatAvg, 2) + '/m³', tone: 'brass' }
           ])}
         </div>
 
         <div class="pbi-grid-2">
           ${pbiPanel('Cash vs credit sales by month', buildClusteredColumnSvg(months, [
-            { key: 'credit_sales', label: 'Credit Sales', color: '#1E293B' },
-            { key: 'cash_sales', label: 'Cash Sales', color: '#1E7A6E' }
-          ]), { legend: [{ label: 'Credit', color: '#1E293B' }, { label: 'Cash', color: '#1E7A6E' }] })}
-          ${pbiPanel('Realised price per unit by month — top material products', buildMultiLineSvg(months, priceSeries, { isMoney: true, decimals: 2 }), {
-            subtitle: 'Monthly ex-VAT realised unit price trajectory across top 4 aggregate grades (m199 fixed product colors)',
+            { key: 'credit_sales', label: 'Credit Sales', color: C.navy },
+            { key: 'cash_sales', label: 'Cash Sales', color: C.steel }
+          ]), { legend: [{ label: 'Credit', color: C.navy }, { label: 'Cash', color: C.steel }] })}
+          ${pbiPanel('Realised price per unit ($/m³) by month · top aggregate grades', buildMultiLineSvg(months, priceSeries, { isMoney: true, decimals: 2 }), {
+            subtitle: 'Monthly realised material price ($/m³ ex-transport & VAT) from weighbridge tickets across top 4 aggregate grades',
             legend: priceSeries.map(s => ({ label: s.label, color: s.color, line: true }))
           })}
         </div>
 
         <div class="pbi-grid-3">
-          ${pbiPanel('Sales by material', buildHorizontalBarChart(prodRows, 'Product', 'sales_ttc', v => fmtUSD(v, 0), { color: '#1E293B', maxItems: 8 }), { subtitle: 'Gross revenue TTC ($)' })}
-          ${pbiPanel('Quantity sold by material (m³)', buildHorizontalBarChart(prodRows, 'Product', 'qty_sold', v => fmtNum(v, 0) + ' m³', { color: '#8A94A6', maxItems: 8 }), { subtitle: 'Volume converted to m³ (1 Truck = 27 m³)' })}
-          ${pbiPanel('Average price per m³ by material', buildHorizontalBarChart(prodRows, 'Product', 'avg_price_net', v => fmtUSD(v, 2), { color: '#0F766E', maxItems: 8 }), { subtitle: 'Realised ex-VAT $/m³' })}
+          ${pbiPanel('Sales by material', buildHorizontalBarChart(prodRows, 'Product', 'sales_ttc', v => fmtUSD(v, 0), { color: C.navy, maxItems: 8 }), { subtitle: 'Gross revenue TTC ($)' })}
+          ${pbiPanel('Quantity sold by material (m³)', buildHorizontalBarChart(prodRows, 'Product', 'qty_sold', v => fmtNum(v, 0) + ' m³', { color: C.slate, maxItems: 8 }), { subtitle: 'Volume converted to m³ (1 Truck = 27 m³)' })}
+          ${pbiPanel('Average price per m³ by material', buildHorizontalBarChart(pickTopAggregateGrades(prodRows, 8, rec.products), 'Product', 'avg_price_net', v => fmtUSD(v, 2), { color: C.brass, maxItems: 8 }), { subtitle: 'Realised material ex-VAT $/m³' })}
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiTable('Products — volume, revenue, list vs realised price', [
+          ${pbiTable('Products · volume, revenue, list vs realised price', [
             { label: 'Product / Grade', key: 'Product', fmt: (v, r) => `<b>${esc(v || '—')}</b>${r && r['Material Family'] && r['Material Family'] !== v ? ` <span class="mu">· ${esc(r['Material Family'])}</span>` : ''}` },
             { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v) },
             { label: 'Qty (m³)', key: 'qty_sold', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '—' },
@@ -2922,8 +3079,8 @@
       const siteRules = allRules.filter(r => /Purchase|Transport/i.test(r.rule_type || ''));
       const commRules = allRules.filter(r => /Commission/i.test(r.rule_type || ''));
 
-      // Product price comparison (Agreed vs Realised vs List)
-      const prodPriceComp = prodRows.slice(0, 8).map(p => {
+      // Product price comparison (Agreed vs Realised vs List — aggregate m³ grades only so equipment sales never distort $/m³ scale)
+      const prodPriceComp = pickTopAggregateGrades(prodRows, 8, rec.products).map(p => {
         const pRules = salesRules.filter(r => norm(r.product) === norm(p.Product) && Number(r.unit_price || 0) > 0);
         const avgAgreed = pRules.length ? pRules.reduce((a, r) => a + Number(r.unit_price || 0), 0) / pRules.length : (p.list_price || p.avg_price_net || 0);
         const minP = pRules.length ? Math.min(...pRules.map(r => Number(r.unit_price))) : Number(p.avg_price_net || 0) * 0.9;
@@ -2960,18 +3117,18 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Agreed vs realised vs list price per unit (by material)', buildClusteredBarChart(prodPriceComp, 'Product', [
-            { label: 'Agreed', key: 'agreed', color: '#8A94A6' },
-            { label: 'Realised', key: 'realised', color: '#1E293B' },
-            { label: 'List Price', key: 'list', color: '#0D9488' }
+            { label: 'Agreed', key: 'agreed', color: C.slate },
+            { label: 'Realised', key: 'realised', color: C.navy },
+            { label: 'List Price', key: 'list', color: C.brass }
           ]), { subtitle: 'Comparison of average agreed price, actual realised net price, and standard list price per unit' })}
 
           ${pbiPanel('Spread by product — lowest, highest and list price', buildClusteredColumnSvg(prodPriceComp, [
-            { key: 'lowest', label: 'Lowest Agreed', color: '#8A94A6' },
-            { key: 'highest', label: 'Highest Agreed', color: '#1E293B' },
-            { key: 'list', label: 'List Price', color: '#0D9488' }
+            { key: 'lowest', label: 'Lowest Agreed', color: C.slate },
+            { key: 'highest', label: 'Highest Agreed', color: C.navy },
+            { key: 'list', label: 'List Price', color: C.brass }
           ], { labelKey: 'Product', labels: true }), {
             subtitle: 'Price corridor across active customer agreements vs standard list price',
-            legend: [{ label: 'Lowest', color: '#8A94A6' }, { label: 'Highest', color: '#1E293B' }, { label: 'List', color: '#0D9488' }]
+            legend: [{ label: 'Lowest', color: C.slate }, { label: 'Highest', color: C.navy }, { label: 'List', color: C.brass }]
           })}
         </div>
 
@@ -3056,14 +3213,14 @@
         arMonths[arMonths.length - 1].ar_net_m = round2(arBal);
       }
 
-      // 6-bucket AR Aging signed vertical column data (matches Screenshot 2: Current, 1-10, 11-30, 31-60, 60+, On account)
+      // 6-bucket AR Aging signed vertical column data (Current, 1-10, 11-30, 31-60, 60+, On account)
       const agingBuckets = [
-        { label: 'Current', value: arCur, color: '#1E293B' },
-        { label: '1-10', value: ar1_10, color: '#1E293B' },
-        { label: '11-30', value: ar11_30, color: '#1E293B' },
-        { label: '31-60', value: ar31_60, color: '#0D9488' },
-        { label: '60+', value: ar60p, color: '#C8333B' },
-        { label: 'On account', value: onAcctSigned, color: '#1E7A6E' }
+        { label: 'Current', value: arCur, color: C.navy },
+        { label: '1-10', value: ar1_10, color: C.navy },
+        { label: '11-30', value: ar11_30, color: C.steel },
+        { label: '31-60', value: ar31_60, color: C.brass },
+        { label: '60+', value: ar60p, color: C.crit },
+        { label: 'On account', value: onAcctSigned, color: C.slate }
       ];
 
       // Build Customer Running Statement (every ticket + receipt in chronological order with running balance)
@@ -3108,18 +3265,18 @@
         <!-- Row 1 Charts: Credit sales vs receipts by month + Customers owing at month end -->
         <div class="pbi-grid-2">
           ${pbiPanel('Credit sales vs receipts by month', buildClusteredColumnSvg(arMonths, [
-            { key: 'credit_sales', label: 'Credit sales', color: '#1E293B' },
-            { key: 'receipts', label: 'Receipts', color: '#1E7A6E' }
+            { key: 'credit_sales', label: 'Credit sales', color: C.navy },
+            { key: 'receipts', label: 'Receipts', color: C.steel }
           ]), {
             subtitle: 'Monthly credit billings vs customer cash/check collections',
-            legend: [{ label: 'Credit sales', color: '#1E293B' }, { label: 'Receipts', color: '#1E7A6E' }]
+            legend: [{ label: 'Credit sales', color: C.navy }, { label: 'Receipts', color: C.steel }]
           })}
           ${pbiPanel('Customers owing at month end — gross, advances, net', buildComboChartSvg(arMonths, [
-            { key: 'ar_gross_m', label: 'Gross', color: '#1E293B' },
-            { key: 'ar_adv_m', label: 'Advances', color: '#8A94A6' }
-          ], { label: 'Net', key: 'ar_net_m', color: '#0F172A', isMoney: true }, { shareAxis: true }), {
+            { key: 'ar_gross_m', label: 'Gross', color: C.navy },
+            { key: 'ar_adv_m', label: 'Advances', color: C.slate }
+          ], { label: 'Net', key: 'ar_net_m', color: C.brass, isMoney: true }, { shareAxis: true }), {
             subtitle: 'Gross owing vs customer advances (on account) and Net AR trajectory',
-            legend: [{ label: 'Gross', color: '#1E293B' }, { label: 'Advances', color: '#8A94A6' }, { label: 'Net', color: '#0F172A', line: true }]
+            legend: [{ label: 'Gross', color: C.navy }, { label: 'Advances', color: C.slate }, { label: 'Net', color: C.brass, line: true }]
           })}
         </div>
 
@@ -3127,9 +3284,9 @@
         <div class="pbi-grid-2">
           ${pbiPanel('AR aging', buildSignedColumnSvg(agingBuckets, { isMoney: true }), {
             subtitle: 'FIFO open receivables by aging bucket · On account (unapplied customer advances) shown below zero',
-            legend: [{ label: 'Current–30d', color: '#1E293B' }, { label: '31–60d', color: '#0D9488' }, { label: '60+ Overdue', color: '#C8333B' }, { label: 'On account', color: '#1E7A6E' }]
+            legend: [{ label: 'Current–30d', color: C.navy }, { label: '31–60d', color: C.brass }, { label: '60+ Overdue', color: C.crit }, { label: 'On account', color: C.slate }]
           })}
-          ${pbiPanel('Balance by customer', buildHorizontalBarChart(arCustRows, 'Customer', 'ar_balance', v => fmtUSDk(v), { color: '#1E293B', maxItems: 10 }), {
+          ${pbiPanel('Balance by customer', buildHorizontalBarChart(arCustRows, 'Customer', 'ar_balance', v => fmtUSDk(v), { color: C.navy, maxItems: 10 }), {
             subtitle: 'Top customer balances as at period end (FIFO allocated)'
           })}
         </div>
@@ -3255,22 +3412,22 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Accrued vs settled by month (Raw + Expenses vs Settlements)', buildClusteredColumnSvg(months, [
-            { label: 'Raw + Credit Exp', color: '#C8333B', get: r => Number(r.raw_cost || 0) + Number(r.credit_expenses || 0) },
-            { label: 'Settlements Paid', key: 'settlements_paid', color: '#1E7A6E' }
+            { label: 'Raw + Credit Exp', color: C.crit, get: r => Number(r.raw_cost || 0) + Number(r.credit_expenses || 0) },
+            { label: 'Settlements Paid', key: 'settlements_paid', color: C.steel }
           ]), {
             subtitle: 'Monthly supplier accruals (raw material + haulage + credit expenses) vs supplier settlements paid',
-            legend: [{ label: 'Accrued (Raw + Credit Exp)', color: '#C8333B' }, { label: 'Settlements Paid', color: '#1E7A6E' }]
+            legend: [{ label: 'Accrued (Raw + Credit Exp)', color: C.crit }, { label: 'Settlements Paid', color: C.steel }]
           })}
-          ${pbiPanel('Expenses by category', buildHorizontalBarChart(catList, 'Category', 'amount', v => fmtUSD(v, 0), { subKey: 'costClass', color: '#0F766E', maxItems: 10 }), {
+          ${pbiPanel('Expenses by category', buildHorizontalBarChart(catList, 'Category', 'amount', v => fmtUSD(v, 0), { subKey: 'costClass', color: C.steel, maxItems: 10 }), {
             subtitle: 'Top expense categories in the selected period'
           })}
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('Payables by supplier / hauler', buildHorizontalBarChart([...suppRows].sort((a, b) => Number(b.ap_balance || 0) - Number(a.ap_balance || 0)), 'Supplier', 'ap_balance', v => fmtUSD(v, 0), { subKey: 'IVA', color: '#1E293B', maxItems: 10 }), {
+          ${pbiPanel('Payables by supplier / hauler', buildHorizontalBarChart([...suppRows].sort((a, b) => Number(b.ap_balance || 0) - Number(a.ap_balance || 0)), 'Supplier', 'ap_balance', v => fmtUSD(v, 0), { subKey: 'IVA', color: C.navy, maxItems: 10 }), {
             subtitle: 'Net closing AP balance (+ owed by company, − advance to supplier)'
           })}
-          ${pbiPanel('Raw material & haulage volume by supplier', buildHorizontalBarChart([...suppRows].sort((a, b) => Number(b.raw_cost || 0) - Number(a.raw_cost || 0)), 'Supplier', 'raw_cost', v => fmtUSD(v, 0), { color: '#8A94A6', maxItems: 10 }), {
+          ${pbiPanel('Raw material & haulage volume by supplier', buildHorizontalBarChart([...suppRows].sort((a, b) => Number(b.raw_cost || 0) - Number(a.raw_cost || 0)), 'Supplier', 'raw_cost', v => fmtUSD(v, 0), { color: C.slate, maxItems: 10 }), {
             subtitle: 'Total raw material + haulage accrued'
           })}
         </div>
@@ -3319,18 +3476,18 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Unit economics by month — raw cost vs selling price ($/unit)', buildMultiLineSvg(months, [
-            { label: 'Avg Selling Price (ex-VAT)', key: 'avg_price_net', color: '#1E293B' },
-            { label: 'Avg Raw Cost / unit', key: 'avg_raw_cost', color: '#C8333B' }
+            { label: 'Avg Selling Price (ex-VAT)', key: 'avg_price_net', color: C.navy },
+            { label: 'Avg Raw Cost / unit', key: 'avg_raw_cost', color: C.crit }
           ], { isMoney: true, decimals: 2 }), {
             subtitle: 'Monthly unit spread between realised ex-VAT selling price and raw material intake cost',
-            legend: [{ label: 'Selling Price ($/u)', color: '#1E293B', line: true }, { label: 'Raw Cost ($/u)', color: '#C8333B', line: true }]
+            legend: [{ label: 'Selling Price ($/u)', color: C.navy, line: true }, { label: 'Raw Cost ($/u)', color: C.crit, line: true }]
           })}
           ${pbiPanel('Transport revenue vs truck haulage cost by month', buildComboChartSvg(months, [
-            { key: 'trans_rev', label: 'Transport Revenue', color: '#1E7A6E' },
-            { key: 'raw_haulage', label: '3rd-Party Haulage Cost', color: '#C8333B' }
-          ], { label: 'Recovery %', color: '#0D9488', isPct: true, get: r => Number(r.raw_haulage || 0) > 0 ? Number(r.trans_rev || 0) / Number(r.raw_haulage) : 1 }), {
+            { key: 'trans_rev', label: 'Transport Revenue', color: C.steel },
+            { key: 'raw_haulage', label: '3rd-Party Haulage Cost', color: C.crit }
+          ], { label: 'Recovery %', color: C.brass, isPct: true, get: r => Number(r.raw_haulage || 0) > 0 ? Number(r.trans_rev || 0) / Number(r.raw_haulage) : 1 }), {
             subtitle: 'Delivery transport billed to customers vs third-party raw haulage cost',
-            legend: [{ label: 'Trans Revenue', color: '#1E7A6E' }, { label: 'Haulage Cost', color: '#C8333B' }, { label: 'Recovery %', color: '#0D9488', line: true }]
+            legend: [{ label: 'Trans Revenue', color: C.steel }, { label: 'Haulage Cost', color: C.crit }, { label: 'Recovery %', color: C.brass, line: true }]
           })}
         </div>
 
@@ -3384,14 +3541,14 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Diesel bought, issued and sold by month with balance in tank', buildComboChartSvg(months, [
-            { key: 'diesel_bought', label: 'Bought (L)', color: '#1E7A6E' },
-            { key: 'diesel_issued', label: 'Issued (L)', color: '#1E293B' },
-            { key: 'diesel_sold', label: 'Sold (L)', color: '#0D9488' }
-          ], { label: 'Tank Balance (L)', key: 'diesel_tank', color: '#C8333B', isMoney: false }, { isMoney: false }), {
+            { key: 'diesel_bought', label: 'Bought (L)', color: C.steel },
+            { key: 'diesel_issued', label: 'Issued (L)', color: C.navy },
+            { key: 'diesel_sold', label: 'Sold (L)', color: C.brass }
+          ], { label: 'Tank Balance (L)', key: 'diesel_tank', color: C.crit, isMoney: false }, { isMoney: false }), {
             subtitle: 'Monthly bulk diesel purchases vs fleet issues and tank balance trajectory',
-            legend: [{ label: 'Bought', color: '#1E7A6E' }, { label: 'Issued', color: '#1E293B' }, { label: 'Sold', color: '#0D9488' }, { label: 'Tank (L)', color: '#C8333B', line: true }]
+            legend: [{ label: 'Bought', color: C.steel }, { label: 'Issued', color: C.navy }, { label: 'Sold', color: C.brass }, { label: 'Tank (L)', color: C.crit, line: true }]
           })}
-          ${pbiPanel('Diesel issued by equipment unit (Litres)', buildHorizontalBarChart(topDieselUnits, 'Equipment', 'diesel_litres', v => fmtNum(v, 0) + ' L', { subKey: 'Type', color: '#1E293B', maxItems: 10 }), {
+          ${pbiPanel('Diesel issued by equipment unit (Litres)', buildHorizontalBarChart(topDieselUnits, 'Equipment', 'diesel_litres', v => fmtNum(v, 0) + ' L', { subKey: 'Type', color: C.navy, maxItems: 10 }), {
             subtitle: 'Top fuel-consuming trucks, loaders, excavators and plant generators'
           })}
         </div>
@@ -3436,10 +3593,10 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Fleet cost by month (Equipment & maintenance)', buildClusteredColumnSvg(months, [
-            { key: 'equip_cost', label: 'Fleet Total Cost', color: '#1E293B' },
-            { key: 'expenses', label: 'General Expenses', color: '#8A94A6' }
-          ]), { legend: [{ label: 'Fleet Cost', color: '#1E293B' }, { label: 'All Expenses', color: '#8A94A6' }] })}
-          ${pbiPanel('Cost by equipment unit (Running + Driver)', buildHorizontalBarChart(activeUnits, 'Equipment', 'total_cost', v => fmtUSD(v, 0), { subKey: 'Type', color: '#0F766E', maxItems: 10 }), {
+            { key: 'equip_cost', label: 'Fleet Total Cost', color: C.navy },
+            { key: 'expenses', label: 'General Expenses', color: C.slate }
+          ]), { legend: [{ label: 'Fleet Cost', color: C.navy }, { label: 'All Expenses', color: C.slate }] })}
+          ${pbiPanel('Cost by equipment unit (Running + Driver)', buildHorizontalBarChart(activeUnits, 'Equipment', 'total_cost', v => fmtUSD(v, 0), { subKey: 'Type', color: C.steel, maxItems: 10 }), {
             subtitle: 'Top cost-bearing plant and fleet units in the selected period'
           })}
         </div>
@@ -3504,13 +3661,13 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Overtime bonus vs delivery loads by month', buildComboChartSvg(months, [
-            { key: 'delivery_loads', label: 'Delivery Loads', color: '#1E293B' },
-            { key: 'raw_loads', label: 'Raw Loads', color: '#8A94A6' }
-          ], { label: 'Overtime Bonus ($)', key: 'overtime_due', color: '#0D9488', isMoney: true }, { isMoney: false }), {
+            { key: 'delivery_loads', label: 'Delivery Loads', color: C.navy },
+            { key: 'raw_loads', label: 'Raw Loads', color: C.slate }
+          ], { label: 'Overtime Bonus ($)', key: 'overtime_due', color: C.brass, isMoney: true }, { isMoney: false }), {
             subtitle: 'Monthly dispatch loads vs accrued driver overtime bonus ($)',
-            legend: [{ label: 'Delivery Loads', color: '#1E293B' }, { label: 'Raw Loads', color: '#8A94A6' }, { label: 'OT Bonus ($)', color: '#0D9488', line: true }]
+            legend: [{ label: 'Delivery Loads', color: C.navy }, { label: 'Raw Loads', color: C.slate }, { label: 'OT Bonus ($)', color: C.brass, line: true }]
           })}
-          ${pbiPanel('Trips by driver (Sales + Raw sample)', buildHorizontalBarChart(drvList, 'driver', 'trips', v => fmtNum(v) + ' trips', { subKey: 'trucksStr', color: '#1E293B', maxItems: 10 }), {
+          ${pbiPanel('Trips by driver (Sales + Raw sample)', buildHorizontalBarChart(drvList, 'driver', 'trips', v => fmtNum(v) + ' trips', { subKey: 'trucksStr', color: C.navy, maxItems: 10 }), {
             subtitle: 'Top drivers by dispatched trips in the active sample'
           })}
         </div>
@@ -3720,26 +3877,26 @@
         <!-- 4 Charts: Earnings vs Paid by month, OT & Lateness hours by month, Earnings by staff, OT by staff -->
         <div class="pbi-grid-2">
           ${pbiPanel('Earnings vs paid by month', buildClusteredColumnSvg(payMonths, [
-            { key: 'earnings_m', label: 'Earnings', color: '#8A94A6' },
-            { key: 'paid_m', label: 'Paid', color: '#1E293B' }
+            { key: 'earnings_m', label: 'Earnings', color: C.slate },
+            { key: 'paid_m', label: 'Paid', color: C.navy }
           ]), {
             subtitle: 'Monthly accrued staff earnings (base + overtime + site allowance) vs salary cash disbursements',
-            legend: [{ label: 'Earnings', color: '#8A94A6' }, { label: 'Paid', color: '#1E293B' }]
+            legend: [{ label: 'Earnings', color: C.slate }, { label: 'Paid', color: C.navy }]
           })}
           ${pbiPanel('Overtime and lateness hours by month', buildClusteredColumnSvg(payMonths, [
-            { key: 'ot_hrs_m', label: 'Overtime hrs', color: '#0D9488' },
-            { key: 'late_hrs_m', label: 'Lateness hrs', color: '#C8333B' }
+            { key: 'ot_hrs_m', label: 'Overtime hrs', color: C.steel },
+            { key: 'late_hrs_m', label: 'Lateness hrs', color: C.crit }
           ], { isMoney: false }), {
             subtitle: 'Monthly logged overtime hours vs lateness hours',
-            legend: [{ label: 'Overtime hrs', color: '#0D9488' }, { label: 'Lateness hrs', color: '#C8333B' }]
+            legend: [{ label: 'Overtime hrs', color: C.steel }, { label: 'Lateness hrs', color: C.crit }]
           })}
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('Earnings by staff member', buildHorizontalBarChart(staffPayrollRows, 'staff', 'earnings', v => fmtUSD(v, 0), { subKey: 'company', color: '#1E293B', maxItems: 10 }), {
+          ${pbiPanel('Earnings by staff member', buildHorizontalBarChart(staffPayrollRows, 'staff', 'earnings', v => fmtUSD(v, 0), { subKey: 'company', color: C.navy, maxItems: 10 }), {
             subtitle: 'Top staff members ranked by total earnings in period'
           })}
-          ${pbiPanel('Overtime & allowance by staff member', buildHorizontalBarChart(staffPayrollRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: '#0F766E', maxItems: 10 }), {
+          ${pbiPanel('Overtime & allowance by staff member', buildHorizontalBarChart(staffPayrollRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
             subtitle: 'Staff ranked by accrued site allowance & overtime'
           })}
         </div>
@@ -3817,10 +3974,10 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Site allowance accrued vs paid by month', buildClusteredColumnSvg(payMonths, [
-            { key: 'sa_accrued', label: 'Accrued', color: '#8A94A6' },
-            { key: 'sa_paid', label: 'Paid', color: '#1E293B' }
-          ]), { legend: [{ label: 'Accrued', color: '#8A94A6' }, { label: 'Paid', color: '#1E293B' }] })}
-          ${pbiPanel('Site allowance accrued by staff member', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: '#8A94A6', maxItems: 10 }), {
+            { key: 'sa_accrued', label: 'Accrued', color: C.slate },
+            { key: 'sa_paid', label: 'Paid', color: C.navy }
+          ]), { legend: [{ label: 'Accrued', color: C.slate }, { label: 'Paid', color: C.navy }] })}
+          ${pbiPanel('Site allowance accrued by staff member', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
             subtitle: 'Accrued daily site allowance by posted staff member'
           })}
         </div>
@@ -3947,9 +4104,9 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Output vs input VAT by month', buildClusteredColumnSvg(months.map(r => ({ ...r, in_vat: round2(Number(r.expenses || 0) * 0.025) })), [
-            { key: 'sales_vat', label: 'Output VAT (11%)', color: '#1E293B' },
-            { key: 'in_vat', label: 'Input VAT', color: '#C8333B' }
-          ]), { legend: [{ label: 'Output VAT', color: '#1E293B' }, { label: 'Input VAT', color: '#C8333B' }] })}
+            { key: 'sales_vat', label: 'Output VAT (11%)', color: C.navy },
+            { key: 'in_vat', label: 'Input VAT', color: C.steel }
+          ]), { legend: [{ label: 'Output VAT', color: C.navy }, { label: 'Input VAT', color: C.steel }] })}
 
           ${pbiTable('Quarterly VAT position', [
             { label: 'Year · Quarter', key: 'Quarter', bold: true, mono: true },
@@ -3961,8 +4118,8 @@
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('Output VAT by customer', buildHorizontalBarChart(vatCusts, 'Customer', 'sales_vat', v => fmtUSD(v, 0), { color: '#1E293B', maxItems: 8 }), { subtitle: 'Top IVA customers by 11% output VAT' })}
-          ${pbiPanel('VAT receivable (due) by customer', buildHorizontalBarChart([...vatCusts].sort((a, b) => Number(b.vat_receivable || 0) - Number(a.vat_receivable || 0)), 'Customer', 'vat_receivable', v => fmtUSD(v, 0), { color: '#0D9488', maxItems: 8 }), { subtitle: 'Uncollected 11% VAT inside open AR' })}
+          ${pbiPanel('Output VAT by customer', buildHorizontalBarChart(vatCusts, 'Customer', 'sales_vat', v => fmtUSD(v, 0), { color: C.navy, maxItems: 8 }), { subtitle: 'Top IVA customers by 11% output VAT' })}
+          ${pbiPanel('VAT receivable (due) by customer', buildHorizontalBarChart([...vatCusts].sort((a, b) => Number(b.vat_receivable || 0) - Number(a.vat_receivable || 0)), 'Customer', 'vat_receivable', v => fmtUSD(v, 0), { color: C.brass, maxItems: 8 }), { subtitle: 'Uncollected 11% VAT inside open AR' })}
         </div>
 
         <div class="pbi-grid-1">
@@ -4138,11 +4295,11 @@
           };
 
           return `<g class="cf-chart-bar pbi-chart-col${isSel ? ' is-selected' : ''}" ${d.ymIso ? `data-cf-focus-ym="${esc(d.ymIso)}"` : ''} data-chart-pop="${encodeChartPop(popSpec)}">` +
-            `<rect class="cf-bar-hit pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${(grpW - 2).toFixed(1)}" height="${plotH + 22}" rx="4" fill="${isSel ? 'rgba(13,148,136,0.10)' : 'transparent'}"/>` +
-            (hOpIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yOpIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpIn.toFixed(1)}" fill="#1C8C46" rx="1.5"/>` : '') +
-            (hTrIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yTrIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTrIn.toFixed(1)}" fill="#6BB38B" rx="1.5"/>` : '') +
-            (hOpOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yOpOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpOut.toFixed(1)}" fill="#C8333B" rx="1.5"/>` : '') +
-            (hTrOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yTrOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTrOut.toFixed(1)}" fill="#DF8A71" rx="1.5"/>` : '') +
+            `<rect class="cf-bar-hit pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${(grpW - 2).toFixed(1)}" height="${plotH + 22}" rx="4" fill="${isSel ? 'rgba(46,116,181,0.12)' : 'transparent'}"/>` +
+            (hOpIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yOpIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpIn.toFixed(1)}" fill="${C.good}" rx="1.5"/>` : '') +
+            (hTrIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yTrIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTrIn.toFixed(1)}" fill="${C.goodSoft}" rx="1.5"/>` : '') +
+            (hOpOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yOpOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpOut.toFixed(1)}" fill="${C.crit}" rx="1.5"/>` : '') +
+            (hTrOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yTrOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTrOut.toFixed(1)}" fill="${C.critSoft}" rx="1.5"/>` : '') +
             `<text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="9.3" font-weight="${isSel ? '800' : '500'}" fill="${isSel ? 'var(--brass)' : 'var(--muted)'}">${esc(shortLbl)}</text>` +
             `</g>`;
         }).join('');
@@ -4186,16 +4343,16 @@
           const isNeg = d.val <= -0.5;
           const lbpUsdEq = Math.abs(Number(d.lbp || 0)) / rateNum;
           const isLbpDom = !isZeroBar && !isNeg && lbpUsdEq > Math.abs(Number(d.usd || 0)) + 1;
-          const fill = isZeroBar ? '#1C8C46' : (isNeg ? '#C8333B' : (isLbpDom ? '#0F766E' : '#334155'));
+          const fill = isZeroBar ? C.good : (isNeg ? C.crit : (isLbpDom ? C.steel : C.navy));
           const isSel = (d.ymIso && opts.selectedYm === d.ymIso) || (d.dateIso && opts.selectedDate === d.dateIso);
           const drillAttr = d.dateIso ? `data-cf-focus-date="${esc(d.dateIso)}"` : (d.ymIso ? `data-cf-focus-ym="${esc(d.ymIso)}"` : '');
 
           let barShape = '';
           let valLbl = '';
           if (isZeroBar) {
-            barShape = `<circle cx="${cx.toFixed(1)}" cy="${yZero.toFixed(1)}" r="${isDaily ? '3.2' : '4.2'}" fill="#1C8C46" stroke="var(--surface)" stroke-width="1.2"/>`;
+            barShape = `<circle cx="${cx.toFixed(1)}" cy="${yZero.toFixed(1)}" r="${isDaily ? '3.2' : '4.2'}" fill="${C.good}" stroke="var(--surface)" stroke-width="1.2"/>`;
             if (!isDaily || i === items.length - 1) {
-              valLbl = `<text x="${cx.toFixed(1)}" y="${(yZero - 8).toFixed(1)}" text-anchor="middle" font-size="8.6" font-weight="700" fill="#1C8C46">$0</text>`;
+              valLbl = `<text x="${cx.toFixed(1)}" y="${(yZero - 8).toFixed(1)}" text-anchor="middle" font-size="8.6" font-weight="700" fill="${C.good}">$0</text>`;
             }
           } else {
             const yVal = yOf(d.val);
@@ -4206,7 +4363,7 @@
             if (showVal) {
               const txt = (d.val < 0 ? '-$' : '$') + Math.round(Math.abs(d.val)).toLocaleString('en-US');
               const lblY = isNeg ? Math.min(H - 22, rectY + rectH + 10) : Math.max(12, rectY - 5);
-              valLbl = `<text x="${cx.toFixed(1)}" y="${lblY.toFixed(1)}" text-anchor="middle" font-size="8.8" font-weight="700" fill="${isNeg ? '#C8333B' : 'var(--ink)'}">${txt}</text>`;
+              valLbl = `<text x="${cx.toFixed(1)}" y="${lblY.toFixed(1)}" text-anchor="middle" font-size="8.8" font-weight="700" fill="${isNeg ? C.crit : 'var(--ink)'}">${txt}</text>`;
             }
           }
 
@@ -4217,13 +4374,13 @@
 
           const lbpEqStr = Math.abs(d.lbp || 0) > 5 ? ` (${fmtUSD((d.lbp || 0) / rateNum, 2)} eq.)` : '';
           const popRows = [
-            { label: 'USD Physical Drawer', value: fmtUSD(cleanUsd(d.usd, 0.05), 2), color: '#334155' },
-            { label: 'LBP Physical Drawer', value: fmtLL(d.lbp || 0) + lbpEqStr, color: '#0F766E' },
+            { label: 'USD Physical Drawer', value: fmtUSD(cleanUsd(d.usd, 0.05), 2), color: C.navy },
+            { label: 'LBP Physical Drawer', value: fmtLL(d.lbp || 0) + lbpEqStr, color: C.steel },
             { label: 'Combined Closing Till', value: fmtUSD(d.val, 2), isTotal: true, tone: isZeroBar ? 'good' : (isNeg ? 'crit' : 'brass') }
           ];
           if (d.inUsd != null) {
-            popRows.push({ label: 'Period Cash Inflows', value: fmtUSD(d.inUsd, 0), color: '#1C8C46' });
-            popRows.push({ label: 'Period Cash Outflows', value: fmtUSD(d.outUsd, 0), color: '#C8333B' });
+            popRows.push({ label: 'Period Cash Inflows', value: fmtUSD(d.inUsd, 0), color: C.good });
+            popRows.push({ label: 'Period Cash Outflows', value: fmtUSD(d.outUsd, 0), color: C.crit });
           }
           const popSpec = {
             title: d.fullLbl || d.shortLbl,
@@ -4234,7 +4391,7 @@
           };
 
           return `<g class="cf-chart-bar pbi-chart-col${isSel ? ' is-selected' : ''}" ${drillAttr} data-chart-pop="${encodeChartPop(popSpec)}">` +
-            `<rect class="cf-bar-hit pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${(grpW - 2).toFixed(1)}" height="${plotH + 22}" rx="4" fill="${isSel ? 'rgba(13,148,136,0.10)' : 'transparent'}"/>` +
+            `<rect class="cf-bar-hit pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${(grpW - 2).toFixed(1)}" height="${plotH + 22}" rx="4" fill="${isSel ? 'rgba(46,116,181,0.12)' : 'transparent'}"/>` +
             `${barShape}${valLbl}${xLbl}` +
             `</g>`;
         }).join('');
@@ -4399,10 +4556,10 @@
           ${pbiPanel('Monthly Cash Inflows vs Outflows — Operating vs Treasury Sweeps', buildCashFlowSplitColumnSvg(months, focusYm), {
             subtitle: 'Left column = Inflows · Right column = Outflows · Click any month to filter entries below',
             legend: [
-              { label: 'Op. Cash In (Sales+AR)', color: '#1C8C46' },
-              { label: 'Treasury / FX In', color: '#6BB38B' },
-              { label: 'Op. Cash Out (Exp+AP+Sal)', color: '#C8333B' },
-              { label: 'Sweeps / FX Out', color: '#DF8A71' }
+              { label: 'Op. Cash In (Sales+AR)', color: C.good },
+              { label: 'Treasury / FX In', color: C.goodSoft },
+              { label: 'Op. Cash Out (Exp+AP+Sal)', color: C.crit },
+              { label: 'Sweeps / FX Out', color: C.critSoft }
             ]
           })}
           ${pbiPanel(chartGrain === 'daily' ? 'Closing Cash Till — Last 30 Operating Days' : 'Closing Cash Till — Month-End Balance ($)', buildTillBalanceChartSvg(tillChartItems, { rate: rateLbp, isDaily: chartGrain === 'daily', selectedYm: focusYm, selectedDate: focusDate }), {
@@ -4410,10 +4567,10 @@
               ? 'End-of-day physical drawer balance anchored at $0 · Click any day to inspect entries'
               : 'Month-end physical drawer balance anchored at $0 (no flow overlay) · Hover for USD + LBP split',
             legend: [
-              { label: 'USD Drawer (+)', color: '#334155' },
-              { label: 'LBP Drawer (+)', color: '#0F766E' },
-              { label: 'Timing Deficit (<$0)', color: '#C8333B' },
-              { label: 'Balanced ($0)', color: '#1C8C46' }
+              { label: 'USD Drawer (+)', color: C.navy },
+              { label: 'LBP Drawer (+)', color: C.steel },
+              { label: 'Timing Deficit (<$0)', color: C.crit },
+              { label: 'Balanced ($0)', color: C.good }
             ]
           })}
         </div>
@@ -4679,12 +4836,12 @@
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('External net by counterparty', buildHorizontalBarChart(cpList, 'Counterparty', 'net', v => fmtUSD(v, 0), { color: '#1E293B', maxItems: 8, sortAbs: true }), {
+          ${pbiPanel('External net by counterparty', buildHorizontalBarChart(cpList, 'Counterparty', 'net', v => fmtUSD(v, 0), { color: C.navy, maxItems: 8, sortAbs: true }), {
             subtitle: 'Net external treasury position by counterparty (+ net inflow, − net outflow)'
           })}
           ${pbiPanel('External revenue vs expense by counterparty', buildClusteredBarChart(cpList, 'Counterparty', [
-            { label: 'Inflow', key: 'rev', color: '#1E293B' },
-            { label: 'Outflow', key: 'exp', color: '#C8333B' }
+            { label: 'Inflow', key: 'rev', color: C.navy },
+            { label: 'Outflow', key: 'exp', color: C.crit }
           ], { decimals: 0 }), {
             subtitle: 'Gross external inflows vs outflows per counterparty'
           })}
@@ -4876,8 +5033,8 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('JV sites — Sales TTC vs Raw Material Cost', buildClusteredBarChart(jvSites, 'Site', [
-            { label: 'Sales TTC', key: 'sales_ttc', color: '#1E293B' },
-            { label: 'Raw Cost', key: 'raw_cost', color: '#0D9488' }
+            { label: 'Sales TTC', key: 'sales_ttc', color: C.navy },
+            { label: 'Raw Cost', key: 'raw_cost', color: C.steel }
           ], { decimals: 0 }), { subtitle: 'Volume comparison across the 3 Joint Venture sites' })}
 
           ${pbiTable('JV 50/50 Sites & Partner Stock Entitlement', [
@@ -4940,9 +5097,9 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Weighbridge loads by month — Sales vs Raw pads', buildClusteredColumnSvg(months, [
-            { key: 'loads', label: 'Sales Pad Tickets', color: '#1E293B' },
-            { key: 'raw_loads', label: 'Raw Pad Tickets', color: '#0D9488' }
-          ], { isMoney: false }), { legend: [{ label: 'Sales Pad', color: '#1E293B' }, { label: 'Raw Pad', color: '#0D9488' }] })}
+            { key: 'loads', label: 'Sales Pad Tickets', color: C.navy },
+            { key: 'raw_loads', label: 'Raw Pad Tickets', color: C.steel }
+          ], { isMoney: false }), { legend: [{ label: 'Sales Pad', color: C.navy }, { label: 'Raw Pad', color: C.steel }] })}
 
           ${pbiTable('Skipped & Duplicate Ticket Serials (m116 — Find Each Skipped Number Between Its Neighbours)', [
             { label: 'Serial / Gap #', key: 'serialLabel', mono: true, bold: true },
@@ -5067,12 +5224,12 @@
     else {
       const stCatalog = (ctx.STATEMENT_CATALOG || []).filter(s => !sl.reconSide || norm(s.cat) === norm(sl.reconSide));
       const bridgeSteps = [
-        { label: 'Sales TTC', value: Number(k.sales_ttc || 0), color: '#1E293B' },
-        { label: 'Less VAT 11%', value: -Number(k.sales_vat || 0), color: '#8A94A6' },
-        { label: 'Net Sales', value: Number(k.net_sales || 0), color: '#0F172A' },
-        { label: 'Raw Cost', value: -Number(k.raw_cost || 0), color: '#C8333B' },
-        { label: 'Gross Margin', value: Number(k.gross_margin || 0), color: '#1E7A6E' },
-        { label: 'Op. Profit', value: Number(k.operating_profit || 0), color: '#0D9488' }
+        { label: 'Sales TTC', value: Number(k.sales_ttc || 0), color: C.navy },
+        { label: 'Less VAT 11%', value: -Number(k.sales_vat || 0), color: C.slate },
+        { label: 'Net Sales', value: Number(k.net_sales || 0), color: C.steel },
+        { label: 'Raw Cost', value: -Number(k.raw_cost || 0), color: C.crit },
+        { label: 'Gross Margin', value: Number(k.gross_margin || 0), color: C.good },
+        { label: 'Op. Profit', value: Number(k.operating_profit || 0), color: C.brass }
       ];
 
       bodyHtml = `
@@ -5487,8 +5644,8 @@
 
       <!-- Table Picker Strip Grouped by Pure Business Domain -->
       <div class="panel-card" style="margin-bottom:12px;padding:10px 12px">
-        ${groups.map(g => `
-          <div style="margin-bottom:8px">
+        ${groups.map((g, gi) => `
+          <div style="${gi < groups.length - 1 ? 'margin-bottom:8px' : ''}">
             <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">${esc(g)}</div>
             <div class="chip-bar">
               ${tablePool.filter(t => t.group === g).map(t => {
@@ -5970,11 +6127,11 @@
         };
 
         return `<g class="cf-chart-bar pbi-chart-col${isSel ? ' is-selected' : ''}" ${d.ymIso ? `data-cf-focus-ym="${esc(d.ymIso)}"` : ''} data-chart-pop="${encodeChartPop(popSpec)}">` +
-          `<rect class="cf-bar-hit pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${(grpW - 2).toFixed(1)}" height="${plotH + 22}" rx="4" fill="${isSel ? 'rgba(13,148,136,0.10)' : 'transparent'}"/>` +
-          (hOpIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yOpIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpIn.toFixed(1)}" fill="#1C8C46" rx="1.5"/>` : '') +
-          (hTrIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yTrIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTrIn.toFixed(1)}" fill="#6BB38B" rx="1.5"/>` : '') +
-          (hOpOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yOpOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpOut.toFixed(1)}" fill="#C8333B" rx="1.5"/>` : '') +
-          (hTrOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yTrOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTrOut.toFixed(1)}" fill="#DF8A71" rx="1.5"/>` : '') +
+          `<rect class="cf-bar-hit pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${(grpW - 2).toFixed(1)}" height="${plotH + 22}" rx="4" fill="${isSel ? 'rgba(46,116,181,0.12)' : 'transparent'}"/>` +
+          (hOpIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yOpIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpIn.toFixed(1)}" fill="${C.good}" rx="1.5"/>` : '') +
+          (hTrIn > 0.4 ? `<rect x="${xIn.toFixed(1)}" y="${yTrIn.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTrIn.toFixed(1)}" fill="${C.goodSoft}" rx="1.5"/>` : '') +
+          (hOpOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yOpOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hOpOut.toFixed(1)}" fill="${C.crit}" rx="1.5"/>` : '') +
+          (hTrOut > 0.4 ? `<rect x="${xOut.toFixed(1)}" y="${yTrOut.toFixed(1)}" width="${barW.toFixed(1)}" height="${hTrOut.toFixed(1)}" fill="${C.critSoft}" rx="1.5"/>` : '') +
           `<text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="9.3" font-weight="${isSel ? '800' : '500'}" fill="${isSel ? 'var(--brass)' : 'var(--muted)'}">${esc(shortLbl)}</text>` +
           `</g>`;
       }).join('');
@@ -6018,16 +6175,16 @@
         const isNeg = d.val <= -0.5;
         const lbpUsdEq = Math.abs(Number(d.lbp || 0)) / rateNum;
         const isLbpDom = !isZeroBar && !isNeg && lbpUsdEq > Math.abs(Number(d.usd || 0)) + 1;
-        const fill = isZeroBar ? '#1C8C46' : (isNeg ? '#C8333B' : (isLbpDom ? '#0F766E' : '#334155'));
+        const fill = isZeroBar ? C.good : (isNeg ? C.crit : (isLbpDom ? C.steel : C.navy));
         const isSel = (d.ymIso && chartOpts.selectedYm === d.ymIso) || (d.dateIso && chartOpts.selectedDate === d.dateIso);
         const drillAttr = d.dateIso ? `data-cf-focus-date="${esc(d.dateIso)}"` : (d.ymIso ? `data-cf-focus-ym="${esc(d.ymIso)}"` : '');
 
         let barShape = '';
         let valLbl = '';
         if (isZeroBar) {
-          barShape = `<circle cx="${cx.toFixed(1)}" cy="${yZero.toFixed(1)}" r="${isDaily ? '3.2' : '4.2'}" fill="#1C8C46" stroke="var(--surface)" stroke-width="1.2"/>`;
+          barShape = `<circle cx="${cx.toFixed(1)}" cy="${yZero.toFixed(1)}" r="${isDaily ? '3.2' : '4.2'}" fill="${C.good}" stroke="var(--surface)" stroke-width="1.2"/>`;
           if (!isDaily || i === items.length - 1) {
-            valLbl = `<text x="${cx.toFixed(1)}" y="${(yZero - 8).toFixed(1)}" text-anchor="middle" font-size="8.6" font-weight="700" fill="#1C8C46">$0</text>`;
+            valLbl = `<text x="${cx.toFixed(1)}" y="${(yZero - 8).toFixed(1)}" text-anchor="middle" font-size="8.6" font-weight="700" fill="${C.good}">$0</text>`;
           }
         } else {
           const yVal = yOf(d.val);
@@ -6038,7 +6195,7 @@
           if (showVal) {
             const txt = (d.val < 0 ? '-$' : '$') + Math.round(Math.abs(d.val)).toLocaleString('en-US');
             const lblY = isNeg ? Math.min(H - 22, rectY + rectH + 10) : Math.max(12, rectY - 5);
-            valLbl = `<text x="${cx.toFixed(1)}" y="${lblY.toFixed(1)}" text-anchor="middle" font-size="8.8" font-weight="700" fill="${isNeg ? '#C8333B' : 'var(--ink)'}">${txt}</text>`;
+            valLbl = `<text x="${cx.toFixed(1)}" y="${lblY.toFixed(1)}" text-anchor="middle" font-size="8.8" font-weight="700" fill="${isNeg ? C.crit : 'var(--ink)'}">${txt}</text>`;
           }
         }
 
@@ -6049,13 +6206,13 @@
 
         const lbpEqStr = Math.abs(d.lbp || 0) > 5 ? ` (${fmtUSD((d.lbp || 0) / rateNum, 2)} eq.)` : '';
         const popRows = [
-          { label: 'USD Physical Drawer', value: fmtUSD(cleanUsd(d.usd, 0.05), 2), color: '#334155' },
-          { label: 'LBP Physical Drawer', value: fmtLL(d.lbp || 0) + lbpEqStr, color: '#0F766E' },
+          { label: 'USD Physical Drawer', value: fmtUSD(cleanUsd(d.usd, 0.05), 2), color: C.navy },
+          { label: 'LBP Physical Drawer', value: fmtLL(d.lbp || 0) + lbpEqStr, color: C.steel },
           { label: 'Combined Closing Till', value: fmtUSD(d.val, 2), isTotal: true, tone: isZeroBar ? 'good' : (isNeg ? 'crit' : 'brass') }
         ];
         if (d.inUsd != null) {
-          popRows.push({ label: 'Period Cash Inflows', value: fmtUSD(d.inUsd, 0), color: '#1C8C46' });
-          popRows.push({ label: 'Period Cash Outflows', value: fmtUSD(d.outUsd, 0), color: '#C8333B' });
+          popRows.push({ label: 'Period Cash Inflows', value: fmtUSD(d.inUsd, 0), color: C.good });
+          popRows.push({ label: 'Period Cash Outflows', value: fmtUSD(d.outUsd, 0), color: C.crit });
         }
         const popSpec = {
           title: d.fullLbl || d.shortLbl,
@@ -6066,7 +6223,7 @@
         };
 
         return `<g class="cf-chart-bar pbi-chart-col${isSel ? ' is-selected' : ''}" ${drillAttr} data-chart-pop="${encodeChartPop(popSpec)}">` +
-          `<rect class="cf-bar-hit pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${(grpW - 2).toFixed(1)}" height="${plotH + 22}" rx="4" fill="${isSel ? 'rgba(13,148,136,0.10)' : 'transparent'}"/>` +
+          `<rect class="cf-bar-hit pbi-col-hit" x="${(padL + i * grpW + 1).toFixed(1)}" y="${padT}" width="${(grpW - 2).toFixed(1)}" height="${plotH + 22}" rx="4" fill="${isSel ? 'rgba(46,116,181,0.12)' : 'transparent'}"/>` +
           `${barShape}${valLbl}${xLbl}` +
           `</g>`;
       }).join('');
@@ -6124,10 +6281,10 @@
         ${pbiPanel('Monthly Cash Inflows vs Outflows — Operating vs Treasury Sweeps', buildCashFlowSplitColumnSvg(months, focusYm), {
           subtitle: 'Left column = Inflows · Right column = Outflows · Click any month to filter entries',
           legend: [
-            { label: 'Op. Cash In (Sales+AR)', color: '#1C8C46' },
-            { label: 'Treasury / FX In', color: '#6BB38B' },
-            { label: 'Op. Cash Out (Exp+AP+Sal)', color: '#C8333B' },
-            { label: 'Sweeps / FX Out', color: '#DF8A71' }
+            { label: 'Op. Cash In (Sales+AR)', color: C.good },
+            { label: 'Treasury / FX In', color: C.goodSoft },
+            { label: 'Op. Cash Out (Exp+AP+Sal)', color: C.crit },
+            { label: 'Sweeps / FX Out', color: C.critSoft }
           ]
         })}
         ${pbiPanel(chartGrain === 'daily' ? 'Closing Cash Till — Last 30 Operating Days' : 'Closing Cash Till — Month-End Balance ($)', buildTillBalanceChartSvg(tillChartItems, { rate: rateLbp, isDaily: chartGrain === 'daily', selectedYm: focusYm, selectedDate: focusDate }), {
@@ -6135,10 +6292,10 @@
             ? 'End-of-day physical drawer balance anchored at $0 · Click any day to inspect entries'
             : 'Month-end physical drawer balance anchored at $0 (no flow overlay) · Hover for USD + LBP split',
           legend: [
-            { label: 'USD Drawer (+)', color: '#334155' },
-            { label: 'LBP Drawer (+)', color: '#0F766E' },
-            { label: 'Timing Deficit (<$0)', color: '#C8333B' },
-            { label: 'Balanced ($0)', color: '#1C8C46' }
+            { label: 'USD Drawer (+)', color: C.navy },
+            { label: 'LBP Drawer (+)', color: C.steel },
+            { label: 'Timing Deficit (<$0)', color: C.crit },
+            { label: 'Balanced ($0)', color: C.good }
           ]
         })}
       </div>
@@ -6148,30 +6305,30 @@
   function renderSalesVisualsSection(ctx) {
     const months = (ctx && ctx.months) || [];
     const prodRows = (ctx && ctx.prodRows) || [];
-    const k = (ctx && ctx.k) || {};
-    const top4Prods = prodRows.slice(0, 4);
-    const prodColors = ['#0F172A', '#1E293B', '#0D9488', '#1E7A6E'];
-    const priceSeries = top4Prods.map((p, idx) => ({
-      label: p.Product,
-      color: prodColors[idx % prodColors.length],
-      get: mRow => {
-        const base = Number(p.avg_price_net || p.avg_price_ttc || 15);
-        const mAvg = Number(mRow.avg_price_net || 15);
-        const gAvg = Number(k.avg_price_net || 15) || 15;
-        return round2(base * (mAvg / gAvg));
+    const top4Prods = pickTopAggregateGrades(prodRows, 4, ctx && ctx.productsCatalog);
+    const prodColors = [C.navy, C.brass, C.steel, C.amber];
+    const priceSeries = buildMonthlyGradePriceSeries(
+      months,
+      top4Prods,
+      (ctx && (ctx.trendSalesRows || ctx.salesRows)) || [],
+      {
+        basis: ctx && ctx.basis,
+        ticketMeters: ctx && ctx.ticketMeters,
+        ticketSign: ctx && ctx.ticketSign,
+        colors: prodColors
       }
-    }));
+    );
     return `
       <div class="pbi-grid-2" id="salesChartsRow" style="margin-bottom:14px">
         ${pbiPanel('Monthly Cash vs. Credit Sales ($)', buildClusteredColumnSvg(months, [
-          { key: 'credit_sales', label: 'Credit Sales', color: '#1E293B' },
-          { key: 'cash_sales', label: 'Cash Sales', color: '#1E7A6E' }
+          { key: 'credit_sales', label: 'Credit Sales', color: C.navy },
+          { key: 'cash_sales', label: 'Cash Sales', color: C.steel }
         ]), {
           subtitle: 'Monthly ex-VAT credit billings vs cash weighbridge sales',
-          legend: [{ label: 'Credit', color: '#1E293B' }, { label: 'Cash', color: '#1E7A6E' }]
+          legend: [{ label: 'Credit', color: C.navy }, { label: 'Cash', color: C.steel }]
         })}
-        ${pbiPanel('Realised Price per Unit ($/m³) by Month — Top Aggregate Grades', buildMultiLineSvg(months, priceSeries, { isMoney: true, decimals: 2 }), {
-          subtitle: 'Monthly ex-VAT realised unit price trajectory across top 4 aggregate grades',
+        ${pbiPanel('Realised Price per Unit ($/m³) by Month · Top Aggregate Grades', buildMultiLineSvg(months, priceSeries, { isMoney: true, decimals: 2 }), {
+          subtitle: 'Monthly realised material price ($/m³ ex-transport & VAT) from weighbridge tickets across top 4 aggregate grades',
           legend: priceSeries.map(s => ({ label: s.label, color: s.color, line: true }))
         })}
       </div>
@@ -6186,20 +6343,20 @@
         ${pbiPanel('FIFO AR Aging by Bucket ($)', buildSignedColumnSvg(agingBuckets, { isMoney: true }), {
           subtitle: 'FIFO open receivables by aging bucket · On account (unapplied customer advances) shown below zero',
           legend: [
-            { label: 'Current–30d', color: '#1E293B' },
-            { label: '31–60d', color: '#0D9488' },
-            { label: '60+ Overdue', color: '#C8333B' },
-            { label: 'On account', color: '#1E7A6E' }
+            { label: 'Current–30d', color: C.navy },
+            { label: '31–60d', color: C.brass },
+            { label: '60+ Overdue', color: C.crit },
+            { label: 'On account', color: C.slate }
           ]
         })}
         ${pbiPanel('Monthly Output vs. Input 11% VAT (Account 4427)', buildClusteredColumnSvg(months.map(r => ({ ...r, in_vat: round2(Number(r.expenses || 0) * 0.025) })), [
-          { key: 'sales_vat', label: 'Output VAT (11%)', color: '#1E293B' },
-          { key: 'in_vat', label: 'Input VAT', color: '#C8333B' }
+          { key: 'sales_vat', label: 'Output VAT (11%)', color: C.navy },
+          { key: 'in_vat', label: 'Input VAT', color: C.steel }
         ]), {
           subtitle: 'Monthly 11% Output VAT invoiced on IVA customers vs deductible Input VAT',
           legend: [
-            { label: 'Output VAT (11%)', color: '#1E293B' },
-            { label: 'Input VAT', color: '#C8333B' }
+            { label: 'Output VAT (11%)', color: C.navy },
+            { label: 'Input VAT', color: C.steel }
           ]
         })}
       </div>
@@ -6207,26 +6364,26 @@
   }
 
   function renderPricingVisualsSection(ctx) {
-    const prodPriceComp = (ctx && ctx.prodPriceComp) || [];
+    const prodPriceComp = pickTopAggregateGrades((ctx && ctx.prodPriceComp) || [], 8, ctx && ctx.productsCatalog);
     return `
       <div class="pbi-grid-2" id="pricingChartsRow" style="margin-bottom:14px">
-        ${pbiPanel('Agreed vs. Realised vs. List Price per Unit by Grade', buildClusteredBarChart(prodPriceComp, 'Product', [
-          { label: 'Agreed', key: 'agreed', color: '#8A94A6' },
-          { label: 'Realised', key: 'realised', color: '#1E293B' },
-          { label: 'List Price', key: 'list', color: '#0D9488' }
+        ${pbiPanel('Agreed vs. Realised vs. List Price per Unit ($/m³) by Grade', buildClusteredBarChart(prodPriceComp, 'Product', [
+          { label: 'Agreed', key: 'agreed', color: C.slate },
+          { label: 'Realised', key: 'realised', color: C.navy },
+          { label: 'List Price', key: 'list', color: C.brass }
         ]), {
-          subtitle: 'Average active customer agreement rate vs realised net price and standard list price'
+          subtitle: 'Average active customer agreement rate vs realised material net price ($/m³) and standard list price'
         })}
-        ${pbiPanel('Price Corridor by Grade — Lowest Agreed, Highest Agreed & List Price', buildClusteredColumnSvg(prodPriceComp, [
-          { key: 'lowest', label: 'Lowest Agreed', color: '#8A94A6' },
-          { key: 'highest', label: 'Highest Agreed', color: '#1E293B' },
-          { key: 'list', label: 'List Price', color: '#0D9488' }
+        ${pbiPanel('Price Corridor by Grade · Lowest Agreed, Highest Agreed & List Price', buildClusteredColumnSvg(prodPriceComp, [
+          { key: 'lowest', label: 'Lowest Agreed', color: C.slate },
+          { key: 'highest', label: 'Highest Agreed', color: C.navy },
+          { key: 'list', label: 'List Price', color: C.brass }
         ], { labelKey: 'Product', labels: true }), {
-          subtitle: 'Price corridor across active customer agreements vs standard list price',
+          subtitle: 'Price corridor across active customer agreements vs standard list price ($/m³)',
           legend: [
-            { label: 'Lowest', color: '#8A94A6' },
-            { label: 'Highest', color: '#1E293B' },
-            { label: 'List', color: '#0D9488' }
+            { label: 'Lowest', color: C.slate },
+            { label: 'Highest', color: C.navy },
+            { label: 'List', color: C.brass }
           ]
         })}
       </div>
@@ -6583,18 +6740,18 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Hydraulic Oil 68 issued vs normal benchmark by unit (L)', buildClusteredBarChart(hydTop, 'Equipment', [
-            { label: 'Actual Hyd 68', key: 'hyd_oil_l', color: '#C8333B', fmt: v => fmtNum(v, 0) + ' L' },
-            { label: 'Expected Top-Up', key: 'exp_hyd_l', color: '#8A94A6', fmt: v => fmtNum(v, 0) + ' L' }
+            { label: 'Actual Hyd 68', key: 'hyd_oil_l', color: C.crit, fmt: v => fmtNum(v, 0) + ' L' },
+            { label: 'Expected Top-Up', key: 'exp_hyd_l', color: C.slate, fmt: v => fmtNum(v, 0) + ' L' }
           ], { headRight: r => r.Type + (r.excess_hyd_l >= 30 ? ' · Excess +' + fmtNum(r.excess_hyd_l, 0) + ' L' : '') }), {
             subtitle: 'Red bar exceeding slate benchmark flags blown hydraulic hoses, cylinder rod seals or PTO pump leaks',
-            legend: [{ label: 'Actual Hyd 68 (L)', color: '#C8333B' }, { label: 'Normal Benchmark (L)', color: '#8A94A6' }]
+            legend: [{ label: 'Actual Hyd 68 (L)', color: C.crit }, { label: 'Normal Benchmark (L)', color: C.slate }]
           })}
           ${pbiPanel('Engine Oil 15W-40 issued vs service benchmark by unit (L)', buildClusteredBarChart(engTop, 'Equipment', [
-            { label: 'Actual 15W-40', key: 'engine_oil_l', color: '#1E293B', fmt: v => fmtNum(v, 0) + ' L' },
-            { label: 'Expected Service', key: 'exp_engine_l', color: '#0D9488', fmt: v => fmtNum(v, 0) + ' L' }
+            { label: 'Actual 15W-40', key: 'engine_oil_l', color: C.navy, fmt: v => fmtNum(v, 0) + ' L' },
+            { label: 'Expected Service', key: 'exp_engine_l', color: C.brass, fmt: v => fmtNum(v, 0) + ' L' }
           ], { headRight: r => `${r.Type} · ${r.eng_changes} chg / ${r.eng_topups} top-up` }), {
             subtitle: 'Expected = 32 L per 12,000 L diesel on trucks (15,000 km) or 28 L per 5,000 L diesel on yellow iron (250 hrs)',
-            legend: [{ label: 'Actual 15W-40 (L)', color: '#1E293B' }, { label: 'Expected Service (L)', color: '#0D9488' }]
+            legend: [{ label: 'Actual 15W-40 (L)', color: C.navy }, { label: 'Expected Service (L)', color: C.brass }]
           })}
         </div>
 
@@ -6649,19 +6806,19 @@
     return `
       <div class="pbi-grid-2" id="fuelChartsRow" style="margin-bottom:14px">
         ${pbiPanel('Monthly Diesel Bought, Issued & Sold with Tank Balance (L)', buildComboChartSvg(months, [
-          { key: 'diesel_bought', label: 'Bought (L)', color: '#1E7A6E' },
-          { key: 'diesel_issued', label: 'Issued (L)', color: '#1E293B' },
-          { key: 'diesel_sold', label: 'Sold (L)', color: '#0D9488' }
-        ], { label: 'Tank Balance (L)', key: 'diesel_tank', color: '#C8333B', isMoney: false }, { isMoney: false }), {
+          { key: 'diesel_bought', label: 'Bought (L)', color: C.steel },
+          { key: 'diesel_issued', label: 'Issued (L)', color: C.navy },
+          { key: 'diesel_sold', label: 'Sold (L)', color: C.brass }
+        ], { label: 'Tank Balance (L)', key: 'diesel_tank', color: C.crit, isMoney: false }, { isMoney: false }), {
           subtitle: 'Monthly bulk diesel purchases vs fleet issues and tank balance trajectory',
           legend: [
-            { label: 'Bought', color: '#1E7A6E' },
-            { label: 'Issued', color: '#1E293B' },
-            { label: 'Sold', color: '#0D9488' },
-            { label: 'Tank (L)', color: '#C8333B', line: true }
+            { label: 'Bought', color: C.steel },
+            { label: 'Issued', color: C.navy },
+            { label: 'Sold', color: C.brass },
+            { label: 'Tank (L)', color: C.crit, line: true }
           ]
         })}
-        ${pbiPanel('Diesel & Lubricant Issued by Equipment Unit (Litres)', buildHorizontalBarChart(topUnits, 'Equipment', 'total_litres', v => fmtNum(v, 0) + ' L', { subKey: 'Type', color: '#1E293B', maxItems: 10 }), {
+        ${pbiPanel('Diesel & Lubricant Issued by Equipment Unit (Litres)', buildHorizontalBarChart(topUnits, 'Equipment', 'total_litres', v => fmtNum(v, 0) + ' L', { subKey: 'Type', color: C.navy, maxItems: 10 }), {
           subtitle: 'Top fuel-consuming trucks, loaders, excavators and plant generators'
         })}
       </div>
@@ -6672,24 +6829,24 @@
     const s = `${catRaw || ''} ${subRaw || ''}`.toLowerCase();
     const subL = String(subRaw || '').trim().toLowerCase();
     if (/screen|ghrbal|sieve|corraze|knive|سكاكين|شبك|غربال|jaw|liner/.test(s)) {
-      return { key: 'screens', label: 'Screens, Jaws & Blades', series: 'parts_usd', color: '#C0892F' };
+      return { key: 'screens', label: 'Screens, Jaws & Blades', series: 'parts_usd', color: C.brass };
     }
     if (/wheel|tire|tyre|pneu|اطار|دولاب|كاوتشوك|undercarriage|track/.test(s) && !/شبك/.test(s)) {
-      return { key: 'tires', label: 'Tires & Undercarriage', series: 'parts_usd', color: '#1E7A6E' };
+      return { key: 'tires', label: 'Tires & Undercarriage', series: 'parts_usd', color: C.plum };
     }
     if (/oil|lube|lubric|grease|68|15w|atf|filter|hydraul|تشحيم|مشحمة|زيت/.test(s)) {
-      return { key: 'oils', label: 'Oils & Hydraulics', series: 'oils_tools_usd', color: '#0F766E' };
+      return { key: 'oils', label: 'Oils & Hydraulics', series: 'oils_tools_usd', color: C.slate };
     }
     if (/roulment|bearing|belt|courroie|رولمان|قشاط|chain|seal|hose|driveline|clutch|gearbox/.test(s)) {
       return { key: 'bearings', label: 'Bearings & Drive Belts', series: 'parts_usd', color: '#64748B' };
     }
     if (/tool|oxygen|paint|weld|حديد|صندوق|loadcell|gps|winch|elec|battery|body|cabin/.test(s)) {
-      return { key: 'tools', label: 'Tools, Welding & Body', series: 'oils_tools_usd', color: '#2563EB' };
+      return { key: 'tools', label: 'Tools, Welding & Body', series: 'oils_tools_usd', color: C.steel };
     }
     if (subL === 'parts' || subL === 'spare parts' || subL === 'equipment' || String(catRaw || '').trim().toLowerCase() === 'spare parts') {
-      return { key: 'parts', label: 'Engine & Mech. Parts', series: 'parts_usd', color: '#C0892F' };
+      return { key: 'parts', label: 'Engine & Mech. Parts', series: 'parts_usd', color: C.amber };
     }
-    return { key: 'repairs', label: 'Workshop Repairs', series: 'repairs_usd', color: '#2B5C8F' };
+    return { key: 'repairs', label: 'Workshop Repairs', series: 'repairs_usd', color: C.navy };
   }
 
   function renderMaintVisualsSection(ctx) {
@@ -6796,16 +6953,16 @@
     return `
       <div class="pbi-grid-2" id="maintChartsRow">
         ${pbiPanel('Monthly Repair & Spare Spend ($)', buildComboChartSvg(maintMonths, [
-          { key: 'repairs_usd', label: 'Repairs', color: '#2B5C8F' },
-          { key: 'parts_usd', label: 'Parts', color: '#C0892F' },
-          { key: 'oils_tools_usd', label: 'Oils & Tools', color: '#0F766E' }
-        ], { label: 'Vouchers', key: 'vouchers', color: '#D97706', isMoney: false }, { isMoney: true, height: 228 }), {
+          { key: 'repairs_usd', label: 'Repairs', color: C.navy },
+          { key: 'parts_usd', label: 'Parts', color: C.steel },
+          { key: 'oils_tools_usd', label: 'Oils & Tools', color: C.slate }
+        ], { label: 'Vouchers', key: 'vouchers', color: C.brass, isMoney: false }, { isMoney: true, height: 228 }), {
           subtitle: 'Repairs, spare parts & oils vs monthly vouchers',
           legend: [
-            { label: 'Repairs', color: '#2B5C8F' },
-            { label: 'Parts', color: '#C0892F' },
-            { label: 'Oils & Tools', color: '#0F766E' },
-            { label: 'Vouchers', color: '#D97706', line: true }
+            { label: 'Repairs', color: C.navy },
+            { label: 'Parts', color: C.steel },
+            { label: 'Oils & Tools', color: C.slate },
+            { label: 'Vouchers', color: C.brass, line: true }
           ]
         })}
         ${pbiPanel('Maintenance & Spare Spend by Subsystem ($)', rightBodyHtml, {
@@ -6822,16 +6979,16 @@
     return `
       <div class="pbi-grid-2" id="fleetEconChartsRow" style="margin-bottom:14px">
         ${pbiPanel('Monthly Fleet Running Cost vs. General Expenses ($)', buildClusteredColumnSvg(months, [
-          { key: 'equip_cost', label: 'Fleet Total Cost', color: '#1E293B' },
-          { key: 'expenses', label: 'General Expenses', color: '#8A94A6' }
+          { key: 'equip_cost', label: 'Fleet Total Cost', color: C.navy },
+          { key: 'expenses', label: 'General Expenses', color: C.slate }
         ]), {
           subtitle: 'Monthly equipment fuel, repair & allocated driver cost vs general overhead',
           legend: [
-            { label: 'Fleet Cost', color: '#1E293B' },
-            { label: 'All Expenses', color: '#8A94A6' }
+            { label: 'Fleet Cost', color: C.navy },
+            { label: 'All Expenses', color: C.slate }
           ]
         })}
-        ${pbiPanel('Cost by Equipment Unit — Running + Driver ($)', buildHorizontalBarChart(activeUnits, 'Equipment', 'total_cost', v => fmtUSD(v, 0), { subKey: 'Type', color: '#0F766E', maxItems: 10 }), {
+        ${pbiPanel('Cost by Equipment Unit — Running + Driver ($)', buildHorizontalBarChart(activeUnits, 'Equipment', 'total_cost', v => fmtUSD(v, 0), { subKey: 'Type', color: C.steel, maxItems: 10 }), {
           subtitle: 'Top cost-bearing plant and fleet units in the selected period'
         })}
       </div>
@@ -6844,17 +7001,17 @@
     return `
       <div class="pbi-grid-2" id="driversChartsRow" style="margin-bottom:14px">
         ${pbiPanel('Monthly Overtime Bonus ($) vs. Dispatched Loads', buildComboChartSvg(months, [
-          { key: 'delivery_loads', label: 'Delivery Loads', color: '#1E293B' },
-          { key: 'raw_loads', label: 'Raw Loads', color: '#8A94A6' }
-        ], { label: 'Overtime Bonus ($)', key: 'overtime_due', color: '#0D9488', isMoney: true }, { isMoney: false }), {
+          { key: 'delivery_loads', label: 'Delivery Loads', color: C.navy },
+          { key: 'raw_loads', label: 'Raw Loads', color: C.slate }
+        ], { label: 'Overtime Bonus ($)', key: 'overtime_due', color: C.brass, isMoney: true }, { isMoney: false }), {
           subtitle: 'Monthly dispatch loads vs accrued company-fleet driver overtime bonus ($)',
           legend: [
-            { label: 'Delivery Loads', color: '#1E293B' },
-            { label: 'Raw Loads', color: '#8A94A6' },
-            { label: 'OT Bonus ($)', color: '#0D9488', line: true }
+            { label: 'Delivery Loads', color: C.navy },
+            { label: 'Raw Loads', color: C.slate },
+            { label: 'OT Bonus ($)', color: C.brass, line: true }
           ]
         })}
-        ${pbiPanel('Dispatched Trips by Driver (Sales + Raw)', buildHorizontalBarChart(drvList, 'driver', 'trips', v => fmtNum(v) + ' trips', { subKey: 'trucksStr', color: '#1E293B', maxItems: 10 }), {
+        ${pbiPanel('Dispatched Trips by Driver (Sales + Raw)', buildHorizontalBarChart(drvList, 'driver', 'trips', v => fmtNum(v) + ' trips', { subKey: 'trucksStr', color: C.navy, maxItems: 10 }), {
           subtitle: 'Top drivers by dispatched trips in the active period'
         })}
       </div>
@@ -6867,16 +7024,16 @@
     return `
       <div class="pbi-grid-2" id="payrollChartsRow" style="margin-bottom:14px">
         ${pbiPanel('Monthly Accrued Staff Earnings vs. Salary Disbursements ($)', buildClusteredColumnSvg(payMonths, [
-          { key: 'earnings_m', label: 'Accrued Earnings', color: '#8A94A6' },
-          { key: 'paid_m', label: 'Salary Paid', color: '#1E293B' }
+          { key: 'earnings_m', label: 'Accrued Earnings', color: C.slate },
+          { key: 'paid_m', label: 'Salary Paid', color: C.navy }
         ]), {
           subtitle: 'Monthly accrued staff earnings (base + overtime + site allowance + extras) vs salary cash disbursements',
           legend: [
-            { label: 'Accrued Earnings', color: '#8A94A6' },
-            { label: 'Salary Paid', color: '#1E293B' }
+            { label: 'Accrued Earnings', color: C.slate },
+            { label: 'Salary Paid', color: C.navy }
           ]
         })}
-        ${pbiPanel('Top Staff Members by Accrued Earnings & Paid ($)', buildHorizontalBarChart(staffRows, 'staff', 'earnings', v => fmtUSD(v, 0), { subKey: 'company', color: '#1E293B', maxItems: 10 }), {
+        ${pbiPanel('Top Staff Members by Accrued Earnings & Paid ($)', buildHorizontalBarChart(staffRows, 'staff', 'earnings', v => fmtUSD(v, 0), { subKey: 'company', color: C.navy, maxItems: 10 }), {
           subtitle: 'Top staff members ranked by total earnings in the active period'
         })}
       </div>
@@ -6889,16 +7046,16 @@
     return `
       <div class="pbi-grid-2" id="attChartsRow" style="margin-bottom:14px">
         ${pbiPanel('Monthly Overtime vs. Lateness Hours', buildClusteredColumnSvg(payMonths, [
-          { key: 'ot_hrs_m', label: 'Overtime Hrs', color: '#0D9488' },
-          { key: 'late_hrs_m', label: 'Lateness Hrs', color: '#C8333B' }
+          { key: 'ot_hrs_m', label: 'Overtime Hrs', color: C.steel },
+          { key: 'late_hrs_m', label: 'Lateness Hrs', color: C.crit }
         ], { isMoney: false }), {
           subtitle: 'Monthly logged overtime hours vs lateness / tardy hours on attendance sheets',
           legend: [
-            { label: 'Overtime Hrs', color: '#0D9488' },
-            { label: 'Lateness Hrs', color: '#C8333B' }
+            { label: 'Overtime Hrs', color: C.steel },
+            { label: 'Lateness Hrs', color: C.crit }
           ]
         })}
-        ${pbiPanel('Top Staff Members by Logged Overtime Hours', buildHorizontalBarChart(attStaffRows, 'staff', 'ot_hrs', v => fmtNum(v, 1) + ' hrs', { subKey: 'company', color: '#0D9488', maxItems: 10 }), {
+        ${pbiPanel('Top Staff Members by Logged Overtime Hours', buildHorizontalBarChart(attStaffRows, 'staff', 'ot_hrs', v => fmtNum(v, 1) + ' hrs', { subKey: 'company', color: C.steel, maxItems: 10 }), {
           subtitle: 'Employees ranked by total logged overtime hours in the active period'
         })}
       </div>
@@ -6911,16 +7068,16 @@
     return `
       <div class="pbi-grid-2" id="allowancesChartsRow" style="margin-bottom:14px">
         ${pbiPanel('Monthly Site Allowance Accrued vs. Paid ($)', buildClusteredColumnSvg(payMonths, [
-          { key: 'sa_accrued', label: 'Accrued', color: '#8A94A6' },
-          { key: 'sa_paid', label: 'Paid (FIFO)', color: '#1E293B' }
+          { key: 'sa_accrued', label: 'Accrued', color: C.slate },
+          { key: 'sa_paid', label: 'Paid (FIFO)', color: C.navy }
         ]), {
           subtitle: 'Monthly site allowance accrued on posted working days vs FIFO paid inside salary disbursements',
           legend: [
-            { label: 'Accrued', color: '#8A94A6' },
-            { label: 'Paid (FIFO)', color: '#1E293B' }
+            { label: 'Accrued', color: C.slate },
+            { label: 'Paid (FIFO)', color: C.navy }
           ]
         })}
-        ${pbiPanel('Site Allowance Accrued by Staff Member ($)', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: '#0F766E', maxItems: 10 }), {
+        ${pbiPanel('Site Allowance Accrued by Staff Member ($)', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
           subtitle: 'Posted staff members ranked by accrued daily site allowance ($)'
         })}
       </div>

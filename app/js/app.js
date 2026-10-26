@@ -5609,11 +5609,18 @@
   }
   function coBadge(co) {
     const raw = String(co || '').trim();
-    const short = /^bbconstruction$/i.test(raw) ? 'BBC' : (/^lions\s*transport$/i.test(raw) ? 'Lions' : (raw || 'WTC'));
-    const cls = /^bbconstruction$/i.test(raw) ? 'badge-info' : 'badge-brass';
+    const isBbc = /^bbconstruction$/i.test(raw);
+    const isLt = /^lions\s*transport$/i.test(raw);
+    const short = isBbc ? 'BBC' : (isLt ? 'Lions' : (raw || 'WTC'));
+    const cls = isBbc ? 'co-tbl-bbc' : (isLt ? 'co-tbl-lions' : 'co-tbl-wtc');
     return short !== raw
-      ? `<span class="badge ${cls} co-tbl-badge" title="${esc(raw)}">${esc(short)}<span class="sr-only"> ${esc(raw)}</span></span>`
-      : `<span class="badge ${cls} co-tbl-badge">${esc(raw)}</span>`;
+      ? `<span class="badge badge-neutral co-tbl-badge ${cls}" title="${esc(raw)}">${esc(short)}<span class="sr-only"> ${esc(raw)}</span></span>`
+      : `<span class="badge badge-neutral co-tbl-badge ${cls}">${esc(raw)}</span>`;
+  }
+  function methodBadge(method, sgn) {
+    const m = String(method == null ? '' : method).trim();
+    const cls = sgn < 0 ? 'badge-warn' : (/^cash$/i.test(m) ? 'badge-method-cash' : 'badge-method-credit');
+    return `<span class="badge ${cls}">${esc(m || '—')}</span>`;
   }
   function listPrice(name) {
     const n = norm(name);
@@ -5887,9 +5894,9 @@
         t: ymFull,
         b: `${fmtNum(row.loads)} loads`,
         r: [
-          { l: 'Sales TTC', v: `$${sK.toFixed(1)}k`, c: '#1E293B' },
-          { l: 'Raw Material Cost', v: `$${rK.toFixed(1)}k`, c: '#0D9488' },
-          { l: 'Operating Cash Profit', v: `$${pK.toFixed(1)}k`, c: '#10B981', tot: true }
+          { l: 'Sales TTC', v: `$${sK.toFixed(1)}k`, c: 'var(--s1)' },
+          { l: 'Raw Material Cost', v: `$${rK.toFixed(1)}k`, c: 'var(--s2)' },
+          { l: 'Operating Cash Profit', v: `$${pK.toFixed(1)}k`, c: 'var(--s3)', tot: true }
         ]
       });
       g += `<g class="col" data-m="${esc(ymFull)}" data-t="$${sK.toFixed(1)}k Sales" data-tip="${esc(tip)}" data-chart-pop="${esc(popSpec)}">`
@@ -7083,7 +7090,7 @@
                   <td class="r"><strong>${fmtUSD(netVal, 2)}</strong></td>
                   <td class="r">${Number(r.vat || 0) ? fmtUSD(sgn * Number(r.vat || 0), 2) : '—'}</td>
                   <td class="r"><strong>${fmtUSD(sgn * Number(r.total_ttc || 0), 2)}</strong></td>
-                  <td><span class="badge ${r.method === 'Cash' ? 'badge-ok' : (sgn < 0 ? 'badge-warn' : 'badge-info')}">${esc(r.method)}</span></td>
+                  <td>${methodBadge(r.method, sgn)}</td>
                 </tr>
               `;
               }).join('') || emptyRow(15, periodEmptyMsg(SEED.records.sales_tickets, 'sales tickets'))}
@@ -7804,7 +7811,7 @@
                     <td>${relLink('products', r.product)}</td>
                     <td class="r">${fmtTicketQtyCell(r, sgn, true)}</td>
                     <td class="r"><strong>${fmtUSD(tp, 2)}</strong></td>
-                    <td><span class="badge ${r.method === 'Cash' ? 'badge-ok' : (sgn < 0 ? 'badge-warn' : 'badge-info')}">${esc(r.method)}</span></td>
+                    <td>${methodBadge(r.method, sgn)}</td>
                   </tr>
                   `;
                 }).join('') || emptyRow(11, qRaw ? `No 3rd-party customer haulage tickets match "${STATE.search}".` : 'No 3rd-party customer-site transportation tickets in this period')}
@@ -9783,12 +9790,12 @@
     const over60CustCount = custAll.filter(c => Number(c.ar_60_plus || 0) > 0).length;
     const onAcct = round2(custAll.reduce((s, r) => s + (Number(r.ar_balance || 0) < 0 ? Number(r.ar_balance || 0) : 0), 0));
     const agingBuckets = [
-      { label: 'Current', val: round2(k.ar_current || 0), color: '#1E293B' },
-      { label: '1–10d',   val: round2(k.ar_1_10 || 0),    color: '#1E293B' },
-      { label: '11–30d',  val: round2(k.ar_11_30 || 0),   color: '#1E293B' },
-      { label: '31–60d',  val: round2(k.ar_31_60 || 0),   color: '#0D9488' },
-      { label: '60+d',    val: round2(k.ar_60_plus || 0),  color: '#C8333B' },
-      { label: 'On Acct', val: onAcct,                    color: '#1E7A6E' }
+      { label: 'Current', val: round2(k.ar_current || 0), color: 'var(--chart-navy)' },
+      { label: '1–10d',   val: round2(k.ar_1_10 || 0),    color: 'var(--chart-navy)' },
+      { label: '11–30d',  val: round2(k.ar_11_30 || 0),   color: 'var(--chart-steel)' },
+      { label: '31–60d',  val: round2(k.ar_31_60 || 0),   color: 'var(--chart-brass)' },
+      { label: '60+d',    val: round2(k.ar_60_plus || 0), color: 'var(--chart-crit)' },
+      { label: 'On Acct', val: onAcct,                    color: 'var(--chart-slate)' }
     ];
     const arVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderCustomersVisualsSection === 'function')
       ? window.MFG_PBI.renderCustomersVisualsSection({ months: getScopedMonthly(m.monthly, 14), agingBuckets })
@@ -10584,7 +10591,7 @@
                   <td>${x.subcategory ? relLink('expense_subcategories', x.subcategory) : '—'}${x.reference ? ` <span class="mu">· ${esc(x.reference)}</span>` : ''}</td>
                   <td>${x.supplier ? relLink('suppliers', x.supplier) : '—'}</td>
                   <td class="mono">${x.equipment ? relLink('equipment', x.equipment) : '—'}</td>
-                  <td><span class="badge ${x.method === 'Cash' ? 'badge-ok' : (sgn < 0 ? 'badge-warn' : 'badge-info')}">${esc(x.method)}</span></td>
+                  <td>${methodBadge(x.method, sgn)}</td>
                   <td class="r"><strong>${fmtUSD(sgn * Number(x.amount || 0), 2)}</strong></td>
                 </tr>
               `;
