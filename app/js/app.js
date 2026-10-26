@@ -1546,13 +1546,16 @@
     salesPool.forEach(s => {
       const pk = norm(s.product);
       if (!pk) return;
-      const cur = pMap.get(pk) || { loads: 0, qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
       const sgn = ticketSign(s);
+      if (sgn === 0) return;
+      const cur = pMap.get(pk) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
       const q = sgn * ticketMeters(s);
+      const rawQ = sgn * Number(s.qty || 0);
       const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
       const net = sgn * Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0)));
       if (sgn === 1) cur.loads += 1;
       cur.qty_sold += q;
+      cur.native_qty_sold += rawQ;
       cur.tons_sold += sgn * ticketTons(s);
       cur.sales_ttc += ttc;
       cur.net_sales += net;
@@ -1562,15 +1565,17 @@
     rawPool.forEach(r => {
       const pk = norm(r.product);
       if (!pk) return;
-      const cur = pMap.get(pk) || { loads: 0, qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
+      const cur = pMap.get(pk) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
       cur.raw_qty += ticketMeters(r);
       cur.raw_cost += Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)));
       pMap.set(pk, cur);
     });
     return mdlProds.map(p => {
-      const st = pMap.get(norm(p.Product)) || { loads: 0, qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
+      const st = pMap.get(norm(p.Product)) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
+      const denom = st.qty_sold > 0 ? st.qty_sold : st.native_qty_sold;
       return Object.assign({}, p, {
         loads: st.loads,
+        native_qty_sold: round2(st.native_qty_sold),
         qty_sold: round2(st.qty_sold),
         tons_sold: round2(st.tons_sold),
         sales_ttc: round2(st.sales_ttc),
@@ -1578,8 +1583,8 @@
         trans_rev: round2(st.trans_rev),
         raw_qty: round2(st.raw_qty),
         raw_cost: round2(st.raw_cost),
-        avg_price_ttc: st.qty_sold > 0 ? round2(st.sales_ttc / st.qty_sold) : p.avg_price_ttc,
-        avg_price_net: st.qty_sold > 0 ? round2(st.net_sales / st.qty_sold) : p.avg_price_net,
+        avg_price_ttc: denom > 0 ? round2(st.sales_ttc / denom) : 0,
+        avg_price_net: denom > 0 ? round2(st.net_sales / denom) : 0,
         avg_raw_cost: st.raw_qty > 0 ? round2(st.raw_cost / st.raw_qty) : null
       });
     }).sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0));
@@ -6905,9 +6910,10 @@
       return Array.from(map.values());
     })();
     const prodTotQty = allProds.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
+    const prodTotNet = allProds.reduce((a, p) => a + Number(p.net_sales != null ? p.net_sales : p.net_sum || 0), 0);
     const prodTotTtc = allProds.reduce((a, p) => a + Number(p.sales_ttc || 0), 0);
-    const prodAvgNet = !isSalesFiltered ? k.avg_price_net : (prodTotQty > 0 ? round2((sumTtc - sumVat) / prodTotQty) : 0);
-    const prodAvgTtc = !isSalesFiltered ? k.avg_price_ttc : (prodTotQty > 0 ? round2(prodTotTtc / prodTotQty) : 0);
+    const prodAvgNet = prodTotQty > 0 ? round2((!isSalesFiltered ? prodTotNet : (sumTtc - sumVat)) / prodTotQty) : k.avg_price_net;
+    const prodAvgTtc = prodTotQty > 0 ? round2(prodTotTtc / prodTotQty) : k.avg_price_ttc;
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const wtcS = byCo.WTC;
     const bbcS = byCo.BBConstruction;
