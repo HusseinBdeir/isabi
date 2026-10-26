@@ -1,22 +1,29 @@
 import html
 import json
 import os
+import re
 import shutil
-import socket
 import subprocess
 import sys
 import tempfile
-import time
-import urllib.request
 
 EDGE = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 URL = 'file:///C:/Users/HusseinBdeir/bhfirms/isabi/index.html'
-ART_DIR = r'C:\Users\HusseinBdeir\.gemini\antigravity\brain\dd68773e-e5d4-4966-9a94-9714e22f9c15'
+ART_DIR = os.environ.get('ISABI_ART_DIR') or os.path.join(tempfile.gettempdir(), 'isabi_verify_shots')
 
 
 def run_dom_and_screenshots():
     ud = tempfile.mkdtemp(prefix='isabi_edge_')
     try:
+        # 0. Verify 0 forbidden vendor reliance strings in index.html & manifest.json
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for fname in ('index.html', 'manifest.json'):
+            fpath = os.path.join(repo_root, fname)
+            txt = open(fpath, 'r', encoding='utf-8').read()
+            hits = re.findall(r'Power BI|Dataverse|Power Apps|Microsoft', txt, flags=re.IGNORECASE)
+            assert not hits, f"Forbidden terms found in {fname}: {hits[:10]}"
+            print(f'[CLEAN] {fname}: 0 forbidden vendor terms')
+
         # 1. Dump DOM at #industries hash to verify initial hash activation & rendering
         res = subprocess.run(
             [EDGE, '--headless=new', f'--user-data-dir={ud}', '--window-size=1440,900', '--dump-dom', URL + '#industries'],
@@ -35,6 +42,7 @@ def run_dom_and_screenshots():
             ('Mobile Section Nav Present', 'id="mobile-sec-nav"'),
             ('Mobile Segmented Bar Present', 'class="mob-seg-bar"'),
             ('Hash #industries activates Industries nav link', '<a href="#industries" data-sec-link="industries" class="active">Industries</a>'),
+            ('Platform & AI section rendered', 'id="platform-ai"'),
             ('FAQ section rendered', 'id="faq"'),
             ('FAQ JSON-LD present', '"@type": "FAQPage"'),
             ('Organization JSON-LD present', '"@type": "ProfessionalService"'),
@@ -59,8 +67,8 @@ def run_dom_and_screenshots():
             sys.exit(1)
 
         # 2. Create a temporary test harness HTML wrapper to verify geometry on Desktop & Mobile
-        diag_html = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '_diag_test.html')
-        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'index.html'), 'r', encoding='utf-8') as f:
+        diag_html = os.path.join(repo_root, '_diag_test.html')
+        with open(os.path.join(repo_root, 'index.html'), 'r', encoding='utf-8') as f:
             base_html = f.read()
 
         test_script = """
@@ -72,6 +80,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (window.innerWidth < 600) {
       document.documentElement.style.width = '390px';
       document.body.style.width = '390px';
+      var md = document.querySelector('.mobile-dock');
+      if (md) md.style.maxWidth = '390px';
     }
     var hdr = document.querySelector('.site-header').getBoundingClientRect();
     var arch = document.getElementById('architecture').getBoundingClientRect();
@@ -123,9 +133,19 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     });
     var secHeights = {};
-    ['.hero-section', '#architecture', '#industries', '#sandbox', '#microsoft-ai', '#ingenuity', '#pricing', '#faq', '#portal'].forEach(function(sel) {
+    ['.hero-section', '#architecture', '#industries', '#sandbox', '#platform-ai', '#ingenuity', '#pricing', '#faq', '#portal'].forEach(function(sel) {
       var el = document.querySelector(sel);
       if (el) secHeights[sel] = Math.round(el.getBoundingClientRect().height);
+    });
+    var layerBudgets = Array.from(document.querySelectorAll('#architecture .layer-card')).map(function(card) {
+      var eye = card.querySelector('.layer-num');
+      var h4 = card.querySelector('h4');
+      var p = card.querySelector('p');
+      return {
+        eyeLen: eye ? eye.textContent.trim().length : 0,
+        h4Len: h4 ? h4.textContent.trim().length : 0,
+        pLen: p ? p.textContent.trim().length : 0
+      };
     });
     var out = {
       vw: effW,
@@ -152,6 +172,7 @@ document.addEventListener('DOMContentLoaded', function() {
       indTabsH: Math.round(indTabs.height),
       indDetailH: Math.round(indDetail.height),
       secHeights: secHeights,
+      layerBudgets: layerBudgets,
       kpi1W: Math.round(kpi1.width),
       kpi2W: Math.round(kpi2.width),
       kpi1StrongTop: Math.round(kpi1Strong.top),
@@ -217,7 +238,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (sboxAiBtn) sboxAiBtn.click();
     var drawerTextAfterSbox = document.getElementById('ai-drawer-thread').textContent;
 
-    // 4. Click a Sandbox watchdog alert button (View VINs on Trading)
+    // 4. Click a Sandbox watchdog alert button (Send SOA on Trading)
     var alertBtn = document.querySelector('#sandbox-mock [data-sbox-act]');
     if (alertBtn) alertBtn.click();
     var drawerTextAfterAlert = document.getElementById('ai-drawer-thread').textContent;
@@ -255,7 +276,7 @@ document.addEventListener('DOMContentLoaded', function() {
       hasResetWelcome: resetDrawerText.indexOf('Welcome. I am ISABI') !== -1
     };
 
-    // v4.0 Interactive Tabs & Simulators checks
+    // Interactive Tabs & Simulators checks
     var posTile = document.querySelector('[data-app-id="pos"]');
     if (posTile) posTile.click();
     var spotTitle = document.querySelector('#app-spotlight h3') ? document.querySelector('#app-spotlight h3').textContent : '';
@@ -351,46 +372,55 @@ document.addEventListener('DOMContentLoaded', function() {
 
         diag_url = 'file:///' + diag_html.replace('\\', '/')
 
-        # Run Desktop test (1366x768) at #industries
-        res_desk = subprocess.run(
-            [EDGE, '--headless=new', f'--user-data-dir={ud}', '--window-size=1366,768', '--dump-dom', diag_url + '#industries'],
-            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=25
-        )
-        m_desk = html.unescape(res_desk.stdout.split('<pre id="diag-json">')[1].split('</pre>')[0])
-        d_desk = json.loads(m_desk)
-        print('[DESK 1366x768]', json.dumps(d_desk))
+        def probe_viewport(w, h, label):
+            res_vp = subprocess.run(
+                [EDGE, '--headless=new', f'--user-data-dir={ud}', f'--window-size={w},{h}', '--dump-dom', diag_url + '#industries'],
+                capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=25
+            )
+            m_vp = html.unescape(res_vp.stdout.split('<pre id="diag-json">')[1].split('</pre>')[0])
+            d_vp = json.loads(m_vp)
+            print(f'[{label} {w}x{h}]', json.dumps({k: d_vp[k] for k in ('vw', 'vh', 'scrollW', 'hdrBottom', 'secHeights', 'cardOverflows', 'overflows') if k in d_vp}))
+            return d_vp
 
-        # Run Mobile test (390x844) at #industries
-        res_mob = subprocess.run(
-            [EDGE, '--headless=new', f'--user-data-dir={ud}', '--window-size=390,844', '--dump-dom', diag_url + '#industries'],
-            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=25
-        )
-        m_mob = html.unescape(res_mob.stdout.split('<pre id="diag-json">')[1].split('</pre>')[0])
-        d_mob = json.loads(m_mob)
-        print('[MOB 390x844]', json.dumps(d_mob))
+        d_desk = probe_viewport(1366, 768, 'DESK')
+        d_desk_1440 = probe_viewport(1440, 810, 'DESK')
+        d_desk_1536 = probe_viewport(1536, 864, 'DESK')
+        d_mob = probe_viewport(390, 844, 'MOB')
 
         if os.path.exists(diag_html):
             os.remove(diag_html)
 
-        # Assertions
+        # Layer 01-04 character budget assertions
+        assert len(d_desk['layerBudgets']) == 4, f"Expected 4 layer cards in #architecture, got {len(d_desk['layerBudgets'])}"
+        for idx, lb in enumerate(d_desk['layerBudgets'], 1):
+            assert lb['eyeLen'] <= 30, f"Layer 0{idx} eyebrow > 30 chars: {lb['eyeLen']}"
+            assert lb['h4Len'] <= 27, f"Layer 0{idx} headline > 27 chars: {lb['h4Len']}"
+            assert 147 <= lb['pLen'] <= 179, f"Layer 0{idx} body outside 147-179 char budget: {lb['pLen']}"
+
+        # Desktop multi-viewport single-screen assertions (1366x768, 1440x810, 1536x864)
+        for vp_lbl, dvp in [('1366x768', d_desk), ('1440x810', d_desk_1440), ('1536x864', d_desk_1536)]:
+            assert dvp['scrollW'] <= dvp['vw'], f"{vp_lbl} horizontal overflow! scrollW={dvp['scrollW']} > vw={dvp['vw']}"
+            assert dvp['cardOverflows'] == [], f"{vp_lbl} card overflows detected: {dvp['cardOverflows']}"
+            avail_h = dvp['vh'] - dvp['hdrBottom']
+            for sec_sel, sec_h in dvp['secHeights'].items():
+                assert abs(sec_h - avail_h) <= 2, f"{vp_lbl} section {sec_sel} height ({sec_h}px) != viewport availH ({avail_h}px)!"
+
+        # Primary Desktop assertions
         assert d_desk['activeMain'] == ['#industries'], f"Expected activeMain=['#industries'], got {d_desk['activeMain']}"
         assert d_desk['archBottom'] <= d_desk['hdrBottom'] + 1, f"Previous section bled through! archBottom={d_desk['archBottom']} > hdrBottom={d_desk['hdrBottom']}"
         assert abs(d_desk['indTop'] - d_desk['hdrBottom']) <= 4, f"Section top not aligned to header bottom! indTop={d_desk['indTop']}, hdrBottom={d_desk['hdrBottom']}"
         assert d_desk['ctaRight'] <= d_desk['vw'], f"Header CTA clipped! ctaRight={d_desk['ctaRight']} > vw={d_desk['vw']}"
-        assert d_desk['scrollW'] <= d_desk['vw'], f"Desktop horizontal overflow! scrollW={d_desk['scrollW']} > vw={d_desk['vw']}"
         assert abs(d_desk['leadIndustryW'] - d_desk['leadNameW']) <= 1, f"lead-industry width ({d_desk['leadIndustryW']}) != lead-name width ({d_desk['leadNameW']})"
         assert abs(d_desk['leadBudgetW'] - d_desk['leadCompanyW']) <= 1, f"lead-budget width ({d_desk['leadBudgetW']}) != lead-company width ({d_desk['leadCompanyW']})"
         assert d_desk['leadBudgetRight'] <= d_desk['portalCardRight'] - 24, f"lead-budget overflows portal card! {d_desk['leadBudgetRight']} vs {d_desk['portalCardRight']}"
-        assert d_desk['cardOverflows'] == [], f"Desktop card overflows detected: {d_desk['cardOverflows']}"
         assert d_desk['hlcSvgCount'] == 1, f"Expected 1 SVG in .hlc-brand (no nested SVG), got {d_desk['hlcSvgCount']}"
-        assert d_desk['heroSecH'] >= d_desk['vh'] - d_desk['hdrBottom'], f"Hero section too short ({d_desk['heroSecH']} < {d_desk['vh'] - d_desk['hdrBottom']}): second section bleeds into first viewport!"
-        avail_desk_h = d_desk['vh'] - d_desk['hdrBottom']
-        for sec_sel, sec_h in d_desk['secHeights'].items():
-            assert abs(sec_h - avail_desk_h) <= 2, f"Desktop section {sec_sel} height ({sec_h}px) does not fit viewport availH ({avail_desk_h}px)!"
+        assert d_desk['heroSecH'] >= d_desk['vh'] - d_desk['hdrBottom'], f"Hero section too short ({d_desk['heroSecH']} < {d_desk['vh'] - d_desk['hdrBottom']})!"
         assert abs(d_desk['heroLeftH'] - d_desk['heroCardH']) <= 2, f"Desktop hero column heights mismatch: {d_desk['heroLeftH']} vs {d_desk['heroCardH']}"
         assert abs(d_desk['indTabsH'] - d_desk['indDetailH']) <= 2, f"Desktop industry tabs/detail heights mismatch: {d_desk['indTabsH']} vs {d_desk['indDetailH']}"
 
+        # Mobile assertions (390x844)
         assert d_mob['scrollW'] <= d_mob['vw'], f"Mobile horizontal overflow! scrollW={d_mob['scrollW']} > vw={d_mob['vw']}"
+        assert d_mob['overflows'] == [], f"Mobile element overflows detected: {d_mob['overflows']}"
         assert d_mob['mockWidth'] <= d_mob['vw'], f"Mobile sandbox .mock overflows! mockWidth={d_mob['mockWidth']} > vw={d_mob['vw']}"
         assert d_mob['compWidth'] <= d_mob['vw'], f"Mobile .comp-table overflows! compWidth={d_mob['compWidth']} > vw={d_mob['vw']}"
         assert abs(d_mob['kpi1W'] - d_mob['kpi2W']) <= 2, f"Mobile .hlc-kpi width mismatch: {d_mob['kpi1W']} vs {d_mob['kpi2W']}"
@@ -431,10 +461,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
         # 3. Capture fresh screenshots of Hero & #portal at 1366x768
         os.makedirs(ART_DIR, exist_ok=True)
-        shot_desk_hero = os.path.join(ART_DIR, 'isabi_desk_hero_v41.png')
+        shot_desk_hero = os.path.join(ART_DIR, 'isabi_desk_hero_v60.png')
         subprocess.run([EDGE, '--headless=new', '--disable-gpu', f'--user-data-dir={ud}', '--window-size=1366,768', f'--screenshot={shot_desk_hero}', URL], timeout=25)
-        shot_desk_portal = os.path.join(ART_DIR, 'isabi_desk_portal_fixed.png')
-        shot_html = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '_shot_portal.html')
+        shot_desk_portal = os.path.join(ART_DIR, 'isabi_desk_portal_v60.png')
+        shot_html = os.path.join(repo_root, '_shot_portal.html')
         shot_script = """
 <script>
 window.addEventListener('load', function() {
@@ -454,7 +484,7 @@ window.addEventListener('load', function() {
         subprocess.run([EDGE, '--headless=new', '--disable-gpu', f'--user-data-dir={ud}', '--window-size=1366,768', f'--screenshot={shot_desk_portal}', shot_url], timeout=25)
         if os.path.exists(shot_html):
             os.remove(shot_html)
-        print('ALL GEOMETRY & ACTIVE-NAV ASSERTIONS PASSED + PORTAL SCREENSHOT SAVED.')
+        print('ALL GEOMETRY, MULTI-VIEWPORT, LAYER-BUDGET & INTERACTIVE ASSERTIONS PASSED.')
     finally:
         shutil.rmtree(ud, ignore_errors=True)
 

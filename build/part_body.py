@@ -6,7 +6,7 @@ BADGE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" cla
 
 MARK_ON_DARK_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="-9.5 -78.8 74.66 109.7" aria-hidden="true"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>"""
 
-WORDMARK_HEADER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -82.8 346.86 160.76" class="brand-wordmark" role="img" aria-label="ISABI Systems"><g fill="currentColor"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-12.95,0)" d="M82.46 1.2Q74.06 1.2 66.77 0.2Q59.48 -0.81 54 -3.31Q48.52 -5.82 45.43 -10.3Q42.33 -14.78 42.33 -21.68Q42.33 -21.88 42.33 -22.21Q42.33 -22.53 42.43 -22.84H62.38Q62.28 -22.44 62.25 -22Q62.23 -21.56 62.23 -21.08Q62.23 -18.03 64.55 -16.27Q66.87 -14.51 71.11 -13.8Q75.35 -13.09 80.96 -13.09Q83.32 -13.09 85.78 -13.23Q88.24 -13.38 90.53 -13.74Q92.82 -14.1 94.65 -14.79Q96.47 -15.47 97.56 -16.55Q98.65 -17.63 98.65 -19.15Q98.65 -21.32 96.35 -22.57Q94.05 -23.82 90.14 -24.58Q86.22 -25.33 81.35 -25.92Q76.49 -26.52 71.28 -27.34Q66.06 -28.16 61.2 -29.61Q56.33 -31.06 52.41 -33.47Q48.5 -35.88 46.2 -39.66Q43.9 -43.45 43.9 -48.91Q43.9 -54.37 46.67 -58.34Q49.43 -62.31 54.42 -64.89Q59.41 -67.46 66.2 -68.71Q73 -69.95 81.01 -69.95Q89.17 -69.95 95.82 -68.69Q102.46 -67.43 107.23 -64.88Q112 -62.33 114.57 -58.47Q117.13 -54.6 117.13 -49.39V-48.01H97.39V-48.82Q97.39 -50.91 95.59 -52.53Q93.78 -54.15 90.34 -55.12Q86.89 -56.1 81.96 -56.1Q76.07 -56.1 72.27 -55.36Q68.48 -54.62 66.68 -53.34Q64.88 -52.07 64.88 -50.55Q64.88 -48.52 67.17 -47.33Q69.47 -46.15 73.39 -45.47Q77.3 -44.78 82.17 -44.19Q87.03 -43.6 92.25 -42.78Q97.46 -41.96 102.32 -40.59Q107.19 -39.21 111.11 -36.84Q115.03 -34.46 117.32 -30.83Q119.62 -27.2 119.62 -21.89Q119.62 -13.62 114.83 -8.52Q110.04 -3.43 101.65 -1.11Q93.26 1.2 82.46 1.2Z"/><path transform="translate(-12.35,0)" d="M125.53 0 159.33 -68.75H181.97L215.77 0H193.74L188.55 -11.02H151.65L146.51 0ZM158.47 -25.93H181.73L175.47 -39.9Q175.08 -40.84 174.37 -42.55Q173.67 -44.27 172.91 -46.22Q172.15 -48.17 171.51 -49.85Q170.87 -51.52 170.55 -52.33H169.8Q169.07 -50.49 168.11 -48.11Q167.15 -45.73 166.26 -43.49Q165.37 -41.25 164.73 -39.85Z"/><path transform="translate(-14.35,0)" d="M225.75 0V-68.75H282.27Q287.86 -68.75 292.39 -66.6Q296.91 -64.45 299.54 -60.65Q302.18 -56.85 302.18 -51.81Q302.18 -47.31 300.57 -44.11Q298.96 -40.91 296.25 -38.92Q293.54 -36.94 290.23 -35.95V-35.55Q294.09 -34.75 297.19 -32.66Q300.3 -30.57 302.11 -27.09Q303.92 -23.62 303.92 -18.57Q303.92 -12.66 301.07 -8.52Q298.22 -4.37 293.39 -2.19Q288.55 0 282.6 0ZM246.11 -14.49H275.8Q279 -14.49 281.02 -16.24Q283.05 -17.98 283.05 -21.59Q283.05 -23.49 282.17 -25.01Q281.3 -26.53 279.61 -27.37Q277.93 -28.21 275.53 -28.21H246.11ZM246.11 -41.59H274.11Q276.44 -41.59 278.03 -42.43Q279.63 -43.27 280.49 -44.8Q281.35 -46.33 281.35 -48.4Q281.35 -51.33 279.38 -53.04Q277.4 -54.75 274.39 -54.75H246.11Z"/><path transform="translate(-18.65,0)" d="M317.15 0V-68.75H337.51V0Z"/></g><g fill="var(--brass)"><rect x="0" y="9.5" width="318.86" height="3.4"/><rect x="0" y="17.5" width="318.86" height="3.4"/></g><g fill="currentColor" transform="translate(0,62.46) scale(0.42)"><path transform="translate(-5.17,0)" d="M38 1.2Q31.29 1.2 25.32 0.09Q19.36 -1.01 14.83 -3.57Q10.3 -6.12 7.74 -10.29Q5.17 -14.45 5.17 -20.57Q5.17 -20.98 5.2 -21.44Q5.22 -21.89 5.27 -22.14H19.28Q19.24 -21.85 19.19 -21.3Q19.14 -20.75 19.14 -20.2Q19.14 -17 21.42 -14.84Q23.7 -12.68 27.98 -11.6Q32.25 -10.52 38.01 -10.52Q41.12 -10.52 43.86 -10.85Q46.6 -11.18 48.86 -11.81Q51.12 -12.44 52.78 -13.41Q54.43 -14.39 55.32 -15.72Q56.2 -17.04 56.2 -18.68Q56.2 -21.44 54.14 -23.17Q52.08 -24.9 48.57 -26.06Q45.06 -27.22 40.66 -28.1Q36.26 -28.98 31.59 -29.96Q26.91 -30.94 22.51 -32.44Q18.11 -33.94 14.6 -36.19Q11.1 -38.44 9.03 -41.93Q6.97 -45.43 6.97 -50.42Q6.97 -55.22 9.14 -58.86Q11.31 -62.51 15.42 -64.96Q19.53 -67.4 25.27 -68.63Q31.02 -69.85 38.16 -69.85Q45.15 -69.85 50.75 -68.58Q56.34 -67.31 60.28 -64.79Q216.22 -62.26 66.3 -58.56Q68.37 -54.86 68.37 -50V-48.6H54.56V-49.75Q54.56 -52.31 52.5 -54.17Q50.44 -56.02 46.83 -57.08Q515.82 -58.13 38.54 -58.13Q32.75 -58.13 28.92 -57.25Q25.1 -56.38 23.21 -54.78Q21.32 -53.18 21.32 -51.02Q21.32 -48.61 23.38 -47.06Q25.44 -45.5 28.95 -44.47Q32.46 -43.44 36.86 -42.58Q41.26 -41.72 45.93 -40.69Q50.61 -39.66 55.01 -38.21Q59.41 -36.76 62.92 -34.46Q66.42 -32.16 68.49 -28.74Q70.55 -25.32 70.55 -20.44Q70.55 -12.59 66.39 -7.82Q62.24 -3.05 54.89 -0.92Q47.55 1.2 38 1.2Z"/><path transform="translate(32.83,0)" d="M106.74 0V-27.85L76.88 -68.65H93.47L113.82 -39.79H114.56L134.96 -68.65H150.65L120.8 -27.85V0Z"/><path transform="translate(70.83,0)" d="M190 1.2Q183.29 1.2 177.32 0.09Q171.36 -1.01 166.83 -3.57Q162.3 -6.12 159.74 -10.29Q157.17 -14.45 157.17 -20.57Q157.17 -20.98 157.2 -21.44Q157.22 -21.89 157.27 -22.14H171.28Q171.24 -21.85 171.19 -21.3Q171.14 -20.75 171.14 -20.2Q171.14 -17 173.42 -14.84Q175.7 -12.68 179.98 -11.6Q184.25 -10.52 190.01 -10.52Q193.12 -10.52 195.86 -10.85Q198.6 -11.18 200.86 -11.81Q203.12 -12.44 204.78 -13.41Q206.43 -14.39 207.32 -15.72Q208.2 -17.04 208.2 -18.68Q208.2 -21.44 206.14 -23.17Q204.08 -24.9 200.57 -26.06Q197.06 -27.22 192.66 -28.1Q188.26 -28.98 183.59 -29.96Q178.91 -30.94 174.51 -32.44Q170.11 -33.94 166.6 -36.19Q163.1 -38.44 161.03 -41.93Q158.97 -45.43 158.97 -50.42Q158.97 -55.22 161.14 -58.86Q163.31 -62.51 167.42 -64.96Q171.53 -67.4 177.27 -68.63Q183.02 -69.85 190.16 -69.85Q197.15 -69.85 202.75 -68.58Q208.34 -67.31 212.28 -64.79Q216.22 -62.26 218.3 -58.56Q220.37 -54.86 220.37 -50V-48.6H206.56V-49.75Q206.56 -52.31 204.5 -54.17Q202.44 -56.02 198.83 -57.08Q195.22 -58.13 190.54 -58.13Q184.75 -58.13 180.92 -57.25Q177.1 -56.38 175.21 -54.78Q173.32 -53.18 173.32 -51.02Q173.32 -48.61 175.38 -47.06Q177.44 -45.5 180.95 -44.47Q184.46 -43.44 188.86 -42.58Q193.26 -41.72 197.93 -40.69Q202.61 -39.66 207.01 -38.21Q211.41 -36.76 214.92 -34.46Q218.42 -32.16 220.49 -28.74Q222.55 -25.32 222.55 -20.44Q222.55 -12.59 218.39 -7.82Q214.24 -3.05 206.89 -0.92Q199.55 1.2 190 1.2Z"/><path transform="translate(108.83,0)" d="M256.08 0V-56.39H230.05V-68.65H296.21V-56.39H270.13V0Z"/><path transform="translate(146.83,0)" d="M307.41 0V-68.65H368.59V-56.78H321.46V-40.94H363.42V-29.07H321.46V-11.87H369.28V0Z"/><path transform="translate(184.83,0)" d="M383.91 0V-68.65H405.9L419.05 -31.84Q419.7 -30.03 420.56 -27.36Q421.42 -24.7 422.31 -21.99Q423.2 -19.28 423.83 -17.15H424.58Q425.12 -19.03 425.9 -21.62Q426.69 -24.2 427.55 -26.92Q428.41 -29.64 429.16 -31.8L442.31 -68.65H463.96V0H449.9V-38.2Q449.9 -41.41 449.98 -44.81Q450.05 -48.21 450.18 -50.91Q450.3 -53.61 450.35 -54.64H449.55Q449.21 -53.46 448.41 -50.89Q447.61 -48.32 446.76 -45.49Q445.9 -42.66 445.2 -40.6L430.35 0H417.01L402.11 -40.54Q401.36 -42.6 400.57 -45.16Q399.77 -47.73 399.07 -50.28Q398.36 -52.82 397.81 -54.64H397.01Q397.11 -52.66 397.19 -49.78Q397.26 -46.89 397.34 -43.86Q397.42 -40.82 397.42 -38.2V0Z"/><path transform="translate(222.83,0)" d="M510.6 1.2Q503.89 1.2 497.92 0.09Q491.96 -1.01 487.43 -3.57Q482.9 -6.12 480.34 -10.29Q477.77 -14.45 477.77 -20.57Q477.77 -20.98 477.8 -21.44Q477.82 -21.89 477.87 -22.14H491.88Q491.84 -21.85 491.79 -21.3Q491.74 -20.75 491.74 -20.2Q491.74 -17 494.02 -14.84Q496.3 -12.68 500.58 -11.6Q504.85 -10.52 510.61 -10.52Q513.72 -10.52 516.46 -10.85Q519.2 -11.18 521.46 -11.81Q523.72 -12.44 525.38 -13.41Q527.03 -14.39 527.92 -15.72Q528.8 -17.04 528.8 -18.68Q528.8 -21.44 526.74 -23.17Q524.68 -24.9 521.17 -26.06Q517.66 -27.22 513.26 -28.1Q508.86 -28.98 504.19 -29.96Q499.51 -30.94 495.11 -32.44Q490.71 -33.94 487.2 -36.19Q483.7 -38.44 481.63 -41.93Q479.57 -45.43 479.57 -50.42Q479.57 -55.22 481.74 -58.86Q483.91 -62.51 488.02 -64.96Q492.13 -67.4 497.87 -68.63Q503.62 -69.85 510.76 -69.85Q517.75 -69.85 523.35 -68.58Q528.94 -67.31 532.88 -64.79Q536.82 -62.26 538.9 -58.56Q540.97 -54.86 540.97 -50V-48.6H527.16V-49.75Q527.16 -52.31 525.1 -54.17Q523.04 -56.02 519.43 -57.08Q515.82 -58.13 511.14 -58.13Q505.35 -58.13 501.52 -57.25Q497.7 -56.38 495.81 -54.78Q493.92 -53.18 493.92 -51.02Q493.92 -48.61 495.98 -47.06Q498.04 -45.5 501.55 -44.47Q505.06 -43.44 509.46 -42.58Q513.86 -41.72 518.53 -40.69Q523.21 -39.66 527.61 -38.21Q532.01 -36.76 535.52 -34.46Q539.02 -32.16 541.09 -28.74Q543.15 -25.32 543.15 -20.44Q543.15 -12.59 538.99 -7.82Q534.84 -3.05 527.49 -0.92Q520.15 1.2 510.6 1.2Z"/></g></svg>"""
+WORDMARK_HEADER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -82.8 346.86 160.76" class="brand-wordmark" role="img" aria-label="ISABI Systems"><g fill="currentColor"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-12.95,0)" d="M82.46 1.2Q74.06 1.2 66.77 0.2Q59.48 -0.81 54 -3.31Q48.52 -5.82 45.43 -10.3Q42.33 -14.78 42.33 -21.68Q42.33 -21.88 42.33 -22.21Q42.33 -22.53 42.43 -22.84H62.38Q62.28 -22.44 62.25 -22Q62.23 -21.56 62.23 -21.08Q62.23 -18.03 64.55 -16.27Q66.87 -14.51 71.11 -13.8Q75.35 -13.09 80.96 -13.09Q83.32 -13.09 85.78 -13.23Q88.24 -13.38 90.53 -13.74Q92.82 -14.1 94.65 -14.79Q96.47 -15.47 97.56 -16.55Q98.65 -17.63 98.65 -19.15Q98.65 -21.32 96.35 -22.57Q94.05 -23.82 90.14 -24.58Q86.22 -25.33 81.35 -25.92Q76.49 -26.52 71.28 -27.34Q66.06 -28.16 61.2 -29.61Q56.33 -31.06 52.41 -33.47Q48.5 -35.88 46.2 -39.66Q43.9 -43.45 43.9 -48.91Q43.9 -54.37 46.67 -58.34Q49.43 -62.31 54.42 -64.89Q59.41 -67.46 66.2 -68.71Q73 -69.95 81.01 -69.95Q89.17 -69.95 95.82 -68.69Q102.46 -67.43 107.23 -64.88Q112 -62.33 114.57 -58.47Q117.13 -54.6 117.13 -49.39V-48.01H97.39V-48.82Q97.39 -50.91 95.59 -52.53Q93.78 -54.15 90.34 -55.12Q86.89 -56.1 81.96 -56.1Q76.07 -56.1 72.27 -55.36Q68.48 -54.62 66.68 -53.34Q64.88 -52.07 64.88 -50.55Q64.88 -48.52 67.17 -47.33Q69.47 -46.15 73.39 -45.47Q77.3 -44.78 82.17 -44.19Q87.03 -43.6 92.25 -42.78Q97.46 -41.96 102.32 -40.59Q107.19 -39.21 111.11 -36.84Q115.03 -34.46 117.32 -30.83Q119.62 -27.2 119.62 -21.89Q119.62 -13.62 114.83 -8.52Q110.04 -3.43 101.65 -1.11Q93.26 1.2 82.46 1.2Z"/><path transform="translate(-12.35,0)" d="M125.53 0 159.33 -68.75H181.97L215.77 0H193.74L188.55 -11.02H151.65L146.51 0ZM158.47 -25.93H181.73L175.47 -39.9Q175.08 -40.84 174.37 -42.55Q173.67 -44.27 172.91 -46.22Q172.15 -48.17 171.51 -49.85Q170.87 -51.52 170.55 -52.33H169.8Q169.07 -50.49 168.11 -48.11Q167.15 -45.73 166.26 -43.49Q165.37 -41.25 164.73 -39.85Z"/><path transform="translate(-14.35,0)" d="M225.75 0V-68.75H282.27Q287.86 -68.75 292.39 -66.6Q296.91 -64.45 299.54 -60.65Q302.18 -56.85 302.18 -51.81Q302.18 -47.31 300.57 -44.11Q298.96 -40.91 296.25 -38.92Q293.54 -36.94 290.23 -35.95V-35.55Q294.09 -34.75 297.19 -32.66Q300.3 -30.57 302.11 -27.09Q303.92 -23.62 303.92 -18.57Q303.92 -12.66 301.07 -8.52Q298.22 -4.37 293.39 -2.19Q288.55 0 282.6 0ZM246.11 -14.49H275.8Q279 -14.49 281.02 -16.24Q283.05 -17.98 283.05 -21.59Q283.05 -23.49 282.17 -25.01Q281.3 -26.53 279.61 -27.37Q277.93 -28.21 275.53 -28.21H246.11ZM246.11 -41.59H274.11Q276.44 -41.59 278.03 -42.43Q279.63 -43.27 280.49 -44.8Q281.35 -46.33 281.35 -48.4Q281.35 -51.33 279.38 -53.04Q277.4 -54.75 274.39 -54.75H246.11Z"/><path transform="translate(-18.65,0)" d="M317.15 0V-68.75H337.51V0Z"/></g><g fill="var(--brass)"><rect x="0" y="9.5" width="318.86" height="3.4"/><rect x="0" y="17.5" width="318.86" height="3.4"/></g><g fill="currentColor" transform="translate(0,62.46) scale(0.42)"><path transform="translate(-5.17,0)" d="M38 1.2Q31.29 1.2 25.32 0.09Q19.36 -1.01 14.83 -3.57Q10.3 -6.12 7.74 -10.29Q5.17 -14.45 5.17 -20.57Q5.17 -20.98 5.2 -21.44Q5.22 -21.89 5.27 -22.14H19.28Q19.24 -21.85 19.19 -21.3Q19.14 -20.75 19.14 -20.2Q19.14 -17 21.42 -14.84Q23.7 -12.68 27.98 -11.6Q32.25 -10.52 38.01 -10.52Q41.12 -10.52 43.86 -10.85Q46.6 -11.18 48.86 -11.81Q51.12 -12.44 52.78 -13.41Q54.43 -14.39 55.32 -15.72Q56.2 -17.04 56.2 -18.68Q56.2 -21.44 54.14 -23.17Q52.08 -24.9 48.57 -26.06Q45.06 -27.22 40.66 -28.1Q36.26 -28.98 31.59 -29.96Q26.91 -30.94 22.51 -32.44Q18.11 -33.94 14.6 -36.19Q11.1 -38.44 9.03 -41.93Q6.97 -45.43 6.97 -50.42Q6.97 -55.22 9.14 -58.86Q11.31 -62.51 15.42 -64.96Q19.53 -67.4 25.27 -68.63Q31.02 -69.85 38.16 -69.85Q45.15 -69.85 50.75 -68.58Q56.34 -67.31 60.28 -64.79Q216.22 -62.26 66.3 -58.56Q68.37 -54.86 68.37 -50V-48.6H54.56V-49.75Q54.56 -52.31 52.5 -54.17Q50.44 -56.02 46.83 -57.08Q515.82 -58.13 38.54 -58.13Q32.75 -58.13 28.92 -57.25Q25.1 -56.38 23.21 -54.78Q21.32 -53.18 21.32 -51.02Q21.32 -48.61 23.38 -47.06Q25.44 -45.5 28.95 -44.47Q32.46 -43.44 36.86 -42.58Q41.26 -41.72 45.93 -40.69Q50.61 -39.66 55.01 -38.21Q59.41 -36.76 62.92 -34.46Q66.42 -32.16 68.49 -28.74Q70.55 -25.32 70.55 -20.44Q70.55 -12.59 66.39 -7.82Q62.24 -3.05 54.89 -0.92Q47.55 1.2 38 1.2Z"/><path transform="translate(32.83,0)" d="M106.74 0V-27.85L76.88 -68.65H93.47L113.82 -39.79H114.56L134.96 -68.65H150.65L120.8 -27.85V0Z"/><path transform="translate(70.83,0)" d="M190 1.2Q183.29 1.2 177.32 0.09Q171.36 -1.01 166.83 -3.57Q162.3 -6.12 159.74 -10.29Q157.17 -14.45 157.17 -20.57Q157.17 -20.98 157.2 -21.44Q157.22 -21.89 157.27 -22.14H171.28Q171.24 -21.85 171.19 -21.3Q171.14 -20.75 171.14 -20.2Q171.14 -17 173.42 -14.84Q175.7 -12.68 179.98 -11.6Q184.25 -10.52 190.01 -10.52Q193.12 -10.52 195.86 -10.85Q198.6 -11.18 200.86 -11.81Q523.72 -12.44 204.78 -13.41Q206.43 -14.39 207.32 -15.72Q208.2 -17.04 208.2 -18.68Q208.2 -21.44 206.14 -23.17Q204.08 -24.9 200.57 -26.06Q197.06 -27.22 192.66 -28.1Q188.26 -28.98 183.59 -29.96Q178.91 -30.94 174.51 -32.44Q170.11 -33.94 166.6 -36.19Q163.1 -38.44 161.03 -41.93Q158.97 -45.43 158.97 -50.42Q158.97 -55.22 161.14 -58.86Q163.31 -62.51 167.42 -64.96Q171.53 -67.4 177.27 -68.63Q183.02 -69.85 190.16 -69.85Q197.15 -69.85 202.75 -68.58Q208.34 -67.31 212.28 -64.79Q216.22 -62.26 218.3 -58.56Q220.37 -54.86 220.37 -50V-48.6H206.56V-49.75Q206.56 -52.31 204.5 -54.17Q202.44 -56.02 198.83 -57.08Q195.22 -58.13 190.54 -58.13Q184.75 -58.13 180.92 -57.25Q177.1 -56.38 175.21 -54.78Q173.32 -53.18 173.32 -51.02Q173.32 -48.61 175.38 -47.06Q177.44 -45.5 180.95 -44.47Q184.46 -43.44 188.86 -42.58Q193.26 -41.72 197.93 -40.69Q202.61 -39.66 207.01 -38.21Q211.41 -36.76 214.92 -34.46Q218.42 -32.16 220.49 -28.74Q222.55 -25.32 222.55 -20.44Q222.55 -12.59 218.39 -7.82Q214.24 -3.05 206.89 -0.92Q199.55 1.2 190 1.2Z"/><path transform="translate(108.83,0)" d="M256.08 0V-56.39H230.05V-68.65H296.21V-56.39H270.13V0Z"/><path transform="translate(146.83,0)" d="M307.41 0V-68.65H368.59V-56.78H321.46V-40.94H363.42V-29.07H321.46V-11.87H369.28V0Z"/><path transform="translate(184.83,0)" d="M383.91 0V-68.65H405.9L419.05 -31.84Q419.7 -30.03 420.56 -27.36Q421.42 -24.7 422.31 -21.99Q423.2 -19.28 423.83 -17.15H424.58Q425.12 -19.03 425.9 -21.62Q426.69 -24.2 427.55 -26.92Q428.41 -29.64 429.16 -31.8L442.31 -68.65H463.96V0H449.9V-38.2Q449.9 -41.41 449.98 -44.81Q450.05 -48.21 450.18 -50.91Q450.3 -53.61 450.35 -54.64H449.55Q449.21 -53.46 448.41 -50.89Q447.61 -48.32 446.76 -45.49Q445.9 -42.66 445.2 -40.6L430.35 0H417.01L402.11 -40.54Q401.36 -42.6 400.57 -45.16Q399.77 -47.73 399.07 -50.28Q398.36 -52.82 397.81 -54.64H397.01Q397.11 -52.66 397.19 -49.78Q397.26 -46.89 397.34 -43.86Q397.42 -40.82 397.42 -38.2V0Z"/><path transform="translate(222.83,0)" d="M510.6 1.2Q503.89 1.2 497.92 0.09Q491.96 -1.01 487.43 -3.57Q482.9 -6.12 480.34 -10.29Q477.77 -14.45 477.77 -20.57Q477.77 -20.98 477.8 -21.44Q477.82 -21.89 477.87 -22.14H491.88Q491.84 -21.85 491.79 -21.3Q491.74 -20.75 491.74 -20.2Q491.74 -17 494.02 -14.84Q496.3 -12.68 500.58 -11.6Q504.85 -10.52 510.61 -10.52Q513.72 -10.52 516.46 -10.85Q519.2 -11.18 521.46 -11.81Q523.72 -12.44 525.38 -13.41Q527.03 -14.39 527.92 -15.72Q528.8 -17.04 528.8 -18.68Q528.8 -21.44 526.74 -23.17Q524.68 -24.9 521.17 -26.06Q517.66 -27.22 513.26 -28.1Q508.86 -28.98 504.19 -29.96Q499.51 -30.94 495.11 -32.44Q490.71 -33.94 487.2 -36.19Q483.7 -38.44 481.63 -41.93Q479.57 -45.43 479.57 -50.42Q479.57 -55.22 481.74 -58.86Q483.91 -62.51 488.02 -64.96Q492.13 -67.4 497.87 -68.63Q503.62 -69.85 510.76 -69.85Q517.75 -69.85 523.35 -68.58Q528.94 -67.31 532.88 -64.79Q536.82 -62.26 538.9 -58.56Q540.97 -54.86 540.97 -50V-48.6H527.16V-49.75Q527.16 -52.31 525.1 -54.17Q523.04 -56.02 519.43 -57.08Q515.82 -58.13 511.14 -58.13Q505.35 -58.13 501.52 -57.25Q497.7 -56.38 495.81 -54.78Q493.92 -53.18 493.92 -51.02Q493.92 -48.61 495.98 -47.06Q498.04 -45.5 501.55 -44.47Q505.06 -43.44 509.46 -42.58Q513.86 -41.72 518.53 -40.69Q523.21 -39.66 527.61 -38.21Q532.01 -36.76 535.52 -34.46Q539.02 -32.16 541.09 -28.74Q543.15 -25.32 543.15 -20.44Q543.15 -12.59 538.99 -7.82Q534.84 -3.05 527.49 -0.92Q520.15 1.2 510.6 1.2Z"/></g></svg>"""
 
 BODY = f"""
 <header class="site-header" id="site-header">
@@ -19,7 +19,7 @@ BODY = f"""
       <a href="#architecture" data-sec-link="architecture" class="active">Architecture</a>
       <a href="#industries" data-sec-link="industries">Industries</a>
       <a href="#sandbox" data-sec-link="sandbox">Live Sandbox</a>
-      <a href="#microsoft-ai" data-sec-link="microsoft-ai">Microsoft &amp; AI</a>
+      <a href="#platform-ai" data-sec-link="platform-ai">Platform &amp; AI</a>
       <a href="#ingenuity" data-sec-link="ingenuity">Ingenuity</a>
       <a href="#pricing" data-sec-link="pricing">Pricing</a>
       <a href="#faq" data-sec-link="faq">FAQ</a>
@@ -41,7 +41,7 @@ BODY = f"""
     <a href="#architecture" data-sec-link="architecture" class="active">{ICONS["apps"]} 01 Apps &amp; Arch</a>
     <a href="#industries" data-sec-link="industries">{ICONS["manufacturing"]} 02 Industries</a>
     <a href="#sandbox" data-sec-link="sandbox">{ICONS["erp"]} 03 Live ERP</a>
-    <a href="#microsoft-ai" data-sec-link="microsoft-ai">{ICONS["ms"]} 04 Microsoft &amp; AI</a>
+    <a href="#platform-ai" data-sec-link="platform-ai">{ICONS["cloud"]} 04 Platform &amp; AI</a>
     <a href="#ingenuity" data-sec-link="ingenuity">{ICONS["bolt"]} 05 Ingenuity</a>
     <a href="#pricing" data-sec-link="pricing">{ICONS["diamond"]} 06 Pricing</a>
     <a href="#faq" data-sec-link="faq">{ICONS["faq"]} 07 FAQ</a>
@@ -56,10 +56,10 @@ BODY = f"""
   <section class="hero-section">
     <div class="wrap hero-grid">
       <div>
-        <div class="eyebrow">{ICONS["ai_mark"]} ISABI Systems · Interactive Enterprise Cloud &amp; Native AI</div>
+        <div class="eyebrow">{ICONS["ai_mark"]} ISABI Systems · Standalone SQL Cloud, 4 Kiosks &amp; Cited AI</div>
         <h1 class="hero-title">The ERP Your Group<br><span class="brass-text">Actually Runs On</span>.</h1>
         <p class="hero-lead">
-          Custom Microsoft Cloud ERP apps, real-time Power BI dashboards, offline field PWAs, and a cited AI assistant: engineered around how your business works, live in 1 to 2 weeks.
+          Custom relational SQL ERP, 20 executive dashboards, 22 printable statements, 4 biometric &amp; thermal kiosks, and a cited AI assistant: zero per-seat fees, live in 1 to 2 weeks.
         </p>
         <div class="hero-cta-row">
           <a href="#sandbox" class="btn btn-brass">{ICONS["erp"]} Launch Live Sandbox</a>
@@ -75,7 +75,7 @@ BODY = f"""
           <div class="hero-mode-grid" role="tablist" aria-label="Interactive Hero Preview Modes">
             <button type="button" class="hero-mode-card active" role="tab" aria-selected="true" data-hero-screen="dashboard">
               <div class="hmc-top">
-                <span class="hmc-icon tone-brass">{ICONS["pbi"]}</span>
+                <span class="hmc-icon tone-brass">{ICONS["analytics"]}</span>
                 <span class="hmc-tag">5 Industries</span>
               </div>
               <b>Live Executive Command</b>
@@ -85,10 +85,10 @@ BODY = f"""
             <button type="button" class="hero-mode-card" role="tab" aria-selected="false" data-hero-screen="pos">
               <div class="hmc-top">
                 <span class="hmc-icon tone-green">{ICONS["pos"]}</span>
-                <span class="hmc-tag">Tap to Ring</span>
+                <span class="hmc-tag">4 Kiosks</span>
               </div>
-              <b>Offline POS &amp; Gate Kiosk</b>
-              <small>Ring up till items &amp; test a 1-sec biometric punch</small>
+              <b>Thermal POS &amp; Face ID Kiosk</b>
+              <small>80mm/58mm Bluetooth print &amp; 128-d liveness punch</small>
             </button>
 
             <button type="button" class="hero-mode-card" role="tab" aria-selected="false" data-hero-screen="apps">
@@ -96,8 +96,8 @@ BODY = f"""
                 <span class="hmc-icon tone-blue">{ICONS["apps"]}</span>
                 <span class="hmc-tag">18 Modules</span>
               </div>
-              <b>Modular App Ecosystem</b>
-              <small>Explore custom Dataverse tables, SOA &amp; workflows</small>
+              <b>9 Hubs &amp; 34 SQL Tables</b>
+              <small>Explore 360° record inspector, smart forms &amp; SOA</small>
             </button>
 
             <button type="button" class="hero-mode-card" role="tab" aria-selected="false" data-hero-screen="ai">
@@ -105,7 +105,7 @@ BODY = f"""
                 <span class="hmc-icon tone-purple">{ICONS["ai"]}</span>
                 <span class="hmc-tag">Cited AI</span>
               </div>
-              <b>Ask ISABI Live Assistant</b>
+              <b>Ask ISABI &amp; Sentinels</b>
               <small>Run instant audits on receivables, stock &amp; P&amp;L</small>
             </button>
           </div>
@@ -125,13 +125,13 @@ BODY = f"""
               <button type="button" class="hlc-curr-btn" data-hero-curr="EUR">EUR</button>
               <button type="button" class="hlc-curr-btn" data-hero-curr="AED">AED</button>
             </div>
-            <a href="app/?demo=1&amp;autologin=1" id="hlc-open-portal-link" class="hlc-status" style="text-decoration:none" title="Launch Full 20-Page Power BI &amp; 34-Table Command Portal"><i></i>Full Portal ▸</a>
+            <a href="app/?demo=1&amp;autologin=1" id="hlc-open-portal-link" class="hlc-status" style="text-decoration:none" title="Launch Full 20-Dashboard &amp; 34-Table Command Center"><i></i>Full Portal ▸</a>
           </div>
         </div>
 
         <div class="hlc-body">
           <div class="hlc-screen-tabs" role="tablist" aria-label="Hero Screen Switcher">
-            <button type="button" class="hlc-screen-tab active" data-hero-screen="dashboard">{ICONS["pbi"]} Dashboard</button>
+            <button type="button" class="hlc-screen-tab active" data-hero-screen="dashboard">{ICONS["analytics"]} Dashboard</button>
             <button type="button" class="hlc-screen-tab" data-hero-screen="pos">{ICONS["pos"]} POS &amp; Kiosk</button>
             <button type="button" class="hlc-screen-tab" data-hero-screen="apps">{ICONS["apps"]} 18 Apps</button>
             <button type="button" class="hlc-screen-tab" data-hero-screen="ai">{ICONS["ai"]} Ask AI</button>
@@ -203,7 +203,7 @@ BODY = f"""
             <div class="hlc-ai-chips">
               <b>{ICONS["ai"]} Try Live AI:</b>
               <button type="button" class="hlc-prompt-chip" data-hero-ai-q="Audit overdue receivables across all Business Units">{ICONS["search"]} Overdue AR</button>
-              <button type="button" class="hlc-prompt-chip" data-hero-ai-q="Compare Hospitality vs. Auto &amp; Heavy Equipment margins">{ICONS["pbi"]} Compare Margins</button>
+              <button type="button" class="hlc-prompt-chip" data-hero-ai-q="Compare Hospitality vs. Auto &amp; Heavy Equipment margins">{ICONS["analytics"]} Compare Margins</button>
               <button type="button" class="hlc-prompt-chip" data-hero-ai-q="How does the 1 to 2 week go-live sprint work?">{ICONS["calendar"]} 2-Week Plan</button>
             </div>
             <button type="button" class="btn btn-brass" style="padding:6px 11px;font-size:12px" data-open-ai="Explain how ISABI Systems customizes the ledger for my industry">Open AI</button>
@@ -219,10 +219,10 @@ BODY = f"""
       <a href="#architecture" class="metric-cell">
         <div class="m-top-row">
           <div class="m-val num">8<span> Live Apps</span></div>
-          <span class="m-pill good">● In Production</span>
+          <span class="m-pill good">● $0 Seat Tax</span>
         </div>
         <div class="m-lbl">Running in Production Today</div>
-        <div class="m-sub">6 industry ERPs + Offline POS Till + Biometric Kiosk.</div>
+        <div class="m-sub">9 hubs, 34 SQL tables + 4 biometric &amp; thermal kiosks.</div>
         <span class="m-jump">Explore 18-App Suite ▸</span>
       </a>
       <a href="#industries" class="metric-cell">
@@ -230,7 +230,7 @@ BODY = f"""
           <div class="m-val num">100<span>%</span></div>
           <span class="m-pill blue">Zero Templates</span>
         </div>
-        <div class="m-lbl">Custom Data Model</div>
+        <div class="m-lbl">Custom SQL Data Model</div>
         <div class="m-sub">Engineered around your exact operational units &amp; COA.</div>
         <span class="m-jump">Inspect 8 Blueprints ▸</span>
       </a>
@@ -240,7 +240,7 @@ BODY = f"""
           <span class="m-pill brass">14-Day Sprint</span>
         </div>
         <div class="m-lbl">To Go-Live</div>
-        <div class="m-sub">Code-compiled schemas, Power BI &amp; statements in days.</div>
+        <div class="m-sub">Code-compiled SQL schemas, dashboards &amp; SOA in days.</div>
         <span class="m-jump">See 14-Day Roadmap ▸</span>
       </a>
       <a href="#sandbox" class="metric-cell">
@@ -273,13 +273,13 @@ BODY = f"""
         </div>
       </div>
 
-      <!-- TAB PANEL 1: ODOO-STYLE 18-APP INTERACTIVE GRID + LIVE SPOTLIGHT -->
+      <!-- TAB PANEL 1: 18-APP INTERACTIVE GRID + LIVE SPOTLIGHT -->
       <div class="arch-panel" data-arch-panel="apps">
         <div class="app-cat-bar" role="tablist" aria-label="Filter App Categories">
           <button type="button" class="app-cat-pill active" data-app-cat="all">{ICONS["apps"]} All 18 Modules</button>
-          <button type="button" class="app-cat-pill" data-app-cat="finance">{ICONS["ledger"]} Accounting &amp; BI (7)</button>
+          <button type="button" class="app-cat-pill" data-app-cat="finance">{ICONS["ledger"]} Accounting &amp; Analytics (7)</button>
           <button type="button" class="app-cat-pill" data-app-cat="ops">{ICONS["manufacturing"]} Industry Operations (7)</button>
-          <button type="button" class="app-cat-pill" data-app-cat="field">{ICONS["ai"]} Field PWAs, AI &amp; HR (4)</button>
+          <button type="button" class="app-cat-pill" data-app-cat="field">{ICONS["ai"]} 4 Kiosks, Sentinels &amp; HR (4)</button>
         </div>
 
         <div class="app-suite-grid" id="app-suite-grid" role="listbox" aria-label="ISABI Application Modules">
@@ -295,24 +295,24 @@ BODY = f"""
       <div class="arch-panel" data-arch-panel="layers" data-panel-hidden="1">
         <div class="layers-grid">
           <div class="layer-card reveal">
-            <div class="layer-num">{ICONS["dataverse"]} Layer 01 · Domain Schema</div>
+            <div class="layer-num">{ICONS["sql"]} Layer 01 · Relational Core</div>
             <h4>Tables Built for Your Trade</h4>
-            <p>We do not rename generic fields. We design the tables, form logic, and document numbering around the documents your staff already handle every day.</p>
+            <p>We compile 34 relational SQL tables, 24 smart entry forms with policy-locked dates, and a 360-degree record inspector shaped around your real daily workflow.</p>
           </div>
           <div class="layer-card reveal">
             <div class="layer-num">{ICONS["lock"]} Layer 02 · Security &amp; Roles</div>
             <h4>Each Role Sees Its Own Unit</h4>
-            <p>Cashiers, plant dispatchers, showroom staff, and branch accountants see only their own Business Unit. Owners and partners see the consolidated group view.</p>
+            <p>Nine business-cycle hubs, 10-industry by 150-company row-level security, and custom role field-locks keep every branch isolated while owners see group totals.</p>
           </div>
           <div class="layer-card reveal">
-            <div class="layer-num">{ICONS["scale"]} Layer 03 · Financial Integrity</div>
+            <div class="layer-num">{ICONS["scale"]} Layer 03 · Financial Ledger</div>
             <h4>Real Books, Safe Transition</h4>
-            <p>ISABI keeps full double-entry accounts, not just operational data. It runs beside your current accounting until the two agree, so your tax and audit records stay intact.</p>
+            <p>Full Class 1 to 7 double-entry accounting and autonomous AI sentinels audit ticket serials, fuel meters, and 3-leg payables beside your statutory trial balance.</p>
           </div>
           <div class="layer-card reveal">
-            <div class="layer-num">{ICONS["pbi"]} Layer 04 · Executive Output</div>
-            <h4>Reports, Statements &amp; AI</h4>
-            <p>Every transaction feeds Power BI dashboards and printable statements: balance sheet, P&amp;L, cash flow, and statements of account. Ask ISABI answers questions about your own figures.</p>
+            <div class="layer-num">{ICONS["analytics"]} Layer 04 · Executive Output</div>
+            <h4>Dashboards, SOA &amp; Cited AI</h4>
+            <p>Every entry powers 20 native executive dashboards, 22 bilingual printable statements, 4 biometric and thermal kiosks, and multilingual Ask ISABI ledger answers.</p>
           </div>
         </div>
       </div>
@@ -353,12 +353,12 @@ BODY = f"""
           <div class="contrast-card isabi-win" data-arch-card="isabi">
             <div class="cc-tag">{ICONS["award"]} The ISABI Standard</div>
             <h3>ISABI Systems Custom Architecture</h3>
-            <p>One operational and financial system, built on Microsoft enterprise infrastructure and shaped entirely around your entities, workflows, and chart of accounts.</p>
+            <p>One standalone SQL and encrypted cloud platform with zero per-user seat fees, shaped entirely around your entities, field kiosks, and chart of accounts.</p>
             <ul class="cc-list">
               <li><span style="color:var(--brass)">✓</span> Modeled around your exact operational unit (VINs, m³, cabanas, policies, leases)</li>
-              <li><span style="color:var(--brass)">✓</span> Strict Business Unit isolation for every subsidiary, property, or branch</li>
-              <li><span style="color:var(--brass)">✓</span> Power BI executive dashboards plus printable, audit-ready statements</li>
-              <li><span style="color:var(--brass)">✓</span> Embedded Ask ISABI assistant and offline-capable POS and kiosk apps</li>
+              <li><span style="color:var(--brass)">✓</span> 10-industry by 150-company row-level isolation across 9 business-cycle hubs</li>
+              <li><span style="color:var(--brass)">✓</span> 20 native executive dashboards plus 22 bilingual printable statements</li>
+              <li><span style="color:var(--brass)">✓</span> 4 biometric &amp; Bluetooth thermal kiosks, AI sentinels, and cited Ask ISABI</li>
             </ul>
           </div>
         </div>
@@ -396,13 +396,13 @@ BODY = f"""
           <div class="eyebrow">{ICONS["erp"]} 03 · Interactive Product Sandbox</div>
           <h2>Experience the ISABI Command Center Live.</h2>
           <p>
-            Switch between 6 live industry environments, inspect a printable Statement of Account (.RDL), or test the interactive Offline POS Till and Biometric Kiosk right here.
+            Switch between 6 live industry environments, inspect a bilingual printable Statement of Account, or test the interactive Offline POS Till and Biometric Kiosk right here.
           </p>
         </div>
         <div class="sec-tabs" role="tablist" aria-label="Sandbox Surface Mode">
-          <button type="button" class="sec-tab active" data-sbox-mode="erp">{ICONS["pbi"]} Live ERP &amp; Power BI</button>
-          <button type="button" class="sec-tab" data-sbox-mode="soa">{ICONS["soa"]} Printable Statement (.RDL)</button>
-          <button type="button" class="sec-tab" data-sbox-mode="pwa">{ICONS["pos"]} POS Till &amp; Gate Kiosk</button>
+          <button type="button" class="sec-tab active" data-sbox-mode="erp">{ICONS["analytics"]} Live ERP &amp; Analytics</button>
+          <button type="button" class="sec-tab" data-sbox-mode="soa">{ICONS["soa"]} Printable Statements (22)</button>
+          <button type="button" class="sec-tab" data-sbox-mode="pwa">{ICONS["pos"]} 4 Kiosks &amp; POS Till</button>
         </div>
       </div>
 
@@ -426,77 +426,77 @@ BODY = f"""
     </div>
   </section>
 
-  <!-- SECTION 04: AI INTEGRATED & MICROSOFT POWER PLATFORM -->
-  <section class="sec sec-alt" id="microsoft-ai">
+  <!-- SECTION 04: STANDALONE SQL CLOUD, KIOSKS & NATIVE AI -->
+  <section class="sec sec-alt" id="platform-ai">
     <div class="wrap">
       <div class="sec-head">
-        <div class="eyebrow">{ICONS["ms"]} 04 · Microsoft Enterprise Stack &amp; Native AI</div>
-        <h2>Microsoft Infrastructure Under the Hood. Native AI on Top.</h2>
+        <div class="eyebrow">{ICONS["cloud"]} 04 · Standalone SQL Cloud, Kiosks &amp; Native AI</div>
+        <h2>Zero Per-Seat Tax Under the Hood. Cited AI on Top.</h2>
         <p>
-          Your database, sign-in, automations, and analytics run inside your own Microsoft 365 tenant, with Ask ISABI wired directly to your live ledger.
+          Dedicated PostgreSQL and SQLite storage, encrypted multi-device cloud sync, 4 field kiosks, and AI audit sentinels, with zero per-user licence fees.
         </p>
       </div>
 
       <div class="ms-ai-grid">
         <div class="ms-left-col">
-          <div class="sec-tabs ms-pillar-tabs" role="tablist" aria-label="Microsoft Stack Pillars">
-            <button type="button" class="sec-tab active" data-ms-tab="all">{ICONS["ms"]} All 4 Pillars</button>
-            <button type="button" class="sec-tab" data-ms-tab="dataverse">{ICONS["dataverse"]} Dataverse</button>
-            <button type="button" class="sec-tab" data-ms-tab="apps">{ICONS["apps"]} Apps &amp; PWAs</button>
-            <button type="button" class="sec-tab" data-ms-tab="bi">{ICONS["pbi"]} Power BI &amp; SOA</button>
-            <button type="button" class="sec-tab" data-ms-tab="entra">{ICONS["lock"]} Security &amp; Flows</button>
+          <div class="sec-tabs ms-pillar-tabs" role="tablist" aria-label="Platform Architecture Pillars">
+            <button type="button" class="sec-tab active" data-ms-tab="all">{ICONS["cloud"]} All 4 Pillars</button>
+            <button type="button" class="sec-tab" data-ms-tab="sql">{ICONS["sql"]} SQL &amp; Cloud</button>
+            <button type="button" class="sec-tab" data-ms-tab="apps">{ICONS["apps"]} 9 Hubs &amp; Kiosks</button>
+            <button type="button" class="sec-tab" data-ms-tab="bi">{ICONS["analytics"]} Analytics &amp; SOA</button>
+            <button type="button" class="sec-tab" data-ms-tab="security">{ICONS["lock"]} Face ID &amp; Sentinels</button>
           </div>
 
           <div class="stack-cards" id="ms-stack-cards">
-            <div class="stack-card reveal" data-ms-card="dataverse">
+            <div class="stack-card reveal" data-ms-card="sql">
               <div class="stack-card-hdr">
-                <h4>{ICONS["dataverse"]} Microsoft Dataverse (Relational Core)</h4>
-                <span>Database &amp; Security</span>
+                <h4>{ICONS["sql"]} PostgreSQL &amp; SQLite Core (Zero Seat Tax)</h4>
+                <span>Database &amp; Sync</span>
               </div>
-              <p>Transactional relational storage with row-level ownership, Business Unit hierarchy, field-level audit history, nightly backups, and a standard web API.</p>
+              <p>34 relational tables with sub-150ms navigation across 93k+ live transactions, zero-spinner progressive boot, encrypted cloud relay, and unlimited seats.</p>
               <div class="stack-tags">
-                <span>Row-Level BU Isolation</span>
-                <span>Full Field Audit Trail</span>
-                <span>Nightly SharePoint DR</span>
+                <span>$0 Per-User Seat Tax</span>
+                <span>&lt;150ms SQL Speed</span>
+                <span>Encrypted Cloud Relay</span>
               </div>
             </div>
 
             <div class="stack-card reveal" data-ms-card="apps">
               <div class="stack-card-hdr">
-                <h4>{ICONS["apps"]} Power Apps &amp; Offline Field PWAs</h4>
+                <h4>{ICONS["apps"]} 9 Hubs, 360° Inspector &amp; 4 Field Kiosks</h4>
                 <span>Operational Surfaces</span>
               </div>
-              <p>Back-office ERP applications with custom client-side validation rules on every form, paired with offline-first web apps for POS tills and gate kiosks.</p>
+              <p>24 smart entry forms with policy-locked dates and auto-overtime, 360° Modify Drawer, Daily Plant Map, and 80mm/58mm Bluetooth thermal receipt kiosks.</p>
               <div class="stack-tags">
-                <span>Custom JS Form Rules</span>
-                <span>Offline Bluetooth POS</span>
-                <span>1s Face + PIN Kiosk</span>
+                <span>360° Modify Drawer</span>
+                <span>Priced / Gate Thermal</span>
+                <span>Daily Plant &amp; Fleet Map</span>
               </div>
             </div>
 
             <div class="stack-card reveal" data-ms-card="bi">
               <div class="stack-card-hdr">
-                <h4>{ICONS["pbi"]} Power BI (XMLA) &amp; Paginated .RDL</h4>
+                <h4>{ICONS["analytics"]} 20 Dashboards &amp; 22 Printable Statements</h4>
                 <span>Executive &amp; Statutory</span>
               </div>
-              <p>Governed semantic models with Year, Month, Week, and Day period intelligence, plus print-ready paginated reports for statements of account, P&amp;L, and trial balances.</p>
+              <p>Real-time Year, Month, Week, and Day segmented date facilitator with KPI drilldowns, plus 22 click-sortable bilingual A4 statements, P&amp;L, and tax invoices.</p>
               <div class="stack-tags">
-                <span>Y / M / W / D Pickers</span>
-                <span>Printable PDF &amp; Excel SOA</span>
+                <span>Y / M / W / D Facilitator</span>
+                <span>22 Bilingual A4 Reports</span>
                 <span>Class 1 to 7 COA</span>
               </div>
             </div>
 
-            <div class="stack-card reveal" data-ms-card="entra">
+            <div class="stack-card reveal" data-ms-card="security">
               <div class="stack-card-hdr">
-                <h4>{ICONS["lock"]} Power Automate, SharePoint &amp; Entra ID</h4>
-                <span>Workflows &amp; Identity</span>
+                <h4>{ICONS["lock"]} 128-d Face ID Liveness, RLS &amp; AI Sentinels</h4>
+                <span>Security &amp; Audit</span>
               </div>
-              <p>Event-driven flows for supervisor approvals, document routing into SharePoint, scheduled report delivery, and Entra ID sign-in with multi-factor authentication.</p>
+              <p>128-d Face ID with Eye-Blink and 3D Parallax liveness, 150-company RLS, and continuous AI sentinels auditing skipped tickets, fuel meters, and 3-leg AP/AR.</p>
               <div class="stack-tags">
-                <span>Digital Stamp Flows</span>
-                <span>Per-BU SharePoint Drives</span>
-                <span>Your Own M365 Tenant</span>
+                <span>Blink + 3D Liveness</span>
+                <span>10x150 Company RLS</span>
+                <span>AI Audit Sentinels</span>
               </div>
             </div>
           </div>
@@ -508,8 +508,8 @@ BODY = f"""
             <div class="ai-console-title">
               {BADGE_SVG}
               <div>
-                <b>Ask ISABI · Native System Intelligence</b>
-                <small>Reads your ledger entries, inventory, receivables, and Power BI measures. Every answer cites its source.</small>
+                <b>Ask ISABI · Multilingual Ledger Intelligence</b>
+                <small>Reads your ledger entries, ticket serials, stock, and receivables in EN, AR, and FR. Every answer cites its source.</small>
               </div>
             </div>
             <span class="hlc-status"><i></i>Live Sandbox</span>
@@ -562,7 +562,7 @@ BODY = f"""
           <thead>
             <tr>
               <th>Capability / Criterion</th>
-              <th class="isabi-col">{ICONS["ai"]} ISABI Systems (Custom, Microsoft Cloud)</th>
+              <th class="isabi-col">{ICONS["ai"]} ISABI Systems (Standalone SQL &amp; Cited AI)</th>
               <th>{ICONS["box"]} Generic SaaS (Odoo / Zoho / Off-the-Shelf)</th>
               <th>{ICONS["clock"]} Traditional Legacy ERP Consultancies</th>
             </tr>
@@ -570,33 +570,33 @@ BODY = f"""
           <tbody>
             <tr>
               <td><b>{ICONS["apps"]} Fit to Your Workflow</b></td>
-              <td class="isabi-col">{ICONS["check"]} 100% custom schema built around your exact operations</td>
+              <td class="isabi-col">{ICONS["check"]} 100% custom 34-table SQL schema &amp; 9 business-cycle hubs</td>
               <td>{ICONS["warn"]} Rigid templates and awkward workarounds</td>
               <td>{ICONS["cross"]} Possible only after expensive custom change orders</td>
             </tr>
             <tr>
-              <td><b>{ICONS["bolt"]} Deployment Speed</b></td>
-              <td class="isabi-col">{ICONS["check"]} 1 to 2 weeks, generated from code</td>
-              <td>{ICONS["warn"]} 2 to 4 months of configuration compromises</td>
-              <td>{ICONS["cross"]} 9 to 18 months of slow manual consulting</td>
+              <td><b>{ICONS["key"]} Per-User Seat Fees</b></td>
+              <td class="isabi-col">{ICONS["check"]} $0 per-user fees across unlimited staff &amp; kiosk tablets</td>
+              <td>{ICONS["warn"]} Per-user &amp; per-module fees that compound monthly</td>
+              <td>{ICONS["cross"]} Steep named-user licences plus annual maintenance</td>
             </tr>
             <tr>
-              <td><b>{ICONS["pbi"]} Executive Analytics &amp; SOA</b></td>
-              <td class="isabi-col">{ICONS["check"]} Native Power BI plus print-ready audited statements</td>
+              <td><b>{ICONS["analytics"]} Executive Analytics &amp; SOA</b></td>
+              <td class="isabi-col">{ICONS["check"]} 20 native dashboards plus 22 bilingual printable statements</td>
               <td>{ICONS["warn"]} Basic built-in charts and constant Excel exports</td>
               <td>{ICONS["cross"]} Sold as a separate six-figure BI project</td>
             </tr>
             <tr>
-              <td><b>{ICONS["ai"]} AI Integration</b></td>
-              <td class="isabi-col">{ICONS["check"]} Native Ask ISABI wired to the live ledger and stock</td>
-              <td>{ICONS["warn"]} Generic chatbots with no access to the ledger</td>
+              <td><b>{ICONS["ai"]} AI &amp; Field Kiosks</b></td>
+              <td class="isabi-col">{ICONS["check"]} Ask ISABI (EN/AR/FR), AI sentinels, Face ID &amp; thermal print</td>
+              <td>{ICONS["warn"]} Generic chatbots and third-party POS add-ons</td>
               <td>{ICONS["cross"]} Rarely available or requires external middleware</td>
             </tr>
             <tr>
-              <td><b>{ICONS["lock"]} Data Ownership &amp; Security</b></td>
-              <td class="isabi-col">{ICONS["check"]} 100% inside your own Microsoft Dataverse &amp; Entra tenant</td>
-              <td>{ICONS["warn"]} Locked inside vendor proprietary cloud</td>
-              <td>{ICONS["cross"]} Often hosted on aging on-premise servers</td>
+              <td><b>{ICONS["lock"]} Ownership &amp; Go-Live Speed</b></td>
+              <td class="isabi-col">{ICONS["check"]} 100% client-owned SQL database, live in 1 to 2 weeks</td>
+              <td>{ICONS["warn"]} 2 to 4 months locked inside vendor proprietary cloud</td>
+              <td>{ICONS["cross"]} 9 to 18 months on aging on-premise servers</td>
             </tr>
             <tr>
               <td><b>{ICONS["user"]} Architect Access</b></td>
@@ -672,7 +672,7 @@ BODY = f"""
           <div class="ing-kicker">{ICONS["bolt"]} Advantage 02 · Code-First Compilers</div>
           <h3>Weeks to Production, Not Years</h3>
           <p>
-            Where agencies configure screens by hand, ISABI Systems generates the database schema, form logic, Power BI models, and report layouts from code. Every change is repeatable, versioned, and verified before it reaches your team.
+            Where agencies configure screens by hand, ISABI Systems compiles the SQL relational schema, 24 smart form rules, 20 executive dashboards, and 22 statement layouts from code. Every change is repeatable, versioned, and verified before release.
           </p>
         </div>
 
@@ -680,7 +680,7 @@ BODY = f"""
           <div class="ing-kicker">{ICONS["pos"]} Advantage 03 · Edge-to-Boardroom Continuity</div>
           <h3>From the Plant Gate &amp; Till to the Group P&amp;L</h3>
           <p>
-            We solve the hard last-mile problems: POS tills that keep printing receipts over Bluetooth through power and internet cuts, tablet kiosks that verify faces and PINs at 6:00 AM, and nightly pipelines that turn raw tickets into audited ledger entries.
+            We solve the hard last-mile problems: weighbridge and POS terminals that toggle Priced Invoices and Unpriced Gate Passes over 80mm/58mm Bluetooth printers offline, 128-d Face ID liveness kiosks at 6:00 AM, and Daily Plant Machine Maps.
           </p>
         </div>
 
@@ -693,30 +693,30 @@ BODY = f"""
         </div>
       </div>
 
-      <!-- Panel 4 (NEW): 14-Day Go-Live Sprint Roadmap -->
+      <!-- Panel 4: 14-Day Go-Live Sprint Roadmap -->
       <div class="sprint-grid" data-ing-panel="roadmap" data-panel-hidden="1" data-mob-hide="1">
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["calendar"]} Days 1 to 3</div>
-          <h4>1. Schema, COA &amp; Business Units</h4>
-          <p>We map your entities, Class 1 to 7 chart of accounts, currencies, and operational units (VINs, m³, cabanas, leases, or policies) and compile the Dataverse relational schema.</p>
-          <span class="sprint-deliverable">✓ Deliverable: Live tables &amp; role security in your M365 tenant</span>
+          <h4>1. SQL Schema, COA &amp; RLS</h4>
+          <p>We map your entities, Class 1 to 7 chart of accounts, currencies, and operational units (VINs, m³, cabanas, leases, or policies) and compile the PostgreSQL and SQLite core.</p>
+          <span class="sprint-deliverable">✓ Deliverable: Live SQL tables &amp; 150-company RLS isolation</span>
         </div>
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["scope"]} Days 4 to 6</div>
-          <h4>2. Forms, Approvals &amp; Field PWAs</h4>
-          <p>We deploy your tailored model-driven ERP forms with client-side validation rules, supervisor approval flows, and any companion Offline POS Till or Biometric Gate Kiosk.</p>
-          <span class="sprint-deliverable">✓ Deliverable: Working operational screens &amp; offline field apps</span>
+          <h4>2. 9 Hubs, 24 Forms &amp; 4 Kiosks</h4>
+          <p>We deploy your 9 business-cycle hubs, 360-degree record inspector, policy-locked entry forms, and companion Bluetooth thermal &amp; 128-d Face ID kiosks.</p>
+          <span class="sprint-deliverable">✓ Deliverable: Working hubs, Modify Drawer &amp; field kiosks</span>
         </div>
         <div class="sprint-card">
-          <div class="sprint-day">{ICONS["pbi"]} Days 7 to 10</div>
-          <h4>3. Power BI &amp; Printable SOA Pack</h4>
-          <p>We publish your Operations and Financial Power BI workspaces (with Year, Month, Week, and Day pickers) alongside pixel-perfect printable Statements of Account and P&amp;L.</p>
-          <span class="sprint-deliverable">✓ Deliverable: Executive dashboards &amp; PDF/Excel statements</span>
+          <div class="sprint-day">{ICONS["analytics"]} Days 7 to 10</div>
+          <h4>3. 20 Dashboards &amp; 22 Statements</h4>
+          <p>We publish 20 native executive dashboards (with Year, Month, Week, and Day date facilitators) alongside 22 bilingual printable Statements of Account and P&amp;L.</p>
+          <span class="sprint-deliverable">✓ Deliverable: Executive analytics &amp; bilingual A4 statements</span>
         </div>
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["bolt"]} Days 11 to 14</div>
-          <h4>4. Historical Load, Ask ISABI &amp; Go-Live</h4>
-          <p>We migrate historical workbooks, wire in Ask ISABI, run parallel reconciliation against your current accounting until variance is $0.00, train your staff, and cut over.</p>
+          <h4>4. Migration, Sentinels &amp; Cutover</h4>
+          <p>We migrate historical workbooks, activate AI sentinels and multilingual Ask ISABI, reconcile in parallel until variance is $0.00, train staff, and cut over.</p>
           <span class="sprint-deliverable">✓ Deliverable: Verified zero-variance cutover &amp; team sign-off</span>
         </div>
       </div>
@@ -737,7 +737,7 @@ BODY = f"""
         <div class="sec-tabs" role="tablist" aria-label="Pricing View Switcher">
           <button type="button" class="sec-tab active" data-price-view="tiers">{ICONS["diamond"]} 3 Engagement Tiers</button>
           <button type="button" class="sec-tab" data-price-view="builder">{ICONS["scope"]} Custom Scope Builder</button>
-          <button type="button" class="sec-tab" data-price-view="guarantee">{ICONS["insurance"]} Ownership &amp; Included</button>
+          <button type="button" class="sec-tab" data-price-view="guarantee">{ICONS["insurance"]} Zero Seat Tax &amp; Ownership</button>
         </div>
       </div>
 
@@ -755,17 +755,17 @@ BODY = f"""
         <div class="price-card reveal" data-tier-card="tier1" data-mob-hide="1">
           <span class="price-badge">{ICONS["realestate"]} Tier 01 · Single Entity</span>
           <h3>Operational Foundation</h3>
-          <p class="price-desc">Ideal for a single operating company, resort property, showroom, plant, or brokerage replacing fragile spreadsheets with a governed ERP and Power BI suite.</p>
+          <p class="price-desc">Ideal for a single operating company, resort property, showroom, plant, or brokerage replacing fragile spreadsheets with a zero-seat-fee SQL ERP and analytics suite.</p>
           <div class="price-block">
             <div class="price-val num">$4,500 <small>starting build</small></div>
             <div class="price-retainer">+$350 / month ongoing support and improvements (optional)</div>
           </div>
           <ul class="price-features">
-            <li><i>✓</i> <span>Custom Dataverse operational &amp; accounting schema (up to 10 core tables)</span></li>
-            <li><i>✓</i> <span>Tailored ERP application with custom validation on every form</span></li>
-            <li><i>✓</i> <span>Role-based security for staff, accountants, and management</span></li>
-            <li><i>✓</i> <span>Executive Power BI dashboard (Sales, Expenses, Receivables, Cash)</span></li>
-            <li><i>✓</i> <span>2 printable statements (Statement of Account and P&amp;L)</span></li>
+            <li><i>✓</i> <span>Custom PostgreSQL &amp; SQLite schema with zero per-user seat fees</span></li>
+            <li><i>✓</i> <span>Role-gated workspace with 360° record inspector &amp; smart entry forms</span></li>
+            <li><i>✓</i> <span>Unlimited internal seats for staff, accountants, and management</span></li>
+            <li><i>✓</i> <span>Native executive analytics (Sales, Expenses, Receivables, Cash)</span></li>
+            <li><i>✓</i> <span>Core bilingual printable statements (Statement of Account &amp; P&amp;L)</span></li>
             <li><i>✓</i> <span>Historical Excel data migration and team onboarding</span></li>
           </ul>
           <button type="button" class="btn btn-outline" data-select-tier="Operational Foundation ($4,500+)">Start with This Tier</button>
@@ -775,18 +775,18 @@ BODY = f"""
         <div class="price-card featured reveal" data-tier-card="tier2">
           <span class="price-badge">{ICONS["award"]} Recommended · Most Popular</span>
           <h3>Multi-Entity &amp; AI Operations Suite</h3>
-          <p class="price-desc">Complete operational and financial control for multi-branch companies requiring automated workflows, statutory reconciliation, companion field apps, and Ask ISABI AI.</p>
+          <p class="price-desc">Complete operational and financial control for multi-branch companies requiring 9 business-cycle hubs, statutory reconciliation, field kiosks, and cited AI.</p>
           <div class="price-block">
             <div class="price-val num">$9,500 <small>starting build</small></div>
             <div class="price-retainer">+$650 / month continuous engineering, AI tuning, and priority support</div>
           </div>
           <ul class="price-features">
-            <li><i>✓</i> <span>Everything in Operational Foundation, expanded for multi-branch scale</span></li>
-            <li><i>✓</i> <span>Multi-Business Unit isolation (branch-level security + consolidated view)</span></li>
-            <li><i>✓</i> <span>Three Power BI workspaces (Operations, Financial, and Reconciliation)</span></li>
-            <li><i>✓</i> <span>Full printable statement pack (customer and supplier SOA, aging, trial balance)</span></li>
-            <li><i>✓</i> <span>Embedded <b>Ask ISABI</b> AI assistant wired to your live ledger &amp; stock</span></li>
-            <li><i>✓</i> <span>1 Companion PWA included (Offline POS Till or Biometric Attendance Kiosk)</span></li>
+            <li><i>✓</i> <span>Everything in Operational Foundation, expanded to 34 relational tables</span></li>
+            <li><i>✓</i> <span>Multi-Business Unit RLS isolation + consolidated group view ($0 seat tax)</span></li>
+            <li><i>✓</i> <span>All 20 native executive dashboards with Y/M/W/D date facilitator</span></li>
+            <li><i>✓</i> <span>Full 22 bilingual printable statements (SOA, aging, tax invoices, P&amp;L)</span></li>
+            <li><i>✓</i> <span>Multilingual <b>Ask ISABI</b> (EN/AR/FR) &amp; autonomous AI audit sentinels</span></li>
+            <li><i>✓</i> <span>Companion Kiosk included (80mm/58mm Bluetooth POS or 128-d Face ID)</span></li>
             <li><i>✓</i> <span>Parallel-run reconciliation against your statutory books</span></li>
           </ul>
           <button type="button" class="btn btn-brass" data-select-tier="Multi-Entity & AI Operations Suite ($9,500+)">Start with This Suite</button>
@@ -804,9 +804,9 @@ BODY = f"""
           <ul class="price-features">
             <li><i>✓</i> <span>Multiple dedicated industry apps (Hospitality, Trading, Manufacturing, Real Estate, Insurance, Holding)</span></li>
             <li><i>✓</i> <span>Group-wide treasury, partner equity split engines &amp; intercompany ledgers</span></li>
-            <li><i>✓</i> <span>Unlimited companion PWAs (POS tills, attendance kiosks, field portals)</span></li>
-            <li><i>✓</i> <span>Full Microsoft Entra ID sign-in &amp; M365 custom corporate branding rollout</span></li>
-            <li><i>✓</i> <span>Automated nightly backups, audit watchdogs &amp; custom API integrations</span></li>
+            <li><i>✓</i> <span>Full 4-Kiosk Suite (Sales, Quarry, Fuel Metering &amp; 128-d Face ID Liveness)</span></li>
+            <li><i>✓</i> <span>10-Industry by 150-Company RLS, custom role permissions &amp; field-locks</span></li>
+            <li><i>✓</i> <span>Encrypted multi-device cloud relay, nightly backups &amp; Daily Plant Map</span></li>
             <li><i>✓</i> <span>Hussein Bdeir works with you directly from design to cutover</span></li>
           </ul>
           <button type="button" class="btn btn-outline" data-select-tier="Enterprise Group Ecosystem ($18,000+ Custom)">Request Custom Group Proposal</button>
@@ -854,45 +854,45 @@ BODY = f"""
               <h4>3. Choose the Modules to Include</h4>
               <div class="cfg-checks" id="cfg-mod-checks">
                 <label class="cfg-check active">
-                  <input type="checkbox" value="Core Dataverse ERP & Custom Ledger" data-cost="4500" data-wks="2" checked disabled>
+                  <input type="checkbox" value="Core SQL ERP, 9 Hubs & Custom Ledger" data-cost="4500" data-wks="2" checked disabled>
                   <div>
-                    <b>{ICONS["ledger"]} Core Dataverse ERP &amp; Ledger</b>
-                    <small>Custom tables, forms, roles, COA &amp; audit trail (Included)</small>
+                    <b>{ICONS["ledger"]} Core SQL ERP, 9 Hubs &amp; Ledger</b>
+                    <small>34 tables, 360° inspector, COA &amp; unlimited seats (Included)</small>
                   </div>
                 </label>
                 <label class="cfg-check active">
-                  <input type="checkbox" value="Power BI Executive Dashboards" data-cost="2000" data-wks="1" checked>
+                  <input type="checkbox" value="20 Native Executive Dashboards" data-cost="2000" data-wks="1" checked>
                   <div>
-                    <b>{ICONS["pbi"]} Power BI Executive Dashboards</b>
-                    <small>XMLA semantic model, KPIs, MoM variance &amp; period pickers</small>
+                    <b>{ICONS["analytics"]} 20 Native Executive Dashboards</b>
+                    <small>Y/M/W/D date facilitator, KPI drilldowns &amp; chart popovers</small>
                   </div>
                 </label>
                 <label class="cfg-check active">
-                  <input type="checkbox" value="Paginated .RDL Statements & SOA Pack" data-cost="1500" data-wks="1" checked>
+                  <input type="checkbox" value="22 Bilingual Printable Statements & SOA" data-cost="1500" data-wks="1" checked>
                   <div>
-                    <b>{ICONS["soa"]} Printable .RDL Statements &amp; SOA</b>
-                    <small>Pixel-perfect PDF/Excel Statement of Accounts, P&amp;L &amp; Aging</small>
+                    <b>{ICONS["soa"]} 22 Printable Statements &amp; SOA</b>
+                    <small>Click-sortable A4 Balance Sheet, P&amp;L, Cash Flow &amp; Invoices</small>
                   </div>
                 </label>
                 <label class="cfg-check active">
-                  <input type="checkbox" value="Ask ISABI Native AI Assistant" data-cost="1800" data-wks="1" checked>
+                  <input type="checkbox" value="Ask ISABI AI & Audit Sentinels" data-cost="1800" data-wks="1" checked>
                   <div>
-                    <b>{ICONS["ai"]} Ask ISABI Native AI Assistant</b>
-                    <small>In-app &amp; WhatsApp ledger intelligence wired to live data</small>
+                    <b>{ICONS["ai"]} Ask ISABI &amp; Audit Sentinels</b>
+                    <small>EN/AR/FR cited ledger AI + ticket, fuel &amp; AP/AR sentinels</small>
                   </div>
                 </label>
                 <label class="cfg-check">
-                  <input type="checkbox" value="Custom Offline POS Till PWA" data-cost="2200" data-wks="1">
+                  <input type="checkbox" value="Offline Bluetooth POS Till PWA" data-cost="2200" data-wks="1">
                   <div>
-                    <b>{ICONS["pos"]} Custom Offline POS Till (PWA)</b>
-                    <small>Fast cashier till, thermal receipt print &amp; daily revenue sync</small>
+                    <b>{ICONS["pos"]} Offline Bluetooth POS Till (PWA)</b>
+                    <small>80mm/58mm ESC/POS thermal print &amp; instant cloud sync</small>
                   </div>
                 </label>
                 <label class="cfg-check">
-                  <input type="checkbox" value="Biometric Face & PIN Attendance Kiosk" data-cost="1800" data-wks="1">
+                  <input type="checkbox" value="4-Kiosk Suite & 128-d Face ID Liveness" data-cost="1800" data-wks="1">
                   <div>
-                    <b>{ICONS["kiosk"]} Biometric Attendance Kiosk (PWA)</b>
-                    <small>Tablet face + PIN verification &amp; automated payroll attendance</small>
+                    <b>{ICONS["kiosk"]} 4-Kiosk Suite &amp; 128-d Face ID</b>
+                    <small>Blink + 3D parallax liveness, weighbridge, fuel &amp; plant map</small>
                   </div>
                 </label>
                 <label class="cfg-check">
@@ -903,10 +903,10 @@ BODY = f"""
                   </div>
                 </label>
                 <label class="cfg-check">
-                  <input type="checkbox" value="Automated Recruitment & CV Pipeline" data-cost="1200" data-wks="1">
+                  <input type="checkbox" value="Automated Recruitment & Encrypted CV Vault" data-cost="1200" data-wks="1">
                   <div>
-                    <b>{ICONS["hr"]} Recruitment &amp; SharePoint CV Pipeline</b>
-                    <small>Automated applicant intake, SharePoint folders &amp; HR review</small>
+                    <b>{ICONS["hr"]} Recruitment &amp; Encrypted CV Vault</b>
+                    <small>Applicant intake, per-entity routing &amp; HR review pipeline</small>
                   </div>
                 </label>
               </div>
@@ -948,19 +948,19 @@ BODY = f"""
         </div>
       </div>
 
-      <!-- Pricing Panel 3 (NEW): Ownership, Licensing & Zero Lock-In Guarantee -->
+      <!-- Pricing Panel 3: Zero Seat Tax, Ownership & Parallel-Run Guarantee -->
       <div class="sprint-grid" data-price-panel="guarantee" data-panel-hidden="1">
         <div class="sprint-card">
-          <div class="sprint-day">{ICONS["key"]} 100% Tenant Ownership</div>
-          <h4>Your Data Never Leaves Your Microsoft Tenant</h4>
-          <p>Every table, flow, Power BI semantic model, and printable report is deployed directly inside your own Microsoft 365 tenant under your administrators. If you ever pause our retainer, your system keeps running without interruption.</p>
+          <div class="sprint-day">{ICONS["key"]} 100% Data Ownership</div>
+          <h4>Dedicated SQL Database Under Your Control</h4>
+          <p>Every PostgreSQL and SQLite schema, double-entry ledger, dashboard, and printable statement belongs to your organisation with full exportability. If you ever pause our retainer, your system keeps running.</p>
           <span class="sprint-deliverable">✓ Zero vendor lock-in · Full source &amp; schema ownership</span>
         </div>
         <div class="sprint-card">
-          <div class="sprint-day">{ICONS["ar"]} Zero Licence Mark-Up</div>
-          <h4>Direct Microsoft Billing &amp; Free Companion Terminals</h4>
-          <p>Microsoft bills your tenant directly at standard list prices. ISABI Systems adds zero licence mark-up and charges $0 per terminal for the Offline POS Till and Biometric Gate Kiosk web apps.</p>
-          <span class="sprint-deliverable">✓ Unlimited POS &amp; Kiosk tablets with zero SaaS seat tax</span>
+          <div class="sprint-day">{ICONS["ar"]} Zero Per-User Seat Tax</div>
+          <h4>Unlimited Staff Seats &amp; Field Kiosk Tablets</h4>
+          <p>Unlike per-seat cloud ERPs and BI tools that charge $30 to $60 per user every month, ISABI runs with $0 per-user licence fees across executives, accountants, dispatchers, and kiosk tablets.</p>
+          <span class="sprint-deliverable">✓ Unlimited internal seats &amp; kiosks with $0 SaaS user tax</span>
         </div>
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["scale"]} Parallel-Run Guarantee</div>
@@ -997,10 +997,10 @@ BODY = f"""
         <span class="topic-lbl">{ICONS["bolt"]} Quick Fill:</span>
         <button type="button" class="topic-chip" data-topic-ind="Hospitality & Resorts" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We operate hospitality / F&B venues and want to unify daily outlet closes, POS tills, supplier invoices, and partner profit splits.">{ICONS["hospitality"]} Hospitality &amp; POS</button>
         <button type="button" class="topic-chip" data-topic-ind="Automotive & Heavy Equipment Trading" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We trade vehicles, heavy equipment, or spare parts and need per-VIN landed cost, bonded stock, and aged receivable SOA control.">{ICONS["trading"]} Auto &amp; VIN Trading</button>
-        <button type="button" class="topic-chip" data-topic-ind="Concrete, Construction & Manufacturing" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We run concrete batch plants, manufacturing, or transport fleets and need ticket-level m³ dispatch, silo stock, and contractor credit gates.">{ICONS["manufacturing"]} Concrete &amp; Mfg</button>
+        <button type="button" class="topic-chip" data-topic-ind="Concrete, Construction & Manufacturing" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We run concrete batch plants, manufacturing, or transport fleets and need ticket-level m³ dispatch, 4 plant kiosks, and contractor credit gates.">{ICONS["manufacturing"]} Concrete &amp; Mfg</button>
         <button type="button" class="topic-chip" data-topic-ind="Real Estate & Property Portfolio" data-topic-tier="Operational Foundation ($4,500+)" data-topic-note="We manage a property portfolio and need unit registries, lease escalations, post-dated check tracking, and property NOI dashboards.">{ICONS["realestate"]} Real Estate</button>
         <button type="button" class="topic-chip" data-topic-ind="Insurance Brokerage" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We operate an insurance brokerage and want automated carrier bordereaux, commission splits, 90/60/30-day renewals, and premium aging.">{ICONS["insurance"]} Insurance</button>
-        <button type="button" class="topic-chip" data-topic-ind="Multi-Entity Holding Group" data-topic-tier="Enterprise Group Ecosystem ($18,000+ Custom)" data-topic-note="We run a multi-company group and want consolidated Power BI reporting, Business Unit isolation, printable SOAs, and Ask ISABI AI.">{ICONS["holding"]} Holding Group</button>
+        <button type="button" class="topic-chip" data-topic-ind="Multi-Entity Holding Group" data-topic-tier="Enterprise Group Ecosystem ($18,000+ Custom)" data-topic-note="We run a multi-company group and want consolidated executive dashboards, 150-company RLS isolation, 22 printable SOAs, and Ask ISABI AI with zero per-seat fees.">{ICONS["holding"]} Holding Group</button>
       </div>
 
       <!-- Mobile Switcher for Consultation Portal -->
@@ -1144,7 +1144,7 @@ BODY = f"""
           </div>
         </div>
         <p style="margin:0 0 12px;color:#9FB0C7;font-size:13px">
-          Custom ERP, financial ledgers, Power BI reporting, companion field apps, and native AI, built on the Microsoft Cloud.
+          Standalone SQL ERP, double-entry ledgers, 20 executive dashboards, 22 printable statements, 4 field kiosks, and cited AI with zero per-user seat fees.
         </p>
         <div style="font-size:12.5px;color:#F4F2EE">
           <b>{ICONS["wa"]} Direct WhatsApp:</b> <a href="https://wa.me/96170444955" target="_blank" rel="noopener" style="color:#D9A54A">+961 70 444 955</a><br>
@@ -1168,10 +1168,10 @@ BODY = f"""
         <h4>Platform &amp; AI</h4>
         <ul>
           <li><a href="#architecture">{ICONS["apps"]} 18-App Ecosystem &amp; Architecture</a></li>
-          <li><a href="#sandbox">{ICONS["erp"]} Interactive ERP, SOA &amp; POS Sandbox</a></li>
-          <li><a href="#microsoft-ai">{ICONS["ms"]} Microsoft Dataverse &amp; Power Platform</a></li>
-          <li><a href="#microsoft-ai">{ICONS["ai"]} Ask ISABI Native Intelligence</a></li>
-          <li><a href="#industries" data-goto-ind="pos">{ICONS["pos"]} Offline POS Till &amp; Attendance PWAs</a></li>
+          <li><a href="#sandbox">{ICONS["erp"]} Interactive ERP, SOA &amp; Kiosk Sandbox</a></li>
+          <li><a href="#platform-ai">{ICONS["cloud"]} Standalone SQL Cloud &amp; Zero Seat Tax</a></li>
+          <li><a href="#platform-ai">{ICONS["ai"]} Ask ISABI &amp; Audit Sentinels</a></li>
+          <li><a href="#industries" data-goto-ind="pos">{ICONS["pos"]} 4 Kiosks, 128-d Face ID &amp; Thermal POS</a></li>
           <li><a href="#ingenuity">{ICONS["roi"]} ROI &amp; 14-Day Go-Live Sprint</a></li>
           <li><a href="#faq">{ICONS["faq"]} Frequently Asked Questions</a></li>
         </ul>
@@ -1191,7 +1191,7 @@ BODY = f"""
 
     <div class="ftr-bottom">
       <span>© <span id="ftr-year">2026</span> ISABI Systems. Founded and architected by Hussein Bdeir. All rights reserved.</span>
-      <span>Built on Microsoft Dataverse · Power Apps · Power Automate · Power BI · Ask ISABI AI</span>
+      <span>Standalone PostgreSQL &amp; SQLite · 9 Business-Cycle Hubs · 22 Printable Statements · 4 Biometric &amp; Thermal Kiosks · Ask ISABI AI</span>
     </div>
   </div>
 </footer>
@@ -1212,7 +1212,7 @@ BODY = f"""
         {BADGE_SVG}
         <div>
           <b style="font-family:Archivo,sans-serif;font-size:16px;display:block">ISABI · System Intelligence</b>
-          <small style="color:#9FB0C7;font-size:12px">Ask about custom ERP architecture, industry fit, pricing, or live ledger queries</small>
+          <small style="color:#9FB0C7;font-size:12px">Ask about custom SQL ERP architecture, industry fit, 4 kiosks, pricing, or live ledger queries</small>
         </div>
       </div>
       <button type="button" class="btn btn-ghost" id="close-ai-drawer" style="color:#F4F2EE;border-color:rgba(255,255,255,0.2)">Close</button>
@@ -1225,7 +1225,7 @@ BODY = f"""
       <!-- Populated by JS -->
     </div>
     <form class="ai-drawer-ftr" id="ai-drawer-form">
-      <input type="text" id="ai-drawer-input" placeholder="Ask ISABI about your industry, Microsoft stack, or pricing..." autocomplete="off">
+      <input type="text" id="ai-drawer-input" placeholder="Ask ISABI about your industry, zero-seat-fee SQL stack, or pricing..." autocomplete="off">
       <button type="submit" class="btn btn-brass">Ask</button>
     </form>
   </aside>

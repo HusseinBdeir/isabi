@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "ISABI Systems | Custom ERP, Power BI and Native AI",
+  "name": "ISABI Systems | Custom ERP, Native Analytics and Cited AI",
   "short_name": "ISABI Systems",
-  "description": "Custom ERP, financial ledgers, Power BI reporting, offline field apps, and the Ask ISABI assistant, built on the Microsoft Cloud.",
+  "description": "Custom relational SQL ERP, 9 business-cycle hubs, 20 native executive dashboards, 22 printable statements, 4 biometric & thermal field kiosks, and Ask ISABI AI with zero per-user seat fees.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

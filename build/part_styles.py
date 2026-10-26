@@ -1663,7 +1663,7 @@ button {
   color: var(--ink);
 }
 
-/* ---------- Section 3: Interactive ERP & Power BI Command Center Sandbox ---------- */
+/* ---------- Section 3: Interactive ERP & Executive Analytics Command Center Sandbox ---------- */
 .sandbox-controls {
   display: flex;
   flex-wrap: wrap;
@@ -2202,7 +2202,7 @@ table.m-grid tr.total td {
 .att li.warn { border-left-color: var(--warn); }
 .att li.good { border-left-color: var(--good); }
 
-/* ---------- Section 4: Microsoft Stack & Native AI ("Ask ISABI") ---------- */
+/* ---------- Section 4: Standalone SQL Cloud & Native AI ("Ask ISABI") ---------- */
 .ms-ai-grid {
   display: grid;
   grid-template-columns: 1fr 1.05fr;
@@ -5436,7 +5436,7 @@ html.js-io .reveal.in:not(.done):nth-child(4) { transition-delay: 0.21s; }
     line-height: 1.3;
   }
 
-  /* Section 04: Microsoft Stack & Ask ISABI */
+  /* Section 04: Standalone SQL Cloud & Ask ISABI */
   .ms-ai-grid {
     gap: 18px;
   }

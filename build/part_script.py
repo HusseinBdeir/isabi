@@ -8,7 +8,7 @@ JS = r"""
   const EMAIL_ADDR = 'hbdeir16@gmail.com';
   const ASK_FLOW_U_B64 = '__ASK_FLOW_U_B64__';
   const ASK_FLOW_K_B64 = '__ASK_FLOW_K_B64__';
-  const SEC_IDS = ['architecture', 'industries', 'sandbox', 'microsoft-ai', 'ingenuity', 'pricing', 'faq', 'portal'];
+  const SEC_IDS = ['architecture', 'industries', 'sandbox', 'platform-ai', 'ingenuity', 'pricing', 'faq', 'portal'];
   const NOW = new Date();
   const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -43,11 +43,11 @@ JS = r"""
         'Offline POS till posts end-of-day sales totals straight into the revenue ledger',
         'Supervisor stamp workflow on petty cash and supplier credit purchases',
         'Automated monthly partner capital & profit distribution statements',
-        'Nightly cross-property KPI flash report delivered to owners via Power BI'
+        'Nightly cross-property KPI flash report delivered via native executive dashboards'
       ],
       reports: [
         'Consolidated & Per-Property P&L (Year / Month / Week / Day picker)',
-        'Printable Supplier & Partner Statement of Accounts (.rdl)',
+        'Printable Supplier & Partner Statement of Accounts (PDF & A4)',
         'Outlet Gross Margin & Revenue Mix Analytics',
         'Payroll, Attendance & Seasonal Labor Cost Ratio'
       ],
@@ -79,7 +79,7 @@ JS = r"""
         'Automated line-by-line variance check against statutory accounting registers'
       ],
       reports: [
-        'Unit-by-Unit Gross Profit & Landed Cost Breakdown (.rdl & Power BI)',
+        'Unit-by-Unit Gross Profit & Landed Cost Breakdown (Dashboards & A4)',
         'Customer Receivable Aging (0-30, 31-60, 61-90, 90+ Days)',
         'Bonded vs Duty-Paid Stock Valuation Report',
         'Statutory vs Operational P&L Reconciliation Statement'
@@ -99,23 +99,23 @@ JS = r"""
       badge: 'Industry Blueprint 03 · Manufacturing & Fleet Operations',
       lead: 'Engineered for ready-mix concrete plants, construction material producers, and heavy transport fleets where every cubic meter batched, cement silo delivery, and transit mixer trip must be tracked from plant dispatch to customer signature.',
       modules: [
-        'Sales Ticket & Batch Plant Dispatch Ledger (m³ poured, mix design, pump usage)',
-        'Raw Material Silo & Aggregate Stock Ledger (Cement, Sand, Gravel, Admixtures)',
-        'Transit Mixer, Pump & Heavy Transport Fleet Fuel and Maintenance Tracking',
-        'Contractor Project Billing, Delivery Note Matching & Credit Limit Gates',
-        'Multi-Company Inter-Entity Billing (Plant to Construction to Transport)'
+        '9 Business-Cycle Hubs & 34-Table SQL Core (Sales Tickets, Mix Grades & Silo MT)',
+        '4 Plant Kiosks: Sales Dispatch, Quarry Receiving, Fuel Metering & 128-d Face ID',
+        'Daily Plant & Workforce Machine Map (3-Zone Site, Truck & Absent-Driver Audit)',
+        'Smart 24-Form Desk (Policy-Locked Dates, Auto-Overtime & Duplicate Ticket Guards)',
+        'Multi-Company Inter-Entity Billing (Plant, Construction & Heavy Transport RLS)'
       ],
       workflows: [
-        'Real-time form rules enforcing pump fees, mix grade pricing, and customer credit caps',
-        'Daily theoretical vs actual cement and aggregate consumption variance alerts',
-        'Automated driver trip allowance and mixer utilization calculation',
-        'One-click customer project billing statement grouped by construction site'
+        '1-tap Bluetooth ESC/POS 80mm/58mm Priced Tax Invoice vs Unpriced Gate Pass print',
+        'AI Sentinels auditing skipped ticket serials, fuel-meter drift & price corridors',
+        'Real-time credit gates, pump fee rules & 3-leg AP/AR reconciliation checks',
+        'Zero-spinner progressive boot (<150ms navigation across 93k+ live transactions)'
       ],
       reports: [
-        'Daily Plant Production Volume (m³) & Average Selling Price per Mix',
-        'Customer & Project Statement of Account with Ticket Breakdown (.rdl)',
+        '20 Executive Dashboards with Year / Month / Week / Day Date Facilitator',
+        'Customer & Project Statement of Account with Ticket Breakdown (Bilingual A4)',
         'Raw Material Yield, Silo Depletion & Gross Margin per Cubic Meter',
-        'Fleet Profitability & Fuel Cost per Delivered Cubic Meter'
+        'Fleet Profitability, Diesel Burn & Daily Workforce Machine Map'
       ],
       metrics: [
         ['Production Tracking', 'Per Ticket & m³'],
@@ -146,8 +146,8 @@ JS = r"""
       ],
       reports: [
         'Portfolio Occupancy, Lease Expiry & Vacancy Roll-Forward',
-        'Net Operating Income (NOI) & Cap Rate by Property (Power BI)',
-        'Tenant Statement of Account & Rent Collection Aging (.rdl)',
+        'Net Operating Income (NOI) & Cap Rate by Property (Executive Dashboard)',
+        'Tenant Statement of Account & Rent Collection Aging (A4 PDF)',
         'Maintenance & CapEx Spend vs Budget'
       ],
       metrics: [
@@ -179,7 +179,7 @@ JS = r"""
       ],
       reports: [
         'Production & Commission Revenue by Line of Business and Carrier',
-        'Carrier Settlement Bordereaux & Client Statement of Account (.rdl)',
+        'Carrier Settlement Bordereaux & Client Statement of Account (A4 PDF)',
         'Renewal Retention Rate & Expiring Book Forecast',
         'Uncollected Premium Aging & Producer Net Payable'
       ],
@@ -202,18 +202,18 @@ JS = r"""
         'Intercompany Loan, Management Fee & Cross-Charge Ledger',
         'Shareholder & Partner Capital Accounts, Drawings & Dividend Schedules',
         'Executive Relationship, Legal Matter & Board Interaction Tracker',
-        'Group-Wide Automated Recruitment (Tally to SharePoint CV Drive to Dataverse)'
+        'Group-Wide Automated Recruitment & Encrypted Per-Company CV Vault'
       ],
       workflows: [
         'Overnight group consolidation across all operating Business Units',
-        'Automated routing of job applicant CVs into per-company SharePoint folders',
+        'Automated routing of job applicant CVs into encrypted per-company document vaults',
         'Executive exception alerts when any subsidiary breaches overdue or margin thresholds',
         'One-click board pack generation across all operating companies'
       ],
       reports: [
         'Group Consolidated P&L, Balance Sheet & Cash Position',
         'Entity-by-Entity Performance & Books-Closed Status Matrix',
-        'Intercompany Balance Confirmation & Partner SOA (.rdl)',
+        'Intercompany Balance Confirmation & Partner SOA (A4 PDF)',
         'Group Recruitment Funnel & Headcount Analytics'
       ],
       metrics: [
@@ -233,9 +233,9 @@ JS = r"""
       modules: [
         'Touch-Optimized Cashier Grid with Category Tabs, Modifiers & Fast Search',
         'IndexedDB / Local Offline Transaction Queue (100% functional without internet)',
-        'Direct RawBT / ESC-POS Thermal Receipt & Kitchen Order Printing',
+        'Bluetooth ESC/POS 80mm & 58mm Thermal Print (Priced Invoice vs Unpriced Gate Pass)',
         'Shift Open / Close Cash Drawer Count & Variance Audit',
-        'Automated End-of-Day Sales Totals Sync into the Dataverse Revenue Ledger'
+        'Automated End-of-Day Sales Totals Sync into the SQL Revenue Ledger'
       ],
       workflows: [
         'Cashier rings order and prints local thermal receipt in under 300ms',
@@ -247,12 +247,12 @@ JS = r"""
         'Shift Close Report & Cashier Cash Variance Log',
         'Hourly Sales Velocity & Top-Selling Item Mix',
         'Void, Discount & Complimentary Audit Trail',
-        'Direct Feed into Group Power BI Revenue Dashboards'
+        'Direct Feed into 20 Native Group Revenue Dashboards'
       ],
       metrics: [
         ['Offline Uptime', '100% Local Queue'],
         ['Receipt Print Speed', '< 0.3 Seconds'],
-        ['ERP Integration', 'Native Dataverse Sync']
+        ['ERP Integration', 'Native SQL Cloud Sync']
       ]
     },
     {
@@ -264,7 +264,7 @@ JS = r"""
       badge: 'Industry Blueprint 08 · Workforce & Gate Kiosk PWA',
       lead: 'Replace proprietary fingerprint hardware that breaks and needs manual USB exports. The tablet kiosk verifies staff by face and PIN, works offline at remote plants and resorts, and posts daily attendance into your ERP every night.',
       modules: [
-        'Wall-Mounted Tablet PWA with Live Camera Face Enrolment & Verification',
+        '128-d Biometric Face ID + Anti-Screenshot Liveness (Eye-Blink & 3D Parallax)',
         'Offline-Capable Punch Queue (Clock-In, Break, Clock-Out) with Photo Audit',
         'Multi-Site & Business Unit Routing (Plant, Resort, Showroom, Head Office)',
         'Automated Nightly Derivation Engine (Punches to Shifts, Overtime & Lateness)',
@@ -272,13 +272,13 @@ JS = r"""
       ],
       workflows: [
         'Employee enters PIN with instant face match and records punch in 1 second',
-        'Offline punches buffer on tablet and sync via encrypted Power Automate API',
+        'Offline punches buffer on tablet and sync via encrypted SQL cloud relay',
         'Nightly job pairs clock-in/out, flags missing punches, and updates HR attendance table',
         'Managers review late arrivals and overtime exceptions on their morning dashboard'
       ],
       reports: [
         'Daily Site Attendance Roster & Live Headcount Present',
-        'Monthly Employee Timesheet, Overtime & Lateness Summary (.rdl)',
+        'Monthly Employee Timesheet, Overtime & Lateness Summary (A4 PDF)',
         'Departmental Labor Cost vs Revenue Ratio',
         'Biometric Audit Log with Verification Confidence Scores'
       ],
@@ -320,7 +320,7 @@ JS = r"""
         ['crit', '7 trade receivables past 60 days', 'Concentrated in fleet & contractor accounts · Ready for SOA dispatch', 'Review Aging'],
         ['warn', 'Statutory vs Operational reconciliation check', 'Zero unallocated variance across all 6 Business Units', 'View Audit'],
         ['warn', '2 supplier purchase orders above approval threshold', 'Awaiting principal digital stamp in Procurement queue', 'Approve'],
-        ['good', 'Nightly automation fleet completed', 'Database backup 02:00 · Attendance sync 03:00 · Power BI refresh 07:00', 'Logs']
+        ['good', 'Nightly automation fleet completed', 'Database backup 02:00 · Attendance sync 03:00 · Analytics refresh 07:00', 'Logs']
       ],
       journal: [
         ['D0', 'SI-2026-0841', 'Auto Dealership', '70100 Vehicle & Parts Sales', 0, 18450.00],
@@ -392,7 +392,7 @@ JS = r"""
         ['crit', '5 fleet customer installments past 60 days', 'Automated SOA PDF ready for WhatsApp & Email dispatch', 'Send SOA'],
         ['good', '3 heavy equipment units cleared customs today', 'Landed cost allocated · Moved from Bonded to Showroom stock', 'View VINs'],
         ['warn', 'Fast-moving brake & filter SKUs below safety stock', 'Suggested supplier reorder batch generated', 'Order List'],
-        ['good', 'Monthly statutory reconciliation verified', 'Operational sales, stock, and cash match statutory trial balance', 'Recon RDL']
+        ['good', 'Monthly statutory reconciliation verified', 'Operational sales, stock, and cash match statutory trial balance', 'Recon Pack']
       ],
       journal: [
         ['D0', 'SI-TRK-0419', 'Heavy Equipment Div', '70110 Heavy Equipment Sales (VIN #8841)', 0, 68500.00],
@@ -495,7 +495,7 @@ JS = r"""
       alerts: [
         ['good', '19 corporate renewals due next month pre-quoted', 'Comparison sheets & WhatsApp renewal summaries queued', 'Pipeline'],
         ['crit', '6 policy installments past 30-day grace window', 'Client SOA statements generated for account executives', 'Collect'],
-        ['warn', '2 motor claims awaiting surveyor repair approval', 'Workshop estimate uploaded to SharePoint claim folder', 'Claims'],
+        ['warn', '2 motor claims awaiting surveyor repair approval', 'Workshop estimate uploaded to encrypted claim vault', 'Claims'],
         ['good', 'Monthly carrier net payable reconciled', 'Commission splits verified across 8 underwriting carriers', 'Settlement']
       ],
       journal: [
@@ -521,12 +521,12 @@ JS = r"""
         ['4 Smaller Balances (< $2k each)', 'Multiple', '61-74 Days', '$4,850.00']
       ],
       total: ['Total Audited Overdue (> 60 Days)', '$42,300.00'],
-      citation: 'Source: Dataverse Receivables Ledger · Verified 100% against Printable SOA (.rdl)'
+      citation: 'Source: SQL Receivables Ledger · Verified 100% against Printable SOA (A4 PDF)'
     },
     {
       q: 'How does ISABI customize the ERP for my specific industry?',
       title: 'Bespoke Schema Architecture',
-      answer: 'Unlike off-the-shelf software that forces every business into generic "Invoice" and "Item" boxes, ISABI Systems engineers a <b>dedicated Dataverse relational schema</b> around your physical unit of operation while sharing a unified institutional accounting core.',
+      answer: 'Unlike off-the-shelf software that forces every business into generic "Invoice" and "Item" boxes, ISABI Systems engineers a <b>dedicated PostgreSQL &amp; SQLite relational schema</b> around your physical unit of operation with $0 per-user seat fees.',
       headers: ['Industry Vertical', 'Custom Operational Unit', 'Automated Ledger Link'],
       rows: [
         ['Hospitality & Resorts', 'Outlet Till Close, Cabana & Seasonal Shift', 'Daily TTC revenue & partner split journal'],
@@ -535,7 +535,7 @@ JS = r"""
         ['Real Estate & Insurance', 'Lease Schedule / Policy & Endorsement', 'NOI yield / Carrier commission bordereaux']
       ],
       total: ['Deployment Timeframe', '1 to 2 Weeks to Live Production'],
-      citation: 'Architecture: Microsoft Dataverse + Model-Driven Apps + XMLA Power BI + Paginated .RDL'
+      citation: 'Architecture: Standalone SQL Core + 9 Business-Cycle Hubs + 20 Dashboards + 22 Printable Statements'
     },
     {
       q: 'How does dual-entry reconciliation work with our existing accountant software?',
@@ -545,7 +545,7 @@ JS = r"""
       rows: [
         ['01. Operational Capture', 'Staff key sales, purchases, stock, and cash directly into ISABI', 'Real-time operational ledger'],
         ['02. Statutory Anchor Import', 'Monthly trial balance from legacy accounting software is ingested', 'Account-by-account mapping'],
-        ['03. Variance Engine', 'Power BI & Paginated RDL highlight any discrepancy down to $1', 'Instant root-cause drilldown'],
+        ['03. Variance Engine', 'AI Sentinels & printable audit packs flag any discrepancy down to $1', 'Instant root-cause drilldown'],
         ['04. Executive Sign-Off', 'Books close with the double rule once variance equals zero', '100% audit confidence']
       ],
       total: ['Typical Cutover Variance', '$0.00 Unexplained Difference'],
@@ -557,10 +557,10 @@ JS = r"""
       answer: 'For a growing company or multi-branch operation, our recommended <b>Multi-Entity & AI Operations Suite</b> starts at <b>$9,500</b> (one-time implementation) with optional <b>$650/month</b> continuous engineering and support.',
       headers: ['Deliverable Component', 'Included Specification', 'Standalone Value'],
       rows: [
-        ['Custom Dataverse ERP App', 'Multi-Business Unit schema, forms, JS rules & security roles', 'Included'],
-        ['Power BI Executive Suite', 'Operations + Financial workspaces with Year/Month/Week/Day pickers', 'Included'],
-        ['Paginated .RDL Pack', 'Printable PDF/Excel Statement of Accounts, P&L & Aging', 'Included'],
-        ['Ask ISABI + Companion PWA', 'Native AI assistant + Offline POS Till or Attendance Kiosk', 'Included']
+        ['Standalone SQL ERP & 9 Hubs', '34-table schema, 24 smart forms, custom roles & unlimited seats ($0/user)', 'Included'],
+        ['20 Native Executive Dashboards', 'Year / Month / Week / Day date facilitator, KPI drilldowns & chart popovers', 'Included'],
+        ['22 Bilingual Printable Statements', 'Sortable PDF/A4 Statement of Accounts, P&L, Balance Sheet & Tax Invoices', 'Included'],
+        ['Ask ISABI + 4-Kiosk Suite', 'Cited AI + AI Sentinels + Face ID Liveness & Bluetooth Thermal Kiosks', 'Included']
       ],
       total: ['Indicative Complete Suite Investment', 'From $9,500 + $650/mo'],
       citation: 'Every engagement is fixed-scope after a 30-minute discovery call with Hussein Bdeir'
@@ -572,53 +572,53 @@ JS = r"""
     {
       id: 'gl', cat: 'finance', emoji: ICONS.ledger, tone: 'tone-brass',
       name: 'General Ledger & COA', sub: 'Double-Entry & Class 1 to 7',
-      kicker: 'Core Accounting Module · Microsoft Dataverse',
-      desc: 'Full double-entry institutional accounting with regional Class 1 to 7 charts of accounts, multi-currency journals, and automated voucher numbering.',
+      kicker: 'Core Accounting Module · Dedicated SQL Core',
+      desc: 'Full double-entry institutional accounting with regional Class 1 to 7 charts of accounts, policy-locked dates, and $0 per-user seat fees.',
       bullets: [
         ICONS.scale + ' Balanced Debit & Credit validation on every operational posting',
         ICONS.globe + ' Multi-currency ledger (USD, EUR, AED, LBP) with live FX rates',
-        ICONS.lock + ' Immutable audit log of who created, edited, or stamped each entry'
+        ICONS.lock + ' Policy-locked transaction dates with Reporting Date overrides'
       ],
-      tables: ['bhf_journal', 'bhf_coa', 'bhf_voucher', 'bhf_fiscalperiod'],
+      tables: ['gl_journals', 'chart_of_accounts', 'gl_vouchers', 'fiscal_periods'],
       sbox: 'holding', ask: 'How does the ISABI General Ledger and Class 1 to 7 Chart of Accounts work?'
     },
     {
       id: 'soa', cat: 'finance', emoji: ICONS.soa, tone: 'tone-steel',
-      name: 'Printable SOA & P&L', sub: 'PDF & Excel Paginated .RDL',
-      kicker: 'Statutory & Partner Statements · Paginated .RDL',
-      desc: 'Pixel-perfect printable Statements of Account for customers, suppliers, and equity partners, plus audited Balance Sheet, P&L, and Trial Balance packs.',
+      name: '22 Printable Statements', sub: 'Bilingual PDF & A4 Packs',
+      kicker: 'Statutory & Partner Statements · Click-Sortable Print',
+      desc: '22 built-in bilingual printable statements including Customer, Supplier, and Partner SOAs, Balance Sheet, P&L, Cash Flow, and Tax Invoices.',
       bullets: [
-        ICONS.soa + ' Running balance Statement of Account with opening & closing rules',
-        ICONS.download + ' One-click export to print-ready PDF, Word, or formatted Excel',
+        ICONS.soa + ' Click-sortable running balance SOA closed with the double rule',
+        ICONS.download + ' One-click export to print-ready A4 PDF or formatted Excel',
         ICONS.partner + ' Automated monthly partner profit-split and capital statements'
       ],
-      tables: ['StatementOfAccount.rdl', 'PartnerStatement.rdl', 'TrialBalance.rdl'],
+      tables: ['Statement of Account A4', 'Partner SOA PDF', 'Trial Balance Pack'],
       sbox: 'holding', ask: 'Tell me about the printable Statements of Account and P&L reports'
     },
     {
-      id: 'pbi', cat: 'finance', emoji: ICONS.pbi, tone: 'tone-good',
-      name: 'Power BI Suite', sub: 'Year / Month / Week / Day',
-      kicker: 'Executive Analytics · XMLA Semantic Models',
-      desc: 'Three governed workspaces per company (Operations, Financial, and Reconciliation) with instant period pickers and month-over-month variance.',
+      id: 'pbi', cat: 'finance', emoji: ICONS.analytics, tone: 'tone-good',
+      name: '20 Native Dashboards', sub: 'Year / Month / Week / Day',
+      kicker: 'Executive Analytics · Built-In SQL Engine',
+      desc: '20 native interactive executive and operational dashboards with a real-time Year, Month, Week, and Day date facilitator and KPI drilldowns.',
       bullets: [
-        ICONS.calendar + ' Unified Year, Month, Week, and Day slicer across every visual',
-        ICONS.trend + ' Consolidated group view plus per-branch Business Unit security',
-        ICONS.bolt + ' Direct XMLA semantic model refresh on scheduled cloud pipelines'
+        ICONS.calendar + ' Segmented Year, Month, Week, and Day date grain across every chart',
+        ICONS.trend + ' Chart explanation popovers, MoM variance, and 360-degree drilldowns',
+        ICONS.bolt + ' Zero third-party BI licences required for unlimited internal viewers'
       ],
-      tables: ['Operations Workspace', 'Financial Workspace', 'Period Picker DAX'],
-      sbox: 'holding', ask: 'How are the Power BI dashboards structured across Operations and Finance?'
+      tables: ['Executive Cockpits', 'Operations Analytics', 'Date Grain Engine'],
+      sbox: 'holding', ask: 'How are the 20 native executive dashboards structured across Operations and Finance?'
     },
     {
       id: 'ai', cat: 'field', emoji: ICONS.ai, tone: 'tone-brass',
-      name: 'Ask ISABI Native AI', sub: 'Cited Live Ledger Answers',
-      kicker: 'Embedded System Intelligence · Role-Aware',
-      desc: 'Your executive AI analyst wired directly to your live Dataverse ledger, stock, and receivables. Every answer cites the exact vouchers it used.',
+      name: 'Ask ISABI & Sentinels', sub: 'Cited AI & Audit Watchdogs',
+      kicker: 'Autonomous System Intelligence · EN / AR / FR',
+      desc: 'Conversational executive analyst plus continuous background AI Sentinels auditing skipped ticket serials, fuel meters, and 3-leg AP/AR matches.',
       bullets: [
-        ICONS.search + ' Queries live overdue receivables, margin shifts, and stock variances',
-        ICONS.insurance + ' Respects Entra ID & Business Unit roles so branch data stays private',
-        ICONS.ai_mark + ' Available inside the ERP header bar, Power BI, and WhatsApp'
+        ICONS.search + ' Neighbor-linked skipped/duplicate ticket serial & price-corridor audits',
+        ICONS.insurance + ' Enforces 150-Company Row-Level Security so branch data stays private',
+        ICONS.ai_mark + ' Multilingual EN, AR, and FR answers citing exact ledger vouchers'
       ],
-      tables: ['bhf_isabi_ask_store', 'Live Ledger Context', 'Role-Scoped Citations'],
+      tables: ['ai_audit_sentinels', 'Live SQL Context', 'Role-Scoped Citations'],
       sbox: 'holding', ask: 'How does Ask ISABI treat confidential figures?'
     },
     {
@@ -631,7 +631,7 @@ JS = r"""
         ICONS.trend + ' Live 0-30-60-90+ day aging matrix across all operating branches',
         ICONS.wa + ' One-click WhatsApp & email payment reminders with attached SOA'
       ],
-      tables: ['bhf_customer', 'bhf_receivable', 'bhf_creditlimit', 'ARAging.rdl'],
+      tables: ['ar_customers', 'ar_receivables', 'credit_limits', 'Aged Receivables PDF'],
       sbox: 'trading', ask: 'Why did receivables past 60 days increase this month?'
     },
     {
@@ -644,7 +644,7 @@ JS = r"""
         ICONS.ar + ' Tracks partner drawings, capital injections, and management fees',
         ICONS.soa + ' Generates monthly audited partner distribution statements'
       ],
-      tables: ['bhf_partner', 'bhf_partnersplit', 'bhf_capitalaccount'],
+      tables: ['equity_partners', 'partner_splits', 'capital_accounts'],
       sbox: 'hospitality', ask: 'How does ISABI automate partner profit splits and capital accounts?'
     },
     {
@@ -657,7 +657,7 @@ JS = r"""
         ICONS.search + ' Highlights any discrepancy down to $1 with instant voucher drilldown',
         ICONS.check + ' Protects tax and statutory compliance while operations modernize'
       ],
-      tables: ['bhf_statutoryanchor', 'bhf_variancebridge', 'Reconciliation.pbix'],
+      tables: ['statutory_anchors', 'variance_bridge', 'Reconciliation Pack'],
       sbox: 'holding', ask: 'How does dual-entry reconciliation work with our existing accountant software?'
     },
     {
@@ -670,7 +670,7 @@ JS = r"""
         ICONS.calendar + ' Post-dated check (PDC) maturity radar and deposit alerts',
         ICONS.lock + ' Supervisor digital stamp required on inter-vault transfers'
       ],
-      tables: ['bhf_bankaccount', 'bhf_treasurytransfer', 'bhf_pdccheck'],
+      tables: ['bank_accounts', 'treasury_transfers', 'pdc_checks'],
       sbox: 'holding', ask: 'How does ISABI manage multi-currency treasury and post-dated checks?'
     },
     {
@@ -683,7 +683,7 @@ JS = r"""
         ICONS.box + ' Supplier invoice intake, recipe cost ratios, and beverage stock audits',
         ICONS.hr + ' Seasonal staff contracts, cash advances, tips, and attendance'
       ],
-      tables: ['bhf_revenue', 'bhf_expense', 'bhf_supplier', 'bhf_employee'],
+      tables: ['outlet_revenue', 'operating_expenses', 'ap_suppliers', 'hr_employees'],
       sbox: 'hospitality', ask: 'Show the Hospitality, Resorts & Beach Clubs blueprint'
     },
     {
@@ -696,33 +696,33 @@ JS = r"""
         ICONS.globe + ' Full landed cost engine: FOB + Freight + Insurance + Customs Duty',
         ICONS.box + ' Multi-warehouse spare parts SKU stock and minimum margin locks'
       ],
-      tables: ['bhf_vehiclevin', 'bhf_landedcost', 'bhf_partssku', 'bhf_salesorder'],
+      tables: ['vehicle_vins', 'landed_costs', 'parts_skus', 'sales_orders'],
       sbox: 'trading', ask: 'Show the Automotive, Heavy Equipment & Parts Trading blueprint'
     },
     {
       id: 'concrete', cat: 'ops', emoji: ICONS.manufacturing, tone: 'tone-good',
-      name: 'Ready-Mix & Plant', sub: 'Batch Tickets m³ & Silos',
-      kicker: 'Industry App 03 · Manufacturing Operations',
-      desc: 'Built for ready-mix concrete plants and construction material producers tracking every cubic meter poured, mix design, pump fee, and cement silo.',
+      name: 'Ready-Mix & 9 Hubs', sub: '34 Tables & Smart Forms',
+      kicker: 'Industry App 03 · Manufacturing Command Center',
+      desc: 'Role-gated 9-hub workspace with 360-degree record inspector, 24 smart forms, duplicate ticket guards, and sub-150ms navigation across 93k+ rows.',
       bullets: [
-        ICONS.soa + ' Sales ticket ledger by m³ poured, MPA mix grade, and pump usage',
-        ICONS.dataverse + ' Live cement silo, sand, gravel, and admixture depletion vs. batch yield',
-        ICONS.lock + ' Contractor project billing and automated credit-limit gates'
+        ICONS.soa + ' Sales ticket ledger by m³ poured, MPA mix grade, and 3-band duplicate guard',
+        ICONS.sql + ' Live cement silo, sand, gravel, and admixture depletion vs. batch yield',
+        ICONS.lock + ' Granular custom role field locks and interactive Column Manager'
       ],
-      tables: ['bhf_salesticket', 'bhf_mixdesign', 'bhf_silostock', 'bhf_project'],
+      tables: ['sales_tickets', 'mix_designs', 'silo_stock', 'site_projects'],
       sbox: 'manufacturing', ask: 'Show the Concrete & Manufacturing blueprint'
     },
     {
       id: 'fleet', cat: 'ops', emoji: ICONS.fleet, tone: 'tone-coral',
-      name: 'Fleet & Fuel Dispatch', sub: 'Mixers, Pumps & Trips',
-      kicker: 'Heavy Transport & Fleet Module · Manufacturing & Logistics',
-      desc: 'Track transit mixers, concrete pumps, and heavy transport trucks with per-trip driver allowances, fuel burn per cubic meter, and maintenance logs.',
+      name: 'Fleet & Workforce Map', sub: '3-Zone Plant & Fuel Audit',
+      kicker: 'Heavy Transport & Plant Telemetry · Spatial Map',
+      desc: 'Daily Plant & Workforce Machine Map tracking plant crews, external sites, absent drivers, transit mixer diesel burn, and fuel tank metering.',
       bullets: [
-        ICONS.bolt + ' Fuel issue tracking and liters-per-m³ efficiency alerts by truck',
-        ICONS.fleet + ' Automated driver trip bonuses and inter-company transport billing',
-        ICONS.scope + ' Preventive maintenance schedules, tires, and workshop job cards'
+        ICONS.bolt + ' Fuel & Tank Metering kiosk with liters-per-m³ efficiency alerts',
+        ICONS.fleet + ' 3-zone spatial machine map auditing active trucks & absent drivers',
+        ICONS.scope + ' Preventive maintenance schedules, tires, and workshop defect logs'
       ],
-      tables: ['bhf_fleetasset', 'bhf_tripdispatch', 'bhf_fuellog', 'bhf_maintenance'],
+      tables: ['fleet_assets', 'workforce_map', 'fuel_tank_logs', 'fleet_defects'],
       sbox: 'manufacturing', ask: 'How does ISABI track transit mixer fleets, fuel, and inter-company transport?'
     },
     {
@@ -735,7 +735,7 @@ JS = r"""
         ICONS.soa + ' Lease contracts with 60/30-day renewal alerts and rent escalations',
         ICONS.scope + ' Maintenance work orders tagged automatically to CapEx vs. OpEx'
       ],
-      tables: ['bhf_property', 'bhf_unit', 'bhf_lease', 'bhf_workorder'],
+      tables: ['re_properties', 're_units', 'lease_contracts', 'work_orders'],
       sbox: 'realestate', ask: 'Show the Real Estate & Commercial Property Portfolios blueprint'
     },
     {
@@ -748,60 +748,60 @@ JS = r"""
         ICONS.holding + ' One-click printable carrier settlement bordereaux and client SOA',
         ICONS.bell + ' 90/60/30-day expiring book renewal radar and claims tracker'
       ],
-      tables: ['bhf_policy', 'bhf_endorsement', 'bhf_bordereau', 'bhf_claim'],
+      tables: ['ins_policies', 'policy_endorsements', 'carrier_bordereaux', 'claim_files'],
       sbox: 'insurance', ask: 'Show the Insurance Brokerage & Underwriting Operations blueprint'
     },
     {
       id: 'holding', cat: 'ops', emoji: ICONS.holding, tone: 'tone-brass',
-      name: 'Holding & Board Pack', sub: 'Multi-Company Command',
-      kicker: 'Industry App 06 · Holding Operations',
-      desc: 'Unifies all sister companies into one boardroom console while keeping each subsidiary isolated inside its own Dataverse Business Unit.',
+      name: 'Holding & 150-Co RLS', sub: 'Multi-Industry Governance',
+      kicker: 'Industry App 06 · 10-Industry x 150-Company RLS',
+      desc: 'Unifies all sister companies into one boardroom console while isolating every subsidiary via strict SQL Row-Level Security and custom roles.',
       bullets: [
-        ICONS.globe + ' Overnight group consolidation across all operating industries',
+        ICONS.globe + ' Real-time group consolidation across 10 industries & 150 entities',
         ICONS.sync + ' Intercompany loans, management fees, and cross-charge elimination',
-        ICONS.pbi + ' Executive board pack with entity-by-entity books-closed status'
+        ICONS.analytics + ' Executive board pack with entity-by-entity books-closed status'
       ],
-      tables: ['bhf_interaction', 'bhf_intercompany', 'bhf_businessunit'],
+      tables: ['board_interactions', 'intercompany_ledger', 'company_rls_scope'],
       sbox: 'holding', ask: 'Show the Multi-Entity Holding Groups & Family Offices blueprint'
     },
     {
       id: 'pos', cat: 'field', emoji: ICONS.pos, tone: 'tone-good',
-      name: 'Offline POS Till PWA', sub: '<0.3s Thermal Receipt Till',
-      kicker: 'Companion Field App 07 · Progressive Web App',
-      desc: 'Zero-latency cashier till that keeps ringing sales and printing Bluetooth thermal receipts through internet cuts, then syncs daily totals to Dataverse.',
+      name: 'Offline POS Till PWA', sub: '80mm/58mm Thermal & Sync',
+      kicker: 'Unified 4-Kiosk Suite · Bluetooth ESC/POS Printing',
+      desc: 'Touch-first cashier & dispatch terminal printing 80mm/58mm Bluetooth thermal receipts (1-tap Priced Tax Invoice vs Unpriced Gate Pass) offline.',
       bullets: [
-        ICONS.bolt + ' Sub-300ms local thermal receipt and kitchen order printing (RawBT)',
-        ICONS.sync + ' 100% offline IndexedDB sales queue during Wi-Fi or power cuts',
-        ICONS.ar + ' Zero per-terminal SaaS fees across unlimited cashier tablets'
+        ICONS.bolt + ' 1-tap toggle: Priced Tax Invoice vs Unpriced Gate/Scale Pass (<0.3s)',
+        ICONS.sync + ' 100% offline IndexedDB queue syncing via encrypted SQL cloud relay',
+        ICONS.ar + ' Zero per-terminal or per-user seat fees across unlimited tablets'
       ],
-      tables: ['IndexedDB bhfpos', 'RawBT ESC/POS', 'bhf_revenue Sync'],
+      tables: ['IndexedDB Offline Queue', 'ESC/POS 80mm & 58mm', 'SQL Revenue Sync'],
       sbox: 'hospitality', ask: 'Tell me about the Offline POS Till PWA'
     },
     {
       id: 'kiosk', cat: 'field', emoji: ICONS.kiosk, tone: 'tone-steel',
-      name: 'Face & PIN Gate Kiosk', sub: '1s Biometric Tablet PWA',
-      kicker: 'Companion Field App 08 · Workforce Attendance PWA',
-      desc: 'Replaces fragile fingerprint boxes with any standard wall-mounted tablet. Verifies staff by face + PIN in 1 second offline and syncs nightly to payroll.',
+      name: '128-d Face ID Kiosk', sub: 'Liveness & Gate PWA',
+      kicker: 'Biometric Attendance Terminal · Anti-Screenshot Liveness',
+      desc: 'Verifies staff on any wall tablet via 128-d Face ID with eye-blink & 3D parallax anti-screenshot liveness, syncing offline punches to payroll.',
       bullets: [
-        ICONS.kiosk + ' Live camera facial verification + 4-digit PIN with photo audit trail',
+        ICONS.kiosk + ' 128-d neural Face ID + eye-blink & 3D parallax liveness + PIN',
         ICONS.sync + ' Buffers clock-in, break, and clock-out punches offline at remote sites',
-        ICONS.clock + ' Nightly cloud job pairs shifts, calculates overtime, and posts to HR'
+        ICONS.clock + ' Time-linked auto-overtime detection and nightly shift derivation'
       ],
-      tables: ['bhf_punch', 'bhf_faceenrolment', 'bhf_attendance'],
+      tables: ['biometric_punches', 'face_128d_vectors', 'hr_attendance'],
       sbox: 'manufacturing', ask: 'Tell me about the Biometric Face & PIN Attendance Kiosk PWA'
     },
     {
       id: 'hr', cat: 'field', emoji: ICONS.hr, tone: 'tone-violet',
-      name: 'Recruitment & CV Drive', sub: 'Applicant to SharePoint',
-      kicker: 'HR & Talent Pipeline · Automated Cloud Flow',
-      desc: 'Automated applicant intake that routes candidate CVs straight into per-company SharePoint drives and creates structured Dataverse review records.',
+      name: 'Recruitment & CV Vault', sub: 'Applicant Intake & HR',
+      kicker: 'HR & Talent Pipeline · Encrypted Document Vault',
+      desc: 'Automated applicant intake that routes candidate CVs straight into encrypted per-company document vaults and structured HR review queues.',
       bullets: [
         ICONS.download + ' Public application form auto-routes by target resort, plant, or branch',
-        ICONS.folder + ' Uploads PDF CVs directly into per-Business Unit SharePoint folders',
+        ICONS.folder + ' Stores PDF CVs inside encrypted per-Business Unit document vaults',
         ICONS.hr + ' HR evaluation workflow from screening to one-click employee onboarding'
       ],
-      tables: ['cr519_recruitment', 'SharePoint Per-BU Drive', 'bhf_employee'],
-      sbox: 'holding', ask: 'How does the automated recruitment and SharePoint CV pipeline work?'
+      tables: ['cv_applications', 'Per-BU Document Vault', 'hr_employees'],
+      sbox: 'holding', ask: 'How does the automated recruitment and CV vault pipeline work?'
     }
   ];
 
@@ -812,8 +812,8 @@ JS = r"""
       dayFlow: [
         [ICONS.clock + ' 08:00 AM · Gate & Staff', 'Biometric Shift Check-In', 'Seasonal staff clock in on the tablet kiosk via Face + PIN; kitchen and bar stock deliveries are logged against supplier POs.', '✓ Live Headcount'],
         [ICONS.clock + ' 01:30 PM · Peak Service', 'Offline POS Tills Ringing', 'Entrance, cabanas, and beach bars ring orders and print Bluetooth thermal receipts in 0.2s, even if Wi-Fi drops.', '✓ 100% Uptime'],
-        [ICONS.clock + ' 11:30 PM · Shift Close', 'Cash & Card Till Audit', 'Managers count drawers; end-of-day sales totals sync automatically into the Dataverse revenue ledger by outlet.', '✓ $0 Variance'],
-        [ICONS.clock + ' 02:00 AM · Nightly Close', 'Owner Flash & Partner Split', 'Power BI refreshes consolidated TTC revenue, F&B cost ratios, and partner profit-split balances for morning review.', '✓ Books Closed']
+        [ICONS.clock + ' 11:30 PM · Shift Close', 'Cash & Card Till Audit', 'Managers count drawers; end-of-day sales totals sync automatically into the SQL revenue ledger by outlet.', '✓ $0 Variance'],
+        [ICONS.clock + ' 02:00 AM · Nightly Close', 'Owner Flash & Partner Split', 'Executive dashboards refresh consolidated TTC revenue, F&B cost ratios, and partner profit-split balances for morning review.', '✓ Books Closed']
       ],
       before: [
         ICONS.cross + ' Cashiers and accountants re-keying paper till slips into 12 separate Excel sheets every morning',
@@ -822,10 +822,10 @@ JS = r"""
         ICONS.cross + ' Cloud POS terminals freezing whenever beach or resort internet fluctuates'
       ],
       after: [
-        ICONS.check + ' Offline POS tills sync end-of-day sales totals straight into the Dataverse ledger automatically',
+        ICONS.check + ' Offline POS tills sync end-of-day sales totals straight into the SQL revenue ledger automatically',
         ICONS.check + ' Every supplier invoice and petty cash voucher requires a digital supervisor stamp',
-        ICONS.check + ' Partner Statement of Accounts (.rdl) and profit splits generate in one click',
-        ICONS.check + ' Owners open one mobile Power BI dashboard to see every property and outlet live'
+        ICONS.check + ' Printable Partner Statement of Accounts (PDF & A4) and profit splits generate in one click',
+        ICONS.check + ' Owners open 20 native mobile-ready executive dashboards to see every property live'
       ]
     },
     trading: {
@@ -866,8 +866,8 @@ JS = r"""
       after: [
         ICONS.check + ' Every cubic meter batched is captured on a governed Sales Ticket with mix grade and pump rules',
         ICONS.check + ' Real-time credit gates alert dispatchers before a truck leaves the yard',
-        ICONS.check + ' Daily theoretical vs. actual silo depletion and gross margin per m³ in Power BI',
-        ICONS.check + ' Automated inter-entity ledger and project-grouped customer Statements of Account (.rdl)'
+        ICONS.check + ' Daily theoretical vs. actual silo depletion, Workforce Machine Map, and m³ margin dashboards',
+        ICONS.check + ' Automated inter-entity SQL ledger, AI ticket-serial sentinels & project SOA packs (A4 PDF)'
       ]
     },
     realestate: {
@@ -887,7 +887,7 @@ JS = r"""
       after: [
         ICONS.check + ' Automated 60/30-day lease expiry, escalation, and PDC deposit alerts',
         ICONS.check + ' Every work order and vendor bill is tied to a specific property, unit, and ledger class',
-        ICONS.check + ' One-click printable Tenant Statement of Account (.rdl) and collection aging dashboard',
+        ICONS.check + ' One-click printable Tenant Statement of Account (A4 PDF) and collection aging dashboard',
         ICONS.check + ' Live property-by-property NOI, occupancy roll-forward, and co-investor distribution schedules'
       ]
     },
@@ -909,15 +909,15 @@ JS = r"""
         ICONS.check + ' Instant calculation of gross premium, carrier net payable, and producer commission on every policy',
         ICONS.check + ' Pro-rata endorsement adjustments and credit notes post directly to the ledger',
         ICONS.check + ' Automated 90/60/30-day renewal pipeline and client collection aging radar',
-        ICONS.check + ' One-click printable Carrier Settlement Bordereaux and Client SOA (.rdl)'
+        ICONS.check + ' One-click printable Carrier Settlement Bordereaux and Client SOA (A4 PDF)'
       ]
     },
     holding: {
       emoji: ICONS.holding,
       dayFlow: [
-        [ICONS.clock + ' 07:00 AM · Cloud Fleet', 'Overnight Group Sync', 'Scheduled pipelines audit all subsidiary Business Units, verify SharePoint backups, and refresh group semantic models.', '✓ 100% Green'],
+        [ICONS.clock + ' 07:00 AM · Cloud Fleet', 'Overnight Group Sync', 'Scheduled pipelines audit all subsidiary Business Units, verify encrypted cloud backups, and refresh 20 executive dashboards.', '✓ 100% Green'],
         [ICONS.clock + ' 10:30 AM · Group Treasury', 'Multi-Entity Cash & Loans', 'CFO reviews consolidated USD/EUR/AED cash positions, intercompany balances, and partner capital accounts.', '✓ Group Visibility'],
-        [ICONS.clock + ' 02:30 PM · HR & Talent', 'Automated CV Routing', 'New job applicants via Tally auto-route CVs into per-company SharePoint folders and Dataverse HR queues.', '✓ Zero Manual Filing'],
+        [ICONS.clock + ' 02:30 PM · HR & Talent', 'Automated CV Routing', 'New job applicants auto-route PDF CVs into encrypted per-company document vaults and structured HR review queues.', '✓ Zero Manual Filing'],
         [ICONS.clock + ' 05:30 PM · Boardroom', 'Ask ISABI Executive Brief', 'Chairman asks ISABI for a cross-industry margin and receivable briefing; every figure cites its underlying subsidiary ledger.', '✓ Board Ready']
       ],
       before: [
@@ -929,17 +929,17 @@ JS = r"""
       after: [
         ICONS.check + ' Real-time group P&L, balance sheet, and cash position across all operating industries',
         ICONS.check + ' Governed intercompany ledger and partner equity capital accounts that always balance',
-        ICONS.check + ' Strict Dataverse Business Unit isolation so every seat sees only its authorized scope',
-        ICONS.check + ' Automated group-wide recruitment pipeline wired straight to SharePoint and Dataverse'
+        ICONS.check + ' Strict 150-Company SQL Row-Level Security so unlimited seats see only their authorized scope',
+        ICONS.check + ' Automated group-wide recruitment pipeline wired straight into encrypted per-company CV vaults'
       ]
     },
     pos: {
       emoji: ICONS.pos,
       dayFlow: [
         [ICONS.clock + ' 09:00 AM · Cashier Open', 'PIN Unlock & Drawer Float', 'Cashier unlocks the tablet till with a 4-digit PIN (fail-closed lock screen) and logs the opening cash float.', '✓ Till Unlocked'],
-        [ICONS.clock + ' 02:00 PM · High Volume', '0.2s Offline Receipt Print', 'Internet drops during peak lunch rush; cashier keeps ringing orders and printing thermal receipts via RawBT Bluetooth.', '✓ Zero Lag'],
+        [ICONS.clock + ' 02:00 PM · High Volume', '0.2s Offline Receipt Print', 'Internet drops during peak rush; cashier keeps ringing orders and printing 80mm/58mm ESC/POS Bluetooth receipts.', '✓ Zero Lag'],
         [ICONS.clock + ' 06:00 PM · Reconnect', 'Auto Queue Flush', 'Wi-Fi returns; the local IndexedDB transaction queue flushes pending sales to the cloud with revision safety.', '✓ Auto Synced'],
-        [ICONS.clock + ' 11:00 PM · Shift Close', 'Drawer Count & Ledger Post', 'Supervisor runs the Shift Close Report, reconciles cash + card totals, and posts end-of-day revenue to Dataverse.', '✓ Posted to ERP']
+        [ICONS.clock + ' 11:00 PM · Shift Close', 'Drawer Count & Ledger Post', 'Supervisor runs the Shift Close Report, reconciles cash + card totals, and posts end-of-day revenue to the SQL ledger.', '✓ Posted to ERP']
       ],
       before: [
         ICONS.cross + ' Cloud POS systems freezing at the gate or bar the moment internet connectivity flickers',
@@ -949,18 +949,18 @@ JS = r"""
       ],
       after: [
         ICONS.check + ' 100% offline-first IndexedDB queue that never drops a single order or receipt',
-        ICONS.check + ' Direct ESC/POS raster thermal printing over Bluetooth in under 300 milliseconds',
+        ICONS.check + ' Bluetooth ESC/POS 80mm/58mm printing with 1-tap Priced Invoice vs Unpriced Gate Pass toggle',
         ICONS.check + ' $0 per-terminal licence tax on unlimited iOS, Android, or Windows tablets',
-        ICONS.check + ' Automated end-of-day sales totals sync straight into `bhf_revenue` and Power BI'
+        ICONS.check + ' Automated end-of-day sales totals sync straight into the SQL ledger and 20 executive dashboards'
       ]
     },
     attendance: {
       emoji: ICONS.kiosk,
       dayFlow: [
-        [ICONS.clock + ' 06:00 AM · Site Gate', '1-Second Face + PIN Punch', 'Staff walk up to the wall tablet, enter their PIN, and the live camera verifies their face in 1 second (even offline).', '✓ Biometric Match'],
-        [ICONS.clock + ' 12:30 PM · Multi-Site', 'Offline Buffer & Sync', 'Remote plant and resort punches buffer locally in IndexedDB and sync via encrypted HTTP flow to Dataverse.', '✓ Photo Audited'],
+        [ICONS.clock + ' 06:00 AM · Site Gate', '1-Second 128-d Face ID', 'Staff look at the wall tablet; 128-d Face ID with eye-blink & 3D parallax liveness verifies them in 1 second offline.', '✓ Liveness Verified'],
+        [ICONS.clock + ' 12:30 PM · Multi-Site', 'Offline Buffer & Sync', 'Remote plant and resort punches buffer locally in IndexedDB and sync via encrypted cloud relay to the SQL ledger.', '✓ Photo Audited'],
         [ICONS.clock + ' 05:00 PM · HR Console', 'Enrolment & Roster Control', 'HR enrols a new hire face descriptor in 15 seconds on the tablet and assigns their Business Unit and shift.', '✓ Instant Enrol'],
-        [ICONS.clock + ' 03:00 AM · Nightly Job', 'Payroll Shift Derivation', 'Nightly cloud engine pairs clock-in/out punches, flags missing outs, computes overtime, and updates `bhf_attendance`.', '✓ Payroll Ready']
+        [ICONS.clock + ' 03:00 AM · Nightly Job', 'Payroll Shift Derivation', 'Nightly engine pairs clock-in/out punches, runs time-linked auto-overtime detection, and updates HR payroll rosters.', '✓ Payroll Ready']
       ],
       before: [
         ICONS.cross + ' Proprietary fingerprint boxes breaking in dusty plants or humid beach resorts',
@@ -970,8 +970,8 @@ JS = r"""
       ],
       after: [
         ICONS.check + ' Runs on any off-the-shelf Android or iPad tablet mounted at the gate',
-        ICONS.check + ' Dual Face + PIN verification with confidence score and photo audit on every punch',
-        ICONS.check + ' Works 100% offline during power/internet cuts and syncs automatically to Dataverse',
+        ICONS.check + ' 128-d Face ID + eye-blink & 3D parallax anti-screenshot liveness + PIN audit on every punch',
+        ICONS.check + ' Works 100% offline during power/internet cuts and syncs via encrypted cloud relay',
         ICONS.check + ' Nightly derivation engine turns raw punches into audited shifts, lateness, and overtime'
       ]
     }
@@ -998,7 +998,7 @@ JS = r"""
       { name: 'Sunset Pitcher', price: 34, qty: 1 }
     ],
     posSyncedCount: 142,
-    kioskLastPunch: { name: 'Rami K. · Batch Plant Dispatcher', time: '06:02:14 AM', score: '99.4% Face + PIN Match', status: 'Synced to bhf_punch' },
+    kioskLastPunch: { name: 'Rami K. · Batch Plant Dispatcher', time: '06:02:14 AM', score: '99.4% Face + PIN Match', status: 'Synced to SQL Cloud Ledger' },
     sboxInd: 'holding',
     sboxNav: 'Overview',
     sboxPeriod: 'mtd',
@@ -1054,26 +1054,26 @@ JS = r"""
     ar: {
       lbl: ICONS.search + ' Overdue AR Audit',
       q: 'Audit overdue receivables across all Business Units',
-      ans: 'Across all 6 Business Units, <b>7 invoices totaling $42,300</b> are past 60 days (led by 2 fleet buyer installments in Trading and 1 contractor account in Concrete). One-click printable Statements of Account are ready for WhatsApp dispatch.',
-      cite: 'Cited: bhf_receivable +ARAging.rdl · Reconciled to $0.00'
+      ans: 'Across all 6 Business Units, <b>7 invoices totaling $42,300</b> are past 60 days (led by 2 fleet buyer installments in Trading and 1 contractor account in Concrete). One-click bilingual Statements of Account are ready for WhatsApp dispatch.',
+      cite: 'Cited: ar_receivables + Aged Receivables A4 · Reconciled to $0.00'
     },
     margin: {
-      lbl: ICONS.pbi + ' Margin by Unit',
+      lbl: ICONS.analytics + ' Margin by Unit',
       q: 'Compare Hospitality vs. Auto & Heavy Equipment margins',
       ans: '<b>Hospitality & Resorts</b> leads net operating margin at <b>34.2% EBITDA</b> ($418.2k MTD), while <b>Auto & Heavy Equipment</b> leads gross volume at <b>$524.9k MTD</b> (24.1% GP after customs & freight capitalization).',
-      cite: 'Cited: Consolidated Power BI XMLA Model · Class 6 & 7 Ledger'
+      cite: 'Cited: 20 Native Executive Dashboards · Class 6 & 7 SQL Ledger'
     },
     parallel: {
       lbl: ICONS.scale + ' Parallel Run',
       q: 'How does the parallel run guarantee zero variance?',
       ans: 'ISABI runs side-by-side with your existing accounting until every operational sale, stock movement, and bank voucher matches your statutory trial balance to <b>$0.00 variance</b> before cutover.',
-      cite: 'Cited: Layer 03 Statutory Bridge & TrialBalance.rdl'
+      cite: 'Cited: Layer 03 Statutory Bridge & Printable Trial Balance Pack'
     },
     sprint: {
       lbl: ICONS.calendar + ' 14-Day Sprint',
       q: 'How does the 1 to 2 week go-live sprint work?',
-      ans: '<b>Days 1-3:</b> Custom Dataverse tables & COA. <b>Days 4-6:</b> ERP forms, role security & Offline PWAs. <b>Days 7-10:</b> Power BI & printable SOA pack. <b>Days 11-14:</b> Historical data migration & zero-variance go-live.',
-      cite: 'Cited: ISABI Code-First Schema & TMDL Compiler'
+      ans: '<b>Days 1-3:</b> Custom SQL schema, COA & $0-seat RLS. <b>Days 4-6:</b> 9 Hubs, 24 smart forms & 4 Kiosks. <b>Days 7-10:</b> 20 dashboards & 22 printable statements. <b>Days 11-14:</b> Historical load & $0.00-variance go-live.',
+      cite: 'Cited: ISABI Code-First SQL & Progressive Boot Engine'
     }
   };
 
@@ -1153,7 +1153,7 @@ JS = r"""
       if (k1Sub) k1Sub.textContent = '✓ 100% Custom Schema · Zero Templates';
       if (k2Lbl) k2Lbl.innerHTML = `${ICONS.bolt} Go-Live Delivery`;
       if (k2Val) k2Val.textContent = '1 to 2 Wks';
-      if (k2Sub) k2Sub.textContent = '✓ Deployed inside your M365 tenant';
+      if (k2Sub) k2Sub.textContent = '✓ $0 Per-User Seat Fees · Client-Owned SQL';
 
       const heroApps = APP_SUITE.slice(0, 8);
       const curApp = APP_SUITE.find(a => a.id === state.heroAppId) || heroApps[0];
@@ -1187,7 +1187,7 @@ JS = r"""
       if (winTitle) winTitle.textContent = 'Ask ISABI · Cited AI Assistant';
       if (k1Lbl) k1Lbl.innerHTML = `${ICONS.ai} AI Ledger Grounding`;
       if (k1Val) k1Val.textContent = '100% Cited';
-      if (k1Sub) k1Sub.textContent = '✓ Live Dataverse Ledger, Stock & AR';
+      if (k1Sub) k1Sub.textContent = '✓ Live SQL Ledger, AI Sentinels & AR';
       if (k2Lbl) k2Lbl.innerHTML = `${ICONS.globe} Multilingual Fluency`;
       if (k2Val) k2Val.textContent = 'EN · AR · FR';
       if (k2Sub) k2Sub.textContent = '✓ Instant Executive Audits 24/7';
@@ -1558,7 +1558,7 @@ JS = r"""
             <ul>${cur.workflows.map(w => `<li>${w}</li>`).join('')}</ul>
           </div>
           <div class="ind-box" data-ind-box="reports" ${mTab !== 'reports' && mTab !== 'modules' ? 'data-mob-hide="1"' : (isMobile && mTab !== 'reports' ? 'data-mob-hide="1"' : '')}>
-            <h4>${ICONS.pbi} Power BI &amp; Printable .RDL</h4>
+            <h4>${ICONS.analytics} 20 Dashboards &amp; 22 Statements</h4>
             <ul>${cur.reports.map(r => `<li>${r}</li>`).join('')}</ul>
           </div>
         </div>
@@ -1582,7 +1582,7 @@ JS = r"""
         <button type="button" class="ind-subtab-btn ${mTab === 'modules' ? 'active' : ''}" data-ind-subtab="modules">${ICONS.box} Core Modules (${cur.modules.length})</button>
         <button type="button" class="ind-subtab-btn ${mTab === 'dayflow' ? 'active' : ''}" data-ind-subtab="dayflow">${ICONS.clock} Day-in-the-Life Flow</button>
         <button type="button" class="ind-subtab-btn ${mTab === 'beforeafter' ? 'active' : ''}" data-ind-subtab="beforeafter">${ICONS.sync} Before vs. After</button>
-        <button type="button" class="ind-subtab-btn ${mTab === 'reports' ? 'active' : ''}" data-ind-subtab="reports">${ICONS.pbi} Reports &amp; Workflows</button>
+        <button type="button" class="ind-subtab-btn ${mTab === 'reports' ? 'active' : ''}" data-ind-subtab="reports">${ICONS.analytics} Dashboards &amp; Workflows</button>
       </div>
 
       ${bodyContentHtml}
@@ -1592,7 +1592,7 @@ JS = r"""
           ${cur.metrics.map(m => `<div><small>${m[0]}</small><b class="num">${m[1]}</b></div>`).join('')}
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <a href="app/?demo=1&amp;autologin=1&amp;industry=${cur.sandboxKey || cur.id}" class="btn btn-outline ind-portal-btn" title="Launch Full 20-Page Power BI &amp; 34-Table Command Center for ${cur.name}">${ICONS.erp} Open Full Portal ▸</a>
+          <a href="app/?demo=1&amp;autologin=1&amp;industry=${cur.sandboxKey || cur.id}" class="btn btn-outline ind-portal-btn" title="Launch Full 20-Dashboard &amp; 34-Table Command Center for ${cur.name}">${ICONS.erp} Open Full Portal ▸</a>
           <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I am interested in an ISABI Systems blueprint for ' + cur.name + '. Can we schedule a quick walkthrough?')}" target="_blank" rel="noopener" class="btn btn-wa" aria-label="Discuss ${cur.name} on WhatsApp">
             ${ICONS.wa} Discuss on WhatsApp
           </a>
@@ -1685,7 +1685,7 @@ JS = r"""
     const pm = PERIOD_MULT[state.sboxPeriod] || PERIOD_MULT.mtd;
     const totalMult = cm.mult * pm.mult;
 
-    // MODE 2: PRINTABLE STATEMENT OF ACCOUNT (.RDL) VIEWER
+    // MODE 2: PRINTABLE STATEMENT OF ACCOUNT (22 STATEMENTS) VIEWER
     if (state.sboxMode === 'soa') {
       mockEl.className = 'mock mode-full';
       const docType = state.soaDoc || 'soa';
@@ -1710,7 +1710,7 @@ JS = r"""
         <div class="soa-viewer">
           <div class="soa-hdr">
             <div>
-              <span class="ind-badge-pill">${ICONS.soa} Paginated .RDL Statement Preview · ${d.groupTitle}</span>
+              <span class="ind-badge-pill">${ICONS.soa} Bilingual Printable Statement Preview · ${d.groupTitle}</span>
               <h3 style="font-size:20px;margin:4px 0">Audited Statement of Account &amp; Trial Balance (${cm.sym})</h3>
               <span style="font-size:12px;color:var(--m-muted)">Period: ${pm.label} · Lebanese / Regional Class 1 to 7 COA · Reconciled to $0.00 Variance</span>
             </div>
@@ -1782,7 +1782,7 @@ JS = r"""
               </div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button type="button" class="btn btn-brass" style="flex:1" data-pos-sync="1">${ICONS.pos} Print Receipt &amp; Sync to Dataverse</button>
+              <button type="button" class="btn btn-brass" style="flex:1" data-pos-sync="1">${ICONS.pos} Print Receipt &amp; Sync to SQL Ledger</button>
               <button type="button" class="btn btn-outline" data-pos-clear="1">Reset Till</button>
             </div>
           </div>
@@ -1811,7 +1811,7 @@ JS = r"""
               <div><b>Biometric Audit:</b> ${state.kioskLastPunch.score}</div>
               <div style="color:#D9A54A;margin-top:4px"><b>Cloud Pipeline:</b> ${state.kioskLastPunch.status}</div>
             </div>
-            <button type="button" class="btn btn-outline" style="width:100%" data-open-ai="How do the Offline POS Till and Biometric Attendance Kiosk PWAs sync to Dataverse?">${ICONS.ai} Ask ISABI How Offline Sync Works</button>
+            <button type="button" class="btn btn-outline" style="width:100%" data-open-ai="How do the Offline POS Till and 4 Field Kiosks sync to the SQL cloud ledger?">${ICONS.ai} Ask ISABI How Offline Sync Works</button>
           </div>
         </div>
       `;
@@ -1819,9 +1819,9 @@ JS = r"""
       return;
     }
 
-    // MODE 1 (DEFAULT): 6-INDUSTRY LIVE ERP & POWER BI COMMAND CENTER
+    // MODE 1 (DEFAULT): 6-INDUSTRY LIVE ERP & EXECUTIVE ANALYTICS COMMAND CENTER
     mockEl.className = 'mock';
-    const navItems = ['Overview', 'Sales & Revenue', 'Purchases & Stock', 'Cash & Treasury', 'General Ledger', 'Paginated .RDL'];
+    const navItems = ['Overview', 'Sales & Revenue', 'Purchases & Stock', 'Cash & Treasury', 'General Ledger', '22 Statements'];
 
     const kpisHtml = d.kpis.map(k => {
       const val = k.fixed ? k.v : (k.v * totalMult).toFixed(1);
@@ -1860,7 +1860,7 @@ JS = r"""
     const focusChart = state.sboxNav === 'Sales & Revenue' || state.sboxNav === 'Purchases & Stock';
     const focusEnt = state.sboxNav === 'Business Units' || state.sboxNav === 'Cash & Treasury';
     const focusAlerts = state.sboxNav === 'Audit Trail';
-    const focusGl = state.sboxNav === 'General Ledger' || state.sboxNav === 'Paginated .RDL';
+    const focusGl = state.sboxNav === 'General Ledger' || state.sboxNav === '22 Statements';
 
     const mTab = state.sboxMobTab || 'chart';
 
@@ -1902,7 +1902,7 @@ JS = r"""
             <button type="button" class="primary-mock" data-open-ai="Analyze the ${d.groupTitle} dashboard numbers and highlight key action items">
               <span>${ICONS.ai} Ask ISABI</span>
             </button>
-            <a href="app/?demo=1&amp;autologin=1&amp;industry=${state.sboxInd}" class="primary-mock sbox-launch-portal hide-xs" style="text-decoration:none" title="Open the full 20-Page Power BI &amp; 34-Table Command Portal for ${d.groupTitle}">
+            <a href="app/?demo=1&amp;autologin=1&amp;industry=${state.sboxInd}" class="primary-mock sbox-launch-portal hide-xs" style="text-decoration:none" title="Open the full 20-Dashboard &amp; 34-Table Command Portal for ${d.groupTitle}">
               <span>${ICONS.erp} Full Portal ▸</span>
             </a>
           </div>
@@ -1918,7 +1918,7 @@ JS = r"""
         <section class="row2" ${mTab !== 'chart' ? 'data-mob-hide="1"' : ''}>
           <div class="panel ${focusChart ? 'panel-focus' : ''}">
             <div class="ph">
-              <h3>${ICONS.pbi} Monthly Revenue Trajectory (${cm.sym} thousands)</h3>
+              <h3>${ICONS.analytics} Monthly Revenue Trajectory (${cm.sym} thousands)</h3>
               <div class="legend">
                 <span><i class="sw-box s-1"></i>${d.seriesNames[0]}</span>
                 <span><i class="sw-box s-2"></i>${d.seriesNames[1]}</span>
@@ -2038,7 +2038,7 @@ JS = r"""
     const map = {
       '7 trade receivables past 60 days': {
         title: 'Executive Action Plan · Aged Receivables (> 60d)',
-        answer: `Across the 6 operating Business Units, <b>7 invoices totaling ${fmtMoney(42300, m, s)}</b> are past the 60-day credit window. Printable Statements of Account (.rdl) and WhatsApp collection links are staged for dispatch.`,
+        answer: `Across the 6 operating Business Units, <b>7 invoices totaling ${fmtMoney(42300, m, s)}</b> are past the 60-day credit window. Printable A4 Statements of Account and WhatsApp collection links are staged for dispatch.`,
         headers: ['Customer / Entity', 'Voucher', 'Age', 'Balance (' + s + ')'],
         rows: [
           ['Apex Contracting · Concrete Plant', 'TK-2026-3104', '68 Days', fmtMoney(16400, m, s)],
@@ -2047,7 +2047,7 @@ JS = r"""
           ['4 Smaller Accounts (Auto & Real Estate)', 'Multiple', '61-74 Days', fmtMoney(4850, m, s)]
         ],
         total: ['Total Audited Overdue (> 60d)', fmtMoney(42300, m, s)],
-        citation: 'Source: Dataverse Receivables Ledger & Aging RDL · Credit hold active at 85%',
+        citation: 'Source: SQL Receivables Ledger & Aged Receivables Pack · Credit hold active at 85%',
         followUps: ['Show today\'s journal vouchers', 'How does dual-entry reconciliation work with our existing accountant software?']
       },
       'Statutory vs Operational reconciliation check': {
@@ -2073,26 +2073,26 @@ JS = r"""
           ['PO-2026-0918', 'Flagship Resort · Premium Beverage Import', '60210 F&B Provisions', fmtMoney(11850, m, s)]
         ],
         total: ['Total Awaiting Executive Stamp', fmtMoney(36450, m, s)],
-        citation: 'Source: Power Automate Approval Flow & Dataverse Procurement Queue',
+        citation: 'Source: Automated Stamp Workflow & SQL Procurement Queue',
         followUps: ['How does role-based security work?', 'Show the Concrete & Manufacturing blueprint']
       },
       'Nightly automation fleet completed': {
-        title: 'Nightly Cloud Automation Fleet Log',
-        answer: `All scheduled Power Automate and Fabric pipelines completed on time with zero failed actions and verified row counts.`,
+        title: 'Nightly Cloud Automation & Sentinel Log',
+        answer: `All scheduled SQL backup, biometric shift derivation, and AI Audit Sentinel jobs completed on time with zero failed actions and verified row counts.`,
         headers: ['Job / Pipeline', 'Run Time', 'Target Store', 'Status'],
         rows: [
-          ['Ops - Nightly Export to SharePoint', '02:00', '111 CSVs + Manifest Verified', 'Succeeded'],
-          ['Ops - Attendance Kiosk Derivation', '03:00', 'Punches Paired to HR Shifts', 'Succeeded'],
-          ['Ops - Re-root Universal Dimensions', '03:10', 'Shared Master Tables Audited', 'Succeeded'],
-          ['Fabric XMLA Semantic Model Refresh', '07:00', 'Operations & Financial Models', 'Succeeded']
+          ['Encrypted Nightly SQL Snapshot', '02:00', '34 Tables + Checksum Manifest Verified', 'Succeeded'],
+          ['128-d Face ID Kiosk Shift Derivation', '03:00', 'Punches Paired + Auto-Overtime Flagged', 'Succeeded'],
+          ['Autonomous AI Ticket & Fuel Sentinels', '03:10', 'Serial Gaps, Diesel & AP/AR Audited', 'Succeeded'],
+          ['20 Executive Dashboards Cache Warmup', '07:00', 'Year / Month / Week / Day Aggregates', 'Succeeded']
         ],
         total: ['Total Automated Fleet Health', '100% Green (0 Errors)'],
-        citation: 'Source: Power Automate Run History & SharePoint DR Sentinel',
-        followUps: ['Who owns the system and the data?', 'How do the offline PWAs sync to Dataverse?']
+        citation: 'Source: ISABI Cloud Relay Scheduler & Autonomous Audit Sentinels',
+        followUps: ['Who owns the system and the data?', 'How do the offline kiosks sync to the SQL ledger?']
       },
       'Offline POS Tills synchronized (100%)': {
         title: 'Companion POS Till Close Audit',
-        answer: `All 6 offline-capable cashier tills across the resort properties closed their shifts and synced 1,420 receipts into the Dataverse Revenue Ledger with zero cash/card variance.`,
+        answer: `All 6 offline-capable cashier tills across the resort properties closed their shifts and synced 1,420 receipts into the SQL Revenue Ledger with zero cash/card variance.`,
         headers: ['Outlet Till', 'Receipts', 'Payment Split', 'Synced TTC (' + s + ')'],
         rows: [
           ['Main Gate & Cabana Desk (2 Tills)', '412', 'Cash + Whish + Card', fmtMoney(6420, m, s)],
@@ -2100,7 +2100,7 @@ JS = r"""
           ['VIP Lounge & Pool Bar (1 Till)', '162', 'Room Charge + Card', fmtMoney(3140, m, s)]
         ],
         total: ['Total Audited Daily POS Revenue', fmtMoney(18470, m, s)],
-        citation: 'Source: IndexedDB POS Queue to Dataverse bhf_revenue · Till closes matched',
+        citation: 'Source: IndexedDB POS Queue to SQL outlet_revenue · Till closes matched',
         followUps: ['Tell me about the Offline POS Till PWA', 'Analyze the Hospitality & Resort Operations dashboard numbers']
       },
       'Beverage stock variance check': {
@@ -2128,7 +2128,7 @@ JS = r"""
           ['Sound & Lighting Production', 'PI-2026-0404', 'Palms Waterfront', fmtMoney(2400, m, s)]
         ],
         total: ['Total Friday Payment Run', fmtMoney(18200, m, s)],
-        citation: 'Source: Dataverse Supplier Payables & Partner Agreement Split Engine',
+        citation: 'Source: SQL Supplier Payables & Partner Agreement Split Engine',
         followUps: ['Show Hospitality journal entries', 'How do printable Statements of Account work?']
       },
       'Biometric Attendance Kiosk synced': {
@@ -2142,12 +2142,12 @@ JS = r"""
           ['Boutique Suites · Front Desk & HK', '13 Staff', '1.5 hrs', '100% Face + PIN']
         ],
         total: ['Total Verified Shifts Synced', '118 Shifts (0 Missing Punches)'],
-        citation: 'Source: Attendance Kiosk PWA via Ops - Attendance Kiosk API Flow',
+        citation: 'Source: 128-d Face ID Kiosk PWA via Encrypted SQL Cloud Relay',
         followUps: ['Tell me about the Biometric Attendance Kiosk PWA', 'What hardware is needed for the kiosks?']
       },
       '5 fleet customer installments past 60 days': {
         title: 'Dealership Fleet Receivables & SOA Dispatch',
-        answer: `Five fleet and commercial equipment buyers have installment notes past 60 days totaling <b>${fmtMoney(31400, m, s)}</b>. One-click PDF Statements of Account (.rdl) are ready for WhatsApp and email delivery.`,
+        answer: `Five fleet and commercial equipment buyers have installment notes past 60 days totaling <b>${fmtMoney(31400, m, s)}</b>. One-click PDF Statements of Account are ready for WhatsApp and email delivery.`,
         headers: ['Dealer / Fleet Account', 'Invoice / VIN Ref', 'Days Past Due', 'Overdue (' + s + ')'],
         rows: [
           ['Levant Heavy Haulage', 'SI-TRK-0298 (VIN #8792)', '66 Days', fmtMoney(14800, m, s)],
@@ -2156,7 +2156,7 @@ JS = r"""
           ['2 Regional Workshop Accounts', 'SI-PRT-1420 / 1429', '61-65 Days', fmtMoney(4950, m, s)]
         ],
         total: ['Total Dealership Overdue (> 60d)', fmtMoney(31400, m, s)],
-        citation: 'Source: Trading Operations Customer Allocation & Aged Receivables RDL',
+        citation: 'Source: Trading SQL Customer Allocation & Printable Aged Receivables Statement',
         followUps: ['Show the Auto & Equipment Trading blueprint', 'How are VIN landed costs calculated?']
       },
       '3 heavy equipment units cleared customs today': {
@@ -2169,7 +2169,7 @@ JS = r"""
           ['VIN #LZGJL484X20268845', '8x4 Tipper Chassis (400 HP)', fmtMoney(3800, m, s), fmtMoney(58600, m, s)]
         ],
         total: ['Total Capitalized Showroom Value (3 Units)', fmtMoney(167000, m, s)],
-        citation: 'Source: Dataverse Vehicle VIN Registry & Landed Cost Sheet (LC-2026-0118)',
+        citation: 'Source: SQL Vehicle VIN Registry & Landed Cost Sheet (LC-2026-0118)',
         followUps: ['Analyze the Automotive & Heavy Equipment Trading dashboard', 'Show Trading journal entries']
       },
       'Fast-moving brake & filter SKUs below safety stock': {
@@ -2196,7 +2196,7 @@ JS = r"""
           ['Trade Receivables Past 60d', fmtMoney(31400, m, s), fmtMoney(31400, m, s), fmtMoney(0, m, s)]
         ],
         total: ['Parallel-Run Audit Variance', fmtMoney(0, m, s)],
-        citation: 'Source: Trading Parallel-Run Reconciliation RDL · 100% Matched',
+        citation: 'Source: Trading Parallel-Run Reconciliation Pack · 100% Matched',
         followUps: ['How does dual-entry reconciliation work with our existing accountant software?', 'Show Trading journal entries']
       },
       '142 batch plant delivery tickets verified today': {
@@ -2222,7 +2222,7 @@ JS = r"""
           ['Cedars Precast & Foundations', fmtMoney(30000, m, s), fmtMoney(25800, m, s), '86.0% (Gate)']
         ],
         total: ['Total Protected Credit Exposure', fmtMoney(107400, m, s)],
-        citation: 'Source: Dataverse Customer Credit Terms & Sales Ticket Form Gate JS',
+        citation: 'Source: SQL Customer Credit Terms & Smart 24-Form Gate Engine',
         followUps: ['Analyze the Manufacturing, Concrete & Fleet dashboard', 'How does customer receipt allocation work?']
       },
       'Silo #2 Portland Cement reorder trigger': {
@@ -2280,7 +2280,7 @@ JS = r"""
       },
       'Tower HVAC preventive maintenance completed': {
         title: 'Property Work Order & Service-Charge Attribution',
-        answer: `Work Order <b>WO-2026-0088</b> (Harbor View Residences chiller & generator overhaul) is signed off with vendor warranty attached in SharePoint and allocated to the building OpEx service-charge pool.`,
+        answer: `Work Order <b>WO-2026-0088</b> (Harbor View Residences chiller & generator overhaul) is signed off with vendor warranty attached in the encrypted document vault and allocated to the building OpEx service-charge pool.`,
         headers: ['Work Order Component', 'Vendor', 'Classification', 'Cost (' + s + ')'],
         rows: [
           ['Rooftop Chiller Compressor Overhaul', 'ClimateTech MEP', 'OpEx · Service Charge', fmtMoney(2150, m, s)],
@@ -2301,7 +2301,7 @@ JS = r"""
           ['Co-Investor Partner B (15%)', '15.0%', fmtMoney(23400, m, s), fmtMoney(18395, m, s)]
         ],
         total: ['Total Quarterly Net Distribution (78.6% NOI)', fmtMoney(122635, m, s)],
-        citation: 'Source: Real Estate Ownership Registry (bhf_partner) & Partner SOA RDL',
+        citation: 'Source: Real Estate Partner Equity Registry & Printable Partner SOA',
         followUps: ['Analyze the Real Estate & Property Operations dashboard', 'How do printable Statements of Account work?']
       },
       '19 corporate renewals due next month pre-quoted': {
@@ -2327,19 +2327,19 @@ JS = r"""
           ['4 Commercial Fleet Endorsements', 'END-MOT-1102..1109', '31-34 Days', fmtMoney(5100, m, s)]
         ],
         total: ['Total Premium Past Grace Window', fmtMoney(14600, m, s)],
-        citation: 'Source: Insurance Premium Invoice Aging & Client SOA RDL',
+        citation: 'Source: Insurance Premium Invoice Aging & Printable Client SOA',
         followUps: ['How are carrier commissions and net payables calculated?', 'Show Insurance journal entries']
       },
       '2 motor claims awaiting surveyor repair approval': {
         title: 'Claims Intake & Surveyor Approval Tracker',
-        answer: `Two motor fleet accident files have garage repair estimates and accident photos uploaded in their SharePoint claim folders and await underwriter surveyor stamp.`,
+        answer: `Two motor fleet accident files have garage repair estimates and accident photos uploaded in their encrypted claim vaults and await underwriter surveyor stamp.`,
         headers: ['Claim File', 'Policy & Vehicle', 'Workshop Estimate', 'Status'],
         rows: [
           ['CLM-2026-0194', 'POL-MOT-2210 · Delivery Van #14', fmtMoney(2850, m, s), 'Surveyor Review Today'],
           ['CLM-2026-0198', 'POL-MOT-2405 · Executive SUV', fmtMoney(1920, m, s), 'Parts Quote Attached']
         ],
         total: ['Total Active Reserve Under Survey', fmtMoney(4770, m, s)],
-        citation: 'Source: Insurance Claims Registry & SharePoint Document Pipeline',
+        citation: 'Source: Insurance Claims Registry & Encrypted Document Vault',
         followUps: ['Show the Insurance Brokerage blueprint', 'Configure scope and pricing for Insurance Brokerage']
       },
       'Monthly carrier net payable reconciled': {
@@ -2352,7 +2352,7 @@ JS = r"""
           ['Net Payable to Underwriting Carriers', '4017 Insurer Payable Trust', '81.6%', fmtMoney(152592, m, s)]
         ],
         total: ['Unreconciled Bordereaux Variance', fmtMoney(0, m, s)],
-        citation: 'Source: Insurance Carrier Bordereaux RDL & Trust Account Ledger',
+        citation: 'Source: Printable Carrier Bordereaux Statement & Trust Account SQL Ledger',
         followUps: ['Analyze the Insurance Brokerage Operations dashboard', 'Show Insurance journal entries']
       }
     };
@@ -2436,7 +2436,7 @@ JS = r"""
       headers: ['Date & Voucher', 'Business Unit', 'GL Account', `Posting (${sym})`],
       rows: rows,
       total: ['Balanced Double-Rule Batch Total', `Dr ${fmtMoney(totDeb / m, m, sym)} = Cr ${fmtMoney(totCred / m, m, sym)}`],
-      citation: `Source: Dataverse General Ledger & SOA Journal Specification · Column-Level GL Security Active`,
+      citation: `Source: Dedicated SQL General Ledger & SOA Journal Engine · Custom Role Field Locks Active`,
       followUps: [
         'Analyze the ' + d.groupTitle + ' dashboard numbers',
         'How does dual-entry reconciliation work with our existing accountant software?',
@@ -2463,7 +2463,7 @@ JS = r"""
         ['04. BI & Statements', indObj.reports[0] + ' & ' + indObj.reports[1], '100% Reconciled']
       ],
       total: ['Typical Turnkey Go-Live Window', '1 to 2 Weeks (Fixed Scope)'],
-      citation: `Source: ISABI Production Blueprint (${indObj.name}) · Microsoft Dataverse + Power BI`,
+      citation: `Source: ISABI Standalone SQL Blueprint (${indObj.name}) · Zero Per-User Seat Fees`,
       actionInd: indObj.sandboxKey,
       actionCfg: indObj.cfgName,
       followUps: [
@@ -2521,7 +2521,7 @@ JS = r"""
     const cfg = state.lastCfgSummary || {
       industry: state.cfgInd,
       scale: state.cfgScaleLabel,
-      modules: ['Core Dataverse ERP & Ledger', 'Power BI Executive Dashboards', 'Printable .RDL Statements & SOA', 'Ask ISABI Native AI Assistant'],
+      modules: ['Standalone SQL ERP & 9 Hubs', '20 Native Executive Dashboards', '22 Bilingual Printable Statements', 'Ask ISABI & AI Sentinels'],
       range: '$12,300 to $15,000',
       weeks: '1 to 2 Weeks'
     };
@@ -2563,7 +2563,7 @@ JS = r"""
         lang: 'ar',
         conversational: true,
         title: 'استشارة هندسية ومحاسبية مخصصة · ISABI',
-        answer: `نعم، نصمم النظام ليتطابق تماماً مع هذا المتطلب داخل حساب شركتكم في Microsoft 365 خلال أسبوع إلى أسبوعين، مع مطابقة يومية بنسبة 100% مع برنامج المحاسبة المعتمد لديكم.`,
+        answer: `نعم، نصمم النظام بقاعدة بيانات SQL مستقلة ومملوكة بالكامل لشركتكم بدون أي رسوم شهرية لكل مستخدم، خلال أسبوع إلى أسبوعين، مع مطابقة يومية بنسبة 100% مع برنامج المحاسبة المعتمد لديكم.`,
         promptText: `هل تود إخباري بالمزيد عن قطاع عملكم وعدد الفروع، أو تجربة سؤال آخر؟`,
         actionCfg: state.cfgInd,
         followUps: [
@@ -2610,7 +2610,7 @@ JS = r"""
         lang: 'fr',
         conversational: true,
         title: 'Architecture Sur Mesure · ISABI Systems',
-        answer: `Tout à fait. Plutôt que de vous imposer un modèle figé, nous construisons vos tables, vos validations et vos tableaux de bord Power BI sur mesure dans votre propre compte Microsoft 365 en <b>1 à 2 semaines</b>.`,
+        answer: `Tout à fait. Plutôt que de vous imposer un modèle figé, nous construisons votre base SQL dédiée, vos 24 formulaires intelligents et vos 20 tableaux de bord sur mesure sans frais par utilisateur en <b>1 à 2 semaines</b>.`,
         promptText: `Dans quel secteur d'activité êtes-vous, ou quelle autre question souhaitez-vous me poser ?`,
         actionCfg: state.cfgInd,
         followUps: [
@@ -2675,7 +2675,7 @@ JS = r"""
         q: cleanQ,
         conversational: true,
         title: 'About Ask ISABI',
-        answer: `I'm <b>ISABI</b>, the assistant built into every ISABI Systems ERP and Power BI workspace. Inside our clients' systems, I help owners and accountants check balances, trace vouchers, and pull statements in plain language.`,
+        answer: `I'm <b>ISABI</b>, the assistant and audit sentinel built into every ISABI Systems SQL ERP and 20-dashboard command center. Inside our clients' systems, I help owners and accountants check balances, trace vouchers, and flag anomalies in plain language.`,
         promptText: `Here on the website, I can walk you through our 8 live industry systems, run numbers in the sandbox, or estimate a build for your company. Which one would you like to try?`,
         followUps: [
           'Why did receivables past 60 days increase this month?',
@@ -2755,7 +2755,7 @@ JS = r"""
       const curInd = INDUSTRIES.find(x => x.id === state.activeInd) || INDUSTRIES[0];
       return Object.assign({}, AI_PROMPTS[1], {
         q: cleanQ,
-        answer: `Unlike off-the-shelf software that forces every company into generic "Invoice" and "Item" boxes, ISABI Systems engineers a <b>dedicated Dataverse relational schema</b> around your physical unit of operation while sharing a governed double-entry accounting core. Currently selected blueprint on page: <b>${curInd.name}</b>.`,
+        answer: `Unlike off-the-shelf software that forces every company into generic "Invoice" and "Item" boxes, ISABI Systems engineers a <b>dedicated PostgreSQL &amp; SQLite relational schema</b> around your physical unit of operation while sharing a governed double-entry accounting core with $0 per-user seat fees. Currently selected blueprint on page: <b>${curInd.name}</b>.`,
         actionInd: curInd.sandboxKey,
         actionCfg: curInd.cfgName,
         followUps: [
@@ -2778,7 +2778,7 @@ JS = r"""
       return {
         q: cleanQ,
         title: `Live Receivables & SOA Audit (${s})`,
-        answer: `I queried the Receivables Ledger across all active Business Units in <b>${s}</b>. Overdue balances past 60 days stand at <b>${fmtMoney(42300, m, s)}</b> across 7 invoices, with one-click printable Statements of Account (.rdl) ready for WhatsApp or email dispatch.`,
+        answer: `I queried the SQL Receivables Ledger across all active Business Units in <b>${s}</b>. Overdue balances past 60 days stand at <b>${fmtMoney(42300, m, s)}</b> across 7 invoices, with one-click printable A4 Statements of Account ready for WhatsApp or email dispatch.`,
         headers: ['Account / Entity', 'Voucher Ref', 'Days Past Due', `Balance (${s})`],
         rows: [
           ['Apex Contracting · Concrete Plant', 'TK-2026-3104', '68 Days', fmtMoney(16400, m, s)],
@@ -2787,7 +2787,7 @@ JS = r"""
           ['4 Smaller Balances (< $2k each)', 'Multiple', '61-74 Days', fmtMoney(4850, m, s)]
         ],
         total: ['Total Audited Overdue (> 60 Days)', fmtMoney(42300, m, s)],
-        citation: 'Source: Dataverse Receivables Ledger · Verified 100% against Printable SOA (.rdl)',
+        citation: 'Source: SQL Receivables Ledger · Verified 100% against Printable SOA (A4 PDF)',
         followUps: [
           'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
           'How do printable Statements of Account work?',
@@ -2801,7 +2801,7 @@ JS = r"""
       const cfg = state.lastCfgSummary || {
         industry: state.cfgInd,
         scale: state.cfgScaleLabel,
-        modules: ['Core Dataverse ERP & Ledger', 'Power BI Executive Dashboards', 'Printable .RDL Statements & SOA', 'Ask ISABI Native AI Assistant'],
+        modules: ['Standalone SQL ERP & 9 Hubs', '20 Native Executive Dashboards', '22 Bilingual Printable Statements', 'Ask ISABI & AI Sentinels'],
         range: '$12,300 to $15,000',
         weeks: '1 to 2 Weeks'
       };
@@ -2812,15 +2812,15 @@ JS = r"""
         headers: ['Engagement Option', 'Target Scale & Included Scope', 'Investment'],
         rows: [
           ['Your Configured Scope', `${cfg.industry} · ${cfg.scale} (${cfg.modules.length} modules)`, cfg.range],
-          ['Tier 01 · Foundation', 'Single entity ERP, custom schema, roles, Power BI & 2 RDLs', 'From $4,500 (+$350/mo opt.)'],
-          ['Tier 02 · Multi-Entity & AI', 'Multi-BU isolation, 3 PBI workspaces, full SOA pack, Ask ISABI & 1 PWA', 'From $9,500 (+$650/mo opt.)'],
-          ['Tier 03 · Enterprise Group', 'Multi-industry apps, group treasury, partner splits & unlimited PWAs', 'From $18,000+ Custom']
+          ['Tier 01 · Foundation', 'Single entity SQL ERP, custom schema, unlimited seats ($0/user) & dashboards', 'From $4,500 (+$350/mo opt.)'],
+          ['Tier 02 · Multi-Entity & AI', 'Multi-BU RLS, 20 dashboards, 22 printable statements, Ask ISABI & kiosks', 'From $9,500 (+$650/mo opt.)'],
+          ['Tier 03 · Enterprise Group', 'Multi-industry command center, group treasury, partner splits & 4-kiosk suite', 'From $18,000+ Custom']
         ],
         total: ['Your Live Configured Estimate', `${cfg.range} (${cfg.weeks})`],
         citation: 'Fixed-scope quotation confirmed after a 30-minute discovery call with Hussein Bdeir',
         actionCfg: state.cfgInd,
         followUps: [
-          'Do we need to buy Microsoft licences?',
+          'Are there any per-user seat fees?',
           'What happens in the first two weeks?',
           'Can we start small and add modules later?'
         ]
@@ -2839,21 +2839,21 @@ JS = r"""
       });
     }
 
-    // 10. Microsoft Licensing, Tenant Ownership, Security, Permissions & Confidential Data
-    if (low.includes('licen') || low.includes('own') || low.includes('security') || low.includes('confidential') || low.includes('permission') || low.includes('role') || low.includes('entra') || low.includes('privacy') || low.includes('tenant') || low.includes('who sees')) {
+    // 10. Zero Seat Fees, SQL Ownership, Security, Permissions & Confidential Data
+    if (low.includes('licen') || low.includes('seat') || low.includes('per-user') || low.includes('own') || low.includes('security') || low.includes('confidential') || low.includes('permission') || low.includes('role') || low.includes('rls') || low.includes('privacy') || low.includes('tenant') || low.includes('who sees')) {
       return {
         q: cleanQ,
-        title: 'Tenant Ownership, Licensing & Role Security',
-        answer: `<b>You own 100% of the system and data.</b> Every database table, workflow, Power BI model, and Ask ISABI prompt runs inside your own Microsoft 365 & Dataverse tenant. Microsoft bills your licences directly at cost with zero markup from ISABI Systems and zero per-terminal fees on POS and Attendance PWAs.`,
+        title: 'Zero Seat Fees, SQL Data Ownership & 150-Company RLS',
+        answer: `<b>You own 100% of your database and pay $0 per-user seat fees.</b> Every relational table, 20-dashboard analytics engine, printable statement, and Ask ISABI prompt runs on your dedicated PostgreSQL &amp; SQLite architecture with unlimited internal users and unlimited field kiosks.`,
         headers: ['Governance Layer', 'How It Is Enforced in Production', 'Client Benefit'],
         rows: [
-          ['Tenant & Data Ownership', 'Deployed inside your own Microsoft 365 & Entra ID tenant', '100% client-owned forever'],
-          ['Business Unit Isolation', 'Row-level Dataverse ownership per branch, resort, or plant', 'Staff see only their unit'],
-          ['Entry vs Supervisor Roles', 'Entry seats create records; Supervisors audit & approve; GL is column-secured', 'Zero unauthorized edits'],
-          ['Ask ISABI Security Scope', 'Queries execute under the signed-in user\'s exact Dataverse security role', 'Confidential figures protected']
+          ['SQL & Data Ownership', 'Dedicated PostgreSQL / SQLite database on your cloud or on-prem server', '100% client-owned forever'],
+          ['Zero Per-User Seat Tax', 'Unlimited executives, accountants, dispatchers, and kiosk operators', '$0/user & $0/terminal'],
+          ['10-Industry x 150-Company RLS', 'Row-level company isolation + custom role permissions & field locks', 'Staff see only their unit'],
+          ['Ask ISABI Security Scope', 'Queries execute strictly inside the signed-in user\'s authorized RLS scope', 'Confidential figures protected']
         ],
-        total: ['Companion POS & Kiosk Terminal Fees', '$0 / Terminal (Unlimited PWA Installs)'],
-        citation: 'Source: Microsoft Entra ID + Dataverse Role & Column-Level Security Architecture',
+        total: ['Per-User & Per-Terminal Seat Fees', '$0 / Month (Unlimited Seats & Kiosks)'],
+        citation: 'Source: ISABI Standalone SQL Core + 150-Company Row-Level Security Engine',
         followUps: [
           'How does dual-entry reconciliation work with our existing accountant software?',
           'What would a complete multi-branch system cost and include?',
@@ -2870,36 +2870,36 @@ JS = r"""
         answer: `Before commissioning an ISABI system, you only need your current spreadsheets or chart of accounts and a 30-minute walkthrough with Hussein Bdeir. Your accountant does not need to change software, and you can start with one entity and add modules later without rebuilding.`,
         headers: ['Delivery Window', 'Engineering Milestone', 'Client Sign-Off'],
         rows: [
-          ['Days 1 to 3', 'Custom Dataverse schema, Chart of Accounts, Business Units & roles', 'Live ERP forms approved'],
-          ['Days 3 to 6', 'Automated approvals, SharePoint document routing & POS/Kiosk PWAs', 'Workflows tested end-to-end'],
-          ['Days 6 to 10', 'Power BI XMLA models (Year/Month/Week/Day) & printable .RDL statements', 'Historical data migrated'],
-          ['Days 10 to 14', 'Ask ISABI wiring, team training, parallel-run reconciliation & go-live', '0.00 variance cutover']
+          ['Days 1 to 3', 'Dedicated SQL schema, Class 1 to 7 COA, 150-company RLS & custom roles', 'Live 24-form desk approved'],
+          ['Days 3 to 6', '9 Business-Cycle Hubs, encrypted document vaults & 4 Field Kiosks', 'Thermal print & Face ID live'],
+          ['Days 6 to 10', '20 native dashboards (Year/Month/Week/Day) & 22 bilingual A4 statements', 'Historical data migrated'],
+          ['Days 10 to 14', 'Ask ISABI + AI Sentinels, team training & parallel-run reconciliation', '$0.00 variance cutover']
         ],
         total: ['Typical End-to-End Delivery', '1 to 2 Weeks to Production'],
-        citation: 'Source: ISABI Code-First Compiler Pipeline · Direct Principal Engineering',
+        citation: 'Source: ISABI Code-First SQL Pipeline · Direct Principal Engineering',
         followUps: [
           'What would a complete multi-branch system cost and include?',
-          'Do we need to buy Microsoft licences?',
+          'Are there any per-user seat fees?',
           'Can we start small and add modules later?'
         ]
       };
     }
 
-    // 12. Power BI, Printable Statements (.RDL), Reports
-    if (low.includes('power bi') || low.includes('pbi') || low.includes('rdl') || low.includes('printable') || low.includes('report') || low.includes('xmla')) {
+    // 12. 20 Native Dashboards, 22 Printable Statements, Analytics & Reports
+    if (low.includes('pbi') || low.includes('analytics') || low.includes('printable') || low.includes('statement') || low.includes('report')) {
       return {
         q: cleanQ,
-        title: 'Power BI Executive Suite & Printable Statements (.RDL)',
-        answer: `Every ISABI implementation pairs interactive <b>Power BI semantic models</b> (with dynamic Year, Month, Week, and Day period pickers) with pixel-perfect <b>Paginated Reports (.rdl)</b> formatted for immediate PDF/Excel export and statutory audit.`,
-        headers: ['Reporting Workspace', 'Audience & Access Gate', 'Included Outputs'],
+        title: '20 Native Executive Dashboards & 22 Printable Statements',
+        answer: `Every ISABI implementation includes <b>20 built-in interactive dashboards</b> (with a real-time Year, Month, Week, and Day date facilitator, KPI drilldowns, and chart popovers) paired with <b>22 click-sortable bilingual printable statements</b> formatted for instant A4 PDF and Excel export with zero BI seat licences.`,
+        headers: ['Reporting Layer', 'Audience & Access Gate', 'Included Outputs'],
         rows: [
-          ['01. Operations Workspace', 'Branch Managers & Department Heads', 'Daily revenue, stock velocity, attendance & ticket books'],
-          ['02. Financial Workspace', 'Owners, Partners & Chief Accountants', 'Consolidated P&L, balance sheet, cashflow & partner splits'],
-          ['03. Printable .RDL Pack', 'In-App Viewer + Automated Email/WhatsApp', 'Customer/Supplier SOA, Aged Trial Balance & Payslips'],
-          ['04. Reconciliation Workspace', 'Parallel-Run Audit Team', 'Line-by-line operational vs statutory variance check']
+          ['01. Executive Cockpits', 'Owners, Board & Managing Directors', 'Consolidated P&L, Balance Sheet, Cash Flow & MoM variance'],
+          ['02. Operations Dashboards', 'Plant, Resort & Dealership Managers', 'Daily volume, yield, Workforce Machine Map & fleet fuel'],
+          ['03. 22 Printable Statements', 'One-Click Bilingual A4 PDF & Excel', 'Customer/Supplier/Partner SOA, Tax Invoices & Scale Passes'],
+          ['04. AI Sentinel & Recon Pack', 'Finance & Parallel-Run Audit Team', 'Ticket serial gaps, price corridors & $0.00 statutory match']
         ],
-        total: ['Report Refresh & Delivery', 'Edit-Driven Auto Refresh + Scheduled PDF Subscriptions'],
-        citation: 'Source: Power BI XMLA Pipeline & Shared RDL Institutional Style Engine',
+        total: ['BI Seat Licences Required', '$0 / User (100% Native to ISABI)'],
+        citation: 'Source: ISABI Native Analytics Engine & 22-Statement Institutional Print Pack',
         followUps: [
           'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
           'Why did receivables past 60 days increase this month?',
@@ -2945,7 +2945,7 @@ JS = r"""
         conversational: true,
         title: 'Location & Reach',
         answer: `We are based in <b>Lebanon</b> (founded and led by <b>Hussein Bdeir</b>), and we build and support systems for companies across Lebanon, the Middle East, and internationally.`,
-        promptText: `Since everything deploys directly into your own Microsoft 365 cloud, we can work with your team anywhere. Where is your business based, or what kind of system are you exploring?`,
+        promptText: `Since everything deploys onto your own dedicated SQL cloud or server with encrypted multi-device sync, we can work with your team anywhere. Where is your business based, or what kind of system are you exploring?`,
         followUps: [
           'What would a complete multi-branch system cost and include?',
           'How does ISABI customize the ERP for my specific industry?',
@@ -3024,7 +3024,7 @@ JS = r"""
       conversational: true,
       isCustomFallback: true,
       title: 'Custom Architectural Guidance',
-      answer: `We can build around that directly. Instead of forcing your team into a generic template, we set up the exact tables, approvals, and Power BI reports your workflow needs inside your own Microsoft 365 account (typical delivery for ${escapeHtml(cfg.scale)} is <b>${escapeHtml(cfg.weeks)}</b> at <b>${escapeHtml(cfg.range)}</b>).`,
+      answer: `We can build around that directly. Instead of forcing your team into a generic template, we engineer the exact SQL tables, 24-form validations, 20 executive dashboards, and printable statements your workflow needs with $0 per-user seat fees (typical delivery for ${escapeHtml(cfg.scale)} is <b>${escapeHtml(cfg.weeks)}</b> at <b>${escapeHtml(cfg.range)}</b>).`,
       promptText: `Would you like to tell me a bit more about your industry and how many branches you run, or send this straight to Hussein on WhatsApp?`,
       actionCfg: state.cfgInd,
       followUps: [
@@ -3246,9 +3246,9 @@ JS = r"""
       'You are ISABI, the warm, human conversational assistant on the ISABI Systems website (https://husseinbdeir.github.io/isabi/).',
       'Company & Location: ISABI Systems is founded and led by Hussein Bdeir (Principal Systems Architect), based in Lebanon and serving owner-led companies and multi-entity holding groups across Lebanon, the Middle East, and worldwide. Direct WhatsApp: +961 70 444 955. Email: hbdeir16@gmail.com.',
       'What this website shows: Visitors can explore our 8 live industry ERP blueprints, test real multi-currency double-entry numbers in the Live Sandbox, calculate time savings in the ROI Estimator, or configure a custom quote in the Scope Configurator.',
-      'What we build: Custom Microsoft Dataverse ERP apps, double-entry general ledgers, Power BI executive dashboards, printable .RDL Statements of Account, and offline field PWAs (POS Till & Biometric Attendance Kiosk) delivered inside the client\'s own Microsoft 365 account in 1 to 2 weeks.',
+      'What we build: Standalone PostgreSQL & SQLite ERP command centers (9 Business-Cycle Hubs, 34 tables, 24 smart forms), double-entry general ledgers, 20 native executive dashboards, 22 bilingual printable statements, AI Audit Sentinels, and a 4-Kiosk field suite (128-d Face ID liveness & Bluetooth 80mm/58mm thermal printing) delivered in 1 to 2 weeks.',
       '8 live apps: Hospitality & Resorts, Auto & Heavy Equipment Trading, Concrete & Manufacturing, Real Estate Portfolio, Insurance Brokerage, Multi-Entity Holding, Custom Offline POS PWA, Biometric Attendance Kiosk PWA.',
-      'Pricing: Single-Entity Foundation from $4,500+ (1 week); Multi-Entity & AI Suite from $9,500+ (1 to 2 weeks); Enterprise Holding Group from $18,000+ (2 weeks). Clients own 100% of their Microsoft 365 tenant and pay $0 per terminal for PWAs. Runs side-by-side with existing accounting software (Dolphin, PIMS, QuickBooks, SAP) to 0.00 variance.',
+      'Pricing: Single-Entity Foundation from $4,500+ (1 week); Multi-Entity & AI Suite from $9,500+ (1 to 2 weeks); Enterprise Holding Group from $18,000+ (2 weeks). Clients own 100% of their SQL database and pay $0 per-user seat fees and $0 per kiosk terminal for unlimited internal staff. Runs side-by-side with existing accounting software (Dolphin, PIMS, QuickBooks, SAP) to 0.00 variance.',
       'Tone & Formatting rules: Speak like a friendly, sharp, natural human in a live chat. NEVER sound like a corporate brochure or dump walls of text. NEVER use em-dashes or unicode arrows. Reply in the same language as the user (Detected language: ' + lang + ').',
       'You ALWAYS reply in TWO short chat bubbles: (1) "answer": 1 to 2 natural, direct sentences answering what the user asked; (2) "promptText": 1 short, natural follow-up question inviting the user to continue the conversation.',
       'Return ONLY valid JSON: {"conversational": true, "title": "Short heading", "answer": "1-2 sentence natural human reply", "promptText": "1-sentence natural follow-up question", "headers": [], "rows": [], "total": [], "followUps": ["Short option 1", "Short option 2", "Short option 3"]}. Leave headers/rows/total empty [] unless the user explicitly asks for a numerical table.'
@@ -3556,7 +3556,7 @@ JS = r"""
     const industry = document.getElementById('lead-industry')?.value || state.cfgInd;
     const budget = document.getElementById('lead-budget')?.value || 'Custom Scope';
     const notes = (document.getElementById('lead-notes')?.value || '').trim() || 'Interested in an architecture walkthrough and custom quotation.';
-    const cfg = state.lastCfgSummary || { scale: state.cfgScaleLabel, modules: ['Core Dataverse ERP & Ledger'], range: '$9,500+', weeks: '1 to 2 Weeks' };
+    const cfg = state.lastCfgSummary || { scale: state.cfgScaleLabel, modules: ['Standalone SQL ERP & 9 Hubs'], range: '$9,500+', weeks: '1 to 2 Weeks' };
 
     return [
       'ISABI SYSTEMS - EXECUTIVE ARCHITECTURE INQUIRY',
@@ -3805,7 +3805,7 @@ JS = r"""
         state.posSyncedCount += 1;
         renderSandbox();
         renderHeroStage();
-        showToast('Thermal receipt printed (0.2s) & synced to Dataverse bhf_revenue!');
+        showToast('80mm thermal receipt printed (0.2s) & synced to SQL revenue ledger!');
         return;
       }
 
@@ -3817,7 +3817,7 @@ JS = r"""
           name: empName,
           time: nowStr,
           score: matchScore + ' Match (0.8s)',
-          status: 'Synced to Dataverse bhf_punch ✓'
+          status: 'Synced to SQL Cloud Ledger ✓'
         };
         renderSandbox();
         renderHeroStage();
@@ -3825,7 +3825,7 @@ JS = r"""
         return;
       }
 
-      // 0g. Section 04 Microsoft Stack Pillar Tabs
+      // 0g. Section 04 Platform & AI Pillar Tabs
       const msTabBtn = e.target.closest('[data-ms-tab]');
       if (msTabBtn) {
         const key = msTabBtn.dataset.msTab;
@@ -4006,7 +4006,7 @@ JS = r"""
       const sboxNavBtn = e.target.closest('[data-sbox-nav]');
       if (sboxNavBtn) {
         state.sboxNav = sboxNavBtn.dataset.sboxNav;
-        if (state.sboxNav === 'General Ledger' || state.sboxNav === 'Audit Trail' || state.sboxNav === 'Paginated .RDL') {
+        if (state.sboxNav === 'General Ledger' || state.sboxNav === 'Audit Trail' || state.sboxNav === '22 Statements') {
           state.sboxMobTab = 'ledger';
         } else {
           state.sboxMobTab = 'chart';

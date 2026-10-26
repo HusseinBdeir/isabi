@@ -1,5 +1,5 @@
 # Authentic brand logos and crisp institutional SVG icons for ISABI Systems PWA
-# Replaces all OS cartoon emojis (e.g., PS5 gamepad 🎮, speech bubble 💬, robot 🤖) with vector SVGs.
+# Replaces all OS cartoon emojis (e.g., PS5 gamepad, speech bubble, robot) with vector SVGs.
 
 def _stroke_svg(inner, cls="ic", vb="0 0 24 24"):
     return (
@@ -25,7 +25,7 @@ ICONS = {
         '-.06-.1-.23-.17-.48-.29z"/></svg>'
     ),
 
-    # 2. Official ISABI / Ask ISABI Rev 10 "II" Double-Rule Badge (replaces cartoon robot 🤖)
+    # 2. Official ISABI / Ask ISABI Rev 10 "II" Double-Rule Badge
     "ai": (
         '<svg class="ic ic-isabi" viewBox="0 0 120 120" width="1em" height="1em" aria-hidden="true">'
         '<rect width="120" height="120" rx="26" fill="#0B1730"/>'
@@ -45,23 +45,22 @@ ICONS = {
         '<rect x="0" y="18.5" width="55.66" height="4.2"/></g></svg>'
     ),
 
-    # 3. Official Microsoft 4-Square Logo
-    "ms": (
-        '<svg class="ic ic-ms" viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">'
-        '<rect x="2.5" y="2.5" width="8.8" height="8.8" fill="#F25022"/>'
-        '<rect x="12.7" y="2.5" width="8.8" height="8.8" fill="#7FBA00"/>'
-        '<rect x="2.5" y="12.7" width="8.8" height="8.8" fill="#00A4EF"/>'
-        '<rect x="12.7" y="12.7" width="8.8" height="8.8" fill="#FFB900"/></svg>'
+    # 3. Dedicated Server & Cloud Core Icon
+    "cloud": _stroke_svg(
+        '<rect x="3" y="4" width="18" height="6" rx="1.8"/>'
+        '<rect x="3" y="14" width="18" height="6" rx="1.8"/>'
+        '<line x1="7" y1="7" x2="7.01" y2="7"/>'
+        '<line x1="7" y1="17" x2="7.01" y2="17"/>'
     ),
 
-    # 4. Official Power BI Stepped Columns Logo
-    "pbi": _stroke_svg(
+    # 4. Executive Analytics Stepped Columns Icon
+    "analytics": _stroke_svg(
         '<rect x="3" y="13" width="4.5" height="8" rx="1"/>'
         '<rect x="9.75" y="8" width="4.5" height="13" rx="1"/>'
         '<rect x="16.5" y="3" width="4.5" height="18" rx="1"/>'
     ),
 
-    # 5. Enterprise ERP Command Console (replaces PS5 gamepad controller 🎮)
+    # 5. Enterprise ERP Command Console
     "erp": _stroke_svg(
         '<rect x="2" y="3" width="20" height="18" rx="2.5"/>'
         '<line x1="2" y1="8" x2="22" y2="8"/>'
@@ -71,7 +70,7 @@ ICONS = {
         '<line x1="11" y1="17.5" x2="19.5" y2="17.5"/>'
     ),
 
-    # 6. Modular 18-App Ecosystem Grid (replaces jigsaw puzzle piece 🧩)
+    # 6. Modular 18-App Ecosystem Grid
     "apps": _stroke_svg(
         '<rect x="3" y="3" width="7.5" height="7.5" rx="1.8"/>'
         '<rect x="13.5" y="3" width="7.5" height="7.5" rx="1.8"/>'
@@ -79,7 +78,7 @@ ICONS = {
         '<rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.8"/>'
     ),
 
-    # 7. Scope & Pricing Configurator Sliders (replaces wrench/hammer 🛠️)
+    # 7. Scope & Pricing Configurator Sliders
     "scope": _stroke_svg(
         '<line x1="4" y1="6" x2="20" y2="6"/>'
         '<line x1="4" y1="12" x2="20" y2="12"/>'
@@ -89,14 +88,14 @@ ICONS = {
         '<circle cx="10" cy="18" r="2.2" fill="currentColor"/>'
     ),
 
-    # 8. POS Till & Thermal Receipt Printer (replaces 🖨️)
+    # 8. POS Till & Thermal Receipt Printer
     "pos": _stroke_svg(
         '<path d="M6 9V3h12v6"/>'
         '<rect x="3" y="9" width="18" height="8" rx="2"/>'
         '<path d="M6 14h12v7l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5V14z"/>'
     ),
 
-    # 9. Biometric Face & PIN Gate Kiosk (replaces 📸)
+    # 9. Biometric Face & PIN Gate Kiosk
     "kiosk": _stroke_svg(
         '<path d="M3 7V5a2 2 0 0 1 2-2h2"/>'
         '<path d="M17 3h2a2 2 0 0 1 2 2v2"/>'
@@ -191,10 +190,14 @@ ICONS = {
         '<path d="M22 21v-2a4 4 0 0 0-3-3.87"/>'
         '<path d="M16 3.13a4 4 0 0 1 0 7.75"/>'
     ),
-    "dataverse": _stroke_svg(
+    "sql": _stroke_svg(
         '<ellipse cx="12" cy="5" rx="8" ry="3"/>'
         '<path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/>'
         '<path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>'
+    ),
+    "sentinel": _stroke_svg(
+        '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
+        '<circle cx="12" cy="11" r="2.5"/>'
     ),
     "layers": _stroke_svg(
         '<polygon points="12 2 2 7 12 12 22 7 12 2"/>'
