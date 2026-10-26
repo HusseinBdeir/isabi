@@ -54,6 +54,11 @@ def sync_command_app() -> int:
                 shutil.copy2(os.path.join(root, f), os.path.join(target_root, f))
                 copied += 1
 
+    # Remove retired monolithic seed_data.js if replaced by split seed_core.json + seed_records.json
+    legacy_seed = os.path.join(APP_OUT, "js", "seed_data.js")
+    if os.path.exists(legacy_seed) and not os.path.exists(os.path.join(MFG_ROOT, "js", "seed_data.js")):
+        os.remove(legacy_seed)
+
     print(f"OK: Synced {copied} Command Center files from {MFG_ROOT} -> {APP_OUT}")
     return copied
 

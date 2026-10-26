@@ -47,11 +47,38 @@ const MFG_FACE_CONFIG = {
 const Face = (() => {
   let ready = false;
   let loading = null;
+  let faceApiScriptPromise = null;
   let backend = "?";
   let detector = "tiny";
   let landmarksTiny = true;
 
   const M = () => MFG_FACE_CONFIG.match;
+
+  function ensureFaceApiScript(immediate = false) {
+    if (typeof faceapi !== "undefined") return Promise.resolve();
+    if (faceApiScriptPromise) return faceApiScriptPromise;
+    if (typeof document === "undefined") return Promise.reject(new Error("document unavailable"));
+    faceApiScriptPromise = new Promise((resolve, reject) => {
+      const inject = () => {
+        if (typeof faceapi !== "undefined") { resolve(); return; }
+        const s = document.createElement("script");
+        s.src = "./vendor/face-api.js?v=1";
+        s.async = true;
+        s.onload = () => (typeof faceapi !== "undefined" ? resolve() : reject(new Error("face-api.js loaded without global")));
+        s.onerror = () => {
+          faceApiScriptPromise = null;
+          reject(new Error("Failed to load vendor/face-api.js"));
+        };
+        (document.head || document.documentElement).appendChild(s);
+      };
+      if (immediate || document.readyState === "complete") {
+        inject();
+      } else {
+        window.addEventListener("load", () => setTimeout(inject, 0), { once: true });
+      }
+    });
+    return faceApiScriptPromise;
+  }
 
   function opts(which) {
     const d = which || detector;
@@ -97,9 +124,8 @@ const Face = (() => {
 
   function prewarm() {
     if (typeof window === "undefined" || navigator.webdriver || window.__MFG_HEADLESS_TEST || window.__mfgSwResuming) return;
-    // 1. Start loading WebGL + 128-d recognition models immediately (before 10.4 MB seed_data.js parses)
-    load().catch(() => {});
-    // 2. Request webcam stream immediately if #authGate is visible so the video feed appears in <150ms
+    // Request webcam stream immediately if #authGate is visible so the video preview appears in <150ms,
+    // without downloading 8 MB of neural weights until UI shell + core seed have finished loading.
     const gate = document.getElementById("authGate");
     const videoEl = document.getElementById("authFaceVideo");
     if (!gate || gate.hidden || !videoEl || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
@@ -124,8 +150,10 @@ const Face = (() => {
           if (offEl) offEl.hidden = true;
           const hint = document.getElementById("authFaceHint");
           if (hint && /Loading Face ID/i.test(hint.textContent || "")) {
-            hint.textContent = "Camera active — scanning Face ID…";
-            hint.className = "auth-face-hint ok";
+            hint.textContent = ready
+              ? "Camera active — scanning Face ID…"
+              : "Camera active — preparing Face ID (or enter PIN below)…";
+            hint.className = ready ? "auth-face-hint ok" : "auth-face-hint";
           }
         } else {
           stopStreamTracks(s);
@@ -163,8 +191,10 @@ const Face = (() => {
   async function load() {
     if (ready) return;
     if (loading) return loading;
-    if (typeof faceapi === "undefined") throw new Error("face-api.js not loaded");
+    const isAutoTest = typeof navigator !== "undefined" && Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
     loading = (async () => {
+      await ensureFaceApiScript(isAutoTest);
+      if (typeof faceapi === "undefined") throw new Error("face-api.js not loaded");
       const base = "./vendor/models";
       try {
         await faceapi.tf.setBackend("webgl");
@@ -174,8 +204,8 @@ const Face = (() => {
         await faceapi.tf.ready();
       }
       backend = faceapi.tf.getBackend();
-      // Load all neural nets in parallel: become ready as soon as Tiny + Landmarks + Recognition finish,
-      // and upgrade detector to SSD MobileNet v1 as soon as its weights resolve.
+      // Load fast live-video recognition pipeline first (~4.4 MB gz: Tiny + Landmarks + Recognition)
+      // so Face ID is live without competing with the 3.4 MB gz SSD fallback detector.
       const tinyP = faceapi.nets.tinyFaceDetector.loadFromUri(base);
       const lmP = faceapi.nets.faceLandmark68Net.loadFromUri(base).then(() => {
         landmarksTiny = false;
@@ -185,18 +215,19 @@ const Face = (() => {
         landmarksTiny = true;
       });
       const recP = faceapi.nets.faceRecognitionNet.loadFromUri(base);
-      const ssdP = M().detector === "ssd"
+
+      await Promise.all([tinyP, lmP, recP]);
+      ready = true;
+
+      const loadSsd = () => (M().detector === "ssd"
         ? faceapi.nets.ssdMobilenetv1.loadFromUri(base).then(() => { detector = "ssd"; }).catch(e => {
             console.warn("SSD detector unavailable, using tiny", e);
             detector = "tiny";
           })
-        : Promise.resolve();
+        : Promise.resolve());
 
-      // Become ready as soon as Tiny + Landmarks + Recognition finish; let 5.6 MB SSD finish in parallel on live browsers
-      await Promise.all([tinyP, lmP, recP]);
-      ready = true;
-      if (typeof navigator !== "undefined" && (navigator.webdriver || window.__MFG_HEADLESS_TEST)) {
-        await ssdP;
+      if (isAutoTest) {
+        await loadSsd();
       } else {
         setTimeout(() => {
           try {
@@ -205,9 +236,13 @@ const Face = (() => {
             faceapi.detectSingleFace(wcv, new faceapi.TinyFaceDetectorOptions({ inputSize: 128, scoreThreshold: 0.9 }))
               .withFaceLandmarks(landmarksTiny).withFaceDescriptor().catch(() => {});
           } catch (_) {}
-        }, 15);
+          loadSsd();
+        }, 60);
       }
-    })();
+    })().catch(err => {
+      loading = null;
+      throw err;
+    });
     return loading;
   }
 

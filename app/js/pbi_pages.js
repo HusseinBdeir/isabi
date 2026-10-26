@@ -48,7 +48,7 @@
     { key: 'price_rules', group: '2 · Commercial & Pricing', label: 'Price & Commission Agreements', dvn: 'bhf_pricerule', form: 'pricerule', cols: ['name', 'company', 'rule_type', 'customer', 'supplier', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'total1', 'qty2', 'adj2', 'total2', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'], relTables: ['customers', 'suppliers', 'products', 'sites', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Price Agreements' }, { id: 'active', label: 'Active Agreements', fn: r => !r.end_date }, { id: 'sales', label: 'Customer Sales Rules', fn: r => /sale|pickup|deliv/i.test(r.rule_type || '') }, { id: 'transport', label: 'Transport & Raw Rules', fn: r => /trans|raw|purch/i.test(r.rule_type || '') }, { id: 'list', label: 'List Prices', fn: r => /list/i.test(r.rule_type || '') }] },
     { key: 'credit_terms', group: '2 · Commercial & Pricing', label: 'Customer Credit Terms', dvn: 'bhf_creditterm', form: 'creditterm', cols: ['name', 'company', 'customer', 'credit_days', 'credit_limit', 'ar_balance', 'start_date', 'end_date', 'notes'], relTables: ['customers', 'sales_tickets', 'receipts'], views: [{ id: 'all', label: 'All Credit Terms' }, { id: 'active', label: 'Active Policies', fn: r => !r.end_date }] },
     { key: 'vat_invoices', group: '2 · Commercial & Pricing', label: 'VAT 11% Tax Invoices', dvn: 'bhf_vatinvoice', form: 'vatinvoice', cols: ['invoice_no', 'date', 'company', 'customer', 'start_date', 'end_date', 'net_amount', 'vat_amount', 'total_ttc', 'tickets_count', 'notes'], relTables: ['customers', 'sales_tickets', 'receipts'], views: [{ id: 'all', label: 'All VAT Invoices' }] },
-    { key: 'equipment', group: '3 · Universal Registries (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
+    { key: 'equipment', group: '3 · Universal Registries (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
     { key: 'drivers', group: '3 · Universal Registries (All BUs)', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] },
     { key: 'sites', group: '3 · Universal Registries (All BUs)', universal: true, navView: 'reg_sites', label: 'Sites', dvn: 'bhf_site', form: 'site', cols: ['name', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'sales_loads', 'raw_loads'], relTables: ['regions', 'suppliers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [{ id: 'all', label: 'All Sites' }, { id: 'jv', label: 'JV 50/50 Sites', fn: r => Boolean(r.is_jv) }, { id: 'gps', label: 'Verified GPS Pin', fn: r => r.latitude != null && r.longitude != null }] },
     { key: 'regions', group: '3 · Universal Registries (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', dvn: 'bhf_region', form: 'site', cols: ['name', 'code', 'sites_count', 'overtime_rate', 'sales_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
@@ -71,7 +71,22 @@
       { id: 'capex', label: 'Capital Expenditure (22)', fn: r => deriveExpenseCostClass(r) === 'Capital Expenditure' }
     ] },
     { key: 'expense_subcategories', group: '3 · Universal Registries (All BUs)', universal: true, label: 'Expense Subcategories', dvn: 'bhf_expensesubcategory', form: 'expense', cols: ['name', 'category', 'expenses_count', 'total_spent'], relTables: ['expense_categories', 'expenses'], views: [{ id: 'all', label: 'All Expense Subcategories' }] },
-    { key: 'company_equipment', group: '4 · Workforce, Fleet & Payroll', label: 'Company-Equipment Assignments', dvn: 'bhf_companyequipment', form: 'companyequipment', cols: ['equipment', 'company', 'ownership', 'status', 'supplier', 'default_driver', 'site', 'day_operator', 'night_operator', 'start_date', 'end_date'], relTables: ['equipment', 'suppliers', 'drivers', 'sites'], views: [{ id: 'all', label: 'All Fleet Assignments' }, { id: 'active', label: 'Active Assignments', fn: r => /active/i.test(r.status || '') && !r.end_date }] },
+    { key: 'company_equipment', group: '4 · Workforce, Fleet & Payroll', label: 'Company-Equipment Assignments', dvn: 'bhf_companyequipment', form: 'companyequipment', cols: ['equipment', 'company', 'ownership', 'status', 'supplier', 'default_driver', 'site', 'day_operator', 'night_operator', 'start_date', 'end_date'], relTables: ['equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sites'], views: [{ id: 'all', label: 'All Fleet Assignments' }, { id: 'active', label: 'Active Assignments', fn: r => /active/i.test(r.status || '') && !r.end_date }] },
+    { key: 'equipment_defects', group: '4 · Workforce, Fleet & Payroll', navView: 'fleet_maint', label: 'Equipment Defects & Issues', dvn: 'bhf_equipmentdefect', form: 'defect', cols: ['name', 'date', 'company', 'equipment', 'subsystem', 'part_name', 'severity', 'status', 'reported_by', 'description'], relTables: ['equipment', 'company_equipment', 'part_movements', 'expenses'], views: [
+      { id: 'all', label: 'All Defect Reports' },
+      { id: 'open', label: 'Open / Unresolved', fn: r => !/resolved|closed/i.test(r.status || '') },
+      { id: 'critical', label: 'Critical — Down', fn: r => /critical/i.test(r.severity || '') && !/resolved|closed/i.test(r.status || '') },
+      { id: 'resolved', label: 'Resolved / Part Changed', fn: r => /resolved|closed/i.test(r.status || '') }
+    ] },
+    { key: 'part_movements', group: '4 · Workforce, Fleet & Payroll', navView: 'fleet_maint', label: 'Changed & Removed Parts', dvn: 'bhf_partmovement', form: 'partlog', cols: ['name', 'date', 'company', 'equipment', 'part_name', 'qty', 'removed_disposition', 'storage_location', 'prior_defect_notified', 'new_part_cost', 'sale_proceeds'], relTables: ['equipment', 'equipment_defects', 'company_equipment', 'expenses'], views: [
+      { id: 'all', label: 'All Part Movements' },
+      { id: 'stored', label: 'Stored in Warehouse', fn: r => /stored|warehouse|spare/i.test(r.removed_disposition || '') },
+      { id: 'maint', label: 'In Maintenance / Workshop', fn: r => /maintenance|workshop/i.test(r.removed_disposition || '') },
+      { id: 'sold', label: 'Sold (Used / Scrap)', fn: r => /^sold/i.test(r.removed_disposition || '') },
+      { id: 'installed', label: 'Installed on Unit', fn: r => /installed|mounted/i.test(r.removed_disposition || '') },
+      { id: 'scrapped', label: 'Scrapped / Discarded', fn: r => /scrap/i.test(r.removed_disposition || '') && !/^sold/i.test(r.removed_disposition || '') },
+      { id: 'unnotified', label: 'Unnotified (No Prior Defect)', fn: r => !r.prior_defect_notified }
+    ] },
     { key: 'company_drivers', group: '4 · Workforce, Fleet & Payroll', label: 'Company-Driver Assignments', dvn: 'bhf_companydriver', form: 'driver', cols: ['driver', 'company', 'staff', 'assigned_trucks', 'loads_hauled', 'start_date', 'end_date', 'notes'], relTables: ['drivers', 'employments', 'equipment', 'sales_tickets'], views: [{ id: 'all', label: 'All Driver Assignments' }] },
     { key: 'salaries', group: '4 · Workforce, Fleet & Payroll', label: 'Staff Salary Payments', dvn: 'bhf_mfgsalary', form: 'salary', cols: ['date', 'payroll_month', 'company', 'staff', 'currency', 'amount', 'lbp_amount', 'notes'], relTables: ['employments', 'attendance', 'logistics_allowances', 'freelance_entries'], views: [
       { id: 'all', label: 'All Salary Payments' },
@@ -118,6 +133,8 @@
     region: 'regions',
     truck: 'equipment',
     equipment: 'equipment',
+    defect_ref: 'equipment_defects',
+    linked_part_log: 'part_movements',
     driver: 'drivers',
     default_driver: 'drivers',
     day_operator: 'drivers',
@@ -212,7 +229,7 @@
     return `<span class="badge ${cls}">${esc(s)}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(cost_class|cost_bucket|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(cost_class|cost_bucket|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -1703,7 +1720,7 @@
       ],
       p19_changelog: [
         { key: 'ledgerDomain', label: 'Ledger Domain', opts: ['Sales', 'RawPurchases', 'Expenses', 'CustomerReceipts', 'SupplierPayments', 'Fuel'] },
-        { key: 'ledgerOrigin', label: 'Origin', opts: ['Reported (Power BI)', 'Entered (Dataverse)'] },
+        { key: 'ledgerOrigin', label: 'Origin', opts: ['Reported Snapshot', 'Entered Ledger'] },
         { key: 'ledgerKind', label: 'Snapshot Kind', opts: ['Changed', 'Baseline', 'Date Gap >31d'] }
       ],
       p20_recon: [
@@ -2411,7 +2428,7 @@
           <div class="pbi-date-slicer-row">
             <div class="pbi-date-left">
               <span class="pbi-date-lbl">Period Grain</span>
-              <div class="pbi-grain-group" role="group" aria-label="Power BI Date Grain">
+              <div class="pbi-grain-group" role="group" aria-label="Analytics Date Grain">
                 ${[
                   ['all', 'All'],
                   ['year', 'Year'],
@@ -2422,7 +2439,7 @@
                   <button type="button" class="pbi-grain-btn ${STATE.dateGrain === gKey ? 'active' : ''}" data-pbi-grain="${gKey}">${gLbl}</button>
                 `).join('')}
               </div>
-              <select id="pbiPeriodSelect" class="pbi-period-select" aria-label="Power BI Period Value" hidden aria-hidden="true">
+              <select id="pbiPeriodSelect" class="pbi-period-select" aria-label="Analytics Period Value" hidden aria-hidden="true">
                 ${STATE.period === 'custom' ? `<option value="custom" selected>Range: ${esc(curFrom)} → ${esc(curTo)}</option>` : ''}
                 ${activeGrainOpts.map(o => `<option value="${esc(o.value)}" ${STATE.period === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
               </select>
@@ -2430,12 +2447,12 @@
             <div class="pbi-date-right">
               <span class="pbi-date-lbl">Period (Between)</span>
               <div class="date-seg-slot pbi-seg-slot" data-date-slot="from">
-                <input type="date" id="pbiDateFrom" class="pbi-date-input date-native-proxy" min="2024-01-01" max="2030-12-31" value="${esc(curFrom)}" aria-label="Power BI From Date" tabindex="-1">
+                <input type="date" id="pbiDateFrom" class="pbi-date-input date-native-proxy" min="2024-01-01" max="2030-12-31" value="${esc(curFrom)}" aria-label="Analytics From Date" tabindex="-1">
                 ${ctx.renderDateSegPillHtml ? ctx.renderDateSegPillHtml('from', curFrom, 'pbi') : ''}
               </div>
               <span style="color:var(--muted);font-weight:700">–</span>
               <div class="date-seg-slot pbi-seg-slot" data-date-slot="to">
-                <input type="date" id="pbiDateTo" class="pbi-date-input date-native-proxy" min="2024-01-01" max="2030-12-31" value="${esc(curTo)}" aria-label="Power BI To Date" tabindex="-1">
+                <input type="date" id="pbiDateTo" class="pbi-date-input date-native-proxy" min="2024-01-01" max="2030-12-31" value="${esc(curTo)}" aria-label="Analytics To Date" tabindex="-1">
                 ${ctx.renderDateSegPillHtml ? ctx.renderDateSegPillHtml('to', curTo, 'pbi') : ''}
               </div>
               <button type="button" id="pbiDateResetBtn" class="btn" style="padding:3px 8px;font-size:10.5px" ${isDateFiltered ? '' : 'hidden'}>✕ All-Time</button>
@@ -3435,11 +3452,11 @@
 
       bodyHtml = `
         <div class="pbi-overview-bands">
-          ${kpiBand('1 · Driver Dispatch Volume, Shift Split & Company-Fleet Overtime Bonus (m48 / m93)', [
+          ${kpiBand('1 · Driver Dispatch Volume, Shift Split & Company-Fleet Overtime Bonus', [
             { label: 'Overtime Bonus Due', value: fmtUSD(k.overtime_bonus, 0), sub: 'Period accrued allowance', tone: 'brass' },
             { label: 'Sales Overtime (Book)', value: fmtUSD(flSn.sales_overtime_bonus_usd || 0, 0), sub: 'Company-fleet night sales' },
             { label: 'Raw Overtime (Book)', value: fmtUSD(flSn.raw_overtime_bonus_usd || 0, 0), sub: 'Company-fleet night raw' },
-            { label: '3rd-Party Overtime Paid', value: '$0.00', sub: 'm93: 3rd-party loads earn $0 OT', tone: 'good' },
+            { label: '3rd-Party Overtime Paid', value: '$0.00', sub: 'Policy: 3rd-party loads earn $0 OT', tone: 'good' },
             { label: 'Company Fleet Drivers', value: fmtNum((rec.company_drivers || []).length), sub: fmtNum((rec.drivers || []).length) + ' total drivers in registry' },
             { label: 'Driver Pay Unattributed', value: fmtUSD(flSn.unallocated_driver_payroll_usd || 0, 0), sub: fmtNum(flSn.unallocated_driver_months_count || 0) + ' driver-months', tone: 'warn' }
           ])}
@@ -3470,7 +3487,7 @@
             { label: 'OT Trips', key: 'ot_trips', r: true, fmt: v => v ? `<b style="color:var(--warn)">${fmtNum(v)}</b>` : '0' },
             { label: 'Qty Hauled', key: 'qty', r: true, fmt: v => fmtNum(v, 0) }
           ], drvList, {
-            subtitle: 'Pale navy row = Company driver · Overtime is paid only on Company-fleet loads outside 06:00–17:59 (m48 / m93)',
+            subtitle: 'Pale navy row = Company driver · Overtime is paid only on Company-fleet loads outside 06:00–17:59',
             rowNavy: r => r.is_company === 'Yes',
             unitLabel: 'drivers'
           })}
@@ -4928,10 +4945,11 @@
         if (STATE.company !== 'manufacturing-group' && g.bu && norm(g.bu) !== norm(STATE.company === 'wtc' ? 'WTC' : 'BBConstruction')) return false;
         return true;
       });
+      const fmtOriginLbl = v => v === 'Reported (Power BI)' ? 'Reported Snapshot' : (v === 'Entered (Dataverse)' ? 'Entered Ledger' : (v || '—'));
       const dtRows = filterRecords(rec.daily_totals, { ignorePeriod: true, ignoreSearch: true }).filter(d => {
         if (!matchSearch(d)) return false;
         if (sl.ledgerDomain && norm(d.domain) !== norm(sl.ledgerDomain)) return false;
-        if (sl.ledgerOrigin && norm(d.origin) !== norm(sl.ledgerOrigin)) return false;
+        if (sl.ledgerOrigin && norm(fmtOriginLbl(d.origin)) !== norm(sl.ledgerOrigin)) return false;
         if (sl.ledgerKind && norm(d.kind) !== norm(sl.ledgerKind)) return false;
         return true;
       });
@@ -4973,17 +4991,17 @@
             { label: 'Expenses (Rep $)', key: 'e_rep', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Expenses Δ ($)', key: 'e_delta', r: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` }
           ], repBridgeRows, {
-            subtitle: 'SharePoint legacy reports group backdated tickets and expenses by ExpectedDate (Reporting Date); Δ = Reporting Date − Transaction Date (m276)',
+            subtitle: 'Historical operational reports group backdated tickets and expenses by ExpectedDate (Reporting Date); Δ = Reporting Date − Transaction Date',
             unitLabel: 'months'
           })}
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiTable('Daily totals snapshot ledger (m117)', [
+          ${pbiTable('Daily totals snapshot ledger', [
             { label: 'Date', key: 'date', mono: true },
             { label: 'Co.', key: 'company' },
             { label: 'Domain', key: 'domain', bold: true },
-            { label: 'Origin', key: 'origin' },
+            { label: 'Origin', key: 'origin', fmt: fmtOriginLbl },
             { label: 'Kind', key: 'kind' },
             { label: 'Rows', key: 'row_count', r: true, fmt: v => fmtNum(v) },
             { label: 'Value ($)', key: 'value', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
@@ -5019,7 +5037,7 @@
 
       bodyHtml = `
         <div class="pbi-overview-bands">
-          ${kpiBand('1 · Cross-Statement Reconciliation Bridge (Ties Power BI → Lebanese CoA GL → 22 A4 PDF Statements)', [
+          ${kpiBand('1 · Cross-Statement Reconciliation Bridge (Ties Executive Analytics → Lebanese CoA GL → 22 A4 PDF Statements)', [
             { label: 'P&L Net Sales → Stmt #03', value: fmtUSD(k.net_sales, 2), sub: 'Ties to Class 701 + 706', tone: 'good' },
             { label: 'Output VAT 11% → Stmt #18', value: fmtUSD(k.sales_vat, 2), sub: 'Ties to Class 4427', tone: 'good' },
             { label: 'FIFO Open AR → Stmt #09/#11', value: fmtUSD(k.ar_balance, 2), sub: 'Ties to Class 4111', tone: 'good' },
@@ -5479,7 +5497,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${meta.cols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate/.test(c) ? 'r' : '')).join('')}
+                ${meta.cols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
@@ -5488,12 +5506,12 @@
                   ${meta.cols.map((c, ci) => {
                     const v = cellValue(r, c, meta.key, rel);
                     const nonNum = NON_NUMERIC_HUB_COLS.test(c);
-                    const isBool = typeof v === 'boolean' || (/^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|iva$|overtime$)/.test(c) && (v === 0 || v === 1));
+                    const isBool = typeof v === 'boolean' || (/^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|prior_defect_notified|iva$|overtime$)/.test(c) && (v === 0 || v === 1));
                     const isSignedUsd = !isBool && !nonNum && c === 'usd_delta';
                     const isSignedLbp = !isBool && !nonNum && c === 'lbp_delta';
                     const isLbp = !isBool && !nonNum && !isSignedLbp && /^lbp_|_lbp$/.test(c);
-                    const isMoney = !isBool && !nonNum && !isLbp && !isSignedLbp && /price|cost|amount|total|vat_amount|limit|salary|balance|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$/.test(c) && !/rate$/.test(c);
-                    const isNum = !isBool && !nonNum && !isMoney && !isLbp && !isSignedLbp && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets/.test(c);
+                    const isMoney = !isBool && !nonNum && !isLbp && !isSignedLbp && /price|cost|amount|total|vat_amount|limit|salary|balance|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(c) && !/rate$/.test(c);
+                    const isNum = !isBool && !nonNum && !isMoney && !isLbp && !isSignedLbp && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets/.test(c);
                     let cell = v == null || v === '' ? '—' : (isBool ? (v && v !== 0 ? 'Yes' : 'No') : String(v));
                     if (isSignedUsd && v != null && v !== '') cell = fmtSignedUSD(v, 2);
                     else if (isSignedLbp && v != null && v !== '') cell = fmtSignedLBP(v);
@@ -5521,12 +5539,12 @@
                 ${(() => {
                   const isColNumeric = col => {
                     if (NON_NUMERIC_HUB_COLS.test(col)) return { isM: false, isN: false, isL: false, isSU: false, isSL: false, num: false };
-                    const isBoolCol = /^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|iva$|overtime$)/.test(col);
+                    const isBoolCol = /^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|prior_defect_notified|iva$|overtime$)/.test(col);
                     const isSU = !isBoolCol && col === 'usd_delta';
                     const isSL = !isBoolCol && col === 'lbp_delta';
                     const isL = !isBoolCol && !isSL && /^lbp_|_lbp$/.test(col);
-                    const isM = !isBoolCol && !isL && !isSL && /price|cost|amount|total|vat_amount|limit|salary|balance|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$/.test(col) && !/rate$/.test(col);
-                    const isN = !isBoolCol && !isM && !isL && !isSL && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|loads|fills|rules|tickets/.test(col);
+                    const isM = !isBoolCol && !isL && !isSL && /price|cost|amount|total|vat_amount|limit|salary|balance|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(col) && !/rate$/.test(col);
+                    const isN = !isBoolCol && !isM && !isL && !isSL && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|loads|fills|rules|tickets/.test(col);
                     return { isM, isN, isL, isSU, isSL, num: isM || isN || isL || isSU || isSL };
                   };
                   let firstNum = meta.cols.findIndex((col, idx) => idx > 0 && isColNumeric(col).num);
@@ -5591,13 +5609,27 @@
     gps_status: 'GPS Pin',
     usd_delta: 'USD Change ($)',
     lbp_delta: 'LBP Change (LL)',
-    exchange_rate: 'Rate (LL/$)'
+    exchange_rate: 'Rate (LL/$)',
+    removed_disposition: 'Piece Disposition',
+    prior_defect_notified: 'Pre-Notified',
+    new_part_cost: 'New Cost ($)',
+    repair_cost: 'Repair Cost ($)',
+    sale_proceeds: 'Sale Proceeds ($)',
+    vendor_or_buyer: 'Vendor / Buyer',
+    storage_location: 'Store / Unit',
+    part_name: 'Part / Piece',
+    action_type: 'Action',
+    defect_ref: 'Prior Defect',
+    linked_part_log: 'Part Log',
+    meter_reading: 'Meter (km/h)'
   };
 
   function hubColLabel(c, tableKey) {
     if (c === 'type' && tableKey === 'conversions') return 'Direction';
     if (c === 'name') {
       if (tableKey === 'conversions') return 'Voucher / Ref';
+      if (tableKey === 'equipment_defects') return 'Defect Ref';
+      if (tableKey === 'part_movements') return 'Part Log Ref';
       if (tableKey === 'suppliers') return 'Supplier / Hauler';
       if (tableKey === 'equipment') return 'Unit / Plate #';
       if (tableKey === 'drivers') return 'Driver Name';

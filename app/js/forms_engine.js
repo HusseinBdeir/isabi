@@ -66,9 +66,11 @@
     {
       id: 'ops',
       icon: 'payroll',
-      label: '4. Payroll, Fleet & Treasury (9)',
+      label: '4. Payroll, Fleet & Treasury (11)',
       forms: [
         { id: 'companyequipment', label: 'Company Fleet Unit', badge: 'bhf_companyequipment', crKey: 'company_equipment', title: 'New Company Fleet Unit (BU Assignment)' },
+        { id: 'defect', label: 'Equipment Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', title: 'Report Equipment / Truck Defect' },
+        { id: 'partlog', label: 'Part Change & Custody', badge: 'bhf_partmovement', crKey: 'part_movements', title: 'Part Change, Removal & Disposition' },
         { id: 'salary', label: 'Salary Payment', badge: 'bhf_salarypayment', crKey: 'salaries', title: 'New Salary Payment' },
         { id: 'attendance', label: 'Attendance', badge: 'bhf_attendance', crKey: 'attendance', title: 'New Staff Attendance' },
         { id: 'freelance', label: 'Freelance Work', badge: 'bhf_freelancework', crKey: 'employments', title: 'New Freelance Work' },
@@ -697,6 +699,126 @@
       `;
     }
 
+    if (fType === 'defect' || fType === 'partlog') {
+      const subsystems = [
+        ['Engine & Powertrain', 'Engine & Powertrain'],
+        ['Brakes & Suspension', 'Brakes & Suspension'],
+        ['Hydraulics & Hoist', 'Hydraulics & Hoist'],
+        ['Tyres & Wheels', 'Tyres & Wheels'],
+        ['Electrical & Battery', 'Electrical & Battery'],
+        ['Transmission & Gearbox', 'Transmission & Gearbox'],
+        ['Body, Chassis & Bucket', 'Body, Chassis & Bucket'],
+        ['Crusher / Plant Screen', 'Crusher / Plant Screen'],
+        ['Cooling & Exhaust', 'Cooling & Exhaust'],
+        ['Other', 'Other']
+      ];
+      const staffAndDrivers = uniqSorted(driverNames.concat(staffNames));
+      const partNames = uniqSorted(
+        (rec.products || []).filter(p => p && String(p.product_type || '').toLowerCase() === 'part').map(p => p.name)
+          .concat((rec.part_movements || []).map(p => p && p.part_name))
+          .concat((rec.equipment_defects || []).map(d => d && d.part_name))
+          .concat(['Dynamo / Alternator', 'Starter Motor (March)', 'Hydraulic Pump', 'Brake Pads & Drum', 'Tyre 315/80R22.5', 'Oil Filter', 'Air Filter', 'Fuel Filter', 'Water Pump / Radiator', 'Battery 180Ah', 'Clutch Plate & Disc', 'Gearbox Bearing', 'Crusher Jaw Plate', 'Screen Mesh', 'Hydraulic Hose'])
+      );
+      const partLocations = uniqSorted(['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'].concat(siteNames).concat(equipNames));
+      const vendorsAndBuyers = uniqSorted(supNames.concat(custNames));
+
+      if (fType === 'defect') {
+        return `
+          ${adminHeaderHtml}
+          <div class="form-grid-3">
+            ${secHdr('1. Unit Identity & Pre-Replacement Defect Notice', 'Notify management & garage ahead of failure so part replacements are pre-verified')}
+            ${companyField}
+            ${lockedDateField('Reported Date *')}
+            ${collapsibleRepDateField()}
+            ${fld('Equipment / Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select truck, mixer, loader, crusher..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
+            ${fld('Reported By (Driver / Staff)', inp('f_reported_by', 'text', '', 'list="dl_staff_drivers" placeholder="Select driver, operator, or mechanic..."') + dl('dl_staff_drivers', staffAndDrivers))}
+            ${fld('Meter Reading (km / h)', inp('f_meter', 'number', '', 'step="1" min="0" placeholder="Optional km or hours"'))}
+            <div id="qv_truck_defect" class="span-3" style="grid-column:1 / -1"></div>
+            ${secHdr('2. Affected Subsystem, Severity & Operational Status')}
+            ${fld('Affected Subsystem *', sel('f_subsystem', subsystems, 'Engine & Powertrain'))}
+            ${fld('Suspected Part / Piece', inp('f_part_name', 'text', '', 'list="dl_part_names" placeholder="e.g. Dynamo, Hydraulic Pump, Brake Drum..."') + dl('dl_part_names', partNames))}
+            ${fld('Defect Severity *', sel('f_severity', [
+              ['Minor — Monitor (Running)', 'Minor — Monitor (Running)'],
+              ['Moderate — Needs Part Soon', 'Moderate — Needs Part Soon'],
+              ['Critical — Down / Do Not Dispatch', 'Critical — Down / Do Not Dispatch']
+            ], 'Moderate — Needs Part Soon'))}
+            ${fld('Defect Status *', sel('f_status', [
+              ['Open — Defect Reported', 'Open — Defect Reported'],
+              ['Part Ordered / Scheduled', 'Part Ordered / Scheduled'],
+              ['In Maintenance / Workshop', 'In Maintenance / Workshop'],
+              ['Resolved — Part Changed', 'Resolved — Part Changed'],
+              ['Closed — Inspected OK', 'Closed — Inspected OK']
+            ], 'Open — Defect Reported'))}
+            <div class="form-field check-field" style="grid-column:span 2"><input type="checkbox" id="f_sync_unit_status"><label for="f_sync_unit_status">Flag unit Fleet Status as "Under repair" until resolved</label></div>
+            ${fld('Issue / Defect Description *', inp('f_description', 'text', '', 'placeholder="Describe symptom, leak, noise, warning light, or worn component..."'), { span: true })}
+            ${fld('Notes / Action Plan', inp('f_notes', 'text', '', 'placeholder="Parts to order, vendor inspection, or target repair date..."'), { span: true })}
+          </div>
+          <div class="live-calc">
+            <div><small>Unit Health Impact</small><b id="calc_def_health">Needs Part Soon</b></div>
+            <div><small>Prior Open Issues</small><b id="calc_def_open">0 open</b></div>
+            <div><small>Subsystem</small><b id="calc_def_sub">Engine &amp; Powertrain</b></div>
+            <div><small>Pre-Notification</small><b id="calc_def_notif">Logged Before Replacement</b></div>
+          </div>
+        `;
+      }
+
+      return `
+        ${adminHeaderHtml}
+        <div id="partPreDefectBanner" class="pa-rec-banner info" style="margin-bottom:12px">
+          ${ic('info')} Select an <b>Equipment / Truck</b> unit below to check whether a defect was reported beforehand.
+        </div>
+        <div class="form-grid-3">
+          ${secHdr('1. Unit, Pre-Defect Verification & Part Piece Identity')}
+          ${companyField}
+          ${lockedDateField('Action Date *')}
+          ${collapsibleRepDateField()}
+          ${fld('Equipment / Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select truck, mixer, loader, crusher..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
+          ${fld('Prior Reported Defect (Pre-Notification)', sel('f_defect_ref', [['', 'No Prior Defect Report (Emergency / Unnotified Change)']], ''), { id: 'wrap_f_defect_ref', hintId: 'hint_defect_ref', hint: '' })}
+          ${fld('Action Type *', sel('f_action_type', [
+            ['Part Replaced (Old Removed + New Installed)', 'Part Replaced (Old Removed + New Installed)'],
+            ['Part Removed Only', 'Part Removed Only'],
+            ['Part Sent to Maintenance / Rebuild', 'Part Sent to Maintenance / Rebuild'],
+            ['Part Installed from Stock', 'Part Installed from Stock'],
+            ['Used / Scrap Part Sold', 'Used / Scrap Part Sold'],
+            ['Part Scrapped / Discarded', 'Part Scrapped / Discarded']
+          ], 'Part Replaced (Old Removed + New Installed)'))}
+          ${fld('Part / Piece Name *', inp('f_part_name', 'text', '', 'list="dl_part_names" placeholder="e.g. Dynamo, Starter Motor, Hydraulic Pump..."') + dl('dl_part_names', partNames))}
+          ${fld('Part Code / Serial / Brand', inp('f_part_serial', 'text', '', 'placeholder="Optional OEM / serial / brand"'))}
+          ${fld('Subsystem *', sel('f_subsystem', subsystems, 'Engine & Powertrain'))}
+          ${secHdr('2. Removed / Tracked Piece Custody, Disposition & Financials')}
+          ${fld('Pieces / Qty *', inp('f_qty', 'number', '1', 'step="1" min="1"'))}
+          ${fld('Piece Condition *', sel('f_condition', [
+            ['Repairable / Rebuildable', 'Repairable / Rebuildable'],
+            ['Reusable Spare (Working)', 'Reusable Spare (Working)'],
+            ['New / Reconditioned', 'New / Reconditioned'],
+            ['Worn / Scrap Metal', 'Worn / Scrap Metal'],
+            ['Damaged / Burnt Out', 'Damaged / Burnt Out']
+          ], 'Repairable / Rebuildable'))}
+          ${fld('Piece Custody / Disposition *', sel('f_disposition', [
+            ['Stored in Warehouse / Spare Stock', 'Stored in Warehouse / Spare Stock'],
+            ['In Maintenance / At Workshop', 'In Maintenance / At Workshop'],
+            ['Sold (Used / Scrap)', 'Sold (Used / Scrap)'],
+            ['Installed / Mounted on Unit', 'Installed / Mounted on Unit'],
+            ['Scrapped / Discarded', 'Scrapped / Discarded']
+          ], 'Stored in Warehouse / Spare Stock'))}
+          ${fld('Warehouse Store / Target Unit', inp('f_location', 'text', 'WTC Main Warehouse', 'list="dl_part_locations" placeholder="Select store, site, or target truck..."') + dl('dl_part_locations', partLocations), { id: 'wrap_part_loc', hintId: 'hint_part_loc', hint: '' })}
+          ${fld('Workshop Vendor / Buyer', inp('f_vendor_buyer', 'text', '', 'list="dl_suppliers_buyers" placeholder="Select workshop vendor or scrap buyer..."') + dl('dl_suppliers_buyers', vendorsAndBuyers), { id: 'wrap_part_party', hintId: 'hint_part_party', hint: '' })}
+          ${fld('Supervisor / Approved By', inp('f_approved_by', 'text', '', 'list="dl_staff" placeholder="Select supervisor / approver..."') + dl('dl_staff', staffNames))}
+          ${fld('New Replacement Part Cost ($)', inp('f_new_cost', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_part_newcost' })}
+          ${fld('Workshop Rebuild Cost ($)', inp('f_repair_cost', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_part_repcost' })}
+          ${fld('Used / Scrap Sale Proceeds ($)', inp('f_sale_proceeds', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_part_sale' })}
+          <div class="form-field check-field span-3" id="wrap_resolve_defect" hidden><input type="checkbox" id="f_resolve_defect" checked><label for="f_resolve_defect">Mark linked prior defect report as "Resolved — Part Changed"</label></div>
+          ${fld('Notes & Custody Details', inp('f_notes', 'text', '', 'placeholder="Shelf bin, workshop job card #, buyer receipt #, or mounting notes..."'), { span: true })}
+        </div>
+        <div class="live-calc">
+          <div><small>Pre-Notification</small><b id="calc_part_notif">Pending Unit</b></div>
+          <div><small>Piece Custody</small><b id="calc_part_disp">Stored in Warehouse</b></div>
+          <div><small>Outlay (New + Repair)</small><b id="calc_part_cost">$0.00</b></div>
+          <div><small>Net Cash Impact</small><b id="calc_part_net">$0.00</b></div>
+        </div>
+      `;
+    }
+
     if (fType === 'driver') {
       return `
         <div class="form-grid-3">
@@ -733,16 +855,77 @@
     if (fType === 'attendance') {
       return `
         <div class="form-grid-3">
+          ${secHdr('1. Employee & Attendance Date', 'Select the employee to load their contract shift hours, hourly rate & overtime multiplier')}
           ${companyField}
-          ${fld('Attendance Date *', inp('f_date', 'date', today))}
+          ${fld('Attendance Date *', inp('f_date', 'date', today), { hintId: 'hint_att_date', hint: '' })}
           ${fld('Staff Member *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff member..."') + dl('dl_staff', staffNames))}
-          ${fld('Status *', sel('f_status', [['Present', 'Present (Full Day)'], ['Overtime', 'Overtime'], ['Lateness', 'Lateness'], ['Half Day', 'Half Day'], ['Absent', 'Absent'], ['Sick Leave', 'Sick Leave'], ['Paid Leave', 'Paid Leave'], ['Holiday', 'Public Holiday']], 'Present'))}
-          ${fld('Time In', inp('f_in', 'time', '08:00'))}
-          ${fld('Time Out', inp('f_out', 'time', '16:00'))}
-          ${fld('Scheduled Shift (Hrs)', inp('f_sched_hours', 'number', '8', 'step="0.5" min="0"'))}
-          ${fld('Actual Work Hours', inp('f_worked_hours', 'number', '8', 'step="0.5" min="0" readonly class="pa-locked-input"'), { id: 'wrap_f_worked_hours', lockField: 'f_worked_hours', lockReason: 'Calculated from Time In → Time Out' })}
-          ${fld('Overtime Hours', inp('f_hours', 'number', '0', 'step="0.5" min="0"'))}
-          ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+          <div id="attStaffContractCard" class="att-contract-strip is-muted">
+            <span>Select a <b>Staff Member</b> above to view their active contract salary, standard shift hours &amp; overtime rate.</span>
+          </div>
+
+          ${secHdr('2. What Are You Recording?', 'Overtime & Short/Late hours derive automatically from Time In → Time Out; Leave & Half Day hide clock times')}
+          <input type="hidden" id="f_att_mode" value="shift">
+          <input type="hidden" id="f_status" value="Present">
+          <div class="att-mode-deck" id="attModeDeck" role="tablist" aria-label="Attendance Entry Mode">
+            <button type="button" class="att-mode-card active" data-att-mode="shift" role="tab" aria-selected="true">
+              <span class="att-mode-card-top"><span>${ic('clock')} Worked Shift (In → Out)</span></span>
+              <span class="att-mode-card-sub">Log Time In &amp; Out — Overtime or Short/Late hours calculate automatically</span>
+            </button>
+            <button type="button" class="att-mode-card" data-att-mode="leave" role="tab" aria-selected="false">
+              <span class="att-mode-card-top"><span>${ic('calendar')} Leave, Absence or Half Day</span></span>
+              <span class="att-mode-card-sub">Half Day Off (0.5d), Full Absence (1d), Paid Vacation, or Sick Leave</span>
+            </button>
+            <button type="button" class="att-mode-card" data-att-mode="extra" role="tab" aria-selected="false">
+              <span class="att-mode-card-top"><span>${ic('cashflow')} Extra Pay / Bonus</span></span>
+              <span class="att-mode-card-sub">Extra shift bonus or payroll adjustment in USD ($) or LBP (LL)</span>
+            </button>
+          </div>
+
+          <div class="att-subpanel" id="attShiftPanel">
+            <div class="att-preset-bar" id="attPresetBar">
+              <span class="att-preset-lbl">Shift Basis:</span>
+              <button type="button" class="att-preset-pill active" data-att-preset="regular">Regular Shift (Contract Base)</button>
+              <button type="button" class="att-preset-pill" data-att-preset="callout">Sunday / Call-Out (100% OT)</button>
+              <button type="button" class="att-preset-pill" data-att-preset="halfshift">Half Shift Worked (08:00–12:00)</button>
+              <button type="button" class="att-preset-pill" data-att-preset="noclock">Hours Only (No Clock)</button>
+            </div>
+            ${fld('Time In', inp('f_in', 'time', '08:00'), { id: 'wrap_f_in' })}
+            ${fld('Time Out', inp('f_out', 'time', '16:00'), { id: 'wrap_f_out', hintId: 'hint_att_out', hint: '' })}
+            ${fld('Contract / Base Shift (Hrs)', inp('f_sched_hours', 'number', '8', 'step="0.5" min="0"'), { id: 'wrap_f_sched_hours', hintId: 'hint_att_sched', hint: '0 hrs = Day-Off / Call-Out (all worked hours count as OT)' })}
+            ${fld('Actual Work Hours', inp('f_worked_hours', 'number', '8', 'step="0.5" min="0" readonly class="pa-locked-input"'), { id: 'wrap_f_worked_hours', hintId: 'hint_att_worked', hint: 'Calculated from Time In → Time Out' })}
+            ${fld('Overtime Hours (+)', inp('f_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_hours', hintId: 'hint_att_ot', hint: 'Auto-calculated above Base Shift (editable)' })}
+            ${fld('Short / Late Hours (−)', inp('f_late_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_late_hours', hintId: 'hint_att_late', hint: 'Auto-calculated below Base Shift (editable)' })}
+          </div>
+
+          <div class="att-subpanel" id="attLeavePanel" hidden>
+            <div class="att-preset-bar" id="attLeavePresetBar">
+              <span class="att-preset-lbl">Leave Type:</span>
+              <button type="button" class="att-preset-pill active" data-att-leave="Half Day">Half Day Off (0.5d)</button>
+              <button type="button" class="att-preset-pill" data-att-leave="Absence">Full Day Absence (1.0d)</button>
+              <button type="button" class="att-preset-pill" data-att-leave="VacAbsence">Paid Vacation</button>
+              <button type="button" class="att-preset-pill" data-att-leave="Sick Leave">Sick Leave</button>
+            </div>
+            <input type="hidden" id="f_leave_type" value="Half Day">
+            ${fld('Leave Duration (Days) *', inp('f_leave_days', 'number', '0.5', 'step="0.5" min="0.5"'), { hintId: 'hint_att_leave_days', hint: '0.5 = Half Day · 1.0 = Full Day · 2+ = Multi-Day' })}
+            ${fld('Pay Treatment *', sel('f_leave_pay', [
+              ['unpaid', 'Unpaid — Deduct from Monthly Salary'],
+              ['paid', 'Paid — Keep Full Monthly Salary (Vacation / Sick)']
+            ], 'unpaid'), { span2: true, hintId: 'hint_att_leave_pay', hint: '' })}
+          </div>
+
+          <div class="att-subpanel" id="attExtraPanel" hidden>
+            ${fld('Bonus / Extra USD ($)', inp('f_extra_usd', 'number', '', 'step="0.01" placeholder="0.00"'))}
+            ${fld('Bonus / Extra LBP (L.L.)', inp('f_extra_lbp', 'number', '', 'step="1000" placeholder="0"'))}
+            ${fld('Total USD Equivalent ($)', inp('f_extra_total', 'number', '0.00', 'step="0.01" readonly class="pa-locked-input"'), { hint: 'USD + LBP ÷ 89,500' })}
+          </div>
+
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional reason, Sunday shift note, site, or approval remark..."'), { span: true })}
+        </div>
+        <div class="live-calc" id="attLiveCalc">
+          <div><small>Auto-Classification</small><b id="calc_att_type">Full Shift (On Time)</b></div>
+          <div><small>Shift / Duration Math</small><b id="calc_att_math">08:00 → 16:00 = 8.0h</b></div>
+          <div><small>Contract Rate Basis</small><b id="calc_att_rate">Select Staff Member</b></div>
+          <div><small>Est. Payroll Impact</small><b id="calc_att_impact">$0.00 (Standard Shift)</b></div>
         </div>
       `;
     }

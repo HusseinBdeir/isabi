@@ -13,20 +13,28 @@
 
   const ic = (name, cls) => (window.MFG_ICONS ? window.MFG_ICONS.svg(name, cls) : '');
 
-  const SEED = window.MFG_SEED || {};
+  const SEED_MANIFEST = window.__MFG_SEED_MANIFEST || {};
+  const SEED = window.MFG_SEED || window.__MFG_SEED_INTERNAL || {};
+  window.__MFG_SEED_INTERNAL = SEED;
+  if (!SEED.generated_at && SEED_MANIFEST.generated_at) SEED.generated_at = SEED_MANIFEST.generated_at;
   SEED.models = SEED.models || {};
   SEED.records = SEED.records || {};
   SEED.sentinels = SEED.sentinels || {};
-  [
+  const SEED_RECORD_KEYS = [
     'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses', 'receipts', 'settlements', 'salaries',
     'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products', 'sites',
-    'regions', 'uoms', 'product_types', 'equipment', 'company_equipment', 'drivers', 'company_drivers',
-    'expense_categories', 'expense_subcategories', 'employments', 'attendance', 'logistics_allowances',
-    'overtime_rates', 'external_movements', 'loans', 'loan_settlements', 'conversions',
-    'jv_partnerships', 'jv_distributions', 'daily_totals'
-  ].forEach(k => {
+    'regions', 'uoms', 'product_types', 'equipment', 'company_equipment', 'equipment_defects', 'part_movements',
+    'drivers', 'company_drivers', 'expense_categories', 'expense_subcategories', 'employments', 'attendance',
+    'freelance_entries', 'freelance_payments', 'logistics_allowances', 'overtime_rates', 'external_movements',
+    'loans', 'loan_settlements', 'conversions', 'jv_partnerships', 'jv_distributions', 'daily_totals'
+  ];
+  SEED_RECORD_KEYS.forEach(k => {
     if (!Array.isArray(SEED.records[k])) SEED.records[k] = [];
   });
+  if (window.MFG_SEED) {
+    SEED._coreReady = true;
+    SEED._recordsReady = true;
+  }
 
   function cleanNotesText(s) {
     if (!s || typeof s !== 'string') return s;
@@ -37,11 +45,13 @@
     });
     return lines.join('\n').replace(/\s*\[m\d+[^\]]*\]/gi, '').trim();
   }
-  Object.keys(SEED.records).forEach(k => {
-    (SEED.records[k] || []).forEach(r => {
-      if (r && r.notes) r.notes = cleanNotesText(r.notes);
+  if (window.MFG_SEED) {
+    Object.keys(SEED.records).forEach(k => {
+      (SEED.records[k] || []).forEach(r => {
+        if (r && r.notes) r.notes = cleanNotesText(r.notes);
+      });
     });
-  });
+  }
 
   const CLOUD_CFG = window.MFG_CLOUD_CFG || {};
   const CLOUD_URL = CLOUD_CFG.u ? atob(CLOUD_CFG.u) : '';
@@ -126,6 +136,15 @@
     salesPadFilter: 'all',
     vatInvFilter: 'all',
     rawSiteFilter: 'expense',
+    partDispFilter: 'all',
+    unitHealthFilter: 'all',
+    wfMapDate: '',
+    wfIncludeHaulers: false,
+    wfAuditScope: 'period',
+    wfAuditFilter: 'all',
+    wfRosterScope: 'day',
+    wfZoneFilter: 'all',
+    wfShowAllRosterStaff: false,
     activeStatement: '01',
     stmtCatFilter: 'all',
     pbiPage: 'p01_overview',
@@ -242,6 +261,7 @@
     'sales_tickets', 'raw_purchases', 'receipts', 'fuel_intakes', 'expenses', 'settlements',
     'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products',
     'product_types', 'uoms', 'sites', 'regions', 'equipment', 'company_equipment',
+    'equipment_defects', 'part_movements',
     'drivers', 'company_drivers', 'expense_categories', 'expense_subcategories',
     'salaries', 'attendance', 'employments', 'freelance_entries', 'logistics_allowances',
     'overtime_rates', 'external_movements', 'loans', 'loan_settlements',
@@ -254,6 +274,7 @@
     customers: 'customers', suppliers: 'suppliers', products: 'products',
     product_types: 'product_types', uoms: 'uoms', sites: 'sites', regions: 'regions',
     equipment: 'equipment', company_equipment: 'company_equipment',
+    equipment_defects: 'equipment_defects', part_movements: 'part_movements',
     drivers: 'drivers', company_drivers: 'company_drivers',
     expense_categories: 'expense_categories', expense_subcategories: 'expense_subcategories',
     salaries: 'salaries', attendance: 'attendance', employments: 'employments',
@@ -265,10 +286,11 @@
   const CR_LABEL = {
     sales_tickets: 'sales ticket', raw_purchases: 'raw receipt', receipts: 'customer receipt',
     fuel_intakes: 'fuel intake', expenses: 'expense', settlements: 'supplier settlement',
-    price_rules: 'price agreement', vat_invoices: 'VAT invoice', credit_terms: 'credit terms',
+    price_rules: 'price agreement', vat_invoices: 'vat invoice', credit_terms: 'credit terms',
     customers: 'customer', suppliers: 'supplier', products: 'product',
     product_types: 'product family', uoms: 'unit of measure', sites: 'site', regions: 'region',
     equipment: 'equipment', company_equipment: 'company fleet unit',
+    equipment_defects: 'equipment defect', part_movements: 'part movement',
     drivers: 'driver', company_drivers: 'company driver',
     expense_categories: 'expense category', expense_subcategories: 'expense subcategory',
     salaries: 'salary payment', attendance: 'attendance log', employments: 'contract / freelance',
@@ -2705,13 +2727,15 @@
     pay_att: [
       { key: 'company', label: 'Company' },
       { key: 'staff', label: 'Staff Member' },
-      { key: 'type', label: 'Type / Status' },
+      { key: 'display_type', label: 'Category' },
       { key: 'in_time', label: 'Time In' },
       { key: 'out_time', label: 'Time Out' },
       { key: 'worked_hours', label: 'Work Hrs', kind: 'numeric' },
-      { key: 'regular_hours', label: 'Reg Hrs', kind: 'numeric' },
+      { key: 'shift_basis_lbl', label: 'Shift Basis' },
       { key: 'overtime_hours', label: 'OT Hrs', kind: 'numeric' },
-      { key: 'late_hours', label: 'Late Hrs', kind: 'numeric' }
+      { key: 'late_hours', label: 'Late Hrs', kind: 'numeric' },
+      { key: 'leave_days', label: 'Leave (d)', kind: 'numeric' },
+      { key: 'payroll_impact_usd', label: 'Pay Impact ($)', kind: 'numeric' }
     ],
     pay_att_sum: [
       { key: 'company', label: 'Company' },
@@ -2854,9 +2878,9 @@
 
   function isNumericColKey(colKey) {
     const k = String(colKey || '');
-    if (/^(cost_class|cost_bucket|working_days|assigned_trucks|trucksStr|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str)$/i.test(k)) return false;
+    if (/^(cost_class|cost_bucket|working_days|assigned_trucks|trucksStr|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|shift_basis_lbl|display_type)$/i.test(k)) return false;
     if (isBooleanColKey(k)) return false;
-    return /price|cost|amount|total|vat_amount|^vat$|limit|salary|balance|remaining|haul|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|in_usd|out_usd|net_usd|open_usd|close_usd|in_lbp|out_lbp|net_lbp|close_lbp|close_combined|usd_delta|lbp_delta|^lbp$|entries_cnt|overtime_rate|ot_bonus|l_per_100km|flag_count|qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|trips|km_run|debit|credit|earnings|paid|base|ot_hrs|ot_pay|late_hrs|late_ded|absent_days|abs_ded|site_allow|ar_current|ar_60_plus|ap_material|ap_haulage|ap_expense|settlements_paid|sales_ttc|net_sum|tons_sold|qty_sold|trans_rev|tally|leave_days|extra_usd|unmatched_usd|vouchers|accrued|outstanding|paid_fifo|logs_cnt|ot_logs|late_logs|vac_days|sick_days|net_att_impact|reimbursement|deduction|overtime_multiplier/i.test(k);
+    return /price|cost|amount|total|vat_amount|^vat$|limit|salary|balance|remaining|haul|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|in_usd|out_usd|net_usd|open_usd|close_usd|in_lbp|out_lbp|net_lbp|close_lbp|close_combined|usd_delta|lbp_delta|^lbp$|entries_cnt|overtime_rate|ot_bonus|l_per_100km|flag_count|qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|trips|km_run|debit|credit|earnings|paid|base|ot_hrs|ot_pay|late_hrs|late_ded|absent_days|abs_ded|site_allow|ar_current|ar_60_plus|ap_material|ap_haulage|ap_expense|settlements_paid|sales_ttc|net_sum|tons_sold|qty_sold|trans_rev|tally|leave_days|extra_usd|payroll_impact_usd|unmatched_usd|vouchers|accrued|outstanding|paid_fifo|logs_cnt|ot_logs|late_logs|vac_days|sick_days|net_att_impact|reimbursement|deduction|overtime_multiplier/i.test(k);
   }
 
   function isDefaultDescSortKey(colKey) {
@@ -3938,7 +3962,7 @@
       tierBadge: 'TIER 1 · ADMIN / OWNER',
       badgeCls: 'badge-ok',
       defaultAccess: 'full|full',
-      summary: 'Unrestricted read, entry, inline record modification, voiding, seat administration, all 9 policy-lock overrides, all 20 Power BI pages & all 22 A4 statements.',
+      summary: 'Unrestricted read, entry, inline record modification, voiding, seat administration, all 9 policy-lock overrides, all 20 executive dashboards & all 22 A4 statements.',
       rights: { read_ops: true, read_fin: true, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: true, modify_data: true, void_data: true, manage_users: true },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: true, unlock_method: true, unlock_fleet_cascade: true, unlock_site_owner: true, unlock_vat_serial: true, unlock_formula_totals: true },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: true },
@@ -3960,7 +3984,7 @@
       tierBadge: 'TIER 3 · SUPERVISOR',
       badgeCls: 'badge-info',
       defaultAccess: 'full|full',
-      summary: 'Oversight across registers, AI sentinels, 20 Power BI dashboards & 22 statements; can void records & unlock policy-locked fields (cannot post new tickets).',
+      summary: 'Oversight across registers, AI sentinels, 20 executive dashboards & 22 statements; can void records & unlock policy-locked fields (cannot post new tickets).',
       rights: { read_ops: true, read_fin: true, enter_dispatch: false, enter_accounting: false, enter_master: false, enter_payroll_jv: false, modify_data: false, void_data: true, manage_users: false },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: true, unlock_method: true, unlock_fleet_cascade: true, unlock_site_owner: true, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: true },
@@ -4128,6 +4152,7 @@
     if (/^Custom/i.test(role)) {
       const p = getEffectivePermissions(u);
       if (['sales', 'raw', 'fuel'].includes(form)) return !!p.rights.enter_dispatch;
+      if (['defect', 'partlog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master);
       if (['receipt', 'expense', 'settlement'].includes(form)) return !!p.rights.enter_accounting;
       if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'site', 'equipment', 'companyequipment', 'driver', 'attendance'].includes(form)) return !!p.rights.enter_master;
       if (['salary', 'employment', 'allowance', 'logistics', 'overtimerate', 'triprate', 'treasury', 'external', 'extmovement', 'loan', 'loansettlement', 'conversion', 'jv', 'jvpartnership', 'jvdistribution'].includes(form)) return !!p.rights.enter_payroll_jv;
@@ -4142,6 +4167,7 @@
     if (/Entry/i.test(role)) {
       return [
         'sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement',
+        'defect', 'partlog',
         'customer', 'supplier', 'product', 'site', 'equipment', 'companyequipment', 'driver', 'attendance'
       ].includes(form);
     }
@@ -4248,6 +4274,7 @@
       tabs: [
         { view: 'fleet', label: 'Diesel & Lubricants', icon: 'fleet', pillFn: () => fmtNum(filterRecords(SEED.records.fuel_intakes || []).length) },
         { view: 'fleet_equip', label: 'Fleet & Running Costs', icon: 'fleet_equip', pillFn: (_u, k) => (k && k.active_equip != null ? fmtNum(k.active_equip) : '') },
+        { view: 'fleet_maint', label: 'Defects & Parts', icon: 'fleet_maint', pillCls: () => { const mi = getMaintIndex(); return mi.openCritCount > 0 ? 'crit' : (mi.openCount > 0 ? 'brass' : ''); }, pillFn: () => { const mi = getMaintIndex(); return mi.openCount > 0 ? `${fmtNum(mi.openCount)} Open` : (mi.partTotalCount > 0 ? `${fmtNum(mi.partTotalCount)} Parts` : 'Healthy'); } },
         { view: 'fleet_drivers', match: ['fleet_drivers', 'fleet_analytics'], label: 'Drivers & Overtime', icon: 'fleet_drivers', pillFn: (_u, k) => (k && Number(k.overtime_bonus || 0) > 0 ? fmtUSDk(k.overtime_bonus) : fmtNum(filterRecords(SEED.records.company_drivers || [], { ignorePeriod: true }).length) + ' Drv') },
         { view: 'reg_equipment', match: ['reg_equipment', 'reg_drivers'], label: 'Equipment & Drivers', icon: 'reg_equipment', universal: true, pillCls: 'univ', pillFn: () => 'All BUs' }
       ]
@@ -4277,6 +4304,7 @@
       group: 'books',
       tabs: [
         { view: 'payroll', match: ['payroll', 'payroll_analytics'], label: 'Payroll & Workforce', icon: 'payroll', pillFn: (_u, k) => (k && k.salaries_paid != null ? fmtUSDk(k.salaries_paid) : '') },
+        { view: 'workforce_map', label: 'Daily Plant & Machine Map', icon: 'workforce_map', pillCls: 'brass', pillFn: () => { const d = buildWorkforceMapData(); return d && d.daySummary ? `${d.daySummary.plantCount + d.daySummary.extCount} On · ${d.daySummary.absCount} Abs` : 'Live Map'; } },
         { view: 'payroll_attendance', label: 'Attendance & Overtime', icon: 'payroll_attendance', pillFn: () => fmtNum(filterRecords(SEED.records.attendance).length) },
         { view: 'payroll_contracts', label: 'Contracts & Allowances', icon: 'payroll_contracts', pillFn: () => fmtNum(filterRecords(SEED.records.employments, { ignorePeriod: true }).length) }
       ]
@@ -4296,7 +4324,7 @@
       group: 'exec',
       tabs: [
         { view: 'users', label: 'Team Auth & Users', icon: 'users', pillCls: 'brass', pillFn: () => `${STATE.users.length} Seats` },
-        { view: 'tables', label: 'Tables & Registers', icon: 'tables', pillFn: u => String((window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) ? window.MFG_PBI.TABLE_CATALOG.filter(t => canAccessTable(t.key, u)).length : 34) }
+        { view: 'tables', label: 'Tables & Registers', icon: 'tables', pillFn: u => String((window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) ? window.MFG_PBI.TABLE_CATALOG.filter(t => canAccessTable(t.key, u)).length : 36) }
       ]
     }
   ];
@@ -4315,11 +4343,11 @@
     if (view === 'sales_vat') return canAccessTable('vat_invoices', u) || canAccessTable('credit_terms', u) || canAccessPbiPage('p13_vat', u);
     if (view === 'sales_analytics') return canAccessPbiPage('p18_tickets', u) || canAccessPbiPage('p04_sales', u) || canAccessPbiPage('p05_pricing', u) || canAccessPbiPage('p06_ar', u);
     if (view === 'raw_analytics') return canViewView('raw', u) && (canAccessPbiPage('p17_jv', u) || canAccessPbiPage('p08_stock', u) || canAccessPbiPage('p07_ap', u));
-    if (view === 'fleet_equip' || view === 'fleet_drivers') return canViewView('fleet', u);
+    if (view === 'fleet_equip' || view === 'fleet_maint' || view === 'fleet_drivers') return canViewView('fleet', u);
     if (view === 'fleet_analytics') return canViewView('fleet', u) && (canAccessPbiPage('p11_drivers', u) || canAccessPbiPage('p09_fuel', u) || canAccessPbiPage('p10_fleet', u));
     if (view === 'cashflow_analytics') return canViewView('cashflow', u) && canAccessPbiPage('p14_cashflow', u);
     if (view === 'expenses_analytics') return canViewView('expenses', u) && canAccessPbiPage('p07_ap', u);
-    if (view === 'payroll_attendance' || view === 'payroll_contracts') return canViewView('payroll', u);
+    if (view === 'workforce_map' || view === 'payroll_attendance' || view === 'payroll_contracts') return canViewView('payroll', u);
     if (view === 'payroll_analytics') return canViewView('payroll', u) && (canAccessPbiPage('p12_payroll', u) || canAccessPbiPage('p11_drivers', u));
     if (view === 'external') return canViewView('cashflow', u) && canAccessTable('external_movements', u);
     if (view === 'ledger_treasury') return canViewView('cashflow', u) && (canAccessTable('loans', u) || canAccessPbiPage('p15_treasury', u));
@@ -6142,7 +6170,30 @@
       detail: `${fmtNum(anomalies)} rows carry a reporting date more than 31 days from the transaction date · ${fmtNum(parity.unlinked_vat_invoices_count || 0)} VAT invoices not linked to tickets · ${fmtNum(parity.header_vs_tickets_mismatch_count || 0)} VAT headers disagree with their tickets.`,
       severity: anomalies > 0 ? 'warn' : 'ok',
       badge: anomalies > 0 ? fmtNum(anomalies) + ' GAPS' : 'IN SYNC',
-      company: 'SharePoint parity'
+      company: 'Ledger parity'
+    });
+
+    const wfAudit = buildWorkforceMapData({ auditOnly: true });
+    const absGhostCnt = wfAudit ? wfAudit.absentGhostCount : 0;
+    const unattrLubeCnt = wfAudit ? wfAudit.noDriverServiceCount : 0;
+    items.push({
+      code: 'S9 · MACHINE_GREASE_DIESEL_ABSENT_DRIVER', title: 'Absent-Driver Diesel, Lubricant & Grease Machine Watchdog',
+      detail: `${fmtNum(absGhostCnt)} machine fuel, lubricant or grease entries occurred on days when the assigned driver was absent without a logged substitute · ${fmtNum(unattrLubeCnt)} lubricant or grease entries carry no operator on the ticket. Review in Daily Plant & Machine Map.`,
+      severity: absGhostCnt > 0 ? 'crit' : (unattrLubeCnt > 0 ? 'warn' : 'ok'),
+      badge: absGhostCnt > 0 ? fmtNum(absGhostCnt) + ' GHOST ALERTS' : (unattrLubeCnt > 0 ? fmtNum(unattrLubeCnt) + ' UNATTRIBUTED' : 'CLEAN'),
+      company: scope
+    });
+
+    const maintIdx = getMaintIndex();
+    const unnotifPartsCnt = maintIdx.unnotifiedParts.length;
+    const openCritDefCnt = maintIdx.openCritCount;
+    const maintNoVendorCnt = maintIdx.partsInMaint.filter(p => !String(p.vendor_or_buyer || '').trim()).length;
+    items.push({
+      code: 'S10 · FLEET_DEFECT_PARTS_CUSTODY', title: 'Pre-Replacement Defect Notice & Removed Parts Custody',
+      detail: `${fmtNum(unnotifPartsCnt)} part replacement${unnotifPartsCnt === 1 ? '' : 's'} logged without a prior reported defect · ${fmtNum(openCritDefCnt)} critical unit${openCritDefCnt === 1 ? '' : 's'} flagged Down / Do Not Dispatch · ${fmtNum(maintIdx.partsStored.length)} stored in warehouse · ${fmtNum(maintIdx.partsInMaint.length)} in maintenance${maintNoVendorCnt > 0 ? ' (' + fmtNum(maintNoVendorCnt) + ' missing workshop vendor)' : ''} · ${fmtNum(maintIdx.partsSold.length)} sold (${fmtUSD(maintIdx.totalSaleProceeds, 0)} proceeds).`,
+      severity: openCritDefCnt > 0 ? 'crit' : ((unnotifPartsCnt > 0 || maintNoVendorCnt > 0) ? 'warn' : 'ok'),
+      badge: openCritDefCnt > 0 ? `${fmtNum(openCritDefCnt)} DOWN UNITS` : (unnotifPartsCnt > 0 ? `${fmtNum(unnotifPartsCnt)} UNNOTIFIED` : (maintNoVendorCnt > 0 ? `${fmtNum(maintNoVendorCnt)} NO VENDOR` : 'COMPLIANT')),
+      company: scope
     });
 
     return items;
@@ -6546,6 +6597,12 @@
           { label: 'BU', key: 'bu' }, { label: 'Invoice', key: 'invoice' }, { label: 'No.', key: 'invoiceno', mono: true }, { label: 'Date', key: 'date', mono: true },
           { label: 'Header Net', key: 'header_net', r: true, fmt: usd2 }, { label: 'Header VAT', key: 'header_vat', r: true, fmt: usd2 }
         ], 'snVat')}
+        ${miniTable('UNNOTIFIED PART CHANGES &amp; OPEN CRITICAL DEFECTS', getMaintIndex().sentinelExceptions, [
+          { label: 'Type', key: 'audit_type' }, { label: 'Ref', key: 'name', mono: true }, { label: 'Co.', key: 'company' },
+          { label: 'Unit', key: 'equipment', mono: true }, { label: 'Part / Subsystem', key: 'item_label' },
+          { label: 'Date', key: 'date', mono: true }, { label: 'Disposition / Status', key: 'state_label' },
+          { label: 'Cost ($)', key: 'cost_usd', r: true, fmt: usd2 }
+        ], 'snFleetParts')}
       </div>
       ${moduleAnalyticsHtml('sentinels')}
     `;
@@ -6804,7 +6861,7 @@
 
         ${isGroupScope ? `
         <div class="sales-entity-recon">
-          <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only (matches WTC Old Power BI)">
+          <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only (matches WTC standalone entity view)">
             <div class="sales-recon-head">
               <span class="badge badge-brass">WTC</span>
               <b>${fmtNum(wtcS.loads)} Loads</b>
@@ -7900,6 +7957,7 @@
             <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('diesel', `Diesel (${dieselBaseCount})`)}${chip('lube', `Lubricants (${lubeBaseCount})`)}${chip('flag', `Guard Flags (${flagged})`)}${chip('own', 'Own Fleet')}${chip('transporter', 'Haulers')}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
             <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="fuel" title="Open Touch Fuel &amp; Lubricants Kiosk">${ic('fuel')} Fuel Kiosk</button>
             ${exportBtn('fuelPanel', 'Fuel_Intakes')}
             ${canEnterForm('fuel') ? '<button class="btn btn-primary" data-open-modal="fuel">+ New Fuel Ticket</button>' : ''}
@@ -8041,20 +8099,263 @@
     `;
   }
 
+  function isDefectOpen(d) {
+    return Boolean(d && !d.voided && !/^(Resolved|Closed)/i.test(String(d.status || 'Open')));
+  }
+
+  let _MAINT_IDX = null;
+  function getMaintIndex() {
+    const revKey = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${allowedCompanyNames().join(',')}`;
+    if (_MAINT_IDX && _MAINT_IDX.revKey === revKey) return _MAINT_IDX;
+
+    const liveDefectsAll = filterRecords(SEED.records.equipment_defects || [], { ignorePeriod: true, ignoreSearch: true });
+    const livePartsAll = filterRecords(SEED.records.part_movements || [], { ignorePeriod: true, ignoreSearch: true });
+    const periodDefects = filterRecords(SEED.records.equipment_defects || [], { ignoreSearch: true });
+    const periodParts = filterRecords(SEED.records.part_movements || [], { ignoreSearch: true });
+    const equipExpenses = filterRecords(SEED.records.expenses || [], { ignoreSearch: true }).filter(e => e && !e.voided && String(e.equipment || '').trim());
+
+    const openDefects = liveDefectsAll.filter(isDefectOpen);
+    const openCrit = openDefects.filter(d => /Critical/i.test(d.severity || ''));
+    const openMod = openDefects.filter(d => /Moderate/i.test(d.severity || ''));
+    const openMinor = openDefects.filter(d => /Minor/i.test(d.severity || ''));
+    const inWorkshopDefects = openDefects.filter(d => /Workshop|Maintenance/i.test(d.status || ''));
+
+    const partsStored = livePartsAll.filter(p => /^Stored/i.test(p.removed_disposition || ''));
+    const partsInMaint = livePartsAll.filter(p => /Maintenance|Workshop/i.test(p.removed_disposition || ''));
+    const partsSold = livePartsAll.filter(p => /^Sold/i.test(p.removed_disposition || ''));
+    const partsInstalled = livePartsAll.filter(p => /^Installed/i.test(p.removed_disposition || ''));
+    const partsScrapped = livePartsAll.filter(p => /^Scrapped/i.test(p.removed_disposition || ''));
+    const unnotifiedParts = livePartsAll.filter(p => !p.prior_defect_notified);
+    const notifiedParts = livePartsAll.filter(p => Boolean(p.prior_defect_notified));
+
+    const totalNewCost = livePartsAll.reduce((a, p) => a + Number(p.new_part_cost || 0), 0);
+    const totalRepairCost = livePartsAll.reduce((a, p) => a + Number(p.repair_cost || 0), 0);
+    const totalSaleProceeds = livePartsAll.reduce((a, p) => a + Number(p.sale_proceeds || 0), 0);
+
+    const byUnit = new Map();
+    const ensureUnit = rawName => {
+      const k = norm(rawName);
+      if (!k) return null;
+      let u = byUnit.get(k);
+      if (!u) {
+        u = {
+          name: String(rawName).trim(),
+          defects: [],
+          openDefects: [],
+          parts: [],
+          expCount: 0,
+          expTotal: 0
+        };
+        byUnit.set(k, u);
+      }
+      return u;
+    };
+
+    liveDefectsAll.forEach(d => {
+      const u = ensureUnit(d.equipment);
+      if (!u) return;
+      u.defects.push(d);
+      if (isDefectOpen(d)) u.openDefects.push(d);
+    });
+    livePartsAll.forEach(p => {
+      const u = ensureUnit(p.equipment);
+      if (u) u.parts.push(p);
+    });
+    equipExpenses.forEach(e => {
+      const u = ensureUnit(e.equipment);
+      if (u) {
+        u.expCount += 1;
+        u.expTotal += Number(e.amount || 0);
+      }
+    });
+
+    const sentinelExceptions = [];
+    openCrit.forEach(d => {
+      sentinelExceptions.push({
+        id: d.id, rkey: 'equipment_defects',
+        audit_type: 'Critical Down Unit',
+        name: d.name || d.id,
+        company: d.company || 'WTC',
+        equipment: d.equipment || '—',
+        item_label: `${d.subsystem || 'General'}${d.part_name ? ' · ' + d.part_name : ''}`,
+        date: d.date,
+        state_label: d.status || 'Open — Defect Reported',
+        cost_usd: 0
+      });
+    });
+    unnotifiedParts.forEach(p => {
+      sentinelExceptions.push({
+        id: p.id, rkey: 'part_movements',
+        audit_type: 'Unnotified Part Change',
+        name: p.name || p.id,
+        company: p.company || 'WTC',
+        equipment: p.equipment || '—',
+        item_label: `${p.part_name || 'Part'}${p.subsystem ? ' (' + p.subsystem + ')' : ''}`,
+        date: p.date,
+        state_label: p.removed_disposition || '—',
+        cost_usd: Number(p.new_part_cost || 0) + Number(p.repair_cost || 0)
+      });
+    });
+    partsInMaint.filter(p => !String(p.vendor_or_buyer || '').trim()).forEach(p => {
+      if (unnotifiedParts.includes(p)) return;
+      sentinelExceptions.push({
+        id: p.id, rkey: 'part_movements',
+        audit_type: 'Workshop Missing Vendor',
+        name: p.name || p.id,
+        company: p.company || 'WTC',
+        equipment: p.equipment || '—',
+        item_label: p.part_name || 'Part',
+        date: p.date,
+        state_label: p.removed_disposition || 'In Maintenance',
+        cost_usd: Number(p.repair_cost || 0)
+      });
+    });
+
+    _MAINT_IDX = {
+      revKey,
+      liveDefectsAll,
+      livePartsAll,
+      periodDefects,
+      periodParts,
+      equipExpenses,
+      openDefects,
+      openCount: openDefects.length,
+      openCrit,
+      openCritCount: openCrit.length,
+      openModCount: openMod.length,
+      openMinorCount: openMinor.length,
+      inWorkshopCount: inWorkshopDefects.length,
+      partsStored,
+      partsInMaint,
+      partsSold,
+      partsInstalled,
+      partsScrapped,
+      unnotifiedParts,
+      notifiedParts,
+      partTotalCount: livePartsAll.length,
+      totalNewCost,
+      totalRepairCost,
+      totalSaleProceeds,
+      byUnit,
+      sentinelExceptions
+    };
+    return _MAINT_IDX;
+  }
+
+  function getEquipmentHealth(unitName, coOpt) {
+    const k = norm(unitName);
+    if (!k) {
+      return { status: 'Healthy · Operational', shortBadge: 'OK', badgeCls: 'badge-ok', tone: 'good', severityRank: 5, openDefects: [], openCount: 0, critCount: 0, modCount: 0, minorCount: 0, partCount: 0, storedCount: 0, maintPartCount: 0, soldPartCount: 0, unnotifiedCount: 0, expCount: 0, expTotal: 0, latestOpenDefect: null };
+    }
+    const allowedCos = allowedCompanyNames();
+    const coMatch = r => (!r.company || allowedCos.includes(r.company)) && (!coOpt || !r.company || norm(r.company) === norm(coOpt));
+    const allDef = (SEED.records.equipment_defects || []).filter(d => d && !d.voided && norm(d.equipment) === k && coMatch(d));
+    const openDef = allDef.filter(isDefectOpen).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const allParts = (SEED.records.part_movements || []).filter(p => p && !p.voided && norm(p.equipment) === k && coMatch(p));
+    const coEqs = (SEED.records.company_equipment || []).filter(ce => ce && !ce.voided && norm(ce.equipment) === k && coMatch(ce));
+    const activeCoEq = coEqs.find(ce => !ce.end_date) || coEqs[0] || null;
+    const coEqStatus = String((activeCoEq && activeCoEq.status) || '');
+    const mi = getMaintIndex();
+    const uEntry = mi.byUnit.get(k);
+
+    const critCount = openDef.filter(d => /Critical/i.test(d.severity || '')).length;
+    const modCount = openDef.filter(d => /Moderate/i.test(d.severity || '')).length;
+    const minorCount = openDef.filter(d => /Minor/i.test(d.severity || '')).length;
+    const inWs = openDef.some(d => /Workshop|Maintenance/i.test(d.status || ''));
+
+    let status = 'Healthy · Operational';
+    let shortBadge = 'HEALTHY';
+    let badgeCls = 'badge-ok';
+    let tone = 'good';
+    let severityRank = 5;
+
+    if (critCount > 0) {
+      status = 'Critical — Down';
+      shortBadge = 'DOWN';
+      badgeCls = 'badge-err';
+      tone = 'crit';
+      severityRank = 0;
+    } else if (inWs || /under\s*repair/i.test(coEqStatus)) {
+      status = 'Under Repair';
+      shortBadge = 'REPAIR';
+      badgeCls = 'badge-warn';
+      tone = 'warn';
+      severityRank = 1;
+    } else if (modCount > 0 || /defect/i.test(coEqStatus)) {
+      status = 'Needs Part Soon';
+      shortBadge = 'DEFECT';
+      badgeCls = 'badge-warn';
+      tone = 'warn';
+      severityRank = 2;
+    } else if (minorCount > 0) {
+      status = 'Monitor (Minor)';
+      shortBadge = 'MONITOR';
+      badgeCls = 'badge-info';
+      tone = 'info';
+      severityRank = 3;
+    } else if (/sold|retir/i.test(coEqStatus)) {
+      status = 'Sold / Retired';
+      shortBadge = 'RETIRED';
+      badgeCls = '';
+      tone = 'muted';
+      severityRank = 6;
+    } else if (/idle/i.test(coEqStatus)) {
+      status = 'Idle';
+      shortBadge = 'IDLE';
+      badgeCls = 'badge-info';
+      tone = 'info';
+      severityRank = 4;
+    }
+
+    return {
+      status,
+      shortBadge,
+      badgeCls,
+      tone,
+      severityRank,
+      coEqStatus: coEqStatus || 'Active',
+      allDefects: allDef,
+      openDefects: openDef,
+      openCount: openDef.length,
+      critCount,
+      modCount,
+      minorCount,
+      resolvedCount: Math.max(0, allDef.length - openDef.length),
+      parts: allParts,
+      partCount: allParts.length,
+      storedCount: allParts.filter(p => /^Stored/i.test(p.removed_disposition || '')).length,
+      maintPartCount: allParts.filter(p => /Maintenance|Workshop/i.test(p.removed_disposition || '')).length,
+      soldPartCount: allParts.filter(p => /^Sold/i.test(p.removed_disposition || '')).length,
+      unnotifiedCount: allParts.filter(p => !p.prior_defect_notified).length,
+      expCount: uEntry ? uEntry.expCount : 0,
+      expTotal: uEntry ? uEntry.expTotal : 0,
+      latestOpenDefect: openDef[0] || null
+    };
+  }
+
+  function renderEquipmentHealthBadge(unitName, coOpt, compact = false) {
+    const h = getEquipmentHealth(unitName, coOpt);
+    if (compact && h.severityRank >= 4) return '';
+    return `<span class="badge ${h.badgeCls}" style="margin-left:${compact ? '5px' : '0'};font-size:${compact ? '9.5px' : '10.5px'}" title="${esc(h.status)}${h.latestOpenDefect ? ' · ' + esc(h.latestOpenDefect.subsystem || '') + ': ' + esc(h.latestOpenDefect.description || '') : ''}">${esc(compact ? h.shortBadge : h.status)}</span>`;
+  }
+
   function renderFleetEquipment() {
     const k = getKPI();
     const m = getModel();
+    const mi = getMaintIndex();
     const isOwnEquip = e => /^own/i.test(String((e && (e.Ownership || e.ownership)) || ''));
     const isTruckEquip = e => /truck/i.test(String((e && (e.Type || e.type)) || 'Truck'));
     const equipAll = m.equipment || [];
     const ownCount = equipAll.filter(isOwnEquip).length;
     const transCount = equipAll.length - ownCount;
+    const equipWithDefectsCount = equipAll.filter(e => getEquipmentHealth(e.Equipment).severityRank <= 3).length;
     const equipBase = equipAll.filter(e => !STATE.search || Object.values(e).join(' ').toLowerCase().includes(STATE.search.toLowerCase()));
     const equipRows = sortRows(equipBase.filter(e => {
       if (STATE.chipFilter === 'own') return isOwnEquip(e);
       if (STATE.chipFilter === 'transporter') return !isOwnEquip(e);
       if (STATE.chipFilter === 'truck') return isTruckEquip(e);
       if (STATE.chipFilter === 'machinery') return !isTruckEquip(e);
+      if (STATE.chipFilter === 'defects') return getEquipmentHealth(e.Equipment).severityRank <= 3;
       if (STATE.chipFilter === 'cost') return Number(e.total_cost || 0) > 0;
       if (STATE.chipFilter === 'diesel') return Number(e.diesel_litres || 0) > 0;
       if (STATE.chipFilter === 'app') {
@@ -8070,6 +8371,7 @@
     const coEquipRows = sortRows(coEqBase.filter(ce => {
       if (STATE.chipFilter === 'own') return /^own/i.test(ce.ownership || '');
       if (STATE.chipFilter === 'transporter') return !/^own/i.test(ce.ownership || '');
+      if (STATE.chipFilter === 'defects') return getEquipmentHealth(ce.equipment, ce.company).severityRank <= 3;
       if (STATE.chipFilter === 'app') return isAppRecord(ce);
       return true;
     }), 'coeq', 'loads_hauled', 'desc');
@@ -8119,14 +8421,14 @@
             tone: 'steel'
           })}
           ${insightCard({
-            label: 'BU Fleet & Driver Assignments',
-            badge: `${fmtNum(activeCoEqCount)} Active Windows`,
-            badgeCls: 'emerald',
-            val: `<span class="insight-drill" data-scroll-panel="coFleetAssignPanel" title="Click to jump to BU Company-Equipment &amp; Driver Assignment Windows">${fmtNum(coEquipRows.length)} <small>Assignments ↘</small></span>`,
-            valCls: 'emerald',
+            label: 'BU Fleet & Health Status',
+            badge: mi.openCount > 0 ? `${fmtNum(mi.openCount)} Open Defects` : `${fmtNum(activeCoEqCount)} Active Windows`,
+            badgeCls: mi.openCritCount > 0 ? 'crit' : (mi.openCount > 0 ? 'warn' : 'emerald'),
+            val: `<span class="insight-drill" data-nav-jump="fleet_maint" title="Open Defects &amp; Parts Custody Ledger">${mi.openCount > 0 ? `${fmtNum(mi.openCount)} <small>Open Issues →</small>` : `${fmtNum(coEquipRows.length)} <small>Healthy ↘</small>`}</span>`,
+            valCls: mi.openCritCount > 0 ? 'amber' : 'emerald',
             pct: coEqBase.length > 0 ? (activeCoEqCount / coEqBase.length) * 100 : 100,
-            sub: `Dated equipment-driver windows locking Sales, Raw &amp; Fuel tickets`,
-            tone: 'emerald'
+            sub: `<span class="insight-drill" data-scroll-panel="coFleetAssignPanel">Assignments: <b>${fmtNum(coEquipRows.length)}</b></span> · <span class="insight-drill" data-nav-jump="fleet_maint">Parts Custody: <b>${fmtNum(mi.partTotalCount)}</b></span>`,
+            tone: mi.openCount > 0 ? 'amber' : 'emerald'
           })}
           ${appPill('company_equipment', null, 'assignments')}
         </div>
@@ -8136,10 +8438,10 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search equipment, plate, type, ownership...')}
-            <div class="chip-bar">${chip('all', `All Units (${equipBase.length})`)}${chip('own', `Own Fleet (${ownCount})`)}${chip('transporter', `Haulers (${transCount})`)}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('cost', 'With Cost')}${chip('diesel', 'With Fuel')}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All Units (${equipBase.length})`)}${chip('own', `Own Fleet (${ownCount})`)}${chip('transporter', `Haulers (${transCount})`)}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('defects', `Defects (${equipWithDefectsCount})`)}${chip('cost', 'With Cost')}${chip('diesel', 'With Fuel')}${chip('app', 'App-entered')}</div>
           </div>
-          <div style="display:flex;gap:6px">
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_equipment">Equipment &amp; Drivers (All BUs) →</button>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_maint">Defects &amp; Parts →</button>
             ${exportBtn('equipPanel', 'Equipment_Costs')}
             ${canEnterForm('companyequipment') ? '<button class="btn btn-primary" data-open-modal="companyequipment">+ New Company Fleet Unit</button>' : ''}
           </div>
@@ -8156,7 +8458,7 @@
             <tbody>
               ${shownEquip.map(e => `
                 <tr class="rrow" data-rkey="equipment" data-rid="${esc((equipInfo(e.Equipment) || {}).id || e.Equipment)}">
-                  <td class="mono">${relLink('equipment', e.Equipment, e.Equipment, true)}${appCell(equipInfo(e.Equipment) || { id: e.Equipment, name: e.Equipment }, 'equipment')}</td>
+                  <td class="mono">${relLink('equipment', e.Equipment, e.Equipment, true)}${renderEquipmentHealthBadge(e.Equipment, null, true)}${appCell(equipInfo(e.Equipment) || { id: e.Equipment, name: e.Equipment }, 'equipment')}</td>
                   <td>${esc(e.Type || 'Truck')}</td>
                   <td><span class="badge ${e.Ownership === 'Owned' || e.Ownership === 'Own' ? 'badge-ok' : 'badge-info'}">${esc(e.Ownership || 'Transporter')}</span></td>
                   <td class="r">${fmtNum(e.trips)}</td>
@@ -8209,25 +8511,512 @@
               </tr>
             </thead>
             <tbody>
-              ${coEquipRows.slice(0, shownCount('coeq')).map(ce => `
+              ${coEquipRows.slice(0, shownCount('coeq')).map(ce => {
+                const eqH = getEquipmentHealth(ce.equipment, ce.company);
+                const statusBadgeCls = eqH.severityRank === 0 ? 'badge-err' : (eqH.severityRank <= 2 ? 'badge-warn' : (/active/i.test(ce.status || 'Active') && !ce.end_date ? 'badge-ok' : 'badge-warn'));
+                const statusLabel = eqH.severityRank <= 2 && /active/i.test(ce.status || 'Active') ? `${ce.status || 'Active'} · ${eqH.shortBadge}` : (ce.status || 'Active');
+                return `
                 <tr class="rrow" data-rkey="company_equipment" data-rid="${esc(ce.id || ce.equipment)}">
                   <td class="mono">${relLink('equipment', ce.equipment, ce.equipment, true)}${appCell(ce, 'company_equipment')}</td>
                   <td>${coBadge(ce.company)}</td>
                   <td><span class="badge ${/^own/i.test(ce.ownership || '') ? 'badge-ok' : 'badge-info'}">${esc(ce.ownership || 'Owned')}</span></td>
-                  <td><span class="badge ${/active/i.test(ce.status || 'Active') && !ce.end_date ? 'badge-ok' : 'badge-warn'}">${esc(ce.status || 'Active')}</span></td>
+                  <td><span class="badge ${statusBadgeCls}">${esc(statusLabel)}</span></td>
                   <td>${ce.default_driver ? relLink('drivers', ce.default_driver) : '—'}</td>
                   <td>${ce.day_operator ? relLink('drivers', ce.day_operator) : '—'}</td>
                   <td>${ce.site ? relLink('sites', ce.site) : '—'}</td>
                   <td class="mono">${esc(fmtDateDMY(ce.start_date))}</td>
                   <td class="mono">${ce.end_date ? esc(fmtDateDMY(ce.end_date)) : '—'}</td>
-                </tr>
-              `).join('') || emptyRow(9, 'No BU company-equipment assignments match the active filter')}
+                </tr>`;
+              }).join('') || emptyRow(9, 'No BU company-equipment assignments match the active filter')}
               ${showMoreRow('coeq', coEquipRows.length, 9)}
             </tbody>
             <tfoot>
               <tr>
                 <td colspan="4"><b>TOTAL (${fmtNum(coEquipRows.length)} BU FLEET ASSIGNMENTS)</b></td>
                 <td colspan="5"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderFleetMaintenance() {
+    const mi = getMaintIndex();
+    const q = String(STATE.search || '').trim().toLowerCase();
+    const matchQ = vals => !q || vals.filter(Boolean).join(' ').toLowerCase().includes(q);
+
+    // 1. Scoped Equipment Defects Register
+    const defBase = mi.periodDefects.filter(d => matchQ([d.name, d.equipment, d.subsystem, d.part_name, d.severity, d.status, d.reported_by, d.description, d.company]));
+    const defOpenCnt = defBase.filter(isDefectOpen).length;
+    const defCritCnt = defBase.filter(d => isDefectOpen(d) && /Critical/i.test(d.severity || '')).length;
+    const defModCnt = defBase.filter(d => isDefectOpen(d) && /Moderate/i.test(d.severity || '')).length;
+    const defWsCnt = defBase.filter(d => /Workshop|Maintenance/i.test(d.status || '')).length;
+    const defResCnt = defBase.filter(d => !isDefectOpen(d)).length;
+
+    const defFiltered = sortRows(defBase.filter(d => {
+      if (STATE.chipFilter === 'open') return isDefectOpen(d);
+      if (STATE.chipFilter === 'critical') return isDefectOpen(d) && /Critical/i.test(d.severity || '');
+      if (STATE.chipFilter === 'moderate') return isDefectOpen(d) && /Moderate/i.test(d.severity || '');
+      if (STATE.chipFilter === 'workshop') return /Workshop|Maintenance/i.test(d.status || '');
+      if (STATE.chipFilter === 'resolved') return !isDefectOpen(d);
+      return true;
+    }), 'defects', 'date', 'desc');
+    const shownDefects = defFiltered.slice(0, shownCount('defects'));
+
+    // 2. Scoped Changed / Removed Parts Custody & Disposition Ledger
+    const partBase = mi.periodParts.filter(p => matchQ([p.name, p.equipment, p.part_name, p.part_serial, p.subsystem, p.action_type, p.condition, p.removed_disposition, p.storage_location, p.vendor_or_buyer, p.defect_ref, p.company]));
+    const pDisp = STATE.partDispFilter || 'all';
+    const partFiltered = sortRows(partBase.filter(p => {
+      if (pDisp === 'stored') return /^Stored/i.test(p.removed_disposition || '');
+      if (pDisp === 'maint') return /Maintenance|Workshop/i.test(p.removed_disposition || '');
+      if (pDisp === 'sold') return /^Sold/i.test(p.removed_disposition || '');
+      if (pDisp === 'installed') return /^Installed/i.test(p.removed_disposition || '');
+      if (pDisp === 'scrapped') return /^Scrapped/i.test(p.removed_disposition || '');
+      if (pDisp === 'unnotified') return !p.prior_defect_notified;
+      return true;
+    }), 'parts', 'date', 'desc');
+    const shownParts = partFiltered.slice(0, shownCount('parts'));
+
+    // 3. Live Truck & Equipment Operational Health Board (company fleet units + any unit with defects/parts)
+    const coEqBase = filterRecords(SEED.records.company_equipment || [], { ignorePeriod: true, ignoreSearch: true });
+    const boardMap = new Map();
+    coEqBase.forEach(ce => {
+      const uk = norm(ce.equipment);
+      if (!uk) return;
+      const eqMaster = equipInfo(ce.equipment, ce.company) || {};
+      const ex = boardMap.get(uk);
+      if (!ex || (!ex.isActive && !ce.end_date)) {
+        boardMap.set(uk, {
+          id: eqMaster.id || ce.id || ce.equipment,
+          equipment: ce.equipment,
+          company: ce.company || 'WTC',
+          type: eqMaster.type || 'Truck',
+          ownership: ce.ownership || eqMaster.ownership || 'Own',
+          driver: ce.default_driver || eqMaster.default_driver || '',
+          isActive: !ce.end_date
+        });
+      }
+    });
+    mi.byUnit.forEach((u, uk) => {
+      if (boardMap.has(uk)) return;
+      const eqMaster = equipInfo(u.name) || {};
+      if (!/^own/i.test(String(eqMaster.ownership || '')) && !u.defects.length && !u.parts.length) return;
+      boardMap.set(uk, {
+        id: eqMaster.id || u.name,
+        equipment: u.name,
+        company: (u.defects[0] && u.defects[0].company) || (u.parts[0] && u.parts[0].company) || defaultEntryCompany(),
+        type: eqMaster.type || 'Truck',
+        ownership: eqMaster.ownership || 'Own',
+        driver: eqMaster.default_driver || '',
+        isActive: true
+      });
+    });
+
+    const boardAll = Array.from(boardMap.values()).map(u => {
+      const h = getEquipmentHealth(u.equipment, STATE.company === 'manufacturing-group' ? null : u.company);
+      return Object.assign({}, u, {
+        healthStatus: h.status,
+        healthBadgeCls: h.badgeCls,
+        severityRank: h.severityRank,
+        openCount: h.openCount,
+        partCount: h.partCount,
+        expCount: h.expCount,
+        expTotal: h.expTotal,
+        latestOpenDefect: h.latestOpenDefect
+      });
+    }).filter(u => matchQ([u.equipment, u.company, u.type, u.ownership, u.driver, u.healthStatus]));
+
+    const uFilter = STATE.unitHealthFilter || 'all';
+    const boardRows = sortRows(boardAll.filter(u => {
+      if (uFilter === 'issues') return u.severityRank <= 3;
+      if (uFilter === 'healthy') return u.severityRank === 5;
+      if (uFilter === 'own') return /^own/i.test(u.ownership || '');
+      if (uFilter === 'machinery') return !/truck/i.test(u.type || 'Truck');
+      return true;
+    }), 'uhealth', 'severityRank', 'asc');
+    const shownBoard = boardRows.slice(0, shownCount('uhealth'));
+
+    // 4. Equipment-Tagged Spare Parts & Repairs Expense Feed
+    const expRows = sortRows(mi.equipExpenses.filter(e => matchQ([e.name, e.equipment, e.category, e.subcategory, e.supplier, e.reference, e.company])), 'eqexp', 'date', 'desc');
+    const shownExp = expRows.slice(0, shownCount('eqexp'));
+    const expSum = expRows.reduce((a, e) => a + Number(e.amount || 0), 0);
+
+    // Readiness & Compliance KPIs
+    const totalUnits = Math.max(1, boardAll.length);
+    const issueUnitsCount = boardAll.filter(u => u.severityRank <= 3).length;
+    const healthyUnitsCount = boardAll.filter(u => u.severityRank === 5).length;
+    const readyPct = Math.round(((totalUnits - boardAll.filter(u => u.severityRank <= 1).length) / totalUnits) * 100);
+    const notifCompliancePct = mi.partTotalCount > 0 ? Math.round((mi.notifiedParts.length / mi.partTotalCount) * 100) : 100;
+
+    // Subsystem / Fleet Expense distribution for left visual panel
+    const subCounts = new Map();
+    if (mi.liveDefectsAll.length > 0) {
+      mi.liveDefectsAll.forEach(d => {
+        const kSub = d.subsystem || 'Other';
+        subCounts.set(kSub, (subCounts.get(kSub) || 0) + 1);
+      });
+    } else {
+      mi.equipExpenses.forEach(e => {
+        const kSub = e.subcategory || e.category || 'Fleet Maintenance';
+        subCounts.set(kSub, (subCounts.get(kSub) || 0) + Number(e.amount || 0));
+      });
+    }
+    const subBars = Array.from(subCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const subMax = Math.max(1, ...subBars.map(x => x[1]));
+
+    const dispRows = [
+      { key: 'stored', label: 'Stored in Warehouse / Spare Stock', count: mi.partsStored.length, cls: 'var(--good)' },
+      { key: 'maint', label: 'In Maintenance / At Workshop', count: mi.partsInMaint.length, cls: 'var(--warn)' },
+      { key: 'sold', label: 'Sold (Used / Scrap)', count: mi.partsSold.length, cls: 'var(--brass)', extra: mi.totalSaleProceeds > 0 ? fmtUSD(mi.totalSaleProceeds, 0) : '' },
+      { key: 'installed', label: 'Installed / Mounted on Unit', count: mi.partsInstalled.length, cls: 'var(--accent, #2563EB)' },
+      { key: 'scrapped', label: 'Scrapped / Discarded', count: mi.partsScrapped.length, cls: 'var(--muted)' }
+    ];
+    const dispMax = Math.max(1, ...dispRows.map(d => d.count));
+
+    const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const pChip = (key, label) => `<button type="button" class="filter-chip ${pDisp === key ? 'active' : ''}" data-partdisp-chip="${esc(key)}">${label}</button>`;
+    const uChip = (key, label) => `<button type="button" class="filter-chip ${uFilter === key ? 'active' : ''}" data-unithealth-chip="${esc(key)}">${label}</button>`;
+    const canPostMaint = canEnterForm('defect');
+
+    const partOutlaySum = partFiltered.reduce((a, p) => a + Number(p.new_part_cost || 0) + Number(p.repair_cost || 0), 0);
+    const partSaleSum = partFiltered.reduce((a, p) => a + Number(p.sale_proceeds || 0), 0);
+    const partNetSum = partOutlaySum - partSaleSum;
+
+    return `
+      <div class="cockpit-banner has-insights">
+        <div class="cockpit-title-block sr-only">
+          <div class="cockpit-eyebrow">LIVE TRUCK &amp; MACHINERY HEALTH, PRE-REPLACEMENT DEFECT NOTICES &amp; REMOVED PARTS CUSTODY</div>
+          <div class="cockpit-title">Defects &amp; Parts</div>
+        </div>
+        <div class="cockpit-pills insight-grid">
+          ${insightCard({
+            label: 'Fleet Operational Readiness',
+            badge: mi.openCritCount > 0 ? `${fmtNum(mi.openCritCount)} Critical Down` : `${fmtNum(healthyUnitsCount)}/${fmtNum(boardAll.length)} Healthy`,
+            badgeCls: mi.openCritCount > 0 ? 'crit' : (issueUnitsCount > 0 ? 'warn' : 'emerald'),
+            val: `${readyPct}% <small>Ready</small>`,
+            valCls: mi.openCritCount > 0 ? 'amber' : 'emerald',
+            pct: readyPct,
+            pct2: 100 - readyPct,
+            sub: `<span class="insight-drill" data-scroll-panel="unitHealthPanel">Operational: <b>${fmtNum(healthyUnitsCount)}</b></span> · Flagged / Repair: <b>${fmtNum(issueUnitsCount)}</b>`,
+            tone: mi.openCritCount > 0 ? 'amber' : 'emerald'
+          })}
+          ${insightCard({
+            label: 'Open Defects & Pre-Notices',
+            badge: mi.openCount > 0 ? `${fmtNum(mi.openModCount)} Needs Part · ${fmtNum(mi.inWorkshopCount)} Workshop` : '0 Open Defects',
+            badgeCls: mi.openCritCount > 0 ? 'crit' : (mi.openCount > 0 ? 'warn' : 'good'),
+            val: `${fmtNum(mi.openCount)} <small>Open</small>`,
+            valCls: mi.openCount > 0 ? 'brass' : 'emerald',
+            pct: mi.liveDefectsAll.length > 0 ? Math.round(((mi.liveDefectsAll.length - mi.openCount) / mi.liveDefectsAll.length) * 100) : 100,
+            sub: `Logged before part failure · <b>${fmtNum(mi.liveDefectsAll.length - mi.openCount)}</b> resolved to date`,
+            tone: 'brass'
+          })}
+          ${insightCard({
+            label: 'Removed & Changed Parts Custody',
+            badge: `${fmtNum(mi.partsStored.length)} Stored · ${fmtNum(mi.partsInMaint.length)} Maint · ${fmtNum(mi.partsSold.length)} Sold`,
+            badgeCls: 'brass',
+            val: `<span class="insight-drill" data-scroll-panel="partsLifecyclePanel">${fmtNum(mi.partTotalCount)} <small>Pieces ↘</small></span>`,
+            valCls: 'brass',
+            pct: mi.partTotalCount > 0 ? Math.min(100, Math.max(20, Math.round(((mi.partsStored.length + mi.partsInstalled.length) / mi.partTotalCount) * 100))) : 100,
+            sub: `Outlay <b>${fmtUSD(mi.totalNewCost + mi.totalRepairCost, 0)}</b> · Used/Scrap Sold <b>${fmtUSD(mi.totalSaleProceeds, 0)}</b>`,
+            tone: 'steel'
+          })}
+          ${insightCard({
+            label: 'Pre-Defect Notice Compliance',
+            badge: mi.unnotifiedParts.length > 0 ? `${fmtNum(mi.unnotifiedParts.length)} Unnotified` : '100% Pre-Notified',
+            badgeCls: mi.unnotifiedParts.length > 0 ? 'warn' : 'emerald',
+            val: `${notifCompliancePct}% <small>Verified</small>`,
+            valCls: mi.unnotifiedParts.length > 0 ? 'amber' : 'emerald',
+            pct: notifCompliancePct,
+            pct2: 100 - notifCompliancePct,
+            sub: `Fleet spare/repair vouchers: <span class="insight-drill" data-scroll-panel="fleetPartsExpPanel"><b>${fmtNum(mi.equipExpenses.length)}</b> (${fmtUSDk(expSum)}) ↘</span>`,
+            tone: mi.unnotifiedParts.length > 0 ? 'amber' : 'emerald'
+          })}
+        </div>
+      </div>
+
+      <!-- 1st Panel: Primary Equipment & Truck Defect Pre-Notification Register -->
+      <div class="panel-card" id="defectsPanel">
+        <div class="table-toolbar">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search defect ref, unit, subsystem, part, symptom...')}
+            <div class="chip-bar">
+              ${chip('all', `All Defects (${defBase.length})`)}
+              ${chip('open', `Open (${defOpenCnt})`)}
+              ${chip('critical', `Critical — Down (${defCritCnt})`)}
+              ${chip('moderate', `Needs Part Soon (${defModCnt})`)}
+              ${chip('workshop', `In Workshop (${defWsCnt})`)}
+              ${chip('resolved', `Resolved (${defResCnt})`)}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
+            ${exportBtn('defectsPanel', 'Equipment_Defects')}
+            ${canPostMaint ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="partlog">${ic('cog')} + Log Part Change</button>` : ''}
+            ${canPostMaint ? `<button type="button" class="btn btn-primary" data-open-modal="defect">+ Report Defect</button>` : ''}
+          </div>
+        </div>
+        ${renderColFilterBar('defects')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('defects', 'Defect Ref', 'name')}${th('defects', 'Date', 'date')}${th('defects', 'Co.', 'company')}${th('defects', 'Unit', 'equipment')}
+                ${th('defects', 'Subsystem & Part', 'subsystem')}${th('defects', 'Severity', 'severity')}${th('defects', 'Status', 'status')}${th('defects', 'Symptom & Action', 'description')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownDefects.map(d => {
+                const open = isDefectOpen(d);
+                const sevCls = /Critical/i.test(d.severity || '') ? 'badge-err' : (/Moderate/i.test(d.severity || '') ? 'badge-warn' : 'badge-info');
+                const stCls = !open ? 'badge-ok' : (/Workshop/i.test(d.status || '') ? 'badge-warn' : 'badge-brass');
+                const sevShort = /Critical/i.test(d.severity || '') ? 'Critical — Down' : (/Moderate/i.test(d.severity || '') ? 'Needs Part Soon' : 'Minor — Monitor');
+                return `
+                  <tr class="rrow" data-rkey="equipment_defects" data-rid="${esc(d.id || d.name)}">
+                    <td class="mono"><strong>${esc(d.name || d.id)}</strong>${appCell(d, 'equipment_defects')}</td>
+                    <td class="mono">${esc(fmtDateDMY(d.date))}</td>
+                    <td>${coBadge(d.company)}</td>
+                    <td class="mono">${relLink('equipment', d.equipment, d.equipment, true)}</td>
+                    <td style="max-width:190px;overflow:hidden;text-overflow:ellipsis"><strong>${esc(d.subsystem || 'General')}</strong>${d.part_name ? ` · <span class="mu">${esc(d.part_name)}</span>` : ''}</td>
+                    <td><span class="badge ${sevCls}">${esc(sevShort)}</span></td>
+                    <td><span class="badge ${stCls}">${esc(d.status || 'Open — Defect Reported')}</span>${d.linked_part_log ? ` ${relLink('part_movements', d.linked_part_log, d.linked_part_log, true)}` : ''}</td>
+                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis">
+                      <span title="${esc(d.description || '')}">${esc(d.description || '—')}</span>
+                      ${open && canPostMaint ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px;margin-left:6px" data-open-modal="partlog" data-prefill-co="${esc(d.company || '')}" data-prefill-eq="${esc(d.equipment || '')}" data-prefill-def="${esc(d.name || d.id)}" data-prefill-part="${esc(d.part_name || '')}" data-prefill-sub="${esc(d.subsystem || '')}">+ Change Part</button>` : ''}
+                    </td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(8, 'No equipment defects logged in this scope — click "+ Report Defect" as soon as a truck or machine shows wear or a fault so future part changes are pre-notified')}
+              ${showMoreRow('defects', defFiltered.length, 8)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="5"><b>TOTAL (${fmtNum(defFiltered.length)} DEFECTS · ${fmtNum(defOpenCnt)} OPEN)</b></td>
+                <td colspan="3"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Visual Telemetry Strip (.pbi-grid-2 using .pbi-panel so primary/secondary .panel-card order stays strict) -->
+      <div class="pbi-grid-2" id="maintChartsRow" style="margin-bottom:14px">
+        <div class="pbi-panel">
+          <div class="pbi-panel-head">
+            <div>
+              <div class="pbi-panel-title">${mi.liveDefectsAll.length > 0 ? 'Reported Defects by Subsystem' : 'Historical Fleet Maintenance & Spare Categories'}</div>
+              <div class="pbi-panel-sub">${mi.liveDefectsAll.length > 0 ? 'Pre-replacement defect distribution across fleet subsystems' : 'Real equipment-tagged maintenance & spare-part spend from Expenses'}</div>
+            </div>
+            <span class="badge badge-brass">${mi.liveDefectsAll.length > 0 ? `${fmtNum(mi.liveDefectsAll.length)} Reports` : fmtUSDk(expSum)}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px">
+            ${subBars.map(([lbl, valNum]) => {
+              const pct = Math.max(6, Math.round((valNum / subMax) * 100));
+              const rightTxt = mi.liveDefectsAll.length > 0 ? `${fmtNum(valNum)} issue${valNum === 1 ? '' : 's'}` : fmtUSD(valNum, 0);
+              return `
+                <div>
+                  <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px">
+                    <span><b>${esc(lbl)}</b></span>
+                    <span class="mono">${esc(rightTxt)}</span>
+                  </div>
+                  <div style="height:7px;background:var(--surface-2);border-radius:99px;overflow:hidden">
+                    <div style="width:${pct}%;height:100%;background:var(--brass);border-radius:99px"></div>
+                  </div>
+                </div>
+              `;
+            }).join('') || '<div class="mu" style="font-size:12px">No subsystem maintenance activity in this scope.</div>'}
+          </div>
+        </div>
+
+        <div class="pbi-panel">
+          <div class="pbi-panel-head">
+            <div>
+              <div class="pbi-panel-title">Changed &amp; Removed Parts Custody (5 Dispositions)</div>
+              <div class="pbi-panel-sub">Where every removed, rebuilt, stored, mounted, or sold piece currently sits</div>
+            </div>
+            <span class="badge ${mi.unnotifiedParts.length > 0 ? 'badge-warn' : 'badge-ok'}">${mi.partTotalCount > 0 ? `${notifCompliancePct}% Pre-Notified` : 'Ready'}</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px">
+            ${dispRows.map(dr => {
+              const pct = dr.count > 0 ? Math.max(8, Math.round((dr.count / dispMax) * 100)) : 0;
+              return `
+                <div style="cursor:pointer" data-partdisp-chip="${esc(dr.key)}" title="Filter Parts Custody Ledger by ${esc(dr.label)}">
+                  <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px">
+                    <span><b>${esc(dr.label)}</b>${dr.extra ? ` <span class="mu">(${esc(dr.extra)})</span>` : ''}</span>
+                    <span class="mono"><b>${fmtNum(dr.count)}</b> pc${dr.count === 1 ? '' : 's'}</span>
+                  </div>
+                  <div style="height:7px;background:var(--surface-2);border-radius:99px;overflow:hidden">
+                    <div style="width:${pct}%;height:100%;background:${dr.cls};border-radius:99px"></div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- 2nd Panel: Changed & Removed Parts Custody & Disposition Ledger -->
+      <div class="panel-card" id="partsLifecyclePanel" style="margin-bottom:14px">
+        <div class="panel-head">
+          <div class="panel-title"><span>CHANGED &amp; REMOVED PARTS CUSTODY &amp; DISPOSITION LEDGER (${fmtNum(partFiltered.length)} MOVEMENTS)</span></div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+            ${exportBtn('partsLifecyclePanel', 'Part_Movements_Custody')}
+            ${canPostMaint ? `<button type="button" class="btn btn-primary" data-open-modal="partlog">+ Log Part Change / Disposition</button>` : ''}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${pChip('all', `All Pieces (${partBase.length})`)}
+            ${pChip('stored', `Stored in Warehouse (${partBase.filter(p => /^Stored/i.test(p.removed_disposition || '')).length})`)}
+            ${pChip('maint', `In Maintenance (${partBase.filter(p => /Maintenance|Workshop/i.test(p.removed_disposition || '')).length})`)}
+            ${pChip('sold', `Sold (${partBase.filter(p => /^Sold/i.test(p.removed_disposition || '')).length})`)}
+            ${pChip('installed', `Installed (${partBase.filter(p => /^Installed/i.test(p.removed_disposition || '')).length})`)}
+            ${pChip('scrapped', `Scrapped (${partBase.filter(p => /^Scrapped/i.test(p.removed_disposition || '')).length})`)}
+            ${pChip('unnotified', `Unnotified Changes (${partBase.filter(p => !p.prior_defect_notified).length})`)}
+          </div>
+        </div>
+        ${renderColFilterBar('parts')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('parts', 'Ref', 'name')}${th('parts', 'Date', 'date')}${th('parts', 'Co.', 'company')}${th('parts', 'Unit', 'equipment')}
+                ${th('parts', 'Piece / Part', 'part_name')}${th('parts', 'Qty', 'qty', 'r')}${th('parts', 'Condition', 'condition')}
+                ${th('parts', 'Disposition & Custody', 'removed_disposition')}${th('parts', 'Pre-Notice', 'prior_defect_notified')}${th('parts', 'Net Cash ($)', 'new_part_cost', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownParts.map(p => {
+                const disp = p.removed_disposition || 'Stored in Warehouse / Spare Stock';
+                const dispCls = /^Stored|^Installed/i.test(disp) ? 'badge-ok' : (/Maintenance|Workshop/i.test(disp) ? 'badge-warn' : (/^Sold/i.test(disp) ? 'badge-brass' : 'badge-info'));
+                const custodyLoc = [p.storage_location, p.vendor_or_buyer].filter(Boolean).join(' · ');
+                const outlay = Number(p.new_part_cost || 0) + Number(p.repair_cost || 0);
+                const sale = Number(p.sale_proceeds || 0);
+                const netCash = outlay - sale;
+                return `
+                  <tr class="rrow" data-rkey="part_movements" data-rid="${esc(p.id || p.name)}">
+                    <td class="mono"><strong>${esc(p.name || p.id)}</strong>${appCell(p, 'part_movements')}</td>
+                    <td class="mono">${esc(fmtDateDMY(p.date))}</td>
+                    <td>${coBadge(p.company)}</td>
+                    <td class="mono">${relLink('equipment', p.equipment, p.equipment, true)}</td>
+                    <td style="max-width:175px;overflow:hidden;text-overflow:ellipsis"><strong>${esc(p.part_name || '—')}</strong>${p.part_serial ? ` <span class="mono mu">(${esc(p.part_serial)})</span>` : ''}</td>
+                    <td class="r">${fmtNum(p.qty || 1, 0)}</td>
+                    <td>${esc(p.condition || '—')}</td>
+                    <td style="max-width:210px;overflow:hidden;text-overflow:ellipsis"><span class="badge ${dispCls}">${esc(disp)}</span>${custodyLoc ? ` <span class="mu" style="font-size:11px">${esc(custodyLoc)}</span>` : ''}</td>
+                    <td>${p.prior_defect_notified
+                      ? `<span class="badge badge-ok">Pre-Notified</span>${p.defect_ref ? ' ' + relLink('equipment_defects', p.defect_ref, p.defect_ref, true) : ''}`
+                      : `<span class="badge badge-warn" title="No prior defect report was linked before this part change">Unnotified</span>`}</td>
+                    <td class="r mono">${sale > 0 && outlay === 0 ? `<span style="color:var(--good)">+${fmtUSD(sale, 2)}</span>` : fmtUSD(netCash, 2)}</td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(10, 'No part removals or replacements logged yet — click "+ Log Part Change / Disposition" or "+ Track Piece" on any spare-part expense voucher below')}
+              ${showMoreRow('parts', partFiltered.length, 10)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="5"><b>TOTAL (${fmtNum(partFiltered.length)} PART MOVEMENTS)</b></td>
+                <td class="r"><b>${fmtNum(partFiltered.reduce((a, p) => a + Number(p.qty || 0), 0), 0)}</b></td>
+                <td colspan="3"></td>
+                <td class="r"><b>${fmtUSD(partNetSum, 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- 3rd Panel: Live Truck & Equipment Operational Health Status Board -->
+      <div class="panel-card" id="unitHealthPanel" style="margin-bottom:14px">
+        <div class="panel-head">
+          <div class="panel-title"><span>LIVE TRUCK &amp; EQUIPMENT HEALTH STATUS BOARD (${fmtNum(boardRows.length)} UNITS)</span></div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+            ${exportBtn('unitHealthPanel', 'Fleet_Unit_Health')}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${uChip('all', `All Fleet Units (${boardAll.length})`)}
+            ${uChip('issues', `Flagged / Open Issues (${issueUnitsCount})`)}
+            ${uChip('healthy', `Healthy (${healthyUnitsCount})`)}
+            ${uChip('own', `Own Fleet (${boardAll.filter(u => /^own/i.test(u.ownership || '')).length})`)}
+            ${uChip('machinery', `Machinery & Plant (${boardAll.filter(u => !/truck/i.test(u.type || 'Truck')).length})`)}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('uhealth', 'Unit / Plate', 'equipment')}${th('uhealth', 'Co.', 'company')}${th('uhealth', 'Category', 'type')}${th('uhealth', 'Driver / Operator', 'driver')}
+                ${th('uhealth', 'Live Health Status', 'severityRank')}${th('uhealth', 'Open Defects', 'openCount', 'r')}${th('uhealth', 'Parts Logged', 'partCount', 'r')}${th('uhealth', 'Spare/Repair ($)', 'expTotal', 'r')}${canPostMaint ? '<th>Quick Log</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownBoard.map(u => `
+                <tr class="rrow" data-rkey="equipment" data-rid="${esc(u.id || u.equipment)}">
+                  <td class="mono">${relLink('equipment', u.equipment, u.equipment, true)}</td>
+                  <td>${coBadge(u.company)}</td>
+                  <td>${esc(u.type || 'Truck')}</td>
+                  <td>${u.driver ? relLink('drivers', u.driver) : '—'}</td>
+                  <td style="max-width:230px;overflow:hidden;text-overflow:ellipsis"><span class="badge ${u.healthBadgeCls}">${esc(u.healthStatus)}</span>${u.latestOpenDefect ? ` <span class="mu" style="font-size:11px">${esc(u.latestOpenDefect.subsystem || '')}${u.latestOpenDefect.part_name ? ' · ' + esc(u.latestOpenDefect.part_name) : ''}</span>` : ''}</td>
+                  <td class="r">${u.openCount > 0 ? `<strong>${fmtNum(u.openCount)}</strong>` : '0'}</td>
+                  <td class="r">${fmtNum(u.partCount)}</td>
+                  <td class="r">${fmtUSD(u.expTotal, 0)}</td>
+                  ${canPostMaint ? `<td><div style="display:flex;gap:4px"><button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px" data-open-modal="defect" data-prefill-co="${esc(u.company)}" data-prefill-eq="${esc(u.equipment)}">+ Defect</button><button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px" data-open-modal="partlog" data-prefill-co="${esc(u.company)}" data-prefill-eq="${esc(u.equipment)}">+ Part</button></div></td>` : ''}
+                </tr>
+              `).join('') || emptyRow(canPostMaint ? 9 : 8, 'No fleet units match the active health filter')}
+              ${showMoreRow('uhealth', boardRows.length, canPostMaint ? 9 : 8)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="5"><b>TOTAL (${fmtNum(boardRows.length)} FLEET UNITS)</b></td>
+                <td class="r"><b>${fmtNum(boardRows.reduce((a, u) => a + Number(u.openCount || 0), 0))}</b></td>
+                <td class="r"><b>${fmtNum(boardRows.reduce((a, u) => a + Number(u.partCount || 0), 0))}</b></td>
+                <td class="r"><b>${fmtUSD(boardRows.reduce((a, u) => a + Number(u.expTotal || 0), 0), 0)}</b></td>
+                ${canPostMaint ? '<td></td>' : ''}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- 4th Panel: Equipment Spare Parts & Maintenance Expense Vouchers (1-Click Custody Bridge) -->
+      <div class="panel-card" id="fleetPartsExpPanel">
+        <div class="panel-head">
+          <div class="panel-title"><span>EQUIPMENT SPARE PARTS &amp; REPAIRS EXPENSE VOUCHERS (${fmtNum(expRows.length)} VOUCHERS)</span></div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+            ${exportBtn('fleetPartsExpPanel', 'Equipment_Maintenance_Expenses')}
+          </span>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('eqexp', 'Date', 'date')}${th('eqexp', 'Voucher', 'name')}${th('eqexp', 'Co.', 'company')}${th('eqexp', 'Unit', 'equipment')}
+                ${th('eqexp', 'Category / Subcategory', 'category')}${th('eqexp', 'Supplier / Workshop', 'supplier')}${th('eqexp', 'Amount ($)', 'amount', 'r')}${canPostMaint ? '<th>Custody</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownExp.map(e => {
+                const subLbl = [e.category, e.subcategory].filter(Boolean).join(' · ') || 'Fleet Maintenance';
+                return `
+                  <tr class="rrow" data-rkey="expenses" data-rid="${esc(e.id || e.name)}">
+                    <td class="mono">${esc(fmtDateDMY(e.date))}</td>
+                    <td style="max-width:170px;overflow:hidden;text-overflow:ellipsis"><strong>${esc(e.name || e.id)}</strong></td>
+                    <td>${coBadge(e.company)}</td>
+                    <td class="mono">${relLink('equipment', e.equipment, e.equipment, true)}</td>
+                    <td style="max-width:190px;overflow:hidden;text-overflow:ellipsis">${esc(subLbl)}</td>
+                    <td style="max-width:170px;overflow:hidden;text-overflow:ellipsis">${e.supplier ? relLink('suppliers', e.supplier) : '—'}</td>
+                    <td class="r"><strong>${fmtUSD(e.amount, 2)}</strong></td>
+                    ${canPostMaint ? `<td><button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px" data-open-modal="partlog" data-prefill-co="${esc(e.company || '')}" data-prefill-eq="${esc(e.equipment || '')}" data-prefill-part="${esc(e.subcategory || e.category || '')}" data-prefill-party="${esc(e.supplier || '')}" data-prefill-cost="${esc(e.amount || '')}" data-prefill-notes="${esc('Linked to expense voucher ' + (e.name || ''))}">+ Track Piece</button></td>` : ''}
+                  </tr>
+                `;
+              }).join('') || emptyRow(canPostMaint ? 8 : 7, 'No equipment-tagged spare parts or maintenance expenses in this scope')}
+              ${showMoreRow('eqexp', expRows.length, canPostMaint ? 8 : 7)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>TOTAL (${fmtNum(expRows.length)} EQUIPMENT MAINTENANCE &amp; SPARE VOUCHERS)</b></td>
+                <td class="r"><b>${fmtUSD(expSum, 2)}</b></td>
+                ${canPostMaint ? '<td></td>' : ''}
               </tr>
             </tfoot>
           </table>
@@ -8352,6 +9141,7 @@
             <div class="chip-bar">${chip('all', `All Drivers (${drvBase.length})`)}${chip('company', `Company Drivers (${coDrvActiveCount})`)}${chip('third', `3rd-Party (${Math.max(0, drvBase.length - coDrvActiveCount)})`)}${chip('ot', `With Overtime (${otDrvCount})`)}${chip('fleet', 'Own-Fleet Hauls')}</div>
           </div>
           <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Daily Machine Map</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_drivers">Drivers Registry (All BUs) →</button>
             ${exportBtn('driversOtPanel', 'Drivers_Overtime')}
             ${canEnterForm('triprate') ? '<button class="btn btn-primary" data-open-modal="triprate">+ New Overtime Rate</button>' : ''}
@@ -10357,6 +11147,7 @@
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
               <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="attendance">${ic('kiosks')} Attendance Kiosk</button>
               ${exportBtn('payAttPanel', 'Attendance_Records')}
               ${canEnterForm('attendance') ? '<button type="button" class="btn btn-primary" data-open-modal="attendance">+ Log Attendance</button>' : ''}
@@ -10449,7 +11240,7 @@
           <div class="panel-head">
             <div>
               <div class="panel-title"><span>STAFF ATTENDANCE, OVERTIME, LATENESS &amp; LEAVE SUMMARY BY EMPLOYEE (${fmtNum(filteredAttStaff.length)} STAFF)</span></div>
-              <span class="ph-sub">Aggregated across all ${fmtNum(attAll.length)} Dataverse attendance logs · Overtime valued at contract multiplier (1.5×) · Click any employee to inspect 360° profile</span>
+              <span class="ph-sub">Aggregated across all ${fmtNum(attAll.length)} enterprise attendance logs · Overtime valued at contract multiplier (1.5×) · Click any employee to inspect 360° profile</span>
             </div>
             <span class="panel-meta">${exportBtn('payAttStaffSumPanel', 'Staff_Attendance_Summary')}</span>
           </div>
@@ -10707,6 +11498,7 @@
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="10">${ic('printer')} Payroll RDL (#10)</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_attendance">Attendance (${fmtNum(attAll.length)}) →</button>
             ${exportBtn('paySalPanel', 'Salary_Disbursements')}
             ${canEnterForm('salary') ? '<button type="button" class="btn btn-primary" data-open-modal="salary">+ Pay Salary</button>' : ''}
@@ -10882,6 +11674,1621 @@
                 <td class="r"><b>${fmtUSD(filteredUnmatched.reduce((a, r) => a + r.cash_usd, 0), 2)}</b></td>
                 <td class="r"><b>${fmtUSD(filteredUnmatched.reduce((a, r) => a + r.bank_usd, 0), 2)}</b></td>
                 <td class="r"><b>${fmtUSD(filteredUnmatched.reduce((a, r) => a + r.unmatched_usd, 0), 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  // ==========================================================================
+  // VIEW 9A-2: DAILY PLANT, EXTERNAL FACTORIES & WORKFORCE MACHINE MAP
+  // ==========================================================================
+  const WF_DRV_ALIASES = {
+    'abdallah smael': 'Abdallah Ismail',
+    'abdallah ismail': 'Abdallah Ismail',
+    'abdallah maghsal': 'Abdallah Ismail',
+    'ali najdeh': 'Ali Najdi',
+    'ali najdi': 'Ali Najdi',
+    'maher kadour': 'Maher Kadour',
+    'ibrahim mortada': 'Ibrahim Mortada',
+    'khalil al sharif': 'Khalil Al Sharif',
+    'ghafar saloum': 'Ghafar Saloum',
+    'ghafar': 'Ghafar Saloum',
+    'hussein saleh': 'Hussein Saleh',
+    'ali el hajj': 'Ali el Hajj',
+    'ali haj': 'Ali el Hajj',
+    'mohamad habib': 'Mohamad Habib',
+    'ali saleh': 'Ali Saleh',
+    'ismael': 'Ismael',
+    'ismail': 'Ismael',
+    'naameh najdi': 'Naameh Najdi',
+    'mashaal habib': 'Mashaal Habib',
+    'mashaal': 'Mashaal Habib',
+    'mahmoud shiref': 'mahmoud shiref',
+    'mohamad shiref': 'mahmoud shiref',
+    'jasim': 'jasim',
+    'jasem': 'jasim',
+    'abo nidal': 'abo nidal',
+    'rashad zahra': 'Rashad Zahra',
+    'awad': 'Awad',
+    'sultan': 'Sultan',
+    'mwafak': 'Mwafak',
+    'yasser': 'yasser mortada',
+    'yasser mortada': 'yasser mortada',
+    'ahmad jaawik': 'Ahmad jaawik',
+    'mosaed': 'Mosaed',
+    'majed karam': 'Majed Karam',
+    'mahmoud al mortada': 'Mahmoud Al Mortada',
+    'mahmoud sahi': 'Mahmoud Alsahe',
+    'mahmoud alsahe': 'Mahmoud Alsahe',
+    'imad': 'Imad Dakhloul',
+    'imad dakhloul': 'Imad Dakhloul'
+  };
+
+  function isWfCompanyOrAffiliateUnit(ce) {
+    if (!ce) return false;
+    if (ce.is_company_fleet === true) return true;
+    if (/^(own|rent)/i.test(String(ce.ownership || '').trim())) return true;
+    if (/^(karim|kareem|hussein|jad)\s+bdeir$/i.test(String(ce.supplier || '').trim())) return true;
+    if (/^(tb\d+|sb\d+|pb\d+|mb\d+|mbs\d+|shacman|danbar|maghsal|caterpillar|e6225f|baldouzar|mowaled|mwaled|325\s*cat|2\d0\s*volvo|pickup)/i.test(String(ce.equipment || ce.name || '').trim())) return true;
+    return false;
+  }
+
+  function isWfNonMachineBucket(eqName) {
+    return /^(|gallon|galon|mazout|diesel|stock|tank|barrel|barmil|workshop|garage|general|office|site)$/i.test(String(eqName || '').trim());
+  }
+
+  function isWfPlantInternalLocation(loc) {
+    const s = String(loc || '').trim();
+    if (!s) return true;
+    return /^(main\s*plant.*|wtc(\s*main)?(\s*plant|\s*site\s*tank|\s*yard)?|plant(\s*yard|\s*tank)?|maghsal.*|wash.*|crusher|kasara\s*wtc|stock|yard|bbconstruction(\s*plant|\s*tank)?|workshop|garage)$/i.test(s);
+  }
+
+  function isWfAbsenceType(tp) {
+    return /^(absence|absent|sick|sick\s*leave|vacabsence|vacation|unpaid)/i.test(String(tp || '').trim());
+  }
+
+  function isWfGreaseOrMaintExpense(x) {
+    if (!x) return false;
+    const blob = `${x.category || ''} ${x.subcategory || ''} ${x.notes || ''} ${x.name || ''}`;
+    return /greas|شحم|تشحيم|مشحمة|\boil\b|oils|زيت|lube|lubric|filter|فلتر|hydraul|هيدروليك|diesel|مازوت|repair|maint|صيانة|تصليح/i.test(blob);
+  }
+
+  function wfExpenseServiceLabel(x) {
+    const blob = `${x.subcategory || ''} ${x.category || ''} ${x.notes || ''}`;
+    if (/greas|شحم|تشحيم|مشحمة/i.test(blob)) return 'Grease Service';
+    if (/\boil\b|oils|زيت|lube|lubric|hydraul/i.test(blob)) return 'Oil & Lube Expense';
+    if (/filter|فلتر/i.test(blob)) return 'Filter & Service';
+    return x.subcategory || x.category || 'Machine Maintenance';
+  }
+
+  function classifyPlantStation(emp, operatedMachines, assignedMachines) {
+    const machList = operatedMachines.length ? operatedMachines : assignedMachines;
+    const joined = machList.join(' ').toLowerCase();
+    if (/^(pb\d|maghsal|mowaled|mwaled|sb\d|kasara|crusher|screen|batch)/i.test(joined) || /\b(pb\d|maghsal|mowaled|mwaled|sb\d)\b/i.test(joined)) {
+      return 'crusher_power';
+    }
+    if (/\b(e6225f|caterpillar|325\s*cat|volvo|mb\d+|mbs\d+|baldouzar|bulldozer|bobcat|danbar|pickup|corolla|kombrasor|compressor)\b/i.test(joined)) {
+      return 'heavy_yard';
+    }
+    if (/\b(tb\d+|shacman|iveco|mercedes|man|renault|camion|mixer)\b/i.test(joined) || /driver/i.test(emp.role_type || '')) {
+      return machList.length ? 'yard_fleet' : 'plant_staff';
+    }
+    if (machList.length) return 'heavy_yard';
+    return 'plant_staff';
+  }
+
+  let _WF_AUDIT_CACHE = null;
+  let _WF_MAP_CACHE = null;
+
+  function buildWorkforceMapData(opts) {
+    const auditOnly = Boolean(opts && opts.auditOnly);
+    const auditKey = `${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${SEED._customRev || 0}|${_WIN_REV}`;
+    const mapKey = `${auditKey}|${STATE.wfMapDate || ''}|${STATE.wfIncludeHaulers ? 1 : 0}|${STATE.wfRosterScope || 'day'}`;
+
+    if (auditOnly && _WF_AUDIT_CACHE && _WF_AUDIT_CACHE.key === auditKey) {
+      return _WF_AUDIT_CACHE.val;
+    }
+    if (!auditOnly && _WF_MAP_CACHE && _WF_MAP_CACHE.key === mapKey) {
+      return _WF_MAP_CACHE.val;
+    }
+
+    const effDt = r => String((STATE.basis === 'tx' ? r.date : (r.rep_date || r.date)) || r.date || '').slice(0, 10);
+
+    let audit = (_WF_AUDIT_CACHE && _WF_AUDIT_CACHE.key === auditKey) ? _WF_AUDIT_CACHE.val : null;
+    if (!audit) {
+      const salesPeriod = filterRecords(SEED.records.sales_tickets, { ignoreSearch: true });
+      const rawPeriod = filterRecords(SEED.records.raw_purchases, { ignoreSearch: true });
+      const fuelPeriod = filterRecords(SEED.records.fuel_intakes, { ignoreSearch: true });
+      const expPeriod = filterRecords(SEED.records.expenses, { ignoreSearch: true });
+      const attPeriod = filterRecords(SEED.records.attendance, { ignoreSearch: true });
+
+      const empScoped = filterRecords(SEED.records.employments || [], { ignorePeriod: true, ignoreSearch: true });
+      const coDrvScoped = filterRecords(SEED.records.company_drivers || [], { ignorePeriod: true, ignoreSearch: true });
+      const coEqScoped = filterRecords(SEED.records.company_equipment || [], { ignorePeriod: true, ignoreSearch: true });
+      const logScoped = filterRecords(SEED.records.logistics_allowances || [], { ignorePeriod: true, ignoreSearch: true });
+
+      // Single O(N) pass: pre-group dated streams & collect operational dates
+      const opDateSet = new Set();
+      const salesByDate = new Map();
+      const rawByDate = new Map();
+      const fuelByDate = new Map();
+      const expByDate = new Map();
+      const pushByDate = (map, d, row) => {
+        let arr = map.get(d);
+        if (!arr) { arr = []; map.set(d, arr); }
+        arr.push(row);
+      };
+
+      for (let i = 0; i < salesPeriod.length; i++) {
+        const s = salesPeriod[i];
+        if (!s || s.voided) continue;
+        const d = effDt(s);
+        if (d.length === 10) { opDateSet.add(d); pushByDate(salesByDate, d, s); }
+      }
+      for (let i = 0; i < rawPeriod.length; i++) {
+        const r = rawPeriod[i];
+        if (!r || r.voided) continue;
+        const d = effDt(r);
+        if (d.length === 10) { opDateSet.add(d); pushByDate(rawByDate, d, r); }
+      }
+      for (let i = 0; i < fuelPeriod.length; i++) {
+        const f = fuelPeriod[i];
+        if (!f || f.voided) continue;
+        const d = effDt(f);
+        if (d.length === 10) { opDateSet.add(d); pushByDate(fuelByDate, d, f); }
+      }
+      for (let i = 0; i < expPeriod.length; i++) {
+        const x = expPeriod[i];
+        if (!x || x.voided) continue;
+        const d = effDt(x);
+        if (d.length === 10) {
+          opDateSet.add(d);
+          if (x.equipment && isWfGreaseOrMaintExpense(x)) pushByDate(expByDate, d, x);
+        }
+      }
+      for (let i = 0; i < attPeriod.length; i++) {
+        const a = attPeriod[i];
+        if (!a || a.voided) continue;
+        const d = effDt(a);
+        if (d.length === 10) opDateSet.add(d);
+      }
+
+      const sortedPeriodDates = Array.from(opDateSet).sort();
+      const latestOpDate = sortedPeriodDates.length ? sortedPeriodDates[sortedPeriodDates.length - 1] : (SEED_DATE || '2026-10-24');
+
+      // O(1) master equipment lookup by normalized name
+      const eqMasterByKey = new Map();
+      const allEqRows = SEED.records.equipment || [];
+      for (let i = 0; i < allEqRows.length; i++) {
+        const eq = allEqRows[i];
+        if (!eq || eq.voided) continue;
+        const ek = norm(eq.name || eq.equipment);
+        if (ek && !eqMasterByKey.has(ek)) eqMasterByKey.set(ek, eq);
+      }
+
+      // 1. Build canonical Staff & Operator Directory
+      const staffCatalog = new Map();
+      empScoped.forEach(e => {
+        if (!e || e.voided) return;
+        const rawName = String(e.staff || e.name || '').trim();
+        const canonName = WF_DRV_ALIASES[norm(rawName)] || rawName;
+        const k = norm(canonName);
+        if (!k) return;
+        const isCurrent = (!e.end_date || String(e.end_date) >= latestOpDate) && String(e.status || 'Active') !== 'Ended';
+        const prev = staffCatalog.get(k);
+        if (!prev || (isCurrent && !prev.isCurrent) || (isCurrent === prev.isCurrent && String(e.start_date || '') > String(prev.start_date || ''))) {
+          const aliases = prev ? prev.aliases : new Set();
+          aliases.add(norm(rawName));
+          aliases.add(k);
+          staffCatalog.set(k, {
+            key: k,
+            staff: canonName,
+            company: e.company || 'WTC',
+            role_type: e.role || e.type || 'Plant Staff',
+            start_date: e.start_date || '2024-01-01',
+            end_date: e.end_date || '',
+            status: e.status || 'Active',
+            isCurrent,
+            assignedMachines: prev ? prev.assignedMachines : new Set(),
+            assignedSites: prev ? prev.assignedSites : new Set(),
+            aliases
+          });
+        } else if (prev) {
+          prev.aliases.add(norm(rawName));
+        }
+      });
+
+      const aliasToStaffKey = new Map();
+      const rebuildAliases = () => {
+        aliasToStaffKey.clear();
+        for (const [sk, info] of staffCatalog.entries()) {
+          aliasToStaffKey.set(sk, sk);
+          info.aliases.forEach(a => { if (a) aliasToStaffKey.set(a, sk); });
+        }
+        Object.entries(WF_DRV_ALIASES).forEach(([al, targetName]) => {
+          const tk = norm(targetName);
+          if (staffCatalog.has(tk)) {
+            aliasToStaffKey.set(norm(al), tk);
+            staffCatalog.get(tk).aliases.add(norm(al));
+          }
+        });
+      };
+      rebuildAliases();
+
+      coDrvScoped.forEach(cd => {
+        if (!cd || cd.voided) return;
+        const drvRaw = String(cd.driver || '').trim();
+        const stfRaw = String(cd.staff || WF_DRV_ALIASES[norm(drvRaw)] || drvRaw).trim();
+        const existingKey = aliasToStaffKey.get(norm(stfRaw)) || aliasToStaffKey.get(norm(drvRaw));
+        if (existingKey && staffCatalog.has(existingKey)) {
+          const sObj = staffCatalog.get(existingKey);
+          if (drvRaw) sObj.aliases.add(norm(drvRaw));
+          if (stfRaw) sObj.aliases.add(norm(stfRaw));
+          if (!/driver|operator/i.test(sObj.role_type)) sObj.role_type = 'Driver / Operator';
+        } else if (stfRaw) {
+          const k = norm(stfRaw);
+          const isCurrent = !cd.end_date || String(cd.end_date) >= latestOpDate;
+          staffCatalog.set(k, {
+            key: k,
+            staff: stfRaw,
+            company: cd.company || 'WTC',
+            role_type: 'Company Driver',
+            start_date: cd.start_date || '2024-01-01',
+            end_date: cd.end_date || '',
+            status: cd.end_date && String(cd.end_date) < latestOpDate ? 'Ended' : 'Active',
+            isCurrent,
+            assignedMachines: new Set(),
+            assignedSites: new Set(),
+            aliases: new Set([k, norm(drvRaw)].filter(Boolean))
+          });
+        }
+      });
+      rebuildAliases();
+
+      const resolveStaffKey = rawName => {
+        const n = norm(rawName);
+        if (!n) return '';
+        const hit = aliasToStaffKey.get(n);
+        if (hit) return hit;
+        const viaMap = WF_DRV_ALIASES[n];
+        if (viaMap) {
+          const vk = norm(viaMap);
+          if (staffCatalog.has(vk)) return vk;
+        }
+        return '';
+      };
+
+      // 2. Machine Catalog (Company & Bdeir-Affiliate Fleet Units)
+      const machineCatalog = new Map();
+      coEqScoped.forEach(ce => {
+        if (!ce || ce.voided) return;
+        if (!isWfCompanyOrAffiliateUnit(ce)) return;
+        const eqName = String(ce.equipment || ce.name || '').trim();
+        const ek = norm(eqName);
+        if (!ek || isWfNonMachineBucket(eqName)) return;
+        const eqMaster = eqMasterByKey.get(ek) || {};
+        const regDrv = String(ce.default_driver || ce.day_operator || eqMaster.default_driver || '').trim();
+        const sk = resolveStaffKey(regDrv);
+        if (sk && staffCatalog.has(sk)) {
+          staffCatalog.get(sk).assignedMachines.add(eqName);
+          if (ce.site && !isWfPlantInternalLocation(ce.site)) staffCatalog.get(sk).assignedSites.add(ce.site);
+        }
+        const prev = machineCatalog.get(ek);
+        if (!prev || (!prev.regularDriver && regDrv)) {
+          machineCatalog.set(ek, {
+            key: ek,
+            equipment: eqMaster.name || eqName,
+            company: ce.company || eqMaster.company || 'WTC',
+            type: eqMaster.type || ce.type || 'Machinery',
+            ownership: ce.ownership || eqMaster.ownership || 'Own',
+            regularDriver: regDrv,
+            regularStaffKey: sk,
+            regularStaffName: (sk && staffCatalog.get(sk)) ? staffCatalog.get(sk).staff : regDrv,
+            site: ce.site || 'Main Plant'
+          });
+        }
+      });
+
+      // 3. Build Attendance Index by Date -> StaffKey
+      const attByDateStaff = new Map();
+      const ensureAttSlot = (d, sk) => {
+        let dm = attByDateStaff.get(d);
+        if (!dm) { dm = new Map(); attByDateStaff.set(d, dm); }
+        let slot = dm.get(sk);
+        if (!slot) {
+          slot = { logs: [], isAbsent: false, absentType: '', workedHrs: 0, otHrs: 0, lateHrs: 0, inTime: '', outTime: '', notes: '' };
+          dm.set(sk, slot);
+        }
+        return slot;
+      };
+      for (let i = 0; i < attPeriod.length; i++) {
+        const a = attPeriod[i];
+        if (!a || a.voided) continue;
+        const d = effDt(a);
+        const sk = resolveStaffKey(a.staff);
+        if (!d || !sk) continue;
+        const slot = ensureAttSlot(d, sk);
+        slot.logs.push(a);
+        if (isWfAbsenceType(a.type)) {
+          slot.isAbsent = true;
+          slot.absentType = a.type || 'Absence';
+        }
+        slot.workedHrs += Number(a.worked_hours || 0);
+        slot.otHrs += Number(a.overtime_hours || 0);
+        slot.lateHrs += Number(a.late_hours || 0);
+        if (a.in_time && !slot.inTime) slot.inTime = a.in_time;
+        if (a.out_time) slot.outTime = a.out_time;
+        if (a.notes && !slot.notes) slot.notes = a.notes;
+      }
+
+      const getStaffAbsentOn = (d, sk) => {
+        const dm = attByDateStaff.get(d);
+        return (dm && sk && dm.get(sk)) || null;
+      };
+
+      // 4. Index Machine Operators per Date (O(1) lookups only — zero equipInfo scans on 55k haul rows)
+      const machineOpsByDate = new Map(); // `${d}|${ek}` -> Set of non-absent operator names
+      const recordMachineOp = (d, eqRaw, drvRaw) => {
+        if (!d || !drvRaw || !eqRaw) return;
+        const ek = norm(eqRaw);
+        if (!ek || (!machineCatalog.has(ek) && !eqMasterByKey.has(ek))) return;
+        const dClean = String(drvRaw).trim();
+        if (!dClean) return;
+        const sk = resolveStaffKey(dClean);
+        const att = getStaffAbsentOn(d, sk);
+        if (!att || !att.isAbsent) {
+          const key = `${d}|${ek}`;
+          let set = machineOpsByDate.get(key);
+          if (!set) { set = new Set(); machineOpsByDate.set(key, set); }
+          set.add((sk && staffCatalog.get(sk)) ? staffCatalog.get(sk).staff : dClean);
+        }
+      };
+
+      for (const [d, arr] of salesByDate.entries()) {
+        for (let i = 0; i < arr.length; i++) {
+          const s = arr[i];
+          if (s.truck && s.driver) recordMachineOp(d, s.truck, s.driver);
+        }
+      }
+      for (const [d, arr] of rawByDate.entries()) {
+        for (let i = 0; i < arr.length; i++) {
+          const r = arr[i];
+          if (r.truck && r.driver) recordMachineOp(d, r.truck, r.driver);
+        }
+      }
+      for (const [d, arr] of fuelByDate.entries()) {
+        for (let i = 0; i < arr.length; i++) {
+          const f = arr[i];
+          if (f.equipment && f.driver) recordMachineOp(d, f.equipment, f.driver);
+        }
+      }
+
+      // Helper to resolve bounded substitute window ONLY when needed (absent driver or custom bounded adj_windows)
+      const hasCustomDrvWins = (SEED.records.equipment || []).some(e => e && Array.isArray(e.adj_windows) && e.adj_windows.some(w => w && w.e && w.drv));
+      const getBoundedSubWin = (eqName, co, d) => {
+        if (!eqName || !d) return null;
+        const winEq = equipInfo(eqName, co || 'WTC', false, { date: d, side: 'fuel' });
+        if (winEq && winEq.active_window && winEq.active_window.e) {
+          const wsk = resolveStaffKey(winEq.default_driver);
+          const watt = getStaffAbsentOn(d, wsk);
+          if (!watt || !watt.isAbsent) {
+            const ek = norm(eqName);
+            const key = `${d}|${ek}`;
+            let set = machineOpsByDate.get(key);
+            if (!set) { set = new Set(); machineOpsByDate.set(key, set); }
+            set.add((wsk && staffCatalog.get(wsk)) ? staffCatalog.get(wsk).staff : winEq.default_driver);
+          }
+          return winEq.active_window;
+        }
+        return null;
+      };
+
+      // 5. Evaluate Machine Grease, Lubricant & Diesel Audit across the Active Period
+      const machineAnomalies = [];
+      const anomsByDate = new Map();
+      const anomsByDateEquip = new Map();
+      const pushAnom = anom => {
+        machineAnomalies.push(anom);
+        pushByDate(anomsByDate, anom.date, anom);
+        pushByDate(anomsByDateEquip, `${anom.date}|${norm(anom.equipment)}`, anom);
+      };
+      const dayAlertCounts = new Map();
+      const bumpDayAlert = (d, isCrit) => {
+        let c = dayAlertCounts.get(d);
+        if (!c) { c = { crit: 0, warn: 0 }; dayAlertCounts.set(d, c); }
+        if (isCrit) c.crit += 1; else c.warn += 1;
+      };
+
+      // 5a. Check Diesel & Lubricant Intakes (fuel_intakes)
+      for (const [d, arr] of fuelByDate.entries()) {
+        for (let i = 0; i < arr.length; i++) {
+          const f = arr[i];
+          const eqName = String(f.equipment || '').trim();
+          const ek = norm(eqName);
+          if (!ek || isWfNonMachineBucket(eqName)) continue;
+          const mInfo = machineCatalog.get(ek);
+          const eqMaster = eqMasterByKey.get(ek);
+          const isCompanyUnit = Boolean(mInfo || (eqMaster && (/^(own|rent)/i.test(eqMaster.ownership || '') || /^(karim|kareem|hussein|jad)\s+bdeir$/i.test(eqMaster.supplier || ''))));
+          if (!isCompanyUnit) continue;
+
+          const isLube = !/diesel|mazout|petrol/i.test(String(f.item || f.fuel_type || 'Diesel'));
+          const serviceKind = isLube ? 'lubricant' : 'diesel';
+          const serviceLabel = isLube ? (f.item || 'Lubricant Oil') : 'Diesel';
+          const litres = Number(f.litres || 0);
+          const regStaffKey = mInfo ? mInfo.regularStaffKey : resolveStaffKey(eqMaster && eqMaster.default_driver);
+          const regDriverName = (mInfo && mInfo.regularStaffName) || (eqMaster && eqMaster.default_driver) || '';
+          const regAtt = regStaffKey ? getStaffAbsentOn(d, regStaffKey) : null;
+          const regIsAbsent = Boolean(regAtt && regAtt.isAbsent);
+
+          const ticketDrvRaw = String(f.driver || '').trim();
+          const ticketSk = resolveStaffKey(ticketDrvRaw);
+          const ticketDisp = (ticketSk && staffCatalog.get(ticketSk)) ? staffCatalog.get(ticketSk).staff : ticketDrvRaw;
+          const ticketDrvAtt = ticketSk ? getStaffAbsentOn(d, ticketSk) : null;
+          const ticketDrvIsAbsent = Boolean(ticketDrvAtt && ticketDrvAtt.isAbsent);
+
+          if (!regIsAbsent && !ticketDrvIsAbsent && ticketDrvRaw) continue;
+
+          const loggedSubWin = (regIsAbsent || hasCustomDrvWins) ? getBoundedSubWin(eqName, f.company, d) : null;
+          const presentOps = Array.from(machineOpsByDate.get(`${d}|${ek}`) || []).filter(op => norm(op) !== norm(regDriverName));
+          const substituteName = (loggedSubWin && loggedSubWin.drv && norm(loggedSubWin.drv) !== norm(regDriverName))
+            ? loggedSubWin.drv
+            : (presentOps[0] || '');
+
+          if (regIsAbsent) {
+            const absLabel = regAtt.absentType || 'Absent';
+            if (!substituteName) {
+              bumpDayAlert(d, true);
+              pushAnom({
+                id: f.id, rkey: 'fuel_intakes', date: d, company: f.company || 'WTC',
+                equipment: (mInfo && mInfo.equipment) || eqName,
+                serviceKind, serviceLabel,
+                qtyLitres: litres, amountUsd: 0,
+                qtyDisplay: `${fmtNum(litres, 1)} L`,
+                assignedDriver: regDriverName || 'Unassigned',
+                assignedStatus: absLabel,
+                ticketDriver: ticketDisp || '(Blank)',
+                substituteDriver: '',
+                anomalyCode: 'absent_no_sub',
+                severity: 'crit',
+                whyText: `${regDriverName} was on ${absLabel} and no substitute driver operated ${eqName} — why was ${fmtNum(litres, 0)} L ${serviceLabel} added${ticketDisp ? ' under ' + ticketDisp : ''}?`
+              });
+            } else if (ticketDrvIsAbsent || !ticketDrvRaw) {
+              bumpDayAlert(d, false);
+              pushAnom({
+                id: f.id, rkey: 'fuel_intakes', date: d, company: f.company || 'WTC',
+                equipment: (mInfo && mInfo.equipment) || eqName,
+                serviceKind, serviceLabel,
+                qtyLitres: litres, amountUsd: 0,
+                qtyDisplay: `${fmtNum(litres, 1)} L`,
+                assignedDriver: regDriverName,
+                assignedStatus: absLabel,
+                ticketDriver: ticketDisp || '(Blank)',
+                substituteDriver: substituteName,
+                anomalyCode: 'absent_with_sub',
+                severity: 'warn',
+                whyText: `${regDriverName} was on ${absLabel}; ${substituteName} also operated ${eqName}, yet this ${fmtNum(litres, 0)} L ${serviceLabel} ticket booked ${ticketDisp || 'no driver'} — log ${substituteName} in Equipment Driver Log.`
+              });
+            } else if (!loggedSubWin) {
+              pushAnom({
+                id: f.id, rkey: 'fuel_intakes', date: d, company: f.company || 'WTC',
+                equipment: (mInfo && mInfo.equipment) || eqName,
+                serviceKind, serviceLabel,
+                qtyLitres: litres, amountUsd: 0,
+                qtyDisplay: `${fmtNum(litres, 1)} L`,
+                assignedDriver: regDriverName,
+                assignedStatus: absLabel,
+                ticketDriver: ticketDisp,
+                substituteDriver: substituteName,
+                anomalyCode: 'sub_covered',
+                severity: 'info',
+                whyText: `${regDriverName} was on ${absLabel}; covered by ${substituteName} (${fmtNum(litres, 0)} L ${serviceLabel}) — formalize substitute window if multi-day.`
+              });
+            }
+          } else if (ticketDrvIsAbsent) {
+            const absLabel = ticketDrvAtt.absentType || 'Absent';
+            bumpDayAlert(d, true);
+            pushAnom({
+              id: f.id, rkey: 'fuel_intakes', date: d, company: f.company || 'WTC',
+              equipment: (mInfo && mInfo.equipment) || eqName,
+              serviceKind, serviceLabel,
+              qtyLitres: litres, amountUsd: 0,
+              qtyDisplay: `${fmtNum(litres, 1)} L`,
+              assignedDriver: regDriverName || ticketDisp,
+              assignedStatus: absLabel,
+              ticketDriver: ticketDisp,
+              substituteDriver: substituteName,
+              anomalyCode: 'absent_no_sub',
+              severity: 'crit',
+              whyText: `Ticket driver ${ticketDisp} was marked ${absLabel} on this day — why was ${fmtNum(litres, 0)} L ${serviceLabel} booked under an absent employee?`
+            });
+          } else if (!ticketDrvRaw) {
+            const mSpec = equipMeterSpec(eqMaster || eqName, f.company);
+            if (mSpec.type !== 'none') {
+              bumpDayAlert(d, false);
+              pushAnom({
+                id: f.id, rkey: 'fuel_intakes', date: d, company: f.company || 'WTC',
+                equipment: (mInfo && mInfo.equipment) || eqName,
+                serviceKind, serviceLabel,
+                qtyLitres: litres, amountUsd: 0,
+                qtyDisplay: `${fmtNum(litres, 1)} L`,
+                assignedDriver: regDriverName || 'Unassigned',
+                assignedStatus: regDriverName ? 'On Roster' : 'No Operator',
+                ticketDriver: '(No driver on ticket)',
+                substituteDriver: '',
+                anomalyCode: 'no_driver',
+                severity: 'warn',
+                whyText: `${fmtNum(litres, 0)} L ${serviceLabel} added to ${eqName} with no operator recorded on ticket${regDriverName ? ' (regular driver: ' + regDriverName + ')' : ' (machine has no assigned operator)'}.`
+              });
+            }
+          }
+        }
+      }
+
+      // 5b. Check Grease, Oil, Filter & Machine Maintenance Expenses (expByDate already filtered)
+      for (const [d, arr] of expByDate.entries()) {
+        for (let i = 0; i < arr.length; i++) {
+          const x = arr[i];
+          const eqName = String(x.equipment || '').trim();
+          const ek = norm(eqName);
+          if (!ek || isWfNonMachineBucket(eqName)) continue;
+          const mInfo = machineCatalog.get(ek);
+          const eqMaster = eqMasterByKey.get(ek);
+          const regStaffKey = mInfo ? mInfo.regularStaffKey : resolveStaffKey(eqMaster && eqMaster.default_driver);
+          const regDriverName = (mInfo && mInfo.regularStaffName) || (eqMaster && eqMaster.default_driver) || '';
+          const regAtt = regStaffKey ? getStaffAbsentOn(d, regStaffKey) : null;
+          const regIsAbsent = Boolean(regAtt && regAtt.isAbsent);
+          if (!regIsAbsent && regDriverName) continue;
+
+          const loggedSubWin = (regIsAbsent || hasCustomDrvWins) ? getBoundedSubWin(eqName, x.company, d) : null;
+          const presentOps = Array.from(machineOpsByDate.get(`${d}|${ek}`) || []).filter(op => norm(op) !== norm(regDriverName));
+          const substituteName = (loggedSubWin && loggedSubWin.drv && norm(loggedSubWin.drv) !== norm(regDriverName))
+            ? loggedSubWin.drv
+            : (presentOps[0] || '');
+          const svcLabel = wfExpenseServiceLabel(x);
+          const amt = Number(x.amount || 0);
+          const noteSnippet = cleanLedgerNote(x.notes || x.subcategory || '');
+
+          if (regIsAbsent && !substituteName) {
+            const absLabel = regAtt.absentType || 'Absent';
+            bumpDayAlert(d, true);
+            pushAnom({
+              id: x.id, rkey: 'expenses', date: d, company: x.company || 'WTC',
+              equipment: (mInfo && mInfo.equipment) || eqName,
+              serviceKind: 'grease', serviceLabel: svcLabel,
+              qtyLitres: 0, amountUsd: amt,
+              qtyDisplay: fmtUSD(amt, 2),
+              assignedDriver: regDriverName || 'Unassigned',
+              assignedStatus: absLabel,
+              ticketDriver: x.supplier || 'Workshop',
+              substituteDriver: '',
+              anomalyCode: 'absent_no_sub',
+              severity: 'crit',
+              whyText: `${svcLabel} (${fmtUSD(amt, 0)}${noteSnippet ? ' · ' + noteSnippet : ''}) booked on ${eqName} while assigned driver ${regDriverName} was on ${absLabel} and no substitute driver operated ${eqName}.`
+            });
+          } else if (regIsAbsent && substituteName) {
+            pushAnom({
+              id: x.id, rkey: 'expenses', date: d, company: x.company || 'WTC',
+              equipment: (mInfo && mInfo.equipment) || eqName,
+              serviceKind: 'grease', serviceLabel: svcLabel,
+              qtyLitres: 0, amountUsd: amt,
+              qtyDisplay: fmtUSD(amt, 2),
+              assignedDriver: regDriverName,
+              assignedStatus: regAtt.absentType || 'Absent',
+              ticketDriver: substituteName,
+              substituteDriver: substituteName,
+              anomalyCode: 'sub_covered',
+              severity: 'info',
+              whyText: `${svcLabel} (${fmtUSD(amt, 0)}) on ${eqName} while ${regDriverName} was ${regAtt.absentType || 'Absent'} — substitute ${substituteName} operated ${eqName} that day.`
+            });
+          } else if (!regDriverName) {
+            bumpDayAlert(d, false);
+            pushAnom({
+              id: x.id, rkey: 'expenses', date: d, company: x.company || 'WTC',
+              equipment: (mInfo && mInfo.equipment) || eqName,
+              serviceKind: 'grease', serviceLabel: svcLabel,
+              qtyLitres: 0, amountUsd: amt,
+              qtyDisplay: fmtUSD(amt, 2),
+              assignedDriver: 'Unassigned',
+              assignedStatus: 'No Assigned Driver',
+              ticketDriver: x.supplier || '(Unassigned)',
+              substituteDriver: '',
+              anomalyCode: 'no_driver',
+              severity: 'warn',
+              whyText: `${svcLabel} (${fmtUSD(amt, 0)}${noteSnippet ? ' · ' + noteSnippet : ''}) booked on ${eqName}, which has no assigned company driver and no active operator logged that day.`
+            });
+          }
+        }
+      }
+
+      const alertDatesDesc = Array.from(dayAlertCounts.entries())
+        .filter(([, c]) => (c.crit + c.warn) > 0)
+        .sort((a, b) => (Number(b[1].crit > 0) - Number(a[1].crit > 0)) || b[0].localeCompare(a[0]))
+        .map(([d]) => d);
+      const absentGhostCount = machineAnomalies.filter(a => a.anomalyCode === 'absent_no_sub' || a.anomalyCode === 'absent_with_sub').length;
+      const noDriverServiceCount = machineAnomalies.filter(a => a.anomalyCode === 'no_driver').length;
+
+      audit = {
+        sortedPeriodDates,
+        latestOpDate,
+        staffCatalog,
+        resolveStaffKey,
+        machineCatalog,
+        logScoped,
+        getStaffAbsentOn,
+        machineOpsByDate,
+        machineAnomalies,
+        anomsByDate,
+        anomsByDateEquip,
+        dayAlertCounts,
+        alertDatesDesc,
+        absentGhostCount,
+        noDriverServiceCount,
+        salesByDate,
+        rawByDate,
+        fuelByDate,
+        expByDate
+      };
+      _WF_AUDIT_CACHE = { key: auditKey, val: audit };
+    }
+
+    if (auditOnly) return audit;
+
+    const {
+      sortedPeriodDates, latestOpDate, staffCatalog, resolveStaffKey, machineCatalog,
+      logScoped, getStaffAbsentOn, machineOpsByDate, machineAnomalies, anomsByDate,
+      anomsByDateEquip, dayAlertCounts, alertDatesDesc, absentGhostCount, noDriverServiceCount,
+      salesByDate, rawByDate, fuelByDate, expByDate
+    } = audit;
+
+    let targetDate = (STATE.wfMapDate && /^\d{4}-\d{2}-\d{2}$/.test(STATE.wfMapDate)) ? STATE.wfMapDate : latestOpDate;
+    if (STATE.wfMapDate && sortedPeriodDates.length && STATE.period !== 'all') {
+      const pr = periodRange(STATE.period);
+      if (pr && (targetDate < pr.from || targetDate > pr.to)) {
+        targetDate = latestOpDate;
+      }
+    }
+
+    // Active site allowances on targetDate
+    const dayAllowanceSiteByStaff = new Map();
+    for (let i = 0; i < logScoped.length; i++) {
+      const la = logScoped[i];
+      if (!la || la.voided || !la.site) continue;
+      if (la.start_date && String(la.start_date) > targetDate) continue;
+      if (la.end_date && String(la.end_date) < targetDate) continue;
+      const sk = resolveStaffKey(la.staff);
+      if (sk && !isWfPlantInternalLocation(la.site) && !dayAllowanceSiteByStaff.has(sk)) {
+        dayAllowanceSiteByStaff.set(sk, la.site);
+      }
+    }
+
+    // 6. Build Snapshot for Selected Day (targetDate) + 14-Day Strip + Period Roster (O(1) per-day bucket lookup)
+    const buildDaySnapshot = (d, includeDetail) => {
+      const salesDay = salesByDate.get(d) || [];
+      const rawDay = rawByDate.get(d) || [];
+      const fuelDay = fuelByDate.get(d) || [];
+      const expDay = expByDate.get(d) || [];
+
+      const empOps = new Map();
+      const ensureEmpOp = sk => {
+        if (!empOps.has(sk)) {
+          empOps.set(sk, {
+            operatedMachines: new Map(), // machName -> { name, trips: 0, dieselL: 0, lubeL: 0, greaseUsd: 0, lubeItems: new Set() }
+            extStops: new Map(),         // destKey -> { name, kind, sub, loads: 0, qty: 0, machines: new Set(), company: '' }
+            salesTrips: 0,
+            rawTrips: 0,
+            qtyHauled: 0,
+            dieselL: 0,
+            lubeL: 0,
+            greaseUsd: 0
+          });
+        }
+        return empOps.get(sk);
+      };
+      const touchMach = (op, eqRaw) => {
+        const clean = String(eqRaw || '').trim();
+        if (!clean || isWfNonMachineBucket(clean)) return null;
+        const mInfo = machineCatalog.get(norm(clean));
+        const disp = (mInfo && mInfo.equipment) || clean;
+        if (!op.operatedMachines.has(disp)) {
+          op.operatedMachines.set(disp, { name: disp, trips: 0, dieselL: 0, lubeL: 0, greaseUsd: 0, lubeItems: new Set() });
+        }
+        return op.operatedMachines.get(disp);
+      };
+
+      const haulerNodes = new Map(); // External 3rd-party haulers when STATE.wfIncludeHaulers is enabled
+
+      salesDay.forEach(s => {
+        const isDeliv = String(s.sale_type || 'Delivery') === 'Delivery' || Boolean(s.driver);
+        if (!isDeliv) return;
+        const sk = resolveStaffKey(s.driver);
+        const destName = s.customer || s.site || 'External Customer';
+        const destSub = (s.site && norm(s.site) !== norm(destName)) ? s.site : 'Customer Factory / Project';
+        const destKey = `cust|${norm(destName)}`;
+        if (sk && staffCatalog.has(sk)) {
+          const op = ensureEmpOp(sk);
+          op.salesTrips += 1;
+          op.qtyHauled += Number(s.qty || 0);
+          const m = touchMach(op, s.truck);
+          if (m) m.trips += 1;
+          if (!op.extStops.has(destKey)) {
+            op.extStops.set(destKey, { key: destKey, name: destName, kind: 'factory', kindLabel: 'Customer Factory', sub: destSub, loads: 0, qty: 0, machines: new Set(), company: s.company || 'WTC' });
+          }
+          const st = op.extStops.get(destKey);
+          st.loads += 1;
+          st.qty += Number(s.qty || 0);
+          if (s.truck) st.machines.add(s.truck);
+        } else if (includeDetail && STATE.wfIncludeHaulers && s.driver) {
+          if (!haulerNodes.has(destKey)) {
+            haulerNodes.set(destKey, { key: destKey, name: destName, kind: 'factory', kindLabel: 'Customer Factory', sub: destSub, workers: new Map() });
+          }
+          const hn = haulerNodes.get(destKey);
+          const hk = norm(s.driver);
+          if (!hn.workers.has(hk)) hn.workers.set(hk, { driver: s.driver, owner: s.truck_owner || '3rd-Party Hauler', truck: s.truck || '—', loads: 0, qty: 0, company: s.company || 'WTC' });
+          const hw = hn.workers.get(hk);
+          hw.loads += 1;
+          hw.qty += Number(s.qty || 0);
+        }
+      });
+
+      rawDay.forEach(r => {
+        const sk = resolveStaffKey(r.driver);
+        const destName = r.site || r.site_owner || 'External Quarry';
+        const destSub = r.site_owner && norm(r.site_owner) !== norm(destName) ? `Owner: ${r.site_owner}` : 'Raw Material Quarry';
+        const destKey = `quarry|${norm(destName)}`;
+        if (sk && staffCatalog.has(sk)) {
+          const op = ensureEmpOp(sk);
+          op.rawTrips += 1;
+          op.qtyHauled += Number(r.qty || 0);
+          const m = touchMach(op, r.truck);
+          if (m) m.trips += 1;
+          if (!isWfPlantInternalLocation(destName)) {
+            if (!op.extStops.has(destKey)) {
+              op.extStops.set(destKey, { key: destKey, name: destName, kind: 'quarry', kindLabel: 'Raw Quarry', sub: destSub, loads: 0, qty: 0, machines: new Set(), company: r.company || 'WTC' });
+            }
+            const st = op.extStops.get(destKey);
+            st.loads += 1;
+            st.qty += Number(r.qty || 0);
+            if (r.truck) st.machines.add(r.truck);
+          }
+        } else if (includeDetail && STATE.wfIncludeHaulers && r.driver && !isWfPlantInternalLocation(destName)) {
+          if (!haulerNodes.has(destKey)) {
+            haulerNodes.set(destKey, { key: destKey, name: destName, kind: 'quarry', kindLabel: 'Raw Quarry', sub: destSub, workers: new Map() });
+          }
+          const hn = haulerNodes.get(destKey);
+          const hk = norm(r.driver);
+          if (!hn.workers.has(hk)) hn.workers.set(hk, { driver: r.driver, owner: r.truck_owner || r.site_owner || '3rd-Party Hauler', truck: r.truck || '—', loads: 0, qty: 0, company: r.company || 'WTC' });
+          const hw = hn.workers.get(hk);
+          hw.loads += 1;
+          hw.qty += Number(r.qty || 0);
+        }
+      });
+
+      const unattributedPlantFills = [];
+      fuelDay.forEach(f => {
+        const eqName = String(f.equipment || '').trim();
+        if (!eqName || isWfNonMachineBucket(eqName)) return;
+        const sk = resolveStaffKey(f.driver);
+        const isLube = !/diesel|mazout|petrol/i.test(String(f.item || f.fuel_type || 'Diesel'));
+        const litres = Number(f.litres || 0);
+        if (sk && staffCatalog.has(sk)) {
+          const op = ensureEmpOp(sk);
+          if (isLube) op.lubeL += litres; else op.dieselL += litres;
+          const m = touchMach(op, eqName);
+          if (m) {
+            if (isLube) { m.lubeL += litres; m.lubeItems.add(f.item || 'Lubricant'); }
+            else m.dieselL += litres;
+          }
+          if (f.location && !isWfPlantInternalLocation(f.location)) {
+            const fk = `field|${norm(f.location)}`;
+            if (!op.extStops.has(fk)) {
+              op.extStops.set(fk, { key: fk, name: f.location, kind: 'field', kindLabel: 'External Site', sub: 'Field Machine Deployment', loads: 0, qty: 0, machines: new Set(), company: f.company || 'WTC' });
+            }
+            op.extStops.get(fk).machines.add(eqName);
+          }
+        } else if (includeDetail && !String(f.driver || '').trim()) {
+          const mInfo = machineCatalog.get(norm(eqName));
+          if (mInfo || isLube) {
+            unattributedPlantFills.push({
+              id: f.id, rkey: 'fuel_intakes', equipment: (mInfo && mInfo.equipment) || eqName,
+              company: f.company || 'WTC', item: f.item || f.fuel_type || 'Diesel',
+              litres, isLube, regularDriver: (mInfo && mInfo.regularStaffName) || 'Unassigned'
+            });
+          }
+        }
+      });
+
+      expDay.forEach(x => {
+        const mInfo = machineCatalog.get(norm(x.equipment));
+        const sk = mInfo ? mInfo.regularStaffKey : '';
+        if (sk && staffCatalog.has(sk)) {
+          const op = ensureEmpOp(sk);
+          op.greaseUsd += Number(x.amount || 0);
+          const m = touchMach(op, mInfo.equipment);
+          if (m) m.greaseUsd += Number(x.amount || 0);
+        }
+      });
+
+      const plantList = [];
+      const extList = [];
+      const absList = [];
+      const siteNodesMap = new Map();
+
+      for (const [sk, emp] of staffCatalog.entries()) {
+        const att = getStaffAbsentOn(d, sk);
+        const op = empOps.get(sk);
+        const activeOnDay = ((!emp.start_date || String(emp.start_date) <= d) && (!emp.end_date || String(emp.end_date) >= d) && String(emp.status || 'Active') !== 'Ended') || Boolean(att) || Boolean(op);
+        if (!activeOnDay) continue;
+
+        const assignedMachArr = Array.from(emp.assignedMachines);
+        const operatedMachObjs = op ? Array.from(op.operatedMachines.values()) : [];
+        const operatedMachNames = operatedMachObjs.map(m => m.name);
+
+        if (att && att.isAbsent) {
+          // Check every assigned machine (and any machine booked under this employee today) for ghost activity vs substitute coverage
+          const machCheckNames = Array.from(new Set(assignedMachArr.concat(operatedMachNames)));
+          const machineChecks = machCheckNames.map(mName => {
+            const ek = norm(mName);
+            const dayAnoms = anomsByDateEquip.get(`${d}|${ek}`) || [];
+            const presentSubs = Array.from(machineOpsByDate.get(`${d}|${ek}`) || []).filter(nm => norm(nm) !== norm(emp.staff));
+            const critAnom = dayAnoms.find(a => a.severity === 'crit' || a.anomalyCode === 'absent_no_sub');
+            const warnAnom = dayAnoms.find(a => a.severity === 'warn');
+            return {
+              machine: mName,
+              ghostCrit: Boolean(critAnom),
+              ghostWarn: Boolean(warnAnom),
+              substitute: presentSubs[0] || (dayAnoms[0] && dayAnoms[0].substituteDriver) || '',
+              anomalies: dayAnoms
+            };
+          });
+          const hasGhostCrit = machineChecks.some(mc => mc.ghostCrit || mc.ghostWarn);
+          const hasSub = !hasGhostCrit && machineChecks.some(mc => Boolean(mc.substitute));
+          absList.push({
+            date: d, key: sk, staff: emp.staff, company: emp.company, role_type: emp.role_type,
+            zone: 'absent', zoneLabel: 'Absent / Leave',
+            absentType: att.absentType || 'Absence',
+            assignedMachines: assignedMachArr,
+            operatedMachines: operatedMachObjs,
+            machineChecks, hasGhostCrit, hasSub,
+            stationLabel: `Leave (${att.absentType || 'Absence'})`,
+            workedHrs: 0, otHrs: 0, salesTrips: op ? op.salesTrips : 0, rawTrips: op ? op.rawTrips : 0,
+            totalTrips: op ? (op.salesTrips + op.rawTrips) : 0,
+            dieselL: op ? op.dieselL : 0, lubeL: op ? op.lubeL : 0,
+            totalFuelL: op ? round2(op.dieselL + op.lubeL) : 0,
+            auditStatus: hasGhostCrit ? 'Ghost Activity Alert' : (hasSub ? 'Substitute Covered' : 'Parked / Verified Idle')
+          });
+          continue;
+        }
+
+        // Check if employee has external factory/quarry/site dispatches OR works at an external quarry site today
+        const extStopsArr = op ? Array.from(op.extStops.values()) : [];
+        const assignedExtSite = dayAllowanceSiteByStaff.get(sk) || (emp.assignedSites.size > 0 ? Array.from(emp.assignedSites)[0] : '');
+        if (!extStopsArr.length && op && assignedExtSite && (op.dieselL > 0 || op.lubeL > 0 || operatedMachObjs.length > 0)) {
+          extStopsArr.push({
+            key: `field|${norm(assignedExtSite)}`, name: assignedExtSite, kind: 'field', kindLabel: 'Field Quarry / Site',
+            sub: 'Assigned Field Machinery', loads: 0, qty: 0, machines: new Set(operatedMachNames.length ? operatedMachNames : assignedMachArr), company: emp.company
+          });
+        }
+
+        if (extStopsArr.length > 0) {
+          const destNames = extStopsArr.map(s => s.name);
+          const workerRec = {
+            date: d, key: sk, staff: emp.staff, company: emp.company, role_type: emp.role_type,
+            zone: 'external', zoneLabel: 'External Dispatch',
+            assignedMachines: assignedMachArr,
+            operatedMachines: operatedMachObjs,
+            extStops: extStopsArr,
+            stationLabel: destNames.join(' · '),
+            workedHrs: att ? att.workedHrs : 0,
+            otHrs: att ? att.otHrs : 0,
+            inTime: att ? att.inTime : '', outTime: att ? att.outTime : '',
+            salesTrips: op ? op.salesTrips : 0, rawTrips: op ? op.rawTrips : 0,
+            totalTrips: op ? (op.salesTrips + op.rawTrips) : 0,
+            qtyHauled: op ? round2(op.qtyHauled) : 0,
+            dieselL: op ? op.dieselL : 0, lubeL: op ? op.lubeL : 0,
+            totalFuelL: op ? round2(op.dieselL + op.lubeL) : 0,
+            auditStatus: extStopsArr.length > 1 ? `${extStopsArr.length} Factories / Sites` : 'Dispatched'
+          };
+          extList.push(workerRec);
+
+          if (includeDetail) {
+            extStopsArr.forEach(st => {
+              if (!siteNodesMap.has(st.key)) {
+                siteNodesMap.set(st.key, {
+                  key: st.key, name: st.name, kind: st.kind, kindLabel: st.kindLabel, sub: st.sub,
+                  companyWorkers: [], haulerWorkers: [], totalLoads: 0, totalQty: 0, machines: new Set()
+                });
+              }
+              const node = siteNodesMap.get(st.key);
+              st.machines.forEach(m => node.machines.add(m));
+              node.totalLoads += st.loads;
+              node.totalQty = round2(node.totalQty + st.qty);
+              node.companyWorkers.push({
+                staff: emp.staff, company: emp.company,
+                machines: Array.from(st.machines).length ? Array.from(st.machines) : (operatedMachNames.length ? operatedMachNames : assignedMachArr),
+                loads: st.loads, qty: round2(st.qty),
+                dieselL: op ? op.dieselL : 0, lubeL: op ? op.lubeL : 0,
+                multiStop: extStopsArr.length > 1
+              });
+            });
+          }
+          continue;
+        }
+
+        // Zone 1: In the Plant
+        const stationKey = classifyPlantStation(emp, operatedMachNames, assignedMachArr);
+        const stationTitles = {
+          crusher_power: 'Crusher, Washer & Power Plant',
+          heavy_yard: 'Yard Loaders, Excavators & Dozers',
+          yard_fleet: 'Standby Fleet Drivers in Yard',
+          plant_staff: 'Plant, Weighbridge & Office Staff'
+        };
+        const hasLiveActivity = Boolean(operatedMachObjs.length > 0 || (att && (att.workedHrs > 0 || att.otHrs > 0 || att.logs.length > 0)));
+        plantList.push({
+          date: d, key: sk, staff: emp.staff, company: emp.company, role_type: emp.role_type,
+          zone: 'plant', zoneLabel: 'In the Plant',
+          stationKey, stationLabel: stationTitles[stationKey] || 'Main Plant',
+          assignedMachines: assignedMachArr,
+          operatedMachines: operatedMachObjs,
+          hasLiveActivity,
+          workedHrs: att ? att.workedHrs : 0,
+          otHrs: att ? att.otHrs : 0,
+          lateHrs: att ? att.lateHrs : 0,
+          inTime: att ? att.inTime : '', outTime: att ? att.outTime : '',
+          salesTrips: op ? op.salesTrips : 0, rawTrips: op ? op.rawTrips : 0,
+          totalTrips: op ? (op.salesTrips + op.rawTrips) : 0,
+          dieselL: op ? op.dieselL : 0, lubeL: op ? op.lubeL : 0,
+          greaseUsd: op ? op.greaseUsd : 0,
+          totalFuelL: op ? round2(op.dieselL + op.lubeL) : 0,
+          auditStatus: operatedMachObjs.length ? 'Machine Active' : (att && att.logs.length ? 'Clocked Shift' : 'On Shift (Roster)')
+        });
+      }
+
+      if (includeDetail && STATE.wfIncludeHaulers) {
+        for (const [hk, hn] of haulerNodes.entries()) {
+          if (!siteNodesMap.has(hk)) {
+            siteNodesMap.set(hk, {
+              key: hk, name: hn.name, kind: hn.kind, kindLabel: hn.kindLabel, sub: hn.sub,
+              companyWorkers: [], haulerWorkers: [], totalLoads: 0, totalQty: 0, machines: new Set()
+            });
+          }
+          const node = siteNodesMap.get(hk);
+          Array.from(hn.workers.values()).forEach(hw => {
+            node.haulerWorkers.push(hw);
+            node.totalLoads += hw.loads;
+            node.totalQty = round2(node.totalQty + hw.qty);
+            if (hw.truck && hw.truck !== '—') node.machines.add(hw.truck);
+          });
+        }
+      }
+
+      plantList.sort((a, b) => (Number(b.operatedMachines.length > 0) - Number(a.operatedMachines.length > 0)) || (Number(b.hasLiveActivity) - Number(a.hasLiveActivity)) || a.staff.localeCompare(b.staff));
+      extList.sort((a, b) => (b.totalTrips - a.totalTrips) || a.staff.localeCompare(b.staff));
+      absList.sort((a, b) => (Number(b.hasGhostCrit) - Number(a.hasGhostCrit)) || (Number(b.assignedMachines.length > 0) - Number(a.assignedMachines.length > 0)) || a.staff.localeCompare(b.staff));
+
+      const siteNodes = Array.from(siteNodesMap.values()).sort((a, b) => (b.companyWorkers.length - a.companyWorkers.length) || (b.totalLoads - a.totalLoads) || a.name.localeCompare(b.name));
+      const dayAnoms = anomsByDate.get(d) || [];
+
+      return {
+        date: d,
+        plantList, extList, absList, siteNodes, unattributedPlantFills,
+        plantCount: plantList.length,
+        extCount: extList.length,
+        absCount: absList.length,
+        totalHeadcount: plantList.length + extList.length + absList.length,
+        activePlantMachines: new Set(plantList.flatMap(p => p.operatedMachines.map(m => m.name).concat(p.assignedMachines))).size,
+        extFactoriesCount: siteNodes.length,
+        extLoadsCount: siteNodes.reduce((s, n) => s + n.totalLoads, 0),
+        extQtyTotal: round2(siteNodes.reduce((s, n) => s + n.totalQty, 0)),
+        dayAlertCount: dayAnoms.filter(a => a.severity !== 'info').length,
+        dayCritCount: dayAnoms.filter(a => a.severity === 'crit').length
+      };
+    };
+
+    const daySummary = buildDaySnapshot(targetDate, true);
+
+    // Build 14-day interactive strip anchored around targetDate / latestOpDate
+    const stripPool = sortedPeriodDates.length ? sortedPeriodDates : [targetDate];
+    let anchorIdx = stripPool.findIndex(d => d >= targetDate);
+    if (anchorIdx < 0) anchorIdx = stripPool.length - 1;
+    const endIdx = Math.min(stripPool.length, Math.max(anchorIdx + 4, 14));
+    const startIdx = Math.max(0, endIdx - 14);
+    const stripDates = stripPool.slice(startIdx, endIdx);
+    if (!stripDates.includes(targetDate)) {
+      stripDates.push(targetDate);
+      stripDates.sort();
+    }
+    const dayNamesShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const monNamesShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const stripDays = stripDates.map(d => {
+      const snap = d === targetDate ? daySummary : buildDaySnapshot(d, false);
+      const [yy, mm, dd] = d.split('-').map(Number);
+      const dow = dayNamesShort[new Date(Date.UTC(yy, (mm || 1) - 1, dd || 1)).getUTCDay()] || '';
+      const alertObj = dayAlertCounts.get(d) || { crit: 0, warn: 0 };
+      return {
+        date: d,
+        shortLabel: `${dow} ${String(dd).padStart(2, '0')} ${monNamesShort[(mm || 1) - 1] || ''}`,
+        plantCount: snap.plantCount,
+        extCount: snap.extCount,
+        absCount: snap.absCount,
+        critAlerts: alertObj.crit,
+        warnAlerts: alertObj.warn
+      };
+    });
+
+    // Optional period day-by-day activity log (most recent 21 operational days when user switches Roster to 'period')
+    let periodRosterRows = null;
+    if (STATE.wfRosterScope === 'period') {
+      periodRosterRows = [];
+      const recentDates = stripPool.slice(-21).reverse();
+      recentDates.forEach(d => {
+        const snap = d === targetDate ? daySummary : buildDaySnapshot(d, false);
+        snap.extList.concat(snap.absList, snap.plantList.filter(p => p.hasLiveActivity)).forEach(row => {
+          periodRosterRows.push(row);
+        });
+      });
+    }
+
+    const result = {
+      targetDate,
+      latestOpDate,
+      sortedPeriodDates,
+      daySummary,
+      stripDays,
+      alertDatesDesc,
+      machineAnomalies,
+      absentGhostCount,
+      noDriverServiceCount,
+      periodRosterRows
+    };
+    _WF_MAP_CACHE = { key: mapKey, val: result };
+    return result;
+  }
+
+  function renderWorkforceMap() {
+    const wf = buildWorkforceMapData();
+    const ds = wf.daySummary;
+    const totStaff = Math.max(1, ds.totalHeadcount);
+    const plantPct = round2((ds.plantCount / totStaff) * 100);
+    const extPct = round2((ds.extCount / totStaff) * 100);
+    const absPct = Math.max(0, round2(100 - plantPct - extPct));
+
+    const openPeriodAlerts = wf.machineAnomalies.filter(a => a.severity !== 'info');
+    const dayAlerts = openPeriodAlerts.filter(a => a.date === wf.targetDate);
+    const greaseAlertsCnt = openPeriodAlerts.filter(a => a.serviceKind === 'grease').length;
+    const lubeAlertsCnt = openPeriodAlerts.filter(a => a.serviceKind === 'lubricant').length;
+    const dieselAlertsCnt = openPeriodAlerts.filter(a => a.serviceKind === 'diesel').length;
+
+    const curIdx = wf.sortedPeriodDates.indexOf(wf.targetDate);
+    const prevDate = curIdx > 0 ? wf.sortedPeriodDates[curIdx - 1] : prevDayISO(wf.targetDate);
+    const nextDate = (curIdx >= 0 && curIdx + 1 < wf.sortedPeriodDates.length) ? wf.sortedPeriodDates[curIdx + 1] : '';
+
+    // Filter Machine Audit Ledger
+    const auditScope = STATE.wfAuditScope || 'period';
+    const auditChip = STATE.wfAuditFilter || 'all';
+    const baseAuditPool = auditScope === 'day'
+      ? wf.machineAnomalies.filter(a => a.date === wf.targetDate)
+      : wf.machineAnomalies;
+    const qNorm = norm(STATE.search);
+    const filteredAudit = baseAuditPool.filter(a => {
+      if (auditChip === 'absent_ghost' && a.anomalyCode !== 'absent_no_sub' && a.anomalyCode !== 'absent_with_sub') return false;
+      if (auditChip === 'grease' && a.serviceKind !== 'grease') return false;
+      if (auditChip === 'lubricant' && a.serviceKind !== 'lubricant') return false;
+      if (auditChip === 'diesel' && a.serviceKind !== 'diesel') return false;
+      if (auditChip === 'no_driver' && a.anomalyCode !== 'no_driver') return false;
+      if (auditChip === 'sub_covered' && a.anomalyCode !== 'sub_covered') return false;
+      if (auditChip === 'all' && a.severity === 'info' && baseAuditPool.some(x => x.severity !== 'info')) return false;
+      if (qNorm) {
+        const hay = norm(`${a.date} ${a.company} ${a.equipment} ${a.serviceLabel} ${a.assignedDriver} ${a.ticketDriver} ${a.whyText}`);
+        if (!hay.includes(qNorm)) return false;
+      }
+      return true;
+    });
+    const auditSorted = sortRows(filteredAudit, 'wf_audit', 'date', 'desc');
+    const shownAudit = auditSorted.slice(0, shownCount('wf_audit'));
+    const totAuditLitres = auditSorted.reduce((s, a) => s + Number(a.qtyLitres || 0), 0);
+    const totAuditUsd = auditSorted.reduce((s, a) => s + Number(a.amountUsd || 0), 0);
+
+    // Filter Daily Employee × Machine × Location Register
+    const rosterScope = STATE.wfRosterScope || 'day';
+    const zFilter = STATE.wfZoneFilter || 'all';
+    const rawRosterPool = rosterScope === 'period' && Array.isArray(wf.periodRosterRows)
+      ? wf.periodRosterRows
+      : ds.plantList.concat(ds.extList, ds.absList);
+    const filteredRoster = rawRosterPool.filter(r => {
+      if (zFilter !== 'all' && r.zone !== zFilter) return false;
+      if (qNorm) {
+        const machStr = r.operatedMachines.map(m => m.name).concat(r.assignedMachines).join(' ');
+        const hay = norm(`${r.date} ${r.company} ${r.staff} ${r.role_type} ${r.zoneLabel} ${r.stationLabel} ${machStr} ${r.auditStatus}`);
+        if (!hay.includes(qNorm)) return false;
+      }
+      return true;
+    });
+    const rosterSorted = sortRows(filteredRoster, 'wf_roster', rosterScope === 'period' ? 'date' : 'totalTrips', 'desc');
+    const shownRoster = rosterSorted.slice(0, shownCount('wf_roster'));
+    const totRosterHrs = rosterSorted.reduce((s, r) => s + Number(r.workedHrs || 0) + Number(r.otHrs || 0), 0);
+    const totRosterTrips = rosterSorted.reduce((s, r) => s + Number(r.totalTrips || 0), 0);
+    const totRosterFuel = rosterSorted.reduce((s, r) => s + Number(r.totalFuelL || 0), 0);
+
+    // Partition Zone 1 (Plant) into stations
+    const stCrusher = ds.plantList.filter(p => p.stationKey === 'crusher_power');
+    const stHeavy = ds.plantList.filter(p => p.stationKey === 'heavy_yard');
+    const stYardFleet = ds.plantList.filter(p => p.stationKey === 'yard_fleet');
+    const stPlantStaff = ds.plantList.filter(p => p.stationKey === 'plant_staff');
+    const activePlantStaff = stPlantStaff.filter(p => p.hasLiveActivity);
+    const rosterQuietStaff = stPlantStaff.filter(p => !p.hasLiveActivity);
+    const visibleQuietStaff = STATE.wfShowAllRosterStaff ? rosterQuietStaff : rosterQuietStaff.slice(0, 8);
+
+    const renderOperatorCard = p => {
+      const machPills = p.operatedMachines.length
+        ? p.operatedMachines.map(m => {
+            const mSub = [];
+            if (m.trips > 0) mSub.push(`${m.trips}t`);
+            if (m.dieselL > 0) mSub.push(`${fmtNum(m.dieselL, 0)}L`);
+            if (m.lubeL > 0) mSub.push(`Oil ${fmtNum(m.lubeL, 0)}L`);
+            if (m.greaseUsd > 0) mSub.push(`Maint ${fmtUSD(m.greaseUsd, 0)}`);
+            return `<span class="wf-mach-tag" data-rel-key="equipment" data-rel-val="${esc(m.name)}" title="Inspect ${esc(m.name)} 360°">${ic('truck')} ${esc(m.name)}${mSub.length ? ` · ${esc(mSub.join(' / '))}` : ''}</span>`;
+          }).join('')
+        : p.assignedMachines.map(mName => `<span class="wf-mach-tag" style="opacity:0.78" data-rel-key="equipment" data-rel-val="${esc(mName)}" title="Assigned unit ${esc(mName)} (no fuel/haul ticket today)">${esc(mName)} <small>(Assigned)</small></span>`).join('');
+
+      const metaBits = [];
+      if (p.workedHrs > 0 || p.otHrs > 0) {
+        metaBits.push(`<span class="wf-service-pill">${p.inTime && p.outTime ? `${esc(p.inTime)}–${esc(p.outTime)} · ` : ''}${fmtNum(p.workedHrs || 0, 1)}h${p.otHrs > 0 ? ` (+${fmtNum(p.otHrs, 1)} OT)` : ''}</span>`);
+      }
+      if (p.dieselL > 0) metaBits.push(`<span class="wf-service-pill diesel">${ic('fuel')} ${fmtNum(p.dieselL, 0)} L Diesel</span>`);
+      if (p.lubeL > 0) metaBits.push(`<span class="wf-service-pill lube">${ic('droplet')} ${fmtNum(p.lubeL, 0)} L Oil</span>`);
+      if (p.greaseUsd > 0) metaBits.push(`<span class="wf-service-pill lube">${ic('wrench')} Maint. ${fmtUSD(p.greaseUsd, 0)}</span>`);
+      if (!metaBits.length) metaBits.push(`<span>${esc(p.role_type || 'Operator')} · On Shift</span>`);
+
+      return `
+        <div class="wf-station-card">
+          <div class="wf-st-top">
+            <span class="wf-st-emp">${relLink('employments', p.staff, p.staff, true)}</span>
+            ${coBadge(p.company)}
+          </div>
+          ${machPills ? `<div class="wf-st-machines">${machPills}</div>` : ''}
+          <div class="wf-st-meta">${metaBits.join('')}</div>
+        </div>
+      `;
+    };
+
+    const wfAuditChipBtn = (k, lbl) => `<button type="button" class="filter-chip ${auditChip === k ? 'active' : ''}" data-wf-audit-chip="${esc(k)}">${lbl}</button>`;
+
+    return `
+      <div class="cockpit-banner has-insights">
+        <div class="cockpit-title-block sr-only">
+          <div class="cockpit-eyebrow">WORKFORCE SPATIAL COMMAND &amp; MACHINE INTEGRITY AUDIT</div>
+          <div class="cockpit-title">Daily Plant &amp; Machine Map</div>
+        </div>
+        <div class="cockpit-pills insight-grid">
+          ${insightCard({
+            label: 'In the Plant Today',
+            badge: `${plantPct.toFixed(0)}% of Workforce`,
+            badgeCls: 'emerald',
+            val: `<span class="insight-drill" data-wf-zone="${zFilter === 'plant' ? 'all' : 'plant'}" title="Click to focus Zone 1: In the Plant">${fmtNum(ds.plantCount)} <small>In Plant</small></span>`,
+            valCls: 'emerald',
+            pct: plantPct,
+            pct2: 100 - plantPct,
+            sub: `<b>${fmtNum(stCrusher.length + stHeavy.length + stYardFleet.length)}</b> machine operators &amp; <b>${fmtNum(stPlantStaff.length)}</b> plant/yard staff · <b>${fmtNum(ds.activePlantMachines)}</b> plant units`,
+            tone: 'emerald'
+          })}
+          ${insightCard({
+            label: 'Left to Factories & Quarries',
+            badge: `${fmtNum(ds.extFactoriesCount)} Sites`,
+            badgeCls: 'info',
+            val: `<span class="insight-drill" data-wf-zone="${zFilter === 'external' ? 'all' : 'external'}" title="Click to focus Zone 2: Outbound Factory & Quarry Dispatches">${fmtNum(ds.extCount)} <small>Dispatched</small></span>`,
+            pct: extPct,
+            pct2: 100 - extPct,
+            sub: `<b>${fmtNum(ds.extLoadsCount)}</b> outbound loads (<b>${fmtNum(ds.extQtyTotal, 0)} m³</b>) across <b>${fmtNum(ds.extFactoriesCount)}</b> external factories &amp; quarries`,
+            tone: 'steel'
+          })}
+          ${insightCard({
+            label: 'Absent / On Leave Today',
+            badge: ds.absCount ? `${absPct.toFixed(0)}% Absent` : 'Full Roster',
+            badgeCls: ds.dayCritCount > 0 ? 'warn' : (ds.absCount > 0 ? 'info' : 'emerald'),
+            val: `<span class="insight-drill" data-wf-zone="${zFilter === 'absent' ? 'all' : 'absent'}" title="Click to focus Zone 3: Absent Staff & Machine Coverage">${fmtNum(ds.absCount)} <small>Absent</small></span>`,
+            valCls: ds.dayCritCount > 0 ? 'amber' : '',
+            pct: absPct,
+            pct2: 100 - absPct,
+            sub: ds.absCount
+              ? (ds.dayCritCount > 0
+                  ? `<b style="color:var(--crit)">${fmtNum(ds.dayCritCount)} Ghost Machine Alert${ds.dayCritCount === 1 ? '' : 's'}</b> on ${esc(fmtDateDMY(wf.targetDate))}`
+                  : `All absent-driver machines verified parked or covered by substitute`)
+              : `Zero absences logged on <b>${esc(fmtDateDMY(wf.targetDate))}</b>`,
+            tone: ds.dayCritCount > 0 ? 'amber' : 'brass'
+          })}
+          ${insightCard({
+            label: 'Grease, Oil & Diesel Audit',
+            badge: `${fmtNum(openPeriodAlerts.length)} Period Flags`,
+            badgeCls: wf.absentGhostCount > 0 ? 'warn' : 'emerald',
+            val: `<span class="insight-drill" data-scroll-panel="wfMachineAuditPanel" title="Jump to Grease, Lubricant & Diesel Machine-Driver Audit">${fmtNum(wf.absentGhostCount)} <small>Absent-Drv ↘</small></span>`,
+            valCls: wf.absentGhostCount > 0 ? 'brass' : 'emerald',
+            pct: openPeriodAlerts.length ? Math.min(100, Math.round((wf.absentGhostCount / openPeriodAlerts.length) * 100)) : 100,
+            sub: `<b>${fmtNum(dieselAlertsCnt)}</b> Diesel · <b>${fmtNum(lubeAlertsCnt)}</b> Lube Oil · <b>${fmtNum(greaseAlertsCnt)}</b> Grease/Maint · <b>${fmtNum(dayAlerts.length)}</b> on selected day`,
+            tone: 'brass'
+          })}
+        </div>
+      </div>
+
+      <div class="wf-day-command-bar" id="wfDayCommandBar">
+        <div class="wf-day-top-row">
+          <div class="wf-day-stepper">
+            <button type="button" class="btn btn-ghost-bar" data-wf-day-step="-1" ${prevDate ? `data-wf-target="${esc(prevDate)}"` : 'disabled'} title="Previous operational day">◀ Prev Day</button>
+            <label class="wf-date-badge" for="wfMapDateInput">
+              ${ic('calendar')}
+              <span>Map Date:</span>
+              <input type="date" id="wfMapDateInput" value="${esc(wf.targetDate)}" min="${esc(MIN_DATE)}" max="${esc(MAX_DATE)}">
+              <span class="mono" style="font-size:11px;color:var(--muted)">(${esc(fmtDateDMY(wf.targetDate))})</span>
+            </label>
+            <button type="button" class="btn btn-ghost-bar" data-wf-day-step="1" ${nextDate ? `data-wf-target="${esc(nextDate)}"` : 'disabled'} title="Next operational day">Next Day ▶</button>
+            ${wf.targetDate !== wf.latestOpDate ? `<button type="button" class="btn btn-ghost-bar" data-wf-date="${esc(wf.latestOpDate)}">Latest Day (${esc(fmtDateDMY(wf.latestOpDate))})</button>` : ''}
+            ${wf.alertDatesDesc.length ? `<button type="button" class="wf-alert-jump-btn" id="wfNextAlertDayBtn" title="Cycle through dates where Diesel, Lubricant or Grease was added to an absent driver's machine">${ic('warn')} Next Alert Day (${fmtNum(wf.alertDatesDesc.length)} days)</button>` : ''}
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <div class="seg-toggle" role="group" aria-label="Hauler Scope">
+              <button type="button" class="seg-btn ${!STATE.wfIncludeHaulers ? 'active' : ''}" data-wf-haulers="0">Company Staff Only</button>
+              <button type="button" class="seg-btn ${STATE.wfIncludeHaulers ? 'active' : ''}" data-wf-haulers="1">+ 3rd-Party Haulers</button>
+            </div>
+            ${canEnterForm('attendance') ? `<button type="button" class="btn btn-primary" data-open-modal="attendance">+ Log Attendance</button>` : ''}
+          </div>
+        </div>
+        <div class="wf-day-strip" role="tablist" aria-label="14-Day Plant & Machine Strip">
+          ${wf.stripDays.map(sd => {
+            const isSel = sd.date === wf.targetDate;
+            const totAlerts = sd.critAlerts + sd.warnAlerts;
+            return `
+              <button type="button" class="wf-day-pill ${isSel ? 'is-active' : ''}" data-wf-date="${esc(sd.date)}" role="tab" aria-selected="${isSel ? 'true' : 'false'}">
+                <div class="wf-day-pill-top">
+                  <span>${esc(sd.shortLabel)}</span>
+                  ${totAlerts > 0 ? `<span class="wf-day-alert-dot ${sd.critAlerts > 0 ? '' : 'warn'}" title="${sd.critAlerts} critical absent-driver alerts, ${sd.warnAlerts} unattributed fills">${totAlerts}!</span>` : ''}
+                </div>
+                <div class="wf-day-pill-sub">${sd.plantCount} Plant · ${sd.extCount} Out · ${sd.absCount} Abs</div>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </div>
+
+      <div class="panel-card" id="wfVisualMapPanel" style="margin-bottom:14px">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title"><span>LIVE SPATIAL WORKFORCE &amp; MACHINE DEPLOYMENT MAP — ${esc(fmtDateDMY(wf.targetDate))} (${fmtNum(ds.totalHeadcount)} ACTIVE COMPANY WORKFORCE)</span></div>
+            <span class="ph-sub">Every active employee mapped across Main Plant Stations, Outbound Customer Factories &amp; Quarries, and Absent / Leave Machine Coverage</span>
+          </div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost-bar" data-scroll-panel="wfMachineAuditPanel">${ic('wrench')} Grease &amp; Diesel Audit (${fmtNum(openPeriodAlerts.length)}) ↘</button>
+            <button type="button" class="btn btn-ghost-bar" data-scroll-panel="wfDailyRosterPanel">Daily Register ↘</button>
+          </span>
+        </div>
+
+        <div class="wf-proportion-wrap">
+          <div class="wf-proportion-legend">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+              <button type="button" class="wf-prop-pill ${zFilter === 'all' ? 'is-active' : ''}" data-wf-zone="all">All 3 Zones (${fmtNum(ds.totalHeadcount)})</button>
+              <button type="button" class="wf-prop-pill ${zFilter === 'plant' ? 'is-active' : ''}" data-wf-zone="plant"><i class="wf-prop-dot plant"></i> In the Plant: <b>${fmtNum(ds.plantCount)}</b> (${plantPct.toFixed(0)}%)</button>
+              <button type="button" class="wf-prop-pill ${zFilter === 'external' ? 'is-active' : ''}" data-wf-zone="external"><i class="wf-prop-dot ext"></i> Left to Factories &amp; Quarries: <b>${fmtNum(ds.extCount)}</b> (${extPct.toFixed(0)}%)</button>
+              <button type="button" class="wf-prop-pill ${zFilter === 'absent' ? 'is-active' : ''}" data-wf-zone="absent"><i class="wf-prop-dot abs"></i> Absent / On Leave: <b>${fmtNum(ds.absCount)}</b> (${absPct.toFixed(0)}%)</button>
+            </div>
+            <span class="mu" style="font-size:11px">Click any employee or machine badge for 360° operational history</span>
+          </div>
+          <div class="wf-proportion-bar" title="In Plant ${plantPct.toFixed(1)}% · External Factories & Quarries ${extPct.toFixed(1)}% · Absent ${absPct.toFixed(1)}%">
+            <div class="wf-prop-seg plant" data-wf-zone="plant" style="width:${Math.max(ds.plantCount ? 3 : 0, plantPct)}%"></div>
+            <div class="wf-prop-seg ext" data-wf-zone="external" style="width:${Math.max(ds.extCount ? 3 : 0, extPct)}%"></div>
+            <div class="wf-prop-seg abs" data-wf-zone="absent" style="width:${Math.max(ds.absCount ? 3 : 0, absPct)}%"></div>
+          </div>
+        </div>
+
+        <div class="wf-map-canvas ${zFilter !== 'all' ? 'single-zone' : ''}">
+          ${(zFilter === 'all' || zFilter === 'plant') ? `
+          <div class="wf-zone-card zone-plant" id="wfZonePlant">
+            <div class="wf-zone-hdr">
+              <div>
+                <div class="wf-zone-title">${ic('plant')} ZONE 1 — IN THE PLANT</div>
+                <div class="wf-zone-sub">Crusher, Washer (Maghsal), Power Generators, Yard Loaders &amp; Plant Staff</div>
+              </div>
+              <span class="wf-zone-count">${fmtNum(ds.plantCount)} Staff</span>
+            </div>
+            <div class="wf-zone-body">
+              ${ds.unattributedPlantFills.length ? `
+                <div class="wf-absent-card is-ghost-alert">
+                  <div class="wf-st-top">
+                    <strong style="color:var(--crit);font-size:11.5px">${ic('warn')} ${fmtNum(ds.unattributedPlantFills.length)} Plant Machine Fill${ds.unattributedPlantFills.length === 1 ? '' : 's'} With No Operator on Ticket</strong>
+                  </div>
+                  <div class="wf-st-machines">
+                    ${ds.unattributedPlantFills.map(uf => `
+                      <span class="wf-mach-tag" data-rkey="fuel_intakes" data-rid="${esc(uf.id)}" title="Click to inspect ticket · Regular driver: ${esc(uf.regularDriver)}">
+                        ${ic(uf.isLube ? 'droplet' : 'fuel')} ${esc(uf.equipment)} · ${fmtNum(uf.litres, 0)}L ${esc(uf.item)} (Reg: ${esc(uf.regularDriver)})
+                      </span>
+                    `).join('')}
+                  </div>
+                </div>
+              ` : ''}
+
+              ${stCrusher.length ? `
+                <div class="wf-subsec-lbl"><span>Crusher, Washer &amp; Power Generators</span><span>${stCrusher.length}</span></div>
+                <div class="wf-station-grid">${stCrusher.map(renderOperatorCard).join('')}</div>
+              ` : ''}
+
+              ${stHeavy.length ? `
+                <div class="wf-subsec-lbl"><span>Yard Loaders, Excavators &amp; Dozers</span><span>${stHeavy.length}</span></div>
+                <div class="wf-station-grid">${stHeavy.map(renderOperatorCard).join('')}</div>
+              ` : ''}
+
+              ${stYardFleet.length ? `
+                <div class="wf-subsec-lbl"><span>Standby Fleet Drivers in Plant Yard</span><span>${stYardFleet.length}</span></div>
+                <div class="wf-station-grid">${stYardFleet.map(renderOperatorCard).join('')}</div>
+              ` : ''}
+
+              ${activePlantStaff.length ? `
+                <div class="wf-subsec-lbl"><span>Clocked Plant &amp; Overtime Staff</span><span>${activePlantStaff.length}</span></div>
+                <div class="wf-station-grid">${activePlantStaff.map(renderOperatorCard).join('')}</div>
+              ` : ''}
+
+              ${rosterQuietStaff.length ? `
+                <div class="wf-subsec-lbl">
+                  <span>Plant, Weighbridge &amp; Office Roster On Shift</span>
+                  <span>${rosterQuietStaff.length}</span>
+                </div>
+                <div class="wf-staff-pills">
+                  ${visibleQuietStaff.map(p => `
+                    <span class="wf-staff-chip">
+                      ${relLink('employments', p.staff, p.staff, false)}
+                      <small>${esc(p.company === 'BBConstruction' ? 'BBC' : p.company)}</small>
+                    </span>
+                  `).join('')}
+                  ${rosterQuietStaff.length > 8 ? `
+                    <button type="button" class="btn btn-sm" id="wfToggleIdleStaffBtn" style="font-size:10.5px;padding:2px 8px">
+                      ${STATE.wfShowAllRosterStaff ? 'Show Less' : `+${rosterQuietStaff.length - 8} More Staff`}
+                    </button>
+                  ` : ''}
+                </div>
+              ` : ''}
+
+              ${!ds.plantCount ? `<div class="mu" style="padding:14px;text-align:center">No employees in Zone 1 for this scope on ${esc(fmtDateDMY(wf.targetDate))}.</div>` : ''}
+            </div>
+          </div>
+          ` : ''}
+
+          ${(zFilter === 'all' || zFilter === 'external') ? `
+          <div class="wf-zone-card zone-external" id="wfZoneExternal">
+            <div class="wf-zone-hdr">
+              <div>
+                <div class="wf-zone-title">${ic('truck')} ZONE 2 — LEFT TO FACTORIES &amp; QUARRIES</div>
+                <div class="wf-zone-sub">${fmtNum(ds.extFactoriesCount)} External Customer Factories, Quarries &amp; Sites (${fmtNum(ds.extLoadsCount)} Loads · ${fmtNum(ds.extQtyTotal, 0)} m³)</div>
+              </div>
+              <span class="wf-zone-count">${fmtNum(ds.extCount)} Out</span>
+            </div>
+            <div class="wf-zone-body">
+              ${ds.siteNodes.length ? ds.siteNodes.map(node => `
+                <div class="wf-site-node kind-${esc(node.kind)}">
+                  <div class="wf-site-hdr">
+                    <span class="wf-site-name">
+                      ${ic('pin')}
+                      ${relLink(node.kind === 'factory' ? 'customers' : 'sites', node.name, node.name, true)}
+                    </span>
+                    <span style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap">
+                      <span class="badge ${node.kind === 'factory' ? 'badge-info' : (node.kind === 'quarry' ? 'badge-brass' : 'badge-ok')}">${esc(node.kindLabel)}</span>
+                      <span class="badge">${node.companyWorkers.length + node.haulerWorkers.length} Drv · ${fmtNum(node.totalLoads)} Loads${node.totalQty > 0 ? ` · ${fmtNum(node.totalQty, 0)} m³` : ''}</span>
+                    </span>
+                  </div>
+                  <div class="wf-site-workers">
+                    ${node.companyWorkers.map(w => `
+                      <div class="wf-worker-row">
+                        <span style="display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap">
+                          ${relLink('employments', w.staff, w.staff, true)}
+                          ${w.multiStop ? `<span class="badge badge-brass" title="Visited multiple factories/sites today">Multi-Stop</span>` : ''}
+                          ${w.machines.map(m => `<span class="wf-mach-tag" data-rel-key="equipment" data-rel-val="${esc(m)}">${ic('truck')} ${esc(m)}</span>`).join('')}
+                        </span>
+                        <span class="mono" style="font-size:11px;color:var(--muted)">
+                          ${w.loads > 0 ? `<b>${fmtNum(w.loads)}</b> load${w.loads === 1 ? '' : 's'} (${fmtNum(w.qty, 0)} m³)` : 'Site Machine'}
+                          ${w.dieselL > 0 ? ` · ${fmtNum(w.dieselL, 0)}L Diesel` : ''}${w.lubeL > 0 ? ` · ${fmtNum(w.lubeL, 0)}L Oil` : ''}
+                        </span>
+                      </div>
+                    `).join('')}
+                    ${node.haulerWorkers.map(hw => `
+                      <div class="wf-worker-row is-hauler">
+                        <span style="display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap">
+                          ${relLink('drivers', hw.driver, hw.driver, false)}
+                          <span class="badge">3rd-Party · ${esc(hw.owner)}</span>
+                          ${hw.truck && hw.truck !== '—' ? `<span class="wf-mach-tag" data-rel-key="equipment" data-rel-val="${esc(hw.truck)}">${esc(hw.truck)}</span>` : ''}
+                        </span>
+                        <span class="mono" style="font-size:11px;color:var(--muted)"><b>${fmtNum(hw.loads)}</b> loads (${fmtNum(hw.qty, 0)} m³)</span>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              `).join('') : `<div class="mu" style="padding:18px;text-align:center">No company employees dispatched to external factories or quarries on ${esc(fmtDateDMY(wf.targetDate))}.${!STATE.wfIncludeHaulers ? ' Toggle <b>+ 3rd-Party Haulers</b> above to inspect external contractor trucks.' : ''}</div>`}
+            </div>
+          </div>
+          ` : ''}
+
+          ${(zFilter === 'all' || zFilter === 'absent') ? `
+          <div class="wf-zone-card zone-absent" id="wfZoneAbsent">
+            <div class="wf-zone-hdr">
+              <div>
+                <div class="wf-zone-title">${ic('user_x')} ZONE 3 — ABSENT / ON LEAVE</div>
+                <div class="wf-zone-sub">Absent Staff, Assigned Machine Status &amp; Unexplained Grease/Diesel Watch</div>
+              </div>
+              <span class="wf-zone-count">${fmtNum(ds.absCount)} Absent</span>
+            </div>
+            <div class="wf-zone-body">
+              ${ds.absList.length ? ds.absList.map(ab => `
+                <div class="wf-absent-card ${ab.hasGhostCrit ? 'is-ghost-alert' : (ab.hasSub ? 'has-substitute' : '')}">
+                  <div class="wf-st-top">
+                    <span class="wf-st-emp">${relLink('employments', ab.staff, ab.staff, true)}</span>
+                    <span style="display:inline-flex;gap:4px;align-items:center">
+                      ${coBadge(ab.company)}
+                      <span class="badge ${ab.hasGhostCrit ? 'badge-err' : 'badge-warn'}">${esc(ab.absentType)}</span>
+                    </span>
+                  </div>
+                  ${ab.machineChecks.length ? ab.machineChecks.map(mc => `
+                    <div style="display:flex;flex-direction:column;gap:4px;margin-top:2px">
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:5px;flex-wrap:wrap">
+                        <span class="wf-mach-tag" data-rel-key="equipment" data-rel-val="${esc(mc.machine)}">${ic('truck')} ${esc(mc.machine)}</span>
+                        ${mc.ghostCrit || mc.ghostWarn
+                          ? `<span class="badge badge-err">${ic('warn')} Ghost Fuel / Grease</span>`
+                          : (mc.substitute
+                              ? `<span class="badge badge-info">${ic('swap')} Sub: ${esc(mc.substitute)}</span>`
+                              : `<span class="badge badge-ok">${ic('check_circle')} Parked / Idle (0 L)</span>`)}
+                      </div>
+                      ${mc.anomalies.map(an => `
+                        <div class="wf-ghost-explain">
+                          <div>${esc(an.whyText)}</div>
+                          <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap">
+                            <button type="button" class="btn btn-sm" data-rkey="${esc(an.rkey)}" data-rid="${esc(an.id)}" style="font-size:10.5px;padding:2px 7px">Inspect Ticket</button>
+                            ${canModifyData() ? `<button type="button" class="btn btn-sm btn-primary" data-open-eq-sub="${esc(mc.machine)}" data-sub-date="${esc(wf.targetDate)}" data-sub-co="${esc(ab.company)}" style="font-size:10.5px;padding:2px 8px">${ic('swap')} Log Substitute Driver</button>` : ''}
+                          </div>
+                        </div>
+                      `).join('')}
+                    </div>
+                  `).join('') : `<div class="wf-st-meta"><span>${esc(ab.role_type || 'Staff')} · No machine assigned</span></div>`}
+                </div>
+              `).join('') : `
+                <div style="padding:18px 12px;text-align:center;color:var(--muted);font-size:12px">
+                  <div style="color:var(--good);font-weight:700;margin-bottom:4px">${ic('check_circle')} Zero Absences Logged on ${esc(fmtDateDMY(wf.targetDate))}</div>
+                  <div>Use <b>Next Alert Day</b> above or click any flagged day pill in the 14-day strip to inspect absent-driver machine alerts.</div>
+                </div>
+              `}
+            </div>
+          </div>
+          ` : ''}
+        </div>
+      </div>
+
+      <div class="panel-card" id="wfMachineAuditPanel" style="margin-bottom:14px">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title"><span>GREASE, LUBRICANT &amp; DIESEL MACHINE-DRIVER AUDIT (${fmtNum(auditSorted.length)} ITEMS)</span></div>
+            <span class="ph-sub">Flags machines where Grease, Oil, Maintenance or Diesel was added while the assigned driver was absent without a substitute, or with no operator recorded on the ticket</span>
+          </div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <div class="seg-toggle" role="group" aria-label="Audit Date Scope">
+              <button type="button" class="seg-btn ${auditScope === 'period' ? 'active' : ''}" data-wf-audit-scope="period">All Period (${fmtNum(openPeriodAlerts.length)})</button>
+              <button type="button" class="seg-btn ${auditScope === 'day' ? 'active' : ''}" data-wf-audit-scope="day">Selected Day (${fmtNum(dayAlerts.length)})</button>
+            </div>
+            ${exportBtn('wfMachineAuditPanel', 'Machine_Grease_Diesel_Driver_Audit')}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search machine, absent driver, grease/oil/diesel, explanation...')}
+            <div class="chip-bar">
+              ${wfAuditChipBtn('all', `All Open Flags (${fmtNum(openPeriodAlerts.length)})`)}
+              ${wfAuditChipBtn('absent_ghost', `Absent Driver · No Sub (${fmtNum(wf.absentGhostCount)})`)}
+              ${wfAuditChipBtn('grease', `Grease & Maint. (${fmtNum(greaseAlertsCnt)})`)}
+              ${wfAuditChipBtn('lubricant', `Lubricants (${fmtNum(lubeAlertsCnt)})`)}
+              ${wfAuditChipBtn('diesel', `Diesel (${fmtNum(dieselAlertsCnt)})`)}
+              ${wfAuditChipBtn('no_driver', `No Driver on Ticket (${fmtNum(wf.noDriverServiceCount)})`)}
+              ${wfAuditChipBtn('sub_covered', `Substitute Covered`)}
+            </div>
+          </div>
+        </div>
+        ${renderColFilterBar('wf_audit')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('wf_audit', 'Date', 'date')}${th('wf_audit', 'Co.', 'company')}${th('wf_audit', 'Machine', 'equipment')}${th('wf_audit', 'Service / Intake', 'serviceLabel')}
+                ${th('wf_audit', 'Qty / Spend', 'qtyLitres', 'r')}${th('wf_audit', 'Assigned Driver', 'assignedDriver')}${th('wf_audit', 'Audit Finding — Why Flagged', 'whyText')}${th('wf_audit', 'Action', 'anomalyCode')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownAudit.map(a => {
+                const sevBadge = a.severity === 'crit' ? 'badge-err' : (a.severity === 'warn' ? 'badge-warn' : 'badge-info');
+                const kindIc = a.serviceKind === 'grease' ? ic('wrench') : (a.serviceKind === 'lubricant' ? ic('droplet') : ic('fuel'));
+                return `
+                  <tr class="rrow ${a.severity === 'crit' ? 'pbi-row-amber' : ''}" data-rkey="${esc(a.rkey)}" data-rid="${esc(a.id)}">
+                    <td class="mono" style="white-space:nowrap">
+                      <button type="button" class="btn btn-sm" data-wf-date="${esc(a.date)}" data-wf-scroll-map="1" style="padding:1px 6px;font-size:10.5px;margin-right:4px" title="Show ${esc(fmtDateDMY(a.date))} on the 3-Zone Map above">Map ↗</button>${esc(fmtDateDMY(a.date))}
+                    </td>
+                    <td>${coBadge(a.company)}</td>
+                    <td><strong>${relLink('equipment', a.equipment, a.equipment, true)}</strong></td>
+                    <td><span class="badge ${sevBadge}">${kindIc} ${esc(a.serviceLabel)}</span></td>
+                    <td class="r mono"><strong>${esc(a.qtyDisplay)}</strong></td>
+                    <td style="white-space:normal;max-width:165px">
+                      ${a.assignedDriver && a.assignedDriver !== 'Unassigned' ? relLink('employments', a.assignedDriver, a.assignedDriver, true) : '<span class="mu">Unassigned</span>'}
+                      <div><span class="badge ${/sick|absen|vac|unpaid/i.test(a.assignedStatus) ? 'badge-err' : 'badge-info'}" style="margin-top:2px">${esc(a.assignedStatus)}</span></div>
+                    </td>
+                    <td style="white-space:normal;min-width:180px;max-width:300px;font-size:11.5px;line-height:1.35">${esc(a.whyText)}</td>
+                    <td style="white-space:nowrap">
+                      ${canModifyData()
+                        ? `<button type="button" class="btn btn-sm" data-open-eq-sub="${esc(a.equipment)}" data-sub-date="${esc(a.date)}" data-sub-co="${esc(a.company)}" style="font-size:10.5px;padding:3px 7px" title="Open Equipment Driver Assignment Log for ${esc(a.equipment)} on ${esc(fmtDateDMY(a.date))}">Log Sub</button>`
+                        : `<span class="badge">Inspect</span>`}
+                    </td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(8, 'No grease, lubricant or diesel driver-mismatch alerts in this filter')}
+              ${showMoreRow('wf_audit', auditSorted.length, 8)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4"><b>TOTAL (${fmtNum(auditSorted.length)} AUDIT ITEMS)</b></td>
+                <td class="r"><b>${totAuditLitres > 0 ? `${fmtNum(totAuditLitres, 0)} L` : ''}${totAuditLitres > 0 && totAuditUsd > 0 ? ' · ' : ''}${totAuditUsd > 0 ? fmtUSD(totAuditUsd, 0) : (totAuditLitres <= 0 ? '0 L' : '')}</b></td>
+                <td colspan="3"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel-card" id="wfDailyRosterPanel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title"><span>EMPLOYEE × MACHINE × LOCATION DAILY REGISTER (${fmtNum(rosterSorted.length)} ROWS)</span></div>
+            <span class="ph-sub">${rosterScope === 'period' ? 'Day-by-day active operator & absence log across recent operational dates' : `Complete company workforce deployment for ${esc(fmtDateDMY(wf.targetDate))}`} · Click any employee or machine for 360° profile</span>
+          </div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <div class="seg-toggle" role="group" aria-label="Roster Scope">
+              <button type="button" class="seg-btn ${rosterScope === 'day' ? 'active' : ''}" data-wf-roster-scope="day">Selected Day (${fmtNum(ds.totalHeadcount)})</button>
+              <button type="button" class="seg-btn ${rosterScope === 'period' ? 'active' : ''}" data-wf-roster-scope="period">Multi-Day Log</button>
+            </div>
+            ${exportBtn('wfDailyRosterPanel', 'Daily_Workforce_Machine_Map')}
+          </span>
+        </div>
+        ${renderColFilterBar('wf_roster')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('wf_roster', 'Date', 'date')}${th('wf_roster', 'Co.', 'company')}${th('wf_roster', 'Employee', 'staff')}${th('wf_roster', 'Zone', 'zoneLabel')}
+                ${th('wf_roster', 'Plant Station / External Factories', 'stationLabel')}${th('wf_roster', 'Machines (Operated / Assigned)', 'auditStatus')}
+                ${th('wf_roster', 'Shift / OT', 'workedHrs', 'r')}${th('wf_roster', 'Trips', 'totalTrips', 'r')}${th('wf_roster', 'Fuel / Oil', 'totalFuelL', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownRoster.map(r => {
+                const zCls = r.zone === 'plant' ? 'badge-ok' : (r.zone === 'external' ? 'badge-info' : (r.hasGhostCrit ? 'badge-err' : 'badge-warn'));
+                const opM = (r.operatedMachines || []).map(m => `<span class="wf-mach-tag" data-rel-key="equipment" data-rel-val="${esc(m.name)}">${esc(m.name)}</span>`).join(' ');
+                const asM = (!opM && (r.assignedMachines || []).length)
+                  ? r.assignedMachines.map(mName => `<span class="badge" data-rel-key="equipment" data-rel-val="${esc(mName)}">${esc(mName)} (Assigned)</span>`).join(' ')
+                  : '';
+                const shiftTxt = r.zone === 'absent'
+                  ? `<span class="badge badge-warn">${esc(r.absentType)}</span>`
+                  : ((r.workedHrs > 0 || r.otHrs > 0) ? `<strong>${fmtNum(r.workedHrs, 1)}h</strong>${r.otHrs > 0 ? ` <span style="color:var(--brass)">+${fmtNum(r.otHrs, 1)}OT</span>` : ''}` : '<span class="mu">Roster</span>');
+                return `
+                  <tr class="rrow" data-rkey="employments" data-rid="${esc(r.staff)}">
+                    <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td>${relLink('employments', r.staff, r.staff, true)}</td>
+                    <td><span class="badge ${zCls}">${esc(r.zoneLabel)}</span></td>
+                    <td style="white-space:normal;max-width:220px;font-size:11.5px">${esc(r.stationLabel)}</td>
+                    <td style="white-space:normal;max-width:195px">${opM || asM || '<span class="mu">—</span>'}</td>
+                    <td class="r">${shiftTxt}</td>
+                    <td class="r">${r.totalTrips > 0 ? `<strong>${fmtNum(r.totalTrips)}</strong>` : '—'}</td>
+                    <td class="r">${r.totalFuelL > 0 ? `<strong>${fmtNum(r.totalFuelL, 0)} L</strong>` : '—'}</td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(9, 'No workforce deployment rows match the active filter')}
+              ${showMoreRow('wf_roster', rosterSorted.length, 9)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>TOTAL (${fmtNum(rosterSorted.length)} WORKFORCE ROWS)</b></td>
+                <td class="r"><b>${fmtNum(totRosterHrs, 1)} hrs</b></td>
+                <td class="r"><b>${fmtNum(totRosterTrips, 0)}</b></td>
+                <td class="r"><b>${fmtNum(totRosterFuel, 0)} L</b></td>
               </tr>
             </tfoot>
           </table>
@@ -13841,7 +16248,7 @@
             <div class="perm-sec-head">
               <div>
                 <span class="perm-sec-num">03</span>
-                <strong>Executive Dashboards (20 Power BI Pages · m18c)</strong>
+                <strong>Executive Dashboards (20 Interactive Pages)</strong>
               </div>
               <div class="perm-sec-quick">
                 <button type="button" class="perm-mini-btn" data-perm-bulk="dashboards:full">All 20 Pages</button>
@@ -14021,7 +16428,7 @@
             <div class="form-field">
               <div class="field-lbl-with-btn">
                 <label for="nu_access">Executive Dashboards &amp; Statements</label>
-                <button type="button" class="role-inspect-btn ${STATE.showRolePermMatrix ? 'active' : ''}" id="checkDashAccessBtn" title="Inspect or customize which of the 20 Power BI Dashboards and 22 Printable Statements this seat can open">
+                <button type="button" class="role-inspect-btn ${STATE.showRolePermMatrix ? 'active' : ''}" id="checkDashAccessBtn" title="Inspect or customize which of the 20 Executive Dashboards and 22 Printable Statements this seat can open">
                   ${ic('pbi')} Check Dashboards &amp; Statements
                 </button>
               </div>
@@ -14180,7 +16587,7 @@
             badgeCls: 'emerald',
             val: `${fmtUSD(annualSaved, 0)} / yr`,
             valCls: 'emerald',
-            sub: `Zero Power Apps / Power BI per-seat licensing overhead`,
+            sub: `Zero per-seat SaaS licensing overhead`,
             tone: 'emerald'
           })}
         </div>
@@ -14379,7 +16786,7 @@
             <div class="sentinel-item ${/Live/.test(STATE.cloudStatus) ? 'ok' : 'warn'}">
               <div>
                 <div class="sentinel-title">Driver 1: BHFIRMS Multi-Device Cloud Relay + Local SQLite</div>
-                <div class="sentinel-detail">Active across phones, tablets &amp; laptops at <code class="mono">husseinbdeir.github.io/mfg-web</code>; on the LAN host <code class="mono">server.py</code> also writes every entry into <code class="mono">data/mfg.db</code>. Syncs seats, PINs, sessions and app entries with 0 licenses.</div>
+                <div class="sentinel-detail">Active across phones, tablets &amp; laptops at <code class="mono">husseinbdeir.github.io/isabi/app</code>; on the LAN host <code class="mono">server.py</code> also writes every entry into <code class="mono">data/mfg.db</code>. Syncs seats, PINs, sessions and app entries with 0 licenses.</div>
               </div>
               <span class="badge ${/Live/.test(STATE.cloudStatus) ? 'badge-ok' : 'badge-warn'}">${/Live/.test(STATE.cloudStatus) ? 'CONNECTED' : esc(STATE.cloudStatus.replace('● ', '').toUpperCase())}</span>
             </div>
@@ -14403,7 +16810,7 @@
         <div class="system-showcase-inner">
           <div class="system-showcase-copy">
             <div class="system-showcase-title">ISABI Systems Public Showcase &amp; Architecture Blueprints</div>
-            <div class="system-showcase-sub">Open the public ISABI Systems overview to explore the 10-industry ERP &amp; Power BI architecture blueprints, interactive module tours, and zero-seat licensing model.</div>
+            <div class="system-showcase-sub">Open the public ISABI Systems overview to explore the 10-industry ERP &amp; executive analytics blueprints, interactive module tours, and zero-seat licensing model.</div>
           </div>
           <a href="${esc(showcaseHref)}" class="btn btn-brass system-showcase-btn" id="railShowcaseLink" aria-label="Public Showcase">
             <i class="nav-ico" aria-hidden="true">${ic('showcase')}</i>
@@ -14748,7 +17155,7 @@
     if (!el) return false;
     const wrap = el.closest('.form-field');
     const pill = wrap ? wrap.querySelector(`[data-lock-pill="${fieldId}"]`) : null;
-    const baseReason = (wrap && wrap.getAttribute('data-lock-reason')) || 'Locked by Dataverse form policy';
+    const baseReason = (wrap && wrap.getAttribute('data-lock-reason')) || 'Locked by enterprise form policy';
     const reason = dynamicReason || baseReason;
     const adminOpen = isFieldAdminUnlocked(fieldId);
     const isAdmin = isAdminUser();
@@ -14948,7 +17355,7 @@
         FORM_UI.driverManual = false;
         box.hidden = true;
         recalcForm();
-        toast('All policy-locked fields restored to Dataverse rules', 'ok');
+        toast('All policy-locked fields restored to standard form rules', 'ok');
       });
     }
     const btnCancel = $('paCancelUnlockBtn');
@@ -15466,7 +17873,9 @@
           ? ` · ${winInfo.cust || winInfo.site} window`
           : (winInfo && winInfo.s ? ` · Window ${winInfo.s}..${winInfo.e || 'Open'}` : ''));
 
+    const trkHealth = truckName ? getEquipmentHealth(truckName, company) : null;
     if (isDelivery && !truckName) setHint('hint_truck', 'Required on Delivery', FORM_UI.postAttempted ? 'crit' : '');
+    else if (trkHealth && trkHealth.critCount > 0) setHint('hint_truck', `${truckName} is flagged Critical — Down (${trkHealth.latestOpenDefect ? trkHealth.latestOpenDefect.subsystem : 'Open Defect'}) · Do Not Dispatch`, 'warn');
     else if (truckName && isCoFleet && truckRow && !ownTruck) setHint('hint_truck', `${truckRow.name} is not in ${company} — switch Transported By or pick a ${company} truck`, 'warn');
     else if (truckName && transportBy === 'Third-party truck' && pureOwnTruck) setHint('hint_truck', `${truckRow.name} is an own unit — switch Transported By`, 'warn');
     else if (truckRow && effCap) setHint('hint_truck', `${truckRow.plate_no && norm(truckRow.plate_no) !== norm(truckRow.name) ? 'Plate ' + truckRow.plate_no + ' · ' : ''}Capacity ${fmtNum(effCap, 1)} m³${!isCoFleet && truckRow.supplier ? ' · Owner: ' + truckRow.supplier : ''}${winSuffix}`, 'ok');
@@ -16314,6 +18723,129 @@
         setFieldVisible('wrap_jv_share', jvt === 'partnership');
         setFieldVisible('wrap_jv_amount', jvt === 'distribution');
         if (jvt === 'partnership' && $('f_amount') && $('f_amount').value) $('f_amount').value = '';
+        commonDateChecks([]);
+        renderAdminLockBar();
+        return {};
+      }
+      if (STATE.modalForm === 'defect') {
+        const company = val('f_company') || defaultEntryCompany();
+        const unit = val('f_truck');
+        const sev = val('f_severity') || 'Moderate — Needs Part Soon';
+        const st = val('f_status') || 'Open — Defect Reported';
+        const sub = val('f_subsystem') || 'Engine & Powertrain';
+        const eq = unit ? equipInfo(unit, company) : null;
+        if (unit !== FORM_UI.lastTruck) {
+          FORM_UI.lastTruck = unit;
+          if (eq && eq.default_driver && $('f_reported_by') && !val('f_reported_by')) {
+            $('f_reported_by').value = eq.default_driver;
+          }
+        }
+        if (sev !== FORM_UI.lastSeverity) {
+          FORM_UI.lastSeverity = sev;
+          if (/Critical/i.test(sev) && $('f_sync_unit_status')) {
+            $('f_sync_unit_status').checked = true;
+          }
+        }
+        const h = unit ? getEquipmentHealth(unit, company) : null;
+        const qvEl = $('qv_truck_defect');
+        if (qvEl) {
+          if (unit) {
+            const lm = lastMeter(company, unit, val('f_date'));
+            const lmEff = lm ? effectiveFuelMeter(lm) : null;
+            const toneCls = h && h.critCount > 0 ? 'crit' : (h && h.openCount > 0 ? 'warn' : 'ok');
+            qvEl.innerHTML = `<div class="pa-rec-banner ${toneCls}" style="margin:2px 0 4px">${ic(h && h.openCount > 0 ? 'warn' : 'truck')} <span><b>${esc(unit)}</b> (${esc((eq && eq.type) || 'Truck')} · ${esc((eq && eq.ownership) || 'Fleet')}) · Current Health: <b>${esc(h ? h.status : 'Healthy')}</b> · Prior Open Defects: <b>${h ? h.openCount : 0}</b>${eq && eq.default_driver ? ' · Driver: <b>' + esc(eq.default_driver) + '</b>' : ''}${lmEff && lmEff.reading != null ? ' · Last Meter: <b>' + fmtNum(lmEff.reading, 0) + ' ' + esc(lmEff.unit) + '</b>' : ''}</span></div>`;
+          } else {
+            qvEl.innerHTML = '';
+          }
+        }
+        setHint('hint_truck', unit ? `${(eq && eq.type) || 'Truck'} · ${(eq && eq.ownership) || 'Fleet'}${h && h.openCount ? ' · ' + h.openCount + ' open defect(s)' : ' · Currently healthy'}` : '', h && h.critCount > 0 ? 'warn' : (unit ? 'ok' : ''));
+        setText('calc_def_health', /^(Resolved|Closed)/i.test(st) ? 'Resolved · Healthy' : (/Critical/i.test(sev) ? 'Critical — Down' : (/Moderate/i.test(sev) ? 'Needs Part Soon' : 'Monitor (Minor)')));
+        setText('calc_def_open', `${h ? h.openCount : 0} open`);
+        setText('calc_def_sub', sub);
+        setText('calc_def_notif', 'Logged Before Replacement');
+        commonDateChecks([]);
+        renderAdminLockBar();
+        return {};
+      }
+      if (STATE.modalForm === 'partlog') {
+        const company = val('f_company') || defaultEntryCompany();
+        const unit = val('f_truck');
+        const disp = val('f_disposition') || 'Stored in Warehouse / Spare Stock';
+        const selDef = $('f_defect_ref');
+        const unitDefs = unit
+          ? (SEED.records.equipment_defects || [])
+              .filter(d => d && !d.voided && norm(d.equipment) === norm(unit))
+              .slice()
+              .sort((a, b) => (isDefectOpen(b) ? 1 : 0) - (isDefectOpen(a) ? 1 : 0) || String(b.date || '').localeCompare(String(a.date || '')))
+          : [];
+        if (selDef) {
+          const uKey = `${norm(unit)}|${SEED._customRev || 0}`;
+          const prevVal = selDef.value;
+          if (selDef.dataset.unitKey !== uKey) {
+            selDef.dataset.unitKey = uKey;
+            const opts = [['', 'No Prior Defect Report (Emergency / Unnotified Change)']].concat(
+              unitDefs.map(d => [
+                d.name || d.id,
+                `${d.name || d.id} · ${isDefectOpen(d) ? 'OPEN' : 'RESOLVED'} · ${d.subsystem || 'General'}${d.part_name ? ' (' + d.part_name + ')' : ''}`
+              ])
+            );
+            selDef.innerHTML = opts.map(([ov, ol]) => `<option value="${esc(ov)}">${esc(ol)}</option>`).join('');
+            if (prevVal && opts.some(([ov]) => ov === prevVal)) {
+              selDef.value = prevVal;
+            }
+          }
+          if (unit !== FORM_UI.lastTruck) {
+            FORM_UI.lastTruck = unit;
+            if (!FORM_UI.defectRefPreset) {
+              const firstOpen = unitDefs.find(isDefectOpen);
+              selDef.value = firstOpen ? (firstOpen.name || firstOpen.id) : '';
+              if (firstOpen) {
+                if (firstOpen.part_name && $('f_part_name') && !val('f_part_name')) $('f_part_name').value = firstOpen.part_name;
+                if (firstOpen.subsystem && $('f_subsystem')) $('f_subsystem').value = firstOpen.subsystem;
+              }
+            }
+          }
+          if (selDef.value !== FORM_UI.lastDefectRef) {
+            FORM_UI.lastDefectRef = selDef.value;
+            const picked = unitDefs.find(d => (d.name || d.id) === selDef.value);
+            if (picked) {
+              if (picked.part_name && $('f_part_name') && !val('f_part_name')) $('f_part_name').value = picked.part_name;
+              if (picked.subsystem && $('f_subsystem')) $('f_subsystem').value = picked.subsystem;
+            }
+          }
+        }
+        const defRef = val('f_defect_ref');
+        const linkedDef = defRef ? unitDefs.find(d => (d.name || d.id) === defRef) : null;
+        const banner = $('partPreDefectBanner');
+        if (banner) {
+          if (!unit) {
+            banner.className = 'pa-rec-banner info';
+            banner.innerHTML = `${ic('info')} <span>Select an <b>Equipment / Truck</b> unit below to check whether a defect was reported beforehand.</span>`;
+            setFieldVisible('wrap_resolve_defect', false);
+          } else if (defRef) {
+            banner.className = 'pa-rec-banner ok';
+            banner.innerHTML = `${ic('check_circle')} <span><b>Pre-Replacement Defect Verified</b> — Linked to prior defect report <b>${esc(defRef)}</b>${linkedDef && linkedDef.subsystem ? ' (' + esc(linkedDef.subsystem) + ')' : ''} on <b>${esc(unit)}</b>.</span>`;
+            setFieldVisible('wrap_resolve_defect', Boolean(!linkedDef || isDefectOpen(linkedDef)));
+          } else {
+            const openCnt = unitDefs.filter(isDefectOpen).length;
+            banner.className = 'pa-rec-banner warn';
+            banner.innerHTML = `${ic('warn')} <span><b>Unnotified Part Change</b> — No prior defect report is linked for <b>${esc(unit)}</b>${openCnt ? ` (${openCnt} open defect${openCnt === 1 ? '' : 's'} available in dropdown)` : ' (0 prior defects on file)'}. Emergency breakdown replacements are permitted, and <b>AI Sentinels &amp; Audit</b> will flag this change as unnotified.</span>`;
+            setFieldVisible('wrap_resolve_defect', false);
+          }
+        }
+        const eq = unit ? equipInfo(unit, company) : null;
+        setHint('hint_truck', unit ? `${(eq && eq.type) || 'Truck'} · ${(eq && eq.ownership) || 'Fleet'} · ${unitDefs.filter(isDefectOpen).length} open defect(s)` : '', unit ? 'ok' : '');
+        setHint('hint_defect_ref', defRef ? 'Pre-notification verified' : (unit ? 'Unnotified emergency change — Sentinel S10 will log exception' : ''), defRef ? 'ok' : (unit ? 'warn' : ''));
+        setHint('hint_part_loc', /^Stored/i.test(disp) ? 'Warehouse shelf / spare bin where piece is stored' : (/^Installed/i.test(disp) ? 'Target unit where piece is mounted' : ''), '');
+        setHint('hint_part_party', /Maintenance|Workshop/i.test(disp) ? 'Workshop / mechanic rebuilding this piece' : (/^Sold/i.test(disp) ? 'Used-part / scrap buyer' : ''), '');
+        const outlay = round2(num('f_new_cost') + num('f_repair_cost'));
+        const sale = round2(num('f_sale_proceeds'));
+        const net = round2(outlay - sale);
+        const dispShort = /^Stored/i.test(disp) ? 'Stored in Warehouse' : (/Maintenance|Workshop/i.test(disp) ? 'In Maintenance' : (/^Sold/i.test(disp) ? 'Sold (Used/Scrap)' : (/^Installed/i.test(disp) ? 'Installed on Unit' : 'Scrapped')));
+        setText('calc_part_notif', !unit ? 'Pending Unit' : (defRef ? 'Pre-Notified' : 'Unnotified (Flagged)'));
+        setText('calc_part_disp', dispShort);
+        setText('calc_part_cost', fmtUSD(outlay, 2));
+        setText('calc_part_net', sale > outlay ? `+${fmtUSD(sale - outlay, 2)} Inflow` : fmtUSD(net, 2));
         commonDateChecks([]);
         renderAdminLockBar();
         return {};
@@ -17296,6 +19828,7 @@
     FORM_UI.lastSite = val('f_site'); FORM_UI.lastProduct = val('f_product');
     FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier');
     FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = '';
+    FORM_UI.defectRefPreset = false; FORM_UI.lastSeverity = ''; FORM_UI.lastDefectRef = '';
 
     const addSupDrvBtn = $('btnAddSupDriver');
     if (addSupDrvBtn) {
@@ -17414,6 +19947,7 @@
           if (!isFieldAdminUnlocked('f_transunitprice')) FORM_UI.transManual = false;
         }
         if (el.id === 'f_customer' && !isFieldAdminUnlocked('f_method')) FORM_UI.methodManual = false;
+        if (el.id === 'f_defect_ref') FORM_UI.defectRefPreset = true;
         recalcForm();
       };
       el.addEventListener('input', handler);
@@ -17894,6 +20428,67 @@
       if (!pt) addErr('f_counterparty', 'JV Partner is required.');
       crKey = jvt === 'partnership' ? 'jv_partnerships' : 'jv_distributions';
       record = { ...base, name: `JV ${st} · ${pt}`, site: st, partner: pt, share_pct: num('f_share') || 50, percentage: num('f_share') || 50, basis: 'Revenue', amount: round2(num('f_amount')), difference: 0, total: round2(num('f_amount')), rep_date: repDate };
+    } else if (f === 'defect') {
+      const unit = val('f_truck'), sub = val('f_subsystem') || 'Engine & Powertrain', desc = val('f_description');
+      if (!unit) addErr('f_truck', 'Equipment / Truck unit is required.');
+      if (!sub) addErr('f_subsystem', 'Subsystem / Component Area is required.');
+      if (!desc) addErr('f_description', 'Defect / Issue Description is required.');
+      const st = val('f_status') || 'Open — Monitoring';
+      const unitSlug = String(unit || 'UNIT').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'UNIT';
+      const seq = String(((SEED.records.equipment_defects || []).length + (STATE.customRecords.equipment_defects || []).length) + 1).padStart(3, '0');
+      crKey = 'equipment_defects';
+      record = {
+        ...base,
+        name: `DEF-${date.replace(/-/g, '')}-${unitSlug}-${seq}`,
+        rep_date: repDate,
+        equipment: unit,
+        equipment_category: (equipInfo(unit, company) || {}).type || 'Truck',
+        subsystem: sub,
+        part_name: val('f_part_name'),
+        severity: val('f_severity') || 'Moderate — Needs Part Soon',
+        status: st,
+        reported_by: val('f_reported_by'),
+        meter_reading: val('f_meter') !== '' ? num('f_meter') : null,
+        description: desc,
+        resolved_date: /^(Resolved|Closed)/i.test(st) ? date : '',
+        linked_part_log: '',
+        sync_unit_status: Boolean($('f_sync_unit_status') && $('f_sync_unit_status').checked)
+      };
+    } else if (f === 'partlog') {
+      const unit = val('f_truck'), pName = val('f_part_name'), qty = num('f_qty'), disp = val('f_disposition');
+      if (!unit) addErr('f_truck', 'Equipment / Truck unit is required.');
+      if (!pName) addErr('f_part_name', 'Part / Piece Name is required.');
+      if (!(qty > 0)) addErr('f_qty', 'Quantity must be above zero.');
+      if (!disp) addErr('f_disposition', 'Part Disposition / Lifecycle Status is required.');
+      if (/^Sold/i.test(disp) && !(num('f_sale_proceeds') > 0) && !notes) {
+        addErr('f_sale_proceeds', 'Enter Used / Scrap Sale Proceeds ($) > 0 for a Sold part (or explain in Notes).');
+      }
+      const defRef = val('f_defect_ref');
+      const unitSlug = String(unit || 'UNIT').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'UNIT';
+      const seq = String(((SEED.records.part_movements || []).length + (STATE.customRecords.part_movements || []).length) + 1).padStart(3, '0');
+      crKey = 'part_movements';
+      record = {
+        ...base,
+        name: `PRT-${date.replace(/-/g, '')}-${unitSlug}-${seq}`,
+        rep_date: repDate,
+        equipment: unit,
+        action_type: val('f_action_type') || 'Part Replaced (Old Removed + New Installed)',
+        part_name: pName,
+        part_serial: val('f_part_serial'),
+        subsystem: val('f_subsystem') || 'Engine & Powertrain',
+        qty: qty || 1,
+        condition: val('f_condition') || 'Repairable / Rebuildable',
+        removed_disposition: disp,
+        storage_location: val('f_location'),
+        vendor_or_buyer: val('f_vendor_buyer'),
+        new_part_cost: round2(num('f_new_cost')),
+        repair_cost: round2(num('f_repair_cost')),
+        sale_proceeds: round2(num('f_sale_proceeds')),
+        defect_ref: defRef,
+        prior_defect_notified: Boolean(defRef),
+        approved_by: val('f_approved_by'),
+        resolve_defect: Boolean(defRef && $('f_resolve_defect') && $('f_resolve_defect').checked)
+      };
     }
     return { errors, fieldErrors, record, crKey };
   }
@@ -18110,12 +20705,64 @@
           });
         }
       }
+      const extraApiPosts = [];
+      if (crKey === 'equipment_defects' && record.sync_unit_status && isDefectOpen(record)) {
+        if (!Array.isArray(STATE.customRecords.company_equipment)) STATE.customRecords.company_equipment = [];
+        const allCoEq = (SEED.records.company_equipment || []).concat(STATE.customRecords.company_equipment || []);
+        const eqMatches = allCoEq.filter(ce => ce && !ce.voided && norm(ce.equipment) === norm(record.equipment) && !ce.end_date);
+        const scopedMatches = eqMatches.filter(ce => !record.company || norm(ce.company) === norm(record.company));
+        const targets = scopedMatches.length ? scopedMatches : eqMatches;
+        const seenCeIds = new Set();
+        targets.forEach(ce => {
+          const cid = String(ce.id || '');
+          if (cid && seenCeIds.has(cid)) return;
+          if (cid) seenCeIds.add(cid);
+          if (ce.status !== 'Under repair') ce._prev_status = ce.status || 'Active';
+          ce.status = 'Under repair';
+          const cIdx = STATE.customRecords.company_equipment.findIndex(x => x && String(x.id) === cid);
+          if (cIdx >= 0) Object.assign(STATE.customRecords.company_equipment[cIdx], ce);
+          else STATE.customRecords.company_equipment.unshift(Object.assign({}, ce));
+          extraApiPosts.push(['company_equipment', ce]);
+        });
+      }
+      if (crKey === 'part_movements' && record.defect_ref && record.resolve_defect) {
+        if (!Array.isArray(STATE.customRecords.equipment_defects)) STATE.customRecords.equipment_defects = [];
+        const defPool = STATE.customRecords.equipment_defects.concat(SEED.records.equipment_defects || []);
+        const dMatch = defPool.find(d => d && !d.voided && (norm(d.name) === norm(record.defect_ref) || String(d.id) === String(record.defect_ref)));
+        if (dMatch) {
+          dMatch.status = 'Resolved — Part Changed';
+          dMatch.resolved_date = record.date;
+          dMatch.linked_part_log = record.name;
+          const dIdx = STATE.customRecords.equipment_defects.findIndex(x => x && String(x.id) === String(dMatch.id));
+          if (dIdx >= 0) Object.assign(STATE.customRecords.equipment_defects[dIdx], dMatch);
+          else STATE.customRecords.equipment_defects.unshift(Object.assign({}, dMatch));
+          extraApiPosts.push(['equipment_defects', dMatch]);
+          const remOpen = defPool.some(d => d && !d.voided && String(d.id) !== String(dMatch.id) && norm(d.equipment) === norm(record.equipment) && isDefectOpen(d));
+          if (!remOpen && Array.isArray(STATE.customRecords.company_equipment)) {
+            const allCoEq = (SEED.records.company_equipment || []).concat(STATE.customRecords.company_equipment || []);
+            const seenCeIds = new Set();
+            allCoEq.forEach(ce => {
+              if (!ce || ce.voided || norm(ce.equipment) !== norm(record.equipment) || ce.status !== 'Under repair') return;
+              const cid = String(ce.id || '');
+              if (cid && seenCeIds.has(cid)) return;
+              if (cid) seenCeIds.add(cid);
+              ce.status = ce._prev_status || 'Active';
+              const cIdx = STATE.customRecords.company_equipment.findIndex(x => x && String(x.id) === cid);
+              if (cIdx >= 0) Object.assign(STATE.customRecords.company_equipment[cIdx], ce);
+              extraApiPosts.push(['company_equipment', ce]);
+            });
+          }
+        }
+      }
       applyCustomRecordsToSeed();
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
       closeEntryModal(true);
       toast(`${CR_LABEL[crKey].replace(/^./, ch => ch.toUpperCase())} posted · ${record.name}`, 'ok');
       renderApp();
       await postRecordToLocalApi(crKey, record);
+      for (const [ek, er] of extraApiPosts) {
+        await postRecordToLocalApi(ek, er);
+      }
       syncWithCloud(true);
     } finally {
       STATE.saving = false;
@@ -18189,6 +20836,25 @@
       r = Object.assign({}, seedRow, { id: seedRow.id || q, voided: true, voided_by: who, voided_at: when });
       list.unshift(r);
     }
+    const extraVoidPosts = [];
+    if (crKey === 'equipment_defects' && r && r.equipment && Array.isArray(STATE.customRecords.company_equipment)) {
+      const defPool = (STATE.customRecords.equipment_defects || []).concat(SEED.records.equipment_defects || []);
+      const remOpen = defPool.some(d => d && !d.voided && norm(d.equipment) === norm(r.equipment) && isDefectOpen(d));
+      if (!remOpen) {
+        const allCoEq = (SEED.records.company_equipment || []).concat(STATE.customRecords.company_equipment || []);
+        const seenCeIds = new Set();
+        allCoEq.forEach(ce => {
+          if (!ce || ce.voided || norm(ce.equipment) !== norm(r.equipment) || ce.status !== 'Under repair') return;
+          const cid = String(ce.id || '');
+          if (cid && seenCeIds.has(cid)) return;
+          if (cid) seenCeIds.add(cid);
+          ce.status = ce._prev_status || 'Active';
+          const cIdx = STATE.customRecords.company_equipment.findIndex(x => x && String(x.id) === cid);
+          if (cIdx >= 0) Object.assign(STATE.customRecords.company_equipment[cIdx], ce);
+          extraVoidPosts.push(['company_equipment', ce]);
+        });
+      }
+    }
     applyCustomRecordsToSeed();
     saveLocalAuthAndRecords();
     renderApp();
@@ -18196,10 +20862,11 @@
     const targetId = (r && r.id) || q;
     toast('Record voided · ' + label, 'ok', { onUndo: () => restoreVoidedRecord(crKey, targetId) });
     postRecordToLocalApi(crKey, r);
+    extraVoidPosts.forEach(([ek, er]) => postRecordToLocalApi(ek, er));
     syncWithCloud(true);
   }
 
-  function openEntryModal(formType) {
+  function openEntryModal(formType, prefill = null) {
     const preselectConv = formType === 'conversion';
     const preselectExt = formType === 'external';
     const resolvedForm = (preselectConv || preselectExt) ? 'treasury' : formType;
@@ -18287,6 +20954,28 @@
       $('f_trtype').value = 'external';
     }
     wireModalLiveCalc(wasClosed);
+    if (prefill && typeof prefill === 'object') {
+      if (prefill.co && $('f_company') && allowedCompanyNames().includes(prefill.co)) {
+        $('f_company').value = prefill.co;
+      }
+      if (prefill.eq && $('f_truck')) {
+        $('f_truck').value = prefill.eq;
+        FORM_UI.lastTruck = '';
+        recalcForm(true);
+      }
+      if ('def' in prefill && $('f_defect_ref')) {
+        FORM_UI.defectRefPreset = true;
+        $('f_defect_ref').value = prefill.def || '';
+        FORM_UI.lastDefectRef = $('f_defect_ref').value;
+      }
+      if (prefill.part && $('f_part_name')) $('f_part_name').value = prefill.part;
+      if (prefill.sub && $('f_subsystem')) $('f_subsystem').value = prefill.sub;
+      if (prefill.disp && $('f_disposition')) $('f_disposition').value = prefill.disp;
+      if (prefill.party && $('f_vendor_buyer')) $('f_vendor_buyer').value = prefill.party;
+      if (prefill.cost != null && prefill.cost !== '' && $('f_new_cost')) $('f_new_cost').value = prefill.cost;
+      if (prefill.notes && $('f_notes')) $('f_notes').value = prefill.notes;
+      recalcForm();
+    }
   }
 
   function closeEntryModal(force) {
@@ -18322,7 +21011,8 @@
     logistics_allowances: 'Site Allowance (Mon–Sun)', overtime_rates: 'Driver Trip & Overtime Rate',
     external_movements: 'External Treasury Movement', loans: 'Loan & Partner Advance',
     loan_settlements: 'Loan Repayment / Drawdown', conversions: 'USD ↔ LBP FX Conversion',
-    jv_partnerships: 'JV 50/50 Site Partnership', jv_distributions: 'JV Profit Distribution'
+    jv_partnerships: 'JV 50/50 Site Partnership', jv_distributions: 'JV Profit Distribution',
+    equipment_defects: 'Equipment Defect Report', part_movements: 'Part Change & Custody'
   };
 
   const INSPECT_DVN = {
@@ -18337,7 +21027,8 @@
     employments: 'bhf_mfgemployment', attendance: 'bhf_mfgattendance', freelance_entries: 'bhf_mfgfreelance',
     logistics_allowances: 'bhf_mfglogistics', overtime_rates: 'bhf_mfgovertimerate',
     external_movements: 'bhf_mfgexternal', loans: 'bhf_mfgloan', loan_settlements: 'bhf_mfgloansettlement',
-    conversions: 'bhf_mfgconversion', jv_partnerships: 'bhf_mfgjvpartnership', jv_distributions: 'bhf_mfgjvdistribution'
+    conversions: 'bhf_mfgconversion', jv_partnerships: 'bhf_mfgjvpartnership', jv_distributions: 'bhf_mfgjvdistribution',
+    equipment_defects: 'bhf_equipmentdefect', part_movements: 'bhf_partmovement'
   };
 
   const INSPECT_LOOKUP_FIELD_TARGET = {
@@ -18346,7 +21037,8 @@
     region: 'regions', truck: 'equipment', equipment: 'equipment', driver: 'drivers',
     default_driver: 'drivers', day_operator: 'drivers', night_operator: 'drivers',
     staff: 'employments', vat_invoice: 'vat_invoices', category: 'expense_categories',
-    subcategory: 'expense_subcategories', uom: 'uoms', unit: 'uoms', type: 'product_types'
+    subcategory: 'expense_subcategories', uom: 'uoms', unit: 'uoms', type: 'product_types',
+    defect_ref: 'equipment_defects', linked_part_log: 'part_movements'
   };
 
   function inspectorValue(key, v) {
@@ -18358,7 +21050,7 @@
       if (key === 'lbp_delta') return fmtSignedLBP(v);
       if (/^lbp_|_lbp$/.test(key)) return fmtLBP(v);
       if (key === 'usd_delta') return fmtSignedUSD(v, 2);
-      if (/price|cost|amount|total|vat|discount|tip|limit|salary|balance|adj|principal|value|change|rate_usd|daily_usd|paid|spent|sales_ttc|raw_cost/.test(key) && !/rate$|pct|factor|ton_factor|exchange|count|loads|days|hours|cost_class|cost_bucket/.test(key)) return fmtUSD(v, 2);
+      if (/price|cost|amount|total|vat|discount|tip|limit|salary|balance|adj|principal|value|change|rate_usd|daily_usd|paid|spent|sales_ttc|raw_cost|proceeds/.test(key) && !/rate$|pct|factor|ton_factor|exchange|count|loads|days|hours|meter_reading|cost_class|cost_bucket/.test(key)) return fmtUSD(v, 2);
       return fmtNum(v, Number.isInteger(v) ? 0 : 2);
     }
     if (/date|last_sale|last_purchase/i.test(key)) return fmtDateDMY(v);
@@ -18455,13 +21147,32 @@
         text: `Supplier & Hauler 3-Leg AP Ledger: Net AP Balance ${fmtUSD(si.ap_balance || 0, 2)} (Material Leg: ${fmtUSD(si.ap_material || 0, 0)} · Haulage Leg: ${fmtUSD(si.ap_haulage || 0, 0)} · Expense Leg: ${fmtUSD(si.ap_expense || 0, 0)})  |  Active Agreements: ${rulesCnt}  |  Registered Trucks: ${fmtNum(row.trucks_count || (row.trucks || []).length || 0)}`
       };
     }
-    if (key === 'equipment') {
-      const lm = lastMeter(null, row.name, null);
+    if (key === 'equipment' || key === 'company_equipment') {
+      const eqName = row.equipment || row.name;
+      const lm = lastMeter(null, eqName, null);
       const lmEff = lm ? effectiveFuelMeter(lm) : null;
       const mSpec = equipMeterSpec(row, row.company);
+      const h = getEquipmentHealth(eqName);
+      const healthSummary = `Health: ${h.label}${h.openCount ? ' (' + h.openCount + ' open defect' + (h.openCount > 1 ? 's' : '') + ')' : ''}${h.partMovements && h.partMovements.length ? ' · ' + h.partMovements.length + ' part log' + (h.partMovements.length > 1 ? 's' : '') : ''}`;
       return {
-        tone: 'info',
-        text: `Universal Fleet Registry: Unit ${row.name} (${row.type || 'Truck'} · ${mSpec.label} · ${row.ownership || 'Transporter'})  |  Capacity: ${row.capacity ? fmtNum(row.capacity, 1) + ' m³' : 'Standard'}  |  Owner: ${row.supplier || 'Company Fleet'}  |  Default Driver: ${row.default_driver || '—'}  |  Last Meter: ${lm && lmEff && lmEff.reading != null ? fmtNum(lmEff.reading, lmEff.type === 'hours' && lmEff.reading % 1 !== 0 ? 1 : 0) + ' ' + lmEff.unit + ' (' + lm.date + ')' : 'No meter log'}`
+        tone: h.critCount > 0 ? 'crit' : (h.openCount > 0 ? 'warn' : 'info'),
+        text: `Universal Fleet Registry: Unit ${eqName} (${row.type || 'Truck'} · ${mSpec.label} · ${row.ownership || 'Transporter'})  |  ${healthSummary}  |  Capacity: ${row.capacity ? fmtNum(row.capacity, 1) + ' m³' : 'Standard'}  |  Owner: ${row.supplier || 'Company Fleet'}  |  Default Driver: ${row.default_driver || '—'}  |  Last Meter: ${lm && lmEff && lmEff.reading != null ? fmtNum(lmEff.reading, lmEff.type === 'hours' && lmEff.reading % 1 !== 0 ? 1 : 0) + ' ' + lmEff.unit + ' (' + lm.date + ')' : 'No meter log'}`
+      };
+    }
+    if (key === 'equipment_defects') {
+      const open = isDefectOpen(row);
+      const isCrit = /^Critical/i.test(row.severity || '');
+      return {
+        tone: open ? (isCrit ? 'crit' : 'warn') : 'ok',
+        text: `Equipment Defect Report ${row.name}: Unit ${row.equipment || '—'} · Subsystem: ${row.subsystem || '—'}${row.part_name ? ' (' + row.part_name + ')' : ''}  |  Severity: ${row.severity || '—'}  |  Status: ${row.status || 'Open'}${row.linked_part_log ? ' · Resolved by ' + row.linked_part_log : ''}`
+      };
+    }
+    if (key === 'part_movements') {
+      const preOk = Boolean(row.prior_defect_notified || row.defect_ref);
+      const netCost = round2(Number(row.new_part_cost || 0) + Number(row.repair_cost || 0) - Number(row.sale_proceeds || 0));
+      return {
+        tone: preOk ? 'ok' : 'warn',
+        text: `Part Custody & Lifecycle ${row.name}: ${row.part_name || 'Part'} (×${fmtNum(row.qty || 1, 0)}) on Unit ${row.equipment || '—'}  |  Disposition: ${row.removed_disposition || '—'}${row.storage_location ? ' @ ' + row.storage_location : ''}  |  Pre-Defect Notification: ${preOk ? 'Verified (' + (row.defect_ref || 'Prior Report') + ')' : 'Unnotified Emergency Change'}  |  Net Cost: ${fmtUSD(netCost, 2)}`
       };
     }
     if (key === 'sites') {
@@ -18488,7 +21199,7 @@
     }
     return {
       tone: 'info',
-      text: `Relational Record (${INSPECT_LABELS[key] || key}) · Connected to live Dataverse tables & SOA double-entry ledger (${SEED_DATE}). Click any blue lookup pill or related subgrid row below to drill across entities.`
+      text: `Relational Record (${INSPECT_LABELS[key] || key}) · Connected to live relational SQL tables & SOA double-entry ledger (${SEED_DATE}). Click any blue lookup pill or related subgrid row below to drill across entities.`
     };
   }
 
@@ -18620,7 +21331,7 @@
           { lbl: 'USD DRAWER CHANGE', tag: d.u2l ? 'USD OUTFLOW' : 'USD INFLOW', tone: d.u2l ? 'crit' : 'good', val: fmtSignedUSD(d.usd, 2), sub1: d.u2l ? 'USD sold from cash till' : 'USD received into cash till', sub2: `Direction: ${d.dirLabel}`, pct: 85 },
           { lbl: 'LBP DRAWER CHANGE', tag: d.u2l ? 'LBP INFLOW' : 'LBP OUTFLOW', tone: d.u2l ? 'good' : 'crit', val: fmtSignedLBP(d.lbp), sub1: d.u2l ? 'LBP received into cash till' : 'LBP sold from cash till', sub2: `Dual-currency cash till`, pct: 85 },
           { lbl: 'EFFECTIVE FX RATE', tag: 'LL / USD', tone: 'info', val: `${fmtNum(d.rate, 0)} LL/$`, sub1: `Exact Rate: ${fmtNum(d.rate, 2)} LL/$`, sub2: `Tx Date: ${row.date || '—'}`, pct: 80 },
-          { lbl: 'AUDIT & LEDGER SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'DATAVERSE', tone: 'info', val: isAppRecord(row) ? 'App Entry' : 'Synced Book', sub1: isAppRecord(row) ? `Posted by ${row.entered_by || 'User'}` : `Snapshot ${SEED_DATE}`, sub2: `Cash Till Reconciled`, pct: 100 }
+          { lbl: 'AUDIT & LEDGER SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: isAppRecord(row) ? 'App Entry' : 'Synced Book', sub1: isAppRecord(row) ? `Posted by ${row.entered_by || 'User'}` : `Snapshot ${SEED_DATE}`, sub2: `Cash Till Reconciled`, pct: 100 }
         ]
       };
     }
@@ -18638,7 +21349,7 @@
         { lbl: 'PRIMARY RECORD VALUE', tag: (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18), tone: 'good', val: primaryMoney != null ? fmtUSD(primaryMoney, 2) : (row.name || row.ticket_no || String(row.id).slice(0, 10)), sub1: `Entity: ${INSPECT_LABELS[key] || key}`, sub2: `Company Scope: ${row.company || 'Shared / Root BU'}`, pct: 82 },
         { lbl: 'CONNECTED SUBGRIDS', tag: `${subgrids.length} TABLES`, tone: 'info', val: `${fmtNum(totalRel)} Rows`, sub1: subgrids.slice(0, 2).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Direct master record', sub2: subgrids.slice(2, 4).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Click any row below to inspect', pct: Math.min(100, Math.max(25, totalRel * 5)) },
         { lbl: 'EFFECTIVE DATES & TIMELINE', tag: row.end_date ? 'DATED' : 'ACTIVE', tone: row.end_date && String(row.end_date) < SEED_DATE ? 'warn' : 'good', val: String(row.date || row.start_date || SEED_DATE).slice(0, 10), sub1: `Rep / Start: ${row.rep_date || row.start_date || row.date || '—'}`, sub2: `End Date: ${row.end_date || 'Open / Current'}`, pct: 75 },
-        { lbl: 'AUDIT & LEDGER SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'DATAVERSE', tone: 'info', val: isAppRecord(row) ? 'App Entry' : 'Synced Book', sub1: isAppRecord(row) ? `Posted by ${row.entered_by || 'User'}` : `Snapshot ${SEED_DATE}`, sub2: `Double-Entry SOA Verified`, pct: 100 }
+        { lbl: 'AUDIT & LEDGER SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: isAppRecord(row) ? 'App Entry' : 'Synced Book', sub1: isAppRecord(row) ? `Posted by ${row.entered_by || 'User'}` : `Snapshot ${SEED_DATE}`, sub2: `Double-Entry SOA Verified`, pct: 100 }
       ]
     };
   }
@@ -19459,7 +22170,7 @@
     // Guarantee at least 9 .inspector-cell elements across sections for headless verifier & dense Power Apps parity
     const synthExtras = [
       ['entity_table', INSPECT_LABELS[key] || key],
-      ['record_origin', isAppRecord(row) ? 'ISABI Web App' : 'Dataverse Production'],
+      ['record_origin', isAppRecord(row) ? 'ISABI Web App' : 'ISABI SQL Core'],
       ['snapshot_date', SEED_DATE],
       ['coa_status', 'Double-Entry Verified'],
       ['currency_basis', 'USD (89,500 LBP Peg)']
@@ -19938,7 +22649,7 @@
       </div>
 
       <div class="modal-foot">
-        <span class="form-note">${app ? `Posted by <b>${esc(row.entered_by || '—')}</b> · ${esc(row.entered_at || '')}${row.voided ? ' · <b>VOIDED</b>' : ''}` : 'Click any blue lookup pill or related subgrid row to navigate across connected Dataverse records.'}</span>
+        <span class="form-note">${app ? `Posted by <b>${esc(row.entered_by || '—')}</b> · ${esc(row.entered_at || '')}${row.voided ? ' · <b>VOIDED</b>' : ''}` : 'Click any blue lookup pill or related subgrid row to navigate across connected relational records.'}</span>
         <div>
           ${!row.voided && canVoid() ? `<button type="button" class="btn btn-danger-outline" id="inspectorVoidBtn">${ic('trash')} Void / Delete Record</button>` : ''}
           <button type="button" class="btn btn-brass" id="inspectorDoneBtn">Close</button>
@@ -20592,6 +23303,7 @@
   }
 
   function ensureUniversalCanonicalIndex() {
+    if (!SEED._coreReady) return;
     if (SEED._canonicalById && SEED._canonicalByMain) return;
     SEED._canonicalById = {};
     SEED._canonicalByMain = {};
@@ -20612,6 +23324,7 @@
   }
 
   function sanitizeUniversalCustomRecords() {
+    if (!SEED._coreReady) return false;
     ensureUniversalCanonicalIndex();
     let removedAny = false;
     Object.keys(UNIVERSAL_MAIN_SPEC).forEach(k => {
@@ -21709,7 +24422,6 @@
     const videoEl = $('authFaceVideo');
     if (!videoEl) return false;
     setAuthHint('Starting camera…', '');
-    const modelPromise = ensureFaceModelsLoaded().catch(() => false);
     const camOk = await startFaceCamera(videoEl);
     if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) {
       stopFaceCamera();
@@ -21723,17 +24435,40 @@
       return false;
     }
     const enrolled = usableFaces();
+    const faceAlreadyReady = Boolean(window.Face && window.Face.ready);
     setAuthHint(
       FACE_STATE.pending2faUser
         ? `🔒 Look at the camera to complete 2FA for ${FACE_STATE.pending2faUser.full_name}`
         : (enrolled.length
-          ? `Look at the camera for instant Face ID sign-in (${enrolled.length} enrolled)`
+          ? (faceAlreadyReady
+            ? `Look at the camera for instant Face ID sign-in (${enrolled.length} enrolled)`
+            : 'Camera active — preparing Face ID (or enter PIN below)…')
           : 'Camera active · Sign in with PIN below, then open Team Auth to enrol your 3 Face ID poses'),
-      enrolled.length ? 'ok' : ''
+      (enrolled.length && faceAlreadyReady) ? 'ok' : ''
     );
-    modelPromise.then(() => { if (!STATE.authed) updateAuthFaceUi(); });
+    const startModelsWhenReady = () => {
+      if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) return Promise.resolve(false);
+      return ensureFaceModelsLoaded().then(() => {
+        if (!STATE.authed && FACE_STATE.camActive) {
+          const enrNow = usableFaces();
+          if (!FACE_STATE.pending2faUser && enrNow.length && FACE_STATE.streakCount === 0) {
+            setAuthHint(`Look at the camera for instant Face ID sign-in (${enrNow.length} enrolled)`, 'ok');
+          }
+          updateAuthFaceUi();
+        }
+        return true;
+      }).catch(() => false);
+    };
+    if (forceStart || FACE_STATE.pending2faUser || window.__mfgCoreSeedLoaded) {
+      startModelsWhenReady();
+    } else {
+      let triggered = false;
+      const runOnce = () => { if (!triggered) { triggered = true; startModelsWhenReady(); } };
+      window.addEventListener('mfg:core-seed-ready', runOnce, { once: true });
+      setTimeout(runOnce, 1200);
+    }
     if (FACE_STATE.loopTimer) clearTimeout(FACE_STATE.loopTimer);
-    FACE_STATE.loopTimer = setTimeout(authFaceTick, 10);
+    FACE_STATE.loopTimer = setTimeout(authFaceTick, 25);
     return true;
   }
 
@@ -23032,6 +25767,7 @@
     expenses: 'Expenses & Overhead',
     expenses_analytics: 'Overhead Analytics',
     payroll: 'Payroll & Workforce',
+    workforce_map: 'Daily Plant & Machine Map',
     payroll_attendance: 'Attendance & Overtime',
     payroll_contracts: 'Contracts & Allowances',
     payroll_analytics: 'Payroll & Workforce',
@@ -23077,6 +25813,7 @@
     expenses: 'Expenses & Overhead',
     expenses_analytics: 'Overhead Analytics',
     payroll: 'Payroll & Workforce',
+    workforce_map: 'Daily Plant & Machine Map',
     payroll_attendance: 'Attendance & Overtime',
     payroll_contracts: 'Contracts & Allowances',
     payroll_analytics: 'Payroll & Workforce',
@@ -23723,7 +26460,7 @@
       const n = STATE.users.length;
       return `<strong>Option 3 Multi-Device Cloud &amp; SQL Economics:</strong><br>
         • ${n} team seats run on the BHFIRMS cloud relay (<code class="mono">${esc(CLOUD_DOC_KEY)}</code>) + optional local SQLite (<code class="mono">data/mfg.db</code>) + PostgreSQL schema (<code class="mono">data/schema_postgres.sql</code>).<br>
-        • Versus Dataverse + Power BI PPU at about $37 / seat / month that is <strong>${fmtUSD(n * 37 * 12, 0)} / year</strong> saved at the current seat count.`;
+        • Versus per-user enterprise ERP &amp; BI licensing at about $37 / seat / month that is <strong>${fmtUSD(n * 37 * 12, 0)} / year</strong> saved at the current seat count.`;
     }
     return `<strong>${esc(scope)} at a glance:</strong><br>
       • Revenue (TTC) <strong>${fmtUSD(k.sales_ttc, 2)}</strong> across <strong>${fmtNum(k.loads)} loads</strong> (${fmtNum(k.tons_sold, 0)} t) · gross margin ${fmtUSD(k.gross_margin, 0)} · operating cash profit ${fmtUSD(k.operating_profit, 0)}.<br>
@@ -23752,7 +26489,7 @@
       customers: 'receipt', ar: 'receipt',
       suppliers: 'settlement', ap: 'settlement',
       expenses: 'expense', expenses_analytics: 'expense',
-      payroll: 'salary', payroll_attendance: 'attendance', payroll_contracts: 'employment', payroll_analytics: 'salary',
+      payroll: 'salary', workforce_map: 'attendance', payroll_attendance: 'attendance', payroll_contracts: 'employment', payroll_analytics: 'salary',
       ledger: 'treasury', gl: 'treasury', ledger_treasury: 'treasury',
       tables: 'pricerule',
       reg_equipment: 'equipment', reg_drivers: 'driver', reg_sites: 'site', reg_regions: 'site',
@@ -24888,7 +27625,7 @@
         <div class="cockpit-title-block">
           <div class="cockpit-eyebrow">UNIFIED 4-KIOSK TERMINAL SUITE · WEIGHBRIDGE, RAW MATERIAL, FUEL DEPOT &amp; BIOMETRIC ATTENDANCE</div>
           <div class="cockpit-title">Kiosk Terminals</div>
-          <div class="cockpit-sub">Touch-first plant terminals linked directly to ISABI's 35 Dataverse form rules, 3-leg AP/AR ledgers &amp; Bluetooth ESC/POS thermal receipt printers (80mm &amp; 58mm · Priced Invoice vs Unpriced Gate Pass).</div>
+          <div class="cockpit-sub">Touch-first plant terminals linked directly to ISABI's 35 smart form rules, 3-leg AP/AR ledgers &amp; Bluetooth ESC/POS thermal receipt printers (80mm &amp; 58mm · Priced Invoice vs Unpriced Gate Pass).</div>
         </div>
         <div class="cockpit-pills">
           <div class="cockpit-pill"><div class="cockpit-pill-lbl">Active Terminal</div><div class="cockpit-pill-val brass">${esc(kMode.toUpperCase())}</div></div>
@@ -25374,6 +28111,7 @@
       case 'expenses': wsHtml = renderExpenses(); break;
       case 'payroll':
       case 'payroll_analytics': wsHtml = renderPayroll('main'); break;
+      case 'workforce_map': wsHtml = renderWorkforceMap(); break;
       case 'payroll_attendance': wsHtml = renderPayroll('attendance'); break;
       case 'payroll_contracts': wsHtml = renderPayroll('contracts'); break;
       case 'ledger':
@@ -26128,6 +28866,133 @@
     container.querySelectorAll('[data-salespad-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.salesPadFilter = btn.getAttribute('data-salespad-chip'); STATE.shown.spad = PAGE; const ws = $('workspace'); const y = ws ? ws.scrollTop : 0; renderApp(); if (ws) ws.scrollTop = y; }));
     container.querySelectorAll('[data-vatinv-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.vatInvFilter = btn.getAttribute('data-vatinv-chip'); STATE.shown.vatinv = PAGE; const ws = $('workspace'); const y = ws ? ws.scrollTop : 0; renderApp(); if (ws) ws.scrollTop = y; }));
     container.querySelectorAll('[data-rawsite-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.rawSiteFilter = btn.getAttribute('data-rawsite-chip'); STATE.shown.sites = PAGE; renderApp(); }));
+
+    // Daily Plant & Machine Map (workforce_map) interactive controls
+    container.querySelectorAll('[data-wf-date]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const dt = btn.getAttribute('data-wf-date') || '';
+      if (!dt) return;
+      STATE.wfMapDate = dt;
+      STATE.shown.wf_roster = PAGE;
+      const scrollMap = btn.getAttribute('data-wf-scroll-map') === '1';
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (scrollMap) {
+        const mp = $('wfDayCommandBar') || $('wfVisualMapPanel');
+        if (mp) scrollWorkspaceTo(mp, 6);
+      } else if (ws) {
+        ws.scrollTop = y;
+      }
+    }));
+    container.querySelectorAll('[data-wf-day-step]').forEach(btn => btn.addEventListener('click', () => {
+      const tgt = btn.getAttribute('data-wf-target') || '';
+      if (!tgt) return;
+      STATE.wfMapDate = tgt;
+      STATE.shown.wf_roster = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    const wfDateInp = $('wfMapDateInput');
+    if (wfDateInp) {
+      wfDateInp.addEventListener('change', e => {
+        if (e.target.value) {
+          STATE.wfMapDate = e.target.value;
+          STATE.shown.wf_roster = PAGE;
+          renderApp();
+        }
+      });
+    }
+    const wfAlertNextBtn = $('wfNextAlertDayBtn');
+    if (wfAlertNextBtn) {
+      wfAlertNextBtn.addEventListener('click', () => {
+        const wf = buildWorkforceMapData();
+        const list = (wf && wf.alertDatesDesc) || [];
+        if (!list.length) return;
+        const idx = list.indexOf(wf.targetDate);
+        STATE.wfMapDate = list[(idx + 1) % list.length];
+        STATE.shown.wf_roster = PAGE;
+        renderApp();
+      });
+    }
+    container.querySelectorAll('[data-wf-haulers]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.wfIncludeHaulers = btn.getAttribute('data-wf-haulers') === '1';
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-wf-zone]').forEach(el => el.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const z = el.getAttribute('data-wf-zone') || 'all';
+      STATE.wfZoneFilter = (z !== 'all' && STATE.wfZoneFilter === z && el.classList.contains('wf-prop-seg')) ? 'all' : z;
+      STATE.shown.wf_roster = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-wf-audit-scope]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.wfAuditScope = btn.getAttribute('data-wf-audit-scope') || 'period';
+      STATE.shown.wf_audit = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-wf-audit-chip]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.wfAuditFilter = btn.getAttribute('data-wf-audit-chip') || 'all';
+      STATE.shown.wf_audit = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-wf-roster-scope]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.wfRosterScope = btn.getAttribute('data-wf-roster-scope') || 'day';
+      STATE.shown.wf_roster = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    const wfIdleBtn = $('wfToggleIdleStaffBtn');
+    if (wfIdleBtn) {
+      wfIdleBtn.addEventListener('click', () => {
+        STATE.wfShowAllRosterStaff = !STATE.wfShowAllRosterStaff;
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+      });
+    }
+    container.querySelectorAll('[data-open-eq-sub]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const eqName = btn.getAttribute('data-open-eq-sub') || '';
+      const subDate = btn.getAttribute('data-sub-date') || '';
+      const subCo = btn.getAttribute('data-sub-co') || '';
+      openEntryModal('equipment');
+      if ($('f_truck') && eqName) {
+        $('f_truck').value = eqName;
+        recalcForm();
+      }
+      if ($('f_log_co') && subCo) $('f_log_co').value = subCo;
+      if ($('f_log_start') && subDate) $('f_log_start').value = subDate;
+      if ($('f_log_end') && subDate) $('f_log_end').value = subDate;
+      const logBox = $('eqDriverLogBox');
+      if (logBox) {
+        const mc = logBox.closest('.modal-card');
+        if (mc) mc.scrollTop = Math.max(0, logBox.offsetTop - 80);
+        lockShellScroll();
+      }
+      const drvInp = $('f_log_driver');
+      if (drvInp) {
+        drvInp.value = '';
+        try { drvInp.focus({ preventScroll: true }); } catch (_) {}
+      }
+    }));
     container.querySelectorAll('[data-scroll-panel]').forEach(el => {
       el.addEventListener('click', ev => {
         ev.stopPropagation();
@@ -27585,10 +30450,151 @@
       }, 160);
     });
 
-    if (!STATE.authed && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
-      setTimeout(() => { if (!STATE.authed) renderApp(); }, 180);
-    } else {
+    scheduleSeedHydration();
+    const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    if (STATE.authed || isAutoTest) {
       renderApp();
+    }
+  }
+
+  function invalidateAllSeedCaches() {
+    _grainCatalogCache = null;
+    _grainCatalogCacheDate = '';
+    _kpiRangeCacheMap.clear();
+    _prodByNameLen = -1;
+    _prodByName = null;
+    _dateActivityCacheKey = '';
+    _dateActivityCacheVal = null;
+    Object.keys(_tablePoolCache).forEach(k => { delete _tablePoolCache[k]; });
+    _filterRecordsWeakCache = new WeakMap();
+    _sortedRowsCache.clear();
+    _colFilterOptsCache.clear();
+    _FREQ_IDX = null;
+    _FLEET_IDX = null;
+    _WIN_REV += 1;
+    _CUST_DECL_QTY_SET = null;
+    _CUST_EXT_INV_SET = null;
+    _ticketAuditCache = null;
+    _meterGuardCacheKey = '';
+    _meterGuardCacheVal = null;
+    _WF_MAP_CACHE = null;
+    _MAINT_IDX = null;
+    _cashMovesCacheKey = '';
+    _cashMovesCacheVal = null;
+    if (typeof FORM_UI !== 'undefined' && FORM_UI) FORM_UI.catCache = null;
+    SEED._customRev = (SEED._customRev || 0) + 1;
+  }
+
+  async function unpackPackedRecordsIntoSeed(P, shouldYield) {
+    if (!P || typeof P !== 'object') return;
+    if (P.generated_at) SEED.generated_at = P.generated_at;
+    if (P.models && typeof P.models === 'object' && Object.keys(P.models).length) {
+      SEED.models = P.models;
+      SEED._origModelMasters = null;
+    }
+    if (P.sentinels && typeof P.sentinels === 'object' && Object.keys(P.sentinels).length) {
+      SEED.sentinels = P.sentinels;
+    }
+    const S = P._s || [];
+    const entries = Object.entries(P.records || {});
+    let sliceStart = performance.now();
+    for (let ei = 0; ei < entries.length; ei++) {
+      const [k, t] = entries[ei];
+      if (!t || !t.c) {
+        SEED.records[k] = Array.isArray(t) ? t : [];
+        continue;
+      }
+      const cols = t.c, sc = t.sc, pf = t.p, hr = t.hr;
+      const isSales = k === 'sales_tickets', isRaw = k === 'raw_purchases';
+      const rows = t.r || [];
+      const out = new Array(rows.length);
+      for (let idx = 0; idx < rows.length; idx++) {
+        const row = rows[idx];
+        const o = pf ? { id: pf + idx } : {};
+        for (let i = 0; i < row.length; i++) {
+          let v = row[i];
+          if (v === null || v === undefined) continue;
+          if (sc[i] && typeof v === 'number') v = S[v];
+          o[cols[i]] = v;
+        }
+        if (hr && !o.rep_date && o.date) o.rep_date = o.date;
+        if (o.amount !== undefined && o.usd_amount === undefined && !o.lbp_amount) o.usd_amount = o.amount;
+        if (isSales) {
+          if (o.vat == null) o.vat = 0;
+          if (o.total_ttc == null && o.total != null) o.total_ttc = o.total;
+          if (!o.sale_type) o.sale_type = 'Delivery';
+          if (!o.method) o.method = 'Credit';
+        }
+        if (isRaw && !o.method) o.method = 'Credit';
+        if (pf && !o.name) o.name = o.ticket_no ? ('#' + o.ticket_no + ' · ' + (o.date || '')) : (pf.toUpperCase() + '-' + idx);
+        out[idx] = o;
+        if (shouldYield && (idx & 4095) === 4095 && (performance.now() - sliceStart) > 12) {
+          await new Promise(r => setTimeout(r, 0));
+          sliceStart = performance.now();
+        }
+      }
+      SEED.records[k] = out;
+      if (shouldYield && (performance.now() - sliceStart) > 12) {
+        await new Promise(r => setTimeout(r, 0));
+        sliceStart = performance.now();
+      }
+    }
+  }
+
+  let _seedHydrationPromise = null;
+  function hydrateSeedData() {
+    if (SEED._recordsReady && window.MFG_SEED) return Promise.resolve(SEED);
+    if (_seedHydrationPromise) return _seedHydrationPromise;
+    const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+    const shouldYield = !isAutoTest;
+    const coreUrl = SEED_MANIFEST.core || './js/seed_core.json';
+    const recordsUrl = SEED_MANIFEST.records || './js/seed_records.json';
+
+    _seedHydrationPromise = (async () => {
+      try {
+        const coreRes = await fetch(coreUrl);
+        if (!coreRes.ok) throw new Error('seed_core HTTP ' + coreRes.status);
+        const corePayload = await coreRes.json();
+        await unpackPackedRecordsIntoSeed(corePayload, shouldYield);
+        SEED._coreReady = true;
+        SEED._canonicalById = null;
+        SEED._canonicalByMain = null;
+        SEED._origModelMasters = null;
+        const periodSelInit = $('periodSelect');
+        const gp = ((SEED.models['manufacturing-group'] || {}).periods) || {};
+        if (periodSelInit) Array.from(periodSelInit.options).forEach(o => { const lbl = gp[o.value] && gp[o.value].label; if (lbl) o.textContent = lbl; });
+        applyCustomRecordsToSeed();
+        invalidateAllSeedCaches();
+        window.__mfgCoreSeedLoaded = true;
+        try { window.dispatchEvent(new CustomEvent('mfg:core-seed-ready')); } catch (_) {}
+        if (STATE.authed || isAutoTest) safeRender();
+
+        const recRes = await fetch(recordsUrl);
+        if (!recRes.ok) throw new Error('seed_records HTTP ' + recRes.status);
+        const recPayload = await recRes.json();
+        await unpackPackedRecordsIntoSeed(recPayload, shouldYield);
+        SEED._recordsReady = true;
+        applyCustomRecordsToSeed();
+        invalidateAllSeedCaches();
+        window.MFG_SEED = SEED;
+        try { window.dispatchEvent(new CustomEvent('mfg:records-seed-ready')); } catch (_) {}
+        if (STATE.authed || isAutoTest) safeRender();
+      } catch (err) {
+        console.error('Seed hydration error:', err);
+        SEED._recordsReady = true;
+        window.MFG_SEED = SEED;
+      }
+      return SEED;
+    })();
+    return _seedHydrationPromise;
+  }
+
+  function scheduleSeedHydration() {
+    if (SEED._recordsReady && window.MFG_SEED) return;
+    if (document.readyState === 'complete') {
+      setTimeout(hydrateSeedData, 0);
+    } else {
+      window.addEventListener('load', () => setTimeout(hydrateSeedData, 0), { once: true });
     }
   }
 

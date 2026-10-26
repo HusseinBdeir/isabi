@@ -430,7 +430,8 @@
       const item = record.item || fuelType || 'Diesel';
       const litres = Number(record.litres != null ? record.litres : (record.qty || 0));
       const eqNm = String(record.equipment || record.truck || '').trim();
-      const eqList = (typeof window !== 'undefined' && window.MFG_SEED && window.MFG_SEED.records && window.MFG_SEED.records.equipment) || [];
+      const seedRef = typeof window !== 'undefined' ? (window.MFG_SEED || window.__MFG_SEED_INTERNAL) : null;
+      const eqList = (seedRef && seedRef.records && seedRef.records.equipment) || [];
       const eqRec = eqNm ? eqList.find(e => e && String(e.name || '').trim().toLowerCase() === eqNm.toLowerCase()) : null;
       const eqCatL = String((eqRec && (eqRec.type || eqRec.category)) || '').trim().toLowerCase();
       const isHourCat = eqCatL === 'excavator' || eqCatL === 'wheel loader' || eqCatL === 'generator' || eqCatL === 'plant' ||
