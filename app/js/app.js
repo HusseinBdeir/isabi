@@ -1026,6 +1026,24 @@
     return 0;
   }
 
+  const _NON_AGG_MATERIAL_RE = /\b(shacman|truck|mixer|pump|excavator|excavation|loader|bulldozer|diesel|mazout|fuel|benzin|gasoline|oil|lubricant|grease|atf|hydraulic|rent|rental|insurance|salary|salaries|spare\s*part|jack\s*hammer|hammer|filter|tire|tyre|wheel|battery|service|discount|remove|tip|tips|iron|ghirbal|transportation|vat\s*invoice|electricity|commission)\b/i;
+
+  function isAggregateMaterialProduct(prodName, uomHint, famHint) {
+    const raw = String(prodName || '').trim();
+    if (!raw) return false;
+    const p = productByName(raw);
+    const u = String(uomHint || (p && p.uom) || '').trim().toLowerCase();
+    if (u === 'litre' || u === 'litres' || u === 'liter' || u === 'liters' || u === 'l' || u === 'kg' || u === 'kgs' || u === 'hr' || u === 'hrs' || u === 'hour' || u === 'hours' || u === 'day' || u === 'days' || u === 'month' || u === 'months') {
+      return false;
+    }
+    if (_NON_AGG_MATERIAL_RE.test(`${raw} ${famHint || ''}`)) return false;
+    if (p && p.type) {
+      return String(p.type).trim().toLowerCase() === 'material';
+    }
+    if (u === 'unit') return false;
+    return true;
+  }
+
   function productMeters(prodName, qty, uomHint) {
     const q = Number(qty || 0);
     if (!q) return 0;
@@ -1115,13 +1133,19 @@
   // Keys that are plain sums over records (safe to shift by a per-record delta); ratios are recomputed afterwards.
   // Note: Cash Flow & Till (cash_inflow, cash_outflow, net_cash_flow, cash_till) are physical Transaction-Date movements and never shift on Rep Date.
   const KPI_ADDITIVE_KEYS = ['sales_ttc', 'gross_sales', 'net_sales', 'trans_rev', 'sales_vat', 'loads', 'delivery_loads', 'pickup_loads', 'unregistered_loads',
-    'tons_sold', 'qty_sold', 'cash_sales', 'credit_sales', 'raw_cost', 'raw_mat_cost', 'raw_haulage', 'raw_loads', 'raw_tons', 'raw_qty',
+    'tons_sold', 'qty_sold', 'agg_qty_sold', 'agg_sales_net', 'agg_sales_ttc', 'cash_sales', 'credit_sales', 'raw_cost', 'raw_mat_cost', 'raw_haulage', 'raw_loads', 'raw_tons', 'raw_qty',
     'expenses', 'cash_expenses', 'credit_expenses', 'ap_material', 'ap_haulage', 'ap_expense', 'ap_on_credit', 'salaries_paid', 'gross_margin', 'operating_profit', 'receipts', 'settlements_paid',
     'diesel_litres', 'own_fleet_loads'];
 
   function finishKpiRatios(k) {
-    k.avg_price_ttc = k.qty_sold > 0 ? round2(k.sales_ttc / k.qty_sold) : 0;
-    k.avg_price_net = k.qty_sold > 0 ? round2((k.gross_sales || k.net_sales) / k.qty_sold) : 0;
+    const aggQty = Number(k.agg_qty_sold || 0);
+    const useAgg = aggQty > 0 && k.agg_sales_net != null;
+    k.avg_price_ttc = useAgg
+      ? round2(Number(k.agg_sales_ttc != null ? k.agg_sales_ttc : k.sales_ttc || 0) / aggQty)
+      : (k.qty_sold > 0 ? round2(k.sales_ttc / k.qty_sold) : 0);
+    k.avg_price_net = useAgg
+      ? round2(Number(k.agg_sales_net) / aggQty)
+      : (k.qty_sold > 0 ? round2((k.gross_sales || k.net_sales) / k.qty_sold) : 0);
     k.avg_raw_cost = k.raw_qty > 0 ? round2(k.raw_cost / k.raw_qty) : 0;
     k.gm_pct = k.net_sales > 0 ? k.gross_margin / k.net_sales : 0;
     k.op_margin_pct = (k.gross_sales || k.net_sales) > 0 ? k.operating_profit / (k.gross_sales || k.net_sales) : 0;
@@ -1148,6 +1172,7 @@
 
     let loads = 0, delivery_loads = 0, pickup_loads = 0, unregistered_loads = 0;
     let sales_ttc = 0, sales_vat = 0, net_sales = 0, gross_sales = 0, trans_rev = 0, qty_sold = 0, tons_sold = 0;
+    let agg_qty_sold = 0, agg_sales_net = 0, agg_sales_ttc = 0;
     let cash_sales = 0, credit_sales = 0, sales_haulage_credit = 0;
     sales.forEach(s => {
       const sgn = ticketSign(s);
@@ -1169,6 +1194,11 @@
       gross_sales += net;
       trans_rev += tr;
       qty_sold += q;
+      if (q !== 0 && isAggregateMaterialProduct(s.product, s.uom)) {
+        agg_qty_sold += q;
+        agg_sales_net += net;
+        agg_sales_ttc += ttc;
+      }
       tons_sold += ticketTons(s) * sgn;
       if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') cash_sales += net;
       else if (sgn !== 0) credit_sales += net;
@@ -1242,6 +1272,9 @@
       unregistered_loads,
       tons_sold: round2(tons_sold),
       qty_sold: round2(qty_sold),
+      agg_qty_sold: round2(agg_qty_sold),
+      agg_sales_net: round2(agg_sales_net),
+      agg_sales_ttc: round2(agg_sales_ttc),
       cash_sales: round2(cash_sales),
       credit_sales: round2(credit_sales),
       raw_cost: round2(raw_cost),
@@ -1500,8 +1533,11 @@
 
     const txRaw = computeLocalKPI(m, range, 'tx', coKey);
     if (anchor) {
-      if (crCount > 0 || anchor.qty_sold == null) anchor.qty_sold = txRaw.qty_sold;
-      if (crCount > 0 || anchor.raw_qty == null) anchor.raw_qty = txRaw.raw_qty;
+      anchor.qty_sold = txRaw.qty_sold;
+      anchor.raw_qty = txRaw.raw_qty;
+      anchor.agg_qty_sold = txRaw.agg_qty_sold;
+      anchor.agg_sales_net = txRaw.agg_sales_net;
+      anchor.agg_sales_ttc = txRaw.agg_sales_ttc;
       anchor.tons_sold = txRaw.tons_sold || anchor.tons_sold;
       anchor.raw_tons = txRaw.raw_tons || anchor.raw_tons;
       if (range) {
@@ -6031,8 +6067,8 @@
       <!-- 2. SECONDARY OPERATIONAL PROOF STRIP -->
       <section class="ops-strip" aria-label="Operational Unit Economics">
         <div class="ops-cell kpi-link" data-nav-jump="sales" role="button" tabindex="0"><span>Sales Loads &amp; Volume</span><b class="num">${fmtNum(k.loads)} (${fmtNum(k.tons_sold, 0)} t)</b></div>
-        <div class="ops-cell kpi-link" data-nav-jump="pricing" role="button" tabindex="0"><span>Avg Selling Price (TTC)</span><b class="num">${fmtUSD(k.avg_price_ttc, 2)} / unit</b></div>
-        <div class="ops-cell kpi-link" data-nav-jump="raw" role="button" tabindex="0"><span>Raw Material Intake</span><b class="num">${fmtNum(k.raw_loads)} loads (${fmtUSD(k.avg_raw_cost, 2)}/u)</b></div>
+        <div class="ops-cell kpi-link" data-nav-jump="pricing" role="button" tabindex="0"><span>Avg Selling Price (TTC)</span><b class="num">${fmtUSD(k.avg_price_ttc, 2)} / m³</b></div>
+        <div class="ops-cell kpi-link" data-nav-jump="raw" role="button" tabindex="0"><span>Raw Material Intake</span><b class="num">${fmtNum(k.raw_loads)} loads (${fmtUSD(k.avg_raw_cost, 2)}/m³)</b></div>
         <div class="ops-cell kpi-link" data-nav-jump="fleet" role="button" tabindex="0"><span>Active Fleet &amp; Cost/Ton</span><b class="num">${fmtNum(k.active_equip)} units · ${fmtUSD(k.cost_per_ton, 2)}/t</b></div>
         <div class="ops-cell kpi-link" data-nav-jump="pricing" role="button" tabindex="0"><span>Customer Price Matrix</span><b class="num">${fmtNum(k.active_agreements)} active rules</b></div>
         <div class="ops-cell kpi-link" data-nav-jump="suppliers" role="button" tabindex="0"><span>3-Leg AP Open Balance</span><b class="num">${fmtUSD(k.ap_balance, 0)}</b></div>
@@ -6682,7 +6718,9 @@
       .sort((a, b) => b.unmatched_usd - a.unmatched_usd);
     const liveUnmatchedTotalUsd = round2(liveUnmatchedStaff.reduce((s, r) => s + r.unmatched_usd, 0));
 
+    const kSn = getKPI();
     const livePricing = Object.assign({}, basePricing, {
+      actual_avg_price_usd: Number(kSn && kSn.avg_price_net) > 0 ? kSn.avg_price_net : basePricing.actual_avg_price_usd,
       active_agreements: activeAgreementsCnt,
       truck_unit_delivery_rules: truckDeliveryRulesCnt,
       sales_below_agreed_usd: liveBelowTotalUsd,
@@ -7041,7 +7079,7 @@
       filterRecords, buildSentinelItems, exportBtn, nextTicketNo,
       canEnterForm, canAccessPbiPage, allowedCompanyNames,
       SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog,
-      getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, renderDateSegPillHtml,
+      getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml,
       buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic
     });
   }
@@ -7491,7 +7529,7 @@
     };
     const rows = sortRows(base.filter(chipPredicate), 'sales', 'date', 'desc');
     const shown = rows.slice(0, shownCount('sales'));
-    let saleLoads = 0, sumQty = 0, sumTons = 0, sumMat = 0, sumTr = 0, sumNet = 0, sumVat = 0, sumTtc = 0, sumCash = 0, sumCredit = 0, sumDisc = 0;
+    let saleLoads = 0, sumQty = 0, sumAggQty = 0, sumTons = 0, sumMat = 0, sumTr = 0, sumNet = 0, sumVat = 0, sumTtc = 0, sumCash = 0, sumCredit = 0, sumDisc = 0;
     let sumVolMat = 0, sumVolTtc = 0;
     let delivLoads = 0, pickupLoads = 0, ownFleetLoads = 0, thirdPartyLoads = 0, otLoads = 0, vatLoads = 0, cashLoads = 0, creditLoads = 0;
     const custMap = new Map();
@@ -7529,7 +7567,8 @@
       sumVat += vat;
       sumTtc += ttc;
       sumDisc += disc;
-      if (q !== 0) {
+      if (q !== 0 && isAggregateMaterialProduct(r.product, r.uom)) {
+        sumAggQty += q;
         sumVolMat += net;
         sumVolTtc += ttc;
       }
@@ -7632,7 +7671,7 @@
       });
       return Array.from(map.values());
     })();
-    const volProds = allProds.filter(p => Number(p.qty_sold || 0) > 0);
+    const volProds = allProds.filter(p => Number(p.qty_sold || 0) > 0 && isAggregateMaterialProduct(p.Product, p.UoM, p['Material Family']));
     const prodTotQty = volProds.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
     const prodTotTtc = allProds.reduce((a, p) => a + Number(p.sales_ttc || 0), 0);
     const prodVolMat = volProds.reduce((a, p) => a + Number((p.net_sales != null ? p.net_sales : (Number(p.avg_price_net || 0) * Number(p.qty_sold || 0)))), 0);
@@ -7644,9 +7683,9 @@
     const bbcS = byCo.BBConstruction;
     const isGroupScope = STATE.company === 'manufacturing-group';
 
-    // Executive derived telemetry (distinct from bottom tfoot column totals; exclude 0-m³ equipment/fuel tickets from $/m³)
-    const avgUnitTtc = sumQty > 0 ? (sumVolTtc / sumQty) : (prodAvgTtc || 0);
-    const avgUnitNet = sumQty > 0 ? (sumVolMat / sumQty) : (prodAvgNet || 0);
+    // Executive derived telemetry (distinct from bottom tfoot column totals; exclude non-aggregate equipment/fuel tickets from $/m³)
+    const avgUnitTtc = sumAggQty > 0 ? (sumVolTtc / sumAggQty) : (prodAvgTtc || 0);
+    const avgUnitNet = sumAggQty > 0 ? (sumVolMat / sumAggQty) : (prodAvgNet || 0);
     const avgLoadTtc = saleLoads > 0 ? (sumTtc / saleLoads) : 0;
     const avgLoadQty = saleLoads > 0 ? (sumQty / saleLoads) : 0;
     const matRevShare = sumNet > 0 ? Math.round((sumMat / sumNet) * 100) : 82;
@@ -10187,7 +10226,7 @@
     const uniqPrCusts = new Set(salesBase.map(r => r.customer).filter(Boolean)).size;
     const uniqPrSites = new Set(salesBase.map(r => r.site).filter(Boolean)).size;
     const scopedProds = getScopedModelProducts();
-    const volScopedProds = scopedProds.filter(p => Number(p.qty_sold || 0) > 0);
+    const volScopedProds = scopedProds.filter(p => Number(p.qty_sold || 0) > 0 && isAggregateMaterialProduct(p.Product, p.UoM, p['Material Family']));
     const volTotM3 = volScopedProds.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
     const prVolAvgNet = volTotM3 > 0
       ? round2(volScopedProds.reduce((a, p) => a + Number((p.net_sales != null ? p.net_sales : (Number(p.avg_price_net || 0) * Number(p.qty_sold || 0)))), 0) / volTotM3)
@@ -16315,7 +16354,7 @@
           filterRecords, buildSentinelItems, exportBtn, nextTicketNo,
           canEnterForm, canAccessPbiPage, allowedCompanyNames,
           SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog,
-          getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, renderDateSegPillHtml
+          getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml
         }, 'p02_companies', true)
       : '';
     return `
@@ -30353,7 +30392,7 @@
     switch (STATE.view) {
       case 'overview': wsHtml = renderOverview(); break;
       case 'entities': wsHtml = renderEntitiesComparison(); break;
-      case 'pbi': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview(); break;
+      case 'pbi': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview(); break;
       case 'tables': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview(); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
       case 'kiosks': wsHtml = renderKiosks(); break;

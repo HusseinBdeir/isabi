@@ -28,6 +28,8 @@
     return String(v == null ? '' : v).trim().toLowerCase();
   }
 
+  const _NON_AGG_PROD_RE = /\b(truck|shacman|mixer|pump|excavator|excavation|loader|bulldozer|diesel|oil|grease|benzin|gasoline|mazout|fuel|atf|hydraulic|rent|rental|transportation|commission|discount|vat|insurance|tire|tyre|wheel|battery|filter|hammer|salary|salaries|spare\s*part|service|remove|tip|tips|iron|ghirbal|electricity)\b/i;
+
   function pickTopAggregateGrades(prodRows, limit = 4, productsCatalog = null) {
     const list = Array.isArray(prodRows) ? prodRows : [];
     const catArr = Array.isArray(productsCatalog)
@@ -35,22 +37,112 @@
       : ((typeof window !== 'undefined' && window.SEED && window.SEED.records && window.SEED.records.products) || []);
     const catMap = new Map();
     catArr.forEach(c => { if (c && (c.name || c.Product)) catMap.set(normKey(c.name || c.Product), c); });
-    const nonAggRe = /\b(truck|shacman|mixer|pump|excavator|excavation|loader|bulldozer|diesel|oil|grease|benzin|mazout|rent|transportation|commission|discount|vat|insurance|tire|wheel|battery|filter|hammer)\b/i;
     const agg = list
       .filter(p => {
         if (!p || !(Number(p.qty_sold || 0) > 0)) return false;
         const uomLow = normKey(p.UoM || '');
-        if (uomLow === 'unit' || uomLow === 'litre' || uomLow === 'kg') return false;
+        if (uomLow === 'unit' || uomLow === 'litre' || uomLow === 'litres' || uomLow === 'kg') return false;
+        if (_NON_AGG_PROD_RE.test(`${p.Product || ''} ${p['Material Family'] || ''}`)) return false;
         const cat = catMap.get(normKey(p.Product));
         if (cat && cat.type) return normKey(cat.type) === 'material';
-        return !nonAggRe.test(`${p.Product || ''} ${p['Material Family'] || ''}`);
+        return true;
       })
       .sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0));
     const volFallback = list
-      .filter(p => Number(p && p.qty_sold || 0) > 0 && !nonAggRe.test(`${(p && p.Product) || ''} ${(p && p['Material Family']) || ''}`))
+      .filter(p => Number(p && p.qty_sold || 0) > 0 && !_NON_AGG_PROD_RE.test(`${(p && p.Product) || ''} ${(p && p['Material Family']) || ''}`))
       .sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0));
     const pool = agg.length ? agg : (volFallback.length ? volFallback : [...list].sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0)));
     return pool.slice(0, limit);
+  }
+
+  function enrichMonthsWithTicketUnitEconomics(months, salesRows, rawRows, opts = {}) {
+    const mList = Array.isArray(months) ? months : [];
+    if (!mList.length) return mList;
+    const sList = Array.isArray(salesRows) ? salesRows : [];
+    const rList = Array.isArray(rawRows) ? rawRows : [];
+    const basis = opts.basis === 'tx' ? 'tx' : 'rep';
+    const ticketMetersFn = typeof opts.ticketMeters === 'function' ? opts.ticketMeters : null;
+    const isAggFn = typeof opts.isAggregateMaterialProduct === 'function' ? opts.isAggregateMaterialProduct : null;
+    const catArr = Array.isArray(opts.productsCatalog) ? opts.productsCatalog : [];
+    const catMap = new Map();
+    catArr.forEach(c => { if (c && (c.name || c.Product)) catMap.set(normKey(c.name || c.Product), c); });
+    const roundFn = v => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+
+    const ymSet = new Set(mList.map(monthRowToYmKey).filter(Boolean));
+    if (!ymSet.size) return mList;
+
+    const isAggTicket = s => {
+      if (isAggFn) return isAggFn(s.product, s.uom);
+      const pn = String(s.product || '').trim();
+      if (!pn) return false;
+      const u = normKey(s.uom || '');
+      if (u === 'litre' || u === 'litres' || u === 'kg' || u === 'unit') return false;
+      if (_NON_AGG_PROD_RE.test(pn)) return false;
+      const cat = catMap.get(normKey(pn));
+      if (cat && cat.type) return normKey(cat.type) === 'material';
+      return true;
+    };
+
+    const salesByYm = new Map();
+    for (let i = 0; i < sList.length; i++) {
+      const s = sList[i];
+      if (!s || s.voided) continue;
+      const mth = String(s.method || '').trim();
+      const sgn = (mth === 'C Return' || mth === 'CR Return' || mth === 'Cash Return' || mth === 'Credit Return') ? -1
+        : ((mth === 'Free' || mth === 'Remove' || mth === 'Config' || mth === 'VATConfig') ? 0 : 1);
+      if (sgn === 0) continue;
+      const ym = String((basis === 'tx' ? s.date : (s.rep_date || s.date)) || '').slice(0, 7);
+      if (!ymSet.has(ym)) continue;
+      const qUnit = ticketMetersFn
+        ? ticketMetersFn(s)
+        : (/truck/i.test(String(s.uom || '')) ? Number(s.qty || 0) * 27 : Number(s.qty || 0));
+      const m3 = sgn * qUnit;
+      if (m3 === 0 || !isAggTicket(s)) continue;
+      const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+      const net = sgn * Number(s.total != null ? s.total : (ttc - sgn * Number(s.vat || 0)));
+      const b = salesByYm.get(ym);
+      if (b) { b.m3 += m3; b.net += net; b.ttc += ttc; }
+      else salesByYm.set(ym, { m3, net, ttc });
+    }
+
+    const rawByYm = new Map();
+    for (let i = 0; i < rList.length; i++) {
+      const r = rList[i];
+      if (!r || r.voided) continue;
+      const ym = String((basis === 'tx' ? r.date : (r.rep_date || r.date)) || '').slice(0, 7);
+      if (!ymSet.has(ym)) continue;
+      const rq = ticketMetersFn
+        ? ticketMetersFn(r)
+        : (/truck/i.test(String(r.uom || '')) ? Number(r.qty || 0) * 27 : Number(r.qty || 0));
+      if (!(rq > 0)) continue;
+      const rc = Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)));
+      const b = rawByYm.get(ym);
+      if (b) { b.m3 += rq; b.cost += rc; }
+      else rawByYm.set(ym, { m3: rq, cost: rc });
+    }
+
+    const hasSalesPool = sList.length > 0 && salesByYm.size > 0;
+    const hasRawPool = rList.length > 0 && rawByYm.size > 0;
+
+    return mList.map(mRow => {
+      const ym = monthRowToYmKey(mRow);
+      const sb = ym ? salesByYm.get(ym) : null;
+      const rb = ym ? rawByYm.get(ym) : null;
+      const avgNet = (sb && sb.m3 > 0.001)
+        ? roundFn(sb.net / sb.m3)
+        : (hasSalesPool ? 0 : Number(mRow.avg_price_net || 0));
+      const avgTtc = (sb && sb.m3 > 0.001)
+        ? roundFn(sb.ttc / sb.m3)
+        : (hasSalesPool ? 0 : Number(mRow.avg_price_ttc || avgNet || 0));
+      const avgRaw = (rb && rb.m3 > 0.001)
+        ? roundFn(rb.cost / rb.m3)
+        : (hasRawPool ? 0 : Number(mRow.avg_raw_cost || 0));
+      return Object.assign({}, mRow, {
+        avg_price_net: avgNet,
+        avg_price_ttc: avgTtc,
+        avg_raw_cost: avgRaw
+      });
+    });
   }
 
   const _YM_SHORT_IDX = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
@@ -2473,7 +2565,7 @@
   let _pbiBaseCacheVal = null;
 
   function renderPbiStudio(ctx, overridePageId, bodyOnly) {
-    const { STATE, SEED, COMPANY_LABELS, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, ticketTons, ticketMeters, productMeters } = ctx;
+    const { STATE, SEED, COMPANY_LABELS, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct } = ctx;
     _activePbiState = STATE;
     const m = getModel();
     const k = getKPI();
@@ -3268,12 +3360,36 @@
       : (hasSalesSlicer ? (sampleFiltTtc / sampleAllTtc) : 1);
     const sc = v => round2(Number(v || 0) * (hasSalesSlicer ? sRatio : 1));
     const baseMonths = ctx.getScopedMonthly ? ctx.getScopedMonthly(m.monthly, 14) : (m.monthly || []).slice(-14);
-    const months = hasSalesSlicer ? baseMonths.map(r => ({
+    const allCoSalesForMonths = filterRecords(rec.sales_tickets, { ignorePeriod: true, ignoreSearch: true });
+    const allCoRawForMonths = filterRecords(rec.raw_purchases, { ignorePeriod: true, ignoreSearch: true });
+    const monthSalesPool = !hasAnySlicer ? allCoSalesForMonths : allCoSalesForMonths.filter(r => {
+      if (!matchCommon(r)) return false;
+      if (sl.shift) {
+        const isNight = !!r.overtime;
+        if (sl.shift === 'Night' && !isNight) return false;
+        if (sl.shift === 'Day' && isNight) return false;
+      }
+      if (sl.overtimeFlag === 'Yes' && !r.overtime) return false;
+      if (sl.overtimeFlag === 'No' && r.overtime) return false;
+      return true;
+    });
+    const monthRawPool = !hasAnySlicer ? allCoRawForMonths : allCoRawForMonths.filter(r => {
+      if (!matchCommon(r)) return false;
+      if (sl.transportBy && norm(r.transport_by) !== norm(sl.transportBy)) return false;
+      return true;
+    });
+    const scaledMonths = hasSalesSlicer ? baseMonths.map(r => ({
       ...r,
       sales_ttc: sc(r.sales_ttc), net_sales: sc(r.net_sales), credit_sales: sc(r.credit_sales),
       cash_sales: sc(r.cash_sales), raw_cost: sc(r.raw_cost), expenses: sc(r.expenses),
       operating_profit: sc(r.operating_profit), gross_margin: sc(r.gross_margin), receipts: sc(r.receipts)
     })) : baseMonths;
+    const months = enrichMonthsWithTicketUnitEconomics(scaledMonths, monthSalesPool, monthRawPool, {
+      basis: STATE.basis,
+      ticketMeters,
+      isAggregateMaterialProduct,
+      productsCatalog: rec.products
+    });
 
     let bodyHtml = '';
 
@@ -3601,7 +3717,7 @@
         ticketMeters,
         colors: prodColors
       });
-      const volGradeRows = prodRows.filter(p => Number(p && p.qty_sold || 0) > 0);
+      const volGradeRows = pickTopAggregateGrades(prodRows, 999, rec.products);
       const volM3Sum = volGradeRows.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
       const volMatAvg = volM3Sum > 0
         ? round2(volGradeRows.reduce((a, p) => a + Number((p.net_sales != null ? p.net_sales : (Number(p.avg_price_net || 0) * Number(p.qty_sold || 0)))), 0) / volM3Sum)
@@ -3626,7 +3742,7 @@
             { label: 'Pick-up Loads', value: fmtNum(sc(k.pickup_loads), 0), sub: 'Material only (customer truck)' },
             { label: 'Quantity Sold (m³)', value: fmtNum(sc(k.qty_sold), 0) + ' m³', sub: 'Converted to m³ (1 Truck = 27 m³)' },
             { label: 'Tons Sold (Converted)', value: fmtNum(sc(k.tons_sold), 0) + ' t', sub: 'Using grade ton_factor', tone: 'good' },
-            { label: 'Avg Realised Price', value: fmtUSD(volTtcAvg, 2), sub: 'Material ex-VAT: ' + fmtUSD(volMatAvg, 2) + '/m³', tone: 'brass' }
+            { label: 'Avg Realised Price', value: fmtUSD(volTtcAvg, 2), sub: 'Ex-VAT: ' + fmtUSD(volMatAvg, 2) + '/m³', tone: 'brass' }
           ])}
         </div>
 
@@ -3654,7 +3770,18 @@
             { label: 'Qty (m³)', key: 'qty_sold', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '—' },
             { label: 'Tons', key: 'tons_sold', r: true, fmt: v => fmtNum(v, 0) },
             { label: 'List ($)', key: 'list_price', r: true, fmt: v => v != null ? fmtUSD(v, 2) : '—' },
-            { label: 'Avg Net ($)', key: 'avg_price_net', r: true, fmt: v => fmtUSD(v, 2) },
+            {
+              label: 'Avg Net ($)',
+              key: 'avg_price_net',
+              r: true,
+              fmt: v => fmtUSD(v, 2),
+              foot: list => {
+                const agg = pickTopAggregateGrades(list, 999, rec.products);
+                const ts = agg.reduce((a, r) => a + Number(r.net_sales != null ? r.net_sales : (Number(r.avg_price_net || 0) * Number(r.qty_sold || 0))), 0);
+                const tq = agg.reduce((a, r) => a + Number(r.qty_sold || 0), 0);
+                return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(ts / tq, 2)}</b>` : '—';
+              }
+            },
             { label: 'Sales TTC ($)', key: 'sales_ttc', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` }
           ], prodRows, { subtitle: 'Complete aggregate grade breakdown with inline revenue bars', unitLabel: 'grades' })}
 
@@ -3724,12 +3851,18 @@
       const haulChartSource = quarryComp.haulFlatChartRows.length ? quarryComp.haulFlatChartRows : quarryComp.haulUnitChartRows;
       const haulChartBasisLbl = quarryComp.haulFlatChartRows.length ? '$/Truck Flat' : '$/m³';
 
+      const p05AggGrades = pickTopAggregateGrades(prodRows, 999, rec.products);
+      const p05AggM3 = p05AggGrades.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
+      const p05RealisedNet = hasAnySlicer && p05AggM3 > 0
+        ? round2(p05AggGrades.reduce((a, p) => a + Number(p.net_sales != null ? p.net_sales : (Number(p.avg_price_net || 0) * Number(p.qty_sold || 0))), 0) / p05AggM3)
+        : k.avg_price_net;
+
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Price Agreement Coverage, Realised vs Agreed & Below-Agreed Governance', [
             { label: 'Active Price Agreements', value: fmtNum(activeRules.length), sub: fmtNum(allRules.length) + ' total rules in matrix', tone: 'brass' },
-            { label: 'Weighted Agreed Price', value: fmtUSD(prSn.weighted_agreed_price_usd || k.avg_price_net, 2), sub: 'Per billed unit' },
-            { label: 'Actual Realised Price', value: fmtUSD(prSn.actual_avg_price_usd || k.avg_price_net, 2), sub: 'Across ticketed loads' },
+            { label: 'Weighted Agreed Price', value: fmtUSD(prSn.weighted_agreed_price_usd || k.avg_price_net, 2), sub: 'Per m³ agreed corridor' },
+            { label: 'Actual Realised Price', value: fmtUSD(p05RealisedNet, 2), sub: 'Ex-VAT across aggregate m³' },
             { label: 'Sold Below Agreed ($)', value: fmtUSD(prSn.sales_below_agreed_usd || 0, 0), sub: fmtNum(prSn.below_agreed_pairs_count || 0) + ' customer × grade pairs', tone: 'warn' },
             { label: 'Lapsed Pairs Still Trading', value: fmtNum(prSn.lapsed_agreement_pairs_count || 0), sub: 'Trading after End date', tone: 'warn' },
             { label: 'Per-Truck Delivery Rules', value: fmtNum(prSn.truck_unit_delivery_rules || 0), sub: 'Unit = Truck flat rate' }
@@ -4106,7 +4239,7 @@
             { label: 'Cash Expenses', value: fmtUSD(sc(k.cash_expenses), 0), sub: 'Paid from Till' },
             { label: 'Credit Expenses', value: fmtUSD(sc(k.credit_expenses), 0), sub: 'Booked to Supplier AP Leg 3' },
             { label: 'Total Raw Material Cost', value: fmtUSD(sc(k.raw_cost), 0), sub: fmtNum(k.raw_loads) + ' raw loads' },
-            { label: 'Avg Raw Cost / Unit', value: fmtUSD(k.avg_raw_cost, 2), sub: 'Material + haulage combined' },
+            { label: 'Avg Raw Cost / m³', value: fmtUSD(k.avg_raw_cost, 2), sub: 'Material + haulage per m³' },
             { label: 'Expense Categories', value: fmtNum(catList.length), sub: 'Production · OpEx · CapEx' }
           ])}
         </div>
@@ -4163,6 +4296,15 @@
     // =========================================================================
     else if (activePageId === 'p08_stock') {
       const costRecPct = Number(k.raw_haulage || 0) > 0 ? (Number(k.trans_rev || 0) / Number(k.raw_haulage || 1)) : 1;
+      const p08AggGrades = pickTopAggregateGrades(prodRows, 999, rec.products);
+      const p08AggSoldM3 = p08AggGrades.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
+      const p08SellNet = hasAnySlicer && p08AggSoldM3 > 0
+        ? round2(p08AggGrades.reduce((a, p) => a + Number(p.net_sales != null ? p.net_sales : (Number(p.avg_price_net || 0) * Number(p.qty_sold || 0))), 0) / p08AggSoldM3)
+        : k.avg_price_net;
+      const p08RawM3 = hasAnySlicer ? prodRows.reduce((a, p) => a + Number(p.raw_qty || 0), 0) : 0;
+      const p08RawCostPerM3 = hasAnySlicer && p08RawM3 > 0
+        ? round2(prodRows.reduce((a, p) => a + Number(p.raw_cost || 0), 0) / p08RawM3)
+        : k.avg_raw_cost;
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Raw Material Intake, Tonnage & Two-Leg Cost Split', [
@@ -4170,18 +4312,18 @@
             { label: 'Material Cost (Site Owners)', value: fmtUSD(sc(k.raw_mat_cost), 0), sub: fmtPct(null, k.raw_mat_cost, k.raw_cost) + ' of raw cost' },
             { label: 'Haulage Cost (3rd-Party)', value: fmtUSD(sc(k.raw_haulage), 0), sub: fmtPct(null, k.raw_haulage, k.raw_cost) + ' of raw cost' },
             { label: 'Raw Tons Purchased', value: fmtNum(k.raw_tons, 0) + ' t', sub: fmtNum(k.raw_qty, 0) + ' m³ purchased', tone: 'good' },
-            { label: 'Avg Raw Cost / m³', value: fmtUSD(k.avg_raw_cost, 2), sub: 'Sell price: ' + fmtUSD(k.avg_price_net, 2) + '/m³' },
+            { label: 'Avg Raw Cost / m³', value: fmtUSD(p08RawCostPerM3, 2), sub: 'Sell price: ' + fmtUSD(p08SellNet, 2) + '/m³' },
             { label: 'Transport Cost Recovery', value: fmtPct(costRecPct), sub: 'Trans Rev ' + fmtUSDk(k.trans_rev) + ' ÷ Haul ' + fmtUSDk(k.raw_haulage), tone: costRecPct >= 1 ? 'good' : 'warn' }
           ])}
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('Unit economics by month — raw cost vs selling price ($/unit)', buildMultiLineSvg(months, [
-            { label: 'Avg Selling Price (ex-VAT)', key: 'avg_price_net', color: C.navy },
-            { label: 'Avg Raw Cost / unit', key: 'avg_raw_cost', color: C.crit }
+          ${pbiPanel('Unit economics by month · raw cost vs selling price ($/m³)', buildMultiLineSvg(months, [
+            { label: 'Avg Selling Price ($/m³ ex-VAT)', key: 'avg_price_net', color: C.navy },
+            { label: 'Avg Raw Cost / m³', key: 'avg_raw_cost', color: C.crit }
           ], { isMoney: true, decimals: 2 }), {
-            subtitle: 'Monthly unit spread between realised ex-VAT selling price and raw material intake cost',
-            legend: [{ label: 'Selling Price ($/u)', color: C.navy, line: true }, { label: 'Raw Cost ($/u)', color: C.crit, line: true }]
+            subtitle: 'Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw material intake cost',
+            legend: [{ label: 'Selling Price ($/m³)', color: C.navy, line: true }, { label: 'Raw Cost ($/m³)', color: C.crit, line: true }]
           })}
           ${pbiPanel('Transport revenue vs truck haulage cost by month', buildComboChartSvg(months, [
             { key: 'trans_rev', label: 'Transport Revenue', color: C.steel },
@@ -4267,7 +4409,7 @@
               const pm = prodMetaByNorm.get(norm(p.Product)) || {};
               const pType = String(pm.type || '').trim();
               if (pType && pType !== 'Material') return;
-              if (!pType && /shacman|diesel|mazout|oil|grease|benzin|transportation|insurance|vat\s*invoice|wheel|tire|tyre|hammer|battery|salary|rent|electricity|discount|filter|tip|bonus|remove/i.test(p.Product)) return;
+              if (_NON_AGG_PROD_RE.test(p.Product)) return;
               const famName = String(p['Material Family'] || pm.input_product || p.Product).trim();
               const fk = norm(famName);
               if (!famMap.has(fk)) {
