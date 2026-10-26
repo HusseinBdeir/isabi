@@ -6655,6 +6655,154 @@
     `;
   }
 
+  function classifyMaintSubsystem(catRaw, subRaw) {
+    const s = `${catRaw || ''} ${subRaw || ''}`.toLowerCase();
+    const subL = String(subRaw || '').trim().toLowerCase();
+    if (/screen|ghrbal|sieve|corraze|knive|سكاكين|شبك|غربال|jaw|liner/.test(s)) {
+      return { key: 'screens', label: 'Screens, Jaws & Blades', series: 'parts_usd', color: '#C0892F' };
+    }
+    if (/wheel|tire|tyre|pneu|اطار|دولاب|كاوتشوك|undercarriage|track/.test(s) && !/شبك/.test(s)) {
+      return { key: 'tires', label: 'Tires & Undercarriage', series: 'parts_usd', color: '#1E7A6E' };
+    }
+    if (/oil|lube|lubric|grease|68|15w|atf|filter|hydraul|تشحيم|مشحمة|زيت/.test(s)) {
+      return { key: 'oils', label: 'Oils & Hydraulics', series: 'oils_tools_usd', color: '#0F766E' };
+    }
+    if (/roulment|bearing|belt|courroie|رولمان|قشاط|chain|seal|hose|driveline|clutch|gearbox/.test(s)) {
+      return { key: 'bearings', label: 'Bearings & Drive Belts', series: 'parts_usd', color: '#64748B' };
+    }
+    if (/tool|oxygen|paint|weld|حديد|صندوق|loadcell|gps|winch|elec|battery|body|cabin/.test(s)) {
+      return { key: 'tools', label: 'Tools, Welding & Body', series: 'oils_tools_usd', color: '#2563EB' };
+    }
+    if (subL === 'parts' || subL === 'spare parts' || subL === 'equipment' || String(catRaw || '').trim().toLowerCase() === 'spare parts') {
+      return { key: 'parts', label: 'Engine & Mech. Parts', series: 'parts_usd', color: '#C0892F' };
+    }
+    return { key: 'repairs', label: 'Workshop Repairs', series: 'repairs_usd', color: '#2B5C8F' };
+  }
+
+  function renderMaintVisualsSection(ctx) {
+    const expRows = (ctx && ctx.expRows) || [];
+    const partRows = (ctx && ctx.partRows) || [];
+    const liveDefectsAll = (ctx && ctx.liveDefectsAll) || [];
+    const livePartsAll = (ctx && ctx.livePartsAll) || [];
+    const basis = (ctx && ctx.basis) || 'rep';
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    const monthMap = new Map();
+    const subMap = new Map();
+    let totalUsd = 0;
+    let totalVouchers = 0;
+
+    const ensureSub = spec => {
+      let row = subMap.get(spec.key);
+      if (!row) {
+        row = { key: spec.key, label: spec.label, color: spec.color, amount: 0, count: 0, openDefects: 0 };
+        subMap.set(spec.key, row);
+      }
+      return row;
+    };
+
+    const addEntry = (dtStr, spec, amt) => {
+      const val = Number(amt || 0);
+      if (!(val > 0)) return;
+      totalUsd += val;
+      totalVouchers += 1;
+      const sr = ensureSub(spec);
+      sr.amount += val;
+      sr.count += 1;
+      const ym = String(dtStr || '').slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(ym)) {
+        let mr = monthMap.get(ym);
+        if (!mr) {
+          const [yy, mm] = ym.split('-');
+          const mLbl = `${monthNames[Math.max(0, Math.min(11, Number(mm) - 1))]} ${yy}`;
+          mr = { ym, 'Year Month': mLbl, repairs_usd: 0, parts_usd: 0, oils_tools_usd: 0, vouchers: 0 };
+          monthMap.set(ym, mr);
+        }
+        mr[spec.series] = (mr[spec.series] || 0) + val;
+        mr.vouchers += 1;
+      }
+    };
+
+    expRows.forEach(e => {
+      const dt = basis === 'tx' && e.date_tx ? e.date_tx : e.date;
+      const spec = classifyMaintSubsystem(e.category, e.subcategory);
+      addEntry(dt, spec, e.amount);
+    });
+
+    partRows.forEach(p => {
+      if (!p || p.voided || /linked to expense voucher/i.test(String(p.notes || ''))) return;
+      const outlay = Number(p.new_part_cost || 0) + Number(p.repair_cost || 0);
+      if (outlay > 0) {
+        const spec = classifyMaintSubsystem('Spare Parts', `${p.subsystem || ''} ${p.part_name || ''}`);
+        addEntry(p.date, spec, outlay);
+      }
+    });
+
+    const openDefects = liveDefectsAll.filter(d => d && !d.voided && !/^(Resolved|Closed)/i.test(String(d.status || 'Open')));
+    openDefects.forEach(d => {
+      const spec = classifyMaintSubsystem('Repairs and Maintenance', `${d.subsystem || ''} ${d.part_name || ''}`);
+      ensureSub(spec).openDefects += 1;
+    });
+
+    const maintMonths = Array.from(monthMap.values())
+      .sort((a, b) => a.ym.localeCompare(b.ym))
+      .slice(-14);
+
+    const subRows = Array.from(subMap.values())
+      .filter(r => r.amount > 0)
+      .sort((a, b) => b.amount - a.amount)
+      .map(r => Object.assign({}, r, {
+        vouchersTag: `${fmtNum(r.count)} vch${r.openDefects > 0 ? ' · ' + fmtNum(r.openDefects) + ' open' : ''}`
+      }));
+
+    const storedCnt = livePartsAll.filter(p => p && !p.voided && /^Stored/i.test(p.removed_disposition || '')).length;
+    const workshopCnt = livePartsAll.filter(p => p && !p.voided && /Maintenance|Workshop/i.test(p.removed_disposition || '')).length;
+    const soldCnt = livePartsAll.filter(p => p && !p.voided && /^Sold/i.test(p.removed_disposition || '')).length;
+    const installedCnt = livePartsAll.filter(p => p && !p.voided && /^Installed/i.test(p.removed_disposition || '')).length;
+    const activePartsTotal = livePartsAll.filter(p => p && !p.voided).length;
+
+    const custodyFooterHtml = (openDefects.length > 0 || activePartsTotal > 0) ? `
+      <div class="maint-custody-strip">
+        <span class="maint-custody-lbl">Live Custody:</span>
+        ${openDefects.length > 0 ? `<span class="badge badge-warn">${fmtNum(openDefects.length)} Open Defect${openDefects.length === 1 ? '' : 's'}</span>` : ''}
+        <button type="button" class="maint-custody-pill" data-partdisp-chip="stored">Stored <b>${fmtNum(storedCnt)}</b></button>
+        <button type="button" class="maint-custody-pill" data-partdisp-chip="maint">Workshop <b>${fmtNum(workshopCnt)}</b></button>
+        <button type="button" class="maint-custody-pill" data-partdisp-chip="installed">Installed <b>${fmtNum(installedCnt)}</b></button>
+        <button type="button" class="maint-custody-pill" data-partdisp-chip="sold">Sold <b>${fmtNum(soldCnt)}</b></button>
+      </div>
+    ` : '';
+
+    const rightMetaHtml = `<span class="badge badge-brass">${fmtUSDk(totalUsd)} · ${fmtNum(totalVouchers)} Vouchers</span>`;
+    const rightBodyHtml = buildHorizontalBarChart(subRows, 'label', 'amount', v => fmtUSD(v, 0), {
+      subKey: 'vouchersTag',
+      maxItems: 7,
+      valLabel: 'Subsystem Spend',
+      colorFn: r => r.color
+    }) + custodyFooterHtml;
+
+    return `
+      <div class="pbi-grid-2" id="maintChartsRow">
+        ${pbiPanel('Monthly Repair & Spare Spend ($)', buildComboChartSvg(maintMonths, [
+          { key: 'repairs_usd', label: 'Repairs', color: '#2B5C8F' },
+          { key: 'parts_usd', label: 'Parts', color: '#C0892F' },
+          { key: 'oils_tools_usd', label: 'Oils & Tools', color: '#0F766E' }
+        ], { label: 'Vouchers', key: 'vouchers', color: '#D97706', isMoney: false }, { isMoney: true, height: 228 }), {
+          subtitle: 'Repairs, spare parts & oils vs monthly vouchers',
+          legend: [
+            { label: 'Repairs', color: '#2B5C8F' },
+            { label: 'Parts', color: '#C0892F' },
+            { label: 'Oils & Tools', color: '#0F766E' },
+            { label: 'Vouchers', color: '#D97706', line: true }
+          ]
+        })}
+        ${pbiPanel('Maintenance & Spare Spend by Subsystem ($)', rightBodyHtml, {
+          subtitle: 'Repair, spare-part, screen, tire & oil outlay',
+          meta: rightMetaHtml
+        })}
+      </div>
+    `;
+  }
+
   function renderFleetEconVisualsSection(ctx) {
     const months = (ctx && ctx.months) || [];
     const activeUnits = (ctx && ctx.activeUnits) || [];
@@ -6787,6 +6935,7 @@
     renderFuelVisualsSection,
     computeLubricationAudit,
     renderLubricationBenchmarksSection,
+    renderMaintVisualsSection,
     renderFleetEconVisualsSection,
     renderDriversVisualsSection,
     renderPayrollVisualsSection,

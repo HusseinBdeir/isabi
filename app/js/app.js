@@ -8234,6 +8234,26 @@
     return Boolean(d && !d.voided && !/^(Resolved|Closed)/i.test(String(d.status || 'Open')));
   }
 
+  function isFleetMaintExpense(e) {
+    if (!e || e.voided || !String(e.equipment || '').trim()) return false;
+    const cat = String(e.category || '').trim();
+    const sub = String(e.subcategory || '').trim();
+    if (/^(Repairs and Maintenance|Spare Parts|Oils|Minor Equipment|Tools|Skilled Labor)$/i.test(cat)) {
+      return !/^(diesel|benzine?|gas|fuel|مازوت|بنزين)$/i.test(sub);
+    }
+    if (/^Fuel$/i.test(cat)) {
+      return /oil|filter|part|maint|oxygen|lube|lubric|grease|atf|68|15w|90|تشحيم|مشحمة|زيت/i.test(sub) &&
+        !/diesel|benzin|gas|مازوت|بنزين/i.test(sub);
+    }
+    if (/^Other Costs$/i.test(cat)) {
+      return /mechanic|maint|accident|winch|oil|part|repair|wheel|tire|tyre|weld|صيانة|قطع|تصليح|تشحيم/i.test(sub);
+    }
+    if (/^Capital Expenditures$/i.test(cat)) {
+      return /sieve|loadcell|paint|gps/i.test(sub);
+    }
+    return false;
+  }
+
   let _MAINT_IDX = null;
   function getMaintIndex() {
     const revKey = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${allowedCompanyNames().join(',')}`;
@@ -8243,7 +8263,7 @@
     const livePartsAll = filterRecords(SEED.records.part_movements || [], { ignorePeriod: true, ignoreSearch: true });
     const periodDefects = filterRecords(SEED.records.equipment_defects || [], { ignoreSearch: true });
     const periodParts = filterRecords(SEED.records.part_movements || [], { ignoreSearch: true });
-    const equipExpenses = filterRecords(SEED.records.expenses || [], { ignoreSearch: true }).filter(e => e && !e.voided && String(e.equipment || '').trim());
+    const equipExpenses = filterRecords(SEED.records.expenses || [], { ignoreSearch: true }).filter(isFleetMaintExpense);
 
     const openDefects = liveDefectsAll.filter(isDefectOpen);
     const openCrit = openDefects.filter(d => /Critical/i.test(d.severity || ''));
@@ -8784,31 +8804,6 @@
     const readyPct = Math.round(((totalUnits - boardAll.filter(u => u.severityRank <= 1).length) / totalUnits) * 100);
     const notifCompliancePct = mi.partTotalCount > 0 ? Math.round((mi.notifiedParts.length / mi.partTotalCount) * 100) : 100;
 
-    // Subsystem / Fleet Expense distribution for left visual panel
-    const subCounts = new Map();
-    if (mi.liveDefectsAll.length > 0) {
-      mi.liveDefectsAll.forEach(d => {
-        const kSub = d.subsystem || 'Other';
-        subCounts.set(kSub, (subCounts.get(kSub) || 0) + 1);
-      });
-    } else {
-      mi.equipExpenses.forEach(e => {
-        const kSub = e.subcategory || e.category || 'Fleet Maintenance';
-        subCounts.set(kSub, (subCounts.get(kSub) || 0) + Number(e.amount || 0));
-      });
-    }
-    const subBars = Array.from(subCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    const subMax = Math.max(1, ...subBars.map(x => x[1]));
-
-    const dispRows = [
-      { key: 'stored', label: 'Stored in Warehouse / Spare Stock', count: mi.partsStored.length, cls: 'var(--good)' },
-      { key: 'maint', label: 'In Maintenance / At Workshop', count: mi.partsInMaint.length, cls: 'var(--warn)' },
-      { key: 'sold', label: 'Sold (Used / Scrap)', count: mi.partsSold.length, cls: 'var(--brass)', extra: mi.totalSaleProceeds > 0 ? fmtUSD(mi.totalSaleProceeds, 0) : '' },
-      { key: 'installed', label: 'Installed / Mounted on Unit', count: mi.partsInstalled.length, cls: 'var(--accent, #2563EB)' },
-      { key: 'scrapped', label: 'Scrapped / Discarded', count: mi.partsScrapped.length, cls: 'var(--muted)' }
-    ];
-    const dispMax = Math.max(1, ...dispRows.map(d => d.count));
-
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const pChip = (key, label) => `<button type="button" class="filter-chip ${pDisp === key ? 'active' : ''}" data-partdisp-chip="${esc(key)}">${label}</button>`;
     const uChip = (key, label) => `<button type="button" class="filter-chip ${uFilter === key ? 'active' : ''}" data-unithealth-chip="${esc(key)}">${label}</button>`;
@@ -8920,7 +8915,7 @@
                     </td>
                   </tr>
                 `;
-              }).join('') || emptyRow(8, 'No equipment defects logged in this scope — click "+ Report Defect" as soon as a truck or machine shows wear or a fault so future part changes are pre-notified')}
+              }).join('') || emptyRow(8, 'No equipment defects logged in this scope. Click "+ Report Defect" as soon as a truck or machine shows wear or a fault so future part changes are pre-notified.')}
               ${showMoreRow('defects', defFiltered.length, 8)}
             </tbody>
             <tfoot>
@@ -8933,61 +8928,15 @@
         </div>
       </div>
 
-      <!-- Visual Telemetry Strip (.pbi-grid-2 using .pbi-panel so primary/secondary .panel-card order stays strict) -->
-      <div class="pbi-grid-2" id="maintChartsRow" style="margin-bottom:14px">
-        <div class="pbi-panel">
-          <div class="pbi-panel-head">
-            <div>
-              <div class="pbi-panel-title">${mi.liveDefectsAll.length > 0 ? 'Reported Defects by Subsystem' : 'Historical Fleet Maintenance & Spare Categories'}</div>
-              <div class="pbi-panel-sub">${mi.liveDefectsAll.length > 0 ? 'Pre-replacement defect distribution across fleet subsystems' : 'Real equipment-tagged maintenance & spare-part spend from Expenses'}</div>
-            </div>
-            <span class="badge badge-brass">${mi.liveDefectsAll.length > 0 ? `${fmtNum(mi.liveDefectsAll.length)} Reports` : fmtUSDk(expSum)}</span>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px">
-            ${subBars.map(([lbl, valNum]) => {
-              const pct = Math.max(6, Math.round((valNum / subMax) * 100));
-              const rightTxt = mi.liveDefectsAll.length > 0 ? `${fmtNum(valNum)} issue${valNum === 1 ? '' : 's'}` : fmtUSD(valNum, 0);
-              return `
-                <div>
-                  <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px">
-                    <span><b>${esc(lbl)}</b></span>
-                    <span class="mono">${esc(rightTxt)}</span>
-                  </div>
-                  <div style="height:7px;background:var(--surface-2);border-radius:99px;overflow:hidden">
-                    <div style="width:${pct}%;height:100%;background:var(--brass);border-radius:99px"></div>
-                  </div>
-                </div>
-              `;
-            }).join('') || '<div class="mu" style="font-size:12px">No subsystem maintenance activity in this scope.</div>'}
-          </div>
-        </div>
-
-        <div class="pbi-panel">
-          <div class="pbi-panel-head">
-            <div>
-              <div class="pbi-panel-title">Changed &amp; Removed Parts Custody (5 Dispositions)</div>
-              <div class="pbi-panel-sub">Where every removed, rebuilt, stored, mounted, or sold piece currently sits</div>
-            </div>
-            <span class="badge ${mi.unnotifiedParts.length > 0 ? 'badge-warn' : 'badge-ok'}">${mi.partTotalCount > 0 ? `${notifCompliancePct}% Pre-Notified` : 'Ready'}</span>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px">
-            ${dispRows.map(dr => {
-              const pct = dr.count > 0 ? Math.max(8, Math.round((dr.count / dispMax) * 100)) : 0;
-              return `
-                <div style="cursor:pointer" data-partdisp-chip="${esc(dr.key)}" title="Filter Parts Custody Ledger by ${esc(dr.label)}">
-                  <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px">
-                    <span><b>${esc(dr.label)}</b>${dr.extra ? ` <span class="mu">(${esc(dr.extra)})</span>` : ''}</span>
-                    <span class="mono"><b>${fmtNum(dr.count)}</b> pc${dr.count === 1 ? '' : 's'}</span>
-                  </div>
-                  <div style="height:7px;background:var(--surface-2);border-radius:99px;overflow:hidden">
-                    <div style="width:${pct}%;height:100%;background:${dr.cls};border-radius:99px"></div>
-                  </div>
-                </div>
-              `;
-            }).join('')}
-          </div>
-        </div>
-      </div>
+      ${(window.MFG_PBI && typeof window.MFG_PBI.renderMaintVisualsSection === 'function')
+        ? window.MFG_PBI.renderMaintVisualsSection({
+            expRows: mi.equipExpenses,
+            partRows: mi.periodParts,
+            liveDefectsAll: mi.liveDefectsAll,
+            livePartsAll: mi.livePartsAll,
+            basis: STATE.basis
+          })
+        : ''}
 
       <!-- 2nd Panel: Changed & Removed Parts Custody & Disposition Ledger -->
       <div class="panel-card" id="partsLifecyclePanel" style="margin-bottom:14px">
@@ -9043,7 +8992,7 @@
                     <td class="r mono">${sale > 0 && outlay === 0 ? `<span style="color:var(--good)">+${fmtUSD(sale, 2)}</span>` : fmtUSD(netCash, 2)}</td>
                   </tr>
                 `;
-              }).join('') || emptyRow(10, 'No part removals or replacements logged yet — click "+ Log Part Change / Disposition" or "+ Track Piece" on any spare-part expense voucher below')}
+              }).join('') || emptyRow(10, 'No part removals or replacements logged yet. Click "+ Log Part Change / Disposition" or "+ Track Piece" on any spare-part expense voucher below.')}
               ${showMoreRow('parts', partFiltered.length, 10)}
             </tbody>
             <tfoot>
@@ -29182,7 +29131,26 @@
       default: wsHtml = renderOverview();
     }
     const subtabBarHtml = renderHubSubtabBar(user, k, sentinelsOpen);
-    wsHtml = subtabBarHtml + wsHtml;
+    const isDesktopFrozenSubtabs = window.innerWidth > 860;
+    const prevSubtabBar = $('hubSubtabBar');
+    const prevSubtabScroll = prevSubtabBar ? prevSubtabBar.scrollLeft : 0;
+    if (isDesktopFrozenSubtabs) {
+      if (subtabBarHtml) {
+        if (prevSubtabBar && prevSubtabBar.parentElement === container.parentElement) {
+          prevSubtabBar.outerHTML = subtabBarHtml;
+        } else {
+          if (prevSubtabBar) prevSubtabBar.remove();
+          container.insertAdjacentHTML('beforebegin', subtabBarHtml);
+        }
+        const nextSubtabBar = $('hubSubtabBar');
+        if (nextSubtabBar && prevSubtabScroll > 0) nextSubtabBar.scrollLeft = prevSubtabScroll;
+      } else if (prevSubtabBar) {
+        prevSubtabBar.remove();
+      }
+    } else {
+      if (prevSubtabBar && prevSubtabBar.parentElement !== container) prevSubtabBar.remove();
+      wsHtml = subtabBarHtml + wsHtml;
+    }
     setContainerHtmlPreservingActiveInput(container, wsHtml);
     wireWorkspace(container, user);
   }
@@ -29474,7 +29442,8 @@
 
   function wireWorkspace(container, activeUserRow) {
     wireModalSuggestions(container);
-    container.querySelectorAll('[data-hub-subtab]').forEach(btn => {
+    const subtabRoot = $('hubSubtabBar') || container;
+    subtabRoot.querySelectorAll('[data-hub-subtab]').forEach(btn => {
       btn.addEventListener('click', () => {
         const targetView = btn.getAttribute('data-hub-subtab');
         if (targetView) setView(targetView);
