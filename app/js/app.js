@@ -7463,7 +7463,7 @@
   function renderSales() {
     const k = getKPI();
     const base = filterRecords(SEED.records.sales_tickets);
-    const rows = sortRows(base.filter(r => {
+    const chipPredicate = r => {
       if (STATE.chipFilter === 'delivery') return r.sale_type === 'Delivery';
       if (STATE.chipFilter === 'pickup') return r.sale_type === 'Pickup';
       if (STATE.chipFilter === 'credit') return r.method === 'Credit';
@@ -7472,9 +7472,11 @@
       if (STATE.chipFilter === 'vat') return Number(r.vat || 0) > 0;
       if (STATE.chipFilter === 'app') return isAppRecord(r);
       return true;
-    }), 'sales', 'date', 'desc');
+    };
+    const rows = sortRows(base.filter(chipPredicate), 'sales', 'date', 'desc');
     const shown = rows.slice(0, shownCount('sales'));
     let saleLoads = 0, sumQty = 0, sumTons = 0, sumMat = 0, sumTr = 0, sumNet = 0, sumVat = 0, sumTtc = 0, sumCash = 0, sumCredit = 0, sumDisc = 0;
+    let sumVolMat = 0, sumVolTtc = 0;
     let delivLoads = 0, pickupLoads = 0, ownFleetLoads = 0, thirdPartyLoads = 0, otLoads = 0, vatLoads = 0, cashLoads = 0, creditLoads = 0;
     const custMap = new Map();
     const prodMap = new Map();
@@ -7511,6 +7513,10 @@
       sumVat += vat;
       sumTtc += ttc;
       sumDisc += disc;
+      if (q !== 0) {
+        sumVolMat += net;
+        sumVolTtc += ttc;
+      }
       if (isCash) {
         sumCash += net;
         if (sgn === 1) cashLoads += 1;
@@ -7557,6 +7563,8 @@
     }) : (() => {
       const map = new Map();
       rows.forEach(r => {
+        const sgn = ticketSign(r);
+        if (sgn === 0) return;
         const name = r.product || '(Unspecified)';
         let cur = map.get(name);
         if (!cur) {
@@ -7570,11 +7578,10 @@
           };
           map.set(name, cur);
         }
-        const sgn = ticketSign(r);
         const q = sgn * ticketMeters(r);
         const rawQ = sgn * Number(r.qty || 0);
         const ttc = sgn * Number(r.total_ttc != null ? r.total_ttc : r.total || 0);
-        const net = sgn * Number(r.total != null ? r.total : (Number(r.total_ttc || 0) - Number(r.vat || 0)));
+        const mat = sgn * Number(r.price != null ? r.price : (Number(r.total != null ? r.total : (Number(r.total_ttc || 0) - Number(r.vat || 0))) - Number(r.trans_price || 0)));
         if (sgn === 1) cur.loads += 1;
         cur.qty_sold += q;
         cur.native_qty_sold += rawQ;
@@ -7585,6 +7592,7 @@
       return Array.from(map.values()).map(p => {
         const denom = p.qty_sold > 0 ? p.qty_sold : p.native_qty_sold;
         return Object.assign(p, {
+          net_sales: round2(p.net_sum),
           avg_price_net: denom > 0 ? round2(p.net_sum / denom) : 0,
           avg_price_ttc: denom > 0 ? round2(p.sales_ttc / denom) : 0
         });
@@ -7608,19 +7616,21 @@
       });
       return Array.from(map.values());
     })();
-    const prodTotQty = allProds.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
-    const prodTotNet = allProds.reduce((a, p) => a + Number(p.net_sales != null ? p.net_sales : p.net_sum || 0), 0);
+    const volProds = allProds.filter(p => Number(p.qty_sold || 0) > 0);
+    const prodTotQty = volProds.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
     const prodTotTtc = allProds.reduce((a, p) => a + Number(p.sales_ttc || 0), 0);
-    const prodAvgNet = prodTotQty > 0 ? round2((!isSalesFiltered ? prodTotNet : (sumTtc - sumVat)) / prodTotQty) : k.avg_price_net;
-    const prodAvgTtc = prodTotQty > 0 ? round2(prodTotTtc / prodTotQty) : k.avg_price_ttc;
+    const prodVolMat = volProds.reduce((a, p) => a + Number((p.net_sales != null ? p.net_sales : (Number(p.avg_price_net || 0) * Number(p.qty_sold || 0)))), 0);
+    const prodVolTtc = volProds.reduce((a, p) => a + Number(p.sales_ttc || 0), 0);
+    const prodAvgNet = prodTotQty > 0 ? round2(prodVolMat / prodTotQty) : 0;
+    const prodAvgTtc = prodTotQty > 0 ? round2(prodVolTtc / prodTotQty) : 0;
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const wtcS = byCo.WTC;
     const bbcS = byCo.BBConstruction;
     const isGroupScope = STATE.company === 'manufacturing-group';
 
-    // Executive derived telemetry (distinct from bottom tfoot column totals)
-    const avgUnitTtc = sumQty > 0 ? (sumTtc / sumQty) : (prodAvgTtc || 0);
-    const avgUnitNet = sumQty > 0 ? (sumNet / sumQty) : (prodAvgNet || 0);
+    // Executive derived telemetry (distinct from bottom tfoot column totals; exclude 0-m³ equipment/fuel tickets from $/m³)
+    const avgUnitTtc = sumQty > 0 ? (sumVolTtc / sumQty) : (prodAvgTtc || 0);
+    const avgUnitNet = sumQty > 0 ? (sumVolMat / sumQty) : (prodAvgNet || 0);
     const avgLoadTtc = saleLoads > 0 ? (sumTtc / saleLoads) : 0;
     const avgLoadQty = saleLoads > 0 ? (sumQty / saleLoads) : 0;
     const matRevShare = sumNet > 0 ? Math.round((sumMat / sumNet) * 100) : 82;
@@ -7820,7 +7830,16 @@
       </div>
 
       ${(window.MFG_PBI && typeof window.MFG_PBI.renderSalesVisualsSection === 'function')
-        ? window.MFG_PBI.renderSalesVisualsSection({ months: getScopedMonthly(getModel().monthly, 14), prodRows: allProds, k })
+        ? window.MFG_PBI.renderSalesVisualsSection({
+            months: getScopedMonthly(getModel().monthly, 14),
+            prodRows: allProds,
+            k,
+            trendSalesRows: filterRecords(SEED.records.sales_tickets, { ignorePeriod: true, ignoreSearch: true }).filter(chipPredicate),
+            ticketMeters,
+            ticketSign,
+            basis: STATE.basis,
+            productsCatalog: SEED.records.products
+          })
         : ''}
 
       <div class="split-grid-2">
@@ -10143,6 +10162,15 @@
     const avgInd = indRules.length ? indRules.reduce((a, r) => a + Number(ruleAnyIndiffPrice(r) || 0), 0) / indRules.length : 0;
     const uniqPrCusts = new Set(base.map(r => r.customer).filter(Boolean)).size;
     const uniqPrSites = new Set(base.map(r => r.site).filter(Boolean)).size;
+    const scopedProds = getScopedModelProducts();
+    const volScopedProds = scopedProds.filter(p => Number(p.qty_sold || 0) > 0);
+    const volTotM3 = volScopedProds.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
+    const prVolAvgNet = volTotM3 > 0
+      ? round2(volScopedProds.reduce((a, p) => a + Number((p.net_sales != null ? p.net_sales : (Number(p.avg_price_net || 0) * Number(p.qty_sold || 0)))), 0) / volTotM3)
+      : k.avg_price_net;
+    const prVolAvgTtc = volTotM3 > 0
+      ? round2(volScopedProds.reduce((a, p) => a + Number(p.sales_ttc || 0), 0) / volTotM3)
+      : k.avg_price_ttc;
 
     return `
       <div class="cockpit-banner has-insights">
@@ -10173,9 +10201,9 @@
           })}
           ${insightCard({
             label: 'Realized Selling Rate',
-            badge: `Ex-VAT: ${fmtUSD(k.avg_price_net, 2)}`,
-            val: `${fmtUSD(k.avg_price_ttc, 2)} <small>/ m³ TTC</small>`,
-            sub: `Benchmarked across <b>${fmtNum((getModel().products || []).length)}</b> active aggregate grades`,
+            badge: `Ex-VAT: ${fmtUSD(prVolAvgNet, 2)}`,
+            val: `${fmtUSD(prVolAvgTtc, 2)} <small>/ m³ TTC</small>`,
+            sub: `Benchmarked across <b>${fmtNum(volScopedProds.length || scopedProds.length)}</b> active aggregate grades`,
             tone: 'steel'
           })}
           ${insightCard({
@@ -10252,7 +10280,6 @@
       </div>
 
       ${(() => {
-        const scopedProds = getScopedModelProducts();
         const activeRulesList = base.filter(isActive);
         const prodPriceComp = scopedProds.map(p => {
           const pRules = activeRulesList.filter(r => norm(r.product) === norm(p.Product) && !isMatIndiffRule(r) && Number(r.unit_price ?? r.price ?? 0) > 0);
@@ -10272,7 +10299,7 @@
           };
         });
         const visualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderPricingVisualsSection === 'function')
-          ? window.MFG_PBI.renderPricingVisualsSection({ prodPriceComp: prodPriceComp.slice(0, 8) })
+          ? window.MFG_PBI.renderPricingVisualsSection({ prodPriceComp, productsCatalog: SEED.records.products })
           : '';
         const qSearch = STATE.search.trim().toLowerCase();
         const rawBelow = ((sentinelSlice().pricing || {}).top_below_agreed_exceptions || []).filter(r => {
@@ -10322,8 +10349,8 @@
                   <td class="r">—</td>
                   <td class="r"><b>${avgUp ? fmtUSD(avgUp, 2) : '—'}</b></td>
                   <td class="r">—</td>
-                  <td class="r"><b>${fmtUSD(k.avg_price_net, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(k.avg_price_ttc, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(prVolAvgNet, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(prVolAvgTtc, 2)}</b></td>
                   <td class="r"><b>${fmtUSD(prodPriceComp.reduce((a, p) => a + Number(p.sales_ttc || 0), 0), 0)}</b></td>
                 </tr>
               </tfoot>
