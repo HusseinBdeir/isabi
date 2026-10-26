@@ -19183,7 +19183,7 @@
             <div class="panel-title"><span>CLOUD DATABASE BACKENDS (DUAL-DRIVER)</span></div>
             <span class="badge badge-ok">ACTIVE</span>
           </div>
-          <div style="font-size:12px;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:12px;display:flex;flex-direction:column;gap:0">
             <div class="sentinel-item ${/Live/.test(STATE.cloudStatus) ? 'ok' : 'warn'}">
               <div>
                 <div class="sentinel-title">Driver 1: BHFIRMS Multi-Device Cloud Relay + Local SQLite</div>
@@ -19201,19 +19201,35 @@
                   <button class="btn" id="saveSbCfgBtn" style="padding:4px 9px;font-size:11px">Save</button>
                 </div>` : ''}
               </div>
-              <span class="badge ${sbConfigured ? 'badge-ok' : ''}">${sbConfigured ? 'KEYS SAVED' : 'NOT CONFIGURED'}</span>
+              <span class="badge ${sbConfigured ? 'badge-ok' : 'badge-neutral'}">${sbConfigured ? 'KEYS SAVED' : 'NOT CONFIGURED'}</span>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="panel-card system-showcase-card" id="systemShowcasePanel" style="margin-top:14px">
+      <div class="panel-card system-showcase-card" id="systemShowcasePanel">
         <div class="system-showcase-inner">
-          <div class="system-showcase-copy">
-            <div class="system-showcase-title">ISABI Systems Public Showcase &amp; Architecture Blueprints</div>
-            <div class="system-showcase-sub">Open the public ISABI Systems overview to explore the 10-industry ERP &amp; executive analytics blueprints, interactive module tours, and zero-seat licensing model.</div>
+          <div class="system-showcase-lead">
+            <div class="system-showcase-crest" aria-hidden="true">
+              <svg viewBox="0 0 36 36" width="22" height="22" focusable="false">
+                <rect x="8" y="6.5" width="20" height="3.2" rx="0.9" fill="#D9A54A"/>
+                <rect x="9.5" y="12" width="6.2" height="17.5" rx="1.1" fill="#F4F2EE"/>
+                <rect x="20.3" y="12" width="6.2" height="17.5" rx="1.1" fill="#F4F2EE"/>
+              </svg>
+            </div>
+            <div class="system-showcase-copy">
+              <div class="system-showcase-head">
+                <div class="system-showcase-title">ISABI Systems Public Showcase &amp; Architecture Blueprints</div>
+                <div class="system-showcase-tags">
+                  <span class="badge badge-neutral">8 Industry Blueprints</span>
+                  <span class="badge badge-neutral">18 Custom Modules</span>
+                  <span class="badge badge-neutral">$0 Per-Seat Fees</span>
+                </div>
+              </div>
+              <div class="system-showcase-sub">Explore the public ISABI Systems overview, interactive multi-industry ERP and executive analytics blueprints, live sandbox tours, and zero-seat-fee ownership model.</div>
+            </div>
           </div>
-          <a href="${esc(showcaseHref)}" class="btn btn-brass system-showcase-btn" id="railShowcaseLink" aria-label="Public Showcase">
+          <a href="${esc(showcaseHref)}" class="btn system-showcase-btn" id="railShowcaseLink" aria-label="Public Showcase">
             <i class="nav-ico" aria-hidden="true">${ic('showcase')}</i>
             <span>Public Showcase</span>
           </a>
