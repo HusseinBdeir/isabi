@@ -567,21 +567,92 @@
   function daysBetween(a, b) { return Math.round((new Date(b) - new Date(a)) / 86400000); }
 
   let toastTimer = null;
+  let toastFadeTimer = null;
+  function wireToastDismiss(el) {
+    if (!el || el.dataset.dismissWired === '1') return;
+    el.dataset.dismissWired = '1';
+    el.addEventListener('click', e => {
+      if (e.target && e.target.closest('#toastUndoBtn')) return;
+      clearTimeout(toastTimer);
+      clearTimeout(toastFadeTimer);
+      el.classList.remove('is-leaving');
+      el.hidden = true;
+    });
+  }
+
+  function scheduleToastHide(el, durationMs) {
+    clearTimeout(toastTimer);
+    clearTimeout(toastFadeTimer);
+    el.classList.remove('is-leaving');
+    const fadeStart = Math.max(200, durationMs - 190);
+    toastFadeTimer = setTimeout(() => {
+      if (!el.hidden) el.classList.add('is-leaving');
+    }, fadeStart);
+    toastTimer = setTimeout(() => {
+      el.classList.remove('is-leaving');
+      el.hidden = true;
+    }, durationMs);
+  }
+
   function toast(msg, kind, opts) {
     const el = document.getElementById('toast');
     if (!el) return;
+    wireToastDismiss(el);
     el.className = 'toast' + (kind ? ' toast-' + kind : '');
     el.hidden = false;
-    clearTimeout(toastTimer);
     if (opts && typeof opts.onUndo === 'function') {
       el.innerHTML = `<span>${esc(msg)}</span> <button type="button" class="toast-undo-btn" id="toastUndoBtn" style="margin-left:10px;padding:2px 8px;border-radius:4px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:inherit;font-size:11px;font-weight:700;cursor:pointer">Undo ↩</button>`;
       const uBtn = document.getElementById('toastUndoBtn');
-      if (uBtn) uBtn.addEventListener('click', () => { clearTimeout(toastTimer); el.hidden = true; opts.onUndo(); });
-      toastTimer = setTimeout(() => { el.hidden = true; }, 6000);
+      if (uBtn) uBtn.addEventListener('click', () => { clearTimeout(toastTimer); clearTimeout(toastFadeTimer); el.classList.remove('is-leaving'); el.hidden = true; opts.onUndo(); });
+      scheduleToastHide(el, 6000);
       return;
     }
     el.textContent = msg;
-    toastTimer = setTimeout(() => { el.hidden = true; }, kind === 'err' ? 5200 : 3000);
+    scheduleToastHide(el, kind === 'err' ? 5200 : 3000);
+  }
+
+  function formatCleanAuthBadge(authMethod) {
+    const m = String(authMethod || 'PIN');
+    if (/2FA/i.test(m)) return 'Face ID + PIN verified';
+    if (/Face ID/i.test(m)) return 'Face ID verified';
+    if (/Impersonation/i.test(m)) return 'Seat preview';
+    if (/Sandbox/i.test(m)) return 'Demo workspace';
+    return 'PIN verified';
+  }
+
+  function formatCleanSeatRole(roleRaw) {
+    const r = String(roleRaw || '').trim();
+    if (!r || /Owner/i.test(r)) return 'Owner';
+    if (/^Supervisor\s*\+\s*Entry$/i.test(r)) return 'Supervisor';
+    if (/^Entry$/i.test(r)) return 'Operations';
+    if (/^Sales$/i.test(r)) return 'Sales & AR';
+    return r;
+  }
+
+  function formatSeatEntityCountLabel(userOrRaw) {
+    const cos = parseUserCompanies(userOrRaw);
+    const cat = getCompanyCatalog();
+    if (cos.length >= cat.length && cat.length > 1) return 'All Entities';
+    return cos.length === 1 ? '1 Entity' : `${cos.length} Entities`;
+  }
+
+  function toastWelcome(user, authMethod) {
+    const el = document.getElementById('toast');
+    if (!el || !user) return;
+    wireToastDismiss(el);
+    const m = String(authMethod || 'PIN');
+    const fullName = String(user.full_name || 'Team Member').trim();
+    const initials = getInitials(fullName);
+    const greeting = /Impersonation/i.test(m)
+      ? `Viewing as ${fullName}`
+      : (/Sandbox/i.test(m) ? `Welcome, ${fullName}` : `Welcome back, ${fullName}`);
+    const methodBadge = formatCleanAuthBadge(m);
+    const roleLabel = formatCleanSeatRole(user.role);
+
+    el.className = 'toast toast-welcome';
+    el.hidden = false;
+    el.innerHTML = `<span class="tw-avatar-wrap" aria-hidden="true"><span class="tw-avatar">${esc(initials)}</span><span class="tw-check"><svg viewBox="0 0 12 12" width="8" height="8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="2.2 6.3 4.8 8.9 9.8 3.3"/></svg></span></span><span class="tw-copy"><strong class="tw-title">${esc(greeting)}</strong><span class="tw-meta"><span class="tw-badge">${esc(methodBadge)}</span><span class="tw-dot" aria-hidden="true">·</span><span class="tw-role">${esc(roleLabel)}</span></span></span>`;
+    scheduleToastHide(el, 2600);
   }
 
   function resolveEffectiveModelKey(coKey) {
@@ -19201,7 +19272,7 @@
             `;
           } else {
             cardEl.className = 'att-contract-strip is-warn';
-            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file — using default <b>8.0h</b> base shift &amp; standard fallback rate (<b>${fmtUSD(prof.hourlyRate, 2)}/hr</b>).</span>`;
+            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file · using default <b>8.0h</b> shift &amp; standard fallback rate (<b>${fmtUSD(prof.hourlyRate, 2)}/hr</b>).</span>`;
           }
         }
         setHint(
@@ -19240,7 +19311,7 @@
           const typeDisp = lvType === 'Half Day' ? 'Half Day Off' : (lvType === 'VacAbsence' ? 'Paid Vacation' : (lvType === 'Sick Leave' ? 'Sick Leave' : 'Full Absence'));
           setHint('hint_att_leave_pay', lvPay === 'unpaid'
             ? `Deducts ${fmtNum(lvDays, 1)}d × ${fmtUSD(prof.dailyRate, 2)}/day = ${fmtUSD(dedUsd, 2)}`
-            : 'Paid leave — $0.00 deducted from monthly base salary', '');
+            : 'Paid leave · $0.00 deducted from monthly base salary', '');
           setText('calc_att_type', typeDisp);
           setText('calc_att_math', `${fmtNum(lvDays, 1)} day${lvDays === 1 ? '' : 's'} (No Clock In/Out)`);
           setText('calc_att_rate', `${fmtUSD(prof.dailyRate, 2)}/day (${prof.workingDays}d mo.)`);
@@ -19266,54 +19337,87 @@
           return { mode: 'extra', extraTotal: eTot };
         }
 
-        // Shift Mode ('shift'): Time In -> Time Out -> Auto Work Hrs, OT Hrs & Short/Late Hrs
-        const presetBar = $('attPresetBar');
-        if (presetBar) {
-          presetBar.querySelectorAll('[data-att-preset]').forEach(btn => {
-            btn.classList.toggle('active', btn.getAttribute('data-att-preset') === preset);
-          });
+        // Shift Mode ('shift'): Time In & Time Out compared directly against the employee's contract shift (zero redundant Base Shift box)
+        const contractHrs = Number(prof.workingHours || 8);
+        if (attDate !== FORM_UI.lastAttDate) {
+          FORM_UI.lastAttDate = attDate;
+          if (preset !== 'noclock') {
+            if (wk.isSunday) {
+              FORM_UI.attPreset = 'callout';
+            } else if (FORM_UI.attPreset === 'callout') {
+              FORM_UI.attPreset = 'regular';
+            }
+          }
         }
-        const isNoClock = preset === 'noclock';
-        setFieldVisible('wrap_f_in', !isNoClock);
-        setFieldVisible('wrap_f_out', !isNoClock);
-        setFieldVisible('wrap_f_sched_hours', !isNoClock);
-        setFieldVisible('wrap_f_worked_hours', !isNoClock);
+        const activePreset = FORM_UI.attPreset || 'regular';
+        const isNoClock = activePreset === 'noclock';
+        const isCallout = activePreset === 'callout';
 
         if (curStaff !== FORM_UI.lastAttStaff) {
           FORM_UI.lastAttStaff = curStaff;
-          if (curStaff && $('f_sched_hours') && preset !== 'callout' && !FORM_UI.attSchedManual) {
-            $('f_sched_hours').value = String(prof.workingHours || 8);
-          }
-        }
-        if (attDate !== FORM_UI.lastAttDate) {
-          FORM_UI.lastAttDate = attDate;
-          if (!FORM_UI.attSchedManual && preset !== 'noclock' && $('f_sched_hours')) {
-            if (wk.isSunday) {
-              FORM_UI.attPreset = 'callout';
-              $('f_sched_hours').value = '0';
-              if (presetBar) presetBar.querySelectorAll('[data-att-preset]').forEach(b => b.classList.toggle('active', b.getAttribute('data-att-preset') === 'callout'));
-            } else if (FORM_UI.attPreset === 'callout') {
-              FORM_UI.attPreset = 'regular';
-              $('f_sched_hours').value = String(prof.workingHours || 8);
-              if (presetBar) presetBar.querySelectorAll('[data-att-preset]').forEach(b => b.classList.toggle('active', b.getAttribute('data-att-preset') === 'regular'));
+          if (curStaff && !isNoClock && !FORM_UI.attClockManual && $('f_in') && $('f_out')) {
+            const inStart = parseAttClockHour(val('f_in') || '08:00');
+            if (inStart != null) {
+              const endTotalMin = Math.round(((inStart + contractHrs) % 24) * 60);
+              const hh = String(Math.floor(endTotalMin / 60) % 24).padStart(2, '0');
+              const mm = String(endTotalMin % 60).padStart(2, '0');
+              $('f_out').value = `${hh}:${mm}`;
             }
           }
         }
 
+        const regBtn = $('attPresetRegularBtn');
+        if (regBtn) {
+          regBtn.textContent = curStaff
+            ? `Regular Shift (${fmtNum(contractHrs, 1)}h Contract)`
+            : 'Regular Shift (Employee Contract)';
+        }
+        const presetBar = $('attPresetBar');
+        if (presetBar) {
+          presetBar.querySelectorAll('[data-att-preset]').forEach(btn => {
+            btn.classList.toggle('active', btn.getAttribute('data-att-preset') === activePreset);
+          });
+        }
+        setFieldVisible('wrap_f_in', !isNoClock);
+        setFieldVisible('wrap_f_out', !isNoClock);
+        setFieldVisible('wrap_f_worked_hours', !isNoClock);
+
+        const sched = (isNoClock || isCallout) ? 0 : contractHrs;
+        if ($('f_sched_hours')) $('f_sched_hours').value = String(sched);
+
         const inVal = isNoClock ? '' : val('f_in');
         const outVal = isNoClock ? '' : val('f_out');
-        const schedEl = $('f_sched_hours');
-        const sched = isNoClock ? 0 : ((schedEl && String(schedEl.value).trim() !== '') ? Math.max(0, num('f_sched_hours')) : (prof.workingHours || 8));
         const worked = isNoClock ? 0 : computeShiftWorkedHours(inVal, outVal);
         const inH = parseAttClockHour(inVal);
         const outH = parseAttClockHour(outVal);
         const isOvernight = Boolean(!isNoClock && inH != null && outH != null && outH < inH);
         setHint('hint_att_out', isOvernight ? `Overnight finish (+1d next morning) · ${fmtNum(worked, 1)}h span` : '', isOvernight ? 'ok' : '');
+        setHint(
+          'hint_att_worked',
+          isCallout
+            ? 'Day-Off / Call-Out · 100% of worked hours count as Overtime'
+            : (curStaff ? `Compared against ${prof.staff}'s ${fmtNum(contractHrs, 1)}h contract shift` : 'Calculated from Time In & Time Out'),
+          ''
+        );
+        setHint(
+          'hint_att_ot',
+          isCallout
+            ? '100% Call-Out Overtime (editable)'
+            : `Auto-calculated above ${fmtNum(contractHrs, 1)}h contract shift (editable)`,
+          ''
+        );
+        setHint(
+          'hint_att_late',
+          isCallout
+            ? '0.0h on Day-Off / Call-Out'
+            : `Auto-calculated below ${fmtNum(contractHrs, 1)}h contract shift (editable)`,
+          ''
+        );
 
         if (!isNoClock && $('f_worked_hours') && document.activeElement !== $('f_worked_hours')) {
           $('f_worked_hours').value = String(worked);
         }
-        const attTimeKey = `${curStaff}|${curCo}|${FORM_UI.attPreset || 'regular'}|${inVal}|${outVal}|${sched}`;
+        const attTimeKey = `${curStaff}|${curCo}|${activePreset}|${inVal}|${outVal}|${sched}`;
         if (!isNoClock && attTimeKey !== FORM_UI.lastAttTimeKey) {
           FORM_UI.lastAttTimeKey = attTimeKey;
           const autoOt = Math.round(Math.max(0, worked - sched) * 10) / 10;
@@ -19337,7 +19441,7 @@
           : (ltH > 0 ? `Short / Late (-${fmtNum(ltH, 1)}h)` : 'Full Shift (On Time)');
         const mathLbl = isNoClock
           ? `Hours Tally · +${fmtNum(otH, 1)}h OT / -${fmtNum(ltH, 1)}h Late`
-          : `${inVal || '—'} → ${outVal || '—'}${isOvernight ? ' (+1d)' : ''} = ${fmtNum(worked, 1)}h (Base ${fmtNum(sched, 1)}h)`;
+          : `${inVal || '-'} to ${outVal || '-'}${isOvernight ? ' (+1d)' : ''} = ${fmtNum(worked, 1)}h (${isCallout ? 'Call-Out 0h Base' : fmtNum(sched, 1) + 'h Contract'})`;
         setText('calc_att_type', typeLbl);
         setText('calc_att_math', mathLbl);
         setText('calc_att_rate', `${fmtUSD(prof.otHourlyRate, 2)}/hr OT · ${fmtUSD(prof.lateHourlyRate, 2)}/hr Late`);
@@ -20457,7 +20561,7 @@
     FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier');
     FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = ''; FORM_UI.lastFuelItem = val('f_item'); FORM_UI.greaseAutoPreset = false;
     FORM_UI.defectRefPreset = false; FORM_UI.lastSeverity = ''; FORM_UI.lastDefectRef = '';
-    FORM_UI.attPreset = 'regular'; FORM_UI.attSchedManual = false;
+    FORM_UI.attPreset = 'regular'; FORM_UI.attClockManual = false;
     FORM_UI.lastAttStaff = ''; FORM_UI.lastAttDate = val('f_date'); FORM_UI.lastAttTimeKey = '';
 
     body.querySelectorAll('[data-grease-preset]').forEach(btn => {
@@ -20487,21 +20591,16 @@
         ev.preventDefault();
         const p = btn.getAttribute('data-att-preset') || 'regular';
         FORM_UI.attPreset = p;
-        FORM_UI.attSchedManual = false;
         FORM_UI.lastAttTimeKey = '';
         const prof = getStaffContractProfile(val('f_staff'), val('f_company'), val('f_date'));
         if (p === 'regular') {
           if ($('f_in') && !val('f_in')) $('f_in').value = '08:00';
-          if ($('f_out') && (!val('f_out') || val('f_out') === '12:00')) $('f_out').value = '16:00';
+          if ($('f_out') && !val('f_out')) $('f_out').value = '16:00';
           if ($('f_sched_hours')) $('f_sched_hours').value = String(prof.workingHours || 8);
         } else if (p === 'callout') {
           if ($('f_in') && !val('f_in')) $('f_in').value = '08:00';
           if ($('f_out') && !val('f_out')) $('f_out').value = '16:00';
           if ($('f_sched_hours')) $('f_sched_hours').value = '0';
-        } else if (p === 'halfshift') {
-          if ($('f_in')) $('f_in').value = '08:00';
-          if ($('f_out')) $('f_out').value = '12:00';
-          if ($('f_sched_hours')) $('f_sched_hours').value = String(prof.workingHours || 8);
         } else if (p === 'noclock') {
           if ($('f_hours')) $('f_hours').value = '0';
           if ($('f_late_hours')) $('f_late_hours').value = '0';
@@ -20522,10 +20621,10 @@
         recalcForm();
       });
     });
-    const attSchedInp = $('f_sched_hours');
-    if (attSchedInp) {
-      attSchedInp.addEventListener('input', () => { FORM_UI.attSchedManual = true; });
-    }
+    ['f_in', 'f_out'].forEach(fid => {
+      const clkEl = $(fid);
+      if (clkEl) clkEl.addEventListener('input', () => { FORM_UI.attClockManual = true; });
+    });
 
     const addSupDrvBtn = $('btnAddSupDriver');
     if (addSupDrvBtn) {
@@ -21094,10 +21193,11 @@
         };
       } else {
         const isNoClock = FORM_UI.attPreset === 'noclock';
+        const isCallout = FORM_UI.attPreset === 'callout';
         const inFmt = isNoClock ? '' : fmtAttClockTime(val('f_in'));
         const outFmt = isNoClock ? '' : fmtAttClockTime(val('f_out'));
         const schedEl = $('f_sched_hours');
-        const schedH = isNoClock ? 0 : ((schedEl && String(schedEl.value).trim() !== '') ? Math.max(0, num('f_sched_hours')) : staffScheduledHours(st, company, date));
+        const schedH = (isNoClock || isCallout) ? 0 : ((schedEl && String(schedEl.value).trim() !== '') ? Math.max(0, num('f_sched_hours')) : staffScheduledHours(st, company, date));
         const workedH = isNoClock ? 0 : (num('f_worked_hours') > 0 ? num('f_worked_hours') : computeShiftWorkedHours(inFmt, outFmt));
         const otH = Math.max(0, num('f_hours'));
         const ltH = Math.max(0, num('f_late_hours'));
@@ -25115,10 +25215,10 @@
     const confEl = $('authFaceCardSub') || $('authFaceConf');
     const badgeEl = $('authFaceCardBadge') || $('authFaceBadge');
     if (card) {
-      if (badgeEl) badgeEl.textContent = methodLabel || 'BIOMETRIC FACE ID VERIFIED';
+      if (badgeEl) badgeEl.textContent = /2FA/i.test(String(methodLabel || '')) ? '2FA VERIFIED' : 'FACE ID VERIFIED';
       if (nameEl) nameEl.textContent = user.full_name;
-      if (metaEl) metaEl.textContent = `${confPct.toFixed(1)}% · d=${Number(dist || 0).toFixed(3)}`;
-      if (confEl) confEl.textContent = `${user.role} · ${user.companies}`;
+      if (metaEl) metaEl.textContent = `${Math.round(confPct)}% match`;
+      if (confEl) confEl.textContent = `${formatCleanSeatRole(user.role)} · ${formatSeatEntityCountLabel(user)}`;
       if (photoEl && snapshotUrl) photoEl.src = snapshotUrl;
       card.hidden = false;
     }
@@ -25268,7 +25368,7 @@
       ? ` · Live ${liveRes.method === 'turn3d' ? '3D Turn' : 'Blink'}`
       : '';
     const methodLabel = FACE_STATE.pending2faUser ? `PIN + Face ID 2FA${livenessTag}` : `Face ID${livenessTag}`;
-    setAuthHint(`✓ Verified ${dec.best.name} (${methodLabel})`, 'ok');
+    setAuthHint(`✓ Face ID verified · ${dec.best.name}`, 'ok');
     if (!snapshotUrl && opts && opts.videoEl && window.Face && window.Face.snapshot) {
       try { snapshotUrl = window.Face.snapshot(opts.videoEl); } catch (_) {}
     }
@@ -27113,7 +27213,7 @@
       <button type="button" class="quick-seat-item" data-quick-seat="${esc(u.email)}">
         <div>
           <b>${esc(u.full_name)}</b>
-          <small>${esc(u.email)} · ${esc(u.companies)}</small>
+          <small>${esc(u.email)} · ${esc(formatSeatEntityCountLabel(u))}</small>
         </div>
         <div class="quick-seat-meta">
           <span class="quick-seat-role">${esc(u.role)}</span>
@@ -27189,12 +27289,15 @@
     const email = activeUser().email;
     try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
     try { sessionStorage.removeItem('isabi_mfg_sw_resume'); } catch (_) {}
+    clearTimeout(toastTimer);
+    clearTimeout(toastFadeTimer);
+    const tEl = $('toast');
+    if (tEl) { tEl.classList.remove('is-leaving'); tEl.hidden = true; }
     closeEntryModal(true);
     const keep = new URLSearchParams();
     ['demo', 'nosse'].forEach(p => { if (PARAMS.has(p)) keep.set(p, PARAMS.get(p)); });
     history.replaceState({ view: STATE.view }, '', location.pathname + (keep.toString() ? '?' + keep.toString() : ''));
     openAuthGate(email);
-    toast('Session locked — sign in with Face ID or PIN to continue');
   }
 
   function authError(msg) {
@@ -27310,7 +27413,7 @@
     STATE.search = '';
     STATE.showAddUserForm = false;
     renderApp();
-    toast(`Signed in as ${user.full_name} (${authMethod}) · ${String(user.companies).replace(/BBConstruction/g, 'BBC')}`);
+    toastWelcome(user, authMethod);
     syncWithCloud(true);
     return true;
   }

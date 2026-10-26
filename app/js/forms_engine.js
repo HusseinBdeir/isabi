@@ -860,16 +860,17 @@
           ${fld('Attendance Date *', inp('f_date', 'date', today), { hintId: 'hint_att_date', hint: '' })}
           ${fld('Staff Member *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff member..."') + dl('dl_staff', staffNames))}
           <div id="attStaffContractCard" class="att-contract-strip is-muted">
-            <span>Select a <b>Staff Member</b> above to view their active contract salary, standard shift hours &amp; overtime rate.</span>
+            <span>Select a <b>Staff Member</b> above to load their contract salary, daily shift hours &amp; overtime rate.</span>
           </div>
 
-          ${secHdr('2. What Are You Recording?', 'Overtime & Short/Late hours derive automatically from Time In → Time Out; Leave & Half Day hide clock times')}
+          ${secHdr('2. What Are You Recording?', 'Compared automatically against the selected employee contract shift; Leave & Half Day hide clock times')}
           <input type="hidden" id="f_att_mode" value="shift">
           <input type="hidden" id="f_status" value="Present">
+          <input type="hidden" id="f_sched_hours" value="8">
           <div class="att-mode-deck" id="attModeDeck" role="tablist" aria-label="Attendance Entry Mode">
             <button type="button" class="att-mode-card active" data-att-mode="shift" role="tab" aria-selected="true">
-              <span class="att-mode-card-top"><span>${ic('clock')} Worked Shift (In → Out)</span></span>
-              <span class="att-mode-card-sub">Log Time In &amp; Out — Overtime or Short/Late hours calculate automatically</span>
+              <span class="att-mode-card-top"><span>${ic('clock')} Worked Shift (In &amp; Out)</span></span>
+              <span class="att-mode-card-sub">Log Time In &amp; Out · Overtime or Short/Late hours calculate from contract</span>
             </button>
             <button type="button" class="att-mode-card" data-att-mode="leave" role="tab" aria-selected="false">
               <span class="att-mode-card-top"><span>${ic('calendar')} Leave, Absence or Half Day</span></span>
@@ -884,17 +885,17 @@
           <div class="att-subpanel" id="attShiftPanel">
             <div class="att-preset-bar" id="attPresetBar">
               <span class="att-preset-lbl">Shift Basis:</span>
-              <button type="button" class="att-preset-pill active" data-att-preset="regular">Regular Shift (Contract Base)</button>
+              <button type="button" class="att-preset-pill active" id="attPresetRegularBtn" data-att-preset="regular">Regular Shift (Employee Contract)</button>
               <button type="button" class="att-preset-pill" data-att-preset="callout">Sunday / Call-Out (100% OT)</button>
-              <button type="button" class="att-preset-pill" data-att-preset="halfshift">Half Shift Worked (08:00–12:00)</button>
               <button type="button" class="att-preset-pill" data-att-preset="noclock">Hours Only (No Clock)</button>
             </div>
             ${fld('Time In', inp('f_in', 'time', '08:00'), { id: 'wrap_f_in' })}
             ${fld('Time Out', inp('f_out', 'time', '16:00'), { id: 'wrap_f_out', hintId: 'hint_att_out', hint: '' })}
-            ${fld('Contract / Base Shift (Hrs)', inp('f_sched_hours', 'number', '8', 'step="0.5" min="0"'), { id: 'wrap_f_sched_hours', hintId: 'hint_att_sched', hint: '0 hrs = Day-Off / Call-Out (all worked hours count as OT)' })}
-            ${fld('Actual Work Hours', inp('f_worked_hours', 'number', '8', 'step="0.5" min="0" readonly class="pa-locked-input"'), { id: 'wrap_f_worked_hours', hintId: 'hint_att_worked', hint: 'Calculated from Time In → Time Out' })}
-            ${fld('Overtime Hours (+)', inp('f_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_hours', hintId: 'hint_att_ot', hint: 'Auto-calculated above Base Shift (editable)' })}
-            ${fld('Short / Late Hours (−)', inp('f_late_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_late_hours', hintId: 'hint_att_late', hint: 'Auto-calculated below Base Shift (editable)' })}
+            ${fld('Actual Work Hours', inp('f_worked_hours', 'number', '8', 'step="0.5" min="0" readonly class="pa-locked-input"'), { id: 'wrap_f_worked_hours', hintId: 'hint_att_worked', hint: 'Calculated from Time In & Time Out' })}
+            <div class="att-variance-grid">
+              ${fld('Overtime Hours (+)', inp('f_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_hours', hintId: 'hint_att_ot', hint: 'Auto-calculated above employee contract shift (editable)' })}
+              ${fld('Short / Late Hours (−)', inp('f_late_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_late_hours', hintId: 'hint_att_late', hint: 'Auto-calculated below employee contract shift (editable)' })}
+            </div>
           </div>
 
           <div class="att-subpanel" id="attLeavePanel" hidden>
@@ -908,8 +909,8 @@
             <input type="hidden" id="f_leave_type" value="Half Day">
             ${fld('Leave Duration (Days) *', inp('f_leave_days', 'number', '0.5', 'step="0.5" min="0.5"'), { hintId: 'hint_att_leave_days', hint: '0.5 = Half Day · 1.0 = Full Day · 2+ = Multi-Day' })}
             ${fld('Pay Treatment *', sel('f_leave_pay', [
-              ['unpaid', 'Unpaid — Deduct from Monthly Salary'],
-              ['paid', 'Paid — Keep Full Monthly Salary (Vacation / Sick)']
+              ['unpaid', 'Unpaid (Deduct from Monthly Salary)'],
+              ['paid', 'Paid (Keep Full Monthly Salary)']
             ], 'unpaid'), { span2: true, hintId: 'hint_att_leave_pay', hint: '' })}
           </div>
 
@@ -923,7 +924,7 @@
         </div>
         <div class="live-calc" id="attLiveCalc">
           <div><small>Auto-Classification</small><b id="calc_att_type">Full Shift (On Time)</b></div>
-          <div><small>Shift / Duration Math</small><b id="calc_att_math">08:00 → 16:00 = 8.0h</b></div>
+          <div><small>Shift / Duration Math</small><b id="calc_att_math">08:00 to 16:00 = 8.0h</b></div>
           <div><small>Contract Rate Basis</small><b id="calc_att_rate">Select Staff Member</b></div>
           <div><small>Est. Payroll Impact</small><b id="calc_att_impact">$0.00 (Standard Shift)</b></div>
         </div>
