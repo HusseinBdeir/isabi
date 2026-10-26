@@ -9868,8 +9868,10 @@
       const otH = Number(a.overtime_hours != null && a.overtime_hours > 0 ? a.overtime_hours : (/^overtime$/i.test(attType) ? tally : 0));
       const regH = Number(a.regular_hours != null && a.regular_hours > 0 ? a.regular_hours : (workedH > 0 ? round2(Math.max(0, workedH - otH)) : 0));
       const ltH = Number(a.late_hours != null && a.late_hours > 0 ? a.late_hours : (/^lateness$/i.test(attType) ? tally : 0));
-      const lvD = /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(attType) && !/Config/i.test(attType) ? (tally > 0 ? tally : 1) : 0;
-      const extUsd = /^extra\s*usd$/i.test(attType) ? tally : (/^extra\s*lbp$/i.test(attType) ? round2(tally / 89500) : 0);
+      const lvD = /^config\s*vac/i.test(attType)
+        ? tally
+        : (/Absence|VacAbsence|Sick|Leave|Unpaid/i.test(attType) && !/Config/i.test(attType) ? (tally > 0 ? tally : 1) : 0);
+      const extUsd = /^(?:extra|config)\s*usd$/i.test(attType) ? tally : (/^(?:extra|config)\s*lbp$/i.test(attType) ? round2(tally / 89500) : 0);
       const shiftStr = (inFmt || outFmt)
         ? `${inFmt || '—'} → ${outFmt || '—'}`
         : (regH > 0 ? `${fmtNum(regH, 1)}h reg` : '—');
@@ -10116,7 +10118,7 @@
 
     const otAttCount = attAll.filter(a => Number(a.overtime_hours || 0) > 0).length;
     const lateAttCount = attAll.filter(a => Number(a.late_hours || 0) > 0).length;
-    const absentAttCount = attAll.filter(a => Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(String(a.type || ''))).length;
+    const absentAttCount = attAll.filter(a => !/^config/i.test(String(a.type || '')) && (Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(String(a.type || '')))).length;
     const extraAttCount = attAll.filter(a => /^extra/i.test(String(a.type || ''))).length;
     const configAttCount = attAll.filter(a => /^config/i.test(String(a.type || ''))).length;
 
@@ -10124,7 +10126,7 @@
       if (subMode !== 'attendance') return true;
       if (STATE.chipFilter === 'ot_att') return Number(a.overtime_hours || 0) > 0;
       if (STATE.chipFilter === 'late_att') return Number(a.late_hours || 0) > 0;
-      if (STATE.chipFilter === 'absent_att') return Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(String(a.type || ''));
+      if (STATE.chipFilter === 'absent_att') return !/^config/i.test(String(a.type || '')) && (Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(String(a.type || '')));
       if (STATE.chipFilter === 'extra_att') return /^extra/i.test(String(a.type || ''));
       if (STATE.chipFilter === 'config_att') return /^config/i.test(String(a.type || ''));
       if (STATE.chipFilter === 'app') return isAppRecord(a);
@@ -10168,7 +10170,7 @@
         b.n += 1;
         b.ot += Number(a.overtime_hours || 0);
         b.late += Number(a.late_hours || 0);
-        b.leave += Number(a.leave_days || 0);
+        if (!/^config/i.test(String(a.type || ''))) b.leave += Number(a.leave_days || 0);
       }
     });
 
@@ -18919,7 +18921,7 @@
       const staff = row.staff || row.name;
       addGrid('sg_w_emp', `Employment & Freelance Contracts (${staff})`, 'Contracts', 'Contracts', 'employments', (rec.employments || []).filter(e => norm(e.staff || e.name) === norm(staff)), ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'start_date', 'end_date'], 'salary_usd');
       addGrid('sg_w_sal', `Salary Payments (${staff})`, 'Salary Payments', 'Salary Payments', 'salaries', (rec.salaries || []).filter(s => norm(s.staff) === norm(staff)), ['date', 'payroll_month', 'company', 'staff', 'method', 'amount', 'notes'], 'amount');
-      addGrid('sg_w_att', `Attendance & Overtime Log (${staff})`, 'Attendance', 'Attendance', 'attendance', (rec.attendance || []).filter(a => norm(a.staff) === norm(staff)), ['date', 'company', 'status', 'in_time', 'out_time', 'worked_hours', 'regular_hours', 'overtime_hours', 'late_hours', 'notes'], 'overtime_hours');
+      addGrid('sg_w_att', `Attendance & Overtime Log (${staff})`, 'Attendance', 'Attendance', 'attendance', (rec.attendance || []).filter(a => norm(a.staff) === norm(staff)), ['date', 'company', 'status', 'in_time', 'out_time', 'worked_hours', 'regular_hours', 'overtime_hours', 'late_hours', 'leave_days', 'extra_usd', 'notes'], 'overtime_hours');
       addGrid('sg_w_log', `Site Logistics Allowances (${staff})`, 'Site Allowances', 'Site Allowances', 'logistics_allowances', (rec.logistics_allowances || []).filter(l => norm(l.staff) === norm(staff)), ['name', 'company', 'site', 'equipment', 'daily_usd', 'working_days', 'start_date', 'end_date'], 'daily_usd');
       addGrid('sg_w_fl', `Freelance Work Entries (${staff})`, 'Freelance', 'Freelance', 'freelance_entries', (rec.freelance_entries || []).filter(f => norm(f.staff) === norm(staff)), ['date', 'company', 'hours', 'extra_hours', 'rate_usd', 'total', 'notes'], 'total');
     }
@@ -18959,8 +18961,16 @@
       if (row.site) {
         addGrid('sg_jv_dist', `JV Profit Distributions (${row.site})`, 'JV Distributions', 'JV Distributions', 'jv_distributions', (rec.jv_distributions || []).filter(d => norm(d.site) === norm(row.site)), ['date', 'company', 'site', 'partner', 'basis', 'amount', 'total'], 'total');
       }
-      addGrid('sg_tr_loans', `Partner Loans & Advances`, 'Loans', 'Loans', 'loans', (rec.loans || []).slice(0, 25), ['name', 'company', 'principal', 'interest_rate', 'notes'], 'principal');
-      addGrid('sg_tr_set', `Loan Repayments & Drawdowns`, 'Loan Settlements', 'Loan Settlements', 'loan_settlements', (rec.loan_settlements || []).slice(0, 25), ['date', 'company', 'type', 'method', 'usd_amount', 'notes'], 'usd_amount');
+      const cpMatch = norm(row.counterparty || row.lender || row.borrower || '');
+      const lnMatch = norm(key === 'loans' ? row.name : row.loan || '');
+      const scopedLoans = (cpMatch || lnMatch)
+        ? (rec.loans || []).filter(l => (lnMatch && norm(l.name) === lnMatch) || (cpMatch && norm(l.counterparty || l.lender) === cpMatch))
+        : (rec.loans || []).slice(0, 25);
+      const scopedLoanSet = (cpMatch || lnMatch)
+        ? (rec.loan_settlements || []).filter(s => (lnMatch && norm(s.loan) === lnMatch) || (cpMatch && (norm(s.counterparty) === cpMatch || norm(s.borrower) === cpMatch)))
+        : (rec.loan_settlements || []).slice(0, 25);
+      addGrid('sg_tr_loans', `Partner Loans & Advances`, 'Loans', 'Loans', 'loans', scopedLoans, ['name', 'company', 'counterparty', 'direction', 'principal', 'settled_amount', 'start_date', 'notes'], 'principal');
+      addGrid('sg_tr_set', `Loan Repayments & Drawdowns`, 'Loan Settlements', 'Loan Settlements', 'loan_settlements', scopedLoanSet, ['date', 'company', 'loan', 'type', 'method', 'amount', 'notes'], 'amount');
     }
 
     return subgrids;
@@ -19277,26 +19287,33 @@
       employments: [
         { key: 'staff', label: 'Staff Full Name *', type: 'text', sec: 1, getVal: r => r.staff || r.name || '' },
         { key: 'role', label: 'Job Title / Role', type: 'text', sec: 1, placeholder: 'e.g. Plant Operator, Scale Clerk, Driver' },
-        { key: 'type', label: 'Contract Type *', type: 'select', options: ['Regular', 'Daily', 'Freelance'], sec: 1 },
-        { key: 'status', label: 'Employment Status *', type: 'select', options: ['Active', 'Inactive', 'Terminated'], sec: 1 },
+        { key: 'type', label: 'Contract Type *', type: 'select', options: ['Staff', 'Freelance', 'Regular', 'Daily'], sec: 1 },
+        { key: 'status', label: 'Employment Status *', type: 'select', options: ['Current', 'Ended', 'Active', 'Inactive', 'Terminated'], sec: 1 },
         { key: 'phone', label: 'Phone / Contact Number', type: 'tel', sec: 1, placeholder: '+961 ...' },
         { key: 'salary_usd', label: 'Monthly Base Salary ($)', type: 'number', step: '10', min: '0', sec: 3 },
         { key: 'daily_rate', label: 'Daily Rate ($ / day)', type: 'number', step: '1', min: '0', sec: 3 },
+        { key: 'working_days', label: 'Working Days / Month', type: 'number', step: '1', min: '1', sec: 3 },
+        { key: 'working_hours', label: 'Working Hours / Day', type: 'number', step: '0.5', min: '1', sec: 3 },
+        { key: 'overtime_multiplier', label: 'Overtime Multiplier (×)', type: 'number', step: '0.1', min: '0', sec: 3 },
+        { key: 'reimbursement', label: 'Monthly Reimbursement ($)', type: 'number', step: '1', min: '0', sec: 3 },
+        { key: 'deduction', label: 'Monthly Deduction ($)', type: 'number', step: '1', min: '0', sec: 3 },
         { key: 'start_date', label: 'Start Date', type: 'date', sec: 2 },
-        { key: 'end_date', label: 'End Date (Blank = Active)', type: 'date', sec: 2 },
+        { key: 'end_date', label: 'End Date (Blank = Current)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       attendance: [
         { key: 'date', label: 'Attendance Date *', type: 'date', sec: 1 },
         { key: 'staff', label: 'Staff Member *', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
-        { key: 'status', label: 'Attendance / Entry Type *', type: 'select', options: ['Present', 'Overtime', 'Absent', 'Absence', 'Sick Leave', 'VacAbsence', 'Leave', 'Lateness', 'Half Day', 'Extra USD', 'Extra LBP', 'Config USD', 'Config LBP', 'Config VacAbsence'], sec: 1 },
+        { key: 'status', label: 'Attendance / Entry Type *', type: 'select', options: ['Present', 'Overtime', 'Lateness', 'Absence', 'Absent', 'VacAbsence', 'Sick Leave', 'Leave', 'Half Day', 'Extra USD', 'Extra LBP', 'Config USD', 'Config LBP', 'Config VacAbsence'], sec: 1, getVal: r => r.type || r.status || 'Present' },
         { key: 'in_time', label: 'Time In', type: 'time', sec: 2, getVal: r => fmtAttClockTime(r.in_time || r.check_in || '') },
         { key: 'out_time', label: 'Time Out', type: 'time', sec: 2, getVal: r => fmtAttClockTime(r.out_time || r.check_out || '') },
+        { key: 'tally', label: 'Tally (Hrs / Days / Amount)', type: 'number', step: '0.5', sec: 3 },
         { key: 'worked_hours', label: 'Actual Work Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
         { key: 'regular_hours', label: 'Regular Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
         { key: 'overtime_hours', label: 'Overtime Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
         { key: 'late_hours', label: 'Late Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
-        { key: 'usd_amount', label: 'USD Adjustment ($)', type: 'number', step: '0.01', sec: 3 },
+        { key: 'leave_days', label: 'Leave / Absence Days', type: 'number', step: '0.5', sec: 3 },
+        { key: 'extra_usd', label: 'Extra / Config USD ($)', type: 'number', step: '0.01', sec: 3, getVal: r => r.extra_usd ?? r.usd_amount ?? '' },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       freelance_entries: [
@@ -19357,9 +19374,9 @@
         { key: 'date', label: 'Settlement Date *', type: 'date', sec: 1 },
         { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
         { key: 'loan', label: 'Loan / Counterparty *', type: 'combo', dl: 'dl_insp_counterparties', sec: 1, getVal: r => r.loan || r.counterparty || '' },
-        { key: 'type', label: 'Transaction Type *', type: 'select', options: ['Repayment', 'Drawdown'], sec: 1 },
-        { key: 'method', label: 'Direction / Method *', type: 'select', options: ['Inflow', 'Outflow', 'Cash', 'Bank Transfer', 'Check'], sec: 3 },
-        { key: 'usd_amount', label: 'USD Amount ($) *', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'type', label: 'Transaction Type *', type: 'select', options: ['Repayment', 'Drawdown', 'Movement', 'Interest', 'Config'], sec: 1 },
+        { key: 'method', label: 'Direction / Method *', type: 'select', options: ['Inflow', 'Outflow', 'Cash', 'Bank Transfer', 'Check', 'Config'], sec: 3 },
+        { key: 'usd_amount', label: 'USD Amount ($) *', type: 'number', step: '0.01', min: '0', sec: 3, getVal: r => r.usd_amount != null ? r.usd_amount : r.amount },
         { key: 'lbp_amount', label: 'LBP Amount (LL)', type: 'number', step: '1000', min: '0', sec: 3 },
         { key: 'reference', label: 'Reference', type: 'text', sec: 3 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
