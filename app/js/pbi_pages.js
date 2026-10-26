@@ -10,10 +10,10 @@
 (function () {
   'use strict';
 
-  // Institutional Rev 10 Dataviz Palette (Light & Dark CSS-variable backed, zero murky teal or twin near-blacks)
+  // Institutional Rev 10 Dataviz Palette (Light & Dark CSS-variable backed, zero black/near-black or murky teal)
   const C = {
-    navy: 'var(--chart-navy, #162D50)',
-    steel: 'var(--chart-steel, #2E74B5)',
+    navy: 'var(--chart-navy, #2356A8)',
+    steel: 'var(--chart-steel, #4A90D9)',
     brass: 'var(--chart-brass, #C0892F)',
     slate: 'var(--chart-slate, #7A889B)',
     amber: 'var(--chart-amber, #C96A22)',
@@ -3219,7 +3219,7 @@
       // 6-bucket AR Aging signed vertical column data (Current, 1-10, 11-30, 31-60, 60+, On account)
       const agingBuckets = [
         { label: 'Current', value: arCur, color: C.navy },
-        { label: '1-10', value: ar1_10, color: C.navy },
+        { label: '1-10', value: ar1_10, color: C.steel },
         { label: '11-30', value: ar11_30, color: C.steel },
         { label: '31-60', value: ar31_60, color: C.brass },
         { label: '60+', value: ar60p, color: C.crit },

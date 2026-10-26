@@ -35,11 +35,11 @@
   --warn-bg: #FCEBDD;
   --crit: #C8333B;
   --crit-bg: #F9E1E2;
-  --s1: #162D50;
+  --s1: #2356A8;
   --s2: #7A889B;
   --s3: #C0892F;
-  --chart-navy: #162D50;
-  --chart-steel: #2E74B5;
+  --chart-navy: #2356A8;
+  --chart-steel: #4A90D9;
   --chart-brass: #C0892F;
   --chart-slate: #7A889B;
   --chart-amber: #C96A22;
@@ -84,11 +84,11 @@
   --warn-bg: rgba(240, 144, 69, 0.16);
   --crit: #E25A61;
   --crit-bg: rgba(226, 90, 97, 0.18);
-  --s1: #C5D8F0;
+  --s1: #5B9CF0;
   --s2: #788CA6;
   --s3: #DFAA4E;
-  --chart-navy: #C5D8F0;
-  --chart-steel: #4F94E0;
+  --chart-navy: #5B9CF0;
+  --chart-steel: #88C4FA;
   --chart-brass: #DFAA4E;
   --chart-slate: #788CA6;
   --chart-amber: #ED8936;
@@ -15482,30 +15482,82 @@ svg .cf-chart-bar:hover .cf-bar-hit {
 .cockpit-meter {
   display: flex;
   width: 100%;
-  height: 3px;
+  height: 3.5px;
   border-radius: 999px;
-  background: var(--line);
+  background: rgba(35, 86, 168, 0.10);
   overflow: hidden;
   margin-bottom: 5px;
-  gap: 1px;
+  gap: 1.5px;
+}
+:root[data-theme="dark"] .cockpit-meter {
+  background: rgba(255, 255, 255, 0.10);
 }
 .cockpit-meter-fill {
   display: block;
   height: 100%;
   border-radius: 999px;
 }
+/* Never use black/ink on progress meters or bars — chromatic institutional palette across all tones */
 .cockpit-meter-fill.primary {
-  background: var(--ink);
-}
-.tone-emerald .cockpit-meter-fill.primary {
-  background: var(--good);
+  background: var(--chart-navy);
 }
 .tone-brass .cockpit-meter-fill.primary {
-  background: var(--brass);
+  background: var(--chart-brass);
+}
+.tone-emerald .cockpit-meter-fill.primary,
+.tone-good .cockpit-meter-fill.primary {
+  background: var(--chart-good);
+}
+.tone-steel .cockpit-meter-fill.primary,
+.tone-info .cockpit-meter-fill.primary {
+  background: var(--chart-navy);
+}
+.tone-sky .cockpit-meter-fill.primary {
+  background: var(--chart-steel);
+}
+.tone-amber .cockpit-meter-fill.primary,
+.tone-warn .cockpit-meter-fill.primary {
+  background: var(--chart-amber);
+}
+.tone-crit .cockpit-meter-fill.primary {
+  background: var(--chart-crit);
+}
+.tone-plum .cockpit-meter-fill.primary {
+  background: var(--chart-plum);
+}
+.tone-teal .cockpit-meter-fill.primary {
+  background: var(--teal);
+}
+.tone-slate .cockpit-meter-fill.primary {
+  background: var(--chart-slate);
 }
 .cockpit-meter-fill.secondary {
-  background: var(--muted-2);
-  opacity: 0.38;
+  background: #9DB2CC;
+  opacity: 0.62;
+}
+:root[data-theme="dark"] .cockpit-meter-fill.secondary {
+  background: rgba(148, 175, 210, 0.38);
+  opacity: 1;
+}
+.cockpit-meter-fill.secondary.sec-emerald {
+  background: var(--chart-good);
+  opacity: 0.86;
+}
+.cockpit-meter-fill.secondary.sec-steel {
+  background: var(--chart-steel);
+  opacity: 0.88;
+}
+.cockpit-meter-fill.secondary.sec-brass {
+  background: var(--chart-brass);
+  opacity: 0.86;
+}
+.cockpit-meter-fill.secondary.sec-amber {
+  background: var(--chart-amber);
+  opacity: 0.86;
+}
+.cockpit-meter-fill.secondary.sec-crit {
+  background: var(--chart-crit);
+  opacity: 0.86;
 }
 .cockpit-pill-sub {
   font-size: 10.8px;
@@ -15765,13 +15817,13 @@ tr.rrow:hover .tkt-print-mini,
   background: #1F7A52;
 }
 .sales-recon-head .recon-head-mix .rhm-steel {
-  background: #2E5E99;
+  background: #2E74B5;
 }
 :root[data-theme="dark"] .sales-recon-head .recon-head-mix .rhm-emerald {
   background: #34B37A;
 }
 :root[data-theme="dark"] .sales-recon-head .recon-head-mix .rhm-steel {
-  background: #5B95D6;
+  background: #5B9CF0;
 }
 .sales-recon-head .recon-head-mix-lbl {
   text-decoration: none;
@@ -16001,7 +16053,7 @@ tr.rrow:hover .tkt-print-mini,
   background: #1F7A52;
 }
 .sales-recon-metrics > span[data-tile-tone="steel"] small::before {
-  background: #2E5E99;
+  background: #2E74B5;
 }
 .sales-recon-metrics > span[data-tile-tone="warn"] small::before {
   background: #B45309;
@@ -16010,14 +16062,14 @@ tr.rrow:hover .tkt-print-mini,
   width: 5px;
   height: 5px;
   border-radius: 1.5px;
-  background: var(--ink);
-  opacity: 0.72;
+  background: var(--brass);
+  opacity: 0.90;
 }
 :root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="emerald"] small::before {
   background: #34B37A;
 }
 :root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="steel"] small::before {
-  background: #5B95D6;
+  background: #5B9CF0;
 }
 :root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="warn"] small::before {
   background: #F59E0B;
@@ -16100,16 +16152,16 @@ tr.rrow:hover .tkt-print-mini,
   background: #94A3B8;
 }
 .sales-recon-metrics > span[data-tile-tone="navy"] u.recon-tile-bar > i {
-  background: #1E3A5F;
+  background: var(--chart-navy);
 }
 :root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="navy"] u.recon-tile-bar > i {
-  background: #6488B4;
+  background: var(--chart-navy);
 }
 .sales-recon-metrics > span[data-tile-tone="total"] u.recon-tile-bar > i {
-  background: #0F1E38;
+  background: var(--chart-brass);
 }
 :root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="total"] u.recon-tile-bar > i {
-  background: #94A3B8;
+  background: var(--chart-brass);
 }
 .sales-recon-metrics > span[data-tile-tone="emerald"] u.recon-tile-bar > i {
   background: #1F7A52;
@@ -16118,10 +16170,10 @@ tr.rrow:hover .tkt-print-mini,
   background: #34B37A;
 }
 .sales-recon-metrics > span[data-tile-tone="steel"] u.recon-tile-bar > i {
-  background: #2E5E99;
+  background: #2E74B5;
 }
 :root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="steel"] u.recon-tile-bar > i {
-  background: #5B95D6;
+  background: #5B9CF0;
 }
 .sales-recon-metrics > span[data-tile-tone="warn"] u.recon-tile-bar > i {
   background: #B45309;
@@ -17347,9 +17399,6 @@ table.ledger-table tbody td.td-databar {
 }
 :root[data-theme="dark"] .cockpit-pill.insight-card .cockpit-pill-val.brass {
   color: var(--brass);
-}
-.tone-emerald .cockpit-meter-fill.primary {
-  background: var(--chart-steel);
 }
 
 /* Shared All-BUs subtle micro-pill inside Domain Table Picker & + New Entry Modal */

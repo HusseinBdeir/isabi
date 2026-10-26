@@ -3729,12 +3729,13 @@
     }
   }
 
-  function insightCard({ label, badge = '', badgeHtml = '', badgeCls = '', badgeChip = '', val, valCls = '', pct = null, pct2 = null, sub = '', tone = 'brass', id = '' }) {
+  function insightCard({ label, badge = '', badgeHtml = '', badgeCls = '', badgeChip = '', val, valCls = '', pct = null, pct2 = null, sub = '', tone = 'brass', tone2 = '', id = '' }) {
     const p1 = pct != null ? Math.max(0, Math.min(100, Number(pct) || 0)) : null;
     const p2 = pct2 != null ? Math.max(0, Math.min(100 - (p1 || 0), Number(pct2) || 0)) : null;
     const bAttr = badgeChip ? ` data-insight-chip="${esc(badgeChip)}" title="Click to toggle ${esc(badgeChip)} filter"` : '';
     const bActive = badgeChip && STATE.chipFilter === badgeChip ? ' is-active' : '';
     const renderedBadge = badgeHtml || (badge ? `<span class="cockpit-pill-tag ${esc(badgeCls)}${badgeChip ? ' insight-drill' : ''}${bActive}"${bAttr}>${esc(badge)}</span>` : '');
+    const secCls = tone2 ? ` sec-${esc(tone2)}` : '';
     return `
       <div class="cockpit-pill insight-card tone-${esc(tone)}">
         <div class="cockpit-pill-top">
@@ -3745,7 +3746,7 @@
         ${p1 != null ? `
           <div class="cockpit-meter" aria-hidden="true">
             <span class="cockpit-meter-fill primary" style="width:${p1.toFixed(1)}%"></span>
-            ${p2 != null && p2 > 0 ? `<span class="cockpit-meter-fill secondary" style="width:${p2.toFixed(1)}%"></span>` : ''}
+            ${p2 != null && p2 > 0 ? `<span class="cockpit-meter-fill secondary${secCls}" style="width:${p2.toFixed(1)}%"></span>` : ''}
           </div>
         ` : ''}
         ${sub ? `<div class="cockpit-pill-sub">${sub}</div>` : ''}
@@ -7687,7 +7688,8 @@
             pct: creditPct,
             pct2: cashPct,
             sub: `<span class="insight-drill ${STATE.chipFilter === 'credit' ? 'is-active' : ''}" data-insight-chip="credit">Credit <b>${fmtNum(creditLoads)}</b> loads</span> · <span class="insight-drill ${STATE.chipFilter === 'cash' ? 'is-active' : ''}" data-insight-chip="cash">Cash <b>${fmtNum(cashLoads)}</b></span> · <span class="insight-drill ${STATE.chipFilter === 'vat' ? 'is-active' : ''}" data-insight-chip="vat">VAT <b>${fmtNum(vatLoads)}</b> loads</span>`,
-            tone: 'steel'
+            tone: 'steel',
+            tone2: 'emerald'
           })}
           ${insightCard({
             label: 'Active Reach & Top Volume',
@@ -10523,7 +10525,7 @@
     const onAcct = round2(custAll.reduce((s, r) => s + (Number(r.ar_balance || 0) < 0 ? Number(r.ar_balance || 0) : 0), 0));
     const agingBuckets = [
       { label: 'Current', val: round2(k.ar_current || 0), color: 'var(--chart-navy)' },
-      { label: '1–10d',   val: round2(k.ar_1_10 || 0),    color: 'var(--chart-navy)' },
+      { label: '1–10d',   val: round2(k.ar_1_10 || 0),    color: 'var(--chart-steel)' },
       { label: '11–30d',  val: round2(k.ar_11_30 || 0),   color: 'var(--chart-steel)' },
       { label: '31–60d',  val: round2(k.ar_31_60 || 0),   color: 'var(--chart-brass)' },
       { label: '60+d',    val: round2(k.ar_60_plus || 0), color: 'var(--chart-crit)' },
@@ -10560,7 +10562,8 @@
             pct: curPct,
             pct2: over60Pct,
             sub: `0–10d <b>${fmtUSD(arCur, 0)}</b> · 11–60d <b>${fmtUSD(arMid, 0)}</b> · 60+d <b>${fmtUSD(ar60, 0)}</b>`,
-            tone: 'brass'
+            tone: 'brass',
+            tone2: 'crit'
           })}
           ${insightCard({
             label: '11% Output VAT (4427)',
@@ -11231,7 +11234,8 @@
             pct: cashExpPct,
             pct2: 100 - cashExpPct,
             sub: `Cash <b>${fmtUSD(sumCashExp, 0)}</b> · Credit AP <b>${fmtUSD(sumCredExp, 0)}</b>`,
-            tone: 'emerald'
+            tone: 'emerald',
+            tone2: 'steel'
           })}
           ${insightCard({
             label: 'Fleet & Plant Attribution',
