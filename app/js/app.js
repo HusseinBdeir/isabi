@@ -2517,6 +2517,7 @@
     settle: 'settlements',
     expenses: 'expenses',
     pricing: 'price_rules',
+    raw_pricing: 'price_rules',
     coeq: 'company_equipment',
     salaries: 'salaries',
     pay_sal: 'salaries',
@@ -2744,6 +2745,15 @@
       { key: 'supplier', label: 'Supplier' },
       { key: 'product', label: 'Product' },
       { key: 'site', label: 'Site' },
+      { key: 'unit', label: 'Unit' },
+      { key: 'unit_price', label: 'Unit Price ($)', kind: 'numeric' }
+    ],
+    raw_pricing: [
+      { key: 'company', label: 'Company' },
+      { key: 'rule_type', label: 'Rule Type' },
+      { key: 'supplier', label: 'Supplier / Hauler' },
+      { key: 'site', label: 'Source Site' },
+      { key: 'product', label: 'Product' },
       { key: 'unit', label: 'Unit' },
       { key: 'unit_price', label: 'Unit Price ($)', kind: 'numeric' }
     ],
@@ -4229,6 +4239,7 @@
   }
 
   function canEnterForm(form, u) {
+    if (form === 'pricerule_raw' || form === 'pricerule_haul') form = 'pricerule';
     u = u || activeUser();
     const role = String(u.role || '').trim();
     if (/^Custom/i.test(role)) {
@@ -4389,6 +4400,7 @@
       group: 'dispatch',
       tabs: [
         { view: 'raw', label: 'Material & Transportation', icon: 'raw' },
+        { view: 'raw_pricing', label: 'Pricing & Haulage Rates', icon: 'pricing' },
         { view: 'raw_analytics', label: 'JV & Stock Analytics', icon: 'raw_analytics' }
       ]
     },
@@ -4489,6 +4501,7 @@
     if (view === 'entities') return canAccessPbiPage('p02_companies', u);
     if (view === 'sales_vat') return canAccessTable('vat_invoices', u) || canAccessTable('credit_terms', u) || canAccessPbiPage('p13_vat', u);
     if (view === 'sales_analytics') return canAccessPbiPage('p18_tickets', u) || canAccessPbiPage('p04_sales', u) || canAccessPbiPage('p05_pricing', u) || canAccessPbiPage('p06_ar', u);
+    if (view === 'raw_pricing') return canViewView('raw', u) && (canViewView('pricing', u) || canAccessTable('price_rules', u));
     if (view === 'raw_analytics') return canViewView('raw', u) && (canAccessPbiPage('p17_jv', u) || canAccessPbiPage('p08_stock', u) || canAccessPbiPage('p07_ap', u));
     if (view === 'fleet_equip' || view === 'fleet_maint' || view === 'fleet_drivers') return canViewView('fleet', u);
     if (view === 'fleet_analytics') return canViewView('fleet', u) && (canAccessPbiPage('p11_drivers', u) || canAccessPbiPage('p09_fuel', u) || canAccessPbiPage('p10_fleet', u));
@@ -8362,6 +8375,7 @@
               <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('fleet', 'Company fleet')}${chip('third', 'Third-party')}${chip('app', 'App-entered')}</div>
             </div>
             <div style="display:flex;gap:6px">
+              <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw_pricing" title="Open Quarry Raw Material &amp; Haulage Rate Agreements">${ic('pricing')} Pricing &amp; Rates</button>
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_sites" title="Open Master Sites &amp; Regions Registry">${ic('reg_sites')} Sites &amp; Regions</button>
               <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="raw" title="Open Touch Raw Material Receiving Kiosk &amp; Bluetooth Thermal Printer">${ic('printer')} Raw Kiosk</button>
               ${exportBtn('rawPanel', 'Material_Transportation_Register')}
@@ -10126,46 +10140,52 @@
   }
 
   // ==========================================================================
-  // VIEW 06: PRICING & COMMISSION AGREEMENTS
+  // VIEW 06: PRICING & COMMISSION AGREEMENTS (COMMERCIAL SALES, DELIVERY & LIST PRICES)
   // ==========================================================================
   function renderPricing() {
     const k = getKPI();
     const today = SEED_DATE;
     const isActive = r => (!r.end_date || String(r.end_date) >= today) && (!r.start_date || String(r.start_date) <= today);
+    const isQuarryOnlyRule = r => r && (r.rule_type === 'Purchase Price (Site)' || r.rule_type === 'Transport Price (Site)');
+    const isNonAggOutlierRule = r => !r || /^unit$/i.test(String(r.unit || '')) || Number(r.unit_price ?? r.price ?? 0) > 250 || /\b(shacman|truck|mixer|pump|excavator|excavation)\b/i.test(String(r.product || ''));
     const base = filterRecords(SEED.records.price_rules, { ignorePeriod: true });
-    const types = uniqSorted(base.map(r => r.rule_type));
+    const salesBase = base.filter(r => !isQuarryOnlyRule(r));
+    const salesTypes = uniqSorted(salesBase.map(r => r.rule_type));
+    const allTypes = uniqSorted(base.map(r => r.rule_type));
     const rules = sortRows(base.filter(r => {
-      if (STATE.chipFilter === 'active') return isActive(r);
-      if (STATE.chipFilter === 'lapsed') return !isActive(r);
+      if (STATE.chipFilter === 'all_domains') return true;
+      if (STATE.chipFilter === 'active') return !isQuarryOnlyRule(r) && isActive(r);
+      if (STATE.chipFilter === 'lapsed') return !isQuarryOnlyRule(r) && !isActive(r);
       if (STATE.chipFilter === 'indiff') return ruleAnyIndiffPrice(r) != null;
       if (STATE.chipFilter === 'customer') return !!r.customer;
-      if (STATE.chipFilter === 'quarry') return !r.customer && (r.supplier || r.site);
+      if (STATE.chipFilter === 'quarry') return isQuarryOnlyRule(r) || (!r.customer && (r.supplier || r.site));
       if (STATE.chipFilter === 'app') return isAppRecord(r);
-      if (types.includes(STATE.chipFilter)) return r.rule_type === STATE.chipFilter;
-      return true;
+      if (allTypes.includes(STATE.chipFilter)) return r.rule_type === STATE.chipFilter;
+      return !isQuarryOnlyRule(r);
     }), 'pricing', 'start_date', 'desc');
     const shown = rules.slice(0, shownCount('pricing'));
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
-    const activeCount = base.filter(isActive).length;
+    const activeCount = salesBase.filter(isActive).length;
     const indiffCount = base.filter(r => ruleAnyIndiffPrice(r) != null).length;
+    const salesIndiffRules = salesBase.filter(r => ruleAnyIndiffPrice(r) != null);
     const shortRuleType = t => ({
       'Sales (Delivery)': 'Delivery',
       'Sales (Pickup)': 'Pickup',
-      'Purchase Price (Site)': 'Purchase (Site)',
-      'Transport Price (Site)': 'Transport (Site)',
-      'List Price': 'List Price'
+      'Haulage (Customer Site)': '3P Delivery Haul',
+      'List Price': 'List Price',
+      'Commission': 'Commission'
     }[t] || t);
-    const typeChips = types.length ? types.map(t => chip(t, shortRuleType(t))).join('') : chip('customer', 'Customer rules') + chip('quarry', 'Site / hauler rules');
-    const upRules = rules.filter(r => !isMatIndiffRule(r) && Number(r.unit_price ?? r.price ?? 0) !== 0);
-    const tpRules = rules.filter(r => !isTransIndiffRule(r) && Number(r.trans_unit_price ?? r.trans_price ?? 0) > 0);
+    const typeChips = salesTypes.length ? salesTypes.map(t => chip(t, shortRuleType(t))).join('') : chip('customer', 'Customer rules');
+    const upRules = rules.filter(r => !isMatIndiffRule(r) && !isNonAggOutlierRule(r) && Number(r.unit_price ?? r.price ?? 0) > 0);
+    const tpRules = rules.filter(r => !isTransIndiffRule(r) && Number(r.trans_unit_price ?? r.trans_price ?? 0) > 0 && Number(r.trans_unit_price ?? r.trans_price ?? 0) <= 100);
     const indRules = rules.filter(r => ruleAnyIndiffPrice(r) != null);
 
-    const covPct = base.length > 0 ? (activeCount / base.length) * 100 : 100;
+    const covPct = salesBase.length > 0 ? (activeCount / salesBase.length) * 100 : 100;
     const avgUp = upRules.length ? upRules.reduce((a, r) => a + Number(r.unit_price ?? r.price ?? 0), 0) / upRules.length : 0;
     const avgTp = tpRules.length ? tpRules.reduce((a, r) => a + Number(r.trans_unit_price ?? r.trans_price ?? 0), 0) / tpRules.length : 0;
     const avgInd = indRules.length ? indRules.reduce((a, r) => a + Number(ruleAnyIndiffPrice(r) || 0), 0) / indRules.length : 0;
-    const uniqPrCusts = new Set(base.map(r => r.customer).filter(Boolean)).size;
-    const uniqPrSites = new Set(base.map(r => r.site).filter(Boolean)).size;
+    const uniqPrCusts = new Set(salesBase.map(r => r.customer).filter(Boolean)).size;
+    const uniqPrSites = new Set(salesBase.map(r => r.site).filter(Boolean)).size;
     const scopedProds = getScopedModelProducts();
     const volScopedProds = scopedProds.filter(p => Number(p.qty_sold || 0) > 0);
     const volTotM3 = volScopedProds.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
@@ -10173,40 +10193,41 @@
       ? round2(volScopedProds.reduce((a, p) => a + Number((p.net_sales != null ? p.net_sales : (Number(p.avg_price_net || 0) * Number(p.qty_sold || 0)))), 0) / volTotM3)
       : k.avg_price_net;
     const prVolAvgTtc = volTotM3 > 0
-      ? round2(volScopedProds.reduce((a, p) => a + Number(p.sales_ttc || 0), 0) / volTotM3)
+      ? round2(volScopedProds.reduce((a, p) => a + Number(p.sales_ttc || 0), 0), 0) / volTotM3
       : k.avg_price_ttc;
+    const prVolAvgTtcRound = round2(prVolAvgTtc);
 
     return `
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
-          <div class="cockpit-eyebrow">CONTRACTUAL PRICE ENGINE</div>
+          <div class="cockpit-eyebrow">COMMERCIAL PRICE &amp; DELIVERY ENGINE</div>
           <div class="cockpit-title">Pricing &amp; Commissions</div>
         </div>
         <div class="cockpit-pills insight-grid">
           ${insightCard({
-            label: 'Contractual Coverage',
-            badge: `${fmtNum(activeCount)} / ${fmtNum(base.length)} Rules`,
+            label: 'Commercial Coverage',
+            badge: `${fmtNum(activeCount)} / ${fmtNum(salesBase.length)} Rules`,
             badgeCls: 'brass',
             val: `${covPct.toFixed(1)}% <small>Active</small>`,
             valCls: 'brass',
             pct: covPct,
             pct2: 100 - covPct,
-            sub: `<b>${fmtNum(activeCount)}</b> active agreements · <b>${fmtNum(base.length - activeCount)}</b> historical lapsed`,
+            sub: `<b>${fmtNum(activeCount)}</b> active sales/list rules · <b>${fmtNum(base.length - salesBase.length)}</b> quarry rates in Quarry Hub`,
             tone: 'brass'
           })}
           ${insightCard({
             label: 'Avg Agreement Rates',
-            badge: `Trans: ${avgTp ? fmtUSD(avgTp, 2) + '/u' : '—'}`,
+            badge: `Trans: ${avgTp ? fmtUSD(avgTp, 2) + '/m³' : '—'}`,
             badgeCls: 'emerald',
-            val: `${avgUp ? fmtUSD(avgUp, 2) : '—'} <small>/ unit</small>`,
+            val: `${avgUp ? fmtUSD(avgUp, 2) : '—'} <small>/ m³</small>`,
             valCls: 'emerald',
-            sub: `<b>${fmtNum(indiffCount)}</b> flat indifference rules (${avgInd ? 'avg ' + fmtUSD(avgInd, 0) + '/load' : 'per load'})`,
+            sub: `<b>${fmtNum(salesIndiffRules.length)}</b> flat delivery rules (${avgInd ? 'avg ' + fmtUSD(avgInd, 0) + '/load' : 'per load'})`,
             tone: 'emerald'
           })}
           ${insightCard({
             label: 'Realized Selling Rate',
             badge: `Ex-VAT: ${fmtUSD(prVolAvgNet, 2)}`,
-            val: `${fmtUSD(prVolAvgTtc, 2)} <small>/ m³ TTC</small>`,
+            val: `${fmtUSD(prVolAvgTtcRound, 2)} <small>/ m³ TTC</small>`,
             sub: `Benchmarked across <b>${fmtNum(volScopedProds.length || scopedProds.length)}</b> active aggregate grades`,
             tone: 'steel'
           })}
@@ -10226,10 +10247,11 @@
       <div class="panel-card" id="pricingPanel">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search customer, supplier, product, site, agreement code...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('active', `Active (${activeCount})`)}${chip('lapsed', 'Lapsed')}${chip('indiff', `Indifference (${indiffCount})`)}${typeChips}${chip('app', 'App-entered')}</div>
+            ${searchBox('Search customer, product, delivery site, agreement code...')}
+            <div class="chip-bar">${chip('all', `Commercial (${salesBase.length})`)}${chip('active', `Active (${activeCount})`)}${chip('lapsed', 'Lapsed')}${chip('indiff', `Indifference (${indiffCount})`)}${typeChips}${chip('all_domains', `All Domains (${base.length})`)}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw_pricing" title="Open Raw Material Purchase &amp; Quarry Haulage Agreements">${ic('raw')} Quarry &amp; Haulage Rates</button>
             ${exportBtn('pricingPanel', 'Price_Agreements')}
             ${canEnterForm('pricerule') ? '<button class="btn btn-primary" data-open-modal="pricerule">+ New Price Agreement</button>' : ''}
           </div>
@@ -10284,9 +10306,9 @@
       </div>
 
       ${(() => {
-        const activeRulesList = base.filter(isActive);
+        const activeRulesList = salesBase.filter(isActive);
         const prodPriceComp = scopedProds.map(p => {
-          const pRules = activeRulesList.filter(r => norm(r.product) === norm(p.Product) && !isMatIndiffRule(r) && Number(r.unit_price ?? r.price ?? 0) > 0);
+          const pRules = activeRulesList.filter(r => norm(r.product) === norm(p.Product) && !isMatIndiffRule(r) && !isNonAggOutlierRule(r) && Number(r.unit_price ?? r.price ?? 0) > 0);
           const prices = pRules.map(r => Number(r.unit_price ?? r.price));
           const agreedAvg = prices.length ? prices.reduce((a, v) => a + v, 0) / prices.length : Number(p.avg_price_net || 0);
           const lowest = prices.length ? Math.min(...prices) : Number(p.avg_price_net || 0);
@@ -10302,10 +10324,42 @@
             corridorLabel: prices.length ? `${fmtUSD(lowest, 2)} – ${fmtUSD(highest, 2)}` : '—'
           };
         });
+        const pRange = periodRange(STATE.period);
+        const asAtDate = (pRange && pRange.to && pRange.to < today) ? pRange.to : today;
+        const allCompanyRules = filterRecords(SEED.records.price_rules, { ignorePeriod: true, ignoreSearch: true });
+        const scopedSalesTickets = filterRecords(SEED.records.sales_tickets, { ignoreSearch: true });
+        const scopedMonths = getScopedMonthly(getModel().monthly, 18);
+        const lpHist = (window.MFG_PBI && typeof window.MFG_PBI.buildListPriceHistoryData === 'function')
+          ? window.MFG_PBI.buildListPriceHistoryData(allCompanyRules, prodPriceComp, scopedMonths, {
+              today,
+              dateFrom: pRange && pRange.from,
+              dateTo: pRange && pRange.to
+            })
+          : { months: [], series: [], totalRulesCount: 0 };
+        const delTransComp = (window.MFG_PBI && typeof window.MFG_PBI.buildSalesDeliveryTransportComp === 'function')
+          ? window.MFG_PBI.buildSalesDeliveryTransportComp(scopedSalesTickets, allCompanyRules, { today, asAtDate })
+          : { rows: [], unitChartRows: [], siteSpreadRows: [] };
+
         const visualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderPricingVisualsSection === 'function')
-          ? window.MFG_PBI.renderPricingVisualsSection({ prodPriceComp, productsCatalog: SEED.records.products })
+          ? window.MFG_PBI.renderPricingVisualsSection({
+              prodPriceComp,
+              productsCatalog: SEED.records.products,
+              lpHist,
+              delTransComp,
+              today,
+              asAtDate
+            })
           : '';
         const qSearch = STATE.search.trim().toLowerCase();
+        const delRowsFiltered = sortRows((delTransComp.rows || []).filter(r => {
+          if (!qSearch) return true;
+          return `${r.customer || ''} ${r.site || ''} ${r.basis || ''} ${r.company || ''}`.toLowerCase().includes(qSearch);
+        }), 'pdeltrans', 'trans_rev', 'desc');
+        const delShown = delRowsFiltered.slice(0, shownCount('pdeltrans'));
+        const totDelLoads = delRowsFiltered.reduce((a, r) => a + Number(r.loads || 0), 0);
+        const totDelRev = delRowsFiltered.reduce((a, r) => a + Number(r.trans_rev || 0), 0);
+        const belowDelCount = delRowsFiltered.filter(r => r.vs_agreed != null && r.vs_agreed < -0.005).length;
+
         const rawBelow = ((sentinelSlice().pricing || {}).top_below_agreed_exceptions || []).filter(r => {
           if (!qSearch) return true;
           return `${r.customer || ''} ${r.product || ''}`.toLowerCase().includes(qSearch);
@@ -10354,8 +10408,60 @@
                   <td class="r"><b>${avgUp ? fmtUSD(avgUp, 2) : '—'}</b></td>
                   <td class="r">—</td>
                   <td class="r"><b>${fmtUSD(prVolAvgNet, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(prVolAvgTtc, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(prVolAvgTtcRound, 2)}</b></td>
                   <td class="r"><b>${fmtUSD(prodPriceComp.reduce((a, p) => a + Number(p.sales_ttc || 0), 0), 0)}</b></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel-card" id="deliveryTransCompPanel" style="margin-bottom:14px">
+          <div class="panel-head">
+            <div class="panel-title"><span>CUSTOMER DELIVERY TRANSPORTATION COMPARISON: AGREED VS. LAST DELIVERED BY SITE (${fmtNum(delRowsFiltered.length)} PAIRS)</span></div>
+            <span class="panel-meta" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span>${belowDelCount > 0 ? `<b style="color:var(--crit)">${fmtNum(belowDelCount)} below agreed</b> · ` : ''}Total Haulage Rev ${fmtUSD(totDelRev, 0)}</span>
+              <button type="button" class="btn btn-ghost-bar" style="padding:3px 8px;font-size:11px" data-nav-jump="raw_pricing">${ic('raw')} Quarry Site Haulage Rates</button>
+              ${exportBtn('deliveryTransCompPanel', 'Customer_Delivery_Transport_Comparison')}
+            </span>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  ${th('pdeltrans', 'Customer', 'customer')}${th('pdeltrans', 'Co.', 'company')}${th('pdeltrans', 'Delivery Site', 'site')}${th('pdeltrans', 'Basis', 'basis')}
+                  ${th('pdeltrans', 'Agreed ($)', 'agreed_rate', 'r')}${th('pdeltrans', 'Agreement End', 'end_date')}${th('pdeltrans', 'Last Billed ($)', 'last_rate', 'r')}
+                  ${th('pdeltrans', 'Period Avg ($)', 'avg_rate', 'r')}${th('pdeltrans', 'Last − Agreed', 'vs_agreed', 'r')}${th('pdeltrans', 'Loads', 'loads', 'r')}${th('pdeltrans', 'Transport Rev ($)', 'trans_rev', 'r')}
+                </tr>
+              </thead>
+              <tbody>
+                ${delShown.map(r => `
+                  <tr class="rrow" data-rkey="customers" data-rid="${esc((customerInfo(r.customer) || {}).id || r.customer)}">
+                    <td>${relLink('customers', r.customer, r.customer, true)}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td>${r.site && r.site !== '(Direct Delivery)' ? relLink('sites', r.site) : '<span class="mu">(Direct Delivery)</span>'}</td>
+                    <td class="mono"><span class="badge ${r.is_flat ? 'badge-brass' : 'badge-neutral'}">${esc(r.basis)}</span></td>
+                    <td class="r">${r.agreed_rate != null ? `<strong>${fmtUSD(r.agreed_rate, 2)}</strong>` : '<span class="mu">No Rule</span>'}</td>
+                    <td class="mono">${r.end_date ? `<span class="badge ${r.is_lapsed ? 'badge-warn' : 'badge-ok'}">${esc(fmtDateDMY(r.end_date))}</span>` : '<span class="mu">Open</span>'}</td>
+                    <td class="r"><strong>${fmtUSD(r.last_rate, 2)}</strong></td>
+                    <td class="r">${fmtUSD(r.avg_rate, 2)}</td>
+                    <td class="r" ${r.vs_agreed != null && r.vs_agreed < -0.005 ? 'style="color:var(--crit);font-weight:700"' : ''}>${r.vs_agreed != null ? fmtUSD(r.vs_agreed, 2) : '—'}</td>
+                    <td class="r">${fmtNum(r.loads, 0)}</td>
+                    <td class="r"><strong>${fmtUSD(r.trans_rev, 0)}</strong></td>
+                  </tr>
+                `).join('') || emptyRow(11, 'No customer delivery transportation tickets in the selected period')}
+                ${showMoreRow('pdeltrans', delRowsFiltered.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="4"><b>TOTAL (${fmtNum(delRowsFiltered.length)} CUSTOMER × SITE DELIVERY PAIRS)</b></td>
+                  <td class="r">—</td>
+                  <td></td>
+                  <td class="r">—</td>
+                  <td class="r">—</td>
+                  <td class="r">${belowDelCount > 0 ? `<b style="color:var(--crit)">${fmtNum(belowDelCount)} under-billed</b>` : '<b>On Rate</b>'}</td>
+                  <td class="r"><b>${fmtNum(totDelLoads, 0)}</b></td>
+                  <td class="r"><b>${fmtUSD(totDelRev, 0)}</b></td>
                 </tr>
               </tfoot>
             </table>
@@ -10402,6 +10508,289 @@
           </div>
         </div>`;
       })()}
+    `;
+  }
+
+  // ==========================================================================
+  // VIEW 06B: QUARRY & RAW MATERIAL PRICING & HAULAGE RATES
+  // ==========================================================================
+  function renderRawPricing() {
+    const today = SEED_DATE;
+    const isActive = r => (!r.end_date || String(r.end_date) >= today) && (!r.start_date || String(r.start_date) <= today);
+    const isQuarryDomainRule = r => r && (r.rule_type === 'Purchase Price (Site)' || r.rule_type === 'Transport Price (Site)' || r.rule_type === 'Haulage (Customer Site)');
+    const isOutlier = r => !r || /^unit$/i.test(String(r.unit || '')) || Number(r.unit_price ?? r.price ?? 0) > 250 || /\b(shacman|truck|mixer|pump|excavator|excavation)\b/i.test(String(r.product || ''));
+
+    const allBase = filterRecords(SEED.records.price_rules, { ignorePeriod: true });
+    const base = allBase.filter(isQuarryDomainRule);
+    const purchCount = base.filter(r => r.rule_type === 'Purchase Price (Site)').length;
+    const transCount = base.filter(r => r.rule_type === 'Transport Price (Site)' || r.rule_type === 'Haulage (Customer Site)').length;
+    const activeCount = base.filter(isActive).length;
+    const indiffCount = base.filter(r => ruleAnyIndiffPrice(r) != null).length;
+
+    const rules = sortRows(base.filter(r => {
+      if (STATE.chipFilter === 'active') return isActive(r);
+      if (STATE.chipFilter === 'lapsed') return !isActive(r);
+      if (STATE.chipFilter === 'indiff') return ruleAnyIndiffPrice(r) != null;
+      if (STATE.chipFilter === 'unit_rate') return ruleAnyIndiffPrice(r) == null;
+      if (STATE.chipFilter === 'Purchase Price (Site)') return r.rule_type === 'Purchase Price (Site)';
+      if (STATE.chipFilter === 'Transport Price (Site)') return r.rule_type === 'Transport Price (Site)' || r.rule_type === 'Haulage (Customer Site)';
+      if (STATE.chipFilter === 'app') return isAppRecord(r);
+      return true;
+    }), 'raw_pricing', 'start_date', 'desc');
+    const shown = rules.slice(0, shownCount('raw_pricing'));
+    const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+
+    const matUnitRules = rules.filter(r => r.rule_type === 'Purchase Price (Site)' && !isMatIndiffRule(r) && !isOutlier(r) && Number(r.unit_price ?? r.price ?? 0) > 0);
+    const matFlatRules = rules.filter(r => r.rule_type === 'Purchase Price (Site)' && ruleAnyIndiffPrice(r) != null);
+    const haulUnitRules = rules.filter(r => (r.rule_type === 'Transport Price (Site)' || r.rule_type === 'Haulage (Customer Site)') && !isTransIndiffRule(r) && ruleAnyIndiffPrice(r) == null && Number(r.trans_unit_price || r.unit_price || 0) > 0 && Number(r.trans_unit_price || r.unit_price || 0) <= 100);
+    const haulFlatRules = rules.filter(r => (r.rule_type === 'Transport Price (Site)' || r.rule_type === 'Haulage (Customer Site)') && ruleAnyIndiffPrice(r) != null);
+    const allIndRules = rules.filter(r => ruleAnyIndiffPrice(r) != null);
+
+    const avgMatUnit = matUnitRules.length ? matUnitRules.reduce((a, r) => a + Number(r.unit_price ?? r.price ?? 0), 0) / matUnitRules.length : 0;
+    const avgMatFlat = matFlatRules.length ? matFlatRules.reduce((a, r) => a + Number(ruleAnyIndiffPrice(r) || 0), 0) / matFlatRules.length : 0;
+    const avgHaulUnit = haulUnitRules.length ? haulUnitRules.reduce((a, r) => a + Number(r.trans_unit_price || r.unit_price || 0), 0) / haulUnitRules.length : 0;
+    const avgHaulFlat = haulFlatRules.length ? haulFlatRules.reduce((a, r) => a + Number(ruleAnyIndiffPrice(r) || 0), 0) / haulFlatRules.length : 0;
+    const avgAllInd = allIndRules.length ? allIndRules.reduce((a, r) => a + Number(ruleAnyIndiffPrice(r) || 0), 0) / allIndRules.length : 0;
+    const covPct = base.length > 0 ? (activeCount / base.length) * 100 : 100;
+
+    const pRange = periodRange(STATE.period);
+    const asAtDate = (pRange && pRange.to && pRange.to < today) ? pRange.to : today;
+    const allCompanyRules = filterRecords(SEED.records.price_rules, { ignorePeriod: true, ignoreSearch: true });
+    const scopedRawReceipts = filterRecords(SEED.records.raw_purchases, { ignoreSearch: true });
+    const quarryComp = (window.MFG_PBI && typeof window.MFG_PBI.buildQuarryPricingComp === 'function')
+      ? window.MFG_PBI.buildQuarryPricingComp(scopedRawReceipts, allCompanyRules, { today, asAtDate })
+      : { matRows: [], haulRows: [], overAgreedCount: 0, matUnitChartRows: [], haulFlatChartRows: [], haulUnitChartRows: [] };
+
+    const qSearch = STATE.search.trim().toLowerCase();
+    const haulCompRows = sortRows((quarryComp.haulRows || []).filter(r => {
+      if (!qSearch) return true;
+      return `${r.truck_owner || ''} ${r.site || ''} ${r.basis || ''} ${r.company || ''}`.toLowerCase().includes(qSearch);
+    }), 'prawtrans', 'haul_cost', 'desc');
+    const matCompRows = sortRows((quarryComp.matRows || []).filter(r => {
+      if (!qSearch) return true;
+      return `${r.site || ''} ${r.site_owner || ''} ${r.product || ''} ${r.basis || ''} ${r.company || ''}`.toLowerCase().includes(qSearch);
+    }), 'prawmat', 'mat_cost', 'desc');
+
+    const haulShown = haulCompRows.slice(0, shownCount('prawtrans'));
+    const matShown = matCompRows.slice(0, shownCount('prawmat'));
+    const lapsedHaulPairs = haulCompRows.filter(r => r.is_lapsed).length + matCompRows.filter(r => r.is_lapsed).length;
+    const overHaulCount = haulCompRows.filter(r => r.agreed_minus_last != null && r.agreed_minus_last < -0.005).length;
+    const overMatCount = matCompRows.filter(r => r.agreed_minus_last != null && r.agreed_minus_last < -0.005).length;
+    const totHaulLoads = haulCompRows.reduce((a, r) => a + Number(r.loads || 0), 0);
+    const totHaulCost = haulCompRows.reduce((a, r) => a + Number(r.haul_cost || 0), 0);
+    const totMatLoads = matCompRows.reduce((a, r) => a + Number(r.loads || 0), 0);
+    const totMatCost = matCompRows.reduce((a, r) => a + Number(r.mat_cost || 0), 0);
+
+    const visualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderQuarryPricingVisualsSection === 'function')
+      ? window.MFG_PBI.renderQuarryPricingVisualsSection({ quarryComp, today, asAtDate })
+      : '';
+
+    return `
+      <div class="cockpit-banner has-insights">
+        <div class="cockpit-title-block sr-only">
+          <div class="cockpit-eyebrow">QUARRY SOURCE &amp; HAULAGE RATE ENGINE</div>
+          <div class="cockpit-title">Pricing &amp; Haulage Rates</div>
+        </div>
+        <div class="cockpit-pills insight-grid">
+          ${insightCard({
+            label: 'Quarry & Haulage Coverage',
+            badge: `${fmtNum(activeCount)} / ${fmtNum(base.length)} Rules`,
+            badgeCls: 'brass',
+            val: `${covPct.toFixed(1)}% <small>Active</small>`,
+            valCls: 'brass',
+            pct: covPct,
+            pct2: 100 - covPct,
+            sub: `<b>${fmtNum(purchCount)}</b> site purchase rules · <b>${fmtNum(transCount)}</b> quarry transport rules`,
+            tone: 'brass'
+          })}
+          ${insightCard({
+            label: 'Avg Site Material Rate',
+            badge: `${fmtNum(matFlatRules.length)} Flat / Load`,
+            badgeCls: 'emerald',
+            val: `${avgMatUnit ? fmtUSD(avgMatUnit, 2) : (avgMatFlat ? fmtUSD(avgMatFlat, 0) : '—')} <small>${avgMatUnit ? '/ m³' : '/ load'}</small>`,
+            valCls: 'emerald',
+            sub: `Flat truck purchase avg <b>${avgMatFlat ? fmtUSD(avgMatFlat, 0) + '/load' : '—'}</b> across source sites`,
+            tone: 'emerald'
+          })}
+          ${insightCard({
+            label: 'Avg Quarry Transport Rate',
+            badge: avgHaulUnit ? `Unit: ${fmtUSD(avgHaulUnit, 2)}/m³` : `${fmtNum(haulFlatRules.length)} Flat Rules`,
+            val: `${avgHaulFlat ? fmtUSD(avgHaulFlat, 0) : (avgHaulUnit ? fmtUSD(avgHaulUnit, 2) : '—')} <small>${avgHaulFlat ? '/ truck' : '/ m³'}</small>`,
+            sub: `<b>${fmtNum(haulCompRows.length)}</b> active hauler × site pairs (${fmtNum(totHaulLoads)} haulage loads)`,
+            tone: 'steel'
+          })}
+          ${insightCard({
+            label: 'Agreed vs. Billed Audit',
+            badge: `${fmtNum(lapsedHaulPairs)} Lapsed Active`,
+            badgeCls: quarryComp.overAgreedCount > 0 ? 'amber' : 'emerald',
+            val: `${fmtNum(quarryComp.overAgreedCount)} <small>Over-Rate Pairs</small>`,
+            valCls: quarryComp.overAgreedCount > 0 ? 'amber' : 'emerald',
+            sub: `<b>${fmtNum(overHaulCount)}</b> haulage + <b>${fmtNum(overMatCount)}</b> site purchase pairs above agreed`,
+            tone: quarryComp.overAgreedCount > 0 ? 'amber' : 'emerald'
+          })}
+          ${appPill('price_rules', 'unit_price', 'agreements')}
+        </div>
+      </div>
+
+      <div class="panel-card" id="rawPricingPanel" style="margin-bottom:14px">
+        <div class="table-toolbar">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search site owner, hauler, source site, material, code...')}
+            <div class="chip-bar">${chip('all', `All Quarry (${base.length})`)}${chip('active', `Active (${activeCount})`)}${chip('lapsed', 'Lapsed')}${chip('Purchase Price (Site)', `Purchase (${purchCount})`)}${chip('Transport Price (Site)', `Transport (${transCount})`)}${chip('indiff', `Flat / Truck (${indiffCount})`)}${chip('unit_rate', 'Per m³ / Ton')}${chip('app', 'App-entered')}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="pricing" title="Open Customer Sales &amp; Commission Agreements">${ic('sales')} Sales Pricing</button>
+            ${exportBtn('rawPricingPanel', 'Quarry_Site_And_Haulage_Rates')}
+            ${canEnterForm('pricerule') ? '<button type="button" class="btn btn-ghost-bar" data-open-modal="pricerule_haul">+ Haulage Rate</button><button class="btn btn-primary" data-open-modal="pricerule_raw">+ New Site Agreement</button>' : ''}
+          </div>
+        </div>
+        ${renderColFilterBar('raw_pricing')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('raw_pricing', 'Code', 'name')}${th('raw_pricing', 'Co.', 'company')}${th('raw_pricing', 'Rule Type', 'rule_type')}${th('raw_pricing', 'Site Owner / Hauler', 'supplier')}${th('raw_pricing', 'Source Site', 'site')}${th('raw_pricing', 'Material', 'product')}
+                ${th('raw_pricing', 'Unit', 'unit')}${th('raw_pricing', 'Unit Rate ($)', 'unit_price', 'r')}${th('raw_pricing', 'Haul Rate ($)', 'trans_unit_price', 'r')}${th('raw_pricing', 'Flat / Truck ($)', 'indiff_price', 'r')}${th('raw_pricing', 'Start', 'start_date')}${th('raw_pricing', 'End', 'end_date')}<th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shown.map(pr => {
+                const indVal = ruleAnyIndiffPrice(pr);
+                const matInd = isMatIndiffRule(pr);
+                const trInd = isTransIndiffRule(pr);
+                const upVal = (!matInd && Number(pr.unit_price ?? pr.price ?? 0) !== 0) ? Number(pr.unit_price ?? pr.price) : null;
+                const tpVal = (!trInd && Number(pr.trans_unit_price ?? pr.trans_price ?? 0) !== 0) ? Number(pr.trans_unit_price ?? pr.trans_price) : null;
+                return `
+                <tr class="rrow" data-rkey="price_rules" data-rid="${esc(pr.id)}">
+                  <td class="mono"><strong>${esc(pr.name)}</strong>${appCell(pr, 'price_rules')}</td>
+                  <td>${coBadge(pr.company)}</td>
+                  <td><span class="badge ${pr.rule_type === 'Transport Price (Site)' ? 'badge-brass' : 'badge-info'}">${esc(pr.rule_type || '—')}</span></td>
+                  <td>${pr.supplier ? relLink('suppliers', pr.supplier, pr.supplier, true) : (pr.site ? relLink('sites', pr.site, pr.site + ' (site)', true) : '—')}</td>
+                  <td>${pr.site ? relLink('sites', pr.site) : '—'}</td>
+                  <td>${pr.product ? relLink('products', pr.product) : '(All Grades)'}</td>
+                  <td class="mono">${esc(pr.unit)}${pr.truck_size ? ` <span class="badge badge-brass" title="Site Truck Size Override (${pr.truck || 'All trucks'})">${fmtNum(pr.truck_size, 1)} m³</span>` : ''}</td>
+                  <td class="r">${upVal != null ? `<strong>${fmtUSD(upVal, 2)}</strong>` : '—'}</td>
+                  <td class="r">${tpVal != null ? `<strong>${fmtUSD(tpVal, 2)}</strong>` : '—'}</td>
+                  <td class="r">${indVal != null ? `<strong>${fmtUSD(indVal, 2)}</strong> <span class="badge badge-brass" title="Flat per-truck load rate">Flat</span>` : '—'}</td>
+                  <td class="mono">${esc(fmtDateDMY(pr.start_date))}</td>
+                  <td class="mono">${esc(pr.end_date ? fmtDateDMY(pr.end_date) : 'Open')}</td>
+                  <td><span class="badge ${isActive(pr) ? 'badge-ok' : 'badge-warn'}">${isActive(pr) ? 'Active' : 'Lapsed'}</span></td>
+                </tr>
+              `;
+              }).join('') || emptyRow(13, STATE.search ? `No quarry or haulage agreements match "${STATE.search}".` : 'No quarry or haulage agreements for this entity')}
+              ${showMoreRow('raw_pricing', rules.length, 13)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="7"><b>TOTAL (${fmtNum(rules.length)} QUARRY &amp; HAULAGE AGREEMENTS · ${fmtNum(rules.filter(isActive).length)} ACTIVE)</b></td>
+                <td class="r"><span class="mu" style="font-size:10px">Avg </span><b>${avgMatUnit ? fmtUSD(avgMatUnit, 2) : '—'}</b></td>
+                <td class="r"><span class="mu" style="font-size:10px">Avg </span><b>${avgHaulUnit ? fmtUSD(avgHaulUnit, 2) : '—'}</b></td>
+                <td class="r"><span class="mu" style="font-size:10px">Avg </span><b>${avgAllInd ? fmtUSD(avgAllInd, 2) : '—'}</b></td>
+                <td colspan="3"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      ${visualsHtml}
+
+      <div class="panel-card" id="rawTransPriceCompPanel" style="margin-bottom:14px">
+        <div class="panel-head">
+          <div class="panel-title"><span>QUARRY TRANSPORTATION RATE COMPARISON: AGREED VS. LAST HAUL BY HAULER &amp; SITE (${fmtNum(haulCompRows.length)} PAIRS)</span></div>
+          <span class="panel-meta">${overHaulCount > 0 ? `<b style="color:var(--crit)">${fmtNum(overHaulCount)} above agreed</b> · ` : ''}Total Haulage ${fmtUSD(totHaulCost, 0)} ${exportBtn('rawTransPriceCompPanel', 'Quarry_Transport_Rate_Comparison')}</span>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('prawtrans', 'Hauler / Truck Owner', 'truck_owner')}${th('prawtrans', 'Co.', 'company')}${th('prawtrans', 'Source Site', 'site')}${th('prawtrans', 'Basis', 'basis')}
+                ${th('prawtrans', 'Agreed ($)', 'agreed_rate', 'r')}${th('prawtrans', 'Agreement End', 'end_date')}${th('prawtrans', 'Last Haul ($)', 'last_rate', 'r')}
+                ${th('prawtrans', 'Period Avg ($)', 'avg_rate', 'r')}${th('prawtrans', 'Agreed − Last', 'agreed_minus_last', 'r')}${th('prawtrans', 'Loads', 'loads', 'r')}${th('prawtrans', 'Haulage Cost ($)', 'haul_cost', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${haulShown.map(r => `
+                <tr class="rrow" data-rkey="suppliers" data-rid="${esc((supplierInfo(r.truck_owner) || {}).id || r.truck_owner)}">
+                  <td>${relLink('suppliers', r.truck_owner, r.truck_owner, true)}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td>${r.site && r.site !== '(General Site)' ? relLink('sites', r.site) : '<span class="mu">(General Site)</span>'}</td>
+                  <td class="mono"><span class="badge ${r.is_flat ? 'badge-brass' : 'badge-neutral'}">${esc(r.basis)}</span></td>
+                  <td class="r">${r.agreed_rate != null ? `<strong>${fmtUSD(r.agreed_rate, 2)}</strong>` : '<span class="mu">No Rule</span>'}</td>
+                  <td class="mono">${r.end_date ? `<span class="badge ${r.is_lapsed ? 'badge-warn' : 'badge-ok'}">${esc(fmtDateDMY(r.end_date))}</span>` : '<span class="mu">Open</span>'}</td>
+                  <td class="r"><strong>${fmtUSD(r.last_rate, 2)}</strong></td>
+                  <td class="r">${fmtUSD(r.avg_rate, 2)}</td>
+                  <td class="r" ${r.agreed_minus_last != null && r.agreed_minus_last < -0.005 ? 'style="color:var(--crit);font-weight:700"' : ''}>${r.agreed_minus_last != null ? fmtUSD(r.agreed_minus_last, 2) : '—'}</td>
+                  <td class="r">${fmtNum(r.loads, 0)}</td>
+                  <td class="r"><strong>${fmtUSD(r.haul_cost, 0)}</strong></td>
+                </tr>
+              `).join('') || emptyRow(11, 'No 3rd-party quarry transportation loads in the selected period')}
+              ${showMoreRow('prawtrans', haulCompRows.length, 11)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4"><b>TOTAL (${fmtNum(haulCompRows.length)} HAULER × SITE PAIRS)</b></td>
+                <td class="r">—</td>
+                <td></td>
+                <td class="r">—</td>
+                <td class="r">—</td>
+                <td class="r">${overHaulCount > 0 ? `<b style="color:var(--crit)">${fmtNum(overHaulCount)} above agreed</b>` : '<b>On Rate</b>'}</td>
+                <td class="r"><b>${fmtNum(totHaulLoads, 0)}</b></td>
+                <td class="r"><b>${fmtUSD(totHaulCost, 0)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel-card" id="rawMatPriceCompPanel">
+        <div class="panel-head">
+          <div class="panel-title"><span>RAW MATERIAL PURCHASE COMPARISON: AGREED VS. LAST RECEIPT BY SITE &amp; PRODUCT (${fmtNum(matCompRows.length)} PAIRS)</span></div>
+          <span class="panel-meta">${overMatCount > 0 ? `<b style="color:var(--crit)">${fmtNum(overMatCount)} above agreed</b> · ` : ''}Total Material ${fmtUSD(totMatCost, 0)} ${exportBtn('rawMatPriceCompPanel', 'Raw_Material_Site_Rate_Comparison')}</span>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('prawmat', 'Source Site', 'site')}${th('prawmat', 'Co.', 'company')}${th('prawmat', 'Site Owner', 'site_owner')}${th('prawmat', 'Material', 'product')}${th('prawmat', 'Basis', 'basis')}
+                ${th('prawmat', 'Agreed ($)', 'agreed_rate', 'r')}${th('prawmat', 'Agreement End', 'end_date')}${th('prawmat', 'Last Cost ($)', 'last_rate', 'r')}
+                ${th('prawmat', 'Period Avg ($)', 'avg_rate', 'r')}${th('prawmat', 'Agreed − Last', 'agreed_minus_last', 'r')}${th('prawmat', 'Loads', 'loads', 'r')}${th('prawmat', 'Material Cost ($)', 'mat_cost', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${matShown.map(r => `
+                <tr class="rrow" data-rkey="sites" data-rid="${esc((siteInfo(r.site) || {}).id || r.site)}">
+                  <td>${r.site && r.site !== '(General Site)' ? relLink('sites', r.site, r.site, true) : '<span class="mu">(General Site)</span>'}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td>${r.site_owner && r.site_owner !== '—' ? relLink('suppliers', r.site_owner) : '—'}</td>
+                  <td>${r.product && r.product !== '(Material)' ? relLink('products', r.product) : esc(r.product)}</td>
+                  <td class="mono"><span class="badge ${r.is_flat ? 'badge-brass' : 'badge-neutral'}">${esc(r.basis)}</span></td>
+                  <td class="r">${r.agreed_rate != null ? `<strong>${fmtUSD(r.agreed_rate, 2)}</strong>` : '<span class="mu">No Rule</span>'}</td>
+                  <td class="mono">${r.end_date ? `<span class="badge ${r.is_lapsed ? 'badge-warn' : 'badge-ok'}">${esc(fmtDateDMY(r.end_date))}</span>` : '<span class="mu">Open</span>'}</td>
+                  <td class="r"><strong>${fmtUSD(r.last_rate, 2)}</strong></td>
+                  <td class="r">${fmtUSD(r.avg_rate, 2)}</td>
+                  <td class="r" ${r.agreed_minus_last != null && r.agreed_minus_last < -0.005 ? 'style="color:var(--crit);font-weight:700"' : ''}>${r.agreed_minus_last != null ? fmtUSD(r.agreed_minus_last, 2) : '—'}</td>
+                  <td class="r">${fmtNum(r.loads, 0)}</td>
+                  <td class="r"><strong>${fmtUSD(r.mat_cost, 0)}</strong></td>
+                </tr>
+              `).join('') || emptyRow(12, 'No raw material purchase receipts in the selected period')}
+              ${showMoreRow('prawmat', matCompRows.length, 12)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="5"><b>TOTAL (${fmtNum(matCompRows.length)} SITE × MATERIAL PAIRS)</b></td>
+                <td class="r">—</td>
+                <td></td>
+                <td class="r">—</td>
+                <td class="r">—</td>
+                <td class="r">${overMatCount > 0 ? `<b style="color:var(--crit)">${fmtNum(overMatCount)} above agreed</b>` : '<b>On Rate</b>'}</td>
+                <td class="r"><b>${fmtNum(totMatLoads, 0)}</b></td>
+                <td class="r"><b>${fmtUSD(totMatCost, 0)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
     `;
   }
 
@@ -22523,7 +22912,12 @@
   function openEntryModal(formType, prefill = null) {
     const preselectConv = formType === 'conversion';
     const preselectExt = formType === 'external';
-    const resolvedForm = (preselectConv || preselectExt) ? 'treasury' : formType;
+    const preselectRawPrice = formType === 'pricerule_raw';
+    const preselectHaulPrice = formType === 'pricerule_haul';
+    const modalGroupOverride = (preselectRawPrice || preselectHaulPrice) ? 'raw' : null;
+    const resolvedForm = (preselectConv || preselectExt)
+      ? 'treasury'
+      : ((preselectRawPrice || preselectHaulPrice) ? 'pricerule' : formType);
     const form = FORM_TITLES[resolvedForm] ? resolvedForm : 'sales';
     if (!canEnterForm(form)) { toast('Your seat has no entry rights for this form', 'err'); return; }
     const kBody = $('kioskFormBody');
@@ -22537,10 +22931,14 @@
     if (title) {
       title.textContent = preselectExt
         ? 'New External Treasury Entry'
-        : (preselectConv ? 'New Currency Conversion (USD ↔ LBP)' : FORM_TITLES[form]);
+        : (preselectConv
+          ? 'New Currency Conversion (USD ↔ LBP)'
+          : (preselectRawPrice
+            ? 'New Raw Material Site Agreement'
+            : (preselectHaulPrice ? 'New Quarry Haulage Agreement' : FORM_TITLES[form])));
     }
     if (tabsWrap && window.MFG_FORMS) {
-      tabsWrap.innerHTML = window.MFG_FORMS.renderModalTabsHtml(form, canEnterForm);
+      tabsWrap.innerHTML = window.MFG_FORMS.renderModalTabsHtml(form, canEnterForm, modalGroupOverride);
       tabsWrap.querySelectorAll('[data-pa-group]').forEach(gBtn => {
         gBtn.addEventListener('click', () => {
           const gid = gBtn.getAttribute('data-pa-group');
@@ -22606,6 +23004,10 @@
       $('f_trtype').value = 'conversion';
     } else if (preselectExt && $('f_trtype')) {
       $('f_trtype').value = 'external';
+    } else if (preselectRawPrice && $('f_ruletype')) {
+      $('f_ruletype').value = 'Purchase Price (Site)';
+    } else if (preselectHaulPrice && $('f_ruletype')) {
+      $('f_ruletype').value = 'Transport Price (Site)';
     }
     wireModalLiveCalc(wasClosed);
     if (prefill && typeof prefill === 'object') {
@@ -24146,6 +24548,7 @@
       raw: { sites: 'site', suppliers: 'site_owner', products: 'product', equipment: 'truck' },
       fleet: { equipment: 'equipment', drivers: 'driver' },
       pricing: { customers: 'customer', suppliers: 'supplier', products: 'product', sites: 'site' },
+      raw_pricing: { customers: 'customer', suppliers: 'supplier', products: 'product', sites: 'site' },
       customers: { customers: 'customer' },
       suppliers: { suppliers: 'supplier' },
       expenses: { suppliers: 'supplier', equipment: 'equipment', expense_categories: 'category' }
@@ -27590,6 +27993,7 @@
     sales_vat: 'VAT & Credit',
     sales_analytics: 'Sales Analytics',
     raw: 'Material & Transportation',
+    raw_pricing: 'Pricing & Haulage Rates',
     raw_analytics: 'JV & Stock Analytics',
     fleet: 'Diesel & Lubricants',
     fleet_equip: 'Fleet & Running Costs',
@@ -27638,6 +28042,7 @@
     sales_vat: 'VAT & Credit',
     sales_analytics: 'Sales Analytics',
     raw: 'Material & Transportation',
+    raw_pricing: 'Pricing & Haulage Rates',
     raw_analytics: 'JV & Stock Analytics',
     fleet: 'Diesel & Lubricants',
     fleet_equip: 'Fleet & Running Costs',
@@ -28351,7 +28756,7 @@
     }
     const map = {
       kiosks: 'sales', sales: 'sales', sales_vat: 'vatinvoice', sales_analytics: 'sales',
-      raw: 'raw', raw_analytics: 'raw',
+      raw: 'raw', raw_pricing: 'pricerule_raw', raw_analytics: 'raw',
       fleet: 'fuel', fleet_equip: 'companyequipment', fleet_maint: 'defect', fleet_drivers: 'triprate', fleet_analytics: 'triprate',
       pricing: 'pricerule',
       cashflow: 'receipt', cashflow_analytics: 'receipt',
@@ -28407,7 +28812,7 @@
           sales: 'Post Ticket', raw: 'Post Raw', fuel: 'Log Fuel', receipt: 'Post Receipt',
           settlement: 'Settle AP', expense: 'Post Expense', salary: 'Pay Salary',
           vatinvoice: 'Post VAT Inv', attendance: 'Log Attendance', employment: 'New Contract',
-          treasury: 'Post Treasury', pricerule: 'New Agreement',
+          treasury: 'Post Treasury', pricerule: 'New Agreement', pricerule_raw: 'New Site Rate',
           defect: 'Report Defect', partlog: 'Log Part'
         };
         dEntryLbl.textContent = formLabels[contextFormForView(v, user)] || 'Post Entry';
@@ -29960,6 +30365,7 @@
         wsHtml = renderHubAnalyticsView(STATE.view);
         break;
       case 'raw': wsHtml = renderRaw(); break;
+      case 'raw_pricing': wsHtml = renderRawPricing(); break;
       case 'fleet': wsHtml = renderFleet(); break;
       case 'fleet_equip': wsHtml = renderFleetEquipment(); break;
       case 'fleet_maint': wsHtml = renderFleetMaintenance(); break;
@@ -31099,6 +31505,7 @@
           raw: { sites: 'site', suppliers: 'site_owner', products: 'product', equipment: 'truck' },
           fleet: { equipment: 'equipment', drivers: 'driver' },
           pricing: { customers: 'customer', suppliers: 'supplier', products: 'product', sites: 'site' },
+          raw_pricing: { customers: 'customer', suppliers: 'supplier', products: 'product', sites: 'site' },
           customers: { customers: 'customer' },
           suppliers: { suppliers: 'supplier' },
           expenses: { suppliers: 'supplier', equipment: 'equipment', expense_categories: 'category' }

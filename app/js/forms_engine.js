@@ -415,9 +415,16 @@
   }
 
   // ==================== MODAL GROUP & TAB BAR RENDERER ====================
-  function renderModalTabsHtml(activeForm, canEnterFn) {
+  function renderModalTabsHtml(activeForm, canEnterFn, groupOverride) {
     const info = FORM_MAP[activeForm] || FORM_MAP.sales;
-    const activeGroup = FORM_GROUPS.find(g => g.id === info.groupId) || FORM_GROUPS[0];
+    const activeGroup = (groupOverride && FORM_GROUPS.find(g => g.id === groupOverride)) || FORM_GROUPS.find(g => g.id === info.groupId) || FORM_GROUPS[0];
+    const extraQuarryTab = (activeGroup.id === 'raw' && (!canEnterFn || canEnterFn('pricerule')))
+      ? `
+          <button type="button" class="modal-tab ${groupOverride === 'raw' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_raw">
+            <span>Site &amp; Haulage Pricing</span>
+          </button>
+        `
+      : '';
     return `
       <div class="pa-modal-groups">
         ${FORM_GROUPS.map(g => {
@@ -428,10 +435,10 @@
       </div>
       <div class="pa-modal-subtabs">
         ${activeGroup.forms.filter(f => !canEnterFn || canEnterFn(f.id)).map(f => `
-          <button type="button" class="modal-tab ${f.id === activeForm ? 'active' : ''}" data-form="${esc(f.id)}">
+          <button type="button" class="modal-tab ${!groupOverride && f.id === activeForm ? 'active' : ''}" data-form="${esc(f.id)}">
             <span>${esc(f.label)}</span>${f.universal ? '<span class="tbl-univ-tag">All BUs</span>' : ''}
           </button>
-        `).join('')}
+        `).join('')}${extraQuarryTab}
       </div>
     `;
   }

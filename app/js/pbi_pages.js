@@ -135,6 +135,566 @@
     });
   }
 
+  const _MONTH_SHORT_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function formatYmLabel(ym) {
+    const m = String(ym || '').match(/^(\d{4})-(\d{2})$/);
+    if (!m) return String(ym || '');
+    const idx = parseInt(m[2], 10) - 1;
+    return `${_MONTH_SHORT_NAMES[idx] || m[2]} ${m[1]}`;
+  }
+  function buildYmSequence(startYm, endYm) {
+    const s = String(startYm || '').match(/^(\d{4})-(\d{2})/);
+    const e = String(endYm || '').match(/^(\d{4})-(\d{2})/);
+    if (!s || !e) return [];
+    let y = parseInt(s[1], 10), m = parseInt(s[2], 10);
+    const ey = parseInt(e[1], 10), em = parseInt(e[2], 10);
+    const out = [];
+    let guard = 0;
+    while ((y < ey || (y === ey && m <= em)) && guard++ < 96) {
+      const ym = `${y}-${String(m).padStart(2, '0')}`;
+      out.push({ ym, 'Year Month': formatYmLabel(ym), YearMonthNo: `${y}${String(m).padStart(2, '0')}` });
+      m += 1;
+      if (m > 12) { m = 1; y += 1; }
+    }
+    return out;
+  }
+
+  function isRuleFlatMat(r) {
+    if (!r) return false;
+    const ip = r.indiff_price != null && r.indiff_price !== '' && Number(r.indiff_price) !== 0 ? Number(r.indiff_price) : null;
+    if (ip == null) return false;
+    if (/^truck$/i.test(r.unit || '') || /^truck$/i.test(r.rate_per || '')) return true;
+    if (r.rule_type === 'Transport Price (Site)' || r.rule_type === 'Purchase Price (Site)') return true;
+    const up = Number(r.price ?? r.unit_price ?? 0);
+    return !(up > 0) || up === ip;
+  }
+  function ruleFlatTransVal(r) {
+    if (!r) return null;
+    if (r.trans_indiff_price != null && r.trans_indiff_price !== '' && Number(r.trans_indiff_price) !== 0) return Number(r.trans_indiff_price);
+    if ((r.rule_type === 'Transport Price (Site)' || r.rule_type === 'Haulage (Customer Site)') && r.indiff_price != null && r.indiff_price !== '' && Number(r.indiff_price) !== 0) {
+      return Number(r.indiff_price);
+    }
+    if ((r.rule_type === 'Transport Price (Site)' || r.rule_type === 'Haulage (Customer Site)') && (/^truck$/i.test(r.unit || '') || /^truck$/i.test(r.rate_per || '')) && Number(r.trans_unit_price || r.unit_price || 0) !== 0) {
+      return Number(r.trans_unit_price || r.unit_price);
+    }
+    return null;
+  }
+  function isRuleFlatTrans(r) {
+    return ruleFlatTransVal(r) != null || (r && r.rule_type === 'Transport Price (Site)' && isRuleFlatMat(r)) || /^truck$/i.test((r && r.rate_per) || '');
+  }
+
+  // Build monthly List Price step-history trajectory from dated List Price agreements in price_rules
+  function buildListPriceHistoryData(priceRules, prodRows, months, opts = {}) {
+    const colors = opts.colors || [C.navy, C.brass, C.steel, C.plum, C.good];
+    const maxSeries = opts.maxSeries || 5;
+    const maxMonths = opts.maxMonths || 20;
+    const todayYm = String(opts.today || '2026-10-26').slice(0, 7);
+    const nonAggRe = /\b(truck|shacman|mixer|pump|excavator|excavation|loader|bulldozer|diesel|oil|grease|benzin|mazout|rent|transportation|commission|discount|vat|insurance|tire|wheel|battery|filter|hammer)\b/i;
+    const roundFn = v => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+
+    const lpRules = (Array.isArray(priceRules) ? priceRules : []).filter(r => {
+      if (!r || r.voided) return false;
+      if (!/^list price$/i.test(String(r.rule_type || '').trim())) return false;
+      const pName = String(r.product || '').trim();
+      const up = Number(r.unit_price ?? r.price ?? 0);
+      if (!pName || !(up > 0) || up > 250 || nonAggRe.test(pName) || /^unit$/i.test(String(r.unit || ''))) return false;
+      return true;
+    });
+
+    // Group by (company, product) first so multi-entity views never mix two companies' price scales on the same line
+    const byCoProd = new Map();
+    const distinctCos = new Set();
+    lpRules.forEach(r => {
+      const co = String(r.company || '').trim();
+      const pName = String(r.product || '').trim();
+      if (co) distinctCos.add(co);
+      const key = `${normKey(co)}|${normKey(pName)}`;
+      let g = byCoProd.get(key);
+      if (!g) {
+        g = { key, company: co, product: pName, rules: [] };
+        byCoProd.set(key, g);
+      }
+      g.rules.push(r);
+    });
+
+    const prodVolMap = new Map();
+    (Array.isArray(prodRows) ? prodRows : []).forEach(p => {
+      const pk = normKey(p && (p.Product || p.name));
+      if (!pk) return;
+      prodVolMap.set(pk, (prodVolMap.get(pk) || 0) + Number(p.qty_sold || p.loads || 0));
+    });
+
+    // Deduplicate product names across companies by keeping the company series with the richest step history + volume
+    const byProdBest = new Map();
+    byCoProd.forEach(g => {
+      g.rules.sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
+      const distinctPrices = new Set(g.rules.map(r => roundFn(Number(r.unit_price ?? r.price ?? 0)))).size;
+      g.steps = g.rules.length;
+      g.distinctPrices = distinctPrices;
+      g.vol = prodVolMap.get(normKey(g.product)) || 0;
+      g.score = (distinctPrices > 1 ? 100000 : 0) + g.steps * 2500 + g.vol;
+      const pk = normKey(g.product);
+      const prev = byProdBest.get(pk);
+      if (!prev || g.score > prev.score) {
+        byProdBest.set(pk, g);
+      }
+    });
+
+    const picked = Array.from(byProdBest.values())
+      .sort((a, b) => b.score - a.score || a.product.localeCompare(b.product))
+      .slice(0, maxSeries);
+
+    // Build monthly timeline respecting active period/date range when filtered, else covering active List Price change window
+    let mSeq = [];
+    const passedMonths = (Array.isArray(months) ? months : [])
+      .map(m => ({ ym: monthRowToYmKey(m), 'Year Month': m['Year Month'] || formatYmLabel(monthRowToYmKey(m)) }))
+      .filter(m => m.ym);
+
+    if (opts.dateFrom || opts.dateTo) {
+      const sYm = String(opts.dateFrom || (passedMonths[0] && passedMonths[0].ym) || '2025-01').slice(0, 7);
+      const eYm = String(opts.dateTo || todayYm).slice(0, 7);
+      const clampedEnd = eYm > todayYm ? todayYm : eYm;
+      mSeq = buildYmSequence(sYm <= clampedEnd ? sYm : clampedEnd, clampedEnd);
+    } else if (passedMonths.length >= 4) {
+      mSeq = passedMonths.filter(m => m.ym <= todayYm);
+    }
+    if (mSeq.length < 2) {
+      // Derive natural window from step changes up to todayYm
+      let earliestChange = '2025-01';
+      picked.forEach(g => {
+        g.rules.forEach((r, idx) => {
+          const ym = String(r.start_date || '').slice(0, 7);
+          if (idx > 0 && ym && ym < earliestChange && ym >= '2024-01') earliestChange = ym;
+        });
+      });
+      mSeq = buildYmSequence(earliestChange, todayYm);
+    }
+    if (mSeq.length > maxMonths) {
+      mSeq = mSeq.slice(-maxMonths);
+    }
+
+    const multiCo = distinctCos.size > 1;
+    const series = picked.map((g, idx) => {
+      const firstStartYm = String((g.rules[0] && g.rules[0].start_date) || '2024-01').slice(0, 7);
+      const coShort = g.company === 'BBConstruction' ? 'BBC' : g.company;
+      return {
+        label: multiCo && g.company ? `${g.product} (${coShort})` : g.product,
+        product: g.product,
+        company: g.company,
+        steps: g.steps,
+        color: colors[idx % colors.length],
+        get: mRow => {
+          const ym = mRow.ym || monthRowToYmKey(mRow);
+          if (!ym || ym < firstStartYm) return null;
+          const ymStart = `${ym}-01`;
+          const ymEnd = `${ym}-31`;
+          let best = null;
+          for (let i = 0; i < g.rules.length; i++) {
+            const r = g.rules[i];
+            const s = String(r.start_date || '2024-01-01').slice(0, 10);
+            const e = r.end_date ? String(r.end_date).slice(0, 10) : '';
+            if (s > ymEnd) continue;
+            if (e && e < ymStart) continue;
+            if (!best || s >= String(best.start_date || '')) best = r;
+          }
+          // If rules had a brief gap between end_date and next start_date, carry forward most recent prior rule up to ymEnd
+          if (!best) {
+            for (let i = 0; i < g.rules.length; i++) {
+              const r = g.rules[i];
+              const s = String(r.start_date || '2024-01-01').slice(0, 10);
+              if (s <= ymEnd && (!best || s >= String(best.start_date || ''))) best = r;
+            }
+          }
+          return best ? roundFn(Number(best.unit_price ?? best.price ?? 0)) : null;
+        }
+      };
+    });
+
+    return { months: mSeq, series, totalRulesCount: lpRules.length };
+  }
+
+  // Build Customer Delivery Transportation Rate Comparison (Agreed vs. Last Delivered & Site Spread)
+  function buildSalesDeliveryTransportComp(salesRows, priceRules, opts = {}) {
+    const asAtDate = String(opts.asAtDate || opts.today || '2026-10-26').slice(0, 10);
+    const roundFn = v => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+    const rules = (Array.isArray(priceRules) ? priceRules : []).filter(r => r && !r.voided);
+    const tickets = Array.isArray(salesRows) ? salesRows : [];
+
+    const pairMap = new Map();
+    for (let i = 0; i < tickets.length; i++) {
+      const s = tickets[i];
+      if (!s || s.voided) continue;
+      const mth = String(s.method || '').trim();
+      if (mth === 'Free' || mth === 'Remove' || mth === 'Config' || mth === 'VATConfig') continue;
+      const sgn = (mth === 'C Return' || mth === 'CR Return' || mth === 'Cash Return' || mth === 'Credit Return') ? -1 : 1;
+      const tp = sgn * Number(s.trans_price || 0);
+      if (Math.abs(tp) < 0.005) continue;
+      const cust = String(s.customer || '').trim();
+      const site = String(s.site || '').trim() || '(Direct Delivery)';
+      const co = String(s.company || '').trim();
+      if (!cust) continue;
+      const key = `${normKey(co)}|${normKey(cust)}|${normKey(site)}`;
+      let cur = pairMap.get(key);
+      if (!cur) {
+        cur = {
+          key,
+          company: co,
+          customer: cust,
+          site,
+          loads: 0,
+          qty: 0,
+          trans_rev: 0,
+          last_date: '',
+          last_tup: 0,
+          last_tp: 0,
+          last_qty: 0,
+          uom: s.uom || 'm³'
+        };
+        pairMap.set(key, cur);
+      }
+      const rawQ = Number(s.qty || 0);
+      if (sgn > 0) cur.loads += 1;
+      cur.qty += sgn * rawQ;
+      cur.trans_rev += tp;
+      const dStr = String(s.date || '').slice(0, 10);
+      if (sgn > 0 && dStr >= cur.last_date) {
+        cur.last_date = dStr;
+        cur.last_tp = Math.abs(tp);
+        cur.last_qty = rawQ;
+        cur.last_tup = Number(s.trans_unit_price || 0) > 0
+          ? Number(s.trans_unit_price)
+          : (rawQ > 0 ? roundFn(Math.abs(tp) / rawQ) : Math.abs(tp));
+        if (s.uom) cur.uom = s.uom;
+      }
+    }
+
+    const findBestDeliveryTransRule = (co, cust, site) => {
+      const cK = normKey(cust);
+      const sK = site && site !== '(Direct Delivery)' ? normKey(site) : '';
+      let bestActive = null, bestActiveScore = -1;
+      let bestEnded = null, bestEndedDate = '';
+      for (let i = 0; i < rules.length; i++) {
+        const r = rules[i];
+        if (co && r.company && r.company !== co) continue;
+        const rt = String(r.rule_type || '');
+        if (!/Sales \(Delivery\)|Haulage \(Customer Site\)|Transport Price/i.test(rt)) continue;
+        const flatVal = ruleFlatTransVal(r);
+        const tupVal = Number(r.trans_unit_price ?? r.trans_price ?? (rt === 'Haulage (Customer Site)' ? r.unit_price : 0) ?? 0);
+        if (!(tupVal > 0) && flatVal == null) continue;
+        if (r.customer && normKey(r.customer) !== cK) continue;
+        if (!r.customer && (!sK || normKey(r.site) !== sK)) continue;
+        if (r.site && sK && normKey(r.site) !== sK) continue;
+        if (r.site && !sK) continue;
+        const startD = String(r.start_date || '').slice(0, 10);
+        const endD = String(r.end_date || '').slice(0, 10);
+        if (startD && startD > asAtDate) continue;
+        const score = (r.customer ? 4 : 0) + (r.site ? 2 : 0) + (/Sales \(Delivery\)/i.test(rt) ? 1 : 0);
+        if (!endD || endD >= asAtDate) {
+          if (score > bestActiveScore || (score === bestActiveScore && startD >= String(bestActive.start_date || ''))) {
+            bestActive = r;
+            bestActiveScore = score;
+          }
+        } else if (score >= 4) {
+          if (!bestEnded || endD > bestEndedDate || (endD === bestEndedDate && startD >= String(bestEnded.start_date || ''))) {
+            bestEnded = r;
+            bestEndedDate = endD;
+          }
+        }
+      }
+      return bestActive || bestEnded;
+    };
+
+    const rows = Array.from(pairMap.values()).filter(r => r.loads > 0 && r.trans_rev > 0).map(cur => {
+      const rule = findBestDeliveryTransRule(cur.company, cur.customer, cur.site);
+      const isFlat = Boolean((rule && isRuleFlatTrans(rule)) || (cur.last_qty > 1.5 && Math.abs(cur.last_tup - cur.last_tp) < 0.05) || /^truck$/i.test(cur.uom || ''));
+      const agreed = rule
+        ? roundFn(isFlat ? Number(ruleFlatTransVal(rule) ?? rule.trans_unit_price ?? 0) : Number(rule.trans_unit_price ?? rule.trans_price ?? ruleFlatTransVal(rule) ?? 0))
+        : null;
+      const lastRate = roundFn(isFlat ? cur.last_tp : cur.last_tup);
+      const avgRate = roundFn(isFlat ? (cur.loads > 0 ? cur.trans_rev / cur.loads : 0) : (cur.qty > 0 ? cur.trans_rev / cur.qty : 0));
+      const endDate = rule && rule.end_date ? String(rule.end_date).slice(0, 10) : '';
+      const isLapsed = Boolean(endDate && endDate < asAtDate);
+      const vsAgreed = agreed != null && agreed > 0 ? roundFn(lastRate - agreed) : null;
+      return {
+        company: cur.company,
+        customer: cur.customer,
+        site: cur.site,
+        label: cur.site && cur.site !== '(Direct Delivery)' ? `${cur.customer} · ${cur.site}` : cur.customer,
+        basis: isFlat ? 'Flat / Truck' : `Per ${cur.uom || 'm³'}`,
+        is_flat: isFlat,
+        rule_name: rule ? (rule.name || rule.rule_type) : '',
+        agreed_rate: agreed != null && agreed > 0 ? agreed : null,
+        end_date: endDate,
+        is_lapsed: isLapsed,
+        last_rate: lastRate,
+        avg_rate: avgRate,
+        vs_agreed: vsAgreed,
+        last_date: cur.last_date,
+        loads: cur.loads,
+        qty: roundFn(cur.qty),
+        trans_rev: roundFn(cur.trans_rev)
+      };
+    }).sort((a, b) => b.trans_rev - a.trans_rev);
+
+    // Site-level rate spread across multi-customer delivery destinations (m260 parity)
+    const siteMap = new Map();
+    rows.filter(r => !r.is_flat && r.site && r.site !== '(Direct Delivery)').forEach(r => {
+      const sk = normKey(r.site);
+      let st = siteMap.get(sk);
+      if (!st) {
+        st = { Site: r.site, rates: [], customers: new Set(), loads: 0, trans_rev: 0, qty: 0 };
+        siteMap.set(sk, st);
+      }
+      const refRate = r.agreed_rate != null ? r.agreed_rate : r.last_rate;
+      if (refRate > 0) st.rates.push(refRate);
+      st.customers.add(r.customer);
+      st.loads += r.loads;
+      st.trans_rev += r.trans_rev;
+      st.qty += r.qty;
+    });
+    const siteSpreadRows = Array.from(siteMap.values())
+      .filter(s => s.rates.length > 0)
+      .map(s => ({
+        Site: s.Site,
+        customers_count: s.customers.size,
+        lowest_rate: roundFn(Math.min(...s.rates)),
+        highest_rate: roundFn(Math.max(...s.rates)),
+        avg_rate: s.qty > 0 ? roundFn(s.trans_rev / s.qty) : roundFn(s.rates.reduce((a, v) => a + v, 0) / s.rates.length),
+        loads: s.loads,
+        trans_rev: roundFn(s.trans_rev)
+      }))
+      .sort((a, b) => b.trans_rev - a.trans_rev);
+
+    return {
+      rows,
+      unitChartRows: rows.filter(r => !r.is_flat && (r.agreed_rate != null || r.last_rate > 0)).slice(0, 8).map(r => ({
+        ...r,
+        agreed_chart: r.agreed_rate != null ? r.agreed_rate : r.avg_rate
+      })),
+      siteSpreadRows
+    };
+  }
+
+  // Build Quarry Raw Material Purchase (Site) & Site Transportation Rate Comparisons
+  function buildQuarryPricingComp(rawRows, priceRules, opts = {}) {
+    const asAtDate = String(opts.asAtDate || opts.today || '2026-10-26').slice(0, 10);
+    const roundFn = v => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+    const rules = (Array.isArray(priceRules) ? priceRules : []).filter(r => r && !r.voided);
+    const receipts = Array.isArray(rawRows) ? rawRows : [];
+
+    const matMap = new Map();
+    const haulMap = new Map();
+
+    for (let i = 0; i < receipts.length; i++) {
+      const r = receipts[i];
+      if (!r || r.voided) continue;
+      const rm = String(r.method || 'Credit').trim();
+      if (rm === 'Remove' || rm === 'Free' || rm === 'Config' || rm === 'VATConfig') continue;
+      const co = String(r.company || '').trim();
+      const site = String(r.site || '').trim() || '(General Site)';
+      const prod = String(r.product || '').trim() || '(Material)';
+      const sOwner = String(r.site_owner || '').trim();
+      const tOwner = String(r.truck_owner || '').trim();
+      const q = Number(r.qty || 0);
+      const uom = r.uom || 'm³';
+      const dStr = String(r.date || '').slice(0, 10);
+
+      const mc = Number(r.cost || 0);
+      if (mc > 0) {
+        const mk = `${normKey(co)}|${normKey(site)}|${normKey(prod)}|${normKey(sOwner)}`;
+        let mCur = matMap.get(mk);
+        if (!mCur) {
+          mCur = { company: co, site, product: prod, site_owner: sOwner, uom, loads: 0, qty: 0, mat_cost: 0, last_date: '', last_uc: 0, last_mc: 0, last_qty: 0 };
+          matMap.set(mk, mCur);
+        }
+        mCur.loads += 1;
+        mCur.qty += q;
+        mCur.mat_cost += mc;
+        if (dStr >= mCur.last_date) {
+          mCur.last_date = dStr;
+          mCur.last_mc = mc;
+          mCur.last_qty = q;
+          mCur.last_uc = Number(r.unit_cost || 0) > 0 ? Number(r.unit_cost) : (q > 0 ? roundFn(mc / q) : mc);
+          if (r.uom) mCur.uom = r.uom;
+        }
+      }
+
+      const tc = Number(r.trans_cost || 0);
+      if (tc > 0 && r.transport_by !== 'Company fleet') {
+        const hauler = tOwner || '(3rd-Party Hauler)';
+        const hk = `${normKey(co)}|${normKey(hauler)}|${normKey(site)}`;
+        let hCur = haulMap.get(hk);
+        if (!hCur) {
+          hCur = { company: co, truck_owner: hauler, site, product: prod, uom, loads: 0, qty: 0, haul_cost: 0, last_date: '', last_tuc: 0, last_tc: 0, last_qty: 0 };
+          haulMap.set(hk, hCur);
+        }
+        hCur.loads += 1;
+        hCur.qty += q;
+        hCur.haul_cost += tc;
+        if (dStr >= hCur.last_date) {
+          hCur.last_date = dStr;
+          hCur.last_tc = tc;
+          hCur.last_qty = q;
+          hCur.last_tuc = Number(r.trans_unit_cost || 0) > 0 ? Number(r.trans_unit_cost) : (q > 0 ? roundFn(tc / q) : tc);
+          if (r.uom) hCur.uom = r.uom;
+        }
+      }
+    }
+
+    const findPurchaseRule = (co, site, sOwner, prod) => {
+      const sK = normKey(site), oK = normKey(sOwner), pK = normKey(prod);
+      let bestActive = null, bestActiveScore = -1;
+      let bestEnded = null, bestEndedScore = -1, bestEndedDate = '';
+      for (let i = 0; i < rules.length; i++) {
+        const r = rules[i];
+        if (co && r.company && r.company !== co) continue;
+        if (r.rule_type !== 'Purchase Price (Site)') continue;
+        if (r.site && normKey(r.site) !== sK) continue;
+        if (r.supplier && oK && normKey(r.supplier) !== oK) continue;
+        if (!r.site && (!r.supplier || normKey(r.supplier) !== oK)) continue;
+        if (r.product && normKey(r.product) !== pK) continue;
+        const startD = String(r.start_date || '').slice(0, 10);
+        const endD = String(r.end_date || '').slice(0, 10);
+        if (startD && startD > asAtDate) continue;
+        const score = (r.site ? 4 : 0) + (r.product ? 2 : 0) + (r.supplier && oK && normKey(r.supplier) === oK ? 1 : 0);
+        if (!endD || endD >= asAtDate) {
+          if (score > bestActiveScore || (score === bestActiveScore && startD >= String(bestActive.start_date || ''))) {
+            bestActive = r;
+            bestActiveScore = score;
+          }
+        } else {
+          if (score > bestEndedScore || (score === bestEndedScore && endD >= bestEndedDate)) {
+            bestEnded = r;
+            bestEndedScore = score;
+            bestEndedDate = endD;
+          }
+        }
+      }
+      return bestActive || bestEnded;
+    };
+
+    const findSiteTransRule = (co, hauler, site) => {
+      const hK = normKey(hauler), sK = normKey(site);
+      let bestActive = null, bestActiveScore = -1;
+      let bestEnded = null, bestEndedScore = -1, bestEndedDate = '';
+      for (let i = 0; i < rules.length; i++) {
+        const r = rules[i];
+        if (co && r.company && r.company !== co) continue;
+        if (r.rule_type !== 'Transport Price (Site)') continue;
+        if (r.site && normKey(r.site) !== sK) continue;
+        if (r.supplier && normKey(r.supplier) !== hK) continue;
+        if (!r.site && !r.supplier) continue;
+        const startD = String(r.start_date || '').slice(0, 10);
+        const endD = String(r.end_date || '').slice(0, 10);
+        if (startD && startD > asAtDate) continue;
+        const score = (r.site ? 4 : 0) + (r.supplier ? 4 : 0);
+        if (!endD || endD >= asAtDate) {
+          if (score > bestActiveScore || (score === bestActiveScore && startD >= String(bestActive.start_date || ''))) {
+            bestActive = r;
+            bestActiveScore = score;
+          }
+        } else {
+          if (score > bestEndedScore || (score === bestEndedScore && endD >= bestEndedDate)) {
+            bestEnded = r;
+            bestEndedScore = score;
+            bestEndedDate = endD;
+          }
+        }
+      }
+      return bestActive || bestEnded;
+    };
+
+    const matRows = Array.from(matMap.values()).map(m => {
+      const rule = findPurchaseRule(m.company, m.site, m.site_owner, m.product);
+      const isFlat = Boolean((rule && isRuleFlatMat(rule)) || (m.last_qty > 1.5 && Math.abs(m.last_uc - m.last_mc) < 0.05));
+      const agreed = rule
+        ? roundFn(isFlat ? Number(rValOr(rule.indiff_price, rule.unit_price ?? rule.price)) : Number(rule.unit_price ?? rule.price ?? 0))
+        : null;
+      const lastRate = roundFn(isFlat ? m.last_mc : m.last_uc);
+      const avgRate = roundFn(isFlat ? (m.loads > 0 ? m.mat_cost / m.loads : 0) : (m.qty > 0 ? m.mat_cost / m.qty : 0));
+      const endDate = rule && rule.end_date ? String(rule.end_date).slice(0, 10) : '';
+      const isLapsed = Boolean(endDate && endDate < asAtDate);
+      // Agreed - Last: negative means supplier billed MORE than the agreed purchase rate
+      const agreedMinusLast = agreed != null && agreed > 0 ? roundFn(agreed - lastRate) : null;
+      return {
+        company: m.company,
+        site: m.site,
+        site_owner: m.site_owner || (rule && rule.supplier) || '—',
+        product: m.product,
+        label: `${m.site} · ${m.product}`,
+        basis: isFlat ? 'Flat / Truck' : `Per ${m.uom || 'm³'}`,
+        is_flat: isFlat,
+        rule_name: rule ? (rule.name || '') : '',
+        agreed_rate: agreed != null && agreed > 0 ? agreed : null,
+        end_date: endDate,
+        is_lapsed: isLapsed,
+        last_rate: lastRate,
+        avg_rate: avgRate,
+        agreed_minus_last: agreedMinusLast,
+        last_date: m.last_date,
+        loads: m.loads,
+        qty: roundFn(m.qty),
+        mat_cost: roundFn(m.mat_cost)
+      };
+    }).sort((a, b) => b.mat_cost - a.mat_cost);
+
+    const haulRows = Array.from(haulMap.values()).map(h => {
+      const rule = findSiteTransRule(h.company, h.truck_owner, h.site);
+      const isFlat = Boolean((rule && isRuleFlatTrans(rule)) || (h.last_qty > 1.5 && Math.abs(h.last_tuc - h.last_tc) < 0.05));
+      const agreed = rule
+        ? roundFn(isFlat ? Number(ruleFlatTransVal(rule) ?? rule.trans_unit_price ?? rule.unit_price ?? 0) : Number(rule.trans_unit_price || rule.unit_price || rule.price || 0))
+        : null;
+      const lastRate = roundFn(isFlat ? h.last_tc : h.last_tuc);
+      const avgRate = roundFn(isFlat ? (h.loads > 0 ? h.haul_cost / h.loads : 0) : (h.qty > 0 ? h.haul_cost / h.qty : 0));
+      const endDate = rule && rule.end_date ? String(rule.end_date).slice(0, 10) : '';
+      const isLapsed = Boolean(endDate && endDate < asAtDate);
+      const agreedMinusLast = agreed != null && agreed > 0 ? roundFn(agreed - lastRate) : null;
+      return {
+        company: h.company,
+        truck_owner: h.truck_owner,
+        site: h.site,
+        label: `${h.truck_owner} · ${h.site}`,
+        basis: isFlat ? 'Flat / Truck' : `Per ${h.uom || 'm³'}`,
+        is_flat: isFlat,
+        rule_name: rule ? (rule.name || '') : '',
+        agreed_rate: agreed != null && agreed > 0 ? agreed : null,
+        end_date: endDate,
+        is_lapsed: isLapsed,
+        last_rate: lastRate,
+        avg_rate: avgRate,
+        agreed_minus_last: agreedMinusLast,
+        last_date: h.last_date,
+        loads: h.loads,
+        qty: roundFn(h.qty),
+        haul_cost: roundFn(h.haul_cost)
+      };
+    }).sort((a, b) => b.haul_cost - a.haul_cost);
+
+    const overAgreedMatCount = matRows.filter(r => r.agreed_minus_last != null && r.agreed_minus_last < -0.005).length;
+    const overAgreedHaulCount = haulRows.filter(r => r.agreed_minus_last != null && r.agreed_minus_last < -0.005).length;
+
+    return {
+      matRows,
+      haulRows,
+      overAgreedCount: overAgreedMatCount + overAgreedHaulCount,
+      matUnitChartRows: matRows.filter(r => !r.is_flat && r.last_rate > 0 && r.last_rate < 100).slice(0, 8).map(r => ({
+        ...r,
+        agreed_chart: r.agreed_rate != null ? r.agreed_rate : r.avg_rate
+      })),
+      haulFlatChartRows: haulRows.filter(r => r.is_flat && r.last_rate > 0).slice(0, 8).map(r => ({
+        ...r,
+        agreed_chart: r.agreed_rate != null ? r.agreed_rate : r.avg_rate
+      })),
+      haulUnitChartRows: haulRows.filter(r => !r.is_flat && r.last_rate > 0 && r.last_rate < 40).slice(0, 8).map(r => ({
+        ...r,
+        agreed_chart: r.agreed_rate != null ? r.agreed_rate : r.avg_rate
+      }))
+    };
+  }
+  function rValOr(a, b) {
+    return (a != null && a !== '' && Number(a) !== 0) ? a : (b || 0);
+  }
+
   const PBI_PAGES = [
     { id: 'p01_overview', num: '01', label: 'Executive Pulse', title: 'Executive P&L, Margin, AR/AP & Fleet Overview' },
     { id: 'p02_companies', num: '02', label: 'Entity Comparison', title: 'Side-by-Side Entity Comparison (WTC · BBConstruction · Lions Transport)' },
@@ -179,7 +739,13 @@
     { key: 'raw_purchases', group: '2 · Quarry, Sites & Joint Ventures', label: 'Raw Material Purchases', dvn: 'bhf_rawpurchase', form: 'raw', cols: ['date', 'rep_date', 'ticket_no', 'company', 'site', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'driver', 'product', 'qty', 'uom', 'unit_cost', 'cost', 'trans_cost', 'total'], relTables: ['sites', 'suppliers', 'price_rules', 'equipment', 'drivers', 'products', 'settlements'], views: [{ id: 'all', label: 'All Raw Purchases' }, { id: 'supplier_haul', label: 'Third-Party Haulage', fn: r => Number(r.trans_cost || 0) > 0 }, { id: 'company_haul', label: 'Company Fleet Haul', fn: r => /company/i.test(r.transport_by) }] },
     { key: 'jv_partnerships', group: '2 · Quarry, Sites & Joint Ventures', label: 'JV Site Partnerships', dvn: 'bhf_mfgjvpartnership', form: 'jv', cols: ['name', 'company', 'site', 'partner', 'percentage', 'distributions_total', 'notes'], relTables: ['sites', 'jv_distributions', 'raw_purchases'], views: [{ id: 'all', label: 'All JV Partnerships' }] },
     { key: 'jv_distributions', group: '2 · Quarry, Sites & Joint Ventures', label: 'JV Profit Distributions', dvn: 'bhf_mfgjvdistribution', form: 'jv', cols: ['date', 'rep_date', 'company', 'site', 'partner', 'basis', 'amount', 'total', 'notes'], relTables: ['jv_partnerships', 'sites'], views: [{ id: 'all', label: 'All JV Distributions' }] },
-    { key: 'sites', group: '2 · Quarry, Sites & Joint Ventures', universal: true, navView: 'reg_sites', label: 'Sites', dvn: 'bhf_site', form: 'site', cols: ['name', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'sales_loads', 'raw_loads'], relTables: ['regions', 'suppliers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [{ id: 'all', label: 'All Sites' }, { id: 'jv', label: 'JV 50/50 Sites', fn: r => Boolean(r.is_jv) }, { id: 'gps', label: 'Verified GPS Pin', fn: r => r.latitude != null && r.longitude != null }] },
+    { key: 'sites', group: '2 · Quarry, Sites & Joint Ventures', universal: true, navView: 'reg_sites', label: 'Sites', dvn: 'bhf_site', form: 'site', cols: ['name', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads', 'sales_loads'], relTables: ['regions', 'suppliers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [
+      { id: 'all', label: 'All Sites' },
+      { id: 'source', label: 'Source / Quarry Sites', fn: (r, rel) => { const se = rel && rel.siteByName[norm(r.name)]; return Boolean((se && se.raw_loads > 0) || r.supplier || r.is_jv); } },
+      { id: 'delivery', label: 'Customer Delivery Sites', fn: (r, rel) => { const se = rel && rel.siteByName[norm(r.name)]; return Boolean(se && se.sales_loads > 0); } },
+      { id: 'jv', label: 'JV 50/50 Sites', fn: r => Boolean(r.is_jv) },
+      { id: 'gps', label: 'Verified GPS Pin', fn: r => r.latitude != null && r.longitude != null }
+    ] },
     { key: 'regions', group: '2 · Quarry, Sites & Joint Ventures', universal: true, navView: 'reg_regions', label: 'Regions & Zones', dvn: 'bhf_region', form: 'site', cols: ['name', 'code', 'sites_count', 'overtime_rate', 'sales_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
 
     // 3 · Fleet, Fuel, Maintenance & Drivers (8)
@@ -389,7 +955,7 @@
       case 'company_drivers':
         return { key: 'loads_hauled', dir: 'desc' };
       case 'sites':
-        return { key: vw === 'jv' ? 'raw_loads' : 'sales_loads', dir: 'desc' };
+        return { key: (vw === 'jv' || vw === 'source') ? 'raw_loads' : 'sales_loads', dir: 'desc' };
       case 'regions':
       case 'product_types':
         return { key: 'sales_loads', dir: 'desc' };
@@ -1393,6 +1959,7 @@
     const padSpan = (maxVal - minVal) * 0.14;
     maxVal += padSpan;
     if (minVal < 0) minVal -= padSpan;
+    else if (opts.includeZero === false && minVal > 0) minVal = Math.max(0, minVal - padSpan);
     const span = Math.max(1e-6, maxVal - minVal);
 
     const grid = [0, 0.25, 0.5, 0.75, 1].map(f => {
@@ -1430,6 +1997,7 @@
     });
 
     const hitW = data.length > 1 ? stepX : plotW;
+    const labelStep = data.length > 13 ? Math.ceil(data.length / 9) : 1;
     const colBands = colSpecs.map((c, i) => {
       const bandX = data.length > 1
         ? (i === 0 ? padL : c.x - hitW / 2)
@@ -1437,10 +2005,11 @@
       const bandW = data.length > 1
         ? (i === 0 || i === colSpecs.length - 1 ? hitW / 2 + 6 : hitW)
         : plotW;
+      const showLbl = (i % labelStep === 0) || (i === colSpecs.length - 1 && (colSpecs.length - 1) % labelStep >= Math.max(1, Math.floor(labelStep / 2)));
       return `<g class="pbi-chart-col" data-chart-pop="${encodeChartPop(c.popSpec)}">` +
         `<rect class="pbi-col-hit" x="${bandX.toFixed(1)}" y="${padT}" width="${Math.max(6, bandW).toFixed(1)}" height="${plotH + 20}" rx="3" fill="transparent"/>` +
         `<line class="pbi-col-guide" x1="${c.x.toFixed(1)}" y1="${padT}" x2="${c.x.toFixed(1)}" y2="${(padT + plotH).toFixed(1)}"/>` +
-        `<text x="${c.x.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${esc(c.shortLbl)}</text>` +
+        (showLbl ? `<text x="${c.x.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${esc(c.shortLbl)}</text>` : '') +
         `</g>`;
     }).join('');
 
@@ -2312,8 +2881,11 @@
           cur.raw_haulage += haul;
           cur.raw_cost += Number(r.total != null ? r.total : (mat + haul));
         });
-        return (m.sites || []).map(st => {
-          const cur = stMap.get(norm(st.Site || '(Unassigned Site)')) || { loads: 0, tons_sold: 0, trans_rev: 0, sales_ttc: 0, net_sales: 0, raw_loads: 0, raw_tons: 0, raw_qty: 0, raw_mat_cost: 0, raw_haulage: 0, raw_cost: 0 };
+        const seenSiteNorm = new Set();
+        const mappedSites = (m.sites || []).map(st => {
+          const sk = norm(st.Site || '(Unassigned Site)');
+          seenSiteNorm.add(sk);
+          const cur = stMap.get(sk) || { loads: 0, tons_sold: 0, trans_rev: 0, sales_ttc: 0, net_sales: 0, raw_loads: 0, raw_tons: 0, raw_qty: 0, raw_mat_cost: 0, raw_haulage: 0, raw_cost: 0 };
           return Object.assign({}, st, {
             loads: cur.loads,
             tons_sold: round2(cur.tons_sold),
@@ -2327,7 +2899,27 @@
             raw_haulage: round2(cur.raw_haulage),
             raw_cost: round2(cur.raw_cost)
           });
-        }).sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0) || Number(b.raw_cost || 0) - Number(a.raw_cost || 0));
+        });
+        stMap.forEach((cur, sk) => {
+          if (seenSiteNorm.has(sk)) return;
+          const recSite = (rec.sites || []).find(rs => norm(rs.name) === sk);
+          mappedSites.push({
+            Site: cur.displayName === '(Unassigned Site)' ? null : cur.displayName,
+            JV: recSite && recSite.is_jv ? 'Yes' : 'No',
+            loads: cur.loads,
+            tons_sold: round2(cur.tons_sold),
+            trans_rev: round2(cur.trans_rev),
+            sales_ttc: round2(cur.sales_ttc),
+            net_sales: round2(cur.net_sales),
+            raw_loads: cur.raw_loads,
+            raw_tons: round2(cur.raw_tons),
+            raw_qty: round2(cur.raw_qty),
+            raw_mat_cost: round2(cur.raw_mat_cost),
+            raw_haulage: round2(cur.raw_haulage),
+            raw_cost: round2(cur.raw_cost)
+          });
+        });
+        return mappedSites.sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0) || Number(b.raw_cost || 0) - Number(a.raw_cost || 0));
       };
 
       const buildScopedEquip = (salesPool, rawPool, expPool, fuelPool, forceScope = false) => {
@@ -3066,14 +3658,19 @@
             { label: 'Sales TTC ($)', key: 'sales_ttc', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` }
           ], prodRows, { subtitle: 'Complete aggregate grade breakdown with inline revenue bars', unitLabel: 'grades' })}
 
-          ${pbiTable('Destination sites — loads, tonnage, transport & revenue', [
-            { label: 'Destination Site', key: 'Site', bold: true, fmt: v => esc(v || '(No site on ticket)') },
-            { label: 'JV', key: 'JV', fmt: v => v === 'Yes' ? '<span class="badge badge-brass">JV</span>' : '—' },
-            { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v) },
-            { label: 'Tons Sold', key: 'tons_sold', r: true, fmt: v => fmtNum(v, 0) },
-            { label: 'Transport ($)', key: 'trans_rev', r: true, fmt: v => fmtUSD(v, 0) },
-            { label: 'Sales TTC ($)', key: 'sales_ttc', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` }
-          ], siteRows, { subtitle: 'Customer delivery sites and pick-up dispatch locations', unitLabel: 'sites' })}
+          ${(() => {
+            const destSiteRows = siteRows
+              .filter(s => Number(s.loads || 0) > 0 || Math.abs(Number(s.sales_ttc || 0)) > 0.005)
+              .sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0) || Number(b.loads || 0) - Number(a.loads || 0));
+            return pbiTable('Customer destination sites · loads, tonnage, transport & revenue', [
+              { label: 'Destination Site', key: 'Site', bold: true, fmt: v => esc(v && v !== '(Unassigned Site)' ? v : 'Pick-up at Plant (No delivery site)') },
+              { label: 'JV', key: 'JV', fmt: v => v === 'Yes' ? '<span class="badge badge-brass">JV</span>' : '—' },
+              { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v) },
+              { label: 'Tons Sold', key: 'tons_sold', r: true, fmt: v => fmtNum(v, 0) },
+              { label: 'Transport ($)', key: 'trans_rev', r: true, fmt: v => fmtUSD(v, 0) },
+              { label: 'Sales TTC ($)', key: 'sales_ttc', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` }
+            ], destSiteRows, { subtitle: 'Customer delivery destination sites and plant pick-up dispatches (excludes raw material quarry source sites)', unitLabel: 'destination sites' });
+          })()}
         </div>
 
         <div class="pbi-grid-1">
@@ -3100,8 +3697,9 @@
       const commRules = allRules.filter(r => /Commission/i.test(r.rule_type || ''));
 
       // Product price comparison (Agreed vs Realised vs List — aggregate m³ grades only so equipment sales never distort $/m³ scale)
+      const nonAggProdRe = /\b(truck|shacman|mixer|pump|excavator|excavation|loader|bulldozer)\b/i;
       const prodPriceComp = pickTopAggregateGrades(prodRows, 8, rec.products).map(p => {
-        const pRules = salesRules.filter(r => norm(r.product) === norm(p.Product) && Number(r.unit_price || 0) > 0);
+        const pRules = salesRules.filter(r => norm(r.product) === norm(p.Product) && Number(r.unit_price || 0) > 0 && Number(r.unit_price || 0) <= 250 && !/^unit$/i.test(String(r.unit || '')) && !nonAggProdRe.test(String(r.product || '')));
         const avgAgreed = pRules.length ? pRules.reduce((a, r) => a + Number(r.unit_price || 0), 0) / pRules.length : (p.list_price || p.avg_price_net || 0);
         const minP = pRules.length ? Math.min(...pRules.map(r => Number(r.unit_price))) : Number(p.avg_price_net || 0) * 0.9;
         const maxP = pRules.length ? Math.max(...pRules.map(r => Number(r.unit_price))) : Number(p.list_price || p.avg_price_ttc || 0);
@@ -3115,6 +3713,17 @@
         };
       });
 
+      const asAtPricingDate = (activeRange && activeRange.to && activeRange.to < today) ? activeRange.to : today;
+      const lpHist = buildListPriceHistoryData(allRules, prodRows, months, {
+        today,
+        dateFrom: activeRange && activeRange.from,
+        dateTo: activeRange && activeRange.to
+      });
+      const delTransComp = buildSalesDeliveryTransportComp(salesRows, allRules, { today, asAtDate: asAtPricingDate });
+      const quarryComp = buildQuarryPricingComp(rawRows, allRules, { today, asAtDate: asAtPricingDate });
+      const haulChartSource = quarryComp.haulFlatChartRows.length ? quarryComp.haulFlatChartRows : quarryComp.haulUnitChartRows;
+      const haulChartBasisLbl = quarryComp.haulFlatChartRows.length ? '$/Truck Flat' : '$/m³';
+
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Price Agreement Coverage, Realised vs Agreed & Below-Agreed Governance', [
@@ -3125,34 +3734,74 @@
             { label: 'Lapsed Pairs Still Trading', value: fmtNum(prSn.lapsed_agreement_pairs_count || 0), sub: 'Trading after End date', tone: 'warn' },
             { label: 'Per-Truck Delivery Rules', value: fmtNum(prSn.truck_unit_delivery_rules || 0), sub: 'Unit = Truck flat rate' }
           ])}
-          ${kpiBand('2 · Commissions & Site Purchase / Transport Rules', [
+          ${kpiBand('2 · Commissions, Delivery Transport & Quarry Purchase / Haulage Rules', [
             { label: 'Commission Earned', value: fmtUSD(prSn.commission_earned_usd || k.commission_due, 0), sub: 'Accrued on qualifying loads' },
-            { label: 'Commission Paid', value: fmtUSD(prSn.commission_paid_usd || 0, 0), sub: 'Settled to beneficiaries', tone: 'good' },
-            { label: 'Commission Balance Due', value: fmtUSD(prSn.commission_balance_usd || k.commission_due, 0), sub: 'Open payable', tone: 'brass' },
-            { label: 'Customer Sales Rules', value: fmtNum(salesRules.length), sub: 'Delivery & Pickup agreements' },
-            { label: 'Site Purchase & Haul Rules', value: fmtNum(siteRules.length), sub: 'Site Owner & Transport rates' },
-            { label: 'Commission Rules', value: fmtNum(commRules.length), sub: 'Per-ton / per-load rules' }
+            { label: 'Commission Balance Due', value: fmtUSD(prSn.commission_balance_usd || k.commission_due, 0), sub: 'Paid ' + fmtUSD(prSn.commission_paid_usd || 0, 0), tone: 'brass' },
+            { label: 'Customer Sales Rules', value: fmtNum(salesRules.length), sub: fmtNum(delTransComp.rows.length) + ' active delivery pairs' },
+            { label: 'List Price Revisions', value: fmtNum(lpHist.totalRulesCount), sub: fmtNum(lpHist.series.length) + ' tracked grades over time' },
+            { label: 'Site Purchase & Haul Rules', value: fmtNum(siteRules.length), sub: fmtNum(quarryComp.haulRows.length) + ' hauler × site pairs' },
+            { label: 'Quarry Over-Agreed Pairs', value: fmtNum(quarryComp.overAgreedCount), sub: 'Billed above site / haul rate', tone: quarryComp.overAgreedCount > 0 ? 'warn' : 'good' }
           ])}
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('Agreed vs realised vs list price per unit (by material)', buildClusteredBarChart(prodPriceComp, 'Product', [
+          ${pbiPanel('List price evolution over time ($/m³ by grade)', buildMultiLineSvg(lpHist.months, lpHist.series, {
+            isMoney: true,
+            decimals: 2,
+            includeZero: false,
+            maxPoints: 22
+          }), {
+            id: 'pbiListPriceTrendChart',
+            subtitle: 'Monthly standard list price trajectory across dated revision steps by aggregate grade',
+            legend: lpHist.series.map(s => ({ label: s.label, color: s.color, line: true }))
+          })}
+
+          ${pbiPanel('Agreed vs. realised vs. list price per unit (by material)', buildClusteredBarChart(prodPriceComp, 'Product', [
             { label: 'Agreed', key: 'agreed', color: C.slate },
             { label: 'Realised', key: 'realised', color: C.navy },
             { label: 'List Price', key: 'list', color: C.brass }
           ]), { subtitle: 'Comparison of average agreed price, actual realised net price, and standard list price per unit' })}
+        </div>
 
-          ${pbiPanel('Spread by product — lowest, highest and list price', buildClusteredColumnSvg(prodPriceComp, [
+        <div class="pbi-grid-2">
+          ${pbiPanel('Spread by product · lowest, highest and list price', buildClusteredColumnSvg(prodPriceComp, [
             { key: 'lowest', label: 'Lowest Agreed', color: C.slate },
             { key: 'highest', label: 'Highest Agreed', color: C.navy },
             { key: 'list', label: 'List Price', color: C.brass }
           ], { labelKey: 'Product', labels: true }), {
-            subtitle: 'Price corridor across active customer agreements vs standard list price',
+            subtitle: 'Price corridor across active customer agreements vs. standard list price',
             legend: [{ label: 'Lowest', color: C.slate }, { label: 'Highest', color: C.navy }, { label: 'List', color: C.brass }]
+          })}
+
+          ${pbiPanel('Customer delivery transportation rate by site ($/m³)', buildClusteredBarChart(delTransComp.unitChartRows, 'label', [
+            { label: 'Agreed', key: 'agreed_chart', color: C.slate },
+            { label: 'Last Billed', key: 'last_rate', color: C.navy },
+            { label: 'Period Avg', key: 'avg_rate', color: C.brass }
+          ], { headRight: r => `${fmtNum(r.loads, 0)} loads` }), {
+            id: 'pbiDeliveryTransChart',
+            subtitle: 'Agreed delivery transport rate vs. last billed and period average across top customer × destination pairs'
           })}
         </div>
 
-        ${pbiHeading('Customer pricing & below-agreed exceptions', 'Amber row = agreement End date has passed (m202) · Red variance = sold below agreed or list price · Pale navy = Pickup rule (m204)')}
+        <div class="pbi-grid-2">
+          ${pbiPanel('Quarry raw material purchase rate by site ($/m³)', buildClusteredBarChart(quarryComp.matUnitChartRows, 'label', [
+            { label: 'Agreed', key: 'agreed_chart', color: C.slate },
+            { label: 'Last Receipt', key: 'last_rate', color: C.navy },
+            { label: 'Period Avg', key: 'avg_rate', color: C.brass }
+          ], { headRight: r => `${fmtNum(r.loads, 0)} loads` }), {
+            subtitle: 'Site purchase agreement rate vs. last received unit cost and period average by quarry source'
+          })}
+
+          ${pbiPanel(`Quarry transportation rate by hauler & site (${haulChartBasisLbl})`, buildClusteredBarChart(haulChartSource, 'label', [
+            { label: 'Agreed', key: 'agreed_chart', color: C.slate },
+            { label: 'Last Haul', key: 'last_rate', color: C.navy },
+            { label: 'Period Avg', key: 'avg_rate', color: C.brass }
+          ], { headRight: r => `${fmtNum(r.loads, 0)} loads` }), {
+            subtitle: 'Agreed 3rd-party quarry haulage rate vs. last haul ticket and period average'
+          })}
+        </div>
+
+        ${pbiHeading('Commercial sales & customer delivery transportation comparisons', 'Amber row = agreement End date has passed · Red variance = billed below customer agreement or delivery transport rate')}
         <div class="pbi-grid-2">
           ${pbiTable('Customer × product price performance & below-agreed exceptions', [
             { label: 'Customer', key: 'customer', bold: true },
@@ -3164,26 +3813,58 @@
             { label: 'Shortfall ($)', raw: r => (Number(r.last_price || 0) - Number(r.agreed_price || 0)) * Number(r.qty || 0), r: true, negRed: true, fmt: v => fmtUSD(v, 0) }
           ], (prSn.top_below_agreed_exceptions || []).filter(matchCommon), { subtitle: 'Pairs where tickets were billed below the customer agreement price', unitLabel: 'pairs' })}
 
-          ${pbiTable('Site purchase, transport & commission rules', [
-            { label: 'Rule Type', key: 'rule_type', bold: true },
-            { label: 'Co.', key: 'company' },
+          ${pbiTable('Customer delivery transportation comparison (agreed vs. last delivered)', [
+            { label: 'Customer', key: 'customer', bold: true },
             { label: 'Site', key: 'site' },
-            { label: 'Owner / Beneficiary', raw: r => r.supplier || r.customer || '—' },
-            { label: 'Product', key: 'product', fmt: v => esc(v || '(All Grades)') },
-            { label: 'Unit', key: 'unit', mono: true },
-            { label: 'Unit Price ($)', raw: r => Number(r.unit_price || 0) > 0 ? r.unit_price : null, r: true, fmt: v => v != null ? `<b>${fmtUSD(v, 2)}</b>` : '—' },
-            { label: 'Indifference ($)', raw: r => r.indiff_price ?? r.trans_indiff_price ?? r.delivered_indiff_price, r: true, bar: 'brass', fmt: v => v != null && Number(v) > 0 ? `<b>${fmtUSD(v, 2)}</b>` : '—' },
-            { label: 'End Date', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }
-          ], siteRules.concat(commRules), {
-            subtitle: 'Raw material purchase rates, haulage rates, and sales commission rules',
-            rowAmber: r => Boolean(r.end_date && String(r.end_date) < today),
-            rkey: 'price_rules',
-            unitLabel: 'rules'
+            { label: 'Basis', key: 'basis', mono: true },
+            { label: 'Agreed ($)', key: 'agreed_rate', r: true, agg: 'none', fmt: v => v != null ? `<b>${fmtUSD(v, 2)}</b>` : '—' },
+            { label: 'Last Billed ($)', key: 'last_rate', r: true, agg: 'none', fmt: v => fmtUSD(v, 2) },
+            { label: 'Last − Agreed', key: 'vs_agreed', r: true, agg: 'none', negRed: true, fmt: v => v != null ? fmtUSD(v, 2) : '—' },
+            { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v, 0) },
+            { label: 'Transport Rev ($)', key: 'trans_rev', r: true, bar: true, fmt: v => fmtUSD(v, 0) }
+          ], delTransComp.rows, {
+            subtitle: 'Customer × site delivery haulage rate comparison across active weighbridge delivery tickets',
+            rowAmber: r => Boolean(r.is_lapsed),
+            unitLabel: 'pairs'
           })}
         </div>
 
-        <div class="pbi-grid-1">
-          ${movedRegisterBanner('Price & Commission Agreements Register (2-Tier Capacity Rules)', 'The full Price & Commission Agreements register (593 rules across Sales, Purchase, Transport, and Commission) lives directly in Pricing & Commissions.', 'pricing', 'Pricing & Commissions', 'spreads')}
+        ${pbiHeading('Quarry raw material purchase & site transportation comparisons', 'Dedicated operational register & agreement entry live in Quarry & Raw Material ▸ Pricing & Haulage Rates')}
+        <div class="pbi-grid-2">
+          ${pbiTable('Raw material purchase comparison (agreed vs. last receipt by site)', [
+            { label: 'Site', key: 'site', bold: true },
+            { label: 'Site Owner', key: 'site_owner' },
+            { label: 'Material', key: 'product' },
+            { label: 'Basis', key: 'basis', mono: true },
+            { label: 'Agreed ($)', key: 'agreed_rate', r: true, agg: 'none', fmt: v => v != null ? `<b>${fmtUSD(v, 2)}</b>` : '—' },
+            { label: 'Last Cost ($)', key: 'last_rate', r: true, agg: 'none', fmt: v => fmtUSD(v, 2) },
+            { label: 'Agreed − Last', key: 'agreed_minus_last', r: true, agg: 'none', negRed: true, fmt: v => v != null ? fmtUSD(v, 2) : '—' },
+            { label: 'Material Cost ($)', key: 'mat_cost', r: true, bar: true, fmt: v => fmtUSD(v, 0) }
+          ], quarryComp.matRows, {
+            subtitle: 'Purchase Price (Site) agreements vs. actual raw material intake unit and flat-truck costs',
+            rowAmber: r => Boolean(r.is_lapsed),
+            unitLabel: 'pairs'
+          })}
+
+          ${pbiTable('Quarry transportation comparison (agreed vs. last haul by hauler & site)', [
+            { label: 'Hauler / Truck Owner', key: 'truck_owner', bold: true },
+            { label: 'Source Site', key: 'site' },
+            { label: 'Basis', key: 'basis', mono: true },
+            { label: 'Agreed ($)', key: 'agreed_rate', r: true, agg: 'none', fmt: v => v != null ? `<b>${fmtUSD(v, 2)}</b>` : '—' },
+            { label: 'Last Haul ($)', key: 'last_rate', r: true, agg: 'none', fmt: v => fmtUSD(v, 2) },
+            { label: 'Agreed − Last', key: 'agreed_minus_last', r: true, agg: 'none', negRed: true, fmt: v => v != null ? fmtUSD(v, 2) : '—' },
+            { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v, 0) },
+            { label: 'Haulage Cost ($)', key: 'haul_cost', r: true, bar: 'brass', fmt: v => fmtUSD(v, 0) }
+          ], quarryComp.haulRows, {
+            subtitle: 'Transport Price (Site) agreements vs. actual 3rd-party quarry haulage intake tickets',
+            rowAmber: r => Boolean(r.is_lapsed),
+            unitLabel: 'pairs'
+          })}
+        </div>
+
+        <div class="pbi-grid-2">
+          ${movedRegisterBanner('Commercial Sales, Delivery & Commission Agreements', 'Customer Sales (Pickup / Delivery), Standard List Prices, and Sales Commission rules live in Sales & Receivables ▸ Pricing & Commissions.', 'pricing', 'Pricing & Commissions', 'spreads')}
+          ${movedRegisterBanner('Quarry Raw Material & Site Haulage Agreements', 'Purchase Price (Site) and Transport Price (Site) agreements and haulage comparisons live in Quarry & Raw Material ▸ Pricing & Haulage Rates.', 'raw_pricing', 'Pricing & Haulage Rates', 'raw_analytics')}
         </div>
       `;
     }
@@ -3512,24 +4193,157 @@
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiTable('Sites — raw intake vs sales volume', [
-            { label: 'Site', key: 'Site', bold: true, fmt: v => esc(v || '(Unassigned Site)') },
-            { label: 'JV', key: 'JV', fmt: v => v === 'Yes' ? '<span class="badge badge-brass">JV 50/50</span>' : '—' },
-            { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: v => fmtNum(v) },
-            { label: 'Raw Tons', key: 'raw_tons', r: true, fmt: v => fmtNum(v, 0) },
-            { label: 'Raw Cost ($)', key: 'raw_cost', r: true, bar: 'brass', fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
-            { label: 'Sales Loads', key: 'loads', r: true, fmt: v => fmtNum(v) },
-            { label: 'Sales TTC ($)', key: 'sales_ttc', r: true, bar: true, fmt: v => fmtUSD(v, 0) }
-          ], siteRows, { subtitle: 'Volume and value across source sites and customer destination sites', unitLabel: 'sites' })}
+          ${(() => {
+            const siteOwnerTally = new Map();
+            (rec.sites || []).forEach(rs => {
+              if (rs && rs.name && rs.supplier) {
+                const sk = norm(rs.name);
+                if (!siteOwnerTally.has(sk)) siteOwnerTally.set(sk, new Map([[String(rs.supplier).trim(), 0.01]]));
+              }
+            });
+            rawRows.forEach(r => {
+              if (!r || !r.site || !r.site_owner) return;
+              const sk = norm(r.site);
+              const ow = String(r.site_owner).trim();
+              if (!sk || !ow) return;
+              if (!siteOwnerTally.has(sk)) siteOwnerTally.set(sk, new Map());
+              const om = siteOwnerTally.get(sk);
+              om.set(ow, (om.get(ow) || 0) + Math.max(1, Number(r.total || r.cost || 0)));
+            });
+            const resolveSiteOwner = siteName => {
+              const om = siteOwnerTally.get(norm(siteName || ''));
+              if (!om || !om.size) return '';
+              let best = '', bestScore = -1;
+              om.forEach((scVal, name) => { if (scVal > bestScore) { bestScore = scVal; best = name; } });
+              return om.size > 1 ? `${best} (+${om.size - 1})` : best;
+            };
+            const sourceSiteRows = siteRows
+              .filter(s => Number(s.raw_loads || 0) > 0 || Math.abs(Number(s.raw_cost || 0)) > 0.005 || Number(s.raw_qty || 0) > 0)
+              .map(s => {
+                const qty = Number(s.raw_qty || 0);
+                const cost = Number(s.raw_cost || 0);
+                return Object.assign({}, s, {
+                  siteOwner: resolveSiteOwner(s.Site),
+                  avgRawPerM3: qty > 0 ? round2(cost / qty) : null
+                });
+              })
+              .sort((a, b) => Number(b.raw_cost || 0) - Number(a.raw_cost || 0) || Number(b.raw_loads || 0) - Number(a.raw_loads || 0));
 
-          ${pbiTable('Products — sold vs purchased unit economics', [
-            { label: 'Product / Grade', key: 'Product', bold: true },
-            { label: 'Qty Sold (m³)', key: 'qty_sold', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '—' },
-            { label: 'Avg Sell ($)', key: 'avg_price_net', r: true, fmt: v => fmtUSD(v, 2) },
-            { label: 'Raw Qty (m³)', key: 'raw_qty', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '—' },
-            { label: 'Avg Raw ($)', key: 'avg_raw_cost', r: true, fmt: v => v ? fmtUSD(v, 2) : '—' },
-            { label: 'Raw Cost ($)', key: 'raw_cost', r: true, bar: true, fmt: v => fmtUSD(v, 0) }
-          ], prodRows, { subtitle: 'Comparison of sales volume vs raw material intake by aggregate grade', unitLabel: 'products' })}
+            return pbiTable('Source sites · raw material intake & haulage cost', [
+              { label: 'Source Site', key: 'Site', bold: true, fmt: v => esc(v && v !== '(Unassigned Site)' ? v : '(Unassigned Source Site)') },
+              { label: 'Site Owner', key: 'siteOwner', fmt: v => esc(v || '—') },
+              { label: 'JV', key: 'JV', fmt: v => v === 'Yes' ? '<span class="badge badge-brass">JV 50/50</span>' : '—' },
+              { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: v => fmtNum(v) },
+              { label: 'Raw Qty (m³)', key: 'raw_qty', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '—' },
+              { label: 'Raw Tons', key: 'raw_tons', r: true, fmt: v => v > 0 ? fmtNum(v, 0) : '—' },
+              { label: 'Material ($)', key: 'raw_mat_cost', r: true, fmt: v => fmtUSD(v, 0) },
+              { label: 'Haulage ($)', key: 'raw_haulage', r: true, fmt: v => fmtUSD(v, 0) },
+              { label: 'Total Raw Cost ($)', key: 'raw_cost', r: true, bar: 'brass', fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
+              {
+                label: 'Avg $/m³',
+                key: 'avgRawPerM3',
+                r: true,
+                fmt: v => v != null ? fmtUSD(v, 2) : '—',
+                foot: list => {
+                  const tc = list.reduce((a, r) => a + Number(r.raw_cost || 0), 0);
+                  const tq = list.reduce((a, r) => a + Number(r.raw_qty || 0), 0);
+                  return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(tc / tq, 2)}</b>` : '—';
+                }
+              }
+            ], sourceSiteRows, {
+              subtitle: 'Quarry and excavation source sites ranked by total raw intake cost (Leg 1 material to site owner + Leg 2 haulage to truck owner); customer delivery sites are tracked separately under Sales & Receivables',
+              unitLabel: 'source sites'
+            });
+          })()}
+
+          ${(() => {
+            const prodMetaByNorm = new Map();
+            (rec.products || []).forEach(pr => {
+              if (pr && pr.name) prodMetaByNorm.set(norm(pr.name), pr);
+            });
+            const famMap = new Map();
+            prodRows.forEach(p => {
+              if (!p || !p.Product) return;
+              const pm = prodMetaByNorm.get(norm(p.Product)) || {};
+              const pType = String(pm.type || '').trim();
+              if (pType && pType !== 'Material') return;
+              if (!pType && /shacman|diesel|mazout|oil|grease|benzin|transportation|insurance|vat\s*invoice|wheel|tire|tyre|hammer|battery|salary|rent|electricity|discount|filter|tip|bonus|remove/i.test(p.Product)) return;
+              const famName = String(p['Material Family'] || pm.input_product || p.Product).trim();
+              const fk = norm(famName);
+              if (!famMap.has(fk)) {
+                famMap.set(fk, {
+                  Family: famName,
+                  UoM: p.UoM || pm.uom || 'm³',
+                  outputs: new Set(),
+                  raw_qty: 0,
+                  raw_cost: 0,
+                  qty_sold: 0,
+                  net_sales: 0
+                });
+              }
+              const f = famMap.get(fk);
+              const qSold = Number(p.qty_sold || 0);
+              const qRaw = Number(p.raw_qty || 0);
+              const cRaw = Number(p.raw_cost || 0);
+              const nSales = Number(p.net_sales != null ? p.net_sales : (qSold * Number(p.avg_price_net || 0)));
+              if (qSold > 0 && norm(p.Product) !== fk) f.outputs.add(p.Product);
+              f.raw_qty += qRaw;
+              f.raw_cost += cRaw;
+              f.qty_sold += qSold;
+              f.net_sales += nSales;
+            });
+            const famRows = Array.from(famMap.values())
+              .filter(f => f.raw_qty > 0 || f.raw_cost > 0 || f.qty_sold > 0)
+              .map(f => ({
+                Family: f.Family,
+                UoM: f.UoM,
+                outputsList: Array.from(f.outputs).join(', '),
+                raw_qty: round2(f.raw_qty),
+                raw_cost: round2(f.raw_cost),
+                avg_raw_cost: f.raw_qty > 0 ? round2(f.raw_cost / f.raw_qty) : null,
+                qty_sold: round2(f.qty_sold),
+                net_sales: round2(f.net_sales),
+                avg_price_net: f.qty_sold > 0 ? round2(f.net_sales / f.qty_sold) : null
+              }))
+              .sort((a, b) => Number(b.raw_cost || 0) - Number(a.raw_cost || 0) || Number(b.qty_sold || 0) - Number(a.qty_sold || 0));
+
+            return pbiTable('Raw material families · bought in vs sold out as finished grades', [
+              {
+                label: 'Raw Material Family',
+                key: 'Family',
+                fmt: (v, r) => `<b>${esc(v || '—')}</b>${r && r.outputsList ? ` <span class="mu">· Sold as: ${esc(r.outputsList)}</span>` : ''}`
+              },
+              { label: 'Unit', key: 'UoM', mono: true },
+              { label: 'Raw Bought', key: 'raw_qty', r: true, fmt: (v, r) => v > 0 ? `${fmtNum(v, 0)} ${esc((r && r.UoM) || 'm³')}` : '—' },
+              {
+                label: 'Avg Raw ($)',
+                key: 'avg_raw_cost',
+                r: true,
+                fmt: v => v != null ? fmtUSD(v, 2) : '—',
+                foot: list => {
+                  const tc = list.reduce((a, r) => a + Number(r.raw_cost || 0), 0);
+                  const tq = list.reduce((a, r) => a + Number(r.raw_qty || 0), 0);
+                  return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(tc / tq, 2)}</b>` : '—';
+                }
+              },
+              { label: 'Raw Cost ($)', key: 'raw_cost', r: true, bar: 'brass', fmt: v => fmtUSD(v, 0) },
+              { label: 'Sold Out', key: 'qty_sold', r: true, fmt: (v, r) => v > 0 ? `${fmtNum(v, 0)} ${esc((r && r.UoM) || 'm³')}` : '—' },
+              {
+                label: 'Avg Sell ($)',
+                key: 'avg_price_net',
+                r: true,
+                fmt: v => v != null ? fmtUSD(v, 2) : '—',
+                foot: list => {
+                  const ts = list.reduce((a, r) => a + Number(r.net_sales || 0), 0);
+                  const tq = list.reduce((a, r) => a + Number(r.qty_sold || 0), 0);
+                  return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(ts / tq, 2)}</b>` : '—';
+                }
+              }
+            ], famRows, {
+              subtitle: 'Aggregate material families linking raw quarry intake (e.g. Ramel Mrml, Sakher) to finished crushed/washed grades sold (excludes equipment & fuel)',
+              unitLabel: 'material families'
+            });
+          })()}
         </div>
 
         <div class="pbi-grid-1">
@@ -5868,6 +6682,10 @@
 
   function hubColLabel(c, tableKey) {
     if (c === 'type' && tableKey === 'conversions') return 'Direction';
+    if (tableKey === 'sites') {
+      if (c === 'raw_loads') return 'Source Raw Loads';
+      if (c === 'sales_loads') return 'Delivery Loads';
+    }
     if (c === 'name') {
       if (tableKey === 'conversions') return 'Voucher / Ref';
       if (tableKey === 'equipment_defects') return 'Defect Ref';
@@ -6436,26 +7254,85 @@
 
   function renderPricingVisualsSection(ctx) {
     const prodPriceComp = pickTopAggregateGrades((ctx && ctx.prodPriceComp) || [], 8, ctx && ctx.productsCatalog);
+    const lpHist = (ctx && ctx.lpHist) || buildListPriceHistoryData(
+      (ctx && ctx.priceRules) || [],
+      prodPriceComp,
+      (ctx && ctx.months) || [],
+      { today: (ctx && ctx.today) || '2026-10-26', dateFrom: ctx && ctx.dateFrom, dateTo: ctx && ctx.dateTo }
+    );
+    const delTransComp = (ctx && ctx.delTransComp) || buildSalesDeliveryTransportComp(
+      (ctx && ctx.salesRows) || [],
+      (ctx && ctx.priceRules) || [],
+      { today: (ctx && ctx.today) || '2026-10-26', asAtDate: (ctx && ctx.asAtDate) || (ctx && ctx.today) || '2026-10-26' }
+    );
     return `
       <div class="pbi-grid-2" id="pricingChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('List Price Evolution Over Time ($/m³) by Grade', buildMultiLineSvg(lpHist.months, lpHist.series, {
+          isMoney: true,
+          decimals: 2,
+          includeZero: false,
+          maxPoints: 22
+        }), {
+          id: 'listPriceTrendChart',
+          subtitle: 'Monthly standard list price trajectory across dated revision agreements',
+          legend: lpHist.series.map(s => ({ label: s.label, color: s.color, line: true }))
+        })}
         ${pbiPanel('Agreed vs. Realised vs. List Price per Unit ($/m³) by Grade', buildClusteredBarChart(prodPriceComp, 'Product', [
           { label: 'Agreed', key: 'agreed', color: C.slate },
           { label: 'Realised', key: 'realised', color: C.navy },
           { label: 'List Price', key: 'list', color: C.brass }
         ]), {
-          subtitle: 'Average active customer agreement rate vs realised material net price ($/m³) and standard list price'
+          subtitle: 'Average active customer agreement rate vs. realised material net price ($/m³) and standard list price'
         })}
         ${pbiPanel('Price Corridor by Grade · Lowest Agreed, Highest Agreed & List Price', buildClusteredColumnSvg(prodPriceComp, [
           { key: 'lowest', label: 'Lowest Agreed', color: C.slate },
           { key: 'highest', label: 'Highest Agreed', color: C.navy },
           { key: 'list', label: 'List Price', color: C.brass }
         ], { labelKey: 'Product', labels: true }), {
-          subtitle: 'Price corridor across active customer agreements vs standard list price ($/m³)',
+          subtitle: 'Price corridor across active customer agreements vs. standard list price ($/m³)',
           legend: [
             { label: 'Lowest', color: C.slate },
             { label: 'Highest', color: C.navy },
             { label: 'List', color: C.brass }
           ]
+        })}
+        ${pbiPanel('Customer Delivery Transportation Rate · Agreed vs. Last Delivered ($/m³)', buildClusteredBarChart(delTransComp.unitChartRows, 'label', [
+          { label: 'Agreed', key: 'agreed_chart', color: C.slate },
+          { label: 'Last Billed', key: 'last_rate', color: C.navy },
+          { label: 'Period Avg', key: 'avg_rate', color: C.brass }
+        ], { headRight: r => `${fmtNum(r.loads, 0)} loads` }), {
+          id: 'deliveryTransChart',
+          subtitle: 'Agreed customer delivery rate vs. last billed ticket and period average across top delivery sites'
+        })}
+      </div>
+    `;
+  }
+
+  function renderQuarryPricingVisualsSection(ctx) {
+    const quarryComp = (ctx && ctx.quarryComp) || buildQuarryPricingComp(
+      (ctx && ctx.rawRows) || [],
+      (ctx && ctx.priceRules) || [],
+      { today: (ctx && ctx.today) || '2026-10-26', asAtDate: (ctx && ctx.asAtDate) || (ctx && ctx.today) || '2026-10-26' }
+    );
+    const haulRows = quarryComp.haulFlatChartRows.length ? quarryComp.haulFlatChartRows : quarryComp.haulUnitChartRows;
+    const haulBasis = quarryComp.haulFlatChartRows.length ? '$/Truck Flat' : '$/m³';
+    return `
+      <div class="pbi-grid-2" id="rawPricingChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('Raw Material Purchase Rate by Source Site · Agreed vs. Last Receipt ($/m³)', buildClusteredBarChart(quarryComp.matUnitChartRows, 'label', [
+          { label: 'Agreed', key: 'agreed_chart', color: C.slate },
+          { label: 'Last Receipt', key: 'last_rate', color: C.navy },
+          { label: 'Period Avg', key: 'avg_rate', color: C.brass }
+        ], { headRight: r => `${fmtNum(r.loads, 0)} loads` }), {
+          id: 'rawMatRateChart',
+          subtitle: 'Purchase Price (Site) agreement rate vs. last raw material intake unit cost and period average'
+        })}
+        ${pbiPanel(`Quarry Transportation Rate by Hauler & Site · Agreed vs. Last Haul (${haulBasis})`, buildClusteredBarChart(haulRows, 'label', [
+          { label: 'Agreed', key: 'agreed_chart', color: C.slate },
+          { label: 'Last Haul', key: 'last_rate', color: C.navy },
+          { label: 'Period Avg', key: 'avg_rate', color: C.brass }
+        ], { headRight: r => `${fmtNum(r.loads, 0)} loads` }), {
+          id: 'rawHaulRateChart',
+          subtitle: 'Transport Price (Site) agreement rate vs. last 3rd-party quarry haulage intake ticket and period average'
         })}
       </div>
     `;
@@ -7173,6 +8050,10 @@
     renderSalesVisualsSection,
     renderCustomersVisualsSection,
     renderPricingVisualsSection,
+    renderQuarryPricingVisualsSection,
+    buildListPriceHistoryData,
+    buildSalesDeliveryTransportComp,
+    buildQuarryPricingComp,
     renderFuelVisualsSection,
     computeLubricationAudit,
     renderLubricationBenchmarksSection,

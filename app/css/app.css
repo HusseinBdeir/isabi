@@ -11086,6 +11086,7 @@ table.m-grid tfoot tr td[colspan] {
 
 /* Allow long agreement codes, vouchers & composite mono cells to wrap instead of forcing 300px+ columns */
 #pricingPanel table.ledger-table tbody td:first-child,
+#rawPricingPanel table.ledger-table tbody td:first-child,
 #soaPanel table.ledger-table tbody td.mono:nth-child(3),
 #rcptPanel table.ledger-table tbody td.mono:nth-child(2),
 #settlePanel table.ledger-table tbody td.mono:nth-child(2),
@@ -11188,7 +11189,9 @@ table.ledger-table:has(#usersDirectoryTbody) .user-actions-wrap .btn {
   #salesPanel table.ledger-table th,
   #salesPanel table.ledger-table td,
   #pricingPanel table.ledger-table th,
-  #pricingPanel table.ledger-table td {
+  #pricingPanel table.ledger-table td,
+  #rawPricingPanel table.ledger-table th,
+  #rawPricingPanel table.ledger-table td {
     padding: 5.5px 3.2px;
     font-size: 11.5px;
   }
