@@ -338,6 +338,25 @@ document.addEventListener('DOMContentLoaded', function() {
     if (heroPosBtn) heroPosBtn.click();
     var hasHeroPos = !!document.querySelector('#hlc-stage .hlc-pos-box');
 
+    // Audit Light Mode surfaces while Hero POS receipt is mounted
+    function parseRgbSum(el) {
+      if (!el) return -1;
+      var cs = getComputedStyle(el);
+      var bg = cs.backgroundColor || '';
+      var img = cs.backgroundImage || '';
+      var m = bg.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([0-9.]+))?\\)/);
+      if (m) {
+        var a = m[4] !== undefined ? parseFloat(m[4]) : 1;
+        if (a > 0.2) return parseInt(m[1], 10) + parseInt(m[2], 10) + parseInt(m[3], 10);
+      }
+      var gm = img.match(/rgb\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)/);
+      if (gm) return parseInt(gm[1], 10) + parseInt(gm[2], 10) + parseInt(gm[3], 10);
+      return 765;
+    }
+
+    document.documentElement.setAttribute('data-theme', 'light');
+    var lightPosReceiptRgb = parseRgbSum(document.querySelector('.hlc-pos-receipt'));
+
     var heroAppsBtn = document.querySelector('[data-hero-screen="apps"]');
     if (heroAppsBtn) heroAppsBtn.click();
     var hasHeroApps = !!document.querySelector('#hlc-stage .hlc-apps-mini');
@@ -350,6 +369,42 @@ document.addEventListener('DOMContentLoaded', function() {
     if (heroDashBtn) heroDashBtn.click();
     var heroUsdBtn = document.querySelector('[data-hero-curr="USD"]');
     if (heroUsdBtn) heroUsdBtn.click();
+
+    var lightChecks = {
+      askTrigger: parseRgbSum(document.querySelector('.ask-isabi-trigger')),
+      hlcTop: parseRgbSum(document.querySelector('.hlc-top')),
+      hlcPosReceipt: lightPosReceiptRgb,
+      sboxRail: parseRgbSum(document.querySelector('.rail')),
+      aiConsole: parseRgbSum(document.querySelector('.ai-console')),
+      aiConsoleHdr: parseRgbSum(document.querySelector('.ai-console-hdr')),
+      aiBotBubble: parseRgbSum(document.querySelector('.ai-bot-bubble')),
+      aiDrawer: parseRgbSum(document.querySelector('.ai-drawer')),
+      portalDirect: parseRgbSum(document.querySelector('.portal-direct-card')),
+      directChannel: parseRgbSum(document.querySelector('.direct-channel-box')),
+      siteFooter: parseRgbSum(document.querySelector('.site-footer'))
+    };
+
+    var darkBlocksInLight = [];
+    Array.from(document.querySelectorAll('body *')).forEach(function(el) {
+      if (el.classList && el.classList.contains('drawer-backdrop')) return;
+      var r = el.getBoundingClientRect();
+      if (r.width < 80 || r.height < 34) return;
+      var cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return;
+      var s = parseRgbSum(el);
+      if (s >= 0 && s < 220) {
+        darkBlocksInLight.push(el.tagName.toLowerCase() + '.' + String(el.className || '').trim().split(/\\s+/).slice(0, 2).join('.') + ':' + s);
+      }
+    });
+
+    document.documentElement.setAttribute('data-theme', 'dark');
+    var darkChecks = {
+      hlcTop: parseRgbSum(document.querySelector('.hlc-top')),
+      aiConsole: parseRgbSum(document.querySelector('.ai-console')),
+      portalDirect: parseRgbSum(document.querySelector('.portal-direct-card')),
+      siteFooter: parseRgbSum(document.querySelector('.site-footer'))
+    };
+    document.documentElement.setAttribute('data-theme', 'light');
 
     out.v4Test = {
       spotTitle: spotTitle,
@@ -364,6 +419,9 @@ document.addEventListener('DOMContentLoaded', function() {
       hasHeroPos: hasHeroPos,
       hasHeroApps: hasHeroApps,
       hasHeroAi: hasHeroAi,
+      lightChecks: lightChecks,
+      darkBlocksInLight: darkBlocksInLight.slice(0, 10),
+      darkChecks: darkChecks,
       visibleJargon: (
         (document.title + ' ' + (document.querySelector('meta[name="description"]')?.content || '') + ' ' + document.body.innerText)
         .match(/\b(SQL|PostgreSQL|SQLite|IndexedDB|PWA|PWAs|RLS|schema|schemas|compiler|compiled|128-d|80mm|58mm)\b/gi) || []
@@ -469,6 +527,11 @@ document.addEventListener('DOMContentLoaded', function() {
         assert v4['hasHeroApps'] is True, "Hero Apps mode did not render .hlc-apps-mini"
         assert v4['hasHeroAi'] is True, "Hero AI mode did not render .hlc-ai-box"
         assert v4['visibleJargon'] == [], f"Visible technical jargon found in rendered page: {v4['visibleJargon']}"
+        for surf_k, surf_rgb in v4['lightChecks'].items():
+            assert surf_rgb >= 650, f"Light Mode surface {surf_k} is too dark (RGB sum={surf_rgb} < 650): {v4['lightChecks']}"
+        assert v4['darkBlocksInLight'] == [], f"Dark-navy blocks found in Light Mode: {v4['darkBlocksInLight']}"
+        for d_k, d_rgb in v4['darkChecks'].items():
+            assert 0 <= d_rgb <= 120, f"Dark Mode surface {d_k} did not switch to dark palette (RGB sum={d_rgb}): {v4['darkChecks']}"
 
         # 3. Capture fresh screenshots of Hero & #portal at 1366x768
         os.makedirs(ART_DIR, exist_ok=True)

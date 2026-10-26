@@ -19,7 +19,7 @@ JS = r"""
   const DAY_TOKENS = { D0: dayLabel(0), D1: dayLabel(1) };
 
   const BADGE_MINI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="34" height="34" style="border-radius:7px;flex-shrink:0"><rect width="120" height="120" rx="26" fill="#0B1730"/><g transform="translate(39.52,77.62) scale(0.74)"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>';
-  const RAIL_MARK_SVG = '<svg viewBox="-9.5 -78.8 74.66 109.7" height="22"><g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>';
+  const RAIL_MARK_SVG = '<svg viewBox="-9.5 -78.8 74.66 109.7" height="22"><g fill="currentColor"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>';
   const ICONS = __ICONS_JSON__;
 
   // ---------------- 8 INDUSTRY BLUEPRINTS ----------------
@@ -1138,7 +1138,7 @@ JS = r"""
             </div>
             <div class="hlc-pos-racts">
               <button type="button" class="btn btn-brass" style="padding:6px 12px;font-size:12px" data-pos-sync="1">${ICONS.pos} Print &amp; Sync to Ledger</button>
-              <button type="button" class="btn btn-outline" style="padding:6px 12px;font-size:12px;background:rgba(255,255,255,0.08);color:#F4F2EE;border-color:rgba(255,255,255,0.2)" data-kiosk-punch="Rami K. · Batch Plant|99.6% Face + PIN">${ICONS.kiosk} Simulate Gate Face Punch</button>
+              <button type="button" class="btn btn-outline" style="padding:6px 12px;font-size:12px" data-kiosk-punch="Rami K. · Batch Plant|99.6% Face + PIN">${ICONS.kiosk} Simulate Gate Face Punch</button>
             </div>
           </div>
         </div>
@@ -1771,12 +1771,12 @@ JS = r"""
               <button type="button" class="pos-item-btn" data-pos-add="Double Espresso|8"><span>${ICONS.pos} Double Espresso</span><b class="num">+$8</b></button>
             </div>
             <div class="pos-receipt-box">
-              <div style="border-bottom:1px dashed rgba(255,255,255,0.25);padding-bottom:6px;margin-bottom:6px;display:flex;justify-content:space-between">
+              <div class="pos-receipt-hdr">
                 <span>ISABI THERMAL RECEIPT · TILL #01</span>
                 <span>Receipts Synced: ${state.posSyncedCount}</span>
               </div>
               ${state.posCart.map(it => `<div style="display:flex;justify-content:space-between"><span>${it.qty}x ${it.name}</span><span>$${(it.price * it.qty).toFixed(2)}</span></div>`).join('')}
-              <div style="border-top:1px solid #D9A54A;border-bottom:3px double #D9A54A;margin-top:8px;padding:5px 0;display:flex;justify-content:space-between;font-weight:700;color:#D9A54A">
+              <div class="pos-receipt-tot">
                 <span>TOTAL TTC (INCL. VAT)</span>
                 <span>$${cartTotal.toFixed(2)}</span>
               </div>
@@ -1802,14 +1802,14 @@ JS = r"""
               <button type="button" class="pos-item-btn" data-kiosk-punch="Jad M. · Mixer Fleet Driver|99.5% Face + PIN"><span>${ICONS.fleet} Jad M. · Mixer Fleet</span><b>Clock Out</b></button>
             </div>
             <div class="pos-receipt-box">
-              <div style="border-bottom:1px dashed rgba(255,255,255,0.25);padding-bottom:6px;margin-bottom:6px;display:flex;justify-content:space-between">
+              <div class="pos-receipt-hdr">
                 <span>LIVE GATE VERIFICATION LOG</span>
-                <span style="color:#3DB36A">● Verified</span>
+                <span style="color:var(--good)">● Verified</span>
               </div>
               <div><b>Employee:</b> ${state.kioskLastPunch.name}</div>
               <div><b>Timestamp:</b> ${state.kioskLastPunch.time}</div>
               <div><b>Face &amp; PIN Audit:</b> ${state.kioskLastPunch.score}</div>
-              <div style="color:#D9A54A;margin-top:4px"><b>Sync Status:</b> ${state.kioskLastPunch.status}</div>
+              <div class="pos-receipt-accent"><b>Sync Status:</b> ${state.kioskLastPunch.status}</div>
             </div>
             <button type="button" class="btn btn-outline" style="width:100%" data-open-ai="How do the Offline POS Till and Field Kiosks keep working during internet cuts?">${ICONS.ai} Ask ISABI How Offline Sync Works</button>
           </div>
@@ -3136,7 +3136,7 @@ JS = r"""
       <div class="ai-msg-bot">
         ${BADGE_MINI_SVG}
         <div class="ai-bot-bubble"${dirAttr}>
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#D9A54A;font-weight:700;margin-bottom:4px">ISABI · ${item.title}</div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--ai-accent);font-weight:700;margin-bottom:4px">ISABI · ${item.title}</div>
           <p>${item.answer}</p>
           ${bulletsHtml}
           ${tableBlockHtml}
@@ -3144,7 +3144,7 @@ JS = r"""
             <span>${item.citation || 'Source: ISABI Systems'}</span>
             <div class="ai-bot-actions">
               ${extraActions}
-              <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I asked Ask ISABI ("' + item.q + '") and would like to discuss this for our company.')}" target="_blank" rel="noopener" style="color:#D9A54A;font-weight:700">Discuss on WhatsApp</a>
+              <a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I asked Ask ISABI ("' + item.q + '") and would like to discuss this for our company.')}" target="_blank" rel="noopener" style="color:var(--ai-accent);font-weight:700">Discuss on WhatsApp</a>
             </div>
           </div>
         </div>
@@ -3160,7 +3160,7 @@ JS = r"""
       </div>`;
     } else if (followUpsHtml || item.promptText) {
       const convActions = isConv
-        ? `<div class="ai-bot-actions" style="margin-top:8px;font-size:11.5px">${extraActions}<a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I asked Ask ISABI ("' + item.q + '") and would like to discuss this for our company.')}" target="_blank" rel="noopener" style="color:#D9A54A;font-weight:700">Message Hussein on WhatsApp</a></div>`
+        ? `<div class="ai-bot-actions" style="margin-top:8px;font-size:11.5px">${extraActions}<a href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Hello Hussein, I asked Ask ISABI ("' + item.q + '") and would like to discuss this for our company.')}" target="_blank" rel="noopener" style="color:var(--ai-accent);font-weight:700">Message Hussein on WhatsApp</a></div>`
         : '';
       bubble2Html = `
       <div class="ai-msg-followup">
