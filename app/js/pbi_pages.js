@@ -1231,7 +1231,7 @@
     p20_recon:      { id: 'p20_recon',      view: 'statements',      modSec: 'recon',      short: 'Statement Recon',    targetLabel: 'Statements & Reports' }
   };
 
-  // All 36 Relational Tables organized into 6 Pure Business Domains matching #sidebarNav (BU-scoped operations first, shared All-BUs master registries in-domain)
+  // All 36 Relational Tables organized into 5 Pure Business Domains matching #sidebarNav (BU-scoped operations first, shared All-BUs master registries in-domain)
   const TABLE_CATALOG = [
     // 1 · Sales, Pricing & Receivables (9)
     { key: 'sales_tickets', group: '1 · Sales, Pricing & Receivables', label: 'Sales Tickets', dvn: 'bhf_salesticket', form: 'sales', cols: ['date', 'rep_date', 'ticket_no', 'company', 'sale_type', 'customer', 'product', 'site', 'truck', 'driver', 'qty', 'uom', 'unit_price', 'price', 'trans_price', 'vat', 'total_ttc', 'method'], relTables: ['customers', 'price_rules', 'products', 'sites', 'equipment', 'drivers', 'receipts', 'vat_invoices'], views: [{ id: 'all', label: 'All Sales Tickets' }, { id: 'delivery', label: 'Delivery Loads', fn: r => /deliv/i.test(r.sale_type) }, { id: 'pickup', label: 'Pick-up (Material Only)', fn: r => /pick/i.test(r.sale_type) }, { id: 'credit', label: 'Credit / Account', fn: r => !/cash/i.test(r.method) }, { id: 'iva', label: 'IVA / VAT 11%', fn: r => r.iva || Number(r.vat || 0) > 0 }] },
@@ -1244,18 +1244,35 @@
     { key: 'product_types', group: '1 · Sales, Pricing & Receivables', universal: true, navView: 'reg_products', label: 'Product Types (Families)', dvn: 'bhf_producttype', form: 'product', cols: ['name', 'code', 'products_count', 'sales_loads'], relTables: ['products', 'sales_tickets'], views: [{ id: 'all', label: 'All Product Families' }] },
     { key: 'uoms', group: '1 · Sales, Pricing & Receivables', universal: true, navView: 'reg_products', label: 'Units of Measure (UoM)', dvn: 'bhf_uom', form: 'product', cols: ['name', 'code', 'products_count', 'tickets_count'], relTables: ['products', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Units of Measure' }] },
 
-    // 2 · Quarry, Sites & Joint Ventures (5)
-    { key: 'raw_purchases', group: '2 · Quarry, Sites & Joint Ventures', label: 'Raw Material Purchases', dvn: 'bhf_rawpurchase', form: 'raw', cols: ['date', 'rep_date', 'ticket_no', 'company', 'site', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'driver', 'product', 'qty', 'uom', 'unit_cost', 'cost', 'trans_cost', 'total'], relTables: ['sites', 'suppliers', 'price_rules', 'equipment', 'drivers', 'products', 'settlements'], views: [{ id: 'all', label: 'All Raw Purchases' }, { id: 'supplier_haul', label: 'Third-Party Haulage', fn: r => Number(r.trans_cost || 0) > 0 }, { id: 'company_haul', label: 'Company Fleet Haul', fn: r => /company/i.test(r.transport_by) }] },
-    { key: 'jv_partnerships', group: '2 · Quarry, Sites & Joint Ventures', label: 'JV Site Partnerships', dvn: 'bhf_mfgjvpartnership', form: 'jv', cols: ['name', 'company', 'site', 'partner', 'percentage', 'distributions_total', 'notes'], relTables: ['sites', 'jv_distributions', 'raw_purchases'], views: [{ id: 'all', label: 'All JV Partnerships' }] },
-    { key: 'jv_distributions', group: '2 · Quarry, Sites & Joint Ventures', label: 'JV Profit Distributions', dvn: 'bhf_mfgjvdistribution', form: 'jv', cols: ['date', 'rep_date', 'company', 'site', 'partner', 'basis', 'amount', 'total', 'notes'], relTables: ['jv_partnerships', 'sites'], views: [{ id: 'all', label: 'All JV Distributions' }] },
-    { key: 'sites', group: '2 · Quarry, Sites & Joint Ventures', universal: true, navView: 'reg_sites', label: 'Sites', dvn: 'bhf_site', form: 'site', cols: ['name', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads', 'sales_loads'], relTables: ['regions', 'suppliers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [
+    // 2 · Purchases, Expenses & Payables (10)
+    { key: 'raw_purchases', group: '2 · Purchases, Expenses & Payables', label: 'Raw Material Purchases', dvn: 'bhf_rawpurchase', form: 'raw', cols: ['date', 'rep_date', 'ticket_no', 'company', 'site', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'driver', 'product', 'qty', 'uom', 'unit_cost', 'cost', 'trans_cost', 'total'], relTables: ['sites', 'suppliers', 'price_rules', 'equipment', 'drivers', 'products', 'settlements'], views: [{ id: 'all', label: 'All Raw Purchases' }, { id: 'supplier_haul', label: 'Third-Party Haulage', fn: r => Number(r.trans_cost || 0) > 0 }, { id: 'company_haul', label: 'Company Fleet Haul', fn: r => /company/i.test(r.transport_by) }] },
+    { key: 'expenses', group: '2 · Purchases, Expenses & Payables', label: 'General & Fleet Expenses', dvn: 'bhf_mfgexpense', form: 'expense', cols: ['date', 'rep_date', 'name', 'company', 'category', 'subcategory', 'supplier', 'equipment', 'method', 'qty', 'amount', 'vat', 'total_ttc', 'invoice', 'reference', 'notes'], relTables: ['expense_categories', 'expense_subcategories', 'suppliers', 'equipment', 'settlements'], views: [{ id: 'all', label: 'All Expenses' }, { id: 'fleet', label: 'Equipment & Fleet Tagged', fn: r => Boolean(r.equipment) }, { id: 'overhead', label: 'Plant & General Overhead', fn: r => !r.equipment }] },
+    { key: 'settlements', group: '2 · Purchases, Expenses & Payables', label: 'Supplier Settlements (AP)', dvn: 'bhf_mfgsupplierpayment', form: 'settlement', cols: ['date', 'rep_date', 'name', 'company', 'supplier', 'payable_leg', 'method', 'kind', 'amount', 'discount', 'raw_ticket', 'expense_record', 'reference', 'notes'], relTables: ['suppliers', 'raw_purchases', 'expenses', 'price_rules'], views: [{ id: 'all', label: 'All Supplier Settlements' }, { id: 'raw_leg', label: 'Raw / Haulage Leg', fn: r => Boolean(r.raw_ticket) }, { id: 'exp_leg', label: 'Expense Leg', fn: r => Boolean(r.expense_record) }] },
+    { key: 'jv_partnerships', group: '2 · Purchases, Expenses & Payables', label: 'JV Site Partnerships', dvn: 'bhf_mfgjvpartnership', form: 'jv', cols: ['name', 'company', 'site', 'partner', 'percentage', 'distributions_total', 'notes'], relTables: ['sites', 'jv_distributions', 'raw_purchases'], views: [{ id: 'all', label: 'All JV Partnerships' }] },
+    { key: 'jv_distributions', group: '2 · Purchases, Expenses & Payables', label: 'JV Profit Distributions', dvn: 'bhf_mfgjvdistribution', form: 'jv', cols: ['date', 'rep_date', 'company', 'site', 'partner', 'basis', 'amount', 'total', 'notes'], relTables: ['jv_partnerships', 'sites'], views: [{ id: 'all', label: 'All JV Distributions' }] },
+    { key: 'suppliers', group: '2 · Purchases, Expenses & Payables', universal: true, navView: 'reg_suppliers', label: 'Suppliers & Haulers', dvn: 'bhf_supplier', form: 'supplier', cols: ['name', 'supplier_role', 'method', 'trucks_list', 'drivers_list', 'haul_loads', 'raw_loads', 'expenses_count', 'active_rules', 'iva', 'ap_balance'], relTables: ['raw_purchases', 'expenses', 'settlements', 'price_rules', 'equipment', 'drivers', 'sites'], views: [
+      { id: 'all', label: 'All Suppliers & Haulers' },
+      { id: 'haulers', label: 'Truck Owners / Haulers', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; return Boolean(r.is_truck_owner || Number(r.trucks_count || 0) > 0 || (se && (se.is_hauler || se.trucks.size > 0 || se.haul_loads > 0))); } },
+      { id: 'quarries', label: 'Material & Site Suppliers', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; return Boolean((se && (se.is_quarry || se.raw_loads > 0 || se.sites.size > 0)) || /Quarry|Site|Raw Material/i.test(r.category || r.category1 || '')); } },
+      { id: 'vendors', label: 'Expense & Parts Vendors', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; const isH = Boolean(r.is_truck_owner || Number(r.trucks_count || 0) > 0 || (se && (se.is_hauler || se.trucks.size > 0 || se.haul_loads > 0))); const isQ = Boolean((se && (se.is_quarry || se.raw_loads > 0 || se.sites.size > 0)) || /Quarry|Site|Raw Material/i.test(r.category || r.category1 || '')); return Boolean((se && (se.is_expense || se.expenses_count > 0)) || (!isH && !isQ)); } },
+      { id: 'open_ap', label: 'Open AP Balance > $0', fn: (r, rel) => ((rel.suppByName[norm(r.name)] || {}).ap_balance || 0) > 1 },
+      { id: 'iva', label: 'IVA / VAT Registered', fn: r => Boolean(r.iva || r.financial_no || r.mof_no) }
+    ] },
+    { key: 'expense_categories', group: '2 · Purchases, Expenses & Payables', universal: true, navView: 'reg_categories', label: 'Expense Categories', dvn: 'bhf_expensecategory', form: 'expense', cols: ['name', 'cost_class', 'subcategories_count', 'expenses_count', 'total_spent'], relTables: ['expense_subcategories', 'expenses'], views: [
+      { id: 'all', label: 'All Expense Categories' },
+      { id: 'prod', label: 'Production Cost (60/61)', fn: r => deriveExpenseCostClass(r) === 'Production Cost' },
+      { id: 'opex', label: 'Operating Expense (62–67)', fn: r => deriveExpenseCostClass(r) === 'Operating Expense' },
+      { id: 'capex', label: 'Capital Expenditure (22)', fn: r => deriveExpenseCostClass(r) === 'Capital Expenditure' }
+    ] },
+    { key: 'expense_subcategories', group: '2 · Purchases, Expenses & Payables', universal: true, navView: 'reg_categories', label: 'Expense Subcategories', dvn: 'bhf_expensesubcategory', form: 'expense', cols: ['name', 'category', 'expenses_count', 'total_spent'], relTables: ['expense_categories', 'expenses'], views: [{ id: 'all', label: 'All Expense Subcategories' }] },
+    { key: 'sites', group: '2 · Purchases, Expenses & Payables', universal: true, navView: 'reg_sites', label: 'Sites', dvn: 'bhf_site', form: 'site', cols: ['name', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads', 'sales_loads'], relTables: ['regions', 'suppliers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [
       { id: 'all', label: 'All Sites' },
       { id: 'source', label: 'Source / Quarry Sites', fn: (r, rel) => { const se = rel && rel.siteByName[norm(r.name)]; return Boolean((se && se.raw_loads > 0) || r.supplier || r.is_jv); } },
       { id: 'delivery', label: 'Customer Delivery Sites', fn: (r, rel) => { const se = rel && rel.siteByName[norm(r.name)]; return Boolean(se && se.sales_loads > 0); } },
       { id: 'jv', label: 'JV 50/50 Sites', fn: r => Boolean(r.is_jv) },
       { id: 'gps', label: 'Verified GPS Pin', fn: r => r.latitude != null && r.longitude != null }
     ] },
-    { key: 'regions', group: '2 · Quarry, Sites & Joint Ventures', universal: true, navView: 'reg_regions', label: 'Regions & Zones', dvn: 'bhf_region', form: 'site', cols: ['name', 'code', 'sites_count', 'overtime_rate', 'sales_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
+    { key: 'regions', group: '2 · Purchases, Expenses & Payables', universal: true, navView: 'reg_regions', label: 'Regions & Zones', dvn: 'bhf_region', form: 'site', cols: ['name', 'code', 'sites_count', 'overtime_rate', 'sales_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
 
     // 3 · Fleet, Fuel, Maintenance & Drivers (8)
     { key: 'fuel_intakes', group: '3 · Fleet, Fuel, Maintenance & Drivers', label: 'Fuel & Lubricant Intakes', dvn: 'bhf_fuelintake', form: 'fuel', cols: ['date', 'ticket_no', 'company', 'equipment', 'driver', 'item', 'litres', 'uom', 'odometer', 'hours', 'notes'], relTables: ['equipment', 'company_equipment', 'drivers', 'products'], views: [{ id: 'all', label: 'All Fuel & Lube Fills' }, { id: 'diesel', label: 'Diesel Only', fn: r => /diesel|fuel|mazout/i.test(r.item || '') }, { id: 'lube', label: 'Oils & Lubricants', fn: r => !/diesel|fuel|mazout|grease/i.test(r.item || '') }, { id: 'grease', label: 'Daily Greasing (kg)', fn: r => /grease/i.test(r.item || '') }] },
@@ -1280,51 +1297,32 @@
     { key: 'equipment', group: '3 · Fleet, Fuel, Maintenance & Drivers', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
     { key: 'drivers', group: '3 · Fleet, Fuel, Maintenance & Drivers', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] },
 
-    // 4 · Expenses, Suppliers & Payables (5)
-    { key: 'expenses', group: '4 · Expenses, Suppliers & Payables', label: 'General & Fleet Expenses', dvn: 'bhf_mfgexpense', form: 'expense', cols: ['date', 'rep_date', 'name', 'company', 'category', 'subcategory', 'supplier', 'equipment', 'method', 'qty', 'amount', 'vat', 'total_ttc', 'invoice', 'reference', 'notes'], relTables: ['expense_categories', 'expense_subcategories', 'suppliers', 'equipment', 'settlements'], views: [{ id: 'all', label: 'All Expenses' }, { id: 'fleet', label: 'Equipment & Fleet Tagged', fn: r => Boolean(r.equipment) }, { id: 'overhead', label: 'Plant & General Overhead', fn: r => !r.equipment }] },
-    { key: 'settlements', group: '4 · Expenses, Suppliers & Payables', label: 'Supplier Settlements (AP)', dvn: 'bhf_mfgsupplierpayment', form: 'settlement', cols: ['date', 'rep_date', 'name', 'company', 'supplier', 'payable_leg', 'method', 'kind', 'amount', 'discount', 'raw_ticket', 'expense_record', 'reference', 'notes'], relTables: ['suppliers', 'raw_purchases', 'expenses', 'price_rules'], views: [{ id: 'all', label: 'All Supplier Settlements' }, { id: 'raw_leg', label: 'Raw / Haulage Leg', fn: r => Boolean(r.raw_ticket) }, { id: 'exp_leg', label: 'Expense Leg', fn: r => Boolean(r.expense_record) }] },
-    { key: 'suppliers', group: '4 · Expenses, Suppliers & Payables', universal: true, navView: 'reg_suppliers', label: 'Suppliers & Haulers', dvn: 'bhf_supplier', form: 'supplier', cols: ['name', 'supplier_role', 'method', 'trucks_list', 'drivers_list', 'haul_loads', 'raw_loads', 'expenses_count', 'active_rules', 'iva', 'ap_balance'], relTables: ['raw_purchases', 'expenses', 'settlements', 'price_rules', 'equipment', 'drivers', 'sites'], views: [
-      { id: 'all', label: 'All Suppliers & Haulers' },
-      { id: 'haulers', label: 'Truck Owners / Haulers', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; return Boolean(r.is_truck_owner || Number(r.trucks_count || 0) > 0 || (se && (se.is_hauler || se.trucks.size > 0 || se.haul_loads > 0))); } },
-      { id: 'quarries', label: 'Material & Site Suppliers', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; return Boolean((se && (se.is_quarry || se.raw_loads > 0 || se.sites.size > 0)) || /Quarry|Site|Raw Material/i.test(r.category || r.category1 || '')); } },
-      { id: 'vendors', label: 'Expense & Parts Vendors', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; const isH = Boolean(r.is_truck_owner || Number(r.trucks_count || 0) > 0 || (se && (se.is_hauler || se.trucks.size > 0 || se.haul_loads > 0))); const isQ = Boolean((se && (se.is_quarry || se.raw_loads > 0 || se.sites.size > 0)) || /Quarry|Site|Raw Material/i.test(r.category || r.category1 || '')); return Boolean((se && (se.is_expense || se.expenses_count > 0)) || (!isH && !isQ)); } },
-      { id: 'open_ap', label: 'Open AP Balance > $0', fn: (r, rel) => ((rel.suppByName[norm(r.name)] || {}).ap_balance || 0) > 1 },
-      { id: 'iva', label: 'IVA / VAT Registered', fn: r => Boolean(r.iva || r.financial_no || r.mof_no) }
-    ] },
-    { key: 'expense_categories', group: '4 · Expenses, Suppliers & Payables', universal: true, navView: 'reg_categories', label: 'Expense Categories', dvn: 'bhf_expensecategory', form: 'expense', cols: ['name', 'cost_class', 'subcategories_count', 'expenses_count', 'total_spent'], relTables: ['expense_subcategories', 'expenses'], views: [
-      { id: 'all', label: 'All Expense Categories' },
-      { id: 'prod', label: 'Production Cost (60/61)', fn: r => deriveExpenseCostClass(r) === 'Production Cost' },
-      { id: 'opex', label: 'Operating Expense (62–67)', fn: r => deriveExpenseCostClass(r) === 'Operating Expense' },
-      { id: 'capex', label: 'Capital Expenditure (22)', fn: r => deriveExpenseCostClass(r) === 'Capital Expenditure' }
-    ] },
-    { key: 'expense_subcategories', group: '4 · Expenses, Suppliers & Payables', universal: true, navView: 'reg_categories', label: 'Expense Subcategories', dvn: 'bhf_expensesubcategory', form: 'expense', cols: ['name', 'category', 'expenses_count', 'total_spent'], relTables: ['expense_categories', 'expenses'], views: [{ id: 'all', label: 'All Expense Subcategories' }] },
-
-    // 5 · Payroll, Attendance & Workforce (5)
-    { key: 'salaries', group: '5 · Payroll, Attendance & Workforce', label: 'Staff Salary Payments', dvn: 'bhf_mfgsalary', form: 'salary', cols: ['date', 'payroll_month', 'company', 'staff', 'currency', 'amount', 'lbp_amount', 'notes'], relTables: ['employments', 'attendance', 'logistics_allowances', 'freelance_entries'], views: [
+    // 4 · Payroll, Attendance & Workforce (5)
+    { key: 'salaries', group: '4 · Payroll, Attendance & Workforce', label: 'Staff Salary Payments', dvn: 'bhf_mfgsalary', form: 'salary', cols: ['date', 'payroll_month', 'company', 'staff', 'currency', 'amount', 'lbp_amount', 'notes'], relTables: ['employments', 'attendance', 'logistics_allowances', 'freelance_entries'], views: [
       { id: 'all', label: 'All Salary Payments' },
       { id: 'usd', label: 'USD Salaries', fn: r => String(r.currency || 'USD').toUpperCase() !== 'LBP' && !r.lbp_amount },
       { id: 'lbp', label: 'LBP Salaries (LL)', fn: r => String(r.currency || '').toUpperCase() === 'LBP' || Number(r.lbp_amount || 0) > 0 }
     ] },
-    { key: 'attendance', group: '5 · Payroll, Attendance & Workforce', label: 'Attendance & Overtime Log', dvn: 'bhf_mfgattendance', form: 'attendance', cols: ['date', 'month', 'company', 'staff', 'type', 'tally', 'in_time', 'out_time', 'worked_hours', 'overtime_hours', 'late_hours', 'leave_days', 'extra_usd', 'notes'], relTables: ['employments', 'salaries'], views: [
+    { key: 'attendance', group: '4 · Payroll, Attendance & Workforce', label: 'Attendance & Overtime Log', dvn: 'bhf_mfgattendance', form: 'attendance', cols: ['date', 'month', 'company', 'staff', 'type', 'tally', 'in_time', 'out_time', 'worked_hours', 'overtime_hours', 'late_hours', 'leave_days', 'extra_usd', 'notes'], relTables: ['employments', 'salaries'], views: [
       { id: 'all', label: 'All Attendance Rows' },
       { id: 'ot', label: 'Overtime', fn: r => Number(r.overtime_hours || 0) > 0 || /^overtime$/i.test(r.type || r.status || '') },
       { id: 'late', label: 'Lateness', fn: r => Number(r.late_hours || 0) > 0 || /^lateness$/i.test(r.type || r.status || '') },
       { id: 'leave', label: 'Absence & Leave', fn: r => Number(r.leave_days || 0) !== 0 || /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(r.type || r.status || '') },
       { id: 'extra', label: 'Extra & Config', fn: r => /^(?:extra|config)/i.test(r.type || r.status || '') }
     ] },
-    { key: 'employments', group: '5 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'working_days', 'working_hours', 'overtime_multiplier', 'reimbursement', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'freelance', label: 'Freelance / Daily', fn: r => /free|daily/i.test(r.type || '') }] },
-    { key: 'freelance_entries', group: '5 · Payroll, Attendance & Workforce', label: 'Freelance Work Entries', dvn: 'bhf_mfgfreelance', form: 'freelance', cols: ['date', 'company', 'staff', 'hours', 'extra_hours', 'rate_usd', 'total', 'notes'], relTables: ['employments', 'salaries'], views: [{ id: 'all', label: 'All Freelance Entries' }] },
-    { key: 'logistics_allowances', group: '5 · Payroll, Attendance & Workforce', label: 'Site Allowances (Mon–Sun)', dvn: 'bhf_mfglogistics', form: 'logistics', cols: ['name', 'company', 'staff', 'site', 'equipment', 'daily_usd', 'lbp_amount', 'working_days', 'start_date', 'end_date'], relTables: ['employments', 'sites', 'equipment', 'salaries'], views: [{ id: 'all', label: 'All Site Allowances' }] },
+    { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'working_days', 'working_hours', 'overtime_multiplier', 'reimbursement', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'freelance', label: 'Freelance / Daily', fn: r => /free|daily/i.test(r.type || '') }] },
+    { key: 'freelance_entries', group: '4 · Payroll, Attendance & Workforce', label: 'Freelance Work Entries', dvn: 'bhf_mfgfreelance', form: 'freelance', cols: ['date', 'company', 'staff', 'hours', 'extra_hours', 'rate_usd', 'total', 'notes'], relTables: ['employments', 'salaries'], views: [{ id: 'all', label: 'All Freelance Entries' }] },
+    { key: 'logistics_allowances', group: '4 · Payroll, Attendance & Workforce', label: 'Site Allowances (Mon–Sun)', dvn: 'bhf_mfglogistics', form: 'logistics', cols: ['name', 'company', 'staff', 'site', 'equipment', 'daily_usd', 'lbp_amount', 'working_days', 'start_date', 'end_date'], relTables: ['employments', 'sites', 'equipment', 'salaries'], views: [{ id: 'all', label: 'All Site Allowances' }] },
 
-    // 6 · Cash Flow, Treasury & FX (4)
-    { key: 'external_movements', group: '6 · Cash Flow, Treasury & FX', label: 'External & Extended Movements', dvn: 'bhf_mfgexternal', form: 'treasury', cols: ['date', 'company', 'kind', 'counterparty', 'direction', 'usd_amount', 'lbp_amount', 'notes'], relTables: ['loans', 'loan_settlements'], views: [
+    // 5 · Cash Flow, Treasury & FX (4)
+    { key: 'external_movements', group: '5 · Cash Flow, Treasury & FX', label: 'External & Extended Movements', dvn: 'bhf_mfgexternal', form: 'treasury', cols: ['date', 'company', 'kind', 'counterparty', 'direction', 'usd_amount', 'lbp_amount', 'notes'], relTables: ['loans', 'loan_settlements'], views: [
       { id: 'all', label: 'All External & Extended' },
       { id: 'external', label: 'External Treasury', fn: r => String(r.kind || 'External').toLowerCase() !== 'extended' },
       { id: 'extended', label: 'Extended Stakeholders', fn: r => String(r.kind || '').toLowerCase() === 'extended' }
     ] },
-    { key: 'loans', group: '6 · Cash Flow, Treasury & FX', label: 'Loans & Partner Advances', dvn: 'bhf_mfgloan', form: 'treasury', cols: ['name', 'company', 'counterparty', 'direction', 'principal', 'settled_amount', 'interest_rate', 'start_date', 'notes'], relTables: ['loan_settlements', 'external_movements'], views: [{ id: 'all', label: 'All Loans & Advances' }] },
-    { key: 'loan_settlements', group: '6 · Cash Flow, Treasury & FX', label: 'Loan Repayments & Drawdowns', dvn: 'bhf_mfgloansettlement', form: 'treasury', cols: ['date', 'company', 'loan', 'type', 'method', 'usd_amount', 'notes'], relTables: ['loans', 'external_movements'], views: [{ id: 'all', label: 'All Loan Settlements' }] },
-    { key: 'conversions', group: '6 · Cash Flow, Treasury & FX', label: 'USD ↔ LBP FX Conversions', dvn: 'bhf_mfgconversion', form: 'conversion', cols: ['date', 'company', 'type', 'usd_delta', 'lbp_delta', 'exchange_rate', 'name', 'notes'], relTables: ['external_movements'], views: [
+    { key: 'loans', group: '5 · Cash Flow, Treasury & FX', label: 'Loans & Partner Advances', dvn: 'bhf_mfgloan', form: 'treasury', cols: ['name', 'company', 'counterparty', 'direction', 'principal', 'settled_amount', 'interest_rate', 'start_date', 'notes'], relTables: ['loan_settlements', 'external_movements'], views: [{ id: 'all', label: 'All Loans & Advances' }] },
+    { key: 'loan_settlements', group: '5 · Cash Flow, Treasury & FX', label: 'Loan Repayments & Drawdowns', dvn: 'bhf_mfgloansettlement', form: 'treasury', cols: ['date', 'company', 'loan', 'type', 'method', 'usd_amount', 'notes'], relTables: ['loans', 'external_movements'], views: [{ id: 'all', label: 'All Loan Settlements' }] },
+    { key: 'conversions', group: '5 · Cash Flow, Treasury & FX', label: 'USD ↔ LBP FX Conversions', dvn: 'bhf_mfgconversion', form: 'conversion', cols: ['date', 'company', 'type', 'usd_delta', 'lbp_delta', 'exchange_rate', 'name', 'notes'], relTables: ['external_movements'], views: [
       { id: 'all', label: 'All FX Conversions' },
       { id: 'u2l', label: 'USD → LBP (USD Out · LBP In)', fn: r => !/LBP\s*(?:to|→|2)\s*USD/i.test(String(r.type || r.name || '')) && String(r.from_currency || 'USD').toUpperCase() !== 'LBP' },
       { id: 'l2u', label: 'LBP → USD (LBP Out · USD In)', fn: r => /LBP\s*(?:to|→|2)\s*USD/i.test(String(r.type || r.name || '')) || String(r.from_currency || '').toUpperCase() === 'LBP' }
@@ -4544,7 +4542,7 @@
           })}
         </div>
 
-        ${pbiHeading('Quarry raw material purchase & site transportation comparisons', 'Dedicated operational register & agreement entry live in Quarry & Raw Material ▸ Pricing & Haulage Rates')}
+        ${pbiHeading('Quarry raw material purchase & site transportation comparisons', 'Dedicated operational register & agreement entry live in Purchases, Expenses & Payables · Quarry & Haulage Rates')}
         <div class="pbi-grid-2">
           ${pbiTable('Raw material purchase comparison (agreed vs. last receipt by site)', [
             { label: 'Site', key: 'site', bold: true },
@@ -4579,7 +4577,7 @@
 
         <div class="pbi-grid-2">
           ${movedRegisterBanner('Commercial Sales, Delivery & Commission Agreements', 'Customer Sales (Pickup / Delivery), Standard List Prices, and Sales Commission rules live in Sales & Receivables ▸ Pricing & Commissions.', 'pricing', 'Pricing & Commissions', 'spreads')}
-          ${movedRegisterBanner('Quarry Raw Material & Site Haulage Agreements', 'Purchase Price (Site) and Transport Price (Site) agreements and haulage comparisons live in Quarry & Raw Material ▸ Pricing & Haulage Rates.', 'raw_pricing', 'Pricing & Haulage Rates', 'raw_analytics')}
+          ${movedRegisterBanner('Quarry Raw Material & Site Haulage Agreements', 'Purchase Price (Site) and Transport Price (Site) agreements and haulage comparisons live in Purchases, Expenses & Payables · Quarry & Haulage Rates.', 'raw_pricing', 'Quarry & Haulage Rates')}
         </div>
       `;
     }
@@ -5082,7 +5080,7 @@
         </div>
 
         <div class="pbi-grid-1">
-          ${movedRegisterBanner('Raw Material Purchases Register & Joint Venture 50/50 Ledger', 'Individual 2-leg raw material tickets (Site Owner + Truck Owner), 3rd-party customer-site transportation, and supplier remaining expenses live in Material & Transportation, while JV 50/50 sites and distributions live in JV & Partnerships.', 'raw_jv', 'JV & Partnerships')}
+          ${movedRegisterBanner('Raw Material Purchases Register & Joint Venture 50/50 Ledger', 'Individual 2-leg raw material tickets (Site Owner + Truck Owner), 3rd-party customer-site transportation, and source quarry intakes live in Quarry & Haulage, while JV 50/50 sites and distributions live in JV & Partnerships.', 'raw_jv', 'JV & Partnerships')}
         </div>
       `;
     }
@@ -9136,6 +9134,113 @@
     `;
   }
 
+  function renderRawVisualsSection(ctx) {
+    const rawMonths = (ctx && ctx.months) || [];
+    const salesRows = (ctx && ctx.salesRows) || [];
+    const rawRows = (ctx && ctx.rawRows) || [];
+    const mRows = enrichMonthsWithTicketUnitEconomics(rawMonths, salesRows, rawRows, {
+      basis: ctx && ctx.basis,
+      ticketMeters: ctx && ctx.ticketMeters,
+      isAggregateMaterialProduct: ctx && ctx.isAggregateMaterialProduct,
+      productsCatalog: ctx && ctx.productsCatalog,
+      hasSalesTicketSource: salesRows.length > 0,
+      hasRawTicketSource: rawRows.length > 0
+    });
+    return `
+      <div class="pbi-grid-2" id="rawChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('Unit economics by month · raw cost vs selling price ($/m³)', buildMultiLineSvg(mRows, [
+          { label: 'Avg Selling Price ($/m³ ex-VAT)', key: 'avg_price_net', color: C.navy },
+          { label: 'Avg Raw Cost / m³', key: 'avg_raw_cost', color: C.crit }
+        ], { isMoney: true, decimals: 2 }), {
+          subtitle: 'Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw material intake cost',
+          legend: [
+            { label: 'Selling Price ($/m³)', color: C.navy, line: true },
+            { label: 'Raw Cost ($/m³)', color: C.crit, line: true }
+          ]
+        })}
+        ${pbiPanel('Raw intake cost split by month · material vs 3rd-party haulage ($)', buildComboChartSvg(mRows, [
+          { key: 'raw_mat_leg', label: 'Material Cost (Leg 1)', color: C.navy },
+          { key: 'raw_haul_leg', label: '3rd-Party Haulage (Leg 2)', color: C.crit }
+        ], {
+          label: 'Haulage Share %',
+          color: C.brass,
+          isPct: true,
+          get: r => {
+            const mat = Math.max(0, Number(r.raw_mat_leg || 0));
+            const haul = Math.max(0, Number(r.raw_haul_leg || 0));
+            return (mat + haul) > 0 ? haul / (mat + haul) : 0;
+          }
+        }, { lineMax: 1 }), {
+          id: 'pbiRawIntakeCostSplitChart',
+          subtitle: 'Site-owner material cost (Leg 1) vs subcontracted truck haulage (Leg 2) and monthly haulage share %',
+          legend: [
+            { label: 'Material (Leg 1)', color: C.navy },
+            { label: '3rd-Party Haul (Leg 2)', color: C.crit },
+            { label: 'Haulage Share %', color: C.brass, line: true }
+          ]
+        })}
+      </div>
+    `;
+  }
+
+  function renderExpensesVisualsSection(ctx) {
+    const expMonths = (ctx && ctx.expMonths) || [];
+    const catRows = (ctx && ctx.catRows) || [];
+    return `
+      <div class="pbi-grid-2" id="expensesChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('Monthly Operating Expenses · Cash vs. Credit Leg 3 AP ($)', buildComboChartSvg(expMonths, [
+          { key: 'cash_usd', label: 'Cash Paid', color: C.good },
+          { key: 'credit_usd', label: 'Credit Leg 3 AP', color: C.navy }
+        ], {
+          label: 'Vouchers',
+          key: 'vouchers',
+          color: C.brass,
+          isMoney: false
+        }, { isMoney: true }), {
+          subtitle: 'Monthly direct cash operating expenses vs credit Leg 3 payables and posted voucher volume',
+          legend: [
+            { label: 'Cash Paid', color: C.good },
+            { label: 'Credit Leg 3 AP', color: C.navy },
+            { label: 'Vouchers', color: C.brass, line: true }
+          ]
+        })}
+        ${pbiPanel('Expenses by Category & Cost Class ($)', buildHorizontalBarChart(catRows, 'category', 'total', v => fmtUSD(v, 0), {
+          subKey: 'cost_class',
+          maxItems: 10,
+          colorFn: r => /Production/i.test(r.cost_class) ? C.navy : (/Capital/i.test(r.cost_class) ? C.brass : C.steel)
+        }), {
+          subtitle: 'Top operating, production (60/61), and capital (22) expense categories in the active period'
+        })}
+      </div>
+    `;
+  }
+
+  function renderSuppliersVisualsSection(ctx) {
+    const months = (ctx && ctx.months) || [];
+    const openSups = (ctx && ctx.openSups) || [];
+    return `
+      <div class="pbi-grid-2" id="apChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('Accrued vs. Settled by Month · 3-Leg Credit vs. Settlements ($)', buildClusteredColumnSvg(months, [
+          { label: 'Accrued (Raw + Credit Exp)', color: C.navy, get: r => Number(r.raw_cost || 0) + Number(r.credit_expenses || 0) },
+          { label: 'Settlements Paid', key: 'settlements_paid', color: C.steel }
+        ]), {
+          subtitle: 'Monthly 3-leg credit payables accrued (Material + Haulage + Credit Expenses) vs supplier settlements paid',
+          legend: [
+            { label: '3-Leg Accrued', color: C.navy },
+            { label: 'Settlements Paid', color: C.steel }
+          ]
+        })}
+        ${pbiPanel('Payables by Supplier, Hauler & Vendor ($)', buildHorizontalBarChart(openSups, 'Supplier', 'ap_balance', v => fmtUSD(v, 0), {
+          subKey: 'role',
+          color: C.navy,
+          maxItems: 10
+        }), {
+          subtitle: 'Largest open 3-leg supplier, quarry, hauler, and vendor payable balances ($)'
+        })}
+      </div>
+    `;
+  }
+
   window.MFG_PBI = {
     PBI_PAGES,
     MOVED_PBI_PAGES,
@@ -9170,6 +9275,9 @@
     renderPayrollVisualsSection,
     renderAttendanceVisualsSection,
     renderAllowancesVisualsSection,
-    renderJvVisualsSection
+    renderJvVisualsSection,
+    renderRawVisualsSection,
+    renderExpensesVisualsSection,
+    renderSuppliersVisualsSection
   };
 })();

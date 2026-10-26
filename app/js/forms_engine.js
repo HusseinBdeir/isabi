@@ -43,11 +43,14 @@
     },
     {
       id: 'raw',
-      icon: 'raw',
-      label: '2. Quarry & JV',
+      icon: 'suppliers',
+      label: '2. Purchases, Expenses & AP',
       forms: [
         { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', title: 'New Raw Material Ticket' },
+        { id: 'expense', label: 'Expense (Cash / Credit)', badge: 'bhf_expense', crKey: 'expenses', title: 'New Expense' },
+        { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', title: 'New Supplier Settlement' },
         { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', title: 'New Joint-Venture Entry' },
+        { id: 'supplier', label: 'Supplier / Hauler', badge: 'bhf_supplier', crKey: 'suppliers', title: 'New Supplier / Hauler (Universal Registry)', universal: true },
         { id: 'site', label: 'Site', badge: 'bhf_site', crKey: 'sites', title: 'New Site (Universal Registry)', universal: true }
       ]
     },
@@ -66,19 +69,9 @@
       ]
     },
     {
-      id: 'expenses',
-      icon: 'expenses',
-      label: '4. Expenses & Payables',
-      forms: [
-        { id: 'expense', label: 'Expense (Cash / Credit)', badge: 'bhf_expense', crKey: 'expenses', title: 'New Expense' },
-        { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', title: 'New Supplier Settlement' },
-        { id: 'supplier', label: 'Supplier / Hauler', badge: 'bhf_supplier', crKey: 'suppliers', title: 'New Supplier / Hauler (Universal Registry)', universal: true }
-      ]
-    },
-    {
       id: 'payroll',
       icon: 'payroll',
-      label: '5. Payroll & Workforce',
+      label: '4. Payroll & Workforce',
       forms: [
         { id: 'salary', label: 'Salary Payment', badge: 'bhf_salarypayment', crKey: 'salaries', title: 'New Salary Payment' },
         { id: 'attendance', label: 'Attendance', badge: 'bhf_attendance', crKey: 'attendance', title: 'New Staff Attendance' },
@@ -90,7 +83,7 @@
     {
       id: 'treasury',
       icon: 'cashflow',
-      label: '6. Treasury & FX',
+      label: '5. Treasury & FX',
       forms: [
         { id: 'treasury', label: 'Treasury / Loans / FX', badge: 'bhf_external', crKey: 'loans', title: 'New Treasury Entry' }
       ]
@@ -416,6 +409,7 @@
 
   // ==================== MODAL GROUP & TAB BAR RENDERER ====================
   function renderModalTabsHtml(activeForm, canEnterFn, groupOverride) {
+    if (groupOverride === 'expenses') groupOverride = 'raw';
     const info = FORM_MAP[activeForm] || FORM_MAP.sales;
     const activeGroup = (groupOverride && FORM_GROUPS.find(g => g.id === groupOverride)) || FORM_GROUPS.find(g => g.id === info.groupId) || FORM_GROUPS[0];
     const extraQuarryTab = (activeGroup.id === 'raw' && (!canEnterFn || canEnterFn('pricerule')))

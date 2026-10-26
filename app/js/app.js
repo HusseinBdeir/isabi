@@ -2894,10 +2894,15 @@
     ],
     sups: [
       { key: 'Supplier', label: 'Supplier' },
+      { key: 'role', label: 'Role' },
       { key: 'IVA', label: 'IVA' },
       { key: 'raw_loads', label: 'Raw Loads', kind: 'numeric' },
       { key: 'ap_material', label: 'Mat. Leg ($)', kind: 'numeric' },
       { key: 'ap_haulage', label: 'Haul Leg ($)', kind: 'numeric' },
+      { key: 'ap_expense', label: 'Exp. Leg ($)', kind: 'numeric' },
+      { key: 'cash_expense', label: 'Cash Spend ($)', kind: 'numeric' },
+      { key: 'ap_on_credit', label: 'Total Credit ($)', kind: 'numeric' },
+      { key: 'settlements_paid', label: 'Settled ($)', kind: 'numeric' },
       { key: 'ap_balance', label: 'Net AP ($)', kind: 'numeric' }
     ],
     settle: [
@@ -4440,12 +4445,12 @@
     overview: 'Executive Overview',
     reports: 'Dashboards & Reports',
     sales: 'Sales & Receivables',
-    raw: 'Quarry & Raw Material',
+    raw: 'Purchases, Expenses & Payables',
+    expenses: 'Purchases, Expenses & Payables',
     fleet: 'Fleet, Fuel & Drivers',
-    kiosks: 'Plant Kiosks',
-    expenses: 'Expenses & Payables',
-    cashflow: 'Cash Flow & Treasury',
     payroll: 'Payroll & Workforce',
+    kiosks: 'Plant Kiosks',
+    cashflow: 'Cash Flow & Treasury',
     ledger: 'General Ledger & COA',
     master: 'Master Data & Tables',
     users: 'Users & Security'
@@ -4511,7 +4516,7 @@
     {
       id: 'sales',
       title: HUB_TITLES.sales,
-      group: 'dispatch',
+      group: 'commercial',
       tabs: [
         { view: 'sales', match: ['sales', 'sales_analytics'], label: 'Sales & Deliveries', icon: 'sales' },
         { view: 'customers', match: ['customers', 'ar', 'sales_vat'], label: 'Customers & Receivables', icon: 'customers' },
@@ -4521,18 +4526,19 @@
     {
       id: 'raw',
       title: HUB_TITLES.raw,
-      group: 'dispatch',
+      group: 'commercial',
       tabs: [
-        { view: 'raw', label: 'Material & Transportation', icon: 'raw' },
-        { view: 'raw_pricing', label: 'Pricing & Haulage Rates', icon: 'pricing' },
-        { view: 'raw_analytics', label: 'Stock Analytics', icon: 'raw_analytics' },
+        { view: 'raw', match: ['raw', 'raw_analytics'], label: 'Quarry & Haulage', icon: 'raw' },
+        { view: 'expenses', match: ['expenses', 'expenses_analytics'], label: 'Expenses & Overhead', icon: 'expenses' },
+        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers' },
+        { view: 'raw_pricing', label: 'Quarry & Haulage Rates', icon: 'pricing' },
         { view: 'raw_jv', match: ['raw_jv', 'jv'], label: 'JV & Partnerships', icon: 'raw_jv' }
       ]
     },
     {
       id: 'fleet',
       title: HUB_TITLES.fleet,
-      group: 'dispatch',
+      group: 'plant',
       tabs: [
         { view: 'fleet', label: 'Diesel & Lubricants', icon: 'fleet' },
         { view: 'fleet_equip', label: 'Fleet & Running Costs', icon: 'fleet_equip' },
@@ -4541,21 +4547,22 @@
       ]
     },
     {
-      id: 'kiosks',
-      title: HUB_TITLES.kiosks,
-      group: 'dispatch',
+      id: 'payroll',
+      title: HUB_TITLES.payroll,
+      group: 'plant',
       tabs: [
-        { view: 'kiosks', label: 'Plant Kiosks', icon: 'kiosks' }
+        { view: 'payroll', match: ['payroll', 'payroll_analytics'], label: 'Payroll & Workforce', icon: 'payroll' },
+        { view: 'workforce_map', label: 'Daily Plant & Machine Map', icon: 'workforce_map', badgeFn: u => getWorkforceMapExceptionBadge(u) },
+        { view: 'payroll_attendance', label: 'Attendance & Overtime', icon: 'payroll_attendance' },
+        { view: 'payroll_contracts', label: 'Contracts & Allowances', icon: 'payroll_contracts' }
       ]
     },
     {
-      id: 'expenses',
-      title: HUB_TITLES.expenses,
-      group: 'books',
+      id: 'kiosks',
+      title: HUB_TITLES.kiosks,
+      group: 'plant',
       tabs: [
-        { view: 'expenses', label: 'Expenses & Overhead', icon: 'expenses' },
-        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers' },
-        { view: 'expenses_analytics', label: 'Overhead Analytics', icon: 'expenses_analytics' }
+        { view: 'kiosks', label: 'Plant Kiosks', icon: 'kiosks' }
       ]
     },
     {
@@ -4567,17 +4574,6 @@
         { view: 'external', label: 'External Entries', icon: 'external' },
         { view: 'ledger_treasury', label: 'Loans & Settlements', icon: 'ledger_treasury' },
         { view: 'conversions', label: 'FX Conversions', icon: 'conversions' }
-      ]
-    },
-    {
-      id: 'payroll',
-      title: HUB_TITLES.payroll,
-      group: 'books',
-      tabs: [
-        { view: 'payroll', match: ['payroll', 'payroll_analytics'], label: 'Payroll & Workforce', icon: 'payroll' },
-        { view: 'workforce_map', label: 'Daily Plant & Machine Map', icon: 'workforce_map', badgeFn: u => getWorkforceMapExceptionBadge(u) },
-        { view: 'payroll_attendance', label: 'Attendance & Overtime', icon: 'payroll_attendance' },
-        { view: 'payroll_contracts', label: 'Contracts & Allowances', icon: 'payroll_contracts' }
       ]
     },
     {
@@ -4677,17 +4673,18 @@
 
   function canViewHub(hubId, u) {
     u = u || activeUser();
+    if (hubId === 'expenses') hubId = 'raw';
     const h = getHubDef(hubId);
     if (!h) return canViewView(hubId, u);
     if (hubId === 'reports') return canViewView('pbi', u) || canViewView('statements', u);
-    if (hubId === 'raw') return canViewView('raw', u);
+    if (hubId === 'raw') return canViewView('raw', u) || canViewView('expenses', u) || canViewView('suppliers', u);
     if (hubId === 'fleet') return canViewView('fleet', u);
-    if (hubId === 'expenses') return canViewView('expenses', u) || canViewView('suppliers', u);
     return h.tabs.some(t => canViewView(t.view, u));
   }
 
   function resolveHubView(hubId, u) {
     u = u || activeUser();
+    if (hubId === 'expenses') hubId = 'raw';
     const h = getHubDef(hubId);
     if (!h) return canViewView(hubId, u) ? hubId : defaultViewFor(u);
     const first = h.tabs.find(t => canViewView(t.view, u));
@@ -8466,12 +8463,24 @@
       return `<strong style="color:var(--ok)" title="Net advance / overpayment credit with supplier">${fmtUSD(v, 2)}</strong>`;
     };
 
+    const rawVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderRawVisualsSection === 'function')
+      ? window.MFG_PBI.renderRawVisualsSection({
+          months: getScopedMonthly(getModel().monthly, 14),
+          salesRows: filterRecords(SEED.records.sales_tickets, { ignorePeriod: true, ignoreSearch: true }),
+          rawRows: filterRecords(SEED.records.raw_purchases, { ignorePeriod: true, ignoreSearch: true }),
+          basis: STATE.basis,
+          ticketMeters,
+          isAggregateMaterialProduct,
+          productsCatalog: SEED.records.products
+        })
+      : '';
+
     return `
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
-          <div class="cockpit-eyebrow">MATERIAL INTAKE &amp; THIRD-PARTY TRANSPORTATION · 2-LEG PAYABLE ENGINE</div>
-          <div class="cockpit-title">Material &amp; Transportation</div>
-          <div class="cockpit-sub">Unified Material &amp; 3rd-Party Haulage across Supplier Sites and Customer Delivery Sites, reconciled with Supplier Settlements &amp; Remaining Balances.</div>
+          <div class="cockpit-eyebrow">QUARRY INTAKE &amp; THIRD-PARTY TRANSPORTATION · 2-LEG PAYABLE ENGINE</div>
+          <div class="cockpit-title">Quarry &amp; Haulage</div>
+          <div class="cockpit-sub">Unified Quarry Material &amp; 3rd-Party Haulage across Source Sites and Customer Delivery Sites, paired with Monthly Unit Economics and Two-Leg Raw Intake Split.</div>
         </div>
         <div class="cockpit-pills insight-grid">
           ${insightCard({
@@ -8481,7 +8490,6 @@
             val: `${fmtUSD(grandMatTrans, 0)}`,
             valCls: 'brass',
             pct: matLegPct,
-            pct2: haulLegPct,
             sub: `Mat <b>${fmtUSD(sumMat, 0)}</b> · Supplier Haul <b>${fmtUSD(sumHaul, 0)}</b> · Sales Haul <b>${fmtUSD(sumSalesHaul, 0)}</b>`,
             tone: 'brass'
           })}
@@ -8492,18 +8500,17 @@
             val: `${fmtUSD(grandHaul, 2)}`,
             valCls: '',
             pct: grandHaul > 0 ? Math.round((sumHaul / grandHaul) * 1000) / 10 : 0,
-            pct2: grandHaul > 0 ? Math.round((sumSalesHaul / grandHaul) * 1000) / 10 : 0,
             sub: `Supplier Sites <b>${fmtUSD(sumHaul, 2)}</b> · Customer Sites <b>${fmtUSD(sumSalesHaul, 2)}</b>`,
             tone: 'steel'
           })}
           ${insightCard({
-            label: 'Supplier Settlements & Net',
+            label: 'Quarry & Haulage Net Open',
             badge: `${fmtNum(openSupCnt)} Open A/Cs`,
             badgeCls: supSumRem > 0 ? 'warn' : 'good',
             val: `${fmtUSD(supSumRem, 0)}`,
             valCls: supSumRem > 0 ? 'amber' : 'emerald',
             pct: supSumCred > 0 ? Math.min(100, Math.round((supSumPaid / supSumCred) * 100)) : 100,
-            sub: `Credit <b>${fmtUSD(supSumCred, 0)}</b> − Paid <b>${fmtUSD(supSumPaid, 0)}</b> across <b>${fmtNum(rawSupAll.length)}</b> suppliers`,
+            sub: `Credit <b>${fmtUSD(supSumCred, 0)}</b> minus Paid <b>${fmtUSD(supSumPaid, 0)}</b> across <b>${fmtNum(rawSupAll.length)}</b> counterparties`,
             tone: supSumRem > 0 ? 'amber' : 'emerald'
           })}
           ${insightCard({
@@ -8513,7 +8520,6 @@
             val: `${fmtUSD(costPerTon, 2)} <small>/ ton</small>`,
             valCls: 'emerald',
             pct: thirdRawPct,
-            pct2: fleetRawPct,
             sub: `Mat <b>${fmtUSD(matPerTon, 2)}/t</b> · Haul <b>${fmtUSD(haulPerTon, 2)}/t</b> · Avg <b>${fmtNum(avgTonsLoad, 1)} t</b> (${fmtNum(thirdRawPct, 0)}% 3rd-party)`,
             tone: 'emerald'
           })}
@@ -8521,103 +8527,106 @@
         </div>
       </div>
 
-      <div class="split-grid-2">
-        <div class="panel-card" id="rawPanel">
-          <div class="table-toolbar">
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              ${searchBox('Search ticket #, supplier, hauler, site, product...')}
-              <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('fleet', 'Company fleet')}${chip('third', 'Third-party')}${chip('app', 'App-entered')}</div>
-            </div>
-            <div style="display:flex;gap:6px">
-              <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw_pricing" title="Open Quarry Raw Material &amp; Haulage Rate Agreements">${ic('pricing')} Pricing &amp; Rates</button>
-              <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_sites" title="Open Master Sites &amp; Regions Registry">${ic('reg_sites')} Sites &amp; Regions</button>
-              <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="raw" title="Open Touch Raw Material Receiving Kiosk &amp; Bluetooth Thermal Printer">${ic('printer')} Raw Kiosk</button>
-              ${exportBtn('rawPanel', 'Material_Transportation_Register')}
-              ${canEnterForm('raw') ? '<button class="btn btn-primary" data-open-modal="raw">+ New Raw Receipt</button>' : ''}
-            </div>
+      <div class="panel-card" id="rawPanel" style="margin-bottom:14px">
+        <div class="table-toolbar">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search ticket #, supplier, hauler, site, product...')}
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('fleet', 'Company fleet')}${chip('third', 'Third-party')}${chip('app', 'App-entered')}</div>
           </div>
-          ${isGroupScope ? `
-          <div class="sales-entity-recon">
-            <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
-              <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcR.loads)} Loads (${fmtNum(wtcR.qty, 0)} m³ · ${fmtNum(wtcR.tons, 0)} t)</b><span class="sales-recon-act">Filter WTC Only →</span></div>
-              <div class="sales-recon-metrics">
-                <span><small>Material Leg</small><b>${fmtUSD(wtcR.mat, 2)}</b></span>
-                <span><small>Supplier-Site Haul</small><b>${fmtUSD(wtcR.haul, 2)}</b></span>
-                <span><small>Raw Total</small><b class="brass">${fmtUSD(wtcR.tot, 2)}</b></span>
-                ${wtcR.salesHaul > 0 ? `<span data-scroll-panel="rawSalesHaulPanel" style="cursor:pointer" title="Click to inspect itemized 3rd-party customer delivery haulage tickets (Combined Mat + All Haul = ${fmtUSD(wtcR.tot + wtcR.salesHaul, 2)})"><small>+ Customer-Site Haul ↘</small><b>${fmtUSD(wtcR.salesHaul, 2)}</b></span>` : ''}
-              </div>
-            </div>
-            <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
-              <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcR.loads)} Loads (${fmtNum(bbcR.qty, 0)} m³ · ${fmtNum(bbcR.tons, 0)} t)</b><span class="sales-recon-act">Filter BBC Only →</span></div>
-              <div class="sales-recon-metrics">
-                <span><small>Material Leg</small><b>${fmtUSD(bbcR.mat, 2)}</b></span>
-                <span><small>Supplier-Site Haul</small><b>${fmtUSD(bbcR.haul, 2)}</b></span>
-                <span><small>Raw Total</small><b class="brass">${fmtUSD(bbcR.tot, 2)}</b></span>
-                ${bbcR.salesHaul > 0 ? `<span data-scroll-panel="rawSalesHaulPanel" style="cursor:pointer" title="Click to inspect itemized 3rd-party customer delivery haulage tickets"><small>+ Customer-Site Haul ↘</small><b>${fmtUSD(bbcR.salesHaul, 2)}</b></span>` : ''}
-              </div>
-            </div>
-          </div>
-          ` : `
-          <div class="sales-entity-recon single">
-            <div class="sales-recon-card single-card sales-recon-single" data-co="${esc(STATE.company)}">
-              <div class="sales-recon-head">
-                <span class="badge ${STATE.company === 'bbconstruction' ? 'badge-info' : 'badge-brass'}">${esc(COMPANY_BU_MATCH[STATE.company] || STATE.company)}</span>
-                <b>${fmtNum(rows.length)} Loads (${fmtNum(sumQty, 0)} m³ · ${fmtNum(sumTons, 0)} t)</b>
-                <button type="button" class="btn sales-recon-reset" data-jump-co="manufacturing-group">Show All Group (3)</button>
-              </div>
-              <div class="sales-recon-metrics">
-                <span><small>Material Leg</small><b>${fmtUSD(sumMat, 2)}</b></span>
-                <span><small>Supplier-Site Haul</small><b>${fmtUSD(sumHaul, 2)}</b></span>
-                <span><small>Raw Total</small><b class="brass">${fmtUSD(sumTot, 2)}</b></span>
-                ${sumSalesHaul > 0 ? `<span data-scroll-panel="rawSalesHaulPanel" style="cursor:pointer" title="Click to jump to the 3rd-Party Customer-Site Transportation table below"><small>+ Customer-Site Haul ↘</small><b>${fmtUSD(sumSalesHaul, 2)}</b></span>` : ''}
-                ${sumSalesHaul > 0 ? `<span title="Total Material + Supplier-Site Haulage + Customer-Site 3rd-Party Haulage"><small>Total Mat. + Haul</small><b class="brass">${fmtUSD(sumTot + sumSalesHaul, 2)}</b></span>` : ''}
-              </div>
-            </div>
-          </div>
-          `}
-          ${renderColFilterBar('raw')}
-          <div class="table-wrap">
-            <table class="ledger-table">
-              <thead>
-                <tr>
-                  ${th('raw', 'Date', 'date')}${th('raw', 'Ticket #', 'ticket_no')}${th('raw', 'Co.', 'company')}${th('raw', 'Site', 'site')}
-                  ${th('raw', 'Site Owner', 'site_owner')}${th('raw', 'Truck Owner', 'truck_owner')}${th('raw', 'Product', 'product')}
-                  ${th('raw', 'Qty', 'qty', 'r')}${th('raw', 'Mat Cost', 'cost', 'r')}${th('raw', 'Haulage', 'trans_cost', 'r')}${th('raw', 'Total ($)', 'total', 'r')}
-                </tr>
-              </thead>
-              <tbody>
-                ${shown.map(r => `
-                  <tr class="rrow" data-rkey="raw_purchases" data-rid="${esc(r.id)}">
-                    <td class="mono">${esc(recordDateDMY(r))}${appCell(r, 'raw_purchases')}</td>
-                    <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '(no number)')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="raw" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Raw Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button></span></td>
-                    <td>${coBadge(r.company)}</td>
-                    <td>${relLink('sites', r.site, r.site || '—', true)}</td>
-                    <td>${r.site_owner ? relLink('suppliers', r.site_owner) : '—'}</td>
-                    <td>${r.truck_owner ? relLink('suppliers', r.truck_owner) : esc(r.transport_by === 'Company fleet' ? 'Company fleet' : (r.transport_by || '—'))}</td>
-                    <td>${relLink('products', r.product)}</td>
-                    <td class="r">${fmtTicketQtyCell(r, 1, false)}</td>
-                    <td class="r">${fmtUSD(r.cost, 2)}</td>
-                    <td class="r">${fmtUSD(r.trans_cost, 2)}</td>
-                    <td class="r"><strong>${fmtUSD(r.total, 2)}</strong></td>
-                  </tr>
-                `).join('') || emptyRow(11, periodEmptyMsg(SEED.records.raw_purchases, 'raw material receipts'))}
-                ${showMoreRow('raw', rows.length, 11)}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colspan="7">
-                    <b>TOTAL (${fmtNum(rows.length)} RECEIPTS · ${fmtNum(sumTons, 0)} TONS)</b>
-                  </td>
-                  <td class="r"><b>${fmtNum(sumQty, 1)} m³</b></td>
-                  <td class="r"><b>${fmtUSD(sumMat, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(sumHaul, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(sumTot, 2)}</b></td>
-                </tr>
-              </tfoot>
-            </table>
+          <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="suppliers" title="Open Unified 3-Leg Suppliers &amp; Payables Sub-Ledger">${ic('suppliers')} Suppliers &amp; AP</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw_pricing" title="Open Quarry Raw Material &amp; Haulage Rate Agreements">${ic('pricing')} Quarry &amp; Haulage Rates</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_sites" title="Open Master Sites &amp; Regions Registry">${ic('reg_sites')} Sites &amp; Regions</button>
+            <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="raw" title="Open Touch Raw Material Receiving Kiosk &amp; Bluetooth Thermal Printer">${ic('printer')} Raw Kiosk</button>
+            ${exportBtn('rawPanel', 'Material_Transportation_Register')}
+            ${canEnterForm('raw') ? '<button class="btn btn-primary" data-open-modal="raw">+ New Raw Receipt</button>' : ''}
           </div>
         </div>
+        ${isGroupScope ? `
+        <div class="sales-entity-recon">
+          <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
+            <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcR.loads)} Loads (${fmtNum(wtcR.qty, 0)} m³ · ${fmtNum(wtcR.tons, 0)} t)</b><span class="sales-recon-act">Filter WTC Only</span></div>
+            <div class="sales-recon-metrics">
+              <span><small>Material Leg</small><b>${fmtUSD(wtcR.mat, 2)}</b></span>
+              <span><small>Supplier-Site Haul</small><b>${fmtUSD(wtcR.haul, 2)}</b></span>
+              <span><small>Raw Total</small><b class="brass">${fmtUSD(wtcR.tot, 2)}</b></span>
+              ${wtcR.salesHaul > 0 ? `<span data-scroll-panel="rawSalesHaulPanel" style="cursor:pointer" title="Click to inspect itemized 3rd-party customer delivery haulage tickets (Combined Mat + All Haul = ${fmtUSD(wtcR.tot + wtcR.salesHaul, 2)})"><small>+ Customer-Site Haul</small><b>${fmtUSD(wtcR.salesHaul, 2)}</b></span>` : ''}
+            </div>
+          </div>
+          <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
+            <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcR.loads)} Loads (${fmtNum(bbcR.qty, 0)} m³ · ${fmtNum(bbcR.tons, 0)} t)</b><span class="sales-recon-act">Filter BBC Only</span></div>
+            <div class="sales-recon-metrics">
+              <span><small>Material Leg</small><b>${fmtUSD(bbcR.mat, 2)}</b></span>
+              <span><small>Supplier-Site Haul</small><b>${fmtUSD(bbcR.haul, 2)}</b></span>
+              <span><small>Raw Total</small><b class="brass">${fmtUSD(bbcR.tot, 2)}</b></span>
+              ${bbcR.salesHaul > 0 ? `<span data-scroll-panel="rawSalesHaulPanel" style="cursor:pointer" title="Click to inspect itemized 3rd-party customer delivery haulage tickets"><small>+ Customer-Site Haul</small><b>${fmtUSD(bbcR.salesHaul, 2)}</b></span>` : ''}
+            </div>
+          </div>
+        </div>
+        ` : `
+        <div class="sales-entity-recon single">
+          <div class="sales-recon-card single-card sales-recon-single" data-co="${esc(STATE.company)}">
+            <div class="sales-recon-head">
+              <span class="badge ${STATE.company === 'bbconstruction' ? 'badge-info' : 'badge-brass'}">${esc(COMPANY_BU_MATCH[STATE.company] || STATE.company)}</span>
+              <b>${fmtNum(rows.length)} Loads (${fmtNum(sumQty, 0)} m³ · ${fmtNum(sumTons, 0)} t)</b>
+              <button type="button" class="btn sales-recon-reset" data-jump-co="manufacturing-group">Show All Group (3)</button>
+            </div>
+            <div class="sales-recon-metrics">
+              <span><small>Material Leg</small><b>${fmtUSD(sumMat, 2)}</b></span>
+              <span><small>Supplier-Site Haul</small><b>${fmtUSD(sumHaul, 2)}</b></span>
+              <span><small>Raw Total</small><b class="brass">${fmtUSD(sumTot, 2)}</b></span>
+              ${sumSalesHaul > 0 ? `<span data-scroll-panel="rawSalesHaulPanel" style="cursor:pointer" title="Click to jump to the 3rd-Party Customer-Site Transportation table below"><small>+ Customer-Site Haul</small><b>${fmtUSD(sumSalesHaul, 2)}</b></span>` : ''}
+              ${sumSalesHaul > 0 ? `<span title="Total Material + Supplier-Site Haulage + Customer-Site 3rd-Party Haulage"><small>Total Mat. + Haul</small><b class="brass">${fmtUSD(sumTot + sumSalesHaul, 2)}</b></span>` : ''}
+            </div>
+          </div>
+        </div>
+        `}
+        ${renderColFilterBar('raw')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('raw', 'Date', 'date')}${th('raw', 'Ticket #', 'ticket_no')}${th('raw', 'Co.', 'company')}${th('raw', 'Site', 'site')}
+                ${th('raw', 'Site Owner', 'site_owner')}${th('raw', 'Truck Owner', 'truck_owner')}${th('raw', 'Product', 'product')}
+                ${th('raw', 'Qty', 'qty', 'r')}${th('raw', 'Mat Cost', 'cost', 'r')}${th('raw', 'Haulage', 'trans_cost', 'r')}${th('raw', 'Total ($)', 'total', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shown.map(r => `
+                <tr class="rrow" data-rkey="raw_purchases" data-rid="${esc(r.id)}">
+                  <td class="mono">${esc(recordDateDMY(r))}${appCell(r, 'raw_purchases')}</td>
+                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '(no number)')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="raw" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Raw Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button></span></td>
+                  <td>${coBadge(r.company)}</td>
+                  <td>${relLink('sites', r.site, r.site || '—', true)}</td>
+                  <td>${r.site_owner ? relLink('suppliers', r.site_owner) : '—'}</td>
+                  <td>${r.truck_owner ? relLink('suppliers', r.truck_owner) : esc(r.transport_by === 'Company fleet' ? 'Company fleet' : (r.transport_by || '—'))}</td>
+                  <td>${relLink('products', r.product)}</td>
+                  <td class="r">${fmtTicketQtyCell(r, 1, false)}</td>
+                  <td class="r">${fmtUSD(r.cost, 2)}</td>
+                  <td class="r">${fmtUSD(r.trans_cost, 2)}</td>
+                  <td class="r"><strong>${fmtUSD(r.total, 2)}</strong></td>
+                </tr>
+              `).join('') || emptyRow(11, periodEmptyMsg(SEED.records.raw_purchases, 'raw material receipts'))}
+              ${showMoreRow('raw', rows.length, 11)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="7">
+                  <b>TOTAL (${fmtNum(rows.length)} RECEIPTS · ${fmtNum(sumTons, 0)} TONS)</b>
+                </td>
+                <td class="r"><b>${fmtNum(sumQty, 1)} m³</b></td>
+                <td class="r"><b>${fmtUSD(sumMat, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(sumHaul, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(sumTot, 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
 
+      ${rawVisualsHtml}
+
+      <div class="split-grid-2">
         <div class="panel-card" id="rawSalesHaulPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div class="panel-title"><span>THIRD-PARTY CUSTOMER-SITE TRANSPORTATION REGISTER (SALES DELIVERIES BY HAULER)</span></div>
@@ -8670,67 +8679,16 @@
           </div>
         </div>
 
-        <div class="panel-card" id="rawSupPanel">
-          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
-            <div class="panel-title"><span>SUPPLIER &amp; HAULER MATERIAL, TRANSPORTATION &amp; REMAINING EXPENSES</span></div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <div class="chip-bar">${supChip('all', `All (${rawSupAll.length})`)}${supChip('mat', `Material (${matSupCnt})`)}${supChip('haul', `3rd-Party Haulers (${haulSupCnt})`)}${supChip('open', `Open Balance (${openSupCnt})`)}</div>
-              <span class="panel-meta">${exportBtn('rawSupPanel', 'Supplier_Material_Transportation_Balances')}</span>
-            </div>
-          </div>
-          ${renderColFilterBar('rawsup')}
-          <div class="table-wrap">
-            <table class="ledger-table">
-              <thead>
-                <tr>
-                  ${th('rawsup', 'Supplier / Hauler', 'supplier')}${th('rawsup', 'Role', 'role')}${th('rawsup', 'Qty (m³)', 'mat_qty', 'r')}${th('rawsup', 'Mat. Credit', 'mat_credit', 'r')}
-                  ${th('rawsup', 'Supplier Haul', 'quarry_haul', 'r')}${th('rawsup', 'Customer Haul', 'sales_haul', 'r')}${th('rawsup', 'Total Haul', 'total_haul', 'r')}
-                  ${th('rawsup', 'Total Credit', 'total_credit', 'r')}${th('rawsup', 'Paid ($)', 'paid', 'r')}${th('rawsup', 'Remaining ($)', 'remaining', 'r')}
-                </tr>
-              </thead>
-              <tbody>
-                ${shownRawSups.map(r => {
-                  const isUnassigned = String(r.supplier || '').startsWith('(');
-                  const supObj = isUnassigned ? null : supplierInfo(r.supplier);
-                  return `
-                  <tr class="${isUnassigned ? '' : 'rrow'}" ${isUnassigned ? '' : `data-rkey="suppliers" data-rid="${esc((supObj || {}).id || r.supplier)}"`}>
-                    <td>${isUnassigned ? `<span class="muted">${esc(r.supplier)}</span>` : relLink('suppliers', r.supplier, r.supplier, true)}</td>
-                    <td><span class="badge ${r.role === 'Both' ? 'badge-brass' : (r.role === 'Hauler' ? 'badge-info' : 'badge-neutral')}">${esc(r.role)}</span></td>
-                    <td class="r">${r.mat_qty > 0 ? `${fmtNum(r.mat_qty, 0)} m³` : '—'}</td>
-                    <td class="r">${r.mat_credit !== 0 ? fmtUSD(r.mat_credit, 2) : '—'}</td>
-                    <td class="r" title="Haulage from supplier sites (${fmtNum(r.haul_loads)} total haul loads)">${r.quarry_haul !== 0 ? fmtUSD(r.quarry_haul, 2) : '—'}</td>
-                    <td class="r" title="3rd-party haulage to customer delivery sites">${r.sales_haul !== 0 ? fmtUSD(r.sales_haul, 2) : '—'}</td>
-                    <td class="r">${r.total_haul !== 0 ? `<strong>${fmtUSD(r.total_haul, 2)}</strong>` : '—'}</td>
-                    <td class="r"><strong>${fmtUSD(r.total_credit, 2)}</strong></td>
-                    <td class="r" title="Material Paid: ${fmtUSD(r.mat_paid, 2)} · Haulage Paid: ${fmtUSD(r.haul_paid, 2)}">${r.paid !== 0 ? fmtUSD(r.paid, 2) : '—'}</td>
-                    <td class="r">${fmtRemCell(r.remaining)}</td>
-                  </tr>`;
-                }).join('') || emptyRow(10, qRaw ? `No suppliers or haulers match "${STATE.search}".` : 'No supplier material or transportation activity in this scope')}
-                ${showMoreRow('rawsup', rawSupRows.length, 10)}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colspan="2"><b>TOTAL (${fmtNum(rawSupRows.length)} SUPPLIERS)</b></td>
-                  <td class="r"><b>${fmtNum(supSumQty, 0)} m³</b></td>
-                  <td class="r"><b>${fmtUSD(supSumMat, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(supSumQHaul, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(supSumSHaul, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(supSumTHaul, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(supSumCred, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(supSumPaid, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(supSumRem, 2)}</b></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-
         <div class="panel-card" id="sitesPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div class="panel-title"><span>SITE MATERIAL, HAULAGE &amp; REMAINING EXPENSES</span></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
               <div class="chip-bar">${siteChip('expense', `All Payable Sites (${siteAllList.length})`)}${siteChip('source', `Source Sites (${srcSiteCnt})`)}${siteChip('custhaul', `3P Customer Haul (${custHaulSiteCnt})`)}</div>
-              <span class="panel-meta">${exportBtn('sitesPanel', 'Sites_Material_Haulage_Balances')}</span>
+              <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+                <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="suppliers">Suppliers &amp; Payables</button>
+                ${canViewView('raw_jv') ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="raw_jv">JV &amp; Partnerships</button>' : ''}
+                ${exportBtn('sitesPanel', 'Sites_Material_Haulage_Balances')}
+              </span>
             </div>
           </div>
           ${renderColFilterBar('sites')}
@@ -11351,7 +11309,7 @@
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
           <div class="cockpit-eyebrow">QUARRY SOURCE &amp; HAULAGE RATE ENGINE</div>
-          <div class="cockpit-title">Pricing &amp; Haulage Rates</div>
+          <div class="cockpit-title">Quarry &amp; Haulage Rates</div>
         </div>
         <div class="cockpit-pills insight-grid">
           ${insightCard({
@@ -11361,7 +11319,6 @@
             val: `${covPct.toFixed(1)}% <small>Active</small>`,
             valCls: 'brass',
             pct: covPct,
-            pct2: 100 - covPct,
             sub: `<b>${fmtNum(purchCount)}</b> site purchase rules · <b>${fmtNum(transCount)}</b> quarry transport rules`,
             tone: 'brass'
           })}
@@ -12009,13 +11966,77 @@
     const m = getModel();
     const q = STATE.search.trim().toLowerCase();
     const hasApRange = Boolean(periodRange(STATE.period));
-    const supAll = getScopedModelSuppliers(m).filter(s => !hasApRange || s.raw_loads > 0 || Math.abs(Number(s.ap_on_credit || 0)) > 0.005 || Math.abs(Number(s.settlements_paid || 0)) > 0.005 || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.opening_ap || 0)) > 0.005);
+
+    const scopeExpForAp = filterRecords(SEED.records.expenses || [], { ignoreSearch: true });
+    const cashExpBySup = new Map();
+    const cashExpLabelBySup = new Map();
+    scopeExpForAp.forEach(x => {
+      const sgn = expenseSign(x);
+      if (sgn === 0 || isCreditExpense(x)) return;
+      const sName = String(x.supplier || '').trim();
+      if (!sName || sName.startsWith('(')) return;
+      const sk = norm(sName);
+      if (!sk) return;
+      cashExpBySup.set(sk, (cashExpBySup.get(sk) || 0) + sgn * Number(x.amount || 0));
+      if (!cashExpLabelBySup.has(sk)) cashExpLabelBySup.set(sk, sName);
+    });
+
+    const deriveSupRole = (s, cashAmt) => {
+      const hasMat = Math.abs(Number(s.ap_material || 0)) > 0.005 || Number(s.raw_loads || 0) > 0;
+      const hasHaul = Math.abs(Number(s.ap_haulage || 0)) > 0.005;
+      const hasExp = Math.abs(Number(s.ap_expense || 0)) > 0.005;
+      const legs = (hasMat ? 1 : 0) + (hasHaul ? 1 : 0) + (hasExp ? 1 : 0);
+      if (legs >= 2) return 'Multi-Leg';
+      if (hasMat) return 'Quarry';
+      if (hasHaul) return 'Hauler';
+      if (hasExp || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.settlements_paid || 0)) > 0.005) return 'Vendor';
+      if (Math.abs(cashAmt) > 0.005) return 'Cash Vendor';
+      return 'Supplier';
+    };
+
+    const seenSupSet = new Set();
+    const supAll = [];
+    getScopedModelSuppliers(m).forEach(s => {
+      const sk = norm(s.Supplier);
+      const cashAmt = round2(cashExpBySup.get(sk) || 0);
+      if (sk) seenSupSet.add(sk);
+      const keep = !hasApRange || s.raw_loads > 0 || Math.abs(Number(s.ap_on_credit || 0)) > 0.005 || Math.abs(Number(s.settlements_paid || 0)) > 0.005 || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.opening_ap || 0)) > 0.005 || Math.abs(cashAmt) > 0.005;
+      if (!keep) return;
+      supAll.push(Object.assign({}, s, {
+        cash_expense: cashAmt,
+        role: deriveSupRole(s, cashAmt)
+      }));
+    });
+    cashExpBySup.forEach((rawCashAmt, sk) => {
+      if (!sk || seenSupSet.has(sk)) return;
+      const cashAmt = round2(rawCashAmt);
+      if (Math.abs(cashAmt) <= 0.005) return;
+      const dispName = cashExpLabelBySup.get(sk) || sk;
+      const supObj = supplierInfo(dispName);
+      supAll.push({
+        Supplier: (supObj && supObj.name) || dispName,
+        IVA: supObj && (supObj.iva || supObj.mof_no || supObj.financial_no) ? 'Yes' : 'No',
+        role: 'Cash Vendor',
+        raw_loads: 0,
+        opening_ap: 0,
+        ap_material: 0,
+        ap_haulage: 0,
+        ap_expense: 0,
+        cash_expense: cashAmt,
+        ap_on_credit: 0,
+        settlements_paid: 0,
+        ap_settled: 0,
+        ap_balance: 0
+      });
+    });
+
     const sups = sortRows(supAll.filter(s => {
-      if (q && !String(s.Supplier || '').toLowerCase().includes(q)) return false;
+      if (q && !String(s.Supplier || '').toLowerCase().includes(q) && !String(s.role || '').toLowerCase().includes(q)) return false;
       if (STATE.chipFilter === 'open_ap') return Number(s.ap_balance || 0) > 0;
       if (STATE.chipFilter === 'mat_leg') return Number(s.ap_material || 0) > 0;
       if (STATE.chipFilter === 'haul_leg') return Number(s.ap_haulage || 0) > 0;
       if (STATE.chipFilter === 'exp_leg') return Number(s.ap_expense || 0) > 0;
+      if (STATE.chipFilter === 'cash_vendor') return Math.abs(Number(s.cash_expense || 0)) > 0.005;
       if (STATE.chipFilter === 'iva_sup') return s.IVA === 'Yes';
       return true;
     }), 'sups', 'ap_balance', 'desc');
@@ -12024,6 +12045,7 @@
     const matLegSupSet = new Set(supAll.filter(s => Number(s.ap_material || 0) > 0).map(s => norm(s.Supplier)));
     const haulLegSupSet = new Set(supAll.filter(s => Number(s.ap_haulage || 0) > 0).map(s => norm(s.Supplier)));
     const expLegSupSet = new Set(supAll.filter(s => Number(s.ap_expense || 0) > 0).map(s => norm(s.Supplier)));
+    const cashSupSet = new Set(supAll.filter(s => Math.abs(Number(s.cash_expense || 0)) > 0.005).map(s => norm(s.Supplier)));
     const ivaSupSet = new Set(supAll.filter(s => s.IVA === 'Yes').map(s => norm(s.Supplier)));
     const base = filterRecords(SEED.records.settlements);
     const spays = sortRows(base.filter(r => {
@@ -12034,6 +12056,7 @@
       if (STATE.chipFilter === 'mat_leg') return matLegSupSet.has(norm(r.supplier));
       if (STATE.chipFilter === 'haul_leg') return haulLegSupSet.has(norm(r.supplier));
       if (STATE.chipFilter === 'exp_leg') return expLegSupSet.has(norm(r.supplier));
+      if (STATE.chipFilter === 'cash_vendor') return cashSupSet.has(norm(r.supplier));
       if (STATE.chipFilter === 'iva_sup') return ivaSupSet.has(norm(r.supplier));
       return STATE.chipFilter === 'all' || r.method === STATE.chipFilter;
     }), 'settle', 'date', 'desc');
@@ -12079,13 +12102,19 @@
     const grossApFlow = Math.max(1, paidTot + Math.max(0, Number(k.ap_balance || 0)));
     const paidPct = Math.min(100, (paidTot / grossApFlow) * 100);
     const avgPay = spays.length > 0 ? ((sumAmt + sumDisc) / spays.length) : 0;
-    const openSupCount = supAll.filter(s => Number(s.ap_balance || 0) > 0).length;
+    const openSups = supAll.filter(s => Number(s.ap_balance || 0) > 0);
+    const openSupCount = openSups.length;
     const ivaSupCount = supAll.filter(s => s.IVA === 'Yes').length;
+
+    const apVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderSuppliersVisualsSection === 'function')
+      ? window.MFG_PBI.renderSuppliersVisualsSection({ months: getScopedMonthly(getModel().monthly, 14), openSups })
+      : '';
+    const supColCount = hasApRange ? 12 : 11;
 
     return `
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
-          <div class="cockpit-eyebrow">ACCOUNTS PAYABLE · THREE-LEG FIFO SETTLEMENT ENGINE</div>
+          <div class="cockpit-eyebrow">ACCOUNTS PAYABLE · THREE-LEG FIFO SETTLEMENT &amp; COUNTERPARTY ENGINE</div>
           <div class="cockpit-title">Suppliers &amp; Payables</div>
         </div>
         <div class="cockpit-pills insight-grid">
@@ -12096,7 +12125,6 @@
             val: `${paidPct.toFixed(1)}% <small>Settled</small>`,
             valCls: 'emerald',
             pct: paidPct,
-            pct2: 100 - paidPct,
             sub: `Paid <b>${fmtUSD(k.settlements_paid, 0)}</b> · Net open AP <b>${fmtUSD(k.ap_balance, 0)}</b>`,
             tone: 'emerald'
           })}
@@ -12107,7 +12135,6 @@
             val: `Mat ${matLegPct.toFixed(0)}% · Haul ${haulLegPct.toFixed(0)}%`,
             valCls: 'brass',
             pct: matLegPct,
-            pct2: haulLegPct,
             sub: `Material <b>${fmtUSD(k.ap_material, 0)}</b> · Hauler <b>${fmtUSD(k.ap_haulage, 0)}</b> · Expense <b>${fmtUSD(k.ap_expense, 0)}</b>`,
             tone: 'brass'
           })}
@@ -12119,25 +12146,28 @@
             tone: 'steel'
           })}
           ${insightCard({
-            label: 'Active Creditor Reach',
-            badge: `${fmtNum(ivaSupCount)} IVA Registered`,
+            label: 'Active Counterparty Reach',
+            badge: `${fmtNum(ivaSupCount)} IVA · ${fmtNum(cashSupSet.size)} Cash`,
             badgeCls: 'amber',
             val: `${fmtNum(openSupCount)} <small>Open Payees</small>`,
             valCls: 'amber',
-            sub: `Across <b>${fmtNum(supAll.length)}</b> site owners, haulers &amp; service vendors`,
+            sub: `Across <b>${fmtNum(supAll.length)}</b> quarries, haulers, credit &amp; cash vendors`,
             tone: 'amber'
           })}
           ${appPill('settlements', 'amount', 'settlements')}
         </div>
       </div>
 
-      <div class="panel-card" id="settlePanel">
+      <div class="panel-card" id="settlePanel" style="margin-bottom:14px">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search voucher #, supplier, hauler, method, reference...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('payments_only', 'Payments Only')}${chip('vat_paid', 'VAT Paid')}${methods.map(mm => chip(mm, mm)).join('')}${chip('open_ap', 'Open AP')}${chip('mat_leg', 'Material Leg')}${chip('haul_leg', 'Haulage Leg')}${chip('exp_leg', 'Expense Leg')}${chip('iva_sup', 'IVA')}${chip('app', 'App-entered')}</div>
+            ${searchBox('Search voucher #, supplier, hauler, vendor, method, reference...')}
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('payments_only', 'Payments Only')}${chip('vat_paid', 'VAT Paid')}${methods.map(mm => chip(mm, mm)).join('')}${chip('open_ap', 'Open AP')}${chip('mat_leg', 'Material Leg')}${chip('haul_leg', 'Haulage Leg')}${chip('exp_leg', 'Expense Leg')}${chip('cash_vendor', 'Cash Vendors')}${chip('iva_sup', 'IVA')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw" title="Open Quarry &amp; Haulage Tickets">${ic('raw')} Quarry &amp; Haulage</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="expenses" title="Open Expenses &amp; Overhead Vouchers">${ic('expenses')} Expenses &amp; Overhead</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_suppliers" title="Open Master Suppliers &amp; Haulers Registry">${ic('reg_customers')} Suppliers Registry</button>
             ${exportBtn('settlePanel', 'Supplier_Settlements')}
             ${canEnterForm('settlement') ? '<button class="btn btn-primary" data-open-modal="settlement">+ Supplier Settlement</button>' : ''}
           </div>
@@ -12145,7 +12175,7 @@
         ${isGroupScope ? `
         <div class="sales-entity-recon">
           <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
-            <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcSp.n)} Payments</b><span class="sales-recon-act">Filter WTC Only →</span></div>
+            <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcSp.n)} Payments</b><span class="sales-recon-act">Filter WTC Only</span></div>
             <div class="sales-recon-metrics">
               <span><small>Settlements Paid</small><b class="brass">${fmtUSD(wtcSp.pay, 2)}</b></span>
               <span><small>VAT Paid</small><b>${fmtUSD(wtcSp.vat, 2)}</b></span>
@@ -12154,7 +12184,7 @@
             </div>
           </div>
           <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
-            <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcSp.n)} Payments</b><span class="sales-recon-act">Filter BBC Only →</span></div>
+            <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcSp.n)} Payments</b><span class="sales-recon-act">Filter BBC Only</span></div>
             <div class="sales-recon-metrics">
               <span><small>Settlements Paid</small><b class="brass">${fmtUSD(bbcSp.pay, 2)}</b></span>
               <span><small>VAT Paid</small><b>${fmtUSD(bbcSp.vat, 2)}</b></span>
@@ -12215,46 +12245,58 @@
         </div>
       </div>
 
+      ${apVisualsHtml}
+
       <div class="split-grid-2">
         <div class="panel-card" id="supPanel">
-          <div class="panel-head">
-            <div class="panel-title"><span>SUPPLIER &amp; HAULER 3-LEG AP BALANCES (${fmtNum(sups.length)} SUPPLIERS)</span></div>
-            <span class="panel-meta" style="display:flex;gap:6px;align-items:center"><button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-nav-jump="expenses">Expense Vouchers →</button><button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-nav-jump="reg_suppliers">Universal Suppliers Registry →</button>${exportBtn('supPanel', 'AP_Legs')}</span>
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div class="panel-title"><span>UNIFIED SUPPLIER, HAULER &amp; VENDOR 3-LEG AP + CASH SPEND SUB-LEDGER (${fmtNum(sups.length)} COUNTERPARTIES)</span></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <div class="chip-bar">${chip('all', `All (${supAll.length})`)}${chip('open_ap', `Open AP (${openSupCount})`)}${chip('mat_leg', `Leg 1 Material (${matLegSupSet.size})`)}${chip('haul_leg', `Leg 2 Haulage (${haulLegSupSet.size})`)}${chip('exp_leg', `Leg 3 Credit Exp. (${expLegSupSet.size})`)}${chip('cash_vendor', `Cash Vendors (${cashSupSet.size})`)}${chip('iva_sup', `IVA (${ivaSupCount})`)}</div>
+              <span class="panel-meta" style="display:flex;gap:6px;align-items:center">${exportBtn('supPanel', 'Unified_Supplier_3Leg_AP_And_Cash')}</span>
+            </div>
           </div>
           ${renderColFilterBar('sups')}
           <div class="table-wrap">
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${th('sups', 'Supplier / Hauler', 'Supplier')}${th('sups', 'IVA', 'IVA')}${th('sups', 'Raw Loads', 'raw_loads', 'r')}${hasApRange ? th('sups', 'Opening AP', 'opening_ap', 'r') : ''}${th('sups', 'Mat. Leg', 'ap_material', 'r')}${th('sups', 'Haul Leg', 'ap_haulage', 'r')}
-                  ${th('sups', 'Exp. Leg', 'ap_expense', 'r')}${th('sups', 'Total on Credit', 'ap_on_credit', 'r')}${th('sups', 'Paid ($)', 'settlements_paid', 'r')}${th('sups', 'Net AP ($)', 'ap_balance', 'r')}
+                  ${th('sups', 'Supplier / Counterparty', 'Supplier')}${th('sups', 'Role', 'role')}${th('sups', 'IVA', 'IVA')}${th('sups', 'Raw Loads', 'raw_loads', 'r')}${hasApRange ? th('sups', 'Opening AP', 'opening_ap', 'r') : ''}${th('sups', 'Mat. Leg', 'ap_material', 'r')}${th('sups', 'Haul Leg', 'ap_haulage', 'r')}
+                  ${th('sups', 'Exp. Leg', 'ap_expense', 'r')}${th('sups', 'Cash Spend', 'cash_expense', 'r')}${th('sups', 'Total Credit', 'ap_on_credit', 'r')}${th('sups', 'Settled ($)', 'settlements_paid', 'r')}${th('sups', 'Net AP ($)', 'ap_balance', 'r')}
                 </tr>
               </thead>
               <tbody>
-                ${shownSups.map(s => `
-                  <tr class="rrow" data-rkey="suppliers" data-rid="${esc((supplierInfo(s.Supplier) || {}).id || s.Supplier)}">
-                    <td>${relLink('suppliers', s.Supplier, s.Supplier, true)}${appCell(supplierInfo(s.Supplier) || { id: s.Supplier, name: s.Supplier }, 'suppliers')}</td>
+                ${shownSups.map(s => {
+                  const isUnassigned = String(s.Supplier || '').startsWith('(');
+                  const supObj = isUnassigned ? null : supplierInfo(s.Supplier);
+                  const roleCls = s.role === 'Multi-Leg' ? 'badge-brass' : (s.role === 'Hauler' ? 'badge-info' : (s.role === 'Cash Vendor' ? 'badge-ok' : 'badge-neutral'));
+                  return `
+                  <tr class="${isUnassigned ? '' : 'rrow'}" ${isUnassigned ? '' : `data-rkey="suppliers" data-rid="${esc((supObj || {}).id || s.Supplier)}"`}>
+                    <td>${isUnassigned ? `<span class="mu">${esc(s.Supplier)}</span>` : `${relLink('suppliers', s.Supplier, s.Supplier, true)}${appCell(supObj || { id: s.Supplier, name: s.Supplier }, 'suppliers')}`}</td>
+                    <td><span class="badge ${roleCls}">${esc(s.role || 'Supplier')}</span></td>
                     <td>${s.IVA === 'Yes' ? '<span class="badge badge-info">IVA</span>' : '—'}</td>
                     <td class="r">${fmtNum(s.raw_loads)}</td>
                     ${hasApRange ? `<td class="r">${fmtUSD(s.opening_ap, 0)}</td>` : ''}
                     <td class="r">${fmtUSD(s.ap_material, 0)}</td>
                     <td class="r">${fmtUSD(s.ap_haulage, 0)}</td>
                     <td class="r">${fmtUSD(s.ap_expense, 0)}</td>
+                    <td class="r">${s.cash_expense ? fmtUSD(s.cash_expense, 0) : '—'}</td>
                     <td class="r"><strong>${fmtUSD(s.ap_on_credit, 0)}</strong></td>
                     <td class="r">${fmtUSD(hasApRange ? s.settlements_paid : (s.ap_settled != null ? s.ap_settled : s.settlements_paid), 0)}</td>
                     <td class="r"><strong>${fmtUSD(s.ap_balance, 2)}</strong></td>
-                  </tr>
-                `).join('') || emptyRow(hasApRange ? 10 : 9, q ? `No suppliers match "${STATE.search}".` : 'No supplier balances for this entity')}
-                ${showMoreRow('sups', sups.length, hasApRange ? 10 : 9)}
+                  </tr>`;
+                }).join('') || emptyRow(supColCount, q ? `No counterparties match "${STATE.search}".` : 'No supplier or vendor balances for this entity')}
+                ${showMoreRow('sups', sups.length, supColCount)}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="2"><b>TOTAL (${fmtNum(sups.length)} SUPPLIERS)</b></td>
+                  <td colspan="3"><b>TOTAL (${fmtNum(sups.length)} COUNTERPARTIES)</b></td>
                   <td class="r"><b>${fmtNum(sups.reduce((a, s) => a + Number(s.raw_loads || 0), 0))}</b></td>
                   ${hasApRange ? `<td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(s.opening_ap || 0), 0), 0)}</b></td>` : ''}
                   <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(s.ap_material || 0), 0), 0)}</b></td>
                   <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(s.ap_haulage || 0), 0), 0)}</b></td>
                   <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(s.ap_expense || 0), 0), 0)}</b></td>
+                  <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(s.cash_expense || 0), 0), 0)}</b></td>
                   <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(s.ap_on_credit || 0), 0), 0)}</b></td>
                   <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(hasApRange ? (s.settlements_paid || 0) : (s.ap_settled != null ? s.ap_settled : (s.settlements_paid || 0))), 0), 0)}</b></td>
                   <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(s.ap_balance || 0), 0), 2)}</b></td>
@@ -12280,7 +12322,7 @@
                 <tr>
                   <td><span class="badge badge-brass">Leg 1 · Material</span></td>
                   <td>Quarry &amp; Site Owners</td>
-                  <td><button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="raw">Material &amp; Transportation →</button></td>
+                  <td><button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="raw">Quarry &amp; Haulage</button></td>
                   <td class="r">${fmtNum(matLegSupSet.size)}</td>
                   <td class="r"><strong>${fmtUSD(k.ap_material, 2)}</strong></td>
                   <td class="r">${matLegPct.toFixed(1)}%</td>
@@ -12288,7 +12330,7 @@
                 <tr>
                   <td><span class="badge badge-info">Leg 2 · Haulage</span></td>
                   <td>3rd-Party Truck Owners ($0 Own Fleet)</td>
-                  <td><button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="raw">3rd-Party Haulage →</button></td>
+                  <td><button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="raw">Quarry &amp; Haulage</button></td>
                   <td class="r">${fmtNum(haulLegSupSet.size)}</td>
                   <td class="r"><strong>${fmtUSD(k.ap_haulage, 2)}</strong></td>
                   <td class="r">${haulLegPct.toFixed(1)}%</td>
@@ -12296,7 +12338,7 @@
                 <tr>
                   <td><span class="badge badge-ok">Leg 3 · Expenses</span></td>
                   <td>Parts, Maintenance &amp; Overhead Vendors</td>
-                  <td><button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="expenses">Expenses &amp; Overhead →</button></td>
+                  <td><button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="expenses">Expenses &amp; Overhead</button></td>
                   <td class="r">${fmtNum(expLegSupSet.size)}</td>
                   <td class="r"><strong>${fmtUSD(k.ap_expense, 2)}</strong></td>
                   <td class="r">${expLegPct.toFixed(1)}%</td>
@@ -12318,7 +12360,7 @@
   }
 
   // ==========================================================================
-  // VIEW 09: EXPENSES & PAYROLL
+  // VIEW 09: EXPENSES & OVERHEAD
   // ==========================================================================
   function renderExpenses() {
     const k = getKPI();
@@ -12340,6 +12382,8 @@
     };
     const catMetaMap = new Map((SEED.records.expense_categories || []).map(c => [norm(c.name || c.category || ''), c]));
     const catAggMap = new Map();
+    const expMonthAgg = new Map();
+    const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     expRows.forEach(r => {
       const sgn = expenseSign(r);
       if (sgn === 0) return;
@@ -12352,6 +12396,16 @@
         b.n += 1;
         b.tot += a;
         if (isCr) b.cred += a; else b.cash += a;
+      }
+      const dt = recordDate(r);
+      const ym = dt ? dt.slice(0, 7) : '';
+      if (/^\d{4}-\d{2}$/.test(ym)) {
+        const mIdx = Math.max(0, Math.min(11, parseInt(ym.slice(5, 7), 10) - 1));
+        const cur = expMonthAgg.get(ym) || { ym, 'Year Month': `${MONTH_SHORT[mIdx]} ${ym.slice(0, 4)}`, cash_usd: 0, credit_usd: 0, vouchers: 0 };
+        if (isCr) cur.credit_usd = round2(cur.credit_usd + a);
+        else cur.cash_usd = round2(cur.cash_usd + a);
+        cur.vouchers += 1;
+        expMonthAgg.set(ym, cur);
       }
       const catName = String(r.category || 'Uncategorized').trim() || 'Uncategorized';
       const ck = norm(catName);
@@ -12379,34 +12433,7 @@
     });
     const expCatRows = sortRows(Array.from(catAggMap.values()), 'exp_cat', 'total', 'desc');
     const shownExpCat = expCatRows.slice(0, shownCount('exp_cat'));
-    const expSupMap = new Map();
-    expRows.forEach(r => {
-      const sgn = expenseSign(r);
-      if (sgn === 0) return;
-      const a = sgn * Number(r.amount || 0);
-      const isCr = isCreditExpense(r);
-      const sName = String(r.supplier || '(Direct Cash / Petty Cash)').trim() || '(Direct Cash / Petty Cash)';
-      const sk = norm(sName);
-      if (!expSupMap.has(sk)) {
-        const si = sName.startsWith('(') ? null : supplierInfo(sName);
-        expSupMap.set(sk, {
-          id: (si && si.id) || sName,
-          supplier: sName,
-          vouchers: 0,
-          unit_tagged: 0,
-          cash: 0,
-          credit: 0,
-          total: 0
-        });
-      }
-      const sg = expSupMap.get(sk);
-      sg.vouchers += 1;
-      if (r.equipment) sg.unit_tagged += 1;
-      if (isCr) sg.credit += a; else sg.cash += a;
-      sg.total += a;
-    });
-    const expVendorRows = sortRows(Array.from(expSupMap.values()), 'exp_sup', 'total', 'desc');
-    const shownExpVendors = expVendorRows.slice(0, shownCount('exp_sup'));
+    const expMonths = Array.from(expMonthAgg.values()).sort((a, b) => a.ym.localeCompare(b.ym));
     const wtcEx = byCoExp.WTC;
     const bbcEx = byCoExp.BBConstruction;
     const isGroupScope = STATE.company === 'manufacturing-group';
@@ -12419,6 +12446,10 @@
     const uniqExpCats = new Set(expRows.map(x => x.category).filter(Boolean)).size;
     const uniqExpSups = new Set(expRows.map(x => x.supplier).filter(Boolean)).size;
     const topExpCat = expCatRows[0] || null;
+
+    const expVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderExpensesVisualsSection === 'function')
+      ? window.MFG_PBI.renderExpensesVisualsSection({ expMonths, catRows: expCatRows })
+      : '';
 
     return `
       <div class="cockpit-banner has-insights">
@@ -12451,7 +12482,6 @@
             badge: `${fmtNum(equipLinkedCount)} Unit-Tagged`,
             val: `${equipLinkedPct.toFixed(1)}% <small>Direct Fleet</small>`,
             pct: equipLinkedPct,
-            pct2: 100 - equipLinkedPct,
             sub: `Direct equipment cost attribution across <b>${fmtNum(uniqExpSups)}</b> vendors`,
             tone: 'steel'
           })}
@@ -12470,13 +12500,14 @@
         </div>
       </div>
 
-      <div class="panel-card" id="expPanel">
+      <div class="panel-card" id="expPanel" style="margin-bottom:14px">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search category, subcategory, supplier, equipment, reference...')}
             <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="suppliers" title="Open Unified Supplier, Hauler &amp; Vendor 3-Leg AP + Cash Spend Sub-Ledger">${ic('suppliers')} Suppliers &amp; Payables</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_categories" title="Open Master Expense Categories &amp; Subcategories">${ic('reg_categories')} Expense Categories</button>
             ${exportBtn('expPanel', 'Expense_Register')}
             ${canEnterForm('expense') ? '<button class="btn btn-primary" data-open-modal="expense">+ New Expense</button>' : ''}
@@ -12485,7 +12516,7 @@
         ${isGroupScope ? `
         <div class="sales-entity-recon">
           <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
-            <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcEx.n)} Vouchers</b><span class="sales-recon-act">Filter WTC Only →</span></div>
+            <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcEx.n)} Vouchers</b><span class="sales-recon-act">Filter WTC Only</span></div>
             <div class="sales-recon-metrics">
               <span><small>Cash Exp.</small><b>${fmtUSD(wtcEx.cash, 2)}</b></span>
               <span><small>Credit Exp.</small><b>${fmtUSD(wtcEx.cred, 2)}</b></span>
@@ -12493,7 +12524,7 @@
             </div>
           </div>
           <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
-            <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcEx.n)} Vouchers</b><span class="sales-recon-act">Filter BBC Only →</span></div>
+            <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcEx.n)} Vouchers</b><span class="sales-recon-act">Filter BBC Only</span></div>
             <div class="sales-recon-metrics">
               <span><small>Cash Exp.</small><b>${fmtUSD(bbcEx.cash, 2)}</b></span>
               <span><small>Credit Exp.</small><b>${fmtUSD(bbcEx.cred, 2)}</b></span>
@@ -12555,103 +12586,55 @@
         </div>
       </div>
 
-      <div class="split-grid-2">
-        <div class="panel-card" id="expCatPanel">
-          <div class="panel-head">
-            <div class="panel-title"><span>EXPENSE BREAKDOWN BY CATEGORY &amp; COST CLASS (${fmtNum(expCatRows.length)} CATEGORIES)</span></div>
-            <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
-              <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="suppliers">3-Leg AP Sub-Ledger →</button>
-              <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="reg_categories">Universal Expense Categories →</button>
-              ${exportBtn('expCatPanel', 'Expense_Categories_Summary')}
-            </span>
-          </div>
-          ${renderColFilterBar('exp_cat')}
-          <div class="table-wrap">
-            <table class="ledger-table">
-              <thead>
-                <tr>
-                  ${th('exp_cat', 'Expense Category', 'category')}${th('exp_cat', 'Cost Class', 'cost_class')}${th('exp_cat', 'Vouchers', 'vouchers', 'r')}${th('exp_cat', 'Unit-Tagged', 'unit_tagged', 'r')}
-                  ${th('exp_cat', 'Cash ($)', 'cash', 'r')}${th('exp_cat', 'Credit ($)', 'credit', 'r')}${th('exp_cat', 'Total ($)', 'total', 'r')}<th>% Spend</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${shownExpCat.map(c => {
-                  const pct = sumExp > 0 ? Math.max(0, (c.total / sumExp) * 100) : 0;
-                  return `
-                  <tr class="rrow" data-rkey="expense_categories" data-rid="${esc(c.id)}">
-                    <td>${relLink('expense_categories', c.category, c.category, true)}</td>
-                    <td><span class="badge ${/Production/i.test(c.cost_class) ? 'badge-cost-prod' : (/Capital/i.test(c.cost_class) ? 'badge-cost-capex' : 'badge-cost-opex')}">${esc(c.cost_class)}</span></td>
-                    <td class="r">${fmtNum(c.vouchers)}</td>
-                    <td class="r">${fmtNum(c.unit_tagged)}</td>
-                    <td class="r">${fmtUSD(c.cash, 2)}</td>
-                    <td class="r">${fmtUSD(c.credit, 2)}</td>
-                    <td class="r"><strong>${fmtUSD(c.total, 2)}</strong></td>
-                    <td class="r">${pct.toFixed(1)}%</td>
-                  </tr>`;
-                }).join('') || emptyRow(8, 'No expense category totals for this entity')}
-                ${showMoreRow('exp_cat', expCatRows.length, 8)}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colspan="2"><b>TOTAL (${fmtNum(expCatRows.length)} CATEGORIES)</b></td>
-                  <td class="r"><b>${fmtNum(expRows.length)}</b></td>
-                  <td class="r"><b>${fmtNum(equipLinkedCount)}</b></td>
-                  <td class="r"><b>${fmtUSD(sumCashExp, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(sumCredExp, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(sumExp, 2)}</b></td>
-                  <td class="r"><b>100.0%</b></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
+      ${expVisualsHtml}
 
-        <div class="panel-card" id="expVendorPanel">
-          <div class="panel-head">
-            <div class="panel-title"><span>EXPENSE &amp; OVERHEAD SPEND BY VENDOR — CASH VS CREDIT LEG 3 AP (${fmtNum(expVendorRows.length)} COUNTERPARTIES)</span></div>
-            <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
-              <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="suppliers">Settle in Suppliers &amp; Payables →</button>
-              ${exportBtn('expVendorPanel', 'Expense_Vendors_Summary')}
-            </span>
-          </div>
-          <div class="table-wrap">
-            <table class="ledger-table">
-              <thead>
-                <tr>
-                  ${th('exp_sup', 'Vendor / Counterparty', 'supplier')}${th('exp_sup', 'Vouchers', 'vouchers', 'r')}${th('exp_sup', 'Unit-Tagged', 'unit_tagged', 'r')}
-                  ${th('exp_sup', 'Cash ($)', 'cash', 'r')}${th('exp_sup', 'Credit Leg 3 AP ($)', 'credit', 'r')}${th('exp_sup', 'Total Spend ($)', 'total', 'r')}<th class="r">% Spend</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${shownExpVendors.map(v => {
-                  const pct = sumExp > 0 ? Math.max(0, (v.total / sumExp) * 100) : 0;
-                  const isDirect = v.supplier.startsWith('(');
-                  return `
-                  <tr class="${isDirect ? '' : 'rrow'}" ${isDirect ? '' : `data-rkey="suppliers" data-rid="${esc(v.id)}"`}>
-                    <td>${isDirect ? `<span class="mu">${esc(v.supplier)}</span>` : relLink('suppliers', v.supplier, v.supplier, true)}</td>
-                    <td class="r">${fmtNum(v.vouchers)}</td>
-                    <td class="r">${fmtNum(v.unit_tagged)}</td>
-                    <td class="r">${fmtUSD(v.cash, 2)}</td>
-                    <td class="r">${v.credit !== 0 ? `<strong style="color:var(--brass)">${fmtUSD(v.credit, 2)}</strong>` : '—'}</td>
-                    <td class="r"><strong>${fmtUSD(v.total, 2)}</strong></td>
-                    <td class="r">${pct.toFixed(1)}%</td>
-                  </tr>`;
-                }).join('') || emptyRow(7, 'No vendor expense totals for this entity')}
-                ${showMoreRow('exp_sup', expVendorRows.length, 7)}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td><b>TOTAL (${fmtNum(expVendorRows.length)} VENDORS)</b></td>
-                  <td class="r"><b>${fmtNum(expRows.length)}</b></td>
-                  <td class="r"><b>${fmtNum(equipLinkedCount)}</b></td>
-                  <td class="r"><b>${fmtUSD(sumCashExp, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(sumCredExp, 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(sumExp, 2)}</b></td>
-                  <td class="r"><b>100.0%</b></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+      <div class="panel-card" id="expCatPanel">
+        <div class="panel-head">
+          <div class="panel-title"><span>EXPENSE BREAKDOWN BY CATEGORY &amp; COST CLASS (${fmtNum(expCatRows.length)} CATEGORIES)</span></div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+            <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="suppliers">Suppliers &amp; Payables</button>
+            <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="reg_categories">Expense Categories</button>
+            ${exportBtn('expCatPanel', 'Expense_Categories_Summary')}
+          </span>
+        </div>
+        ${renderColFilterBar('exp_cat')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('exp_cat', 'Expense Category', 'category')}${th('exp_cat', 'Cost Class', 'cost_class')}${th('exp_cat', 'Vouchers', 'vouchers', 'r')}${th('exp_cat', 'Unit-Tagged', 'unit_tagged', 'r')}
+                ${th('exp_cat', 'Cash ($)', 'cash', 'r')}${th('exp_cat', 'Credit ($)', 'credit', 'r')}${th('exp_cat', 'Total ($)', 'total', 'r')}<th>% Spend</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownExpCat.map(c => {
+                const pct = sumExp > 0 ? Math.max(0, (c.total / sumExp) * 100) : 0;
+                return `
+                <tr class="rrow" data-rkey="expense_categories" data-rid="${esc(c.id)}">
+                  <td>${relLink('expense_categories', c.category, c.category, true)}</td>
+                  <td><span class="badge ${/Production/i.test(c.cost_class) ? 'badge-cost-prod' : (/Capital/i.test(c.cost_class) ? 'badge-cost-capex' : 'badge-cost-opex')}">${esc(c.cost_class)}</span></td>
+                  <td class="r">${fmtNum(c.vouchers)}</td>
+                  <td class="r">${fmtNum(c.unit_tagged)}</td>
+                  <td class="r">${fmtUSD(c.cash, 2)}</td>
+                  <td class="r">${fmtUSD(c.credit, 2)}</td>
+                  <td class="r"><strong>${fmtUSD(c.total, 2)}</strong></td>
+                  <td class="r">${pct.toFixed(1)}%</td>
+                </tr>`;
+              }).join('') || emptyRow(8, 'No expense category totals for this entity')}
+              ${showMoreRow('exp_cat', expCatRows.length, 8)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2"><b>TOTAL (${fmtNum(expCatRows.length)} CATEGORIES)</b></td>
+                <td class="r"><b>${fmtNum(expRows.length)}</b></td>
+                <td class="r"><b>${fmtNum(equipLinkedCount)}</b></td>
+                <td class="r"><b>${fmtUSD(sumCashExp, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(sumCredExp, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(sumExp, 2)}</b></td>
+                <td class="r"><b>100.0%</b></td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
     `;
@@ -28821,9 +28804,9 @@
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
     sales_analytics: 'Sales Analytics',
-    raw: 'Material & Transportation',
-    raw_pricing: 'Pricing & Haulage Rates',
-    raw_analytics: 'Stock Analytics',
+    raw: 'Quarry & Haulage',
+    raw_pricing: 'Quarry & Haulage Rates',
+    raw_analytics: 'Quarry & Haulage',
     raw_jv: 'JV & Partnerships',
     jv: 'JV & Partnerships',
     fleet: 'Diesel & Lubricants',
@@ -28841,7 +28824,7 @@
     suppliers: 'Suppliers & Payables',
     ap: 'Suppliers & Payables',
     expenses: 'Expenses & Overhead',
-    expenses_analytics: 'Overhead Analytics',
+    expenses_analytics: 'Expenses & Overhead',
     payroll: 'Payroll & Workforce',
     workforce_map: 'Daily Plant & Machine Map',
     payroll_attendance: 'Attendance & Overtime',
@@ -28872,9 +28855,9 @@
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
     sales_analytics: 'Sales Analytics',
-    raw: 'Material & Transportation',
-    raw_pricing: 'Pricing & Haulage Rates',
-    raw_analytics: 'Stock Analytics',
+    raw: 'Quarry & Haulage',
+    raw_pricing: 'Quarry & Haulage Rates',
+    raw_analytics: 'Quarry & Haulage',
     raw_jv: 'JV & Partnerships',
     jv: 'JV & Partnerships',
     fleet: 'Diesel & Lubricants',
@@ -28892,7 +28875,7 @@
     suppliers: 'Suppliers & Payables',
     ap: 'Suppliers & Payables',
     expenses: 'Expenses & Overhead',
-    expenses_analytics: 'Overhead Analytics',
+    expenses_analytics: 'Expenses & Overhead',
     payroll: 'Payroll & Workforce',
     workforce_map: 'Daily Plant & Machine Map',
     payroll_attendance: 'Attendance & Overtime',
@@ -29625,7 +29608,12 @@
     const activeHub = getHubDef(activeHubId) || HUB_CATALOG[0];
     const group = (activeHub && activeHub.group) || 'exec';
 
-    const hubsInGroup = HUB_CATALOG.filter(h => h.group === group && canViewHub(h.id, user));
+    const hubsInGroup = HUB_CATALOG.filter(h => {
+      const sameDock = (group === 'commercial' || group === 'plant')
+        ? (h.group === 'commercial' || h.group === 'plant')
+        : ((group === 'books' || group === 'master') ? (h.group === 'books' || h.group === 'master') : h.group === group);
+      return sameDock && canViewHub(h.id, user);
+    });
     el.innerHTML = hubsInGroup.map(h => {
       const on = h.id === activeHubId;
       const badge = getHubExceptionBadge(h.id, user, k, sentinelsOpen);
@@ -29636,7 +29624,7 @@
     // Sync Mobile Bottom Dock active states
     const dOver = $('dockBtnOverview'), dDisp = $('dockBtnDispatch'), dBooks = $('dockBtnBooks'), dEntry = $('mobileDockEntryBtn'), dEntryLbl = $('mobileDockEntryLabel');
     if (dOver) dOver.classList.toggle('on', group === 'exec');
-    if (dDisp) dDisp.classList.toggle('on', group === 'dispatch');
+    if (dDisp) dDisp.classList.toggle('on', group === 'commercial' || group === 'plant' || group === 'dispatch');
     if (dBooks) dBooks.classList.toggle('on', group === 'books' || group === 'master');
     if (dEntry && dEntryLbl) {
       if (canEnterAny(user)) {
@@ -31193,10 +31181,9 @@
       case 'sales': wsHtml = renderSales(); break;
       case 'sales_vat': wsHtml = renderSalesVatAndCredit(); break;
       case 'sales_analytics':
-      case 'raw_analytics':
-      case 'expenses_analytics':
         wsHtml = renderHubAnalyticsView(STATE.view);
         break;
+      case 'raw_analytics':
       case 'raw': wsHtml = renderRaw(); break;
       case 'raw_pricing': wsHtml = renderRawPricing(); break;
       case 'raw_jv':
@@ -31215,6 +31202,7 @@
       case 'ar': wsHtml = renderAR(); break;
       case 'suppliers':
       case 'ap': wsHtml = renderAP(); break;
+      case 'expenses_analytics':
       case 'expenses': wsHtml = renderExpenses(); break;
       case 'payroll':
       case 'payroll_analytics': wsHtml = renderPayroll('main'); break;
@@ -32729,6 +32717,7 @@
   }
 
   function clickHub(hubId) {
+    if (hubId === 'expenses') hubId = 'raw';
     const u = activeUser();
     const target = resolveHubView(hubId, u);
     setView(target);
@@ -32738,6 +32727,8 @@
     if (view === 'cashflow_analytics') view = 'cashflow';
     if (view === 'sales_vat') view = 'customers';
     if (view === 'sales_analytics') view = 'sales';
+    if (view === 'raw_analytics') view = 'raw';
+    if (view === 'expenses_analytics') view = 'expenses';
     if (view === 'fleet_analytics') view = 'fleet_drivers';
     if (view === 'payroll_analytics') view = 'payroll';
     if (view === 'jv') view = 'raw_jv';
@@ -32821,7 +32812,7 @@
       }
     } catch (_) {}
     const rawQView = PARAMS.get('view') || (location.hash || '').replace(/^#/, '');
-    const qView = rawQView === 'cashflow_analytics' ? 'cashflow' : (rawQView === 'sales_vat' ? 'customers' : (rawQView === 'sales_analytics' ? 'sales' : (rawQView === 'fleet_analytics' ? 'fleet_drivers' : (rawQView === 'payroll_analytics' ? 'payroll' : rawQView))));
+    const qView = rawQView === 'cashflow_analytics' ? 'cashflow' : (rawQView === 'sales_vat' ? 'customers' : (rawQView === 'sales_analytics' ? 'sales' : (rawQView === 'raw_analytics' ? 'raw' : (rawQView === 'expenses_analytics' ? 'expenses' : (rawQView === 'fleet_analytics' ? 'fleet_drivers' : (rawQView === 'payroll_analytics' ? 'payroll' : (rawQView === 'jv' ? 'raw_jv' : rawQView)))))));
     if (qView && VIEW_TITLES[qView]) STATE.view = qView;
     const qKiosk = PARAMS.get('kiosk');
     if (qKiosk && ['sales', 'raw', 'fuel', 'attendance'].includes(qKiosk.toLowerCase())) {
@@ -33229,8 +33220,8 @@
     document.querySelectorAll('#mobileBottomDock [data-dock-view]').forEach(btn => btn.addEventListener('click', () => {
       const dv = btn.getAttribute('data-dock-view');
       const u = activeUser();
-      const grp = dv === 'overview' ? 'exec' : (dv === 'sales' ? 'dispatch' : 'books');
-      const firstHub = HUB_CATALOG.find(h => h.group === grp && canViewHub(h.id, u));
+      const grps = dv === 'overview' ? ['exec'] : (dv === 'sales' ? ['commercial', 'plant'] : ['books', 'master']);
+      const firstHub = HUB_CATALOG.find(h => grps.includes(h.group) && canViewHub(h.id, u));
       if (firstHub) clickHub(firstHub.id);
       else setView(dv);
     }));
