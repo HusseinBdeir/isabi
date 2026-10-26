@@ -133,6 +133,7 @@
     cfFocusParty: '',
     cfChartGrain: 'monthly',
     arChartMode: 'collections',
+    salesChartMode: 'payment',
     rawSupFilter: 'all',
     salesHaulFilter: 'all',
     salesPadFilter: 'all',
@@ -7916,16 +7917,21 @@
       </div>
 
       ${(window.MFG_PBI && typeof window.MFG_PBI.renderSalesVisualsSection === 'function')
-        ? window.MFG_PBI.renderSalesVisualsSection({
-            months: getScopedMonthly(getModel().monthly, 14),
-            prodRows: allProds,
-            k,
-            trendSalesRows: filterRecords(SEED.records.sales_tickets, { ignorePeriod: true, ignoreSearch: true }).filter(chipPredicate),
-            ticketMeters,
-            ticketSign,
-            basis: STATE.basis,
-            productsCatalog: SEED.records.products
-          })
+        ? (() => {
+            const allCoSalesForTrends = filterRecords(SEED.records.sales_tickets, { ignorePeriod: true, ignoreSearch: true });
+            return window.MFG_PBI.renderSalesVisualsSection({
+              months: getScopedMonthly(getModel().monthly, 14),
+              prodRows: allProds,
+              k,
+              chartMode: STATE.salesChartMode || 'payment',
+              hasTicketSource: allCoSalesForTrends.length > 0,
+              trendSalesRows: allCoSalesForTrends.filter(chipPredicate),
+              ticketMeters,
+              ticketSign,
+              basis: STATE.basis,
+              productsCatalog: SEED.records.products
+            });
+          })()
         : ''}
 
       <div class="split-grid-2">
@@ -31629,6 +31635,13 @@
     }));
     container.querySelectorAll('[data-ar-chart-mode]').forEach(btn => btn.addEventListener('click', () => {
       STATE.arChartMode = btn.getAttribute('data-ar-chart-mode') || 'collections';
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-sales-chart-mode]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.salesChartMode = btn.getAttribute('data-sales-chart-mode') || 'payment';
       const ws = $('workspace');
       const y = ws ? ws.scrollTop : 0;
       renderApp();

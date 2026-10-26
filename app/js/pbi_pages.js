@@ -84,6 +84,7 @@
     };
 
     const salesByYm = new Map();
+    const delivByYm = new Map();
     for (let i = 0; i < sList.length; i++) {
       const s = sList[i];
       if (!s || s.voided) continue;
@@ -93,6 +94,24 @@
       if (sgn === 0) continue;
       const ym = String((basis === 'tx' ? s.date : (s.rep_date || s.date)) || '').slice(0, 7);
       if (!ymSet.has(ym)) continue;
+
+      const trVal = sgn * Number(s.trans_price || 0);
+      const isOwnFleet = /company/i.test(String(s.transport_by || ''));
+      const isDeliv = /deliv/i.test(String(s.sale_type || ''));
+      let db = delivByYm.get(ym);
+      if (!db) {
+        db = { ownTrans: 0, thirdTrans: 0, delivLoads: 0, pickupLoads: 0 };
+        delivByYm.set(ym, db);
+      }
+      if (trVal !== 0) {
+        if (isOwnFleet) db.ownTrans += trVal;
+        else db.thirdTrans += trVal;
+      }
+      if (sgn > 0) {
+        if (isDeliv) db.delivLoads += 1;
+        else db.pickupLoads += 1;
+      }
+
       const qUnit = ticketMetersFn
         ? ticketMetersFn(s)
         : (/truck/i.test(String(s.uom || '')) ? Number(s.qty || 0) * 27 : Number(s.qty || 0));
@@ -111,22 +130,34 @@
       if (!r || r.voided) continue;
       const ym = String((basis === 'tx' ? r.date : (r.rep_date || r.date)) || '').slice(0, 7);
       if (!ymSet.has(ym)) continue;
+      const matLeg = Number(r.cost || 0);
+      const haulLeg = Number(r.trans_cost || 0);
       const rq = ticketMetersFn
         ? ticketMetersFn(r)
         : (/truck/i.test(String(r.uom || '')) ? Number(r.qty || 0) * 27 : Number(r.qty || 0));
-      if (!(rq > 0)) continue;
-      const rc = Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)));
-      const b = rawByYm.get(ym);
-      if (b) { b.m3 += rq; b.cost += rc; }
-      else rawByYm.set(ym, { m3: rq, cost: rc });
+      const rc = Number(r.total != null ? r.total : (matLeg + haulLeg));
+      let b = rawByYm.get(ym);
+      if (!b) {
+        b = { m3: 0, cost: 0, mat: 0, haul: 0 };
+        rawByYm.set(ym, b);
+      }
+      b.mat += matLeg;
+      b.haul += haulLeg;
+      if (rq > 0) {
+        b.m3 += rq;
+        b.cost += rc;
+      }
     }
 
     const hasSalesPool = sList.length > 0 && salesByYm.size > 0;
     const hasRawPool = rList.length > 0 && rawByYm.size > 0;
+    const hasSalesSource = opts.hasSalesTicketSource != null ? Boolean(opts.hasSalesTicketSource) : (sList.length > 0 && (salesByYm.size > 0 || delivByYm.size > 0));
+    const hasRawSource = opts.hasRawTicketSource != null ? Boolean(opts.hasRawTicketSource) : hasRawPool;
 
     return mList.map(mRow => {
       const ym = monthRowToYmKey(mRow);
       const sb = ym ? salesByYm.get(ym) : null;
+      const db = ym ? delivByYm.get(ym) : null;
       const rb = ym ? rawByYm.get(ym) : null;
       const avgNet = (sb && sb.m3 > 0.001)
         ? roundFn(sb.net / sb.m3)
@@ -140,7 +171,60 @@
       return Object.assign({}, mRow, {
         avg_price_net: avgNet,
         avg_price_ttc: avgTtc,
-        avg_raw_cost: avgRaw
+        avg_raw_cost: avgRaw,
+        raw_mat_leg: hasRawSource ? roundFn(rb ? rb.mat : 0) : roundFn(Number(mRow.raw_mat_cost || 0)),
+        raw_haul_leg: hasRawSource ? roundFn(rb ? rb.haul : 0) : roundFn(Number(mRow.raw_haulage || 0)),
+        own_trans_rev: hasSalesSource ? roundFn(db ? db.ownTrans : 0) : roundFn(Number(mRow.trans_rev || 0)),
+        third_trans_rev: hasSalesSource ? roundFn(db ? db.thirdTrans : 0) : 0,
+        deliv_loads_m: hasSalesSource ? (db ? db.delivLoads : 0) : Number(mRow.delivery_loads || 0),
+        pickup_loads_m: hasSalesSource ? (db ? db.pickupLoads : 0) : Number(mRow.pickup_loads != null ? mRow.pickup_loads : Math.max(0, Number(mRow.loads || 0) - Number(mRow.delivery_loads || 0)))
+      });
+    });
+  }
+
+  function buildMonthlyDeliveryTransportRows(months, salesRows, opts = {}) {
+    const mList = Array.isArray(months) ? months : [];
+    if (!mList.length) return mList;
+    const sList = Array.isArray(salesRows) ? salesRows : [];
+    const basis = opts.basis === 'tx' ? 'tx' : 'rep';
+    const ticketSignFn = typeof opts.ticketSign === 'function' ? opts.ticketSign : null;
+    const roundFn = v => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+    const ymSet = new Set(mList.map(monthRowToYmKey).filter(Boolean));
+    const byYm = new Map();
+    for (let i = 0; i < sList.length; i++) {
+      const s = sList[i];
+      if (!s || s.voided) continue;
+      let sgn = 1;
+      if (ticketSignFn) {
+        sgn = ticketSignFn(s);
+      } else {
+        const mth = String(s.method || '').trim();
+        if (mth === 'C Return' || mth === 'CR Return' || mth === 'Cash Return' || mth === 'Credit Return') sgn = -1;
+        else if (mth === 'Free' || mth === 'Remove' || mth === 'Config' || mth === 'VATConfig') sgn = 0;
+      }
+      if (sgn === 0) continue;
+      const ym = String((basis === 'tx' ? s.date : (s.rep_date || s.date)) || '').slice(0, 7);
+      if (!ymSet.has(ym)) continue;
+      let b = byYm.get(ym);
+      if (!b) {
+        b = { ownTrans: 0, thirdTrans: 0, delivLoads: 0 };
+        byYm.set(ym, b);
+      }
+      const trVal = sgn * Number(s.trans_price || 0);
+      if (trVal !== 0) {
+        if (/company/i.test(String(s.transport_by || ''))) b.ownTrans += trVal;
+        else b.thirdTrans += trVal;
+      }
+      if (sgn > 0 && /deliv/i.test(String(s.sale_type || ''))) b.delivLoads += 1;
+    }
+    const hasSource = opts.hasTicketSource != null ? Boolean(opts.hasTicketSource) : (sList.length > 0 && byYm.size > 0);
+    return mList.map(mRow => {
+      const ym = monthRowToYmKey(mRow);
+      const b = ym ? byYm.get(ym) : null;
+      return Object.assign({}, mRow, {
+        own_trans_rev: hasSource ? roundFn(b ? b.ownTrans : 0) : roundFn(Number(mRow.trans_rev || 0)),
+        third_trans_rev: hasSource ? roundFn(b ? b.thirdTrans : 0) : 0,
+        deliv_loads_m: hasSource ? (b ? b.delivLoads : 0) : Number(mRow.delivery_loads || 0)
       });
     });
   }
@@ -1123,11 +1207,11 @@
   const PBI_PAGES = [
     { id: 'p01_overview', num: '01', label: 'Executive Pulse', title: 'Executive P&L, Margin, AR/AP & Fleet Overview' },
     { id: 'p02_companies', num: '02', label: 'Entity Comparison', title: 'Side-by-Side Entity Comparison (WTC · BBConstruction · Lions Transport)' },
-    { id: 'p04_sales', num: '03', label: 'Sales Analytics', title: 'Sales Revenue, Realised Price Trends, Top Grades & Customer Mix' },
+    { id: 'p04_sales', num: '03', label: 'Sales Analytics', title: 'Sales Revenue, Realised Price Trends, Delivery Transport & Site Mix' },
     { id: 'p05_pricing', num: '04', label: 'Pricing & Spreads', title: 'Price Agreements, Spread, Below-Agreed Exceptions & Commissions' },
     { id: 'p06_ar', num: '05', label: 'Receivables & Aging', title: 'FIFO Customer Balances, 5-Bucket AR Aging & Running Statement' },
     { id: 'p07_ap', num: '06', label: 'Payables & Spend', title: '3-Leg Accounts Payable (Material / Haulage / Expense) & Overhead' },
-    { id: 'p08_stock', num: '07', label: 'Stock & Unit Margin', title: 'Raw Material Intake, Unit Economics & Transport Cost Recovery' },
+    { id: 'p08_stock', num: '07', label: 'Stock & Unit Margin', title: 'Raw Material Intake, Unit Economics & Two-Leg Cost Split' },
     { id: 'p09_fuel', num: '08', label: 'Diesel & Tank Burn', title: 'Diesel Tank Balance, Consumption per 100 km / hr & Meter Guard (m142)' },
     { id: 'p10_fleet', num: '09', label: 'Fleet Economics', title: 'Equipment Utilization, Running Cost & Cost per Ton' },
     { id: 'p12_payroll', num: '10', label: 'Workforce Analytics', title: 'Staff Payroll Analytics, Site Allowances & Freelance' },
@@ -2210,7 +2294,7 @@
     });
     maxBar *= 1.12;
     const shareAxis = opts.shareAxis === true;
-    const lMax = shareAxis ? maxBar : (maxLine * 1.15 || 1);
+    const lMax = shareAxis ? maxBar : (opts.lineMax != null ? Math.max(Number(opts.lineMax), maxLine) : (maxLine * 1.15 || 1));
     const lMin = shareAxis ? 0 : Math.min(0, minLine * 1.1);
     const lSpan = Math.max(1e-6, lMax - lMin);
 
@@ -3731,7 +3815,9 @@
       basis: STATE.basis,
       ticketMeters,
       isAggregateMaterialProduct,
-      productsCatalog: rec.products
+      productsCatalog: rec.products,
+      hasSalesTicketSource: allCoSalesForMonths.length > 0,
+      hasRawTicketSource: allCoRawForMonths.length > 0
     });
 
     let bodyHtml = '';
@@ -3745,7 +3831,7 @@
           ${kpiBand('1 · Sales & Revenue (Click any card to drill into its page)', [
             { label: 'Sales incl. VAT (TTC)', value: fmtUSD(sc(k.sales_ttc), 0), sub: fmtNum(sc(k.loads), 0) + ' weighbridge loads', tone: 'brass', navPage: 'p04_sales' },
             { label: 'Sales Ex-VAT (Mat + Trans)', value: fmtUSD(sc(k.gross_sales || k.net_sales), 0), sub: 'Mat ' + fmtUSDk(sc(k.net_sales)) + ' + Trans ' + fmtUSDk(sc(k.trans_rev)), navPage: 'p04_sales' },
-            { label: 'Transport Revenue', value: fmtUSD(sc(k.trans_rev), 0), sub: fmtNum(sc(k.delivery_loads), 0) + ' delivery loads', navPage: 'p08_stock' },
+            { label: 'Transport Revenue', value: fmtUSD(sc(k.trans_rev), 0), sub: fmtNum(sc(k.delivery_loads), 0) + ' delivery loads', navPage: 'p04_sales' },
             { label: 'Output VAT (11%)', value: fmtUSD(sc(k.sales_vat), 0), sub: 'Account 4427 invoiced', navPage: 'p13_vat' },
             { label: 'Tons Sold', value: fmtNum(sc(k.tons_sold), 0) + ' t', sub: fmtNum(sc(k.qty_sold), 0) + ' m³ sold', navPage: 'p04_sales' },
             { label: 'Avg Price / m³ (TTC)', value: fmtUSD(k.avg_price_ttc, 2), sub: 'Net: ' + fmtUSD(k.avg_price_net, 2) + '/m³', navPage: 'p05_pricing' }
@@ -4097,6 +4183,41 @@
           ${pbiPanel('Realised price per unit ($/m³) by month · top aggregate grades', buildMultiLineSvg(months, priceSeries, { isMoney: true, decimals: 2 }), {
             subtitle: 'Monthly realised material price ($/m³ ex-transport & VAT) from weighbridge tickets across top 4 aggregate grades',
             legend: priceSeries.map(s => ({ label: s.label, color: s.color, line: true }))
+          })}
+        </div>
+
+        <div class="pbi-grid-2">
+          ${pbiPanel('Delivery transport by month · own fleet vs 3rd-party pass-through ($)', buildComboChartSvg(months, [
+            { key: 'own_trans_rev', label: 'Own-Fleet Delivery Rev', color: C.navy },
+            { key: 'third_trans_rev', label: '3rd-Party Pass-Through', color: C.brass }
+          ], {
+            label: 'Own-Fleet Share %',
+            color: C.steel,
+            isPct: true,
+            get: r => {
+              const own = Math.max(0, Number(r.own_trans_rev || 0));
+              const ext = Math.max(0, Number(r.third_trans_rev || 0));
+              return (own + ext) > 0 ? own / (own + ext) : 0;
+            }
+          }, { lineMax: 1 }), {
+            id: 'pbiSalesDeliveryTransChart',
+            subtitle: 'Customer delivery haulage billed on company trucks vs third-party haulers and own-fleet share %',
+            legend: [
+              { label: 'Own Fleet', color: C.navy },
+              { label: '3rd-Party Pass-Through', color: C.brass },
+              { label: 'Own-Fleet %', color: C.steel, line: true }
+            ]
+          })}
+          ${pbiPanel('Dispatch mix by month · delivery vs pick-up loads', buildClusteredColumnSvg(months, [
+            { key: 'deliv_loads_m', label: 'Delivery Loads', color: C.navy },
+            { key: 'pickup_loads_m', label: 'Pick-up Loads', color: C.steel }
+          ], { isMoney: false }), {
+            id: 'pbiSalesDispatchMixChart',
+            subtitle: 'Monthly weighbridge dispatches split between delivered customer loads and plant pick-up loads',
+            legend: [
+              { label: 'Delivery Loads', color: C.navy },
+              { label: 'Pick-up Loads', color: C.steel }
+            ]
           })}
         </div>
 
@@ -4635,10 +4756,9 @@
     }
 
     // =========================================================================
-    // PAGE 08: STOCK & HAULAGE (m18c_report.py Page 08 — Unit Economics & Transport Recovery)
+    // PAGE 08: STOCK & HAULAGE (Unit Economics & Two-Leg Raw Intake Split)
     // =========================================================================
     else if (activePageId === 'p08_stock') {
-      const costRecPct = Number(k.raw_haulage || 0) > 0 ? (Number(k.trans_rev || 0) / Number(k.raw_haulage || 1)) : 1;
       const p08AggGrades = pickTopAggregateGrades(prodRows, 999, rec.products);
       const p08AggSoldM3 = p08AggGrades.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
       const p08SellNet = hasAnySlicer && p08AggSoldM3 > 0
@@ -4648,6 +4768,8 @@
       const p08RawCostPerM3 = hasAnySlicer && p08RawM3 > 0
         ? round2(prodRows.reduce((a, p) => a + Number(p.raw_cost || 0), 0) / p08RawM3)
         : k.avg_raw_cost;
+      const unitSpreadM3 = round2(Number(p08SellNet || 0) - Number(p08RawCostPerM3 || 0));
+      const unitSpreadPct = Number(p08SellNet || 0) > 0 ? (unitSpreadM3 / Number(p08SellNet)) : 0;
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Raw Material Intake, Tonnage & Two-Leg Cost Split', [
@@ -4656,7 +4778,7 @@
             { label: 'Haulage Cost (3rd-Party)', value: fmtUSD(sc(k.raw_haulage), 0), sub: fmtPct(null, k.raw_haulage, k.raw_cost) + ' of raw cost' },
             { label: 'Raw Tons Purchased', value: fmtNum(k.raw_tons, 0) + ' t', sub: fmtNum(k.raw_qty, 0) + ' m³ purchased', tone: 'good' },
             { label: 'Avg Raw Cost / m³', value: fmtUSD(p08RawCostPerM3, 2), sub: 'Sell price: ' + fmtUSD(p08SellNet, 2) + '/m³' },
-            { label: 'Transport Cost Recovery', value: fmtPct(costRecPct), sub: 'Trans Rev ' + fmtUSDk(k.trans_rev) + ' ÷ Haul ' + fmtUSDk(k.raw_haulage), tone: costRecPct >= 1 ? 'good' : 'warn' }
+            { label: 'Aggregate Unit Spread', value: fmtUSD(unitSpreadM3, 2) + '/m³', sub: fmtPct(unitSpreadPct) + ' spread over raw cost', tone: unitSpreadM3 >= 0 ? 'good' : 'warn' }
           ])}
         </div>
 
@@ -4668,12 +4790,22 @@
             subtitle: 'Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw material intake cost',
             legend: [{ label: 'Selling Price ($/m³)', color: C.navy, line: true }, { label: 'Raw Cost ($/m³)', color: C.crit, line: true }]
           })}
-          ${pbiPanel('Transport revenue vs truck haulage cost by month', buildComboChartSvg(months, [
-            { key: 'trans_rev', label: 'Transport Revenue', color: C.steel },
-            { key: 'raw_haulage', label: '3rd-Party Haulage Cost', color: C.crit }
-          ], { label: 'Recovery %', color: C.brass, isPct: true, get: r => Number(r.raw_haulage || 0) > 0 ? Number(r.trans_rev || 0) / Number(r.raw_haulage) : 1 }), {
-            subtitle: 'Delivery transport billed to customers vs third-party raw haulage cost',
-            legend: [{ label: 'Trans Revenue', color: C.steel }, { label: 'Haulage Cost', color: C.crit }, { label: 'Recovery %', color: C.brass, line: true }]
+          ${pbiPanel('Raw intake cost split by month · material vs 3rd-party haulage ($)', buildComboChartSvg(months, [
+            { key: 'raw_mat_leg', label: 'Material Cost (Leg 1)', color: C.navy },
+            { key: 'raw_haul_leg', label: '3rd-Party Haulage (Leg 2)', color: C.crit }
+          ], {
+            label: 'Haulage Share %',
+            color: C.brass,
+            isPct: true,
+            get: r => {
+              const mat = Math.max(0, Number(r.raw_mat_leg || 0));
+              const haul = Math.max(0, Number(r.raw_haul_leg || 0));
+              return (mat + haul) > 0 ? haul / (mat + haul) : 0;
+            }
+          }, { lineMax: 1 }), {
+            id: 'pbiRawIntakeCostSplitChart',
+            subtitle: 'Site-owner material cost (Leg 1) vs subcontracted truck haulage (Leg 2) and monthly haulage share %',
+            legend: [{ label: 'Material (Leg 1)', color: C.navy }, { label: '3rd-Party Haul (Leg 2)', color: C.crit }, { label: 'Haulage Share %', color: C.brass, line: true }]
           })}
         </div>
 
@@ -4838,10 +4970,9 @@
     }
 
     // =========================================================================
-    // MERGED STOCK ANALYTICS: UNIT ECONOMICS, TRANSPORT RECOVERY & 3-LEG AP
+    // MERGED STOCK ANALYTICS: UNIT ECONOMICS, TWO-LEG INTAKE SPLIT & 3-LEG AP
     // =========================================================================
     else if (activePageId === 'p08_stock_ap') {
-      const costRecPct = Number(k.raw_haulage || 0) > 0 ? (Number(k.trans_rev || 0) / Number(k.raw_haulage || 1)) : 1;
       const p08ApAggGrades = pickTopAggregateGrades(prodRows, 999, rec.products);
       const p08ApAggSoldM3 = p08ApAggGrades.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
       const p08ApSellNet = hasAnySlicer && p08ApAggSoldM3 > 0
@@ -4851,6 +4982,8 @@
       const p08ApRawCostPerM3 = hasAnySlicer && p08ApRawM3 > 0
         ? round2(prodRows.reduce((a, p) => a + Number(p.raw_cost || 0), 0) / p08ApRawM3)
         : k.avg_raw_cost;
+      const p08ApSpreadM3 = round2(Number(p08ApSellNet || 0) - Number(p08ApRawCostPerM3 || 0));
+      const p08ApSpreadPct = Number(p08ApSellNet || 0) > 0 ? (p08ApSpreadM3 / Number(p08ApSellNet)) : 0;
       const isScopedAp = Boolean(activeRange || hasAnySlicer);
       const apBalVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_balance || 0), 0) : k.ap_balance;
       const apMatVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_material || 0), 0) : k.ap_material;
@@ -4860,13 +4993,13 @@
 
       bodyHtml = `
         <div class="pbi-overview-bands">
-          ${kpiBand('1 · Raw Material Intake, Tonnage & Unit Economics', [
+          ${kpiBand('1 · Raw Material Intake, Tonnage & Two-Leg Cost Split', [
             { label: 'Total Raw Cost', value: fmtUSD(sc(k.raw_cost), 0), sub: fmtNum(k.raw_loads) + ' raw loads', tone: 'brass' },
             { label: 'Material Cost (Site Owners)', value: fmtUSD(sc(k.raw_mat_cost), 0), sub: fmtPct(null, k.raw_mat_cost, k.raw_cost) + ' of raw cost' },
             { label: 'Haulage Cost (3rd-Party)', value: fmtUSD(sc(k.raw_haulage), 0), sub: fmtPct(null, k.raw_haulage, k.raw_cost) + ' of raw cost' },
             { label: 'Raw Tons Purchased', value: fmtNum(k.raw_tons, 0) + ' t', sub: fmtNum(k.raw_qty, 0) + ' m³ purchased', tone: 'good' },
             { label: 'Avg Raw Cost / m³', value: fmtUSD(p08ApRawCostPerM3, 2), sub: 'Sell price: ' + fmtUSD(p08ApSellNet, 2) + '/m³' },
-            { label: 'Transport Cost Recovery', value: fmtPct(costRecPct), sub: 'Trans Rev ' + fmtUSDk(k.trans_rev) + ' ÷ Haul ' + fmtUSDk(k.raw_haulage), tone: costRecPct >= 1 ? 'good' : 'warn' }
+            { label: 'Aggregate Unit Spread', value: fmtUSD(p08ApSpreadM3, 2) + '/m³', sub: fmtPct(p08ApSpreadPct) + ' spread over raw cost', tone: p08ApSpreadM3 >= 0 ? 'good' : 'warn' }
           ])}
           ${kpiBand('2 · 3-Leg Supplier & Hauler Payables (Accrual vs Settlement)', [
             { label: 'Net Open AP Balance', value: fmtUSD(apBalVal, 0), sub: 'Class 4011 Supplier Liability', tone: 'brass' },
@@ -4886,12 +5019,22 @@
             subtitle: 'Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw material intake cost',
             legend: [{ label: 'Selling Price ($/m³)', color: C.navy, line: true }, { label: 'Raw Cost ($/m³)', color: C.crit, line: true }]
           })}
-          ${pbiPanel('Transport revenue vs truck haulage cost by month', buildComboChartSvg(months, [
-            { key: 'trans_rev', label: 'Transport Revenue', color: C.steel },
-            { key: 'raw_haulage', label: '3rd-Party Haulage Cost', color: C.crit }
-          ], { label: 'Recovery %', color: C.brass, isPct: true, get: r => Number(r.raw_haulage || 0) > 0 ? Number(r.trans_rev || 0) / Number(r.raw_haulage) : 1 }), {
-            subtitle: 'Delivery transport billed to customers vs third-party raw haulage cost',
-            legend: [{ label: 'Trans Revenue', color: C.steel }, { label: 'Haulage Cost', color: C.crit }, { label: 'Recovery %', color: C.brass, line: true }]
+          ${pbiPanel('Raw intake cost split by month · material vs 3rd-party haulage ($)', buildComboChartSvg(months, [
+            { key: 'raw_mat_leg', label: 'Material Cost (Leg 1)', color: C.navy },
+            { key: 'raw_haul_leg', label: '3rd-Party Haulage (Leg 2)', color: C.crit }
+          ], {
+            label: 'Haulage Share %',
+            color: C.brass,
+            isPct: true,
+            get: r => {
+              const mat = Math.max(0, Number(r.raw_mat_leg || 0));
+              const haul = Math.max(0, Number(r.raw_haul_leg || 0));
+              return (mat + haul) > 0 ? haul / (mat + haul) : 0;
+            }
+          }, { lineMax: 1 }), {
+            id: 'pbiRawIntakeCostSplitChart',
+            subtitle: 'Site-owner material cost (Leg 1) vs subcontracted truck haulage (Leg 2) and monthly haulage share %',
+            legend: [{ label: 'Material (Leg 1)', color: C.navy }, { label: '3rd-Party Haul (Leg 2)', color: C.crit }, { label: 'Haulage Share %', color: C.brass, line: true }]
           })}
         </div>
 
@@ -6905,7 +7048,7 @@
     },
     raw_analytics: {
       title: 'Stock Intake, Unit Economics & 3-Leg Payables',
-      subtitle: 'Raw Material Intake, Unit Margin, Transport Cost Recovery & Monthly Supplier Accrual vs Settlement',
+      subtitle: 'Raw Material Intake, Unit Margin, Two-Leg Cost Split & Monthly Supplier Accrual vs Settlement',
       defaultSec: 'stock',
       sections: [
         { id: 'stock', label: 'Stock Intake, Unit Economics & 3-Leg Payables', pageId: 'p08_stock_ap', studioPageId: 'p08_stock', badge: 'Analytics' }
@@ -6936,7 +7079,7 @@
       sections: [
         { id: 'costclass', label: '3-Leg AP & Expense Cost Classes', pageId: 'p07_ap', badge: 'Analytics' },
         { id: 'jv', label: 'JV 50/50 Sites & Partner Stock Entitlement', pageId: 'p17_jv', badge: 'Moved Page' },
-        { id: 'stock', label: 'Unit Economics & Transport Cost Recovery', pageId: 'p08_stock', badge: 'Analytics' }
+        { id: 'stock', label: 'Unit Economics & Raw Intake Cost Split', pageId: 'p08_stock', badge: 'Analytics' }
       ]
     },
     payroll_analytics: {
@@ -6984,11 +7127,11 @@
     },
     raw: {
       title: 'Material, Transportation, JV 50/50 & Unit Economics',
-      subtitle: 'Joint Venture 50/50 Site Stock Entitlement, Unit Margin & Transport Cost Recovery',
+      subtitle: 'Joint Venture 50/50 Site Stock Entitlement, Unit Margin & Raw Intake Cost Split',
       defaultSec: 'jv',
       sections: [
         { id: 'jv', label: 'JV 50/50 Sites & Partner Stock Entitlement', pageId: 'p17_jv', badge: 'Moved Page' },
-        { id: 'stock', label: 'Unit Economics & Transport Cost Recovery', pageId: 'p08_stock', badge: 'Analytics' }
+        { id: 'stock', label: 'Unit Economics & Raw Intake Cost Split', pageId: 'p08_stock', badge: 'Analytics' }
       ]
     },
     fleet: {
@@ -7898,12 +8041,14 @@
   function renderSalesVisualsSection(ctx) {
     const months = (ctx && ctx.months) || [];
     const prodRows = (ctx && ctx.prodRows) || [];
+    const chartMode = (ctx && ctx.chartMode) === 'transport' ? 'transport' : 'payment';
+    const salesTicketRows = (ctx && (ctx.trendSalesRows || ctx.salesRows)) || [];
     const top4Prods = pickTopAggregateGrades(prodRows, 4, ctx && ctx.productsCatalog);
     const prodColors = [C.navy, C.brass, C.steel, C.amber];
     const priceSeries = buildMonthlyGradePriceSeries(
       months,
       top4Prods,
-      (ctx && (ctx.trendSalesRows || ctx.salesRows)) || [],
+      salesTicketRows,
       {
         basis: ctx && ctx.basis,
         ticketMeters: ctx && ctx.ticketMeters,
@@ -7911,15 +8056,53 @@
         colors: prodColors
       }
     );
-    return `
-      <div class="pbi-grid-2" id="salesChartsRow" style="margin-bottom:14px">
-        ${pbiPanel('Monthly Cash vs. Credit Sales ($)', buildClusteredColumnSvg(months, [
+    const modeSwitchHtml = `
+      <div class="cf-mode-switch" role="group" aria-label="Monthly Sales Chart View">
+        <button type="button" class="cf-mode-btn ${chartMode === 'payment' ? 'active' : ''}" data-sales-chart-mode="payment">Cash vs. Credit</button>
+        <button type="button" class="cf-mode-btn ${chartMode === 'transport' ? 'active' : ''}" data-sales-chart-mode="transport">Delivery Transport</button>
+      </div>
+    `;
+    const delivMonths = chartMode === 'transport'
+      ? buildMonthlyDeliveryTransportRows(months, salesTicketRows, {
+          basis: ctx && ctx.basis,
+          ticketSign: ctx && ctx.ticketSign,
+          hasTicketSource: ctx && ctx.hasTicketSource
+        })
+      : months;
+    const leftPanelHtml = chartMode === 'transport'
+      ? pbiPanel('Monthly Delivery Transport · Own Fleet vs. 3rd-Party Pass-Through ($)', buildComboChartSvg(delivMonths, [
+          { key: 'own_trans_rev', label: 'Own-Fleet Delivery Rev', color: C.navy },
+          { key: 'third_trans_rev', label: '3rd-Party Pass-Through', color: C.brass }
+        ], {
+          label: 'Own-Fleet Share %',
+          color: C.steel,
+          isPct: true,
+          get: r => {
+            const own = Math.max(0, Number(r.own_trans_rev || 0));
+            const ext = Math.max(0, Number(r.third_trans_rev || 0));
+            return (own + ext) > 0 ? own / (own + ext) : 0;
+          }
+        }, { lineMax: 1 }), {
+          id: 'salesDeliveryTransChart',
+          subtitle: 'Customer delivery haulage billed on company trucks vs third-party haulers and own-fleet share %',
+          headerRight: modeSwitchHtml,
+          legend: [
+            { label: 'Own Fleet', color: C.navy },
+            { label: '3rd-Party Pass-Through', color: C.brass },
+            { label: 'Own-Fleet %', color: C.steel, line: true }
+          ]
+        })
+      : pbiPanel('Monthly Cash vs. Credit Sales ($)', buildClusteredColumnSvg(months, [
           { key: 'credit_sales', label: 'Credit Sales', color: C.navy },
           { key: 'cash_sales', label: 'Cash Sales', color: C.steel }
         ]), {
           subtitle: 'Monthly ex-VAT credit billings vs cash weighbridge sales',
+          headerRight: modeSwitchHtml,
           legend: [{ label: 'Credit', color: C.navy }, { label: 'Cash', color: C.steel }]
-        })}
+        });
+    return `
+      <div class="pbi-grid-2" id="salesChartsRow" style="margin-bottom:14px">
+        ${leftPanelHtml}
         ${pbiPanel('Realised Price per Unit ($/m³) by Month · Top Aggregate Grades', buildMultiLineSvg(months, priceSeries, { isMoney: true, decimals: 2 }), {
           subtitle: 'Monthly realised material price ($/m³ ex-transport & VAT) from weighbridge tickets across top 4 aggregate grades',
           legend: priceSeries.map(s => ({ label: s.label, color: s.color, line: true }))
@@ -8804,6 +8987,7 @@
     renderUniversalRegistriesView,
     renderCashFlowVisualsSection,
     renderSalesVisualsSection,
+    buildMonthlyDeliveryTransportRows,
     renderCustomersVisualsSection,
     renderPricingVisualsSection,
     renderQuarryPricingVisualsSection,
