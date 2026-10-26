@@ -139,6 +139,7 @@
     rawSiteFilter: 'expense',
     partDispFilter: 'all',
     unitHealthFilter: 'all',
+    sentinelFilter: 'all',
     wfMapDate: '',
     wfIncludeHaulers: false,
     wfAuditScope: 'period',
@@ -192,6 +193,7 @@
     }),
     sessions: lsGet('isabi_mfg_sessions_v2', null) || [],
     customRecords: lsGet('isabi_mfg_custom_recs_v2', null) || {},
+    sentinelReviews: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_sentinel_reviews_v1', null) : null) || {},
     supabaseCfg: lsGet('isabi_mfg_supabase_cfg', null) || { url: '', anonKey: '' },
     faceSettings: (() => {
       const saved = lsGet('isabi_mfg_face_settings_v2', null) || {};
@@ -6229,124 +6231,759 @@
   }
 
   // ==========================================================================
-  // VIEW 02: AI SENTINELS (M280 LIVE WATCHDOGS — DRIVEN BY THE SNAPSHOT DATA)
+  // VIEW 02: AI SENTINELS (LIVE SQL WATCHDOGS + OWNER SIGN-OFF & DRILL-DOWN)
   // ==========================================================================
+  let _liveSentinelCache = null;
+
+  function canReviewSentinels(u) {
+    const user = u || activeUser();
+    if (!user) return false;
+    const roleStr = String(user.role || '');
+    return /owner|admin|super|director|cfo|audit/i.test(roleStr) || user.pbi_access === 'full';
+  }
+
+  function sentinelReviewKey(ruleId, coKey) {
+    return `${coKey || STATE.company || 'manufacturing-group'}|${ruleId}`;
+  }
+
+  function persistSentinelReviewRows(changedMap) {
+    saveLocalAuthAndRecords();
+    if (HAS_LOCAL_API && changedMap && Object.keys(changedMap).length) {
+      fetch('./api/sentinel_reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reviews: changedMap })
+      }).catch(() => {});
+    }
+    syncWithCloud(true);
+  }
+
+  function markSentinelReviewed(ruleId) {
+    if (!canReviewSentinels()) {
+      toast('Only Owner or Supervisor seats may sign off audit rules', 'err');
+      return false;
+    }
+    const items = buildSentinelItems();
+    const target = items.find(i => i.id === ruleId);
+    if (!target) return false;
+    if (!STATE.sentinelReviews || typeof STATE.sentinelReviews !== 'object') STATE.sentinelReviews = {};
+    const user = activeUser() || {};
+    const nowIso = new Date().toISOString();
+    const key = sentinelReviewKey(ruleId, STATE.company);
+    const row = {
+      id: key,
+      rule_id: ruleId,
+      company: STATE.company || 'manufacturing-group',
+      baseline_metric: Number(target.rawMetric || 0),
+      baseline_secondary: Number(target.rawSecondary || 0),
+      baseline_badge: String(target.rawBadge || target.badge || ''),
+      active: true,
+      checked_by: String(user.full_name || user.email || 'Owner'),
+      checked_by_email: String(user.email || ''),
+      checked_at: nowIso,
+      updated_at: nowIso,
+      note: ''
+    };
+    STATE.sentinelReviews[key] = row;
+    persistSentinelReviewRows({ [key]: row });
+    return true;
+  }
+
+  function unmarkSentinelReviewed(ruleId) {
+    if (!canReviewSentinels()) return false;
+    if (!STATE.sentinelReviews || typeof STATE.sentinelReviews !== 'object') return false;
+    const key = sentinelReviewKey(ruleId, STATE.company);
+    const ex = STATE.sentinelReviews[key];
+    if (!ex) return false;
+    const nowIso = new Date().toISOString();
+    const row = Object.assign({}, ex, { active: false, updated_at: nowIso });
+    STATE.sentinelReviews[key] = row;
+    persistSentinelReviewRows({ [key]: row });
+    return true;
+  }
+
+  function markAllFlaggedSentinelsReviewed() {
+    if (!canReviewSentinels()) {
+      toast('Only Owner or Supervisor seats may sign off audit rules', 'err');
+      return 0;
+    }
+    const items = buildSentinelItems().filter(i => i.severity !== 'ok');
+    if (!items.length) return 0;
+    if (!STATE.sentinelReviews || typeof STATE.sentinelReviews !== 'object') STATE.sentinelReviews = {};
+    const user = activeUser() || {};
+    const nowIso = new Date().toISOString();
+    const batch = {};
+    items.forEach(target => {
+      const key = sentinelReviewKey(target.id, STATE.company);
+      const row = {
+        id: key,
+        rule_id: target.id,
+        company: STATE.company || 'manufacturing-group',
+        baseline_metric: Number(target.rawMetric || 0),
+        baseline_secondary: Number(target.rawSecondary || 0),
+        baseline_badge: String(target.rawBadge || target.badge || ''),
+        active: true,
+        checked_by: String(user.full_name || user.email || 'Owner'),
+        checked_by_email: String(user.email || ''),
+        checked_at: nowIso,
+        updated_at: nowIso,
+        note: ''
+      };
+      STATE.sentinelReviews[key] = row;
+      batch[key] = row;
+    });
+    persistSentinelReviewRows(batch);
+    return items.length;
+  }
+
+  function resetCompanySentinelReviews() {
+    if (!canReviewSentinels() || !STATE.sentinelReviews) return 0;
+    const prefix = (STATE.company || 'manufacturing-group') + '|';
+    const nowIso = new Date().toISOString();
+    const batch = {};
+    let cnt = 0;
+    Object.entries(STATE.sentinelReviews).forEach(([k, v]) => {
+      if (k.startsWith(prefix) && v && v.active) {
+        const row = Object.assign({}, v, { active: false, updated_at: nowIso });
+        STATE.sentinelReviews[k] = row;
+        batch[k] = row;
+        cnt += 1;
+      }
+    });
+    if (cnt > 0) persistSentinelReviewRows(batch);
+    return cnt;
+  }
+
   function sentinelSlice() {
     const sn = SEED.sentinels || {};
     const mk = SENTINEL_MODEL_KEY[STATE.company];
-    return {
-      fleet: (((sn.fleet_fuel_overtime_auditor || {}).by_model) || {})[mk] || {},
-      pricing: (((sn.pricing_commission_payroll_sentinel || {}).by_model) || {})[mk] || {},
-      parity: sn.sharepoint_parity_sentinel || {},
-      generated: sn.generated_at || ''
+    const baseFleet = (((sn.fleet_fuel_overtime_auditor || {}).by_model) || {})[mk] || {};
+    const basePricing = (((sn.pricing_commission_payroll_sentinel || {}).by_model) || {})[mk] || {};
+    const baseParity = sn.sharepoint_parity_sentinel || {};
+    const salesArr = SEED.records && SEED.records.sales_tickets;
+    if (!Array.isArray(salesArr) || !salesArr.length) {
+      return {
+        fleet: baseFleet,
+        pricing: basePricing,
+        parity: baseParity,
+        overdueArRows: [],
+        wfAnomalies: [],
+        generated: sn.generated_at || '',
+        isLive: false
+      };
+    }
+
+    const cacheKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${salesArr.length}|${(SEED.records.raw_purchases || []).length}|${(SEED.records.fuel_intakes || []).length}|${(SEED.records.salaries || []).length}|${(SEED.records.employments || []).length}|${(SEED.records.price_rules || []).length}|${(SEED.records.vat_invoices || []).length}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${allowedCompanyNames().join(',')}`;
+    if (_liveSentinelCache && _liveSentinelCache.key === cacheKey) {
+      return _liveSentinelCache.val;
+    }
+
+    const isPeriodFiltered = Boolean(periodRange(STATE.period));
+    const mdl = getModel() || {};
+
+    // 1. Live Fleet & Fuel Meter / Burn Outliers (S2 + S3)
+    const fuelsScoped = filterRecords(SEED.records.fuel_intakes, { ignoreSearch: true });
+    const fuelsAllCo = isPeriodFiltered
+      ? filterRecords(SEED.records.fuel_intakes, { ignoreSearch: true, ignorePeriod: true })
+      : fuelsScoped;
+    const guards = meterGuardMap(fuelsAllCo);
+    const voidedEqNorms = new Set();
+    ((STATE.customRecords && STATE.customRecords.equipment) || []).forEach(x => {
+      if (x && x.voided) {
+        const nm = norm(x.name || x.equipment);
+        if (nm) voidedEqNorms.add(nm);
+      }
+    });
+    const mdlEqByNorm = new Map();
+    (mdl.equipment || []).forEach(e => {
+      if (e && e.Equipment) mdlEqByNorm.set(norm(e.Equipment), e);
+    });
+
+    const unitFuelStats = new Map();
+    const meterIssues = [];
+    let appRefillDelta = 0, appDispenseDelta = 0;
+    fuelsScoped.forEach(f => {
+      if (!f || f.voided) return;
+      const isDiesel = /diesel|mazout/i.test(String(f.item || f.fuel_type || 'Diesel'));
+      const l = Number(f.litres || 0);
+      if (isDiesel && isAppRecord(f)) {
+        if (/refill|purchase|intake|tank/i.test(String(f.fuel_type || f.location || '')) && !f.equipment) appRefillDelta += l;
+        else appDispenseDelta += l;
+      }
+      const g = guards.get(f.id);
+      if (isAppRecord(f) && g && (g.cls === 'badge-err' || g.cls === 'badge-warn')) {
+        meterIssues.push({
+          id: f.id, rid: f.id, rkey: 'fuel_intakes',
+          equipment: f.equipment || 'Unassigned',
+          type: 'Meter Check',
+          metric: g.label || 'Meter jump',
+          value: Number(f.odometer || f.hours || 0),
+          distance_km: Number(f.odometer || 0) || null,
+          hours: Number(f.hours || 0) || null,
+          diesel_l: l
+        });
+      }
+      if (!isDiesel || !f.equipment || l <= 0) return;
+      const ek = norm(f.equipment);
+      if (!ek || voidedEqNorms.has(ek)) return;
+      let st = unitFuelStats.get(ek);
+      if (!st) {
+        st = { name: f.equipment, diesel_l: 0, minOdo: Infinity, maxOdo: -Infinity, minHr: Infinity, maxHr: -Infinity, lastId: f.id, lastDate: '' };
+        unitFuelStats.set(ek, st);
+      }
+      st.diesel_l += l;
+      const odo = Number(f.odometer || 0);
+      const hr = Number(f.hours || 0);
+      if (odo > 0) { if (odo < st.minOdo) st.minOdo = odo; if (odo > st.maxOdo) st.maxOdo = odo; }
+      if (hr > 0) { if (hr < st.minHr) st.minHr = hr; if (hr > st.maxHr) st.maxHr = hr; }
+      const d = String(f.date || '');
+      if (d >= st.lastDate) { st.lastDate = d; st.lastId = f.id; }
+    });
+
+    const liveOutliers = meterIssues.slice();
+    unitFuelStats.forEach((st, ek) => {
+      const eqRec = equipInfo(st.name);
+      const mdlEq = mdlEqByNorm.get(ek);
+      const eqType = String((eqRec && (eqRec.type || eqRec.Type)) || (mdlEq && mdlEq.Type) || 'Truck');
+      const odoSpan = (st.maxOdo > st.minOdo && Number.isFinite(st.minOdo)) ? (st.maxOdo - st.minOdo) : 0;
+      const hrSpan = (st.maxHr > st.minHr && Number.isFinite(st.minHr)) ? (st.maxHr - st.minHr) : 0;
+      const kmSpan = odoSpan > 0 ? odoSpan : (!isPeriodFiltered && mdlEq ? Number(mdlEq.km_run || 0) : 0);
+      const ridVal = (eqRec && eqRec.id) ? eqRec.id : st.name;
+      if (kmSpan >= 100) {
+        const rate100 = round2((st.diesel_l / kmSpan) * 100);
+        if (rate100 > 80) {
+          liveOutliers.push({
+            id: ridVal, rid: ridVal, rkey: 'equipment',
+            equipment: (eqRec && eqRec.name) || st.name,
+            type: eqType,
+            metric: 'L/100km',
+            value: rate100,
+            distance_km: round2(kmSpan),
+            diesel_l: round2(st.diesel_l)
+          });
+          return;
+        }
+      }
+      if (hrSpan >= 20) {
+        const rateHr = round2(st.diesel_l / hrSpan);
+        if (rateHr > 25) {
+          liveOutliers.push({
+            id: ridVal, rid: ridVal, rkey: 'equipment',
+            equipment: (eqRec && eqRec.name) || st.name,
+            type: eqType,
+            metric: 'L/h',
+            value: rateHr,
+            hours: round2(hrSpan),
+            diesel_l: round2(st.diesel_l)
+          });
+        }
+      }
+    });
+    liveOutliers.sort((a, b) => Number(b.diesel_l || 0) - Number(a.diesel_l || 0));
+
+    const baseTank = baseFleet.diesel_stock_balance_l != null ? Number(baseFleet.diesel_stock_balance_l) : null;
+    const liveFleet = Object.assign({}, baseFleet, {
+      active_equipment: (mdl.equipment || []).length || baseFleet.active_equipment || 0,
+      meter_readings_to_check: meterIssues.length,
+      consumption_outliers: liveOutliers,
+      consumption_outliers_count: liveOutliers.length,
+      diesel_purchased_l: baseFleet.diesel_purchased_l != null ? round2(Number(baseFleet.diesel_purchased_l) + appRefillDelta) : null,
+      diesel_issued_l: baseFleet.diesel_issued_l != null ? round2(Number(baseFleet.diesel_issued_l) + appDispenseDelta) : null,
+      diesel_stock_balance_l: baseTank != null ? round2(baseTank + appRefillDelta - appDispenseDelta) : null
+    });
+
+    // 2. Live Price Agreement Enforcement (S5) + Weighbridge Pad Audit (S6) + Payroll Contract Match (S7)
+    const rulesScoped = filterRecords(SEED.records.price_rules, { ignorePeriod: true, ignoreSearch: true }).filter(r => r && !r.voided);
+    const isRuleOpenToday = r => (!r.end_date || String(r.end_date).slice(0, 10) >= SEED_DATE) && (!r.start_date || String(r.start_date).slice(0, 10) <= SEED_DATE);
+    const activeAgreementsCnt = rulesScoped.filter(isRuleOpenToday).length;
+    const truckDeliveryRulesCnt = rulesScoped.filter(r => r.truck_size || r.qty1 || /truck/i.test(String(r.rate_per || r.unit || ''))).length;
+
+    const custProdRules = new Map();
+    rulesScoped.forEach(r => {
+      if (!r.customer || !r.product || isMatIndiffRule(r)) return;
+      const up = Number(r.unit_price ?? r.price ?? 0);
+      if (!(up > 0)) return;
+      const pk = `${norm(r.company)}|${norm(r.customer)}|${norm(r.product)}`;
+      let arr = custProdRules.get(pk);
+      if (!arr) { arr = []; custProdRules.set(pk, arr); }
+      arr.push(r);
+    });
+
+    const belowPairsMap = new Map();
+    const lapsedPairsMap = new Map();
+    const salesScoped = filterRecords(SEED.records.sales_tickets, { ignoreSearch: true });
+    salesScoped.forEach(t => {
+      if (!t || t.voided || ticketSign(t) !== 1) return;
+      if (!t.customer || !t.product) return;
+      const qty = ticketProductQty(t);
+      const up = Number(t.unit_price || 0);
+      const txDate = String(t.date || '').slice(0, 10);
+      if (!(qty > 0) || !(up > 0) || !txDate) return;
+      const pk = `${norm(t.company)}|${norm(t.customer)}|${norm(t.product)}`;
+      const allCand = custProdRules.get(pk);
+      if (!allCand || !allCand.length) return;
+
+      const isPickup = /pickup/i.test(String(t.sale_type || ''));
+      const typeCand = allCand.filter(r => {
+        const rt = String(r.rule_type || '').toLowerCase();
+        if (isPickup) return !rt.includes('delivery');
+        return !rt.includes('pickup');
+      });
+      const pool1 = typeCand.length ? typeCand : allCand;
+      const tSite = norm(t.site);
+      const exactSite = tSite ? pool1.filter(r => norm(r.site) === tSite) : [];
+      const blankSite = pool1.filter(r => !norm(r.site));
+      const cand = exactSite.length ? exactSite : (blankSite.length ? blankSite : pool1);
+
+      const actOnDate = cand.filter(r => {
+        const s0 = r.start_date ? String(r.start_date).slice(0, 10) : '1900-01-01';
+        const e0 = r.end_date ? String(r.end_date).slice(0, 10) : '9999-12-31';
+        return s0 <= txDate && txDate <= e0;
+      });
+
+      if (actOnDate.length) {
+        let minAg = Infinity;
+        actOnDate.forEach(r => {
+          const rp = Number(r.unit_price ?? r.price ?? 0);
+          if (rp > 0 && rp < minAg) minAg = rp;
+        });
+        if (Number.isFinite(minAg) && up + 0.01 < minAg) {
+          let b = belowPairsMap.get(pk);
+          if (!b) {
+            b = { cust: t.customer, prod: t.product, company: t.company, qty: 0, tickets: 0, shortfall: 0, lastDate: '', lastPrice: up, agreedPrice: minAg, lastId: t.id };
+            belowPairsMap.set(pk, b);
+          }
+          b.qty += qty;
+          b.tickets += 1;
+          b.shortfall += (minAg - up) * qty;
+          if (txDate >= b.lastDate) {
+            b.lastDate = txDate;
+            b.lastPrice = up;
+            b.agreedPrice = minAg;
+            b.lastId = t.id;
+          }
+        }
+      } else {
+        const hasRenewedOpen = cand.some(isRuleOpenToday);
+        if (!hasRenewedOpen) {
+          const endedBefore = cand.filter(r => r.end_date && String(r.end_date).slice(0, 10) < txDate);
+          if (endedBefore.length) {
+            let latestEnded = endedBefore[0];
+            endedBefore.forEach(r => {
+              if (String(r.end_date).slice(0, 10) > String(latestEnded.end_date).slice(0, 10)) latestEnded = r;
+            });
+            let lp = lapsedPairsMap.get(pk);
+            if (!lp) {
+              lp = { cust: t.customer, prod: t.product, company: t.company, qty: 0, rev: 0, tickets: 0, agreedPrice: Number(latestEnded.unit_price ?? latestEnded.price ?? 0), endDate: String(latestEnded.end_date).slice(0, 10), lastDate: '', lastId: t.id, ruleId: latestEnded.id };
+              lapsedPairsMap.set(pk, lp);
+            }
+            lp.qty += qty;
+            lp.rev += qty * up;
+            lp.tickets += 1;
+            if (txDate >= lp.lastDate) {
+              lp.lastDate = txDate;
+              lp.lastId = t.id;
+              lp.ruleId = latestEnded.id;
+              lp.agreedPrice = Number(latestEnded.unit_price ?? latestEnded.price ?? 0);
+              lp.endDate = String(latestEnded.end_date).slice(0, 10);
+            }
+          }
+        }
+      }
+    });
+
+    const liveBelowRows = Array.from(belowPairsMap.values())
+      .sort((a, b) => b.shortfall - a.shortfall)
+      .map(b => ({
+        id: b.lastId, rid: b.lastId, rkey: 'sales_tickets',
+        customer: b.cust, product: b.prod, company: b.company,
+        qty: round2(b.qty), qty_sold: round2(b.qty), tickets: b.tickets,
+        last_price: round2(b.lastPrice), last_sold_price: round2(b.lastPrice),
+        agreed_price: round2(b.agreedPrice),
+        gap_per_unit_usd: round2(b.agreedPrice - b.lastPrice),
+        spread: round2(b.lastPrice - b.agreedPrice),
+        shortfall_usd: round2(b.shortfall), shortfall: round2(b.shortfall),
+        last_date: b.lastDate
+      }));
+    const liveBelowTotalUsd = round2(liveBelowRows.reduce((s, r) => s + Number(r.shortfall_usd || 0), 0));
+
+    const liveLapsedRows = Array.from(lapsedPairsMap.values())
+      .sort((a, b) => b.qty - a.qty)
+      .map(lp => ({
+        id: lp.ruleId || lp.lastId, rid: lp.ruleId || lp.lastId, rkey: lp.ruleId ? 'price_rules' : 'sales_tickets',
+        customer: lp.cust, product: lp.prod, company: lp.company,
+        qty: round2(lp.qty), tickets: lp.tickets,
+        actual_price: lp.qty > 0 ? round2(lp.rev / lp.qty) : 0,
+        agreed_price: round2(lp.agreedPrice),
+        end_date: lp.endDate, last_date: lp.lastDate
+      }));
+
+    // Live S6 Ticket Serial Audit
+    const padAudit = buildTicketSerialAudit();
+
+    // Live S7 Payroll Contract Match
+    const empsScoped = filterRecords(SEED.records.employments, { ignorePeriod: true, ignoreSearch: true }).filter(e => e && !e.voided && e.staff);
+    const empWindows = new Map();
+    empsScoped.forEach(e => {
+      const ek = `${norm(e.company)}|${norm(e.staff)}`;
+      let wins = empWindows.get(ek);
+      if (!wins) { wins = []; empWindows.set(ek, wins); }
+      wins.push({
+        startYm: String(e.start_date || '1900-01').slice(0, 7),
+        endYm: String(e.end_date || '9999-12').slice(0, 7)
+      });
+    });
+
+    const salsScoped = filterRecords(SEED.records.salaries, { ignoreSearch: true });
+    const unmByStaff = new Map();
+    salsScoped.forEach(s => {
+      if (!s || s.voided || !s.staff) return;
+      const ym = String(s.payroll_month || s.date || '').slice(0, 7);
+      const usd = Number(s.amount || 0) > 0 ? Number(s.amount) : (Number(s.lbp_amount || 0) > 0 ? Number(s.lbp_amount) / 89500 : 0);
+      if (!(usd > 0) || !ym) return;
+      const ek = `${norm(s.company)}|${norm(s.staff)}`;
+      const wins = empWindows.get(ek) || [];
+      const covered = wins.some(w => w.startYm <= ym && ym <= w.endYm);
+      if (!covered) {
+        let row = unmByStaff.get(ek);
+        if (!row) {
+          row = { id: s.id, rid: s.id, rkey: 'salaries', staff: s.staff, company: s.company || 'WTC', unmatched_usd: 0, months: new Set(), lastDate: '' };
+          unmByStaff.set(ek, row);
+        }
+        row.unmatched_usd += usd;
+        row.months.add(ym);
+        const dt = String(s.date || '');
+        if (dt >= row.lastDate) { row.lastDate = dt; row.id = s.id; row.rid = s.id; }
+      }
+    });
+    const liveUnmatchedStaff = Array.from(unmByStaff.values())
+      .map(r => ({
+        id: r.id, rid: r.rid, rkey: 'salaries',
+        staff: r.staff, company: r.company,
+        months_count: r.months.size,
+        unmatched_usd: round2(r.unmatched_usd)
+      }))
+      .sort((a, b) => b.unmatched_usd - a.unmatched_usd);
+    const liveUnmatchedTotalUsd = round2(liveUnmatchedStaff.reduce((s, r) => s + r.unmatched_usd, 0));
+
+    const livePricing = Object.assign({}, basePricing, {
+      active_agreements: activeAgreementsCnt,
+      truck_unit_delivery_rules: truckDeliveryRulesCnt,
+      sales_below_agreed_usd: liveBelowTotalUsd,
+      below_agreed_pairs_count: liveBelowRows.length,
+      top_below_agreed_exceptions: liveBelowRows,
+      lapsed_agreement_pairs_count: liveLapsedRows.length,
+      lapsed_agreement_pairs: liveLapsedRows,
+      duplicate_ticket_numbers: padAudit.duplicates.length,
+      unnumbered_tickets: padAudit.unnumbered.length,
+      incomplete_ticket_books: new Set(padAudit.skipped.map(x => `${x.company}|${x.padRun}`)).size,
+      missing_tickets_in_books: padAudit.skipped.reduce((s, x) => s + Number(x.count || 0), 0),
+      unmatched_salary_payments_usd: liveUnmatchedTotalUsd,
+      unmatched_salary_by_staff: liveUnmatchedStaff
+    });
+
+    // 3. Live Date-Basis Parity > 31 Days & Unlinked VAT Invoices (S8)
+    const dateGaps = [];
+    const scanDateGaps = (tblLabel, rkey, list, amtFn) => {
+      filterRecords(list, { ignoreSearch: true }).forEach(r => {
+        if (!r || r.voided || !r.date || !r.rep_date) return;
+        const d1 = String(r.date).slice(0, 10);
+        const d2 = String(r.rep_date).slice(0, 10);
+        if (d1 === d2 || d1.length < 10 || d2.length < 10) return;
+        const t1 = Date.parse(d1 + 'T00:00:00Z');
+        const t2 = Date.parse(d2 + 'T00:00:00Z');
+        if (!Number.isFinite(t1) || !Number.isFinite(t2)) return;
+        const gap = Math.round((t2 - t1) / 86400000);
+        if (Math.abs(gap) > 31) {
+          dateGaps.push({
+            id: r.id, rid: r.id, rkey,
+            table: tblLabel,
+            bu: r.company || 'WTC',
+            name: r.name || r.id,
+            ticket: String(r.ticket_no || r.invoice || r.reference || '—'),
+            transaction_date: d1,
+            reporting_date: d2,
+            gap_days: gap,
+            amount_usd: round2(Number(amtFn(r) || 0))
+          });
+        }
+      });
     };
+    scanDateGaps('Sales', 'sales_tickets', SEED.records.sales_tickets, r => r.total_ttc != null ? r.total_ttc : r.total);
+    scanDateGaps('Raw', 'raw_purchases', SEED.records.raw_purchases, r => r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)));
+    scanDateGaps('Expenses', 'expenses', SEED.records.expenses, r => r.amount);
+    dateGaps.sort((a, b) => Math.abs(b.gap_days) - Math.abs(a.gap_days));
+
+    const linkedVatRefs = new Set();
+    (SEED.records.sales_tickets || []).forEach(s => {
+      if (s && !s.voided && s.vat_invoice) {
+        linkedVatRefs.add(`${norm(s.company)}|${norm(s.vat_invoice)}`);
+      }
+    });
+    const unlinkedVats = [];
+    filterRecords(SEED.records.vat_invoices, { ignoreSearch: true }).forEach(v => {
+      if (!v || v.voided) return;
+      const ck = norm(v.company);
+      const hasTicketRef = (v.name && linkedVatRefs.has(`${ck}|${norm(v.name)}`)) ||
+        (v.invoice_no && linkedVatRefs.has(`${ck}|${norm(v.invoice_no)}`));
+      if (!hasTicketRef && Number(v.tickets_count || 0) === 0) {
+        unlinkedVats.push({
+          id: v.id, rid: v.id, rkey: 'vat_invoices',
+          bu: v.company || 'WTC',
+          invoice: v.name || ('VAT ' + (v.invoice_no || '')),
+          invoiceno: v.invoice_no || '-',
+          customer: v.customer || '-',
+          date: v.date || '',
+          header_net: round2(Number(v.net_amount || 0)),
+          header_vat: round2(Number(v.vat_amount || 0))
+        });
+      }
+    });
+
+    const liveParity = Object.assign({}, baseParity, {
+      date_basis_anomalies_gt_31d_count: dateGaps.length,
+      date_basis_anomalies_gt_31d: dateGaps,
+      unlinked_vat_invoices_count: unlinkedVats.length,
+      unlinked_vat_invoices_sample: unlinkedVats
+    });
+
+    // 4. Overdue AR > 60 Days (S4) & Workforce Absent-Driver / Unattributed Machine Entries (S9)
+    const overdueArRows = (mdl.customers || [])
+      .filter(c => Number(c.ar_60_plus || 0) > 0.01)
+      .sort((a, b) => Number(b.ar_60_plus || 0) - Number(a.ar_60_plus || 0))
+      .map(c => {
+        const ci = customerInfo(c.Customer);
+        const cid = (ci && ci.id) ? ci.id : c.Customer;
+        return {
+          id: cid, rid: cid, rkey: 'customers',
+          customer: c.Customer,
+          ar_balance: round2(Number(c.ar_balance || 0)),
+          ar_overdue: round2(Number(c.ar_overdue || 0)),
+          ar_60_plus: round2(Number(c.ar_60_plus || 0)),
+          last_sale: String(c.last_sale || '').slice(0, 10)
+        };
+      });
+
+    const wfAudit = buildWorkforceMapData({ auditOnly: true });
+    const wfAnomalies = ((wfAudit && wfAudit.machineAnomalies) || [])
+      .filter(a => a && (a.severity === 'crit' || a.severity === 'warn'))
+      .map(a => ({
+        id: a.id, rid: a.id, rkey: a.rkey || 'fuel_intakes',
+        date: a.date,
+        company: a.company || 'WTC',
+        equipment: a.equipment || '-',
+        service: a.serviceLabel || a.serviceKind || 'Machine Entry',
+        qty_display: a.qtyDisplay || '-',
+        assigned_driver: a.assignedDriver || 'Unassigned',
+        status_label: a.anomalyCode === 'no_driver' ? 'No Operator on Ticket' : (a.assignedStatus || 'Driver Absent')
+      }));
+
+    const outVal = {
+      fleet: liveFleet,
+      pricing: livePricing,
+      parity: liveParity,
+      overdueArRows,
+      wfAnomalies,
+      generated: SEED_DATE,
+      isLive: true
+    };
+    _liveSentinelCache = { key: cacheKey, val: outVal };
+    return outVal;
   }
 
   function buildSentinelItems() {
     const k = getKPI();
     const { fleet, pricing, parity } = sentinelSlice();
     const scope = STATE.company === 'manufacturing-group' ? 'WTC & BBConstruction' : COMPANY_BU_MATCH[STATE.company];
-    const items = [];
+    const rawItems = [];
 
     const tbv = k.tb_check == null ? null : Number(k.tb_check);
-    items.push({
+    rawItems.push({
+      id: 'S1',
       code: 'S1 · TRIAL_BALANCE_TIE', title: 'Double-Entry Trial Balance Integrity (Lebanese CoA)',
       detail: tbv == null ? 'No ledger published for this entity yet.' : `Total Debits vs Total Credits across every SOA journal leg (sales, raw material, haulage, expenses, VAT 11%, receipts, settlements): variance ${fmtUSD(tbv, 2)}.`,
       severity: tbv == null ? 'warn' : (Math.abs(tbv) < 0.005 ? 'ok' : 'crit'),
       badge: tbv == null ? 'NO LEDGER' : (Math.abs(tbv) < 0.005 ? 'PASS · $0.00 DIFF' : 'FAIL · ' + fmtUSD(tbv, 2)),
-      company: scope
+      company: scope,
+      rawMetric: tbv == null ? 1 : (Math.abs(tbv) < 0.005 ? 0 : round2(Math.abs(tbv))),
+      rawSecondary: 0,
+      navView: 'ledger', navLabel: 'Open Ledger'
     });
 
     const tank = fleet.diesel_stock_balance_l != null ? Number(fleet.diesel_stock_balance_l) : (k.diesel_in_tank == null ? null : Number(k.diesel_in_tank));
-    items.push({
+    rawItems.push({
+      id: 'S2',
       code: 'S2 · DIESEL_TANK_RECONCILIATION', title: 'Diesel Tank Physical vs Ledger Reconciliation',
-      detail: tank == null ? 'No diesel ledger for this entity.' : `Purchased ${fmtNum(fleet.diesel_purchased_l, 0)} L − issued ${fmtNum(fleet.diesel_issued_l, 0)} L − sold = ${fmtNum(tank, 0)} L in tank.${tank < -1000 ? ' A negative tank means bulk diesel invoices were booked under General Expenses instead of Fuel Purchases — the fuel form refuses new diesel intakes at that BU until the history is corrected (m212).' : ''}`,
+      detail: tank == null ? 'No diesel ledger for this entity.' : `Purchased ${fmtNum(fleet.diesel_purchased_l, 0)} L minus issued ${fmtNum(fleet.diesel_issued_l, 0)} L minus sold = ${fmtNum(tank, 0)} L in tank.${tank < -1000 ? ' A negative tank means bulk diesel invoices were booked under General Expenses instead of Fuel Purchases; correct the historical intake before booking new diesel.' : ''}`,
       severity: tank == null ? 'warn' : (tank < -1000 ? 'crit' : (tank < 0 ? 'warn' : 'ok')),
       badge: tank == null ? 'NO DATA' : (tank < 0 ? 'ACTION · ' + fmtNum(tank, 0) + ' L' : 'OK · ' + fmtNum(tank, 0) + ' L'),
-      company: scope
+      company: scope,
+      rawMetric: tank == null ? 1 : (tank < 0 ? Math.abs(Math.round(tank)) : 0),
+      rawSecondary: 0,
+      navView: 'fleet', navLabel: 'Open Diesel'
     });
 
     const meters = Number(fleet.meter_readings_to_check || 0);
     const outliers = fleet.consumption_outliers || [];
-    items.push({
-      code: 'S3 · FUEL_METER_OUTLIERS (M142)', title: 'Odometer & Hour-Meter Tolerance Watchdog',
+    rawItems.push({
+      id: 'S3',
+      code: 'S3 · FUEL_METER_OUTLIERS', title: 'Odometer & Hour-Meter Tolerance Watchdog',
       detail: `${fmtNum(meters)} meter readings to check · ${outliers.length} consumption outlier${outliers.length === 1 ? '' : 's'}${outliers.length ? ' (' + outliers.slice(0, 3).map(o => `${o.equipment} ${fmtNum(o.value, 1)} ${o.metric}`).join(', ') + ')' : ''} · ${fmtNum(fleet.own_units_idle_30d || 0)} own units idle 30+ days.`,
       severity: meters > 0 || outliers.length ? 'warn' : 'ok',
       badge: meters > 0 ? fmtNum(meters) + ' TO CHECK' : (outliers.length ? outliers.length + ' OUTLIER' + (outliers.length === 1 ? '' : 'S') : 'GUARD ACTIVE'),
-      company: `${fmtNum(fleet.active_equipment || k.active_equip || 0)} units`
+      company: `${fmtNum(fleet.active_equipment || k.active_equip || 0)} units`,
+      rawMetric: meters + outliers.length,
+      rawSecondary: meters,
+      scrollPanel: 'snFuel', navView: 'fleet', navLabel: 'Open Diesel'
     });
 
     const ar60 = Number(k.ar_60_plus || 0);
-    items.push({
+    rawItems.push({
+      id: 'S4',
       code: 'S4 · AR_OVERDUE_60_PLUS', title: 'Customer Receivables Overdue > 60 Days (FIFO Allocated)',
-      detail: `Open AR ${fmtUSD(k.ar_balance, 2)} (VAT-inclusive per m249) · ${fmtUSD(ar60, 2)} aged past 60 days after FIFO receipt allocation · DSO ${fmtNum(k.dso_days, 0)} days.`,
+      detail: `Open AR ${fmtUSD(k.ar_balance, 2)} (VAT-inclusive) · ${fmtUSD(ar60, 2)} aged past 60 days after FIFO receipt allocation · DSO ${fmtNum(k.dso_days, 0)} days.`,
       severity: ar60 > 0 ? 'warn' : 'ok',
-      badge: `${fmtUSD(ar60, 0)} > 60D`,
-      company: scope
+      badge: ar60 > 0 ? `${fmtUSD(ar60, 0)} > 60D` : 'CURRENT',
+      company: scope,
+      rawMetric: round2(Math.max(0, ar60)),
+      rawSecondary: 0,
+      scrollPanel: 'snOverdueAr', navView: 'customers', navLabel: 'Open Receivables'
     });
 
     const below = Number(pricing.sales_below_agreed_usd || 0);
     const lapsed = Number(pricing.lapsed_agreement_pairs_count || 0);
-    items.push({
+    rawItems.push({
+      id: 'S5',
       code: 'S5 · PRICE_AGREEMENT_ENFORCEMENT', title: `${fmtNum(pricing.active_agreements || k.active_agreements || 0)} Active Price Agreements vs Tickets`,
-      detail: `${fmtUSD(below, 0)} sold below the agreed price across ${fmtNum(pricing.below_agreed_pairs_count || 0)} customer × product pairs · ${fmtNum(lapsed)} pairs still trading on lapsed agreements · ${fmtNum(pricing.truck_unit_delivery_rules || 0)} per-truck delivery rules.`,
+      detail: `${fmtUSD(below, 0)} sold below the date-effective agreed price across ${fmtNum(pricing.below_agreed_pairs_count || 0)} customer × product pairs · ${fmtNum(lapsed)} pairs trading on lapsed agreements · ${fmtNum(pricing.truck_unit_delivery_rules || 0)} per-truck delivery rules.`,
       severity: below > 0 || lapsed > 0 ? 'warn' : 'ok',
-      badge: below > 0 ? fmtUSD(below, 0) + ' BELOW' : 'ENFORCED',
-      company: scope
+      badge: below > 0 ? fmtUSD(below, 0) + ' BELOW' : (lapsed > 0 ? fmtNum(lapsed) + ' LAPSED' : 'ENFORCED'),
+      company: scope,
+      rawMetric: round2(below),
+      rawSecondary: lapsed,
+      scrollPanel: below > 0 ? 'snBelow' : 'snLapsed', navView: 'pricing', navLabel: 'Open Pricing'
     });
 
     const dups = Number(pricing.duplicate_ticket_numbers || 0);
     const unnum = Number(pricing.unnumbered_tickets || 0);
-    items.push({
+    const missingCnt = Number(pricing.missing_tickets_in_books || 0);
+    rawItems.push({
+      id: 'S6',
       code: 'S6 · TICKET_BOOK_HYGIENE', title: 'Duplicate & Unnumbered Tickets in the Books',
-      detail: `${fmtNum(dups)} duplicate ticket numbers · ${fmtNum(unnum)} unnumbered tickets · ${fmtNum(pricing.missing_tickets_in_books || 0)} numbers missing from ${fmtNum(pricing.incomplete_ticket_books || 0)} incomplete pads. The entry desk blocks a repeated number in the same BU unless you confirm it.`,
+      detail: `${fmtNum(dups)} duplicate ticket numbers · ${fmtNum(unnum)} unnumbered tickets · ${fmtNum(missingCnt)} numbers missing from ${fmtNum(pricing.incomplete_ticket_books || 0)} incomplete pads. The entry desk guards repeated serials per entity.`,
       severity: dups > 0 || unnum > 0 ? 'warn' : 'ok',
-      badge: dups > 0 ? fmtNum(dups) + ' DUPLICATES' : 'CLEAN',
-      company: scope
+      badge: dups > 0 ? fmtNum(dups) + ' DUPLICATES' : (unnum > 0 ? fmtNum(unnum) + ' UNNUMBERED' : 'CLEAN'),
+      company: scope,
+      rawMetric: dups + unnum,
+      rawSecondary: missingCnt,
+      scrollPanel: 'salesPadPanel',
+      padFilter: dups > 0 ? 'duplicates' : (unnum > 0 ? 'unnumbered' : 'skipped'),
+      navView: 'sales', navLabel: 'Open Sales'
     });
 
     const unmatched = Number(pricing.unmatched_salary_payments_usd || 0);
-    items.push({
+    const unmatchedStaffCnt = (pricing.unmatched_salary_by_staff || []).length;
+    rawItems.push({
+      id: 'S7',
       code: 'S7 · PAYROLL_CONTRACT_MATCH', title: 'Salary Payments Without an Employment Contract',
-      detail: `${fmtUSD(unmatched, 2)} paid on staff-months with no contract · ${fmtUSD(fleet.unallocated_driver_payroll_usd || 0, 0)} driver payroll not allocated to a unit (${fmtNum(fleet.unallocated_driver_months_count || 0)} months) · commission balance ${fmtUSD(pricing.commission_balance_usd || 0, 0)}.`,
+      detail: `${fmtUSD(unmatched, 2)} paid across ${fmtNum(unmatchedStaffCnt)} staff without an active contract for that month · ${fmtUSD(fleet.unallocated_driver_payroll_usd || 0, 0)} driver payroll unallocated (${fmtNum(fleet.unallocated_driver_months_count || 0)} months).`,
       severity: unmatched > 0 ? 'warn' : 'ok',
       badge: unmatched > 0 ? fmtUSD(unmatched, 0) + ' UNMATCHED' : 'MATCHED',
-      company: scope
+      company: scope,
+      rawMetric: round2(unmatched),
+      rawSecondary: unmatchedStaffCnt,
+      scrollPanel: 'snPayroll', navView: 'payroll_contracts', navLabel: 'Open Contracts'
     });
 
     const anomalies = Number(parity.date_basis_anomalies_gt_31d_count || 0);
-    items.push({
+    const unlinkedVatCnt = Number(parity.unlinked_vat_invoices_count || 0);
+    rawItems.push({
+      id: 'S8',
       code: 'S8 · DATE_BASIS_PARITY', title: 'Transaction vs Reporting Date Gaps > 31 Days',
-      detail: `${fmtNum(anomalies)} rows carry a reporting date more than 31 days from the transaction date · ${fmtNum(parity.unlinked_vat_invoices_count || 0)} VAT invoices not linked to tickets · ${fmtNum(parity.header_vs_tickets_mismatch_count || 0)} VAT headers disagree with their tickets.`,
-      severity: anomalies > 0 ? 'warn' : 'ok',
-      badge: anomalies > 0 ? fmtNum(anomalies) + ' GAPS' : 'IN SYNC',
-      company: 'Ledger parity'
+      detail: `${fmtNum(anomalies)} rows carry a reporting date more than 31 days from the transaction date · ${fmtNum(unlinkedVatCnt)} VAT invoices not linked to tickets · ${fmtNum(parity.header_vs_tickets_mismatch_count || 0)} VAT header variances.`,
+      severity: anomalies > 0 || unlinkedVatCnt > 0 ? 'warn' : 'ok',
+      badge: anomalies > 0 ? fmtNum(anomalies) + ' GAPS' : (unlinkedVatCnt > 0 ? fmtNum(unlinkedVatCnt) + ' UNLINKED VAT' : 'IN SYNC'),
+      company: scope,
+      rawMetric: anomalies,
+      rawSecondary: unlinkedVatCnt,
+      scrollPanel: anomalies > 0 ? 'snDates' : 'snVat', navView: 'customers', navLabel: 'Open VAT & AR'
     });
 
     const wfAudit = buildWorkforceMapData({ auditOnly: true });
     const absGhostCnt = wfAudit ? wfAudit.absentGhostCount : 0;
     const unattrLubeCnt = wfAudit ? wfAudit.noDriverServiceCount : 0;
-    items.push({
+    rawItems.push({
+      id: 'S9',
       code: 'S9 · MACHINE_GREASE_DIESEL_ABSENT_DRIVER', title: 'Absent-Driver Diesel, Lubricant & Grease Machine Watchdog',
-      detail: `${fmtNum(absGhostCnt)} machine fuel, lubricant or grease entries occurred on days when the assigned driver was absent without a logged substitute · ${fmtNum(unattrLubeCnt)} lubricant or grease entries carry no operator on the ticket. Review in Daily Plant & Machine Map.`,
+      detail: `${fmtNum(absGhostCnt)} machine fuel, lubricant or grease entries occurred on days when the assigned driver was absent without a logged substitute · ${fmtNum(unattrLubeCnt)} lubricant or grease entries carry no operator on the ticket.`,
       severity: absGhostCnt > 0 ? 'crit' : (unattrLubeCnt > 0 ? 'warn' : 'ok'),
       badge: absGhostCnt > 0 ? fmtNum(absGhostCnt) + ' GHOST ALERTS' : (unattrLubeCnt > 0 ? fmtNum(unattrLubeCnt) + ' UNATTRIBUTED' : 'CLEAN'),
-      company: scope
+      company: scope,
+      rawMetric: absGhostCnt,
+      rawSecondary: unattrLubeCnt,
+      scrollPanel: 'snWorkforce', navView: 'workforce_map', navLabel: 'Open Plant Map'
     });
 
     const maintIdx = getMaintIndex();
     const unnotifPartsCnt = maintIdx.unnotifiedParts.length;
     const openCritDefCnt = maintIdx.openCritCount;
     const maintNoVendorCnt = maintIdx.partsInMaint.filter(p => !String(p.vendor_or_buyer || '').trim()).length;
-    items.push({
+    rawItems.push({
+      id: 'S10',
       code: 'S10 · FLEET_DEFECT_PARTS_CUSTODY', title: 'Pre-Replacement Defect Notice & Removed Parts Custody',
       detail: `${fmtNum(unnotifPartsCnt)} part replacement${unnotifPartsCnt === 1 ? '' : 's'} logged without a prior reported defect · ${fmtNum(openCritDefCnt)} critical unit${openCritDefCnt === 1 ? '' : 's'} flagged Down / Do Not Dispatch · ${fmtNum(maintIdx.partsStored.length)} stored in warehouse · ${fmtNum(maintIdx.partsInMaint.length)} in maintenance${maintNoVendorCnt > 0 ? ' (' + fmtNum(maintNoVendorCnt) + ' missing workshop vendor)' : ''} · ${fmtNum(maintIdx.partsSold.length)} sold (${fmtUSD(maintIdx.totalSaleProceeds, 0)} proceeds).`,
       severity: openCritDefCnt > 0 ? 'crit' : ((unnotifPartsCnt > 0 || maintNoVendorCnt > 0) ? 'warn' : 'ok'),
       badge: openCritDefCnt > 0 ? `${fmtNum(openCritDefCnt)} DOWN UNITS` : (unnotifPartsCnt > 0 ? `${fmtNum(unnotifPartsCnt)} UNNOTIFIED` : (maintNoVendorCnt > 0 ? `${fmtNum(maintNoVendorCnt)} NO VENDOR` : 'COMPLIANT')),
-      company: scope
+      company: scope,
+      rawMetric: openCritDefCnt * 1000 + unnotifPartsCnt,
+      rawSecondary: maintNoVendorCnt,
+      scrollPanel: 'snFleetParts', navView: 'fleet_maint', navLabel: 'Open Defects'
     });
 
-    return items;
+    const revStore = STATE.sentinelReviews || {};
+    return rawItems.map(item => {
+      const rawSev = item.severity;
+      const rawBadge = item.badge;
+      const rev = revStore[sentinelReviewKey(item.id, STATE.company)];
+      if (rawSev === 'ok') {
+        return Object.assign({}, item, {
+          rawSeverity: 'ok',
+          rawBadge,
+          reviewState: 'pass',
+          isReviewed: false,
+          reviewInfo: null
+        });
+      }
+      if (rev && rev.active) {
+        const driftedPrimary = Number(item.rawMetric || 0) > Number(rev.baseline_metric || 0) + 0.05;
+        const driftedSecondary = Number(item.rawSecondary || 0) > Number(rev.baseline_secondary || 0) + 0.05;
+        if (!driftedPrimary && !driftedSecondary) {
+          return Object.assign({}, item, {
+            rawSeverity: rawSev,
+            rawBadge,
+            severity: 'ok',
+            badge: 'CHECKED · ' + rawBadge,
+            reviewState: 'reviewed',
+            isReviewed: true,
+            reviewInfo: rev
+          });
+        }
+        return Object.assign({}, item, {
+          rawSeverity: rawSev,
+          rawBadge,
+          reviewState: 'drifted',
+          isReviewed: false,
+          reviewInfo: rev
+        });
+      }
+      return Object.assign({}, item, {
+        rawSeverity: rawSev,
+        rawBadge,
+        reviewState: 'open',
+        isReviewed: false,
+        reviewInfo: null
+      });
+    });
   }
 
   function miniTable(title, rows, cols, panelId) {
@@ -6354,23 +6991,28 @@
     const footHtml = list.length ? `<tfoot><tr>${cols.map((c, idx) => {
       if (idx === 0) return `<td><b>TOTAL (${fmtNum(list.length)})</b></td>`;
       if (!c.r) return `<td></td>`;
-      const isAvg = /price|agreed|actual|value|gap/i.test(c.key || '') && !/shortfall|unmatched|amount|header_|diesel/i.test(c.key || '');
+      const isAvg = /price|agreed|actual|value|gap/i.test(c.key || '') && !/shortfall|unmatched|amount|header_|diesel|ar_/i.test(c.key || '');
       let sum = 0, cnt = 0;
       list.forEach(r => {
         const v = Number(r[c.key]);
         if (Number.isFinite(v)) { sum += v; cnt++; }
       });
-      if (!cnt) return `<td class="r">—</td>`;
+      if (!cnt) return `<td class="r">-</td>`;
       const val = isAvg ? (sum / cnt) : sum;
       const txt = c.fmt ? c.fmt(val, {}) : fmtNum(val, 0);
       return `<td class="r">${isAvg ? '<span class="mu" style="font-size:10px">Avg </span>' : ''}<b>${txt}</b></td>`;
     }).join('')}</tr></tfoot>` : '';
     return `
       <div class="panel-card" id="${esc(panelId)}">
-        <div class="panel-head"><div class="panel-title"><span>${title}</span></div><span class="panel-meta">${fmtNum(list.length)} rows ${list.length ? exportBtn(panelId, title.replace(/&amp;/g, 'and')) : ''}</span></div>
+        <div class="panel-head"><div class="panel-title"><span>${title}</span></div><span class="panel-meta">${fmtNum(list.length)} rows${list.length ? ' · Click row to inspect ' + exportBtn(panelId, title.replace(/&amp;/g, 'and').replace(/&gt;/g, 'gt')) : ''}</span></div>
         <div class="table-wrap"><table class="ledger-table">
           <thead><tr>${cols.map(c => `<th class="${c.r ? 'r' : ''}">${c.label}</th>`).join('')}</tr></thead>
-          <tbody>${list.slice(0, 60).map(r => `<tr>${cols.map(c => `<td class="${c.r ? 'r' : ''}${c.mono ? ' mono' : ''}">${c.fmt ? c.fmt(r[c.key], r) : esc(/date/i.test(c.key || '') ? fmtDateDMY(r[c.key]) : (r[c.key] == null ? '—' : r[c.key]))}</td>`).join('')}</tr>`).join('') || emptyRow(cols.length, 'Nothing flagged')}</tbody>
+          <tbody>${list.slice(0, 60).map(r => {
+            const rk = r && r.rkey ? String(r.rkey) : '';
+            const rid = r && (r.rid != null || r.id != null) ? String(r.rid != null ? r.rid : r.id) : '';
+            const trAttr = (rk && rid) ? ` class="rrow" data-rkey="${esc(rk)}" data-rid="${esc(rid)}" title="Click to open 360° Record Inspector"` : '';
+            return `<tr${trAttr}>${cols.map(c => `<td class="${c.r ? 'r' : ''}${c.mono ? ' mono' : ''}">${c.fmt ? c.fmt(r[c.key], r) : esc(/date/i.test(c.key || '') ? fmtDateDMY(r[c.key]) : (r[c.key] == null ? '-' : r[c.key]))}</td>`).join('')}</tr>`;
+          }).join('') || emptyRow(cols.length, 'Nothing flagged')}</tbody>
           ${footHtml}
         </table></div>
       </div>`;
@@ -6390,7 +7032,7 @@
 
   let _ticketAuditCache = null;
   function buildTicketSerialAudit() {
-    const rev = STATE._customRev || 0;
+    const rev = `${SEED._customRev || 0}|${STATE._customRev || 0}|${(SEED.records.sales_tickets || []).length}|${(SEED.records.raw_purchases || []).length}|${(SEED.records.fuel_intakes || []).length}`;
     if (!_ticketAuditCache || _ticketAuditCache.rev !== rev) {
       const all = [];
       const pushRec = (docType, rkey, list) => (list || []).forEach(r => {
@@ -6583,7 +7225,7 @@
     return `
       <div class="panel-card" id="salesPadPanel" style="margin-bottom:14px">
         <div class="panel-head">
-          <div class="panel-title"><span>WEIGHBRIDGE TICKET SERIAL AUDIT — SKIPPED, DUPLICATE &amp; UNNUMBERED TICKETS (${fmtNum(sorted.length)} ITEMS)</span></div>
+          <div class="panel-title"><span>WEIGHBRIDGE TICKET SERIAL AUDIT: SKIPPED, DUPLICATE &amp; UNNUMBERED TICKETS (${fmtNum(sorted.length)} ITEMS)</span></div>
           <span class="panel-meta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span class="badge badge-brass" title="Next sequential 25-ticket pad serial (excludes >6-digit external scale numbers)">${nextBadge}</span>
             ${exportBtn('salesPadPanel', 'Ticket_Serial_Audit')}
@@ -6638,10 +7280,22 @@
 
   function renderSentinels() {
     const items = buildSentinelItems();
-    const { fleet, pricing, parity, generated } = sentinelSlice();
+    const { fleet, pricing, parity, overdueArRows, wfAnomalies, generated, isLive } = sentinelSlice();
     const open = items.filter(i => i.severity !== 'ok').length;
+    const reviewedCnt = items.filter(i => i.reviewState === 'reviewed').length;
+    const nativePassCnt = items.filter(i => i.reviewState === 'pass').length;
     const okCnt = Math.max(0, items.length - open);
     const passPct = items.length > 0 ? Math.round((okCnt / items.length) * 100) : 100;
+    const canSignOff = canReviewSentinels();
+    const snFilter = STATE.sentinelFilter || 'all';
+    const filteredItems = items.filter(s => {
+      if (snFilter === 'flagged') return s.severity !== 'ok';
+      if (snFilter === 'reviewed') return s.reviewState === 'reviewed';
+      if (snFilter === 'passing') return s.reviewState === 'pass';
+      return true;
+    });
+    const snChip = (key, lbl) => `<button type="button" class="filter-chip ${snFilter === key ? 'active' : ''}" data-sn-filter="${esc(key)}">${lbl}</button>`;
+
     const k = getKPI();
     const tbTied = Math.abs(Number(k.tb_check || 0)) < 0.005;
     const belowUsd = Number(pricing.sales_below_agreed_usd || 0);
@@ -6650,23 +7304,27 @@
     const usd0 = v => fmtUSD(v, 0);
     const usd2 = v => fmtUSD(v, 2);
     const num1 = v => fmtNum(v, 1);
+    const evalModeTxt = isLive ? 'Live SQL' : (String(generated).slice(0, 10) || 'Live');
+    const healthSub = reviewedCnt > 0
+      ? `<b>${open}</b> open · <b>${reviewedCnt}</b> checked · <b>${nativePassCnt}</b> native pass · <b>${esc(evalModeTxt)}</b>`
+      : `<b>${open}</b> rule${open === 1 ? '' : 's'} flagged for review · Evaluated <b>${esc(evalModeTxt)}</b>`;
     return `
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
-          <div class="cockpit-eyebrow">AUTONOMOUS AUDIT &amp; ANOMALY DETECTION · RUN ${esc(String(generated).slice(0, 16).replace('T', ' ') || '—')}</div>
+          <div class="cockpit-eyebrow">AUTONOMOUS AUDIT &amp; ANOMALY DETECTION · ${esc(evalModeTxt)}</div>
           <div class="cockpit-title">AI Sentinels &amp; Audit</div>
-          <div class="cockpit-sub">Deterministic audit rules evaluated against the SQL ledger snapshot for ${esc(COMPANY_LABELS[STATE.company])}.</div>
+          <div class="cockpit-sub">Deterministic audit rules evaluated against the live SQL ledger for ${esc(COMPANY_LABELS[STATE.company])}.</div>
         </div>
         <div class="cockpit-pills insight-grid">
           ${insightCard({
             label: 'Sentinel Health Score',
-            badge: `${okCnt}/${items.length} Passing`,
+            badge: open ? `${okCnt}/${items.length} Clear` : (reviewedCnt ? `${items.length}/${items.length} Signed Off` : `${okCnt}/${items.length} Passing`),
             badgeCls: open ? 'warn' : 'good',
             val: `${passPct}% Clean`,
             valCls: open ? 'brass' : 'emerald',
             pct: passPct,
             pct2: 100 - passPct,
-            sub: `<b>${open}</b> rule${open === 1 ? '' : 's'} flagged for review · Run <b>${esc(String(generated).slice(0, 10) || 'Live')}</b>`,
+            sub: healthSub,
             tone: 'brass'
           })}
           ${insightCard({
@@ -6676,77 +7334,118 @@
             val: tbTied ? '$0.00 Variance' : fmtUSD(k.tb_check || 0, 2),
             valCls: tbTied ? 'emerald' : 'amber',
             pct: tbTied ? 100 : 50,
-            sub: `Lebanese CoA Classes 1–7 double-entry parity across <b>${esc(COMPANY_LABELS[STATE.company])}</b>`,
+            sub: `Lebanese CoA Classes 1-7 double-entry parity across <b>${esc(COMPANY_LABELS[STATE.company])}</b>`,
             tone: 'emerald'
           })}
           ${insightCard({
             label: 'Contract Price Compliance',
             badge: `${lapsedCnt} Lapsed Pairs`,
-            badgeCls: belowUsd > 0 ? 'warn' : 'good',
-            val: `${fmtUSD(belowUsd, 0)} <small>Shortfall</small>`,
+            badgeCls: (belowUsd > 0 || lapsedCnt > 0) ? 'warn' : 'good',
+            val: `<span class="insight-drill" data-scroll-panel="${belowUsd > 0 ? 'snBelow' : 'snLapsed'}" title="Jump to Price Agreement Exceptions">${fmtUSD(belowUsd, 0)} <small>Shortfall</small></span>`,
             valCls: belowUsd > 0 ? 'amber' : 'emerald',
-            pct: Math.max(12, Math.min(100, 100 - lapsedCnt * 4)),
-            sub: `<b>${(pricing.top_below_agreed_exceptions || []).length}</b> below-agreed exceptions · <b>${lapsedCnt}</b> lapsed agreements trading`,
+            pct: Math.max(12, Math.min(100, 100 - lapsedCnt * 2)),
+            sub: `<b>${(pricing.top_below_agreed_exceptions || []).length}</b> below-agreed pairs · <b>${lapsedCnt}</b> lapsed agreements trading`,
             tone: 'steel'
           })}
           ${insightCard({
             label: 'Fleet & Payroll Hygiene',
             badge: `${outlierCnt} Fuel Outliers`,
-            badgeCls: outlierCnt > 0 ? 'warn' : 'good',
-            val: `${fmtUSD(pricing.unmatched_salary_payments_usd || 0, 0)} <small>Unmatched</small>`,
+            badgeCls: (outlierCnt > 0 || Number(pricing.unmatched_salary_payments_usd || 0) > 0) ? 'warn' : 'good',
+            val: `<span class="insight-drill" data-scroll-panel="snPayroll" title="Jump to Unmatched Salary Payments">${fmtUSD(pricing.unmatched_salary_payments_usd || 0, 0)} <small>Unmatched</small></span>`,
             valCls: Number(pricing.unmatched_salary_payments_usd || 0) > 0 ? 'amber' : 'emerald',
             pct: Math.max(20, 100 - outlierCnt * 8),
-            sub: `<b>${outlierCnt}</b> diesel burn outliers · <b>${(pricing.unmatched_salary_by_staff || []).length}</b> staff without active contract`,
+            sub: `<span class="insight-drill" data-scroll-panel="snFuel"><b>${outlierCnt}</b> diesel outliers</span> · <b>${(pricing.unmatched_salary_by_staff || []).length}</b> staff without contract`,
             tone: 'amber'
           })}
         </div>
       </div>
 
-      <div class="panel-card">
+      <div class="panel-card" id="sentinelsCheckPanel">
         <div class="panel-head">
           <div class="panel-title"><span>LIVE AUDIT CHECKS &amp; RECOMMENDED ACTIONS</span></div>
-          <span class="panel-meta">Verified against SQLite &amp; Semantic Baseline</span>
+          <span class="panel-meta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span>Click any rule to inspect flagged rows</span>
+            ${canSignOff && open > 0 ? `<button type="button" class="btn-sn-act is-check" id="snCheckAllBtn">${ic('check_circle')} Mark All Flagged Checked (${fmtNum(open)})</button>` : ''}
+            ${canSignOff && reviewedCnt > 0 ? `<button type="button" class="btn-sn-act is-undo" id="snResetChecksBtn">${ic('rotate')} Reset Checks</button>` : ''}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${snChip('all', `All Rules (${fmtNum(items.length)})`)}
+            ${snChip('flagged', `Flagged (${fmtNum(open)})`)}
+            ${snChip('reviewed', `Checked (${fmtNum(reviewedCnt)})`)}
+            ${snChip('passing', `Native Pass (${fmtNum(nativePassCnt)})`)}
+          </div>
         </div>
         <div class="sentinel-list">
-          ${items.map(s => `
-            <div class="sentinel-item ${s.severity}" style="padding:14px 16px">
-              <div>
-                <div class="mono" style="font-size:10px;color:var(--brass);margin-bottom:2px">${esc(s.code)} · ${esc(s.company)}</div>
-                <div class="sentinel-title" style="font-size:14px">${esc(s.title)}</div>
-                <div class="sentinel-detail" style="font-size:12.5px;margin-top:4px">${esc(s.detail)}</div>
+          ${filteredItems.length ? filteredItems.map(s => {
+            const rowCls = s.isReviewed ? 'reviewed' : s.severity;
+            const badgeCls = s.isReviewed ? 'badge-reviewed' : (s.severity === 'ok' ? 'badge-ok' : (s.severity === 'crit' ? 'badge-err' : 'badge-warn'));
+            const revDate = s.reviewInfo && s.reviewInfo.checked_at ? fmtDateDMY(String(s.reviewInfo.checked_at).slice(0, 10)) : '';
+            const signedPill = s.reviewState === 'reviewed' && s.reviewInfo
+              ? `<span class="sentinel-signed-note">${ic('check_circle')} Checked by ${esc(s.reviewInfo.checked_by)}${revDate ? ' · ' + esc(revDate) : ''}</span>`
+              : (s.reviewState === 'drifted' && s.reviewInfo
+                ? `<span class="sentinel-signed-note is-drifted">${ic('warn')} New activity above ${esc(revDate || 'prior')} check</span>`
+                : '');
+            return `
+              <div class="sentinel-item ${rowCls} is-interactive" data-sn-card="${esc(s.id)}" style="padding:14px 16px" title="Click to jump to itemized records">
+                <div class="sentinel-body">
+                  <div class="sentinel-meta-row">
+                    <span class="mono" style="font-size:10px;color:var(--brass)">${esc(s.code)} · ${esc(s.company)}</span>
+                    ${signedPill}
+                  </div>
+                  <div class="sentinel-title" style="font-size:14px">${esc(s.title)}</div>
+                  <div class="sentinel-detail" style="font-size:12.5px;margin-top:4px">${esc(s.detail)}</div>
+                </div>
+                <div class="sentinel-right">
+                  <span class="badge ${badgeCls}">${esc(s.badge)}</span>
+                  ${s.scrollPanel ? `<button type="button" class="btn-sn-act" data-sn-inspect="${esc(s.id)}">Inspect Rows</button>` : ''}
+                  ${s.navView && canViewView(s.navView) ? `<button type="button" class="btn-sn-act" data-sn-open-mod="${esc(s.navView)}">${esc(s.navLabel || 'Open Module')}</button>` : ''}
+                  ${canSignOff && s.severity !== 'ok' ? `<button type="button" class="btn-sn-act is-check" data-sn-check="${esc(s.id)}">${ic('check_circle')} Mark Checked</button>` : ''}
+                  ${canSignOff && s.isReviewed ? `<button type="button" class="btn-sn-act is-undo" data-sn-uncheck="${esc(s.id)}">Undo</button>` : ''}
+                </div>
               </div>
-              <span class="badge ${s.severity === 'ok' ? 'badge-ok' : (s.severity === 'crit' ? 'badge-err' : 'badge-warn')}">${esc(s.badge)}</span>
-            </div>
-          `).join('')}
+            `;
+          }).join('') : `<div style="padding:20px 16px;font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><span>No rules match the <b>${esc(snFilter)}</b> filter for ${esc(COMPANY_LABELS[STATE.company])}.</span><button type="button" class="btn-sn-act" data-sn-filter="all">Show All Rules (${fmtNum(items.length)})</button></div>`}
         </div>
       </div>
 
       ${renderTicketSerialAuditPanel()}
 
       <div class="mini-table-grid">
+        ${miniTable('CUSTOMER RECEIVABLES OVERDUE &gt; 60 DAYS (FIFO)', overdueArRows || [], [
+          { label: 'Customer', key: 'customer' }, { label: 'Open AR ($)', key: 'ar_balance', r: true, fmt: usd2 },
+          { label: 'Total Overdue ($)', key: 'ar_overdue', r: true, fmt: usd2 }, { label: 'Overdue > 60d ($)', key: 'ar_60_plus', r: true, fmt: usd2 },
+          { label: 'Last Sale', key: 'last_sale', mono: true }
+        ], 'snOverdueAr')}
         ${miniTable('TOP SALES BELOW AGREED PRICE', pricing.top_below_agreed_exceptions || [], [
           { label: 'Customer', key: 'customer' }, { label: 'Product', key: 'product' }, { label: 'Qty', key: 'qty', r: true, fmt: v => fmtNum(v, 1) },
-          { label: 'Last Price', key: 'last_price', r: true, fmt: usd2 }, { label: 'Agreed', key: 'agreed_price', r: true, fmt: usd2 }, { label: 'Shortfall', key: 'shortfall_usd', r: true, fmt: (v, r) => v != null ? usd0(v) : (r.agreed_price != null && r.last_price != null ? usd0((Number(r.agreed_price) - Number(r.last_price)) * Number(r.qty || 0)) : '—') }
+          { label: 'Last Price', key: 'last_price', r: true, fmt: usd2 }, { label: 'Agreed', key: 'agreed_price', r: true, fmt: usd2 }, { label: 'Shortfall', key: 'shortfall_usd', r: true, fmt: (v, r) => v != null ? usd2(v) : (r.agreed_price != null && r.last_price != null ? usd0((Number(r.agreed_price) - Number(r.last_price)) * Number(r.qty || 0)) : '-') }
         ], 'snBelow')}
         ${miniTable('LAPSED AGREEMENTS STILL TRADING', pricing.lapsed_agreement_pairs || [], [
           { label: 'Customer', key: 'customer' }, { label: 'Product', key: 'product' }, { label: 'Qty', key: 'qty', r: true, fmt: v => fmtNum(v, 1) },
-          { label: 'Actual', key: 'actual_price', r: true, fmt: usd2 }, { label: 'Agreed (lapsed)', key: 'agreed_price', r: true, fmt: usd2 }
+          { label: 'Actual', key: 'actual_price', r: true, fmt: usd2 }, { label: 'Agreed (lapsed)', key: 'agreed_price', r: true, fmt: usd2 }, { label: 'Ended', key: 'end_date', mono: true }
         ], 'snLapsed')}
-        ${miniTable('FUEL CONSUMPTION OUTLIERS', fleet.consumption_outliers || [], [
+        ${miniTable('FUEL CONSUMPTION &amp; METER OUTLIERS', fleet.consumption_outliers || [], [
           { label: 'Equipment', key: 'equipment', mono: true }, { label: 'Type', key: 'type' }, { label: 'Metric', key: 'metric' },
           { label: 'Value', key: 'value', r: true, fmt: num1 }, { label: 'Distance / Hours', key: 'distance_km', r: true, fmt: (v, r) => fmtNum(v != null ? v : r.hours, 0) }, { label: 'Diesel (L)', key: 'diesel_l', r: true, fmt: v => fmtNum(v, 0) }
         ], 'snFuel')}
         ${miniTable('SALARY PAYMENTS WITHOUT A CONTRACT', pricing.unmatched_salary_by_staff || [], [
-          { label: 'Staff Member', key: 'staff' }, { label: 'Unmatched ($)', key: 'unmatched_usd', r: true, fmt: usd2 }
+          { label: 'Staff Member', key: 'staff' }, { label: 'Co.', key: 'company' }, { label: 'Months', key: 'months_count', r: true, fmt: v => fmtNum(v || 1, 0) }, { label: 'Unmatched ($)', key: 'unmatched_usd', r: true, fmt: usd2 }
         ], 'snPayroll')}
         ${miniTable('TRANSACTION vs REPORTING DATE GAPS &gt; 31 DAYS', (parity.date_basis_anomalies_gt_31d || []).filter(r => STATE.company === 'manufacturing-group' || r.bu === COMPANY_BU_MATCH[STATE.company]), [
           { label: 'Table', key: 'table' }, { label: 'BU', key: 'bu' }, { label: 'Record', key: 'name' }, { label: 'Ticket', key: 'ticket', mono: true },
           { label: 'Tx Date', key: 'transaction_date', mono: true }, { label: 'Rep Date', key: 'reporting_date', mono: true }, { label: 'Gap (d)', key: 'gap_days', r: true, fmt: v => fmtNum(v) }, { label: 'Amount', key: 'amount_usd', r: true, fmt: usd2 }
         ], 'snDates')}
-        ${miniTable('VAT INVOICES NOT LINKED TO TICKETS (SAMPLE)', (parity.unlinked_vat_invoices_sample || []).filter(r => STATE.company === 'manufacturing-group' || r.bu === COMPANY_BU_MATCH[STATE.company]), [
+        ${miniTable('VAT INVOICES NOT LINKED TO TICKETS', (parity.unlinked_vat_invoices_sample || []).filter(r => STATE.company === 'manufacturing-group' || r.bu === COMPANY_BU_MATCH[STATE.company]), [
           { label: 'BU', key: 'bu' }, { label: 'Invoice', key: 'invoice' }, { label: 'No.', key: 'invoiceno', mono: true }, { label: 'Date', key: 'date', mono: true },
           { label: 'Header Net', key: 'header_net', r: true, fmt: usd2 }, { label: 'Header VAT', key: 'header_vat', r: true, fmt: usd2 }
         ], 'snVat')}
+        ${miniTable('ABSENT-DRIVER &amp; UNATTRIBUTED MACHINE ENTRIES', wfAnomalies || [], [
+          { label: 'Date', key: 'date', mono: true }, { label: 'Co.', key: 'company' }, { label: 'Machine / Unit', key: 'equipment', mono: true },
+          { label: 'Entry', key: 'service' }, { label: 'Qty / Cost', key: 'qty_display', r: true, mono: true },
+          { label: 'Assigned Driver', key: 'assigned_driver' }, { label: 'Audit Flag', key: 'status_label' }
+        ], 'snWorkforce')}
         ${miniTable('UNNOTIFIED PART CHANGES &amp; OPEN CRITICAL DEFECTS', getMaintIndex().sentinelExceptions, [
           { label: 'Type', key: 'audit_type' }, { label: 'Ref', key: 'name', mono: true }, { label: 'Co.', key: 'company' },
           { label: 'Unit', key: 'equipment', mono: true }, { label: 'Part / Subsystem', key: 'item_label' },
@@ -24255,6 +24954,7 @@
       localStorage.setItem('isabi_mfg_users_v2', JSON.stringify(STATE.users));
       localStorage.setItem('isabi_mfg_sessions_v2', JSON.stringify(STATE.sessions.slice(0, 50)));
       localStorage.setItem('isabi_mfg_custom_recs_v2', JSON.stringify(STATE.customRecords));
+      localStorage.setItem('isabi_mfg_sentinel_reviews_v1', JSON.stringify(STATE.sentinelReviews || {}));
       localStorage.setItem('isabi_mfg_face_settings_v2', JSON.stringify(STATE.faceSettings));
       localStorage.setItem('isabi_mfg_face_settings_v1', JSON.stringify(STATE.faceSettings));
       localStorage.setItem('isabi_mfg_kiosk_punches_v1', JSON.stringify((STATE.kioskPunches || []).slice(0, 300)));
@@ -24654,6 +25354,24 @@
     _FLEET_IDX = null;
   }
 
+  function mergeSentinelReviews(remoteMap) {
+    if (!remoteMap || typeof remoteMap !== 'object') return false;
+    if (!STATE.sentinelReviews || typeof STATE.sentinelReviews !== 'object') STATE.sentinelReviews = {};
+    let changed = false;
+    Object.entries(remoteMap).forEach(([rk, inc]) => {
+      if (!inc || typeof inc !== 'object') return;
+      const key = String(inc.id || rk);
+      const cur = STATE.sentinelReviews[key];
+      const inTs = String(inc.updated_at || inc.checked_at || '');
+      const curTs = cur ? String(cur.updated_at || cur.checked_at || '') : '';
+      if (!cur || inTs > curTs) {
+        STATE.sentinelReviews[key] = Object.assign({}, inc, { id: key });
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
   function cloudPayload() {
     const trimmed = {};
     CR_KEYS.forEach(k => { trimmed[k] = STATE.customRecords[k].slice(0, 1500); });
@@ -24661,6 +25379,7 @@
       users: STATE.users,
       sessions: STATE.sessions.slice(0, 25),
       customRecords: trimmed,
+      sentinelReviews: STATE.sentinelReviews || {},
       faceSettings: STATE.faceSettings,
       updatedAt: new Date().toISOString(),
       updatedBy: activeUser().email,
@@ -24777,6 +25496,16 @@
             STATE.users = merged;
           }
         }
+        const ctrlSr = new AbortController();
+        const tSr = setTimeout(() => ctrlSr.abort(), 5000);
+        const rSr = await fetch('./api/sentinel_reviews', { signal: ctrlSr.signal });
+        clearTimeout(tSr);
+        if (rSr.ok) {
+          const dSr = await rSr.json();
+          if (dSr && dSr.reviews && mergeSentinelReviews(dSr.reviews)) {
+            saveLocalAuthAndRecords();
+          }
+        }
       } catch (_) { /* server.py not running */ }
     }
 
@@ -24840,11 +25569,19 @@
       }
 
       if (remote.customRecords && mergeCustomRecords(remote.customRecords)) { changed = true; applyCustomRecordsToSeed(); }
-      // anything only we hold → push
+      if (remote.sentinelReviews && mergeSentinelReviews(remote.sentinelReviews)) { changed = true; }
+      // anything only we hold -> push
       if (!pushChanges && remote.customRecords) {
         const remoteIds = new Set();
         CR_KEYS.forEach(k => (remote.customRecords[k] || []).forEach(r => r && remoteIds.add(r.id + (r.voided ? '|v' : ''))));
         CR_KEYS.forEach(k => STATE.customRecords[k].forEach(r => { if (!remoteIds.has(r.id + (r.voided ? '|v' : ''))) pushChanges = true; }));
+      }
+      if (!pushChanges && STATE.sentinelReviews && Object.keys(STATE.sentinelReviews).length) {
+        const remSr = remote.sentinelReviews || {};
+        Object.entries(STATE.sentinelReviews).forEach(([rk, rv]) => {
+          const remRow = remSr[rk];
+          if (!remRow || String(rv.updated_at || '') > String(remRow.updated_at || '')) pushChanges = true;
+        });
       }
 
       saveLocalAuthAndRecords();
@@ -29990,6 +30727,100 @@
       const y = ws ? ws.scrollTop : 0;
       renderApp();
       if (ws) ws.scrollTop = y;
+    }));
+
+    // AI Sentinels & Audit (#sentinels) drill-down, filter & owner sign-off controls
+    const jumpFromSentinelRule = ruleId => {
+      if (!ruleId) return;
+      const item = buildSentinelItems().find(x => x.id === ruleId);
+      if (!item) return;
+      if (item.padFilter) {
+        STATE.salesPadFilter = item.padFilter;
+        STATE.shown.spad = PAGE;
+        renderApp();
+      }
+      const panelEl = item.scrollPanel ? $(item.scrollPanel) : null;
+      if (panelEl) {
+        scrollWorkspaceTo(panelEl, 8);
+        if (IS_AUTOMATED_TEST) {
+          const ws = $('workspace');
+          if (ws && ws.contains(panelEl)) {
+            const wsRect = ws.getBoundingClientRect();
+            const elRect = panelEl.getBoundingClientRect();
+            ws.scrollTop = Math.max(0, ws.scrollTop + (elRect.top - wsRect.top) - 8);
+          }
+        }
+        panelEl.classList.remove('sn-panel-flash');
+        void panelEl.offsetWidth;
+        panelEl.classList.add('sn-panel-flash');
+        return;
+      }
+      if (item.navView && canViewView(item.navView)) {
+        setView(item.navView);
+      }
+    };
+    container.querySelectorAll('[data-sn-filter]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.sentinelFilter = btn.getAttribute('data-sn-filter') || 'all';
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-sn-check]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const ruleId = btn.getAttribute('data-sn-check') || '';
+      if (!markSentinelReviewed(ruleId)) return;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+      toast('Marked ' + ruleId + ' as checked', 'ok');
+    }));
+    container.querySelectorAll('[data-sn-uncheck]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const ruleId = btn.getAttribute('data-sn-uncheck') || '';
+      if (!unmarkSentinelReviewed(ruleId)) return;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+      toast('Re-opened ' + ruleId + ' for review');
+    }));
+    const snCheckAllBtn = $('snCheckAllBtn');
+    if (snCheckAllBtn) {
+      snCheckAllBtn.addEventListener('click', () => {
+        const n = markAllFlaggedSentinelsReviewed();
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+        if (n) toast('Signed off ' + n + ' flagged audit rule' + (n === 1 ? '' : 's'), 'ok');
+      });
+    }
+    const snResetChecksBtn = $('snResetChecksBtn');
+    if (snResetChecksBtn) {
+      snResetChecksBtn.addEventListener('click', () => {
+        if (STATE.sentinelFilter === 'reviewed') STATE.sentinelFilter = 'all';
+        const n = resetCompanySentinelReviews();
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+        if (n) toast('Reset ' + n + ' checked rule' + (n === 1 ? '' : 's'));
+      });
+    }
+    container.querySelectorAll('[data-sn-inspect]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      jumpFromSentinelRule(btn.getAttribute('data-sn-inspect') || '');
+    }));
+    container.querySelectorAll('[data-sn-open-mod]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const v = btn.getAttribute('data-sn-open-mod') || '';
+      if (v && canViewView(v)) setView(v);
+    }));
+    container.querySelectorAll('[data-sn-card]').forEach(card => card.addEventListener('click', ev => {
+      if (ev.target && ev.target.closest('button, a, input, select')) return;
+      jumpFromSentinelRule(card.getAttribute('data-sn-card') || '');
     }));
 
     // Daily Plant & Machine Map (workforce_map) interactive controls
