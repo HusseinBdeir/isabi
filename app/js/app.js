@@ -23153,9 +23153,9 @@
       <div class="pa-subgrid-box" id="subgrid_${esc(sg.id)}" data-subgrid-box="${esc(sg.id)}">
         <div class="pa-subgrid-bar">
           <div class="pa-subgrid-title">
-            <span>⊞ ${esc(sg.title)}</span>
+            <span>${esc(sg.title)}</span>
             <span class="pa-subgrid-rel">${esc(sg.relBadge)} · ${fmtNum(rows.length)} rows</span>
-            ${hasSum ? `<span class="pa-subgrid-rel" style="background:var(--good-bg);color:var(--good);border-color:color-mix(in srgb, var(--good) 40%, transparent)">Σ ${isMoneySum ? fmtUSD(sumVal, 2) : fmtNum(sumVal, 1)}</span>` : ''}
+            ${hasSum ? `<span class="pa-subgrid-rel" style="background:var(--good-bg);color:var(--good);border-color:color-mix(in srgb, var(--good) 40%, transparent)">Total · ${isMoneySum ? fmtUSD(sumVal, 2) : fmtNum(sumVal, 1)}</span>` : ''}
           </div>
           <div class="pa-subgrid-tools">
             ${rows.length > 3 ? `<input type="search" class="pa-subgrid-search" data-sg-filter="${esc(sg.id)}" placeholder="Filter ${esc(sg.shortLabel)}...">` : ''}
@@ -23384,7 +23384,7 @@
           ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">${ic('ruler')} Truck Size Windows (${eqWindows.length})</button>` : ''}
           ${!row.voided && canVoid() ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
           ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
-          <button type="button" class="pa-cmd-btn" data-insp-open-hub="${esc(key)}">⊞ Open ${esc(INSPECT_LABELS[key] || key)} Table</button>
+          <button type="button" class="pa-cmd-btn" data-insp-open-hub="${esc(key)}">${ic('tables')} Open ${esc(INSPECT_LABELS[key] || key)} Table</button>
           <button type="button" class="pa-cmd-btn" id="inspPrintBtn">${ic('printer')} Print Form</button>
         </div>
       </div>
