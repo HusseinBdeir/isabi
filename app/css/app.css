@@ -494,12 +494,12 @@ body.is-resizing-rail .rail-resizer .rail-resizer-grip {
     letter-spacing: 0.035em;
   }
   .app-shell.rail-narrow .rail-nav {
-    padding: 6px 6px 10px;
+    padding: 4px 6px 6px;
   }
   .app-shell.rail-narrow .rail-nav button.nav-item,
   .app-shell.rail-narrow .rail-nav a.rail-showcase-link {
-    padding: 6.5px 6px;
-    font-size: 11.8px;
+    padding: 5px 6px;
+    font-size: 11.6px;
     gap: 4px;
   }
   .app-shell.rail-narrow .rail-footer {
@@ -510,23 +510,23 @@ body.is-resizing-rail .rail-resizer .rail-resizer-grip {
 .rail-nav {
   flex: 1;
   overflow-y: auto;
-  padding: 6px 8px 10px;
+  padding: 4px 8px 6px;
   display: flex;
   flex-direction: column;
 }
 
 .rail-nav .grp {
   font-family: "Archivo", sans-serif;
-  font-size: 9.8px;
+  font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
-  padding: 11px 8px 3px;
+  padding: 7px 8px 2px;
 }
 
 .rail-nav .grp:first-child {
-  padding-top: 3px;
+  padding-top: 2px;
 }
 
 .rail-nav button.nav-item,
@@ -536,11 +536,11 @@ body.is-resizing-rail .rail-resizer .rail-resizer-grip {
   background: transparent;
   border: 0;
   border-left: 3px solid transparent;
-  padding: 7.5px 8px;
+  padding: 5.5px 8px;
   border-radius: 5px;
   color: var(--muted);
-  margin: 1px 0;
-  font-size: 12.4px;
+  margin: 0.5px 0;
+  font-size: 12.1px;
   font-weight: 500;
   display: flex;
   align-items: center;

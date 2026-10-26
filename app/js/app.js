@@ -62,7 +62,8 @@
   const IS_LOCAL = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.|10\.)/.test(location.hostname);
   // Demo mode = the 1-click seat simulator shows PINs. Only on the local server.py host or with ?demo=1.
   const IS_DEMO = PARAMS.get('demo') !== '0' && (IS_LOCAL || PARAMS.get('demo') === '1');
-  const HAS_LOCAL_API = IS_LOCAL; // server.py REST endpoints exist only on the local / LAN host
+  const IS_HEADLESS_HARNESS = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST || (location.port && Number(location.port) >= 8095));
+  const HAS_LOCAL_API = IS_LOCAL && !IS_HEADLESS_HARNESS; // server.py REST endpoints exist only on the local / LAN host (quarantined in headless test harness)
   const MIN_DATE = '2024-01-01';   // bhf_mindate on every manufacturing BU
   const MAX_DATE = '2030-12-31';   // Power BI Dates calendar ceiling (2024-01-01 .. 2030-12-31)
   const VAT_RATE = 0.11;
@@ -4211,25 +4212,27 @@
   const UNIV_REGISTRY_GROUPS = {
     reg_customers: ['customers', 'products', 'product_types', 'uoms'],
     reg_products: ['customers', 'products', 'product_types', 'uoms'],
-    reg_suppliers: ['suppliers', 'sites', 'regions', 'expense_categories', 'expense_subcategories'],
-    reg_sites: ['suppliers', 'sites', 'regions', 'expense_categories', 'expense_subcategories'],
-    reg_regions: ['suppliers', 'sites', 'regions', 'expense_categories', 'expense_subcategories'],
-    reg_categories: ['suppliers', 'sites', 'regions', 'expense_categories', 'expense_subcategories'],
+    reg_suppliers: ['suppliers', 'expense_categories', 'expense_subcategories'],
+    reg_categories: ['suppliers', 'expense_categories', 'expense_subcategories'],
+    reg_sites: ['sites', 'regions'],
+    reg_regions: ['sites', 'regions'],
     reg_equipment: ['equipment', 'drivers'],
     reg_drivers: ['equipment', 'drivers']
   };
 
   const HUB_TITLES = {
     overview: 'Executive Overview',
-    sales: 'Sales & Customers',
-    raw: 'Material, Expenses & AP',
-    fleet: 'Fleet & Diesel',
-    kiosks: 'Kiosk Terminals',
-    cashflow: 'Cash Flow & Till',
-    expenses: 'Material, Expenses & AP',
+    reports: 'Dashboards & Reports',
+    sales: 'Sales & Receivables',
+    raw: 'Quarry & Raw Material',
+    fleet: 'Fleet, Fuel & Drivers',
+    kiosks: 'Plant Kiosks',
+    expenses: 'Expenses & Payables',
+    cashflow: 'Cash Flow & Treasury',
     payroll: 'Payroll & Workforce',
-    ledger: 'Ledger & Reports',
-    users: 'System & Access'
+    ledger: 'General Ledger & COA',
+    master: 'Master Data & Tables',
+    users: 'Users & Security'
   };
 
   const HUB_CATALOG = [
@@ -4240,8 +4243,16 @@
       tabs: [
         { view: 'overview', label: 'Executive Overview', icon: 'overview', pillCls: 'brass', pillFn: () => 'Live' },
         { view: 'entities', label: 'Entity Comparison', icon: 'entities', pillFn: u => `${allowedCompanyNames(u).length} BUs` },
-        { view: 'pbi', label: 'Analytics & Insights', icon: 'pbi', pillCls: 'brass', pillFn: u => `${(window.MFG_PBI && Array.isArray(window.MFG_PBI.PBI_PAGES)) ? window.MFG_PBI.PBI_PAGES.filter(p => canAccessPbiPage(p.id, u)).length : 12} Pages` },
         { view: 'sentinels', label: 'AI Sentinels & Audit', icon: 'sentinels', pillCls: (_u, _k, sn) => (sn ? 'brass' : ''), pillFn: (_u, _k, sn) => String(sn != null ? sn : 0) }
+      ]
+    },
+    {
+      id: 'reports',
+      title: HUB_TITLES.reports,
+      group: 'exec',
+      tabs: [
+        { view: 'pbi', label: 'Analytics & Insights', icon: 'pbi', pillCls: 'brass', pillFn: u => `${(window.MFG_PBI && Array.isArray(window.MFG_PBI.PBI_PAGES)) ? window.MFG_PBI.PBI_PAGES.filter(p => canAccessPbiPage(p.id, u)).length : 12} Pages` },
+        { view: 'statements', label: 'Statements & Reports', icon: 'statements', pillCls: 'brass', pillFn: u => `${(window.MFG_RDL && Array.isArray(window.MFG_RDL.RDL_CATALOG)) ? window.MFG_RDL.RDL_CATALOG.filter(r => canAccessRdlReport(r, u)).length : 22} A4` }
       ]
     },
     {
@@ -4251,8 +4262,7 @@
       tabs: [
         { view: 'sales', match: ['sales', 'sales_analytics'], label: 'Sales & Deliveries', icon: 'sales', pillFn: (_u, k) => (k && k.loads != null ? fmtNum(k.loads) : '') },
         { view: 'customers', match: ['customers', 'ar', 'sales_vat'], label: 'Customers & Receivables', icon: 'customers', pillFn: (_u, k) => (k && k.ar_balance != null ? fmtUSDk(k.ar_balance) : '') },
-        { view: 'pricing', label: 'Pricing & Commissions', icon: 'pricing', pillFn: (_u, k) => (k && k.active_agreements != null ? fmtNum(k.active_agreements) : '') },
-        { view: 'reg_customers', match: ['reg_customers', 'reg_products'], label: 'Customers & Products', icon: 'reg_customers', universal: true, pillCls: 'univ', pillFn: () => 'All BUs' }
+        { view: 'pricing', label: 'Pricing & Commissions', icon: 'pricing', pillFn: (_u, k) => (k && k.active_agreements != null ? fmtNum(k.active_agreements) : '') }
       ]
     },
     {
@@ -4261,10 +4271,7 @@
       group: 'dispatch',
       tabs: [
         { view: 'raw', label: 'Material & Transportation', icon: 'raw', pillFn: (_u, k) => (k && k.raw_loads != null ? fmtNum(k.raw_loads) : '') },
-        { view: 'expenses', label: 'Expenses & Overhead', icon: 'expenses', pillFn: (_u, k) => (k && k.expenses != null ? fmtUSDk(k.expenses) : '') },
-        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers', pillFn: (_u, k) => (k && k.ap_balance != null ? fmtUSDk(k.ap_balance) : '3 Legs') },
-        { view: 'raw_analytics', match: ['raw_analytics', 'expenses_analytics'], label: 'JV & Stock Analytics', icon: 'raw_analytics', pillCls: 'brass', pillFn: () => 'Analytics' },
-        { view: 'reg_suppliers', match: ['reg_suppliers', 'reg_sites', 'reg_regions', 'reg_categories'], label: 'Suppliers, Sites & Categories', icon: 'reg_suppliers', universal: true, pillCls: 'univ', pillFn: () => 'All BUs' }
+        { view: 'raw_analytics', label: 'JV & Stock Analytics', icon: 'raw_analytics', pillCls: 'brass', pillFn: () => 'Analytics' }
       ]
     },
     {
@@ -4275,8 +4282,7 @@
         { view: 'fleet', label: 'Diesel & Lubricants', icon: 'fleet', pillFn: () => fmtNum(filterRecords(SEED.records.fuel_intakes || []).length) },
         { view: 'fleet_equip', label: 'Fleet & Running Costs', icon: 'fleet_equip', pillFn: (_u, k) => (k && k.active_equip != null ? fmtNum(k.active_equip) : '') },
         { view: 'fleet_maint', label: 'Defects & Parts', icon: 'fleet_maint', pillCls: () => { const mi = getMaintIndex(); return mi.openCritCount > 0 ? 'crit' : (mi.openCount > 0 ? 'brass' : ''); }, pillFn: () => { const mi = getMaintIndex(); return mi.openCount > 0 ? `${fmtNum(mi.openCount)} Open` : (mi.partTotalCount > 0 ? `${fmtNum(mi.partTotalCount)} Parts` : 'Healthy'); } },
-        { view: 'fleet_drivers', match: ['fleet_drivers', 'fleet_analytics'], label: 'Drivers & Overtime', icon: 'fleet_drivers', pillFn: (_u, k) => (k && Number(k.overtime_bonus || 0) > 0 ? fmtUSDk(k.overtime_bonus) : fmtNum(filterRecords(SEED.records.company_drivers || [], { ignorePeriod: true }).length) + ' Drv') },
-        { view: 'reg_equipment', match: ['reg_equipment', 'reg_drivers'], label: 'Equipment & Drivers', icon: 'reg_equipment', universal: true, pillCls: 'univ', pillFn: () => 'All BUs' }
+        { view: 'fleet_drivers', match: ['fleet_drivers', 'fleet_analytics'], label: 'Drivers & Overtime', icon: 'fleet_drivers', pillFn: (_u, k) => (k && Number(k.overtime_bonus || 0) > 0 ? fmtUSDk(k.overtime_bonus) : fmtNum(filterRecords(SEED.records.company_drivers || [], { ignorePeriod: true }).length) + ' Drv') }
       ]
     },
     {
@@ -4284,7 +4290,17 @@
       title: HUB_TITLES.kiosks,
       group: 'dispatch',
       tabs: [
-        { view: 'kiosks', label: 'Kiosk Terminals', icon: 'kiosks', pillCls: 'brass', pillFn: () => '4 Kiosks' }
+        { view: 'kiosks', label: 'Plant Kiosks', icon: 'kiosks', pillCls: 'brass', pillFn: () => '4 Kiosks' }
+      ]
+    },
+    {
+      id: 'expenses',
+      title: HUB_TITLES.expenses,
+      group: 'books',
+      tabs: [
+        { view: 'expenses', label: 'Expenses & Overhead', icon: 'expenses', pillFn: (_u, k) => (k && k.expenses != null ? fmtUSDk(k.expenses) : '') },
+        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers', pillFn: (_u, k) => (k && k.ap_balance != null ? fmtUSDk(k.ap_balance) : '3 Legs') },
+        { view: 'expenses_analytics', label: 'Overhead Analytics', icon: 'expenses_analytics', pillCls: 'brass', pillFn: () => 'Analytics' }
       ]
     },
     {
@@ -4315,16 +4331,27 @@
       group: 'books',
       tabs: [
         { view: 'ledger', match: ['ledger', 'gl'], label: 'General Ledger & SOA', icon: 'ledger', pillFn: (_u, k) => (k && k.tb_check != null && Math.abs(Number(k.tb_check)) < 0.005 ? 'TB $0' : '') },
-        { view: 'statements', label: 'Statements & Reports', icon: 'statements', pillCls: 'brass', pillFn: u => `${(window.MFG_RDL && Array.isArray(window.MFG_RDL.RDL_CATALOG)) ? window.MFG_RDL.RDL_CATALOG.filter(r => canAccessRdlReport(r, u)).length : 22} A4` }
+        { view: 'coa_classes', label: 'Chart of Accounts & Classes', icon: 'coa_classes', pillCls: 'brass', pillFn: () => `${fmtNum((getModel().gl_tb || []).length)} Accts` }
+      ]
+    },
+    {
+      id: 'master',
+      title: HUB_TITLES.master,
+      group: 'master',
+      tabs: [
+        { view: 'reg_customers', match: ['reg_customers', 'reg_products'], label: 'Customers & Products', icon: 'reg_customers', universal: true, pillCls: 'univ', pillFn: () => 'All BUs' },
+        { view: 'reg_suppliers', match: ['reg_suppliers', 'reg_categories'], label: 'Suppliers & Categories', icon: 'reg_suppliers', universal: true, pillCls: 'univ', pillFn: () => 'All BUs' },
+        { view: 'reg_sites', match: ['reg_sites', 'reg_regions'], label: 'Sites & Regions', icon: 'reg_sites', universal: true, pillCls: 'univ', pillFn: () => 'All BUs' },
+        { view: 'reg_equipment', match: ['reg_equipment', 'reg_drivers'], label: 'Equipment & Drivers', icon: 'reg_equipment', universal: true, pillCls: 'univ', pillFn: () => 'All BUs' },
+        { view: 'tables', label: 'Tables & Registers', icon: 'tables', pillFn: u => String((window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) ? window.MFG_PBI.TABLE_CATALOG.filter(t => canAccessTable(t.key, u)).length : 36) }
       ]
     },
     {
       id: 'users',
       title: HUB_TITLES.users,
-      group: 'exec',
+      group: 'master',
       tabs: [
-        { view: 'users', label: 'Team Auth & Users', icon: 'users', pillCls: 'brass', pillFn: () => `${STATE.users.length} Seats` },
-        { view: 'tables', label: 'Tables & Registers', icon: 'tables', pillFn: u => String((window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) ? window.MFG_PBI.TABLE_CATALOG.filter(t => canAccessTable(t.key, u)).length : 36) }
+        { view: 'users', label: 'Users & Security', icon: 'users', pillCls: 'brass', pillFn: () => `${STATE.users.length} Seats` }
       ]
     }
   ];
@@ -4339,6 +4366,7 @@
 
   function canViewView(view, u) {
     u = u || activeUser();
+    if (view === 'coa_classes') return canViewView('ledger', u);
     if (view === 'entities') return canAccessPbiPage('p02_companies', u);
     if (view === 'sales_vat') return canAccessTable('vat_invoices', u) || canAccessTable('credit_terms', u) || canAccessPbiPage('p13_vat', u);
     if (view === 'sales_analytics') return canAccessPbiPage('p18_tickets', u) || canAccessPbiPage('p04_sales', u) || canAccessPbiPage('p05_pricing', u) || canAccessPbiPage('p06_ar', u);
@@ -4393,9 +4421,10 @@
     u = u || activeUser();
     const h = getHubDef(hubId);
     if (!h) return canViewView(hubId, u);
-    if (hubId === 'raw') return canViewView('raw', u) || canViewView('expenses', u) || canViewView('suppliers', u);
+    if (hubId === 'reports') return canViewView('pbi', u) || canViewView('statements', u);
+    if (hubId === 'raw') return canViewView('raw', u);
     if (hubId === 'fleet') return canViewView('fleet', u);
-    if (hubId === 'expenses') return canViewView('expenses', u);
+    if (hubId === 'expenses') return canViewView('expenses', u) || canViewView('suppliers', u);
     return h.tabs.some(t => canViewView(t.view, u));
   }
 
@@ -6853,6 +6882,7 @@
             </div>
           </div>
           <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_customers" title="Open Master Customers &amp; Products Registry">${ic('reg_customers')} Master Registry</button>
             <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="sales" title="Open Touch Sales Dispatch Kiosk &amp; Bluetooth Thermal Printer">${ic('printer')} Sales Kiosk</button>
             ${exportBtn('salesPanel', 'Sales_Register')}
             ${canEnterForm('sales') ? '<button class="btn btn-primary" data-open-modal="sales">+ New Sales Ticket</button>' : ''}
@@ -7488,6 +7518,7 @@
               <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('fleet', 'Company fleet')}${chip('third', 'Third-party')}${chip('app', 'App-entered')}</div>
             </div>
             <div style="display:flex;gap:6px">
+              <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_sites" title="Open Master Sites &amp; Regions Registry">${ic('reg_sites')} Sites &amp; Regions</button>
               <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="raw" title="Open Touch Raw Material Receiving Kiosk &amp; Bluetooth Thermal Printer">${ic('printer')} Raw Kiosk</button>
               ${exportBtn('rawPanel', 'Material_Transportation_Register')}
               ${canEnterForm('raw') ? '<button class="btn btn-primary" data-open-modal="raw">+ New Raw Receipt</button>' : ''}
@@ -7793,12 +7824,15 @@
     const isOwnEquip = e => /^own/i.test(String((e && (e.Ownership || e.ownership)) || ''));
     const isTruckEquip = e => /truck/i.test(String((e && (e.Type || e.type)) || 'Truck'));
     const isDieselFill = f => /diesel|mazout/i.test(String(f.item || f.fuel_type || 'Diesel'));
+    const isGreaseFill = f => /grease|تشحيم|مشحمة/i.test(String(f.item || ''));
     const dieselBaseCount = base.filter(isDieselFill).length;
+    const greaseBaseCount = base.filter(f => !isDieselFill(f) && isGreaseFill(f)).length;
     const lubeBaseCount = base.length - dieselBaseCount;
     const fuelRows = sortRows(base.filter(f => {
       if (STATE.chipFilter === 'flag') { const g = guards.get(f.id); return g && g.cls !== 'badge-ok' && g.cls !== ''; }
       if (STATE.chipFilter === 'diesel') return isDieselFill(f);
       if (STATE.chipFilter === 'lube') return !isDieselFill(f);
+      if (STATE.chipFilter === 'grease') return !isDieselFill(f) && isGreaseFill(f);
       if (STATE.chipFilter === 'own') { const eq = equipInfo(f.equipment); return !eq || isOwnEquip(eq); }
       if (STATE.chipFilter === 'transporter') { const eq = equipInfo(f.equipment); return !!(eq && !isOwnEquip(eq)); }
       if (STATE.chipFilter === 'truck') { const eq = equipInfo(f.equipment); return !eq || isTruckEquip(eq); }
@@ -7807,11 +7841,11 @@
       return true;
     }), 'fuel', 'date', 'desc');
     const shownFuel = fuelRows.slice(0, shownCount('fuel'));
-    let litres = 0, dieselLitres = 0, lubeLitres = 0, lubeCount = 0;
+    let litres = 0, dieselLitres = 0, lubeLitres = 0, lubeCount = 0, greaseKg = 0, greaseCount = 0;
     let ownFuelLitres = 0, transFuelLitres = 0;
     const byCoFuel = {
-      WTC: { n: 0, litres: 0, diesel: 0, lube: 0, flags: 0 },
-      BBConstruction: { n: 0, litres: 0, diesel: 0, lube: 0, flags: 0 }
+      WTC: { n: 0, litres: 0, diesel: 0, lube: 0, grease: 0, flags: 0 },
+      BBConstruction: { n: 0, litres: 0, diesel: 0, lube: 0, grease: 0, flags: 0 }
     };
     const eqFuelMap = new Map();
     (m.equipment || []).forEach(e => {
@@ -7823,6 +7857,7 @@
         fills: 0,
         diesel_litres: 0,
         lube_litres: 0,
+        grease_kg: 0,
         total_litres: 0,
         km_run: Number(e.km_run || 0),
         l_per_100km: e.l_per_100km != null ? Number(e.l_per_100km) : null,
@@ -7833,20 +7868,29 @@
     fuelRows.forEach(f => {
       const l = Number(f.litres || 0);
       const isD = isDieselFill(f);
+      const isG = !isD && isGreaseFill(f);
       const g = guards.get(f.id);
       const isFlag = Boolean(g && (g.cls === 'badge-err' || g.cls === 'badge-warn'));
-      litres += l;
-      if (isD) dieselLitres += l;
-      else { lubeLitres += l; lubeCount += 1; }
       const eqRec = equipInfo(f.equipment);
-      if (!eqRec || isOwnEquip(eqRec)) ownFuelLitres += l;
-      else transFuelLitres += l;
+      if (isG) {
+        greaseKg += l;
+        greaseCount += 1;
+      } else {
+        litres += l;
+        if (isD) dieselLitres += l;
+        else { lubeLitres += l; lubeCount += 1; }
+        if (!eqRec || isOwnEquip(eqRec)) ownFuelLitres += l;
+        else transFuelLitres += l;
+      }
       const b = byCoFuel[f.company];
       if (b) {
         b.n += 1;
-        b.litres += l;
-        if (isD) b.diesel += l;
-        else b.lube += l;
+        if (isG) b.grease += l;
+        else {
+          b.litres += l;
+          if (isD) b.diesel += l;
+          else b.lube += l;
+        }
         if (isFlag) b.flags += 1;
       }
       if (f.equipment) {
@@ -7860,6 +7904,7 @@
             fills: 0,
             diesel_litres: 0,
             lube_litres: 0,
+            grease_kg: 0,
             total_litres: 0,
             km_run: 0,
             l_per_100km: null,
@@ -7868,9 +7913,13 @@
           eqFuelMap.set(ek, ef);
         }
         ef.fills += 1;
-        if (isD) ef.diesel_litres = round2(ef.diesel_litres + l);
-        else ef.lube_litres = round2(ef.lube_litres + l);
-        ef.total_litres = round2(ef.total_litres + l);
+        if (isG) {
+          ef.grease_kg = round2((ef.grease_kg || 0) + l);
+        } else {
+          if (isD) ef.diesel_litres = round2(ef.diesel_litres + l);
+          else ef.lube_litres = round2(ef.lube_litres + l);
+          ef.total_litres = round2(ef.total_litres + l);
+        }
         if (isFlag) ef.flag_count += 1;
       }
     });
@@ -7954,9 +8003,10 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search ticket #, equipment, plate, driver, item...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('diesel', `Diesel (${dieselBaseCount})`)}${chip('lube', `Lubricants (${lubeBaseCount})`)}${chip('flag', `Guard Flags (${flagged})`)}${chip('own', 'Own Fleet')}${chip('transporter', 'Haulers')}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('diesel', `Diesel (${dieselBaseCount})`)}${chip('lube', `Lubricants (${lubeBaseCount})`)}${greaseBaseCount > 0 ? chip('grease', `Grease (${greaseBaseCount})`) : ''}${chip('flag', `Guard Flags (${flagged})`)}${chip('own', 'Own Fleet')}${chip('transporter', 'Haulers')}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_equipment" title="Open Master Equipment &amp; Drivers Registry">${ic('reg_equipment')} Master Fleet</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
             <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="fuel" title="Open Touch Fuel &amp; Lubricants Kiosk">${ic('fuel')} Fuel Kiosk</button>
             ${exportBtn('fuelPanel', 'Fuel_Intakes')}
@@ -8022,7 +8072,7 @@
                   <td class="mono">${relLink('equipment', f.equipment, f.equipment, true)}</td>
                   <td>${f.driver ? relLink('drivers', f.driver) : '—'}</td>
                   <td>${relLink('products', f.item || f.fuel_type || 'Diesel')}</td>
-                  <td class="r"><strong>${fmtNum(f.litres, 1)} L</strong></td>
+                  <td class="r"><strong>${!isDieselFill(f) && isGreaseFill(f) ? fmtNum(f.litres, 2) + ' kg' : fmtNum(f.litres, 1) + ' L'}</strong></td>
                   <td class="r">${effM.reading != null ? fmtNum(effM.reading, effM.type === 'hours' && effM.reading % 1 !== 0 ? 1 : 0) + ' ' + effM.unit : '—'}</td>
                   <td><span class="badge ${g.cls}">${esc(g.label)}</span></td>
                 </tr>`;
@@ -8032,9 +8082,9 @@
             <tfoot>
               <tr>
                 <td colspan="6">
-                  <b>TOTAL (${fmtNum(fuelRows.length)} INTAKES · Diesel ${fmtNum(dieselLitres, 1)} L${lubeLitres > 0 ? ` · Lubricants ${fmtNum(lubeLitres, 1)} L` : ''})</b>
+                  <b>TOTAL (${fmtNum(fuelRows.length)} INTAKES · Diesel ${fmtNum(dieselLitres, 1)} L${lubeLitres > 0 ? ` · Lubricants ${fmtNum(lubeLitres, 1)} L` : ''}${greaseKg > 0 ? ` · Grease ${fmtNum(greaseKg, 2)} kg` : ''})</b>
                 </td>
-                <td class="r"><b>${fmtNum(litres, 1)} L</b></td>
+                <td class="r"><b>${STATE.chipFilter === 'grease' || (litres === 0 && greaseKg > 0) ? fmtNum(greaseKg, 2) + ' kg' : fmtNum(litres, 1) + ' L' + (greaseKg > 0 ? ' · ' + fmtNum(greaseKg, 2) + ' kg' : '')}</b></td>
                 <td colspan="2"></td>
               </tr>
             </tfoot>
@@ -8096,6 +8146,16 @@
           </table>
         </div>
       </div>
+
+      ${(window.MFG_PBI && typeof window.MFG_PBI.renderLubricationBenchmarksSection === 'function')
+        ? window.MFG_PBI.renderLubricationBenchmarksSection({
+            fuelRows: filterRecords(SEED.records.fuel_intakes, { ignoreSearch: true }),
+            expRows: filterRecords(SEED.records.expenses || [], { ignoreSearch: true }),
+            salesRows: filterRecords(SEED.records.sales_tickets || [], { ignoreSearch: true }),
+            rawRows: filterRecords(SEED.records.raw_purchases || [], { ignoreSearch: true }),
+            equipList: SEED.records.equipment || []
+          })
+        : ''}
     `;
   }
 
@@ -10407,6 +10467,7 @@
             <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_suppliers" title="Open Master Suppliers &amp; Expense Categories">${ic('reg_suppliers')} Vendors &amp; Categories</button>
             ${exportBtn('expPanel', 'Expense_Register')}
             ${canEnterForm('expense') ? '<button class="btn btn-primary" data-open-modal="expense">+ New Expense</button>' : ''}
           </div>
@@ -14813,6 +14874,185 @@
     `;
   }
 
+  function renderCoaClasses() {
+    const m = getModel();
+    const k = getKPI();
+    const q = STATE.search.trim().toLowerCase();
+    const tbAll = m.gl_tb || [];
+    const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+
+    const classMap = new Map();
+    tbAll.forEach(r => {
+      const clsName = String(r.Class || 'Other').trim();
+      const clsKey = 'cls_' + clsName.replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+      let g = classMap.get(clsKey);
+      if (!g) {
+        g = { key: clsKey, label: clsName, count: 0, debit: 0, credit: 0, balance: 0 };
+        classMap.set(clsKey, g);
+      }
+      g.count += 1;
+      g.debit += Number(r.debit || 0);
+      g.credit += Number(r.credit || 0);
+      g.balance += Number(r.balance || 0);
+    });
+    const classGroups = Array.from(classMap.values()).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+
+    let totDr = 0, totCr = 0;
+    tbAll.forEach(r => { totDr += Number(r.debit || 0); totCr += Number(r.credit || 0); });
+    const diff = round2(totDr - totCr);
+    const tied = Math.abs(diff) < 0.005;
+
+    const filtered = sortRows(tbAll.filter(r => {
+      if (q && !`${r.Code} ${r.Account} ${r.Class}`.toLowerCase().includes(q)) return false;
+      if (STATE.chipFilter && STATE.chipFilter !== 'all') {
+        const rk = 'cls_' + String(r.Class || 'Other').trim().replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+        if (rk !== STATE.chipFilter) return false;
+      }
+      return true;
+    }), 'coacls', 'Code', 'asc');
+
+    let fDr = 0, fCr = 0, fBal = 0;
+    filtered.forEach(r => {
+      fDr += Number(r.debit || 0);
+      fCr += Number(r.credit || 0);
+      fBal += Number(r.balance || 0);
+    });
+
+    const bsAccts = tbAll.filter(r => /^[1-5]/.test(String(r.Code || '').trim())).length;
+    const plAccts = tbAll.length - bsAccts;
+
+    return `
+      <div class="cockpit-banner has-insights">
+        <div class="cockpit-title-block sr-only">
+          <div class="cockpit-eyebrow">LEBANESE GENERAL CHART OF ACCOUNTS · CLASSES 1–7 HIERARCHY</div>
+          <div class="cockpit-title">Chart of Accounts &amp; Classes</div>
+        </div>
+        <div class="cockpit-pills insight-grid">
+          ${insightCard({
+            label: 'Active GL Accounts',
+            badge: `${fmtNum(classGroups.length)} PCG Classes`,
+            badgeCls: 'brass',
+            val: `${fmtNum(tbAll.length)} <small>Accounts</small>`,
+            valCls: 'brass',
+            sub: `Balance Sheet (1–5): <b>${fmtNum(bsAccts)}</b> · P&amp;L (6–7): <b>${fmtNum(plAccts)}</b>`,
+            tone: 'brass'
+          })}
+          ${insightCard({
+            label: 'Total Gross Debits',
+            badge: 'Double-Entry Dr',
+            val: fmtUSD(totDr, 0),
+            sub: `Across <b>${fmtNum((m.soa_stream || []).length)}</b> posted SOA journal legs`,
+            tone: 'steel'
+          })}
+          ${insightCard({
+            label: 'Total Gross Credits',
+            badge: 'Double-Entry Cr',
+            val: fmtUSD(totCr, 0),
+            sub: `Matched 1-to-1 against operational sub-ledgers`,
+            tone: 'steel'
+          })}
+          ${insightCard({
+            label: 'Class Parity Check',
+            badge: tied ? 'Balanced' : 'Variance',
+            badgeCls: tied ? 'emerald' : 'amber',
+            val: tied ? '$0.00 <small>TIED</small>' : `${fmtUSD(diff, 2)}`,
+            valCls: tied ? 'emerald' : 'amber',
+            pct: 100,
+            sub: `Model TB check <b>${fmtUSD(k.tb_check || 0, 2)}</b>`,
+            tone: tied ? 'emerald' : 'amber'
+          })}
+        </div>
+      </div>
+
+      <div class="panel-card" id="coaClassesPanel">
+        <div class="table-toolbar">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search GL code, account title, or Lebanese CoA class...')}
+            <div class="chip-bar">
+              ${chip('all', `All Classes (${tbAll.length})`)}
+              ${classGroups.map(g => chip(g.key, `${esc(g.label)} (${g.count})`)).join('')}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="ledger">${ic('ledger')} SOA Journal Stream</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="05">${ic('printer')} Trial Balance RDL (#05)</button>
+            ${exportBtn('coaClassesPanel', 'Chart_of_Accounts_Classes')}
+          </div>
+        </div>
+        ${renderColFilterBar('coacls')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('coacls', 'GL Code', 'Code')}${th('coacls', 'Account Name', 'Account')}${th('coacls', 'Lebanese CoA Class', 'Class')}${th('coacls', 'Total Debit ($)', 'debit', 'r')}${th('coacls', 'Total Credit ($)', 'credit', 'r')}${th('coacls', 'Net Balance ($)', 'balance', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${filtered.map(r => `
+                <tr>
+                  <td class="mono"><strong>${esc(r.Code)}</strong></td>
+                  <td><strong>${esc(r.Account)}</strong></td>
+                  <td><span class="badge badge-info">${esc(r.Class)}</span></td>
+                  <td class="r">${fmtUSD(r.debit, 2)}</td>
+                  <td class="r">${fmtUSD(r.credit, 2)}</td>
+                  <td class="r"><strong>${fmtUSD(r.balance, 2)}</strong></td>
+                </tr>
+              `).join('') || emptyRow(6, tbAll.length ? `No accounts match the active filter.` : 'No Chart of Accounts published for this entity')}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3"><b>TOTAL CHART OF ACCOUNTS (${fmtNum(filtered.length)} ACCOUNTS)</b></td>
+                <td class="r"><b>${fmtUSD(fDr, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(fCr, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(round2(fBal), 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel-card" id="coaClassesSummaryPanel">
+        <div class="panel-head">
+          <div class="panel-title"><span>LEBANESE PCG CLASS ROLLUP SUMMARY (${fmtNum(classGroups.length)} CLASSES)</span></div>
+          <span class="panel-meta">${exportBtn('coaClassesSummaryPanel', 'PCG_Class_Summary')}</span>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Lebanese CoA Class</th>
+                <th class="r">Active Accounts</th>
+                <th class="r">Class Debit ($)</th>
+                <th class="r">Class Credit ($)</th>
+                <th class="r">Net Class Balance ($)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${classGroups.map(g => `
+                <tr>
+                  <td><span class="badge badge-brass">${esc(g.label)}</span></td>
+                  <td class="r">${fmtNum(g.count)}</td>
+                  <td class="r">${fmtUSD(g.debit, 2)}</td>
+                  <td class="r">${fmtUSD(g.credit, 2)}</td>
+                  <td class="r"><strong>${fmtUSD(round2(g.balance), 2)}</strong></td>
+                </tr>
+              `).join('') || emptyRow(5, 'No class summary rows')}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td><b>ALL LEBANESE COA CLASSES</b></td>
+                <td class="r"><b>${fmtNum(tbAll.length)}</b></td>
+                <td class="r"><b>${fmtUSD(totDr, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(totCr, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(diff, 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   // ==========================================================================
   // HUB SUB-TAB DEDICATED RENDERERS (ENTITY COMPARE · VAT & CREDIT · ANALYTICS · TREASURY)
   // ==========================================================================
@@ -16700,7 +16940,7 @@
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
           <div class="cockpit-eyebrow">MULTI-DEVICE TEAM AUTHENTICATION · FACE ID · BUSINESS-UNIT RLS</div>
-          <div class="cockpit-title">Team Auth &amp; Users</div>
+          <div class="cockpit-title">Users &amp; Security</div>
         </div>
         <div class="cockpit-pills insight-grid">
           ${insightCard({
@@ -17197,14 +17437,14 @@
           ${companyField}
           ${dateField}
           ${repDateField}
-          ${fld('Fuel Type *', sel('f_fueltype', [['Diesel', 'Diesel (Plant Tank Issue)'], ['Lubricant', 'Lubricant / Hydraulic / Oil'], ['Petrol', 'Petrol / Gasoline']], 'Diesel'), { id: 'wrap_f_fueltype' })}
+          ${fld('Fuel Type *', sel('f_fueltype', [['Diesel', 'Diesel (Plant Tank Issue)'], ['Lubricant', 'Lubricant / Hydraulic / Grease'], ['Petrol', 'Petrol / Gasoline']], 'Diesel'), { id: 'wrap_f_fueltype' })}
           ${fld('Ticket #', inp('f_ticketno', 'text', '', 'inputmode="numeric" placeholder="Optional ticket no."'), { id: 'wrap_f_ticketno', hintId: 'hint_ticket', hint: '' })}
-          ${fld('Lubricant / Item *', inp('f_item', 'text', 'Diesel', 'list="dl_fuel_items" placeholder="Select or type lubricant / item..."') + dlMeta('dl_fuel_items', [['Diesel', 'Bulk Fuel (L)'], ['Oil 15W40', 'Engine Oil'], ['Oil 68', 'Hydraulic 68'], ['Hydraulic Oil', 'Hydraulic'], ['Grease', 'Lubricant'], ['Other lubricant', 'Lubricant']]), { id: 'wrap_f_item', hidden: true })}
+          ${fld('Lubricant / Item *', inp('f_item', 'text', 'Diesel', 'list="dl_fuel_items" placeholder="Select or type lubricant / grease..."') + dlMeta('dl_fuel_items', [['Diesel', 'Bulk Fuel (L)'], ['Oil 15W40', 'Engine Oil (L)'], ['Oil 68', 'Hydraulic 68 (L)'], ['Oil 90', 'Gear / Diff 80W-90 (L)'], ['Oil ATF / Gearbox', 'Transmission / Steering (L)'], ['Grease', 'Daily Chassis & Pin Grease (kg)'], ['Other lubricant', 'Lubricant (L)']]), { id: 'wrap_f_item', hidden: true })}
           ${fld('Equipment / Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type equipment..."') + dl('dl_equip', equipmentNames()), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
           ${fld('Driver *', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Pick Equipment / Truck first..." readonly') + dl('dl_drivers', []), { id: 'wrap_f_driver', lockField: 'f_driver', lockReason: 'Locked to the active driver in the Equipment Log — update Equipment Log if absent or changed', hintId: 'hint_driver', hint: '' })}
 
           ${secHdr('2. Intake Quantity & Meter Reading')}
-          ${fld('Litres Issued (L) *', inp('f_qty', 'number', '', 'step="0.1" min="0.1" inputmode="decimal"'), { id: 'wrap_f_qty', hintId: 'hint_qty', hint: '' })}
+          ${fld('<span id="lbl_fuel_qty">Litres Issued (L) *</span>', inp('f_qty', 'number', '', 'step="0.05" min="0.05" inputmode="decimal"'), { id: 'wrap_f_qty', hintId: 'hint_qty', hint: '', afterHtml: '<div id="greasePresetBar" class="chip-bar" hidden style="margin-top:6px;gap:5px;flex-wrap:wrap"><button type="button" class="filter-chip" data-grease-preset="0.15" title="Daily truck chassis, fifth wheel &amp; kingpin greasing (0.15 kg)">0.15 kg · Truck</button><button type="button" class="filter-chip" data-grease-preset="0.30" title="Daily excavator &amp; wheel loader pin/bushing greasing (0.30 kg)">0.30 kg · Machine</button><button type="button" class="filter-chip" data-grease-preset="0.60" title="Daily crushing &amp; washing plant bearing greasing (0.60 kg)">0.60 kg · Plant</button></div>' })}
           ${fld('Meter Type', sel('f_metertype', [['', '— Select Equipment first —'], ['odometer', 'Odometer (km)'], ['hours', 'Hour meter (h)'], ['none', 'No meter']], ''), { id: 'wrap_f_metertype', lockField: 'f_metertype', lockReason: 'Auto-loaded and locked from the selected Equipment category', hintId: 'hint_metertype', hint: '' })}
           ${fld('<span id="lbl_meter_reading">Meter Reading</span>', inp('f_meter', 'number', '', 'step="1" min="0" inputmode="numeric" readonly placeholder="Pick Equipment first..."'), { id: 'wrap_f_meter', hintId: 'hint_meter', hint: '' })}
           ${fld('Tank / Location', inp('f_location', 'text', 'Main Plant Tank', 'list="dl_fuel_locs" placeholder="Select or type tank / location..."') + dl('dl_fuel_locs', fuelLocs), { id: 'wrap_f_location' })}
@@ -17279,7 +17519,7 @@
     lastCompany: '', lastDate: '', lastCategory: null, catCache: null,
     lastTruck: '', lastTruckOwner: '', lastSaleType: '', lastTransportBy: '',
     lastSite: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastRuleType: '',
-    lastWinKey: '', lastFuelWinKey: '',
+    lastWinKey: '', lastFuelWinKey: '', lastFuelItem: '', greaseAutoPreset: false,
     adminUnlocked: {}, unlockTargetField: '', unlockNote: ''
   };
   const $ = id => document.getElementById(id);
@@ -18453,11 +18693,43 @@
       !equipment ? '' : (mtLocked ? 'ok' : 'warn'));
 
     // Hide and clear Meter Reading column when Meter Type = none; lock until Equipment is picked
+    const curItem = isLubricant ? (val('f_item') || 'Oil 15W40') : fuelType;
+    const isGrease = isLubricant && /grease|تشحيم|مشحمة/i.test(curItem);
+    setText('lbl_fuel_qty', isGrease ? 'Grease Issued (kg) *' : 'Litres Issued (L) *');
+    const eqCatHint = `${(eqRow && (eqRow.type || eqRow.Type || eqRow.category)) || mSpec.category || ''} ${equipment || ''}`;
+    const recGreaseKg = /plant|crush|wash|screen|kasara|maghsal|belt/i.test(eqCatHint)
+      ? '0.60'
+      : ((/excavator|loader|dozer|bulldozer|backhoe|poclain|jcb|shovel|grader|roller/i.test(eqCatHint) || (!/truck|vehicle|pickup|car|van|bobcat/i.test(eqCatHint) && mSpec.type === 'hours' && !/^pb/i.test(equipment || '')))
+          ? '0.30'
+          : '0.15');
+    const qInput = $('f_qty');
+    if (isGrease) {
+      if (qInput && (!val('f_qty') || !FORM_UI.qtyManual || FORM_UI.greaseAutoPreset)) {
+        if (qInput.value !== recGreaseKg) qInput.value = recGreaseKg;
+        FORM_UI.greaseAutoPreset = true;
+      }
+    } else if (FORM_UI.greaseAutoPreset) {
+      if (qInput) qInput.value = '';
+      FORM_UI.greaseAutoPreset = false;
+      FORM_UI.qtyManual = false;
+    }
+    FORM_UI.lastFuelItem = curItem;
+    const gpBar = $('greasePresetBar');
+    if (gpBar) {
+      gpBar.hidden = !isGrease;
+      if (isGrease) {
+        const curNum = num('f_qty');
+        gpBar.querySelectorAll('[data-grease-preset]').forEach(btn => {
+          btn.classList.toggle('active', Math.abs(Number(btn.getAttribute('data-grease-preset')) - curNum) < 0.005);
+        });
+      }
+    }
+
     const showMeterReading = type !== 'none';
     setFieldVisible('wrap_f_meter', showMeterReading);
     setText('lbl_meter_reading', type === 'hours' ? 'Meter Reading (h)' : (type === 'odometer' ? 'Meter Reading (km)' : 'Meter Reading'));
     setText('lbl_calc_delta', type === 'hours' ? 'Hours since last fill' : (type === 'odometer' ? 'Distance since last fill' : 'Distance / hours since'));
-    setText('lbl_calc_rate', type === 'hours' ? 'Burn rate (L / h)' : (type === 'odometer' ? 'Consumption (L / 100 km)' : 'Consumption'));
+    setText('lbl_calc_rate', isGrease ? 'Daily greasing' : (type === 'hours' ? 'Burn rate (L / h)' : (type === 'odometer' ? 'Consumption (L / 100 km)' : 'Consumption')));
     const mEl = $('f_meter');
     if (mEl) {
       const waitEquip = !equipment && !isFieldAdminUnlocked('f_metertype');
@@ -18495,8 +18767,63 @@
     }
     setHint('hint_meter', guard.label === 'OK' ? '' : guard.label, guard.cls);
     setText('calc_delta', delta == null ? '—' : fmtNum(delta, type === 'hours' && delta % 1 !== 0 ? 1 : 0) + (type === 'hours' ? ' h' : ' km'));
-    setText('calc_rate', delta && delta > 0 && litres > 0 ? (type === 'hours' ? fmtNum(litres / delta, 2) + ' L/h' : fmtNum(litres / delta * 100, 1) + ' L/100km') : '—');
-    setText('calc_total', guard.ok ? (guard.cls === 'warn' ? 'CHECK' : 'PASS') : 'BLOCKED');
+    setText('calc_rate', isGrease
+      ? (litres > 0 ? fmtNum(litres, 2) + ' kg grease' : '—')
+      : (delta && delta > 0 && litres > 0 ? (type === 'hours' ? fmtNum(litres / delta, 2) + ' L/h' : fmtNum(litres / delta * 100, 1) + ' L/100km') : '—'));
+
+    // Non-blocking OEM lubrication benchmark & hydraulic leak checks
+    let lubeWarn = '';
+    let lubeInfo = '';
+    if (isLubricant && equipment && litres > 0) {
+      const eqNorm = norm(eqRow ? eqRow.name : equipment);
+      const refIso = (effDate || todayISO()).slice(0, 10);
+      if (/\b68\b|hydraul/i.test(curItem)) {
+        const refMs = Date.parse(refIso + 'T00:00:00Z');
+        const cutIso = isFinite(refMs) ? new Date(refMs - 30 * 86400000).toISOString().slice(0, 10) : '';
+        let prior30dHyd = 0;
+        (SEED.records.fuel_intakes || []).forEach(r => {
+          if (!r || r.voided || norm(r.equipment) !== eqNorm) return;
+          const rd = String(r.date || '').slice(0, 10);
+          if (rd && rd >= cutIso && rd <= refIso && /\b68\b|hydraul/i.test(String(r.item || ''))) {
+            prior30dHyd += Number(r.litres || 0);
+          }
+        });
+        if (prior30dHyd + litres > 40) {
+          lubeWarn = `LEAK WATCH: ${fmtNum(prior30dHyd + litres, 1)} L Hydraulic 68 in 30 days on ${eqRow ? eqRow.name : equipment} (healthy seal ceiling <= 40 L) · inspect hoses & cylinders`;
+        }
+      } else if (/15w|engine\s*oil/i.test(curItem)) {
+        const isSmallUnit = /vehicle|car|pickup|suv|van|bobcat|skid/i.test(eqCatHint);
+        const minDrainL = isSmallUnit ? 8 : 25;
+        if (litres >= minDrainL) {
+          let lastDrainDate = '';
+          (SEED.records.fuel_intakes || []).forEach(r => {
+            if (!r || r.voided || norm(r.equipment) !== eqNorm) return;
+            const rd = String(r.date || '').slice(0, 10);
+            if (rd && rd <= refIso && /15w|engine\s*oil/i.test(String(r.item || '')) && Number(r.litres || 0) >= minDrainL) {
+              if (rd > lastDrainDate) lastDrainDate = rd;
+            }
+          });
+          if (lastDrainDate) {
+            let dieselSince = 0;
+            (SEED.records.fuel_intakes || []).forEach(r => {
+              if (!r || r.voided || norm(r.equipment) !== eqNorm) return;
+              const rd = String(r.date || '').slice(0, 10);
+              if (rd && rd > lastDrainDate && rd <= refIso && /diesel|mazout/i.test(String(r.item || r.fuel_type || 'Diesel'))) {
+                dieselSince += Number(r.litres || 0);
+              }
+            });
+            const targetDiesel = /truck|tractor|tipper|mixer/i.test(eqCatHint) ? 8000 : 4000;
+            if (dieselSince < targetDiesel * 0.85) {
+              lubeWarn = `EARLY DRAIN WATCH: Only ${fmtNum(dieselSince, 0)} L diesel burned since last 15W-40 change on ${lastDrainDate} (benchmark ${fmtNum(targetDiesel, 0)} L / ${type === 'hours' ? '250 h' : '15,000 km'})`;
+            }
+          }
+        }
+      } else if (isGrease) {
+        lubeInfo = `Daily greasing benchmark: ${recGreaseKg} kg / active work day (${fmtNum(Number(recGreaseKg) * 26, 1)} kg / 26-day month)`;
+      }
+    }
+
+    setText('calc_total', guard.ok ? (guard.cls === 'warn' ? 'CHECK' : (lubeWarn ? (lubeWarn.startsWith('LEAK') ? 'LEAK WATCH' : 'EARLY DRAIN') : 'PASS')) : 'BLOCKED');
     const known = !!(eqRow && equipmentNames().some(n => norm(n) === norm(equipment)));
     setHint('hint_truck', equipment
       ? (known
@@ -18504,11 +18831,21 @@
           : 'Not in the equipment registry — check the plate')
       : '', equipment ? (known ? 'ok' : 'warn') : '');
     const bbcTankNegative = company === 'BBConstruction' && (fuelType === 'Diesel' || /diesel/i.test(val('f_item'))) && Number((((SEED.sentinels.fleet_fuel_overtime_auditor || {}).by_model || {}).BBConstruction || {}).diesel_stock_balance_l || 0) < 0;
-    setHint('hint_qty', bbcTankNegative ? 'BBConstruction tank is negative — diesel intakes are refused until the history is corrected' : (litres <= 0 && val('f_qty') ? 'Must be above zero' : ''), bbcTankNegative || (litres <= 0 && val('f_qty')) ? 'crit' : '');
+    if (bbcTankNegative) {
+      setHint('hint_qty', 'BBConstruction tank is negative — diesel intakes are refused until the history is corrected', 'crit');
+    } else if (litres <= 0 && val('f_qty')) {
+      setHint('hint_qty', 'Must be above zero', 'crit');
+    } else if (lubeWarn) {
+      setHint('hint_qty', lubeWarn, 'warn');
+    } else if (lubeInfo) {
+      setHint('hint_qty', lubeInfo, 'ok');
+    } else {
+      setHint('hint_qty', '', '');
+    }
     commonDateChecks([]);
     if (val('f_ticketno')) dupCheck(company, 'fuel', date); else setHint('hint_ticket', 'Optional — leave blank for an unnumbered intake', '');
     renderAdminLockBar();
-    return { company, equipment, date, repDate: effDate, fuelType, type, reading, litres, prev, delta, guard, bbcTankNegative };
+    return { company, equipment, date, repDate: effDate, fuelType, isGrease, type, reading, litres, prev, delta, guard, bbcTankNegative };
   }
 
   function recalcExpense() {
@@ -20118,10 +20455,24 @@
     FORM_UI.lastSaleType = val('f_saletype'); FORM_UI.lastTransportBy = val('f_transportby');
     FORM_UI.lastSite = val('f_site'); FORM_UI.lastProduct = val('f_product');
     FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier');
-    FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = '';
+    FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = ''; FORM_UI.lastFuelItem = val('f_item'); FORM_UI.greaseAutoPreset = false;
     FORM_UI.defectRefPreset = false; FORM_UI.lastSeverity = ''; FORM_UI.lastDefectRef = '';
     FORM_UI.attPreset = 'regular'; FORM_UI.attSchedManual = false;
     FORM_UI.lastAttStaff = ''; FORM_UI.lastAttDate = val('f_date'); FORM_UI.lastAttTimeKey = '';
+
+    body.querySelectorAll('[data-grease-preset]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const gv = btn.getAttribute('data-grease-preset') || '0.15';
+        const qEl = $('f_qty');
+        if (qEl) {
+          qEl.value = gv;
+          FORM_UI.qtyManual = true;
+          FORM_UI.greaseAutoPreset = false;
+        }
+        recalcForm();
+      });
+    });
 
     body.querySelectorAll('[data-att-mode]').forEach(btn => {
       btn.addEventListener('click', ev => {
@@ -20275,7 +20626,7 @@
         if (el.id === 'f_method' && (isFieldAdminUnlocked('f_method') || el.dataset.policyLockedNow !== '1')) FORM_UI.methodManual = true;
         if (el.id === 'f_uom' && (isFieldAdminUnlocked('f_uom') || el.dataset.policyLockedNow !== '1')) FORM_UI.uomManual = true;
         if (el.id === 'f_metertype' && (isFieldAdminUnlocked('f_metertype') || el.dataset.policyLockedNow !== '1')) FORM_UI.meterTypeManual = true;
-        if (el.id === 'f_qty') FORM_UI.qtyManual = !!el.value;
+        if (el.id === 'f_qty') { FORM_UI.qtyManual = !!el.value; FORM_UI.greaseAutoPreset = false; }
         if (el.id === 'f_repdate') {
           FORM_UI.repDateManual = val('f_repdate') !== val('f_date');
           if (FORM_UI.repDateManual) FORM_UI.showRepDate = true;
@@ -20497,7 +20848,7 @@
     } else if (f === 'fuel') {
       if (!c.equipment) addErr('f_truck', 'Equipment is required.');
       else if (c.type !== 'none' && !val('f_driver')) addErr('f_driver', 'Active driver is required (assign in Equipment Log).');
-      if (!(c.litres > 0)) addErr('f_qty', 'Litres must be above zero.');
+      if (!(c.litres > 0)) addErr('f_qty', c.isGrease ? 'Grease quantity (kg) must be above zero.' : 'Litres must be above zero.');
       if (c.bbcTankNegative) addErr('f_qty', 'BBConstruction diesel intakes are refused while the tank reconciliation is negative.');
       if (!c.guard.ok) addErr('f_meter', 'Meter guard: ' + c.guard.label);
       if (c.guard.cls === 'warn' && !notes) addErr('f_notes', 'Large meter jump — add a note to confirm the reading.');
@@ -26305,7 +26656,7 @@
     pbi: 'Analytics & Insights',
     tables: 'Tables & Registers',
     sentinels: 'AI Sentinels & Audit',
-    kiosks: 'Kiosk Terminals',
+    kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
     sales_analytics: 'Sales Analytics',
@@ -26334,6 +26685,7 @@
     payroll_analytics: 'Payroll & Workforce',
     ledger: 'General Ledger & SOA',
     gl: 'General Ledger & SOA',
+    coa_classes: 'Chart of Accounts & Classes',
     ledger_treasury: 'Loans & Settlements',
     reg_equipment: 'Equipment & Trucks',
     reg_drivers: 'Drivers & Operators',
@@ -26344,7 +26696,7 @@
     reg_suppliers: 'Suppliers & Haulers',
     reg_categories: 'Expense Categories',
     statements: 'Statements & Reports',
-    users: 'Team Auth & Users'
+    users: 'Users & Security'
   };
   const VIEW_MOBILE_TITLES = {
     overview: 'Executive Overview',
@@ -26352,7 +26704,7 @@
     pbi: 'Analytics & Insights',
     tables: 'Tables & Registers',
     sentinels: 'AI Sentinels & Audit',
-    kiosks: 'Kiosk Terminals',
+    kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
     sales_analytics: 'Sales Analytics',
@@ -26381,6 +26733,7 @@
     payroll_analytics: 'Payroll & Workforce',
     ledger: 'General Ledger & SOA',
     gl: 'General Ledger & SOA',
+    coa_classes: 'Chart of Accounts & Classes',
     ledger_treasury: 'Loans & Settlements',
     reg_equipment: 'Equipment & Trucks',
     reg_drivers: 'Drivers & Operators',
@@ -26391,7 +26744,7 @@
     reg_suppliers: 'Suppliers & Haulers',
     reg_categories: 'Expense Categories',
     statements: 'Statements & Reports',
-    users: 'Team Auth & Users'
+    users: 'Users & Security'
   };
   const COMPANY_MOBILE_LABELS = {
     'manufacturing-group': 'All Group (WTC · BBC · Lions)',
@@ -26699,6 +27052,14 @@
     document.querySelectorAll('#sidebarNav .nav-item').forEach(btn => {
       const hubId = btn.getAttribute('data-hub') || btn.getAttribute('data-view');
       btn.hidden = !canViewHub(hubId, user);
+    });
+    document.querySelectorAll('#sidebarNav .grp').forEach(grpEl => {
+      let sib = grpEl.nextElementSibling, anyVisible = false;
+      while (sib && !sib.classList.contains('grp')) {
+        if (sib.classList.contains('nav-item') && !sib.hidden) { anyVisible = true; break; }
+        sib = sib.nextElementSibling;
+      }
+      grpEl.hidden = !anyVisible;
     });
     if (!canViewView(STATE.view, user)) STATE.view = defaultViewFor(user);
 
@@ -27107,7 +27468,7 @@
     const dOver = $('dockBtnOverview'), dDisp = $('dockBtnDispatch'), dBooks = $('dockBtnBooks'), dEntry = $('mobileDockEntryBtn'), dEntryLbl = $('mobileDockEntryLabel');
     if (dOver) dOver.classList.toggle('on', group === 'exec');
     if (dDisp) dDisp.classList.toggle('on', group === 'dispatch');
-    if (dBooks) dBooks.classList.toggle('on', group === 'books');
+    if (dBooks) dBooks.classList.toggle('on', group === 'books' || group === 'master');
     if (dEntry && dEntryLbl) {
       if (canEnterAny(user)) {
         dEntry.hidden = false;
@@ -27937,7 +28298,8 @@
             <div class="kiosk-quick-group">
               <span class="kiosk-quick-lbl">Product Type:</span>
               <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_fueltype" data-kiosk-preset-val="Diesel">${ic('fuel')} Diesel</button>
-              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_fueltype" data-kiosk-preset-val="Lubricant">${ic('droplet')} Lubricant / Oil / Grease</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_fueltype" data-kiosk-preset-val="Lubricant">${ic('droplet')} Lubricant / Oil</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_fueltype" data-kiosk-preset-val="Lubricant" data-kiosk-preset-item="Grease">${ic('droplet')} Daily Grease (kg)</button>
               <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_fueltype" data-kiosk-preset-val="Petrol">${ic('fuel')} Petrol</button>
             </div>
             <div class="kiosk-quick-group">
@@ -28202,7 +28564,7 @@
       <div class="cockpit-banner">
         <div class="cockpit-title-block">
           <div class="cockpit-eyebrow">UNIFIED 4-KIOSK TERMINAL SUITE · WEIGHBRIDGE, RAW MATERIAL, FUEL DEPOT &amp; BIOMETRIC ATTENDANCE</div>
-          <div class="cockpit-title">Kiosk Terminals</div>
+          <div class="cockpit-title">Plant Kiosks</div>
           <div class="cockpit-sub">Touch-first plant terminals linked directly to ISABI's 35 smart form rules, 3-leg AP/AR ledgers &amp; Bluetooth ESC/POS thermal receipt printers (80mm &amp; 58mm · Priced Invoice vs Unpriced Gate Pass).</div>
         </div>
         <div class="cockpit-pills">
@@ -28365,6 +28727,7 @@
       chip.addEventListener('click', () => {
         const fid = chip.getAttribute('data-kiosk-preset-field');
         const fval = chip.getAttribute('data-kiosk-preset-val') || '';
+        const fitem = chip.getAttribute('data-kiosk-preset-item') || '';
         const el = $(fid);
         if (!el) return;
         if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(fid)) {
@@ -28373,6 +28736,14 @@
         el.value = fval;
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
+        if (fitem) {
+          const itemEl = $('f_item');
+          if (itemEl) {
+            itemEl.value = fitem;
+            itemEl.dispatchEvent(new Event('input', { bubbles: true }));
+            itemEl.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
       });
     });
 
@@ -28623,12 +28994,14 @@
     const setPill = (id, text) => { const el = $(id); if (el) el.textContent = text; };
     const sentinelsOpen = buildSentinelItems().filter(s => s.severity !== 'ok').length;
     const pbiNavCount = (window.MFG_PBI && Array.isArray(window.MFG_PBI.PBI_PAGES)) ? window.MFG_PBI.PBI_PAGES.filter(p => canAccessPbiPage(p.id, user)).length : 12;
+    const rdlNavCount = (window.MFG_RDL && Array.isArray(window.MFG_RDL.RDL_CATALOG)) ? window.MFG_RDL.RDL_CATALOG.filter(r => canAccessRdlReport(r, user)).length : 22;
     const tblNavCount = (window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) ? window.MFG_PBI.TABLE_CATALOG.filter(t => canAccessTable(t.key, user)).length : 36;
     setPill('navCountPbi', `${pbiNavCount} Pages`);
+    setPill('navCountReports', `${pbiNavCount} · ${rdlNavCount} A4`);
     setPill('navCountTables', String(tblNavCount));
     setPill('navCountSales', k.loads != null ? fmtNum(k.loads) : '—');
     setPill('navCountRaw', k.raw_loads != null ? fmtNum(k.raw_loads) : '—');
-    setPill('navCountFleet', k.active_equip != null ? fmtNum(k.active_equip) : fmtNum(SEED.records.equipment.length));
+    setPill('navCountFleet', fmtNum(filterRecords(SEED.records.fuel_intakes || []).length));
     setPill('navCountPricing', k.active_agreements != null ? fmtNum(k.active_agreements) : '—');
     setPill('navCountTill', fmtTillPair(k.cash_till_usd, k.cash_till_lbp, true));
     setPill('navCountAR', k.ar_balance != null ? fmtUSDk(k.ar_balance) : '—');
@@ -28639,15 +29012,9 @@
     setPill('navCountUsers', `${STATE.users.length} Seats`);
     const tbPill = $('navCountTB');
     if (tbPill) {
-      if (!canViewView('ledger', user)) {
-        const rdlCnt = (window.MFG_RDL && Array.isArray(window.MFG_RDL.RDL_CATALOG)) ? window.MFG_RDL.RDL_CATALOG.filter(r => canAccessRdlReport(r, user)).length : 22;
-        tbPill.textContent = `${rdlCnt} A4`;
-        tbPill.className = 'nav-pill brass';
-      } else {
-        const tb = Number(k.tb_check);
-        tbPill.textContent = k.tb_check == null ? 'TB —' : (Math.abs(tb) < 0.005 ? 'TB $0' : 'TB ' + fmtUSDk(tb));
-        tbPill.className = 'nav-pill ' + (k.tb_check == null ? '' : (Math.abs(tb) < 0.005 ? 'good' : 'brass'));
-      }
+      const tb = Number(k.tb_check);
+      tbPill.textContent = k.tb_check == null ? 'TB —' : (Math.abs(tb) < 0.005 ? 'TB $0' : 'TB ' + fmtUSDk(tb));
+      tbPill.className = 'nav-pill ' + (k.tb_check == null ? '' : (Math.abs(tb) < 0.005 ? 'good' : 'brass'));
     }
     const snPill = $('navCountSentinels');
     if (snPill) snPill.className = 'nav-pill ' + (sentinelsOpen ? 'brass' : 'good');
@@ -28695,6 +29062,7 @@
       case 'payroll_contracts': wsHtml = renderPayroll('contracts'); break;
       case 'ledger':
       case 'gl': wsHtml = renderGL(); break;
+      case 'coa_classes': wsHtml = renderCoaClasses(); break;
       case 'ledger_treasury': wsHtml = renderLedgerTreasury(); break;
       case 'reg_equipment':
       case 'reg_drivers':
