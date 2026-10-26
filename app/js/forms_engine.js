@@ -471,7 +471,7 @@
     const fIdx = (helpers && typeof helpers.getFreqIndex === 'function')
       ? helpers.getFreqIndex()
       : (typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null);
-    const uoms = uniqSorted((rec.uoms || []).map(u => u.name).concat(['m³', 'Ton', 'Truck', 'Piece', 'Bag', 'Litre']), fIdx && fIdx.uom);
+    const uoms = uniqSorted((rec.uoms || []).map(u => u.name).concat(['m³', 'Ton', 'Truck', 'Piece', 'Bag', 'Litre', 'kg']), fIdx && fIdx.uom);
     const prodNames = uniqSorted((rec.products || []).map(p => p.name), fIdx && fIdx.product);
     const prodByName = {};
     (rec.products || []).forEach(p => { if (p && p.name && !prodByName[p.name]) prodByName[p.name] = p; });

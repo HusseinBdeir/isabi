@@ -428,6 +428,7 @@
     if (docType === 'fuel') {
       const fuelType = record.fuel_type || (/diesel/i.test(record.item || '') ? 'Diesel' : 'Lubricant');
       const item = record.item || fuelType || 'Diesel';
+      const isGrease = /grease/i.test(item);
       const litres = Number(record.litres != null ? record.litres : (record.qty || 0));
       const eqNm = String(record.equipment || record.truck || '').trim();
       const seedRef = typeof window !== 'undefined' ? (window.MFG_SEED || window.__MFG_SEED_INTERNAL) : null;
@@ -464,6 +465,8 @@
         driver: record.driver || '—',
         location: record.location || 'Main Plant Tank',
         litres,
+        isGrease,
+        issueUnit: isGrease ? 'kg' : 'L',
         reading,
         meterUnit,
         delta,
@@ -689,7 +692,7 @@
       if (d.driver && d.driver !== '—') lr('Driver / Operator:', d.driver);
       line(SEP);
       emit(P.BOLD_ON, P.TALL_ON);
-      lr('LITRES ISSUED:', `${fmtQty(d.litres, 1)} L`);
+      lr(d.isGrease ? 'GREASE ISSUED:' : 'LITRES ISSUED:', `${fmtQty(d.litres, d.isGrease ? 2 : 1)} ${d.issueUnit || 'L'}`);
       emit(P.NORMAL, P.BOLD_OFF);
       if (d.reading != null) {
         lr('Meter Reading:', `${fmtQty(d.reading, 0)} ${d.meterUnit}`);
@@ -928,7 +931,7 @@
         <div class="th-kv"><span>Equipment / Unit</span><b class="mono">${escHtml(d.equipment)}</b></div>
         ${d.driver && d.driver !== '—' ? `<div class="th-kv"><span>Driver / Operator</span><b>${escHtml(d.driver)}</b></div>` : ''}
         <div class="th-sep"></div>
-        <div class="th-total-row"><span>LITRES ISSUED</span><b>${fmtQty(d.litres, 1)} L</b></div>
+        <div class="th-total-row"><span>${d.isGrease ? 'GREASE ISSUED' : 'LITRES ISSUED'}</span><b>${fmtQty(d.litres, d.isGrease ? 2 : 1)} ${escHtml(d.issueUnit || 'L')}</b></div>
         ${d.reading != null ? `<div class="th-kv"><span>Meter Reading</span><b>${fmtQty(d.reading, 0)} ${escHtml(d.meterUnit)}</b></div>` : ''}
         ${d.delta != null && d.delta > 0 ? `<div class="th-kv"><span>Distance / Hours</span><b>+${fmtQty(d.delta, 0)} ${escHtml(d.meterUnit)}</b></div>` : ''}
         ${d.priceMode === 'priced' && d.totalUsd > 0 ? `

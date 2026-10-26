@@ -8245,7 +8245,7 @@
   function getEquipmentHealth(unitName, coOpt) {
     const k = norm(unitName);
     if (!k) {
-      return { status: 'Healthy · Operational', shortBadge: 'OK', badgeCls: 'badge-ok', tone: 'good', severityRank: 5, openDefects: [], openCount: 0, critCount: 0, modCount: 0, minorCount: 0, partCount: 0, storedCount: 0, maintPartCount: 0, soldPartCount: 0, unnotifiedCount: 0, expCount: 0, expTotal: 0, latestOpenDefect: null };
+      return { status: 'Healthy · Operational', label: 'Healthy · Operational', shortBadge: 'OK', code: 'OK', badgeCls: 'badge-ok', tone: 'good', severityRank: 5, openDefects: [], openCount: 0, critCount: 0, modCount: 0, minorCount: 0, parts: [], partMovements: [], partCount: 0, storedCount: 0, maintPartCount: 0, soldPartCount: 0, unnotifiedCount: 0, expCount: 0, expTotal: 0, latestOpenDefect: null };
     }
     const allowedCos = allowedCompanyNames();
     const coMatch = r => (!r.company || allowedCos.includes(r.company)) && (!coOpt || !r.company || norm(r.company) === norm(coOpt));
@@ -8309,7 +8309,9 @@
 
     return {
       status,
+      label: status,
       shortBadge,
+      code: shortBadge,
       badgeCls,
       tone,
       severityRank,
@@ -8322,6 +8324,7 @@
       minorCount,
       resolvedCount: Math.max(0, allDef.length - openDef.length),
       parts: allParts,
+      partMovements: allParts,
       partCount: allParts.length,
       storedCount: allParts.filter(p => /^Stored/i.test(p.removed_disposition || '')).length,
       maintPartCount: allParts.filter(p => /Maintenance|Workshop/i.test(p.removed_disposition || '')).length,
@@ -10628,14 +10631,76 @@
     return Math.round(raw * 10) / 10;
   }
 
-  function staffScheduledHours(staffName, company) {
+  const ATT_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  function attDateWeekdayInfo(isoDate) {
+    const s = String(isoDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return { dayIdx: -1, short: '', isSunday: false };
+    const [y, m, d] = s.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    const idx = dt.getUTCDay();
+    return { dayIdx: idx, short: ATT_WEEKDAYS[idx] || '', isSunday: idx === 0 };
+  }
+
+  function getStaffContractProfile(staffName, company, onDate) {
     const k = norm(staffName);
-    if (!k || !SEED.records || !Array.isArray(SEED.records.employments)) return 8;
+    const def = {
+      hasContract: false, staff: staffName || '', company: company || 'WTC',
+      type: 'Monthly', status: 'No Contract', role: '',
+      monthlySalary: 0, dailyRateInput: 0,
+      workingDays: 30, workingHours: 8, otMultiplier: 1.0, lateMultiplier: 1.0,
+      reimbursement: 0, deduction: 0,
+      dailyRate: 25, hourlyRate: round2(25 / 8), otHourlyRate: round2(25 / 8), lateHourlyRate: round2(25 / 8)
+    };
+    if (!k || !SEED.records || !Array.isArray(SEED.records.employments)) return def;
     const co = norm(company);
-    const match = SEED.records.employments.find(e => e && !e.voided && norm(e.staff) === k && (!co || norm(e.company) === co) && e.status !== 'Ended')
-      || SEED.records.employments.find(e => e && !e.voided && norm(e.staff) === k);
-    const h = match ? Number(match.working_hours || match.shift_hours || 8) : 8;
-    return h > 0 ? h : 8;
+    const allForStaff = SEED.records.employments.filter(e => e && !e.voided && norm(e.staff) === k);
+    if (!allForStaff.length) return def;
+    const pool = co ? allForStaff.filter(e => norm(e.company) === co) : allForStaff;
+    const candidates = pool.length ? pool : allForStaff;
+    const refDate = String(onDate || SEED_DATE || '').slice(0, 10);
+    const isEnded = e => e.status === 'Ended' || e.status === 'Inactive' || e.status === 'Terminated' || (e.end_date && refDate && String(e.end_date).slice(0, 10) < refDate);
+    const sorted = candidates.slice().sort((a, b) => {
+      const aAct = isEnded(a) ? 0 : 1;
+      const bAct = isEnded(b) ? 0 : 1;
+      if (aAct !== bAct) return bAct - aAct;
+      const aInWin = refDate && (!a.start_date || String(a.start_date).slice(0, 10) <= refDate) && (!a.end_date || String(a.end_date).slice(0, 10) >= refDate) ? 1 : 0;
+      const bInWin = refDate && (!b.start_date || String(b.start_date).slice(0, 10) <= refDate) && (!b.end_date || String(b.end_date).slice(0, 10) >= refDate) ? 1 : 0;
+      if (aInWin !== bInWin) return bInWin - aInWin;
+      return String(b.start_date || '').localeCompare(String(a.start_date || ''));
+    });
+    const best = sorted[0];
+    const wDays = Number(best.working_days || 0) > 0 ? Number(best.working_days) : 30;
+    const wHrs = Number(best.working_hours || best.shift_hours || 0) > 0 ? Number(best.working_hours || best.shift_hours) : 8;
+    const dRateIn = Number(best.daily_rate || 0);
+    const mSal = Number(best.salary_usd || best.base_salary || 0) || (dRateIn > 0 ? round2(dRateIn * wDays) : 0);
+    const otMult = Number(best.overtime_multiplier || 0) > 0 ? Number(best.overtime_multiplier) : 1.0;
+    const ltMult = Number(best.lateness_multiplier || 0) > 0 ? Number(best.lateness_multiplier) : 1.0;
+    const dailyRate = dRateIn > 0 ? dRateIn : (mSal > 0 ? (mSal / wDays) : 25);
+    const hourlyRate = mSal > 0 ? (mSal / (wDays * wHrs)) : (dailyRate / wHrs);
+    return {
+      hasContract: true,
+      staff: best.staff || staffName,
+      company: best.company || company || 'WTC',
+      type: best.type || 'Staff',
+      status: isEnded(best) ? 'Ended' : 'Current',
+      role: best.role || '',
+      monthlySalary: mSal,
+      dailyRateInput: dRateIn,
+      workingDays: wDays,
+      workingHours: wHrs,
+      otMultiplier: otMult,
+      lateMultiplier: ltMult,
+      reimbursement: Number(best.reimbursement || 0),
+      deduction: Number(best.deduction || 0),
+      dailyRate,
+      hourlyRate,
+      otHourlyRate: hourlyRate * otMult,
+      lateHourlyRate: hourlyRate * ltMult
+    };
+  }
+
+  function staffScheduledHours(staffName, company, onDate) {
+    return getStaffContractProfile(staffName, company, onDate).workingHours || 8;
   }
 
   function renderPayroll(subMode = 'main') {
@@ -10648,66 +10713,140 @@
     const logAll = filterRecords(SEED.records.logistics_allowances, { ignorePeriod: true });
     const otRates = filterRecords(SEED.records.overtime_rates, { ignorePeriod: true });
 
-    // Normalize attendance fields from Dataverse bhf_attendance (type + tally + in_time/out_time + worked_hours)
+    const profCache = new Map();
+    const profOf = (name, co) => {
+      const ck = `${norm(name)}|${norm(co)}`;
+      if (!profCache.has(ck)) profCache.set(ck, getStaffContractProfile(name, co, today));
+      return profCache.get(ck);
+    };
+
+    // Normalize attendance fields & derive intuitive shift basis + $ payroll impact per row
     attAll.forEach(a => {
       const attType = String(a.type || a.status || 'Present');
       const tally = Number(a.tally != null ? a.tally : 0);
       const inFmt = fmtAttClockTime(a.in_time || a.check_in || '');
       const outFmt = fmtAttClockTime(a.out_time || a.check_out || '');
+      const inH = parseAttClockHour(inFmt);
+      const outH = parseAttClockHour(outFmt);
+      const isOvernight = Boolean(inH != null && outH != null && outH < inH);
+      const wk = attDateWeekdayInfo(a.date);
       const workedH = Number(a.worked_hours != null && a.worked_hours > 0 ? a.worked_hours : computeShiftWorkedHours(inFmt, outFmt));
       const otH = Number(a.overtime_hours != null && a.overtime_hours > 0 ? a.overtime_hours : (/^overtime$/i.test(attType) ? tally : 0));
       const regH = Number(a.regular_hours != null && a.regular_hours > 0 ? a.regular_hours : (workedH > 0 ? round2(Math.max(0, workedH - otH)) : 0));
       const ltH = Number(a.late_hours != null && a.late_hours > 0 ? a.late_hours : (/^lateness$/i.test(attType) ? tally : 0));
       const lvD = /^config\s*vac/i.test(attType)
         ? tally
-        : (/Absence|VacAbsence|Sick|Leave|Unpaid/i.test(attType) && !/Config/i.test(attType) ? (tally > 0 ? tally : 1) : 0);
+        : (/^half\s*day$/i.test(attType)
+          ? (tally > 0 ? tally : 0.5)
+          : (/Absence|VacAbsence|Sick|Leave|Unpaid/i.test(attType) && !/Config/i.test(attType) ? (tally > 0 ? tally : 1) : 0));
       const extUsd = /^(?:extra|config)\s*usd$/i.test(attType) ? tally : (/^(?:extra|config)\s*lbp$/i.test(attType) ? round2(tally / 89500) : 0);
       const shiftStr = (inFmt || outFmt)
         ? `${inFmt || '—'} → ${outFmt || '—'}`
         : (regH > 0 ? `${fmtNum(regH, 1)}h reg` : '—');
+
+      let displayType = attType;
+      if (/^overtime$/i.test(attType)) displayType = 'Overtime';
+      else if (/^present$/i.test(attType)) displayType = 'Full Shift';
+      else if (/^lateness$/i.test(attType)) displayType = 'Lateness';
+      else if (/^half\s*day$/i.test(attType)) displayType = 'Half Day';
+      else if (/^vacabsence$|^paid\s*leave$/i.test(attType)) displayType = 'Paid Vacation';
+      else if (/^sick/i.test(attType)) displayType = 'Sick Leave';
+      else if (/^absence$|^absent$|unpaid/i.test(attType)) displayType = 'Absence';
+      else if (/^extra/i.test(attType)) displayType = 'Extra Bonus';
+      else if (/^config\s*vac/i.test(attType)) displayType = 'Opening Vac.';
+      else if (/^config/i.test(attType)) displayType = 'Opening Bal.';
+
+      let isCallout = false;
+      let shiftBasisLbl = '—';
+      if (/^config/i.test(attType)) {
+        shiftBasisLbl = 'Opening Balance';
+      } else if (/^extra/i.test(attType)) {
+        shiftBasisLbl = /lbp/i.test(attType) ? 'LBP Bonus (89.5k)' : 'USD Bonus';
+      } else if (/^half\s*day$/i.test(attType) && workedH === 0) {
+        shiftBasisLbl = a.pay_treatment === 'paid' ? 'Half Day (Paid)' : 'Half Day Off (0.5d)';
+      } else if (lvD > 0 || (/Absence|VacAbsence|Sick|Leave|Unpaid/i.test(attType) && workedH === 0)) {
+        shiftBasisLbl = /^vacabsence$|^paid\s*leave$/i.test(attType) || a.pay_treatment === 'paid'
+          ? 'Paid Leave (0 Ded.)'
+          : (/^sick/i.test(attType) ? 'Sick Leave (0 Ded.)' : 'Unpaid Leave');
+      } else if (workedH > 0) {
+        if (otH > 0 && Math.abs(workedH - otH) <= 0.15) {
+          isCallout = true;
+          shiftBasisLbl = wk.isSunday ? 'Sun Off (100% OT)' : 'Call-Out (100% OT)';
+        } else if (otH > 0) {
+          const impliedBase = round2(Math.max(0, workedH - otH));
+          shiftBasisLbl = Math.abs(impliedBase - 9) <= 0.15 ? '9.0h (8h+1h brk)' : `${fmtNum(impliedBase, 1)}h base`;
+        } else if (ltH > 0) {
+          const impliedSched = Number(a.scheduled_hours || 0) > 0 ? Number(a.scheduled_hours) : round2(workedH + ltH);
+          shiftBasisLbl = `${fmtNum(impliedSched, 1)}h base`;
+        } else {
+          shiftBasisLbl = `${fmtNum(Number(a.scheduled_hours || workedH || 8), 1)}h std shift`;
+        }
+      } else if (otH > 0) {
+        if (wk.isSunday) {
+          isCallout = true;
+          shiftBasisLbl = 'Sun Tally (100% OT)';
+        } else {
+          shiftBasisLbl = 'Hours Tally';
+        }
+      } else if (ltH > 0) {
+        shiftBasisLbl = 'Hours Tally';
+      } else {
+        shiftBasisLbl = 'Standard Day';
+      }
+
+      const prof = profOf(a.staff, a.company);
+      const otPayRow = round2(otH * prof.otHourlyRate);
+      const lateDedRow = round2(ltH * prof.lateHourlyRate);
+      const isUnpaidAbs = (/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType)) && !/^config/i.test(attType) && a.pay_treatment !== 'paid';
+      const absDedRow = isUnpaidAbs ? round2((lvD > 0 ? lvD : (/^half\s*day$/i.test(attType) ? 0.5 : 1)) * prof.dailyRate) : 0;
+      const impactUsd = round2(otPayRow + extUsd - lateDedRow - absDedRow);
+
       a.type = attType;
       a.status = attType;
+      a.display_type = displayType;
       a.tally = tally;
       a.in_time = inFmt;
       a.out_time = outFmt;
+      a.weekday = wk.short;
+      a.is_sunday = wk.isSunday;
+      a.is_overnight = isOvernight;
+      a.is_callout = isCallout;
+      a.shift_basis_lbl = shiftBasisLbl;
       a.worked_hours = workedH;
       a.regular_hours = regH;
       a.overtime_hours = otH;
       a.late_hours = ltH;
       a.leave_days = lvD;
       a.extra_usd = extUsd;
+      a.payroll_impact_usd = impactUsd;
       a.shift_str = shiftStr;
     });
 
-    // Build per-staff 15-column payroll register & attendance summary
+    // Build per-staff 15-column payroll register & attendance summary (using active primary contract per staff, never summing rolled-over contracts)
     const staffMap = new Map();
     const ensureStaff = (name, co) => {
       const key = norm(name || '(Unassigned)');
       if (!staffMap.has(key)) {
+        const prof = profOf(name, co);
         staffMap.set(key, {
-          staff: name || '(Unassigned)', company: co || 'WTC', type: 'Monthly', status: 'Current',
-          base: 0, work_days: 26, work_hrs: 9, ot_mult: 1.5, late_mult: 1,
+          staff: name || '(Unassigned)', company: co || prof.company || 'WTC',
+          type: prof.hasContract ? prof.type : 'Monthly',
+          status: prof.hasContract ? prof.status : 'Current',
+          base: prof.hasContract ? prof.monthlySalary : 0,
+          work_days: prof.workingDays || 30,
+          work_hrs: prof.workingHours || 8,
+          ot_mult: prof.otMultiplier || 1.0,
+          late_mult: prof.lateMultiplier || 1.0,
           ot_hrs: 0, ot_pay: 0, late_hrs: 0, late_ded: 0, absent_days: 0, vac_days: 0, sick_days: 0, gap_days: 0, abs_ded: 0,
-          extras: 0, reimb: 0, ded: 0, site_allow: 0, earnings: 0, paid: 0, balance: 0, payments: 0,
-          logs_cnt: 0, ot_logs: 0, late_logs: 0, hasContract: false
+          extras: 0, reimb: prof.hasContract ? prof.reimbursement : 0, ded: prof.hasContract ? prof.deduction : 0,
+          site_allow: 0, earnings: 0, paid: 0, balance: 0, payments: 0,
+          logs_cnt: 0, ot_logs: 0, late_logs: 0, hasContract: prof.hasContract
         });
       }
       return staffMap.get(key);
     };
     empAll.forEach(e => {
-      const s = ensureStaff(e.staff, e.company);
-      s.hasContract = true;
-      s.type = e.type || 'Staff';
-      const ended = e.status === 'Ended' || (e.end_date && String(e.end_date) < today);
-      if (!ended) s.status = 'Current';
-      else if (s.status !== 'Current') s.status = 'Ended';
-      s.base += Number(e.salary_usd || 0) || (Number(e.daily_rate || 0) * 26);
-      s.reimb += Number(e.reimbursement || 0);
-      s.ded += Number(e.deduction || 0);
-      if (Number(e.working_days || 0) > 0) s.work_days = Number(e.working_days);
-      if (Number(e.working_hours || 0) > 0) s.work_hrs = Number(e.working_hours);
-      if (Number(e.overtime_multiplier || 0) > 0) s.ot_mult = Number(e.overtime_multiplier);
-      if (Number(e.lateness_multiplier || 0) > 0) s.late_mult = Number(e.lateness_multiplier);
+      ensureStaff(e.staff, e.company);
     });
     attAll.forEach(a => {
       const s = ensureStaff(a.staff, a.company);
@@ -10720,20 +10859,20 @@
       if (otH > 0) s.ot_logs += 1;
       s.late_hrs += ltH;
       if (ltH > 0) s.late_logs += 1;
-      const wDays = s.work_days || 26;
-      const wHrs = s.work_hrs || 9;
-      const hrRate = s.base > 0 ? (s.base / (wDays * wHrs)) : 4.5;
+      const wDays = s.work_days || 30;
+      const wHrs = s.work_hrs || 8;
+      const hrRate = s.base > 0 ? (s.base / (wDays * wHrs)) : (25 / 8);
       const dayRate = s.base > 0 ? (s.base / wDays) : 25;
-      s.ot_pay += round2(otH * hrRate * (s.ot_mult || 1.5));
-      s.late_ded += round2(ltH * hrRate * (s.late_mult || 1));
-      if (/^absence$/i.test(attType) || /Absent|Unpaid/i.test(attType)) {
-        const dCnt = tally > 0 ? tally : 1;
+      s.ot_pay += round2(otH * hrRate * (s.ot_mult || 1.0));
+      s.late_ded += round2(ltH * hrRate * (s.late_mult || 1.0));
+      if ((/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType)) && !/^config/i.test(attType) && a.pay_treatment !== 'paid') {
+        const dCnt = Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (/^half\s*day$/i.test(attType) ? 0.5 : (tally > 0 ? tally : 1));
         s.absent_days += dCnt;
         s.abs_ded += round2(dCnt * dayRate);
-      } else if (/^vacabsence$/i.test(attType)) {
-        s.vac_days += (tally > 0 ? tally : 1);
+      } else if (/^vacabsence$|^paid\s*leave$/i.test(attType) || (a.pay_treatment === 'paid' && Number(a.leave_days || 0) > 0)) {
+        s.vac_days += (Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : 1));
       } else if (/^sick/i.test(attType)) {
-        s.sick_days += (tally > 0 ? tally : 1);
+        s.sick_days += (Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : 1));
       } else if (/^extra\s*usd$/i.test(attType)) {
         s.extras += round2(tally);
       } else if (/^extra\s*lbp$/i.test(attType)) {
@@ -10907,16 +11046,18 @@
     const shownEmp = filteredEmp.slice(0, shownCount('pay_emp'));
 
     const otAttCount = attAll.filter(a => Number(a.overtime_hours || 0) > 0).length;
+    const calloutAttCount = attAll.filter(a => Boolean(a.is_callout)).length;
     const lateAttCount = attAll.filter(a => Number(a.late_hours || 0) > 0).length;
-    const absentAttCount = attAll.filter(a => !/^config/i.test(String(a.type || '')) && (Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(String(a.type || '')))).length;
+    const absentAttCount = attAll.filter(a => !/^config/i.test(String(a.type || '')) && (Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Half\s*Day|Unpaid/i.test(String(a.type || '')))).length;
     const extraAttCount = attAll.filter(a => /^extra/i.test(String(a.type || ''))).length;
     const configAttCount = attAll.filter(a => /^config/i.test(String(a.type || ''))).length;
 
     const filteredAttBase = attAll.filter(a => {
       if (subMode !== 'attendance') return true;
       if (STATE.chipFilter === 'ot_att') return Number(a.overtime_hours || 0) > 0;
+      if (STATE.chipFilter === 'callout_att') return Boolean(a.is_callout);
       if (STATE.chipFilter === 'late_att') return Number(a.late_hours || 0) > 0;
-      if (STATE.chipFilter === 'absent_att') return !/^config/i.test(String(a.type || '')) && (Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(String(a.type || '')));
+      if (STATE.chipFilter === 'absent_att') return !/^config/i.test(String(a.type || '')) && (Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Half\s*Day|Unpaid/i.test(String(a.type || '')));
       if (STATE.chipFilter === 'extra_att') return /^extra/i.test(String(a.type || ''));
       if (STATE.chipFilter === 'config_att') return /^config/i.test(String(a.type || ''));
       if (STATE.chipFilter === 'app') return isAppRecord(a);
@@ -11125,20 +11266,27 @@
       const wtcAtt = byCoAtt.WTC;
       const bbcAtt = byCoAtt.BBConstruction;
       const sumAttWorked = filteredAtt.reduce((a, r) => a + Number(r.worked_hours || 0), 0);
-      const sumAttReg = filteredAtt.reduce((a, r) => a + Number(r.regular_hours || 0), 0);
       const sumAttOt = filteredAtt.reduce((a, r) => a + Number(r.overtime_hours || 0), 0);
       const sumAttLate = filteredAtt.reduce((a, r) => a + Number(r.late_hours || 0), 0);
       const sumAttLeave = filteredAtt.reduce((a, r) => a + Number(r.leave_days || 0), 0);
-      const sumAttExtra = filteredAtt.reduce((a, r) => a + Number(r.extra_usd || 0), 0);
+      const sumAttImpact = round2(filteredAtt.reduce((a, r) => a + Number(r.payroll_impact_usd || 0), 0));
+      const fmtSignedImpact = v => {
+        const n = round2(Number(v || 0));
+        if (Math.abs(n) < 0.005) return '<span class="mu">$0.00</span>';
+        return n > 0
+          ? `<span class="att-impact-pos">+${fmtUSD(n, 2)}</span>`
+          : `<span class="att-impact-neg">-${fmtUSD(Math.abs(n), 2)}</span>`;
+      };
       return `
         ${bannerHtml}
         <div class="panel-card" id="payAttPanel">
           <div class="table-toolbar">
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              ${searchBox('Search staff member, date, type, shift, notes...')}
+              ${searchBox('Search staff member, date, category, shift basis, notes...')}
               <div class="chip-bar">
                 ${chip('all', `All (${fmtNum(attAll.length)})`)}
                 ${chip('ot_att', `With Overtime (${fmtNum(otAttCount)})`)}
+                ${calloutAttCount ? chip('callout_att', `Sunday / Call-Out (${fmtNum(calloutAttCount)})`) : ''}
                 ${chip('late_att', `Lateness (${fmtNum(lateAttCount)})`)}
                 ${chip('absent_att', `Absent / Leave (${fmtNum(absentAttCount)})`)}
                 ${chip('extra_att', `Extra / Bonus (${fmtNum(extraAttCount)})`)}
@@ -11192,25 +11340,28 @@
           ${renderColFilterBar('pay_att')}
           <div class="table-wrap">
             <table class="ledger-table">
-              <thead><tr>${th('pay_att', 'Date', 'date')}${th('pay_att', 'Co.', 'company')}${th('pay_att', 'Staff', 'staff')}${th('pay_att', 'Type / Status', 'type')}${th('pay_att', 'In', 'in_time')}${th('pay_att', 'Out', 'out_time')}${th('pay_att', 'Work Hrs', 'worked_hours', 'r')}${th('pay_att', 'Reg Hrs', 'regular_hours', 'r')}${th('pay_att', 'OT Hrs', 'overtime_hours', 'r')}${th('pay_att', 'Late Hrs', 'late_hours', 'r')}${th('pay_att', 'Leave (d)', 'leave_days', 'r')}${th('pay_att', 'Extra ($)', 'extra_usd', 'r')}${th('pay_att', 'Notes', 'notes')}</tr></thead>
+              <thead><tr>${th('pay_att', 'Date', 'date')}${th('pay_att', 'Co.', 'company')}${th('pay_att', 'Staff', 'staff')}${th('pay_att', 'Category', 'display_type')}${th('pay_att', 'In', 'in_time')}${th('pay_att', 'Out', 'out_time')}${th('pay_att', 'Work Hrs', 'worked_hours', 'r')}${th('pay_att', 'Shift Basis', 'shift_basis_lbl')}${th('pay_att', 'OT Hrs', 'overtime_hours', 'r')}${th('pay_att', 'Late Hrs', 'late_hours', 'r')}${th('pay_att', 'Leave (d)', 'leave_days', 'r')}${th('pay_att', 'Pay Impact ($)', 'payroll_impact_usd', 'r')}${th('pay_att', 'Notes', 'notes')}</tr></thead>
               <tbody>
                 ${shownAtt.map(a => {
                   const tp = String(a.type || 'Present');
-                  const badgeCls = /Absence|Sick|Lateness|Unpaid/i.test(tp) ? 'badge-warn' : (/^Extra/i.test(tp) ? 'badge-brass' : (/^Config|Vac/i.test(tp) ? 'badge-info' : 'badge-ok'));
+                  const dispTp = String(a.display_type || tp);
+                  const badgeCls = /Absence|Absent|Sick|Lateness|Half\s*Day|Unpaid/i.test(tp) ? 'badge-warn' : (/^Extra/i.test(tp) ? 'badge-brass' : (/^Config|Vac/i.test(tp) ? 'badge-info' : 'badge-ok'));
+                  const dayPill = a.weekday ? `<span class="att-day-pill${a.is_sunday ? ' is-sun' : ''}">${esc(a.weekday)}</span>` : '';
+                  const outCell = a.out_time ? `${esc(a.out_time)}${a.is_overnight ? '<span class="att-nextday-tag" title="Overnight shift finishing next morning">+1d</span>' : ''}` : '—';
                   return `
                   <tr class="rrow" data-rkey="attendance" data-rid="${esc(a.id)}">
-                    <td class="mono">${esc(fmtDateDMY(a.date))}${appCell(a, 'attendance')}</td>
+                    <td class="mono">${esc(fmtDateDMY(a.date))}${dayPill}${appCell(a, 'attendance')}</td>
                     <td>${coBadge(a.company)}</td>
                     <td>${relLink('employments', a.staff, a.staff, true)}</td>
-                    <td><span class="badge ${badgeCls}">${esc(tp)}</span></td>
+                    <td><span class="badge ${badgeCls}">${esc(dispTp)}</span></td>
                     <td class="mono">${esc(a.in_time || '—')}</td>
-                    <td class="mono">${esc(a.out_time || '—')}</td>
+                    <td class="mono">${outCell}</td>
                     <td class="r">${a.worked_hours ? `<strong>${fmtNum(a.worked_hours, 1)}</strong>` : '—'}</td>
-                    <td class="r">${a.regular_hours ? fmtNum(a.regular_hours, 1) : '—'}</td>
-                    <td class="r">${a.overtime_hours ? `<strong style="color:var(--brass)">${fmtNum(a.overtime_hours, 1)}</strong>` : '0.0'}</td>
-                    <td class="r">${a.late_hours ? fmtNum(a.late_hours, 1) : '0.0'}</td>
+                    <td><span class="att-basis-pill${a.is_callout ? ' is-callout' : ''}">${esc(a.shift_basis_lbl || '—')}</span></td>
+                    <td class="r">${a.overtime_hours ? `<strong style="color:var(--brass)">${fmtNum(a.overtime_hours, 1)}</strong>` : '—'}</td>
+                    <td class="r">${a.late_hours ? `<strong class="att-impact-neg">${fmtNum(a.late_hours, 1)}</strong>` : '—'}</td>
                     <td class="r">${a.leave_days ? fmtNum(a.leave_days, 1) : '—'}</td>
-                    <td class="r">${a.extra_usd ? fmtUSD(a.extra_usd, 2) : '—'}</td>
+                    <td class="r">${fmtSignedImpact(a.payroll_impact_usd)}</td>
                     <td class="mu">${esc(a.notes || '—')}</td>
                   </tr>`;
                 }).join('') || emptyRow(13, 'No attendance records match filter')}
@@ -11218,13 +11369,13 @@
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="6"><b>TOTAL (${fmtNum(filteredAtt.length)} ATTENDANCE LOGS)</b></td>
+                  <td colspan="6"><b>TOTAL (${fmtNum(filteredAtt.length)} LOGS)</b></td>
                   <td class="r"><b>${fmtNum(sumAttWorked, 1)} hrs</b></td>
-                  <td class="r"><b>${fmtNum(sumAttReg, 1)} hrs</b></td>
+                  <td></td>
                   <td class="r"><b>${fmtNum(sumAttOt, 1)} hrs</b></td>
                   <td class="r"><b>${fmtNum(sumAttLate, 1)} hrs</b></td>
                   <td class="r"><b>${fmtNum(sumAttLeave, 1)} d</b></td>
-                  <td class="r"><b>${fmtUSD(sumAttExtra, 2)}</b></td>
+                  <td class="r"><b>${sumAttImpact >= 0 ? `+${fmtUSD(sumAttImpact, 2)}` : `-${fmtUSD(Math.abs(sumAttImpact), 2)}`}</b></td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -18685,38 +18836,178 @@
         return {};
       }
       if (STATE.modalForm === 'attendance') {
-        const st = val('f_status') || 'Present';
         const curStaff = val('f_staff');
-        const curCo = val('f_company');
-        if (curStaff !== FORM_UI.lastAttStaff) {
-          FORM_UI.lastAttStaff = curStaff;
-          if (curStaff && $('f_sched_hours')) {
-            $('f_sched_hours').value = String(staffScheduledHours(curStaff, curCo));
+        const curCo = val('f_company') || defaultEntryCompany();
+        const attDate = val('f_date') || todayISO();
+        const wk = attDateWeekdayInfo(attDate);
+        const prof = getStaffContractProfile(curStaff, curCo, attDate);
+        const attMode = val('f_att_mode') || 'shift';
+        const preset = FORM_UI.attPreset || 'regular';
+
+        // 1. Live Employee Contract Strip (#attStaffContractCard) & Date Weekday Hint
+        const cardEl = $('attStaffContractCard');
+        if (cardEl) {
+          if (!curStaff) {
+            cardEl.className = 'att-contract-strip is-muted';
+            cardEl.innerHTML = '<span>Select a <b>Staff Member</b> above to view their active contract salary, standard shift hours &amp; overtime rate.</span>';
+          } else if (prof.hasContract) {
+            cardEl.className = 'att-contract-strip';
+            cardEl.innerHTML = `
+              <div><strong>${esc(prof.staff)}</strong> <span class="badge ${prof.status === 'Current' ? 'badge-ok' : 'badge-warn'}">${esc(prof.status)}</span></div>
+              <div class="att-contract-metrics">
+                <span><small>Monthly</small><b>${fmtUSD(prof.monthlySalary, 0)}</b></span>
+                <span><small>Schedule</small><b>${prof.workingDays}d × ${fmtNum(prof.workingHours, 1)}h</b></span>
+                <span><small>Hourly</small><b>${fmtUSD(prof.hourlyRate, 2)}/hr</b></span>
+                <span><small>OT Rate</small><b>${fmtUSD(prof.otHourlyRate, 2)}/hr (${prof.otMultiplier}×)</b></span>
+                <span><small>Daily</small><b>${fmtUSD(prof.dailyRate, 2)}/d</b></span>
+              </div>
+            `;
+          } else {
+            cardEl.className = 'att-contract-strip is-warn';
+            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file — using default <b>8.0h</b> base shift &amp; standard fallback rate (<b>${fmtUSD(prof.hourlyRate, 2)}/hr</b>).</span>`;
           }
         }
-        const isLeave = ['Absent', 'Sick Leave', 'Paid Leave', 'Holiday'].includes(st);
-        if (isLeave) {
-          if ($('f_worked_hours')) $('f_worked_hours').value = '0';
-          if ($('f_hours') && Number(val('f_hours')) > 0) $('f_hours').value = '0';
-          FORM_UI.lastAttTimeKey = '';
-          return {};
+        setHint(
+          'hint_att_date',
+          wk.short ? (wk.isSunday ? 'Sunday · Weekly Day Off (use "Sunday / Call-Out" if 100% OT)' : `${wk.short} · Standard Workday`) : '',
+          wk.isSunday ? 'warn' : ''
+        );
+
+        // 2. Sync 3-Card Entry Mode Deck & Sub-Panels (hides clock fields on Leave / Half Day / Extra!)
+        const deckEl = $('attModeDeck');
+        if (deckEl) {
+          deckEl.querySelectorAll('[data-att-mode]').forEach(btn => {
+            const on = btn.getAttribute('data-att-mode') === attMode;
+            btn.classList.toggle('active', on);
+            btn.setAttribute('aria-selected', on ? 'true' : 'false');
+          });
         }
-        const inVal = val('f_in');
-        const outVal = val('f_out');
-        const sched = num('f_sched_hours') > 0 ? num('f_sched_hours') : 8;
-        const worked = computeShiftWorkedHours(inVal, outVal);
-        if ($('f_worked_hours') && document.activeElement !== $('f_worked_hours')) {
+        if ($('attShiftPanel')) $('attShiftPanel').hidden = attMode !== 'shift';
+        if ($('attLeavePanel')) $('attLeavePanel').hidden = attMode !== 'leave';
+        if ($('attExtraPanel')) $('attExtraPanel').hidden = attMode !== 'extra';
+
+        // 3. Mode-Specific Auto-Calculation & 4-Tile Payroll Verification Bar
+        if (attMode === 'leave') {
+          const lvType = val('f_leave_type') || 'Half Day';
+          const lvBar = $('attLeavePresetBar');
+          if (lvBar) {
+            lvBar.querySelectorAll('[data-att-leave]').forEach(btn => {
+              btn.classList.toggle('active', btn.getAttribute('data-att-leave') === lvType);
+            });
+          }
+          const lvDays = Math.max(0, num('f_leave_days'));
+          const lvPay = val('f_leave_pay') || 'unpaid';
+          const effSt = lvType === 'Half Day' ? 'Half Day' : (lvType === 'Sick Leave' ? 'Sick Leave' : ((lvType === 'VacAbsence' || lvPay === 'paid') ? 'VacAbsence' : 'Absence'));
+          if ($('f_status')) $('f_status').value = effSt;
+          const dedUsd = lvPay === 'unpaid' ? round2(lvDays * prof.dailyRate) : 0;
+          const typeDisp = lvType === 'Half Day' ? 'Half Day Off' : (lvType === 'VacAbsence' ? 'Paid Vacation' : (lvType === 'Sick Leave' ? 'Sick Leave' : 'Full Absence'));
+          setHint('hint_att_leave_pay', lvPay === 'unpaid'
+            ? `Deducts ${fmtNum(lvDays, 1)}d × ${fmtUSD(prof.dailyRate, 2)}/day = ${fmtUSD(dedUsd, 2)}`
+            : 'Paid leave — $0.00 deducted from monthly base salary', '');
+          setText('calc_att_type', typeDisp);
+          setText('calc_att_math', `${fmtNum(lvDays, 1)} day${lvDays === 1 ? '' : 's'} (No Clock In/Out)`);
+          setText('calc_att_rate', `${fmtUSD(prof.dailyRate, 2)}/day (${prof.workingDays}d mo.)`);
+          setText('calc_att_impact', dedUsd > 0 ? `-${fmtUSD(dedUsd, 2)} Deduction` : '$0.00 (Paid Leave)');
+          FORM_UI.lastAttTimeKey = '';
+          return { mode: 'leave', lvType: effSt, lvDays, dedUsd };
+        }
+
+        if (attMode === 'extra') {
+          const eUsd = round2(Math.max(0, num('f_extra_usd')));
+          const eLbp = Math.round(Math.max(0, num('f_extra_lbp')));
+          const eTot = round2(eUsd + (eLbp / 89500));
+          if ($('f_extra_total') && document.activeElement !== $('f_extra_total')) {
+            $('f_extra_total').value = eTot.toFixed(2);
+          }
+          const effSt = (eLbp > 0 && !(eUsd > 0)) ? 'Extra LBP' : 'Extra USD';
+          if ($('f_status')) $('f_status').value = effSt;
+          setText('calc_att_type', 'Extra Pay / Bonus');
+          setText('calc_att_math', eUsd > 0 && eLbp > 0 ? `${fmtUSD(eUsd, 2)} + ${fmtNum(eLbp, 0)} LL` : (eLbp > 0 ? `${fmtNum(eLbp, 0)} LL` : fmtUSD(eUsd, 2)));
+          setText('calc_att_rate', 'Direct Payroll Addition (89.5k FX)');
+          setText('calc_att_impact', eTot > 0 ? `+${fmtUSD(eTot, 2)} Bonus Pay` : '$0.00');
+          FORM_UI.lastAttTimeKey = '';
+          return { mode: 'extra', extraTotal: eTot };
+        }
+
+        // Shift Mode ('shift'): Time In -> Time Out -> Auto Work Hrs, OT Hrs & Short/Late Hrs
+        const presetBar = $('attPresetBar');
+        if (presetBar) {
+          presetBar.querySelectorAll('[data-att-preset]').forEach(btn => {
+            btn.classList.toggle('active', btn.getAttribute('data-att-preset') === preset);
+          });
+        }
+        const isNoClock = preset === 'noclock';
+        setFieldVisible('wrap_f_in', !isNoClock);
+        setFieldVisible('wrap_f_out', !isNoClock);
+        setFieldVisible('wrap_f_sched_hours', !isNoClock);
+        setFieldVisible('wrap_f_worked_hours', !isNoClock);
+
+        if (curStaff !== FORM_UI.lastAttStaff) {
+          FORM_UI.lastAttStaff = curStaff;
+          if (curStaff && $('f_sched_hours') && preset !== 'callout' && !FORM_UI.attSchedManual) {
+            $('f_sched_hours').value = String(prof.workingHours || 8);
+          }
+        }
+        if (attDate !== FORM_UI.lastAttDate) {
+          FORM_UI.lastAttDate = attDate;
+          if (!FORM_UI.attSchedManual && preset !== 'noclock' && $('f_sched_hours')) {
+            if (wk.isSunday) {
+              FORM_UI.attPreset = 'callout';
+              $('f_sched_hours').value = '0';
+              if (presetBar) presetBar.querySelectorAll('[data-att-preset]').forEach(b => b.classList.toggle('active', b.getAttribute('data-att-preset') === 'callout'));
+            } else if (FORM_UI.attPreset === 'callout') {
+              FORM_UI.attPreset = 'regular';
+              $('f_sched_hours').value = String(prof.workingHours || 8);
+              if (presetBar) presetBar.querySelectorAll('[data-att-preset]').forEach(b => b.classList.toggle('active', b.getAttribute('data-att-preset') === 'regular'));
+            }
+          }
+        }
+
+        const inVal = isNoClock ? '' : val('f_in');
+        const outVal = isNoClock ? '' : val('f_out');
+        const schedEl = $('f_sched_hours');
+        const sched = isNoClock ? 0 : ((schedEl && String(schedEl.value).trim() !== '') ? Math.max(0, num('f_sched_hours')) : (prof.workingHours || 8));
+        const worked = isNoClock ? 0 : computeShiftWorkedHours(inVal, outVal);
+        const inH = parseAttClockHour(inVal);
+        const outH = parseAttClockHour(outVal);
+        const isOvernight = Boolean(!isNoClock && inH != null && outH != null && outH < inH);
+        setHint('hint_att_out', isOvernight ? `Overnight finish (+1d next morning) · ${fmtNum(worked, 1)}h span` : '', isOvernight ? 'ok' : '');
+
+        if (!isNoClock && $('f_worked_hours') && document.activeElement !== $('f_worked_hours')) {
           $('f_worked_hours').value = String(worked);
         }
-        const attTimeKey = `${curStaff}|${curCo}|${st}|${inVal}|${outVal}|${sched}`;
-        if (attTimeKey !== FORM_UI.lastAttTimeKey) {
+        const attTimeKey = `${curStaff}|${curCo}|${FORM_UI.attPreset || 'regular'}|${inVal}|${outVal}|${sched}`;
+        if (!isNoClock && attTimeKey !== FORM_UI.lastAttTimeKey) {
           FORM_UI.lastAttTimeKey = attTimeKey;
-          const autoOt = st === 'Half Day' ? 0 : Math.round(Math.max(0, worked - sched) * 10) / 10;
+          const autoOt = Math.round(Math.max(0, worked - sched) * 10) / 10;
+          const autoLate = Math.round(Math.max(0, sched - worked) * 10) / 10;
           if ($('f_hours') && document.activeElement !== $('f_hours')) {
             $('f_hours').value = String(autoOt);
           }
+          if ($('f_late_hours') && document.activeElement !== $('f_late_hours')) {
+            $('f_late_hours').value = String(autoLate);
+          }
         }
-        return {};
+
+        const otH = Math.max(0, num('f_hours'));
+        const ltH = Math.max(0, num('f_late_hours'));
+        const effSt = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
+        if ($('f_status')) $('f_status').value = effSt;
+
+        const impactUsd = round2((otH * prof.otHourlyRate) - (ltH * prof.lateHourlyRate));
+        const typeLbl = otH > 0
+          ? (sched === 0 && !isNoClock ? `Call-Out / 100% OT (+${fmtNum(otH, 1)}h)` : `Overtime (+${fmtNum(otH, 1)}h)`)
+          : (ltH > 0 ? `Short / Late (-${fmtNum(ltH, 1)}h)` : 'Full Shift (On Time)');
+        const mathLbl = isNoClock
+          ? `Hours Tally · +${fmtNum(otH, 1)}h OT / -${fmtNum(ltH, 1)}h Late`
+          : `${inVal || '—'} → ${outVal || '—'}${isOvernight ? ' (+1d)' : ''} = ${fmtNum(worked, 1)}h (Base ${fmtNum(sched, 1)}h)`;
+        setText('calc_att_type', typeLbl);
+        setText('calc_att_math', mathLbl);
+        setText('calc_att_rate', `${fmtUSD(prof.otHourlyRate, 2)}/hr OT · ${fmtUSD(prof.lateHourlyRate, 2)}/hr Late`);
+        setText('calc_att_impact', impactUsd > 0
+          ? `+${fmtUSD(impactUsd, 2)} Overtime Pay`
+          : (impactUsd < 0 ? `-${fmtUSD(Math.abs(impactUsd), 2)} Deduction` : '$0.00 (Standard Shift)'));
+        return { mode: 'shift', worked, sched, otH, ltH, impactUsd };
       }
       if (STATE.modalForm === 'jv') {
         const jvt = val('f_jvtype') || 'distribution';
@@ -19565,7 +19856,7 @@
         }
         const allOpts = getSelectOptions();
         if (!allOpts.length) { closeAll(null); return; }
-        const MAX_SHOW = 7;
+        const MAX_SHOW = 16;
         const needsFilter = allOpts.length > MAX_SHOW;
         closeAll(menu);
         menu.innerHTML = (needsFilter
@@ -19829,6 +20120,61 @@
     FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier');
     FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = '';
     FORM_UI.defectRefPreset = false; FORM_UI.lastSeverity = ''; FORM_UI.lastDefectRef = '';
+    FORM_UI.attPreset = 'regular'; FORM_UI.attSchedManual = false;
+    FORM_UI.lastAttStaff = ''; FORM_UI.lastAttDate = val('f_date'); FORM_UI.lastAttTimeKey = '';
+
+    body.querySelectorAll('[data-att-mode]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const mode = btn.getAttribute('data-att-mode') || 'shift';
+        if ($('f_att_mode')) $('f_att_mode').value = mode;
+        recalcForm();
+      });
+    });
+    body.querySelectorAll('[data-att-preset]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const p = btn.getAttribute('data-att-preset') || 'regular';
+        FORM_UI.attPreset = p;
+        FORM_UI.attSchedManual = false;
+        FORM_UI.lastAttTimeKey = '';
+        const prof = getStaffContractProfile(val('f_staff'), val('f_company'), val('f_date'));
+        if (p === 'regular') {
+          if ($('f_in') && !val('f_in')) $('f_in').value = '08:00';
+          if ($('f_out') && (!val('f_out') || val('f_out') === '12:00')) $('f_out').value = '16:00';
+          if ($('f_sched_hours')) $('f_sched_hours').value = String(prof.workingHours || 8);
+        } else if (p === 'callout') {
+          if ($('f_in') && !val('f_in')) $('f_in').value = '08:00';
+          if ($('f_out') && !val('f_out')) $('f_out').value = '16:00';
+          if ($('f_sched_hours')) $('f_sched_hours').value = '0';
+        } else if (p === 'halfshift') {
+          if ($('f_in')) $('f_in').value = '08:00';
+          if ($('f_out')) $('f_out').value = '12:00';
+          if ($('f_sched_hours')) $('f_sched_hours').value = String(prof.workingHours || 8);
+        } else if (p === 'noclock') {
+          if ($('f_hours')) $('f_hours').value = '0';
+          if ($('f_late_hours')) $('f_late_hours').value = '0';
+        }
+        recalcForm();
+      });
+    });
+    body.querySelectorAll('[data-att-leave]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const lt = btn.getAttribute('data-att-leave') || 'Half Day';
+        if ($('f_leave_type')) $('f_leave_type').value = lt;
+        if ($('f_leave_days')) $('f_leave_days').value = lt === 'Half Day' ? '0.5' : '1';
+        if ($('f_leave_pay')) {
+          $('f_leave_pay').value = (lt === 'VacAbsence' || lt === 'Sick Leave') ? 'paid' : 'unpaid';
+          $('f_leave_pay').dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        recalcForm();
+      });
+    });
+    const attSchedInp = $('f_sched_hours');
+    if (attSchedInp) {
+      attSchedInp.addEventListener('input', () => { FORM_UI.attSchedManual = true; });
+    }
 
     const addSupDrvBtn = $('btnAddSupDriver');
     if (addSupDrvBtn) {
@@ -20340,32 +20686,98 @@
     } else if (f === 'attendance') {
       const st = val('f_staff');
       if (!st) addErr('f_staff', 'Staff Member is required.');
-      const stStatus = val('f_status') || 'Present';
-      const isLeave = ['Absent', 'Sick Leave', 'Paid Leave', 'Holiday'].includes(stStatus);
-      const inFmt = isLeave ? '' : fmtAttClockTime(val('f_in'));
-      const outFmt = isLeave ? '' : fmtAttClockTime(val('f_out'));
-      const schedH = num('f_sched_hours') > 0 ? num('f_sched_hours') : staffScheduledHours(st, company);
-      const workedH = isLeave ? 0 : (num('f_worked_hours') > 0 ? num('f_worked_hours') : computeShiftWorkedHours(inFmt, outFmt));
-      const otH = isLeave ? 0 : (num('f_hours') || 0);
-      const regH = isLeave ? 0 : round2(Math.max(0, workedH - otH));
-      const effType = otH > 0 && stStatus === 'Present' ? 'Overtime' : stStatus;
-      record = {
-        ...base,
-        name: `ATT ${date} ${st}`,
-        staff: st,
-        type: effType,
-        status: effType,
-        in_time: inFmt,
-        out_time: outFmt,
-        check_in: inFmt,
-        check_out: outFmt,
-        scheduled_hours: schedH,
-        worked_hours: workedH,
-        regular_hours: regH,
-        overtime_hours: otH,
-        late_hours: effType === 'Lateness' ? otH : 0,
-        tally: otH
-      };
+      const attMode = val('f_att_mode') || 'shift';
+      if (attMode === 'leave') {
+        const lvType = val('f_leave_type') || 'Half Day';
+        const lvDays = round2(num('f_leave_days'));
+        const lvPay = val('f_leave_pay') || 'unpaid';
+        if (!(lvDays > 0)) addErr('f_leave_days', 'Leave Duration (Days) must be at least 0.5.');
+        const effType = lvType === 'Half Day' ? 'Half Day' : (lvType === 'Sick Leave' ? 'Sick Leave' : ((lvType === 'VacAbsence' || lvPay === 'paid') ? 'VacAbsence' : 'Absence'));
+        record = {
+          ...base,
+          name: `ATT ${date} ${st}`,
+          staff: st,
+          type: effType,
+          status: effType,
+          in_time: '',
+          out_time: '',
+          check_in: '',
+          check_out: '',
+          scheduled_hours: 0,
+          worked_hours: 0,
+          regular_hours: 0,
+          overtime_hours: 0,
+          late_hours: 0,
+          leave_days: lvDays,
+          pay_treatment: lvPay,
+          extra_usd: 0,
+          tally: lvDays
+        };
+      } else if (attMode === 'extra') {
+        const eUsd = round2(Math.max(0, num('f_extra_usd')));
+        const eLbp = Math.round(Math.max(0, num('f_extra_lbp')));
+        const eTot = round2(eUsd + (eLbp / 89500));
+        if (!(eTot > 0)) addErr('f_extra_usd', 'Enter a Bonus USD or LBP amount greater than zero.');
+        const effType = (eLbp > 0 && !(eUsd > 0)) ? 'Extra LBP' : 'Extra USD';
+        const tallyVal = effType === 'Extra LBP' ? eLbp : eTot;
+        record = {
+          ...base,
+          name: `ATT ${date} ${st}`,
+          staff: st,
+          type: effType,
+          status: effType,
+          in_time: '',
+          out_time: '',
+          check_in: '',
+          check_out: '',
+          scheduled_hours: 0,
+          worked_hours: 0,
+          regular_hours: 0,
+          overtime_hours: 0,
+          late_hours: 0,
+          leave_days: 0,
+          usd_amount: eUsd,
+          lbp_amount: eLbp,
+          extra_usd: eTot,
+          tally: tallyVal
+        };
+      } else {
+        const isNoClock = FORM_UI.attPreset === 'noclock';
+        const inFmt = isNoClock ? '' : fmtAttClockTime(val('f_in'));
+        const outFmt = isNoClock ? '' : fmtAttClockTime(val('f_out'));
+        const schedEl = $('f_sched_hours');
+        const schedH = isNoClock ? 0 : ((schedEl && String(schedEl.value).trim() !== '') ? Math.max(0, num('f_sched_hours')) : staffScheduledHours(st, company, date));
+        const workedH = isNoClock ? 0 : (num('f_worked_hours') > 0 ? num('f_worked_hours') : computeShiftWorkedHours(inFmt, outFmt));
+        const otH = Math.max(0, num('f_hours'));
+        const ltH = Math.max(0, num('f_late_hours'));
+        if (!isNoClock && (!inFmt || !outFmt)) {
+          addErr('f_in', 'Enter both Time In and Time Out, or choose "Hours Only (No Clock)".');
+        } else if (isNoClock && !(otH > 0) && !(ltH > 0)) {
+          addErr('f_hours', 'Enter Overtime Hours or Short / Late Hours.');
+        }
+        const regH = isNoClock ? 0 : round2(Math.max(0, workedH - otH));
+        const effType = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
+        const tallyVal = otH > 0 ? otH : (ltH > 0 ? ltH : workedH);
+        record = {
+          ...base,
+          name: `ATT ${date} ${st}`,
+          staff: st,
+          type: effType,
+          status: effType,
+          in_time: inFmt,
+          out_time: outFmt,
+          check_in: inFmt,
+          check_out: outFmt,
+          scheduled_hours: schedH,
+          worked_hours: workedH,
+          regular_hours: regH,
+          overtime_hours: otH,
+          late_hours: ltH,
+          leave_days: 0,
+          extra_usd: 0,
+          tally: tallyVal
+        };
+      }
     } else if (f === 'freelance' || f === 'employment') {
       const st = val('f_staff'), amt = round2(num('f_amount'));
       if (!st) addErr('f_staff', 'Staff Name is required.');
@@ -21153,7 +21565,7 @@
       const lmEff = lm ? effectiveFuelMeter(lm) : null;
       const mSpec = equipMeterSpec(row, row.company);
       const h = getEquipmentHealth(eqName);
-      const healthSummary = `Health: ${h.label}${h.openCount ? ' (' + h.openCount + ' open defect' + (h.openCount > 1 ? 's' : '') + ')' : ''}${h.partMovements && h.partMovements.length ? ' · ' + h.partMovements.length + ' part log' + (h.partMovements.length > 1 ? 's' : '') : ''}`;
+      const healthSummary = `Health: ${h.status}${h.openCount ? ' (' + h.openCount + ' open defect' + (h.openCount > 1 ? 's' : '') + ')' : ''}${h.partCount ? ' · ' + h.partCount + ' part log' + (h.partCount > 1 ? 's' : '') : ''}`;
       return {
         tone: h.critCount > 0 ? 'crit' : (h.openCount > 0 ? 'warn' : 'info'),
         text: `Universal Fleet Registry: Unit ${eqName} (${row.type || 'Truck'} · ${mSpec.label} · ${row.ownership || 'Transporter'})  |  ${healthSummary}  |  Capacity: ${row.capacity ? fmtNum(row.capacity, 1) + ' m³' : 'Standard'}  |  Owner: ${row.supplier || 'Company Fleet'}  |  Default Driver: ${row.default_driver || '—'}  |  Last Meter: ${lm && lmEff && lmEff.reading != null ? fmtNum(lmEff.reading, lmEff.type === 'hours' && lmEff.reading % 1 !== 0 ? 1 : 0) + ' ' + lmEff.unit + ' (' + lm.date + ')' : 'No meter log'}`
@@ -21336,6 +21748,36 @@
       };
     }
 
+    if (key === 'equipment_defects') {
+      const open = isDefectOpen(row);
+      const isCrit = /^Critical/i.test(row.severity || '');
+      const h = getEquipmentHealth(row.equipment);
+      return {
+        bu, title, pill: row.status || 'Open',
+        cards: [
+          { lbl: 'DEFECT SEVERITY', tag: open ? 'OPEN DEFECT' : 'RESOLVED', tone: open ? (isCrit ? 'crit' : 'warn') : 'good', val: String(row.severity || 'Moderate').split('—')[0].trim(), sub1: `Subsystem: ${row.subsystem || '—'}`, sub2: `Affected Part: ${row.part_name || 'General'}`, pct: isCrit ? 95 : 65 },
+          { lbl: 'UNIT LIVE HEALTH', tag: String(h.shortBadge || 'OK').toUpperCase(), tone: h.critCount > 0 ? 'crit' : (h.openCount > 0 ? 'warn' : 'good'), val: row.equipment || '—', sub1: `Health: ${h.status}`, sub2: `Open Defects on Unit: ${fmtNum(h.openCount)}`, pct: 80 },
+          { lbl: 'REPORTED TELEMETRY', tag: row.meter_reading != null ? 'METER LOGGED' : 'INSPECTION', tone: 'info', val: row.meter_reading != null ? fmtNum(row.meter_reading, 0) : (row.date || '—'), sub1: `Reported By: ${row.reported_by || row.entered_by || '—'}`, sub2: `Report Date: ${row.date || '—'}`, pct: 75 },
+          { lbl: 'PART RESOLUTION LINK', tag: row.linked_part_log ? 'LINKED PART' : 'AWAITING PART', tone: row.linked_part_log ? 'good' : 'warn', val: row.linked_part_log || 'Pending', sub1: `Resolved Date: ${row.resolved_date || 'Open'}`, sub2: `Pre-Replacement Governance`, pct: row.linked_part_log ? 100 : 40 }
+        ]
+      };
+    }
+
+    if (key === 'part_movements') {
+      const preOk = Boolean(row.prior_defect_notified || row.defect_ref);
+      const outlay = round2(Number(row.new_part_cost || 0) + Number(row.repair_cost || 0));
+      const proceeds = round2(Number(row.sale_proceeds || 0));
+      return {
+        bu, title, pill: row.removed_disposition || 'Tracked',
+        cards: [
+          { lbl: 'PART & DISPOSITION', tag: `QTY ${fmtNum(row.qty || 1, 0)}`, tone: 'info', val: row.part_name || '—', sub1: `Disposition: ${row.removed_disposition || '—'}`, sub2: `Condition: ${row.condition || '—'}${row.part_serial ? ' · SN ' + row.part_serial : ''}`, pct: 85 },
+          { lbl: 'PRE-DEFECT GOVERNANCE', tag: preOk ? 'PRE-NOTIFIED' : 'UNNOTIFIED', tone: preOk ? 'good' : 'warn', val: preOk ? (row.defect_ref || 'Verified') : 'Emergency', sub1: preOk ? 'Prior defect report verified before change' : 'Flagged in AI Sentinel S10', sub2: `Unit: ${row.equipment || '—'} · ${row.subsystem || '—'}`, pct: preOk ? 100 : 45 },
+          { lbl: 'CUSTODY & COUNTERPARTY', tag: (row.action_type || 'PART LOG').split('(')[0].trim().toUpperCase().slice(0, 16), tone: 'info', val: row.storage_location || row.vendor_or_buyer || row.equipment || '—', sub1: `Storage / Shelf: ${row.storage_location || '—'}`, sub2: `Workshop / Buyer: ${row.vendor_or_buyer || '—'}`, pct: 75 },
+          { lbl: 'PART ECONOMICS ($)', tag: proceeds > 0 ? 'RECOVERY $' : 'COST TRACKED', tone: proceeds > 0 ? 'good' : 'info', val: fmtUSD(outlay - proceeds, 2), sub1: `New Cost: ${fmtUSD(row.new_part_cost || 0, 2)} · Repair: ${fmtUSD(row.repair_cost || 0, 2)}`, sub2: `Sale Proceeds: ${fmtUSD(proceeds, 2)} · Approved: ${row.approved_by || '—'}`, pct: 80 }
+        ]
+      };
+    }
+
     // Generic rich 4-card cockpit for all other 30 tables
     const subgrids = buildInspectorSubgrids(key, row);
     const totalRel = subgrids.reduce((a, sg) => a + sg.rows.length, 0);
@@ -21505,6 +21947,12 @@
       const sName = row.name || row.Supplier;
       const sEqs = (SEED.records.equipment || []).filter(e => normOwnerName(e.supplier) === normOwnerName(sName));
       sEqs.slice(0, 2).forEach(eq => addTruckQv(eq.name, eq.default_driver));
+    } else if (key === 'equipment_defects') {
+      addTruckQv(row.equipment, row.reported_by);
+      if (row.reported_by) addDriverQv(row.reported_by, 'REPORTED BY');
+    } else if (key === 'part_movements') {
+      addTruckQv(row.equipment, null);
+      if (row.vendor_or_buyer) addSupplierQv(row.vendor_or_buyer, 'WORKSHOP / BUYER');
     }
     return cards;
   }
@@ -21607,11 +22055,19 @@
     }
     else if (key === 'equipment' || key === 'company_equipment') {
       const name = row.equipment || row.name || row.Equipment;
+      addGrid('sg_eq_defects', `Equipment Defect Reports (${name})`, 'Defects', 'Health & Issues', 'equipment_defects', (rec.equipment_defects || []).filter(d => norm(d.equipment) === norm(name)), ['name', 'date', 'company', 'subsystem', 'part_name', 'severity', 'status', 'description'], null);
+      addGrid('sg_eq_parts', `Part Changes, Removals & Custody (${name})`, 'Part Custody', 'Parts Lifecycle', 'part_movements', (rec.part_movements || []).filter(p => norm(p.equipment) === norm(name)), ['name', 'date', 'company', 'action_type', 'part_name', 'qty', 'condition', 'removed_disposition', 'new_part_cost', 'sale_proceeds'], 'new_part_cost');
       addGrid('sg_eq_co', `Company-Equipment Assignments (${name})`, 'BU Assignments', 'BU Assignments', 'company_equipment', (rec.company_equipment || []).filter(ce => norm(ce.equipment) === norm(name)), ['company', 'equipment', 'ownership', 'status', 'supplier', 'default_driver', 'site', 'start_date', 'end_date'], null);
       addGrid('sg_eq_sales', `Sales Loads Hauled by ${name}`, 'Sales Loads', 'Sales Loads', 'sales_tickets', (rec.sales_tickets || []).filter(t => norm(t.truck) === norm(name)), ['date', 'ticket_no', 'company', 'customer', 'product', 'site', 'driver', 'qty', 'trans_price', 'total_ttc'], 'total_ttc');
       addGrid('sg_eq_raw', `Raw Material Loads Hauled by ${name}`, 'Raw Loads', 'Raw Loads', 'raw_purchases', (rec.raw_purchases || []).filter(t => norm(t.truck) === norm(name)), ['date', 'ticket_no', 'company', 'site', 'site_owner', 'truck_owner', 'driver', 'product', 'qty', 'trans_cost', 'total'], 'total');
       addGrid('sg_eq_fuel', `Fuel & Lubricant Intakes + Meter Log (${name})`, 'Fuel & Meters', 'Fuel & Meters', 'fuel_intakes', (rec.fuel_intakes || []).filter(f => norm(f.equipment) === norm(name)), ['date', 'ticket_no', 'company', 'driver', 'item', 'litres', 'odometer', 'hours'], 'litres');
       addGrid('sg_eq_exp', `Maintenance, Spare Parts & Fleet Expenses (${name})`, 'Fleet Expenses', 'Fleet Expenses', 'expenses', (rec.expenses || []).filter(x => norm(x.equipment) === norm(name)), ['date', 'name', 'company', 'category', 'subcategory', 'supplier', 'method', 'amount', 'reference'], 'amount');
+    }
+    else if (key === 'equipment_defects' || key === 'part_movements') {
+      const eq = row.equipment;
+      addGrid('sg_m_defects', `All Defect Reports on ${eq}`, 'Unit Defects', 'Health Log', 'equipment_defects', (rec.equipment_defects || []).filter(d => norm(d.equipment) === norm(eq)), ['name', 'date', 'company', 'subsystem', 'part_name', 'severity', 'status', 'linked_part_log'], null);
+      addGrid('sg_m_parts', `All Part Movements & Dispositions on ${eq}`, 'Unit Parts', 'Parts Custody', 'part_movements', (rec.part_movements || []).filter(p => norm(p.equipment) === norm(eq)), ['name', 'date', 'company', 'action_type', 'part_name', 'qty', 'condition', 'removed_disposition', 'defect_ref', 'new_part_cost', 'sale_proceeds'], 'new_part_cost');
+      addGrid('sg_m_exp', `Maintenance & Spare Parts Expenses (${eq})`, 'Fleet Expenses', 'Expense Ledger', 'expenses', (rec.expenses || []).filter(x => norm(x.equipment) === norm(eq)), ['date', 'name', 'company', 'category', 'subcategory', 'supplier', 'method', 'amount', 'reference'], 'amount');
     }
     else if (key === 'drivers' || key === 'company_drivers') {
       const name = row.driver || row.name;
@@ -21959,7 +22415,7 @@
         { key: 'effective_to', label: 'Effective To Date (Blank = Permanent)', type: 'date', sec: 2, getVal: () => '', drawerOnly: true },
         { key: 'equipment', label: 'Equipment / Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'ownership', label: 'Ownership *', type: 'select', options: [['Own', 'Company Owned'], ['Third Party', 'Third-Party Hauler'], ['Rented', 'Rented']], sec: 2 },
-        { key: 'status', label: 'Operational Status *', type: 'select', options: ['Active', 'Idle', 'Sold / retired'], sec: 1 },
+        { key: 'status', label: 'Operational Status *', type: 'select', options: ['Active', 'Under repair', 'Defect — Needs Part', 'Idle', 'Sold / retired'], sec: 1 },
         { key: 'capacity', label: 'Box Capacity (m³)', type: 'number', step: '0.5', min: '0', sec: 2, getVal: r => r.capacity ?? (targetEqRow && targetEqRow.capacity) ?? '' },
         { key: 'supplier', label: 'Truck Owner (Supplier)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2, getVal: r => r.supplier ?? (targetEqRow && targetEqRow.supplier) ?? '' },
         { key: 'default_driver', label: 'Default Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2, getVal: r => r.default_driver ?? (targetEqRow && targetEqRow.default_driver) ?? '' },
@@ -22119,6 +22575,40 @@
         { key: 'difference', label: 'Reconciliation Adj ($)', type: 'number', step: '0.01', sec: 3 },
         { key: 'total', label: 'Net Total Distributed ($)', type: 'number', step: '0.01', sec: 3 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+      ],
+      equipment_defects: [
+        { key: 'date', label: 'Report Date *', type: 'date', sec: 1 },
+        { key: 'equipment', label: 'Equipment / Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 1 },
+        { key: 'subsystem', label: 'Subsystem / Area *', type: 'select', options: ['Engine & Powertrain', 'Brakes & Suspension', 'Hydraulics & Hoist', 'Tyres & Wheels', 'Electrical & Battery', 'Transmission & Gearbox', 'Body, Chassis & Bucket', 'Crusher / Plant Screen', 'Cooling & Exhaust', 'Other'], sec: 2 },
+        { key: 'part_name', label: 'Suspected / Affected Part', type: 'combo', dl: 'dl_insp_parts', sec: 2 },
+        { key: 'severity', label: 'Defect Severity *', type: 'select', options: ['Minor — Monitor (Running)', 'Moderate — Needs Part Soon', 'Critical — Down / Do Not Dispatch'], sec: 1 },
+        { key: 'status', label: 'Defect Status *', type: 'select', options: ['Open — Defect Reported', 'Part Ordered / Scheduled', 'In Maintenance / Workshop', 'Resolved — Part Changed', 'Closed — Inspected OK'], sec: 1 },
+        { key: 'reported_by', label: 'Reported By (Driver / Mechanic)', type: 'combo', dl: 'dl_insp_drivers', sec: 1 },
+        { key: 'meter_reading', label: 'Meter Reading (km / hr)', type: 'number', step: '0.1', min: '0', sec: 2 },
+        { key: 'resolved_date', label: 'Resolved Date', type: 'date', sec: 2 },
+        { key: 'linked_part_log', label: 'Linked Part Log #', type: 'text', sec: 1 },
+        { key: 'description', label: 'Defect / Symptom Description *', type: 'text', sec: 2, span: true },
+        { key: 'notes', label: 'Workshop Notes', type: 'text', sec: 3, span: true }
+      ],
+      part_movements: [
+        { key: 'date', label: 'Action Date *', type: 'date', sec: 1 },
+        { key: 'equipment', label: 'Equipment / Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 1 },
+        { key: 'defect_ref', label: 'Linked Prior Defect Report', type: 'text', sec: 1 },
+        { key: 'prior_defect_notified', label: 'Pre-Notified Defect Verified', type: 'bool', sec: 1 },
+        { key: 'action_type', label: 'Action Type *', type: 'select', options: ['Part Replaced (Old Removed + New Installed)', 'Part Removed Only', 'Part Sent to Maintenance / Rebuild', 'Part Installed from Stock', 'Used / Scrap Part Sold', 'Part Scrapped / Discarded'], sec: 2 },
+        { key: 'subsystem', label: 'Subsystem / Area *', type: 'select', options: ['Engine & Powertrain', 'Brakes & Suspension', 'Hydraulics & Hoist', 'Tyres & Wheels', 'Electrical & Battery', 'Transmission & Gearbox', 'Body, Chassis & Bucket', 'Crusher / Plant Screen', 'Cooling & Exhaust', 'Other'], sec: 2 },
+        { key: 'part_name', label: 'Part / Piece Name *', type: 'combo', dl: 'dl_insp_parts', sec: 2 },
+        { key: 'part_serial', label: 'Serial / Brand / Tire Code', type: 'text', sec: 2 },
+        { key: 'qty', label: 'Quantity *', type: 'number', step: '1', min: '1', sec: 3 },
+        { key: 'condition', label: 'Piece Condition *', type: 'select', options: ['Repairable / Rebuildable', 'Reusable Spare (Working)', 'New / Reconditioned', 'Worn / Scrap Metal', 'Damaged / Burnt Out'], sec: 2 },
+        { key: 'removed_disposition', label: 'Part Disposition / Status *', type: 'select', options: ['Stored in Warehouse / Spare Stock', 'In Maintenance / At Workshop', 'Sold (Used / Scrap)', 'Installed / Mounted on Unit', 'Scrapped / Discarded'], sec: 2 },
+        { key: 'storage_location', label: 'Warehouse / Shelf / Workshop Bay', type: 'combo', dl: 'dl_insp_locations', sec: 2 },
+        { key: 'vendor_or_buyer', label: 'Supplier / Workshop / Scrap Buyer', type: 'combo', dl: 'dl_insp_counterparties', sec: 2 },
+        { key: 'new_part_cost', label: 'New Part Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'repair_cost', label: 'Workshop / Rebuild Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'sale_proceeds', label: 'Used / Scrap Sale Proceeds ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'approved_by', label: 'Approved / Verified By', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
+        { key: 'notes', label: 'Notes & Custody Remarks', type: 'text', sec: 3, span: true }
       ]
     };
 
@@ -22140,7 +22630,7 @@
       if (!f.drawerOnly) schemaByKey.set(f.key, f);
     });
 
-    const hidden = new Set(['id', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows']);
+    const hidden = new Set(['id', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status']);
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
 
@@ -22151,9 +22641,9 @@
     });
     const allKeys = Array.from(allKeysSet);
 
-    const idFields = new Set(['name', 'official_name', 'ticket_no', 'invoice_no', 'date', 'rep_date', 'time', 'payroll_month', 'company', 'sale_type', 'rule_type', 'type', 'status', 'customer', 'supplier', 'staff', 'driver', 'partner', 'counterparty', 'loan', 'role', 'mof_no', 'financial_no', 'vat_registered', 'iva', 'phone', 'contact', 'email', 'address', 'location', 'direction', 'is_company_driver']);
-    const opsFields = new Set(['product', 'item', 'input_product', 'fuel_type', 'site', 'region', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'equipment', 'plate_no', 'ownership', 'capacity', 'truck_size', 'default_driver', 'day_operator', 'night_operator', 'model', 'working_days', 'start_date', 'end_date', 'latitude', 'longitude', 'is_jv', 'is_truck_owner', 'ticket_product', 'fuel_item', 'customer_declared_qty', 'external_invoice', 'trucks_count', 'trucks', 'drivers', 'category', 'subcategory', 'category1', 'category2', 'cost_class', 'from_currency', 'to_currency']);
-    const finFields = new Set(['qty', 'external_qty', 'uom', 'unit', 'rate_per', 'ton_factor', 'litres', 'odometer', 'hours', 'regular_hours', 'overtime_hours', 'late_hours', 'extra_hours', 'days_count', 'unit_price', 'price', 'list_price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'delivered_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'qty1', 'adj1', 'trans_adj1', 'qty2', 'adj2', 'trans_adj2', 'vat', 'vat_amount', 'net_amount', 'total', 'total_ttc', 'amount', 'usd_amount', 'lbp_amount', 'usd_delta', 'lbp_delta', 'discount', 'tip', 'salary_usd', 'daily_rate', 'daily_usd', 'rate_usd', 'credit_days', 'credit_limit', 'principal', 'interest_rate', 'exchange_rate', 'percentage', 'basis', 'difference', 'ar_balance', 'ap_balance', 'loads', 'raw_loads', 'sales_ttc', 'raw_cost', 'receipts', 'settlements_paid', 'method', 'vat_invoice', 'record_ticket', 'raw_ticket', 'expense_record', 'invoice', 'reference', 'revenue_account', 'purchase_account', 'notes']);
+    const idFields = new Set(['name', 'official_name', 'ticket_no', 'invoice_no', 'date', 'rep_date', 'time', 'payroll_month', 'company', 'sale_type', 'rule_type', 'type', 'status', 'severity', 'customer', 'supplier', 'staff', 'driver', 'reported_by', 'approved_by', 'prior_defect_notified', 'defect_ref', 'linked_part_log', 'partner', 'counterparty', 'loan', 'role', 'mof_no', 'financial_no', 'vat_registered', 'iva', 'phone', 'contact', 'email', 'address', 'location', 'direction', 'is_company_driver']);
+    const opsFields = new Set(['product', 'item', 'input_product', 'fuel_type', 'site', 'region', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'equipment', 'equipment_category', 'subsystem', 'action_type', 'part_name', 'part_serial', 'condition', 'removed_disposition', 'storage_location', 'vendor_or_buyer', 'meter_reading', 'resolved_date', 'description', 'plate_no', 'ownership', 'capacity', 'truck_size', 'default_driver', 'day_operator', 'night_operator', 'model', 'working_days', 'start_date', 'end_date', 'latitude', 'longitude', 'is_jv', 'is_truck_owner', 'ticket_product', 'fuel_item', 'customer_declared_qty', 'external_invoice', 'trucks_count', 'trucks', 'drivers', 'category', 'subcategory', 'category1', 'category2', 'cost_class', 'from_currency', 'to_currency']);
+    const finFields = new Set(['qty', 'external_qty', 'uom', 'unit', 'rate_per', 'ton_factor', 'litres', 'odometer', 'hours', 'regular_hours', 'overtime_hours', 'late_hours', 'extra_hours', 'days_count', 'unit_price', 'price', 'list_price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'delivered_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'new_part_cost', 'repair_cost', 'sale_proceeds', 'qty1', 'adj1', 'trans_adj1', 'qty2', 'adj2', 'trans_adj2', 'vat', 'vat_amount', 'net_amount', 'total', 'total_ttc', 'amount', 'usd_amount', 'lbp_amount', 'usd_delta', 'lbp_delta', 'discount', 'tip', 'salary_usd', 'daily_rate', 'daily_usd', 'rate_usd', 'credit_days', 'credit_limit', 'principal', 'interest_rate', 'exchange_rate', 'percentage', 'basis', 'difference', 'ar_balance', 'ap_balance', 'loads', 'raw_loads', 'sales_ttc', 'raw_cost', 'receipts', 'settlements_paid', 'method', 'vat_invoice', 'record_ticket', 'raw_ticket', 'expense_record', 'invoice', 'reference', 'revenue_account', 'purchase_account', 'notes']);
 
     const s1 = [], s2 = [], s3 = [];
     allKeys.forEach(k => {
@@ -22221,7 +22711,7 @@
         if (Number.isFinite(n)) { sumVal += n; hasSum = true; }
       });
     }
-    const isMoneySum = sg.sumCol && /price|cost|amount|total|vat|limit|salary|daily_usd|principal/.test(sg.sumCol);
+    const isMoneySum = sg.sumCol && /price|cost|amount|total|vat|limit|salary|daily_usd|principal|proceeds/.test(sg.sumCol);
 
     return `
       <div class="pa-subgrid-box" id="subgrid_${esc(sg.id)}" data-subgrid-box="${esc(sg.id)}">
@@ -22241,7 +22731,7 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${sg.cols.map(c => `<th class="${!/^(cost_class|cost_bucket|working_days)$/i.test(c) && /price|cost|amount|total|vat|limit|salary|qty|litres|capacity|hours|days|percentage|_count$/.test(c) ? 'r' : ''}">${esc(c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</th>`).join('')}
+                  ${sg.cols.map(c => `<th class="${!/^(cost_class|cost_bucket|working_days)$/i.test(c) && /price|cost|amount|total|vat|limit|salary|qty|litres|capacity|hours|days|percentage|_count|proceeds$/.test(c) ? 'r' : ''}">${esc(c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</th>`).join('')}
                 </tr>
               </thead>
               <tbody data-sg-tbody="${esc(sg.id)}">
@@ -22254,7 +22744,7 @@
                         if (c === 'unit_price' && isMatIndiffRule(r)) v = null;
                       }
                       const nonNum = /^(cost_class|cost_bucket|working_days)$/i.test(c);
-                      const isMoney = !nonNum && /price|cost|amount|total|vat|limit|salary|daily_usd|rate_usd|principal|discount/.test(c) && !/rate$/.test(c);
+                      const isMoney = !nonNum && /price|cost|amount|total|vat|limit|salary|daily_usd|rate_usd|principal|discount|proceeds/.test(c) && !/rate$/.test(c);
                       const isNum = !nonNum && !isMoney && /qty|litres|capacity|hours|days|odometer|percentage|_count$/.test(c);
                       let txt = v == null || v === '' ? '—' : String(v);
                       if (isMoney && v != null && v !== '') txt = fmtUSD(v, 2);
@@ -22346,6 +22836,15 @@
         .concat(supplierNames(), customerNames())
     );
     const inspProds = uniqSorted(((SEED.records && SEED.records.products) || []).map(p => p.name));
+    const inspParts = uniqSorted(
+      ((SEED.records && SEED.records.part_movements) || []).map(p => p.part_name)
+        .concat(((SEED.records && SEED.records.equipment_defects) || []).map(d => d.part_name))
+        .concat(['Tire 315/80 R22.5', 'Tire 13R22.5', 'Brake Lining & Drum Set', 'Clutch Disc & Pressure Plate', 'Hydraulic Hoist Cylinder', 'Alternator 24V', 'Starter Motor 24V', 'Battery 12V 200Ah', 'Radiator & Water Pump', 'Turbocharger', 'Fuel Injector Set', 'Leaf Spring Pack', 'Crusher Jaw Plate', 'Conveyor Belt Roller'])
+    );
+    const inspPartLocs = uniqSorted(
+      ((SEED.records && SEED.records.part_movements) || []).map(p => p.storage_location)
+        .concat(['WTC Main Spare Parts Room', 'BBConstruction Spare Parts Store', 'Lions Garage Shelf A', 'Tire Rack — Plant Yard', 'External Workshop / Rebuild Shop', 'Scrap Yard Bin'])
+    );
 
     const renderModFieldHtml = (fDef) => {
       const f = fDef.key;
@@ -22427,6 +22926,8 @@
         <datalist id="dl_insp_staff">${staffNames().map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_subcategories">${inspSubcats.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_counterparties">${inspCounterparties.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+        <datalist id="dl_insp_parts">${inspParts.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+        <datalist id="dl_insp_locations">${inspPartLocs.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
       </div>
 
       <!-- Top Command Bar & Relational Breadcrumb Trail -->
@@ -22441,6 +22942,9 @@
         <div class="pa-cmd-actions">
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
           ${canModifyData() ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} Modify Record</button>` : ''}
+          ${isEquipInspect && canEnterForm('defect') ? `<button type="button" class="pa-cmd-btn" id="inspReportDefectBtn">${ic('warn')} + Report Defect</button>` : ''}
+          ${isEquipInspect && canEnterForm('partlog') ? `<button type="button" class="pa-cmd-btn" id="inspLogPartBtn">${ic('cog')} + Log Part</button>` : ''}
+          ${key === 'equipment_defects' && isDefectOpen(row) && canEnterForm('partlog') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspResolveWithPartBtn">${ic('cog')} + Log Part Change</button>` : ''}
           ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">${ic('ruler')} Truck Size Windows (${eqWindows.length})</button>` : ''}
           ${!row.voided && canVoid() ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
           ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
@@ -22734,6 +23238,29 @@
 
     const prBtn = $('inspPrintBtn');
     if (prBtn) prBtn.addEventListener('click', () => window.print());
+    const inspRepDefBtn = $('inspReportDefectBtn');
+    if (inspRepDefBtn) {
+      inspRepDefBtn.addEventListener('click', () => {
+        const eqName = row.equipment || row.name || '';
+        closeRecordInspector();
+        openEntryModal('defect', { eq: eqName, co: row.company || '' });
+      });
+    }
+    const inspLogPartBtn = $('inspLogPartBtn');
+    if (inspLogPartBtn) {
+      inspLogPartBtn.addEventListener('click', () => {
+        const eqName = row.equipment || row.name || '';
+        closeRecordInspector();
+        openEntryModal('partlog', { eq: eqName, co: row.company || '' });
+      });
+    }
+    const inspResPartBtn = $('inspResolveWithPartBtn');
+    if (inspResPartBtn) {
+      inspResPartBtn.addEventListener('click', () => {
+        closeRecordInspector();
+        openEntryModal('partlog', { eq: row.equipment || '', def: row.name || '', part: row.part_name || '', sub: row.subsystem || '', co: row.company || '' });
+      });
+    }
     const thPrBtn = $('inspThermalPrintBtn');
     if (thPrBtn && window.MFG_PRINT) {
       thPrBtn.addEventListener('click', () => {
@@ -22811,6 +23338,16 @@
         const c2 = getModVal('category2');
         const iva = getModVal('iva') === 'Yes';
         html = `<span>Default Method: <b>${esc(m)}</b></span><span>Category: <b>${esc([c1, c2].filter(Boolean).join(', ') || 'General')}</b></span><span>IVA: <b>${iva ? 'Yes' : 'No'}</b></span>`;
+      } else if (key === 'equipment_defects') {
+        const sev = getModVal('severity') || row.severity || 'Moderate';
+        const st = getModVal('status') || row.status || 'Open';
+        html = `<span>Severity: <b>${esc(sev)}</b></span><span>Status: <b>${esc(st)}</b></span>`;
+      } else if (key === 'part_movements') {
+        const disp = getModVal('removed_disposition') || row.removed_disposition || '—';
+        const pre = getModVal('prior_defect_notified') === 'Yes' || Boolean(getModVal('defect_ref'));
+        const out = round2(getModNum('new_part_cost') + getModNum('repair_cost'));
+        const proc = round2(getModNum('sale_proceeds'));
+        html = `<span>Disposition: <b>${esc(disp)}</b></span><span>Pre-Notified: <b>${pre ? 'Verified' : 'Unnotified'}</b></span><span>Outlay: <b>${fmtUSD(out, 2)}</b></span><span>Proceeds: <b>${fmtUSD(proc, 2)}</b></span>`;
       }
       modLiveCalcEl.innerHTML = html;
       modLiveCalcEl.hidden = !html;
@@ -23090,6 +23627,29 @@
           row.price = up || null;
           if (row.qty1 != null && up > 0) row.total1 = round2(Number(row.qty1) * up + Number(row.adj1 || 0));
           if (row.qty2 != null && up > 0) row.total2 = round2(Number(row.qty2) * up + Number(row.adj2 || 0));
+        } else if (key === 'equipment_defects') {
+          if (!isDefectOpen(row)) {
+            row.resolved_date = row.resolved_date || todayISO();
+            if (row.equipment && Array.isArray(STATE.customRecords.company_equipment)) {
+              const defPool = (STATE.customRecords.equipment_defects || []).concat(SEED.records.equipment_defects || []);
+              const remOpen = defPool.some(d => d && !d.voided && String(d.id) !== String(row.id) && norm(d.equipment) === norm(row.equipment) && isDefectOpen(d));
+              if (!remOpen) {
+                const allCoEq = (SEED.records.company_equipment || []).concat(STATE.customRecords.company_equipment || []);
+                allCoEq.forEach(ce => {
+                  if (ce && !ce.voided && norm(ce.equipment) === norm(row.equipment) && ce.status === 'Under repair') {
+                    ce.status = ce._prev_status || 'Active';
+                    const cIdx = STATE.customRecords.company_equipment.findIndex(x => x && String(x.id) === String(ce.id));
+                    if (cIdx >= 0) Object.assign(STATE.customRecords.company_equipment[cIdx], ce);
+                    postRecordToLocalApi('company_equipment', ce);
+                  }
+                });
+              }
+            }
+          }
+        } else if (key === 'part_movements') {
+          if ('defect_ref' in pendingUpdates && !('prior_defect_notified' in pendingUpdates)) {
+            row.prior_defect_notified = Boolean(row.defect_ref);
+          }
         }
 
         if (isEquipInspect && targetEqRow && ('capacity' in pendingUpdates || 'supplier' in pendingUpdates || 'default_driver' in pendingUpdates || Boolean(effToDate))) {
@@ -25753,6 +26313,7 @@
     raw_analytics: 'JV & Stock Analytics',
     fleet: 'Diesel & Lubricants',
     fleet_equip: 'Fleet & Running Costs',
+    fleet_maint: 'Defects & Parts',
     fleet_drivers: 'Drivers & Overtime',
     fleet_analytics: 'Drivers & Overtime',
     pricing: 'Pricing & Commissions',
@@ -25799,6 +26360,7 @@
     raw_analytics: 'JV & Stock Analytics',
     fleet: 'Diesel & Lubricants',
     fleet_equip: 'Fleet & Running Costs',
+    fleet_maint: 'Defects & Parts',
     fleet_drivers: 'Drivers & Overtime',
     fleet_analytics: 'Drivers & Overtime',
     pricing: 'Pricing & Commissions',
@@ -26456,6 +27018,21 @@
         • Salaries paid ${fmtUSD(k.salaries_paid, 0)} · overtime bonus due ${fmtUSD(k.overtime_bonus, 0)} (sales ${fmtUSD(fleet.sales_overtime_bonus_usd || 0, 0)} + raw ${fmtUSD(fleet.raw_overtime_bonus_usd || 0, 0)} all-time) · ${fmtUSD(pricing.unmatched_salary_payments_usd || 0, 0)} paid without a contract.<br>
         • Overtime = a company-fleet load dispatched outside the 06:00–17:59 day shift (m48 / m93); third-party loads never earn the allowance.`;
     }
+    if (has(/\b(defect|defects|part|parts|spare|spares|maintenance|workshop|broken|custody)\b/)) {
+      const mIdx = getMaintIndex();
+      const allowedCos = allowedCompanyNames();
+      const openDefs = mIdx.openDefects.filter(d => !d.company || allowedCos.includes(d.company));
+      const parts = mIdx.parts.filter(p => !p.company || allowedCos.includes(p.company));
+      const storedCnt = parts.filter(p => /^Stored/i.test(p.removed_disposition || '')).length;
+      const wsCnt = parts.filter(p => /^In Maintenance/i.test(p.removed_disposition || '')).length;
+      const soldCnt = parts.filter(p => /^Sold/i.test(p.removed_disposition || '')).length;
+      const proceeds = parts.reduce((a, p) => a + Number(p.sale_proceeds || 0), 0);
+      const unnotified = parts.filter(p => !p.prior_defect_notified && !p.defect_ref).length;
+      return `<strong>Equipment Defects &amp; Parts Custody — ${esc(scope)}:</strong><br>
+        • <strong>Open Defects</strong>: <strong>${fmtNum(openDefs.length)}</strong> (${fmtNum(openDefs.filter(d => /^Critical/i.test(d.severity || '')).length)} critical · ${fmtNum(openDefs.filter(d => /Awaiting Part/i.test(d.status || '')).length)} awaiting part).<br>
+        • <strong>Part Custody (${fmtNum(parts.length)} logged)</strong>: ${fmtNum(storedCnt)} stored in warehouse · ${fmtNum(wsCnt)} in maintenance / workshop · ${fmtNum(soldCnt)} sold (${fmtUSD(proceeds, 2)} proceeds).<br>
+        • <strong>Pre-Defect Governance</strong>: ${unnotified === 0 ? '100% of part changes had a prior defect notification.' : fmtNum(unnotified) + ' unnotified emergency part change(s) flagged in AI Sentinel S10.'} Open <em>Fleet &amp; Diesel → Defects &amp; Parts</em> to log or update custody.`;
+    }
     if (has(/\b(license|licence|licenses|save|savings|cost|option 3|architecture|seat|seats)\b/)) {
       const n = STATE.users.length;
       return `<strong>Option 3 Multi-Device Cloud &amp; SQL Economics:</strong><br>
@@ -26482,7 +27059,7 @@
     const map = {
       kiosks: 'sales', sales: 'sales', sales_vat: 'vatinvoice', sales_analytics: 'sales',
       raw: 'raw', raw_analytics: 'raw',
-      fleet: 'fuel', fleet_equip: 'companyequipment', fleet_drivers: 'triprate', fleet_analytics: 'triprate',
+      fleet: 'fuel', fleet_equip: 'companyequipment', fleet_maint: 'defect', fleet_drivers: 'triprate', fleet_analytics: 'triprate',
       pricing: 'pricerule',
       cashflow: 'receipt', cashflow_analytics: 'receipt',
       external: 'external', conversions: 'conversion',
@@ -26538,7 +27115,8 @@
           sales: 'Post Ticket', raw: 'Post Raw', fuel: 'Log Fuel', receipt: 'Post Receipt',
           settlement: 'Settle AP', expense: 'Post Expense', salary: 'Pay Salary',
           vatinvoice: 'Post VAT Inv', attendance: 'Log Attendance', employment: 'New Contract',
-          treasury: 'Post Treasury', pricerule: 'New Agreement'
+          treasury: 'Post Treasury', pricerule: 'New Agreement',
+          defect: 'Report Defect', partlog: 'Log Part'
         };
         dEntryLbl.textContent = formLabels[contextFormForView(v, user)] || 'Post Entry';
       } else {
@@ -28045,7 +28623,7 @@
     const setPill = (id, text) => { const el = $(id); if (el) el.textContent = text; };
     const sentinelsOpen = buildSentinelItems().filter(s => s.severity !== 'ok').length;
     const pbiNavCount = (window.MFG_PBI && Array.isArray(window.MFG_PBI.PBI_PAGES)) ? window.MFG_PBI.PBI_PAGES.filter(p => canAccessPbiPage(p.id, user)).length : 12;
-    const tblNavCount = (window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) ? window.MFG_PBI.TABLE_CATALOG.filter(t => canAccessTable(t.key, user)).length : 34;
+    const tblNavCount = (window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) ? window.MFG_PBI.TABLE_CATALOG.filter(t => canAccessTable(t.key, user)).length : 36;
     setPill('navCountPbi', `${pbiNavCount} Pages`);
     setPill('navCountTables', String(tblNavCount));
     setPill('navCountSales', k.loads != null ? fmtNum(k.loads) : '—');
@@ -28097,6 +28675,7 @@
       case 'raw': wsHtml = renderRaw(); break;
       case 'fleet': wsHtml = renderFleet(); break;
       case 'fleet_equip': wsHtml = renderFleetEquipment(); break;
+      case 'fleet_maint': wsHtml = renderFleetMaintenance(); break;
       case 'fleet_drivers':
       case 'fleet_analytics': wsHtml = renderFleetDrivers(); break;
       case 'pricing': wsHtml = renderPricing(); break;
@@ -28866,6 +29445,22 @@
     container.querySelectorAll('[data-salespad-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.salesPadFilter = btn.getAttribute('data-salespad-chip'); STATE.shown.spad = PAGE; const ws = $('workspace'); const y = ws ? ws.scrollTop : 0; renderApp(); if (ws) ws.scrollTop = y; }));
     container.querySelectorAll('[data-vatinv-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.vatInvFilter = btn.getAttribute('data-vatinv-chip'); STATE.shown.vatinv = PAGE; const ws = $('workspace'); const y = ws ? ws.scrollTop : 0; renderApp(); if (ws) ws.scrollTop = y; }));
     container.querySelectorAll('[data-rawsite-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.rawSiteFilter = btn.getAttribute('data-rawsite-chip'); STATE.shown.sites = PAGE; renderApp(); }));
+    container.querySelectorAll('[data-partdisp-chip]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.partDispFilter = btn.getAttribute('data-partdisp-chip') || 'all';
+      STATE.shown.parts_log = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-unithealth-chip]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.unitHealthFilter = btn.getAttribute('data-unithealth-chip') || 'all';
+      STATE.shown.unit_health = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
 
     // Daily Plant & Machine Map (workforce_map) interactive controls
     container.querySelectorAll('[data-wf-date]').forEach(btn => btn.addEventListener('click', ev => {
@@ -29083,7 +29678,19 @@
       if (sel.length > 1) return; // the user is copying text inside the row, not opening the row
       showRecordInspector(tr.getAttribute('data-rkey'), tr.getAttribute('data-rid'));
     }));
-    container.querySelectorAll('[data-open-modal]').forEach(btn => btn.addEventListener('click', () => openEntryModal(btn.getAttribute('data-open-modal'))));
+    container.querySelectorAll('[data-open-modal]').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const pf = {};
+      let hasPf = false;
+      ['co', 'eq', 'def', 'part', 'sub', 'disp', 'party', 'cost', 'notes'].forEach(k => {
+        const attr = 'data-prefill-' + k;
+        if (btn.hasAttribute(attr)) {
+          pf[k] = btn.getAttribute(attr) || '';
+          hasPf = true;
+        }
+      });
+      openEntryModal(btn.getAttribute('data-open-modal'), hasPf ? pf : null);
+    }));
     container.querySelectorAll('[data-kiosk-jump]').forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
       const targetKiosk = btn.getAttribute('data-kiosk-jump') || 'sales';
