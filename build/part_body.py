@@ -16,7 +16,7 @@ BODY = f"""
       {WORDMARK_HEADER_SVG}
     </a>
     <nav class="main-nav" id="main-nav" aria-label="Primary Navigation">
-      <a href="#architecture" data-sec-link="architecture" class="active">Architecture</a>
+      <a href="#architecture" data-sec-link="architecture" class="active">Features</a>
       <a href="#industries" data-sec-link="industries">Industries</a>
       <a href="#sandbox" data-sec-link="sandbox">Live Sandbox</a>
       <a href="#platform-ai" data-sec-link="platform-ai">Platform &amp; AI</a>
@@ -38,7 +38,7 @@ BODY = f"""
   </div>
   <!-- Mobile & Tablet Section Jump Strip -->
   <nav class="mobile-sec-nav" id="mobile-sec-nav" aria-label="Section Navigation">
-    <a href="#architecture" data-sec-link="architecture" class="active">{ICONS["apps"]} 01 Apps &amp; Arch</a>
+    <a href="#architecture" data-sec-link="architecture" class="active">{ICONS["apps"]} 01 Features</a>
     <a href="#industries" data-sec-link="industries">{ICONS["manufacturing"]} 02 Industries</a>
     <a href="#sandbox" data-sec-link="sandbox">{ICONS["erp"]} 03 Live ERP</a>
     <a href="#platform-ai" data-sec-link="platform-ai">{ICONS["cloud"]} 04 Platform &amp; AI</a>
@@ -56,10 +56,10 @@ BODY = f"""
   <section class="hero-section">
     <div class="wrap hero-grid">
       <div>
-        <div class="eyebrow">{ICONS["ai_mark"]} ISABI Systems · Standalone SQL Cloud, 4 Kiosks &amp; Cited AI</div>
+        <div class="eyebrow">{ICONS["ai_mark"]} ISABI Systems · Zero Per-User Fees, Field Kiosks &amp; Cited AI</div>
         <h1 class="hero-title">The ERP Your Group<br><span class="brass-text">Actually Runs On</span>.</h1>
         <p class="hero-lead">
-          Custom relational SQL ERP, 20 executive dashboards, 22 printable statements, 4 biometric &amp; thermal kiosks, and a cited AI assistant: zero per-seat fees, live in 1 to 2 weeks.
+          Custom operations, double-entry accounting, executive dashboards, printable statements, field kiosks, and a cited AI assistant, engineered around how your business works in 1 to 2 weeks.
         </p>
         <div class="hero-cta-row">
           <a href="#sandbox" class="btn btn-brass">{ICONS["erp"]} Launch Live Sandbox</a>
@@ -85,10 +85,10 @@ BODY = f"""
             <button type="button" class="hero-mode-card" role="tab" aria-selected="false" data-hero-screen="pos">
               <div class="hmc-top">
                 <span class="hmc-icon tone-green">{ICONS["pos"]}</span>
-                <span class="hmc-tag">4 Kiosks</span>
+                <span class="hmc-tag">Field Kiosks</span>
               </div>
-              <b>Thermal POS &amp; Face ID Kiosk</b>
-              <small>80mm/58mm Bluetooth print &amp; 128-d liveness punch</small>
+              <b>POS Till &amp; Gate Kiosk</b>
+              <small>Instant receipt printing &amp; live face sign-in</small>
             </button>
 
             <button type="button" class="hero-mode-card" role="tab" aria-selected="false" data-hero-screen="apps">
@@ -96,8 +96,8 @@ BODY = f"""
                 <span class="hmc-icon tone-blue">{ICONS["apps"]}</span>
                 <span class="hmc-tag">18 Modules</span>
               </div>
-              <b>9 Hubs &amp; 34 SQL Tables</b>
-              <small>Explore 360° record inspector, smart forms &amp; SOA</small>
+              <b>Operations &amp; Accounting</b>
+              <small>Explore 360° record views, guided forms &amp; statements</small>
             </button>
 
             <button type="button" class="hero-mode-card" role="tab" aria-selected="false" data-hero-screen="ai">
@@ -105,7 +105,7 @@ BODY = f"""
                 <span class="hmc-icon tone-purple">{ICONS["ai"]}</span>
                 <span class="hmc-tag">Cited AI</span>
               </div>
-              <b>Ask ISABI &amp; Sentinels</b>
+              <b>Ask ISABI &amp; Watchdogs</b>
               <small>Run instant audits on receivables, stock &amp; P&amp;L</small>
             </button>
           </div>
@@ -125,7 +125,7 @@ BODY = f"""
               <button type="button" class="hlc-curr-btn" data-hero-curr="EUR">EUR</button>
               <button type="button" class="hlc-curr-btn" data-hero-curr="AED">AED</button>
             </div>
-            <a href="app/?demo=1&amp;autologin=1" id="hlc-open-portal-link" class="hlc-status" style="text-decoration:none" title="Launch Full 20-Dashboard &amp; 34-Table Command Center"><i></i>Full Portal ▸</a>
+            <a href="app/?demo=1&amp;autologin=1" id="hlc-open-portal-link" class="hlc-status" style="text-decoration:none" title="Launch Full Interactive Command Center"><i></i>Full Portal ▸</a>
           </div>
         </div>
 
@@ -219,10 +219,10 @@ BODY = f"""
       <a href="#architecture" class="metric-cell">
         <div class="m-top-row">
           <div class="m-val num">8<span> Live Apps</span></div>
-          <span class="m-pill good">● $0 Seat Tax</span>
+          <span class="m-pill good">● $0 Seat Fees</span>
         </div>
         <div class="m-lbl">Running in Production Today</div>
-        <div class="m-sub">9 hubs, 34 SQL tables + 4 biometric &amp; thermal kiosks.</div>
+        <div class="m-sub">Operations, accounting, analytics &amp; field kiosks in one place.</div>
         <span class="m-jump">Explore 18-App Suite ▸</span>
       </a>
       <a href="#industries" class="metric-cell">
@@ -230,8 +230,8 @@ BODY = f"""
           <div class="m-val num">100<span>%</span></div>
           <span class="m-pill blue">Zero Templates</span>
         </div>
-        <div class="m-lbl">Custom SQL Data Model</div>
-        <div class="m-sub">Engineered around your exact operational units &amp; COA.</div>
+        <div class="m-lbl">Tailored to Your Business</div>
+        <div class="m-sub">Shaped around your exact branches, approvals &amp; accounts.</div>
         <span class="m-jump">Inspect 8 Blueprints ▸</span>
       </a>
       <a href="#ingenuity" class="metric-cell">
@@ -240,7 +240,7 @@ BODY = f"""
           <span class="m-pill brass">14-Day Sprint</span>
         </div>
         <div class="m-lbl">To Go-Live</div>
-        <div class="m-sub">Code-compiled SQL schemas, dashboards &amp; SOA in days.</div>
+        <div class="m-sub">Guided entry forms, dashboards &amp; printable statements in days.</div>
         <span class="m-jump">See 14-Day Roadmap ▸</span>
       </a>
       <a href="#sandbox" class="metric-cell">
@@ -260,15 +260,15 @@ BODY = f"""
     <div class="wrap">
       <div class="sec-head sec-head-split">
         <div>
-          <div class="eyebrow">{ICONS["apps"]} 01 · Interactive App Suite &amp; Architecture</div>
+          <div class="eyebrow">{ICONS["apps"]} 01 · Interactive App Suite &amp; Capabilities</div>
           <h2>Every App Your Business Needs. One Unified Ledger.</h2>
           <p>
-            Click any module below to inspect how it works, or switch tabs to explore our 4-layer engineering stack and how ISABI compares to off-the-shelf software.
+            Click any module below to inspect what it does for your team, or switch tabs to see how ISABI compares to off-the-shelf software.
           </p>
         </div>
         <div class="sec-tabs" role="tablist" aria-label="Architecture Views">
           <button type="button" class="sec-tab active" data-arch-view="apps">{ICONS["apps"]} 18-App Ecosystem</button>
-          <button type="button" class="sec-tab" data-arch-view="layers">{ICONS["layers"]} 4-Layer Stack</button>
+          <button type="button" class="sec-tab" data-arch-view="layers">{ICONS["layers"]} How It Works</button>
           <button type="button" class="sec-tab" data-arch-view="contrast">{ICONS["compare"]} Why Not Templates?</button>
         </div>
       </div>
@@ -279,7 +279,7 @@ BODY = f"""
           <button type="button" class="app-cat-pill active" data-app-cat="all">{ICONS["apps"]} All 18 Modules</button>
           <button type="button" class="app-cat-pill" data-app-cat="finance">{ICONS["ledger"]} Accounting &amp; Analytics (7)</button>
           <button type="button" class="app-cat-pill" data-app-cat="ops">{ICONS["manufacturing"]} Industry Operations (7)</button>
-          <button type="button" class="app-cat-pill" data-app-cat="field">{ICONS["ai"]} 4 Kiosks, Sentinels &amp; HR (4)</button>
+          <button type="button" class="app-cat-pill" data-app-cat="field">{ICONS["ai"]} Kiosks, AI &amp; HR (4)</button>
         </div>
 
         <div class="app-suite-grid" id="app-suite-grid" role="listbox" aria-label="ISABI Application Modules">
@@ -295,24 +295,24 @@ BODY = f"""
       <div class="arch-panel" data-arch-panel="layers" data-panel-hidden="1">
         <div class="layers-grid">
           <div class="layer-card reveal">
-            <div class="layer-num">{ICONS["sql"]} Layer 01 · Relational Core</div>
-            <h4>Tables Built for Your Trade</h4>
-            <p>We compile 34 relational SQL tables, 24 smart entry forms with policy-locked dates, and a 360-degree record inspector shaped around your real daily workflow.</p>
+            <div class="layer-num">{ICONS["apps"]} Layer 01 · Daily Operations</div>
+            <h4>Built Around Your Workflow</h4>
+            <p>Sales, purchasing, stock, fleet maintenance, and smart entry forms with locked dates, credit holds, and a 360-degree view of every customer, truck, or unit.</p>
           </div>
           <div class="layer-card reveal">
-            <div class="layer-num">{ICONS["lock"]} Layer 02 · Security &amp; Roles</div>
+            <div class="layer-num">{ICONS["lock"]} Layer 02 · Roles &amp; Access</div>
             <h4>Each Role Sees Its Own Unit</h4>
-            <p>Nine business-cycle hubs, 10-industry by 150-company row-level security, and custom role field-locks keep every branch isolated while owners see group totals.</p>
+            <p>Role-based workspaces and company permissions keep every branch, cashier, and clerk focused on their own work while owners see the entire group in one place.</p>
           </div>
           <div class="layer-card reveal">
-            <div class="layer-num">{ICONS["scale"]} Layer 03 · Financial Ledger</div>
+            <div class="layer-num">{ICONS["scale"]} Layer 03 · Financial Books</div>
             <h4>Real Books, Safe Transition</h4>
-            <p>Full Class 1 to 7 double-entry accounting and autonomous AI sentinels audit ticket serials, fuel meters, and 3-leg payables beside your statutory trial balance.</p>
+            <p>Full double-entry accounting and automatic audit watchdogs check missing tickets, pricing rules, fuel use, and payables alongside your accountant's trial balance.</p>
           </div>
           <div class="layer-card reveal">
-            <div class="layer-num">{ICONS["analytics"]} Layer 04 · Executive Output</div>
-            <h4>Dashboards, SOA &amp; Cited AI</h4>
-            <p>Every entry powers 20 native executive dashboards, 22 bilingual printable statements, 4 biometric and thermal kiosks, and multilingual Ask ISABI ledger answers.</p>
+            <div class="layer-num">{ICONS["analytics"]} Layer 04 · Dashboards &amp; AI</div>
+            <h4>Reports, Statements &amp; AI</h4>
+            <p>Every entry updates interactive dashboards, bilingual printable balance sheets, P&amp;L, cash flow, and statements of account, plus Ask ISABI answers in three languages.</p>
           </div>
         </div>
       </div>
@@ -352,13 +352,13 @@ BODY = f"""
 
           <div class="contrast-card isabi-win" data-arch-card="isabi">
             <div class="cc-tag">{ICONS["award"]} The ISABI Standard</div>
-            <h3>ISABI Systems Custom Architecture</h3>
-            <p>One standalone SQL and encrypted cloud platform with zero per-user seat fees, shaped entirely around your entities, field kiosks, and chart of accounts.</p>
+            <h3>ISABI Systems Custom Platform</h3>
+            <p>One unified operations, accounting, and reporting platform with zero per-user fees, shaped around your branches, field teams, and chart of accounts.</p>
             <ul class="cc-list">
               <li><span style="color:var(--brass)">✓</span> Modeled around your exact operational unit (VINs, m³, cabanas, policies, leases)</li>
-              <li><span style="color:var(--brass)">✓</span> 10-industry by 150-company row-level isolation across 9 business-cycle hubs</li>
-              <li><span style="color:var(--brass)">✓</span> 20 native executive dashboards plus 22 bilingual printable statements</li>
-              <li><span style="color:var(--brass)">✓</span> 4 biometric &amp; Bluetooth thermal kiosks, AI sentinels, and cited Ask ISABI</li>
+              <li><span style="color:var(--brass)">✓</span> Strict company and role permissions so each team sees only its own scope</li>
+              <li><span style="color:var(--brass)">✓</span> Interactive executive dashboards plus bilingual printable statements</li>
+              <li><span style="color:var(--brass)">✓</span> Offline-ready touch kiosks, automatic audit watchdogs, and cited Ask ISABI</li>
             </ul>
           </div>
         </div>
@@ -396,13 +396,13 @@ BODY = f"""
           <div class="eyebrow">{ICONS["erp"]} 03 · Interactive Product Sandbox</div>
           <h2>Experience the ISABI Command Center Live.</h2>
           <p>
-            Switch between 6 live industry environments, inspect a bilingual printable Statement of Account, or test the interactive Offline POS Till and Biometric Kiosk right here.
+            Switch between 6 live industry environments, inspect a bilingual printable Statement of Account, or test the interactive Offline POS Till and Gate Kiosk right here.
           </p>
         </div>
         <div class="sec-tabs" role="tablist" aria-label="Sandbox Surface Mode">
-          <button type="button" class="sec-tab active" data-sbox-mode="erp">{ICONS["analytics"]} Live ERP &amp; Analytics</button>
-          <button type="button" class="sec-tab" data-sbox-mode="soa">{ICONS["soa"]} Printable Statements (22)</button>
-          <button type="button" class="sec-tab" data-sbox-mode="pwa">{ICONS["pos"]} 4 Kiosks &amp; POS Till</button>
+          <button type="button" class="sec-tab active" data-sbox-mode="erp">{ICONS["analytics"]} Live ERP &amp; Dashboards</button>
+          <button type="button" class="sec-tab" data-sbox-mode="soa">{ICONS["soa"]} Printable Statements</button>
+          <button type="button" class="sec-tab" data-sbox-mode="pwa">{ICONS["pos"]} Field Kiosks &amp; POS Till</button>
         </div>
       </div>
 
@@ -426,77 +426,77 @@ BODY = f"""
     </div>
   </section>
 
-  <!-- SECTION 04: STANDALONE SQL CLOUD, KIOSKS & NATIVE AI -->
+  <!-- SECTION 04: BUILT-IN DASHBOARDS, FIELD KIOSKS & CITED AI -->
   <section class="sec sec-alt" id="platform-ai">
     <div class="wrap">
       <div class="sec-head">
-        <div class="eyebrow">{ICONS["cloud"]} 04 · Standalone SQL Cloud, Kiosks &amp; Native AI</div>
-        <h2>Zero Per-Seat Tax Under the Hood. Cited AI on Top.</h2>
+        <div class="eyebrow">{ICONS["cloud"]} 04 · Built-In Dashboards, Kiosks &amp; Cited AI</div>
+        <h2>Unlimited Users. Offline-Ready Kiosks. Cited AI.</h2>
         <p>
-          Dedicated PostgreSQL and SQLite storage, encrypted multi-device cloud sync, 4 field kiosks, and AI audit sentinels, with zero per-user licence fees.
+          Add every executive, accountant, dispatcher, and gate tablet with zero per-user fees, live dashboards, printable statements, and automatic audit watchdogs.
         </p>
       </div>
 
       <div class="ms-ai-grid">
         <div class="ms-left-col">
-          <div class="sec-tabs ms-pillar-tabs" role="tablist" aria-label="Platform Architecture Pillars">
+          <div class="sec-tabs ms-pillar-tabs" role="tablist" aria-label="Platform Capabilities">
             <button type="button" class="sec-tab active" data-ms-tab="all">{ICONS["cloud"]} All 4 Pillars</button>
-            <button type="button" class="sec-tab" data-ms-tab="sql">{ICONS["sql"]} SQL &amp; Cloud</button>
-            <button type="button" class="sec-tab" data-ms-tab="apps">{ICONS["apps"]} 9 Hubs &amp; Kiosks</button>
-            <button type="button" class="sec-tab" data-ms-tab="bi">{ICONS["analytics"]} Analytics &amp; SOA</button>
-            <button type="button" class="sec-tab" data-ms-tab="security">{ICONS["lock"]} Face ID &amp; Sentinels</button>
+            <button type="button" class="sec-tab" data-ms-tab="sql">{ICONS["key"]} Zero Seat Fees</button>
+            <button type="button" class="sec-tab" data-ms-tab="apps">{ICONS["apps"]} 360° View &amp; Kiosks</button>
+            <button type="button" class="sec-tab" data-ms-tab="bi">{ICONS["analytics"]} Dashboards &amp; SOA</button>
+            <button type="button" class="sec-tab" data-ms-tab="security">{ICONS["lock"]} Watchdogs &amp; Access</button>
           </div>
 
           <div class="stack-cards" id="ms-stack-cards">
             <div class="stack-card reveal" data-ms-card="sql">
               <div class="stack-card-hdr">
-                <h4>{ICONS["sql"]} PostgreSQL &amp; SQLite Core (Zero Seat Tax)</h4>
-                <span>Database &amp; Sync</span>
+                <h4>{ICONS["key"]} Unlimited Users &amp; Full Data Ownership</h4>
+                <span>Zero Seat Fees</span>
               </div>
-              <p>34 relational tables with sub-150ms navigation across 93k+ live transactions, zero-spinner progressive boot, encrypted cloud relay, and unlimited seats.</p>
+              <p>Add every executive, accountant, dispatcher, cashier, and field tablet with $0 per-user monthly fees. Your company owns its records and reports outright.</p>
               <div class="stack-tags">
-                <span>$0 Per-User Seat Tax</span>
-                <span>&lt;150ms SQL Speed</span>
-                <span>Encrypted Cloud Relay</span>
+                <span>$0 Per-User Fees</span>
+                <span>Unlimited Staff &amp; Tablets</span>
+                <span>100% Data Ownership</span>
               </div>
             </div>
 
             <div class="stack-card reveal" data-ms-card="apps">
               <div class="stack-card-hdr">
-                <h4>{ICONS["apps"]} 9 Hubs, 360° Inspector &amp; 4 Field Kiosks</h4>
-                <span>Operational Surfaces</span>
+                <h4>{ICONS["apps"]} 360° Record Views, Guided Forms &amp; Kiosks</h4>
+                <span>Daily Operations</span>
               </div>
-              <p>24 smart entry forms with policy-locked dates and auto-overtime, 360° Modify Drawer, Daily Plant Map, and 80mm/58mm Bluetooth thermal receipt kiosks.</p>
+              <p>Inspect any customer, truck, or voucher in one click, lock past dates, map daily site crews and equipment defects, and print priced invoices or gate passes.</p>
               <div class="stack-tags">
-                <span>360° Modify Drawer</span>
-                <span>Priced / Gate Thermal</span>
-                <span>Daily Plant &amp; Fleet Map</span>
+                <span>360° Record View</span>
+                <span>Invoice / Gate Pass Print</span>
+                <span>Plant &amp; Fleet Control</span>
               </div>
             </div>
 
             <div class="stack-card reveal" data-ms-card="bi">
               <div class="stack-card-hdr">
-                <h4>{ICONS["analytics"]} 20 Dashboards &amp; 22 Printable Statements</h4>
-                <span>Executive &amp; Statutory</span>
+                <h4>{ICONS["analytics"]} Executive Dashboards &amp; Printable Statements</h4>
+                <span>Reporting &amp; Close</span>
               </div>
-              <p>Real-time Year, Month, Week, and Day segmented date facilitator with KPI drilldowns, plus 22 click-sortable bilingual A4 statements, P&amp;L, and tax invoices.</p>
+              <p>Switch any dashboard between Year, Month, Week, and Day with instant KPI drilldowns, or print bilingual Statements of Account, Balance Sheet, and Tax Invoices.</p>
               <div class="stack-tags">
-                <span>Y / M / W / D Facilitator</span>
-                <span>22 Bilingual A4 Reports</span>
-                <span>Class 1 to 7 COA</span>
+                <span>Year / Month / Week / Day</span>
+                <span>Bilingual A4 Statements</span>
+                <span>One-Click Drilldowns</span>
               </div>
             </div>
 
             <div class="stack-card reveal" data-ms-card="security">
               <div class="stack-card-hdr">
-                <h4>{ICONS["lock"]} 128-d Face ID Liveness, RLS &amp; AI Sentinels</h4>
+                <h4>{ICONS["lock"]} Live Face Sign-In, Permissions &amp; Watchdogs</h4>
                 <span>Security &amp; Audit</span>
               </div>
-              <p>128-d Face ID with Eye-Blink and 3D Parallax liveness, 150-company RLS, and continuous AI sentinels auditing skipped tickets, fuel meters, and 3-leg AP/AR.</p>
+              <p>Photo-proof face and PIN sign-in, strict company and role permissions, and automatic watchdogs catching missing tickets, fuel anomalies, and overdue balances.</p>
               <div class="stack-tags">
-                <span>Blink + 3D Liveness</span>
-                <span>10x150 Company RLS</span>
-                <span>AI Audit Sentinels</span>
+                <span>Live Face + PIN Sign-In</span>
+                <span>Per-Company Access</span>
+                <span>Automatic Audit Alerts</span>
               </div>
             </div>
           </div>
@@ -509,7 +509,7 @@ BODY = f"""
               {BADGE_SVG}
               <div>
                 <b>Ask ISABI · Multilingual Ledger Intelligence</b>
-                <small>Reads your ledger entries, ticket serials, stock, and receivables in EN, AR, and FR. Every answer cites its source.</small>
+                <small>Answers plain-language questions about your balances, tickets, stock, and receivables in EN, AR, and FR, citing every voucher.</small>
               </div>
             </div>
             <span class="hlc-status"><i></i>Live Sandbox</span>
@@ -542,7 +542,7 @@ BODY = f"""
     <div class="wrap">
       <div class="sec-head sec-head-split">
         <div>
-          <div class="eyebrow">{ICONS["bolt"]} 05 · Engineering Ingenuity &amp; ROI Studio</div>
+          <div class="eyebrow">{ICONS["bolt"]} 05 · Operational Value &amp; ROI Studio</div>
           <h2>Why Owners and CFOs Choose ISABI Systems.</h2>
           <p>
             Compare ISABI side-by-side against Odoo and legacy consultancies, calculate your annual payback, or walk through our 14-day go-live sprint.
@@ -562,7 +562,7 @@ BODY = f"""
           <thead>
             <tr>
               <th>Capability / Criterion</th>
-              <th class="isabi-col">{ICONS["ai"]} ISABI Systems (Standalone SQL &amp; Cited AI)</th>
+              <th class="isabi-col">{ICONS["ai"]} ISABI Systems (Custom ERP &amp; Cited AI)</th>
               <th>{ICONS["box"]} Generic SaaS (Odoo / Zoho / Off-the-Shelf)</th>
               <th>{ICONS["clock"]} Traditional Legacy ERP Consultancies</th>
             </tr>
@@ -570,7 +570,7 @@ BODY = f"""
           <tbody>
             <tr>
               <td><b>{ICONS["apps"]} Fit to Your Workflow</b></td>
-              <td class="isabi-col">{ICONS["check"]} 100% custom 34-table SQL schema &amp; 9 business-cycle hubs</td>
+              <td class="isabi-col">{ICONS["check"]} 100% tailored workspaces, guided forms &amp; approval rules</td>
               <td>{ICONS["warn"]} Rigid templates and awkward workarounds</td>
               <td>{ICONS["cross"]} Possible only after expensive custom change orders</td>
             </tr>
@@ -582,20 +582,20 @@ BODY = f"""
             </tr>
             <tr>
               <td><b>{ICONS["analytics"]} Executive Analytics &amp; SOA</b></td>
-              <td class="isabi-col">{ICONS["check"]} 20 native dashboards plus 22 bilingual printable statements</td>
+              <td class="isabi-col">{ICONS["check"]} Built-in interactive dashboards &amp; bilingual printable statements</td>
               <td>{ICONS["warn"]} Basic built-in charts and constant Excel exports</td>
               <td>{ICONS["cross"]} Sold as a separate six-figure BI project</td>
             </tr>
             <tr>
               <td><b>{ICONS["ai"]} AI &amp; Field Kiosks</b></td>
-              <td class="isabi-col">{ICONS["check"]} Ask ISABI (EN/AR/FR), AI sentinels, Face ID &amp; thermal print</td>
+              <td class="isabi-col">{ICONS["check"]} Ask ISABI (EN/AR/FR), audit watchdogs, face sign-in &amp; receipt print</td>
               <td>{ICONS["warn"]} Generic chatbots and third-party POS add-ons</td>
               <td>{ICONS["cross"]} Rarely available or requires external middleware</td>
             </tr>
             <tr>
               <td><b>{ICONS["lock"]} Ownership &amp; Go-Live Speed</b></td>
-              <td class="isabi-col">{ICONS["check"]} 100% client-owned SQL database, live in 1 to 2 weeks</td>
-              <td>{ICONS["warn"]} 2 to 4 months locked inside vendor proprietary cloud</td>
+              <td class="isabi-col">{ICONS["check"]} 100% client-owned system &amp; data, live in 1 to 2 weeks</td>
+              <td>{ICONS["warn"]} 2 to 4 months locked inside vendor subscription cloud</td>
               <td>{ICONS["cross"]} 9 to 18 months on aging on-premise servers</td>
             </tr>
             <tr>
@@ -658,37 +658,37 @@ BODY = f"""
         </div>
       </div>
 
-      <!-- Panel 3: 4 Engineering Advantages -->
+      <!-- Panel 3: 4 Core Advantages -->
       <div class="ingenuity-grid" data-ing-panel="advantages" data-panel-hidden="1" data-mob-hide="1">
         <div class="ing-card">
-          <div class="ing-kicker">{ICONS["scale"]} Advantage 01 · Principal-Led Architecture</div>
-          <h3>Financial Fluency Meets Systems Engineering</h3>
+          <div class="ing-kicker">{ICONS["scale"]} Advantage 01 · Principal-Led Delivery</div>
+          <h3>Accounting Fluency Meets Operational Detail</h3>
           <p>
-            You work directly with Hussein Bdeir, not a chain of account managers. Every system is designed with deep fluency in double-entry accounting, regional Class 1 to 7 charts of accounts, multi-currency treasury, VAT discipline, and partner equity splits.
+            You work directly with Hussein Bdeir, not a chain of account managers. Every system is built with deep fluency in double-entry accounting, regional charts of accounts, multi-currency treasury, VAT rules, and partner profit splits.
           </p>
         </div>
 
         <div class="ing-card">
-          <div class="ing-kicker">{ICONS["bolt"]} Advantage 02 · Code-First Compilers</div>
+          <div class="ing-kicker">{ICONS["bolt"]} Advantage 02 · Rapid Turnkey Delivery</div>
           <h3>Weeks to Production, Not Years</h3>
           <p>
-            Where agencies configure screens by hand, ISABI Systems compiles the SQL relational schema, 24 smart form rules, 20 executive dashboards, and 22 statement layouts from code. Every change is repeatable, versioned, and verified before release.
+            Instead of dragging out discovery for a year, we map your real daily documents, approval rules, executive dashboards, and printable statements straight into a working system your team can review in days.
           </p>
         </div>
 
         <div class="ing-card">
-          <div class="ing-kicker">{ICONS["pos"]} Advantage 03 · Edge-to-Boardroom Continuity</div>
+          <div class="ing-kicker">{ICONS["pos"]} Advantage 03 · Gate-to-Boardroom Control</div>
           <h3>From the Plant Gate &amp; Till to the Group P&amp;L</h3>
           <p>
-            We solve the hard last-mile problems: weighbridge and POS terminals that toggle Priced Invoices and Unpriced Gate Passes over 80mm/58mm Bluetooth printers offline, 128-d Face ID liveness kiosks at 6:00 AM, and Daily Plant Machine Maps.
+            We solve the hard operational details on the ground: weighbridge and cashier tablets that print priced invoices or unpriced gate passes offline, live face sign-in at 6:00 AM, fleet defect and spare-part custody, and daily crew maps.
           </p>
         </div>
 
         <div class="ing-card">
-          <div class="ing-kicker">{ICONS["ai_mark"]} Advantage 04 · Institutional Design Discipline</div>
+          <div class="ing-kicker">{ICONS["ai_mark"]} Advantage 04 · Clear Executive Design</div>
           <h3>Software Your Team Actually Wants to Open</h3>
           <p>
-            Enterprise software does not have to look cluttered or dated. The Ledger design system keeps visual noise low, aligns every figure in tabular columns, keeps status colours clear, and lets an executive read a screen in seconds.
+            Enterprise software does not have to look cluttered or dated. Clean screens keep visual noise low, align every figure in clear columns, highlight exceptions immediately, and let an owner read the business in seconds.
           </p>
         </div>
       </div>
@@ -697,26 +697,26 @@ BODY = f"""
       <div class="sprint-grid" data-ing-panel="roadmap" data-panel-hidden="1" data-mob-hide="1">
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["calendar"]} Days 1 to 3</div>
-          <h4>1. SQL Schema, COA &amp; RLS</h4>
-          <p>We map your entities, Class 1 to 7 chart of accounts, currencies, and operational units (VINs, m³, cabanas, leases, or policies) and compile the PostgreSQL and SQLite core.</p>
-          <span class="sprint-deliverable">✓ Deliverable: Live SQL tables &amp; 150-company RLS isolation</span>
+          <h4>1. Workflow, Accounts &amp; Roles</h4>
+          <p>We map your companies, chart of accounts, currencies, and daily operational units (VINs, m³, cabanas, leases, or policies) and set up company and role permissions.</p>
+          <span class="sprint-deliverable">✓ Deliverable: Custom workspaces &amp; role permissions</span>
         </div>
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["scope"]} Days 4 to 6</div>
-          <h4>2. 9 Hubs, 24 Forms &amp; 4 Kiosks</h4>
-          <p>We deploy your 9 business-cycle hubs, 360-degree record inspector, policy-locked entry forms, and companion Bluetooth thermal &amp; 128-d Face ID kiosks.</p>
-          <span class="sprint-deliverable">✓ Deliverable: Working hubs, Modify Drawer &amp; field kiosks</span>
+          <h4>2. Forms, 360° Views &amp; Kiosks</h4>
+          <p>We configure your guided entry forms, 360-degree record views, date and credit locks, and companion cashier, dispatch, fuel, and attendance kiosks.</p>
+          <span class="sprint-deliverable">✓ Deliverable: Guided forms, record views &amp; field kiosks</span>
         </div>
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["analytics"]} Days 7 to 10</div>
-          <h4>3. 20 Dashboards &amp; 22 Statements</h4>
-          <p>We publish 20 native executive dashboards (with Year, Month, Week, and Day date facilitators) alongside 22 bilingual printable Statements of Account and P&amp;L.</p>
-          <span class="sprint-deliverable">✓ Deliverable: Executive analytics &amp; bilingual A4 statements</span>
+          <h4>3. Dashboards &amp; Statements</h4>
+          <p>We deliver interactive executive dashboards (with Year, Month, Week, and Day switching) alongside bilingual printable Statements of Account and tax invoices.</p>
+          <span class="sprint-deliverable">✓ Deliverable: Executive dashboards &amp; bilingual A4 statements</span>
         </div>
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["bolt"]} Days 11 to 14</div>
-          <h4>4. Migration, Sentinels &amp; Cutover</h4>
-          <p>We migrate historical workbooks, activate AI sentinels and multilingual Ask ISABI, reconcile in parallel until variance is $0.00, train staff, and cut over.</p>
+          <h4>4. Migration, Watchdogs &amp; Go-Live</h4>
+          <p>We import your historical spreadsheets, turn on audit watchdogs and Ask ISABI, reconcile side by side until variance is $0.00, train your team, and go live.</p>
           <span class="sprint-deliverable">✓ Deliverable: Verified zero-variance cutover &amp; team sign-off</span>
         </div>
       </div>
@@ -737,7 +737,7 @@ BODY = f"""
         <div class="sec-tabs" role="tablist" aria-label="Pricing View Switcher">
           <button type="button" class="sec-tab active" data-price-view="tiers">{ICONS["diamond"]} 3 Engagement Tiers</button>
           <button type="button" class="sec-tab" data-price-view="builder">{ICONS["scope"]} Custom Scope Builder</button>
-          <button type="button" class="sec-tab" data-price-view="guarantee">{ICONS["insurance"]} Zero Seat Tax &amp; Ownership</button>
+          <button type="button" class="sec-tab" data-price-view="guarantee">{ICONS["insurance"]} Zero Seat Fees &amp; Ownership</button>
         </div>
       </div>
 
@@ -755,18 +755,18 @@ BODY = f"""
         <div class="price-card reveal" data-tier-card="tier1" data-mob-hide="1">
           <span class="price-badge">{ICONS["realestate"]} Tier 01 · Single Entity</span>
           <h3>Operational Foundation</h3>
-          <p class="price-desc">Ideal for a single operating company, resort property, showroom, plant, or brokerage replacing fragile spreadsheets with a zero-seat-fee SQL ERP and analytics suite.</p>
+          <p class="price-desc">Ideal for a single operating company, resort property, showroom, plant, or brokerage replacing fragile spreadsheets with one unified operations and accounting suite.</p>
           <div class="price-block">
             <div class="price-val num">$4,500 <small>starting build</small></div>
             <div class="price-retainer">+$350 / month ongoing support and improvements (optional)</div>
           </div>
           <ul class="price-features">
-            <li><i>✓</i> <span>Custom PostgreSQL &amp; SQLite schema with zero per-user seat fees</span></li>
-            <li><i>✓</i> <span>Role-gated workspace with 360° record inspector &amp; smart entry forms</span></li>
-            <li><i>✓</i> <span>Unlimited internal seats for staff, accountants, and management</span></li>
-            <li><i>✓</i> <span>Native executive analytics (Sales, Expenses, Receivables, Cash)</span></li>
+            <li><i>✓</i> <span>Custom operational modules &amp; chart of accounts ($0 per-user fees)</span></li>
+            <li><i>✓</i> <span>Role-based workspaces, 360° record views &amp; guided entry forms</span></li>
+            <li><i>✓</i> <span>Unlimited seats for staff, accountants, and management</span></li>
+            <li><i>✓</i> <span>Interactive executive dashboards (Sales, Expenses, Receivables, Cash)</span></li>
             <li><i>✓</i> <span>Core bilingual printable statements (Statement of Account &amp; P&amp;L)</span></li>
-            <li><i>✓</i> <span>Historical Excel data migration and team onboarding</span></li>
+            <li><i>✓</i> <span>Historical Excel data import and team onboarding</span></li>
           </ul>
           <button type="button" class="btn btn-outline" data-select-tier="Operational Foundation ($4,500+)">Start with This Tier</button>
         </div>
@@ -775,19 +775,19 @@ BODY = f"""
         <div class="price-card featured reveal" data-tier-card="tier2">
           <span class="price-badge">{ICONS["award"]} Recommended · Most Popular</span>
           <h3>Multi-Entity &amp; AI Operations Suite</h3>
-          <p class="price-desc">Complete operational and financial control for multi-branch companies requiring 9 business-cycle hubs, statutory reconciliation, field kiosks, and cited AI.</p>
+          <p class="price-desc">Complete operational and financial control for multi-branch companies needing role-separated branches, parallel accounting verification, field kiosks, and cited AI.</p>
           <div class="price-block">
             <div class="price-val num">$9,500 <small>starting build</small></div>
-            <div class="price-retainer">+$650 / month continuous engineering, AI tuning, and priority support</div>
+            <div class="price-retainer">+$650 / month continuous improvements, AI tuning, and priority support</div>
           </div>
           <ul class="price-features">
-            <li><i>✓</i> <span>Everything in Operational Foundation, expanded to 34 relational tables</span></li>
-            <li><i>✓</i> <span>Multi-Business Unit RLS isolation + consolidated group view ($0 seat tax)</span></li>
-            <li><i>✓</i> <span>All 20 native executive dashboards with Y/M/W/D date facilitator</span></li>
-            <li><i>✓</i> <span>Full 22 bilingual printable statements (SOA, aging, tax invoices, P&amp;L)</span></li>
-            <li><i>✓</i> <span>Multilingual <b>Ask ISABI</b> (EN/AR/FR) &amp; autonomous AI audit sentinels</span></li>
-            <li><i>✓</i> <span>Companion Kiosk included (80mm/58mm Bluetooth POS or 128-d Face ID)</span></li>
-            <li><i>✓</i> <span>Parallel-run reconciliation against your statutory books</span></li>
+            <li><i>✓</i> <span>Everything in Operational Foundation across multiple branches</span></li>
+            <li><i>✓</i> <span>Strict per-branch permissions + consolidated owner view ($0 seat fees)</span></li>
+            <li><i>✓</i> <span>Full executive &amp; operational dashboards (Year / Month / Week / Day)</span></li>
+            <li><i>✓</i> <span>Complete bilingual printable statements (SOA, aging, tax invoices, P&amp;L)</span></li>
+            <li><i>✓</i> <span>Multilingual <b>Ask ISABI</b> (EN/AR/FR) &amp; automatic audit watchdogs</span></li>
+            <li><i>✓</i> <span>Companion Field Kiosk included (Cashier POS or Face &amp; PIN Attendance)</span></li>
+            <li><i>✓</i> <span>Side-by-side reconciliation against your accountant's books</span></li>
           </ul>
           <button type="button" class="btn btn-brass" data-select-tier="Multi-Entity & AI Operations Suite ($9,500+)">Start with This Suite</button>
         </div>
@@ -796,18 +796,18 @@ BODY = f"""
         <div class="price-card reveal" data-tier-card="tier3" data-mob-hide="1">
           <span class="price-badge">{ICONS["holding"]} Tier 03 · Group &amp; Holding</span>
           <h3>Enterprise Group Ecosystem</h3>
-          <p class="price-desc">For multi-industry holding groups, family offices, and large enterprises deploying dedicated applications across multiple sister companies with group consolidation.</p>
+          <p class="price-desc">For multi-industry holding groups, family offices, and large enterprises running dedicated applications across sister companies with consolidated group reporting.</p>
           <div class="price-block">
             <div class="price-val num">$18,000+ <small>custom engagement</small></div>
             <div class="price-retainer">Custom retainer or dedicated principal advisory agreement</div>
           </div>
           <ul class="price-features">
             <li><i>✓</i> <span>Multiple dedicated industry apps (Hospitality, Trading, Manufacturing, Real Estate, Insurance, Holding)</span></li>
-            <li><i>✓</i> <span>Group-wide treasury, partner equity split engines &amp; intercompany ledgers</span></li>
-            <li><i>✓</i> <span>Full 4-Kiosk Suite (Sales, Quarry, Fuel Metering &amp; 128-d Face ID Liveness)</span></li>
-            <li><i>✓</i> <span>10-Industry by 150-Company RLS, custom role permissions &amp; field-locks</span></li>
-            <li><i>✓</i> <span>Encrypted multi-device cloud relay, nightly backups &amp; Daily Plant Map</span></li>
-            <li><i>✓</i> <span>Hussein Bdeir works with you directly from design to cutover</span></li>
+            <li><i>✓</i> <span>Group-wide treasury, partner profit-split engines &amp; intercompany ledgers</span></li>
+            <li><i>✓</i> <span>Full Field Kiosk Suite (Dispatch, Receiving, Fuel &amp; Live Face Sign-In)</span></li>
+            <li><i>✓</i> <span>Granular per-company &amp; per-role permissions with field-level locks</span></li>
+            <li><i>✓</i> <span>Daily Plant &amp; Workforce Map, Fleet Defects &amp; Spare Parts Custody</span></li>
+            <li><i>✓</i> <span>Hussein Bdeir works with you directly from design to go-live</span></li>
           </ul>
           <button type="button" class="btn btn-outline" data-select-tier="Enterprise Group Ecosystem ($18,000+ Custom)">Request Custom Group Proposal</button>
         </div>
@@ -854,59 +854,59 @@ BODY = f"""
               <h4>3. Choose the Modules to Include</h4>
               <div class="cfg-checks" id="cfg-mod-checks">
                 <label class="cfg-check active">
-                  <input type="checkbox" value="Core SQL ERP, 9 Hubs & Custom Ledger" data-cost="4500" data-wks="2" checked disabled>
+                  <input type="checkbox" value="Core Operations, Guided Forms & Double-Entry Ledger" data-cost="4500" data-wks="2" checked disabled>
                   <div>
-                    <b>{ICONS["ledger"]} Core SQL ERP, 9 Hubs &amp; Ledger</b>
-                    <small>34 tables, 360° inspector, COA &amp; unlimited seats (Included)</small>
+                    <b>{ICONS["ledger"]} Core Operations &amp; Double-Entry Ledger</b>
+                    <small>Custom modules, 360° record views, COA &amp; unlimited users (Included)</small>
                   </div>
                 </label>
                 <label class="cfg-check active">
-                  <input type="checkbox" value="20 Native Executive Dashboards" data-cost="2000" data-wks="1" checked>
+                  <input type="checkbox" value="Interactive Executive & Operations Dashboards" data-cost="2000" data-wks="1" checked>
                   <div>
-                    <b>{ICONS["analytics"]} 20 Native Executive Dashboards</b>
-                    <small>Y/M/W/D date facilitator, KPI drilldowns &amp; chart popovers</small>
+                    <b>{ICONS["analytics"]} Interactive Executive Dashboards</b>
+                    <small>Year / Month / Week / Day switching, KPI drilldowns &amp; breakdowns</small>
                   </div>
                 </label>
                 <label class="cfg-check active">
-                  <input type="checkbox" value="22 Bilingual Printable Statements & SOA" data-cost="1500" data-wks="1" checked>
+                  <input type="checkbox" value="Bilingual Printable Statements & SOA" data-cost="1500" data-wks="1" checked>
                   <div>
-                    <b>{ICONS["soa"]} 22 Printable Statements &amp; SOA</b>
-                    <small>Click-sortable A4 Balance Sheet, P&amp;L, Cash Flow &amp; Invoices</small>
+                    <b>{ICONS["soa"]} Printable Statements &amp; SOA</b>
+                    <small>Sortable A4 Balance Sheet, P&amp;L, Cash Flow, SOA &amp; Tax Invoices</small>
                   </div>
                 </label>
                 <label class="cfg-check active">
-                  <input type="checkbox" value="Ask ISABI AI & Audit Sentinels" data-cost="1800" data-wks="1" checked>
+                  <input type="checkbox" value="Ask ISABI AI & Automatic Audit Watchdogs" data-cost="1800" data-wks="1" checked>
                   <div>
-                    <b>{ICONS["ai"]} Ask ISABI &amp; Audit Sentinels</b>
-                    <small>EN/AR/FR cited ledger AI + ticket, fuel &amp; AP/AR sentinels</small>
+                    <b>{ICONS["ai"]} Ask ISABI &amp; Audit Watchdogs</b>
+                    <small>EN/AR/FR cited answers + missing-ticket, pricing &amp; overdue alerts</small>
                   </div>
                 </label>
                 <label class="cfg-check">
-                  <input type="checkbox" value="Offline Bluetooth POS Till PWA" data-cost="2200" data-wks="1">
+                  <input type="checkbox" value="Offline Cashier POS & Thermal Receipt Till" data-cost="2200" data-wks="1">
                   <div>
-                    <b>{ICONS["pos"]} Offline Bluetooth POS Till (PWA)</b>
-                    <small>80mm/58mm ESC/POS thermal print &amp; instant cloud sync</small>
+                    <b>{ICONS["pos"]} Offline Cashier POS &amp; Receipt Till</b>
+                    <small>Touch cashier terminal, wireless thermal receipts &amp; auto sync</small>
                   </div>
                 </label>
                 <label class="cfg-check">
-                  <input type="checkbox" value="4-Kiosk Suite & 128-d Face ID Liveness" data-cost="1800" data-wks="1">
+                  <input type="checkbox" value="Plant, Gate & Live Face Sign-In Kiosks" data-cost="1800" data-wks="1">
                   <div>
-                    <b>{ICONS["kiosk"]} 4-Kiosk Suite &amp; 128-d Face ID</b>
-                    <small>Blink + 3D parallax liveness, weighbridge, fuel &amp; plant map</small>
+                    <b>{ICONS["kiosk"]} Plant, Gate &amp; Face Sign-In Kiosks</b>
+                    <small>Dispatch, weighbridge, fuel, live face attendance &amp; daily crew map</small>
                   </div>
                 </label>
                 <label class="cfg-check">
-                  <input type="checkbox" value="Statutory ERP Reconciliation & Historical Migration" data-cost="1500" data-wks="1">
+                  <input type="checkbox" value="Parallel Accounting Reconciliation & Data Import" data-cost="1500" data-wks="1">
                   <div>
-                    <b>{ICONS["scale"]} Statutory Reconciliation &amp; Migration</b>
-                    <small>Historical workbook import &amp; dual-entry variance bridge</small>
+                    <b>{ICONS["scale"]} Parallel Reconciliation &amp; Migration</b>
+                    <small>Historical spreadsheet import &amp; side-by-side accounting balance check</small>
                   </div>
                 </label>
                 <label class="cfg-check">
-                  <input type="checkbox" value="Automated Recruitment & Encrypted CV Vault" data-cost="1200" data-wks="1">
+                  <input type="checkbox" value="Automated Recruitment & Private CV Vault" data-cost="1200" data-wks="1">
                   <div>
-                    <b>{ICONS["hr"]} Recruitment &amp; Encrypted CV Vault</b>
-                    <small>Applicant intake, per-entity routing &amp; HR review pipeline</small>
+                    <b>{ICONS["hr"]} Recruitment &amp; Private CV Vault</b>
+                    <small>Applicant intake, per-company routing &amp; HR review pipeline</small>
                   </div>
                 </label>
               </div>
@@ -915,7 +915,7 @@ BODY = f"""
 
           <div class="cfg-summary">
             <div>
-              <div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--brass);margin-bottom:6px">{ICONS["copy"]} Live Architecture Summary</div>
+              <div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--brass);margin-bottom:6px">{ICONS["copy"]} Live Scope Summary</div>
               <h4 style="font-size:20px;margin-bottom:4px" id="cfg-out-title">Hospitality &amp; Resorts System</h4>
               <div style="font-size:13px;color:var(--muted)" id="cfg-out-scale">Multi-Branch (2 to 4 Entities)</div>
 
@@ -948,30 +948,30 @@ BODY = f"""
         </div>
       </div>
 
-      <!-- Pricing Panel 3: Zero Seat Tax, Ownership & Parallel-Run Guarantee -->
+      <!-- Pricing Panel 3: Zero Seat Fees, Ownership & Parallel-Run Guarantee -->
       <div class="sprint-grid" data-price-panel="guarantee" data-panel-hidden="1">
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["key"]} 100% Data Ownership</div>
-          <h4>Dedicated SQL Database Under Your Control</h4>
-          <p>Every PostgreSQL and SQLite schema, double-entry ledger, dashboard, and printable statement belongs to your organisation with full exportability. If you ever pause our retainer, your system keeps running.</p>
-          <span class="sprint-deliverable">✓ Zero vendor lock-in · Full source &amp; schema ownership</span>
+          <h4>Your System and Records Belong to You</h4>
+          <p>Every customer history, double-entry voucher, dashboard, and printable statement belongs to your company with full export access at any time. If you ever pause support, your system keeps running.</p>
+          <span class="sprint-deliverable">✓ Zero vendor lock-in · Complete ownership of your records</span>
         </div>
         <div class="sprint-card">
-          <div class="sprint-day">{ICONS["ar"]} Zero Per-User Seat Tax</div>
+          <div class="sprint-day">{ICONS["ar"]} Zero Per-User Seat Fees</div>
           <h4>Unlimited Staff Seats &amp; Field Kiosk Tablets</h4>
-          <p>Unlike per-seat cloud ERPs and BI tools that charge $30 to $60 per user every month, ISABI runs with $0 per-user licence fees across executives, accountants, dispatchers, and kiosk tablets.</p>
-          <span class="sprint-deliverable">✓ Unlimited internal seats &amp; kiosks with $0 SaaS user tax</span>
+          <p>Unlike cloud subscriptions that charge $30 to $60 per user every month, ISABI runs with $0 per-user fees across executives, accountants, dispatchers, and kiosk tablets.</p>
+          <span class="sprint-deliverable">✓ Unlimited internal users &amp; kiosks with $0 monthly seat fees</span>
         </div>
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["scale"]} Parallel-Run Guarantee</div>
           <h4>Reconciled to the Cent Before Cutover</h4>
-          <p>We never ask you to turn off your existing accounting on faith. ISABI runs in parallel alongside your current software until the trial balance and statements of account match down to $0.00 variance.</p>
+          <p>We never ask you to turn off your existing accounting on faith. ISABI runs side by side with your current software until the trial balance and statements of account match down to $0.00 variance.</p>
           <span class="sprint-deliverable">✓ Audited parallel run included in every build</span>
         </div>
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["user"]} Direct Principal Delivery</div>
           <h4>Built by Hussein Bdeir from Day 1 to Cutover</h4>
-          <p>No junior intermediaries, no ticket queues, and no surprise change-order bills. Your scope, tables, reports, and timeline are fixed in writing before engineering begins.</p>
+          <p>No junior intermediaries, no ticket queues, and no surprise change-order bills. Your scope, modules, reports, and timeline are fixed in writing before work begins.</p>
           <span class="sprint-deliverable">✓ Fixed-scope proposal after a 30-minute discovery call</span>
         </div>
       </div>
@@ -997,10 +997,10 @@ BODY = f"""
         <span class="topic-lbl">{ICONS["bolt"]} Quick Fill:</span>
         <button type="button" class="topic-chip" data-topic-ind="Hospitality & Resorts" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We operate hospitality / F&B venues and want to unify daily outlet closes, POS tills, supplier invoices, and partner profit splits.">{ICONS["hospitality"]} Hospitality &amp; POS</button>
         <button type="button" class="topic-chip" data-topic-ind="Automotive & Heavy Equipment Trading" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We trade vehicles, heavy equipment, or spare parts and need per-VIN landed cost, bonded stock, and aged receivable SOA control.">{ICONS["trading"]} Auto &amp; VIN Trading</button>
-        <button type="button" class="topic-chip" data-topic-ind="Concrete, Construction & Manufacturing" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We run concrete batch plants, manufacturing, or transport fleets and need ticket-level m³ dispatch, 4 plant kiosks, and contractor credit gates.">{ICONS["manufacturing"]} Concrete &amp; Mfg</button>
+        <button type="button" class="topic-chip" data-topic-ind="Concrete, Construction & Manufacturing" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We run concrete batch plants, manufacturing, or transport fleets and need ticket-level m³ dispatch, field kiosks, fleet defect &amp; parts tracking, and contractor credit holds.">{ICONS["manufacturing"]} Concrete &amp; Mfg</button>
         <button type="button" class="topic-chip" data-topic-ind="Real Estate & Property Portfolio" data-topic-tier="Operational Foundation ($4,500+)" data-topic-note="We manage a property portfolio and need unit registries, lease escalations, post-dated check tracking, and property NOI dashboards.">{ICONS["realestate"]} Real Estate</button>
         <button type="button" class="topic-chip" data-topic-ind="Insurance Brokerage" data-topic-tier="Multi-Entity & AI Operations Suite ($9,500+)" data-topic-note="We operate an insurance brokerage and want automated carrier bordereaux, commission splits, 90/60/30-day renewals, and premium aging.">{ICONS["insurance"]} Insurance</button>
-        <button type="button" class="topic-chip" data-topic-ind="Multi-Entity Holding Group" data-topic-tier="Enterprise Group Ecosystem ($18,000+ Custom)" data-topic-note="We run a multi-company group and want consolidated executive dashboards, 150-company RLS isolation, 22 printable SOAs, and Ask ISABI AI with zero per-seat fees.">{ICONS["holding"]} Holding Group</button>
+        <button type="button" class="topic-chip" data-topic-ind="Multi-Entity Holding Group" data-topic-tier="Enterprise Group Ecosystem ($18,000+ Custom)" data-topic-note="We run a multi-company group and want consolidated executive dashboards, per-company access controls, printable statements of account, and Ask ISABI AI with zero per-user fees.">{ICONS["holding"]} Holding Group</button>
       </div>
 
       <!-- Mobile Switcher for Consultation Portal -->
@@ -1102,7 +1102,7 @@ BODY = f"""
             <div class="direct-channel-box">
               <small>{ICONS["wa"]} WhatsApp &amp; Direct Mobile (Fastest Response)</small>
               <strong class="num">+961 70 444 955</strong>
-              <p>Message Hussein on WhatsApp to discuss your architecture, book a live walkthrough, or review pricing.</p>
+              <p>Message Hussein on WhatsApp to discuss your operations, book a live walkthrough, or review pricing.</p>
               <a href="https://wa.me/96170444955?text=Hello%20Hussein%2C%20I%20would%20like%20to%20schedule%20a%20discovery%20call%20regarding%20an%20ISABI%20Systems%20implementation." target="_blank" rel="noopener" class="btn btn-wa" style="width:100%">{ICONS["wa"]} Open Direct WhatsApp Chat</a>
             </div>
 
@@ -1144,7 +1144,7 @@ BODY = f"""
           </div>
         </div>
         <p style="margin:0 0 12px;color:#9FB0C7;font-size:13px">
-          Standalone SQL ERP, double-entry ledgers, 20 executive dashboards, 22 printable statements, 4 field kiosks, and cited AI with zero per-user seat fees.
+          Custom operations, double-entry accounting, interactive executive dashboards, printable statements, field kiosks, and cited AI with zero per-user fees.
         </p>
         <div style="font-size:12.5px;color:#F4F2EE">
           <b>{ICONS["wa"]} Direct WhatsApp:</b> <a href="https://wa.me/96170444955" target="_blank" rel="noopener" style="color:#D9A54A">+961 70 444 955</a><br>
@@ -1167,11 +1167,11 @@ BODY = f"""
       <div class="ftr-col">
         <h4>Platform &amp; AI</h4>
         <ul>
-          <li><a href="#architecture">{ICONS["apps"]} 18-App Ecosystem &amp; Architecture</a></li>
+          <li><a href="#architecture">{ICONS["apps"]} 18-App Ecosystem &amp; Capabilities</a></li>
           <li><a href="#sandbox">{ICONS["erp"]} Interactive ERP, SOA &amp; Kiosk Sandbox</a></li>
-          <li><a href="#platform-ai">{ICONS["cloud"]} Standalone SQL Cloud &amp; Zero Seat Tax</a></li>
-          <li><a href="#platform-ai">{ICONS["ai"]} Ask ISABI &amp; Audit Sentinels</a></li>
-          <li><a href="#industries" data-goto-ind="pos">{ICONS["pos"]} 4 Kiosks, 128-d Face ID &amp; Thermal POS</a></li>
+          <li><a href="#platform-ai">{ICONS["cloud"]} Zero Per-User Fees &amp; Data Ownership</a></li>
+          <li><a href="#platform-ai">{ICONS["ai"]} Ask ISABI &amp; Audit Watchdogs</a></li>
+          <li><a href="#industries" data-goto-ind="pos">{ICONS["pos"]} Field Kiosks, Face Sign-In &amp; Receipt Till</a></li>
           <li><a href="#ingenuity">{ICONS["roi"]} ROI &amp; 14-Day Go-Live Sprint</a></li>
           <li><a href="#faq">{ICONS["faq"]} Frequently Asked Questions</a></li>
         </ul>
@@ -1191,7 +1191,7 @@ BODY = f"""
 
     <div class="ftr-bottom">
       <span>© <span id="ftr-year">2026</span> ISABI Systems. Founded and architected by Hussein Bdeir. All rights reserved.</span>
-      <span>Standalone PostgreSQL &amp; SQLite · 9 Business-Cycle Hubs · 22 Printable Statements · 4 Biometric &amp; Thermal Kiosks · Ask ISABI AI</span>
+      <span>Zero Per-User Fees · Custom Operations &amp; Accounting · Executive Dashboards · Printable Statements · Field Kiosks · Ask ISABI AI</span>
     </div>
   </div>
 </footer>
@@ -1212,7 +1212,7 @@ BODY = f"""
         {BADGE_SVG}
         <div>
           <b style="font-family:Archivo,sans-serif;font-size:16px;display:block">ISABI · System Intelligence</b>
-          <small style="color:#9FB0C7;font-size:12px">Ask about custom SQL ERP architecture, industry fit, 4 kiosks, pricing, or live ledger queries</small>
+          <small style="color:#9FB0C7;font-size:12px">Ask about custom modules, industry fit, field kiosks, pricing, or live ledger numbers</small>
         </div>
       </div>
       <button type="button" class="btn btn-ghost" id="close-ai-drawer" style="color:#F4F2EE;border-color:rgba(255,255,255,0.2)">Close</button>
@@ -1225,7 +1225,7 @@ BODY = f"""
       <!-- Populated by JS -->
     </div>
     <form class="ai-drawer-ftr" id="ai-drawer-form">
-      <input type="text" id="ai-drawer-input" placeholder="Ask ISABI about your industry, zero-seat-fee SQL stack, or pricing..." autocomplete="off">
+      <input type="text" id="ai-drawer-input" placeholder="Ask ISABI about your industry, features, kiosks, or pricing..." autocomplete="off">
       <button type="submit" class="btn btn-brass">Ask</button>
     </form>
   </aside>

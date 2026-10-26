@@ -15,14 +15,20 @@ ART_DIR = os.environ.get('ISABI_ART_DIR') or os.path.join(tempfile.gettempdir(),
 def run_dom_and_screenshots():
     ud = tempfile.mkdtemp(prefix='isabi_edge_')
     try:
-        # 0. Verify 0 forbidden vendor reliance strings in index.html & manifest.json
+        # 0. Verify 0 forbidden vendor reliance & 0 overspecified technical plumbing jargon in index.html & manifest.json
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         for fname in ('index.html', 'manifest.json'):
             fpath = os.path.join(repo_root, fname)
             txt = open(fpath, 'r', encoding='utf-8').read()
             hits = re.findall(r'Power BI|Dataverse|Power Apps|Microsoft', txt, flags=re.IGNORECASE)
             assert not hits, f"Forbidden terms found in {fname}: {hits[:10]}"
-            print(f'[CLEAN] {fname}: 0 forbidden vendor terms')
+            jargon = re.findall(
+                r'PostgreSQL|SQLite|IndexedDB|ESC/POS|80mm|58mm|128-d|128d|Parallax|Eye-Blink|'
+                r'Progressive Web|Row-Level|progressive boot|zero-spinner|150ms|93k|3-leg|neighbor-linked|cloud relay',
+                txt, flags=re.IGNORECASE
+            )
+            assert not jargon, f"Overspecified technical jargon found in {fname}: {jargon[:10]}"
+            print(f'[CLEAN] {fname}: 0 forbidden vendor terms & 0 technical plumbing jargon')
 
         # 1. Dump DOM at #industries hash to verify initial hash activation & rendering
         res = subprocess.run(
@@ -357,7 +363,11 @@ document.addEventListener('DOMContentLoaded', function() {
       heroHospEurVal: heroHospEurVal,
       hasHeroPos: hasHeroPos,
       hasHeroApps: hasHeroApps,
-      hasHeroAi: hasHeroAi
+      hasHeroAi: hasHeroAi,
+      visibleJargon: (
+        (document.title + ' ' + (document.querySelector('meta[name="description"]')?.content || '') + ' ' + document.body.innerText)
+        .match(/\b(SQL|PostgreSQL|SQLite|IndexedDB|PWA|PWAs|RLS|schema|schemas|compiler|compiled|128-d|80mm|58mm)\b/gi) || []
+      ).slice(0, 10)
     };
     pre.textContent = JSON.stringify(out);
   } catch (err) {
@@ -458,6 +468,7 @@ document.addEventListener('DOMContentLoaded', function() {
         assert v4['hasHeroPos'] is True, "Hero POS mode did not render .hlc-pos-box"
         assert v4['hasHeroApps'] is True, "Hero Apps mode did not render .hlc-apps-mini"
         assert v4['hasHeroAi'] is True, "Hero AI mode did not render .hlc-ai-box"
+        assert v4['visibleJargon'] == [], f"Visible technical jargon found in rendered page: {v4['visibleJargon']}"
 
         # 3. Capture fresh screenshots of Hero & #portal at 1366x768
         os.makedirs(ART_DIR, exist_ok=True)

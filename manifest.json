@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "ISABI Systems | Custom ERP, Native Analytics and Cited AI",
+  "name": "ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI",
   "short_name": "ISABI Systems",
-  "description": "Custom relational SQL ERP, 9 business-cycle hubs, 20 native executive dashboards, 22 printable statements, 4 biometric & thermal field kiosks, and Ask ISABI AI with zero per-user seat fees.",
+  "description": "Custom operations, double-entry accounting, interactive executive dashboards, bilingual printable statements, touch field kiosks, and Ask ISABI AI with zero per-user fees.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -17,8 +17,8 @@ HEAD = """<!DOCTYPE html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>ISABI Systems | Custom Enterprise ERP, Native Analytics and Cited AI</title>
-  <meta name="description" content="ISABI Systems builds custom relational SQL ERP applications, 9 business-cycle hubs, 20 executive dashboards, 22 bilingual printable statements, 4 biometric &amp; Bluetooth thermal field kiosks, and Ask ISABI AI with zero per-user seat fees.">
+  <title>ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI</title>
+  <meta name="description" content="ISABI Systems builds custom operations and double-entry accounting systems, interactive executive dashboards, bilingual printable statements, offline-ready field kiosks, and Ask ISABI AI with zero per-user fees.">
   <meta name="author" content="Hussein Bdeir">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <meta name="color-scheme" content="light dark">
@@ -27,15 +27,15 @@ HEAD = """<!DOCTYPE html>
   <meta property="og:site_name" content="ISABI Systems">
   <meta property="og:locale" content="en_US">
   <meta property="og:url" content="https://husseinbdeir.github.io/isabi/">
-  <meta property="og:title" content="ISABI Systems | Custom Enterprise ERP, Native Analytics and Cited AI">
-  <meta property="og:description" content="The ERP Your Group Actually Runs On. Custom SQL ERP, 9 business-cycle hubs, 20 executive dashboards, 22 printable statements, 4 field kiosks, and Ask ISABI AI, live in 1 to 2 weeks with zero per-user seat fees.">
+  <meta property="og:title" content="ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI">
+  <meta property="og:description" content="The ERP Your Group Actually Runs On. Custom operations, double-entry accounting, executive dashboards, printable statements, field kiosks, and Ask ISABI AI, live in 1 to 2 weeks with zero per-user fees.">
   <meta property="og:image" content="https://husseinbdeir.github.io/isabi/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="ISABI Systems. The ERP Your Group Actually Runs On.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="ISABI Systems | Custom Enterprise ERP, Native Analytics and Cited AI">
-  <meta name="twitter:description" content="Custom SQL ERP, double-entry ledgers, 20 executive dashboards, 22 printable statements, 4 biometric &amp; thermal field kiosks, and Ask ISABI AI with zero per-user seat fees.">
+  <meta name="twitter:title" content="ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI">
+  <meta name="twitter:description" content="Custom operations, double-entry accounting, executive dashboards, printable statements, offline-ready field kiosks, and Ask ISABI AI with zero per-user fees.">
   <meta name="twitter:image" content="https://husseinbdeir.github.io/isabi/og-image.png">
   <meta name="theme-color" content="#F4F2EE">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -76,13 +76,13 @@ ORG_JSONLD = _json.dumps({
     "logo": "https://husseinbdeir.github.io/isabi/icon-512.png",
     "image": "https://husseinbdeir.github.io/isabi/og-image.png",
     "slogan": "The ERP Your Group Actually Runs On",
-    "description": "Custom relational SQL ERP applications, double-entry financial ledgers, 20 executive dashboards, 22 printable statements, 4 biometric and Bluetooth thermal field kiosks, and the Ask ISABI assistant with zero per-user seat fees.",
+    "description": "Custom enterprise ERP operations, double-entry financial accounting, interactive executive dashboards, bilingual printable statements, offline-ready field kiosks, and the Ask ISABI assistant with zero per-user fees.",
     "email": "hbdeir16@gmail.com",
     "telephone": "+96170444955",
     "founder": {"@type": "Person", "name": "Hussein Bdeir", "jobTitle": "Founder and Principal Systems Architect"},
     "areaServed": ["Lebanon", "Middle East", "Worldwide"],
     "address": {"@type": "PostalAddress", "addressCountry": "LB"},
-    "knowsAbout": ["Enterprise Resource Planning", "Relational SQL Architecture", "Executive Analytics & Dashboards", "Double-Entry Accounting", "Biometric & Thermal Field Kiosks", "AI Audit Sentinels"],
+    "knowsAbout": ["Enterprise Resource Planning", "Multi-Entity Operations", "Executive Dashboards & Reporting", "Double-Entry Accounting", "POS & Gate Kiosks", "Automated Financial Controls"],
     "contactPoint": [{"@type": "ContactPoint", "contactType": "sales", "telephone": "+96170444955", "email": "hbdeir16@gmail.com", "availableLanguage": ["en"]}],
     "priceRange": "$4,500 to $18,000+"
 }, ensure_ascii=False)
@@ -111,8 +111,19 @@ def main():
         print("JS SYNTAX ERROR:", res.stderr, file=sys.stderr)
         sys.exit(1)
 
-    # Sync Command Center bundle into /isabi/app/
-    sync_command_app()
+    # Sync Command Center bundle into /isabi/app/ unless skipped or mfg-web has uncommitted WIP
+    if '--skip-app-sync' in sys.argv or os.environ.get('ISABI_SKIP_APP_SYNC') == '1':
+        print("INFO: Skipped sync_command_app() (--skip-app-sync)")
+    else:
+        mfg_dir = os.path.join(os.path.dirname(ROOT), 'mfg-web')
+        mfg_dirty = False
+        if os.path.isdir(mfg_dir) and '--force-app-sync' not in sys.argv:
+            st = subprocess.run(['git', '-C', mfg_dir, 'status', '--porcelain'], capture_output=True, text=True)
+            mfg_dirty = bool(st.returncode == 0 and st.stdout.strip())
+        if mfg_dirty:
+            print("WARN: Skipped sync_command_app() because mfg-web has uncommitted WIP (pass --force-app-sync to override)")
+        else:
+            sync_command_app()
 
     # Sync OneDrive mirror if present
     mirror_dir = os.path.join(os.path.expanduser('~'), 'OneDrive - BHFIRMS', 'System', 'System', 'ISABI', 'Website')

@@ -43,13 +43,13 @@ HTML = f"""<!doctype html>
     <div class="brand">{BADGE_SVG}{WORDMARK_HEADER_SVG}</div>
     <div>
       <h1>The ERP Your Group <b>Actually Runs On</b>.</h1>
-      <p>Custom SQL ERP, double-entry ledgers, 20 executive dashboards, 22 printable statements, 4 field kiosks, and Ask ISABI AI. Zero per-user seat fees.</p>
+      <p>Custom operations, double-entry accounting, executive dashboards, printable statements, field kiosks, and Ask ISABI AI. Zero per-user fees.</p>
     </div>
     <div class="chips">
       <span class="chip">8 Live Production Apps</span>
-      <span class="chip">Zero Per-User Seat Fees</span>
+      <span class="chip">Zero Per-User Fees</span>
       <span class="chip">1 to 2 Weeks to Go-Live</span>
-      <span class="chip">4 Kiosks &amp; Cited AI</span>
+      <span class="chip">Field Kiosks &amp; Cited AI</span>
     </div>
   </div>
   <div class="url">husseinbdeir.github.io/isabi</div>
