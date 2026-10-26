@@ -4306,15 +4306,52 @@
     users: 'Users & Security'
   };
 
+  function getSentinelExceptionBadge(u, sentinelsOpen) {
+    if (!canViewView('sentinels', u)) return null;
+    const cnt = Number(sentinelsOpen || 0);
+    return cnt > 0 ? { text: `${fmtNum(cnt)} Alert${cnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
+  }
+
+  function getFleetExceptionBadge(u) {
+    if (!canViewView('fleet_maint', u)) return null;
+    const mi = getMaintIndex();
+    if (mi.openCritCount > 0) return { text: `${fmtNum(mi.openCritCount)} Crit`, cls: 'crit' };
+    if (mi.openCount > 0) return { text: `${fmtNum(mi.openCount)} Open`, cls: 'warn' };
+    if (mi.unnotifiedParts && mi.unnotifiedParts.length > 0) return { text: `${fmtNum(mi.unnotifiedParts.length)} Audit`, cls: 'warn' };
+    return null;
+  }
+
+  function getWorkforceMapExceptionBadge(u) {
+    if (!canViewView('workforce_map', u)) return null;
+    const wf = buildWorkforceMapData({ auditOnly: true });
+    const ghostCnt = wf ? Number(wf.absentGhostCount || 0) : 0;
+    return ghostCnt > 0 ? { text: `${fmtNum(ghostCnt)} Alert${ghostCnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
+  }
+
+  function getLedgerExceptionBadge(u, k) {
+    if (!canViewView('ledger', u)) return null;
+    if (k && k.tb_check != null && Math.abs(Number(k.tb_check)) >= 0.005) {
+      return { text: 'TB ' + fmtUSDk(Number(k.tb_check)), cls: 'crit' };
+    }
+    return null;
+  }
+
+  function getHubExceptionBadge(hubId, u, k, sentinelsOpen) {
+    if (hubId === 'overview') return getSentinelExceptionBadge(u, sentinelsOpen);
+    if (hubId === 'fleet') return getFleetExceptionBadge(u);
+    if (hubId === 'ledger') return getLedgerExceptionBadge(u, k);
+    return null;
+  }
+
   const HUB_CATALOG = [
     {
       id: 'overview',
       title: HUB_TITLES.overview,
       group: 'exec',
       tabs: [
-        { view: 'overview', label: 'Executive Overview', icon: 'overview', pillCls: 'brass', pillFn: () => 'Live' },
-        { view: 'entities', label: 'Entity Comparison', icon: 'entities', pillFn: u => `${allowedCompanyNames(u).length} BUs` },
-        { view: 'sentinels', label: 'AI Sentinels & Audit', icon: 'sentinels', pillCls: (_u, _k, sn) => (sn ? 'brass' : ''), pillFn: (_u, _k, sn) => String(sn != null ? sn : 0) }
+        { view: 'overview', label: 'Executive Overview', icon: 'overview' },
+        { view: 'entities', label: 'Entity Comparison', icon: 'entities' },
+        { view: 'sentinels', label: 'AI Sentinels & Audit', icon: 'sentinels', badgeFn: (u, _k, sn) => getSentinelExceptionBadge(u, sn) }
       ]
     },
     {
@@ -4322,8 +4359,8 @@
       title: HUB_TITLES.reports,
       group: 'exec',
       tabs: [
-        { view: 'pbi', label: 'Analytics & Insights', icon: 'pbi', pillCls: 'brass', pillFn: u => `${(window.MFG_PBI && Array.isArray(window.MFG_PBI.PBI_PAGES)) ? window.MFG_PBI.PBI_PAGES.filter(p => canAccessPbiPage(p.id, u)).length : 12} Pages` },
-        { view: 'statements', label: 'Statements & Reports', icon: 'statements', pillCls: 'brass', pillFn: u => `${(window.MFG_RDL && Array.isArray(window.MFG_RDL.RDL_CATALOG)) ? window.MFG_RDL.RDL_CATALOG.filter(r => canAccessRdlReport(r, u)).length : 22} A4` }
+        { view: 'pbi', label: 'Analytics & Insights', icon: 'pbi' },
+        { view: 'statements', label: 'Statements & Reports', icon: 'statements' }
       ]
     },
     {
@@ -4331,9 +4368,9 @@
       title: HUB_TITLES.sales,
       group: 'dispatch',
       tabs: [
-        { view: 'sales', match: ['sales', 'sales_analytics'], label: 'Sales & Deliveries', icon: 'sales', pillFn: (_u, k) => (k && k.loads != null ? fmtNum(k.loads) : '') },
-        { view: 'customers', match: ['customers', 'ar', 'sales_vat'], label: 'Customers & Receivables', icon: 'customers', pillFn: (_u, k) => (k && k.ar_balance != null ? fmtUSDk(k.ar_balance) : '') },
-        { view: 'pricing', label: 'Pricing & Commissions', icon: 'pricing', pillFn: (_u, k) => (k && k.active_agreements != null ? fmtNum(k.active_agreements) : '') }
+        { view: 'sales', match: ['sales', 'sales_analytics'], label: 'Sales & Deliveries', icon: 'sales' },
+        { view: 'customers', match: ['customers', 'ar', 'sales_vat'], label: 'Customers & Receivables', icon: 'customers' },
+        { view: 'pricing', label: 'Pricing & Commissions', icon: 'pricing' }
       ]
     },
     {
@@ -4341,8 +4378,8 @@
       title: HUB_TITLES.raw,
       group: 'dispatch',
       tabs: [
-        { view: 'raw', label: 'Material & Transportation', icon: 'raw', pillFn: (_u, k) => (k && k.raw_loads != null ? fmtNum(k.raw_loads) : '') },
-        { view: 'raw_analytics', label: 'JV & Stock Analytics', icon: 'raw_analytics', pillCls: 'brass', pillFn: () => 'Analytics' }
+        { view: 'raw', label: 'Material & Transportation', icon: 'raw' },
+        { view: 'raw_analytics', label: 'JV & Stock Analytics', icon: 'raw_analytics' }
       ]
     },
     {
@@ -4350,10 +4387,10 @@
       title: HUB_TITLES.fleet,
       group: 'dispatch',
       tabs: [
-        { view: 'fleet', label: 'Diesel & Lubricants', icon: 'fleet', pillFn: () => fmtNum(filterRecords(SEED.records.fuel_intakes || []).length) },
-        { view: 'fleet_equip', label: 'Fleet & Running Costs', icon: 'fleet_equip', pillFn: (_u, k) => (k && k.active_equip != null ? fmtNum(k.active_equip) : '') },
-        { view: 'fleet_maint', label: 'Defects & Parts', icon: 'fleet_maint', pillCls: () => { const mi = getMaintIndex(); return mi.openCritCount > 0 ? 'crit' : (mi.openCount > 0 ? 'brass' : ''); }, pillFn: () => { const mi = getMaintIndex(); return mi.openCount > 0 ? `${fmtNum(mi.openCount)} Open` : (mi.partTotalCount > 0 ? `${fmtNum(mi.partTotalCount)} Parts` : 'Healthy'); } },
-        { view: 'fleet_drivers', match: ['fleet_drivers', 'fleet_analytics'], label: 'Drivers & Overtime', icon: 'fleet_drivers', pillFn: (_u, k) => (k && Number(k.overtime_bonus || 0) > 0 ? fmtUSDk(k.overtime_bonus) : fmtNum(filterRecords(SEED.records.company_drivers || [], { ignorePeriod: true }).length) + ' Drv') }
+        { view: 'fleet', label: 'Diesel & Lubricants', icon: 'fleet' },
+        { view: 'fleet_equip', label: 'Fleet & Running Costs', icon: 'fleet_equip' },
+        { view: 'fleet_maint', label: 'Defects & Parts', icon: 'fleet_maint', badgeFn: u => getFleetExceptionBadge(u) },
+        { view: 'fleet_drivers', match: ['fleet_drivers', 'fleet_analytics'], label: 'Drivers & Overtime', icon: 'fleet_drivers' }
       ]
     },
     {
@@ -4361,7 +4398,7 @@
       title: HUB_TITLES.kiosks,
       group: 'dispatch',
       tabs: [
-        { view: 'kiosks', label: 'Plant Kiosks', icon: 'kiosks', pillCls: 'brass', pillFn: () => '4 Kiosks' }
+        { view: 'kiosks', label: 'Plant Kiosks', icon: 'kiosks' }
       ]
     },
     {
@@ -4369,9 +4406,9 @@
       title: HUB_TITLES.expenses,
       group: 'books',
       tabs: [
-        { view: 'expenses', label: 'Expenses & Overhead', icon: 'expenses', pillFn: (_u, k) => (k && k.expenses != null ? fmtUSDk(k.expenses) : '') },
-        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers', pillFn: (_u, k) => (k && k.ap_balance != null ? fmtUSDk(k.ap_balance) : '3 Legs') },
-        { view: 'expenses_analytics', label: 'Overhead Analytics', icon: 'expenses_analytics', pillCls: 'brass', pillFn: () => 'Analytics' }
+        { view: 'expenses', label: 'Expenses & Overhead', icon: 'expenses' },
+        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers' },
+        { view: 'expenses_analytics', label: 'Overhead Analytics', icon: 'expenses_analytics' }
       ]
     },
     {
@@ -4379,10 +4416,10 @@
       title: HUB_TITLES.cashflow,
       group: 'books',
       tabs: [
-        { view: 'cashflow', match: ['cashflow', 'cashflow_analytics'], label: 'Cash Flow & Till', icon: 'cashflow', pillFn: (_u, k) => (k ? fmtTillPair(k.cash_till_usd, k.cash_till_lbp, true) : '') },
-        { view: 'external', label: 'External Entries', icon: 'external', pillFn: () => fmtNum(filterRecords(SEED.records.external_movements || []).length) },
-        { view: 'ledger_treasury', label: 'Loans & Settlements', icon: 'ledger_treasury', pillFn: () => fmtNum(filterRecords(SEED.records.loans || [], { ignorePeriod: true }).length) },
-        { view: 'conversions', label: 'FX Conversions', icon: 'conversions', pillFn: () => fmtNum(filterRecords(SEED.records.conversions || []).length) }
+        { view: 'cashflow', match: ['cashflow', 'cashflow_analytics'], label: 'Cash Flow & Till', icon: 'cashflow' },
+        { view: 'external', label: 'External Entries', icon: 'external' },
+        { view: 'ledger_treasury', label: 'Loans & Settlements', icon: 'ledger_treasury' },
+        { view: 'conversions', label: 'FX Conversions', icon: 'conversions' }
       ]
     },
     {
@@ -4390,10 +4427,10 @@
       title: HUB_TITLES.payroll,
       group: 'books',
       tabs: [
-        { view: 'payroll', match: ['payroll', 'payroll_analytics'], label: 'Payroll & Workforce', icon: 'payroll', pillFn: (_u, k) => (k && k.salaries_paid != null ? fmtUSDk(k.salaries_paid) : '') },
-        { view: 'workforce_map', label: 'Daily Plant & Machine Map', icon: 'workforce_map', pillCls: 'brass', pillFn: () => { const d = buildWorkforceMapData(); return d && d.daySummary ? `${d.daySummary.plantCount + d.daySummary.extCount} On · ${d.daySummary.absCount} Abs` : 'Live Map'; } },
-        { view: 'payroll_attendance', label: 'Attendance & Overtime', icon: 'payroll_attendance', pillFn: () => fmtNum(filterRecords(SEED.records.attendance).length) },
-        { view: 'payroll_contracts', label: 'Contracts & Allowances', icon: 'payroll_contracts', pillFn: () => fmtNum(filterRecords(SEED.records.employments, { ignorePeriod: true }).length) }
+        { view: 'payroll', match: ['payroll', 'payroll_analytics'], label: 'Payroll & Workforce', icon: 'payroll' },
+        { view: 'workforce_map', label: 'Daily Plant & Machine Map', icon: 'workforce_map', badgeFn: u => getWorkforceMapExceptionBadge(u) },
+        { view: 'payroll_attendance', label: 'Attendance & Overtime', icon: 'payroll_attendance' },
+        { view: 'payroll_contracts', label: 'Contracts & Allowances', icon: 'payroll_contracts' }
       ]
     },
     {
@@ -4401,8 +4438,8 @@
       title: HUB_TITLES.ledger,
       group: 'books',
       tabs: [
-        { view: 'ledger', match: ['ledger', 'gl'], label: 'General Ledger & SOA', icon: 'ledger', pillFn: (_u, k) => (k && k.tb_check != null && Math.abs(Number(k.tb_check)) < 0.005 ? 'TB $0' : '') },
-        { view: 'coa_classes', label: 'Chart of Accounts & Classes', icon: 'coa_classes', pillCls: 'brass', pillFn: () => `${fmtNum((getModel().gl_tb || []).length)} Accts` }
+        { view: 'ledger', match: ['ledger', 'gl'], label: 'General Ledger & SOA', icon: 'ledger', badgeFn: (u, k) => getLedgerExceptionBadge(u, k) },
+        { view: 'coa_classes', label: 'Chart of Accounts & Classes', icon: 'coa_classes' }
       ]
     },
     {
@@ -4410,11 +4447,11 @@
       title: HUB_TITLES.master,
       group: 'master',
       tabs: [
-        { view: 'reg_customers', match: ['reg_customers', 'reg_products'], label: 'Customers & Products', icon: 'reg_customers', universal: true, pillCls: 'univ', pillFn: () => 'All BUs' },
-        { view: 'reg_suppliers', match: ['reg_suppliers', 'reg_categories'], label: 'Suppliers & Categories', icon: 'reg_suppliers', universal: true, pillCls: 'univ', pillFn: () => 'All BUs' },
-        { view: 'reg_sites', match: ['reg_sites', 'reg_regions'], label: 'Sites & Regions', icon: 'reg_sites', universal: true, pillCls: 'univ', pillFn: () => 'All BUs' },
-        { view: 'reg_equipment', match: ['reg_equipment', 'reg_drivers'], label: 'Equipment & Drivers', icon: 'reg_equipment', universal: true, pillCls: 'univ', pillFn: () => 'All BUs' },
-        { view: 'tables', label: 'Tables & Registers', icon: 'tables', pillFn: u => String((window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) ? window.MFG_PBI.TABLE_CATALOG.filter(t => canAccessTable(t.key, u)).length : 36) }
+        { view: 'reg_customers', match: ['reg_customers', 'reg_products'], label: 'Customers & Products', icon: 'reg_customers', universal: true },
+        { view: 'reg_suppliers', match: ['reg_suppliers', 'reg_categories'], label: 'Suppliers & Categories', icon: 'reg_suppliers', universal: true },
+        { view: 'reg_sites', match: ['reg_sites', 'reg_regions'], label: 'Sites & Regions', icon: 'reg_sites', universal: true },
+        { view: 'reg_equipment', match: ['reg_equipment', 'reg_drivers'], label: 'Equipment & Drivers', icon: 'reg_equipment', universal: true },
+        { view: 'tables', label: 'Tables & Registers', icon: 'tables' }
       ]
     },
     {
@@ -4422,7 +4459,7 @@
       title: HUB_TITLES.users,
       group: 'master',
       tabs: [
-        { view: 'users', label: 'Users & Security', icon: 'users', pillCls: 'brass', pillFn: () => `${STATE.users.length} Seats` }
+        { view: 'users', label: 'Users & Security', icon: 'users' }
       ]
     }
   ];
@@ -17226,7 +17263,6 @@
           <a href="${esc(showcaseHref)}" class="btn btn-brass system-showcase-btn" id="railShowcaseLink" aria-label="Public Showcase">
             <i class="nav-ico" aria-hidden="true">${ic('showcase')}</i>
             <span>Public Showcase</span>
-            <em class="nav-pill brass">Web</em>
           </a>
         </div>
       </div>
@@ -27510,9 +27546,8 @@
     const hubsInGroup = HUB_CATALOG.filter(h => h.group === group && canViewHub(h.id, user));
     el.innerHTML = hubsInGroup.map(h => {
       const on = h.id === activeHubId;
-      const firstTab = h.tabs.find(t => canViewView(t.view, user)) || h.tabs[0];
-      const rawPill = firstTab && typeof firstTab.pillFn === 'function' ? firstTab.pillFn(user, k, sentinelsOpen) : '';
-      return `<button type="button" class="m-subnav-pill${on ? ' on' : ''}" data-subnav-hub="${esc(h.id)}" data-subnav-view="${esc(resolveHubView(h.id, user))}" title="${esc(h.title)}"><i class="m-subnav-ico" aria-hidden="true">${ic(h.id)}</i><span>${esc(h.title)}</span>${rawPill ? `<em>${esc(rawPill)}</em>` : ''}</button>`;
+      const badge = getHubExceptionBadge(h.id, user, k, sentinelsOpen);
+      return `<button type="button" class="m-subnav-pill${on ? ' on' : ''}" data-subnav-hub="${esc(h.id)}" data-subnav-view="${esc(resolveHubView(h.id, user))}" title="${esc(h.title)}"><i class="m-subnav-ico" aria-hidden="true">${ic(h.id)}</i><span>${esc(h.title)}</span>${badge ? `<em class="${esc(badge.cls)}">${esc(badge.text)}</em>` : ''}</button>`;
     }).join('');
     el.querySelectorAll('[data-subnav-hub]').forEach(btn => btn.addEventListener('click', () => clickHub(btn.getAttribute('data-subnav-hub'))));
 
@@ -27550,9 +27585,8 @@
       const lbl = (isActive && !UNIV_VIEW_TO_TABLE_KEY[STATE.view] && VIEW_TITLES[STATE.view])
         ? VIEW_TITLES[STATE.view]
         : (t.shortLabel || t.label || VIEW_TITLES[t.view] || t.view);
-      const rawPill = typeof t.pillFn === 'function' ? t.pillFn(user, k, sentinelsOpen) : (t.pill || '');
-      const pCls = typeof t.pillCls === 'function' ? t.pillCls(user, k, sentinelsOpen) : (t.pillCls || '');
-      const pillHtml = rawPill ? `<em class="hub-subtab-pill${pCls ? ' ' + pCls : ''}">${esc(rawPill)}</em>` : '';
+      const badge = typeof t.badgeFn === 'function' ? t.badgeFn(user, k, sentinelsOpen) : null;
+      const pillHtml = badge && badge.text ? `<em class="hub-subtab-pill${badge.cls ? ' ' + badge.cls : ''}">${esc(badge.text)}</em>` : '';
       return `<button type="button" class="hub-subtab${isActive ? ' active' : ''}" data-hub-subtab="${esc(t.view)}" aria-current="${isActive ? 'page' : 'false'}"><i class="nav-ico" aria-hidden="true">${ic(t.icon || t.view)}</i><span class="hub-subtab-lbl">${esc(lbl)}</span>${pillHtml}</button>`;
     }).join('');
     return `<nav class="hub-subtab-bar no-print" id="hubSubtabBar" data-parent-hub="${esc(hubId)}" aria-label="${esc(hubDef.title)} Sub-Views">${pillsHtml}</nav>`;
@@ -29042,34 +29076,24 @@
     document.querySelectorAll('#basisSwitch .basis-btn').forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-basis') === STATE.basis));
     syncTopbarDateControls();
 
-    // Rail badges follow the active scope
-    const setPill = (id, text) => { const el = $(id); if (el) el.textContent = text; };
+    // Rail badges: clean by default; surface semantic .warn / .crit pills strictly on actionable exceptions
     const sentinelsOpen = buildSentinelItems().filter(s => s.severity !== 'ok').length;
-    const pbiNavCount = (window.MFG_PBI && Array.isArray(window.MFG_PBI.PBI_PAGES)) ? window.MFG_PBI.PBI_PAGES.filter(p => canAccessPbiPage(p.id, user)).length : 12;
-    const rdlNavCount = (window.MFG_RDL && Array.isArray(window.MFG_RDL.RDL_CATALOG)) ? window.MFG_RDL.RDL_CATALOG.filter(r => canAccessRdlReport(r, user)).length : 22;
-    const tblNavCount = (window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) ? window.MFG_PBI.TABLE_CATALOG.filter(t => canAccessTable(t.key, user)).length : 36;
-    setPill('navCountPbi', `${pbiNavCount} Pages`);
-    setPill('navCountReports', `${pbiNavCount} · ${rdlNavCount} A4`);
-    setPill('navCountTables', String(tblNavCount));
-    setPill('navCountSales', k.loads != null ? fmtNum(k.loads) : '—');
-    setPill('navCountRaw', k.raw_loads != null ? fmtNum(k.raw_loads) : '—');
-    setPill('navCountFleet', fmtNum(filterRecords(SEED.records.fuel_intakes || []).length));
-    setPill('navCountPricing', k.active_agreements != null ? fmtNum(k.active_agreements) : '—');
-    setPill('navCountTill', fmtTillPair(k.cash_till_usd, k.cash_till_lbp, true));
-    setPill('navCountAR', k.ar_balance != null ? fmtUSDk(k.ar_balance) : '—');
-    setPill('navCountAP', k.ap_balance != null ? fmtUSDk(k.ap_balance) : '3 Legs');
-    setPill('navCountExp', k.expenses != null ? fmtUSDk(k.expenses) : '—');
-    setPill('navCountPayroll', k.salaries_paid != null ? fmtUSDk(k.salaries_paid) : fmtNum(SEED.records.employments.length));
-    setPill('navCountSentinels', String(sentinelsOpen));
-    setPill('navCountUsers', `${STATE.users.length} Seats`);
-    const tbPill = $('navCountTB');
-    if (tbPill) {
-      const tb = Number(k.tb_check);
-      tbPill.textContent = k.tb_check == null ? 'TB —' : (Math.abs(tb) < 0.005 ? 'TB $0' : 'TB ' + fmtUSDk(tb));
-      tbPill.className = 'nav-pill ' + (k.tb_check == null ? '' : (Math.abs(tb) < 0.005 ? 'good' : 'brass'));
-    }
-    const snPill = $('navCountSentinels');
-    if (snPill) snPill.className = 'nav-pill ' + (sentinelsOpen ? 'brass' : 'good');
+    const setExceptionPill = (id, badge) => {
+      const el = $(id);
+      if (!el) return;
+      if (badge && badge.text) {
+        el.textContent = badge.text;
+        el.className = 'nav-pill' + (badge.cls ? ' ' + badge.cls : '');
+        el.hidden = false;
+      } else {
+        el.textContent = '';
+        el.className = 'nav-pill';
+        el.hidden = true;
+      }
+    };
+    setExceptionPill('navCountOverview', getHubExceptionBadge('overview', user, k, sentinelsOpen));
+    setExceptionPill('navCountFleet', getHubExceptionBadge('fleet', user, k, sentinelsOpen));
+    setExceptionPill('navCountTB', getHubExceptionBadge('ledger', user, k, sentinelsOpen));
 
     renderMobileSubnav(user, k, sentinelsOpen);
 
