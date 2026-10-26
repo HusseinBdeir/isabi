@@ -8446,6 +8446,58 @@
           </div>
         </div>
 
+        <div class="panel-card" id="rawSalesHaulPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div class="panel-title"><span>THIRD-PARTY CUSTOMER-SITE TRANSPORTATION REGISTER (SALES DELIVERIES BY HAULER)</span></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <div class="chip-bar">${shChip('all', `All (${salesHaulBase.length})`)}${shChip('credit', `Credit (${shCredCnt})`)}${shChip('cash', `Cash (${shCashCnt})`)}</div>
+              <span class="panel-meta">${exportBtn('rawSalesHaulPanel', 'ThirdParty_Customer_Haulage')}</span>
+            </div>
+          </div>
+          ${renderColFilterBar('saleshaul')}
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  ${th('saleshaul', 'Date', 'date')}${th('saleshaul', 'Ticket #', 'ticket_no')}${th('saleshaul', 'Co.', 'company')}${th('saleshaul', 'Customer', 'customer')}
+                  ${th('saleshaul', 'Customer Site', 'site')}${th('saleshaul', 'Hauler', 'truck_owner')}${th('saleshaul', 'Truck / Driver', 'truck', 'th-truck-drv')}
+                  ${th('saleshaul', 'Product', 'product')}${th('saleshaul', 'Qty', 'qty', 'r')}${th('saleshaul', 'Haulage ($)', 'trans_price', 'r')}${th('saleshaul', 'Method', 'method')}
+                </tr>
+              </thead>
+              <tbody>
+                ${shownSalesHaul.map(r => {
+                  const sgn = ticketSign(r);
+                  const tp = sgn * Number(r.trans_price || 0);
+                  return `
+                  <tr class="rrow" data-rkey="sales_tickets" data-rid="${esc(r.id)}">
+                    <td class="mono">${esc(recordDateDMY(r))}${appCell(r, 'sales_tickets')}</td>
+                    <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button></span></td>
+                    <td>${coBadge(r.company)}</td>
+                    <td>${relLink('customers', r.customer, r.customer, true)}</td>
+                    <td>${r.site ? relLink('sites', r.site) : '—'}</td>
+                    <td>${r.truck_owner ? relLink('suppliers', r.truck_owner) : '—'}</td>
+                    <td class="td-truck-drv"><span class="mono">${r.truck ? relLink('equipment', r.truck) : '3rd-party'}</span>${r.driver ? `<div class="drv-sub">${relLink('drivers', r.driver)}</div>` : ''}</td>
+                    <td>${relLink('products', r.product)}</td>
+                    <td class="r">${fmtTicketQtyCell(r, sgn, true)}</td>
+                    <td class="r"><strong>${fmtUSD(tp, 2)}</strong></td>
+                    <td>${methodBadge(r.method, sgn)}</td>
+                  </tr>
+                  `;
+                }).join('') || emptyRow(11, qRaw ? `No 3rd-party customer haulage tickets match "${STATE.search}".` : 'No 3rd-party customer-site transportation tickets in this period')}
+                ${showMoreRow('saleshaul', salesHaulRows.length, 11)}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="8"><b>TOTAL (${fmtNum(salesHaulRows.length)} LOADS · Credit ${fmtUSD(shSumCreditAmt, 2)})</b></td>
+                  <td class="r"><b>${fmtNum(shSumQty, 0)} m³</b></td>
+                  <td class="r"><b>${fmtUSD(shSumAmt, 2)}</b></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
         <div class="panel-card" id="rawSupPanel">
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div class="panel-title"><span>SUPPLIER &amp; HAULER MATERIAL, TRANSPORTATION &amp; REMAINING EXPENSES</span></div>
@@ -8495,58 +8547,6 @@
                   <td class="r"><b>${fmtUSD(supSumCred, 2)}</b></td>
                   <td class="r"><b>${fmtUSD(supSumPaid, 2)}</b></td>
                   <td class="r"><b>${fmtUSD(supSumRem, 2)}</b></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-
-        <div class="panel-card" id="rawSalesHaulPanel">
-          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
-            <div class="panel-title"><span>THIRD-PARTY CUSTOMER-SITE TRANSPORTATION REGISTER (SALES DELIVERIES BY HAULER)</span></div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <div class="chip-bar">${shChip('all', `All (${salesHaulBase.length})`)}${shChip('credit', `Credit (${shCredCnt})`)}${shChip('cash', `Cash (${shCashCnt})`)}</div>
-              <span class="panel-meta">${exportBtn('rawSalesHaulPanel', 'ThirdParty_Customer_Haulage')}</span>
-            </div>
-          </div>
-          ${renderColFilterBar('saleshaul')}
-          <div class="table-wrap">
-            <table class="ledger-table">
-              <thead>
-                <tr>
-                  ${th('saleshaul', 'Date', 'date')}${th('saleshaul', 'Ticket #', 'ticket_no')}${th('saleshaul', 'Co.', 'company')}${th('saleshaul', 'Customer', 'customer')}
-                  ${th('saleshaul', 'Customer Site', 'site')}${th('saleshaul', 'Hauler', 'truck_owner')}${th('saleshaul', 'Truck / Driver', 'truck', 'th-truck-drv')}
-                  ${th('saleshaul', 'Product', 'product')}${th('saleshaul', 'Qty', 'qty', 'r')}${th('saleshaul', 'Haulage ($)', 'trans_price', 'r')}${th('saleshaul', 'Method', 'method')}
-                </tr>
-              </thead>
-              <tbody>
-                ${shownSalesHaul.map(r => {
-                  const sgn = ticketSign(r);
-                  const tp = sgn * Number(r.trans_price || 0);
-                  return `
-                  <tr class="rrow" data-rkey="sales_tickets" data-rid="${esc(r.id)}">
-                    <td class="mono">${esc(recordDateDMY(r))}${appCell(r, 'sales_tickets')}</td>
-                    <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button></span></td>
-                    <td>${coBadge(r.company)}</td>
-                    <td>${relLink('customers', r.customer, r.customer, true)}</td>
-                    <td>${r.site ? relLink('sites', r.site) : '—'}</td>
-                    <td>${r.truck_owner ? relLink('suppliers', r.truck_owner) : '—'}</td>
-                    <td class="td-truck-drv"><span class="mono">${r.truck ? relLink('equipment', r.truck) : '3rd-party'}</span>${r.driver ? `<div class="drv-sub">${relLink('drivers', r.driver)}</div>` : ''}</td>
-                    <td>${relLink('products', r.product)}</td>
-                    <td class="r">${fmtTicketQtyCell(r, sgn, true)}</td>
-                    <td class="r"><strong>${fmtUSD(tp, 2)}</strong></td>
-                    <td>${methodBadge(r.method, sgn)}</td>
-                  </tr>
-                  `;
-                }).join('') || emptyRow(11, qRaw ? `No 3rd-party customer haulage tickets match "${STATE.search}".` : 'No 3rd-party customer-site transportation tickets in this period')}
-                ${showMoreRow('saleshaul', salesHaulRows.length, 11)}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colspan="8"><b>TOTAL (${fmtNum(salesHaulRows.length)} LOADS · Credit ${fmtUSD(shSumCreditAmt, 2)})</b></td>
-                  <td class="r"><b>${fmtNum(shSumQty, 0)} m³</b></td>
-                  <td class="r"><b>${fmtUSD(shSumAmt, 2)}</b></td>
-                  <td></td>
                 </tr>
               </tfoot>
             </table>

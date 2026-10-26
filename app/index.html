@@ -12,7 +12,7 @@
       if (location.hostname === 'husseinbdeir.github.io' && /^\/mfg-web(\/|$)/.test(location.pathname) && !/[?&]noredirect=1\b/.test(location.search)) {
         location.replace('https://husseinbdeir.github.io/isabi/app/' + (location.search || '') + (location.hash || ''));
       }
-      window.__MFG_SHELL_VER = '18.9.2';
+      window.__MFG_SHELL_VER = '18.9.2.1';
       var t = localStorage.getItem('isabi_mfg_theme');
       if (t === 'dark' || t === 'light') { document.documentElement.setAttribute('data-theme', t); var tm = document.querySelector('meta[name="theme-color"]'); if (tm) tm.setAttribute('content', t === 'dark' ? '#081124' : '#F4F2EE'); }
       var rw = parseInt(localStorage.getItem('isabi_mfg_rail_width'), 10);
@@ -39,7 +39,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap"></noscript>
-  <link rel="stylesheet" href="css/app.css?v=18.9.2">
+  <link rel="stylesheet" href="css/app.css?v=18.9.2.1">
 </head>
 <body class="locked">
   <div class="app-shell" id="appShell">
@@ -577,16 +577,16 @@
   <!-- Toast Notification -->
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script defer src="js/face.js?v=18.9.2"></script>
-  <script defer src="js/endpoints.js?v=18.9.2"></script>
-  <script defer src="js/seed_manifest.js?v=18.9.2"></script>
-  <script defer src="js/icons.js?v=18.9.2"></script>
-  <script defer src="js/forms_engine.js?v=18.9.2"></script>
-  <script defer src="js/pbi_pages.js?v=18.9.2"></script>
-  <script defer src="js/rdl_reports.js?v=18.9.2"></script>
-  <script defer src="js/kiosk_print.js?v=18.9.2"></script>
-  <script defer src="js/table_columns.js?v=18.9.2"></script>
-  <script defer src="js/app.js?v=18.9.2"></script>
+  <script defer src="js/face.js?v=18.9.2.1"></script>
+  <script defer src="js/endpoints.js?v=18.9.2.1"></script>
+  <script defer src="js/seed_manifest.js?v=18.9.2.1"></script>
+  <script defer src="js/icons.js?v=18.9.2.1"></script>
+  <script defer src="js/forms_engine.js?v=18.9.2.1"></script>
+  <script defer src="js/pbi_pages.js?v=18.9.2.1"></script>
+  <script defer src="js/rdl_reports.js?v=18.9.2.1"></script>
+  <script defer src="js/kiosk_print.js?v=18.9.2.1"></script>
+  <script defer src="js/table_columns.js?v=18.9.2.1"></script>
+  <script defer src="js/app.js?v=18.9.2.1"></script>
   <script>
     window.addEventListener('load', () => {
       // Load Google Fonts after window.load so webfont fetches never spin Chrome's tab loading indicator
