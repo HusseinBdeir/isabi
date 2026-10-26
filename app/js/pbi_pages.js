@@ -1071,6 +1071,9 @@
     const legendHtml = (opts.legend && opts.legend.length)
       ? `<div class="pbi-legend">${opts.legend.map(l => `<span><i class="${l.line ? 'line' : ''}" style="background:${esc(l.color)}"></i>${esc(l.label)}</span>`).join('')}</div>`
       : (opts.meta ? `<span class="panel-meta">${opts.meta}</span>` : '');
+    const rightSideHtml = opts.headerRight
+      ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end">${opts.headerRight}${legendHtml}</div>`
+      : legendHtml;
     return `
       <div class="pbi-panel" ${opts.id ? `id="${esc(opts.id)}"` : ''}>
         <div class="pbi-panel-hdr">
@@ -1078,7 +1081,7 @@
             <div class="pbi-panel-title">${esc(title)}</div>
             ${opts.subtitle ? `<span class="pbi-panel-sub">${esc(opts.subtitle)}</span>` : ''}
           </div>
-          ${legendHtml}
+          ${rightSideHtml}
         </div>
         ${bodyHtml}
       </div>
@@ -1291,23 +1294,33 @@
   function buildSignedColumnSvg(items, opts = {}) {
     const data = items || [];
     if (!data.length) return `<div style="padding:24px;text-align:center;color:var(--muted);font-size:12px">No bucket data</div>`;
+    const readVal = d => Number(d && (d.value != null ? d.value : d.val) || 0);
     const W = opts.width || 580, H = opts.height || 235, padL = 54, padR = 18, padT = 26, padB = 36;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const isMoney = opts.isMoney !== false;
     let maxPos = 0, minNeg = 0, totPos = 0;
     data.forEach(d => {
-      const v = Number(d.value || 0);
+      const v = readVal(d);
       if (v > maxPos) maxPos = v;
       if (v < minNeg) minNeg = v;
       if (v > 0) totPos += v;
     });
-    if (maxPos === 0 && minNeg === 0) maxPos = 1;
+    const allZero = maxPos === 0 && minNeg === 0;
+    if (allZero) maxPos = 100;
     maxPos *= 1.18;
     minNeg *= 1.22;
     const span = Math.max(1, maxPos - minNeg);
     const zeroY = padT + (maxPos / span) * plotH;
 
-    const ticks = [minNeg, minNeg / 2, 0, maxPos / 2, maxPos].filter((v, i, a) => a.indexOf(v) === i && Math.abs(v) > 0.01 || v === 0);
+    const rawTicks = allZero ? [0] : [minNeg, minNeg / 2, 0, maxPos / 2, maxPos].filter((v, i, a) => a.indexOf(v) === i && (Math.abs(v) > 0.01 || v === 0));
+    const seenTickLbls = new Set();
+    const ticks = rawTicks.filter(v => {
+      const lbl = isMoney ? fmtUSDk(v) : fmtNum(v, 0);
+      if (Math.abs(v) < 0.001) { seenTickLbls.add(lbl); return true; }
+      if (seenTickLbls.has(lbl)) return false;
+      seenTickLbls.add(lbl);
+      return true;
+    });
     const grid = ticks.map(v => {
       const y = (padT + ((maxPos - v) / span) * plotH).toFixed(1);
       const isZero = Math.abs(v) < 0.001;
@@ -1318,7 +1331,7 @@
     const grpW = plotW / data.length;
     const barW = Math.min(54, Math.max(18, grpW * 0.56));
     const bars = data.map((d, i) => {
-      const v = Number(d.value || 0);
+      const v = readVal(d);
       const cx = padL + i * grpW + grpW / 2;
       const x = (cx - barW / 2).toFixed(1);
       const h = Math.max(Math.abs(v) > 0 ? 3 : 0, (Math.abs(v) / span) * plotH);
@@ -1328,14 +1341,15 @@
       const fullVal = isMoney ? fmtUSD(v, 2) : fmtNum(v, 2);
       const lblY = v >= 0 ? Math.max(12, y - 5) : Math.min(H - 22, y + h + 12);
       const shareStr = (v > 0 && totPos > 0 && data.length > 1)
-        ? `${((v / totPos) * 100).toFixed(1)}% of positive`
-        : (v < -0.005 ? 'Credit / On Account' : 'Balanced');
+        ? `${((v / totPos) * 100).toFixed(1)}% of gross owing`
+        : (v < -0.005 ? 'Customer Advance (On Acct)' : 'Balanced');
       const popRows = [
         { label: d.sub || d.label || 'Bucket Balance', value: fullVal, color, tone: v < -0.005 ? 'crit' : '' }
       ];
-      if (d.count != null) popRows.push({ label: 'Records / Counterparties', value: fmtNum(d.count, 0) });
+      if (d.count != null) popRows.push({ label: d.countLabel || 'Customers in Bucket', value: fmtNum(d.count, 0) });
+      if (Array.isArray(d.extraRows)) d.extraRows.forEach(er => { if (er && er.label) popRows.push(er); });
       const popSpec = {
-        title: String(d.label || 'Bucket'),
+        title: String(d.title || d.label || 'Bucket'),
         badge: shareStr,
         badgeTone: v < -0.005 ? 'crit' : (Math.abs(v) < 0.005 ? 'good' : ''),
         rows: popRows
@@ -1349,8 +1363,11 @@
         </g>
       `;
     }).join('');
+    const zeroNote = allZero
+      ? `<text x="${(padL + plotW / 2).toFixed(1)}" y="${(padT + plotH * 0.48).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="500" fill="var(--muted)">No open receivable balances for active scope</text>`
+      : '';
 
-    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">${grid}${bars}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px;display:block">${grid}${zeroNote}${bars}</svg>`;
   }
 
   // 7. Multi-Line Trend Chart (e.g. P04 Realised price per unit by month — top material products, P08 Unit economics, P14 Cash till)
@@ -4067,20 +4084,42 @@
       const vatCollected = Math.max(0, Number(k.sales_vat || 0) - Number(k.vat_receivable || 0));
       const inputVat = setRows.reduce((a, s) => isVatMethod(String(s.method || '').trim()) ? a + Number(s.amount || 0) + Number(s.discount || 0) : a, 0);
 
-      // Quarterly VAT summary
+      // Real ledger-backed monthly & quarterly VAT settlements (zero synthetic expense multipliers)
+      const inVatByYm = new Map();
+      filterRecords(rec.settlements, { ignorePeriod: true, ignoreSearch: true }).filter(matchCommon).forEach(s => {
+        if (!isVatMethod(String(s.method || '').trim())) return;
+        const ymKey = recDateForBasis(s).slice(0, 7).replace('-', '');
+        if (ymKey.length === 6) inVatByYm.set(ymKey, round2((inVatByYm.get(ymKey) || 0) + Number(s.amount || 0) + Number(s.discount || 0)));
+      });
+      const collVatByYm = new Map();
+      filterRecords(rec.receipts, { ignorePeriod: true, ignoreSearch: true }).filter(matchCommon).forEach(r => {
+        const mth = String(r.method || '').trim();
+        if (!isVatMethod(mth) && mth !== 'VATRent') return;
+        const ymKey = recDateForBasis(r).slice(0, 7).replace('-', '');
+        if (ymKey.length === 6) collVatByYm.set(ymKey, round2((collVatByYm.get(ymKey) || 0) + Number(r.amount || 0) + Number(r.discount || 0)));
+      });
+      const vatMonths = months.map(mRow => {
+        const ym = String(mRow.YearMonthNo || '');
+        return {
+          ...mRow,
+          in_vat: round2(inVatByYm.get(ym) || 0),
+          coll_vat: round2(collVatByYm.get(ym) || 0)
+        };
+      });
       const qtrMap = new Map();
-      months.forEach(mRow => {
+      vatMonths.forEach(mRow => {
         const ym = String(mRow.YearMonthNo || '202601');
         const yr = ym.slice(0, 4);
         const mo = Number(ym.slice(4, 6) || 1);
         const q = `${yr} Q${Math.ceil(mo / 3)}`;
         const cur = qtrMap.get(q) || { Quarter: q, out_vat: 0, coll_vat: 0, in_vat: 0, net_vat: 0 };
         const ov = Number(mRow.sales_vat || 0);
-        const iv = round2(Number(mRow.expenses || 0) * 0.025);
-        cur.out_vat += ov;
-        cur.coll_vat += ov * 0.78;
-        cur.in_vat += iv;
-        cur.net_vat += (ov * 0.78 - iv);
+        const cv = Number(mRow.coll_vat || 0);
+        const iv = Number(mRow.in_vat || 0);
+        cur.out_vat = round2(cur.out_vat + ov);
+        cur.coll_vat = round2(cur.coll_vat + cv);
+        cur.in_vat = round2(cur.in_vat + iv);
+        cur.net_vat = round2(cur.net_vat + (cv - iv));
         qtrMap.set(q, cur);
       });
       const qtrRows = Array.from(qtrMap.values());
@@ -4092,8 +4131,8 @@
             { label: 'Net invoiced (ex-VAT)', value: fmtUSD(k.net_sales, 0), sub: 'Taxable + non-taxable base' },
             { label: 'VAT collected', value: fmtUSD(vatCollected, 2), sub: 'Tagged VAT + paid beyond net', tone: 'good' },
             { label: 'VAT due (customers)', value: fmtUSD(k.vat_receivable, 2), sub: '11% inside open customer AR', tone: 'warn' },
-            { label: 'Input VAT paid', value: fmtUSD(inputVat, 2), sub: 'Deductible VAT on expenses' },
-            { label: 'Net VAT position (cash)', value: fmtUSD(vatCollected - inputVat, 2), sub: 'Collected − Input paid', tone: 'brass' }
+            { label: 'Input VAT paid', value: fmtUSD(inputVat, 2), sub: 'Deductible VAT settlements' },
+            { label: 'Net VAT position (cash)', value: fmtUSD(vatCollected - inputVat, 2), sub: 'Collected minus Input paid', tone: 'brass' }
           ])}
           ${kpiBand('2 · VAT Invoice Headers & Ticket Linkage Hygiene', [
             { label: 'VAT invoices in register', value: fmtNum(vatInvRows.length), sub: 'Official MOF tax headers' },
@@ -4106,10 +4145,13 @@
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('Output vs input VAT by month', buildClusteredColumnSvg(months.map(r => ({ ...r, in_vat: round2(Number(r.expenses || 0) * 0.025) })), [
-            { key: 'sales_vat', label: 'Output VAT (11%)', color: C.navy },
-            { key: 'in_vat', label: 'Input VAT', color: C.steel }
-          ]), { legend: [{ label: 'Output VAT', color: C.navy }, { label: 'Input VAT', color: C.steel }] })}
+          ${pbiPanel('Output vs. Input VAT by month', buildClusteredColumnSvg(vatMonths, [
+            { key: 'sales_vat', label: 'Output VAT Invoiced', color: C.navy },
+            { key: 'in_vat', label: 'Input VAT Paid', color: C.steel }
+          ]), {
+            subtitle: 'Monthly 11% Output VAT invoiced (Account 4427) vs actual supplier VAT settlements paid',
+            legend: [{ label: 'Output VAT', color: C.navy }, { label: 'Input VAT Paid', color: C.steel }]
+          })}
 
           ${pbiTable('Quarterly VAT position', [
             { label: 'Year · Quarter', key: 'Quarter', bold: true, mono: true },
@@ -6341,27 +6383,53 @@
   function renderCustomersVisualsSection(ctx) {
     const months = (ctx && ctx.months) || [];
     const agingBuckets = (ctx && ctx.agingBuckets) || [];
+    const chartMode = (ctx && ctx.chartMode) === 'vat' ? 'vat' : 'collections';
+    const sumInfo = (ctx && ctx.arSummary) || null;
+    const agingSubtitle = sumInfo && (sumInfo.grossAr > 0 || sumInfo.advancesUsd > 0)
+      ? `Gross owing ${fmtUSDk(sumInfo.grossAr)} (${fmtNum(sumInfo.openCustCount, 0)} customers) minus ${fmtUSDk(sumInfo.advancesUsd)} customer advances (On Acct) = ${fmtUSDk(sumInfo.netAr)} Net Open AR`
+      : 'FIFO open receivables by aging bucket · On Acct (unapplied customer advances) shown below zero';
+    const modeSwitchHtml = `
+      <div class="cf-mode-switch" role="group" aria-label="Monthly Receivables Chart View">
+        <button type="button" class="cf-mode-btn ${chartMode === 'collections' ? 'active' : ''}" data-ar-chart-mode="collections">Credit vs. Receipts</button>
+        <button type="button" class="cf-mode-btn ${chartMode === 'vat' ? 'active' : ''}" data-ar-chart-mode="vat">11% Customer VAT</button>
+      </div>
+    `;
+    const rightPanelHtml = chartMode === 'vat'
+      ? pbiPanel('Monthly 11% Customer VAT · Invoiced vs. Collected ($)', buildClusteredColumnSvg(months, [
+          { key: 'sales_vat', label: 'Output VAT Invoiced (11%)', color: C.navy },
+          { key: 'vat_collected', label: 'VAT Collected (Receipts)', color: C.steel }
+        ]), {
+          subtitle: '11% Output VAT billed on IVA customers (Account 4427) vs actual VAT receipts collected from customers',
+          headerRight: modeSwitchHtml,
+          legend: [
+            { label: 'VAT Invoiced', color: C.navy },
+            { label: 'VAT Collected', color: C.steel }
+          ]
+        })
+      : pbiPanel('Monthly Credit Sales vs. Customer Receipts ($)', buildClusteredColumnSvg(months, [
+          { key: 'credit_sales', label: 'Credit Sales Billed', color: C.navy },
+          { key: 'receipts', label: 'Receipts Settled', color: C.steel }
+        ]), {
+          subtitle: 'Monthly credit billings vs customer settlements collected · Months where Receipts exceed Credit Sales reduce Open AR',
+          headerRight: modeSwitchHtml,
+          legend: [
+            { label: 'Credit Sales', color: C.navy },
+            { label: 'Receipts', color: C.steel }
+          ]
+        });
     return `
       <div class="pbi-grid-2" id="arVatChartsRow" style="margin-bottom:14px">
         ${pbiPanel('FIFO AR Aging by Bucket ($)', buildSignedColumnSvg(agingBuckets, { isMoney: true }), {
-          subtitle: 'FIFO open receivables by aging bucket · On account (unapplied customer advances) shown below zero',
+          subtitle: agingSubtitle,
           legend: [
-            { label: 'Current–30d', color: C.navy },
+            { label: 'Current', color: C.navy },
+            { label: '1–30d', color: C.steel },
             { label: '31–60d', color: C.brass },
             { label: '60+ Overdue', color: C.crit },
-            { label: 'On account', color: C.slate }
+            { label: 'On Acct', color: C.slate }
           ]
         })}
-        ${pbiPanel('Monthly Output vs. Input 11% VAT (Account 4427)', buildClusteredColumnSvg(months.map(r => ({ ...r, in_vat: round2(Number(r.expenses || 0) * 0.025) })), [
-          { key: 'sales_vat', label: 'Output VAT (11%)', color: C.navy },
-          { key: 'in_vat', label: 'Input VAT', color: C.steel }
-        ]), {
-          subtitle: 'Monthly 11% Output VAT invoiced on IVA customers vs deductible Input VAT',
-          legend: [
-            { label: 'Output VAT (11%)', color: C.navy },
-            { label: 'Input VAT', color: C.steel }
-          ]
-        })}
+        ${rightPanelHtml}
       </div>
     `;
   }

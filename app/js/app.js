@@ -132,6 +132,7 @@
     cfFocusYm: '',
     cfFocusParty: '',
     cfChartGrain: 'monthly',
+    arChartMode: 'collections',
     rawSupFilter: 'all',
     salesHaulFilter: 'all',
     salesPadFilter: 'all',
@@ -2750,6 +2751,7 @@
       { key: 'Customer', label: 'Customer' },
       { key: 'VAT Registered', label: 'VAT Reg' },
       { key: 'loads', label: 'Loads', kind: 'numeric' },
+      { key: 'ar_1_60', label: 'Past Due 1-60d ($)', kind: 'numeric' },
       { key: 'ar_60_plus', label: 'Overdue 60+ ($)', kind: 'numeric' },
       { key: 'ar_balance', label: 'Open AR ($)', kind: 'numeric' }
     ],
@@ -2959,7 +2961,7 @@
     const k = String(colKey || '');
     if (/^(cost_class|cost_bucket|working_days|assigned_trucks|trucksStr|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|shift_basis_lbl|display_type)$/i.test(k)) return false;
     if (isBooleanColKey(k)) return false;
-    return /price|cost|amount|total|vat_amount|^vat$|limit|salary|balance|remaining|haul|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|in_usd|out_usd|net_usd|open_usd|close_usd|in_lbp|out_lbp|net_lbp|close_lbp|close_combined|usd_delta|lbp_delta|^lbp$|entries_cnt|overtime_rate|ot_bonus|l_per_100km|flag_count|qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|trips|km_run|debit|credit|earnings|paid|base|ot_hrs|ot_pay|late_hrs|late_ded|absent_days|abs_ded|site_allow|ar_current|ar_60_plus|ap_material|ap_haulage|ap_expense|settlements_paid|sales_ttc|net_sum|tons_sold|qty_sold|trans_rev|tally|leave_days|extra_usd|payroll_impact_usd|unmatched_usd|vouchers|accrued|outstanding|paid_fifo|logs_cnt|ot_logs|late_logs|vac_days|sick_days|net_att_impact|reimbursement|deduction|overtime_multiplier/i.test(k);
+    return /price|cost|amount|total|vat_amount|^vat$|limit|salary|balance|remaining|haul|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|in_usd|out_usd|net_usd|open_usd|close_usd|in_lbp|out_lbp|net_lbp|close_lbp|close_combined|usd_delta|lbp_delta|^lbp$|entries_cnt|overtime_rate|ot_bonus|l_per_100km|flag_count|qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|trips|km_run|debit|credit|earnings|paid|base|ot_hrs|ot_pay|late_hrs|late_ded|absent_days|abs_ded|site_allow|ar_current|ar_1_60|ar_60_plus|ap_material|ap_haulage|ap_expense|settlements_paid|sales_ttc|net_sum|tons_sold|qty_sold|trans_rev|tally|leave_days|extra_usd|payroll_impact_usd|unmatched_usd|vouchers|accrued|outstanding|paid_fifo|logs_cnt|ot_logs|late_logs|vac_days|sick_days|net_att_impact|reimbursement|deduction|overtime_multiplier/i.test(k);
   }
 
   function isDefaultDescSortKey(colKey) {
@@ -10423,8 +10425,10 @@
       const ct = ctMap.get(norm(c.Customer));
       const cDays = ct && Number.isFinite(Number(ct.credit_days)) ? Number(ct.credit_days) : 30;
       const cLimit = ct && Number.isFinite(Number(ct.credit_limit)) ? Number(ct.credit_limit) : 0;
+      const ar1_60 = round2(Number(c.ar_1_10 || 0) + Number(c.ar_11_30 || 0) + Number(c.ar_31_60 || 0));
       return {
         ...c,
+        ar_1_60: ar1_60,
         credit_days: cDays,
         credit_limit: cLimit,
         sales_vat: round2(Number(c.sales_vat || 0)),
@@ -10522,17 +10526,73 @@
     const over60Pct = Math.max(0, Math.min(100, (ar60 / arBucketTot) * 100));
     const openCustCount = custAll.filter(c => Number(c.ar_balance || 0) > 0).length;
     const over60CustCount = custAll.filter(c => Number(c.ar_60_plus || 0) > 0).length;
-    const onAcct = round2(custAll.reduce((s, r) => s + (Number(r.ar_balance || 0) < 0 ? Number(r.ar_balance || 0) : 0), 0));
+    const isCustFiltered = Boolean(q || STATE.chipFilter === 'open_ar' || STATE.chipFilter === 'overdue60' || STATE.chipFilter === 'vat_reg');
+    const bucketSrc = isCustFiltered ? custs : custAll;
+    const sumCustField = fld => round2(bucketSrc.reduce((s, r) => s + Number(r[fld] || 0), 0));
+    const useCustSums = isCustFiltered || (k.ar_current == null && k.ar_balance == null);
+    const bCurVal = useCustSums ? sumCustField('ar_current') : round2(k.ar_current || 0);
+    const b1_10Val = useCustSums ? sumCustField('ar_1_10') : round2(k.ar_1_10 || 0);
+    const b11_30Val = useCustSums ? sumCustField('ar_11_30') : round2(k.ar_11_30 || 0);
+    const b31_60Val = useCustSums ? sumCustField('ar_31_60') : round2(k.ar_31_60 || 0);
+    const b60pVal = useCustSums ? sumCustField('ar_60_plus') : round2(k.ar_60_plus || 0);
+    const custOnAcct = round2(bucketSrc.reduce((s, r) => s + (Number(r.ar_balance || 0) < 0 ? Number(r.ar_balance || 0) : 0), 0));
+    const onAcct = (!useCustSums && k.ar_advances != null && Number(k.ar_advances) > 0)
+      ? -round2(Math.abs(Number(k.ar_advances)))
+      : custOnAcct;
+    const bucketCustStats = getter => {
+      let cnt = 0, topName = '', topAmt = 0;
+      bucketSrc.forEach(c => {
+        const amt = Number(getter(c) || 0);
+        if (amt > 0.005) {
+          cnt += 1;
+          if (amt > topAmt) { topAmt = amt; topName = c.Customer || ''; }
+        }
+      });
+      return {
+        count: cnt,
+        extraRows: topName ? [{ label: 'Largest Account', value: `${topName} (${fmtUSD(topAmt, 0)})` }] : []
+      };
+    };
+    const stCur = bucketCustStats(c => c.ar_current);
+    const st1_10 = bucketCustStats(c => c.ar_1_10);
+    const st11_30 = bucketCustStats(c => c.ar_11_30);
+    const st31_60 = bucketCustStats(c => c.ar_31_60);
+    const st60p = bucketCustStats(c => c.ar_60_plus);
+    const stAdv = bucketCustStats(c => Number(c.ar_balance || 0) < 0 ? Math.abs(Number(c.ar_balance || 0)) : 0);
     const agingBuckets = [
-      { label: 'Current', val: round2(k.ar_current || 0), color: 'var(--chart-navy)' },
-      { label: '1–10d',   val: round2(k.ar_1_10 || 0),    color: 'var(--chart-steel)' },
-      { label: '11–30d',  val: round2(k.ar_11_30 || 0),   color: 'var(--chart-steel)' },
-      { label: '31–60d',  val: round2(k.ar_31_60 || 0),   color: 'var(--chart-brass)' },
-      { label: '60+d',    val: round2(k.ar_60_plus || 0), color: 'var(--chart-crit)' },
-      { label: 'On Acct', val: onAcct,                    color: 'var(--chart-slate)' }
+      { label: 'Current', title: 'Current (Within Credit Term)', value: bCurVal,   color: 'var(--chart-navy)',  count: stCur.count,   extraRows: stCur.extraRows },
+      { label: '1–10d',   title: '1–10 Days Past Due',           value: b1_10Val,  color: 'var(--chart-steel)', count: st1_10.count,  extraRows: st1_10.extraRows },
+      { label: '11–30d',  title: '11–30 Days Past Due',          value: b11_30Val, color: 'var(--chart-steel)', count: st11_30.count, extraRows: st11_30.extraRows },
+      { label: '31–60d',  title: '31–60 Days Past Due',          value: b31_60Val, color: 'var(--chart-brass)', count: st31_60.count, extraRows: st31_60.extraRows },
+      { label: '60+d',    title: 'Over 60 Days Past Due',        value: b60pVal,   color: 'var(--chart-crit)',  count: st60p.count,   extraRows: st60p.extraRows },
+      { label: 'On Acct', title: 'On Account (Customer Advances)', value: onAcct,  color: 'var(--chart-slate)', count: stAdv.count,   extraRows: stAdv.extraRows }
     ];
+    const grossArChart = round2(bCurVal + b1_10Val + b11_30Val + b31_60Val + b60pVal);
+    const netArChart = useCustSums ? sumCustField('ar_balance') : round2(Number(k.ar_balance != null ? k.ar_balance : (grossArChart + onAcct)));
+    const vatCollectedByYm = new Map();
+    filterRecords(SEED.records.receipts, { ignorePeriod: true, ignoreSearch: true }).forEach(r => {
+      const mth = String(r.method || '').trim();
+      if (receiptKind(r) !== 'VAT received' && mth !== 'VATRent') return;
+      const ymKey = String((STATE.basis === 'rep' ? (r.rep_date || r.date) : r.date) || '').slice(0, 7).replace('-', '');
+      if (ymKey.length === 6) vatCollectedByYm.set(ymKey, round2((vatCollectedByYm.get(ymKey) || 0) + Number(r.amount || 0) + Number(r.discount || 0)));
+    });
+    const arMonthsSeries = getScopedMonthly(m.monthly, 14).map(mr => ({
+      ...mr,
+      vat_collected: round2(vatCollectedByYm.get(String(mr.YearMonthNo || '')) || 0)
+    }));
     const arVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderCustomersVisualsSection === 'function')
-      ? window.MFG_PBI.renderCustomersVisualsSection({ months: getScopedMonthly(m.monthly, 14), agingBuckets })
+      ? window.MFG_PBI.renderCustomersVisualsSection({
+          months: arMonthsSeries,
+          agingBuckets,
+          chartMode: STATE.arChartMode || 'collections',
+          arSummary: {
+            grossAr: grossArChart,
+            advancesUsd: Math.abs(onAcct),
+            netAr: netArChart,
+            openCustCount: bucketSrc.filter(c => Number(c.ar_balance || 0) > 0.005).length,
+            advanceCustCount: stAdv.count
+          }
+        })
       : '';
 
     return `
@@ -10689,7 +10749,7 @@
             <thead>
               <tr>
                 ${th('custs', 'Customer', 'Customer')}${th('custs', 'IVA & Term', 'VAT Registered')}${th('custs', 'Loads', 'loads', 'r')}${th('custs', 'Sales TTC', 'sales_ttc', 'r')}${th('custs', 'Output VAT', 'sales_vat', 'r')}
-                ${th('custs', 'Receipts', 'receipts', 'r')}${th('custs', 'VAT Due', 'vat_receivable', 'r')}${th('custs', 'Current', 'ar_current', 'r')}${th('custs', 'Overdue 60+', 'ar_60_plus', 'r')}${th('custs', 'Open AR ($)', 'ar_balance', 'r')}${th('custs', 'Last Sale', 'last_sale')}
+                ${th('custs', 'Receipts', 'receipts', 'r')}${th('custs', 'VAT Due', 'vat_receivable', 'r')}${th('custs', 'Current', 'ar_current', 'r')}${th('custs', '1–60d', 'ar_1_60', 'r')}${th('custs', 'Overdue 60+', 'ar_60_plus', 'r')}${th('custs', 'Open AR ($)', 'ar_balance', 'r')}${th('custs', 'Last Sale', 'last_sale')}
               </tr>
             </thead>
             <tbody>
@@ -10703,12 +10763,13 @@
                   <td class="r">${fmtUSD(c.receipts, 0)}</td>
                   <td class="r">${Number(c.vat_receivable || 0) !== 0 ? fmtUSD(c.vat_receivable, 0) : '—'}</td>
                   <td class="r">${fmtUSD(c.ar_current, 0)}</td>
+                  <td class="r">${Number(c.ar_1_60 || 0) > 0 ? `<span style="color:var(--warn)">${fmtUSD(c.ar_1_60, 0)}</span>` : '—'}</td>
                   <td class="r">${Number(c.ar_60_plus || 0) > 0 ? `<span style="color:var(--crit)">${fmtUSD(c.ar_60_plus, 0)}</span>` : '—'}</td>
                   <td class="r"><strong>${fmtUSD(c.ar_balance, 2)}</strong></td>
                   <td class="mono">${esc(fmtDateDMY(c.last_sale))}</td>
                 </tr>
-              `).join('') || emptyRow(11, q ? `No customers match "${STATE.search}".` : 'No customer balances for this entity')}
-              ${showMoreRow('custs', custs.length, 11)}
+              `).join('') || emptyRow(12, q ? `No customers match "${STATE.search}".` : 'No customer balances for this entity')}
+              ${showMoreRow('custs', custs.length, 12)}
             </tbody>
             <tfoot>
               <tr>
@@ -10719,6 +10780,7 @@
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.receipts || 0), 0), 0)}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.vat_receivable || 0), 0), 0)}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_current || 0), 0), 0)}</b></td>
+                <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_1_60 || 0), 0), 0)}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_60_plus || 0), 0), 0)}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_balance || 0), 0), 2)}</b></td>
                 <td></td>
@@ -30676,6 +30738,13 @@
     }));
     container.querySelectorAll('[data-cf-chart-grain]').forEach(btn => btn.addEventListener('click', () => {
       STATE.cfChartGrain = btn.getAttribute('data-cf-chart-grain') || 'monthly';
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-ar-chart-mode]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.arChartMode = btn.getAttribute('data-ar-chart-mode') || 'collections';
       const ws = $('workspace');
       const y = ws ? ws.scrollTop : 0;
       renderApp();
