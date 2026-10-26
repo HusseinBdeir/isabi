@@ -4281,10 +4281,10 @@
   };
 
   const UNIV_REGISTRY_GROUPS = {
-    reg_customers: ['customers', 'products', 'product_types', 'uoms'],
-    reg_products: ['customers', 'products', 'product_types', 'uoms'],
-    reg_suppliers: ['suppliers', 'expense_categories', 'expense_subcategories'],
-    reg_categories: ['suppliers', 'expense_categories', 'expense_subcategories'],
+    reg_customers: ['customers', 'suppliers'],
+    reg_suppliers: ['customers', 'suppliers'],
+    reg_products: ['products', 'product_types', 'uoms'],
+    reg_categories: ['expense_categories', 'expense_subcategories'],
     reg_sites: ['sites', 'regions'],
     reg_regions: ['sites', 'regions'],
     reg_equipment: ['equipment', 'drivers'],
@@ -4447,11 +4447,12 @@
       title: HUB_TITLES.master,
       group: 'master',
       tabs: [
-        { view: 'reg_customers', match: ['reg_customers', 'reg_products'], label: 'Customers & Products', icon: 'reg_customers', universal: true },
-        { view: 'reg_suppliers', match: ['reg_suppliers', 'reg_categories'], label: 'Suppliers & Categories', icon: 'reg_suppliers', universal: true },
+        { view: 'reg_customers', match: ['reg_customers', 'reg_suppliers'], label: 'Counterparties', icon: 'reg_customers', universal: true },
+        { view: 'reg_products', label: 'Products & Catalog', icon: 'reg_products', universal: true },
+        { view: 'reg_categories', label: 'Expense Categories', icon: 'reg_categories', universal: true },
         { view: 'reg_sites', match: ['reg_sites', 'reg_regions'], label: 'Sites & Regions', icon: 'reg_sites', universal: true },
         { view: 'reg_equipment', match: ['reg_equipment', 'reg_drivers'], label: 'Equipment & Drivers', icon: 'reg_equipment', universal: true },
-        { view: 'tables', label: 'Tables & Registers', icon: 'tables' }
+        { view: 'tables', label: 'All Tables & Registers', icon: 'tables' }
       ]
     },
     {
@@ -6990,7 +6991,7 @@
             </div>
           </div>
           <div style="display:flex;gap:6px">
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_customers" title="Open Master Customers &amp; Products Registry">${ic('reg_customers')} Master Registry</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_customers" title="Open Master Customers &amp; Suppliers Registry">${ic('reg_customers')} Master Registry</button>
             <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="sales" title="Open Touch Sales Dispatch Kiosk &amp; Bluetooth Thermal Printer">${ic('printer')} Sales Kiosk</button>
             ${exportBtn('salesPanel', 'Sales_Register')}
             ${canEnterForm('sales') ? '<button class="btn btn-primary" data-open-modal="sales">+ New Sales Ticket</button>' : ''}
@@ -10524,7 +10525,7 @@
             <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_suppliers" title="Open Master Suppliers &amp; Expense Categories">${ic('reg_suppliers')} Vendors &amp; Categories</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_categories" title="Open Master Expense Categories &amp; Subcategories">${ic('reg_categories')} Expense Categories</button>
             ${exportBtn('expPanel', 'Expense_Register')}
             ${canEnterForm('expense') ? '<button class="btn btn-primary" data-open-modal="expense">+ New Expense</button>' : ''}
           </div>
@@ -26739,7 +26740,7 @@
     overview: 'Executive Overview',
     entities: 'Entity Comparison',
     pbi: 'Analytics & Insights',
-    tables: 'Tables & Registers',
+    tables: 'All Tables & Registers',
     sentinels: 'AI Sentinels & Audit',
     kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
@@ -26787,7 +26788,7 @@
     overview: 'Executive Overview',
     entities: 'Entity Comparison',
     pbi: 'Analytics & Insights',
-    tables: 'Tables & Registers',
+    tables: 'All Tables & Registers',
     sentinels: 'AI Sentinels & Audit',
     kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
@@ -29148,7 +29149,7 @@
       case 'reg_customers':
       case 'reg_suppliers':
       case 'reg_categories':
-        wsHtml = window.MFG_PBI ? window.MFG_PBI.renderUniversalRegistriesView({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, pageTitle: canonicalViewTitle, registryGroupKeys: univGroupKeys }) : renderOverview();
+        wsHtml = window.MFG_PBI ? window.MFG_PBI.renderUniversalRegistriesView({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, pageTitle: canonicalViewTitle, registryGroupKeys: univGroupKeys }) : renderOverview();
         break;
       case 'statements': wsHtml = renderStatements(); break;
       case 'users': wsHtml = renderUsers(); break;

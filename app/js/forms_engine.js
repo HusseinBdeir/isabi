@@ -28,57 +28,71 @@
 
   const FORM_GROUPS = [
     {
-      id: 'dispatch',
-      icon: 'truck',
-      label: '1. Dispatch & Settlements (6)',
+      id: 'sales',
+      icon: 'sales',
+      label: '1. Sales & Receivables',
       forms: [
         { id: 'sales', label: 'Sales Ticket', badge: 'bhf_salesticket', crKey: 'sales_tickets', title: 'New Sales Ticket' },
-        { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', title: 'New Raw Material Ticket' },
-        { id: 'receipt', label: 'Customer Settlement', badge: 'bhf_customerreceipt', crKey: 'receipts', title: 'New Customer Settlement' },
-        { id: 'settlement', label: 'Supplier Settlement', badge: 'bhf_supplierpayment', crKey: 'settlements', title: 'New Supplier Settlement' },
-        { id: 'fuel', label: 'Fuel & Lubricant Intake', badge: 'bhf_fuelintake', crKey: 'fuel_intakes', title: 'New Fuel & Lubricant Intake' },
-        { id: 'expense', label: 'Expense (Cash / Credit)', badge: 'bhf_expense', crKey: 'expenses', title: 'New Expense' }
-      ]
-    },
-    {
-      id: 'pricing',
-      icon: 'pricing',
-      label: '2. Sales & Pricing Setup (3)',
-      forms: [
-        { id: 'pricerule', label: 'Price Agreement', badge: 'bhf_pricerule', crKey: 'price_rules', title: 'New Price Agreement' },
+        { id: 'receipt', label: 'Customer Receipt (AR)', badge: 'bhf_customerreceipt', crKey: 'receipts', title: 'New Customer Settlement' },
         { id: 'vatinvoice', label: 'VAT Invoice', badge: 'bhf_vatinvoice', crKey: 'vat_invoices', title: 'New VAT Invoice' },
-        { id: 'creditterm', label: 'Credit Terms', badge: 'bhf_creditterm', crKey: 'credit_terms', title: 'New Customer Credit Terms' }
+        { id: 'pricerule', label: 'Price Agreement', badge: 'bhf_pricerule', crKey: 'price_rules', title: 'New Price Agreement' },
+        { id: 'creditterm', label: 'Credit Terms', badge: 'bhf_creditterm', crKey: 'credit_terms', title: 'New Customer Credit Terms' },
+        { id: 'customer', label: 'Customer', badge: 'bhf_customer', crKey: 'customers', title: 'New Customer (Universal Registry)', universal: true },
+        { id: 'product', label: 'Product / Grade', badge: 'bhf_product', crKey: 'products', title: 'New Product / Aggregate Grade (Universal Registry)', universal: true }
       ]
     },
     {
-      id: 'hq',
-      icon: 'globe',
-      label: '3. Universal Registries (6)',
+      id: 'raw',
+      icon: 'raw',
+      label: '2. Quarry & JV',
       forms: [
-        { id: 'customer', label: 'Customer', badge: 'bhf_customer', crKey: 'customers', title: 'New Customer (Universal Registry)', universal: true },
-        { id: 'supplier', label: 'Supplier / Hauler', badge: 'bhf_supplier', crKey: 'suppliers', title: 'New Supplier / Hauler (Universal Registry)', universal: true },
-        { id: 'product', label: 'Product / Grade', badge: 'bhf_product', crKey: 'products', title: 'New Product / Aggregate Grade (Universal Registry)', universal: true },
-        { id: 'site', label: 'Site', badge: 'bhf_site', crKey: 'sites', title: 'New Site (Universal Registry)', universal: true },
+        { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', title: 'New Raw Material Ticket' },
+        { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', title: 'New Joint-Venture Entry' },
+        { id: 'site', label: 'Site', badge: 'bhf_site', crKey: 'sites', title: 'New Site (Universal Registry)', universal: true }
+      ]
+    },
+    {
+      id: 'fleet',
+      icon: 'fleet',
+      label: '3. Fleet, Fuel & Maint.',
+      forms: [
+        { id: 'fuel', label: 'Fuel & Lubricant Intake', badge: 'bhf_fuelintake', crKey: 'fuel_intakes', title: 'New Fuel & Lubricant Intake' },
+        { id: 'companyequipment', label: 'Company Fleet Unit', badge: 'bhf_companyequipment', crKey: 'company_equipment', title: 'New Company Fleet Unit (BU Assignment)' },
+        { id: 'defect', label: 'Equipment Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', title: 'Report Equipment / Truck Defect' },
+        { id: 'partlog', label: 'Part Change & Custody', badge: 'bhf_partmovement', crKey: 'part_movements', title: 'Part Change, Removal & Disposition' },
+        { id: 'triprate', label: 'Overtime Trip Rate', badge: 'bhf_triprate', crKey: 'overtime_rates', title: 'New Overtime Trip Rate' },
         { id: 'equipment', label: 'Equipment / Truck', badge: 'bhf_equipment', crKey: 'equipment', title: 'New Equipment / Truck (Universal Registry)', universal: true },
         { id: 'driver', label: 'Driver / Operator', badge: 'bhf_driver', crKey: 'drivers', title: 'New Driver / Operator (Universal Registry)', universal: true }
       ]
     },
     {
-      id: 'ops',
-      icon: 'payroll',
-      label: '4. Payroll, Fleet & Treasury (11)',
+      id: 'expenses',
+      icon: 'expenses',
+      label: '4. Expenses & Payables',
       forms: [
-        { id: 'companyequipment', label: 'Company Fleet Unit', badge: 'bhf_companyequipment', crKey: 'company_equipment', title: 'New Company Fleet Unit (BU Assignment)' },
-        { id: 'defect', label: 'Equipment Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', title: 'Report Equipment / Truck Defect' },
-        { id: 'partlog', label: 'Part Change & Custody', badge: 'bhf_partmovement', crKey: 'part_movements', title: 'Part Change, Removal & Disposition' },
+        { id: 'expense', label: 'Expense (Cash / Credit)', badge: 'bhf_expense', crKey: 'expenses', title: 'New Expense' },
+        { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', title: 'New Supplier Settlement' },
+        { id: 'supplier', label: 'Supplier / Hauler', badge: 'bhf_supplier', crKey: 'suppliers', title: 'New Supplier / Hauler (Universal Registry)', universal: true }
+      ]
+    },
+    {
+      id: 'payroll',
+      icon: 'payroll',
+      label: '5. Payroll & Workforce',
+      forms: [
         { id: 'salary', label: 'Salary Payment', badge: 'bhf_salarypayment', crKey: 'salaries', title: 'New Salary Payment' },
         { id: 'attendance', label: 'Attendance', badge: 'bhf_attendance', crKey: 'attendance', title: 'New Staff Attendance' },
-        { id: 'freelance', label: 'Freelance Work', badge: 'bhf_freelancework', crKey: 'employments', title: 'New Freelance Work' },
         { id: 'employment', label: 'Employment Contract', badge: 'bhf_employment', crKey: 'employments', title: 'New Employment Contract' },
-        { id: 'logistics', label: 'Site Allowance (Mon–Sun)', badge: 'bhf_logistics', crKey: 'logistics_allowances', title: 'New Weekly Site Allowance' },
-        { id: 'triprate', label: 'Overtime Trip Rate', badge: 'bhf_triprate', crKey: 'overtime_rates', title: 'New Overtime Trip Rate' },
-        { id: 'treasury', label: 'Treasury / Loans / FX', badge: 'bhf_external', crKey: 'loans', title: 'New Treasury Entry' },
-        { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', title: 'New Joint-Venture Entry' }
+        { id: 'freelance', label: 'Freelance Work', badge: 'bhf_freelancework', crKey: 'employments', title: 'New Freelance Work' },
+        { id: 'logistics', label: 'Site Allowance (Mon–Sun)', badge: 'bhf_logistics', crKey: 'logistics_allowances', title: 'New Weekly Site Allowance' }
+      ]
+    },
+    {
+      id: 'treasury',
+      icon: 'cashflow',
+      label: '6. Treasury & FX',
+      forms: [
+        { id: 'treasury', label: 'Treasury / Loans / FX', badge: 'bhf_external', crKey: 'loans', title: 'New Treasury Entry' }
       ]
     }
   ];
@@ -415,7 +429,7 @@
       <div class="pa-modal-subtabs">
         ${activeGroup.forms.filter(f => !canEnterFn || canEnterFn(f.id)).map(f => `
           <button type="button" class="modal-tab ${f.id === activeForm ? 'active' : ''}" data-form="${esc(f.id)}">
-            <span>${esc(f.label)}</span>
+            <span>${esc(f.label)}</span>${f.universal ? '<span class="tbl-univ-tag">All BUs</span>' : ''}
           </button>
         `).join('')}
       </div>

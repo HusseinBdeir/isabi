@@ -16969,4 +16969,29 @@ tr.rrow.is-row-selected > td {
   margin-left: 2px;
 }
 
-
+/* Shared All-BUs subtle micro-pill inside Domain Table Picker & + New Entry Modal */
+.tbl-univ-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 15px;
+  vertical-align: 1px;
+  color: var(--muted);
+  background: var(--m-chip, rgba(15, 23, 42, 0.06));
+  border: 1px solid var(--line);
+}
+.filter-chip.active .tbl-univ-tag,
+.modal-tab.active .tbl-univ-tag {
+  color: inherit;
+  background: rgba(255, 255, 255, 0.22);
+  border-color: currentColor;
+  opacity: 0.85;
+}
+:root[data-theme="dark"] .tbl-univ-tag {
+  background: rgba(255, 255, 255, 0.07);
+}
