@@ -5,8 +5,8 @@ from part_icons import ICONS
 
 # Tuple format: (question, answer, icon_key)
 FAQ_ITEMS = [
-    ("Are there any per-user fees or monthly charges as our team grows?",
-     "No. ISABI has zero per-user fees. Unlimited executives, accountants, dispatchers, cashiers, and field kiosk tablets operate on one flat build without monthly per-seat charges.",
+    ("How do the initial custom setup fee and monthly per-seat pricing work?",
+     "Every engagement combines a one-time custom setup fee (starting at $1,500 to build and tailor your workflows, chart of accounts, dashboards, and historical Excel import) with a simple monthly per-seat fee ($15 to $35 per active user) covering cloud sync, backups, updates, and ongoing support.",
      "key"),
     ("Who owns the system and the data?",
      "You do. Every customer record, ledger entry, dashboard, and printable statement belongs to your company under your administrators, with full export access at any time and zero lock-in.",

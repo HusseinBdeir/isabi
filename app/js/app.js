@@ -19210,10 +19210,15 @@
         <div class="system-showcase-inner">
           <div class="system-showcase-lead">
             <div class="system-showcase-crest" aria-hidden="true">
-              <svg viewBox="0 0 36 36" width="22" height="22" focusable="false">
-                <rect x="8" y="6.5" width="20" height="3.2" rx="0.9" fill="#D9A54A"/>
-                <rect x="9.5" y="12" width="6.2" height="17.5" rx="1.1" fill="#F4F2EE"/>
-                <rect x="20.3" y="12" width="6.2" height="17.5" rx="1.1" fill="#F4F2EE"/>
+              <svg viewBox="-9.5 -78.8 74.66 109.7" width="22" height="22" focusable="false">
+                <g fill="#F4F2EE">
+                  <path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/>
+                  <path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/>
+                </g>
+                <g fill="#D9A54A">
+                  <rect x="-1.5" y="9.5" width="58.66" height="4.5" rx="1"/>
+                  <rect x="-1.5" y="17.5" width="58.66" height="3.2" rx="1" opacity="0.72"/>
+                </g>
               </svg>
             </div>
             <div class="system-showcase-copy">
@@ -19222,10 +19227,10 @@
                 <div class="system-showcase-tags">
                   <span class="badge badge-neutral">8 Industry Blueprints</span>
                   <span class="badge badge-neutral">18 Custom Modules</span>
-                  <span class="badge badge-neutral">$0 Per-Seat Fees</span>
+                  <span class="badge badge-neutral">Custom Setup + Per-Seat</span>
                 </div>
               </div>
-              <div class="system-showcase-sub">Explore the public ISABI Systems overview, interactive multi-industry ERP and executive analytics blueprints, live sandbox tours, and zero-seat-fee ownership model.</div>
+              <div class="system-showcase-sub">Explore the public ISABI Systems overview, interactive multi-industry ERP and executive analytics blueprints, live sandbox tours, and tailored setup + per-seat plans.</div>
             </div>
           </div>
           <a href="${esc(showcaseHref)}" class="btn system-showcase-btn" id="railShowcaseLink" aria-label="Public Showcase">

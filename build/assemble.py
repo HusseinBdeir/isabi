@@ -18,7 +18,7 @@ HEAD = """<!DOCTYPE html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI</title>
-  <meta name="description" content="ISABI Systems builds custom operations and double-entry accounting systems, interactive executive dashboards, bilingual printable statements, offline-ready field kiosks, and Ask ISABI AI with zero per-user fees.">
+  <meta name="description" content="ISABI Systems builds custom operations and double-entry accounting systems, interactive executive dashboards, bilingual printable statements, offline-ready field kiosks, and Ask ISABI AI with tailored setup and simple per-seat pricing.">
   <meta name="author" content="Hussein Bdeir">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <meta name="color-scheme" content="light dark">
@@ -28,14 +28,14 @@ HEAD = """<!DOCTYPE html>
   <meta property="og:locale" content="en_US">
   <meta property="og:url" content="https://husseinbdeir.github.io/isabi/">
   <meta property="og:title" content="ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI">
-  <meta property="og:description" content="The ERP Your Group Actually Runs On. Custom operations, double-entry accounting, executive dashboards, printable statements, field kiosks, and Ask ISABI AI, live in 1 to 2 weeks with zero per-user fees.">
+  <meta property="og:description" content="The ERP Your Group Actually Runs On. Custom operations, double-entry accounting, executive dashboards, printable statements, field kiosks, and Ask ISABI AI, live in 1 to 2 weeks with tailored setup and simple per-seat pricing.">
   <meta property="og:image" content="https://husseinbdeir.github.io/isabi/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="ISABI Systems. The ERP Your Group Actually Runs On.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI">
-  <meta name="twitter:description" content="Custom operations, double-entry accounting, executive dashboards, printable statements, offline-ready field kiosks, and Ask ISABI AI with zero per-user fees.">
+  <meta name="twitter:description" content="Custom operations, double-entry accounting, executive dashboards, printable statements, offline-ready field kiosks, and Ask ISABI AI with tailored setup and simple per-seat pricing.">
   <meta name="twitter:image" content="https://husseinbdeir.github.io/isabi/og-image.png">
   <meta name="theme-color" content="#F4F2EE">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -76,7 +76,7 @@ ORG_JSONLD = _json.dumps({
     "logo": "https://husseinbdeir.github.io/isabi/icon-512.png",
     "image": "https://husseinbdeir.github.io/isabi/og-image.png",
     "slogan": "The ERP Your Group Actually Runs On",
-    "description": "Custom enterprise ERP operations, double-entry financial accounting, interactive executive dashboards, bilingual printable statements, offline-ready field kiosks, and the Ask ISABI assistant with zero per-user fees.",
+    "description": "Custom enterprise ERP operations, double-entry financial accounting, interactive executive dashboards, bilingual printable statements, offline-ready field kiosks, and the Ask ISABI assistant with tailored setup and simple per-seat pricing.",
     "email": "hbdeir16@gmail.com",
     "telephone": "+96170444955",
     "founder": {"@type": "Person", "name": "Hussein Bdeir", "jobTitle": "Founder and Principal Systems Architect"},
@@ -84,7 +84,7 @@ ORG_JSONLD = _json.dumps({
     "address": {"@type": "PostalAddress", "addressCountry": "LB"},
     "knowsAbout": ["Enterprise Resource Planning", "Multi-Entity Operations", "Executive Dashboards & Reporting", "Double-Entry Accounting", "POS & Gate Kiosks", "Automated Financial Controls"],
     "contactPoint": [{"@type": "ContactPoint", "contactType": "sales", "telephone": "+96170444955", "email": "hbdeir16@gmail.com", "availableLanguage": ["en"]}],
-    "priceRange": "$4,500 to $18,000+"
+    "priceRange": "$1,500 to $5,500+ setup + $15 to $35/seat/mo"
 }, ensure_ascii=False)
 HEAD = HEAD.replace("__ORG_JSONLD__", ORG_JSONLD).replace("__FAQ_JSONLD__", FAQ_JSONLD)
 

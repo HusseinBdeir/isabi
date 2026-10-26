@@ -51,7 +51,7 @@ BODY = f"""
     <div class="wrap hero-grid">
       <div>
         <div>
-          <div class="eyebrow">{ICONS["ai_mark"]} ISABI Systems · $0 Per-User Fees · Live in 1 to 2 Weeks</div>
+          <div class="eyebrow">{ICONS["ai_mark"]} ISABI Systems · Custom Setup + Per-Seat Plans · Live in 1 to 2 Weeks</div>
           <h1 class="hero-title">The ERP Your Group<br><span class="brass-text">Actually Runs On</span>.</h1>
           <p class="hero-lead">
             Custom operations, double-entry accounting, live dashboards, field kiosks, and cited AI, built around how your business works.
@@ -66,8 +66,8 @@ BODY = f"""
           <div class="hero-proof-item">
             <span class="hp-check">{ICONS["check"]}</span>
             <div>
-              <b>$0 Per-User &amp; Kiosk Fees</b>
-              <small>Unlimited executives, accountants, dispatchers, and field tablets on one flat build.</small>
+              <b>Low Custom Setup + Per-Seat Plans</b>
+              <small>Accessible one-time setup for your tailored system plus simple per-seat monthly pricing from $15/seat.</small>
             </div>
           </div>
           <div class="hero-proof-item">
@@ -192,13 +192,13 @@ BODY = f"""
             <div class="stack-cards" id="ms-stack-cards">
               <div class="stack-card reveal">
                 <div class="stack-card-hdr">
-                  <h4>{ICONS["key"]} Unlimited Users &amp; Full Data Ownership</h4>
-                  <span>Zero Seat Fees</span>
+                  <h4>{ICONS["key"]} Tailored Setup, Simple Seats &amp; Full Data Ownership</h4>
+                  <span>From $15/Seat</span>
                 </div>
-                <p>Add every executive, accountant, dispatcher, cashier, and field tablet with $0 per-user monthly fees. Your company owns its records and reports outright.</p>
+                <p>One-time custom setup to build your exact operational workflows and ledger, paired with predictable per-seat monthly pricing and 100% client data ownership.</p>
                 <div class="stack-tags">
-                  <span>$0 Per-User Fees</span>
-                  <span>Unlimited Staff &amp; Tablets</span>
+                  <span>From $1,500 Setup</span>
+                  <span>From $15/Seat/Mo</span>
                   <span>100% Data Ownership</span>
                 </div>
               </div>
@@ -389,10 +389,10 @@ BODY = f"""
               <td>{ICONS["cross"]} Possible only after expensive custom change orders</td>
             </tr>
             <tr>
-              <td><b>{ICONS["key"]} Per-User Seat Fees</b></td>
-              <td class="isabi-col">{ICONS["check"]} $0 per-user fees across unlimited staff &amp; kiosk tablets</td>
-              <td>{ICONS["warn"]} Per-user &amp; per-module fees that compound monthly</td>
-              <td>{ICONS["cross"]} Steep named-user licences plus annual maintenance</td>
+              <td><b>{ICONS["key"]} Setup &amp; Per-Seat Pricing</b></td>
+              <td class="isabi-col">{ICONS["check"]} From $1,500 custom setup + $15 to $35/seat/month</td>
+              <td>{ICONS["warn"]} Rigid per-module tiers + costly implementation add-ons</td>
+              <td>{ICONS["cross"]} Steep six-figure setup fees plus heavy annual maintenance</td>
             </tr>
             <tr>
               <td><b>{ICONS["analytics"]} Executive Analytics &amp; SOA</b></td>
@@ -475,9 +475,9 @@ BODY = f"""
       <!-- Pricing Panel 1: 3 Tiers + 1-Line Guarantee Bar -->
       <div data-price-panel="tiers">
         <div class="mob-seg-bar" role="tablist" aria-label="Select Engagement Tier">
-          <button type="button" class="mob-seg-btn" data-tier-tab="tier1">$4.5k+ Base</button>
-          <button type="button" class="mob-seg-btn active" data-tier-tab="tier2">★ $9.5k+ Suite</button>
-          <button type="button" class="mob-seg-btn" data-tier-tab="tier3">$18k+ Group</button>
+          <button type="button" class="mob-seg-btn" data-tier-tab="tier1">$1.5k + $15/seat</button>
+          <button type="button" class="mob-seg-btn active" data-tier-tab="tier2">★ $2.8k + $25/seat</button>
+          <button type="button" class="mob-seg-btn" data-tier-tab="tier3">$5.5k+ Group</button>
         </div>
 
         <div class="pricing-grid" id="pricing-tiers-grid">
@@ -487,17 +487,17 @@ BODY = f"""
             <h3>Operational Foundation</h3>
             <p class="price-desc">Ideal for a single company, resort, showroom, plant, or brokerage replacing spreadsheets with one unified operations and accounting suite.</p>
             <div class="price-block">
-              <div class="price-val num">$4,500 <small>starting build</small></div>
-              <div class="price-retainer">+$350 / month ongoing support and improvements (optional)</div>
+              <div class="price-val num">$1,500 <small>custom setup</small></div>
+              <div class="price-retainer">+$15 / seat / month · Cloud sync, updates &amp; support</div>
             </div>
             <ul class="price-features">
-              <li><i>✓</i> <span>Custom modules, double-entry ledger &amp; unlimited staff ($0 seat fees)</span></li>
+              <li><i>✓</i> <span>Custom modules, double-entry ledger &amp; tailored setup ($15/seat/mo)</span></li>
               <li><i>✓</i> <span>Role-based workspaces, 360° record views &amp; guided entry forms</span></li>
               <li><i>✓</i> <span>Interactive executive dashboards (Sales, Expenses, Receivables, Cash)</span></li>
               <li><i>✓</i> <span>Core bilingual printable statements (Statement of Account &amp; P&amp;L)</span></li>
               <li><i>✓</i> <span>Historical Excel data import and team onboarding</span></li>
             </ul>
-            <button type="button" class="btn btn-outline" data-select-tier="Operational Foundation ($4,500+)">Start with This Tier</button>
+            <button type="button" class="btn btn-outline" data-select-tier="Operational Foundation ($1,500 Setup + $15/seat/mo)">Start with This Tier</button>
           </div>
 
           <!-- Tier 2 (Featured) -->
@@ -506,17 +506,17 @@ BODY = f"""
             <h3>Multi-Entity &amp; AI Operations Suite</h3>
             <p class="price-desc">Complete operational and financial control for multi-branch companies needing role-separated branches, field kiosks, and cited AI.</p>
             <div class="price-block">
-              <div class="price-val num">$9,500 <small>starting build</small></div>
-              <div class="price-retainer">+$650 / month continuous improvements, AI tuning, and priority support</div>
+              <div class="price-val num">$2,800 <small>custom setup</small></div>
+              <div class="price-retainer">+$25 / seat / month · Multi-branch, Ask ISABI AI &amp; priority support</div>
             </div>
             <ul class="price-features">
-              <li><i>✓</i> <span>Everything in Operational Foundation across multiple branches ($0 seat fees)</span></li>
+              <li><i>✓</i> <span>Everything in Operational Foundation across multiple branches ($25/seat/mo)</span></li>
               <li><i>✓</i> <span>Full executive &amp; operational dashboards (Year / Month / Week / Day)</span></li>
               <li><i>✓</i> <span>Complete bilingual statements (SOA, aging, tax invoices &amp; Balance Sheet)</span></li>
               <li><i>✓</i> <span>Multilingual <b>Ask ISABI</b> (EN/AR/FR) &amp; automatic audit watchdogs</span></li>
               <li><i>✓</i> <span>Companion Field Kiosk (POS or Face Attendance) &amp; parallel-run check</span></li>
             </ul>
-            <button type="button" class="btn btn-brass" data-select-tier="Multi-Entity & AI Operations Suite ($9,500+)">Start with This Suite</button>
+            <button type="button" class="btn btn-brass" data-select-tier="Multi-Entity & AI Operations Suite ($2,800 Setup + $25/seat/mo)">Start with This Suite</button>
           </div>
 
           <!-- Tier 3 -->
@@ -525,8 +525,8 @@ BODY = f"""
             <h3>Enterprise Group Ecosystem</h3>
             <p class="price-desc">For multi-industry holding groups and large enterprises running dedicated applications across sister companies with group consolidation.</p>
             <div class="price-block">
-              <div class="price-val num">$18,000+ <small>custom engagement</small></div>
-              <div class="price-retainer">Custom retainer or dedicated principal advisory agreement</div>
+              <div class="price-val num">$5,500+ <small>custom group setup</small></div>
+              <div class="price-retainer">+$35 / seat / month · Volume group seats &amp; principal advisory</div>
             </div>
             <ul class="price-features">
               <li><i>✓</i> <span>Multiple dedicated industry apps (Hospitality, Trading, Mfg, Real Estate, Insurance)</span></li>
@@ -535,15 +535,15 @@ BODY = f"""
               <li><i>✓</i> <span>Daily Plant &amp; Workforce Map, Fleet Defects &amp; Spare Parts Custody</span></li>
               <li><i>✓</i> <span>Hussein Bdeir works with you directly from design to go-live</span></li>
             </ul>
-            <button type="button" class="btn btn-outline" data-select-tier="Enterprise Group Ecosystem ($18,000+ Custom)">Request Custom Group Proposal</button>
+            <button type="button" class="btn btn-outline" data-select-tier="Enterprise Group Ecosystem ($5,500+ Setup + $35/seat/mo)">Request Custom Group Proposal</button>
           </div>
         </div>
 
         <div class="pricing-trust-bar">
-          <span>{ICONS["check"]} <b>$0 Per-User Fees</b> · Unlimited Staff &amp; Tablets</span>
-          <span>{ICONS["check"]} <b>100% Data Ownership</b> · Zero Vendor Lock-In</span>
+          <span>{ICONS["check"]} <b>From $1,500 Setup</b> · Tailored Around Your Workflow</span>
+          <span>{ICONS["check"]} <b>$15 to $35 / Seat / Mo</b> · Simple Per-User Pricing</span>
           <span>{ICONS["check"]} <b>$0.00 Variance</b> · Parallel-Tested Before Cutover</span>
-          <span>{ICONS["check"]} <b>Fixed Scope</b> · Direct Principal Delivery</span>
+          <span>{ICONS["check"]} <b>100% Data Ownership</b> · Direct Principal Delivery</span>
         </div>
       </div>
 
@@ -577,10 +577,10 @@ BODY = f"""
             <div class="cfg-group">
               <h4>2. Number of Operating Entities / Locations</h4>
               <div class="cfg-pills" id="cfg-scale-pills">
-                <button type="button" class="cfg-pill" data-cfg-scale="1" data-scale-label="Single Entity (1 Location)" data-scale-add="0">{ICONS["pin"]} 1 Entity / Location</button>
-                <button type="button" class="cfg-pill active" data-cfg-scale="2" data-scale-label="Multi-Branch (2 to 4 Entities)" data-scale-add="2500">{ICONS["realestate"]} 2 to 4 Entities</button>
-                <button type="button" class="cfg-pill" data-cfg-scale="5" data-scale-label="Group Estate (5 to 8 Entities)" data-scale-add="6000">{ICONS["manufacturing"]} 5 to 8 Entities</button>
-                <button type="button" class="cfg-pill" data-cfg-scale="10" data-scale-label="Enterprise Holding (9+ Entities)" data-scale-add="11000">{ICONS["holding"]} 9+ Entities</button>
+                <button type="button" class="cfg-pill" data-cfg-scale="1" data-scale-label="Single Entity (1 Location)" data-scale-add="0" data-seat-rate="15">{ICONS["pin"]} 1 Entity / Location</button>
+                <button type="button" class="cfg-pill active" data-cfg-scale="2" data-scale-label="Multi-Branch (2 to 4 Entities)" data-scale-add="600" data-seat-rate="25">{ICONS["realestate"]} 2 to 4 Entities</button>
+                <button type="button" class="cfg-pill" data-cfg-scale="5" data-scale-label="Group Estate (5 to 8 Entities)" data-scale-add="1500" data-seat-rate="30">{ICONS["manufacturing"]} 5 to 8 Entities</button>
+                <button type="button" class="cfg-pill" data-cfg-scale="10" data-scale-label="Enterprise Holding (9+ Entities)" data-scale-add="3000" data-seat-rate="35">{ICONS["holding"]} 9+ Entities</button>
               </div>
             </div>
 
@@ -588,56 +588,56 @@ BODY = f"""
               <h4>3. Choose the Modules to Include</h4>
               <div class="cfg-checks" id="cfg-mod-checks">
                 <label class="cfg-check active">
-                  <input type="checkbox" value="Core Operations, Guided Forms & Double-Entry Ledger" data-cost="4500" data-wks="2" checked disabled>
+                  <input type="checkbox" value="Core Operations, Guided Forms & Double-Entry Ledger" data-cost="1500" data-wks="2" checked disabled>
                   <div>
                     <b>{ICONS["ledger"]} Core Operations &amp; Double-Entry Ledger</b>
-                    <small>Custom modules, 360° record views, COA &amp; unlimited users (Included)</small>
+                    <small>Custom modules, 360° record views, COA &amp; role setup (Included)</small>
                   </div>
                 </label>
                 <label class="cfg-check active">
-                  <input type="checkbox" value="Interactive Executive & Operations Dashboards" data-cost="2000" data-wks="1" checked>
+                  <input type="checkbox" value="Interactive Executive & Operations Dashboards" data-cost="500" data-wks="1" checked>
                   <div>
                     <b>{ICONS["analytics"]} Interactive Executive Dashboards</b>
                     <small>Year / Month / Week / Day switching, KPI drilldowns &amp; breakdowns</small>
                   </div>
                 </label>
                 <label class="cfg-check active">
-                  <input type="checkbox" value="Bilingual Printable Statements & SOA" data-cost="1500" data-wks="1" checked>
+                  <input type="checkbox" value="Bilingual Printable Statements & SOA" data-cost="400" data-wks="1" checked>
                   <div>
                     <b>{ICONS["soa"]} Printable Statements &amp; SOA</b>
                     <small>Sortable A4 Balance Sheet, P&amp;L, Cash Flow, SOA &amp; Tax Invoices</small>
                   </div>
                 </label>
                 <label class="cfg-check active">
-                  <input type="checkbox" value="Ask ISABI AI & Automatic Audit Watchdogs" data-cost="1800" data-wks="1" checked>
+                  <input type="checkbox" value="Ask ISABI AI & Automatic Audit Watchdogs" data-cost="500" data-wks="1" checked>
                   <div>
                     <b>{ICONS["ai"]} Ask ISABI &amp; Audit Watchdogs</b>
                     <small>EN/AR/FR cited answers + missing-ticket, pricing &amp; overdue alerts</small>
                   </div>
                 </label>
                 <label class="cfg-check">
-                  <input type="checkbox" value="Offline Cashier POS & Thermal Receipt Till" data-cost="2200" data-wks="1">
+                  <input type="checkbox" value="Offline Cashier POS & Thermal Receipt Till" data-cost="600" data-wks="1">
                   <div>
                     <b>{ICONS["pos"]} Offline Cashier POS &amp; Receipt Till</b>
                     <small>Touch cashier terminal, wireless thermal receipts &amp; auto sync</small>
                   </div>
                 </label>
                 <label class="cfg-check">
-                  <input type="checkbox" value="Plant, Gate & Live Face Sign-In Kiosks" data-cost="1800" data-wks="1">
+                  <input type="checkbox" value="Plant, Gate & Live Face Sign-In Kiosks" data-cost="500" data-wks="1">
                   <div>
                     <b>{ICONS["kiosk"]} Plant, Gate &amp; Face Sign-In Kiosks</b>
                     <small>Dispatch, weighbridge, fuel, live face attendance &amp; daily crew map</small>
                   </div>
                 </label>
                 <label class="cfg-check">
-                  <input type="checkbox" value="Parallel Accounting Reconciliation & Data Import" data-cost="1500" data-wks="1">
+                  <input type="checkbox" value="Parallel Accounting Reconciliation & Data Import" data-cost="400" data-wks="1">
                   <div>
                     <b>{ICONS["scale"]} Parallel Reconciliation &amp; Migration</b>
                     <small>Historical spreadsheet import &amp; side-by-side accounting balance check</small>
                   </div>
                 </label>
                 <label class="cfg-check">
-                  <input type="checkbox" value="Automated Recruitment & Private CV Vault" data-cost="1200" data-wks="1">
+                  <input type="checkbox" value="Automated Recruitment & Private CV Vault" data-cost="350" data-wks="1">
                   <div>
                     <b>{ICONS["hr"]} Recruitment &amp; Private CV Vault</b>
                     <small>Applicant intake, per-company routing &amp; HR review pipeline</small>
@@ -651,7 +651,7 @@ BODY = f"""
             <div>
               <div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--brass);margin-bottom:6px">{ICONS["copy"]} Live Scope Summary</div>
               <h4 style="font-size:20px;margin-bottom:4px" id="cfg-out-title">Hospitality &amp; Resorts System</h4>
-              <div style="font-size:13px;color:var(--muted)" id="cfg-out-scale">Multi-Branch (2 to 4 Entities)</div>
+              <div style="font-size:13px;color:var(--muted)" id="cfg-out-scale">Multi-Branch (2 to 4 Entities) · $25/seat/mo</div>
 
               <table class="cfg-sum-table">
                 <tbody id="cfg-out-rows">
@@ -659,8 +659,8 @@ BODY = f"""
                 </tbody>
                 <tfoot>
                   <tr class="tot">
-                    <td>Indicative Investment Range</td>
-                    <td class="r num" id="cfg-out-total">$12,300 to $15,000</td>
+                    <td id="cfg-out-tot-lbl">Custom Setup (+$25/seat/mo)</td>
+                    <td class="r num" id="cfg-out-total">$3,500 to $4,200</td>
                   </tr>
                 </tfoot>
               </table>
@@ -709,7 +709,7 @@ BODY = f"""
           </div>
 
           <form id="lead-portal-form" novalidate>
-            <input type="hidden" id="lead-budget" value="Multi-Entity &amp; AI Operations Suite ($9,500+)">
+            <input type="hidden" id="lead-budget" value="Multi-Entity &amp; AI Operations Suite ($2,800 Setup + $25/seat/mo)">
             <div class="form-row">
               <div class="form-field">
                 <label for="lead-name">Your Full Name *</label>
@@ -812,7 +812,7 @@ BODY = f"""
           </div>
         </div>
         <p class="ftr-desc">
-          Custom operations, double-entry accounting, live dashboards, printable statements, field kiosks, and cited AI with zero per-user fees.
+          Custom operations, double-entry accounting, live dashboards, printable statements, field kiosks, and cited AI with tailored setup and simple per-seat plans.
         </p>
         <div class="ftr-contact">
           <b>{ICONS["wa"]} Direct WhatsApp:</b> <a href="https://wa.me/96170444955" target="_blank" rel="noopener">+961 70 444 955</a><br>
@@ -857,7 +857,7 @@ BODY = f"""
 
     <div class="ftr-bottom">
       <span>© <span id="ftr-year">2026</span> ISABI Systems. Founded and architected by Hussein Bdeir. All rights reserved.</span>
-      <span>Zero Per-User Fees · Custom Operations &amp; Accounting · Executive Dashboards · Printable Statements · Field Kiosks · Ask ISABI AI</span>
+      <span>Custom Setup + Per-Seat Plans · Operations &amp; Accounting · Executive Dashboards · Printable Statements · Field Kiosks · Ask ISABI AI</span>
     </div>
   </div>
 </footer>

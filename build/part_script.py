@@ -3324,11 +3324,11 @@ JS = r"""
       }
     });
 
-    titleEl.textContent = state.cfgInd + ' System';
-    scaleEl.textContent = state.cfgScaleLabel;
-
     const seatRate = state.cfgSeatRate || 25;
-    let html = `<tr><td>Scale &amp; Seat Plan (${state.cfgScaleLabel})</td><td class="r num">${state.cfgScaleAdd ? '+$' + state.cfgScaleAdd.toLocaleString('en-US') : 'Base'} · $${seatRate}/seat</td></tr>`;
+    titleEl.textContent = state.cfgInd + ' System';
+    scaleEl.textContent = `${state.cfgScaleLabel} · $${seatRate}/seat/mo`;
+
+    let html = `<tr><td>Organizational Scale (${state.cfgScaleLabel})</td><td class="r num">${state.cfgScaleAdd ? '+$' + state.cfgScaleAdd.toLocaleString('en-US') : 'Base'}</td></tr>`;
     selectedMods.forEach(([nm, c]) => {
       html += `<tr><td>${nm}</td><td class="r num">$${c.toLocaleString('en-US')}</td></tr>`;
     });
@@ -3336,8 +3336,11 @@ JS = r"""
 
     const low = baseCost;
     const high = Math.round((baseCost * 1.2) / 100) * 100;
-    const rangeStr = `$${low.toLocaleString('en-US')} to $${high.toLocaleString('en-US')} + $${seatRate}/seat/mo`;
-    totalEl.textContent = rangeStr;
+    const setupRangeStr = `$${low.toLocaleString('en-US')} to $${high.toLocaleString('en-US')}`;
+    const rangeStr = `${setupRangeStr} + $${seatRate}/seat/mo`;
+    const totLblEl = document.getElementById('cfg-out-tot-lbl');
+    if (totLblEl) totLblEl.textContent = `Custom Setup (+$${seatRate}/seat/mo)`;
+    totalEl.textContent = setupRangeStr;
 
     // Scope points (scale + modules) map to a delivery window: 1 to 2 Weeks for a typical scope, 1 to 3 only for the heaviest full-module enterprise scope.
     const minW = 1;

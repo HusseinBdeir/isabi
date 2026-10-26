@@ -44,7 +44,7 @@ def run_dom_and_screenshots():
             ('Rendered Sandbox Chart', 'class="chart"'),
             ('Rendered Sandbox Ledger Total', '<b>Audited Batch</b>'),
             ('Rendered Ask ISABI Thread', 'Overdue Receivables Audit'),
-            ('Rendered Configurator Total', '$12,300 to $15,000'),
+            ('Rendered Configurator Total', '$3,500 to $4,200'),
             ('Mobile Section Nav Present', 'id="mobile-sec-nav"'),
             ('Mobile Segmented Bar Present', 'class="mob-seg-bar"'),
             ('Hash #industries activates Industries nav link', '<a href="#industries" data-sec-link="industries" class="active">Industries</a>'),
@@ -362,7 +362,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (tiersTab) tiersTab.click();
 
     // Tier selection updates hidden budget & portal header note
-    var tierBtn = document.querySelector('[data-select-tier="Operational Foundation ($4,500+)"]');
+    var tierBtn = document.querySelector('[data-select-tier="Operational Foundation ($1,500 Setup + $15/seat/mo)"]');
     if (tierBtn) tierBtn.click();
     var tierNoteTxt = document.getElementById('portal-tier-note').textContent;
     var leadBudgetVal = document.getElementById('lead-budget').value;
@@ -538,7 +538,7 @@ document.addEventListener('DOMContentLoaded', function() {
         assert v4['hasPwaSim'] is True, "POS & Kiosk simulator did not update on interactive click in mode 'pwa'"
         assert v4['roadActive'] is True, "14-Day Go-Live Sprint tab did not activate roadmap panel"
         assert v4['faqActive'] is True and v4['visibleFaqs'] == 6, f"Expected 6 visible FAQs in Why ISABI FAQ tab, got {v4['visibleFaqs']}"
-        assert v4['leadBudgetVal'] == 'Operational Foundation ($4,500+)' and 'Operational Foundation' in v4['tierNoteTxt'], f"Tier select did not update portal brief: {v4}"
+        assert v4['leadBudgetVal'] == 'Operational Foundation ($1,500 Setup + $15/seat/mo)' and 'Operational Foundation' in v4['tierNoteTxt'], f"Tier select did not update portal brief: {v4}"
         assert v4['heroHospVal'] == '$418,200' and v4['hasHeroReset'] is True and v4['heroResetVal'] == '$1,482,600', f"Hero vertical inspect/reset failed: {v4}"
         assert v4['visibleJargon'] == [], f"Visible technical jargon found in rendered page: {v4['visibleJargon']}"
         for surf_k, surf_rgb in v4['lightChecks'].items():
