@@ -2741,6 +2741,11 @@
     return esc(raw || '—');
   }
 
+  function siteJvMarker(isJv) {
+    if (!isJv || isJv === 'No' || isJv === 'false') return '';
+    return ' <span class="site-jv-marker" title="Joint Venture (50/50 Partnership Site)"><svg class="site-jv-ico" viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.3" cy="6" r="2.7"/><circle cx="7.7" cy="6" r="2.7"/></svg>JV</span>';
+  }
+
   // 10. Power BI Table with Inline Data Bars, Red Negatives, Amber/Navy Row Highlights, Sticky Totals & Interactive Pagination
   function pbiTable(title, cols, rows, opts = {}) {
     const list = rows || [];
@@ -4252,8 +4257,7 @@
               .filter(s => Number(s.loads || 0) > 0 || Math.abs(Number(s.sales_ttc || 0)) > 0.005)
               .sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0) || Number(b.loads || 0) - Number(a.loads || 0));
             return pbiTable('Customer destination sites · loads, tonnage, transport & revenue', [
-              { label: 'Destination Site', key: 'Site', bold: true, fmt: v => esc(v && v !== '(Unassigned Site)' ? v : 'Pick-up at Plant (No delivery site)') },
-              { label: 'JV', key: 'JV', fmt: v => v === 'Yes' ? '<span class="badge badge-brass">JV</span>' : '—' },
+              { label: 'Destination Site', key: 'Site', bold: true, fmt: (v, r) => `<b>${esc(v && v !== '(Unassigned Site)' ? v : 'Pick-up at Plant (No delivery site)')}</b>${siteJvMarker(r && (r.JV === 'Yes' || r.is_jv))}` },
               { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v) },
               { label: 'Tons Sold', key: 'tons_sold', r: true, fmt: v => fmtNum(v, 0) },
               { label: 'Transport ($)', key: 'trans_rev', r: true, fmt: v => fmtUSD(v, 0) },
@@ -4963,9 +4967,8 @@
               .sort((a, b) => Number(b.raw_cost || 0) - Number(a.raw_cost || 0) || Number(b.raw_loads || 0) - Number(a.raw_loads || 0));
 
             return pbiTable('Source sites · raw material intake & haulage cost', [
-              { label: 'Source Site', key: 'Site', bold: true, fmt: v => esc(v && v !== '(Unassigned Site)' ? v : '(Unassigned Source Site)') },
+              { label: 'Source Site', key: 'Site', bold: true, fmt: (v, r) => `<b>${esc(v && v !== '(Unassigned Site)' ? v : '(Unassigned Source Site)')}</b>${siteJvMarker(r && (r.JV === 'Yes' || r.is_jv))}` },
               { label: 'Site Owner', key: 'siteOwner', fmt: v => esc(v || '—') },
-              { label: 'JV', key: 'JV', fmt: v => v === 'Yes' ? '<span class="badge badge-brass">JV 50/50</span>' : '—' },
               { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: v => fmtNum(v) },
               { label: 'Raw Qty (m³)', key: 'raw_qty', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '—' },
               { label: 'Raw Tons', key: 'raw_tons', r: true, fmt: v => v > 0 ? fmtNum(v, 0) : '—' },
@@ -5205,9 +5208,8 @@
               .sort((a, b) => Number(b.raw_cost || 0) - Number(a.raw_cost || 0) || Number(b.raw_loads || 0) - Number(a.raw_loads || 0));
 
             return pbiTable('Source sites · raw material intake & haulage cost', [
-              { label: 'Source Site', key: 'Site', bold: true, fmt: v => esc(v && v !== '(Unassigned Site)' ? v : '(Unassigned Source Site)') },
+              { label: 'Source Site', key: 'Site', bold: true, fmt: (v, r) => `<b>${esc(v && v !== '(Unassigned Site)' ? v : '(Unassigned Source Site)')}</b>${siteJvMarker(r && (r.JV === 'Yes' || r.is_jv))}` },
               { label: 'Site Owner', key: 'siteOwner', fmt: v => esc(v || '—') },
-              { label: 'JV', key: 'JV', fmt: v => v === 'Yes' ? '<span class="badge badge-brass">JV 50/50</span>' : '—' },
               { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: v => fmtNum(v) },
               { label: 'Raw Qty (m³)', key: 'raw_qty', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '—' },
               { label: 'Raw Tons', key: 'raw_tons', r: true, fmt: v => v > 0 ? fmtNum(v, 0) : '—' },

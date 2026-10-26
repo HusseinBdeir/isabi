@@ -5769,6 +5769,10 @@
     const cls = sgn < 0 ? 'badge-warn' : (/^cash$/i.test(m) ? 'badge-method-cash' : 'badge-method-credit');
     return `<span class="badge ${cls}">${esc(m || '—')}</span>`;
   }
+  function siteJvMarker(isJv) {
+    if (!isJv || isJv === 'No' || isJv === 'false') return '';
+    return ' <span class="site-jv-marker" title="Joint Venture (50/50 Partnership Site)"><svg class="site-jv-ico" viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="4.3" cy="6" r="2.7"/><circle cx="7.7" cy="6" r="2.7"/></svg>JV</span>';
+  }
   function listPrice(name) {
     const n = norm(name);
     for (const m of Object.values(SEED.models)) {
@@ -7764,7 +7768,7 @@
         let cur = map.get(name);
         if (!cur) {
           const ref = mdlSites.find(s => norm(s.Site) === norm(name)) || siteInfo(name) || {};
-          cur = { Site: name, JV: ref.JV || (ref.is_jv ? 'Yes' : 'No'), loads: 0, tons_sold: 0, trans_rev: 0, sales_ttc: 0 };
+          cur = { Site: name, JV: ref.JV || ((ref.is_jv || /\bjv\b/i.test(name)) ? 'Yes' : 'No'), loads: 0, tons_sold: 0, trans_rev: 0, sales_ttc: 0 };
           map.set(name, cur);
         }
         const sgn = ticketSign(r);
@@ -8061,24 +8065,23 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${th('ssite', 'Destination Site', 'Site')}${th('ssite', 'JV', 'JV')}${th('ssite', 'Sales Loads', 'loads', 'r')}${th('ssite', 'Tons Sold', 'tons_sold', 'r')}${th('ssite', 'Transport Rev ($)', 'trans_rev', 'r')}${th('ssite', 'Sales TTC ($)', 'sales_ttc', 'r')}
+                  ${th('ssite', 'Destination Site', 'Site')}${th('ssite', 'Sales Loads', 'loads', 'r')}${th('ssite', 'Tons Sold', 'tons_sold', 'r')}${th('ssite', 'Transport Rev ($)', 'trans_rev', 'r')}${th('ssite', 'Sales TTC ($)', 'sales_ttc', 'r')}
                 </tr>
               </thead>
               <tbody>
                 ${sortRows(allSites, 'ssite', 'sales_ttc', 'desc').map(s => `
                   <tr class="rrow" data-rkey="sites" data-rid="${esc((siteInfo(s.Site) || {}).id || s.Site)}">
-                    <td>${relLink('sites', s.Site, s.Site || '(no site on ticket)', true)}</td>
-                    <td>${s.JV === 'Yes' ? '<span class="badge badge-brass">JV</span>' : '—'}</td>
+                    <td>${relLink('sites', s.Site, s.Site || '(no site on ticket)', true)}${siteJvMarker(s.JV === 'Yes' || s.is_jv)}</td>
                     <td class="r">${fmtNum(s.loads)}</td>
                     <td class="r">${fmtNum(s.tons_sold, 0)}</td>
                     <td class="r">${fmtUSD(s.trans_rev, 0)}</td>
                     <td class="r"><strong>${fmtUSD(s.sales_ttc, 0)}</strong></td>
                   </tr>
-                `).join('') || emptyRow(6, 'No site breakdown for this entity')}
+                `).join('') || emptyRow(5, 'No site breakdown for this entity')}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="2"><b>TOTAL (${fmtNum(allSites.length)} SITES)</b></td>
+                  <td><b>TOTAL (${fmtNum(allSites.length)} SITES)</b></td>
                   <td class="r"><b>${fmtNum(allSites.reduce((a, s) => a + Number(s.loads || 0), 0))}</b></td>
                   <td class="r"><b>${fmtNum(allSites.reduce((a, s) => a + Number(s.tons_sold || 0), 0), 0)}</b></td>
                   <td class="r"><b>${fmtUSD(allSites.reduce((a, s) => a + Number(s.trans_rev || 0), 0), 0)}</b></td>
@@ -18083,19 +18086,19 @@
         .map(s => ({ ...s, Site: s.Site && s.Site !== '(Unassigned Site)' ? s.Site : 'Pick-up at Plant (No delivery site)' }))
         .sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0));
       bodyHtml = `<h4>1. Source &amp; Quarry Sites (Raw Material Intake)</h4>` + stTable([
-        { label: 'Source Site', key: 'Site', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'JV', key: 'JV', fmt: v => v === 'Yes' ? '<span class="badge badge-brass">JV 50 / 50</span>' : '—' },
+        { label: 'Source Site', key: 'Site', fmt: (v, r) => `<strong>${esc(v)}</strong>${siteJvMarker(r && (r.JV === 'Yes' || r.is_jv))}` },
         { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: C.num0 }, { label: 'Raw Tons', key: 'raw_tons', r: true, fmt: C.num0 }, { label: 'Material ($)', key: 'raw_mat_cost', r: true, fmt: C.usd2 }, { label: 'Haulage ($)', key: 'raw_haulage', r: true, fmt: C.usd2 }, { label: 'Total Raw Cost', key: 'raw_cost', r: true, fmt: C.usd2 }
-      ], srcRows, [{ v: `${srcRows.length} SOURCE SITES`, span: 2 }, { v: fmtNum(sum(srcRows, 'raw_loads')), r: true }, { v: fmtNum(sum(srcRows, 'raw_tons'), 0), r: true }, { v: fmtUSD(sum(srcRows, 'raw_mat_cost'), 2), r: true }, { v: fmtUSD(sum(srcRows, 'raw_haulage'), 2), r: true }, { v: fmtUSD(sum(srcRows, 'raw_cost'), 2), r: true }])
+      ], srcRows, [{ v: `${srcRows.length} SOURCE SITES` }, { v: fmtNum(sum(srcRows, 'raw_loads')), r: true }, { v: fmtNum(sum(srcRows, 'raw_tons'), 0), r: true }, { v: fmtUSD(sum(srcRows, 'raw_mat_cost'), 2), r: true }, { v: fmtUSD(sum(srcRows, 'raw_haulage'), 2), r: true }, { v: fmtUSD(sum(srcRows, 'raw_cost'), 2), r: true }])
       + `<h4 style="margin-top:18px">2. Customer Destination Sites (Finished Aggregate Deliveries)</h4>` + stTable([
-        { label: 'Destination Site', key: 'Site', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'JV', key: 'JV', fmt: v => v === 'Yes' ? '<span class="badge badge-brass">JV 50 / 50</span>' : '—' },
+        { label: 'Destination Site', key: 'Site', fmt: (v, r) => `<strong>${esc(v)}</strong>${siteJvMarker(r && (r.JV === 'Yes' || r.is_jv))}` },
         { label: 'Sales Loads', key: 'loads', r: true, fmt: C.num0 }, { label: 'Tons Sold', key: 'tons_sold', r: true, fmt: C.num0 }, { label: 'Transport Rev', key: 'trans_rev', r: true, fmt: C.usd2 }, { label: 'Sales TTC', key: 'sales_ttc', r: true, fmt: C.usd2 }
-      ], dstRows, [{ v: `${dstRows.length} DESTINATION SITES`, span: 2 }, { v: fmtNum(sum(dstRows, 'loads')), r: true }, { v: fmtNum(sum(dstRows, 'tons_sold'), 0), r: true }, { v: fmtUSD(sum(dstRows, 'trans_rev'), 2), r: true }, { v: fmtUSD(sum(dstRows, 'sales_ttc'), 2), r: true }]);
+      ], dstRows, [{ v: `${dstRows.length} DESTINATION SITES` }, { v: fmtNum(sum(dstRows, 'loads')), r: true }, { v: fmtNum(sum(dstRows, 'tons_sold'), 0), r: true }, { v: fmtUSD(sum(dstRows, 'trans_rev'), 2), r: true }, { v: fmtUSD(sum(dstRows, 'sales_ttc'), 2), r: true }]);
     } else if (code === '20') {
       const rows = (m.sites || []).filter(s => s.JV === 'Yes').map(s => ({ ...s, Site: s.Site || '(no site on ticket)' }));
       bodyHtml = stTable([
-        { label: 'Site', key: 'Site', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'JV', key: 'JV', fmt: v => v === 'Yes' ? '<span class="badge badge-brass">JV 50 / 50</span>' : '—' }, { label: 'Sales Loads', key: 'loads', r: true, fmt: C.num0 }, { label: 'Tons Sold', key: 'tons_sold', r: true, fmt: C.num0 }, { label: 'Sales TTC', key: 'sales_ttc', r: true, fmt: C.usd2 }, { label: 'Transport Rev', key: 'trans_rev', r: true, fmt: C.usd2 },
+        { label: 'Site', key: 'Site', fmt: (v, r) => `<strong>${esc(v)}</strong>${siteJvMarker(r && (r.JV === 'Yes' || r.is_jv))}` }, { label: 'Sales Loads', key: 'loads', r: true, fmt: C.num0 }, { label: 'Tons Sold', key: 'tons_sold', r: true, fmt: C.num0 }, { label: 'Sales TTC', key: 'sales_ttc', r: true, fmt: C.usd2 }, { label: 'Transport Rev', key: 'trans_rev', r: true, fmt: C.usd2 },
         { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: C.num0 }, { label: 'Raw Tons', key: 'raw_tons', r: true, fmt: C.num0 }, { label: 'Raw Cost', key: 'raw_cost', r: true, fmt: C.usd2 }, { label: 'Partner 50% of Raw Cost', key: 'raw_cost', r: true, fmt: v => `<strong>${fmtUSD(Number(v || 0) / 2, 2)}</strong>` }
-      ], rows, [{ v: `${rows.length} SITES`, span: 2 }, { v: fmtNum(sum(rows, 'loads')), r: true }, { v: fmtNum(sum(rows, 'tons_sold'), 0), r: true }, { v: fmtUSD(sum(rows, 'sales_ttc'), 2), r: true }, { v: fmtUSD(sum(rows, 'trans_rev'), 2), r: true }, { v: fmtNum(sum(rows, 'raw_loads')), r: true }, { v: fmtNum(sum(rows, 'raw_tons'), 0), r: true }, { v: fmtUSD(sum(rows, 'raw_cost'), 2), r: true }, { v: fmtUSD(sum(rows, 'raw_cost') / 2, 2), r: true }]);
+      ], rows, [{ v: `${rows.length} SITES` }, { v: fmtNum(sum(rows, 'loads')), r: true }, { v: fmtNum(sum(rows, 'tons_sold'), 0), r: true }, { v: fmtUSD(sum(rows, 'sales_ttc'), 2), r: true }, { v: fmtUSD(sum(rows, 'trans_rev'), 2), r: true }, { v: fmtNum(sum(rows, 'raw_loads')), r: true }, { v: fmtNum(sum(rows, 'raw_tons'), 0), r: true }, { v: fmtUSD(sum(rows, 'raw_cost'), 2), r: true }, { v: fmtUSD(sum(rows, 'raw_cost') / 2, 2), r: true }]);
       bodyHtml += `<p class="form-note">JV entitlement = partner share × the JV site's raw material cost (Stock Entitlement rule, m114). Revenue-side entitlement is not derivable from tickets because the ticket Site is the delivery site — confirm with the accountant before reading this as a debt.</p>`;
     } else if (code === '17') {
       const today = SEED_DATE;

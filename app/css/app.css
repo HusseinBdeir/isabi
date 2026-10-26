@@ -17873,3 +17873,29 @@ table.ledger-table tbody td.td-databar {
     border-color: var(--line-strong);
   }
 }
+
+/* Inline Joint Venture ("JV") marker icon on Site columns (replaces dedicated JV column) */
+.site-jv-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 5.5px 1px 4.5px;
+  border-radius: 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.35;
+  vertical-align: middle;
+  white-space: nowrap;
+  color: var(--brass-strong, #A67320);
+  background: var(--brass-tint);
+  border: 1px solid var(--brass-border);
+}
+.site-jv-marker .site-jv-ico {
+  flex-shrink: 0;
+  opacity: 0.92;
+}
+:root[data-theme="dark"] .site-jv-marker {
+  color: var(--brass, #D9A54A);
+}
