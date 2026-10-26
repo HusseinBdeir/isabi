@@ -567,6 +567,339 @@
     };
   }
 
+  // Build Live Sales Commission Accrual, Per-Product Corridor, Monthly Ledger & Payout Vouchers (m18a / m18b / m256 parity)
+  function buildSalesCommissionData(salesRows, receiptRows, settlementRows, priceRules, opts = {}) {
+    const today = String(opts.today || '2026-10-26').slice(0, 10);
+    const asAtDate = String(opts.asAtDate || today).slice(0, 10);
+    const roundFn = v => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+    const isSaleMethod = mth => {
+      const m = String(mth || 'Credit').trim();
+      return m !== 'Return' && m !== 'C Return' && m !== 'CR Return' && m !== 'Cash Return' && m !== 'Credit Return' &&
+        m !== 'Discount' && m !== 'Cash Discount' && m !== 'Credit Discount' &&
+        m !== 'JV Adjusted' && m !== 'Remove' && m !== 'Adjusted' && m !== 'Free';
+    };
+
+    const rules = (Array.isArray(priceRules) ? priceRules : []).filter(r => r && !r.voided);
+    const commRules = rules.filter(r => /^commission$/i.test(String(r.rule_type || '').trim()));
+    const custSalesRules = rules.filter(r => /^sales\s*\(/i.test(String(r.rule_type || '').trim()) && Number(r.unit_price ?? r.price ?? 0) > 0 && Number(r.unit_price ?? r.price ?? 0) <= 250 && !/^unit$/i.test(String(r.unit || '')));
+    const listRules = rules.filter(r => /^list\s*price$/i.test(String(r.rule_type || '').trim()) && Number(r.unit_price ?? r.price ?? 0) > 0);
+
+    // Check cross-entity Commission availability (e.g. when WTC is active, BBConstruction holds 12 Agrimount rules)
+    const globalRules = (Array.isArray(opts.allGlobalRules) ? opts.allGlobalRules : []).filter(r => r && !r.voided && /^commission$/i.test(String(r.rule_type || '').trim()));
+    const allowedCos = Array.isArray(opts.allowedCompanies) ? opts.allowedCompanies : null;
+    const globalByCo = new Map();
+    globalRules.forEach(r => {
+      const co = String(r.company || '').trim();
+      if (!co || (allowedCos && allowedCos.length && !allowedCos.includes(co))) return;
+      let st = globalByCo.get(co);
+      if (!st) { st = { company: co, rulesCount: 0, products: new Set(), owners: new Set() }; globalByCo.set(co, st); }
+      st.rulesCount += 1;
+      if (r.product) st.products.add(r.product);
+      if (r.supplier) st.owners.add(r.supplier);
+    });
+    const otherEntities = Array.from(globalByCo.values())
+      .map(x => ({ company: x.company, rulesCount: x.rulesCount, productsCount: x.products.size, ownersLabel: Array.from(x.owners).join(', ') || 'Plant Owner' }))
+      .sort((a, b) => b.rulesCount - a.rulesCount);
+
+    // Index Commission rules by company|product
+    const commByCoProd = new Map();
+    const prodMetaMap = new Map();
+    const beneficiaries = new Set();
+    commRules.forEach(r => {
+      const co = String(r.company || 'BBConstruction').trim();
+      const prod = String(r.product || '').trim();
+      if (!prod) return;
+      if (r.supplier) beneficiaries.add(String(r.supplier).trim());
+      const ck = `${norm(co)}|${norm(prod)}`;
+      let arr = commByCoProd.get(ck);
+      if (!arr) { arr = []; commByCoProd.set(ck, arr); }
+      arr.push(r);
+
+      let pm = prodMetaMap.get(ck);
+      if (!pm) {
+        pm = {
+          key: ck,
+          company: co,
+          product: prod,
+          owner: String(r.supplier || 'Agrimount').trim() || 'Agrimount',
+          uom: String(r.unit || 'Ton').trim() || 'Ton',
+          rules: [],
+          loads: 0,
+          qty_sold: 0,
+          comm_due: 0,
+          net_sales: 0,
+          ticketUnitPrices: []
+        };
+        prodMetaMap.set(ck, pm);
+      }
+      pm.rules.push(r);
+    });
+
+    const matchCommRate = (co, prod, txDate) => {
+      if (!prod || !txDate) return 0;
+      const arr = commByCoProd.get(`${norm(co)}|${norm(prod)}`);
+      if (!arr || !arr.length) return 0;
+      const d = String(txDate).slice(0, 10);
+      let best = 0;
+      for (let i = 0; i < arr.length; i++) {
+        const r = arr[i];
+        const sd = r.start_date ? String(r.start_date).slice(0, 10) : '';
+        const ed = r.end_date ? String(r.end_date).slice(0, 10) : '';
+        if ((!sd || sd <= d) && (!ed || ed >= d)) {
+          const v = Number(r.unit_price ?? r.price ?? 0);
+          if (v > best) best = v;
+        }
+      }
+      return best;
+    };
+
+    const isRuleInForceAt = (r, d) => {
+      const sd = r.start_date ? String(r.start_date).slice(0, 10) : '';
+      const ed = r.end_date ? String(r.end_date).slice(0, 10) : '';
+      return (!sd || sd <= d) && (!ed || ed >= d);
+    };
+
+    // 1. Scoped per-product accrual & selling-price corridor
+    const scopedSales = Array.isArray(salesRows) ? salesRows : [];
+    let totalEarned = 0;
+    let totalQualifyingLoads = 0;
+    let totalQualifyingQty = 0;
+
+    for (let i = 0; i < scopedSales.length; i++) {
+      const s = scopedSales[i];
+      if (!s || s.voided || !isSaleMethod(s.method)) continue;
+      const txDate = String(s.date || '').slice(0, 10);
+      const rate = matchCommRate(s.company, s.product, txDate);
+      if (!(rate > 0)) continue;
+      const qty = Number(s.qty || 0);
+      if (!(qty > 0)) continue;
+      const comm = qty * rate;
+      const netMat = Number(s.price != null ? s.price : (Number(s.total || 0) - Number(s.trans_price || 0)));
+      const up = Number(s.unit_price || 0);
+      totalEarned += comm;
+      totalQualifyingLoads += 1;
+      totalQualifyingQty += qty;
+
+      const ck = `${norm(s.company)}|${norm(s.product)}`;
+      const pm = prodMetaMap.get(ck);
+      if (pm) {
+        pm.loads += 1;
+        pm.qty_sold += qty;
+        pm.comm_due += comm;
+        pm.net_sales += netMat;
+        if (up > 0) pm.ticketUnitPrices.push(up);
+      }
+    }
+
+    const productRows = Array.from(prodMetaMap.values()).map(pm => {
+      const sortedRules = pm.rules.slice().sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+      const activeRule = sortedRules.find(r => isRuleInForceAt(r, asAtDate)) || sortedRules[0] || {};
+      const ruleRates = sortedRules.map(r => Number(r.unit_price ?? r.price ?? 0)).filter(v => v > 0);
+      const minRuleRate = ruleRates.length ? Math.min(...ruleRates) : 0;
+      const maxRuleRate = ruleRates.length ? Math.max(...ruleRates) : 0;
+      const activeRate = Number(activeRule.unit_price ?? activeRule.price ?? 0);
+      const effRate = pm.qty_sold > 0 ? roundFn(pm.comm_due / pm.qty_sold) : activeRate;
+
+      // List price in force for this company + product
+      const lpMatches = listRules
+        .filter(r => norm(r.company) === norm(pm.company) && norm(r.product) === norm(pm.product) && isRuleInForceAt(r, asAtDate))
+        .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+      const lpVal = lpMatches.length ? roundFn(Number(lpMatches[0].unit_price ?? lpMatches[0].price ?? 0)) : null;
+
+      // Customer agreement corridor in native unit (fallback to non-flat ticket unit prices)
+      const cRules = custSalesRules.filter(r => norm(r.company) === norm(pm.company) && norm(r.product) === norm(pm.product) && isRuleInForceAt(r, asAtDate));
+      let cPrices = cRules.map(r => Number(r.unit_price ?? r.price ?? 0)).filter(v => v > 0);
+      if (!cPrices.length && pm.ticketUnitPrices.length) {
+        const cap = lpVal ? lpVal * 2.5 : 45;
+        cPrices = pm.ticketUnitPrices.filter(v => v > 0 && v <= cap);
+      }
+      const minSell = cPrices.length ? roundFn(Math.min(...cPrices)) : null;
+      const maxSell = cPrices.length ? roundFn(Math.max(...cPrices)) : null;
+      const realisedSell = pm.qty_sold > 0 ? roundFn(pm.net_sales / pm.qty_sold) : null;
+      const netAfterComm = realisedSell != null ? roundFn(realisedSell - effRate) : null;
+      const commSharePct = pm.net_sales > 0 ? roundFn((pm.comm_due / pm.net_sales) * 100) : 0;
+      const rateStepNote = (minRuleRate > 0 && maxRuleRate > minRuleRate + 0.005)
+        ? `${fmtUSD(minRuleRate, 2)} → ${fmtUSD(maxRuleRate, 2)}`
+        : '';
+
+      return {
+        id: activeRule.id || pm.product,
+        rule_id: activeRule.id || '',
+        company: pm.company,
+        product: pm.product,
+        Product: pm.product,
+        owner: pm.owner,
+        uom: activeRule.unit || pm.uom || 'Ton',
+        rules_count: pm.rules.length,
+        active_rate: roundFn(activeRate),
+        eff_rate: roundFn(effRate),
+        rate_step_note: rateStepNote,
+        rate_sub: `${fmtUSD(activeRate, 2)}/${activeRule.unit || pm.uom || 'u'} · ${fmtNum(pm.loads, 0)} loads`,
+        loads: pm.loads,
+        qty_sold: roundFn(pm.qty_sold),
+        comm_due: roundFn(pm.comm_due),
+        list_price: lpVal,
+        min_price: minSell,
+        max_price: maxSell,
+        corridor_label: (minSell != null && maxSell != null) ? `${fmtUSD(minSell, 2)} – ${fmtUSD(maxSell, 2)}` : '—',
+        realised_price: realisedSell,
+        net_after_comm: netAfterComm,
+        comm_share_pct: commSharePct,
+        is_active_rule: Boolean(!activeRule.end_date || String(activeRule.end_date).slice(0, 10) >= asAtDate)
+      };
+    }).sort((a, b) => (b.comm_due - a.comm_due) || (b.active_rate - a.active_rate) || a.product.localeCompare(b.product));
+
+    // 2. Scoped Commission Payout Vouchers (Rent / VATRent / RentConfig in receipts + Commission in settlements)
+    const extractVoucher = (r, rkey) => {
+      if (!r || r.voided) return null;
+      const m = String(r.method || '').trim();
+      if (rkey === 'receipts' && m !== 'Rent' && m !== 'VATRent' && m !== 'RentConfig') return null;
+      if (rkey === 'settlements' && m !== 'Commission') return null;
+      const amt = Number(r.amount || 0);
+      const disc = Number(r.discount || 0);
+      const tot = roundFn(amt + disc);
+      const isVat = m === 'VATRent';
+      const isCfg = m === 'RentConfig';
+      return {
+        id: r.id,
+        rkey,
+        date: String(r.date || '').slice(0, 10),
+        rep_date: String(r.rep_date || r.date || '').slice(0, 10),
+        name: r.name || 'Commission Voucher',
+        company: r.company || 'BBConstruction',
+        beneficiary: r.customer || r.supplier || 'Agrimount',
+        method: m,
+        stream_label: isVat ? '11% Commission VAT (GL 449)' : (isCfg ? 'Commission Opening / Config (GL 6222)' : 'Commission Paid Ex-VAT (GL 6222)'),
+        amount: roundFn(amt),
+        discount: roundFn(disc),
+        total: tot,
+        ex_vat_paid: isVat ? 0 : tot,
+        vat_paid: isVat ? tot : 0,
+        m18b_paid: isCfg ? 0 : tot,
+        reference: r.reference || ''
+      };
+    };
+
+    const scopedReceipts = Array.isArray(receiptRows) ? receiptRows : [];
+    const scopedSettlements = Array.isArray(settlementRows) ? settlementRows : [];
+    const voucherRows = [];
+    scopedReceipts.forEach(r => { const v = extractVoucher(r, 'receipts'); if (v) voucherRows.push(v); });
+    scopedSettlements.forEach(s => { const v = extractVoucher(s, 'settlements'); if (v) voucherRows.push(v); });
+    voucherRows.sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.name).localeCompare(String(a.name)));
+
+    let totalPaidExVat = 0, totalPaidRentCash = 0, totalPaidConfig = 0, totalPaidVat = 0, totalPaidM18b = 0;
+    voucherRows.forEach(v => {
+      totalPaidExVat += v.ex_vat_paid;
+      if (v.method === 'RentConfig') totalPaidConfig += v.total;
+      else if (!v.vat_paid) totalPaidRentCash += v.total;
+      totalPaidVat += v.vat_paid;
+      totalPaidM18b += v.m18b_paid;
+      if (v.beneficiary) beneficiaries.add(v.beneficiary);
+    });
+
+    // 3. Full chronological Monthly Commission Ledger (computes true cumulative carry-in from 2024-01, then slices to active period)
+    const fullSales = Array.isArray(opts.allSalesRows) ? opts.allSalesRows : scopedSales;
+    const fullReceipts = Array.isArray(opts.allReceiptRows) ? opts.allReceiptRows : scopedReceipts;
+    const fullSettlements = Array.isArray(opts.allSettlementRows) ? opts.allSettlementRows : scopedSettlements;
+    const useRepBasis = opts.basis === 'rep';
+    const mMap = new Map();
+    const ensureYm = ym => {
+      let row = mMap.get(ym);
+      if (!row) {
+        row = { ym, 'Year Month': formatYmLabel(ym), loads: 0, qty_sold: 0, earned_usd: 0, paid_net_usd: 0, paid_vat_usd: 0, paid_total_usd: 0, vouchers_count: 0 };
+        mMap.set(ym, row);
+      }
+      return row;
+    };
+
+    for (let i = 0; i < fullSales.length; i++) {
+      const s = fullSales[i];
+      if (!s || s.voided || !isSaleMethod(s.method)) continue;
+      const txDate = String(s.date || '').slice(0, 10);
+      const effDate = useRepBasis ? String(s.rep_date || s.date || '').slice(0, 10) : txDate;
+      const rate = matchCommRate(s.company, s.product, txDate);
+      if (!(rate > 0) || !effDate) continue;
+      const qty = Number(s.qty || 0);
+      if (!(qty > 0)) continue;
+      const row = ensureYm(effDate.slice(0, 7));
+      row.loads += 1;
+      row.qty_sold += qty;
+      row.earned_usd += qty * rate;
+    }
+
+    const addFullVoucher = (r, rkey) => {
+      const v = extractVoucher(r, rkey);
+      if (!v) return;
+      const effDate = useRepBasis ? (v.rep_date || v.date) : v.date;
+      if (!effDate) return;
+      const row = ensureYm(effDate.slice(0, 7));
+      row.paid_net_usd += v.ex_vat_paid;
+      row.paid_vat_usd += v.vat_paid;
+      row.paid_total_usd += (v.ex_vat_paid + v.vat_paid);
+      row.vouchers_count += 1;
+    };
+    fullReceipts.forEach(r => addFullVoucher(r, 'receipts'));
+    fullSettlements.forEach(s => addFullVoucher(s, 'settlements'));
+
+    const sortedYms = Array.from(mMap.keys()).sort();
+    let cumExVat = 0;
+    let cumM18b = 0;
+    const allMonthlyRows = sortedYms.map(ym => {
+      const r = mMap.get(ym);
+      const earned = roundFn(r.earned_usd);
+      const paidNet = roundFn(r.paid_net_usd);
+      const paidVat = roundFn(r.paid_vat_usd);
+      const paidTot = roundFn(r.paid_total_usd);
+      const netExVat = roundFn(earned - paidNet);
+      cumExVat = roundFn(cumExVat + netExVat);
+      cumM18b = roundFn(cumM18b + (earned - (paidTot - (ym === '2024-02' || ym === '2024-05' ? 0 : 0))));
+      return {
+        ym,
+        'Year Month': r['Year Month'],
+        loads: r.loads,
+        qty_sold: roundFn(r.qty_sold),
+        earned_usd: earned,
+        paid_net_usd: paidNet,
+        paid_vat_usd: paidVat,
+        paid_total_usd: paidTot,
+        vouchers_count: r.vouchers_count,
+        period_net_ex_vat: netExVat,
+        cum_payable_ex_vat: cumExVat
+      };
+    });
+
+    const fromYm = opts.dateFrom ? String(opts.dateFrom).slice(0, 7) : '';
+    const toYm = opts.dateTo ? String(opts.dateTo).slice(0, 7) : '';
+    const monthlyRows = allMonthlyRows.filter(m => (!fromYm || m.ym >= fromYm) && (!toYm || m.ym <= toYm));
+    const endCumPayableExVat = monthlyRows.length
+      ? monthlyRows[monthlyRows.length - 1].cum_payable_ex_vat
+      : roundFn(totalEarned - totalPaidExVat);
+
+    return {
+      rulesCount: commRules.length,
+      activeRulesCount: commRules.filter(r => isRuleInForceAt(r, asAtDate)).length,
+      productsCount: productRows.length,
+      activeVolumeProductsCount: productRows.filter(p => p.comm_due > 0).length,
+      beneficiariesLabel: Array.from(beneficiaries).join(', ') || 'Agrimount',
+      totalQualifyingLoads,
+      totalQualifyingQty: roundFn(totalQualifyingQty),
+      totalEarned: roundFn(totalEarned),
+      totalPaidExVat: roundFn(totalPaidExVat),
+      totalPaidRentCash: roundFn(totalPaidRentCash),
+      totalPaidConfig: roundFn(totalPaidConfig),
+      totalPaidVat: roundFn(totalPaidVat),
+      totalPaidTtc: roundFn(totalPaidExVat + totalPaidVat),
+      totalPaidM18b: roundFn(totalPaidM18b),
+      periodNetExVat: roundFn(totalEarned - totalPaidExVat),
+      openPayableExVat: roundFn(endCumPayableExVat),
+      m18bBalanceUsd: roundFn(totalEarned - totalPaidM18b),
+      productRows,
+      monthlyRows,
+      voucherRows,
+      otherEntities
+    };
+  }
+
   // Build Quarry Raw Material Purchase (Site) & Site Transportation Rate Comparisons
   function buildQuarryPricingComp(rawRows, priceRules, opts = {}) {
     const asAtDate = String(opts.asAtDate || opts.today || '2026-10-26').slice(0, 10);
@@ -806,7 +1139,7 @@
   const MOVED_PBI_PAGES = {
     p03_exceptions: { id: 'p03_exceptions', view: 'sentinels',       modSec: 'exceptions', short: 'Action Items',       targetLabel: 'AI Sentinels & Audit' },
     p18_tickets:    { id: 'p18_tickets',    view: 'sentinels',       modSec: 'tickets',    short: 'Ticket Books',       targetLabel: 'AI Sentinels & Audit', scrollPanel: 'salesPadPanel' },
-    p17_jv:         { id: 'p17_jv',         view: 'raw_analytics',   modSec: 'jv',         short: 'JV 50/50 Sites',     targetLabel: 'JV & Stock Analytics' },
+    p17_jv:         { id: 'p17_jv',         view: 'raw_jv',          modSec: 'jv',         short: 'JV 50/50 Sites',     targetLabel: 'JV & Partnerships', scrollPanel: 'jvDistPanel' },
     p11_drivers:    { id: 'p11_drivers',    view: 'fleet_drivers',   modSec: 'drivers',    short: 'Drivers & Overtime', targetLabel: 'Drivers & Overtime', scrollPanel: 'driversOtPanel' },
     p13_vat:        { id: 'p13_vat',        view: 'customers',       modSec: 'vat',        short: 'VAT & Invoices',     targetLabel: 'Customers & Receivables', scrollPanel: 'vatInvPanel' },
     p15_treasury:   { id: 'p15_treasury',   view: 'ledger_treasury', modSec: 'treasury',   short: 'Treasury & Loans',   targetLabel: 'Loans & Settlements' },
@@ -1584,9 +1917,12 @@
       if (tableKey === 'vat_invoices' && c === 'tickets_count') {
         return rel.vatInvByNo[norm(r.invoice_no || r.name)] || 0;
       }
-      if (tableKey === 'price_rules' && c === 'matched_tickets') {
-        const pe = r.product ? rel.prodByName[norm(r.product)] : null;
-        return pe ? pe.sales_loads : 0;
+      if (tableKey === 'price_rules') {
+        if (c === 'customer') return r.customer || r.supplier || r.site || '';
+        if (c === 'matched_tickets') {
+          const pe = r.product ? rel.prodByName[norm(r.product)] : null;
+          return pe ? pe.sales_loads : 0;
+        }
       }
       if (tableKey === 'loans' && c === 'settled_amount') {
         const cp = cellValue(r, 'counterparty');
@@ -3229,7 +3565,7 @@
     let headerHtml = '';
     if (!bodyOnly) {
       const fIdx = typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null;
-      const isRawSlicerPage = activePageId === 'p08_stock';
+      const isRawSlicerPage = activePageId === 'p08_stock' || activePageId === 'p08_stock_ap';
       const isSalesSlicerPage = activePageId === 'p04_sales';
       const slicerPools = {
         prodOpts: uniq((m.products || []).map(p => p.Product).concat((rec.products || []).map(p => p.name)), fIdx ? (isRawSlicerPage ? fIdx.productRaw : (isSalesSlicerPage ? fIdx.productSales : fIdx.product)) : null),
@@ -4496,7 +4832,252 @@
         </div>
 
         <div class="pbi-grid-1">
-          ${movedRegisterBanner('Raw Material Purchases Register & JV 50/50 Site Ledger', 'Individual 2-leg raw material tickets (Site Owner + Truck Owner), 3rd-party customer-site transportation, supplier remaining expenses, and Joint Venture 50/50 site stock entitlements live directly inside Material & Transportation.', 'raw', 'Material & Transportation', 'jv')}
+          ${movedRegisterBanner('Raw Material Purchases Register & Joint Venture 50/50 Ledger', 'Individual 2-leg raw material tickets (Site Owner + Truck Owner), 3rd-party customer-site transportation, and supplier remaining expenses live in Material & Transportation, while JV 50/50 sites and distributions live in JV & Partnerships.', 'raw_jv', 'JV & Partnerships')}
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // MERGED STOCK ANALYTICS: UNIT ECONOMICS, TRANSPORT RECOVERY & 3-LEG AP
+    // =========================================================================
+    else if (activePageId === 'p08_stock_ap') {
+      const costRecPct = Number(k.raw_haulage || 0) > 0 ? (Number(k.trans_rev || 0) / Number(k.raw_haulage || 1)) : 1;
+      const p08ApAggGrades = pickTopAggregateGrades(prodRows, 999, rec.products);
+      const p08ApAggSoldM3 = p08ApAggGrades.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
+      const p08ApSellNet = hasAnySlicer && p08ApAggSoldM3 > 0
+        ? round2(p08ApAggGrades.reduce((a, p) => a + Number(p.net_sales != null ? p.net_sales : (Number(p.avg_price_net || 0) * Number(p.qty_sold || 0))), 0) / p08ApAggSoldM3)
+        : k.avg_price_net;
+      const p08ApRawM3 = hasAnySlicer ? prodRows.reduce((a, p) => a + Number(p.raw_qty || 0), 0) : 0;
+      const p08ApRawCostPerM3 = hasAnySlicer && p08ApRawM3 > 0
+        ? round2(prodRows.reduce((a, p) => a + Number(p.raw_cost || 0), 0) / p08ApRawM3)
+        : k.avg_raw_cost;
+      const isScopedAp = Boolean(activeRange || hasAnySlicer);
+      const apBalVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_balance || 0), 0) : k.ap_balance;
+      const apMatVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_material || 0), 0) : k.ap_material;
+      const apHaulVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_haulage || 0), 0) : k.ap_haulage;
+      const apExpVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_expense || 0), 0) : k.ap_expense;
+      const apSetVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.settlements_paid || 0), 0) : k.settlements_paid;
+
+      bodyHtml = `
+        <div class="pbi-overview-bands">
+          ${kpiBand('1 · Raw Material Intake, Tonnage & Unit Economics', [
+            { label: 'Total Raw Cost', value: fmtUSD(sc(k.raw_cost), 0), sub: fmtNum(k.raw_loads) + ' raw loads', tone: 'brass' },
+            { label: 'Material Cost (Site Owners)', value: fmtUSD(sc(k.raw_mat_cost), 0), sub: fmtPct(null, k.raw_mat_cost, k.raw_cost) + ' of raw cost' },
+            { label: 'Haulage Cost (3rd-Party)', value: fmtUSD(sc(k.raw_haulage), 0), sub: fmtPct(null, k.raw_haulage, k.raw_cost) + ' of raw cost' },
+            { label: 'Raw Tons Purchased', value: fmtNum(k.raw_tons, 0) + ' t', sub: fmtNum(k.raw_qty, 0) + ' m³ purchased', tone: 'good' },
+            { label: 'Avg Raw Cost / m³', value: fmtUSD(p08ApRawCostPerM3, 2), sub: 'Sell price: ' + fmtUSD(p08ApSellNet, 2) + '/m³' },
+            { label: 'Transport Cost Recovery', value: fmtPct(costRecPct), sub: 'Trans Rev ' + fmtUSDk(k.trans_rev) + ' ÷ Haul ' + fmtUSDk(k.raw_haulage), tone: costRecPct >= 1 ? 'good' : 'warn' }
+          ])}
+          ${kpiBand('2 · 3-Leg Supplier & Hauler Payables (Accrual vs Settlement)', [
+            { label: 'Net Open AP Balance', value: fmtUSD(apBalVal, 0), sub: 'Class 4011 Supplier Liability', tone: 'brass' },
+            { label: 'Leg 1 · Raw Material', value: fmtUSD(apMatVal, 0), sub: 'Owed to site owners' },
+            { label: 'Leg 2 · 3rd-Party Haulage', value: fmtUSD(apHaulVal, 0), sub: '$0 on company-fleet loads' },
+            { label: 'Leg 3 · Credit Expenses', value: fmtUSD(apExpVal, 0), sub: 'Supplies, repairs & services' },
+            { label: 'Supplier Settlements Paid', value: fmtUSD(apSetVal, 0), sub: 'Cash, check & bank wires', tone: 'good' },
+            { label: 'Active Suppliers & Haulers', value: fmtNum(suppRows.length), sub: 'With ledger activity' }
+          ])}
+        </div>
+
+        <div class="pbi-grid-2">
+          ${pbiPanel('Unit economics by month · raw cost vs selling price ($/m³)', buildMultiLineSvg(months, [
+            { label: 'Avg Selling Price ($/m³ ex-VAT)', key: 'avg_price_net', color: C.navy },
+            { label: 'Avg Raw Cost / m³', key: 'avg_raw_cost', color: C.crit }
+          ], { isMoney: true, decimals: 2 }), {
+            subtitle: 'Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw material intake cost',
+            legend: [{ label: 'Selling Price ($/m³)', color: C.navy, line: true }, { label: 'Raw Cost ($/m³)', color: C.crit, line: true }]
+          })}
+          ${pbiPanel('Transport revenue vs truck haulage cost by month', buildComboChartSvg(months, [
+            { key: 'trans_rev', label: 'Transport Revenue', color: C.steel },
+            { key: 'raw_haulage', label: '3rd-Party Haulage Cost', color: C.crit }
+          ], { label: 'Recovery %', color: C.brass, isPct: true, get: r => Number(r.raw_haulage || 0) > 0 ? Number(r.trans_rev || 0) / Number(r.raw_haulage) : 1 }), {
+            subtitle: 'Delivery transport billed to customers vs third-party raw haulage cost',
+            legend: [{ label: 'Trans Revenue', color: C.steel }, { label: 'Haulage Cost', color: C.crit }, { label: 'Recovery %', color: C.brass, line: true }]
+          })}
+        </div>
+
+        <div class="pbi-grid-2">
+          ${pbiPanel('Accrued vs settled by month (Raw + Expenses vs Settlements)', buildClusteredColumnSvg(months, [
+            { label: 'Raw + Credit Exp', color: C.crit, get: r => Number(r.raw_cost || 0) + Number(r.credit_expenses || 0) },
+            { label: 'Settlements Paid', key: 'settlements_paid', color: C.steel }
+          ]), {
+            subtitle: 'Monthly supplier accruals (raw material + haulage + credit expenses) vs supplier settlements paid',
+            legend: [{ label: 'Accrued (Raw + Credit Exp)', color: C.crit }, { label: 'Settlements Paid', color: C.steel }]
+          })}
+          ${pbiPanel('Payables by supplier / hauler', buildHorizontalBarChart([...suppRows].sort((a, b) => Number(b.ap_balance || 0) - Number(a.ap_balance || 0)), 'Supplier', 'ap_balance', v => fmtUSD(v, 0), { subKey: 'IVA', color: C.navy, maxItems: 10 }), {
+            subtitle: 'Net closing AP balance (+ owed by company, − advance to supplier)'
+          })}
+        </div>
+
+        <div class="pbi-grid-2">
+          ${(() => {
+            const siteOwnerTally = new Map();
+            (rec.sites || []).forEach(rs => {
+              if (rs && rs.name && rs.supplier) {
+                const sk = norm(rs.name);
+                if (!siteOwnerTally.has(sk)) siteOwnerTally.set(sk, new Map([[String(rs.supplier).trim(), 0.01]]));
+              }
+            });
+            rawRows.forEach(r => {
+              if (!r || !r.site || !r.site_owner) return;
+              const sk = norm(r.site);
+              const ow = String(r.site_owner).trim();
+              if (!sk || !ow) return;
+              if (!siteOwnerTally.has(sk)) siteOwnerTally.set(sk, new Map());
+              const om = siteOwnerTally.get(sk);
+              om.set(ow, (om.get(ow) || 0) + Math.max(1, Number(r.total || r.cost || 0)));
+            });
+            const resolveSiteOwner = siteName => {
+              const om = siteOwnerTally.get(norm(siteName || ''));
+              if (!om || !om.size) return '';
+              let best = '', bestScore = -1;
+              om.forEach((scVal, name) => { if (scVal > bestScore) { bestScore = scVal; best = name; } });
+              return om.size > 1 ? `${best} (+${om.size - 1})` : best;
+            };
+            const sourceSiteRows = siteRows
+              .filter(s => Number(s.raw_loads || 0) > 0 || Math.abs(Number(s.raw_cost || 0)) > 0.005 || Number(s.raw_qty || 0) > 0)
+              .map(s => {
+                const qty = Number(s.raw_qty || 0);
+                const cost = Number(s.raw_cost || 0);
+                return Object.assign({}, s, {
+                  siteOwner: resolveSiteOwner(s.Site),
+                  avgRawPerM3: qty > 0 ? round2(cost / qty) : null
+                });
+              })
+              .sort((a, b) => Number(b.raw_cost || 0) - Number(a.raw_cost || 0) || Number(b.raw_loads || 0) - Number(a.raw_loads || 0));
+
+            return pbiTable('Source sites · raw material intake & haulage cost', [
+              { label: 'Source Site', key: 'Site', bold: true, fmt: v => esc(v && v !== '(Unassigned Site)' ? v : '(Unassigned Source Site)') },
+              { label: 'Site Owner', key: 'siteOwner', fmt: v => esc(v || '—') },
+              { label: 'JV', key: 'JV', fmt: v => v === 'Yes' ? '<span class="badge badge-brass">JV 50/50</span>' : '—' },
+              { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: v => fmtNum(v) },
+              { label: 'Raw Qty (m³)', key: 'raw_qty', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '—' },
+              { label: 'Raw Tons', key: 'raw_tons', r: true, fmt: v => v > 0 ? fmtNum(v, 0) : '—' },
+              { label: 'Material ($)', key: 'raw_mat_cost', r: true, fmt: v => fmtUSD(v, 0) },
+              { label: 'Haulage ($)', key: 'raw_haulage', r: true, fmt: v => fmtUSD(v, 0) },
+              { label: 'Total Raw Cost ($)', key: 'raw_cost', r: true, bar: 'brass', fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
+              {
+                label: 'Avg $/m³',
+                key: 'avgRawPerM3',
+                r: true,
+                fmt: v => v != null ? fmtUSD(v, 2) : '—',
+                foot: list => {
+                  const tc = list.reduce((a, r) => a + Number(r.raw_cost || 0), 0);
+                  const tq = list.reduce((a, r) => a + Number(r.raw_qty || 0), 0);
+                  return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(tc / tq, 2)}</b>` : '—';
+                }
+              }
+            ], sourceSiteRows, {
+              subtitle: 'Quarry and excavation source sites ranked by total raw intake cost (Leg 1 material to site owner + Leg 2 haulage to truck owner); customer delivery sites are tracked separately under Sales & Receivables',
+              unitLabel: 'source sites'
+            });
+          })()}
+
+          ${(() => {
+            const prodMetaByNorm = new Map();
+            (rec.products || []).forEach(pr => {
+              if (pr && pr.name) prodMetaByNorm.set(norm(pr.name), pr);
+            });
+            const famMap = new Map();
+            prodRows.forEach(p => {
+              if (!p || !p.Product) return;
+              const pm = prodMetaByNorm.get(norm(p.Product)) || {};
+              const pType = String(pm.type || '').trim();
+              if (pType && pType !== 'Material') return;
+              if (_NON_AGG_PROD_RE.test(p.Product)) return;
+              const famName = String(p['Material Family'] || pm.input_product || p.Product).trim();
+              const fk = norm(famName);
+              if (!famMap.has(fk)) {
+                famMap.set(fk, {
+                  Family: famName,
+                  UoM: p.UoM || pm.uom || 'm³',
+                  outputs: new Set(),
+                  raw_qty: 0,
+                  raw_cost: 0,
+                  qty_sold: 0,
+                  net_sales: 0
+                });
+              }
+              const f = famMap.get(fk);
+              const qSold = Number(p.qty_sold || 0);
+              const qRaw = Number(p.raw_qty || 0);
+              const cRaw = Number(p.raw_cost || 0);
+              const nSales = Number(p.net_sales != null ? p.net_sales : (qSold * Number(p.avg_price_net || 0)));
+              if (qSold > 0 && norm(p.Product) !== fk) f.outputs.add(p.Product);
+              f.raw_qty += qRaw;
+              f.raw_cost += cRaw;
+              f.qty_sold += qSold;
+              f.net_sales += nSales;
+            });
+            const famRows = Array.from(famMap.values())
+              .filter(f => f.raw_qty > 0 || f.raw_cost > 0 || f.qty_sold > 0)
+              .map(f => ({
+                Family: f.Family,
+                UoM: f.UoM,
+                outputsList: Array.from(f.outputs).join(', '),
+                raw_qty: round2(f.raw_qty),
+                raw_cost: round2(f.raw_cost),
+                avg_raw_cost: f.raw_qty > 0 ? round2(f.raw_cost / f.raw_qty) : null,
+                qty_sold: round2(f.qty_sold),
+                net_sales: round2(f.net_sales),
+                avg_price_net: f.qty_sold > 0 ? round2(f.net_sales / f.qty_sold) : null
+              }))
+              .sort((a, b) => Number(b.raw_cost || 0) - Number(a.raw_cost || 0) || Number(b.qty_sold || 0) - Number(a.qty_sold || 0));
+
+            return pbiTable('Raw material families · bought in vs sold out as finished grades', [
+              {
+                label: 'Raw Material Family',
+                key: 'Family',
+                fmt: (v, r) => `<b>${esc(v || '—')}</b>${r && r.outputsList ? ` <span class="mu">· Sold as: ${esc(r.outputsList)}</span>` : ''}`
+              },
+              { label: 'Unit', key: 'UoM', mono: true },
+              { label: 'Raw Bought', key: 'raw_qty', r: true, fmt: (v, r) => v > 0 ? `${fmtNum(v, 0)} ${esc((r && r.UoM) || 'm³')}` : '—' },
+              {
+                label: 'Avg Raw ($)',
+                key: 'avg_raw_cost',
+                r: true,
+                fmt: v => v != null ? fmtUSD(v, 2) : '—',
+                foot: list => {
+                  const tc = list.reduce((a, r) => a + Number(r.raw_cost || 0), 0);
+                  const tq = list.reduce((a, r) => a + Number(r.raw_qty || 0), 0);
+                  return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(tc / tq, 2)}</b>` : '—';
+                }
+              },
+              { label: 'Raw Cost ($)', key: 'raw_cost', r: true, bar: 'brass', fmt: v => fmtUSD(v, 0) },
+              { label: 'Sold Out', key: 'qty_sold', r: true, fmt: (v, r) => v > 0 ? `${fmtNum(v, 0)} ${esc((r && r.UoM) || 'm³')}` : '—' },
+              {
+                label: 'Avg Sell ($)',
+                key: 'avg_price_net',
+                r: true,
+                fmt: v => v != null ? fmtUSD(v, 2) : '—',
+                foot: list => {
+                  const ts = list.reduce((a, r) => a + Number(r.net_sales || 0), 0);
+                  const tq = list.reduce((a, r) => a + Number(r.qty_sold || 0), 0);
+                  return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(ts / tq, 2)}</b>` : '—';
+                }
+              }
+            ], famRows, {
+              subtitle: 'Aggregate material families linking raw quarry intake (e.g. Ramel Mrml, Sakher) to finished crushed/washed grades sold (excludes equipment & fuel)',
+              unitLabel: 'material families'
+            });
+          })()}
+        </div>
+
+        <div class="pbi-grid-1">
+          ${pbiTable('Supplier 3-leg payables & settlements schedule', [
+            { label: 'Supplier / Hauler', key: 'Supplier', bold: true },
+            { label: 'IVA', key: 'IVA' },
+            { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: v => fmtNum(v) },
+            ...(activeRange ? [{ label: 'Opening AP ($)', key: 'opening_ap', r: true, negRed: true, fmt: v => fmtUSD(v, 0) }] : []),
+            { label: 'Leg 1 · Material ($)', key: 'ap_material', r: true, fmt: v => fmtUSD(v, 0) },
+            { label: 'Leg 2 · Haulage ($)', key: 'ap_haulage', r: true, fmt: v => fmtUSD(v, 0) },
+            { label: 'Leg 3 · Expenses ($)', key: 'ap_expense', r: true, fmt: v => fmtUSD(v, 0) },
+            { label: 'Total on Credit ($)', key: 'ap_on_credit', r: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
+            { label: 'Settlements Paid ($)', raw: r => activeRange ? (r.settlements_paid || 0) : (r.ap_settled != null ? r.ap_settled : (r.settlements_paid || 0)), r: true, fmt: v => `<span class="pbi-pos">${fmtUSD(v, 0)}</span>` },
+            { label: 'Closing AP Balance ($)', key: 'ap_balance', r: true, bar: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` }
+          ], [...suppRows].sort((a, b) => Number(b.ap_balance || 0) - Number(a.ap_balance || 0) || Number(b.ap_on_credit || 0) - Number(a.ap_on_credit || 0)), {
+            subtitle: 'Leg 1 (Material owed to Site Owner) + Leg 2 (Haulage owed to Truck Owner) + Leg 3 (Credit Expenses) = Total on Credit · ' + (activeRange ? 'Opening AP + Total on Credit − Settlements Paid = Closing AP Balance' : 'Total on Credit − Settlements Paid = Closing AP Balance'),
+            unitLabel: 'suppliers'
+          })}
         </div>
       `;
     }
@@ -6323,13 +6904,11 @@
       ]
     },
     raw_analytics: {
-      title: 'JV 50/50 Stock Entitlement, Unit Economics & 3-Leg AP',
-      subtitle: 'Joint Venture 50/50 Site Stock Entitlement, Unit Margin, Transport Cost Recovery & 3-Leg Payables',
-      defaultSec: 'jv',
+      title: 'Stock Intake, Unit Economics & 3-Leg Payables',
+      subtitle: 'Raw Material Intake, Unit Margin, Transport Cost Recovery & Monthly Supplier Accrual vs Settlement',
+      defaultSec: 'stock',
       sections: [
-        { id: 'jv', label: 'JV 50/50 Sites & Partner Stock Entitlement', pageId: 'p17_jv', badge: 'Moved Page' },
-        { id: 'stock', label: 'Unit Economics & Transport Cost Recovery', pageId: 'p08_stock', badge: 'Analytics' },
-        { id: 'ap3leg', label: '3-Leg AP Schedule & Monthly Accrual vs Settlement', pageId: 'p07_ap', badge: 'Analytics' }
+        { id: 'stock', label: 'Stock Intake, Unit Economics & 3-Leg Payables', pageId: 'p08_stock_ap', studioPageId: 'p08_stock', badge: 'Analytics' }
       ]
     },
     fleet_analytics: {
@@ -6499,7 +7078,7 @@
     const { STATE } = ctx;
     if (!STATE.moduleSection) STATE.moduleSection = {};
     if (!STATE.moduleLastSection) STATE.moduleLastSection = {};
-    const availSecs = cfg.sections.filter(s => typeof ctx.canAccessPbiPage !== 'function' || ctx.canAccessPbiPage(s.pageId));
+    const availSecs = cfg.sections.filter(s => typeof ctx.canAccessPbiPage !== 'function' || ctx.canAccessPbiPage(s.studioPageId || s.pageId));
     if (!availSecs.length) return '';
 
     const defaultSecId = (cfg.defaultSec && cfg.defaultSec !== 'hide' && (cfg.defaultSec === 'all' ? availSecs.length > 1 : availSecs.some(s => s.id === cfg.defaultSec)))
@@ -6521,9 +7100,11 @@
       : defaultSecId;
 
     const studioTargetSec = !isCollapsed
-      ? (activeSecs.find(s => PBI_PAGES.some(p => p.id === s.pageId)) || null)
+      ? (activeSecs.find(s => PBI_PAGES.some(p => p.id === (s.studioPageId || s.pageId))) || null)
       : null;
-    const primaryPageId = studioTargetSec ? studioTargetSec.pageId : ((availSecs[0] && availSecs[0].pageId) || 'p01_overview');
+    const primaryPageId = studioTargetSec
+      ? (studioTargetSec.studioPageId || studioTargetSec.pageId)
+      : ((availSecs[0] && (availSecs[0].studioPageId || availSecs[0].pageId)) || 'p01_overview');
     const hasPbiInStudio = Boolean(studioTargetSec);
 
     return `
@@ -8181,6 +8762,32 @@
     `;
   }
 
+  function renderJvVisualsSection(ctx) {
+    const jvSites = (ctx && ctx.jvSites) || [];
+    const jvMonths = (ctx && ctx.jvMonths) || [];
+    return `
+      <div class="pbi-grid-2" id="jvChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('JV 50/50 Sites · Sales TTC, Raw Cost & Partner Entitlement ($)', buildClusteredBarChart(jvSites, 'Site', [
+          { label: 'Sales TTC', key: 'sales_ttc', color: C.navy },
+          { label: 'Raw Cost', key: 'raw_cost', color: C.steel },
+          { label: 'Partner Entitlement', key: 'entitlement', color: C.brass }
+        ], { decimals: 0 }), {
+          subtitle: 'Volume and partner 50% stock entitlement comparison across Joint Venture quarry sites'
+        })}
+        ${pbiPanel('Monthly JV Partner Distributions ($)', buildClusteredColumnSvg(jvMonths, [
+          { key: 'rev_usd', label: 'Revenue Basis', color: C.navy },
+          { key: 'stock_usd', label: 'Stock Basis', color: C.brass }
+        ]), {
+          subtitle: 'Monthly Joint Venture profit & stock distributions paid to site partners',
+          legend: [
+            { label: 'Revenue Basis', color: C.navy },
+            { label: 'Stock Basis', color: C.brass }
+          ]
+        })}
+      </div>
+    `;
+  }
+
   window.MFG_PBI = {
     PBI_PAGES,
     MOVED_PBI_PAGES,
@@ -8211,6 +8818,7 @@
     renderDriversVisualsSection,
     renderPayrollVisualsSection,
     renderAttendanceVisualsSection,
-    renderAllowancesVisualsSection
+    renderAllowancesVisualsSection,
+    renderJvVisualsSection
   };
 })();

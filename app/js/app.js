@@ -2567,6 +2567,9 @@
     external: 'external_movements',
     fx_conv: 'conversions',
     conversions: 'conversions',
+    jvdist: 'jv_distributions',
+    jvpart: 'jv_partnerships',
+    jvsites: 'sites',
     st17: 'price_rules'
   };
 
@@ -2653,6 +2656,9 @@
     litres: 'Litres (L)',
     unit_price: 'Unit Price ($)',
     is_jv: 'JV 50/50',
+    partner: 'Partner',
+    basis: 'Basis',
+    percentage: 'Share %',
     vat_registered: 'VAT (11%)',
     is_truck_owner: 'Truck Owner?',
     dir: 'Flow Direction',
@@ -2791,6 +2797,29 @@
       { key: 'product', label: 'Product' },
       { key: 'unit', label: 'Unit' },
       { key: 'unit_price', label: 'Unit Price ($)', kind: 'numeric' }
+    ],
+    jvdist: [
+      { key: 'company', label: 'Company' },
+      { key: 'site', label: 'JV Site' },
+      { key: 'partner', label: 'Partner' },
+      { key: 'basis', label: 'Basis' },
+      { key: 'amount', label: 'Amount ($)', kind: 'numeric' }
+    ],
+    jvpart: [
+      { key: 'company', label: 'Company' },
+      { key: 'site', label: 'JV Site' },
+      { key: 'partner', label: 'Partner' },
+      { key: 'percentage', label: 'Share %', kind: 'numeric' }
+    ],
+    jvsites: [
+      { key: 'Site', label: 'JV Site' },
+      { key: 'loads', label: 'Sales Loads', kind: 'numeric' },
+      { key: 'sales_ttc', label: 'Sales TTC ($)', kind: 'numeric' },
+      { key: 'raw_loads', label: 'Raw Loads', kind: 'numeric' },
+      { key: 'raw_cost', label: 'Raw Cost ($)', kind: 'numeric' },
+      { key: 'entitlement', label: 'Partner 50% ($)', kind: 'numeric' },
+      { key: 'distributed', label: 'Distributed ($)', kind: 'numeric' },
+      { key: 'net_balance', label: 'Net Position ($)', kind: 'numeric' }
     ],
     custs: [
       { key: 'Customer', label: 'Customer' },
@@ -4436,7 +4465,8 @@
       tabs: [
         { view: 'raw', label: 'Material & Transportation', icon: 'raw' },
         { view: 'raw_pricing', label: 'Pricing & Haulage Rates', icon: 'pricing' },
-        { view: 'raw_analytics', label: 'JV & Stock Analytics', icon: 'raw_analytics' }
+        { view: 'raw_analytics', label: 'Stock Analytics', icon: 'raw_analytics' },
+        { view: 'raw_jv', match: ['raw_jv', 'jv'], label: 'JV & Partnerships', icon: 'raw_jv' }
       ]
     },
     {
@@ -4537,7 +4567,8 @@
     if (view === 'sales_vat') return canAccessTable('vat_invoices', u) || canAccessTable('credit_terms', u) || canAccessPbiPage('p13_vat', u);
     if (view === 'sales_analytics') return canAccessPbiPage('p18_tickets', u) || canAccessPbiPage('p04_sales', u) || canAccessPbiPage('p05_pricing', u) || canAccessPbiPage('p06_ar', u);
     if (view === 'raw_pricing') return canViewView('raw', u) && (canViewView('pricing', u) || canAccessTable('price_rules', u));
-    if (view === 'raw_analytics') return canViewView('raw', u) && (canAccessPbiPage('p17_jv', u) || canAccessPbiPage('p08_stock', u) || canAccessPbiPage('p07_ap', u));
+    if (view === 'raw_analytics') return canViewView('raw', u) && (canAccessPbiPage('p08_stock', u) || canAccessPbiPage('p07_ap', u));
+    if (view === 'raw_jv' || view === 'jv') return canViewView('raw', u) && (canAccessTable('jv_partnerships', u) || canAccessTable('jv_distributions', u) || canAccessPbiPage('p17_jv', u));
     if (view === 'fleet_equip' || view === 'fleet_maint' || view === 'fleet_drivers') return canViewView('fleet', u);
     if (view === 'fleet_analytics') return canViewView('fleet', u) && (canAccessPbiPage('p11_drivers', u) || canAccessPbiPage('p09_fuel', u) || canAccessPbiPage('p10_fleet', u));
     if (view === 'cashflow_analytics') return canViewView('cashflow', u) && canAccessPbiPage('p14_cashflow', u);
@@ -4605,6 +4636,7 @@
 
   function canAccessPbiPage(pageId, u) {
     u = u || activeUser();
+    if (pageId === 'p08_stock_ap') return canAccessPbiPage('p08_stock', u) || canAccessPbiPage('p07_ap', u);
     const role = String(u.role || '');
     const pbi = u.pbi_access || 'partial';
     if (pageId === 'p02_companies' && allowedCompanyNames(u).length < 2) return false;
@@ -8656,6 +8688,393 @@
                   <td class="r"><b>${fmtUSD(stSumCred, 2)}</b></td>
                   <td class="r"><b>${fmtUSD(stSumPaid, 2)}</b></td>
                   <td class="r"><b>${fmtUSD(stSumRem, 2)}</b></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderRawJv() {
+    const m = getModel();
+    const qRaw = norm(STATE.search);
+    const range = periodRange(STATE.period);
+    const distBase = filterRecords(SEED.records.jv_distributions || [], { ignoreSearch: true });
+    const partBase = filterRecords(SEED.records.jv_partnerships || [], { ignoreSearch: true, ignorePeriod: true });
+
+    const jvSiteNameMap = new Map();
+    const registerJvSite = name => {
+      const lbl = String(name || '').trim();
+      const k = norm(lbl);
+      if (k && !jvSiteNameMap.has(k)) jvSiteNameMap.set(k, lbl);
+    };
+    (m.sites || []).forEach(s => { if (s && s.JV === 'Yes') registerJvSite(s.Site); });
+    partBase.forEach(p => { if (p && p.site) registerJvSite(p.site); });
+    distBase.forEach(d => { if (d && d.site) registerJvSite(d.site); });
+    (SEED.records.sites || []).forEach(s => {
+      if (s && (s.is_jv || s.jv === 'Yes')) registerJvSite(s.name);
+    });
+
+    const distBySite = new Map();
+    const distBySitePartner = new Map();
+    const monthAgg = new Map();
+    const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    let totalDistAll = 0, totalRevBase = 0, totalStockBase = 0, revCnt = 0, stockCnt = 0;
+
+    distBase.forEach(d => {
+      const amt = Number(d.amount != null ? d.amount : d.total || 0);
+      totalDistAll += amt;
+      const isStock = /stock/i.test(String(d.basis || ''));
+      if (isStock) { totalStockBase += amt; stockCnt += 1; }
+      else { totalRevBase += amt; revCnt += 1; }
+      const sk = norm(d.site);
+      if (sk) distBySite.set(sk, (distBySite.get(sk) || 0) + amt);
+      const spk = `${sk}|${norm(d.partner)}`;
+      distBySitePartner.set(spk, (distBySitePartner.get(spk) || 0) + amt);
+      const dt = recordDate(d);
+      const ym = dt ? dt.slice(0, 7) : '';
+      if (/^\d{4}-\d{2}$/.test(ym)) {
+        const mIdx = Math.max(0, Math.min(11, parseInt(ym.slice(5, 7), 10) - 1));
+        const cur = monthAgg.get(ym) || { ym, 'Year Month': `${MONTH_SHORT[mIdx]} ${ym.slice(0, 4)}`, rev_usd: 0, stock_usd: 0 };
+        if (isStock) cur.stock_usd = round2(cur.stock_usd + amt);
+        else cur.rev_usd = round2(cur.rev_usd + amt);
+        monthAgg.set(ym, cur);
+      }
+    });
+    const jvMonths = Array.from(monthAgg.values()).sort((a, b) => a.ym.localeCompare(b.ym));
+
+    // Build scoped JV site intake & sales metrics
+    const siteMetricByNorm = new Map();
+    if (!range) {
+      (m.sites || []).forEach(s => {
+        if (!s || !s.Site) return;
+        const sk = norm(s.Site);
+        if (!jvSiteNameMap.has(sk)) return;
+        siteMetricByNorm.set(sk, {
+          loads: Number(s.loads || 0),
+          sales_ttc: round2(Number(s.sales_ttc || 0)),
+          raw_loads: Number(s.raw_loads || 0),
+          raw_qty: round2(Number(s.raw_qty || 0)),
+          raw_cost: round2(Number(s.raw_cost || 0))
+        });
+      });
+    } else {
+      const salesPool = filterRecords(SEED.records.sales_tickets || [], { ignoreSearch: true });
+      const rawPool = filterRecords(SEED.records.raw_purchases || [], { ignoreSearch: true });
+      salesPool.forEach(s => {
+        const sk = norm(s.site);
+        if (!sk || !jvSiteNameMap.has(sk)) return;
+        const sgn = ticketSign(s);
+        if (sgn === 0) return;
+        const cur = siteMetricByNorm.get(sk) || { loads: 0, sales_ttc: 0, raw_loads: 0, raw_qty: 0, raw_cost: 0 };
+        if (sgn === 1) cur.loads += 1;
+        cur.sales_ttc = round2(cur.sales_ttc + sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0));
+        siteMetricByNorm.set(sk, cur);
+      });
+      rawPool.forEach(r => {
+        const sk = norm(r.site);
+        if (!sk || !jvSiteNameMap.has(sk)) return;
+        const cur = siteMetricByNorm.get(sk) || { loads: 0, sales_ttc: 0, raw_loads: 0, raw_qty: 0, raw_cost: 0 };
+        cur.raw_loads += 1;
+        cur.raw_qty = round2(cur.raw_qty + productMeters(r.product, r.qty, r.uom));
+        cur.raw_cost = round2(cur.raw_cost + Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0))));
+        siteMetricByNorm.set(sk, cur);
+      });
+    }
+
+    const partnersBySite = new Map();
+    partBase.forEach(p => {
+      const sk = norm(p.site);
+      if (!sk) return;
+      if (!partnersBySite.has(sk)) partnersBySite.set(sk, []);
+      partnersBySite.get(sk).push(`${p.partner} (${fmtNum(p.percentage || 50, 0)}%)`);
+    });
+
+    const jvSitesAll = Array.from(jvSiteNameMap.entries()).map(([sk, siteLabel]) => {
+      const st = siteMetricByNorm.get(sk) || { loads: 0, sales_ttc: 0, raw_loads: 0, raw_qty: 0, raw_cost: 0 };
+      const entitlement = round2(Number(st.raw_cost || 0) / 2);
+      const distributed = round2(distBySite.get(sk) || 0);
+      const net_balance = round2(entitlement - distributed);
+      const pList = partnersBySite.get(sk) || [];
+      return {
+        Site: siteLabel,
+        splitLabel: pList.length ? pList.join(' · ') : '50% / 50%',
+        loads: st.loads,
+        sales_ttc: st.sales_ttc,
+        raw_loads: st.raw_loads,
+        raw_qty: st.raw_qty,
+        raw_cost: st.raw_cost,
+        entitlement,
+        distributed,
+        net_balance
+      };
+    }).sort((a, b) => Number(b.raw_cost || 0) - Number(a.raw_cost || 0) || Number(b.distributed || 0) - Number(a.distributed || 0));
+
+    const totJvSales = round2(jvSitesAll.reduce((a, r) => a + Number(r.sales_ttc || 0), 0));
+    const totJvRaw = round2(jvSitesAll.reduce((a, r) => a + Number(r.raw_cost || 0), 0));
+    const totJvEnt = round2(jvSitesAll.reduce((a, r) => a + Number(r.entitlement || 0), 0));
+    const totJvDist = round2(totalDistAll);
+    const netPosAll = round2(totJvEnt - totJvDist);
+    const jiyehCnt = distBase.filter(d => /jiyeh/i.test(String(d.site || ''))).length;
+    const halatCnt = distBase.filter(d => /halat/i.test(String(d.site || ''))).length;
+
+    const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const distPool = distBase.filter(d => {
+      if (qRaw && !norm(`${d.name || ''} ${d.site || ''} ${d.partner || ''} ${d.basis || ''} ${d.company || ''} ${d.notes || ''}`).includes(qRaw)) return false;
+      if (STATE.chipFilter === 'jiyeh') return /jiyeh/i.test(String(d.site || ''));
+      if (STATE.chipFilter === 'halat') return /halat/i.test(String(d.site || ''));
+      if (STATE.chipFilter === 'revenue') return !/stock/i.test(String(d.basis || ''));
+      if (STATE.chipFilter === 'stock') return /stock/i.test(String(d.basis || ''));
+      if (STATE.chipFilter === 'app') return isAppRecord(d);
+      return true;
+    });
+    const distRows = sortRows(distPool, 'jvdist', 'date', 'desc');
+    const shownDist = distRows.slice(0, shownCount('jvdist'));
+    let sumDistAmt = 0, sumRevDist = 0, sumStockDist = 0;
+    distRows.forEach(d => {
+      const a = Number(d.amount != null ? d.amount : d.total || 0);
+      sumDistAmt += a;
+      if (/stock/i.test(String(d.basis || ''))) sumStockDist += a;
+      else sumRevDist += a;
+    });
+
+    const jvSitesPool = jvSitesAll.filter(s => {
+      if (!qRaw) return true;
+      return norm(`${s.Site} ${s.splitLabel}`).includes(qRaw);
+    });
+    const jvSiteRows = sortRows(jvSitesPool, 'jvsites', 'raw_cost', 'desc');
+    const shownJvSites = jvSiteRows.slice(0, shownCount('jvsites'));
+    let sumStSales = 0, sumStRawLoads = 0, sumStRawQty = 0, sumStRawCost = 0, sumStEnt = 0, sumStDist = 0, sumStNet = 0;
+    jvSiteRows.forEach(s => {
+      sumStSales += s.sales_ttc;
+      sumStRawLoads += s.raw_loads;
+      sumStRawQty += s.raw_qty;
+      sumStRawCost += s.raw_cost;
+      sumStEnt += s.entitlement;
+      sumStDist += s.distributed;
+      sumStNet += s.net_balance;
+    });
+
+    const partPool = partBase.map(p => {
+      const isSelfCo = ['wtc', 'bbconstruction', 'lions transport', 'lionstransport'].includes(norm(p.partner));
+      const paid = isSelfCo ? 0 : round2(distBySitePartner.get(`${norm(p.site)}|${norm(p.partner)}`) || 0);
+      return Object.assign({}, p, { dist_paid: paid });
+    }).filter(p => {
+      if (!qRaw) return true;
+      return norm(`${p.name || ''} ${p.company || ''} ${p.site || ''} ${p.partner || ''} ${p.notes || ''}`).includes(qRaw);
+    });
+    const partRows = sortRows(partPool, 'jvpart', 'dist_paid', 'desc');
+    const shownParts = partRows.slice(0, shownCount('jvpart'));
+    const sumPartPaid = round2(partRows.reduce((a, p) => a + Number(p.dist_paid || 0), 0));
+
+    const fmtJvNet = v => {
+      if (Math.abs(v) < 0.005) return '<span class="muted">$0.00</span>';
+      if (v > 0) return `<strong style="color:var(--warn)" title="Remaining stock entitlement above distributions paid">${fmtUSD(v, 2)}</strong>`;
+      return `<strong style="color:var(--ok)" title="Distributions paid in advance / above raw-cost stock entitlement">${fmtUSD(v, 2)}</strong>`;
+    };
+
+    const settledSharePct = totJvEnt > 0 ? Math.min(100, Math.round((totJvDist / totJvEnt) * 100)) : 100;
+    const revSharePct = totJvDist > 0 ? Math.round((totalRevBase / totJvDist) * 1000) / 10 : 0;
+    const stockSharePct = totJvDist > 0 ? Math.round((100 - revSharePct) * 10) / 10 : 0;
+
+    return `
+      <div class="cockpit-banner has-insights">
+        <div class="cockpit-title-block sr-only">
+          <div class="cockpit-eyebrow">JOINT VENTURE 50/50 SITES · PARTNER STOCK ENTITLEMENT &amp; DISTRIBUTIONS</div>
+          <div class="cockpit-title">JV &amp; Partnerships</div>
+          <div class="cockpit-sub">50/50 Joint Venture quarry partnership agreements, partner raw-cost stock entitlement, and profit &amp; stock distribution vouchers.</div>
+        </div>
+        <div class="cockpit-pills insight-grid">
+          ${insightCard({
+            label: 'JV 50/50 Stock Entitlement',
+            badge: `${fmtNum(jvSitesAll.length)} Active JV Sites`,
+            badgeCls: 'brass',
+            val: `${fmtUSD(totJvEnt, 0)}`,
+            valCls: 'brass',
+            pct: 50,
+            pct2: 50,
+            sub: `50% × JV Raw Cost <b>${fmtUSD(totJvRaw, 0)}</b> · JV Sales <b>${fmtUSD(totJvSales, 0)}</b>`,
+            tone: 'brass'
+          })}
+          ${insightCard({
+            label: 'JV Distributions Paid',
+            badge: `${fmtNum(distBase.length)} Vouchers`,
+            badgeCls: 'good',
+            val: `${fmtUSD(totJvDist, 0)}`,
+            valCls: 'emerald',
+            pct: revSharePct,
+            pct2: stockSharePct,
+            sub: `Revenue <b>${fmtUSD(totalRevBase, 0)}</b> (${fmtNum(revCnt)}) · Stock <b>${fmtUSD(totalStockBase, 0)}</b> (${fmtNum(stockCnt)})`,
+            tone: 'emerald'
+          })}
+          ${insightCard({
+            label: 'Net Stock Position',
+            badge: netPosAll > 0.01 ? 'Entitlement Open' : 'Settled / Advance',
+            badgeCls: netPosAll > 0.01 ? 'warn' : 'good',
+            val: `${fmtUSD(netPosAll, 0)}`,
+            valCls: netPosAll > 0.01 ? 'amber' : 'emerald',
+            pct: settledSharePct,
+            sub: `Entitlement <b>${fmtUSD(totJvEnt, 0)}</b> − Paid <b>${fmtUSD(totJvDist, 0)}</b> (${settledSharePct}% covered)`,
+            tone: netPosAll > 0.01 ? 'amber' : 'emerald'
+          })}
+          ${insightCard({
+            label: 'JV Partnership Contracts',
+            badge: `50% / 50% Split`,
+            badgeCls: 'info',
+            val: `${fmtNum(partBase.length)} <small>agreements</small>`,
+            valCls: '',
+            pct: 100,
+            sub: `Jiyeh JV (<b>${fmtNum(jiyehCnt)}</b> dist) · Halat JV (<b>${fmtNum(halatCnt)}</b> dist)`,
+            tone: 'steel'
+          })}
+          ${appPill('jv_distributions', 'amount', 'JV entries')}
+        </div>
+      </div>
+
+      <div class="panel-card" id="jvDistPanel" style="margin-bottom:14px">
+        <div class="table-toolbar">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search voucher, JV site, partner, basis, notes...')}
+            <div class="chip-bar">${chip('all', `All (${distBase.length})`)}${chip('jiyeh', `Jiyeh JV (${jiyehCnt})`)}${chip('halat', `Halat JV (${halatCnt})`)}${chip('revenue', `Revenue (${revCnt})`)}${chip('stock', `Stock (${stockCnt})`)}${chip('app', 'App-entered')}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_sites" title="Open Master Sites &amp; Regions Registry">${ic('reg_sites')} Sites &amp; Regions</button>
+            ${exportBtn('jvDistPanel', 'JV_Partner_Distributions')}
+            ${canEnterForm('jv') ? '<button class="btn btn-primary" data-open-modal="jv">+ New JV Entry</button>' : ''}
+          </div>
+        </div>
+        ${renderColFilterBar('jvdist')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('jvdist', STATE.basis === 'rep' ? 'Rep Date' : 'Date', 'date')}${th('jvdist', 'Voucher', 'name')}${th('jvdist', 'Co.', 'company')}${th('jvdist', 'JV Site', 'site')}
+                ${th('jvdist', 'Partner', 'partner')}${th('jvdist', 'Basis', 'basis')}${th('jvdist', 'Amount ($)', 'amount', 'r')}${th('jvdist', 'Notes', 'notes')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownDist.map(r => {
+                const amt = Number(r.amount != null ? r.amount : r.total || 0);
+                const isStock = /stock/i.test(String(r.basis || ''));
+                return `
+                  <tr class="rrow" data-rkey="jv_distributions" data-rid="${esc(r.id)}">
+                    <td class="mono">${esc(recordDateDMY(r))}</td>
+                    <td class="mono">${appCell(r)}<strong>${esc(r.name || r.id || '-')}</strong></td>
+                    <td>${coBadge(r.company)}</td>
+                    <td>${r.site ? relLink('sites', r.site, r.site, true) : '-'}</td>
+                    <td>${r.partner ? relLink('suppliers', r.partner, r.partner, true) : '-'}</td>
+                    <td><span class="badge ${isStock ? 'badge-brass' : 'badge-info'}">${esc(r.basis || 'Revenue')}</span></td>
+                    <td class="r"><strong>${fmtUSD(amt, 2)}</strong></td>
+                    <td class="muted">${esc(r.notes || '-')}</td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(8, qRaw ? `No JV distributions match "${STATE.search}".` : 'No JV distributions in this scope')}
+              ${showMoreRow('jvdist', distRows.length, 8)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>TOTAL (${fmtNum(distRows.length)} DISTRIBUTIONS)</b></td>
+                <td class="r"><b>${fmtUSD(sumDistAmt, 2)}</b></td>
+                <td class="muted"><b>Revenue ${fmtUSD(sumRevDist, 0)} · Stock ${fmtUSD(sumStockDist, 0)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      ${window.MFG_PBI && typeof window.MFG_PBI.renderJvVisualsSection === 'function'
+        ? window.MFG_PBI.renderJvVisualsSection({ jvSites: jvSitesAll, jvMonths })
+        : ''}
+
+      <div class="split-grid-2">
+        <div class="panel-card" id="jvSitesEntPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div class="panel-title"><span>JV 50/50 SITES &amp; PARTNER STOCK ENTITLEMENT</span></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span class="panel-meta">Partner share × JV site raw intake cost ${exportBtn('jvSitesEntPanel', 'JV_Sites_Stock_Entitlement')}</span>
+            </div>
+          </div>
+          ${renderColFilterBar('jvsites')}
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  ${th('jvsites', 'JV Site', 'Site')}${th('jvsites', 'Partners & Split', 'splitLabel')}${th('jvsites', 'Sales TTC', 'sales_ttc', 'r')}
+                  ${th('jvsites', 'Raw Loads', 'raw_loads', 'r')}${th('jvsites', 'Raw Qty', 'raw_qty', 'r')}${th('jvsites', 'Raw Cost', 'raw_cost', 'r')}
+                  ${th('jvsites', 'Partner 50%', 'entitlement', 'r')}${th('jvsites', 'Distributed', 'distributed', 'r')}${th('jvsites', 'Net Position', 'net_balance', 'r')}
+                </tr>
+              </thead>
+              <tbody>
+                ${shownJvSites.map(s => `
+                  <tr class="rrow" data-rkey="sites" data-rid="${esc((siteInfo(s.Site) || {}).id || s.Site)}">
+                    <td>${relLink('sites', s.Site, s.Site, true)}</td>
+                    <td><span class="badge badge-brass">JV 50/50</span> <small class="muted">${esc(s.splitLabel)}</small></td>
+                    <td class="r">${s.sales_ttc !== 0 ? fmtUSD(s.sales_ttc, 0) : '-'}</td>
+                    <td class="r">${fmtNum(s.raw_loads)}</td>
+                    <td class="r">${s.raw_qty > 0 ? `${fmtNum(s.raw_qty, 0)} m³` : '-'}</td>
+                    <td class="r">${fmtUSD(s.raw_cost, 2)}</td>
+                    <td class="r"><strong>${fmtUSD(s.entitlement, 2)}</strong></td>
+                    <td class="r">${fmtUSD(s.distributed, 2)}</td>
+                    <td class="r">${fmtJvNet(s.net_balance)}</td>
+                  </tr>
+                `).join('') || emptyRow(9, 'No Joint Venture sites in this scope')}
+                ${showMoreRow('jvsites', jvSiteRows.length, 9)}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="2"><b>TOTAL (${fmtNum(jvSiteRows.length)} JV SITES)</b></td>
+                  <td class="r"><b>${fmtUSD(sumStSales, 0)}</b></td>
+                  <td class="r"><b>${fmtNum(sumStRawLoads)}</b></td>
+                  <td class="r"><b>${fmtNum(sumStRawQty, 0)} m³</b></td>
+                  <td class="r"><b>${fmtUSD(sumStRawCost, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(sumStEnt, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(sumStDist, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(sumStNet, 2)}</b></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel-card" id="jvPartPanel">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div class="panel-title"><span>JV SITE PARTNERSHIP AGREEMENTS</span></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span class="panel-meta">${exportBtn('jvPartPanel', 'JV_Partnership_Agreements')}</span>
+              ${canEnterForm('jv') ? '<button class="btn btn-ghost-bar" data-open-modal="jv">+ New Agreement</button>' : ''}
+            </div>
+          </div>
+          ${renderColFilterBar('jvpart')}
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  ${th('jvpart', 'Agreement', 'name')}${th('jvpart', 'Co.', 'company')}${th('jvpart', 'JV Site', 'site')}
+                  ${th('jvpart', 'Partner', 'partner')}${th('jvpart', 'Share %', 'percentage', 'r')}${th('jvpart', 'Distributed ($)', 'dist_paid', 'r')}${th('jvpart', 'Notes', 'notes')}
+                </tr>
+              </thead>
+              <tbody>
+                ${shownParts.map(p => `
+                  <tr class="rrow" data-rkey="jv_partnerships" data-rid="${esc(p.id)}">
+                    <td>${appCell(p)}<strong>${esc(p.name || p.id || '-')}</strong></td>
+                    <td>${coBadge(p.company)}</td>
+                    <td>${p.site ? relLink('sites', p.site, p.site, true) : '-'}</td>
+                    <td>${p.partner ? relLink('suppliers', p.partner, p.partner, true) : '-'}</td>
+                    <td class="r"><span class="badge badge-brass">${fmtNum(p.percentage || 50, 1)}%</span></td>
+                    <td class="r">${p.dist_paid > 0 ? `<strong>${fmtUSD(p.dist_paid, 2)}</strong>` : '<span class="muted">Operating Co.</span>'}</td>
+                    <td class="muted">${esc(p.notes || '-')}</td>
+                  </tr>
+                `).join('') || emptyRow(7, 'No JV partnership agreements in this scope')}
+                ${showMoreRow('jvpart', partRows.length, 7)}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="4"><b>TOTAL (${fmtNum(partRows.length)} AGREEMENTS)</b></td>
+                  <td class="r"><b>50% / 50%</b></td>
+                  <td class="r"><b>${fmtUSD(sumPartPaid, 2)}</b></td>
+                  <td></td>
                 </tr>
               </tfoot>
             </table>
@@ -24598,6 +25017,7 @@
     const REL_TO_VIEW_COL = {
       sales: { customers: 'customer', products: 'product', sites: 'site', equipment: 'truck', drivers: 'driver' },
       raw: { sites: 'site', suppliers: 'site_owner', products: 'product', equipment: 'truck' },
+      raw_jv: { sites: 'site', suppliers: 'partner' },
       fleet: { equipment: 'equipment', drivers: 'driver' },
       pricing: { customers: 'customer', suppliers: 'supplier', products: 'product', sites: 'site' },
       raw_pricing: { customers: 'customer', suppliers: 'supplier', products: 'product', sites: 'site' },
@@ -28046,7 +28466,9 @@
     sales_analytics: 'Sales Analytics',
     raw: 'Material & Transportation',
     raw_pricing: 'Pricing & Haulage Rates',
-    raw_analytics: 'JV & Stock Analytics',
+    raw_analytics: 'Stock Analytics',
+    raw_jv: 'JV & Partnerships',
+    jv: 'JV & Partnerships',
     fleet: 'Diesel & Lubricants',
     fleet_equip: 'Fleet & Running Costs',
     fleet_maint: 'Defects & Parts',
@@ -28095,7 +28517,9 @@
     sales_analytics: 'Sales Analytics',
     raw: 'Material & Transportation',
     raw_pricing: 'Pricing & Haulage Rates',
-    raw_analytics: 'JV & Stock Analytics',
+    raw_analytics: 'Stock Analytics',
+    raw_jv: 'JV & Partnerships',
+    jv: 'JV & Partnerships',
     fleet: 'Diesel & Lubricants',
     fleet_equip: 'Fleet & Running Costs',
     fleet_maint: 'Defects & Parts',
@@ -28808,7 +29232,7 @@
     }
     const map = {
       kiosks: 'sales', sales: 'sales', sales_vat: 'vatinvoice', sales_analytics: 'sales',
-      raw: 'raw', raw_pricing: 'pricerule_raw', raw_analytics: 'raw',
+      raw: 'raw', raw_pricing: 'pricerule_raw', raw_analytics: 'raw', raw_jv: 'jv', jv: 'jv',
       fleet: 'fuel', fleet_equip: 'companyequipment', fleet_maint: 'defect', fleet_drivers: 'triprate', fleet_analytics: 'triprate',
       pricing: 'pricerule',
       cashflow: 'receipt', cashflow_analytics: 'receipt',
@@ -28865,7 +29289,7 @@
           settlement: 'Settle AP', expense: 'Post Expense', salary: 'Pay Salary',
           vatinvoice: 'Post VAT Inv', attendance: 'Log Attendance', employment: 'New Contract',
           treasury: 'Post Treasury', pricerule: 'New Agreement', pricerule_raw: 'New Site Rate',
-          defect: 'Report Defect', partlog: 'Log Part'
+          jv: 'Post JV Entry', defect: 'Report Defect', partlog: 'Log Part'
         };
         dEntryLbl.textContent = formLabels[contextFormForView(v, user)] || 'Post Entry';
       } else {
@@ -30418,6 +30842,8 @@
         break;
       case 'raw': wsHtml = renderRaw(); break;
       case 'raw_pricing': wsHtml = renderRawPricing(); break;
+      case 'raw_jv':
+      case 'jv': wsHtml = renderRawJv(); break;
       case 'fleet': wsHtml = renderFleet(); break;
       case 'fleet_equip': wsHtml = renderFleetEquipment(); break;
       case 'fleet_maint': wsHtml = renderFleetMaintenance(); break;
@@ -31558,11 +31984,12 @@
           fleet: { equipment: 'equipment', drivers: 'driver' },
           pricing: { customers: 'customer', suppliers: 'supplier', products: 'product', sites: 'site' },
           raw_pricing: { customers: 'customer', suppliers: 'supplier', products: 'product', sites: 'site' },
+          raw_jv: { sites: 'site', suppliers: 'partner' },
           customers: { customers: 'customer' },
           suppliers: { suppliers: 'supplier' },
           expenses: { suppliers: 'supplier', equipment: 'equipment', expense_categories: 'category' }
         };
-        const cfView = STATE.view === 'fleet' ? 'fuel' : (STATE.view === 'customers' ? 'receipts' : (STATE.view === 'suppliers' ? 'settle' : STATE.view));
+        const cfView = STATE.view === 'fleet' ? 'fuel' : (STATE.view === 'customers' ? 'receipts' : (STATE.view === 'suppliers' ? 'settle' : (STATE.view === 'raw_jv' ? 'jvdist' : STATE.view)));
         const col = (relColMap[STATE.view] || {})[rk];
         if (col && cfView) {
           if (!STATE.colFilters[cfView]) STATE.colFilters[cfView] = {};
@@ -31938,6 +32365,7 @@
     if (view === 'sales_analytics') view = 'sales';
     if (view === 'fleet_analytics') view = 'fleet_drivers';
     if (view === 'payroll_analytics') view = 'payroll';
+    if (view === 'jv') view = 'raw_jv';
     if (!VIEW_TITLES[view]) view = 'overview';
     if (!canViewView(view)) { toast('Your seat has no access to that module', 'err'); view = defaultViewFor(); }
     if (STATE.kioskLocked && view !== 'kiosks') {

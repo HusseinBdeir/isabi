@@ -26,6 +26,8 @@
     sales_vat: s('<path d="M5.5 3h13v18l-2.2-1.6-2.1 1.6-2.2-1.6-2.2 1.6-2.1-1.6L5.5 21V3z"/><line x1="9" y1="9" x2="15" y2="15"/><circle cx="9.5" cy="9.5" r="1"/><circle cx="14.5" cy="14.5" r="1"/>'),
     sales_analytics: s('<rect x="3.5" y="13" width="4.2" height="8" rx="1"/><rect x="9.9" y="8" width="4.2" height="13" rx="1"/><rect x="16.3" y="3" width="4.2" height="18" rx="1"/>'),
     raw_analytics: s('<rect x="3.5" y="13" width="4.2" height="8" rx="1"/><rect x="9.9" y="8" width="4.2" height="13" rx="1"/><rect x="16.3" y="3" width="4.2" height="18" rx="1"/>'),
+    raw_jv: s('<circle cx="9.2" cy="12" r="5.5"/><circle cx="14.8" cy="12" r="5.5"/>'),
+    jv: s('<circle cx="9.2" cy="12" r="5.5"/><circle cx="14.8" cy="12" r="5.5"/>'),
     fleet_analytics: s('<rect x="3.5" y="13" width="4.2" height="8" rx="1"/><rect x="9.9" y="8" width="4.2" height="13" rx="1"/><rect x="16.3" y="3" width="4.2" height="18" rx="1"/>'),
     cashflow_analytics: s('<rect x="3.5" y="13" width="4.2" height="8" rx="1"/><rect x="9.9" y="8" width="4.2" height="13" rx="1"/><rect x="16.3" y="3" width="4.2" height="18" rx="1"/>'),
     expenses_analytics: s('<rect x="3.5" y="13" width="4.2" height="8" rx="1"/><rect x="9.9" y="8" width="4.2" height="13" rx="1"/><rect x="16.3" y="3" width="4.2" height="18" rx="1"/>'),
