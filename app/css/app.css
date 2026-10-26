@@ -7209,12 +7209,12 @@ table.ledger-table tfoot tr td:last-child {
   }
 }
 
-/* v6.4 / v12.7 — Sales Entity Split & Reconciliation Bar (Unified Card Layout for Multi-Group & Single-Group) */
+/* v6.4 / v18.5 — Entity Split & Reconciliation Ledger Strip (Flush Hairline Columns & Semantic Restraint) */
 .sales-entity-recon {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding: 10px 16px;
+  gap: 12px;
+  padding: 10px 14px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
 }
@@ -7222,49 +7222,58 @@ table.ledger-table tfoot tr td:last-child {
 .sales-entity-recon:not(:has(.sales-recon-card:not([hidden]) ~ .sales-recon-card:not([hidden]))) {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  padding: 10px 16px;
+  padding: 0;
+  background: var(--surface);
 }
 .sales-recon-card {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-left: 3.5px solid var(--brass);
-  border-radius: 6px;
-  padding: 8px 12px;
+  border-radius: 8px;
+  padding: 0;
+  overflow: hidden;
   cursor: pointer;
   transition: border-color 0.14s, box-shadow 0.14s, background 0.14s;
 }
 .sales-recon-card.single-card {
   cursor: default;
-}
-.sales-recon-card[data-jump-co="bbconstruction"],
-.sales-recon-card[data-co="bbconstruction"] {
-  border-left-color: var(--steel);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
 }
 .sales-recon-card:not(.single-card):hover {
-  border-color: var(--brass);
-  background: color-mix(in srgb, var(--brass) 5%, var(--surface));
+  border-color: var(--line-strong);
+  background: var(--surface);
   box-shadow: var(--shadow-sm);
-}
-.sales-recon-card[data-jump-co="bbconstruction"]:not(.single-card):hover {
-  border-left-color: var(--steel);
 }
 .sales-recon-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
-  font-size: 12px;
+  margin: 0;
+  padding: 6px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  font-size: 11.5px;
+}
+:root[data-theme="dark"] .sales-recon-head {
+  background: rgba(255, 255, 255, 0.024);
 }
 .sales-recon-act {
   margin-left: auto;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--brass);
+  font-size: 10.8px;
+  font-weight: 600;
+  color: var(--muted);
+  transition: color 0.12s;
+}
+.sales-recon-card:not(.single-card):hover .sales-recon-act {
+  color: var(--ink);
 }
 .sales-recon-metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-  gap: 6px 10px;
+  grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
+  gap: 0;
+  background: var(--surface);
 }
 .sales-recon-metrics span {
   display: flex;
@@ -7288,8 +7297,10 @@ table.ledger-table tfoot tr td:last-child {
   white-space: nowrap;
 }
 .sales-recon-metrics b.brass,
-.sales-recon-single b.brass {
-  color: var(--brass);
+.sales-recon-single b.brass,
+.sales-recon-metrics b.good,
+.sales-recon-metrics b.crit {
+  color: var(--ink);
 }
 .sales-recon-single {
   display: block;
@@ -11162,27 +11173,31 @@ table.ledger-table:has(#usersDirectoryTbody) .user-actions-wrap .btn {
     white-space: nowrap;
   }
   .sales-entity-recon {
-    padding: 5px 12px;
+    padding: 6px 12px;
     gap: 8px;
   }
   .sales-entity-recon.single {
-    padding: 5px 12px;
+    padding: 0;
   }
   .sales-recon-single {
     font-size: 11.6px;
   }
   .sales-recon-card {
-    padding: 4px 10px;
+    padding: 0;
   }
   .sales-recon-head {
-    margin-bottom: 2px;
+    margin-bottom: 0;
+    padding: 4px 12px;
     font-size: 11px;
   }
   .sales-recon-act {
     font-size: 10.2px;
   }
   .sales-recon-metrics {
-    gap: 4px;
+    gap: 0;
+  }
+  .sales-recon-metrics > span {
+    padding: 6px 10px 5px;
   }
   .sales-recon-metrics small {
     font-size: 8.5px;
@@ -11230,17 +11245,23 @@ table.ledger-table:has(#usersDirectoryTbody) .user-actions-wrap .btn {
   .table-toolbar {
     padding: 4px 10px;
   }
-  .sales-entity-recon,
+  .sales-entity-recon {
+    padding: 4px 10px;
+    gap: 6px;
+  }
   .sales-entity-recon.single {
-    padding: 3px 10px;
-    gap: 5px;
+    padding: 0;
   }
   .sales-recon-card {
-    padding: 2.5px 8px;
+    padding: 0;
   }
   .sales-recon-head {
     margin-bottom: 0;
+    padding: 3px 10px;
     font-size: 10.2px;
+  }
+  .sales-recon-metrics > span {
+    padding: 4px 8px 4px;
   }
   .sales-recon-metrics small {
     font-size: 8px;
@@ -15384,18 +15405,25 @@ svg .cf-chart-bar:hover .cf-bar-hit {
     font-size: 11.2px;
     border-radius: 6px;
   }
-  .sales-entity-recon,
-  .sales-entity-recon.single {
-    padding: 7px 12px;
+  .sales-entity-recon {
+    padding: 9px 12px;
     gap: 10px;
   }
+  .sales-entity-recon.single {
+    padding: 0;
+  }
   .sales-recon-card {
-    padding: 7px 11px;
-    border-radius: 7px;
-    box-shadow: 0 1px 2px rgba(15, 30, 56, 0.04);
+    padding: 0;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(15, 30, 56, 0.03);
+  }
+  .sales-recon-card.single-card {
+    border-radius: 0;
+    box-shadow: none;
   }
   .sales-recon-head {
-    margin-bottom: 6px;
+    margin-bottom: 0;
+    padding: 5.5px 14px;
     font-size: 11.4px;
     flex-wrap: nowrap;
   }
@@ -15492,12 +15520,24 @@ tr.rrow:hover .tkt-print-mini,
   font-weight: 700;
 }
 
-/* Architectural Metric Tiles & Financial Typography inside .sales-entity-recon */
+/* Architectural Ledger Strip & Semantic Metric Columns inside .sales-entity-recon (v18.5) */
+.sales-recon-head > .badge {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  font-weight: 700;
+  letter-spacing: 0.015em;
+}
+:root[data-theme="dark"] .sales-recon-head > .badge {
+  background: var(--surface-elev);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
 .sales-recon-head .recon-head-mix {
   display: inline-flex;
   align-items: center;
-  width: 68px;
-  height: 6px;
+  width: 50px;
+  height: 4.5px;
   border-radius: 999px;
   background: var(--line);
   overflow: hidden;
@@ -15510,10 +15550,16 @@ tr.rrow:hover .tkt-print-mini,
   height: 100%;
 }
 .sales-recon-head .recon-head-mix .rhm-emerald {
-  background: var(--good);
+  background: #1F7A52;
 }
 .sales-recon-head .recon-head-mix .rhm-steel {
-  background: var(--steel);
+  background: #2E5E99;
+}
+:root[data-theme="dark"] .sales-recon-head .recon-head-mix .rhm-emerald {
+  background: #34B37A;
+}
+:root[data-theme="dark"] .sales-recon-head .recon-head-mix .rhm-steel {
+  background: #5B95D6;
 }
 .sales-recon-head .recon-head-mix-lbl {
   text-decoration: none;
@@ -15527,23 +15573,21 @@ tr.rrow:hover .tkt-print-mini,
 .sales-recon-head .recon-head-mix-lbl em {
   font-style: normal;
   font-weight: 600;
-}
-.sales-recon-head .recon-head-mix-lbl .rhm-em-cash {
-  color: var(--good);
-}
-.sales-recon-head .recon-head-mix-lbl .rhm-em-cred {
-  color: var(--steel);
+  color: var(--ink);
 }
 .sales-recon-head .recon-co-pills {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   margin-left: auto;
-  background: var(--surface-2);
+  background: rgba(15, 30, 56, 0.045);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 2px;
   flex-shrink: 0;
+}
+:root[data-theme="dark"] .sales-recon-head .recon-co-pills {
+  background: rgba(255, 255, 255, 0.05);
 }
 .sales-recon-head:has(.recon-co-pills) .sales-recon-reset {
   margin-left: 4px;
@@ -15583,77 +15627,140 @@ tr.rrow:hover .tkt-print-mini,
 
 .sales-recon-metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 7px;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 0;
+  background: var(--surface);
 }
 .sales-entity-recon:not(.single) .sales-recon-metrics {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 5px;
-}
-@media (max-width: 1100px) {
-  .sales-recon-metrics,
-  .sales-entity-recon:not(.single) .sales-recon-metrics {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 0;
 }
 .sales-recon-metrics > span {
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 1.5px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-top: 2.5px solid var(--line-strong);
-  border-radius: 6px;
-  padding: 6px 9px 5px;
+  gap: 2px;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  padding: 8px 13px 7px;
   margin: 0;
   min-width: 0;
-  transition: background 0.14s, border-color 0.14s, box-shadow 0.14s, transform 0.12s;
+  transition: background 0.14s, box-shadow 0.14s;
 }
-:root[data-theme="dark"] .sales-recon-metrics > span {
-  background: rgba(255, 255, 255, 0.025);
+.sales-recon-metrics > span:last-child {
+  border-right: 0;
 }
-.sales-recon-metrics > span[data-tile-tone="navy"] {
-  border-top-color: #1E3A5F;
+.sales-entity-recon:not(.single) .sales-recon-metrics > span {
+  padding: 7px 10px 6px;
 }
-:root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="navy"] {
-  border-top-color: #5C8BC0;
+@media (max-width: 1680px) {
+  .sales-entity-recon:not(.single) .sales-recon-metrics:has(> span:nth-child(5)) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .sales-entity-recon:not(.single) .sales-recon-metrics:has(> span:nth-child(5)) > span:nth-child(3n) {
+    border-right: 0;
+  }
+  .sales-entity-recon:not(.single) .sales-recon-metrics:has(> span:nth-child(5)) > span:nth-child(-n+3) {
+    border-bottom: 1px solid var(--line);
+  }
+  .sales-entity-recon:not(.single) .sales-recon-metrics:has(> span:nth-child(5)) > span:nth-child(5):last-child {
+    grid-column: span 2;
+  }
 }
-.sales-recon-metrics > span[data-tile-tone="emerald"] {
-  border-top-color: var(--good);
+@media (max-width: 1100px) {
+  .sales-recon-metrics,
+  .sales-entity-recon:not(.single) .sales-recon-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .sales-recon-metrics > span:nth-child(3n) {
+    border-right: 0;
+  }
+  .sales-recon-metrics:has(> span:nth-child(4)) > span:nth-child(-n+3) {
+    border-bottom: 1px solid var(--line);
+  }
+  .sales-recon-metrics > span:nth-child(5):last-child {
+    grid-column: span 2;
+  }
 }
-.sales-recon-metrics > span[data-tile-tone="steel"] {
-  border-top-color: var(--steel);
+@media (max-width: 600px) {
+  .sales-recon-metrics,
+  .sales-entity-recon:not(.single) .sales-recon-metrics,
+  .sales-entity-recon:not(.single) .sales-recon-metrics:has(> span:nth-child(5)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sales-recon-metrics > span:nth-child(n),
+  .sales-entity-recon:not(.single) .sales-recon-metrics:has(> span:nth-child(5)) > span:nth-child(n) {
+    grid-column: auto;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .sales-recon-metrics > span:nth-child(2n),
+  .sales-entity-recon:not(.single) .sales-recon-metrics:has(> span:nth-child(5)) > span:nth-child(2n) {
+    border-right: 0;
+  }
+  .sales-recon-metrics > span:last-child,
+  .sales-recon-metrics > span:nth-last-child(2):nth-child(odd),
+  .sales-entity-recon:not(.single) .sales-recon-metrics:has(> span:nth-child(5)) > span:last-child,
+  .sales-entity-recon:not(.single) .sales-recon-metrics:has(> span:nth-child(5)) > span:nth-last-child(2):nth-child(odd) {
+    border-bottom: 0;
+  }
+  .sales-recon-metrics > span:nth-child(5):last-child,
+  .sales-entity-recon:not(.single) .sales-recon-metrics:has(> span:nth-child(5)) > span:nth-child(5):last-child {
+    grid-column: span 2;
+    border-right: 0;
+  }
 }
-.sales-recon-metrics > span[data-tile-tone="amber"] {
-  border-top-color: #C87A19;
+
+/* Reconciled Total Column: calm warm-stone ledger paper shading (zero muddy yellow/orange) */
+.sales-recon-metrics > span[data-tile-tone="total"] {
+  background: #F5F4F0;
 }
-.sales-recon-metrics > span[data-tile-tone="slate"] {
-  border-top-color: #64748B;
+:root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="total"] {
+  background: rgba(255, 255, 255, 0.036);
 }
-.sales-recon-metrics > span[data-tile-tone="brass"] {
-  border-color: rgba(192, 137, 47, 0.34);
-  border-top: 2.5px solid var(--brass);
-  background: linear-gradient(180deg, rgba(192, 137, 47, 0.11) 0%, rgba(192, 137, 47, 0.03) 100%);
+.sales-recon-metrics > span[data-tile-tone="total"] small {
+  color: #334155;
 }
+:root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="total"] small {
+  color: #CBD5E1;
+}
+.sales-recon-metrics > span[data-tile-tone="total"] b {
+  font-weight: 800;
+}
+
+/* Interactive Filter Slice Hover & Active Selection Indicator */
 .sales-recon-metrics > span.recon-metric-slice {
   cursor: pointer;
 }
 .sales-recon-metrics > span.recon-metric-slice:hover {
-  background: var(--brass-tint);
-  border-color: rgba(192, 137, 47, 0.45);
-  box-shadow: 0 2px 5px rgba(15, 30, 56, 0.06);
+  background: rgba(15, 30, 56, 0.028);
+}
+:root[data-theme="dark"] .sales-recon-metrics > span.recon-metric-slice:hover {
+  background: rgba(255, 255, 255, 0.045);
 }
 .sales-recon-metrics > span.recon-metric-slice.is-active {
-  background: rgba(192, 137, 47, 0.14);
-  border-color: var(--brass);
-  box-shadow: inset 0 -2px 0 var(--brass);
+  background: rgba(15, 30, 56, 0.055);
+  box-shadow: inset 0 2px 0 var(--ink);
+}
+:root[data-theme="dark"] .sales-recon-metrics > span.recon-metric-slice.is-active {
+  background: rgba(217, 165, 74, 0.10);
+  box-shadow: inset 0 2px 0 var(--brass);
 }
 .sales-recon-metrics > span.recon-metric-slice.is-active small {
+  color: var(--ink);
+}
+:root[data-theme="dark"] .sales-recon-metrics > span.recon-metric-slice.is-active small {
   color: var(--brass);
 }
+
+/* Label Typography & Restrained Semantic Dots (ONLY on Cash/Credit split, Total marker & >0 Exceptions) */
 .sales-recon-metrics small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-family: "Archivo", sans-serif;
   font-size: 9px;
   font-weight: 700;
@@ -15665,7 +15772,49 @@ tr.rrow:hover .tkt-print-mini,
 .sales-entity-recon:not(.single) .sales-recon-metrics small {
   font-size: 8.2px;
   letter-spacing: 0.03em;
+  gap: 4px;
 }
+.sales-recon-metrics > span[data-tile-tone="emerald"] small::before,
+.sales-recon-metrics > span[data-tile-tone="steel"] small::before,
+.sales-recon-metrics > span[data-tile-tone="warn"] small::before,
+.sales-recon-metrics > span[data-tile-tone="total"] small::before {
+  content: "";
+  display: inline-block;
+  width: 5.5px;
+  height: 5.5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sales-recon-metrics > span[data-tile-tone="emerald"] small::before {
+  background: #1F7A52;
+}
+.sales-recon-metrics > span[data-tile-tone="steel"] small::before {
+  background: #2E5E99;
+}
+.sales-recon-metrics > span[data-tile-tone="warn"] small::before {
+  background: #B45309;
+}
+.sales-recon-metrics > span[data-tile-tone="total"] small::before {
+  width: 5px;
+  height: 5px;
+  border-radius: 1.5px;
+  background: var(--ink);
+  opacity: 0.72;
+}
+:root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="emerald"] small::before {
+  background: #34B37A;
+}
+:root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="steel"] small::before {
+  background: #5B95D6;
+}
+:root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="warn"] small::before {
+  background: #F59E0B;
+}
+:root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="total"] small::before {
+  background: var(--brass);
+  opacity: 0.85;
+}
+
 .sales-recon-metrics b {
   font-family: "Archivo", sans-serif;
   font-stretch: 108%;
@@ -15680,13 +15829,13 @@ tr.rrow:hover .tkt-print-mini,
   text-overflow: ellipsis;
 }
 .sales-entity-recon:not(.single) .sales-recon-metrics b {
-  font-size: 12.2px;
+  font-size: 13.2px;
 }
 .sales-recon-metrics b .num-sym {
   font-style: normal;
   font-size: 0.74em;
   font-weight: 600;
-  opacity: 0.65;
+  opacity: 0.62;
   margin-right: 1px;
   vertical-align: 0.06em;
 }
@@ -15694,7 +15843,7 @@ tr.rrow:hover .tkt-print-mini,
   font-style: normal;
   font-size: 0.72em;
   font-weight: 600;
-  opacity: 0.56;
+  opacity: 0.54;
   letter-spacing: 0;
 }
 .sales-recon-metrics b .num-unit {
@@ -15717,17 +15866,17 @@ tr.rrow:hover .tkt-print-mini,
   margin-top: 1px;
 }
 .sales-entity-recon:not(.single) .sales-recon-metrics em.recon-tile-sub {
-  font-size: 8.3px;
+  font-size: 8.8px;
 }
 .sales-recon-metrics u.recon-tile-bar {
   display: block;
   text-decoration: none;
   width: 100%;
-  height: 2.5px;
+  height: 2px;
   border-radius: 999px;
-  background: rgba(15, 30, 56, 0.07);
+  background: rgba(15, 30, 56, 0.075);
   overflow: hidden;
-  margin-top: 3px;
+  margin-top: 4px;
 }
 :root[data-theme="dark"] .sales-recon-metrics u.recon-tile-bar {
   background: rgba(255, 255, 255, 0.09);
@@ -15736,27 +15885,42 @@ tr.rrow:hover .tkt-print-mini,
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: var(--steel);
+  background: #94A3B8;
 }
 .sales-recon-metrics > span[data-tile-tone="navy"] u.recon-tile-bar > i {
   background: #1E3A5F;
 }
 :root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="navy"] u.recon-tile-bar > i {
-  background: #5C8BC0;
+  background: #6488B4;
+}
+.sales-recon-metrics > span[data-tile-tone="total"] u.recon-tile-bar > i {
+  background: #0F1E38;
+}
+:root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="total"] u.recon-tile-bar > i {
+  background: #94A3B8;
 }
 .sales-recon-metrics > span[data-tile-tone="emerald"] u.recon-tile-bar > i {
-  background: var(--good);
+  background: #1F7A52;
+}
+:root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="emerald"] u.recon-tile-bar > i {
+  background: #34B37A;
 }
 .sales-recon-metrics > span[data-tile-tone="steel"] u.recon-tile-bar > i {
-  background: var(--steel);
+  background: #2E5E99;
 }
-.sales-recon-metrics > span[data-tile-tone="amber"] u.recon-tile-bar > i {
-  background: #C87A19;
+:root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="steel"] u.recon-tile-bar > i {
+  background: #5B95D6;
 }
-.sales-recon-metrics > span[data-tile-tone="brass"] u.recon-tile-bar > i {
-  background: var(--brass);
+.sales-recon-metrics > span[data-tile-tone="warn"] u.recon-tile-bar > i {
+  background: #B45309;
+}
+:root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="warn"] u.recon-tile-bar > i {
+  background: #F59E0B;
 }
 .sales-recon-metrics > span[data-tile-tone="slate"] u.recon-tile-bar > i {
+  background: #94A3B8;
+}
+:root[data-theme="dark"] .sales-recon-metrics > span[data-tile-tone="slate"] u.recon-tile-bar > i {
   background: #64748B;
 }
 

@@ -7039,12 +7039,12 @@
               <button type="button" class="btn sales-recon-reset" data-jump-co="manufacturing-group">Show All Group (3)</button>
             </div>
             <div class="sales-recon-metrics">
-              <span class="recon-metric-slice ${STATE.chipFilter === 'all' ? 'is-active' : ''}" data-recon-chip="all" title="Click to show all tickets"><small>Sales Ex-VAT</small><b>${fmtUSD(sumNet, 2)}</b></span>
+              <span class="${STATE.chipFilter !== 'all' ? 'recon-metric-slice' : ''}" data-recon-chip="all" title="Net sales revenue excluding VAT"><small>Sales Ex-VAT</small><b>${fmtUSD(sumNet, 2)}</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'cash' ? 'is-active' : ''}" data-recon-chip="cash" title="Click to toggle Cash filter"><small>Cash</small><b>${fmtUSD(sumCash, 2)}</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'credit' ? 'is-active' : ''}" data-recon-chip="credit" title="Click to toggle Credit filter"><small>Credit</small><b>${fmtUSD(sumCredit, 2)}</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'vat' ? 'is-active' : ''}" data-recon-chip="vat" title="Click to toggle VAT filter"><small>VAT (11%)</small><b>${fmtUSD(sumVat, 2)}</b></span>
-              <span class="recon-metric-slice ${STATE.chipFilter === 'all' ? 'is-active' : ''}" data-recon-chip="all" title="Click to show all tickets"><small>Sales VAT Incl.</small><b class="brass">${fmtUSD(sumTtc, 2)}</b></span>
-              <span class="recon-metric-slice" data-recon-chip="all"><small>Discount</small><b>${fmtUSD(sumDisc, 2)}</b></span>
+              <span class="${STATE.chipFilter !== 'all' ? 'recon-metric-slice' : ''}" data-recon-chip="all" title="Gross billed sales including 11% VAT"><small>Sales VAT Incl.</small><b class="brass">${fmtUSD(sumTtc, 2)}</b></span>
+              <span><small>Discount</small><b>${fmtUSD(sumDisc, 2)}</b></span>
             </div>
           </div>
         </div>
@@ -8126,18 +8126,18 @@
           <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
             <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcFl.n)} Fuel Tickets</b><span class="sales-recon-act">Filter WTC Only →</span></div>
             <div class="sales-recon-metrics">
-              <span class="recon-metric-slice ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="diesel" title="Click to filter WTC Diesel Intakes"><small>Diesel Issued</small><b class="brass">${fmtNum(wtcFl.diesel, 1)} L</b></span>
+              <span class="recon-metric-slice ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="diesel" title="Click to filter WTC Diesel Intakes"><small>Diesel Issued</small><b>${fmtNum(wtcFl.diesel, 1)} L</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'lube' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="lube" title="Click to filter WTC Lubricants"><small>Lubricants</small><b>${fmtNum(wtcFl.lube, 1)} L</b></span>
-              <span class="recon-metric-slice" data-recon-co="wtc" data-recon-chip="all" title="Click to filter WTC All Intakes"><small>Total Intake</small><b>${fmtNum(wtcFl.litres, 1)} L</b></span>
+              <span class="recon-metric-slice" data-recon-co="wtc" data-recon-chip="all" title="Click to filter WTC All Intakes"><small>Total Intake</small><b class="brass">${fmtNum(wtcFl.litres, 1)} L</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'flag' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="flag" title="Click to filter WTC Meter Guard Flags"><small>Guard Flags</small><b>${fmtNum(wtcFl.flags)}</b></span>
             </div>
           </div>
           <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
             <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcFl.n)} Fuel Tickets</b><span class="sales-recon-act">Filter BBC Only →</span></div>
             <div class="sales-recon-metrics">
-              <span class="recon-metric-slice ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="diesel" title="Click to filter BBConstruction Diesel Intakes"><small>Diesel Issued</small><b class="brass">${fmtNum(bbcFl.diesel, 1)} L</b></span>
+              <span class="recon-metric-slice ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="diesel" title="Click to filter BBConstruction Diesel Intakes"><small>Diesel Issued</small><b>${fmtNum(bbcFl.diesel, 1)} L</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'lube' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="lube" title="Click to filter BBConstruction Lubricants"><small>Lubricants</small><b>${fmtNum(bbcFl.lube, 1)} L</b></span>
-              <span class="recon-metric-slice" data-recon-co="bbconstruction" data-recon-chip="all" title="Click to filter BBConstruction All Intakes"><small>Total Intake</small><b>${fmtNum(bbcFl.litres, 1)} L</b></span>
+              <span class="recon-metric-slice" data-recon-co="bbconstruction" data-recon-chip="all" title="Click to filter BBConstruction All Intakes"><small>Total Intake</small><b class="brass">${fmtNum(bbcFl.litres, 1)} L</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'flag' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="flag" title="Click to filter BBConstruction Meter Guard Flags"><small>Guard Flags</small><b>${fmtNum(bbcFl.flags)}</b></span>
             </div>
           </div>
@@ -8151,9 +8151,9 @@
               <button type="button" class="btn sales-recon-reset" data-jump-co="manufacturing-group">Show All Group (3)</button>
             </div>
             <div class="sales-recon-metrics">
-              <span class="recon-metric-slice ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-recon-chip="diesel" title="Click to toggle Diesel filter"><small>Diesel Issued</small><b class="brass">${fmtNum(dieselLitres, 1)} L</b></span>
+              <span class="recon-metric-slice ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-recon-chip="diesel" title="Click to toggle Diesel filter"><small>Diesel Issued</small><b>${fmtNum(dieselLitres, 1)} L</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'lube' ? 'is-active' : ''}" data-recon-chip="lube" title="Click to toggle Lubricants filter"><small>Lubricants</small><b>${fmtNum(lubeLitres, 1)} L</b></span>
-              <span class="recon-metric-slice ${STATE.chipFilter === 'all' ? 'is-active' : ''}" data-recon-chip="all" title="Click to show all intakes"><small>Total Intake</small><b>${fmtNum(litres, 1)} L</b></span>
+              <span class="${STATE.chipFilter !== 'all' ? 'recon-metric-slice' : ''}" data-recon-chip="all" title="Combined liquid fuel &amp; lubricant volume"><small>Total Intake</small><b class="brass">${fmtNum(litres, 1)} L</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'flag' ? 'is-active' : ''}" data-recon-chip="flag" title="Click to toggle Meter Guard Flags filter"><small>Guard Flags</small><b>${fmtNum(flagged)}</b></span>
             </div>
           </div>
@@ -29277,7 +29277,17 @@
       const chipBtns = Array.from(panel.querySelectorAll('.chip-bar .filter-chip'));
       const headEl = card.querySelector('.sales-recon-head');
       const headB = headEl ? headEl.querySelector('b') : null;
-      const headCount = headB ? (parseInt((headB.textContent || '').replace(/[^0-9]/g, ''), 10) || 0) : 0;
+      const headTxt = headB ? (headB.textContent || '').trim() : '';
+      const headCount = headTxt ? (parseInt(headTxt.replace(/[^0-9]/g, ''), 10) || 0) : 0;
+      const unitNoun = /load/i.test(headTxt)
+        ? 'load'
+        : (/ticket/i.test(headTxt)
+          ? 'ticket'
+          : (/voucher/i.test(headTxt)
+            ? 'voucher'
+            : (/settle|payment|disburse/i.test(headTxt)
+              ? 'payment'
+              : (/log/i.test(headTxt) ? 'log' : 'entry'))));
       const spans = Array.from(card.querySelectorAll('.sales-recon-metrics > span'));
       const tiles = spans.map((sp, idx) => {
         const sm = sp.querySelector('small');
@@ -29285,14 +29295,18 @@
         const lbl = sm ? (sm.textContent || '').trim() : '';
         const rawVal = bEl ? (bEl.textContent || '').trim() : '';
         const isUsd = /^[+-]?\$/.test(rawVal);
-        const numVal = isUsd
-          ? Math.abs(parseFloat(rawVal.replace(/[^0-9.-]/g, '')) || 0)
-          : Math.abs(parseFloat(rawVal.replace(/[^0-9.-]/g, '')) || 0);
+        const numVal = Math.abs(parseFloat(rawVal.replace(/[^0-9.-]/g, '')) || 0);
         return { sp, sm, bEl, lbl, rawVal, isUsd, numVal, idx };
       });
       const usdTiles = tiles.filter(t => t.isUsd);
       const maxUsd = usdTiles.reduce((m, t) => Math.max(m, t.numVal), 0);
-      const baseUsd = (usdTiles[0] && usdTiles[0].numVal > 0) ? usdTiles[0].numVal : maxUsd;
+      const exVatTile = usdTiles.find(t => /ex-vat/i.test(t.lbl));
+      const ttcTile = usdTiles.find(t => /vat incl|total ttc/i.test(t.lbl));
+      const totalRoleTile = usdTiles.find(t => (t.bEl && t.bEl.classList.contains('brass')) || /vat incl|total ttc|raw total|total mat|total expenses|total payroll|combined till|net external|receipts \(cash|settlements paid/i.test(t.lbl));
+      const refTotalUsd = exVatTile && exVatTile.numVal > 0
+        ? exVatTile.numVal
+        : ((totalRoleTile && totalRoleTile.numVal > 0) ? totalRoleTile.numVal : maxUsd);
+      const maxNonUsd = tiles.filter(t => !t.isUsd && !/flag/i.test(t.lbl)).reduce((m, t) => Math.max(m, t.numVal), 0);
       const jumpCo = card.getAttribute('data-jump-co') || '';
 
       tiles.forEach(t => {
@@ -29309,65 +29323,103 @@
             }
           }
         }
-        // Assign semantic tile tone
-        let tone = 'steel';
-        if ((bEl && bEl.classList.contains('brass')) || /vat incl|total ttc|gross billed|closing|net pay|total cost|net cash/i.test(lbl)) {
-          tone = 'brass';
-        } else if (/\bcash\b|\bpaid\b|settled|collected|inflow/i.test(lbl)) {
-          tone = 'emerald';
-        } else if (/credit|unpaid|open|balance|receivable|payable|\bar\b|\bap\b/i.test(lbl)) {
-          tone = 'steel';
-        } else if (/vat|tax|overtime|advance|diesel|fuel/i.test(lbl)) {
-          tone = 'amber';
-        } else if (/discount|deduct|outflow|void/i.test(lbl)) {
+        // Assign disciplined semantic role:
+        // - 'total': Reconciled grand/subtotal column (subtle ledger paper shading, bold Ink figure)
+        // - 'warn': True operational exceptions ONLY when > 0 (Guard Flags, Lateness)
+        // - 'emerald' / 'steel': Immediate cash settlement vs Receivable/Credit/Bank channel
+        // - 'navy': Primary net base / opening anchor column
+        // - 'slate': Neutral statutory pass-throughs (VAT), commercial memos (Discount) & sub-legs
+        const isTotalCol = Boolean(
+          (bEl && bEl.classList.contains('brass') && !/diesel|overtime/i.test(lbl)) ||
+          /vat incl|total ttc|gross billed|raw total|total mat|total intake|total expenses|total payroll|combined till|net external|receipts \(cash|settlements paid/i.test(lbl)
+        );
+        let tone = 'slate';
+        if (isTotalCol) {
+          tone = 'total';
+        } else if (/guard flag|lateness|timing deficit/i.test(lbl)) {
+          tone = numVal > 0 ? 'warn' : 'slate';
+        } else if (/external out/i.test(lbl)) {
           tone = 'slate';
+        } else if ((/\bcash\b|\bpaid\b|settled|collected|inflow|external in/i.test(lbl)) && !/unpaid|vat paid/i.test(lbl)) {
+          tone = 'emerald';
+        } else if (/credit|bank\s*\/?\s*transfer|unpaid|open|balance|receivable|payable|\bar\b|\bap\b|diesel/i.test(lbl)) {
+          tone = 'steel';
         } else if (idx === 0) {
           tone = 'navy';
         }
         sp.setAttribute('data-tile-tone', tone);
 
-        // Auto-wire interactive chip slice if not already wired
-        if (!sp.classList.contains('recon-metric-slice') && chipBtns.length) {
-          let targetChip = 'all';
+        // Auto-wire interactive chip slice ONLY when it filters a real subset or switches entity in Group mode
+        if (!sp.classList.contains('recon-metric-slice') && (jumpCo || chipBtns.length)) {
+          let targetChip = '';
           if (/\bcash\b/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'cash')) targetChip = 'cash';
+          else if (/\bcash\b/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'cash_sal')) targetChip = 'cash_sal';
+          else if (/bank/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'bank_sal')) targetChip = 'bank_sal';
           else if (/credit/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'credit')) targetChip = 'credit';
-          else if (/\bpaid\b|settled/i.test(lbl) && !/unpaid/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'paid')) targetChip = 'paid';
+          else if (/\bpaid\b|settled/i.test(lbl) && !/unpaid|vat paid/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'paid')) targetChip = 'paid';
           else if (/unpaid|open|balance/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'unpaid')) targetChip = 'unpaid';
           else if (/vat/i.test(lbl) && !/incl|ex-vat/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'vat')) targetChip = 'vat';
-          sp.classList.add('recon-metric-slice');
-          sp.setAttribute('data-recon-chip', targetChip);
-          if (jumpCo) sp.setAttribute('data-recon-co', jumpCo);
-          if (!jumpCo && targetChip !== 'all' && STATE.chipFilter === targetChip) sp.classList.add('is-active');
+          else if (/vat paid/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'vat_paid')) targetChip = 'vat_paid';
+          else if (/overtime/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'ot_att')) targetChip = 'ot_att';
+          else if (/lateness/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'late_att')) targetChip = 'late_att';
+          else if (/leave|absent/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'absent_att')) targetChip = 'absent_att';
+          if (jumpCo || targetChip) {
+            const chipKey = targetChip || 'all';
+            sp.classList.add('recon-metric-slice');
+            sp.setAttribute('data-recon-chip', chipKey);
+            if (jumpCo) sp.setAttribute('data-recon-co', jumpCo);
+            if (!jumpCo && chipKey !== 'all' && STATE.chipFilter === chipKey) sp.classList.add('is-active');
+          }
         }
 
-        // Append contextual share/avg sub-label (<em class="recon-tile-sub">) & micro-bar (<u class="recon-tile-bar">)
+        // Append honest proportional micro-bar (<u class="recon-tile-bar">) & intuitive accounting sub-label (<em class="recon-tile-sub">)
         if (!sp.querySelector('.recon-tile-sub')) {
           let barPct = 0;
           let subTxt = '';
           if (isUsd) {
-            if (idx === 0) {
+            if (tone === 'navy' && exVatTile) {
+              const grossRef = (ttcTile && ttcTile.numVal > 0) ? ttcTile.numVal : numVal;
+              barPct = grossRef > 0 ? Math.min(100, (numVal / grossRef) * 100) : 0;
+              subTxt = headCount > 0 ? `Net base · ${fmtUSD(numVal / headCount, 2)} / ${unitNoun}` : 'Net revenue base';
+            } else if (tone === 'total') {
               barPct = numVal > 0 ? 100 : 0;
-              subTxt = headCount > 0 ? `Avg ${fmtUSD(numVal / headCount, 0)} / rec` : '100% base net';
-            } else if (tone === 'brass') {
-              barPct = numVal > 0 ? 100 : 0;
-              subTxt = headCount > 0 ? `Avg ${fmtUSD(numVal / headCount, 2)} / load` : 'Gross billed total';
+              if (/vat incl|total ttc/i.test(lbl)) {
+                subTxt = headCount > 0 ? `Gross billed · ${fmtUSD(numVal / headCount, 2)} / ${unitNoun}` : 'Ex-VAT + 11% VAT';
+              } else {
+                subTxt = headCount > 0 ? `Avg ${fmtUSD(numVal / headCount, 2)} / ${unitNoun}` : 'Reconciled total';
+              }
             } else if (/discount/i.test(lbl)) {
-              const pct = baseUsd > 0 ? (numVal / baseUsd) * 100 : 0;
-              barPct = Math.min(100, Math.max(numVal > 0 ? 6 : 0, pct * 8));
-              subTxt = baseUsd > 0 ? `${pct.toFixed(1)}% of Ex-VAT` : 'Price adjustment';
+              const pct = refTotalUsd > 0 ? (numVal / refTotalUsd) * 100 : 0;
+              barPct = numVal > 0 ? Math.min(100, Math.max(2, pct)) : 0;
+              subTxt = refTotalUsd > 0 ? `${pct.toFixed(1)}% of ${exVatTile ? 'Ex-VAT' : 'total'}` : 'Commercial memo';
             } else if (/vat/i.test(lbl)) {
-              const pct = baseUsd > 0 ? (numVal / baseUsd) * 100 : 0;
-              barPct = Math.min(100, Math.max(numVal > 0 ? 8 : 0, pct * 5));
-              subTxt = baseUsd > 0 ? `${pct.toFixed(1)}% eff. tax share` : '11% statutory rate';
+              const pct = refTotalUsd > 0 ? (numVal / refTotalUsd) * 100 : 0;
+              barPct = numVal > 0 ? Math.min(100, Math.max(2.5, pct)) : 0;
+              subTxt = exVatTile && refTotalUsd > 0
+                ? `+${pct.toFixed(1)}% on Ex-VAT`
+                : (refTotalUsd > 0 ? `${pct.toFixed(1)}% of total` : '11% statutory rate');
             } else {
-              const ref = baseUsd > 0 ? baseUsd : maxUsd;
-              const pct = ref > 0 ? Math.min(100, (numVal / ref) * 100) : 0;
-              barPct = Math.min(100, Math.max(numVal > 0 ? 6 : 0, pct));
-              subTxt = ref > 0 ? `${pct.toFixed(1)}% of total` : 'Settlement slice';
+              const pct = refTotalUsd > 0 ? Math.min(100, (numVal / refTotalUsd) * 100) : 0;
+              barPct = numVal > 0 ? Math.min(100, Math.max(2.5, pct)) : 0;
+              subTxt = refTotalUsd > 0
+                ? `${pct.toFixed(1)}% of ${exVatTile ? 'Ex-VAT' : 'total'}`
+                : (headCount > 0 ? `Avg ${fmtUSD(numVal / headCount, 2)} / ${unitNoun}` : 'Ledger balance');
             }
           } else {
-            barPct = numVal > 0 ? 72 : 0;
-            subTxt = (headCount > 0 && numVal > 0) ? `Avg ${fmtNum(numVal / headCount, 1)} / rec` : 'Operational volume';
+            if (/flag/i.test(lbl)) {
+              const pct = headCount > 0 ? (numVal / headCount) * 100 : 0;
+              barPct = numVal > 0 ? Math.min(100, Math.max(3, pct)) : 0;
+              subTxt = numVal === 0 ? '0 exceptions' : (headCount > 0 ? `${pct.toFixed(1)}% of ${unitNoun}s` : 'Meter alerts');
+            } else if (tone === 'total') {
+              barPct = numVal > 0 ? 100 : 0;
+              subTxt = headCount > 0 ? `Avg ${fmtNum(numVal / headCount, 1)} / ${unitNoun}` : 'Combined volume';
+            } else {
+              const pct = maxNonUsd > 0 ? Math.min(100, (numVal / maxNonUsd) * 100) : 0;
+              barPct = numVal > 0 ? Math.min(100, Math.max(3, pct)) : 0;
+              subTxt = (maxNonUsd > 0 && pct < 99.5)
+                ? `${pct.toFixed(1)}% of total`
+                : ((headCount > 0 && numVal > 0) ? `Avg ${fmtNum(numVal / headCount, 1)} / ${unitNoun}` : 'Recorded balance');
+            }
           }
           const em = document.createElement('em');
           em.className = 'recon-tile-sub';
