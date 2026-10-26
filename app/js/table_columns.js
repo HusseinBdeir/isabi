@@ -459,6 +459,24 @@
     }
   }
 
+  function ensureToolbarActionSlot(tb) {
+    if (!tb) return null;
+    const directDivs = Array.from(tb.children).filter(el => el.tagName === 'DIV');
+    if (directDivs.length >= 2) {
+      return directDivs[directDivs.length - 1];
+    }
+    if (directDivs.length === 1) {
+      let autoSlot = tb.querySelector(':scope > .tb-auto-actions');
+      if (!autoSlot) {
+        autoSlot = document.createElement('div');
+        autoSlot.className = 'tb-auto-actions';
+        tb.appendChild(autoSlot);
+      }
+      return autoSlot;
+    }
+    return tb;
+  }
+
   function findOrAttachControlHost(table) {
     const wrap = table.closest('.table-wrap, .table-scroll, .rdl-table-wrap');
     if (!wrap) return null;
@@ -466,17 +484,17 @@
     // Look for an immediately preceding toolbar or header inside the same card/panel
     const prev = wrap.previousElementSibling;
     if (prev && prev.classList.contains('table-toolbar')) {
-      return { host: prev.lastElementChild || prev, prepend: true };
+      return { host: ensureToolbarActionSlot(prev), prepend: true };
     }
     if (prev && prev.classList.contains('col-filter-bar') && prev.previousElementSibling && prev.previousElementSibling.classList.contains('table-toolbar')) {
       const tb = prev.previousElementSibling;
-      return { host: tb.lastElementChild || tb, prepend: true };
+      return { host: ensureToolbarActionSlot(tb), prepend: true };
     }
     const parentCard = wrap.parentElement;
     if (parentCard) {
       const tb = parentCard.querySelector(':scope > .table-toolbar');
       if (tb) {
-        return { host: tb.lastElementChild || tb, prepend: true };
+        return { host: ensureToolbarActionSlot(tb), prepend: true };
       }
       const pbiHdr = parentCard.querySelector(':scope > .pbi-panel-hdr');
       if (pbiHdr) {
@@ -733,6 +751,77 @@
     });
   }
 
+  const ALL_CHIP_SELECTOR = [
+    '.filter-chip[data-chip="all"]',
+    '.filter-chip[data-cf-chip="all"]',
+    '.filter-chip[data-part-chip="all"]',
+    '.filter-chip[data-uhealth-chip="all"]',
+    '.filter-chip[data-vat-chip="all"]',
+    '.filter-chip[data-wf-audit-chip="all"]'
+  ].join(', ');
+
+  function enhanceToolbarStructure(root) {
+    const toolbars = Array.from((root || document).querySelectorAll('.table-toolbar'));
+    toolbars.forEach(tb => {
+      const directDivs = Array.from(tb.children).filter(el => el.tagName === 'DIV');
+      const actionSlot = directDivs.length >= 2 ? directDivs[directDivs.length - 1] : null;
+      if (actionSlot) {
+        const items = Array.from(actionSlot.children).filter(el => el.offsetParent !== null || el.tagName === 'BUTTON' || el.classList.contains('tbl-col-mgr-wrap'));
+        let seenUtility = false;
+        let markedSep = false;
+        items.forEach(el => {
+          el.classList.remove('tb-cluster-sep');
+          const isExportOrPrimary = el.hasAttribute('data-export-csv') || el.classList.contains('btn-primary');
+          if (!isExportOrPrimary && (el.classList.contains('tbl-col-mgr-wrap') || el.classList.contains('btn-ghost-bar') || el.classList.contains('btn'))) {
+            seenUtility = true;
+          } else if (isExportOrPrimary && seenUtility && !markedSep) {
+            el.classList.add('tb-cluster-sep');
+            markedSep = true;
+          }
+        });
+      }
+
+      const chipBar = tb.querySelector('.chip-bar');
+      if (chipBar) {
+        const allChip = chipBar.querySelector(ALL_CHIP_SELECTOR);
+        const searchEl = tb.querySelector('.search-input');
+        const hasSlice = Boolean(allChip && !allChip.classList.contains('active'));
+        const hasSearch = Boolean(searchEl && String(searchEl.value || '').trim().length > 0);
+        const isFiltered = hasSlice || hasSearch;
+        chipBar.classList.toggle('has-active-filter', isFiltered);
+
+        let resetBtn = chipBar.querySelector(':scope > .tb-chip-reset-btn');
+        if (isFiltered) {
+          if (!resetBtn) {
+            resetBtn = document.createElement('button');
+            resetBtn.type = 'button';
+            resetBtn.className = 'tb-chip-reset-btn';
+            resetBtn.title = 'Clear active filter slice and search query';
+            resetBtn.innerHTML = ICONS.reset + '<span>Reset</span>';
+            resetBtn.addEventListener('click', e => {
+              e.preventDefault();
+              e.stopPropagation();
+              const hostPanel = resetBtn.closest('.panel-card[id], .pbi-panel[id]');
+              const panelSel = hostPanel && hostPanel.id ? '#' + hostPanel.id + ' ' : '#workspace ';
+              const liveSearch = document.querySelector(panelSel + '.table-toolbar .search-input') || document.getElementById('tableSearchInput');
+              if (liveSearch && String(liveSearch.value || '').trim().length > 0) {
+                liveSearch.value = '';
+                liveSearch.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+              const liveAllChip = document.querySelector(panelSel + '.table-toolbar .chip-bar ' + ALL_CHIP_SELECTOR.split(', ').join(', ' + panelSel + '.table-toolbar .chip-bar '));
+              if (liveAllChip && !liveAllChip.classList.contains('active')) {
+                liveAllChip.click();
+              }
+            });
+            chipBar.appendChild(resetBtn);
+          }
+        } else if (resetBtn) {
+          resetBtn.remove();
+        }
+      }
+    });
+  }
+
   function enhanceAllTables(rootContainer, stateObj) {
     ensureGlobalListeners();
     if (stateObj) {
@@ -756,6 +845,7 @@
     tables.forEach((table, idx) => {
       mountTableControls(table, idx);
     });
+    enhanceToolbarStructure(root);
   }
 
   window.MFG_TABLE_COLS = {
