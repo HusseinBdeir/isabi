@@ -525,6 +525,7 @@
             ['Sales (Delivery)', 'Sales (Delivery) — Customer + Site + Material/Trans'],
             ['Sales (Pickup)', 'Sales (Pickup) — Customer Material Price (Pick-up)'],
             ['List Price', 'List Price — Benchmark Product Price'],
+            ['Commission', 'Commission — Per-Unit Plant Owner Fee (Product + Owner)'],
             ['Purchase Price (Site)', 'Purchase Price (Site) — Site Material Cost'],
             ['Transport Price (Site)', 'Transport Price (Site) — Site Haulage Rate'],
             ['Haulage (Customer Site)', 'Haulage (Customer Site) — 3P Delivery Hauler Rate']

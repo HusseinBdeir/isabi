@@ -134,6 +134,7 @@
     cfChartGrain: 'monthly',
     arChartMode: 'collections',
     salesChartMode: 'payment',
+    commLedgerMode: 'monthly',
     rawSupFilter: 'all',
     salesHaulFilter: 'all',
     salesPadFilter: 'all',
@@ -1135,8 +1136,54 @@
   // Note: Cash Flow & Till (cash_inflow, cash_outflow, net_cash_flow, cash_till) are physical Transaction-Date movements and never shift on Rep Date.
   const KPI_ADDITIVE_KEYS = ['sales_ttc', 'gross_sales', 'net_sales', 'trans_rev', 'sales_vat', 'loads', 'delivery_loads', 'pickup_loads', 'unregistered_loads',
     'tons_sold', 'qty_sold', 'agg_qty_sold', 'agg_sales_net', 'agg_sales_ttc', 'cash_sales', 'credit_sales', 'raw_cost', 'raw_mat_cost', 'raw_haulage', 'raw_loads', 'raw_tons', 'raw_qty',
-    'expenses', 'cash_expenses', 'credit_expenses', 'ap_material', 'ap_haulage', 'ap_expense', 'ap_on_credit', 'salaries_paid', 'gross_margin', 'operating_profit', 'receipts', 'settlements_paid',
+    'expenses', 'cash_expenses', 'credit_expenses', 'ap_material', 'ap_haulage', 'ap_expense', 'ap_on_credit', 'salaries_paid', 'commission_due', 'gross_margin', 'operating_profit', 'receipts', 'settlements_paid',
     'diesel_litres', 'own_fleet_loads'];
+
+  let _commIdxRev = -1;
+  let _commIdxLen = -1;
+  let _commIdxMap = null;
+  function getCommissionRulesIndex() {
+    const pr = (SEED && SEED.records && SEED.records.price_rules) || [];
+    const rev = (SEED && SEED._customRev) || 0;
+    if (_commIdxMap && _commIdxRev === rev && _commIdxLen === pr.length) return _commIdxMap;
+    const map = new Map();
+    for (let i = 0; i < pr.length; i++) {
+      const r = pr[i];
+      if (!r || r.voided || !/^commission$/i.test(String(r.rule_type || '').trim())) continue;
+      const prod = norm(r.product);
+      if (!prod) continue;
+      const ck = `${norm(r.company || 'BBConstruction')}|${prod}`;
+      let arr = map.get(ck);
+      if (!arr) { arr = []; map.set(ck, arr); }
+      arr.push(r);
+    }
+    _commIdxRev = rev;
+    _commIdxLen = pr.length;
+    _commIdxMap = map;
+    return map;
+  }
+
+  function ticketCommissionUsd(s) {
+    if (!s || s.voided || ticketSign(s) !== 1) return 0;
+    const mth = String(s.method || 'Credit').trim();
+    if (mth === 'Discount' || mth === 'Cash Discount' || mth === 'Credit Discount' || mth === 'JV Adjusted' || mth === 'Adjusted') return 0;
+    const qty = Number(s.qty || 0);
+    if (!(qty > 0)) return 0;
+    const d = String(s.date || '').slice(0, 10);
+    const arr = getCommissionRulesIndex().get(`${norm(s.company)}|${norm(s.product)}`);
+    if (!arr || !arr.length) return 0;
+    let best = 0;
+    for (let i = 0; i < arr.length; i++) {
+      const r = arr[i];
+      const sd = r.start_date ? String(r.start_date).slice(0, 10) : '';
+      const ed = r.end_date ? String(r.end_date).slice(0, 10) : '';
+      if ((!sd || sd <= d) && (!ed || ed >= d)) {
+        const v = Number(r.unit_price ?? r.price ?? 0);
+        if (v > best) best = v;
+      }
+    }
+    return best > 0 ? qty * best : 0;
+  }
 
   function finishKpiRatios(k) {
     const aggQty = Number(k.agg_qty_sold || 0);
@@ -1174,7 +1221,7 @@
     let loads = 0, delivery_loads = 0, pickup_loads = 0, unregistered_loads = 0;
     let sales_ttc = 0, sales_vat = 0, net_sales = 0, gross_sales = 0, trans_rev = 0, qty_sold = 0, tons_sold = 0;
     let agg_qty_sold = 0, agg_sales_net = 0, agg_sales_ttc = 0;
-    let cash_sales = 0, credit_sales = 0, sales_haulage_credit = 0;
+    let cash_sales = 0, credit_sales = 0, sales_haulage_credit = 0, commission_due_calc = 0;
     sales.forEach(s => {
       const sgn = ticketSign(s);
       if (sgn === 1) {
@@ -1182,6 +1229,7 @@
         if (s.sale_type === 'Pickup') pickup_loads += 1;
         else if (s.sale_type === 'Delivery') delivery_loads += 1;
         else unregistered_loads += 1;
+        commission_due_calc += ticketCommissionUsd(s);
       }
       const ttc = Number(s.total_ttc != null ? s.total_ttc : s.total || 0) * sgn;
       const vat = Number(s.vat || 0) * sgn;
@@ -1250,7 +1298,8 @@
 
     const gross_margin = round2(net_sales - raw_cost);
     const freelance_paid = Number(baseKpi.freelance_paid || 0);
-    const commission_due = Number(baseKpi.commission_due || 0);
+    const hasHydratedSales = Boolean(SEED.records && Array.isArray(SEED.records.sales_tickets) && SEED.records.sales_tickets.length > 0);
+    const commission_due = hasHydratedSales ? round2(commission_due_calc) : Number(baseKpi.commission_due || 0);
     const overtime_bonus = Number(baseKpi.overtime_bonus || 0);
     const operating_profit = round2(gross_sales - (raw_cost + expenses + salaries_paid + freelance_paid + commission_due + overtime_bonus));
     const cash_inflow = round2(cash_sales + receipts + ext_in);
@@ -1292,6 +1341,7 @@
       ap_expense: range ? round2(credit_expenses) : round2(Number(baseKpi.ap_expense != null ? baseKpi.ap_expense : credit_expenses)),
       ap_on_credit: range ? round2(raw_mat_cost + raw_haulage + sales_haulage_credit + credit_expenses) : round2(Number(baseKpi.ap_material != null ? baseKpi.ap_material : raw_mat_cost) + Number(baseKpi.ap_haulage != null ? baseKpi.ap_haulage : (raw_haulage + sales_haulage_credit)) + Number(baseKpi.ap_expense != null ? baseKpi.ap_expense : credit_expenses)),
       salaries_paid: round2(salaries_paid),
+      commission_due: round2(commission_due),
       gross_margin,
       operating_profit,
       receipts: round2(receipts),
@@ -1328,7 +1378,7 @@
     const MAP = { sales_ttc: 'sales_ttc', gross_sales: 'gross_sales', net_sales: 'net_sales', trans_rev: 'trans_rev', sales_vat: 'sales_vat', cash_sales: 'cash_sales', credit_sales: 'credit_sales',
       loads: 'loads', delivery_loads: 'delivery_loads', pickup_loads: 'pickup_loads', tons_sold: 'tons',
       raw_cost: 'raw_cost', raw_mat_cost: 'raw_mat_cost', raw_haulage: 'raw_haulage', raw_loads: 'raw_loads',
-      expenses: 'expenses', cash_expenses: 'cash_expenses', credit_expenses: 'credit_expenses', salaries_paid: 'salaries',
+      expenses: 'expenses', cash_expenses: 'cash_expenses', credit_expenses: 'credit_expenses', salaries_paid: 'salaries', commission_due: 'commission_due',
       gross_margin: 'gross_margin', operating_profit: 'operating_profit', receipts: 'receipts', settlements_paid: 'settlements_paid' };
     Object.keys(MAP).forEach(key => { if (mRow[MAP[key]] != null) k[key] = Number(mRow[MAP[key]]); });
     if (k.gross_sales == null && k.net_sales != null) k.gross_sales = round2(Number(k.net_sales || 0) + Number(k.trans_rev || 0));
@@ -1529,7 +1579,8 @@
     const f = range ? range.from : MIN_DATE;
     const t = range ? range.to : MAX_DATE;
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
-    const cacheKey = `${coKey}|${allowedCompanyNames().join(',')}|${STATE.basis}|${STATE.period}|${f}|${t}|${SEED._customRev || 0}|${crCount}`;
+    const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
+    const cacheKey = `${coKey}|${allowedCompanyNames().join(',')}|${STATE.basis}|${STATE.period}|${f}|${t}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}`;
     if (_kpiRangeCacheMap.has(cacheKey)) return _kpiRangeCacheMap.get(cacheKey);
 
     const txRaw = computeLocalKPI(m, range, 'tx', coKey);
@@ -1539,6 +1590,7 @@
       anchor.agg_qty_sold = txRaw.agg_qty_sold;
       anchor.agg_sales_net = txRaw.agg_sales_net;
       anchor.agg_sales_ttc = txRaw.agg_sales_ttc;
+      if (hydSalesLen > 0) anchor.commission_due = txRaw.commission_due;
       anchor.tons_sold = txRaw.tons_sold || anchor.tons_sold;
       anchor.raw_tons = txRaw.raw_tons || anchor.raw_tons;
       if (range) {
@@ -1588,12 +1640,15 @@
       if (!pk) return;
       const sgn = ticketSign(s);
       if (sgn === 0) return;
-      const cur = pMap.get(pk) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
+      const cur = pMap.get(pk) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, commission_due: 0, raw_qty: 0, raw_cost: 0 };
       const q = sgn * ticketMeters(s);
       const rawQ = sgn * Number(s.qty || 0);
       const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
       const net = sgn * Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0)));
-      if (sgn === 1) cur.loads += 1;
+      if (sgn === 1) {
+        cur.loads += 1;
+        cur.commission_due += ticketCommissionUsd(s);
+      }
       cur.qty_sold += q;
       cur.native_qty_sold += rawQ;
       cur.tons_sold += sgn * ticketTons(s);
@@ -1605,13 +1660,13 @@
     rawPool.forEach(r => {
       const pk = norm(r.product);
       if (!pk) return;
-      const cur = pMap.get(pk) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
+      const cur = pMap.get(pk) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, commission_due: 0, raw_qty: 0, raw_cost: 0 };
       cur.raw_qty += ticketMeters(r);
       cur.raw_cost += Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)));
       pMap.set(pk, cur);
     });
     return mdlProds.map(p => {
-      const st = pMap.get(norm(p.Product)) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, raw_qty: 0, raw_cost: 0 };
+      const st = pMap.get(norm(p.Product)) || { loads: 0, qty_sold: 0, native_qty_sold: 0, tons_sold: 0, sales_ttc: 0, net_sales: 0, trans_rev: 0, commission_due: 0, raw_qty: 0, raw_cost: 0 };
       const denom = st.qty_sold > 0 ? st.qty_sold : st.native_qty_sold;
       return Object.assign({}, p, {
         loads: st.loads,
@@ -1621,6 +1676,7 @@
         sales_ttc: round2(st.sales_ttc),
         net_sales: round2(st.net_sales),
         trans_rev: round2(st.trans_rev),
+        commission_due: round2(st.commission_due),
         raw_qty: round2(st.raw_qty),
         raw_cost: round2(st.raw_cost),
         avg_price_ttc: denom > 0 ? round2(st.sales_ttc / denom) : 0,
@@ -2993,6 +3049,9 @@
   function resolveColVal(r, colKey, view) {
     if (!r || !colKey) return null;
     if (colKey === 'date' && r.date !== undefined) return recordDate(r);
+    if (colKey === 'customer' && (view === 'pricing' || view === 'raw_pricing' || view === 'price_rules')) {
+      return r.customer || r.supplier || (r.site ? r.site + ' (site)' : 'Standard List');
+    }
     if (r[colKey] !== undefined && r[colKey] !== null && r[colKey] !== '') return r[colKey];
     if (window.MFG_PBI && typeof window.MFG_PBI.cellValue === 'function') {
       const tk = viewToTableKey(view);
@@ -6751,8 +6810,24 @@
     const liveUnmatchedTotalUsd = round2(liveUnmatchedStaff.reduce((s, r) => s + r.unmatched_usd, 0));
 
     const kSn = getKPI();
+    let liveCommPaidExVat = 0;
+    filterRecords(SEED.records.receipts, { ignoreSearch: true }).forEach(r => {
+      if (!r || r.voided) return;
+      const mth = String(r.method || '').trim();
+      if (mth === 'Rent' || mth === 'RentConfig') liveCommPaidExVat += Number(r.amount || 0) + Number(r.discount || 0);
+    });
+    filterRecords(SEED.records.settlements, { ignoreSearch: true }).forEach(s => {
+      if (!s || s.voided) return;
+      if (String(s.method || '').trim() === 'Commission') liveCommPaidExVat += Number(s.amount || 0) + Number(s.discount || 0);
+    });
+    const hasHydratedSalesSn = Boolean(SEED.records && Array.isArray(SEED.records.sales_tickets) && SEED.records.sales_tickets.length > 0);
+    const liveCommEarnedUsd = round2(Number(kSn && kSn.commission_due != null ? kSn.commission_due : (basePricing.commission_earned_usd || 0)));
+    const liveCommPaidFinal = hasHydratedSalesSn ? round2(liveCommPaidExVat) : round2(Number(basePricing.commission_paid_usd || 0));
     const livePricing = Object.assign({}, basePricing, {
       actual_avg_price_usd: Number(kSn && kSn.avg_price_net) > 0 ? kSn.avg_price_net : basePricing.actual_avg_price_usd,
+      commission_earned_usd: liveCommEarnedUsd,
+      commission_paid_usd: liveCommPaidFinal,
+      commission_balance_usd: round2(liveCommEarnedUsd - liveCommPaidFinal),
       active_agreements: activeAgreementsCnt,
       truck_unit_delivery_rules: truckDeliveryRulesCnt,
       sales_below_agreed_usd: liveBelowTotalUsd,
@@ -10611,9 +10686,11 @@
     const today = SEED_DATE;
     const isActive = r => (!r.end_date || String(r.end_date) >= today) && (!r.start_date || String(r.start_date) <= today);
     const isQuarryOnlyRule = r => r && (r.rule_type === 'Purchase Price (Site)' || r.rule_type === 'Transport Price (Site)');
+    const isCommRule = r => Boolean(r && /^commission$/i.test(String(r.rule_type || '').trim()));
     const isNonAggOutlierRule = r => !r || /^unit$/i.test(String(r.unit || '')) || Number(r.unit_price ?? r.price ?? 0) > 250 || /\b(shacman|truck|mixer|pump|excavator|excavation)\b/i.test(String(r.product || ''));
     const base = filterRecords(SEED.records.price_rules, { ignorePeriod: true });
     const salesBase = base.filter(r => !isQuarryOnlyRule(r));
+    const commBaseCount = salesBase.filter(isCommRule).length;
     const salesTypes = uniqSorted(salesBase.map(r => r.rule_type));
     const allTypes = uniqSorted(base.map(r => r.rule_type));
     const rules = sortRows(base.filter(r => {
@@ -10637,10 +10714,10 @@
       'Sales (Pickup)': 'Pickup',
       'Haulage (Customer Site)': '3P Delivery Haul',
       'List Price': 'List Price',
-      'Commission': 'Commission'
+      'Commission': commBaseCount > 0 ? `Commission (${commBaseCount})` : 'Commission'
     }[t] || t);
     const typeChips = salesTypes.length ? salesTypes.map(t => chip(t, shortRuleType(t))).join('') : chip('customer', 'Customer rules');
-    const upRules = rules.filter(r => !isMatIndiffRule(r) && !isNonAggOutlierRule(r) && Number(r.unit_price ?? r.price ?? 0) > 0);
+    const upRules = rules.filter(r => !isMatIndiffRule(r) && !isNonAggOutlierRule(r) && (STATE.chipFilter === 'Commission' || !isCommRule(r)) && Number(r.unit_price ?? r.price ?? 0) > 0);
     const tpRules = rules.filter(r => !isTransIndiffRule(r) && Number(r.trans_unit_price ?? r.trans_price ?? 0) > 0 && Number(r.trans_unit_price ?? r.trans_price ?? 0) <= 100);
     const indRules = rules.filter(r => ruleAnyIndiffPrice(r) != null);
 
@@ -10660,6 +10737,37 @@
       ? round2(volScopedProds.reduce((a, p) => a + Number(p.sales_ttc || 0), 0), 0) / volTotM3
       : k.avg_price_ttc;
     const prVolAvgTtcRound = round2(prVolAvgTtc);
+
+    // Live Sales Commission engine (BBConstruction -> Agrimount 12 rules across 11 products + 94 GL 6222 / GL 449 settlement vouchers)
+    const pRangeTop = periodRange(STATE.period);
+    const asAtDateTop = (pRangeTop && pRangeTop.to && pRangeTop.to < today) ? pRangeTop.to : today;
+    const allCompanyRulesTop = filterRecords(SEED.records.price_rules, { ignorePeriod: true, ignoreSearch: true });
+    const scopedSalesTop = filterRecords(SEED.records.sales_tickets, { ignoreSearch: true });
+    const scopedRecTop = filterRecords(SEED.records.receipts, { ignoreSearch: true });
+    const scopedSetTop = filterRecords(SEED.records.settlements, { ignoreSearch: true });
+    const allCoSalesTop = filterRecords(SEED.records.sales_tickets, { ignorePeriod: true, ignoreSearch: true });
+    const allCoRecTop = filterRecords(SEED.records.receipts, { ignorePeriod: true, ignoreSearch: true });
+    const allCoSetTop = filterRecords(SEED.records.settlements, { ignorePeriod: true, ignoreSearch: true });
+    const commData = (window.MFG_PBI && typeof window.MFG_PBI.buildSalesCommissionData === 'function')
+      ? window.MFG_PBI.buildSalesCommissionData(scopedSalesTop, scopedRecTop, scopedSetTop, allCompanyRulesTop, {
+          today,
+          asAtDate: asAtDateTop,
+          allSalesRows: allCoSalesTop,
+          allReceiptRows: allCoRecTop,
+          allSettlementRows: allCoSetTop,
+          allGlobalRules: SEED.records.price_rules,
+          allowedCompanies: allowedCompanyNames(),
+          dateFrom: pRangeTop && pRangeTop.from,
+          dateTo: pRangeTop && pRangeTop.to,
+          basis: STATE.basis
+        })
+      : { rulesCount: 0, activeRulesCount: 0, productsCount: 0, activeVolumeProductsCount: 0, beneficiariesLabel: 'Agrimount', totalQualifyingLoads: 0, totalQualifyingQty: 0, totalEarned: Number(k.commission_due || 0), totalPaidExVat: 0, totalPaidVat: 0, totalPaidTtc: 0, periodNetExVat: Number(k.commission_due || 0), openPayableExVat: Number(k.commission_due || 0), productRows: [], monthlyRows: [], voucherRows: [], otherEntities: [] };
+    const hasComm = commData.rulesCount > 0 || commData.totalEarned > 0 || commData.totalPaidExVat > 0;
+    const commHintCo = !hasComm && commData.otherEntities.length ? commData.otherEntities[0] : null;
+    const commHintSlug = commHintCo
+      ? (norm(commHintCo.company) === 'bbconstruction' ? 'bbconstruction' : (norm(commHintCo.company) === 'wtc' ? 'wtc' : (norm(commHintCo.company) === 'lions transport' ? 'lionstransport' : 'manufacturing-group')))
+      : '';
+    const commPaidPct = commData.totalEarned > 0 ? Math.min(100, Math.max(4, (commData.totalPaidExVat / commData.totalEarned) * 100)) : 0;
 
     return `
       <div class="cockpit-banner has-insights">
@@ -10683,7 +10791,7 @@
             label: 'Avg Agreement Rates',
             badge: `Trans: ${avgTp ? fmtUSD(avgTp, 2) + '/m³' : '—'}`,
             badgeCls: 'emerald',
-            val: `${avgUp ? fmtUSD(avgUp, 2) : '—'} <small>/ m³</small>`,
+            val: `${avgUp ? fmtUSD(avgUp, 2) : '—'} <small>/ ${STATE.chipFilter === 'Commission' ? 'unit' : 'm³'}</small>`,
             valCls: 'emerald',
             sub: `<b>${fmtNum(salesIndiffRules.length)}</b> flat delivery rules (${avgInd ? 'avg ' + fmtUSD(avgInd, 0) + '/load' : 'per load'})`,
             tone: 'emerald'
@@ -10695,18 +10803,39 @@
             sub: `Benchmarked across <b>${fmtNum(volScopedProds.length || scopedProds.length)}</b> active aggregate grades`,
             tone: 'steel'
           })}
-          ${insightCard({
+          ${hasComm ? insightCard({
+            label: 'Sales Commission Earned',
+            badge: `${fmtNum(commData.rulesCount)} Rules · ${commData.beneficiariesLabel}`,
+            badgeCls: 'brass',
+            val: `<span class="insight-drill" data-scroll-panel="commissionProductPanel" title="Jump to Sales Commissions by Product">${fmtUSD(commData.totalEarned, 0)}</span>`,
+            valCls: 'brass',
+            pct: commPaidPct,
+            sub: `Paid <b>${fmtUSD(commData.totalPaidExVat, 0)}</b> Ex-VAT${commData.totalPaidVat > 0 ? ` (+<b>${fmtUSD(commData.totalPaidVat, 0)}</b> VAT)` : ''} · <span class="insight-drill" data-scroll-panel="commissionLedgerPanel">Open: <b>${fmtUSD(commData.openPayableExVat, 0)}</b></span>`,
+            tone: 'brass'
+          }) : insightCard({
             label: 'Sales Commission Due',
-            badge: `${fmtNum(uniqPrCusts)} Clients · ${fmtNum(uniqPrSites)} Sites`,
-            badgeCls: Number(k.commission_due || 0) > 0 ? 'amber' : 'emerald',
-            val: fmtUSD(k.commission_due, 0),
-            valCls: Number(k.commission_due || 0) > 0 ? 'amber' : 'emerald',
-            sub: `Locked at weighbridge entry across <b>${fmtNum(uniqPrCusts)}</b> customer accounts`,
-            tone: 'amber'
+            badge: 'Own Plant · 0 Rules',
+            badgeCls: 'emerald',
+            val: '$0',
+            valCls: 'emerald',
+            sub: commHintCo
+              ? `Own plant ($0) · <span class="insight-drill" data-jump-co="${esc(commHintSlug)}" role="button" tabindex="0" title="Switch entity to ${esc(commHintCo.company)}"><b>${esc(commHintCo.company)}</b>: <b>${fmtNum(commHintCo.rulesCount)}</b> rules (${esc(commHintCo.ownersLabel)})</span>`
+              : `Locked at weighbridge entry across <b>${fmtNum(uniqPrCusts)}</b> customer accounts`,
+            tone: 'emerald'
           })}
           ${appPill('price_rules', 'unit_price', 'agreements')}
         </div>
       </div>
+
+      ${commHintCo ? `
+        <div class="pbi-panel" id="commEntityHintBanner" style="margin-bottom:14px;padding:11px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-left:3px solid var(--brass)">
+          <div style="font-size:12.5px;color:var(--ink-2)">
+            <b>${esc(COMPANY_LABELS[STATE.company] || STATE.company)}</b> operates its own crushing &amp; washing plant with <b>$0</b> per-unit sales commissions.
+            <b>${esc(commHintCo.company)}</b> carries <b>${fmtNum(commHintCo.rulesCount)}</b> sales commission agreements across <b>${fmtNum(commHintCo.productsCount)}</b> products payable to <b>${esc(commHintCo.ownersLabel)}</b>.
+          </div>
+          <button type="button" class="btn btn-sm btn-brass" data-jump-co="${esc(commHintSlug)}" style="white-space:nowrap">View ${esc(commHintCo.company)} Commissions (${fmtNum(commHintCo.rulesCount)} Rules)</button>
+        </div>
+      ` : ''}
 
       <div class="panel-card" id="pricingPanel">
         <div class="table-toolbar">
@@ -10716,6 +10845,7 @@
           </div>
           <div style="display:flex;gap:6px">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw_pricing" title="Open Raw Material Purchase &amp; Quarry Haulage Agreements">${ic('raw')} Quarry &amp; Haulage Rates</button>
+            ${canEnterForm('pricerule') ? '<button type="button" class="btn btn-ghost-bar" data-open-modal="pricerule_comm" title="Create a per-unit Sales Commission rule for a plant owner">+ Commission Rule</button>' : ''}
             ${exportBtn('pricingPanel', 'Price_Agreements')}
             ${canEnterForm('pricerule') ? '<button class="btn btn-primary" data-open-modal="pricerule">+ New Price Agreement</button>' : ''}
           </div>
@@ -10734,14 +10864,15 @@
                 const indVal = ruleAnyIndiffPrice(pr);
                 const matInd = isMatIndiffRule(pr);
                 const trInd = isTransIndiffRule(pr);
+                const commRow = isCommRule(pr);
                 const upVal = (!matInd && Number(pr.unit_price ?? pr.price ?? 0) !== 0) ? Number(pr.unit_price ?? pr.price) : null;
                 const tpVal = (!trInd && Number(pr.trans_unit_price ?? pr.trans_price ?? 0) !== 0) ? Number(pr.trans_unit_price ?? pr.trans_price) : null;
                 return `
                 <tr class="rrow" data-rkey="price_rules" data-rid="${esc(pr.id)}">
                   <td class="mono"><strong>${esc(pr.name)}</strong>${appCell(pr, 'price_rules')}</td>
                   <td>${coBadge(pr.company)}</td>
-                  <td><span class="badge badge-info">${esc(pr.rule_type || '—')}</span></td>
-                  <td>${pr.customer ? relLink('customers', pr.customer, pr.customer, true) : (pr.supplier ? relLink('suppliers', pr.supplier, pr.supplier, true) : (pr.site ? relLink('sites', pr.site, pr.site + ' (site)', true) : '<strong>Standard List</strong>'))}</td>
+                  <td><span class="badge ${commRow ? 'badge-brass' : 'badge-info'}">${esc(pr.rule_type || '—')}</span></td>
+                  <td>${pr.customer ? relLink('customers', pr.customer, pr.customer, true) : (pr.supplier ? `${relLink('suppliers', pr.supplier, pr.supplier, true)}${commRow ? ' <span class="badge badge-neutral" style="font-size:9.5px">Plant Owner</span>' : ''}` : (pr.site ? relLink('sites', pr.site, pr.site + ' (site)', true) : '<strong>Standard List</strong>'))}</td>
                   <td>${pr.product ? relLink('products', pr.product) : '(All Grades)'}</td>
                   <td>${pr.site ? relLink('sites', pr.site) : '—'}</td>
                   <td class="mono">${esc(pr.unit)}${pr.truck_size ? ` <span class="badge badge-brass" title="Client/Site Truck Size Override (${pr.truck || 'All trucks'})">${fmtNum(pr.truck_size, 1)} m³</span>` : (pr.qty1 ? ` <span class="badge badge-neutral" title="Tier 1${pr.qty2 ? ' / Tier 2' : ''} Truck Size">${fmtNum(pr.qty1, 1)}${pr.qty2 ? '/' + fmtNum(pr.qty2, 1) : ''} m³</span>` : '')}</td>
@@ -10770,7 +10901,7 @@
       </div>
 
       ${(() => {
-        const activeRulesList = salesBase.filter(isActive);
+        const activeRulesList = salesBase.filter(r => isActive(r) && !isCommRule(r));
         const prodPriceComp = scopedProds.map(p => {
           const pRules = activeRulesList.filter(r => norm(r.product) === norm(p.Product) && !isMatIndiffRule(r) && !isNonAggOutlierRule(r) && Number(r.unit_price ?? r.price ?? 0) > 0);
           const prices = pRules.map(r => Number(r.unit_price ?? r.price));
@@ -10788,10 +10919,10 @@
             corridorLabel: prices.length ? `${fmtUSD(lowest, 2)} – ${fmtUSD(highest, 2)}` : '—'
           };
         });
-        const pRange = periodRange(STATE.period);
-        const asAtDate = (pRange && pRange.to && pRange.to < today) ? pRange.to : today;
-        const allCompanyRules = filterRecords(SEED.records.price_rules, { ignorePeriod: true, ignoreSearch: true });
-        const scopedSalesTickets = filterRecords(SEED.records.sales_tickets, { ignoreSearch: true });
+        const pRange = pRangeTop;
+        const asAtDate = asAtDateTop;
+        const allCompanyRules = allCompanyRulesTop;
+        const scopedSalesTickets = scopedSalesTop;
         const scopedMonths = getScopedMonthly(getModel().monthly, 18);
         const lpHist = (window.MFG_PBI && typeof window.MFG_PBI.buildListPriceHistoryData === 'function')
           ? window.MFG_PBI.buildListPriceHistoryData(allCompanyRules, prodPriceComp, scopedMonths, {
@@ -10814,7 +10945,171 @@
               asAtDate
             })
           : '';
+        const commVisualsHtml = (hasComm && window.MFG_PBI && typeof window.MFG_PBI.renderCommissionVisualsSection === 'function')
+          ? window.MFG_PBI.renderCommissionVisualsSection(commData, { isPbi: false })
+          : '';
         const qSearch = STATE.search.trim().toLowerCase();
+        const commProdFiltered = sortRows((commData.productRows || []).filter(r => {
+          if (!qSearch) return true;
+          return `${r.product || ''} ${r.owner || ''} ${r.company || ''} ${r.uom || ''}`.toLowerCase().includes(qSearch);
+        }), 'pcommprod', 'comm_due', 'desc');
+        const totCommProdLoads = commProdFiltered.reduce((a, r) => a + Number(r.loads || 0), 0);
+        const totCommProdEarned = commProdFiltered.reduce((a, r) => a + Number(r.comm_due || 0), 0);
+        const commLedgerMode = STATE.commLedgerMode === 'vouchers' ? 'vouchers' : 'monthly';
+        const commMonthsSorted = sortRows((commData.monthlyRows || []).filter(r => {
+          if (!qSearch) return true;
+          return `${r['Year Month'] || ''} ${r.ym || ''}`.toLowerCase().includes(qSearch);
+        }), 'pcommmo', 'ym', 'desc');
+        const commVouchersFiltered = sortRows((commData.voucherRows || []).filter(v => {
+          if (!qSearch) return true;
+          return `${v.name || ''} ${v.beneficiary || ''} ${v.method || ''} ${v.date || ''} ${v.reference || ''}`.toLowerCase().includes(qSearch);
+        }), 'pcommvc', 'date', 'desc');
+        const commVouchersShown = commVouchersFiltered.slice(0, shownCount('pcommvc'));
+        const totMoLoads = commMonthsSorted.reduce((a, r) => a + Number(r.loads || 0), 0);
+        const totMoEarned = commMonthsSorted.reduce((a, r) => a + Number(r.earned_usd || 0), 0);
+        const totMoPaidNet = commMonthsSorted.reduce((a, r) => a + Number(r.paid_net_usd || 0), 0);
+        const totMoPaidVat = commMonthsSorted.reduce((a, r) => a + Number(r.paid_vat_usd || 0), 0);
+        const totMoPaidTtc = commMonthsSorted.reduce((a, r) => a + Number(r.paid_total_usd || 0), 0);
+        const totMoPeriodNet = commMonthsSorted.reduce((a, r) => a + Number(r.period_net_ex_vat || 0), 0);
+        const totVcExVat = commVouchersFiltered.reduce((a, v) => a + Number(v.ex_vat_paid || 0), 0);
+        const totVcVat = commVouchersFiltered.reduce((a, v) => a + Number(v.vat_paid || 0), 0);
+        const commSectionHtml = !hasComm ? '' : `
+          <div class="panel-card" id="commissionProductPanel" style="margin-bottom:14px">
+            <div class="panel-head">
+              <div class="panel-title"><span>SALES COMMISSIONS BY PRODUCT &amp; SELLING-PRICE CORRIDOR (${fmtNum(commProdFiltered.length)} PRODUCTS · ${fmtNum(commData.rulesCount)} RULES · ${esc(commData.beneficiariesLabel.toUpperCase())})</span></div>
+              <span class="panel-meta" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span>Qualifying Loads <b>${fmtNum(commData.totalQualifyingLoads)}</b> · Accrued Ex-VAT <b>${fmtUSD(commData.totalEarned, 2)}</b></span>
+                ${canEnterForm('pricerule') ? '<button type="button" class="btn btn-ghost-bar" style="padding:3px 8px;font-size:11px" data-open-modal="pricerule_comm">+ Commission Rule</button>' : ''}
+                ${exportBtn('commissionProductPanel', 'Sales_Commissions_By_Product')}
+              </span>
+            </div>
+            <div class="table-wrap">
+              <table class="ledger-table">
+                <thead>
+                  <tr>
+                    ${th('pcommprod', 'Product / Grade', 'product')}${th('pcommprod', 'Co.', 'company')}${th('pcommprod', 'Plant Owner', 'owner')}${th('pcommprod', 'UoM', 'uom')}
+                    ${th('pcommprod', 'Comm. Rate', 'active_rate', 'r')}${th('pcommprod', 'Loads', 'loads', 'r')}${th('pcommprod', 'Qty Sold', 'qty_sold', 'r')}
+                    ${th('pcommprod', 'List Price', 'list_price', 'r')}${th('pcommprod', 'Agreed Corridor', 'min_price', 'r')}${th('pcommprod', 'Realized Net', 'realised_price', 'r')}${th('pcommprod', 'Net After Comm.', 'net_after_comm', 'r')}${th('pcommprod', 'Commission Earned ($)', 'comm_due', 'r')}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${commProdFiltered.map(r => `
+                    <tr class="rrow" data-rkey="price_rules" data-rid="${esc(r.rule_id || r.id)}">
+                      <td>${relLink('products', r.product, r.product, true)}</td>
+                      <td>${coBadge(r.company)}</td>
+                      <td>${relLink('suppliers', r.owner, r.owner, true)}</td>
+                      <td class="mono">${esc(r.uom)}</td>
+                      <td class="r"><strong>${fmtUSD(r.active_rate, 2)}</strong>${r.rate_step_note ? `<div style="font-size:10px;color:var(--muted)">${esc(r.rate_step_note)}</div>` : ''}</td>
+                      <td class="r">${fmtNum(r.loads, 0)}</td>
+                      <td class="r mono">${fmtNum(r.qty_sold, 1)} ${esc(r.uom)}</td>
+                      <td class="r">${r.list_price != null ? fmtUSD(r.list_price, 2) : '-'}</td>
+                      <td class="r mono">${esc(r.corridor_label)}</td>
+                      <td class="r">${r.realised_price != null ? fmtUSD(r.realised_price, 2) : '-'}</td>
+                      <td class="r">${r.net_after_comm != null ? `<strong>${fmtUSD(r.net_after_comm, 2)}</strong>` : '-'}</td>
+                      <td class="r"><strong>${fmtUSD(r.comm_due, 2)}</strong></td>
+                    </tr>
+                  `).join('') || emptyRow(12, 'No sales commission agreements match the current filter')}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="5"><b>TOTAL (${fmtNum(commProdFiltered.length)} PRODUCTS)</b></td>
+                    <td class="r"><b>${fmtNum(totCommProdLoads, 0)}</b></td>
+                    <td class="r">-</td>
+                    <td class="r">-</td>
+                    <td class="r">-</td>
+                    <td class="r">-</td>
+                    <td class="r">-</td>
+                    <td class="r"><b>${fmtUSD(totCommProdEarned, 2)}</b></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel-card" id="commissionLedgerPanel" style="margin-bottom:14px">
+            <div class="panel-head">
+              <div class="panel-title"><span>COMMISSION ACCRUAL, ${esc(commData.beneficiariesLabel.toUpperCase())} SETTLEMENTS &amp; OPEN PAYABLE LEDGER</span></div>
+              <span class="panel-meta" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span>Paid Ex-VAT <b>${fmtUSD(commData.totalPaidExVat, 2)}</b> (GL 6222) · 11% VAT <b>${fmtUSD(commData.totalPaidVat, 2)}</b> (GL 449) · Open Payable <b>${fmtUSD(commData.openPayableExVat, 2)}</b></span>
+                <span style="display:inline-flex;gap:4px">
+                  <button type="button" class="filter-chip ${commLedgerMode === 'monthly' ? 'active' : ''}" data-comm-ledger-mode="monthly">Monthly Ledger (${fmtNum(commData.monthlyRows.length)})</button>
+                  <button type="button" class="filter-chip ${commLedgerMode === 'vouchers' ? 'active' : ''}" data-comm-ledger-mode="vouchers">Payout Vouchers (${fmtNum(commData.voucherRows.length)})</button>
+                </span>
+                ${exportBtn('commissionLedgerPanel', commLedgerMode === 'vouchers' ? 'Commission_Payout_Vouchers' : 'Commission_Monthly_Ledger')}
+              </span>
+            </div>
+            <div class="table-wrap">
+              ${commLedgerMode === 'monthly' ? `
+                <table class="ledger-table">
+                  <thead>
+                    <tr>
+                      ${th('pcommmo', 'Month', 'ym')}${th('pcommmo', 'Qualifying Loads', 'loads', 'r')}${th('pcommmo', 'Earned Ex-VAT ($)', 'earned_usd', 'r')}
+                      ${th('pcommmo', 'Paid Ex-VAT · GL 6222', 'paid_net_usd', 'r')}${th('pcommmo', '11% VAT Paid · GL 449', 'paid_vat_usd', 'r')}${th('pcommmo', 'Settled TTC', 'paid_total_usd', 'r')}
+                      ${th('pcommmo', 'Period Net', 'period_net_ex_vat', 'r')}${th('pcommmo', 'Open Payable', 'cum_payable_ex_vat', 'r')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${commMonthsSorted.map(m => `
+                      <tr>
+                        <td class="mono"><strong>${esc(m['Year Month'])}</strong></td>
+                        <td class="r">${fmtNum(m.loads, 0)}</td>
+                        <td class="r"><strong>${fmtUSD(m.earned_usd, 2)}</strong></td>
+                        <td class="r">${m.paid_net_usd ? fmtUSD(m.paid_net_usd, 2) : '-'}</td>
+                        <td class="r">${m.paid_vat_usd ? fmtUSD(m.paid_vat_usd, 2) : '-'}</td>
+                        <td class="r">${m.paid_total_usd ? fmtUSD(m.paid_total_usd, 2) : '-'}</td>
+                        <td class="r">${fmtUSD(m.period_net_ex_vat, 2)}</td>
+                        <td class="r"><strong>${fmtUSD(m.cum_payable_ex_vat, 2)}</strong></td>
+                      </tr>
+                    `).join('') || emptyRow(8, 'No monthly commission accruals or settlements in the selected period')}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td><b>TOTAL (${fmtNum(commMonthsSorted.length)} MO.)</b></td>
+                      <td class="r"><b>${fmtNum(totMoLoads, 0)}</b></td>
+                      <td class="r"><b>${fmtUSD(totMoEarned, 2)}</b></td>
+                      <td class="r"><b>${fmtUSD(totMoPaidNet, 2)}</b></td>
+                      <td class="r"><b>${fmtUSD(totMoPaidVat, 2)}</b></td>
+                      <td class="r"><b>${fmtUSD(totMoPaidTtc, 2)}</b></td>
+                      <td class="r"><b>${fmtUSD(totMoPeriodNet, 2)}</b></td>
+                      <td class="r"><b>${fmtUSD(commData.openPayableExVat, 2)}</b></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              ` : `
+                <table class="ledger-table">
+                  <thead>
+                    <tr>
+                      ${th('pcommvc', 'Date', 'date')}${th('pcommvc', 'Voucher', 'name')}${th('pcommvc', 'Co.', 'company')}${th('pcommvc', 'Beneficiary', 'beneficiary')}
+                      ${th('pcommvc', 'Method', 'method')}${th('pcommvc', 'GL Stream', 'stream_label')}${th('pcommvc', 'Paid Ex-VAT ($)', 'ex_vat_paid', 'r')}${th('pcommvc', '11% VAT Paid', 'vat_paid', 'r')}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${commVouchersShown.map(v => `
+                      <tr class="rrow" data-rkey="${esc(v.rkey)}" data-rid="${esc(v.id)}">
+                        <td class="mono">${esc(fmtDateDMY(v.date))}</td>
+                        <td class="mono"><strong>${esc(v.name)}</strong></td>
+                        <td>${coBadge(v.company)}</td>
+                        <td>${relLink('suppliers', v.beneficiary, v.beneficiary, true)}</td>
+                        <td><span class="badge ${v.method === 'VATRent' ? 'badge-info' : 'badge-ok'}">${esc(v.method)}</span></td>
+                        <td>${esc(v.stream_label)}</td>
+                        <td class="r">${v.ex_vat_paid ? `<strong>${fmtUSD(v.ex_vat_paid, 2)}</strong>` : '-'}</td>
+                        <td class="r">${v.vat_paid ? fmtUSD(v.vat_paid, 2) : '-'}</td>
+                      </tr>
+                    `).join('') || emptyRow(8, 'No commission payout vouchers in the selected period')}
+                    ${showMoreRow('pcommvc', commVouchersFiltered.length, 8)}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colspan="6"><b>TOTAL (${fmtNum(commVouchersFiltered.length)} VOUCHERS)</b></td>
+                      <td class="r"><b>${fmtUSD(totVcExVat, 2)}</b></td>
+                      <td class="r"><b>${fmtUSD(totVcVat, 2)}</b></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              `}
+            </div>
+          </div>
+        `;
         const delRowsFiltered = sortRows((delTransComp.rows || []).filter(r => {
           if (!qSearch) return true;
           return `${r.customer || ''} ${r.site || ''} ${r.basis || ''} ${r.company || ''}`.toLowerCase().includes(qSearch);
@@ -10833,6 +11128,7 @@
         const totBelowShortfall = belowRows.reduce((a, r) => a + Number(r.shortfall || 0), 0);
         return `
         ${visualsHtml}
+        ${commVisualsHtml}
         <div class="panel-card" id="listPricePanel" style="margin-bottom:14px">
           <div class="panel-head">
             <div class="panel-title"><span>GRADE PRICE CORRIDOR: AGREED VS. LIST VS. REALIZED SELLING PRICE (${fmtNum(prodPriceComp.length)} GRADES)</span></div>
@@ -10879,6 +11175,8 @@
             </table>
           </div>
         </div>
+
+        ${commSectionHtml}
 
         <div class="panel-card" id="deliveryTransCompPanel" style="margin-bottom:14px">
           <div class="panel-head">
@@ -20674,17 +20972,23 @@
         const isSalesDel = rt === 'Sales (Delivery)';
         const isSalesPick = rt === 'Sales (Pickup)';
         const isList = rt === 'List Price';
+        const isComm = rt === 'Commission';
         const isPurch = rt === 'Purchase Price (Site)';
         const isTransSite = rt === 'Transport Price (Site)';
         const isHaulCust = rt === 'Haulage (Customer Site)';
         const hasTrans = isSalesDel || isTransSite || isHaulCust;
         const hasMat = !isTransSite && !isHaulCust;
         const showCustomer = isSalesDel || isSalesPick || isHaulCust;
-        const showSupplier = isPurch || isTransSite || isHaulCust;
-        const showSite = !isList && !isSalesPick;
-        const showIndiff = !isList;
+        const showSupplier = isPurch || isTransSite || isHaulCust || isComm;
+        const showSite = !isList && !isSalesPick && !isComm;
+        const showIndiff = !isList && !isComm;
         const ratePer = val('f_rateper') || 'm³';
         const isTruckRate = hasTrans && ratePer === 'Truck';
+
+        const supLbl = document.querySelector('#wrap_pr_supplier .pa-fld-lbl');
+        const matLbl = document.querySelector('#wrap_pr_matprice .pa-fld-lbl');
+        if (supLbl) supLbl.textContent = isComm ? 'Plant Owner / Beneficiary *' : 'Supplier / Hauler *';
+        if (matLbl) matLbl.textContent = isComm ? 'Commission Rate ($ / Unit) *' : 'Material Unit Price ($) *';
 
         const prProduct = val('f_product');
         if (prProduct !== FORM_UI.lastProduct) {
@@ -20702,11 +21006,11 @@
         setFieldVisible('wrap_pr_transrate', hasTrans);
         setFieldVisible('wrap_pr_transprice', hasTrans && !isTruckRate);
         setFieldVisible('wrap_pr_indiff', showIndiff);
-        setFieldVisible('wrap_pr_trucksize', !isList);
-        setFieldVisible('wrap_pr_truck', !isList);
-        setFieldVisible('wrap_pr_tier1', !isList && !isTruckRate);
-        setFieldVisible('wrap_pr_adj1', !isList && hasMat);
-        setFieldVisible('wrap_pr_transadj1', !isList && hasTrans && !isTruckRate);
+        setFieldVisible('wrap_pr_trucksize', !isList && !isComm);
+        setFieldVisible('wrap_pr_truck', !isList && !isComm);
+        setFieldVisible('wrap_pr_tier1', !isList && !isComm && !isTruckRate);
+        setFieldVisible('wrap_pr_adj1', !isList && !isComm && hasMat);
+        setFieldVisible('wrap_pr_transadj1', !isList && !isComm && hasTrans && !isTruckRate);
 
         // Clear hidden fields when Rule Type hides them so stale values are never saved
         if (!showCustomer && $('f_customer') && $('f_customer').value) $('f_customer').value = '';
@@ -20726,18 +21030,18 @@
           if ($('f_transadj2') && $('f_transadj2').value !== '0.00') $('f_transadj2').value = '0.00';
         }
         if (!showIndiff && $('f_indiff') && $('f_indiff').value) $('f_indiff').value = '';
-        if (isList) {
+        if (isList || isComm) {
           if ($('f_trucksize') && $('f_trucksize').value) $('f_trucksize').value = '';
           if ($('f_pr_truck') && $('f_pr_truck').value) $('f_pr_truck').value = '';
           if ($('f_qty1') && $('f_qty1').value) $('f_qty1').value = '';
           if ($('f_adj1') && $('f_adj1').value !== '0.00') $('f_adj1').value = '0.00';
           if ($('f_transadj1') && $('f_transadj1').value !== '0.00') $('f_transadj1').value = '0.00';
-          if ($('f_enddate') && $('f_enddate').value) $('f_enddate').value = '';
+          if (isList && $('f_enddate') && $('f_enddate').value) $('f_enddate').value = '';
         }
 
         const q1 = num('f_qty1');
         const tSize = num('f_trucksize');
-        const showTier2 = !isList && !isTruckRate && q1 > 0;
+        const showTier2 = !isList && !isComm && !isTruckRate && q1 > 0;
         setFieldVisible('wrap_pr_tier2', showTier2);
         setFieldVisible('wrap_pr_adj2', showTier2 && hasMat);
         setFieldVisible('wrap_pr_transadj2', showTier2 && hasTrans && !isTruckRate);
@@ -20748,10 +21052,18 @@
         }
 
         const up = num('f_unitprice'), tp = (hasTrans && !isTruckRate) ? num('f_transunitprice') : 0, ind = num('f_indiff'), a1 = num('f_adj1'), ta1 = num('f_transadj1'), q2 = num('f_qty2'), a2 = num('f_adj2'), ta2 = num('f_transadj2');
-        setText('calc_mat', (ind > 0 && !(up > 0) && !(tp > 0)) ? `${fmtUSD(ind, 2)} flat / load (Indifference)` : `${fmtUSD(up, 2)} + ${fmtUSD(tp, 2)} / ${val('f_uom') || 'm³'}${ind > 0 ? ` · Indiff ${fmtUSD(ind, 2)}` : ''}${tSize > 0 ? ` · Size ${tSize} m³` : ''}`);
-        setText('calc_tr', q1 > 0 ? `${q1} ${val('f_uom') || 'm³'} → ${fmtUSD(q1 * up + a1, 2)}${tp ? ' + trans ' + fmtUSD(q1 * tp + ta1, 2) : ''}` : (ind > 0 && !(up > 0) && !(tp > 0) ? `${fmtUSD(ind, 2)} flat / load` : (tSize > 0 ? `${tSize} m³ → ${fmtUSD(tSize * (up + tp), 2)}` : '—')));
-        setText('calc_vat', q2 > 0 ? `${q2} ${val('f_uom') || 'm³'} → ${fmtUSD(q2 * up + a2, 2)}${tp ? ' + trans ' + fmtUSD(q2 * tp + ta2, 2) : ''}` : '—');
-        setText('calc_total', (ind > 0 && !(up > 0) && !(tp > 0)) ? `${fmtUSD(ind, 2)} (Flat)` : fmtUSD(up + tp, 2));
+        if (isComm) {
+          const uLbl = val('f_uom') || 'Ton';
+          setText('calc_mat', `${fmtUSD(up, 2)} / ${uLbl} commission`);
+          setText('calc_tr', val('f_supplier') || 'Select Plant Owner');
+          setText('calc_vat', 'GL 6222 Accrual');
+          setText('calc_total', `${fmtUSD(up, 2)} / ${uLbl}`);
+        } else {
+          setText('calc_mat', (ind > 0 && !(up > 0) && !(tp > 0)) ? `${fmtUSD(ind, 2)} flat / load (Indifference)` : `${fmtUSD(up, 2)} + ${fmtUSD(tp, 2)} / ${val('f_uom') || 'm³'}${ind > 0 ? ` · Indiff ${fmtUSD(ind, 2)}` : ''}${tSize > 0 ? ` · Size ${tSize} m³` : ''}`);
+          setText('calc_tr', q1 > 0 ? `${q1} ${val('f_uom') || 'm³'} → ${fmtUSD(q1 * up + a1, 2)}${tp ? ' + trans ' + fmtUSD(q1 * tp + ta1, 2) : ''}` : (ind > 0 && !(up > 0) && !(tp > 0) ? `${fmtUSD(ind, 2)} flat / load` : (tSize > 0 ? `${tSize} m³ → ${fmtUSD(tSize * (up + tp), 2)}` : '—')));
+          setText('calc_vat', q2 > 0 ? `${q2} ${val('f_uom') || 'm³'} → ${fmtUSD(q2 * up + a2, 2)}${tp ? ' + trans ' + fmtUSD(q2 * tp + ta2, 2) : ''}` : '—');
+          setText('calc_total', (ind > 0 && !(up > 0) && !(tp > 0)) ? `${fmtUSD(ind, 2)} (Flat)` : fmtUSD(up + tp, 2));
+        }
         renderAdminLockBar();
         return { up, tp, ind };
       }
@@ -22645,9 +22957,14 @@
       if (val('f_enddate') && val('f_enddate') < date) addErr('f_enddate', 'End Date cannot be before the Start Date.');
       if (/Sales/.test(rt) && !val('f_customer') && !(rt === 'Sales (Delivery)' && val('f_site') && tSizeV > 0)) addErr('f_customer', 'A Sales rule needs the Customer it is agreed with.');
       if (/Purchase|Transport/.test(rt) && !val('f_supplier') && !val('f_site')) addErr('f_supplier', 'A Purchase / Transport rule needs the Supplier or the Site.');
+      if (rt === 'Commission') {
+        if (!val('f_supplier')) addErr('f_supplier', 'A Commission rule needs the Plant Owner / Beneficiary.');
+        if (!(up0 > 0)) addErr('f_unitprice', 'Commission rate ($ / unit) must be above zero.');
+      }
+      const autoCodeTag = rt === 'Commission' ? 'COMMISSION' : rt.slice(0, 5).toUpperCase();
       record = {
         ...base,
-        name: val('f_name') || `PRC-${date.replace(/-/g, '')}-${rt.slice(0, 5).toUpperCase()}-${prod || val('f_site') || val('f_customer') || 'RULE'}`,
+        name: val('f_name') || `PRC-${date.replace(/-/g, '')}-${autoCodeTag}-${(prod || val('f_site') || val('f_customer') || 'RULE').toUpperCase().replace(/\s+/g, '')}-001`,
         rule_type: rt,
         customer: val('f_customer'),
         supplier: val('f_supplier'),
@@ -23391,10 +23708,11 @@
     const preselectExt = formType === 'external';
     const preselectRawPrice = formType === 'pricerule_raw';
     const preselectHaulPrice = formType === 'pricerule_haul';
+    const preselectCommPrice = formType === 'pricerule_comm';
     const modalGroupOverride = (preselectRawPrice || preselectHaulPrice) ? 'raw' : null;
     const resolvedForm = (preselectConv || preselectExt)
       ? 'treasury'
-      : ((preselectRawPrice || preselectHaulPrice) ? 'pricerule' : formType);
+      : ((preselectRawPrice || preselectHaulPrice || preselectCommPrice) ? 'pricerule' : formType);
     const form = FORM_TITLES[resolvedForm] ? resolvedForm : 'sales';
     if (!canEnterForm(form)) { toast('Your seat has no entry rights for this form', 'err'); return; }
     const kBody = $('kioskFormBody');
@@ -23412,7 +23730,9 @@
           ? 'New Currency Conversion (USD ↔ LBP)'
           : (preselectRawPrice
             ? 'New Raw Material Site Agreement'
-            : (preselectHaulPrice ? 'New Quarry Haulage Agreement' : FORM_TITLES[form])));
+            : (preselectHaulPrice
+              ? 'New Quarry Haulage Agreement'
+              : (preselectCommPrice ? 'New Sales Commission Agreement' : FORM_TITLES[form]))));
     }
     if (tabsWrap && window.MFG_FORMS) {
       tabsWrap.innerHTML = window.MFG_FORMS.renderModalTabsHtml(form, canEnterForm, modalGroupOverride);
@@ -23485,6 +23805,21 @@
       $('f_ruletype').value = 'Purchase Price (Site)';
     } else if (preselectHaulPrice && $('f_ruletype')) {
       $('f_ruletype').value = 'Transport Price (Site)';
+    } else if (preselectCommPrice && $('f_ruletype')) {
+      $('f_ruletype').value = 'Commission';
+      if ($('f_company')) {
+        const curCo = $('f_company').value;
+        const curHasComm = ((SEED.records && SEED.records.price_rules) || []).some(r => r && !r.voided && /^commission$/i.test(String(r.rule_type || '')) && norm(r.company) === norm(curCo));
+        if (!curHasComm && allowedCompanyNames().includes('BBConstruction')) {
+          $('f_company').value = 'BBConstruction';
+        }
+      }
+      if ($('f_supplier') && !val('f_supplier')) {
+        const bbcOwners = ((SEED.records && SEED.records.price_rules) || []).filter(r => r && !r.voided && /^commission$/i.test(String(r.rule_type || '')) && r.supplier);
+        if (bbcOwners.length === 0 || new Set(bbcOwners.map(r => norm(r.supplier))).size === 1) {
+          if (bbcOwners[0] && bbcOwners[0].supplier) $('f_supplier').value = bbcOwners[0].supplier;
+        }
+      }
     }
     wireModalLiveCalc(wasClosed);
     if (prefill && typeof prefill === 'object') {
@@ -24147,7 +24482,11 @@
       addGrid('sg_s_haul', `Leg 2 · Haulage Loads (${name})`, 'Haulage Loads', 'Truck Owner Leg', 'raw_purchases', (rec.raw_purchases || []).filter(r => norm(r.truck_owner) === norm(name)), ['date', 'ticket_no', 'company', 'site', 'site_owner', 'truck', 'driver', 'qty', 'trans_cost', 'total'], 'trans_cost');
       addGrid('sg_s_exp', `Leg 3 · General & Fleet Expenses (${name})`, 'Expenses', 'Expense Leg', 'expenses', (rec.expenses || []).filter(x => norm(x.supplier) === norm(name)), ['date', 'name', 'company', 'category', 'subcategory', 'equipment', 'method', 'amount', 'reference'], 'amount');
       addGrid('sg_s_pay', `Supplier AP Settlements (${name})`, 'Settlements', 'Settlements', 'settlements', (rec.settlements || []).filter(s => norm(s.supplier) === norm(name)), ['date', 'name', 'company', 'method', 'amount', 'discount', 'raw_ticket', 'expense_record', 'reference'], 'amount');
-      addGrid('sg_s_rules', `Site & Transport Price Agreements (${name})`, 'Price Rules', 'Price Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.supplier) === norm(name)), ['name', 'company', 'rule_type', 'product', 'site', 'unit', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
+      const commVouchersForSup = (rec.receipts || []).filter(r => norm(r.customer) === norm(name) && ['Rent', 'VATRent', 'RentConfig'].includes(String(r.method || '').trim()));
+      if (commVouchersForSup.length) {
+        addGrid('sg_s_comm_rcpt', `Plant Commission & 11% VAT Settlements (${name})`, 'Commission Payouts', 'GL 6222 & 449', 'receipts', commVouchersForSup, ['date', 'name', 'company', 'method', 'amount', 'discount', 'reference'], 'amount');
+      }
+      addGrid('sg_s_rules', `Price & Commission Agreements (${name})`, 'Price Rules', 'Price Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.supplier) === norm(name)), ['name', 'company', 'rule_type', 'product', 'site', 'unit', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
       addGrid('sg_s_eq', `Registered Trucks & Equipment (${name})`, 'Trucks', 'Trucks & Equipment', 'equipment', (rec.equipment || []).filter(e => norm(e.supplier) === norm(name)), ['name', 'plate_no', 'type', 'ownership', 'capacity', 'default_driver'], 'capacity');
       addGrid('sg_s_drv', `Registered Drivers (${name})`, 'Drivers', 'Drivers', 'drivers', (rec.drivers || []).filter(d => norm(d.truck_owner) === norm(name)), ['name', 'truck', 'phone', 'truck_owner', 'notes'], null);
     }
@@ -24200,10 +24539,22 @@
       addGrid('sg_d_fuel', `Fuel Intakes Signed by ${name}`, 'Fuel Log', 'Fuel Log', 'fuel_intakes', (rec.fuel_intakes || []).filter(f => norm(f.driver) === norm(name)), ['date', 'ticket_no', 'company', 'equipment', 'item', 'litres', 'odometer'], 'litres');
     }
     else if (key === 'price_rules') {
-      const mSales = (rec.sales_tickets || []).filter(t => (!row.customer || norm(t.customer) === norm(row.customer)) && (!row.product || norm(t.product) === norm(row.product)) && (!row.site || norm(t.site) === norm(row.site)));
-      const mRaw = (rec.raw_purchases || []).filter(t => ((row.supplier && (norm(t.site_owner) === norm(row.supplier) || norm(t.truck_owner) === norm(row.supplier))) || (row.site && norm(t.site) === norm(row.site))) && (!row.product || norm(t.product) === norm(row.product)));
+      const isCommPr = /^commission$/i.test(String(row.rule_type || '').trim());
+      const mSales = (rec.sales_tickets || []).filter(t =>
+        (!row.company || norm(t.company) === norm(row.company)) &&
+        (!row.customer || norm(t.customer) === norm(row.customer)) &&
+        (!row.product || norm(t.product) === norm(row.product)) &&
+        (!row.site || norm(t.site) === norm(row.site)) &&
+        (!isCommPr || ((!row.start_date || String(t.date || '').slice(0, 10) >= String(row.start_date).slice(0, 10)) && (!row.end_date || String(t.date || '').slice(0, 10) <= String(row.end_date).slice(0, 10))))
+      );
+      const mRaw = isCommPr ? [] : (rec.raw_purchases || []).filter(t => ((row.supplier && (norm(t.site_owner) === norm(row.supplier) || norm(t.truck_owner) === norm(row.supplier))) || (row.site && norm(t.site) === norm(row.site))) && (!row.product || norm(t.product) === norm(row.product)));
       addGrid('sg_pr_sales', `Sales Tickets Governed by Rule (${row.name})`, 'Matched Sales', 'Rule Execution', 'sales_tickets', mSales, ['date', 'ticket_no', 'company', 'customer', 'product', 'site', 'qty', 'unit_price', 'trans_price', 'total_ttc'], 'total_ttc');
-      addGrid('sg_pr_raw', `Raw Material Tickets Governed by Rule (${row.name})`, 'Matched Raw', 'Rule Execution', 'raw_purchases', mRaw, ['date', 'ticket_no', 'company', 'site', 'site_owner', 'truck_owner', 'product', 'qty', 'unit_cost', 'total'], 'total');
+      if (isCommPr && row.supplier) {
+        const commRcpts = (rec.receipts || []).filter(r => norm(r.customer) === norm(row.supplier) && ['Rent', 'VATRent', 'RentConfig'].includes(String(r.method || '').trim()));
+        addGrid('sg_pr_comm_rcpt', `Commission Payout Vouchers (${row.supplier})`, 'Commission Payouts', 'GL 6222 & 449', 'receipts', commRcpts, ['date', 'name', 'company', 'method', 'amount', 'discount', 'reference'], 'amount');
+      } else {
+        addGrid('sg_pr_raw', `Raw Material Tickets Governed by Rule (${row.name})`, 'Matched Raw', 'Rule Execution', 'raw_purchases', mRaw, ['date', 'ticket_no', 'company', 'site', 'site_owner', 'truck_owner', 'product', 'qty', 'unit_cost', 'total'], 'total');
+      }
     }
     else if (['employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries'].includes(key)) {
       const staff = row.staff || row.name;
@@ -31953,9 +32304,20 @@
         if (target) scrollWorkspaceTo(target, 8);
       });
     });
-    container.querySelectorAll('[data-jump-co]').forEach(row => {
+    container.querySelectorAll('[data-comm-ledger-mode]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const mode = btn.getAttribute('data-comm-ledger-mode') === 'vouchers' ? 'vouchers' : 'monthly';
+        if (STATE.commLedgerMode === mode) return;
+        const prevScroll = container.scrollTop;
+        STATE.commLedgerMode = mode;
+        renderApp();
+        container.scrollTop = prevScroll;
+      });
+    });
+    container.querySelectorAll('[data-jump-co], [data-switch-comm-co]').forEach(row => {
       const goCo = () => {
-        const targetCo = row.getAttribute('data-jump-co');
+        const targetCo = row.getAttribute('data-jump-co') || row.getAttribute('data-switch-comm-co');
         if (getAllowedCompanyKeys(activeUserRow).includes(targetCo)) {
           STATE.company = targetCo;
           STATE.shown = {};

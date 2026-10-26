@@ -803,7 +803,7 @@
       const netAfterComm = realisedSell != null ? roundFn(realisedSell - effRate) : null;
       const commSharePct = pm.net_sales > 0 ? roundFn((pm.comm_due / pm.net_sales) * 100) : 0;
       const rateStepNote = (minRuleRate > 0 && maxRuleRate > minRuleRate + 0.005)
-        ? `${fmtUSD(minRuleRate, 2)} → ${fmtUSD(maxRuleRate, 2)}`
+        ? `${fmtUSD(minRuleRate, 2)} to ${fmtUSD(maxRuleRate, 2)}`
         : '';
 
       return {
@@ -821,11 +821,11 @@
         rate_sub: `${fmtUSD(activeRate, 2)}/${activeRule.unit || pm.uom || 'u'} · ${fmtNum(pm.loads, 0)} loads`,
         loads: pm.loads,
         qty_sold: roundFn(pm.qty_sold),
-        comm_due: roundFn(pm.comm_due),
+        comm_due: pm.comm_due,
         list_price: lpVal,
         min_price: minSell,
         max_price: maxSell,
-        corridor_label: (minSell != null && maxSell != null) ? `${fmtUSD(minSell, 2)} – ${fmtUSD(maxSell, 2)}` : '—',
+        corridor_label: (minSell != null && maxSell != null) ? `${fmtUSD(minSell, 2)} - ${fmtUSD(maxSell, 2)}` : '-',
         realised_price: realisedSell,
         net_after_comm: netAfterComm,
         comm_share_pct: commSharePct,
@@ -926,17 +926,17 @@
     fullSettlements.forEach(s => addFullVoucher(s, 'settlements'));
 
     const sortedYms = Array.from(mMap.keys()).sort();
-    let cumExVat = 0;
-    let cumM18b = 0;
+    let rawCumExVat = 0;
+    let rawCumM18b = 0;
     const allMonthlyRows = sortedYms.map(ym => {
       const r = mMap.get(ym);
-      const earned = roundFn(r.earned_usd);
-      const paidNet = roundFn(r.paid_net_usd);
-      const paidVat = roundFn(r.paid_vat_usd);
-      const paidTot = roundFn(r.paid_total_usd);
-      const netExVat = roundFn(earned - paidNet);
-      cumExVat = roundFn(cumExVat + netExVat);
-      cumM18b = roundFn(cumM18b + (earned - (paidTot - (ym === '2024-02' || ym === '2024-05' ? 0 : 0))));
+      const earned = r.earned_usd;
+      const paidNet = r.paid_net_usd;
+      const paidVat = r.paid_vat_usd;
+      const paidTot = r.paid_total_usd;
+      const netExVat = earned - paidNet;
+      rawCumExVat += netExVat;
+      rawCumM18b += (earned - paidTot);
       return {
         ym,
         'Year Month': r['Year Month'],
@@ -948,7 +948,7 @@
         paid_total_usd: paidTot,
         vouchers_count: r.vouchers_count,
         period_net_ex_vat: netExVat,
-        cum_payable_ex_vat: cumExVat
+        cum_payable_ex_vat: roundFn(rawCumExVat)
       };
     });
 
@@ -4321,6 +4321,64 @@
         ? round2(p05AggGrades.reduce((a, p) => a + Number(p.net_sales != null ? p.net_sales : (Number(p.avg_price_net || 0) * Number(p.qty_sold || 0))), 0) / p05AggM3)
         : k.avg_price_net;
 
+      // Live Sales Commission computation (BBConstruction -> Agrimount per-unit agreements + GL 6222 / GL 449 settlements)
+      const commFilterSales = s => {
+        if (!s) return false;
+        if (sl.product && norm(s.product) !== norm(sl.product)) return false;
+        if (sl.customer && norm(s.customer) !== norm(sl.customer)) return false;
+        if (sl.site && norm(s.site) !== norm(sl.site)) return false;
+        if (sl.saleType && s.sale_type && norm(s.sale_type) !== norm(sl.saleType)) return false;
+        if (sl.method && s.method && norm(s.method) !== norm(sl.method)) return false;
+        return true;
+      };
+      const commFilterRec = r => {
+        if (!r) return false;
+        if (sl.supplier && norm(r.customer || r.supplier) !== norm(sl.supplier)) return false;
+        if (sl.customer && norm(r.customer) !== norm(sl.customer)) return false;
+        return true;
+      };
+      const commFilterSet = s => {
+        if (!s) return false;
+        if (sl.supplier && norm(s.supplier) !== norm(sl.supplier)) return false;
+        return true;
+      };
+      const commRulesPool = filterRecords(rec.price_rules, { ignorePeriod: true, ignoreSearch: true }).filter(r => {
+        const isComm = /^commission$/i.test(String(r.rule_type || '').trim());
+        if (sl.ruleType && norm(sl.ruleType) !== 'commission' && isComm) return false;
+        if (sl.product && norm(r.product) !== norm(sl.product)) return false;
+        if (sl.supplier && isComm && norm(r.supplier) !== norm(sl.supplier)) return false;
+        const isEnded = Boolean(r.end_date && String(r.end_date) < today);
+        if (sl.activeStatus === 'Active' && isEnded) return false;
+        if (sl.activeStatus === 'Ended' && !isEnded) return false;
+        return true;
+      });
+      const allCoSalesP05 = filterRecords(rec.sales_tickets, { ignorePeriod: true, ignoreSearch: true }).filter(commFilterSales);
+      const allCoRecP05 = filterRecords(rec.receipts, { ignorePeriod: true, ignoreSearch: true }).filter(commFilterRec);
+      const allCoSetP05 = filterRecords(rec.settlements, { ignorePeriod: true, ignoreSearch: true }).filter(commFilterSet);
+      const commData = buildSalesCommissionData(
+        baseSalesRows.filter(commFilterSales),
+        baseRecRows.filter(commFilterRec),
+        baseSetRows.filter(commFilterSet),
+        commRulesPool,
+        {
+          today,
+          asAtDate: asAtPricingDate,
+          allSalesRows: allCoSalesP05,
+          allReceiptRows: allCoRecP05,
+          allSettlementRows: allCoSetP05,
+          allGlobalRules: rec.price_rules,
+          allowedCompanies: typeof ctx.allowedCompanyNames === 'function' ? ctx.allowedCompanyNames() : null,
+          dateFrom: activeRange && activeRange.from,
+          dateTo: activeRange && activeRange.to,
+          basis: STATE.basis
+        }
+      );
+      const hasCommData = commData.rulesCount > 0 || commData.totalEarned > 0 || commData.totalPaidExVat > 0;
+      const commCoHintObj = !hasCommData && commData.otherEntities.length ? commData.otherEntities[0] : null;
+      const commCoSlug = commCoHintObj
+        ? (norm(commCoHintObj.company) === 'bbconstruction' ? 'bbconstruction' : (norm(commCoHintObj.company) === 'wtc' ? 'wtc' : (norm(commCoHintObj.company) === 'lions transport' ? 'lionstransport' : 'all')))
+        : '';
+
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Price Agreement Coverage, Realised vs Agreed & Below-Agreed Governance', [
@@ -4332,14 +4390,40 @@
             { label: 'Per-Truck Delivery Rules', value: fmtNum(prSn.truck_unit_delivery_rules || 0), sub: 'Unit = Truck flat rate' }
           ])}
           ${kpiBand('2 · Commissions, Delivery Transport & Quarry Purchase / Haulage Rules', [
-            { label: 'Commission Earned', value: fmtUSD(prSn.commission_earned_usd || k.commission_due, 0), sub: 'Accrued on qualifying loads' },
-            { label: 'Commission Balance Due', value: fmtUSD(prSn.commission_balance_usd || k.commission_due, 0), sub: 'Paid ' + fmtUSD(prSn.commission_paid_usd || 0, 0), tone: 'brass' },
+            {
+              label: 'Commission Earned (Ex-VAT)',
+              value: fmtUSD(commData.totalEarned, 0),
+              sub: hasCommData
+                ? `${fmtNum(commData.rulesCount, 0)} rules · ${commData.beneficiariesLabel} (${fmtNum(commData.totalQualifyingLoads, 0)} loads)`
+                : (commCoHintObj ? `Own plant ($0) · ${commCoHintObj.company}: ${commCoHintObj.rulesCount} rules` : 'Own plant · 0 commission rules'),
+              tone: hasCommData ? 'brass' : ''
+            },
+            {
+              label: 'Commission Payable (Ex-VAT)',
+              value: fmtUSD(commData.openPayableExVat, 0),
+              sub: (commData.totalPaidExVat > 0 || commData.totalPaidVat > 0)
+                ? `Paid ${fmtUSD(commData.totalPaidExVat, 0)} Ex-VAT (+${fmtUSD(commData.totalPaidVat, 0)} VAT)`
+                : 'No commission payouts in scope',
+              tone: commData.openPayableExVat > 0 ? 'brass' : 'good'
+            },
             { label: 'Customer Sales Rules', value: fmtNum(salesRules.length), sub: fmtNum(delTransComp.rows.length) + ' active delivery pairs' },
             { label: 'List Price Revisions', value: fmtNum(lpHist.totalRulesCount), sub: fmtNum(lpHist.series.length) + ' tracked grades over time' },
             { label: 'Site Purchase & Haul Rules', value: fmtNum(siteRules.length), sub: fmtNum(quarryComp.haulRows.length) + ' hauler × site pairs' },
             { label: 'Quarry Over-Agreed Pairs', value: fmtNum(quarryComp.overAgreedCount), sub: 'Billed above site / haul rate', tone: quarryComp.overAgreedCount > 0 ? 'warn' : 'good' }
           ])}
         </div>
+
+        ${commCoHintObj ? `
+          <div class="pbi-panel" id="pbiCommEntityHint" style="padding:11px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-left:3px solid var(--brass)">
+            <div style="font-size:12.5px;color:var(--ink-2)">
+              <b>${esc(COMPANY_LABELS[STATE.company] || STATE.company)}</b> operates its own plant with <b>$0</b> per-unit sales commissions.
+              <b>${esc(commCoHintObj.company)}</b> carries <b>${fmtNum(commCoHintObj.rulesCount, 0)}</b> sales commission rules across <b>${fmtNum(commCoHintObj.productsCount, 0)}</b> products payable to <b>${esc(commCoHintObj.ownersLabel)}</b>.
+            </div>
+            <button class="btn btn-sm" type="button" data-switch-comm-co="${esc(commCoSlug)}" style="white-space:nowrap">Switch to ${esc(commCoHintObj.company)} Commissions</button>
+          </div>
+        ` : ''}
+
+        ${hasCommData ? renderCommissionVisualsSection(commData, { isPbi: true }) : ''}
 
         <div class="pbi-grid-2">
           ${pbiPanel('List price evolution over time ($/m³ by grade)', buildMultiLineSvg(lpHist.months, lpHist.series, {
@@ -4397,6 +4481,40 @@
             subtitle: 'Agreed 3rd-party quarry haulage rate vs. last haul ticket and period average'
           })}
         </div>
+
+        ${hasCommData ? `
+          ${pbiHeading('Sales commissions by product, monthly accrual & plant-owner settlements', `${commData.beneficiariesLabel} per-unit plant commission rules reconciled to GL 6222 (${fmtUSD(commData.totalPaidExVat, 2)} Ex-VAT paid) and GL 449 (${fmtUSD(commData.totalPaidVat, 2)} 11% VAT paid)`)}
+          <div class="pbi-grid-2" id="pbiCommissionTablesRow">
+            ${pbiTable('Sales commission & selling-price corridor by product', [
+              { label: 'Product', key: 'product', bold: true },
+              { label: 'Owner', key: 'owner' },
+              { label: 'UoM', key: 'uom', mono: true },
+              { label: 'Comm. Rate', key: 'active_rate', r: true, agg: 'none', fmt: (v, r) => `<b>${fmtUSD(v, 2)}</b>${r.rate_step_note ? `<div style="font-size:10px;color:var(--muted)">${esc(r.rate_step_note)}</div>` : ''}` },
+              { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v, 0) },
+              { label: 'Qty Sold', key: 'qty_sold', r: true, fmt: v => fmtNum(v, 1) },
+              { label: 'Earned Ex-VAT ($)', key: 'comm_due', r: true, bar: true, fmt: v => fmtUSD(v, 2) },
+              { label: 'List ($)', key: 'list_price', r: true, agg: 'none', fmt: v => v != null ? fmtUSD(v, 2) : '-' },
+              { label: 'Realised ($)', key: 'realised_price', r: true, agg: 'none', fmt: v => v != null ? fmtUSD(v, 2) : '-' },
+              { label: 'Net After ($)', key: 'net_after_comm', r: true, agg: 'none', fmt: v => v != null ? `<b>${fmtUSD(v, 2)}</b>` : '-' }
+            ], commData.productRows, {
+              subtitle: 'Per-unit commission rate, qualifying weighbridge tonnage/m³, accrued commission, and selling rate net of commission',
+              unitLabel: 'products'
+            })}
+
+            ${pbiTable('Monthly commission accrual, settlement & open payable ledger', [
+              { label: 'Month', key: 'Year Month', bold: true },
+              { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v, 0) },
+              { label: 'Earned Ex-VAT ($)', key: 'earned_usd', r: true, bar: true, fmt: v => fmtUSD(v, 2) },
+              { label: 'Paid Ex-VAT ($)', key: 'paid_net_usd', r: true, fmt: v => fmtUSD(v, 2) },
+              { label: '11% VAT Paid ($)', key: 'paid_vat_usd', r: true, fmt: v => fmtUSD(v, 2) },
+              { label: 'Period Net ($)', key: 'period_net_ex_vat', r: true, fmt: v => fmtUSD(v, 2) },
+              { label: 'Open Payable ($)', key: 'cum_payable_ex_vat', r: true, agg: 'none', fmt: v => `<b>${fmtUSD(v, 2)}</b>` }
+            ], commData.monthlyRows, {
+              subtitle: `Chronological monthly commission accrued vs. ${commData.beneficiariesLabel} Rent (GL 6222) and 11% VATRent (GL 449) payouts`,
+              unitLabel: 'months'
+            })}
+          </div>
+        ` : ''}
 
         ${pbiHeading('Commercial sales & customer delivery transportation comparisons', 'Amber row = agreement End date has passed · Red variance = billed below customer agreement or delivery transport rate')}
         <div class="pbi-grid-2">
@@ -8221,6 +8339,53 @@
     `;
   }
 
+  function renderCommissionVisualsSection(commData, opts = {}) {
+    if (!commData || (commData.rulesCount === 0 && commData.totalEarned <= 0 && commData.totalPaidExVat <= 0)) return '';
+    const isPbi = Boolean(opts.isPbi);
+    const rowId = isPbi ? 'pbiCommissionChartsRow' : 'commissionChartsRow';
+    const prodChartId = isPbi ? 'pbiCommissionByProductChart' : 'commissionByProductChart';
+    const monthChartId = isPbi ? 'pbiCommissionMonthlyChart' : 'commissionMonthlyChart';
+    const ownerLbl = commData.beneficiariesLabel || 'Plant Owner';
+    const prodChartHtml = buildHorizontalBarChart(
+      commData.productRows,
+      'Product',
+      'comm_due',
+      v => fmtUSD(v, 0),
+      {
+        maxItems: 10,
+        subKey: 'rate_sub',
+        valLabel: 'Commission Earned (Ex-VAT)',
+        color: C.navy
+      }
+    );
+    const monthChartHtml = buildComboChartSvg(
+      commData.monthlyRows,
+      [
+        { key: 'earned_usd', label: 'Earned Ex-VAT ($)', color: C.navy },
+        { key: 'paid_net_usd', label: 'Paid Ex-VAT · GL 6222 ($)', color: C.good }
+      ],
+      { key: 'cum_payable_ex_vat', label: 'Open Payable Ex-VAT ($)', color: C.brass, isMoney: true },
+      { maxBars: 18, isMoney: true }
+    );
+    return `
+      <div class="pbi-grid-2" id="${rowId}"${isPbi ? '' : ' style="margin-bottom:14px"'}>
+        ${pbiPanel(`Sales Commission Earned by Product ($) · ${ownerLbl}`, prodChartHtml, {
+          id: prodChartId,
+          subtitle: `${fmtNum(commData.activeVolumeProductsCount, 0)} active volume grades (${fmtNum(commData.rulesCount, 0)} rules across ${fmtNum(commData.productsCount, 0)} products · ${fmtNum(commData.totalQualifyingLoads, 0)} loads)`
+        })}
+        ${pbiPanel(`Monthly Commission Accrued vs. Settled & Open Payable ($) · ${ownerLbl}`, monthChartHtml, {
+          id: monthChartId,
+          subtitle: `Earned ${fmtUSD(commData.totalEarned, 0)} Ex-VAT · Paid ${fmtUSD(commData.totalPaidExVat, 0)} Ex-VAT (+${fmtUSD(commData.totalPaidVat, 0)} 11% VAT) · Open Ex-VAT Payable ${fmtUSD(commData.openPayableExVat, 0)}`,
+          legend: [
+            { label: 'Earned Ex-VAT', color: C.navy },
+            { label: 'Paid Ex-VAT (Rent)', color: C.good },
+            { label: 'Open Payable Ex-VAT', color: C.brass, line: true }
+          ]
+        })}
+      </div>
+    `;
+  }
+
   function renderQuarryPricingVisualsSection(ctx) {
     const quarryComp = (ctx && ctx.quarryComp) || buildQuarryPricingComp(
       (ctx && ctx.rawRows) || [],
@@ -8990,9 +9155,11 @@
     buildMonthlyDeliveryTransportRows,
     renderCustomersVisualsSection,
     renderPricingVisualsSection,
+    renderCommissionVisualsSection,
     renderQuarryPricingVisualsSection,
     buildListPriceHistoryData,
     buildSalesDeliveryTransportComp,
+    buildSalesCommissionData,
     buildQuarryPricingComp,
     renderFuelVisualsSection,
     computeLubricationAudit,
