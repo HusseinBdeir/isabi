@@ -6016,7 +6016,6 @@
       g += `<line class="grid" x1="${ml}" x2="${W - mr}" y1="${y(tv).toFixed(1)}" y2="${y(tv).toFixed(1)}"/>`;
       g += `<text class="tick" x="${ml - 8}" y="${(y(tv) + 4).toFixed(1)}" text-anchor="end">$${tv.toLocaleString()}k</text>`;
     });
-    g += `<text class="tick" x="${ml}" y="${mt - 5}" text-anchor="start">USD thousands</text>`;
 
     const n = rows.length;
     const slot = pw / n;
@@ -6055,9 +6054,6 @@
         + `<line class="pbi-col-guide" x1="${(x0 + bw / 2).toFixed(1)}" x2="${(x0 + bw / 2).toFixed(1)}" y1="${mt}" y2="${mt + ph}"/>`
         + `${bars}</g>`;
       g += `<text class="tick" x="${(x0 + bw / 2).toFixed(1)}" y="${H - 9}" text-anchor="middle">${esc(ymShort.slice(0, 6))}</text>`;
-      if (i === n - 1) {
-        g += `<text class="lbl" x="${(x0 + bw / 2).toFixed(1)}" y="${(y(sK) - 6).toFixed(1)}" text-anchor="middle">$${Math.round(sK)}k</text>`;
-      }
     });
 
     g += `<line class="axis" x1="${ml}" x2="${W - mr}" y1="${y(0)}" y2="${y(0)}"/>`;
