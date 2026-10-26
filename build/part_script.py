@@ -526,7 +526,7 @@ JS = r"""
     {
       q: 'How does ISABI customize the ERP for my specific industry?',
       title: 'Tailored Industry Operations',
-      answer: 'Unlike off-the-shelf software that forces every business into generic "Invoice" and "Item" boxes, ISABI Systems builds <b>custom operational screens and controls</b> around how your company actually runs, with $0 monthly per-user fees.',
+      answer: 'Unlike off-the-shelf software that forces every business into generic "Invoice" and "Item" boxes, ISABI Systems builds <b>custom operational screens and controls</b> around how your company actually runs, with a low one-time setup fee and simple per-seat plans.',
       headers: ['Industry Vertical', 'Custom Operational Unit', 'Automated Ledger Link'],
       rows: [
         ['Hospitality & Resorts', 'Outlet Till Close, Cabana & Seasonal Shift', 'Daily TTC revenue & partner split journal'],
@@ -554,15 +554,15 @@ JS = r"""
     {
       q: 'What would a complete multi-branch system cost and include?',
       title: 'Investment & Deliverables Breakdown',
-      answer: 'For a growing company or multi-branch operation, our recommended <b>Multi-Entity & AI Operations Suite</b> starts at <b>$9,500</b> (one-time implementation) with optional <b>$650/month</b> continuous engineering and support.',
-      headers: ['Deliverable Component', 'Included Capabilities', 'Standalone Value'],
+      answer: 'For a growing company or multi-branch operation, our recommended <b>Multi-Entity & AI Operations Suite</b> starts at a <b>$2,800</b> one-time custom setup fee plus <b>$25/seat/month</b> for multi-branch access, Ask ISABI AI, and ongoing support.',
+      headers: ['Deliverable Component', 'Included Capabilities', 'Setup & Seat Plan'],
       rows: [
-        ['Core Operations & Accounting', 'Custom workflows, guided entry forms, role permissions & unlimited users ($0/seat)', 'Included'],
-        ['Interactive Executive Dashboards', 'Year / Month / Week / Day switcher, KPI drilldowns & chart breakdowns', 'Included'],
-        ['Bilingual Printable Statements', 'Sortable PDF/A4 Statement of Accounts, P&L, Balance Sheet & Tax Invoices', 'Included'],
-        ['Ask ISABI + Field Kiosks', 'Cited AI + audit watchdogs + live face sign-in & wireless thermal kiosks', 'Included']
+        ['Core Operations & Accounting', 'Custom workflows, guided entry forms, role permissions & double-entry ledger', 'Included in Setup'],
+        ['Interactive Executive Dashboards', 'Year / Month / Week / Day switcher, KPI drilldowns & chart breakdowns', 'Included in Setup'],
+        ['Bilingual Printable Statements', 'Sortable PDF/A4 Statement of Accounts, P&L, Balance Sheet & Tax Invoices', 'Included in Setup'],
+        ['Ask ISABI + Field Kiosks', 'Cited AI + audit watchdogs + live face sign-in & wireless thermal kiosks', '$25 / seat / mo']
       ],
-      total: ['Indicative Complete Suite Investment', 'From $9,500 + $650/mo'],
+      total: ['Indicative Complete Suite Investment', 'From $2,800 Setup + $25/seat/mo'],
       citation: 'Every engagement is fixed-scope after a 30-minute discovery call with Hussein Bdeir'
     }
   ];
@@ -573,7 +573,7 @@ JS = r"""
       id: 'gl', cat: 'finance', emoji: ICONS.ledger, tone: 'tone-brass',
       name: 'General Ledger & COA', sub: 'Double-Entry & Class 1 to 7',
       kicker: 'Core Accounting · Multi-Currency Ledger',
-      desc: 'Full double-entry institutional accounting with regional Class 1 to 7 charts of accounts, locked past dates, and $0 per-user fees.',
+      desc: 'Full double-entry institutional accounting with regional Class 1 to 7 charts of accounts, locked past dates, and role-scoped seats.',
       bullets: [
         ICONS.scale + ' Balanced Debit & Credit validation on every operational posting',
         ICONS.globe + ' Multi-currency ledger (USD, EUR, AED, LBP) with live FX rates',
@@ -772,7 +772,7 @@ JS = r"""
       bullets: [
         ICONS.bolt + ' One-tap toggle: Priced Tax Invoice vs Unpriced Gate or Scale Pass',
         ICONS.sync + ' Works 100% offline during internet cuts and syncs when reconnected',
-        ICONS.ar + ' Zero monthly per-terminal or per-user fees across unlimited tablets'
+        ICONS.ar + ' Per-cashier shift counters and instant end-of-day drawer reconciliation'
       ],
       tables: ['Offline Order Queue', 'Priced / Gate Receipts', 'Drawer Close Sync'],
       sbox: 'hospitality', ask: 'Tell me about the Offline POS Till'
@@ -1003,7 +1003,8 @@ JS = r"""
     cfgInd: 'Hospitality & Resorts',
     cfgScale: 2,
     cfgScaleLabel: 'Multi-Branch (2 to 4 Entities)',
-    cfgScaleAdd: 2500,
+    cfgScaleAdd: 600,
+    cfgSeatRate: 25,
     aiHistory: [],
     activeAiPillIdx: 0,
     deferredPrompt: null
@@ -1457,7 +1458,7 @@ JS = r"""
   const SBOX_LABELS = { holding: 'Group Holding', hospitality: 'Hospitality & Resorts', trading: 'Auto & Equipment Trading', manufacturing: 'Concrete & Manufacturing', realestate: 'Real Estate', insurance: 'Insurance Brokerage' };
 
   function buildSandboxChart(d, mult, sym) {
-    const W = 660, H = 118, ml = 40, mr = 10, mt = 12, mb = 18;
+    const W = 660, H = 118, ml = 44, mr = 10, mt = 12, mb = 18;
     const pw = W - ml - mr, ph = H - mt - mb;
     const totals = MONTHS.map((_, i) => (d.seriesVals[0][i] + d.seriesVals[1][i] + d.seriesVals[2][i]) * mult);
     const rawMax = Math.max(...totals, 100);
@@ -1468,9 +1469,8 @@ JS = r"""
     [0, 0.25, 0.5, 0.75, 1].forEach(f => {
       const tv = Math.round(max * f);
       g += `<line class="grid" x1="${ml}" x2="${W - mr}" y1="${y(tv).toFixed(1)}" y2="${y(tv).toFixed(1)}"/>`;
-      g += `<text class="tick" x="${ml - 8}" y="${(y(tv) + 4).toFixed(1)}" text-anchor="end">${tv}</text>`;
+      g += `<text class="tick" x="${ml - 8}" y="${(y(tv) + 4).toFixed(1)}" text-anchor="end">${sym}${tv}k</text>`;
     });
-    g += `<text class="tick" x="${ml}" y="${mt - 4}" text-anchor="start">${sym} k</text>`;
 
     const slot = pw / 12, bw = 28;
     MONTHS.forEach((m, i) => {
@@ -1495,9 +1495,6 @@ JS = r"""
       g += `<g class="col" data-m="${MONTH_LABELS[i]}" data-t="${total}k ${sym}" data-tip="${tip}" data-rows="${rowsJson}">`
         + `<rect class="hit" x="${(ml + slot * i).toFixed(1)}" y="${mt}" width="${slot.toFixed(1)}" height="${ph}"/>${seg}</g>`;
       g += `<text class="tick" x="${(x + bw / 2).toFixed(1)}" y="${H - 10}" text-anchor="middle">${m}</text>`;
-      if (i === 11) {
-        g += `<text class="lbl" x="${(x + bw / 2).toFixed(1)}" y="${(y(total) - 6).toFixed(1)}" text-anchor="middle">${total}k</text>`;
-      }
     });
 
     g += `<line class="axis" x1="${ml}" x2="${W - mr}" y1="${y(0)}" y2="${y(0)}"/>`;
@@ -1758,7 +1755,7 @@ JS = r"""
         <section class="row2" ${mTab !== 'chart' ? 'data-mob-hide="1"' : ''}>
           <div class="panel ${focusChart ? 'panel-focus' : ''}">
             <div class="ph">
-              <h3>${ICONS.analytics} Monthly Revenue Trajectory (${cm.sym} thousands)</h3>
+              <h3>${ICONS.analytics} Monthly Revenue Trajectory</h3>
               <div class="legend">
                 <span><i class="sw-box s-1"></i>${d.seriesNames[0]}</span>
                 <span><i class="sw-box s-2"></i>${d.seriesNames[1]}</span>
@@ -2303,7 +2300,7 @@ JS = r"""
         ['04. Dashboards & Print', indObj.reports[0] + ' & ' + indObj.reports[1], '100% Reconciled']
       ],
       total: ['Typical Turnkey Go-Live Window', '1 to 2 Weeks (Fixed Scope)'],
-      citation: `Source: ISABI Industry Blueprint (${indObj.name}) · Zero Per-User Fees`,
+      citation: `Source: ISABI Industry Blueprint (${indObj.name}) · Tailored Setup & Per-Seat Plans`,
       actionInd: indObj.sandboxKey,
       actionCfg: indObj.cfgName,
       followUps: [
@@ -2389,7 +2386,7 @@ JS = r"""
           lang: 'ar',
           conversational: true,
           title: 'الاستثمار الشفاف وتقدير النطاق المخصص',
-          answer: `تبدأ الأنظمة المتكاملة لشركة واحدة من <b>$4,500+</b>، وللمجموعات متعددة الفروع مع الذكاء الاصطناعي من <b>$9,500+</b>، وللشركات القابضة من <b>$18,000+</b>. وبناءً على إعداداتك الحالية (${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)})، يبلغ التقدير المبدئي <b>${escapeHtml(cfg.range)}</b> والتسليم خلال <b>أسبوع إلى أسبوعين</b>.`,
+          answer: `تبدأ رسوم التأسيس والتخصيص لشركة واحدة من <b>$1,500</b> (+<b>$15/مستخدم شهرياً</b>)، وللمجموعات متعددة الفروع مع الذكاء الاصطناعي من <b>$2,800</b> (+<b>$25/مستخدم شهرياً</b>)، وللشركات القابضة من <b>$5,500+</b> (+<b>$35/مستخدم شهرياً</b>). وبناءً على إعداداتك الحالية (${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)})، يبلغ التقدير المبدئي <b>${escapeHtml(cfg.range)}</b> والتسليم خلال <b>أسبوع إلى أسبوعين</b>.`,
           promptText: `هل ترغب في معرفة كيف نطابق القيود مع برنامج المحاسبة الحالي لديكم، أم تفضل التحدث مباشرة مع حسين بدير عبر واتساب؟`,
           actionCfg: state.cfgInd,
           followUps: [
@@ -2403,7 +2400,7 @@ JS = r"""
         lang: 'ar',
         conversational: true,
         title: 'استشارة تشغيلية ومحاسبية مخصصة · ISABI',
-        answer: `نعم، نصمم النظام خصيصاً لطريقة عمل شركتكم ويكون مملوكاً لكم بالكامل بدون أي رسوم شهرية لكل مستخدم، خلال أسبوع إلى أسبوعين، مع مطابقة يومية بنسبة 100% مع برنامج المحاسبة المعتمد لديكم.`,
+        answer: `نعم، نصمم النظام خصيصاً لطريقة عمل شركتكم بتكلفة تأسيس ميسرة واشتراك شهري بسيط لكل مستخدم، خلال أسبوع إلى أسبوعين، مع مطابقة يومية بنسبة 100% مع برنامج المحاسبة المعتمد لديكم.`,
         promptText: `هل تود إخباري بالمزيد عن قطاع عملكم وعدد الفروع، أو تجربة سؤال آخر؟`,
         actionCfg: state.cfgInd,
         followUps: [
@@ -2436,7 +2433,7 @@ JS = r"""
           lang: 'fr',
           conversational: true,
           title: 'Investissement Transparent & Périmètre Configuré',
-          answer: `Un système pour une entité unique démarre à <b>$4,500+</b>, un déploiement multi-filiales avec IA à <b>$9,500+</b>, et un groupe holding à <b>$18,000+</b>. Selon votre configuration actuelle (${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)}), comptez environ <b>${escapeHtml(cfg.range)}</b> avec une mise en service en <b>1 à 2 semaines</b>.`,
+          answer: `Un système pour une entité unique démarre à <b>$1,500</b> de mise en place (+<b>$15/utilisateur/mois</b>), un déploiement multi-filiales avec IA à <b>$2,800</b> (+<b>$25/utilisateur/mois</b>), et un groupe holding à <b>$5,500+</b> (+<b>$35/utilisateur/mois</b>). Selon votre configuration actuelle (${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)}), comptez environ <b>${escapeHtml(cfg.range)}</b> avec une mise en service en <b>1 à 2 semaines</b>.`,
           promptText: `Voulez-vous voir comment nous fonctionnons en parallèle avec votre logiciel comptable actuel, ou ajuster le périmètre ?`,
           actionCfg: state.cfgInd,
           followUps: [
@@ -2450,7 +2447,7 @@ JS = r"""
         lang: 'fr',
         conversational: true,
         title: 'Système Sur Mesure · ISABI Systems',
-        answer: `Tout à fait. Plutôt que de vous imposer un modèle figé, nous construisons vos écrans opérationnels, vos contrôles comptables et vos tableaux de bord sur mesure sans frais par utilisateur en <b>1 à 2 semaines</b>.`,
+        answer: `Tout à fait. Plutôt que de vous imposer un modèle figé, nous construisons vos écrans opérationnels, vos contrôles comptables et vos tableaux de bord sur mesure avec des frais d'installation réduits et un tarif simple par utilisateur en <b>1 à 2 semaines</b>.`,
         promptText: `Dans quel secteur d'activité êtes-vous, ou quelle autre question souhaitez-vous me poser ?`,
         actionCfg: state.cfgInd,
         followUps: [
@@ -2595,7 +2592,7 @@ JS = r"""
       const curInd = INDUSTRIES.find(x => x.id === state.activeInd) || INDUSTRIES[0];
       return Object.assign({}, AI_PROMPTS[1], {
         q: cleanQ,
-        answer: `Unlike off-the-shelf software that forces every company into generic "Invoice" and "Item" boxes, ISABI Systems builds <b>custom operational screens and controls</b> around how your team actually works while sharing a governed double-entry accounting core with $0 per-user fees. Currently selected blueprint on page: <b>${curInd.name}</b>.`,
+        answer: `Unlike off-the-shelf software that forces every company into generic "Invoice" and "Item" boxes, ISABI Systems builds <b>custom operational screens and controls</b> around how your team actually works while sharing a governed double-entry accounting core with low setup fees and simple per-seat plans. Currently selected blueprint on page: <b>${curInd.name}</b>.`,
         actionInd: curInd.sandboxKey,
         actionCfg: curInd.cfgName,
         followUps: [
@@ -2642,25 +2639,25 @@ JS = r"""
         industry: state.cfgInd,
         scale: state.cfgScaleLabel,
         modules: ['Core Operations & Double-Entry Ledger', 'Interactive Executive Dashboards', 'Bilingual Printable Statements', 'Ask ISABI & Audit Watchdogs'],
-        range: '$12,300 to $15,000',
+        range: '$3,500 to $4,200 + $25/seat/mo',
         weeks: '1 to 2 Weeks'
       };
       return {
         q: cleanQ,
-        title: 'Transparent Investment & Your Configured Scope',
-        answer: `ISABI Systems offers three fixed-scope engagement tiers (<b>$4,500+</b> Single Entity, <b>$9,500+</b> Multi-Entity & AI Suite, and <b>$18,000+</b> Enterprise Group). Based on your current <b>Scope Configurator</b> selection for <b>${cfg.industry}</b> (${cfg.scale}), your estimated turnkey range is <b>${cfg.range}</b> delivered in <b>${cfg.weeks}</b>.`,
-        headers: ['Engagement Option', 'Target Scale & Included Scope', 'Investment'],
+        title: 'Transparent Setup + Per-Seat Pricing & Your Configured Scope',
+        answer: `ISABI Systems combines an accessible <b>one-time custom setup fee</b> with a simple <b>per-seat monthly plan</b>: <b>$1,500</b> setup + <b>$15/seat/mo</b> (Single Entity), <b>$2,800</b> setup + <b>$25/seat/mo</b> (Multi-Entity & AI Suite), and <b>$5,500+</b> setup + <b>$35/seat/mo</b> (Enterprise Group). Based on your current <b>Scope Configurator</b> selection for <b>${cfg.industry}</b> (${cfg.scale}), your estimated range is <b>${cfg.range}</b> delivered in <b>${cfg.weeks}</b>.`,
+        headers: ['Engagement Option', 'Target Scale & Included Scope', 'Setup + Per-Seat'],
         rows: [
           ['Your Configured Scope', `${cfg.industry} · ${cfg.scale} (${cfg.modules.length} modules)`, cfg.range],
-          ['Tier 01 · Foundation', 'Single entity operations & accounting, unlimited users ($0/seat) & dashboards', 'From $4,500 (+$350/mo opt.)'],
-          ['Tier 02 · Multi-Entity & AI', 'Multi-branch isolation, dashboards, printable statements, Ask ISABI & kiosks', 'From $9,500 (+$650/mo opt.)'],
-          ['Tier 03 · Enterprise Group', 'Multi-industry command center, group treasury, partner splits & field kiosks', 'From $18,000+ Custom']
+          ['Tier 01 · Foundation', 'Single entity operations, double-entry ledger, dashboards & SOA', '$1,500 setup + $15/seat/mo'],
+          ['Tier 02 · Multi-Entity & AI', 'Multi-branch isolation, dashboards, statements, Ask ISABI & kiosks', '$2,800 setup + $25/seat/mo'],
+          ['Tier 03 · Enterprise Group', 'Multi-industry command center, group treasury, partner splits & kiosks', '$5,500+ setup + $35/seat/mo']
         ],
         total: ['Your Live Configured Estimate', `${cfg.range} (${cfg.weeks})`],
         citation: 'Fixed-scope quotation confirmed after a 30-minute discovery call with Hussein Bdeir',
         actionCfg: state.cfgInd,
         followUps: [
-          'Are there any per-user seat fees?',
+          'How do the setup fee and per-seat pricing work?',
           'What happens in the first two weeks?',
           'Can we start small and add modules later?'
         ]
@@ -2679,20 +2676,20 @@ JS = r"""
       });
     }
 
-    // 10. Zero Seat Fees, Data Ownership, Security, Permissions & Confidential Data
+    // 10. Per-Seat Pricing, Data Ownership, Security, Permissions & Confidential Data
     if (low.includes('licen') || low.includes('seat') || low.includes('per-user') || low.includes('own') || low.includes('security') || low.includes('confidential') || low.includes('permission') || low.includes('role') || low.includes('rls') || low.includes('privacy') || low.includes('tenant') || low.includes('who sees')) {
       return {
         q: cleanQ,
-        title: 'Zero Per-User Fees, Full Data Ownership & Branch Privacy',
-        answer: `<b>You own 100% of your system and data, and pay $0 monthly per-user fees.</b> Every operational module, executive dashboard, printable statement, and Ask ISABI prompt supports unlimited internal staff and unlimited field tablets with strict company and role permissions.`,
+        title: 'Custom Setup, Per-Seat Plans, Full Data Ownership & Branch Privacy',
+        answer: `<b>You own 100% of your records and reports, with a one-time custom setup fee and simple per-seat monthly pricing ($15 to $35/seat/mo).</b> Every operational module, executive dashboard, printable statement, and Ask ISABI prompt enforces strict company and role permissions.`,
         headers: ['Governance Pillar', 'How It Works for Your Team', 'Client Benefit'],
         rows: [
-          ['Full Data Ownership', 'Hosted on your dedicated cloud or on-premise server with full export anytime', '100% client-owned forever'],
-          ['Zero Per-User Fees', 'Unlimited executives, accountants, dispatchers, cashiers, and field tablets', '$0/user & $0/tablet'],
+          ['Tailored Initial Setup', 'One-time fee from $1,500 to customize modules, COA, dashboards & imports', 'Built around your workflow'],
+          ['Simple Per-Seat Pricing', 'Predictable monthly rate per active seat ($15 to $35/seat/mo)', 'Includes sync, AI & support'],
           ['Strict Company & Role Privacy', 'Per-branch isolation plus role-based screen, action, and field locks', 'Staff see only their unit'],
-          ['Ask ISABI Access Control', 'Answers only using figures the signed-in user is authorized to view', 'Confidential numbers protected']
+          ['Full Data Ownership', 'Your company owns 100% of its ledger entries and exports at all times', 'Zero vendor lock-in']
         ],
-        total: ['Monthly Per-User & Per-Tablet Fees', '$0 / Month (Unlimited Users & Kiosks)'],
+        total: ['Setup & Per-Seat Structure', 'From $1,500 Setup + $15 to $35/Seat/Mo'],
         citation: 'Source: ISABI Governance & Multi-Company Access Control',
         followUps: [
           'How does dual-entry reconciliation work with our existing accountant software?',
@@ -2719,7 +2716,7 @@ JS = r"""
         citation: 'Source: Direct Principal Implementation · Fixed Scope & Timeline',
         followUps: [
           'What would a complete multi-branch system cost and include?',
-          'Are there any per-user seat fees?',
+          'How do the setup fee and per-seat pricing work?',
           'Can we start small and add modules later?'
         ]
       };
@@ -2730,7 +2727,7 @@ JS = r"""
       return {
         q: cleanQ,
         title: 'Interactive Executive Dashboards & Bilingual Printable Statements',
-        answer: `Every ISABI implementation includes <b>built-in interactive dashboards</b> (with one-click Year, Month, Week, and Day switching, KPI drilldowns, and chart breakdowns) paired with <b>click-sortable bilingual printable statements</b> formatted for instant A4 PDF and Excel export at $0 per viewer.`,
+        answer: `Every ISABI implementation includes <b>built-in interactive dashboards</b> (with one-click Year, Month, Week, and Day switching, KPI drilldowns, and chart breakdowns) paired with <b>click-sortable bilingual printable statements</b> formatted for instant A4 PDF and Excel export inside every authorized user seat.`,
         headers: ['Reporting Layer', 'Audience & Access', 'Included Outputs'],
         rows: [
           ['01. Executive Cockpits', 'Owners, Board & Managing Directors', 'Consolidated P&L, Balance Sheet, Cash Flow & MoM variance'],
@@ -2738,7 +2735,7 @@ JS = r"""
           ['03. Printable Statements', 'One-Click Bilingual A4 PDF & Excel', 'Customer/Supplier/Partner SOA, Tax Invoices & Gate Passes'],
           ['04. Audit & Recon Pack', 'Finance & Parallel-Run Audit Team', 'Missing ticket checks, price exceptions & $0.00 statutory match']
         ],
-        total: ['BI Viewer Fees Required', '$0 / User (Built Directly into ISABI)'],
+        total: ['Analytics & Statement Access', 'Included in Standard User Seat'],
         citation: 'Source: ISABI Executive Analytics & Institutional Print Suite',
         followUps: [
           'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
@@ -2755,8 +2752,8 @@ JS = r"""
       const closeDays = parseInt(document.getElementById('roi-close')?.value || '14', 10) || 14;
       const annualHours = Math.round(hrs * 52 * 0.78 + ent * 65);
       const annualVal = annualHours * 30;
-      const estCost = ent === 1 ? 5500 : (ent <= 4 ? 10500 : 18500);
-      const payback = Math.max(1.2, (estCost / (annualVal / 12))).toFixed(1);
+      const estCost = ent === 1 ? 1500 : (ent <= 4 ? 2800 : 5500);
+      const payback = Math.max(0.5, (estCost / (annualVal / 12))).toFixed(1);
 
       return {
         q: cleanQ,
@@ -2864,7 +2861,7 @@ JS = r"""
       conversational: true,
       isCustomFallback: true,
       title: 'Custom Operational Guidance',
-      answer: `We can build around that directly. Instead of forcing your team into a generic template, we tailor the exact operational screens, approval rules, executive dashboards, and printable statements your workflow needs with $0 per-user fees (typical delivery for ${escapeHtml(cfg.scale)} is <b>${escapeHtml(cfg.weeks)}</b> at <b>${escapeHtml(cfg.range)}</b>).`,
+      answer: `We can build around that directly. Instead of forcing your team into a generic template, we tailor the exact operational screens, approval rules, executive dashboards, and printable statements your workflow needs with a low one-time setup fee and simple per-seat plans (typical delivery for ${escapeHtml(cfg.scale)} is <b>${escapeHtml(cfg.weeks)}</b> at <b>${escapeHtml(cfg.range)}</b>).`,
       promptText: `Would you like to tell me a bit more about your industry and how many branches you run, or send this straight to Hussein on WhatsApp?`,
       actionCfg: state.cfgInd,
       followUps: [
@@ -3088,7 +3085,7 @@ JS = r"""
       'What this website shows: Visitors can explore our 8 live industry ERP blueprints, test real multi-currency double-entry numbers in the Live Sandbox, calculate time savings in the ROI Estimator, or configure a custom quote in the Scope Configurator.',
       'What we build: Custom operational & financial ERP workspaces tailored around how each business runs, including guided daily entry forms, double-entry general ledgers (Class 1 to 7), interactive executive dashboards (Year/Month/Week/Day), bilingual printable A4 statements, automatic audit watchdogs, and offline-ready field kiosks (live photo-proof face sign-in & wireless thermal receipt printing) delivered in 1 to 2 weeks.',
       '8 live blueprints: Hospitality & Resorts, Auto & Heavy Equipment Trading, Concrete & Manufacturing, Real Estate Portfolio, Insurance Brokerage, Multi-Entity Holding, Custom Offline POS Till, Face & PIN Attendance Kiosk.',
-      'Pricing & Ownership: Single-Entity Foundation from $4,500+ (1 week); Multi-Entity & AI Suite from $9,500+ (1 to 2 weeks); Enterprise Holding Group from $18,000+ (2 weeks). Clients own 100% of their system and data and pay $0 monthly per-user fees and $0 per kiosk tablet across unlimited staff. Runs side-by-side with existing accounting software (Dolphin, PIMS, QuickBooks, SAP) to 0.00 variance.',
+      'Pricing & Ownership: Single-Entity Foundation from $1,500 one-time custom setup + $15/seat/month (1 week); Multi-Entity & AI Suite from $2,800 custom setup + $25/seat/month (1 to 2 weeks); Enterprise Holding Group from $5,500+ custom setup + $35/seat/month (2 weeks). Clients own 100% of their records and data. Runs side-by-side with existing accounting software (Dolphin, PIMS, QuickBooks, SAP) to 0.00 variance.',
       'Focus on business features & outcomes: Focus strictly on what business owners, CFOs, and operators experience. Do NOT overspecify internal technical plumbing (never mention database engines, math internals, printer protocols, or software acronyms).',
       'Tone & Formatting rules: Speak like a friendly, sharp, natural human in a live chat. NEVER sound like a corporate brochure or dump walls of text. NEVER use em-dashes or unicode arrows. Reply in the same language as the user (Detected language: ' + lang + ').',
       'You ALWAYS reply in TWO short chat bubbles: (1) "answer": 1 to 2 natural, direct sentences answering what the user asked; (2) "promptText": 1 short, natural follow-up question inviting the user to continue the conversation.',
@@ -3100,7 +3097,7 @@ JS = r"""
     const sbox = SANDBOX_DATA[state.sboxInd] || SANDBOX_DATA.holding;
     const cm = CURR_MULT[state.sboxCurr] || CURR_MULT.USD;
     const pm = PERIOD_MULT[state.sboxPeriod] || PERIOD_MULT.mtd;
-    const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$12,300 to $15,000', weeks: '1 to 2 Weeks' };
+    const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$3,500 to $4,200 + $25/seat/mo', weeks: '1 to 2 Weeks' };
     const recent = state.aiHistory.slice(-4).map(h => 'User: ' + h.q + '\nISABI: ' + String(h.answer || '').replace(/<[^>]+>/g, '')).join('\n\n');
     return [
       'Active Live Sandbox Context: ' + sbox.groupTitle + ' | Currency: ' + cm.sym + ' | Period: ' + pm.label,
@@ -3330,15 +3327,16 @@ JS = r"""
     titleEl.textContent = state.cfgInd + ' System';
     scaleEl.textContent = state.cfgScaleLabel;
 
-    let html = `<tr><td>Organizational Scale (${state.cfgScaleLabel})</td><td class="r num">${state.cfgScaleAdd ? '+$' + state.cfgScaleAdd.toLocaleString('en-US') : 'Base'}</td></tr>`;
+    const seatRate = state.cfgSeatRate || 25;
+    let html = `<tr><td>Scale &amp; Seat Plan (${state.cfgScaleLabel})</td><td class="r num">${state.cfgScaleAdd ? '+$' + state.cfgScaleAdd.toLocaleString('en-US') : 'Base'} · $${seatRate}/seat</td></tr>`;
     selectedMods.forEach(([nm, c]) => {
       html += `<tr><td>${nm}</td><td class="r num">$${c.toLocaleString('en-US')}</td></tr>`;
     });
     rowsEl.innerHTML = html;
 
     const low = baseCost;
-    const high = Math.round((baseCost * 1.22) / 500) * 500;
-    const rangeStr = `$${low.toLocaleString('en-US')} to $${high.toLocaleString('en-US')}`;
+    const high = Math.round((baseCost * 1.2) / 100) * 100;
+    const rangeStr = `$${low.toLocaleString('en-US')} to $${high.toLocaleString('en-US')} + $${seatRate}/seat/mo`;
     totalEl.textContent = rangeStr;
 
     // Scope points (scale + modules) map to a delivery window: 1 to 2 Weeks for a typical scope, 1 to 3 only for the heaviest full-module enterprise scope.
@@ -3371,7 +3369,7 @@ JS = r"""
     const industry = document.getElementById('lead-industry')?.value || state.cfgInd;
     const budget = document.getElementById('lead-budget')?.value || 'Custom Scope';
     const notes = (document.getElementById('lead-notes')?.value || '').trim() || 'Interested in a live walkthrough and custom quotation.';
-    const cfg = state.lastCfgSummary || { scale: state.cfgScaleLabel, modules: ['Core Operations & Double-Entry Ledger'], range: '$9,500+', weeks: '1 to 2 Weeks' };
+    const cfg = state.lastCfgSummary || { scale: state.cfgScaleLabel, modules: ['Core Operations & Double-Entry Ledger'], range: '$2,800 Setup + $25/seat/mo', weeks: '1 to 2 Weeks' };
 
     return [
       'ISABI SYSTEMS - PROJECT SCOPE & INQUIRY',
@@ -3797,6 +3795,7 @@ JS = r"""
         state.cfgScale = parseInt(cfgScalePill.dataset.cfgScale, 10) || 1;
         state.cfgScaleLabel = cfgScalePill.dataset.scaleLabel;
         state.cfgScaleAdd = parseInt(cfgScalePill.dataset.scaleAdd, 10) || 0;
+        state.cfgSeatRate = parseInt(cfgScalePill.dataset.seatRate, 10) || 25;
         document.querySelectorAll('#cfg-scale-pills .cfg-pill').forEach(b => b.classList.toggle('active', b === cfgScalePill));
         updateConfigurator();
         return;
