@@ -44,6 +44,9 @@ ALLOWED_TABLES = {
     "product_types",
     "equipment",
     "company_equipment",
+    "equipment_defects",
+    "part_movements",
+    "fuel_malfunctions",
     "drivers",
     "company_drivers",
     "expense_categories",
@@ -152,6 +155,129 @@ def ensure_auth_schema():
     if "confidence" not in scols:
         cur.execute("ALTER TABLE auth_sessions ADD COLUMN confidence REAL")
     cur.execute("DELETE FROM users WHERE id IN ('u-wtc', 'u-bbc', 'u-lions')")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS equipment_defects (
+            id TEXT PRIMARY KEY,
+            name TEXT DEFAULT '',
+            company TEXT DEFAULT '',
+            date TEXT DEFAULT '',
+            rep_date TEXT DEFAULT '',
+            equipment TEXT DEFAULT '',
+            equipment_category TEXT DEFAULT '',
+            subsystem TEXT DEFAULT '',
+            part_name TEXT DEFAULT '',
+            severity TEXT DEFAULT '',
+            status TEXT DEFAULT '',
+            reported_by TEXT DEFAULT '',
+            meter_reading REAL DEFAULT 0,
+            description TEXT DEFAULT '',
+            resolved_date TEXT DEFAULT '',
+            linked_part_log TEXT DEFAULT '',
+            source TEXT DEFAULT '',
+            entered_by TEXT DEFAULT '',
+            entered_at TEXT DEFAULT '',
+            voided INTEGER DEFAULT 0,
+            voided_by TEXT DEFAULT '',
+            voided_at TEXT DEFAULT '',
+            modified_by TEXT DEFAULT '',
+            modified_at TEXT DEFAULT '',
+            notes TEXT DEFAULT ''
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS part_movements (
+            id TEXT PRIMARY KEY,
+            name TEXT DEFAULT '',
+            company TEXT DEFAULT '',
+            date TEXT DEFAULT '',
+            rep_date TEXT DEFAULT '',
+            equipment TEXT DEFAULT '',
+            action_type TEXT DEFAULT '',
+            part_name TEXT DEFAULT '',
+            part_serial TEXT DEFAULT '',
+            subsystem TEXT DEFAULT '',
+            qty REAL DEFAULT 1,
+            condition TEXT DEFAULT '',
+            removed_disposition TEXT DEFAULT '',
+            storage_location TEXT DEFAULT '',
+            vendor_or_buyer TEXT DEFAULT '',
+            new_part_cost REAL DEFAULT 0,
+            repair_cost REAL DEFAULT 0,
+            sale_proceeds REAL DEFAULT 0,
+            defect_ref TEXT DEFAULT '',
+            prior_defect_notified INTEGER DEFAULT 0,
+            approved_by TEXT DEFAULT '',
+            source TEXT DEFAULT '',
+            entered_by TEXT DEFAULT '',
+            entered_at TEXT DEFAULT '',
+            voided INTEGER DEFAULT 0,
+            voided_by TEXT DEFAULT '',
+            voided_at TEXT DEFAULT '',
+            modified_by TEXT DEFAULT '',
+            modified_at TEXT DEFAULT '',
+            notes TEXT DEFAULT ''
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS fuel_malfunctions (
+            id TEXT PRIMARY KEY,
+            name TEXT DEFAULT '',
+            ticket_no TEXT DEFAULT '',
+            date TEXT DEFAULT '',
+            rep_date TEXT DEFAULT '',
+            company TEXT DEFAULT '',
+            item TEXT DEFAULT 'Diesel',
+            discrepancy_type TEXT DEFAULT 'Malfunction',
+            litres REAL DEFAULT 0,
+            equipment TEXT DEFAULT '',
+            driver TEXT DEFAULT '',
+            source TEXT DEFAULT '',
+            entered_by TEXT DEFAULT '',
+            entered_by_email TEXT DEFAULT '',
+            entered_at TEXT DEFAULT '',
+            voided INTEGER DEFAULT 0,
+            voided_by TEXT DEFAULT '',
+            voided_at TEXT DEFAULT '',
+            modified_by TEXT DEFAULT '',
+            modified_at TEXT DEFAULT '',
+            notes TEXT DEFAULT ''
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_fuel_malfunctions_co_date ON fuel_malfunctions (company, date)")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sentinel_reviews (
+            id TEXT PRIMARY KEY,
+            rule_id TEXT DEFAULT '',
+            company TEXT DEFAULT '',
+            baseline_metric REAL DEFAULT 0,
+            baseline_secondary REAL DEFAULT 0,
+            baseline_badge TEXT DEFAULT '',
+            active INTEGER DEFAULT 1,
+            checked_by TEXT DEFAULT '',
+            checked_by_email TEXT DEFAULT '',
+            checked_at TEXT DEFAULT '',
+            updated_at TEXT DEFAULT '',
+            note TEXT DEFAULT ''
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS alert_rules (
+            id TEXT PRIMARY KEY,
+            kind TEXT DEFAULT 'override',
+            payload_json TEXT DEFAULT '{}',
+            updated_at TEXT DEFAULT ''
+        )
+        """
+    )
     for table in USER_WRITABLE_TABLES:
         try:
             tcols = {r[1] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()}
@@ -298,6 +424,50 @@ class MfgHandler(SimpleHTTPRequestHandler):
             sessions = [dict(r) for r in conn.execute("SELECT * FROM auth_sessions ORDER BY logged_in_at DESC LIMIT 25").fetchall()]
             conn.close()
             return self._send_json({"ok": True, "users": rows, "sessions": sessions})
+
+        if api_path == "/api/sentinel_reviews":
+            if not DB_PATH.exists():
+                return self._send_json({"ok": True, "reviews": {}})
+            conn = sqlite3.connect(str(DB_PATH))
+            conn.row_factory = sqlite3.Row
+            revs = {}
+            try:
+                for r in conn.execute("SELECT * FROM sentinel_reviews").fetchall():
+                    d = dict(r)
+                    d["active"] = bool(d.get("active"))
+                    if d.get("id"):
+                        revs[d["id"]] = d
+            except Exception:
+                pass
+            conn.close()
+            return self._send_json({"ok": True, "reviews": revs})
+
+        if api_path == "/api/alert_rules":
+            if not DB_PATH.exists():
+                return self._send_json({"ok": True, "overrides": {}, "custom": []})
+            conn = sqlite3.connect(str(DB_PATH))
+            conn.row_factory = sqlite3.Row
+            overrides = {}
+            custom_list = []
+            try:
+                for r in conn.execute("SELECT * FROM alert_rules").fetchall():
+                    rid = str(r["id"] or "")
+                    kind = str(r["kind"] or "override")
+                    try:
+                        obj = json.loads(r["payload_json"] or "{}")
+                    except Exception:
+                        obj = {}
+                    if not isinstance(obj, dict):
+                        continue
+                    if kind == "custom":
+                        if not obj.get("deleted"):
+                            custom_list.append(obj)
+                    elif rid:
+                        overrides[rid] = obj
+            except Exception:
+                pass
+            conn.close()
+            return self._send_json({"ok": True, "overrides": overrides, "custom": custom_list})
 
         if api_path == "/api/records":
             qs = parse_qs(parsed.query)
@@ -546,6 +716,119 @@ class MfgHandler(SimpleHTTPRequestHandler):
             conn.commit()
             conn.close()
             return self._send_json({"ok": True, "table": table, "inserted": valid})
+
+        if api_path == "/api/sentinel_reviews":
+            incoming_map = {}
+            if isinstance(body.get("review"), dict) and body["review"].get("id"):
+                incoming_map[str(body["review"]["id"])] = body["review"]
+            elif isinstance(body.get("reviews"), dict):
+                for rk, rv in body["reviews"].items():
+                    if isinstance(rv, dict):
+                        rid = str(rv.get("id") or rk)
+                        incoming_map[rid] = rv
+            if not DB_PATH.exists() or not incoming_map:
+                return self._send_json({"ok": True, "saved": 0})
+            conn = sqlite3.connect(str(DB_PATH))
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sentinel_reviews (
+                    id TEXT PRIMARY KEY,
+                    rule_id TEXT DEFAULT '',
+                    company TEXT DEFAULT '',
+                    baseline_metric REAL DEFAULT 0,
+                    baseline_secondary REAL DEFAULT 0,
+                    baseline_badge TEXT DEFAULT '',
+                    active INTEGER DEFAULT 1,
+                    checked_by TEXT DEFAULT '',
+                    checked_by_email TEXT DEFAULT '',
+                    checked_at TEXT DEFAULT '',
+                    updated_at TEXT DEFAULT '',
+                    note TEXT DEFAULT ''
+                )
+                """
+            )
+            saved_cnt = 0
+            for rid, rv in incoming_map.items():
+                ex = cur.execute("SELECT updated_at FROM sentinel_reviews WHERE id = ?", (rid,)).fetchone()
+                in_ts = str(rv.get("updated_at") or rv.get("checked_at") or "")
+                if ex and str(ex["updated_at"] or "") > in_ts:
+                    continue
+                cur.execute(
+                    """
+                    INSERT OR REPLACE INTO sentinel_reviews
+                    (id, rule_id, company, baseline_metric, baseline_secondary, baseline_badge, active, checked_by, checked_by_email, checked_at, updated_at, note)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        rid,
+                        str(rv.get("rule_id") or ""),
+                        str(rv.get("company") or ""),
+                        float(rv.get("baseline_metric") or 0),
+                        float(rv.get("baseline_secondary") or 0),
+                        str(rv.get("baseline_badge") or ""),
+                        1 if rv.get("active", True) else 0,
+                        str(rv.get("checked_by") or ""),
+                        str(rv.get("checked_by_email") or ""),
+                        str(rv.get("checked_at") or ""),
+                        in_ts,
+                        str(rv.get("note") or ""),
+                    ),
+                )
+                saved_cnt += 1
+            conn.commit()
+            conn.close()
+            return self._send_json({"ok": True, "saved": saved_cnt})
+
+        if api_path == "/api/alert_rules":
+            if not DB_PATH.exists():
+                return self._send_json({"ok": False, "error": "Database missing"}, 500)
+            conn = sqlite3.connect(str(DB_PATH))
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS alert_rules (
+                    id TEXT PRIMARY KEY,
+                    kind TEXT DEFAULT 'override',
+                    payload_json TEXT DEFAULT '{}',
+                    updated_at TEXT DEFAULT ''
+                )
+                """
+            )
+            saved_cnt = 0
+            overrides_in = body.get("overrides") if isinstance(body.get("overrides"), dict) else {}
+            for rid, ov in overrides_in.items():
+                if not isinstance(ov, dict):
+                    continue
+                key = str(rid)
+                in_ts = str(ov.get("updated_at") or "")
+                ex = cur.execute("SELECT updated_at FROM alert_rules WHERE id = ?", (key,)).fetchone()
+                if ex and str(ex["updated_at"] or "") > in_ts:
+                    continue
+                cur.execute(
+                    "INSERT OR REPLACE INTO alert_rules (id, kind, payload_json, updated_at) VALUES (?,?,?,?)",
+                    (key, "override", json.dumps(ov), in_ts),
+                )
+                saved_cnt += 1
+            custom_in = body.get("custom") if isinstance(body.get("custom"), list) else []
+            for cr in custom_in:
+                if not isinstance(cr, dict) or not cr.get("id"):
+                    continue
+                cid = str(cr["id"])
+                in_ts = str(cr.get("updated_at") or "")
+                ex = cur.execute("SELECT updated_at FROM alert_rules WHERE id = ?", (cid,)).fetchone()
+                if ex and str(ex["updated_at"] or "") > in_ts:
+                    continue
+                cur.execute(
+                    "INSERT OR REPLACE INTO alert_rules (id, kind, payload_json, updated_at) VALUES (?,?,?,?)",
+                    (cid, "custom", json.dumps(cr), in_ts),
+                )
+                saved_cnt += 1
+            conn.commit()
+            conn.close()
+            return self._send_json({"ok": True, "saved": saved_cnt})
 
         return self._send_json({"ok": False, "error": "Not found"}, 404)
 
