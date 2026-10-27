@@ -11854,6 +11854,12 @@ table.ledger-table:has(#usersDirectoryTbody) .user-actions-wrap .btn {
   border-color: var(--brass);
 }
 
+/* Context-Clean Topbar on Plant Kiosks (kiosks operate live in real time; hide accounting date filters & generic + New Entry) */
+body.is-kiosks-view .period-basis-row,
+body.is-kiosks-view #newEntryBtn {
+  display: none !important;
+}
+
 /* Locked Tablet Kiosk Shell Mode */
 body.kiosk-locked .rail,
 body.kiosk-locked #railResizer,
@@ -11875,7 +11881,7 @@ body.kiosk-locked .app-shell {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px;
-  margin: 0 20px 12px;
+  margin: 0 0 10px;
   padding: 10px 14px;
   border-radius: 8px;
   background: var(--warn-bg);
@@ -11883,10 +11889,22 @@ body.kiosk-locked .app-shell {
   color: var(--ink);
   font-size: 12.5px;
 }
+.kiosk-unlock-pin-input {
+  width: 128px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 700;
+  -webkit-text-security: disc;
+}
 
-/* 4-Kiosk Mode Switcher & Bluetooth Printer Control Deck */
+/* 4-Kiosk Mode Switcher & Context-Aware Station / Printer Deck */
 .kiosk-control-deck {
-  margin: 0 20px 12px;
+  margin: 0 0 10px;
   padding: 0;
   overflow: hidden;
 }
@@ -11931,7 +11949,9 @@ body.kiosk-locked .app-shell {
   min-width: 0;
 }
 .kiosk-tab-ico {
-  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--brass);
   flex-shrink: 0;
 }
 .kiosk-tab-top strong {
@@ -11955,7 +11975,8 @@ body.kiosk-locked .app-shell {
   overflow: hidden;
 }
 
-.kiosk-printer-bar {
+.kiosk-printer-bar,
+.kiosk-station-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -11964,21 +11985,55 @@ body.kiosk-locked .app-shell {
   padding: 8px 12px;
   background: var(--surface);
 }
-.kiosk-printer-grp {
+.kiosk-printer-grp,
+.kiosk-station-right {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
 }
+.kiosk-station-right {
+  margin-left: auto;
+}
 .kiosk-bar-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   font-weight: 700;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  white-space: nowrap;
 }
-.kiosk-toggle-pill {
+.kiosk-select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 0;
+  max-width: 240px;
+  padding: 5px 28px 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  background-color: var(--surface-2);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.kiosk-select:focus {
+  outline: none;
+  border-color: var(--brass);
+}
+.kiosk-toggle-pill,
+.kiosk-dir-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 4.5px 10px;
   border-radius: 999px;
   border: 1px solid var(--line-strong);
@@ -11988,16 +12043,67 @@ body.kiosk-locked .app-shell {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.14s, border-color 0.14s;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
 }
-.kiosk-toggle-pill:hover {
+.kiosk-toggle-pill:hover,
+.kiosk-dir-pill:hover {
   border-color: var(--brass);
 }
-.kiosk-toggle-pill.active {
+.kiosk-toggle-pill.active,
+.kiosk-dir-pill.active {
   background: var(--brass);
   color: #0B1730;
   border-color: var(--brass);
   font-weight: 700;
+}
+.kiosk-dir-pill.in.active {
+  background: var(--good);
+  color: #FFFFFF;
+  border-color: var(--good);
+}
+.kiosk-dir-pill.out.active {
+  background: var(--warn);
+  color: #0B1730;
+  border-color: var(--warn);
+}
+.kiosk-onsite-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4.5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.kiosk-onsite-pill.has-onsite {
+  background: var(--good-bg);
+  border-color: color-mix(in srgb, var(--good) 40%, var(--line));
+  color: var(--good);
+}
+.kiosk-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.kiosk-onsite-pill.has-onsite .kiosk-live-dot {
+  background: var(--good);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent);
+}
+.kiosk-lock-pill-btn,
+.kiosk-enrol-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4.5px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* 1-Tap Quick-Preset Strip for Touch Operators */
@@ -12006,7 +12112,7 @@ body.kiosk-locked .app-shell {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 14px;
-  margin: 0 20px 12px;
+  margin: 0 0 10px;
   padding: 8px 12px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -12028,6 +12134,9 @@ body.kiosk-locked .app-shell {
   margin-right: 2px;
 }
 .kiosk-qchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 4px 9px;
   border-radius: 6px;
   border: 1px solid var(--line);
@@ -12051,8 +12160,11 @@ body.kiosk-locked .app-shell {
   display: grid;
   grid-template-columns: minmax(0, 1.32fr) minmax(0, 0.95fr);
   gap: 14px;
-  padding: 0 20px 18px;
+  padding: 0 0 18px;
   align-items: start;
+}
+.kiosk-work-grid.is-single-col {
+  grid-template-columns: minmax(0, 860px);
 }
 .kiosk-work-grid .panel-card {
   margin: 0;
@@ -12386,61 +12498,44 @@ body.kiosk-locked .app-shell {
   gap: 6px;
 }
 
-/* Kiosk 4: Attendance Biometric Kiosk (4:3 Camera + 4-Digit Touch PIN Keypad) */
+/* Kiosk 4: Intuitive Staff Attendance Station (Hands-Free 4:3 Face ID + 4-Digit Touch PIN + Full-Width Activity Log) */
+.kiosk-att-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 0 18px;
+}
+.kiosk-att-shell .panel-card {
+  margin: 0;
+}
 .kiosk-att-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.15fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  padding: 0 20px 18px;
-  align-items: start;
+  padding: 0;
+  align-items: stretch;
 }
-.kiosk-att-grid .panel-card {
-  margin: 0;
+.kiosk-att-cam-card,
+.kiosk-att-pin-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .kiosk-att-cam-body,
 .kiosk-att-pin-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
   padding: 14px 16px;
-}
-.kiosk-att-dir-bar {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.kiosk-dir-btn {
-  padding: 7px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--line-strong);
-  background: var(--surface-2);
-  color: var(--ink);
-  font-size: 11.5px;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.kiosk-dir-btn.active {
-  background: var(--brass);
-  color: #0B1730;
-  border-color: var(--brass);
-}
-.kiosk-dir-btn.in.active {
-  background: var(--good);
-  color: #FFFFFF;
-  border-color: var(--good);
-}
-.kiosk-dir-btn.out.active {
-  background: var(--warn);
-  color: #0B1730;
-  border-color: var(--warn);
 }
 
 /* 4:3 Camera Viewport — PWA.md §3.5 */
 .kiosk-att-viewport {
   position: relative;
   width: 100%;
-  max-width: 460px;
+  max-width: 440px;
   margin: 0 auto;
   aspect-ratio: 4 / 3;
   background: var(--surface-2);
@@ -12465,33 +12560,73 @@ body.kiosk-locked .app-shell {
 .kiosk-att-oval {
   width: 48%;
   height: 70%;
-  border: 2px dashed rgba(217, 165, 74, 0.75);
+  border: 2px dashed rgba(217, 165, 74, 0.78);
   border-radius: 50%;
+  transition: opacity 0.18s;
 }
-.kiosk-att-cam-overlay-badge {
+.kiosk-att-viewport.is-standby .kiosk-att-oval {
+  opacity: 0.28;
+}
+.kiosk-cam-standby-card {
   position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 8px;
+  inset: 0;
   display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  font-size: 10px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 18px 22px;
+  text-align: center;
+  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+}
+.kiosk-cam-standby-ico {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--brass-tint);
+  border: 1px solid var(--brass-border);
+  color: var(--brass);
+}
+.kiosk-cam-standby-ico svg {
+  width: 20px;
+  height: 20px;
+}
+.kiosk-cam-standby-card strong {
+  font-family: "Archivo", sans-serif;
+  font-size: 14px;
   font-weight: 700;
   color: var(--ink);
-  background: color-mix(in srgb, var(--surface) 86%, transparent);
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
+}
+.kiosk-cam-standby-card p {
+  margin: 0;
+  max-width: 290px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.kiosk-cam-start-btn {
+  margin-top: 4px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.kiosk-att-cam-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .kiosk-att-status {
-  margin-top: 10px;
+  flex: 1;
+  min-width: 0;
   padding: 8px 11px;
   border-radius: 6px;
   background: var(--surface-2);
   border: 1px solid var(--line);
   font-size: 12px;
-  color: var(--ink);
+  color: var(--muted);
   text-align: center;
 }
 .kiosk-att-status.ok {
@@ -12506,83 +12641,129 @@ body.kiosk-locked .app-shell {
   color: var(--warn);
   font-weight: 700;
 }
-.kiosk-att-cam-actions {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
+.kiosk-cam-stop-btn {
+  flex-shrink: 0;
+  font-size: 11.5px;
 }
 
+/* Top Confirmation Strip for Most Recent Punch (with 1-Tap Switch IN/OUT) */
 .kiosk-last-punch-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 12px;
-  padding: 10px 12px;
+  padding: 9px 14px;
   border-radius: 8px;
-  background: var(--surface-2);
-  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-left: 4px solid var(--good);
+  box-shadow: var(--shadow-sm);
 }
 .kiosk-last-punch-card.is-out {
   border-left-color: var(--warn);
 }
-.kiosk-lp-main {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-}
-.kiosk-flip-btn {
-  font-weight: 700;
-  border-color: var(--brass);
-}
-
-.kiosk-pin-display-bar {
+.kiosk-lp-left {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 12px;
-  padding: 10px 12px;
+  min-width: 0;
+}
+.kiosk-lp-info {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 12.5px;
+  min-width: 0;
+}
+.kiosk-lp-meta {
+  font-size: 11.8px;
+  color: var(--muted);
+}
+.kiosk-flip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-color: var(--brass-border);
+}
+
+/* 4-Box PIN Display & Touch Keypad */
+.kiosk-pin-display-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 14px;
   border-radius: 8px;
   background: var(--surface-2);
   border: 1px solid var(--line);
 }
-.kiosk-pin-dots {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: 0.18em;
+.kiosk-pin-boxes {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.kiosk-pin-slot {
+  width: 44px;
+  height: 46px;
+  border-radius: 8px;
+  border: 1.5px solid var(--line-strong);
+  background: var(--surface);
   color: var(--ink);
-  margin-top: 2px;
+  display: grid;
+  place-items: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 18px;
+  font-weight: 800;
+  transition: border-color 0.14s, background 0.14s, box-shadow 0.14s;
 }
-.kiosk-pin-dots .muted {
-  font-family: "Plus Jakarta Sans", sans-serif;
-  font-size: 11.5px;
-  font-weight: 500;
-  letter-spacing: normal;
+.kiosk-pin-slot.filled {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brass) 18%, transparent);
 }
+.kiosk-pin-hint {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.35;
+}
+.kiosk-pin-hint.ok {
+  color: var(--good);
+  font-weight: 700;
+}
+.kiosk-pin-hint.warn {
+  color: var(--warn);
+  font-weight: 700;
+}
+
 .kiosk-pin-pad {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 10px;
 }
 .kiosk-pad-key {
+  min-height: 48px;
   padding: 11px 8px;
   border-radius: 8px;
   border: 1px solid var(--line-strong);
   background: var(--surface-2);
   color: var(--ink);
   font-family: "Archivo", sans-serif;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 800;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
   transition: background 0.12s, border-color 0.12s;
 }
 .kiosk-pad-key:hover {
@@ -12591,13 +12772,89 @@ body.kiosk-locked .app-shell {
 }
 .kiosk-pad-key.aux {
   font-size: 12.5px;
+  font-weight: 700;
   color: var(--muted);
 }
 .kiosk-pad-key.go {
-  font-size: 12.5px;
+  font-size: 12px;
+  font-weight: 800;
   background: var(--brass);
   color: #0B1730;
   border-color: var(--brass);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kiosk-pad-key.go.is-in {
+  background: var(--good);
+  color: #FFFFFF;
+  border-color: var(--good);
+}
+
+/* Optional Supervisor Name Selector (quiet footer inside PIN card) */
+.kiosk-manual-staff-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+.kiosk-manual-lbl {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.kiosk-manual-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 210px;
+  min-width: 0;
+}
+.kiosk-manual-ctrl .kiosk-select {
+  flex: 1;
+  max-width: none;
+  width: 100%;
+}
+.kiosk-clear-staff-btn {
+  padding: 4px 9px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* Full-Width Recent Clock Activity & On-Site Team Table */
+.kiosk-att-feed-card {
+  overflow: hidden;
+}
+.kiosk-feed-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.kiosk-feed-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.kiosk-feed-chip:hover {
+  border-color: var(--brass-border);
+  color: var(--ink);
+}
+.kiosk-feed-chip.active {
+  background: var(--brass-tint);
+  border-color: var(--brass);
+  color: var(--ink);
+  font-weight: 700;
 }
 
 @media (max-width: 1180px) {
@@ -12605,28 +12862,46 @@ body.kiosk-locked .app-shell {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .kiosk-work-grid,
+  .kiosk-work-grid.is-single-col,
   .kiosk-att-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 860px) {
+  .kiosk-unlock-bar,
   .kiosk-control-deck,
-  .kiosk-quick-strip,
-  .kiosk-unlock-bar {
+  .kiosk-quick-strip {
     margin-left: 12px;
     margin-right: 12px;
   }
+  .workspace > .kiosk-unlock-bar,
+  .workspace > .kiosk-control-deck {
+    margin-top: 10px;
+  }
+  .workspace > .kiosk-unlock-bar + .kiosk-control-deck {
+    margin-top: 0;
+  }
   .kiosk-work-grid,
-  .kiosk-att-grid {
+  .kiosk-att-shell {
     padding-left: 12px;
     padding-right: 12px;
   }
   .kiosk-mode-tabs {
     grid-template-columns: minmax(0, 1fr);
   }
-  .kiosk-att-dir-bar {
-    grid-template-columns: minmax(0, 1fr);
+  .kiosk-station-right {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .kiosk-select,
+  .kiosk-unlock-pin-input {
+    font-size: 16px !important;
+  }
+  .kiosk-select {
+    max-width: 100%;
   }
 }
 
