@@ -755,8 +755,8 @@
           ${fld('Default Payment Method *', sel('f_method', [['Credit', 'Credit'], ['Cash', 'Cash']], 'Credit'))}
           ${fld('VAT Registered (11%)', sel('f_vatreg', [['No', 'No'], ['Yes', 'Yes — 11% VAT Applies']], 'No'))}
           ${fld('MOF Tax Number', inp('f_mof', 'text', '', 'placeholder="Ministry of Finance #"'), { id: 'wrap_cust_mof' })}
-          ${fld('Phone / Contact', inp('f_phone', 'tel', '', 'placeholder="+961 ..."'))}
-          ${fld('Region / Address', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Select or type region..."') + dl('dl_regions', regNames))}
+          ${fld('Phone', inp('f_phone', 'tel', '', 'placeholder="+961 ..."'))}
+          ${fld('Region', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Select or type region..."') + dl('dl_regions', regNames))}
           <div class="form-field check-field"><input type="checkbox" id="f_declqty"><label for="f_declqty">Uses Customer-declared Qty on tickets</label></div>
           <div class="form-field check-field"><input type="checkbox" id="f_extinv"><label for="f_extinv">Requires External Invoice # on tickets</label></div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
@@ -784,8 +784,8 @@
             </div>
             <span class="hint" id="hint_sup_category">Hauler / Truck Owner opens Fleet &amp; Drivers below</span>
           </div>
-          ${fld('Phone / Contact', inp('f_phone', 'tel', '', 'placeholder="+961 ..."'))}
-          ${fld('Region / Location', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Select or type region..."') + dl('dl_regions', regNames))}
+          ${fld('Phone', inp('f_phone', 'tel', '', 'placeholder="+961 ..."'))}
+          ${fld('Region', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Select or type region..."') + dl('dl_regions', regNames))}
           ${fld('Default Payment Method', sel('f_method', [['Credit', 'Credit'], ['Cash', 'Cash']], 'Credit'))}
           ${fld('MOF Tax Number', inp('f_mof', 'text', '', 'placeholder="Tax / MOF registration #"'))}
           <div class="form-field check-field"><input type="checkbox" id="f_iva"><label for="f_iva">IVA / VAT Registered (11% Input VAT)</label></div>
@@ -794,16 +794,16 @@
             <div class="pa-owner-drivers-panel">
               <div class="pa-owner-drivers-add">
                 <div class="form-field">
-                  <label for="f_sup_drv_name"><span class="pa-fld-lbl">Driver Full Name</span></label>
+                  <label for="f_sup_drv_name"><span class="pa-fld-lbl">Driver</span></label>
                   <input type="text" id="f_sup_drv_name" list="dl_drivers" placeholder="Enter driver name to link or add..." autocomplete="off">
                   ${dl('dl_drivers', driverNames)}
                 </div>
                 <div class="form-field">
-                  <label for="f_sup_drv_phone"><span class="pa-fld-lbl">Driver Phone (Optional)</span></label>
+                  <label for="f_sup_drv_phone"><span class="pa-fld-lbl">Phone</span></label>
                   <input type="text" id="f_sup_drv_phone" placeholder="+961 ..." autocomplete="off">
                 </div>
                 <div class="form-field">
-                  <label for="f_sup_drv_truck"><span class="pa-fld-lbl">Default Truck Plate (Optional)</span></label>
+                  <label for="f_sup_drv_truck"><span class="pa-fld-lbl">Default Truck</span></label>
                   <input type="text" id="f_sup_drv_truck" list="dl_equip" placeholder="Assign default truck..." autocomplete="off">
                   ${dl('dl_equip', equipNames)}
                 </div>
@@ -997,10 +997,10 @@
       return `
         <div class="form-grid-3">
           ${secHdr('1. Driver / Operator Identity & Truck Assignment (Universal Registry · All BUs)')}
-          ${fld('Driver Full Name *', inp('f_driver', 'text', '', 'placeholder="Driver name"'))}
+          ${fld('Driver *', inp('f_driver', 'text', '', 'placeholder="Driver name"'))}
           ${fld('Default Truck Plate', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type truck plate..."') + dl('dl_equip', equipNames))}
           ${fld('Truck Owner (Hauler Supplier)', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Auto-filled from Truck Plate (or select hauler)..."') + dl('dl_suppliers', supNames), { id: 'wrap_drv_supplier' })}
-          ${fld('Phone Number', inp('f_phone', 'text', '', 'placeholder="+961 ..."'))}
+          ${fld('Phone', inp('f_phone', 'text', '', 'placeholder="+961 ..."'))}
           <div class="form-field check-field"><input type="checkbox" id="f_iscompanydriver"><label for="f_iscompanydriver">Company Fleet Driver (WTC / BBC / Lions Payroll)</label></div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
@@ -1019,7 +1019,7 @@
             ['bonus', 'Bonus / Extra Pay']
           ], 'payment'), { id: 'wrap_sal_type' })}
           ${fld('Payroll Month *', inp('f_paymonth', 'month', today.slice(0, 7)), { id: 'wrap_sal_month' })}
-          ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff member..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_sal_staff', hintId: 'hint_sal_staff', hint: '' })}
+          ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_sal_staff', hintId: 'hint_sal_staff', hint: '' })}
           ${fld('Payment Method *', sel('f_method', [['Cash', 'Cash'], ['Bank', 'Bank Transfer']], 'Cash'), { id: 'wrap_sal_method' })}
           <div id="salStaffMonthCard" class="att-contract-strip is-muted">Select a <b>Staff</b> and <b>Payroll Month</b> above to view their monthly contract salary, attendance overtime/deductions, amount already paid, and remaining balance or advance status.</div>
           <div id="salQuickFillBar" class="att-preset-bar" hidden></div>
@@ -1043,7 +1043,7 @@
         <div class="form-grid-3 att-compact-grid">
           ${companyField}
           ${fld('Attendance Date *', inp('f_date', 'date', today), { hintId: 'hint_att_date', hint: '' })}
-          ${fld('Staff Member *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff member..."') + dlMeta('dl_staff', staffMetaItems))}
+          ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_att_staff' })}
           <div id="attStaffContractCard" class="att-contract-strip" hidden></div>
 
           <input type="hidden" id="f_att_mode" value="shift">
@@ -1062,7 +1062,7 @@
             ${fld('Time Out', inp('f_out', 'time', '16:00'), { id: 'wrap_f_out', hintId: 'hint_att_out', hint: '' })}
             ${fld('Work Hours', inp('f_worked_hours', 'number', '8', 'step="0.5" min="0" readonly class="pa-locked-input"'), { id: 'wrap_f_worked_hours' })}
             ${fld('Overtime Hours (+)', inp('f_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_hours' })}
-            ${fld('Short / Late Hours (−)', inp('f_late_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_late_hours' })}
+            ${fld('Late Hours (−)', inp('f_late_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_late_hours' })}
           </div>
 
           <div class="att-subpanel" id="attLeavePanel" hidden>
@@ -1074,7 +1074,7 @@
               <button type="button" class="att-preset-pill" data-att-leave="Sick Leave">Sick Leave</button>
             </div>
             <input type="hidden" id="f_leave_type" value="Half Day">
-            ${fld('Leave Duration (Days) *', inp('f_leave_days', 'number', '0.5', 'step="0.5" min="0.5"'))}
+            ${fld('Leave Days *', inp('f_leave_days', 'number', '0.5', 'step="0.5" min="0.5"'))}
             ${fld('Pay Treatment *', sel('f_leave_pay', [
               ['unpaid', 'Unpaid (Deduct from Salary)'],
               ['paid', 'Paid (Keep Full Salary)']
@@ -1098,19 +1098,19 @@
         <div class="form-grid-3">
           ${companyField}
           ${fld(isContract ? 'Start Date *' : 'Work Date *', inp('f_date', 'date', today))}
-          ${fld('Staff / Worker Name *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff / worker..."') + dlMeta('dl_staff', staffMetaItems), { hintId: 'hint_emp_staff', hint: '' })}
+          ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
           <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
-          ${fld('Role / Trade *', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type role / trade..."') + dl('dl_roles', roleNames))}
-          ${fld('Pay Basis', sel('f_paytype', isContract ? [['Monthly', 'Monthly Salary'], ['Daily', 'Daily Wage']] : [['Daily', 'Daily Freelance Rate'], ['Lump Sum', 'Task Lump Sum']], isContract ? 'Monthly' : 'Daily'))}
-          ${fld(isContract ? 'Agreed Base Salary ($) *' : 'Amount ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'))}
-          ${fld('Assigned Equipment / Site', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type equipment..."') + dl('dl_equip', equipNames))}
+          <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
+          ${fld('Role', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type role..."') + dl('dl_roles', roleNames), { id: 'wrap_emp_role' })}
+          ${fld('Pay Basis', sel('f_paytype', isContract ? [['Monthly', 'Monthly'], ['Daily', 'Daily']] : [['Daily', 'Daily'], ['Lump Sum', 'Lump Sum']], isContract ? 'Monthly' : 'Daily'), { id: 'wrap_emp_paytype' })}
+          ${fld(isContract ? 'Base Salary ($) *' : 'Amount ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_emp_amount' })}
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
         <div class="live-calc" id="empLiveCalc">
-          <div><small>${isContract ? 'Existing Contract' : 'Staff Status'}</small><b id="calc_emp_prior">Select Staff</b></div>
-          <div><small>Pay Basis</small><b id="calc_emp_basis">${isContract ? 'Monthly Salary' : 'Daily Rate'}</b></div>
-          <div><small>Implied Daily / Hourly</small><b id="calc_emp_rates">—</b></div>
-          <div><small>${isContract ? 'Monthly Commitment' : 'Sheet Amount'}</small><b id="calc_emp_total">$0.00</b></div>
+          <div><small>${isContract ? 'Contract' : 'Status'}</small><b id="calc_emp_prior">Select Staff</b></div>
+          <div><small>Pay Basis</small><b id="calc_emp_basis">${isContract ? 'Monthly' : 'Daily'}</b></div>
+          <div><small>Daily / Hourly</small><b id="calc_emp_rates">—</b></div>
+          <div><small>${isContract ? 'Monthly Salary' : 'Amount'}</small><b id="calc_emp_total">$0.00</b></div>
         </div>
       `;
     }
@@ -1122,23 +1122,25 @@
           ${companyField}
           ${lockedDateField('Transaction Date *')}
           ${collapsibleRepDateField()}
-          ${fld('Staff / Driver *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff / driver..."') + dlMeta('dl_staff', staffMetaItems), { hintId: 'hint_log_staff', hint: '' })}
-          ${fld('Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames))}
-          ${fld('USD Allowance ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'))}
+          ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_log_staff', hintId: 'hint_log_staff', hint: '' })}
           <div id="logStaffContextStrip" class="att-contract-strip" hidden></div>
-          ${fld('LBP Allowance (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0"'))}
-          ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
-          <div class="form-field span-3" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding-top:4px">
-            <strong style="font-size:12px">Days Worked:</strong>
-            ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => `<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="f_day_${d.toLowerCase()}" ${i < 6 ? 'checked' : ''}> ${d}</label>`).join('')}
+          ${fld('USD Allowance ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'))}
+          ${fld('LBP Allowance (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'))}
+          ${fld(`Daily Rate USD (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
+          ${fld('Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames), { id: 'wrap_log_site' })}
+          <div class="form-field span-2" id="wrap_log_days">
+            <label><span class="pa-fld-lbl">Days Worked</span></label>
+            <div class="log-days-inline">
+              ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => `<label class="log-day-chk"><input type="checkbox" id="f_day_${d.toLowerCase()}" ${i < 6 ? 'checked' : ''}><span>${d}</span></label>`).join('')}
+            </div>
           </div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
         <div class="live-calc" id="logLiveCalc">
           <div><small>Active Days</small><b id="calc_log_days">6 days (Mon–Sat)</b></div>
-          <div><small>Per Active Day</small><b id="calc_log_daily">$0.00 / day</b></div>
-          <div><small>Month Site Allowances</small><b id="calc_log_month">$0.00 prior</b></div>
-          <div><small>Total Allowance (USD)</small><b id="calc_log_total">$0.00</b></div>
+          <div><small>Per Day</small><b id="calc_log_daily">$0.00 / day</b></div>
+          <div><small>Month Allowances</small><b id="calc_log_month">$0.00 prior</b></div>
+          <div><small>Allowance</small><b id="calc_log_total">$0.00</b></div>
         </div>
       `;
     }
@@ -1148,8 +1150,8 @@
         <div class="form-grid-3">
           ${companyField}
           ${fld('Effective From *', inp('f_date', 'date', today))}
-          ${fld('Route / Rate Name *', inp('f_name', 'text', '', 'placeholder="e.g. WTC Site → Beirut Night Trip"'))}
-          ${fld('Site / Destination *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type destination site..."') + dl('dl_sites', siteNames))}
+          ${fld('Rate Name *', inp('f_name', 'text', '', 'placeholder="e.g. WTC Site → Beirut Night Trip"'))}
+          ${fld('Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames))}
           ${fld('Equipment Category', sel('f_category', [['Truck', 'Dump Truck'], ['Mixer', 'Mixer'], ['All', 'All Fleet Units']], 'Truck'))}
           ${fld('Overtime Bonus per Trip ($) *', inp('f_amount', 'number', '10.00', 'step="0.50" min="0"'))}
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
@@ -1209,10 +1211,10 @@
           ], 'Malfunction'), { id: 'wrap_malf_type' })}
           ${fld('Quantity (Litres L) *', inp('f_qty', 'number', '', 'step="0.1" placeholder="e.g. 50 or -50"'), { id: 'wrap_malf_qty', hintId: 'hint_malf_qty', hint: '+ deducts from tank (used / shortage) · − adds to tank (surplus)' })}
           <div class="pa-form-sec-hdr" id="sec_malf_wash" hidden><span>2. Wash Ticket, Equipment &amp; Driver</span></div>
-          ${fld('Invoice / Ticket No.', inp('f_ticketno', 'text', '', 'placeholder="Optional wash slip or ticket #..."'), { id: 'wrap_malf_ticketno', hidden: true })}
-          ${fld('Equipment / Unit (Optional)', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional unit..."') + dl('dl_equip', equipNames), { id: 'wrap_malf_truck', hidden: true })}
-          ${fld('Driver / Operator (Optional)', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Optional driver..."') + dl('dl_drivers', driverNames), { id: 'wrap_malf_driver', hidden: true })}
-          ${fld('Reason / Audit Notes', inp('f_notes', 'text', '', 'placeholder="Explain meter variance, dip calibration, or wash note..."'), { id: 'wrap_malf_notes', span: true })}
+          ${fld('Ticket No.', inp('f_ticketno', 'text', '', 'placeholder="Optional wash slip or ticket #..."'), { id: 'wrap_malf_ticketno', hidden: true })}
+          ${fld('Equipment', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional unit..."') + dl('dl_equip', equipNames), { id: 'wrap_malf_truck', hidden: true })}
+          ${fld('Driver', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Optional driver..."') + dl('dl_drivers', driverNames), { id: 'wrap_malf_driver', hidden: true })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Explain meter variance, dip calibration, or wash note..."'), { id: 'wrap_malf_notes', span: true })}
         </div>
         <div id="malfLiveAlertBanner" class="att-contract-strip" hidden></div>
         <div class="live-calc" id="malfLiveCalc">

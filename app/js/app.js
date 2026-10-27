@@ -19214,7 +19214,7 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${th('pay_site_staff', 'Staff Member', 'staff')}${th('pay_site_staff', 'Co.', 'company')}${th('pay_site_staff', 'Primary Site', 'site')}${th('pay_site_staff', 'Equipment', 'equipment')}
+                  ${th('pay_site_staff', 'Staff', 'staff')}${th('pay_site_staff', 'Co.', 'company')}${th('pay_site_staff', 'Primary Site', 'site')}${th('pay_site_staff', 'Equipment', 'equipment')}
                   ${th('pay_site_staff', 'Schedule', 'working_days')}${th('pay_site_staff', 'Rules', 'arrangements', 'r')}${th('pay_site_staff', 'Daily ($)', 'daily_usd', 'r')}
                   ${th('pay_site_staff', 'Days Counted', 'days_counted', 'r')}${th('pay_site_staff', 'Activity Days', 'activity_days', 'r')}${th('pay_site_staff', 'Earned ($)', 'accrued', 'r')}${th('pay_site_staff', 'Paid (FIFO)', 'paid_fifo', 'r')}${th('pay_site_staff', 'Outstanding ($)', 'outstanding', 'r')}
                 </tr>
@@ -19262,7 +19262,7 @@
             </div>
             <div class="table-wrap">
               <table class="ledger-table">
-                <thead><tr>${th('pay_log', 'Staff', 'staff')}${th('pay_log', 'Site / Location', 'site')}${th('pay_log', 'Equipment', 'equipment')}${th('pay_log', 'Start', 'start_date')}${th('pay_log', 'End', 'end_date')}${th('pay_log', 'Working Days', 'working_days')}${th('pay_log', 'Daily ($)', 'daily_usd', 'r')}</tr></thead>
+                <thead><tr>${th('pay_log', 'Staff', 'staff')}${th('pay_log', 'Site', 'site')}${th('pay_log', 'Equipment', 'equipment')}${th('pay_log', 'Start', 'start_date')}${th('pay_log', 'End', 'end_date')}${th('pay_log', 'Working Days', 'working_days')}${th('pay_log', 'Daily ($)', 'daily_usd', 'r')}</tr></thead>
                 <tbody>
                   ${shownLog.map(l => {
                     const ended = l.end_date && String(l.end_date) < today;
@@ -19585,6 +19585,222 @@
     'imad': 'Imad Dakhloul',
     'imad dakhloul': 'Imad Dakhloul'
   };
+
+  function resolveStaffEquipmentSitesInfo(staffName, company, onDate) {
+    const raw = String(staffName || '').trim();
+    const empty = { hasConnection: false, staff: raw, primaryEquipment: '', primarySite: '', registeredUnits: [], siteLogs: [] };
+    if (!raw || !SEED.records) return empty;
+    const rawNorm = norm(raw);
+    const canon = WF_DRV_ALIASES[rawNorm] || raw;
+    const canonNorm = norm(canon);
+    const aliasSet = new Set([rawNorm, canonNorm]);
+    Object.keys(WF_DRV_ALIASES).forEach(k => {
+      const targetNorm = norm(WF_DRV_ALIASES[k]);
+      if (targetNorm === rawNorm || targetNorm === canonNorm) aliasSet.add(norm(k));
+    });
+    const rawStem = normStaffStem(raw);
+    const canonStem = normStaffStem(canon);
+    const multiTokenStems = new Set();
+    if (rawStem && rawStem.includes(' ')) multiTokenStems.add(rawStem);
+    if (canonStem && canonStem.includes(' ')) multiTokenStems.add(canonStem);
+
+    const matchesPerson = nameVal => {
+      const n = norm(nameVal);
+      if (!n) return false;
+      if (aliasSet.has(n)) return true;
+      const mapped = WF_DRV_ALIASES[n];
+      if (mapped && aliasSet.has(norm(mapped))) return true;
+      if (multiTokenStems.size) {
+        const st = normStaffStem(nameVal);
+        if (st && st.includes(' ') && multiTokenStems.has(st)) return true;
+      }
+      return false;
+    };
+
+    const refDate = String(onDate || SEED_DATE || todayISO()).slice(0, 10);
+    const coNorm = norm(company);
+    const eqMasterByNorm = new Map();
+    (SEED.records.equipment || []).forEach(eq => {
+      if (eq && !eq.voided && (eq.name || eq.equipment)) {
+        eqMasterByNorm.set(norm(eq.name || eq.equipment), eq);
+      }
+    });
+
+    const unitMap = new Map();
+    const upsertUnit = (eqName, info) => {
+      const k = norm(eqName);
+      if (!k || isWfNonMachineBucket(eqName)) return;
+      const master = eqMasterByNorm.get(k);
+      const prev = unitMap.get(k);
+      unitMap.set(k, {
+        equipment: (prev && prev.equipment) || String(eqName).trim(),
+        type: info.type || (prev && prev.type) || (master && master.type) || '',
+        plate_no: info.plate_no || (prev && prev.plate_no) || (master && master.plate_no) || '',
+        company: info.company || (prev && prev.company) || '',
+        ownership: info.ownership || (prev && prev.ownership) || (master && master.ownership) || '',
+        site: info.site || (prev && prev.site) || '',
+        roleLabel: info.roleLabel || (prev && prev.roleLabel) || 'Driver Log',
+        start_date: info.start_date || (prev && prev.start_date) || '',
+        end_date: info.end_date || (prev && prev.end_date) || '',
+        isCoMatch: Boolean((prev && prev.isCoMatch) || (coNorm && info.company && norm(info.company) === coNorm)),
+        fromDriverReg: Boolean((prev && prev.fromDriverReg) || info.fromDriverReg),
+        isActiveWindow: Boolean((prev && prev.isActiveWindow) || info.isActiveWindow)
+      });
+    };
+
+    (SEED.records.company_equipment || []).forEach(ce => {
+      if (!ce || ce.voided || /^sold/i.test(String(ce.status || '').trim())) return;
+      const eqName = ce.equipment || ce.name;
+      if (!eqName) return;
+      let roleLabel = '';
+      if (matchesPerson(ce.default_driver)) roleLabel = 'Driver Log';
+      else if (matchesPerson(ce.day_operator)) roleLabel = 'Day Shift';
+      else if (matchesPerson(ce.night_operator)) roleLabel = 'Night Shift';
+      if (!roleLabel) return;
+      const inWin = (!ce.start_date || String(ce.start_date).slice(0, 10) <= refDate) && (!ce.end_date || String(ce.end_date).slice(0, 10) >= refDate);
+      upsertUnit(eqName, {
+        type: ce.type || '',
+        plate_no: ce.plate_no || '',
+        company: ce.company || '',
+        ownership: ce.ownership || '',
+        site: ce.site || '',
+        roleLabel,
+        start_date: ce.start_date || '',
+        end_date: ce.end_date || '',
+        fromDriverReg: true,
+        isActiveWindow: inWin
+      });
+    });
+
+    (SEED.records.equipment || []).forEach(eq => {
+      if (!eq || eq.voided) return;
+      const eqName = eq.name || eq.equipment;
+      if (!eqName) return;
+      if (matchesPerson(eq.default_driver)) {
+        upsertUnit(eqName, {
+          type: eq.type || '',
+          plate_no: eq.plate_no || '',
+          company: eq.company || '',
+          ownership: eq.ownership || '',
+          roleLabel: 'Driver Log',
+          fromDriverReg: true,
+          isActiveWindow: true
+        });
+      }
+      if (Array.isArray(eq.adj_windows)) {
+        eq.adj_windows.forEach(w => {
+          if (!w || !matchesPerson(w.drv)) return;
+          const inWin = (!w.s || String(w.s).slice(0, 10) <= refDate) && (!w.e || String(w.e).slice(0, 10) >= refDate);
+          upsertUnit(eqName, {
+            type: eq.type || '',
+            plate_no: eq.plate_no || '',
+            company: w.co || eq.company || '',
+            ownership: eq.ownership || '',
+            site: w.site || '',
+            roleLabel: 'Driver Log',
+            start_date: w.s || '',
+            end_date: w.e || '',
+            fromDriverReg: true,
+            isActiveWindow: inWin
+          });
+        });
+      }
+    });
+
+    const fxRate = getLbpFxRate();
+    const siteLogs = [];
+    (SEED.records.logistics_allowances || []).forEach(l => {
+      if (!l || l.voided || !matchesPerson(l.staff)) return;
+      const sDate = String(l.start_date || l.date || '').slice(0, 10);
+      const eDate = String(l.end_date || '').slice(0, 10);
+      const isActive = (!sDate || sDate <= refDate) && (!eDate || eDate >= refDate);
+      const eqName = String(l.equipment || '').trim();
+      const siteName = String(l.site || '').trim();
+      const dailyUsd = round2(Number(l.daily_usd || l.usd_amount || (Number(l.lbp_amount || 0) / fxRate) || 0));
+      siteLogs.push({
+        id: l.id,
+        company: l.company || '',
+        equipment: eqName,
+        site: siteName,
+        start_date: sDate,
+        end_date: eDate,
+        working_days: l.working_days || 'Mon–Sat',
+        daily_usd: dailyUsd,
+        isActive
+      });
+      if (eqName) {
+        upsertUnit(eqName, {
+          company: l.company || '',
+          site: siteName,
+          roleLabel: 'Sites Log',
+          start_date: sDate,
+          end_date: eDate,
+          fromDriverReg: false,
+          isActiveWindow: isActive
+        });
+      }
+    });
+
+    siteLogs.sort((a, b) => {
+      if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+      const cmpS = String(b.start_date || '').localeCompare(String(a.start_date || ''));
+      if (cmpS !== 0) return cmpS;
+      return String(b.end_date || '9999').localeCompare(String(a.end_date || '9999'));
+    });
+
+    const registeredUnits = Array.from(unitMap.values()).sort((a, b) => {
+      if (a.isCoMatch !== b.isCoMatch) return a.isCoMatch ? -1 : 1;
+      if (a.isActiveWindow !== b.isActiveWindow) return a.isActiveWindow ? -1 : 1;
+      if (a.fromDriverReg !== b.fromDriverReg) return a.fromDriverReg ? -1 : 1;
+      return a.equipment.localeCompare(b.equipment);
+    });
+
+    const latestWithEq = siteLogs.find(x => x.equipment);
+    const latestWithSite = siteLogs.find(x => x.site) || registeredUnits.find(u => u.site);
+    const primaryEquipment = (registeredUnits.find(u => u.fromDriverReg && u.isCoMatch) || registeredUnits.find(u => u.fromDriverReg) || (latestWithEq ? { equipment: latestWithEq.equipment } : null) || registeredUnits[0] || {}).equipment || '';
+    const primarySite = (latestWithSite && latestWithSite.site) || '';
+
+    return {
+      hasConnection: registeredUnits.length > 0 || siteLogs.length > 0,
+      staff: canon || raw,
+      primaryEquipment,
+      primarySite,
+      registeredUnits,
+      siteLogs
+    };
+  }
+
+  function renderStaffEquipSiteBoxHtml(eqInfo) {
+    if (!eqInfo || !eqInfo.hasConnection) return '';
+    const unitBadges = eqInfo.registeredUnits.slice(0, 5).map(u => {
+      const meta = [u.type, u.site ? `@ ${u.site}` : '', u.roleLabel].filter(Boolean).join(' · ');
+      return `<span class="eq-site-chip">${relLink('equipment', u.equipment)}${meta ? `<small>${esc(meta)}</small>` : ''}</span>`;
+    }).join('');
+    const extraUnits = eqInfo.registeredUnits.length > 5 ? `<span class="eq-site-more">+${eqInfo.registeredUnits.length - 5} more</span>` : '';
+    const shownLogs = eqInfo.siteLogs.slice(0, 3);
+    const logsHtml = shownLogs.length ? `
+      <div class="eq-site-log-list">
+        ${shownLogs.map(l => {
+          const dtRange = l.start_date
+            ? `${fmtDateDMY(l.start_date)} – ${l.end_date ? fmtDateDMY(l.end_date) : 'Open'}`
+            : 'Open';
+          return `<div class="eq-site-log-row">
+            <span class="eq-site-log-main">${l.equipment ? relLink('equipment', l.equipment) : ''}${l.equipment && l.site ? ' <span class="muted">·</span> ' : ''}${l.site ? relLink('sites', l.site) : ''}</span>
+            <span class="eq-site-log-meta"><span class="mono">${esc(dtRange)}</span>${l.working_days ? ` · ${esc(l.working_days)}` : ''}${l.daily_usd > 0 ? ` · <b>${fmtUSD(l.daily_usd, 2)}/d</b>` : ''}${l.isActive ? ' <span class="badge badge-ok">Active</span>' : ''}</span>
+          </div>`;
+        }).join('')}
+        ${eqInfo.siteLogs.length > 3 ? `<div class="eq-site-log-foot">+${eqInfo.siteLogs.length - 3} earlier in Equipment Sites Log</div>` : ''}
+      </div>
+    ` : '';
+    return `
+      <div class="eq-site-box-hdr">
+        <span class="eq-site-box-title">${ic('fleet')} Connected Equipment &amp; Sites Log</span>
+        <span class="eq-site-readonly-pill">Equipment Log</span>
+      </div>
+      ${unitBadges ? `<div class="eq-site-units-row">${unitBadges}${extraUnits}</div>` : ''}
+      ${logsHtml}
+    `;
+  }
 
   function isWfCompanyOrAffiliateUnit(ce) {
     if (!ce) return false;
@@ -28004,7 +28220,7 @@
         const tot = round2(usd + lbp / activeFx);
         const aEl = $('f_amount');
         const amtLblEl = document.querySelector('#wrap_f_amount .pa-fld-lbl');
-        if (amtLblEl && /Total USD/i.test(amtLblEl.textContent || '')) {
+        if (amtLblEl && /(Total USD|Daily Rate USD)/i.test(amtLblEl.textContent || '')) {
           amtLblEl.textContent = STATE.modalForm === 'logistics'
             ? `Daily Rate USD (${fmtNum(activeFx, 0)} LL/$) *`
             : `Total USD Value (${fmtNum(activeFx, 0)} LL/$) *`;
@@ -28317,6 +28533,7 @@
           const curCo = val('f_company') || defaultEntryCompany();
           const txDate = val('f_date') || todayISO();
           const prof = getStaffContractProfile(curStaff, curCo, txDate);
+          const eqInfo = resolveStaffEquipmentSitesInfo(curStaff, curCo, txDate);
           const fIntel = _getFormIntelIndex();
           const sKey = normStaffStem(curStaff);
           const dayKeys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -28324,8 +28541,12 @@
           const daysCount = checkedDays.length;
           if (curStaff !== FORM_UI.lastAttStaff) {
             FORM_UI.lastAttStaff = curStaff;
-            const topSite = sKey ? fIntel.staffPrimarySite[sKey] : '';
-            if (topSite && $('f_site') && !val('f_site')) $('f_site').value = topSite;
+            const topSite = eqInfo.primarySite || (sKey ? fIntel.staffPrimarySite[sKey] : '');
+            const siteEl = $('f_site');
+            if (siteEl && (!val('f_site') || siteEl.dataset.autoFilledSite === '1')) {
+              siteEl.value = topSite || '';
+              siteEl.dataset.autoFilledSite = topSite ? '1' : '0';
+            }
           }
           const ym = txDate.slice(0, 7);
           let priorMoAllow = 0, priorMoCnt = 0;
@@ -28342,18 +28563,20 @@
               logStrip.hidden = true;
               logStrip.innerHTML = '';
             } else {
+              const effPrimarySite = eqInfo.primarySite || (sKey && fIntel.staffPrimarySite[sKey]) || '';
               logStrip.hidden = false;
               logStrip.className = 'att-contract-strip';
               logStrip.innerHTML = `
                 <div>
                   <strong>${esc(prof.staff || curStaff)}</strong>
-                  <span class="badge ${prof.hasContract ? 'badge-ok' : 'badge-neutral'}">${esc(prof.role || (prof.hasContract ? 'Contract Staff' : 'Staff / Driver'))}</span>
+                  <span class="badge ${prof.hasContract ? 'badge-ok' : 'badge-neutral'}">${esc(prof.role || (prof.hasContract ? 'Contract' : 'Staff'))}</span>
                 </div>
                 <div class="att-contract-metrics">
+                  ${eqInfo.primaryEquipment ? `<span><small>Equipment</small><b>${relLink('equipment', eqInfo.primaryEquipment)}</b></span>` : ''}
+                  ${effPrimarySite ? `<span><small>Sites Log</small><b>${relLink('sites', effPrimarySite)}</b></span>` : ''}
                   ${prof.hasContract ? `<span><small>Base Salary</small><b>${fmtUSD(prof.monthlySalary, 0)}/mo</b></span>` : ''}
-                  ${prof.reimbursement > 0 ? `<span><small>Contract Reimb.</small><b>${fmtUSD(prof.reimbursement, 2)}/mo</b></span>` : ''}
+                  ${prof.reimbursement > 0 ? `<span><small>Reimb.</small><b>${fmtUSD(prof.reimbursement, 2)}/mo</b></span>` : ''}
                   <span><small>${esc(formatPayrollMonthLabel(ym))} Allowances</small><b>${fmtUSD(priorMoAllow, 2)} (${priorMoCnt} wk${priorMoCnt === 1 ? '' : 's'})</b></span>
-                  ${sKey && fIntel.staffPrimarySite[sKey] ? `<span><small>Primary Site</small><b>${esc(fIntel.staffPrimarySite[sKey])}</b></span>` : ''}
                 </div>
               `;
             }
@@ -28361,7 +28584,7 @@
           setHint('hint_log_staff', curStaff && prof.hasContract ? `${prof.role || 'Staff'} · ${prof.company || curCo}` : '', 'ok');
           setText('calc_log_days', `${daysCount} day${daysCount === 1 ? '' : 's'} (${checkedDays.map(d => d[0].toUpperCase() + d.slice(1)).join(', ') || 'None'})`);
           setText('calc_log_daily', daysCount > 0 && thisPay > 0 ? `${fmtUSD(thisPay / daysCount, 2)} / day` : '$0.00 / day');
-          setText('calc_log_month', `${fmtUSD(priorMoAllow, 2)} prior${thisPay > 0 ? ' -> ' + fmtUSD(priorMoAllow + thisPay, 2) : ''}`);
+          setText('calc_log_month', `${fmtUSD(priorMoAllow, 2)} prior${thisPay > 0 ? ' + ' + fmtUSD(thisPay, 2) + ' = ' + fmtUSD(priorMoAllow + thisPay, 2) : ''}`);
           setText('calc_log_total', fmtUSD(thisPay, 2));
         }
 
@@ -29202,12 +29425,38 @@
         const curCo = val('f_company') || defaultEntryCompany();
         const txDate = val('f_date') || todayISO();
         const prof = getStaffContractProfile(curStaff, curCo, txDate);
+        const eqInfo = resolveStaffEquipmentSitesInfo(curStaff, curCo, txDate);
         const payBasis = val('f_paytype') || (isContract ? 'Monthly' : 'Daily');
         const amt = num('f_amount');
         if (curStaff !== FORM_UI.lastAttStaff) {
           FORM_UI.lastAttStaff = curStaff;
-          if (prof.hasContract && prof.role && $('f_role') && !val('f_role')) {
-            $('f_role').value = prof.role;
+          const roleEl = $('f_role');
+          if (roleEl) {
+            const canAutoRole = !val('f_role') || (roleEl.dataset.autoFilledRole === '1' && val('f_role') === (roleEl.dataset.autoFilledRoleVal || ''));
+            const suggestedRole = (prof.hasContract && prof.role)
+              ? prof.role
+              : (eqInfo.registeredUnits.some(u => u.fromDriverReg) ? 'Driver' : '');
+            if (canAutoRole) {
+              if (suggestedRole) {
+                roleEl.value = suggestedRole;
+                roleEl.dataset.autoFilledRole = '1';
+                roleEl.dataset.autoFilledRoleVal = suggestedRole;
+              } else if (roleEl.dataset.autoFilledRole === '1') {
+                roleEl.value = '';
+                delete roleEl.dataset.autoFilledRole;
+                delete roleEl.dataset.autoFilledRoleVal;
+              }
+            }
+          }
+        }
+        const eqBox = $('empEquipSiteBox');
+        if (eqBox) {
+          if (!curStaff || !eqInfo.hasConnection) {
+            eqBox.hidden = true;
+            eqBox.innerHTML = '';
+          } else {
+            eqBox.hidden = false;
+            eqBox.innerHTML = renderStaffEquipSiteBoxHtml(eqInfo);
           }
         }
         const empStrip = $('empStaffContextStrip');
@@ -29243,10 +29492,10 @@
         const impDaily = payBasis === 'Monthly' ? (amt / wDays) : amt;
         const impHourly = impDaily / wHours;
         const impMonthly = payBasis === 'Monthly' ? amt : (payBasis === 'Daily' ? amt * wDays : amt);
-        setHint('hint_emp_staff', curStaff && prof.hasContract ? `Existing ${prof.status} contract: ${fmtUSD(prof.monthlySalary, 2)}/mo (${prof.role || 'Staff'})` : '', 'ok');
-        setText('calc_emp_prior', !curStaff ? 'Select Staff' : (prof.hasContract ? `${fmtUSD(prof.monthlySalary, 0)}/mo (${prof.status})` : 'New Staff Member'));
-        setText('calc_emp_basis', payBasis === 'Monthly' ? 'Monthly Salary' : (payBasis === 'Daily' ? 'Daily Wage / Rate' : 'Task Lump Sum'));
-        setText('calc_emp_rates', amt > 0 ? `${fmtUSD(impDaily, 2)}/d · ${fmtUSD(impHourly, 2)}/hr` : '—');
+        setHint('hint_emp_staff', curStaff && prof.hasContract ? `${prof.status} contract: ${fmtUSD(prof.monthlySalary, 2)}/mo${prof.role ? ' · ' + prof.role : ''}` : '', 'ok');
+        setText('calc_emp_prior', !curStaff ? 'Select Staff' : (prof.hasContract ? `${fmtUSD(prof.monthlySalary, 0)}/mo (${prof.status})` : 'New Staff'));
+        setText('calc_emp_basis', payBasis === 'Monthly' ? 'Monthly' : (payBasis === 'Daily' ? 'Daily' : 'Lump Sum'));
+        setText('calc_emp_rates', amt > 0 ? `${fmtUSD(impDaily, 2)}/d · ${fmtUSD(impHourly, 2)}/hr` : '-');
         setText('calc_emp_total', fmtUSD(isContract ? impMonthly : amt, 2));
         return { curStaff, payBasis, amt };
       }
@@ -31489,13 +31738,13 @@
       }
     } else if (f === 'attendance') {
       const st = val('f_staff');
-      if (!st) addErr('f_staff', 'Staff Member is required.');
+      if (!st) addErr('f_staff', 'Staff is required.');
       const attMode = val('f_att_mode') || 'shift';
       if (attMode === 'leave') {
         const lvType = val('f_leave_type') || 'Half Day';
         const lvDays = round2(num('f_leave_days'));
         const lvPay = val('f_leave_pay') || 'unpaid';
-        if (!(lvDays > 0)) addErr('f_leave_days', 'Leave Duration (Days) must be at least 0.5.');
+        if (!(lvDays > 0)) addErr('f_leave_days', 'Leave Days must be at least 0.5.');
         const effType = lvType === 'Half Day' ? 'Half Day' : (lvType === 'Sick Leave' ? 'Sick Leave' : ((lvType === 'VacAbsence' || lvPay === 'paid') ? 'VacAbsence' : 'Absence'));
         record = {
           ...base,
@@ -31530,7 +31779,7 @@
         if (!isNoClock && (!inFmt || !outFmt)) {
           addErr('f_in', 'Enter both Time In and Time Out, or choose "Hours Only (No Clock)".');
         } else if (isNoClock && !(otH > 0) && !(ltH > 0)) {
-          addErr('f_hours', 'Enter Overtime Hours or Short / Late Hours.');
+          addErr('f_hours', 'Enter Overtime Hours or Late Hours.');
         }
         const regH = isNoClock ? 0 : round2(Math.max(0, workedH - otH));
         const effType = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
@@ -31557,22 +31806,24 @@
       }
     } else if (f === 'freelance' || f === 'employment') {
       const st = val('f_staff'), amt = round2(num('f_amount'));
-      if (!st) addErr('f_staff', 'Staff Name is required.');
-      if (!(amt > 0)) addErr('f_amount', 'Salary/Rate > 0 is required.');
+      if (!st) addErr('f_staff', 'Staff is required.');
+      if (!(amt > 0)) addErr('f_amount', f === 'employment' ? 'Base Salary > 0 is required.' : 'Amount > 0 is required.');
       const payType = val('f_paytype');
       // seed / SQLite keys (type · salary_usd · daily_rate) beside the form keys so the registers and mfg.db read both
       record = { ...base, name: `${f === 'employment' ? 'EMP' : 'FRL'} ${st}`, staff: st, role: val('f_role'), pay_type: payType, type: f === 'employment' ? (payType === 'Daily' ? 'Daily' : 'Regular') : 'Freelance', salary_usd: /Monthly/i.test(payType) ? amt : 0, daily_rate: /Daily/i.test(payType) ? amt : 0, base_salary: amt, amount: amt, start_date: date, status: 'Active' };
     } else if (f === 'logistics') {
       const st = val('f_staff'), amt = round2(num('f_amount'));
-      if (!st) addErr('f_staff', 'Staff Member is required.');
+      if (!st) addErr('f_staff', 'Staff is required.');
       if (!(amt > 0)) addErr('f_usd', 'Allowance > 0 is required.');
       const dayKeys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
       const dayFlags = Object.fromEntries(dayKeys.map(d => [d, !!($('f_day_' + d) && $('f_day_' + d).checked)]));
       const days = dayKeys.filter(d => dayFlags[d]).length;
-      record = { ...base, name: `ALLOW ${date} ${st}`, rep_date: repDate, staff: st, site: val('f_site'), equipment: '', days_count: days, working_days: dayKeys.filter(d => dayFlags[d]).map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', '), ...dayFlags, start_date: date, end_date: date, usd_amount: round2(num('f_usd')), lbp_amount: round2(num('f_lbp')), daily_usd: days ? round2(amt / days) : amt, amount: amt };
+      const eqInfo = st ? resolveStaffEquipmentSitesInfo(st, company, date) : null;
+      const linkedEq = (eqInfo && eqInfo.primaryEquipment) || '';
+      record = { ...base, name: `ALLOW ${date} ${st}`, rep_date: repDate, staff: st, site: val('f_site'), equipment: linkedEq, days_count: days, working_days: dayKeys.filter(d => dayFlags[d]).map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', '), ...dayFlags, start_date: date, end_date: date, usd_amount: round2(num('f_usd')), lbp_amount: round2(num('f_lbp')), daily_usd: days ? round2(amt / days) : amt, amount: amt };
     } else if (f === 'triprate') {
       const nm = val('f_name') || val('f_site'), amt = round2(num('f_amount'));
-      if (!nm) addErr('f_name', 'Route/Site is required.');
+      if (!nm) addErr('f_name', 'Rate Name or Site is required.');
       if (!(amt > 0)) addErr('f_amount', 'Rate > 0 is required.');
       record = { ...base, name: nm, site: val('f_site'), region: val('f_site'), category: val('f_category') || 'Truck', rate_usd: amt, amount: amt, start_date: date };
     } else if (f === 'treasury') {
@@ -32594,6 +32845,18 @@
         text: `FX Conversion (${d.dirLabel}): USD Drawer ${fmtSignedUSD(d.usd, 2)} (${d.u2l ? 'Decreased' : 'Increased'})  |  LBP Drawer ${fmtSignedLBP(d.lbp)} (${d.u2l ? 'Increased' : 'Decreased'})  |  Effective Rate: ${fmtNum(d.rate, 2)} LL/$  |  Entity: ${row.company || 'WTC'}`
       };
     }
+    if (key === 'employments') {
+      const stName = row.staff || row.name || '';
+      const eqInfo = stName ? resolveStaffEquipmentSitesInfo(stName, row.company || '', row.start_date || todayISO()) : null;
+      const eqTxt = eqInfo && eqInfo.hasConnection
+        ? `Connected Equipment: ${eqInfo.registeredUnits.map(u => u.equipment + (u.site ? ' @ ' + u.site : '')).slice(0, 3).join(', ')}${eqInfo.siteLogs.length ? ` (${eqInfo.siteLogs.length} Equipment Sites Log ${eqInfo.siteLogs.length === 1 ? 'entry' : 'entries'})` : ''}`
+        : 'No Equipment Assignment';
+      const baseAmt = Number(row.salary_usd || row.daily_rate || row.amount || 0);
+      return {
+        tone: 'info',
+        text: `Staff Contract · ${stName || 'Staff'} (${row.role || 'Staff'} · ${row.status || 'Current'}): ${Number(row.salary_usd || 0) > 0 ? fmtUSD(row.salary_usd, 2) + '/mo' : (baseAmt > 0 ? fmtUSD(baseAmt, 2) + '/d' : '-')}  |  ${eqTxt}`
+      };
+    }
     if (key === 'salaries') {
       const payMo = row.payroll_month || String(row.date || '').slice(0, 7);
       const pos = computeStaffMonthPayrollPosition(row.staff, row.company, payMo, row.date, row.id, true);
@@ -33196,11 +33459,26 @@
     }
     else if (['employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries'].includes(key)) {
       const staff = row.staff || row.name;
-      addGrid('sg_w_emp', `Employment & Freelance Contracts (${staff})`, 'Contracts', 'Contracts', 'employments', (rec.employments || []).filter(e => norm(e.staff || e.name) === norm(staff)), ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'start_date', 'end_date'], 'salary_usd');
-      addGrid('sg_w_sal', `Salary Payments (${staff})`, 'Salary Payments', 'Salary Payments', 'salaries', (rec.salaries || []).filter(s => norm(s.staff) === norm(staff)), ['date', 'payroll_month', 'company', 'staff', 'method', 'amount', 'notes'], 'amount');
-      addGrid('sg_w_att', `Attendance & Overtime Log (${staff})`, 'Attendance', 'Attendance', 'attendance', (rec.attendance || []).filter(a => norm(a.staff) === norm(staff)), ['date', 'company', 'status', 'in_time', 'out_time', 'worked_hours', 'regular_hours', 'overtime_hours', 'late_hours', 'leave_days', 'extra_usd', 'notes'], 'overtime_hours');
-      addGrid('sg_w_log', `Site Logistics Allowances (${staff})`, 'Site Allowances', 'Site Allowances', 'logistics_allowances', (rec.logistics_allowances || []).filter(l => norm(l.staff) === norm(staff)), ['name', 'company', 'site', 'equipment', 'daily_usd', 'working_days', 'start_date', 'end_date'], 'daily_usd');
-      addGrid('sg_w_fl', `Freelance Work Entries (${staff})`, 'Freelance', 'Freelance', 'freelance_entries', (rec.freelance_entries || []).filter(f => norm(f.staff) === norm(staff)), ['date', 'company', 'hours', 'extra_hours', 'rate_usd', 'total', 'notes'], 'total');
+      const staffNorm = norm(staff);
+      const staffKeys = new Set([staffNorm]);
+      const addAliasKey = v => { const k = String(v || '').toLowerCase().replace(/[^a-z0-9]/g, ''); if (k) staffKeys.add(k); };
+      addAliasKey(staff);
+      Object.entries(WF_DRV_ALIASES).forEach(([a, b]) => {
+        const ka = a.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const kb = b.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (staffKeys.has(ka) || staffKeys.has(kb)) { staffKeys.add(ka); staffKeys.add(kb); }
+      });
+      const matchStaffName = v => {
+        if (!v) return false;
+        if (norm(v) === staffNorm) return true;
+        const kv = String(v).toLowerCase().replace(/[^a-z0-9]/g, '');
+        return Boolean(kv && staffKeys.has(kv));
+      };
+      addGrid('sg_w_emp', `Employment & Freelance Contracts (${staff})`, 'Contracts', 'Contracts', 'employments', (rec.employments || []).filter(e => matchStaffName(e.staff || e.name)), ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'start_date', 'end_date'], 'salary_usd');
+      addGrid('sg_w_sal', `Salary Payments (${staff})`, 'Salary Payments', 'Salary Payments', 'salaries', (rec.salaries || []).filter(s => matchStaffName(s.staff)), ['date', 'payroll_month', 'company', 'staff', 'method', 'amount', 'notes'], 'amount');
+      addGrid('sg_w_att', `Attendance & Overtime Log (${staff})`, 'Attendance', 'Attendance', 'attendance', (rec.attendance || []).filter(a => matchStaffName(a.staff)), ['date', 'company', 'status', 'in_time', 'out_time', 'worked_hours', 'regular_hours', 'overtime_hours', 'late_hours', 'leave_days', 'extra_usd', 'notes'], 'overtime_hours');
+      addGrid('sg_w_log', `Equipment Sites Log (${staff})`, 'Sites Log', 'Equipment Sites Log', 'logistics_allowances', (rec.logistics_allowances || []).filter(l => matchStaffName(l.staff)), ['name', 'company', 'site', 'equipment', 'daily_usd', 'working_days', 'start_date', 'end_date'], 'daily_usd');
+      addGrid('sg_w_fl', `Freelance Work (${staff})`, 'Freelance', 'Freelance', 'freelance_entries', (rec.freelance_entries || []).filter(f => matchStaffName(f.staff)), ['date', 'company', 'hours', 'extra_hours', 'rate_usd', 'total', 'notes'], 'total');
     }
     else if (key === 'expense_categories' || key === 'expense_subcategories' || key === 'expenses') {
       const cat = row.category || row.name;
@@ -33591,16 +33869,16 @@
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       drivers: [
-        { key: 'name', label: 'Driver Full Name *', type: 'text', sec: 1, getVal: r => r.name || r.driver || '' },
-        { key: 'phone', label: 'Phone / Mobile Number', type: 'tel', sec: 1, placeholder: '+961 ...' },
-        { key: 'truck_owner', label: 'Truck Owner (Hauler / Supplier)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
-        { key: 'truck', label: 'Default Assigned Truck', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
-        { key: 'is_company_driver', label: 'Company Payroll Driver', type: 'bool', sec: 1 },
-        { key: 'notes', label: 'Notes / License Details', type: 'text', sec: 3, span: true }
+        { key: 'name', label: 'Driver *', type: 'text', sec: 1, getVal: r => r.name || r.driver || '' },
+        { key: 'phone', label: 'Phone', type: 'tel', sec: 1, placeholder: '+961 ...' },
+        { key: 'truck_owner', label: 'Truck Owner', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
+        { key: 'truck', label: 'Default Truck', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
+        { key: 'is_company_driver', label: 'Company Driver', type: 'bool', sec: 1 },
+        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       company_drivers: [
-        { key: 'driver', label: 'Driver Name *', type: 'combo', dl: 'dl_insp_drivers', sec: 1 },
-        { key: 'staff', label: 'Linked Staff Record', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
+        { key: 'driver', label: 'Driver *', type: 'combo', dl: 'dl_insp_drivers', sec: 1 },
+        { key: 'staff', label: 'Staff', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
         { key: 'start_date', label: 'Start Date', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Active)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
@@ -33616,13 +33894,13 @@
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       employments: [
-        { key: 'staff', label: 'Staff Full Name *', type: 'text', sec: 1, getVal: r => r.staff || r.name || '' },
-        { key: 'role', label: 'Job Title / Role', type: 'text', sec: 1, placeholder: 'e.g. Plant Operator, Scale Clerk, Driver' },
+        { key: 'staff', label: 'Staff *', type: 'text', sec: 1, getVal: r => r.staff || r.name || '' },
+        { key: 'role', label: 'Role', type: 'text', sec: 1, placeholder: 'e.g. Operator, Clerk, Driver' },
         { key: 'type', label: 'Contract Type *', type: 'select', options: ['Staff', 'Freelance', 'Regular', 'Daily'], sec: 1 },
-        { key: 'status', label: 'Employment Status *', type: 'select', options: ['Current', 'Ended', 'Active', 'Inactive', 'Terminated'], sec: 1 },
-        { key: 'phone', label: 'Phone / Contact Number', type: 'tel', sec: 1, placeholder: '+961 ...' },
-        { key: 'salary_usd', label: 'Monthly Base Salary ($)', type: 'number', step: '10', min: '0', sec: 3 },
-        { key: 'daily_rate', label: 'Daily Rate ($ / day)', type: 'number', step: '1', min: '0', sec: 3 },
+        { key: 'status', label: 'Status *', type: 'select', options: ['Current', 'Ended', 'Active', 'Inactive', 'Terminated'], sec: 1 },
+        { key: 'phone', label: 'Phone', type: 'tel', sec: 1, placeholder: '+961 ...' },
+        { key: 'salary_usd', label: 'Base Salary ($)', type: 'number', step: '10', min: '0', sec: 3 },
+        { key: 'daily_rate', label: 'Daily Rate ($)', type: 'number', step: '1', min: '0', sec: 3 },
         { key: 'working_days', label: 'Working Days / Month', type: 'number', step: '1', min: '1', sec: 3 },
         { key: 'working_hours', label: 'Working Hours / Day', type: 'number', step: '0.5', min: '1', sec: 3 },
         { key: 'overtime_multiplier', label: 'Overtime Multiplier (×)', type: 'number', step: '0.1', min: '0', sec: 3 },
@@ -33633,50 +33911,50 @@
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       attendance: [
-        { key: 'date', label: 'Attendance Date *', type: 'date', sec: 1 },
-        { key: 'staff', label: 'Staff Member *', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
-        { key: 'status', label: 'Attendance / Entry Type *', type: 'select', options: ['Present', 'Overtime', 'Lateness', 'Absence', 'Absent', 'VacAbsence', 'Sick Leave', 'Leave', 'Half Day', 'Extra USD', 'Extra LBP', 'Config USD', 'Config LBP', 'Config VacAbsence'], sec: 1, getVal: r => r.type || r.status || 'Present' },
+        { key: 'date', label: 'Date *', type: 'date', sec: 1 },
+        { key: 'staff', label: 'Staff *', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
+        { key: 'status', label: 'Type *', type: 'select', options: ['Present', 'Overtime', 'Lateness', 'Absence', 'Absent', 'VacAbsence', 'Sick Leave', 'Leave', 'Half Day', 'Extra USD', 'Extra LBP', 'Config USD', 'Config LBP', 'Config VacAbsence'], sec: 1, getVal: r => r.type || r.status || 'Present' },
         { key: 'in_time', label: 'Time In', type: 'time', sec: 2, getVal: r => fmtAttClockTime(r.in_time || r.check_in || '') },
         { key: 'out_time', label: 'Time Out', type: 'time', sec: 2, getVal: r => fmtAttClockTime(r.out_time || r.check_out || '') },
-        { key: 'tally', label: 'Tally (Hrs / Days / Amount)', type: 'number', step: '0.5', sec: 3 },
-        { key: 'worked_hours', label: 'Actual Work Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
+        { key: 'tally', label: 'Tally', type: 'number', step: '0.5', sec: 3 },
+        { key: 'worked_hours', label: 'Worked Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
         { key: 'regular_hours', label: 'Regular Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
         { key: 'overtime_hours', label: 'Overtime Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
         { key: 'late_hours', label: 'Late Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
-        { key: 'leave_days', label: 'Leave / Absence Days', type: 'number', step: '0.5', sec: 3 },
-        { key: 'extra_usd', label: 'Extra / Config USD ($)', type: 'number', step: '0.01', sec: 3, getVal: r => r.extra_usd ?? r.usd_amount ?? '' },
+        { key: 'leave_days', label: 'Leave Days', type: 'number', step: '0.5', sec: 3 },
+        { key: 'extra_usd', label: 'Extra USD ($)', type: 'number', step: '0.01', sec: 3, getVal: r => r.extra_usd ?? r.usd_amount ?? '' },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       freelance_entries: [
         { key: 'date', label: 'Work Date *', type: 'date', sec: 1 },
-        { key: 'staff', label: 'Freelancer / Operator *', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
+        { key: 'staff', label: 'Staff *', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
         { key: 'site', label: 'Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
-        { key: 'hours', label: 'Regular Hours / Days', type: 'number', step: '0.5', min: '0', sec: 3 },
-        { key: 'extra_hours', label: 'Extra / Overtime Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
+        { key: 'hours', label: 'Hours / Days', type: 'number', step: '0.5', min: '0', sec: 3 },
+        { key: 'extra_hours', label: 'Overtime Hours', type: 'number', step: '0.5', min: '0', sec: 3 },
         { key: 'rate_usd', label: 'Rate ($)', type: 'number', step: '0.5', min: '0', sec: 3 },
-        { key: 'total', label: 'Total Amount ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'total', label: 'Amount ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       logistics_allowances: [
-        { key: 'staff', label: 'Staff Member *', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
-        { key: 'site', label: 'Assigned Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
-        { key: 'equipment', label: 'Assigned Unit / Truck', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
-        { key: 'working_days', label: 'Working Days (Mon–Sun)', type: 'text', sec: 2, placeholder: 'Mon, Tue, Wed, Thu, Fri, Sat' },
+        { key: 'staff', label: 'Staff *', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
+        { key: 'site', label: 'Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
+        { key: 'equipment', label: 'Equipment', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
+        { key: 'working_days', label: 'Days Worked', type: 'text', sec: 2, placeholder: 'Mon, Tue, Wed, Thu, Fri, Sat' },
         { key: 'days_count', label: 'Days Count', type: 'number', step: '1', min: '0', max: '7', sec: 3 },
-        { key: 'daily_usd', label: 'Daily Allowance ($)', type: 'number', step: '0.5', min: '0', sec: 3 },
+        { key: 'daily_usd', label: 'Daily Rate ($)', type: 'number', step: '0.5', min: '0', sec: 3 },
         { key: 'usd_amount', label: 'USD Paid ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'lbp_amount', label: 'LBP Paid (LL)', type: 'number', step: '1000', min: '0', sec: 3 },
-        { key: 'amount', label: 'Total Allowance ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'start_date', label: 'Week Start Date', type: 'date', sec: 2 },
-        { key: 'end_date', label: 'Week End Date', type: 'date', sec: 2 },
+        { key: 'amount', label: 'Allowance ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'start_date', label: 'Start Date', type: 'date', sec: 2 },
+        { key: 'end_date', label: 'End Date', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       overtime_rates: [
-        { key: 'name', label: 'Route / Rate Name *', type: 'text', sec: 1 },
-        { key: 'region', label: 'Region / Destination', type: 'combo', dl: 'dl_insp_regions', sec: 2 },
+        { key: 'name', label: 'Rate Name *', type: 'text', sec: 1 },
+        { key: 'region', label: 'Region', type: 'combo', dl: 'dl_insp_regions', sec: 2 },
         { key: 'site', label: 'Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
-        { key: 'amount', label: 'Trip / Overtime Rate ($) *', type: 'number', step: '0.5', min: '0', sec: 3 },
-        { key: 'start_date', label: 'Effective Start Date', type: 'date', sec: 2 },
+        { key: 'amount', label: 'Rate ($) *', type: 'number', step: '0.5', min: '0', sec: 3 },
+        { key: 'start_date', label: 'Start Date', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Active)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
@@ -33797,6 +34075,10 @@
     const hidden = new Set(['id', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status']);
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
+    if (key === 'employments') {
+      hidden.add('equipment');
+      hidden.add('truck');
+    }
     if (key === 'salaries') {
       hidden.add('name');
       hidden.add('equipment');
