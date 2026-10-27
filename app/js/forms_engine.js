@@ -652,15 +652,8 @@
         `Per ${u}`
       ]);
       const ruleTypeOpts = isRawForm
-        ? [
-            ['Purchase Price (Site)', 'Purchase Price (Site) — Raw Material Site Cost'],
-            ['Transport Price (Site)', 'Transport Price (Site) — Site Haulage Rate']
-          ]
-        : [
-            ['Sales (Delivery)', 'Sales (Delivery) — Customer + Site + Material/Trans'],
-            ['Sales (Pickup)', 'Sales (Pickup) — Customer Material Price (Pick-up)'],
-            ['List Price', 'List Price — Benchmark Product Price']
-          ];
+        ? ['Purchase Price (Site)', 'Transport Price (Site)']
+        : ['Sales (Delivery)', 'Sales (Pickup)', 'List Price'];
       const defRuleType = isRawForm ? 'Purchase Price (Site)' : 'Sales (Delivery)';
       return `
         ${adminHeaderHtml}

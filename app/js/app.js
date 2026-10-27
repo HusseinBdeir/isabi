@@ -28249,11 +28249,13 @@
       let currentMatches = [];
 
       const getSelectOptions = () => {
+        const plainOpts = selEl.dataset.plainOptions === '1' || selEl.id === 'f_ruletype' || selEl.id === 'insp_edit_rule_type';
         return Array.from(selEl.options)
           .filter(o => !(o.value === '' && /^—/.test((o.textContent || '').trim())))
           .map(o => {
-            const sp = splitOptionLabel(o.textContent || o.value);
-            return { value: o.value, raw: (o.textContent || '').trim(), label: sp.label, meta: sp.meta };
+            const raw = (o.textContent || o.value || '').trim();
+            const sp = plainOpts ? { label: raw, meta: '' } : splitOptionLabel(raw);
+            return { value: o.value, raw, label: sp.label, meta: sp.meta };
           });
       };
 
