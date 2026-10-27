@@ -1032,9 +1032,29 @@
     `;
     document.body.appendChild(modal);
 
-    modal.addEventListener('click', e => {
-      if (e.target === modal) closeThermalModal();
-    });
+    if (typeof window.__mfgWireBackdropDismiss === 'function') {
+      window.__mfgWireBackdropDismiss(modal, closeThermalModal);
+    } else {
+      let downOnBackdrop = null;
+      let upOnBackdrop = null;
+      modal.addEventListener('mousedown', e => {
+        if (e.button != null && e.button !== 0) return;
+        downOnBackdrop = (e.target === modal);
+        upOnBackdrop = null;
+      }, true);
+      modal.addEventListener('mouseup', e => {
+        if (e.button != null && e.button !== 0) return;
+        upOnBackdrop = (e.target === modal);
+        setTimeout(() => { downOnBackdrop = null; upOnBackdrop = null; }, 0);
+      }, true);
+      modal.addEventListener('click', e => {
+        const hadPointerCycle = downOnBackdrop !== null || upOnBackdrop !== null;
+        const shouldClose = (e.target === modal) && (!hadPointerCycle || (downOnBackdrop === true && upOnBackdrop !== false));
+        downOnBackdrop = null;
+        upOnBackdrop = null;
+        if (shouldClose) closeThermalModal();
+      });
+    }
     const closeBtn = document.getElementById('closeThermalModalBtn');
     if (closeBtn) closeBtn.addEventListener('click', closeThermalModal);
 

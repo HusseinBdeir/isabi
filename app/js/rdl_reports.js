@@ -3359,11 +3359,17 @@
         inp.addEventListener('focus', () => enterSearchMode(false));
         inp.addEventListener('mousedown', () => {
           clearTimeout(blurTimer);
-          if (document.activeElement === inp && menu.hidden) {
-            enterSearchMode(true);
-          }
         });
         inp.addEventListener('click', () => {
+          clearTimeout(blurTimer);
+          const hasSelection = typeof inp.selectionStart === 'number' && typeof inp.selectionEnd === 'number' && inp.selectionEnd > inp.selectionStart;
+          if (hasSelection) {
+            if (!menu.hidden) {
+              menu.hidden = true;
+              wrap.classList.remove('open');
+            }
+            return;
+          }
           if (menu.hidden) enterSearchMode(true);
         });
         inp.addEventListener('input', () => {
@@ -3416,7 +3422,11 @@
             ev.preventDefault();
             const pick = currentMatches[activeIdx >= 0 ? activeIdx : 0];
             if (pick) chooseOption(pick);
-          } else if (ev.key === 'Escape' || ev.key === 'Tab') {
+          } else if (ev.key === 'Escape') {
+            ev.preventDefault();
+            ev.stopPropagation();
+            closeAllCombos(null);
+          } else if (ev.key === 'Tab') {
             closeAllCombos(null);
           }
         });

@@ -738,14 +738,22 @@
   function ensureGlobalListeners() {
     if (globalListenersWired) return;
     globalListenersWired = true;
+    let downInsideMgr = false;
+    document.addEventListener('mousedown', e => {
+      downInsideMgr = Boolean(openPopoverTableId && e.target && e.target.closest && e.target.closest('.tbl-col-mgr-wrap'));
+    }, true);
     document.addEventListener('click', e => {
-      if (!openPopoverTableId) return;
+      const wasDownInside = downInsideMgr;
+      downInsideMgr = false;
+      if (!openPopoverTableId || wasDownInside) return;
       if (!e.target.closest('.tbl-col-mgr-wrap')) {
         closeAllColumnPopovers('');
       }
     });
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape' && openPopoverTableId) {
+        e.preventDefault();
+        e.stopPropagation();
         closeAllColumnPopovers('');
       }
     });
