@@ -3374,7 +3374,9 @@
     net_usd: 'Net USD ($)',
     close_usd: 'Closing USD ($)',
     close_lbp: 'Closing LBP (LL)',
-    close_combined: 'Closing Till ($)'
+    close_combined: 'Closing Till ($)',
+    month_earnings: 'Month Paid / Earned',
+    sal_status_lbl: 'Month Status'
   };
 
   const VIEW_COL_DEFS = {
@@ -3584,6 +3586,8 @@
       { key: 'payroll_month', label: 'Payroll Month' },
       { key: 'staff', label: 'Staff Member' },
       { key: 'method', label: 'Method' },
+      { key: 'month_earnings', label: 'Month Paid / Earned', kind: 'numeric' },
+      { key: 'sal_status_lbl', label: 'Month Status' },
       { key: 'amount', label: 'Amount ($)', kind: 'numeric' }
     ],
     pay_att: [
@@ -3763,7 +3767,7 @@
 
   function isNumericColKey(colKey) {
     const k = String(colKey || '');
-    if (/^(cost_class|cost_bucket|working_days|assigned_trucks|trucksStr|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|shift_basis_lbl|display_type)$/i.test(k)) return false;
+    if (/^(cost_class|cost_bucket|working_days|assigned_trucks|trucksStr|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|shift_basis_lbl|display_type|sal_status_lbl)$/i.test(k)) return false;
     if (isBooleanColKey(k)) return false;
     return /price|cost|amount|total|vat_amount|^vat$|limit|salary|balance|remaining|haul|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|in_usd|out_usd|net_usd|open_usd|close_usd|in_lbp|out_lbp|net_lbp|close_lbp|close_combined|usd_delta|lbp_delta|^lbp$|entries_cnt|overtime_rate|ot_bonus|l_per_100km|flag_count|qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|trips|km_run|debit|credit|earnings|paid|base|ot_hrs|ot_pay|late_hrs|late_ded|absent_days|abs_ded|site_allow|ar_current|ar_1_60|ar_60_plus|ap_material|ap_haulage|ap_expense|ap_settled|ap_on_credit|opening_ap|opening_ar|credit_sales_ttc|cash_sales_ttc|cash_expense|settlements_paid|sales_ttc|net_sum|tons_sold|qty_sold|trans_rev|tally|leave_days|extra_usd|payroll_impact_usd|unmatched_usd|vouchers|accrued|outstanding|paid_fifo|logs_cnt|ot_logs|late_logs|vac_days|sick_days|net_att_impact|reimbursement|deduction|overtime_multiplier/i.test(k);
   }
@@ -17879,9 +17883,10 @@
     const filteredUnmatched = sortRows(unmatchedRowsDetailed, 'pay_unmatched', 'unmatched_usd', 'desc');
     const shownUnmatched = filteredUnmatched.slice(0, shownCount('pay_unmatched'));
 
-    // Annotate each salary voucher with its monthly running entitlement & settlement / advance posture
+    // Annotate each salary payment with its full-month running entitlement & settlement / advance posture
     const salRunMap = new Map();
-    salAll.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || ''))).forEach(s => {
+    const salScopeForRun = filterRecords(SEED.records.salaries, { ignorePeriod: true, ignoreSearch: true });
+    salScopeForRun.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || ''))).forEach(s => {
       const sk = norm(s.staff);
       const ym = String(s.payroll_month || (s.date || '').slice(0, 7)).slice(0, 7);
       const mk = `${sk}|${ym}`;
@@ -17892,15 +17897,19 @@
       const pos = computeStaffMonthPayrollPosition(s.staff, s.company, ym, s.date || today, null, true);
       const txYm = String(s.date || '').slice(0, 7);
       const isFut = Boolean(ym && txYm && ym > txYm);
+      s.month_cum_paid = cumPaid;
+      s.month_has_contract = Boolean(pos && pos.hasContract);
+      s.month_is_future = isFut;
+      s.month_earnings = (pos && pos.hasContract) ? round2(isFut ? pos.baseNet : pos.monthNetEarned) : 0;
       if (!pos || !pos.hasContract) {
         s.sal_status_lbl = 'No Contract';
         s.sal_status_cls = 'badge-warn';
-        s.sal_status_tip = `No active contract on file for ${s.staff || 'staff'} · Month total paid: ${fmtUSD(pos ? pos.paidSoFar : 0, 2)}`;
+        s.sal_status_tip = `No active contract on file for ${s.staff || 'staff'} · Month total paid: ${fmtUSD(pos ? pos.paidSoFar : cumPaid, 2)}`;
         s.is_advance_sal = false;
       } else if (isFut) {
         s.sal_status_lbl = `Future Advance (${pos.ymLabel})`;
         s.sal_status_cls = 'badge-brass';
-        s.sal_status_tip = `Paid on ${String(s.date || '').slice(0, 10)} in advance for ${pos.ymLabel} · Month Earned: ${fmtUSD(pos.monthNetEarned, 2)}`;
+        s.sal_status_tip = `Paid on ${String(s.date || '').slice(0, 10)} in advance for ${pos.ymLabel} · Contract Base: ${fmtUSD(pos.baseNet, 2)}`;
         s.is_advance_sal = true;
       } else if (cumPaid > pos.monthNetEarned + 1) {
         const over = round2(cumPaid - pos.monthNetEarned);
@@ -17918,7 +17927,7 @@
         const remMonthNow = round2(Math.max(0, pos.remainingNet));
         s.sal_status_lbl = `Partial · ${fmtUSD(remAfterThis, 0)} rem`;
         s.sal_status_cls = 'badge-info';
-        s.sal_status_tip = `${pos.ymLabel} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Paid after this voucher: ${fmtUSD(cumPaid, 2)} (${fmtUSD(remAfterThis, 2)} remaining then · ${fmtUSD(remMonthNow, 2)} remaining now)`;
+        s.sal_status_tip = `${pos.ymLabel} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Paid through this entry: ${fmtUSD(cumPaid, 2)} (${fmtUSD(remAfterThis, 2)} remaining then · ${fmtUSD(remMonthNow, 2)} remaining now)`;
         s.is_advance_sal = false;
       }
     });
@@ -18546,7 +18555,7 @@
       <div class="panel-card" id="paySalPanel">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search voucher #, staff member, payroll month, status, method...')}
+            ${searchBox('Search staff member, payroll month, status, method...')}
             <div class="chip-bar">
               ${chip('all', `All (${salAll.length})`)}
               ${chip('cash_sal', 'Cash')}
@@ -18602,20 +18611,27 @@
         ${renderColFilterBar('pay_sal')}
         <div class="table-wrap">
           <table class="ledger-table">
-            <thead><tr>${th('pay_sal', 'Date', 'date')}${th('pay_sal', 'Voucher', 'name')}${th('pay_sal', 'Payroll Month', 'payroll_month')}${th('pay_sal', 'Co.', 'company')}${th('pay_sal', 'Staff Member', 'staff')}${th('pay_sal', 'Method', 'method')}${th('pay_sal', 'Month Status', 'sal_status_lbl')}${th('pay_sal', 'Amount ($)', 'amount', 'r')}</tr></thead>
+            <thead><tr>${th('pay_sal', 'Date', 'date')}${th('pay_sal', 'Payroll Month', 'payroll_month')}${th('pay_sal', 'Co.', 'company')}${th('pay_sal', 'Staff Member', 'staff')}${th('pay_sal', 'Method', 'method')}${th('pay_sal', 'Month Paid / Earned', 'month_earnings')}${th('pay_sal', 'Month Status', 'sal_status_lbl')}${th('pay_sal', 'Amount ($)', 'amount', 'r')}</tr></thead>
             <tbody>
-              ${shownSal.map(s => `
+              ${shownSal.map(s => {
+                const cumPaidVal = Number(s.month_cum_paid != null ? s.month_cum_paid : s.amount || 0);
+                const monthEarnHtml = !s.month_has_contract
+                  ? `<span>${fmtUSD(cumPaidVal, 2)} <span class="mu">/ No contract</span></span>`
+                  : (s.month_is_future
+                      ? `<strong>${fmtUSD(cumPaidVal, 2)}</strong> <span class="mu">/ ${fmtUSD(s.month_earnings, 2)} base</span>`
+                      : `<strong>${fmtUSD(cumPaidVal, 2)}</strong> <span class="mu">/ ${fmtUSD(s.month_earnings, 2)}</span>`);
+                return `
                 <tr class="rrow" data-rkey="salaries" data-rid="${esc(s.id)}">
                   <td class="mono">${esc(recordDateDMY(s))}${appCell(s, 'salaries')}</td>
-                  <td class="mono mu">${esc(s.name || '—')}</td>
                   <td class="mono">${esc(s.payroll_month)}</td>
                   <td>${coBadge(s.company)}</td>
                   <td>${relLink('employments', s.staff, s.staff, true)}</td>
                   <td>${esc(s.method || 'Cash')}</td>
+                  <td class="mono sal-paid-earned-cell" title="${esc(s.sal_status_tip || '')}">${monthEarnHtml}</td>
                   <td><span class="badge ${esc(s.sal_status_cls || 'badge-info')}" title="${esc(s.sal_status_tip || '')}">${esc(s.sal_status_lbl || '—')}</span></td>
                   <td class="r"><strong>${fmtUSD(s.amount, 2)}</strong></td>
-                </tr>
-              `).join('') || emptyRow(8, 'No salary payments match filter')}
+                </tr>`;
+              }).join('') || emptyRow(8, 'No salary payments match filter')}
               ${showMoreRow('pay_sal', filteredSal.length, 8)}
             </tbody>
             <tfoot>
@@ -27442,7 +27458,6 @@
                   return `
                     <tr>
                       <td class="mono">${esc(String(p.date || '').slice(0, 10))}</td>
-                      <td class="mono"><b>${esc(p.name || ('#' + p.id))}</b></td>
                       <td>${esc(p.company || curCo)}</td>
                       <td><span class="badge ${p.method === 'Bank' ? 'badge-info' : 'badge-ok'}">${esc(p.method || 'Cash')}</span></td>
                       <td class="r">${fmtUSD(p.usd_amount || pAmt, 2)}</td>
@@ -27455,13 +27470,13 @@
                 subEl.innerHTML = `
                   <div class="pa-subgrid" style="margin-top:8px">
                     <div class="pa-subgrid-hdr">
-                      <span>PRIOR SALARY VOUCHERS FOR ${esc(pos.monthLabel.toUpperCase())} · ${esc((prof.staff || curStaff).toUpperCase())}</span>
-                      <span>${pos.paidCount} Voucher${pos.paidCount === 1 ? '' : 's'} · ${pos.isFutureMonth ? `Advanced ${fmtUSD(pos.paidSoFar, 2)} against ${fmtUSD(pos.baseNet, 2)} Base ($0.00 Earned Yet)` : `Paid ${fmtUSD(pos.paidSoFar, 2)} of ${fmtUSD(pos.monthNetEarned, 2)} Earned`}</span>
+                      <span>PRIOR SALARY PAYMENTS FOR ${esc(pos.monthLabel.toUpperCase())} · ${esc((prof.staff || curStaff).toUpperCase())}</span>
+                      <span>${pos.paidCount} Payment${pos.paidCount === 1 ? '' : 's'} · ${pos.isFutureMonth ? `Advanced ${fmtUSD(pos.paidSoFar, 2)} against ${fmtUSD(pos.baseNet, 2)} Base ($0.00 Earned Yet)` : `Paid ${fmtUSD(pos.paidSoFar, 2)} of ${fmtUSD(pos.monthNetEarned, 2)} Earned`}</span>
                     </div>
                     <div class="table-wrap" style="max-height:135px;overflow:auto">
                       <table class="ledger-table">
                         <thead>
-                          <tr><th>Date</th><th>Voucher</th><th>BU</th><th>Method</th><th class="r">USD ($)</th><th class="r">LBP (LL)</th><th class="r">Total USD</th><th class="r">Balance After</th></tr>
+                          <tr><th>Date</th><th>BU</th><th>Method</th><th class="r">USD ($)</th><th class="r">LBP (LL)</th><th class="r">Total USD</th><th class="r">Balance After</th></tr>
                         </thead>
                         <tbody>${rowsHtml}</tbody>
                       </table>
@@ -31666,13 +31681,13 @@
             : `Future-Month Salary Advance (+${fmtUSD(Math.abs(afterRem), 2)} Over ${pos.monthLabel} Base)`;
           return {
             tone: 'warn',
-            text: `Payroll Voucher ${row.name || ('#' + row.id)} (${pos.monthLabel} Advance): Contract Base ${fmtUSD(pos.baseNet, 2)} ($0.00 Earned as of ${String(row.date || '').slice(0, 10)})  |  Other Advances: ${fmtUSD(pos.paidSoFar, 2)}  |  This Advance: ${fmtUSD(thisAmt, 2)}  |  Status: ${futSt}`
+            text: `Salary Payment · ${row.staff || 'Staff'} (${pos.monthLabel} Advance): Contract Base ${fmtUSD(pos.baseNet, 2)} ($0.00 Earned as of ${String(row.date || '').slice(0, 10)})  |  Other Advances: ${fmtUSD(pos.paidSoFar, 2)}  |  This Advance: ${fmtUSD(thisAmt, 2)}  |  Status: ${futSt}`
           };
         }
         const stTxt = afterRem < -0.01 ? `Advance / Overpayment (+${fmtUSD(Math.abs(afterRem), 2)})` : (afterRem <= 0.01 ? 'Month Settled ($0.00 Left)' : `${fmtUSD(afterRem, 2)} Remaining`);
         return {
           tone: afterRem < -0.01 ? 'warn' : 'info',
-          text: `Payroll Voucher ${row.name || ('#' + row.id)} (${pos.monthLabel}): Contract Base ${fmtUSD(pos.baseNet, 2)} + OT/Adj ${pos.attNetImpact >= 0 ? '+' : '-'}${fmtUSD(Math.abs(pos.attNetImpact), 2)} = Month Earned ${fmtUSD(pos.monthNetEarned, 2)}  |  Other Vouchers: ${fmtUSD(pos.paidSoFar, 2)}  |  This Voucher: ${fmtUSD(thisAmt, 2)}  |  Status: ${stTxt}`
+          text: `Salary Payment · ${row.staff || 'Staff'} (${pos.monthLabel}): Contract Base ${fmtUSD(pos.baseNet, 2)} + OT/Adj ${pos.attNetImpact >= 0 ? '+' : '-'}${fmtUSD(Math.abs(pos.attNetImpact), 2)} = Month Earned ${fmtUSD(pos.monthNetEarned, 2)}  |  Other Payments: ${fmtUSD(pos.paidSoFar, 2)}  |  This Payment: ${fmtUSD(thisAmt, 2)}  |  Status: ${stTxt}`
         };
       }
     }
@@ -31716,7 +31731,9 @@
     const isQuarryPr = key === 'price_rules' && !isCommRow && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(row.rule_type || '').trim());
     const title = key === 'price_rules'
       ? `${isCommRow ? 'Sales Commission Rule' : (isQuarryPr ? 'Raw & Haulage Agreement' : 'Sales Price Agreement')} · ${row.customer || row.supplier || row.site || 'Standard List'}${row.product ? ' · ' + row.product : ''}`
-      : (row.ticket_no ? `${INSPECT_LABELS[key] || key} #${row.ticket_no} · ${row.customer || row.site || row.equipment || row.name || ''}` : `${INSPECT_LABELS[key] || key} · ${row.name || row.invoice_no || row.staff || row.driver || row.equipment || row.id}`);
+      : (key === 'salaries'
+          ? `Salary Payment · ${row.staff || 'Staff'}${row.payroll_month ? ' · ' + row.payroll_month : ''}`
+          : (row.ticket_no ? `${INSPECT_LABELS[key] || key} #${row.ticket_no} · ${row.customer || row.site || row.equipment || row.name || ''}` : `${INSPECT_LABELS[key] || key} · ${row.name || row.invoice_no || row.staff || row.driver || row.equipment || row.id}`));
 
     if (key === 'sales_tickets') {
       const pr = findRule({ company: row.company, customer: row.customer, product: row.product, site: row.site, date: row.date, types: [row.sale_type === 'Pickup' ? 'Sales (Pickup)' : 'Sales (Delivery)', 'Sales (Delivery)', 'Sales (Pickup)'] });
@@ -32847,7 +32864,18 @@
     const hidden = new Set(['id', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status']);
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
-    if (key === 'salaries') { hidden.add('equipment'); }
+    if (key === 'salaries') {
+      hidden.add('name');
+      hidden.add('equipment');
+      hidden.add('sal_status_lbl');
+      hidden.add('sal_status_cls');
+      hidden.add('sal_status_tip');
+      hidden.add('is_advance_sal');
+      hidden.add('month_cum_paid');
+      hidden.add('month_has_contract');
+      hidden.add('month_is_future');
+      hidden.add('month_earnings');
+    }
     if (key === 'fuel_intakes') { hidden.add('location'); }
     if (key === 'fuel_malfunctions' && !/^wash$/i.test(String((row && row.discrepancy_type) || ''))) {
       if (!row || !row.ticket_no) hidden.add('ticket_no');

@@ -11455,6 +11455,7 @@ table.ledger-table:has(#usersDirectoryTbody) .user-actions-wrap .btn {
     font-size: 10.3px;
   }
   #paySalPanel table.ledger-table thead th,
+  #paySalPanel table.ledger-table tbody td.sal-paid-earned-cell,
   #payAttPanel table.ledger-table thead th,
   #payAttStaffSumPanel table.ledger-table thead th,
   #payDriverOtPanel table.ledger-table thead th,
