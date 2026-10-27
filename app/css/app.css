@@ -18079,10 +18079,12 @@ table.ledger-table tbody td.td-databar {
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  height: 36px;
-  min-height: 36px;
-  max-height: 36px;
-  box-sizing: border-box;
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  box-sizing: border-box !important;
 }
 
 .form-field input[type="date"],
@@ -18226,6 +18228,39 @@ table.ledger-table tbody td.td-databar {
   .form-field .pa-suggest-wrap.menu-align-right > .pa-suggest-menu {
     left: auto;
     right: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .form-field input:not([type="checkbox"]):not([type="radio"]):not(.co-multi-search):not(.pa-select-filter),
+  .form-field select,
+  .form-field > .pa-suggest-wrap,
+  .form-field > .pa-select-wrap,
+  .form-field input[type="date"],
+  .form-field input[type="time"],
+  .form-field input[type="month"],
+  .form-field input[type="datetime-local"] {
+    height: 38px !important;
+    min-height: 38px !important;
+    max-height: 38px !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .form-grid-3 {
+    gap: 10px 8px;
+  }
+  .form-field:not(.check-field) > label,
+  .form-field > .field-lbl-with-btn {
+    gap: 3px;
+    font-size: 11px;
+    letter-spacing: -0.01em;
+  }
+  .pa-lock-pill .lp-short {
+    display: none;
+  }
+  .pa-lock-pill {
+    padding: 2px 4px;
   }
 }
 
