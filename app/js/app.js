@@ -8420,7 +8420,7 @@
   const ALERT_RULE_CATALOG = [
     {
       id: 'G_TON_CORRIDOR',
-      code: 'G1',
+      code: '#01',
       name: 'Weighbridge Ton Estimate Corridor',
       domain: 'Sales & Quarry',
       behavior: 'block',
@@ -8447,7 +8447,7 @@
     },
     {
       id: 'G_DUP_SERIAL',
-      code: 'G2',
+      code: '#02',
       name: 'Duplicate Ticket Serial Number Guard',
       domain: 'Sales & Quarry',
       behavior: 'block',
@@ -8464,7 +8464,7 @@
     },
     {
       id: 'G_DISCOUNT_WARN',
-      code: 'G3',
+      code: '#03',
       name: 'High Material Discount Note Guard',
       domain: 'Sales & Quarry',
       behavior: 'block',
@@ -8480,7 +8480,7 @@
     },
     {
       id: 'S5',
-      code: 'S5',
+      code: '#04',
       name: 'Price Agreement & Lapsed Contract Watchdog',
       domain: 'Sales & Quarry',
       behavior: 'audit',
@@ -8494,11 +8494,11 @@
       ],
       whatFn: p => `Audits every Sales Ticket against date-effective Customer x Product agreements. Flags unit rates more than <b>$${fmtNum(p.unit_tolerance_usd, 2)}</b> below agreed price when cumulative shortfall exceeds <b>$${fmtNum(p.min_shortfall_usd, 0)}</b>, plus lapsed contracts.`,
       threshFn: p => `Tol $${fmtNum(p.unit_tolerance_usd, 2)}/u · Min > $${fmtNum(p.min_shortfall_usd, 0)}`,
-      previewFn: p => `Live example: On a $12.00/m3 agreement, tickets below $${fmtNum(Math.max(0, 12 - Number(p.unit_tolerance_usd || 0.01)), 2)}/m3 accumulate shortfall and flag Sentinel S5 once total shortfall > $${fmtNum(p.min_shortfall_usd, 0)}.`
+      previewFn: p => `Live example: On a $12.00/m3 agreement, tickets below $${fmtNum(Math.max(0, 12 - Number(p.unit_tolerance_usd || 0.01)), 2)}/m3 accumulate shortfall and flag AI Sentinels once total shortfall > $${fmtNum(p.min_shortfall_usd, 0)}.`
     },
     {
       id: 'S6',
-      code: 'S6',
+      code: '#05',
       name: 'Weighbridge Ticket Pad & Skipped Serial Audit',
       domain: 'Sales & Quarry',
       behavior: 'audit',
@@ -8515,7 +8515,7 @@
     },
     {
       id: 'G_BACKDATE_NOTE',
-      code: 'G4',
+      code: '#06',
       name: 'Back-Dated Entry Explanation Guard',
       domain: 'Dates & VAT',
       behavior: 'block',
@@ -8531,7 +8531,7 @@
     },
     {
       id: 'G_REPDATE_GAP',
-      code: 'G5',
+      code: '#07',
       name: 'Reporting Date vs Transaction Date Guard',
       domain: 'Dates & VAT',
       behavior: 'block',
@@ -8547,7 +8547,7 @@
     },
     {
       id: 'S8',
-      code: 'S8',
+      code: '#08',
       name: 'Transaction vs Reporting Date Parity Audit',
       domain: 'Dates & VAT',
       behavior: 'audit',
@@ -8560,11 +8560,11 @@
       ],
       whatFn: p => `Scans Sales, Quarry, and Expense ledgers for rows where Reporting Date differs from Transaction Date by more than <b>${fmtNum(p.audit_gap_days, 0)} days</b>, plus unlinked VAT invoices.`,
       threshFn: p => `Audit gap > ${fmtNum(p.audit_gap_days, 0)}d + Unlinked VAT`,
-      previewFn: p => `Live example: Any ledger voucher shifted by more than ${fmtNum(p.audit_gap_days, 0)} days between Cash Date and Reporting Date is itemized in Sentinel S8.`
+      previewFn: p => `Live example: Any ledger voucher shifted by more than ${fmtNum(p.audit_gap_days, 0)} days between Cash Date and Reporting Date is itemized in AI Sentinels.`
     },
     {
       id: 'G_METER_JUMP',
-      code: 'G6',
+      code: '#09',
       name: 'Odometer & Hour-Meter Jump & Ceiling Guard',
       domain: 'Fleet & Diesel',
       behavior: 'block',
@@ -8583,7 +8583,7 @@
     },
     {
       id: 'S3',
-      code: 'S3',
+      code: '#10',
       name: 'Fuel Burn Rate & Meter Outlier Watchdog',
       domain: 'Fleet & Diesel',
       behavior: 'audit',
@@ -8597,11 +8597,11 @@
       ],
       whatFn: p => `Flags road trucks burning more than <b>${fmtNum(p.max_truck_l100km, 0)} L/100km</b> (over >= 100 km) and loaders/excavators burning more than <b>${fmtNum(p.max_machine_lh, 0)} L/h</b> (over >= 20 h), plus meter anomalies.`,
       threshFn: p => `Trucks > ${fmtNum(p.max_truck_l100km, 0)} L/100km · Machines > ${fmtNum(p.max_machine_lh, 0)} L/h`,
-      previewFn: p => `Live example: A tipper averaging ${fmtNum(Number(p.max_truck_l100km || 80) + 5, 0)} L/100km or an excavator averaging ${fmtNum(Number(p.max_machine_lh || 25) + 3, 0)} L/h is flagged in Sentinel S3.`
+      previewFn: p => `Live example: A tipper averaging ${fmtNum(Number(p.max_truck_l100km || 80) + 5, 0)} L/100km or an excavator averaging ${fmtNum(Number(p.max_machine_lh || 25) + 3, 0)} L/h is flagged in AI Sentinels.`
     },
     {
       id: 'S2',
-      code: 'S2',
+      code: '#11',
       name: 'Diesel Tank Physical vs Ledger Watchdog',
       domain: 'Fleet & Diesel',
       behavior: 'audit',
@@ -8613,17 +8613,17 @@
         { key: 'low_tank_warn_l', label: 'Low Plant Tank Warning', def: 1500, min: 200, max: 20000, step: 250, unit: 'L' },
         { key: 'crit_neg_tank_l', label: 'Critical Negative Tank Alert', def: -1000, min: -20000, max: 0, step: 250, unit: 'L' }
       ],
-      whatFn: p => `Reconciles Opening + Purchased minus Issued minus Malfunction/Discrepancy minus Sold diesel. Shows a low-stock warning on the Fuel form below <b>${fmtNum(p.low_tank_warn_l, 0)} L</b>, blocks BBConstruction intakes below <b>0 L</b>, and escalates Sentinel S2 to critical below <b>${fmtNum(p.crit_neg_tank_l, 0)} L</b>.`,
+      whatFn: p => `Reconciles Opening + Purchased minus Issued minus Malfunction/Discrepancy minus Sold diesel. Shows a low-stock warning on the Fuel form below <b>${fmtNum(p.low_tank_warn_l, 0)} L</b>, blocks BBConstruction intakes below <b>0 L</b>, and escalates AI Sentinels to critical below <b>${fmtNum(p.crit_neg_tank_l, 0)} L</b>.`,
       threshFn: p => `Low < ${fmtNum(p.low_tank_warn_l, 0)} L · Crit < ${fmtNum(p.crit_neg_tank_l, 0)} L`,
-      previewFn: p => `Live example: Fuel context badge turns amber below ${fmtNum(p.low_tank_warn_l, 0)} L available, warns below 0 L, and raises a critical S2 alert below ${fmtNum(p.crit_neg_tank_l, 0)} L.`
+      previewFn: p => `Live example: Fuel context badge turns amber below ${fmtNum(p.low_tank_warn_l, 0)} L available, warns below 0 L, and raises a critical tank alert below ${fmtNum(p.crit_neg_tank_l, 0)} L.`
     },
     {
       id: 'S11',
-      code: 'S11',
+      code: '#12',
       name: 'Diesel Malfunction vs Company Consumption Watchdog',
       domain: 'Fleet & Diesel',
       behavior: 'warn',
-      whereLabel: 'Diesel Hub, Dashboards & Sentinel S11',
+      whereLabel: 'Diesel Hub, Dashboards & AI Sentinels',
       jumpView: 'fleet',
       sentinelId: 'S11',
       why: 'Alerts management whenever meter variance, unallocated diesel slips, or tank discrepancies reach 5% or more of total company diesel used in the selected period.',
@@ -8631,13 +8631,13 @@
         { key: 'malfunction_warn_pct', label: 'Malfunction Warning Share (% of Used)', def: 5.0, min: 1.0, max: 25.0, step: 0.5, unit: '%' },
         { key: 'malfunction_crit_pct', label: 'Critical Escalation Share (% of Used)', def: 10.0, min: 2.0, max: 50.0, step: 0.5, unit: '%' }
       ],
-      whatFn: p => `Evaluates gross diesel malfunction litres divided by total company diesel used in the selected date range. Raises an alert banner, sidebar badge, and Sentinel S11 at <b>&ge; ${fmtNum(p.malfunction_warn_pct, 1)}%</b> (critical at <b>&ge; ${fmtNum(p.malfunction_crit_pct, 1)}%</b>).`,
+      whatFn: p => `Evaluates gross diesel malfunction litres divided by total company diesel used in the selected date range. Raises an alert banner, sidebar badge, and AI Sentinels flag at <b>&ge; ${fmtNum(p.malfunction_warn_pct, 1)}%</b> (critical at <b>&ge; ${fmtNum(p.malfunction_crit_pct, 1)}%</b>).`,
       threshFn: p => `Warn >= ${fmtNum(p.malfunction_warn_pct, 1)}% · Crit >= ${fmtNum(p.malfunction_crit_pct, 1)}%`,
       previewFn: p => `Live example: If company diesel used in a month is 38,000 L, malfunction volume at or above ${fmtNum(38000 * (Number(p.malfunction_warn_pct || 5) / 100), 0)} L (${fmtNum(p.malfunction_warn_pct, 1)}%) triggers the watchdog banner and toast notification.`
     },
     {
       id: 'G_HYD_LEAK_30D',
-      code: 'G7',
+      code: '#13',
       name: 'Hydraulic Oil 68 Leak Watch (30-Day & Excess)',
       domain: 'Lubrication & Parts',
       behavior: 'warn',
@@ -8655,7 +8655,7 @@
     },
     {
       id: 'G_OIL_DRAIN',
-      code: 'G8',
+      code: '#14',
       name: 'Engine Oil 15W-40 Early Drain & Overdue Service',
       domain: 'Lubrication & Parts',
       behavior: 'warn',
@@ -8675,7 +8675,7 @@
     },
     {
       id: 'G_GREASE_COMP',
-      code: 'G9',
+      code: '#15',
       name: 'Daily Chassis & Plant Greasing Benchmark',
       domain: 'Lubrication & Parts',
       behavior: 'warn',
@@ -8694,42 +8694,42 @@
     },
     {
       id: 'S10',
-      code: 'S10',
+      code: '#16',
       name: 'Critical Down-Unit & Unnotified Part Custody',
       domain: 'Lubrication & Parts',
       behavior: 'warn',
-      whereLabel: 'Sales Form, Defects Hub & Sentinel S10',
+      whereLabel: 'Sales Form, Defects Hub & AI Sentinels',
       jumpView: 'fleet_maint',
       sentinelId: 'S10',
       why: 'Stops dispatchers from sending out a truck with an open Critical safety defect and ensures no spare part is replaced or scrapped without a prior logged defect notice.',
       params: [
         { key: 'min_unnotified_parts', label: 'Unnotified Part Replacements to Flag', def: 1, min: 1, max: 20, step: 1, unit: 'parts' }
       ],
-      whatFn: p => `Warns immediately on Sales Dispatch when a selected unit is marked <b>Critical / Down</b>, and flags Sentinel S10 when open Down units exist or unnotified part swaps reach <b>>= ${fmtNum(p.min_unnotified_parts, 0)}</b>.`,
+      whatFn: p => `Warns immediately on Sales Dispatch when a selected unit is marked <b>Critical / Down</b>, and flags AI Sentinels when open Down units exist or unnotified part swaps reach <b>>= ${fmtNum(p.min_unnotified_parts, 0)}</b>.`,
       threshFn: p => `Any Down unit · >= ${fmtNum(p.min_unnotified_parts, 0)} unnotified part`,
-      previewFn: p => `Live example: Selecting a Down truck on Sales Ticket shows DO NOT DISPATCH; Sentinel S10 flags at >= ${fmtNum(p.min_unnotified_parts, 0)} part swap(s) missing a prior defect log.`
+      previewFn: p => `Live example: Selecting a Down truck on Sales Ticket shows DO NOT DISPATCH; AI Sentinels flags at >= ${fmtNum(p.min_unnotified_parts, 0)} part swap(s) missing a prior defect log.`
     },
     {
       id: 'S4',
-      code: 'S4',
+      code: '#17',
       name: 'Customer Receivables Overdue > 60 Days (FIFO)',
       domain: 'Finance & Payroll',
       behavior: 'warn',
-      whereLabel: 'Sales Context Strip & Sentinel S4',
+      whereLabel: 'Sales Context Strip & AI Sentinels',
       jumpView: 'customers',
       sentinelId: 'S4',
       why: 'Surfaces slow-paying credit accounts right on the Sales Ticket screen before dispatching more material on credit, and tracks aged 60+ day balances after FIFO receipts.',
       params: [
         { key: 'entry_strip_warn_ar60_usd', label: 'Sales Form Banner Warning (60+d AR)', def: 1000, min: 50, max: 50000, step: 250, unit: '$' },
-        { key: 'min_sentinel_ar60_usd', label: 'Sentinel S4 Min 60+d Balance', def: 0.01, min: 0.01, max: 10000, step: 100, unit: '$' }
+        { key: 'min_sentinel_ar60_usd', label: 'Audit Min 60+d Balance', def: 0.01, min: 0.01, max: 10000, step: 100, unit: '$' }
       ],
-      whatFn: p => `Highlights the live Customer AR strip in amber on Sales Tickets when 60+ day overdue balance exceeds <b>$${fmtNum(p.entry_strip_warn_ar60_usd, 0)}</b> (or credit limit), and lists accounts > <b>$${fmtNum(p.min_sentinel_ar60_usd, 2)}</b> in Sentinel S4.`,
+      whatFn: p => `Highlights the live Customer AR strip in amber on Sales Tickets when 60+ day overdue balance exceeds <b>$${fmtNum(p.entry_strip_warn_ar60_usd, 0)}</b> (or credit limit), and lists accounts > <b>$${fmtNum(p.min_sentinel_ar60_usd, 2)}</b> in AI Sentinels.`,
       threshFn: p => `Form > $${fmtNum(p.entry_strip_warn_ar60_usd, 0)} · Audit > $${fmtNum(p.min_sentinel_ar60_usd, 2)}`,
       previewFn: p => `Live example: Picking a customer with > $${fmtNum(p.entry_strip_warn_ar60_usd, 0)} aged past 60 days turns the Sales Ticket context banner amber during dispatch.`
     },
     {
       id: 'S1',
-      code: 'S1',
+      code: '#18',
       name: 'Double-Entry Trial Balance Integrity (Lebanese CoA)',
       domain: 'Finance & Payroll',
       behavior: 'audit',
@@ -8747,7 +8747,7 @@
     },
     {
       id: 'S7',
-      code: 'S7',
+      code: '#19',
       name: 'Salary Payments Without Active Contract',
       domain: 'Finance & Payroll',
       behavior: 'audit',
@@ -8758,30 +8758,30 @@
       params: [
         { key: 'min_unmatched_usd', label: 'Min Unmatched Payroll to Flag', def: 0, min: 0, max: 5000, step: 50, unit: '$' }
       ],
-      whatFn: p => `Matches every monthly salary payment against active staff employment start/end windows. Flags Sentinel S7 when unmatched salary payments exceed <b>$${fmtNum(p.min_unmatched_usd, 0)}</b>.`,
+      whatFn: p => `Matches every monthly salary payment against active staff employment start/end windows. Flags AI Sentinels when unmatched salary payments exceed <b>$${fmtNum(p.min_unmatched_usd, 0)}</b>.`,
       threshFn: p => `Unmatched > $${fmtNum(p.min_unmatched_usd, 0)}`,
-      previewFn: p => `Live example: Any salary voucher paid in a month without an active contract is listed in Sentinel S7 once total unmatched exceeds $${fmtNum(p.min_unmatched_usd, 0)}.`
+      previewFn: p => `Live example: Any salary voucher paid in a month without an active contract is listed in AI Sentinels once total unmatched exceeds $${fmtNum(p.min_unmatched_usd, 0)}.`
     },
     {
       id: 'S9',
-      code: 'S9',
+      code: '#20',
       name: 'Absent-Driver Machine Fuel & Lube Watchdog',
       domain: 'Finance & Payroll',
       behavior: 'warn',
-      whereLabel: 'Fuel Form, Plant Map & Sentinel S9',
+      whereLabel: 'Fuel Form, Plant Map & AI Sentinels',
       jumpView: 'workforce_map',
       sentinelId: 'S9',
       why: 'Catches ghost diesel/lubricant issues booked to a machine on days when its assigned operator was marked Absent, Sick, or On Leave without a logged substitute driver.',
       params: [
         { key: 'min_ghost_events', label: 'Min Absent/Unattributed Entries to Flag', def: 1, min: 1, max: 20, step: 1, unit: 'entries' }
       ],
-      whatFn: p => `Shows a live red S9 alert pill on the Fuel & Lube form when the operator is marked Absent on that date, and flags Sentinel S9 at <b>>= ${fmtNum(p.min_ghost_events, 0)}</b> absent-driver or unattributed machine entries.`,
+      whatFn: p => `Shows a live red absent-driver alert pill on the Fuel & Lube form when the operator is marked Absent on that date, and flags AI Sentinels at <b>>= ${fmtNum(p.min_ghost_events, 0)}</b> absent-driver or unattributed machine entries.`,
       threshFn: p => `>= ${fmtNum(p.min_ghost_events, 0)} absent-driver entry`,
-      previewFn: p => `Live example: Booking diesel to a loader whose assigned driver is Absent today shows a red S9 badge on the form and flags Sentinel S9 at >= ${fmtNum(p.min_ghost_events, 0)} event(s).`
+      previewFn: p => `Live example: Booking diesel to a loader whose assigned driver is Absent today shows a red absent-driver badge on the form and flags AI Sentinels at >= ${fmtNum(p.min_ghost_events, 0)} event(s).`
     },
     {
       id: 'G_KIOSK_PUNCH',
-      code: 'G10',
+      code: '#21',
       name: 'Kiosk Anti-Double-Punch Debounce Guard',
       domain: 'Finance & Payroll',
       behavior: 'block',
@@ -8799,110 +8799,151 @@
 
   const ALERT_RULE_BY_ID = new Map(ALERT_RULE_CATALOG.map(r => [r.id, r]));
 
+  const CUSTOM_ALERT_DOMAINS = [
+    { key: 'all', label: 'All Areas' },
+    { key: 'expenses', label: 'Expenses & Payables' },
+    { key: 'sales', label: 'Sales & Receivables' },
+    { key: 'quarry', label: 'Quarry & Haulage' },
+    { key: 'fleet', label: 'Fleet, Diesel & Maint.' },
+    { key: 'payroll', label: 'Payroll & Workforce' },
+    { key: 'treasury', label: 'Cash Till & Loans' }
+  ];
+
+  const _caCutDate30d = () => {
+    const base = Date.parse((SEED_DATE || '2026-10-27') + 'T00:00:00Z');
+    return new Date((Number.isFinite(base) ? base : Date.now()) - 30 * 86400000).toISOString().slice(0, 10);
+  };
+
   const CUSTOM_ALERT_METRICS = {
     expense_usd: {
-      label: 'Single Expense Amount ($)',
-      unit: '$',
-      domain: 'Custom Rules',
-      formTypes: ['expense'],
-      whereLabel: 'Expense Form & Sentinel Audit',
-      jumpForm: 'expense',
+      label: 'Single Expense Voucher ($)',
+      unit: '$', domainKey: 'expenses', domain: 'Expenses & Payables', targetKind: 'expense_cat',
+      explain: 'Amount in USD on a single Expense Entry voucher (excluding $0.00 pending-price deliveries). Optional scope limits the rule to one Expense Category such as Repairs and Maintenance or Fuel.',
+      formTypes: ['expense'], whereLabel: 'Expense Form & Sentinel Audit', jumpForm: 'expense',
+      formTargetFn: () => val('f_category'),
       formValFn: () => (val('f_price_pending') === '1' ? 0 : num('f_amount')),
       recordsFn: () => filterRecords(SEED.records.expenses, { ignoreSearch: true }).map(r => ({
-        id: r.id, rid: r.id, rkey: 'expenses',
-        date: String(r.date || '').slice(0, 10),
-        company: r.company || 'WTC',
+        id: r.id, rid: r.id, rkey: 'expenses', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC', target: r.category || '',
         party: r.supplier || r.category || 'Expense',
         detail: [r.category, r.subcategory, r.reference].filter(Boolean).join(' · ') || r.name || 'Expense',
         value: Number(r.amount || 0)
       }))
     },
-    sales_total_usd: {
-      label: 'Single Sales Ticket Total ($)',
-      unit: '$',
-      domain: 'Custom Rules',
-      formTypes: ['sales'],
-      whereLabel: 'Sales Ticket Form & Sentinel Audit',
-      jumpForm: 'sales',
-      formValFn: c => Number((c && (c.ttc != null ? c.ttc : c.net)) || num('f_total_usd') || 0),
-      recordsFn: () => filterRecords(SEED.records.sales_tickets, { ignoreSearch: true }).map(r => ({
-        id: r.id, rid: r.id, rkey: 'sales_tickets',
-        date: String(r.date || '').slice(0, 10),
-        company: r.company || 'WTC',
-        party: r.customer || 'Walk-in',
-        detail: `#${r.ticket_no || '-'} · ${r.product || ''}`,
-        value: Number(r.total_ttc != null ? r.total_ttc : (r.total || 0))
-      }))
-    },
-    raw_total_usd: {
-      label: 'Single Quarry / Haulage Ticket ($)',
-      unit: '$',
-      domain: 'Custom Rules',
-      formTypes: ['raw'],
-      whereLabel: 'Quarry Ticket Form & Sentinel Audit',
-      jumpForm: 'raw',
-      formValFn: c => Number((c && ((c.mat || 0) + (c.tr || 0))) || num('f_total_usd') || 0),
-      recordsFn: () => filterRecords(SEED.records.raw_purchases, { ignoreSearch: true }).map(r => ({
-        id: r.id, rid: r.id, rkey: 'raw_purchases',
-        date: String(r.date || '').slice(0, 10),
-        company: r.company || 'WTC',
-        party: r.site_owner || r.truck_owner || r.site || 'Quarry',
-        detail: `#${r.ticket_no || '-'} · ${r.product || ''} (${r.site || ''})`,
-        value: Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)))
-      }))
-    },
-    fuel_litres: {
-      label: 'Single Diesel / Lubricant Issue (L)',
-      unit: 'L',
-      domain: 'Custom Rules',
-      formTypes: ['fuel'],
-      whereLabel: 'Diesel & Lubricants Form & Audit',
-      jumpForm: 'fuel',
-      formValFn: c => Number((c && c.litres) || num('f_qty') || 0),
-      recordsFn: () => filterRecords(SEED.records.fuel_intakes, { ignoreSearch: true }).map(r => ({
-        id: r.id, rid: r.id, rkey: 'fuel_intakes',
-        date: String(r.date || '').slice(0, 10),
-        company: r.company || 'WTC',
-        party: r.equipment || 'Unit',
-        detail: `${r.item || r.fuel_type || 'Diesel'}${r.driver ? ' · ' + r.driver : ''}`,
-        value: Number(r.litres || 0)
-      }))
-    },
-    customer_ar_usd: {
-      label: 'Customer Open AR Balance ($)',
-      unit: '$',
-      domain: 'Custom Rules',
-      formTypes: ['sales'],
-      whereLabel: 'Sales Ticket Form & Receivables',
-      jumpView: 'customers',
+    expense_cat_month_usd: {
+      label: 'Monthly Category Spend ($)',
+      unit: '$', domainKey: 'expenses', domain: 'Expenses & Payables', targetKind: 'expense_cat',
+      explain: 'Cumulative USD spend for an Expense Category within the same calendar month (YYYY-MM) per entity.',
+      formTypes: ['expense'], whereLabel: 'Expense Form & Monthly Budget', jumpView: 'expenses',
+      formTargetFn: () => val('f_category'),
       formValFn: () => {
-        const cust = val('f_customer');
-        const bal = cust ? openArBalance(cust) : null;
-        return bal != null ? Number(bal) : 0;
+        const cat = val('f_category');
+        const addAmt = val('f_price_pending') === '1' ? 0 : num('f_amount');
+        if (!cat || !(addAmt > 0)) return 0;
+        const co = val('f_company') || defaultEntryCompany();
+        const ym = String(val('f_date') || SEED_DATE || '').slice(0, 7);
+        let sum = addAmt;
+        (SEED.records.expenses || []).forEach(r => {
+          if (!r || r.voided || String(r.id) === String(STATE.editingId || '')) return;
+          if (co && r.company && norm(r.company) !== norm(co)) return;
+          if (norm(r.category) === norm(cat) && String(r.date || '').slice(0, 7) === ym) sum += Number(r.amount || 0);
+        });
+        return round2(sum);
       },
       recordsFn: () => {
-        const mdl = getModel() || {};
-        return (mdl.customers || []).map(c => {
-          const ci = customerInfo(c.Customer);
-          const cid = (ci && ci.id) ? ci.id : c.Customer;
-          return {
-            id: cid, rid: cid, rkey: 'customers',
-            date: String(c.last_sale || '').slice(0, 10),
-            company: STATE.company === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[STATE.company] || 'WTC'),
-            party: c.Customer,
-            detail: `Open AR (${fmtNum(c.loads || 0)} loads)`,
-            value: Number(c.ar_balance || 0)
-          };
+        const map = new Map();
+        filterRecords(SEED.records.expenses, { ignoreSearch: true }).forEach(r => {
+          const cat = r.category || 'Uncategorized';
+          const ym = String(r.date || '').slice(0, 7) || 'Month';
+          const co = r.company || 'WTC';
+          const k = `${co}|${ym}|${cat}`;
+          const cur = map.get(k) || { id: k, rid: r.id, rkey: 'expenses', date: ym + '-01', company: co, target: cat, party: cat, count: 0, value: 0 };
+          cur.count += 1; cur.value += Number(r.amount || 0);
+          map.set(k, cur);
         });
+        return Array.from(map.values()).map(b => Object.assign(b, { value: round2(b.value), detail: `${b.date.slice(0, 7)} · ${fmtNum(b.count)} vouchers` }));
+      }
+    },
+    expense_cat_30d_usd: {
+      label: '30-Day Rolling Category Spend ($)',
+      unit: '$', domainKey: 'expenses', domain: 'Expenses & Payables', targetKind: 'expense_cat',
+      explain: 'Rolling 30-day USD spend per Expense Category up to the latest ledger date.',
+      formTypes: ['expense'], whereLabel: 'Expense Form & 30d Spend Audit', jumpView: 'expenses',
+      formTargetFn: () => val('f_category'),
+      formValFn: () => {
+        const cat = val('f_category');
+        const addAmt = val('f_price_pending') === '1' ? 0 : num('f_amount');
+        if (!cat || !(addAmt > 0)) return 0;
+        const cut = _caCutDate30d();
+        const co = val('f_company') || defaultEntryCompany();
+        let sum = addAmt;
+        (SEED.records.expenses || []).forEach(r => {
+          if (!r || r.voided || String(r.id) === String(STATE.editingId || '')) return;
+          if (co && r.company && norm(r.company) !== norm(co)) return;
+          if (norm(r.category) === norm(cat) && String(r.date || '').slice(0, 10) >= cut) sum += Number(r.amount || 0);
+        });
+        return round2(sum);
+      },
+      recordsFn: () => {
+        const cut = _caCutDate30d();
+        const map = new Map();
+        filterRecords(SEED.records.expenses, { ignoreSearch: true }).forEach(r => {
+          const dt = String(r.date || '').slice(0, 10);
+          if (dt < cut) return;
+          const cat = r.category || 'Uncategorized';
+          const co = r.company || 'WTC';
+          const k = `${co}|${cat}`;
+          const cur = map.get(k) || { id: k, rid: r.id, rkey: 'expenses', date: dt, company: co, target: cat, party: cat, count: 0, value: 0 };
+          if (dt > cur.date) cur.date = dt;
+          cur.count += 1; cur.value += Number(r.amount || 0);
+          map.set(k, cur);
+        });
+        return Array.from(map.values()).map(b => Object.assign(b, { value: round2(b.value), detail: `Last 30d (${fmtNum(b.count)} vouchers)` }));
+      }
+    },
+    daily_cash_expense_usd: {
+      label: 'Daily Cash Expenses Paid ($)',
+      unit: '$', domainKey: 'expenses', domain: 'Expenses & Payables', targetKind: 'expense_cat',
+      explain: 'Total Cash-method expenses paid out on a single calendar day (ignores Credit supplier invoices).',
+      formTypes: ['expense'], whereLabel: 'Expense Form & Daily Till Audit', jumpView: 'expenses',
+      formTargetFn: () => val('f_category'),
+      formValFn: () => {
+        if (norm(val('f_method')) !== 'cash' || val('f_price_pending') === '1') return 0;
+        const addAmt = num('f_amount');
+        if (!(addAmt > 0)) return 0;
+        const dt = String(val('f_date') || SEED_DATE || '').slice(0, 10);
+        const co = val('f_company') || defaultEntryCompany();
+        let sum = addAmt;
+        (SEED.records.expenses || []).forEach(r => {
+          if (!r || r.voided || String(r.id) === String(STATE.editingId || '')) return;
+          if (norm(r.method) !== 'cash') return;
+          if (co && r.company && norm(r.company) !== norm(co)) return;
+          if (String(r.date || '').slice(0, 10) === dt) sum += Number(r.amount || 0);
+        });
+        return round2(sum);
+      },
+      recordsFn: targetFilter => {
+        const map = new Map();
+        const tf = norm(targetFilter || '');
+        filterRecords(SEED.records.expenses, { ignoreSearch: true }).forEach(r => {
+          if (norm(r.method) !== 'cash') return;
+          if (tf && norm(r.category) !== tf) return;
+          const dt = String(r.date || '').slice(0, 10);
+          const co = r.company || 'WTC';
+          const k = `${co}|${dt}`;
+          const cur = map.get(k) || { id: k, rid: r.id, rkey: 'expenses', date: dt, company: co, target: tf ? (r.category || '') : '', party: tf ? (r.category || 'Cash Expense') : `${co} Cash Desk`, count: 0, value: 0 };
+          cur.count += 1; cur.value += Number(r.amount || 0);
+          map.set(k, cur);
+        });
+        return Array.from(map.values()).map(b => Object.assign(b, { value: round2(b.value), detail: `${b.date} · ${fmtNum(b.count)} cash vouchers` }));
       }
     },
     supplier_ap_usd: {
       label: 'Supplier Open AP Balance ($)',
-      unit: '$',
-      domain: 'Custom Rules',
-      formTypes: ['raw', 'expense'],
-      whereLabel: 'Quarry & Expense Forms & Payables',
-      jumpView: 'suppliers',
+      unit: '$', domainKey: 'expenses', domain: 'Expenses & Payables', targetKind: 'supplier',
+      explain: 'Live unpaid Accounts Payable balance owed to a supplier across quarry tickets, expenses, and settlements.',
+      formTypes: ['raw', 'expense'], whereLabel: 'Quarry & Expense Forms & Payables', jumpView: 'suppliers',
+      formTargetFn: () => val('f_supplier') || val('f_siteowner') || val('f_truckowner'),
       formValFn: () => {
         const sup = val('f_supplier') || val('f_siteowner') || val('f_truckowner');
         const bal = sup ? openApBalance(sup) : null;
@@ -8914,51 +8955,574 @@
           const si = supplierInfo(s.Supplier);
           const sid = (si && si.id) ? si.id : s.Supplier;
           return {
-            id: sid, rid: sid, rkey: 'suppliers',
-            date: String(s.last_tx || '').slice(0, 10),
+            id: sid, rid: sid, rkey: 'suppliers', date: String(s.last_tx || '').slice(0, 10),
             company: STATE.company === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[STATE.company] || 'WTC'),
-            party: s.Supplier,
-            detail: s.Category || 'Supplier AP',
-            value: Number(s.ap_balance || 0)
+            target: s.Supplier, party: s.Supplier, detail: s.Category || 'Supplier AP', value: Number(s.ap_balance || 0)
           };
         });
       }
     },
-    salary_voucher_usd: {
-      label: 'Single Salary Payment ($)',
-      unit: '$',
-      domain: 'Custom Rules',
-      formTypes: ['salary'],
-      whereLabel: 'Salary Form & Payroll Audit',
-      jumpForm: 'salary',
-      formValFn: () => num('f_amount'),
-      recordsFn: () => filterRecords(SEED.records.salaries, { ignoreSearch: true }).map(r => ({
-        id: r.id, rid: r.id, rkey: 'salaries',
-        date: String(r.date || '').slice(0, 10),
-        company: r.company || 'WTC',
-        party: r.staff || 'Staff',
-        detail: r.payroll_month || r.notes || 'Salary payment',
-        value: Number(r.amount || 0) > 0 ? Number(r.amount) : (Number(r.lbp_amount || 0) / 89500)
-      }))
-    },
     settlement_usd: {
       label: 'Single Supplier Settlement ($)',
-      unit: '$',
-      domain: 'Custom Rules',
-      formTypes: ['settlement'],
-      whereLabel: 'Settlement Form & Payables Audit',
-      jumpForm: 'settlement',
+      unit: '$', domainKey: 'expenses', domain: 'Expenses & Payables', targetKind: 'supplier',
+      explain: 'USD payment amount recorded on a single Supplier Settlement voucher.',
+      formTypes: ['settlement'], whereLabel: 'Settlement Form & Payables Audit', jumpForm: 'settlement',
+      formTargetFn: () => val('f_supplier'),
       formValFn: () => num('f_amount'),
       recordsFn: () => filterRecords(SEED.records.settlements, { ignoreSearch: true }).map(r => ({
-        id: r.id, rid: r.id, rkey: 'settlements',
-        date: String(r.date || '').slice(0, 10),
-        company: r.company || 'WTC',
-        party: r.supplier || 'Supplier',
-        detail: `${r.method || 'Cash'}${r.reference ? ' · ' + r.reference : ''}`,
-        value: Number(r.amount || 0)
+        id: r.id, rid: r.id, rkey: 'settlements', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC', target: r.supplier || '', party: r.supplier || 'Supplier',
+        detail: `${r.method || 'Cash'}${r.reference ? ' · ' + r.reference : ''}`, value: Number(r.amount || 0)
       }))
+    },
+    sales_total_usd: {
+      label: 'Single Sales Ticket Total ($)',
+      unit: '$', domainKey: 'sales', domain: 'Sales & Receivables', targetKind: 'customer',
+      explain: 'VAT-inclusive total USD (material + transport + 11% VAT - discount) on a single Sales Ticket.',
+      formTypes: ['sales'], whereLabel: 'Sales Ticket Form & Sentinel Audit', jumpForm: 'sales',
+      formTargetFn: () => val('f_customer'),
+      formValFn: c => Number((c && (c.ttc != null ? c.ttc : c.net)) || num('f_total_usd') || 0),
+      recordsFn: () => filterRecords(SEED.records.sales_tickets, { ignoreSearch: true }).map(r => ({
+        id: r.id, rid: r.id, rkey: 'sales_tickets', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC', target: r.customer || '', party: r.customer || 'Walk-in',
+        detail: `#${r.ticket_no || '-'} · ${r.product || ''}`, value: Number(r.total_ttc != null ? r.total_ttc : (r.total || 0))
+      }))
+    },
+    sales_unit_price_usd: {
+      label: 'Sales Material Unit Price ($/unit)',
+      unit: '$', domainKey: 'sales', domain: 'Sales & Receivables', targetKind: 'product',
+      explain: 'Ex-works material unit selling price ($ per ton or m3) on a Sales Ticket. Pair with Drops Below (<) and a specific Product to guard floor pricing.',
+      formTypes: ['sales'], whereLabel: 'Sales Ticket Form & Pricing Audit', jumpForm: 'sales',
+      formTargetFn: () => val('f_product'),
+      formValFn: () => num('f_unitprice') || num('f_unit_price'),
+      recordsFn: () => filterRecords(SEED.records.sales_tickets, { ignoreSearch: true }).filter(r => Number(r.unit_price || 0) > 0).map(r => ({
+        id: r.id, rid: r.id, rkey: 'sales_tickets', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC', target: r.product || '', party: r.customer || 'Walk-in',
+        detail: `#${r.ticket_no || '-'} · ${r.product || ''}`, value: Number(r.unit_price || 0)
+      }))
+    },
+    sales_discount_pct: {
+      label: 'Sales Ticket Discount Share (%)',
+      unit: '%', domainKey: 'sales', domain: 'Sales & Receivables', targetKind: 'customer',
+      explain: 'Discount granted on a Sales Ticket expressed as a percentage of gross pre-discount value.',
+      formTypes: ['sales'], whereLabel: 'Sales Ticket Form & Margin Audit', jumpForm: 'sales',
+      formTargetFn: () => val('f_customer'),
+      formValFn: c => {
+        const disc = num('f_discount');
+        if (!(disc > 0)) return 0;
+        const gross = Number((c && ((c.mat || 0) + (c.tr || 0))) || 0);
+        return gross > 0 ? round2((disc / gross) * 100) : 0;
+      },
+      recordsFn: () => filterRecords(SEED.records.sales_tickets, { ignoreSearch: true }).filter(r => Number(r.discount || 0) > 0).map(r => {
+        const disc = Number(r.discount || 0);
+        const gross = Number(r.price || 0) + Number(r.trans_price || 0);
+        return {
+          id: r.id, rid: r.id, rkey: 'sales_tickets', date: String(r.date || '').slice(0, 10),
+          company: r.company || 'WTC', target: r.customer || '', party: r.customer || 'Walk-in',
+          detail: `#${r.ticket_no || '-'} · disc ${fmtUSD(disc, 2)}`, value: gross > 0 ? round2((disc / gross) * 100) : 0
+        };
+      })
+    },
+    customer_ar_usd: {
+      label: 'Customer Open AR Balance ($)',
+      unit: '$', domainKey: 'sales', domain: 'Sales & Receivables', targetKind: 'customer',
+      explain: 'Live unpaid Accounts Receivable balance (VAT-inclusive) owed by a customer across credit sales and receipts.',
+      formTypes: ['sales'], whereLabel: 'Sales Ticket Form & Receivables', jumpView: 'customers',
+      formTargetFn: () => val('f_customer'),
+      formValFn: () => {
+        const cust = val('f_customer');
+        const bal = cust ? openArBalance(cust) : null;
+        return bal != null ? Number(bal) : 0;
+      },
+      recordsFn: () => {
+        const mdl = getModel() || {};
+        return (mdl.customers || []).map(c => {
+          const ci = customerInfo(c.Customer);
+          const cid = (ci && ci.id) ? ci.id : c.Customer;
+          return {
+            id: cid, rid: cid, rkey: 'customers', date: String(c.last_sale || '').slice(0, 10),
+            company: STATE.company === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[STATE.company] || 'WTC'),
+            target: c.Customer, party: c.Customer, detail: `Open AR (${fmtNum(c.loads || 0)} loads)`, value: Number(c.ar_balance || 0)
+          };
+        });
+      }
+    },
+    customer_ar60_usd: {
+      label: 'Customer Overdue > 60d AR ($)',
+      unit: '$', domainKey: 'sales', domain: 'Sales & Receivables', targetKind: 'customer',
+      explain: 'FIFO-allocated customer receivable balance aged more than 60 days past due.',
+      formTypes: ['sales'], whereLabel: 'Sales Ticket Form & Aging Audit', jumpView: 'customers',
+      formTargetFn: () => val('f_customer'),
+      formValFn: () => {
+        const cust = norm(val('f_customer'));
+        if (!cust) return 0;
+        const rows = (sentinelSlice() && sentinelSlice().overdueArRows) || [];
+        const hit = rows.find(r => norm(r.customer) === cust);
+        return hit ? Number(hit.ar_60_plus || 0) : 0;
+      },
+      recordsFn: () => ((sentinelSlice() && sentinelSlice().overdueArRows) || []).map(r => ({
+        id: r.customer, rid: r.customer, rkey: 'customers', date: String(r.last_sale || '').slice(0, 10),
+        company: STATE.company === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[STATE.company] || 'WTC'),
+        target: r.customer, party: r.customer, detail: `Open AR ${fmtUSD(r.ar_balance || 0, 0)}`, value: Number(r.ar_60_plus || 0)
+      }))
+    },
+    customer_month_sales_usd: {
+      label: 'Monthly Customer Credit Sales ($)',
+      unit: '$', domainKey: 'sales', domain: 'Sales & Receivables', targetKind: 'customer',
+      explain: 'Cumulative Credit-method sales billed to a customer within a single calendar month (YYYY-MM).',
+      formTypes: ['sales'], whereLabel: 'Sales Ticket Form & Credit Control', jumpView: 'sales',
+      formTargetFn: () => val('f_customer'),
+      formValFn: c => {
+        if (norm(val('f_method')) !== 'credit') return 0;
+        const cust = val('f_customer');
+        const addAmt = Number((c && (c.ttc != null ? c.ttc : c.net)) || 0);
+        if (!cust || !(addAmt > 0)) return 0;
+        const ym = String(val('f_date') || SEED_DATE || '').slice(0, 7);
+        let sum = addAmt;
+        (SEED.records.sales_tickets || []).forEach(r => {
+          if (!r || r.voided || String(r.id) === String(STATE.editingId || '')) return;
+          if (norm(r.method) === 'credit' && norm(r.customer) === norm(cust) && String(r.date || '').slice(0, 7) === ym) {
+            sum += Number(r.total_ttc != null ? r.total_ttc : (r.total || 0));
+          }
+        });
+        return round2(sum);
+      },
+      recordsFn: () => {
+        const map = new Map();
+        filterRecords(SEED.records.sales_tickets, { ignoreSearch: true }).forEach(r => {
+          if (norm(r.method) !== 'credit' || !r.customer) return;
+          const ym = String(r.date || '').slice(0, 7) || 'Month';
+          const co = r.company || 'WTC';
+          const k = `${co}|${ym}|${r.customer}`;
+          const cur = map.get(k) || { id: k, rid: r.id, rkey: 'sales_tickets', date: ym + '-01', company: co, target: r.customer, party: r.customer, count: 0, value: 0 };
+          cur.count += 1; cur.value += Number(r.total_ttc != null ? r.total_ttc : (r.total || 0));
+          map.set(k, cur);
+        });
+        return Array.from(map.values()).map(b => Object.assign(b, { value: round2(b.value), detail: `${b.date.slice(0, 7)} · ${fmtNum(b.count)} credit loads` }));
+      }
+    },
+    raw_total_usd: {
+      label: 'Single Quarry / Haulage Ticket ($)',
+      unit: '$', domainKey: 'quarry', domain: 'Quarry & Haulage', targetKind: 'site',
+      explain: 'Combined material + 3rd-party haulage USD cost on a single Quarry Intake ticket.',
+      formTypes: ['raw'], whereLabel: 'Quarry Ticket Form & Sentinel Audit', jumpForm: 'raw',
+      formTargetFn: () => val('f_site'),
+      formValFn: c => Number((c && ((c.mat || 0) + (c.tr || 0))) || num('f_total_usd') || 0),
+      recordsFn: () => filterRecords(SEED.records.raw_purchases, { ignoreSearch: true }).map(r => ({
+        id: r.id, rid: r.id, rkey: 'raw_purchases', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC', target: r.site || '', party: r.site_owner || r.truck_owner || r.site || 'Quarry',
+        detail: `#${r.ticket_no || '-'} · ${r.product || ''} (${r.site || ''})`,
+        value: Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)))
+      }))
+    },
+    raw_mat_unit_usd: {
+      label: 'Quarry Material Unit Cost ($/unit)',
+      unit: '$', domainKey: 'quarry', domain: 'Quarry & Haulage', targetKind: 'product',
+      explain: 'Ex-quarry material unit purchase cost ($ per ton or m3) on a Quarry Intake ticket.',
+      formTypes: ['raw'], whereLabel: 'Quarry Ticket Form & Cost Audit', jumpForm: 'raw',
+      formTargetFn: () => val('f_product'),
+      formValFn: () => num('f_unitcost') || num('f_unit_cost'),
+      recordsFn: () => filterRecords(SEED.records.raw_purchases, { ignoreSearch: true }).filter(r => Number(r.unit_cost || 0) > 0).map(r => ({
+        id: r.id, rid: r.id, rkey: 'raw_purchases', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC', target: r.product || '', party: r.site_owner || r.site || 'Quarry',
+        detail: `#${r.ticket_no || '-'} · ${r.product || ''}`, value: Number(r.unit_cost || 0)
+      }))
+    },
+    raw_haul_leg_usd: {
+      label: 'Single 3rd-Party Haulage Leg ($)',
+      unit: '$', domainKey: 'quarry', domain: 'Quarry & Haulage', targetKind: 'supplier',
+      explain: 'Transport cost leg in USD paid to an external truck owner on a Quarry or Sales ticket.',
+      formTypes: ['raw', 'sales'], whereLabel: 'Quarry & Sales Haulage Legs', jumpView: 'raw',
+      formTargetFn: () => val('f_truckowner'),
+      formValFn: c => Number((c && c.tr) || num('f_transprice') || num('f_transcost') || 0),
+      recordsFn: () => filterRecords(SEED.records.raw_purchases, { ignoreSearch: true }).filter(r => Number(r.trans_cost || 0) > 0).map(r => ({
+        id: r.id, rid: r.id, rkey: 'raw_purchases', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC', target: r.truck_owner || '', party: r.truck_owner || 'Haulier',
+        detail: `#${r.ticket_no || '-'} · ${r.truck || ''} (${r.site || ''})`, value: Number(r.trans_cost || 0)
+      }))
+    },
+    site_month_intake_usd: {
+      label: 'Monthly Source Site Intake ($)',
+      unit: '$', domainKey: 'quarry', domain: 'Quarry & Haulage', targetKind: 'site',
+      explain: 'Cumulative USD raw material and haulage intake from a quarry or JV source site within a calendar month.',
+      formTypes: ['raw'], whereLabel: 'Quarry Form & Monthly Site Ledger', jumpView: 'raw',
+      formTargetFn: () => val('f_site'),
+      formValFn: c => {
+        const site = val('f_site');
+        const addAmt = Number((c && ((c.mat || 0) + (c.tr || 0))) || 0);
+        if (!site || !(addAmt > 0)) return 0;
+        const ym = String(val('f_date') || SEED_DATE || '').slice(0, 7);
+        let sum = addAmt;
+        (SEED.records.raw_purchases || []).forEach(r => {
+          if (!r || r.voided || String(r.id) === String(STATE.editingId || '')) return;
+          if (norm(r.site) === norm(site) && String(r.date || '').slice(0, 7) === ym) {
+            sum += Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)));
+          }
+        });
+        return round2(sum);
+      },
+      recordsFn: () => {
+        const map = new Map();
+        filterRecords(SEED.records.raw_purchases, { ignoreSearch: true }).forEach(r => {
+          const site = r.site || 'Quarry';
+          const ym = String(r.date || '').slice(0, 7) || 'Month';
+          const co = r.company || 'WTC';
+          const k = `${co}|${ym}|${site}`;
+          const cur = map.get(k) || { id: k, rid: r.id, rkey: 'raw_purchases', date: ym + '-01', company: co, target: site, party: site, count: 0, value: 0 };
+          cur.count += 1; cur.value += Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)));
+          map.set(k, cur);
+        });
+        return Array.from(map.values()).map(b => Object.assign(b, { value: round2(b.value), detail: `${b.date.slice(0, 7)} · ${fmtNum(b.count)} loads` }));
+      }
+    },
+    fuel_litres: {
+      label: 'Single Diesel / Lube Issue (L)',
+      unit: 'L', domainKey: 'fleet', domain: 'Fleet, Diesel & Maint.', targetKind: 'equipment',
+      explain: 'Litres dispensed in a single Diesel & Lubricants entry for a truck, loader, excavator, or generator.',
+      formTypes: ['fuel'], whereLabel: 'Diesel & Lubricants Form & Audit', jumpForm: 'fuel',
+      formTargetFn: () => val('f_truck') || val('f_equipment'),
+      formValFn: c => Number((c && c.litres) || num('f_qty') || 0),
+      recordsFn: () => filterRecords(SEED.records.fuel_intakes, { ignoreSearch: true }).map(r => ({
+        id: r.id, rid: r.id, rkey: 'fuel_intakes', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC', target: r.equipment || '', party: r.equipment || 'Unit',
+        detail: `${r.item || r.fuel_type || 'Diesel'}${r.driver ? ' · ' + r.driver : ''}`, value: Number(r.litres || 0)
+      }))
+    },
+    unit_diesel_30d_l: {
+      label: 'Unit 30-Day Diesel Issued (L)',
+      unit: 'L', domainKey: 'fleet', domain: 'Fleet, Diesel & Maint.', targetKind: 'equipment',
+      explain: 'Rolling 30-day diesel volume in litres dispensed to an individual road truck or yellow-iron unit.',
+      formTypes: ['fuel'], whereLabel: 'Diesel Form & 30d Fleet Audit', jumpView: 'fleet',
+      formTargetFn: () => val('f_truck') || val('f_equipment'),
+      formValFn: c => {
+        const eq = val('f_truck') || val('f_equipment');
+        const addL = Number((c && c.litres) || num('f_qty') || 0);
+        if (!eq || !(addL > 0)) return 0;
+        const cut = _caCutDate30d();
+        let sum = addL;
+        (SEED.records.fuel_intakes || []).forEach(r => {
+          if (!r || r.voided || String(r.id) === String(STATE.editingId || '')) return;
+          if (norm(r.equipment) === norm(eq) && String(r.date || '').slice(0, 10) >= cut && /diesel|mazout/i.test(String(r.item || r.fuel_type || 'Diesel'))) {
+            sum += Number(r.litres || 0);
+          }
+        });
+        return round2(sum);
+      },
+      recordsFn: () => {
+        const cut = _caCutDate30d();
+        const map = new Map();
+        filterRecords(SEED.records.fuel_intakes, { ignoreSearch: true }).forEach(r => {
+          const dt = String(r.date || '').slice(0, 10);
+          if (dt < cut || !r.equipment || !/diesel|mazout/i.test(String(r.item || r.fuel_type || 'Diesel'))) return;
+          const co = r.company || 'WTC';
+          const k = `${co}|${r.equipment}`;
+          const cur = map.get(k) || { id: k, rid: r.id, rkey: 'fuel_intakes', date: dt, company: co, target: r.equipment, party: r.equipment, count: 0, value: 0 };
+          if (dt > cur.date) cur.date = dt;
+          cur.count += 1; cur.value += Number(r.litres || 0);
+          map.set(k, cur);
+        });
+        return Array.from(map.values()).map(b => Object.assign(b, { value: round2(b.value), detail: `Last 30d (${fmtNum(b.count)} fills)` }));
+      }
+    },
+    truck_burn_l100km: {
+      label: 'Road Truck Fuel Burn (L/100km)',
+      unit: 'L/100km', domainKey: 'fleet', domain: 'Fleet, Diesel & Maint.', targetKind: 'equipment',
+      explain: 'Measured road-truck diesel burn rate in litres per 100 km across consecutive odometer fills.',
+      formTypes: [], whereLabel: 'Fleet & Diesel Consumption Audit', jumpView: 'fleet',
+      formTargetFn: () => '',
+      formValFn: () => 0,
+      recordsFn: () => {
+        const mdl = getModel() || {};
+        return (mdl.equipment || []).filter(e => Number(e.l_per_100km || 0) > 0).map(e => ({
+          id: e.Equipment, rid: e.Equipment, rkey: 'equipment', date: SEED_DATE || '',
+          company: STATE.company === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[STATE.company] || 'WTC'),
+          target: e.Equipment, party: e.Equipment, detail: `${fmtNum(e.km_run || 0, 0)} km logged`, value: round2(Number(e.l_per_100km || 0))
+        }));
+      }
+    },
+    machine_burn_lh: {
+      label: 'Yellow-Iron Fuel Burn (L/h)',
+      unit: 'L/h', domainKey: 'fleet', domain: 'Fleet, Diesel & Maint.', targetKind: 'equipment',
+      explain: 'Measured excavator, loader, or crusher diesel burn rate in litres per operating hour.',
+      formTypes: [], whereLabel: 'Fleet & Diesel Hour-Meter Audit', jumpView: 'fleet',
+      formTargetFn: () => '',
+      formValFn: () => 0,
+      recordsFn: () => {
+        const fl = (sentinelSlice() && sentinelSlice().fleet) || {};
+        return (fl.consumption_outliers || []).filter(o => /L\/h/i.test(String(o.metric || ''))).map((o, idx) => ({
+          id: `${o.equipment}_${idx}`, rid: o.equipment, rkey: 'equipment', date: SEED_DATE || '',
+          company: STATE.company === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[STATE.company] || 'WTC'),
+          target: o.equipment, party: o.equipment, detail: `${fmtNum(o.hours || 0, 0)} hrs · ${fmtNum(o.diesel_l || 0, 0)} L`, value: round2(Number(o.value || 0))
+        }));
+      }
+    },
+    diesel_tank_rem_l: {
+      label: 'Plant Diesel Tank Remaining (L)',
+      unit: 'L', domainKey: 'fleet', domain: 'Fleet, Diesel & Maint.', targetKind: 'none', allowZeroOrNeg: true,
+      explain: 'Live physical plant diesel tank balance in litres (opening + bulk deliveries minus unit issues, malfunctions, and sold). Use Drops Below (<) for low-fuel reorder alerts.',
+      formTypes: ['fuel'], whereLabel: 'Diesel Form & Tank Reconciliation', jumpView: 'fleet',
+      formTargetFn: () => '',
+      formValFn: c => {
+        const fl = (sentinelSlice() && sentinelSlice().fleet) || {};
+        const curTank = fl.diesel_stock_balance_l != null ? Number(fl.diesel_stock_balance_l) : Number((getKPI() || {}).diesel_in_tank || 0);
+        const issueL = Number((c && c.litres) || num('f_qty') || 0);
+        return round2(curTank - Math.max(0, issueL));
+      },
+      recordsFn: () => {
+        const fl = (sentinelSlice() && sentinelSlice().fleet) || {};
+        const tank = fl.diesel_stock_balance_l != null ? Number(fl.diesel_stock_balance_l) : Number((getKPI() || {}).diesel_in_tank || 0);
+        const co = STATE.company === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[STATE.company] || 'WTC');
+        return [{ id: 'diesel_tank_' + co, rid: 'diesel_tank', rkey: 'fuel_intakes', date: SEED_DATE || '', company: co, target: '', party: `${co} Bulk Diesel Tank`, detail: 'Physical tank balance', value: round2(tank) }];
+      }
+    },
+    unit_maint_month_usd: {
+      label: 'Monthly Unit Repair & Parts ($)',
+      unit: '$', domainKey: 'fleet', domain: 'Fleet, Diesel & Maint.', targetKind: 'equipment',
+      explain: 'Cumulative USD repair, spare parts, and workshop expenses tagged to a specific truck or machine within a calendar month.',
+      formTypes: ['expense'], whereLabel: 'Expense Form & Fleet Maintenance', jumpView: 'fleet_maint',
+      formTargetFn: () => val('f_equipment') || val('f_truck'),
+      formValFn: () => {
+        const eq = val('f_equipment') || val('f_truck');
+        const addAmt = val('f_price_pending') === '1' ? 0 : num('f_amount');
+        if (!eq || !(addAmt > 0)) return 0;
+        const ym = String(val('f_date') || SEED_DATE || '').slice(0, 7);
+        let sum = addAmt;
+        (SEED.records.expenses || []).forEach(r => {
+          if (!r || r.voided || String(r.id) === String(STATE.editingId || '')) return;
+          if (norm(r.equipment) === norm(eq) && String(r.date || '').slice(0, 7) === ym) sum += Number(r.amount || 0);
+        });
+        return round2(sum);
+      },
+      recordsFn: () => {
+        const map = new Map();
+        filterRecords(SEED.records.expenses, { ignoreSearch: true }).forEach(r => {
+          if (!r.equipment) return;
+          const ym = String(r.date || '').slice(0, 7) || 'Month';
+          const co = r.company || 'WTC';
+          const k = `${co}|${ym}|${r.equipment}`;
+          const cur = map.get(k) || { id: k, rid: r.id, rkey: 'expenses', date: ym + '-01', company: co, target: r.equipment, party: r.equipment, count: 0, value: 0 };
+          cur.count += 1; cur.value += Number(r.amount || 0);
+          map.set(k, cur);
+        });
+        return Array.from(map.values()).map(b => Object.assign(b, { value: round2(b.value), detail: `${b.date.slice(0, 7)} · ${fmtNum(b.count)} repair bills` }));
+      }
+    },
+    salary_voucher_usd: {
+      label: 'Single Salary / Advance Payment ($)',
+      unit: '$', domainKey: 'payroll', domain: 'Payroll & Workforce', targetKind: 'staff',
+      explain: 'USD equivalent of a single Salary or Cash Advance voucher (converting LBP payments at 89,500 LBP per USD).',
+      formTypes: ['salary'], whereLabel: 'Salary Form & Payroll Audit', jumpForm: 'salary',
+      formTargetFn: () => val('f_staff'),
+      formValFn: () => num('f_amount') > 0 ? num('f_amount') : round2(num('f_lbp_amount') / 89500),
+      recordsFn: () => filterRecords(SEED.records.salaries, { ignoreSearch: true }).map(r => ({
+        id: r.id, rid: r.id, rkey: 'salaries', date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC', target: r.staff || '', party: r.staff || 'Staff',
+        detail: r.payroll_month || r.notes || 'Salary payment',
+        value: Number(r.amount || 0) > 0 ? Number(r.amount) : round2(Number(r.lbp_amount || 0) / 89500)
+      }))
+    },
+    staff_rem_due_usd: {
+      label: 'Staff Unpaid Payroll Balance ($)',
+      unit: '$', domainKey: 'payroll', domain: 'Payroll & Workforce', targetKind: 'staff',
+      explain: 'Remaining unpaid monthly salary balance in USD owed to an active contract employee after salary vouchers.',
+      formTypes: ['salary'], whereLabel: 'Salary Form & Payroll Sheet', jumpView: 'payroll',
+      formTargetFn: () => val('f_staff'),
+      formValFn: () => 0,
+      recordsFn: () => {
+        const paidMap = new Map();
+        filterRecords(SEED.records.salaries, { ignoreSearch: true }).forEach(r => {
+          const stf = r.staff || '';
+          const ym = String(r.payroll_month || r.date || '').slice(0, 7);
+          if (!stf || !ym) return;
+          const k = `${r.company || 'WTC'}|${ym}|${norm(stf)}`;
+          const v = Number(r.amount || 0) > 0 ? Number(r.amount) : (Number(r.lbp_amount || 0) / 89500);
+          paidMap.set(k, (paidMap.get(k) || 0) + v);
+        });
+        const ymNow = String(SEED_DATE || '').slice(0, 7);
+        return filterRecords(SEED.records.employments, { ignoreSearch: true }).filter(e => e.staff && norm(e.status || 'Active') === 'active').map(e => {
+          const baseUsd = Number(e.salary_usd || 0) + (Number(e.salary_lbp || 0) / 89500);
+          const co = e.company || 'WTC';
+          const paid = paidMap.get(`${co}|${ymNow}|${norm(e.staff)}`) || 0;
+          const rem = Math.max(0, round2(baseUsd - paid));
+          return { id: e.id || e.staff, rid: e.id || e.staff, rkey: 'employments', date: ymNow + '-01', company: co, target: e.staff, party: e.staff, detail: `${ymNow} contract ${fmtUSD(baseUsd, 0)}`, value: rem };
+        }).filter(x => x.value > 0);
+      }
+    },
+    staff_month_ot_usd: {
+      label: 'Staff Monthly Overtime Pay ($)',
+      unit: '$', domainKey: 'payroll', domain: 'Payroll & Workforce', targetKind: 'staff',
+      explain: 'Monthly extra and overtime earnings in USD logged for a staff member across attendance rows.',
+      formTypes: [], whereLabel: 'Payroll Sheet & Attendance Audit', jumpView: 'payroll',
+      formTargetFn: () => '',
+      formValFn: () => 0,
+      recordsFn: () => {
+        const map = new Map();
+        filterRecords(SEED.records.attendance, { ignoreSearch: true }).forEach(r => {
+          const otUsd = Number(r.extra_usd || 0) + (Number(r.extra_lbp || 0) / 89500);
+          const otHrs = Number(r.overtime_hours || 0);
+          if (!(otUsd > 0 || otHrs > 0) || !r.staff) return;
+          const ym = String(r.month || r.date || '').slice(0, 7) || 'Month';
+          const co = r.company || 'WTC';
+          const k = `${co}|${ym}|${r.staff}`;
+          const cur = map.get(k) || { id: k, rid: k, rkey: 'attendance', date: ym + '-01', company: co, target: r.staff, party: r.staff, hrs: 0, value: 0 };
+          cur.hrs += otHrs; cur.value += otUsd;
+          map.set(k, cur);
+        });
+        return Array.from(map.values()).filter(b => b.value > 0).map(b => Object.assign(b, { value: round2(b.value), detail: `${b.date.slice(0, 7)} · ${fmtNum(b.hrs, 1)} OT hrs` }));
+      }
+    },
+    staff_month_absent_d: {
+      label: 'Staff Monthly Absent Days (days)',
+      unit: 'days', domainKey: 'payroll', domain: 'Payroll & Workforce', targetKind: 'staff',
+      explain: 'Count of absent days recorded for an employee within a single calendar month in the Attendance register.',
+      formTypes: [], whereLabel: 'Attendance Register & Workforce Audit', jumpView: 'attendance',
+      formTargetFn: () => '',
+      formValFn: () => 0,
+      recordsFn: () => {
+        const map = new Map();
+        filterRecords(SEED.records.attendance, { ignoreSearch: true }).forEach(r => {
+          if (!r.staff || !/absent/i.test(String(r.status || ''))) return;
+          const ym = String(r.month || r.date || '').slice(0, 7) || 'Month';
+          const co = r.company || 'WTC';
+          const k = `${co}|${ym}|${r.staff}`;
+          const cur = map.get(k) || { id: k, rid: k, rkey: 'attendance', date: ym + '-01', company: co, target: r.staff, party: r.staff, value: 0 };
+          cur.value += Number(r.leave_days || 1);
+          map.set(k, cur);
+        });
+        return Array.from(map.values()).map(b => Object.assign(b, { detail: `${b.date.slice(0, 7)} attendance` }));
+      }
+    },
+    external_out_usd: {
+      label: 'Single External Cash Outflow ($)',
+      unit: '$', domainKey: 'treasury', domain: 'Cash Till & Loans', targetKind: 'none',
+      explain: 'USD value of a single External Cash Movement, partner draw, or inter-company transfer outflow.',
+      formTypes: ['external'], whereLabel: 'External Cash Form & Treasury', jumpView: 'treasury',
+      formTargetFn: () => '',
+      formValFn: () => /out/i.test(String(val('f_direction') || val('f_flow') || 'out')) ? num('f_amount') : 0,
+      recordsFn: () => filterRecords(SEED.records.external_movements, { ignoreSearch: true }).filter(r => /out/i.test(String(r.direction || r.flow || ''))).map(r => {
+        const v = Number(r.usd_amount != null ? r.usd_amount : (r.amount || 0));
+        return {
+          id: r.id, rid: r.id, rkey: 'external_movements', date: String(r.date || '').slice(0, 10),
+          company: r.company || 'WTC', target: '', party: r.counterparty || r.kind || 'External Flow',
+          detail: [r.kind, r.method, r.notes].filter(Boolean).join(' · ') || 'Cash Outflow', value: Math.abs(v)
+        };
+      })
+    },
+    cash_till_usd: {
+      label: 'Live USD Cash Till Balance ($)',
+      unit: '$', domainKey: 'treasury', domain: 'Cash Till & Loans', targetKind: 'none', allowZeroOrNeg: true,
+      explain: 'Live net USD cash-on-hand balance in the entity till across cash sales, receipts, cash expenses, settlements, salaries, and external flows.',
+      formTypes: ['expense', 'settlement', 'salary'], whereLabel: 'Entry Forms & Cash Till Ledger', jumpView: 'treasury',
+      formTargetFn: () => '',
+      formValFn: () => {
+        const k = getKPI() || {};
+        const cur = Number(k.cash_till_usd != null ? k.cash_till_usd : (k.cash_till || 0));
+        const isCash = norm(val('f_method') || 'Cash') === 'cash';
+        return round2(cur - (isCash ? Math.max(0, num('f_amount')) : 0));
+      },
+      recordsFn: () => {
+        const k = getKPI() || {};
+        const bal = Number(k.cash_till_usd != null ? k.cash_till_usd : (k.cash_till || 0));
+        const co = STATE.company === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[STATE.company] || 'WTC');
+        return [{ id: 'cash_till_' + co, rid: 'cash_till', rkey: 'expenses', date: SEED_DATE || '', company: co, target: '', party: `${co} USD Cash Till`, detail: 'Live net cash balance', value: round2(bal) }];
+      }
     }
   };
+
+  function formatCustomAlertMetricVal(spec, v, decOverride) {
+    const n = Number(v || 0);
+    if (!spec || spec.unit === '$') return fmtUSD(n, decOverride != null ? decOverride : (Math.abs(n) >= 100 ? 0 : 2));
+    if (spec.unit === '%') return `${fmtNum(n, 1)}%`;
+    return `${fmtNum(n, decOverride != null ? decOverride : (n % 1 ? 1 : 0))} ${spec.unit}`;
+  }
+
+  function getCustomAlertTargetOptions(targetKind) {
+    const uniqSort = arr => Array.from(new Set(arr.map(x => String(x || '').trim()).filter(x => x && !/^\d+$/.test(x)))).sort((a, b) => a.localeCompare(b));
+    if (targetKind === 'expense_cat') {
+      const cats = [];
+      (SEED.records.expense_categories || []).forEach(c => { if (c && c.name) cats.push(c.name); });
+      (SEED.records.expenses || []).forEach(r => { if (r && r.category) cats.push(r.category); });
+      return { label: 'Expense Category (Optional)', placeholder: 'All Expense Categories', options: uniqSort(cats) };
+    }
+    if (targetKind === 'customer') {
+      const arr = [];
+      (SEED.records.customers || []).forEach(c => { if (c && c.name) arr.push(c.name); });
+      return { label: 'Specific Customer (Optional)', placeholder: 'All Customers', options: uniqSort(arr) };
+    }
+    if (targetKind === 'supplier') {
+      const arr = [];
+      (SEED.records.suppliers || []).forEach(s => { if (s && s.name) arr.push(s.name); });
+      return { label: 'Specific Supplier / Haulier (Optional)', placeholder: 'All Suppliers & Hauliers', options: uniqSort(arr) };
+    }
+    if (targetKind === 'product') {
+      const arr = [];
+      (SEED.records.products || []).forEach(p => { if (p && p.name) arr.push(p.name); });
+      return { label: 'Specific Product / Grade (Optional)', placeholder: 'All Products & Grades', options: uniqSort(arr) };
+    }
+    if (targetKind === 'site') {
+      const arr = [];
+      (SEED.records.sites || []).forEach(s => { if (s && s.name) arr.push(s.name); });
+      return { label: 'Quarry / Source Site (Optional)', placeholder: 'All Quarry & JV Sites', options: uniqSort(arr) };
+    }
+    if (targetKind === 'equipment') {
+      const arr = [];
+      (SEED.records.equipment || []).forEach(e => { if (e && e.name) arr.push(e.name); });
+      return { label: 'Specific Truck / Machine (Optional)', placeholder: 'All Fleet & Plant Units', options: uniqSort(arr) };
+    }
+    if (targetKind === 'staff') {
+      const arr = [];
+      (SEED.records.employments || []).forEach(e => { if (e && e.staff) arr.push(e.staff); });
+      (SEED.records.salaries || []).forEach(s => { if (s && s.staff) arr.push(s.staff); });
+      return { label: 'Specific Staff Member (Optional)', placeholder: 'All Staff Members', options: uniqSort(arr) };
+    }
+    return { label: 'Specific Scope', placeholder: 'Entire Selected Entity', options: [] };
+  }
+
+  function matchesCustomAlertTarget(rowTarget, ruleTarget) {
+    const rt = norm(ruleTarget || '');
+    if (!rt) return true;
+    return norm(rowTarget || '') === rt;
+  }
+
+  function buildCustomAlertExplainHtml(metricKey, targetVal, opVal, rawThreshStr, coScope) {
+    const spec = CUSTOM_ALERT_METRICS[metricKey] || CUSTOM_ALERT_METRICS.expense_usd;
+    const coLbl = (!coScope || coScope === 'all') ? COMPANY_LABELS[STATE.company] : coScope;
+    const scopeSummary = targetVal ? `${targetVal} · ${coLbl}` : coLbl;
+    const allRows = (spec.recordsFn(targetVal) || []).filter(r => {
+      if (!r) return false;
+      if (!spec.allowZeroOrNeg && !(r.value > 0)) return false;
+      if (coScope && coScope !== 'all' && r.company && r.company !== 'Group' && norm(r.company) !== norm(coScope)) return false;
+      return matchesCustomAlertTarget(r.target || r.party, targetVal);
+    });
+    let statsHtml = '';
+    if (!allRows.length) {
+      statsHtml = `<div><strong>Current data (${esc(scopeSummary)}):</strong> 0 matching records in the current period/entity filter.</div>`;
+    } else {
+      let sum = 0, maxV = -Infinity, minV = Infinity;
+      allRows.forEach(r => {
+        const v = Number(r.value || 0);
+        sum += v;
+        if (v > maxV) maxV = v;
+        if (v < minV) minV = v;
+      });
+      const avgV = sum / allRows.length;
+      statsHtml = `<div><strong>Current data (${esc(scopeSummary)}):</strong> <b>${fmtNum(allRows.length)}</b> record${allRows.length === 1 ? '' : 's'} · average <b>${esc(formatCustomAlertMetricVal(spec, avgV))}</b> · highest <b>${esc(formatCustomAlertMetricVal(spec, maxV))}</b>${spec.allowZeroOrNeg ? ` · lowest <b>${esc(formatCustomAlertMetricVal(spec, minV))}</b>` : ''}.</div>`;
+    }
+    const parsedT = rawThreshStr !== '' && rawThreshStr != null ? parseFloat(rawThreshStr) : NaN;
+    let backtestHtml = '';
+    if (Number.isFinite(parsedT)) {
+      const op = opVal === '<' ? '<' : '>';
+      const hits = allRows.filter(r => op === '<' ? (r.value < parsedT) : (r.value > parsedT));
+      hits.sort((a, b) => op === '<' ? (a.value - b.value) : (b.value - a.value));
+      const topEx = hits[0] ? ` (top match: ${esc(hits[0].party)} at ${esc(formatCustomAlertMetricVal(spec, hits[0].value))}${hits[0].date ? ' on ' + esc(hits[0].date) : ''})` : '';
+      backtestHtml = `<div class="ca-explain-live"><strong>Live check (${esc(op)} ${esc(formatCustomAlertMetricVal(spec, parsedT))}):</strong> Would flag <b>${fmtNum(hits.length)}</b> of ${fmtNum(allRows.length)} existing record${allRows.length === 1 ? '' : 's'} right now${topEx}.</div>`;
+    }
+    return `
+      <div><strong>Measures:</strong> ${esc(spec.explain)} <span class="muted">(Runs on: ${esc(spec.whereLabel)})</span></div>
+      ${statsHtml}
+      ${backtestHtml}
+    `;
+  }
 
   function ensureAlertRulesState() {
     if (!STATE.alertRules || typeof STATE.alertRules !== 'object') {
@@ -9103,12 +9667,14 @@
     const thresh = Number(cr.threshold || 0);
     const op = cr.op === '<' ? '<' : '>';
     const coScope = String(cr.company || 'all');
-    const rows = spec.recordsFn() || [];
+    const targetScope = String(cr.target || '').trim();
+    const rows = spec.recordsFn(targetScope) || [];
     const hits = [];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!r || !(r.value > 0)) continue;
+      if (!r || (!spec.allowZeroOrNeg && !(r.value > 0))) continue;
       if (coScope !== 'all' && r.company && r.company !== 'Group' && norm(r.company) !== norm(coScope)) continue;
+      if (targetScope && !matchesCustomAlertTarget(r.target != null ? r.target : r.party, targetScope)) continue;
       const matched = op === '<' ? (r.value < thresh) : (r.value > thresh);
       if (matched) {
         hits.push(Object.assign({}, r, {
@@ -9132,13 +9698,17 @@
       const spec = CUSTOM_ALERT_METRICS[cr.metric];
       if (!spec || !spec.formTypes.includes(f)) return;
       if (cr.company && cr.company !== 'all' && company && norm(cr.company) !== norm(company)) return;
+      if (cr.target) {
+        const formTarget = typeof spec.formTargetFn === 'function' ? spec.formTargetFn() : '';
+        if (!matchesCustomAlertTarget(formTarget, cr.target)) return;
+      }
       const curVal = Number(spec.formValFn(calcRes || {}) || 0);
-      if (!(curVal > 0)) return;
+      if (!spec.allowZeroOrNeg && !(curVal > 0)) return;
       const thresh = Number(cr.threshold || 0);
       const op = cr.op === '<' ? '<' : '>';
       if (op === '<' ? (curVal < thresh) : (curVal > thresh)) {
-        const fmtV = spec.unit === '$' ? fmtUSD(curVal, 2) : `${fmtNum(curVal, 1)} ${spec.unit}`;
-        const fmtT = spec.unit === '$' ? fmtUSD(thresh, 2) : `${fmtNum(thresh, 1)} ${spec.unit}`;
+        const fmtV = formatCustomAlertMetricVal(spec, curVal, 2);
+        const fmtT = formatCustomAlertMetricVal(spec, thresh, 2);
         triggered.push({
           rule: cr,
           spec,
@@ -9240,20 +9810,22 @@
 
     customList.forEach((cr, idx) => {
       const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
-      const code = cr.code || `C${idx + 1}`;
+      const code = '#' + String(ALERT_RULE_CATALOG.length + idx + 1).padStart(2, '0');
       const enabled = cr.enabled !== false;
       const behavior = cr.mode === 'block_and_audit' ? 'block' : (cr.mode === 'audit_only' ? 'audit' : 'warn');
-      const fmtT = spec.unit === '$' ? fmtUSD(cr.threshold || 0, 0) : `${fmtNum(cr.threshold || 0, 1)} ${spec.unit}`;
+      const fmtT = formatCustomAlertMetricVal(spec, cr.threshold || 0);
       const snItem = sentById.get(cr.id);
       const isFlagged = Boolean(enabled && snItem && snItem.severity !== 'ok');
       const scopeLbl = (!cr.company || cr.company === 'all') ? 'All Entities' : cr.company;
+      const targetStr = String(cr.target || '').trim();
+      const targetClause = targetStr ? ` for <b>${esc(targetStr)}</b>` : '';
       unifiedRows.push({
         isCustom: true,
         customRaw: cr,
         id: cr.id,
         code,
         name: cr.name || 'Custom Alert',
-        domain: 'Custom Rules',
+        domain: spec.domain || 'Custom Rules',
         behavior,
         whereLabel: spec.whereLabel,
         jumpForm: spec.jumpForm || '',
@@ -9261,13 +9833,13 @@
         lockedActive: false,
         enabled,
         edited: true,
-        whatHtml: `Monitors <b>${esc(spec.label)}</b> across <b>${esc(scopeLbl)}</b> and triggers when value <b>${cr.op === '<' ? '&lt;' : '&gt;'} ${esc(fmtT)}</b>.`,
+        whatHtml: `Monitors <b>${esc(spec.label)}</b>${targetClause} across <b>${esc(scopeLbl)}</b> and triggers when value <b>${cr.op === '<' ? '&lt;' : '&gt;'} ${esc(fmtT)}</b>.`,
         whyText: cr.why || 'Custom threshold rule added by management.',
         defaultWhy: cr.why || '',
-        threshText: `${cr.op === '<' ? '<' : '>'} ${fmtT} (${scopeLbl})`,
-        previewText: `Live rule: Triggers whenever ${spec.label} is ${cr.op === '<' ? 'below' : 'above'} ${fmtT} (${behavior === 'block' ? 'holds form save until explained in Notes + flags Sentinel audit' : (behavior === 'warn' ? 'shows live yellow warning on Entry Form + flags Sentinel audit' : 'flags in AI Sentinels & Audit')}).`,
+        threshText: `${cr.op === '<' ? '<' : '>'} ${fmtT}${targetStr ? ' · ' + targetStr : ''} (${scopeLbl})`,
+        previewText: `Live rule: Triggers whenever ${spec.label}${targetStr ? ' (' + targetStr + ')' : ''} is ${cr.op === '<' ? 'below' : 'above'} ${fmtT} (${behavior === 'block' ? 'holds form save until explained in Notes + flags Sentinel audit' : (behavior === 'warn' ? 'shows live yellow warning on Entry Form + flags Sentinel audit' : 'flags in AI Sentinels & Audit')}).`,
         params: [
-          { key: 'threshold', label: `Threshold (${spec.unit})`, def: Number(cr.threshold || 0), min: 0, max: 10000000, step: spec.unit === '$' ? 100 : 5, unit: spec.unit }
+          { key: 'threshold', label: `Threshold (${spec.unit})`, def: Number(cr.threshold || 0), min: spec.allowZeroOrNeg ? -10000000 : 0, max: 10000000, step: spec.unit === '$' ? 100 : 5, unit: spec.unit }
         ],
         paramValues: { threshold: Number(cr.threshold || 0) },
         liveBadge: snItem ? snItem.badge : '',
@@ -9305,8 +9877,9 @@
     });
 
     const arChip = (key, lbl) => `<button type="button" class="filter-chip ${flt === key ? 'active' : ''}" data-ar-filter="${esc(key)}">${lbl}</button>`;
-    const domains = ['Sales & Quarry', 'Dates & VAT', 'Fleet & Diesel', 'Lubrication & Parts', 'Finance & Payroll', 'Custom Rules'];
+    const domains = Array.from(new Set(['Sales & Quarry', 'Dates & VAT', 'Fleet & Diesel', 'Lubrication & Parts', 'Finance & Payroll'].concat(unifiedRows.map(r => r.domain))));
     const compOpts = ['all'].concat(allowedCompanyNames());
+    const initTargetMeta = getCustomAlertTargetOptions('expense_cat');
 
     const behaviorBadgeHtml = b => {
       if (b === 'block') return `<span class="badge badge-crit">Blocks Save</span>`;
@@ -9382,33 +9955,46 @@
           <div class="alert-custom-creator" id="customAlertCreatorCard">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
               <strong style="font-size:13.5px;color:var(--ink)">${ic('sliders')} Add a New Custom Alert &amp; Business Reason</strong>
-              <span style="font-size:11.5px;color:var(--muted)">Runs live on both Entry Forms and AI Sentinels &amp; Audit</span>
+              <span style="font-size:11.5px;color:var(--muted)">Runs live on Entry Forms and AI Sentinels &amp; Audit · ${Object.keys(CUSTOM_ALERT_METRICS).length} business metrics</span>
+            </div>
+            <div class="ca-domain-pills" role="tablist" aria-label="Filter metrics by operational area">
+              ${CUSTOM_ALERT_DOMAINS.map((d, di) => {
+                const cnt = d.key === 'all' ? Object.keys(CUSTOM_ALERT_METRICS).length : Object.values(CUSTOM_ALERT_METRICS).filter(m => m.domainKey === d.key).length;
+                return `<button type="button" class="ca-domain-pill${di === 0 ? ' active' : ''}" data-ca-domain="${esc(d.key)}">${esc(d.label)} <span class="ca-pill-cnt">${cnt}</span></button>`;
+              }).join('')}
             </div>
             <div class="alert-custom-grid">
               <div class="fld-mini">
                 <label for="caName">Alert Name *</label>
-                <input type="text" id="caName" placeholder="e.g. High Single Expense Check">
+                <input type="text" id="caName" placeholder="e.g. High Workshop Repair Invoice">
               </div>
               <div class="fld-mini">
                 <label for="caMetric">What to Measure *</label>
-                <select id="caMetric">
+                <select id="caMetric" data-plain-options="1">
                   ${Object.entries(CUSTOM_ALERT_METRICS).map(([mk, mv]) => `<option value="${esc(mk)}">${esc(mv.label)}</option>`).join('')}
                 </select>
               </div>
               <div class="fld-mini">
+                <label for="caTarget" id="caTargetLabel">${esc(initTargetMeta.label)}</label>
+                <select id="caTarget" data-plain-options="1">
+                  <option value="">${esc(initTargetMeta.placeholder)}</option>
+                  ${initTargetMeta.options.map(opt => `<option value="${esc(opt)}">${esc(opt)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="fld-mini">
                 <label for="caOp">Condition *</label>
-                <select id="caOp">
+                <select id="caOp" data-plain-options="1">
                   <option value=">">Exceeds (&gt;)</option>
                   <option value="<">Drops Below (&lt;)</option>
                 </select>
               </div>
               <div class="fld-mini">
-                <label for="caThreshold">Threshold Value *</label>
-                <input type="number" id="caThreshold" step="any" min="0" placeholder="e.g. 5000">
+                <label for="caThreshold" id="caThresholdLabel">Threshold Value ($) *</label>
+                <input type="number" id="caThreshold" step="any" placeholder="e.g. 1500">
               </div>
               <div class="fld-mini">
                 <label for="caMode">How It Fires *</label>
-                <select id="caMode">
+                <select id="caMode" data-plain-options="1">
                   <option value="warn_and_audit">Entry Warning + Audit Watchdog</option>
                   <option value="block_and_audit">Blocks Save (Unless Note) + Watchdog</option>
                   <option value="audit_only">Audit Watchdog Only</option>
@@ -9416,14 +10002,17 @@
               </div>
               <div class="fld-mini">
                 <label for="caCompany">Entity Scope</label>
-                <select id="caCompany">
+                <select id="caCompany" data-plain-options="1">
                   ${compOpts.map(c => `<option value="${esc(c)}">${c === 'all' ? 'All Entities' : esc(c)}</option>`).join('')}
                 </select>
               </div>
             </div>
+            <div class="ca-explain-box" id="caMetricExplainBox">
+              ${buildCustomAlertExplainHtml('expense_usd', '', '>', '', 'all')}
+            </div>
             <div class="fld-mini" style="margin-top:10px">
-              <label for="caWhy" style="display:block;font-size:11px;font-weight:700;color:var(--ink);margin-bottom:4px">Why Am I Adding This Alert? * (Plain-English reminder so you always remember its purpose)</label>
-              <input type="text" id="caWhy" class="alert-why-input" placeholder="e.g. Remind me to verify supplier invoice approval whenever a single expense exceeds $5,000">
+              <label for="caWhy" style="display:block;font-size:11px;font-weight:700;color:var(--ink);margin-bottom:4px">Why Am I Adding This Alert? * (Plain-English reminder so your team always knows its purpose)</label>
+              <input type="text" id="caWhy" class="alert-why-input" placeholder="e.g. Require workshop manager approval on repair bills above $1,500">
             </div>
             <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
               <button type="button" class="btn-ghost-bar" id="cancelCustomAlertBtn">Cancel</button>
@@ -9432,13 +10021,10 @@
           </div>
         ` : ''}
 
-        <div class="table-toolbar" style="gap:10px;flex-wrap:wrap">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1;min-width:240px">
-            <div class="search-box" style="min-width:230px;flex:1;max-width:340px">
-              ${ic('search')}
-              <input type="search" id="alertRulesSearchInput" value="${esc(STATE.alertRulesSearch || '')}" placeholder="Search alert, form, threshold, or why...">
-            </div>
-            <select id="alertRulesDomainSelect" class="col-filter-sel" aria-label="Filter by domain" style="height:32px;border-radius:7px;padding:0 10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:12px;font-weight:600">
+        <div class="alert-rules-toolbar">
+          <div class="alert-rules-toolbar-left">
+            <input type="search" id="alertRulesSearchInput" class="search-input" value="${esc(STATE.alertRulesSearch || '')}" placeholder="Search alert, form, threshold, or why...">
+            <select id="alertRulesDomainSelect" class="col-filter-sel" data-native-select="1" aria-label="Filter by domain" style="height:34px;border-radius:7px;padding:0 10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:12px;font-weight:600">
               <option value="all" ${dom === 'all' ? 'selected' : ''}>All Domains (${totalCnt})</option>
               ${domains.map(d => `<option value="${esc(d)}" ${dom === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}
             </select>
@@ -10100,7 +10686,7 @@
     const s1Tol = getAlertParam('S1', 'tb_tolerance_usd', 0.005);
     rawItems.push({
       id: 'S1',
-      code: 'S1 · TRIAL_BALANCE_TIE', title: 'Double-Entry Trial Balance Integrity (Lebanese CoA)',
+      code: 'Rule #18 · General Ledger', title: 'Double-Entry Trial Balance Integrity (Lebanese CoA)',
       detail: tbv == null ? 'No ledger published for this entity yet.' : `Total Debits vs Total Credits across every SOA journal leg (sales, raw material, haulage, expenses, VAT 11%, receipts, settlements): variance ${fmtUSD(tbv, 2)}.`,
       severity: tbv == null ? 'warn' : (Math.abs(tbv) < s1Tol ? 'ok' : 'crit'),
       badge: tbv == null ? 'NO LEDGER' : (Math.abs(tbv) < s1Tol ? 'PASS · $0.00 DIFF' : 'FAIL · ' + fmtUSD(tbv, 2)),
@@ -10119,7 +10705,7 @@
     const s2CritNegL = getAlertParam('S2', 'crit_neg_tank_l', -1000);
     rawItems.push({
       id: 'S2',
-      code: 'S2 · DIESEL_TANK_RECONCILIATION', title: 'Diesel Tank Physical vs Ledger Reconciliation',
+      code: 'Rule #11 · Diesel Tank', title: 'Diesel Tank Physical vs Ledger Reconciliation',
       detail: tank == null ? 'No diesel ledger for this entity.' : `${tankOpenL !== 0 ? `Opening ${fmtNum(tankOpenL, 0)} L + purchased ` : 'Purchased '}${fmtNum(fleet.diesel_purchased_l, 0)} L minus issued ${fmtNum(fleet.diesel_issued_l, 0)} L minus malfunction/discrepancy ${fmtNum(tankDiscL, 0)} L minus sold ${fmtNum(tankSoldL, 0)} L = ${fmtNum(tank, 0)} L in tank.${pendDieselCnt > 0 ? ` · ${fmtNum(pendDieselCnt)} delivery voucher${pendDieselCnt === 1 ? '' : 's'} (${fmtNum(pendDieselL, 0)} L) in tank with Pending Invoice Price ($0.00 AP) awaiting supplier invoice.` : ''}${tank < s2CritNegL ? ' A negative tank means bulk diesel invoices were booked under General Expenses instead of Fuel Purchases; correct the historical intake before booking new diesel.' : ''}`,
       severity: tank == null ? 'warn' : (tank < s2CritNegL ? 'crit' : ((tank < 0 || pendDieselCnt > 0) ? 'warn' : 'ok')),
       badge: tank == null ? 'NO DATA' : (tank < 0 ? 'ACTION · ' + fmtNum(tank, 0) + ' L' : (pendDieselCnt > 0 ? `PENDING PRICE · ${fmtNum(pendDieselCnt)} (${fmtNum(pendDieselL, 0)} L)` : 'OK · ' + fmtNum(tank, 0) + ' L')),
@@ -10134,7 +10720,7 @@
     const outliers = fleet.consumption_outliers || [];
     rawItems.push({
       id: 'S3',
-      code: 'S3 · FUEL_METER_OUTLIERS', title: 'Odometer & Hour-Meter Tolerance Watchdog',
+      code: 'Rule #10 · Fuel & Meters', title: 'Odometer & Hour-Meter Tolerance Watchdog',
       detail: `${fmtNum(meters)} meter readings to check · ${outliers.length} consumption outlier${outliers.length === 1 ? '' : 's'}${outliers.length ? ' (' + outliers.slice(0, 3).map(o => `${o.equipment} ${fmtNum(o.value, 1)} ${o.metric}`).join(', ') + ')' : ''} · ${fmtNum(fleet.own_units_idle_30d || 0)} own units idle 30+ days.`,
       severity: meters > 0 || outliers.length ? 'warn' : 'ok',
       badge: meters > 0 ? fmtNum(meters) + ' TO CHECK' : (outliers.length ? outliers.length + ' OUTLIER' + (outliers.length === 1 ? '' : 'S') : 'GUARD ACTIVE'),
@@ -10148,7 +10734,7 @@
     const s4MinAr = getAlertParam('S4', 'min_sentinel_ar60_usd', 0.01);
     rawItems.push({
       id: 'S4',
-      code: 'S4 · AR_OVERDUE_60_PLUS', title: 'Customer Receivables Overdue > 60 Days (FIFO Allocated)',
+      code: 'Rule #17 · Receivables', title: 'Customer Receivables Overdue > 60 Days (FIFO Allocated)',
       detail: `Open AR ${fmtUSD(k.ar_balance, 2)} (VAT-inclusive) · ${fmtUSD(ar60, 2)} aged past 60 days after FIFO receipt allocation · DSO ${fmtNum(k.dso_days, 0)} days.`,
       severity: ar60 > s4MinAr ? 'warn' : 'ok',
       badge: ar60 > s4MinAr ? `${fmtUSD(ar60, 0)} > 60D` : 'CURRENT',
@@ -10163,7 +10749,7 @@
     const s5MinShort = getAlertParam('S5', 'min_shortfall_usd', 0);
     rawItems.push({
       id: 'S5',
-      code: 'S5 · PRICE_AGREEMENT_ENFORCEMENT', title: `${fmtNum(pricing.active_agreements || k.active_agreements || 0)} Active Price Agreements vs Tickets`,
+      code: 'Rule #04 · Sales Pricing', title: `${fmtNum(pricing.active_agreements || k.active_agreements || 0)} Active Price Agreements vs Tickets`,
       detail: `${fmtUSD(below, 0)} sold below the date-effective agreed price across ${fmtNum(pricing.below_agreed_pairs_count || 0)} customer × product pairs · ${fmtNum(lapsed)} pairs trading on lapsed agreements · ${fmtNum(pricing.truck_unit_delivery_rules || 0)} per-truck delivery rules.`,
       severity: below > s5MinShort || lapsed > 0 ? 'warn' : 'ok',
       badge: below > s5MinShort ? fmtUSD(below, 0) + ' BELOW' : (lapsed > 0 ? fmtNum(lapsed) + ' LAPSED' : 'ENFORCED'),
@@ -10178,7 +10764,7 @@
     const missingCnt = Number(pricing.missing_tickets_in_books || 0);
     rawItems.push({
       id: 'S6',
-      code: 'S6 · TICKET_BOOK_HYGIENE', title: 'Duplicate & Unnumbered Tickets in the Books',
+      code: 'Rule #05 · Ticket Books', title: 'Duplicate & Unnumbered Tickets in the Books',
       detail: `${fmtNum(dups)} duplicate ticket numbers · ${fmtNum(unnum)} unnumbered tickets · ${fmtNum(missingCnt)} numbers missing from ${fmtNum(pricing.incomplete_ticket_books || 0)} incomplete pads. The entry desk guards repeated serials per entity.`,
       severity: dups > 0 || unnum > 0 ? 'warn' : 'ok',
       badge: dups > 0 ? fmtNum(dups) + ' DUPLICATES' : (unnum > 0 ? fmtNum(unnum) + ' UNNUMBERED' : 'CLEAN'),
@@ -10195,7 +10781,7 @@
     const s7MinUnm = getAlertParam('S7', 'min_unmatched_usd', 0);
     rawItems.push({
       id: 'S7',
-      code: 'S7 · PAYROLL_CONTRACT_MATCH', title: 'Salary Payments Without an Employment Contract',
+      code: 'Rule #19 · Payroll Contracts', title: 'Salary Payments Without an Employment Contract',
       detail: `${fmtUSD(unmatched, 2)} paid across ${fmtNum(unmatchedStaffCnt)} staff without an active contract for that month · ${fmtUSD(fleet.unallocated_driver_payroll_usd || 0, 0)} driver payroll unallocated (${fmtNum(fleet.unallocated_driver_months_count || 0)} months).`,
       severity: unmatched > s7MinUnm ? 'warn' : 'ok',
       badge: unmatched > s7MinUnm ? fmtUSD(unmatched, 0) + ' UNMATCHED' : 'MATCHED',
@@ -10210,7 +10796,7 @@
     const s8AuditDays = getAlertParam('S8', 'audit_gap_days', 31);
     rawItems.push({
       id: 'S8',
-      code: 'S8 · DATE_BASIS_PARITY', title: `Transaction vs Reporting Date Gaps > ${fmtNum(s8AuditDays, 0)} Days`,
+      code: 'Rule #08 · Dates & VAT', title: `Transaction vs Reporting Date Gaps > ${fmtNum(s8AuditDays, 0)} Days`,
       detail: `${fmtNum(anomalies)} rows carry a reporting date more than ${fmtNum(s8AuditDays, 0)} days from the transaction date · ${fmtNum(unlinkedVatCnt)} VAT invoices not linked to tickets · ${fmtNum(parity.header_vs_tickets_mismatch_count || 0)} VAT header variances.`,
       severity: anomalies > 0 || unlinkedVatCnt > 0 ? 'warn' : 'ok',
       badge: anomalies > 0 ? fmtNum(anomalies) + ' GAPS' : (unlinkedVatCnt > 0 ? fmtNum(unlinkedVatCnt) + ' UNLINKED VAT' : 'IN SYNC'),
@@ -10226,7 +10812,7 @@
     const s9MinEvents = getAlertParam('S9', 'min_ghost_events', 1);
     rawItems.push({
       id: 'S9',
-      code: 'S9 · MACHINE_GREASE_DIESEL_ABSENT_DRIVER', title: 'Absent-Driver Diesel, Lubricant & Grease Machine Watchdog',
+      code: 'Rule #20 · Workforce & Fleet', title: 'Absent-Driver Diesel, Lubricant & Grease Machine Watchdog',
       detail: `${fmtNum(absGhostCnt)} machine fuel, lubricant or grease entries occurred on days when the assigned driver was absent without a logged substitute · ${fmtNum(unattrLubeCnt)} lubricant or grease entries carry no operator on the ticket.`,
       severity: absGhostCnt >= s9MinEvents ? 'crit' : (unattrLubeCnt >= s9MinEvents ? 'warn' : 'ok'),
       badge: absGhostCnt >= s9MinEvents ? fmtNum(absGhostCnt) + ' GHOST ALERTS' : (unattrLubeCnt >= s9MinEvents ? fmtNum(unattrLubeCnt) + ' UNATTRIBUTED' : 'CLEAN'),
@@ -10243,7 +10829,7 @@
     const s10MinUnnotif = getAlertParam('S10', 'min_unnotified_parts', 1);
     rawItems.push({
       id: 'S10',
-      code: 'S10 · FLEET_DEFECT_PARTS_CUSTODY', title: 'Pre-Replacement Defect Notice & Removed Parts Custody',
+      code: 'Rule #16 · Defects & Parts', title: 'Pre-Replacement Defect Notice & Removed Parts Custody',
       detail: `${fmtNum(unnotifPartsCnt)} part replacement${unnotifPartsCnt === 1 ? '' : 's'} logged without a prior reported defect · ${fmtNum(openCritDefCnt)} critical unit${openCritDefCnt === 1 ? '' : 's'} flagged Down / Do Not Dispatch · ${fmtNum(maintIdx.partsStored.length)} stored in warehouse · ${fmtNum(maintIdx.partsInMaint.length)} in maintenance${maintNoVendorCnt > 0 ? ' (' + fmtNum(maintNoVendorCnt) + ' missing workshop vendor)' : ''} · ${fmtNum(maintIdx.partsSold.length)} sold (${fmtUSD(maintIdx.totalSaleProceeds, 0)} proceeds).`,
       severity: openCritDefCnt > 0 ? 'crit' : ((unnotifPartsCnt >= s10MinUnnotif || maintNoVendorCnt > 0) ? 'warn' : 'ok'),
       badge: openCritDefCnt > 0 ? `${fmtNum(openCritDefCnt)} DOWN UNITS` : (unnotifPartsCnt >= s10MinUnnotif ? `${fmtNum(unnotifPartsCnt)} UNNOTIFIED` : (maintNoVendorCnt > 0 ? `${fmtNum(maintNoVendorCnt)} NO VENDOR` : 'COMPLIANT')),
@@ -10262,7 +10848,7 @@
     const malfSev = fleet.diesel_malfunction_severity || (malfAlert ? 'warn' : 'ok');
     rawItems.push({
       id: 'S11',
-      code: 'S11 · DIESEL_MALFUNCTION_WATCHDOG',
+      code: 'Rule #12 · Diesel Watchdog',
       title: `Diesel Malfunction Watchdog (${malfWarnPct.toFixed(1)}% of Company Consumption)`,
       detail: `Gross malfunction volume ${fmtNum(malfAbsL, 1)} L (${fmtNum(malfCnt)} entries) vs ${fmtNum(malfCompUsedL, 1)} L total company diesel used = ${malfPct.toFixed(1)}% in selected period (threshold >= ${malfWarnPct.toFixed(1)}%). Net tank discrepancy across all types: ${Number(fleet.diesel_discrepancy_l || 0) > 0 ? '+' : ''}${fmtNum(fleet.diesel_discrepancy_l || 0, 1)} L.`,
       severity: malfAlert ? (malfSev === 'crit' ? 'crit' : 'warn') : 'ok',
@@ -10279,17 +10865,18 @@
     customList.forEach((cr, idx) => {
       const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
       const hits = cr.enabled === false ? [] : evaluateSingleCustomAlert(cr);
-      const code = cr.code || `C${idx + 1}`;
-      const fmtT = spec.unit === '$' ? fmtUSD(cr.threshold || 0, 0) : `${fmtNum(cr.threshold || 0, 1)} ${spec.unit}`;
-      const safeName = String(cr.name || 'Custom Alert').replace(/[—→]/g, '-');
+      const seqNum = String(ALERT_RULE_CATALOG.length + idx + 1).padStart(2, '0');
+      const fmtT = formatCustomAlertMetricVal(spec, cr.threshold || 0);
+      const safeName = String(cr.name || 'Custom Alert').replace(/[—→_]/g, '-');
       const safeWhy = String(cr.why || 'Custom threshold rule').replace(/[—→]/g, '-');
+      const targetStr = String(cr.target || '').trim();
       rawItems.push({
         id: cr.id,
         isCustom: true,
         customEnabled: cr.enabled !== false,
-        code: `${code} · CUSTOM_THRESHOLD`,
+        code: `Custom Rule #${seqNum} · ${spec.domain || 'Custom Rules'}`,
         title: safeName,
-        detail: `${fmtNum(hits.length)} matching record${hits.length === 1 ? '' : 's'} where ${spec.label} ${cr.op === '<' ? '<' : '>'} ${fmtT}. Why: ${safeWhy}`,
+        detail: `${fmtNum(hits.length)} matching record${hits.length === 1 ? '' : 's'} where ${spec.label}${targetStr ? ' (' + targetStr + ')' : ''} ${cr.op === '<' ? '<' : '>'} ${fmtT}. Why: ${safeWhy}`,
         severity: cr.enabled === false ? 'ok' : (hits.length > 0 ? (cr.mode === 'block_and_audit' ? 'crit' : 'warn') : 'ok'),
         badge: cr.enabled === false ? 'PAUSED' : (hits.length > 0 ? `${fmtNum(hits.length)} FLAGGED` : 'CLEAR'),
         company: (!cr.company || cr.company === 'all') ? scope : cr.company,
@@ -10774,7 +11361,8 @@
               <div class="sentinel-item ${rowCls} is-interactive" data-sn-card="${esc(s.id)}" style="padding:14px 16px" title="Click to jump to itemized records">
                 <div class="sentinel-body">
                   <div class="sentinel-meta-row">
-                    <span class="mono" style="font-size:10px;color:var(--brass)">${esc(s.code)} · ${esc(s.company)}</span>
+                    ${!s.isCustom ? `<span class="sr-only">${esc(s.id)}</span>` : ''}
+                    <span class="mono" style="font-size:10.5px;color:var(--brass)">${esc(s.code)} · ${esc(s.company)}</span>
                     ${signedPill}
                   </div>
                   <div class="sentinel-title" style="font-size:14px">${esc(s.title)}</div>
@@ -41017,27 +41605,85 @@
         renderApp();
       });
     }
+    const creatorCardEl = $('customAlertCreatorCard');
+    if (creatorCardEl) {
+      const refreshCaExplainBox = () => {
+        const expEl = $('caMetricExplainBox');
+        if (!expEl) return;
+        const mk = String(($('caMetric') && $('caMetric').value) || 'expense_usd');
+        const tv = String(($('caTarget') && $('caTarget').value) || '');
+        const ov = ($('caOp') && $('caOp').value) === '<' ? '<' : '>';
+        const thStr = $('caThreshold') ? $('caThreshold').value : '';
+        const cv = String(($('caCompany') && $('caCompany').value) || 'all');
+        expEl.innerHTML = buildCustomAlertExplainHtml(mk, tv, ov, thStr, cv);
+      };
+      const syncCaMetricDependents = repopulateTarget => {
+        const mk = String(($('caMetric') && $('caMetric').value) || 'expense_usd');
+        const spec = CUSTOM_ALERT_METRICS[mk] || CUSTOM_ALERT_METRICS.expense_usd;
+        const thLbl = $('caThresholdLabel');
+        if (thLbl) thLbl.textContent = `Threshold Value (${spec.unit}) *`;
+        if (repopulateTarget) {
+          const tSel = $('caTarget');
+          const tLbl = $('caTargetLabel');
+          const meta = getCustomAlertTargetOptions(spec.targetKind);
+          if (tLbl) tLbl.textContent = meta.label;
+          if (tSel) {
+            tSel.innerHTML = `<option value="">${esc(meta.placeholder)}</option>` +
+              meta.options.map(opt => `<option value="${esc(opt)}">${esc(opt)}</option>`).join('');
+            tSel.value = '';
+            tSel.disabled = spec.targetKind === 'none';
+          }
+        }
+        refreshCaExplainBox();
+      };
+      creatorCardEl.querySelectorAll('[data-ca-domain]').forEach(pill => {
+        pill.addEventListener('click', () => {
+          const domKey = pill.getAttribute('data-ca-domain') || 'all';
+          creatorCardEl.querySelectorAll('[data-ca-domain]').forEach(p => p.classList.toggle('active', p === pill));
+          const mSel = $('caMetric');
+          if (!mSel) return;
+          const prevVal = mSel.value;
+          const entries = Object.entries(CUSTOM_ALERT_METRICS).filter(([, mv]) => domKey === 'all' || mv.domainKey === domKey);
+          mSel.innerHTML = entries.map(([mk, mv]) => `<option value="${esc(mk)}">${esc(mv.label)}</option>`).join('');
+          const keepPrev = entries.some(([mk]) => mk === prevVal);
+          mSel.value = keepPrev ? prevVal : (entries[0] ? entries[0][0] : 'expense_usd');
+          syncCaMetricDependents(!keepPrev);
+        });
+      });
+      const caMetricEl = $('caMetric');
+      if (caMetricEl) caMetricEl.addEventListener('change', () => syncCaMetricDependents(true));
+      ['caTarget', 'caOp', 'caThreshold', 'caCompany'].forEach(fid => {
+        const el = $(fid);
+        if (!el) return;
+        el.addEventListener('input', refreshCaExplainBox);
+        el.addEventListener('change', refreshCaExplainBox);
+      });
+    }
     const saveCaBtn = $('saveCustomAlertBtn');
     if (saveCaBtn) {
       saveCaBtn.addEventListener('click', () => {
         if (!canReviewSentinels()) { toast('Only Owner or Supervisor seats may modify alerts', 'err'); return; }
         const nameVal = String(($('caName') && $('caName').value) || '').trim().replace(/[—→]/g, '-');
         const metricVal = String(($('caMetric') && $('caMetric').value) || 'expense_usd');
+        const spec = CUSTOM_ALERT_METRICS[metricVal] || CUSTOM_ALERT_METRICS.expense_usd;
+        const targetVal = String(($('caTarget') && $('caTarget').value) || '').trim().replace(/[—→]/g, '-');
         const opVal = ($('caOp') && $('caOp').value) === '<' ? '<' : '>';
         const rawThresh = $('caThreshold') ? parseFloat($('caThreshold').value) : NaN;
         const modeVal = String(($('caMode') && $('caMode').value) || 'warn_and_audit');
         const coVal = String(($('caCompany') && $('caCompany').value) || 'all');
         const whyVal = String(($('caWhy') && $('caWhy').value) || '').trim().replace(/[—→]/g, '-');
         if (!nameVal) { toast('Enter an Alert Name', 'err'); if ($('caName')) $('caName').focus(); return; }
-        if (!Number.isFinite(rawThresh) || rawThresh < 0) { toast('Enter a valid numeric Threshold Value', 'err'); if ($('caThreshold')) $('caThreshold').focus(); return; }
+        if (!Number.isFinite(rawThresh) || (!spec.allowZeroOrNeg && rawThresh < 0)) { toast('Enter a valid numeric Threshold Value', 'err'); if ($('caThreshold')) $('caThreshold').focus(); return; }
         if (!whyVal) { toast('Write a brief reason in "Why Am I Adding This Alert?" so you always remember why it exists', 'err'); if ($('caWhy')) $('caWhy').focus(); return; }
         const st = ensureAlertRulesState();
         const nextNum = st.custom.length + 1;
+        const seqCode = '#' + String(ALERT_RULE_CATALOG.length + getActiveCustomAlertRules().length + 1).padStart(2, '0');
         const newRule = {
           id: 'CA_' + Date.now().toString(36) + '_' + nextNum,
-          code: 'C' + nextNum,
+          code: seqCode,
           name: nameVal,
           metric: metricVal,
+          target: targetVal,
           op: opVal,
           threshold: round2(rawThresh),
           mode: modeVal,
@@ -41053,7 +41699,7 @@
         STATE.alertRulesDomain = 'all';
         persistAlertRulesChange({}, [newRule]);
         renderApp();
-        toast(`Custom alert "${nameVal}" activated`, 'ok');
+        toast(`Custom alert ${seqCode} "${nameVal}" activated`, 'ok');
       });
     }
     const resetAllArBtn = $('resetAllAlertRulesBtn');
