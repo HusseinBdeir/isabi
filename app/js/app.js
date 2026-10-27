@@ -11582,7 +11582,7 @@
           <div style="display:flex;gap:6px">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="pricing" title="Open Customer Sales &amp; Commission Agreements">${ic('sales')} Sales Pricing</button>
             ${exportBtn('rawPricingPanel', 'Quarry_Site_And_Haulage_Rates')}
-            ${canEnterForm('pricerule') ? '<button type="button" class="btn btn-ghost-bar" data-open-modal="pricerule_haul">+ Haulage Rate</button><button class="btn btn-primary" data-open-modal="pricerule_raw">+ New Site Agreement</button>' : ''}
+            ${canEnterForm('pricerule_raw') ? '<button type="button" class="btn btn-ghost-bar" data-open-modal="pricerule_haul">+ Haulage Rate</button><button class="btn btn-primary" data-open-modal="pricerule_raw">+ New Site Agreement</button>' : ''}
           </div>
         </div>
         ${renderColFilterBar('raw_pricing')}
@@ -23618,6 +23618,16 @@
         const transPriceLbl = document.querySelector('#wrap_pr_transprice .pa-fld-lbl');
         const adj1Lbl = document.querySelector('#wrap_pr_adj1 .pa-fld-lbl');
         const adj2Lbl = document.querySelector('#wrap_pr_adj2 .pa-fld-lbl');
+        const mTitleEl = $('modalTitle');
+        if (mTitleEl) {
+          mTitleEl.textContent = isComm
+            ? 'New Sales Commission Agreement'
+            : (isTransSite
+                ? 'New Site Haulage Agreement'
+                : (isPurch
+                    ? 'New Raw Material Site Agreement'
+                    : (isList ? 'New List Price Agreement' : 'New Price Agreement')));
+        }
         if (sec1Hdr) sec1Hdr.textContent = isComm ? '1. Commission Product, Plant Owner & Effective Date Window' : (isRawDomain ? '1. Raw Material Site, Supplier / Hauler & Effective Window' : '1. Sales Agreement Scope & Customer');
         if (sec2Hdr) sec2Hdr.textContent = isComm ? '2. Commission Unit (m³ / Ton) & Per-Unit Rate' : '2. Unit Pricing, Flat / Indifference Rate & Volume Tiers';
         if (startLbl) startLbl.textContent = isComm ? 'Effective Start Date *' : 'Start Date *';

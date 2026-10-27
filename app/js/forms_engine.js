@@ -448,25 +448,33 @@
         }).join('')}
       </div>
       <div class="pa-modal-subtabs">
-        ${activeGroup.forms.filter(f => !canEnterFn || canEnterFn(f.id)).map(f => {
-          const baseTab = `
+        ${(() => {
+          const vis = activeGroup.forms.filter(f => !canEnterFn || canEnterFn(f.id));
+          const showRawPr = activeGroup.id === 'raw' && (!canEnterFn || canEnterFn('pricerule_raw'));
+          const rawPrTab = showRawPr ? `
+          <button type="button" class="modal-tab ${groupOverride === 'raw' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_raw" title="Add or update a Raw Material Site Cost or Site Haulage Rate agreement">
+            <span>Price Agreement</span>
+          </button>` : '';
+          const rawAnchorObj = showRawPr ? (['settlement', 'expense', 'raw'].map(id => vis.find(f => f.id === id)).find(Boolean) || null) : null;
+          let html = vis.map(f => {
+            const baseTab = `
           <button type="button" class="modal-tab ${!groupOverride && f.id === activeForm ? 'active' : ''}" data-form="${esc(f.id)}">
             <span>${esc(f.label)}</span>${f.universal ? '<span class="tbl-univ-tag">All BUs</span>' : ''}
           </button>`;
-          if (activeGroup.id === 'sales' && f.id === 'pricerule') {
-            return baseTab + `
+            if (activeGroup.id === 'sales' && f.id === 'pricerule') {
+              return baseTab + `
           <button type="button" class="modal-tab ${groupOverride === 'comm' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_comm" title="Add or step a per-unit Sales Commission rule by Product, Date Window &amp; Unit (m³ / Ton)">
             <span>Commission Rule</span>
           </button>`;
-          }
-          if (activeGroup.id === 'raw' && f.id === 'settlement' && (!canEnterFn || canEnterFn('pricerule_raw'))) {
-            return baseTab + `
-          <button type="button" class="modal-tab ${groupOverride === 'raw' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_raw" title="Add or update a Raw Material Site Cost or Site Haulage Rate agreement">
-            <span>Price Agreement</span>
-          </button>`;
-          }
-          return baseTab;
-        }).join('')}
+            }
+            if (rawAnchorObj && f.id === rawAnchorObj.id) {
+              return baseTab + rawPrTab;
+            }
+            return baseTab;
+          }).join('');
+          if (showRawPr && !rawAnchorObj) html = rawPrTab + html;
+          return html;
+        })()}
       </div>
     `;
   }
