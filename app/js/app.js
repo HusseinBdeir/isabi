@@ -3866,6 +3866,8 @@
           e.preventDefault();
           applyFilterVal(customInp.value.trim());
         } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
           closeColFilterPopover();
         }
       });
@@ -5904,8 +5906,15 @@
     const trkRow = q.truckRow || null;
     const tNameN = norm(trkRow && trkRow.name);
     const tPlateN = norm(trkRow && trkRow.plate_no);
+    const ruleUsesM3 = r => {
+      const u = String((r && r.unit) || 'm³').trim();
+      const rp = String((r && r.rate_per) || 'm³').trim();
+      if (u && !/^m/i.test(u)) return false;
+      if (rp && !/^m/i.test(rp)) return false;
+      return true;
+    };
     const truckMatchesRule = r => {
-      if (!r.truck) return true;
+      if (!r || !r.truck || !ruleUsesM3(r)) return false;
       const rtN = norm(r.truck);
       return Boolean(rtN && (rtN === tNameN || rtN === tPlateN));
     };
@@ -22912,21 +22921,26 @@
           }
         }
 
+        if (!hasMat && hasTrans && $('f_uom') && $('f_uom').value !== ratePer) {
+          $('f_uom').value = ratePer;
+        }
+        const uomVal = hasMat ? (val('f_uom') || 'm³') : ratePer;
+        const matIsM3 = hasMat && /^m/i.test(uomVal);
+        const transIsM3 = hasTrans && /^m/i.test(ratePer);
+        const isM3Rule = !isList && !isComm && (hasTrans ? (transIsM3 && (!hasMat || matIsM3)) : matIsM3);
+
         setFieldVisible('wrap_pr_ruletype', !isComm);
         setFieldVisible('wrap_pr_customer', showCustomer);
         setFieldVisible('wrap_pr_supplier', showSupplier);
         setFieldVisible('wrap_pr_site', showSite);
+        setFieldVisible('wrap_pr_uom', hasMat);
         setFieldVisible('wrap_pr_matprice', hasMat);
         setFieldVisible('wrap_pr_transrate', hasTrans);
         setFieldVisible('wrap_pr_transprice', hasTrans && !isTruckRate);
         setFieldVisible('wrap_pr_indiff', showIndiff);
-        setFieldVisible('wrap_pr_trucksize', !isList && !isComm);
-        setFieldVisible('wrap_pr_truck', !isList && !isComm);
-        setFieldVisible('wrap_pr_tier1', !isList && !isComm && !isTruckRate);
-        setFieldVisible('wrap_pr_adj1', !isList && !isComm && hasMat);
-        setFieldVisible('wrap_pr_transadj1', !isList && !isComm && hasTrans && !isTruckRate);
+        setFieldVisible('wrap_pr_truck', isM3Rule);
 
-        // Clear hidden fields when Rule Type hides them so stale values are never saved
+        // Clear hidden fields when Rule Type or Unit/Rate Per hides them so stale values are never saved
         if (!showCustomer && $('f_customer') && $('f_customer').value) $('f_customer').value = '';
         if (!showSupplier && $('f_supplier') && $('f_supplier').value) $('f_supplier').value = '';
         if (!showSite && $('f_site') && $('f_site').value) $('f_site').value = '';
@@ -22943,22 +22957,50 @@
           if ($('f_transadj1') && $('f_transadj1').value !== '0.00') $('f_transadj1').value = '0.00';
           if ($('f_transadj2') && $('f_transadj2').value !== '0.00') $('f_transadj2').value = '0.00';
         }
+        if (!transIsM3) {
+          if ($('f_transadj1') && $('f_transadj1').value !== '0.00') $('f_transadj1').value = '0.00';
+          if ($('f_transadj2') && $('f_transadj2').value !== '0.00') $('f_transadj2').value = '0.00';
+        }
         if (!showIndiff && $('f_indiff') && $('f_indiff').value) $('f_indiff').value = '';
-        if (isList || isComm) {
-          if ($('f_trucksize') && $('f_trucksize').value) $('f_trucksize').value = '';
+        if (!isM3Rule) {
           if ($('f_pr_truck') && $('f_pr_truck').value) $('f_pr_truck').value = '';
+          if ($('f_trucksize') && $('f_trucksize').value) $('f_trucksize').value = '';
           if ($('f_qty1') && $('f_qty1').value) $('f_qty1').value = '';
           if ($('f_adj1') && $('f_adj1').value !== '0.00') $('f_adj1').value = '0.00';
           if ($('f_transadj1') && $('f_transadj1').value !== '0.00') $('f_transadj1').value = '0.00';
           if (isList && $('f_enddate') && $('f_enddate').value) $('f_enddate').value = '';
         }
 
+        const prTruckVal = isM3Rule ? val('f_pr_truck') : '';
+        const hasTargetTruck = Boolean(prTruckVal);
+        setFieldVisible('wrap_pr_trucksize', isM3Rule && hasTargetTruck);
+        if (!hasTargetTruck && $('f_trucksize') && $('f_trucksize').value) {
+          $('f_trucksize').value = '';
+        }
+        const trkSizeLbl = document.querySelector('#wrap_pr_trucksize .pa-fld-lbl');
+        if (hasTargetTruck) {
+          const trkObj = equipInfo(prTruckVal, prCo);
+          const trkName = (trkObj && trkObj.name) || prTruckVal;
+          const stdCap = trkObj && Number(trkObj.capacity) > 0 ? `${fmtNum(trkObj.capacity, 1)} m³` : '—';
+          if (trkSizeLbl) trkSizeLbl.textContent = `${trkName} Client / Site Size (m³)`;
+          setHint('hint_pr_trucksize', `Standard ${trkName} capacity: ${stdCap} · Overrides ${trkName}'s m³ on matching tickets`, 'ok');
+          setHint('hint_pr_truck', `${trkName} selected (${stdCap} standard capacity)`, 'ok');
+        } else {
+          if (trkSizeLbl) trkSizeLbl.textContent = 'Client / Site Truck Size (m³)';
+          setHint('hint_pr_trucksize', 'Overrides the selected truck capacity (m³) on matching m³ tickets.', '');
+          setHint('hint_pr_truck', 'Select a specific truck first to override its m³ capacity for this client or site.', '');
+        }
+
+        setFieldVisible('wrap_pr_tier1', isM3Rule);
+        setFieldVisible('wrap_pr_adj1', isM3Rule && hasMat);
+        setFieldVisible('wrap_pr_transadj1', isM3Rule && hasTrans && transIsM3);
+
         const q1 = num('f_qty1');
         const tSize = num('f_trucksize');
-        const showTier2 = !isList && !isComm && !isTruckRate && q1 > 0;
+        const showTier2 = isM3Rule && q1 > 0;
         setFieldVisible('wrap_pr_tier2', showTier2);
         setFieldVisible('wrap_pr_adj2', showTier2 && hasMat);
-        setFieldVisible('wrap_pr_transadj2', showTier2 && hasTrans && !isTruckRate);
+        setFieldVisible('wrap_pr_transadj2', showTier2 && hasTrans && transIsM3);
         if (!showTier2) {
           if ($('f_qty2') && $('f_qty2').value) $('f_qty2').value = '';
           if ($('f_adj2') && $('f_adj2').value !== '0.00') $('f_adj2').value = '0.00';
@@ -23157,12 +23199,18 @@
         const curTruck = val('f_truck');
         const tRow = curTruck ? equipInfo(curTruck) : null;
         if (curTruck !== FORM_UI.lastTruck) {
+          const prevTruck = FORM_UI.lastTruck;
+          const prevRow = prevTruck ? equipInfo(prevTruck) : null;
           FORM_UI.lastTruck = curTruck;
           if (tRow) {
-            if ($('f_plateno') && (!val('f_plateno') || val('f_plateno') === curTruck)) $('f_plateno').value = tRow.plate_no || tRow.name;
+            if ($('f_plateno') && (!val('f_plateno') || val('f_plateno') === curTruck || (prevRow && val('f_plateno') === (prevRow.plate_no || prevRow.name)))) $('f_plateno').value = tRow.plate_no || tRow.name;
             if (hasCap && tRow.capacity > 0 && $('f_capacity')) $('f_capacity').value = String(tRow.capacity);
             if (hasSup && tRow.supplier && $('f_supplier') && !FORM_UI.ownerManuallyPicked) $('f_supplier').value = tRow.supplier;
             if (tRow.default_driver && $('f_driver') && !FORM_UI.driverManual) $('f_driver').value = tRow.default_driver;
+          } else if (!curTruck && prevRow) {
+            if ($('f_plateno') && (val('f_plateno') === prevTruck || val('f_plateno') === (prevRow.plate_no || prevRow.name))) $('f_plateno').value = '';
+            if (hasSup && $('f_supplier') && !FORM_UI.ownerManuallyPicked && prevRow.supplier && val('f_supplier') === prevRow.supplier) $('f_supplier').value = '';
+            if ($('f_driver') && !FORM_UI.driverManual && prevRow.default_driver && val('f_driver') === prevRow.default_driver) $('f_driver').value = '';
           }
         }
         const curSup = hasSup ? val('f_supplier') : company;
@@ -23459,9 +23507,13 @@
         const fIntel = _getFormIntelIndex();
         const jvPos = site ? fIntel.jvBySite[norm(site)] : null;
         if (site !== FORM_UI.lastSite) {
+          const prevSite = FORM_UI.lastSite;
+          const prevJvPos = prevSite ? fIntel.jvBySite[norm(prevSite)] : null;
           FORM_UI.lastSite = site;
-          if (jvPos && jvPos.partner && $('f_counterparty') && !val('f_counterparty')) {
+          if (jvPos && jvPos.partner && $('f_counterparty') && (!val('f_counterparty') || (prevJvPos && val('f_counterparty') === prevJvPos.partner))) {
             $('f_counterparty').value = jvPos.partner;
+          } else if (!site && prevJvPos && prevJvPos.partner && $('f_counterparty') && val('f_counterparty') === prevJvPos.partner) {
+            $('f_counterparty').value = '';
           }
         }
         setFieldVisible('wrap_jv_share', jvt === 'partnership');
@@ -23514,9 +23566,13 @@
         const sub = val('f_subsystem') || 'Engine & Powertrain';
         const eq = unit ? equipInfo(unit, company) : null;
         if (unit !== FORM_UI.lastTruck) {
+          const prevUnit = FORM_UI.lastTruck;
+          const prevEq = prevUnit ? equipInfo(prevUnit, company) : null;
           FORM_UI.lastTruck = unit;
-          if (eq && eq.default_driver && $('f_reported_by') && !val('f_reported_by')) {
+          if (eq && eq.default_driver && $('f_reported_by') && (!val('f_reported_by') || (prevEq && val('f_reported_by') === prevEq.default_driver))) {
             $('f_reported_by').value = eq.default_driver;
+          } else if (!unit && prevEq && prevEq.default_driver && $('f_reported_by') && val('f_reported_by') === prevEq.default_driver) {
+            $('f_reported_by').value = '';
           }
         }
         if (sev !== FORM_UI.lastSeverity) {
@@ -24255,12 +24311,14 @@
       });
       el.addEventListener('mousedown', () => {
         clearTimeout(blurTimer);
-        if (document.activeElement === el && menu.hidden) {
-          renderMenu(true, true);
-        }
       });
       el.addEventListener('click', () => {
         clearTimeout(blurTimer);
+        const hasSelection = typeof el.selectionStart === 'number' && typeof el.selectionEnd === 'number' && el.selectionEnd > el.selectionStart;
+        if (hasSelection) {
+          if (!menu.hidden) closeOwnMenu();
+          return;
+        }
         if (menu.hidden) {
           renderMenu(true, true);
         }
@@ -24317,8 +24375,14 @@
           if (activeIdx >= 0 && currentMatches[activeIdx] != null) {
             ev.preventDefault();
             choose(currentMatches[activeIdx].value);
+          } else {
+            closeOwnMenu();
           }
-        } else if (ev.key === 'Escape' || ev.key === 'Tab') {
+        } else if (ev.key === 'Escape') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          closeAll(null);
+        } else if (ev.key === 'Tab') {
           closeAll(null);
         }
       });
@@ -24468,7 +24532,11 @@
               ev.preventDefault();
               ev.stopPropagation();
               if (activeIdx >= 0 && currentMatches[activeIdx] != null) chooseOption(currentMatches[activeIdx].value);
-            } else if (ev.key === 'Escape' || ev.key === 'Tab') {
+            } else if (ev.key === 'Escape') {
+              ev.preventDefault();
+              ev.stopPropagation();
+              closeAll(null);
+            } else if (ev.key === 'Tab') {
               closeAll(null);
             }
           });
@@ -24519,7 +24587,11 @@
         } else if (ev.key === 'Enter' || ev.key === ' ') {
           ev.preventDefault();
           if (activeIdx >= 0 && currentMatches[activeIdx] != null) chooseOption(currentMatches[activeIdx].value);
-        } else if (ev.key === 'Escape' || ev.key === 'Tab') {
+        } else if (ev.key === 'Escape') {
+          ev.preventDefault();
+          ev.stopPropagation();
+          closeAll(null);
+        } else if (ev.key === 'Tab') {
           closeAll(null);
         }
       });
@@ -24631,7 +24703,9 @@
         if (ev.key === 'ArrowDown' || ev.key === 'Enter' || ev.key === ' ') {
           ev.preventDefault();
           if (supMsMenu.hidden) openSupMultiMenu();
-        } else if (ev.key === 'Escape') {
+        } else if (ev.key === 'Escape' && !supMsMenu.hidden) {
+          ev.preventDefault();
+          ev.stopPropagation();
           closeAll(null);
           supMsTrig.setAttribute('aria-expanded', 'false');
         }
@@ -25148,8 +25222,8 @@
       record = { ...base, name: `SETTLE ${date} ${c.supplier}`, rep_date: repDate, supplier: c.supplier, method: val('f_method'), amount: round2(c.amount), discount: round2(c.disc), reference: val('f_reference'), ap_before: c.before };
     } else if (f === 'pricerule') {
       const prod = val('f_product'), rt = val('f_ruletype') || 'Sales (Delivery)';
-      const tSizeV = val('f_trucksize') ? num('f_trucksize') : null;
       const prTruck = val('f_pr_truck') || '';
+      const tSizeV = (prTruck && val('f_trucksize')) ? num('f_trucksize') : null;
       const ratePer = val('f_rateper') || 'm³';
       const rawIndiff = val('f_indiff') ? round2(num('f_indiff')) : null;
       const isTransOnly = rt === 'Transport Price (Site)' || rt === 'Haulage (Customer Site)';
@@ -27115,8 +27189,8 @@
         { key: 'unit_price', label: 'Material Unit Price ($)', type: 'number', step: '0.01', sec: 3 },
         { key: 'indiff_price', label: 'Indifference Price ($ · Flat / Load)', type: 'number', step: '0.01', sec: 3 },
         { key: 'trans_unit_price', label: 'Transport Unit Price ($)', type: 'number', step: '0.01', sec: 3 },
-        { key: 'truck_size', label: 'Client / Site Truck Size (m³)', type: 'number', step: '0.5', sec: 2 },
         { key: 'truck', label: 'Target Truck Plate (Optional)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
+        { key: 'truck_size', label: 'Client / Site Truck Size (m³)', type: 'number', step: '0.5', sec: 2 },
         { key: 'qty1', label: 'Tier 1 Truck Size (m³)', type: 'number', step: '0.5', sec: 3 },
         { key: 'adj1', label: 'Tier 1 Price Adj ($)', type: 'number', step: '0.01', sec: 3 },
         { key: 'trans_adj1', label: 'Tier 1 Trans Adj ($)', type: 'number', step: '0.01', sec: 3 },
@@ -27573,6 +27647,38 @@
     `;
   }
 
+  function wireBackdropDismiss(backdropEl, closeFn) {
+    if (!backdropEl || backdropEl.dataset.backdropGuardWired === '1') return;
+    backdropEl.dataset.backdropGuardWired = '1';
+    let downOnBackdrop = null;
+    let upOnBackdrop = null;
+    const onDown = e => {
+      if (e.button != null && e.button !== 0) return;
+      downOnBackdrop = (e.target === backdropEl);
+      upOnBackdrop = null;
+    };
+    const onUp = e => {
+      if (e.button != null && e.button !== 0) return;
+      upOnBackdrop = (e.target === backdropEl);
+      setTimeout(() => { downOnBackdrop = null; upOnBackdrop = null; }, 0);
+    };
+    backdropEl.addEventListener('pointerdown', onDown, true);
+    backdropEl.addEventListener('mousedown', onDown, true);
+    backdropEl.addEventListener('pointerup', onUp, true);
+    backdropEl.addEventListener('mouseup', onUp, true);
+    document.addEventListener('mouseup', () => {
+      setTimeout(() => { downOnBackdrop = null; upOnBackdrop = null; }, 0);
+    }, true);
+    backdropEl.addEventListener('click', e => {
+      const hadPointerCycle = downOnBackdrop !== null || upOnBackdrop !== null;
+      const shouldClose = (e.target === backdropEl) && (!hadPointerCycle || (downOnBackdrop === true && upOnBackdrop !== false));
+      downOnBackdrop = null;
+      upOnBackdrop = null;
+      if (shouldClose) closeFn();
+    });
+  }
+  window.__mfgWireBackdropDismiss = wireBackdropDismiss;
+
   function showRecordInspector(key, idOrName, opts = {}) {
     const row = resolveInspectorRecord(key, idOrName);
     if (!row) { toast('Record not found in this snapshot', 'err'); return; }
@@ -27599,7 +27705,7 @@
       panel.className = 'modal-backdrop';
       panel.innerHTML = '<div class="modal-card inspector-card" role="dialog" aria-modal="true" aria-labelledby="inspectorTitle"><div class="modal-header"><div><span class="modal-eyebrow" id="inspectorEyebrow"></span><h2 id="inspectorTitle"></h2></div><button type="button" class="modal-close-btn" id="inspectorCloseBtn" aria-label="Close">✕</button></div><div class="modal-body" id="inspectorBody"></div></div>';
       document.body.appendChild(panel);
-      panel.addEventListener('click', e => { if (e.target === panel) closeRecordInspector(); });
+      wireBackdropDismiss(panel, closeRecordInspector);
       $('inspectorCloseBtn').addEventListener('click', closeRecordInspector);
     }
 
@@ -28222,6 +28328,8 @@
     bodyEl.querySelectorAll('.inspector-cell[data-edit-field]').forEach(cell => {
       cell.addEventListener('click', e => {
         if (e.target && e.target.closest('[data-rel-key]')) return;
+        const sel = window.getSelection && window.getSelection();
+        if (sel && !sel.isCollapsed && String(sel).trim().length > 0) return;
         const fk = cell.getAttribute('data-edit-field');
         if (fk) openModifyDrawerAndFocus(fk);
       });
@@ -28577,6 +28685,8 @@
     // Wire clickable subgrid rows inside the inspector
     bodyEl.querySelectorAll('tr.rrow[data-rid]').forEach(tr => tr.addEventListener('click', e => {
       if (e.target.closest('[data-rel-key], button, a, input')) return;
+      const sel = window.getSelection && window.getSelection();
+      if (sel && !sel.isCollapsed && String(sel).trim().length > 0) return;
       showRecordInspector(tr.getAttribute('data-rkey'), tr.getAttribute('data-rid'), { pushHistory: true });
     }));
 
@@ -35639,7 +35749,14 @@
     document.querySelectorAll('#basisSwitch .basis-btn').forEach(btn => btn.addEventListener('click', () => { STATE.basis = btn.getAttribute('data-basis'); saveFilterState(); renderApp(); if (_dateFacState.open) renderDateFacilitatorPopover(); }));
 
     // Delegated Interactive Segmented Date Control & Date/Period Facilitator Popover
+    let _dateFacDownInside = false;
+    document.addEventListener('mousedown', e => {
+      const pop = $('dateFacilitatorPopover');
+      _dateFacDownInside = Boolean(pop && !pop.hidden && pop.contains(e.target));
+    }, true);
     document.addEventListener('click', e => {
+      const wasDownInside = _dateFacDownInside;
+      _dateFacDownInside = false;
       const segBtn = e.target && e.target.closest ? e.target.closest('.date-seg-part, .date-seg-cal') : null;
       if (segBtn) {
         e.preventDefault();
@@ -35854,7 +35971,7 @@
         return;
       }
 
-      if (!e.target.closest('#grainSwitch, .pbi-grain-group, #dateRangeBar, .pbi-date-right')) {
+      if (!wasDownInside && !e.target.closest('#grainSwitch, .pbi-grain-group, #dateRangeBar, .pbi-date-right')) {
         closeDateFacilitator();
       }
     });
@@ -35869,6 +35986,8 @@
         return;
       }
       if (e.key === 'Escape' && _dateFacState.open) {
+        e.preventDefault();
+        e.stopPropagation();
         closeDateFacilitator();
       }
     });
@@ -35899,7 +36018,7 @@
     const closeEntryBtn = $('closeModalBtn');
     if (closeEntryBtn) closeEntryBtn.addEventListener('click', () => closeEntryModal());
     const modal = $('entryModal');
-    if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeEntryModal(); });
+    if (modal) wireBackdropDismiss(modal, closeEntryModal);
     document.querySelectorAll('#modalTabs .modal-tab').forEach(btn => btn.addEventListener('click', () => openEntryModal(btn.getAttribute('data-form'))));
 
     // Ask ISABI slide-over drawer
@@ -35941,13 +36060,39 @@
     document.querySelectorAll('#aiChips .ai-pill-btn').forEach(chip => chip.addEventListener('click', () => pushAskMessage(chip.getAttribute('data-prompt') || chip.textContent)));
     if (askForm && askInput) askForm.addEventListener('submit', e => { e.preventDefault(); if (askInput.value.trim()) { pushAskMessage(askInput.value.trim()); askInput.value = ''; } });
 
-    // Keyboard: Escape closes the modal / drawer / rail; Ctrl+K focuses search
+    // Keyboard: Escape closes the innermost open popover / drawer / modal / rail; Ctrl+K focuses search
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
+        const openSuggestMenus = document.querySelectorAll('.pa-suggest-menu:not([hidden]), .pa-select-menu:not([hidden]), #supCategoryMenu:not([hidden]), .rdl-combo-menu:not([hidden])');
+        if (openSuggestMenus.length) {
+          openSuggestMenus.forEach(m => { m.hidden = true; });
+          document.querySelectorAll('.pa-suggest-wrap.open, .rdl-combo.open').forEach(w => w.classList.remove('open'));
+          return;
+        }
+        const colPop = $('colFilterPopover');
+        if (colPop && !colPop.hidden) { closeColFilterPopover(); return; }
+        const openColMgr = document.querySelector('.tbl-col-popover:not([hidden])');
+        if (openColMgr) {
+          document.querySelectorAll('.tbl-col-popover').forEach(p => { p.hidden = true; });
+          return;
+        }
+        if (_dateFacState.open) { closeDateFacilitator(); return; }
+        const thModal = $('thermalPrintModal');
+        if (thModal && !thModal.hidden) { thModal.hidden = true; return; }
         const ins = $('recordInspector');
-        if (ins && !ins.hidden) { closeRecordInspector(); return; }
+        if (ins && !ins.hidden) {
+          const modDrawer = $('inspModifyDrawer');
+          if (modDrawer && !modDrawer.hidden) { modDrawer.hidden = true; return; }
+          closeRecordInspector();
+          return;
+        }
         const m = $('entryModal');
-        if (m && !m.hidden) { closeEntryModal(); return; }
+        if (m && !m.hidden) {
+          const unlockBox = $('paAdminUnlockBox');
+          if (unlockBox && !unlockBox.hidden) { unlockBox.hidden = true; return; }
+          closeEntryModal();
+          return;
+        }
         if (askDrawer && askDrawer.classList.contains('open')) { closeDrawer(); return; }
         if (sidebar && sidebar.classList.contains('open')) { closeRail(); return; }
         if (STATE.showAddUserForm) { STATE.showAddUserForm = false; renderApp(); }
