@@ -28983,7 +28983,12 @@
     const el = $('sqlStatusText');
     if (el && !HAS_LOCAL_API) el.textContent = STATE.cloudStatus.replace('● ', '');
     const auth = $('authCloudStatusBadge');
-    if (auth) { auth.textContent = STATE.cloudStatus; auth.className = /Live|Ready/.test(STATE.cloudStatus) ? 'auth-cloud-ok' : 'auth-cloud-warn'; }
+    if (auth) {
+      const isNormal = /Live|Ready|Sandbox|Connecting/i.test(STATE.cloudStatus);
+      auth.hidden = isNormal;
+      auth.textContent = STATE.cloudStatus;
+      auth.className = isNormal ? 'auth-cloud-ok' : 'auth-cloud-warn';
+    }
   }
 
   // ==========================================================================
