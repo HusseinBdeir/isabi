@@ -22251,7 +22251,7 @@
             if (cardEl) {
               cardEl.hidden = false;
               cardEl.className = 'att-contract-strip is-muted';
-              cardEl.innerHTML = `Select a <b>Staff Member</b> and <b>Payroll Month</b> above to view their monthly contract salary, attendance overtime/deductions, amount already paid, and remaining balance or advance status.`;
+              cardEl.innerHTML = `Select a <b>Staff</b> and <b>Payroll Month</b> above to view their monthly contract salary, attendance overtime/deductions, amount already paid, and remaining balance or advance status.`;
             }
             if (qfEl) { qfEl.hidden = true; qfEl.innerHTML = ''; }
             if (subEl) subEl.innerHTML = '';
@@ -22277,10 +22277,10 @@
             let statusFoot = '';
             if (isBonus) {
               statusTag = thisPay > 0
-                ? `<span class="badge badge-ok">Bonus / Extra Pay Accrual (+${fmtUSD(thisPay, 2)} added to ${esc(pos.monthLabel)})</span>`
+                ? `<span class="badge badge-ok">Bonus / Extra Pay (+${fmtUSD(thisPay, 2)} added to ${esc(pos.monthLabel)})</span>`
                 : `<span class="badge badge-info">Bonus / Extra Pay Mode · Adds to ${esc(pos.monthLabel)} Net Earned</span>`;
               statusCls = 'is-ok';
-              statusFoot = thisPay > 0 ? `Bonus +${fmtUSD(thisPay, 2)}` : 'Bonus Accrual Mode';
+              statusFoot = thisPay > 0 ? `Bonus +${fmtUSD(thisPay, 2)}` : 'Bonus / Extra Pay';
             } else if (!pos.hasContract) {
               statusTag = `<span class="badge badge-warn">No Active Contract on File</span>`;
               statusCls = 'is-warn';

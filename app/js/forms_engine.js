@@ -897,13 +897,13 @@
           ${lockedDateField('Transaction Date *')}
           ${collapsibleRepDateField()}
           ${fld('Entry Type *', sel('f_sal_type', [
-            ['payment', 'Salary Payment (Disbursement)'],
-            ['bonus', 'Bonus / Extra Pay (Accrual)']
+            ['payment', 'Salary Payment'],
+            ['bonus', 'Bonus / Extra Pay']
           ], 'payment'), { id: 'wrap_sal_type' })}
           ${fld('Payroll Month *', inp('f_paymonth', 'month', today.slice(0, 7)), { id: 'wrap_sal_month' })}
           ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff member..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_sal_staff', hintId: 'hint_sal_staff', hint: '' })}
           ${fld('Payment Method *', sel('f_method', [['Cash', 'Cash'], ['Bank', 'Bank Transfer']], 'Cash'), { id: 'wrap_sal_method' })}
-          <div id="salStaffMonthCard" class="att-contract-strip is-muted">Select a <b>Staff Member</b> and <b>Payroll Month</b> above to view their monthly contract salary, attendance overtime/deductions, amount already paid, and remaining balance or advance status.</div>
+          <div id="salStaffMonthCard" class="att-contract-strip is-muted">Select a <b>Staff</b> and <b>Payroll Month</b> above to view their monthly contract salary, attendance overtime/deductions, amount already paid, and remaining balance or advance status.</div>
           <div id="salQuickFillBar" class="att-preset-bar" hidden></div>
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { hintId: 'hint_sal_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'))}

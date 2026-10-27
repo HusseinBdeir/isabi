@@ -17181,6 +17181,7 @@ tr.rrow.is-row-selected > td {
   display: none !important;
 }
 .att-contract-strip.is-muted {
+  display: block;
   border-left-color: var(--muted-2);
   color: var(--muted);
 }
