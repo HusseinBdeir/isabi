@@ -292,7 +292,7 @@
     const recs = (SEED && SEED.records) || {};
     const allowedCos = Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length ? STATE.allowedCompanyNames : null;
     const allowedSig = allowedCos ? allowedCos.join(',') : 'ALL';
-    const sig = `${co}|${allowedSig}|${basis}|${(recs.sales_tickets || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}`;
+    const sig = `${co}|${allowedSig}|${basis}|${(SEED && SEED._customRev) || 0}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.vat_invoices || []).length}`;
 
     if (_cachedCoKey !== sig || !_cachedCtxData) {
       const rawSales = (recs.sales_tickets || recs.sales || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos));
@@ -470,7 +470,7 @@
       rawRm.forEach(r => {
         const isCash = String(r.method || '').toLowerCase() === 'cash';
         const matCost = Number(r.cost !== undefined ? r.cost : (Number(r.total || r.total_usd || 0) - Number(r.trans_cost || 0)));
-        const haulCost = r.transport_by === 'Company fleet' ? 0 : Number(r.trans_cost || 0);
+        const haulCost = Number(r.trans_cost || 0);
         const matSup = r.site_owner || r.supplier || r.truck_owner || '(Unassigned Supplier)';
         if (Math.abs(matCost) >= 0.005) {
           apRmLegsAll.push({

@@ -408,7 +408,7 @@
           priorCreditReturns += Math.abs(c);
         }
       }
-      if (r.transport_by !== 'Company fleet' && norm(r.truck_owner) === sNorm) {
+      if (norm(r.truck_owner) === sNorm) {
         const hc = Number(r.trans_cost || 0);
         if (hc > 0) {
           allLegs.push({ date: r.date, ref: `RAW #${r.ticket_no || '—'}`, legType: 'haulage', leg: 'Leg 2 · Raw Haulage', detail: `${r.truck || ''} · ${r.product || ''}`, amount: hc });

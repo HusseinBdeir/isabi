@@ -1718,8 +1718,8 @@
             cur.onCr += c;
           }
         }
-        if (r.transport_by !== 'Company fleet' && r.truck_owner && Number(r.trans_cost || 0) !== 0) {
-          const curH = ensureSC(r.truck_owner);
+        if (Number(r.trans_cost || 0) !== 0) {
+          const curH = ensureSC(r.truck_owner || '(Unassigned Supplier)');
           if (curH) {
             const hc = Number(r.trans_cost || 0);
             curH.rawCost += hc;
