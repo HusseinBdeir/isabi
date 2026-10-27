@@ -360,26 +360,34 @@
 
   function isRuleFlatMat(r) {
     if (!r) return false;
+    const isTransOnly = /^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(String(r.rule_type || '').trim());
+    if (isTransOnly) return false;
     const ip = r.indiff_price != null && r.indiff_price !== '' && Number(r.indiff_price) !== 0 ? Number(r.indiff_price) : null;
+    if (/^truck$/i.test(String(r.unit || '').trim()) && (ip != null || Number(r.unit_price ?? r.price ?? 0) !== 0)) return true;
     if (ip == null) return false;
-    if (/^truck$/i.test(r.unit || '') || /^truck$/i.test(r.rate_per || '')) return true;
-    if (r.rule_type === 'Transport Price (Site)' || r.rule_type === 'Purchase Price (Site)') return true;
+    if (r.rule_type === 'Purchase Price (Site)') return true;
     const up = Number(r.price ?? r.unit_price ?? 0);
     return !(up > 0) || up === ip;
   }
   function ruleFlatTransVal(r) {
     if (!r) return null;
+    const isTransOnly = /^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(String(r.rule_type || '').trim());
     if (r.trans_indiff_price != null && r.trans_indiff_price !== '' && Number(r.trans_indiff_price) !== 0) return Number(r.trans_indiff_price);
-    if ((r.rule_type === 'Transport Price (Site)' || r.rule_type === 'Haulage (Customer Site)') && r.indiff_price != null && r.indiff_price !== '' && Number(r.indiff_price) !== 0) {
+    if (isTransOnly && r.indiff_price != null && r.indiff_price !== '' && Number(r.indiff_price) !== 0) {
       return Number(r.indiff_price);
     }
-    if ((r.rule_type === 'Transport Price (Site)' || r.rule_type === 'Haulage (Customer Site)') && (/^truck$/i.test(r.unit || '') || /^truck$/i.test(r.rate_per || '')) && Number(r.trans_unit_price || r.unit_price || 0) !== 0) {
-      return Number(r.trans_unit_price || r.unit_price);
+    if (isTransOnly && (/^truck$/i.test(String(r.unit || '').trim()) || /^truck$/i.test(String(r.rate_per || '').trim())) && Number(r.trans_unit_price || r.unit_price || r.price || 0) !== 0) {
+      return Number(r.trans_unit_price || r.unit_price || r.price);
+    }
+    if (!isTransOnly && /^truck$/i.test(String(r.rate_per || '').trim()) && Number(r.trans_unit_price || r.trans_price || 0) !== 0) {
+      return Number(r.trans_unit_price || r.trans_price);
     }
     return null;
   }
   function isRuleFlatTrans(r) {
-    return ruleFlatTransVal(r) != null || (r && r.rule_type === 'Transport Price (Site)' && isRuleFlatMat(r)) || /^truck$/i.test((r && r.rate_per) || '');
+    const hasTransLeg = /^(Sales \(Delivery\)|Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(String((r && r.rule_type) || '').trim());
+    if (!hasTransLeg && (!r || r.trans_indiff_price == null)) return false;
+    return ruleFlatTransVal(r) != null || /^truck$/i.test(String((r && r.rate_per) || '').trim());
   }
 
   // Build monthly List Price step-history trajectory from dated List Price agreements in price_rules
@@ -619,7 +627,7 @@
         customer: cur.customer,
         site: cur.site,
         label: cur.site && cur.site !== '(Direct Delivery)' ? `${cur.customer} · ${cur.site}` : cur.customer,
-        basis: isFlat ? 'Flat / Truck' : `Per ${cur.uom || 'm³'}`,
+        basis: isFlat ? 'Per Truck Load' : `Per ${cur.uom || 'm³'}`,
         is_flat: isFlat,
         rule_name: rule ? (rule.name || rule.rule_type) : '',
         agreed_rate: agreed != null && agreed > 0 ? agreed : null,
@@ -1244,7 +1252,7 @@
         site_owner: m.site_owner || (rule && rule.supplier) || '—',
         product: m.product,
         label: `${m.site} · ${m.product}`,
-        basis: isFlat ? 'Flat / Truck' : `Per ${m.uom || 'm³'}`,
+        basis: isFlat ? 'Per Truck Load' : `Per ${m.uom || 'm³'}`,
         is_flat: isFlat,
         rule_name: rule ? (rule.name || '') : '',
         agreed_rate: agreed != null && agreed > 0 ? agreed : null,
@@ -1276,7 +1284,7 @@
         truck_owner: h.truck_owner,
         site: h.site,
         label: `${h.truck_owner} · ${h.site}`,
-        basis: isFlat ? 'Flat / Truck' : `Per ${h.uom || 'm³'}`,
+        basis: isFlat ? 'Per Truck Load' : `Per ${h.uom || 'm³'}`,
         is_flat: isFlat,
         rule_name: rule ? (rule.name || '') : '',
         agreed_rate: agreed != null && agreed > 0 ? agreed : null,
@@ -1350,7 +1358,7 @@
     { key: 'sales_tickets', group: '1 · Sales, Pricing & Receivables', label: 'Sales Tickets', dvn: 'bhf_salesticket', form: 'sales', cols: ['date', 'rep_date', 'ticket_no', 'company', 'sale_type', 'customer', 'product', 'site', 'truck', 'driver', 'qty', 'uom', 'unit_price', 'price', 'trans_price', 'vat', 'total_ttc', 'method'], relTables: ['customers', 'price_rules', 'products', 'sites', 'equipment', 'drivers', 'receipts', 'vat_invoices'], views: [{ id: 'all', label: 'All Sales Tickets' }, { id: 'delivery', label: 'Delivery Loads', fn: r => /deliv/i.test(r.sale_type) }, { id: 'pickup', label: 'Pick-up (Material Only)', fn: r => /pick/i.test(r.sale_type) }, { id: 'credit', label: 'Credit / Account', fn: r => !/cash/i.test(r.method) }, { id: 'iva', label: 'IVA / VAT 11%', fn: r => r.iva || Number(r.vat || 0) > 0 }] },
     { key: 'receipts', group: '1 · Sales, Pricing & Receivables', label: 'Customer Receipts (AR)', dvn: 'bhf_mfgcustomerreceipt', form: 'receipt', cols: ['date', 'rep_date', 'name', 'company', 'customer', 'method', 'kind', 'amount', 'discount', 'vat_invoice', 'record_ticket', 'reference', 'notes'], relTables: ['customers', 'sales_tickets', 'vat_invoices', 'credit_terms'], views: [{ id: 'all', label: 'All Customer Receipts' }, { id: 'cash', label: 'Cash / Check', fn: r => /cash|check|cheque/i.test(r.method || '') }, { id: 'disc', label: 'With Discount / Rebate', fn: r => Number(r.discount || 0) > 0 }] },
     { key: 'vat_invoices', group: '1 · Sales, Pricing & Receivables', label: 'VAT 11% Tax Invoices', dvn: 'bhf_vatinvoice', form: 'vatinvoice', cols: ['invoice_no', 'date', 'company', 'customer', 'start_date', 'end_date', 'net_amount', 'vat_amount', 'total_ttc', 'tickets_count', 'notes'], relTables: ['customers', 'sales_tickets', 'receipts'], views: [{ id: 'all', label: 'All VAT Invoices' }] },
-    { key: 'price_rules', group: '1 · Sales, Pricing & Receivables', label: 'Price & Commission Agreements', dvn: 'bhf_pricerule', form: 'pricerule', cols: ['company', 'rule_type', 'customer', 'supplier', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'total1', 'qty2', 'adj2', 'total2', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'], relTables: ['customers', 'suppliers', 'products', 'sites', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'Sales & Commission Agreements', fn: r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '') }, { id: 'active', label: 'Active Sales Agreements', fn: r => !r.end_date && !/^(Purchase Price \(Site\)|Transport Price \(Site\)|Commission)$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'sales', label: 'Customer Delivery & Pickup', fn: r => /sale|pickup|deliv/i.test(r.rule_type || '') && !/^commission$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'list', label: 'List Prices', fn: r => /list/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'commission', label: 'Commission Rules', fn: r => /^commission$/i.test(r.rule_type || ''), cols: ['company', 'supplier', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_all', label: 'Raw & Site Haulage Agreements', fn: r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_active', label: 'Active Raw & Haulage', fn: r => !r.end_date && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_purch', label: 'Site Material Cost Rules', fn: r => r.rule_type === 'Purchase Price (Site)', cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_haul', label: 'Site Haulage Rate Rules', fn: r => r.rule_type === 'Transport Price (Site)', cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'trans_unit_price', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'] }] },
+    { key: 'price_rules', group: '1 · Sales, Pricing & Receivables', label: 'Price & Commission Agreements', dvn: 'bhf_pricerule', form: 'pricerule', cols: ['company', 'rule_type', 'customer', 'supplier', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'total1', 'qty2', 'adj2', 'total2', 'start_date', 'end_date', 'matched_tickets'], relTables: ['customers', 'suppliers', 'products', 'sites', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'Sales & Commission Agreements', fn: r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '') }, { id: 'active', label: 'Active Sales Agreements', fn: r => !r.end_date && !/^(Purchase Price \(Site\)|Transport Price \(Site\)|Commission)$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'sales', label: 'Customer Delivery & Pickup', fn: r => /sale|pickup|deliv/i.test(r.rule_type || '') && !/^commission$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'list', label: 'List Prices', fn: r => /list/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'commission', label: 'Commission Rules', fn: r => /^commission$/i.test(r.rule_type || ''), cols: ['company', 'supplier', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_all', label: 'Raw & Site Haulage Agreements', fn: r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_active', label: 'Active Raw & Haulage', fn: r => !r.end_date && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_purch', label: 'Site Material Cost Rules', fn: r => r.rule_type === 'Purchase Price (Site)', cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_haul', label: 'Site Haulage Rate Rules', fn: r => r.rule_type === 'Transport Price (Site)', cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }] },
     { key: 'credit_terms', group: '1 · Sales, Pricing & Receivables', label: 'Customer Credit Terms', dvn: 'bhf_creditterm', form: 'creditterm', cols: ['name', 'company', 'customer', 'credit_days', 'credit_limit', 'ar_balance', 'start_date', 'end_date', 'notes'], relTables: ['customers', 'sales_tickets', 'receipts'], views: [{ id: 'all', label: 'All Credit Terms' }, { id: 'active', label: 'Active Policies', fn: r => !r.end_date }] },
     { key: 'customers', group: '1 · Sales, Pricing & Receivables', universal: true, navView: 'reg_customers', label: 'Customers Registry', dvn: 'bhf_customer', form: 'customer', cols: ['name', 'method', 'vat_registered', 'mof_no', 'phone', 'address', 'credit_days', 'credit_limit', 'active_rules', 'sales_loads', 'ar_balance'], relTables: ['sales_tickets', 'receipts', 'price_rules', 'credit_terms', 'vat_invoices'], views: [{ id: 'all', label: 'All Customers' }, { id: 'open_ar', label: 'Open AR Balance > $0', fn: (r, rel) => ((rel.custByName[norm(r.name)] || {}).ar_balance || 0) > 1 }, { id: 'vat', label: 'VAT Registered (MOF)', fn: r => Boolean(r.vat_registered || r.mof_no) }] },
     { key: 'products', group: '1 · Sales, Pricing & Receivables', universal: true, navView: 'reg_products', label: 'Products & Grades', dvn: 'bhf_product', form: 'product', cols: ['name', 'type', 'uom', 'ton_factor', 'list_price', 'ticket_product', 'fuel_item', 'input_product', 'active_rules', 'sales_loads', 'revenue_account'], relTables: ['sales_tickets', 'raw_purchases', 'price_rules', 'fuel_intakes', 'product_types', 'uoms'], views: [{ id: 'all', label: 'All Products & Grades' }, { id: 'agg', label: 'Ticket / Aggregate Grades', fn: r => Boolean(r.ticket_product) }, { id: 'fuel', label: 'Fuel & Lube Items', fn: r => Boolean(r.fuel_item) }] },
@@ -2091,9 +2099,24 @@
         return hv;
       }
     }
-    if (tableKey === 'price_rules' && c === 'indiff_price') {
-      const iv = r.indiff_price ?? r.trans_indiff_price ?? r.delivered_indiff_price;
-      if (iv != null && iv !== '') return iv;
+    if (tableKey === 'price_rules') {
+      const isTrOnly = /^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(String(r.rule_type || '').trim());
+      if (c === 'unit_price') {
+        if (isTrOnly) return null;
+        if (isRuleFlatMat(r)) return rValOr(r.indiff_price, r.unit_price ?? r.price);
+        return (r.unit_price ?? r.price) || null;
+      }
+      if (c === 'trans_unit_price') {
+        if (isRuleFlatTrans(r)) return ruleFlatTransVal(r);
+        const tv = r.trans_unit_price ?? r.trans_price ?? (isTrOnly ? (r.unit_price ?? r.price) : null);
+        return (tv != null && Number(tv) !== 0) ? Number(tv) : null;
+      }
+      if (c === 'unit') {
+        const rawU = isTrOnly
+          ? (isRuleFlatTrans(r) ? 'Truck' : (r.rate_per || r.unit || 'm³'))
+          : (isRuleFlatMat(r) ? 'Truck' : (r.unit || 'm³'));
+        return /^truck$/i.test(String(rawU || '').trim()) ? 'Per Truck Load' : `Per ${rawU}`;
+      }
     }
     if (tableKey === 'conversions') {
       const cd = convDeltasPbi(r);
@@ -4840,7 +4863,7 @@
       const delTransComp = buildSalesDeliveryTransportComp(salesRows, allRules, { today, asAtDate: asAtPricingDate });
       const quarryComp = buildQuarryPricingComp(rawRows, allRules, { today, asAtDate: asAtPricingDate });
       const haulChartSource = quarryComp.haulFlatChartRows.length ? quarryComp.haulFlatChartRows : quarryComp.haulUnitChartRows;
-      const haulChartBasisLbl = quarryComp.haulFlatChartRows.length ? '$/Truck Flat' : '$/m³';
+      const haulChartBasisLbl = quarryComp.haulFlatChartRows.length ? '$/Truck Load' : '$/m³';
 
       const p05AggGrades = pickTopAggregateGrades(prodRows, 999, rec.products);
       const p05AggM3 = p05AggGrades.reduce((a, p) => a + Number(p.qty_sold || 0), 0);
@@ -8959,7 +8982,7 @@
       { today: (ctx && ctx.today) || '2026-10-26', asAtDate: (ctx && ctx.asAtDate) || (ctx && ctx.today) || '2026-10-26' }
     );
     const haulRows = quarryComp.haulFlatChartRows.length ? quarryComp.haulFlatChartRows : quarryComp.haulUnitChartRows;
-    const haulBasis = quarryComp.haulFlatChartRows.length ? '$/Truck Flat' : '$/m³';
+    const haulBasis = quarryComp.haulFlatChartRows.length ? '$/Truck Load' : '$/m³';
     return `
       <div class="pbi-grid-2" id="rawPricingChartsRow" style="margin-bottom:14px">
         ${pbiPanel('Raw Material Purchase Rate by Source Site · Agreed vs. Last Receipt ($/m³)', buildClusteredBarChart(quarryComp.matUnitChartRows, 'label', [
