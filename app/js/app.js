@@ -1172,17 +1172,42 @@
     const d = String(s.date || '').slice(0, 10);
     const arr = getCommissionRulesIndex().get(`${norm(s.company)}|${norm(s.product)}`);
     if (!arr || !arr.length) return 0;
-    let best = 0;
+    let bestRule = null;
+    let bestStart = '';
+    let bestRate = -1;
     for (let i = 0; i < arr.length; i++) {
       const r = arr[i];
       const sd = r.start_date ? String(r.start_date).slice(0, 10) : '';
       const ed = r.end_date ? String(r.end_date).slice(0, 10) : '';
       if ((!sd || sd <= d) && (!ed || ed >= d)) {
         const v = Number(r.unit_price ?? r.price ?? 0);
-        if (v > best) best = v;
+        if (!bestRule || sd > bestStart || (sd === bestStart && v > bestRate)) {
+          bestRule = r;
+          bestStart = sd;
+          bestRate = v;
+        }
       }
     }
-    return best > 0 ? qty * best : 0;
+    if (!bestRule || !(bestRate > 0)) return 0;
+    const su = norm(s.uom || '');
+    const ru = norm(bestRule.unit || '');
+    let effQty = qty;
+    if (ru && su && ru !== su) {
+      const pInfo = productInfo(s.product);
+      const tf = Number((pInfo && pInfo.ton_factor) || 1.5) || 1.5;
+      const isTicketM3 = su === 'm3' || su === 'm³';
+      const isRuleM3 = ru === 'm3' || ru === 'm³';
+      const isTicketTon = su === 'ton' || su === 'tons' || su === 't';
+      const isRuleTon = ru === 'ton' || ru === 'tons' || ru === 't';
+      if (isTicketM3 && isRuleTon) effQty = qty * tf;
+      else if (isTicketTon && isRuleM3) effQty = qty / tf;
+      else if (ru === 'truck' || ru === 'load') effQty = 1;
+      else if (su === 'truck' || su === 'load') {
+        const m3 = Number(s.truck_size) > 0 ? Number(s.truck_size) : 20;
+        effQty = isRuleTon ? m3 * tf : m3;
+      }
+    }
+    return effQty * bestRate;
   }
 
   function finishKpiRatios(k) {
@@ -4120,41 +4145,41 @@
   // ---- Unified Role & Granular Custom Permission Matrix ---------------------
   const PERM_CATALOG = {
     rights: [
-      { id: 'read_ops', label: 'Read Operational Data & Registers', sub: '23 Operational Tables · Sales, Raw Material, Fleet, AR/AP & Expenses', badge: 'READ OPS' },
-      { id: 'read_fin', label: 'Read Confidential Financial, Payroll, GL & Sentinels', sub: '11 Financial/HR Tables · Salaries, Contracts, Loans, JV & Trial Balance', badge: 'READ FIN' },
-      { id: 'enter_dispatch', label: 'Enter Weighbridge Sales, Raw Material Intake & Diesel', sub: 'New Sales Ticket, Raw Material 2-Leg Purchase & Fuel Intake', badge: 'ENTER DISPATCH' },
-      { id: 'enter_accounting', label: 'Enter Customer Receipts, Expenses & Settlements', sub: 'FIFO Customer Receipt, Cash/Credit Expense & Oldest-Leg AP Settlement', badge: 'ENTER ACCT' },
-      { id: 'enter_master', label: 'Enter Master Data, Price Rules & Attendance', sub: 'Customers, Suppliers, Products, Sites, Trucks, Drivers, Price Rules & Attendance', badge: 'ENTER MASTER' },
-      { id: 'enter_payroll_jv', label: 'Enter Confidential Payroll, Loans & JV Splits', sub: 'Monthly Salaries, Contracts, Partner Loans, FX Conversions & JV Splits', badge: 'ENTER PAYROLL' },
-      { id: 'modify_data', label: 'Modify Existing Records (Inline 360° Edit)', sub: 'Edit posted quantities, unit prices, references & notes with audit trail', badge: 'MODIFY DATA' },
-      { id: 'void_data', label: 'Void / Delete Records', sub: 'Void or delete records via multi-device cloud tombstones & 1-click Undo (Supervisor / Admin / Custom)', badge: 'VOID DATA' },
-      { id: 'manage_users', label: 'Administer Team Seats, Roles, Face ID & RLS', sub: 'Create/edit login seats, PINs, custom permissions, RLS & 2FA policies', badge: 'ADMIN SEATS' }
+      { id: 'read_ops', label: 'Read Commercial, Procurement, Fleet & Master Hubs', sub: '25 Operational & Master Tables · Sales & Receivables, Purchases & Payables, Fleet & Defects, Counterparties & Catalogs', badge: 'READ OPS' },
+      { id: 'read_fin', label: 'Read Confidential Payroll, Treasury, General Ledger & Sentinels', sub: '11 Confidential Tables · Payroll & Workforce, Cash Flow & Loans, JV Partnerships, Class 1–7 CoA GL & AI Sentinels', badge: 'READ FIN' },
+      { id: 'enter_dispatch', label: 'Enter Sales Dispatch, Quarry Intake, Fuel & Fleet Defects', sub: 'Sales Tickets, 2-Leg Quarry Purchases, Diesel/Lubricants/Grease, Equipment Defects, Part Changes & Plant Kiosks', badge: 'ENTER DISPATCH' },
+      { id: 'enter_accounting', label: 'Enter Customer Receipts, Expenses & Supplier Settlements', sub: 'FIFO Customer Receipts, Cash/Credit Operating Expenses & 3-Leg Supplier AP Settlements', badge: 'ENTER ACCT' },
+      { id: 'enter_master', label: 'Enter Master Registries, Pricing Agreements & Attendance', sub: 'Customers, Suppliers, Products, Quarry/Delivery Sites, Fleet Units, Drivers, Price Agreements & Staff Attendance', badge: 'ENTER MASTER' },
+      { id: 'enter_payroll_jv', label: 'Enter Confidential Payroll, Treasury, Loans & JV Splits', sub: 'Monthly Salaries, Employment Contracts, Allowances, Partner Loans, External Cash, FX Conversions & 50/50 JV Vouchers', badge: 'ENTER PAYROLL' },
+      { id: 'modify_data', label: 'Modify Posted Records (360° Inspector & Inline Edit)', sub: 'Edit posted quantities, unit prices, references & 5-state part custody via the 360° Modify Drawer', badge: 'MODIFY DATA' },
+      { id: 'void_data', label: 'Void / Delete Posted Records (With 1-Click Undo)', sub: 'Void or delete records via multi-device cloud tombstones & instant 1-click Undo', badge: 'VOID DATA' },
+      { id: 'manage_users', label: 'Administer Team Seats, Company RLS, Permissions & Face ID', sub: 'Create/edit login seats, PINs, Assigned Companies (RLS), custom role matrices & Face ID liveness policies', badge: 'ADMIN SEATS' }
     ],
     unlocks: [
-      { id: 'unlock_unit_price', fields: ['f_unitprice'], label: 'Unit Price & Agreement Lock', rule: 'PRICE', sub: 'Override active Customer Price Agreement or List Price for spot-rate dispatches' },
-      { id: 'unlock_trans_price', fields: ['f_transunitprice'], label: 'Transport / Haulage Rate Lock', rule: 'HAULAGE', sub: 'Override contractual delivery or third-party raw haulage rate per load' },
-      { id: 'unlock_qty_cap', fields: ['f_qty'], label: 'Quantity & Truck Capacity Lock', rule: 'CAPACITY', sub: 'Override auto-filled truck m³ capacity or 1-load Truck UoM quantity lock' },
-      { id: 'unlock_uom', fields: ['f_uom'], label: 'Unit of Measure (UoM) Lock', rule: 'UNIT', sub: 'Switch ticket billing unit between m³, Ton, Truck load, Bag or Piece' },
-      { id: 'unlock_method', fields: ['f_method'], label: 'Payment Method Lock (Cash / Credit)', rule: 'METHOD', sub: 'Override Customer default Cash/Credit method or Raw Material Credit payable rule' },
-      { id: 'unlock_fleet_cascade', fields: ['f_truckowner', 'f_truck', 'f_driver', 'f_metertype', 'f_subcategory'], label: 'Cascading Fleet, Driver & Category Locks', rule: 'CASCADE', sub: 'Override Truck → Truck Owner/Driver/Meter Type cascade or Expense Category → Subcategory lock' },
-      { id: 'unlock_site_owner', fields: ['f_siteowner'], label: 'Site Default Supplier Lock', rule: 'SITE', sub: 'Override the default supplier bound to a raw material source site' },
-      { id: 'unlock_vat_serial', fields: ['f_vatinvoice'], label: 'Statutory VAT Invoice Serial Lock', rule: 'VAT 11%', sub: 'Manually bind or override a statutory 11% VAT invoice serial number' },
-      { id: 'unlock_formula_totals', fields: ['f_date', 'f_mat_total', 'f_trans_total', 'f_total_usd'], label: 'Transaction Date & Calculated Total Locks', rule: 'DATE / TOTAL', sub: 'Override locked Transaction Date or computed Material / Transport / Total USD' }
+      { id: 'unlock_unit_price', fields: ['f_unitprice'], label: 'Unit Price & Agreement Lock', rule: 'PRICE', sub: 'Override active Customer Price Agreement, Quarry Purchase Rate, or List Price on spot dispatches' },
+      { id: 'unlock_trans_price', fields: ['f_transunitprice'], label: 'Delivery & Quarry Haulage Rate Lock', rule: 'HAULAGE', sub: 'Override contractual Customer Delivery rate or 3rd-party Quarry Haulage rate per load' },
+      { id: 'unlock_qty_cap', fields: ['f_qty'], label: 'Quantity & Truck Capacity Lock', rule: 'CAPACITY', sub: 'Override auto-filled truck m³ capacity window or 1-load Truck UoM quantity lock' },
+      { id: 'unlock_uom', fields: ['f_uom'], label: 'Billing Unit of Measure (UoM) Lock', rule: 'UNIT', sub: 'Switch ticket billing unit between m³, Ton, Truck load, Litre, kg, Bag or Piece' },
+      { id: 'unlock_method', fields: ['f_method'], label: 'Payment Method Lock (Cash / Credit)', rule: 'METHOD', sub: 'Override Customer default Cash/Credit terms or Quarry Credit payable rule' },
+      { id: 'unlock_fleet_cascade', fields: ['f_truckowner', 'f_truck', 'f_driver', 'f_metertype', 'f_subcategory'], label: 'Truck, Driver & Category Cascade Lock', rule: 'CASCADE', sub: 'Override Truck → Owner / Assigned Driver / Meter cascade or Expense Category → Subcategory lock' },
+      { id: 'unlock_site_owner', fields: ['f_siteowner'], label: 'Quarry Site Default Supplier Lock', rule: 'SITE', sub: 'Override the default quarry supplier bound to a raw material source site' },
+      { id: 'unlock_vat_serial', fields: ['f_vatinvoice'], label: 'Statutory 11% VAT Invoice Serial Lock', rule: 'VAT 11%', sub: 'Manually bind or override a statutory 11% VAT invoice serial number' },
+      { id: 'unlock_formula_totals', fields: ['f_date', 'f_mat_total', 'f_trans_total', 'f_total_usd'], label: 'Transaction Date & Computed Total Locks', rule: 'DATE / TOTAL', sub: 'Unlock past Transaction Date or override computed Material, Transport & Total USD' }
     ],
     dashboards: [
-      { id: 'dash_overview', pages: ['p01_overview', 'p02_companies', 'p03_exceptions'], count: 3, label: 'Executive, Entity Comparison & Sentinels', sub: 'P01 Executive Pulse, P02 Entity Comparison & Action Items (in AI Sentinels)', badge: '3 Dashboards' },
-      { id: 'dash_commercial', pages: ['p04_sales', 'p05_pricing', 'p06_ar', 'p18_tickets', 'p20_recon'], count: 5, label: 'Commercial, Sales, Pricing & AR Aging', sub: 'Sales Analytics, Pricing Spreads, AR Aging + Ticket Books & Statement Recon', badge: '5 Dashboards' },
-      { id: 'dash_plant_fleet', pages: ['p07_ap', 'p08_stock', 'p09_fuel', 'p10_fleet', 'p11_drivers'], count: 5, label: 'Raw Material, 3-Leg AP, Inventory & Fleet', sub: 'Payables & Spend, Stock & Margin, Diesel Burn, Fleet Economics + Drivers & OT', badge: '5 Dashboards' },
-      { id: 'dash_expenses_vat', pages: ['p13_vat', 'p14_cashflow', 'p19_changelog'], count: 3, label: 'Operating Cash Flow, Statutory VAT & Audit', sub: 'Cash Flow & Till + VAT 11% (in Customers) & Change Log (in Sentinels)', badge: '3 Dashboards' },
-      { id: 'dash_payroll_hr', pages: ['p12_payroll'], count: 1, label: 'Payroll, Attendance & Workforce (Confidential)', sub: 'Workforce Analytics, Site Allowances & Freelance', badge: '1 Dashboard' },
-      { id: 'dash_financial_gl', pages: ['p15_treasury', 'p16_financial', 'p17_jv'], count: 3, label: 'Treasury, CoA Trial Balance & JV Board', sub: 'Financial GL & Ratios + Treasury/Loans (in GL) & JV 50/50 Sites (in Material & Transportation)', badge: '3 Dashboards' }
+      { id: 'dash_overview', pages: ['p01_overview', 'p02_companies', 'p03_exceptions'], livePages: ['p01_overview', 'p02_companies'], count: 2, label: 'Executive Overview, Entity Comparison & AI Sentinels', sub: '#01 Executive Pulse & #02 Entity Comparison dashboards + Executive Overview & S1–S10 AI Sentinels hub', badge: '2 Dashboards' },
+      { id: 'dash_commercial', pages: ['p04_sales', 'p05_pricing', 'p06_ar', 'p18_tickets', 'p20_recon'], livePages: ['p04_sales', 'p05_pricing', 'p06_ar'], count: 3, label: 'Sales, Pricing, Commissions & Receivables', sub: '#03 Sales Analytics, #04 Pricing & Spreads, #05 Receivables & Aging + inline Sales & AR hub charts', badge: '3 Dashboards' },
+      { id: 'dash_plant_fleet', pages: ['p07_ap', 'p08_stock', 'p09_fuel', 'p10_fleet', 'p11_drivers'], livePages: ['p07_ap', 'p08_stock', 'p09_fuel', 'p10_fleet'], count: 4, label: 'Purchases, 3-Leg Payables, Quarry Stock & Fleet', sub: '#06 Payables & Spend, #07 Stock & Unit Margin, #08 Diesel & Tank Burn, #09 Fleet Economics + Procurement & Fleet charts', badge: '4 Dashboards' },
+      { id: 'dash_expenses_vat', pages: ['p13_vat', 'p14_cashflow', 'p19_changelog'], livePages: ['p14_cashflow'], count: 1, label: 'Cash Flow, Daily Till & 11% VAT Analytics', sub: '#11 Cash Flow & Till dashboard + 610-Day Daily Till Sheet & 11% Statutory VAT charts', badge: '1 Dashboard' },
+      { id: 'dash_payroll_hr', pages: ['p12_payroll'], livePages: ['p12_payroll'], count: 1, label: 'Payroll, Daily Plant Map & Workforce (Confidential)', sub: '#10 Workforce Analytics dashboard + Payroll, Daily Plant & Machine Map, Attendance & Contracts hub', badge: '1 Dashboard' },
+      { id: 'dash_financial_gl', pages: ['p15_treasury', 'p16_financial', 'p17_jv'], livePages: ['p16_financial'], count: 1, label: 'General Ledger, Lebanese CoA, Loans & 50/50 JV (Confidential)', sub: '#12 Financial GL & Ratios dashboard + Class 1–7 CoA, Trial Balance, Partner Loans & JV Partnerships', badge: '1 Dashboard' }
     ],
     statements: [
-      { id: 'stmt_digest_ops', codes: ['01', '08', '09', '11', '12'], count: 5, label: 'Executive Digest & Operational Registers', sub: '#01 Daily Operations, #08 Sales Register, #09 Expense Register, #11 Raw Material, #12 Fuel Log', badge: '5 Statements' },
-      { id: 'stmt_counterparty', codes: ['13', '14', '15', '16', '17'], count: 5, label: 'Counterparty Aging & Statements (SOA)', sub: '#13 Aged Receivables, #14 Customer Statement, #15 Supplier Balances, #16 Supplier Statement, #17 Driver Statement', badge: '5 Statements' },
-      { id: 'stmt_vouchers', codes: ['20', '21', '22'], count: 3, label: 'Printable Invoices, Tickets & Vouchers', sub: '#20 Sales Invoice, #21 Delivery Ticket, #22 Customer Receipt Voucher', badge: '3 Statements' },
-      { id: 'stmt_payroll', codes: ['10'], count: 1, label: 'Payroll & Workforce Register (Confidential)', sub: '#10 Monthly Payroll, Attendance & Allowances Register', badge: '1 Statement' },
-      { id: 'stmt_financial_board', codes: ['02', '03', '04', '05', '06', '07', '18', '19'], count: 8, label: 'Audited Financial, General Ledger, VAT & Recon Pack', sub: '#02 Balance Sheet, #03 Income Stmt, #04 Cash Flow, #05 Trial Balance, #06 Gen Journal, #07 Sub-Account, #18 VAT, #19 P&L Recon', badge: '8 Statements' }
+      { id: 'stmt_digest_ops', codes: ['01', '08', '09', '11', '12'], count: 5, label: 'Executive Digest & Operational Registers', sub: '#01 Daily Operations Digest, #08 Sales Register, #09 Expense Register, #11 Quarry & Raw Material, #12 Fuel & Lube Log', badge: '5 Statements' },
+      { id: 'stmt_counterparty', codes: ['13', '14', '15', '16', '17'], count: 5, label: 'Customer, Supplier & Driver Statements (SOA)', sub: '#13 Aged Receivables, #14 Customer Statement, #15 Supplier 3-Leg Balances, #16 Quarry & Supplier Statement, #17 Driver Statement', badge: '5 Statements' },
+      { id: 'stmt_vouchers', codes: ['20', '21', '22'], count: 3, label: 'Printable Tax Invoices, Delivery Tickets & Vouchers', sub: '#20 Statutory VAT Sales Invoice (2738), #21 Weighbridge Delivery Ticket, #22 Customer Receipt Voucher', badge: '3 Statements' },
+      { id: 'stmt_payroll', codes: ['10'], count: 1, label: 'Payroll, Attendance & Allowances Register (Confidential)', sub: '#10 Monthly Payroll, Overtime, Attendance & Site Allowances Register', badge: '1 Statement' },
+      { id: 'stmt_financial_board', codes: ['02', '03', '04', '05', '06', '07', '18', '19'], count: 8, label: 'Audited Financial Statements, CoA Trial Balance, VAT & JV Pack', sub: '#02 Balance Sheet, #03 P&L Statement, #04 Cash Flow, #05 Trial Balance, #06 General Journal, #07 Sub-Account SOA, #18 VAT Return, #19 JV & Recon', badge: '8 Statements' }
     ]
   };
 
@@ -4179,11 +4204,11 @@
 
   const ROLE_PRESETS = {
     'Full Access (Owner)': {
-      title: 'Admin / Owner (Full Access)',
+      title: 'Admin / Owner (Full Access across All 5 Domains)',
       tierBadge: 'TIER 1 · ADMIN / OWNER',
       badgeCls: 'badge-ok',
       defaultAccess: 'full|full',
-      summary: 'Unrestricted read, entry, inline record modification, voiding, seat administration, all 9 policy-lock overrides, all 20 executive dashboards & all 22 A4 statements.',
+      summary: 'Unrestricted access across all 11 sidebar hubs, 36 tables, 26 entry forms, 360° record modification, voiding, seat administration, all 9 field-lock overrides, all 12 executive dashboards & all 22 A4 statements.',
       rights: { read_ops: true, read_fin: true, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: true, modify_data: true, void_data: true, manage_users: true },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: true, unlock_method: true, unlock_fleet_cascade: true, unlock_site_owner: true, unlock_vat_serial: true, unlock_formula_totals: true },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: true },
@@ -4194,51 +4219,51 @@
       tierBadge: 'TIER 2 · SUPERVISOR + ENTRY',
       badgeCls: 'badge-ok',
       defaultAccess: 'full|full',
-      summary: 'Full operational & financial visibility, all entry forms, inline record modification, record voiding, all 9 policy-lock overrides, and linked Executive Dashboards & Statements.',
+      summary: 'Full operational & financial visibility across all hubs, 26 entry forms, 360° record modification, record voiding, all 9 policy-lock overrides, 12 executive dashboards & 22 printable statements.',
       rights: { read_ops: true, read_fin: true, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: true, modify_data: true, void_data: true, manage_users: false },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: true, unlock_method: true, unlock_fleet_cascade: true, unlock_site_owner: true, unlock_vat_serial: true, unlock_formula_totals: true },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: true },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: true }
     },
     'Supervisor': {
-      title: 'Supervisor (Oversight, Audit & Void)',
+      title: 'Supervisor (Oversight, Sentinels & Void)',
       tierBadge: 'TIER 3 · SUPERVISOR',
       badgeCls: 'badge-info',
       defaultAccess: 'full|full',
-      summary: 'Oversight across registers, AI sentinels, 20 executive dashboards & 22 statements; can void records & unlock policy-locked fields (cannot post new tickets).',
+      summary: 'Oversight across all domain hubs, S1–S10 AI sentinels, 12 executive dashboards & 22 statements; can void records & unlock policy-locked fields (read-only on entry forms).',
       rights: { read_ops: true, read_fin: true, enter_dispatch: false, enter_accounting: false, enter_master: false, enter_payroll_jv: false, modify_data: false, void_data: true, manage_users: false },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: true, unlock_method: true, unlock_fleet_cascade: true, unlock_site_owner: true, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: true },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: true }
     },
     'Entry': {
-      title: 'Entry (Weighbridge, Plant & Desk Operator)',
+      title: 'Entry Operator (Weighbridge, Procurement, Fleet & Kiosks)',
       tierBadge: 'TIER 4 · ENTRY OPERATOR',
       badgeCls: 'badge-brass',
       defaultAccess: 'partial|partial',
-      summary: 'Enters Sales Tickets, Raw Material Intake, Fuel, Expenses, Customer Receipts & Master Data (create-only; cannot modify or void records). Policy-locked fields require Admin PIN unless customized.',
+      summary: 'Posts Sales Tickets, Quarry Purchases, Fuel/Grease, Defects/Parts, Expenses, Customer Receipts & Master Registries (create-only; hides confidential Payroll & GL). Policy locks require Admin PIN unless customized.',
       rights: { read_ops: true, read_fin: false, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: false, modify_data: false, void_data: false, manage_users: false },
       unlocks: { unlock_unit_price: false, unlock_trans_price: false, unlock_qty_cap: false, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: false, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: false, dash_financial_gl: false },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: false, stmt_financial_board: false }
     },
     'Sales': {
-      title: 'Sales & AR Collector (Commercial Desk)',
+      title: 'Commercial & AR Desk (Sales, Pricing & Receivables)',
       tierBadge: 'TIER 4 · COMMERCIAL & AR',
       badgeCls: 'badge-info',
       defaultAccess: 'partial|full',
-      summary: 'Scoped to Sales Tickets, Customer Receipts, Price Agreements, VAT Invoices & AR Aging; hides Material AP, Fleet, Expenses & Payroll.',
+      summary: 'Scoped to Sales & Receivables (Deliveries, Customers & AR Aging, Commercial Pricing & Commissions, VAT Invoices); hides Purchases/Payables, Fleet, Payroll & General Ledger hubs.',
       rights: { read_ops: true, read_fin: false, enter_dispatch: false, enter_accounting: true, enter_master: false, enter_payroll_jv: false, modify_data: false, void_data: false, manage_users: false },
       unlocks: { unlock_unit_price: false, unlock_trans_price: false, unlock_qty_cap: false, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: false, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: false, dash_expenses_vat: false, dash_payroll_hr: false, dash_financial_gl: false },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: true }
     },
     'Custom': {
-      title: 'Custom Role (Granular Permission & Lock Matrix)',
+      title: 'Custom Role (Granular Hub, Lock & Analytics Matrix)',
       tierBadge: 'CUSTOM · GRANULAR MATRIX',
       badgeCls: 'badge-brass',
       defaultAccess: 'custom|custom',
-      summary: 'Tailored seat profile — pick exact Read/Enter/Modify/Void rights, specific policy-locked fields this seat can unlock without Admin PIN, and custom Executive Dashboards & Statements.',
+      summary: 'Tailored seat profile — pick exact Hub Read/Enter/Modify/Void rights, specific policy-locked form fields this seat can unlock without Admin PIN, and custom Executive Dashboards & Statements.',
       rights: { read_ops: true, read_fin: false, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: false, modify_data: true, void_data: true, manage_users: false },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: true, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: false, dash_financial_gl: false },
@@ -4341,6 +4366,12 @@
     return { roleKey, isCustomRole, preset, rights, unlocks, dashboards, statements, pbiTier, stTier };
   }
 
+  const LIVE_DASHBOARD_IDS = [
+    'p01_overview', 'p02_companies', 'p04_sales', 'p05_pricing',
+    'p06_ar', 'p07_ap', 'p08_stock', 'p09_fuel',
+    'p10_fleet', 'p12_payroll', 'p14_cashflow', 'p16_financial'
+  ];
+
   function countPermissionMetrics(perms, u) {
     const rightsCount = PERM_CATALOG.rights.filter(r => perms.rights[r.id]).length;
     const unlockCount = PERM_CATALOG.unlocks.filter(ul => perms.unlocks[ul.id]).length;
@@ -4348,22 +4379,36 @@
     let pbiPageCount = 0;
     PERM_CATALOG.dashboards.forEach(d => {
       if (perms.dashboards[d.id]) {
-        pbiPageCount += d.pages.filter(p => p !== 'p02_companies' || multiCo).length;
+        const liveList = d.livePages || d.pages.filter(p => LIVE_DASHBOARD_IDS.includes(p));
+        pbiPageCount += liveList.filter(p => p !== 'p02_companies' || multiCo).length;
       }
     });
     let stmtCount = 0;
     PERM_CATALOG.statements.forEach(s => {
       if (perms.statements[s.id]) stmtCount += s.codes.length;
     });
+    const hubTotal = typeof HUB_CATALOG !== 'undefined' ? HUB_CATALOG.length : 11;
+    const hubCount = (typeof HUB_CATALOG !== 'undefined' && u)
+      ? HUB_CATALOG.filter(h => canViewHub(h.id, u)).length
+      : (perms.rights.read_fin ? hubTotal : 9);
+    const allTblKeys = typeof TABLE_CATALOG !== 'undefined' ? Object.keys(TABLE_CATALOG) : [];
+    const tableTotal = allTblKeys.length || 36;
+    const tableCount = (allTblKeys.length && u)
+      ? allTblKeys.filter(tk => canAccessTable(tk, u)).length
+      : (perms.rights.read_fin ? tableTotal : 25);
     return {
       rightsCount,
       rightsTotal: PERM_CATALOG.rights.length,
       unlockCount,
       unlockTotal: PERM_CATALOG.unlocks.length,
       pbiPageCount,
-      pbiPageTotal: multiCo ? 20 : 19,
+      pbiPageTotal: multiCo ? 12 : 11,
       stmtCount,
-      stmtTotal: 22
+      stmtTotal: 22,
+      hubCount,
+      hubTotal,
+      tableCount,
+      tableTotal
     };
   }
 
@@ -10648,8 +10693,9 @@
     const base = filterRecords(SEED.records.price_rules, { ignorePeriod: true });
     const salesBase = base.filter(r => !isQuarryOnlyRule(r));
     const commBaseCount = salesBase.filter(isCommRule).length;
-    const salesTypes = uniqSorted(salesBase.map(r => r.rule_type));
-    const allTypes = uniqSorted(base.map(r => r.rule_type));
+    const CANON_SALES_TYPES = ['Sales (Pickup)', 'Sales (Delivery)', 'List Price', 'Commission'];
+    const salesTypes = uniqSorted(CANON_SALES_TYPES.concat(salesBase.map(r => r.rule_type)).filter(Boolean));
+    const allTypes = uniqSorted(CANON_SALES_TYPES.concat(base.map(r => r.rule_type)).filter(Boolean));
     const rules = sortRows(base.filter(r => {
       if (STATE.chipFilter === 'all_domains') return true;
       if (STATE.chipFilter === 'active') return !isQuarryOnlyRule(r) && isActive(r);
@@ -10671,9 +10717,9 @@
       'Sales (Pickup)': 'Pickup',
       'Haulage (Customer Site)': '3P Delivery Haul',
       'List Price': 'List Price',
-      'Commission': commBaseCount > 0 ? `Commission (${commBaseCount})` : 'Commission'
+      'Commission': `Commission (${commBaseCount})`
     }[t] || t);
-    const typeChips = salesTypes.length ? salesTypes.map(t => chip(t, shortRuleType(t))).join('') : chip('customer', 'Customer rules');
+    const typeChips = salesTypes.map(t => chip(t, shortRuleType(t))).join('');
     const upRules = rules.filter(r => !isMatIndiffRule(r) && !isNonAggOutlierRule(r) && (STATE.chipFilter === 'Commission' || !isCommRule(r)) && Number(r.unit_price ?? r.price ?? 0) > 0);
     const tpRules = rules.filter(r => !isTransIndiffRule(r) && Number(r.trans_unit_price ?? r.trans_price ?? 0) > 0 && Number(r.trans_unit_price ?? r.trans_price ?? 0) <= 100);
     const indRules = rules.filter(r => ruleAnyIndiffPrice(r) != null);
@@ -10760,39 +10806,19 @@
             sub: `Benchmarked across <b>${fmtNum(volScopedProds.length || scopedProds.length)}</b> active aggregate grades`,
             tone: 'steel'
           })}
-          ${hasComm ? insightCard({
+          ${insightCard({
             label: 'Sales Commission Earned',
             badge: `${fmtNum(commData.rulesCount)} Rules · ${commData.beneficiariesLabel}`,
-            badgeCls: 'brass',
+            badgeCls: commData.rulesCount > 0 ? 'brass' : 'emerald',
             val: `<span class="insight-drill" data-scroll-panel="commissionProductPanel" title="Jump to Sales Commissions by Product">${fmtUSD(commData.totalEarned, 0)}</span>`,
-            valCls: 'brass',
+            valCls: commData.rulesCount > 0 ? 'brass' : 'emerald',
             pct: commPaidPct,
             sub: `Paid <b>${fmtUSD(commData.totalPaidExVat, 0)}</b> Ex-VAT${commData.totalPaidVat > 0 ? ` (+<b>${fmtUSD(commData.totalPaidVat, 0)}</b> VAT)` : ''} · <span class="insight-drill" data-scroll-panel="commissionLedgerPanel">Open: <b>${fmtUSD(commData.openPayableExVat, 0)}</b></span>`,
-            tone: 'brass'
-          }) : insightCard({
-            label: 'Sales Commission Due',
-            badge: 'Own Plant · 0 Rules',
-            badgeCls: 'emerald',
-            val: '$0',
-            valCls: 'emerald',
-            sub: commHintCo
-              ? `Own plant ($0) · <span class="insight-drill" data-jump-co="${esc(commHintSlug)}" role="button" tabindex="0" title="Switch entity to ${esc(commHintCo.company)}"><b>${esc(commHintCo.company)}</b>: <b>${fmtNum(commHintCo.rulesCount)}</b> rules (${esc(commHintCo.ownersLabel)})</span>`
-              : `Locked at weighbridge entry across <b>${fmtNum(uniqPrCusts)}</b> customer accounts`,
-            tone: 'emerald'
+            tone: commData.rulesCount > 0 ? 'brass' : 'emerald'
           })}
           ${appPill('price_rules', 'unit_price', 'agreements')}
         </div>
       </div>
-
-      ${commHintCo ? `
-        <div class="pbi-panel" id="commEntityHintBanner" style="margin-bottom:14px;padding:11px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-left:3px solid var(--brass)">
-          <div style="font-size:12.5px;color:var(--ink-2)">
-            <b>${esc(COMPANY_LABELS[STATE.company] || STATE.company)}</b> operates its own crushing &amp; washing plant with <b>$0</b> per-unit sales commissions.
-            <b>${esc(commHintCo.company)}</b> carries <b>${fmtNum(commHintCo.rulesCount)}</b> sales commission agreements across <b>${fmtNum(commHintCo.productsCount)}</b> products payable to <b>${esc(commHintCo.ownersLabel)}</b>.
-          </div>
-          <button type="button" class="btn btn-sm btn-brass" data-jump-co="${esc(commHintSlug)}" style="white-space:nowrap">View ${esc(commHintCo.company)} Commissions (${fmtNum(commHintCo.rulesCount)} Rules)</button>
-        </div>
-      ` : ''}
 
       <div class="panel-card" id="pricingPanel">
         <div class="table-toolbar">
@@ -10838,10 +10864,10 @@
                   <td class="r">${indVal != null ? `<strong>${fmtUSD(indVal, 2)}</strong> <span class="badge badge-brass" title="Flat Indifference Price per truck load (not multiplied by m³)">Flat</span>` : '—'}</td>
                   <td class="mono">${esc(fmtDateDMY(pr.start_date))}</td>
                   <td class="mono">${esc(pr.end_date ? fmtDateDMY(pr.end_date) : 'Open')}</td>
-                  <td><span class="badge ${isActive(pr) ? 'badge-ok' : 'badge-warn'}">${isActive(pr) ? 'Active' : 'Lapsed'}</span></td>
+                  <td><span class="badge ${isActive(pr) ? 'badge-ok' : 'badge-warn'}">${isActive(pr) ? 'Active' : 'Lapsed'}</span>${commRow && canEnterForm('pricerule') ? ` <button type="button" class="btn btn-ghost-bar" style="padding:1px 6px;font-size:10px" data-open-comm-prod="${esc(pr.product || '')}" data-comm-co="${esc(pr.company || '')}" data-comm-uom="${esc(pr.unit || 'Ton')}" data-comm-owner="${esc(pr.supplier || '')}" title="Add a dated rate or unit change for ${esc(pr.product || 'this product')}">Step Rate</button>` : ''}</td>
                 </tr>
               `;
-              }).join('') || emptyRow(13, STATE.search ? `No agreements match "${STATE.search}".` : 'No agreements for this entity')}
+              }).join('') || emptyRow(13, STATE.search ? `No agreements match "${STATE.search}".` : (STATE.chipFilter === 'Commission' ? 'No sales commission rules configured for this entity yet. Click "+ Commission Rule" above to add one.' : 'No agreements for this entity'))}
               ${showMoreRow('pricing', rules.length, 13)}
             </tbody>
             <tfoot>
@@ -10902,7 +10928,7 @@
               asAtDate
             })
           : '';
-        const commVisualsHtml = (hasComm && window.MFG_PBI && typeof window.MFG_PBI.renderCommissionVisualsSection === 'function')
+        const commVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderCommissionVisualsSection === 'function')
           ? window.MFG_PBI.renderCommissionVisualsSection(commData, { isPbi: false })
           : '';
         const qSearch = STATE.search.trim().toLowerCase();
@@ -10930,7 +10956,7 @@
         const totMoPeriodNet = commMonthsSorted.reduce((a, r) => a + Number(r.period_net_ex_vat || 0), 0);
         const totVcExVat = commVouchersFiltered.reduce((a, v) => a + Number(v.ex_vat_paid || 0), 0);
         const totVcVat = commVouchersFiltered.reduce((a, v) => a + Number(v.vat_paid || 0), 0);
-        const commSectionHtml = !hasComm ? '' : `
+        const commSectionHtml = `
           <div class="panel-card" id="commissionProductPanel" style="margin-bottom:14px">
             <div class="panel-head">
               <div class="panel-title"><span>SALES COMMISSIONS BY PRODUCT &amp; SELLING-PRICE CORRIDOR (${fmtNum(commProdFiltered.length)} PRODUCTS · ${fmtNum(commData.rulesCount)} RULES · ${esc(commData.beneficiariesLabel.toUpperCase())})</span></div>
@@ -10951,12 +10977,12 @@
                 </thead>
                 <tbody>
                   ${commProdFiltered.map(r => `
-                    <tr class="rrow" data-rkey="price_rules" data-rid="${esc(r.rule_id || r.id)}">
+                    <tr class="rrow" data-rkey="${r.rule_id ? 'price_rules' : 'products'}" data-rid="${esc(r.rule_id || (productInfo(r.product) || {}).id || r.product)}">
                       <td>${relLink('products', r.product, r.product, true)}</td>
                       <td>${coBadge(r.company)}</td>
-                      <td>${relLink('suppliers', r.owner, r.owner, true)}</td>
+                      <td>${r.owner && r.owner !== '-' && r.owner !== '—' ? relLink('suppliers', r.owner, r.owner, true) : '<span class="mu">-</span>'}</td>
                       <td class="mono">${esc(r.uom)}</td>
-                      <td class="r"><strong>${fmtUSD(r.active_rate, 2)}</strong>${r.rate_step_note ? `<div style="font-size:10px;color:var(--muted)">${esc(r.rate_step_note)}</div>` : ''}</td>
+                      <td class="r"><strong>${fmtUSD(r.active_rate, 2)}</strong>${canEnterForm('pricerule') ? ` <button type="button" class="btn btn-ghost-bar" style="padding:1px 6px;font-size:10px;margin-left:4px" data-open-comm-prod="${esc(r.product)}" data-comm-co="${esc(r.company)}" data-comm-uom="${esc(r.uom)}" data-comm-owner="${esc(r.owner && r.owner !== '-' && r.owner !== '—' ? r.owner : '')}" title="Set or step commission rate &amp; unit (m³ / Ton) for ${esc(r.product)}">${r.rules_count > 0 ? 'Change Rate' : '+ Set Rate'}</button>` : ''}${r.rate_step_note ? `<div style="font-size:10px;color:var(--muted)">${esc(r.rate_step_note)}</div>` : ''}</td>
                       <td class="r">${fmtNum(r.loads, 0)}</td>
                       <td class="r mono">${fmtNum(r.qty_sold, 1)} ${esc(r.uom)}</td>
                       <td class="r">${r.list_price != null ? fmtUSD(r.list_price, 2) : '-'}</td>
@@ -12711,13 +12737,15 @@
     const pool = co ? allForStaff.filter(e => norm(e.company) === co) : allForStaff;
     const candidates = pool.length ? pool : allForStaff;
     const refDate = String(onDate || SEED_DATE || '').slice(0, 10);
+    const hasExplicitDate = Boolean(onDate);
     const isEnded = e => e.status === 'Ended' || e.status === 'Inactive' || e.status === 'Terminated' || (e.end_date && refDate && String(e.end_date).slice(0, 10) < refDate);
     const sorted = candidates.slice().sort((a, b) => {
+      const aInWin = refDate && (!a.start_date || String(a.start_date).slice(0, 10) <= refDate) && (!a.end_date || String(a.end_date).slice(0, 10) >= refDate) ? 1 : 0;
+      const bInWin = refDate && (!b.start_date || String(b.start_date).slice(0, 10) <= refDate) && (!b.end_date || String(b.end_date).slice(0, 10) >= refDate) ? 1 : 0;
+      if (hasExplicitDate && aInWin !== bInWin) return bInWin - aInWin;
       const aAct = isEnded(a) ? 0 : 1;
       const bAct = isEnded(b) ? 0 : 1;
       if (aAct !== bAct) return bAct - aAct;
-      const aInWin = refDate && (!a.start_date || String(a.start_date).slice(0, 10) <= refDate) && (!a.end_date || String(a.end_date).slice(0, 10) >= refDate) ? 1 : 0;
-      const bInWin = refDate && (!b.start_date || String(b.start_date).slice(0, 10) <= refDate) && (!b.end_date || String(b.end_date).slice(0, 10) >= refDate) ? 1 : 0;
       if (aInWin !== bInWin) return bInWin - aInWin;
       return String(b.start_date || '').localeCompare(String(a.start_date || ''));
     });
@@ -12734,6 +12762,10 @@
       hasContract: true,
       staff: best.staff || staffName,
       company: best.company || company || 'WTC',
+      contractCompany: best.company || 'WTC',
+      startDate: best.start_date || '',
+      endDate: best.end_date || '',
+      contractCount: allForStaff.length,
       type: best.type || 'Staff',
       status: isEnded(best) ? 'Ended' : 'Current',
       role: best.role || '',
@@ -12754,6 +12786,323 @@
 
   function staffScheduledHours(staffName, company, onDate) {
     return getStaffContractProfile(staffName, company, onDate).workingHours || 8;
+  }
+
+  const MONTH_SHORT_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function formatPayrollMonthLabel(ym) {
+    const s = String(ym || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(s)) return s || '—';
+    const [y, m] = s.split('-').map(Number);
+    return `${MONTH_SHORT_NAMES[(m - 1) % 12] || s} ${y}`;
+  }
+  function shiftYearMonth(ym, deltaMonths) {
+    const s = String(ym || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(s)) return s;
+    const [y, m] = s.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, (m - 1) + Number(deltaMonths || 0), 1));
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+  function normStaffStem(name) {
+    return norm(name).replace(/(?:e|y)\b/g, 'i');
+  }
+
+  let _PAYROLL_INTEL_CACHE = null;
+  function _getPayrollIntelIndex() {
+    const rev = `${SEED._customRev || 0}|${(SEED.records && SEED.records.salaries && SEED.records.salaries.length) || 0}|${(SEED.records && SEED.records.attendance && SEED.records.attendance.length) || 0}|${(SEED.records && SEED.records.employments && SEED.records.employments.length) || 0}|${(SEED.records && SEED.records.loans && SEED.records.loans.length) || 0}|${(SEED.records && SEED.records.loan_settlements && SEED.records.loan_settlements.length) || 0}`;
+    if (_PAYROLL_INTEL_CACHE && _PAYROLL_INTEL_CACHE.rev === rev) return _PAYROLL_INTEL_CACHE;
+    const salByStaffMonth = new Map();
+    const salByStaff = new Map();
+    const attByStaffMonth = new Map();
+    const logByStaff = new Map();
+    const logByStaffYm = {};
+    const openLoansByStem = new Map();
+    const posCache = new Map();
+
+    const recs = SEED.records || {};
+    (recs.salaries || []).forEach(s => {
+      if (!s || s.voided) return;
+      const sk = norm(s.staff);
+      if (!sk) return;
+      const ym = String(s.payroll_month || (s.date || '').slice(0, 7)).slice(0, 7);
+      const mk = `${sk}|${ym}`;
+      if (!salByStaffMonth.has(mk)) salByStaffMonth.set(mk, []);
+      salByStaffMonth.get(mk).push(s);
+      if (!salByStaff.has(sk)) salByStaff.set(sk, []);
+      salByStaff.get(sk).push(s);
+    });
+    salByStaffMonth.forEach(list => {
+      list.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || '')));
+    });
+
+    (recs.attendance || []).forEach(a => {
+      if (!a || a.voided) return;
+      const sk = norm(a.staff);
+      if (!sk) return;
+      const ym = String(a.month || (a.date || '').slice(0, 7)).slice(0, 7);
+      const mk = `${sk}|${ym}`;
+      if (!attByStaffMonth.has(mk)) attByStaffMonth.set(mk, []);
+      attByStaffMonth.get(mk).push(a);
+    });
+
+    (recs.logistics_allowances || []).forEach(l => {
+      if (!l || l.voided) return;
+      const sk = norm(l.staff);
+      if (!sk) return;
+      if (!logByStaff.has(sk)) logByStaff.set(sk, []);
+      logByStaff.get(sk).push(l);
+      const sStem = normStaffStem(l.staff);
+      const lym = String(l.start_date || l.date || '').slice(0, 7);
+      if (sStem && lym) {
+        if (!logByStaffYm[sStem]) logByStaffYm[sStem] = {};
+        if (!logByStaffYm[sStem][lym]) logByStaffYm[sStem][lym] = [];
+        logByStaffYm[sStem][lym].push(l);
+      }
+    });
+
+    // Staff loans / advances from SEED.records.loans & loan_settlements (when Company lends to staff)
+    const loanMap = new Map();
+    (recs.loans || []).forEach(l => {
+      if (!l || l.voided) return;
+      const party = l.lender || l.counterparty || '';
+      const stem = normStaffStem(party);
+      if (!stem) return;
+      const isCompanyLends = /lends|outflow|advance/i.test(String(l.direction || '')) || !/borrows/i.test(String(l.direction || ''));
+      if (!isCompanyLends) return;
+      const amt = Number(l.principal || l.amount || l.usd_amount || 0) + (Number(l.lbp_amount || 0) / 89500);
+      if (!(amt > 0)) return;
+      if (!loanMap.has(stem)) loanMap.set(stem, { party, principal: 0, settled: 0, vouchers: [] });
+      const entry = loanMap.get(stem);
+      entry.principal = round2(entry.principal + amt);
+      entry.vouchers.push({ id: l.id, name: l.name || l.reference || l.id, date: String(l.start_date || l.date || '').slice(0, 10), amount: round2(amt), settled_amount: Number(l.settled_amount || 0), company: l.company || 'WTC' });
+    });
+    (recs.loan_settlements || []).forEach(ls => {
+      if (!ls || ls.voided) return;
+      const stem = normStaffStem(ls.borrower || ls.lender || ls.counterparty || '');
+      if (!stem || !loanMap.has(stem)) return;
+      const amt = Number(ls.amount || ls.usd_amount || 0) + (Number(ls.lbp_amount || 0) / 89500);
+      loanMap.get(stem).settled = round2(loanMap.get(stem).settled + amt);
+    });
+    loanMap.forEach((v, stem) => {
+      const openBal = round2(Math.max(0, v.principal - v.settled));
+      if (openBal > 0.01) {
+        const unpaidCnt = v.vouchers.filter(x => round2(x.amount - (x.settled_amount || 0)) > 0.01).length;
+        openLoansByStem.set(stem, {
+          party: v.party,
+          principal: v.principal,
+          settled: v.settled,
+          openBalance: openBal,
+          latestLoan: v.vouchers[v.vouchers.length - 1] || null,
+          count: unpaidCnt || v.vouchers.length
+        });
+      }
+    });
+
+    _PAYROLL_INTEL_CACHE = { rev, salByStaffMonth, salByStaff, attByStaffMonth, logByStaff, logByStaffYm, openLoansByStem, posCache };
+    return _PAYROLL_INTEL_CACHE;
+  }
+
+  function computeStaffMonthPayrollPosition(staffName, company, payrollMonth, txDate, excludeSalId = null, _skipPrev = false) {
+    const sk = norm(staffName);
+    if (!sk) return null;
+    const ym = String(payrollMonth || (txDate || SEED_DATE || '').slice(0, 7)).slice(0, 7);
+    const refTxDate = String(txDate || SEED_DATE || '').slice(0, 10);
+    const idx = _getPayrollIntelIndex();
+    const cacheKey = `${sk}|${norm(company)}|${ym}|${refTxDate}|${excludeSalId || ''}|${_skipPrev ? 1 : 0}`;
+    if (idx.posCache.has(cacheKey)) return idx.posCache.get(cacheKey);
+
+    const monthMidDate = /^\d{4}-\d{2}$/.test(ym) ? `${ym}-15` : refTxDate;
+    const prof = getStaffContractProfile(staffName, company, monthMidDate);
+    const baseSalary = round2(prof.hasContract ? prof.monthlySalary : 0);
+    const reimbursement = round2(prof.hasContract ? prof.reimbursement : 0);
+    const contractDed = round2(prof.hasContract ? prof.deduction : 0);
+    const contractNetBase = round2(baseSalary + reimbursement - contractDed);
+
+    const attList = sk && ym ? (idx.attByStaffMonth.get(`${sk}|${ym}`) || []) : [];
+    let otHrs = 0, otPay = 0, lateHrs = 0, lateDed = 0, absDays = 0, absDed = 0, extraUsd = 0, workedDays = 0;
+    attList.forEach(a => {
+      const attType = String(a.type || a.status || 'Present');
+      if (/^config/i.test(attType)) return;
+      const tally = Number(a.tally != null ? a.tally : 0);
+      const otH = Number(a.overtime_hours != null && a.overtime_hours > 0 ? a.overtime_hours : (/^overtime$/i.test(attType) ? tally : 0));
+      const ltH = Number(a.late_hours != null && a.late_hours > 0 ? a.late_hours : (/^lateness$/i.test(attType) ? tally : 0));
+      const lvD = /^half\s*day$/i.test(attType)
+        ? (tally > 0 ? tally : 0.5)
+        : (/Absence|VacAbsence|Sick|Leave|Unpaid/i.test(attType) ? (tally > 0 ? tally : 1) : 0);
+      otHrs = round2(otHrs + otH);
+      otPay = round2(otPay + round2(otH * prof.otHourlyRate));
+      lateHrs = round2(lateHrs + ltH);
+      lateDed = round2(lateDed + round2(ltH * prof.lateHourlyRate));
+      if ((/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType)) && a.pay_treatment !== 'paid') {
+        const dCnt = lvD > 0 ? lvD : (/^half\s*day$/i.test(attType) ? 0.5 : 1);
+        absDays = round2(absDays + dCnt);
+        absDed = round2(absDed + round2(dCnt * prof.dailyRate));
+      } else if (/^extra\s*usd$/i.test(attType)) {
+        extraUsd = round2(extraUsd + tally);
+      } else if (/^extra\s*lbp$/i.test(attType)) {
+        extraUsd = round2(extraUsd + (tally / 89500));
+      }
+      if (!/^absence$|^absent$|unpaid/i.test(attType)) workedDays += 1;
+    });
+
+    // Monthly site allowance if staff has an active arrangement overlapping ym
+    let siteAllowUsd = 0;
+    let primarySite = '';
+    const logArr = sk ? (idx.logByStaff.get(sk) || []) : [];
+    if (logArr.length && /^\d{4}-\d{2}$/.test(ym)) {
+      const mStart = `${ym}-01`;
+      const mEnd = `${ym}-31`;
+      logArr.forEach(l => {
+        if (!primarySite && l.site) primarySite = l.site;
+        const s = String(l.start_date || '2026-01-01').slice(0, 10);
+        const e = String(l.end_date || '2099-12-31').slice(0, 10);
+        if (s <= mEnd && e >= mStart) {
+          const daily = Number(l.daily_usd || l.usd_amount || 0) || (Number(l.lbp_amount || 0) / 89500);
+          const daysPerWk = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].filter(d => l[d]).length || 6;
+          siteAllowUsd = round2(siteAllowUsd + (daily * Math.round(26 * (daysPerWk / 6))));
+        }
+      });
+    }
+
+    // Historical fallback baseline if no contract exists
+    const allStaffSals = sk ? (idx.salByStaff.get(sk) || []) : [];
+    let histAvgMonthly = 0;
+    if (!prof.hasContract && allStaffSals.length) {
+      const byM = new Map();
+      allStaffSals.forEach(s => {
+        if (excludeSalId && String(s.id) === String(excludeSalId)) return;
+        const m = String(s.payroll_month || (s.date || '').slice(0, 7)).slice(0, 7);
+        if (m) byM.set(m, round2((byM.get(m) || 0) + Number(s.amount || 0)));
+      });
+      if (byM.size > 0) {
+        let sumM = 0;
+        byM.forEach(v => { sumM += v; });
+        histAvgMonthly = round2(sumM / byM.size);
+      }
+    }
+
+    const netAttImpact = round2(otPay + extraUsd + siteAllowUsd - lateDed - absDed);
+    const monthNetEarned = prof.hasContract
+      ? round2(Math.max(0, contractNetBase + netAttImpact))
+      : round2(Math.max(0, histAvgMonthly + netAttImpact));
+
+    const rawVouchers = sk && ym ? (idx.salByStaffMonth.get(`${sk}|${ym}`) || []) : [];
+    const vouchers = excludeSalId
+      ? rawVouchers.filter(v => String(v.id) !== String(excludeSalId))
+      : rawVouchers;
+    const paidSoFar = round2(vouchers.reduce((sum, v) => sum + Number(v.amount || 0), 0));
+    const remainingNet = round2(monthNetEarned - paidSoFar);
+    const remainingBase = round2(contractNetBase - paidSoFar);
+
+    const txYm = refTxDate.slice(0, 7);
+    const isFutureMonth = Boolean(ym && txYm && ym > txYm);
+    const isCurrentMonth = Boolean(ym && txYm && ym === txYm);
+    const daysElapsed = isCurrentMonth
+      ? Math.min(30, Math.max(1, Number(refTxDate.slice(8, 10)) || 30))
+      : (isFutureMonth ? 0 : 30);
+    const proRataBaseToDate = round2(contractNetBase * (daysElapsed / 30));
+    const accruedToDate = round2(Math.max(0, proRataBaseToDate + netAttImpact));
+
+    // Check prior month unpaid arrears (1 level deep)
+    let prevMonthUnpaid = null;
+    if (!_skipPrev && sk && /^\d{4}-\d{2}$/.test(ym)) {
+      const prevYm = shiftYearMonth(ym, -1);
+      const prevStart = (prof.startDate || '').slice(0, 7);
+      if (!prevStart || prevYm >= prevStart) {
+        const prevPos = computeStaffMonthPayrollPosition(staffName, company, prevYm, refTxDate, excludeSalId, true);
+        if (prevPos && prevPos.hasContract && prevPos.remainingNet > 35) {
+          prevMonthUnpaid = {
+            ym: prevYm,
+            label: formatPayrollMonthLabel(prevYm),
+            monthLabel: formatPayrollMonthLabel(prevYm),
+            earned: prevPos.monthNetEarned,
+            paid: prevPos.paidSoFar,
+            remaining: prevPos.remainingNet,
+            remainingNet: prevPos.remainingNet
+          };
+        }
+      }
+    }
+
+    const openLoan = sk ? (idx.openLoansByStem.get(normStaffStem(staffName)) || null) : null;
+    const crossCompanyMismatch = Boolean(prof.hasContract && company && norm(prof.contractCompany) !== norm(company));
+
+    const monthLbl = formatPayrollMonthLabel(ym);
+    const nextYmVal = shiftYearMonth(ym, 1);
+    const nextYmLbl = formatPayrollMonthLabel(nextYmVal);
+    const prevYmVal = shiftYearMonth(ym, -1);
+    const result = {
+      prof,
+      staff: prof.staff || staffName || '',
+      company: company || prof.company || 'WTC',
+      contractCompany: prof.contractCompany || prof.company || 'WTC',
+      crossCompanyMismatch,
+      contractInOtherBu: crossCompanyMismatch,
+      hasContract: prof.hasContract,
+      status: prof.status,
+      role: prof.role,
+      workingDays: prof.workingDays,
+      workingHours: prof.workingHours,
+      otMultiplier: prof.otMultiplier,
+      hourlyRate: prof.hourlyRate,
+      otHourlyRate: prof.otHourlyRate,
+      dailyRate: prof.dailyRate,
+      ym,
+      ymLabel: monthLbl,
+      monthLabel: monthLbl,
+      nextYm: nextYmVal,
+      nextMonth: nextYmVal,
+      nextYmLabel: nextYmLbl,
+      nextMonthLabel: nextYmLbl,
+      prevMonth: prevYmVal,
+      baseSalary,
+      reimbursement,
+      contractDed,
+      deduction: contractDed,
+      contractNetBase,
+      baseNet: contractNetBase,
+      histAvgMonthly,
+      attLogsCount: attList.length,
+      attCount: attList.length,
+      workedDays,
+      otHrs,
+      otHours: otHrs,
+      otPay,
+      lateHrs,
+      lateHours: lateHrs,
+      lateDed,
+      absDays,
+      unpaidLeaveDays: absDays,
+      absDed,
+      leaveDed: absDed,
+      extraUsd,
+      siteAllowUsd,
+      logUsd: siteAllowUsd,
+      flUsd: 0,
+      primarySite,
+      netAttImpact,
+      attNetImpact: netAttImpact,
+      monthNetEarned,
+      vouchers,
+      monthPayments: vouchers,
+      vouchersCount: vouchers.length,
+      paidCount: vouchers.length,
+      paidSoFar,
+      remainingNet,
+      remainingBase,
+      alreadyInAdvance: remainingNet < -0.01,
+      advanceOverNet: round2(Math.max(0, -remainingNet)),
+      isFutureMonth,
+      isCurrentMonth,
+      daysElapsed,
+      proRataBaseToDate,
+      accruedToDate,
+      prevMonthUnpaid,
+      openLoan,
+      openLoanBalance: openLoan ? openLoan.openBalance : 0,
+      openLoansCount: openLoan ? openLoan.count : 0
+    };
+    idx.posCache.set(cacheKey, result);
+    return result;
   }
 
   function renderPayroll(subMode = 'main') {
@@ -13076,9 +13425,55 @@
     const filteredUnmatched = sortRows(unmatchedRowsDetailed, 'pay_unmatched', 'unmatched_usd', 'desc');
     const shownUnmatched = filteredUnmatched.slice(0, shownCount('pay_unmatched'));
 
+    // Annotate each salary voucher with its monthly running entitlement & settlement / advance posture
+    const salRunMap = new Map();
+    salAll.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || ''))).forEach(s => {
+      const sk = norm(s.staff);
+      const ym = String(s.payroll_month || (s.date || '').slice(0, 7)).slice(0, 7);
+      const mk = `${sk}|${ym}`;
+      const prevCum = salRunMap.get(mk) || 0;
+      const amt = Number(s.amount || 0);
+      const cumPaid = round2(prevCum + amt);
+      salRunMap.set(mk, cumPaid);
+      const pos = computeStaffMonthPayrollPosition(s.staff, s.company, ym, s.date || today, null, true);
+      const txYm = String(s.date || '').slice(0, 7);
+      const isFut = Boolean(ym && txYm && ym > txYm);
+      if (!pos || !pos.hasContract) {
+        s.sal_status_lbl = 'No Contract';
+        s.sal_status_cls = 'badge-warn';
+        s.sal_status_tip = `No active contract on file for ${s.staff || 'staff'} · Month total paid: ${fmtUSD(pos ? pos.paidSoFar : 0, 2)}`;
+        s.is_advance_sal = false;
+      } else if (isFut) {
+        s.sal_status_lbl = `Future Advance (${pos.ymLabel})`;
+        s.sal_status_cls = 'badge-brass';
+        s.sal_status_tip = `Paid on ${String(s.date || '').slice(0, 10)} in advance for ${pos.ymLabel} · Month Earned: ${fmtUSD(pos.monthNetEarned, 2)}`;
+        s.is_advance_sal = true;
+      } else if (cumPaid > pos.monthNetEarned + 1) {
+        const over = round2(cumPaid - pos.monthNetEarned);
+        s.sal_status_lbl = `Advance +${fmtUSD(over, 0)}`;
+        s.sal_status_cls = 'badge-warn';
+        s.sal_status_tip = `${pos.ymLabel} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Cumulative paid: ${fmtUSD(cumPaid, 2)} (+${fmtUSD(over, 2)} above month net)`;
+        s.is_advance_sal = true;
+      } else if (Math.abs(pos.monthNetEarned - cumPaid) <= 25) {
+        s.sal_status_lbl = 'Settled';
+        s.sal_status_cls = 'badge-ok';
+        s.sal_status_tip = `${pos.ymLabel} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Paid in full (${fmtUSD(cumPaid, 2)})`;
+        s.is_advance_sal = false;
+      } else {
+        const remAfterThis = round2(Math.max(0, pos.monthNetEarned - cumPaid));
+        const remMonthNow = round2(Math.max(0, pos.remainingNet));
+        s.sal_status_lbl = `Partial · ${fmtUSD(remAfterThis, 0)} rem`;
+        s.sal_status_cls = 'badge-info';
+        s.sal_status_tip = `${pos.ymLabel} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Paid after this voucher: ${fmtUSD(cumPaid, 2)} (${fmtUSD(remAfterThis, 2)} remaining then · ${fmtUSD(remMonthNow, 2)} remaining now)`;
+        s.is_advance_sal = false;
+      }
+    });
+    const advanceSalCount = salAll.filter(s => Boolean(s.is_advance_sal)).length;
+
     const salFilteredBase = salAll.filter(s => {
       if (STATE.chipFilter === 'cash_sal') return /cash/i.test(String(s.method || 'Cash'));
       if (STATE.chipFilter === 'bank_sal') return !/cash/i.test(String(s.method || 'Cash'));
+      if (STATE.chipFilter === 'advance_sal') return Boolean(s.is_advance_sal);
       if (STATE.chipFilter === 'unmatched_sal') return !hasContractStaffSet.has(norm(s.staff)) || unmatchedStaffSet.has(norm(s.staff));
       if (STATE.chipFilter === 'app') return isAppRecord(s);
       return true;
@@ -13691,11 +14086,12 @@
       <div class="panel-card" id="paySalPanel">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search voucher #, staff member, payroll month, method...')}
+            ${searchBox('Search voucher #, staff member, payroll month, status, method...')}
             <div class="chip-bar">
               ${chip('all', `All (${salAll.length})`)}
               ${chip('cash_sal', 'Cash')}
               ${chip('bank_sal', 'Bank / Transfer')}
+              ${advanceSalCount ? chip('advance_sal', `Advances (${advanceSalCount})`) : ''}
               ${chip('unmatched_sal', `No Contract (${unmatchedRowsDetailed.length})`)}
               ${chip('app', 'App-entered')}
             </div>
@@ -13746,7 +14142,7 @@
         ${renderColFilterBar('pay_sal')}
         <div class="table-wrap">
           <table class="ledger-table">
-            <thead><tr>${th('pay_sal', 'Date', 'date')}${th('pay_sal', 'Voucher', 'name')}${th('pay_sal', 'Payroll Month', 'payroll_month')}${th('pay_sal', 'Co.', 'company')}${th('pay_sal', 'Staff Member', 'staff')}${th('pay_sal', 'Method', 'method')}${th('pay_sal', 'Amount ($)', 'amount', 'r')}</tr></thead>
+            <thead><tr>${th('pay_sal', 'Date', 'date')}${th('pay_sal', 'Voucher', 'name')}${th('pay_sal', 'Payroll Month', 'payroll_month')}${th('pay_sal', 'Co.', 'company')}${th('pay_sal', 'Staff Member', 'staff')}${th('pay_sal', 'Method', 'method')}${th('pay_sal', 'Month Status', 'sal_status_lbl')}${th('pay_sal', 'Amount ($)', 'amount', 'r')}</tr></thead>
             <tbody>
               ${shownSal.map(s => `
                 <tr class="rrow" data-rkey="salaries" data-rid="${esc(s.id)}">
@@ -13756,14 +14152,15 @@
                   <td>${coBadge(s.company)}</td>
                   <td>${relLink('employments', s.staff, s.staff, true)}</td>
                   <td>${esc(s.method || 'Cash')}</td>
+                  <td><span class="badge ${esc(s.sal_status_cls || 'badge-info')}" title="${esc(s.sal_status_tip || '')}">${esc(s.sal_status_lbl || '—')}</span></td>
                   <td class="r"><strong>${fmtUSD(s.amount, 2)}</strong></td>
                 </tr>
-              `).join('') || emptyRow(7, 'No salary payments match filter')}
-              ${showMoreRow('pay_sal', filteredSal.length, 7)}
+              `).join('') || emptyRow(8, 'No salary payments match filter')}
+              ${showMoreRow('pay_sal', filteredSal.length, 8)}
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="6"><b>TOTAL (${fmtNum(filteredSal.length)} SALARY DISBURSEMENTS)</b></td>
+                <td colspan="7"><b>TOTAL (${fmtNum(filteredSal.length)} SALARY DISBURSEMENTS)</b></td>
                 <td class="r"><b>${fmtUSD(sumSalFiltered, 2)}</b></td>
               </tr>
             </tfoot>
@@ -18255,22 +18652,22 @@
   ];
 
   const SEAT_ROLE_OPTIONS = [
-    { value: 'Full Access (Owner)', label: 'Full Access (Admin / Owner)' },
-    { value: 'Supervisor + Entry', label: 'Supervisor + Entry (All Ops + Entry)' },
-    { value: 'Supervisor', label: 'Supervisor (Read-Only Oversight)' },
-    { value: 'Entry', label: 'Entry (Tickets, Fuel, Expenses & Receipts)' },
-    { value: 'Sales', label: 'Sales & AR Collector (Receipts only)' },
-    { value: 'Custom', label: 'Custom Role (Granular Permissions & Locks)' }
+    { value: 'Full Access (Owner)', label: 'Admin / Owner (Full Access · All 5 Domains)' },
+    { value: 'Supervisor + Entry', label: 'Supervisor + Entry (All Hubs, Entry & Overrides)' },
+    { value: 'Supervisor', label: 'Supervisor (Oversight, Sentinels & Void)' },
+    { value: 'Entry', label: 'Entry Operator (Sales, Procurement, Fleet & Kiosks)' },
+    { value: 'Sales', label: 'Commercial & AR Desk (Sales, Pricing & Receipts)' },
+    { value: 'Custom', label: 'Custom Role (Granular Hubs, Locks & Suites)' }
   ];
 
   const SEAT_ACCESS_OPTIONS = [
-    { value: 'full|full', label: 'Full Executive PBI + All 22 Statements', short: 'Full PBI + 22 Statements', badgeCls: 'badge-ok' },
-    { value: 'full|partial', label: 'Full Executive PBI + Operational Statements', short: 'Full PBI + Ops Statements', badgeCls: 'badge-ok' },
-    { value: 'partial|full', label: 'Operational KPIs + All 22 Statements', short: 'Ops KPIs + 22 Statements', badgeCls: 'badge-info' },
-    { value: 'partial|partial', label: 'Operational KPIs + Statements', short: 'Ops KPIs + Statements', badgeCls: 'badge-info' },
-    { value: 'none|partial', label: 'Weighbridge / Desk + Operational Statements', short: 'Desk + Ops Statements', badgeCls: 'badge-brass' },
-    { value: 'none|none', label: 'Weighbridge / Desk Only (No Financials)', short: 'Desk Only (No Financials)', badgeCls: 'badge-warn' },
-    { value: 'custom|custom', label: 'Custom Dashboards & Statements (Granular Matrix)', short: 'Custom PBI & Statements', badgeCls: 'badge-brass' }
+    { value: 'full|full', label: 'All 12 Dashboards + All 22 Statements (Full Executive)', short: 'All Dashboards + 22 Statements', badgeCls: 'badge-ok' },
+    { value: 'full|partial', label: 'All 12 Dashboards + Operational Statements (13)', short: 'All Dashboards + Ops Statements', badgeCls: 'badge-ok' },
+    { value: 'partial|full', label: 'Operational Dashboards + All 22 Statements', short: 'Ops Dashboards + 22 Statements', badgeCls: 'badge-info' },
+    { value: 'partial|partial', label: 'Operational Dashboards + Operational Statements', short: 'Ops Dashboards + Statements', badgeCls: 'badge-info' },
+    { value: 'none|partial', label: 'Hub Registers + Operational Statements (No Dashboards)', short: 'Registers + Ops Statements', badgeCls: 'badge-brass' },
+    { value: 'none|none', label: 'Entry & Kiosks Only (No Dashboards or Statements)', short: 'Entry & Kiosks Only', badgeCls: 'badge-warn' },
+    { value: 'custom|custom', label: 'Custom Dashboards & Statements (Granular Matrix)', short: 'Custom Dashboards & Statements', badgeCls: 'badge-brass' }
   ];
 
   function normalizeCompaniesScope(cStr) {
@@ -18439,7 +18836,7 @@
       return {
         value: 'custom|custom',
         label: 'Custom Dashboards & Statements (Granular Matrix)',
-        short: `Custom (${m.pbiPageCount} PBI · ${m.stmtCount} Stmt)`,
+        short: `Custom (${m.pbiPageCount}/${m.pbiPageTotal} Dash · ${m.stmtCount}/22 Stmt)`,
         badgeCls: 'badge-brass'
       };
     }
@@ -18479,11 +18876,11 @@
     const canVoidRec = perms.rights.void_data;
     return `
       <span class="role-posture-pill tier ${perms.preset.badgeCls}">${esc(perms.preset.tierBadge)}</span>
-      <span class="role-posture-pill ${canRead ? 'on' : 'off'}">${perms.rights.read_fin ? '✓ Read Ops + Fin' : (canRead ? '✓ Read Ops' : '✕ No Read')}</span>
+      <span class="role-posture-pill ${canRead ? 'on' : 'off'}">${perms.rights.read_fin ? '✓ All 36 Tables' : (canRead ? `✓ ${m.tableCount}/${m.tableTotal} Ops Tables` : '✕ No Read')}</span>
       <span class="role-posture-pill ${canEnter ? 'on' : 'off'}">${canEnter ? '✓ Enter New Data' : 'Read-Only'}</span>
       <span class="role-posture-pill ${canModify ? 'on' : 'off'}">${canModify ? '✓ Modify Data' : 'No Modify'}</span>
       <span class="role-posture-pill ${canVoidRec ? 'on' : 'off'}">${canVoidRec ? '✓ Void Entries' : 'No Void'}</span>
-      <span class="role-posture-pill ${m.unlockCount ? 'brass' : 'off'}">${ic('unlock')} ${m.unlockCount}/${m.unlockTotal} Policy Locks</span>
+      <span class="role-posture-pill ${m.unlockCount ? 'brass' : 'off'}">${ic('unlock')} ${m.unlockCount}/${m.unlockTotal} Field Locks</span>
     `;
   }
 
@@ -18493,8 +18890,9 @@
     const isCustomAcc = curAccess === 'custom|custom' || perms.isCustomRole;
     return `
       <span class="role-posture-pill ${isCustomAcc ? 'brass' : 'linked'}">${isCustomAcc ? `${ic('sliders')} Custom Matrix` : `${ic('link')} Linked to Role`}</span>
-      <span class="role-posture-pill ${m.pbiPageCount ? 'on' : 'off'}">${ic('pbi')} ${m.pbiPageCount}/${m.pbiPageTotal} PBI Dashboards</span>
-      <span class="role-posture-pill ${m.stmtCount ? 'on' : 'off'}">${ic('statements')} ${m.stmtCount}/${m.stmtTotal} A4 Statements</span>
+      <span class="role-posture-pill on">${m.hubCount}/${m.hubTotal} Sidebar Hubs</span>
+      <span class="role-posture-pill ${m.pbiPageCount ? 'on' : 'off'}">${ic('pbi')} ${m.pbiPageCount}/${m.pbiPageTotal} Dashboards</span>
+      <span class="role-posture-pill ${m.stmtCount ? 'on' : 'off'}">${ic('statements')} ${m.stmtCount}/${m.stmtTotal} Statements</span>
     `;
   }
 
@@ -18503,35 +18901,41 @@
     const m = countPermissionMetrics(perms, previewUser);
     const isOpen = !!STATE.showRolePermMatrix;
     const roleTabs = [
-      { key: 'Entry', label: 'Entry' },
+      { key: 'Entry', label: 'Entry Operator' },
       { key: 'Supervisor', label: 'Supervisor' },
       { key: 'Supervisor + Entry', label: 'Supervisor + Entry' },
       { key: 'Full Access (Owner)', label: 'Admin / Owner' },
-      { key: 'Sales', label: 'Sales & AR' },
+      { key: 'Sales', label: 'Commercial & AR' },
       { key: 'Custom', label: 'Custom Role', icon: 'sliders' }
     ];
     if (!isOpen) {
       return `
         <div class="perm-matrix-collapsed" id="rolePermissionsMatrixPanel">
           <div class="perm-collapsed-left">
-            <span class="perm-collapsed-badge">${ENROL_SVGS.shield}<span>ROLE &amp; EXECUTIVE ACCESS POSTURE</span></span>
+            <span class="perm-collapsed-badge">${ENROL_SVGS.shield}<span>5-DOMAIN HUB, LOCK &amp; ANALYTICS POSTURE</span></span>
             <span class="perm-collapsed-text">
-              <b>${esc(perms.preset.title)}</b> — ${m.rightsCount}/${m.rightsTotal} Data Rights · ${m.unlockCount}/${m.unlockTotal} Policy-Lock Overrides · ${m.pbiPageCount}/${m.pbiPageTotal} Executive PBI Pages · ${m.stmtCount}/${m.stmtTotal} Printable Statements
+              <b>${esc(perms.preset.title)}</b> · ${m.hubCount}/${m.hubTotal} Sidebar Hubs · ${m.rightsCount}/${m.rightsTotal} Data Rights · ${m.unlockCount}/${m.unlockTotal} Field-Lock Overrides · ${m.pbiPageCount}/${m.pbiPageTotal} Executive Dashboards · ${m.stmtCount}/${m.stmtTotal} Printable Statements
             </span>
           </div>
           <div class="perm-collapsed-actions">
-            <button type="button" class="btn btn-brass" style="padding:4px 10px;font-size:11px" id="expandPermMatrixBtn">${ic('shield')} Check Role Permissions &amp; Locks</button>
+            <button type="button" class="btn btn-brass" style="padding:4px 10px;font-size:11px" id="expandPermMatrixBtn">${ic('shield')} Check Permissions &amp; Suites</button>
             <button type="button" class="btn" style="padding:4px 10px;font-size:11px" id="quickSwitchCustomRoleBtn">${ic('sliders')} Customize Role</button>
           </div>
         </div>
       `;
     }
 
+    const hubVisibilityList = (typeof HUB_CATALOG !== 'undefined' ? HUB_CATALOG : []).map(h => ({
+      id: h.id,
+      title: h.title,
+      visible: canViewHub(h.id, previewUser)
+    }));
+
     return `
-      <div class="perm-matrix-card" id="rolePermissionsMatrixPanel">
+      <div class="perm-matrix-card ${perms.isCustomRole ? 'is-custom' : ''}" id="rolePermissionsMatrixPanel">
         <div class="perm-matrix-hdr">
           <div class="perm-matrix-title-wrap">
-            <div class="perm-matrix-eyebrow">ROLE PERMISSIONS · POLICY-LOCK OVERRIDES · LINKED EXECUTIVE DASHBOARDS &amp; STATEMENTS</div>
+            <div class="perm-matrix-eyebrow">ROLE PERMISSIONS · FIELD-LOCK OVERRIDES · 5-DOMAIN HUBS, DASHBOARDS &amp; STATEMENTS</div>
             <div class="perm-matrix-title">
               <span>${esc(perms.preset.title)}</span>
               <span class="badge ${perms.preset.badgeCls}">${esc(perms.preset.tierBadge)}</span>
@@ -18549,30 +18953,42 @@
                 </button>
               `).join('')}
             </div>
-            <button type="button" class="btn" style="padding:4px 9px;font-size:11px" id="collapsePermMatrixBtn">✕ Close Inspector</button>
+            <button type="button" class="btn perm-close-btn" id="collapsePermMatrixBtn">✕ Close Inspector</button>
           </div>
         </div>
 
         <div class="perm-summary-strip">
           <div class="perm-summary-cell">
-            <span class="perm-sum-lbl">1 · Data &amp; Action Rights</span>
+            <span class="perm-sum-lbl">01 · Hub &amp; Data Rights</span>
             <strong class="perm-sum-val" id="permSumRights">${m.rightsCount} / ${m.rightsTotal} Enabled</strong>
-            <small>${perms.rights.modify_data ? 'Read + Enter + Modify' : (perms.rights.enter_dispatch || perms.rights.enter_accounting ? 'Read + Enter' : 'Read-Only Oversight')}</small>
+            <small>${m.hubCount}/${m.hubTotal} Sidebar Hubs · ${m.tableCount}/${m.tableTotal} Tables</small>
           </div>
           <div class="perm-summary-cell">
-            <span class="perm-sum-lbl">2 · Policy-Locked Fields They Can Unlock</span>
+            <span class="perm-sum-lbl">02 · Policy-Locked Fields</span>
             <strong class="perm-sum-val brass" id="permSumUnlocks">${m.unlockCount} / ${m.unlockTotal} Unlockable</strong>
             <small>${m.unlockCount === 9 ? 'All 9 locks overrideable without PIN' : (m.unlockCount > 0 ? `${m.unlockCount} field locks open without Admin PIN` : 'All 9 locks require Admin PIN 2401')}</small>
           </div>
           <div class="perm-summary-cell">
-            <span class="perm-sum-lbl">3 · Linked Executive Dashboards</span>
-            <strong class="perm-sum-val" id="permSumDash">${m.pbiPageCount} / ${m.pbiPageTotal} PBI Pages</strong>
-            <small>${Object.values(perms.dashboards).filter(Boolean).length} of 6 Semantic Dashboard Suites</small>
+            <span class="perm-sum-lbl">03 · Executive Dashboards</span>
+            <strong class="perm-sum-val" id="permSumDash">${m.pbiPageCount} / ${m.pbiPageTotal} Dashboards</strong>
+            <small>${Object.values(perms.dashboards).filter(Boolean).length} of 6 Analytics &amp; Hub Suites</small>
           </div>
           <div class="perm-summary-cell">
-            <span class="perm-sum-lbl">4 · Linked Printable A4 Statements</span>
+            <span class="perm-sum-lbl">04 · Printable A4 Statements</span>
             <strong class="perm-sum-val" id="permSumStmts">${m.stmtCount} / ${m.stmtTotal} Statements</strong>
-            <small>${Object.values(perms.statements).filter(Boolean).length} of 5 Audited Statement Suites</small>
+            <small>${Object.values(perms.statements).filter(Boolean).length} of 5 Statement &amp; Voucher Suites</small>
+          </div>
+        </div>
+
+        <div class="perm-hub-preview-bar">
+          <span class="perm-hub-preview-lbl">Visible Sidebar Hubs (${m.hubCount}/${m.hubTotal}):</span>
+          <div class="perm-hub-preview-pills">
+            ${hubVisibilityList.map(h => `
+              <span class="perm-hub-pill ${h.visible ? 'is-visible' : 'is-hidden'}" title="${h.visible ? `${esc(h.title)} is visible in the left sidebar for this seat` : `${esc(h.title)} is hidden from the left sidebar for this seat`}">
+                <i>${h.visible ? '✓' : '🔒'}</i>
+                <span>${esc(h.title)}</span>
+              </span>
+            `).join('')}
           </div>
         </div>
 
@@ -18582,7 +18998,7 @@
             <div class="perm-sec-head">
               <div>
                 <span class="perm-sec-num">01</span>
-                <strong>Data Rights: Read, Enter New Data, Modify &amp; Void</strong>
+                <strong>Hub Access, Data Entry, Modify &amp; Void Rights (36 Tables · 26 Forms)</strong>
               </div>
               <div class="perm-sec-quick">
                 <button type="button" class="perm-mini-btn" data-perm-bulk="rights:all">All On</button>
@@ -18615,7 +19031,7 @@
             <div class="perm-sec-head">
               <div>
                 <span class="perm-sec-num">02</span>
-                <strong>Policy-Locked Items This Role Can Unlock (No Admin PIN)</strong>
+                <strong>Policy-Locked Form Fields This Role Can Unlock (No Admin PIN)</strong>
               </div>
               <div class="perm-sec-quick">
                 <button type="button" class="perm-mini-btn" data-perm-bulk="unlocks:all">Unlock All 9</button>
@@ -18643,16 +19059,16 @@
             </div>
           </div>
 
-          <!-- SECTION 3: LINKED EXECUTIVE DASHBOARDS (20 PBI PAGES) -->
-          <div class="perm-sec-box">
+          <!-- SECTION 3: LINKED EXECUTIVE DASHBOARDS & HUB ANALYTICS (12 DASHBOARDS) -->
+          <div class="perm-sec-box" id="permSecDashboards">
             <div class="perm-sec-head">
               <div>
                 <span class="perm-sec-num">03</span>
-                <strong>Executive Dashboards (20 Interactive Pages)</strong>
+                <strong>Executive Dashboards &amp; Hub Analytics (${m.pbiPageTotal} Interactive Dashboards)</strong>
               </div>
               <div class="perm-sec-quick">
-                <button type="button" class="perm-mini-btn" data-perm-bulk="dashboards:full">All 20 Pages</button>
-                <button type="button" class="perm-mini-btn" data-perm-bulk="dashboards:ops">Ops Only (16)</button>
+                <button type="button" class="perm-mini-btn" data-perm-bulk="dashboards:full">All ${m.pbiPageTotal} Dashboards</button>
+                <button type="button" class="perm-mini-btn" data-perm-bulk="dashboards:ops">Ops Only (${m.pbiPageTotal === 12 ? 10 : 9})</button>
                 <button type="button" class="perm-mini-btn" data-perm-bulk="dashboards:off">None</button>
               </div>
             </div>
@@ -18677,7 +19093,7 @@
           </div>
 
           <!-- SECTION 4: LINKED PRINTABLE A4 STATEMENTS (22 REPORTS) -->
-          <div class="perm-sec-box">
+          <div class="perm-sec-box" id="permSecStatements">
             <div class="perm-sec-head">
               <div>
                 <span class="perm-sec-num">04</span>
@@ -18810,8 +19226,8 @@
             <div class="form-field">
               <div class="field-lbl-with-btn">
                 <label for="nu_role">Role &amp; Permissions *</label>
-                <button type="button" class="role-inspect-btn ${STATE.showRolePermMatrix ? 'active' : ''}" id="checkRolePermsBtn" title="Inspect or customize Read, Enter, Modify, Policy-Lock Unlocks & Executive Access for this role">
-                  ${curRole === 'Custom' ? `${ic('sliders')} Configure Custom Matrix` : `${ic('shield')} Check Permissions &amp; Locks`}
+                <button type="button" class="role-inspect-btn ${STATE.showRolePermMatrix ? 'active' : ''}" id="checkRolePermsBtn" title="Inspect or customize Hub Access, Field-Lock Overrides, Dashboards & Statements for this role">
+                  ${STATE.showRolePermMatrix ? `${ic('shield')} Hide Permissions` : (curRole === 'Custom' ? `${ic('sliders')} Configure Matrix` : `${ic('shield')} Check Permissions`)}
                 </button>
               </div>
               <select id="nu_role">
@@ -18827,9 +19243,9 @@
             </div>
             <div class="form-field">
               <div class="field-lbl-with-btn">
-                <label for="nu_access">Executive Dashboards &amp; Statements</label>
-                <button type="button" class="role-inspect-btn ${STATE.showRolePermMatrix ? 'active' : ''}" id="checkDashAccessBtn" title="Inspect or customize which of the 20 Executive Dashboards and 22 Printable Statements this seat can open">
-                  ${ic('pbi')} Check Dashboards &amp; Statements
+                <label for="nu_access">Dashboards &amp; Statements</label>
+                <button type="button" class="role-inspect-btn ${STATE.showRolePermMatrix ? 'active' : ''}" id="checkDashAccessBtn" title="Inspect or customize which of the 12 Executive Dashboards and 22 Printable Statements this seat can open">
+                  ${ic('pbi')} ${STATE.showRolePermMatrix ? 'Inspect Suites ↓' : 'Configure Suites'}
                 </button>
               </div>
               <select id="nu_access">
@@ -18912,7 +19328,7 @@
             ${compBadge.indCount > 1 ? `<span class="badge badge-info">${compBadge.indCount} Ind</span>` : ''}
           </div>
         </td>
-        <td><span class="badge ${accMeta.badgeCls}" title="${pm.pbiPageCount}/${pm.pbiPageTotal} PBI Pages · ${pm.stmtCount}/22 Printable Statements">${esc(accMeta.short)}</span></td>
+        <td><span class="badge ${accMeta.badgeCls}" title="${pm.hubCount}/${pm.hubTotal} Sidebar Hubs · ${pm.pbiPageCount}/${pm.pbiPageTotal} Executive Dashboards · ${pm.stmtCount}/22 Printable Statements">${esc(accMeta.short)}</span></td>
         <td><span class="badge ${u.status === 'Suspended' ? 'badge-err' : 'badge-ok'}">${esc(u.status || 'Active')}</span></td>
         <td class="mono" style="font-size:10.5px">${esc(u.last_login_at || 'Never')}</td>
         <td class="user-actions-cell">
@@ -19210,14 +19626,14 @@
         <div class="system-showcase-inner">
           <div class="system-showcase-lead">
             <div class="system-showcase-crest" aria-hidden="true">
-              <svg viewBox="-9.5 -78.8 74.66 109.7" width="22" height="22" focusable="false">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="-9.5 -78.8 74.66 109.7" width="22" height="22" focusable="false">
                 <g fill="#F4F2EE">
                   <path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/>
                   <path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/>
                 </g>
                 <g fill="#D9A54A">
-                  <rect x="-1.5" y="9.5" width="58.66" height="4.5" rx="1"/>
-                  <rect x="-1.5" y="17.5" width="58.66" height="3.2" rx="1" opacity="0.72"/>
+                  <rect x="0" y="9.5" width="55.66" height="3.4"/>
+                  <rect x="0" y="17.5" width="55.66" height="3.4"/>
                 </g>
               </svg>
             </div>
@@ -19263,7 +19679,7 @@
   }
   function fld(label, inner, opts = {}) {
     const lockAttr = opts.lockField ? ` data-policy-lock="${esc(opts.lockField)}" data-lock-reason="${esc(opts.lockReason || 'Locked by business rule')}"` : '';
-    const lockPill = opts.lockField ? `<span class="pa-lock-pill locked" data-lock-pill="${esc(opts.lockField)}" data-toggle-field-lock="${esc(opts.lockField)}" title="${esc(opts.lockReason || 'Locked by policy')}">${ic('lock')} LOCKED</span>` : '';
+    const lockPill = opts.lockField ? `<span class="pa-lock-pill locked" data-lock-pill="${esc(opts.lockField)}" data-toggle-field-lock="${esc(opts.lockField)}" title="${esc(opts.lockReason || 'Locked by policy')}">${ic('lock')} <span class="lp-short">Locked</span><span class="sr-only"> LOCKED</span></span>` : '';
     return `<div class="form-field${opts.span ? ' span-3' : ''}${opts.cls ? ' ' + opts.cls : ''}${opts.lockField ? ' is-policy-locked' : ''}"${opts.id ? ` id="${opts.id}"` : ''}${lockAttr}${opts.hidden ? ' hidden' : ''}><label><span class="pa-fld-lbl">${label}</span>${lockPill}</label>${inner}${opts.afterHtml || ''}${opts.hint != null ? `<span class="hint"${opts.hintId ? ` id="${opts.hintId}"` : ''}>${opts.hint}</span>` : ''}</div>`;
   }
   function inp(id, type, value, attrs = '') {
@@ -19287,6 +19703,30 @@
   function nowHHMM() {
     const d = new Date();
     return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  function salesProductMetaItems(company) {
+    const prods = productList(true, 'sales');
+    const bbcPriority = ['Bodra', 'Bahes', 'Sarek', 'Washed Sand', 'Fine Washed Sand', 'Bodra Stock', 'Baskors', 'Jarousha', 'Sakher'];
+    const ordered = company === 'BBConstruction'
+      ? prods.slice().sort((a, b) => {
+          const ia = bbcPriority.findIndex(n => norm(n) === norm(a.name));
+          const ib = bbcPriority.findIndex(n => norm(n) === norm(b.name));
+          if (ia >= 0 && ib >= 0) return ia - ib;
+          if (ia >= 0) return -1;
+          if (ib >= 0) return 1;
+          const aTon = /^tons?$/i.test(a.uom || '') ? 0 : 1;
+          const bTon = /^tons?$/i.test(b.uom || '') ? 0 : 1;
+          if (aTon !== bTon) return aTon - bTon;
+          return 0;
+        })
+      : prods;
+    return ordered.map(p => {
+      const u = p.uom || 'm³';
+      const tf = Number(p.ton_factor || 0);
+      const tfMeta = tf > 0 && tf !== 1 ? ` · 1 m³ = ${tf} t` : '';
+      return [p.name, `${u}${tfMeta}`];
+    });
   }
 
   function renderEntryModalBody() {
@@ -19325,8 +19765,8 @@
     }
 
     if (fType === 'sales') {
-      const prods = productList(true, 'sales');
-      const prodMetaItems = prods.map(p => [p.name, `${p.uom || 'm³'}${Number(p.ton_factor) && Number(p.ton_factor) !== 1 ? ' · ×' + p.ton_factor + ' t' : ''}`]);
+      const prodMetaItems = salesProductMetaItems(company);
+      const initSalesUom = company === 'BBConstruction' ? 'Ton' : 'm³';
       return cockpitHtml + `
         ${adminHeaderHtml}
         <div class="form-grid-3">
@@ -19354,10 +19794,10 @@
           ${fld('Payment Method *', sel('f_method', [['Credit', 'Credit'], ['Cash', 'Cash']], 'Credit'), { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to the Customer default (Cash or Credit)', hintId: 'hint_method', hint: '' })}
 
           ${secHdr('2. Quantities & Amounts')}
-          ${fld('Quantity (<span id="lbl_uom">m³</span>) *', inp('f_qty', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to Truck Capacity (m³) or 1 when Unit = Truck; auto-unlocks if truck has no capacity', hintId: 'hint_qty', hint: '' })}
-          ${fld('Unit (UoM) *', sel('f_uom', uoms, 'm³'), { id: 'wrap_f_uom', lockField: 'f_uom', lockReason: 'Locked to Price Agreement Unit or Product default UoM', hintId: 'hint_uom', hint: '' })}
+          ${fld(`Quantity (<span id="lbl_uom">${initSalesUom}</span>) *`, inp('f_qty', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to Truck Capacity (m³) when measured in m³; unlocked & blank when Unit = Ton so you can enter weighed tons', hintId: 'hint_qty', hint: '' })}
+          ${fld(`Unit (UoM) * <span class="uom-quick-pills" id="uomQuickPills"><button type="button" class="uom-qpill${initSalesUom === 'm³' ? ' active' : ''}" data-set-uom="m³">m³</button><button type="button" class="uom-qpill${initSalesUom === 'Ton' ? ' active' : ''}" data-set-uom="Ton">Ton</button><button type="button" class="uom-qpill" data-set-uom="Truck">Truck</button></span>`, sel('f_uom', uoms, initSalesUom), { id: 'wrap_f_uom', hintId: 'hint_uom', hint: '' })}
           ${fld('Customer-declared Qty', inp('f_extqty', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="Customer ticket qty"'), { id: 'wrap_f_extqty', hidden: true })}
-          ${fld('Unit Price ($) * <span id="lbl_pricelock" hidden>—</span>', inp('f_unitprice', 'number', '', 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_unitprice', lockField: 'f_unitprice', lockReason: 'Locked on Pickup & Delivery to active Price Agreement or List Price', hintId: 'hint_price', hint: '' })}
+          ${fld('Unit Price ($) * <span id="lbl_pricelock" hidden>—</span>', inp('f_unitprice', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="Auto from Agreement..." readonly'), { id: 'wrap_f_unitprice', lockField: 'f_unitprice', lockReason: 'Locked on Pickup & Delivery to active Price Agreement or List Price', hintId: 'hint_price', hint: '' })}
           ${fld('<span id="lbl_mat_total">Material Total (USD) *</span>', inp('f_mat_total', 'number', '0.00', 'step="0.01" readonly'), { id: 'wrap_f_mat_total', lockField: 'f_mat_total', lockReason: 'Computed as Quantity × Unit Price + Tier Adjustment − Discount', hintId: 'hint_mat_total', hint: 'Qty × Unit Price + Tier Adj − Discount' })}
           ${fld('Transport Unit Price ($)', inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_transunitprice', hidden: true, lockField: 'f_transunitprice', lockReason: 'Locked to Price Agreement transport rate on Delivery; hidden on Pickup', hintId: 'hint_trans', hint: '' })}
           ${fld('Transport Total (USD)', inp('f_trans_total', 'number', '0.00', 'step="0.01" readonly'), { id: 'wrap_f_trans_total', hidden: true, lockField: 'f_trans_total', lockReason: 'Computed as Quantity × Transport Unit Price + Tier Transport Adjustment', hintId: 'hint_trans_total', hint: 'Qty × Transport Unit Price' })}
@@ -19372,6 +19812,7 @@
           <div class="form-field check-field" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok">Post anyway — duplicate ticket number confirmed</label></div>
           ${notesField}
         </div>
+        <div id="salesLiveContextStrip" class="att-contract-strip" hidden></div>
         <div class="live-calc">
           <div><small>Material</small><b id="calc_mat">$0.00</b></div>
           <div><small>Transport</small><b id="calc_tr">$0.00</b></div>
@@ -19409,9 +19850,9 @@
 
           ${secHdr('2. Quantities & Costs')}
           ${fld('Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { id: 'wrap_f_discount' })}
-          ${fld('Quantity (<span id="lbl_uom">m³</span>) *', inp('f_qty', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to Truck Capacity (m³) when known', hintId: 'hint_qty', hint: '' })}
-          ${fld('Unit (UoM) *', sel('f_uom', uoms, 'm³'), { id: 'wrap_f_uom', lockField: 'f_uom', lockReason: 'Locked to Product / Agreement UoM' })}
-          ${fld('Material Unit Cost ($) * <span id="lbl_pricelock" hidden>—</span>', inp('f_unitprice', 'number', '', 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_unitprice', lockField: 'f_unitprice', lockReason: 'Locked to Purchase Price (Site) or List Price', hintId: 'hint_price', hint: '' })}
+          ${fld('Quantity (<span id="lbl_uom">m³</span>) *', inp('f_qty', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to Truck Capacity (m³) when measured in m³; unlocked & blank when Unit = Ton', hintId: 'hint_qty', hint: '' })}
+          ${fld('Unit (UoM) * <span class="uom-quick-pills" id="uomQuickPills"><button type="button" class="uom-qpill active" data-set-uom="m³">m³</button><button type="button" class="uom-qpill" data-set-uom="Ton">Ton</button><button type="button" class="uom-qpill" data-set-uom="Truck">Truck</button></span>', sel('f_uom', uoms, 'm³'), { id: 'wrap_f_uom', hintId: 'hint_uom', hint: '' })}
+          ${fld('Material Unit Cost ($) * <span id="lbl_pricelock" hidden>—</span>', inp('f_unitprice', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="Auto from Site Rule..." readonly'), { id: 'wrap_f_unitprice', lockField: 'f_unitprice', lockReason: 'Locked to Purchase Price (Site) or List Price', hintId: 'hint_price', hint: '' })}
           ${fld('Material Cost (USD) *', inp('f_mat_total', 'number', '0.00', 'step="0.01" readonly'), { id: 'wrap_f_mat_total', lockField: 'f_mat_total', lockReason: 'Computed as Quantity × Material Unit Cost − Discount' })}
           ${fld('Haulage Unit Cost ($)', inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_transunitprice', lockField: 'f_transunitprice', lockReason: 'Locked to Transport Price (Site) agreement on third-party loads', hintId: 'hint_trans', hint: '' })}
           ${fld('Haulage Cost (USD)', inp('f_trans_total', 'number', '0.00', 'step="0.01" readonly'), { id: 'wrap_f_trans_total', lockField: 'f_trans_total', lockReason: 'Computed as Quantity × Haulage Unit Cost' })}
@@ -19424,6 +19865,7 @@
           <div class="form-field check-field" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok">Post anyway — duplicate ticket number confirmed</label></div>
           ${notesField}
         </div>
+        <div id="rawLiveContextStrip" class="att-contract-strip" hidden></div>
         <div class="live-calc">
           <div><small>Material leg → site owner</small><b id="calc_mat">$0.00</b></div>
           <div><small>Haulage leg → truck owner</small><b id="calc_tr">$0.00</b></div>
@@ -19447,6 +19889,7 @@
           ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer / receipt no."'))}
           ${notesField}
         </div>
+        <div id="rcptQuickContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
         <div id="paCustSubgridWrap"></div>
         <div class="live-calc">
           <div><small>Open AR before</small><b id="calc_before">—</b></div>
@@ -19506,6 +19949,7 @@
           ${fld('Reference / Invoice', inp('f_reference', 'text', ''), { id: 'wrap_f_reference' })}
           ${notesField}
         </div>
+        <div id="expLiveContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
         <div class="live-calc">
           <div><small>Amount</small><b id="calc_total">$0.00</b></div>
           <div><small>Method</small><b id="calc_post">Cash</b></div>
@@ -19529,6 +19973,7 @@
         ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer no."'))}
         ${notesField}
       </div>
+      <div id="settleQuickContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
       <div id="paSupSubgridWrap"></div>
       <div class="live-calc">
         <div><small>Open AP before</small><b id="calc_before">—</b></div>
@@ -19590,7 +20035,7 @@
       el.dataset.policyLockedNow = '0';
       if (pill) {
         pill.className = 'pa-lock-pill unlocked';
-        pill.innerHTML = `${ic('unlock')} ADMIN OVERRIDE`;
+        pill.innerHTML = `${ic('unlock')} <span class="lp-short">Override</span><span class="sr-only"> ADMIN OVERRIDE</span>`;
         pill.title = 'Unlocked via Admin / Role Privilege — click to re-lock to policy rule';
       }
       return false; // not locked
@@ -19606,7 +20051,11 @@
       el.dataset.lockedValue = el.value;
       if (pill) {
         pill.className = 'pa-lock-pill locked';
-        pill.innerHTML = isAdmin ? `${ic('lock')} LOCKED · Unlock` : (roleCanUnlock ? `${ic('lock')} LOCKED · Role` : `${ic('lock')} LOCKED`);
+        pill.innerHTML = isAdmin
+          ? `${ic('lock')} <span class="lp-short">Locked</span><span class="sr-only"> LOCKED · Unlock</span>`
+          : (roleCanUnlock
+              ? `${ic('lock')} <span class="lp-short">Locked</span><span class="sr-only"> LOCKED · Role</span>`
+              : `${ic('lock')} <span class="lp-short">Locked</span><span class="sr-only"> LOCKED</span>`);
         pill.title = reason + ((isAdmin || roleCanUnlock) ? ' — Click to open Admin Privilege Unlock Process' : ' — Requires Admin PIN (2401)');
       }
       return true; // locked
@@ -19677,6 +20126,11 @@
     const canUnlockTarget = isAdmin || canUnlockField(target.id, who);
     const roleUnlockableFields = fields.filter(f => isAdmin || f.canUnlock);
     const unlockedList = fields.filter(f => f.adminOpen);
+    const targetElForBox = $(target.id);
+    const targetWrapForBox = targetElForBox ? targetElForBox.closest('.form-field') : null;
+    if (targetWrapForBox && targetWrapForBox.parentNode) {
+      targetWrapForBox.parentNode.insertBefore(box, targetWrapForBox);
+    }
     box.hidden = false;
     box.innerHTML = `
       <div class="pa-admin-unlock-hdr">
@@ -19920,6 +20374,8 @@
       if (qtyEl() && !isUnreg && !FORM_UI.qtyManual) {
         if (/truck/i.test(val('f_uom'))) {
           qtyEl().value = '1';
+        } else if (/^tons?$/i.test(val('f_uom'))) {
+          qtyEl().value = '';
         } else {
           qtyEl().value = (tRow && Number(tRow.capacity) > 0) ? Number(tRow.capacity).toFixed(2) : '';
         }
@@ -20034,6 +20490,418 @@
     return { truckName, truckRow, truckOwner, ownerFromTruck, allowedDrivers };
   }
 
+  let _FORM_INTEL_CACHE = null;
+  function _getFormIntelIndex() {
+    const recs = SEED.records || {};
+    const rev = `${SEED._customRev || 0}|${(recs.sales_tickets && recs.sales_tickets.length) || 0}|${(recs.raw_purchases && recs.raw_purchases.length) || 0}|${(recs.receipts && recs.receipts.length) || 0}|${(recs.settlements && recs.settlements.length) || 0}|${(recs.expenses && recs.expenses.length) || 0}|${(recs.credit_terms && recs.credit_terms.length) || 0}|${(recs.jv_distributions && recs.jv_distributions.length) || 0}|${(recs.loans && recs.loans.length) || 0}|${(recs.loan_settlements && recs.loan_settlements.length) || 0}`;
+    if (_FORM_INTEL_CACHE && _FORM_INTEL_CACHE.rev === rev) return _FORM_INTEL_CACHE;
+
+    const lastSalesTicketByCo = new Map();
+    const lastRawTicketByCo = new Map();
+    const creditTermsByCust = new Map();
+    const custOverdue60ByCust = new Map();
+    const unbilledVatByCust = new Map();
+    const supLegsBySup = new Map();
+    const jvBySite = new Map();
+    const loansByParty = new Map();
+    const lastExpenseBySup = new Map();
+    const absentStaffByDate = new Map();
+    const loadsByTruckDate = new Map();
+
+    // 1. Latest ticket serial per BU + truck loads per date + unbilled VAT tickets
+    const vatRegCusts = new Set();
+    (SEED.top_customers || []).forEach(c => {
+      if (c && c['VAT Registered'] === 'Yes') vatRegCusts.add(norm(c.Customer));
+    });
+    (recs.customers || []).forEach(c => {
+      if (c && (c.vat_registered === 'Yes' || c['VAT Registered'] === 'Yes' || c.vat)) vatRegCusts.add(norm(c.name || c.Customer));
+    });
+
+    (recs.sales_tickets || []).forEach(t => {
+      if (!t || t.voided) return;
+      const co = String(t.company || 'WTC');
+      const d = String(t.date || '').slice(0, 10);
+      const tno = String(t.ticket_no || '').trim();
+      if (tno && /^\d+$/.test(tno)) {
+        const cur = lastSalesTicketByCo.get(co);
+        if (!cur || d > cur.date || (d === cur.date && Number(tno) > Number(cur.ticketNo))) {
+          lastSalesTicketByCo.set(co, { ticketNo: tno, date: d, customer: t.customer || '' });
+        }
+      }
+      if (t.equipment && d) {
+        const tk = `${norm(t.equipment)}|${d}`;
+        loadsByTruckDate.set(tk, (loadsByTruckDate.get(tk) || 0) + 1);
+      }
+      const ck = norm(t.customer);
+      if (ck && vatRegCusts.has(ck) && !t.vat_invoice) {
+        const net = Number(t.total ?? t.total_usd ?? t.mat_total ?? 0);
+        if (net > 0) {
+          const prev = unbilledVatByCust.get(ck) || { count: 0, netUsd: 0, net: 0, vat: 0 };
+          prev.count += 1;
+          prev.netUsd = round2(prev.netUsd + net);
+          prev.net = prev.netUsd;
+          prev.vat = round2(prev.netUsd * VAT_RATE);
+          unbilledVatByCust.set(ck, prev);
+        }
+      }
+      // Track 3P delivery haulage leg on supplier
+      const sHaul = Number(t.trans_price ?? t.trans_total ?? 0);
+      if (t.transport_by === 'Third-party truck' && t.truck_owner && sHaul > 0) {
+        const sk = norm(t.truck_owner);
+        if (!supLegsBySup.has(sk)) supLegsBySup.set(sk, { matGross: 0, haulGross: 0, expGross: 0, paid: 0 });
+        supLegsBySup.get(sk).haulGross = round2(supLegsBySup.get(sk).haulGross + sHaul);
+      }
+    });
+
+    (recs.raw_purchases || []).forEach(r => {
+      if (!r || r.voided) return;
+      const co = String(r.company || 'WTC');
+      const d = String(r.date || '').slice(0, 10);
+      const tno = String(r.ticket_no || '').trim();
+      if (tno && /^\d+$/.test(tno)) {
+        const cur = lastRawTicketByCo.get(co);
+        if (!cur || d > cur.date || (d === cur.date && Number(tno) > Number(cur.ticketNo))) {
+          lastRawTicketByCo.set(co, { ticketNo: tno, date: d, site: r.site || '' });
+        }
+      }
+      if (r.equipment && d) {
+        const tk = `${norm(r.equipment)}|${d}`;
+        loadsByTruckDate.set(tk, (loadsByTruckDate.get(tk) || 0) + 1);
+      }
+      const rMat = Number(r.cost ?? r.mat_total ?? 0);
+      const rHaul = Number(r.trans_cost ?? r.trans_total ?? 0);
+      if (r.site_owner && rMat > 0) {
+        const sk = norm(r.site_owner);
+        if (!supLegsBySup.has(sk)) supLegsBySup.set(sk, { matGross: 0, haulGross: 0, expGross: 0, paid: 0 });
+        supLegsBySup.get(sk).matGross = round2(supLegsBySup.get(sk).matGross + rMat);
+      }
+      if (r.transport_by === 'Third-party truck' && r.truck_owner && rHaul > 0) {
+        const sk = norm(r.truck_owner);
+        if (!supLegsBySup.has(sk)) supLegsBySup.set(sk, { matGross: 0, haulGross: 0, expGross: 0, paid: 0 });
+        supLegsBySup.get(sk).haulGross = round2(supLegsBySup.get(sk).haulGross + rHaul);
+      }
+      if (r.site) {
+        const sitK = norm(r.site);
+        if (!jvBySite.has(sitK)) {
+          const sObj = siteInfo(r.site);
+          jvBySite.set(sitK, {
+            site: r.site,
+            isJv: Boolean(sObj && (sObj.is_jv || sObj.jv)),
+            partner: (sObj && sObj.supplier) || 'Assaf',
+            sharePct: 50,
+            rawMatUsd: 0,
+            distributedUsd: 0,
+            distCount: 0,
+            loads: 0
+          });
+        }
+        const jb = jvBySite.get(sitK);
+        jb.rawMatUsd = round2(jb.rawMatUsd + Number(r.total ?? (rMat + rHaul)));
+        jb.loads += 1;
+      }
+    });
+
+    (recs.sites || []).forEach(s => {
+      if (!s || s.voided || !s.name) return;
+      const sitK = norm(s.name);
+      if (!jvBySite.has(sitK)) {
+        jvBySite.set(sitK, {
+          site: s.name,
+          isJv: Boolean(s.is_jv || s.jv),
+          partner: s.supplier || 'Assaf',
+          sharePct: 50,
+          rawMatUsd: 0,
+          distributedUsd: 0,
+          distCount: 0,
+          loads: 0
+        });
+      } else {
+        const jb = jvBySite.get(sitK);
+        if (s.is_jv || s.jv) jb.isJv = true;
+        if (s.supplier) jb.partner = s.supplier;
+      }
+    });
+    (recs.jv_distributions || []).forEach(j => {
+      if (!j || j.voided) return;
+      const sitK = norm(j.site);
+      const amt = Number(j.amount || j.usd_amount || 0);
+      if (sitK && jvBySite.has(sitK)) {
+        const jb = jvBySite.get(sitK);
+        jb.distributedUsd = round2(jb.distributedUsd + amt);
+        jb.distCount += 1;
+        if (j.partner || j.counterparty) jb.partner = j.partner || j.counterparty;
+      } else if (amt > 0) {
+        // Fallback: allocate general partner distributions across JV sites proportionally or track on primary JV site
+        jvBySite.forEach(jb => {
+          if (jb.isJv && (!j.site || norm(jb.partner) === norm(j.partner || j.counterparty || 'Assaf'))) {
+            jb.distributedUsd = round2(jb.distributedUsd + amt);
+            jb.distCount += 1;
+          }
+        });
+      }
+    });
+    jvBySite.forEach(jb => {
+      jb.partnerShareUsd = round2(jb.rawMatUsd * ((jb.sharePct || 50) / 100));
+      jb.remainingUsd = round2(jb.partnerShareUsd - jb.distributedUsd);
+    });
+
+    // 2. Credit terms & 60+d overdue AR
+    (recs.credit_terms || []).forEach(ct => {
+      if (!ct || ct.voided) return;
+      const ck = norm(ct.customer);
+      if (!ck) return;
+      const d = String(ct.date || ct.effective_date || '').slice(0, 10);
+      const cur = creditTermsByCust.get(ck);
+      if (!cur || d >= cur.date) {
+        creditTermsByCust.set(ck, {
+          customer: ct.customer,
+          days: Number(ct.days != null ? ct.days : (ct.payment_days != null ? ct.payment_days : 30)),
+          limit: Number(ct.credit_limit != null ? ct.credit_limit : (ct.amount || 0)),
+          date: d,
+          company: ct.company || 'WTC'
+        });
+      }
+    });
+    const arSent = (SEED.sentinels && SEED.sentinels.ar_collection_credit_sentinel) || {};
+    (arSent.top_debtors || []).forEach(d => {
+      if (!d || !d.customer) return;
+      custOverdue60ByCust.set(norm(d.customer), round2(Number(d.overdue_60d_usd || d.over_60_usd || d.ar_balance_usd || 0)));
+    });
+
+    // 3. Expenses & Settlements for 3-Leg Supplier AP
+    (recs.expenses || []).forEach(e => {
+      if (!e || e.voided || !e.supplier) return;
+      const sk = norm(e.supplier);
+      const amt = Number(e.amount || 0);
+      const d = String(e.date || '').slice(0, 10);
+      if (/credit/i.test(String(e.method || ''))) {
+        if (!supLegsBySup.has(sk)) supLegsBySup.set(sk, { matGross: 0, haulGross: 0, expGross: 0, paid: 0 });
+        supLegsBySup.get(sk).expGross = round2(supLegsBySup.get(sk).expGross + amt);
+      }
+      const curLast = lastExpenseBySup.get(sk);
+      if (!curLast || d >= curLast.date) {
+        lastExpenseBySup.set(sk, { date: d, category: e.category || '', subcategory: e.subcategory || '', amount: amt, reference: e.reference || e.name || '' });
+      }
+    });
+    (recs.settlements || []).forEach(st => {
+      if (!st || st.voided || !st.supplier) return;
+      const sk = norm(st.supplier);
+      if (!supLegsBySup.has(sk)) supLegsBySup.set(sk, { matGross: 0, haulGross: 0, expGross: 0, paid: 0 });
+      supLegsBySup.get(sk).paid = round2(supLegsBySup.get(sk).paid + Number(st.amount || 0) + Number(st.discount || 0));
+    });
+    supLegsBySup.forEach((v, sk) => {
+      let remPaid = v.paid;
+      const mCut = Math.min(v.matGross, remPaid); remPaid = Math.max(0, remPaid - mCut);
+      const hCut = Math.min(v.haulGross, remPaid); remPaid = Math.max(0, remPaid - hCut);
+      const eCut = Math.min(v.expGross, remPaid);
+      v.matOpen = round2(Math.max(0, v.matGross - mCut));
+      v.haulOpen = round2(Math.max(0, v.haulGross - hCut));
+      v.expOpen = round2(Math.max(0, v.expGross - eCut));
+      v.totalOpen = round2(v.matOpen + v.haulOpen + v.expOpen);
+    });
+
+    // 4. Loans & Loan Settlements by Counterparty
+    const loanByCp = {};
+    (recs.loans || []).forEach(l => {
+      if (!l || l.voided) return;
+      const party = l.lender || l.counterparty || l.name || '';
+      const pk = normStaffStem(party) || norm(party);
+      if (!pk) return;
+      if (!loansByParty.has(pk)) loansByParty.set(pk, { name: party, party, borrowed: 0, lent: 0, repaidOut: 0, repaidIn: 0, count: 0, settledCount: 0 });
+      const entry = loansByParty.get(pk);
+      const amt = round2(Number(l.principal || l.amount || l.usd_amount || 0) + (Number(l.lbp_amount || 0) / 89500));
+      if (/lends|outflow/i.test(String(l.direction || ''))) entry.lent = round2(entry.lent + amt);
+      else entry.borrowed = round2(entry.borrowed + amt);
+      entry.count += 1;
+    });
+    (recs.loan_settlements || []).forEach(ls => {
+      if (!ls || ls.voided) return;
+      const party = ls.borrower || ls.lender || ls.counterparty || ls.name || '';
+      const pk = normStaffStem(party) || norm(party);
+      if (!pk) return;
+      if (!loansByParty.has(pk)) loansByParty.set(pk, { name: party, party, borrowed: 0, lent: 0, repaidOut: 0, repaidIn: 0, count: 0, settledCount: 0 });
+      const entry = loansByParty.get(pk);
+      const amt = round2(Number(ls.amount || ls.usd_amount || 0) + (Number(ls.lbp_amount || 0) / 89500));
+      if (/inflow|lends/i.test(String(ls.direction || '')) || (!ls.direction && entry.lent > entry.borrowed)) entry.repaidIn = round2(entry.repaidIn + amt);
+      else entry.repaidOut = round2(entry.repaidOut + amt);
+      entry.settledCount += 1;
+    });
+    loansByParty.forEach((entry, pk) => {
+      const openBorrowed = round2(Math.max(0, entry.borrowed - entry.repaidOut));
+      const openLent = round2(Math.max(0, entry.lent - entry.repaidIn));
+      entry.openBorrowed = openBorrowed;
+      entry.openLent = openLent;
+      entry.principal = round2(entry.borrowed + entry.lent);
+      entry.settled = round2(entry.repaidOut + entry.repaidIn);
+      entry.netOpen = openBorrowed >= openLent ? openBorrowed : openLent;
+      entry.netType = openBorrowed >= openLent ? 'Payable (Company Borrowed)' : 'Receivable (Company Lent)';
+      loanByCp[pk] = entry;
+      if (entry.party) loanByCp[norm(entry.party)] = entry;
+    });
+
+    // External movements & primary staff sites + plain-object lookup aliases
+    const extByCp = {};
+    (recs.external_movements || recs.external_cash || []).forEach(ex => {
+      if (!ex || ex.voided) return;
+      const cpName = ex.counterparty || ex.party || ex.name || '';
+      const ek = norm(cpName);
+      if (!ek) return;
+      if (!extByCp[ek]) extByCp[ek] = { name: cpName, inflow: 0, outflow: 0, count: 0 };
+      const amt = round2(Number(ex.amount || ex.usd_amount || 0) + (Number(ex.lbp_amount || 0) / 89500));
+      if (/outflow/i.test(String(ex.direction || ex.type || ''))) extByCp[ek].outflow = round2(extByCp[ek].outflow + amt);
+      else extByCp[ek].inflow = round2(extByCp[ek].inflow + amt);
+      extByCp[ek].count += 1;
+    });
+
+    const staffPrimarySite = {};
+    (recs.logistics_allowances || []).forEach(l => {
+      if (!l || l.voided || !l.staff || !l.site) return;
+      const sk = normStaffStem(l.staff);
+      if (sk && !staffPrimarySite[sk]) staffPrimarySite[sk] = l.site;
+    });
+
+    jvBySite.forEach((jb, sitK) => {
+      jb.accrued50 = jb.partnerShareUsd;
+      jb.distributed = jb.distributedUsd;
+      jvBySite[sitK] = jb;
+    });
+
+    const lastExpBySup = {};
+    lastExpenseBySup.forEach((v, k) => { lastExpBySup[k] = v; });
+    const vatTicketsByCust = {};
+    unbilledVatByCust.forEach((v, k) => { vatTicketsByCust[k] = v; });
+    const ctByCust = {};
+    creditTermsByCust.forEach((v, k) => { ctByCust[k] = v; });
+
+    // 5. Absent staff by date for S9 pre-post check
+    (recs.attendance || []).forEach(a => {
+      if (!a || a.voided || !a.staff || !a.date) return;
+      const tp = String(a.type || a.status || '');
+      if (/Absence|VacAbsence|Sick|Unpaid/i.test(tp) && !/^config/i.test(tp)) {
+        absentStaffByDate.set(`${norm(a.staff)}|${String(a.date).slice(0, 10)}`, tp);
+      }
+    });
+
+    _FORM_INTEL_CACHE = {
+      rev,
+      lastSalesTicketByCo,
+      lastRawTicketByCo,
+      creditTermsByCust,
+      ctByCust,
+      custOverdue60ByCust,
+      unbilledVatByCust,
+      vatTicketsByCust,
+      supLegsBySup,
+      jvBySite,
+      loansByParty,
+      loanByCp,
+      extByCp,
+      staffPrimarySite,
+      lastExpenseBySup,
+      lastExpBySup,
+      absentStaffByDate,
+      loadsByTruckDate
+    };
+    return _FORM_INTEL_CACHE;
+  }
+
+  let _CUST_PROD_TON_CACHE = null;
+  function _tonProductEquivKeys(productName) {
+    const p = norm(productName);
+    if (!p) return [];
+    if (p === 'washed sand' || p === 'mghasal') return ['washed sand', 'mghasal'];
+    if (p === 'screened sand' || p === 'ramel mgharbal' || p === 'mgharbal') return ['screened sand', 'ramel mgharbal', 'mgharbal'];
+    return [p];
+  }
+  function _getCustomerProductTonSet() {
+    const rev = `${SEED._customRev || 0}|${(SEED.records && SEED.records.sales_tickets && SEED.records.sales_tickets.length) || 0}`;
+    if (_CUST_PROD_TON_CACHE && _CUST_PROD_TON_CACHE.rev === rev) return _CUST_PROD_TON_CACHE;
+    const byCoCustProd = new Map();
+    const byCustProd = new Map();
+    const byCoCustTon = new Map();
+    const byCoCustM3 = new Map();
+    ((SEED.records && SEED.records.sales_tickets) || []).forEach(t => {
+      if (!t || t.voided || !t.customer || !t.product) return;
+      const d = String(t.date || '').slice(0, 10);
+      const cck = `${norm(t.company || '')}|${norm(t.customer)}`;
+      const isTonTicket = /^tons?$/i.test(t.uom || '') || (Number(t.external_qty) > 0 && (!d || d >= '2024-12-01'));
+      if (!d || d >= '2024-12-01') {
+        if (isTonTicket) byCoCustTon.set(cck, (byCoCustTon.get(cck) || 0) + 1);
+        else byCoCustM3.set(cck, (byCoCustM3.get(cck) || 0) + 1);
+      }
+      if (!isTonTicket) return;
+      const ck = `${norm(t.company || '')}|${norm(t.customer)}|${norm(t.product)}`;
+      const pk = `${norm(t.customer)}|${norm(t.product)}`;
+      byCoCustProd.set(ck, (byCoCustProd.get(ck) || 0) + 1);
+      byCustProd.set(pk, (byCustProd.get(pk) || 0) + 1);
+    });
+    _CUST_PROD_TON_CACHE = { rev, byCoCustProd, byCustProd, byCoCustTon, byCoCustM3 };
+    return _CUST_PROD_TON_CACHE;
+  }
+
+  function resolveCustomerProductTonMode(company, customer, product, effDate, rule, prod) {
+    if (rule && !isMatIndiffRule(rule)) {
+      if (/^tons?$/i.test(rule.unit || '') || /^tons?$/i.test(rule.rate_per || '')) {
+        return { isTon: true, reason: `Agreement unit: Ton (${rule.name || 'Price Agreement'})` };
+      }
+      const rRate = Number(rule.unit_price ?? rule.price ?? 0);
+      const d = String(effDate || '').slice(0, 10);
+      if (prod && /^m/i.test(prod.uom || 'm³') && Number(prod.ton_factor) > 1 && rRate > 0) {
+        if (company === 'BBConstruction' && /sibline\s*baton/i.test(customer || '') && rRate <= 11.5) {
+          return { isTon: true, reason: `Customer (${customer}) buys ${product} in Tons` };
+        }
+        if (/^soime\b/i.test(customer || '') && (!d || d >= '2024-12-01') && rRate <= 15.5) {
+          return { isTon: true, reason: `Customer (${customer}) buys ${product} in Tons` };
+        }
+        if (/^sibline\s*s\.?a\.?l/i.test(customer || '') && (!d || d >= '2025-07-01') && rRate <= 14.5) {
+          return { isTon: true, reason: `Customer (${customer}) buys ${product} in Tons` };
+        }
+      }
+    }
+    if (customer && product) {
+      const d = String(effDate || '').slice(0, 10);
+      if (!d || d >= '2024-12-01' || company === 'BBConstruction') {
+        const tonIdx = _getCustomerProductTonSet();
+        const coN = norm(company || '');
+        const cuN = norm(customer);
+        const eqKeys = _tonProductEquivKeys(product);
+        const coProdHits = eqKeys.reduce((s, pk) => s + (tonIdx.byCoCustProd.get(`${coN}|${cuN}|${pk}`) || 0), 0);
+        const anyProdHits = eqKeys.reduce((s, pk) => s + (tonIdx.byCustProd.get(`${cuN}|${pk}`) || 0), 0);
+        const cck = `${coN}|${cuN}`;
+        const allCustomerAggregateTon = Boolean(prod && /^m/i.test(prod.uom || '') && Number(prod.ton_factor) > 1 && (tonIdx.byCoCustTon.get(cck) || 0) >= 5 && (tonIdx.byCoCustM3.get(cck) || 0) === 0);
+        if (coProdHits >= 2 || allCustomerAggregateTon || (company === 'BBConstruction' && anyProdHits >= 2)) {
+          return { isTon: true, reason: `Customer (${customer}) uses Tons for ${product}` };
+        }
+      }
+    }
+    if (prod && /^tons?$/i.test(prod.uom || '')) {
+      const tf = Number(prod.ton_factor || 0);
+      return { isTon: true, reason: `Product unit: Ton${tf > 0 && tf !== 1 ? ' (1 m³ = ' + tf + ' Tons)' : ''}` };
+    }
+    if (!product && company === 'BBConstruction') {
+      return { isTon: true, reason: 'BBConstruction default unit: Ton (most products sold in Tons)' };
+    }
+    return { isTon: false, reason: '' };
+  }
+
+  function resolveProductTonFactor(prod, productName) {
+    if (prod && Number(prod.ton_factor) > 0 && (Number(prod.ton_factor) !== 1 || !/trab\s*mrml|raml\s*bab/i.test(productName || ''))) {
+      return Number(prod.ton_factor);
+    }
+    if (/trab\s*mrml|raml\s*bab/i.test(productName || '')) return 1.7;
+    if (prod && Number(prod.ton_factor) > 0) return Number(prod.ton_factor);
+    return 0;
+  }
+
+  function syncUomQuickPillsUI(activeUom) {
+    const bar = $('uomQuickPills');
+    if (!bar) return;
+    bar.querySelectorAll('[data-set-uom]').forEach(btn => {
+      const v = btn.getAttribute('data-set-uom') || '';
+      btn.classList.toggle('active', norm(v) === norm(activeUom));
+    });
+  }
+
   function recalcSales() {
     const company = val('f_company');
     const saleType = val('f_saletype') || 'Pickup';
@@ -20062,6 +20930,13 @@
     FORM_UI.lastTransportBy = transportBy;
     FORM_UI.lastCustomer = customer;
     FORM_UI.lastProduct = product;
+
+    if (companyChanged) {
+      const dlSalesProds = $('dl_sales_prods');
+      if (dlSalesProds) {
+        dlSalesProds.innerHTML = salesProductMetaItems(company).map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+      }
+    }
 
     // 1. Dynamic Column Visibility & Stale-Field Clearing on Mode Switch
     setFieldVisible('wrap_f_transportby', isDelivery);
@@ -20176,27 +21051,44 @@
     const crossType = (!rule && !isUnreg && customer && product) ? findRule({ company, customer, product, site: isDelivery ? site : '', date: effDate, types: [isPickup ? 'Sales (Delivery)' : 'Sales (Pickup)'] }) : null;
 
     const matIsIndiff = !isUnreg && isMatIndiffRule(rule);
-    if ((customerChanged || productChanged || siteChanged || saleTypeChanged) && !isFieldAdminUnlocked('f_uom')) {
+    if ((companyChanged || customerChanged || productChanged || siteChanged || saleTypeChanged) && !isFieldAdminUnlocked('f_uom')) {
       FORM_UI.uomManual = false;
     }
     const prevUom = uomEl ? uomEl.value : 'm³';
-    const targetUom = (rule && rule.unit && !matIsIndiff) ? rule.unit : baseUom;
-    const uomLocked = applyFieldLockState('f_uom', !isUnreg, `Locked to ${rule && rule.unit && !matIsIndiff ? 'Agreement Unit' : 'Product UoM'} (${targetUom})`);
-    if (uomEl && uomLocked && !FORM_UI.uomManual) {
+    const tonMode = resolveCustomerProductTonMode(company, customer, product, effDate, rule || crossType, prod);
+    const targetUom = tonMode.isTon
+      ? 'Ton'
+      : ((rule && rule.unit && !matIsIndiff) ? rule.unit : (product ? baseUom : (company === 'BBConstruction' ? 'Ton' : 'm³')));
+    applyFieldLockState('f_uom', false, 'Select m³, Ton, or Truck');
+    if (uomEl && !FORM_UI.uomManual) {
       uomEl.value = targetUom;
     }
     const uom = (uomEl && uomEl.value) ? uomEl.value : targetUom;
+    const isTonUom = /^tons?$/i.test(uom);
+    const isTruckUom = /truck/i.test(uom);
+    syncUomQuickPillsUI(uom);
     const agrSizeOverride = !isUnreg ? resolveAgreementTruckSize({
       company, side: 'sales', customer, site: isDelivery ? site : '', truckOwner, product, truckRow, date: effDate,
       matchedRules: [haulCustRule, transRule, rule]
     }) : null;
     const effCap = agrSizeOverride ? agrSizeOverride.size : ((truckRow && Number(truckRow.capacity) > 0) ? Number(truckRow.capacity) : null);
 
-    if (prevUom !== uom && !FORM_UI.qtyManual && qtyEl() && !/truck/i.test(uom) && /truck/i.test(prevUom)) {
-      qtyEl().value = (effCap != null && effCap > 0) ? Number(effCap).toFixed(2) : '';
+    if (prevUom !== uom && !FORM_UI.qtyManual && qtyEl()) {
+      if (isTonUom) {
+        qtyEl().value = '';
+      } else if (isTruckUom) {
+        qtyEl().value = '1';
+      } else {
+        qtyEl().value = (effCap != null && effCap > 0) ? Number(effCap).toFixed(2) : '';
+      }
+    }
+    if (isTonUom && !FORM_UI.qtyManual && qtyEl() && qtyEl().value !== '') {
+      qtyEl().value = '';
     }
     setText('lbl_uom', uom);
-    setHint('hint_product', prod ? (Number(prod.ton_factor) && Number(prod.ton_factor) !== 1 ? `1 ${baseUom} = ${prod.ton_factor} t` : '') : (product ? 'Unknown grade' : ''), '');
+    const tonFactor = resolveProductTonFactor(prod, product);
+    setHint('hint_product', prod ? (tonFactor && tonFactor !== 1 ? `1 m³ = ${tonFactor} t` : '') : (product ? 'Unknown grade' : ''), '');
+    setHint('hint_uom', tonMode.reason || (isTonUom ? 'Weighed in Tons · Quantity unlocked' : `Measured in ${uom} · Click Ton to switch`), isTonUom ? 'ok' : '');
 
     const priceLocked = applyFieldLockState('f_unitprice', !isUnreg, 'Locked to active Price Agreement or List Price on Pickup & Delivery');
     const transLocked = applyFieldLockState('f_transunitprice', isDelivery, 'Locked to Price Agreement transport rate on Delivery');
@@ -20269,20 +21161,30 @@
     }
 
     const truckHasNoCap = !!(truckRow && !(Number(effCap) > 0));
-    const unitOverridden = uom !== baseUom && !/truck/i.test(uom);
-    const shouldLockQty = !isUnreg && !truckHasNoCap && !unitOverridden;
+    const unitOverridden = uom !== baseUom && !isTruckUom;
+    const shouldLockQty = !isUnreg && !truckHasNoCap && !isTonUom && !unitOverridden;
+    const estTons = (effCap && Number(effCap) > 0 && tonFactor > 0) ? round2(Number(effCap) * tonFactor) : null;
     const qtyLocked = applyFieldLockState('f_qty', shouldLockQty,
-      /truck/i.test(uom)
+      isTruckUom
         ? 'Unit = Truck locks Quantity to 1 load'
-        : (agrSizeOverride
-            ? `Locked to ${agrSizeOverride.rule.name} Client/Site Truck Size (${agrSizeOverride.size} m³)`
-            : (truckRow && effCap
-                ? `Locked to ${truckRow.name} capacity (${effCap} m³)`
-                : 'Auto-populated from Truck Capacity (m³); unlock as Admin to enter manual quantity')));
+        : (isTonUom
+            ? (estTons != null
+                ? `Unlocked for Ton sale · Est. ≈ ${fmtNum(estTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${tonFactor} t/m³)`
+                : 'Unlocked for Ton sale — enter weighed tons')
+            : (agrSizeOverride
+                ? `Locked to ${agrSizeOverride.rule.name} Client/Site Truck Size (${agrSizeOverride.size} m³)`
+                : (truckRow && effCap
+                    ? `Locked to ${truckRow.name} capacity (${effCap} m³)`
+                    : 'Auto-populated from Truck Capacity (m³); unlock as Admin to enter manual quantity'))));
 
-    if (/truck/i.test(uom) && qtyEl() && qtyLocked && !FORM_UI.qtyManual) {
+    if (qtyEl()) {
+      qtyEl().placeholder = isTonUom
+        ? (estTons != null ? `Est. ≈ ${fmtNum(estTons, 2)} t (${fmtNum(effCap, 1)} m³ × ${tonFactor})` : 'Enter weighed tons...')
+        : (qtyLocked ? 'Auto-filled from Truck m³...' : 'Enter quantity...');
+    }
+    if (isTruckUom && qtyEl() && qtyLocked && !FORM_UI.qtyManual) {
       qtyEl().value = '1';
-    } else if (effCap && qtyEl() && qtyLocked && !FORM_UI.qtyManual && (truckRow || agrSizeOverride)) {
+    } else if (!isTonUom && effCap && qtyEl() && qtyLocked && !FORM_UI.qtyManual && (truckRow || agrSizeOverride)) {
       qtyEl().value = Number(effCap).toFixed(2);
     }
 
@@ -20332,7 +21234,23 @@
     setText('calc_tr', fmtUSD(finalTr, 2) + (transIsIndiff ? ' (flat / load)' : (tierTrAdj ? ` (tier ${tierTrAdj > 0 ? '+' : '−'}$${Math.abs(tierTrAdj).toFixed(2)})` : '')));
     setText('calc_vat', vatReg ? fmtUSD(vat, 2) : '—');
     setText('calc_total', fmtUSD(ttc, 2));
-    setHint('hint_qty', qty > 0 && prod && Number(prod.ton_factor) && Number(prod.ton_factor) !== 1 ? `≈ ${fmtNum(qty * Number(prod.ton_factor), 2)} t` : (qty <= 0 && val('f_qty') ? 'Must be above zero' : ''), qty <= 0 && val('f_qty') ? 'crit' : '');
+    if (isTonUom) {
+      if (qty <= 0 && val('f_qty') !== '') {
+        setHint('hint_qty', 'Must be above zero', 'crit');
+      } else if (estTons != null && qty <= 0) {
+        setHint('hint_qty', `Estimated: ≈ ${fmtNum(estTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${tonFactor} t/m³) · Enter weighed tons`, 'ok');
+      } else if (estTons != null && qty > 0) {
+        setHint('hint_qty', `Estimated: ≈ ${fmtNum(estTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${tonFactor} t/m³) · Entered: ${fmtNum(qty, 2)} t (≈ ${fmtNum(qty / tonFactor, 2)} m³)`, 'ok');
+      } else if (effCap && Number(effCap) > 0) {
+        setHint('hint_qty', `Truck size: ${fmtNum(effCap, 1)} m³ · Select Product for conversion rate & estimated tonnage`, '');
+      } else if (tonFactor > 0) {
+        setHint('hint_qty', `Conversion rate: 1 m³ = ${tonFactor} Tons · Select Truck to see estimated tonnage`, '');
+      } else {
+        setHint('hint_qty', 'Unlocked for Ton sale · Select Truck & Product to see estimated tonnage', '');
+      }
+    } else {
+      setHint('hint_qty', qty > 0 && prod && tonFactor > 0 && tonFactor !== 1 ? `≈ ${fmtNum(qty * tonFactor, 2)} Tons (${fmtNum(qty, 1)} m³ × ${tonFactor} t/m³)` : (qty <= 0 && val('f_qty') ? 'Must be above zero' : ''), qty <= 0 && val('f_qty') ? 'crit' : '');
+    }
     if (disc > matGross && matGross > 0) setHint('hint_disc', 'Discount exceeds the material subtotal', 'crit');
     else if (matGross > 0 && disc > matGross * 0.2) { setHint('hint_disc', 'Above 20% of material — add a note', 'warn'); }
     else setHint('hint_disc', '', '');
@@ -20340,6 +21258,34 @@
     commonDateChecks(warnings);
     const salesEffDate = (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date;
     dupCheck(company, 'sales', salesEffDate);
+    const fIdx = _getFormIntelIndex();
+    const salesStrip = $('salesLiveContextStrip');
+    if (salesStrip) {
+      if (STATE.view === 'kiosks' || (!customer && !site && !truckName)) {
+        salesStrip.hidden = true;
+        salesStrip.innerHTML = '';
+      } else {
+        const ct = customer ? fIdx.creditTermsByCust.get(norm(customer)) : null;
+        const ov60 = customer ? (fIdx.custOverdue60ByCust.get(norm(customer)) || 0) : 0;
+        const trkLoads = (truckName && salesEffDate) ? (fIdx.loadsByTruckDate.get(`${norm(truckName)}|${salesEffDate.slice(0, 10)}`) || 0) : 0;
+        const sObj = site ? siteInfo(site) : null;
+        const isJvSite = Boolean(sObj && (sObj.is_jv || sObj.jv));
+        const afterAr = ar != null && val('f_method') === 'Credit' ? round2(ar + ttc) : ar;
+        const overLimit = Boolean(ct && ct.limit > 0 && afterAr != null && afterAr > ct.limit);
+        salesStrip.hidden = false;
+        salesStrip.className = `att-contract-strip${overLimit || ov60 > 1000 ? ' is-warn' : ''}`;
+        salesStrip.innerHTML = `
+          <div><strong>${esc(customer || site || truckName)}</strong> ${vatReg ? '<span class="badge badge-info">11% VAT</span>' : ''}${isJvSite ? ' <span class="badge badge-brass">JV 50/50 Site</span>' : ''}</div>
+          <div class="att-contract-metrics">
+            ${customer ? `<span><small>Open AR</small><b>${ar != null ? fmtUSD(ar, 2) : '$0.00'}</b></span>` : ''}
+            ${ct ? `<span><small>Credit Terms</small><b>Net ${ct.days}d · Limit ${fmtUSD(ct.limit, 0)}</b></span>` : ''}
+            ${ov60 > 0 ? `<span><small>60+d Overdue</small><b class="amber">${fmtUSD(ov60, 0)}</b></span>` : ''}
+            ${afterAr != null && ttc > 0 && val('f_method') === 'Credit' ? `<span><small>AR After Ticket</small><b>${fmtUSD(afterAr, 2)}${overLimit ? ' (Over Limit)' : ''}</b></span>` : ''}
+            ${truckName ? `<span><small>${esc(truckName)} Today</small><b>${trkLoads} load${trkLoads === 1 ? '' : 's'} logged</b></span>` : ''}
+          </div>
+        `;
+      }
+    }
     renderAdminLockBar();
     return { company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule, tier, tierAdj, tierTrAdj, qty, up, tp, disc, tip, mat: matGross, tr: finalTr, net, vat, ttc, method: val('f_method') };
   }
@@ -20434,34 +21380,70 @@
     }
     const prevUom = uomEl ? uomEl.value : 'm³';
     const targetUom = (rule && rule.unit && !matIsIndiff) ? rule.unit : baseUom;
-    const uomLocked = applyFieldLockState('f_uom', true, `Locked to Product / Agreement UoM (${targetUom})`);
-    if (uomEl && uomLocked && !FORM_UI.uomManual) uomEl.value = targetUom;
+    applyFieldLockState('f_uom', false, 'Select m³, Ton, or Truck');
+    if (uomEl && !FORM_UI.uomManual) uomEl.value = targetUom;
     const uom = val('f_uom') || targetUom;
+    const isTonUom = /^tons?$/i.test(uom);
+    const isTruckUom = /truck/i.test(uom);
+    syncUomQuickPillsUI(uom);
     const agrSizeOverride = resolveAgreementTruckSize({
       company, side: 'raw', site, siteOwner: owner, truckOwner, product, truckRow, date: effDate,
       matchedRules: [haulRule, rule]
     });
     const effCap = agrSizeOverride ? agrSizeOverride.size : ((truckRow && Number(truckRow.capacity) > 0) ? Number(truckRow.capacity) : null);
 
-    if (prevUom !== uom && !FORM_UI.qtyManual && qtyEl() && !/truck/i.test(uom) && /truck/i.test(prevUom)) {
-      qtyEl().value = (effCap != null && effCap > 0) ? Number(effCap).toFixed(2) : '';
+    if (prevUom !== uom && !FORM_UI.qtyManual && qtyEl()) {
+      if (isTonUom) {
+        qtyEl().value = '';
+      } else if (isTruckUom) {
+        qtyEl().value = '1';
+      } else {
+        qtyEl().value = (effCap != null && effCap > 0) ? Number(effCap).toFixed(2) : '';
+      }
+    }
+    if (isTonUom && !FORM_UI.qtyManual && qtyEl() && qtyEl().value !== '') {
+      qtyEl().value = '';
     }
     setText('lbl_uom', uom);
+    const rawTonFactor = resolveProductTonFactor(prod, product);
+    const rawEstTons = (effCap && Number(effCap) > 0 && rawTonFactor > 0) ? round2(Number(effCap) * rawTonFactor) : null;
+    setHint('hint_uom', isTonUom ? 'Weighed in Tons · Quantity unlocked' : `Measured in ${uom} · Click Ton to switch`, isTonUom ? 'ok' : '');
 
     // 5. Quantity Lock & Quarry Site / Hauler Agreement Truck Size Override
     const truckHasNoCap = !!(truckRow && !(Number(effCap) > 0));
-    const unitOverridden = uom !== baseUom && !/truck/i.test(uom);
-    const shouldLockQty = !truckHasNoCap && !unitOverridden;
+    const unitOverridden = uom !== baseUom && !isTruckUom;
+    const shouldLockQty = !truckHasNoCap && !isTonUom && !unitOverridden;
     const qtyLocked = applyFieldLockState('f_qty', shouldLockQty,
-      /truck/i.test(uom)
+      isTruckUom
         ? 'Unit = Truck locks Quantity to 1 load'
-        : (agrSizeOverride
-            ? `Locked to ${agrSizeOverride.rule.name} Site/Hauler Truck Size (${agrSizeOverride.size} m³)`
-            : 'Auto-populated from Truck Capacity (m³)'));
-    if (/truck/i.test(uom) && qtyEl() && qtyLocked && !FORM_UI.qtyManual) {
+        : (isTonUom
+            ? (rawEstTons != null
+                ? `Unlocked for Ton intake · Est. ≈ ${fmtNum(rawEstTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${rawTonFactor} t/m³)`
+                : 'Unlocked for Ton intake — enter weighed tons')
+            : (agrSizeOverride
+                ? `Locked to ${agrSizeOverride.rule.name} Site/Hauler Truck Size (${agrSizeOverride.size} m³)`
+                : 'Auto-populated from Truck Capacity (m³)')));
+    if (qtyEl()) {
+      qtyEl().placeholder = isTonUom
+        ? (rawEstTons != null ? `Est. ≈ ${fmtNum(rawEstTons, 2)} t (${fmtNum(effCap, 1)} m³ × ${rawTonFactor})` : 'Enter weighed tons...')
+        : '';
+    }
+    if (isTruckUom && qtyEl() && qtyLocked && !FORM_UI.qtyManual) {
       qtyEl().value = '1';
-    } else if (effCap && qtyEl() && qtyLocked && !FORM_UI.qtyManual && (truckRow || agrSizeOverride)) {
+    } else if (!isTonUom && effCap && qtyEl() && qtyLocked && !FORM_UI.qtyManual && (truckRow || agrSizeOverride)) {
       qtyEl().value = Number(effCap).toFixed(2);
+    }
+    if (isTonUom) {
+      const curRawQty = num('f_qty');
+      if (rawEstTons != null && curRawQty <= 0) {
+        setHint('hint_qty', `Estimated: ≈ ${fmtNum(rawEstTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${rawTonFactor} t/m³) · Enter weighed tons`, 'ok');
+      } else if (rawEstTons != null && curRawQty > 0) {
+        setHint('hint_qty', `Estimated: ≈ ${fmtNum(rawEstTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${rawTonFactor} t/m³) · Entered: ${fmtNum(curRawQty, 2)} t`, 'ok');
+      } else {
+        setHint('hint_qty', 'Unlocked for Ton intake · Select Truck & Product to see estimated tonnage', '');
+      }
+    } else {
+      setHint('hint_qty', '', '');
     }
 
     const winInfo = truckRow && truckRow.active_window ? truckRow.active_window : null;
@@ -20564,6 +21546,30 @@
     setText('calc_total', fmtUSD(mat + tr, 2));
     commonDateChecks(warnings);
     dupCheck(company, 'raw', effDate);
+    const fIdx = _getFormIntelIndex();
+    const rawStrip = $('rawLiveContextStrip');
+    if (rawStrip) {
+      if (STATE.view === 'kiosks' || (!site && !owner && !truckName)) {
+        rawStrip.hidden = true;
+        rawStrip.innerHTML = '';
+      } else {
+        const jvInfo = site ? fIdx.jvBySite.get(norm(site)) : null;
+        const isJv = Boolean((sInfo && (sInfo.is_jv || sInfo.jv)) || (jvInfo && jvInfo.isJv));
+        const haulAp = (!isCoFleet && truckOwner) ? openApBalance(truckOwner) : null;
+        const trkLoads = (truckName && effDate) ? (fIdx.loadsByTruckDate.get(`${norm(truckName)}|${effDate.slice(0, 10)}`) || 0) : 0;
+        rawStrip.hidden = false;
+        rawStrip.className = 'att-contract-strip';
+        rawStrip.innerHTML = `
+          <div><strong>${esc(site || owner || truckName)}</strong> <span class="badge ${isJv ? 'badge-brass' : 'badge-info'}">${isJv ? 'JV 50/50 Site · Partner ' + esc((jvInfo && jvInfo.partner) || 'Assaf') : 'Quarry Intake'}</span></div>
+          <div class="att-contract-metrics">
+            ${owner ? `<span><small>Leg 1 Payee (${esc(owner)})</small><b>${ap != null ? 'Open AP ' + fmtUSD(ap, 0) : 'Direct Site Payee'}</b></span>` : ''}
+            ${!isCoFleet && truckOwner ? `<span><small>Leg 2 Hauler (${esc(truckOwner)})</small><b>${haulAp != null ? 'Open AP ' + fmtUSD(haulAp, 0) : '3P Hauler'}</b></span>` : `<span><small>Transport</small><b>${esc(company)} Fleet ($0 3P AP)</b></span>`}
+            ${isJv && jvInfo ? `<span><small>JV Remaining Share</small><b>${fmtUSD(Math.max(0, jvInfo.remainingUsd), 0)}</b></span>` : ''}
+            ${truckName ? `<span><small>${esc(truckName)} Today</small><b>${trkLoads} load${trkLoads === 1 ? '' : 's'} logged</b></span>` : ''}
+          </div>
+        `;
+      }
+    }
     renderAdminLockBar();
     return { company, transportBy, site, owner, product, date, repDate: val('f_repdate') || date, prod, uom, rule, haulRule, tierAdj, tierTrAdj, qty, up, tp, disc, mat, tr };
   }
@@ -20573,17 +21579,57 @@
     const cust = customerInfo(customer);
     const before = openArBalance(customer);
     const amount = num('f_amount'), disc = num('f_discount');
+    const totCredit = round2(amount + disc);
+    const fIdx = _getFormIntelIndex();
+    const ct = customer ? fIdx.creditTermsByCust.get(norm(customer)) : null;
+    const ov60 = customer ? (fIdx.custOverdue60ByCust.get(norm(customer)) || 0) : 0;
     setHint('hint_customer', cust
-      ? (cust.in_ar_book ? `${cust['VAT Registered'] === 'Yes' ? 'VAT-registered · ' : ''}${fmtNum(cust.loads)} loads · last sale ${String(cust.last_sale || '').slice(0, 10) || '—'}` : 'Registered customer · outside the top-60 AR sample (balance unknown here)')
+      ? (cust.in_ar_book ? `${cust['VAT Registered'] === 'Yes' ? 'VAT-registered · ' : ''}${fmtNum(cust.loads)} loads · last sale ${String(cust.last_sale || '').slice(0, 10) || '—'}${ct ? ' · Net ' + ct.days + 'd' : ''}` : 'Registered customer · outside the top-60 AR sample (balance unknown here)')
       : (customer ? 'Not in the customer master — check the spelling' : ''), customer && !cust ? 'warn' : '');
     setText('calc_before', before == null ? '—' : fmtUSD(before, 2));
-    setText('calc_total', fmtUSD(amount + disc, 2));
-    setText('calc_after', before == null ? '—' : fmtUSD(before - amount - disc, 2));
-    setText('calc_alloc', val('f_method') === 'VAT' ? 'VAT leg only' : 'FIFO oldest ticket first');
+    setText('calc_total', fmtUSD(totCredit, 2));
+    const afterBal = before == null ? null : round2(before - totCredit);
+    setText('calc_after', afterBal == null ? '—' : (afterBal < -0.005 ? `Advance +${fmtUSD(Math.abs(afterBal), 2)}` : fmtUSD(afterBal, 2)));
+    setText('calc_alloc', val('f_method') === 'VAT' ? 'VAT leg only' : (afterBal != null && afterBal < -0.005 ? 'Clears AR + Customer Advance' : 'FIFO oldest ticket first'));
     const cSub = $('paCustSubgridWrap');
-    if (cSub && window.MFG_FORMS) cSub.innerHTML = window.MFG_FORMS.renderCustomerOpenTicketsSubgrid({ SEED, STATE }, val('f_company'), customer, amount + disc, val('f_method'));
-    if (before != null && amount + disc > before + 0.005) setHint('hint_amount', `Exceeds the open balance by ${fmtUSD(amount + disc - before, 2)} — becomes an advance`, 'warn');
+    if (cSub && window.MFG_FORMS) cSub.innerHTML = window.MFG_FORMS.renderCustomerOpenTicketsSubgrid({ SEED, STATE }, val('f_company'), customer, totCredit, val('f_method'));
+    if (before != null && totCredit > before + 0.005) setHint('hint_amount', `Exceeds open AR (${fmtUSD(before, 2)}) by ${fmtUSD(totCredit - before, 2)} · excess posts as Customer Advance`, 'warn');
+    else if (before != null && before > 0 && Math.abs(totCredit - before) <= 0.01) setHint('hint_amount', `Settles ${customer}'s full open AR balance (${fmtUSD(before, 2)})`, 'ok');
     else setHint('hint_amount', amount <= 0 && val('f_amount') ? 'Must be above zero' : '', amount <= 0 && val('f_amount') ? 'crit' : '');
+
+    const rStrip = $('rcptQuickContextStrip');
+    if (rStrip) {
+      if (!customer) {
+        rStrip.hidden = true;
+        rStrip.innerHTML = '';
+      } else {
+        const openVal = round2(Math.max(0, Number(before || 0)));
+        const isAdv = before != null && totCredit > openVal + 0.005;
+        const isFull = openVal > 0 && Math.abs(totCredit - openVal) <= 0.01;
+        const stBadge = isAdv
+          ? `<span class="badge badge-warn">Customer Advance (+${fmtUSD(totCredit - openVal, 2)} Credit)</span>`
+          : (isFull
+              ? `<span class="badge badge-ok">Settles Full AR ($0.00 Left)</span>`
+              : (totCredit > 0 && before != null
+                  ? `<span class="badge badge-info">Partial · ${fmtUSD(Math.max(0, openVal - totCredit), 2)} Remaining</span>`
+                  : (openVal > 0 ? `<span class="badge badge-brass">${fmtUSD(openVal, 2)} Open AR</span>` : `<span class="badge badge-ok">$0.00 Open AR · Any Receipt = Advance</span>`)));
+        rStrip.hidden = false;
+        rStrip.className = `att-contract-strip${isAdv ? ' is-advance' : (isFull ? ' is-ok' : '')}`;
+        rStrip.innerHTML = `
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <strong>${esc(customer)}</strong> ${stBadge}
+            ${openVal > 0 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${openVal.toFixed(2)}">Receive Full Open AR (${fmtUSD(openVal, 2)})</button>` : ''}
+            ${ov60 > 0 && Math.abs(ov60 - openVal) > 1 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${ov60.toFixed(2)}">60+d Overdue (${fmtUSD(ov60, 2)})</button>` : ''}
+          </div>
+          <div class="att-contract-metrics">
+            <span><small>Open AR Before</small><b>${before != null ? fmtUSD(before, 2) : '$0.00'}</b></span>
+            ${ov60 > 0 ? `<span><small>60+d Overdue</small><b class="amber">${fmtUSD(ov60, 2)}</b></span>` : ''}
+            ${ct ? `<span><small>Terms</small><b>Net ${ct.days}d · Limit ${fmtUSD(ct.limit, 0)}</b></span>` : ''}
+            <span><small>After Receipt</small><b>${afterBal == null ? '—' : (afterBal < -0.005 ? 'Advance +' + fmtUSD(Math.abs(afterBal), 2) : fmtUSD(afterBal, 2) + ' Left')}</b></span>
+          </div>
+        `;
+      }
+    }
     commonDateChecks([]);
     renderAdminLockBar();
     return { customer, cust, before, amount, disc };
@@ -20871,6 +21917,33 @@
     } else {
       setHint('hint_qty', '', '');
     }
+    const fuelStrip = $('fuelLiveContextStrip');
+    if (fuelStrip) {
+      if (isKioskActive()) {
+        fuelStrip.hidden = true;
+      } else {
+        const tankAll = computeDieselTank();
+        const coTank = (tankAll.byCo && tankAll.byCo[company]) || { balance: 0, avgUsdPerL: 0 };
+        const tankAfter = (!isLubricant && fuelType === 'Diesel' && litres > 0) ? (coTank.balance - litres) : coTank.balance;
+        const activeDrv = val('f_driver') || defDriver;
+        const absRec = (activeDrv && effDate) ? (SEED.records.attendance || []).find(a => a && !a.voided && String(a.date || '').slice(0, 10) === effDate.slice(0, 10) && normStaffStem(a.staff) === normStaffStem(activeDrv) && /absen|sick|vac/i.test(String(a.type || a.status || ''))) : null;
+        fuelStrip.hidden = false;
+        fuelStrip.className = 'att-contract-strip' + ((bbcTankNegative || absRec || !guard.ok) ? ' is-warn' : '');
+        fuelStrip.innerHTML = `
+          <div>
+            <strong>${esc(company)} Plant Tank</strong>
+            <span class="badge ${coTank.balance < 0 ? 'badge-crit' : (coTank.balance < 1500 ? 'badge-warn' : 'badge-ok')}">${fmtNum(coTank.balance, 0)} L Available</span>
+            ${absRec ? `<span class="badge badge-crit">S9 Alert: ${esc(activeDrv)} marked ${esc(absRec.type || 'Absent')} on ${esc(effDate)}</span>` : ''}
+          </div>
+          <div class="att-contract-metrics">
+            ${!isLubricant && fuelType === 'Diesel' && litres > 0 ? `<span><small>Tank After Issue</small><b class="${tankAfter < 0 ? 'red' : ''}">${fmtNum(tankAfter, 0)} L</b></span>` : ''}
+            ${coTank.avgUsdPerL > 0 && !isLubricant ? `<span><small>Est. Cost</small><b>${fmtUSD(litres > 0 ? litres * coTank.avgUsdPerL : coTank.avgUsdPerL, 2)}${litres > 0 ? '' : '/L'}</b></span>` : ''}
+            ${prev ? `<span><small>Last Refuel</small><b>${fmtNum(prev.litres || 0, 0)} L on ${esc(String(prev.date || '').slice(0, 10))}</b></span>` : ''}
+            ${delta != null && delta >= 0 ? `<span><small>Interval</small><b>+${fmtNum(delta, type === 'hours' && delta % 1 !== 0 ? 1 : 0)} ${type === 'hours' ? 'h' : 'km'}</b></span>` : ''}
+          </div>
+        `;
+      }
+    }
     commonDateChecks([]);
     if (val('f_ticketno')) dupCheck(company, 'fuel', date); else setHint('hint_ticket', 'Optional — leave blank for an unnumbered intake', '');
     renderAdminLockBar();
@@ -20907,6 +21980,35 @@
     setHint('hint_amount', amount <= 0 && val('f_amount') ? 'Must be above zero' : '', amount <= 0 && val('f_amount') ? 'crit' : '');
     const cat = val('f_category');
     setText('calc_gl', /fuel|oil/i.test(cat) ? '60 · Fuel & lubricants' : (/repair|spare|tool|minor/i.test(cat) ? '61 · Repairs & parts' : (/tip/i.test(cat) ? '64 · Staff' : '62 · Operating')));
+    const expStrip = $('expLiveContextStrip');
+    if (expStrip) {
+      const fIntel = _getFormIntelIndex();
+      const sInfo = supplier ? supplierInfo(supplier) : null;
+      const lastExp = supplier ? fIntel.lastExpBySup[norm(supplier)] : null;
+      const litres = num('f_qty');
+      const isDieselBulk = /fuel|oil|mazout|diesel/i.test(`${catNow} ${val('f_subcategory')}`) && litres > 0;
+      if (!supplier && !isDieselBulk) {
+        expStrip.hidden = true;
+        expStrip.innerHTML = '';
+      } else {
+        const afterAp = (ap != null ? ap : 0) + (method === 'Credit' ? amount : 0);
+        expStrip.hidden = false;
+        expStrip.className = 'att-contract-strip';
+        expStrip.innerHTML = `
+          <div>
+            <strong>${esc(supplier || catNow || 'Expense Context')}</strong>
+            <span class="badge ${method === 'Credit' ? 'badge-warn' : 'badge-ok'}">${method === 'Credit' ? 'Adds to Leg 3 AP' : 'Immediate Cash Out'}</span>
+          </div>
+          <div class="att-contract-metrics">
+            ${supplier ? `<span><small>Open AP Before</small><b>${ap != null ? fmtUSD(ap, 2) : '$0.00'}</b></span>` : ''}
+            ${supplier && method === 'Credit' && amount > 0 ? `<span><small>AP After</small><b>${fmtUSD(afterAp, 2)}</b></span>` : ''}
+            ${sInfo && Number(sInfo.ap_expense || 0) > 0 ? `<span><small>Leg 3 Credit Exp.</small><b>${fmtUSD(sInfo.ap_expense, 0)}</b></span>` : ''}
+            ${lastExp ? `<span><small>Last Voucher</small><b>${fmtUSD(lastExp.amount || 0, 2)} on ${esc(String(lastExp.date || '').slice(0, 10))}</b></span>` : ''}
+            ${isDieselBulk && amount > 0 ? `<span><small>Implied Rate</small><b>${fmtUSD(amount / litres, 3)} / L (${fmtNum(litres, 0)} L)</b></span>` : ''}
+          </div>
+        `;
+      }
+    }
     commonDateChecks([]);
     renderAdminLockBar();
     return { method, supplier, amount };
@@ -20916,15 +22018,57 @@
     const supplier = val('f_supplier');
     const before = openApBalance(supplier);
     const amount = num('f_amount'), disc = num('f_discount');
+    const totRelief = round2(amount + disc);
     setHint('hint_supplier', supplier && before == null ? 'Not in the AP book — check the spelling' : '', supplier && before == null ? 'warn' : '');
     setText('calc_before', before == null ? '—' : fmtUSD(before, 2));
-    setText('calc_total', fmtUSD(amount + disc, 2));
-    setText('calc_after', before == null ? '—' : fmtUSD(before - amount - disc, 2));
+    setText('calc_total', fmtUSD(totRelief, 2));
+    const afterBal = before == null ? null : round2(before - totRelief);
+    setText('calc_after', afterBal == null ? '—' : (afterBal < -0.005 ? `Prepayment +${fmtUSD(Math.abs(afterBal), 2)}` : fmtUSD(afterBal, 2)));
     setText('calc_alloc', /VAT|IVA/.test(val('f_method')) ? 'VAT leg only' : 'Oldest leg first');
     const sSub = $('paSupSubgridWrap');
-    if (sSub && window.MFG_FORMS) sSub.innerHTML = window.MFG_FORMS.renderSupplierOpenLegsSubgrid({ SEED, STATE }, val('f_company'), supplier, amount + disc, 'all');
-    if (before != null && amount + disc > before + 0.005) setHint('hint_amount', `Exceeds the open balance by ${fmtUSD(amount + disc - before, 2)} — becomes a prepayment`, 'warn');
+    if (sSub && window.MFG_FORMS) sSub.innerHTML = window.MFG_FORMS.renderSupplierOpenLegsSubgrid({ SEED, STATE }, val('f_company'), supplier, totRelief, 'all');
+    if (before != null && totRelief > before + 0.005) setHint('hint_amount', `Exceeds the open balance by ${fmtUSD(totRelief - before, 2)} · posts a Supplier Advance / Prepayment`, 'warn');
     else setHint('hint_amount', amount <= 0 && val('f_amount') ? 'Must be above zero' : '', amount <= 0 && val('f_amount') ? 'crit' : '');
+    const stStrip = $('settleQuickContextStrip');
+    if (stStrip) {
+      if (!supplier) {
+        stStrip.hidden = true;
+        stStrip.innerHTML = '';
+      } else {
+        const si = supplierInfo(supplier) || {};
+        const openVal = Math.max(0, Number(before || 0));
+        const legMat = Math.max(0, Number(si.ap_material || 0));
+        const legHaul = Math.max(0, Number(si.ap_haulage || 0));
+        const legExp = Math.max(0, Number(si.ap_expense || 0));
+        const isAdv = before != null && totRelief > openVal + 0.005;
+        const isFull = before != null && openVal > 0 && Math.abs(totRelief - openVal) <= 0.01;
+        const stBadge = isAdv
+          ? `<span class="badge badge-warn">Supplier Advance (+${fmtUSD(totRelief - openVal, 2)} Prepayment)</span>`
+          : (isFull
+              ? `<span class="badge badge-ok">Settles Open AP in Full ($0.00 Left)</span>`
+              : (totRelief > 0 && before != null
+                  ? `<span class="badge badge-info">Partial Settlement · ${fmtUSD(Math.max(0, openVal - totRelief), 2)} Remaining</span>`
+                  : (openVal > 0 ? `<span class="badge badge-brass">Open AP: ${fmtUSD(openVal, 2)}</span>` : `<span class="badge badge-ok">AP Settled ($0.00)</span>`)));
+        stStrip.hidden = false;
+        stStrip.className = 'att-contract-strip' + (isAdv ? ' is-warn' : (isFull ? ' is-ok' : ''));
+        stStrip.innerHTML = `
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <strong>${esc(supplier)}</strong> ${stBadge}
+            ${openVal > 0 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${openVal.toFixed(2)}">Pay Full Open AP (${fmtUSD(openVal, 2)})</button>` : ''}
+            ${legMat > 0 && Math.abs(legMat - openVal) > 1 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${legMat.toFixed(2)}">Material Leg (${fmtUSD(legMat, 0)})</button>` : ''}
+            ${legHaul > 0 && Math.abs(legHaul - openVal) > 1 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${legHaul.toFixed(2)}">Haulage Leg (${fmtUSD(legHaul, 0)})</button>` : ''}
+            ${legExp > 0 && Math.abs(legExp - openVal) > 1 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${legExp.toFixed(2)}">Expense Leg (${fmtUSD(legExp, 0)})</button>` : ''}
+          </div>
+          <div class="att-contract-metrics">
+            <span><small>Total Open AP</small><b>${before != null ? fmtUSD(before, 2) : '$0.00'}</b></span>
+            ${legMat > 0 ? `<span><small>Leg 1 Material</small><b>${fmtUSD(legMat, 0)}</b></span>` : ''}
+            ${legHaul > 0 ? `<span><small>Leg 2 Haulage</small><b>${fmtUSD(legHaul, 0)}</b></span>` : ''}
+            ${legExp > 0 ? `<span><small>Leg 3 Expenses</small><b>${fmtUSD(legExp, 0)}</b></span>` : ''}
+            <span><small>After Payment</small><b>${afterBal == null ? '—' : (afterBal < -0.005 ? 'Advance +' + fmtUSD(Math.abs(afterBal), 2) : fmtUSD(afterBal, 2) + ' Left')}</b></span>
+          </div>
+        `;
+      }
+    }
     commonDateChecks([]);
     renderAdminLockBar();
     return { supplier, before, amount, disc };
@@ -20934,6 +22078,10 @@
     try {
       if (['salary', 'logistics', 'treasury'].includes(STATE.modalForm)) {
         const isConv = STATE.modalForm === 'treasury' && val('f_trtype') === 'conversion';
+        if (STATE.modalForm === 'salary') {
+          const isBonus = val('f_sal_type') === 'bonus';
+          setFieldVisible('wrap_sal_method', !isBonus);
+        }
         if (STATE.modalForm === 'treasury') {
           setFieldVisible('wrap_tr_cp', !isConv);
           setFieldVisible('wrap_tr_dir', !isConv);
@@ -20958,6 +22106,18 @@
           if (fxEl && usd > 0 && lbp > 0 && document.activeElement !== fxEl) {
             fxEl.value = String(Math.round(lbp / usd));
           }
+          const fxRate = num('f_fxrate') || 89500;
+          const isU2L = !/LBP/i.test(String(val('f_conv_dir') || 'USD to LBP').slice(0, 4));
+          const trStrip = $('trLiveContextStrip');
+          if (trStrip) trStrip.hidden = true;
+          if ($('lbl_tr_c1')) $('lbl_tr_c1').textContent = 'USD Drawer Delta';
+          if ($('lbl_tr_c2')) $('lbl_tr_c2').textContent = 'LBP Drawer Delta';
+          if ($('lbl_tr_c3')) $('lbl_tr_c3').textContent = 'Effective FX Rate';
+          if ($('lbl_tr_c4')) $('lbl_tr_c4').textContent = 'Conversion Leg';
+          setText('calc_tr_c1', isU2L ? `-${fmtUSD(usd, 2)}` : `+${fmtUSD(usd, 2)}`);
+          setText('calc_tr_c2', isU2L ? `+${fmtNum(lbp, 0)} LL` : `-${fmtNum(lbp, 0)} LL`);
+          setText('calc_tr_c3', `${fmtNum(fxRate, 0)} LL / $`);
+          setText('calc_tr_c4', isU2L ? 'USD to LBP' : 'LBP to USD');
           commonDateChecks([]);
           renderAdminLockBar();
           return { usd, lbp, amount: usd };
@@ -20966,9 +22126,379 @@
         const aEl = $('f_amount');
         const amtLocked = applyFieldLockState('f_amount', true, 'Dual-Currency FX Lock: Total USD = USD + LBP ÷ 90,000');
         if (aEl && amtLocked) aEl.value = (usd > 0 || lbp > 0) ? tot.toFixed(2) : '';
+        const thisPay = num('f_amount');
+
+        // 1. Live Salary Payment & Entitlement Intelligence Strip + 1-Click Quick-Fill + Subgrid
+        if (STATE.modalForm === 'salary') {
+          const curStaff = val('f_staff');
+          const curCo = val('f_company') || defaultEntryCompany();
+          const txDate = val('f_date') || todayISO();
+          const payMonth = val('f_paymonth') || txDate.slice(0, 7);
+          const isBonus = val('f_sal_type') === 'bonus';
+          const pos = computeStaffMonthPayrollPosition(curStaff, curCo, payMonth, txDate);
+          const cardEl = $('salStaffMonthCard');
+          const qfEl = $('salQuickFillBar');
+          const subEl = $('paSalSubgridWrap');
+
+          if (!pos) {
+            if (cardEl) {
+              cardEl.hidden = false;
+              cardEl.className = 'att-contract-strip is-muted';
+              cardEl.innerHTML = `Select a <b>Staff Member</b> and <b>Payroll Month</b> above to view their monthly contract salary, attendance overtime/deductions, amount already paid, and remaining balance or advance status.`;
+            }
+            if (qfEl) { qfEl.hidden = true; qfEl.innerHTML = ''; }
+            if (subEl) subEl.innerHTML = '';
+            setHint('hint_sal_staff', '', '');
+            setHint('hint_sal_usd', '', '');
+            setText('calc_sal_earned', 'Select Staff');
+            setText('calc_sal_paid', '$0.00');
+            setText('calc_sal_rem', '—');
+            setText('calc_sal_status', 'Pending Staff');
+          } else {
+            const prof = pos.prof;
+            const afterPaid = isBonus ? pos.paidSoFar : round2(pos.paidSoFar + thisPay);
+            const effMonthNet = isBonus ? round2(pos.monthNetEarned + thisPay) : pos.monthNetEarned;
+            const afterRemNet = round2(effMonthNet - afterPaid);
+            const isOverMonthNet = !isBonus && pos.hasContract && afterRemNet < -0.01;
+            const isOverBaseOnly = !isBonus && pos.hasContract && !isOverMonthNet && (pos.remainingBase - thisPay) < -0.01 && pos.attNetImpact > 0;
+            const isSettledNow = !isBonus && pos.hasContract && thisPay > 0 && Math.abs(afterRemNet) <= 0.01;
+            const isAlreadySettled = !isBonus && pos.hasContract && pos.remainingNet <= 0.01 && thisPay === 0;
+            const isAdvanceBefore = !isBonus && pos.hasContract && pos.alreadyInAdvance;
+
+            let statusTag = '';
+            let statusCls = '';
+            let statusFoot = '';
+            if (isBonus) {
+              statusTag = thisPay > 0
+                ? `<span class="badge badge-ok">Bonus / Extra Pay Accrual (+${fmtUSD(thisPay, 2)} added to ${esc(pos.monthLabel)})</span>`
+                : `<span class="badge badge-info">Bonus / Extra Pay Mode · Adds to ${esc(pos.monthLabel)} Net Earned</span>`;
+              statusCls = 'is-ok';
+              statusFoot = thisPay > 0 ? `Bonus +${fmtUSD(thisPay, 2)}` : 'Bonus Accrual Mode';
+            } else if (!pos.hasContract) {
+              statusTag = `<span class="badge badge-warn">No Active Contract on File</span>`;
+              statusCls = 'is-warn';
+              statusFoot = thisPay > 0 ? `Uncontracted Payment (${fmtUSD(thisPay, 2)})` : 'No Active Contract';
+            } else if (pos.isFutureMonth) {
+              statusTag = `<span class="badge badge-warn">Advance Payment · Future Month (${esc(pos.monthLabel)})</span>`;
+              statusCls = 'is-warn';
+              statusFoot = thisPay > 0
+                ? `Future Advance · ${fmtUSD(Math.max(0, afterRemNet), 2)} Left for ${pos.monthLabel}`
+                : `Future Month Advance (${pos.monthLabel})`;
+            } else if (isOverMonthNet) {
+              const advAmt = round2(Math.abs(afterRemNet));
+              statusTag = `<span class="badge badge-warn">Advance / Overpayment (+${fmtUSD(advAmt, 2)} above ${esc(pos.monthLabel)} Net)</span>`;
+              statusCls = 'is-warn';
+              statusFoot = `Advance +${fmtUSD(advAmt, 2)} over Month Net`;
+            } else if (isAlreadySettled) {
+              statusTag = `<span class="badge badge-ok">${esc(pos.monthLabel)} Already Settled ($0.00 Remaining)</span>`;
+              statusCls = 'is-ok';
+              statusFoot = isAdvanceBefore ? `Already in Advance (+${fmtUSD(pos.advanceOverNet, 2)})` : `Settled ($0.00 Left)`;
+            } else if (isSettledNow) {
+              statusTag = `<span class="badge badge-ok">Settles ${esc(pos.monthLabel)} in Full ($0.00 Left)</span>`;
+              statusCls = 'is-ok';
+              statusFoot = `Full Settlement ($0.00 Left)`;
+            } else if (thisPay > 0) {
+              statusTag = `<span class="badge badge-info">Partial Payment · ${fmtUSD(afterRemNet, 2)} Remaining</span>`;
+              statusCls = '';
+              statusFoot = `Partial · ${fmtUSD(afterRemNet, 2)} Left`;
+            } else {
+              statusTag = `<span class="badge badge-brass">Remaining Due: ${fmtUSD(pos.remainingNet, 2)}</span>`;
+              statusCls = '';
+              statusFoot = `${fmtUSD(pos.remainingNet, 2)} Remaining`;
+            }
+
+            setHint('hint_sal_staff', pos.hasContract
+              ? `${prof.role || 'Staff'} (${prof.company || curCo}${pos.contractInOtherBu ? ' — switch BU or cross-BU pay' : ''}) · Base ${fmtUSD(pos.baseNet, 2)}/mo`
+              : `No active employment contract in ${curCo}`,
+              pos.contractInOtherBu ? 'warn' : (pos.hasContract ? 'ok' : 'warn'));
+
+            if (!isBonus && pos.isFutureMonth && thisPay > 0) {
+              setHint('hint_sal_usd', `Paying ${pos.monthLabel} ahead of ${txDate} (Future-Month Salary Advance)`, 'warn');
+            } else if (isOverMonthNet) {
+              const advAmt = round2(Math.abs(afterRemNet));
+              setHint('hint_sal_usd', `Exceeds ${pos.monthLabel} remaining salary (${fmtUSD(pos.remainingNet, 2)}) by +${fmtUSD(advAmt, 2)} · creates an Advance / Overpayment`, 'warn');
+            } else if (isOverBaseOnly) {
+              setHint('hint_sal_usd', `Covers remaining base (${fmtUSD(pos.remainingBase, 2)}) + ${fmtUSD(thisPay - pos.remainingBase, 2)} of ${pos.monthLabel} overtime/allowances`, 'ok');
+            } else if (isSettledNow) {
+              setHint('hint_sal_usd', `Exact remaining balance for ${pos.monthLabel}`, 'ok');
+            } else {
+              setHint('hint_sal_usd', '', '');
+            }
+
+            if (cardEl) {
+              cardEl.hidden = false;
+              cardEl.className = `att-contract-strip ${statusCls}`.trim();
+              const baseBreakdown = pos.reimbursement > 0 || pos.deduction > 0
+                ? `${fmtUSD(pos.baseSalary, 2)}${pos.reimbursement > 0 ? ' +' + fmtUSD(pos.reimbursement, 2) + ' reimb' : ''}${pos.deduction > 0 ? ' -' + fmtUSD(pos.deduction, 2) + ' ded' : ''} = ${fmtUSD(pos.baseNet, 2)}`
+                : fmtUSD(pos.baseNet, 2);
+              const attParts = [];
+              if (pos.otHours > 0) attParts.push(`+${fmtNum(pos.otHours, 1)}h OT (+${fmtUSD(pos.otPay, 2)})`);
+              if (pos.extraUsd > 0) attParts.push(`+${fmtUSD(pos.extraUsd, 2)} Bonus`);
+              if (pos.logUsd > 0) attParts.push(`+${fmtUSD(pos.logUsd, 2)} Site Allow.`);
+              if (pos.flUsd > 0) attParts.push(`+${fmtUSD(pos.flUsd, 2)} Freelance`);
+              if (pos.lateHours > 0) attParts.push(`-${fmtNum(pos.lateHours, 1)}h Late (-${fmtUSD(pos.lateDed, 2)})`);
+              if (pos.unpaidLeaveDays > 0) attParts.push(`-${fmtNum(pos.unpaidLeaveDays, 1)}d Leave (-${fmtUSD(pos.leaveDed, 2)})`);
+              const attSummary = attParts.length ? attParts.join(' · ') : (pos.attCount > 0 ? `${pos.attCount} logs ($0 variance)` : 'No OT/Leave logged');
+
+              const alertBanners = [];
+              if (pos.openLoanBalance > 0) {
+                alertBanners.push(`<span class="badge badge-warn" title="Open employee cash advance / loan in Treasury">${ic('warn')} Open Staff Loan / Advance: ${fmtUSD(pos.openLoanBalance, 2)} (${pos.openLoansCount} active)</span>`);
+              }
+              if (pos.prevMonthUnpaid && pos.prevMonthUnpaid.remainingNet > 0) {
+                alertBanners.push(`<span class="badge badge-info" title="Prior month still has an unpaid net balance">${esc(pos.prevMonthUnpaid.monthLabel)} Still Unpaid: ${fmtUSD(pos.prevMonthUnpaid.remainingNet, 2)}</span>`);
+              }
+
+              cardEl.innerHTML = `
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;width:100%">
+                  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                    <strong>${esc(prof.staff || curStaff)}</strong>
+                    <span class="badge badge-neutral">${esc(pos.monthLabel)}</span>
+                    ${statusTag}
+                    ${alertBanners.join(' ')}
+                  </div>
+                  <div class="att-contract-metrics">
+                    <span><small>Contract Base</small><b title="${esc(baseBreakdown)}">${fmtUSD(pos.baseNet, 2)}</b></span>
+                    <span><small>OT &amp; Adj.</small><b class="${pos.attNetImpact > 0 ? 'emerald' : (pos.attNetImpact < 0 ? 'amber' : '')}" title="${esc(attSummary)}">${pos.attNetImpact >= 0 ? '+' : '-'}${fmtUSD(Math.abs(pos.attNetImpact), 2)}</b></span>
+                    <span><small>Month Earned</small><b>${fmtUSD(effMonthNet, 2)}</b></span>
+                    <span><small>Paid (${pos.paidCount})</small><b>${fmtUSD(pos.paidSoFar, 2)}</b></span>
+                    <span><small>${afterRemNet < -0.01 ? 'Advance Over Net' : (thisPay > 0 ? 'Left After This' : 'Remaining Due')}</small><b class="${afterRemNet < -0.01 ? 'amber' : (afterRemNet <= 0.01 ? 'emerald' : '')}">${afterRemNet < -0.01 ? '+' + fmtUSD(Math.abs(afterRemNet), 2) + ' Adv' : fmtUSD(Math.max(0, afterRemNet), 2)}</b></span>
+                  </div>
+                </div>
+              `;
+            }
+
+            // 1-Click Quick-Fill Pill Bar (#salQuickFillBar)
+            if (qfEl) {
+              const pills = [];
+              if (!isBonus && pos.hasContract) {
+                if (pos.remainingNet > 0.01) {
+                  pills.push(`<button type="button" class="att-preset-pill ${Math.abs(thisPay - pos.remainingNet) <= 0.01 ? 'active' : ''}" data-sal-quick="rem_net" data-val="${pos.remainingNet.toFixed(2)}">Pay Remaining (${fmtUSD(pos.remainingNet, 2)})</button>`);
+                }
+                if (pos.remainingBase > 0.01 && Math.abs(pos.remainingBase - pos.remainingNet) > 0.5) {
+                  pills.push(`<button type="button" class="att-preset-pill ${Math.abs(thisPay - pos.remainingBase) <= 0.01 ? 'active' : ''}" data-sal-quick="rem_base" data-val="${pos.remainingBase.toFixed(2)}">Pay Base Left (${fmtUSD(pos.remainingBase, 2)})</button>`);
+                }
+                if (pos.paidSoFar === 0 && pos.baseNet > 0 && Math.abs(pos.baseNet - pos.remainingNet) > 0.5) {
+                  pills.push(`<button type="button" class="att-preset-pill ${Math.abs(thisPay - pos.baseNet) <= 0.01 ? 'active' : ''}" data-sal-quick="full_base" data-val="${pos.baseNet.toFixed(2)}">Contract Base (${fmtUSD(pos.baseNet, 2)})</button>`);
+                }
+                if (pos.remainingNet <= 0.01 || isOverMonthNet) {
+                  pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="next_month" data-month="${esc(pos.nextMonth)}">Switch to ${esc(pos.nextMonthLabel)} (Advance)</button>`);
+                } else if (!pos.isFutureMonth) {
+                  pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="next_month" data-month="${esc(pos.nextMonth)}">Advance Next Month (${esc(pos.nextMonthLabel)})</button>`);
+                }
+                if (pos.prevMonthUnpaid && pos.prevMonthUnpaid.remainingNet > 0.01) {
+                  pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="prev_month" data-month="${esc(pos.prevMonth)}" data-val="${pos.prevMonthUnpaid.remainingNet.toFixed(2)}">Settle ${esc(pos.prevMonthUnpaid.monthLabel)} Left (${fmtUSD(pos.prevMonthUnpaid.remainingNet, 2)})</button>`);
+                }
+                if (pos.contractInOtherBu && prof.company) {
+                  pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="switch_bu" data-company="${esc(prof.company)}">Switch Company to ${esc(prof.company)}</button>`);
+                }
+              }
+              if (pills.length) {
+                qfEl.hidden = false;
+                qfEl.innerHTML = `<span class="att-preset-lbl">Quick Fill:</span>${pills.join('')}`;
+              } else {
+                qfEl.hidden = true;
+                qfEl.innerHTML = '';
+              }
+            }
+
+            // Prior Vouchers in Selected Payroll Month (#paSalSubgridWrap)
+            if (subEl) {
+              if (pos.monthPayments.length > 0) {
+                let runPaid = 0;
+                const rowsHtml = pos.monthPayments.map(p => {
+                  const pAmt = round2(Number(p.amount != null ? p.amount : (Number(p.usd_amount || 0) + Number(p.lbp_amount || 0) / 89500)));
+                  runPaid = round2(runPaid + pAmt);
+                  const remAfter = round2(pos.monthNetEarned - runPaid);
+                  const st = !pos.hasContract
+                    ? `<span class="badge badge-neutral">Logged</span>`
+                    : (remAfter < -0.01
+                        ? `<span class="badge badge-warn">Advance +${fmtUSD(Math.abs(remAfter), 2)}</span>`
+                        : (remAfter <= 0.01
+                            ? `<span class="badge badge-ok">Settled</span>`
+                            : `<span class="badge badge-info">${fmtUSD(remAfter, 2)} Left</span>`));
+                  return `
+                    <tr>
+                      <td class="mono">${esc(String(p.date || '').slice(0, 10))}</td>
+                      <td class="mono"><b>${esc(p.name || ('#' + p.id))}</b></td>
+                      <td>${esc(p.company || curCo)}</td>
+                      <td><span class="badge ${p.method === 'Bank' ? 'badge-info' : 'badge-ok'}">${esc(p.method || 'Cash')}</span></td>
+                      <td class="r">${fmtUSD(p.usd_amount || pAmt, 2)}</td>
+                      <td class="r">${Number(p.lbp_amount || 0) > 0 ? fmtNum(p.lbp_amount, 0) + ' LL' : '—'}</td>
+                      <td class="r"><b>${fmtUSD(pAmt, 2)}</b></td>
+                      <td class="r">${st}</td>
+                    </tr>
+                  `;
+                }).join('');
+                subEl.innerHTML = `
+                  <div class="pa-subgrid" style="margin-top:8px">
+                    <div class="pa-subgrid-hdr">
+                      <span>PRIOR SALARY VOUCHERS FOR ${esc(pos.monthLabel.toUpperCase())} · ${esc((prof.staff || curStaff).toUpperCase())}</span>
+                      <span>${pos.paidCount} Voucher${pos.paidCount === 1 ? '' : 's'} · Paid ${fmtUSD(pos.paidSoFar, 2)} of ${fmtUSD(pos.monthNetEarned, 2)} Earned</span>
+                    </div>
+                    <div class="table-wrap" style="max-height:135px;overflow:auto">
+                      <table class="ledger-table">
+                        <thead>
+                          <tr><th>Date</th><th>Voucher</th><th>BU</th><th>Method</th><th class="r">USD ($)</th><th class="r">LBP (LL)</th><th class="r">Total USD</th><th class="r">Balance After</th></tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                      </table>
+                    </div>
+                  </div>
+                `;
+              } else {
+                subEl.innerHTML = '';
+              }
+            }
+
+            setText('calc_sal_earned', pos.hasContract ? `${fmtUSD(effMonthNet, 2)} (${pos.attNetImpact >= 0 ? '+' : '-'}${fmtUSD(Math.abs(pos.attNetImpact), 0)} OT/Adj)` : 'No Contract');
+            setText('calc_sal_paid', `${fmtUSD(pos.paidSoFar, 2)} (${pos.paidCount} voucher${pos.paidCount === 1 ? '' : 's'})`);
+            setText('calc_sal_rem', !pos.hasContract ? '—' : (afterRemNet < -0.01 ? `Advance +${fmtUSD(Math.abs(afterRemNet), 2)}` : `${fmtUSD(Math.max(0, afterRemNet), 2)} Left`));
+            setText('calc_sal_status', statusFoot);
+          }
+        }
+
+        // 2. Live Site Allowance Strip & 4-Tile Footer (#logStaffContextStrip & #logLiveCalc)
+        if (STATE.modalForm === 'logistics') {
+          const curStaff = val('f_staff');
+          const curCo = val('f_company') || defaultEntryCompany();
+          const txDate = val('f_date') || todayISO();
+          const prof = getStaffContractProfile(curStaff, curCo, txDate);
+          const fIntel = _getFormIntelIndex();
+          const sKey = normStaffStem(curStaff);
+          const dayKeys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+          const checkedDays = dayKeys.filter(d => $('f_day_' + d) && $('f_day_' + d).checked);
+          const daysCount = checkedDays.length;
+          if (curStaff !== FORM_UI.lastAttStaff) {
+            FORM_UI.lastAttStaff = curStaff;
+            const topSite = sKey ? fIntel.staffPrimarySite[sKey] : '';
+            if (topSite && $('f_site') && !val('f_site')) $('f_site').value = topSite;
+          }
+          const ym = txDate.slice(0, 7);
+          let priorMoAllow = 0, priorMoCnt = 0;
+          if (sKey) {
+            const pIdx = _getPayrollIntelIndex();
+            ((pIdx.logByStaffYm[sKey] && pIdx.logByStaffYm[sKey][ym]) || []).forEach(l => {
+              priorMoAllow += Number(l.amount != null ? l.amount : (l.usd_amount || 0));
+              priorMoCnt++;
+            });
+          }
+          const logStrip = $('logStaffContextStrip');
+          if (logStrip) {
+            if (!curStaff) {
+              logStrip.hidden = true;
+              logStrip.innerHTML = '';
+            } else {
+              logStrip.hidden = false;
+              logStrip.className = 'att-contract-strip';
+              logStrip.innerHTML = `
+                <div>
+                  <strong>${esc(prof.staff || curStaff)}</strong>
+                  <span class="badge ${prof.hasContract ? 'badge-ok' : 'badge-neutral'}">${esc(prof.role || (prof.hasContract ? 'Contract Staff' : 'Staff / Driver'))}</span>
+                </div>
+                <div class="att-contract-metrics">
+                  ${prof.hasContract ? `<span><small>Base Salary</small><b>${fmtUSD(prof.monthlySalary, 0)}/mo</b></span>` : ''}
+                  ${prof.reimbursement > 0 ? `<span><small>Contract Reimb.</small><b>${fmtUSD(prof.reimbursement, 2)}/mo</b></span>` : ''}
+                  <span><small>${esc(formatPayrollMonthLabel(ym))} Allowances</small><b>${fmtUSD(priorMoAllow, 2)} (${priorMoCnt} wk${priorMoCnt === 1 ? '' : 's'})</b></span>
+                  ${sKey && fIntel.staffPrimarySite[sKey] ? `<span><small>Primary Site</small><b>${esc(fIntel.staffPrimarySite[sKey])}</b></span>` : ''}
+                </div>
+              `;
+            }
+          }
+          setHint('hint_log_staff', curStaff && prof.hasContract ? `${prof.role || 'Staff'} · ${prof.company || curCo}` : '', 'ok');
+          setText('calc_log_days', `${daysCount} day${daysCount === 1 ? '' : 's'} (${checkedDays.map(d => d[0].toUpperCase() + d.slice(1)).join(', ') || 'None'})`);
+          setText('calc_log_daily', daysCount > 0 && thisPay > 0 ? `${fmtUSD(thisPay / daysCount, 2)} / day` : '$0.00 / day');
+          setText('calc_log_month', `${fmtUSD(priorMoAllow, 2)} prior${thisPay > 0 ? ' -> ' + fmtUSD(priorMoAllow + thisPay, 2) : ''}`);
+          setText('calc_log_total', fmtUSD(thisPay, 2));
+        }
+
+        // 3. Live Treasury / Loans / External Cash Strip & 4-Tile Footer (#trLiveContextStrip & #trLiveCalc)
+        if (STATE.modalForm === 'treasury') {
+          const trType = val('f_trtype') || 'loan';
+          const cp = val('f_counterparty');
+          const dir = val('f_direction') || 'Inflow';
+          const fIntel = _getFormIntelIndex();
+          const cpStem = normStaffStem(cp) || norm(cp);
+          const loanPos = cpStem ? fIntel.loanByCp[cpStem] : null;
+          const extPos = cp ? fIntel.extByCp[norm(cp)] : null;
+          const trStrip = $('trLiveContextStrip');
+
+          if (trType === 'loan' || trType === 'loan_settlement') {
+            const openBefore = loanPos ? round2(loanPos.principal - loanPos.settled) : 0;
+            const afterOut = trType === 'loan_settlement'
+              ? round2(openBefore - thisPay)
+              : round2(openBefore + thisPay);
+            const isOverRepay = trType === 'loan_settlement' && loanPos && afterOut < -0.01;
+            if (trStrip) {
+              if (!cp) {
+                trStrip.hidden = true;
+                trStrip.innerHTML = '';
+              } else {
+                trStrip.hidden = false;
+                trStrip.className = 'att-contract-strip' + (isOverRepay ? ' is-warn' : (trType === 'loan_settlement' && openBefore > 0 && Math.abs(afterOut) <= 0.01 ? ' is-ok' : ''));
+                trStrip.innerHTML = `
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <strong>${esc((loanPos && loanPos.name) || cp)}</strong>
+                    <span class="badge ${openBefore > 0 ? 'badge-brass' : 'badge-ok'}">${openBefore > 0 ? 'Outstanding Loan: ' + fmtUSD(openBefore, 2) : 'No Open Loan Balance'}</span>
+                    ${isOverRepay ? `<span class="badge badge-warn">Over-Repayment (+${fmtUSD(Math.abs(afterOut), 2)})</span>` : ''}
+                    ${trType === 'loan_settlement' && openBefore > 0 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_usd" data-val="${openBefore.toFixed(2)}">Repay Full Balance (${fmtUSD(openBefore, 2)})</button>` : ''}
+                  </div>
+                  <div class="att-contract-metrics">
+                    <span><small>Principal Drawn (${loanPos ? loanPos.count : 0})</small><b>${fmtUSD(loanPos ? loanPos.principal : 0, 2)}</b></span>
+                    <span><small>Repaid (${loanPos ? loanPos.settledCount : 0})</small><b>${fmtUSD(loanPos ? loanPos.settled : 0, 2)}</b></span>
+                    <span><small>Open Before</small><b>${fmtUSD(openBefore, 2)}</b></span>
+                    <span><small>After Entry</small><b>${afterOut < -0.01 ? 'Overpaid +' + fmtUSD(Math.abs(afterOut), 2) : fmtUSD(Math.max(0, afterOut), 2)}</b></span>
+                  </div>
+                `;
+              }
+            }
+            setHint('hint_tr_usd', isOverRepay ? `Exceeds open loan balance (${fmtUSD(openBefore, 2)}) by +${fmtUSD(Math.abs(afterOut), 2)}` : '', isOverRepay ? 'warn' : '');
+            if ($('lbl_tr_c1')) $('lbl_tr_c1').textContent = 'Open Loan Before';
+            if ($('lbl_tr_c2')) $('lbl_tr_c2').textContent = trType === 'loan_settlement' ? 'Repayment Now' : 'Drawdown Now';
+            if ($('lbl_tr_c3')) $('lbl_tr_c3').textContent = 'Loan Balance After';
+            if ($('lbl_tr_c4')) $('lbl_tr_c4').textContent = 'Treasury Leg';
+            setText('calc_tr_c1', cp ? fmtUSD(openBefore, 2) : '—');
+            setText('calc_tr_c2', fmtUSD(thisPay, 2));
+            setText('calc_tr_c3', cp ? (afterOut < -0.01 ? `Overpaid +${fmtUSD(Math.abs(afterOut), 2)}` : fmtUSD(Math.max(0, afterOut), 2)) : '—');
+            setText('calc_tr_c4', trType === 'loan_settlement' ? 'Loan Settlement' : 'Loan Drawdown');
+          } else {
+            const netBefore = extPos ? round2(extPos.inflow - extPos.outflow) : 0;
+            const netAfter = round2(netBefore + (dir === 'Inflow' ? thisPay : -thisPay));
+            if (trStrip) {
+              if (!cp) {
+                trStrip.hidden = true;
+                trStrip.innerHTML = '';
+              } else {
+                trStrip.hidden = false;
+                trStrip.className = 'att-contract-strip';
+                trStrip.innerHTML = `
+                  <div>
+                    <strong>${esc((extPos && extPos.name) || cp)}</strong>
+                    <span class="badge ${dir === 'Inflow' ? 'badge-ok' : 'badge-warn'}">${dir === 'Inflow' ? 'External Inflow' : 'External Outflow'}</span>
+                  </div>
+                  <div class="att-contract-metrics">
+                    <span><small>Prior Inflows</small><b>${fmtUSD(extPos ? extPos.inflow : 0, 0)}</b></span>
+                    <span><small>Prior Outflows</small><b>${fmtUSD(extPos ? extPos.outflow : 0, 0)}</b></span>
+                    <span><small>Net Position</small><b>${fmtSignedUSD(netBefore, 0)}</b></span>
+                    ${thisPay > 0 ? `<span><small>After Entry</small><b>${fmtSignedUSD(netAfter, 0)}</b></span>` : ''}
+                  </div>
+                `;
+              }
+            }
+            setHint('hint_tr_usd', '', '');
+            if ($('lbl_tr_c1')) $('lbl_tr_c1').textContent = 'Prior Net Position';
+            if ($('lbl_tr_c2')) $('lbl_tr_c2').textContent = `${dir} Now`;
+            if ($('lbl_tr_c3')) $('lbl_tr_c3').textContent = 'Net Position After';
+            if ($('lbl_tr_c4')) $('lbl_tr_c4').textContent = 'Treasury Leg';
+            setText('calc_tr_c1', cp ? fmtSignedUSD(netBefore, 2) : '—');
+            setText('calc_tr_c2', fmtUSD(thisPay, 2));
+            setText('calc_tr_c3', cp ? fmtSignedUSD(netAfter, 2) : '—');
+            setText('calc_tr_c4', `External ${dir}`);
+          }
+        }
+
         commonDateChecks([]);
         renderAdminLockBar();
-        return { usd, lbp, amount: num('f_amount') };
+        return { usd, lbp, amount: thisPay };
       }
       if (STATE.modalForm === 'pricerule') {
         const rt = val('f_ruletype') || 'Sales (Delivery)';
@@ -20988,17 +22518,70 @@
         const ratePer = val('f_rateper') || 'm³';
         const isTruckRate = hasTrans && ratePer === 'Truck';
 
+        const sec1Hdr = $('pr_sec1_hdr');
+        const sec2Hdr = $('pr_sec2_hdr');
+        const startLbl = document.querySelector('#wrap_pr_startdate .pa-fld-lbl');
+        const endLbl = document.querySelector('#wrap_pr_enddate .pa-fld-lbl');
+        const uomLbl = document.querySelector('#wrap_pr_uom .pa-fld-lbl');
         const supLbl = document.querySelector('#wrap_pr_supplier .pa-fld-lbl');
         const matLbl = document.querySelector('#wrap_pr_matprice .pa-fld-lbl');
+        if (sec1Hdr) sec1Hdr.textContent = isComm ? '1. Commission Product, Plant Owner & Effective Date Window' : '1. Rule Scope & Counterparty';
+        if (sec2Hdr) sec2Hdr.textContent = isComm ? '2. Commission Unit (m³ / Ton) & Per-Unit Rate' : '2. Unit Pricing, Flat / Indifference Rate & Volume Tiers';
+        if (startLbl) startLbl.textContent = isComm ? 'Effective Start Date *' : 'Start Date *';
+        if (endLbl) endLbl.textContent = isComm ? 'Effective End Date (Optional · blank = Open)' : 'End Date (Optional)';
+        if (uomLbl) uomLbl.textContent = isComm ? 'Commission Unit (m³ / Ton) *' : 'Pricing Unit';
         if (supLbl) supLbl.textContent = isComm ? 'Plant Owner / Beneficiary *' : 'Supplier / Hauler *';
-        if (matLbl) matLbl.textContent = isComm ? 'Commission Rate ($ / Unit) *' : 'Material Unit Price ($) *';
+        if (matLbl) matLbl.textContent = isComm ? `Commission Rate ($ / ${val('f_uom') || 'Unit'}) *` : 'Material Unit Price ($) *';
 
         const prProduct = val('f_product');
+        const prCo = val('f_company');
         if (prProduct !== FORM_UI.lastProduct) {
           FORM_UI.lastProduct = prProduct;
           const pInfo = productInfo(prProduct);
-          if (pInfo && pInfo.uom && $('f_uom') && !FORM_UI.uomManual) {
+          if (isComm && prProduct) {
+            const existingComm = ((SEED.records && SEED.records.price_rules) || [])
+              .filter(r => r && !r.voided && /^commission$/i.test(String(r.rule_type || '')) && norm(r.company) === norm(prCo) && norm(r.product) === norm(prProduct))
+              .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')))[0];
+            if (existingComm && existingComm.unit && $('f_uom') && !FORM_UI.uomManual) {
+              $('f_uom').value = existingComm.unit;
+            } else if (pInfo && pInfo.uom && $('f_uom') && !FORM_UI.uomManual) {
+              $('f_uom').value = pInfo.uom;
+            }
+            if (existingComm && existingComm.supplier && $('f_supplier') && !val('f_supplier')) {
+              $('f_supplier').value = existingComm.supplier;
+            }
+          } else if (pInfo && pInfo.uom && $('f_uom') && !FORM_UI.uomManual) {
             $('f_uom').value = pInfo.uom;
+          }
+        }
+
+        const histBox = $('pr_comm_history_box');
+        if (histBox) {
+          histBox.hidden = !isComm;
+          if (isComm) {
+            const coCommRules = ((SEED.records && SEED.records.price_rules) || [])
+              .filter(r => r && !r.voided && /^commission$/i.test(String(r.rule_type || '')) && norm(r.company) === norm(prCo) && (!prProduct || norm(r.product) === norm(prProduct)))
+              .sort((a, b) => String(a.product || '').localeCompare(String(b.product || '')) || String(a.start_date || '').localeCompare(String(b.start_date || '')));
+            const startDt = val('f_date') || SEED_DATE;
+            const openPrior = prProduct ? coCommRules.find(r => !r.end_date && String(r.start_date || '') < startDt) : null;
+            if (!prProduct) {
+              histBox.innerHTML = coCommRules.length
+                ? `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><span><b>${esc(prCo)} Commission Schedule:</b> ${coCommRules.length} configured rule${coCommRules.length === 1 ? '' : 's'} across ${new Set(coCommRules.map(r => norm(r.product))).size} products. Select a <b>Product / Aggregate</b> above to inspect its rate &amp; unit history or add a dated rate change.</span></div>`
+                : `<div><b>${esc(prCo)} Commission Schedule:</b> 0 rules configured yet. Select a <b>Product / Aggregate</b>, <b>Effective Start Date</b>, <b>Commission Unit (m³ or Ton)</b>, and <b>Commission Rate ($ / Unit)</b> to set a per-unit commission rule.</div>`;
+            } else if (coCommRules.length === 0) {
+              const pInfo = productInfo(prProduct);
+              const tf = Number((pInfo && pInfo.ton_factor) || 1.5);
+              histBox.innerHTML = `<div><b>${esc(prProduct)} (${esc(prCo)}):</b> No prior commission rule on file (currently <b>$0.00</b>). Standard product unit is <b>${esc((pInfo && pInfo.uom) || 'm³')}</b> (density factor <b>${tf.toFixed(2)} Ton/m³</b>). Set the effective start date, unit (<b>m³</b> or <b>Ton</b>), and rate below.</div>`;
+            } else {
+              const stepsHtml = coCommRules.map(r => {
+                const isAct = (!r.end_date || String(r.end_date) >= SEED_DATE) && (!r.start_date || String(r.start_date) <= SEED_DATE);
+                return `<span class="badge ${isAct ? 'badge-ok' : 'badge-neutral'}" style="margin-right:6px;margin-top:3px">${esc(fmtDateDMY(r.start_date))} to ${esc(r.end_date ? fmtDateDMY(r.end_date) : 'Open')} · <b>${fmtUSD(Number(r.unit_price ?? r.price ?? 0), 2)} / ${esc(r.unit || 'Ton')}</b> · ${esc(r.supplier || '-')}</span>`;
+              }).join('');
+              const autoCloseNote = openPrior
+                ? `<div style="margin-top:4px;color:var(--brass)">Posting a new rule starting <b>${esc(fmtDateDMY(startDt))}</b> will automatically close the open <b>${fmtUSD(Number(openPrior.unit_price ?? openPrior.price ?? 0), 2)} / ${esc(openPrior.unit || 'Ton')}</b> rule (started ${esc(fmtDateDMY(openPrior.start_date))}) on the day before.</div>`
+                : '';
+              histBox.innerHTML = `<div><b>Existing Rate &amp; Unit Windows for ${esc(prProduct)} (${esc(prCo)}):</b><div style="margin-top:2px">${stepsHtml}</div>${autoCloseNote}</div>`;
+            }
           }
         }
 
@@ -21055,13 +22638,29 @@
         }
 
         const up = num('f_unitprice'), tp = (hasTrans && !isTruckRate) ? num('f_transunitprice') : 0, ind = num('f_indiff'), a1 = num('f_adj1'), ta1 = num('f_transadj1'), q2 = num('f_qty2'), a2 = num('f_adj2'), ta2 = num('f_transadj2');
+        const lMat = $('lbl_calc_mat'), lTr = $('lbl_calc_tr'), lVat = $('lbl_calc_vat'), lTot = $('lbl_calc_total');
         if (isComm) {
           const uLbl = val('f_uom') || 'Ton';
-          setText('calc_mat', `${fmtUSD(up, 2)} / ${uLbl} commission`);
-          setText('calc_tr', val('f_supplier') || 'Select Plant Owner');
-          setText('calc_vat', 'GL 6222 Accrual');
+          const pInfo = productInfo(prProduct);
+          const tf = Number((pInfo && pInfo.ton_factor) || 1.5);
+          const eqStr = /^m/i.test(uLbl)
+            ? `≈ ${fmtUSD(up / (tf > 0 ? tf : 1.5), 2)} / Ton (${tf.toFixed(2)} T/m³)`
+            : (/^ton/i.test(uLbl) ? `≈ ${fmtUSD(up * (tf > 0 ? tf : 1.5), 2)} / m³ (${tf.toFixed(2)} T/m³)` : `${uLbl} basis`);
+          const startDt = val('f_date') || SEED_DATE;
+          const endDt = val('f_enddate');
+          if (lMat) lMat.textContent = 'Commission Rate';
+          if (lTr) lTr.textContent = 'Unit Equivalence';
+          if (lVat) lVat.textContent = 'Effective Window';
+          if (lTot) lTot.textContent = 'Accrual Rate (GL 6222)';
+          setText('calc_mat', `${fmtUSD(up, 2)} / ${uLbl}`);
+          setText('calc_tr', eqStr);
+          setText('calc_vat', `${fmtDateDMY(startDt)} to ${endDt ? fmtDateDMY(endDt) : 'Open'}`);
           setText('calc_total', `${fmtUSD(up, 2)} / ${uLbl}`);
         } else {
+          if (lMat) lMat.textContent = 'Base Rate (Mat + Trans)';
+          if (lTr) lTr.textContent = 'Tier 1 Sample';
+          if (lVat) lVat.textContent = 'Tier 2 Sample';
+          if (lTot) lTot.textContent = 'Headline Rate';
           setText('calc_mat', (ind > 0 && !(up > 0) && !(tp > 0)) ? `${fmtUSD(ind, 2)} flat / load (Indifference)` : `${fmtUSD(up, 2)} + ${fmtUSD(tp, 2)} / ${val('f_uom') || 'm³'}${ind > 0 ? ` · Indiff ${fmtUSD(ind, 2)}` : ''}${tSize > 0 ? ` · Size ${tSize} m³` : ''}`);
           setText('calc_tr', q1 > 0 ? `${q1} ${val('f_uom') || 'm³'} → ${fmtUSD(q1 * up + a1, 2)}${tp ? ' + trans ' + fmtUSD(q1 * tp + ta1, 2) : ''}` : (ind > 0 && !(up > 0) && !(tp > 0) ? `${fmtUSD(ind, 2)} flat / load` : (tSize > 0 ? `${tSize} m³ → ${fmtUSD(tSize * (up + tp), 2)}` : '—')));
           setText('calc_vat', q2 > 0 ? `${q2} ${val('f_uom') || 'm³'} → ${fmtUSD(q2 * up + a2, 2)}${tp ? ' + trans ' + fmtUSD(q2 * tp + ta2, 2) : ''}` : '—');
@@ -21071,17 +22670,97 @@
         return { up, tp, ind };
       }
       if (STATE.modalForm === 'vatinvoice') {
+        const custName = val('f_customer');
+        const cInfo = custName ? customerInfo(custName) : null;
+        const fIntel = _getFormIntelIndex();
+        const vatTickets = custName ? fIntel.vatTicketsByCust[norm(custName)] : null;
         const net = num('f_amount');
         const vEl = $('f_vat');
         const vatLocked = applyFieldLockState('f_vat', true, 'Statutory 11% VAT Lock: Computed as Net HT × 11%');
         if (vEl && vatLocked && !FORM_UI.priceManual) vEl.value = net > 0 ? round2(net * VAT_RATE).toFixed(2) : '';
         const vat = num('f_vat');
+        const isVatReg = Boolean(cInfo && (cInfo['VAT Registered'] === 'Yes' || cInfo.vat_registered || Number(cInfo.vat_11 || 0) > 0));
+        setHint('hint_vat_cust', custName
+          ? (isVatReg ? `11% VAT Registered${cInfo && cInfo.mof_no ? ' · MOF #' + cInfo.mof_no : ''}` : 'Non-VAT account · verify MOF registration')
+          : '', custName ? (isVatReg ? 'ok' : 'warn') : '');
+        const vStrip = $('vatInvContextStrip');
+        if (vStrip) {
+          if (!custName) {
+            vStrip.hidden = true;
+            vStrip.innerHTML = '';
+          } else {
+            const unbilledNet = vatTickets ? round2(vatTickets.net) : 0;
+            vStrip.hidden = false;
+            vStrip.className = 'att-contract-strip' + (!isVatReg ? ' is-warn' : '');
+            vStrip.innerHTML = `
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <strong>${esc((cInfo && cInfo.Customer) || custName)}</strong>
+                <span class="badge ${isVatReg ? 'badge-ok' : 'badge-warn'}">${isVatReg ? '11% VAT Registered' : 'Non-VAT Account'}</span>
+                ${unbilledNet > 0 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${unbilledNet.toFixed(2)}">Fill VAT Tickets Net HT (${fmtUSD(unbilledNet, 2)})</button>` : ''}
+              </div>
+              <div class="att-contract-metrics">
+                <span><small>Open AR</small><b>${fmtUSD(cInfo ? (cInfo.ar_balance || 0) : 0, 2)}</b></span>
+                <span><small>VAT Tickets</small><b>${vatTickets ? vatTickets.count : 0} loads (${fmtUSD(unbilledNet, 0)} HT)</b></span>
+                <span><small>11% VAT Total</small><b>${fmtUSD(vatTickets ? vatTickets.vat : 0, 2)}</b></span>
+              </div>
+            `;
+          }
+        }
         setText('calc_mat', fmtUSD(net, 2));
         setText('calc_vat', fmtUSD(vat, 2));
         setText('calc_total', fmtUSD(net + vat, 2));
+        setText('calc_vat_status', custName ? (isVatReg ? '11% VAT Registered' : 'Check Registration') : '11% Statutory VAT');
         commonDateChecks([]);
         renderAdminLockBar();
         return { net, vat, ttc: round2(net + vat) };
+      }
+      if (STATE.modalForm === 'creditterm') {
+        const custName = val('f_customer');
+        const cInfo = custName ? customerInfo(custName) : null;
+        const fIntel = _getFormIntelIndex();
+        const existingCt = custName ? fIntel.ctByCust[norm(custName)] : null;
+        if (custName !== FORM_UI.lastCustomer) {
+          FORM_UI.lastCustomer = custName;
+          if (existingCt) {
+            if ($('f_days')) $('f_days').value = String(existingCt.days || 30);
+            if ($('f_amount')) $('f_amount').value = String(existingCt.limit || 25000);
+          }
+        }
+        const days = num('f_days');
+        const lim = num('f_amount');
+        const curAr = cInfo ? Number(cInfo.ar_balance || 0) : 0;
+        const ov60 = cInfo ? Number(cInfo.ar_60_plus || 0) : 0;
+        const headroom = round2(lim - Math.max(0, curAr));
+        setHint('hint_ct_cust', custName
+          ? (existingCt ? `Updating existing rule (${existingCt.name || 'Net ' + existingCt.days + 'd'})` : 'Creating new credit policy for customer')
+          : '', custName ? 'ok' : '');
+        const ctStrip = $('credTermContextStrip');
+        if (ctStrip) {
+          if (!custName) {
+            ctStrip.hidden = true;
+            ctStrip.innerHTML = '';
+          } else {
+            ctStrip.hidden = false;
+            ctStrip.className = 'att-contract-strip' + (headroom < 0 || ov60 > 0 ? ' is-warn' : '');
+            ctStrip.innerHTML = `
+              <div>
+                <strong>${esc((cInfo && cInfo.Customer) || custName)}</strong>
+                <span class="badge ${existingCt ? 'badge-info' : 'badge-ok'}">${existingCt ? `Existing: Net ${existingCt.days}d · Limit ${fmtUSD(existingCt.limit, 0)}` : 'New Credit Rule'}</span>
+                ${ov60 > 0 ? `<span class="badge badge-warn">60+d Overdue: ${fmtUSD(ov60, 0)}</span>` : ''}
+              </div>
+              <div class="att-contract-metrics">
+                <span><small>Current Open AR</small><b>${fmtUSD(curAr, 2)}</b></span>
+                <span><small>New Credit Limit</small><b>${fmtUSD(lim, 0)}</b></span>
+                <span><small>Headroom</small><b class="${headroom < 0 ? 'amber' : 'emerald'}">${headroom < 0 ? 'Over by ' + fmtUSD(Math.abs(headroom), 0) : fmtUSD(headroom, 0) + ' Avail.'}</b></span>
+              </div>
+            `;
+          }
+        }
+        setText('calc_ct_ar', fmtUSD(curAr, 2));
+        setText('calc_ct_lim', `${fmtUSD(lim, 0)} (Net ${days}d)`);
+        setText('calc_ct_head', headroom < 0 ? `Over by ${fmtUSD(Math.abs(headroom), 0)}` : fmtUSD(headroom, 0));
+        setText('calc_ct_status', headroom < 0 ? 'Over Credit Limit' : (ov60 > 0 ? '60+d Overdue Watch' : 'Within Limit'));
+        return { custName, days, lim, headroom };
       }
       if (STATE.modalForm === 'customer') {
         setFieldVisible('wrap_cust_mof', true);
@@ -21224,13 +22903,14 @@
         const attMode = val('f_att_mode') || 'shift';
         const preset = FORM_UI.attPreset || 'regular';
 
-        // 1. Live Employee Contract Strip (#attStaffContractCard) & Date Weekday Hint
+        // 1. Live Employee Contract Strip (#attStaffContractCard — hidden when blank) & Date Sunday Hint
         const cardEl = $('attStaffContractCard');
         if (cardEl) {
           if (!curStaff) {
-            cardEl.className = 'att-contract-strip is-muted';
-            cardEl.innerHTML = '<span>Select a <b>Staff Member</b> above to view their active contract salary, standard shift hours &amp; overtime rate.</span>';
+            cardEl.hidden = true;
+            cardEl.innerHTML = '';
           } else if (prof.hasContract) {
+            cardEl.hidden = false;
             cardEl.className = 'att-contract-strip';
             cardEl.innerHTML = `
               <div><strong>${esc(prof.staff)}</strong> <span class="badge ${prof.status === 'Current' ? 'badge-ok' : 'badge-warn'}">${esc(prof.status)}</span></div>
@@ -21243,31 +22923,31 @@
               </div>
             `;
           } else {
+            cardEl.hidden = false;
             cardEl.className = 'att-contract-strip is-warn';
-            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file · using default <b>8.0h</b> shift &amp; standard fallback rate (<b>${fmtUSD(prof.hourlyRate, 2)}/hr</b>).</span>`;
+            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file · using default <b>8.0h</b> shift &amp; fallback rate (<b>${fmtUSD(prof.hourlyRate, 2)}/hr</b>).</span>`;
           }
         }
         setHint(
           'hint_att_date',
-          wk.short ? (wk.isSunday ? 'Sunday · Weekly Day Off (use "Sunday / Call-Out" if 100% OT)' : `${wk.short} · Standard Workday`) : '',
+          wk.isSunday ? 'Sunday · Weekly Day Off (100% OT)' : '',
           wk.isSunday ? 'warn' : ''
         );
 
-        // 2. Sync 3-Card Entry Mode Deck & Sub-Panels (hides clock fields on Leave / Half Day / Extra!)
-        const deckEl = $('attModeDeck');
-        if (deckEl) {
-          deckEl.querySelectorAll('[data-att-mode]').forEach(btn => {
-            const on = btn.getAttribute('data-att-mode') === attMode;
-            btn.classList.toggle('active', on);
-            btn.setAttribute('aria-selected', on ? 'true' : 'false');
-          });
-        }
+        // 2. Sync Unified Entry Mode / Shift Basis Pill Bar & Sub-Panels
         if ($('attShiftPanel')) $('attShiftPanel').hidden = attMode !== 'shift';
         if ($('attLeavePanel')) $('attLeavePanel').hidden = attMode !== 'leave';
-        if ($('attExtraPanel')) $('attExtraPanel').hidden = attMode !== 'extra';
 
-        // 3. Mode-Specific Auto-Calculation & 4-Tile Payroll Verification Bar
+        // 3. Mode-Specific Auto-Calculation & Compact Summary Bar
         if (attMode === 'leave') {
+          const deckEl = $('attModeDeck');
+          if (deckEl) {
+            deckEl.querySelectorAll('[data-att-mode]').forEach(btn => {
+              const on = btn.getAttribute('data-att-mode') === 'leave';
+              btn.classList.toggle('active', on);
+              btn.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+          }
           const lvType = val('f_leave_type') || 'Half Day';
           const lvBar = $('attLeavePresetBar');
           if (lvBar) {
@@ -21281,35 +22961,18 @@
           if ($('f_status')) $('f_status').value = effSt;
           const dedUsd = lvPay === 'unpaid' ? round2(lvDays * prof.dailyRate) : 0;
           const typeDisp = lvType === 'Half Day' ? 'Half Day Off' : (lvType === 'VacAbsence' ? 'Paid Vacation' : (lvType === 'Sick Leave' ? 'Sick Leave' : 'Full Absence'));
-          setHint('hint_att_leave_pay', lvPay === 'unpaid'
-            ? `Deducts ${fmtNum(lvDays, 1)}d × ${fmtUSD(prof.dailyRate, 2)}/day = ${fmtUSD(dedUsd, 2)}`
-            : 'Paid leave · $0.00 deducted from monthly base salary', '');
+          setHint('hint_att_leave_pay', lvPay === 'unpaid' && curStaff
+            ? `Deducts ${fmtNum(lvDays, 1)}d × ${fmtUSD(prof.dailyRate, 2)}/d = ${fmtUSD(dedUsd, 2)}`
+            : '', '');
           setText('calc_att_type', typeDisp);
-          setText('calc_att_math', `${fmtNum(lvDays, 1)} day${lvDays === 1 ? '' : 's'} (No Clock In/Out)`);
+          setText('calc_att_math', `${fmtNum(lvDays, 1)} day${lvDays === 1 ? '' : 's'} (No Clock)`);
           setText('calc_att_rate', `${fmtUSD(prof.dailyRate, 2)}/day (${prof.workingDays}d mo.)`);
           setText('calc_att_impact', dedUsd > 0 ? `-${fmtUSD(dedUsd, 2)} Deduction` : '$0.00 (Paid Leave)');
           FORM_UI.lastAttTimeKey = '';
           return { mode: 'leave', lvType: effSt, lvDays, dedUsd };
         }
 
-        if (attMode === 'extra') {
-          const eUsd = round2(Math.max(0, num('f_extra_usd')));
-          const eLbp = Math.round(Math.max(0, num('f_extra_lbp')));
-          const eTot = round2(eUsd + (eLbp / 89500));
-          if ($('f_extra_total') && document.activeElement !== $('f_extra_total')) {
-            $('f_extra_total').value = eTot.toFixed(2);
-          }
-          const effSt = (eLbp > 0 && !(eUsd > 0)) ? 'Extra LBP' : 'Extra USD';
-          if ($('f_status')) $('f_status').value = effSt;
-          setText('calc_att_type', 'Extra Pay / Bonus');
-          setText('calc_att_math', eUsd > 0 && eLbp > 0 ? `${fmtUSD(eUsd, 2)} + ${fmtNum(eLbp, 0)} LL` : (eLbp > 0 ? `${fmtNum(eLbp, 0)} LL` : fmtUSD(eUsd, 2)));
-          setText('calc_att_rate', 'Direct Payroll Addition (89.5k FX)');
-          setText('calc_att_impact', eTot > 0 ? `+${fmtUSD(eTot, 2)} Bonus Pay` : '$0.00');
-          FORM_UI.lastAttTimeKey = '';
-          return { mode: 'extra', extraTotal: eTot };
-        }
-
-        // Shift Mode ('shift'): Time In & Time Out compared directly against the employee's contract shift (zero redundant Base Shift box)
+        // Shift Mode ('shift'): Time In & Time Out compared directly against the employee's contract shift
         const contractHrs = Number(prof.workingHours || 8);
         if (attDate !== FORM_UI.lastAttDate) {
           FORM_UI.lastAttDate = attDate;
@@ -21342,12 +23005,16 @@
         if (regBtn) {
           regBtn.textContent = curStaff
             ? `Regular Shift (${fmtNum(contractHrs, 1)}h Contract)`
-            : 'Regular Shift (Employee Contract)';
+            : 'Regular Shift (Contract)';
         }
-        const presetBar = $('attPresetBar');
-        if (presetBar) {
-          presetBar.querySelectorAll('[data-att-preset]').forEach(btn => {
-            btn.classList.toggle('active', btn.getAttribute('data-att-preset') === activePreset);
+        const deckEl = $('attModeDeck');
+        if (deckEl) {
+          deckEl.querySelectorAll('[data-att-mode]').forEach(btn => {
+            const btnMode = btn.getAttribute('data-att-mode');
+            const btnPreset = btn.getAttribute('data-att-preset');
+            const on = btnMode === 'shift' && btnPreset === activePreset;
+            btn.classList.toggle('active', on);
+            btn.setAttribute('aria-selected', on ? 'true' : 'false');
           });
         }
         setFieldVisible('wrap_f_in', !isNoClock);
@@ -21363,28 +23030,7 @@
         const inH = parseAttClockHour(inVal);
         const outH = parseAttClockHour(outVal);
         const isOvernight = Boolean(!isNoClock && inH != null && outH != null && outH < inH);
-        setHint('hint_att_out', isOvernight ? `Overnight finish (+1d next morning) · ${fmtNum(worked, 1)}h span` : '', isOvernight ? 'ok' : '');
-        setHint(
-          'hint_att_worked',
-          isCallout
-            ? 'Day-Off / Call-Out · 100% of worked hours count as Overtime'
-            : (curStaff ? `Compared against ${prof.staff}'s ${fmtNum(contractHrs, 1)}h contract shift` : 'Calculated from Time In & Time Out'),
-          ''
-        );
-        setHint(
-          'hint_att_ot',
-          isCallout
-            ? '100% Call-Out Overtime (editable)'
-            : `Auto-calculated above ${fmtNum(contractHrs, 1)}h contract shift (editable)`,
-          ''
-        );
-        setHint(
-          'hint_att_late',
-          isCallout
-            ? '0.0h on Day-Off / Call-Out'
-            : `Auto-calculated below ${fmtNum(contractHrs, 1)}h contract shift (editable)`,
-          ''
-        );
+        setHint('hint_att_out', isOvernight ? `Overnight (+1d) · ${fmtNum(worked, 1)}h` : '', isOvernight ? 'ok' : '');
 
         if (!isNoClock && $('f_worked_hours') && document.activeElement !== $('f_worked_hours')) {
           $('f_worked_hours').value = String(worked);
@@ -21422,14 +23068,115 @@
           : (impactUsd < 0 ? `-${fmtUSD(Math.abs(impactUsd), 2)} Deduction` : '$0.00 (Standard Shift)'));
         return { mode: 'shift', worked, sched, otH, ltH, impactUsd };
       }
+      if (STATE.modalForm === 'employment' || STATE.modalForm === 'freelance') {
+        const isContract = STATE.modalForm === 'employment';
+        const curStaff = val('f_staff');
+        const curCo = val('f_company') || defaultEntryCompany();
+        const txDate = val('f_date') || todayISO();
+        const prof = getStaffContractProfile(curStaff, curCo, txDate);
+        const payBasis = val('f_paytype') || (isContract ? 'Monthly' : 'Daily');
+        const amt = num('f_amount');
+        if (curStaff !== FORM_UI.lastAttStaff) {
+          FORM_UI.lastAttStaff = curStaff;
+          if (prof.hasContract && prof.role && $('f_role') && !val('f_role')) {
+            $('f_role').value = prof.role;
+          }
+        }
+        const empStrip = $('empStaffContextStrip');
+        if (empStrip) {
+          if (!curStaff) {
+            empStrip.hidden = true;
+            empStrip.innerHTML = '';
+          } else if (prof.hasContract) {
+            const diffBase = amt > 0 && payBasis === 'Monthly' ? round2(amt - prof.monthlySalary) : null;
+            empStrip.hidden = false;
+            empStrip.className = 'att-contract-strip';
+            empStrip.innerHTML = `
+              <div>
+                <strong>${esc(prof.staff)}</strong>
+                <span class="badge ${prof.status === 'Current' ? 'badge-ok' : 'badge-neutral'}">${esc(prof.status)} Contract (${esc(prof.company || curCo)})</span>
+                ${diffBase != null && Math.abs(diffBase) > 0.01 ? `<span class="badge ${diffBase > 0 ? 'badge-info' : 'badge-warn'}">${diffBase > 0 ? '+' : ''}${fmtUSD(diffBase, 2)} vs Current Base</span>` : ''}
+              </div>
+              <div class="att-contract-metrics">
+                <span><small>Current Base</small><b>${fmtUSD(prof.monthlySalary, 2)}/mo</b></span>
+                ${prof.reimbursement > 0 ? `<span><small>Reimb.</small><b>+${fmtUSD(prof.reimbursement, 2)}</b></span>` : ''}
+                <span><small>Schedule</small><b>${prof.workingDays}d × ${fmtNum(prof.workingHours, 1)}h</b></span>
+                <span><small>Hourly / OT</small><b>${fmtUSD(prof.hourlyRate, 2)} / ${fmtUSD(prof.otHourlyRate, 2)}</b></span>
+              </div>
+            `;
+          } else {
+            empStrip.hidden = false;
+            empStrip.className = 'att-contract-strip';
+            empStrip.innerHTML = `<span><b>${esc(curStaff)}</b> has no existing contract on file in ${esc(curCo)} · this entry establishes their ${isContract ? 'active contract' : 'freelance work log'}.</span>`;
+          }
+        }
+        const wDays = prof.workingDays || 26;
+        const wHours = prof.workingHours || 8;
+        const impDaily = payBasis === 'Monthly' ? (amt / wDays) : amt;
+        const impHourly = impDaily / wHours;
+        const impMonthly = payBasis === 'Monthly' ? amt : (payBasis === 'Daily' ? amt * wDays : amt);
+        setHint('hint_emp_staff', curStaff && prof.hasContract ? `Existing ${prof.status} contract: ${fmtUSD(prof.monthlySalary, 2)}/mo (${prof.role || 'Staff'})` : '', 'ok');
+        setText('calc_emp_prior', !curStaff ? 'Select Staff' : (prof.hasContract ? `${fmtUSD(prof.monthlySalary, 0)}/mo (${prof.status})` : 'New Staff Member'));
+        setText('calc_emp_basis', payBasis === 'Monthly' ? 'Monthly Salary' : (payBasis === 'Daily' ? 'Daily Wage / Rate' : 'Task Lump Sum'));
+        setText('calc_emp_rates', amt > 0 ? `${fmtUSD(impDaily, 2)}/d · ${fmtUSD(impHourly, 2)}/hr` : '—');
+        setText('calc_emp_total', fmtUSD(isContract ? impMonthly : amt, 2));
+        return { curStaff, payBasis, amt };
+      }
       if (STATE.modalForm === 'jv') {
         const jvt = val('f_jvtype') || 'distribution';
+        const site = val('f_site');
+        const cp = val('f_counterparty');
+        const amt = num('f_amount');
+        const share = num('f_share') || 50;
+        const fIntel = _getFormIntelIndex();
+        const jvPos = site ? fIntel.jvBySite[norm(site)] : null;
+        if (site !== FORM_UI.lastSite) {
+          FORM_UI.lastSite = site;
+          if (jvPos && jvPos.partner && $('f_counterparty') && !val('f_counterparty')) {
+            $('f_counterparty').value = jvPos.partner;
+          }
+        }
         setFieldVisible('wrap_jv_share', jvt === 'partnership');
         setFieldVisible('wrap_jv_amount', jvt === 'distribution');
         if (jvt === 'partnership' && $('f_amount') && $('f_amount').value) $('f_amount').value = '';
+        const accrued = jvPos ? jvPos.accrued50 : 0;
+        const paid = jvPos ? jvPos.distributed : 0;
+        const remBefore = round2(accrued - paid);
+        const remAfter = jvt === 'distribution' ? round2(remBefore - amt) : remBefore;
+        const isAdvDist = jvt === 'distribution' && jvPos && remAfter < -0.01;
+        const jvStrip = $('jvLiveContextStrip');
+        if (jvStrip) {
+          if (!site && !cp) {
+            jvStrip.hidden = true;
+            jvStrip.innerHTML = '';
+          } else {
+            jvStrip.hidden = false;
+            jvStrip.className = 'att-contract-strip' + (isAdvDist ? ' is-warn' : (jvt === 'distribution' && remBefore > 0 && Math.abs(remAfter) <= 0.01 ? ' is-ok' : ''));
+            jvStrip.innerHTML = `
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <strong>${esc((jvPos && jvPos.site) || site || 'JV Site')}</strong>
+                <span class="badge ${jvPos && jvPos.isJv ? 'badge-brass' : 'badge-info'}">${jvPos && jvPos.isJv ? 'Active 50/50 JV Site' : 'Site Ledger'} · Partner: ${esc(val('f_counterparty') || (jvPos && jvPos.partner) || 'Assaf')}</span>
+                ${isAdvDist ? `<span class="badge badge-warn">Advance Distribution (+${fmtUSD(Math.abs(remAfter), 2)} over Accrued)</span>` : ''}
+                ${jvt === 'distribution' && remBefore > 0.01 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${remBefore.toFixed(2)}">Pay Remaining (${fmtUSD(remBefore, 2)})</button>` : ''}
+              </div>
+              <div class="att-contract-metrics">
+                <span><small>50% Accrued (${jvPos ? jvPos.loads : 0} loads)</small><b>${fmtUSD(accrued, 2)}</b></span>
+                <span><small>Already Distributed (${jvPos ? jvPos.distCount : 0})</small><b>${fmtUSD(paid, 2)}</b></span>
+                <span><small>Remaining Before</small><b>${remBefore < -0.01 ? 'Adv +' + fmtUSD(Math.abs(remBefore), 2) : fmtUSD(Math.max(0, remBefore), 2)}</b></span>
+                ${jvt === 'distribution' ? `<span><small>After Entry</small><b>${remAfter < -0.01 ? 'Advance +' + fmtUSD(Math.abs(remAfter), 2) : fmtUSD(Math.max(0, remAfter), 2) + ' Left'}</b></span>` : ''}
+              </div>
+            `;
+          }
+        }
+        setHint('hint_jv_site', site && jvPos ? `${jvPos.loads} loads · 50% share accrued ${fmtUSD(accrued, 2)}` : '', 'ok');
+        setHint('hint_jv_amount', isAdvDist ? `Exceeds accrued JV share (${fmtUSD(remBefore, 2)}) by +${fmtUSD(Math.abs(remAfter), 2)} · posts an Advance Distribution` : '', isAdvDist ? 'warn' : '');
+        setText('calc_jv_accrued', site ? fmtUSD(accrued, 2) : '—');
+        setText('calc_jv_paid', site ? fmtUSD(paid, 2) : '—');
+        setText('calc_jv_rem', site ? (remAfter < -0.01 ? `Advance +${fmtUSD(Math.abs(remAfter), 2)}` : `${fmtUSD(Math.max(0, remAfter), 2)} Left`) : '—');
+        setText('calc_jv_status', jvt === 'partnership' ? `${share}% JV Partnership` : (isAdvDist ? 'Advance Distribution' : (amt > 0 && Math.abs(remAfter) <= 0.01 ? 'Settles Accrued Share' : (site ? 'Profit Distribution' : 'Select JV Site'))));
         commonDateChecks([]);
         renderAdminLockBar();
-        return {};
+        return { jvt, site, accrued, paid, remAfter };
       }
       if (STATE.modalForm === 'defect') {
         const company = val('f_company') || defaultEntryCompany();
@@ -22038,12 +23785,20 @@
       let currentMatches = [];
       let choosing = false;
       let blurTimer = null;
+      let pageOffset = 0;
 
       const closeOwnMenu = () => {
         clearTimeout(blurTimer);
         menu.hidden = true;
         menu.innerHTML = '';
         wrap.classList.remove('open');
+      };
+
+      const syncMenuAlign = () => {
+        try {
+          const r = wrap.getBoundingClientRect();
+          wrap.classList.toggle('menu-align-right', r.left > (window.innerWidth || 800) * 0.42);
+        } catch (_) {}
       };
 
       menu.addEventListener('mousedown', ev => {
@@ -22070,7 +23825,7 @@
         }
       };
 
-      const renderMenu = (showAllOnEmpty = false, ignoreExactCurrent = false) => {
+      const renderMenu = (showAllOnEmpty = false, ignoreExactCurrent = false, keepPageOffset = false) => {
         if (el.disabled || el.readOnly || (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id))) {
           closeOwnMenu();
           return;
@@ -22102,14 +23857,21 @@
           return;
         }
         const MAX_SHOW = 7;
-        let sliceStart = 0;
-        if (ignoreExactCurrent && exactHit && filtered.length > MAX_SHOW) {
+        if (!keepPageOffset) pageOffset = 0;
+        let sliceStart = pageOffset;
+        if (!keepPageOffset && ignoreExactCurrent && exactHit && filtered.length > MAX_SHOW) {
           const curPos = filtered.findIndex(it => it.value.toLowerCase() === ql);
           if (curPos >= MAX_SHOW) sliceStart = Math.min(curPos - 2, filtered.length - MAX_SHOW);
+          pageOffset = sliceStart;
+        }
+        if (sliceStart >= filtered.length) {
+          sliceStart = 0;
+          pageOffset = 0;
         }
         currentMatches = filtered.slice(sliceStart, sliceStart + MAX_SHOW);
         activeIdx = highlightQuery ? 0 : currentMatches.findIndex(it => it.value.toLowerCase() === ql);
         closeAll(menu);
+        syncMenuAlign();
         menu.innerHTML = currentMatches.map((item, i) => {
           const isSel = ql && item.value.toLowerCase() === ql;
           return `
@@ -22119,18 +23881,33 @@
             </div>
           `;
         }).join('') + (filtered.length > MAX_SHOW
-          ? `<div class="pa-suggest-more">Top ${MAX_SHOW} of ${filtered.length} options · type to filter</div>`
+          ? `<div class="pa-suggest-more" data-suggest-next="1">${sliceStart > 0 ? `Showing ${sliceStart + 1}–${sliceStart + currentMatches.length}` : `Top ${MAX_SHOW}`} of ${filtered.length} options · Next ▸</div>`
           : '');
         menu.hidden = false;
         wrap.classList.add('open');
 
+        const moreBtn = menu.querySelector('[data-suggest-next]');
+        if (moreBtn) {
+          const onNextPage = ev => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            clearTimeout(blurTimer);
+            pageOffset = (sliceStart + MAX_SHOW >= filtered.length) ? 0 : (sliceStart + MAX_SHOW);
+            renderMenu(showAllOnEmpty, ignoreExactCurrent, true);
+          };
+          moreBtn.addEventListener('mousedown', onNextPage);
+          moreBtn.addEventListener('click', onNextPage);
+        }
+
         menu.querySelectorAll('.pa-suggest-item').forEach(row => {
-          row.addEventListener('mousedown', ev => {
+          const onPickRow = ev => {
             ev.preventDefault();
             ev.stopPropagation();
             const idx = Number(row.getAttribute('data-suggest-idx'));
             if (currentMatches[idx] != null) choose(currentMatches[idx].value);
-          });
+          };
+          row.addEventListener('mousedown', onPickRow);
+          row.addEventListener('click', onPickRow);
           row.addEventListener('mouseenter', () => {
             activeIdx = Number(row.getAttribute('data-suggest-idx'));
             menu.querySelectorAll('.pa-suggest-item').forEach((r, ri) => r.classList.toggle('active', ri === activeIdx));
@@ -22160,9 +23937,13 @@
           renderMenu(true, true);
         }
       });
-      caret.addEventListener('mousedown', ev => {
+      let lastCaretToggleTs = 0;
+      const onCaretActivate = ev => {
         ev.preventDefault();
         ev.stopPropagation();
+        const nowTs = Date.now();
+        if (nowTs - lastCaretToggleTs < 220) return;
+        lastCaretToggleTs = nowTs;
         clearTimeout(blurTimer);
         if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id)) {
           openAdminUnlockPrompt(el.id);
@@ -22171,12 +23952,15 @@
         if (!menu.hidden) {
           closeOwnMenu();
         } else {
-          if (document.activeElement !== el) {
+          const isCoarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+          if (!isCoarse && document.activeElement !== el) {
             try { el.focus({ preventScroll: true }); } catch (_) {}
           }
           if (menu.hidden) renderMenu(true, true);
         }
-      });
+      };
+      caret.addEventListener('mousedown', onCaretActivate);
+      caret.addEventListener('click', onCaretActivate);
       el.addEventListener('blur', () => {
         clearTimeout(blurTimer);
         blurTimer = setTimeout(() => {
@@ -22317,12 +24101,14 @@
             : '');
 
           rowsBox.querySelectorAll('.pa-suggest-item').forEach(row => {
-            row.addEventListener('mousedown', ev => {
+            const onPickOpt = ev => {
               ev.preventDefault();
               ev.stopPropagation();
               const idx = Number(row.getAttribute('data-suggest-idx'));
               if (currentMatches[idx] != null) chooseOption(currentMatches[idx].value);
-            });
+            };
+            row.addEventListener('mousedown', onPickOpt);
+            row.addEventListener('click', onPickOpt);
             row.addEventListener('mouseenter', () => {
               activeIdx = Number(row.getAttribute('data-suggest-idx'));
               rowsBox.querySelectorAll('.pa-suggest-item').forEach((r, ri) => r.classList.toggle('active', ri === activeIdx));
@@ -22330,6 +24116,10 @@
           });
         };
 
+        try {
+          const r = wrap.getBoundingClientRect();
+          wrap.classList.toggle('menu-align-right', r.left > (window.innerWidth || 800) * 0.42);
+        } catch (_) {}
         renderRows('');
         menu.hidden = false;
         wrap.classList.add('open');
@@ -22359,9 +24149,13 @@
         }
       };
 
+      let lastSelToggleTs = 0;
       const toggleSelectMenu = ev => {
         if (ev.target && ev.target.closest('.pa-suggest-menu')) return;
         ev.preventDefault();
+        const nowTs = Date.now();
+        if (nowTs - lastSelToggleTs < 220) return;
+        lastSelToggleTs = nowTs;
         if (selEl.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(selEl.id)) {
           openAdminUnlockPrompt(selEl.id);
           return;
@@ -22376,6 +24170,7 @@
       };
 
       wrap.addEventListener('mousedown', toggleSelectMenu);
+      wrap.addEventListener('click', toggleSelectMenu);
       selEl.addEventListener('keydown', ev => {
         if (selEl.disabled || (selEl.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(selEl.id))) return;
         if (menu.hidden) {
@@ -22550,32 +24345,89 @@
       });
     });
 
-    body.querySelectorAll('[data-att-mode]').forEach(btn => {
+    body.querySelectorAll('[data-set-uom]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const uVal = btn.getAttribute('data-set-uom');
+        const uEl = $('f_uom');
+        if (!uVal || !uEl) return;
+        uEl.value = uVal;
+        FORM_UI.uomManual = true;
+        FORM_UI.qtyManual = false;
+        recalcForm();
+      });
+    });
+
+    // Delegated 1-click quick-fill pills across Salary, Receipt, Settlement, Treasury, VAT & JV forms
+    if (!body.dataset.quickFillWired) {
+      body.dataset.quickFillWired = '1';
+      body.addEventListener('click', ev => {
+        const salBtn = ev.target && ev.target.closest ? ev.target.closest('[data-sal-quick]') : null;
+        if (salBtn) {
+          ev.preventDefault();
+          const act = salBtn.getAttribute('data-sal-quick');
+          const valStr = salBtn.getAttribute('data-val');
+          const moStr = salBtn.getAttribute('data-month');
+          const coStr = salBtn.getAttribute('data-company');
+          if (act === 'switch_bu' && coStr && $('f_company')) {
+            $('f_company').value = coStr;
+            $('f_company').dispatchEvent(new Event('change', { bubbles: true }));
+          } else if (act === 'next_month' && moStr && $('f_paymonth')) {
+            $('f_paymonth').value = moStr;
+            $('f_paymonth').dispatchEvent(new Event('change', { bubbles: true }));
+          } else if (act === 'prev_month' && moStr && $('f_paymonth')) {
+            $('f_paymonth').value = moStr;
+            if (valStr != null && $('f_usd')) $('f_usd').value = valStr;
+            if ($('f_lbp')) $('f_lbp').value = '0';
+            $('f_paymonth').dispatchEvent(new Event('change', { bubbles: true }));
+          } else if (valStr != null && $('f_usd')) {
+            $('f_usd').value = valStr;
+            if ($('f_lbp')) $('f_lbp').value = '0';
+            $('f_usd').dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          recalcForm();
+          return;
+        }
+        const qfBtn = ev.target && ev.target.closest ? ev.target.closest('[data-form-quickfill]') : null;
+        if (qfBtn) {
+          ev.preventDefault();
+          const fid = qfBtn.getAttribute('data-form-quickfill');
+          const valStr = qfBtn.getAttribute('data-val');
+          const targetEl = fid ? $(fid) : null;
+          if (targetEl && valStr != null) {
+            targetEl.value = valStr;
+            if (fid === 'f_usd' && $('f_lbp')) $('f_lbp').value = '0';
+            targetEl.dispatchEvent(new Event('input', { bubbles: true }));
+            targetEl.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          recalcForm();
+        }
+      });
+    }
+
+    body.querySelectorAll('[data-att-mode], [data-att-preset]').forEach(btn => {
       btn.addEventListener('click', ev => {
         ev.preventDefault();
         const mode = btn.getAttribute('data-att-mode') || 'shift';
         if ($('f_att_mode')) $('f_att_mode').value = mode;
-        recalcForm();
-      });
-    });
-    body.querySelectorAll('[data-att-preset]').forEach(btn => {
-      btn.addEventListener('click', ev => {
-        ev.preventDefault();
-        const p = btn.getAttribute('data-att-preset') || 'regular';
-        FORM_UI.attPreset = p;
-        FORM_UI.lastAttTimeKey = '';
-        const prof = getStaffContractProfile(val('f_staff'), val('f_company'), val('f_date'));
-        if (p === 'regular') {
-          if ($('f_in') && !val('f_in')) $('f_in').value = '08:00';
-          if ($('f_out') && !val('f_out')) $('f_out').value = '16:00';
-          if ($('f_sched_hours')) $('f_sched_hours').value = String(prof.workingHours || 8);
-        } else if (p === 'callout') {
-          if ($('f_in') && !val('f_in')) $('f_in').value = '08:00';
-          if ($('f_out') && !val('f_out')) $('f_out').value = '16:00';
-          if ($('f_sched_hours')) $('f_sched_hours').value = '0';
-        } else if (p === 'noclock') {
-          if ($('f_hours')) $('f_hours').value = '0';
-          if ($('f_late_hours')) $('f_late_hours').value = '0';
+        if (btn.hasAttribute('data-att-preset')) {
+          const p = btn.getAttribute('data-att-preset') || 'regular';
+          FORM_UI.attPreset = p;
+          FORM_UI.lastAttTimeKey = '';
+          const prof = getStaffContractProfile(val('f_staff'), val('f_company'), val('f_date'));
+          if (p === 'regular') {
+            if ($('f_in') && !val('f_in')) $('f_in').value = '08:00';
+            if ($('f_out') && !val('f_out')) $('f_out').value = '16:00';
+            if ($('f_sched_hours')) $('f_sched_hours').value = String(prof.workingHours || 8);
+          } else if (p === 'callout') {
+            if ($('f_in') && !val('f_in')) $('f_in').value = '08:00';
+            if ($('f_out') && !val('f_out')) $('f_out').value = '16:00';
+            if ($('f_sched_hours')) $('f_sched_hours').value = '0';
+          } else if (p === 'noclock') {
+            if ($('f_hours')) $('f_hours').value = '0';
+            if ($('f_late_hours')) $('f_late_hours').value = '0';
+          }
         }
         recalcForm();
       });
@@ -23107,9 +24959,40 @@
       record = { ...base, name: nm, driver: nm, truck_owner: val('f_supplier'), truck: val('f_truck'), phone: val('f_phone'), is_company_driver: !!($('f_iscompanydriver') && $('f_iscompanydriver').checked) };
     } else if (f === 'salary') {
       const st = val('f_staff'), amt = round2(num('f_amount'));
-      if (!st) addErr('f_staff', 'Staff Name is required.');
-      if (!(amt > 0)) addErr('f_usd', 'Salary Amount > 0 is required.');
-      record = { ...base, name: `SAL ${val('f_paymonth') || date.slice(0, 7)} ${st}`, rep_date: repDate, payroll_month: val('f_paymonth') || date.slice(0, 7), staff: st, equipment: val('f_truck'), method: val('f_method') || 'Cash', usd_amount: round2(num('f_usd')), lbp_amount: round2(num('f_lbp')), amount: amt };
+      const salType = val('f_sal_type') || 'payment';
+      if (!st) addErr('f_staff', 'Staff is required.');
+      if (!(amt > 0)) addErr('f_usd', (salType === 'bonus' ? 'Bonus' : 'Salary') + ' Amount > 0 is required.');
+      if (salType === 'bonus') {
+        const eUsd = round2(Math.max(0, num('f_usd')));
+        const eLbp = Math.round(Math.max(0, num('f_lbp')));
+        const effType = (eLbp > 0 && !(eUsd > 0)) ? 'Extra LBP' : 'Extra USD';
+        const tallyVal = effType === 'Extra LBP' ? eLbp : amt;
+        crKey = 'attendance';
+        record = {
+          ...base,
+          name: `BON ${date} ${st}`,
+          month: val('f_paymonth') || date.slice(0, 7),
+          staff: st,
+          type: effType,
+          status: effType,
+          in_time: '',
+          out_time: '',
+          check_in: '',
+          check_out: '',
+          scheduled_hours: 0,
+          worked_hours: 0,
+          regular_hours: 0,
+          overtime_hours: 0,
+          late_hours: 0,
+          leave_days: 0,
+          usd_amount: eUsd,
+          lbp_amount: eLbp,
+          extra_usd: amt,
+          tally: tallyVal
+        };
+      } else {
+        record = { ...base, name: `SAL ${val('f_paymonth') || date.slice(0, 7)} ${st}`, rep_date: repDate, payroll_month: val('f_paymonth') || date.slice(0, 7), staff: st, method: val('f_method') || 'Cash', usd_amount: round2(num('f_usd')), lbp_amount: round2(num('f_lbp')), amount: amt };
+      }
     } else if (f === 'attendance') {
       const st = val('f_staff');
       if (!st) addErr('f_staff', 'Staff Member is required.');
@@ -23139,34 +25022,6 @@
           pay_treatment: lvPay,
           extra_usd: 0,
           tally: lvDays
-        };
-      } else if (attMode === 'extra') {
-        const eUsd = round2(Math.max(0, num('f_extra_usd')));
-        const eLbp = Math.round(Math.max(0, num('f_extra_lbp')));
-        const eTot = round2(eUsd + (eLbp / 89500));
-        if (!(eTot > 0)) addErr('f_extra_usd', 'Enter a Bonus USD or LBP amount greater than zero.');
-        const effType = (eLbp > 0 && !(eUsd > 0)) ? 'Extra LBP' : 'Extra USD';
-        const tallyVal = effType === 'Extra LBP' ? eLbp : eTot;
-        record = {
-          ...base,
-          name: `ATT ${date} ${st}`,
-          staff: st,
-          type: effType,
-          status: effType,
-          in_time: '',
-          out_time: '',
-          check_in: '',
-          check_out: '',
-          scheduled_hours: 0,
-          worked_hours: 0,
-          regular_hours: 0,
-          overtime_hours: 0,
-          late_hours: 0,
-          leave_days: 0,
-          usd_amount: eUsd,
-          lbp_amount: eLbp,
-          extra_usd: eTot,
-          tally: tallyVal
         };
       } else {
         const isNoClock = FORM_UI.attPreset === 'noclock';
@@ -23594,6 +25449,34 @@
           }
         }
       }
+      if (crKey === 'price_rules' && /^commission$/i.test(String(record.rule_type || '')) && record.product && record.start_date) {
+        const dt = new Date(record.start_date + 'T00:00:00Z');
+        if (!isNaN(dt.getTime())) {
+          dt.setUTCDate(dt.getUTCDate() - 1);
+          const prevCloseDate = dt.toISOString().slice(0, 10);
+          const allPr = ((SEED.records && SEED.records.price_rules) || []).concat(STATE.customRecords.price_rules || []);
+          const seenPrIds = new Set();
+          allPr.forEach(pr => {
+            if (!pr || pr.voided || String(pr.id) === String(record.id)) return;
+            if (!/^commission$/i.test(String(pr.rule_type || ''))) return;
+            if (norm(pr.company) !== norm(record.company) || norm(pr.product) !== norm(record.product)) return;
+            if (pr.end_date || !(String(pr.start_date || '') < String(record.start_date))) return;
+            const pid = String(pr.id || '');
+            if (pid && seenPrIds.has(pid)) return;
+            if (pid) seenPrIds.add(pid);
+            pr._prev_end_date = pr.end_date || '';
+            pr.end_date = prevCloseDate;
+            record._auto_closed_prev_id = pid;
+            const cIdx = (STATE.customRecords.price_rules || []).findIndex(x => x && String(x.id) === pid);
+            if (cIdx >= 0) {
+              Object.assign(STATE.customRecords.price_rules[cIdx], pr);
+            } else {
+              STATE.customRecords.price_rules.push(Object.assign({}, pr));
+            }
+            extraApiPosts.push(['price_rules', pr]);
+          });
+        }
+      }
       applyCustomRecordsToSeed();
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
       closeEntryModal(true);
@@ -23695,6 +25578,15 @@
         });
       }
     }
+    if (crKey === 'price_rules' && r && r._auto_closed_prev_id) {
+      const prevId = String(r._auto_closed_prev_id);
+      const allPr = ((SEED.records && SEED.records.price_rules) || []).concat(STATE.customRecords.price_rules || []);
+      allPr.forEach(pr => {
+        if (!pr || String(pr.id) !== prevId) return;
+        pr.end_date = pr._prev_end_date || '';
+        extraVoidPosts.push(['price_rules', pr]);
+      });
+    }
     applyCustomRecordsToSeed();
     saveLocalAuthAndRecords();
     renderApp();
@@ -23712,7 +25604,7 @@
     const preselectRawPrice = formType === 'pricerule_raw';
     const preselectHaulPrice = formType === 'pricerule_haul';
     const preselectCommPrice = formType === 'pricerule_comm';
-    const modalGroupOverride = (preselectRawPrice || preselectHaulPrice) ? 'raw' : null;
+    const modalGroupOverride = (preselectRawPrice || preselectHaulPrice) ? 'raw' : (preselectCommPrice ? 'comm' : null);
     const resolvedForm = (preselectConv || preselectExt)
       ? 'treasury'
       : ((preselectRawPrice || preselectHaulPrice || preselectCommPrice) ? 'pricerule' : formType);
@@ -23749,6 +25641,15 @@
       });
       tabsWrap.querySelectorAll('.modal-tab[data-form]').forEach(tBtn => {
         tBtn.addEventListener('click', () => openEntryModal(tBtn.getAttribute('data-form')));
+      });
+      requestAnimationFrame(() => {
+        ['.pa-modal-groups', '.pa-modal-subtabs'].forEach(selStr => {
+          const strip = tabsWrap.querySelector(selStr);
+          const act = strip && strip.querySelector('.active');
+          if (strip && act && strip.scrollWidth > strip.clientWidth) {
+            strip.scrollLeft = Math.max(0, act.offsetLeft - (strip.clientWidth - act.offsetWidth) / 2);
+          }
+        });
       });
     } else {
       document.querySelectorAll('#modalTabs .modal-tab').forEach(b => {
@@ -23810,17 +25711,11 @@
       $('f_ruletype').value = 'Transport Price (Site)';
     } else if (preselectCommPrice && $('f_ruletype')) {
       $('f_ruletype').value = 'Commission';
-      if ($('f_company')) {
-        const curCo = $('f_company').value;
-        const curHasComm = ((SEED.records && SEED.records.price_rules) || []).some(r => r && !r.voided && /^commission$/i.test(String(r.rule_type || '')) && norm(r.company) === norm(curCo));
-        if (!curHasComm && allowedCompanyNames().includes('BBConstruction')) {
-          $('f_company').value = 'BBConstruction';
-        }
-      }
       if ($('f_supplier') && !val('f_supplier')) {
-        const bbcOwners = ((SEED.records && SEED.records.price_rules) || []).filter(r => r && !r.voided && /^commission$/i.test(String(r.rule_type || '')) && r.supplier);
-        if (bbcOwners.length === 0 || new Set(bbcOwners.map(r => norm(r.supplier))).size === 1) {
-          if (bbcOwners[0] && bbcOwners[0].supplier) $('f_supplier').value = bbcOwners[0].supplier;
+        const curCo = $('f_company') ? $('f_company').value : '';
+        const coOwners = ((SEED.records && SEED.records.price_rules) || []).filter(r => r && !r.voided && /^commission$/i.test(String(r.rule_type || '')) && norm(r.company) === norm(curCo) && r.supplier);
+        if (coOwners.length > 0 && new Set(coOwners.map(r => norm(r.supplier))).size === 1) {
+          $('f_supplier').value = coOwners[0].supplier;
         }
       }
     }
@@ -23828,6 +25723,17 @@
     if (prefill && typeof prefill === 'object') {
       if (prefill.co && $('f_company') && allowedCompanyNames().includes(prefill.co)) {
         $('f_company').value = prefill.co;
+      }
+      if (prefill.prod && $('f_product')) {
+        $('f_product').value = prefill.prod;
+        FORM_UI.lastProduct = '';
+      }
+      if (prefill.uom && $('f_uom')) {
+        $('f_uom').value = prefill.uom;
+        FORM_UI.uomManual = true;
+      }
+      if (prefill.owner && $('f_supplier')) {
+        $('f_supplier').value = prefill.owner;
       }
       if (prefill.eq && $('f_truck')) {
         $('f_truck').value = prefill.eq;
@@ -24067,6 +25973,19 @@
         tone: 'info',
         text: `FX Conversion (${d.dirLabel}): USD Drawer ${fmtSignedUSD(d.usd, 2)} (${d.u2l ? 'Decreased' : 'Increased'})  |  LBP Drawer ${fmtSignedLBP(d.lbp)} (${d.u2l ? 'Increased' : 'Decreased'})  |  Effective Rate: ${fmtNum(d.rate, 2)} LL/$  |  Entity: ${row.company || 'WTC'}`
       };
+    }
+    if (key === 'salaries') {
+      const payMo = row.payroll_month || String(row.date || '').slice(0, 7);
+      const pos = computeStaffMonthPayrollPosition(row.staff, row.company, payMo, row.date, row.id, true);
+      const thisAmt = round2(Number(row.amount != null ? row.amount : (Number(row.usd_amount || 0) + Number(row.lbp_amount || 0) / 89500)));
+      if (pos && pos.hasContract) {
+        const afterRem = round2(pos.monthNetEarned - (pos.paidSoFar + thisAmt));
+        const stTxt = afterRem < -0.01 ? `Advance / Overpayment (+${fmtUSD(Math.abs(afterRem), 2)})` : (afterRem <= 0.01 ? 'Month Settled ($0.00 Left)' : `${fmtUSD(afterRem, 2)} Remaining`);
+        return {
+          tone: afterRem < -0.01 ? 'warn' : 'info',
+          text: `Payroll Voucher ${row.name || ('#' + row.id)} (${pos.monthLabel}): Contract Base ${fmtUSD(pos.baseNet, 2)} + OT/Adj ${pos.attNetImpact >= 0 ? '+' : '-'}${fmtUSD(Math.abs(pos.attNetImpact), 2)} = Month Earned ${fmtUSD(pos.monthNetEarned, 2)}  |  Other Vouchers: ${fmtUSD(pos.paidSoFar, 2)}  |  This Voucher: ${fmtUSD(thisAmt, 2)}  |  Status: ${stTxt}`
+        };
+      }
     }
     return {
       tone: 'info',
@@ -24783,8 +26702,7 @@
         { key: 'date', label: 'Payment Date *', type: 'date', sec: 1 },
         { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
         { key: 'payroll_month', label: 'Payroll Month (YYYY-MM)', type: 'month', sec: 1 },
-        { key: 'staff', label: 'Staff Member *', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
-        { key: 'equipment', label: 'Assigned Unit / Truck', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
+        { key: 'staff', label: 'Staff *', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
         { key: 'method', label: 'Payment Method *', type: 'select', options: ['Cash', 'Bank Transfer', 'Check'], sec: 3 },
         { key: 'usd_amount', label: 'USD Paid ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'lbp_amount', label: 'LBP Paid (LL)', type: 'number', step: '1000', min: '0', sec: 3 },
@@ -25108,6 +27026,7 @@
     const hidden = new Set(['id', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status']);
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
+    if (key === 'salaries') { hidden.add('equipment'); }
 
     const populatedKeys = Object.keys(row).filter(k => !hidden.has(k) && row[k] !== '' && row[k] != null && !(typeof row[k] === 'number' && row[k] === 0 && /tip|discount|tier|adj|difference/.test(k) && !schemaByKey.has(k)));
     const allKeysSet = new Set(populatedKeys);
@@ -25825,6 +27744,21 @@
         const out = round2(getModNum('new_part_cost') + getModNum('repair_cost'));
         const proc = round2(getModNum('sale_proceeds'));
         html = `<span>Disposition: <b>${esc(disp)}</b></span><span>Pre-Notified: <b>${pre ? 'Verified' : 'Unnotified'}</b></span><span>Outlay: <b>${fmtUSD(out, 2)}</b></span><span>Proceeds: <b>${fmtUSD(proc, 2)}</b></span>`;
+      } else if (key === 'salaries') {
+        const stName = getModVal('staff') || row.staff;
+        const payMo = getModVal('payroll_month') || row.payroll_month || String(getModVal('date') || row.date || '').slice(0, 7);
+        const usd = getModNum('usd_amount');
+        const lbp = getModNum('lbp_amount');
+        const totAmt = (usd > 0 || lbp > 0) ? round2(usd + lbp / 89500) : getModNum('amount');
+        if ($('insp_edit_amount') && (usd > 0 || lbp > 0)) $('insp_edit_amount').value = totAmt.toFixed(2);
+        const pos = computeStaffMonthPayrollPosition(stName, getModVal('company') || row.company, payMo, getModVal('date') || row.date, row.id, true);
+        if (pos && pos.hasContract) {
+          const afterRem = round2(pos.monthNetEarned - (pos.paidSoFar + totAmt));
+          const statusStr = afterRem < -0.01 ? `Advance +${fmtUSD(Math.abs(afterRem), 2)}` : (afterRem <= 0.01 ? 'Settled ($0.00 Left)' : `${fmtUSD(afterRem, 2)} Remaining`);
+          html = `<span>${esc(pos.monthLabel)} Earned: <b>${fmtUSD(pos.monthNetEarned, 2)}</b></span><span>Other Paid: <b>${fmtUSD(pos.paidSoFar, 2)}</b></span><span>This Voucher: <b>${fmtUSD(totAmt, 2)}</b></span><span>After: <b>${statusStr}</b></span>`;
+        } else {
+          html = `<span>Total USD: <b>${fmtUSD(totAmt, 2)}</b></span><span>Month: <b>${esc(formatPayrollMonthLabel(payMo))}</b></span>`;
+        }
       }
       modLiveCalcEl.innerHTML = html;
       modLiveCalcEl.hidden = !html;
@@ -27982,10 +29916,12 @@
     if (checkRoleBtn) {
       const isCustom = previewPerms.roleKey === 'Custom';
       checkRoleBtn.classList.toggle('active', !!STATE.showRolePermMatrix);
-      checkRoleBtn.innerHTML = `
-        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-        <span>${STATE.showRolePermMatrix ? 'Hide Permissions' : (isCustom ? 'Configure Custom Permissions' : 'Check Permissions')}</span>
-      `;
+      checkRoleBtn.innerHTML = `${ic(isCustom ? 'sliders' : 'shield')} <span>${STATE.showRolePermMatrix ? 'Hide Permissions' : (isCustom ? 'Configure Matrix' : 'Check Permissions')}</span>`;
+    }
+    const checkDashBtn = scope.querySelector('#checkDashAccessBtn');
+    if (checkDashBtn) {
+      checkDashBtn.classList.toggle('active', !!STATE.showRolePermMatrix);
+      checkDashBtn.innerHTML = `${ic('pbi')} <span>${STATE.showRolePermMatrix ? 'Inspect Suites ↓' : 'Configure Suites'}</span>`;
     }
   }
 
@@ -28207,14 +30143,15 @@
       checkDashBtn.addEventListener('click', () => {
         if (STATE.showRolePermMatrix && STATE.permMatrixTab === 'dashboards') {
           STATE.showRolePermMatrix = false;
+          STATE.permMatrixTab = 'all';
         } else {
           STATE.showRolePermMatrix = true;
           STATE.permMatrixTab = 'dashboards';
         }
         refreshRoleAndAccessMatrixUi(root);
         if (STATE.showRolePermMatrix) {
-          const mw = root.querySelector('#rolePermissionsMatrixWrap');
-          if (mw) mw.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          const targetEl = root.querySelector('#permSecDashboards') || root.querySelector('#rolePermissionsMatrixWrap');
+          if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       });
     }
@@ -32323,6 +34260,17 @@
         container.scrollTop = prevScroll;
       });
     });
+    container.querySelectorAll('[data-open-comm-prod]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        openEntryModal('pricerule_comm', {
+          co: btn.getAttribute('data-comm-co') || '',
+          prod: btn.getAttribute('data-open-comm-prod') || '',
+          uom: btn.getAttribute('data-comm-uom') || '',
+          owner: btn.getAttribute('data-comm-owner') || ''
+        });
+      });
+    });
     container.querySelectorAll('[data-jump-co], [data-switch-comm-co]').forEach(row => {
       const goCo = () => {
         const targetCo = row.getAttribute('data-jump-co') || row.getAttribute('data-switch-comm-co');
@@ -33805,6 +35753,8 @@
       clickHub: hubId => clickHub(hubId),
       setView: (view, opts) => setView(view, opts)
     };
+    window.__openModalForm = (fid, prefill) => openEntryModal(fid, prefill);
+    if (!window.__navToView) window.__navToView = v => setView(v);
 
     document.addEventListener('mousedown', () => { lastPointerDownAt = Date.now(); }, true);
     document.addEventListener('touchstart', () => { lastPointerDownAt = Date.now(); }, { capture: true, passive: true });

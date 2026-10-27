@@ -73,7 +73,7 @@
       icon: 'payroll',
       label: '4. Payroll & Workforce',
       forms: [
-        { id: 'salary', label: 'Salary Payment', badge: 'bhf_salarypayment', crKey: 'salaries', title: 'New Salary Payment' },
+        { id: 'salary', label: 'Salary & Bonus', badge: 'bhf_salarypayment', crKey: 'salaries', title: 'New Salary Payment or Bonus' },
         { id: 'attendance', label: 'Attendance', badge: 'bhf_attendance', crKey: 'attendance', title: 'New Staff Attendance' },
         { id: 'employment', label: 'Employment Contract', badge: 'bhf_employment', crKey: 'employments', title: 'New Employment Contract' },
         { id: 'freelance', label: 'Freelance Work', badge: 'bhf_freelancework', crKey: 'employments', title: 'New Freelance Work' },
@@ -411,7 +411,8 @@
   function renderModalTabsHtml(activeForm, canEnterFn, groupOverride) {
     if (groupOverride === 'expenses') groupOverride = 'raw';
     const info = FORM_MAP[activeForm] || FORM_MAP.sales;
-    const activeGroup = (groupOverride && FORM_GROUPS.find(g => g.id === groupOverride)) || FORM_GROUPS.find(g => g.id === info.groupId) || FORM_GROUPS[0];
+    const effectiveGroupId = groupOverride === 'comm' ? 'sales' : groupOverride;
+    const activeGroup = (effectiveGroupId && FORM_GROUPS.find(g => g.id === effectiveGroupId)) || FORM_GROUPS.find(g => g.id === info.groupId) || FORM_GROUPS[0];
     const extraQuarryTab = (activeGroup.id === 'raw' && (!canEnterFn || canEnterFn('pricerule')))
       ? `
           <button type="button" class="modal-tab ${groupOverride === 'raw' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_raw">
@@ -428,11 +429,19 @@
         }).join('')}
       </div>
       <div class="pa-modal-subtabs">
-        ${activeGroup.forms.filter(f => !canEnterFn || canEnterFn(f.id)).map(f => `
+        ${activeGroup.forms.filter(f => !canEnterFn || canEnterFn(f.id)).map(f => {
+          const baseTab = `
           <button type="button" class="modal-tab ${!groupOverride && f.id === activeForm ? 'active' : ''}" data-form="${esc(f.id)}">
             <span>${esc(f.label)}</span>${f.universal ? '<span class="tbl-univ-tag">All BUs</span>' : ''}
-          </button>
-        `).join('')}${extraQuarryTab}
+          </button>`;
+          if (activeGroup.id === 'sales' && f.id === 'pricerule') {
+            return baseTab + `
+          <button type="button" class="modal-tab ${groupOverride === 'comm' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_comm" title="Add or step a per-unit Sales Commission rule by Product, Date Window &amp; Unit (m³ / Ton)">
+            <span>Commission Rule</span>
+          </button>`;
+          }
+          return baseTab;
+        }).join('')}${extraQuarryTab}
       </div>
     `;
   }
@@ -443,8 +452,8 @@
   }
   function fld(label, inner, opts = {}) {
     const lockAttr = opts.lockField ? ` data-policy-lock="${esc(opts.lockField)}" data-lock-reason="${esc(opts.lockReason || 'Locked by business rule')}"` : '';
-    const lockPill = opts.lockField ? `<span class="pa-lock-pill locked" data-lock-pill="${esc(opts.lockField)}" data-toggle-field-lock="${esc(opts.lockField)}" title="${esc(opts.lockReason || 'Locked by policy')}">${ic('lock')} LOCKED</span>` : '';
-    return `<div class="form-field${opts.span ? ' span-3' : ''}${opts.cls ? ' ' + opts.cls : ''}${opts.lockField ? ' is-policy-locked' : ''}"${opts.id ? ` id="${opts.id}"` : ''}${lockAttr}${opts.hidden ? ' hidden' : ''}><label><span class="pa-fld-lbl">${label}</span>${lockPill}</label>${inner}${opts.afterHtml || ''}${opts.hint != null ? `<span class="hint"${opts.hintId ? ` id="${opts.hintId}"` : ''}>${opts.hint}</span>` : ''}</div>`;
+    const lockPill = opts.lockField ? `<span class="pa-lock-pill locked" data-lock-pill="${esc(opts.lockField)}" data-toggle-field-lock="${esc(opts.lockField)}" title="${esc(opts.lockReason || 'Locked by policy')}">${ic('lock')} <span class="lp-short">Locked</span><span class="sr-only"> LOCKED</span></span>` : '';
+    return `<div class="form-field${opts.span ? ' span-3' : ''}${opts.span2 ? ' span-2' : ''}${opts.cls ? ' ' + opts.cls : ''}${opts.lockField ? ' is-policy-locked' : ''}"${opts.id ? ` id="${opts.id}"` : ''}${lockAttr}${opts.hidden ? ' hidden' : ''}><label><span class="pa-fld-lbl">${label}</span>${lockPill}</label>${inner}${opts.afterHtml || ''}${opts.hint != null ? `<span class="hint"${opts.hintId ? ` id="${opts.hintId}"` : ''}>${opts.hint}</span>` : ''}</div>`;
   }
   function inp(id, type, value, attrs = '') {
     return `<input type="${type}" id="${id}" value="${esc(value == null ? '' : value)}" autocomplete="off" ${attrs}>`;
@@ -506,20 +515,42 @@
     const counterpartyNames = uniqSorted(['Bdeir Holding', 'WTC', 'BBConstruction', 'Lions Transport', 'Cash Till', 'Bank Audi', 'Blom Bank'].concat((rec.loans || []).map(l => l.lender || l.counterparty || l.name)).concat((rec.external_movements || []).map(x => x.counterparty || x.name)).concat(supNames), fIdx && fIdx.counterparty);
     const regNames = uniqSorted((rec.regions || []).map(r => r.name).concat(['Beirut', 'Mount Lebanon', 'South', 'Bekaa', 'North', 'Nabatieh']), fIdx && fIdx.region);
     const adminHeaderHtml = `<div id="paAdminUnlockBox" hidden></div>`;
+    const empByStaff = {};
+    (rec.employments || []).forEach(e => {
+      if (!e || e.voided) return;
+      const sn = norm(e.staff || e.name);
+      if (!sn) return;
+      const prev = empByStaff[sn];
+      const isCur = String(e.status || '').toLowerCase() === 'current';
+      const prevCur = prev && String(prev.status || '').toLowerCase() === 'current';
+      if (!prev || (isCur && !prevCur) || (isCur === prevCur && String(e.start_date || '') > String(prev.start_date || ''))) {
+        empByStaff[sn] = e;
+      }
+    });
+    const staffMetaItems = staffNames.map(n => {
+      const e = empByStaff[norm(n)];
+      if (!e) return [n, ''];
+      const baseNet = round2(Number(e.salary_usd || e.amount || 0) + Number(e.reimbursement || 0) - Number(e.deduction || 0));
+      const parts = [];
+      if (e.role || e.position) parts.push(e.role || e.position);
+      if (baseNet > 0) parts.push(`${fmtUsd(baseNet)}/mo`);
+      if (e.company) parts.push(e.company);
+      return [n, parts.join(' · ')];
+    });
 
     if (fType === 'pricerule') {
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
-          ${secHdr('1. Agreement Scope & Counterparty')}
+          <div class="pa-form-sec-hdr"><span id="pr_sec1_hdr">1. Agreement Scope &amp; Counterparty</span></div>
           ${companyField}
-          ${fld('Start Date *', inp('f_date', 'date', today))}
-          ${fld('End Date', inp('f_enddate', 'date', ''))}
+          ${fld('Start Date *', inp('f_date', 'date', today), { id: 'wrap_pr_startdate' })}
+          ${fld('End Date', inp('f_enddate', 'date', ''), { id: 'wrap_pr_enddate' })}
           ${fld('Rule Type *', sel('f_ruletype', [
             ['Sales (Delivery)', 'Sales (Delivery) — Customer + Site + Material/Trans'],
             ['Sales (Pickup)', 'Sales (Pickup) — Customer Material Price (Pick-up)'],
             ['List Price', 'List Price — Benchmark Product Price'],
-            ['Commission', 'Commission — Per-Unit Plant Owner Fee (Product + Owner)'],
+            ['Commission', 'Commission · Per-Unit Plant Owner Fee (Product + Date + m³/Ton)'],
             ['Purchase Price (Site)', 'Purchase Price (Site) — Site Material Cost'],
             ['Transport Price (Site)', 'Transport Price (Site) — Site Haulage Rate'],
             ['Haulage (Customer Site)', 'Haulage (Customer Site) — 3P Delivery Hauler Rate']
@@ -529,8 +560,9 @@
           ${fld('Customer (Sales Rules) *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_pr_customer' })}
           ${fld('Supplier / Hauler *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_pr_supplier', hidden: true })}
           ${fld('Site / Destination', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames), { id: 'wrap_pr_site' })}
-          ${secHdr('2. Unit Pricing, Client/Site Truck Size & Tier 1 / Tier 2 Adjustments')}
-          ${fld('Priced Per Unit *', sel('f_uom', uoms, 'm³'))}
+          <div id="pr_comm_history_box" class="form-field span-3" hidden style="background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.45"></div>
+          <div class="pa-form-sec-hdr"><span id="pr_sec2_hdr">2. Unit Pricing, Client/Site Truck Size &amp; Tier 1 / Tier 2 Adjustments</span></div>
+          ${fld('Priced Per Unit *', sel('f_uom', uoms, 'm³'), { id: 'wrap_pr_uom' })}
           ${fld('Material Unit Price ($) *', inp('f_unitprice', 'number', '0.00', 'step="0.01" min="0"'), { id: 'wrap_pr_matprice' })}
           ${fld('Transport Rate Per', sel('f_rateper', [['m³', 'Per m³'], ['Ton', 'Per Ton (× Ton Factor)'], ['Truck', 'Flat Per Truck Load']], 'm³'), { id: 'wrap_pr_transrate' })}
           ${fld('Transport Unit Price ($)', inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0"'), { id: 'wrap_pr_transprice' })}
@@ -546,10 +578,10 @@
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
         <div class="live-calc">
-          <div><small>Base Material + Trans</small><b id="calc_mat">$0.00 / u</b></div>
-          <div><small>Tier 1 Total per Load</small><b id="calc_tr">—</b></div>
-          <div><small>Tier 2 Total per Load</small><b id="calc_vat">—</b></div>
-          <div><small>Delivered Unit Price Total</small><b id="calc_total">$0.00</b></div>
+          <div><small id="lbl_calc_mat">Base Material + Trans</small><b id="calc_mat">$0.00 / u</b></div>
+          <div><small id="lbl_calc_tr">Tier 1 Total per Load</small><b id="calc_tr">—</b></div>
+          <div><small id="lbl_calc_vat">Tier 2 Total per Load</small><b id="calc_vat">—</b></div>
+          <div><small id="lbl_calc_total">Delivered Unit Price Total</small><b id="calc_total">$0.00</b></div>
         </div>
       `;
     }
@@ -561,8 +593,9 @@
           ${companyField}
           ${lockedDateField('Transaction Date *')}
           ${collapsibleRepDateField()}
+          <div id="vatInvContextStrip" class="att-contract-strip" hidden></div>
           ${fld('Invoice Serial No. *', inp('f_ticketno', 'text', '', 'placeholder="e.g. VAT-2026-0412"'))}
-          ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames))}
+          ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { hintId: 'hint_vat_cust', hint: '' })}
           ${fld('Net Amount Ex-VAT ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'))}
           ${fld('VAT 11% ($)', inp('f_vat', 'number', '', 'step="0.01" min="0" readonly'), { id: 'wrap_f_vat', lockField: 'f_vat', lockReason: 'Locked to 11% Statutory Tax formula (Net HT × 11%)' })}
           ${fld('Payment Status', sel('f_status', [['Open', 'Open'], ['Settled', 'Settled'], ['Partial', 'Partial']], 'Open'))}
@@ -572,7 +605,7 @@
           <div><small>Net HT</small><b id="calc_mat">$0.00</b></div>
           <div><small>11% VAT</small><b id="calc_vat">$0.00</b></div>
           <div><small>Total TTC</small><b id="calc_total">$0.00</b></div>
-          <div><small>Tax Rate</small><b>11% Statutory VAT</b></div>
+          <div><small>Customer VAT Status</small><b id="calc_vat_status">11% Statutory VAT</b></div>
         </div>
       `;
     }
@@ -582,10 +615,17 @@
         <div class="form-grid-3">
           ${companyField}
           ${fld('Effective Date *', inp('f_date', 'date', today))}
-          ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames))}
+          ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { hintId: 'hint_ct_cust', hint: '' })}
+          <div id="credTermContextStrip" class="att-contract-strip" hidden></div>
           ${fld('Payment Days (Net Days) *', inp('f_days', 'number', '30', 'step="1" min="0"'))}
           ${fld('Credit Limit ($)', inp('f_amount', 'number', '25000', 'step="100" min="0"'))}
           ${fld('Notes', inp('f_notes', 'text', ''))}
+        </div>
+        <div class="live-calc" id="credTermLiveCalc">
+          <div><small>Current Open AR</small><b id="calc_ct_ar">$0.00</b></div>
+          <div><small>Credit Limit</small><b id="calc_ct_lim">$25,000</b></div>
+          <div><small>Available Headroom</small><b id="calc_ct_head">$25,000</b></div>
+          <div><small>Account Status</small><b id="calc_ct_status">Within Limit</b></div>
         </div>
       `;
     }
@@ -852,97 +892,84 @@
     if (fType === 'salary') {
       return `
         ${adminHeaderHtml}
-        <div class="form-grid-3">
+        <div class="form-grid-3 att-compact-grid">
           ${companyField}
           ${lockedDateField('Transaction Date *')}
           ${collapsibleRepDateField()}
-          ${fld('Payroll Month *', inp('f_paymonth', 'month', today.slice(0, 7)))}
-          ${fld('Staff / Driver Name *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff member..."') + dl('dl_staff', staffNames))}
-          ${fld('Allocated Equipment (if Driver)', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type equipment..."') + dl('dl_equip', equipNames))}
-          ${fld('Payment Method *', sel('f_method', [['Cash', 'Cash'], ['Bank', 'Bank Transfer']], 'Cash'))}
-          ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'))}
+          ${fld('Entry Type *', sel('f_sal_type', [
+            ['payment', 'Salary Payment (Disbursement)'],
+            ['bonus', 'Bonus / Extra Pay (Accrual)']
+          ], 'payment'), { id: 'wrap_sal_type' })}
+          ${fld('Payroll Month *', inp('f_paymonth', 'month', today.slice(0, 7)), { id: 'wrap_sal_month' })}
+          ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff member..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_sal_staff', hintId: 'hint_sal_staff', hint: '' })}
+          ${fld('Payment Method *', sel('f_method', [['Cash', 'Cash'], ['Bank', 'Bank Transfer']], 'Cash'), { id: 'wrap_sal_method' })}
+          <div id="salStaffMonthCard" class="att-contract-strip is-muted">Select a <b>Staff Member</b> and <b>Payroll Month</b> above to view their monthly contract salary, attendance overtime/deductions, amount already paid, and remaining balance or advance status.</div>
+          <div id="salQuickFillBar" class="att-preset-bar" hidden></div>
+          ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { hintId: 'hint_sal_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'))}
           ${fld('Total USD Value (90k FX) *', inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: 'Locked to Dual-Currency FX formula (USD + LBP ÷ 90,000)' })}
-          ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional payroll note, bonus reason, or voucher ref..."'), { span: true })}
+        </div>
+        <div id="paSalSubgridWrap"></div>
+        <div class="live-calc att-live-calc-compact" id="salLiveCalc">
+          <div><small>Month Net Earned</small><b id="calc_sal_earned">Select Staff</b></div>
+          <div><small>Already Paid (Month)</small><b id="calc_sal_paid">$0.00</b></div>
+          <div><small>Remaining After Payment</small><b id="calc_sal_rem">—</b></div>
+          <div><small>Payment Classification</small><b id="calc_sal_status">Pending Staff</b></div>
         </div>
       `;
     }
 
     if (fType === 'attendance') {
       return `
-        <div class="form-grid-3">
-          ${secHdr('1. Employee & Attendance Date', 'Select the employee to load their contract shift hours, hourly rate & overtime multiplier')}
+        <div class="form-grid-3 att-compact-grid">
           ${companyField}
           ${fld('Attendance Date *', inp('f_date', 'date', today), { hintId: 'hint_att_date', hint: '' })}
-          ${fld('Staff Member *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff member..."') + dl('dl_staff', staffNames))}
-          <div id="attStaffContractCard" class="att-contract-strip is-muted">
-            <span>Select a <b>Staff Member</b> above to load their contract salary, daily shift hours &amp; overtime rate.</span>
-          </div>
+          ${fld('Staff Member *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff member..."') + dlMeta('dl_staff', staffMetaItems))}
+          <div id="attStaffContractCard" class="att-contract-strip" hidden></div>
 
-          ${secHdr('2. What Are You Recording?', 'Compared automatically against the selected employee contract shift; Leave & Half Day hide clock times')}
           <input type="hidden" id="f_att_mode" value="shift">
           <input type="hidden" id="f_status" value="Present">
           <input type="hidden" id="f_sched_hours" value="8">
-          <div class="att-mode-deck" id="attModeDeck" role="tablist" aria-label="Attendance Entry Mode">
-            <button type="button" class="att-mode-card active" data-att-mode="shift" role="tab" aria-selected="true">
-              <span class="att-mode-card-top"><span>${ic('clock')} Worked Shift (In &amp; Out)</span></span>
-              <span class="att-mode-card-sub">Log Time In &amp; Out · Overtime or Short/Late hours calculate from contract</span>
-            </button>
-            <button type="button" class="att-mode-card" data-att-mode="leave" role="tab" aria-selected="false">
-              <span class="att-mode-card-top"><span>${ic('calendar')} Leave, Absence or Half Day</span></span>
-              <span class="att-mode-card-sub">Half Day Off (0.5d), Full Absence (1d), Paid Vacation, or Sick Leave</span>
-            </button>
-            <button type="button" class="att-mode-card" data-att-mode="extra" role="tab" aria-selected="false">
-              <span class="att-mode-card-top"><span>${ic('cashflow')} Extra Pay / Bonus</span></span>
-              <span class="att-mode-card-sub">Extra shift bonus or payroll adjustment in USD ($) or LBP (LL)</span>
-            </button>
+          <div class="att-preset-bar" id="attModeDeck" role="tablist" aria-label="Attendance Entry Mode">
+            <span class="att-preset-lbl">Entry:</span>
+            <button type="button" class="att-preset-pill active" id="attPresetRegularBtn" data-att-mode="shift" data-att-preset="regular">Regular Shift (Contract)</button>
+            <button type="button" class="att-preset-pill" data-att-mode="shift" data-att-preset="callout">Sunday / Call-Out (100% OT)</button>
+            <button type="button" class="att-preset-pill" data-att-mode="shift" data-att-preset="noclock">Hours Only</button>
+            <button type="button" class="att-preset-pill" data-att-mode="leave">Leave / Absence / Half Day</button>
           </div>
 
           <div class="att-subpanel" id="attShiftPanel">
-            <div class="att-preset-bar" id="attPresetBar">
-              <span class="att-preset-lbl">Shift Basis:</span>
-              <button type="button" class="att-preset-pill active" id="attPresetRegularBtn" data-att-preset="regular">Regular Shift (Employee Contract)</button>
-              <button type="button" class="att-preset-pill" data-att-preset="callout">Sunday / Call-Out (100% OT)</button>
-              <button type="button" class="att-preset-pill" data-att-preset="noclock">Hours Only (No Clock)</button>
-            </div>
             ${fld('Time In', inp('f_in', 'time', '08:00'), { id: 'wrap_f_in' })}
             ${fld('Time Out', inp('f_out', 'time', '16:00'), { id: 'wrap_f_out', hintId: 'hint_att_out', hint: '' })}
-            ${fld('Actual Work Hours', inp('f_worked_hours', 'number', '8', 'step="0.5" min="0" readonly class="pa-locked-input"'), { id: 'wrap_f_worked_hours', hintId: 'hint_att_worked', hint: 'Calculated from Time In & Time Out' })}
-            <div class="att-variance-grid">
-              ${fld('Overtime Hours (+)', inp('f_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_hours', hintId: 'hint_att_ot', hint: 'Auto-calculated above employee contract shift (editable)' })}
-              ${fld('Short / Late Hours (−)', inp('f_late_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_late_hours', hintId: 'hint_att_late', hint: 'Auto-calculated below employee contract shift (editable)' })}
-            </div>
+            ${fld('Work Hours', inp('f_worked_hours', 'number', '8', 'step="0.5" min="0" readonly class="pa-locked-input"'), { id: 'wrap_f_worked_hours' })}
+            ${fld('Overtime Hours (+)', inp('f_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_hours' })}
+            ${fld('Short / Late Hours (−)', inp('f_late_hours', 'number', '0', 'step="0.5" min="0"'), { id: 'wrap_f_late_hours' })}
           </div>
 
           <div class="att-subpanel" id="attLeavePanel" hidden>
             <div class="att-preset-bar" id="attLeavePresetBar">
               <span class="att-preset-lbl">Leave Type:</span>
-              <button type="button" class="att-preset-pill active" data-att-leave="Half Day">Half Day Off (0.5d)</button>
-              <button type="button" class="att-preset-pill" data-att-leave="Absence">Full Day Absence (1.0d)</button>
+              <button type="button" class="att-preset-pill active" data-att-leave="Half Day">Half Day (0.5d)</button>
+              <button type="button" class="att-preset-pill" data-att-leave="Absence">Full Absence (1.0d)</button>
               <button type="button" class="att-preset-pill" data-att-leave="VacAbsence">Paid Vacation</button>
               <button type="button" class="att-preset-pill" data-att-leave="Sick Leave">Sick Leave</button>
             </div>
             <input type="hidden" id="f_leave_type" value="Half Day">
-            ${fld('Leave Duration (Days) *', inp('f_leave_days', 'number', '0.5', 'step="0.5" min="0.5"'), { hintId: 'hint_att_leave_days', hint: '0.5 = Half Day · 1.0 = Full Day · 2+ = Multi-Day' })}
+            ${fld('Leave Duration (Days) *', inp('f_leave_days', 'number', '0.5', 'step="0.5" min="0.5"'))}
             ${fld('Pay Treatment *', sel('f_leave_pay', [
-              ['unpaid', 'Unpaid (Deduct from Monthly Salary)'],
-              ['paid', 'Paid (Keep Full Monthly Salary)']
-            ], 'unpaid'), { span2: true, hintId: 'hint_att_leave_pay', hint: '' })}
+              ['unpaid', 'Unpaid (Deduct from Salary)'],
+              ['paid', 'Paid (Keep Full Salary)']
+            ], 'unpaid'), { hintId: 'hint_att_leave_pay', hint: '' })}
           </div>
 
-          <div class="att-subpanel" id="attExtraPanel" hidden>
-            ${fld('Bonus / Extra USD ($)', inp('f_extra_usd', 'number', '', 'step="0.01" placeholder="0.00"'))}
-            ${fld('Bonus / Extra LBP (L.L.)', inp('f_extra_lbp', 'number', '', 'step="1000" placeholder="0"'))}
-            ${fld('Total USD Equivalent ($)', inp('f_extra_total', 'number', '0.00', 'step="0.01" readonly class="pa-locked-input"'), { hint: 'USD + LBP ÷ 89,500' })}
-          </div>
-
-          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional reason, Sunday shift note, site, or approval remark..."'), { span: true })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional remark..."'), { id: 'wrap_att_notes' })}
         </div>
-        <div class="live-calc" id="attLiveCalc">
-          <div><small>Auto-Classification</small><b id="calc_att_type">Full Shift (On Time)</b></div>
-          <div><small>Shift / Duration Math</small><b id="calc_att_math">08:00 to 16:00 = 8.0h</b></div>
-          <div><small>Contract Rate Basis</small><b id="calc_att_rate">Select Staff Member</b></div>
-          <div><small>Est. Payroll Impact</small><b id="calc_att_impact">$0.00 (Standard Shift)</b></div>
+        <div class="live-calc att-live-calc-compact" id="attLiveCalc">
+          <div><small>Classification</small><b id="calc_att_type">Full Shift (On Time)</b></div>
+          <div><small>Shift / Duration</small><b id="calc_att_math">08:00 to 16:00 = 8.0h</b></div>
+          <div><small>Rate Basis</small><b id="calc_att_rate">Contract Basis</b></div>
+          <div><small>Payroll Impact</small><b id="calc_att_impact">$0.00 (Standard Shift)</b></div>
         </div>
       `;
     }
@@ -953,12 +980,19 @@
         <div class="form-grid-3">
           ${companyField}
           ${fld(isContract ? 'Start Date *' : 'Work Date *', inp('f_date', 'date', today))}
-          ${fld('Staff / Worker Name *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff / worker..."') + dl('dl_staff', staffNames))}
+          ${fld('Staff / Worker Name *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff / worker..."') + dlMeta('dl_staff', staffMetaItems), { hintId: 'hint_emp_staff', hint: '' })}
+          <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
           ${fld('Role / Trade *', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type role / trade..."') + dl('dl_roles', roleNames))}
           ${fld('Pay Basis', sel('f_paytype', isContract ? [['Monthly', 'Monthly Salary'], ['Daily', 'Daily Wage']] : [['Daily', 'Daily Freelance Rate'], ['Lump Sum', 'Task Lump Sum']], isContract ? 'Monthly' : 'Daily'))}
           ${fld(isContract ? 'Agreed Base Salary ($) *' : 'Amount ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'))}
           ${fld('Assigned Equipment / Site', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type equipment..."') + dl('dl_equip', equipNames))}
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+        </div>
+        <div class="live-calc" id="empLiveCalc">
+          <div><small>${isContract ? 'Existing Contract' : 'Staff Status'}</small><b id="calc_emp_prior">Select Staff</b></div>
+          <div><small>Pay Basis</small><b id="calc_emp_basis">${isContract ? 'Monthly Salary' : 'Daily Rate'}</b></div>
+          <div><small>Implied Daily / Hourly</small><b id="calc_emp_rates">—</b></div>
+          <div><small>${isContract ? 'Monthly Commitment' : 'Sheet Amount'}</small><b id="calc_emp_total">$0.00</b></div>
         </div>
       `;
     }
@@ -970,9 +1004,10 @@
           ${companyField}
           ${lockedDateField('Transaction Date *')}
           ${collapsibleRepDateField()}
-          ${fld('Staff / Driver *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff / driver..."') + dl('dl_staff', staffNames))}
+          ${fld('Staff / Driver *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff / driver..."') + dlMeta('dl_staff', staffMetaItems), { hintId: 'hint_log_staff', hint: '' })}
           ${fld('Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames))}
           ${fld('USD Allowance ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'))}
+          <div id="logStaffContextStrip" class="att-contract-strip" hidden></div>
           ${fld('LBP Allowance (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0"'))}
           ${fld('Total USD Value *', inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: 'Locked to Dual-Currency FX formula (USD + LBP ÷ 90,000)' })}
           <div class="form-field span-3" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding-top:4px">
@@ -980,6 +1015,12 @@
             ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => `<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="f_day_${d.toLowerCase()}" ${i < 6 ? 'checked' : ''}> ${d}</label>`).join('')}
           </div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+        </div>
+        <div class="live-calc" id="logLiveCalc">
+          <div><small>Active Days</small><b id="calc_log_days">6 days (Mon–Sat)</b></div>
+          <div><small>Per Active Day</small><b id="calc_log_daily">$0.00 / day</b></div>
+          <div><small>Month Site Allowances</small><b id="calc_log_month">$0.00 prior</b></div>
+          <div><small>Total Allowance (USD)</small><b id="calc_log_total">$0.00</b></div>
         </div>
       `;
     }
@@ -1011,18 +1052,25 @@
             ['external', 'External Cash Inflow / Outflow'],
             ['conversion', 'Currency Conversion USD ↔ LBP']
           ], 'loan'))}
-          ${fld('Counterparty / Partner / Account *', inp('f_counterparty', 'text', '', 'list="dl_counterparties" placeholder="Select or type partner, bank, or entity..."') + dl('dl_counterparties', counterpartyNames), { id: 'wrap_tr_cp' })}
+          ${fld('Counterparty / Partner / Account *', inp('f_counterparty', 'text', '', 'list="dl_counterparties" placeholder="Select or type partner, bank, or entity..."') + dl('dl_counterparties', counterpartyNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
           ${fld('Direction / Leg *', sel('f_direction', [['Inflow', 'Cash Inflow / Borrowed'], ['Outflow', 'Cash Outflow / Repaid']], 'Inflow'), { id: 'wrap_tr_dir' })}
+          <div id="trLiveContextStrip" class="att-contract-strip" hidden></div>
           ${fld('Conversion Direction *', sel('f_conv_dir', [
             ['USD to LBP', 'USD → LBP (USD Decreases · LBP Increases)'],
             ['LBP to USD', 'LBP → USD (LBP Decreases · USD Increases)']
           ], 'USD to LBP'), { id: 'wrap_conv_dir', hidden: true })}
           ${fld('Exchange Rate (LL / $)', inp('f_fxrate', 'number', '89500', 'step="10" min="1"'), { id: 'wrap_conv_rate', hidden: true })}
-          ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_tr_usd' })}
+          ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0"'), { id: 'wrap_tr_lbp' })}
           ${fld('Total USD Value *', inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: 'Locked to Dual-Currency FX formula (USD + LBP ÷ 90,000)' })}
           ${fld('Reference / Voucher', inp('f_reference', 'text', ''))}
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+        </div>
+        <div class="live-calc" id="trLiveCalc">
+          <div><small id="lbl_tr_c1">Counterparty Balance</small><b id="calc_tr_c1">—</b></div>
+          <div><small id="lbl_tr_c2">This Entry (USD Eq.)</small><b id="calc_tr_c2">$0.00</b></div>
+          <div><small id="lbl_tr_c3">Balance After Entry</small><b id="calc_tr_c3">—</b></div>
+          <div><small id="lbl_tr_c4">Treasury Leg</small><b id="calc_tr_c4">Loan Drawdown</b></div>
         </div>
       `;
     }
@@ -1035,11 +1083,18 @@
         ${lockedDateField('Transaction Date *')}
         ${collapsibleRepDateField()}
         ${fld('JV Entry Type *', sel('f_jvtype', [['distribution', 'JV Profit / Cash Distribution'], ['partnership', 'New JV Site Partnership Setup']], 'distribution'))}
-        ${fld('JV Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type JV site..."') + dl('dl_sites', siteNames))}
+        ${fld('JV Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type JV site..."') + dl('dl_sites', siteNames), { hintId: 'hint_jv_site', hint: '' })}
         ${fld('JV Partner *', inp('f_counterparty', 'text', '', 'list="dl_suppliers" placeholder="Select or type JV partner..."') + dl('dl_suppliers', supNames))}
+        <div id="jvLiveContextStrip" class="att-contract-strip" hidden></div>
         ${fld('Partner Share (%)', inp('f_share', 'number', '50', 'step="0.5" min="0" max="100"'), { id: 'wrap_jv_share', hidden: true })}
-        ${fld('Distribution Amount ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_jv_amount' })}
+        ${fld('Distribution Amount ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_jv_amount', hintId: 'hint_jv_amount', hint: '' })}
         ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+      </div>
+      <div class="live-calc" id="jvLiveCalc">
+        <div><small>50% Accrued Share</small><b id="calc_jv_accrued">—</b></div>
+        <div><small>Already Distributed</small><b id="calc_jv_paid">—</b></div>
+        <div><small>Remaining After Entry</small><b id="calc_jv_rem">—</b></div>
+        <div><small>JV Status</small><b id="calc_jv_status">Select JV Site</b></div>
       </div>
     `;
   }
