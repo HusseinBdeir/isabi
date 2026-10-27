@@ -51,10 +51,10 @@ BODY = f"""
     <div class="wrap hero-grid">
       <div>
         <div>
-          <div class="eyebrow">{ICONS["ai_mark"]} ISABI Systems · Custom Setup + Per-Seat Plans · Live in 1 to 2 Weeks</div>
+          <div class="eyebrow">{ICONS["ai_mark"]} Tailored Enterprise ERP · Live in 1 to 2 Weeks</div>
           <h1 class="hero-title">The ERP Your Group<br><span class="brass-text">Actually Runs On</span>.</h1>
           <p class="hero-lead">
-            Custom operations, double-entry accounting, live dashboards, field kiosks, and cited AI, built around how your business works.
+            Custom daily operations, double-entry accounting, live executive dashboards, field kiosks, and cited AI, tailored around how your business works.
           </p>
           <div class="hero-cta-row">
             <a href="#sandbox" class="btn btn-brass">{ICONS["erp"]} Explore Live Demo</a>
@@ -66,22 +66,22 @@ BODY = f"""
           <div class="hero-proof-item">
             <span class="hp-check">{ICONS["check"]}</span>
             <div>
-              <b>Low Custom Setup + Per-Seat Plans</b>
-              <small>Accessible one-time setup for your tailored system plus simple per-seat monthly pricing from $15/seat.</small>
+              <b>Tailored Setup + Simple Per-Seat Plans</b>
+              <small>One-time custom setup from $3,000, paired with transparent monthly plans from $50/seat.</small>
             </div>
           </div>
           <div class="hero-proof-item">
             <span class="hp-check">{ICONS["check"]}</span>
             <div>
-              <b>100% Tailored in 1 to 2 Weeks</b>
-              <small>Shaped around your exact branches, approvals, operational units, and chart of accounts.</small>
+              <b>100% Built Around You in 1 to 2 Weeks</b>
+              <small>Shaped around your exact branches, approvals, daily operations, and chart of accounts.</small>
             </div>
           </div>
           <div class="hero-proof-item">
             <span class="hp-check">{ICONS["check"]}</span>
             <div>
-              <b>Reconciled to $0.00 Variance</b>
-              <small>Verified side by side against your accountant's books before cutover, with full data ownership.</small>
+              <b>Works With Your Accountant · 100% Your Data</b>
+              <small>Runs smoothly alongside your current accounting software while keeping every record 100% yours.</small>
             </div>
           </div>
         </div>
@@ -90,8 +90,7 @@ BODY = f"""
       <div class="hero-ledger-card" aria-label="Interactive Command Center Preview">
         <div class="hlc-top">
           <div class="hlc-brand">
-            <span class="hlc-win-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-            {MARK_ON_DARK_SVG}
+            {BADGE_SVG}
             <span id="hlc-window-title">ISABI Live Command Center</span>
           </div>
           <div class="hlc-top-right">
@@ -104,12 +103,12 @@ BODY = f"""
             <div class="hlc-kpi">
               <small id="hlc-kpi1-lbl">{ICONS["trend"]} Consolidated Revenue (MTD)</small>
               <strong class="num" id="hlc-kpi1-val">$1,482,600</strong>
-              <span id="hlc-kpi1-sub">▲ +11.4% vs prior period · 6 Entities</span>
+              <span id="hlc-kpi1-sub">▲ +11.4% vs prior month · 6 Entities</span>
             </div>
             <div class="hlc-kpi">
-              <small id="hlc-kpi2-lbl">{ICONS["scale"]} Books Reconciled</small>
-              <strong class="num" id="hlc-kpi2-val">100.0%</strong>
-              <span id="hlc-kpi2-sub">✓ $0.00 statutory variance</span>
+              <small id="hlc-kpi2-lbl">{ICONS["scale"]} Net Operating Profit</small>
+              <strong class="num" id="hlc-kpi2-val">$384,200</strong>
+              <span id="hlc-kpi2-sub">✓ 25.9% margin · Books 100% balanced</span>
             </div>
           </div>
 
@@ -445,8 +444,8 @@ BODY = f"""
         <div class="sprint-card">
           <div class="sprint-day">{ICONS["bolt"]} Days 11 to 14</div>
           <h4>4. Migration, Watchdogs &amp; Go-Live</h4>
-          <p>We import your historical spreadsheets, turn on audit watchdogs and Ask ISABI, reconcile side by side until variance is $0.00, train your team, and go live.</p>
-          <span class="sprint-deliverable">✓ Deliverable: Verified zero-variance cutover &amp; team sign-off</span>
+          <p>We import your historical spreadsheets, turn on audit watchdogs and Ask ISABI, verify every balance side by side with your accountant, train your team, and go live.</p>
+          <span class="sprint-deliverable">✓ Deliverable: Verified side-by-side cutover &amp; team sign-off</span>
         </div>
       </div>
 
@@ -542,7 +541,7 @@ BODY = f"""
         <div class="pricing-trust-bar">
           <span>{ICONS["check"]} <b>From $3,000 Setup</b> · Tailored Around Your Workflow</span>
           <span>{ICONS["check"]} <b>$50 to $100 / Seat / Mo</b> · Simple Per-User Pricing</span>
-          <span>{ICONS["check"]} <b>$0.00 Variance</b> · Parallel-Tested Before Cutover</span>
+          <span>{ICONS["check"]} <b>Accountant-Ready</b> · Verified Side-by-Side Before Go-Live</span>
           <span>{ICONS["check"]} <b>100% Data Ownership</b> · Direct Principal Delivery</span>
         </div>
       </div>

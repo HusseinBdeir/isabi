@@ -649,9 +649,9 @@ JS = r"""
     },
     {
       id: 'bridge', cat: 'finance', emoji: ICONS.scale, tone: 'tone-teal',
-      name: 'Statutory Book Bridge', sub: 'Zero-Variance Parallel Run',
-      kicker: 'Safe Transition · Dual-Entry Verification',
-      desc: 'Runs alongside your existing accounting software during onboarding and compares every account line-by-line until the variance is $0.00.',
+      name: 'Accountant Book Bridge', sub: 'Side-by-Side Accounting Sync',
+      kicker: 'Safe Transition · Works With Your Accountant',
+      desc: 'Runs alongside your existing accounting software during onboarding and compares every account line-by-line until every balance matches cleanly.',
       bullets: [
         ICONS.sync + ' Imports monthly trial balances from legacy accounting registers',
         ICONS.search + ' Highlights any discrepancy down to $1 with instant voucher drilldown',
@@ -1071,10 +1071,10 @@ JS = r"""
     } else {
       if (k1Lbl) k1Lbl.innerHTML = `${ICONS.trend} Consolidated Revenue (MTD)`;
       if (k1Val) k1Val.textContent = fmtHeroMoney(1482600);
-      if (k1Sub) k1Sub.textContent = '▲ +11.4% vs prior period · 6 Entities';
-      if (k2Lbl) k2Lbl.innerHTML = `${ICONS.scale} Books Reconciled`;
-      if (k2Val) k2Val.textContent = '100.0%';
-      if (k2Sub) k2Sub.textContent = '✓ $0.00 statutory variance';
+      if (k1Sub) k1Sub.textContent = '▲ +11.4% vs prior month · 6 Entities';
+      if (k2Lbl) k2Lbl.innerHTML = `${ICONS.scale} Net Operating Profit`;
+      if (k2Val) k2Val.textContent = fmtHeroMoney(384200);
+      if (k2Sub) k2Sub.textContent = '✓ 25.9% margin · Books 100% balanced';
     }
 
     stageEl.innerHTML = `

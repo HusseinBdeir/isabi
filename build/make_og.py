@@ -48,7 +48,7 @@ HTML = f"""<!doctype html>
     <div class="chips">
       <span class="chip">Tailored Setup + Per-Seat</span>
       <span class="chip">1 to 2 Weeks to Go-Live</span>
-      <span class="chip">$0.00 Variance Parallel Run</span>
+      <span class="chip">Works With Your Accountant</span>
       <span class="chip">Field Kiosks &amp; Cited AI</span>
     </div>
   </div>

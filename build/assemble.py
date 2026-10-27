@@ -37,7 +37,7 @@ HEAD = """<!DOCTYPE html>
   <meta name="twitter:title" content="ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI">
   <meta name="twitter:description" content="Custom operations, double-entry accounting, executive dashboards, printable statements, offline-ready field kiosks, and Ask ISABI AI with tailored setup and simple per-seat pricing.">
   <meta name="twitter:image" content="https://husseinbdeir.github.io/isabi/og-image.png">
-  <meta name="theme-color" content="#F4F2EE">
+  <meta name="theme-color" content="#FAF9F6">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
@@ -55,7 +55,7 @@ HEAD = """<!DOCTYPE html>
         var t = localStorage.getItem('isabi.theme.v2') === 'dark' ? 'dark' : 'light';
         d.setAttribute('data-theme', t);
         var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute('content', t === 'dark' ? '#0B1730' : '#F4F2EE');
+        if (m) m.setAttribute('content', t === 'dark' ? '#0B1730' : '#FAF9F6');
         if (window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)) {
           d.classList.add('ios-standalone');
         }
