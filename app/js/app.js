@@ -1139,6 +1139,10 @@
     'expenses', 'cash_expenses', 'credit_expenses', 'ap_material', 'ap_haulage', 'ap_expense', 'ap_on_credit', 'salaries_paid', 'commission_due', 'gross_margin', 'operating_profit', 'receipts', 'settlements_paid',
     'diesel_litres', 'own_fleet_loads'];
 
+  function isCommRule(r) {
+    return Boolean(r && /^commission$/i.test(String(r.rule_type || '').trim()));
+  }
+
   let _commIdxRev = -1;
   let _commIdxLen = -1;
   let _commIdxMap = null;
@@ -10691,21 +10695,23 @@
     const isCommRule = r => Boolean(r && /^commission$/i.test(String(r.rule_type || '').trim()));
     const isNonAggOutlierRule = r => !r || /^unit$/i.test(String(r.unit || '')) || Number(r.unit_price ?? r.price ?? 0) > 250 || /\b(shacman|truck|mixer|pump|excavator|excavation)\b/i.test(String(r.product || ''));
     const base = filterRecords(SEED.records.price_rules, { ignorePeriod: true });
-    const salesBase = base.filter(r => !isQuarryOnlyRule(r));
-    const commBaseCount = salesBase.filter(isCommRule).length;
+    const salesBase = base.filter(r => !isQuarryOnlyRule(r) && !isCommRule(r));
+    const commBaseCount = base.filter(isCommRule).length;
+    const isCommView = STATE.chipFilter === 'Commission';
     const CANON_SALES_TYPES = ['Sales (Pickup)', 'Sales (Delivery)', 'List Price', 'Commission'];
     const salesTypes = uniqSorted(CANON_SALES_TYPES.concat(salesBase.map(r => r.rule_type)).filter(Boolean));
     const allTypes = uniqSorted(CANON_SALES_TYPES.concat(base.map(r => r.rule_type)).filter(Boolean));
     const rules = sortRows(base.filter(r => {
-      if (STATE.chipFilter === 'all_domains') return true;
-      if (STATE.chipFilter === 'active') return !isQuarryOnlyRule(r) && isActive(r);
-      if (STATE.chipFilter === 'lapsed') return !isQuarryOnlyRule(r) && !isActive(r);
-      if (STATE.chipFilter === 'indiff') return ruleAnyIndiffPrice(r) != null;
-      if (STATE.chipFilter === 'customer') return !!r.customer;
-      if (STATE.chipFilter === 'quarry') return isQuarryOnlyRule(r) || (!r.customer && (r.supplier || r.site));
+      if (STATE.chipFilter === 'Commission') return isCommRule(r);
+      if (STATE.chipFilter === 'all_domains') return !isCommRule(r);
+      if (STATE.chipFilter === 'active') return !isQuarryOnlyRule(r) && !isCommRule(r) && isActive(r);
+      if (STATE.chipFilter === 'lapsed') return !isQuarryOnlyRule(r) && !isCommRule(r) && !isActive(r);
+      if (STATE.chipFilter === 'indiff') return !isCommRule(r) && ruleAnyIndiffPrice(r) != null;
+      if (STATE.chipFilter === 'customer') return !!r.customer && !isCommRule(r);
+      if (STATE.chipFilter === 'quarry') return isQuarryOnlyRule(r) || (!r.customer && (r.supplier || r.site) && !isCommRule(r));
       if (STATE.chipFilter === 'app') return isAppRecord(r);
       if (allTypes.includes(STATE.chipFilter)) return r.rule_type === STATE.chipFilter;
-      return !isQuarryOnlyRule(r);
+      return !isQuarryOnlyRule(r) && !isCommRule(r);
     }), 'pricing', 'start_date', 'desc');
     const shown = rules.slice(0, shownCount('pricing'));
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
@@ -10823,13 +10829,13 @@
       <div class="panel-card" id="pricingPanel">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search customer, product, delivery site, agreement code...')}
+            ${searchBox('Search customer, product, delivery site...')}
             <div class="chip-bar">${chip('all', `Commercial (${salesBase.length})`)}${chip('active', `Active (${activeCount})`)}${chip('lapsed', 'Lapsed')}${chip('indiff', `Indifference (${indiffCount})`)}${typeChips}${chip('all_domains', `All Domains (${base.length})`)}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw_pricing" title="Open Raw Material Purchase &amp; Quarry Haulage Agreements">${ic('raw')} Quarry &amp; Haulage Rates</button>
             ${canEnterForm('pricerule') ? '<button type="button" class="btn btn-ghost-bar" data-open-modal="pricerule_comm" title="Create a per-unit Sales Commission rule for a plant owner">+ Commission Rule</button>' : ''}
-            ${exportBtn('pricingPanel', 'Price_Agreements')}
+            ${exportBtn('pricingPanel', isCommView ? 'Commission_Rules' : 'Price_Agreements')}
             ${canEnterForm('pricerule') ? '<button class="btn btn-primary" data-open-modal="pricerule">+ New Price Agreement</button>' : ''}
           </div>
         </div>
@@ -10837,10 +10843,16 @@
         <div class="table-wrap">
           <table class="ledger-table">
             <thead>
+              ${isCommView ? `
               <tr>
-                ${th('pricing', 'Code', 'name')}${th('pricing', 'Co.', 'company')}${th('pricing', 'Rule Type', 'rule_type')}${th('pricing', 'Customer / Owner', 'customer')}${th('pricing', 'Product', 'product')}${th('pricing', 'Site', 'site')}
+                ${th('pricing', 'Co.', 'company')}${th('pricing', 'Plant Owner', 'supplier')}${th('pricing', 'Product / Grade', 'product')}${th('pricing', 'Unit', 'unit')}${th('pricing', 'Commission Rate ($)', 'unit_price', 'r')}${th('pricing', 'Start', 'start_date')}${th('pricing', 'End', 'end_date')}<th>Status</th>
+              </tr>
+              ` : `
+              <tr>
+                ${th('pricing', 'Co.', 'company')}${th('pricing', 'Rule Type', 'rule_type')}${th('pricing', 'Customer / Owner', 'customer')}${th('pricing', 'Product', 'product')}${th('pricing', 'Site', 'site')}
                 ${th('pricing', 'Unit', 'unit')}${th('pricing', 'Unit ($)', 'unit_price', 'r')}${th('pricing', 'Transport ($)', 'trans_unit_price', 'r')}${th('pricing', 'Indifference ($)', 'indiff_price', 'r')}${th('pricing', 'Start', 'start_date')}${th('pricing', 'End', 'end_date')}<th>Status</th>
               </tr>
+              `}
             </thead>
             <tbody>
               ${shown.map(pr => {
@@ -10850,10 +10862,23 @@
                 const commRow = isCommRule(pr);
                 const upVal = (!matInd && Number(pr.unit_price ?? pr.price ?? 0) !== 0) ? Number(pr.unit_price ?? pr.price) : null;
                 const tpVal = (!trInd && Number(pr.trans_unit_price ?? pr.trans_price ?? 0) !== 0) ? Number(pr.trans_unit_price ?? pr.trans_price) : null;
+                if (isCommView) {
+                  return `
+                <tr class="rrow" data-rkey="price_rules" data-rid="${esc(pr.id)}">
+                  <td>${coBadge(pr.company)}${appCell(pr, 'price_rules')}</td>
+                  <td>${pr.supplier ? relLink('suppliers', pr.supplier, pr.supplier, true) : '—'}</td>
+                  <td>${pr.product ? relLink('products', pr.product) : '(All Grades)'}</td>
+                  <td class="mono">${esc(pr.unit || 'Ton')}</td>
+                  <td class="r">${upVal != null ? `<strong>${fmtUSD(upVal, 2)}</strong>` : '—'}</td>
+                  <td class="mono">${esc(fmtDateDMY(pr.start_date))}</td>
+                  <td class="mono">${esc(pr.end_date ? fmtDateDMY(pr.end_date) : 'Open')}</td>
+                  <td><span class="badge ${isActive(pr) ? 'badge-ok' : 'badge-warn'}">${isActive(pr) ? 'Active' : 'Lapsed'}</span>${canEnterForm('pricerule') ? ` <button type="button" class="btn btn-ghost-bar" style="padding:1px 6px;font-size:10px" data-open-comm-prod="${esc(pr.product || '')}" data-comm-co="${esc(pr.company || '')}" data-comm-uom="${esc(pr.unit || 'Ton')}" data-comm-owner="${esc(pr.supplier || '')}" title="Add a dated rate or unit change for ${esc(pr.product || 'this product')}">Step Rate</button>` : ''}</td>
+                </tr>
+              `;
+                }
                 return `
                 <tr class="rrow" data-rkey="price_rules" data-rid="${esc(pr.id)}">
-                  <td class="mono"><strong>${esc(pr.name)}</strong>${appCell(pr, 'price_rules')}</td>
-                  <td>${coBadge(pr.company)}</td>
+                  <td>${coBadge(pr.company)}${appCell(pr, 'price_rules')}</td>
                   <td><span class="badge ${commRow ? 'badge-brass' : 'badge-info'}">${esc(pr.rule_type || '—')}</span></td>
                   <td>${pr.customer ? relLink('customers', pr.customer, pr.customer, true) : (pr.supplier ? `${relLink('suppliers', pr.supplier, pr.supplier, true)}${commRow ? ' <span class="badge badge-neutral" style="font-size:9.5px">Plant Owner</span>' : ''}` : (pr.site ? relLink('sites', pr.site, pr.site + ' (site)', true) : '<strong>Standard List</strong>'))}</td>
                   <td>${pr.product ? relLink('products', pr.product) : '(All Grades)'}</td>
@@ -10867,17 +10892,25 @@
                   <td><span class="badge ${isActive(pr) ? 'badge-ok' : 'badge-warn'}">${isActive(pr) ? 'Active' : 'Lapsed'}</span>${commRow && canEnterForm('pricerule') ? ` <button type="button" class="btn btn-ghost-bar" style="padding:1px 6px;font-size:10px" data-open-comm-prod="${esc(pr.product || '')}" data-comm-co="${esc(pr.company || '')}" data-comm-uom="${esc(pr.unit || 'Ton')}" data-comm-owner="${esc(pr.supplier || '')}" title="Add a dated rate or unit change for ${esc(pr.product || 'this product')}">Step Rate</button>` : ''}</td>
                 </tr>
               `;
-              }).join('') || emptyRow(13, STATE.search ? `No agreements match "${STATE.search}".` : (STATE.chipFilter === 'Commission' ? 'No sales commission rules configured for this entity yet. Click "+ Commission Rule" above to add one.' : 'No agreements for this entity'))}
-              ${showMoreRow('pricing', rules.length, 13)}
+              }).join('') || emptyRow(isCommView ? 8 : 12, STATE.search ? `No agreements match "${STATE.search}".` : (isCommView ? 'No sales commission rules configured for this entity yet. Click "+ Commission Rule" above to add one.' : 'No agreements for this entity'))}
+              ${showMoreRow('pricing', rules.length, isCommView ? 8 : 12)}
             </tbody>
             <tfoot>
+              ${isCommView ? `
               <tr>
-                <td colspan="7"><b>TOTAL (${fmtNum(rules.length)} MATCHING AGREEMENTS · ${fmtNum(rules.filter(isActive).length)} ACTIVE)</b></td>
+                <td colspan="4"><b>TOTAL (${fmtNum(rules.length)} COMMISSION RULES · ${fmtNum(rules.filter(isActive).length)} ACTIVE)</b></td>
+                <td class="r"><span class="mu" style="font-size:10px">Avg </span><b>${upRules.length ? fmtUSD(upRules.reduce((a, r) => a + Number(r.unit_price ?? r.price ?? 0), 0) / upRules.length, 2) : '—'}</b></td>
+                <td colspan="3"></td>
+              </tr>
+              ` : `
+              <tr>
+                <td colspan="6"><b>TOTAL (${fmtNum(rules.length)} MATCHING AGREEMENTS · ${fmtNum(rules.filter(isActive).length)} ACTIVE)</b></td>
                 <td class="r"><span class="mu" style="font-size:10px">Avg </span><b>${upRules.length ? fmtUSD(upRules.reduce((a, r) => a + Number(r.unit_price ?? r.price ?? 0), 0) / upRules.length, 2) : '—'}</b></td>
                 <td class="r"><span class="mu" style="font-size:10px">Avg </span><b>${tpRules.length ? fmtUSD(tpRules.reduce((a, r) => a + Number(r.trans_unit_price ?? r.trans_price ?? 0), 0) / tpRules.length, 2) : '—'}</b></td>
                 <td class="r"><span class="mu" style="font-size:10px">Avg </span><b>${indRules.length ? fmtUSD(indRules.reduce((a, r) => a + Number(ruleAnyIndiffPrice(r) || 0), 0) / indRules.length, 2) : '—'}</b></td>
                 <td colspan="3"></td>
               </tr>
+              `}
             </tfoot>
           </table>
         </div>
@@ -11379,7 +11412,7 @@
       <div class="panel-card" id="rawPricingPanel" style="margin-bottom:14px">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search site owner, hauler, source site, material, code...')}
+            ${searchBox('Search site owner, hauler, source site, material...')}
             <div class="chip-bar">${chip('all', `All Quarry (${base.length})`)}${chip('active', `Active (${activeCount})`)}${chip('lapsed', 'Lapsed')}${chip('Purchase Price (Site)', `Purchase (${purchCount})`)}${chip('Transport Price (Site)', `Transport (${transCount})`)}${chip('indiff', `Flat / Truck (${indiffCount})`)}${chip('unit_rate', 'Per m³ / Ton')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
@@ -11393,7 +11426,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('raw_pricing', 'Code', 'name')}${th('raw_pricing', 'Co.', 'company')}${th('raw_pricing', 'Rule Type', 'rule_type')}${th('raw_pricing', 'Site Owner / Hauler', 'supplier')}${th('raw_pricing', 'Source Site', 'site')}${th('raw_pricing', 'Material', 'product')}
+                ${th('raw_pricing', 'Co.', 'company')}${th('raw_pricing', 'Rule Type', 'rule_type')}${th('raw_pricing', 'Site Owner / Hauler', 'supplier')}${th('raw_pricing', 'Source Site', 'site')}${th('raw_pricing', 'Material', 'product')}
                 ${th('raw_pricing', 'Unit', 'unit')}${th('raw_pricing', 'Unit Rate ($)', 'unit_price', 'r')}${th('raw_pricing', 'Haul Rate ($)', 'trans_unit_price', 'r')}${th('raw_pricing', 'Flat / Truck ($)', 'indiff_price', 'r')}${th('raw_pricing', 'Start', 'start_date')}${th('raw_pricing', 'End', 'end_date')}<th>Status</th>
               </tr>
             </thead>
@@ -11406,8 +11439,7 @@
                 const tpVal = (!trInd && Number(pr.trans_unit_price ?? pr.trans_price ?? 0) !== 0) ? Number(pr.trans_unit_price ?? pr.trans_price) : null;
                 return `
                 <tr class="rrow" data-rkey="price_rules" data-rid="${esc(pr.id)}">
-                  <td class="mono"><strong>${esc(pr.name)}</strong>${appCell(pr, 'price_rules')}</td>
-                  <td>${coBadge(pr.company)}</td>
+                  <td>${coBadge(pr.company)}${appCell(pr, 'price_rules')}</td>
                   <td><span class="badge ${pr.rule_type === 'Transport Price (Site)' ? 'badge-brass' : 'badge-info'}">${esc(pr.rule_type || '—')}</span></td>
                   <td>${pr.supplier ? relLink('suppliers', pr.supplier, pr.supplier, true) : (pr.site ? relLink('sites', pr.site, pr.site + ' (site)', true) : '—')}</td>
                   <td>${pr.site ? relLink('sites', pr.site) : '—'}</td>
@@ -11421,12 +11453,12 @@
                   <td><span class="badge ${isActive(pr) ? 'badge-ok' : 'badge-warn'}">${isActive(pr) ? 'Active' : 'Lapsed'}</span></td>
                 </tr>
               `;
-              }).join('') || emptyRow(13, STATE.search ? `No quarry or haulage agreements match "${STATE.search}".` : 'No quarry or haulage agreements for this entity')}
-              ${showMoreRow('raw_pricing', rules.length, 13)}
+              }).join('') || emptyRow(12, STATE.search ? `No quarry or haulage agreements match "${STATE.search}".` : 'No quarry or haulage agreements for this entity')}
+              ${showMoreRow('raw_pricing', rules.length, 12)}
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="7"><b>TOTAL (${fmtNum(rules.length)} QUARRY &amp; HAULAGE AGREEMENTS · ${fmtNum(rules.filter(isActive).length)} ACTIVE)</b></td>
+                <td colspan="6"><b>TOTAL (${fmtNum(rules.length)} QUARRY &amp; HAULAGE AGREEMENTS · ${fmtNum(rules.filter(isActive).length)} ACTIVE)</b></td>
                 <td class="r"><span class="mu" style="font-size:10px">Avg </span><b>${avgMatUnit ? fmtUSD(avgMatUnit, 2) : '—'}</b></td>
                 <td class="r"><span class="mu" style="font-size:10px">Avg </span><b>${avgHaulUnit ? fmtUSD(avgHaulUnit, 2) : '—'}</b></td>
                 <td class="r"><span class="mu" style="font-size:10px">Avg </span><b>${avgAllInd ? fmtUSD(avgAllInd, 2) : '—'}</b></td>
@@ -18497,8 +18529,8 @@
       const today = SEED_DATE;
       const rows = sortRows(filterRecords(SEED.records.price_rules, { ignoreSearch: true, ignorePeriod: true }).filter(r => (!r.end_date || String(r.end_date) >= today) && (!r.start_date || String(r.start_date) <= today)), 'st17', 'unit_price', 'desc');
       bodyHtml = stTable([
-        { label: 'Agreement', key: 'name', mono: true }, { label: 'Co.', key: 'company' }, { label: 'Customer / Owner', key: 'customer', fmt: (v, r) => `<strong>${esc(v || r.supplier || 'Standard List')}</strong>` }, { label: 'Product', key: 'product', fmt: v => esc(v || '(All Grades)') }, { label: 'Site', key: 'site' }, { label: 'Unit', key: 'unit', mono: true }, { label: 'Unit Price', key: 'unit_price', r: true, fmt: C.usd2 }, { label: 'Transport', key: 'trans_unit_price', r: true, fmt: v => v ? fmtUSD(v, 2) : '—' }, { label: 'Start', key: 'start_date', mono: true }, { label: 'End', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }
-      ], rows, [{ v: `${fmtNum(rows.length)} ACTIVE AGREEMENTS AT ${today}`, span: 10 }]);
+        { label: 'Co.', key: 'company' }, { label: 'Customer / Owner', key: 'customer', fmt: (v, r) => `<strong>${esc(v || r.supplier || 'Standard List')}</strong>` }, { label: 'Product', key: 'product', fmt: v => esc(v || '(All Grades)') }, { label: 'Site', key: 'site' }, { label: 'Unit', key: 'unit', mono: true }, { label: 'Unit Price', key: 'unit_price', r: true, fmt: C.usd2 }, { label: 'Transport', key: 'trans_unit_price', r: true, fmt: v => v ? fmtUSD(v, 2) : '—' }, { label: 'Start', key: 'start_date', mono: true }, { label: 'End', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }
+      ], rows, [{ v: `${fmtNum(rows.length)} ACTIVE AGREEMENTS AT ${today}`, span: 9 }]);
     } else if (code === '18') {
       const vatTickets = sortRows(filterRecords(SEED.records.sales_tickets, { ignoreSearch: true }).filter(t => Number(t.vat || 0) > 0 || t.vat_invoice), 'st18', 'date', 'desc');
       bodyHtml = `<div class="live-calc"><div><small>Output VAT 11% invoiced (4427)</small><b>${fmtUSD(k.sales_vat, 2)}</b></div><div><small>VAT receivable from customers</small><b>${fmtUSD(k.vat_receivable, 2)}</b></div><div><small>Net sales ex-VAT</small><b>${fmtUSD(k.net_sales, 2)}</b></div><div><small>Sales TTC</small><b>${fmtUSD(k.sales_ttc, 2)}</b></div></div>
@@ -20979,6 +21011,54 @@
     return 0;
   }
 
+  const TON_EST_MIN_RATIO = 0.70;
+  const TON_EST_MAX_RATIO = 1.50;
+  function evaluateTonEstimateGuard(qty, estTons, effCap, tonFactor, adminUnlocked = false) {
+    const hasEstimate = Boolean(estTons != null && Number(estTons) > 0 && effCap && Number(effCap) > 0 && tonFactor > 0);
+    if (!hasEstimate) {
+      return { hasEstimate: false, minTons: null, maxTons: null, tooLow: false, tooHigh: false, blocked: false, severity: '', hint: '' };
+    }
+    const est = Number(estTons);
+    const cap = Number(effCap);
+    const tf = Number(tonFactor);
+    const minTons = round2(est * TON_EST_MIN_RATIO);
+    const maxTons = round2(est * TON_EST_MAX_RATIO);
+    if (!(qty > 0)) {
+      return {
+        hasEstimate: true, minTons, maxTons, tooLow: false, tooHigh: false, blocked: false,
+        severity: 'ok',
+        hint: `Estimated: ≈ ${fmtNum(est, 2)} Tons (${fmtNum(cap, 1)} m³ truck × ${tf} t/m³) · Enter weighed tons`
+      };
+    }
+    const eqM3 = fmtNum(qty / tf, 2);
+    if (qty + 1e-9 < minTons) {
+      return {
+        hasEstimate: true, minTons, maxTons, tooLow: true, tooHigh: false,
+        blocked: !adminUnlocked,
+        severity: adminUnlocked ? 'warn' : 'crit',
+        hint: adminUnlocked
+          ? `Admin override: ${fmtNum(qty, 2)} t is below min ${fmtNum(minTons, 2)} t (Est. ≈ ${fmtNum(est, 2)} t)`
+          : `Not accepted — ${fmtNum(qty, 2)} Tons (≈ ${eqM3} m³) is far below estimated ${fmtNum(est, 2)} Tons (${fmtNum(cap, 1)} m³ × ${tf} t/m³ · min ${fmtNum(minTons, 2)} t)`
+      };
+    }
+    if (qty - 1e-9 > maxTons) {
+      return {
+        hasEstimate: true, minTons, maxTons, tooLow: false, tooHigh: true,
+        blocked: !adminUnlocked,
+        severity: adminUnlocked ? 'warn' : 'crit',
+        hint: adminUnlocked
+          ? `Admin override: ${fmtNum(qty, 2)} t exceeds max ${fmtNum(maxTons, 2)} t (Est. ≈ ${fmtNum(est, 2)} t)`
+          : `Not accepted — ${fmtNum(qty, 2)} Tons (≈ ${eqM3} m³) exceeds max ${fmtNum(maxTons, 2)} Tons for a ${fmtNum(cap, 1)} m³ truck (Est. ≈ ${fmtNum(est, 2)} t)`
+      };
+    }
+    const isWarn = (qty < est * 0.85 || qty > est * 1.25);
+    return {
+      hasEstimate: true, minTons, maxTons, tooLow: false, tooHigh: false, blocked: false,
+      severity: isWarn ? 'warn' : 'ok',
+      hint: `Estimated: ≈ ${fmtNum(est, 2)} Tons (${fmtNum(cap, 1)} m³ truck × ${tf} t/m³) · Entered: ${fmtNum(qty, 2)} t (≈ ${eqM3} m³)`
+    };
+  }
+
   function syncUomQuickPillsUI(activeUom) {
     const bar = $('uomQuickPills');
     if (!bar) return;
@@ -21140,7 +21220,7 @@
     if ((companyChanged || customerChanged || productChanged || siteChanged || saleTypeChanged) && !isFieldAdminUnlocked('f_uom')) {
       FORM_UI.uomManual = false;
     }
-    const prevUom = uomEl ? uomEl.value : 'm³';
+    const prevUom = FORM_UI.lastUom || (uomEl ? uomEl.value : 'm³');
     const tonMode = resolveCustomerProductTonMode(company, customer, product, effDate, rule || crossType, prod);
     const targetUom = tonMode.isTon
       ? 'Ton'
@@ -21150,6 +21230,11 @@
       uomEl.value = targetUom;
     }
     const uom = (uomEl && uomEl.value) ? uomEl.value : targetUom;
+    const uomChanged = prevUom !== uom;
+    FORM_UI.lastUom = uom;
+    if (uomChanged && !isFieldAdminUnlocked('f_qty')) {
+      FORM_UI.qtyManual = false;
+    }
     const isTonUom = /^tons?$/i.test(uom);
     const isTruckUom = /truck/i.test(uom);
     syncUomQuickPillsUI(uom);
@@ -21158,8 +21243,9 @@
       matchedRules: [haulCustRule, transRule, rule]
     }) : null;
     const effCap = agrSizeOverride ? agrSizeOverride.size : ((truckRow && Number(truckRow.capacity) > 0) ? Number(truckRow.capacity) : null);
+    const winInfo = truckRow && truckRow.active_window ? truckRow.active_window : null;
 
-    if (prevUom !== uom && !FORM_UI.qtyManual && qtyEl()) {
+    if (uomChanged && !FORM_UI.qtyManual && qtyEl()) {
       if (isTonUom) {
         qtyEl().value = '';
       } else if (isTruckUom) {
@@ -21174,7 +21260,20 @@
     setText('lbl_uom', uom);
     const tonFactor = resolveProductTonFactor(prod, product);
     setHint('hint_product', prod ? (tonFactor && tonFactor !== 1 ? `1 m³ = ${tonFactor} t` : '') : (product ? 'Unknown grade' : ''), '');
-    setHint('hint_uom', tonMode.reason || (isTonUom ? 'Weighed in Tons · Quantity unlocked' : `Measured in ${uom} · Click Ton to switch`), isTonUom ? 'ok' : '');
+    const m3LockSource = agrSizeOverride
+      ? `${agrSizeOverride.rule.site || agrSizeOverride.rule.customer || agrSizeOverride.rule.name || 'site'} truck size (${fmtNum(effCap, 1)} m³)`
+      : (winInfo && (winInfo.site || winInfo.cust) && effCap
+          ? `${winInfo.site || winInfo.cust} truck size (${fmtNum(effCap, 1)} m³)`
+          : (effCap
+              ? `${truckRow ? truckRow.name + ' ' : ''}truck size (${fmtNum(effCap, 1)} m³)`
+              : 'truck capacity (select Truck)'));
+    setHint('hint_uom',
+      isTonUom
+        ? (tonMode.reason || 'Weighed in Tons · Quantity unlocked')
+        : (isTruckUom
+            ? 'Measured per Truck load · Quantity locked to 1'
+            : `Measured in m³ · Quantity locked to ${m3LockSource}`),
+      isTonUom ? 'ok' : '');
 
     const priceLocked = applyFieldLockState('f_unitprice', !isUnreg, 'Locked to active Price Agreement or List Price on Pickup & Delivery');
     const transLocked = applyFieldLockState('f_transunitprice', isDelivery, 'Locked to Price Agreement transport rate on Delivery');
@@ -21247,8 +21346,7 @@
     }
 
     const truckHasNoCap = !!(truckRow && !(Number(effCap) > 0));
-    const unitOverridden = uom !== baseUom && !isTruckUom;
-    const shouldLockQty = !isUnreg && !truckHasNoCap && !isTonUom && !unitOverridden;
+    const shouldLockQty = !isUnreg && !truckHasNoCap && !isTonUom;
     const estTons = (effCap && Number(effCap) > 0 && tonFactor > 0) ? round2(Number(effCap) * tonFactor) : null;
     const qtyLocked = applyFieldLockState('f_qty', shouldLockQty,
       isTruckUom
@@ -21259,22 +21357,26 @@
                 : 'Unlocked for Ton sale — enter weighed tons')
             : (agrSizeOverride
                 ? `Locked to ${agrSizeOverride.rule.name} Client/Site Truck Size (${agrSizeOverride.size} m³)`
-                : (truckRow && effCap
-                    ? `Locked to ${truckRow.name} capacity (${effCap} m³)`
-                    : 'Auto-populated from Truck Capacity (m³); unlock as Admin to enter manual quantity'))));
+                : (winInfo && (winInfo.site || winInfo.cust) && effCap
+                    ? `Locked to ${truckRow.name} truck size for ${winInfo.site || winInfo.cust} (${effCap} m³)`
+                    : (truckRow && effCap
+                        ? `Locked to ${truckRow.name} capacity (${effCap} m³)`
+                        : 'Auto-populated from Truck Capacity (m³); unlock as Admin to enter manual quantity')))));
 
     if (qtyEl()) {
       qtyEl().placeholder = isTonUom
         ? (estTons != null ? `Est. ≈ ${fmtNum(estTons, 2)} t (${fmtNum(effCap, 1)} m³ × ${tonFactor})` : 'Enter weighed tons...')
         : (qtyLocked ? 'Auto-filled from Truck m³...' : 'Enter quantity...');
     }
-    if (isTruckUom && qtyEl() && qtyLocked && !FORM_UI.qtyManual) {
-      qtyEl().value = '1';
-    } else if (!isTonUom && effCap && qtyEl() && qtyLocked && !FORM_UI.qtyManual && (truckRow || agrSizeOverride)) {
-      qtyEl().value = Number(effCap).toFixed(2);
+    if (qtyEl() && qtyLocked) {
+      if (isTruckUom) {
+        qtyEl().value = '1';
+      } else if (!isTonUom) {
+        qtyEl().value = (effCap != null && Number(effCap) > 0) ? Number(effCap).toFixed(2) : '';
+      }
+      qtyEl().dataset.lockedValue = qtyEl().value;
     }
 
-    const winInfo = truckRow && truckRow.active_window ? truckRow.active_window : null;
     const winSuffix = agrSizeOverride
       ? ` · Sized by ${agrSizeOverride.rule.rule_type || 'Agreement'} (${agrSizeOverride.rule.site || agrSizeOverride.rule.customer || agrSizeOverride.rule.name})`
       : (winInfo && (winInfo.cust || winInfo.site)
@@ -21320,13 +21422,14 @@
     setText('calc_tr', fmtUSD(finalTr, 2) + (transIsIndiff ? ' (flat / load)' : (tierTrAdj ? ` (tier ${tierTrAdj > 0 ? '+' : '−'}$${Math.abs(tierTrAdj).toFixed(2)})` : '')));
     setText('calc_vat', vatReg ? fmtUSD(vat, 2) : '—');
     setText('calc_total', fmtUSD(ttc, 2));
+    const tonGuard = isTonUom
+      ? evaluateTonEstimateGuard(qty, estTons, effCap, tonFactor, isFieldAdminUnlocked('f_qty'))
+      : { hasEstimate: false, blocked: false, severity: '', hint: '' };
     if (isTonUom) {
       if (qty <= 0 && val('f_qty') !== '') {
         setHint('hint_qty', 'Must be above zero', 'crit');
-      } else if (estTons != null && qty <= 0) {
-        setHint('hint_qty', `Estimated: ≈ ${fmtNum(estTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${tonFactor} t/m³) · Enter weighed tons`, 'ok');
-      } else if (estTons != null && qty > 0) {
-        setHint('hint_qty', `Estimated: ≈ ${fmtNum(estTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${tonFactor} t/m³) · Entered: ${fmtNum(qty, 2)} t (≈ ${fmtNum(qty / tonFactor, 2)} m³)`, 'ok');
+      } else if (tonGuard.hasEstimate) {
+        setHint('hint_qty', tonGuard.hint, tonGuard.severity);
       } else if (effCap && Number(effCap) > 0) {
         setHint('hint_qty', `Truck size: ${fmtNum(effCap, 1)} m³ · Select Product for conversion rate & estimated tonnage`, '');
       } else if (tonFactor > 0) {
@@ -21335,7 +21438,19 @@
         setHint('hint_qty', 'Unlocked for Ton sale · Select Truck & Product to see estimated tonnage', '');
       }
     } else {
-      setHint('hint_qty', qty > 0 && prod && tonFactor > 0 && tonFactor !== 1 ? `≈ ${fmtNum(qty * tonFactor, 2)} Tons (${fmtNum(qty, 1)} m³ × ${tonFactor} t/m³)` : (qty <= 0 && val('f_qty') ? 'Must be above zero' : ''), qty <= 0 && val('f_qty') ? 'crit' : '');
+      const m3SrcNote = agrSizeOverride
+        ? `Sized by ${agrSizeOverride.rule.site || agrSizeOverride.rule.customer || agrSizeOverride.rule.name} (${fmtNum(effCap, 1)} m³)`
+        : (winInfo && (winInfo.site || winInfo.cust) && effCap
+            ? `Sized by ${truckRow.name} site window (${fmtNum(effCap, 1)} m³)`
+            : (truckRow && effCap ? `Sized by ${truckRow.name} (${fmtNum(effCap, 1)} m³)` : ''));
+      const convNote = (qty > 0 && prod && tonFactor > 0 && tonFactor !== 1)
+        ? `≈ ${fmtNum(qty * tonFactor, 2)} Tons (${fmtNum(qty, 1)} m³ × ${tonFactor} t/m³)`
+        : '';
+      setHint('hint_qty',
+        qty <= 0 && val('f_qty')
+          ? 'Must be above zero'
+          : ([m3SrcNote, convNote].filter(Boolean).join(' · ')),
+        qty <= 0 && val('f_qty') ? 'crit' : '');
     }
     if (disc > matGross && matGross > 0) setHint('hint_disc', 'Discount exceeds the material subtotal', 'crit');
     else if (matGross > 0 && disc > matGross * 0.2) { setHint('hint_disc', 'Above 20% of material — add a note', 'warn'); }
@@ -21373,7 +21488,7 @@
       }
     }
     renderAdminLockBar();
-    return { company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule, tier, tierAdj, tierTrAdj, qty, up, tp, disc, tip, mat: matGross, tr: finalTr, net, vat, ttc, method: val('f_method') };
+    return { company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule, tier, tierAdj, tierTrAdj, qty, up, tp, disc, tip, mat: matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard };
   }
 
   function recalcRaw() {
@@ -21473,7 +21588,7 @@
     if ((companyChanged || siteChanged || ownerChanged || productChanged) && !isFieldAdminUnlocked('f_uom')) {
       FORM_UI.uomManual = false;
     }
-    const prevUom = uomEl ? uomEl.value : 'm³';
+    const prevUom = FORM_UI.lastUom || (uomEl ? uomEl.value : 'm³');
     const tonMode = resolveRawSiteProductTonMode(company, site, owner, product, effDate, rule, prod);
     const targetUom = tonMode.isTon
       ? 'Ton'
@@ -21481,6 +21596,11 @@
     applyFieldLockState('f_uom', false, 'Select m³, Ton, or Truck');
     if (uomEl && !FORM_UI.uomManual) uomEl.value = targetUom;
     const uom = val('f_uom') || targetUom;
+    const uomChanged = prevUom !== uom;
+    FORM_UI.lastUom = uom;
+    if (uomChanged && !isFieldAdminUnlocked('f_qty')) {
+      FORM_UI.qtyManual = false;
+    }
     const isTonUom = /^tons?$/i.test(uom);
     const isTruckUom = /truck/i.test(uom);
     syncUomQuickPillsUI(uom);
@@ -21489,8 +21609,9 @@
       matchedRules: [haulRule, rule]
     });
     const effCap = agrSizeOverride ? agrSizeOverride.size : ((truckRow && Number(truckRow.capacity) > 0) ? Number(truckRow.capacity) : null);
+    const winInfo = truckRow && truckRow.active_window ? truckRow.active_window : null;
 
-    if (prevUom !== uom && !FORM_UI.qtyManual && qtyEl()) {
+    if (uomChanged && !FORM_UI.qtyManual && qtyEl()) {
       if (isTonUom) {
         qtyEl().value = '';
       } else if (isTruckUom) {
@@ -21506,12 +21627,24 @@
     const rawTonFactor = resolveProductTonFactor(prod, product);
     const rawEstTons = (effCap && Number(effCap) > 0 && rawTonFactor > 0) ? round2(Number(effCap) * rawTonFactor) : null;
     setHint('hint_product', (prod || rawTonFactor > 0) ? (rawTonFactor && rawTonFactor !== 1 ? `1 m³ = ${rawTonFactor} t` : '') : (product ? 'Unknown grade' : ''), '');
-    setHint('hint_uom', tonMode.reason || (isTonUom ? 'Weighed in Tons · Quantity unlocked' : `Measured in ${uom} · Click Ton to switch`), isTonUom ? 'ok' : '');
+    const rawM3LockSource = agrSizeOverride
+      ? `${agrSizeOverride.rule.site || agrSizeOverride.rule.supplier || agrSizeOverride.rule.name || 'site'} truck size (${fmtNum(effCap, 1)} m³)`
+      : (winInfo && winInfo.site && effCap
+          ? `${winInfo.site} truck size (${fmtNum(effCap, 1)} m³)`
+          : (effCap
+              ? `${truckRow ? truckRow.name + ' ' : ''}truck size (${fmtNum(effCap, 1)} m³)`
+              : 'truck capacity (select Truck)'));
+    setHint('hint_uom',
+      isTonUom
+        ? (tonMode.reason || 'Weighed in Tons · Quantity unlocked')
+        : (isTruckUom
+            ? 'Measured per Truck load · Quantity locked to 1'
+            : `Measured in m³ · Quantity locked to ${rawM3LockSource}`),
+      isTonUom ? 'ok' : '');
 
     // 5. Quantity Lock & Quarry Site / Hauler Agreement Truck Size Override
     const truckHasNoCap = !!(truckRow && !(Number(effCap) > 0));
-    const unitOverridden = uom !== baseUom && !isTruckUom;
-    const shouldLockQty = !truckHasNoCap && !isTonUom && !unitOverridden;
+    const shouldLockQty = !truckHasNoCap && !isTonUom;
     const qtyLocked = applyFieldLockState('f_qty', shouldLockQty,
       isTruckUom
         ? 'Unit = Truck locks Quantity to 1 load'
@@ -21521,27 +21654,33 @@
                 : 'Unlocked for Ton intake — enter weighed tons')
             : (agrSizeOverride
                 ? `Locked to ${agrSizeOverride.rule.name} Site/Hauler Truck Size (${agrSizeOverride.size} m³)`
-                : (truckRow && effCap
-                    ? `Locked to ${truckRow.name} capacity (${effCap} m³)`
-                    : 'Auto-populated from Truck Capacity (m³)'))));
+                : (winInfo && winInfo.site && effCap
+                    ? `Locked to ${truckRow.name} truck size for ${winInfo.site} (${effCap} m³)`
+                    : (truckRow && effCap
+                        ? `Locked to ${truckRow.name} capacity (${effCap} m³)`
+                        : 'Auto-populated from Truck Capacity (m³)')))));
     if (qtyEl()) {
       qtyEl().placeholder = isTonUom
         ? (rawEstTons != null ? `Est. ≈ ${fmtNum(rawEstTons, 2)} t (${fmtNum(effCap, 1)} m³ × ${rawTonFactor})` : 'Enter weighed tons...')
         : (qtyLocked ? 'Auto-filled from Truck m³...' : 'Enter quantity...');
     }
-    if (isTruckUom && qtyEl() && qtyLocked && !FORM_UI.qtyManual) {
-      qtyEl().value = '1';
-    } else if (!isTonUom && effCap && qtyEl() && qtyLocked && !FORM_UI.qtyManual && (truckRow || agrSizeOverride)) {
-      qtyEl().value = Number(effCap).toFixed(2);
+    if (qtyEl() && qtyLocked) {
+      if (isTruckUom) {
+        qtyEl().value = '1';
+      } else if (!isTonUom) {
+        qtyEl().value = (effCap != null && Number(effCap) > 0) ? Number(effCap).toFixed(2) : '';
+      }
+      qtyEl().dataset.lockedValue = qtyEl().value;
     }
     const curRawQty = num('f_qty');
+    const rawTonGuard = isTonUom
+      ? evaluateTonEstimateGuard(curRawQty, rawEstTons, effCap, rawTonFactor, isFieldAdminUnlocked('f_qty'))
+      : { hasEstimate: false, blocked: false, severity: '', hint: '' };
     if (isTonUom) {
       if (curRawQty <= 0 && val('f_qty') !== '') {
         setHint('hint_qty', 'Must be above zero', 'crit');
-      } else if (rawEstTons != null && curRawQty <= 0) {
-        setHint('hint_qty', `Estimated: ≈ ${fmtNum(rawEstTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${rawTonFactor} t/m³) · Enter weighed tons`, 'ok');
-      } else if (rawEstTons != null && curRawQty > 0) {
-        setHint('hint_qty', `Estimated: ≈ ${fmtNum(rawEstTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${rawTonFactor} t/m³) · Entered: ${fmtNum(curRawQty, 2)} t (≈ ${fmtNum(curRawQty / rawTonFactor, 2)} m³)`, 'ok');
+      } else if (rawTonGuard.hasEstimate) {
+        setHint('hint_qty', rawTonGuard.hint, rawTonGuard.severity);
       } else if (effCap && Number(effCap) > 0) {
         setHint('hint_qty', `Truck size: ${fmtNum(effCap, 1)} m³ · Select Product for conversion rate & estimated tonnage`, '');
       } else if (rawTonFactor > 0) {
@@ -21550,10 +21689,21 @@
         setHint('hint_qty', 'Unlocked for Ton intake · Select Truck & Product to see estimated tonnage', '');
       }
     } else {
-      setHint('hint_qty', curRawQty > 0 && (prod || rawTonFactor > 0) && rawTonFactor > 0 && rawTonFactor !== 1 ? `≈ ${fmtNum(curRawQty * rawTonFactor, 2)} Tons (${fmtNum(curRawQty, 1)} m³ × ${rawTonFactor} t/m³)` : (curRawQty <= 0 && val('f_qty') ? 'Must be above zero' : ''), curRawQty <= 0 && val('f_qty') ? 'crit' : '');
+      const rawM3SrcNote = agrSizeOverride
+        ? `Sized by ${agrSizeOverride.rule.site || agrSizeOverride.rule.supplier || agrSizeOverride.rule.name} (${fmtNum(effCap, 1)} m³)`
+        : (winInfo && winInfo.site && effCap
+            ? `Sized by ${truckRow.name} site window (${fmtNum(effCap, 1)} m³)`
+            : (truckRow && effCap ? `Sized by ${truckRow.name} (${fmtNum(effCap, 1)} m³)` : ''));
+      const rawConvNote = (curRawQty > 0 && (prod || rawTonFactor > 0) && rawTonFactor > 0 && rawTonFactor !== 1)
+        ? `≈ ${fmtNum(curRawQty * rawTonFactor, 2)} Tons (${fmtNum(curRawQty, 1)} m³ × ${rawTonFactor} t/m³)`
+        : '';
+      setHint('hint_qty',
+        curRawQty <= 0 && val('f_qty')
+          ? 'Must be above zero'
+          : ([rawM3SrcNote, rawConvNote].filter(Boolean).join(' · ')),
+        curRawQty <= 0 && val('f_qty') ? 'crit' : '');
     }
 
-    const winInfo = truckRow && truckRow.active_window ? truckRow.active_window : null;
     const winSuffix = agrSizeOverride
       ? ` · Sized by ${agrSizeOverride.rule.rule_type || 'Agreement'} (${agrSizeOverride.rule.site || agrSizeOverride.rule.supplier || agrSizeOverride.rule.name})`
       : (winInfo && winInfo.site
@@ -21678,7 +21828,7 @@
       }
     }
     renderAdminLockBar();
-    return { company, transportBy, site, owner, product, date, repDate: val('f_repdate') || date, prod, uom, rule, haulRule, tierAdj, tierTrAdj, qty, up, tp, disc, mat, tr };
+    return { company, transportBy, site, owner, product, date, repDate: val('f_repdate') || date, prod, uom, rule, haulRule, tierAdj, tierTrAdj, qty, up, tp, disc, mat, tr, estTons: rawEstTons, effCap, tonFactor: rawTonFactor, tonGuard: rawTonGuard };
   }
 
   function recalcReceipt() {
@@ -22242,6 +22392,18 @@
           const txDate = val('f_date') || todayISO();
           const payMonth = val('f_paymonth') || txDate.slice(0, 7);
           const isBonus = val('f_sal_type') === 'bonus';
+          const salStaffMoKey = `${norm(curStaff)}|${payMonth}`;
+          if (FORM_UI.lastSalStaffMonthKey && FORM_UI.lastSalStaffMonthKey !== salStaffMoKey) {
+            const usdEl = $('f_usd');
+            if (usdEl && usdEl.dataset.quickFilled === '1') {
+              usdEl.value = '';
+              usdEl.dataset.quickFilled = '0';
+              if ($('f_lbp')) $('f_lbp').value = '0';
+              if (aEl && amtLocked) aEl.value = '';
+            }
+          }
+          FORM_UI.lastSalStaffMonthKey = salStaffMoKey;
+          const effThisPay = num('f_amount');
           const pos = computeStaffMonthPayrollPosition(curStaff, curCo, payMonth, txDate);
           const cardEl = $('salStaffMonthCard');
           const qfEl = $('salQuickFillBar');
@@ -22257,40 +22419,46 @@
             if (subEl) subEl.innerHTML = '';
             setHint('hint_sal_staff', '', '');
             setHint('hint_sal_usd', '', '');
+            if ($('lbl_sal_earned')) $('lbl_sal_earned').textContent = 'Month Net Earned';
+            if ($('lbl_sal_paid')) $('lbl_sal_paid').textContent = 'Already Paid (Month)';
+            if ($('lbl_sal_rem')) $('lbl_sal_rem').textContent = 'Remaining After Payment';
+            if ($('lbl_sal_status')) $('lbl_sal_status').textContent = 'Payment Classification';
             setText('calc_sal_earned', 'Select Staff');
             setText('calc_sal_paid', '$0.00');
             setText('calc_sal_rem', '—');
             setText('calc_sal_status', 'Pending Staff');
           } else {
             const prof = pos.prof;
-            const afterPaid = isBonus ? pos.paidSoFar : round2(pos.paidSoFar + thisPay);
-            const effMonthNet = isBonus ? round2(pos.monthNetEarned + thisPay) : pos.monthNetEarned;
+            const afterPaid = isBonus ? pos.paidSoFar : round2(pos.paidSoFar + effThisPay);
+            const effMonthNet = isBonus ? round2(pos.monthNetEarned + effThisPay) : pos.monthNetEarned;
             const afterRemNet = round2(effMonthNet - afterPaid);
             const isOverMonthNet = !isBonus && pos.hasContract && afterRemNet < -0.01;
-            const isOverBaseOnly = !isBonus && pos.hasContract && !isOverMonthNet && (pos.remainingBase - thisPay) < -0.01 && pos.attNetImpact > 0;
-            const isSettledNow = !isBonus && pos.hasContract && thisPay > 0 && Math.abs(afterRemNet) <= 0.01;
-            const isAlreadySettled = !isBonus && pos.hasContract && pos.remainingNet <= 0.01 && thisPay === 0;
+            const isOverBaseOnly = !isBonus && pos.hasContract && !pos.isFutureMonth && !isOverMonthNet && (pos.remainingBase - effThisPay) < -0.01 && pos.attNetImpact > 0;
+            const isSettledNow = !isBonus && pos.hasContract && !pos.isFutureMonth && effThisPay > 0 && Math.abs(afterRemNet) <= 0.01;
+            const isAlreadySettled = !isBonus && pos.hasContract && !pos.isFutureMonth && pos.remainingNet <= 0.01 && effThisPay === 0;
             const isAdvanceBefore = !isBonus && pos.hasContract && pos.alreadyInAdvance;
 
             let statusTag = '';
             let statusCls = '';
             let statusFoot = '';
             if (isBonus) {
-              statusTag = thisPay > 0
-                ? `<span class="badge badge-ok">Bonus / Extra Pay (+${fmtUSD(thisPay, 2)} added to ${esc(pos.monthLabel)})</span>`
-                : `<span class="badge badge-info">Bonus / Extra Pay Mode · Adds to ${esc(pos.monthLabel)} Net Earned</span>`;
+              statusTag = effThisPay > 0
+                ? `<span class="badge badge-ok">Bonus / Extra Pay (+${fmtUSD(effThisPay, 2)} added to ${esc(pos.monthLabel)})</span>`
+                : `<span class="badge badge-info">Bonus / Extra Pay · Adds to ${esc(pos.monthLabel)} Net Earned</span>`;
               statusCls = 'is-ok';
-              statusFoot = thisPay > 0 ? `Bonus +${fmtUSD(thisPay, 2)}` : 'Bonus / Extra Pay';
+              statusFoot = effThisPay > 0 ? `Bonus +${fmtUSD(effThisPay, 2)}` : 'Bonus / Extra Pay';
             } else if (!pos.hasContract) {
               statusTag = `<span class="badge badge-warn">No Active Contract on File</span>`;
               statusCls = 'is-warn';
-              statusFoot = thisPay > 0 ? `Uncontracted Payment (${fmtUSD(thisPay, 2)})` : 'No Active Contract';
+              statusFoot = effThisPay > 0 ? `Uncontracted Payment (${fmtUSD(effThisPay, 2)})` : 'No Active Contract';
             } else if (pos.isFutureMonth) {
-              statusTag = `<span class="badge badge-warn">Advance Payment · Future Month (${esc(pos.monthLabel)})</span>`;
+              statusTag = effThisPay > 0
+                ? `<span class="badge badge-warn">Advance Payment · Future Month (${esc(pos.monthLabel)}) · Advancing ${fmtUSD(effThisPay, 2)}</span>`
+                : `<span class="badge badge-warn">Advance Payment · Future Month (${esc(pos.monthLabel)}) · $0.00 Due Now</span>`;
               statusCls = 'is-warn';
-              statusFoot = thisPay > 0
-                ? `Future Advance · ${fmtUSD(Math.max(0, afterRemNet), 2)} Left for ${pos.monthLabel}`
-                : `Future Month Advance (${pos.monthLabel})`;
+              statusFoot = effThisPay > 0
+                ? `Salary Advance · +${fmtUSD(effThisPay, 2)} (${pos.monthLabel})`
+                : `Future Month (${pos.monthLabel} Not Started)`;
             } else if (isOverMonthNet) {
               const advAmt = round2(Math.abs(afterRemNet));
               statusTag = `<span class="badge badge-warn">Advance / Overpayment (+${fmtUSD(advAmt, 2)} above ${esc(pos.monthLabel)} Net)</span>`;
@@ -22304,7 +22472,7 @@
               statusTag = `<span class="badge badge-ok">Settles ${esc(pos.monthLabel)} in Full ($0.00 Left)</span>`;
               statusCls = 'is-ok';
               statusFoot = `Full Settlement ($0.00 Left)`;
-            } else if (thisPay > 0) {
+            } else if (effThisPay > 0) {
               statusTag = `<span class="badge badge-info">Partial Payment · ${fmtUSD(afterRemNet, 2)} Remaining</span>`;
               statusCls = '';
               statusFoot = `Partial · ${fmtUSD(afterRemNet, 2)} Left`;
@@ -22319,13 +22487,19 @@
               : `No active employment contract in ${curCo}`,
               pos.contractInOtherBu ? 'warn' : (pos.hasContract ? 'ok' : 'warn'));
 
-            if (!isBonus && pos.isFutureMonth && thisPay > 0) {
-              setHint('hint_sal_usd', `Paying ${pos.monthLabel} ahead of ${txDate} (Future-Month Salary Advance)`, 'warn');
+            if (!isBonus && pos.isFutureMonth) {
+              if (effThisPay > 0) {
+                setHint('hint_sal_usd', afterRemNet >= -0.01
+                  ? `Paying ${pos.monthLabel} ahead of ${txDate} (Future-Month Salary Advance of ${fmtUSD(effThisPay, 2)} · leaves ${fmtUSD(Math.max(0, afterRemNet), 2)} of ${pos.monthLabel} contract base once worked)`
+                  : `Paying ${pos.monthLabel} ahead of ${txDate} (Future-Month Salary Advance exceeds ${pos.monthLabel} contract base by +${fmtUSD(Math.abs(afterRemNet), 2)})`, 'warn');
+              } else {
+                setHint('hint_sal_usd', `${pos.monthLabel} has not started yet (Transaction Date: ${txDate}) · $0.00 is earned or due now; any payment logged here is a Future-Month Salary Advance`, 'warn');
+              }
             } else if (isOverMonthNet) {
               const advAmt = round2(Math.abs(afterRemNet));
               setHint('hint_sal_usd', `Exceeds ${pos.monthLabel} remaining salary (${fmtUSD(pos.remainingNet, 2)}) by +${fmtUSD(advAmt, 2)} · creates an Advance / Overpayment`, 'warn');
             } else if (isOverBaseOnly) {
-              setHint('hint_sal_usd', `Covers remaining base (${fmtUSD(pos.remainingBase, 2)}) + ${fmtUSD(thisPay - pos.remainingBase, 2)} of ${pos.monthLabel} overtime/allowances`, 'ok');
+              setHint('hint_sal_usd', `Covers remaining base (${fmtUSD(pos.remainingBase, 2)}) + ${fmtUSD(effThisPay - pos.remainingBase, 2)} of ${pos.monthLabel} overtime/allowances`, 'ok');
             } else if (isSettledNow) {
               setHint('hint_sal_usd', `Exact remaining balance for ${pos.monthLabel}`, 'ok');
             } else {
@@ -22355,6 +22529,22 @@
                 alertBanners.push(`<span class="badge badge-info" title="Prior month still has an unpaid net balance">${esc(pos.prevMonthUnpaid.monthLabel)} Still Unpaid: ${fmtUSD(pos.prevMonthUnpaid.remainingNet, 2)}</span>`);
               }
 
+              const metricsHtml = (pos.isFutureMonth && !isBonus)
+                ? `
+                    <span><small>Contract Base</small><b title="${esc(baseBreakdown)}">${fmtUSD(pos.baseNet, 2)}</b></span>
+                    <span><small>Earned So Far</small><b title="${esc(pos.monthLabel)} has not started yet as of ${esc(txDate)}">$0.00</b></span>
+                    <span><small>Due Now (${esc(pos.monthLabel)})</small><b class="emerald">$0.00</b></span>
+                    <span><small>Advanced (${pos.paidCount})</small><b>${fmtUSD(pos.paidSoFar, 2)}</b></span>
+                    <span><small>${effThisPay > 0 ? 'After This Advance' : 'Unadvanced Base'}</small><b class="${effThisPay > 0 ? 'amber' : ''}">${effThisPay > 0 ? '+' + fmtUSD(afterPaid, 2) + ' Adv (' + (afterRemNet >= -0.01 ? fmtUSD(Math.max(0, afterRemNet), 2) + ' Base Left' : '+' + fmtUSD(Math.abs(afterRemNet), 2) + ' Over Base') + ')' : fmtUSD(Math.max(0, pos.baseNet - pos.paidSoFar), 2)}</b></span>
+                  `
+                : `
+                    <span><small>Contract Base</small><b title="${esc(baseBreakdown)}">${fmtUSD(pos.baseNet, 2)}</b></span>
+                    <span><small>OT &amp; Adj.</small><b class="${pos.attNetImpact > 0 ? 'emerald' : (pos.attNetImpact < 0 ? 'amber' : '')}" title="${esc(attSummary)}">${pos.attNetImpact >= 0 ? '+' : '-'}${fmtUSD(Math.abs(pos.attNetImpact), 2)}</b></span>
+                    <span><small>Month Earned</small><b>${fmtUSD(effMonthNet, 2)}</b></span>
+                    <span><small>Paid (${pos.paidCount})</small><b>${fmtUSD(pos.paidSoFar, 2)}</b></span>
+                    <span><small>${afterRemNet < -0.01 ? 'Advance Over Net' : (effThisPay > 0 ? 'Left After This' : 'Remaining Due')}</small><b class="${afterRemNet < -0.01 ? 'amber' : (afterRemNet <= 0.01 ? 'emerald' : '')}">${afterRemNet < -0.01 ? '+' + fmtUSD(Math.abs(afterRemNet), 2) + ' Adv' : fmtUSD(Math.max(0, afterRemNet), 2)}</b></span>
+                  `;
+
               cardEl.innerHTML = `
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;width:100%">
                   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -22363,13 +22553,7 @@
                     ${statusTag}
                     ${alertBanners.join(' ')}
                   </div>
-                  <div class="att-contract-metrics">
-                    <span><small>Contract Base</small><b title="${esc(baseBreakdown)}">${fmtUSD(pos.baseNet, 2)}</b></span>
-                    <span><small>OT &amp; Adj.</small><b class="${pos.attNetImpact > 0 ? 'emerald' : (pos.attNetImpact < 0 ? 'amber' : '')}" title="${esc(attSummary)}">${pos.attNetImpact >= 0 ? '+' : '-'}${fmtUSD(Math.abs(pos.attNetImpact), 2)}</b></span>
-                    <span><small>Month Earned</small><b>${fmtUSD(effMonthNet, 2)}</b></span>
-                    <span><small>Paid (${pos.paidCount})</small><b>${fmtUSD(pos.paidSoFar, 2)}</b></span>
-                    <span><small>${afterRemNet < -0.01 ? 'Advance Over Net' : (thisPay > 0 ? 'Left After This' : 'Remaining Due')}</small><b class="${afterRemNet < -0.01 ? 'amber' : (afterRemNet <= 0.01 ? 'emerald' : '')}">${afterRemNet < -0.01 ? '+' + fmtUSD(Math.abs(afterRemNet), 2) + ' Adv' : fmtUSD(Math.max(0, afterRemNet), 2)}</b></span>
-                  </div>
+                  <div class="att-contract-metrics">${metricsHtml}</div>
                 </div>
               `;
             }
@@ -22378,22 +22562,41 @@
             if (qfEl) {
               const pills = [];
               if (!isBonus && pos.hasContract) {
-                if (pos.remainingNet > 0.01) {
-                  pills.push(`<button type="button" class="att-preset-pill ${Math.abs(thisPay - pos.remainingNet) <= 0.01 ? 'active' : ''}" data-sal-quick="rem_net" data-val="${pos.remainingNet.toFixed(2)}">Pay Remaining (${fmtUSD(pos.remainingNet, 2)})</button>`);
-                }
-                if (pos.remainingBase > 0.01 && Math.abs(pos.remainingBase - pos.remainingNet) > 0.5) {
-                  pills.push(`<button type="button" class="att-preset-pill ${Math.abs(thisPay - pos.remainingBase) <= 0.01 ? 'active' : ''}" data-sal-quick="rem_base" data-val="${pos.remainingBase.toFixed(2)}">Pay Base Left (${fmtUSD(pos.remainingBase, 2)})</button>`);
-                }
-                if (pos.paidSoFar === 0 && pos.baseNet > 0 && Math.abs(pos.baseNet - pos.remainingNet) > 0.5) {
-                  pills.push(`<button type="button" class="att-preset-pill ${Math.abs(thisPay - pos.baseNet) <= 0.01 ? 'active' : ''}" data-sal-quick="full_base" data-val="${pos.baseNet.toFixed(2)}">Contract Base (${fmtUSD(pos.baseNet, 2)})</button>`);
-                }
-                if (pos.remainingNet <= 0.01 || isOverMonthNet) {
-                  pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="next_month" data-month="${esc(pos.nextMonth)}">Switch to ${esc(pos.nextMonthLabel)} (Advance)</button>`);
-                } else if (!pos.isFutureMonth) {
-                  pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="next_month" data-month="${esc(pos.nextMonth)}">Advance Next Month (${esc(pos.nextMonthLabel)})</button>`);
-                }
-                if (pos.prevMonthUnpaid && pos.prevMonthUnpaid.remainingNet > 0.01) {
-                  pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="prev_month" data-month="${esc(pos.prevMonth)}" data-val="${pos.prevMonthUnpaid.remainingNet.toFixed(2)}">Settle ${esc(pos.prevMonthUnpaid.monthLabel)} Left (${fmtUSD(pos.prevMonthUnpaid.remainingNet, 2)})</button>`);
+                if (pos.isFutureMonth) {
+                  if (pos.prevMonthUnpaid && pos.prevMonthUnpaid.remainingNet > 0.01) {
+                    pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="prev_month" data-month="${esc(pos.prevMonth)}" data-val="${pos.prevMonthUnpaid.remainingNet.toFixed(2)}">Settle ${esc(pos.prevMonthUnpaid.monthLabel)} Left (${fmtUSD(pos.prevMonthUnpaid.remainingNet, 2)})</button>`);
+                  } else if (pos.prevMonth) {
+                    pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="prev_month_only" data-month="${esc(pos.prevMonth)}">Back to ${esc(formatPayrollMonthLabel(pos.prevMonth))}</button>`);
+                  }
+                  const unadvBase = round2(Math.max(0, pos.baseNet - pos.paidSoFar));
+                  const halfBase = round2(pos.baseNet * 0.5);
+                  if (pos.paidSoFar === 0 && halfBase >= 25 && Math.abs(halfBase - unadvBase) > 0.5) {
+                    pills.push(`<button type="button" class="att-preset-pill ${Math.abs(effThisPay - halfBase) <= 0.01 ? 'active' : ''}" data-sal-quick="adv_half_base" data-val="${halfBase.toFixed(2)}">Advance 50% ${esc(pos.monthLabel)} Base (${fmtUSD(halfBase, 2)})</button>`);
+                  }
+                  if (unadvBase > 0.01) {
+                    const advLbl = pos.paidSoFar > 0
+                      ? `Advance Remaining ${esc(pos.monthLabel)} Base (${fmtUSD(unadvBase, 2)})`
+                      : `Advance Full ${esc(pos.monthLabel)} Base (${fmtUSD(unadvBase, 2)})`;
+                    pills.push(`<button type="button" class="att-preset-pill ${Math.abs(effThisPay - unadvBase) <= 0.01 ? 'active' : ''}" data-sal-quick="adv_full_base" data-val="${unadvBase.toFixed(2)}">${advLbl}</button>`);
+                  }
+                } else {
+                  if (pos.remainingNet > 0.01) {
+                    pills.push(`<button type="button" class="att-preset-pill ${Math.abs(effThisPay - pos.remainingNet) <= 0.01 ? 'active' : ''}" data-sal-quick="rem_net" data-val="${pos.remainingNet.toFixed(2)}">Pay Remaining (${fmtUSD(pos.remainingNet, 2)})</button>`);
+                  }
+                  if (pos.remainingBase > 0.01 && Math.abs(pos.remainingBase - pos.remainingNet) > 0.5) {
+                    pills.push(`<button type="button" class="att-preset-pill ${Math.abs(effThisPay - pos.remainingBase) <= 0.01 ? 'active' : ''}" data-sal-quick="rem_base" data-val="${pos.remainingBase.toFixed(2)}">Pay Base Left (${fmtUSD(pos.remainingBase, 2)})</button>`);
+                  }
+                  if (pos.paidSoFar === 0 && pos.baseNet > 0 && Math.abs(pos.baseNet - pos.remainingNet) > 0.5) {
+                    pills.push(`<button type="button" class="att-preset-pill ${Math.abs(effThisPay - pos.baseNet) <= 0.01 ? 'active' : ''}" data-sal-quick="full_base" data-val="${pos.baseNet.toFixed(2)}">Contract Base (${fmtUSD(pos.baseNet, 2)})</button>`);
+                  }
+                  if (pos.remainingNet <= 0.01 || isOverMonthNet) {
+                    pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="next_month" data-month="${esc(pos.nextMonth)}">Switch to ${esc(pos.nextMonthLabel)} (Advance)</button>`);
+                  } else {
+                    pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="next_month" data-month="${esc(pos.nextMonth)}">Advance Next Month (${esc(pos.nextMonthLabel)})</button>`);
+                  }
+                  if (pos.prevMonthUnpaid && pos.prevMonthUnpaid.remainingNet > 0.01) {
+                    pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="prev_month" data-month="${esc(pos.prevMonth)}" data-val="${pos.prevMonthUnpaid.remainingNet.toFixed(2)}">Settle ${esc(pos.prevMonthUnpaid.monthLabel)} Left (${fmtUSD(pos.prevMonthUnpaid.remainingNet, 2)})</button>`);
+                  }
                 }
                 if (pos.contractInOtherBu && prof.company) {
                   pills.push(`<button type="button" class="att-preset-pill" data-sal-quick="switch_bu" data-company="${esc(prof.company)}">Switch Company to ${esc(prof.company)}</button>`);
@@ -22418,11 +22621,13 @@
                   const remAfter = round2(pos.monthNetEarned - runPaid);
                   const st = !pos.hasContract
                     ? `<span class="badge badge-neutral">Logged</span>`
-                    : (remAfter < -0.01
-                        ? `<span class="badge badge-warn">Advance +${fmtUSD(Math.abs(remAfter), 2)}</span>`
-                        : (remAfter <= 0.01
-                            ? `<span class="badge badge-ok">Settled</span>`
-                            : `<span class="badge badge-info">${fmtUSD(remAfter, 2)} Left</span>`));
+                    : (pos.isFutureMonth
+                        ? `<span class="badge badge-warn">Future Adv (${remAfter >= 0 ? fmtUSD(remAfter, 2) + ' Base Left' : '+' + fmtUSD(Math.abs(remAfter), 2) + ' Over Base'})</span>`
+                        : (remAfter < -0.01
+                            ? `<span class="badge badge-warn">Advance +${fmtUSD(Math.abs(remAfter), 2)}</span>`
+                            : (remAfter <= 0.01
+                                ? `<span class="badge badge-ok">Settled</span>`
+                                : `<span class="badge badge-info">${fmtUSD(remAfter, 2)} Left</span>`)));
                   return `
                     <tr>
                       <td class="mono">${esc(String(p.date || '').slice(0, 10))}</td>
@@ -22440,7 +22645,7 @@
                   <div class="pa-subgrid" style="margin-top:8px">
                     <div class="pa-subgrid-hdr">
                       <span>PRIOR SALARY VOUCHERS FOR ${esc(pos.monthLabel.toUpperCase())} · ${esc((prof.staff || curStaff).toUpperCase())}</span>
-                      <span>${pos.paidCount} Voucher${pos.paidCount === 1 ? '' : 's'} · Paid ${fmtUSD(pos.paidSoFar, 2)} of ${fmtUSD(pos.monthNetEarned, 2)} Earned</span>
+                      <span>${pos.paidCount} Voucher${pos.paidCount === 1 ? '' : 's'} · ${pos.isFutureMonth ? `Advanced ${fmtUSD(pos.paidSoFar, 2)} against ${fmtUSD(pos.baseNet, 2)} Base ($0.00 Earned Yet)` : `Paid ${fmtUSD(pos.paidSoFar, 2)} of ${fmtUSD(pos.monthNetEarned, 2)} Earned`}</span>
                     </div>
                     <div class="table-wrap" style="max-height:135px;overflow:auto">
                       <table class="ledger-table">
@@ -22457,10 +22662,25 @@
               }
             }
 
-            setText('calc_sal_earned', pos.hasContract ? `${fmtUSD(effMonthNet, 2)} (${pos.attNetImpact >= 0 ? '+' : '-'}${fmtUSD(Math.abs(pos.attNetImpact), 0)} OT/Adj)` : 'No Contract');
-            setText('calc_sal_paid', `${fmtUSD(pos.paidSoFar, 2)} (${pos.paidCount} voucher${pos.paidCount === 1 ? '' : 's'})`);
-            setText('calc_sal_rem', !pos.hasContract ? '—' : (afterRemNet < -0.01 ? `Advance +${fmtUSD(Math.abs(afterRemNet), 2)}` : `${fmtUSD(Math.max(0, afterRemNet), 2)} Left`));
-            setText('calc_sal_status', statusFoot);
+            if (pos.isFutureMonth && !isBonus) {
+              if ($('lbl_sal_earned')) $('lbl_sal_earned').textContent = `Earned So Far (${pos.monthLabel})`;
+              if ($('lbl_sal_paid')) $('lbl_sal_paid').textContent = `Already Advanced (${pos.monthLabel})`;
+              if ($('lbl_sal_rem')) $('lbl_sal_rem').textContent = `Projected ${pos.monthLabel} Base Left`;
+              if ($('lbl_sal_status')) $('lbl_sal_status').textContent = 'Payment Classification';
+              setText('calc_sal_earned', pos.hasContract ? `$0.00 (Base ${fmtUSD(pos.baseNet, 2)})` : 'No Contract');
+              setText('calc_sal_paid', `${fmtUSD(pos.paidSoFar, 2)} (${pos.paidCount} voucher${pos.paidCount === 1 ? '' : 's'})`);
+              setText('calc_sal_rem', !pos.hasContract ? '—' : (effThisPay === 0 && pos.paidSoFar === 0 ? '$0.00 Due Now (Future)' : (afterRemNet < -0.01 ? `Advance +${fmtUSD(Math.abs(afterRemNet), 2)} Over Base` : `${fmtUSD(Math.max(0, afterRemNet), 2)} of Base Left`)));
+              setText('calc_sal_status', statusFoot);
+            } else {
+              if ($('lbl_sal_earned')) $('lbl_sal_earned').textContent = 'Month Net Earned';
+              if ($('lbl_sal_paid')) $('lbl_sal_paid').textContent = 'Already Paid (Month)';
+              if ($('lbl_sal_rem')) $('lbl_sal_rem').textContent = 'Remaining After Payment';
+              if ($('lbl_sal_status')) $('lbl_sal_status').textContent = 'Payment Classification';
+              setText('calc_sal_earned', pos.hasContract ? `${fmtUSD(effMonthNet, 2)} (${pos.attNetImpact >= 0 ? '+' : '-'}${fmtUSD(Math.abs(pos.attNetImpact), 0)} OT/Adj)` : 'No Contract');
+              setText('calc_sal_paid', `${fmtUSD(pos.paidSoFar, 2)} (${pos.paidCount} voucher${pos.paidCount === 1 ? '' : 's'})`);
+              setText('calc_sal_rem', !pos.hasContract ? '—' : (afterRemNet < -0.01 ? `Advance +${fmtUSD(Math.abs(afterRemNet), 2)}` : `${fmtUSD(Math.max(0, afterRemNet), 2)} Left`));
+              setText('calc_sal_status', statusFoot);
+            }
           }
         }
 
@@ -22692,6 +22912,7 @@
           }
         }
 
+        setFieldVisible('wrap_pr_ruletype', !isComm);
         setFieldVisible('wrap_pr_customer', showCustomer);
         setFieldVisible('wrap_pr_supplier', showSupplier);
         setFieldVisible('wrap_pr_site', showSite);
@@ -24432,11 +24653,20 @@
     FORM_UI.lastTruck = val('f_truck'); FORM_UI.lastTruckOwner = val('f_truckowner');
     FORM_UI.lastSaleType = val('f_saletype'); FORM_UI.lastTransportBy = val('f_transportby');
     FORM_UI.lastSite = val('f_site'); FORM_UI.lastSiteOwner = val('f_siteowner'); FORM_UI.lastProduct = val('f_product');
-    FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier');
+    FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier'); FORM_UI.lastUom = val('f_uom') || '';
     FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = ''; FORM_UI.lastFuelItem = val('f_item'); FORM_UI.greaseAutoPreset = false;
     FORM_UI.defectRefPreset = false; FORM_UI.lastSeverity = ''; FORM_UI.lastDefectRef = '';
     FORM_UI.attPreset = 'regular'; FORM_UI.attClockManual = false;
     FORM_UI.lastAttStaff = ''; FORM_UI.lastAttDate = val('f_date'); FORM_UI.lastAttTimeKey = '';
+    FORM_UI.lastSalStaffMonthKey = '';
+
+    const salUsdInp = $('f_usd');
+    if (salUsdInp && !salUsdInp.dataset.salManualWired) {
+      salUsdInp.dataset.salManualWired = '1';
+      salUsdInp.addEventListener('input', ev => {
+        if (ev && ev.isTrusted) salUsdInp.dataset.quickFilled = '0';
+      });
+    }
 
     body.querySelectorAll('[data-grease-preset]').forEach(btn => {
       btn.addEventListener('click', ev => {
@@ -24480,16 +24710,28 @@
           if (act === 'switch_bu' && coStr && $('f_company')) {
             $('f_company').value = coStr;
             $('f_company').dispatchEvent(new Event('change', { bubbles: true }));
-          } else if (act === 'next_month' && moStr && $('f_paymonth')) {
+          } else if ((act === 'next_month' || act === 'prev_month_only') && moStr && $('f_paymonth')) {
             $('f_paymonth').value = moStr;
+            if ($('f_usd')) {
+              $('f_usd').value = '';
+              $('f_usd').dataset.quickFilled = '0';
+            }
+            if ($('f_lbp')) $('f_lbp').value = '0';
+            if ($('f_amount')) $('f_amount').value = '';
+            FORM_UI.lastSalStaffMonthKey = `${norm(val('f_staff'))}|${moStr}`;
             $('f_paymonth').dispatchEvent(new Event('change', { bubbles: true }));
           } else if (act === 'prev_month' && moStr && $('f_paymonth')) {
             $('f_paymonth').value = moStr;
-            if (valStr != null && $('f_usd')) $('f_usd').value = valStr;
+            if (valStr != null && $('f_usd')) {
+              $('f_usd').value = valStr;
+              $('f_usd').dataset.quickFilled = '1';
+            }
             if ($('f_lbp')) $('f_lbp').value = '0';
+            FORM_UI.lastSalStaffMonthKey = `${norm(val('f_staff'))}|${moStr}`;
             $('f_paymonth').dispatchEvent(new Event('change', { bubbles: true }));
           } else if (valStr != null && $('f_usd')) {
             $('f_usd').value = valStr;
+            $('f_usd').dataset.quickFilled = '1';
             if ($('f_lbp')) $('f_lbp').value = '0';
             $('f_usd').dispatchEvent(new Event('input', { bubbles: true }));
           }
@@ -24654,7 +24896,10 @@
         if (el.id === 'f_unitprice' && (isFieldAdminUnlocked('f_unitprice') || el.dataset.policyLockedNow !== '1')) FORM_UI.priceManual = true;
         if (el.id === 'f_transunitprice' && (isFieldAdminUnlocked('f_transunitprice') || el.dataset.policyLockedNow !== '1')) FORM_UI.transManual = true;
         if (el.id === 'f_method' && (isFieldAdminUnlocked('f_method') || el.dataset.policyLockedNow !== '1')) FORM_UI.methodManual = true;
-        if (el.id === 'f_uom' && (isFieldAdminUnlocked('f_uom') || el.dataset.policyLockedNow !== '1')) FORM_UI.uomManual = true;
+        if (el.id === 'f_uom' && (isFieldAdminUnlocked('f_uom') || el.dataset.policyLockedNow !== '1')) {
+          FORM_UI.uomManual = true;
+          if (!isFieldAdminUnlocked('f_qty')) FORM_UI.qtyManual = false;
+        }
         if (el.id === 'f_metertype' && (isFieldAdminUnlocked('f_metertype') || el.dataset.policyLockedNow !== '1')) FORM_UI.meterTypeManual = true;
         if (el.id === 'f_qty') { FORM_UI.qtyManual = !!el.value; FORM_UI.greaseAutoPreset = false; }
         if (el.id === 'f_repdate') {
@@ -24833,6 +25078,8 @@
           addErr('f_truck', 'Truck is required to set load capacity (or unlock Quantity).');
         }
         addErr('f_qty', 'Quantity must be above zero.');
+      } else if (c.tonGuard && c.tonGuard.blocked) {
+        addErr('f_qty', c.tonGuard.hint);
       }
       if (c.up < 0) addErr('f_unitprice', 'Unit price cannot be negative.');
       else if (c.product && val('f_unitprice') === '') addErr('f_unitprice', 'Unit price is required.');
@@ -24858,6 +25105,8 @@
           addErr('f_truck', 'Truck is required to set load capacity (or unlock Quantity).');
         }
         addErr('f_qty', 'Quantity must be above zero.');
+      } else if (c.tonGuard && c.tonGuard.blocked) {
+        addErr('f_qty', c.tonGuard.hint);
       }
       if (c.up > 0 && !c.owner) addErr('f_siteowner', 'Site owner (material payee) is required when the material has a cost.');
       if (!val('f_truck')) addErr('f_truck', 'Truck is required.');
@@ -25720,6 +25969,7 @@
     const kBody = $('kioskFormBody');
     if (kBody) kBody.innerHTML = ''; // Prevent duplicate #f_* IDs while #entryModal is open
     STATE.modalForm = form;
+    STATE.modalGroupOverride = modalGroupOverride;
     const modal = $('entryModal');
     const wasClosed = !modal || modal.hidden;
     const body = $('modalBody');
@@ -25980,7 +26230,7 @@
       const ct = creditTermsForCustomer(row.customer);
       const lp = listPrice(row.product);
       const ruleTxt = pr
-        ? `${pr.rule_type || 'Sales Agreement'} (${pr.name}): ${fmtUSD(pr.unit_price, 2)}/${row.uom || pr.unit || 'm³'}`
+        ? `${pr.rule_type || 'Sales Agreement'}: ${fmtUSD(pr.unit_price, 2)}/${row.uom || pr.unit || 'm³'}`
         : (lp != null ? `List Price Benchmark: ${fmtUSD(lp, 2)}/${row.uom || 'm³'} (no active customer rule)` : `Spot Ticket Price: ${fmtUSD(row.unit_price, 2)}/${row.uom || 'm³'}`);
       const trTxt = row.sale_type === 'Delivery'
         ? `Transport: ${fmtUSD(row.trans_unit_price || (pr && pr.trans_unit_price) || 0, 2)}/${row.uom || 'm³'} (${fmtUSD(row.trans_price, 2)})`
@@ -25997,12 +26247,18 @@
       const eq = equipInfo(row.truck);
       return {
         tone: 'info',
-        text: `Two-Leg Material Split: Leg 1 Material ${fmtUSD(row.cost, 2)} → ${row.site_owner || row.site || 'Site Owner'}${matRule ? ' (Rule ' + matRule.name + ')' : ''}  |  Leg 2 Haulage ${fmtUSD(row.trans_cost, 2)} → ${row.truck_owner || row.transport_by || 'Company Fleet'}${eq ? ' · Truck ' + eq.name : ''}  |  Total Payable: ${fmtUSD(row.total, 2)} USD`
+        text: `Two-Leg Material Split: Leg 1 Material ${fmtUSD(row.cost, 2)} → ${row.site_owner || row.site || 'Site Owner'}${matRule ? ' (Agreed Rate)' : ''}  |  Leg 2 Haulage ${fmtUSD(row.trans_cost, 2)} → ${row.truck_owner || row.transport_by || 'Company Fleet'}${eq ? ' · Truck ' + eq.name : ''}  |  Total Payable: ${fmtUSD(row.total, 2)} USD`
       };
     }
     if (key === 'price_rules') {
       const today = SEED_DATE;
       const active = (!row.end_date || String(row.end_date) >= today);
+      if (isCommRule(row)) {
+        return {
+          tone: active ? 'info' : 'warn',
+          text: `Sales Commission Rule: ${row.supplier || 'Plant Owner'} · Grade: ${row.product || 'All Grades'} · Commission Rate: ${fmtUSD(row.unit_price, 2)}/${row.unit || 'Ton'} · Status: ${active ? 'ACTIVE (Accrues on sales tickets)' : 'ENDED (' + row.end_date + ')'}`
+        };
+      }
       const anyIndiff = ruleAnyIndiffPrice(row);
       const isFlatMat = isMatIndiffRule(row);
       const isFlatTrans = isTransIndiffRule(row);
@@ -26011,7 +26267,7 @@
         : `Unit Price: ${fmtUSD(row.unit_price, 2)}/${row.unit || 'm³'}${isFlatTrans ? ' + Transport Indifference ' + fmtUSD(ruleTransIndiffPrice(row), 2) + ' (Flat / Load)' : (row.trans_unit_price ? ' + Transport ' + fmtUSD(row.trans_unit_price, 2) : '')}`;
       return {
         tone: active ? 'info' : 'warn',
-        text: `Price Agreement ${row.name}: ${row.rule_type || 'Rule'} for ${row.customer || row.supplier || row.site || 'Standard List'} · Grade: ${row.product || 'All Grades'} · ${priceSummary} · Status: ${active ? 'ACTIVE (Auto-fills weighbridge tickets)' : 'ENDED (' + row.end_date + ')'}`
+        text: `Price Agreement: ${row.rule_type || 'Rule'} for ${row.customer || row.supplier || row.site || 'Standard List'} · Grade: ${row.product || 'All Grades'} · ${priceSummary} · Status: ${active ? 'ACTIVE (Auto-fills weighbridge tickets)' : 'ENDED (' + row.end_date + ')'}`
       };
     }
     if (key === 'customers') {
@@ -26087,6 +26343,15 @@
       const thisAmt = round2(Number(row.amount != null ? row.amount : (Number(row.usd_amount || 0) + Number(row.lbp_amount || 0) / 89500)));
       if (pos && pos.hasContract) {
         const afterRem = round2(pos.monthNetEarned - (pos.paidSoFar + thisAmt));
+        if (pos.isFutureMonth) {
+          const futSt = afterRem >= -0.01
+            ? `Future-Month Salary Advance (${fmtUSD(Math.max(0, afterRem), 2)} of ${pos.monthLabel} Base Unadvanced)`
+            : `Future-Month Salary Advance (+${fmtUSD(Math.abs(afterRem), 2)} Over ${pos.monthLabel} Base)`;
+          return {
+            tone: 'warn',
+            text: `Payroll Voucher ${row.name || ('#' + row.id)} (${pos.monthLabel} Advance): Contract Base ${fmtUSD(pos.baseNet, 2)} ($0.00 Earned as of ${String(row.date || '').slice(0, 10)})  |  Other Advances: ${fmtUSD(pos.paidSoFar, 2)}  |  This Advance: ${fmtUSD(thisAmt, 2)}  |  Status: ${futSt}`
+          };
+        }
         const stTxt = afterRem < -0.01 ? `Advance / Overpayment (+${fmtUSD(Math.abs(afterRem), 2)})` : (afterRem <= 0.01 ? 'Month Settled ($0.00 Left)' : `${fmtUSD(afterRem, 2)} Remaining`);
         return {
           tone: afterRem < -0.01 ? 'warn' : 'info',
@@ -26103,7 +26368,10 @@
   // Build 4-Card Navy Executive Telemetry & Control Cockpit (Screenshot 2 bhf_mfgCockpit.htm m283 parity)
   function buildInspectorCockpit(key, row) {
     const bu = row.company || COMPANY_BU_MATCH[STATE.company] || 'MFG';
-    const title = row.ticket_no ? `${INSPECT_LABELS[key] || key} #${row.ticket_no} · ${row.customer || row.site || row.equipment || row.name || ''}` : `${INSPECT_LABELS[key] || key} · ${row.name || row.invoice_no || row.staff || row.driver || row.equipment || row.id}`;
+    const isCommRow = key === 'price_rules' && isCommRule(row);
+    const title = key === 'price_rules'
+      ? `${isCommRow ? 'Sales Commission Rule' : 'Price Agreement'} · ${row.customer || row.supplier || row.site || 'Standard List'}${row.product ? ' · ' + row.product : ''}`
+      : (row.ticket_no ? `${INSPECT_LABELS[key] || key} #${row.ticket_no} · ${row.customer || row.site || row.equipment || row.name || ''}` : `${INSPECT_LABELS[key] || key} · ${row.name || row.invoice_no || row.staff || row.driver || row.equipment || row.id}`);
 
     if (key === 'sales_tickets') {
       const pr = findRule({ company: row.company, customer: row.customer, product: row.product, site: row.site, date: row.date, types: [row.sale_type === 'Pickup' ? 'Sales (Pickup)' : 'Sales (Delivery)', 'Sales (Delivery)', 'Sales (Pickup)'] });
@@ -26130,7 +26398,7 @@
             tag: diff < -0.01 ? 'BELOW RULE' : (pr ? 'ON RULE' : 'LIST / SPOT'),
             tone: diff < -0.01 ? 'warn' : 'good',
             val: `${fmtUSD(actual, 2)} / ${row.uom || 'm³'}`,
-            sub1: pr ? `Agreed (${pr.name}): ${fmtUSD(pr.unit_price, 2)} · Diff ${diff >= 0 ? '+' : ''}${fmtUSD(diff, 2)}` : `List Benchmark: ${lp != null ? fmtUSD(lp, 2) : '—'} · Transport: ${fmtUSD(row.trans_price, 2)}`,
+            sub1: pr ? `Agreed: ${fmtUSD(pr.unit_price, 2)} · Diff ${diff >= 0 ? '+' : ''}${fmtUSD(diff, 2)}` : `List Benchmark: ${lp != null ? fmtUSD(lp, 2) : '—'} · Transport: ${fmtUSD(row.trans_price, 2)}`,
             sub2: `Material: ${fmtUSD(row.price, 2)} · VAT 11%: ${fmtUSD(row.vat, 2)}`,
             pct: Math.min(100, Math.max(20, bench > 0 ? Math.round((actual / bench) * 85) : 80))
           },
@@ -26476,24 +26744,24 @@
     };
 
     if (key === 'sales_tickets') {
-      const custRules = (rec.price_rules || []).filter(r => (row.customer && norm(r.customer) === norm(row.customer)) || (row.product && norm(r.product) === norm(row.product) && !r.customer));
+      const custRules = (rec.price_rules || []).filter(r => !isCommRule(r) && ((row.customer && norm(r.customer) === norm(row.customer)) || (row.product && norm(r.product) === norm(row.product) && !r.customer)));
       const sibTickets = (rec.sales_tickets || []).filter(t => norm(t.customer) === norm(row.customer) && String(t.id) !== String(row.id));
       const custRcpts = (rec.receipts || []).filter(r => norm(r.customer) === norm(row.customer));
       const custVat = (rec.vat_invoices || []).filter(v => norm(v.customer) === norm(row.customer));
       const trkFuel = row.truck ? (rec.fuel_intakes || []).filter(f => norm(f.equipment) === norm(row.truck)) : [];
 
-      addGrid('sg_rules', `Matching Price & Commission Agreements (${row.customer || row.product})`, 'Price Rules', 'Rule Lookup', 'price_rules', custRules, ['name', 'company', 'rule_type', 'customer', 'product', 'site', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
+      addGrid('sg_rules', `Matching Price Agreements (${row.customer || row.product})`, 'Price Rules', 'Rule Lookup', 'price_rules', custRules, ['company', 'rule_type', 'customer', 'product', 'site', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
       addGrid('sg_sib_sales', `Other Sales Tickets for ${row.customer || 'Customer'}`, 'Customer Tickets', 'Sibling Loads', 'sales_tickets', sibTickets, ['date', 'ticket_no', 'company', 'sale_type', 'product', 'site', 'truck', 'qty', 'unit_price', 'total_ttc', 'method'], 'total_ttc');
       addGrid('sg_rcpts', `Customer Receipts & FIFO Settlements (${row.customer})`, 'AR Receipts', 'FIFO Relief', 'receipts', custRcpts, ['date', 'name', 'company', 'method', 'amount', 'discount', 'vat_invoice', 'reference'], 'amount');
       addGrid('sg_vat', `Customer VAT 11% Tax Invoices (${row.customer})`, 'VAT Invoices', 'Tax Billing', 'vat_invoices', custVat, ['invoice_no', 'date', 'company', 'start_date', 'end_date', 'net_amount', 'vat_amount', 'total_ttc'], 'total_ttc');
       if (row.truck) addGrid('sg_trk_fuel', `Fuel & Meter Log for Truck ${row.truck}`, 'Truck Fuel Log', 'Fleet Telemetry', 'fuel_intakes', trkFuel, ['date', 'ticket_no', 'company', 'equipment', 'driver', 'item', 'litres', 'odometer'], 'litres');
     }
     else if (key === 'raw_purchases') {
-      const rawRules = (rec.price_rules || []).filter(r => (row.site_owner && norm(r.supplier) === norm(row.site_owner)) || (row.truck_owner && norm(r.supplier) === norm(row.truck_owner)) || (row.site && norm(r.site) === norm(row.site)));
+      const rawRules = (rec.price_rules || []).filter(r => !isCommRule(r) && ((row.site_owner && norm(r.supplier) === norm(row.site_owner)) || (row.truck_owner && norm(r.supplier) === norm(row.truck_owner)) || (row.site && norm(r.site) === norm(row.site))));
       const siteLoads = (rec.raw_purchases || []).filter(t => norm(t.site) === norm(row.site) && String(t.id) !== String(row.id));
       const suppSettle = (rec.settlements || []).filter(s => (row.site_owner && norm(s.supplier) === norm(row.site_owner)) || (row.truck_owner && norm(s.supplier) === norm(row.truck_owner)));
 
-      addGrid('sg_raw_rules', `Site & Hauler Price Agreements (${row.site || row.site_owner})`, 'Site Rules', 'Rule Lookup', 'price_rules', rawRules, ['name', 'company', 'rule_type', 'supplier', 'product', 'site', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
+      addGrid('sg_raw_rules', `Site & Hauler Price Agreements (${row.site || row.site_owner})`, 'Site Rules', 'Rule Lookup', 'price_rules', rawRules, ['company', 'rule_type', 'supplier', 'product', 'site', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
       addGrid('sg_site_loads', `Other Raw Material Purchases from ${row.site || 'Site'}`, 'Raw Loads', 'Sibling Loads', 'raw_purchases', siteLoads, ['date', 'ticket_no', 'company', 'site_owner', 'truck_owner', 'truck', 'product', 'qty', 'cost', 'trans_cost', 'total'], 'total');
       addGrid('sg_supp_settle', `Supplier Settlements for ${row.site_owner || row.truck_owner}`, 'AP Settlements', '3-Leg AP Relief', 'settlements', suppSettle, ['date', 'name', 'company', 'supplier', 'method', 'amount', 'discount', 'reference'], 'amount');
     }
@@ -26501,7 +26769,7 @@
       const name = row.name || row.Customer;
       addGrid('sg_c_sales', `Sales Tickets & Deliveries (${name})`, 'Sales Tickets', 'Sales Tickets', 'sales_tickets', (rec.sales_tickets || []).filter(t => norm(t.customer) === norm(name)), ['date', 'ticket_no', 'company', 'sale_type', 'product', 'site', 'truck', 'qty', 'unit_price', 'vat', 'total_ttc', 'method'], 'total_ttc');
       addGrid('sg_c_rcpts', `Customer Receipts — FIFO Applied (${name})`, 'AR Receipts', 'AR Receipts', 'receipts', (rec.receipts || []).filter(r => norm(r.customer) === norm(name)), ['date', 'name', 'company', 'method', 'amount', 'discount', 'vat_invoice', 'reference'], 'amount');
-      addGrid('sg_c_rules', `Price & Commission Agreements (${name})`, 'Price Rules', 'Price Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.customer) === norm(name)), ['name', 'company', 'rule_type', 'product', 'site', 'unit', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
+      addGrid('sg_c_rules', `Price Agreements (${name})`, 'Price Rules', 'Price Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.customer) === norm(name) && !isCommRule(r)), ['company', 'rule_type', 'product', 'site', 'unit', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
       addGrid('sg_c_cred', `Credit Terms & Limits (${name})`, 'Credit Terms', 'Credit Terms', 'credit_terms', (rec.credit_terms || []).filter(c => norm(c.customer) === norm(name)), ['name', 'company', 'credit_days', 'credit_limit', 'start_date', 'end_date', 'notes'], 'credit_limit');
       addGrid('sg_c_vat', `VAT 11% Tax Invoices (${name})`, 'VAT Invoices', 'VAT Invoices', 'vat_invoices', (rec.vat_invoices || []).filter(v => norm(v.customer) === norm(name)), ['invoice_no', 'date', 'company', 'start_date', 'end_date', 'net_amount', 'vat_amount', 'total_ttc'], 'total_ttc');
     }
@@ -26515,7 +26783,18 @@
       if (commVouchersForSup.length) {
         addGrid('sg_s_comm_rcpt', `Plant Commission & 11% VAT Settlements (${name})`, 'Commission Payouts', 'GL 6222 & 449', 'receipts', commVouchersForSup, ['date', 'name', 'company', 'method', 'amount', 'discount', 'reference'], 'amount');
       }
-      addGrid('sg_s_rules', `Price & Commission Agreements (${name})`, 'Price Rules', 'Price Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.supplier) === norm(name)), ['name', 'company', 'rule_type', 'product', 'site', 'unit', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
+      const supRules = (rec.price_rules || []).filter(r => norm(r.supplier) === norm(name));
+      const allCommSup = supRules.length > 0 && supRules.every(isCommRule);
+      addGrid(
+        'sg_s_rules',
+        allCommSup ? `Sales Commission Rules (${name})` : `Price & Commission Agreements (${name})`,
+        allCommSup ? 'Commission Rules' : 'Price Rules',
+        allCommSup ? 'Commission Schedule' : 'Price Rules',
+        'price_rules',
+        supRules,
+        allCommSup ? ['company', 'product', 'unit', 'unit_price', 'start_date', 'end_date'] : ['company', 'rule_type', 'product', 'site', 'unit', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'],
+        'unit_price'
+      );
       addGrid('sg_s_eq', `Registered Trucks & Equipment (${name})`, 'Trucks', 'Trucks & Equipment', 'equipment', (rec.equipment || []).filter(e => norm(e.supplier) === norm(name)), ['name', 'plate_no', 'type', 'ownership', 'capacity', 'default_driver'], 'capacity');
       addGrid('sg_s_drv', `Registered Drivers (${name})`, 'Drivers', 'Drivers', 'drivers', (rec.drivers || []).filter(d => norm(d.truck_owner) === norm(name)), ['name', 'truck', 'phone', 'truck_owner', 'notes'], null);
     }
@@ -26525,7 +26804,7 @@
       if (key !== 'products') {
         addGrid('sg_p_prods', `Products in ${name}`, 'Products', 'Products', 'products', (rec.products || []).filter(p => norm(p[matchField]) === norm(name)), ['name', 'type', 'uom', 'ton_factor', 'ticket_product', 'fuel_item', 'revenue_account'], 'ton_factor');
       }
-      addGrid('sg_p_rules', `Price Agreements for ${name}`, 'Price Rules', 'Price Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.product) === norm(name)), ['name', 'company', 'rule_type', 'customer', 'supplier', 'site', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
+      addGrid('sg_p_rules', `Price Agreements for ${name}`, 'Price Rules', 'Price Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.product) === norm(name) && !isCommRule(r)), ['company', 'rule_type', 'customer', 'supplier', 'site', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
       addGrid('sg_p_sales', `Sales Tickets (${name})`, 'Sales Tickets', 'Sales Tickets', 'sales_tickets', (rec.sales_tickets || []).filter(t => norm(t.product) === norm(name) || norm(t.uom) === norm(name)), ['date', 'ticket_no', 'company', 'customer', 'site', 'truck', 'qty', 'unit_price', 'total_ttc'], 'total_ttc');
       addGrid('sg_p_raw', `Raw Material Purchases (${name})`, 'Raw Purchases', 'Raw Purchases', 'raw_purchases', (rec.raw_purchases || []).filter(t => norm(t.product) === norm(name) || norm(t.uom) === norm(name)), ['date', 'ticket_no', 'company', 'site', 'site_owner', 'truck', 'qty', 'unit_cost', 'total'], 'total');
     }
@@ -26535,7 +26814,7 @@
         addGrid('sg_r_sites', `Sites in Region ${name}`, 'Sites', 'Sites', 'sites', (rec.sites || []).filter(s => norm(s.region) === norm(name)), ['name', 'region', 'supplier', 'is_jv', 'latitude', 'longitude'], null);
         addGrid('sg_r_ot', `Driver Trip & Overtime Rates (${name})`, 'Overtime Rates', 'Overtime Rates', 'overtime_rates', (rec.overtime_rates || []).filter(o => norm(o.region) === norm(name)), ['name', 'company', 'region', 'amount', 'start_date', 'end_date'], 'amount');
       } else {
-        addGrid('sg_st_rules', `Price & Transport Agreements at ${name}`, 'Site Rules', 'Site Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.site) === norm(name)), ['name', 'company', 'rule_type', 'customer', 'supplier', 'product', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
+        addGrid('sg_st_rules', `Price & Transport Agreements at ${name}`, 'Site Rules', 'Site Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.site) === norm(name) && !isCommRule(r)), ['company', 'rule_type', 'customer', 'supplier', 'product', 'unit_price', 'indiff_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
         addGrid('sg_st_sales', `Sales Deliveries to ${name}`, 'Sales Deliveries', 'Sales Deliveries', 'sales_tickets', (rec.sales_tickets || []).filter(t => norm(t.site) === norm(name)), ['date', 'ticket_no', 'company', 'customer', 'product', 'truck', 'qty', 'trans_price', 'total_ttc'], 'total_ttc');
         addGrid('sg_st_raw', `Raw Material Loads from ${name}`, 'Raw Loads', 'Raw Loads', 'raw_purchases', (rec.raw_purchases || []).filter(t => norm(t.site) === norm(name)), ['date', 'ticket_no', 'company', 'site_owner', 'truck_owner', 'truck', 'product', 'qty', 'cost', 'trans_cost', 'total'], 'total');
         addGrid('sg_st_jv', `JV Partnerships & Profit Split (${name})`, 'JV Partners', 'JV Partners', 'jv_partnerships', (rec.jv_partnerships || []).filter(j => norm(j.site) === norm(name)), ['name', 'company', 'partner', 'percentage', 'notes'], 'percentage');
@@ -26569,6 +26848,7 @@
     }
     else if (key === 'price_rules') {
       const isCommPr = /^commission$/i.test(String(row.rule_type || '').trim());
+      const prLabel = `${row.customer || row.supplier || row.site || 'Standard List'}${row.product ? ' · ' + row.product : ''}`;
       const mSales = (rec.sales_tickets || []).filter(t =>
         (!row.company || norm(t.company) === norm(row.company)) &&
         (!row.customer || norm(t.customer) === norm(row.customer)) &&
@@ -26577,12 +26857,12 @@
         (!isCommPr || ((!row.start_date || String(t.date || '').slice(0, 10) >= String(row.start_date).slice(0, 10)) && (!row.end_date || String(t.date || '').slice(0, 10) <= String(row.end_date).slice(0, 10))))
       );
       const mRaw = isCommPr ? [] : (rec.raw_purchases || []).filter(t => ((row.supplier && (norm(t.site_owner) === norm(row.supplier) || norm(t.truck_owner) === norm(row.supplier))) || (row.site && norm(t.site) === norm(row.site))) && (!row.product || norm(t.product) === norm(row.product)));
-      addGrid('sg_pr_sales', `Sales Tickets Governed by Rule (${row.name})`, 'Matched Sales', 'Rule Execution', 'sales_tickets', mSales, ['date', 'ticket_no', 'company', 'customer', 'product', 'site', 'qty', 'unit_price', 'trans_price', 'total_ttc'], 'total_ttc');
+      addGrid('sg_pr_sales', `Sales Tickets Governed by Rule (${prLabel})`, 'Matched Sales', 'Rule Execution', 'sales_tickets', mSales, ['date', 'ticket_no', 'company', 'customer', 'product', 'site', 'qty', 'unit_price', 'trans_price', 'total_ttc'], 'total_ttc');
       if (isCommPr && row.supplier) {
         const commRcpts = (rec.receipts || []).filter(r => norm(r.customer) === norm(row.supplier) && ['Rent', 'VATRent', 'RentConfig'].includes(String(r.method || '').trim()));
         addGrid('sg_pr_comm_rcpt', `Commission Payout Vouchers (${row.supplier})`, 'Commission Payouts', 'GL 6222 & 449', 'receipts', commRcpts, ['date', 'name', 'company', 'method', 'amount', 'discount', 'reference'], 'amount');
       } else {
-        addGrid('sg_pr_raw', `Raw Material Tickets Governed by Rule (${row.name})`, 'Matched Raw', 'Rule Execution', 'raw_purchases', mRaw, ['date', 'ticket_no', 'company', 'site', 'site_owner', 'truck_owner', 'product', 'qty', 'unit_cost', 'total'], 'total');
+        addGrid('sg_pr_raw', `Raw Material Tickets Governed by Rule (${prLabel})`, 'Matched Raw', 'Rule Execution', 'raw_purchases', mRaw, ['date', 'ticket_no', 'company', 'site', 'site_owner', 'truck_owner', 'product', 'qty', 'unit_cost', 'total'], 'total');
       }
     }
     else if (['employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries'].includes(key)) {
@@ -26816,9 +27096,16 @@
         { key: 'amount', label: 'Total USD Equivalent ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
-      price_rules: [
-        { key: 'name', label: 'Agreement Code', type: 'text', sec: 1 },
-        { key: 'rule_type', label: 'Agreement Type *', type: 'select', options: ['Sales (Delivery)', 'Sales (Pickup)', 'Purchase Price (Site)', 'Transport Price (Site)', 'List Price', 'Commission'], sec: 1 },
+      price_rules: /^commission$/i.test(String((row && row.rule_type) || '').trim()) ? [
+        { key: 'supplier', label: 'Plant Owner / Beneficiary *', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
+        { key: 'product', label: 'Product / Grade *', type: 'combo', dl: 'dl_insp_products', sec: 2 },
+        { key: 'unit', label: 'Commission Unit (m³ / Ton) *', type: 'select', options: uomOpts, sec: 3 },
+        { key: 'unit_price', label: 'Commission Rate ($ / Unit) *', type: 'number', step: '0.01', sec: 3 },
+        { key: 'start_date', label: 'Effective Start Date *', type: 'date', sec: 2 },
+        { key: 'end_date', label: 'End Date (Blank = Open)', type: 'date', sec: 2 },
+        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+      ] : [
+        { key: 'rule_type', label: 'Agreement Type *', type: 'select', options: ['Sales (Delivery)', 'Sales (Pickup)', 'Purchase Price (Site)', 'Transport Price (Site)', 'List Price'], sec: 1 },
         { key: 'customer', label: 'Customer', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
         { key: 'supplier', label: 'Supplier / Hauler', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
         { key: 'site', label: 'Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
@@ -27134,6 +27421,19 @@
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
     if (key === 'salaries') { hidden.add('equipment'); }
+    if (key === 'price_rules') {
+      hidden.add('name');
+      if (/^commission$/i.test(String((row && row.rule_type) || '').trim())) {
+        hidden.add('rule_type');
+        hidden.add('customer');
+        hidden.add('site');
+        hidden.add('rate_per');
+        hidden.add('indiff_price');
+        hidden.add('trans_unit_price');
+        hidden.add('truck_size');
+        hidden.add('truck');
+      }
+    }
 
     const populatedKeys = Object.keys(row).filter(k => !hidden.has(k) && row[k] !== '' && row[k] != null && !(typeof row[k] === 'number' && row[k] === 0 && /tip|discount|tier|adj|difference/.test(k) && !schemaByKey.has(k)));
     const allKeysSet = new Set(populatedKeys);
@@ -27861,8 +28161,15 @@
         const pos = computeStaffMonthPayrollPosition(stName, getModVal('company') || row.company, payMo, getModVal('date') || row.date, row.id, true);
         if (pos && pos.hasContract) {
           const afterRem = round2(pos.monthNetEarned - (pos.paidSoFar + totAmt));
-          const statusStr = afterRem < -0.01 ? `Advance +${fmtUSD(Math.abs(afterRem), 2)}` : (afterRem <= 0.01 ? 'Settled ($0.00 Left)' : `${fmtUSD(afterRem, 2)} Remaining`);
-          html = `<span>${esc(pos.monthLabel)} Earned: <b>${fmtUSD(pos.monthNetEarned, 2)}</b></span><span>Other Paid: <b>${fmtUSD(pos.paidSoFar, 2)}</b></span><span>This Voucher: <b>${fmtUSD(totAmt, 2)}</b></span><span>After: <b>${statusStr}</b></span>`;
+          if (pos.isFutureMonth) {
+            const futAfter = afterRem >= -0.01
+              ? `Future Adv (${fmtUSD(Math.max(0, afterRem), 2)} Base Left)`
+              : `Future Adv (+${fmtUSD(Math.abs(afterRem), 2)} Over Base)`;
+            html = `<span>${esc(pos.monthLabel)} Base: <b>${fmtUSD(pos.baseNet, 2)} ($0 Earned Yet)</b></span><span>Other Advanced: <b>${fmtUSD(pos.paidSoFar, 2)}</b></span><span>This Advance: <b>${fmtUSD(totAmt, 2)}</b></span><span>After: <b>${futAfter}</b></span>`;
+          } else {
+            const statusStr = afterRem < -0.01 ? `Advance +${fmtUSD(Math.abs(afterRem), 2)}` : (afterRem <= 0.01 ? 'Settled ($0.00 Left)' : `${fmtUSD(afterRem, 2)} Remaining`);
+            html = `<span>${esc(pos.monthLabel)} Earned: <b>${fmtUSD(pos.monthNetEarned, 2)}</b></span><span>Other Paid: <b>${fmtUSD(pos.paidSoFar, 2)}</b></span><span>This Voucher: <b>${fmtUSD(totAmt, 2)}</b></span><span>After: <b>${statusStr}</b></span>`;
+          }
         } else {
           html = `<span>Total USD: <b>${fmtUSD(totAmt, 2)}</b></span><span>Month: <b>${esc(formatPayrollMonthLabel(payMo))}</b></span>`;
         }

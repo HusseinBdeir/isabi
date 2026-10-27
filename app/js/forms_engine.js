@@ -539,49 +539,50 @@
     });
 
     if (fType === 'pricerule') {
+      const isCommForm = Boolean(ctx && ctx.STATE && ctx.STATE.modalGroupOverride === 'comm');
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
-          <div class="pa-form-sec-hdr"><span id="pr_sec1_hdr">1. Agreement Scope &amp; Counterparty</span></div>
+          <div class="pa-form-sec-hdr"><span id="pr_sec1_hdr">${isCommForm ? '1. Commission Product, Plant Owner &amp; Effective Date Window' : '1. Agreement Scope &amp; Counterparty'}</span></div>
           ${companyField}
-          ${fld('Start Date *', inp('f_date', 'date', today), { id: 'wrap_pr_startdate' })}
-          ${fld('End Date', inp('f_enddate', 'date', ''), { id: 'wrap_pr_enddate' })}
-          ${fld('Rule Type *', sel('f_ruletype', [
-            ['Sales (Delivery)', 'Sales (Delivery) — Customer + Site + Material/Trans'],
-            ['Sales (Pickup)', 'Sales (Pickup) — Customer Material Price (Pick-up)'],
-            ['List Price', 'List Price — Benchmark Product Price'],
-            ['Commission', 'Commission · Per-Unit Plant Owner Fee (Product + Date + m³/Ton)'],
-            ['Purchase Price (Site)', 'Purchase Price (Site) — Site Material Cost'],
-            ['Transport Price (Site)', 'Transport Price (Site) — Site Haulage Rate'],
-            ['Haulage (Customer Site)', 'Haulage (Customer Site) — 3P Delivery Hauler Rate']
-          ], 'Sales (Delivery)'))}
-          ${fld('Agreement Code / Name', inp('f_name', 'text', '', 'placeholder="Auto-named if blank"'))}
+          ${fld(isCommForm ? 'Effective Start Date *' : 'Start Date *', inp('f_date', 'date', today), { id: 'wrap_pr_startdate' })}
+          ${fld(isCommForm ? 'Effective End Date (Optional · blank = Open)' : 'End Date', inp('f_enddate', 'date', ''), { id: 'wrap_pr_enddate' })}
+          ${isCommForm
+            ? `<input type="hidden" id="f_ruletype" value="Commission">`
+            : fld('Rule Type *', sel('f_ruletype', [
+                ['Sales (Delivery)', 'Sales (Delivery) — Customer + Site + Material/Trans'],
+                ['Sales (Pickup)', 'Sales (Pickup) — Customer Material Price (Pick-up)'],
+                ['List Price', 'List Price — Benchmark Product Price'],
+                ['Purchase Price (Site)', 'Purchase Price (Site) — Site Material Cost'],
+                ['Transport Price (Site)', 'Transport Price (Site) — Site Haulage Rate'],
+                ['Haulage (Customer Site)', 'Haulage (Customer Site) — 3P Delivery Hauler Rate']
+              ], 'Sales (Delivery)'), { id: 'wrap_pr_ruletype' })}
           ${fld('Product / Grade *', inp('f_product', 'text', '', 'list="dl_pr_prods" placeholder="Select or type grade..."') + dlMeta('dl_pr_prods', prodMetaItems))}
-          ${fld('Customer (Sales Rules) *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_pr_customer' })}
-          ${fld('Supplier / Hauler *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_pr_supplier', hidden: true })}
-          ${fld('Site / Destination', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames), { id: 'wrap_pr_site' })}
-          <div id="pr_comm_history_box" class="form-field span-3" hidden style="background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.45"></div>
-          <div class="pa-form-sec-hdr"><span id="pr_sec2_hdr">2. Unit Pricing, Client/Site Truck Size &amp; Tier 1 / Tier 2 Adjustments</span></div>
-          ${fld('Priced Per Unit *', sel('f_uom', uoms, 'm³'), { id: 'wrap_pr_uom' })}
-          ${fld('Material Unit Price ($) *', inp('f_unitprice', 'number', '0.00', 'step="0.01" min="0"'), { id: 'wrap_pr_matprice' })}
-          ${fld('Transport Rate Per', sel('f_rateper', [['m³', 'Per m³'], ['Ton', 'Per Ton (× Ton Factor)'], ['Truck', 'Flat Per Truck Load']], 'm³'), { id: 'wrap_pr_transrate' })}
-          ${fld('Transport Unit Price ($)', inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0"'), { id: 'wrap_pr_transprice' })}
-          ${fld('Indifference Price ($)', inp('f_indiff', 'number', '', 'step="0.01" min="0" placeholder="Optional benchmark"'), { id: 'wrap_pr_indiff' })}
-          ${fld('Client / Site Truck Size (m³)', inp('f_trucksize', 'number', '', 'step="0.5" min="0" placeholder="Optional — overrides truck m³ for client/site"'), { id: 'wrap_pr_trucksize', hintId: 'hint_pr_trucksize', hint: 'Optional: overrides truck capacity (m³) on matching Sales or Raw Material / Transport tickets.' })}
-          ${fld('Target Truck Plate (Optional)', inp('f_pr_truck', 'text', '', 'list="dl_equip" placeholder="All trucks (or select specific truck)..."') + dl('dl_equip', equipNames), { id: 'wrap_pr_truck' })}
-          ${fld('Tier 1 Truck Size (m³)', inp('f_qty1', 'number', '', 'step="0.5" min="0" placeholder="e.g. 14 or 20 m³"'), { id: 'wrap_pr_tier1' })}
-          ${fld('Tier 1 Price Adj ($)', inp('f_adj1', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_adj1' })}
-          ${fld('Tier 1 Trans Adj ($)', inp('f_transadj1', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_transadj1' })}
+          ${fld('Customer (Sales Rules) *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_pr_customer', hidden: isCommForm })}
+          ${fld(isCommForm ? 'Plant Owner / Beneficiary *' : 'Supplier / Hauler *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_pr_supplier', hidden: !isCommForm })}
+          ${fld('Site / Destination', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames), { id: 'wrap_pr_site', hidden: isCommForm })}
+          <div id="pr_comm_history_box" class="form-field span-3" ${isCommForm ? '' : 'hidden'} style="background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.45"></div>
+          <div class="pa-form-sec-hdr"><span id="pr_sec2_hdr">${isCommForm ? '2. Commission Unit (m³ / Ton) &amp; Per-Unit Rate' : '2. Unit Pricing, Client/Site Truck Size &amp; Tier 1 / Tier 2 Adjustments'}</span></div>
+          ${fld(isCommForm ? 'Commission Unit (m³ / Ton) *' : 'Priced Per Unit *', sel('f_uom', uoms, 'm³'), { id: 'wrap_pr_uom' })}
+          ${fld(isCommForm ? 'Commission Rate ($ / m³) *' : 'Material Unit Price ($) *', inp('f_unitprice', 'number', '0.00', 'step="0.01" min="0"'), { id: 'wrap_pr_matprice' })}
+          ${fld('Transport Rate Per', sel('f_rateper', [['m³', 'Per m³'], ['Ton', 'Per Ton (× Ton Factor)'], ['Truck', 'Flat Per Truck Load']], 'm³'), { id: 'wrap_pr_transrate', hidden: isCommForm })}
+          ${fld('Transport Unit Price ($)', inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0"'), { id: 'wrap_pr_transprice', hidden: isCommForm })}
+          ${fld('Indifference Price ($)', inp('f_indiff', 'number', '', 'step="0.01" min="0" placeholder="Optional benchmark"'), { id: 'wrap_pr_indiff', hidden: isCommForm })}
+          ${fld('Client / Site Truck Size (m³)', inp('f_trucksize', 'number', '', 'step="0.5" min="0" placeholder="Optional — overrides truck m³ for client/site"'), { id: 'wrap_pr_trucksize', hidden: isCommForm, hintId: 'hint_pr_trucksize', hint: 'Optional: overrides truck capacity (m³) on matching Sales or Raw Material / Transport tickets.' })}
+          ${fld('Target Truck Plate (Optional)', inp('f_pr_truck', 'text', '', 'list="dl_equip" placeholder="All trucks (or select specific truck)..."') + dl('dl_equip', equipNames), { id: 'wrap_pr_truck', hidden: isCommForm })}
+          ${fld('Tier 1 Truck Size (m³)', inp('f_qty1', 'number', '', 'step="0.5" min="0" placeholder="e.g. 14 or 20 m³"'), { id: 'wrap_pr_tier1', hidden: isCommForm })}
+          ${fld('Tier 1 Price Adj ($)', inp('f_adj1', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_adj1', hidden: isCommForm })}
+          ${fld('Tier 1 Trans Adj ($)', inp('f_transadj1', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_transadj1', hidden: isCommForm })}
           ${fld('Tier 2 Truck Size (m³)', inp('f_qty2', 'number', '', 'step="0.5" min="0" placeholder="e.g. 22 or 25 m³"'), { id: 'wrap_pr_tier2', hidden: true })}
           ${fld('Tier 2 Price Adj ($)', inp('f_adj2', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_adj2', hidden: true })}
           ${fld('Tier 2 Trans Adj ($)', inp('f_transadj2', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_transadj2', hidden: true })}
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
         <div class="live-calc">
-          <div><small id="lbl_calc_mat">Base Material + Trans</small><b id="calc_mat">$0.00 / u</b></div>
-          <div><small id="lbl_calc_tr">Tier 1 Total per Load</small><b id="calc_tr">—</b></div>
-          <div><small id="lbl_calc_vat">Tier 2 Total per Load</small><b id="calc_vat">—</b></div>
-          <div><small id="lbl_calc_total">Delivered Unit Price Total</small><b id="calc_total">$0.00</b></div>
+          <div><small id="lbl_calc_mat">${isCommForm ? 'Commission Rate' : 'Base Material + Trans'}</small><b id="calc_mat">$0.00 / u</b></div>
+          <div><small id="lbl_calc_tr">${isCommForm ? 'Unit Equivalence' : 'Tier 1 Total per Load'}</small><b id="calc_tr">—</b></div>
+          <div><small id="lbl_calc_vat">${isCommForm ? 'Effective Window' : 'Tier 2 Total per Load'}</small><b id="calc_vat">—</b></div>
+          <div><small id="lbl_calc_total">${isCommForm ? 'Accrual Rate (GL 6222)' : 'Delivered Unit Price Total'}</small><b id="calc_total">$0.00</b></div>
         </div>
       `;
     }
@@ -912,10 +913,10 @@
         </div>
         <div id="paSalSubgridWrap"></div>
         <div class="live-calc att-live-calc-compact" id="salLiveCalc">
-          <div><small>Month Net Earned</small><b id="calc_sal_earned">Select Staff</b></div>
-          <div><small>Already Paid (Month)</small><b id="calc_sal_paid">$0.00</b></div>
-          <div><small>Remaining After Payment</small><b id="calc_sal_rem">—</b></div>
-          <div><small>Payment Classification</small><b id="calc_sal_status">Pending Staff</b></div>
+          <div><small id="lbl_sal_earned">Month Net Earned</small><b id="calc_sal_earned">Select Staff</b></div>
+          <div><small id="lbl_sal_paid">Already Paid (Month)</small><b id="calc_sal_paid">$0.00</b></div>
+          <div><small id="lbl_sal_rem">Remaining After Payment</small><b id="calc_sal_rem">—</b></div>
+          <div><small id="lbl_sal_status">Payment Classification</small><b id="calc_sal_status">Pending Staff</b></div>
         </div>
       `;
     }

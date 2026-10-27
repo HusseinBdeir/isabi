@@ -1327,7 +1327,7 @@
     { key: 'sales_tickets', group: '1 · Sales, Pricing & Receivables', label: 'Sales Tickets', dvn: 'bhf_salesticket', form: 'sales', cols: ['date', 'rep_date', 'ticket_no', 'company', 'sale_type', 'customer', 'product', 'site', 'truck', 'driver', 'qty', 'uom', 'unit_price', 'price', 'trans_price', 'vat', 'total_ttc', 'method'], relTables: ['customers', 'price_rules', 'products', 'sites', 'equipment', 'drivers', 'receipts', 'vat_invoices'], views: [{ id: 'all', label: 'All Sales Tickets' }, { id: 'delivery', label: 'Delivery Loads', fn: r => /deliv/i.test(r.sale_type) }, { id: 'pickup', label: 'Pick-up (Material Only)', fn: r => /pick/i.test(r.sale_type) }, { id: 'credit', label: 'Credit / Account', fn: r => !/cash/i.test(r.method) }, { id: 'iva', label: 'IVA / VAT 11%', fn: r => r.iva || Number(r.vat || 0) > 0 }] },
     { key: 'receipts', group: '1 · Sales, Pricing & Receivables', label: 'Customer Receipts (AR)', dvn: 'bhf_mfgcustomerreceipt', form: 'receipt', cols: ['date', 'rep_date', 'name', 'company', 'customer', 'method', 'kind', 'amount', 'discount', 'vat_invoice', 'record_ticket', 'reference', 'notes'], relTables: ['customers', 'sales_tickets', 'vat_invoices', 'credit_terms'], views: [{ id: 'all', label: 'All Customer Receipts' }, { id: 'cash', label: 'Cash / Check', fn: r => /cash|check|cheque/i.test(r.method || '') }, { id: 'disc', label: 'With Discount / Rebate', fn: r => Number(r.discount || 0) > 0 }] },
     { key: 'vat_invoices', group: '1 · Sales, Pricing & Receivables', label: 'VAT 11% Tax Invoices', dvn: 'bhf_vatinvoice', form: 'vatinvoice', cols: ['invoice_no', 'date', 'company', 'customer', 'start_date', 'end_date', 'net_amount', 'vat_amount', 'total_ttc', 'tickets_count', 'notes'], relTables: ['customers', 'sales_tickets', 'receipts'], views: [{ id: 'all', label: 'All VAT Invoices' }] },
-    { key: 'price_rules', group: '1 · Sales, Pricing & Receivables', label: 'Price & Commission Agreements', dvn: 'bhf_pricerule', form: 'pricerule', cols: ['name', 'company', 'rule_type', 'customer', 'supplier', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'total1', 'qty2', 'adj2', 'total2', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'], relTables: ['customers', 'suppliers', 'products', 'sites', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Price Agreements' }, { id: 'active', label: 'Active Agreements', fn: r => !r.end_date }, { id: 'sales', label: 'Customer Sales Rules', fn: r => /sale|pickup|deliv/i.test(r.rule_type || '') }, { id: 'transport', label: 'Transport & Raw Rules', fn: r => /trans|raw|purch/i.test(r.rule_type || '') }, { id: 'list', label: 'List Prices', fn: r => /list/i.test(r.rule_type || '') }] },
+    { key: 'price_rules', group: '1 · Sales, Pricing & Receivables', label: 'Price & Commission Agreements', dvn: 'bhf_pricerule', form: 'pricerule', cols: ['company', 'rule_type', 'customer', 'supplier', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'total1', 'qty2', 'adj2', 'total2', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'], relTables: ['customers', 'suppliers', 'products', 'sites', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Price Agreements' }, { id: 'active', label: 'Active Agreements', fn: r => !r.end_date }, { id: 'sales', label: 'Customer Sales Rules', fn: r => /sale|pickup|deliv/i.test(r.rule_type || '') && !/^commission$/i.test(r.rule_type || '') }, { id: 'transport', label: 'Transport & Raw Rules', fn: r => /trans|raw|purch/i.test(r.rule_type || '') }, { id: 'list', label: 'List Prices', fn: r => /list/i.test(r.rule_type || '') }, { id: 'commission', label: 'Commission Rules', fn: r => /^commission$/i.test(r.rule_type || ''), cols: ['company', 'supplier', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }] },
     { key: 'credit_terms', group: '1 · Sales, Pricing & Receivables', label: 'Customer Credit Terms', dvn: 'bhf_creditterm', form: 'creditterm', cols: ['name', 'company', 'customer', 'credit_days', 'credit_limit', 'ar_balance', 'start_date', 'end_date', 'notes'], relTables: ['customers', 'sales_tickets', 'receipts'], views: [{ id: 'all', label: 'All Credit Terms' }, { id: 'active', label: 'Active Policies', fn: r => !r.end_date }] },
     { key: 'customers', group: '1 · Sales, Pricing & Receivables', universal: true, navView: 'reg_customers', label: 'Customers Registry', dvn: 'bhf_customer', form: 'customer', cols: ['name', 'method', 'vat_registered', 'mof_no', 'phone', 'address', 'credit_days', 'credit_limit', 'active_rules', 'sales_loads', 'ar_balance'], relTables: ['sales_tickets', 'receipts', 'price_rules', 'credit_terms', 'vat_invoices'], views: [{ id: 'all', label: 'All Customers' }, { id: 'open_ar', label: 'Open AR Balance > $0', fn: (r, rel) => ((rel.custByName[norm(r.name)] || {}).ar_balance || 0) > 1 }, { id: 'vat', label: 'VAT Registered (MOF)', fn: r => Boolean(r.vat_registered || r.mof_no) }] },
     { key: 'products', group: '1 · Sales, Pricing & Receivables', universal: true, navView: 'reg_products', label: 'Products & Grades', dvn: 'bhf_product', form: 'product', cols: ['name', 'type', 'uom', 'ton_factor', 'list_price', 'ticket_product', 'fuel_item', 'input_product', 'active_rules', 'sales_loads', 'revenue_account'], relTables: ['sales_tickets', 'raw_purchases', 'price_rules', 'fuel_intakes', 'product_types', 'uoms'], views: [{ id: 'all', label: 'All Products & Grades' }, { id: 'agg', label: 'Ticket / Aggregate Grades', fn: r => Boolean(r.ticket_product) }, { id: 'fuel', label: 'Fuel & Lube Items', fn: r => Boolean(r.fuel_item) }] },
@@ -7512,6 +7512,7 @@
     const views = meta.views || [{ id: 'all', label: 'All ' + meta.label }];
     const activeViewId = (STATE.tableViews && STATE.tableViews[meta.key]) || 'all';
     const activeView = views.find(v => v.id === activeViewId) || views[0];
+    const activeCols = (activeView && Array.isArray(activeView.cols) && activeView.cols.length) ? activeView.cols : meta.cols;
     const filtered = activeView && activeView.fn ? baseFiltered.filter(r => activeView.fn(r, rel)) : baseFiltered;
     const defSortSpec = getHubTableDefaultSort(meta, activeView.id);
     const rows = sortRows(filtered, 'tbl_' + meta.key, defSortSpec.key, defSortSpec.dir);
@@ -7535,7 +7536,7 @@
               <span class="cockpit-pill-tag brass">${esc(meta.group)}</span>
             </div>
             <div class="cockpit-pill-val brass">${esc(meta.label)}</div>
-            <div class="cockpit-pill-sub">${meta.cols.length} columns · ${views.length} system views</div>
+            <div class="cockpit-pill-sub">${activeCols.length} columns · ${views.length} system views</div>
           </div>
           <div class="cockpit-pill insight-card tone-emerald">
             <div class="cockpit-pill-top">
@@ -7614,18 +7615,18 @@
             ${canEnterForm(meta.form) ? `<button type="button" class="btn btn-primary" data-open-modal="${esc(meta.form)}">+ New ${esc(meta.label.replace(/ies$/, 'y').replace(/s$/, ''))}</button>` : ''}
           </div>
         </div>
-        ${typeof ctx.renderColFilterBar === 'function' ? ctx.renderColFilterBar('tbl_' + meta.key, meta.cols) : ''}
+        ${typeof ctx.renderColFilterBar === 'function' ? ctx.renderColFilterBar('tbl_' + meta.key, activeCols) : ''}
         <div class="table-wrap">
           <table class="ledger-table">
             <thead>
               <tr>
-                ${meta.cols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading/.test(c) ? 'r' : '')).join('')}
+                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
               ${shown.map(r => `
                 <tr class="rrow" data-rkey="${esc(meta.key)}" data-rid="${esc(r.id)}">
-                  ${meta.cols.map((c, ci) => {
+                  ${activeCols.map((c, ci) => {
                     const v = cellValue(r, c, meta.key, rel);
                     const nonNum = NON_NUMERIC_HUB_COLS.test(c);
                     const isBool = typeof v === 'boolean' || (/^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|prior_defect_notified|iva$|overtime$)/.test(c) && (v === 0 || v === 1));
@@ -7653,8 +7654,8 @@
                     return `<td class="${isMoney || isNum || isLbp || isSignedLbp ? 'r' : ''}${/date|ticket|code|_no$|plate|version|_delta$|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
-              `).join('') || emptyRow(meta.cols.length, 'No rows match the active filter.')}
-              ${showMoreRow('tbl_' + meta.key, rows.length, meta.cols.length)}
+              `).join('') || emptyRow(activeCols.length, 'No rows match the active filter.')}
+              ${showMoreRow('tbl_' + meta.key, rows.length, activeCols.length)}
             </tbody>
             <tfoot>
               <tr>
@@ -7669,12 +7670,12 @@
                     const isN = !isBoolCol && !isM && !isL && !isSL && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|loads|fills|rules|tickets/.test(col);
                     return { isM, isN, isL, isSU, isSL, num: isM || isN || isL || isSU || isSL };
                   };
-                  let firstNum = meta.cols.findIndex((col, idx) => idx > 0 && isColNumeric(col).num);
-                  if (firstNum < 0) firstNum = meta.cols.length;
+                  let firstNum = activeCols.findIndex((col, idx) => idx > 0 && isColNumeric(col).num);
+                  if (firstNum < 0) firstNum = activeCols.length;
                   const leadSpan = Math.max(1, firstNum);
                   const out = [`<td colspan="${leadSpan}"><b>TOTAL (${fmtNum(rows.length)} RECORDS)</b></td>`];
-                  for (let ci = leadSpan; ci < meta.cols.length; ci++) {
-                    const c = meta.cols[ci];
+                  for (let ci = leadSpan; ci < activeCols.length; ci++) {
+                    const c = activeCols[ci];
                     const { isM: isMoney, isN: isNum, isL, isSU, isSL } = isColNumeric(c);
                     if (!isMoney && !isNum && !isL && !isSU && !isSL) { out.push(`<td></td>`); continue; }
                     let sum = 0, cnt = 0;
