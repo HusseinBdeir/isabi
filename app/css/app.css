@@ -234,8 +234,18 @@ button {
   background-color: #E5B764;
 }
 
-/* Compact scrollbars for Left Sidebar Rail, Ask ISABI Drawer, Auth Gate (theme-aware) */
-.rail-nav::-webkit-scrollbar,
+/* Compact scrollbars for Ask ISABI Drawer & Auth Gate (Left Sidebar Rail hides scrollbar chrome) */
+.rail-nav {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.rail-nav::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .ai-thread::-webkit-scrollbar,
 .quick-seat-list::-webkit-scrollbar,
 .auth-right::-webkit-scrollbar {
@@ -243,7 +253,6 @@ button {
   height: 6px;
 }
 
-:root[data-theme="dark"] .rail-nav::-webkit-scrollbar-track,
 :root[data-theme="dark"] .ai-thread::-webkit-scrollbar-track,
 :root[data-theme="dark"] .quick-seat-list::-webkit-scrollbar-track,
 :root[data-theme="dark"] .auth-right::-webkit-scrollbar-track {
@@ -251,7 +260,6 @@ button {
   border-radius: 999px;
 }
 
-:root[data-theme="dark"] .rail-nav::-webkit-scrollbar-thumb,
 :root[data-theme="dark"] .ai-thread::-webkit-scrollbar-thumb,
 :root[data-theme="dark"] .quick-seat-list::-webkit-scrollbar-thumb,
 :root[data-theme="dark"] .auth-right::-webkit-scrollbar-thumb {
@@ -261,7 +269,6 @@ button {
   background-clip: padding-box;
 }
 
-:root[data-theme="dark"] .rail-nav::-webkit-scrollbar-thumb:hover,
 :root[data-theme="dark"] .ai-thread::-webkit-scrollbar-thumb:hover,
 :root[data-theme="dark"] .quick-seat-list::-webkit-scrollbar-thumb:hover,
 :root[data-theme="dark"] .auth-right::-webkit-scrollbar-thumb:hover {
@@ -276,7 +283,10 @@ button {
   :root[data-theme="dark"] * {
     scrollbar-color: rgba(217, 165, 74, 0.42) #0B1526;
   }
-  :root[data-theme="dark"] .rail-nav,
+  .rail-nav,
+  :root[data-theme="dark"] .rail-nav {
+    scrollbar-width: none;
+  }
   :root[data-theme="dark"] .ai-thread,
   :root[data-theme="dark"] .quick-seat-list {
     scrollbar-color: rgba(217, 165, 74, 0.42) #0B1730;
@@ -428,26 +438,13 @@ body.is-resizing-rail * {
 }
 
 .rail-resizer-grip {
-  width: 3px;
-  height: 36px;
-  border-radius: 999px;
-  background: rgba(217, 165, 74, 0.28);
-  transition: background 0.15s, height 0.15s, transform 0.15s;
-  pointer-events: none;
+  display: none;
 }
 
 .rail-resizer:hover::before,
 .rail-resizer:focus-visible::before,
 body.is-resizing-rail .rail-resizer::before {
   background: #D9A54A;
-}
-
-.rail-resizer:hover .rail-resizer-grip,
-.rail-resizer:focus-visible .rail-resizer-grip,
-body.is-resizing-rail .rail-resizer .rail-resizer-grip {
-  background: #D9A54A;
-  height: 52px;
-  box-shadow: 0 0 8px rgba(217, 165, 74, 0.55);
 }
 
 .brand-badge {
