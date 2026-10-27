@@ -5135,6 +5135,111 @@
     return ghostCnt > 0 ? { text: `${fmtNum(ghostCnt)} Alert${ghostCnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
   }
 
+  function getScopedPendingPriceExpenses(opts) {
+    const filterOpts = opts || { ignoreSearch: true };
+    const rows = filterRecords((SEED && SEED.records && SEED.records.expenses) || [], filterOpts)
+      .filter(isPendingPriceExpense)
+      .slice()
+      .sort((a, b) => String(recordDate(b) || b.date || '').localeCompare(String(recordDate(a) || a.date || '')));
+    let dieselCount = 0, dieselLitres = 0;
+    const bySup = new Map();
+    rows.forEach(x => {
+      const isDsl = isBulkDieselExpense(x);
+      const qv = Number(x.qty || 0);
+      if (isDsl && qv > 0) {
+        dieselCount += 1;
+        dieselLitres += qv;
+      }
+      const sName = String(x.supplier || '').trim();
+      const sk = norm(sName);
+      if (sk && !sName.startsWith('(')) {
+        const cur = bySup.get(sk) || { supplier: sName, count: 0, dieselLitres: 0, rows: [] };
+        cur.count += 1;
+        if (isDsl && qv > 0) cur.dieselLitres += qv;
+        cur.rows.push(x);
+        bySup.set(sk, cur);
+      }
+    });
+    return { rows, count: rows.length, dieselCount, dieselLitres: round2(dieselLitres), bySup };
+  }
+
+  function getPendingPriceExceptionBadge(u, targetView) {
+    const allowed = targetView
+      ? canViewView(targetView, u)
+      : (canViewView('suppliers', u) || canViewView('expenses', u));
+    if (!allowed) return null;
+    const pend = getScopedPendingPriceExpenses({ ignoreSearch: true });
+    return pend.count > 0 ? { text: `${fmtNum(pend.count)} Pending`, cls: 'warn' } : null;
+  }
+
+  function renderPendingPriceQueuePanel(pendRows, contextView) {
+    const rows = Array.isArray(pendRows) ? pendRows : [];
+    const canEdit = canModifyData();
+    const canAdd = canEnterForm('expense');
+    const dieselL = rows.reduce((a, x) => a + (isBulkDieselExpense(x) ? Number(x.qty || 0) : 0), 0);
+    if (!rows.length) {
+      return `
+        <div class="pending-price-queue-card" id="pendingPriceQueuePanel" style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px;border-left:3px solid var(--brass)">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div class="panel-title"><span>${ic('clock')} DELIVERIES AWAITING SUPPLIER INVOICE PRICE (0 PENDING)</span></div>
+            <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${canAdd ? `<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-open-pending-expense="1">+ Pending-Price Delivery</button>` : ''}
+              <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" data-chip="all">Show All</button>
+            </span>
+          </div>
+          <div style="padding:12px 16px;font-size:12.5px;color:var(--ink-2);line-height:1.5">
+            No deliveries are awaiting a supplier invoice price in this company and date range. When bulk diesel or credit purchases arrive before the supplier's invoice price, log them via <b>+ New Entry · Expense (Cash / Credit) · Price Pending ($0)</b>; they appear here and on the supplier's row until the final price is entered.
+          </div>
+        </div>
+      `;
+    }
+    return `
+      <div class="pending-price-queue-card" id="pendingPriceQueuePanel" style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px;border-left:4px solid var(--warn)">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div class="panel-title"><span>${ic('clock')} DELIVERIES AWAITING SUPPLIER INVOICE PRICE (${fmtNum(rows.length)} PENDING${dieselL > 0 ? ` · ${fmtNum(dieselL, 0)} L DIESEL` : ''})</span></div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span class="mu" style="font-size:11.5px">Quantity is active in stock at $0.00 Credit AP until priced</span>
+            ${contextView === 'suppliers' && canViewView('expenses') ? `<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-jump-pending-expenses="1">${ic('expenses')} Open in Expenses</button>` : ''}
+            ${contextView === 'expenses' && canViewView('suppliers') ? `<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-jump-pending-suppliers="1">${ic('suppliers')} Open in Suppliers &amp; Payables</button>` : ''}
+            ${canAdd ? `<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-pending-expense="1">+ Pending-Price Delivery</button>` : ''}
+            ${exportBtn('pendingPriceQueuePanel', 'Pending_Invoice_Price_Deliveries')}
+          </span>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Date</th><th>Voucher</th><th>Co.</th><th>Supplier</th><th>Category / Item</th><th class="r">Qty Received</th><th>Unit / Reference</th><th class="r">Invoice Status</th>${canEdit ? '<th class="r">Action</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(x => {
+                const isDsl = isBulkDieselExpense(x);
+                const qv = Number(x.qty || 0);
+                const qtyTxt = qv > 0 ? `${fmtNum(qv, qv % 1 ? 2 : 0)}${isDsl ? ' L' : ' qty'}` : '1 qty';
+                const itemTxt = [x.category, x.subcategory].filter(Boolean).join(' · ') || 'Expense';
+                const refParts = [x.equipment ? `Unit: ${x.equipment}` : '', x.reference || '', x.notes || ''].filter(Boolean).join(' · ');
+                return `
+                  <tr class="rrow" data-rkey="expenses" data-rid="${esc(x.id)}">
+                    <td class="mono">${esc(recordDateDMY(x))}${appCell(x, 'expenses')}</td>
+                    <td class="mono"><strong>${esc(x.name || x.id)}</strong></td>
+                    <td>${coBadge(x.company)}</td>
+                    <td>${x.supplier ? relLink('suppliers', x.supplier, x.supplier, true) : '<span class="mu">Unassigned</span>'}</td>
+                    <td><strong>${esc(itemTxt)}</strong></td>
+                    <td class="r mono"><strong>${esc(qtyTxt)}</strong></td>
+                    <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${refParts ? esc(refParts) : '-'}</td>
+                    <td class="r"><span class="badge badge-warn">Pending Price ($0.00)</span></td>
+                    ${canEdit ? `<td class="r"><button type="button" class="btn btn-primary" style="padding:3px 9px;font-size:11px" data-set-pending-price-id="${esc(x.id)}" title="Open voucher and enter final supplier invoice price">${ic('dollar')} Enter Final Price</button></td>` : ''}
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   function getLedgerExceptionBadge(u, k) {
     if (!canViewView('ledger', u)) return null;
     if (k && k.tb_check != null && Math.abs(Number(k.tb_check)) >= 0.005) {
@@ -5145,6 +5250,7 @@
 
   function getHubExceptionBadge(hubId, u, k, sentinelsOpen) {
     if (hubId === 'overview') return getSentinelExceptionBadge(u, sentinelsOpen);
+    if (hubId === 'raw') return getPendingPriceExceptionBadge(u);
     if (hubId === 'fleet') return getFleetExceptionBadge(u) || getDieselExceptionBadge(u);
     if (hubId === 'ledger') return getLedgerExceptionBadge(u, k);
     return null;
@@ -5187,8 +5293,8 @@
       group: 'commercial',
       tabs: [
         { view: 'raw', match: ['raw', 'raw_analytics'], label: 'Quarry & Haulage', icon: 'raw' },
-        { view: 'expenses', match: ['expenses', 'expenses_analytics'], label: 'Expenses & Overhead', icon: 'expenses' },
-        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers' },
+        { view: 'expenses', match: ['expenses', 'expenses_analytics'], label: 'Expenses & Overhead', icon: 'expenses', badgeFn: u => getPendingPriceExceptionBadge(u, 'expenses') },
+        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers', badgeFn: u => getPendingPriceExceptionBadge(u, 'suppliers') },
         { view: 'raw_pricing', label: 'Quarry & Haulage Rates', icon: 'pricing' },
         { view: 'raw_jv', match: ['raw_jv', 'jv'], label: 'JV & Partnerships', icon: 'raw_jv' }
       ]
@@ -9229,7 +9335,8 @@
       diesel_sold_l: hasDieselActivity ? dtScoped.soldL : null,
       diesel_stock_balance_l: hasDieselActivity ? dtScoped.closingTankL : null,
       pending_diesel_deliveries_count: pendingDieselCount,
-      pending_diesel_deliveries_l: round2(pendingDieselLitres)
+      pending_diesel_deliveries_l: round2(pendingDieselLitres),
+      pending_price_rows: pendingPriceRows
     });
 
     // 2. Live Price Agreement Enforcement (S5) + Weighbridge Pad Audit (S6) + Payroll Contract Match (S7)
@@ -9588,8 +9695,8 @@
       company: scope,
       rawMetric: tank == null ? 1 : (tank < 0 ? Math.abs(Math.round(tank)) : pendDieselCnt),
       rawSecondary: Math.round(pendDieselL),
-      scrollPanel: pendDieselCnt > 0 ? '' : 'dieselTankPanel',
-      navView: pendDieselCnt > 0 ? 'expenses' : 'fleet', navLabel: pendDieselCnt > 0 ? 'Pending Invoices' : 'Open Diesel'
+      scrollPanel: pendDieselCnt > 0 ? 'snPendingPrice' : 'dieselTankPanel',
+      navView: pendDieselCnt > 0 ? 'suppliers' : 'fleet', navLabel: pendDieselCnt > 0 ? 'Pending Invoices' : 'Open Diesel'
     });
 
     const meters = Number(fleet.meter_readings_to_check || 0);
@@ -10283,6 +10390,11 @@
           { label: 'Tank Impact (L)', key: 'tank_delta_l', r: true, fmt: v => `${Number(v || 0) > 0 ? '+' : ''}${fmtNum(v, 1)}` },
           { label: 'Notes', key: 'notes' }
         ], 'snMalfunction')}
+        ${miniTable('DELIVERIES AWAITING SUPPLIER INVOICE PRICE ($0.00 PENDING)', fleet.pending_price_rows || [], [
+          { label: 'Date', key: 'date', mono: true }, { label: 'Co.', key: 'company' },
+          { label: 'Supplier', key: 'supplier' }, { label: 'Item', key: 'item_label' },
+          { label: 'Qty', key: 'qty_label', r: true, mono: true }
+        ], 'snPendingPrice')}
         ${miniTable('SALARY PAYMENTS WITHOUT A CONTRACT', pricing.unmatched_salary_by_staff || [], [
           { label: 'Staff Member', key: 'staff' }, { label: 'Co.', key: 'company' }, { label: 'Months', key: 'months_count', r: true, fmt: v => fmtNum(v || 1, 0) }, { label: 'Unmatched ($)', key: 'unmatched_usd', r: true, fmt: usd2 }
         ], 'snPayroll')}
@@ -12017,7 +12129,7 @@
     const okCount = Math.max(0, fuelRows.length - fuelRows.filter(f => { const g = guards.get(f.id); return g && (g.cls === 'badge-err' || g.cls === 'badge-warn'); }).length);
 
     const dtMode = ['monthly', 'movements', 'counterparties'].includes(STATE.dieselTankMode) ? STATE.dieselTankMode : 'monthly';
-    const dtChip = ['all', 'bought', 'consumed', 'own', 'hauler', 'malfunction', 'sold'].includes(STATE.dieselTankChip) ? STATE.dieselTankChip : 'all';
+    const dtChip = ['all', 'bought', 'pending', 'consumed', 'own', 'hauler', 'malfunction', 'sold'].includes(STATE.dieselTankChip) ? STATE.dieselTankChip : 'all';
     const dtFocusYm = String(STATE.dieselTankFocusYm || '').trim();
     const dtMonthlySorted = sortRows(dtLedger.monthlyRows, 'dtankmo', 'ym', 'desc');
     const qNorm = String(STATE.search || '').trim().toLowerCase();
@@ -12030,6 +12142,7 @@
       return true;
     });
     const cntBought = dtMovPoolByYm.filter(mv => mv.kind === 'bought').length;
+    const cntPending = dtMovPoolByYm.filter(mv => Boolean(mv.pendingPrice)).length;
     const cntOwn = dtMovPoolByYm.filter(mv => mv.kind === 'consumed_own').length;
     const cntHauler = dtMovPoolByYm.filter(mv => mv.kind === 'consumed_hauler').length;
     const cntConsumed = cntOwn + cntHauler;
@@ -12037,6 +12150,7 @@
     const cntSold = dtMovPoolByYm.filter(mv => mv.kind === 'sold').length;
     const dtMovementsFiltered = sortRows(dtMovPoolByYm.filter(mv => {
       if (dtChip === 'bought') return mv.kind === 'bought';
+      if (dtChip === 'pending') return Boolean(mv.pendingPrice);
       if (dtChip === 'consumed') return mv.kind === 'consumed_own' || mv.kind === 'consumed_hauler';
       if (dtChip === 'own') return mv.kind === 'consumed_own';
       if (dtChip === 'hauler') return mv.kind === 'consumed_hauler';
@@ -12253,8 +12367,8 @@
               <span class="badge ${STATE.company === 'bbconstruction' ? 'badge-info' : 'badge-brass'}">${esc(COMPANY_BU_MATCH[STATE.company] || 'All Group')}</span>
               <b>Tank Equation: ${openingL !== 0 ? 'Opening + ' : ''}Bought - Fleet Used - Malfunction/Adj - Sold = Remaining</b>
               ${isGroupScope
-                ? `<span class="mono" style="margin-left:auto;font-size:11.5px;color:var(--ink-2)">WTC Rem: <b>${fmtNum(wtcDt.closingL, 0)} L</b> · BBC Rem: <b style="color:${bbcDt.closingL < 0 ? 'var(--warn)' : 'inherit'}">${fmtNum(bbcDt.closingL, 0)} L</b> · Malf: <b style="color:${malfAlert ? 'var(--warn)' : 'inherit'}">${malfPct.toFixed(1)}%</b></span>`
-                : `<span class="mono" style="margin-left:auto;font-size:11.5px;color:var(--ink-2)">${dtLedger.pendingCount > 0 ? `<span class="badge badge-warn">${fmtNum(dtLedger.pendingCount)} pending price (${fmtNum(dtLedger.pendingLitres, 0)} L)</span>` : `Malf Watchdog: <b style="color:${malfAlert ? 'var(--crit)' : 'var(--good)'}">${malfPct.toFixed(1)}% of used (${malfAlert ? 'ALERT >=5%' : 'OK <5%'})</b> · Avg Bulk Cost: <b>${dtLedger.boughtL > 0 && dtLedger.boughtUsd > 0 ? fmtUSD(dtLedger.boughtUsd / Math.max(1, dtLedger.boughtL - dtLedger.pendingLitres), 2) + '/L' : '-'}</b>`}</span>`}
+                ? `<span class="mono" style="margin-left:auto;font-size:11.5px;color:var(--ink-2)">WTC Rem: <b>${fmtNum(wtcDt.closingL, 0)} L</b> · BBC Rem: <b style="color:${bbcDt.closingL < 0 ? 'var(--warn)' : 'inherit'}">${fmtNum(bbcDt.closingL, 0)} L</b>${dtLedger.pendingCount > 0 ? ` · <button type="button" class="badge badge-warn" style="cursor:pointer;border:none" data-dtank-jump-chip="pending" title="Click to inspect bulk diesel deliveries awaiting supplier invoice price">${fmtNum(dtLedger.pendingCount)} pending price (${fmtNum(dtLedger.pendingLitres, 0)} L)</button>` : ''} · Malf: <b style="color:${malfAlert ? 'var(--warn)' : 'inherit'}">${malfPct.toFixed(1)}%</b></span>`
+                : `<span class="mono" style="margin-left:auto;font-size:11.5px;color:var(--ink-2)">${dtLedger.pendingCount > 0 ? `<button type="button" class="badge badge-warn" style="cursor:pointer;border:none" data-dtank-jump-chip="pending" title="Click to inspect bulk diesel deliveries awaiting supplier invoice price">${fmtNum(dtLedger.pendingCount)} pending price (${fmtNum(dtLedger.pendingLitres, 0)} L)</button>` : `Malf Watchdog: <b style="color:${malfAlert ? 'var(--crit)' : 'var(--good)'}">${malfPct.toFixed(1)}% of used (${malfAlert ? 'ALERT >=5%' : 'OK <5%'})</b> · Avg Bulk Cost: <b>${dtLedger.boughtL > 0 && dtLedger.boughtUsd > 0 ? fmtUSD(dtLedger.boughtUsd / Math.max(1, dtLedger.boughtL - dtLedger.pendingLitres), 2) + '/L' : '-'}</b>`}</span>`}
             </div>
             <div class="sales-recon-metrics">
               <span data-tile-tone="navy" data-no-auto-recon="1"><small>Opening Tank</small><b>${fmtNum(openingL, 1)} L</b><em class="recon-tile-sub">${openingL === 0 ? 'All-time opening anchor' : 'Carry-in before period'}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(openingL)}%"></i></u></span>
@@ -12320,6 +12434,7 @@
           <div class="chip-bar">
             <button type="button" class="filter-chip ${dtChip === 'all' ? 'active' : ''}" data-dtank-chip="all">All Movements (${fmtNum(dtMovPoolByYm.length)})</button>
             <button type="button" class="filter-chip ${dtChip === 'bought' ? 'active' : ''}" data-dtank-chip="bought">+ Bulk Bought (${fmtNum(cntBought)})</button>
+            <button type="button" class="filter-chip ${dtChip === 'pending' ? 'active' : ''}" data-dtank-chip="pending">Pending Price (${fmtNum(cntPending)})</button>
             <button type="button" class="filter-chip ${dtChip === 'consumed' ? 'active' : ''}" data-dtank-chip="consumed">- All Consumed (${fmtNum(cntConsumed)})</button>
             <button type="button" class="filter-chip ${dtChip === 'own' ? 'active' : ''}" data-dtank-chip="own">- Own Fleet (${fmtNum(cntOwn)})</button>
             <button type="button" class="filter-chip ${dtChip === 'hauler' ? 'active' : ''}" data-dtank-chip="hauler">- Haulers (${fmtNum(cntHauler)})</button>
@@ -12371,7 +12486,7 @@
                   <td>${mv.driver && mv.rkey === 'fuel_intakes' ? relLink('drivers', mv.driver) : esc(mv.detail || '-')}</td>
                   <td class="r">${mv.deltaL > 0 ? `<strong style="color:var(--good)">+${fmtNum(mv.deltaL, 1)} L</strong>` : '-'}</td>
                   <td class="r">${mv.deltaL < 0 ? `<strong>-${fmtNum(Math.abs(mv.deltaL), 1)} L</strong>` : '-'}</td>
-                  <td class="r">${mv.pendingPrice ? '<span class="badge badge-warn">Pending</span>' : (mv.amountUsd ? fmtUSD(mv.amountUsd, 2) : '-')}</td>
+                  <td class="r">${mv.pendingPrice ? `<span class="badge badge-warn">Pending Price</span>${canModifyData() && mv.rkey === 'expenses' ? ` <button type="button" class="btn btn-ghost-bar" style="padding:1px 6px;font-size:10.5px;margin-left:4px" data-set-pending-price-id="${esc(mv.id)}">Enter Price</button>` : ''}` : (mv.amountUsd ? fmtUSD(mv.amountUsd, 2) : '-')}</td>
                   <td class="r mono"><strong style="color:${mv.tank_after < 0 ? 'var(--warn)' : 'var(--ink)'}">${fmtNum(mv.tank_after, 1)} L</strong></td>
                 </tr>`;
               }).join('') || emptyRow(10, 'No diesel movements match the active filter')}
@@ -15075,35 +15190,72 @@
       return 'Supplier';
     };
 
+    const pendInfo = getScopedPendingPriceExpenses({ ignoreSearch: true });
+    const pendFiltered = getScopedPendingPriceExpenses({});
+    const pendSupSet = new Set(Array.from(pendInfo.bySup.keys()));
+
     const seenSupSet = new Set();
     const supAll = [];
     getScopedModelSuppliers(m).forEach(s => {
       const sk = norm(s.Supplier);
       const cashAmt = round2(cashExpBySup.get(sk) || 0);
+      const pendMeta = sk ? pendInfo.bySup.get(sk) : null;
+      const pendCnt = pendMeta ? pendMeta.count : 0;
+      const pendLit = pendMeta ? pendMeta.dieselLitres : 0;
       if (sk) seenSupSet.add(sk);
-      const keep = !hasApRange || s.raw_loads > 0 || Math.abs(Number(s.ap_on_credit || 0)) > 0.005 || Math.abs(Number(s.ap_settled || s.settlements_paid || 0)) > 0.005 || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.opening_ap || 0)) > 0.005 || Math.abs(cashAmt) > 0.005;
+      const keep = !hasApRange || s.raw_loads > 0 || Math.abs(Number(s.ap_on_credit || 0)) > 0.005 || Math.abs(Number(s.ap_settled || s.settlements_paid || 0)) > 0.005 || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.opening_ap || 0)) > 0.005 || Math.abs(cashAmt) > 0.005 || pendCnt > 0;
       if (!keep) return;
       supAll.push(Object.assign({}, s, {
         cash_expense: cashAmt,
+        pending_count: pendCnt,
+        pending_litres: pendLit,
         role: deriveSupRole(s, cashAmt)
       }));
     });
     cashExpBySup.forEach((rawCashAmt, sk) => {
       if (!sk || seenSupSet.has(sk)) return;
       const cashAmt = round2(rawCashAmt);
-      if (Math.abs(cashAmt) <= 0.005) return;
-      const dispName = cashExpLabelBySup.get(sk) || sk;
+      const pendMeta = pendInfo.bySup.get(sk) || null;
+      const pendCnt = pendMeta ? pendMeta.count : 0;
+      const pendLit = pendMeta ? pendMeta.dieselLitres : 0;
+      if (Math.abs(cashAmt) <= 0.005 && pendCnt === 0) return;
+      seenSupSet.add(sk);
+      const dispName = cashExpLabelBySup.get(sk) || (pendMeta && pendMeta.supplier) || sk;
       const supObj = supplierInfo(dispName);
       supAll.push({
         Supplier: (supObj && supObj.name) || dispName,
         IVA: supObj && (supObj.iva || supObj.mof_no || supObj.financial_no) ? 'Yes' : 'No',
-        role: 'Cash Vendor',
+        role: pendCnt > 0 && Math.abs(cashAmt) <= 0.005 ? 'Vendor' : 'Cash Vendor',
         raw_loads: 0,
         opening_ap: 0,
         ap_material: 0,
         ap_haulage: 0,
         ap_expense: 0,
         cash_expense: cashAmt,
+        pending_count: pendCnt,
+        pending_litres: pendLit,
+        ap_on_credit: 0,
+        settlements_paid: 0,
+        ap_settled: 0,
+        ap_balance: 0
+      });
+    });
+    pendInfo.bySup.forEach((pendMeta, sk) => {
+      if (!sk || seenSupSet.has(sk)) return;
+      seenSupSet.add(sk);
+      const supObj = supplierInfo(pendMeta.supplier);
+      supAll.push({
+        Supplier: (supObj && supObj.name) || pendMeta.supplier,
+        IVA: supObj && (supObj.iva || supObj.mof_no || supObj.financial_no) ? 'Yes' : 'No',
+        role: 'Vendor',
+        raw_loads: 0,
+        opening_ap: 0,
+        ap_material: 0,
+        ap_haulage: 0,
+        ap_expense: 0,
+        cash_expense: 0,
+        pending_count: pendMeta.count,
+        pending_litres: pendMeta.dieselLitres,
         ap_on_credit: 0,
         settlements_paid: 0,
         ap_settled: 0,
@@ -15114,6 +15266,7 @@
     const sups = sortRows(supAll.filter(s => {
       if (q && !String(s.Supplier || '').toLowerCase().includes(q) && !String(s.role || '').toLowerCase().includes(q)) return false;
       if (STATE.chipFilter === 'open_ap') return Number(s.ap_balance || 0) > 0;
+      if (STATE.chipFilter === 'pending_price') return Number(s.pending_count || 0) > 0;
       if (STATE.chipFilter === 'mat_leg') return Number(s.ap_material || 0) > 0;
       if (STATE.chipFilter === 'haul_leg') return Number(s.ap_haulage || 0) > 0;
       if (STATE.chipFilter === 'exp_leg') return Number(s.ap_expense || 0) > 0;
@@ -15134,6 +15287,7 @@
       if (STATE.chipFilter === 'payments_only') return settlementKind(r) === 'Payment';
       if (STATE.chipFilter === 'vat_paid') return settlementKind(r) === 'VAT paid';
       if (STATE.chipFilter === 'open_ap') return openApSupSet.has(norm(r.supplier));
+      if (STATE.chipFilter === 'pending_price') return pendSupSet.has(norm(r.supplier));
       if (STATE.chipFilter === 'mat_leg') return matLegSupSet.has(norm(r.supplier));
       if (STATE.chipFilter === 'haul_leg') return haulLegSupSet.has(norm(r.supplier));
       if (STATE.chipFilter === 'exp_leg') return expLegSupSet.has(norm(r.supplier));
@@ -15219,12 +15373,13 @@
           })}
           ${insightCard({
             label: '3-Leg Payable Mix',
-            badge: `Exp ${expLegPct.toFixed(0)}%`,
-            badgeCls: 'brass',
+            badge: pendInfo.count > 0 ? `${fmtNum(pendInfo.count)} Pending Price` : `Exp ${expLegPct.toFixed(0)}%`,
+            badgeCls: pendInfo.count > 0 ? 'warn' : 'brass',
+            badgeChip: pendInfo.count > 0 ? 'pending_price' : '',
             val: `Mat ${matLegPct.toFixed(0)}% · Haul ${haulLegPct.toFixed(0)}%`,
             valCls: 'brass',
             pct: matLegPct,
-            sub: `Material <b>${fmtUSD(supAll.length ? supMatSum : k.ap_material, 0)}</b> · Hauler <b>${fmtUSD(supAll.length ? supHaulSum : k.ap_haulage, 0)}</b> · Expense <b>${fmtUSD(supAll.length ? supExpSum : k.ap_expense, 0)}</b>`,
+            sub: `Material <b>${fmtUSD(supAll.length ? supMatSum : k.ap_material, 0)}</b> · Hauler <b>${fmtUSD(supAll.length ? supHaulSum : k.ap_haulage, 0)}</b> · Expense <b>${fmtUSD(supAll.length ? supExpSum : k.ap_expense, 0)}</b>${pendInfo.count > 0 ? ` · <span class="insight-drill ${STATE.chipFilter === 'pending_price' ? 'is-active' : ''}" data-chip="pending_price"><b>${fmtNum(pendInfo.count)}</b> Pending Price</span>` : ''}`,
             tone: 'brass'
           })}
           ${insightCard({
@@ -15247,11 +15402,13 @@
         </div>
       </div>
 
+      ${(pendInfo.count > 0 || STATE.chipFilter === 'pending_price') ? renderPendingPriceQueuePanel(pendFiltered.rows, 'suppliers') : ''}
+
       <div class="panel-card" id="settlePanel" style="margin-bottom:14px">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search voucher #, supplier, hauler, vendor, method, reference...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('payments_only', 'Payments Only')}${chip('vat_paid', 'VAT Paid')}${methods.map(mm => chip(mm, mm)).join('')}${chip('open_ap', 'Open AP')}${chip('mat_leg', 'Material Leg')}${chip('haul_leg', 'Haulage Leg')}${chip('exp_leg', 'Expense Leg')}${chip('cash_vendor', 'Cash Vendors')}${chip('iva_sup', 'IVA')}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('payments_only', 'Payments Only')}${chip('vat_paid', 'VAT Paid')}${methods.map(mm => chip(mm, mm)).join('')}${chip('open_ap', 'Open AP')}${chip('pending_price', `Pending Price (${pendInfo.count})`)}${chip('mat_leg', 'Material Leg')}${chip('haul_leg', 'Haulage Leg')}${chip('exp_leg', 'Expense Leg')}${chip('cash_vendor', 'Cash Vendors')}${chip('iva_sup', 'IVA Suppliers')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw" title="Open Quarry &amp; Haulage Tickets">${ic('raw')} Quarry &amp; Haulage</button>
@@ -15341,7 +15498,7 @@
           <div class="panel-head" style="flex-wrap:wrap;gap:8px">
             <div class="panel-title"><span>UNIFIED SUPPLIER, HAULER &amp; VENDOR 3-LEG AP + CASH SPEND SUB-LEDGER (${fmtNum(sups.length)} COUNTERPARTIES)</span></div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <div class="chip-bar">${chip('all', `All (${supAll.length})`)}${chip('open_ap', `Open AP (${openSupCount})`)}${chip('mat_leg', `Leg 1 Material (${matLegSupSet.size})`)}${chip('haul_leg', `Leg 2 Haulage (${haulLegSupSet.size})`)}${chip('exp_leg', `Leg 3 Credit Exp. (${expLegSupSet.size})`)}${chip('cash_vendor', `Cash Vendors (${cashSupSet.size})`)}${chip('iva_sup', `IVA (${ivaSupCount})`)}</div>
+              <div class="chip-bar">${chip('all', `All (${supAll.length})`)}${chip('open_ap', `Open AP (${openSupCount})`)}${chip('pending_price', `Pending Price (${pendInfo.count})`)}${chip('mat_leg', `Leg 1 Material (${matLegSupSet.size})`)}${chip('haul_leg', `Leg 2 Haulage (${haulLegSupSet.size})`)}${chip('exp_leg', `Leg 3 Credit Exp. (${expLegSupSet.size})`)}${chip('cash_vendor', `Cash Vendors (${cashSupSet.size})`)}${chip('iva_sup', `IVA (${ivaSupCount})`)}</div>
               <span class="panel-meta" style="display:flex;gap:6px;align-items:center">${exportBtn('supPanel', 'Unified_Supplier_3Leg_AP_And_Cash')}</span>
             </div>
           </div>
@@ -15361,7 +15518,7 @@
                   const roleCls = s.role === 'Multi-Leg' ? 'badge-brass' : (s.role === 'Hauler' ? 'badge-info' : (s.role === 'Cash Vendor' ? 'badge-ok' : 'badge-neutral'));
                   return `
                   <tr class="${isUnassigned ? '' : 'rrow'}" ${isUnassigned ? '' : `data-rkey="suppliers" data-rid="${esc((supObj || {}).id || s.Supplier)}"`}>
-                    <td>${isUnassigned ? `<span class="mu">${esc(s.Supplier)}</span>` : `${relLink('suppliers', s.Supplier, s.Supplier, true)}${appCell(supObj || { id: s.Supplier, name: s.Supplier }, 'suppliers')}`}</td>
+                    <td>${isUnassigned ? `<span class="mu">${esc(s.Supplier)}</span>` : `${relLink('suppliers', s.Supplier, s.Supplier, true)}${appCell(supObj || { id: s.Supplier, name: s.Supplier }, 'suppliers')}${s.pending_count > 0 ? ` <span class="badge badge-warn" title="${s.pending_count} delivery voucher(s) awaiting supplier invoice price">${fmtNum(s.pending_count)} Pending${s.pending_litres > 0 ? ' · ' + fmtNum(s.pending_litres, 0) + ' L' : ''}</span>` : ''}`}</td>
                     <td><span class="badge ${roleCls}">${esc(s.role || 'Supplier')}</span></td>
                     <td>${s.IVA === 'Yes' ? '<span class="badge badge-info">IVA</span>' : '—'}</td>
                     <td class="r">${fmtNum(s.raw_loads)}</td>
@@ -15561,12 +15718,13 @@
           })}
           ${insightCard({
             label: 'Cash vs Credit Mix',
-            badge: `${(100 - cashExpPct).toFixed(1)}% Credit`,
-            badgeCls: 'emerald',
+            badge: pendingPriceCnt > 0 ? `${fmtNum(pendingPriceCnt)} Pending Price` : `${(100 - cashExpPct).toFixed(1)}% Credit`,
+            badgeCls: pendingPriceCnt > 0 ? 'warn' : 'emerald',
+            badgeChip: pendingPriceCnt > 0 ? 'pending_price' : '',
             val: `${cashExpPct.toFixed(1)}% <small>Cash</small>`,
             valCls: 'emerald',
             pct: cashExpPct,
-            sub: `Cash <b>${fmtUSD(sumCashExp, 0)}</b> · Credit AP <b>${fmtUSD(sumCredExp, 0)}</b>`,
+            sub: `Cash <b>${fmtUSD(sumCashExp, 0)}</b> · Credit AP <b>${fmtUSD(sumCredExp, 0)}</b> · <span class="insight-drill ${STATE.chipFilter === 'pending_price' ? 'is-active' : ''}" data-chip="pending_price">Pending Price: <b>${fmtNum(pendingPriceCnt)}</b></span>`,
             tone: 'emerald'
           })}
           ${insightCard({
@@ -15591,6 +15749,8 @@
           ${appPill('expenses', 'amount', 'expenses')}
         </div>
       </div>
+
+      ${(pendingPriceCnt > 0 || STATE.chipFilter === 'pending_price') ? renderPendingPriceQueuePanel(base.filter(isPendingPriceExpense), 'expenses') : ''}
 
       <div class="panel-card" id="expPanel" style="margin-bottom:14px">
         <div class="table-toolbar">
@@ -15664,7 +15824,7 @@
                   <td>${x.supplier ? relLink('suppliers', x.supplier) : '—'}</td>
                   <td class="mono">${x.equipment ? relLink('equipment', x.equipment) : '—'}</td>
                   <td>${methodBadge(x.method, sgn)}</td>
-                  <td class="r">${isPend ? `<span class="badge badge-warn" title="Quantity received (${fmtNum(qtyVal, 0)}${isDieselRow ? ' L' : ''}); awaiting supplier invoice price — click row to enter final Amount ($)">⏳ Pending Price</span>` : `<strong>${fmtUSD(sgn * Number(x.amount || 0), 2)}</strong>`}</td>
+                  <td class="r">${isPend ? `<span class="badge badge-warn" title="Quantity received (${fmtNum(qtyVal, 0)}${isDieselRow ? ' L' : ''}); awaiting supplier invoice price">Pending Price</span>${canModifyData() ? ` <button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px;margin-left:4px" data-set-pending-price-id="${esc(x.id)}">Enter Price</button>` : ''}` : `<strong>${fmtUSD(sgn * Number(x.amount || 0), 2)}</strong>`}</td>
                 </tr>
               `;
               }).join('') || emptyRow(8, periodEmptyMsg(SEED.records.expenses, 'expenses'))}
@@ -25968,6 +26128,9 @@
         stStrip.innerHTML = '';
       } else {
         const si = supplierInfo(supplier) || {};
+        const settleCo = val('f_company') || defaultEntryCompany();
+        const supPendRows = ((SEED.records && SEED.records.expenses) || []).filter(x => isPendingPriceExpense(x) && norm(x.supplier) === norm(supplier) && (!settleCo || norm(x.company) === norm(settleCo)));
+        const supPendLitres = supPendRows.reduce((a, x) => a + (isBulkDieselExpense(x) ? Number(x.qty || 0) : 0), 0);
         const openVal = Math.max(0, Number(before || 0));
         const legMat = Math.max(0, Number(si.ap_material || 0));
         const legHaul = Math.max(0, Number(si.ap_haulage || 0));
@@ -25982,10 +26145,11 @@
                   ? `<span class="badge badge-info">Partial Settlement · ${fmtUSD(Math.max(0, openVal - totRelief), 2)} Remaining</span>`
                   : (openVal > 0 ? `<span class="badge badge-brass">Open AP: ${fmtUSD(openVal, 2)}</span>` : `<span class="badge badge-ok">AP Settled ($0.00)</span>`)));
         stStrip.hidden = false;
-        stStrip.className = 'att-contract-strip' + (isAdv ? ' is-warn' : (isFull ? ' is-ok' : ''));
+        stStrip.className = 'att-contract-strip' + ((isAdv || supPendRows.length > 0) ? ' is-warn' : (isFull ? ' is-ok' : ''));
         stStrip.innerHTML = `
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <strong>${esc(supplier)}</strong> ${stBadge}
+            ${supPendRows.length > 0 ? `<span class="badge badge-warn">${fmtNum(supPendRows.length)} Pending Price${supPendLitres > 0 ? ' (' + fmtNum(supPendLitres, 0) + ' L)' : ''} at $0.00</span>${canModifyData() ? `<button type="button" class="att-preset-pill" data-set-pending-price-id="${esc(supPendRows[0].id)}">Enter Invoice Price First</button>` : ''}` : ''}
             ${openVal > 0 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${openVal.toFixed(2)}">Pay Full Open AP (${fmtUSD(openVal, 2)})</button>` : ''}
             ${legMat > 0 && Math.abs(legMat - openVal) > 1 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${legMat.toFixed(2)}">Material Leg (${fmtUSD(legMat, 0)})</button>` : ''}
             ${legHaul > 0 && Math.abs(legHaul - openVal) > 1 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${legHaul.toFixed(2)}">Haulage Leg (${fmtUSD(legHaul, 0)})</button>` : ''}
@@ -28643,6 +28807,17 @@
           recalcForm();
           return;
         }
+        const setPendBtn = ev.target && ev.target.closest ? ev.target.closest('[data-set-pending-price-id]') : null;
+        if (setPendBtn) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const expId = setPendBtn.getAttribute('data-set-pending-price-id') || '';
+          if (expId) {
+            closeEntryModal(true);
+            showRecordInspector('expenses', expId, { focusModifyField: 'amount' });
+          }
+          return;
+        }
         const qfBtn = ev.target && ev.target.closest ? ev.target.closest('[data-form-quickfill]') : null;
         if (qfBtn) {
           ev.preventDefault();
@@ -30110,6 +30285,10 @@
       }
       if (prefill.owner && $('f_supplier')) {
         $('f_supplier').value = prefill.owner;
+      }
+      if (prefill.pricePending && $('f_price_pending')) {
+        $('f_price_pending').value = '1';
+        recalcForm();
       }
       if (prefill.eq && $('f_truck')) {
         $('f_truck').value = prefill.eq;
@@ -31910,7 +32089,7 @@
         </div>
         <div class="pa-cmd-actions">
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
-          ${key === 'expenses' && isPendingPriceExpense(row) && canModifyData() ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn" title="Enter the final supplier invoice price to clear Pending Price status">💲 Enter Final Invoice Price</button>` : ''}
+          ${key === 'expenses' && isPendingPriceExpense(row) && canModifyData() ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn" title="Enter the final supplier invoice price to clear Pending Price status">${ic('dollar')} Enter Final Invoice Price</button>` : ''}
           ${canModifyData() ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} Modify Record</button>` : ''}
           ${isEquipInspect && canEnterForm('defect') ? `<button type="button" class="pa-cmd-btn" id="inspReportDefectBtn">${ic('warn')} + Report Defect</button>` : ''}
           ${isEquipInspect && canEnterForm('partlog') ? `<button type="button" class="pa-cmd-btn" id="inspLogPartBtn">${ic('cog')} + Log Part</button>` : ''}
@@ -32403,6 +32582,9 @@
       setPriceBtn.addEventListener('click', () => {
         openModifyDrawerAndFocus('amount');
       });
+    }
+    if (opts && opts.focusModifyField && modDrawer && canModifyData()) {
+      openModifyDrawerAndFocus(opts.focusModifyField);
     }
     if (modBtn && modDrawer) {
       modBtn.addEventListener('click', () => {
@@ -37872,6 +38054,7 @@
       }
     };
     setExceptionPill('navCountOverview', getHubExceptionBadge('overview', user, k, sentinelsOpen));
+    setExceptionPill('navCountRaw', getHubExceptionBadge('raw', user, k, sentinelsOpen));
     setExceptionPill('navCountFleet', getHubExceptionBadge('fleet', user, k, sentinelsOpen));
     setExceptionPill('navCountTB', getHubExceptionBadge('ledger', user, k, sentinelsOpen));
 
@@ -38871,7 +39054,14 @@
     container.querySelectorAll('[data-sn-open-mod]').forEach(btn => btn.addEventListener('click', ev => {
       ev.stopPropagation();
       const v = btn.getAttribute('data-sn-open-mod') || '';
-      if (v && canViewView(v)) setView(v);
+      const card = btn.closest('[data-sn-card]');
+      const cid = card ? (card.getAttribute('data-sn-card') || '') : '';
+      if (v && canViewView(v)) {
+        if (cid === 'S2' && (v === 'suppliers' || v === 'expenses')) {
+          STATE.chipFilter = 'pending_price';
+        }
+        setView(v);
+      }
     }));
     container.querySelectorAll('[data-sn-card]').forEach(card => card.addEventListener('click', ev => {
       if (ev.target && ev.target.closest('button, a, input, select')) return;
@@ -39383,6 +39573,33 @@
       btn.addEventListener('click', ev => {
         ev.stopPropagation();
         openEntryModal('expense', { cat: 'Fuel', subcat: 'Diesel', uom: 'Litre' });
+      });
+    });
+    container.querySelectorAll('[data-open-pending-expense]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        openEntryModal('expense', { pricePending: true, cat: 'Fuel', subcat: 'Diesel', uom: 'Litre' });
+      });
+    });
+    container.querySelectorAll('[data-set-pending-price-id]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const expId = btn.getAttribute('data-set-pending-price-id') || '';
+        if (expId) showRecordInspector('expenses', expId, { focusModifyField: 'amount' });
+      });
+    });
+    container.querySelectorAll('[data-jump-pending-expenses]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        STATE.chipFilter = 'pending_price';
+        setView('expenses');
+      });
+    });
+    container.querySelectorAll('[data-jump-pending-suppliers]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        STATE.chipFilter = 'pending_price';
+        setView('suppliers');
       });
     });
     container.querySelectorAll('[data-open-diesel-malf]').forEach(btn => {
