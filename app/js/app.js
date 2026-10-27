@@ -622,7 +622,7 @@
       return;
     }
     el.textContent = msg;
-    scheduleToastHide(el, kind === 'err' ? 5200 : 3000);
+    scheduleToastHide(el, (kind === 'err' || kind === 'warn') ? 5200 : 3000);
   }
 
   function formatCleanAuthBadge(authMethod) {
@@ -1089,6 +1089,14 @@
   const saleTicketSign = ticketSign;
 
   // m18a EXP_BASE: Expense = +1 (Cash/Credit/Barter), Return = -1 (C Return/CR Return), VAT = +1 (IVA/VAT/VAT Dis/Cash VAT Dis), Excluded = 0
+  function isCashSaleTicket(s) {
+    const m = String((s && s.method) || '').trim();
+    return m === 'Cash' || m === 'C Return' || m === 'Cash Return';
+  }
+  function isCreditSaleTicket(s) {
+    const m = String((s && s.method) || '').trim();
+    return m === 'Credit' || m === 'CR Return' || m === 'Credit Return';
+  }
   function expenseKind(x) {
     const m = String((x && x.method) || '').trim();
     if (m === 'Config' || m === 'VATConfig' || m === 'Free' || m === 'Remove' || m === 'Adjusted' || m === 'JV Adjusted') return 'Excluded';
@@ -1102,10 +1110,15 @@
     if (k === 'Excluded') return 0;
     return 1;
   }
-  function isCreditExpense(x) {
+  function isApCreditExpense(x) {
     const m = String((x && x.method) || '').trim();
-    return m === 'Credit' || m === 'Barter' || m === 'CR Return' || m === 'IVA' || m === 'VAT' || m === 'VAT Dis';
+    return m === 'Credit' || m === 'CR Return' || m === 'IVA' || m === 'VAT' || m === 'VAT Dis';
   }
+  function isCashExpense(x) {
+    const m = String((x && x.method) || '').trim();
+    return m === 'Cash' || m === 'C Return' || m === 'Cash VAT Dis';
+  }
+  const isCreditExpense = isApCreditExpense;
   function isBulkDieselExpense(x) {
     if (!x || x.voided) return false;
     const sub = String(x.subcategory || '').trim();
@@ -1155,6 +1168,195 @@
     const m = String(r.method || '').trim();
     return !(m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'IVA' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent');
   }
+  function isApSettlingSettlement(sp) {
+    if (!sp || sp.voided) return false;
+    const m = String(sp.method || '').trim();
+    return !(m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'VAT' || m === 'VATConfig' || m === 'VAT Dis' || m === 'Cash VAT Dis' || m === 'IVA' || m === 'Commission' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent');
+  }
+
+  function resolveModelKeyFromObj(m) {
+    const mdls = (SEED && SEED.models) || {};
+    if (m) {
+      for (const [mk, mv] of Object.entries(mdls)) {
+        if (mv === m) return mk;
+      }
+    }
+    return resolveEffectiveModelKey(STATE.company);
+  }
+
+  let _canonCpCacheKey = '';
+  let _canonCpCacheVal = null;
+  function getCanonicalCounterpartyRollups() {
+    const rec = (SEED && SEED.records) || {};
+    const sales = Array.isArray(rec.sales_tickets) ? rec.sales_tickets : [];
+    const rcpts = Array.isArray(rec.receipts) ? rec.receipts : [];
+    const raws = Array.isArray(rec.raw_purchases) ? rec.raw_purchases : [];
+    const exps = Array.isArray(rec.expenses) ? rec.expenses : [];
+    const spays = Array.isArray(rec.settlements) ? rec.settlements : [];
+    const hasSales = sales.length > 0;
+    const hasAp = raws.length > 0 || exps.length > 0 || spays.length > 0;
+    if (!hasSales && !hasAp) return null;
+    const allowed = allowedCompanyNames();
+    const cacheKey = `${allowed.join(',')}|${SEED._customRev || 0}|${sales.length}|${rcpts.length}|${raws.length}|${exps.length}|${spays.length}`;
+    if (_canonCpCacheVal && _canonCpCacheKey === cacheKey) return _canonCpCacheVal;
+
+    const MODEL_KEYS = ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'];
+    const custByModel = {};
+    const suppByModel = {};
+    const monthlyTxByModel = {};
+    const monthlyRepByModel = {};
+    MODEL_KEYS.forEach(mk => {
+      custByModel[mk] = new Map();
+      suppByModel[mk] = new Map();
+      monthlyTxByModel[mk] = new Map();
+      monthlyRepByModel[mk] = new Map();
+    });
+    const coToMk = co => {
+      const c = String(co || 'WTC');
+      if (c === 'BBConstruction') return 'bbconstruction';
+      if (c === 'Lions Transport') return 'lionstransport';
+      return 'wtc';
+    };
+    const isCoAllowed = co => !allowed.length || allowed.includes(String(co || 'WTC'));
+
+    const ensureCust = (mk, name) => {
+      const label = String(name || '').trim();
+      const ck = norm(label);
+      let cur = custByModel[mk].get(ck);
+      if (!cur) {
+        cur = { displayName: label, loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, cash_sales_ttc: 0, receipts_cash: 0, ar_settled: 0, last_sale: '' };
+        custByModel[mk].set(ck, cur);
+      }
+      return cur;
+    };
+    const ensureSupp = (mk, name) => {
+      const label = String(name || '').trim() || '(Unassigned Supplier)';
+      const sk = norm(label);
+      let cur = suppByModel[mk].get(sk);
+      if (!cur) {
+        cur = { displayName: label, raw_loads: 0, ap_material: 0, ap_haulage: 0, expenses: 0, ap_expense: 0, cash_expense: 0, settlements_paid: 0, ap_settled: 0 };
+        suppByModel[mk].set(sk, cur);
+      }
+      return cur;
+    };
+    const addMonthTtc = (mapByModel, mk, dateStr, isCash, isCred, ttc) => {
+      if (!dateStr || dateStr.length < 7) return;
+      const ymNo = dateStr.slice(0, 4) + dateStr.slice(5, 7);
+      if (!/^\d{6}$/.test(ymNo)) return;
+      let mr = mapByModel[mk].get(ymNo);
+      if (!mr) { mr = { cash_sales_ttc: 0, credit_sales_ttc: 0 }; mapByModel[mk].set(ymNo, mr); }
+      if (isCash) mr.cash_sales_ttc += ttc;
+      else if (isCred) mr.credit_sales_ttc += ttc;
+    };
+
+    for (let i = 0; i < sales.length; i++) {
+      const s = sales[i];
+      if (!s || s.voided || !isCoAllowed(s.company)) continue;
+      const sgn = ticketSign(s);
+      if (sgn === 0) continue;
+      const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+      const vat = sgn * Number(s.vat || 0);
+      const net = sgn * Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0)));
+      const isCash = isCashSaleTicket(s);
+      const isCred = isCreditSaleTicket(s);
+      const mk = coToMk(s.company);
+      const dTx = String(s.date || '').slice(0, 10);
+      const dRep = String(s.rep_date || s.date || '').slice(0, 10);
+      addMonthTtc(monthlyTxByModel, mk, dTx, isCash, isCred, ttc);
+      addMonthTtc(monthlyTxByModel, 'manufacturing-group', dTx, isCash, isCred, ttc);
+      addMonthTtc(monthlyRepByModel, mk, dRep, isCash, isCred, ttc);
+      addMonthTtc(monthlyRepByModel, 'manufacturing-group', dRep, isCash, isCred, ttc);
+      if (!s.customer) continue;
+      for (const tMk of [mk, 'manufacturing-group']) {
+        const cur = ensureCust(tMk, s.customer);
+        if (sgn === 1) cur.loads += 1;
+        cur.sales_ttc += ttc;
+        cur.net_sales += net;
+        cur.sales_vat += vat;
+        if (isCash) { cur.cash_sales += net; cur.cash_sales_ttc += ttc; }
+        else if (isCred) { cur.credit_sales += net; cur.credit_sales_ttc += ttc; }
+        if (dTx && dTx > cur.last_sale) cur.last_sale = dTx;
+      }
+    }
+
+    for (let i = 0; i < rcpts.length; i++) {
+      const r = rcpts[i];
+      if (!r || r.voided || !r.customer || !isCoAllowed(r.company)) continue;
+      const amt = Number(r.amount || 0) + Number(r.discount || 0);
+      const settlesAr = isArSettlingReceipt(r);
+      const kd = receiptKind(r);
+      const isCashR = kd !== 'Excluded' && kd !== 'VAT received';
+      if (!settlesAr && !isCashR) continue;
+      const mk = coToMk(r.company);
+      for (const tMk of [mk, 'manufacturing-group']) {
+        const cur = ensureCust(tMk, r.customer);
+        if (settlesAr) cur.ar_settled += amt;
+        if (isCashR) cur.receipts_cash += amt;
+      }
+    }
+
+    for (let i = 0; i < raws.length; i++) {
+      const r = raws[i];
+      if (!r || r.voided || !isCoAllowed(r.company)) continue;
+      const mk = coToMk(r.company);
+      const costVal = Number(r.cost || 0);
+      const haulVal = Number(r.trans_cost || 0);
+      const hasMat = Boolean(r.site_owner) || costVal !== 0;
+      const matOwner = r.site_owner || r.truck_owner || '(Unassigned Supplier)';
+      const hasHaul = haulVal !== 0 || (Boolean(r.truck_owner) && r.transport_by !== 'Company fleet');
+      const haulOwner = r.truck_owner || '(Unassigned Supplier)';
+      for (const tMk of [mk, 'manufacturing-group']) {
+        if (hasMat) {
+          const st = ensureSupp(tMk, matOwner);
+          st.raw_loads += 1;
+          st.ap_material += costVal;
+        }
+        if (hasHaul) {
+          const st = ensureSupp(tMk, haulOwner);
+          if (!hasMat || norm(haulOwner) !== norm(matOwner)) st.raw_loads += 1;
+          st.ap_haulage += haulVal;
+        }
+      }
+    }
+
+    for (let i = 0; i < exps.length; i++) {
+      const x = exps[i];
+      if (!x || x.voided || !isCoAllowed(x.company)) continue;
+      const sgn = expenseSign(x);
+      if (sgn === 0) continue;
+      const amt = sgn * Number(x.amount || 0);
+      const isCr = isApCreditExpense(x);
+      const isCa = isCashExpense(x);
+      if (!x.supplier && !isCr) continue;
+      const supName = x.supplier || '(Unassigned Supplier)';
+      const mk = coToMk(x.company);
+      for (const tMk of [mk, 'manufacturing-group']) {
+        const st = ensureSupp(tMk, supName);
+        st.expenses += amt;
+        if (isCr) st.ap_expense += amt;
+        if (isCa) st.cash_expense += amt;
+      }
+    }
+
+    for (let i = 0; i < spays.length; i++) {
+      const sp = spays[i];
+      if (!sp || sp.voided || !sp.supplier || !isCoAllowed(sp.company)) continue;
+      const settlesAp = isApSettlingSettlement(sp);
+      const isPay = settlementKind(sp) === 'Payment';
+      if (!settlesAp && !isPay) continue;
+      const tot = Number(sp.amount || 0) + Number(sp.discount || 0);
+      const mk = coToMk(sp.company);
+      for (const tMk of [mk, 'manufacturing-group']) {
+        const st = ensureSupp(tMk, sp.supplier);
+        if (settlesAp) st.ap_settled += tot;
+        if (isPay) st.settlements_paid += tot;
+      }
+    }
+
+    _canonCpCacheKey = cacheKey;
+    _canonCpCacheVal = { hasSales, hasAp, custByModel, suppByModel, monthlyTxByModel, monthlyRepByModel };
+    return _canonCpCacheVal;
+  }
 
   function saveFilterState() {
     if (IS_AUTOMATED_TEST) return;
@@ -1173,8 +1375,8 @@
   // Keys that are plain sums over records (safe to shift by a per-record delta); ratios are recomputed afterwards.
   // Note: Cash Flow & Till (cash_inflow, cash_outflow, net_cash_flow, cash_till) are physical Transaction-Date movements and never shift on Rep Date.
   const KPI_ADDITIVE_KEYS = ['sales_ttc', 'gross_sales', 'net_sales', 'trans_rev', 'sales_vat', 'loads', 'delivery_loads', 'pickup_loads', 'unregistered_loads',
-    'tons_sold', 'qty_sold', 'agg_qty_sold', 'agg_sales_net', 'agg_sales_ttc', 'cash_sales', 'credit_sales', 'raw_cost', 'raw_mat_cost', 'raw_haulage', 'raw_loads', 'raw_tons', 'raw_qty',
-    'expenses', 'cash_expenses', 'credit_expenses', 'ap_material', 'ap_haulage', 'ap_expense', 'ap_on_credit', 'salaries_paid', 'commission_due', 'gross_margin', 'operating_profit', 'receipts', 'settlements_paid',
+    'tons_sold', 'qty_sold', 'agg_qty_sold', 'agg_sales_net', 'agg_sales_ttc', 'cash_sales', 'credit_sales', 'cash_sales_ttc', 'credit_sales_ttc', 'raw_cost', 'raw_mat_cost', 'raw_haulage', 'raw_loads', 'raw_tons', 'raw_qty',
+    'expenses', 'expenses_ex_vat', 'cash_expenses', 'credit_expenses', 'ap_material', 'ap_haulage', 'ap_expense', 'ap_on_credit', 'ap_settled', 'salaries_paid', 'commission_due', 'gross_margin', 'operating_profit', 'receipts', 'settlements_paid',
     'diesel_litres', 'own_fleet_loads'];
 
   function isCommRule(r) {
@@ -1288,7 +1490,7 @@
     let loads = 0, delivery_loads = 0, pickup_loads = 0, unregistered_loads = 0;
     let sales_ttc = 0, sales_vat = 0, net_sales = 0, gross_sales = 0, trans_rev = 0, qty_sold = 0, tons_sold = 0;
     let agg_qty_sold = 0, agg_sales_net = 0, agg_sales_ttc = 0;
-    let cash_sales = 0, credit_sales = 0, sales_haulage_credit = 0, commission_due_calc = 0, diesel_sold = 0;
+    let cash_sales = 0, credit_sales = 0, cash_sales_ttc = 0, credit_sales_ttc = 0, commission_due_calc = 0, diesel_sold = 0;
     sales.forEach(s => {
       const sgn = ticketSign(s);
       if (sgn === 1) {
@@ -1319,10 +1521,12 @@
         agg_sales_ttc += ttc;
       }
       tons_sold += ticketTons(s) * sgn;
-      if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') cash_sales += net;
-      else if (sgn !== 0) credit_sales += net;
-      if (s.transport_by === 'Third-party truck' && (s.method === 'Credit' || s.method === 'CR Return' || s.method === 'Credit Return')) {
-        sales_haulage_credit += tr;
+      if (isCashSaleTicket(s)) {
+        cash_sales += net;
+        cash_sales_ttc += ttc;
+      } else if (isCreditSaleTicket(s)) {
+        credit_sales += net;
+        credit_sales_ttc += ttc;
       }
     });
 
@@ -1340,20 +1544,23 @@
       raw_tons += ticketTons(r);
     });
 
-    let expenses = 0, cash_expenses = 0, credit_expenses = 0, diesel_purchased = 0;
+    let expenses = 0, expenses_ex_vat = 0, cash_expenses = 0, credit_expenses = 0, diesel_purchased = 0;
     exps.forEach(x => {
+      const kd = expenseKind(x);
       const sgn = expenseSign(x);
       if (sgn === 0) return;
       const a = Number(x.amount || 0) * sgn;
       expenses += a;
-      if (isCreditExpense(x)) credit_expenses += a;
-      else cash_expenses += a;
+      if (kd !== 'VAT') expenses_ex_vat += a;
+      if (isApCreditExpense(x)) credit_expenses += a;
+      else if (isCashExpense(x)) cash_expenses += a;
       if (isBulkDieselExpense(x)) diesel_purchased += Number(x.qty || 0) * sgn;
     });
 
     const salaries_paid = sals.reduce((a, r) => a + Number(r.amount || 0), 0);
     const receipts = rcpts.reduce((a, r) => receiptKind(r) === 'Settlement' ? a + Number(r.amount || 0) + Number(r.discount || 0) : a, 0);
     const settlements_paid = spays.reduce((a, r) => settlementKind(r) === 'Payment' ? a + Number(r.amount || 0) + Number(r.discount || 0) : a, 0);
+    const ap_settled = spays.reduce((a, r) => isApSettlingSettlement(r) ? a + Number(r.amount || 0) + Number(r.discount || 0) : a, 0);
     let diesel_litres = 0;
     fuels.forEach(fl => {
       if (isDieselTankRefillIntake(fl)) {
@@ -1374,7 +1581,7 @@
     const hasHydratedSales = Boolean(SEED.records && Array.isArray(SEED.records.sales_tickets) && SEED.records.sales_tickets.length > 0);
     const commission_due = hasHydratedSales ? round2(commission_due_calc) : Number(baseKpi.commission_due || 0);
     const overtime_bonus = Number(baseKpi.overtime_bonus || 0);
-    const operating_profit = round2(gross_sales - (raw_cost + expenses + salaries_paid + freelance_paid + commission_due + overtime_bonus));
+    const operating_profit = round2(gross_sales - (raw_cost + expenses_ex_vat + salaries_paid + freelance_paid + commission_due + overtime_bonus));
     const cash_inflow = round2(cash_sales + receipts + ext_in);
     const cash_outflow = round2(cash_expenses + settlements_paid + salaries_paid + freelance_paid + ext_out);
     const net_cash_flow = round2(cash_inflow - cash_outflow);
@@ -1382,6 +1589,12 @@
     let own_fleet_loads = 0;
     sales.forEach(s => { if (s.truck) truckSet.add(s.truck); if (s.transport_by === 'Company fleet') own_fleet_loads += 1; });
     raws.forEach(r => { if (r.truck) truckSet.add(r.truck); if (r.transport_by === 'Company fleet') own_fleet_loads += 1; });
+
+    const apMatOut = (hasHydratedSales || range) ? round2(raw_mat_cost) : round2(Number(baseKpi.ap_material != null ? baseKpi.ap_material : raw_mat_cost));
+    const apHaulOut = (hasHydratedSales || range) ? round2(raw_haulage) : round2(Number(baseKpi.ap_haulage != null ? baseKpi.ap_haulage : raw_haulage));
+    const apExpOut = (hasHydratedSales || range) ? round2(credit_expenses) : round2(Number(baseKpi.ap_expense != null ? baseKpi.ap_expense : credit_expenses));
+    const apOnCrOut = round2(apMatOut + apHaulOut + apExpOut);
+    const apSetOut = (hasHydratedSales || range) ? round2(ap_settled) : round2(Number(baseKpi.settlements_paid != null ? baseKpi.settlements_paid : ap_settled));
 
     return finishKpiRatios(Object.assign(baseKpi, {
       sales_ttc: round2(sales_ttc),
@@ -1400,6 +1613,8 @@
       agg_sales_ttc: round2(agg_sales_ttc),
       cash_sales: round2(cash_sales),
       credit_sales: round2(credit_sales),
+      cash_sales_ttc: round2(cash_sales_ttc),
+      credit_sales_ttc: round2(credit_sales_ttc),
       raw_cost: round2(raw_cost),
       raw_mat_cost: round2(raw_mat_cost),
       raw_haulage: round2(raw_haulage),
@@ -1407,12 +1622,14 @@
       raw_tons: round2(raw_tons),
       raw_qty: round2(raw_qty),
       expenses: round2(expenses),
+      expenses_ex_vat: round2(expenses_ex_vat),
       cash_expenses: round2(cash_expenses),
       credit_expenses: round2(credit_expenses),
-      ap_material: range ? round2(raw_mat_cost) : round2(Number(baseKpi.ap_material != null ? baseKpi.ap_material : raw_mat_cost)),
-      ap_haulage: range ? round2(raw_haulage + sales_haulage_credit) : round2(Number(baseKpi.ap_haulage != null ? baseKpi.ap_haulage : (raw_haulage + sales_haulage_credit))),
-      ap_expense: range ? round2(credit_expenses) : round2(Number(baseKpi.ap_expense != null ? baseKpi.ap_expense : credit_expenses)),
-      ap_on_credit: range ? round2(raw_mat_cost + raw_haulage + sales_haulage_credit + credit_expenses) : round2(Number(baseKpi.ap_material != null ? baseKpi.ap_material : raw_mat_cost) + Number(baseKpi.ap_haulage != null ? baseKpi.ap_haulage : (raw_haulage + sales_haulage_credit)) + Number(baseKpi.ap_expense != null ? baseKpi.ap_expense : credit_expenses)),
+      ap_material: apMatOut,
+      ap_haulage: apHaulOut,
+      ap_expense: apExpOut,
+      ap_on_credit: apOnCrOut,
+      ap_settled: apSetOut,
       salaries_paid: round2(salaries_paid),
       commission_due: round2(commission_due),
       gross_margin,
@@ -1513,8 +1730,7 @@
       if (upToEnd(dt)) { endNetU += (iu - ou); endNetL += (il - ol); }
     };
     (cr.sales_tickets || []).filter(matchCo).forEach(s => {
-      const mth = String(s.method || '');
-      if (mth === 'Cash' || mth === 'C Return' || mth === 'Cash Return') {
+      if (isCashSaleTicket(s)) {
         const sgn = ticketSign(s);
         const net = Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0))) * sgn;
         const vat = Number(s.vat || 0) * sgn;
@@ -1530,7 +1746,7 @@
     });
     (cr.expenses || []).filter(matchCo).forEach(x => {
       const sgn = expenseSign(x);
-      if (sgn === 0 || isCreditExpense(x)) return;
+      if (sgn === 0 || !isCashExpense(x)) return;
       const lbp = Number(x.lbp_amount || 0) * sgn;
       const usd = (lbp ? Number(x.usd_amount || 0) : Number(x.amount || 0)) * sgn;
       addMove(x.date, usd < 0 ? -usd : 0, usd >= 0 ? usd : 0, lbp < 0 ? -lbp : 0, lbp >= 0 ? lbp : 0);
@@ -1666,19 +1882,28 @@
       anchor.agg_qty_sold = txRaw.agg_qty_sold;
       anchor.agg_sales_net = txRaw.agg_sales_net;
       anchor.agg_sales_ttc = txRaw.agg_sales_ttc;
-      if (hydSalesLen > 0) anchor.commission_due = txRaw.commission_due;
+      if (hydSalesLen > 0) {
+        anchor.commission_due = txRaw.commission_due;
+        anchor.cash_sales_ttc = txRaw.cash_sales_ttc;
+        anchor.credit_sales_ttc = txRaw.credit_sales_ttc;
+        anchor.expenses_ex_vat = txRaw.expenses_ex_vat;
+        anchor.ap_material = txRaw.ap_material;
+        anchor.ap_haulage = txRaw.ap_haulage;
+        anchor.ap_expense = txRaw.ap_expense;
+        anchor.ap_on_credit = txRaw.ap_on_credit;
+        anchor.ap_settled = txRaw.ap_settled;
+      } else if (range) {
+        anchor.ap_material = round2(Number(anchor.raw_mat_cost != null ? anchor.raw_mat_cost : txRaw.raw_mat_cost || 0));
+        anchor.ap_haulage = round2(Number(txRaw.ap_haulage != null ? txRaw.ap_haulage : (anchor.raw_haulage != null ? anchor.raw_haulage : txRaw.raw_haulage || 0)));
+        anchor.ap_expense = round2(Number(anchor.credit_expenses != null ? anchor.credit_expenses : txRaw.credit_expenses || 0));
+        anchor.ap_on_credit = round2(anchor.ap_material + anchor.ap_haulage + anchor.ap_expense);
+      }
       anchor.tons_sold = txRaw.tons_sold || anchor.tons_sold;
       anchor.raw_tons = txRaw.raw_tons || anchor.raw_tons;
       if (SEED._recordsReady || crCount > 0) {
         if (txRaw.diesel_purchased != null || anchor.diesel_purchased != null) anchor.diesel_purchased = txRaw.diesel_purchased;
         if (txRaw.diesel_litres != null || anchor.diesel_litres != null) anchor.diesel_litres = txRaw.diesel_litres;
         if (txRaw.diesel_sold != null || anchor.diesel_sold != null) anchor.diesel_sold = txRaw.diesel_sold;
-      }
-      if (range) {
-        anchor.ap_material = round2(Number(anchor.raw_mat_cost != null ? anchor.raw_mat_cost : txRaw.raw_mat_cost || 0));
-        anchor.ap_haulage = round2(Number(txRaw.ap_haulage != null ? txRaw.ap_haulage : (anchor.raw_haulage != null ? anchor.raw_haulage : txRaw.raw_haulage || 0)));
-        anchor.ap_expense = round2(Number(anchor.credit_expenses != null ? anchor.credit_expenses : txRaw.credit_expenses || 0));
-        anchor.ap_on_credit = round2(anchor.ap_material + anchor.ap_haulage + anchor.ap_expense);
       }
       finishKpiRatios(anchor);
     }
@@ -1782,7 +2007,101 @@
     const m = mOverride || getModel();
     const mdlCusts = m.customers || [];
     const range = periodRange(STATE.period);
+    const mk = resolveModelKeyFromObj(m);
+    const isMfgModel = ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].includes(mk);
+    const canon = isMfgModel ? getCanonicalCounterpartyRollups() : null;
+    const canonMap = (canon && canon.hasSales && canon.custByModel[mk]) || null;
     if (!range) {
+      if (canonMap) {
+        const seenCustNorm = new Set();
+        const out = mdlCusts.map(c => {
+          const ck = norm(c.Customer);
+          if (ck) seenCustNorm.add(ck);
+          const st = canonMap.get(ck);
+          if (!st) {
+            return Object.assign({}, c, {
+              loads: 0,
+              sales_ttc: 0,
+              net_sales: 0,
+              sales_vat: 0,
+              credit_sales: 0,
+              credit_sales_ttc: 0,
+              cash_sales: 0,
+              cash_sales_ttc: 0,
+              ar_settled: 0,
+              receipts_cash: 0,
+              receipts: 0,
+              opening_ar: 0,
+              ar_balance: 0,
+              ar_current: 0,
+              ar_1_60: 0,
+              ar_60_plus: 0
+            });
+          }
+          const crNet = round2(st.credit_sales);
+          const crTtc = round2(st.credit_sales_ttc);
+          const cashNet = round2(st.cash_sales);
+          const cashTtc = round2(st.cash_sales_ttc);
+          const settled = round2(st.ar_settled);
+          const cashRcpt = round2(st.receipts_cash);
+          const bal = round2(crTtc - settled);
+          const balDelta = round2(bal - Number(c.ar_balance || 0));
+          const arCur = Math.abs(balDelta) > 0.005 ? round2(Math.max(0, Number(c.ar_current || 0) + balDelta)) : Number(c.ar_current || 0);
+          return Object.assign({}, c, {
+            loads: st.loads,
+            sales_ttc: round2(st.sales_ttc),
+            net_sales: round2(st.net_sales),
+            sales_vat: round2(st.sales_vat),
+            credit_sales: crNet,
+            credit_sales_ttc: crTtc,
+            cash_sales: cashNet,
+            cash_sales_ttc: cashTtc,
+            ar_settled: settled,
+            receipts_cash: cashRcpt,
+            receipts: settled,
+            opening_ar: 0,
+            ar_current: arCur,
+            ar_balance: bal,
+            last_sale: st.last_sale || c.last_sale
+          });
+        });
+        canonMap.forEach((st, ck) => {
+          if (!ck || seenCustNorm.has(ck)) return;
+          const crNet = round2(st.credit_sales);
+          const crTtc = round2(st.credit_sales_ttc);
+          const cashNet = round2(st.cash_sales);
+          const cashTtc = round2(st.cash_sales_ttc);
+          const settled = round2(st.ar_settled);
+          const bal = round2(crTtc - settled);
+          if (st.loads === 0 && Math.abs(st.sales_ttc) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(bal) <= 0.005) return;
+          const ci = customerInfo(st.displayName) || {};
+          out.push({
+            Customer: st.displayName || ck,
+            'VAT Registered': (ci.vat_registered || ci['VAT Registered'] === 'Yes' || st.sales_vat > 0.005) ? 'Yes' : 'No',
+            credit_days: Number(ci.credit_days || 30),
+            credit_limit: Number(ci.credit_limit || 0),
+            loads: st.loads,
+            sales_ttc: round2(st.sales_ttc),
+            net_sales: round2(st.net_sales),
+            sales_vat: round2(st.sales_vat),
+            credit_sales: crNet,
+            credit_sales_ttc: crTtc,
+            cash_sales: cashNet,
+            cash_sales_ttc: cashTtc,
+            ar_settled: settled,
+            receipts_cash: round2(st.receipts_cash),
+            receipts: settled,
+            opening_ar: 0,
+            ar_current: bal > 0 ? bal : 0,
+            ar_1_60: 0,
+            ar_60_plus: 0,
+            vat_receivable: 0,
+            ar_balance: bal,
+            last_sale: st.last_sale || ''
+          });
+        });
+        return out;
+      }
       return mdlCusts.map(c => {
         const crNet = round2(Number(c.credit_sales || 0));
         const crTtc = round2(c.sales_ttc != null ? (Number(c.sales_ttc || 0) - Number(c.cash_sales || 0)) : (c['VAT Registered'] === 'Yes' ? crNet * 1.11 : crNet));
@@ -1792,6 +2111,7 @@
         return Object.assign({}, c, {
           credit_sales: crNet,
           credit_sales_ttc: crTtc,
+          cash_sales_ttc: round2(Number(c.cash_sales || 0)),
           ar_settled: settled,
           receipts_cash: cashRcpt,
           receipts: settled,
@@ -1803,11 +2123,17 @@
     const salesPool = filterRecords(SEED.records.sales_tickets, { ignoreSearch: true });
     const recPool = filterRecords(SEED.records.receipts, { ignoreSearch: true });
     const cMap = new Map();
+    const ensureCustPeriod = name => {
+      const label = String(name || '').trim();
+      const ck = norm(label);
+      if (!cMap.has(ck)) cMap.set(ck, { displayName: label, loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, cash_sales_ttc: 0, receipts: 0, ar_settled: 0, last_sale: '' });
+      return cMap.get(ck);
+    };
     salesPool.forEach(s => {
-      const ck = norm(s.customer);
-      if (!ck) return;
-      const cur = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, receipts: 0, ar_settled: 0, last_sale: '' };
+      if (!s.customer) return;
       const sgn = ticketSign(s);
+      if (sgn === 0) return;
+      const cur = ensureCustPeriod(s.customer);
       const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
       const vat = sgn * Number(s.vat || 0);
       const net = sgn * Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0)));
@@ -1815,22 +2141,22 @@
       cur.sales_ttc += ttc;
       cur.net_sales += net;
       cur.sales_vat += vat;
-      if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') cur.cash_sales += net;
-      else {
+      if (isCashSaleTicket(s)) {
+        cur.cash_sales += net;
+        cur.cash_sales_ttc += ttc;
+      } else if (isCreditSaleTicket(s)) {
         cur.credit_sales += net;
         cur.credit_sales_ttc += ttc;
       }
       if (s.date && String(s.date) > cur.last_sale) cur.last_sale = String(s.date).slice(0, 10);
-      cMap.set(ck, cur);
     });
     recPool.forEach(r => {
       const ck = norm(r.customer);
       if (!ck || !isArSettlingReceipt(r)) return;
-      const cur = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, receipts: 0, ar_settled: 0, last_sale: '' };
+      const cur = ensureCustPeriod(r.customer);
       const amt = Number(r.amount || 0) + Number(r.discount || 0);
       cur.ar_settled += amt;
       if (receiptKind(r) !== 'Excluded' && receiptKind(r) !== 'VAT received') cur.receipts += amt;
-      cMap.set(ck, cur);
     });
     const postCustMap = new Map();
     if (range.to) {
@@ -1838,8 +2164,7 @@
       const allSalesCo = filterRecords(SEED.records.sales_tickets, { ignorePeriod: true, ignoreSearch: true });
       const allRecCo = filterRecords(SEED.records.receipts, { ignorePeriod: true, ignoreSearch: true });
       allSalesCo.forEach(s => {
-        if (!s.customer || recDate(s) <= range.to) return;
-        if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') return;
+        if (!s.customer || !isCreditSaleTicket(s) || recDate(s) <= range.to) return;
         const sgn = ticketSign(s);
         if (sgn === 0) return;
         const ck = norm(s.customer);
@@ -1855,13 +2180,16 @@
         postCustMap.set(ck, p);
       });
     }
-    return mdlCusts.map(c => {
+    const seenCustNorm = new Set();
+    const out = mdlCusts.map(c => {
       const ck = norm(c.Customer);
-      const st = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, receipts: 0, ar_settled: 0, last_sale: '' };
+      if (ck) seenCustNorm.add(ck);
+      const st = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, cash_sales_ttc: 0, receipts: 0, ar_settled: 0, last_sale: '' };
       const post = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
       const crTtc = round2(st.credit_sales_ttc);
       const settled = round2(st.ar_settled);
-      const bal = round2(Number(c.ar_balance || 0) - post.crTtc + post.rcpt);
+      const allTimeBal = canonMap ? (canonMap.has(ck) ? round2(canonMap.get(ck).credit_sales_ttc - canonMap.get(ck).ar_settled) : 0) : Number(c.ar_balance || 0);
+      const bal = round2(allTimeBal - post.crTtc + post.rcpt);
       const openAr = round2(bal - crTtc + settled);
       return Object.assign({}, c, {
         loads: st.loads,
@@ -1871,6 +2199,7 @@
         credit_sales: round2(st.credit_sales),
         credit_sales_ttc: crTtc,
         cash_sales: round2(st.cash_sales),
+        cash_sales_ttc: round2(st.cash_sales_ttc),
         ar_settled: settled,
         receipts_cash: round2(st.receipts),
         receipts: settled,
@@ -1879,13 +2208,116 @@
         last_sale: st.last_sale || c.last_sale
       });
     });
+    cMap.forEach((st, ck) => {
+      if (!ck || seenCustNorm.has(ck)) return;
+      const crTtc = round2(st.credit_sales_ttc);
+      const settled = round2(st.ar_settled);
+      const post = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
+      const allTimeBal = canonMap && canonMap.has(ck) ? round2(canonMap.get(ck).credit_sales_ttc - canonMap.get(ck).ar_settled) : 0;
+      const bal = round2(allTimeBal - post.crTtc + post.rcpt);
+      if (st.loads === 0 && Math.abs(st.sales_ttc) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(bal) <= 0.005) return;
+      const openAr = round2(bal - crTtc + settled);
+      const ci = customerInfo(st.displayName) || {};
+      out.push({
+        Customer: st.displayName || ck,
+        'VAT Registered': (ci.vat_registered || ci['VAT Registered'] === 'Yes' || st.sales_vat > 0.005) ? 'Yes' : 'No',
+        credit_days: Number(ci.credit_days || 30),
+        credit_limit: Number(ci.credit_limit || 0),
+        loads: st.loads,
+        sales_ttc: round2(st.sales_ttc),
+        net_sales: round2(st.net_sales),
+        sales_vat: round2(st.sales_vat),
+        credit_sales: round2(st.credit_sales),
+        credit_sales_ttc: crTtc,
+        cash_sales: round2(st.cash_sales),
+        cash_sales_ttc: round2(st.cash_sales_ttc),
+        ar_settled: settled,
+        receipts_cash: round2(st.receipts),
+        receipts: settled,
+        opening_ar: openAr,
+        ar_current: bal > 0 ? bal : 0,
+        ar_1_60: 0,
+        ar_60_plus: 0,
+        vat_receivable: 0,
+        ar_balance: bal,
+        last_sale: st.last_sale || ''
+      });
+    });
+    return out;
   }
 
   function getScopedModelSuppliers(mOverride) {
     const m = mOverride || getModel();
     const mdlSups = m.suppliers || [];
     const range = periodRange(STATE.period);
+    const mk = resolveModelKeyFromObj(m);
+    const isMfgModel = ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].includes(mk);
+    const canon = isMfgModel ? getCanonicalCounterpartyRollups() : null;
+    const canonMap = (canon && canon.hasAp && canon.suppByModel[mk]) || null;
     if (!range) {
+      if (canonMap) {
+        const seenSupNorm = new Set();
+        const out = mdlSups.map(s => {
+          const sName = s.Supplier || '(Unassigned Supplier)';
+          const sk = norm(sName);
+          if (sk) seenSupNorm.add(sk);
+          const st = canonMap.get(sk);
+          const mat = st ? round2(st.ap_material) : 0;
+          const haul = st ? round2(st.ap_haulage) : 0;
+          const exp = st ? round2(st.ap_expense) : 0;
+          const onCr = round2(mat + haul + exp);
+          const settled = st ? round2(st.ap_settled) : 0;
+          const paid = st ? round2(st.settlements_paid) : 0;
+          const bal = round2(onCr - settled);
+          return Object.assign({}, s, {
+            Supplier: sName,
+            IVA: s.IVA || 'No',
+            raw_loads: st ? st.raw_loads : 0,
+            raw_mat_cost: mat,
+            raw_haulage: haul,
+            raw_cost: round2(mat + haul),
+            ap_material: mat,
+            ap_haulage: haul,
+            ap_expense: exp,
+            expenses: st ? round2(st.expenses) : 0,
+            ap_on_credit: onCr,
+            ap_settled: settled,
+            settlements_paid: paid,
+            opening_ap: 0,
+            ap_balance: bal
+          });
+        });
+        canonMap.forEach((st, sk) => {
+          if (!sk || seenSupNorm.has(sk)) return;
+          const mat = round2(st.ap_material);
+          const haul = round2(st.ap_haulage);
+          const exp = round2(st.ap_expense);
+          const onCr = round2(mat + haul + exp);
+          const settled = round2(st.ap_settled);
+          const paid = round2(st.settlements_paid);
+          const bal = round2(onCr - settled);
+          if (st.raw_loads === 0 && Math.abs(onCr) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(paid) <= 0.005) return;
+          const supInfo = String(st.displayName || '').startsWith('(') ? null : supplierInfo(st.displayName);
+          out.push({
+            Supplier: st.displayName || sk,
+            IVA: supInfo && supInfo.iva ? 'Yes' : 'No',
+            raw_loads: st.raw_loads,
+            raw_mat_cost: mat,
+            raw_haulage: haul,
+            raw_cost: round2(mat + haul),
+            ap_material: mat,
+            ap_haulage: haul,
+            ap_expense: exp,
+            expenses: round2(st.expenses),
+            ap_on_credit: onCr,
+            ap_settled: settled,
+            settlements_paid: paid,
+            opening_ap: 0,
+            ap_balance: bal
+          });
+        });
+        return out;
+      }
       return mdlSups.map(s => {
         const mat = round2(Number(s.ap_material != null ? s.ap_material : (s.raw_mat_cost || 0)));
         const haul = round2(Number(s.ap_haulage != null ? s.ap_haulage : 0));
@@ -1922,22 +2354,27 @@
       return sMap.get(sk);
     };
     rawPool.forEach(r => {
-      if (r.site_owner || Number(r.cost || 0) !== 0) {
-        const st = ensureSup(r.site_owner || '(Unassigned Supplier)');
+      const costVal = Number(r.cost || 0);
+      const haulVal = Number(r.trans_cost || 0);
+      const hasMat = Boolean(r.site_owner) || costVal !== 0;
+      const matOwner = r.site_owner || r.truck_owner || '(Unassigned Supplier)';
+      const hasHaul = haulVal !== 0 || (Boolean(r.truck_owner) && r.transport_by !== 'Company fleet');
+      const haulOwner = r.truck_owner || '(Unassigned Supplier)';
+      if (hasMat) {
+        const st = ensureSup(matOwner);
         st.raw_loads += 1;
-        st.raw_mat_cost += Number(r.cost || 0);
+        st.raw_mat_cost += costVal;
       }
-      if ((r.truck_owner || Number(r.trans_cost || 0) > 0) && r.transport_by !== 'Company fleet') {
-        const tkName = r.truck_owner || '(Unassigned Supplier)';
-        const st = ensureSup(tkName);
-        if (norm(tkName) !== norm(r.site_owner || '')) st.raw_loads += 1;
-        st.raw_haulage += Number(r.trans_cost || 0);
+      if (hasHaul) {
+        const st = ensureSup(haulOwner);
+        if (!hasMat || norm(haulOwner) !== norm(matOwner)) st.raw_loads += 1;
+        st.raw_haulage += haulVal;
       }
     });
     expPool.forEach(x => {
       const sgn = expenseSign(x);
       if (sgn === 0) return;
-      const isCred = isCreditExpense(x);
+      const isCred = isApCreditExpense(x);
       const amt = sgn * Number(x.amount || 0);
       if (x.supplier || isCred) {
         const st = ensureSup(x.supplier || '(Unassigned Supplier)');
@@ -1946,11 +2383,14 @@
       }
     });
     setPool.forEach(sp => {
-      const kd = settlementKind(sp);
-      if (!sp.supplier || kd === 'Excluded' || kd === 'VAT paid') return;
+      if (!sp.supplier) return;
+      const settlesAp = isApSettlingSettlement(sp);
+      const isPay = settlementKind(sp) === 'Payment';
+      if (!settlesAp && !isPay) return;
       const st = ensureSup(sp.supplier);
-      st.settlements_paid += Number(sp.amount || 0);
-      st.ap_settled += Number(sp.amount || 0) + Number(sp.discount || 0);
+      const tot = Number(sp.amount || 0) + Number(sp.discount || 0);
+      if (isPay) st.settlements_paid += tot;
+      if (settlesAp) st.ap_settled += tot;
     });
 
     const postSupMap = new Map();
@@ -1966,18 +2406,19 @@
       };
       allRawCo.forEach(r => {
         if (recDate(r) <= range.to) return;
-        if (r.site_owner || Number(r.cost || 0) !== 0) ensurePost(r.site_owner).cr += Number(r.cost || 0);
-        if ((r.truck_owner || Number(r.trans_cost || 0) > 0) && r.transport_by !== 'Company fleet') ensurePost(r.truck_owner).cr += Number(r.trans_cost || 0);
+        const costVal = Number(r.cost || 0);
+        const haulVal = Number(r.trans_cost || 0);
+        if (r.site_owner || costVal !== 0) ensurePost(r.site_owner || r.truck_owner || '(Unassigned Supplier)').cr += costVal;
+        if (haulVal !== 0 || (r.truck_owner && r.transport_by !== 'Company fleet')) ensurePost(r.truck_owner || '(Unassigned Supplier)').cr += haulVal;
       });
       allExpCo.forEach(x => {
         if (recDate(x) <= range.to) return;
         const sgn = expenseSign(x);
-        if (sgn !== 0 && isCreditExpense(x)) ensurePost(x.supplier).cr += sgn * Number(x.amount || 0);
+        if (sgn !== 0 && isApCreditExpense(x)) ensurePost(x.supplier || '(Unassigned Supplier)').cr += sgn * Number(x.amount || 0);
       });
       allSetCo.forEach(sp => {
-        const kd = settlementKind(sp);
-        if (!sp.supplier || kd === 'Excluded' || kd === 'VAT paid' || recDate(sp) <= range.to) return;
-        ensurePost(sp.supplier).set += Number(sp.amount || 0);
+        if (!sp.supplier || !isApSettlingSettlement(sp) || recDate(sp) <= range.to) return;
+        ensurePost(sp.supplier).set += Number(sp.amount || 0) + Number(sp.discount || 0);
       });
     }
 
@@ -1993,9 +2434,12 @@
       const exp = round2(st.ap_expense);
       const onCr = round2(mat + haul + exp);
       const paid = round2(st.settlements_paid);
-      const settled = round2(st.ap_settled || paid);
-      const bal = round2(Number(s.ap_balance || 0) - post.cr + post.set);
-      const openAp = round2(bal - onCr + paid);
+      const settled = round2(st.ap_settled);
+      const allTimeBal = canonMap
+        ? (canonMap.has(sk) ? round2((canonMap.get(sk).ap_material + canonMap.get(sk).ap_haulage + canonMap.get(sk).ap_expense) - canonMap.get(sk).ap_settled) : 0)
+        : Number(s.ap_balance || 0);
+      const bal = round2(allTimeBal - post.cr + post.set);
+      const openAp = round2(bal - onCr + settled);
       return Object.assign({}, s, {
         Supplier: sName,
         IVA: s.IVA || 'No',
@@ -2021,15 +2465,18 @@
       const exp = round2(st.ap_expense);
       const onCr = round2(mat + haul + exp);
       const paid = round2(st.settlements_paid);
-      const settled = round2(st.ap_settled || paid);
-      if (st.raw_loads === 0 && onCr === 0 && paid === 0) return;
+      const settled = round2(st.ap_settled);
       const post = postSupMap.get(sk) || { cr: 0, set: 0 };
-      const bal = round2(0 - post.cr + post.set);
-      const openAp = round2(bal - onCr + paid);
-      const supInfo = supplierInfo(st.displayName) || {};
+      const allTimeBal = canonMap && canonMap.has(sk)
+        ? round2((canonMap.get(sk).ap_material + canonMap.get(sk).ap_haulage + canonMap.get(sk).ap_expense) - canonMap.get(sk).ap_settled)
+        : 0;
+      const bal = round2(allTimeBal - post.cr + post.set);
+      if (st.raw_loads === 0 && Math.abs(onCr) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(paid) <= 0.005 && Math.abs(bal) <= 0.005) return;
+      const openAp = round2(bal - onCr + settled);
+      const supInfo = String(st.displayName || '').startsWith('(') ? null : supplierInfo(st.displayName);
       out.push({
         Supplier: st.displayName || sk,
-        IVA: supInfo.iva ? 'Yes' : 'No',
+        IVA: supInfo && supInfo.iva ? 'Yes' : 'No',
         raw_loads: st.raw_loads,
         raw_mat_cost: mat,
         raw_haulage: haul,
@@ -2059,20 +2506,46 @@
   function getScopedMonthly(monthlyList, maxCount = 14) {
     const allM = monthlyList || [];
     const range = periodRange(STATE.period);
-    if (!range) return allM.slice(-maxCount);
-    const fYm = range.from.slice(0, 7);
-    const tYm = range.to.slice(0, 7);
-    const matching = allM.filter(r => {
-      const ym = monthLabelToYm(r['Year Month']);
-      return ym && ym >= fYm && ym <= tYm;
+    let sliced = [];
+    if (!range) {
+      sliced = allM.slice(-maxCount);
+    } else {
+      const fYm = range.from.slice(0, 7);
+      const tYm = range.to.slice(0, 7);
+      const matching = allM.filter(r => {
+        const ym = monthLabelToYm(r['Year Month']);
+        return ym && ym >= fYm && ym <= tYm;
+      });
+      if (matching.length >= 2) {
+        sliced = matching.slice(-maxCount);
+      } else {
+        // When a single Month/Week/Day is selected, include up to 6 months ending at tYm for context
+        const upTo = allM.filter(r => {
+          const ym = monthLabelToYm(r['Year Month']);
+          return ym && ym <= tYm;
+        });
+        sliced = upTo.length ? upTo.slice(-Math.min(6, maxCount)) : allM.slice(-maxCount);
+      }
+    }
+    let mk = '';
+    for (const [k, mv] of Object.entries((SEED && SEED.models) || {})) {
+      if (mv && mv.monthly === monthlyList) { mk = k; break; }
+    }
+    if (!mk) mk = resolveEffectiveModelKey(STATE.company);
+    const canon = ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].includes(mk)
+      ? getCanonicalCounterpartyRollups()
+      : null;
+    const mMap = canon && canon.hasSales ? (STATE.basis === 'rep' ? canon.monthlyRepByModel[mk] : canon.monthlyTxByModel[mk]) : null;
+    return sliced.map(r => {
+      const ymNo = String(r.YearMonthNo || monthLabelToYm(r['Year Month']).replace('-', ''));
+      const mt = mMap && ymNo ? mMap.get(ymNo) : null;
+      const cashTtc = mt ? round2(mt.cash_sales_ttc) : round2(Number(r.cash_sales_ttc != null ? r.cash_sales_ttc : (r.cash_sales || 0)));
+      const credTtc = mt ? round2(mt.credit_sales_ttc) : round2(Number(r.credit_sales_ttc != null ? r.credit_sales_ttc : (Number(r.sales_ttc || 0) - Number(r.cash_sales || 0))));
+      return Object.assign({}, r, {
+        cash_sales_ttc: cashTtc,
+        credit_sales_ttc: credTtc
+      });
     });
-    if (matching.length >= 2) return matching.slice(-maxCount);
-    // When a single Month/Week/Day is selected, include up to 6 months ending at tYm for context
-    const upTo = allM.filter(r => {
-      const ym = monthLabelToYm(r['Year Month']);
-      return ym && ym <= tYm;
-    });
-    return (upTo.length ? upTo.slice(-Math.min(6, maxCount)) : allM.slice(-maxCount));
   }
 
   // ---- Interactive Segmented Date Control & Date/Period Facilitator Engine ----
@@ -3050,7 +3523,7 @@
       { key: 'ap_expense', label: 'Exp. Leg ($)', kind: 'numeric' },
       { key: 'cash_expense', label: 'Cash Spend ($)', kind: 'numeric' },
       { key: 'ap_on_credit', label: 'Total Credit ($)', kind: 'numeric' },
-      { key: 'settlements_paid', label: 'Settled ($)', kind: 'numeric' },
+      { key: 'ap_settled', label: 'Settled ($)', kind: 'numeric' },
       { key: 'ap_balance', label: 'Net AP ($)', kind: 'numeric' }
     ],
     settle: [
@@ -3252,7 +3725,7 @@
     const k = String(colKey || '');
     if (/^(cost_class|cost_bucket|working_days|assigned_trucks|trucksStr|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|shift_basis_lbl|display_type)$/i.test(k)) return false;
     if (isBooleanColKey(k)) return false;
-    return /price|cost|amount|total|vat_amount|^vat$|limit|salary|balance|remaining|haul|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|in_usd|out_usd|net_usd|open_usd|close_usd|in_lbp|out_lbp|net_lbp|close_lbp|close_combined|usd_delta|lbp_delta|^lbp$|entries_cnt|overtime_rate|ot_bonus|l_per_100km|flag_count|qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|trips|km_run|debit|credit|earnings|paid|base|ot_hrs|ot_pay|late_hrs|late_ded|absent_days|abs_ded|site_allow|ar_current|ar_1_60|ar_60_plus|ap_material|ap_haulage|ap_expense|settlements_paid|sales_ttc|net_sum|tons_sold|qty_sold|trans_rev|tally|leave_days|extra_usd|payroll_impact_usd|unmatched_usd|vouchers|accrued|outstanding|paid_fifo|logs_cnt|ot_logs|late_logs|vac_days|sick_days|net_att_impact|reimbursement|deduction|overtime_multiplier/i.test(k);
+    return /price|cost|amount|total|vat_amount|^vat$|limit|salary|balance|remaining|haul|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|in_usd|out_usd|net_usd|open_usd|close_usd|in_lbp|out_lbp|net_lbp|close_lbp|close_combined|usd_delta|lbp_delta|^lbp$|entries_cnt|overtime_rate|ot_bonus|l_per_100km|flag_count|qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|trips|km_run|debit|credit|earnings|paid|base|ot_hrs|ot_pay|late_hrs|late_ded|absent_days|abs_ded|site_allow|ar_current|ar_1_60|ar_60_plus|ap_material|ap_haulage|ap_expense|ap_settled|ap_on_credit|opening_ap|opening_ar|credit_sales_ttc|cash_sales_ttc|cash_expense|settlements_paid|sales_ttc|net_sum|tons_sold|qty_sold|trans_rev|tally|leave_days|extra_usd|payroll_impact_usd|unmatched_usd|vouchers|accrued|outstanding|paid_fifo|logs_cnt|ot_logs|late_logs|vac_days|sick_days|net_att_impact|reimbursement|deduction|overtime_multiplier/i.test(k);
   }
 
   function isDefaultDescSortKey(colKey) {
@@ -5598,6 +6071,15 @@
       ar_balance: mdl ? Number(mdl.ar_balance || 0) : null,
       in_ar_book: !!mdl
     });
+    const mkCust = resolveEffectiveModelKey(STATE.company);
+    if (['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].includes(mkCust)) {
+      const canon = getCanonicalCounterpartyRollups();
+      const cs = canon && canon.hasSales && canon.custByModel[mkCust] ? canon.custByModel[mkCust].get(n) : null;
+      if (cs) {
+        res.ar_balance = round2(cs.credit_sales_ttc - cs.ar_settled);
+        res.in_ar_book = true;
+      }
+    }
     fIdx._custInfoMap.set(cacheKey, res);
     return res;
   }
@@ -5606,15 +6088,24 @@
     if (!n) return null;
     const fIdx = getFreqIndex();
     if (!fIdx._suppInfoMap) fIdx._suppInfoMap = new Map();
-    if (fIdx._suppInfoMap.has(n)) return fIdx._suppInfoMap.get(n);
+    const mkSup = resolveEffectiveModelKey(STATE.company);
+    const cacheKey = `${mkSup || 'all'}|${n}`;
+    if (fIdx._suppInfoMap.has(cacheKey)) return fIdx._suppInfoMap.get(cacheKey);
     const dvn = (SEED.records.suppliers || []).find(x => normOwnerName(x.name) === n) || null;
     let mdl = null;
-    for (const m of Object.values(SEED.models)) {
+    const activeMdl = getModel();
+    const orderedModels = [activeMdl, ...Object.values(SEED.models || {}).filter(x => x !== activeMdl)];
+    for (const m of orderedModels) {
+      if (!m) continue;
       const s = (m.suppliers || []).find(x => normOwnerName(x.Supplier) === n);
       if (s) { mdl = s; break; }
     }
-    if (!dvn && !mdl) {
-      fIdx._suppInfoMap.set(n, null);
+    const canon = ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].includes(mkSup)
+      ? getCanonicalCounterpartyRollups()
+      : null;
+    const cs = canon && canon.hasAp && canon.suppByModel[mkSup] ? canon.suppByModel[mkSup].get(norm(name)) : null;
+    if (!dvn && !mdl && !cs) {
+      fIdx._suppInfoMap.set(cacheKey, null);
       return null;
     }
     const rawCats = [];
@@ -5644,7 +6135,16 @@
       ap_balance: mdl ? Number(mdl.ap_balance || 0) : null,
       in_ap_book: !!mdl
     });
-    fIdx._suppInfoMap.set(n, res);
+    if (cs) {
+      res.ap_material = round2(cs.ap_material);
+      res.ap_haulage = round2(cs.ap_haulage);
+      res.ap_expense = round2(cs.ap_expense);
+      res.ap_on_credit = round2(cs.ap_material + cs.ap_haulage + cs.ap_expense);
+      res.ap_settled = round2(cs.ap_settled);
+      res.ap_balance = round2(res.ap_on_credit - res.ap_settled);
+      res.in_ap_book = true;
+    }
+    fIdx._suppInfoMap.set(cacheKey, res);
     return res;
   }
   function productInfo(name) {
@@ -6187,17 +6687,20 @@
   const _dieselTankLedgerCache = new Map();
 
   function _evalDieselMalfunctionWatchdog(consumedL, otherDiscOutL, malfNetL, malfAbsL) {
+    const warnPct = (typeof getAlertParam === 'function' ? Number(getAlertParam('S11', 'malfunction_warn_pct', MALFUNCTION_ALERT_PCT)) : MALFUNCTION_ALERT_PCT) || MALFUNCTION_ALERT_PCT;
+    const critPct = (typeof getAlertParam === 'function' ? Number(getAlertParam('S11', 'malfunction_crit_pct', 10.0)) : 10.0) || 10.0;
+    const ruleEnabled = typeof isAlertRuleEnabled === 'function' ? isAlertRuleEnabled('S11') : true;
     const companyDieselUsedL = round2(Math.max(0, Number(consumedL || 0)) + Math.max(0, Number(otherDiscOutL || 0)) + Math.max(0, Number(malfNetL || 0)));
     const absL = round2(Math.max(0, Number(malfAbsL || 0)));
     const malfunctionPct = companyDieselUsedL > 0 ? round2((absL / companyDieselUsedL) * 100) : (absL > 0 ? 100 : 0);
     const malfunctionNetPct = companyDieselUsedL > 0 ? round2((Math.abs(Number(malfNetL || 0)) / companyDieselUsedL) * 100) : 0;
-    const malfunctionAlert = absL > 0 && malfunctionPct >= MALFUNCTION_ALERT_PCT;
-    const malfunctionSeverity = (absL > 0 && malfunctionPct >= 10.0) ? 'crit' : (malfunctionAlert ? 'warn' : 'ok');
+    const malfunctionAlert = Boolean(ruleEnabled && absL > 0 && malfunctionPct >= warnPct);
+    const malfunctionSeverity = (ruleEnabled && absL > 0 && malfunctionPct >= critPct) ? 'crit' : (malfunctionAlert ? 'warn' : 'ok');
     return {
       companyDieselUsedL,
       malfunctionPct,
       malfunctionNetPct,
-      malfunctionThresholdPct: MALFUNCTION_ALERT_PCT,
+      malfunctionThresholdPct: warnPct,
       malfunctionAlert,
       malfunctionSeverity
     };
@@ -7589,9 +8092,27 @@
         { key: 'low_tank_warn_l', label: 'Low Plant Tank Warning', def: 1500, min: 200, max: 20000, step: 250, unit: 'L' },
         { key: 'crit_neg_tank_l', label: 'Critical Negative Tank Alert', def: -1000, min: -20000, max: 0, step: 250, unit: 'L' }
       ],
-      whatFn: p => `Reconciles Opening + Purchased minus Issued minus Sold diesel. Shows a low-stock warning on the Fuel form below <b>${fmtNum(p.low_tank_warn_l, 0)} L</b>, blocks BBConstruction intakes below <b>0 L</b>, and escalates Sentinel S2 to critical below <b>${fmtNum(p.crit_neg_tank_l, 0)} L</b>.`,
+      whatFn: p => `Reconciles Opening + Purchased minus Issued minus Malfunction/Discrepancy minus Sold diesel. Shows a low-stock warning on the Fuel form below <b>${fmtNum(p.low_tank_warn_l, 0)} L</b>, blocks BBConstruction intakes below <b>0 L</b>, and escalates Sentinel S2 to critical below <b>${fmtNum(p.crit_neg_tank_l, 0)} L</b>.`,
       threshFn: p => `Low < ${fmtNum(p.low_tank_warn_l, 0)} L · Crit < ${fmtNum(p.crit_neg_tank_l, 0)} L`,
       previewFn: p => `Live example: Fuel context badge turns amber below ${fmtNum(p.low_tank_warn_l, 0)} L available, warns below 0 L, and raises a critical S2 alert below ${fmtNum(p.crit_neg_tank_l, 0)} L.`
+    },
+    {
+      id: 'S11',
+      code: 'S11',
+      name: 'Diesel Malfunction vs Company Consumption Watchdog',
+      domain: 'Fleet & Diesel',
+      behavior: 'warn',
+      whereLabel: 'Diesel Hub, Dashboards & Sentinel S11',
+      jumpView: 'fleet',
+      sentinelId: 'S11',
+      why: 'Alerts management whenever meter variance, unallocated diesel slips, or tank discrepancies reach 5% or more of total company diesel used in the selected period.',
+      params: [
+        { key: 'malfunction_warn_pct', label: 'Malfunction Warning Share (% of Used)', def: 5.0, min: 1.0, max: 25.0, step: 0.5, unit: '%' },
+        { key: 'malfunction_crit_pct', label: 'Critical Escalation Share (% of Used)', def: 10.0, min: 2.0, max: 50.0, step: 0.5, unit: '%' }
+      ],
+      whatFn: p => `Evaluates gross diesel malfunction litres divided by total company diesel used in the selected date range. Raises an alert banner, sidebar badge, and Sentinel S11 at <b>&ge; ${fmtNum(p.malfunction_warn_pct, 1)}%</b> (critical at <b>&ge; ${fmtNum(p.malfunction_crit_pct, 1)}%</b>).`,
+      threshFn: p => `Warn >= ${fmtNum(p.malfunction_warn_pct, 1)}% · Crit >= ${fmtNum(p.malfunction_crit_pct, 1)}%`,
+      previewFn: p => `Live example: If company diesel used in a month is 38,000 L, malfunction volume at or above ${fmtNum(38000 * (Number(p.malfunction_warn_pct || 5) / 100), 0)} L (${fmtNum(p.malfunction_warn_pct, 1)}%) triggers the watchdog banner and toast notification.`
     },
     {
       id: 'G_HYD_LEAK_30D',
@@ -7986,7 +8507,9 @@
 
   window.MFG_ALERT_CONFIG = {
     param: (ruleId, key, fallback) => getAlertParam(ruleId, key, fallback),
-    enabled: ruleId => isAlertRuleEnabled(ruleId)
+    getParam: (ruleId, key, fallback) => getAlertParam(ruleId, key, fallback),
+    enabled: ruleId => isAlertRuleEnabled(ruleId),
+    isEnabled: ruleId => isAlertRuleEnabled(ruleId)
   };
 
   function invalidateAlertRuleCaches() {
@@ -8667,7 +9190,24 @@
     liveOutliers.sort((a, b) => Number(b.diesel_l || 0) - Number(a.diesel_l || 0));
 
     const dtScoped = getDieselTankLedger();
-    const hasDieselActivity = Boolean(dtScoped && (dtScoped.boughtL || dtScoped.consumedL || dtScoped.soldL || dtScoped.closingTankL || resolveEffectiveModelKey(STATE.company) !== 'lionstransport'));
+    const hasDieselActivity = Boolean(dtScoped && (dtScoped.boughtL || dtScoped.consumedL || dtScoped.discrepancyL || dtScoped.soldL || dtScoped.closingTankL || resolveEffectiveModelKey(STATE.company) !== 'lionstransport'));
+    const malfScopedRows = filterRecords(SEED.records.fuel_malfunctions || [], { ignoreSearch: true })
+      .filter(m => m && !m.voided && Number(m.litres || 0) !== 0)
+      .slice()
+      .sort((a, b) => Math.abs(Number(b.litres || 0)) - Math.abs(Number(a.litres || 0)) || String(b.date || '').localeCompare(String(a.date || '')))
+      .map(m => ({
+        id: m.id,
+        rid: m.id,
+        rkey: 'fuel_malfunctions',
+        date: recordDate(m) || String(m.date || '').slice(0, 10),
+        company: m.company || 'WTC',
+        ticket_no: m.ticket_no || '-',
+        discrepancy_type: m.discrepancy_type || 'Malfunction',
+        equipment: m.equipment || '-',
+        litres: round2(Number(m.litres || 0)),
+        tank_delta_l: round2(-Number(m.litres || 0)),
+        notes: m.notes || m.driver || '-'
+      }));
     const liveFleet = Object.assign({}, baseFleet, {
       active_equipment: (mdl.equipment || []).length || baseFleet.active_equipment || 0,
       meter_readings_to_check: meterIssues.length,
@@ -8676,6 +9216,16 @@
       diesel_opening_l: hasDieselActivity ? dtScoped.openingTankL : null,
       diesel_purchased_l: hasDieselActivity ? dtScoped.boughtL : null,
       diesel_issued_l: hasDieselActivity ? dtScoped.consumedL : null,
+      diesel_discrepancy_l: hasDieselActivity ? dtScoped.discrepancyL : null,
+      diesel_malfunction_abs_l: hasDieselActivity ? dtScoped.malfAbsL : 0,
+      diesel_malfunction_net_l: hasDieselActivity ? dtScoped.malfNetL : 0,
+      diesel_malfunction_count: hasDieselActivity ? dtScoped.malfCount : 0,
+      diesel_company_used_l: hasDieselActivity ? dtScoped.companyDieselUsedL : 0,
+      diesel_malfunction_pct: hasDieselActivity ? dtScoped.malfunctionPct : 0,
+      diesel_malfunction_threshold_pct: dtScoped ? dtScoped.malfunctionThresholdPct : MALFUNCTION_ALERT_PCT,
+      diesel_malfunction_alert: Boolean(hasDieselActivity && dtScoped.malfunctionAlert),
+      diesel_malfunction_severity: (hasDieselActivity && dtScoped) ? dtScoped.malfunctionSeverity : 'ok',
+      malfunction_rows: malfScopedRows,
       diesel_sold_l: hasDieselActivity ? dtScoped.soldL : null,
       diesel_stock_balance_l: hasDieselActivity ? dtScoped.closingTankL : null,
       pending_diesel_deliveries_count: pendingDieselCount,
@@ -9025,13 +9575,14 @@
     const tank = fleet.diesel_stock_balance_l != null ? Number(fleet.diesel_stock_balance_l) : (k.diesel_in_tank == null ? null : Number(k.diesel_in_tank));
     const tankSoldL = fleet.diesel_sold_l != null ? Number(fleet.diesel_sold_l) : Number(k.diesel_sold || 0);
     const tankOpenL = Number(fleet.diesel_opening_l || 0);
+    const tankDiscL = Number(fleet.diesel_discrepancy_l != null ? fleet.diesel_discrepancy_l : (k.diesel_discrepancy || 0));
     const pendDieselCnt = Number(fleet.pending_diesel_deliveries_count || 0);
     const pendDieselL = Number(fleet.pending_diesel_deliveries_l || 0);
     const s2CritNegL = getAlertParam('S2', 'crit_neg_tank_l', -1000);
     rawItems.push({
       id: 'S2',
       code: 'S2 · DIESEL_TANK_RECONCILIATION', title: 'Diesel Tank Physical vs Ledger Reconciliation',
-      detail: tank == null ? 'No diesel ledger for this entity.' : `${tankOpenL !== 0 ? `Opening ${fmtNum(tankOpenL, 0)} L + purchased ` : 'Purchased '}${fmtNum(fleet.diesel_purchased_l, 0)} L minus issued ${fmtNum(fleet.diesel_issued_l, 0)} L minus sold ${fmtNum(tankSoldL, 0)} L = ${fmtNum(tank, 0)} L in tank.${pendDieselCnt > 0 ? ` · ${fmtNum(pendDieselCnt)} delivery voucher${pendDieselCnt === 1 ? '' : 's'} (${fmtNum(pendDieselL, 0)} L) in tank with Pending Invoice Price ($0.00 AP) awaiting supplier invoice.` : ''}${tank < s2CritNegL ? ' A negative tank means bulk diesel invoices were booked under General Expenses instead of Fuel Purchases; correct the historical intake before booking new diesel.' : ''}`,
+      detail: tank == null ? 'No diesel ledger for this entity.' : `${tankOpenL !== 0 ? `Opening ${fmtNum(tankOpenL, 0)} L + purchased ` : 'Purchased '}${fmtNum(fleet.diesel_purchased_l, 0)} L minus issued ${fmtNum(fleet.diesel_issued_l, 0)} L minus malfunction/discrepancy ${fmtNum(tankDiscL, 0)} L minus sold ${fmtNum(tankSoldL, 0)} L = ${fmtNum(tank, 0)} L in tank.${pendDieselCnt > 0 ? ` · ${fmtNum(pendDieselCnt)} delivery voucher${pendDieselCnt === 1 ? '' : 's'} (${fmtNum(pendDieselL, 0)} L) in tank with Pending Invoice Price ($0.00 AP) awaiting supplier invoice.` : ''}${tank < s2CritNegL ? ' A negative tank means bulk diesel invoices were booked under General Expenses instead of Fuel Purchases; correct the historical intake before booking new diesel.' : ''}`,
       severity: tank == null ? 'warn' : (tank < s2CritNegL ? 'crit' : ((tank < 0 || pendDieselCnt > 0) ? 'warn' : 'ok')),
       badge: tank == null ? 'NO DATA' : (tank < 0 ? 'ACTION · ' + fmtNum(tank, 0) + ' L' : (pendDieselCnt > 0 ? `PENDING PRICE · ${fmtNum(pendDieselCnt)} (${fmtNum(pendDieselL, 0)} L)` : 'OK · ' + fmtNum(tank, 0) + ' L')),
       company: scope,
@@ -9162,6 +9713,28 @@
       rawMetric: openCritDefCnt * 1000 + unnotifPartsCnt,
       rawSecondary: maintNoVendorCnt,
       scrollPanel: 'snFleetParts', navView: 'fleet_maint', navLabel: 'Open Defects'
+    });
+
+    const malfPct = Number(fleet.diesel_malfunction_pct || 0);
+    const malfAbsL = Number(fleet.diesel_malfunction_abs_l || 0);
+    const malfCompUsedL = Number(fleet.diesel_company_used_l || 0);
+    const malfCnt = Number(fleet.diesel_malfunction_count || 0);
+    const malfWarnPct = Number(getAlertParam('S11', 'malfunction_warn_pct', MALFUNCTION_ALERT_PCT)) || MALFUNCTION_ALERT_PCT;
+    const malfAlert = Boolean(fleet.diesel_malfunction_alert);
+    const malfSev = fleet.diesel_malfunction_severity || (malfAlert ? 'warn' : 'ok');
+    rawItems.push({
+      id: 'S11',
+      code: 'S11 · DIESEL_MALFUNCTION_WATCHDOG',
+      title: `Diesel Malfunction Watchdog (${malfWarnPct.toFixed(1)}% of Company Consumption)`,
+      detail: `Gross malfunction volume ${fmtNum(malfAbsL, 1)} L (${fmtNum(malfCnt)} entries) vs ${fmtNum(malfCompUsedL, 1)} L total company diesel used = ${malfPct.toFixed(1)}% in selected period (threshold >= ${malfWarnPct.toFixed(1)}%). Net tank discrepancy across all types: ${Number(fleet.diesel_discrepancy_l || 0) > 0 ? '+' : ''}${fmtNum(fleet.diesel_discrepancy_l || 0, 1)} L.`,
+      severity: malfAlert ? (malfSev === 'crit' ? 'crit' : 'warn') : 'ok',
+      badge: malfAlert ? `ALERT · ${malfPct.toFixed(1)}% >= ${malfWarnPct.toFixed(1)}%` : `OK · ${malfPct.toFixed(1)}%`,
+      company: scope,
+      rawMetric: round2(malfPct),
+      rawSecondary: Math.round(malfAbsL),
+      scrollPanel: 'snMalfunction',
+      navView: 'fleet',
+      navLabel: 'Open Tank Recon'
     });
 
     const customList = getActiveCustomAlertRules();
@@ -9703,6 +10276,13 @@
           { label: 'Equipment', key: 'equipment', mono: true }, { label: 'Type', key: 'type' }, { label: 'Metric', key: 'metric' },
           { label: 'Value', key: 'value', r: true, fmt: num1 }, { label: 'Distance / Hours', key: 'distance_km', r: true, fmt: (v, r) => fmtNum(v != null ? v : r.hours, 0) }, { label: 'Diesel (L)', key: 'diesel_l', r: true, fmt: v => fmtNum(v, 0) }
         ], 'snFuel')}
+        ${miniTable('DIESEL TANK MALFUNCTIONS &amp; DISCREPANCIES (5% WATCHDOG)', fleet.malfunction_rows || [], [
+          { label: 'Date', key: 'date', mono: true }, { label: 'Ticket', key: 'ticket_no', mono: true }, { label: 'Co.', key: 'company' },
+          { label: 'Type', key: 'discrepancy_type' }, { label: 'Unit', key: 'equipment', mono: true },
+          { label: 'Discrepancy (L)', key: 'litres', r: true, fmt: v => `${Number(v || 0) > 0 ? '+' : ''}${fmtNum(v, 1)}` },
+          { label: 'Tank Impact (L)', key: 'tank_delta_l', r: true, fmt: v => `${Number(v || 0) > 0 ? '+' : ''}${fmtNum(v, 1)}` },
+          { label: 'Notes', key: 'notes' }
+        ], 'snMalfunction')}
         ${miniTable('SALARY PAYMENTS WITHOUT A CONTRACT', pricing.unmatched_salary_by_staff || [], [
           { label: 'Staff Member', key: 'staff' }, { label: 'Co.', key: 'company' }, { label: 'Months', key: 'months_count', r: true, fmt: v => fmtNum(v || 1, 0) }, { label: 'Unmatched ($)', key: 'unmatched_usd', r: true, fmt: usd2 }
         ], 'snPayroll')}
@@ -11248,9 +11828,12 @@
   let _meterGuardCacheKey = '';
   let _meterGuardCacheVal = null;
   function meterGuardMap(fuelRows) {
-    const cacheKey = `${STATE.company}|${fuelRows.length}|${SEED._customRev || 0}`;
+    const cacheKey = `${STATE.company}|${fuelRows.length}|${SEED._customRev || 0}|${_ALERT_RULES_REV || 0}`;
     if (_meterGuardCacheKey === cacheKey && _meterGuardCacheVal) return _meterGuardCacheVal;
-    // Walk each unit's readings in date order; flag backwards readings and > 5,000 km / > 500 h jumps
+    const meterGuardOn = isAlertRuleEnabled('G_METER_JUMP');
+    const warnJumpKm = getAlertParam('G_METER_JUMP', 'warn_jump_km', 5000);
+    const warnJumpHr = getAlertParam('G_METER_JUMP', 'warn_jump_hr', 500);
+    // Walk each unit's readings in date order; flag backwards readings and configured km / h jumps
     const byUnit = new Map();
     fuelRows.forEach(f => {
       const key = norm(f.company) + '|' + norm(f.equipment);
@@ -11274,10 +11857,10 @@
         const pv = pvM ? pvM.reading : null;
         const isHours = curM.type === 'hours';
         if (cur == null) flag = { cls: '', label: 'No meter' };
-        else if (pv != null && pvM && pvM.type === curM.type) {
+        else if (meterGuardOn && pv != null && pvM && pvM.type === curM.type) {
           if (cur < pv) flag = { cls: 'badge-err', label: '▼ Backwards' };
-          else if (!isHours && cur - pv > 5000) flag = { cls: 'badge-warn', label: '▲ +' + fmtNum(cur - pv, 0) + ' km' };
-          else if (isHours && cur - pv > 500) flag = { cls: 'badge-warn', label: '▲ +' + fmtNum(cur - pv, 0) + ' h' };
+          else if (!isHours && cur - pv > warnJumpKm) flag = { cls: 'badge-warn', label: '▲ +' + fmtNum(cur - pv, 0) + ' km' };
+          else if (isHours && cur - pv > warnJumpHr) flag = { cls: 'badge-warn', label: '▲ +' + fmtNum(cur - pv, 0) + ' h' };
         }
         out.set(f.id, flag);
         if (cur != null) prev = f;
@@ -11419,11 +12002,14 @@
     const openingL = dtLedger.openingTankL;
     const boughtL = dtLedger.boughtL;
     const usedDieselL = dtLedger.consumedL;
+    const discL = dtLedger.discrepancyL;
+    const malfPct = dtLedger.malfunctionPct;
+    const malfAlert = dtLedger.malfunctionAlert;
     const soldL = dtLedger.soldL;
-    const wtcDt = dtLedger.perCo.WTC || { openingL: 0, boughtL: 0, boughtCount: 0, boughtUsd: 0, consumedL: 0, soldL: 0, soldCount: 0, soldUsd: 0, closingL: 0 };
-    const bbcDt = dtLedger.perCo.BBConstruction || { openingL: 0, boughtL: 0, boughtCount: 0, boughtUsd: 0, consumedL: 0, soldL: 0, soldCount: 0, soldUsd: 0, closingL: 0 };
+    const wtcDt = dtLedger.perCo.WTC || { openingL: 0, boughtL: 0, boughtCount: 0, boughtUsd: 0, consumedL: 0, discrepancyL: 0, soldL: 0, soldCount: 0, soldUsd: 0, closingL: 0 };
+    const bbcDt = dtLedger.perCo.BBConstruction || { openingL: 0, boughtL: 0, boughtCount: 0, boughtUsd: 0, consumedL: 0, discrepancyL: 0, soldL: 0, soldCount: 0, soldUsd: 0, closingL: 0 };
     const tankSupplyL = Math.max(0, openingL + boughtL);
-    const usedSharePct = tankSupplyL > 0 ? Math.min(100, (usedDieselL / tankSupplyL) * 100) : (usedDieselL > 0 ? 100 : 0);
+    const usedSharePct = tankSupplyL > 0 ? Math.min(100, ((usedDieselL + Math.max(0, discL)) / tankSupplyL) * 100) : (usedDieselL > 0 ? 100 : 0);
     const soldSharePct = tankSupplyL > 0 ? Math.min(Math.max(0, 100 - usedSharePct), (soldL / tankSupplyL) * 100) : 0;
     const avgIntakeL = fuelRows.length > 0 ? (litres / fuelRows.length) : 0;
     const dieselPct = litres > 0 ? (dieselLitres / litres) * 100 : 100;
@@ -11431,14 +12017,14 @@
     const okCount = Math.max(0, fuelRows.length - fuelRows.filter(f => { const g = guards.get(f.id); return g && (g.cls === 'badge-err' || g.cls === 'badge-warn'); }).length);
 
     const dtMode = ['monthly', 'movements', 'counterparties'].includes(STATE.dieselTankMode) ? STATE.dieselTankMode : 'monthly';
-    const dtChip = ['all', 'bought', 'consumed', 'own', 'hauler', 'sold'].includes(STATE.dieselTankChip) ? STATE.dieselTankChip : 'all';
+    const dtChip = ['all', 'bought', 'consumed', 'own', 'hauler', 'malfunction', 'sold'].includes(STATE.dieselTankChip) ? STATE.dieselTankChip : 'all';
     const dtFocusYm = String(STATE.dieselTankFocusYm || '').trim();
     const dtMonthlySorted = sortRows(dtLedger.monthlyRows, 'dtankmo', 'ym', 'desc');
     const qNorm = String(STATE.search || '').trim().toLowerCase();
     const dtMovPoolByYm = dtLedger.scopedMovements.filter(mv => {
       if (dtFocusYm && String(mv.date || '').slice(0, 7) !== dtFocusYm) return false;
       if (qNorm) {
-        const hay = `${mv.date} ${mv.ref} ${mv.company} ${mv.party} ${mv.detail} ${mv.driver} ${mv.kind}`.toLowerCase();
+        const hay = `${mv.date} ${mv.ref} ${mv.company} ${mv.party} ${mv.detail} ${mv.driver} ${mv.kind} ${mv.discrepancyType || ''}`.toLowerCase();
         if (!hay.includes(qNorm)) return false;
       }
       return true;
@@ -11447,27 +12033,43 @@
     const cntOwn = dtMovPoolByYm.filter(mv => mv.kind === 'consumed_own').length;
     const cntHauler = dtMovPoolByYm.filter(mv => mv.kind === 'consumed_hauler').length;
     const cntConsumed = cntOwn + cntHauler;
+    const cntMalf = dtMovPoolByYm.filter(mv => mv.kind === 'malfunction').length;
     const cntSold = dtMovPoolByYm.filter(mv => mv.kind === 'sold').length;
     const dtMovementsFiltered = sortRows(dtMovPoolByYm.filter(mv => {
       if (dtChip === 'bought') return mv.kind === 'bought';
       if (dtChip === 'consumed') return mv.kind === 'consumed_own' || mv.kind === 'consumed_hauler';
       if (dtChip === 'own') return mv.kind === 'consumed_own';
       if (dtChip === 'hauler') return mv.kind === 'consumed_hauler';
+      if (dtChip === 'malfunction') return mv.kind === 'malfunction';
       if (dtChip === 'sold') return mv.kind === 'sold';
       return true;
     }), 'dtankmv', 'date', 'desc');
     const shownDtMov = dtMovementsFiltered.slice(0, shownCount('dtankmv'));
     let dtMvInL = 0, dtMvOutL = 0, dtMvUsd = 0;
     dtMovementsFiltered.forEach(mv => {
-      if (mv.kind === 'bought') dtMvInL += mv.litres;
-      else dtMvOutL += mv.litres;
+      if (mv.deltaL > 0) dtMvInL += mv.deltaL;
+      else if (mv.deltaL < 0) dtMvOutL += Math.abs(mv.deltaL);
       dtMvUsd += Number(mv.amountUsd || 0);
     });
     const dtMvCloseL = dtMovementsFiltered.length ? dtMovementsFiltered[0].tank_after : tank;
     const dtSoldRows = sortRows(dtLedger.soldByBuyer, 'dtanksold', 'litres', 'desc');
     const dtBoughtRows = sortRows(dtLedger.boughtBySupplier, 'dtankbought', 'litres', 'desc');
-    const dtSupplyRef = Math.max(1, Math.abs(openingL) + boughtL, usedDieselL + soldL);
-    const barW = v => Math.min(100, Math.max(v > 0 ? 3 : 0, (Math.abs(v) / dtSupplyRef) * 100)).toFixed(1);
+    const dtDiscTypeRows = sortRows(dtLedger.discrepancyByType || [], 'dtankdisc', 'absLitres', 'desc');
+    const dtSupplyRef = Math.max(1, Math.abs(openingL) + boughtL, usedDieselL + Math.abs(discL) + soldL);
+    const barW = v => Math.min(100, Math.max(Math.abs(v) > 0 ? 3 : 0, (Math.abs(v) / dtSupplyRef) * 100)).toFixed(1);
+    const malfBannerHtml = malfAlert ? `
+      <div class="panel-card" id="dieselMalfunctionAlertBanner" style="margin-bottom:12px;padding:12px 16px;border-left:4px solid ${dtLedger.malfunctionSeverity === 'crit' ? 'var(--crit)' : 'var(--warn)'};background:${dtLedger.malfunctionSeverity === 'crit' ? 'rgba(196,59,45,0.08)' : 'rgba(217,130,43,0.09)'};display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap" role="alert">
+        <div style="font-size:12.5px;line-height:1.45">
+          <strong style="color:${dtLedger.malfunctionSeverity === 'crit' ? 'var(--crit)' : 'var(--warn)'}">HIGH DIESEL MALFUNCTION ALERT (${malfPct.toFixed(1)}% &ge; ${dtLedger.malfunctionThresholdPct.toFixed(1)}%):</strong>
+          Gross diesel malfunction volume in the selected time range is <b>${fmtNum(dtLedger.malfAbsL, 1)} L</b> across <b>${fmtNum(dtLedger.malfCount)}</b> malfunction entries, representing <b>${malfPct.toFixed(1)}%</b> of total diesel used in the company (<b>${fmtNum(dtLedger.companyDieselUsedL, 1)} L</b>).
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn" style="padding:4px 10px;font-size:11px" data-dtank-jump-chip="malfunction">Inspect Malfunctions (${fmtNum(cntMalf)})</button>
+          ${canViewView('sentinels') ? `<button type="button" class="btn" style="padding:4px 10px;font-size:11px" data-nav-jump="sentinels">Sentinel S11</button>` : ''}
+          ${canEnterForm('malfunction') ? `<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-open-diesel-malf="1">+ Log Malfunction</button>` : ''}
+        </div>
+      </div>
+    ` : '';
 
     return `
       <div class="cockpit-banner has-insights">
@@ -11478,15 +12080,15 @@
         <div class="cockpit-pills insight-grid">
           ${insightCard({
             label: 'Diesel Tank & Remaining',
-            badge: tank < 0 ? 'Tank Unreconciled' : `${fmtNum(tank, 0)} L in tank`,
-            badgeCls: tank < 0 ? 'amber' : 'emerald',
-            val: `<span class="insight-drill" data-scroll-panel="dieselTankPanel" title="Click to jump to Diesel Consumption, Sales &amp; Tank Remaining Ledger">${fmtNum(tank, 0)} L <small>remaining</small></span>`,
-            valCls: tank < 0 ? 'amber' : 'emerald',
+            badge: malfAlert ? `Malf ${malfPct.toFixed(1)}% Alert` : (tank < 0 ? 'Tank Unreconciled' : `${fmtNum(tank, 0)} L in tank`),
+            badgeCls: (malfAlert || tank < 0) ? 'amber' : 'emerald',
+            val: `<span class="insight-drill" data-scroll-panel="dieselTankPanel" title="Click to jump to Diesel Consumption, Malfunctions, Sales &amp; Tank Remaining Ledger">${fmtNum(tank, 0)} L <small>remaining</small></span>`,
+            valCls: (malfAlert || tank < 0) ? 'amber' : 'emerald',
             pct: usedSharePct,
             pct2: soldSharePct,
-            tone: tank < 0 ? 'amber' : 'emerald',
+            tone: (malfAlert || tank < 0) ? 'amber' : 'emerald',
             tone2: 'brass',
-            sub: `${openingL !== 0 ? `Open <b>${fmtNum(openingL, 0)} L</b> · ` : ''}Bought <b>${fmtNum(boughtL, 0)} L</b> · Used <b>${fmtNum(usedDieselL, 0)} L</b> · Sold <b>${fmtNum(soldL, 0)} L</b>`
+            sub: `${openingL !== 0 ? `Open <b>${fmtNum(openingL, 0)} L</b> · ` : ''}Bought <b>${fmtNum(boughtL, 0)} L</b> · Used <b>${fmtNum(usedDieselL, 0)} L</b> · Malf <b>${discL >= 0 ? '+' : ''}${fmtNum(discL, 0)} L</b> (${malfPct.toFixed(1)}%) · Sold <b>${fmtNum(soldL, 0)} L</b>`
           })}
           ${insightCard({
             label: 'Lubricants & Fuel Mix',
@@ -11523,18 +12125,21 @@
         </div>
       </div>
 
+      ${malfBannerHtml}
+
       <div class="panel-card" id="fuelPanel">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search ticket #, equipment, plate, driver, buyer, item...')}
             <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('diesel', `Diesel (${dieselBaseCount})`)}${chip('lube', `Lubricants (${lubeBaseCount})`)}${greaseBaseCount > 0 ? chip('grease', `Grease (${greaseBaseCount})`) : ''}${chip('flag', `Guard Flags (${flagged})`)}${chip('own', 'Own Fleet')}${chip('transporter', 'Haulers')}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('app', 'App-entered')}</div>
           </div>
-          <div style="display:flex;gap:6px">
-            <button type="button" class="btn btn-ghost-bar" data-scroll-panel="dieselTankPanel" title="Jump to Diesel Consumption, Sales &amp; Tank Remaining Ledger">Tank Ledger</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost-bar" data-scroll-panel="dieselTankPanel" title="Jump to Diesel Consumption, Malfunctions, Sales &amp; Tank Remaining Ledger">Tank Ledger</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_equipment" title="Open Master Equipment &amp; Drivers Registry">${ic('reg_equipment')} Master Fleet</button>
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map" title="Open Daily Plant &amp; Machine Map">${ic('workforce_map')} Plant Map</button>
             <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="fuel" title="Open Touch Fuel &amp; Lubricants Kiosk">${ic('fuel')} Fuel Kiosk</button>
             ${exportBtn('fuelPanel', 'Fuel_Intakes')}
+            ${canEnterForm('malfunction') ? '<button type="button" class="btn" data-open-diesel-malf="1" title="Log Tank Malfunction, Meter Variance or Dip Calibration">+ Malfunction</button>' : ''}
             ${canEnterForm('fuel') ? '<button class="btn btn-primary" data-open-modal="fuel">+ New Fuel Ticket</button>' : ''}
           </div>
         </div>
@@ -11628,16 +12233,17 @@
 
       <div class="panel-card" id="dieselTankPanel">
         <div class="panel-head">
-          <div class="panel-title"><span>DIESEL CONSUMPTION, SALES &amp; TANK REMAINING LEDGER</span></div>
+          <div class="panel-title"><span>DIESEL CONSUMPTION, MALFUNCTIONS, SALES &amp; TANK REMAINING LEDGER</span></div>
           <span class="panel-meta" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span style="display:inline-flex;gap:4px;flex-wrap:wrap">
               <button type="button" class="filter-chip ${dtMode === 'monthly' ? 'active' : ''}" data-dtank-mode="monthly">Monthly Balance (${fmtNum(dtMonthlySorted.length)})</button>
               <button type="button" class="filter-chip ${dtMode === 'movements' ? 'active' : ''}" data-dtank-mode="movements">All Movements (${fmtNum(dtMovPoolByYm.length)})</button>
-              <button type="button" class="filter-chip ${dtMode === 'counterparties' ? 'active' : ''}" data-dtank-mode="counterparties">Sold &amp; Bought Breakdown (${fmtNum(dtSoldRows.length + dtBoughtRows.length)})</button>
+              <button type="button" class="filter-chip ${dtMode === 'counterparties' ? 'active' : ''}" data-dtank-mode="counterparties">Sold, Bought &amp; Malfunction Breakdown (${fmtNum(dtSoldRows.length + dtBoughtRows.length + dtDiscTypeRows.length)})</button>
             </span>
+            ${canEnterForm('malfunction') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-diesel-malf="1" title="Log Tank Malfunction, Meter Variance or Dip Calibration">+ Log Malfunction</button>' : ''}
             ${canEnterForm('expense') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-diesel-bulk="1" title="Record Bulk Diesel Delivery into Tank">+ Bulk Refill</button>' : ''}
             ${canEnterForm('sales') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-diesel-sale="1" title="Record Diesel Sale Ticket from Tank">+ Diesel Sale</button>' : ''}
-            ${exportBtn('dieselTankPanel', dtMode === 'movements' ? 'Diesel_Tank_Movements' : (dtMode === 'counterparties' ? 'Diesel_Sold_And_Bought_Breakdown' : 'Diesel_Monthly_Tank_Ledger'))}
+            ${exportBtn('dieselTankPanel', dtMode === 'movements' ? 'Diesel_Tank_Movements' : (dtMode === 'counterparties' ? 'Diesel_Sold_Bought_Malfunctions' : 'Diesel_Monthly_Tank_Ledger'))}
           </span>
         </div>
 
@@ -11645,16 +12251,16 @@
           <div class="sales-recon-card single-card sales-recon-single" data-co="${esc(STATE.company)}">
             <div class="sales-recon-head">
               <span class="badge ${STATE.company === 'bbconstruction' ? 'badge-info' : 'badge-brass'}">${esc(COMPANY_BU_MATCH[STATE.company] || 'All Group')}</span>
-              <b>Tank Equation: ${openingL !== 0 ? 'Opening + ' : ''}Bought - Used - Sold = Remaining</b>
+              <b>Tank Equation: ${openingL !== 0 ? 'Opening + ' : ''}Bought - Fleet Used - Malfunction/Adj - Sold = Remaining</b>
               ${isGroupScope
-                ? `<span class="mono" style="margin-left:auto;font-size:11.5px;color:var(--ink-2)">WTC Rem: <b>${fmtNum(wtcDt.closingL, 0)} L</b> · BBC Rem: <b style="color:${bbcDt.closingL < 0 ? 'var(--warn)' : 'inherit'}">${fmtNum(bbcDt.closingL, 0)} L</b></span>`
-                : `<span class="mono" style="margin-left:auto;font-size:11.5px;color:var(--ink-2)">${dtLedger.pendingCount > 0 ? `<span class="badge badge-warn">${fmtNum(dtLedger.pendingCount)} pending price (${fmtNum(dtLedger.pendingLitres, 0)} L)</span>` : `Avg Bulk Cost: <b>${dtLedger.boughtL > 0 && dtLedger.boughtUsd > 0 ? fmtUSD(dtLedger.boughtUsd / Math.max(1, dtLedger.boughtL - dtLedger.pendingLitres), 2) + '/L' : '-'}</b> · Avg Sale: <b>${soldL > 0 && dtLedger.soldUsd > 0 ? fmtUSD(dtLedger.soldUsd / soldL, 2) + '/L' : '-'}</b>`}</span>`}
+                ? `<span class="mono" style="margin-left:auto;font-size:11.5px;color:var(--ink-2)">WTC Rem: <b>${fmtNum(wtcDt.closingL, 0)} L</b> · BBC Rem: <b style="color:${bbcDt.closingL < 0 ? 'var(--warn)' : 'inherit'}">${fmtNum(bbcDt.closingL, 0)} L</b> · Malf: <b style="color:${malfAlert ? 'var(--warn)' : 'inherit'}">${malfPct.toFixed(1)}%</b></span>`
+                : `<span class="mono" style="margin-left:auto;font-size:11.5px;color:var(--ink-2)">${dtLedger.pendingCount > 0 ? `<span class="badge badge-warn">${fmtNum(dtLedger.pendingCount)} pending price (${fmtNum(dtLedger.pendingLitres, 0)} L)</span>` : `Malf Watchdog: <b style="color:${malfAlert ? 'var(--crit)' : 'var(--good)'}">${malfPct.toFixed(1)}% of used (${malfAlert ? 'ALERT >=5%' : 'OK <5%'})</b> · Avg Bulk Cost: <b>${dtLedger.boughtL > 0 && dtLedger.boughtUsd > 0 ? fmtUSD(dtLedger.boughtUsd / Math.max(1, dtLedger.boughtL - dtLedger.pendingLitres), 2) + '/L' : '-'}</b>`}</span>`}
             </div>
             <div class="sales-recon-metrics">
               <span data-tile-tone="navy" data-no-auto-recon="1"><small>Opening Tank</small><b>${fmtNum(openingL, 1)} L</b><em class="recon-tile-sub">${openingL === 0 ? 'All-time opening anchor' : 'Carry-in before period'}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(openingL)}%"></i></u></span>
               <span data-tile-tone="emerald" data-no-auto-recon="1" data-dtank-jump-chip="bought" class="recon-metric-slice ${dtMode === 'movements' && dtChip === 'bought' ? 'is-active' : ''}" title="Click to inspect Bulk Diesel deliveries into tank"><small>+ Bulk Bought</small><b>+${fmtNum(boughtL, 1)} L</b><em class="recon-tile-sub">${fmtNum(dtLedger.boughtCount)} refills · ${fmtUSD(dtLedger.boughtUsd, 0)}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(boughtL)}%"></i></u></span>
-              <span data-tile-tone="steel" data-no-auto-recon="1" data-dtank-jump-chip="own" class="recon-metric-slice ${dtMode === 'movements' && dtChip === 'own' ? 'is-active' : ''}" title="Click to inspect Own Fleet diesel consumption"><small>- Own Fleet Used</small><b>-${fmtNum(dtLedger.consumedOwnL, 1)} L</b><em class="recon-tile-sub">${fmtNum(dtLedger.consumedOwnCount)} own-unit fills</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(dtLedger.consumedOwnL)}%"></i></u></span>
-              <span data-tile-tone="slate" data-no-auto-recon="1" data-dtank-jump-chip="hauler" class="recon-metric-slice ${dtMode === 'movements' && dtChip === 'hauler' ? 'is-active' : ''}" title="Click to inspect Hauler / Subcontractor diesel fills"><small>- Hauler Used</small><b>-${fmtNum(dtLedger.consumedHaulerL, 1)} L</b><em class="recon-tile-sub">${fmtNum(dtLedger.consumedHaulerCount)} hauler fills</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(dtLedger.consumedHaulerL)}%"></i></u></span>
+              <span data-tile-tone="steel" data-no-auto-recon="1" data-dtank-jump-chip="consumed" class="recon-metric-slice ${dtMode === 'movements' && (dtChip === 'consumed' || dtChip === 'own' || dtChip === 'hauler') ? 'is-active' : ''}" title="Click to inspect Fleet & Hauler diesel consumption"><small>- Fleet &amp; Hauler Used</small><b>-${fmtNum(usedDieselL, 1)} L</b><em class="recon-tile-sub">Own ${fmtNum(dtLedger.consumedOwnL, 0)} L · Hauler ${fmtNum(dtLedger.consumedHaulerL, 0)} L</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(usedDieselL)}%"></i></u></span>
+              <span data-tile-tone="${malfAlert ? 'warn' : 'slate'}" data-no-auto-recon="1" data-dtank-jump-chip="malfunction" class="recon-metric-slice ${dtMode === 'movements' && dtChip === 'malfunction' ? 'is-active' : ''}" title="Click to inspect Tank Malfunctions & Discrepancies"><small>- Malf / Discrepancy</small><b>${discL > 0 ? '-' : (discL < 0 ? '+' : '')}${fmtNum(Math.abs(discL), 1)} L</b><em class="recon-tile-sub">${fmtNum(dtLedger.discrepancyCount)} entries · Malf ${malfPct.toFixed(1)}%${malfAlert ? ' (!)' : ''}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(discL)}%"></i></u></span>
               <span data-tile-tone="navy" data-no-auto-recon="1" data-dtank-jump-chip="sold" class="recon-metric-slice ${dtMode === 'movements' && dtChip === 'sold' ? 'is-active' : ''}" title="Click to inspect Diesel Sold tickets"><small>- Diesel Sold</small><b>-${fmtNum(soldL, 1)} L</b><em class="recon-tile-sub">${fmtNum(dtLedger.soldCount)} tickets · ${fmtUSD(dtLedger.soldUsd, 0)}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(soldL)}%"></i></u></span>
               <span data-tile-tone="${tank < 0 ? 'warn' : 'total'}" data-no-auto-recon="1" data-dtank-jump-chip="all" class="recon-metric-slice ${dtMode === 'movements' && dtChip === 'all' ? 'is-active' : ''}" title="Click to inspect full chronological tank movement ledger"><small>= Remaining in Tank</small><b>${fmtNum(tank, 1)} L</b><em class="recon-tile-sub">Net ${dtLedger.netChangeL >= 0 ? '+' : ''}${fmtNum(dtLedger.netChangeL, 0)} L in period</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${tank !== 0 ? '100' : '0'}%"></i></u></span>
             </div>
@@ -11667,7 +12273,8 @@
             <thead>
               <tr>
                 ${th('dtankmo', 'Month', 'ym')}${th('dtankmo', 'Opening (L)', 'openingL', 'r')}${th('dtankmo', '+ Bought (L)', 'boughtL', 'r')}
-                ${th('dtankmo', '- Own Fleet (L)', 'consumedOwnL', 'r')}${th('dtankmo', '- Haulers (L)', 'consumedHaulerL', 'r')}${th('dtankmo', '- Total Used (L)', 'consumedL', 'r')}
+                ${th('dtankmo', '- Own Fleet (L)', 'consumedOwnL', 'r')}${th('dtankmo', '- Haulers (L)', 'consumedHaulerL', 'r')}${th('dtankmo', '- Fleet Used (L)', 'consumedL', 'r')}
+                ${th('dtankmo', '- Malf / Adj (L)', 'discrepancyL', 'r')}${th('dtankmo', 'Malf %', 'malfunctionPct', 'r')}
                 ${th('dtankmo', '- Sold (L)', 'soldL', 'r')}${th('dtankmo', 'Sold ($)', 'soldUsd', 'r')}${th('dtankmo', 'Net Change (L)', 'netChangeL', 'r')}
                 ${th('dtankmo', 'Remaining in Tank (L)', 'closingL', 'r')}
               </tr>
@@ -11681,12 +12288,14 @@
                   <td class="r">${mr.consumedOwnL > 0 ? `-${fmtNum(mr.consumedOwnL, 1)} L` : '-'}</td>
                   <td class="r">${mr.consumedHaulerL > 0 ? `-${fmtNum(mr.consumedHaulerL, 1)} L` : '-'}</td>
                   <td class="r"><strong>${mr.consumedL > 0 ? `-${fmtNum(mr.consumedL, 1)} L` : '-'}</strong></td>
+                  <td class="r">${mr.discrepancyL ? `<span style="color:${mr.discrepancyL > 0 ? 'var(--warn)' : 'var(--good)'}">${mr.discrepancyL > 0 ? '-' : '+'}${fmtNum(Math.abs(mr.discrepancyL), 1)} L</span>` : '-'}</td>
+                  <td class="r mono">${mr.malfunctionPct > 0 ? (mr.malfunctionAlert ? `<span class="badge badge-err">${mr.malfunctionPct.toFixed(1)}%</span>` : `${mr.malfunctionPct.toFixed(1)}%`) : '-'}</td>
                   <td class="r">${mr.soldL !== 0 ? `-${fmtNum(mr.soldL, 1)} L` : '-'}</td>
                   <td class="r">${mr.soldUsd ? fmtUSD(mr.soldUsd, 2) : '-'}</td>
                   <td class="r mono" style="color:${mr.netChangeL < 0 ? 'var(--ink-2)' : 'var(--good)'}">${mr.netChangeL >= 0 ? '+' : ''}${fmtNum(mr.netChangeL, 1)} L</td>
                   <td class="r mono"><strong style="color:${mr.closingL < 0 ? 'var(--warn)' : 'var(--ink)'}">${fmtNum(mr.closingL, 1)} L</strong></td>
                 </tr>
-              `).join('') || emptyRow(10, 'No diesel tank movements in the selected period')}
+              `).join('') || emptyRow(12, 'No diesel tank movements in the selected period')}
             </tbody>
             <tfoot>
               <tr>
@@ -11696,6 +12305,8 @@
                 <td class="r"><b>-${fmtNum(dtLedger.consumedOwnL, 1)} L</b></td>
                 <td class="r"><b>-${fmtNum(dtLedger.consumedHaulerL, 1)} L</b></td>
                 <td class="r"><b>-${fmtNum(usedDieselL, 1)} L</b></td>
+                <td class="r"><b>${discL > 0 ? '-' : (discL < 0 ? '+' : '')}${fmtNum(Math.abs(discL), 1)} L</b></td>
+                <td class="r"><b style="color:${malfAlert ? 'var(--crit)' : 'inherit'}">${malfPct.toFixed(1)}%</b></td>
                 <td class="r"><b>-${fmtNum(soldL, 1)} L</b></td>
                 <td class="r"><b>${fmtUSD(dtLedger.soldUsd, 2)}</b></td>
                 <td class="r"><b>${dtLedger.netChangeL >= 0 ? '+' : ''}${fmtNum(dtLedger.netChangeL, 1)} L</b></td>
@@ -11712,6 +12323,7 @@
             <button type="button" class="filter-chip ${dtChip === 'consumed' ? 'active' : ''}" data-dtank-chip="consumed">- All Consumed (${fmtNum(cntConsumed)})</button>
             <button type="button" class="filter-chip ${dtChip === 'own' ? 'active' : ''}" data-dtank-chip="own">- Own Fleet (${fmtNum(cntOwn)})</button>
             <button type="button" class="filter-chip ${dtChip === 'hauler' ? 'active' : ''}" data-dtank-chip="hauler">- Haulers (${fmtNum(cntHauler)})</button>
+            <button type="button" class="filter-chip ${dtChip === 'malfunction' ? 'active' : ''}" data-dtank-chip="malfunction">Malfunctions &amp; Adj (${fmtNum(cntMalf)})</button>
             <button type="button" class="filter-chip ${dtChip === 'sold' ? 'active' : ''}" data-dtank-chip="sold">- Diesel Sold (${fmtNum(cntSold)})</button>
             ${dtFocusYm ? `<button type="button" class="filter-chip active" data-dtank-focus-ym="" title="Click to clear month filter">Month: ${esc(_formatMonthYmLabel(dtFocusYm))} ✕</button>` : ''}
           </div>
@@ -11732,14 +12344,18 @@
                   ? '<span class="badge badge-ok">+ Bulk Bought</span>'
                   : (mv.kind === 'sold'
                     ? '<span class="badge badge-brass">- Diesel Sold</span>'
-                    : (mv.kind === 'consumed_own'
-                      ? '<span class="badge badge-info">- Own Fleet</span>'
-                      : '<span class="badge">- Hauler Fill</span>'));
+                    : (mv.kind === 'malfunction'
+                      ? `<span class="badge ${mv.deltaL < 0 ? 'badge-warn' : 'badge-ok'}">${mv.deltaL < 0 ? '- ' : '+ '}${esc(mv.discrepancyType || 'Malfunction')}</span>`
+                      : (mv.kind === 'consumed_own'
+                        ? '<span class="badge badge-info">- Own Fleet</span>'
+                        : '<span class="badge">- Hauler Fill</span>')));
                 const partyHtml = mv.kind === 'bought'
                   ? (mv.rkey === 'expenses' ? relLink('suppliers', mv.party, mv.party, true) : esc(mv.party))
                   : (mv.kind === 'sold'
                     ? relLink('customers', mv.party, mv.party, true)
-                    : relLink('equipment', mv.party, mv.party, true));
+                    : (mv.kind === 'malfunction'
+                      ? esc(mv.party)
+                      : relLink('equipment', mv.party, mv.party, true)));
                 const printBtn = mv.rkey === 'fuel_intakes'
                   ? `<button type="button" class="tkt-print-mini" data-print-ticket="fuel" data-print-id="${esc(mv.id)}" title="Print Fuel Slip #${esc(mv.ref)}">${ic('printer')}</button>`
                   : (mv.rkey === 'sales_tickets'
@@ -11753,8 +12369,8 @@
                   <td>${coBadge(mv.company)}</td>
                   <td>${partyHtml}</td>
                   <td>${mv.driver && mv.rkey === 'fuel_intakes' ? relLink('drivers', mv.driver) : esc(mv.detail || '-')}</td>
-                  <td class="r">${mv.kind === 'bought' ? `<strong style="color:var(--good)">+${fmtNum(mv.litres, 1)} L</strong>` : '-'}</td>
-                  <td class="r">${mv.kind !== 'bought' ? `<strong>-${fmtNum(mv.litres, 1)} L</strong>` : '-'}</td>
+                  <td class="r">${mv.deltaL > 0 ? `<strong style="color:var(--good)">+${fmtNum(mv.deltaL, 1)} L</strong>` : '-'}</td>
+                  <td class="r">${mv.deltaL < 0 ? `<strong>-${fmtNum(Math.abs(mv.deltaL), 1)} L</strong>` : '-'}</td>
                   <td class="r">${mv.pendingPrice ? '<span class="badge badge-warn">Pending</span>' : (mv.amountUsd ? fmtUSD(mv.amountUsd, 2) : '-')}</td>
                   <td class="r mono"><strong style="color:${mv.tank_after < 0 ? 'var(--warn)' : 'var(--ink)'}">${fmtNum(mv.tank_after, 1)} L</strong></td>
                 </tr>`;
@@ -11853,6 +12469,47 @@
                     <td class="r"><b>${fmtUSD(dtLedger.boughtUsd, 2)}</b></td>
                     <td class="r"><b>${(boughtL - dtLedger.pendingLitres) > 0 && dtLedger.boughtUsd > 0 ? fmtUSD(dtLedger.boughtUsd / (boughtL - dtLedger.pendingLitres), 2) : '-'}</b></td>
                     <td class="r"><b>${dtBoughtRows.length ? '100.0%' : '-'}</b></td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div class="dtank-cp-section" style="grid-column: 1 / -1">
+            <div class="dtank-cp-head">
+              <b>3 · Tank Malfunctions, Calibration &amp; Discrepancy Breakdown (${fmtNum(dtDiscTypeRows.length)} Categories · ${fmtNum(dtLedger.discrepancyCount)} Entries)</b>
+              <span class="mono">Gross Malf: <b>${fmtNum(dtLedger.malfAbsL, 1)} L</b> (${malfPct.toFixed(1)}% of used) · Net Tank Impact: <b>${-discL >= 0 ? '+' : ''}${fmtNum(-discL, 1)} L</b></span>
+            </div>
+            <div class="table-wrap">
+              <table class="ledger-table" id="dieselTankDiscTypeTable">
+                <thead>
+                  <tr>
+                    ${th('dtankdisc', 'Discrepancy Type', 'type')}${th('dtankdisc', 'Co.', 'companies')}${th('dtankdisc', 'Entries', 'count', 'r')}
+                    ${th('dtankdisc', 'Gross Volume (|L|)', 'absLitres', 'r')}${th('dtankdisc', 'Net Discrepancy (L)', 'netLitres', 'r')}
+                    ${th('dtankdisc', 'Tank Impact (L)', 'tankDeltaL', 'r')}${th('dtankdisc', 'Last Entry', 'lastDate')}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${dtDiscTypeRows.map(r => `
+                    <tr data-dtank-jump-chip="malfunction" style="cursor:pointer" title="Click to inspect individual ${esc(r.type)} entries">
+                      <td><strong>${esc(r.type)}</strong></td>
+                      <td>${esc(r.companies)}</td>
+                      <td class="r">${fmtNum(r.count)}</td>
+                      <td class="r">${fmtNum(r.absLitres, 1)} L</td>
+                      <td class="r">${r.netLitres > 0 ? '+' : ''}${fmtNum(r.netLitres, 1)} L</td>
+                      <td class="r"><strong style="color:${r.tankDeltaL < 0 ? 'var(--warn)' : 'var(--good)'}">${r.tankDeltaL > 0 ? '+' : ''}${fmtNum(r.tankDeltaL, 1)} L</strong></td>
+                      <td class="mono">${r.lastDate ? esc(fmtDateDMY(r.lastDate)) : '-'}</td>
+                    </tr>
+                  `).join('') || emptyRow(7, 'No tank malfunctions or discrepancies in the selected period')}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="2"><b>TOTAL (${fmtNum(dtDiscTypeRows.length)} TYPES)</b></td>
+                    <td class="r"><b>${fmtNum(dtLedger.discrepancyCount)}</b></td>
+                    <td class="r"><b>${fmtNum(dtDiscTypeRows.reduce((s, r) => s + Number(r.absLitres || 0), 0), 1)} L</b></td>
+                    <td class="r"><b>${discL > 0 ? '+' : ''}${fmtNum(discL, 1)} L</b></td>
+                    <td class="r"><b>${-discL > 0 ? '+' : ''}${fmtNum(-discL, 1)} L</b></td>
                     <td></td>
                   </tr>
                 </tfoot>
@@ -14396,7 +15053,7 @@
     const cashExpLabelBySup = new Map();
     scopeExpForAp.forEach(x => {
       const sgn = expenseSign(x);
-      if (sgn === 0 || isCreditExpense(x)) return;
+      if (sgn === 0 || !isCashExpense(x)) return;
       const sName = String(x.supplier || '').trim();
       if (!sName || sName.startsWith('(')) return;
       const sk = norm(sName);
@@ -14413,7 +15070,7 @@
       if (legs >= 2) return 'Multi-Leg';
       if (hasMat) return 'Quarry';
       if (hasHaul) return 'Hauler';
-      if (hasExp || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.settlements_paid || 0)) > 0.005) return 'Vendor';
+      if (hasExp || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.ap_settled || s.settlements_paid || 0)) > 0.005) return 'Vendor';
       if (Math.abs(cashAmt) > 0.005) return 'Cash Vendor';
       return 'Supplier';
     };
@@ -14424,7 +15081,7 @@
       const sk = norm(s.Supplier);
       const cashAmt = round2(cashExpBySup.get(sk) || 0);
       if (sk) seenSupSet.add(sk);
-      const keep = !hasApRange || s.raw_loads > 0 || Math.abs(Number(s.ap_on_credit || 0)) > 0.005 || Math.abs(Number(s.settlements_paid || 0)) > 0.005 || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.opening_ap || 0)) > 0.005 || Math.abs(cashAmt) > 0.005;
+      const keep = !hasApRange || s.raw_loads > 0 || Math.abs(Number(s.ap_on_credit || 0)) > 0.005 || Math.abs(Number(s.ap_settled || s.settlements_paid || 0)) > 0.005 || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.opening_ap || 0)) > 0.005 || Math.abs(cashAmt) > 0.005;
       if (!keep) return;
       supAll.push(Object.assign({}, s, {
         cash_expense: cashAmt,
@@ -14515,15 +15172,23 @@
     const bbcSp = byCoSettle.BBConstruction;
     const isGroupScope = STATE.company === 'manufacturing-group';
 
-    const apMat = Math.max(0, Number(k.ap_material || 0));
-    const apHaul = Math.max(0, Number(k.ap_haulage || 0));
-    const apExp = Math.max(0, Number(k.ap_expense || 0));
+    const supMatSum = round2(supAll.reduce((a, s) => a + Number(s.ap_material || 0), 0));
+    const supHaulSum = round2(supAll.reduce((a, s) => a + Number(s.ap_haulage || 0), 0));
+    const supExpSum = round2(supAll.reduce((a, s) => a + Number(s.ap_expense || 0), 0));
+    const supOnCrSum = round2(supMatSum + supHaulSum + supExpSum);
+    const supSettledSum = round2(supAll.reduce((a, s) => a + Number(s.ap_settled != null ? s.ap_settled : (s.settlements_paid || 0)), 0));
+    const supBalSum = round2(supAll.reduce((a, s) => a + Number(s.ap_balance || 0), 0));
+
+    const apMat = Math.max(0, supAll.length ? supMatSum : Number(k.ap_material || 0));
+    const apHaul = Math.max(0, supAll.length ? supHaulSum : Number(k.ap_haulage || 0));
+    const apExp = Math.max(0, supAll.length ? supExpSum : Number(k.ap_expense || 0));
     const apLegTot = Math.max(1, apMat + apHaul + apExp);
     const matLegPct = (apMat / apLegTot) * 100;
     const haulLegPct = (apHaul / apLegTot) * 100;
     const expLegPct = (apExp / apLegTot) * 100;
-    const paidTot = Number(k.settlements_paid || 0);
-    const grossApFlow = Math.max(1, paidTot + Math.max(0, Number(k.ap_balance || 0)));
+    const paidTot = supAll.length ? supSettledSum : Number(k.ap_settled != null ? k.ap_settled : (k.settlements_paid || 0));
+    const netApTot = supAll.length ? supBalSum : Number(k.ap_balance || 0);
+    const grossApFlow = Math.max(1, paidTot + Math.max(0, netApTot));
     const paidPct = Math.min(100, (paidTot / grossApFlow) * 100);
     const avgPay = spays.length > 0 ? ((sumAmt + sumDisc) / spays.length) : 0;
     const openSups = supAll.filter(s => Number(s.ap_balance || 0) > 0);
@@ -14549,7 +15214,7 @@
             val: `${paidPct.toFixed(1)}% <small>Settled</small>`,
             valCls: 'emerald',
             pct: paidPct,
-            sub: `Paid <b>${fmtUSD(k.settlements_paid, 0)}</b> · Net open AP <b>${fmtUSD(k.ap_balance, 0)}</b>`,
+            sub: `Settled <b>${fmtUSD(paidTot, 0)}</b> · Net open AP <b>${fmtUSD(netApTot, 0)}</b>`,
             tone: 'emerald'
           })}
           ${insightCard({
@@ -14559,7 +15224,7 @@
             val: `Mat ${matLegPct.toFixed(0)}% · Haul ${haulLegPct.toFixed(0)}%`,
             valCls: 'brass',
             pct: matLegPct,
-            sub: `Material <b>${fmtUSD(k.ap_material, 0)}</b> · Hauler <b>${fmtUSD(k.ap_haulage, 0)}</b> · Expense <b>${fmtUSD(k.ap_expense, 0)}</b>`,
+            sub: `Material <b>${fmtUSD(supAll.length ? supMatSum : k.ap_material, 0)}</b> · Hauler <b>${fmtUSD(supAll.length ? supHaulSum : k.ap_haulage, 0)}</b> · Expense <b>${fmtUSD(supAll.length ? supExpSum : k.ap_expense, 0)}</b>`,
             tone: 'brass'
           })}
           ${insightCard({
@@ -14686,7 +15351,7 @@
               <thead>
                 <tr>
                   ${th('sups', 'Supplier / Counterparty', 'Supplier')}${th('sups', 'Role', 'role')}${th('sups', 'IVA', 'IVA')}${th('sups', 'Raw Loads', 'raw_loads', 'r')}${hasApRange ? th('sups', 'Opening AP', 'opening_ap', 'r') : ''}${th('sups', 'Mat. Leg', 'ap_material', 'r')}${th('sups', 'Haul Leg', 'ap_haulage', 'r')}
-                  ${th('sups', 'Exp. Leg', 'ap_expense', 'r')}${th('sups', 'Cash Spend', 'cash_expense', 'r')}${th('sups', 'Total Credit', 'ap_on_credit', 'r')}${th('sups', 'Settled ($)', 'settlements_paid', 'r')}${th('sups', 'Net AP ($)', 'ap_balance', 'r')}
+                  ${th('sups', 'Exp. Leg', 'ap_expense', 'r')}${th('sups', 'Cash Spend', 'cash_expense', 'r')}${th('sups', 'Total Credit', 'ap_on_credit', 'r')}${th('sups', 'Settled ($)', 'ap_settled', 'r')}${th('sups', 'Net AP ($)', 'ap_balance', 'r')}
                 </tr>
               </thead>
               <tbody>
@@ -14706,7 +15371,7 @@
                     <td class="r">${fmtUSD(s.ap_expense, 0)}</td>
                     <td class="r">${s.cash_expense ? fmtUSD(s.cash_expense, 0) : '—'}</td>
                     <td class="r"><strong>${fmtUSD(s.ap_on_credit, 0)}</strong></td>
-                    <td class="r">${fmtUSD(hasApRange ? s.settlements_paid : (s.ap_settled != null ? s.ap_settled : s.settlements_paid), 0)}</td>
+                    <td class="r">${fmtUSD(s.ap_settled != null ? s.ap_settled : s.settlements_paid, 0)}</td>
                     <td class="r"><strong>${fmtUSD(s.ap_balance, 2)}</strong></td>
                   </tr>`;
                 }).join('') || emptyRow(supColCount, q ? `No counterparties match "${STATE.search}".` : 'No supplier or vendor balances for this entity')}
@@ -14722,7 +15387,7 @@
                   <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(s.ap_expense || 0), 0), 0)}</b></td>
                   <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(s.cash_expense || 0), 0), 0)}</b></td>
                   <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(s.ap_on_credit || 0), 0), 0)}</b></td>
-                  <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(hasApRange ? (s.settlements_paid || 0) : (s.ap_settled != null ? s.ap_settled : (s.settlements_paid || 0))), 0), 0)}</b></td>
+                  <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(s.ap_settled != null ? s.ap_settled : (s.settlements_paid || 0)), 0), 0)}</b></td>
                   <td class="r"><b>${fmtUSD(sups.reduce((a, s) => a + Number(s.ap_balance || 0), 0), 2)}</b></td>
                 </tr>
               </tfoot>
@@ -14748,7 +15413,7 @@
                   <td>Quarry &amp; Site Owners</td>
                   <td><button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="raw">Quarry &amp; Haulage</button></td>
                   <td class="r">${fmtNum(matLegSupSet.size)}</td>
-                  <td class="r"><strong>${fmtUSD(k.ap_material, 2)}</strong></td>
+                  <td class="r"><strong>${fmtUSD(supAll.length ? supMatSum : k.ap_material, 2)}</strong></td>
                   <td class="r">${matLegPct.toFixed(1)}%</td>
                 </tr>
                 <tr>
@@ -14756,7 +15421,7 @@
                   <td>3rd-Party Truck Owners ($0 Own Fleet)</td>
                   <td><button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="raw">Quarry &amp; Haulage</button></td>
                   <td class="r">${fmtNum(haulLegSupSet.size)}</td>
-                  <td class="r"><strong>${fmtUSD(k.ap_haulage, 2)}</strong></td>
+                  <td class="r"><strong>${fmtUSD(supAll.length ? supHaulSum : k.ap_haulage, 2)}</strong></td>
                   <td class="r">${haulLegPct.toFixed(1)}%</td>
                 </tr>
                 <tr>
@@ -14764,15 +15429,15 @@
                   <td>Parts, Maintenance &amp; Overhead Vendors</td>
                   <td><button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="expenses">Expenses &amp; Overhead</button></td>
                   <td class="r">${fmtNum(expLegSupSet.size)}</td>
-                  <td class="r"><strong>${fmtUSD(k.ap_expense, 2)}</strong></td>
+                  <td class="r"><strong>${fmtUSD(supAll.length ? supExpSum : k.ap_expense, 2)}</strong></td>
                   <td class="r">${expLegPct.toFixed(1)}%</td>
                 </tr>
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="3"><b>TOTAL 3-LEG AP ACCRUED · Settled ${fmtUSD(k.settlements_paid, 0)} · Net Open AP ${fmtUSD(k.ap_balance, 2)}</b></td>
+                  <td colspan="3"><b>TOTAL 3-LEG AP ACCRUED · Settled ${fmtUSD(paidTot, 0)} · Net Open AP ${fmtUSD(netApTot, 2)}</b></td>
                   <td class="r"><b>${fmtNum(sups.length)}</b></td>
-                  <td class="r"><b>${fmtUSD(Number(k.ap_material || 0) + Number(k.ap_haulage || 0) + Number(k.ap_expense || 0), 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(supAll.length ? supOnCrSum : (Number(k.ap_material || 0) + Number(k.ap_haulage || 0) + Number(k.ap_expense || 0)), 2)}</b></td>
                   <td class="r"><b>100.0%</b></td>
                 </tr>
               </tfoot>
@@ -14791,8 +15456,8 @@
     const base = filterRecords(SEED.records.expenses);
     const pendingPriceCnt = base.filter(isPendingPriceExpense).length;
     const expRows = sortRows(base.filter(x => {
-      if (STATE.chipFilter === 'cash') return !isCreditExpense(x) && expenseSign(x) !== 0;
-      if (STATE.chipFilter === 'credit') return isCreditExpense(x) && expenseSign(x) !== 0;
+      if (STATE.chipFilter === 'cash') return isCashExpense(x) && expenseSign(x) !== 0;
+      if (STATE.chipFilter === 'credit') return isApCreditExpense(x) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'pending_price') return isPendingPriceExpense(x);
       if (STATE.chipFilter === 'fleet_exp') return Boolean(x.equipment) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'overhead_exp') return !x.equipment && expenseSign(x) !== 0;
@@ -14814,14 +15479,15 @@
       const sgn = expenseSign(r);
       if (sgn === 0) return;
       const a = sgn * Number(r.amount || 0);
-      const isCr = isCreditExpense(r);
+      const isCr = isApCreditExpense(r);
+      const isCa = isCashExpense(r);
       sumExp += a;
-      if (isCr) sumCredExp += a; else sumCashExp += a;
+      if (isCr) sumCredExp += a; else if (isCa) sumCashExp += a;
       const b = byCoExp[r.company];
       if (b) {
         b.n += 1;
         b.tot += a;
-        if (isCr) b.cred += a; else b.cash += a;
+        if (isCr) b.cred += a; else if (isCa) b.cash += a;
       }
       const dt = recordDate(r);
       const ym = dt ? dt.slice(0, 7) : '';
@@ -14829,7 +15495,7 @@
         const mIdx = Math.max(0, Math.min(11, parseInt(ym.slice(5, 7), 10) - 1));
         const cur = expMonthAgg.get(ym) || { ym, 'Year Month': `${MONTH_SHORT[mIdx]} ${ym.slice(0, 4)}`, cash_usd: 0, credit_usd: 0, vouchers: 0 };
         if (isCr) cur.credit_usd = round2(cur.credit_usd + a);
-        else cur.cash_usd = round2(cur.cash_usd + a);
+        else if (isCa) cur.cash_usd = round2(cur.cash_usd + a);
         cur.vouchers += 1;
         expMonthAgg.set(ym, cur);
       }
@@ -14854,7 +15520,7 @@
       const cg = catAggMap.get(ck);
       cg.vouchers += 1;
       if (r.equipment) cg.unit_tagged += 1;
-      if (isCr) cg.credit += a; else cg.cash += a;
+      if (isCr) cg.credit += a; else if (isCa) cg.cash += a;
       cg.total += a;
     });
     const expCatRows = sortRows(Array.from(catAggMap.values()), 'exp_cat', 'total', 'desc');
@@ -18862,7 +19528,7 @@
     // 3. Direct Cash Expenses & Cash Refunds
     filterRecords(SEED.records.expenses, { ignoreSearch: true, ignorePeriod: Boolean(opts.ignorePeriod), basis: 'tx', user: u }).forEach(x => {
       const sgn = expenseSign(x);
-      if (!sgn || isCreditExpense(x)) return;
+      if (!sgn || !isCashExpense(x)) return;
       const lbp = -Math.round(Number(x.lbp_amount || 0) * sgn);
       const usd = -(x.lbp_amount ? Number(x.usd_amount || 0) : Number(x.usd_amount != null ? x.usd_amount : x.amount || 0)) * sgn;
       const det = [x.category, (x.subcategory && x.subcategory !== x.category) ? x.subcategory : '', x.equipment ? `Unit ${x.equipment}` : '', cleanLedgerNote(x.notes)].filter(Boolean).join(' · ');
@@ -19062,6 +19728,7 @@
         ol: Number(row[4] || 0)
       });
     });
+    let customNetUsdAll = 0;
     customDeltaByDate.forEach((cd, iso) => {
       const cur = dayMap.get(iso) || { iu: 0, ou: 0, il: 0, ol: 0 };
       cur.iu += cd.iu;
@@ -19069,7 +19736,9 @@
       cur.il += cd.il;
       cur.ol += cd.ol;
       dayMap.set(iso, cur);
+      customNetUsdAll += (cd.iu - cd.ou);
     });
+    const targetFinalUsd = (cf.live_till && cf.live_till.usd != null) ? round2(Number(cf.live_till.usd) + customNetUsdAll) : null;
 
     const sortedDates = Array.from(dayMap.keys()).sort();
     let runUsd = 0, runLbp = 0;
@@ -19089,6 +19758,9 @@
       if (Math.abs(netL) <= 2) netL = 0;
       runUsd = round2(runUsd + (d.iu - d.ou));
       runLbp = Math.round(runLbp + (d.il - d.ol));
+      if (i === sortedDates.length - 1 && targetFinalUsd !== null && Math.abs(runUsd - targetFinalUsd) < 0.05) {
+        runUsd = targetFinalUsd;
+      }
       const closeU = Math.abs(runUsd) < 0.05 ? 0 : round2(runUsd);
       const closeL = Math.abs(runLbp) <= 5 ? 0 : Math.round(runLbp);
       const closeCombinedRaw = round2(closeU + closeL / rate);
@@ -19241,7 +19913,12 @@
     }
     dyInUsd = round2(dyInUsd);
     dyOutUsd = round2(dyOutUsd);
-    const dyNetUsd = round2(dyInUsd - dyOutUsd);
+    let dyNetUsd = round2(dyInUsd - dyOutUsd);
+    if (!focusYm && !q && (STATE.chipFilter || 'all') === 'all' && !hasActiveColFilters('cf_daily') && fullFin && STATE.company !== 'lionstransport') {
+      dyInUsd = round2(Number(k.cash_in_usd != null ? k.cash_in_usd : dyInUsd));
+      dyOutUsd = round2(Number(k.cash_out_usd != null ? k.cash_out_usd : dyOutUsd));
+      dyNetUsd = round2(Number(k.net_cash_usd != null ? k.net_cash_usd : (dyInUsd - dyOutUsd)));
+    }
     const latestDayClose = sortedDaily.length ? sortedDaily[0] : { close_usd: liveUsd, close_lbp: liveLbp, close_combined: liveTot };
 
     const filtName = rows => !q ? rows : rows.filter(r => String(r.name || r.type || '').toLowerCase().includes(q));
@@ -21209,6 +21886,7 @@
         { label: 'Debit ($)', key: 'debit', r: true, fmt: C.usd2 }, { label: 'Credit ($)', key: 'credit', r: true, fmt: C.usd2 }, { label: 'Balance ($)', key: 'balance', r: true, fmt: v => `<strong>${fmtUSD(v, 2)}</strong>` }
       ], tb, [{ v: `TOTAL (${tb.length} ACCOUNTS)`, span: 3 }, { v: fmtUSD(sum(tb, 'debit'), 2), r: true }, { v: fmtUSD(sum(tb, 'credit'), 2), r: true }, { v: fmtUSD(sum(tb, 'debit') - sum(tb, 'credit'), 2), r: true }]);
     } else if (code === '03') {
+      const opexExVat = k.expenses_ex_vat != null ? k.expenses_ex_vat : k.expenses;
       bodyHtml = `
         <table class="ledger-table">
           <thead><tr><th>Code</th><th>Income Statement Line (Lebanese CoA Class 7 &amp; Class 6)</th><th class="r">Amount (USD)</th><th class="r">% of Net Sales</th></tr></thead>
@@ -21220,7 +21898,7 @@
             <tr><td class="mono">601</td><td>Raw Material Cost (Site Owners)</td><td class="r">(${fmtUSD(k.raw_mat_cost, 2)})</td><td class="r">${fmtPct((k.raw_mat_cost || 0) / (k.net_sales || 1))}</td></tr>
             <tr><td class="mono">611</td><td>Raw Haulage Cost (Third-Party Trucks)</td><td class="r">(${fmtUSD(k.raw_haulage, 2)})</td><td class="r">${fmtPct((k.raw_haulage || 0) / (k.net_sales || 1))}</td></tr>
             <tr><td class="mono">GM</td><td><strong>GROSS MARGIN</strong></td><td class="r"><strong>${fmtUSD(k.gross_margin, 2)}</strong></td><td class="r"><strong>${fmtPct(k.gm_pct, k.gross_margin, k.net_sales)}</strong></td></tr>
-            <tr><td class="mono">61/62</td><td>Plant &amp; Fleet Operating Expenses</td><td class="r">(${fmtUSD(k.expenses, 2)})</td><td class="r">${fmtPct((k.expenses || 0) / (k.net_sales || 1))}</td></tr>
+            <tr><td class="mono">61/62</td><td>Plant &amp; Fleet Operating Expenses (Ex-VAT)</td><td class="r">(${fmtUSD(opexExVat, 2)})</td><td class="r">${fmtPct((opexExVat || 0) / (k.net_sales || 1))}</td></tr>
             <tr><td class="mono">641</td><td>Staff Salaries &amp; Workforce Wages Paid</td><td class="r">(${fmtUSD(k.salaries_paid, 2)})</td><td class="r">${fmtPct((k.salaries_paid || 0) / (k.net_sales || 1))}</td></tr>
           </tbody>
           <tfoot>
@@ -21246,7 +21924,7 @@
     } else if (code === '06') {
       const lines = [
         ['Sales TTC', fmtUSD(k.sales_ttc, 2), `${fmtNum(k.loads)} loads · ${fmtNum(k.tons_sold, 0)} t · avg ${fmtUSD(k.avg_price_ttc, 2)}/unit`],
-        ['Cash vs Credit Sales', `${fmtUSD(k.cash_sales, 0)} / ${fmtUSD(k.credit_sales, 0)}`, `${fmtNum(k.delivery_loads)} delivery · ${fmtNum(k.pickup_loads)} pickup`],
+        ['Cash vs Credit Sales', `${fmtUSD(k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales, 0)} / ${fmtUSD(k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales, 0)}`, `${fmtNum(k.delivery_loads)} delivery · ${fmtNum(k.pickup_loads)} pickup`],
         ['Raw Material Intake', fmtUSD(k.raw_cost, 2), `${fmtNum(k.raw_loads)} loads · ${fmtNum(k.raw_tons, 0)} t · material ${fmtUSD(k.raw_mat_cost, 0)} + haulage ${fmtUSD(k.raw_haulage, 0)}`],
         ['Expenses', fmtUSD(k.expenses, 2), `cash ${fmtUSD(k.cash_expenses, 0)} · credit ${fmtUSD(k.credit_expenses, 0)}`],
         ['Payroll', fmtUSD(k.salaries_paid, 2), `overtime bonus ${fmtUSD(k.overtime_bonus, 0)} · commission due ${fmtUSD(k.commission_due, 0)}`],
@@ -21263,10 +21941,11 @@
       if (app.length) bodyHtml += `<h4>App-entered this period (not yet in the figures above)</h4>${stTable([{ label: 'Register', key: 'label' }, { label: 'Rows', key: 'n', r: true }, { label: 'Amount', key: 'sum', r: true, fmt: (v, r) => r.unit === 'L' ? fmtNum(v, 0) + ' L' : fmtUSD(v, 2) }], app)}`;
     } else if (code === '07') {
       const rows = sortRows(filterRecords(SEED.records.sales_tickets, { ignoreSearch: true }), 'st07', 'date', 'desc');
+      const sSum = (arr, fk) => arr.reduce((a, r) => a + ticketSign(r) * Number(r[fk] || 0), 0);
       bodyHtml = stTable([
         { label: 'Date', key: 'date', mono: true }, { label: 'Ticket', key: 'ticket_no', mono: true }, { label: 'Co.', key: 'company' }, { label: 'Type', key: 'sale_type' }, { label: 'Customer', key: 'customer' }, { label: 'Product', key: 'product' }, { label: 'Site', key: 'site' }, { label: 'Truck', key: 'truck', mono: true },
         { label: 'Qty', key: 'qty', r: true, fmt: (v, r) => fmtNum(v, 2) + ' ' + esc(r.uom || '') }, { label: 'Material', key: 'price', r: true, fmt: C.usd2 }, { label: 'Transport', key: 'trans_price', r: true, fmt: C.usd2 }, { label: 'VAT', key: 'vat', r: true, fmt: C.usd2 }, { label: 'Total TTC', key: 'total_ttc', r: true, fmt: v => `<strong>${fmtUSD(v, 2)}</strong>` }, { label: 'Method', key: 'method' }
-      ], rows, [{ v: `${fmtNum(rows.length)} TICKETS IN THE WEB SAMPLE · BOOK TOTAL ${fmtUSD(k.sales_ttc, 2)} / ${fmtNum(k.loads)} LOADS`, span: 8 }, { v: fmtNum(sum(rows, 'qty'), 0), r: true }, { v: fmtUSD(sum(rows, 'price'), 2), r: true }, { v: fmtUSD(sum(rows, 'trans_price'), 2), r: true }, { v: fmtUSD(sum(rows, 'vat'), 2), r: true }, { v: fmtUSD(sum(rows, 'total_ttc'), 2), r: true }, { v: '' }]);
+      ], rows, [{ v: `${fmtNum(rows.length)} TICKETS IN THE WEB SAMPLE · BOOK TOTAL ${fmtUSD(k.sales_ttc, 2)} / ${fmtNum(k.loads)} LOADS`, span: 8 }, { v: fmtNum(sSum(rows, 'qty'), 0), r: true }, { v: fmtUSD(sSum(rows, 'price'), 2), r: true }, { v: fmtUSD(sSum(rows, 'trans_price'), 2), r: true }, { v: fmtUSD(sSum(rows, 'vat'), 2), r: true }, { v: fmtUSD(sSum(rows, 'total_ttc'), 2), r: true }, { v: '' }]);
     } else if (code === '08') {
       const rows = sortRows(filterRecords(SEED.records.raw_purchases, { ignoreSearch: true }), 'st08', 'date', 'desc');
       bodyHtml = stTable([
@@ -21274,16 +21953,16 @@
         { label: 'Qty', key: 'qty', r: true, fmt: (v, r) => fmtNum(v, 2) + ' ' + esc(r.uom || '') }, { label: 'Material', key: 'cost', r: true, fmt: C.usd2 }, { label: 'Haulage', key: 'trans_cost', r: true, fmt: C.usd2 }, { label: 'Total', key: 'total', r: true, fmt: v => `<strong>${fmtUSD(v, 2)}</strong>` }
       ], rows, [{ v: `${fmtNum(rows.length)} RECEIPTS IN THE WEB SAMPLE · BOOK TOTAL ${fmtUSD(k.raw_cost, 2)} / ${fmtNum(k.raw_loads)} LOADS`, span: 8 }, { v: fmtNum(sum(rows, 'qty'), 0), r: true }, { v: fmtUSD(sum(rows, 'cost'), 2), r: true }, { v: fmtUSD(sum(rows, 'trans_cost'), 2), r: true }, { v: fmtUSD(sum(rows, 'total'), 2), r: true }]);
     } else if (code === '09' || code === '11') {
-      const rows = (m.customers || []);
+      const rows = getScopedModelCustomers(m);
       bodyHtml = stTable([
-        { label: 'Customer', key: 'Customer', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'VAT Reg', key: 'VAT Registered' }, { label: 'Loads', key: 'loads', r: true, fmt: C.num0 }, { label: 'Sales TTC', key: 'sales_ttc', r: true, fmt: C.usd2 }, { label: 'Receipts', key: 'receipts', r: true, fmt: C.usd2 },
+        { label: 'Customer', key: 'Customer', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'VAT Reg', key: 'VAT Registered' }, { label: 'Loads', key: 'loads', r: true, fmt: C.num0 }, { label: 'Credit Sales TTC', key: 'credit_sales_ttc', r: true, fmt: C.usd2 }, { label: 'Settled ($)', key: 'ar_settled', r: true, fmt: C.usd2 },
         { label: 'Current', key: 'ar_current', r: true, fmt: C.usd2 }, { label: 'Overdue', key: 'ar_overdue', r: true, fmt: C.usd2 }, { label: 'Overdue 60+', key: 'ar_60_plus', r: true, fmt: C.usd2 }, { label: 'VAT Receivable', key: 'vat_receivable', r: true, fmt: C.usd2 }, { label: 'Closing AR ($)', key: 'ar_balance', r: true, fmt: v => `<strong>${fmtUSD(v, 2)}</strong>` }, { label: 'Last Sale', key: 'last_sale', fmt: C.date }
-      ], rows, [{ v: `${rows.length} CUSTOMERS · BOOK AR ${fmtUSD(k.ar_balance, 2)}`, span: 5 }, { v: fmtUSD(sum(rows, 'ar_current'), 2), r: true }, { v: fmtUSD(sum(rows, 'ar_overdue'), 2), r: true }, { v: fmtUSD(sum(rows, 'ar_60_plus'), 2), r: true }, { v: fmtUSD(sum(rows, 'vat_receivable'), 2), r: true }, { v: fmtUSD(sum(rows, 'ar_balance'), 2), r: true }, { v: '' }]);
+      ], rows, [{ v: `${rows.length} CUSTOMERS · BOOK AR ${fmtUSD(k.ar_balance, 2)}`, span: 3 }, { v: fmtUSD(sum(rows, 'credit_sales_ttc'), 2), r: true }, { v: fmtUSD(sum(rows, 'ar_settled'), 2), r: true }, { v: fmtUSD(sum(rows, 'ar_current'), 2), r: true }, { v: fmtUSD(sum(rows, 'ar_overdue'), 2), r: true }, { v: fmtUSD(sum(rows, 'ar_60_plus'), 2), r: true }, { v: fmtUSD(sum(rows, 'vat_receivable'), 2), r: true }, { v: fmtUSD(sum(rows, 'ar_balance'), 2), r: true }, { v: '' }]);
     } else if (code === '10' || code === '12') {
-      const rows = (m.suppliers || []);
+      const rows = getScopedModelSuppliers(m);
       bodyHtml = stTable([
-        { label: 'Supplier / Hauler', key: 'Supplier', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'IVA', key: 'IVA' }, { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: C.num0 }, { label: 'Material Leg', key: 'ap_material', r: true, fmt: C.usd2 }, { label: 'Haulage Leg', key: 'ap_haulage', r: true, fmt: C.usd2 }, { label: 'Expense Leg', key: 'ap_expense', r: true, fmt: C.usd2 }, { label: 'Paid ($)', key: 'settlements_paid', r: true, fmt: C.usd2 }, { label: 'Closing AP ($)', key: 'ap_balance', r: true, fmt: v => `<strong>${fmtUSD(v, 2)}</strong>` }
-      ], rows, [{ v: `${rows.length} SUPPLIERS · BOOK AP ${fmtUSD(k.ap_balance, 2)}`, span: 3 }, { v: fmtUSD(sum(rows, 'ap_material'), 2), r: true }, { v: fmtUSD(sum(rows, 'ap_haulage'), 2), r: true }, { v: fmtUSD(sum(rows, 'ap_expense'), 2), r: true }, { v: fmtUSD(sum(rows, 'settlements_paid'), 2), r: true }, { v: fmtUSD(sum(rows, 'ap_balance'), 2), r: true }]);
+        { label: 'Supplier / Hauler', key: 'Supplier', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'IVA', key: 'IVA' }, { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: C.num0 }, { label: 'Material Leg', key: 'ap_material', r: true, fmt: C.usd2 }, { label: 'Haulage Leg', key: 'ap_haulage', r: true, fmt: C.usd2 }, { label: 'Expense Leg', key: 'ap_expense', r: true, fmt: C.usd2 }, { label: 'Settled ($)', key: 'ap_settled', r: true, fmt: C.usd2 }, { label: 'Closing AP ($)', key: 'ap_balance', r: true, fmt: v => `<strong>${fmtUSD(v, 2)}</strong>` }
+      ], rows, [{ v: `${rows.length} SUPPLIERS · BOOK AP ${fmtUSD(k.ap_balance, 2)}`, span: 3 }, { v: fmtUSD(sum(rows, 'ap_material'), 2), r: true }, { v: fmtUSD(sum(rows, 'ap_haulage'), 2), r: true }, { v: fmtUSD(sum(rows, 'ap_expense'), 2), r: true }, { v: fmtUSD(sum(rows, 'ap_settled'), 2), r: true }, { v: fmtUSD(sum(rows, 'ap_balance'), 2), r: true }]);
     } else if (code === '13') {
       const rows = (m.equipment || []);
       bodyHtml = stTable([
@@ -21340,11 +22019,12 @@
         { label: 'Co.', key: 'company' }, { label: 'Customer / Owner', key: 'customer', fmt: (v, r) => `<strong>${esc(v || r.supplier || 'Standard List')}</strong>` }, { label: 'Product', key: 'product', fmt: v => esc(v || '(All Grades)') }, { label: 'Site', key: 'site' }, { label: 'Unit', key: 'unit', mono: true }, { label: 'Unit Price', key: 'unit_price', r: true, fmt: C.usd2 }, { label: 'Transport', key: 'trans_unit_price', r: true, fmt: v => v ? fmtUSD(v, 2) : '—' }, { label: 'Start', key: 'start_date', mono: true }, { label: 'End', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }
       ], rows, [{ v: `${fmtNum(rows.length)} ACTIVE AGREEMENTS AT ${today}`, span: 9 }]);
     } else if (code === '18') {
-      const vatTickets = sortRows(filterRecords(SEED.records.sales_tickets, { ignoreSearch: true }).filter(t => Number(t.vat || 0) > 0 || t.vat_invoice), 'st18', 'date', 'desc');
-      bodyHtml = `<div class="live-calc"><div><small>Output VAT 11% invoiced (4427)</small><b>${fmtUSD(k.sales_vat, 2)}</b></div><div><small>VAT receivable from customers</small><b>${fmtUSD(k.vat_receivable, 2)}</b></div><div><small>Net sales ex-VAT</small><b>${fmtUSD(k.net_sales, 2)}</b></div><div><small>Sales TTC</small><b>${fmtUSD(k.sales_ttc, 2)}</b></div></div>
+      const vatTickets = sortRows(filterRecords(SEED.records.sales_tickets, { ignoreSearch: true }).filter(t => ticketSign(t) !== 0 && (Number(t.vat || 0) !== 0 || t.vat_invoice)), 'st18', 'date', 'desc');
+      const vSum = (arr, fk) => arr.reduce((a, t) => a + ticketSign(t) * Number(t[fk] || 0), 0);
+      bodyHtml = `<div class="live-calc"><div><small>Output VAT 11% invoiced (4427)</small><b>${fmtUSD(k.sales_vat, 2)}</b></div><div><small>VAT receivable from customers</small><b>${fmtUSD(k.vat_receivable, 2)}</b></div><div><small>Total sales ex-VAT</small><b>${fmtUSD(k.gross_sales || k.net_sales, 2)}</b></div><div><small>Sales TTC</small><b>${fmtUSD(k.sales_ttc, 2)}</b></div></div>
         <h4>VAT-bearing tickets in the web sample</h4>` + stTable([
         { label: 'Date', key: 'date', mono: true }, { label: 'Ticket', key: 'ticket_no', mono: true }, { label: 'VAT Invoice', key: 'vat_invoice', mono: true }, { label: 'Co.', key: 'company' }, { label: 'Customer', key: 'customer' }, { label: 'Net', key: 'total', r: true, fmt: C.usd2 }, { label: 'VAT 11%', key: 'vat', r: true, fmt: v => `<strong>${fmtUSD(v, 2)}</strong>` }, { label: 'Total TTC', key: 'total_ttc', r: true, fmt: C.usd2 }
-      ], vatTickets, [{ v: `${fmtNum(vatTickets.length)} TICKETS`, span: 5 }, { v: fmtUSD(sum(vatTickets, 'total'), 2), r: true }, { v: fmtUSD(sum(vatTickets, 'vat'), 2), r: true }, { v: fmtUSD(sum(vatTickets, 'total_ttc'), 2), r: true }]);
+      ], vatTickets, [{ v: `${fmtNum(vatTickets.length)} TICKETS`, span: 5 }, { v: fmtUSD(vSum(vatTickets, 'total'), 2), r: true }, { v: fmtUSD(vSum(vatTickets, 'vat'), 2), r: true }, { v: fmtUSD(vSum(vatTickets, 'total_ttc'), 2), r: true }]);
     } else if (code === '19') {
       const { pricing } = sentinelSlice();
       const sal = filterRecords(SEED.records.salaries, { ignoreSearch: true });
@@ -22252,6 +22932,7 @@
             </div>
           </div>
           <div class="enrol-console-actions">
+            ${canViewView('alert_rules') ? `<button type="button" class="btn-sn-act" data-nav-jump="alert_rules">${ic('sliders')} Alerts &amp; Thresholds</button>` : ''}
             <span class="enrol-seat-pill ${enrolSavedSamples.length ? 'enrolled' : 'pending'}" id="enrolHeaderBadge">
               ${enrolSavedSamples.length ? `✓ ${esc(enrolUser.full_name)} · ${enrolSavedSamples.length}/3 Poses Saved` : `${esc(enrolUser.full_name)} · Not Enrolled`}
             </span>
@@ -22496,12 +23177,13 @@
     raw: 'New Raw Material Ticket',
     receipt: 'New Customer Settlement',
     fuel: 'New Fuel & Lubricant Intake',
+    malfunction: 'New Tank Malfunction / Discrepancy',
     expense: 'New Expense',
     settlement: 'New Supplier Settlement'
   }, (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES) || {});
   const FORM_CR_KEY = Object.assign({
     sales: 'sales_tickets', raw: 'raw_purchases', receipt: 'receipts',
-    fuel: 'fuel_intakes', expense: 'expenses', settlement: 'settlements'
+    fuel: 'fuel_intakes', malfunction: 'fuel_malfunctions', expense: 'expenses', settlement: 'settlements'
   }, (window.MFG_FORMS && window.MFG_FORMS.FORM_CR_KEY) || {});
 
   function secHdr(title, sub) {
@@ -22610,7 +23292,7 @@
       afterHtml: `<div class="repdate-bar time-ot-bar"><div id="wrap_f_overtime" class="ot-inline-wrap"${initCoFleet ? '' : ' hidden'}><input type="checkbox" id="f_overtime" ${initCoFleet && initOt ? 'checked' : ''} hidden><button type="button" class="repdate-toggle-btn overtime-toggle-btn${initCoFleet && initOt ? ' active is-overtime' : ''}" id="toggleOvertimeBtn" aria-pressed="${initCoFleet && initOt ? 'true' : 'false'}">${initOt ? `${ic('check_circle')} Overtime Registered (18:00–05:59) · × Clear` : `${ic('sun')} Day Shift (06:00–17:59) · + Overtime?`}</button></div><span class="hint" id="hint_time"></span></div>`
     });
     const notesField = fld('Notes', inp('f_notes', 'text', '', 'placeholder="Required for back-dated entries or discounts above 20%"'), { id: 'wrap_f_notes', span: true });
-    const cockpitHtml = '';
+    const cockpitHtml = '<div id="formCustomAlertBanner" class="form-custom-alert-banner" hidden></div>';
     const adminHeaderHtml = `<div id="paAdminUnlockBox" hidden></div>`;
     const uoms = uniqSorted(((SEED.records && SEED.records.uoms) || []).map(u => u.name).concat(['m³', 'Ton', 'Truck', 'Piece', 'Bag', 'Litre']), getFreqIndex().uom);
 
@@ -23113,17 +23795,19 @@
         tBtn.classList.toggle('active', showRep);
       }
       const gap = daysBetween(d, repEl.value);
-      if (Math.abs(gap) > 60) {
-        setHint('hint_repdate', `Reporting Date is ${Math.abs(gap)} days from Transaction Date (>60d)`, 'warn');
+      const repGapDays = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
+      if (isAlertRuleEnabled('G_REPDATE_GAP') && Math.abs(gap) > repGapDays) {
+        setHint('hint_repdate', `Reporting Date is ${Math.abs(gap)} days from Transaction Date (>${fmtNum(repGapDays, 0)}d)`, 'warn');
         warnings.push('repdate_gap');
       } else {
         setHint('hint_repdate', repEl.value === d ? 'Same as Transaction Date' : `For reports & statements (${repEl.value})`, '');
       }
     }
     FORM_UI.lastDate = d;
+    const backdateDays = getAlertParam('G_BACKDATE_NOTE', 'backdate_warn_days', 30);
     if (d > today) setHint('hint_date', 'Future dates are blocked', 'crit');
     else if (d < MIN_DATE) setHint('hint_date', 'Before the books opened (' + MIN_DATE + ')', 'crit');
-    else if (daysBetween(d, today) > 30) { setHint('hint_date', 'Back-dated ' + daysBetween(d, today) + ' days — add a note', 'warn'); warnings.push('backdated'); }
+    else if (isAlertRuleEnabled('G_BACKDATE_NOTE') && daysBetween(d, today) > backdateDays) { setHint('hint_date', 'Back-dated ' + daysBetween(d, today) + ' days — add a note', 'warn'); warnings.push('backdated'); }
     else setHint('hint_date', '', '');
   }
 
@@ -23860,13 +24544,15 @@
   const TON_EST_MIN_RATIO = 0.70;
   const TON_EST_MAX_RATIO = 1.50;
   function evaluateTonEstimateGuard(qty, estTons, effCap, tonFactor, adminUnlocked = false, defaultTonFactor = 1.6) {
+    const guardEnabled = isAlertRuleEnabled('G_TON_CORRIDOR');
     const hasTruckCap = Boolean(effCap != null && Number(effCap) > 0);
     const hasExplicitFactor = Boolean(tonFactor != null && Number(tonFactor) > 0);
     const tf = hasExplicitFactor ? Number(tonFactor) : Number(defaultTonFactor || 1.6);
+    const unsizedMinTons = getAlertParam('G_TON_CORRIDOR', 'unsized_min_tons', 5);
     if (!hasTruckCap) {
-      if (qty > 0 && qty < 5) {
+      if (guardEnabled && qty > 0 && qty < unsizedMinTons) {
         return {
-          hasEstimate: true, minTons: 5, maxTons: null, tooLow: true, tooHigh: false,
+          hasEstimate: true, minTons: unsizedMinTons, maxTons: null, tooLow: true, tooHigh: false,
           blocked: !adminUnlocked,
           severity: adminUnlocked ? 'warn' : 'crit',
           hint: adminUnlocked
@@ -23878,8 +24564,12 @@
     }
     const cap = Number(effCap);
     const est = (estTons != null && Number(estTons) > 0) ? Number(estTons) : round2(cap * tf);
-    const minTons = round2(est * TON_EST_MIN_RATIO);
-    const maxTons = round2(est * TON_EST_MAX_RATIO);
+    const minRatio = getAlertParam('G_TON_CORRIDOR', 'min_pct', TON_EST_MIN_RATIO * 100) / 100;
+    const maxRatio = getAlertParam('G_TON_CORRIDOR', 'max_pct', TON_EST_MAX_RATIO * 100) / 100;
+    const warnLowRatio = getAlertParam('G_TON_CORRIDOR', 'warn_low_pct', 85) / 100;
+    const warnHighRatio = getAlertParam('G_TON_CORRIDOR', 'warn_high_pct', 125) / 100;
+    const minTons = round2(est * minRatio);
+    const maxTons = round2(est * maxRatio);
     const tfLabel = hasExplicitFactor ? `${tf} t/m³` : `~${tf} t/m³`;
     if (!(qty > 0)) {
       return {
@@ -23891,6 +24581,13 @@
       };
     }
     const eqM3 = fmtNum(qty / tf, 2);
+    if (!guardEnabled) {
+      return {
+        hasEstimate: true, minTons, maxTons, tooLow: false, tooHigh: false, blocked: false,
+        severity: 'ok',
+        hint: `Estimated: ≈ ${fmtNum(est, 2)} Tons (${fmtNum(cap, 1)} m³ truck × ${tf} t/m³) · Entered: ${fmtNum(qty, 2)} t (≈ ${eqM3} m³)`
+      };
+    }
     if (qty + 1e-9 < minTons) {
       return {
         hasEstimate: true, minTons, maxTons, tooLow: true, tooHigh: false,
@@ -23911,7 +24608,7 @@
           : `Not accepted — ${fmtNum(qty, 2)} Tons (≈ ${eqM3} m³) exceeds max ${fmtNum(maxTons, 2)} Tons for a ${fmtNum(cap, 1)} m³ truck (Est. ≈ ${fmtNum(est, 2)} t)`
       };
     }
-    const isWarn = (qty < est * 0.85 || qty > est * 1.25);
+    const isWarn = (qty < est * warnLowRatio || qty > est * warnHighRatio);
     return {
       hasEstimate: true, minTons, maxTons, tooLow: false, tooHigh: false, blocked: false,
       severity: isWarn ? 'warn' : 'ok',
@@ -24260,7 +24957,7 @@
 
     const trkHealth = truckName ? getEquipmentHealth(truckName, company) : null;
     if (isDelivery && !truckName) setHint('hint_truck', 'Required on Delivery', FORM_UI.postAttempted ? 'crit' : '');
-    else if (trkHealth && trkHealth.critCount > 0) setHint('hint_truck', `${truckName} is flagged Critical — Down (${trkHealth.latestOpenDefect ? trkHealth.latestOpenDefect.subsystem : 'Open Defect'}) · Do Not Dispatch`, 'warn');
+    else if (isAlertRuleEnabled('S10') && trkHealth && trkHealth.critCount > 0) setHint('hint_truck', `${truckName} is flagged Critical — Down (${trkHealth.latestOpenDefect ? trkHealth.latestOpenDefect.subsystem : 'Open Defect'}) · Do Not Dispatch`, 'warn');
     else if (truckName && isCoFleet && truckRow && !ownTruck) setHint('hint_truck', `${truckRow.name} is not in ${company} — switch Transported By or pick a ${company} truck`, 'warn');
     else if (truckName && transportBy === 'Third-party truck' && pureOwnTruck) setHint('hint_truck', `${truckRow.name} is an own unit — switch Transported By`, 'warn');
     else if (truckRow && effCap) setHint('hint_truck', `${truckRow.plate_no && norm(truckRow.plate_no) !== norm(truckRow.name) ? 'Plate ' + truckRow.plate_no + ' · ' : ''}Capacity ${fmtNum(effCap, 1)} m³${!isCoFleet && truckRow.supplier ? ' · Owner: ' + truckRow.supplier : ''}${winSuffix}`, 'ok');
@@ -24329,8 +25026,9 @@
           : ([m3SrcNote, convNote].filter(Boolean).join(' · ')),
         qty <= 0 && val('f_qty') ? 'crit' : '');
     }
+    const maxDiscPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
     if (disc > matGross && matGross > 0) setHint('hint_disc', 'Discount exceeds the material subtotal', 'crit');
-    else if (matGross > 0 && disc > matGross * 0.2) { setHint('hint_disc', 'Above 20% of material — add a note', 'warn'); }
+    else if (isAlertRuleEnabled('G_DISCOUNT_WARN') && matGross > 0 && disc > matGross * (maxDiscPct / 100)) { setHint('hint_disc', `Above ${fmtNum(maxDiscPct, 0)}% of material — add a note`, 'warn'); }
     else setHint('hint_disc', '', '');
 
     commonDateChecks(warnings);
@@ -24350,8 +25048,10 @@
         const isJvSite = Boolean(sObj && (sObj.is_jv || sObj.jv));
         const afterAr = ar != null && val('f_method') === 'Credit' ? round2(ar + ttc) : ar;
         const overLimit = Boolean(ct && ct.limit > 0 && afterAr != null && afterAr > ct.limit);
+        const s4BannerThresh = getAlertParam('S4', 'entry_strip_warn_ar60_usd', 1000);
+        const s4WarnOn = isAlertRuleEnabled('S4') && ov60 > s4BannerThresh;
         salesStrip.hidden = false;
-        salesStrip.className = `att-contract-strip${overLimit || ov60 > 1000 ? ' is-warn' : ''}`;
+        salesStrip.className = `att-contract-strip${overLimit || s4WarnOn ? ' is-warn' : ''}`;
         salesStrip.innerHTML = `
           <div><strong>${esc(customer || site || truckName)}</strong> ${vatReg ? '<span class="badge badge-info">11% VAT</span>' : ''}${isJvSite ? ' <span class="badge badge-brass">JV 50/50 Site</span>' : ''}</div>
           <div class="att-contract-metrics">
@@ -24919,11 +25619,14 @@
     const isGrease = isLubricant && /grease|تشحيم|مشحمة/i.test(curItem);
     setText('lbl_fuel_qty', isGrease ? 'Grease Issued (kg) *' : 'Litres Issued (L) *');
     const eqCatHint = `${(eqRow && (eqRow.type || eqRow.Type || eqRow.category)) || mSpec.category || ''} ${equipment || ''}`;
+    const grPlantTarget = getAlertParam('G_GREASE_COMP', 'plant_kg_day', 0.60).toFixed(2);
+    const grMachTarget = getAlertParam('G_GREASE_COMP', 'machine_kg_day', 0.30).toFixed(2);
+    const grTruckTarget = getAlertParam('G_GREASE_COMP', 'truck_kg_day', 0.15).toFixed(2);
     const recGreaseKg = /plant|crush|wash|screen|kasara|maghsal|belt/i.test(eqCatHint)
-      ? '0.60'
+      ? grPlantTarget
       : ((/excavator|loader|dozer|bulldozer|backhoe|poclain|jcb|shovel|grader|roller/i.test(eqCatHint) || (!/truck|vehicle|pickup|car|van|bobcat/i.test(eqCatHint) && mSpec.type === 'hours' && !/^pb/i.test(equipment || '')))
-          ? '0.30'
-          : '0.15');
+          ? grMachTarget
+          : grTruckTarget);
     const qInput = $('f_qty');
     if (isGrease) {
       if (qInput && (!val('f_qty') || !FORM_UI.qtyManual || FORM_UI.greaseAutoPreset)) {
@@ -24976,15 +25679,20 @@
       : (equipment ? (type === 'none' ? 'Non-metered item' : 'No prior reading') : '—'));
     let guard = { ok: true, label: 'OK', cls: '' };
     let delta = null;
+    const meterGuardActive = isAlertRuleEnabled('G_METER_JUMP');
+    const maxOdoKm = getAlertParam('G_METER_JUMP', 'max_odo_km', 1000000);
+    const maxEngHr = getAlertParam('G_METER_JUMP', 'max_hours', 100000);
+    const warnJumpKm = getAlertParam('G_METER_JUMP', 'warn_jump_km', 5000);
+    const warnJumpHr = getAlertParam('G_METER_JUMP', 'warn_jump_hr', 500);
     if (showMeterReading && type !== '' && reading != null) {
       if (reading <= 0) guard = { ok: false, label: 'Reading must be above zero', cls: 'crit' };
-      else if (type === 'odometer' && reading > 1000000) guard = { ok: false, label: 'Over 1,000,000 km — typo?', cls: 'crit' };
-      else if (type === 'hours' && reading > 100000) guard = { ok: false, label: 'Over 100,000 h — typo?', cls: 'crit' };
+      else if (meterGuardActive && type === 'odometer' && reading > maxOdoKm) guard = { ok: false, label: `Over ${fmtNum(maxOdoKm, 0)} km — typo?`, cls: 'crit' };
+      else if (meterGuardActive && type === 'hours' && reading > maxEngHr) guard = { ok: false, label: `Over ${fmtNum(maxEngHr, 0)} h — typo?`, cls: 'crit' };
       else if (prev && prevVal != null && prevType === type) {
         delta = reading - prevVal;
-        if (delta < 0) guard = { ok: false, label: `Backwards by ${fmtNum(-delta, type === 'hours' && (-delta) % 1 !== 0 ? 1 : 0)} ${type === 'hours' ? 'h' : 'km'} vs the last intake`, cls: 'crit' };
-        else if (type === 'odometer' && delta > 5000) guard = { ok: true, label: `Jump of ${fmtNum(delta, 0)} km — confirm in notes`, cls: 'warn' };
-        else if (type === 'hours' && delta > 500) guard = { ok: true, label: `Jump of ${fmtNum(delta, delta % 1 !== 0 ? 1 : 0)} h — confirm in notes`, cls: 'warn' };
+        if (meterGuardActive && delta < 0) guard = { ok: false, label: `Backwards by ${fmtNum(-delta, type === 'hours' && (-delta) % 1 !== 0 ? 1 : 0)} ${type === 'hours' ? 'h' : 'km'} vs the last intake`, cls: 'crit' };
+        else if (meterGuardActive && type === 'odometer' && delta > warnJumpKm) guard = { ok: true, label: `Jump of ${fmtNum(delta, 0)} km — confirm in notes`, cls: 'warn' };
+        else if (meterGuardActive && type === 'hours' && delta > warnJumpHr) guard = { ok: true, label: `Jump of ${fmtNum(delta, delta % 1 !== 0 ? 1 : 0)} h — confirm in notes`, cls: 'warn' };
       }
     }
     setHint('hint_meter', guard.label === 'OK' ? '' : guard.label, guard.cls);
@@ -25000,23 +25708,26 @@
       const eqNorm = norm(eqRow ? eqRow.name : equipment);
       const refIso = (effDate || todayISO()).slice(0, 10);
       if (/\b68\b|hydraul/i.test(curItem)) {
-        const refMs = Date.parse(refIso + 'T00:00:00Z');
-        const cutIso = isFinite(refMs) ? new Date(refMs - 30 * 86400000).toISOString().slice(0, 10) : '';
-        let prior30dHyd = 0;
-        (SEED.records.fuel_intakes || []).forEach(r => {
-          if (!r || r.voided || norm(r.equipment) !== eqNorm) return;
-          const rd = String(r.date || '').slice(0, 10);
-          if (rd && rd >= cutIso && rd <= refIso && /\b68\b|hydraul/i.test(String(r.item || ''))) {
-            prior30dHyd += Number(r.litres || 0);
+        const hydCeiling30d = getAlertParam('G_HYD_LEAK_30D', 'entry_30d_ceiling_l', 40);
+        if (isAlertRuleEnabled('G_HYD_LEAK_30D')) {
+          const refMs = Date.parse(refIso + 'T00:00:00Z');
+          const cutIso = isFinite(refMs) ? new Date(refMs - 30 * 86400000).toISOString().slice(0, 10) : '';
+          let prior30dHyd = 0;
+          (SEED.records.fuel_intakes || []).forEach(r => {
+            if (!r || r.voided || norm(r.equipment) !== eqNorm) return;
+            const rd = String(r.date || '').slice(0, 10);
+            if (rd && rd >= cutIso && rd <= refIso && /\b68\b|hydraul/i.test(String(r.item || ''))) {
+              prior30dHyd += Number(r.litres || 0);
+            }
+          });
+          if (prior30dHyd + litres > hydCeiling30d) {
+            lubeWarn = `LEAK WATCH: ${fmtNum(prior30dHyd + litres, 1)} L Hydraulic 68 in 30 days on ${eqRow ? eqRow.name : equipment} (healthy seal ceiling <= ${fmtNum(hydCeiling30d, 0)} L) · inspect hoses & cylinders`;
           }
-        });
-        if (prior30dHyd + litres > 40) {
-          lubeWarn = `LEAK WATCH: ${fmtNum(prior30dHyd + litres, 1)} L Hydraulic 68 in 30 days on ${eqRow ? eqRow.name : equipment} (healthy seal ceiling <= 40 L) · inspect hoses & cylinders`;
         }
       } else if (/15w|engine\s*oil/i.test(curItem)) {
         const isSmallUnit = /vehicle|car|pickup|suv|van|bobcat|skid/i.test(eqCatHint);
         const minDrainL = isSmallUnit ? 8 : 25;
-        if (litres >= minDrainL) {
+        if (isAlertRuleEnabled('G_OIL_DRAIN') && litres >= minDrainL) {
           let lastDrainDate = '';
           (SEED.records.fuel_intakes || []).forEach(r => {
             if (!r || r.voided || norm(r.equipment) !== eqNorm) return;
@@ -25034,8 +25745,11 @@
                 dieselSince += Number(r.litres || 0);
               }
             });
-            const targetDiesel = /truck|tractor|tipper|mixer/i.test(eqCatHint) ? 8000 : 4000;
-            if (dieselSince < targetDiesel * 0.85) {
+            const trkTarget = getAlertParam('G_OIL_DRAIN', 'truck_target_diesel_l', 8000);
+            const mchTarget = getAlertParam('G_OIL_DRAIN', 'machine_target_diesel_l', 4000);
+            const earlyPct = getAlertParam('G_OIL_DRAIN', 'early_drain_pct', 85) / 100;
+            const targetDiesel = /truck|tractor|tipper|mixer/i.test(eqCatHint) ? trkTarget : mchTarget;
+            if (dieselSince < targetDiesel * earlyPct) {
               lubeWarn = `EARLY DRAIN WATCH: Only ${fmtNum(dieselSince, 0)} L diesel burned since last 15W-40 change on ${lastDrainDate} (benchmark ${fmtNum(targetDiesel, 0)} L / ${type === 'hours' ? '250 h' : '15,000 km'})`;
             }
           }
@@ -25056,7 +25770,9 @@
     const bbcTankBal = (liveTankAll.byCo && liveTankAll.byCo.BBConstruction)
       ? Number(liveTankAll.byCo.BBConstruction.balance || 0)
       : Number((((SEED.sentinels.fleet_fuel_overtime_auditor || {}).by_model || {}).BBConstruction || {}).diesel_stock_balance_l || 0);
-    const bbcTankNegative = company === 'BBConstruction' && (fuelType === 'Diesel' || /diesel/i.test(val('f_item'))) && bbcTankBal < 0;
+    const s2Active = isAlertRuleEnabled('S2');
+    const s2LowTankL = getAlertParam('S2', 'low_tank_warn_l', 1500);
+    const bbcTankNegative = s2Active && company === 'BBConstruction' && (fuelType === 'Diesel' || /diesel/i.test(val('f_item'))) && bbcTankBal < 0;
     if (bbcTankNegative) {
       setHint('hint_qty', 'BBConstruction tank is negative — diesel intakes are refused until the history is corrected', 'crit');
     } else if (litres <= 0 && val('f_qty')) {
@@ -25077,13 +25793,13 @@
         const coTank = (tankAll.byCo && tankAll.byCo[company]) || { balance: 0, avgUsdPerL: 0 };
         const tankAfter = (!isLubricant && fuelType === 'Diesel' && litres > 0) ? (coTank.balance - litres) : coTank.balance;
         const activeDrv = val('f_driver') || defDriver;
-        const absRec = (activeDrv && effDate) ? (SEED.records.attendance || []).find(a => a && !a.voided && String(a.date || '').slice(0, 10) === effDate.slice(0, 10) && normStaffStem(a.staff) === normStaffStem(activeDrv) && /absen|sick|vac/i.test(String(a.type || a.status || ''))) : null;
+        const absRec = (isAlertRuleEnabled('S9') && activeDrv && effDate) ? (SEED.records.attendance || []).find(a => a && !a.voided && String(a.date || '').slice(0, 10) === effDate.slice(0, 10) && normStaffStem(a.staff) === normStaffStem(activeDrv) && /absen|sick|vac/i.test(String(a.type || a.status || ''))) : null;
         fuelStrip.hidden = false;
         fuelStrip.className = 'att-contract-strip' + ((bbcTankNegative || absRec || !guard.ok) ? ' is-warn' : '');
         fuelStrip.innerHTML = `
           <div>
             <strong>${esc(company)} Plant Tank</strong>
-            <span class="badge ${coTank.balance < 0 ? 'badge-crit' : (coTank.balance < 1500 ? 'badge-warn' : 'badge-ok')}">${fmtNum(coTank.balance, 0)} L Available</span>
+            <span class="badge ${s2Active && coTank.balance < 0 ? 'badge-crit' : (s2Active && coTank.balance < s2LowTankL ? 'badge-warn' : 'badge-ok')}">${fmtNum(coTank.balance, 0)} L Available</span>
             ${absRec ? `<span class="badge badge-crit">S9 Alert: ${esc(activeDrv)} marked ${esc(absRec.type || 'Absent')} on ${esc(effDate)}</span>` : ''}
           </div>
           <div class="att-contract-metrics">
@@ -26731,6 +27447,7 @@
         case 'raw': return recalcRaw();
         case 'receipt': return recalcReceipt();
         case 'fuel': return recalcFuel();
+        case 'malfunction': return recalcMalfunction();
         case 'expense': return recalcExpense();
         case 'settlement': return recalcSettlement();
         default: return {};
@@ -26738,8 +27455,79 @@
     } catch (e) { console.error('recalc', e); return {}; }
   }
 
+  function recalcMalfunction() {
+    const coName = val('f_company') || defaultEntryCompany();
+    const coKey = COMPANY_KEY_BY_NAME[coName] || 'wtc';
+    const dt = val('f_date') || todayISO();
+    const repDt = val('f_repdate') || dt;
+    const discType = val('f_disctype') || 'Malfunction';
+    const dir = val('f_malf_dir') || 'out';
+    const rawQty = num('f_qty');
+    const unit = val('f_truck');
+    if (unit !== FORM_UI.lastTruck) {
+      const prevUnit = FORM_UI.lastTruck;
+      const prevEq = prevUnit ? equipInfo(prevUnit, coName) : null;
+      const curEq = unit ? equipInfo(unit, coName) : null;
+      FORM_UI.lastTruck = unit;
+      if (curEq && curEq.default_driver && $('f_driver') && (!val('f_driver') || (prevEq && val('f_driver') === prevEq.default_driver))) {
+        $('f_driver').value = curEq.default_driver;
+      } else if (!unit && prevEq && prevEq.default_driver && $('f_driver') && val('f_driver') === prevEq.default_driver) {
+        $('f_driver').value = '';
+      }
+    }
+    const absQty = Math.abs(Number(rawQty || 0));
+    const effDir = rawQty < 0 ? 'in' : dir;
+    const signedLitres = round2(effDir === 'in' ? -absQty : absQty);
+    const tankDelta = round2(-signedLitres);
+    const dtAll = getDieselTankLedger(coKey, null);
+    const tankBefore = dtAll ? Number(dtAll.closingTankL || 0) : 0;
+    const tankAfter = round2(tankBefore + tankDelta);
+
+    const effDate = STATE.basis === 'tx' ? dt : (repDt || dt);
+    const ym = String(effDate || '').slice(0, 7);
+    const mRange = /^\d{4}-\d{2}$/.test(ym) ? { from: ym + '-01', to: ym + '-31' } : null;
+    const dtMo = getDieselTankLedger(coKey, mRange);
+    const isMalfType = /^malfunction$/i.test(discType);
+    const isConfigType = /^configuration$/i.test(discType);
+    const projMalfAbs = round2((dtMo ? Number(dtMo.malfAbsL || 0) : 0) + (isMalfType ? absQty : 0));
+    const projMalfNet = round2((dtMo ? Number(dtMo.malfNetL || 0) : 0) + (isMalfType ? signedLitres : 0));
+    const projOtherOut = round2((dtMo ? Number(dtMo.otherDiscOutL || 0) : 0) + (!isMalfType && !isConfigType && signedLitres > 0 ? signedLitres : 0));
+    const projWatch = _evalDieselMalfunctionWatchdog(dtMo ? dtMo.consumedL : 0, projOtherOut, projMalfNet, projMalfAbs);
+
+    setText('calc_malf_before', `${fmtNum(tankBefore, 1)} L`);
+    setText('calc_malf_delta', `${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L`);
+    setText('calc_malf_after', `${fmtNum(tankAfter, 1)} L`);
+    setText('calc_malf_pct', `${projWatch.malfunctionPct.toFixed(1)}%`);
+
+    setHint('hint_malf_qty', absQty > 0
+      ? `Tank ${tankDelta >= 0 ? 'surplus' : 'shortage'} (${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L): ${fmtNum(tankBefore, 1)} L -> ${fmtNum(tankAfter, 1)} L`
+      : 'Positive litres; direction sets tank +/- impact', absQty > 0 ? (tankAfter < 0 ? 'warn' : 'ok') : '');
+
+    const banner = $('malfLiveAlertBanner');
+    if (banner) {
+      if (projWatch.malfunctionAlert && (absQty > 0 || (dtMo && dtMo.malfunctionAlert))) {
+        banner.hidden = false;
+        banner.className = 'att-contract-strip is-warn';
+        banner.innerHTML = `
+          <div>
+            <strong>5% Diesel Malfunction Watchdog (${projWatch.malfunctionPct.toFixed(1)}% &ge; ${projWatch.malfunctionThresholdPct.toFixed(1)}%):</strong>
+            ${esc(_formatMonthYmLabel(ym))} gross malfunction volume for <b>${esc(coName)}</b> ${absQty > 0 ? 'reaches' : 'is'} <b>${fmtNum(projMalfAbs, 1)} L</b> against <b>${fmtNum(projWatch.companyDieselUsedL, 1)} L</b> total company diesel used.
+          </div>
+        `;
+      } else {
+        banner.hidden = true;
+        banner.innerHTML = '';
+      }
+    }
+
+    commonDateChecks([]);
+    renderAdminLockBar();
+    return { coName, signedLitres, tankDelta, tankAfter, projWatch };
+  }
+
   function recalcForm(skipPostSync = false) {
     const res = recalcFormInner() || {};
+    syncFormCustomAlertBanner(res);
     if (!skipPostSync) {
       if (FORM_UI.postAttempted) {
         const v = validateAndBuild({ skipRecalc: true, calcResult: res });
@@ -28186,11 +28974,17 @@
     const needsDate = !['customer', 'supplier', 'product', 'site', 'equipment', 'companyequipment', 'driver'].includes(f);
     if (!isUniversalForm && !allowedCompanyNames().includes(company)) addErr('f_company', 'Your seat cannot post to ' + (company || 'that company') + '.');
     if (needsDate) {
+      const bdDaysLimit = getAlertParam('G_BACKDATE_NOTE', 'backdate_warn_days', 30);
+      const repGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
       if (!val('f_date')) addErr('f_date', 'Date is required.');
       else if (date > today && f !== 'pricerule') addErr('f_date', 'Future dates are not allowed.');
       else if (date < MIN_DATE) addErr('f_date', 'Date is before the books opened (' + MIN_DATE + ').');
-      else if (daysBetween(date, today) > 30 && !notes && ['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement'].includes(f)) addErr('f_notes', 'Back-dated more than 30 days — add a note explaining why.');
-      if (val('f_repdate') && Math.abs(daysBetween(date, repDate)) > 60 && !notes) addErr('f_notes', 'Reporting Date is more than 60 days from Transaction Date — add a note explaining why.');
+      else if (isAlertRuleEnabled('G_BACKDATE_NOTE') && daysBetween(date, today) > bdDaysLimit && !notes && ['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement'].includes(f)) addErr('f_notes', `Back-dated more than ${fmtNum(bdDaysLimit, 0)} days — add a note explaining why.`);
+      if (isAlertRuleEnabled('G_REPDATE_GAP') && val('f_repdate') && Math.abs(daysBetween(date, repDate)) > repGapLimit && !notes) addErr('f_notes', `Reporting Date is more than ${fmtNum(repGapLimit, 0)} days from Transaction Date — add a note explaining why.`);
+    }
+    const customBlocks = evaluateFormCustomAlerts(f, c).filter(h => h.blocks);
+    if (customBlocks.length && !notes && !(FORM_UI.adminUnlocked && FORM_UI.adminUnlocked.__all)) {
+      customBlocks.forEach(h => addErr('f_notes', `Custom Alert "${h.rule.name}" (${h.fmtVal} vs ${h.fmtThresh}): add a note explaining why.`));
     }
 
     const adminOverrides = Object.keys(FORM_UI.adminUnlocked || {}).filter(k => k !== '__all' && FORM_UI.adminUnlocked[k]);
@@ -28227,8 +29021,9 @@
           addErr('f_truckowner', `Truck ${val('f_truck')} is registered to ${tRow.supplier}, not ${val('f_truckowner')}.`);
         }
       }
+      const maxDiscPostPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
       if (c.disc > c.mat && c.mat > 0) addErr('f_discount', 'Discount exceeds the material subtotal.');
-      if (c.mat > 0 && c.disc > c.mat * 0.2 && !notes) addErr('f_notes', 'Discount above 20% of material needs a note.');
+      if (isAlertRuleEnabled('G_DISCOUNT_WARN') && c.mat > 0 && c.disc > c.mat * (maxDiscPostPct / 100) && !notes) addErr('f_notes', `Discount above ${fmtNum(maxDiscPostPct, 0)}% of material needs a note.`);
       record = { ...base, name: `TKT ${date} ${c.customer} #${ticket}`, ticket_no: ticket, rep_date: repDate, sale_type: c.saleType, transport_by: c.transportBy, customer: c.customer, product: c.product, site: c.site, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: c.saleType === 'Delivery' ? val('f_driver') : '', uom: c.uom, ton_factor: resolveProductTonFactor(c.prod, c.product) || 1, qty: c.qty, external_qty: val('f_extqty') ? num('f_extqty') : null, unit_price: c.up, price: c.mat, tier: c.tier ? c.tier.tier : 0, tier_adj: c.tierAdj || 0, trans_unit_price: c.tp, trans_price: c.tr, trans_tier_adj: c.tierTrAdj || 0, tip: c.tip || 0, discount: c.disc, total: c.net, vat: c.vat, total_ttc: c.ttc, method: val('f_method'), vat_invoice: c.vatReg ? val('f_vatinvoice') : '', external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : (c.up ? (FORM_UI.priceManual ? 'Manual' : 'List Price') : ''), duplicate_confirmed: !!(dup && dup.warn) };
     } else if (f === 'raw') {
       const ticket = val('f_ticketno');
@@ -28695,6 +29490,28 @@
         approved_by: val('f_approved_by'),
         resolve_defect: Boolean(defRef && $('f_resolve_defect') && $('f_resolve_defect').checked)
       };
+    } else if (f === 'malfunction') {
+      const discType = val('f_disctype') || 'Malfunction';
+      const dir = val('f_malf_dir') || 'out';
+      const rawQty = num('f_qty');
+      const absQty = Math.abs(Number(rawQty || 0));
+      const effDir = rawQty < 0 ? 'in' : dir;
+      const signedLitres = round2(effDir === 'in' ? -absQty : absQty);
+      const ticket = val('f_ticketno');
+      if (!(absQty > 0)) addErr('f_qty', 'Quantity (Litres L) must be above zero.');
+      if (absQty >= 1000 && !notes) addErr('f_notes', 'Please explain any malfunction or discrepancy of 1,000 L or more in Reason / Audit Notes.');
+      crKey = 'fuel_malfunctions';
+      record = {
+        ...base,
+        name: `MALF ${date} ${discType}${ticket ? ' #' + ticket : ''}`,
+        ticket_no: ticket,
+        rep_date: repDate,
+        item: 'Diesel',
+        discrepancy_type: discType,
+        litres: signedLitres,
+        equipment: val('f_truck'),
+        driver: val('f_driver')
+      };
     }
     return { errors, fieldErrors, record, crKey };
   }
@@ -28992,7 +29809,12 @@
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
       STATE.saving = false;
       closeEntryModal(true);
-      toast(`${CR_LABEL[crKey].replace(/^./, ch => ch.toUpperCase())} posted · ${record.name}`, 'ok');
+      const malfHit = crKey === 'fuel_malfunctions' ? getMalfunctionSaveWatchdogHit(record) : null;
+      if (malfHit) {
+        toast(`Malfunction posted (${record.name}) · ⚠️ High Diesel Malfunction Alert (${malfHit.scopeLbl}): ${malfHit.hit.malfunctionPct.toFixed(1)}% of company diesel used (${fmtNum(malfHit.hit.malfAbsL, 0)} L / ${fmtNum(malfHit.hit.companyDieselUsedL, 0)} L >= ${malfHit.hit.malfunctionThresholdPct.toFixed(1)}% threshold)`, 'warn');
+      } else {
+        toast(`${CR_LABEL[crKey].replace(/^./, ch => ch.toUpperCase())} posted · ${record.name}`, 'ok');
+      }
       renderApp();
       await postRecordToLocalApi(crKey, record);
       for (const [ek, er] of extraApiPosts) {
@@ -29002,6 +29824,24 @@
     } finally {
       STATE.saving = false;
     }
+  }
+
+  function getMalfunctionSaveWatchdogHit(record) {
+    if (!record) return null;
+    const coKey = COMPANY_KEY_BY_NAME[record.company] || 'wtc';
+    const dtActive = getDieselTankLedger(coKey);
+    if (dtActive && dtActive.malfunctionAlert) {
+      return { hit: dtActive, scopeLbl: `${record.company || 'WTC'} active period` };
+    }
+    const effDt = STATE.basis === 'tx' ? record.date : (record.rep_date || record.date);
+    const ym = String(effDt || '').slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(ym)) {
+      const dtMonth = getDieselTankLedger(coKey, { from: ym + '-01', to: ym + '-31' });
+      if (dtMonth && dtMonth.malfunctionAlert) {
+        return { hit: dtMonth, scopeLbl: `${record.company || 'WTC'} ${_formatMonthYmLabel(ym)}` };
+      }
+    }
+    return null;
   }
 
   const SEED_VOIDED_ARCHIVE = {};
@@ -29242,9 +30082,14 @@
     }
     wireModalLiveCalc(wasClosed);
     if (prefill && typeof prefill === 'object') {
-      if (prefill.co && $('f_company') && allowedCompanyNames().includes(prefill.co)) {
-        $('f_company').value = prefill.co;
+      const pfCo = prefill.co || prefill.company;
+      if (pfCo && $('f_company') && allowedCompanyNames().includes(pfCo)) {
+        $('f_company').value = pfCo;
       }
+      if (prefill.disctype && $('f_disctype')) $('f_disctype').value = prefill.disctype;
+      if (prefill.dir && $('f_malf_dir')) $('f_malf_dir').value = prefill.dir;
+      if (prefill.ticket && $('f_ticketno')) $('f_ticketno').value = prefill.ticket;
+      if (prefill.driver && $('f_driver')) $('f_driver').value = prefill.driver;
       if (prefill.cat && $('f_category')) {
         $('f_category').value = prefill.cat;
         FORM_UI.lastCategory = '';
@@ -29305,6 +30150,7 @@
   // ==========================================================================
   const INSPECT_LABELS = {
     sales_tickets: 'Sales Ticket', raw_purchases: 'Raw Material Ticket', fuel_intakes: 'Fuel Intake',
+    fuel_malfunctions: 'Tank Malfunction / Discrepancy',
     expenses: 'General / Fleet Expense', receipts: 'Customer Receipt (AR)', settlements: 'Supplier Settlement (AP)',
     salaries: 'Salary Payment', price_rules: 'Price & Commission Agreement', credit_terms: 'Customer Credit Policy',
     vat_invoices: 'VAT 11% Tax Invoice', customers: 'Customer 360° Master', suppliers: 'Supplier & Hauler 360° Master',
@@ -29323,6 +30169,7 @@
 
   const INSPECT_DVN = {
     sales_tickets: 'bhf_salesticket', raw_purchases: 'bhf_rawpurchase', fuel_intakes: 'bhf_fuelintake',
+    fuel_malfunctions: 'bhf_fuelmalfunction',
     expenses: 'bhf_mfgexpense', receipts: 'bhf_mfgcustomerreceipt', settlements: 'bhf_mfgsupplierpayment',
     salaries: 'bhf_mfgsalary', price_rules: 'bhf_pricerule', credit_terms: 'bhf_creditterm',
     vat_invoices: 'bhf_vatinvoice', customers: 'bhf_customer', suppliers: 'bhf_supplier',
@@ -29546,6 +30393,18 @@
         text: `Expense Voucher ${row.name || ('#' + row.id)}: ${row.category || 'Operating'}${row.subcategory ? ' · ' + row.subcategory : ''}  |  Amount: ${fmtUSD(row.amount || 0, 2)} (${row.method || 'Cash'})  |  Vendor: ${row.supplier || '—'}  |  Quantity: ${fmtNum(q, q % 1 ? 2 : 0)}${isDiesel && q > 0 ? ' L (' + fmtUSD(Number(row.amount || 0) / q, 3) + '/L)' : ''}`
       };
     }
+    if (key === 'fuel_malfunctions') {
+      const lit = round2(Number(row.litres || 0));
+      const tankDelta = round2(-lit);
+      const coKey = COMPANY_KEY_BY_NAME[row.company] || 'wtc';
+      const dtAll = getDieselTankLedger(coKey, null);
+      const ym = String((STATE.basis === 'tx' ? row.date : (row.rep_date || row.date)) || '').slice(0, 7);
+      const dtMo = /^\d{4}-\d{2}$/.test(ym) ? getDieselTankLedger(coKey, { from: ym + '-01', to: ym + '-31' }) : dtAll;
+      return {
+        tone: dtMo && dtMo.malfunctionAlert ? (dtMo.malfunctionSeverity === 'crit' ? 'crit' : 'warn') : 'info',
+        text: `Tank Discrepancy (${row.discrepancy_type || 'Malfunction'}): ${lit >= 0 ? 'Shortage / Outflow' : 'Surplus / Over-Read'} ${lit > 0 ? '+' : ''}${fmtNum(lit, 1)} L (Tank Impact ${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L)  |  Live ${row.company || 'WTC'} Tank: ${fmtNum(dtAll ? dtAll.closingTankL : 0, 1)} L  |  ${_formatMonthYmLabel(ym)} Malfunction Share: ${dtMo ? dtMo.malfunctionPct.toFixed(1) : '0.0'}% (${dtMo && dtMo.malfunctionAlert ? '>=' + dtMo.malfunctionThresholdPct.toFixed(1) + '% WATCHDOG ALERT' : '<5.0% OK'})`
+      };
+    }
     return {
       tone: 'info',
       text: `Relational Record (${INSPECT_LABELS[key] || key}) · Connected to live relational SQL tables & SOA double-entry ledger (${SEED_DATE}). Click any blue lookup pill or related subgrid row below to drill across entities.`
@@ -29715,6 +30574,26 @@
           { lbl: 'PRE-DEFECT GOVERNANCE', tag: preOk ? 'PRE-NOTIFIED' : 'UNNOTIFIED', tone: preOk ? 'good' : 'warn', val: preOk ? (row.defect_ref || 'Verified') : 'Emergency', sub1: preOk ? 'Prior defect report verified before change' : 'Flagged in AI Sentinel S10', sub2: `Unit: ${row.equipment || '—'} · ${row.subsystem || '—'}`, pct: preOk ? 100 : 45 },
           { lbl: 'CUSTODY & COUNTERPARTY', tag: (row.action_type || 'PART LOG').split('(')[0].trim().toUpperCase().slice(0, 16), tone: 'info', val: row.storage_location || row.vendor_or_buyer || row.equipment || '—', sub1: `Storage / Shelf: ${row.storage_location || '—'}`, sub2: `Workshop / Buyer: ${row.vendor_or_buyer || '—'}`, pct: 75 },
           { lbl: 'PART ECONOMICS ($)', tag: proceeds > 0 ? 'RECOVERY $' : 'COST TRACKED', tone: proceeds > 0 ? 'good' : 'info', val: fmtUSD(outlay - proceeds, 2), sub1: `New Cost: ${fmtUSD(row.new_part_cost || 0, 2)} · Repair: ${fmtUSD(row.repair_cost || 0, 2)}`, sub2: `Sale Proceeds: ${fmtUSD(proceeds, 2)} · Approved: ${row.approved_by || '—'}`, pct: 80 }
+        ]
+      };
+    }
+
+    if (key === 'fuel_malfunctions') {
+      const lit = round2(Number(row.litres || 0));
+      const tankDelta = round2(-lit);
+      const coKey = COMPANY_KEY_BY_NAME[row.company] || 'wtc';
+      const dtAll = getDieselTankLedger(coKey, null);
+      const ym = String((STATE.basis === 'tx' ? row.date : (row.rep_date || row.date)) || '').slice(0, 7);
+      const dtMo = /^\d{4}-\d{2}$/.test(ym) ? getDieselTankLedger(coKey, { from: ym + '-01', to: ym + '-31' }) : dtAll;
+      return {
+        bu,
+        title,
+        pill: `${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L Tank`,
+        cards: [
+          { lbl: 'DISCREPANCY VOLUME', tag: (row.discrepancy_type || 'MALFUNCTION').toUpperCase(), tone: lit > 0 ? 'warn' : 'good', val: `${lit > 0 ? '+' : ''}${fmtNum(lit, 1)} L`, sub1: lit >= 0 ? 'Tank Shortage / Outflow (-Tank)' : 'Tank Surplus / Over-Read (+Tank)', sub2: `Invoice / Slip: ${row.ticket_no ? '#' + row.ticket_no : '—'}`, pct: 80 },
+          { lbl: 'LIVE TANK RECONCILIATION', tag: (dtAll && dtAll.closingTankL < 0) ? 'DEFICIT' : 'RECONCILED', tone: (dtAll && dtAll.closingTankL < 0) ? 'crit' : 'good', val: `${fmtNum(dtAll ? dtAll.closingTankL : 0, 1)} L`, sub1: `Entry Impact: ${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L`, sub2: `All-Time Disc: ${fmtNum(dtAll ? dtAll.discrepancyL : 0, 1)} L`, pct: 75 },
+          { lbl: '5% MALFUNCTION WATCHDOG', tag: dtMo && dtMo.malfunctionAlert ? 'ALERT >= 5%' : 'WITHIN 5%', tone: dtMo && dtMo.malfunctionAlert ? (dtMo.malfunctionSeverity === 'crit' ? 'crit' : 'warn') : 'good', val: `${dtMo ? dtMo.malfunctionPct.toFixed(1) : '0.0'}%`, sub1: `${_formatMonthYmLabel(ym)} Gross Malf: ${fmtNum(dtMo ? dtMo.malfAbsL : 0, 1)} L`, sub2: `Company Used: ${fmtNum(dtMo ? dtMo.companyDieselUsedL : 0, 1)} L`, pct: Math.min(100, Math.max(15, Math.round((dtMo ? dtMo.malfunctionPct : 0) * 10))) },
+          { lbl: 'UNIT & AUDIT SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: row.equipment || 'Plant Tank', sub1: `Driver: ${row.driver || '—'}`, sub2: `Tx: ${row.date || '—'} · Rep: ${row.rep_date || row.date || '—'}`, pct: 90 }
         ]
       };
     }
@@ -29896,6 +30775,9 @@
     } else if (key === 'part_movements') {
       addTruckQv(row.equipment, null);
       if (row.vendor_or_buyer) addSupplierQv(row.vendor_or_buyer, 'WORKSHOP / BUYER');
+    } else if (key === 'fuel_malfunctions') {
+      if (row.equipment) addTruckQv(row.equipment, row.driver);
+      if (row.driver) addDriverQv(row.driver, 'DRIVER / OPERATOR');
     }
     return cards;
   }
@@ -29965,8 +30847,8 @@
     }
     else if (key === 'suppliers') {
       const name = row.name || row.Supplier;
-      addGrid('sg_s_mat', `Leg 1 · Raw Material Purchases (${name})`, 'Raw Loads', 'Site Owner Leg', 'raw_purchases', (rec.raw_purchases || []).filter(r => norm(r.site_owner) === norm(name)), ['date', 'ticket_no', 'company', 'site', 'product', 'truck', 'qty', 'unit_cost', 'cost', 'total'], 'cost');
-      addGrid('sg_s_haul', `Leg 2 · Haulage Loads (${name})`, 'Haulage Loads', 'Truck Owner Leg', 'raw_purchases', (rec.raw_purchases || []).filter(r => norm(r.truck_owner) === norm(name)), ['date', 'ticket_no', 'company', 'site', 'site_owner', 'truck', 'driver', 'qty', 'trans_cost', 'total'], 'trans_cost');
+      addGrid('sg_s_mat', `Leg 1 · Raw Material Purchases (${name})`, 'Raw Loads', 'Site Owner Leg', 'raw_purchases', (rec.raw_purchases || []).filter(r => norm(r.site_owner || r.truck_owner) === norm(name) && (r.site_owner || Number(r.cost || 0) !== 0)), ['date', 'ticket_no', 'company', 'site', 'product', 'truck', 'qty', 'unit_cost', 'cost', 'total'], 'cost');
+      addGrid('sg_s_haul', `Leg 2 · Haulage Loads (${name})`, 'Haulage Loads', 'Truck Owner Leg', 'raw_purchases', (rec.raw_purchases || []).filter(r => norm(r.truck_owner) === norm(name) && (Number(r.trans_cost || 0) !== 0 || r.transport_by !== 'Company fleet')), ['date', 'ticket_no', 'company', 'site', 'site_owner', 'truck', 'driver', 'qty', 'trans_cost', 'total'], 'trans_cost');
       addGrid('sg_s_exp', `Leg 3 · General & Fleet Expenses (${name})`, 'Expenses', 'Expense Leg', 'expenses', (rec.expenses || []).filter(x => norm(x.supplier) === norm(name)), ['date', 'name', 'company', 'category', 'subcategory', 'equipment', 'method', 'amount', 'reference'], 'amount');
       addGrid('sg_s_pay', `Supplier AP Settlements (${name})`, 'Settlements', 'Settlements', 'settlements', (rec.settlements || []).filter(s => norm(s.supplier) === norm(name)), ['date', 'name', 'company', 'method', 'amount', 'discount', 'raw_ticket', 'expense_record', 'reference'], 'amount');
       const commVouchersForSup = (rec.receipts || []).filter(r => norm(r.customer) === norm(name) && ['Rent', 'VATRent', 'RentConfig'].includes(String(r.method || '').trim()));
@@ -30075,15 +30957,19 @@
       if (key === 'expense_categories') {
         const relIdx = window.MFG_PBI && window.MFG_PBI.getHubRelIndex ? window.MFG_PBI.getHubRelIndex(SEED) : null;
         const subRows = (rec.expense_subcategories || []).filter(s => norm(s.category) === norm(cat)).map(s => {
-          const se = relIdx && relIdx.subcatByName ? relIdx.subcatByName[norm(s.name)] : null;
+          const se = relIdx
+            ? (s.category && relIdx.subcatByKey ? relIdx.subcatByKey[`${norm(s.category)}|${norm(s.name)}`] : (relIdx.subcatByName && relIdx.subcatByName[norm(s.name)]))
+            : null;
           return Object.assign({}, s, {
-            expenses_count: se ? se.expenses_count : Number(s.expenses_count || 0),
-            total_spent: se ? se.total_spent : Number(s.total_spent || 0)
+            expenses_count: se ? se.expenses_count : 0,
+            total_spent: se ? se.total_spent : 0
           });
         });
         addGrid('sg_ec_sub', `Subcategories under ${cat}`, 'Subcategories', 'Subcategories', 'expense_subcategories', subRows, ['name', 'category', 'expenses_count', 'total_spent'], 'total_spent');
       }
-      const matchExps = (rec.expenses || []).filter(x => key === 'expense_subcategories' ? norm(x.subcategory) === norm(row.name) : norm(x.category) === norm(cat));
+      const matchExps = (rec.expenses || []).filter(x => key === 'expense_subcategories'
+        ? (norm(x.subcategory) === norm(row.name) && (!row.category || norm(x.category) === norm(row.category)))
+        : norm(x.category) === norm(cat));
       addGrid('sg_ec_exp', `Expense Vouchers (${row.subcategory || cat})`, 'Expense Vouchers', 'Expense Vouchers', 'expenses', matchExps, ['date', 'name', 'company', 'category', 'subcategory', 'supplier', 'equipment', 'method', 'amount', 'reference'], 'amount');
     }
     else if (key === 'receipts' || key === 'credit_terms' || key === 'vat_invoices') {
@@ -30100,6 +30986,14 @@
       const eq = row.equipment;
       addGrid('sg_fi_log', `All Fuel & Meter Readings for ${eq}`, 'Unit Fuel History', 'Meter Series', 'fuel_intakes', (rec.fuel_intakes || []).filter(f => norm(f.equipment) === norm(eq)), ['date', 'ticket_no', 'company', 'equipment', 'driver', 'item', 'litres', 'odometer', 'hours'], 'litres');
       addGrid('sg_fi_sales', `Sales Loads Hauled by ${eq}`, 'Unit Sales Loads', 'Fleet Activity', 'sales_tickets', (rec.sales_tickets || []).filter(t => norm(t.truck) === norm(eq)), ['date', 'ticket_no', 'company', 'customer', 'product', 'site', 'qty', 'total_ttc'], 'total_ttc');
+    }
+    else if (key === 'fuel_malfunctions') {
+      const ym = String(row.rep_date || row.date || '').slice(0, 7);
+      const sibMalfs = (rec.fuel_malfunctions || []).filter(m => String(m.id) !== String(row.id) && (!row.company || norm(m.company) === norm(row.company)) && (!ym || String(m.rep_date || m.date || '').slice(0, 7) === ym));
+      addGrid('sg_malf_sib', `Tank Malfunctions & Discrepancies (${_formatMonthYmLabel(ym)})`, 'Month Malfunctions', 'Tank Recon', 'fuel_malfunctions', sibMalfs, ['date', 'rep_date', 'ticket_no', 'company', 'discrepancy_type', 'litres', 'equipment', 'driver', 'notes'], 'litres');
+      if (row.equipment) {
+        addGrid('sg_malf_fuel', `Fuel & Meter Readings for ${row.equipment}`, 'Unit Fuel History', 'Meter Series', 'fuel_intakes', (rec.fuel_intakes || []).filter(f => norm(f.equipment) === norm(row.equipment)), ['date', 'ticket_no', 'company', 'equipment', 'driver', 'item', 'litres', 'odometer', 'hours'], 'litres');
+      }
     }
     else {
       // Treasury, Loans, JV Partnerships & Distributions
@@ -30245,6 +31139,17 @@
         { key: 'hours', label: 'Engine Hours (hr)', type: 'number', step: '0.1', min: '0', sec: 3 },
         { key: 'location', label: 'Dispensing Tank / Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+      ],
+      fuel_malfunctions: [
+        { key: 'date', label: 'Transaction Date *', type: 'date', sec: 1 },
+        { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
+        { key: 'ticket_no', label: 'Invoice / Ticket No.', type: 'text', sec: 1 },
+        { key: 'discrepancy_type', label: 'Discrepancy Type *', type: 'select', options: ['Malfunction', 'Wash', 'Ghassanieh', 'Configuration'], sec: 2 },
+        { key: 'item', label: 'Fuel Item', type: 'select', options: ['Diesel'], sec: 2 },
+        { key: 'litres', label: 'Discrepancy Litres (+Shortage / -Surplus) *', type: 'number', step: '0.1', sec: 3 },
+        { key: 'equipment', label: 'Equipment / Unit (Optional)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
+        { key: 'driver', label: 'Driver / Operator (Optional)', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
+        { key: 'notes', label: 'Reason / Audit Notes', type: 'text', sec: 3, span: true }
       ],
       expenses: [
         { key: 'date', label: 'Expense Date *', type: 'date', sec: 1 },
@@ -30732,7 +31637,11 @@
     if (sg.sumCol) {
       rows.forEach(r => {
         const n = Number(r[sg.sumCol]);
-        if (Number.isFinite(n)) { sumVal += n; hasSum = true; }
+        if (Number.isFinite(n)) {
+          const rowSgn = sg.targetKey === 'sales_tickets' ? ticketSign(r) : (sg.targetKey === 'expenses' ? expenseSign(r) : 1);
+          sumVal += n * rowSgn;
+          hasSum = true;
+        }
       });
     }
     const isMoneySum = sg.sumCol && /price|cost|amount|total|vat|limit|salary|daily_usd|principal|proceeds/.test(sg.sumCol);
@@ -31352,8 +32261,15 @@
         const mat = round2(Math.max(0, qty * up + Number(row.tier_adj || 0) - disc));
         const tr = round2(Math.max(0, qty * tp + Number(row.trans_tier_adj || 0)));
         const net = round2(mat + tr);
-        const ci = customerInfo(getModVal('customer') || row.customer) || {};
-        const hasVat = Boolean(row.vat > 0 || row.vat_invoice || getModVal('vat_invoice') || ci.vat_registered || ci['VAT Registered'] === 'Yes');
+        const modCust = getModVal('customer') || row.customer || '';
+        const modMth = getModVal('method') || row.method || '';
+        const modVatInv = $('insp_edit_vat_invoice') ? getModVal('vat_invoice') : String(row.vat_invoice || '');
+        const mSgn = ticketSign({ method: modMth });
+        const ci = customerInfo(modCust) || {};
+        const vatCtxChanged = norm(modCust) !== norm(row.customer) || modMth !== String(row.method || '') || modVatInv !== String(row.vat_invoice || '');
+        const hasVat = mSgn === 0 ? false : (vatCtxChanged
+          ? Boolean(modVatInv || ci.vat_registered || ci['VAT Registered'] === 'Yes')
+          : Boolean(row.vat > 0 || modVatInv || ci.vat_registered || ci['VAT Registered'] === 'Yes'));
         const vat = hasVat ? round2(net * VAT_RATE) : 0;
         const ttc = round2(net + vat);
         html = `<span>Material: <b>${fmtUSD(mat, 2)}</b></span><span>Transport: <b>${fmtUSD(tr, 2)}</b></span><span>VAT 11%: <b>${fmtUSD(vat, 2)}</b></span><span>Total TTC: <b>${fmtUSD(ttc, 2)}</b></span>`;
@@ -31448,6 +32364,11 @@
         } else {
           html = `<span>Total Amount: <b>${fmtUSD(mAmt, 2)}</b></span><span>Method: <b>${esc(mMethod)}</b></span>${isFuel && mQty > 0 && mAmt > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}`;
         }
+      } else if (key === 'fuel_malfunctions') {
+        const mLit = getModNum('litres');
+        const mType = getModVal('discrepancy_type') || row.discrepancy_type || 'Malfunction';
+        const tankDelta = round2(-mLit);
+        html = `<span>Type: <b>${esc(mType)}</b></span><span>Discrepancy: <b>${mLit > 0 ? '+' : ''}${fmtNum(mLit, 1)} L</b></span><span>Tank Impact: <b>${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L</b></span>`;
       }
       modLiveCalcEl.innerHTML = html;
       modLiveCalcEl.hidden = !html;
@@ -31678,10 +32599,18 @@
           row.price = round2(Math.max(0, qty * up + Number(row.tier_adj || 0) - disc));
           row.trans_price = row.sale_type === 'Pickup' ? 0 : round2(Math.max(0, qty * tp + Number(row.trans_tier_adj || 0)));
           row.total = round2(row.price + row.trans_price);
-          const ci = customerInfo(row.customer) || {};
-          const hasVat = Boolean(row.vat > 0 || row.vat_invoice || ci.vat_registered || ci['VAT Registered'] === 'Yes');
-          row.vat = hasVat ? round2(row.total * VAT_RATE) : 0;
-          row.total_ttc = round2(row.total + row.vat);
+          if (ticketSign(row) === 0) {
+            row.vat = 0;
+            row.total_ttc = round2(row.total);
+          } else {
+            const ci = customerInfo(row.customer) || {};
+            const vatContextEdited = ('customer' in pendingUpdates) || ('vat_invoice' in pendingUpdates) || ('method' in pendingUpdates);
+            const hasVat = vatContextEdited
+              ? Boolean(row.vat_invoice || ci.vat_registered || ci['VAT Registered'] === 'Yes')
+              : Boolean(row.vat > 0 || row.vat_invoice || ci.vat_registered || ci['VAT Registered'] === 'Yes');
+            row.vat = hasVat ? round2(row.total * VAT_RATE) : 0;
+            row.total_ttc = round2(row.total + row.vat);
+          }
         } else if (key === 'raw_purchases') {
           const qty = Number(row.qty || 0);
           const uc = Number(row.unit_cost || 0);
@@ -31769,6 +32698,9 @@
             row.amount = 0;
             row.method = 'Credit';
           }
+        } else if (key === 'fuel_malfunctions') {
+          row.litres = round2(Number(row.litres || 0));
+          row.name = `MALF ${row.date || ''} ${row.discrepancy_type || 'Malfunction'}${row.ticket_no ? ' #' + row.ticket_no : ''}`;
         }
 
         if (isEquipInspect && targetEqRow && ('capacity' in pendingUpdates || 'supplier' in pendingUpdates || 'default_driver' in pendingUpdates || Boolean(effToDate))) {
@@ -31927,6 +32859,7 @@
       localStorage.setItem('isabi_mfg_sessions_v2', JSON.stringify(STATE.sessions.slice(0, 50)));
       localStorage.setItem('isabi_mfg_custom_recs_v2', JSON.stringify(STATE.customRecords));
       localStorage.setItem('isabi_mfg_sentinel_reviews_v1', JSON.stringify(STATE.sentinelReviews || {}));
+      localStorage.setItem('isabi_mfg_alert_rules_v1', JSON.stringify(STATE.alertRules || { overrides: {}, custom: [] }));
       localStorage.setItem('isabi_mfg_face_settings_v2', JSON.stringify(STATE.faceSettings));
       localStorage.setItem('isabi_mfg_face_settings_v1', JSON.stringify(STATE.faceSettings));
       localStorage.setItem('isabi_mfg_kiosk_punches_v1', JSON.stringify((STATE.kioskPunches || []).slice(0, 300)));
@@ -32381,6 +33314,7 @@
       sessions: STATE.sessions.slice(0, 25),
       customRecords: trimmed,
       sentinelReviews: STATE.sentinelReviews || {},
+      alertRules: STATE.alertRules || { overrides: {}, custom: [] },
       faceSettings: STATE.faceSettings,
       updatedAt: new Date().toISOString(),
       updatedBy: activeUser().email,
@@ -32408,7 +33342,7 @@
 
   function setContainerHtmlPreservingActiveInput(container, newHtml) {
     const active = document.activeElement;
-    const preserveId = (active && container.contains(active) && (active.id === 'tableSearchInput' || active.id === 'pbiSlicerSearch'))
+    const preserveId = (active && container.contains(active) && (active.id === 'tableSearchInput' || active.id === 'pbiSlicerSearch' || active.id === 'alertRulesSearchInput'))
       ? active.id
       : '';
     if (!preserveId) {
@@ -32507,6 +33441,16 @@
             saveLocalAuthAndRecords();
           }
         }
+        const ctrlAr = new AbortController();
+        const tAr = setTimeout(() => ctrlAr.abort(), 5000);
+        const rAr = await fetch('./api/alert_rules', { signal: ctrlAr.signal });
+        clearTimeout(tAr);
+        if (rAr.ok) {
+          const dAr = await rAr.json();
+          if (dAr && mergeAlertRules(dAr)) {
+            saveLocalAuthAndRecords();
+          }
+        }
       } catch (_) { /* server.py not running */ }
     }
 
@@ -32571,6 +33515,7 @@
 
       if (remote.customRecords && mergeCustomRecords(remote.customRecords)) { changed = true; applyCustomRecordsToSeed(); }
       if (remote.sentinelReviews && mergeSentinelReviews(remote.sentinelReviews)) { changed = true; }
+      if (remote.alertRules && mergeAlertRules(remote.alertRules)) { changed = true; }
       // anything only we hold -> push
       if (!pushChanges && remote.customRecords) {
         const remoteIds = new Set();
@@ -32582,6 +33527,20 @@
         Object.entries(STATE.sentinelReviews).forEach(([rk, rv]) => {
           const remRow = remSr[rk];
           if (!remRow || String(rv.updated_at || '') > String(remRow.updated_at || '')) pushChanges = true;
+        });
+      }
+      if (!pushChanges && STATE.alertRules) {
+        const remAr = remote.alertRules || { overrides: {}, custom: [] };
+        const remOv = remAr.overrides || {};
+        Object.entries(STATE.alertRules.overrides || {}).forEach(([rk, rv]) => {
+          const remRow = remOv[rk];
+          if (!remRow || String((rv && rv.updated_at) || '') > String(remRow.updated_at || '')) pushChanges = true;
+        });
+        const remCustMap = new Map((remAr.custom || []).filter(c => c && c.id).map(c => [String(c.id), c]));
+        (STATE.alertRules.custom || []).forEach(cr => {
+          if (!cr || !cr.id) return;
+          const remRow = remCustMap.get(String(cr.id));
+          if (!remRow || String(cr.updated_at || '') > String(remRow.updated_at || '')) pushChanges = true;
         });
       }
 
@@ -34501,6 +35460,7 @@
     pbi: 'Analytics & Insights',
     tables: 'All Tables & Registers',
     sentinels: 'AI Sentinels & Audit',
+    alert_rules: 'Alerts & Thresholds',
     kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
@@ -34552,6 +35512,7 @@
     pbi: 'Analytics & Insights',
     tables: 'All Tables & Registers',
     sentinels: 'AI Sentinels & Audit',
+    alert_rules: 'Alerts & Thresholds',
     kiosks: 'Plant Kiosks',
     sales: 'Sales & Deliveries',
     sales_vat: 'VAT & Credit',
@@ -35203,14 +36164,16 @@
         3. <strong>Supplies &amp; services leg ${fmtUSD(k.ap_expense, 0)}</strong> from credit expenses.<br>
         Settlements paid ${fmtUSD(k.settlements_paid, 0)} · net open AP <strong>${fmtUSD(k.ap_balance, 0)}</strong>${Number(k.ap_balance || 0) < 0 ? ' (negative = prepayments / advances exceed open legs)' : ''}.`;
     }
-    if (has(/\b(diesel|tank|fuel|litre|litres|consumption)\b/)) {
+    if (has(/\b(diesel|tank|fuel|litre|litres|consumption|malfunction)\b/)) {
       const dtByCo = computeDieselTank().byCo || {};
       const wf = dtByCo.WTC || {};
       const bf = dtByCo.BBConstruction || {};
-      return `<strong>Diesel Tank &amp; Fuel Reconciliation:</strong><br>
-        • <strong>WTC</strong>: purchased ${fmtNum(wf.bought, 0)} L minus issued ${fmtNum(wf.issued, 0)} L minus sold ${fmtNum(wf.sold, 0)} L = <code class="mono">${fmtNum(wf.balance, 0)} L</code> remaining in tank.<br>
-        • <strong>BBConstruction</strong>: purchased ${fmtNum(bf.bought, 0)} L minus issued ${fmtNum(bf.issued, 0)} L minus sold ${fmtNum(bf.sold, 0)} L = <code class="mono">${fmtNum(bf.balance, 0)} L</code> (negative because historical bulk diesel invoices were booked under General Expenses instead of Fuel Purchases).<br>
-        • Period issued ${fmtNum(k.diesel_litres, 0)} L · sold ${fmtNum(k.diesel_sold, 0)} L · fleet cost per ton hauled ${fmtUSD(k.cost_per_ton, 2)} · ${fmtNum((fleet.consumption_outliers || []).length)} consumption outliers flagged.`;
+      const dtScoped = getDieselTankLedger();
+      return `<strong>Diesel Tank &amp; Malfunction Reconciliation:</strong><br>
+        • <strong>WTC</strong>: purchased ${fmtNum(wf.bought, 0)} L minus issued ${fmtNum(wf.issued, 0)} L minus malfunction/discrepancy ${fmtNum(wf.discrepancy || 0, 0)} L minus sold ${fmtNum(wf.sold, 0)} L = <code class="mono">${fmtNum(wf.balance, 0)} L</code> remaining in tank.<br>
+        • <strong>BBConstruction</strong>: purchased ${fmtNum(bf.bought, 0)} L minus issued ${fmtNum(bf.issued, 0)} L minus malfunction/discrepancy ${fmtNum(bf.discrepancy || 0, 0)} L minus sold ${fmtNum(bf.sold, 0)} L = <code class="mono">${fmtNum(bf.balance, 0)} L</code> (negative because historical bulk diesel invoices were booked under General Expenses instead of Fuel Purchases).<br>
+        • <strong>5% Malfunction Watchdog (${esc(scope)})</strong>: gross malfunction ${fmtNum(dtScoped.malfAbsL, 1)} L vs ${fmtNum(dtScoped.companyDieselUsedL, 1)} L company diesel used = <strong>${dtScoped.malfunctionPct.toFixed(1)}%</strong> (${dtScoped.malfunctionAlert ? 'ALERT >= ' + dtScoped.malfunctionThresholdPct.toFixed(1) + '% threshold' : 'OK < ' + dtScoped.malfunctionThresholdPct.toFixed(1) + '% threshold'}).<br>
+        • Period issued ${fmtNum(k.diesel_litres, 0)} L · discrepancy ${fmtNum(k.diesel_discrepancy || 0, 0)} L · sold ${fmtNum(k.diesel_sold, 0)} L · fleet cost per ton hauled ${fmtUSD(k.cost_per_ton, 2)} · ${fmtNum((fleet.consumption_outliers || []).length)} consumption outliers flagged.`;
     }
     if (has(/\b(cash|till|drawer|cashflow|lbp|pounds)\b/)) {
       return `<strong>Cash Flow &amp; Physical Till — ${esc(scope)}:</strong><br>
@@ -35270,7 +36233,7 @@
   function contextFormForView(view, user) {
     user = user || activeUser();
     if (view === 'kiosks') {
-      const kf = STATE.activeKiosk === 'raw' ? 'raw' : (STATE.activeKiosk === 'fuel' ? (STATE.kioskFuelSubmode === 'refill' ? 'expense' : 'fuel') : (STATE.activeKiosk === 'attendance' ? 'attendance' : 'sales'));
+      const kf = STATE.activeKiosk === 'raw' ? 'raw' : (STATE.activeKiosk === 'fuel' ? (STATE.kioskFuelSubmode === 'refill' ? 'expense' : (STATE.kioskFuelSubmode === 'malfunction' ? 'malfunction' : 'fuel')) : (STATE.activeKiosk === 'attendance' ? 'attendance' : 'sales'));
       if (canEnterForm(kf, user)) return kf;
     }
     const map = {
@@ -35333,7 +36296,7 @@
       if (canEnterAny(user)) {
         dEntry.hidden = false;
         const formLabels = {
-          sales: 'Post Ticket', raw: 'Post Raw', fuel: 'Log Fuel', receipt: 'Post Receipt',
+          sales: 'Post Ticket', raw: 'Post Raw', fuel: 'Log Fuel', malfunction: 'Log Malfunction', receipt: 'Post Receipt',
           settlement: 'Settle AP', expense: 'Post Expense', salary: 'Pay Salary',
           vatinvoice: 'Post VAT Inv', attendance: 'Log Attendance', employment: 'New Contract',
           treasury: 'Post Treasury', pricerule: 'New Agreement', pricerule_raw: 'New Site Rate',
@@ -35426,7 +36389,7 @@
 
   function resolveKioskFormType() {
     if (STATE.activeKiosk === 'raw') return 'raw';
-    if (STATE.activeKiosk === 'fuel') return STATE.kioskFuelSubmode === 'refill' ? 'expense' : 'fuel';
+    if (STATE.activeKiosk === 'fuel') return STATE.kioskFuelSubmode === 'refill' ? 'expense' : (STATE.kioskFuelSubmode === 'malfunction' ? 'malfunction' : 'fuel');
     if (STATE.activeKiosk === 'attendance') return 'attendance';
     return 'sales';
   }
@@ -35505,6 +36468,29 @@
     }
 
     if (kMode === 'fuel') {
+      if (STATE.kioskFuelSubmode === 'malfunction') {
+        const discType = val('f_disctype') || 'Malfunction';
+        const dir = val('f_malf_dir') || 'out';
+        const rawQty = num('f_qty') || 0;
+        const absQty = Math.abs(rawQty);
+        const signed = (rawQty < 0 || dir === 'in') ? -absQty : absQty;
+        return {
+          id: 'DRAFT-FUEL-MALF',
+          company,
+          date,
+          rep_date: repDate,
+          time,
+          ticket_no: val('f_ticketno') || 'TANK-MALF',
+          fuel_type: discType,
+          item: `Diesel (${signed >= 0 ? 'Shortage -Tank' : 'Surplus +Tank'})`,
+          equipment: val('f_truck') || 'Main Plant Tank',
+          driver: val('f_driver') || 'Tank Reconciliation',
+          litres: signed,
+          location: 'Main Plant Tank',
+          entered_by: who.full_name,
+          notes
+        };
+      }
       if (STATE.kioskFuelSubmode === 'refill') {
         const qty = num('f_qty') || 1000;
         const amt = num('f_amount') || 0;
@@ -35643,7 +36629,12 @@
       STATE.customRecords[crKey].unshift(record);
       applyCustomRecordsToSeed();
       saveLocalAuthAndRecords();
-      toast(`✓ Kiosk ${CR_LABEL[crKey] || 'entry'} posted · ${record.name}`, 'ok');
+      const malfHit = crKey === 'fuel_malfunctions' ? getMalfunctionSaveWatchdogHit(record) : null;
+      if (malfHit) {
+        toast(`✓ Kiosk ${CR_LABEL[crKey] || 'entry'} posted · ⚠️ High Diesel Malfunction Alert (${malfHit.scopeLbl}): ${malfHit.hit.malfunctionPct.toFixed(1)}% of company diesel used`, 'warn');
+      } else {
+        toast(`✓ Kiosk ${CR_LABEL[crKey] || 'entry'} posted · ${record.name}`, 'ok');
+      }
 
       let printResult = null;
       const shouldPrint = opts.print !== false;
@@ -35826,11 +36817,12 @@
     const nowMs = Date.now();
     const last = getStaffLastPunch(staffName);
 
-    // 2-minute (120,000 ms) anti-double-punch debounce guard
-    if (!opts.bypassDebounce && last && last.iso) {
+    // Configurable anti-double-punch debounce guard (default 120s)
+    const punchDebounceSec = isAlertRuleEnabled('G_KIOSK_PUNCH') ? getAlertParam('G_KIOSK_PUNCH', 'debounce_sec', 120) : 0;
+    if (!opts.bypassDebounce && punchDebounceSec > 0 && last && last.iso) {
       const prevMs = Date.parse(last.iso) || 0;
       const ageSec = Math.round((nowMs - prevMs) / 1000);
-      if (prevMs > 0 && ageSec >= 0 && ageSec < 120) {
+      if (prevMs > 0 && ageSec >= 0 && ageSec < punchDebounceSec) {
         STATE.kioskLastPunch = last;
         toast(`⏱ ${staffName} already clocked ${last.direction} ${ageSec}s ago — tap "Switch to ${last.direction === 'IN' ? 'OUT' : 'IN'}" if needed`, 'warn');
         if (STATE.view === 'kiosks') renderApp();
@@ -36146,14 +37138,16 @@
         </div>
       `;
     } else if (kMode === 'fuel') {
+      const fSub = STATE.kioskFuelSubmode || 'dispense';
       quickStripHtml = `
         <div class="kiosk-quick-strip" id="kioskQuickStrip">
           <div class="kiosk-quick-group">
             <span class="kiosk-quick-lbl">Fuel Kiosk Operation:</span>
-            <button type="button" class="kiosk-qchip ${STATE.kioskFuelSubmode !== 'refill' ? 'active' : ''}" data-kiosk-fuel-sub="dispense">${ic('fuel')} Dispense to Equipment / Truck (Meter Guard)</button>
-            <button type="button" class="kiosk-qchip ${STATE.kioskFuelSubmode === 'refill' ? 'active' : ''}" data-kiosk-fuel-sub="refill">${ic('droplet')} Bulk Tank Refill / Lubricant Purchase</button>
+            <button type="button" class="kiosk-qchip ${fSub === 'dispense' ? 'active' : ''}" data-kiosk-fuel-sub="dispense">${ic('fuel')} Dispense to Equipment / Truck (Meter Guard)</button>
+            <button type="button" class="kiosk-qchip ${fSub === 'refill' ? 'active' : ''}" data-kiosk-fuel-sub="refill">${ic('droplet')} Bulk Tank Refill / Lubricant Purchase</button>
+            <button type="button" class="kiosk-qchip ${fSub === 'malfunction' ? 'active' : ''}" data-kiosk-fuel-sub="malfunction">${ic('warn')} Tank Malfunction / Dip Variance</button>
           </div>
-          ${STATE.kioskFuelSubmode !== 'refill' ? `
+          ${fSub === 'dispense' ? `
             <div class="kiosk-quick-group">
               <span class="kiosk-quick-lbl">Product Type:</span>
               <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_fueltype" data-kiosk-preset-val="Diesel">${ic('fuel')} Diesel</button>
@@ -36165,13 +37159,21 @@
               <span class="kiosk-quick-lbl">Quick Litres:</span>
               ${[20, 50, 100, 150, 200, 300].map(l => `<button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_qty" data-kiosk-preset-val="${l}">${l} L</button>`).join('')}
             </div>
+          ` : (fSub === 'malfunction' ? `
+            <div class="kiosk-quick-group">
+              <span class="kiosk-quick-lbl">Discrepancy Type:</span>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_disctype" data-kiosk-preset-val="Malfunction">Malfunction</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_disctype" data-kiosk-preset-val="Configuration">Configuration / Dip</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_disctype" data-kiosk-preset-val="Wash">Wash</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_disctype" data-kiosk-preset-val="Ghassanieh">Ghassanieh</button>
+            </div>
           ` : `
             <div class="kiosk-quick-group">
               <span class="kiosk-quick-lbl">Bulk Purchase Category:</span>
               <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_category" data-kiosk-preset-val="Fuel">${ic('fuel')} Bulk Diesel Tank Refill</button>
               <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_category" data-kiosk-preset-val="Oils">${ic('droplet')} Drums / Hydraulic &amp; Engine Oils</button>
             </div>
-          `}
+          `)}
         </div>
       `;
     }
@@ -36333,7 +37335,9 @@
         raw: '2. RAW MATERIAL RECEIVING TERMINAL (2-LEG PAYABLE SPLIT + BLUETOOTH ESC/POS)',
         fuel: STATE.kioskFuelSubmode === 'refill'
           ? '3B. BULK FUEL TANK REFILL & LUBRICANT PURCHASE TERMINAL'
-          : '3A. FUEL, DIESEL & LUBRICANT DISPENSE TERMINAL (M142 METER GUARD + PUMP SLIP)'
+          : (STATE.kioskFuelSubmode === 'malfunction'
+            ? '3C. TANK MALFUNCTION, METER VARIANCE & DIP CALIBRATION TERMINAL'
+            : '3A. FUEL, DIESEL & LUBRICANT DISPENSE TERMINAL (M142 METER GUARD + PUMP SLIP)')
       };
 
       workspaceBodyHtml = `
@@ -36573,10 +37577,11 @@
       });
     }
 
-    // 4. Fuel Kiosk Submode (Dispense vs Bulk Tank Refill)
+    // 4. Fuel Kiosk Submode (Dispense vs Bulk Tank Refill vs Tank Malfunction)
     container.querySelectorAll('[data-kiosk-fuel-sub]').forEach(btn => {
       btn.addEventListener('click', () => {
-        STATE.kioskFuelSubmode = btn.getAttribute('data-kiosk-fuel-sub') === 'refill' ? 'refill' : 'dispense';
+        const sub = btn.getAttribute('data-kiosk-fuel-sub');
+        STATE.kioskFuelSubmode = (sub === 'refill' || sub === 'malfunction') ? sub : 'dispense';
         renderApp();
       });
     });
@@ -36880,6 +37885,7 @@
       case 'pbi': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview(); break;
       case 'tables': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview(); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
+      case 'alert_rules': wsHtml = renderAlertRules(); break;
       case 'kiosks': wsHtml = renderKiosks(); break;
       case 'sales': wsHtml = renderSales(); break;
       case 'sales_vat': wsHtml = renderSalesVatAndCredit(); break;
@@ -37870,6 +38876,309 @@
       jumpFromSentinelRule(card.getAttribute('data-sn-card') || '');
     }));
 
+    // Alerts & Thresholds (#alert_rules) + cross-view [data-open-alert-rule] deep-link
+    container.querySelectorAll('[data-open-alert-rule]').forEach(btn => {
+      if (!canViewView('alert_rules', activeUserRow)) {
+        btn.hidden = true;
+        return;
+      }
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        openAlertRuleTuner(btn.getAttribute('data-open-alert-rule') || '');
+      });
+    });
+
+    const arSearch = $('alertRulesSearchInput');
+    if (arSearch && arSearch.dataset.searchInputWired !== '1') {
+      arSearch.dataset.searchInputWired = '1';
+      arSearch.addEventListener('input', e => {
+        STATE.alertRulesSearch = e.target.value;
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+          const wasFocused = document.activeElement === arSearch;
+          const pos = arSearch.selectionStart;
+          renderApp();
+          const next = $('alertRulesSearchInput');
+          if (wasFocused && next && document.activeElement !== next) {
+            next.focus({ preventScroll: true });
+            try { next.setSelectionRange(pos, pos); } catch (_) {}
+          }
+        }, 140);
+      });
+    }
+    const arDomainSel = $('alertRulesDomainSelect');
+    if (arDomainSel) {
+      arDomainSel.addEventListener('change', e => {
+        STATE.alertRulesDomain = e.target.value || 'all';
+        renderApp();
+      });
+    }
+    container.querySelectorAll('[data-ar-filter]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      STATE.alertRulesFilter = btn.getAttribute('data-ar-filter') || 'all';
+      renderApp();
+    }));
+    const toggleCaBtn = $('toggleCustomAlertCreatorBtn');
+    if (toggleCaBtn) {
+      toggleCaBtn.addEventListener('click', () => {
+        STATE.alertRulesShowCreator = !STATE.alertRulesShowCreator;
+        renderApp();
+        if (STATE.alertRulesShowCreator) {
+          setTimeout(() => { const el = $('caName'); if (el) el.focus(); }, 20);
+        }
+      });
+    }
+    const cancelCaBtn = $('cancelCustomAlertBtn');
+    if (cancelCaBtn) {
+      cancelCaBtn.addEventListener('click', () => {
+        STATE.alertRulesShowCreator = false;
+        renderApp();
+      });
+    }
+    const saveCaBtn = $('saveCustomAlertBtn');
+    if (saveCaBtn) {
+      saveCaBtn.addEventListener('click', () => {
+        if (!canReviewSentinels()) { toast('Only Owner or Supervisor seats may modify alerts', 'err'); return; }
+        const nameVal = String(($('caName') && $('caName').value) || '').trim().replace(/[—→]/g, '-');
+        const metricVal = String(($('caMetric') && $('caMetric').value) || 'expense_usd');
+        const opVal = ($('caOp') && $('caOp').value) === '<' ? '<' : '>';
+        const rawThresh = $('caThreshold') ? parseFloat($('caThreshold').value) : NaN;
+        const modeVal = String(($('caMode') && $('caMode').value) || 'warn_and_audit');
+        const coVal = String(($('caCompany') && $('caCompany').value) || 'all');
+        const whyVal = String(($('caWhy') && $('caWhy').value) || '').trim().replace(/[—→]/g, '-');
+        if (!nameVal) { toast('Enter an Alert Name', 'err'); if ($('caName')) $('caName').focus(); return; }
+        if (!Number.isFinite(rawThresh) || rawThresh < 0) { toast('Enter a valid numeric Threshold Value', 'err'); if ($('caThreshold')) $('caThreshold').focus(); return; }
+        if (!whyVal) { toast('Write a brief reason in "Why Am I Adding This Alert?" so you always remember why it exists', 'err'); if ($('caWhy')) $('caWhy').focus(); return; }
+        const st = ensureAlertRulesState();
+        const nextNum = st.custom.length + 1;
+        const newRule = {
+          id: 'CA_' + Date.now().toString(36) + '_' + nextNum,
+          code: 'C' + nextNum,
+          name: nameVal,
+          metric: metricVal,
+          op: opVal,
+          threshold: round2(rawThresh),
+          mode: modeVal,
+          company: coVal,
+          why: whyVal,
+          enabled: true,
+          created_by: String((activeUser() && activeUser().full_name) || 'Owner'),
+          updated_at: new Date().toISOString()
+        };
+        st.custom.push(newRule);
+        STATE.alertRulesShowCreator = false;
+        STATE.alertRulesFilter = 'all';
+        STATE.alertRulesDomain = 'all';
+        persistAlertRulesChange({}, [newRule]);
+        renderApp();
+        toast(`Custom alert "${nameVal}" activated`, 'ok');
+      });
+    }
+    const resetAllArBtn = $('resetAllAlertRulesBtn');
+    if (resetAllArBtn) {
+      resetAllArBtn.addEventListener('click', () => {
+        if (!canReviewSentinels()) return;
+        const st = ensureAlertRulesState();
+        const nowIso = new Date().toISOString();
+        const resetMap = {};
+        ALERT_RULE_CATALOG.forEach(r => {
+          if (isAlertRuleCustomized(r.id)) {
+            const clean = { enabled: true, params: {}, why_note: '', updated_at: nowIso };
+            st.overrides[r.id] = clean;
+            resetMap[r.id] = clean;
+          }
+        });
+        persistAlertRulesChange(resetMap, []);
+        renderApp();
+        toast('All built-in thresholds restored to factory defaults', 'ok');
+      });
+    }
+    container.querySelectorAll('[data-ar-jump-form]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const fm = btn.getAttribute('data-ar-jump-form');
+      if (fm && canEnterForm(fm)) openEntryModal(fm);
+    }));
+    container.querySelectorAll('[data-ar-jump-view]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const vw = btn.getAttribute('data-ar-jump-view');
+      if (vw && canViewView(vw)) setView(vw);
+    }));
+    container.querySelectorAll('[data-ar-expand]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const rid = btn.getAttribute('data-ar-expand') || '';
+      STATE.alertRulesExpanded = STATE.alertRulesExpanded === rid ? '' : rid;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-ar-row]').forEach(row => row.addEventListener('click', ev => {
+      if (ev.target && ev.target.closest('button, a, input, select')) return;
+      const rid = row.getAttribute('data-ar-row') || '';
+      STATE.alertRulesExpanded = STATE.alertRulesExpanded === rid ? '' : rid;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    const refreshLiveRulePreview = rid => {
+      const def = ALERT_RULE_BY_ID.get(rid);
+      const prevEl = $('arLivePreview_' + rid);
+      if (!prevEl) return;
+      if (def) {
+        const draft = {};
+        def.params.forEach(p => {
+          const inpEl = $('arp_' + rid + '_' + p.key);
+          const v = inpEl ? parseFloat(inpEl.value) : p.def;
+          draft[p.key] = Number.isFinite(v) ? v : p.def;
+        });
+        prevEl.innerHTML = `<strong>Live Threshold Preview:</strong> <span>${esc(def.previewFn(draft))}</span>`;
+      } else {
+        const st = ensureAlertRulesState();
+        const cr = st.custom.find(c => c && c.id === rid);
+        if (!cr) return;
+        const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
+        const inpEl = $('arp_' + rid + '_threshold');
+        const v = inpEl && Number.isFinite(parseFloat(inpEl.value)) ? parseFloat(inpEl.value) : Number(cr.threshold || 0);
+        const fmtT = spec.unit === '$' ? fmtUSD(v, 0) : `${fmtNum(v, 1)} ${spec.unit}`;
+        prevEl.innerHTML = `<strong>Live Threshold Preview:</strong> <span>Triggers whenever ${esc(spec.label)} is ${cr.op === '<' ? 'below' : 'above'} ${esc(fmtT)}.</span>`;
+      }
+    };
+    container.querySelectorAll('[data-ar-param-input]').forEach(inpEl => {
+      inpEl.addEventListener('input', () => {
+        refreshLiveRulePreview(inpEl.getAttribute('data-ar-param-input') || '');
+      });
+    });
+    container.querySelectorAll('[data-ar-step]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const rid = btn.getAttribute('data-ar-rule') || '';
+      const pkey = btn.getAttribute('data-ar-key') || '';
+      const dir = Number(btn.getAttribute('data-ar-step') || 0);
+      const inpEl = $('arp_' + rid + '_' + pkey);
+      if (!inpEl) return;
+      const step = parseFloat(inpEl.step) || 1;
+      const min = inpEl.min !== '' ? parseFloat(inpEl.min) : -Infinity;
+      const max = inpEl.max !== '' ? parseFloat(inpEl.max) : Infinity;
+      const cur = Number.isFinite(parseFloat(inpEl.value)) ? parseFloat(inpEl.value) : 0;
+      const next = Math.min(max, Math.max(min, Math.round((cur + dir * step) * 10000) / 10000));
+      inpEl.value = String(next);
+      refreshLiveRulePreview(rid);
+    }));
+    container.querySelectorAll('[data-ar-toggle]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (!canReviewSentinels()) return;
+      const rid = btn.getAttribute('data-ar-toggle') || '';
+      const def = ALERT_RULE_BY_ID.get(rid);
+      const st = ensureAlertRulesState();
+      const nowIso = new Date().toISOString();
+      if (def) {
+        if (def.lockedActive) return;
+        const curOn = isAlertRuleEnabled(rid);
+        const ex = st.overrides[rid] || { params: {}, why_note: '' };
+        const nextRow = Object.assign({}, ex, { enabled: !curOn, updated_at: nowIso });
+        st.overrides[rid] = nextRow;
+        persistAlertRulesChange({ [rid]: nextRow }, []);
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+        toast(`${def.code} ${!curOn ? 'resumed' : 'paused'}`, 'ok');
+      } else {
+        const cr = st.custom.find(c => c && c.id === rid);
+        if (!cr) return;
+        cr.enabled = cr.enabled === false;
+        cr.updated_at = nowIso;
+        persistAlertRulesChange({}, [cr]);
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+        toast(`Custom alert "${cr.name}" ${cr.enabled ? 'resumed' : 'paused'}`, 'ok');
+      }
+    }));
+    container.querySelectorAll('[data-ar-reset]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (!canReviewSentinels()) return;
+      const rid = btn.getAttribute('data-ar-reset') || '';
+      const def = ALERT_RULE_BY_ID.get(rid);
+      if (!def) return;
+      const st = ensureAlertRulesState();
+      const clean = { enabled: true, params: {}, why_note: '', updated_at: new Date().toISOString() };
+      st.overrides[rid] = clean;
+      persistAlertRulesChange({ [rid]: clean }, []);
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+      toast(`Restored ${def.code} (${def.name}) to factory default`, 'ok');
+    }));
+    container.querySelectorAll('[data-ar-delete-custom]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (!canReviewSentinels()) return;
+      const rid = btn.getAttribute('data-ar-delete-custom') || '';
+      const st = ensureAlertRulesState();
+      const cr = st.custom.find(c => c && c.id === rid);
+      if (!cr) return;
+      cr.deleted = true;
+      cr.enabled = false;
+      cr.updated_at = new Date().toISOString();
+      if (STATE.alertRulesExpanded === rid) STATE.alertRulesExpanded = '';
+      persistAlertRulesChange({}, [cr]);
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+      toast(`Deleted custom alert "${cr.name}"`, 'ok');
+    }));
+    container.querySelectorAll('[data-ar-save]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      if (!canReviewSentinels()) { toast('Only Owner or Supervisor seats may modify thresholds', 'err'); return; }
+      const rid = btn.getAttribute('data-ar-save') || '';
+      const def = ALERT_RULE_BY_ID.get(rid);
+      const st = ensureAlertRulesState();
+      const nowIso = new Date().toISOString();
+      const whyInp = $('arWhy_' + rid);
+      const whyVal = whyInp ? String(whyInp.value || '').trim().replace(/[—→]/g, '-') : '';
+      if (def) {
+        const paramsOut = {};
+        def.params.forEach(p => {
+          const inpEl = $('arp_' + rid + '_' + p.key);
+          const rawV = inpEl ? parseFloat(inpEl.value) : p.def;
+          const clamped = Number.isFinite(rawV) ? Math.min(p.max, Math.max(p.min, rawV)) : p.def;
+          paramsOut[p.key] = Math.round(clamped * 10000) / 10000;
+        });
+        const ex = st.overrides[rid] || {};
+        const nextRow = {
+          enabled: def.lockedActive ? true : (typeof ex.enabled === 'boolean' ? ex.enabled : true),
+          params: paramsOut,
+          why_note: (whyVal && whyVal !== def.why) ? whyVal : '',
+          updated_by: String((activeUser() && activeUser().full_name) || 'Owner'),
+          updated_at: nowIso
+        };
+        st.overrides[rid] = nextRow;
+        persistAlertRulesChange({ [rid]: nextRow }, []);
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+        toast(`Saved thresholds for ${def.code} · ${def.name}`, 'ok');
+      } else {
+        const cr = st.custom.find(c => c && c.id === rid);
+        if (!cr) return;
+        const inpEl = $('arp_' + rid + '_threshold');
+        const rawV = inpEl ? parseFloat(inpEl.value) : Number(cr.threshold || 0);
+        if (Number.isFinite(rawV) && rawV >= 0) cr.threshold = round2(rawV);
+        if (whyVal) cr.why = whyVal;
+        cr.updated_at = nowIso;
+        persistAlertRulesChange({}, [cr]);
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+        toast(`Updated custom alert "${cr.name}"`, 'ok');
+      }
+    }));
+
     // Daily Plant & Machine Map (workforce_map) interactive controls
     container.querySelectorAll('[data-wf-date]').forEach(btn => btn.addEventListener('click', ev => {
       ev.stopPropagation();
@@ -38045,6 +39354,7 @@
           STATE.company = jumpCo;
           saveFilterState();
         }
+        if (STATE.view !== 'fleet') STATE.view = 'fleet';
         STATE.dieselTankMode = 'movements';
         STATE.dieselTankChip = el.getAttribute('data-dtank-jump-chip') || 'all';
         STATE.shown.dtankmv = PAGE;
@@ -38071,6 +39381,13 @@
       btn.addEventListener('click', ev => {
         ev.stopPropagation();
         openEntryModal('expense', { cat: 'Fuel', subcat: 'Diesel', uom: 'Litre' });
+      });
+    });
+    container.querySelectorAll('[data-open-diesel-malf]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const targetCo = btn.getAttribute('data-malf-co') || (COMPANY_BU_MATCH[STATE.company] || '');
+        openEntryModal('malfunction', targetCo ? { co: targetCo } : null);
       });
     });
     container.querySelectorAll('[data-open-diesel-sale]').forEach(btn => {
@@ -38107,6 +39424,7 @@
       if (row.getAttribute('role') === 'button') row.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goCo(); } });
     });
     container.querySelectorAll('[data-nav-jump]').forEach(btn => {
+      if (btn.hasAttribute('data-dtank-jump-chip')) return;
       const go = () => {
         const stmt = btn.getAttribute('data-stmt-jump');
         if (stmt) STATE.activeStatement = stmt;
@@ -39481,6 +40799,7 @@
       },
       selectSeatForEdit: (targetId, opts) => selectSeatForEdit(targetId, opts),
       saveSeatEditorForm: () => saveSeatEditorForm(),
+      openEntryModal: (fid, prefill) => openEntryModal(fid, prefill),
       getEffectivePermissions: emailOrUser => {
         const u = typeof emailOrUser === 'string'
           ? STATE.users.find(x => norm(x.email) === norm(emailOrUser) || String(x.id) === String(emailOrUser))

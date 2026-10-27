@@ -261,6 +261,7 @@
     { code: '411', name: 'Customers — Accounts Receivable / ذمم الزبائن', cls: '4 - Third Party Accounts', section: 'Current Assets', normal: 'D' },
     { code: '421', name: 'Personnel — Salaries & Advances / ذمم الموظفين والسلف', cls: '4 - Third Party Accounts', section: 'Current Liabilities', normal: 'C' },
     { code: '442', name: 'State — VAT Collectible & Deductible / الضريبة على القيمة المضافة', cls: '4 - Third Party Accounts', section: 'Current Liabilities', normal: 'C' },
+    { code: '467', name: 'Sundry Debtors, Creditors & Barter Clearing / مدينون ودائنون مختلفون ومقاصة', cls: '4 - Third Party Accounts', section: 'Current Assets', normal: 'D' },
     { code: '512', name: 'Banks & Financial Institutions (Fresh USD) / البنوك', cls: '5 - Financial Accounts', section: 'Cash & Treasury', normal: 'D' },
     { code: '531', name: 'Cash on Hand & Plant Safe / الصندوق', cls: '5 - Financial Accounts', section: 'Cash & Treasury', normal: 'D' },
     { code: '601', name: 'Purchases of Raw Materials & Fuel / مشتريات المواد الأولية والمحروقات', cls: '6 - Expenses', section: 'Cost of Goods Sold', normal: 'D' },
@@ -318,6 +319,8 @@
         const totTtc = sign * Number(r.total_ttc !== undefined ? r.total_ttc : (r.total_usd !== undefined ? r.total_usd : (r.total || 0)));
         const vat = sign * Number(r.vat !== undefined ? r.vat : (r.vat_usd || 0));
         const isCash = m === 'Cash' || m === 'C Return' || m === 'Cash Return';
+        const isCredit = m === 'Credit' || m === 'CR Return' || m === 'Credit Return';
+        const isBarter = m === 'Barter';
         const paid = r.paid_usd !== undefined ? sign * Number(r.paid_usd) : (isCash ? totTtc : 0);
         let vatInv = String(r.vat_invoice || r.vat_inv || '');
         if (!vatInv && vat > 0 && vatInvByCust.has(r.customer)) {
@@ -343,8 +346,11 @@
           vat_usd: vat,
           total_usd: totTtc,
           paid_usd: paid,
-          balance_usd: totTtc - paid,
+          balance_usd: isCredit ? totTtc : 0,
           pay_method: r.method || 'Credit',
+          is_cash: isCash,
+          is_credit: isCredit,
+          is_barter: isBarter,
           is_return: sign <= 0
         };
       });
@@ -386,8 +392,11 @@
         const ml = m.toLowerCase();
         const sign = (ml === 'c return' || ml === 'cr return' || r.return) ? -1 : ((m === 'Config' || m === 'VATConfig' || m === 'Free' || m === 'Remove' || m === 'Adjusted' || m === 'JV Adjusted') ? 0 : 1);
         const amt = sign * Number(r.usd_amount !== undefined ? r.usd_amount : (r.amount !== undefined ? r.amount : (r.total_usd || 0)));
-        const vat = sign * Number(r.vat !== undefined ? r.vat : (r.vat_usd || 0));
-        const isCash = ml === 'cash' || ml === 'c return';
+        const isVatOnly = m === 'IVA' || m === 'VAT' || m === 'VAT Dis' || m === 'Cash VAT Dis';
+        const isBarter = m === 'Barter';
+        const isCash = ml === 'cash' || ml === 'c return' || m === 'Cash VAT Dis';
+        const isApCredit = m === 'Credit' || m === 'CR Return' || m === 'IVA' || m === 'VAT' || m === 'VAT Dis';
+        const vat = isVatOnly ? amt : (sign * Number(r.vat !== undefined ? r.vat : (r.vat_usd || 0)));
         const paid = isCash ? amt : 0;
         return {
           id: r.id,
@@ -404,7 +413,11 @@
           vat_usd: vat,
           total_usd: amt,
           paid_usd: paid,
-          balance_usd: amt - paid,
+          ap_credit_usd: isApCredit ? amt : 0,
+          balance_usd: isApCredit ? amt : 0,
+          is_vat_only: isVatOnly,
+          is_barter: isBarter,
+          is_ap_credit: isApCredit,
           is_return: sign < 0
         };
       });
@@ -452,12 +465,75 @@
         };
       });
 
+      // Split raw_purchases into explicit Leg 1 (Material -> site_owner || truck_owner) & Leg 2 (Haulage -> truck_owner) for Account 401 AP
+      const apRmLegsAll = [];
+      rawRm.forEach(r => {
+        const isCash = String(r.method || '').toLowerCase() === 'cash';
+        const matCost = Number(r.cost !== undefined ? r.cost : (Number(r.total || r.total_usd || 0) - Number(r.trans_cost || 0)));
+        const haulCost = r.transport_by === 'Company fleet' ? 0 : Number(r.trans_cost || 0);
+        const matSup = r.site_owner || r.supplier || r.truck_owner || '(Unassigned Supplier)';
+        if (Math.abs(matCost) >= 0.005) {
+          apRmLegsAll.push({
+            id: r.id,
+            date: r.date,
+            rep_date: r.rep_date || r.date,
+            co: r.company || r.co || co,
+            voucher: r.ticket_no || r.name || r.id,
+            name: r.name || '',
+            leg: 'material',
+            material: r.product || r.material || 'Raw Material',
+            supplier: matSup,
+            driver: r.driver || r.truck_owner || '',
+            plate: r.truck || '',
+            qty: Number(r.qty || 0),
+            unit: r.uom || 'Ton',
+            unit_price: Number(r.unit_cost || r.unit_price || 0),
+            total_usd: matCost,
+            paid_usd: isCash ? matCost : 0
+          });
+        }
+        if (Math.abs(haulCost) >= 0.005) {
+          const haulSup = r.truck_owner || '(Unassigned Supplier)';
+          apRmLegsAll.push({
+            id: `${r.id || r.ticket_no}-haul`,
+            date: r.date,
+            rep_date: r.rep_date || r.date,
+            co: r.company || r.co || co,
+            voucher: r.ticket_no || r.name || r.id,
+            name: r.name || '',
+            leg: 'haulage',
+            material: `Haulage · ${r.product || 'Raw Material'}${r.truck ? ' (' + r.truck + ')' : ''}`,
+            supplier: haulSup,
+            driver: r.driver || '',
+            plate: r.truck || '',
+            qty: Number(r.qty || 0),
+            unit: r.uom || 'Ton',
+            unit_price: 0,
+            total_usd: haulCost,
+            paid_usd: 0
+          });
+        }
+      });
+
       // Separate supplier settlements for Supplier Balances, SOA, Cash Flow & VAT (never mixed into rmAll intake register)
       const settlementLedgerAll = [];
       const vatPaidAll = [];
+      expAll.forEach(ex => {
+        if (ex.is_vat_only && Math.abs(ex.vat_usd) >= 0.005) {
+          vatPaidAll.push({
+            id: ex.id,
+            date: ex.date,
+            rep_date: ex.rep_date || ex.date,
+            co: ex.co,
+            voucher: ex.voucher_no || ex.name || ex.id,
+            supplier: ex.supplier || 'Supplier',
+            vat_usd: ex.vat_usd,
+            total_usd: ex.total_usd
+          });
+        }
+      });
       rawSettlements.forEach(s => {
         const m = String(s.method || '').trim();
-        if (m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Config') return;
         const usd = Number(s.usd_amount !== undefined ? s.usd_amount : (s.amount || 0));
         const diff = Number(s.diff !== undefined ? s.diff : (s.discount || 0));
         const amt = usd + diff;
@@ -474,7 +550,9 @@
               total_usd: amt
             });
           }
+          return;
         }
+        if (m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'IVA' || m === 'Commission' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return;
         if (Math.abs(amt) < 0.005) return;
         settlementLedgerAll.push({
           id: s.id,
@@ -483,8 +561,10 @@
           co: s.company || co,
           voucher: s.name || s.id,
           name: s.name || '',
+          leg: 'settlement',
+          pay_method: m || 'Cash',
           material: s.notes || `Supplier Settlement (${s.method || 'Payment'})`,
-          supplier: s.supplier || 'Material Supplier',
+          supplier: s.supplier || '(Unassigned Supplier)',
           driver: '',
           plate: '',
           qty: 0,
@@ -495,7 +575,7 @@
           is_settlement_row: true
         });
       });
-      const apRmLedgerAll = [...rmAll, ...settlementLedgerAll];
+      const apRmLedgerAll = [...apRmLegsAll, ...settlementLedgerAll];
 
       const eqMap = new Map();
       ((recs.equipment || [])).forEach(e => { if (e && e.name) eqMap.set(e.name, e.type || 'Heavy Equipment'); });
@@ -548,10 +628,10 @@
         return out.sort((a, b) => (counts.get(b.toLowerCase()) || 0) - (counts.get(a.toLowerCase()) || 0) || _rdlCollator.compare(a, b));
       };
 
-      const customers = uniq(salesAll.map(r => r.customer));
+      const customers = uniq([...salesAll.map(r => r.customer), ...receiptLedgerAll.map(r => r.customer)]);
       const products = uniq(salesAll.filter(r => !r.is_receipt_row).map(r => r.product));
       const sites = uniq(salesAll.filter(r => !r.is_receipt_row).map(r => r.site));
-      const suppliers = uniq([...expAll.map(r => r.supplier), ...rmAll.map(r => r.supplier)]);
+      const suppliers = uniq([...apRmLegsAll.map(r => r.supplier), ...expAll.map(r => r.supplier), ...settlementLedgerAll.map(r => r.supplier)]);
       const categories = uniq(expAll.map(r => r.category));
       const staff = uniq(payAll.map(r => r.staff));
       const equipTypes = uniq(fuelAll.map(r => r.equip_type));
@@ -688,7 +768,7 @@
 
       _cachedCoKey = sig;
       _cachedCtxData = {
-        salesAll, expAll, payAll, rmAll, fuelAll, prodAll: [],
+        salesAll, expAll, payAll, rmAll, apRmLegsAll, fuelAll, prodAll: [],
         receiptLedgerAll, arLedgerAll, settlementLedgerAll, apRmLedgerAll, vatPaidAll,
         customers, products, sites, suppliers, categories, staff, equipTypes, equipments, drivers,
         invoiceList, invMap, ticketCandidates, ticketById, receiptCandidates, receiptById
@@ -766,77 +846,95 @@
       const cust = r.customer || 'Walk-in Customer';
       const desc = `${r.product || 'Concrete'} · ${fmtNum(r.qty, 1)} m³ · ${r.site || ''}`.trim();
       const revAcct = /pump|haul|trans/i.test(String(r.product || '')) ? '706' : '701';
+      const recAcct = r.is_barter ? '467' : '411';
       if (tot > 0) {
-        pushJe(d, ref, 'Sales', '411', cust, desc, tot, 0);
-        pushJe(d, ref, 'Sales', revAcct, cust, desc, 0, net);
+        pushJe(d, ref, r.is_barter ? 'Barter Sale' : 'Sales', recAcct, cust, desc, tot, 0);
+        pushJe(d, ref, r.is_barter ? 'Barter Sale' : 'Sales', revAcct, cust, desc, 0, net);
         if (vat > 0) pushJe(d, ref, 'Sales VAT', '442', 'VAT Collectible (11%)', `Output VAT on ${ref}`, 0, vat);
       } else if (tot < 0) {
         pushJe(d, ref, 'Sales Return', revAcct, cust, desc, Math.abs(net), 0);
         if (vat < 0) pushJe(d, ref, 'Sales Return VAT', '442', 'VAT Collectible (11%)', `Return VAT on ${ref}`, Math.abs(vat), 0);
-        pushJe(d, ref, 'Sales Return', '411', cust, desc, 0, Math.abs(tot));
+        pushJe(d, ref, 'Sales Return', recAcct, cust, desc, 0, Math.abs(tot));
       }
-      if (paid > 0) {
+      if (!r.is_barter && paid > 0) {
         const cashAcct = r.pay_method === 'Bank' || r.pay_method === 'Cheque' ? '512' : '531';
         pushJe(d, `RC-${ref}`, 'Collection', cashAcct, cust, `Receipt against ${ref}`, paid, 0);
         pushJe(d, `RC-${ref}`, 'Collection', '411', cust, `Receipt against ${ref}`, 0, paid);
+      } else if (!r.is_barter && paid < 0) {
+        const cashAcct = r.pay_method === 'Bank' || r.pay_method === 'Cheque' ? '512' : '531';
+        pushJe(d, `RC-${ref}`, 'Cash Refund', '411', cust, `Cash return refund ${ref}`, Math.abs(paid), 0);
+        pushJe(d, `RC-${ref}`, 'Cash Refund', cashAcct, cust, `Cash return refund ${ref}`, 0, Math.abs(paid));
       }
     });
 
     (ctx.receiptLedgerAll || []).forEach(r => {
       const d = rowDate(r, basis);
       const paid = Number(r.paid_usd || 0);
-      if (!d || paid <= 0) return;
+      if (!d || Math.abs(paid) < 0.005) return;
       const cust = r.customer || 'Customer';
       const ref = String(r.invoice_no || r.ticket_no || 'RCPT');
-      const cashAcct = r.pay_method === 'Bank' || r.pay_method === 'Cheque' ? '512' : '531';
-      pushJe(d, ref, 'Collection', cashAcct, cust, `Customer receipt (${r.pay_method || 'Cash'})`, paid, 0);
-      pushJe(d, ref, 'Collection', '411', cust, `Customer receipt (${r.pay_method || 'Cash'})`, 0, paid);
+      const clearAcct = r.pay_method === 'Config' ? '467' : (r.pay_method === 'Bank' || r.pay_method === 'Cheque' ? '512' : '531');
+      if (paid > 0) {
+        pushJe(d, ref, 'Collection', clearAcct, cust, `Customer receipt (${r.pay_method || 'Cash'})`, paid, 0);
+        pushJe(d, ref, 'Collection', '411', cust, `Customer receipt (${r.pay_method || 'Cash'})`, 0, paid);
+      } else {
+        pushJe(d, ref, 'AR Adjustment', '411', cust, `Customer balance adjustment (${r.pay_method || 'Config'})`, Math.abs(paid), 0);
+        pushJe(d, ref, 'AR Adjustment', clearAcct, cust, `Customer balance adjustment (${r.pay_method || 'Config'})`, 0, Math.abs(paid));
+      }
     });
 
-    ctx.rmAll.forEach(r => {
+    (ctx.apRmLegsAll || ctx.rmAll).forEach(r => {
       const d = rowDate(r, basis);
       if (!d) return;
       const tot = Number(r.total_usd || 0);
       const paid = Number(r.paid_usd || 0);
-      if (tot <= 0 && paid <= 0) return;
+      if (Math.abs(tot) < 0.005 && Math.abs(paid) < 0.005) return;
       const sup = r.supplier || 'Raw Material Supplier';
       const ref = String(r.voucher || r.name || 'RM');
+      const src = r.leg === 'haulage' ? 'Raw Haulage' : 'Raw Material';
       const desc = `${r.material || 'Raw Material'} · ${fmtNum(r.qty, 2)} ${r.unit || 't'}`;
       if (tot > 0) {
-        pushJe(d, ref, 'Raw Material', '601', sup, desc, tot, 0);
-        pushJe(d, ref, 'Raw Material', '401', sup, desc, 0, tot);
+        pushJe(d, ref, src, '601', sup, desc, tot, 0);
+        pushJe(d, ref, src, '401', sup, desc, 0, tot);
+      } else if (tot < 0) {
+        pushJe(d, ref, `${src} Return`, '401', sup, desc, Math.abs(tot), 0);
+        pushJe(d, ref, `${src} Return`, '601', sup, desc, 0, Math.abs(tot));
       }
       if (paid > 0) {
         pushJe(d, `PV-${ref}`, 'Supplier Payment', '401', sup, `Payment on ${ref}`, paid, 0);
         pushJe(d, `PV-${ref}`, 'Supplier Payment', '531', sup, `Payment on ${ref}`, 0, paid);
+      } else if (paid < 0) {
+        pushJe(d, `PV-${ref}`, 'Supplier Refund', '531', sup, `Refund on ${ref}`, Math.abs(paid), 0);
+        pushJe(d, `PV-${ref}`, 'Supplier Refund', '401', sup, `Refund on ${ref}`, 0, Math.abs(paid));
       }
     });
 
     (ctx.settlementLedgerAll || []).forEach(r => {
       const d = rowDate(r, basis);
       const paid = Number(r.paid_usd || 0);
-      if (!d || paid <= 0) return;
+      if (!d || Math.abs(paid) < 0.005) return;
       const sup = r.supplier || 'Supplier';
       const ref = String(r.voucher || r.name || 'SETL');
-      pushJe(d, ref, 'Supplier Payment', '401', sup, r.material || 'Supplier Settlement', paid, 0);
-      pushJe(d, ref, 'Supplier Payment', '531', sup, r.material || 'Supplier Settlement', 0, paid);
+      const clearAcct = r.pay_method === 'Config' ? '467' : '531';
+      if (paid > 0) {
+        pushJe(d, ref, 'Supplier Payment', '401', sup, r.material || 'Supplier Settlement', paid, 0);
+        pushJe(d, ref, 'Supplier Payment', clearAcct, sup, r.material || 'Supplier Settlement', 0, paid);
+      } else {
+        pushJe(d, ref, 'AP Adjustment', clearAcct, sup, r.material || 'Supplier Balance Adjustment', Math.abs(paid), 0);
+        pushJe(d, ref, 'AP Adjustment', '401', sup, r.material || 'Supplier Balance Adjustment', 0, Math.abs(paid));
+      }
     });
 
     ctx.fuelAll.forEach(r => {
       const d = rowDate(r, basis);
       if (!d) return;
       const tot = Number(r.total_usd || 0);
-      const paid = Number(r.paid_usd || 0);
       if (tot <= 0) return;
-      const sup = r.supplier || r.station || 'Fuel Supplier';
+      const tank = r.station || 'Plant Diesel Tank';
       const ref = String(r.voucher || r.name || 'FUEL');
       const desc = `Diesel ${fmtNum(r.liters, 0)} L · ${r.equip || r.driver || 'Fleet'}`;
-      pushJe(d, ref, 'Fuel Log', '601', sup, desc, tot, 0);
-      pushJe(d, ref, 'Fuel Log', '401', sup, desc, 0, tot);
-      if (paid > 0) {
-        pushJe(d, `PV-${ref}`, 'Fuel Payment', '401', sup, `Fuel settlement ${ref}`, paid, 0);
-        pushJe(d, `PV-${ref}`, 'Fuel Payment', '531', sup, `Fuel settlement ${ref}`, 0, paid);
-      }
+      pushJe(d, ref, 'Fuel Log', '601', tank, desc, tot, 0);
+      pushJe(d, ref, 'Fuel Log', '311', tank, desc, 0, tot);
     });
 
     ctx.expAll.forEach(r => {
@@ -851,21 +949,23 @@
       const ref = String(r.voucher_no || r.invoice_no || r.name || 'EXP');
       const cat = String(r.category || '');
       const expAcct = /maint|spare|repair|tire|oil/i.test(cat) ? '615' : (/raw|cement|sand|agg|fuel|diesel/i.test(cat) ? '601' : '622');
+      const liabAcct = r.is_barter ? '467' : '401';
       const desc = `${cat} — ${r.description || sup}`;
       if (tot > 0) {
-        pushJe(d, ref, 'Expense', expAcct, sup, desc, net, 0);
-        if (vat > 0) pushJe(d, ref, 'Input VAT', '442', 'VAT Deductible (11%)', `Input VAT on ${ref}`, vat, 0);
-        pushJe(d, ref, 'Expense', '401', sup, desc, 0, tot);
+        if (net > 0.0001) pushJe(d, ref, 'Expense', expAcct, sup, desc, net, 0);
+        if (vat > 0.0001) pushJe(d, ref, 'Input VAT', '442', 'VAT Deductible (11%)', `Input VAT on ${ref}`, vat, 0);
+        pushJe(d, ref, r.is_barter ? 'Barter Expense' : 'Expense', liabAcct, sup, desc, 0, tot);
       } else {
-        pushJe(d, ref, 'Expense Return', '401', sup, desc, Math.abs(tot), 0);
-        pushJe(d, ref, 'Expense Return', expAcct, sup, desc, 0, Math.abs(net));
+        pushJe(d, ref, 'Expense Return', liabAcct, sup, desc, Math.abs(tot), 0);
+        if (net < -0.0001) pushJe(d, ref, 'Expense Return', expAcct, sup, desc, 0, Math.abs(net));
+        if (vat < -0.0001) pushJe(d, ref, 'Input VAT Return', '442', 'VAT Deductible (11%)', `Input VAT return on ${ref}`, 0, Math.abs(vat));
       }
-      if (paid > 0) {
-        pushJe(d, `PV-${ref}`, 'Expense Payment', '401', sup, `Settlement ${ref}`, paid, 0);
+      if (!r.is_barter && paid > 0) {
+        pushJe(d, `PV-${ref}`, 'Expense Payment', liabAcct, sup, `Settlement ${ref}`, paid, 0);
         pushJe(d, `PV-${ref}`, 'Expense Payment', '531', sup, `Settlement ${ref}`, 0, paid);
-      } else if (paid < 0) {
+      } else if (!r.is_barter && paid < 0) {
         pushJe(d, `PV-${ref}`, 'Expense Refund', '531', sup, `Refund ${ref}`, Math.abs(paid), 0);
-        pushJe(d, `PV-${ref}`, 'Expense Refund', '401', sup, `Refund ${ref}`, 0, Math.abs(paid));
+        pushJe(d, `PV-${ref}`, 'Expense Refund', liabAcct, sup, `Refund ${ref}`, 0, Math.abs(paid));
       }
     });
 
@@ -1326,7 +1426,7 @@
 
     const bsSections = [
       { title: 'ASSETS — NON-CURRENT & FIXED ASSETS (Class 2)', codes: ['215', '218', '281'], sign: 'D' },
-      { title: 'ASSETS — INVENTORIES & RECEIVABLES (Classes 3 & 4)', codes: ['311', '411'], sign: 'D' },
+      { title: 'ASSETS — INVENTORIES & RECEIVABLES (Classes 3 & 4)', codes: ['311', '411', '467'], sign: 'D' },
       { title: 'ASSETS — CASH, BANK & TREASURY (Class 5)', codes: ['512', '531'], sign: 'D' },
       { title: 'LIABILITIES — PAYABLES & TAX OBLIGATIONS (Class 4)', codes: ['401', '421', '442'], sign: 'C' },
       { title: 'EQUITY & PARTNER ACCOUNTS (Class 1 + Period Result)', codes: ['101', '165'], sign: 'C', includeRetained: true }
@@ -2106,44 +2206,69 @@
     const asofMs = new Date(asof + 'T00:00:00Z').getTime() || Date.now();
 
     const byCust = new Map();
+    const ensureCust = (c, d) => {
+      if (!byCust.has(c)) {
+        byCust.set(c, { customer: c, posTickets: [], crReturnUsd: 0, paid: 0, billed: 0, b0_30: 0, b31_60: 0, b61_90: 0, b90p: 0, totalBal: 0, lastDate: d });
+      }
+      const g = byCust.get(c);
+      if (d > g.lastDate) g.lastDate = d;
+      return g;
+    };
+
     (ctx.arLedgerAll || ctx.salesAll).forEach(r => {
       const d = rowDate(r, ctx.basis);
       if (!d || d > asof) return;
       const c = r.customer || 'Walk-in Customer';
       if (custFilter && custFilter !== 'ALL' && c !== custFilter) return;
-      const tot = Number(r.total_usd || 0);
-      const paid = Number(r.paid_usd || 0);
-      const bal = Number(r.balance_usd !== undefined ? r.balance_usd : (tot - paid));
-      const g = byCust.get(c) || { customer: c, billed: 0, paid: 0, b0_30: 0, b31_60: 0, b61_90: 0, b90p: 0, totalBal: 0, lastDate: d };
-      g.billed += tot;
-      g.paid += paid;
-      if (d > g.lastDate) g.lastDate = d;
-      if (Math.abs(bal) > 0.01) {
-        const ageDays = Math.max(0, Math.floor((asofMs - (new Date(d + 'T00:00:00Z').getTime() || asofMs)) / 86400000));
-        if (ageDays <= 30) g.b0_30 += bal;
-        else if (ageDays <= 60) g.b31_60 += bal;
-        else if (ageDays <= 90) g.b61_90 += bal;
-        else g.b90p += bal;
-        g.totalBal += bal;
+      if (r.is_receipt_row) {
+        const g = ensureCust(c, d);
+        g.paid += Number(r.paid_usd || 0);
+      } else if (r.is_credit) {
+        const tot = Number(r.total_usd || 0);
+        if (Math.abs(tot) < 0.005) return;
+        const g = ensureCust(c, d);
+        g.billed += tot;
+        if (tot > 0) g.posTickets.push({ d, amt: tot });
+        else g.crReturnUsd += Math.abs(tot);
       }
-      byCust.set(c, g);
+    });
+
+    byCust.forEach(g => {
+      g.posTickets.sort((a, b) => a.d.localeCompare(b.d));
+      const totalCredits = g.paid + g.crReturnUsd;
+      let pool = Math.max(0, totalCredits);
+      g.posTickets.forEach(tk => {
+        const used = Math.min(pool, tk.amt);
+        pool -= used;
+        const rem = tk.amt - used;
+        if (rem > 0.005) {
+          const ageDays = Math.max(0, Math.floor((asofMs - (new Date(tk.d + 'T00:00:00Z').getTime() || asofMs)) / 86400000));
+          if (ageDays <= 30) g.b0_30 += rem;
+          else if (ageDays <= 60) g.b31_60 += rem;
+          else if (ageDays <= 90) g.b61_90 += rem;
+          else g.b90p += rem;
+        }
+      });
+      if (pool > 0.005) g.b0_30 -= pool;
+      if (totalCredits < -0.005) g.b0_30 += Math.abs(totalCredits);
+      g.totalBal = g.billed - g.paid;
     });
 
     const rows = [...byCust.values()]
-      .filter(g => Math.abs(g.totalBal) > 1 || g.billed > 0)
+      .filter(g => Math.abs(g.totalBal) > 0.01 || Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01)
       .sort((a, b) => b.totalBal - a.totalBal)
-      .slice(0, 120);
+      .slice(0, 450);
 
     const sum = k => rows.reduce((s, r) => s + r[k], 0);
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `As at ${asof} · Customer: ${custFilter === 'ALL' ? 'All Customers' : custFilter} · 30/60/90+ Day Aging Buckets`)}
+      ${sheetHeaderHtml(meta, ctx.co, `As at ${asof} · Customer: ${custFilter === 'ALL' ? 'All Customers' : custFilter} · FIFO 30/60/90+ Day Aging Buckets`)}
       <table class="rdl-table">
         <thead>
           <tr>
             <th>Customer (Account 411)</th>
-            <th class="num">Cumulative Billed ($)</th>
-            <th class="num">Collected ($)</th>
+            <th class="num">Credit Sales TTC ($)</th>
+            <th class="num">Settled ($)</th>
             <th class="num">0–30 Days ($)</th>
             <th class="num">31–60 Days ($)</th>
             <th class="num">61–90 Days ($)</th>
@@ -2158,10 +2283,10 @@
               <td class="bold">${esc(r.customer)}</td>
               <td class="num">${fmtUsd(r.billed)}</td>
               <td class="num">${fmtUsd(r.paid)}</td>
-              <td class="num">${fmtUsd(r.b0_30)}</td>
-              <td class="num">${fmtUsd(r.b31_60)}</td>
-              <td class="num">${fmtUsd(r.b61_90)}</td>
-              <td class="num">${fmtUsd(r.b90p)}</td>
+              <td class="num">${fmtUsdSigned(r.b0_30)}</td>
+              <td class="num">${fmtUsdSigned(r.b31_60)}</td>
+              <td class="num">${fmtUsdSigned(r.b61_90)}</td>
+              <td class="num">${fmtUsdSigned(r.b90p)}</td>
               <td class="num bold">${fmtUsdSigned(r.totalBal)}</td>
               <td class="mono">${esc(r.lastDate)}</td>
             </tr>
@@ -2172,10 +2297,10 @@
             <td>TOTAL AGED RECEIVABLES (${rows.length} accounts)</td>
             <td class="num">${fmtUsd(sum('billed'))}</td>
             <td class="num">${fmtUsd(sum('paid'))}</td>
-            <td class="num">${fmtUsd(sum('b0_30'))}</td>
-            <td class="num">${fmtUsd(sum('b31_60'))}</td>
-            <td class="num">${fmtUsd(sum('b61_90'))}</td>
-            <td class="num">${fmtUsd(sum('b90p'))}</td>
+            <td class="num">${fmtUsdSigned(sum('b0_30'))}</td>
+            <td class="num">${fmtUsdSigned(sum('b31_60'))}</td>
+            <td class="num">${fmtUsdSigned(sum('b61_90'))}</td>
+            <td class="num">${fmtUsdSigned(sum('b90p'))}</td>
             <td class="num">${fmtUsdSigned(sum('totalBal'))}</td>
             <td>—</td>
           </tr>
@@ -2190,7 +2315,7 @@
     const p = ctx.rdl.params;
     const custName = (p.customer && p.customer !== 'ALL') ? p.customer : (ctx.customers[0] || 'Sabeh Beton S.R.L');
     const allCustRows = (ctx.arLedgerAll || ctx.salesAll)
-      .filter(r => r.customer === custName)
+      .filter(r => r.customer === custName && (r.is_receipt_row || r.is_credit))
       .sort((a, b) => rowDate(a, ctx.basis).localeCompare(rowDate(b, ctx.basis)));
 
     let openDr = 0, openCr = 0;
@@ -2291,40 +2416,45 @@
 
     const addSup = (sup, d, type, billed, paid) => {
       if (!d || d > asof) return;
-      const s = sup || 'General Vendor';
+      const s = sup || '(Unassigned Supplier)';
       if (supFilter && supFilter !== 'ALL' && s !== supFilter) return;
-      const g = bySup.get(s) || { supplier: s, rmUsd: 0, expUsd: 0, fuelUsd: 0, billed: 0, paid: 0, lastDate: d };
+      const g = bySup.get(s) || { supplier: s, rmUsd: 0, haulUsd: 0, expUsd: 0, billed: 0, paid: 0, lastDate: d };
       if (type === 'rm') g.rmUsd += billed;
-      else if (type === 'fuel') g.fuelUsd += billed;
-      else g.expUsd += billed;
+      else if (type === 'haul') g.haulUsd += billed;
+      else if (type === 'exp') g.expUsd += billed;
       g.billed += billed;
       g.paid += paid;
       if (d > g.lastDate) g.lastDate = d;
       bySup.set(s, g);
     };
 
-    (ctx.apRmLedgerAll || ctx.rmAll).forEach(r => addSup(r.supplier, rowDate(r, ctx.basis), 'rm', Number(r.total_usd || 0), Number(r.paid_usd || 0)));
-    ctx.expAll.forEach(r => addSup(r.supplier, rowDate(r, ctx.basis), 'exp', Number(r.total_usd || 0), Number(r.paid_usd || 0)));
-    ctx.fuelAll.forEach(r => addSup(r.supplier || r.station, rowDate(r, ctx.basis), 'fuel', Number(r.total_usd || 0), Number(r.paid_usd || 0)));
+    (ctx.apRmLedgerAll || ctx.rmAll).forEach(r => {
+      const tp = r.is_settlement_row ? 'settle' : (r.leg === 'haulage' ? 'haul' : 'rm');
+      addSup(r.supplier, rowDate(r, ctx.basis), tp, Number(r.total_usd || 0), Number(r.paid_usd || 0));
+    });
+    ctx.expAll.forEach(r => {
+      if (!r.is_ap_credit) return;
+      addSup(r.supplier, rowDate(r, ctx.basis), 'exp', Number(r.ap_credit_usd || 0), 0);
+    });
 
     const rows = [...bySup.values()]
-      .filter(g => g.billed > 0 || Math.abs(g.billed - g.paid) > 1)
+      .filter(g => Math.abs(g.billed) > 0.01 || Math.abs(g.paid) > 0.01 || Math.abs(g.billed - g.paid) > 0.01)
       .sort((a, b) => (b.billed - b.paid) - (a.billed - a.paid))
-      .slice(0, 120);
+      .slice(0, 450);
 
     const sum = k => rows.reduce((s, r) => s + r[k], 0);
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `As at ${asof} · Supplier: ${supFilter === 'ALL' ? 'All Suppliers' : supFilter} · Accounts Payable (Account 401)`)}
+      ${sheetHeaderHtml(meta, ctx.co, `As at ${asof} · Supplier: ${supFilter === 'ALL' ? 'All Suppliers' : supFilter} · 3-Leg Accounts Payable (Account 401)`)}
       <table class="rdl-table">
         <thead>
           <tr>
-            <th>Supplier / Vendor (Account 401)</th>
+            <th>Supplier / Hauler (Account 401)</th>
             <th class="num">Raw Materials ($)</th>
-            <th class="num">Expenses & Maint. ($)</th>
-            <th class="num">Fuel & Diesel ($)</th>
-            <th class="num">Total Invoiced ($)</th>
-            <th class="num">Total Paid ($)</th>
+            <th class="num">Haulage ($)</th>
+            <th class="num">Credit Expenses ($)</th>
+            <th class="num">Total Credit ($)</th>
+            <th class="num">Settled ($)</th>
             <th class="num">Net Payable ($)</th>
             <th>Last Activity</th>
           </tr>
@@ -2336,8 +2466,8 @@
               <tr>
                 <td class="bold">${esc(r.supplier)}</td>
                 <td class="num">${fmtUsd(r.rmUsd)}</td>
+                <td class="num">${fmtUsd(r.haulUsd)}</td>
                 <td class="num">${fmtUsd(r.expUsd)}</td>
-                <td class="num">${fmtUsd(r.fuelUsd)}</td>
                 <td class="num bold">${fmtUsd(r.billed)}</td>
                 <td class="num">${fmtUsd(r.paid)}</td>
                 <td class="num bold">${fmtUsdSigned(net)}</td>
@@ -2350,8 +2480,8 @@
           <tr class="rdl-total-row">
             <td>TOTAL SUPPLIER BALANCES (${rows.length} vendors)</td>
             <td class="num">${fmtUsd(sum('rmUsd'))}</td>
+            <td class="num">${fmtUsd(sum('haulUsd'))}</td>
             <td class="num">${fmtUsd(sum('expUsd'))}</td>
-            <td class="num">${fmtUsd(sum('fuelUsd'))}</td>
             <td class="num">${fmtUsd(sum('billed'))}</td>
             <td class="num">${fmtUsd(sum('paid'))}</td>
             <td class="num">${fmtUsdSigned(sum('billed') - sum('paid'))}</td>
@@ -2368,13 +2498,12 @@
     const supName = (p.supplier && p.supplier !== 'ALL') ? p.supplier : (ctx.suppliers[0] || 'Holcim Liban S.A.L');
     const tx = [];
     (ctx.apRmLedgerAll || ctx.rmAll).filter(r => r.supplier === supName).forEach(r => {
-      tx.push({ date: rowDate(r, ctx.basis), ref: r.voucher || r.name || 'RM', type: r.is_settlement_row ? 'Settlement' : 'Raw Material', desc: r.is_settlement_row ? (r.material || 'Supplier Settlement') : `${r.material || 'Material'} (${fmtNum(r.qty, 2)} ${r.unit || 't'})`, cr: Number(r.total_usd || 0), dr: Number(r.paid_usd || 0) });
+      const srcLbl = r.is_settlement_row ? 'Settlement' : (r.leg === 'haulage' ? 'Raw Haulage' : 'Raw Material');
+      const descLbl = r.is_settlement_row ? (r.material || 'Supplier Settlement') : (r.leg === 'haulage' ? (r.material || 'Haulage') : `${r.material || 'Material'} (${fmtNum(r.qty, 2)} ${r.unit || 't'})`);
+      tx.push({ date: rowDate(r, ctx.basis), ref: r.voucher || r.name || 'RM', type: srcLbl, desc: descLbl, cr: Number(r.total_usd || 0), dr: Number(r.paid_usd || 0) });
     });
-    ctx.expAll.filter(r => r.supplier === supName).forEach(r => {
-      tx.push({ date: rowDate(r, ctx.basis), ref: r.voucher_no || r.invoice_no || 'EXP', type: r.category || 'Expense', desc: r.description || r.category || 'Vendor Invoice', cr: Number(r.total_usd || 0), dr: Number(r.paid_usd || 0) });
-    });
-    ctx.fuelAll.filter(r => (r.supplier || r.station) === supName).forEach(r => {
-      tx.push({ date: rowDate(r, ctx.basis), ref: r.voucher || 'FUEL', type: 'Diesel Supply', desc: `${fmtNum(r.liters, 0)} L · ${r.equip || ''}`, cr: Number(r.total_usd || 0), dr: Number(r.paid_usd || 0) });
+    ctx.expAll.filter(r => r.supplier === supName && r.is_ap_credit).forEach(r => {
+      tx.push({ date: rowDate(r, ctx.basis), ref: r.voucher_no || r.invoice_no || 'EXP', type: r.category || 'Credit Expense', desc: r.description || r.category || 'Vendor Invoice', cr: Number(r.ap_credit_usd || 0), dr: 0 });
     });
     tx.sort((a, b) => a.date.localeCompare(b.date));
 

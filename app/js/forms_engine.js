@@ -395,44 +395,79 @@
     if (!sNorm) {
       return `<div class="pa-subgrid-empty">Select a <b>Supplier / Hauler</b> to inspect open 3-Leg Payables (Material Leg · Haulage Leg · Credit Expense Leg) &amp; live FIFO settlement allocation.</div>`;
     }
-    const legs = [];
-    if (!legFilter || legFilter === 'all' || legFilter === 'material') {
-      (rec.raw_purchases || []).forEach(r => {
-        if (r && !r.voided && (!company || !r.company || r.company === company) && norm(r.site_owner) === sNorm && Number(r.cost || 0) > 0) {
-          legs.push({ date: r.date, ref: `RAW #${r.ticket_no || '—'}`, leg: 'Leg 1 · Raw Material', detail: `${r.product || ''} @ ${r.site || ''}`, amount: Number(r.cost || 0) });
+    const allLegs = [];
+    let priorCreditReturns = 0;
+    (rec.raw_purchases || []).forEach(r => {
+      if (!r || r.voided || (company && r.company && r.company !== company)) return;
+      const matOwner = r.site_owner || r.truck_owner;
+      if (norm(matOwner) === sNorm) {
+        const c = Number(r.cost || 0);
+        if (c > 0) {
+          allLegs.push({ date: r.date, ref: `RAW #${r.ticket_no || '—'}`, legType: 'material', leg: 'Leg 1 · Raw Material', detail: `${r.product || ''} @ ${r.site || ''}`, amount: c });
+        } else if (c < 0) {
+          priorCreditReturns += Math.abs(c);
         }
-      });
-    }
-    if (!legFilter || legFilter === 'all' || legFilter === 'haulage') {
-      (rec.raw_purchases || []).forEach(r => {
-        if (r && !r.voided && (!company || !r.company || r.company === company) && norm(r.truck_owner) === sNorm && Number(r.trans_cost || 0) > 0) {
-          legs.push({ date: r.date, ref: `RAW #${r.ticket_no || '—'}`, leg: 'Leg 2 · Raw Haulage', detail: `${r.truck || ''} · ${r.product || ''}`, amount: Number(r.trans_cost || 0) });
+      }
+      if (r.transport_by !== 'Company fleet' && norm(r.truck_owner) === sNorm) {
+        const hc = Number(r.trans_cost || 0);
+        if (hc > 0) {
+          allLegs.push({ date: r.date, ref: `RAW #${r.ticket_no || '—'}`, legType: 'haulage', leg: 'Leg 2 · Raw Haulage', detail: `${r.truck || ''} · ${r.product || ''}`, amount: hc });
+        } else if (hc < 0) {
+          priorCreditReturns += Math.abs(hc);
         }
-      });
-      (rec.sales_tickets || []).forEach(t => {
-        if (t && !t.voided && (!company || !t.company || t.company === company) && norm(t.truck_owner) === sNorm && Number(t.trans_cost || t.trans_price || 0) > 0) {
-          legs.push({ date: t.date, ref: `TKT #${t.ticket_no || '—'}`, leg: 'Leg 2 · Sales Haulage', detail: `${t.customer || ''} @ ${t.site || ''}`, amount: Number(t.trans_cost || t.trans_price || 0) });
+      }
+    });
+    (rec.expenses || []).forEach(e => {
+      if (!e || e.voided || (company && e.company && e.company !== company) || norm(e.supplier) !== sNorm) return;
+      const m = String(e.method || '').trim();
+      const amt = Number(e.amount || 0);
+      if (m === 'Credit' || m === 'IVA' || m === 'VAT' || m === 'VAT Dis') {
+        if (amt > 0) {
+          allLegs.push({ date: e.date, ref: e.reference || `EXP ${String(e.date || '').slice(5, 10)}`, legType: 'expense', leg: 'Leg 3 · Credit Expense', detail: `${e.category || ''} · ${e.subcategory || ''}`, amount: amt });
+        } else if (amt < 0) {
+          priorCreditReturns += Math.abs(amt);
         }
-      });
-    }
-    if (!legFilter || legFilter === 'all' || legFilter === 'expense') {
-      (rec.expenses || []).forEach(e => {
-        if (e && !e.voided && (!company || !e.company || e.company === company) && norm(e.supplier) === sNorm && String(e.method || '') === 'Credit' && Number(e.amount || 0) > 0) {
-          legs.push({ date: e.date, ref: e.reference || `EXP ${String(e.date || '').slice(5, 10)}`, leg: 'Leg 3 · Credit Expense', detail: `${e.category || ''} · ${e.subcategory || ''}`, amount: Number(e.amount || 0) });
-        }
-      });
-    }
+      } else if (m === 'CR Return' && amt !== 0) {
+        priorCreditReturns += Math.abs(amt);
+      }
+    });
 
-    legs.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
-    if (!legs.length) {
+    allLegs.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+    if (!allLegs.length) {
       return `<div class="pa-subgrid-empty">No open payable rows in the current sample for <b>${esc(supplierName)}</b> — settlement posts against prior book AP balance / supplier advance.</div>`;
     }
 
+    const priorSettled = (rec.settlements || []).reduce((sum, sp) => {
+      if (!sp || sp.voided || (company && sp.company && sp.company !== company) || norm(sp.supplier) !== sNorm) return sum;
+      const m = String(sp.method || '').trim();
+      if (m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'VAT' || m === 'VATConfig' || m === 'VAT Dis' || m === 'Cash VAT Dis' || m === 'IVA' || m === 'Commission' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return sum;
+      return sum + Number(sp.amount || 0) + Number(sp.discount || 0);
+    }, 0);
+
+    let priorPool = Math.max(0, round2(priorSettled + priorCreditReturns));
+    const afterPriorAll = allLegs.map(l => {
+      const origDue = Number(l.amount || 0);
+      const priorUsed = Math.min(priorPool, Math.max(0, origDue));
+      priorPool = round2(priorPool - priorUsed);
+      const openDue = round2(Math.max(0, origDue - priorUsed));
+      return { ...l, origDue, openDue };
+    });
+
+    const scopedAfterPrior = (!legFilter || legFilter === 'all')
+      ? afterPriorAll
+      : afterPriorAll.filter(l => l.legType === legFilter);
+    if (!scopedAfterPrior.length) {
+      return `<div class="pa-subgrid-empty">No payable legs matching the selected leg filter for <b>${esc(supplierName)}</b>.</div>`;
+    }
+    const openLegs = scopedAfterPrior.filter(l => l.openDue > 0.005);
+    const displayLegs = openLegs.length ? openLegs.slice(0, 12) : scopedAfterPrior.slice(-12);
+
     let pool = Math.max(0, Number(payAmount || 0));
-    const rowsHtml = legs.slice(0, 12).map(l => {
-      const alloc = Math.min(pool, Math.max(0, l.amount));
+    const rowsHtml = displayLegs.map(l => {
+      const due = l.openDue;
+      const alloc = Math.min(pool, Math.max(0, due));
       pool = round2(pool - alloc);
-      const rem = round2(Math.max(0, l.amount - alloc));
+      const rem = round2(Math.max(0, due - alloc));
       const status = rem <= 0.005 ? 'SETTLED' : (alloc > 0 ? 'PARTIAL' : 'OPEN');
       const badgeCls = status === 'SETTLED' ? 'badge-ok' : (status === 'PARTIAL' ? 'badge-warn' : 'badge-brass');
       return `
@@ -441,7 +476,7 @@
           <td class="mono"><b>${esc(l.ref)}</b></td>
           <td><span class="badge badge-info">${esc(l.leg)}</span></td>
           <td>${esc(l.detail)}</td>
-          <td class="r">${fmtUsd(l.amount)}</td>
+          <td class="r">${fmtUsd(due)}</td>
           <td class="r"><b>${alloc > 0 ? fmtUsd(alloc) : '—'}</b></td>
           <td class="r">${fmtUsd(rem)}</td>
           <td><span class="badge ${badgeCls}">${status}</span></td>
@@ -452,13 +487,13 @@
     return `
       <div class="pa-subgrid">
         <div class="pa-subgrid-hdr">
-          <span>OPEN 3-LEG SUPPLIER PAYABLES · LIVE FIFO ALLOCATION PREVIEW</span>
-          <span>${legs.length} Payable Legs Found${pool > 0 ? ` · Prepayment / Balance Relief: ${fmtUsd(pool)}` : ''}</span>
+          <span>OPEN 3-LEG SUPPLIER PAYABLES · LIVE FIFO ALLOCATION PREVIEW (Oldest First)</span>
+          <span>${openLegs.length} Open of ${scopedAfterPrior.length} Payable Legs${pool > 0 ? ` · Prepayment / Balance Relief: ${fmtUsd(pool)}` : ''}</span>
         </div>
         <div class="table-wrap" style="max-height:190px;overflow:auto">
           <table class="ledger-table">
             <thead>
-              <tr><th>Date</th><th>Voucher</th><th>AP Leg</th><th>Description</th><th class="r">Leg Amount</th><th class="r">Allocated Now</th><th class="r">Remaining</th><th>Status</th></tr>
+              <tr><th>Date</th><th>Voucher</th><th>AP Leg</th><th>Description</th><th class="r">Open Leg ($)</th><th class="r">Allocated Now</th><th class="r">Remaining</th><th>Status</th></tr>
             </thead>
             <tbody>${rowsHtml}</tbody>
           </table>

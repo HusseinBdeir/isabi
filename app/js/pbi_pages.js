@@ -98,6 +98,7 @@
 
     const salesByYm = new Map();
     const delivByYm = new Map();
+    const ttcByYm = new Map();
     for (let i = 0; i < sList.length; i++) {
       const s = sList[i];
       if (!s || s.voided) continue;
@@ -107,6 +108,12 @@
       if (sgn === 0) continue;
       const ym = String((basis === 'tx' ? s.date : (s.rep_date || s.date)) || '').slice(0, 7);
       if (!ymSet.has(ym)) continue;
+
+      const ttcAll = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+      let tb = ttcByYm.get(ym);
+      if (!tb) { tb = { cashTtc: 0, credTtc: 0 }; ttcByYm.set(ym, tb); }
+      if (mth === 'Cash' || mth === 'C Return' || mth === 'Cash Return') tb.cashTtc += ttcAll;
+      else if (mth === 'Credit' || mth === 'CR Return' || mth === 'Credit Return') tb.credTtc += ttcAll;
 
       const trVal = sgn * Number(s.trans_price || 0);
       const isOwnFleet = /company/i.test(String(s.transport_by || ''));
@@ -172,6 +179,7 @@
       const sb = ym ? salesByYm.get(ym) : null;
       const db = ym ? delivByYm.get(ym) : null;
       const rb = ym ? rawByYm.get(ym) : null;
+      const tb = ym ? ttcByYm.get(ym) : null;
       const avgNet = (sb && sb.m3 > 0.001)
         ? roundFn(sb.net / sb.m3)
         : (hasSalesPool ? 0 : Number(mRow.avg_price_net || 0));
@@ -185,6 +193,8 @@
         avg_price_net: avgNet,
         avg_price_ttc: avgTtc,
         avg_raw_cost: avgRaw,
+        cash_sales_ttc: hasSalesSource ? roundFn(tb ? tb.cashTtc : 0) : roundFn(Number(mRow.cash_sales_ttc != null ? mRow.cash_sales_ttc : (mRow.cash_sales || 0))),
+        credit_sales_ttc: hasSalesSource ? roundFn(tb ? tb.credTtc : 0) : roundFn(Number(mRow.credit_sales_ttc != null ? mRow.credit_sales_ttc : (Number(mRow.sales_ttc || 0) - Number(mRow.cash_sales || 0)))),
         raw_mat_leg: hasRawSource ? roundFn(rb ? rb.mat : 0) : roundFn(Number(mRow.raw_mat_cost || 0)),
         raw_haul_leg: hasRawSource ? roundFn(rb ? rb.haul : 0) : roundFn(Number(mRow.raw_haulage || 0)),
         own_trans_rev: hasSalesSource ? roundFn(db ? db.ownTrans : 0) : roundFn(Number(mRow.trans_rev || 0)),
@@ -1612,8 +1622,9 @@
     const rel = {
       custByName: {}, suppByName: {}, prodByName: {}, typeByName: {}, uomByName: {},
       siteByName: {}, regByName: {}, equipByName: {}, drvByName: {}, catByName: {},
-      subcatByName: {}, staffByName: {}, vatInvByNo: {}, loanByName: {}
+      subcatByName: {}, subcatByKey: {}, staffByName: {}, vatInvByNo: {}, loanByName: {}
     };
+    const subcatKey = (cat, sub) => `${norm(cat)}|${norm(sub)}`;
     const ensure = (map, k, init) => { const nk = norm(k); if (!nk) return null; if (!map[nk]) map[nk] = init(); return map[nk]; };
 
     const initCust = () => ({ sales_loads: 0, sample_loads: 0, total_sales: 0, ar_balance: 0, credit_days: null, credit_limit: null, active_rules: 0 });
@@ -1636,7 +1647,7 @@
       sites: new Set()
     });
 
-    // Seed from Manufacturing Group consolidated model + fallback semantic_model summaries
+    // Seed from Manufacturing Group consolidated model + fallback semantic_model summaries, then overlay canonical hydrated AR/AP
     const mgModel = ((SEED && SEED.models) || {})['manufacturing-group'] || {};
     (mgModel.customers || (((SEED && SEED.semantic_model) || {}).customer_ar_summary) || []).forEach(c => {
       const e = ensure(rel.custByName, c.Customer, initCust);
@@ -1654,6 +1665,92 @@
         e.ap_balance = Number(s.ap_balance || 0);
       }
     });
+    if (Array.isArray(rec.sales_tickets) && rec.sales_tickets.length > 0) {
+      const cCanon = new Map();
+      const ensureCC = nm => {
+        const nk = norm(nm);
+        if (!nk) return null;
+        if (!cCanon.has(nk)) cCanon.set(nk, { loads: 0, ttc: 0, crTtc: 0, settled: 0 });
+        return cCanon.get(nk);
+      };
+      (rec.sales_tickets || []).forEach(s => {
+        if (!s || s.voided || !s.customer) return;
+        const sgn = saleTicketSign(s);
+        if (sgn === 0) return;
+        const cur = ensureCC(s.customer);
+        if (!cur) return;
+        const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+        if (sgn === 1) cur.loads += 1;
+        cur.ttc += ttc;
+        const mth = String(s.method || '').trim();
+        if (mth === 'Credit' || mth === 'CR Return' || mth === 'Credit Return') cur.crTtc += ttc;
+      });
+      (rec.receipts || []).forEach(r => {
+        if (!r || r.voided || !r.customer || !isArSettlingRecpt(r)) return;
+        const cur = ensureCC(r.customer);
+        if (cur) cur.settled += Number(r.amount || 0) + Number(r.discount || 0);
+      });
+      Object.values(rel.custByName).forEach(ce => { ce.sales_loads = 0; ce.total_sales = 0; ce.ar_balance = 0; });
+      cCanon.forEach((st, nk) => {
+        const e = rel.custByName[nk] || (rel.custByName[nk] = initCust());
+        e.sales_loads = st.loads;
+        e.total_sales = round2(st.ttc);
+        e.ar_balance = round2(st.crTtc - st.settled);
+      });
+    }
+    if ((Array.isArray(rec.raw_purchases) && rec.raw_purchases.length > 0) || (Array.isArray(rec.settlements) && rec.settlements.length > 0)) {
+      const sCanon = new Map();
+      const ensureSC = nm => {
+        const nk = norm(nm);
+        if (!nk) return null;
+        if (!sCanon.has(nk)) sCanon.set(nk, { rawLoads: 0, rawCost: 0, onCr: 0, settled: 0 });
+        return sCanon.get(nk);
+      };
+      (rec.raw_purchases || []).forEach(r => {
+        if (!r || r.voided) return;
+        const matOwner = r.site_owner || r.truck_owner;
+        if (matOwner) {
+          const cur = ensureSC(matOwner);
+          if (cur) {
+            cur.rawLoads += 1;
+            const c = Number(r.cost || 0);
+            cur.rawCost += c;
+            cur.onCr += c;
+          }
+        }
+        if (r.transport_by !== 'Company fleet' && r.truck_owner && Number(r.trans_cost || 0) !== 0) {
+          const curH = ensureSC(r.truck_owner);
+          if (curH) {
+            const hc = Number(r.trans_cost || 0);
+            curH.rawCost += hc;
+            curH.onCr += hc;
+          }
+        }
+      });
+      (rec.expenses || []).forEach(x => {
+        if (!x || x.voided || !x.supplier) return;
+        const mth = String(x.method || '').trim();
+        if (mth === 'Credit' || mth === 'CR Return' || mth === 'IVA' || mth === 'VAT' || mth === 'VAT Dis') {
+          const sgn = mth === 'CR Return' ? -1 : 1;
+          const cur = ensureSC(x.supplier);
+          if (cur) cur.onCr += sgn * Number(x.amount || 0);
+        }
+      });
+      (rec.settlements || []).forEach(sp => {
+        if (!sp || sp.voided || !sp.supplier) return;
+        const mth = String(sp.method || '').trim();
+        if (mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Cash Return' || mth === 'Cash Discount' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission' || mth === 'RentConfig' || mth === 'Rent' || mth === 'VATRent') return;
+        const cur = ensureSC(sp.supplier);
+        if (cur) cur.settled += Number(sp.amount || 0) + Number(sp.discount || 0);
+      });
+      Object.values(rel.suppByName).forEach(se => { se.ap_balance = 0; });
+      sCanon.forEach((st, nk) => {
+        const e = rel.suppByName[nk] || (rel.suppByName[nk] = initSupp());
+        if (st.rawLoads > 0) e.raw_loads = st.rawLoads;
+        if (st.rawCost !== 0) e.raw_cost = round2(st.rawCost);
+        e.ap_balance = round2(st.onCr - st.settled);
+      });
+    }
 
     const eqLabelMap = {};
     (rec.equipment || []).forEach(eq => {
@@ -1874,6 +1971,10 @@
     (rec.expense_subcategories || []).forEach(sc => {
       if (!sc) return;
       ensure(rel.subcatByName, sc.name, () => ({ expenses_count: 0, total_spent: 0 }));
+      if (sc.name) {
+        const sk = subcatKey(sc.category, sc.name);
+        if (!rel.subcatByKey[sk]) rel.subcatByKey[sk] = { expenses_count: 0, total_spent: 0 };
+      }
       const ce = ensure(rel.catByName, sc.category, () => ({ subcategories_count: 0, expenses_count: 0, total_spent: 0 }));
       if (ce) ce.subcategories_count++;
     });
@@ -1885,6 +1986,12 @@
       if (ce) { ce.expenses_count++; ce.total_spent = round2(ce.total_spent + amt); }
       const se = ensure(rel.subcatByName, ex.subcategory, () => ({ expenses_count: 0, total_spent: 0 }));
       if (se) { se.expenses_count++; se.total_spent = round2(se.total_spent + amt); }
+      if (ex.subcategory) {
+        const sk = subcatKey(ex.category, ex.subcategory);
+        if (!rel.subcatByKey[sk]) rel.subcatByKey[sk] = { expenses_count: 0, total_spent: 0 };
+        rel.subcatByKey[sk].expenses_count++;
+        rel.subcatByKey[sk].total_spent = round2(rel.subcatByKey[sk].total_spent + amt);
+      }
       if (ex.supplier) {
         const supE = ensure(rel.suppByName, ex.supplier, initSupp);
         if (supE) { supE.is_expense = true; supE.expenses_count++; supE.expenses_usd = round2(supE.expenses_usd + amt); }
@@ -2106,8 +2213,11 @@
         if (ce && ce[c] != null) return ce[c];
       }
       if (tableKey === 'expense_subcategories') {
-        const se = rel.subcatByName[norm(r.name)];
+        const se = r.category
+          ? (rel.subcatByKey && rel.subcatByKey[`${norm(r.category)}|${norm(r.name)}`])
+          : rel.subcatByName[norm(r.name)];
         if (se && se[c] != null) return se[c];
+        if (c === 'expenses_count' || c === 'total_spent') return 0;
       }
       if (tableKey === 'employments') {
         const st = rel.staffByName[norm(r.staff || r.name)];
@@ -3168,7 +3278,7 @@
       const baseRecRows = filterRecords(rec.receipts, { ignoreSearch: true });
       const baseSetRows = filterRecords(rec.settlements, { ignoreSearch: true });
       const baseFuelRows = filterRecords(rec.fuel_intakes, { ignoreSearch: true });
-      const sampleAllTtc = baseSalesRows.reduce((a, r) => a + Number(r.total_ttc || 0), 0) || 1;
+      const sampleAllTtc = baseSalesRows.reduce((a, r) => a + saleTicketSign(r) * Number(r.total_ttc || 0), 0) || 1;
 
       let baseProds = (m.products || []).map(p => {
         if (!productMeters) return p;
@@ -3235,13 +3345,26 @@
       };
 
       const recDateForBasis = r => String((STATE.basis === 'rep' ? (r.rep_date || r.date) : r.date) || '').slice(0, 10);
+      const isCashSale = s => {
+        const mth = String((s && s.method) || '').trim();
+        return mth === 'Cash' || mth === 'C Return' || mth === 'Cash Return';
+      };
+      const isCreditSale = s => {
+        const mth = String((s && s.method) || '').trim();
+        return mth === 'Credit' || mth === 'CR Return' || mth === 'Credit Return';
+      };
       const isValidRecpt = r => {
         const mth = String((r && r.method) || '').trim();
         return !(mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Config' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis' || mth === 'Cash Return' || mth === 'Cash Discount' || mth === 'IVA' || mth === 'RentConfig' || mth === 'Rent' || mth === 'VATRent');
       };
       const isValidSettle = sp => {
         const mth = String((sp && sp.method) || '').trim();
-        return !(mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Config' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis');
+        return !(mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Config' || mth === 'Cash Return' || mth === 'Cash Discount' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission' || mth === 'RentConfig' || mth === 'Rent' || mth === 'VATRent');
+      };
+      const isApSettlingSettle = sp => {
+        if (!sp || sp.voided) return false;
+        const mth = String(sp.method || '').trim();
+        return !(mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Cash Return' || mth === 'Cash Discount' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission' || mth === 'RentConfig' || mth === 'Rent' || mth === 'VATRent');
       };
       const expSignedCredit = x => {
         const mth = String((x && x.method) || '').trim();
@@ -3249,9 +3372,21 @@
         const isCred = (mth === 'Credit' || mth === 'CR Return' || mth === 'IVA' || mth === 'VAT' || mth === 'VAT Dis');
         return { sgn, isCred, amt: sgn * Number(x.amount || 0) };
       };
+      const isMfgCo = ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].includes(STATE.company);
+      const hasHydratedSales = Array.isArray(rec.sales_tickets) && rec.sales_tickets.length > 0;
+      const hasHydratedAp = (Array.isArray(rec.raw_purchases) && rec.raw_purchases.length > 0)
+        || (Array.isArray(rec.expenses) && rec.expenses.length > 0)
+        || (Array.isArray(rec.settlements) && rec.settlements.length > 0);
 
       const buildScopedCusts = (salesPool, recPool, forceScope = false) => {
-        if (!activeRange && !forceScope) {
+        const cMap = new Map();
+        const ensureCust = name => {
+          const label = String(name || '').trim();
+          const ck = norm(label);
+          if (!cMap.has(ck)) cMap.set(ck, { displayName: label, loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, cash_sales_ttc: 0, receipts: 0, ar_settled: 0, last_sale: '' });
+          return cMap.get(ck);
+        };
+        if (!activeRange && !forceScope && !(isMfgCo && hasHydratedSales)) {
           return (m.customers || []).map(c => {
             const crNet = round2(Number(c.credit_sales || 0));
             const crTtc = round2(c.sales_ttc != null ? (Number(c.sales_ttc || 0) - Number(c.cash_sales || 0)) : (c['VAT Registered'] === 'Yes' ? crNet * 1.11 : crNet));
@@ -3261,6 +3396,7 @@
             return Object.assign({}, c, {
               credit_sales: crNet,
               credit_sales_ttc: crTtc,
+              cash_sales_ttc: round2(Number(c.cash_sales || 0)),
               ar_settled: settled,
               receipts_cash: cashRcpt,
               opening_ar: 0,
@@ -3269,12 +3405,6 @@
             });
           });
         }
-        const cMap = new Map();
-        const ensureCust = name => {
-          const ck = norm(name);
-          if (!cMap.has(ck)) cMap.set(ck, { displayName: name, loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, receipts: 0, ar_settled: 0, last_sale: '' });
-          return cMap.get(ck);
-        };
         salesPool.forEach(s => {
           if (!s.customer) return;
           const sgn = saleTicketSign(s);
@@ -3287,8 +3417,10 @@
           cur.sales_ttc += ttc;
           cur.net_sales += net;
           cur.sales_vat += vat;
-          if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') cur.cash_sales += net;
-          else {
+          if (isCashSale(s)) {
+            cur.cash_sales += net;
+            cur.cash_sales_ttc += ttc;
+          } else if (isCreditSale(s)) {
             cur.credit_sales += net;
             cur.credit_sales_ttc += ttc;
           }
@@ -3301,13 +3433,113 @@
           cur.ar_settled += amt;
           if (isValidRecpt(r)) cur.receipts += amt;
         });
+
+        if (!activeRange && !forceScope) {
+          const seenCustNorm = new Set();
+          const out = (m.customers || []).map(c => {
+            const ck = norm(c.Customer);
+            if (ck) seenCustNorm.add(ck);
+            const st = cMap.get(ck);
+            if (!st) {
+              return Object.assign({}, c, {
+                loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0,
+                cash_sales: 0, cash_sales_ttc: 0, ar_settled: 0, receipts_cash: 0, receipts: 0, opening_ar: 0,
+                ar_balance: 0, ar_current: 0, ar_1_10: 0, ar_11_30: 0, ar_31_60: 0, ar_1_60: 0, ar_60_plus: 0, ar_overdue: 0
+              });
+            }
+            const crTtc = round2(st.credit_sales_ttc);
+            const settled = round2(st.ar_settled);
+            const bal = round2(crTtc - settled);
+            const balDelta = round2(bal - Number(c.ar_balance || 0));
+            const arCur = Math.abs(balDelta) > 0.005 ? round2(Math.max(0, Number(c.ar_current || 0) + balDelta)) : Number(c.ar_current || 0);
+            return Object.assign({}, c, {
+              loads: st.loads,
+              sales_ttc: round2(st.sales_ttc),
+              net_sales: round2(st.net_sales),
+              sales_vat: round2(st.sales_vat),
+              credit_sales: round2(st.credit_sales),
+              credit_sales_ttc: crTtc,
+              cash_sales: round2(st.cash_sales),
+              cash_sales_ttc: round2(st.cash_sales_ttc),
+              ar_settled: settled,
+              receipts_cash: round2(st.receipts),
+              receipts: settled,
+              opening_ar: 0,
+              ar_current: arCur,
+              ar_balance: bal,
+              last_sale: st.last_sale || c.last_sale
+            });
+          });
+          cMap.forEach((st, ck) => {
+            if (!ck || seenCustNorm.has(ck)) return;
+            const crTtc = round2(st.credit_sales_ttc);
+            const settled = round2(st.ar_settled);
+            const bal = round2(crTtc - settled);
+            if (st.loads === 0 && Math.abs(st.sales_ttc) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(bal) <= 0.005) return;
+            out.push({
+              Customer: st.displayName || ck,
+              'VAT Registered': custIvaMap.get(ck) || (st.sales_vat > 0.005 ? 'Yes' : 'No'),
+              loads: st.loads,
+              sales_ttc: round2(st.sales_ttc),
+              net_sales: round2(st.net_sales),
+              sales_vat: round2(st.sales_vat),
+              credit_sales: round2(st.credit_sales),
+              credit_sales_ttc: crTtc,
+              cash_sales: round2(st.cash_sales),
+              cash_sales_ttc: round2(st.cash_sales_ttc),
+              ar_settled: settled,
+              receipts_cash: round2(st.receipts),
+              receipts: settled,
+              opening_ar: 0,
+              ar_current: bal > 0 ? bal : 0,
+              ar_1_10: 0,
+              ar_11_30: 0,
+              ar_31_60: 0,
+              ar_1_60: 0,
+              ar_60_plus: 0,
+              ar_overdue: 0,
+              vat_receivable: 0,
+              ar_balance: bal,
+              last_sale: st.last_sale || ''
+            });
+          });
+          return out.sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0) || Number(b.ar_balance || 0) - Number(a.ar_balance || 0));
+        }
+
         const postCustMap = new Map();
-        if (activeRange && activeRange.to) {
+        const allTimeCustMap = new Map();
+        if (isMfgCo && hasHydratedSales) {
           const allSalesCo = filterRecords(rec.sales_tickets, { ignorePeriod: true, ignoreSearch: true });
           const allRecCo = filterRecords(rec.receipts, { ignorePeriod: true, ignoreSearch: true });
           allSalesCo.forEach(s => {
-            if (!s.customer || recDateForBasis(s) <= activeRange.to) return;
-            if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') return;
+            if (!s.customer || !isCreditSale(s)) return;
+            const sgn = saleTicketSign(s);
+            if (sgn === 0) return;
+            const ck = norm(s.customer);
+            const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+            allTimeCustMap.set(ck, (allTimeCustMap.get(ck) || 0) + ttc);
+            if (activeRange && activeRange.to && recDateForBasis(s) > activeRange.to) {
+              const p = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
+              p.crTtc += ttc;
+              postCustMap.set(ck, p);
+            }
+          });
+          allRecCo.forEach(r => {
+            if (!r.customer || !isArSettlingRecpt(r)) return;
+            const ck = norm(r.customer);
+            const amt = Number(r.amount || 0) + Number(r.discount || 0);
+            allTimeCustMap.set(ck, (allTimeCustMap.get(ck) || 0) - amt);
+            if (activeRange && activeRange.to && recDateForBasis(r) > activeRange.to) {
+              const p = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
+              p.rcpt += amt;
+              postCustMap.set(ck, p);
+            }
+          });
+        } else if (activeRange && activeRange.to) {
+          const allSalesCo = filterRecords(rec.sales_tickets, { ignorePeriod: true, ignoreSearch: true });
+          const allRecCo = filterRecords(rec.receipts, { ignorePeriod: true, ignoreSearch: true });
+          allSalesCo.forEach(s => {
+            if (!s.customer || !isCreditSale(s) || recDateForBasis(s) <= activeRange.to) return;
             const sgn = saleTicketSign(s);
             if (sgn === 0) return;
             const ck = norm(s.customer);
@@ -3323,13 +3555,17 @@
             postCustMap.set(ck, p);
           });
         }
-        return (m.customers || []).map(c => {
+
+        const seenCustNorm = new Set();
+        const out = (m.customers || []).map(c => {
           const ck = norm(c.Customer);
-          const st = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, receipts: 0, ar_settled: 0, last_sale: '' };
+          if (ck) seenCustNorm.add(ck);
+          const st = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, cash_sales_ttc: 0, receipts: 0, ar_settled: 0, last_sale: '' };
           const post = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
           const crTtc = round2(st.credit_sales_ttc);
           const settled = round2(st.ar_settled);
-          const bal = round2(Number(c.ar_balance || 0) - post.crTtc + post.rcpt);
+          const allTimeBal = (isMfgCo && hasHydratedSales) ? round2(allTimeCustMap.get(ck) || 0) : Number(c.ar_balance || 0);
+          const bal = round2(allTimeBal - post.crTtc + post.rcpt);
           const openAr = round2(bal - crTtc + settled);
           return Object.assign({}, c, {
             loads: st.loads,
@@ -3339,6 +3575,7 @@
             credit_sales: round2(st.credit_sales),
             credit_sales_ttc: crTtc,
             cash_sales: round2(st.cash_sales),
+            cash_sales_ttc: round2(st.cash_sales_ttc),
             ar_settled: settled,
             receipts_cash: round2(st.receipts),
             receipts: settled,
@@ -3346,11 +3583,48 @@
             ar_balance: bal,
             last_sale: st.last_sale || c.last_sale
           });
-        }).sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0) || Number(b.ar_balance || 0) - Number(a.ar_balance || 0));
+        });
+        cMap.forEach((st, ck) => {
+          if (!ck || seenCustNorm.has(ck)) return;
+          const crTtc = round2(st.credit_sales_ttc);
+          const settled = round2(st.ar_settled);
+          const post = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
+          const allTimeBal = (isMfgCo && hasHydratedSales) ? round2(allTimeCustMap.get(ck) || 0) : 0;
+          const bal = round2(allTimeBal - post.crTtc + post.rcpt);
+          if (st.loads === 0 && Math.abs(st.sales_ttc) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(bal) <= 0.005) return;
+          const openAr = round2(bal - crTtc + settled);
+          out.push({
+            Customer: st.displayName || ck,
+            'VAT Registered': custIvaMap.get(ck) || (st.sales_vat > 0.005 ? 'Yes' : 'No'),
+            loads: st.loads,
+            sales_ttc: round2(st.sales_ttc),
+            net_sales: round2(st.net_sales),
+            sales_vat: round2(st.sales_vat),
+            credit_sales: round2(st.credit_sales),
+            credit_sales_ttc: crTtc,
+            cash_sales: round2(st.cash_sales),
+            cash_sales_ttc: round2(st.cash_sales_ttc),
+            ar_settled: settled,
+            receipts_cash: round2(st.receipts),
+            receipts: settled,
+            opening_ar: openAr,
+            ar_current: bal > 0 ? bal : 0,
+            ar_1_10: 0,
+            ar_11_30: 0,
+            ar_31_60: 0,
+            ar_1_60: 0,
+            ar_60_plus: 0,
+            ar_overdue: 0,
+            vat_receivable: 0,
+            ar_balance: bal,
+            last_sale: st.last_sale || ''
+          });
+        });
+        return out.sort((a, b) => Number(b.sales_ttc || 0) - Number(a.sales_ttc || 0) || Number(b.ar_balance || 0) - Number(a.ar_balance || 0));
       };
 
       const buildScopedSupps = (rawPool, expPool, setPool, forceScope = false) => {
-        if (!activeRange && !forceScope) {
+        if (!activeRange && !forceScope && !(isMfgCo && hasHydratedAp)) {
           return (m.suppliers || []).map(s => {
             const mat = round2(Number(s.ap_material != null ? s.ap_material : (s.raw_mat_cost || 0)));
             const haul = round2(Number(s.ap_haulage != null ? s.ap_haulage : 0));
@@ -3384,16 +3658,21 @@
           return sMap.get(sk);
         };
         rawPool.forEach(r => {
-          if (r.site_owner || Number(r.cost || 0) !== 0) {
-            const st = ensureSup(r.site_owner || '(Unassigned Supplier)');
+          const costVal = Number(r.cost || 0);
+          const haulVal = Number(r.trans_cost || 0);
+          const hasMat = Boolean(r.site_owner) || costVal !== 0;
+          const matOwner = r.site_owner || r.truck_owner || '(Unassigned Supplier)';
+          const hasHaul = haulVal !== 0 || (Boolean(r.truck_owner) && r.transport_by !== 'Company fleet');
+          const haulOwner = r.truck_owner || '(Unassigned Supplier)';
+          if (hasMat) {
+            const st = ensureSup(matOwner);
             st.raw_loads += 1;
-            st.raw_mat_cost += Number(r.cost || 0);
+            st.raw_mat_cost += costVal;
           }
-          if ((r.truck_owner || Number(r.trans_cost || 0) > 0) && r.transport_by !== 'Company fleet') {
-            const tkName = r.truck_owner || '(Unassigned Supplier)';
-            const st = ensureSup(tkName);
-            if (norm(tkName) !== norm(r.site_owner || '')) st.raw_loads += 1;
-            st.raw_haulage += Number(r.trans_cost || 0);
+          if (hasHaul) {
+            const st = ensureSup(haulOwner);
+            if (!hasMat || norm(haulOwner) !== norm(matOwner)) st.raw_loads += 1;
+            st.raw_haulage += haulVal;
           }
         });
         expPool.forEach(x => {
@@ -3406,35 +3685,142 @@
           }
         });
         setPool.forEach(sp => {
-          if (!sp.supplier || !isValidSettle(sp)) return;
+          if (!sp.supplier) return;
+          const settlesAp = isApSettlingSettle(sp);
+          const isPay = isValidSettle(sp);
+          if (!settlesAp && !isPay) return;
           const st = ensureSup(sp.supplier);
-          st.settlements_paid += Number(sp.amount || 0);
-          st.ap_settled += Number(sp.amount || 0) + Number(sp.discount || 0);
+          const tot = Number(sp.amount || 0) + Number(sp.discount || 0);
+          if (isPay) st.settlements_paid += tot;
+          if (settlesAp) st.ap_settled += tot;
         });
 
+        if (!activeRange && !forceScope) {
+          const seenSupNorm = new Set();
+          const result = (m.suppliers || []).map(s => {
+            const sName = s.Supplier || '(Unassigned Supplier)';
+            const sk = norm(sName);
+            if (sk) seenSupNorm.add(sk);
+            const st = sMap.get(sk) || { raw_loads: 0, raw_mat_cost: 0, raw_haulage: 0, expenses: 0, ap_expense: 0, settlements_paid: 0, ap_settled: 0 };
+            const mat = round2(st.raw_mat_cost);
+            const haul = round2(st.raw_haulage);
+            const exp = round2(st.ap_expense);
+            const onCr = round2(mat + haul + exp);
+            const paid = round2(st.settlements_paid);
+            const settled = round2(st.ap_settled);
+            const bal = round2(onCr - settled);
+            return Object.assign({}, s, {
+              Supplier: sName,
+              IVA: s.IVA || suppIvaMap.get(sk) || 'No',
+              raw_loads: st.raw_loads,
+              raw_mat_cost: mat,
+              raw_haulage: haul,
+              raw_cost: round2(mat + haul),
+              ap_material: mat,
+              ap_haulage: haul,
+              ap_expense: exp,
+              expenses: round2(st.expenses),
+              ap_on_credit: onCr,
+              settlements_paid: paid,
+              ap_settled: settled,
+              opening_ap: 0,
+              ap_balance: bal
+            });
+          });
+          sMap.forEach((st, sk) => {
+            if (!sk || seenSupNorm.has(sk)) return;
+            const mat = round2(st.raw_mat_cost);
+            const haul = round2(st.raw_haulage);
+            const exp = round2(st.ap_expense);
+            const onCr = round2(mat + haul + exp);
+            const paid = round2(st.settlements_paid);
+            const settled = round2(st.ap_settled);
+            const bal = round2(onCr - settled);
+            if (st.raw_loads === 0 && Math.abs(onCr) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(paid) <= 0.005) return;
+            result.push({
+              Supplier: st.displayName || sk,
+              IVA: suppIvaMap.get(sk) || 'No',
+              raw_loads: st.raw_loads,
+              raw_mat_cost: mat,
+              raw_haulage: haul,
+              raw_cost: round2(mat + haul),
+              ap_material: mat,
+              ap_haulage: haul,
+              ap_expense: exp,
+              expenses: round2(st.expenses),
+              ap_on_credit: onCr,
+              settlements_paid: paid,
+              ap_settled: settled,
+              opening_ap: 0,
+              ap_balance: bal
+            });
+          });
+          result.sort((a, b) => Number(b.raw_cost || 0) - Number(a.raw_cost || 0) || Number(b.ap_balance || 0) - Number(a.ap_balance || 0));
+          return result;
+        }
+
         const postSupMap = new Map();
-        if (activeRange && activeRange.to) {
+        const allTimeSupMap = new Map();
+        const ensurePost = name => {
+          const sk = norm(String(name || '').trim() || '(Unassigned Supplier)');
+          if (!postSupMap.has(sk)) postSupMap.set(sk, { cr: 0, set: 0 });
+          return postSupMap.get(sk);
+        };
+        if (isMfgCo && hasHydratedAp) {
           const allRawCo = filterRecords(rec.raw_purchases, { ignorePeriod: true, ignoreSearch: true });
           const allExpCo = filterRecords(rec.expenses, { ignorePeriod: true, ignoreSearch: true });
           const allSetCo = filterRecords(rec.settlements, { ignorePeriod: true, ignoreSearch: true });
-          const ensurePost = name => {
-            const sk = norm(String(name || '').trim() || '(Unassigned Supplier)');
-            if (!postSupMap.has(sk)) postSupMap.set(sk, { cr: 0, set: 0 });
-            return postSupMap.get(sk);
-          };
+          allRawCo.forEach(r => {
+            const costVal = Number(r.cost || 0);
+            const haulVal = Number(r.trans_cost || 0);
+            const isAfter = Boolean(activeRange && activeRange.to && recDateForBasis(r) > activeRange.to);
+            if (r.site_owner || costVal !== 0) {
+              const mkOwner = r.site_owner || r.truck_owner || '(Unassigned Supplier)';
+              const msk = norm(String(mkOwner).trim() || '(Unassigned Supplier)');
+              allTimeSupMap.set(msk, (allTimeSupMap.get(msk) || 0) + costVal);
+              if (isAfter) ensurePost(mkOwner).cr += costVal;
+            }
+            if (haulVal !== 0 || (r.truck_owner && r.transport_by !== 'Company fleet')) {
+              const hkOwner = r.truck_owner || '(Unassigned Supplier)';
+              const hsk = norm(String(hkOwner).trim() || '(Unassigned Supplier)');
+              allTimeSupMap.set(hsk, (allTimeSupMap.get(hsk) || 0) + haulVal);
+              if (isAfter) ensurePost(hkOwner).cr += haulVal;
+            }
+          });
+          allExpCo.forEach(x => {
+            const { sgn, isCred, amt } = expSignedCredit(x);
+            if (sgn === 0 || !isCred) return;
+            const supOwner = x.supplier || '(Unassigned Supplier)';
+            const xsk = norm(String(supOwner).trim() || '(Unassigned Supplier)');
+            allTimeSupMap.set(xsk, (allTimeSupMap.get(xsk) || 0) + amt);
+            if (activeRange && activeRange.to && recDateForBasis(x) > activeRange.to) ensurePost(supOwner).cr += amt;
+          });
+          allSetCo.forEach(sp => {
+            if (!sp.supplier || !isApSettlingSettle(sp)) return;
+            const ssk = norm(String(sp.supplier).trim());
+            const tot = Number(sp.amount || 0) + Number(sp.discount || 0);
+            allTimeSupMap.set(ssk, (allTimeSupMap.get(ssk) || 0) - tot);
+            if (activeRange && activeRange.to && recDateForBasis(sp) > activeRange.to) ensurePost(sp.supplier).set += tot;
+          });
+        } else if (activeRange && activeRange.to) {
+          const allRawCo = filterRecords(rec.raw_purchases, { ignorePeriod: true, ignoreSearch: true });
+          const allExpCo = filterRecords(rec.expenses, { ignorePeriod: true, ignoreSearch: true });
+          const allSetCo = filterRecords(rec.settlements, { ignorePeriod: true, ignoreSearch: true });
           allRawCo.forEach(r => {
             if (recDateForBasis(r) <= activeRange.to) return;
-            if (r.site_owner || Number(r.cost || 0) !== 0) ensurePost(r.site_owner).cr += Number(r.cost || 0);
-            if ((r.truck_owner || Number(r.trans_cost || 0) > 0) && r.transport_by !== 'Company fleet') ensurePost(r.truck_owner).cr += Number(r.trans_cost || 0);
+            const costVal = Number(r.cost || 0);
+            const haulVal = Number(r.trans_cost || 0);
+            if (r.site_owner || costVal !== 0) ensurePost(r.site_owner || r.truck_owner || '(Unassigned Supplier)').cr += costVal;
+            if (haulVal !== 0 || (r.truck_owner && r.transport_by !== 'Company fleet')) ensurePost(r.truck_owner || '(Unassigned Supplier)').cr += haulVal;
           });
           allExpCo.forEach(x => {
             if (recDateForBasis(x) <= activeRange.to) return;
             const { sgn, isCred, amt } = expSignedCredit(x);
-            if (sgn !== 0 && isCred) ensurePost(x.supplier).cr += amt;
+            if (sgn !== 0 && isCred) ensurePost(x.supplier || '(Unassigned Supplier)').cr += amt;
           });
           allSetCo.forEach(sp => {
-            if (!sp.supplier || !isValidSettle(sp) || recDateForBasis(sp) <= activeRange.to) return;
-            ensurePost(sp.supplier).set += Number(sp.amount || 0);
+            if (!sp.supplier || !isApSettlingSettle(sp) || recDateForBasis(sp) <= activeRange.to) return;
+            ensurePost(sp.supplier).set += Number(sp.amount || 0) + Number(sp.discount || 0);
           });
         }
 
@@ -3450,9 +3836,10 @@
           const exp = round2(st.ap_expense);
           const onCr = round2(mat + haul + exp);
           const paid = round2(st.settlements_paid);
-          const settled = round2(st.ap_settled || paid);
-          const bal = round2(Number(s.ap_balance || 0) - post.cr + post.set);
-          const openAp = round2(bal - onCr + paid);
+          const settled = round2(st.ap_settled);
+          const allTimeBal = (isMfgCo && hasHydratedAp) ? round2(allTimeSupMap.get(sk) || 0) : Number(s.ap_balance || 0);
+          const bal = round2(allTimeBal - post.cr + post.set);
+          const openAp = round2(bal - onCr + settled);
           return Object.assign({}, s, {
             Supplier: sName,
             IVA: s.IVA || suppIvaMap.get(sk) || 'No',
@@ -3478,11 +3865,12 @@
           const exp = round2(st.ap_expense);
           const onCr = round2(mat + haul + exp);
           const paid = round2(st.settlements_paid);
-          const settled = round2(st.ap_settled || paid);
-          if (st.raw_loads === 0 && onCr === 0 && paid === 0) return;
+          const settled = round2(st.ap_settled);
           const post = postSupMap.get(sk) || { cr: 0, set: 0 };
-          const bal = round2(0 - post.cr + post.set);
-          const openAp = round2(bal - onCr + paid);
+          const allTimeBal = (isMfgCo && hasHydratedAp) ? round2(allTimeSupMap.get(sk) || 0) : 0;
+          const bal = round2(allTimeBal - post.cr + post.set);
+          if (st.raw_loads === 0 && Math.abs(onCr) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(paid) <= 0.005 && Math.abs(bal) <= 0.005) return;
+          const openAp = round2(bal - onCr + settled);
           result.push({
             Supplier: st.displayName || sk,
             IVA: suppIvaMap.get(sk) || 'No',
@@ -3515,13 +3903,15 @@
           return stMap.get(sk);
         };
         salesPool.forEach(s => {
+          const sgn = saleTicketSign(s);
+          if (sgn === 0) return;
           if (!s.site && Number(s.total_ttc || s.total || 0) === 0) return;
           const cur = ensureSite(s.site || '(Unassigned Site)');
-          const ttc = Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
-          const net = Number(s.total != null ? s.total : (ttc - Number(s.vat || 0)));
-          cur.loads += 1;
-          cur.tons_sold += ticketTons ? ticketTons(s) : Number(s.qty || 0);
-          cur.trans_rev += Number(s.trans_price || 0);
+          const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+          const net = sgn * Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0)));
+          if (sgn === 1) cur.loads += 1;
+          cur.tons_sold += sgn * (ticketTons ? ticketTons(s) : Number(s.qty || 0));
+          cur.trans_rev += sgn * Number(s.trans_price || 0);
           cur.sales_ttc += ttc;
           cur.net_sales += net;
         });
@@ -3760,7 +4150,7 @@
       if (sl.payableLeg === 'Haulage' && Number(s.ap_haulage || s.raw_haulage || 0) <= 0) return false;
       if (sl.payableLeg === 'Supplies & services' && Number(s.ap_expense || s.expenses || 0) <= 0) return false;
       return true;
-    })).filter(s => !activeRange || s.raw_loads > 0 || Math.abs(Number(s.ap_on_credit || 0)) > 0.005 || Math.abs(Number(s.settlements_paid || 0)) > 0.005 || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.opening_ap || 0)) > 0.005);
+    })).filter(s => !activeRange || s.raw_loads > 0 || Math.abs(Number(s.ap_on_credit || 0)) > 0.005 || Math.abs(Number(s.ap_settled || s.settlements_paid || 0)) > 0.005 || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.opening_ap || 0)) > 0.005);
     const siteRows = !hasAnySlicer ? baseSites : baseSites.filter(matchCommon);
     const equipRows = !hasAnySlicer ? baseEquip : baseEquip.filter(e => {
       if (!matchCommon(e)) return false;
@@ -4085,7 +4475,8 @@
       });
       const compRows = [
         ['Sales incl. VAT (TTC)', fmtUSD(w.sales_ttc, 2), fmtUSD(b.sales_ttc, 2), '—', fmtUSD(g.sales_ttc, 2)],
-        ['Net Sales ex-VAT', fmtUSD(w.net_sales, 2), fmtUSD(b.net_sales, 2), '—', fmtUSD(g.net_sales, 2)],
+        ['Total Sales ex-VAT (Mat + Trans)', fmtUSD(w.gross_sales || w.net_sales, 2), fmtUSD(b.gross_sales || b.net_sales, 2), '—', fmtUSD(g.gross_sales || g.net_sales, 2)],
+        ['Material Sales ex-VAT', fmtUSD(w.net_sales, 2), fmtUSD(b.net_sales, 2), '—', fmtUSD(g.net_sales, 2)],
         ['Transport Revenue', fmtUSD(w.trans_rev, 2), fmtUSD(b.trans_rev, 2), '—', fmtUSD(g.trans_rev, 2)],
         ['Output VAT 11% (4427)', fmtUSD(w.sales_vat, 2), fmtUSD(b.sales_vat, 2), '—', fmtUSD(g.sales_vat, 2)],
         ['Weighbridge Loads', fmtNum(w.loads), fmtNum(b.loads), '—', fmtNum(g.loads)],
@@ -4314,8 +4705,8 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Cash vs credit sales by month', buildClusteredColumnSvg(months, [
-            { key: 'credit_sales', label: 'Credit Sales', color: C.navy },
-            { key: 'cash_sales', label: 'Cash Sales', color: C.steel }
+            { label: 'Credit Sales', color: C.navy, get: r => Number(r.credit_sales_ttc != null ? r.credit_sales_ttc : (r.credit_sales || 0)) },
+            { label: 'Cash Sales', color: C.steel, get: r => Number(r.cash_sales_ttc != null ? r.cash_sales_ttc : (r.cash_sales || 0)) }
           ]), { legend: [{ label: 'Credit', color: C.navy }, { label: 'Cash', color: C.steel }] })}
           ${pbiPanel('Realised price per unit ($/m³) by month · top aggregate grades', buildMultiLineSvg(months, priceSeries, { isMoney: true, decimals: 2 }), {
             subtitle: 'Monthly realised material price ($/m³ ex-transport & VAT) from weighbridge tickets across top 4 aggregate grades',
@@ -4721,18 +5112,22 @@
       const limitMap = new Map();
       creditTerms.forEach(ct => limitMap.set(norm(ct.customer), ct));
       const totalCreditLimits = creditTerms.reduce((a, r) => a + Number(r.credit_limit || 0), 0);
-      const collectedPct = Number(k.credit_sales || 0) > 0 ? (Number(k.receipts || 0) / Number(k.credit_sales || 1)) : 0;
+      const crSalesTtcKpi = k.credit_sales_ttc != null ? Number(k.credit_sales_ttc) : (Number(k.sales_ttc || 0) - Number(k.cash_sales || 0));
+      const crSalesCardVal = hasCustSlicer ? custRows.reduce((a, r) => a + Number(r.credit_sales_ttc != null ? r.credit_sales_ttc : (r.credit_sales || 0)), 0) : crSalesTtcKpi;
+      const rcptCardVal = hasCustSlicer ? custRows.reduce((a, r) => a + Number(r.ar_settled != null ? r.ar_settled : (r.receipts || 0)), 0) : Number(k.receipts || 0);
+      const collectedPct = crSalesCardVal > 0 ? (rcptCardVal / crSalesCardVal) : 0;
 
       // Monthly trajectory of Customers Owing (Gross, Advances, Net)
       let runNet = Math.max(0, arBal * 0.72);
       const arMonths = months.map(mRow => {
-        const delta = Number(mRow.credit_sales || 0) - Number(mRow.receipts || 0);
+        const crM = Number(mRow.credit_sales_ttc != null ? mRow.credit_sales_ttc : (mRow.credit_sales || 0));
+        const delta = crM - Number(mRow.receipts || 0);
         runNet = Math.max(0, runNet + delta * 0.25);
         const grossM = round2(runNet + Math.abs(onAcctSigned) * 0.85);
         const advM = round2(Math.abs(onAcctSigned) * 0.85);
         return {
           'Year Month': mRow['Year Month'],
-          credit_sales: mRow.credit_sales || 0,
+          credit_sales: crM,
           receipts: mRow.receipts || 0,
           ar_gross_m: grossM,
           ar_adv_m: advM,
@@ -4758,7 +5153,8 @@
       // Build Customer Running Statement (every credit ticket + AR-settling receipt in chronological order with running balance)
       const stmtItems = [];
       salesRows.forEach(s => {
-        if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') return;
+        const mth = String(s.method || '').trim();
+        if (!(mth === 'Credit' || mth === 'CR Return' || mth === 'Credit Return')) return;
         const sgn = saleTicketSign(s);
         if (sgn === 0) return;
         const amt = round2(Math.abs(Number(s.total_ttc != null ? s.total_ttc : s.total || 0)));
@@ -4791,8 +5187,8 @@
             { label: 'Over 60 days', value: fmtUSD(ar60p, 0), sub: 'FIFO oldest unpaid tickets', tone: 'crit' }
           ])}
           ${kpiBand('2 · Credit Sales, Collections, DSO & Credit Limits', [
-            { label: 'Credit sales', value: fmtUSD(hasCustSlicer ? sumC('credit_sales') : k.credit_sales, 0), sub: 'Ticketed on account' },
-            { label: 'Receipts', value: fmtUSD(hasCustSlicer ? sumC('receipts') : k.receipts, 0), sub: 'Applied oldest ticket first', tone: 'good' },
+            { label: 'Credit sales', value: fmtUSD(crSalesCardVal, 0), sub: 'Ticketed TTC on account' },
+            { label: 'Receipts', value: fmtUSD(rcptCardVal, 0), sub: 'Applied oldest ticket first', tone: 'good' },
             { label: 'Collected %', value: fmtPct(collectedPct), sub: 'Receipts ÷ Credit sales' },
             { label: 'Avg days to collect', value: fmtNum(k.dso_days, 0) + ' d', sub: 'Days Sales Outstanding (DSO)' },
             { label: 'Customer credit limits', value: fmtUSD(totalCreditLimits, 0), sub: fmtNum(creditTerms.length) + ' credit term agreements' },
@@ -4921,12 +5317,12 @@
         byCat.set(c, cur);
       });
       const catList = Array.from(byCat.values()).sort((a, b) => b.amount - a.amount);
-      const isScopedAp = Boolean(activeRange || hasAnySlicer);
-      const apBalVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_balance || 0), 0) : k.ap_balance;
-      const apMatVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_material || 0), 0) : k.ap_material;
-      const apHaulVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_haulage || 0), 0) : k.ap_haulage;
-      const apExpVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_expense || 0), 0) : k.ap_expense;
-      const apSetVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.settlements_paid || 0), 0) : k.settlements_paid;
+      const useSuppSums = suppRows.length > 0 || Boolean(activeRange || hasAnySlicer);
+      const apBalVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_balance || 0), 0)) : k.ap_balance;
+      const apMatVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_material || 0), 0)) : k.ap_material;
+      const apHaulVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_haulage || 0), 0)) : k.ap_haulage;
+      const apExpVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_expense || 0), 0)) : k.ap_expense;
+      const apSetVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_settled != null ? r.ap_settled : (r.settlements_paid || 0)), 0)) : (k.ap_settled != null ? k.ap_settled : k.settlements_paid);
 
       bodyHtml = `
         <div class="pbi-overview-bands">
@@ -4980,11 +5376,22 @@
             { label: 'Leg 2 · Haulage ($)', key: 'ap_haulage', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Leg 3 · Expenses ($)', key: 'ap_expense', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Total on Credit ($)', key: 'ap_on_credit', r: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
-            { label: 'Settlements Paid ($)', raw: r => activeRange ? (r.settlements_paid || 0) : (r.ap_settled != null ? r.ap_settled : (r.settlements_paid || 0)), r: true, fmt: v => `<span class="pbi-pos">${fmtUSD(v, 0)}</span>` },
+            { label: 'Settled ($)', raw: r => r.ap_settled != null ? r.ap_settled : (r.settlements_paid || 0), r: true, fmt: v => `<span class="pbi-pos">${fmtUSD(v, 0)}</span>` },
             { label: 'Closing AP Balance ($)', key: 'ap_balance', r: true, bar: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` }
           ], [...suppRows].sort((a, b) => Number(b.ap_balance || 0) - Number(a.ap_balance || 0) || Number(b.ap_on_credit || 0) - Number(a.ap_on_credit || 0)), {
-            subtitle: 'Leg 1 (Material owed to Site Owner) + Leg 2 (Haulage owed to Truck Owner) + Leg 3 (Credit Expenses) = Total on Credit · ' + (activeRange ? 'Opening AP + Total on Credit − Settlements Paid = Closing AP Balance' : 'Total on Credit − Settlements Paid = Closing AP Balance'),
-            unitLabel: 'suppliers'
+            subtitle: 'Leg 1 (Material owed to Site Owner) + Leg 2 (Haulage owed to Truck Owner) + Leg 3 (Credit Expenses) = Total on Credit · ' + (activeRange ? 'Opening AP + Total on Credit − Settled = Closing AP Balance' : 'Total on Credit − Settled = Closing AP Balance'),
+            unitLabel: 'suppliers',
+            foot: [
+              { v: `Total (${suppRows.length} counterparties)`, span: 2 },
+              { v: fmtNum(suppRows.reduce((a, r) => a + Number(r.raw_loads || 0), 0)), r: true },
+              ...(activeRange ? [{ v: fmtUSD(suppRows.reduce((a, r) => a + Number(r.opening_ap || 0), 0), 0), r: true }] : []),
+              { v: fmtUSD(apMatVal, 0), r: true },
+              { v: fmtUSD(apHaulVal, 0), r: true },
+              { v: fmtUSD(apExpVal, 0), r: true },
+              { v: fmtUSD(apMatVal + apHaulVal + apExpVal, 0), r: true },
+              { v: fmtUSD(apSetVal, 0), r: true },
+              { v: fmtUSD(apBalVal, 2), r: true }
+            ]
           })}
         </div>
 
@@ -5223,12 +5630,12 @@
         : k.avg_raw_cost;
       const p08ApSpreadM3 = round2(Number(p08ApSellNet || 0) - Number(p08ApRawCostPerM3 || 0));
       const p08ApSpreadPct = Number(p08ApSellNet || 0) > 0 ? (p08ApSpreadM3 / Number(p08ApSellNet)) : 0;
-      const isScopedAp = Boolean(activeRange || hasAnySlicer);
-      const apBalVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_balance || 0), 0) : k.ap_balance;
-      const apMatVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_material || 0), 0) : k.ap_material;
-      const apHaulVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_haulage || 0), 0) : k.ap_haulage;
-      const apExpVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.ap_expense || 0), 0) : k.ap_expense;
-      const apSetVal = isScopedAp ? suppRows.reduce((a, r) => a + Number(r.settlements_paid || 0), 0) : k.settlements_paid;
+      const useSuppSums = suppRows.length > 0 || Boolean(activeRange || hasAnySlicer);
+      const apBalVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_balance || 0), 0)) : k.ap_balance;
+      const apMatVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_material || 0), 0)) : k.ap_material;
+      const apHaulVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_haulage || 0), 0)) : k.ap_haulage;
+      const apExpVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_expense || 0), 0)) : k.ap_expense;
+      const apSetVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_settled != null ? r.ap_settled : (r.settlements_paid || 0)), 0)) : (k.ap_settled != null ? k.ap_settled : k.settlements_paid);
 
       bodyHtml = `
         <div class="pbi-overview-bands">
@@ -5453,11 +5860,22 @@
             { label: 'Leg 2 · Haulage ($)', key: 'ap_haulage', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Leg 3 · Expenses ($)', key: 'ap_expense', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Total on Credit ($)', key: 'ap_on_credit', r: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
-            { label: 'Settlements Paid ($)', raw: r => activeRange ? (r.settlements_paid || 0) : (r.ap_settled != null ? r.ap_settled : (r.settlements_paid || 0)), r: true, fmt: v => `<span class="pbi-pos">${fmtUSD(v, 0)}</span>` },
+            { label: 'Settled ($)', raw: r => r.ap_settled != null ? r.ap_settled : (r.settlements_paid || 0), r: true, fmt: v => `<span class="pbi-pos">${fmtUSD(v, 0)}</span>` },
             { label: 'Closing AP Balance ($)', key: 'ap_balance', r: true, bar: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` }
           ], [...suppRows].sort((a, b) => Number(b.ap_balance || 0) - Number(a.ap_balance || 0) || Number(b.ap_on_credit || 0) - Number(a.ap_on_credit || 0)), {
-            subtitle: 'Leg 1 (Material owed to Site Owner) + Leg 2 (Haulage owed to Truck Owner) + Leg 3 (Credit Expenses) = Total on Credit · ' + (activeRange ? 'Opening AP + Total on Credit − Settlements Paid = Closing AP Balance' : 'Total on Credit − Settlements Paid = Closing AP Balance'),
-            unitLabel: 'suppliers'
+            subtitle: 'Leg 1 (Material owed to Site Owner) + Leg 2 (Haulage owed to Truck Owner) + Leg 3 (Credit Expenses) = Total on Credit · ' + (activeRange ? 'Opening AP + Total on Credit − Settled = Closing AP Balance' : 'Total on Credit − Settled = Closing AP Balance'),
+            unitLabel: 'suppliers',
+            foot: [
+              { v: `Total (${suppRows.length} counterparties)`, span: 2 },
+              { v: fmtNum(suppRows.reduce((a, r) => a + Number(r.raw_loads || 0), 0)), r: true },
+              ...(activeRange ? [{ v: fmtUSD(suppRows.reduce((a, r) => a + Number(r.opening_ap || 0), 0), 0), r: true }] : []),
+              { v: fmtUSD(apMatVal, 0), r: true },
+              { v: fmtUSD(apHaulVal, 0), r: true },
+              { v: fmtUSD(apExpVal, 0), r: true },
+              { v: fmtUSD(apMatVal + apHaulVal + apExpVal, 0), r: true },
+              { v: fmtUSD(apSetVal, 0), r: true },
+              { v: fmtUSD(apBalVal, 2), r: true }
+            ]
           })}
         </div>
       `;
@@ -5481,7 +5899,7 @@
       const malfBannerHtml = malfAlert ? `
         <div class="panel-card" id="p09MalfunctionAlertBanner" style="margin-bottom:12px;padding:12px 16px;border-left:4px solid ${dtPbi.malfunctionSeverity === 'crit' ? 'var(--crit)' : 'var(--warn)'};background:${dtPbi.malfunctionSeverity === 'crit' ? 'rgba(196,59,45,0.08)' : 'rgba(217,130,43,0.09)'};display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
           <div style="font-size:12.5px;line-height:1.45">
-            <strong style="color:${dtPbi.malfunctionSeverity === 'crit' ? 'var(--crit)' : 'var(--warn)'}">5% DIESEL MALFUNCTION WATCHDOG ALERT (${malfPct.toFixed(1)}% &ge; 5.0%):</strong>
+            <strong style="color:${dtPbi.malfunctionSeverity === 'crit' ? 'var(--crit)' : 'var(--warn)'}">HIGH DIESEL MALFUNCTION ALERT (${malfPct.toFixed(1)}% &ge; ${Number(dtPbi.malfunctionThresholdPct || 5).toFixed(1)}%):</strong>
             Gross diesel malfunction volume in the active range reached <b>${fmtNum(dtPbi.malfAbsL, 1)} L</b> across <b>${fmtNum(dtPbi.malfCount)}</b> entries against <b>${fmtNum(dtPbi.companyDieselUsedL, 1)} L</b> total company diesel used.
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -5970,19 +6388,28 @@
     // =========================================================================
     else if (activePageId === 'p13_vat') {
       const isVatMethod = m => m === 'VAT' || m === 'VATConfig' || m === 'VAT Dis' || m === 'Cash VAT Dis';
+      const isExpVatMethod = m => m === 'IVA' || m === 'VAT' || m === 'VAT Dis' || m === 'Cash VAT Dis';
       const vatInvRows = filterRecords(rec.vat_invoices, { ignorePeriod: true, ignoreSearch: true }).filter(matchCommon);
       const vatCusts = custRows.filter(c => c['VAT Registered'] === 'Yes' || Number(c.sales_vat || 0) > 0 || Number(c.vat_receivable || 0) > 0).sort((a, b) => Number(b.sales_vat || 0) - Number(a.sales_vat || 0) || Number(b.vat_receivable || 0) - Number(a.vat_receivable || 0));
       const vatSupps = suppRows.filter(s => s.IVA === 'Yes');
       const vatRecs = recRows.filter(r => isVatMethod(String(r.method || '').trim()) || /VAT/i.test(String(r.kind || '')) || r.vat_invoice);
       const vatCollected = Math.max(0, Number(k.sales_vat || 0) - Number(k.vat_receivable || 0));
-      const inputVat = setRows.reduce((a, s) => isVatMethod(String(s.method || '').trim()) ? a + Number(s.amount || 0) + Number(s.discount || 0) : a, 0);
+      const inputVat = round2(
+        setRows.reduce((a, s) => isVatMethod(String(s.method || '').trim()) ? a + Number(s.amount || 0) + Number(s.discount || 0) : a, 0)
+        + expRows.reduce((a, x) => isExpVatMethod(String(x.method || '').trim()) ? a + Number(x.amount || 0) : a, 0)
+      );
 
-      // Real ledger-backed monthly & quarterly VAT settlements (zero synthetic expense multipliers)
+      // Real ledger-backed monthly & quarterly VAT settlements (settlements + GL 449 VAT expenses)
       const inVatByYm = new Map();
       filterRecords(rec.settlements, { ignorePeriod: true, ignoreSearch: true }).filter(matchCommon).forEach(s => {
         if (!isVatMethod(String(s.method || '').trim())) return;
         const ymKey = recDateForBasis(s).slice(0, 7).replace('-', '');
         if (ymKey.length === 6) inVatByYm.set(ymKey, round2((inVatByYm.get(ymKey) || 0) + Number(s.amount || 0) + Number(s.discount || 0)));
+      });
+      filterRecords(rec.expenses, { ignorePeriod: true, ignoreSearch: true }).filter(matchCommon).forEach(x => {
+        if (!isExpVatMethod(String(x.method || '').trim())) return;
+        const ymKey = recDateForBasis(x).slice(0, 7).replace('-', '');
+        if (ymKey.length === 6) inVatByYm.set(ymKey, round2((inVatByYm.get(ymKey) || 0) + Number(x.amount || 0)));
       });
       const collVatByYm = new Map();
       filterRecords(rec.receipts, { ignorePeriod: true, ignoreSearch: true }).filter(matchCommon).forEach(r => {
@@ -6021,7 +6448,7 @@
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Output VAT 11%, Collections, Receivable & Net Cash VAT Position', [
             { label: 'Output VAT invoiced', value: fmtUSD(k.sales_vat, 2), sub: 'Account 4427 (11%)', tone: 'brass' },
-            { label: 'Net invoiced (ex-VAT)', value: fmtUSD(k.net_sales, 0), sub: 'Taxable + non-taxable base' },
+            { label: 'Net invoiced (ex-VAT)', value: fmtUSD(k.gross_sales || k.net_sales, 0), sub: 'Sales TTC minus Output VAT' },
             { label: 'VAT collected', value: fmtUSD(vatCollected, 2), sub: 'Tagged VAT + paid beyond net', tone: 'good' },
             { label: 'VAT due (customers)', value: fmtUSD(k.vat_receivable, 2), sub: '11% inside open customer AR', tone: 'warn' },
             { label: 'Input VAT paid', value: fmtUSD(inputVat, 2), sub: 'Deductible VAT settlements' },
@@ -7168,7 +7595,7 @@
       const bridgeSteps = [
         { label: 'Sales TTC', value: Number(k.sales_ttc || 0), color: C.navy },
         { label: 'Less VAT 11%', value: -Number(k.sales_vat || 0), color: C.slate },
-        { label: 'Net Sales', value: Number(k.net_sales || 0), color: C.steel },
+        { label: 'Sales Ex-VAT', value: Number(k.gross_sales || k.net_sales || 0), color: C.steel },
         { label: 'Raw Cost', value: -Number(k.raw_cost || 0), color: C.crit },
         { label: 'Gross Margin', value: Number(k.gross_margin || 0), color: C.good },
         { label: 'Op. Profit', value: Number(k.operating_profit || 0), color: C.brass }
@@ -7177,7 +7604,7 @@
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Cross-Statement Reconciliation Bridge (Ties Executive Analytics → Lebanese CoA GL → 22 A4 PDF Statements)', [
-            { label: 'P&L Net Sales → Stmt #03', value: fmtUSD(k.net_sales, 2), sub: 'Ties to Class 701 + 706', tone: 'good' },
+            { label: 'P&L Sales Ex-VAT → Stmt #03', value: fmtUSD(k.gross_sales || k.net_sales, 2), sub: 'Ties to Class 701 + 706', tone: 'good' },
             { label: 'Output VAT 11% → Stmt #18', value: fmtUSD(k.sales_vat, 2), sub: 'Ties to Class 4427', tone: 'good' },
             { label: 'FIFO Open AR → Stmt #09/#11', value: fmtUSD(k.ar_balance, 2), sub: 'Ties to Class 4111', tone: 'good' },
             { label: '3-Leg Open AP → Stmt #10/#12', value: fmtUSD(k.ap_balance, 2), sub: 'Ties to Class 4011', tone: 'good' },
@@ -7215,7 +7642,7 @@
             { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v) },
             ...(activeRange ? [{ label: 'Opening AR ($)', key: 'opening_ar', r: true, negRed: true, fmt: v => fmtUSD(v, 0) }] : []),
             { label: 'Credit Sales TTC ($)', raw: r => r.credit_sales_ttc != null ? r.credit_sales_ttc : (r.credit_sales || 0), r: true, fmt: v => fmtUSD(v, 0) },
-            { label: 'Receipts ($)', key: 'receipts', r: true, fmt: v => fmtUSD(v, 0) },
+            { label: 'Settled ($)', raw: r => r.ar_settled != null ? r.ar_settled : (r.receipts || 0), r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Closing AR ($)', key: 'ar_balance', r: true, bar: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` }
           ], [...custRows].sort((a, b) => Math.abs(Number(b.ar_balance || 0)) - Math.abs(Number(a.ar_balance || 0)) || Number(b.credit_sales || 0) - Number(a.credit_sales || 0)), { unitLabel: 'customers' })}
 
@@ -7224,7 +7651,7 @@
             { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: v => fmtNum(v) },
             ...(activeRange ? [{ label: 'Opening AP ($)', key: 'opening_ap', r: true, negRed: true, fmt: v => fmtUSD(v, 0) }] : []),
             { label: 'Total on Credit ($)', key: 'ap_on_credit', r: true, fmt: v => fmtUSD(v, 0) },
-            { label: 'Settled ($)', raw: r => activeRange ? (r.settlements_paid || 0) : (r.ap_settled != null ? r.ap_settled : (r.settlements_paid || 0)), r: true, fmt: v => fmtUSD(v, 0) },
+            { label: 'Settled ($)', raw: r => r.ap_settled != null ? r.ap_settled : (r.settlements_paid || 0), r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Closing AP ($)', key: 'ap_balance', r: true, bar: 'brass', negRed: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` }
           ], [...suppRows].sort((a, b) => Math.abs(Number(b.ap_balance || 0)) - Math.abs(Number(a.ap_balance || 0)) || Number(b.ap_on_credit || 0) - Number(a.ap_on_credit || 0)), { unitLabel: 'suppliers' })}
         </div>
@@ -7733,16 +8160,18 @@
                       out.push(`<td class="r">${rem != null ? `<span class="tfoot-avg-tag">Rem. </span><b>${fmtNum(rem, 0)}</b>` : '-'}</td>`);
                       continue;
                     }
+                    const isAvg = /price|rate|factor|pct|percentage|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
                     let sum = 0, cnt = 0;
                     rows.forEach(r => {
+                      const rowSgn = meta.key === 'sales_tickets' ? saleTicketSign(r) : (meta.key === 'expenses' ? hubExpenseSign(r) : 1);
+                      if (isAvg && rowSgn === 0) return;
                       const v = cellValue(r, c, meta.key, rel);
                       if (v != null && v !== '' && typeof v !== 'boolean') {
                         const n = Number(v);
-                        if (Number.isFinite(n)) { sum += n; cnt++; }
+                        if (Number.isFinite(n)) { sum += isAvg ? n : (n * rowSgn); cnt++; }
                       }
                     });
                     if (!cnt) { out.push(`<td class="r">—</td>`); continue; }
-                    const isAvg = /price|rate|factor|pct|percentage|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
                     const val = isAvg ? (sum / cnt) : sum;
                     const txt = isSU ? fmtSignedUSD(val, 2)
                       : (isSL ? fmtSignedLBP(val)
@@ -7953,16 +8382,18 @@
                     const c = meta.cols[ci];
                     const { isM: isMoney, isN: isNum } = isColNumeric(c);
                     if (!isMoney && !isNum) { out.push(`<td></td>`); continue; }
+                    const isAvg = /price|rate|factor|pct|percentage|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
                     let sum = 0, cnt = 0;
                     rows.forEach(r => {
+                      const rowSgn = meta.key === 'sales_tickets' ? saleTicketSign(r) : (meta.key === 'expenses' ? hubExpenseSign(r) : 1);
+                      if (isAvg && rowSgn === 0) return;
                       const v = cellValue(r, c, meta.key, rel);
                       if (v != null && v !== '' && typeof v !== 'boolean') {
                         const n = Number(v);
-                        if (Number.isFinite(n)) { sum += n; cnt++; }
+                        if (Number.isFinite(n)) { sum += isAvg ? n : (n * rowSgn); cnt++; }
                       }
                     });
                     if (!cnt) { out.push(`<td class="r">—</td>`); continue; }
-                    const isAvg = /price|rate|factor|pct|percentage|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
                     const val = isAvg ? (sum / cnt) : sum;
                     const txt = isMoney ? fmtUSD(val, 2) : fmtNum(val, /factor|qty|capacity|percentage|interest/.test(c) ? 2 : 0);
                     out.push(`<td class="r">${isAvg ? '<span class="tfoot-avg-tag">Avg </span>' : ''}<b>${txt}</b></td>`);
@@ -8345,10 +8776,10 @@
           ]
         })
       : pbiPanel('Monthly Cash vs. Credit Sales ($)', buildClusteredColumnSvg(months, [
-          { key: 'credit_sales', label: 'Credit Sales', color: C.navy },
-          { key: 'cash_sales', label: 'Cash Sales', color: C.steel }
+          { label: 'Credit Sales', color: C.navy, get: r => Number(r.credit_sales_ttc != null ? r.credit_sales_ttc : (r.credit_sales || 0)) },
+          { label: 'Cash Sales', color: C.steel, get: r => Number(r.cash_sales_ttc != null ? r.cash_sales_ttc : (r.cash_sales || 0)) }
         ]), {
-          subtitle: 'Monthly ex-VAT credit billings vs cash weighbridge sales',
+          subtitle: 'Monthly TTC credit billings vs cash weighbridge sales',
           headerRight: modeSwitchHtml,
           legend: [{ label: 'Credit', color: C.navy }, { label: 'Cash', color: C.steel }]
         });
@@ -8390,7 +8821,7 @@
           ]
         })
       : pbiPanel('Monthly Credit Sales vs. Customer Receipts ($)', buildClusteredColumnSvg(months, [
-          { key: 'credit_sales', label: 'Credit Sales Billed', color: C.navy },
+          { label: 'Credit Sales Billed', color: C.navy, get: r => Number(r.credit_sales_ttc != null ? r.credit_sales_ttc : (r.credit_sales || 0)) },
           { key: 'receipts', label: 'Receipts Settled', color: C.steel }
         ]), {
           subtitle: 'Monthly credit billings vs customer settlements collected · Months where Receipts exceed Credit Sales reduce Open AR',

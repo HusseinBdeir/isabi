@@ -3471,7 +3471,7 @@ table.ledger-table td.mono { white-space: nowrap; overflow-wrap: normal; word-br
 table.ledger-table .badge { white-space: nowrap; text-align: center; padding: 2px 6.5px; font-size: 10px; line-height: 1.2; }
 #pricingPanel table.ledger-table td:first-child { white-space: nowrap; }
 #salesPanel table.ledger-table th, #salesPanel table.ledger-table td, .a4-sheet table.ledger-table th, .a4-sheet table.ledger-table td { padding: 6.5px 6.5px; font-size: 11px; }
-#snDates { grid-column: 1 / -1; }
+#snDates, #snMalfunction { grid-column: 1 / -1; }
 
 /* Entry desk */
 .form-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
@@ -3609,6 +3609,7 @@ body.locked .app-shell { pointer-events: none; user-select: none; visibility: hi
 html.sw-resuming #authGate { display: none !important; }
 html.sw-resuming body.locked .app-shell { pointer-events: auto; user-select: auto; visibility: visible; }
 .toast.toast-err { border-color: var(--crit); border-left-color: var(--crit); }
+.toast.toast-warn { border-color: var(--warn); border-left-color: var(--warn); }
 .toast.toast-ok { border-left-color: #3DB36A; }
 .auth-cloud-warn { color: #F09045; font-weight: 600; }
 .auth-card.shake { animation: shake .35s; }
@@ -17897,6 +17898,13 @@ table.ledger-table tbody td.td-databar {
     height: 16px;
     background: var(--line-strong);
     pointer-events: none;
+  }
+  #fuelPanel .table-toolbar > div:last-child {
+    gap: 4px !important;
+  }
+  #fuelPanel .table-toolbar > div:last-child .btn {
+    padding: 0 7.5px;
+    font-size: 11px;
   }
 }
 
