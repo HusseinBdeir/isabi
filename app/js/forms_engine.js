@@ -598,15 +598,17 @@
       ? helpers.getFreqIndex()
       : (typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null);
     const uoms = uniqSorted((rec.uoms || []).map(u => u.name).concat(['m³', 'Ton', 'Truck', 'Piece', 'Bag', 'Litre', 'kg']), fIdx && fIdx.uom);
-    const prodNames = uniqSorted((rec.products || []).map(p => p.name), fIdx && fIdx.product);
     const prodByName = {};
     (rec.products || []).forEach(p => { if (p && p.name && !prodByName[p.name]) prodByName[p.name] = p; });
-    const prodMetaItems = prodNames.map(n => {
-      const p = prodByName[n];
-      const u = (p && p.uom) || 'm³';
-      const tf = p && Number(p.ton_factor) ? Number(p.ton_factor) : 0;
-      return [n, u + (tf && tf !== 1 ? ` · ×${tf} t` : '')];
-    });
+    const buildFallbackProdMetaItems = (sideKey) => {
+      const fMap = sideKey === 'raw' ? (fIdx && fIdx.productRaw) : (sideKey === 'sales' || sideKey === 'comm' ? (fIdx && fIdx.productSales) : (fIdx && fIdx.product));
+      return uniqSorted((rec.products || []).map(p => p.name), fMap).map(n => {
+        const p = prodByName[n];
+        const u = (p && p.uom) || 'm³';
+        const tf = p && Number(p.ton_factor) ? Number(p.ton_factor) : 0;
+        return [n, u + (tf && tf !== 1 ? ` · 1 m³ = ${tf} t` : '')];
+      });
+    };
     const custNames = helpers.customerNames();
     const supNames = helpers.supplierNames();
     const siteNames = helpers.siteNames();
@@ -644,6 +646,12 @@
       const grpOverride = (ctx && ctx.STATE && ctx.STATE.modalGroupOverride) || '';
       const isCommForm = grpOverride === 'comm';
       const isRawForm = grpOverride === 'raw';
+      const prSide = isRawForm ? 'raw' : (isCommForm ? 'comm' : 'sales');
+      const prProdMetaItems = (helpers && typeof helpers.domainProductMetaItems === 'function')
+        ? helpers.domainProductMetaItems(prSide, company)
+        : buildFallbackProdMetaItems(prSide);
+      const prSiteNames = helpers.siteNames(isRawForm ? 'raw' : 'sales');
+      const prSupNames = helpers.supplierNames(isRawForm ? 'raw_owner' : 'all');
       const prUomOpts = [
         ['m³', 'Per m³'],
         ['Ton', 'Per Ton'],
@@ -663,10 +671,10 @@
           ${isCommForm
             ? `<input type="hidden" id="f_ruletype" value="Commission">`
             : fld('Rule Type *', sel('f_ruletype', ruleTypeOpts, defRuleType), { id: 'wrap_pr_ruletype' })}
-          ${fld(isRawForm ? 'Raw Material / Grade *' : 'Product / Grade *', inp('f_product', 'text', '', 'list="dl_pr_prods" placeholder="Select or type grade..."') + dlMeta('dl_pr_prods', prodMetaItems), { id: 'wrap_pr_product' })}
+          ${fld(isRawForm ? 'Raw Material / Grade *' : 'Product / Grade *', inp('f_product', 'text', '', 'list="dl_pr_prods" placeholder="Select or type grade..."') + dlMeta('dl_pr_prods', prProdMetaItems), { id: 'wrap_pr_product' })}
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_pr_customer', hidden: isCommForm || isRawForm })}
-          ${fld(isCommForm ? 'Plant Owner / Beneficiary *' : (isRawForm ? 'Site Owner / Material Supplier *' : 'Supplier / Hauler *'), inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_pr_supplier', hidden: !isCommForm && !isRawForm })}
-          ${fld(isRawForm ? 'Source Site *' : 'Delivery Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames), { id: 'wrap_pr_site', hidden: isCommForm })}
+          ${fld(isCommForm ? 'Plant Owner / Beneficiary *' : (isRawForm ? 'Site Owner / Material Supplier *' : 'Supplier / Hauler *'), inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', prSupNames), { id: 'wrap_pr_supplier', hidden: !isCommForm && !isRawForm })}
+          ${fld(isRawForm ? 'Source Site *' : 'Delivery Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', prSiteNames), { id: 'wrap_pr_site', hidden: isCommForm })}
           <div id="pr_comm_history_box" class="form-field span-3" ${isCommForm ? '' : 'hidden'} style="background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.45"></div>
           <div class="pa-form-sec-hdr"><span id="pr_sec2_hdr">${isCommForm ? '2. Commission Unit &amp; Rate' : '2. Pricing &amp; Volume Tiers'}</span></div>
           ${fld(isCommForm ? 'Commission Unit *' : 'Material Pricing Unit *', sel('f_uom', prUomOpts, 'm³'), { id: 'wrap_pr_uom', hintId: 'hint_pr_uom', hint: '' })}

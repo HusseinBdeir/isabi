@@ -4199,10 +4199,18 @@
     let headerHtml = '';
     if (!bodyOnly) {
       const fIdx = typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null;
-      const isRawSlicerPage = activePageId === 'p08_stock' || activePageId === 'p08_stock_ap';
-      const isSalesSlicerPage = activePageId === 'p04_sales';
+      const isRawSlicerPage = activePageId === 'p07_ap' || activePageId === 'p08_stock' || activePageId === 'p08_stock_ap';
+      const isSalesSlicerPage = activePageId === 'p04_sales' || activePageId === 'p05_pricing' || activePageId === 'p06_ar';
+      const activeCoKey = (STATE && STATE.company && !/all|group|manufacturing/i.test(String(STATE.company))) ? norm(STATE.company) : '';
+      const prodFreqMap = fIdx
+        ? (isRawSlicerPage
+            ? ((activeCoKey && fIdx.productRawByCo && fIdx.productRawByCo.get(activeCoKey)) || fIdx.productRaw)
+            : (isSalesSlicerPage
+                ? ((activeCoKey && fIdx.productSalesByCo && fIdx.productSalesByCo.get(activeCoKey)) || fIdx.productSales)
+                : fIdx.product))
+        : null;
       const slicerPools = {
-        prodOpts: uniq((m.products || []).map(p => p.Product).concat((rec.products || []).map(p => p.name)), fIdx ? (isRawSlicerPage ? fIdx.productRaw : (isSalesSlicerPage ? fIdx.productSales : fIdx.product)) : null),
+        prodOpts: uniq((m.products || []).map(p => p.Product).concat((rec.products || []).map(p => p.name)), prodFreqMap),
         custOpts: uniq((m.customers || []).map(c => c.Customer).concat((rec.customers || []).map(c => c.name)), fIdx && fIdx.customer),
         suppOpts: uniq((m.suppliers || []).map(s => s.Supplier).concat((rec.suppliers || []).map(s => s.name)), fIdx ? (isRawSlicerPage ? fIdx.siteOwner : fIdx.supplier) : null),
         siteOpts: uniq((m.sites || []).map(s => s.Site).concat((rec.sites || []).map(s => s.name)), fIdx ? (isRawSlicerPage ? fIdx.siteRaw : (isSalesSlicerPage ? fIdx.siteSales : fIdx.site)) : null),

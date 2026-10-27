@@ -5671,9 +5671,32 @@
       if (!k) return;
       map.set(k, (map.get(k) || 0) + w);
     };
+    const incCo = (mapByCo, coVal, val, w = 1) => {
+      if (!coVal || !val) return;
+      const ck = norm(coVal), vk = norm(val);
+      if (!ck || !vk) return;
+      let sub = mapByCo.get(ck);
+      if (!sub) {
+        sub = new Map();
+        mapByCo.set(ck, sub);
+      }
+      sub.set(vk, (sub.get(vk) || 0) + w);
+    };
 
     const productSales = new Map();
     const productRaw = new Map();
+    const productSalesTickets = new Map();
+    const productRawTickets = new Map();
+    const productSalesByCo = new Map();
+    const productRawByCo = new Map();
+    const productSalesRules = new Map();
+    const productSalesRulesByCo = new Map();
+    const productRawRules = new Map();
+    const productRawRulesByCo = new Map();
+    const productCommRules = new Map();
+    const productCommRulesByCo = new Map();
+    const productFuel = new Map();
+    const productFuelByCo = new Map();
     const product = new Map();
     const customer = new Map();
     const supplier = new Map();
@@ -5707,7 +5730,9 @@
 
     sales.forEach(r => {
       if (!r || r.voided) return;
+      inc(productSalesTickets, r.product, 1);
       inc(productSales, r.product, 1);
+      incCo(productSalesByCo, r.company, r.product, 1);
       inc(product, r.product, 1);
       inc(customer, r.customer, 1);
       inc(siteSales, r.site, 1);
@@ -5720,7 +5745,9 @@
     });
     raws.forEach(r => {
       if (!r || r.voided) return;
+      inc(productRawTickets, r.product, 1);
       inc(productRaw, r.product, 1);
+      incCo(productRawByCo, r.company, r.product, 1);
       inc(product, r.product, 1);
       inc(siteRaw, r.site, 1);
       inc(site, r.site, 1);
@@ -5751,6 +5778,8 @@
     });
     fuels.forEach(f => {
       if (!f || f.voided) return;
+      inc(productFuel, f.item || f.fuel_type, 1);
+      incCo(productFuelByCo, f.company, f.item || f.fuel_type, 1);
       incTruck(f.equipment, 1);
       inc(driver, f.driver, 1);
       inc(fuelLoc, f.location, 1);
@@ -5766,8 +5795,29 @@
     rules.forEach(r => {
       if (!r || r.voided) return;
       inc(product, r.product, 1);
-      if (/purchase|transport\s*price\s*\(site\)/i.test(r.rule_type || '')) inc(productRaw, r.product, 1);
-      else inc(productSales, r.product, 1);
+      const rt = String(r.rule_type || '').trim();
+      const isRawRule = /^(purchase\s*price\s*\(site\)|transport\s*price\s*\(site\))$/i.test(rt) || (/purchase/i.test(rt) && !/sales/i.test(rt));
+      const pk = norm(r.product);
+      if (isRawRule) {
+        inc(productRawRules, r.product, 1);
+        incCo(productRawRulesByCo, r.company, r.product, 1);
+        if (pk && ((productRawTickets.get(pk) || 0) > 0 || (productSalesTickets.get(pk) || 0) === 0)) {
+          inc(productRaw, r.product, 0.1);
+        }
+        inc(siteRaw, r.site, 0.2);
+        inc(siteOwner, r.supplier, 0.2);
+      } else {
+        inc(productSalesRules, r.product, 1);
+        incCo(productSalesRulesByCo, r.company, r.product, 1);
+        if (/^commission$/i.test(rt)) {
+          inc(productCommRules, r.product, 1);
+          incCo(productCommRulesByCo, r.company, r.product, 1);
+        }
+        if (pk && ((productSalesTickets.get(pk) || 0) > 0 || (productRawTickets.get(pk) || 0) === 0)) {
+          inc(productSales, r.product, 0.1);
+        }
+        inc(siteSales, r.site, 0.2);
+      }
       inc(customer, r.customer, 1);
       inc(supplier, r.supplier, 1);
       inc(site, r.site, 1);
@@ -5786,7 +5836,10 @@
     });
 
     _FREQ_IDX = {
-      key, productSales, productRaw, product, customer, supplier, siteOwner, supplierExpense,
+      key, productSales, productRaw, productSalesTickets, productRawTickets,
+      productSalesByCo, productRawByCo, productSalesRules, productSalesRulesByCo,
+      productRawRules, productRawRulesByCo, productCommRules, productCommRulesByCo,
+      productFuel, productFuelByCo, product, customer, supplier, siteOwner, supplierExpense,
       truckOwner, siteSales, siteRaw, site, truck, driver, staff, category, subcategory,
       uom, fuelLoc, role, counterparty, region, any
     };
@@ -6144,13 +6197,75 @@
       }))
       .sort((a, b) => (catFreq.get(norm(b.category)) || 0) - (catFreq.get(norm(a.category)) || 0) || a.category.localeCompare(b.category));
   }
-  function productList(materialOnly, side) {
+  function compareProductByDomain(nameA, nameB, side, company, fIdx) {
+    fIdx = fIdx || getFreqIndex();
+    const ka = norm(nameA), kb = norm(nameB);
+    const coKey = (company && !/all|group|manufacturing/i.test(String(company))) ? norm(company) : '';
+    const mapGet = (m, k) => (m && k ? (m.get(k) || 0) : 0);
+    const mapCoGet = (mByCo, ck, k) => (mByCo && ck && k && mByCo.has(ck) ? (mByCo.get(ck).get(k) || 0) : 0);
+
+    if (side === 'fuel') {
+      const fCoA = mapCoGet(fIdx.productFuelByCo, coKey, ka), fCoB = mapCoGet(fIdx.productFuelByCo, coKey, kb);
+      if (fCoB !== fCoA) return fCoB - fCoA;
+      const fAllA = mapGet(fIdx.productFuel, ka), fAllB = mapGet(fIdx.productFuel, kb);
+      if (fAllB !== fAllA) return fAllB - fAllA;
+      return String(nameA).localeCompare(String(nameB));
+    }
+
+    if (side === 'raw') {
+      const coA = mapCoGet(fIdx.productRawByCo, coKey, ka), coB = mapCoGet(fIdx.productRawByCo, coKey, kb);
+      if (coB !== coA) return coB - coA;
+      const domA = mapGet(fIdx.productRawTickets, ka), domB = mapGet(fIdx.productRawTickets, kb);
+      const oppA = mapGet(fIdx.productSalesTickets, ka), oppB = mapGet(fIdx.productSalesTickets, kb);
+      const rCoA = (domA > 0 || oppA === 0) ? mapCoGet(fIdx.productRawRulesByCo, coKey, ka) : 0;
+      const rCoB = (domB > 0 || oppB === 0) ? mapCoGet(fIdx.productRawRulesByCo, coKey, kb) : 0;
+      if (rCoB !== rCoA) return rCoB - rCoA;
+      if (domB !== domA) return domB - domA;
+      const rAllA = (domA > 0 || oppA === 0) ? mapGet(fIdx.productRawRules, ka) : 0;
+      const rAllB = (domB > 0 || oppB === 0) ? mapGet(fIdx.productRawRules, kb) : 0;
+      if (rAllB !== rAllA) return rAllB - rAllA;
+      const pureOppA = (domA === 0 && rAllA === 0 && oppA > 0) ? 1 : 0;
+      const pureOppB = (domB === 0 && rAllB === 0 && oppB > 0) ? 1 : 0;
+      if (pureOppA !== pureOppB) return pureOppA - pureOppB;
+      return String(nameA).localeCompare(String(nameB));
+    }
+
+    if (side === 'sales' || side === 'comm') {
+      if (side === 'comm') {
+        const cmCoA = mapCoGet(fIdx.productCommRulesByCo, coKey, ka), cmCoB = mapCoGet(fIdx.productCommRulesByCo, coKey, kb);
+        if (cmCoB !== cmCoA) return cmCoB - cmCoA;
+      }
+      const coA = mapCoGet(fIdx.productSalesByCo, coKey, ka), coB = mapCoGet(fIdx.productSalesByCo, coKey, kb);
+      if (coB !== coA) return coB - coA;
+      if (side === 'comm') {
+        const cmAllA = mapGet(fIdx.productCommRules, ka), cmAllB = mapGet(fIdx.productCommRules, kb);
+        if (cmAllB !== cmAllA) return cmAllB - cmAllA;
+      }
+      const domA = mapGet(fIdx.productSalesTickets, ka), domB = mapGet(fIdx.productSalesTickets, kb);
+      const oppA = mapGet(fIdx.productRawTickets, ka), oppB = mapGet(fIdx.productRawTickets, kb);
+      const rCoA = (domA > 0 || oppA === 0) ? mapCoGet(fIdx.productSalesRulesByCo, coKey, ka) : 0;
+      const rCoB = (domB > 0 || oppB === 0) ? mapCoGet(fIdx.productSalesRulesByCo, coKey, kb) : 0;
+      if (rCoB !== rCoA) return rCoB - rCoA;
+      if (domB !== domA) return domB - domA;
+      const rAllA = (domA > 0 || oppA === 0) ? mapGet(fIdx.productSalesRules, ka) : 0;
+      const rAllB = (domB > 0 || oppB === 0) ? mapGet(fIdx.productSalesRules, kb) : 0;
+      if (rAllB !== rAllA) return rAllB - rAllA;
+      const pureOppA = (domA === 0 && rAllA === 0 && oppA > 0) ? 1 : 0;
+      const pureOppB = (domB === 0 && rAllB === 0 && oppB > 0) ? 1 : 0;
+      if (pureOppA !== pureOppB) return pureOppA - pureOppB;
+      return String(nameA).localeCompare(String(nameB));
+    }
+
+    const ca = mapGet(fIdx.product, ka), cb = mapGet(fIdx.product, kb);
+    if (cb !== ca) return cb - ca;
+    return String(nameA).localeCompare(String(nameB));
+  }
+
+  function productList(materialOnly, side, company) {
     // Tickets carry Material / ticket_product products only (m37 / m54 / m110) — oils and spare parts never go on a weighbridge ticket.
-    // Ordered by actual ticket usage frequency descending (raw_purchases on 'raw', sales_tickets on 'sales', combined otherwise).
+    // Ordered strictly by domain + company usage frequency descending (raw_purchases on 'raw', sales_tickets on 'sales', never cross-leaking).
     const pool = materialOnly ? SEED.records.products.filter(p => p.ticket_product !== false && (!p.type || /material/i.test(p.type))) : SEED.records.products;
     const fIdx = getFreqIndex();
-    const primaryMap = side === 'raw' ? fIdx.productRaw : (side === 'sales' ? fIdx.productSales : fIdx.product);
-    const fallbackMap = fIdx.product;
     const seen = new Set();
     const out = [];
     pool.forEach(p => {
@@ -6158,14 +6273,7 @@
       const k = norm(p.name);
       if (k && !seen.has(k)) { seen.add(k); out.push(p); }
     });
-    return out.sort((a, b) => {
-      const ka = norm(a.name), kb = norm(b.name);
-      const ca = primaryMap.get(ka) || 0, cb = primaryMap.get(kb) || 0;
-      if (cb !== ca) return cb - ca;
-      const fa = fallbackMap.get(ka) || 0, fb = fallbackMap.get(kb) || 0;
-      if (fb !== fa) return fb - fa;
-      return String(a.name).localeCompare(String(b.name));
-    });
+    return out.sort((a, b) => compareProductByDomain(a.name, b.name, side, company, fIdx));
   }
   let _CUST_DECL_QTY_SET = null;
   let _CUST_EXT_INV_SET = null;
@@ -24066,53 +24174,72 @@
     return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   }
 
+  function formatProductMetaBadge(prodObj, fallbackName) {
+    const p = prodObj || productInfo(fallbackName);
+    const u = p ? (p.uom || 'm³') : 'm³';
+    const tf = resolveProductTonFactor(p, fallbackName || (p && p.name));
+    const tfMeta = tf > 0 && tf !== 1 ? ` · 1 m³ = ${tf} t` : '';
+    return `${u}${tfMeta}`;
+  }
+
   function salesProductMetaItems(company) {
-    const prods = productList(true, 'sales');
-    const bbcPriority = ['Bodra', 'Bahes', 'Sarek', 'Washed Sand', 'Fine Washed Sand', 'Bodra Stock', 'Baskors', 'Jarousha', 'Sakher'];
-    const ordered = company === 'BBConstruction'
-      ? prods.slice().sort((a, b) => {
-          const ia = bbcPriority.findIndex(n => norm(n) === norm(a.name));
-          const ib = bbcPriority.findIndex(n => norm(n) === norm(b.name));
-          if (ia >= 0 && ib >= 0) return ia - ib;
-          if (ia >= 0) return -1;
-          if (ib >= 0) return 1;
-          const aTon = /^tons?$/i.test(a.uom || '') ? 0 : 1;
-          const bTon = /^tons?$/i.test(b.uom || '') ? 0 : 1;
-          if (aTon !== bTon) return aTon - bTon;
-          return 0;
-        })
-      : prods;
-    return ordered.map(p => {
-      const u = p.uom || 'm³';
-      const tf = resolveProductTonFactor(p, p.name);
-      const tfMeta = tf > 0 && tf !== 1 ? ` · 1 m³ = ${tf} t` : '';
-      return [p.name, `${u}${tfMeta}`];
-    });
+    return productList(true, 'sales', company).map(p => [p.name, formatProductMetaBadge(p, p.name)]);
   }
 
   function rawProductMetaItems(company) {
-    const rawProdNames = uniqSorted(SEED.records.raw_purchases.map(r => r.product).concat(SEED.records.products.map(p => p.name)), getFreqIndex().productRaw);
-    const bbcPriority = ['Sakher', 'Trab Mrml', 'Dabsh', 'Ramel Mrml', 'Raml Bab Thani', 'Zalat Beton', 'Bodra', 'Bahes', 'Sarek', 'Baskors'];
-    const ordered = company === 'BBConstruction'
-      ? rawProdNames.slice().sort((a, b) => {
-          const ia = bbcPriority.findIndex(n => norm(n) === norm(a));
-          const ib = bbcPriority.findIndex(n => norm(n) === norm(b));
-          if (ia >= 0 && ib >= 0) return ia - ib;
-          if (ia >= 0) return -1;
-          if (ib >= 0) return 1;
-          const pa = productInfo(a), pb = productInfo(b);
-          const aTon = /^tons?$/i.test((pa && pa.uom) || '') ? 0 : 1;
-          const bTon = /^tons?$/i.test((pb && pb.uom) || '') ? 0 : 1;
-          if (aTon !== bTon) return aTon - bTon;
-          return 0;
-        })
-      : rawProdNames;
-    return ordered.map(nm => {
-      const p = productInfo(nm);
-      const u = p ? (p.uom || 'm³') : 'm³';
-      const tf = resolveProductTonFactor(p, nm);
-      const tfMeta = tf > 0 && tf !== 1 ? ` · 1 m³ = ${tf} t` : '';
-      return [nm, `${u}${tfMeta}`];
+    const fIdx = getFreqIndex();
+    const seen = new Set();
+    const names = [];
+    const pushName = nm => {
+      const s = String(nm || '').trim();
+      const k = norm(s);
+      if (k && !seen.has(k)) { seen.add(k); names.push(s); }
+    };
+    (SEED.records.raw_purchases || []).forEach(r => { if (r && !r.voided) pushName(r.product); });
+    (SEED.records.products || []).forEach(p => {
+      if (!p || !p.name) return;
+      if (p.ticket_product !== false && (!p.type || /material/i.test(p.type) || (fIdx.productRawTickets.get(norm(p.name)) || 0) > 0 || (fIdx.productRawRules.get(norm(p.name)) || 0) > 0)) {
+        pushName(p.name);
+      }
+    });
+    names.sort((a, b) => compareProductByDomain(a, b, 'raw', company, fIdx));
+    return names.map(nm => [nm, formatProductMetaBadge(null, nm)]);
+  }
+
+  function domainProductMetaItems(side, company) {
+    const fIdx = getFreqIndex();
+    const seen = new Set();
+    const names = [];
+    const pushName = nm => {
+      const s = String(nm || '').trim();
+      const k = norm(s);
+      if (k && !seen.has(k)) { seen.add(k); names.push(s); }
+    };
+    (SEED.records.products || []).forEach(p => { if (p && p.name) pushName(p.name); });
+    if (side === 'raw') {
+      (SEED.records.raw_purchases || []).forEach(r => { if (r && !r.voided) pushName(r.product); });
+    } else if (side === 'sales' || side === 'comm') {
+      (SEED.records.sales_tickets || []).forEach(r => { if (r && !r.voided) pushName(r.product); });
+    }
+    names.sort((a, b) => compareProductByDomain(a, b, side, company, fIdx));
+    return names.map(nm => [nm, formatProductMetaBadge(null, nm)]);
+  }
+
+  function fuelProductMetaItems(company) {
+    const fIdx = getFreqIndex();
+    const base = [
+      ['Diesel', 'Bulk Fuel (L)'],
+      ['Oil 68', 'Hydraulic 68 (L)'],
+      ['Oil 15W40', 'Engine Oil (L)'],
+      ['Grease', 'Daily Chassis & Pin Grease (kg)'],
+      ['Oil 90', 'Gear / Diff 80W-90 (L)'],
+      ['Oil ATF / Gearbox', 'Transmission / Steering (L)'],
+      ['Other lubricant', 'Lubricant (L)']
+    ];
+    return base.slice().sort((a, b) => {
+      if (a[0] === 'Other lubricant') return 1;
+      if (b[0] === 'Other lubricant') return -1;
+      return compareProductByDomain(a[0], b[0], 'fuel', company, fIdx);
     });
   }
 
@@ -24147,7 +24274,7 @@
 
     if (window.MFG_FORMS && !['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement'].includes(fType)) {
       return cockpitHtml + window.MFG_FORMS.renderExtendedFormBody(fType, { SEED, STATE }, {
-        allowedCompanyNames, defaultEntryCompany, customerNames, supplierNames, siteNames, equipmentNames, driverNames, getFreqIndex, uniqSorted
+        allowedCompanyNames, defaultEntryCompany, customerNames, supplierNames, siteNames, equipmentNames, driverNames, getFreqIndex, uniqSorted, domainProductMetaItems
       });
     }
 
@@ -24294,7 +24421,7 @@
           ${repDateField}
           ${fld('Fuel Type *', sel('f_fueltype', [['Diesel', 'Diesel (Plant Tank Issue)'], ['Lubricant', 'Lubricant / Hydraulic / Grease'], ['Petrol', 'Petrol / Gasoline']], 'Diesel'), { id: 'wrap_f_fueltype' })}
           ${fld('Ticket #', inp('f_ticketno', 'text', '', 'inputmode="numeric" placeholder="Optional ticket no."'), { id: 'wrap_f_ticketno', hintId: 'hint_ticket', hint: '' })}
-          ${fld('Lubricant / Item *', inp('f_item', 'text', 'Diesel', 'list="dl_fuel_items" placeholder="Select or type lubricant / grease..."') + dlMeta('dl_fuel_items', [['Diesel', 'Bulk Fuel (L)'], ['Oil 15W40', 'Engine Oil (L)'], ['Oil 68', 'Hydraulic 68 (L)'], ['Oil 90', 'Gear / Diff 80W-90 (L)'], ['Oil ATF / Gearbox', 'Transmission / Steering (L)'], ['Grease', 'Daily Chassis & Pin Grease (kg)'], ['Other lubricant', 'Lubricant (L)']]), { id: 'wrap_f_item', hidden: true })}
+          ${fld('Lubricant / Item *', inp('f_item', 'text', 'Diesel', 'list="dl_fuel_items" placeholder="Select or type lubricant / grease..."') + dlMeta('dl_fuel_items', fuelProductMetaItems(company)), { id: 'wrap_f_item', hidden: true })}
           ${fld('Equipment / Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type equipment..."') + dl('dl_equip', equipmentNames()), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
           ${fld('Driver *', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Pick Equipment / Truck first..." readonly') + dl('dl_drivers', []), { id: 'wrap_f_driver', lockField: 'f_driver', lockReason: 'Locked to the active driver in the Equipment Log - update Equipment Log if absent or changed', hintId: 'hint_driver', hint: '' })}
 
@@ -24424,7 +24551,7 @@
     stagedOwnerDrivers: [],
     lastCompany: '', lastDate: '', lastCategory: null, catCache: null,
     lastTruck: '', lastTruckOwner: '', lastSaleType: '', lastTransportBy: '',
-    lastSite: '', lastSiteOwner: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastRuleType: '',
+    lastSite: '', lastSiteOwner: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastRuleType: '', lastPrCoSide: '',
     lastWinKey: '', lastFuelWinKey: '', lastFuelItem: '', greaseAutoPreset: false,
     adminUnlocked: {}, unlockTargetField: '', unlockNote: ''
   };
@@ -26390,6 +26517,12 @@
 
   function recalcFuel() {
     const company = val('f_company'), equipment = val('f_truck'), date = val('f_date');
+    if (FORM_UI.lastCompany !== '' && FORM_UI.lastCompany !== company) {
+      const dlFuelItems = $('dl_fuel_items');
+      if (dlFuelItems) {
+        dlFuelItems.innerHTML = fuelProductMetaItems(company).map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+      }
+    }
     const effDate = (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date;
     const fuelType = val('f_fueltype') || 'Diesel';
     const isLubricant = fuelType === 'Lubricant';
@@ -27544,6 +27677,23 @@
 
         const prProduct = val('f_product');
         const prCo = val('f_company');
+        const prSide = isRawDomain ? 'raw' : (isComm ? 'comm' : 'sales');
+        const prCoSideKey = `${prCo}|${prSide}`;
+        if (prCoSideKey !== FORM_UI.lastPrCoSide) {
+          FORM_UI.lastPrCoSide = prCoSideKey;
+          const dlPrProds = $('dl_pr_prods');
+          if (dlPrProds) {
+            dlPrProds.innerHTML = domainProductMetaItems(prSide, prCo).map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+          }
+          const dlPrSites = $('dl_sites');
+          if (dlPrSites) {
+            dlPrSites.innerHTML = siteNames(isRawDomain ? 'raw' : 'sales').map(v => `<option value="${esc(v)}">`).join('');
+          }
+          const dlPrSups = $('dl_suppliers');
+          if (dlPrSups) {
+            dlPrSups.innerHTML = supplierNames(isRawDomain ? 'raw_owner' : 'all').map(v => `<option value="${esc(v)}">`).join('');
+          }
+        }
         if (prProduct !== FORM_UI.lastProduct) {
           FORM_UI.lastProduct = prProduct;
           const pInfo = productInfo(prProduct);
@@ -29570,7 +29720,7 @@
     FORM_UI.lastTruck = val('f_truck'); FORM_UI.lastTruckOwner = val('f_truckowner');
     FORM_UI.lastSaleType = val('f_saletype'); FORM_UI.lastTransportBy = val('f_transportby');
     FORM_UI.lastSite = val('f_site'); FORM_UI.lastSiteOwner = val('f_siteowner'); FORM_UI.lastProduct = val('f_product');
-    FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier'); FORM_UI.lastUom = val('f_uom') || '';
+    FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier'); FORM_UI.lastUom = val('f_uom') || ''; FORM_UI.lastPrCoSide = '';
     FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = ''; FORM_UI.lastFuelItem = val('f_item'); FORM_UI.greaseAutoPreset = false;
     FORM_UI.defectRefPreset = false; FORM_UI.lastSeverity = ''; FORM_UI.lastDefectRef = '';
     FORM_UI.attPreset = 'regular'; FORM_UI.attClockManual = false;
@@ -32976,7 +33126,20 @@
         .concat(((SEED.records && SEED.records.jv_partnerships) || []).map(j => j.partner))
         .concat(supplierNames(), customerNames())
     );
-    const inspProds = uniqSorted(((SEED.records && SEED.records.products) || []).map(p => p.name));
+    const inspRuleType = String((row && row.rule_type) || '').trim();
+    const isRawInsp = key === 'raw_purchases' || (key === 'price_rules' && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(inspRuleType));
+    const isCommInsp = key === 'price_rules' && /^commission$/i.test(inspRuleType);
+    const isSalesInsp = key === 'sales_tickets' || (key === 'price_rules' && !isRawInsp && !isCommInsp);
+    const inspRowCo = (row && row.company) || defaultEntryCompany();
+    const inspProdMeta = key === 'fuel_intakes'
+      ? fuelProductMetaItems(inspRowCo).concat(domainProductMetaItems('', inspRowCo).filter(([n]) => !/^(diesel|oil\s*68|oil\s*15w40|grease|oil\s*90|oil\s*atf)/i.test(n)))
+      : (isRawInsp
+          ? domainProductMetaItems('raw', inspRowCo)
+          : (isCommInsp
+              ? domainProductMetaItems('comm', inspRowCo)
+              : (isSalesInsp ? domainProductMetaItems('sales', inspRowCo) : domainProductMetaItems('', inspRowCo))));
+    const inspSiteNames = siteNames(isRawInsp ? 'raw' : (isSalesInsp ? 'sales' : undefined));
+    const inspSupplierNames = supplierNames(isRawInsp ? 'raw_owner' : (key === 'expenses' ? 'expense' : undefined));
     const inspParts = uniqSorted(
       ((SEED.records && SEED.records.part_movements) || []).map(p => p.part_name)
         .concat(((SEED.records && SEED.records.equipment_defects) || []).map(d => d.part_name))
@@ -33060,9 +33223,9 @@
       <!-- Shared Searchable Datalists for Inspector Modification Drawer & Equipment Log -->
       <div hidden aria-hidden="true">
         <datalist id="dl_insp_customers">${customerNames().map(v => `<option value="${esc(v)}">`).join('')}</datalist>
-        <datalist id="dl_insp_suppliers">${supplierNames().map(v => `<option value="${esc(v)}">`).join('')}</datalist>
-        <datalist id="dl_insp_products">${inspProds.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
-        <datalist id="dl_insp_sites">${siteNames().map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+        <datalist id="dl_insp_suppliers">${inspSupplierNames.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+        <datalist id="dl_insp_products">${inspProdMeta.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('')}</datalist>
+        <datalist id="dl_insp_sites">${inspSiteNames.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_regions">${inspRegions.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_equip">${equipmentNames().map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_drivers">${driverNames().map(v => `<option value="${esc(v)}">`).join('')}</datalist>
@@ -38330,7 +38493,7 @@
     // Quick-preset chips for touch operators
     let quickStripHtml = '';
     if (kMode === 'sales') {
-      const topProds = productList(true, 'sales').slice(0, 6);
+      const topProds = productList(true, 'sales', defCo).slice(0, 6);
       const topCusts = customerNames().slice(0, 5);
       quickStripHtml = `
         <div class="kiosk-quick-strip" id="kioskQuickStrip">
@@ -38350,7 +38513,7 @@
         </div>
       `;
     } else if (kMode === 'raw') {
-      const topRawProds = productList(true, 'raw').slice(0, 5);
+      const topRawProds = productList(true, 'raw', defCo).slice(0, 5);
       const topSites = siteNames('raw').slice(0, 5);
       quickStripHtml = `
         <div class="kiosk-quick-strip" id="kioskQuickStrip">
