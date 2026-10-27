@@ -9177,14 +9177,19 @@ table.rdl-meta-box td.rdl-meta-val.bold {
   box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.12);
 }
 
-/* Neglected Field & Neglected Section Red Highlights (shown only on failed post attempt) */
+/* Neglected Field & Neglected Section Red Highlights (shown on failed post attempt or live rejected Ton quantity) */
 .form-field.field-neglected > label .pa-fld-lbl,
-.form-field.field-neglected > .field-lbl-with-btn > label {
+.form-field.field-neglected > .field-lbl-with-btn > label,
+.form-field.field-live-invalid > label,
+.form-field.field-live-invalid > label .pa-fld-lbl,
+.form-field.field-live-invalid > .field-lbl-with-btn > label {
   color: var(--crit) !important;
   font-weight: 700;
 }
 .form-field.field-neglected input:not([type="checkbox"]):not([type="radio"]):not(.pa-select-filter),
-.form-field.field-neglected select {
+.form-field.field-neglected select,
+.form-field.field-live-invalid input:not([type="checkbox"]):not([type="radio"]):not(.pa-select-filter),
+.form-field.field-live-invalid select {
   border-style: solid !important;
   border-color: var(--crit) !important;
   background: rgba(200, 51, 59, 0.05) !important;
@@ -9193,8 +9198,9 @@ table.rdl-meta-box td.rdl-meta-val.bold {
 .form-field.field-neglected > .hint:not(.field-err-msg) {
   display: none;
 }
-.form-field.field-neglected > .field-err-msg {
-  color: var(--crit);
+.form-field.field-neglected > .field-err-msg,
+.form-field.field-live-invalid > .hint.crit {
+  color: var(--crit) !important;
   font-weight: 700;
 }
 .pa-form-sec-hdr.sec-neglected {

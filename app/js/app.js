@@ -21016,27 +21016,43 @@
       return Number(prod.ton_factor);
     }
     if (/trab\s*mrml|raml\s*bab/i.test(productName || '')) return 1.7;
+    if (/^trab$/i.test(String(productName || '').trim())) return 1.5;
     if (prod && Number(prod.ton_factor) > 0) return Number(prod.ton_factor);
+    if (productName && String(productName).trim()) return 1.6;
     return 0;
   }
 
   const TON_EST_MIN_RATIO = 0.70;
   const TON_EST_MAX_RATIO = 1.50;
-  function evaluateTonEstimateGuard(qty, estTons, effCap, tonFactor, adminUnlocked = false) {
-    const hasEstimate = Boolean(estTons != null && Number(estTons) > 0 && effCap && Number(effCap) > 0 && tonFactor > 0);
-    if (!hasEstimate) {
+  function evaluateTonEstimateGuard(qty, estTons, effCap, tonFactor, adminUnlocked = false, defaultTonFactor = 1.6) {
+    const hasTruckCap = Boolean(effCap != null && Number(effCap) > 0);
+    const hasExplicitFactor = Boolean(tonFactor != null && Number(tonFactor) > 0);
+    const tf = hasExplicitFactor ? Number(tonFactor) : Number(defaultTonFactor || 1.6);
+    if (!hasTruckCap) {
+      if (qty > 0 && qty < 5) {
+        return {
+          hasEstimate: true, minTons: 5, maxTons: null, tooLow: true, tooHigh: false,
+          blocked: !adminUnlocked,
+          severity: adminUnlocked ? 'warn' : 'crit',
+          hint: adminUnlocked
+            ? `Admin override: ${fmtNum(qty, 2)} t is below minimum truck load`
+            : `Not accepted — ${fmtNum(qty, 2)} Tons is far below a truck load · Select Truck to see estimated tonnage`
+        };
+      }
       return { hasEstimate: false, minTons: null, maxTons: null, tooLow: false, tooHigh: false, blocked: false, severity: '', hint: '' };
     }
-    const est = Number(estTons);
     const cap = Number(effCap);
-    const tf = Number(tonFactor);
+    const est = (estTons != null && Number(estTons) > 0) ? Number(estTons) : round2(cap * tf);
     const minTons = round2(est * TON_EST_MIN_RATIO);
     const maxTons = round2(est * TON_EST_MAX_RATIO);
+    const tfLabel = hasExplicitFactor ? `${tf} t/m³` : `~${tf} t/m³`;
     if (!(qty > 0)) {
       return {
         hasEstimate: true, minTons, maxTons, tooLow: false, tooHigh: false, blocked: false,
         severity: 'ok',
-        hint: `Estimated: ≈ ${fmtNum(est, 2)} Tons (${fmtNum(cap, 1)} m³ truck × ${tf} t/m³) · Enter weighed tons`
+        hint: hasExplicitFactor
+          ? `Estimated: ≈ ${fmtNum(est, 2)} Tons (${fmtNum(cap, 1)} m³ truck × ${tf} t/m³) · Enter weighed tons`
+          : `Estimated: ≈ ${fmtNum(est, 2)} Tons (${fmtNum(cap, 1)} m³ truck × ${tfLabel}) · Select Product & enter weighed tons`
       };
     }
     const eqM3 = fmtNum(qty / tf, 2);
@@ -21356,13 +21372,14 @@
 
     const truckHasNoCap = !!(truckRow && !(Number(effCap) > 0));
     const shouldLockQty = !isUnreg && !truckHasNoCap && !isTonUom;
-    const estTons = (effCap && Number(effCap) > 0 && tonFactor > 0) ? round2(Number(effCap) * tonFactor) : null;
+    const effTonFactor = tonFactor > 0 ? tonFactor : 1.6;
+    const estTons = (effCap && Number(effCap) > 0) ? round2(Number(effCap) * effTonFactor) : null;
     const qtyLocked = applyFieldLockState('f_qty', shouldLockQty,
       isTruckUom
         ? 'Unit = Truck locks Quantity to 1 load'
         : (isTonUom
             ? (estTons != null
-                ? `Unlocked for Ton sale · Est. ≈ ${fmtNum(estTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${tonFactor} t/m³)`
+                ? `Unlocked for Ton sale · Est. ≈ ${fmtNum(estTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${tonFactor > 0 ? tonFactor : '~1.6'} t/m³)`
                 : 'Unlocked for Ton sale — enter weighed tons')
             : (agrSizeOverride
                 ? `Locked to ${agrSizeOverride.rule.name} Client/Site Truck Size (${agrSizeOverride.size} m³)`
@@ -21374,7 +21391,7 @@
 
     if (qtyEl()) {
       qtyEl().placeholder = isTonUom
-        ? (estTons != null ? `Est. ≈ ${fmtNum(estTons, 2)} t (${fmtNum(effCap, 1)} m³ × ${tonFactor})` : 'Enter weighed tons...')
+        ? (estTons != null ? `Est. ≈ ${fmtNum(estTons, 2)} t (${fmtNum(effCap, 1)} m³ × ${tonFactor > 0 ? tonFactor : '~1.6'})` : 'Enter weighed tons...')
         : (qtyLocked ? 'Auto-filled from Truck m³...' : 'Enter quantity...');
     }
     if (qtyEl() && qtyLocked) {
@@ -21432,15 +21449,17 @@
     setText('calc_vat', vatReg ? fmtUSD(vat, 2) : '—');
     setText('calc_total', fmtUSD(ttc, 2));
     const tonGuard = isTonUom
-      ? evaluateTonEstimateGuard(qty, estTons, effCap, tonFactor, isFieldAdminUnlocked('f_qty'))
+      ? evaluateTonEstimateGuard(qty, estTons, effCap, tonFactor, isFieldAdminUnlocked('f_qty'), 1.6)
       : { hasEstimate: false, blocked: false, severity: '', hint: '' };
+    const qtyWrapEl = $('wrap_f_qty');
+    const isQtyLiveInvalid = Boolean(isTonUom ? ((qty <= 0 && val('f_qty') !== '') || tonGuard.blocked) : (qty <= 0 && val('f_qty') !== ''));
+    if (qtyWrapEl) qtyWrapEl.classList.toggle('field-live-invalid', isQtyLiveInvalid);
+    if (qtyEl()) qtyEl().setAttribute('aria-invalid', isQtyLiveInvalid ? 'true' : 'false');
     if (isTonUom) {
       if (qty <= 0 && val('f_qty') !== '') {
         setHint('hint_qty', 'Must be above zero', 'crit');
       } else if (tonGuard.hasEstimate) {
         setHint('hint_qty', tonGuard.hint, tonGuard.severity);
-      } else if (effCap && Number(effCap) > 0) {
-        setHint('hint_qty', `Truck size: ${fmtNum(effCap, 1)} m³ · Select Product for conversion rate & estimated tonnage`, '');
       } else if (tonFactor > 0) {
         setHint('hint_qty', `Conversion rate: 1 m³ = ${tonFactor} Tons · Select Truck to see estimated tonnage`, '');
       } else {
@@ -21634,7 +21653,8 @@
     }
     setText('lbl_uom', uom);
     const rawTonFactor = resolveProductTonFactor(prod, product);
-    const rawEstTons = (effCap && Number(effCap) > 0 && rawTonFactor > 0) ? round2(Number(effCap) * rawTonFactor) : null;
+    const effRawTonFactor = rawTonFactor > 0 ? rawTonFactor : 1.5;
+    const rawEstTons = (effCap && Number(effCap) > 0) ? round2(Number(effCap) * effRawTonFactor) : null;
     setHint('hint_product', (prod || rawTonFactor > 0) ? (rawTonFactor && rawTonFactor !== 1 ? `1 m³ = ${rawTonFactor} t` : '') : (product ? 'Unknown grade' : ''), '');
     const rawM3LockSource = agrSizeOverride
       ? `${agrSizeOverride.rule.site || agrSizeOverride.rule.supplier || agrSizeOverride.rule.name || 'site'} truck size (${fmtNum(effCap, 1)} m³)`
@@ -21659,7 +21679,7 @@
         ? 'Unit = Truck locks Quantity to 1 load'
         : (isTonUom
             ? (rawEstTons != null
-                ? `Unlocked for Ton intake · Est. ≈ ${fmtNum(rawEstTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${rawTonFactor} t/m³)`
+                ? `Unlocked for Ton intake · Est. ≈ ${fmtNum(rawEstTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${rawTonFactor > 0 ? rawTonFactor : '~1.5'} t/m³)`
                 : 'Unlocked for Ton intake — enter weighed tons')
             : (agrSizeOverride
                 ? `Locked to ${agrSizeOverride.rule.name} Site/Hauler Truck Size (${agrSizeOverride.size} m³)`
@@ -21670,7 +21690,7 @@
                         : 'Auto-populated from Truck Capacity (m³)')))));
     if (qtyEl()) {
       qtyEl().placeholder = isTonUom
-        ? (rawEstTons != null ? `Est. ≈ ${fmtNum(rawEstTons, 2)} t (${fmtNum(effCap, 1)} m³ × ${rawTonFactor})` : 'Enter weighed tons...')
+        ? (rawEstTons != null ? `Est. ≈ ${fmtNum(rawEstTons, 2)} t (${fmtNum(effCap, 1)} m³ × ${rawTonFactor > 0 ? rawTonFactor : '~1.5'})` : 'Enter weighed tons...')
         : (qtyLocked ? 'Auto-filled from Truck m³...' : 'Enter quantity...');
     }
     if (qtyEl() && qtyLocked) {
@@ -21683,15 +21703,17 @@
     }
     const curRawQty = num('f_qty');
     const rawTonGuard = isTonUom
-      ? evaluateTonEstimateGuard(curRawQty, rawEstTons, effCap, rawTonFactor, isFieldAdminUnlocked('f_qty'))
+      ? evaluateTonEstimateGuard(curRawQty, rawEstTons, effCap, rawTonFactor, isFieldAdminUnlocked('f_qty'), 1.5)
       : { hasEstimate: false, blocked: false, severity: '', hint: '' };
+    const rawQtyWrapEl = $('wrap_f_qty');
+    const isRawQtyLiveInvalid = Boolean(isTonUom ? ((curRawQty <= 0 && val('f_qty') !== '') || rawTonGuard.blocked) : (curRawQty <= 0 && val('f_qty') !== ''));
+    if (rawQtyWrapEl) rawQtyWrapEl.classList.toggle('field-live-invalid', isRawQtyLiveInvalid);
+    if (qtyEl()) qtyEl().setAttribute('aria-invalid', isRawQtyLiveInvalid ? 'true' : 'false');
     if (isTonUom) {
       if (curRawQty <= 0 && val('f_qty') !== '') {
         setHint('hint_qty', 'Must be above zero', 'crit');
       } else if (rawTonGuard.hasEstimate) {
         setHint('hint_qty', rawTonGuard.hint, rawTonGuard.severity);
-      } else if (effCap && Number(effCap) > 0) {
-        setHint('hint_qty', `Truck size: ${fmtNum(effCap, 1)} m³ · Select Product for conversion rate & estimated tonnage`, '');
       } else if (rawTonFactor > 0) {
         setHint('hint_qty', `Conversion rate: 1 m³ = ${rawTonFactor} Tons · Select Truck to see estimated tonnage`, '');
       } else {
@@ -24997,7 +25019,16 @@
         recalcForm();
       };
       el.addEventListener('input', handler);
-      el.addEventListener('change', handler);
+      el.addEventListener('change', ev => {
+        handler();
+        if (el.id === 'f_qty' && ev && ev.isTrusted) {
+          const w = $('wrap_f_qty');
+          const h = $('hint_qty');
+          if (w && w.classList.contains('field-live-invalid') && h && h.textContent) {
+            toast(h.textContent, 'err');
+          }
+        }
+      });
     });
     recalcForm();
     wireModalSuggestions(body);
@@ -26108,6 +26139,14 @@
         body.addEventListener('keydown', e => {
           if (e.key === 'Enter' && !e.defaultPrevented && e.target && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && !e.target.list && !e.target.dataset.suggestList) {
             e.preventDefault();
+            if (e.target.id === 'f_qty') {
+              const w = $('wrap_f_qty');
+              const h = $('hint_qty');
+              if (w && w.classList.contains('field-live-invalid')) {
+                if (h && h.textContent) toast(h.textContent, 'err');
+                return;
+              }
+            }
             const controls = Array.from(body.querySelectorAll('.form-grid-3 input, .form-grid-3 select, .form-grid input, .form-grid select')).filter(el => {
               if (el.disabled || el.readOnly || el.type === 'hidden' || el.type === 'checkbox') return false;
               if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id)) return false;
