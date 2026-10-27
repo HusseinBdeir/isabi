@@ -6210,14 +6210,9 @@
             };
           });
 
-      const pbiPostShort = cm ? String((cm.effEndLabel || '').split(' ')[0] || cm.effEndLabel || 'Cutoff') : 'Cutoff';
       const pbiCutoffBar = cm ? `
         <div class="payroll-cutoff-bar is-pbi ${cm.applicable ? '' : 'is-custom-period'}" id="pbiPayrollCutoffBar" data-cutoff-mode="${esc(cm.applicable ? cm.mode : 'custom')}">
           <div class="payroll-cutoff-ctrl">
-            <span class="payroll-cutoff-kicker">
-              <svg class="pck-ico" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.8"/><line x1="5" y1="1.5" x2="5" y2="4.2"/><line x1="11" y1="1.5" x2="11" y2="4.2"/><line x1="2" y1="6.5" x2="14" y2="6.5"/><polyline points="5.6 10.2 7.3 11.8 10.6 8.5"/></svg>
-              <span>Accrual</span>
-            </span>
             ${cm.applicable ? `
             <div class="payroll-cutoff-pills" role="group" aria-label="Remaining earnings accrual cutoff">
               <button type="button" class="payroll-cutoff-pill ${cm.mode === 'closed_month' ? 'active' : ''}" data-payroll-cutoff="closed_month" data-tone="closed">
@@ -6237,23 +6232,6 @@
               <span class="pcc-pill"><span class="pcp-dot is-locked" aria-hidden="true"></span><span>Period Filter · ${esc(cm.effEndLabel)}</span></span>
               <button type="button" class="pcc-reset-btn" data-payroll-cutoff-reset="1">Standard Cutoff</button>
             </div>`}
-          </div>
-          <div class="payroll-cutoff-telemetry">
-            <span class="pct-cell pct-cell-window">
-              <small>Thru</small>
-              <b class="pct-mono">${esc(cm.effToDate)}</b>
-              <em class="pct-mode-tag">${cm.applicable ? (cm.mode === 'closed_month' ? 'Closed Books' : (cm.mode === 'mtd' ? 'Pro-Rata MTD' : 'Projected')) : 'Selected Range'}</em>
-            </span>
-            <span class="pct-sep pct-sep-window" aria-hidden="true"></span>
-            <span class="pct-cell">
-              <small>Earned</small>
-              <b class="pct-num">${fmtUSD(totEarn, 0)}</b>
-            </span>
-            <span class="pct-sep" aria-hidden="true"></span>
-            <span class="pct-cell pct-cell-adv">
-              <small>Post-${esc(pbiPostShort)} Advances</small>
-              <b class="pct-num pct-brass">${fmtUSD(totAdvances, 0)}</b>
-            </span>
           </div>
         </div>` : '';
 

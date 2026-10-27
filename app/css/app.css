@@ -19208,11 +19208,11 @@ table.ledger-table tbody td.td-databar {
 .payroll-cutoff-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-start;
+  gap: 10px;
   flex-wrap: nowrap;
-  height: 42px;
-  min-height: 42px;
+  height: 40px;
+  min-height: 40px;
   padding: 0 14px;
   background: var(--surface-2, #F5F7FA);
   border-bottom: 1px solid var(--line);
@@ -19224,45 +19224,25 @@ table.ledger-table tbody td.td-databar {
 }
 
 .payroll-cutoff-bar.is-pbi {
+  display: inline-flex;
+  height: auto;
+  min-height: 0;
+  padding: 0;
   margin-bottom: 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgba(15, 30, 56, 0.04);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .payroll-cutoff-bar.is-pbi {
-  background: var(--surface-2);
+  background: transparent;
 }
 
 .payroll-cutoff-ctrl {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
   flex: 0 0 auto;
   min-width: 0;
-}
-
-.payroll-cutoff-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 5.5px;
-  height: 20px;
-  padding-right: 9px;
-  border-right: 1px solid var(--line-strong);
-  color: var(--muted);
-  font-size: 9.8px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  user-select: none;
-  flex-shrink: 0;
-}
-
-.payroll-cutoff-kicker .pck-ico {
-  color: var(--brass);
-  flex-shrink: 0;
 }
 
 .payroll-cutoff-pills {
@@ -19431,89 +19411,13 @@ table.ledger-table tbody td.td-databar {
   border-color: var(--brass);
 }
 
-.payroll-cutoff-telemetry {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.pct-cell {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  font-size: 11.4px;
-  color: var(--ink);
-  white-space: nowrap;
-}
-
-.pct-cell small {
-  font-size: 9.6px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.pct-cell b {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-}
-
-.pct-cell b.pct-mono {
-  font-family: Consolas, "Cascadia Mono", ui-monospace, monospace;
-  font-size: 11.1px;
-}
-
-.pct-cell b.pct-brass {
-  color: var(--brass, #9A6B1D);
-}
-
-:root[data-theme="dark"] .pct-cell b.pct-brass {
-  color: #E2B055;
-}
-
-.pct-mode-tag {
-  font-style: normal;
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--muted);
-  padding: 1px 5.5px;
-  border-radius: 4px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-}
-
-:root[data-theme="dark"] .pct-mode-tag {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.pct-sep {
-  width: 1px;
-  height: 14px;
-  background: var(--line-strong);
-  flex-shrink: 0;
-}
-
 @media (max-width: 1280px) and (min-width: 861px) {
-  .pct-mode-tag {
-    display: none;
-  }
   .payroll-cutoff-pills {
     grid-template-columns: repeat(3, 140px);
   }
 }
 
 @media (max-width: 1120px) and (min-width: 861px) {
-  .pct-cell-window,
-  .pct-sep-window {
-    display: none;
-  }
   .payroll-cutoff-pills {
     grid-template-columns: repeat(3, 132px);
   }
@@ -19525,19 +19429,17 @@ table.ledger-table tbody td.td-databar {
 
 @media (max-width: 860px) {
   .payroll-cutoff-bar {
-    flex-direction: column;
-    align-items: stretch;
     height: auto;
     min-height: 0;
-    padding: 8px 10px;
-    gap: 7px;
+    padding: 6px 10px;
+  }
+  .payroll-cutoff-bar.is-pbi {
+    display: flex;
+    width: 100%;
+    padding: 0;
   }
   .payroll-cutoff-ctrl {
     width: 100%;
-    gap: 6px;
-  }
-  .payroll-cutoff-kicker {
-    display: none;
   }
   .payroll-cutoff-pills {
     width: 100%;
@@ -19552,14 +19454,6 @@ table.ledger-table tbody td.td-databar {
   .payroll-cutoff-pill .pcp-lbl {
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-  .payroll-cutoff-telemetry {
-    width: 100%;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .pct-mode-tag {
-    display: none;
   }
 }
 
