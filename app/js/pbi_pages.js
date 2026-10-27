@@ -6148,8 +6148,10 @@
       // Build 17-column Payroll by Staff Member table via Staff × Month accrual engine (m246 / m247 / m252 + Driver Trip OT)
       const regData = (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function')
         ? window.__mfgComputeStaffPayrollRegister({ empRows, salRows, attRows, logRows, matchFn: matchCommon, activeRange })
-        : { staffRows: [], payMonths: [] };
+        : { staffRows: [], driverOtRows: [], payMonths: [] };
       const staffPayrollRows = (regData.staffRows || []).slice().sort((a, b) => b.earnings - a.earnings || b.paid - a.paid);
+      const driverOtRows = (regData.driverOtRows || []).slice();
+      const cm = regData.cutoffMeta || null;
 
       const siteStaffRows = staffPayrollRows.filter(s => s.site_days_counted > 0 || s.site_days > 0 || s.site_allow > 0).sort((a, b) => b.site_allow - a.site_allow || b.earnings - a.earnings);
       logRows.sort((a, b) => Number(b.daily_usd || b.usd_amount || 0) - Number(a.daily_usd || a.usd_amount || 0) || String(b.start_date || '').localeCompare(String(a.start_date || '')));
@@ -6157,16 +6159,16 @@
       const unmatchedSal = (prSn.unmatched_salary_by_staff || []).filter(matchCommon);
 
       const totBase = staffPayrollRows.reduce((a, r) => a + r.base, 0);
+      const totAttOtPay = staffPayrollRows.reduce((a, r) => a + (r.att_ot_pay || 0), 0);
+      const totTripOtPay = staffPayrollRows.reduce((a, r) => a + (r.trip_ot_pay || 0), 0);
       const totOtPay = staffPayrollRows.reduce((a, r) => a + r.ot_pay, 0) || Number(k.overtime_bonus || 0);
       const totOtHrs = staffPayrollRows.reduce((a, r) => a + r.ot_hrs, 0);
       const totLateHrs = staffPayrollRows.reduce((a, r) => a + r.late_hrs, 0);
       const totLateDed = staffPayrollRows.reduce((a, r) => a + r.late_ded, 0);
       const totRecAbsDays = staffPayrollRows.reduce((a, r) => a + (r.rec_absent_days != null ? r.rec_absent_days : r.absent_days), 0);
-      const totGapDays = staffPayrollRows.reduce((a, r) => a + (r.gap_days || 0), 0);
       const totAbsDays = staffPayrollRows.reduce((a, r) => a + r.absent_days, 0);
       const totAbsDed = staffPayrollRows.reduce((a, r) => a + r.abs_ded, 0);
-      const totExtras = staffPayrollRows.reduce((a, r) => a + r.extras, 0);
-      const totReimb = staffPayrollRows.reduce((a, r) => a + r.reimb, 0);
+      const totExtrasReimb = staffPayrollRows.reduce((a, r) => a + (r.extras || 0) + (r.reimb || 0), 0);
       const totDed = staffPayrollRows.reduce((a, r) => a + r.ded, 0);
       const totSiteAcc = staffPayrollRows.reduce((a, r) => a + r.site_allow, 0);
       const totSitePaid = staffPayrollRows.reduce((a, r) => a + r.site_paid, 0);
@@ -6175,6 +6177,7 @@
       const totSiteAct = staffPayrollRows.reduce((a, r) => a + r.site_act_days, 0);
       const totEarn = staffPayrollRows.reduce((a, r) => a + r.earnings, 0);
       const totStaffPaid = staffPayrollRows.reduce((a, r) => a + r.paid, 0);
+      const totAdvances = staffPayrollRows.reduce((a, r) => a + (r.advances || 0), 0);
       const totPaid = Number(k.salaries_paid || totStaffPaid);
       const totBal = round2(totEarn - totStaffPaid);
       const sickDays = staffPayrollRows.reduce((a, r) => a + (r.sick_days || 0), 0);
@@ -6199,23 +6202,41 @@
             };
           });
 
+      const pbiCutoffBar = cm && cm.applicable ? `
+        <div class="payroll-cutoff-bar is-pbi" id="pbiPayrollCutoffBar">
+          <div class="payroll-cutoff-info">
+            <span class="payroll-cutoff-kicker">Accrual Cutoff</span>
+            <span class="payroll-cutoff-desc">${cm.mode === 'closed_month'
+              ? `Accrued through last completed month (<b>${esc(cm.lastClosedLabel)}</b>) · Post-cutoff payouts appear in <b>Advances</b>`
+              : (cm.mode === 'mtd'
+                ? `Accrued through today (<b>${esc(cm.today)}</b> pro-rata MTD) · Post-${esc(cm.todayYmLabel)} payouts in <b>Advances</b>`
+                : `Projected through full current month (<b>${esc(cm.todayYmLabel)}</b>) · Post-${esc(cm.todayYmLabel)} payouts in <b>Advances</b>`)}</span>
+          </div>
+          <div class="payroll-cutoff-pills" role="group" aria-label="Remaining earnings accrual cutoff">
+            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'closed_month' ? 'active' : ''}" data-payroll-cutoff="closed_month">Up to ${esc(cm.lastClosedLabel)} (Closed)</button>
+            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'mtd' ? 'active' : ''}" data-payroll-cutoff="mtd">+ ${esc(cm.todayYmLabel)} MTD</button>
+            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'full_month' ? 'active' : ''}" data-payroll-cutoff="full_month">+ Full ${esc(cm.todayYmLabel)}</button>
+          </div>
+        </div>` : '';
+
       bodyHtml = `
-        ${pbiHeading('Staff payroll & attendance', 'Monthly salary accruals, attendance days, deductions, bonuses, and net balance by employee')}
+        ${pbiHeading('Staff payroll & attendance', 'Monthly salary accruals, shift & driver overtime, deductions, remaining earnings, and post-cutoff advances')}
+        ${pbiCutoffBar}
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Payroll Earnings, Base Salaries, Overtime & Disbursements', [
             { label: 'Staff on payroll', value: fmtNum(staffPayrollRows.length), sub: fmtNum(empRows.length) + ' employment contracts' },
             { label: 'Base salaries', value: fmtUSD(totBase, 0), sub: 'Contracted monthly + daily base' },
-            { label: 'Overtime pay', value: fmtUSD(totOtPay, 0), sub: 'Shift & trip overtime accrued' },
+            { label: 'Overtime pay', value: fmtUSD(totOtPay, 0), sub: `Shift ${fmtUSD(totAttOtPay, 0)} + Driver ${fmtUSD(totTripOtPay, 0)}` },
             { label: 'Site allowances', value: fmtUSD(totSiteAcc, 0), sub: 'Included inside Earnings' },
-            { label: 'Total earnings', value: fmtUSD(totEarn, 0), sub: 'Base + OT + Allowances − Ded', tone: 'brass' },
-            { label: 'Payroll paid (contracted)', value: fmtUSD(prSn.payroll_paid_contracted_usd || totPaid, 0), sub: 'Applied to contracted months', tone: 'good' }
+            { label: 'Total earnings', value: fmtUSD(totEarn, 0), sub: 'Base + OT + Allowances - Ded', tone: 'brass' },
+            { label: 'Paid (for period)', value: fmtUSD(totStaffPaid, 0), sub: `Advances after cutoff: ${fmtUSD(totAdvances, 0)}`, tone: 'good' }
           ])}
-          ${kpiBand('2 · Payroll Balance, Hours, Attendance & Contract Hygiene', [
-            { label: 'Balance due', value: fmtUSD(totBal, 0), sub: 'Earnings − Paid', neg: true, tone: totBal < 0 ? 'crit' : 'brass' },
+          ${kpiBand('2 · Remaining Earnings, Advances, Hours & Contract Hygiene', [
+            { label: 'Remaining earnings', value: fmtUSD(totBal, 0), sub: 'Accrued Earnings - Paid', neg: true, tone: totBal < 0 ? 'crit' : 'brass' },
+            { label: 'Post-cutoff advances', value: fmtUSD(totAdvances, 0), sub: 'Future payroll-month payouts', tone: 'brass' },
             { label: 'Overtime hours', value: fmtNum(totOtHrs, 1) + ' h', sub: 'Logged on attendance sheets' },
             { label: 'Lateness hours', value: fmtNum(totLateHrs, 1) + ' h', sub: 'Deducted at hourly rate' },
-            { label: 'Absence days', value: fmtNum(totAbsDays, 0) + ' d', sub: 'Unpaid / absent days' },
-            { label: 'Sick leave days', value: fmtNum(sickDays, 0) + ' d', sub: 'Recorded sick leave entries' },
+            { label: 'Absence days', value: fmtNum(totAbsDays, 0) + ' d', sub: 'Recorded unpaid absence days' },
             { label: 'Payments without contract', value: fmtUSD(prSn.unmatched_salary_payments_usd || 0, 0), sub: fmtNum(unmatchedSal.length) + ' staff without contract', tone: 'warn' }
           ])}
           ${kpiBand('3 · All-Time Salary Disbursements & Workforce Ratios', [
@@ -6255,47 +6276,75 @@
           })}
         </div>
 
-        <!-- Full-width 16-column Payroll by staff member table (m18c_report.py line 1402) -->
+        <!-- Full-width 17-column Payroll by staff member table -->
         <div class="pbi-grid-1">
-          ${pbiTable('Payroll by staff member — base, overtime, deductions, earnings, paid, balance', [
+          ${pbiTable('Payroll by staff member · base, shift OT, driver OT, deductions, earnings, paid, remaining & advances', [
             { label: 'Staff', key: 'staff', bold: true },
             { label: 'Co.', key: 'company' },
             { label: 'Base', key: 'base', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'OT hrs', key: 'ot_hrs', r: true, fmt: v => fmtNum(v, 1) },
-            { label: 'OT pay', key: 'ot_pay', r: true, fmt: v => fmtUSD(v, 0) },
+            { label: 'Shift OT', key: 'att_ot_pay', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
+            { label: 'Driver OT', key: 'trip_ot_pay', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
             { label: 'Late hrs', key: 'late_hrs', r: true, fmt: v => fmtNum(v, 1) },
-            { label: 'Lateness', key: 'late_ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '—' },
-            { label: 'Absent days', key: 'rec_absent_days', r: true, fmt: v => fmtNum(v, 0) },
-            { label: 'Gap days', key: 'gap_days', r: true, fmt: v => fmtNum(v, 0) },
-            { label: 'Absence', key: 'abs_ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '—' },
-            { label: 'Extras', key: 'extras', r: true, fmt: v => v ? fmtUSD(v, 0) : '—' },
-            { label: 'Reimb.', key: 'reimb', r: true, fmt: v => v ? fmtUSD(v, 0) : '—' },
-            { label: 'Deductions', key: 'ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '—' },
-            { label: 'Site allowance', key: 'site_allow', r: true, fmt: v => v ? fmtUSD(v, 0) : '—' },
+            { label: 'Lateness', key: 'late_ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
+            { label: 'Absent d', key: 'rec_absent_days', r: true, fmt: v => fmtNum(v, 0) },
+            { label: 'Absence', key: 'abs_ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
+            { label: 'Extras/Reimb', key: 'extras', r: true, fmt: (_, r) => ((r.extras || 0) + (r.reimb || 0)) ? fmtUSD((r.extras || 0) + (r.reimb || 0), 0) : '-' },
+            { label: 'Ded.', key: 'ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
+            { label: 'Site allow.', key: 'site_allow', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
             { label: 'Earnings', key: 'earnings', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
             { label: 'Paid', key: 'paid', r: true, fmt: v => fmtUSD(v, 0) },
-            { label: 'Balance', key: 'balance', r: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` }
+            { label: 'Rem. ($)', key: 'balance', r: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
+            { label: 'Advances', key: 'advances', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' }
           ], staffPayrollRows, {
-            subtitle: 'Site allowance is included inside Earnings · Amber row = Employment contract has ended',
+            subtitle: 'Site allowances & driver night-trip overtime are included inside Earnings · Post-cutoff payouts appear in Advances',
             rowAmber: r => r.status === 'Ended',
             unitLabel: 'staff',
             foot: [
               { v: `Total (${staffPayrollRows.length} staff)`, span: 2 },
               { v: fmtUSD(totBase, 0), r: true },
               { v: fmtNum(totOtHrs, 1), r: true },
-              { v: fmtUSD(totOtPay, 0), r: true },
+              { v: fmtUSD(totAttOtPay, 0), r: true },
+              { v: fmtUSD(totTripOtPay, 0), r: true },
               { v: fmtNum(totLateHrs, 1), r: true },
-              { v: totLateDed ? fmtUSD(totLateDed, 0) : '—', r: true },
+              { v: totLateDed ? fmtUSD(totLateDed, 0) : '-', r: true },
               { v: fmtNum(totRecAbsDays, 0), r: true },
-              { v: fmtNum(totGapDays, 0), r: true },
-              { v: totAbsDed ? fmtUSD(totAbsDed, 0) : '—', r: true },
-              { v: totExtras ? fmtUSD(totExtras, 0) : '—', r: true },
-              { v: totReimb ? fmtUSD(totReimb, 0) : '—', r: true },
-              { v: totDed ? fmtUSD(totDed, 0) : '—', r: true },
+              { v: totAbsDed ? fmtUSD(totAbsDed, 0) : '-', r: true },
+              { v: totExtrasReimb ? fmtUSD(totExtrasReimb, 0) : '-', r: true },
+              { v: totDed ? fmtUSD(totDed, 0) : '-', r: true },
               { v: fmtUSD(totSiteAcc, 0), r: true },
               { v: fmtUSD(totEarn, 0), r: true },
               { v: fmtUSD(totStaffPaid, 0), r: true },
-              { v: fmtUSD(totBal, 0), r: true, neg: totBal < 0 }
+              { v: fmtUSD(totBal, 2), r: true, neg: totBal < 0 },
+              { v: totAdvances ? fmtUSD(totAdvances, 0) : '-', r: true }
+            ]
+          })}
+        </div>
+
+        <div class="pbi-grid-1">
+          ${pbiTable('Driver night-trip overtime by driver · sales & quarry trips', [
+            { label: 'Driver / Staff', key: 'driver', bold: true },
+            { label: 'Co.', key: 'company' },
+            { label: 'Regions', key: 'regionsStr' },
+            { label: 'Sales OT trips', key: 'sales_trips', r: true, fmt: v => fmtNum(v, 0) },
+            { label: 'Quarry OT trips', key: 'raw_trips', r: true, fmt: v => fmtNum(v, 0) },
+            { label: 'Total OT trips', key: 'total_trips', r: true, fmt: v => `<b>${fmtNum(v, 0)}</b>` },
+            { label: 'Sales OT ($)', key: 'sales_ot_usd', r: true, fmt: v => v ? fmtUSD(v, 2) : '-' },
+            { label: 'Quarry OT ($)', key: 'raw_ot_usd', r: true, fmt: v => v ? fmtUSD(v, 2) : '-' },
+            { label: 'Total Driver OT ($)', key: 'total_ot_usd', r: true, bar: 'brass', fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
+            { label: 'In Staff Payroll ($)', key: 'in_payroll_usd', r: true, fmt: v => v ? fmtUSD(v, 2) : '$0.00' }
+          ], driverOtRows, {
+            subtitle: 'Dated regional night-trip rates ($5 / $7 / $10 / $14) · Contracted drivers automatically accrue into Driver OT on Staff Payroll',
+            unitLabel: 'drivers',
+            foot: [
+              { v: `Total (${driverOtRows.length} drivers)`, span: 3 },
+              { v: fmtNum(driverOtRows.reduce((a, r) => a + r.sales_trips, 0), 0), r: true },
+              { v: fmtNum(driverOtRows.reduce((a, r) => a + r.raw_trips, 0), 0), r: true },
+              { v: fmtNum(driverOtRows.reduce((a, r) => a + r.total_trips, 0), 0), r: true },
+              { v: fmtUSD(driverOtRows.reduce((a, r) => a + r.sales_ot_usd, 0), 2), r: true },
+              { v: fmtUSD(driverOtRows.reduce((a, r) => a + r.raw_ot_usd, 0), 2), r: true },
+              { v: fmtUSD(driverOtRows.reduce((a, r) => a + r.total_ot_usd, 0), 2), r: true },
+              { v: fmtUSD(driverOtRows.reduce((a, r) => a + r.in_payroll_usd, 0), 2), r: true }
             ]
           })}
         </div>

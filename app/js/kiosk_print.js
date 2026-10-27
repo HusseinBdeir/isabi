@@ -686,7 +686,6 @@
         emit(P.ALIGN_L);
       }
     } else if (d.docType === 'fuel') {
-      lr('Tank / Depot:', d.location);
       lr('Fuel / Item:', d.item);
       lr('Equipment / Unit:', d.equipment);
       if (d.driver && d.driver !== '—') lr('Driver / Operator:', d.driver);
@@ -926,7 +925,6 @@
       `;
     } else {
       bodyRowsHtml = `
-        <div class="th-kv"><span>Tank / Depot</span><b>${escHtml(d.location)}</b></div>
         <div class="th-kv"><span>Fuel / Lubricant</span><b>${escHtml(d.item)}</b></div>
         <div class="th-kv"><span>Equipment / Unit</span><b class="mono">${escHtml(d.equipment)}</b></div>
         ${d.driver && d.driver !== '—' ? `<div class="th-kv"><span>Driver / Operator</span><b>${escHtml(d.driver)}</b></div>` : ''}

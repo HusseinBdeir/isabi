@@ -11406,9 +11406,29 @@ table.ledger-table:has(#usersDirectoryTbody) .user-actions-wrap .btn {
   #pricingPanel table.ledger-table th,
   #pricingPanel table.ledger-table td,
   #rawPricingPanel table.ledger-table th,
-  #rawPricingPanel table.ledger-table td {
+  #rawPricingPanel table.ledger-table td,
+  #payAttStaffSumPanel table.ledger-table th,
+  #payAttStaffSumPanel table.ledger-table td {
     padding: 5.5px 3.2px;
     font-size: 11.5px;
+  }
+  #payStaffRegPanel table.ledger-table th,
+  #payStaffRegPanel table.ledger-table td {
+    padding: 5px 2.6px;
+    font-size: 10.8px;
+  }
+  #payStaffRegPanel table.ledger-table th {
+    font-size: 8.9px;
+    letter-spacing: 0.01em;
+    line-height: 1.12;
+  }
+  #payStaffRegPanel table.ledger-table tbody td:not(.r) {
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+  #payStaffRegPanel table.ledger-table tfoot tr td {
+    padding: 6px 2.6px;
+    font-size: 10.4px;
   }
   table.ledger-table:has(thead th:nth-child(13)) th,
   #salesPanel table.ledger-table th {
@@ -18733,6 +18753,215 @@ table.ledger-table tbody td.td-databar {
     height: 38px;
   }
 }
+
+/* ==================== EXPENSE PENDING-PRICE MODE & LOCKED COMPLETION ==================== */
+.exp-amt-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.exp-amt-input-wrap > input {
+  width: 100%;
+}
+.exp-amt-input-wrap.is-pending > input {
+  padding-right: 104px !important;
+  color: var(--muted);
+  background: var(--surface-2);
+}
+.exp-switch-priced-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 4.5px;
+  border: 1px solid var(--brass-border, var(--line-strong));
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(15, 30, 56, 0.08);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.exp-switch-priced-btn[hidden] {
+  display: none !important;
+}
+.exp-switch-priced-btn:hover {
+  background: var(--brass-tint);
+  border-color: var(--brass);
+  color: var(--ink);
+}
+.exp-switch-priced-btn svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+:root[data-theme="dark"] .exp-switch-priced-btn {
+  background: var(--surface-elev);
+  color: var(--brass, #D9A54A);
+  border-color: var(--brass-border);
+}
+:root[data-theme="dark"] .exp-switch-priced-btn:hover {
+  background: rgba(217, 165, 74, 0.16);
+}
+.exp-price-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  margin-top: 5px;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  box-sizing: border-box;
+}
+.exp-price-mode-bar[hidden] {
+  display: none !important;
+}
+.exp-price-mode-bar .uom-qpill {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 3.5px 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.exp-complete-pending-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--brass-tint);
+  border: 1px solid var(--brass-border);
+  border-left: 3px solid var(--brass);
+  font-size: 12px;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.exp-complete-pending-banner svg {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  margin-right: 4px;
+  color: var(--brass);
+}
+
+/* ==================== PAYROLL ACCRUAL CUTOFF FILTER BAR ==================== */
+.payroll-cutoff-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  background: var(--surface-2, #F5F7FA);
+  border-bottom: 1px solid var(--line);
+}
+.payroll-cutoff-bar.is-pbi {
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.payroll-cutoff-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-2, #475569);
+}
+.payroll-cutoff-kicker {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--brass-tint, rgba(192, 137, 47, 0.12));
+  border: 1px solid var(--brass-border, rgba(192, 137, 47, 0.28));
+  color: var(--brass, #9A6B1D);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.payroll-cutoff-desc b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.payroll-cutoff-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--surface, #FFFFFF);
+  border: 1px solid var(--line);
+}
+.payroll-cutoff-pill {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-2, #475569);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+.payroll-cutoff-pill:hover {
+  background: var(--surface-2, #F1F5F9);
+  color: var(--ink);
+}
+.payroll-cutoff-pill.active {
+  background: #2356A8;
+  color: #FFFFFF;
+  border-color: #2356A8;
+  box-shadow: 0 1px 2px rgba(35, 86, 168, 0.2);
+}
+[data-theme="dark"] .payroll-cutoff-pill.active {
+  background: #3B76CC;
+  color: #FFFFFF;
+  border-color: #5B9CF0;
+}
+@media (max-width: 768px) {
+  .payroll-cutoff-bar {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .payroll-cutoff-pills {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .payroll-cutoff-pill {
+    flex: 1 0 auto;
+    text-align: center;
+    padding: 6px 9px;
+  }
+}
+
+
 
 
 

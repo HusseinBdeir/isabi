@@ -2164,7 +2164,6 @@
             <th>Equipment / Truck</th>
             <th>Equip. Type</th>
             <th>Driver</th>
-            <th>Station / Tank</th>
             <th class="num">Odometer / Hrs</th>
             <th class="num">Liters (L)</th>
             <th class="num">Rate ($/L)</th>
@@ -2175,12 +2174,11 @@
           ${viewRows.map(r => `
             <tr>
               <td class="mono">${esc(rowDate(r, ctx.basis))}</td>
-              <td class="mono">${esc(r.voucher || r.name || '—')}</td>
-              <td class="bold">${esc(r.equip || '—')}</td>
+              <td class="mono">${esc(r.voucher || r.name || '-')}</td>
+              <td class="bold">${esc(r.equip || '-')}</td>
               <td>${esc(r.equip_type || 'Mixer')}</td>
-              <td>${esc(r.driver || '—')}</td>
-              <td>${esc(r.station || r.supplier || 'Plant Tank')}</td>
-              <td class="num">${r.odometer ? fmtNum(r.odometer, r.meter_unit === 'h' && r.odometer % 1 !== 0 ? 1 : 0) + (r.meter_unit ? ' ' + r.meter_unit : '') : '—'}</td>
+              <td>${esc(r.driver || '-')}</td>
+              <td class="num">${r.odometer ? fmtNum(r.odometer, r.meter_unit === 'h' && r.odometer % 1 !== 0 ? 1 : 0) + (r.meter_unit ? ' ' + r.meter_unit : '') : '-'}</td>
               <td class="num bold">${fmtNum(r.liters, 1)}</td>
               <td class="num">${fmtUsd(r.price_per_l, 2)}</td>
               <td class="num bold">${fmtUsd(r.total_usd, 2)}</td>
@@ -2189,7 +2187,7 @@
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
-            <td colspan="7">TOTAL DIESEL & FLEET FUEL LOG (${fmtNum(rows.length, 0)} fills)</td>
+            <td colspan="6">TOTAL DIESEL & FLEET FUEL LOG (${fmtNum(rows.length, 0)} fills)</td>
             <td class="num">${fmtNum(totLiters, 1)}</td>
             <td class="num">${fmtUsd(totLiters > 0 ? totUsd / totLiters : 0, 2)}</td>
             <td class="num">${fmtUsd(totUsd, 2)}</td>
