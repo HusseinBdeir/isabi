@@ -7171,6 +7171,48 @@ table.ledger-table tfoot tr td:last-child {
   width: 100%;
   padding-right: 28px !important;
 }
+.pa-suggest-wrap.has-value > input:not(:disabled):not([readonly]) {
+  padding-right: 48px !important;
+}
+.form-field.is-policy-locked .pa-suggest-wrap.has-value > input {
+  padding-right: 28px !important;
+}
+.pa-suggest-clear {
+  position: absolute;
+  right: 26px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  z-index: 2;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.pa-suggest-wrap.has-value > .pa-suggest-clear:not([hidden]) {
+  display: inline-flex;
+  opacity: 0.78;
+}
+.pa-suggest-wrap.open.has-value > .pa-suggest-clear:not([hidden]),
+.pa-suggest-wrap.has-value:focus-within > .pa-suggest-clear:not([hidden]) {
+  opacity: 0.92;
+}
+.pa-suggest-clear:hover {
+  opacity: 1 !important;
+  color: var(--ink);
+  background: var(--brass-tint);
+}
+:root[data-theme="dark"] .pa-suggest-clear:hover {
+  color: #F8FAFC;
+  background: rgba(217, 165, 74, 0.22);
+}
 .pa-suggest-caret {
   position: absolute;
   right: 5px;
@@ -7197,8 +7239,12 @@ table.ledger-table tfoot tr td:last-child {
   color: var(--brass);
   transform: translateY(-50%) rotate(180deg);
 }
-.pa-suggest-wrap > input:disabled + .pa-suggest-caret {
-  display: none;
+.pa-suggest-wrap > input:disabled ~ .pa-suggest-caret,
+.pa-suggest-wrap > input:disabled ~ .pa-suggest-clear,
+.pa-suggest-wrap > input[readonly] ~ .pa-suggest-clear,
+.pa-select-wrap > select:disabled ~ .pa-suggest-clear,
+.form-field.is-policy-locked .pa-suggest-clear {
+  display: none !important;
 }
 .pa-suggest-menu {
   position: absolute;
@@ -9956,6 +10002,39 @@ table.rdl-meta-box td.rdl-meta-val.bold {
   padding-right: 28px !important;
   cursor: pointer;
   text-overflow: ellipsis;
+}
+.pa-select-wrap.has-value > select:not(:disabled) {
+  padding-right: 48px !important;
+}
+.form-field.is-policy-locked .pa-select-wrap.has-value > select {
+  padding-right: 28px !important;
+}
+.pa-suggest-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 66%;
+}
+.pa-suggest-right .pa-suggest-meta {
+  max-width: 100%;
+  min-width: 0;
+}
+@media (max-width: 768px) {
+  .pa-suggest-clear {
+    width: 24px;
+    height: 24px;
+    right: 27px;
+  }
+  .pa-suggest-wrap.has-value > input:not(:disabled):not([readonly]),
+  .pa-select-wrap.has-value > select:not(:disabled) {
+    padding-right: 52px !important;
+  }
+  .form-field.is-policy-locked .pa-suggest-wrap.has-value > input,
+  .form-field.is-policy-locked .pa-select-wrap.has-value > select {
+    padding-right: 28px !important;
+  }
 }
 .pa-select-wrap.open > select {
   border-color: var(--brass) !important;

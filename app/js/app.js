@@ -29959,6 +29959,10 @@
       return { label: txt, meta: '' };
     };
 
+    const CLEAR_X_SVG = '<svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="3" x2="9" y2="9"/><line x1="9" y1="3" x2="3" y2="9"/></svg>';
+    const protoInputValDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    const protoSelectValDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+
     // 1. Upgrade all <input list="..."> elements into Rev 10 custom searchable combobox popovers
     body.querySelectorAll('input[list]').forEach(el => {
       if (el.dataset.suggestWired === '1') return;
@@ -29986,6 +29990,16 @@
       el.parentNode.insertBefore(wrap, el);
       wrap.appendChild(el);
 
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'pa-suggest-clear';
+      clearBtn.tabIndex = -1;
+      clearBtn.hidden = true;
+      clearBtn.setAttribute('aria-label', 'Clear value');
+      clearBtn.setAttribute('title', 'Clear');
+      clearBtn.innerHTML = CLEAR_X_SVG;
+      wrap.appendChild(clearBtn);
+
       const caret = document.createElement('button');
       caret.type = 'button';
       caret.className = 'pa-suggest-caret';
@@ -29993,6 +30007,26 @@
       caret.setAttribute('aria-label', 'Show suggestions');
       caret.innerHTML = '<svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="2.5 4.5 6 8 9.5 4.5"/></svg>';
       wrap.appendChild(caret);
+
+      const getRawInputVal = () => (protoInputValDesc && protoInputValDesc.get) ? protoInputValDesc.get.call(el) : el.value;
+      const syncClearBtn = () => {
+        const hasVal = String(getRawInputVal() || '').trim().length > 0;
+        wrap.classList.toggle('has-value', hasVal);
+        clearBtn.hidden = !hasVal;
+      };
+      if (protoInputValDesc && protoInputValDesc.get && protoInputValDesc.set) {
+        try {
+          Object.defineProperty(el, 'value', {
+            configurable: true,
+            get() { return protoInputValDesc.get.call(this); },
+            set(v) {
+              protoInputValDesc.set.call(this, v);
+              syncClearBtn();
+            }
+          });
+        } catch (_) {}
+      }
+      syncClearBtn();
 
       const menu = document.createElement('div');
       menu.className = 'pa-suggest-menu';
@@ -30037,6 +30071,7 @@
         try {
           el.value = valStr;
           closeOwnMenu();
+          syncClearBtn();
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
         } finally {
@@ -30096,7 +30131,7 @@
           return `
             <div class="pa-suggest-item${i === activeIdx ? ' active' : ''}${isSel ? ' is-selected' : ''}" role="option" data-suggest-idx="${i}">
               <span class="pa-suggest-label">${highlightMatch(item.value, highlightQuery)}</span>
-              ${item.meta ? `<span class="pa-suggest-meta">${highlightMatch(item.meta, highlightQuery)}</span>` : (isSel ? '<span class="pa-suggest-check">✓</span>' : '')}
+              ${(item.meta || isSel) ? `<span class="pa-suggest-right">${item.meta ? `<span class="pa-suggest-meta">${highlightMatch(item.meta, highlightQuery)}</span>` : ''}${isSel ? '<span class="pa-suggest-check">✓</span>' : ''}</span>` : ''}
             </div>
           `;
         }).join('') + (filtered.length > MAX_SHOW
@@ -30136,9 +30171,11 @@
 
       el.addEventListener('input', () => {
         clearTimeout(blurTimer);
+        syncClearBtn();
         if (choosing) return;
         renderMenu(true, false);
       });
+      el.addEventListener('change', syncClearBtn);
       el.addEventListener('focus', () => {
         clearTimeout(blurTimer);
         if (choosing || window.__mfgSuppressAutoFocusMenu) return;
@@ -30158,6 +30195,39 @@
           renderMenu(true, true);
         }
       });
+      let lastClearTs = 0;
+      const onClearActivate = ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const nowTs = Date.now();
+        if (nowTs - lastClearTs < 180) return;
+        lastClearTs = nowTs;
+        clearTimeout(blurTimer);
+        if (el.disabled || el.readOnly || (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id))) return;
+        choosing = true;
+        try {
+          el.value = '';
+          pageOffset = 0;
+          activeIdx = -1;
+          closeOwnMenu();
+          syncClearBtn();
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        } finally {
+          choosing = false;
+        }
+        const isCoarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+        if (!isCoarse) {
+          const prevSuppress = window.__mfgSuppressAutoFocusMenu;
+          window.__mfgSuppressAutoFocusMenu = true;
+          try { el.focus({ preventScroll: true }); } catch (_) {} finally {
+            window.__mfgSuppressAutoFocusMenu = prevSuppress;
+          }
+        }
+      };
+      clearBtn.addEventListener('mousedown', onClearActivate);
+      clearBtn.addEventListener('click', onClearActivate);
+
       let lastCaretToggleTs = 0;
       const onCaretActivate = ev => {
         ev.preventDefault();
@@ -30234,6 +30304,16 @@
       selEl.parentNode.insertBefore(wrap, selEl);
       wrap.appendChild(selEl);
 
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'pa-suggest-clear';
+      clearBtn.tabIndex = -1;
+      clearBtn.hidden = true;
+      clearBtn.setAttribute('aria-label', 'Reset selection');
+      clearBtn.setAttribute('title', 'Clear');
+      clearBtn.innerHTML = CLEAR_X_SVG;
+      wrap.appendChild(clearBtn);
+
       const caret = document.createElement('button');
       caret.type = 'button';
       caret.className = 'pa-suggest-caret';
@@ -30241,6 +30321,34 @@
       caret.setAttribute('aria-label', 'Show options');
       caret.innerHTML = '<svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="2.5 4.5 6 8 9.5 4.5"/></svg>';
       wrap.appendChild(caret);
+
+      const hasResetEmptyOption = () => {
+        if (selEl.required) return false;
+        const emptyOpt = Array.from(selEl.options).find(o => o.value === '');
+        if (!emptyOpt) return false;
+        return !/^[-—]\s*select\b/i.test((emptyOpt.textContent || '').trim());
+      };
+      const getRawSelVal = () => (protoSelectValDesc && protoSelectValDesc.get) ? protoSelectValDesc.get.call(selEl) : selEl.value;
+      const syncSelectClearBtn = () => {
+        const canClear = hasResetEmptyOption() && String(getRawSelVal() || '') !== '';
+        wrap.classList.toggle('has-value', canClear);
+        clearBtn.hidden = !canClear;
+      };
+      if (protoSelectValDesc && protoSelectValDesc.get && protoSelectValDesc.set) {
+        try {
+          Object.defineProperty(selEl, 'value', {
+            configurable: true,
+            get() { return protoSelectValDesc.get.call(this); },
+            set(v) {
+              protoSelectValDesc.set.call(this, v);
+              syncSelectClearBtn();
+            }
+          });
+        } catch (_) {}
+      }
+      syncSelectClearBtn();
+      selEl.addEventListener('change', syncSelectClearBtn);
+      selEl.addEventListener('input', syncSelectClearBtn);
 
       const menu = document.createElement('div');
       menu.className = 'pa-suggest-menu pa-select-menu';
@@ -30257,7 +30365,7 @@
       const getSelectOptions = () => {
         const plainOpts = selEl.dataset.plainOptions === '1' || selEl.id === 'f_ruletype' || selEl.id === 'insp_edit_rule_type';
         return Array.from(selEl.options)
-          .filter(o => !(o.value === '' && /^—/.test((o.textContent || '').trim())))
+          .filter(o => !(o.value === '' && /^[-—]\s*select\b/i.test((o.textContent || '').trim())))
           .map(o => {
             const raw = (o.textContent || o.value || '').trim();
             const sp = plainOpts ? { label: raw, meta: '' } : splitOptionLabel(raw);
@@ -30268,12 +30376,27 @@
       const chooseOption = valStr => {
         const changed = String(selEl.value) !== String(valStr);
         selEl.value = valStr;
+        syncSelectClearBtn();
         closeAll(null);
         if (changed) {
           selEl.dispatchEvent(new Event('input', { bubbles: true }));
           selEl.dispatchEvent(new Event('change', { bubbles: true }));
         }
       };
+
+      let lastSelClearTs = 0;
+      const onSelClearActivate = ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const nowTs = Date.now();
+        if (nowTs - lastSelClearTs < 180) return;
+        lastSelClearTs = nowTs;
+        if (selEl.disabled || (selEl.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(selEl.id))) return;
+        if (!hasResetEmptyOption()) return;
+        chooseOption('');
+      };
+      clearBtn.addEventListener('mousedown', onSelClearActivate);
+      clearBtn.addEventListener('click', onSelClearActivate);
 
       const openSelectMenu = () => {
         if (selEl.disabled || (selEl.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(selEl.id))) {
@@ -30286,7 +30409,7 @@
         const needsFilter = allOpts.length > MAX_SHOW;
         closeAll(menu);
         menu.innerHTML = (needsFilter
-          ? `<div class="pa-select-filter-wrap"><input type="text" class="pa-select-filter" placeholder="Type to filter ${allOpts.length} options..." autocomplete="off" spellcheck="false"></div>`
+          ? `<div class="pa-select-filter-wrap"><input type="search" class="pa-select-filter" placeholder="Type to filter ${allOpts.length} options..." autocomplete="off" spellcheck="false"></div>`
           : '') + `<div class="pa-suggest-list-rows"></div>`;
         const rowsBox = menu.querySelector('.pa-suggest-list-rows');
         const filterInput = menu.querySelector('.pa-select-filter');
@@ -30322,7 +30445,7 @@
             return `
               <div class="pa-suggest-item${i === activeIdx ? ' active' : ''}${isSel ? ' is-selected' : ''}" role="option" data-suggest-idx="${i}">
                 <span class="pa-suggest-label">${highlightMatch(o.label, q)}</span>
-                ${o.meta ? `<span class="pa-suggest-meta">${highlightMatch(o.meta, q)}</span>` : (isSel ? '<span class="pa-suggest-check">✓</span>' : '')}
+                ${(o.meta || isSel) ? `<span class="pa-suggest-right">${o.meta ? `<span class="pa-suggest-meta">${highlightMatch(o.meta, q)}</span>` : ''}${isSel ? '<span class="pa-suggest-check">✓</span>' : ''}</span>` : ''}
               </div>
             `;
           }).join('') + (filtered.length > MAX_SHOW
@@ -30384,7 +30507,7 @@
 
       let lastSelToggleTs = 0;
       const toggleSelectMenu = ev => {
-        if (ev.target && ev.target.closest('.pa-suggest-menu')) return;
+        if (ev.target && (ev.target.closest('.pa-suggest-menu') || ev.target.closest('.pa-suggest-clear'))) return;
         ev.preventDefault();
         const nowTs = Date.now();
         if (nowTs - lastSelToggleTs < 220) return;
