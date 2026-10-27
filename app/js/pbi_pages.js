@@ -6210,20 +6210,50 @@
             };
           });
 
-      const pbiCutoffBar = cm && cm.applicable ? `
-        <div class="payroll-cutoff-bar is-pbi" id="pbiPayrollCutoffBar">
-          <div class="payroll-cutoff-info">
-            <span class="payroll-cutoff-kicker">Accrual Cutoff</span>
-            <span class="payroll-cutoff-desc">${cm.mode === 'closed_month'
-              ? `Accrued through last completed month (<b>${esc(cm.lastClosedLabel)}</b>) · Post-cutoff payouts appear in <b>Advances</b>`
-              : (cm.mode === 'mtd'
-                ? `Accrued through today (<b>${esc(cm.today)}</b> pro-rata MTD) · Post-${esc(cm.todayYmLabel)} payouts in <b>Advances</b>`
-                : `Projected through full current month (<b>${esc(cm.todayYmLabel)}</b>) · Post-${esc(cm.todayYmLabel)} payouts in <b>Advances</b>`)}</span>
+      const pbiPostShort = cm ? String((cm.effEndLabel || '').split(' ')[0] || cm.effEndLabel || 'Cutoff') : 'Cutoff';
+      const pbiCutoffBar = cm ? `
+        <div class="payroll-cutoff-bar is-pbi ${cm.applicable ? '' : 'is-custom-period'}" id="pbiPayrollCutoffBar" data-cutoff-mode="${esc(cm.applicable ? cm.mode : 'custom')}">
+          <div class="payroll-cutoff-ctrl">
+            <span class="payroll-cutoff-kicker">
+              <svg class="pck-ico" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.8"/><line x1="5" y1="1.5" x2="5" y2="4.2"/><line x1="11" y1="1.5" x2="11" y2="4.2"/><line x1="2" y1="6.5" x2="14" y2="6.5"/><polyline points="5.6 10.2 7.3 11.8 10.6 8.5"/></svg>
+              <span>Accrual</span>
+            </span>
+            ${cm.applicable ? `
+            <div class="payroll-cutoff-pills" role="group" aria-label="Remaining earnings accrual cutoff">
+              <button type="button" class="payroll-cutoff-pill ${cm.mode === 'closed_month' ? 'active' : ''}" data-payroll-cutoff="closed_month" data-tone="closed">
+                <span class="pcp-dot" aria-hidden="true"></span>
+                <span class="pcp-lbl">${esc(cm.lastClosedLabel)} · Closed</span>
+              </button>
+              <button type="button" class="payroll-cutoff-pill ${cm.mode === 'mtd' ? 'active' : ''}" data-payroll-cutoff="mtd" data-tone="mtd">
+                <span class="pcp-dot" aria-hidden="true"></span>
+                <span class="pcp-lbl">${esc(cm.todayYmLabel)} · MTD (${esc(String(cm.today || '').slice(8, 10))}d)</span>
+              </button>
+              <button type="button" class="payroll-cutoff-pill ${cm.mode === 'full_month' ? 'active' : ''}" data-payroll-cutoff="full_month" data-tone="full">
+                <span class="pcp-dot" aria-hidden="true"></span>
+                <span class="pcp-lbl">${esc(cm.todayYmLabel)} · Full</span>
+              </button>
+            </div>` : `
+            <div class="payroll-cutoff-custom-slot">
+              <span class="pcc-pill"><span class="pcp-dot is-locked" aria-hidden="true"></span><span>Period Filter · ${esc(cm.effEndLabel)}</span></span>
+              <button type="button" class="pcc-reset-btn" data-payroll-cutoff-reset="1">Standard Cutoff</button>
+            </div>`}
           </div>
-          <div class="payroll-cutoff-pills" role="group" aria-label="Remaining earnings accrual cutoff">
-            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'closed_month' ? 'active' : ''}" data-payroll-cutoff="closed_month">Up to ${esc(cm.lastClosedLabel)} (Closed)</button>
-            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'mtd' ? 'active' : ''}" data-payroll-cutoff="mtd">+ ${esc(cm.todayYmLabel)} MTD</button>
-            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'full_month' ? 'active' : ''}" data-payroll-cutoff="full_month">+ Full ${esc(cm.todayYmLabel)}</button>
+          <div class="payroll-cutoff-telemetry">
+            <span class="pct-cell pct-cell-window">
+              <small>Thru</small>
+              <b class="pct-mono">${esc(cm.effToDate)}</b>
+              <em class="pct-mode-tag">${cm.applicable ? (cm.mode === 'closed_month' ? 'Closed Books' : (cm.mode === 'mtd' ? 'Pro-Rata MTD' : 'Projected')) : 'Selected Range'}</em>
+            </span>
+            <span class="pct-sep pct-sep-window" aria-hidden="true"></span>
+            <span class="pct-cell">
+              <small>Earned</small>
+              <b class="pct-num">${fmtUSD(totEarn, 0)}</b>
+            </span>
+            <span class="pct-sep" aria-hidden="true"></span>
+            <span class="pct-cell pct-cell-adv">
+              <small>Post-${esc(pbiPostShort)} Advances</small>
+              <b class="pct-num pct-brass">${fmtUSD(totAdvances, 0)}</b>
+            </span>
           </div>
         </div>` : '';
 
@@ -6286,20 +6316,20 @@
 
         <!-- Full-width 17-column Payroll by staff member table -->
         <div class="pbi-grid-1">
-          ${pbiTable('Payroll by staff member · base, shift OT, driver OT, deductions, earnings, paid, remaining & advances', [
+          ${pbiTable('Payroll by staff member · base, shift OT, driver OT, site allowance, deductions, earnings, paid, remaining & advances', [
             { label: 'Staff', key: 'staff', bold: true },
             { label: 'Co.', key: 'company' },
             { label: 'Base', key: 'base', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'OT hrs', key: 'ot_hrs', r: true, fmt: v => fmtNum(v, 1) },
             { label: 'Shift OT', key: 'att_ot_pay', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
             { label: 'Driver OT', key: 'trip_ot_pay', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
+            { label: 'Site allow.', key: 'site_allow', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
+            { label: 'Extras/Reimb', key: 'extras', r: true, fmt: (_, r) => ((r.extras || 0) + (r.reimb || 0)) ? fmtUSD((r.extras || 0) + (r.reimb || 0), 0) : '-' },
             { label: 'Late hrs', key: 'late_hrs', r: true, fmt: v => fmtNum(v, 1) },
             { label: 'Lateness', key: 'late_ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
-            { label: 'Absent d', key: 'rec_absent_days', r: true, fmt: v => fmtNum(v, 0) },
+            { label: 'Absent Days', key: 'rec_absent_days', r: true, fmt: v => fmtNum(v, 0) },
             { label: 'Absence', key: 'abs_ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
-            { label: 'Extras/Reimb', key: 'extras', r: true, fmt: (_, r) => ((r.extras || 0) + (r.reimb || 0)) ? fmtUSD((r.extras || 0) + (r.reimb || 0), 0) : '-' },
             { label: 'Ded.', key: 'ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
-            { label: 'Site allow.', key: 'site_allow', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
             { label: 'Earnings', key: 'earnings', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
             { label: 'Paid', key: 'paid', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Rem. ($)', key: 'balance', r: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
@@ -6314,13 +6344,13 @@
               { v: fmtNum(totOtHrs, 1), r: true },
               { v: fmtUSD(totAttOtPay, 0), r: true },
               { v: fmtUSD(totTripOtPay, 0), r: true },
+              { v: fmtUSD(totSiteAcc, 0), r: true },
+              { v: totExtrasReimb ? fmtUSD(totExtrasReimb, 0) : '-', r: true },
               { v: fmtNum(totLateHrs, 1), r: true },
               { v: totLateDed ? fmtUSD(totLateDed, 0) : '-', r: true },
               { v: fmtNum(totRecAbsDays, 0), r: true },
               { v: totAbsDed ? fmtUSD(totAbsDed, 0) : '-', r: true },
-              { v: totExtrasReimb ? fmtUSD(totExtrasReimb, 0) : '-', r: true },
               { v: totDed ? fmtUSD(totDed, 0) : '-', r: true },
-              { v: fmtUSD(totSiteAcc, 0), r: true },
               { v: fmtUSD(totEarn, 0), r: true },
               { v: fmtUSD(totStaffPaid, 0), r: true },
               { v: fmtUSD(totBal, 2), r: true, neg: totBal < 0 },

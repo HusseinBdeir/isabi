@@ -2792,32 +2792,45 @@
 
   function closeDateFacilitator() {
     _dateFacState.open = false;
+    _dateFacState.lockedLeft = null;
+    _dateFacState.lockedTop = null;
+    _dateFacState.lockedScope = '';
     const pop = $('dateFacilitatorPopover');
     if (pop) pop.hidden = true;
     document.querySelectorAll('.date-seg-pill.is-open-end').forEach(el => el.classList.remove('is-open-end'));
     document.querySelectorAll('.date-seg-part.is-active-seg').forEach(el => el.classList.remove('is-active-seg'));
   }
 
-  function positionDateFacilitator() {
+  function positionDateFacilitator(forceRecompute = false) {
     const pop = $('dateFacilitatorPopover');
     if (!pop || pop.hidden) return;
-    const anchor = (_dateFacState.scope === 'pbi' && document.querySelector('.pbi-date-slicer-row'))
-      || $('dateRangeBar')
-      || $('grainSwitch');
-    if (!anchor) return;
-    const rect = anchor.getBoundingClientRect();
     const vw = window.innerWidth || 1366;
     const vh = window.innerHeight || 768;
-    const popW = Math.min(468, vw - 16);
+    const popW = Math.min(448, vw - 16);
     pop.style.width = `${popW}px`;
+    const scopeKey = _dateFacState.scope || 'top';
+    if (!forceRecompute && _dateFacState.lockedLeft != null && _dateFacState.lockedTop != null && _dateFacState.lockedScope === scopeKey) {
+      pop.style.left = `${_dateFacState.lockedLeft}px`;
+      pop.style.top = `${_dateFacState.lockedTop}px`;
+      return;
+    }
+    const anchor = (scopeKey === 'pbi' && document.querySelector('.pbi-date-slicer-row'))
+      || document.querySelector('.period-basis-row')
+      || $('grainSwitch')
+      || $('dateRangeBar');
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
     let left = Math.round(rect.left);
     if (left + popW > vw - 10) left = Math.max(8, vw - popW - 10);
     if (left < 8) left = 8;
+    const constPopH = 408;
     let top = Math.round(rect.bottom + 6);
-    const popH = pop.offsetHeight || 390;
-    if (top + popH > vh - 10 && rect.top > popH + 12) {
-      top = Math.max(8, Math.round(rect.top - popH - 6));
+    if (top + constPopH > vh - 10 && rect.top > constPopH + 12) {
+      top = Math.max(8, Math.round(rect.top - constPopH - 6));
     }
+    _dateFacState.lockedLeft = left;
+    _dateFacState.lockedTop = top;
+    _dateFacState.lockedScope = scopeKey;
     pop.style.left = `${left}px`;
     pop.style.top = `${top}px`;
   }
@@ -2829,7 +2842,7 @@
       pop.hidden = true;
       return;
     }
-    const r = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE, label: 'All-Time (2024–2030)' };
+    const r = periodRange(STATE.period) || { from: MIN_DATE, to: MAX_DATE, label: 'All-Time (2024 to 2030)' };
     const fp = formatDateSegParts(r.from, MIN_DATE);
     const tp = formatDateSegParts(r.to, MAX_DATE);
     const today = todayISO();
@@ -2845,7 +2858,8 @@
       const curYrNum = Number(today.slice(0, 4)) || 2026;
       bodyHtml = `
         <div class="df-sec-bar">
-          <span class="df-sec-hint">${tm === 'grain' ? 'Click any Year card to filter that Full Calendar Year:' : `Click any Year to set <b>${tm === 'to' ? 'To Date' : 'From Date'} Year</b> (or click <b>Full FY</b> for the whole year):`}</span>
+          <span class="df-sec-hint">${tm === 'grain' ? 'Select a calendar year to filter full-year books' : `Select a year to set <b>${tm === 'to' ? 'To Date' : 'From Date'}</b>`}</span>
+          <span class="df-sec-sub">FY 2024 to 2030</span>
         </div>
         <div class="df-year-grid">
           ${yrs.map(y => {
@@ -2853,20 +2867,18 @@
             const isFullSelected = fp.iso === `${y}-01-01` && (tp.iso === `${y}-12-31` || (y === curYrNum && tp.iso === today));
             const isEndMatch = (tm === 'from' && fp.yrNum === y) || (tm === 'to' && tp.yrNum === y);
             const inSpan = y >= fp.yrNum && y <= tp.yrNum;
-            const tag = y === curYrNum ? 'Current YTD' : (y < curYrNum ? 'Historical' : 'Forecast');
-            const statTxt = yStat.count > 0 ? `${fmtNum(yStat.count)} recs · ${fmtUSDk(yStat.usd)}` : 'Open / Forecast';
+            const tag = y === curYrNum ? 'YTD' : (y < curYrNum ? 'Closed' : 'Open');
+            const statTxt = yStat.count > 0 ? `${fmtNum(yStat.count)} entries` : 'Open period';
+            const volTxt = yStat.count > 0 ? fmtUSDk(yStat.usd) : '';
             return `
               <div class="df-year-card ${isFullSelected ? 'is-full-active' : ''} ${isEndMatch ? 'is-end-active' : ''} ${inSpan ? 'in-range' : ''}" data-df-pick-year="${y}" role="button" tabindex="0">
                 <div class="df-yc-top">
                   <strong class="df-yc-num">${y}</strong>
                   <span class="df-yc-tag ${yStat.count > 0 ? 'has-data' : ''}">${tag}</span>
                 </div>
-                <div class="df-yc-stat">${esc(statTxt)}</div>
-                <div class="df-yc-actions">
-                  <span class="df-yc-act" data-df-year-action="full" data-df-year="${y}" title="Filter Full Year ${y} (01-Jan-${y} – 31-Dec-${y})">Full FY ${y}</span>
-                  <span class="df-yc-act" data-df-year-action="from" data-df-year="${y}" title="Set From Year to ${y}">From ${y}</span>
-                  <span class="df-yc-act" data-df-year-action="to" data-df-year="${y}" title="Set To Year to ${y}">To ${y}</span>
-                  <span class="df-yc-act" data-df-year-action="months" data-df-year="${y}" title="Browse Months of ${y}">Months ▸</span>
+                <div class="df-yc-stat">${esc(statTxt)}${volTxt ? ` · <b>${esc(volTxt)}</b>` : ''}</div>
+                <div class="df-yc-foot">
+                  <span class="df-yc-drill" data-df-year-action="months" data-df-year="${y}" title="Inspect months of ${y}">12 Months</span>
                 </div>
               </div>
             `;
@@ -2876,22 +2888,23 @@
     } else if (tab === 'month') {
       const yrs = [2024, 2025, 2026, 2027, 2028, 2029, 2030];
       bodyHtml = `
-        <div class="df-year-strip" role="group" aria-label="Select Year for Months">
-          <button type="button" class="df-nav-mini" data-df-step-view-year="-1" title="Previous Year">‹</button>
-          ${yrs.map(y => {
-            const hasY = (act.byYear[String(y)] || {}).count > 0;
-            return `<button type="button" class="df-yr-pill ${y === vy ? 'active' : ''} ${hasY ? 'has-data' : ''}" data-df-view-year="${y}">${y}</button>`;
-          }).join('')}
-          <button type="button" class="df-nav-mini" data-df-step-view-year="1" title="Next Year">›</button>
-        </div>
-        <div class="df-quarter-strip">
-          <span class="df-q-lbl">Quarters (${vy}):</span>
-          ${[
-            [1, 'Q1 (Jan–Mar)'],
-            [2, 'Q2 (Apr–Jun)'],
-            [3, 'Q3 (Jul–Sep)'],
-            [4, 'Q4 (Oct–Dec)']
-          ].map(([q, lbl]) => `<button type="button" class="df-q-pill" data-df-quarter="${q}" data-df-qyear="${vy}">${lbl}</button>`).join('')}
+        <div class="df-month-nav-row">
+          <div class="df-year-strip" role="group" aria-label="Select Year for Months">
+            <button type="button" class="df-nav-mini" data-df-step-view-year="-1" title="Previous Year">‹</button>
+            ${yrs.map(y => {
+              const hasY = (act.byYear[String(y)] || {}).count > 0;
+              return `<button type="button" class="df-yr-pill ${y === vy ? 'active' : ''} ${hasY ? 'has-data' : ''}" data-df-view-year="${y}">${y}</button>`;
+            }).join('')}
+            <button type="button" class="df-nav-mini" data-df-step-view-year="1" title="Next Year">›</button>
+          </div>
+          <div class="df-quarter-strip" role="group" aria-label="Quarters">
+            ${[
+              [1, 'Q1'],
+              [2, 'Q2'],
+              [3, 'Q3'],
+              [4, 'Q4']
+            ].map(([q, lbl]) => `<button type="button" class="df-q-pill" data-df-quarter="${q}" data-df-qyear="${vy}" title="Filter ${lbl} ${vy}">${lbl}</button>`).join('')}
+          </div>
         </div>
         <div class="df-month-grid">
           ${MONTH_SHORT.map((mShort, idx) => {
@@ -2908,16 +2921,11 @@
               <div class="df-month-card ${isFullMo ? 'is-full-active' : ''} ${isEndMo ? 'is-end-active' : ''} ${inRangeMo ? 'in-range' : ''}" data-df-pick-month="${mNum}" data-df-pick-year="${vy}" role="button" tabindex="0">
                 <div class="df-mc-top">
                   <span class="df-mc-num">${mm}</span>
-                  <strong class="df-mc-name">${mShort} ${vy}</strong>
-                  ${mStat.count > 0 ? `<i class="df-mc-dot" title="${fmtNum(mStat.count)} records"></i>` : ''}
+                  <strong class="df-mc-name">${mShort}</strong>
+                  ${mStat.count > 0 ? `<i class="df-mc-dot" title="${fmtNum(mStat.count)} entries"></i>` : ''}
+                  <span class="df-mc-days-link" data-df-month-action="days" data-df-month="${mNum}" data-df-year="${vy}" title="Open daily calendar for ${mShort} ${vy}">Days</span>
                 </div>
-                <div class="df-mc-stat">${mStat.count > 0 ? `${fmtNum(mStat.count)} recs · ${fmtUSDk(mStat.usd)}` : 'No records'}</div>
-                <div class="df-mc-actions">
-                  <span class="df-mc-act" data-df-month-action="full" data-df-month="${mNum}" data-df-year="${vy}">Whole ${mShort}</span>
-                  <span class="df-mc-act" data-df-month-action="from" data-df-month="${mNum}" data-df-year="${vy}">From</span>
-                  <span class="df-mc-act" data-df-month-action="to" data-df-month="${mNum}" data-df-year="${vy}">To</span>
-                  <span class="df-mc-act" data-df-month-action="days" data-df-month="${mNum}" data-df-year="${vy}">Days ▸</span>
-                </div>
+                <div class="df-mc-stat">${mStat.count > 0 ? `${fmtNum(mStat.count)} entries` : 'Open'}</div>
               </div>
             `;
           }).join('')}
@@ -2951,12 +2959,12 @@
               <button type="button" class="df-week-row ${isSel ? 'active' : ''}" data-df-pick-week="${esc(w.value)}" data-df-week-from="${esc(w.from)}" data-df-week-to="${esc(w.to)}">
                 <div class="df-wk-main">
                   <strong>${esc(w.label)}</strong>
-                  <small>${esc(fmtDateDMY(w.from))} → ${esc(fmtDateDMY(w.to))} (Mon–Sun)</small>
+                  <small>${esc(fmtDateDMY(w.from))} to ${esc(fmtDateDMY(w.to))} (Mon to Sun)</small>
                 </div>
-                <span class="df-wk-badge ${wkCount > 0 ? 'has-data' : ''}">${wkCount > 0 ? `${fmtNum(wkCount)} recs` : '0 recs'}</span>
+                <span class="df-wk-badge ${wkCount > 0 ? 'has-data' : ''}">${wkCount > 0 ? `${fmtNum(wkCount)} entries` : '0 entries'}</span>
               </button>
             `;
-          }).join('') : `<div class="df-empty-note">No Monday–Sunday weeks in ${MONTH_SHORT[vm - 1]} ${vy}. Pick another month/year above.</div>`}
+          }).join('') : `<div class="df-empty-note">No Monday to Sunday weeks in ${MONTH_SHORT[vm - 1]} ${vy}. Pick another month or year above.</div>`}
         </div>
       `;
     } else {
@@ -2986,14 +2994,14 @@
       bodyHtml = `
         <div class="df-cal-toolbar">
           <div class="df-cal-nav-left">
-            <button type="button" class="df-nav-mini" data-df-cal-nav="-1" title="Previous Month">◀</button>
-            <button type="button" class="df-cal-jumper" data-df-switch-tab="month" title="Click to pick Month from 12-Month Grid">${esc(MONTH_FULL[vm - 1])} ▾</button>
-            <button type="button" class="df-cal-jumper" data-df-switch-tab="year" title="Click to pick Year (2024–2030)">${vy} ▾</button>
-            <button type="button" class="df-nav-mini" data-df-cal-nav="1" title="Next Month">▶</button>
+            <button type="button" class="df-nav-mini" data-df-cal-nav="-1" title="Previous Month">‹</button>
+            <button type="button" class="df-cal-jumper" data-df-switch-tab="month" title="Select Month">${esc(MONTH_FULL[vm - 1])} ▾</button>
+            <button type="button" class="df-cal-jumper" data-df-switch-tab="year" title="Select Year">${vy} ▾</button>
+            <button type="button" class="df-nav-mini" data-df-cal-nav="1" title="Next Month">›</button>
           </div>
           <div class="df-cal-nav-right">
-            <button type="button" class="df-mini-act" data-df-whole-shown-month="${vy}-${String(vm).padStart(2, '0')}" title="Filter entire ${esc(MONTH_SHORT[vm - 1])} ${vy}">Whole ${esc(MONTH_SHORT[vm - 1])}</button>
-            <button type="button" class="df-mini-act" data-df-whole-shown-year="${vy}" title="Filter entire FY ${vy}">Full ${vy}</button>
+            <button type="button" class="df-mini-act" data-df-whole-shown-month="${vy}-${String(vm).padStart(2, '0')}" title="Filter entire ${esc(MONTH_SHORT[vm - 1])} ${vy}">Full ${esc(MONTH_SHORT[vm - 1])}</button>
+            <button type="button" class="df-mini-act" data-df-whole-shown-year="${vy}" title="Filter entire FY ${vy}">FY ${vy}</button>
           </div>
         </div>
         <div class="df-cal-weekdays">
@@ -3015,7 +3023,7 @@
               isToday ? 'is-today' : '',
               cnt > 0 ? 'has-data' : ''
             ].filter(Boolean).join(' ');
-            const tip = `${c.iso}${cnt > 0 ? ` · ${fmtNum(cnt)} records` : ''}`;
+            const tip = `${c.iso}${cnt > 0 ? ` · ${fmtNum(cnt)} entries` : ''}`;
             return `<button type="button" class="${cls}" data-df-pick-day="${c.iso}" ${c.disabled ? 'disabled' : ''} title="${esc(tip)}"><span>${c.d}</span>${cnt > 0 ? '<i></i>' : ''}</button>`;
           }).join('')}
         </div>
@@ -3024,52 +3032,47 @@
 
     const presets = [
       ['today', 'Today'],
-      ['yesterday', 'Yesterday'],
       ['wtd', 'This Week'],
-      ['last_week', 'Last Week'],
       ['mtd', 'MTD'],
       ['prev_m1', 'Last Month'],
       ['qtd', 'QTD'],
       ['ytd', 'YTD'],
-      ['year:2025', 'FY 2025'],
-      ['year:2024', 'FY 2024'],
-      ['all', 'All-Time']
+      ['year:2025', 'FY 2025']
     ];
 
     pop.innerHTML = `
       <div class="df-head">
         <div class="df-head-left">
-          <span class="df-kicker">INTERACTIVE DATE &amp; PERIOD FACILITATOR</span>
           <div class="df-active-summary">
-            <button type="button" class="df-step-period-btn" data-df-step-period="-1" title="Step to Previous Period">◀ Prev</button>
-            <strong class="df-range-readout">${esc(fp.dd)}-${esc(fp.mmm)}-${esc(fp.yyyy)} → ${esc(tp.dd)}-${esc(tp.mmm)}-${esc(tp.yyyy)}</strong>
-            <button type="button" class="df-step-period-btn" data-df-step-period="1" title="Step to Next Period">Next ▶</button>
+            <button type="button" class="df-step-period-btn" data-df-step-period="-1" title="Previous Period" aria-label="Previous Period">‹</button>
+            <strong class="df-range-readout">${esc(fp.dd)} ${esc(fp.mmm)} ${esc(fp.yyyy)} <span class="df-range-to">to</span> ${esc(tp.dd)} ${esc(tp.mmm)} ${esc(tp.yyyy)}</strong>
+            <button type="button" class="df-step-period-btn" data-df-step-period="1" title="Next Period" aria-label="Next Period">›</button>
           </div>
         </div>
         <div class="df-head-right">
-          <button type="button" class="df-reset-btn" data-df-action="reset" title="Reset to All-Time (2024–2030)">↺ All-Time</button>
-          <button type="button" class="df-close-btn" data-df-action="close" aria-label="Close Date Facilitator" title="Close (Esc)">✕</button>
+          <button type="button" class="df-reset-btn" data-df-action="reset" title="Reset to All-Time (2024 to 2030)">All-Time</button>
+          <button type="button" class="df-close-btn" data-df-action="close" aria-label="Close Period Selector" title="Close (Esc)">✕</button>
         </div>
       </div>
 
       <div class="df-mode-bar">
         <div class="df-tabs" role="tablist" aria-label="Date Picker View">
-          <button type="button" role="tab" aria-selected="${tab === 'day'}" class="df-tab ${tab === 'day' ? 'active' : ''}" data-df-switch-tab="day">${ic('calendar')} Day</button>
-          <button type="button" role="tab" aria-selected="${tab === 'month'}" class="df-tab ${tab === 'month' ? 'active' : ''}" data-df-switch-tab="month">${ic('calendar_grid')} Month</button>
-          <button type="button" role="tab" aria-selected="${tab === 'week'}" class="df-tab ${tab === 'week' ? 'active' : ''}" data-df-switch-tab="week">${ic('calendar_week')} Week</button>
-          <button type="button" role="tab" aria-selected="${tab === 'year'}" class="df-tab ${tab === 'year' ? 'active' : ''}" data-df-switch-tab="year">${ic('pbi')} Year</button>
+          <button type="button" role="tab" aria-selected="${tab === 'day'}" class="df-tab ${tab === 'day' ? 'active' : ''}" data-df-switch-tab="day">Day</button>
+          <button type="button" role="tab" aria-selected="${tab === 'month'}" class="df-tab ${tab === 'month' ? 'active' : ''}" data-df-switch-tab="month">Month</button>
+          <button type="button" role="tab" aria-selected="${tab === 'week'}" class="df-tab ${tab === 'week' ? 'active' : ''}" data-df-switch-tab="week">Week</button>
+          <button type="button" role="tab" aria-selected="${tab === 'year'}" class="df-tab ${tab === 'year' ? 'active' : ''}" data-df-switch-tab="year">Year</button>
         </div>
         <div class="df-target-group" role="group" aria-label="Selection Target">
-          <button type="button" class="df-target-btn ${tm === 'from' ? 'active' : ''}" data-df-target="from" title="Click picks From Date (Start)">From: <b>${esc(fp.dd)}-${esc(fp.mmm)}-${esc(fp.yyyy)}</b></button>
-          <button type="button" class="df-target-btn ${tm === 'to' ? 'active' : ''}" data-df-target="to" title="Click picks To Date (End)">To: <b>${esc(tp.dd)}-${esc(tp.mmm)}-${esc(tp.yyyy)}</b></button>
           <button type="button" class="df-target-btn ${tm === 'grain' ? 'active' : ''}" data-df-target="grain" title="1-click selects entire Single Day, Week, Month, or Year">Whole Period</button>
+          <button type="button" class="df-target-btn ${tm === 'from' ? 'active' : ''}" data-df-target="from" title="Click picks From Date (Start)">From · <b>${esc(fp.dd)} ${esc(fp.mmm)} ${esc(String(fp.yyyy).slice(-2))}</b></button>
+          <button type="button" class="df-target-btn ${tm === 'to' ? 'active' : ''}" data-df-target="to" title="Click picks To Date (End)">To · <b>${esc(tp.dd)} ${esc(tp.mmm)} ${esc(String(tp.yyyy).slice(-2))}</b></button>
         </div>
       </div>
 
       <div class="df-body">${bodyHtml}</div>
 
       <div class="df-presets-bar">
-        <span class="df-pre-lbl">Quick:</span>
+        <span class="df-pre-lbl">Presets</span>
         <div class="df-pre-chips">
           ${presets.map(([val, lbl]) => `<button type="button" class="df-pre-chip ${STATE.period === val ? 'active' : ''}" data-df-preset="${esc(val)}">${esc(lbl)}</button>`).join('')}
         </div>
@@ -3604,7 +3607,7 @@
       { key: 'ot_hrs', label: 'OT Hrs', kind: 'numeric' },
       { key: 'ot_pay', label: 'OT Pay ($)', kind: 'numeric' },
       { key: 'late_hrs', label: 'Late Hrs', kind: 'numeric' },
-      { key: 'absent_days', label: 'Absent (d)', kind: 'numeric' }
+      { key: 'absent_days', label: 'Absent Days', kind: 'numeric' }
     ],
     pay_emp: [
       { key: 'company', label: 'Company' },
@@ -17766,30 +17769,59 @@
       applicable: true,
       effEndYm: shiftYearMonth(today.slice(0, 7), -1),
       effToDate: today,
+      lastClosedEnd: today,
+      currentMonthEnd: today,
+      today,
       lastClosedLabel: formatPayrollMonthLabel(shiftYearMonth(today.slice(0, 7), -1)),
       todayYmLabel: formatPayrollMonthLabel(today.slice(0, 7)),
       effEndLabel: formatPayrollMonthLabel(shiftYearMonth(today.slice(0, 7), -1))
     };
-    const renderPayrollCutoffBarHtml = barId => cm.applicable ? `
-      <div class="payroll-cutoff-bar" id="${esc(barId)}">
-        <div class="payroll-cutoff-info">
-          <span class="payroll-cutoff-kicker">Accrual Cutoff</span>
-          <span class="payroll-cutoff-desc">${cm.mode === 'closed_month'
-            ? `Accrued through last completed month (<b>${esc(cm.lastClosedLabel)}</b>) · Payments for future payroll months are isolated in <b>Advances ($)</b>`
-            : (cm.mode === 'mtd'
-              ? `Accrued through today (<b>${esc(fmtDateDMY(cm.today))}</b> pro-rata MTD) · Post-${esc(cm.todayYmLabel)} payouts in <b>Advances ($)</b>`
-              : `Projected through full current month (<b>${esc(cm.todayYmLabel)}</b>) · Post-${esc(cm.todayYmLabel)} payouts in <b>Advances ($)</b>`)}</span>
+    const cutoffEarnTot = round2(staffRows.reduce((a, r) => a + Number(r.earnings || 0), 0));
+    const cutoffAdvTot = round2(staffRows.reduce((a, r) => a + Number(r.advances || 0), 0));
+    const cutoffPostShort = String((cm.effEndLabel || '').split(' ')[0] || cm.effEndLabel || 'Cutoff');
+    const renderPayrollCutoffBarHtml = barId => `
+      <div class="payroll-cutoff-bar ${cm.applicable ? '' : 'is-custom-period'}" id="${esc(barId)}" data-cutoff-mode="${esc(cm.applicable ? cm.mode : 'custom')}">
+        <div class="payroll-cutoff-ctrl">
+          <span class="payroll-cutoff-kicker">
+            <svg class="pck-ico" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.8"/><line x1="5" y1="1.5" x2="5" y2="4.2"/><line x1="11" y1="1.5" x2="11" y2="4.2"/><line x1="2" y1="6.5" x2="14" y2="6.5"/><polyline points="5.6 10.2 7.3 11.8 10.6 8.5"/></svg>
+            <span>Accrual</span>
+          </span>
+          ${cm.applicable ? `
+          <div class="payroll-cutoff-pills" role="group" aria-label="Remaining earnings accrual cutoff">
+            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'closed_month' ? 'active' : ''}" data-payroll-cutoff="closed_month" data-tone="closed" title="Closed month cutoff through ${esc(cm.lastClosedLabel)} (${esc(fmtDateDMY(cm.lastClosedEnd || cm.effToDate))})">
+              <span class="pcp-dot" aria-hidden="true"></span>
+              <span class="pcp-lbl">${esc(cm.lastClosedLabel)} · Closed</span>
+            </button>
+            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'mtd' ? 'active' : ''}" data-payroll-cutoff="mtd" data-tone="mtd" title="Include pro-rata ${esc(cm.todayYmLabel)} accrual up to today (${esc(fmtDateDMY(cm.today))})">
+              <span class="pcp-dot" aria-hidden="true"></span>
+              <span class="pcp-lbl">${esc(cm.todayYmLabel)} · MTD (${esc(String(cm.today || today).slice(8, 10))}d)</span>
+            </button>
+            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'full_month' ? 'active' : ''}" data-payroll-cutoff="full_month" data-tone="full" title="Project full ${esc(cm.todayYmLabel)} salary base through ${esc(fmtDateDMY(cm.currentMonthEnd || cm.effToDate))}">
+              <span class="pcp-dot" aria-hidden="true"></span>
+              <span class="pcp-lbl">${esc(cm.todayYmLabel)} · Full</span>
+            </button>
+          </div>` : `
+          <div class="payroll-cutoff-custom-slot">
+            <span class="pcc-pill"><span class="pcp-dot is-locked" aria-hidden="true"></span><span>Period Filter · ${esc(cm.effEndLabel)}</span></span>
+            <button type="button" class="pcc-reset-btn" data-payroll-cutoff-reset="1" title="Return to All-Time standard accrual cutoff">Standard Cutoff</button>
+          </div>`}
         </div>
-        <div class="payroll-cutoff-pills" role="group" aria-label="Remaining earnings accrual cutoff">
-          <button type="button" class="payroll-cutoff-pill ${cm.mode === 'closed_month' ? 'active' : ''}" data-payroll-cutoff="closed_month" title="Accrue salaries, attendance, site allowances, and driver OT up to the last completed month (${esc(cm.lastClosedLabel)})">Up to ${esc(cm.lastClosedLabel)} (Closed)</button>
-          <button type="button" class="payroll-cutoff-pill ${cm.mode === 'mtd' ? 'active' : ''}" data-payroll-cutoff="mtd" title="Include current month pro-rata up to today (${esc(fmtDateDMY(cm.today))})">+ ${esc(cm.todayYmLabel)} MTD (${esc(cm.today.slice(8, 10))}d)</button>
-          <button type="button" class="payroll-cutoff-pill ${cm.mode === 'full_month' ? 'active' : ''}" data-payroll-cutoff="full_month" title="Project full current month base salary (${esc(cm.todayYmLabel)})">+ Full ${esc(cm.todayYmLabel)}</button>
-        </div>
-      </div>` : `
-      <div class="payroll-cutoff-bar is-custom-period" id="${esc(barId)}">
-        <div class="payroll-cutoff-info">
-          <span class="payroll-cutoff-kicker">Selected Period Cutoff</span>
-          <span class="payroll-cutoff-desc">Accrued from <b>${esc(fmtDateDMY(cm.effFromDate))}</b> through <b>${esc(fmtDateDMY(cm.effToDate))}</b> (${esc(cm.effEndLabel)}) · Payouts for payroll months after ${esc(cm.effEndLabel)} appear in <b>Advances ($)</b></span>
+        <div class="payroll-cutoff-telemetry">
+          <span class="pct-cell pct-cell-window">
+            <small>Thru</small>
+            <b class="pct-mono">${esc(fmtDateDMY(cm.effToDate))}</b>
+            <em class="pct-mode-tag">${cm.applicable ? (cm.mode === 'closed_month' ? 'Closed Books' : (cm.mode === 'mtd' ? 'Pro-Rata MTD' : 'Projected')) : 'Selected Range'}</em>
+          </span>
+          <span class="pct-sep pct-sep-window" aria-hidden="true"></span>
+          <span class="pct-cell">
+            <small>Earned</small>
+            <b class="pct-num">${fmtUSD(cutoffEarnTot, 2)}</b>
+          </span>
+          <span class="pct-sep" aria-hidden="true"></span>
+          <span class="pct-cell pct-cell-adv" title="Payouts for payroll months after ${esc(cm.effEndLabel)} are isolated in Advances ($)">
+            <small>Post-${esc(cutoffPostShort)} Advances</small>
+            <b class="pct-num pct-brass">${fmtUSD(cutoffAdvTot, 2)}</b>
+          </span>
         </div>
       </div>`;
 
@@ -18050,7 +18082,7 @@
             badge: `${fmtNum(absentAttCount)} Leave Logs`,
             badgeCls: 'info',
             badgeChip: 'absent_att',
-            val: `${fmtNum(totalAbsentDays, 0)} <small>Absent d</small> · ${fmtNum(totalVacDays, 0)} <small>Vac/Sick d</small>`,
+            val: `${fmtNum(totalAbsentDays, 0)} <small>Absent Days</small> · ${fmtNum(totalVacDays, 0)} <small>Vac/Sick d</small>`,
             sub: `Absence deduction <b>${fmtUSD(filteredStaff.reduce((a, r) => a + r.abs_ded, 0), 0)}</b> · Extra tickets <b>${fmtNum(extraAttCount)}</b>`,
             tone: 'steel'
           })}
@@ -18301,7 +18333,7 @@
                   ${th('pay_att_sum', 'Staff Member', 'staff')}${th('pay_att_sum', 'Co.', 'company')}${th('pay_att_sum', 'Status', 'contract_status')}
                   ${th('pay_att_sum', 'Logs', 'logs_cnt', 'r')}${th('pay_att_sum', 'OT Hrs', 'ot_hrs', 'r')}${th('pay_att_sum', 'Shift OT ($)', 'att_ot_pay', 'r')}
                   ${th('pay_att_sum', 'OT Trips', 'trip_ot_cnt', 'r')}${th('pay_att_sum', 'Driver OT ($)', 'trip_ot_pay', 'r')}
-                  ${th('pay_att_sum', 'Late Hrs', 'late_hrs', 'r')}${th('pay_att_sum', 'Lateness ($)', 'late_ded', 'r')}${th('pay_att_sum', 'Absent (d)', 'absent_days', 'r')}${th('pay_att_sum', 'Vac / Sick (d)', 'vac_days', 'r')}${th('pay_att_sum', 'Extras ($)', 'extras', 'r')}${th('pay_att_sum', 'Net OT/Att ($)', 'net_att_impact', 'r')}
+                  ${th('pay_att_sum', 'Late Hrs', 'late_hrs', 'r')}${th('pay_att_sum', 'Lateness ($)', 'late_ded', 'r')}${th('pay_att_sum', 'Absent Days', 'absent_days', 'r')}${th('pay_att_sum', 'Vac / Sick (d)', 'vac_days', 'r')}${th('pay_att_sum', 'Extras ($)', 'extras', 'r')}${th('pay_att_sum', 'Net OT/Att ($)', 'net_att_impact', 'r')}
                 </tr>
               </thead>
               <tbody>
@@ -18630,7 +18662,7 @@
       <div class="panel-card" id="payStaffRegPanel">
         <div class="panel-head">
           <div>
-            <div class="panel-title"><span>PAYROLL BY STAFF MEMBER · BASE, SHIFT OT, DRIVER OT, DEDUCTIONS, EARNINGS, PAID, REMAINING &amp; ADVANCES</span></div>
+            <div class="panel-title"><span>PAYROLL BY STAFF MEMBER · BASE, SHIFT OT, DRIVER OT, SITE ALLOWANCE, DEDUCTIONS, EARNINGS, PAID, REMAINING &amp; ADVANCES</span></div>
             <span class="ph-sub">Site allowances &amp; driver night-trip overtime are included inside Earnings · Remaining = Earnings minus Paid for Period · Post-cutoff payouts appear in Advances ($)</span>
           </div>
           <span class="panel-meta">${fmtNum(filteredStaff.length)} Staff ${exportBtn('payStaffRegPanel', 'Payroll_By_Staff')}</span>
@@ -18642,9 +18674,9 @@
             <thead>
               <tr>
                 ${th('pay_staff', 'Staff Member', 'staff')}${th('pay_staff', 'Co.', 'company')}${th('pay_staff', 'Status', 'status')}
-                ${th('pay_staff', 'Base ($)', 'base', 'r')}${th('pay_staff', 'OT Hrs', 'ot_hrs', 'r')}${th('pay_staff', 'Shift OT ($)', 'att_ot_pay', 'r')}${th('pay_staff', 'Driver OT ($)', 'trip_ot_pay', 'r')}
-                ${th('pay_staff', 'Late Hrs', 'late_hrs', 'r')}${th('pay_staff', 'Lateness ($)', 'late_ded', 'r')}${th('pay_staff', 'Absent d', 'absent_days', 'r')}${th('pay_staff', 'Absence ($)', 'abs_ded', 'r')}
-                ${th('pay_staff', 'Site Allow.', 'site_allow', 'r')}${th('pay_staff', 'Earnings ($)', 'earnings', 'r')}${th('pay_staff', 'Paid ($)', 'paid', 'r')}${th('pay_staff', 'Rem. ($)', 'balance', 'r')}${th('pay_staff', 'Advances ($)', 'advances', 'r')}
+                ${th('pay_staff', 'Base ($)', 'base', 'r')}${th('pay_staff', 'OT Hrs', 'ot_hrs', 'r')}${th('pay_staff', 'Shift OT ($)', 'att_ot_pay', 'r')}${th('pay_staff', 'Driver OT ($)', 'trip_ot_pay', 'r')}${th('pay_staff', 'Site Allow.', 'site_allow', 'r')}
+                ${th('pay_staff', 'Late Hrs', 'late_hrs', 'r')}${th('pay_staff', 'Lateness ($)', 'late_ded', 'r')}${th('pay_staff', 'Absent Days', 'absent_days', 'r')}${th('pay_staff', 'Absence ($)', 'abs_ded', 'r')}
+                ${th('pay_staff', 'Earnings ($)', 'earnings', 'r')}${th('pay_staff', 'Paid ($)', 'paid', 'r')}${th('pay_staff', 'Rem. ($)', 'balance', 'r')}${th('pay_staff', 'Advances ($)', 'advances', 'r')}
               </tr>
             </thead>
             <tbody>
@@ -18659,11 +18691,11 @@
                   <td class="r">${r.ot_hrs ? fmtNum(r.ot_hrs, 1) : '-'}</td>
                   <td class="r">${r.att_ot_pay ? fmtUSD(r.att_ot_pay, 2) : '-'}</td>
                   <td class="r" title="${r.trip_ot_cnt ? `${fmtNum(r.trip_ot_cnt, 0)} night OT trips (${fmtNum(r.sales_ot_trips || 0, 0)} Sales · ${fmtNum(r.raw_ot_trips || 0, 0)} Quarry)` : ''}">${r.trip_ot_pay ? `<strong style="color:var(--brass)">${fmtUSD(r.trip_ot_pay, 2)}</strong>` : '-'}</td>
+                  <td class="r">${r.site_allow ? fmtUSD(r.site_allow, 2) : '-'}</td>
                   <td class="r">${r.late_hrs ? fmtNum(r.late_hrs, 1) : '-'}</td>
                   <td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '-'}</td>
                   <td class="r" title="${r.gap_days > 0 ? `${fmtNum(r.rec_absent_days, 1)}d recorded absence (${fmtNum(r.gap_days, 0)}d contract start/end gap deducted in Absence $)` : ''}">${r.absent_days ? fmtNum(r.absent_days, 1).replace(/\.0$/, '') : '-'}</td>
                   <td class="r">${r.abs_ded ? fmtUSD(r.abs_ded, 2) : '-'}</td>
-                  <td class="r">${r.site_allow ? fmtUSD(r.site_allow, 2) : '-'}</td>
                   <td class="r" title="${(r.reimb || r.extras || r.ded) ? `Reimb: ${fmtUSD(r.reimb, 2)} · Extras: ${fmtUSD(r.extras, 2)} · Ded: -${fmtUSD(r.ded, 2)}` : ''}"><strong>${fmtUSD(r.earnings, 2)}</strong></td>
                   <td class="r pbi-bar-cell" title="${r.config_paid ? `Vouchers: ${fmtUSD(r.vouchers_paid, 2)} · Opening Config: ${fmtUSD(r.config_paid, 2)}` : ''}"><span class="pbi-bar-bg pos" style="width:${Math.min(94, Math.round((r.paid / Math.max(1, staffRows[0] ? staffRows[0].paid : 1)) * 90))}%"></span><strong>${fmtUSD(r.paid, 2)}</strong></td>
                   <td class="r ${r.balance < 0 ? 'pbi-neg' : ''}" title="${esc(lbpNote)}"><strong>${fmtUSD(r.balance, 2)}</strong></td>
@@ -18679,11 +18711,11 @@
                 <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.ot_hrs, 0), 1)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.att_ot_pay, 0), 2)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.trip_ot_pay, 0), 2)}</td>
+                <td class="r">${fmtUSD(totalSiteAllow, 2)}</td>
                 <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.late_hrs, 0), 1)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.late_ded, 0), 2)}</td>
                 <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.absent_days, 0), 1).replace(/\.0$/, '')}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.abs_ded, 0), 2)}</td>
-                <td class="r">${fmtUSD(totalSiteAllow, 2)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.earnings, 0), 2)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.paid, 0), 2)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.balance, 0), 2)}</td>
@@ -24493,7 +24525,9 @@
           ${expCompanyField}
           ${expDateField}
           ${expRepDateField}
-          ${fld('Payment Method *', sel('f_method', expMthOpts, expMthVal), { id: 'wrap_f_method' })}
+          ${fld('Payment Method *', sel('f_method', expMthOpts, expMthVal), pendEditRow
+            ? { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to Credit because unpriced deliveries are booked on Supplier AP; record subsequent cash or bank payment via Supplier Settlement' }
+            : { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to Credit while Price is Pending ($0.00 AP)' })}
           ${fld('Category *', inp('f_category', 'text', expCatVal, `list="dl_categories" placeholder="Select or type category..."${pendEditRow ? ' readonly' : ''}`) + dlMeta('dl_categories', cats.map(c => [c.category, c.subs && c.subs.length ? `${c.subs.length} subcats` : ''])), pendEditRow ? { id: 'wrap_f_category', lockField: 'f_category', lockReason: 'Locked to the category recorded on delivery' } : { id: 'wrap_f_category' })}
           ${fld('Subcategory', inp('f_subcategory', 'text', expSubVal, 'list="dl_subcats" placeholder="Pick Category first..." readonly') + dl('dl_subcats', uniqSorted(cats.flatMap(c => c.subs), getFreqIndex().subcategory)), { id: 'wrap_f_subcategory', lockField: 'f_subcategory', lockReason: pendEditRow ? 'Locked to the subcategory recorded on delivery' : 'Locked until Category is selected', hintId: 'hint_subcat', hint: '' })}
           ${fld('Supplier / Vendor', inp('f_supplier', 'text', expSupVal, `list="dl_suppliers" placeholder="Select or type supplier..."${pendEditRow && expSupVal ? ' readonly' : ''}`) + dl('dl_suppliers', supplierNames('expense')), pendEditRow && expSupVal ? { id: 'wrap_f_supplier', lockField: 'f_supplier', lockReason: 'Locked to the supplier recorded on delivery', hintId: 'hint_supplier', hint: '' } : { id: 'wrap_f_supplier', hintId: 'hint_supplier', hint: 'Required for Credit' })}
@@ -26896,13 +26930,31 @@
 
     const mthEl = $('f_method');
     const amtEl = $('f_amount');
-    if (pricePending) {
+    if (pendEditRow) {
+      const targetMth = pendEditRow.method || 'Credit';
+      const mthLocked = applyFieldLockState(
+        'f_method',
+        true,
+        'Locked to Credit because unpriced deliveries are booked on Supplier AP; record subsequent cash or bank payment via Supplier Settlement'
+      );
+      if (mthEl) {
+        mthEl.disabled = false;
+        if (mthLocked && mthEl.value !== targetMth) mthEl.value = targetMth;
+      }
+      if (amtEl) {
+        amtEl.readOnly = false;
+        amtEl.classList.remove('pa-locked-input');
+      }
+    } else if (pricePending) {
       if (!FORM_UI.wasPricePending) {
         FORM_UI.methodBeforePending = mthEl ? mthEl.value : 'Cash';
         FORM_UI.wasPricePending = true;
       }
-      if (mthEl && mthEl.value !== 'Credit') mthEl.value = 'Credit';
-      if (mthEl) mthEl.disabled = true;
+      const mthLocked = applyFieldLockState('f_method', true, 'Locked to Credit while Price is Pending ($0.00 AP)');
+      if (mthEl) {
+        mthEl.disabled = false;
+        if (mthLocked && mthEl.value !== 'Credit') mthEl.value = 'Credit';
+      }
       if (amtEl) {
         amtEl.value = '0.00';
         amtEl.readOnly = true;
@@ -26910,6 +26962,7 @@
         amtEl.dataset.wasPendingZero = '1';
       }
     } else {
+      applyFieldLockState('f_method', false, 'Select Cash or Credit');
       if (mthEl) {
         mthEl.disabled = false;
         if (FORM_UI.wasPricePending) {
@@ -26937,7 +26990,9 @@
       applyFieldLockState('f_truck', true, 'Locked to the equipment unit recorded on delivery');
       applyFieldLockState('f_qty', true, 'Locked to the physical quantity received on delivery');
     }
-    const method = pricePending ? 'Credit' : val('f_method');
+    const method = pricePending
+      ? 'Credit'
+      : (pendEditRow && !isFieldAdminUnlocked('f_method') ? (pendEditRow.method || 'Credit') : val('f_method'));
     const supplier = val('f_supplier');
     const amount = pricePending ? 0 : num('f_amount');
     const qty = num('f_qty');
@@ -30265,7 +30320,7 @@
           subcategory: val('f_subcategory'),
           supplier: c.supplier,
           equipment: val('f_truck'),
-          method: c.method,
+          method: isFieldAdminUnlocked('f_method') ? c.method : (pendEditRow.method || 'Credit'),
           qty: c.qty > 0 ? c.qty : (num('f_qty') || Number(pendEditRow.qty) || 1),
           amount: round2(c.amount),
           price_pending: false,
@@ -33696,12 +33751,22 @@
           pendSel.value = 'No';
         }
         const stillPend = pendSel ? pendSel.value === 'Yes' : (mAmt === 0 && isPendingPriceExpense(row));
+        const modMthSel = $('insp_edit_method');
+        if (modMthSel) {
+          if (stillPend) {
+            modMthSel.value = 'Credit';
+            modMthSel.disabled = true;
+          } else {
+            modMthSel.disabled = false;
+          }
+        }
+        const dispMethod = stillPend ? 'Credit' : mMethod;
         if (stillPend) {
           html = `<span>Quantity Received: <b>${fmtNum(mQty, mQty % 1 ? 2 : 0)}${isFuel ? ' L' : ''}</b></span><span>Status: <b style="color:var(--warn)">Pending Invoice Price ($0.00 AP)</b></span>`;
         } else if (isPendingPriceExpense(row) && mAmt > 0) {
-          html = `<span>Final Invoice Price: <b>${fmtUSD(mAmt, 2)}</b></span>${isFuel && mQty > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}<span>Status: <b style="color:var(--ok)">✓ Clears Pending Price · Books to ${esc(mMethod)}</b></span>`;
+          html = `<span>Final Invoice Price: <b>${fmtUSD(mAmt, 2)}</b></span>${isFuel && mQty > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}<span>Status: <b style="color:var(--ok)">✓ Clears Pending Price · Books to ${esc(dispMethod)}</b></span>`;
         } else {
-          html = `<span>Total Amount: <b>${fmtUSD(mAmt, 2)}</b></span><span>Method: <b>${esc(mMethod)}</b></span>${isFuel && mQty > 0 && mAmt > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}`;
+          html = `<span>Total Amount: <b>${fmtUSD(mAmt, 2)}</b></span><span>Method: <b>${esc(dispMethod)}</b></span>${isFuel && mQty > 0 && mAmt > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}`;
         }
       } else if (key === 'fuel_malfunctions') {
         const mLit = getModNum('litres');
@@ -40100,11 +40165,28 @@
       if (ws) ws.scrollTop = y;
     }));
     container.querySelectorAll('[data-payroll-cutoff]').forEach(btn => btn.addEventListener('click', () => {
-      STATE.payrollCutoffMode = btn.getAttribute('data-payroll-cutoff') || 'closed_month';
+      const nextMode = btn.getAttribute('data-payroll-cutoff') || 'closed_month';
+      if (STATE.payrollCutoffMode === nextMode) return;
+      const barEl = btn.closest('.payroll-cutoff-bar');
+      const barId = barEl ? barEl.id : '';
+      const beforeTop = barEl ? barEl.getBoundingClientRect().top : null;
       const ws = $('workspace');
       const y = ws ? ws.scrollTop : 0;
+      STATE.payrollCutoffMode = nextMode;
       renderApp();
-      if (ws) ws.scrollTop = y;
+      if (ws) {
+        const afterEl = barId ? document.getElementById(barId) : null;
+        if (afterEl && beforeTop !== null) {
+          const afterTop = afterEl.getBoundingClientRect().top;
+          ws.scrollTop = Math.max(0, y + (afterTop - beforeTop));
+        } else {
+          ws.scrollTop = y;
+        }
+      }
+    }));
+    container.querySelectorAll('[data-payroll-cutoff-reset]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.payrollCutoffMode = 'closed_month';
+      setDateFilter({ reset: true });
     }));
     container.querySelectorAll('[data-cf-focus-date]').forEach(el => el.addEventListener('click', ev => {
       ev.stopPropagation();
@@ -42039,7 +42121,7 @@
     }, { passive: false });
 
     window.addEventListener('resize', () => {
-      if (_dateFacState.open) positionDateFacilitator();
+      if (_dateFacState.open) positionDateFacilitator(true);
     });
 
     const toggleTheme = () => { STATE.theme = STATE.theme === 'light' ? 'dark' : 'light'; localStorage.setItem('isabi_mfg_theme', STATE.theme); renderApp(); };
