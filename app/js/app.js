@@ -19349,7 +19349,6 @@
 
   function renderUsers() {
     const uCount = STATE.users.length;
-    const annualSaved = uCount * 37 * 12;
     const me = activeUser();
     const owner = isOwner(me);
     const sbConfigured = !!(STATE.supabaseCfg.url && STATE.supabaseCfg.anonKey);
@@ -19367,10 +19366,10 @@
           <div class="cockpit-eyebrow">MULTI-DEVICE TEAM AUTHENTICATION · FACE ID · BUSINESS-UNIT RLS</div>
           <div class="cockpit-title">Users &amp; Security</div>
         </div>
-        <div class="cockpit-pills insight-grid">
+        <div class="cockpit-pills insight-grid cols-3">
           ${insightCard({
             label: 'Active Web Seats',
-            badge: '$0 / Seat License',
+            badge: 'Multi-Device RLS',
             badgeCls: 'brass',
             val: `${uCount} Users`,
             valCls: 'brass',
@@ -19396,15 +19395,6 @@
             valCls: /Live/.test(STATE.cloudStatus) ? 'emerald' : 'amber',
             sub: `Real-time seat, PIN &amp; entry synchronization across devices`,
             tone: 'steel'
-          })}
-          ${insightCard({
-            label: 'Annual License Savings',
-            badge: '$37 / seat / mo saved',
-            badgeCls: 'emerald',
-            val: `${fmtUSD(annualSaved, 0)} / yr`,
-            valCls: 'emerald',
-            sub: `Zero per-seat SaaS licensing overhead`,
-            tone: 'emerald'
           })}
         </div>
       </div>
@@ -19723,9 +19713,35 @@
       : prods;
     return ordered.map(p => {
       const u = p.uom || 'm³';
-      const tf = Number(p.ton_factor || 0);
+      const tf = resolveProductTonFactor(p, p.name);
       const tfMeta = tf > 0 && tf !== 1 ? ` · 1 m³ = ${tf} t` : '';
       return [p.name, `${u}${tfMeta}`];
+    });
+  }
+
+  function rawProductMetaItems(company) {
+    const rawProdNames = uniqSorted(SEED.records.raw_purchases.map(r => r.product).concat(SEED.records.products.map(p => p.name)), getFreqIndex().productRaw);
+    const bbcPriority = ['Sakher', 'Trab Mrml', 'Dabsh', 'Ramel Mrml', 'Raml Bab Thani', 'Zalat Beton', 'Bodra', 'Bahes', 'Sarek', 'Baskors'];
+    const ordered = company === 'BBConstruction'
+      ? rawProdNames.slice().sort((a, b) => {
+          const ia = bbcPriority.findIndex(n => norm(n) === norm(a));
+          const ib = bbcPriority.findIndex(n => norm(n) === norm(b));
+          if (ia >= 0 && ib >= 0) return ia - ib;
+          if (ia >= 0) return -1;
+          if (ib >= 0) return 1;
+          const pa = productInfo(a), pb = productInfo(b);
+          const aTon = /^tons?$/i.test((pa && pa.uom) || '') ? 0 : 1;
+          const bTon = /^tons?$/i.test((pb && pb.uom) || '') ? 0 : 1;
+          if (aTon !== bTon) return aTon - bTon;
+          return 0;
+        })
+      : rawProdNames;
+    return ordered.map(nm => {
+      const p = productInfo(nm);
+      const u = p ? (p.uom || 'm³') : 'm³';
+      const tf = resolveProductTonFactor(p, nm);
+      const tfMeta = tf > 0 && tf !== 1 ? ` · 1 m³ = ${tf} t` : '';
+      return [nm, `${u}${tfMeta}`];
     });
   }
 
@@ -19823,11 +19839,8 @@
     }
 
     if (fType === 'raw') {
-      const rawProdNames = uniqSorted(SEED.records.raw_purchases.map(r => r.product).concat(SEED.records.products.map(p => p.name)), getFreqIndex().productRaw);
-      const rawProdMeta = rawProdNames.map(nm => {
-        const p = productInfo(nm);
-        return [nm, p ? `${p.uom || 'm³'}${Number(p.ton_factor) && Number(p.ton_factor) !== 1 ? ' · ×' + p.ton_factor + ' t' : ''}` : 'm³'];
-      });
+      const rawProdMeta = rawProductMetaItems(company);
+      const initRawUom = company === 'BBConstruction' ? 'Ton' : 'm³';
       return cockpitHtml + `
         ${adminHeaderHtml}
         <div class="form-grid-3">
@@ -19850,8 +19863,8 @@
 
           ${secHdr('2. Quantities & Costs')}
           ${fld('Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { id: 'wrap_f_discount' })}
-          ${fld('Quantity (<span id="lbl_uom">m³</span>) *', inp('f_qty', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to Truck Capacity (m³) when measured in m³; unlocked & blank when Unit = Ton', hintId: 'hint_qty', hint: '' })}
-          ${fld('Unit (UoM) * <span class="uom-quick-pills" id="uomQuickPills"><button type="button" class="uom-qpill active" data-set-uom="m³">m³</button><button type="button" class="uom-qpill" data-set-uom="Ton">Ton</button><button type="button" class="uom-qpill" data-set-uom="Truck">Truck</button></span>', sel('f_uom', uoms, 'm³'), { id: 'wrap_f_uom', hintId: 'hint_uom', hint: '' })}
+          ${fld(`Quantity (<span id="lbl_uom">${initRawUom}</span>) *`, inp('f_qty', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to Truck Capacity (m³) when measured in m³; unlocked & blank when Unit = Ton so you can enter weighed tons', hintId: 'hint_qty', hint: '' })}
+          ${fld(`Unit (UoM) * <span class="uom-quick-pills" id="uomQuickPills"><button type="button" class="uom-qpill${initRawUom === 'm³' ? ' active' : ''}" data-set-uom="m³">m³</button><button type="button" class="uom-qpill${initRawUom === 'Ton' ? ' active' : ''}" data-set-uom="Ton">Ton</button><button type="button" class="uom-qpill" data-set-uom="Truck">Truck</button></span>`, sel('f_uom', uoms, initRawUom), { id: 'wrap_f_uom', hintId: 'hint_uom', hint: '' })}
           ${fld('Material Unit Cost ($) * <span id="lbl_pricelock" hidden>—</span>', inp('f_unitprice', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="Auto from Site Rule..." readonly'), { id: 'wrap_f_unitprice', lockField: 'f_unitprice', lockReason: 'Locked to Purchase Price (Site) or List Price', hintId: 'hint_price', hint: '' })}
           ${fld('Material Cost (USD) *', inp('f_mat_total', 'number', '0.00', 'step="0.01" readonly'), { id: 'wrap_f_mat_total', lockField: 'f_mat_total', lockReason: 'Computed as Quantity × Material Unit Cost − Discount' })}
           ${fld('Haulage Unit Cost ($)', inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_transunitprice', lockField: 'f_transunitprice', lockReason: 'Locked to Transport Price (Site) agreement on third-party loads', hintId: 'hint_trans', hint: '' })}
@@ -19992,7 +20005,7 @@
     stagedOwnerDrivers: [],
     lastCompany: '', lastDate: '', lastCategory: null, catCache: null,
     lastTruck: '', lastTruckOwner: '', lastSaleType: '', lastTransportBy: '',
-    lastSite: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastRuleType: '',
+    lastSite: '', lastSiteOwner: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastRuleType: '',
     lastWinKey: '', lastFuelWinKey: '', lastFuelItem: '', greaseAutoPreset: false,
     adminUnlocked: {}, unlockTargetField: '', unlockNote: ''
   };
@@ -20884,6 +20897,79 @@
     return { isTon: false, reason: '' };
   }
 
+  let _RAW_SITE_PROD_TON_CACHE = null;
+  function _getRawSiteProductTonSet() {
+    const rev = `${SEED._customRev || 0}|${(SEED.records && SEED.records.raw_purchases && SEED.records.raw_purchases.length) || 0}`;
+    if (_RAW_SITE_PROD_TON_CACHE && _RAW_SITE_PROD_TON_CACHE.rev === rev) return _RAW_SITE_PROD_TON_CACHE;
+    const byCoSiteProdTon = new Map();
+    const byCoSiteProdM3 = new Map();
+    const byCoOwnerProdTon = new Map();
+    const byCoOwnerProdM3 = new Map();
+    ((SEED.records && SEED.records.raw_purchases) || []).forEach(r => {
+      if (!r || r.voided || !r.product) return;
+      const isTonTicket = /^tons?$/i.test(r.uom || '');
+      const coN = norm(r.company || '');
+      const prN = norm(r.product);
+      if (r.site) {
+        const sk = `${coN}|${norm(r.site)}|${prN}`;
+        if (isTonTicket) byCoSiteProdTon.set(sk, (byCoSiteProdTon.get(sk) || 0) + 1);
+        else byCoSiteProdM3.set(sk, (byCoSiteProdM3.get(sk) || 0) + 1);
+      }
+      if (r.site_owner) {
+        const ok = `${coN}|${norm(r.site_owner)}|${prN}`;
+        if (isTonTicket) byCoOwnerProdTon.set(ok, (byCoOwnerProdTon.get(ok) || 0) + 1);
+        else byCoOwnerProdM3.set(ok, (byCoOwnerProdM3.get(ok) || 0) + 1);
+      }
+    });
+    _RAW_SITE_PROD_TON_CACHE = { rev, byCoSiteProdTon, byCoSiteProdM3, byCoOwnerProdTon, byCoOwnerProdM3 };
+    return _RAW_SITE_PROD_TON_CACHE;
+  }
+
+  function resolveRawSiteProductTonMode(company, site, owner, product, effDate, rule, prod) {
+    if (rule && !isMatIndiffRule(rule)) {
+      if (/^tons?$/i.test(rule.unit || '') || /^tons?$/i.test(rule.rate_per || '')) {
+        return { isTon: true, reason: `Agreement unit: Ton (${rule.name || 'Purchase Agreement'})` };
+      }
+      if (/^m/i.test(rule.unit || '') || /truck/i.test(rule.unit || '')) {
+        return { isTon: false, reason: '' };
+      }
+    }
+    if ((site || owner) && product) {
+      const tonIdx = _getRawSiteProductTonSet();
+      const coN = norm(company || '');
+      const eqKeys = _tonProductEquivKeys(product);
+      let sTon = 0, sM3 = 0, oTon = 0, oM3 = 0;
+      if (site) {
+        const stN = norm(site);
+        eqKeys.forEach(pk => {
+          sTon += tonIdx.byCoSiteProdTon.get(`${coN}|${stN}|${pk}`) || 0;
+          sM3 += tonIdx.byCoSiteProdM3.get(`${coN}|${stN}|${pk}`) || 0;
+        });
+      }
+      if (owner) {
+        const owN = norm(owner);
+        eqKeys.forEach(pk => {
+          oTon += tonIdx.byCoOwnerProdTon.get(`${coN}|${owN}|${pk}`) || 0;
+          oM3 += tonIdx.byCoOwnerProdM3.get(`${coN}|${owN}|${pk}`) || 0;
+        });
+      }
+      if (site && sTon >= 2 && sTon > sM3) {
+        return { isTon: true, reason: `Site (${site}) receives ${product} in Tons` };
+      }
+      if (!site && owner && oTon >= 2 && oTon > oM3) {
+        return { isTon: true, reason: `Supplier (${owner}) bills ${product} in Tons` };
+      }
+    }
+    if (prod && /^tons?$/i.test(prod.uom || '')) {
+      const tf = resolveProductTonFactor(prod, product);
+      return { isTon: true, reason: `Product unit: Ton${tf > 0 && tf !== 1 ? ' (1 m³ = ' + tf + ' Tons)' : ''}` };
+    }
+    if (!product && company === 'BBConstruction') {
+      return { isTon: true, reason: 'BBConstruction default unit: Ton (most raw materials weighed in Tons)' };
+    }
+    return { isTon: false, reason: '' };
+  }
+
   function resolveProductTonFactor(prod, productName) {
     if (prod && Number(prod.ton_factor) > 0 && (Number(prod.ton_factor) !== 1 || !/trab\s*mrml|raml\s*bab/i.test(productName || ''))) {
       return Number(prod.ton_factor);
@@ -21307,6 +21393,13 @@
     FORM_UI.lastSite = site;
     FORM_UI.lastProduct = product;
 
+    if (companyChanged) {
+      const dlRawProds = $('dl_products');
+      if (dlRawProds) {
+        dlRawProds.innerHTML = rawProductMetaItems(company).map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+      }
+    }
+
     // 1. Dynamic Column Visibility & Mode Switch Stale Clearing
     setFieldVisible('wrap_f_overtime', isCoFleet);
     setFieldVisible('wrap_f_truckowner', !isCoFleet);
@@ -21360,6 +21453,8 @@
       }
     }
     const owner = val('f_siteowner');
+    const ownerChanged = FORM_UI.lastSiteOwner !== owner;
+    FORM_UI.lastSiteOwner = owner;
 
     // 3. Cascading Truck Plate -> Truck Owner + Driver + Capacity (Date & Quarry Site Window Aware)
     const { truckName, truckRow, truckOwner, ownerFromTruck } = syncFleetCascade(company, isCoFleet, !isCoFleet, false, true, { date: effDate, side: 'raw', site });
@@ -21375,11 +21470,14 @@
     const matIsIndiff = isMatIndiffRule(rule);
     const haulIsIndiff = !isCoFleet && isTransIndiffRule(haulRule);
 
-    if ((siteChanged || productChanged) && !isFieldAdminUnlocked('f_uom')) {
+    if ((companyChanged || siteChanged || ownerChanged || productChanged) && !isFieldAdminUnlocked('f_uom')) {
       FORM_UI.uomManual = false;
     }
     const prevUom = uomEl ? uomEl.value : 'm³';
-    const targetUom = (rule && rule.unit && !matIsIndiff) ? rule.unit : baseUom;
+    const tonMode = resolveRawSiteProductTonMode(company, site, owner, product, effDate, rule, prod);
+    const targetUom = tonMode.isTon
+      ? 'Ton'
+      : ((rule && rule.unit && !matIsIndiff) ? rule.unit : (product ? baseUom : (company === 'BBConstruction' ? 'Ton' : 'm³')));
     applyFieldLockState('f_uom', false, 'Select m³, Ton, or Truck');
     if (uomEl && !FORM_UI.uomManual) uomEl.value = targetUom;
     const uom = val('f_uom') || targetUom;
@@ -21407,7 +21505,8 @@
     setText('lbl_uom', uom);
     const rawTonFactor = resolveProductTonFactor(prod, product);
     const rawEstTons = (effCap && Number(effCap) > 0 && rawTonFactor > 0) ? round2(Number(effCap) * rawTonFactor) : null;
-    setHint('hint_uom', isTonUom ? 'Weighed in Tons · Quantity unlocked' : `Measured in ${uom} · Click Ton to switch`, isTonUom ? 'ok' : '');
+    setHint('hint_product', (prod || rawTonFactor > 0) ? (rawTonFactor && rawTonFactor !== 1 ? `1 m³ = ${rawTonFactor} t` : '') : (product ? 'Unknown grade' : ''), '');
+    setHint('hint_uom', tonMode.reason || (isTonUom ? 'Weighed in Tons · Quantity unlocked' : `Measured in ${uom} · Click Ton to switch`), isTonUom ? 'ok' : '');
 
     // 5. Quantity Lock & Quarry Site / Hauler Agreement Truck Size Override
     const truckHasNoCap = !!(truckRow && !(Number(effCap) > 0));
@@ -21422,28 +21521,36 @@
                 : 'Unlocked for Ton intake — enter weighed tons')
             : (agrSizeOverride
                 ? `Locked to ${agrSizeOverride.rule.name} Site/Hauler Truck Size (${agrSizeOverride.size} m³)`
-                : 'Auto-populated from Truck Capacity (m³)')));
+                : (truckRow && effCap
+                    ? `Locked to ${truckRow.name} capacity (${effCap} m³)`
+                    : 'Auto-populated from Truck Capacity (m³)'))));
     if (qtyEl()) {
       qtyEl().placeholder = isTonUom
         ? (rawEstTons != null ? `Est. ≈ ${fmtNum(rawEstTons, 2)} t (${fmtNum(effCap, 1)} m³ × ${rawTonFactor})` : 'Enter weighed tons...')
-        : '';
+        : (qtyLocked ? 'Auto-filled from Truck m³...' : 'Enter quantity...');
     }
     if (isTruckUom && qtyEl() && qtyLocked && !FORM_UI.qtyManual) {
       qtyEl().value = '1';
     } else if (!isTonUom && effCap && qtyEl() && qtyLocked && !FORM_UI.qtyManual && (truckRow || agrSizeOverride)) {
       qtyEl().value = Number(effCap).toFixed(2);
     }
+    const curRawQty = num('f_qty');
     if (isTonUom) {
-      const curRawQty = num('f_qty');
-      if (rawEstTons != null && curRawQty <= 0) {
+      if (curRawQty <= 0 && val('f_qty') !== '') {
+        setHint('hint_qty', 'Must be above zero', 'crit');
+      } else if (rawEstTons != null && curRawQty <= 0) {
         setHint('hint_qty', `Estimated: ≈ ${fmtNum(rawEstTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${rawTonFactor} t/m³) · Enter weighed tons`, 'ok');
       } else if (rawEstTons != null && curRawQty > 0) {
-        setHint('hint_qty', `Estimated: ≈ ${fmtNum(rawEstTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${rawTonFactor} t/m³) · Entered: ${fmtNum(curRawQty, 2)} t`, 'ok');
+        setHint('hint_qty', `Estimated: ≈ ${fmtNum(rawEstTons, 2)} Tons (${fmtNum(effCap, 1)} m³ truck × ${rawTonFactor} t/m³) · Entered: ${fmtNum(curRawQty, 2)} t (≈ ${fmtNum(curRawQty / rawTonFactor, 2)} m³)`, 'ok');
+      } else if (effCap && Number(effCap) > 0) {
+        setHint('hint_qty', `Truck size: ${fmtNum(effCap, 1)} m³ · Select Product for conversion rate & estimated tonnage`, '');
+      } else if (rawTonFactor > 0) {
+        setHint('hint_qty', `Conversion rate: 1 m³ = ${rawTonFactor} Tons · Select Truck to see estimated tonnage`, '');
       } else {
         setHint('hint_qty', 'Unlocked for Ton intake · Select Truck & Product to see estimated tonnage', '');
       }
     } else {
-      setHint('hint_qty', '', '');
+      setHint('hint_qty', curRawQty > 0 && (prod || rawTonFactor > 0) && rawTonFactor > 0 && rawTonFactor !== 1 ? `≈ ${fmtNum(curRawQty * rawTonFactor, 2)} Tons (${fmtNum(curRawQty, 1)} m³ × ${rawTonFactor} t/m³)` : (curRawQty <= 0 && val('f_qty') ? 'Must be above zero' : ''), curRawQty <= 0 && val('f_qty') ? 'crit' : '');
     }
 
     const winInfo = truckRow && truckRow.active_window ? truckRow.active_window : null;
@@ -21466,8 +21573,8 @@
     const priceLocked = applyFieldLockState('f_unitprice', true, 'Locked to Purchase Price (Site) or List Price');
     const transLocked = applyFieldLockState('f_transunitprice', !isCoFleet, 'Locked to Transport Price (Site) agreement');
     const agreedMatCost = rule ? (matIsIndiff ? Number(ruleIndiffPrice(rule) || 0) : Number(rule.unit_price ?? rule.price ?? 0)) : 0;
-    const haulPerTon = Boolean(haulRule && !haulIsIndiff && /^ton$/i.test(haulRule.rate_per || haulRule.unit || '') && !/^ton$/i.test(uom));
-    const haulTonFactor = (haulPerTon && prod && Number(prod.ton_factor) > 0) ? Number(prod.ton_factor) : 1;
+    const haulPerTon = Boolean(haulRule && !haulIsIndiff && /^tons?$/i.test(haulRule.rate_per || haulRule.unit || '') && !/^tons?$/i.test(uom));
+    const haulTonFactor = (haulPerTon && rawTonFactor > 0) ? rawTonFactor : 1;
     const agreedHaulCost = haulRule
       ? (haulIsIndiff
           ? Number(ruleTransIndiffPrice(haulRule) || 0)
@@ -24324,7 +24431,7 @@
     FORM_UI.lastCompany = val('f_company'); FORM_UI.lastDate = val('f_date'); FORM_UI.lastCategory = null; FORM_UI.catCache = null;
     FORM_UI.lastTruck = val('f_truck'); FORM_UI.lastTruckOwner = val('f_truckowner');
     FORM_UI.lastSaleType = val('f_saletype'); FORM_UI.lastTransportBy = val('f_transportby');
-    FORM_UI.lastSite = val('f_site'); FORM_UI.lastProduct = val('f_product');
+    FORM_UI.lastSite = val('f_site'); FORM_UI.lastSiteOwner = val('f_siteowner'); FORM_UI.lastProduct = val('f_product');
     FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier');
     FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = ''; FORM_UI.lastFuelItem = val('f_item'); FORM_UI.greaseAutoPreset = false;
     FORM_UI.defectRefPreset = false; FORM_UI.lastSeverity = ''; FORM_UI.lastDefectRef = '';
@@ -24738,7 +24845,7 @@
       }
       if (c.disc > c.mat && c.mat > 0) addErr('f_discount', 'Discount exceeds the material subtotal.');
       if (c.mat > 0 && c.disc > c.mat * 0.2 && !notes) addErr('f_notes', 'Discount above 20% of material needs a note.');
-      record = { ...base, name: `TKT ${date} ${c.customer} #${ticket}`, ticket_no: ticket, rep_date: repDate, sale_type: c.saleType, transport_by: c.transportBy, customer: c.customer, product: c.product, site: c.site, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: c.saleType === 'Delivery' ? val('f_driver') : '', uom: c.uom, ton_factor: c.prod ? Number(c.prod.ton_factor || 1) : 1, qty: c.qty, external_qty: val('f_extqty') ? num('f_extqty') : null, unit_price: c.up, price: c.mat, tier: c.tier ? c.tier.tier : 0, tier_adj: c.tierAdj || 0, trans_unit_price: c.tp, trans_price: c.tr, trans_tier_adj: c.tierTrAdj || 0, tip: c.tip || 0, discount: c.disc, total: c.net, vat: c.vat, total_ttc: c.ttc, method: val('f_method'), vat_invoice: c.vatReg ? val('f_vatinvoice') : '', external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : (c.up ? (FORM_UI.priceManual ? 'Manual' : 'List Price') : ''), duplicate_confirmed: !!(dup && dup.warn) };
+      record = { ...base, name: `TKT ${date} ${c.customer} #${ticket}`, ticket_no: ticket, rep_date: repDate, sale_type: c.saleType, transport_by: c.transportBy, customer: c.customer, product: c.product, site: c.site, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: c.saleType === 'Delivery' ? val('f_driver') : '', uom: c.uom, ton_factor: resolveProductTonFactor(c.prod, c.product) || 1, qty: c.qty, external_qty: val('f_extqty') ? num('f_extqty') : null, unit_price: c.up, price: c.mat, tier: c.tier ? c.tier.tier : 0, tier_adj: c.tierAdj || 0, trans_unit_price: c.tp, trans_price: c.tr, trans_tier_adj: c.tierTrAdj || 0, tip: c.tip || 0, discount: c.disc, total: c.net, vat: c.vat, total_ttc: c.ttc, method: val('f_method'), vat_invoice: c.vatReg ? val('f_vatinvoice') : '', external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : (c.up ? (FORM_UI.priceManual ? 'Manual' : 'List Price') : ''), duplicate_confirmed: !!(dup && dup.warn) };
     } else if (f === 'raw') {
       const ticket = val('f_ticketno');
       if (!ticket) addErr('f_ticketno', 'Ticket number is required.');
@@ -24762,7 +24869,7 @@
           addErr('f_truckowner', `Truck ${val('f_truck')} is registered to ${tRow.supplier}, not ${val('f_truckowner')}.`);
         }
       }
-      record = { ...base, name: `RAW ${date} ${c.site} #${ticket}`, ticket_no: ticket, rep_date: repDate, product: c.product, site: c.site, site_owner: c.owner, transport_by: c.transportBy, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: val('f_driver'), uom: c.uom || (c.prod ? c.prod.uom : 'm³'), qty: c.qty, discount: c.disc || 0, unit_cost: c.up, cost: c.mat, trans_unit_cost: c.tp, trans_cost: c.tr, total: round2(c.mat + c.tr), method: val('f_method'), external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : '', duplicate_confirmed: !!(dup && dup.warn) };
+      record = { ...base, name: `RAW ${date} ${c.site} #${ticket}`, ticket_no: ticket, rep_date: repDate, product: c.product, site: c.site, site_owner: c.owner, transport_by: c.transportBy, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: val('f_driver'), uom: c.uom || (c.prod ? c.prod.uom : 'm³'), ton_factor: resolveProductTonFactor(c.prod, c.product) || 1, qty: c.qty, discount: c.disc || 0, unit_cost: c.up, cost: c.mat, trans_unit_cost: c.tp, trans_cost: c.tr, total: round2(c.mat + c.tr), method: val('f_method'), external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : '', duplicate_confirmed: !!(dup && dup.warn) };
     } else if (f === 'receipt') {
       if (!c.customer) addErr('f_customer', 'Customer is required.');
       if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero.');
@@ -31504,16 +31611,17 @@
         • <strong>Part Custody (${fmtNum(parts.length)} logged)</strong>: ${fmtNum(storedCnt)} stored in warehouse · ${fmtNum(wsCnt)} in maintenance / workshop · ${fmtNum(soldCnt)} sold (${fmtUSD(proceeds, 2)} proceeds).<br>
         • <strong>Pre-Defect Governance</strong>: ${unnotified === 0 ? '100% of part changes had a prior defect notification.' : fmtNum(unnotified) + ' unnotified emergency part change(s) flagged in AI Sentinel S10.'} Open <em>Fleet &amp; Diesel → Defects &amp; Parts</em> to log or update custody.`;
     }
-    if (has(/\b(license|licence|licenses|save|savings|cost|option 3|architecture|seat|seats)\b/)) {
+    if (has(/\b(team|biometric|face id|access|architecture|seat|seats|security|rls)\b/)) {
       const n = STATE.users.length;
-      return `<strong>Option 3 Multi-Device Cloud &amp; SQL Economics:</strong><br>
-        • ${n} team seats run on the BHFIRMS cloud relay (<code class="mono">${esc(CLOUD_DOC_KEY)}</code>) + optional local SQLite (<code class="mono">data/mfg.db</code>) + PostgreSQL schema (<code class="mono">data/schema_postgres.sql</code>).<br>
-        • Versus per-user enterprise ERP &amp; BI licensing at about $37 / seat / month that is <strong>${fmtUSD(n * 37 * 12, 0)} / year</strong> saved at the current seat count.`;
+      const faceCnt = STATE.users.filter(userHasFaceId).length;
+      return `<strong>Multi-Device Team Access, Face ID &amp; Row-Level Security:</strong><br>
+        • <strong>${n} active team seats</strong> synchronize across phones, tablets, and laptops over the Cloud Relay (<code class="mono">${esc(CLOUD_DOC_KEY)}</code>) with relational SQLite (<code class="mono">data/mfg.db</code>) and PostgreSQL (<code class="mono">data/schema_postgres.sql</code>) storage.<br>
+        • <strong>${faceCnt} / ${n} seats enrolled</strong> in 128-D neural Face ID liveness authentication with Business-Unit Row-Level Security across entities.`;
     }
     return `<strong>${esc(scope)} at a glance:</strong><br>
       • Revenue (TTC) <strong>${fmtUSD(k.sales_ttc, 2)}</strong> across <strong>${fmtNum(k.loads)} loads</strong> (${fmtNum(k.tons_sold, 0)} t) · gross margin ${fmtUSD(k.gross_margin, 0)} · operating cash profit ${fmtUSD(k.operating_profit, 0)}.<br>
       • Open AR ${fmtUSD(k.ar_balance, 0)} · open AP ${fmtUSD(k.ap_balance, 0)} · till ${fmtUSD(k.cash_till, 2)} · diesel in tank ${fmtNum(k.diesel_in_tank, 0)} L.<br>
-      Ask about <em>margin</em>, <em>AR</em>, <em>AP legs</em>, <em>diesel</em>, <em>trial balance</em>, <em>pricing</em>, <em>overtime</em> or <em>licenses</em>.`;
+      Ask about <em>margin</em>, <em>AR</em>, <em>AP legs</em>, <em>diesel</em>, <em>trial balance</em>, <em>pricing</em>, <em>overtime</em> or <em>team seats</em>.`;
   }
 
   // ==========================================================================

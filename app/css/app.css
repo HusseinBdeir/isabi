@@ -15607,6 +15607,9 @@ svg .cf-chart-bar:hover .cf-bar-hit {
   gap: 0;
   width: 100%;
 }
+.cockpit-pills.insight-grid.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .cockpit-pills.insight-grid > .cockpit-pill.insight-card {
   background: transparent;
   border: 0;
@@ -15787,16 +15790,31 @@ svg .cf-chart-bar:hover .cf-bar-hit {
   font-weight: 600;
 }
 @media (max-width: 1020px) {
-  .cockpit-pills.insight-grid {
+  .cockpit-pills.insight-grid:not(.cols-3) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .cockpit-pills.insight-grid > .cockpit-pill.insight-card {
+  .cockpit-pills.insight-grid:not(.cols-3) > .cockpit-pill.insight-card {
     border-bottom: 1px solid var(--line);
+  }
+}
+@media (max-width: 720px) {
+  .cockpit-pills.insight-grid.cols-3 {
+    grid-template-columns: 1fr;
+  }
+  .cockpit-pills.insight-grid.cols-3 > .cockpit-pill.insight-card {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .cockpit-pills.insight-grid.cols-3 > .cockpit-pill.insight-card:last-of-type {
+    border-bottom: 0;
   }
 }
 @media (max-width: 600px) {
   .cockpit-pills.insight-grid {
     grid-template-columns: 1fr;
+  }
+  .cockpit-pills.insight-grid > .cockpit-pill.insight-card:last-of-type {
+    border-bottom: 0;
   }
 }
 
