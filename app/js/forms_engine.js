@@ -60,6 +60,7 @@
       label: '3. Fleet, Fuel & Maint.',
       forms: [
         { id: 'fuel', label: 'Fuel & Lubricant Intake', badge: 'bhf_fuelintake', crKey: 'fuel_intakes', title: 'New Fuel & Lubricant Intake' },
+        { id: 'malfunction', label: 'Tank Malfunction / Discrepancy', badge: 'bhf_fuelmalfunction', crKey: 'fuel_malfunctions', title: 'New Tank Malfunction / Discrepancy' },
         { id: 'companyequipment', label: 'Company Fleet Unit', badge: 'bhf_companyequipment', crKey: 'company_equipment', title: 'New Company Fleet Unit (BU Assignment)' },
         { id: 'defect', label: 'Equipment Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', title: 'Report Equipment / Truck Defect' },
         { id: 'partlog', label: 'Part Change & Custody', badge: 'bhf_partmovement', crKey: 'part_movements', title: 'Part Change, Removal & Disposition' },
@@ -201,22 +202,50 @@
 
   // ==================== DIESEL TANK BALANCE ENGINE (m207 / m212) ====================
   function computeDieselTank(ctx, companyName, excludeId) {
-    const seed = (ctx && ctx.SEED) || window.MFG_SEED || {};
-    const rec = getRecords(ctx);
-    const sn = (((seed.sentinels || {}).fleet_fuel_overtime_auditor || {}).by_model || {})[companyName] || {};
     const coKey = companyName === 'BBConstruction' ? 'bbconstruction' : (companyName === 'Lions Transport' ? 'lionstransport' : 'wtc');
+    const rec = getRecords(ctx);
+    if (typeof window !== 'undefined' && typeof window.MFG_DIESEL_TANK === 'function') {
+      const dt = window.MFG_DIESEL_TANK(coKey, null);
+      if (dt && dt.perCo && dt.perCo[companyName]) {
+        const pc = dt.perCo[companyName];
+        let bought = pc.boughtL, issued = pc.consumedL, discrepancy = pc.discrepancyL || 0, sold = pc.soldL;
+        if (excludeId) {
+          (rec.fuel_intakes || []).forEach(f => {
+            if (f && f.id === excludeId && !f.voided && f.company === companyName) {
+              if (f.record_type === 'Bulk Purchase') bought -= Number(f.litres || 0);
+              else issued -= Number(f.litres || 0);
+            }
+          });
+          (rec.fuel_malfunctions || []).forEach(m => {
+            if (m && m.id === excludeId && !m.voided && m.company === companyName) {
+              discrepancy -= Number(m.litres || 0);
+            }
+          });
+          (rec.sales_tickets || []).forEach(t => {
+            if (t && t.id === excludeId && !t.voided && t.company === companyName) {
+              sold -= Number(t.qty || 0);
+            }
+          });
+        }
+        const balance = Math.round((bought - issued - discrepancy - sold) * 100) / 100;
+        return { bought, issued, discrepancy, sold, balance };
+      }
+    }
+    const seed = (ctx && ctx.SEED) || window.MFG_SEED || {};
+    const sn = (((seed.sentinels || {}).fleet_fuel_overtime_auditor || {}).by_model || {})[companyName] || {};
     const model = (seed.models && seed.models[coKey]) || {};
     const allKpi = (model.periods && model.periods.all) || {};
 
     let bought = sn.diesel_purchased_l != null ? Number(sn.diesel_purchased_l) : Number(allKpi.diesel_purchased || 0);
     let issued = sn.diesel_issued_l != null ? Number(sn.diesel_issued_l) : Number(allKpi.diesel_litres || 0);
-    let sold = Number(allKpi.diesel_sold || 0);
+    let discrepancy = sn.diesel_discrepancy_l != null ? Number(sn.diesel_discrepancy_l) : 0;
+    let sold = sn.diesel_sold_l != null ? Number(sn.diesel_sold_l) : Number(allKpi.diesel_sold || 0);
 
     (rec.expenses || []).forEach(e => {
       if (!e || e.source !== 'app' || e.voided || e.company !== companyName) return;
       const sub = String(e.subcategory || '').trim();
       const cat = String(e.category || '').trim();
-      if (/^diesel$|^mazout$/i.test(sub) || (/^fuel$/i.test(cat) && (!sub || /diesel|mazout/i.test(sub)))) {
+      if (/^fuel$/i.test(cat) && (!sub || /^diesel$|^mazout$/i.test(sub)) && Number(e.qty || 0) > 0) {
         bought += Number(e.qty || 0);
       }
     });
@@ -226,6 +255,11 @@
         else issued += Number(f.litres || 0);
       }
     });
+    (rec.fuel_malfunctions || []).forEach(m => {
+      if (m && m.source === 'app' && !m.voided && m.company === companyName && m.id !== excludeId) {
+        discrepancy += Number(m.litres || 0);
+      }
+    });
     (rec.sales_tickets || []).forEach(t => {
       if (t && t.source === 'app' && !t.voided && t.company === companyName && t.id !== excludeId &&
           ['diesel', 'diesel trans'].includes(String(t.product || '').toLowerCase())) {
@@ -233,8 +267,8 @@
       }
     });
 
-    const balance = bought - issued - sold;
-    return { bought, issued, sold, balance };
+    const balance = Math.round((bought - issued - discrepancy - sold) * 100) / 100;
+    return { bought, issued, discrepancy, sold, balance };
   }
 
   // ==================== PRICE AGREEMENT & TIER 1/2 ENGINE (m70 / m73 / m103 / m106 / m125 / m136) ====================
@@ -1118,6 +1152,41 @@
           <div><small id="lbl_tr_c2">This Entry (USD Eq.)</small><b id="calc_tr_c2">$0.00</b></div>
           <div><small id="lbl_tr_c3">Balance After Entry</small><b id="calc_tr_c3">—</b></div>
           <div><small id="lbl_tr_c4">Treasury Leg</small><b id="calc_tr_c4">Loan Drawdown</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'malfunction') {
+      return `
+        ${adminHeaderHtml}
+        <div class="form-grid-3">
+          ${secHdr('1. Tank Discrepancy, Dates & Classification')}
+          ${companyField}
+          ${lockedDateField('Transaction Date *')}
+          ${collapsibleRepDateField()}
+          ${fld('Discrepancy Type *', sel('f_disctype', [
+            ['Malfunction', 'Malfunction (Meter / Physical Variance)'],
+            ['Wash', 'Wash (Equipment Cleaning)'],
+            ['Ghassanieh', 'Ghassanieh (House / Generator Supply)'],
+            ['Configuration', 'Configuration (Tank Dip Calibration)']
+          ], 'Malfunction'))}
+          ${fld('Tank Impact Direction *', sel('f_malf_dir', [
+            ['out', 'Tank Shortage / Outflow (-Tank · +Used)'],
+            ['in', 'Tank Surplus / Over-Read (+Tank · -Used)']
+          ], 'out'))}
+          ${fld('Quantity (Litres L) *', inp('f_qty', 'number', '', 'step="0.1" min="0.1" inputmode="decimal" placeholder="Litres..."'), { hintId: 'hint_malf_qty', hint: 'Positive litres; direction sets tank +/- impact' })}
+          ${secHdr('2. Invoice / Reference, Unit Attribution & Audit Notes')}
+          ${fld('Invoice / Ticket No.', inp('f_ticketno', 'text', '', 'placeholder="Optional invoice or slip #..."'))}
+          ${fld('Equipment / Unit (Optional)', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional unit..."') + dl('dl_equip', equipNames))}
+          ${fld('Driver / Operator (Optional)', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Optional driver..."') + dl('dl_drivers', driverNames))}
+          ${fld('Reason / Audit Notes', inp('f_notes', 'text', '', 'placeholder="Explain meter variance, dip calibration, or quarantined slip..."'), { span: true })}
+        </div>
+        <div id="malfLiveAlertBanner" class="att-contract-strip" hidden></div>
+        <div class="live-calc" id="malfLiveCalc">
+          <div><small>Tank Before Entry</small><b id="calc_malf_before">—</b></div>
+          <div><small>Tank Impact</small><b id="calc_malf_delta">0.0 L</b></div>
+          <div><small>Tank After Entry</small><b id="calc_malf_after">—</b></div>
+          <div><small>Month Malfunction % (5% Watchdog)</small><b id="calc_malf_pct">0.0%</b></div>
         </div>
       `;
     }

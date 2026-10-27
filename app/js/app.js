@@ -21,7 +21,7 @@
   SEED.records = SEED.records || {};
   SEED.sentinels = SEED.sentinels || {};
   const SEED_RECORD_KEYS = [
-    'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses', 'receipts', 'settlements', 'salaries',
+    'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'receipts', 'settlements', 'salaries',
     'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products', 'sites',
     'regions', 'uoms', 'product_types', 'equipment', 'company_equipment', 'equipment_defects', 'part_movements',
     'drivers', 'company_drivers', 'expense_categories', 'expense_subcategories', 'employments', 'attendance',
@@ -200,6 +200,12 @@
     sessions: lsGet('isabi_mfg_sessions_v2', null) || [],
     customRecords: lsGet('isabi_mfg_custom_recs_v2', null) || {},
     sentinelReviews: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_sentinel_reviews_v1', null) : null) || {},
+    alertRules: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_alert_rules_v1', null) : null) || { overrides: {}, custom: [] },
+    alertRulesSearch: '',
+    alertRulesFilter: 'all',
+    alertRulesDomain: 'all',
+    alertRulesExpanded: '',
+    alertRulesShowCreator: false,
     supabaseCfg: lsGet('isabi_mfg_supabase_cfg', null) || { url: '', anonKey: '' },
     faceSettings: (() => {
       const saved = lsGet('isabi_mfg_face_settings_v2', null) || {};
@@ -267,7 +273,7 @@
 
   // App-entered record pools (localStorage + cloud relay) → server table + SEED list
   const CR_KEYS = [
-    'sales_tickets', 'raw_purchases', 'receipts', 'fuel_intakes', 'expenses', 'settlements',
+    'sales_tickets', 'raw_purchases', 'receipts', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'settlements',
     'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products',
     'product_types', 'uoms', 'sites', 'regions', 'equipment', 'company_equipment',
     'equipment_defects', 'part_movements',
@@ -278,7 +284,7 @@
   ];
   const CR_TABLE = {
     sales_tickets: 'sales_tickets', raw_purchases: 'raw_purchases', receipts: 'customer_receipts',
-    fuel_intakes: 'fuel_intakes', expenses: 'expenses', settlements: 'supplier_payments',
+    fuel_intakes: 'fuel_intakes', fuel_malfunctions: 'fuel_malfunctions', expenses: 'expenses', settlements: 'supplier_payments',
     price_rules: 'price_rules', vat_invoices: 'vat_invoices', credit_terms: 'credit_terms',
     customers: 'customers', suppliers: 'suppliers', products: 'products',
     product_types: 'product_types', uoms: 'uoms', sites: 'sites', regions: 'regions',
@@ -294,7 +300,7 @@
   };
   const CR_LABEL = {
     sales_tickets: 'sales ticket', raw_purchases: 'raw receipt', receipts: 'customer receipt',
-    fuel_intakes: 'fuel intake', expenses: 'expense', settlements: 'supplier settlement',
+    fuel_intakes: 'fuel intake', fuel_malfunctions: 'tank malfunction', expenses: 'expense', settlements: 'supplier settlement',
     price_rules: 'price agreement', vat_invoices: 'vat invoice', credit_terms: 'credit terms',
     customers: 'customer', suppliers: 'supplier', products: 'product',
     product_types: 'product family', uoms: 'unit of measure', sites: 'site', regions: 'region',
@@ -1107,7 +1113,7 @@
     return /^fuel$/i.test(cat) && (!sub || /^diesel$|^mazout$/i.test(sub)) && Number(x.qty || 0) > 0;
   }
   function isDieselTankRefillIntake(f) {
-    if (!f || f.voided) return false;
+    if (!f || f.voided || !isAppRecord(f)) return false;
     const isDiesel = /diesel|mazout/i.test(String(f.item || f.fuel_type || 'Diesel'));
     return isDiesel && /refill|purchase|intake|tank/i.test(String(f.fuel_type || f.location || '')) && !String(f.equipment || '').trim() && Number(f.litres || 0) > 0;
   }
@@ -1334,7 +1340,7 @@
       raw_tons += ticketTons(r);
     });
 
-    let expenses = 0, cash_expenses = 0, credit_expenses = 0;
+    let expenses = 0, cash_expenses = 0, credit_expenses = 0, diesel_purchased = 0;
     exps.forEach(x => {
       const sgn = expenseSign(x);
       if (sgn === 0) return;
@@ -1342,6 +1348,7 @@
       expenses += a;
       if (isCreditExpense(x)) credit_expenses += a;
       else cash_expenses += a;
+      if (isBulkDieselExpense(x)) diesel_purchased += Number(x.qty || 0) * sgn;
     });
 
     const salaries_paid = sals.reduce((a, r) => a + Number(r.amount || 0), 0);
@@ -1349,7 +1356,9 @@
     const settlements_paid = spays.reduce((a, r) => settlementKind(r) === 'Payment' ? a + Number(r.amount || 0) + Number(r.discount || 0) : a, 0);
     let diesel_litres = 0;
     fuels.forEach(fl => {
-      if (/diesel|mazout/i.test(String(fl.item || fl.fuel_type || 'Diesel'))) {
+      if (isDieselTankRefillIntake(fl)) {
+        diesel_purchased += Number(fl.litres || 0);
+      } else if (/diesel|mazout/i.test(String(fl.item || fl.fuel_type || 'Diesel'))) {
         diesel_litres += Number(fl.litres || 0);
       }
     });
@@ -1413,7 +1422,9 @@
       cash_inflow,
       cash_outflow,
       net_cash_flow,
-      diesel_litres: round2(diesel_litres),
+      diesel_purchased: (baseKpi.diesel_purchased == null && diesel_purchased === 0 && diesel_litres === 0 && diesel_sold === 0) ? null : round2(hasHydratedSales ? diesel_purchased : (baseKpi.diesel_purchased || 0)),
+      diesel_litres: (baseKpi.diesel_litres == null && diesel_purchased === 0 && diesel_litres === 0 && diesel_sold === 0) ? null : round2(hasHydratedSales ? diesel_litres : (baseKpi.diesel_litres || 0)),
+      diesel_sold: (baseKpi.diesel_sold == null && diesel_purchased === 0 && diesel_litres === 0 && diesel_sold === 0) ? null : round2(hasHydratedSales ? diesel_sold : (baseKpi.diesel_sold || 0)),
       trucks_used: truckSet.size || baseKpi.trucks_used || 0,
       own_fleet_loads,
       sales_rep_date: round2(sales_ttc),
@@ -1443,6 +1454,7 @@
       loads: 'loads', delivery_loads: 'delivery_loads', pickup_loads: 'pickup_loads', tons_sold: 'tons',
       raw_cost: 'raw_cost', raw_mat_cost: 'raw_mat_cost', raw_haulage: 'raw_haulage', raw_loads: 'raw_loads',
       expenses: 'expenses', cash_expenses: 'cash_expenses', credit_expenses: 'credit_expenses', salaries_paid: 'salaries', commission_due: 'commission_due',
+      diesel_purchased: 'diesel_bought', diesel_litres: 'diesel_issued', diesel_sold: 'diesel_sold', diesel_in_tank: 'diesel_tank',
       gross_margin: 'gross_margin', operating_profit: 'operating_profit', receipts: 'receipts', settlements_paid: 'settlements_paid' };
     Object.keys(MAP).forEach(key => { if (mRow[MAP[key]] != null) k[key] = Number(mRow[MAP[key]]); });
     if (k.gross_sales == null && k.net_sales != null) k.gross_sales = round2(Number(k.net_sales || 0) + Number(k.trans_rev || 0));
@@ -1657,6 +1669,11 @@
       if (hydSalesLen > 0) anchor.commission_due = txRaw.commission_due;
       anchor.tons_sold = txRaw.tons_sold || anchor.tons_sold;
       anchor.raw_tons = txRaw.raw_tons || anchor.raw_tons;
+      if (SEED._recordsReady || crCount > 0) {
+        if (txRaw.diesel_purchased != null || anchor.diesel_purchased != null) anchor.diesel_purchased = txRaw.diesel_purchased;
+        if (txRaw.diesel_litres != null || anchor.diesel_litres != null) anchor.diesel_litres = txRaw.diesel_litres;
+        if (txRaw.diesel_sold != null || anchor.diesel_sold != null) anchor.diesel_sold = txRaw.diesel_sold;
+      }
       if (range) {
         anchor.ap_material = round2(Number(anchor.raw_mat_cost != null ? anchor.raw_mat_cost : txRaw.raw_mat_cost || 0));
         anchor.ap_haulage = round2(Number(txRaw.ap_haulage != null ? txRaw.ap_haulage : (anchor.raw_haulage != null ? anchor.raw_haulage : txRaw.raw_haulage || 0)));
@@ -1672,6 +1689,17 @@
       ? bridgeKpiToBasis(txFinal, txRaw, computeLocalKPI(m, range, 'rep', coKey))
       : txFinal;
     applyCashFlowParityToKpi(computed, m, range, coKey);
+    const dtSnap = getDieselTankLedger(coKey, range);
+    if (dtSnap) {
+      const noDieselLedger = coKey === 'lionstransport' && !dtSnap.boughtL && !dtSnap.consumedL && !dtSnap.discrepancyL && !dtSnap.soldL && !dtSnap.closingTankL;
+      computed.diesel_purchased = noDieselLedger ? null : dtSnap.boughtL;
+      computed.diesel_litres = noDieselLedger ? null : dtSnap.consumedL;
+      computed.diesel_discrepancy = noDieselLedger ? null : dtSnap.discrepancyL;
+      computed.diesel_sold = noDieselLedger ? null : dtSnap.soldL;
+      computed.diesel_in_tank = noDieselLedger ? null : dtSnap.closingTankL;
+      computed.diesel_malfunction_pct = noDieselLedger ? null : dtSnap.malfunctionPct;
+      computed.diesel_malfunction_alert = Boolean(!noDieselLedger && dtSnap.malfunctionAlert);
+    }
 
     if (_kpiRangeCacheMap.size > 64) _kpiRangeCacheMap.clear();
     _kpiRangeCacheMap.set(cacheKey, computed);
@@ -3174,6 +3202,10 @@
   function resolveColVal(r, colKey, view) {
     if (!r || !colKey) return null;
     if (colKey === 'date' && r.date !== undefined) return recordDate(r);
+    if (colKey === 'tank_rem' || colKey === 'tank_remaining_litres') {
+      const dt = getDieselTankLedger();
+      return (dt && dt.tankAfterById && r.id != null && dt.tankAfterById.has(r.id)) ? dt.tankAfterById.get(r.id) : null;
+    }
     if (colKey === 'customer' && (view === 'pricing' || view === 'raw_pricing' || view === 'price_rules')) {
       return r.customer || r.supplier || (r.site ? r.site + ' (site)' : 'Standard List');
     }
@@ -4064,9 +4096,7 @@
 
   function appEnteredSummary() {
     const out = [];
-    const spec = [['sales_tickets', 'total_ttc', 'sales tickets'], ['raw_purchases', 'total', 'raw receipts'], ['receipts', 'amount', 'customer receipts'], ['fuel_intakes', 'litres', 'fuel intakes'], ['expenses', 'amount', 'supplier settlements']];
-    spec[4] = ['expenses', 'amount', 'expenses'];
-    spec[5] = ['settlements', 'amount', 'supplier settlements'];
+    const spec = [['sales_tickets', 'total_ttc', 'sales tickets'], ['raw_purchases', 'total', 'raw receipts'], ['receipts', 'amount', 'customer receipts'], ['fuel_intakes', 'litres', 'fuel intakes'], ['fuel_malfunctions', 'litres', 'tank malfunctions'], ['expenses', 'amount', 'expenses'], ['settlements', 'amount', 'supplier settlements']];
     spec.forEach(([k, amt, label]) => {
       const rows = filterRecords(STATE.customRecords[k], { ignoreSearch: true }).filter(isAppRecord);
       if (!rows.length) return;
@@ -4516,7 +4546,7 @@
     const role = String(u.role || '').trim();
     if (/^Custom/i.test(role)) {
       const p = getEffectivePermissions(u);
-      if (['sales', 'raw', 'fuel'].includes(form)) return !!p.rights.enter_dispatch;
+      if (['sales', 'raw', 'fuel', 'malfunction'].includes(form)) return !!p.rights.enter_dispatch;
       if (['defect', 'partlog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master);
       if (['receipt', 'expense', 'settlement'].includes(form)) return !!p.rights.enter_accounting;
       if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'site', 'equipment', 'companyequipment', 'driver', 'attendance'].includes(form)) return !!p.rights.enter_master;
@@ -4532,7 +4562,7 @@
     }
     if (/Entry/i.test(role)) {
       return [
-        'sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement',
+        'sales', 'raw', 'receipt', 'fuel', 'malfunction', 'expense', 'settlement',
         'defect', 'partlog',
         'customer', 'supplier', 'product', 'site', 'equipment', 'companyequipment', 'driver', 'attendance'
       ].includes(form);
@@ -4606,6 +4636,16 @@
     return cnt > 0 ? { text: `${fmtNum(cnt)} Alert${cnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
   }
 
+  function getDieselExceptionBadge(u) {
+    if (!canViewView('fleet', u)) return null;
+    const dt = getDieselTankLedger();
+    if (!dt || !dt.malfunctionAlert) return null;
+    return {
+      text: `Malf ${dt.malfunctionPct.toFixed(1)}%`,
+      cls: dt.malfunctionSeverity === 'crit' ? 'crit' : 'warn'
+    };
+  }
+
   function getFleetExceptionBadge(u) {
     if (!canViewView('fleet_maint', u)) return null;
     const mi = getMaintIndex();
@@ -4632,7 +4672,7 @@
 
   function getHubExceptionBadge(hubId, u, k, sentinelsOpen) {
     if (hubId === 'overview') return getSentinelExceptionBadge(u, sentinelsOpen);
-    if (hubId === 'fleet') return getFleetExceptionBadge(u);
+    if (hubId === 'fleet') return getFleetExceptionBadge(u) || getDieselExceptionBadge(u);
     if (hubId === 'ledger') return getLedgerExceptionBadge(u, k);
     return null;
   }
@@ -4645,7 +4685,8 @@
       tabs: [
         { view: 'overview', label: 'Executive Overview', icon: 'overview' },
         { view: 'entities', label: 'Entity Comparison', icon: 'entities' },
-        { view: 'sentinels', label: 'AI Sentinels & Audit', icon: 'sentinels', badgeFn: (u, _k, sn) => getSentinelExceptionBadge(u, sn) }
+        { view: 'sentinels', label: 'AI Sentinels & Audit', icon: 'sentinels', badgeFn: (u, _k, sn) => getSentinelExceptionBadge(u, sn) },
+        { view: 'alert_rules', label: 'Alerts & Thresholds', icon: 'alert_rules' }
       ]
     },
     {
@@ -4684,7 +4725,7 @@
       title: HUB_TITLES.fleet,
       group: 'plant',
       tabs: [
-        { view: 'fleet', label: 'Diesel & Lubricants', icon: 'fleet' },
+        { view: 'fleet', label: 'Diesel & Lubricants', icon: 'fleet', badgeFn: u => getDieselExceptionBadge(u) },
         { view: 'fleet_equip', label: 'Fleet & Running Costs', icon: 'fleet_equip' },
         { view: 'fleet_maint', label: 'Defects & Parts', icon: 'fleet_maint', badgeFn: u => getFleetExceptionBadge(u) },
         { view: 'fleet_drivers', match: ['fleet_drivers', 'fleet_analytics'], label: 'Drivers & Overtime', icon: 'fleet_drivers' }
@@ -4774,6 +4815,7 @@
     if (view === 'cashflow_analytics') return canViewView('cashflow', u) && canAccessPbiPage('p14_cashflow', u);
     if (view === 'expenses_analytics') return canViewView('expenses', u) && canAccessPbiPage('p07_ap', u);
     if (view === 'workforce_map' || view === 'payroll_attendance' || view === 'payroll_contracts') return canViewView('payroll', u);
+    if (view === 'alert_rules') return canViewView('sentinels', u);
     if (view === 'payroll_analytics') return canViewView('payroll', u) && (canAccessPbiPage('p12_payroll', u) || canAccessPbiPage('p11_drivers', u));
     if (view === 'external') return canViewView('cashflow', u) && canAccessTable('external_movements', u);
     if (view === 'ledger_treasury') return canViewView('cashflow', u) && (canAccessTable('loans', u) || canAccessPbiPage('p15_treasury', u));
@@ -6108,7 +6150,12 @@
       }
     }
     if (!best) return null;
-    const status = best.ageDays <= 1 ? 'block' : (best.ageDays <= 30 ? 'warn' : 'ok');
+    if (!isAlertRuleEnabled('G_DUP_SERIAL')) {
+      return { table: k, label, row: best.row, dateStr: best.dateStr, diffDays: best.diffDays, ageDays: best.ageDays, status: 'ok', blocked: false, warn: false };
+    }
+    const dupBlockDays = getAlertParam('G_DUP_SERIAL', 'block_days', 1);
+    const dupWarnDays = getAlertParam('G_DUP_SERIAL', 'warn_days', 30);
+    const status = best.ageDays <= dupBlockDays ? 'block' : (best.ageDays <= dupWarnDays ? 'warn' : 'ok');
     return { table: k, label, row: best.row, dateStr: best.dateStr, diffDays: best.diffDays, ageDays: best.ageDays, status, blocked: status === 'block', warn: status === 'warn' };
   }
 
@@ -6135,47 +6182,695 @@
     const s = supplierInfo(supplier);
     return s && s.in_ap_book ? Number(s.ap_balance || 0) : null;
   }
-  function computeDieselTank() {
-    const snByModel = ((SEED.sentinels || {}).fleet_fuel_overtime_auditor || {}).by_model || {};
+  const MALFUNCTION_ALERT_PCT = 5.0;
+  let _dieselAllIdxCache = null;
+  const _dieselTankLedgerCache = new Map();
+
+  function _evalDieselMalfunctionWatchdog(consumedL, otherDiscOutL, malfNetL, malfAbsL) {
+    const companyDieselUsedL = round2(Math.max(0, Number(consumedL || 0)) + Math.max(0, Number(otherDiscOutL || 0)) + Math.max(0, Number(malfNetL || 0)));
+    const absL = round2(Math.max(0, Number(malfAbsL || 0)));
+    const malfunctionPct = companyDieselUsedL > 0 ? round2((absL / companyDieselUsedL) * 100) : (absL > 0 ? 100 : 0);
+    const malfunctionNetPct = companyDieselUsedL > 0 ? round2((Math.abs(Number(malfNetL || 0)) / companyDieselUsedL) * 100) : 0;
+    const malfunctionAlert = absL > 0 && malfunctionPct >= MALFUNCTION_ALERT_PCT;
+    const malfunctionSeverity = (absL > 0 && malfunctionPct >= 10.0) ? 'crit' : (malfunctionAlert ? 'warn' : 'ok');
+    return {
+      companyDieselUsedL,
+      malfunctionPct,
+      malfunctionNetPct,
+      malfunctionThresholdPct: MALFUNCTION_ALERT_PCT,
+      malfunctionAlert,
+      malfunctionSeverity
+    };
+  }
+
+  function _formatMonthYmLabel(ym) {
+    const m = /^(\d{4})-(\d{2})$/.exec(String(ym || ''));
+    if (!m) return String(ym || 'Unknown');
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${names[Math.max(0, Math.min(11, Number(m[2]) - 1))]} ${m[1]}`;
+  }
+
+  function _getAllDieselMovementsIndex() {
+    const expArr = (SEED.records && SEED.records.expenses) || [];
+    const fuelArr = (SEED.records && SEED.records.fuel_intakes) || [];
+    const malfArr = (SEED.records && SEED.records.fuel_malfunctions) || [];
+    const salesArr = (SEED.records && SEED.records.sales_tickets) || [];
+    const eqArr = (SEED.records && SEED.records.equipment) || [];
+    const hydrated = Boolean(SEED._recordsReady);
+    const cacheKey = `${hydrated ? 1 : 0}|${SEED._customRev || 0}|${STATE._customRev || 0}|${STATE.basis}|${expArr.length}|${fuelArr.length}|${malfArr.length}|${salesArr.length}|${eqArr.length}`;
+    if (_dieselAllIdxCache && _dieselAllIdxCache.cacheKey === cacheKey) return _dieselAllIdxCache;
+
+    const movements = [];
     const byCo = {};
+    const coRunning = {};
     ['WTC', 'BBConstruction', 'Lions Transport'].forEach(co => {
       const coKey = co === 'BBConstruction' ? 'bbconstruction' : (co === 'Lions Transport' ? 'lionstransport' : 'wtc');
-      const sn = snByModel[co] || {};
-      const mdl = (SEED.models && SEED.models[coKey]) || {};
-      const allKpi = (mdl.periods && mdl.periods.all) || {};
-      let bought = sn.diesel_purchased_l != null ? Number(sn.diesel_purchased_l) : Number(allKpi.diesel_purchased || 0);
-      let issued = sn.diesel_issued_l != null ? Number(sn.diesel_issued_l) : Number(allKpi.diesel_litres || 0);
-      let sold = Number(allKpi.diesel_sold || 0);
-      let pricedLitres = 0, pricedUsd = 0, pendingCount = 0, pendingLitres = 0;
-      ((SEED.records && SEED.records.expenses) || []).forEach(e => {
-        if (!e || e.voided || e.company !== co || !isBulkDieselExpense(e)) return;
-        const q = Number(e.qty || 0);
-        const amt = Number(e.amount || 0);
-        if (isAppRecord(e) && q > 0) bought += q;
-        if (isPendingPriceExpense(e)) {
+      const allKpi = (((SEED.models && SEED.models[coKey]) || {}).periods || {}).all || {};
+      const preB = hydrated ? 0 : Number(allKpi.diesel_purchased || 0);
+      const preI = hydrated ? 0 : Number(allKpi.diesel_litres || 0);
+      const preS = hydrated ? 0 : Number(allKpi.diesel_sold || 0);
+      byCo[co] = {
+        bought: preB,
+        boughtUsd: 0,
+        boughtCount: 0,
+        issued: preI,
+        issuedOwn: preI,
+        issuedHauler: 0,
+        issuedCount: 0,
+        discrepancy: 0,
+        discrepancyCount: 0,
+        malfNet: 0,
+        malfAbs: 0,
+        malfCount: 0,
+        sold: preS,
+        soldUsd: 0,
+        soldCount: 0,
+        pricedLitres: 0,
+        pricedUsd: 0,
+        pendingCount: 0,
+        pendingLitres: 0,
+        balance: round2(preB - preI - preS),
+        avgUsdPerL: 0.85
+      };
+      coRunning[co] = round2(preB - preI - preS);
+    });
+
+    for (let i = 0; i < expArr.length; i++) {
+      const e = expArr[i];
+      if (!e || e.voided || !isBulkDieselExpense(e)) continue;
+      const appRec = isAppRecord(e);
+      if (!hydrated && !appRec) continue;
+      const co = e.company || 'WTC';
+      const l = round2(Number(e.qty || 0));
+      const pend = isPendingPriceExpense(e);
+      const amt = pend ? 0 : round2(Number(e.amount || 0));
+      movements.push({
+        id: e.id,
+        rkey: 'expenses',
+        rec: e,
+        company: co,
+        date: recordDate(e) || String(e.date || '').slice(0, 10),
+        kind: 'bought',
+        sortRank: 1,
+        ref: String(e.reference || e.name || '').trim(),
+        party: String(e.supplier || 'Unassigned Supplier').trim(),
+        detail: String(e.notes || e.subcategory || 'Bulk Diesel Delivery').trim(),
+        driver: '',
+        isOwn: true,
+        litres: l,
+        deltaL: l,
+        amountUsd: amt,
+        unitPrice: (!pend && l > 0 && amt > 0) ? round2(amt / l) : null,
+        pendingPrice: pend,
+        isApp: appRec
+      });
+    }
+
+    for (let i = 0; i < fuelArr.length; i++) {
+      const f = fuelArr[i];
+      if (!f || f.voided) continue;
+      const appRec = isAppRecord(f);
+      if (!hydrated && !appRec) continue;
+      const co = f.company || 'WTC';
+      if (isDieselTankRefillIntake(f)) {
+        const l = round2(Number(f.litres || 0));
+        movements.push({
+          id: f.id,
+          rkey: 'fuel_intakes',
+          rec: f,
+          company: co,
+          date: recordDate(f) || String(f.date || '').slice(0, 10),
+          kind: 'bought',
+          sortRank: 1,
+          ref: String(f.ticket_no || '').trim(),
+          party: String(f.location || 'Tank Refill').trim(),
+          detail: String(f.notes || 'Tank Refill Slip').trim(),
+          driver: String(f.driver || '').trim(),
+          isOwn: true,
+          litres: l,
+          deltaL: l,
+          amountUsd: 0,
+          unitPrice: null,
+          pendingPrice: false,
+          isApp: appRec
+        });
+      } else if (isDieselDispenseIntake(f)) {
+        const l = round2(Number(f.litres || 0));
+        const eqRec = f.equipment ? equipInfo(f.equipment) : null;
+        const isOwn = !eqRec || /^own/i.test(String(eqRec.Ownership || eqRec.ownership || 'Own'));
+        movements.push({
+          id: f.id,
+          rkey: 'fuel_intakes',
+          rec: f,
+          company: co,
+          date: recordDate(f) || String(f.date || '').slice(0, 10),
+          kind: isOwn ? 'consumed_own' : 'consumed_hauler',
+          sortRank: 2,
+          ref: String(f.ticket_no || '').trim(),
+          party: String(f.equipment || 'Unassigned Unit').trim(),
+          detail: String(f.driver || (isOwn ? 'Own Fleet' : 'Hauler')).trim(),
+          driver: String(f.driver || '').trim(),
+          isOwn,
+          litres: l,
+          deltaL: round2(-l),
+          amountUsd: 0,
+          unitPrice: null,
+          pendingPrice: false,
+          isApp: appRec
+        });
+      }
+    }
+
+    for (let i = 0; i < malfArr.length; i++) {
+      const m = malfArr[i];
+      if (!m || m.voided) continue;
+      if (!/diesel|mazout/i.test(String(m.item || 'Diesel'))) continue;
+      const l = round2(Number(m.litres || 0));
+      if (!l) continue;
+      const appRec = isAppRecord(m);
+      const co = m.company || 'WTC';
+      const dtype = String(m.discrepancy_type || 'Malfunction').trim() || 'Malfunction';
+      const eqTag = String(m.equipment || '').trim();
+      movements.push({
+        id: m.id,
+        rkey: 'fuel_malfunctions',
+        rec: m,
+        company: co,
+        date: recordDate(m) || String(m.date || '').slice(0, 10),
+        kind: 'malfunction',
+        discrepancyType: dtype,
+        sortRank: 2.5,
+        ref: String(m.ticket_no || m.name || '').trim(),
+        party: eqTag ? `${dtype} · ${eqTag}` : dtype,
+        detail: String(m.notes || m.driver || (l > 0 ? 'Tank Shortage / Outflow' : 'Tank Surplus / Over-Read')).trim(),
+        driver: String(m.driver || '').trim(),
+        isOwn: true,
+        litres: l,
+        deltaL: round2(-l),
+        amountUsd: 0,
+        unitPrice: null,
+        pendingPrice: false,
+        isApp: appRec
+      });
+    }
+
+    for (let i = 0; i < salesArr.length; i++) {
+      const s = salesArr[i];
+      if (!s || s.voided || !isDieselSaleTicket(s)) continue;
+      const appRec = isAppRecord(s);
+      if (!hydrated && !appRec) continue;
+      const co = s.company || 'WTC';
+      const sgn = ticketSign(s);
+      const l = round2(sgn * Number(s.qty || 0));
+      const amt = round2(sgn * Number(s.total != null ? s.total : (Number(s.amount || 0) + Number(s.vat_amount || 0))));
+      const up = (s.unit_price != null && Number(s.unit_price) > 0)
+        ? Number(s.unit_price)
+        : (Math.abs(l) > 0 && Math.abs(amt) > 0 ? round2(Math.abs(amt) / Math.abs(l)) : null);
+      movements.push({
+        id: s.id,
+        rkey: 'sales_tickets',
+        rec: s,
+        company: co,
+        date: recordDate(s) || String(s.date || '').slice(0, 10),
+        kind: 'sold',
+        sortRank: 3,
+        ref: String(s.ticket_no || '').trim(),
+        party: String(s.customer || 'Walk-in Buyer').trim(),
+        detail: String(s.site || s.truck || 'Diesel Sale Ticket').trim(),
+        driver: String(s.driver || '').trim(),
+        isOwn: false,
+        litres: l,
+        deltaL: round2(-l),
+        amountUsd: amt,
+        unitPrice: up,
+        pendingPrice: false,
+        isApp: appRec
+      });
+    }
+
+    movements.sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      if (a.sortRank !== b.sortRank) return a.sortRank - b.sortRank;
+      const rc = _NUM_COLLATOR.compare(a.ref, b.ref);
+      if (rc !== 0) return rc;
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
+
+    const tankAfterById = new Map();
+    for (let i = 0; i < movements.length; i++) {
+      const mv = movements[i];
+      const co = mv.company;
+      if (!byCo[co]) {
+        byCo[co] = { bought: 0, boughtUsd: 0, boughtCount: 0, issued: 0, issuedOwn: 0, issuedHauler: 0, issuedCount: 0, discrepancy: 0, discrepancyCount: 0, malfNet: 0, malfAbs: 0, malfCount: 0, sold: 0, soldUsd: 0, soldCount: 0, pricedLitres: 0, pricedUsd: 0, pendingCount: 0, pendingLitres: 0, balance: 0, avgUsdPerL: 0.85 };
+        coRunning[co] = 0;
+      }
+      const st = byCo[co];
+      coRunning[co] = round2((coRunning[co] || 0) + mv.deltaL);
+      mv.co_tank_after = coRunning[co];
+      if (mv.id != null) tankAfterById.set(mv.id, mv.co_tank_after);
+      if (mv.kind === 'bought') {
+        st.bought = round2(st.bought + mv.litres);
+        st.boughtUsd = round2(st.boughtUsd + mv.amountUsd);
+        st.boughtCount += 1;
+        if (mv.pendingPrice) {
+          st.pendingCount += 1;
+          st.pendingLitres = round2(st.pendingLitres + mv.litres);
+        } else if (mv.litres > 0 && mv.amountUsd > 0) {
+          st.pricedLitres += mv.litres;
+          st.pricedUsd += mv.amountUsd;
+        }
+      } else if (mv.kind === 'sold') {
+        st.sold = round2(st.sold + mv.litres);
+        st.soldUsd = round2(st.soldUsd + mv.amountUsd);
+        st.soldCount += 1;
+      } else if (mv.kind === 'malfunction') {
+        st.discrepancy = round2(st.discrepancy + mv.litres);
+        st.discrepancyCount += 1;
+        if (/^malfunction$/i.test(mv.discrepancyType || 'Malfunction')) {
+          st.malfNet = round2(st.malfNet + mv.litres);
+          st.malfAbs = round2(st.malfAbs + Math.abs(mv.litres));
+          st.malfCount += 1;
+        }
+      } else {
+        st.issued = round2(st.issued + mv.litres);
+        if (mv.isOwn) st.issuedOwn = round2(st.issuedOwn + mv.litres);
+        else st.issuedHauler = round2(st.issuedHauler + mv.litres);
+        st.issuedCount += 1;
+      }
+    }
+
+    Object.keys(byCo).forEach(co => {
+      const st = byCo[co];
+      st.balance = round2(st.bought - st.issued - st.discrepancy - st.sold);
+      st.avgUsdPerL = st.pricedLitres > 0 ? round2(st.pricedUsd / st.pricedLitres) : 0.85;
+    });
+
+    _dieselAllIdxCache = { cacheKey, hydrated, movements, byCo, tankAfterById };
+    _dieselTankLedgerCache.clear();
+    return _dieselAllIdxCache;
+  }
+
+  function getDieselTankLedger(coOverride, rangeOverride) {
+    const idx = _getAllDieselMovementsIndex();
+    const rawKey = coOverride || STATE.company;
+    const coKey = resolveEffectiveModelKey(rawKey);
+    const allowedAll = allowedCompanyNames();
+    let cos;
+    if (coKey === 'wtc') cos = allowedAll.includes('WTC') ? ['WTC'] : ['WTC'];
+    else if (coKey === 'bbconstruction') cos = ['BBConstruction'];
+    else if (coKey === 'lionstransport') cos = ['Lions Transport'];
+    else cos = allowedAll.length ? allowedAll : ['WTC', 'BBConstruction', 'Lions Transport'];
+
+    const range = rangeOverride !== undefined ? rangeOverride : periodRange(STATE.period);
+    const rSig = range ? `${range.from}..${range.to}` : 'all';
+    const lKey = `${idx.cacheKey}|${coKey}|${cos.join(',')}|${rSig}`;
+    if (_dieselTankLedgerCache.has(lKey)) return _dieselTankLedgerCache.get(lKey);
+
+    const perCo = {};
+    ['WTC', 'BBConstruction', 'Lions Transport'].forEach(co => {
+      perCo[co] = {
+        openingL: 0, boughtL: 0, boughtUsd: 0, boughtCount: 0,
+        consumedOwnL: 0, consumedHaulerL: 0, consumedL: 0, consumedCount: 0,
+        discrepancyL: 0, discrepancyCount: 0, malfNetL: 0, malfAbsL: 0, malfCount: 0, otherDiscOutL: 0,
+        soldL: 0, soldUsd: 0, soldCount: 0, closingL: 0, pendingCount: 0, pendingLitres: 0,
+        companyDieselUsedL: 0, malfunctionPct: 0, malfunctionAlert: false, malfunctionSeverity: 'ok'
+      };
+    });
+
+    let openingTankL = 0;
+    let boughtL = 0, boughtUsd = 0, boughtCount = 0, pendingCount = 0, pendingLitres = 0;
+    let consumedOwnL = 0, consumedOwnCount = 0;
+    let consumedHaulerL = 0, consumedHaulerCount = 0;
+    let discrepancyL = 0, discrepancyCount = 0;
+    let malfNetL = 0, malfAbsL = 0, malfCount = 0, otherDiscOutL = 0;
+    let soldL = 0, soldUsd = 0, soldCount = 0;
+    const monthBuckets = new Map();
+    const soldByBuyerMap = new Map();
+    const boughtBySupplierMap = new Map();
+    const discrepancyByTypeMap = new Map();
+    const periodAsc = [];
+
+    if (!idx.hydrated) {
+      // Cold-boot pre-hydration fallback: anchor on pre-aggregated model monthly/all + seed_core malfunctions + local app-entered records
+      cos.forEach(co => {
+        const ck = co === 'BBConstruction' ? 'bbconstruction' : (co === 'Lions Transport' ? 'lionstransport' : 'wtc');
+        const mdl = (SEED.models && SEED.models[ck]) || {};
+        if (!range) {
+          const ak = (mdl.periods && mdl.periods.all) || {};
+          const b = Number(ak.diesel_purchased || 0);
+          const u = Number(ak.diesel_litres || 0);
+          const s = Number(ak.diesel_sold || 0);
+          perCo[co].boughtL = round2(b);
+          perCo[co].consumedOwnL = round2(u);
+          perCo[co].consumedL = round2(u);
+          perCo[co].soldL = round2(s);
+          boughtL += b;
+          consumedOwnL += u;
+          soldL += s;
+        } else {
+          const mRows = Array.isArray(mdl.monthly) ? mdl.monthly : [];
+          const fYm = String(range.from || '').slice(0, 7);
+          const tYm = String(range.to || '').slice(0, 7);
+          mRows.forEach(mr => {
+            const ym = String(mr.month || mr.ym || '').slice(0, 7);
+            if (!ym) return;
+            const b = Number(mr.diesel_bought || 0);
+            const u = Number(mr.diesel_issued || 0);
+            const s = Number(mr.diesel_sold || 0);
+            const d = b - u - s;
+            if (ym < fYm) {
+              openingTankL += d;
+              perCo[co].openingL = round2(perCo[co].openingL + d);
+            } else if (ym <= tYm) {
+              boughtL += b;
+              consumedOwnL += u;
+              soldL += s;
+              perCo[co].boughtL = round2(perCo[co].boughtL + b);
+              perCo[co].consumedOwnL = round2(perCo[co].consumedOwnL + u);
+              perCo[co].consumedL = round2(perCo[co].consumedL + u);
+              perCo[co].soldL = round2(perCo[co].soldL + s);
+            }
+          });
+        }
+      });
+    }
+
+    let scopeRunning = round2(openingTankL);
+    for (let i = 0; i < idx.movements.length; i++) {
+      const mv = idx.movements[i];
+      if (!cos.includes(mv.company)) continue;
+      const pc = perCo[mv.company] || (perCo[mv.company] = {
+        openingL: 0, boughtL: 0, boughtUsd: 0, boughtCount: 0,
+        consumedOwnL: 0, consumedHaulerL: 0, consumedL: 0, consumedCount: 0,
+        discrepancyL: 0, discrepancyCount: 0, malfNetL: 0, malfAbsL: 0, malfCount: 0, otherDiscOutL: 0,
+        soldL: 0, soldUsd: 0, soldCount: 0, closingL: 0, pendingCount: 0, pendingLitres: 0,
+        companyDieselUsedL: 0, malfunctionPct: 0, malfunctionAlert: false, malfunctionSeverity: 'ok'
+      });
+      if (range && mv.date < range.from) {
+        openingTankL += mv.deltaL;
+        scopeRunning += mv.deltaL;
+        pc.openingL = round2(pc.openingL + mv.deltaL);
+        continue;
+      }
+      if (range && mv.date > range.to) continue;
+      scopeRunning = round2(scopeRunning + mv.deltaL);
+      const ym = String(mv.date || '').slice(0, 7) || 'Unknown';
+      let mb = monthBuckets.get(ym);
+      if (!mb) {
+        mb = {
+          ym,
+          monthLabel: _formatMonthYmLabel(ym),
+          openingL: 0,
+          boughtL: 0, boughtUsd: 0, boughtCount: 0,
+          consumedOwnL: 0, consumedHaulerL: 0, consumedL: 0, consumedCount: 0,
+          discrepancyL: 0, discrepancyCount: 0, malfNetL: 0, malfAbsL: 0, malfCount: 0, otherDiscOutL: 0,
+          soldL: 0, soldUsd: 0, soldCount: 0,
+          netChangeL: 0, closingL: 0,
+          companyDieselUsedL: 0, malfunctionPct: 0, malfunctionAlert: false, malfunctionSeverity: 'ok'
+        };
+        monthBuckets.set(ym, mb);
+      }
+      if (mv.kind === 'bought') {
+        boughtL += mv.litres;
+        boughtUsd += mv.amountUsd;
+        boughtCount += 1;
+        pc.boughtL = round2(pc.boughtL + mv.litres);
+        pc.boughtUsd = round2(pc.boughtUsd + mv.amountUsd);
+        pc.boughtCount += 1;
+        mb.boughtL = round2(mb.boughtL + mv.litres);
+        mb.boughtUsd = round2(mb.boughtUsd + mv.amountUsd);
+        mb.boughtCount += 1;
+        if (mv.pendingPrice) {
           pendingCount += 1;
-          pendingLitres += q;
-        } else if (q > 0 && amt > 0) {
-          pricedLitres += q;
-          pricedUsd += amt;
+          pendingLitres += mv.litres;
+          pc.pendingCount += 1;
+          pc.pendingLitres = round2(pc.pendingLitres + mv.litres);
         }
-      });
-      ((SEED.records && SEED.records.fuel_intakes) || []).forEach(f => {
-        if (!f || f.voided || !isAppRecord(f) || f.company !== co) return;
-        if (!/diesel|mazout/i.test(String(f.item || f.fuel_type || 'Diesel'))) return;
-        const l = Number(f.litres || 0);
-        if (/refill|purchase|intake|tank/i.test(String(f.fuel_type || f.location || '')) && !f.equipment) bought += l;
-        else issued += l;
-      });
-      ((SEED.records && SEED.records.sales_tickets) || []).forEach(t => {
-        if (!t || t.voided || !isAppRecord(t) || t.company !== co) return;
-        if (['diesel', 'diesel trans'].includes(String(t.product || '').toLowerCase())) {
-          sold += Number(t.qty || 0);
+        const sk = norm(mv.party) || 'unassigned';
+        let sb = boughtBySupplierMap.get(sk);
+        if (!sb) {
+          sb = { supplier: mv.party || 'Unassigned Supplier', companiesSet: new Set(), vouchers: 0, litres: 0, amountUsd: 0, pricedLitres: 0, pendingCount: 0, lastDate: '' };
+          boughtBySupplierMap.set(sk, sb);
         }
+        sb.companiesSet.add(mv.company);
+        sb.vouchers += 1;
+        sb.litres = round2(sb.litres + mv.litres);
+        sb.amountUsd = round2(sb.amountUsd + mv.amountUsd);
+        if (mv.pendingPrice) sb.pendingCount += 1;
+        else if (mv.litres > 0 && mv.amountUsd > 0) sb.pricedLitres += mv.litres;
+        if (mv.date >= sb.lastDate) sb.lastDate = mv.date;
+      } else if (mv.kind === 'sold') {
+        soldL += mv.litres;
+        soldUsd += mv.amountUsd;
+        soldCount += 1;
+        pc.soldL = round2(pc.soldL + mv.litres);
+        pc.soldUsd = round2(pc.soldUsd + mv.amountUsd);
+        pc.soldCount += 1;
+        mb.soldL = round2(mb.soldL + mv.litres);
+        mb.soldUsd = round2(mb.soldUsd + mv.amountUsd);
+        mb.soldCount += 1;
+        const bk = norm(mv.party) || 'walk-in';
+        let bb = soldByBuyerMap.get(bk);
+        if (!bb) {
+          bb = { buyer: mv.party || 'Walk-in Buyer', companiesSet: new Set(), tickets: 0, litres: 0, amountUsd: 0, lastDate: '' };
+          soldByBuyerMap.set(bk, bb);
+        }
+        bb.companiesSet.add(mv.company);
+        bb.tickets += 1;
+        bb.litres = round2(bb.litres + mv.litres);
+        bb.amountUsd = round2(bb.amountUsd + mv.amountUsd);
+        if (mv.date >= bb.lastDate) bb.lastDate = mv.date;
+      } else if (mv.kind === 'malfunction') {
+        const dtype = mv.discrepancyType || 'Malfunction';
+        const isMalfOnly = /^malfunction$/i.test(dtype);
+        const isCalib = /^configuration$/i.test(dtype);
+        discrepancyL += mv.litres;
+        discrepancyCount += 1;
+        pc.discrepancyL = round2(pc.discrepancyL + mv.litres);
+        pc.discrepancyCount += 1;
+        mb.discrepancyL = round2(mb.discrepancyL + mv.litres);
+        mb.discrepancyCount += 1;
+        if (isMalfOnly) {
+          malfNetL += mv.litres;
+          malfAbsL += Math.abs(mv.litres);
+          malfCount += 1;
+          pc.malfNetL = round2(pc.malfNetL + mv.litres);
+          pc.malfAbsL = round2(pc.malfAbsL + Math.abs(mv.litres));
+          pc.malfCount += 1;
+          mb.malfNetL = round2(mb.malfNetL + mv.litres);
+          mb.malfAbsL = round2(mb.malfAbsL + Math.abs(mv.litres));
+          mb.malfCount += 1;
+        } else if (!isCalib && mv.litres > 0) {
+          otherDiscOutL += mv.litres;
+          pc.otherDiscOutL = round2(pc.otherDiscOutL + mv.litres);
+          mb.otherDiscOutL = round2(mb.otherDiscOutL + mv.litres);
+        }
+        const dk = norm(dtype) || 'malfunction';
+        let db = discrepancyByTypeMap.get(dk);
+        if (!db) {
+          db = { type: dtype, companiesSet: new Set(), count: 0, netLitres: 0, absLitres: 0, tankDeltaL: 0, lastDate: '' };
+          discrepancyByTypeMap.set(dk, db);
+        }
+        db.companiesSet.add(mv.company);
+        db.count += 1;
+        db.netLitres = round2(db.netLitres + mv.litres);
+        db.absLitres = round2(db.absLitres + Math.abs(mv.litres));
+        db.tankDeltaL = round2(db.tankDeltaL + mv.deltaL);
+        if (mv.date >= db.lastDate) db.lastDate = mv.date;
+      } else {
+        if (mv.isOwn) {
+          consumedOwnL += mv.litres;
+          consumedOwnCount += 1;
+          pc.consumedOwnL = round2(pc.consumedOwnL + mv.litres);
+          mb.consumedOwnL = round2(mb.consumedOwnL + mv.litres);
+        } else {
+          consumedHaulerL += mv.litres;
+          consumedHaulerCount += 1;
+          pc.consumedHaulerL = round2(pc.consumedHaulerL + mv.litres);
+          mb.consumedHaulerL = round2(mb.consumedHaulerL + mv.litres);
+        }
+        pc.consumedL = round2(pc.consumedL + mv.litres);
+        pc.consumedCount += 1;
+        mb.consumedL = round2(mb.consumedL + mv.litres);
+        mb.consumedCount += 1;
+      }
+      periodAsc.push(Object.assign({}, mv, { tank_after: idx.hydrated ? scopeRunning : mv.co_tank_after }));
+    }
+
+    openingTankL = round2(openingTankL);
+    boughtL = round2(boughtL);
+    boughtUsd = round2(boughtUsd);
+    consumedOwnL = round2(consumedOwnL);
+    consumedHaulerL = round2(consumedHaulerL);
+    const consumedL = round2(consumedOwnL + consumedHaulerL);
+    const consumedCount = consumedOwnCount + consumedHaulerCount;
+    discrepancyL = round2(discrepancyL);
+    malfNetL = round2(malfNetL);
+    malfAbsL = round2(malfAbsL);
+    otherDiscOutL = round2(otherDiscOutL);
+    soldL = round2(soldL);
+    soldUsd = round2(soldUsd);
+    pendingLitres = round2(pendingLitres);
+    const netChangeL = round2(boughtL - consumedL - discrepancyL - soldL);
+    const closingTankL = round2(openingTankL + netChangeL);
+    const scopeWatch = _evalDieselMalfunctionWatchdog(consumedL, otherDiscOutL, malfNetL, malfAbsL);
+
+    Object.keys(perCo).forEach(co => {
+      const pc = perCo[co];
+      pc.openingL = round2(pc.openingL);
+      pc.closingL = round2(pc.openingL + pc.boughtL - pc.consumedL - pc.discrepancyL - pc.soldL);
+      const pw = _evalDieselMalfunctionWatchdog(pc.consumedL, pc.otherDiscOutL, pc.malfNetL, pc.malfAbsL);
+      pc.companyDieselUsedL = pw.companyDieselUsedL;
+      pc.malfunctionPct = pw.malfunctionPct;
+      pc.malfunctionAlert = pw.malfunctionAlert;
+      pc.malfunctionSeverity = pw.malfunctionSeverity;
+    });
+
+    let monthlyRows;
+    if (idx.hydrated) {
+      const sortedYms = Array.from(monthBuckets.keys()).sort();
+      let mRun = openingTankL;
+      const ascMonths = sortedYms.map(ym => {
+        const mb = monthBuckets.get(ym);
+        mb.openingL = round2(mRun);
+        mb.netChangeL = round2(mb.boughtL - mb.consumedL - mb.discrepancyL - mb.soldL);
+        mRun = round2(mRun + mb.netChangeL);
+        mb.closingL = mRun;
+        const mw = _evalDieselMalfunctionWatchdog(mb.consumedL, mb.otherDiscOutL, mb.malfNetL, mb.malfAbsL);
+        mb.companyDieselUsedL = mw.companyDieselUsedL;
+        mb.malfunctionPct = mw.malfunctionPct;
+        mb.malfunctionAlert = mw.malfunctionAlert;
+        mb.malfunctionSeverity = mw.malfunctionSeverity;
+        return mb;
       });
-      const balance = round2(bought - issued - sold);
-      const avgUsdPerL = pricedLitres > 0 ? round2(pricedUsd / pricedLitres) : 0.85;
-      byCo[co] = { bought: round2(bought), issued: round2(issued), sold: round2(sold), balance, avgUsdPerL, pendingCount, pendingLitres: round2(pendingLitres) };
+      monthlyRows = ascMonths.reverse();
+    } else {
+      const mdl = (SEED.models && SEED.models[coKey]) || getModel() || {};
+      const mSrc = getScopedMonthly(mdl.monthly);
+      let mRun = openingTankL;
+      monthlyRows = mSrc.map(mr => {
+        const ym = String(mr.month || mr.ym || '').slice(0, 7);
+        const mbExtra = monthBuckets.get(ym);
+        const b = round2(Number(mr.diesel_bought || 0) + (mbExtra ? mbExtra.boughtL : 0));
+        const u = round2(Number(mr.diesel_issued || 0) + (mbExtra ? mbExtra.consumedL : 0));
+        const disc = round2(mbExtra ? mbExtra.discrepancyL : 0);
+        const s = round2(Number(mr.diesel_sold || 0) + (mbExtra ? mbExtra.soldL : 0));
+        const op = round2(mRun);
+        const nc = round2(b - u - disc - s);
+        mRun = round2(mRun + nc);
+        const mw = _evalDieselMalfunctionWatchdog(u, mbExtra ? mbExtra.otherDiscOutL : 0, mbExtra ? mbExtra.malfNetL : 0, mbExtra ? mbExtra.malfAbsL : 0);
+        return {
+          ym,
+          monthLabel: _formatMonthYmLabel(ym),
+          openingL: op,
+          boughtL: b, boughtUsd: mbExtra ? mbExtra.boughtUsd : 0, boughtCount: mbExtra ? mbExtra.boughtCount : 0,
+          consumedOwnL: u, consumedHaulerL: 0, consumedL: u, consumedCount: mbExtra ? mbExtra.consumedCount : 0,
+          discrepancyL: disc, discrepancyCount: mbExtra ? mbExtra.discrepancyCount : 0,
+          malfNetL: mbExtra ? mbExtra.malfNetL : 0, malfAbsL: mbExtra ? mbExtra.malfAbsL : 0, malfCount: mbExtra ? mbExtra.malfCount : 0,
+          soldL: s, soldUsd: mbExtra ? mbExtra.soldUsd : 0, soldCount: mbExtra ? mbExtra.soldCount : 0,
+          netChangeL: nc, closingL: mRun,
+          companyDieselUsedL: mw.companyDieselUsedL,
+          malfunctionPct: mw.malfunctionPct,
+          malfunctionAlert: mw.malfunctionAlert,
+          malfunctionSeverity: mw.malfunctionSeverity
+        };
+      }).reverse();
+    }
+
+    const soldByBuyer = Array.from(soldByBuyerMap.values()).map(b => ({
+      buyer: b.buyer,
+      companies: Array.from(b.companiesSet).join(', '),
+      tickets: b.tickets,
+      litres: b.litres,
+      amountUsd: b.amountUsd,
+      avgPriceUsd: b.litres > 0 && b.amountUsd > 0 ? round2(b.amountUsd / b.litres) : null,
+      sharePct: soldL > 0 ? round2((b.litres / soldL) * 100) : 0,
+      lastDate: b.lastDate
+    })).sort((a, b) => b.litres - a.litres || b.amountUsd - a.amountUsd);
+
+    const boughtBySupplier = Array.from(boughtBySupplierMap.values()).map(s => ({
+      supplier: s.supplier,
+      companies: Array.from(s.companiesSet).join(', '),
+      vouchers: s.vouchers,
+      litres: s.litres,
+      amountUsd: s.amountUsd,
+      avgCostUsd: s.pricedLitres > 0 && s.amountUsd > 0 ? round2(s.amountUsd / s.pricedLitres) : null,
+      pendingCount: s.pendingCount,
+      sharePct: boughtL > 0 ? round2((s.litres / boughtL) * 100) : 0,
+      lastDate: s.lastDate
+    })).sort((a, b) => b.litres - a.litres || b.amountUsd - a.amountUsd);
+
+    const discrepancyByType = Array.from(discrepancyByTypeMap.values()).map(d => ({
+      type: d.type,
+      companies: Array.from(d.companiesSet).join(', '),
+      count: d.count,
+      netLitres: d.netLitres,
+      absLitres: d.absLitres,
+      tankDeltaL: d.tankDeltaL,
+      lastDate: d.lastDate
+    })).sort((a, b) => b.absLitres - a.absLitres);
+
+    const out = {
+      hydrated: idx.hydrated,
+      coKey,
+      openingTankL,
+      boughtL,
+      boughtUsd,
+      boughtCount,
+      pendingCount,
+      pendingLitres,
+      consumedOwnL,
+      consumedOwnCount,
+      consumedHaulerL,
+      consumedHaulerCount,
+      consumedL,
+      consumedCount,
+      discrepancyL,
+      discrepancyCount,
+      malfNetL,
+      malfAbsL,
+      malfCount,
+      otherDiscOutL,
+      companyDieselUsedL: scopeWatch.companyDieselUsedL,
+      malfunctionPct: scopeWatch.malfunctionPct,
+      malfunctionNetPct: scopeWatch.malfunctionNetPct,
+      malfunctionThresholdPct: scopeWatch.malfunctionThresholdPct,
+      malfunctionAlert: scopeWatch.malfunctionAlert,
+      malfunctionSeverity: scopeWatch.malfunctionSeverity,
+      soldL,
+      soldUsd,
+      soldCount,
+      netChangeL,
+      closingTankL,
+      perCo,
+      monthlyRows,
+      scopedMovements: periodAsc.reverse(),
+      soldByBuyer,
+      boughtBySupplier,
+      discrepancyByType,
+      tankAfterById: idx.tankAfterById
+    };
+    if (_dieselTankLedgerCache.size > 32) _dieselTankLedgerCache.clear();
+    _dieselTankLedgerCache.set(lKey, out);
+    return out;
+  }
+  window.MFG_DIESEL_TANK = getDieselTankLedger;
+
+  function computeDieselTank() {
+    const idx = _getAllDieselMovementsIndex();
+    const byCo = {};
+    ['WTC', 'BBConstruction', 'Lions Transport'].forEach(co => {
+      const st = idx.byCo[co] || { bought: 0, issued: 0, discrepancy: 0, sold: 0, balance: 0, avgUsdPerL: 0.85, pendingCount: 0, pendingLitres: 0 };
+      byCo[co] = {
+        bought: st.bought,
+        issued: st.issued,
+        discrepancy: st.discrepancy || 0,
+        sold: st.sold,
+        balance: st.balance,
+        avgUsdPerL: st.avgUsdPerL,
+        pendingCount: st.pendingCount,
+        pendingLitres: st.pendingLitres
+      };
     });
     return { byCo };
   }
@@ -6693,6 +7388,1144 @@
     return cnt;
   }
 
+  // ==========================================================================
+  // ALERTS & THRESHOLDS REGISTRY (20 BUILT-IN GUARDS/WATCHDOGS + CUSTOM RULES)
+  // ==========================================================================
+  let _ALERT_RULES_REV = 0;
+
+  const ALERT_RULE_CATALOG = [
+    {
+      id: 'G_TON_CORRIDOR',
+      code: 'G1',
+      name: 'Weighbridge Ton Estimate Corridor',
+      domain: 'Sales & Quarry',
+      behavior: 'block',
+      whereLabel: 'Sales & Quarry Ticket Forms',
+      jumpForm: 'sales',
+      why: 'Prevents scale typos and wrong UoM entries (such as typing m3 instead of weighed Tons, or missing a digit) before the ticket hits Customer AR or Supplier AP.',
+      params: [
+        { key: 'min_pct', label: 'Block Below (% of Est.)', def: 70, min: 20, max: 95, step: 5, unit: '%' },
+        { key: 'warn_low_pct', label: 'Warn Below (% of Est.)', def: 85, min: 30, max: 99, step: 5, unit: '%' },
+        { key: 'warn_high_pct', label: 'Warn Above (% of Est.)', def: 125, min: 105, max: 200, step: 5, unit: '%' },
+        { key: 'max_pct', label: 'Block Above (% of Est.)', def: 150, min: 110, max: 250, step: 5, unit: '%' },
+        { key: 'unsized_min_tons', label: 'Min Tons (Unsized Truck)', def: 5, min: 1, max: 30, step: 1, unit: 't' }
+      ],
+      whatFn: p => `Compares weighed Tons against truck m3 capacity x product density. Blocks save below <b>${fmtNum(p.min_pct, 0)}%</b> or above <b>${fmtNum(p.max_pct, 0)}%</b> of estimated tons, and warns outside <b>${fmtNum(p.warn_low_pct, 0)}% to ${fmtNum(p.warn_high_pct, 0)}%</b> (min <b>${fmtNum(p.unsized_min_tons, 0)} t</b> when truck size is unknown).`,
+      threshFn: p => `Block <${fmtNum(p.min_pct, 0)}% or >${fmtNum(p.max_pct, 0)}% · Warn <${fmtNum(p.warn_low_pct, 0)}% or >${fmtNum(p.warn_high_pct, 0)}%`,
+      previewFn: p => {
+        const est = 32;
+        const bLow = round2(est * (Number(p.min_pct || 70) / 100));
+        const bHigh = round2(est * (Number(p.max_pct || 150) / 100));
+        const wLow = round2(est * (Number(p.warn_low_pct || 85) / 100));
+        const wHigh = round2(est * (Number(p.warn_high_pct || 125) / 100));
+        return `Live example (20 m3 truck x 1.6 t/m3 = 32.00 t estimate): Blocks save below ${fmtNum(bLow, 2)} t or above ${fmtNum(bHigh, 2)} t. Shows yellow warning below ${fmtNum(wLow, 2)} t or above ${fmtNum(wHigh, 2)} t.`;
+      }
+    },
+    {
+      id: 'G_DUP_SERIAL',
+      code: 'G2',
+      name: 'Duplicate Ticket Serial Number Guard',
+      domain: 'Sales & Quarry',
+      behavior: 'block',
+      whereLabel: 'Sales, Quarry & Fuel Forms',
+      jumpForm: 'sales',
+      why: 'Stops clerks from double-entering the same paper weighbridge voucher twice on the same shift while allowing legitimate pad resets from older months with a yellow warning.',
+      params: [
+        { key: 'block_days', label: 'Hard Block Window', def: 1, min: 0, max: 30, step: 1, unit: 'days' },
+        { key: 'warn_days', label: 'Yellow Warning Window', def: 30, min: 2, max: 365, step: 5, unit: 'days' }
+      ],
+      whatFn: p => `Checks if the ticket serial already exists in the same entity and table. Blocks save when used within <b>${fmtNum(p.block_days, 0)} day${Number(p.block_days) === 1 ? '' : 's'}</b>, and warns when reused within <b>${fmtNum(p.warn_days, 0)} days</b>.`,
+      threshFn: p => `Block <= ${fmtNum(p.block_days, 0)}d · Warn <= ${fmtNum(p.warn_days, 0)}d`,
+      previewFn: p => `Live example: Entering Ticket #45102 today is blocked if #45102 was used within ${fmtNum(p.block_days, 0)} day(s), shows a yellow warning if used ${fmtNum(Number(p.block_days) + 1, 0)} to ${fmtNum(p.warn_days, 0)} days ago, and passes silently if older.`
+    },
+    {
+      id: 'G_DISCOUNT_WARN',
+      code: 'G3',
+      name: 'High Material Discount Note Guard',
+      domain: 'Sales & Quarry',
+      behavior: 'block',
+      whereLabel: 'Sales Ticket Form',
+      jumpForm: 'sales',
+      why: 'Prevents unapproved price giveaways or typing a dollar total into the discount box without leaving an audit explanation in Notes.',
+      params: [
+        { key: 'max_disc_pct', label: 'Discount Note Threshold', def: 20, min: 1, max: 90, step: 5, unit: '%' }
+      ],
+      whatFn: p => `Flags any Sales Ticket discount exceeding <b>${fmtNum(p.max_disc_pct, 0)}%</b> of the material subtotal and requires a written explanation in Notes before saving.`,
+      threshFn: p => `Discount > ${fmtNum(p.max_disc_pct, 0)}% needs Note`,
+      previewFn: p => `Live example ($400.00 material load): Any discount above $${fmtNum(400 * (Number(p.max_disc_pct || 20) / 100), 2)} (${fmtNum(p.max_disc_pct, 0)}%) highlights amber and requires a Note before posting.`
+    },
+    {
+      id: 'S5',
+      code: 'S5',
+      name: 'Price Agreement & Lapsed Contract Watchdog',
+      domain: 'Sales & Quarry',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels & Pricing Hub',
+      jumpView: 'sentinels',
+      sentinelId: 'S5',
+      why: 'Catches loads billed below the signed customer agreement rate and highlights customers still buying on expired price agreements that need renewal.',
+      params: [
+        { key: 'unit_tolerance_usd', label: 'Unit Price Rounding Tolerance', def: 0.01, min: 0, max: 2, step: 0.01, unit: '$/unit' },
+        { key: 'min_shortfall_usd', label: 'Min Total Shortfall to Flag', def: 0, min: 0, max: 5000, step: 50, unit: '$' }
+      ],
+      whatFn: p => `Audits every Sales Ticket against date-effective Customer x Product agreements. Flags unit rates more than <b>$${fmtNum(p.unit_tolerance_usd, 2)}</b> below agreed price when cumulative shortfall exceeds <b>$${fmtNum(p.min_shortfall_usd, 0)}</b>, plus lapsed contracts.`,
+      threshFn: p => `Tol $${fmtNum(p.unit_tolerance_usd, 2)}/u · Min > $${fmtNum(p.min_shortfall_usd, 0)}`,
+      previewFn: p => `Live example: On a $12.00/m3 agreement, tickets below $${fmtNum(Math.max(0, 12 - Number(p.unit_tolerance_usd || 0.01)), 2)}/m3 accumulate shortfall and flag Sentinel S5 once total shortfall > $${fmtNum(p.min_shortfall_usd, 0)}.`
+    },
+    {
+      id: 'S6',
+      code: 'S6',
+      name: 'Weighbridge Ticket Pad & Skipped Serial Audit',
+      domain: 'Sales & Quarry',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels & Sales Pad Audit',
+      jumpView: 'sentinels',
+      sentinelId: 'S6',
+      why: 'Detects missing or torn paper vouchers inside 25-leaf weighbridge books, duplicate serials, and unnumbered tickets so no load goes unbilled.',
+      params: [
+        { key: 'pad_run_split_days', label: 'New Pad Run Split Gap', def: 60, min: 15, max: 365, step: 15, unit: 'days' }
+      ],
+      whatFn: p => `Audits 25-ticket physical voucher books for missing serial numbers, duplicates, and unnumbered loads. Treats serial gaps separated by more than <b>${fmtNum(p.pad_run_split_days, 0)} days</b> as a separate pad series.`,
+      threshFn: p => `25-leaf pads · Split > ${fmtNum(p.pad_run_split_days, 0)}d`,
+      previewFn: p => `Live example: Tickets in the same 25-number range more than ${fmtNum(p.pad_run_split_days, 0)} days apart are grouped into separate pad runs to avoid false missing-voucher counts across years.`
+    },
+    {
+      id: 'G_BACKDATE_NOTE',
+      code: 'G4',
+      name: 'Back-Dated Entry Explanation Guard',
+      domain: 'Dates & VAT',
+      behavior: 'block',
+      whereLabel: 'All Ledger Entry Forms',
+      jumpForm: 'expense',
+      why: 'Protects closed monthly figures and daily cash till balances from silent retroactive edits by forcing a written explanation on late vouchers.',
+      params: [
+        { key: 'backdate_warn_days', label: 'Max Back-Date Without Note', def: 30, min: 1, max: 180, step: 5, unit: 'days' }
+      ],
+      whatFn: p => `Warns on any Sales, Quarry, Receipt, Fuel, Expense, or Settlement entry dated more than <b>${fmtNum(p.backdate_warn_days, 0)} days</b> before today and blocks save until Notes explain why.`,
+      threshFn: p => `Back-dated > ${fmtNum(p.backdate_warn_days, 0)}d needs Note`,
+      previewFn: p => `Live example: Posting a voucher dated more than ${fmtNum(p.backdate_warn_days, 0)} days ago highlights Transaction Date in amber and requires a Note to save.`
+    },
+    {
+      id: 'G_REPDATE_GAP',
+      code: 'G5',
+      name: 'Reporting Date vs Transaction Date Guard',
+      domain: 'Dates & VAT',
+      behavior: 'block',
+      whereLabel: 'All Ledger Entry Forms',
+      jumpForm: 'sales',
+      why: 'Keeps operational P&L statements aligned with cash flow by requiring a clear reason whenever a voucher is assigned to a far-away reporting month.',
+      params: [
+        { key: 'repdate_warn_days', label: 'Max Tx-to-Reporting Gap', def: 60, min: 7, max: 365, step: 5, unit: 'days' }
+      ],
+      whatFn: p => `Checks the gap between Transaction Date (cash/till date) and Reporting Date (statement period). Requires a Note when the gap exceeds <b>${fmtNum(p.repdate_warn_days, 0)} days</b>.`,
+      threshFn: p => `Gap > ${fmtNum(p.repdate_warn_days, 0)}d needs Note`,
+      previewFn: p => `Live example: If Transaction Date and Reporting Date differ by more than ${fmtNum(p.repdate_warn_days, 0)} days, saving is held until an explanation is entered in Notes.`
+    },
+    {
+      id: 'S8',
+      code: 'S8',
+      name: 'Transaction vs Reporting Date Parity Audit',
+      domain: 'Dates & VAT',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels & Analytics Bridge',
+      jumpView: 'sentinels',
+      sentinelId: 'S8',
+      why: 'Audits historical vouchers shifted across months (Transaction Date vs Reporting Date) and spots statutory VAT invoices not linked to weighbridge tickets.',
+      params: [
+        { key: 'audit_gap_days', label: 'Audit Date-Gap Threshold', def: 31, min: 7, max: 180, step: 5, unit: 'days' }
+      ],
+      whatFn: p => `Scans Sales, Quarry, and Expense ledgers for rows where Reporting Date differs from Transaction Date by more than <b>${fmtNum(p.audit_gap_days, 0)} days</b>, plus unlinked VAT invoices.`,
+      threshFn: p => `Audit gap > ${fmtNum(p.audit_gap_days, 0)}d + Unlinked VAT`,
+      previewFn: p => `Live example: Any ledger voucher shifted by more than ${fmtNum(p.audit_gap_days, 0)} days between Cash Date and Reporting Date is itemized in Sentinel S8.`
+    },
+    {
+      id: 'G_METER_JUMP',
+      code: 'G6',
+      name: 'Odometer & Hour-Meter Jump & Ceiling Guard',
+      domain: 'Fleet & Diesel',
+      behavior: 'block',
+      whereLabel: 'Diesel & Lubricants Form',
+      jumpForm: 'fuel',
+      why: 'Catches extra-zero odometer typos, backwards meter entries, and missed fuel vouchers before they corrupt fleet L/100km and L/h burn analytics.',
+      params: [
+        { key: 'warn_jump_km', label: 'Odometer Jump Warning', def: 5000, min: 500, max: 50000, step: 500, unit: 'km' },
+        { key: 'warn_jump_hr', label: 'Engine Hours Jump Warning', def: 500, min: 50, max: 5000, step: 50, unit: 'h' },
+        { key: 'max_odo_km', label: 'Hard Odometer Ceiling', def: 1000000, min: 100000, max: 5000000, step: 100000, unit: 'km' },
+        { key: 'max_hours', label: 'Hard Engine-Hours Ceiling', def: 100000, min: 10000, max: 500000, step: 10000, unit: 'h' }
+      ],
+      whatFn: p => `Blocks backwards meter readings and typos above <b>${fmtNum(p.max_odo_km, 0)} km</b> or <b>${fmtNum(p.max_hours, 0)} h</b>. Warns and requires a Note when a single interval jumps over <b>+${fmtNum(p.warn_jump_km, 0)} km</b> or <b>+${fmtNum(p.warn_jump_hr, 0)} h</b>.`,
+      threshFn: p => `Warn > +${fmtNum(p.warn_jump_km, 0)} km / +${fmtNum(p.warn_jump_hr, 0)} h`,
+      previewFn: p => `Live example: Backwards meters or >${fmtNum(p.max_odo_km, 0)} km are hard-blocked; single-fill jumps above +${fmtNum(p.warn_jump_km, 0)} km or +${fmtNum(p.warn_jump_hr, 0)} h require confirmation in Notes.`
+    },
+    {
+      id: 'S3',
+      code: 'S3',
+      name: 'Fuel Burn Rate & Meter Outlier Watchdog',
+      domain: 'Fleet & Diesel',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels & Diesel Hub',
+      jumpView: 'sentinels',
+      sentinelId: 'S3',
+      why: 'Spots possible diesel siphoning, leaking fuel lines, or broken odometers by comparing each truck and yellow-iron unit against severe-duty quarry burn ceilings.',
+      params: [
+        { key: 'max_truck_l100km', label: 'Max Truck Burn Rate', def: 80, min: 30, max: 200, step: 5, unit: 'L/100km' },
+        { key: 'max_machine_lh', label: 'Max Yellow-Iron Burn Rate', def: 25, min: 8, max: 80, step: 1, unit: 'L/h' }
+      ],
+      whatFn: p => `Flags road trucks burning more than <b>${fmtNum(p.max_truck_l100km, 0)} L/100km</b> (over >= 100 km) and loaders/excavators burning more than <b>${fmtNum(p.max_machine_lh, 0)} L/h</b> (over >= 20 h), plus meter anomalies.`,
+      threshFn: p => `Trucks > ${fmtNum(p.max_truck_l100km, 0)} L/100km · Machines > ${fmtNum(p.max_machine_lh, 0)} L/h`,
+      previewFn: p => `Live example: A tipper averaging ${fmtNum(Number(p.max_truck_l100km || 80) + 5, 0)} L/100km or an excavator averaging ${fmtNum(Number(p.max_machine_lh || 25) + 3, 0)} L/h is flagged in Sentinel S3.`
+    },
+    {
+      id: 'S2',
+      code: 'S2',
+      name: 'Diesel Tank Physical vs Ledger Watchdog',
+      domain: 'Fleet & Diesel',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels & Plant Tank Ledger',
+      jumpView: 'fleet',
+      sentinelId: 'S2',
+      why: 'Ensures bulk diesel deliveries are booked properly before dispensing and alerts early when plant tank stock runs low or awaits supplier invoice pricing.',
+      params: [
+        { key: 'low_tank_warn_l', label: 'Low Plant Tank Warning', def: 1500, min: 200, max: 20000, step: 250, unit: 'L' },
+        { key: 'crit_neg_tank_l', label: 'Critical Negative Tank Alert', def: -1000, min: -20000, max: 0, step: 250, unit: 'L' }
+      ],
+      whatFn: p => `Reconciles Opening + Purchased minus Issued minus Sold diesel. Shows a low-stock warning on the Fuel form below <b>${fmtNum(p.low_tank_warn_l, 0)} L</b>, blocks BBConstruction intakes below <b>0 L</b>, and escalates Sentinel S2 to critical below <b>${fmtNum(p.crit_neg_tank_l, 0)} L</b>.`,
+      threshFn: p => `Low < ${fmtNum(p.low_tank_warn_l, 0)} L · Crit < ${fmtNum(p.crit_neg_tank_l, 0)} L`,
+      previewFn: p => `Live example: Fuel context badge turns amber below ${fmtNum(p.low_tank_warn_l, 0)} L available, warns below 0 L, and raises a critical S2 alert below ${fmtNum(p.crit_neg_tank_l, 0)} L.`
+    },
+    {
+      id: 'G_HYD_LEAK_30D',
+      code: 'G7',
+      name: 'Hydraulic Oil 68 Leak Watch (30-Day & Excess)',
+      domain: 'Lubrication & Parts',
+      behavior: 'warn',
+      whereLabel: 'Lubricants Form & Fleet Benchmarks',
+      jumpView: 'fleet',
+      why: 'Hydraulic circuits are sealed; repeated Hydraulic 68 top-ups mean a weeping cylinder seal, PTO pump leak, or blown hose wasting expensive oil and risking downtime.',
+      params: [
+        { key: 'entry_30d_ceiling_l', label: '30-Day Entry Form Ceiling', def: 40, min: 10, max: 200, step: 5, unit: 'L' },
+        { key: 'audit_watch_excess_l', label: 'Audit Watch Excess Above Benchmark', def: 30, min: 10, max: 150, step: 5, unit: 'L' },
+        { key: 'audit_crit_excess_l', label: 'Audit Critical Leak Excess', def: 80, min: 25, max: 300, step: 10, unit: 'L' }
+      ],
+      whatFn: p => `Warns live on the Lubricant form when a unit exceeds <b>${fmtNum(p.entry_30d_ceiling_l, 0)} L</b> of Hydraulic 68 in 30 days. Flags <b>WATCH LEAK</b> at <b>+${fmtNum(p.audit_watch_excess_l, 0)} L</b> excess and <b>CRITICAL LEAK</b> at <b>+${fmtNum(p.audit_crit_excess_l, 0)} L</b> excess on Fleet Lubrication Benchmarks.`,
+      threshFn: p => `30d > ${fmtNum(p.entry_30d_ceiling_l, 0)} L · Watch +${fmtNum(p.audit_watch_excess_l, 0)} L · Crit +${fmtNum(p.audit_crit_excess_l, 0)} L`,
+      previewFn: p => `Live example: Issuing Hydraulic 68 pushing a loader past ${fmtNum(p.entry_30d_ceiling_l, 0)} L in 30 days triggers an immediate hose/cylinder inspection warning on the entry screen.`
+    },
+    {
+      id: 'G_OIL_DRAIN',
+      code: 'G8',
+      name: 'Engine Oil 15W-40 Early Drain & Overdue Service',
+      domain: 'Lubrication & Parts',
+      behavior: 'warn',
+      whereLabel: 'Lubricants Form & Fleet Benchmarks',
+      jumpView: 'fleet',
+      why: 'Prevents premature 15W-40 oil drains (pilferage or wasted oil before service interval) AND catches trucks or loaders running overdue past safe engine service limits.',
+      params: [
+        { key: 'early_drain_pct', label: 'Early Drain Warning Below (% Target)', def: 85, min: 30, max: 100, step: 5, unit: '%' },
+        { key: 'truck_target_diesel_l', label: 'Truck Service Diesel Benchmark', def: 8000, min: 2000, max: 20000, step: 500, unit: 'L' },
+        { key: 'machine_target_diesel_l', label: 'Machine Service Diesel Benchmark', def: 4000, min: 1000, max: 12000, step: 500, unit: 'L' },
+        { key: 'truck_overdue_diesel_l', label: 'Truck Overdue Service Limit', def: 14000, min: 5000, max: 30000, step: 500, unit: 'L' },
+        { key: 'machine_overdue_diesel_l', label: 'Machine Overdue Service Limit', def: 6500, min: 2000, max: 20000, step: 500, unit: 'L' }
+      ],
+      whatFn: p => `Warns on full 15W-40 oil changes logged below <b>${fmtNum(p.early_drain_pct, 0)}%</b> of diesel burn target (<b>${fmtNum(p.truck_target_diesel_l, 0)} L</b> trucks / <b>${fmtNum(p.machine_target_diesel_l, 0)} L</b> yellow iron), and flags <b>OVERDUE OIL</b> past <b>${fmtNum(p.truck_overdue_diesel_l, 0)} L</b> / <b>${fmtNum(p.machine_overdue_diesel_l, 0)} L</b>.`,
+      threshFn: p => `Early <${fmtNum(p.early_drain_pct, 0)}% · Overdue >${fmtNum(p.truck_overdue_diesel_l, 0)}/${fmtNum(p.machine_overdue_diesel_l, 0)} L`,
+      previewFn: p => `Live example: Changing truck 15W-40 before ${fmtNum(Number(p.truck_target_diesel_l || 8000) * (Number(p.early_drain_pct || 85) / 100), 0)} L diesel burned warns EARLY DRAIN; running past ${fmtNum(p.truck_overdue_diesel_l, 0)} L flags OVERDUE OIL.`
+    },
+    {
+      id: 'G_GREASE_COMP',
+      code: 'G9',
+      name: 'Daily Chassis & Plant Greasing Benchmark',
+      domain: 'Lubrication & Parts',
+      behavior: 'warn',
+      whereLabel: 'Lubricants Form & Greasing Table',
+      jumpView: 'fleet',
+      why: 'Protects kingpins, fifth wheels, bucket pins, and crusher bearings from dry-wear seizure by pre-filling daily kg targets and highlighting under-greased active units.',
+      params: [
+        { key: 'min_compliance_pct', label: 'Min Greasing Compliance %', def: 25, min: 5, max: 100, step: 5, unit: '%' },
+        { key: 'truck_kg_day', label: 'Truck Daily Grease Target', def: 0.15, min: 0.05, max: 2, step: 0.05, unit: 'kg/d' },
+        { key: 'machine_kg_day', label: 'Yellow-Iron Daily Target', def: 0.30, min: 0.05, max: 3, step: 0.05, unit: 'kg/d' },
+        { key: 'plant_kg_day', label: 'Crusher / Plant Daily Target', def: 0.60, min: 0.10, max: 5, step: 0.05, unit: 'kg/d' }
+      ],
+      whatFn: p => `Auto-presets daily grease issue (<b>${fmtNum(p.truck_kg_day, 2)} kg</b> truck, <b>${fmtNum(p.machine_kg_day, 2)} kg</b> loader/excavator, <b>${fmtNum(p.plant_kg_day, 2)} kg</b> plant) and highlights active units (>= 10 workdays) below <b>${fmtNum(p.min_compliance_pct, 0)}%</b> greased days.`,
+      threshFn: p => `< ${fmtNum(p.min_compliance_pct, 0)}% compliance · ${fmtNum(p.truck_kg_day, 2)}/${fmtNum(p.machine_kg_day, 2)}/${fmtNum(p.plant_kg_day, 2)} kg`,
+      previewFn: p => `Live example (26-day month): Targets ${fmtNum(Number(p.truck_kg_day || 0.15) * 26, 1)} kg/mo per truck and ${fmtNum(Number(p.machine_kg_day || 0.30) * 26, 1)} kg/mo per machine; highlights rows below ${fmtNum(p.min_compliance_pct, 0)}% compliance.`
+    },
+    {
+      id: 'S10',
+      code: 'S10',
+      name: 'Critical Down-Unit & Unnotified Part Custody',
+      domain: 'Lubrication & Parts',
+      behavior: 'warn',
+      whereLabel: 'Sales Form, Defects Hub & Sentinel S10',
+      jumpView: 'fleet_maint',
+      sentinelId: 'S10',
+      why: 'Stops dispatchers from sending out a truck with an open Critical safety defect and ensures no spare part is replaced or scrapped without a prior logged defect notice.',
+      params: [
+        { key: 'min_unnotified_parts', label: 'Unnotified Part Replacements to Flag', def: 1, min: 1, max: 20, step: 1, unit: 'parts' }
+      ],
+      whatFn: p => `Warns immediately on Sales Dispatch when a selected unit is marked <b>Critical / Down</b>, and flags Sentinel S10 when open Down units exist or unnotified part swaps reach <b>>= ${fmtNum(p.min_unnotified_parts, 0)}</b>.`,
+      threshFn: p => `Any Down unit · >= ${fmtNum(p.min_unnotified_parts, 0)} unnotified part`,
+      previewFn: p => `Live example: Selecting a Down truck on Sales Ticket shows DO NOT DISPATCH; Sentinel S10 flags at >= ${fmtNum(p.min_unnotified_parts, 0)} part swap(s) missing a prior defect log.`
+    },
+    {
+      id: 'S4',
+      code: 'S4',
+      name: 'Customer Receivables Overdue > 60 Days (FIFO)',
+      domain: 'Finance & Payroll',
+      behavior: 'warn',
+      whereLabel: 'Sales Context Strip & Sentinel S4',
+      jumpView: 'customers',
+      sentinelId: 'S4',
+      why: 'Surfaces slow-paying credit accounts right on the Sales Ticket screen before dispatching more material on credit, and tracks aged 60+ day balances after FIFO receipts.',
+      params: [
+        { key: 'entry_strip_warn_ar60_usd', label: 'Sales Form Banner Warning (60+d AR)', def: 1000, min: 50, max: 50000, step: 250, unit: '$' },
+        { key: 'min_sentinel_ar60_usd', label: 'Sentinel S4 Min 60+d Balance', def: 0.01, min: 0.01, max: 10000, step: 100, unit: '$' }
+      ],
+      whatFn: p => `Highlights the live Customer AR strip in amber on Sales Tickets when 60+ day overdue balance exceeds <b>$${fmtNum(p.entry_strip_warn_ar60_usd, 0)}</b> (or credit limit), and lists accounts > <b>$${fmtNum(p.min_sentinel_ar60_usd, 2)}</b> in Sentinel S4.`,
+      threshFn: p => `Form > $${fmtNum(p.entry_strip_warn_ar60_usd, 0)} · Audit > $${fmtNum(p.min_sentinel_ar60_usd, 2)}`,
+      previewFn: p => `Live example: Picking a customer with > $${fmtNum(p.entry_strip_warn_ar60_usd, 0)} aged past 60 days turns the Sales Ticket context banner amber during dispatch.`
+    },
+    {
+      id: 'S1',
+      code: 'S1',
+      name: 'Double-Entry Trial Balance Integrity (Lebanese CoA)',
+      domain: 'Finance & Payroll',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels & General Ledger',
+      jumpView: 'ledger',
+      sentinelId: 'S1',
+      lockedActive: true,
+      why: 'Core accounting guarantee: verifies Total Debits equal Total Credits across Lebanese CoA Classes 1 to 7 so every Balance Sheet and P&L ties to the cent.',
+      params: [
+        { key: 'tb_tolerance_usd', label: 'Rounding Tolerance', def: 0.005, min: 0.001, max: 1, step: 0.005, unit: '$' }
+      ],
+      whatFn: p => `Checks Total Debits minus Total Credits across all SOA journal legs (sales, quarry, haulage, expenses, 11% VAT, receipts, settlements). Escalates to critical if variance >= <b>$${fmtNum(p.tb_tolerance_usd, 3)}</b>.`,
+      threshFn: p => `Always On · Diff < $${fmtNum(p.tb_tolerance_usd, 3)}`,
+      previewFn: p => `Core ledger rule (Always Active): Passes when |Total Debits - Total Credits| < $${fmtNum(p.tb_tolerance_usd, 3)}.`
+    },
+    {
+      id: 'S7',
+      code: 'S7',
+      name: 'Salary Payments Without Active Contract',
+      domain: 'Finance & Payroll',
+      behavior: 'audit',
+      whereLabel: 'AI Sentinels & Payroll Contracts',
+      jumpView: 'payroll_contracts',
+      sentinelId: 'S7',
+      why: 'Prevents ghost payroll disbursements or paying staff outside their hired employment window without an active contract on file.',
+      params: [
+        { key: 'min_unmatched_usd', label: 'Min Unmatched Payroll to Flag', def: 0, min: 0, max: 5000, step: 50, unit: '$' }
+      ],
+      whatFn: p => `Matches every monthly salary payment against active staff employment start/end windows. Flags Sentinel S7 when unmatched salary payments exceed <b>$${fmtNum(p.min_unmatched_usd, 0)}</b>.`,
+      threshFn: p => `Unmatched > $${fmtNum(p.min_unmatched_usd, 0)}`,
+      previewFn: p => `Live example: Any salary voucher paid in a month without an active contract is listed in Sentinel S7 once total unmatched exceeds $${fmtNum(p.min_unmatched_usd, 0)}.`
+    },
+    {
+      id: 'S9',
+      code: 'S9',
+      name: 'Absent-Driver Machine Fuel & Lube Watchdog',
+      domain: 'Finance & Payroll',
+      behavior: 'warn',
+      whereLabel: 'Fuel Form, Plant Map & Sentinel S9',
+      jumpView: 'workforce_map',
+      sentinelId: 'S9',
+      why: 'Catches ghost diesel/lubricant issues booked to a machine on days when its assigned operator was marked Absent, Sick, or On Leave without a logged substitute driver.',
+      params: [
+        { key: 'min_ghost_events', label: 'Min Absent/Unattributed Entries to Flag', def: 1, min: 1, max: 20, step: 1, unit: 'entries' }
+      ],
+      whatFn: p => `Shows a live red S9 alert pill on the Fuel & Lube form when the operator is marked Absent on that date, and flags Sentinel S9 at <b>>= ${fmtNum(p.min_ghost_events, 0)}</b> absent-driver or unattributed machine entries.`,
+      threshFn: p => `>= ${fmtNum(p.min_ghost_events, 0)} absent-driver entry`,
+      previewFn: p => `Live example: Booking diesel to a loader whose assigned driver is Absent today shows a red S9 badge on the form and flags Sentinel S9 at >= ${fmtNum(p.min_ghost_events, 0)} event(s).`
+    },
+    {
+      id: 'G_KIOSK_PUNCH',
+      code: 'G10',
+      name: 'Kiosk Anti-Double-Punch Debounce Guard',
+      domain: 'Finance & Payroll',
+      behavior: 'block',
+      whereLabel: 'Plant Attendance Kiosk',
+      jumpView: 'kiosks',
+      why: 'Stops accidental double-taps or standing in front of the tablet camera right after clocking IN from immediately clocking the worker OUT seconds later.',
+      params: [
+        { key: 'debounce_sec', label: 'Duplicate Punch Cooldown', def: 120, min: 10, max: 900, step: 10, unit: 'sec' }
+      ],
+      whatFn: p => `Blocks a second Face ID or PIN clock punch for the same worker within <b>${fmtNum(p.debounce_sec, 0)} seconds</b> (${fmtNum(Number(p.debounce_sec || 120) / 60, 1)} min) unless the worker explicitly taps Switch Direction.`,
+      threshFn: p => `${fmtNum(p.debounce_sec, 0)} sec cooldown`,
+      previewFn: p => `Live example: After clocking IN at 07:00:00, accidental repeat scans until 07:00 + ${fmtNum(p.debounce_sec, 0)}s are held so the shift is not closed by mistake.`
+    }
+  ];
+
+  const ALERT_RULE_BY_ID = new Map(ALERT_RULE_CATALOG.map(r => [r.id, r]));
+
+  const CUSTOM_ALERT_METRICS = {
+    expense_usd: {
+      label: 'Single Expense Amount ($)',
+      unit: '$',
+      domain: 'Custom Rules',
+      formTypes: ['expense'],
+      whereLabel: 'Expense Form & Sentinel Audit',
+      jumpForm: 'expense',
+      formValFn: () => (val('f_price_pending') === '1' ? 0 : num('f_amount')),
+      recordsFn: () => filterRecords(SEED.records.expenses, { ignoreSearch: true }).map(r => ({
+        id: r.id, rid: r.id, rkey: 'expenses',
+        date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC',
+        party: r.supplier || r.category || 'Expense',
+        detail: [r.category, r.subcategory, r.reference].filter(Boolean).join(' · ') || r.name || 'Expense',
+        value: Number(r.amount || 0)
+      }))
+    },
+    sales_total_usd: {
+      label: 'Single Sales Ticket Total ($)',
+      unit: '$',
+      domain: 'Custom Rules',
+      formTypes: ['sales'],
+      whereLabel: 'Sales Ticket Form & Sentinel Audit',
+      jumpForm: 'sales',
+      formValFn: c => Number((c && (c.ttc != null ? c.ttc : c.net)) || num('f_total_usd') || 0),
+      recordsFn: () => filterRecords(SEED.records.sales_tickets, { ignoreSearch: true }).map(r => ({
+        id: r.id, rid: r.id, rkey: 'sales_tickets',
+        date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC',
+        party: r.customer || 'Walk-in',
+        detail: `#${r.ticket_no || '-'} · ${r.product || ''}`,
+        value: Number(r.total_ttc != null ? r.total_ttc : (r.total || 0))
+      }))
+    },
+    raw_total_usd: {
+      label: 'Single Quarry / Haulage Ticket ($)',
+      unit: '$',
+      domain: 'Custom Rules',
+      formTypes: ['raw'],
+      whereLabel: 'Quarry Ticket Form & Sentinel Audit',
+      jumpForm: 'raw',
+      formValFn: c => Number((c && ((c.mat || 0) + (c.tr || 0))) || num('f_total_usd') || 0),
+      recordsFn: () => filterRecords(SEED.records.raw_purchases, { ignoreSearch: true }).map(r => ({
+        id: r.id, rid: r.id, rkey: 'raw_purchases',
+        date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC',
+        party: r.site_owner || r.truck_owner || r.site || 'Quarry',
+        detail: `#${r.ticket_no || '-'} · ${r.product || ''} (${r.site || ''})`,
+        value: Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)))
+      }))
+    },
+    fuel_litres: {
+      label: 'Single Diesel / Lubricant Issue (L)',
+      unit: 'L',
+      domain: 'Custom Rules',
+      formTypes: ['fuel'],
+      whereLabel: 'Diesel & Lubricants Form & Audit',
+      jumpForm: 'fuel',
+      formValFn: c => Number((c && c.litres) || num('f_qty') || 0),
+      recordsFn: () => filterRecords(SEED.records.fuel_intakes, { ignoreSearch: true }).map(r => ({
+        id: r.id, rid: r.id, rkey: 'fuel_intakes',
+        date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC',
+        party: r.equipment || 'Unit',
+        detail: `${r.item || r.fuel_type || 'Diesel'}${r.driver ? ' · ' + r.driver : ''}`,
+        value: Number(r.litres || 0)
+      }))
+    },
+    customer_ar_usd: {
+      label: 'Customer Open AR Balance ($)',
+      unit: '$',
+      domain: 'Custom Rules',
+      formTypes: ['sales'],
+      whereLabel: 'Sales Ticket Form & Receivables',
+      jumpView: 'customers',
+      formValFn: () => {
+        const cust = val('f_customer');
+        const bal = cust ? openArBalance(cust) : null;
+        return bal != null ? Number(bal) : 0;
+      },
+      recordsFn: () => {
+        const mdl = getModel() || {};
+        return (mdl.customers || []).map(c => {
+          const ci = customerInfo(c.Customer);
+          const cid = (ci && ci.id) ? ci.id : c.Customer;
+          return {
+            id: cid, rid: cid, rkey: 'customers',
+            date: String(c.last_sale || '').slice(0, 10),
+            company: STATE.company === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[STATE.company] || 'WTC'),
+            party: c.Customer,
+            detail: `Open AR (${fmtNum(c.loads || 0)} loads)`,
+            value: Number(c.ar_balance || 0)
+          };
+        });
+      }
+    },
+    supplier_ap_usd: {
+      label: 'Supplier Open AP Balance ($)',
+      unit: '$',
+      domain: 'Custom Rules',
+      formTypes: ['raw', 'expense'],
+      whereLabel: 'Quarry & Expense Forms & Payables',
+      jumpView: 'suppliers',
+      formValFn: () => {
+        const sup = val('f_supplier') || val('f_siteowner') || val('f_truckowner');
+        const bal = sup ? openApBalance(sup) : null;
+        return bal != null ? Number(bal) : 0;
+      },
+      recordsFn: () => {
+        const mdl = getModel() || {};
+        return (mdl.suppliers || []).map(s => {
+          const si = supplierInfo(s.Supplier);
+          const sid = (si && si.id) ? si.id : s.Supplier;
+          return {
+            id: sid, rid: sid, rkey: 'suppliers',
+            date: String(s.last_tx || '').slice(0, 10),
+            company: STATE.company === 'manufacturing-group' ? 'Group' : (COMPANY_BU_MATCH[STATE.company] || 'WTC'),
+            party: s.Supplier,
+            detail: s.Category || 'Supplier AP',
+            value: Number(s.ap_balance || 0)
+          };
+        });
+      }
+    },
+    salary_voucher_usd: {
+      label: 'Single Salary Payment ($)',
+      unit: '$',
+      domain: 'Custom Rules',
+      formTypes: ['salary'],
+      whereLabel: 'Salary Form & Payroll Audit',
+      jumpForm: 'salary',
+      formValFn: () => num('f_amount'),
+      recordsFn: () => filterRecords(SEED.records.salaries, { ignoreSearch: true }).map(r => ({
+        id: r.id, rid: r.id, rkey: 'salaries',
+        date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC',
+        party: r.staff || 'Staff',
+        detail: r.payroll_month || r.notes || 'Salary payment',
+        value: Number(r.amount || 0) > 0 ? Number(r.amount) : (Number(r.lbp_amount || 0) / 89500)
+      }))
+    },
+    settlement_usd: {
+      label: 'Single Supplier Settlement ($)',
+      unit: '$',
+      domain: 'Custom Rules',
+      formTypes: ['settlement'],
+      whereLabel: 'Settlement Form & Payables Audit',
+      jumpForm: 'settlement',
+      formValFn: () => num('f_amount'),
+      recordsFn: () => filterRecords(SEED.records.settlements, { ignoreSearch: true }).map(r => ({
+        id: r.id, rid: r.id, rkey: 'settlements',
+        date: String(r.date || '').slice(0, 10),
+        company: r.company || 'WTC',
+        party: r.supplier || 'Supplier',
+        detail: `${r.method || 'Cash'}${r.reference ? ' · ' + r.reference : ''}`,
+        value: Number(r.amount || 0)
+      }))
+    }
+  };
+
+  function ensureAlertRulesState() {
+    if (!STATE.alertRules || typeof STATE.alertRules !== 'object') {
+      STATE.alertRules = { overrides: {}, custom: [] };
+    }
+    if (!STATE.alertRules.overrides || typeof STATE.alertRules.overrides !== 'object') {
+      STATE.alertRules.overrides = {};
+    }
+    if (!Array.isArray(STATE.alertRules.custom)) {
+      STATE.alertRules.custom = [];
+    }
+    return STATE.alertRules;
+  }
+
+  function isAlertRuleEnabled(ruleId) {
+    const def = ALERT_RULE_BY_ID.get(ruleId);
+    if (def && def.lockedActive) return true;
+    const st = ensureAlertRulesState();
+    const ov = st.overrides[ruleId];
+    if (ov && typeof ov.enabled === 'boolean') return ov.enabled;
+    return true;
+  }
+
+  function getAlertParam(ruleId, paramKey, fallbackVal) {
+    const def = ALERT_RULE_BY_ID.get(ruleId);
+    const pDef = def && Array.isArray(def.params) ? def.params.find(p => p.key === paramKey) : null;
+    const base = pDef != null ? pDef.def : fallbackVal;
+    const st = ensureAlertRulesState();
+    const ov = st.overrides[ruleId];
+    if (ov && ov.params && ov.params[paramKey] != null && Number.isFinite(Number(ov.params[paramKey]))) {
+      return Number(ov.params[paramKey]);
+    }
+    return Number(base);
+  }
+
+  function getAlertRuleParamsObj(ruleId) {
+    const def = ALERT_RULE_BY_ID.get(ruleId);
+    const out = {};
+    if (!def || !Array.isArray(def.params)) return out;
+    def.params.forEach(p => {
+      out[p.key] = getAlertParam(ruleId, p.key, p.def);
+    });
+    return out;
+  }
+
+  function getAlertRuleWhyText(ruleId) {
+    const def = ALERT_RULE_BY_ID.get(ruleId);
+    const st = ensureAlertRulesState();
+    const ov = st.overrides[ruleId];
+    if (ov && typeof ov.why_note === 'string' && ov.why_note.trim()) return ov.why_note.trim();
+    return def ? def.why : '';
+  }
+
+  function isAlertRuleCustomized(ruleId) {
+    const def = ALERT_RULE_BY_ID.get(ruleId);
+    if (!def) return false;
+    const st = ensureAlertRulesState();
+    const ov = st.overrides[ruleId];
+    if (!ov) return false;
+    if (!def.lockedActive && ov.enabled === false) return true;
+    if (ov.why_note && ov.why_note.trim() && ov.why_note.trim() !== def.why) return true;
+    if (ov.params && Array.isArray(def.params)) {
+      return def.params.some(p => ov.params[p.key] != null && Math.abs(Number(ov.params[p.key]) - Number(p.def)) > 1e-6);
+    }
+    return false;
+  }
+
+  window.MFG_ALERT_CONFIG = {
+    param: (ruleId, key, fallback) => getAlertParam(ruleId, key, fallback),
+    enabled: ruleId => isAlertRuleEnabled(ruleId)
+  };
+
+  function invalidateAlertRuleCaches() {
+    _ALERT_RULES_REV += 1;
+    _liveSentinelCache = null;
+    _ticketAuditCache = null;
+    _meterGuardCacheKey = '';
+    _meterGuardCacheVal = null;
+  }
+
+  function persistAlertRulesChange(changedOverrides, changedCustom) {
+    invalidateAlertRuleCaches();
+    saveLocalAuthAndRecords();
+    if (HAS_LOCAL_API) {
+      fetch('./api/alert_rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          overrides: changedOverrides || {},
+          custom: changedCustom || []
+        })
+      }).catch(() => {});
+    }
+    syncWithCloud(true);
+  }
+
+  function mergeAlertRules(incoming) {
+    if (!incoming || typeof incoming !== 'object') return false;
+    const st = ensureAlertRulesState();
+    let changed = false;
+    const inOv = incoming.overrides && typeof incoming.overrides === 'object' ? incoming.overrides : {};
+    Object.entries(inOv).forEach(([rid, rv]) => {
+      if (!rv || typeof rv !== 'object') return;
+      const ex = st.overrides[rid];
+      const inTs = String(rv.updated_at || '');
+      const exTs = ex ? String(ex.updated_at || '') : '';
+      if (!ex || inTs > exTs) {
+        st.overrides[rid] = Object.assign({}, rv);
+        changed = true;
+      }
+    });
+    const inCust = Array.isArray(incoming.custom) ? incoming.custom : [];
+    if (inCust.length) {
+      const byId = new Map(st.custom.filter(c => c && c.id).map(c => [String(c.id), c]));
+      inCust.forEach(cr => {
+        if (!cr || !cr.id) return;
+        const cid = String(cr.id);
+        const ex = byId.get(cid);
+        const inTs = String(cr.updated_at || '');
+        const exTs = ex ? String(ex.updated_at || '') : '';
+        if (!ex || inTs > exTs) {
+          byId.set(cid, Object.assign({}, cr));
+          changed = true;
+        }
+      });
+      st.custom = Array.from(byId.values());
+    }
+    if (changed) invalidateAlertRuleCaches();
+    return changed;
+  }
+
+  function getActiveCustomAlertRules() {
+    const st = ensureAlertRulesState();
+    return st.custom.filter(c => c && c.id && !c.deleted);
+  }
+
+  function evaluateSingleCustomAlert(cr) {
+    const spec = CUSTOM_ALERT_METRICS[cr.metric];
+    if (!spec) return [];
+    const thresh = Number(cr.threshold || 0);
+    const op = cr.op === '<' ? '<' : '>';
+    const coScope = String(cr.company || 'all');
+    const rows = spec.recordsFn() || [];
+    const hits = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || !(r.value > 0)) continue;
+      if (coScope !== 'all' && r.company && r.company !== 'Group' && norm(r.company) !== norm(coScope)) continue;
+      const matched = op === '<' ? (r.value < thresh) : (r.value > thresh);
+      if (matched) {
+        hits.push(Object.assign({}, r, {
+          rule_id: cr.id,
+          rule_code: cr.code || 'CUSTOM',
+          rule_name: cr.name || 'Custom Alert',
+          unit: spec.unit
+        }));
+      }
+    }
+    hits.sort((a, b) => (op === '<' ? (a.value - b.value) : (b.value - a.value)));
+    return hits;
+  }
+
+  function evaluateFormCustomAlerts(formType, calcRes) {
+    const f = formType || STATE.modalForm;
+    const company = val('f_company') || defaultEntryCompany();
+    const activeRules = getActiveCustomAlertRules().filter(cr => cr.enabled !== false && cr.mode !== 'audit_only');
+    const triggered = [];
+    activeRules.forEach(cr => {
+      const spec = CUSTOM_ALERT_METRICS[cr.metric];
+      if (!spec || !spec.formTypes.includes(f)) return;
+      if (cr.company && cr.company !== 'all' && company && norm(cr.company) !== norm(company)) return;
+      const curVal = Number(spec.formValFn(calcRes || {}) || 0);
+      if (!(curVal > 0)) return;
+      const thresh = Number(cr.threshold || 0);
+      const op = cr.op === '<' ? '<' : '>';
+      if (op === '<' ? (curVal < thresh) : (curVal > thresh)) {
+        const fmtV = spec.unit === '$' ? fmtUSD(curVal, 2) : `${fmtNum(curVal, 1)} ${spec.unit}`;
+        const fmtT = spec.unit === '$' ? fmtUSD(thresh, 2) : `${fmtNum(thresh, 1)} ${spec.unit}`;
+        triggered.push({
+          rule: cr,
+          spec,
+          curVal,
+          fmtVal: fmtV,
+          fmtThresh: fmtT,
+          blocks: cr.mode === 'block_and_audit'
+        });
+      }
+    });
+    return triggered;
+  }
+
+  function syncFormCustomAlertBanner(calcRes) {
+    const banner = $('formCustomAlertBanner');
+    if (!banner) return;
+    const hits = evaluateFormCustomAlerts(STATE.modalForm, calcRes);
+    if (!hits.length) {
+      banner.hidden = true;
+      banner.innerHTML = '';
+      banner.className = 'form-custom-alert-banner';
+      return;
+    }
+    const hasBlock = hits.some(h => h.blocks);
+    banner.hidden = false;
+    banner.className = 'form-custom-alert-banner' + (hasBlock ? ' is-crit' : '');
+    banner.innerHTML = hits.map(h => `
+      <div class="form-custom-alert-item">
+        <div>
+          <span class="badge ${h.blocks ? 'badge-crit' : 'badge-warn'}">${h.blocks ? 'Blocks Save' : 'Custom Alert'}</span>
+          <strong style="margin-left:6px">${esc(h.rule.name)}</strong>:
+          current <b>${esc(h.fmtVal)}</b> ${h.rule.op === '<' ? 'is below' : 'exceeds'} threshold <b>${esc(h.fmtThresh)}</b>
+          ${h.blocks ? ' (enter explanation in Notes or adjust rule)' : ''}
+        </div>
+        <div style="margin-top:3px;color:var(--muted);font-size:11.5px">
+          <b>Why you added this:</b> ${esc(h.rule.why || 'Custom threshold check')}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function openAlertRuleTuner(ruleId) {
+    if (!canViewView('alert_rules')) return;
+    STATE.alertRulesSearch = '';
+    STATE.alertRulesFilter = 'all';
+    STATE.alertRulesDomain = 'all';
+    STATE.alertRulesExpanded = ruleId || '';
+    if (STATE.view !== 'alert_rules') {
+      setView('alert_rules');
+    } else {
+      renderApp();
+    }
+    setTimeout(() => {
+      if (!ruleId) return;
+      const escId = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(ruleId) : ruleId;
+      const rowEl = document.querySelector(`[data-ar-row="${escId}"]`);
+      if (rowEl) scrollWorkspaceTo(rowEl, 18);
+    }, 30);
+  }
+
+  function renderAlertRules() {
+    const canEdit = canReviewSentinels();
+    const sentItems = buildSentinelItems();
+    const sentById = new Map(sentItems.map(s => [s.id, s]));
+    const customList = getActiveCustomAlertRules();
+
+    const unifiedRows = ALERT_RULE_CATALOG.map(r => {
+      const p = getAlertRuleParamsObj(r.id);
+      const enabled = isAlertRuleEnabled(r.id);
+      const edited = isAlertRuleCustomized(r.id);
+      const whyTxt = getAlertRuleWhyText(r.id);
+      const snItem = r.sentinelId ? sentById.get(r.sentinelId) : null;
+      const isFlagged = Boolean(enabled && snItem && snItem.severity !== 'ok');
+      return {
+        isCustom: false,
+        id: r.id,
+        code: r.code,
+        name: r.name,
+        domain: r.domain,
+        behavior: r.behavior,
+        whereLabel: r.whereLabel,
+        jumpForm: r.jumpForm || '',
+        jumpView: r.jumpView || '',
+        lockedActive: Boolean(r.lockedActive),
+        enabled,
+        edited,
+        whatHtml: r.whatFn(p),
+        whyText: whyTxt,
+        defaultWhy: r.why,
+        threshText: r.threshFn(p),
+        previewText: r.previewFn(p),
+        params: r.params,
+        paramValues: p,
+        liveBadge: snItem ? snItem.badge : '',
+        liveSeverity: snItem ? snItem.severity : 'ok',
+        isFlagged
+      };
+    });
+
+    customList.forEach((cr, idx) => {
+      const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
+      const code = cr.code || `C${idx + 1}`;
+      const enabled = cr.enabled !== false;
+      const behavior = cr.mode === 'block_and_audit' ? 'block' : (cr.mode === 'audit_only' ? 'audit' : 'warn');
+      const fmtT = spec.unit === '$' ? fmtUSD(cr.threshold || 0, 0) : `${fmtNum(cr.threshold || 0, 1)} ${spec.unit}`;
+      const snItem = sentById.get(cr.id);
+      const isFlagged = Boolean(enabled && snItem && snItem.severity !== 'ok');
+      const scopeLbl = (!cr.company || cr.company === 'all') ? 'All Entities' : cr.company;
+      unifiedRows.push({
+        isCustom: true,
+        customRaw: cr,
+        id: cr.id,
+        code,
+        name: cr.name || 'Custom Alert',
+        domain: 'Custom Rules',
+        behavior,
+        whereLabel: spec.whereLabel,
+        jumpForm: spec.jumpForm || '',
+        jumpView: spec.jumpView || 'sentinels',
+        lockedActive: false,
+        enabled,
+        edited: true,
+        whatHtml: `Monitors <b>${esc(spec.label)}</b> across <b>${esc(scopeLbl)}</b> and triggers when value <b>${cr.op === '<' ? '&lt;' : '&gt;'} ${esc(fmtT)}</b>.`,
+        whyText: cr.why || 'Custom threshold rule added by management.',
+        defaultWhy: cr.why || '',
+        threshText: `${cr.op === '<' ? '<' : '>'} ${fmtT} (${scopeLbl})`,
+        previewText: `Live rule: Triggers whenever ${spec.label} is ${cr.op === '<' ? 'below' : 'above'} ${fmtT} (${behavior === 'block' ? 'holds form save until explained in Notes + flags Sentinel audit' : (behavior === 'warn' ? 'shows live yellow warning on Entry Form + flags Sentinel audit' : 'flags in AI Sentinels & Audit')}).`,
+        params: [
+          { key: 'threshold', label: `Threshold (${spec.unit})`, def: Number(cr.threshold || 0), min: 0, max: 10000000, step: spec.unit === '$' ? 100 : 5, unit: spec.unit }
+        ],
+        paramValues: { threshold: Number(cr.threshold || 0) },
+        liveBadge: snItem ? snItem.badge : '',
+        liveSeverity: snItem ? snItem.severity : 'ok',
+        isFlagged
+      });
+    });
+
+    const totalCnt = unifiedRows.length;
+    const activeCnt = unifiedRows.filter(r => r.enabled).length;
+    const pausedCnt = totalCnt - activeCnt;
+    const blockCnt = unifiedRows.filter(r => r.behavior === 'block').length;
+    const warnCnt = unifiedRows.filter(r => r.behavior === 'warn').length;
+    const auditCnt = unifiedRows.filter(r => r.behavior === 'audit').length;
+    const flaggedCnt = unifiedRows.filter(r => r.isFlagged).length;
+    const editedBuiltInCnt = unifiedRows.filter(r => !r.isCustom && r.edited).length;
+    const editedOrCustomCnt = unifiedRows.filter(r => r.edited || r.isCustom).length;
+
+    const q = norm(STATE.alertRulesSearch || '');
+    const flt = STATE.alertRulesFilter || 'all';
+    const dom = STATE.alertRulesDomain || 'all';
+
+    const visibleRows = unifiedRows.filter(r => {
+      if (flt === 'block' && r.behavior !== 'block') return false;
+      if (flt === 'warn' && r.behavior !== 'warn') return false;
+      if (flt === 'audit' && r.behavior !== 'audit') return false;
+      if (flt === 'flagged' && !r.isFlagged) return false;
+      if (flt === 'edited' && !(r.edited || r.isCustom)) return false;
+      if (dom !== 'all' && r.domain !== dom) return false;
+      if (q) {
+        const hay = norm(`${r.code} ${r.name} ${r.domain} ${r.whereLabel} ${r.whyText} ${r.threshText} ${r.whatHtml.replace(/<[^>]+>/g, ' ')}`);
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    const arChip = (key, lbl) => `<button type="button" class="filter-chip ${flt === key ? 'active' : ''}" data-ar-filter="${esc(key)}">${lbl}</button>`;
+    const domains = ['Sales & Quarry', 'Dates & VAT', 'Fleet & Diesel', 'Lubrication & Parts', 'Finance & Payroll', 'Custom Rules'];
+    const compOpts = ['all'].concat(allowedCompanyNames());
+
+    const behaviorBadgeHtml = b => {
+      if (b === 'block') return `<span class="badge badge-crit">Blocks Save</span>`;
+      if (b === 'warn') return `<span class="badge badge-warn">Entry Warning</span>`;
+      return `<span class="badge badge-info">Audit Watchdog</span>`;
+    };
+
+    return `
+      <div class="cockpit-banner has-insights">
+        <div class="cockpit-title-block sr-only">
+          <div class="cockpit-eyebrow">PLAIN-ENGLISH RULEBOOK &amp; LIVE THRESHOLD TUNING</div>
+          <div class="cockpit-title">Alerts &amp; Thresholds</div>
+          <div class="cockpit-sub">Every warning, entry guard, and audit watchdog in one place with its plain-English business reason and live adjustable thresholds.</div>
+        </div>
+        <div class="cockpit-pills insight-grid">
+          ${insightCard({
+            label: 'Active Alerts & Guards',
+            badge: pausedCnt ? `${pausedCnt} Paused` : 'All Armed',
+            badgeCls: pausedCnt ? 'warn' : 'good',
+            val: `${activeCnt} / ${totalCnt} Active`,
+            valCls: 'emerald',
+            pct: totalCnt ? Math.round((activeCnt / totalCnt) * 100) : 100,
+            sub: `<b>${blockCnt}</b> save-blocking · <b>${warnCnt}</b> warnings · <b>${auditCnt}</b> watchdogs`,
+            tone: 'emerald'
+          })}
+          ${insightCard({
+            label: 'Threshold Overrides',
+            badge: editedBuiltInCnt ? `${editedBuiltInCnt} Tuned` : 'Factory Defaults',
+            badgeCls: editedBuiltInCnt ? 'brass' : 'good',
+            val: `${editedBuiltInCnt} Customized`,
+            valCls: editedBuiltInCnt ? 'brass' : 'steel',
+            pct: Math.min(100, Math.max(12, editedBuiltInCnt * 15)),
+            sub: `Click <b>Modify</b> on any alert row to tune numbers with live preview`,
+            tone: 'brass'
+          })}
+          ${insightCard({
+            label: 'Triggered Right Now',
+            badge: flaggedCnt ? 'Needs Review' : 'All Clear',
+            badgeCls: flaggedCnt ? 'warn' : 'good',
+            val: `<span class="insight-drill" data-ar-filter="flagged" title="Filter to currently triggered alerts">${flaggedCnt} Flagged</span>`,
+            valCls: flaggedCnt ? 'amber' : 'emerald',
+            pct: totalCnt ? Math.max(10, 100 - flaggedCnt * 10) : 100,
+            sub: `Evaluated live across <b>${esc(COMPANY_LABELS[STATE.company])}</b> · <span class="insight-drill" data-nav-jump="sentinels">Open AI Sentinels</span>`,
+            tone: 'amber'
+          })}
+          ${insightCard({
+            label: 'Your Custom Alerts',
+            badge: customList.length ? 'Live' : 'Ready',
+            badgeCls: customList.length ? 'brass' : 'steel',
+            val: `${customList.length} Custom Rule${customList.length === 1 ? '' : 's'}`,
+            valCls: 'steel',
+            pct: Math.min(100, 20 + customList.length * 25),
+            sub: `Add custom thresholds with your own <b>Why</b> note so you never forget`,
+            tone: 'steel'
+          })}
+        </div>
+      </div>
+
+      <div class="panel-card" id="alertRulesPanel">
+        <div class="panel-head">
+          <div class="panel-title">
+            <span>MASTER ALERTS, REASONS &amp; THRESHOLD DIRECTORY (${fmtNum(visibleRows.length)} OF ${fmtNum(totalCnt)})</span>
+          </div>
+          <span class="panel-meta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span>Click any row or <b>Modify</b> to inspect examples &amp; edit thresholds</span>
+            <button type="button" class="btn-sn-act" data-nav-jump="sentinels">${ic('sentinels')} View Live Audit Results</button>
+            ${canEdit && editedBuiltInCnt > 0 ? `<button type="button" class="btn-sn-act is-undo" id="resetAllAlertRulesBtn">${ic('rotate')} Reset All Defaults (${fmtNum(editedBuiltInCnt)})</button>` : ''}
+            ${canEdit ? `<button type="button" class="btn btn-primary" id="toggleCustomAlertCreatorBtn" style="padding:5px 11px;font-size:12px">${ic('plus')} ${STATE.alertRulesShowCreator ? 'Close Creator' : 'New Custom Alert'}</button>` : ''}
+          </span>
+        </div>
+
+        ${canEdit && STATE.alertRulesShowCreator ? `
+          <div class="alert-custom-creator" id="customAlertCreatorCard">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+              <strong style="font-size:13.5px;color:var(--ink)">${ic('sliders')} Add a New Custom Alert &amp; Business Reason</strong>
+              <span style="font-size:11.5px;color:var(--muted)">Runs live on both Entry Forms and AI Sentinels &amp; Audit</span>
+            </div>
+            <div class="alert-custom-grid">
+              <div class="fld-mini">
+                <label for="caName">Alert Name *</label>
+                <input type="text" id="caName" placeholder="e.g. High Single Expense Check">
+              </div>
+              <div class="fld-mini">
+                <label for="caMetric">What to Measure *</label>
+                <select id="caMetric">
+                  ${Object.entries(CUSTOM_ALERT_METRICS).map(([mk, mv]) => `<option value="${esc(mk)}">${esc(mv.label)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="fld-mini">
+                <label for="caOp">Condition *</label>
+                <select id="caOp">
+                  <option value=">">Exceeds (&gt;)</option>
+                  <option value="<">Drops Below (&lt;)</option>
+                </select>
+              </div>
+              <div class="fld-mini">
+                <label for="caThreshold">Threshold Value *</label>
+                <input type="number" id="caThreshold" step="any" min="0" placeholder="e.g. 5000">
+              </div>
+              <div class="fld-mini">
+                <label for="caMode">How It Fires *</label>
+                <select id="caMode">
+                  <option value="warn_and_audit">Entry Warning + Audit Watchdog</option>
+                  <option value="block_and_audit">Blocks Save (Unless Note) + Watchdog</option>
+                  <option value="audit_only">Audit Watchdog Only</option>
+                </select>
+              </div>
+              <div class="fld-mini">
+                <label for="caCompany">Entity Scope</label>
+                <select id="caCompany">
+                  ${compOpts.map(c => `<option value="${esc(c)}">${c === 'all' ? 'All Entities' : esc(c)}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <div class="fld-mini" style="margin-top:10px">
+              <label for="caWhy" style="display:block;font-size:11px;font-weight:700;color:var(--ink);margin-bottom:4px">Why Am I Adding This Alert? * (Plain-English reminder so you always remember its purpose)</label>
+              <input type="text" id="caWhy" class="alert-why-input" placeholder="e.g. Remind me to verify supplier invoice approval whenever a single expense exceeds $5,000">
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+              <button type="button" class="btn-ghost-bar" id="cancelCustomAlertBtn">Cancel</button>
+              <button type="button" class="btn btn-brass" id="saveCustomAlertBtn">Save &amp; Activate Alert</button>
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="table-toolbar" style="gap:10px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1;min-width:240px">
+            <div class="search-box" style="min-width:230px;flex:1;max-width:340px">
+              ${ic('search')}
+              <input type="search" id="alertRulesSearchInput" value="${esc(STATE.alertRulesSearch || '')}" placeholder="Search alert, form, threshold, or why...">
+            </div>
+            <select id="alertRulesDomainSelect" class="col-filter-sel" aria-label="Filter by domain" style="height:32px;border-radius:7px;padding:0 10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:12px;font-weight:600">
+              <option value="all" ${dom === 'all' ? 'selected' : ''}>All Domains (${totalCnt})</option>
+              ${domains.map(d => `<option value="${esc(d)}" ${dom === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="chip-bar">
+            ${arChip('all', `All (${totalCnt})`)}
+            ${arChip('block', `Blocks Save (${blockCnt})`)}
+            ${arChip('warn', `Entry Warnings (${warnCnt})`)}
+            ${arChip('audit', `Watchdogs (${auditCnt})`)}
+            ${arChip('flagged', `Flagged Now (${flaggedCnt})`)}
+            ${arChip('edited', `Edited / Custom (${editedOrCustomCnt})`)}
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="ledger-table alert-rules-table" id="alertRulesTable">
+            <thead>
+              <tr>
+                <th>Alert &amp; Where It Fires</th>
+                <th>What It Checks &amp; Why We Added It</th>
+                <th>Current Threshold</th>
+                <th>Behavior &amp; State</th>
+                <th class="r">Tune</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${visibleRows.length ? visibleRows.map(r => {
+                const isExp = STATE.alertRulesExpanded === r.id;
+                const jumpAttr = r.jumpForm && canEnterForm(r.jumpForm)
+                  ? `data-ar-jump-form="${esc(r.jumpForm)}"`
+                  : (r.jumpView && canViewView(r.jumpView) ? `data-ar-jump-view="${esc(r.jumpView)}"` : '');
+                const stateBadge = r.lockedActive
+                  ? `<span class="badge badge-ok">Always On</span>`
+                  : (r.enabled
+                      ? (r.isFlagged ? `<span class="badge badge-warn">Flagged: ${esc(r.liveBadge)}</span>` : `<span class="badge badge-ok">Active</span>`)
+                      : `<span class="badge">Paused</span>`);
+                return `
+                  <tr class="alert-rule-row${isExp ? ' is-expanded' : ''}${!r.enabled ? ' is-paused' : ''}" data-ar-row="${esc(r.id)}">
+                    <td>
+                      <div class="alert-code-row">
+                        <span class="alert-code-tag">${esc(r.code)}</span>
+                        <span class="alert-domain-tag">${esc(r.domain)}</span>
+                        ${r.isCustom ? '<span class="badge badge-brass">Custom</span>' : ''}
+                      </div>
+                      <div class="alert-rule-name">${esc(r.name)}</div>
+                      ${jumpAttr ? `<button type="button" class="alert-where-btn" ${jumpAttr} title="Jump straight to this form or module">${ic('link')} ${esc(r.whereLabel)}</button>` : `<div class="muted" style="font-size:11px;margin-top:4px">${esc(r.whereLabel)}</div>`}
+                    </td>
+                    <td>
+                      <div class="alert-what-line">${r.whatHtml}</div>
+                      <div class="alert-why-line"><strong>Why:</strong> ${esc(r.whyText)}</div>
+                    </td>
+                    <td>
+                      <div class="alert-thresh-summary">${esc(r.threshText)}</div>
+                      ${!r.isCustom && r.edited ? `<span class="alert-edited-pill">${ic('sliders')} Edited from default</span>` : ''}
+                    </td>
+                    <td>
+                      <div class="alert-status-stack">
+                        ${behaviorBadgeHtml(r.behavior)}
+                        ${stateBadge}
+                      </div>
+                    </td>
+                    <td class="r">
+                      <div class="alert-row-actions">
+                        <button type="button" class="btn-sn-act ${isExp ? 'is-check' : ''}" data-ar-expand="${esc(r.id)}">${ic('sliders')} ${isExp ? 'Close' : (canEdit ? 'Modify' : 'Inspect')}</button>
+                      </div>
+                    </td>
+                  </tr>
+                  ${isExp ? `
+                    <tr class="alert-tune-row" data-ar-drawer="${esc(r.id)}">
+                      <td colspan="5">
+                        <div class="alert-tune-card">
+                          <div class="alert-tune-hdr">
+                            <div class="alert-tune-title">
+                              <span class="alert-code-tag">${esc(r.code)}</span>
+                              <span>${esc(r.name)}</span>
+                              ${r.lockedActive ? '<span class="badge badge-ok">Core Accounting Rule (Always Active)</span>' : ''}
+                            </div>
+                            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                              ${canEdit && !r.lockedActive ? `<button type="button" class="btn-sn-act ${r.enabled ? 'is-undo' : 'is-check'}" data-ar-toggle="${esc(r.id)}">${r.enabled ? 'Pause This Alert' : 'Resume This Alert'}</button>` : ''}
+                              ${canEdit && !r.isCustom && r.edited ? `<button type="button" class="btn-sn-act" data-ar-reset="${esc(r.id)}">${ic('rotate')} Reset to Factory Default</button>` : ''}
+                              ${canEdit && r.isCustom ? `<button type="button" class="btn-sn-act is-undo" data-ar-delete-custom="${esc(r.id)}">${ic('trash')} Delete Custom Alert</button>` : ''}
+                            </div>
+                          </div>
+
+                          <div class="alert-param-grid">
+                            ${r.params.map(p => {
+                              const curVal = r.paramValues[p.key];
+                              return `
+                                <div class="alert-param-box">
+                                  <label class="alert-param-lbl" for="arp_${esc(r.id)}_${esc(p.key)}">${esc(p.label)}</label>
+                                  <div class="alert-stepper">
+                                    ${canEdit ? `<button type="button" class="alert-step-btn" data-ar-step="-1" data-ar-rule="${esc(r.id)}" data-ar-key="${esc(p.key)}" aria-label="Decrease ${esc(p.label)}">-</button>` : ''}
+                                    <input type="number" class="alert-param-input" id="arp_${esc(r.id)}_${esc(p.key)}" data-ar-param-input="${esc(r.id)}" data-ar-key="${esc(p.key)}" value="${esc(String(curVal))}" min="${esc(String(p.min))}" max="${esc(String(p.max))}" step="${esc(String(p.step))}" ${canEdit ? '' : 'readonly'}>
+                                    ${canEdit ? `<button type="button" class="alert-step-btn" data-ar-step="1" data-ar-rule="${esc(r.id)}" data-ar-key="${esc(p.key)}" aria-label="Increase ${esc(p.label)}">+</button>` : ''}
+                                    <span class="alert-param-unit">${esc(p.unit)}</span>
+                                  </div>
+                                  <div class="alert-param-def">Factory default: <b>${esc(String(p.def))} ${esc(p.unit)}</b> (range ${esc(String(p.min))} to ${esc(String(p.max))})</div>
+                                </div>
+                              `;
+                            }).join('')}
+                          </div>
+
+                          <div class="alert-live-preview" id="arLivePreview_${esc(r.id)}">
+                            <strong>Live Threshold Preview:</strong> <span>${esc(r.previewText)}</span>
+                          </div>
+
+                          <div class="alert-why-edit-wrap">
+                            <label for="arWhy_${esc(r.id)}">Why We Added This Alert (Business Reason &amp; Your Notes)</label>
+                            <input type="text" class="alert-why-input" id="arWhy_${esc(r.id)}" data-ar-why-input="${esc(r.id)}" value="${esc(r.whyText)}" ${canEdit ? '' : 'readonly'} placeholder="Write why this alert exists so your team always remembers...">
+                          </div>
+
+                          <div class="alert-tune-foot">
+                            <span style="font-size:11.5px;color:var(--muted)">Changes apply immediately across Entry Forms, Kiosks, Analytics &amp; AI Sentinels, and sync across devices.</span>
+                            <div style="display:flex;gap:8px;align-items:center">
+                              <button type="button" class="btn-ghost-bar" data-ar-expand="${esc(r.id)}">Close</button>
+                              ${canEdit ? `<button type="button" class="btn btn-brass" data-ar-save="${esc(r.id)}">Save Threshold &amp; Note</button>` : ''}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ` : ''}
+                `;
+              }).join('') : `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted)">No alerts match the current search or filter. <button type="button" class="btn-sn-act" data-ar-filter="all" style="margin-left:8px">Show All Alerts (${totalCnt})</button></td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   function sentinelSlice() {
     const sn = SEED.sentinels || {};
     const mk = SENTINEL_MODEL_KEY[STATE.company];
@@ -6712,7 +8545,7 @@
       };
     }
 
-    const cacheKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${salesArr.length}|${(SEED.records.raw_purchases || []).length}|${(SEED.records.expenses || []).length}|${(SEED.records.fuel_intakes || []).length}|${(SEED.records.salaries || []).length}|${(SEED.records.employments || []).length}|${(SEED.records.price_rules || []).length}|${(SEED.records.vat_invoices || []).length}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${allowedCompanyNames().join(',')}`;
+    const cacheKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${_ALERT_RULES_REV || 0}|${salesArr.length}|${(SEED.records.raw_purchases || []).length}|${(SEED.records.expenses || []).length}|${(SEED.records.fuel_intakes || []).length}|${(SEED.records.salaries || []).length}|${(SEED.records.employments || []).length}|${(SEED.records.price_rules || []).length}|${(SEED.records.vat_invoices || []).length}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${allowedCompanyNames().join(',')}`;
     if (_liveSentinelCache && _liveSentinelCache.key === cacheKey) {
       return _liveSentinelCache.val;
     }
@@ -6790,6 +8623,8 @@
       if (d >= st.lastDate) { st.lastDate = d; st.lastId = f.id; }
     });
 
+    const s3MaxTruckRate = getAlertParam('S3', 'max_truck_l100km', 80);
+    const s3MaxMachineRate = getAlertParam('S3', 'max_machine_lh', 25);
     const liveOutliers = meterIssues.slice();
     unitFuelStats.forEach((st, ek) => {
       const eqRec = equipInfo(st.name);
@@ -6801,7 +8636,7 @@
       const ridVal = (eqRec && eqRec.id) ? eqRec.id : st.name;
       if (kmSpan >= 100) {
         const rate100 = round2((st.diesel_l / kmSpan) * 100);
-        if (rate100 > 80) {
+        if (rate100 > s3MaxTruckRate) {
           liveOutliers.push({
             id: ridVal, rid: ridVal, rkey: 'equipment',
             equipment: (eqRec && eqRec.name) || st.name,
@@ -6816,7 +8651,7 @@
       }
       if (hrSpan >= 20) {
         const rateHr = round2(st.diesel_l / hrSpan);
-        if (rateHr > 25) {
+        if (rateHr > s3MaxMachineRate) {
           liveOutliers.push({
             id: ridVal, rid: ridVal, rkey: 'equipment',
             equipment: (eqRec && eqRec.name) || st.name,
@@ -6831,15 +8666,18 @@
     });
     liveOutliers.sort((a, b) => Number(b.diesel_l || 0) - Number(a.diesel_l || 0));
 
-    const baseTank = baseFleet.diesel_stock_balance_l != null ? Number(baseFleet.diesel_stock_balance_l) : null;
+    const dtScoped = getDieselTankLedger();
+    const hasDieselActivity = Boolean(dtScoped && (dtScoped.boughtL || dtScoped.consumedL || dtScoped.soldL || dtScoped.closingTankL || resolveEffectiveModelKey(STATE.company) !== 'lionstransport'));
     const liveFleet = Object.assign({}, baseFleet, {
       active_equipment: (mdl.equipment || []).length || baseFleet.active_equipment || 0,
       meter_readings_to_check: meterIssues.length,
       consumption_outliers: liveOutliers,
       consumption_outliers_count: liveOutliers.length,
-      diesel_purchased_l: baseFleet.diesel_purchased_l != null ? round2(Number(baseFleet.diesel_purchased_l) + appRefillDelta) : null,
-      diesel_issued_l: baseFleet.diesel_issued_l != null ? round2(Number(baseFleet.diesel_issued_l) + appDispenseDelta) : null,
-      diesel_stock_balance_l: baseTank != null ? round2(baseTank + appRefillDelta - appDispenseDelta) : null,
+      diesel_opening_l: hasDieselActivity ? dtScoped.openingTankL : null,
+      diesel_purchased_l: hasDieselActivity ? dtScoped.boughtL : null,
+      diesel_issued_l: hasDieselActivity ? dtScoped.consumedL : null,
+      diesel_sold_l: hasDieselActivity ? dtScoped.soldL : null,
+      diesel_stock_balance_l: hasDieselActivity ? dtScoped.closingTankL : null,
       pending_diesel_deliveries_count: pendingDieselCount,
       pending_diesel_deliveries_l: round2(pendingDieselLitres)
     });
@@ -6899,7 +8737,8 @@
           const rp = Number(r.unit_price ?? r.price ?? 0);
           if (rp > 0 && rp < minAg) minAg = rp;
         });
-        if (Number.isFinite(minAg) && up + 0.01 < minAg) {
+        const s5UnitTol = getAlertParam('S5', 'unit_tolerance_usd', 0.01);
+        if (Number.isFinite(minAg) && up + s5UnitTol < minAg) {
           let b = belowPairsMap.get(pk);
           if (!b) {
             b = { cust: t.customer, prod: t.product, company: t.company, qty: 0, tickets: 0, shortfall: 0, lastDate: '', lastPrice: up, agreedPrice: minAg, lastId: t.id };
@@ -7052,7 +8891,8 @@
       unmatched_salary_by_staff: liveUnmatchedStaff
     });
 
-    // 3. Live Date-Basis Parity > 31 Days & Unlinked VAT Invoices (S8)
+    // 3. Live Date-Basis Parity > N Days & Unlinked VAT Invoices (S8)
+    const s8GapDays = getAlertParam('S8', 'audit_gap_days', 31);
     const dateGaps = [];
     const scanDateGaps = (tblLabel, rkey, list, amtFn) => {
       filterRecords(list, { ignoreSearch: true }).forEach(r => {
@@ -7064,7 +8904,7 @@
         const t2 = Date.parse(d2 + 'T00:00:00Z');
         if (!Number.isFinite(t1) || !Number.isFinite(t2)) return;
         const gap = Math.round((t2 - t1) / 86400000);
-        if (Math.abs(gap) > 31) {
+        if (Math.abs(gap) > s8GapDays) {
           dateGaps.push({
             id: r.id, rid: r.id, rkey,
             table: tblLabel,
@@ -7118,8 +8958,9 @@
     });
 
     // 4. Overdue AR > 60 Days (S4) & Workforce Absent-Driver / Unattributed Machine Entries (S9)
+    const s4MinAr60 = getAlertParam('S4', 'min_sentinel_ar60_usd', 0.01);
     const overdueArRows = (mdl.customers || [])
-      .filter(c => Number(c.ar_60_plus || 0) > 0.01)
+      .filter(c => Number(c.ar_60_plus || 0) > s4MinAr60)
       .sort((a, b) => Number(b.ar_60_plus || 0) - Number(a.ar_60_plus || 0))
       .map(c => {
         const ci = customerInfo(c.Customer);
@@ -7168,30 +9009,35 @@
     const rawItems = [];
 
     const tbv = k.tb_check == null ? null : Number(k.tb_check);
+    const s1Tol = getAlertParam('S1', 'tb_tolerance_usd', 0.005);
     rawItems.push({
       id: 'S1',
       code: 'S1 · TRIAL_BALANCE_TIE', title: 'Double-Entry Trial Balance Integrity (Lebanese CoA)',
       detail: tbv == null ? 'No ledger published for this entity yet.' : `Total Debits vs Total Credits across every SOA journal leg (sales, raw material, haulage, expenses, VAT 11%, receipts, settlements): variance ${fmtUSD(tbv, 2)}.`,
-      severity: tbv == null ? 'warn' : (Math.abs(tbv) < 0.005 ? 'ok' : 'crit'),
-      badge: tbv == null ? 'NO LEDGER' : (Math.abs(tbv) < 0.005 ? 'PASS · $0.00 DIFF' : 'FAIL · ' + fmtUSD(tbv, 2)),
+      severity: tbv == null ? 'warn' : (Math.abs(tbv) < s1Tol ? 'ok' : 'crit'),
+      badge: tbv == null ? 'NO LEDGER' : (Math.abs(tbv) < s1Tol ? 'PASS · $0.00 DIFF' : 'FAIL · ' + fmtUSD(tbv, 2)),
       company: scope,
-      rawMetric: tbv == null ? 1 : (Math.abs(tbv) < 0.005 ? 0 : round2(Math.abs(tbv))),
+      rawMetric: tbv == null ? 1 : (Math.abs(tbv) < s1Tol ? 0 : round2(Math.abs(tbv))),
       rawSecondary: 0,
       navView: 'ledger', navLabel: 'Open Ledger'
     });
 
     const tank = fleet.diesel_stock_balance_l != null ? Number(fleet.diesel_stock_balance_l) : (k.diesel_in_tank == null ? null : Number(k.diesel_in_tank));
+    const tankSoldL = fleet.diesel_sold_l != null ? Number(fleet.diesel_sold_l) : Number(k.diesel_sold || 0);
+    const tankOpenL = Number(fleet.diesel_opening_l || 0);
     const pendDieselCnt = Number(fleet.pending_diesel_deliveries_count || 0);
     const pendDieselL = Number(fleet.pending_diesel_deliveries_l || 0);
+    const s2CritNegL = getAlertParam('S2', 'crit_neg_tank_l', -1000);
     rawItems.push({
       id: 'S2',
       code: 'S2 · DIESEL_TANK_RECONCILIATION', title: 'Diesel Tank Physical vs Ledger Reconciliation',
-      detail: tank == null ? 'No diesel ledger for this entity.' : `Purchased ${fmtNum(fleet.diesel_purchased_l, 0)} L minus issued ${fmtNum(fleet.diesel_issued_l, 0)} L minus sold = ${fmtNum(tank, 0)} L in tank.${pendDieselCnt > 0 ? ` · ${fmtNum(pendDieselCnt)} delivery voucher${pendDieselCnt === 1 ? '' : 's'} (${fmtNum(pendDieselL, 0)} L) in tank with Pending Invoice Price ($0.00 AP) awaiting supplier invoice.` : ''}${tank < -1000 ? ' A negative tank means bulk diesel invoices were booked under General Expenses instead of Fuel Purchases; correct the historical intake before booking new diesel.' : ''}`,
-      severity: tank == null ? 'warn' : (tank < -1000 ? 'crit' : ((tank < 0 || pendDieselCnt > 0) ? 'warn' : 'ok')),
+      detail: tank == null ? 'No diesel ledger for this entity.' : `${tankOpenL !== 0 ? `Opening ${fmtNum(tankOpenL, 0)} L + purchased ` : 'Purchased '}${fmtNum(fleet.diesel_purchased_l, 0)} L minus issued ${fmtNum(fleet.diesel_issued_l, 0)} L minus sold ${fmtNum(tankSoldL, 0)} L = ${fmtNum(tank, 0)} L in tank.${pendDieselCnt > 0 ? ` · ${fmtNum(pendDieselCnt)} delivery voucher${pendDieselCnt === 1 ? '' : 's'} (${fmtNum(pendDieselL, 0)} L) in tank with Pending Invoice Price ($0.00 AP) awaiting supplier invoice.` : ''}${tank < s2CritNegL ? ' A negative tank means bulk diesel invoices were booked under General Expenses instead of Fuel Purchases; correct the historical intake before booking new diesel.' : ''}`,
+      severity: tank == null ? 'warn' : (tank < s2CritNegL ? 'crit' : ((tank < 0 || pendDieselCnt > 0) ? 'warn' : 'ok')),
       badge: tank == null ? 'NO DATA' : (tank < 0 ? 'ACTION · ' + fmtNum(tank, 0) + ' L' : (pendDieselCnt > 0 ? `PENDING PRICE · ${fmtNum(pendDieselCnt)} (${fmtNum(pendDieselL, 0)} L)` : 'OK · ' + fmtNum(tank, 0) + ' L')),
       company: scope,
       rawMetric: tank == null ? 1 : (tank < 0 ? Math.abs(Math.round(tank)) : pendDieselCnt),
       rawSecondary: Math.round(pendDieselL),
+      scrollPanel: pendDieselCnt > 0 ? '' : 'dieselTankPanel',
       navView: pendDieselCnt > 0 ? 'expenses' : 'fleet', navLabel: pendDieselCnt > 0 ? 'Pending Invoices' : 'Open Diesel'
     });
 
@@ -7210,12 +9056,13 @@
     });
 
     const ar60 = Number(k.ar_60_plus || 0);
+    const s4MinAr = getAlertParam('S4', 'min_sentinel_ar60_usd', 0.01);
     rawItems.push({
       id: 'S4',
       code: 'S4 · AR_OVERDUE_60_PLUS', title: 'Customer Receivables Overdue > 60 Days (FIFO Allocated)',
       detail: `Open AR ${fmtUSD(k.ar_balance, 2)} (VAT-inclusive) · ${fmtUSD(ar60, 2)} aged past 60 days after FIFO receipt allocation · DSO ${fmtNum(k.dso_days, 0)} days.`,
-      severity: ar60 > 0 ? 'warn' : 'ok',
-      badge: ar60 > 0 ? `${fmtUSD(ar60, 0)} > 60D` : 'CURRENT',
+      severity: ar60 > s4MinAr ? 'warn' : 'ok',
+      badge: ar60 > s4MinAr ? `${fmtUSD(ar60, 0)} > 60D` : 'CURRENT',
       company: scope,
       rawMetric: round2(Math.max(0, ar60)),
       rawSecondary: 0,
@@ -7224,16 +9071,17 @@
 
     const below = Number(pricing.sales_below_agreed_usd || 0);
     const lapsed = Number(pricing.lapsed_agreement_pairs_count || 0);
+    const s5MinShort = getAlertParam('S5', 'min_shortfall_usd', 0);
     rawItems.push({
       id: 'S5',
       code: 'S5 · PRICE_AGREEMENT_ENFORCEMENT', title: `${fmtNum(pricing.active_agreements || k.active_agreements || 0)} Active Price Agreements vs Tickets`,
       detail: `${fmtUSD(below, 0)} sold below the date-effective agreed price across ${fmtNum(pricing.below_agreed_pairs_count || 0)} customer × product pairs · ${fmtNum(lapsed)} pairs trading on lapsed agreements · ${fmtNum(pricing.truck_unit_delivery_rules || 0)} per-truck delivery rules.`,
-      severity: below > 0 || lapsed > 0 ? 'warn' : 'ok',
-      badge: below > 0 ? fmtUSD(below, 0) + ' BELOW' : (lapsed > 0 ? fmtNum(lapsed) + ' LAPSED' : 'ENFORCED'),
+      severity: below > s5MinShort || lapsed > 0 ? 'warn' : 'ok',
+      badge: below > s5MinShort ? fmtUSD(below, 0) + ' BELOW' : (lapsed > 0 ? fmtNum(lapsed) + ' LAPSED' : 'ENFORCED'),
       company: scope,
       rawMetric: round2(below),
       rawSecondary: lapsed,
-      scrollPanel: below > 0 ? 'snBelow' : 'snLapsed', navView: 'pricing', navLabel: 'Open Pricing'
+      scrollPanel: below > s5MinShort ? 'snBelow' : 'snLapsed', navView: 'pricing', navLabel: 'Open Pricing'
     });
 
     const dups = Number(pricing.duplicate_ticket_numbers || 0);
@@ -7255,12 +9103,13 @@
 
     const unmatched = Number(pricing.unmatched_salary_payments_usd || 0);
     const unmatchedStaffCnt = (pricing.unmatched_salary_by_staff || []).length;
+    const s7MinUnm = getAlertParam('S7', 'min_unmatched_usd', 0);
     rawItems.push({
       id: 'S7',
       code: 'S7 · PAYROLL_CONTRACT_MATCH', title: 'Salary Payments Without an Employment Contract',
       detail: `${fmtUSD(unmatched, 2)} paid across ${fmtNum(unmatchedStaffCnt)} staff without an active contract for that month · ${fmtUSD(fleet.unallocated_driver_payroll_usd || 0, 0)} driver payroll unallocated (${fmtNum(fleet.unallocated_driver_months_count || 0)} months).`,
-      severity: unmatched > 0 ? 'warn' : 'ok',
-      badge: unmatched > 0 ? fmtUSD(unmatched, 0) + ' UNMATCHED' : 'MATCHED',
+      severity: unmatched > s7MinUnm ? 'warn' : 'ok',
+      badge: unmatched > s7MinUnm ? fmtUSD(unmatched, 0) + ' UNMATCHED' : 'MATCHED',
       company: scope,
       rawMetric: round2(unmatched),
       rawSecondary: unmatchedStaffCnt,
@@ -7269,10 +9118,11 @@
 
     const anomalies = Number(parity.date_basis_anomalies_gt_31d_count || 0);
     const unlinkedVatCnt = Number(parity.unlinked_vat_invoices_count || 0);
+    const s8AuditDays = getAlertParam('S8', 'audit_gap_days', 31);
     rawItems.push({
       id: 'S8',
-      code: 'S8 · DATE_BASIS_PARITY', title: 'Transaction vs Reporting Date Gaps > 31 Days',
-      detail: `${fmtNum(anomalies)} rows carry a reporting date more than 31 days from the transaction date · ${fmtNum(unlinkedVatCnt)} VAT invoices not linked to tickets · ${fmtNum(parity.header_vs_tickets_mismatch_count || 0)} VAT header variances.`,
+      code: 'S8 · DATE_BASIS_PARITY', title: `Transaction vs Reporting Date Gaps > ${fmtNum(s8AuditDays, 0)} Days`,
+      detail: `${fmtNum(anomalies)} rows carry a reporting date more than ${fmtNum(s8AuditDays, 0)} days from the transaction date · ${fmtNum(unlinkedVatCnt)} VAT invoices not linked to tickets · ${fmtNum(parity.header_vs_tickets_mismatch_count || 0)} VAT header variances.`,
       severity: anomalies > 0 || unlinkedVatCnt > 0 ? 'warn' : 'ok',
       badge: anomalies > 0 ? fmtNum(anomalies) + ' GAPS' : (unlinkedVatCnt > 0 ? fmtNum(unlinkedVatCnt) + ' UNLINKED VAT' : 'IN SYNC'),
       company: scope,
@@ -7284,12 +9134,13 @@
     const wfAudit = buildWorkforceMapData({ auditOnly: true });
     const absGhostCnt = wfAudit ? wfAudit.absentGhostCount : 0;
     const unattrLubeCnt = wfAudit ? wfAudit.noDriverServiceCount : 0;
+    const s9MinEvents = getAlertParam('S9', 'min_ghost_events', 1);
     rawItems.push({
       id: 'S9',
       code: 'S9 · MACHINE_GREASE_DIESEL_ABSENT_DRIVER', title: 'Absent-Driver Diesel, Lubricant & Grease Machine Watchdog',
       detail: `${fmtNum(absGhostCnt)} machine fuel, lubricant or grease entries occurred on days when the assigned driver was absent without a logged substitute · ${fmtNum(unattrLubeCnt)} lubricant or grease entries carry no operator on the ticket.`,
-      severity: absGhostCnt > 0 ? 'crit' : (unattrLubeCnt > 0 ? 'warn' : 'ok'),
-      badge: absGhostCnt > 0 ? fmtNum(absGhostCnt) + ' GHOST ALERTS' : (unattrLubeCnt > 0 ? fmtNum(unattrLubeCnt) + ' UNATTRIBUTED' : 'CLEAN'),
+      severity: absGhostCnt >= s9MinEvents ? 'crit' : (unattrLubeCnt >= s9MinEvents ? 'warn' : 'ok'),
+      badge: absGhostCnt >= s9MinEvents ? fmtNum(absGhostCnt) + ' GHOST ALERTS' : (unattrLubeCnt >= s9MinEvents ? fmtNum(unattrLubeCnt) + ' UNATTRIBUTED' : 'CLEAN'),
       company: scope,
       rawMetric: absGhostCnt,
       rawSecondary: unattrLubeCnt,
@@ -7300,20 +9151,60 @@
     const unnotifPartsCnt = maintIdx.unnotifiedParts.length;
     const openCritDefCnt = maintIdx.openCritCount;
     const maintNoVendorCnt = maintIdx.partsInMaint.filter(p => !String(p.vendor_or_buyer || '').trim()).length;
+    const s10MinUnnotif = getAlertParam('S10', 'min_unnotified_parts', 1);
     rawItems.push({
       id: 'S10',
       code: 'S10 · FLEET_DEFECT_PARTS_CUSTODY', title: 'Pre-Replacement Defect Notice & Removed Parts Custody',
       detail: `${fmtNum(unnotifPartsCnt)} part replacement${unnotifPartsCnt === 1 ? '' : 's'} logged without a prior reported defect · ${fmtNum(openCritDefCnt)} critical unit${openCritDefCnt === 1 ? '' : 's'} flagged Down / Do Not Dispatch · ${fmtNum(maintIdx.partsStored.length)} stored in warehouse · ${fmtNum(maintIdx.partsInMaint.length)} in maintenance${maintNoVendorCnt > 0 ? ' (' + fmtNum(maintNoVendorCnt) + ' missing workshop vendor)' : ''} · ${fmtNum(maintIdx.partsSold.length)} sold (${fmtUSD(maintIdx.totalSaleProceeds, 0)} proceeds).`,
-      severity: openCritDefCnt > 0 ? 'crit' : ((unnotifPartsCnt > 0 || maintNoVendorCnt > 0) ? 'warn' : 'ok'),
-      badge: openCritDefCnt > 0 ? `${fmtNum(openCritDefCnt)} DOWN UNITS` : (unnotifPartsCnt > 0 ? `${fmtNum(unnotifPartsCnt)} UNNOTIFIED` : (maintNoVendorCnt > 0 ? `${fmtNum(maintNoVendorCnt)} NO VENDOR` : 'COMPLIANT')),
+      severity: openCritDefCnt > 0 ? 'crit' : ((unnotifPartsCnt >= s10MinUnnotif || maintNoVendorCnt > 0) ? 'warn' : 'ok'),
+      badge: openCritDefCnt > 0 ? `${fmtNum(openCritDefCnt)} DOWN UNITS` : (unnotifPartsCnt >= s10MinUnnotif ? `${fmtNum(unnotifPartsCnt)} UNNOTIFIED` : (maintNoVendorCnt > 0 ? `${fmtNum(maintNoVendorCnt)} NO VENDOR` : 'COMPLIANT')),
       company: scope,
       rawMetric: openCritDefCnt * 1000 + unnotifPartsCnt,
       rawSecondary: maintNoVendorCnt,
       scrollPanel: 'snFleetParts', navView: 'fleet_maint', navLabel: 'Open Defects'
     });
 
+    const customList = getActiveCustomAlertRules();
+    customList.forEach((cr, idx) => {
+      const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
+      const hits = cr.enabled === false ? [] : evaluateSingleCustomAlert(cr);
+      const code = cr.code || `C${idx + 1}`;
+      const fmtT = spec.unit === '$' ? fmtUSD(cr.threshold || 0, 0) : `${fmtNum(cr.threshold || 0, 1)} ${spec.unit}`;
+      const safeName = String(cr.name || 'Custom Alert').replace(/[—→]/g, '-');
+      const safeWhy = String(cr.why || 'Custom threshold rule').replace(/[—→]/g, '-');
+      rawItems.push({
+        id: cr.id,
+        isCustom: true,
+        customEnabled: cr.enabled !== false,
+        code: `${code} · CUSTOM_THRESHOLD`,
+        title: safeName,
+        detail: `${fmtNum(hits.length)} matching record${hits.length === 1 ? '' : 's'} where ${spec.label} ${cr.op === '<' ? '<' : '>'} ${fmtT}. Why: ${safeWhy}`,
+        severity: cr.enabled === false ? 'ok' : (hits.length > 0 ? (cr.mode === 'block_and_audit' ? 'crit' : 'warn') : 'ok'),
+        badge: cr.enabled === false ? 'PAUSED' : (hits.length > 0 ? `${fmtNum(hits.length)} FLAGGED` : 'CLEAR'),
+        company: (!cr.company || cr.company === 'all') ? scope : cr.company,
+        rawMetric: hits.length,
+        rawSecondary: 0,
+        scrollPanel: hits.length > 0 ? 'snCustomAlerts' : '',
+        navView: spec.jumpView || '',
+        navLabel: spec.jumpView ? 'Open Module' : ''
+      });
+    });
+
     const revStore = STATE.sentinelReviews || {};
     return rawItems.map(item => {
+      const ruleActive = item.isCustom ? item.customEnabled !== false : isAlertRuleEnabled(item.id);
+      if (!ruleActive) {
+        return Object.assign({}, item, {
+          rawSeverity: 'ok',
+          rawBadge: 'PAUSED',
+          severity: 'ok',
+          badge: 'PAUSED',
+          detail: 'Paused in Alerts & Thresholds. Resume anytime to re-enable live watchdog monitoring.',
+          reviewState: 'pass',
+          isReviewed: false,
+          reviewInfo: null
+        });
+      }
       const rawSev = item.severity;
       const rawBadge = item.badge;
       const rev = revStore[sentinelReviewKey(item.id, STATE.company)];
@@ -7476,9 +9367,10 @@
           bRows.sort((a, b) => (a.date < b.date ? -1 : (a.date > b.date ? 1 : (a.num - b.num))));
           let run = 0, prevD = null;
           const runs = new Map();
+          const s6SplitDays = getAlertParam('S6', 'pad_run_split_days', 60);
           for (let i = 0; i < bRows.length; i++) {
             const r = bRows[i];
-            if (prevD && r.date && dayDiff(prevD, r.date) > 60) run++;
+            if (prevD && r.date && dayDiff(prevD, r.date) > s6SplitDays) run++;
             if (r.date) prevD = r.date;
             if (!runs.has(run)) runs.set(run, []);
             runs.get(run).push(r);
@@ -7669,7 +9561,14 @@
     const snChip = (key, lbl) => `<button type="button" class="filter-chip ${snFilter === key ? 'active' : ''}" data-sn-filter="${esc(key)}">${lbl}</button>`;
 
     const k = getKPI();
-    const tbTied = Math.abs(Number(k.tb_check || 0)) < 0.005;
+    const s1TolUi = getAlertParam('S1', 'tb_tolerance_usd', 0.005);
+    const s8DaysUi = getAlertParam('S8', 'audit_gap_days', 31);
+    const tbTied = Math.abs(Number(k.tb_check || 0)) < s1TolUi;
+    const customHitRows = [];
+    getActiveCustomAlertRules().forEach(cr => {
+      if (cr.enabled === false) return;
+      evaluateSingleCustomAlert(cr).slice(0, 25).forEach(h => customHitRows.push(h));
+    });
     const belowUsd = Number(pricing.sales_below_agreed_usd || 0);
     const lapsedCnt = (pricing.lapsed_agreement_pairs || []).length;
     const outlierCnt = (fleet.consumption_outliers || []).length;
@@ -7737,6 +9636,7 @@
           <div class="panel-title"><span>LIVE AUDIT CHECKS &amp; RECOMMENDED ACTIONS</span></div>
           <span class="panel-meta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span>Click any rule to inspect flagged rows</span>
+            ${canViewView('alert_rules') ? `<button type="button" class="btn-sn-act" data-nav-jump="alert_rules">${ic('sliders')} Alerts &amp; Thresholds</button>` : ''}
             ${canSignOff && open > 0 ? `<button type="button" class="btn-sn-act is-check" id="snCheckAllBtn">${ic('check_circle')} Mark All Flagged Checked (${fmtNum(open)})</button>` : ''}
             ${canSignOff && reviewedCnt > 0 ? `<button type="button" class="btn-sn-act is-undo" id="snResetChecksBtn">${ic('rotate')} Reset Checks</button>` : ''}
           </span>
@@ -7771,6 +9671,7 @@
                 </div>
                 <div class="sentinel-right">
                   <span class="badge ${badgeCls}">${esc(s.badge)}</span>
+                  ${canViewView('alert_rules') ? `<button type="button" class="btn-sn-act" data-open-alert-rule="${esc(s.id)}" title="See why this alert exists and edit its threshold">${ic('sliders')} Threshold &amp; Why</button>` : ''}
                   ${s.scrollPanel ? `<button type="button" class="btn-sn-act" data-sn-inspect="${esc(s.id)}">Inspect Rows</button>` : ''}
                   ${s.navView && canViewView(s.navView) ? `<button type="button" class="btn-sn-act" data-sn-open-mod="${esc(s.navView)}">${esc(s.navLabel || 'Open Module')}</button>` : ''}
                   ${canSignOff && s.severity !== 'ok' ? `<button type="button" class="btn-sn-act is-check" data-sn-check="${esc(s.id)}">${ic('check_circle')} Mark Checked</button>` : ''}
@@ -7805,7 +9706,7 @@
         ${miniTable('SALARY PAYMENTS WITHOUT A CONTRACT', pricing.unmatched_salary_by_staff || [], [
           { label: 'Staff Member', key: 'staff' }, { label: 'Co.', key: 'company' }, { label: 'Months', key: 'months_count', r: true, fmt: v => fmtNum(v || 1, 0) }, { label: 'Unmatched ($)', key: 'unmatched_usd', r: true, fmt: usd2 }
         ], 'snPayroll')}
-        ${miniTable('TRANSACTION vs REPORTING DATE GAPS &gt; 31 DAYS', (parity.date_basis_anomalies_gt_31d || []).filter(r => STATE.company === 'manufacturing-group' || r.bu === COMPANY_BU_MATCH[STATE.company]), [
+        ${miniTable(`TRANSACTION vs REPORTING DATE GAPS &gt; ${fmtNum(s8DaysUi, 0)} DAYS`, (parity.date_basis_anomalies_gt_31d || []).filter(r => STATE.company === 'manufacturing-group' || r.bu === COMPANY_BU_MATCH[STATE.company]), [
           { label: 'Table', key: 'table' }, { label: 'BU', key: 'bu' }, { label: 'Record', key: 'name' }, { label: 'Ticket', key: 'ticket', mono: true },
           { label: 'Tx Date', key: 'transaction_date', mono: true }, { label: 'Rep Date', key: 'reporting_date', mono: true }, { label: 'Gap (d)', key: 'gap_days', r: true, fmt: v => fmtNum(v) }, { label: 'Amount', key: 'amount_usd', r: true, fmt: usd2 }
         ], 'snDates')}
@@ -7824,6 +9725,11 @@
           { label: 'Date', key: 'date', mono: true }, { label: 'Disposition / Status', key: 'state_label' },
           { label: 'Cost ($)', key: 'cost_usd', r: true, fmt: usd2 }
         ], 'snFleetParts')}
+        ${customHitRows.length ? miniTable('CUSTOM ALERT EXCEPTIONS', customHitRows, [
+          { label: 'Alert', key: 'rule_name' }, { label: 'Date', key: 'date', mono: true }, { label: 'Co.', key: 'company' },
+          { label: 'Party / Unit', key: 'party' }, { label: 'Detail', key: 'detail' },
+          { label: 'Value', key: 'value', r: true, fmt: (v, r) => r.unit === '$' ? usd2(v) : `${fmtNum(v, 1)} ${r.unit || ''}` }
+        ], 'snCustomAlerts') : ''}
       </div>
       ${moduleAnalyticsHtml('sentinels')}
     `;
@@ -9508,12 +11414,60 @@
     const isGroupScope = STATE.company === 'manufacturing-group';
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const flagged = base.filter(f => { const g = guards.get(f.id); return g && (g.cls === 'badge-err' || g.cls === 'badge-warn'); }).length;
-    const tank = fleet.diesel_stock_balance_l != null ? Number(fleet.diesel_stock_balance_l) : Number(k.diesel_in_tank || 0);
-    const boughtL = fleet.diesel_purchased_l != null ? Number(fleet.diesel_purchased_l) : Number(k.diesel_purchased || 0);
+    const dtLedger = getDieselTankLedger();
+    const tank = dtLedger.closingTankL;
+    const openingL = dtLedger.openingTankL;
+    const boughtL = dtLedger.boughtL;
+    const usedDieselL = dtLedger.consumedL;
+    const soldL = dtLedger.soldL;
+    const wtcDt = dtLedger.perCo.WTC || { openingL: 0, boughtL: 0, boughtCount: 0, boughtUsd: 0, consumedL: 0, soldL: 0, soldCount: 0, soldUsd: 0, closingL: 0 };
+    const bbcDt = dtLedger.perCo.BBConstruction || { openingL: 0, boughtL: 0, boughtCount: 0, boughtUsd: 0, consumedL: 0, soldL: 0, soldCount: 0, soldUsd: 0, closingL: 0 };
+    const tankSupplyL = Math.max(0, openingL + boughtL);
+    const usedSharePct = tankSupplyL > 0 ? Math.min(100, (usedDieselL / tankSupplyL) * 100) : (usedDieselL > 0 ? 100 : 0);
+    const soldSharePct = tankSupplyL > 0 ? Math.min(Math.max(0, 100 - usedSharePct), (soldL / tankSupplyL) * 100) : 0;
     const avgIntakeL = fuelRows.length > 0 ? (litres / fuelRows.length) : 0;
     const dieselPct = litres > 0 ? (dieselLitres / litres) * 100 : 100;
     const ownFuelLitresPct = litres > 0 ? (ownFuelLitres / litres) * 100 : 100;
     const okCount = Math.max(0, fuelRows.length - fuelRows.filter(f => { const g = guards.get(f.id); return g && (g.cls === 'badge-err' || g.cls === 'badge-warn'); }).length);
+
+    const dtMode = ['monthly', 'movements', 'counterparties'].includes(STATE.dieselTankMode) ? STATE.dieselTankMode : 'monthly';
+    const dtChip = ['all', 'bought', 'consumed', 'own', 'hauler', 'sold'].includes(STATE.dieselTankChip) ? STATE.dieselTankChip : 'all';
+    const dtFocusYm = String(STATE.dieselTankFocusYm || '').trim();
+    const dtMonthlySorted = sortRows(dtLedger.monthlyRows, 'dtankmo', 'ym', 'desc');
+    const qNorm = String(STATE.search || '').trim().toLowerCase();
+    const dtMovPoolByYm = dtLedger.scopedMovements.filter(mv => {
+      if (dtFocusYm && String(mv.date || '').slice(0, 7) !== dtFocusYm) return false;
+      if (qNorm) {
+        const hay = `${mv.date} ${mv.ref} ${mv.company} ${mv.party} ${mv.detail} ${mv.driver} ${mv.kind}`.toLowerCase();
+        if (!hay.includes(qNorm)) return false;
+      }
+      return true;
+    });
+    const cntBought = dtMovPoolByYm.filter(mv => mv.kind === 'bought').length;
+    const cntOwn = dtMovPoolByYm.filter(mv => mv.kind === 'consumed_own').length;
+    const cntHauler = dtMovPoolByYm.filter(mv => mv.kind === 'consumed_hauler').length;
+    const cntConsumed = cntOwn + cntHauler;
+    const cntSold = dtMovPoolByYm.filter(mv => mv.kind === 'sold').length;
+    const dtMovementsFiltered = sortRows(dtMovPoolByYm.filter(mv => {
+      if (dtChip === 'bought') return mv.kind === 'bought';
+      if (dtChip === 'consumed') return mv.kind === 'consumed_own' || mv.kind === 'consumed_hauler';
+      if (dtChip === 'own') return mv.kind === 'consumed_own';
+      if (dtChip === 'hauler') return mv.kind === 'consumed_hauler';
+      if (dtChip === 'sold') return mv.kind === 'sold';
+      return true;
+    }), 'dtankmv', 'date', 'desc');
+    const shownDtMov = dtMovementsFiltered.slice(0, shownCount('dtankmv'));
+    let dtMvInL = 0, dtMvOutL = 0, dtMvUsd = 0;
+    dtMovementsFiltered.forEach(mv => {
+      if (mv.kind === 'bought') dtMvInL += mv.litres;
+      else dtMvOutL += mv.litres;
+      dtMvUsd += Number(mv.amountUsd || 0);
+    });
+    const dtMvCloseL = dtMovementsFiltered.length ? dtMovementsFiltered[0].tank_after : tank;
+    const dtSoldRows = sortRows(dtLedger.soldByBuyer, 'dtanksold', 'litres', 'desc');
+    const dtBoughtRows = sortRows(dtLedger.boughtBySupplier, 'dtankbought', 'litres', 'desc');
+    const dtSupplyRef = Math.max(1, Math.abs(openingL) + boughtL, usedDieselL + soldL);
+    const barW = v => Math.min(100, Math.max(v > 0 ? 3 : 0, (Math.abs(v) / dtSupplyRef) * 100)).toFixed(1);
 
     return `
       <div class="cockpit-banner has-insights">
@@ -9523,15 +11477,16 @@
         </div>
         <div class="cockpit-pills insight-grid">
           ${insightCard({
-            label: 'Diesel Issued & Tank Stock',
+            label: 'Diesel Tank & Remaining',
             badge: tank < 0 ? 'Tank Unreconciled' : `${fmtNum(tank, 0)} L in tank`,
             badgeCls: tank < 0 ? 'amber' : 'emerald',
-            val: `<span class="insight-drill ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-chip="diesel" title="Click to filter Diesel intakes">${fmtNum(dieselLitres, 0)} L <small>diesel</small></span>`,
-            valCls: 'emerald',
-            pct: dieselPct,
-            pct2: 100 - dieselPct,
-            sub: `Bulk bought <b>${fmtNum(boughtL, 0)} L</b> · Tank <b>${fmtNum(tank, 0)} L</b> · Sold <b>${fmtNum(k.diesel_sold || 0, 0)} L</b>`,
-            tone: 'emerald'
+            val: `<span class="insight-drill" data-scroll-panel="dieselTankPanel" title="Click to jump to Diesel Consumption, Sales &amp; Tank Remaining Ledger">${fmtNum(tank, 0)} L <small>remaining</small></span>`,
+            valCls: tank < 0 ? 'amber' : 'emerald',
+            pct: usedSharePct,
+            pct2: soldSharePct,
+            tone: tank < 0 ? 'amber' : 'emerald',
+            tone2: 'brass',
+            sub: `${openingL !== 0 ? `Open <b>${fmtNum(openingL, 0)} L</b> · ` : ''}Bought <b>${fmtNum(boughtL, 0)} L</b> · Used <b>${fmtNum(usedDieselL, 0)} L</b> · Sold <b>${fmtNum(soldL, 0)} L</b>`
           })}
           ${insightCard({
             label: 'Lubricants & Fuel Mix',
@@ -9549,8 +11504,9 @@
             val: `<span class="insight-drill" data-scroll-panel="fuelEffPanel" title="Click to jump to Equipment Fuel &amp; Lubricant Efficiency">${fmtNum(fuelEffAll.length)} <small>Fueled Units ↘</small></span>`,
             pct: ownFuelLitresPct,
             pct2: 100 - ownFuelLitresPct,
-            sub: `<span class="insight-drill ${STATE.chipFilter === 'own' ? 'is-active' : ''}" data-chip="own">Own fleet: <b>${fmtNum(ownFuelLitres, 0)} L</b> (${ownFuelLitresPct.toFixed(1)}%)</span> · <span class="insight-drill ${STATE.chipFilter === 'transporter' ? 'is-active' : ''}" data-chip="transporter">Haulers: <b>${fmtNum(transFuelLitres, 0)} L</b></span>`,
-            tone: 'steel'
+            tone: 'steel',
+            tone2: 'brass',
+            sub: `<span class="insight-drill ${STATE.chipFilter === 'own' ? 'is-active' : ''}" data-chip="own">Own fleet: <b>${fmtNum(ownFuelLitres, 0)} L</b> (${ownFuelLitresPct.toFixed(1)}%)</span> · <span class="insight-drill ${STATE.chipFilter === 'transporter' ? 'is-active' : ''}" data-chip="transporter">Haulers: <b>${fmtNum(transFuelLitres, 0)} L</b></span>`
           })}
           ${insightCard({
             label: 'Meter Tolerance Guard',
@@ -9570,10 +11526,11 @@
       <div class="panel-card" id="fuelPanel">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search ticket #, equipment, plate, driver, item...')}
+            ${searchBox('Search ticket #, equipment, plate, driver, buyer, item...')}
             <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('diesel', `Diesel (${dieselBaseCount})`)}${chip('lube', `Lubricants (${lubeBaseCount})`)}${greaseBaseCount > 0 ? chip('grease', `Grease (${greaseBaseCount})`) : ''}${chip('flag', `Guard Flags (${flagged})`)}${chip('own', 'Own Fleet')}${chip('transporter', 'Haulers')}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-scroll-panel="dieselTankPanel" title="Jump to Diesel Consumption, Sales &amp; Tank Remaining Ledger">Tank Ledger</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_equipment" title="Open Master Equipment &amp; Drivers Registry">${ic('reg_equipment')} Master Fleet</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
             <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="fuel" title="Open Touch Fuel &amp; Lubricants Kiosk">${ic('fuel')} Fuel Kiosk</button>
@@ -9584,21 +11541,25 @@
         ${isGroupScope ? `
         <div class="sales-entity-recon">
           <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
-            <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcFl.n)} Fuel Tickets</b><span class="sales-recon-act">Filter WTC Only →</span></div>
+            <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcFl.n)} Fuel Tickets</b><span class="sales-recon-act">Filter WTC Only</span></div>
             <div class="sales-recon-metrics">
-              <span class="recon-metric-slice ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="diesel" title="Click to filter WTC Diesel Intakes"><small>Diesel Issued</small><b>${fmtNum(wtcFl.diesel, 1)} L</b></span>
-              <span class="recon-metric-slice ${STATE.chipFilter === 'lube' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="lube" title="Click to filter WTC Lubricants"><small>Lubricants</small><b>${fmtNum(wtcFl.lube, 1)} L</b></span>
-              <span class="recon-metric-slice" data-recon-co="wtc" data-recon-chip="all" title="Click to filter WTC All Intakes"><small>Total Intake</small><b class="brass">${fmtNum(wtcFl.litres, 1)} L</b></span>
-              <span class="recon-metric-slice ${STATE.chipFilter === 'flag' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="flag" title="Click to filter WTC Meter Guard Flags"><small>Guard Flags</small><b>${fmtNum(wtcFl.flags)}</b></span>
+              <span data-tile-tone="emerald" data-no-auto-recon="1" data-scroll-panel="dieselTankPanel" class="recon-metric-slice" title="WTC bulk diesel deliveries into tank"><small>Bulk Bought (+)</small><b>${fmtNum(wtcDt.boughtL, 1)} L</b><em class="recon-tile-sub">${fmtNum(wtcDt.boughtCount)} refills · ${fmtUSD(wtcDt.boughtUsd, 0)}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:100%"></i></u></span>
+              <span data-tile-tone="steel" class="recon-metric-slice ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="diesel" title="Click to filter WTC Diesel Intakes"><small>Diesel Used (-)</small><b>${fmtNum(wtcFl.diesel, 1)} L</b></span>
+              <span data-tile-tone="navy" data-no-auto-recon="1" data-dtank-jump-co="wtc" data-dtank-jump-chip="sold" class="recon-metric-slice" title="Click to inspect WTC Diesel Sold tickets"><small>Diesel Sold (-)</small><b>${fmtNum(wtcDt.soldL, 1)} L</b><em class="recon-tile-sub">${fmtNum(wtcDt.soldCount)} tickets · ${fmtUSD(wtcDt.soldUsd, 0)}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${wtcDt.boughtL > 0 ? Math.min(100, Math.max(3, (wtcDt.soldL / wtcDt.boughtL) * 100)).toFixed(1) : '0.0'}%"></i></u></span>
+              <span data-tile-tone="${wtcDt.closingL < 0 ? 'warn' : 'total'}" data-no-auto-recon="1" data-scroll-panel="dieselTankPanel" class="recon-metric-slice" title="WTC live diesel remaining in tank"><small>Tank Remaining (=)</small><b>${fmtNum(wtcDt.closingL, 1)} L</b><em class="recon-tile-sub">${wtcDt.openingL !== 0 ? `Open ${fmtNum(wtcDt.openingL, 0)} L` : 'Bought - Used - Sold'}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${wtcDt.closingL !== 0 ? '100' : '0'}%"></i></u></span>
+              <span data-tile-tone="slate" class="recon-metric-slice ${STATE.chipFilter === 'lube' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="lube" title="Click to filter WTC Lubricants"><small>Lubricants</small><b>${fmtNum(wtcFl.lube, 1)} L</b></span>
+              <span data-tile-tone="${wtcFl.flags > 0 ? 'warn' : 'slate'}" class="recon-metric-slice ${STATE.chipFilter === 'flag' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="flag" title="Click to filter WTC Meter Guard Flags"><small>Guard Flags</small><b>${fmtNum(wtcFl.flags)}</b></span>
             </div>
           </div>
           <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
-            <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcFl.n)} Fuel Tickets</b><span class="sales-recon-act">Filter BBC Only →</span></div>
+            <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcFl.n)} Fuel Tickets</b><span class="sales-recon-act">Filter BBC Only</span></div>
             <div class="sales-recon-metrics">
-              <span class="recon-metric-slice ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="diesel" title="Click to filter BBConstruction Diesel Intakes"><small>Diesel Issued</small><b>${fmtNum(bbcFl.diesel, 1)} L</b></span>
-              <span class="recon-metric-slice ${STATE.chipFilter === 'lube' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="lube" title="Click to filter BBConstruction Lubricants"><small>Lubricants</small><b>${fmtNum(bbcFl.lube, 1)} L</b></span>
-              <span class="recon-metric-slice" data-recon-co="bbconstruction" data-recon-chip="all" title="Click to filter BBConstruction All Intakes"><small>Total Intake</small><b class="brass">${fmtNum(bbcFl.litres, 1)} L</b></span>
-              <span class="recon-metric-slice ${STATE.chipFilter === 'flag' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="flag" title="Click to filter BBConstruction Meter Guard Flags"><small>Guard Flags</small><b>${fmtNum(bbcFl.flags)}</b></span>
+              <span data-tile-tone="emerald" data-no-auto-recon="1" data-scroll-panel="dieselTankPanel" class="recon-metric-slice" title="BBConstruction bulk diesel deliveries into tank"><small>Bulk Bought (+)</small><b>${fmtNum(bbcDt.boughtL, 1)} L</b><em class="recon-tile-sub">${fmtNum(bbcDt.boughtCount)} refills · ${fmtUSD(bbcDt.boughtUsd, 0)}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:100%"></i></u></span>
+              <span data-tile-tone="steel" class="recon-metric-slice ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="diesel" title="Click to filter BBConstruction Diesel Intakes"><small>Diesel Used (-)</small><b>${fmtNum(bbcFl.diesel, 1)} L</b></span>
+              <span data-tile-tone="navy" data-no-auto-recon="1" data-dtank-jump-co="bbconstruction" data-dtank-jump-chip="sold" class="recon-metric-slice" title="Click to inspect BBConstruction Diesel Sold tickets"><small>Diesel Sold (-)</small><b>${fmtNum(bbcDt.soldL, 1)} L</b><em class="recon-tile-sub">${fmtNum(bbcDt.soldCount)} tickets · ${fmtUSD(bbcDt.soldUsd, 0)}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${bbcDt.boughtL > 0 ? Math.min(100, Math.max(3, (bbcDt.soldL / bbcDt.boughtL) * 100)).toFixed(1) : '0.0'}%"></i></u></span>
+              <span data-tile-tone="${bbcDt.closingL < 0 ? 'warn' : 'total'}" data-no-auto-recon="1" data-scroll-panel="dieselTankPanel" class="recon-metric-slice" title="BBConstruction live diesel remaining in tank"><small>Tank Remaining (=)</small><b>${fmtNum(bbcDt.closingL, 1)} L</b><em class="recon-tile-sub">${bbcDt.openingL !== 0 ? `Open ${fmtNum(bbcDt.openingL, 0)} L` : 'Bought - Used - Sold'}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${bbcDt.closingL !== 0 ? '100' : '0'}%"></i></u></span>
+              <span data-tile-tone="slate" class="recon-metric-slice ${STATE.chipFilter === 'lube' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="lube" title="Click to filter BBConstruction Lubricants"><small>Lubricants</small><b>${fmtNum(bbcFl.lube, 1)} L</b></span>
+              <span data-tile-tone="${bbcFl.flags > 0 ? 'warn' : 'slate'}" class="recon-metric-slice ${STATE.chipFilter === 'flag' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="flag" title="Click to filter BBConstruction Meter Guard Flags"><small>Guard Flags</small><b>${fmtNum(bbcFl.flags)}</b></span>
             </div>
           </div>
         </div>
@@ -9611,10 +11572,12 @@
               <button type="button" class="btn sales-recon-reset" data-jump-co="manufacturing-group">Show All Group (3)</button>
             </div>
             <div class="sales-recon-metrics">
-              <span class="recon-metric-slice ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-recon-chip="diesel" title="Click to toggle Diesel filter"><small>Diesel Issued</small><b>${fmtNum(dieselLitres, 1)} L</b></span>
-              <span class="recon-metric-slice ${STATE.chipFilter === 'lube' ? 'is-active' : ''}" data-recon-chip="lube" title="Click to toggle Lubricants filter"><small>Lubricants</small><b>${fmtNum(lubeLitres, 1)} L</b></span>
-              <span class="${STATE.chipFilter !== 'all' ? 'recon-metric-slice' : ''}" data-recon-chip="all" title="Combined liquid fuel &amp; lubricant volume"><small>Total Intake</small><b class="brass">${fmtNum(litres, 1)} L</b></span>
-              <span class="recon-metric-slice ${STATE.chipFilter === 'flag' ? 'is-active' : ''}" data-recon-chip="flag" title="Click to toggle Meter Guard Flags filter"><small>Guard Flags</small><b>${fmtNum(flagged)}</b></span>
+              <span data-tile-tone="emerald" data-no-auto-recon="1" data-dtank-jump-chip="bought" class="recon-metric-slice" title="Click to inspect Bulk Diesel Purchased into tank"><small>Bulk Bought (+)</small><b>${fmtNum(boughtL, 1)} L</b><em class="recon-tile-sub">${fmtNum(dtLedger.boughtCount)} refills · ${fmtUSD(dtLedger.boughtUsd, 0)}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(boughtL)}%"></i></u></span>
+              <span data-tile-tone="steel" class="recon-metric-slice ${STATE.chipFilter === 'diesel' ? 'is-active' : ''}" data-recon-chip="diesel" title="Click to toggle Diesel Consumed filter"><small>Diesel Used (-)</small><b>${fmtNum(dieselLitres, 1)} L</b></span>
+              <span data-tile-tone="navy" data-no-auto-recon="1" data-dtank-jump-chip="sold" class="recon-metric-slice" title="Click to inspect Diesel Sold tickets"><small>Diesel Sold (-)</small><b>${fmtNum(soldL, 1)} L</b><em class="recon-tile-sub">${fmtNum(dtLedger.soldCount)} tickets · ${fmtUSD(dtLedger.soldUsd, 0)}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(soldL)}%"></i></u></span>
+              <span data-tile-tone="${tank < 0 ? 'warn' : 'total'}" data-no-auto-recon="1" data-scroll-panel="dieselTankPanel" class="recon-metric-slice" title="Click to jump to Diesel Consumption, Sales &amp; Tank Remaining Ledger"><small>Remaining in Tank (=)</small><b>${fmtNum(tank, 1)} L</b><em class="recon-tile-sub">${openingL !== 0 ? `Open ${fmtNum(openingL, 0)} L · Net ${dtLedger.netChangeL >= 0 ? '+' : ''}${fmtNum(dtLedger.netChangeL, 0)} L` : 'Bought - Used - Sold'}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${tank !== 0 ? '100' : '0'}%"></i></u></span>
+              <span data-tile-tone="slate" class="recon-metric-slice ${STATE.chipFilter === 'lube' ? 'is-active' : ''}" data-recon-chip="lube" title="Click to toggle Lubricants filter"><small>Lubricants</small><b>${fmtNum(lubeLitres, 1)} L</b></span>
+              <span data-tile-tone="${flagged > 0 ? 'warn' : 'slate'}" class="recon-metric-slice ${STATE.chipFilter === 'flag' ? 'is-active' : ''}" data-recon-chip="flag" title="Click to toggle Meter Guard Flags filter"><small>Guard Flags</small><b>${fmtNum(flagged)}</b></span>
             </div>
           </div>
         </div>
@@ -9625,27 +11588,29 @@
             <thead>
               <tr>
                 ${th('fuel', 'Date', 'date')}${th('fuel', 'Ticket', 'ticket_no')}${th('fuel', 'Co.', 'company')}${th('fuel', 'Equipment', 'equipment')}${th('fuel', 'Driver', 'driver')}${th('fuel', 'Item', 'item')}
-                ${th('fuel', 'Litres', 'litres', 'r')}${th('fuel', 'Meter', 'odometer', 'r')}<th>Meter Guard</th>
+                ${th('fuel', 'Litres', 'litres', 'r')}${th('fuel', 'Tank Rem. (L)', 'tank_rem', 'r')}${th('fuel', 'Meter', 'odometer', 'r')}<th>Meter Guard</th>
               </tr>
             </thead>
             <tbody>
               ${shownFuel.map(f => {
                 const g = guards.get(f.id) || { cls: 'badge-ok', label: '● OK' };
                 const effM = effectiveFuelMeter(f);
+                const remVal = isDieselFill(f) && dtLedger.tankAfterById.has(f.id) ? dtLedger.tankAfterById.get(f.id) : null;
                 return `
                 <tr class="rrow" data-rkey="fuel_intakes" data-rid="${esc(f.id)}">
                   <td class="mono">${esc(recordDateDMY(f))}${appCell(f, 'fuel_intakes')}</td>
-                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(f.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="fuel" data-print-id="${esc(f.id)}" title="Bluetooth Thermal Print / Preview Fuel Slip #${esc(f.ticket_no || '')}">${ic('printer')}</button></span></td>
+                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(f.ticket_no || '-')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="fuel" data-print-id="${esc(f.id)}" title="Bluetooth Thermal Print / Preview Fuel Slip #${esc(f.ticket_no || '')}">${ic('printer')}</button></span></td>
                   <td>${coBadge(f.company)}</td>
                   <td class="mono">${relLink('equipment', f.equipment, f.equipment, true)}</td>
-                  <td>${f.driver ? relLink('drivers', f.driver) : '—'}</td>
+                  <td>${f.driver ? relLink('drivers', f.driver) : '-'}</td>
                   <td>${relLink('products', f.item || f.fuel_type || 'Diesel')}</td>
                   <td class="r"><strong>${!isDieselFill(f) && isGreaseFill(f) ? fmtNum(f.litres, 2) + ' kg' : fmtNum(f.litres, 1) + ' L'}</strong></td>
-                  <td class="r">${effM.reading != null ? fmtNum(effM.reading, effM.type === 'hours' && effM.reading % 1 !== 0 ? 1 : 0) + ' ' + effM.unit : '—'}</td>
+                  <td class="r mono">${remVal != null ? `<span style="color:${remVal < 0 ? 'var(--warn)' : 'var(--ink-2)'}">${fmtNum(remVal, 1)} L</span>` : '-'}</td>
+                  <td class="r">${effM.reading != null ? fmtNum(effM.reading, effM.type === 'hours' && effM.reading % 1 !== 0 ? 1 : 0) + ' ' + effM.unit : '-'}</td>
                   <td><span class="badge ${g.cls}">${esc(g.label)}</span></td>
                 </tr>`;
-              }).join('') || emptyRow(9, periodEmptyMsg(SEED.records.fuel_intakes, 'fuel intakes'))}
-              ${showMoreRow('fuel', fuelRows.length, 9)}
+              }).join('') || emptyRow(10, periodEmptyMsg(SEED.records.fuel_intakes, 'fuel intakes'))}
+              ${showMoreRow('fuel', fuelRows.length, 10)}
             </tbody>
             <tfoot>
               <tr>
@@ -9653,11 +11618,249 @@
                   <b>TOTAL (${fmtNum(fuelRows.length)} INTAKES · Diesel ${fmtNum(dieselLitres, 1)} L${lubeLitres > 0 ? ` · Lubricants ${fmtNum(lubeLitres, 1)} L` : ''}${greaseKg > 0 ? ` · Grease ${fmtNum(greaseKg, 2)} kg` : ''})</b>
                 </td>
                 <td class="r"><b>${STATE.chipFilter === 'grease' || (litres === 0 && greaseKg > 0) ? fmtNum(greaseKg, 2) + ' kg' : fmtNum(litres, 1) + ' L' + (greaseKg > 0 ? ' · ' + fmtNum(greaseKg, 2) + ' kg' : '')}</b></td>
+                <td class="r"><b>${fmtNum(tank, 1)} L</b></td>
                 <td colspan="2"></td>
               </tr>
             </tfoot>
           </table>
         </div>
+      </div>
+
+      <div class="panel-card" id="dieselTankPanel">
+        <div class="panel-head">
+          <div class="panel-title"><span>DIESEL CONSUMPTION, SALES &amp; TANK REMAINING LEDGER</span></div>
+          <span class="panel-meta" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="display:inline-flex;gap:4px;flex-wrap:wrap">
+              <button type="button" class="filter-chip ${dtMode === 'monthly' ? 'active' : ''}" data-dtank-mode="monthly">Monthly Balance (${fmtNum(dtMonthlySorted.length)})</button>
+              <button type="button" class="filter-chip ${dtMode === 'movements' ? 'active' : ''}" data-dtank-mode="movements">All Movements (${fmtNum(dtMovPoolByYm.length)})</button>
+              <button type="button" class="filter-chip ${dtMode === 'counterparties' ? 'active' : ''}" data-dtank-mode="counterparties">Sold &amp; Bought Breakdown (${fmtNum(dtSoldRows.length + dtBoughtRows.length)})</button>
+            </span>
+            ${canEnterForm('expense') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-diesel-bulk="1" title="Record Bulk Diesel Delivery into Tank">+ Bulk Refill</button>' : ''}
+            ${canEnterForm('sales') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-diesel-sale="1" title="Record Diesel Sale Ticket from Tank">+ Diesel Sale</button>' : ''}
+            ${exportBtn('dieselTankPanel', dtMode === 'movements' ? 'Diesel_Tank_Movements' : (dtMode === 'counterparties' ? 'Diesel_Sold_And_Bought_Breakdown' : 'Diesel_Monthly_Tank_Ledger'))}
+          </span>
+        </div>
+
+        <div class="sales-entity-recon single">
+          <div class="sales-recon-card single-card sales-recon-single" data-co="${esc(STATE.company)}">
+            <div class="sales-recon-head">
+              <span class="badge ${STATE.company === 'bbconstruction' ? 'badge-info' : 'badge-brass'}">${esc(COMPANY_BU_MATCH[STATE.company] || 'All Group')}</span>
+              <b>Tank Equation: ${openingL !== 0 ? 'Opening + ' : ''}Bought - Used - Sold = Remaining</b>
+              ${isGroupScope
+                ? `<span class="mono" style="margin-left:auto;font-size:11.5px;color:var(--ink-2)">WTC Rem: <b>${fmtNum(wtcDt.closingL, 0)} L</b> · BBC Rem: <b style="color:${bbcDt.closingL < 0 ? 'var(--warn)' : 'inherit'}">${fmtNum(bbcDt.closingL, 0)} L</b></span>`
+                : `<span class="mono" style="margin-left:auto;font-size:11.5px;color:var(--ink-2)">${dtLedger.pendingCount > 0 ? `<span class="badge badge-warn">${fmtNum(dtLedger.pendingCount)} pending price (${fmtNum(dtLedger.pendingLitres, 0)} L)</span>` : `Avg Bulk Cost: <b>${dtLedger.boughtL > 0 && dtLedger.boughtUsd > 0 ? fmtUSD(dtLedger.boughtUsd / Math.max(1, dtLedger.boughtL - dtLedger.pendingLitres), 2) + '/L' : '-'}</b> · Avg Sale: <b>${soldL > 0 && dtLedger.soldUsd > 0 ? fmtUSD(dtLedger.soldUsd / soldL, 2) + '/L' : '-'}</b>`}</span>`}
+            </div>
+            <div class="sales-recon-metrics">
+              <span data-tile-tone="navy" data-no-auto-recon="1"><small>Opening Tank</small><b>${fmtNum(openingL, 1)} L</b><em class="recon-tile-sub">${openingL === 0 ? 'All-time opening anchor' : 'Carry-in before period'}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(openingL)}%"></i></u></span>
+              <span data-tile-tone="emerald" data-no-auto-recon="1" data-dtank-jump-chip="bought" class="recon-metric-slice ${dtMode === 'movements' && dtChip === 'bought' ? 'is-active' : ''}" title="Click to inspect Bulk Diesel deliveries into tank"><small>+ Bulk Bought</small><b>+${fmtNum(boughtL, 1)} L</b><em class="recon-tile-sub">${fmtNum(dtLedger.boughtCount)} refills · ${fmtUSD(dtLedger.boughtUsd, 0)}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(boughtL)}%"></i></u></span>
+              <span data-tile-tone="steel" data-no-auto-recon="1" data-dtank-jump-chip="own" class="recon-metric-slice ${dtMode === 'movements' && dtChip === 'own' ? 'is-active' : ''}" title="Click to inspect Own Fleet diesel consumption"><small>- Own Fleet Used</small><b>-${fmtNum(dtLedger.consumedOwnL, 1)} L</b><em class="recon-tile-sub">${fmtNum(dtLedger.consumedOwnCount)} own-unit fills</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(dtLedger.consumedOwnL)}%"></i></u></span>
+              <span data-tile-tone="slate" data-no-auto-recon="1" data-dtank-jump-chip="hauler" class="recon-metric-slice ${dtMode === 'movements' && dtChip === 'hauler' ? 'is-active' : ''}" title="Click to inspect Hauler / Subcontractor diesel fills"><small>- Hauler Used</small><b>-${fmtNum(dtLedger.consumedHaulerL, 1)} L</b><em class="recon-tile-sub">${fmtNum(dtLedger.consumedHaulerCount)} hauler fills</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(dtLedger.consumedHaulerL)}%"></i></u></span>
+              <span data-tile-tone="navy" data-no-auto-recon="1" data-dtank-jump-chip="sold" class="recon-metric-slice ${dtMode === 'movements' && dtChip === 'sold' ? 'is-active' : ''}" title="Click to inspect Diesel Sold tickets"><small>- Diesel Sold</small><b>-${fmtNum(soldL, 1)} L</b><em class="recon-tile-sub">${fmtNum(dtLedger.soldCount)} tickets · ${fmtUSD(dtLedger.soldUsd, 0)}</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${barW(soldL)}%"></i></u></span>
+              <span data-tile-tone="${tank < 0 ? 'warn' : 'total'}" data-no-auto-recon="1" data-dtank-jump-chip="all" class="recon-metric-slice ${dtMode === 'movements' && dtChip === 'all' ? 'is-active' : ''}" title="Click to inspect full chronological tank movement ledger"><small>= Remaining in Tank</small><b>${fmtNum(tank, 1)} L</b><em class="recon-tile-sub">Net ${dtLedger.netChangeL >= 0 ? '+' : ''}${fmtNum(dtLedger.netChangeL, 0)} L in period</em><u class="recon-tile-bar" aria-hidden="true"><i style="width:${tank !== 0 ? '100' : '0'}%"></i></u></span>
+            </div>
+          </div>
+        </div>
+
+        ${dtMode === 'monthly' ? `
+        <div class="table-wrap">
+          <table class="ledger-table" id="dieselTankMonthlyTable">
+            <thead>
+              <tr>
+                ${th('dtankmo', 'Month', 'ym')}${th('dtankmo', 'Opening (L)', 'openingL', 'r')}${th('dtankmo', '+ Bought (L)', 'boughtL', 'r')}
+                ${th('dtankmo', '- Own Fleet (L)', 'consumedOwnL', 'r')}${th('dtankmo', '- Haulers (L)', 'consumedHaulerL', 'r')}${th('dtankmo', '- Total Used (L)', 'consumedL', 'r')}
+                ${th('dtankmo', '- Sold (L)', 'soldL', 'r')}${th('dtankmo', 'Sold ($)', 'soldUsd', 'r')}${th('dtankmo', 'Net Change (L)', 'netChangeL', 'r')}
+                ${th('dtankmo', 'Remaining in Tank (L)', 'closingL', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${dtMonthlySorted.map(mr => `
+                <tr class="dtank-month-row" data-dtank-focus-ym="${esc(mr.ym)}" style="cursor:pointer" title="Click to inspect all diesel movements in ${esc(mr.monthLabel)}">
+                  <td class="mono"><strong>${esc(mr.monthLabel)}</strong></td>
+                  <td class="r mono">${fmtNum(mr.openingL, 1)} L</td>
+                  <td class="r">${mr.boughtL > 0 ? `<strong style="color:var(--good)">+${fmtNum(mr.boughtL, 1)} L</strong>` : '-'}</td>
+                  <td class="r">${mr.consumedOwnL > 0 ? `-${fmtNum(mr.consumedOwnL, 1)} L` : '-'}</td>
+                  <td class="r">${mr.consumedHaulerL > 0 ? `-${fmtNum(mr.consumedHaulerL, 1)} L` : '-'}</td>
+                  <td class="r"><strong>${mr.consumedL > 0 ? `-${fmtNum(mr.consumedL, 1)} L` : '-'}</strong></td>
+                  <td class="r">${mr.soldL !== 0 ? `-${fmtNum(mr.soldL, 1)} L` : '-'}</td>
+                  <td class="r">${mr.soldUsd ? fmtUSD(mr.soldUsd, 2) : '-'}</td>
+                  <td class="r mono" style="color:${mr.netChangeL < 0 ? 'var(--ink-2)' : 'var(--good)'}">${mr.netChangeL >= 0 ? '+' : ''}${fmtNum(mr.netChangeL, 1)} L</td>
+                  <td class="r mono"><strong style="color:${mr.closingL < 0 ? 'var(--warn)' : 'var(--ink)'}">${fmtNum(mr.closingL, 1)} L</strong></td>
+                </tr>
+              `).join('') || emptyRow(10, 'No diesel tank movements in the selected period')}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td><b>TOTAL (${fmtNum(dtMonthlySorted.length)} MO.)</b></td>
+                <td class="r"><b>${fmtNum(openingL, 1)} L</b></td>
+                <td class="r"><b>+${fmtNum(boughtL, 1)} L</b></td>
+                <td class="r"><b>-${fmtNum(dtLedger.consumedOwnL, 1)} L</b></td>
+                <td class="r"><b>-${fmtNum(dtLedger.consumedHaulerL, 1)} L</b></td>
+                <td class="r"><b>-${fmtNum(usedDieselL, 1)} L</b></td>
+                <td class="r"><b>-${fmtNum(soldL, 1)} L</b></td>
+                <td class="r"><b>${fmtUSD(dtLedger.soldUsd, 2)}</b></td>
+                <td class="r"><b>${dtLedger.netChangeL >= 0 ? '+' : ''}${fmtNum(dtLedger.netChangeL, 1)} L</b></td>
+                <td class="r"><b>${fmtNum(tank, 1)} L</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        ` : (dtMode === 'movements' ? `
+        <div class="dtank-subbar">
+          <div class="chip-bar">
+            <button type="button" class="filter-chip ${dtChip === 'all' ? 'active' : ''}" data-dtank-chip="all">All Movements (${fmtNum(dtMovPoolByYm.length)})</button>
+            <button type="button" class="filter-chip ${dtChip === 'bought' ? 'active' : ''}" data-dtank-chip="bought">+ Bulk Bought (${fmtNum(cntBought)})</button>
+            <button type="button" class="filter-chip ${dtChip === 'consumed' ? 'active' : ''}" data-dtank-chip="consumed">- All Consumed (${fmtNum(cntConsumed)})</button>
+            <button type="button" class="filter-chip ${dtChip === 'own' ? 'active' : ''}" data-dtank-chip="own">- Own Fleet (${fmtNum(cntOwn)})</button>
+            <button type="button" class="filter-chip ${dtChip === 'hauler' ? 'active' : ''}" data-dtank-chip="hauler">- Haulers (${fmtNum(cntHauler)})</button>
+            <button type="button" class="filter-chip ${dtChip === 'sold' ? 'active' : ''}" data-dtank-chip="sold">- Diesel Sold (${fmtNum(cntSold)})</button>
+            ${dtFocusYm ? `<button type="button" class="filter-chip active" data-dtank-focus-ym="" title="Click to clear month filter">Month: ${esc(_formatMonthYmLabel(dtFocusYm))} ✕</button>` : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table" id="dieselTankMovementsTable">
+            <thead>
+              <tr>
+                ${th('dtankmv', 'Date', 'date')}${th('dtankmv', 'Stream', 'kind')}${th('dtankmv', 'Ref / Ticket', 'ref')}${th('dtankmv', 'Co.', 'company')}
+                ${th('dtankmv', 'Unit / Buyer / Supplier', 'party')}${th('dtankmv', 'Driver / Notes', 'detail')}
+                ${th('dtankmv', 'In (+L)', 'litres', 'r')}${th('dtankmv', 'Out (-L)', 'deltaL', 'r')}${th('dtankmv', 'Amount ($)', 'amountUsd', 'r')}
+                ${th('dtankmv', 'Remaining in Tank (L)', 'tank_after', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownDtMov.map(mv => {
+                const streamBadge = mv.kind === 'bought'
+                  ? '<span class="badge badge-ok">+ Bulk Bought</span>'
+                  : (mv.kind === 'sold'
+                    ? '<span class="badge badge-brass">- Diesel Sold</span>'
+                    : (mv.kind === 'consumed_own'
+                      ? '<span class="badge badge-info">- Own Fleet</span>'
+                      : '<span class="badge">- Hauler Fill</span>'));
+                const partyHtml = mv.kind === 'bought'
+                  ? (mv.rkey === 'expenses' ? relLink('suppliers', mv.party, mv.party, true) : esc(mv.party))
+                  : (mv.kind === 'sold'
+                    ? relLink('customers', mv.party, mv.party, true)
+                    : relLink('equipment', mv.party, mv.party, true));
+                const printBtn = mv.rkey === 'fuel_intakes'
+                  ? `<button type="button" class="tkt-print-mini" data-print-ticket="fuel" data-print-id="${esc(mv.id)}" title="Print Fuel Slip #${esc(mv.ref)}">${ic('printer')}</button>`
+                  : (mv.rkey === 'sales_tickets'
+                    ? `<button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(mv.id)}" title="Print Diesel Sale Ticket #${esc(mv.ref)}">${ic('printer')}</button>`
+                    : '');
+                return `
+                <tr class="rrow" data-rkey="${esc(mv.rkey)}" data-rid="${esc(mv.id)}">
+                  <td class="mono">${esc(fmtDateDMY(mv.date))}${appCell(mv.rec, mv.rkey)}</td>
+                  <td>${streamBadge}</td>
+                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(mv.ref || '-')}</strong>${printBtn}</span></td>
+                  <td>${coBadge(mv.company)}</td>
+                  <td>${partyHtml}</td>
+                  <td>${mv.driver && mv.rkey === 'fuel_intakes' ? relLink('drivers', mv.driver) : esc(mv.detail || '-')}</td>
+                  <td class="r">${mv.kind === 'bought' ? `<strong style="color:var(--good)">+${fmtNum(mv.litres, 1)} L</strong>` : '-'}</td>
+                  <td class="r">${mv.kind !== 'bought' ? `<strong>-${fmtNum(mv.litres, 1)} L</strong>` : '-'}</td>
+                  <td class="r">${mv.pendingPrice ? '<span class="badge badge-warn">Pending</span>' : (mv.amountUsd ? fmtUSD(mv.amountUsd, 2) : '-')}</td>
+                  <td class="r mono"><strong style="color:${mv.tank_after < 0 ? 'var(--warn)' : 'var(--ink)'}">${fmtNum(mv.tank_after, 1)} L</strong></td>
+                </tr>`;
+              }).join('') || emptyRow(10, 'No diesel movements match the active filter')}
+              ${showMoreRow('dtankmv', dtMovementsFiltered.length, 10)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>TOTAL (${fmtNum(dtMovementsFiltered.length)} MOVEMENTS${dtFocusYm ? ` · ${_formatMonthYmLabel(dtFocusYm)}` : ''})</b></td>
+                <td class="r"><b>${dtMvInL > 0 ? `+${fmtNum(dtMvInL, 1)} L` : '-'}</b></td>
+                <td class="r"><b>${dtMvOutL !== 0 ? `-${fmtNum(dtMvOutL, 1)} L` : '-'}</b></td>
+                <td class="r"><b>${dtMvUsd ? fmtUSD(dtMvUsd, 2) : '-'}</b></td>
+                <td class="r"><b>${fmtNum(dtMvCloseL, 1)} L</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        ` : `
+        <div class="dtank-cp-grid">
+          <div class="dtank-cp-section">
+            <div class="dtank-cp-head">
+              <b>1 · Diesel Sold from Tank by Customer / Buyer (${fmtNum(dtSoldRows.length)} Buyers)</b>
+              <span class="mono">${fmtNum(dtLedger.soldCount)} tickets · <b>${fmtNum(soldL, 1)} L</b> · <b>${fmtUSD(dtLedger.soldUsd, 2)}</b></span>
+            </div>
+            <div class="table-wrap">
+              <table class="ledger-table" id="dieselTankSoldTable">
+                <thead>
+                  <tr>
+                    ${th('dtanksold', 'Customer / Buyer', 'buyer')}${th('dtanksold', 'Co.', 'companies')}${th('dtanksold', 'Tickets', 'tickets', 'r')}
+                    ${th('dtanksold', 'Sold (L)', 'litres', 'r')}${th('dtanksold', 'Sold ($)', 'amountUsd', 'r')}${th('dtanksold', 'Avg $/L', 'avgPriceUsd', 'r')}
+                    ${th('dtanksold', 'Share %', 'sharePct', 'r')}${th('dtanksold', 'Last Sale', 'lastDate')}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${dtSoldRows.map(r => `
+                    <tr>
+                      <td>${relLink('customers', r.buyer, r.buyer, true)}</td>
+                      <td>${esc(r.companies)}</td>
+                      <td class="r">${fmtNum(r.tickets)}</td>
+                      <td class="r"><strong>${fmtNum(r.litres, 1)} L</strong></td>
+                      <td class="r">${fmtUSD(r.amountUsd, 2)}</td>
+                      <td class="r">${r.avgPriceUsd != null ? fmtUSD(r.avgPriceUsd, 2) : '-'}</td>
+                      <td class="r">${fmtNum(r.sharePct, 1)}%</td>
+                      <td class="mono">${r.lastDate ? esc(fmtDateDMY(r.lastDate)) : '-'}</td>
+                    </tr>
+                  `).join('') || emptyRow(8, 'No diesel sales in the selected period')}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="2"><b>TOTAL (${fmtNum(dtSoldRows.length)} BUYERS)</b></td>
+                    <td class="r"><b>${fmtNum(dtLedger.soldCount)}</b></td>
+                    <td class="r"><b>${fmtNum(soldL, 1)} L</b></td>
+                    <td class="r"><b>${fmtUSD(dtLedger.soldUsd, 2)}</b></td>
+                    <td class="r"><b>${soldL > 0 && dtLedger.soldUsd > 0 ? fmtUSD(dtLedger.soldUsd / soldL, 2) : '-'}</b></td>
+                    <td class="r"><b>${dtSoldRows.length ? '100.0%' : '-'}</b></td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div class="dtank-cp-section">
+            <div class="dtank-cp-head">
+              <b>2 · Bulk Diesel Purchased into Tank by Supplier (${fmtNum(dtBoughtRows.length)} Suppliers)</b>
+              <span class="mono">${fmtNum(dtLedger.boughtCount)} refills · <b>${fmtNum(boughtL, 1)} L</b> · <b>${fmtUSD(dtLedger.boughtUsd, 2)}</b></span>
+            </div>
+            <div class="table-wrap">
+              <table class="ledger-table" id="dieselTankBoughtTable">
+                <thead>
+                  <tr>
+                    ${th('dtankbought', 'Fuel Supplier', 'supplier')}${th('dtankbought', 'Co.', 'companies')}${th('dtankbought', 'Refills', 'vouchers', 'r')}
+                    ${th('dtankbought', 'Bought (L)', 'litres', 'r')}${th('dtankbought', 'Cost ($)', 'amountUsd', 'r')}${th('dtankbought', 'Avg $/L', 'avgCostUsd', 'r')}
+                    ${th('dtankbought', 'Share %', 'sharePct', 'r')}${th('dtankbought', 'Last Delivery', 'lastDate')}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${dtBoughtRows.map(r => `
+                    <tr>
+                      <td>${relLink('suppliers', r.supplier, r.supplier, true)}${r.pendingCount > 0 ? ` <span class="badge badge-warn">${fmtNum(r.pendingCount)} pending</span>` : ''}</td>
+                      <td>${esc(r.companies)}</td>
+                      <td class="r">${fmtNum(r.vouchers)}</td>
+                      <td class="r"><strong style="color:var(--good)">+${fmtNum(r.litres, 1)} L</strong></td>
+                      <td class="r">${r.amountUsd ? fmtUSD(r.amountUsd, 2) : (r.pendingCount > 0 ? '<span class="badge badge-warn">Pending</span>' : '-')}</td>
+                      <td class="r">${r.avgCostUsd != null ? fmtUSD(r.avgCostUsd, 2) : '-'}</td>
+                      <td class="r">${fmtNum(r.sharePct, 1)}%</td>
+                      <td class="mono">${r.lastDate ? esc(fmtDateDMY(r.lastDate)) : '-'}</td>
+                    </tr>
+                  `).join('') || emptyRow(8, 'No bulk diesel deliveries in the selected period')}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="2"><b>TOTAL (${fmtNum(dtBoughtRows.length)} SUPPLIERS)</b></td>
+                    <td class="r"><b>${fmtNum(dtLedger.boughtCount)}</b></td>
+                    <td class="r"><b>+${fmtNum(boughtL, 1)} L</b></td>
+                    <td class="r"><b>${fmtUSD(dtLedger.boughtUsd, 2)}</b></td>
+                    <td class="r"><b>${(boughtL - dtLedger.pendingLitres) > 0 && dtLedger.boughtUsd > 0 ? fmtUSD(dtLedger.boughtUsd / (boughtL - dtLedger.pendingLitres), 2) : '-'}</b></td>
+                    <td class="r"><b>${dtBoughtRows.length ? '100.0%' : '-'}</b></td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+        `)}
       </div>
 
       ${(window.MFG_PBI && typeof window.MFG_PBI.renderFuelVisualsSection === 'function')
@@ -9666,9 +11869,9 @@
 
       <div class="panel-card" id="fuelEffPanel">
         <div class="panel-head">
-          <div class="panel-title"><span>EQUIPMENT FUEL &amp; LUBRICANT EFFICIENCY — DIESEL, LUBRICANTS, KM RUN &amp; L / 100 KM (${fmtNum(fuelEffRows.length)} FUELED UNITS)</span></div>
+          <div class="panel-title"><span>EQUIPMENT FUEL &amp; LUBRICANT EFFICIENCY · DIESEL, LUBRICANTS, KM RUN &amp; L / 100 KM (${fmtNum(fuelEffRows.length)} FUELED UNITS)</span></div>
           <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
-            <button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-nav-jump="fleet_equip">Fleet &amp; Running Costs →</button>
+            <button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-nav-jump="fleet_equip">Fleet &amp; Running Costs</button>
             ${exportBtn('fuelEffPanel', 'Equipment_Fuel_Efficiency')}
           </span>
         </div>
@@ -13500,9 +15703,8 @@
     });
 
     // 3. Add driver night-trip overtime ([Staff Overtime T]) to Staff OT Pay
-    const allowedCos = new Set((allowedCompanyNames() || []).map(norm));
-    (idx.driverOtTrips || []).forEach(tr => {
-      if (allowedCos.size && !allowedCos.has(tr.coNorm)) return;
+    const scopedDriverOtTrips = filterRecords(idx.driverOtTrips || [], { ignoreSearch: Boolean(opts.salRows) });
+    scopedDriverOtTrips.forEach(tr => {
       const d = STATE.basis === 'rep' ? tr.rep_date : tr.date;
       if (d < effFromDate || d > effToDate) return;
       if (matchFn && !matchFn({ company: tr.company, staff: tr.staff, driver: tr.staff })) return;
@@ -14825,7 +17027,7 @@
               <tr>
                 ${th('pay_staff', 'Staff Member', 'staff')}${th('pay_staff', 'Co.', 'company')}${th('pay_staff', 'Contract', 'type')}${th('pay_staff', 'Status', 'status')}
                 ${th('pay_staff', 'Base ($)', 'base', 'r')}${th('pay_staff', 'OT Hrs', 'ot_hrs', 'r')}${th('pay_staff', 'OT Pay ($)', 'ot_pay', 'r')}
-                ${th('pay_staff', 'Late Hrs', 'late_hrs', 'r')}${th('pay_staff', 'Lateness ($)', 'late_ded', 'r')}${th('pay_staff', 'Absent d', 'rec_absent_days', 'r')}${th('pay_staff', 'Absence ($)', 'abs_ded', 'r')}
+                ${th('pay_staff', 'Late Hrs', 'late_hrs', 'r')}${th('pay_staff', 'Lateness ($)', 'late_ded', 'r')}${th('pay_staff', 'Absent d', 'absent_days', 'r')}${th('pay_staff', 'Absence ($)', 'abs_ded', 'r')}
                 ${th('pay_staff', 'Site Allowance', 'site_allow', 'r')}${th('pay_staff', 'Earnings ($)', 'earnings', 'r')}${th('pay_staff', 'Paid ($)', 'paid', 'r')}${th('pay_staff', 'Balance ($)', 'balance', 'r')}
               </tr>
             </thead>
@@ -14841,7 +17043,7 @@
                   <td class="r" title="${r.trip_ot_pay > 0 ? `Shift OT: ${fmtUSD(r.att_ot_pay, 2)} · Driver Trip OT: ${fmtUSD(r.trip_ot_pay, 2)}` : ''}">${fmtUSD(r.ot_pay, 2)}</td>
                   <td class="r">${fmtNum(r.late_hrs, 1)}</td>
                   <td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '—'}</td>
-                  <td class="r" title="${r.gap_days > 0 ? `${fmtNum(r.rec_absent_days, 1)}d recorded absence + ${fmtNum(r.gap_days, 0)}d mid-month contract start/end gap` : ''}">${fmtNum(r.rec_absent_days, 0)}</td>
+                  <td class="r" title="${r.gap_days > 0 ? `${fmtNum(r.rec_absent_days, 1)}d recorded absence + ${fmtNum(r.gap_days, 0)}d mid-month contract start/end gap` : ''}">${fmtNum(r.absent_days, 0)}</td>
                   <td class="r">${r.abs_ded ? fmtUSD(r.abs_ded, 2) : '—'}</td>
                   <td class="r">${r.site_allow ? fmtUSD(r.site_allow, 2) : '—'}</td>
                   <td class="r" title="${(r.reimb || r.extras || r.ded) ? `Reimb: ${fmtUSD(r.reimb, 2)} · Extras: ${fmtUSD(r.extras, 2)} · Ded: -${fmtUSD(r.ded, 2)}` : ''}"><strong>${fmtUSD(r.earnings, 2)}</strong></td>
@@ -14859,7 +17061,7 @@
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.ot_pay, 0), 2)}</td>
                 <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.late_hrs, 0), 1)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.late_ded, 0), 2)}</td>
-                <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.rec_absent_days, 0), 0)}</td>
+                <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.absent_days, 0), 0)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.abs_ded, 0), 2)}</td>
                 <td class="r">${fmtUSD(totalSiteAllow, 2)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.earnings, 0), 2)}</td>
@@ -26788,6 +28990,7 @@
       }
       applyCustomRecordsToSeed();
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
+      STATE.saving = false;
       closeEntryModal(true);
       toast(`${CR_LABEL[crKey].replace(/^./, ch => ch.toUpperCase())} posted · ${record.name}`, 'ok');
       renderApp();
@@ -27041,6 +29244,14 @@
     if (prefill && typeof prefill === 'object') {
       if (prefill.co && $('f_company') && allowedCompanyNames().includes(prefill.co)) {
         $('f_company').value = prefill.co;
+      }
+      if (prefill.cat && $('f_category')) {
+        $('f_category').value = prefill.cat;
+        FORM_UI.lastCategory = '';
+        recalcForm();
+      }
+      if (prefill.subcat && $('f_subcategory')) {
+        $('f_subcategory').value = prefill.subcat;
       }
       if (prefill.prod && $('f_product')) {
         $('f_product').value = prefill.prod;
@@ -32993,12 +35204,13 @@
         Settlements paid ${fmtUSD(k.settlements_paid, 0)} · net open AP <strong>${fmtUSD(k.ap_balance, 0)}</strong>${Number(k.ap_balance || 0) < 0 ? ' (negative = prepayments / advances exceed open legs)' : ''}.`;
     }
     if (has(/\b(diesel|tank|fuel|litre|litres|consumption)\b/)) {
-      const wf = (((SEED.sentinels.fleet_fuel_overtime_auditor || {}).by_model) || {}).WTC || {};
-      const bf = (((SEED.sentinels.fleet_fuel_overtime_auditor || {}).by_model) || {}).BBConstruction || {};
+      const dtByCo = computeDieselTank().byCo || {};
+      const wf = dtByCo.WTC || {};
+      const bf = dtByCo.BBConstruction || {};
       return `<strong>Diesel Tank &amp; Fuel Reconciliation:</strong><br>
-        • <strong>WTC</strong>: purchased ${fmtNum(wf.diesel_purchased_l, 0)} L − issued ${fmtNum(wf.diesel_issued_l, 0)} L − sold → <code class="mono">${fmtNum(wf.diesel_stock_balance_l, 0)} L</code> in tank.<br>
-        • <strong>BBConstruction</strong>: purchased ${fmtNum(bf.diesel_purchased_l, 0)} L − issued ${fmtNum(bf.diesel_issued_l, 0)} L − sold → <code class="mono">${fmtNum(bf.diesel_stock_balance_l, 0)} L</code> — negative because bulk diesel invoices were booked under General Expenses instead of Fuel Purchases; new BBConstruction diesel intakes are refused until the history is corrected (m212).<br>
-        • Period issued ${fmtNum(k.diesel_litres, 0)} L · fleet cost per ton hauled ${fmtUSD(k.cost_per_ton, 2)} · ${fmtNum((fleet.consumption_outliers || []).length)} consumption outliers flagged by m142.`;
+        • <strong>WTC</strong>: purchased ${fmtNum(wf.bought, 0)} L minus issued ${fmtNum(wf.issued, 0)} L minus sold ${fmtNum(wf.sold, 0)} L = <code class="mono">${fmtNum(wf.balance, 0)} L</code> remaining in tank.<br>
+        • <strong>BBConstruction</strong>: purchased ${fmtNum(bf.bought, 0)} L minus issued ${fmtNum(bf.issued, 0)} L minus sold ${fmtNum(bf.sold, 0)} L = <code class="mono">${fmtNum(bf.balance, 0)} L</code> (negative because historical bulk diesel invoices were booked under General Expenses instead of Fuel Purchases).<br>
+        • Period issued ${fmtNum(k.diesel_litres, 0)} L · sold ${fmtNum(k.diesel_sold, 0)} L · fleet cost per ton hauled ${fmtUSD(k.cost_per_ton, 2)} · ${fmtNum((fleet.consumption_outliers || []).length)} consumption outliers flagged.`;
     }
     if (has(/\b(cash|till|drawer|cashflow|lbp|pounds)\b/)) {
       return `<strong>Cash Flow &amp; Physical Till — ${esc(scope)}:</strong><br>
@@ -34897,24 +37109,27 @@
           (bEl && bEl.classList.contains('brass') && !/diesel|overtime/i.test(lbl)) ||
           /vat incl|total ttc|gross billed|raw total|total mat|total intake|total expenses|total payroll|combined till|net external|receipts \(cash|settlements paid/i.test(lbl)
         );
-        let tone = 'slate';
-        if (isTotalCol) {
-          tone = 'total';
-        } else if (/guard flag|lateness|timing deficit/i.test(lbl)) {
-          tone = numVal > 0 ? 'warn' : 'slate';
-        } else if (/external out/i.test(lbl)) {
-          tone = 'slate';
-        } else if ((/\bcash\b|\bpaid\b|settled|collected|inflow|external in/i.test(lbl)) && !/unpaid|vat paid/i.test(lbl)) {
-          tone = 'emerald';
-        } else if (/credit|bank\s*\/?\s*transfer|unpaid|open|balance|receivable|payable|\bar\b|\bap\b|diesel/i.test(lbl)) {
-          tone = 'steel';
-        } else if (idx === 0) {
-          tone = 'navy';
+        const explicitTone = sp.getAttribute('data-tile-tone');
+        let tone = explicitTone || 'slate';
+        if (!explicitTone) {
+          if (isTotalCol) {
+            tone = 'total';
+          } else if (/guard flag|lateness|timing deficit/i.test(lbl)) {
+            tone = numVal > 0 ? 'warn' : 'slate';
+          } else if (/external out/i.test(lbl)) {
+            tone = 'slate';
+          } else if ((/\bcash\b|\bpaid\b|settled|collected|inflow|external in/i.test(lbl)) && !/unpaid|vat paid/i.test(lbl)) {
+            tone = 'emerald';
+          } else if (/credit|bank\s*\/?\s*transfer|unpaid|open|balance|receivable|payable|\bar\b|\bap\b|diesel/i.test(lbl)) {
+            tone = 'steel';
+          } else if (idx === 0) {
+            tone = 'navy';
+          }
+          sp.setAttribute('data-tile-tone', tone);
         }
-        sp.setAttribute('data-tile-tone', tone);
 
         // Auto-wire interactive chip slice ONLY when it filters a real subset or switches entity in Group mode
-        if (!sp.classList.contains('recon-metric-slice') && (jumpCo || chipBtns.length)) {
+        if (!sp.classList.contains('recon-metric-slice') && !sp.hasAttribute('data-no-auto-recon') && (jumpCo || chipBtns.length)) {
           let targetChip = '';
           if (/\bcash\b/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'cash')) targetChip = 'cash';
           else if (/\bcash\b/i.test(lbl) && chipBtns.some(c => c.getAttribute('data-chip') === 'cash_sal')) targetChip = 'cash_sal';
@@ -35797,6 +38012,71 @@
         STATE.commLedgerMode = mode;
         renderApp();
         container.scrollTop = prevScroll;
+      });
+    });
+    container.querySelectorAll('[data-dtank-mode]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const mode = btn.getAttribute('data-dtank-mode') || 'monthly';
+        if (STATE.dieselTankMode === mode) return;
+        const prevScroll = container.scrollTop;
+        STATE.dieselTankMode = mode;
+        renderApp();
+        container.scrollTop = prevScroll;
+      });
+    });
+    container.querySelectorAll('[data-dtank-chip]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const ch = btn.getAttribute('data-dtank-chip') || 'all';
+        const prevScroll = container.scrollTop;
+        STATE.dieselTankMode = 'movements';
+        STATE.dieselTankChip = (STATE.dieselTankChip === ch && ch !== 'all') ? 'all' : ch;
+        STATE.shown.dtankmv = PAGE;
+        renderApp();
+        container.scrollTop = prevScroll;
+      });
+    });
+    container.querySelectorAll('[data-dtank-jump-chip]').forEach(el => {
+      el.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const jumpCo = el.getAttribute('data-dtank-jump-co') || '';
+        if (jumpCo && getAllowedCompanyKeys(activeUserRow).includes(jumpCo)) {
+          STATE.company = jumpCo;
+          saveFilterState();
+        }
+        STATE.dieselTankMode = 'movements';
+        STATE.dieselTankChip = el.getAttribute('data-dtank-jump-chip') || 'all';
+        STATE.shown.dtankmv = PAGE;
+        renderApp();
+        const target = $('dieselTankPanel');
+        if (target) scrollWorkspaceTo(target, 8);
+      });
+    });
+    container.querySelectorAll('[data-dtank-focus-ym]').forEach(el => {
+      el.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const ym = el.getAttribute('data-dtank-focus-ym') || '';
+        const prevScroll = container.scrollTop;
+        STATE.dieselTankFocusYm = ym;
+        if (ym) {
+          STATE.dieselTankMode = 'movements';
+          STATE.shown.dtankmv = PAGE;
+        }
+        renderApp();
+        container.scrollTop = prevScroll;
+      });
+    });
+    container.querySelectorAll('[data-open-diesel-bulk]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        openEntryModal('expense', { cat: 'Fuel', subcat: 'Diesel', uom: 'Litre' });
+      });
+    });
+    container.querySelectorAll('[data-open-diesel-sale]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        openEntryModal('sales', { prod: 'Diesel', uom: 'Litre' });
       });
     });
     container.querySelectorAll('[data-open-comm-prod]').forEach(btn => {

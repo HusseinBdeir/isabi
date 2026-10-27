@@ -1377,8 +1377,14 @@
     ] },
     { key: 'regions', group: '2 · Purchases, Expenses & Payables', universal: true, navView: 'reg_regions', label: 'Regions & Zones', dvn: 'bhf_region', form: 'site', cols: ['name', 'code', 'sites_count', 'overtime_rate', 'sales_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
 
-    // 3 · Fleet, Fuel, Maintenance & Drivers (8)
-    { key: 'fuel_intakes', group: '3 · Fleet, Fuel, Maintenance & Drivers', label: 'Fuel & Lubricant Intakes', dvn: 'bhf_fuelintake', form: 'fuel', cols: ['date', 'ticket_no', 'company', 'equipment', 'driver', 'item', 'litres', 'uom', 'odometer', 'hours', 'notes'], relTables: ['equipment', 'company_equipment', 'drivers', 'products'], views: [{ id: 'all', label: 'All Fuel & Lube Fills' }, { id: 'diesel', label: 'Diesel Only', fn: r => /diesel|fuel|mazout/i.test(r.item || '') }, { id: 'lube', label: 'Oils & Lubricants', fn: r => !/diesel|fuel|mazout|grease/i.test(r.item || '') }, { id: 'grease', label: 'Daily Greasing (kg)', fn: r => /grease/i.test(r.item || '') }] },
+    // 3 · Fleet, Fuel, Maintenance & Drivers (9)
+    { key: 'fuel_intakes', group: '3 · Fleet, Fuel, Maintenance & Drivers', label: 'Fuel & Lubricant Intakes', dvn: 'bhf_fuelintake', form: 'fuel', cols: ['date', 'ticket_no', 'company', 'equipment', 'driver', 'item', 'litres', 'tank_remaining_litres', 'uom', 'odometer', 'hours', 'notes'], relTables: ['equipment', 'company_equipment', 'drivers', 'products', 'fuel_malfunctions'], views: [{ id: 'all', label: 'All Fuel & Lube Fills' }, { id: 'diesel', label: 'Diesel Only', fn: r => /diesel|fuel|mazout/i.test(r.item || '') }, { id: 'lube', label: 'Oils & Lubricants', fn: r => !/diesel|fuel|mazout|grease/i.test(r.item || '') }, { id: 'grease', label: 'Daily Greasing (kg)', fn: r => /grease/i.test(r.item || '') }] },
+    { key: 'fuel_malfunctions', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet', label: 'Tank Malfunctions & Discrepancies', dvn: 'bhf_fuelmalfunction', form: 'malfunction', cols: ['date', 'rep_date', 'ticket_no', 'company', 'discrepancy_type', 'item', 'litres', 'tank_delta_litres', 'tank_remaining_litres', 'equipment', 'driver', 'notes'], relTables: ['fuel_intakes', 'equipment', 'drivers', 'expenses'], views: [
+      { id: 'all', label: 'All Discrepancies' },
+      { id: 'malf_only', label: 'Malfunctions Only', fn: r => /^malfunction$/i.test(r.discrepancy_type || 'Malfunction') },
+      { id: 'outflow', label: 'Shortages / Outflows (-Tank)', fn: r => Number(r.litres || 0) > 0 },
+      { id: 'surplus', label: 'Surpluses / Over-Reads (+Tank)', fn: r => Number(r.litres || 0) < 0 }
+    ] },
     { key: 'company_equipment', group: '3 · Fleet, Fuel, Maintenance & Drivers', label: 'Company-Equipment Assignments', dvn: 'bhf_companyequipment', form: 'companyequipment', cols: ['equipment', 'company', 'ownership', 'status', 'supplier', 'default_driver', 'site', 'day_operator', 'night_operator', 'start_date', 'end_date'], relTables: ['equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sites'], views: [{ id: 'all', label: 'All Fleet Assignments' }, { id: 'active', label: 'Active Assignments', fn: r => /active/i.test(r.status || '') && !r.end_date }] },
     { key: 'equipment_defects', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet_maint', label: 'Equipment Defects & Issues', dvn: 'bhf_equipmentdefect', form: 'defect', cols: ['name', 'date', 'company', 'equipment', 'subsystem', 'part_name', 'severity', 'status', 'reported_by', 'description'], relTables: ['equipment', 'company_equipment', 'part_movements', 'expenses'], views: [
       { id: 'all', label: 'All Defect Reports' },
@@ -1958,6 +1964,14 @@
     }
     if (tableKey === 'fuel_intakes' && c === 'uom') {
       return /grease|تشحيم|مشحمة/i.test(String(r.item || '')) ? 'kg' : 'L';
+    }
+    if ((tableKey === 'fuel_intakes' || tableKey === 'fuel_malfunctions') && c === 'tank_remaining_litres') {
+      if (!/diesel|mazout/i.test(String(r.item || r.fuel_type || 'Diesel'))) return null;
+      const dt = typeof window.MFG_DIESEL_TANK === 'function' ? window.MFG_DIESEL_TANK() : null;
+      return (dt && dt.tankAfterById && r.id != null && dt.tankAfterById.has(r.id)) ? dt.tankAfterById.get(r.id) : null;
+    }
+    if (tableKey === 'fuel_malfunctions' && c === 'tank_delta_litres') {
+      return -Number(r.litres || 0);
     }
     if (tableKey === 'fuel_intakes' && (c === 'odometer' || c === 'hours')) {
       const eqEntry = rel.equipByName[norm(r.equipment)];
@@ -5453,20 +5467,40 @@
     // PAGE 09: FUEL & LUBRICANTS (m18c_report.py Page 09 — Diesel Tank, Telemetry & Meter Guard)
     // =========================================================================
     else if (activePageId === 'p09_fuel') {
-      const tankBal = flSn.diesel_stock_balance_l != null ? flSn.diesel_stock_balance_l : k.diesel_in_tank;
-      const boughtL = flSn.diesel_purchased_l != null ? flSn.diesel_purchased_l : k.diesel_purchased;
-      const issuedL = flSn.diesel_issued_l != null ? flSn.diesel_issued_l : k.diesel_litres;
+      const dtPbi = typeof window.MFG_DIESEL_TANK === 'function' ? window.MFG_DIESEL_TANK() : null;
+      const tankBal = dtPbi ? dtPbi.closingTankL : (flSn.diesel_stock_balance_l != null ? flSn.diesel_stock_balance_l : k.diesel_in_tank);
+      const boughtL = dtPbi ? dtPbi.boughtL : (flSn.diesel_purchased_l != null ? flSn.diesel_purchased_l : k.diesel_purchased);
+      const issuedL = dtPbi ? dtPbi.consumedL : (flSn.diesel_issued_l != null ? flSn.diesel_issued_l : k.diesel_litres);
+      const discL = dtPbi ? dtPbi.discrepancyL : Number(k.diesel_discrepancy || 0);
+      const malfPct = dtPbi ? dtPbi.malfunctionPct : Number(k.diesel_malfunction_pct || 0);
+      const malfAlert = Boolean(dtPbi && dtPbi.malfunctionAlert);
+      const soldL = dtPbi ? dtPbi.soldL : Number(k.diesel_sold || 0);
+      const openTankL = dtPbi ? dtPbi.openingTankL : 0;
+      const dtMonthlyRows = dtPbi ? dtPbi.monthlyRows : [];
       const topDieselUnits = [...equipRows].filter(e => Number(e.diesel_litres || 0) > 0).sort((a, b) => Number(b.diesel_litres || 0) - Number(a.diesel_litres || 0));
+      const malfBannerHtml = malfAlert ? `
+        <div class="panel-card" id="p09MalfunctionAlertBanner" style="margin-bottom:12px;padding:12px 16px;border-left:4px solid ${dtPbi.malfunctionSeverity === 'crit' ? 'var(--crit)' : 'var(--warn)'};background:${dtPbi.malfunctionSeverity === 'crit' ? 'rgba(196,59,45,0.08)' : 'rgba(217,130,43,0.09)'};display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div style="font-size:12.5px;line-height:1.45">
+            <strong style="color:${dtPbi.malfunctionSeverity === 'crit' ? 'var(--crit)' : 'var(--warn)'}">5% DIESEL MALFUNCTION WATCHDOG ALERT (${malfPct.toFixed(1)}% &ge; 5.0%):</strong>
+            Gross diesel malfunction volume in the active range reached <b>${fmtNum(dtPbi.malfAbsL, 1)} L</b> across <b>${fmtNum(dtPbi.malfCount)}</b> entries against <b>${fmtNum(dtPbi.companyDieselUsedL, 1)} L</b> total company diesel used.
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn" style="padding:4px 10px;font-size:11px" data-nav-jump="fleet" data-dtank-jump-chip="malfunction">Inspect Malfunctions</button>
+            ${ctx.canEnterForm && ctx.canEnterForm('malfunction') ? `<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-open-diesel-malf="1">+ Log Malfunction</button>` : ''}
+          </div>
+        </div>
+      ` : '';
 
       bodyHtml = `
+        ${malfBannerHtml}
         <div class="pbi-overview-bands">
-          ${kpiBand('1 · Diesel Tank Reconciliation, Fleet Consumption & Meter Guard (m142 / m212)', [
-            { label: 'Diesel Purchased', value: fmtNum(boughtL, 0) + ' L', sub: 'Bulk tank deliveries', tone: 'good' },
+          ${kpiBand('1 · Diesel Tank Reconciliation, Malfunction Watchdog & Meter Guard', [
+            { label: 'Diesel Purchased', value: fmtNum(boughtL, 0) + ' L', sub: (dtPbi && dtPbi.boughtCount ? fmtNum(dtPbi.boughtCount) + ' bulk refills · ' + fmtUSD(dtPbi.boughtUsd, 0) : 'Bulk tank deliveries'), tone: 'good' },
             { label: 'Diesel Issued to Fleet', value: fmtNum(issuedL, 0) + ' L', sub: fmtNum(fuelRows.length) + ' intakes in sample', tone: 'brass' },
-            { label: 'Diesel Sold on Tickets', value: fmtNum(k.diesel_sold, 0) + ' L', sub: 'Rebilled to subcontractors' },
-            { label: 'Diesel Balance in Tank', value: fmtNum(tankBal, 0) + ' L', sub: Number(tankBal || 0) < 0 ? 'Negative = unbooked bulk invoice (m212)' : 'Physical vs book tank', tone: Number(tankBal || 0) < 0 ? 'crit' : 'good' },
-            { label: 'Meter Readings to Check', value: fmtNum(flSn.meter_readings_to_check || 0), sub: 'Backwards or >5,000km / >500h jump', tone: 'warn' },
-            { label: 'Consumption Outliers', value: fmtNum((flSn.consumption_outliers || []).length), sub: '>80 L/100km or >25 L/hr', tone: 'warn' }
+            { label: 'Malfunction / Discrepancy', value: `${discL > 0 ? '+' : ''}${fmtNum(discL, 0)} L`, sub: `${dtPbi ? fmtNum(dtPbi.discrepancyCount) + ' entries · ' : ''}Malf ${malfPct.toFixed(1)}% of used (${malfAlert ? '>=5% ALERT' : '<5% OK'})`, tone: malfAlert ? (dtPbi && dtPbi.malfunctionSeverity === 'crit' ? 'crit' : 'warn') : 'good' },
+            { label: 'Diesel Sold on Tickets', value: fmtNum(soldL, 0) + ' L', sub: (dtPbi && dtPbi.soldCount ? fmtNum(dtPbi.soldCount) + ' tickets · ' + fmtUSD(dtPbi.soldUsd, 0) : 'Rebilled to buyers') },
+            { label: 'Remaining in Tank', value: fmtNum(tankBal, 0) + ' L', sub: Number(tankBal || 0) < 0 ? 'Unbooked bulk invoice history' : (openTankL !== 0 ? 'Open ' + fmtNum(openTankL, 0) + ' L + Bought - Used - Malf - Sold' : 'Bought - Used - Malf - Sold'), tone: Number(tankBal || 0) < 0 ? 'crit' : 'good' },
+            { label: 'Outliers & Meter Guard', value: fmtNum((flSn.consumption_outliers || []).length + Number(flSn.meter_readings_to_check || 0)), sub: `${fmtNum((flSn.consumption_outliers || []).length)} outliers · ${fmtNum(flSn.meter_readings_to_check || 0)} meter checks`, tone: 'warn' }
           ])}
         </div>
 
@@ -5484,8 +5518,24 @@
           })}
         </div>
 
+        <div class="pbi-grid-1">
+          ${pbiTable('Monthly diesel consumption, malfunction reconciliation & remaining tank ledger', [
+            { label: 'Month', key: 'monthLabel', mono: true, bold: true },
+            { label: 'Opening (L)', key: 'openingL', r: true, fmt: v => fmtNum(v, 0) + ' L', foot: () => `<b>${fmtNum(openTankL, 0)} L</b>` },
+            { label: '+ Bought (L)', key: 'boughtL', r: true, fmt: v => v ? `+${fmtNum(v, 0)} L` : '-' },
+            { label: '- Own Fleet (L)', key: 'consumedOwnL', r: true, fmt: v => v ? `-${fmtNum(v, 0)} L` : '-' },
+            { label: '- Haulers (L)', key: 'consumedHaulerL', r: true, fmt: v => v ? `-${fmtNum(v, 0)} L` : '-' },
+            { label: '- Fleet Used (L)', key: 'consumedL', r: true, bar: true, fmt: v => `<b>-${fmtNum(v, 0)} L</b>` },
+            { label: '- Malf / Adj (L)', key: 'discrepancyL', r: true, fmt: v => v ? `<span style="color:${Number(v) > 0 ? 'var(--warn)' : 'var(--good)'}">${Number(v) > 0 ? '-' : '+'}${fmtNum(Math.abs(v), 0)} L</span>` : '-' },
+            { label: 'Malf %', key: 'malfunctionPct', r: true, fmt: (v, r) => Number(v || 0) > 0 ? (r && r.malfunctionAlert ? `<b style="color:var(--crit)">${Number(v).toFixed(1)}%</b>` : `${Number(v).toFixed(1)}%`) : '-', foot: () => `<b style="color:${malfAlert ? 'var(--crit)' : 'inherit'}">${malfPct.toFixed(1)}%</b>` },
+            { label: '- Sold (L)', key: 'soldL', r: true, fmt: v => v ? `-${fmtNum(v, 0)} L` : '-' },
+            { label: 'Net Change (L)', key: 'netChangeL', r: true, negRed: true, fmt: v => `${Number(v || 0) >= 0 ? '+' : ''}${fmtNum(v, 0)} L` },
+            { label: 'Remaining in Tank (L)', key: 'closingL', r: true, negRed: true, fmt: v => `<b>${fmtNum(v, 0)} L</b>`, foot: () => `<b>${fmtNum(tankBal, 0)} L</b>` }
+          ], dtMonthlyRows, { id: 't_p09_diesel_tank_monthly', subtitle: 'Opening Tank + Bulk Bought - Fleet Used - Malfunction/Discrepancy - Diesel Sold = Remaining in Tank (5% Malfunction Watchdog)', limit: 36, unitLabel: 'months' })}
+        </div>
+
         <div class="pbi-grid-2">
-          ${pbiTable('Equipment fuel efficiency — Litres, km run & L / 100 km', [
+          ${pbiTable('Equipment fuel efficiency · Litres, km run & L / 100 km', [
             { label: 'Equipment', key: 'Equipment', mono: true, bold: true },
             { label: 'Type', key: 'Type' },
             { label: 'Ownership', key: 'Ownership' },
@@ -7051,6 +7101,10 @@
         e_delta: round2(Number(mRow.exp_rep != null ? mRow.exp_rep : mRow.expenses || 0) - Number(mRow.expenses || 0))
       }));
 
+      const _ac = window.MFG_ALERT_CONFIG || null;
+      const _s8GapDays = _ac ? _ac.param('S8', 'audit_gap_days', 31) : 31;
+      const _repGapDays = _ac ? _ac.param('G_REPDATE_GAP', 'repdate_warn_days', 60) : 60;
+      const _repGapOn = _ac ? _ac.enabled('G_REPDATE_GAP') : true;
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Daily Totals Snapshot Ledger & Transaction vs Reporting Date Bridge', [
@@ -7058,8 +7112,8 @@
             { label: 'Sales (Rep Date Basis)', value: fmtUSD(k.sales_rep_date || k.sales_ttc, 0), sub: 'Reporting Date basis' },
             { label: 'Raw Cost (Tx vs Rep)', value: fmtUSD(k.raw_cost, 0), sub: 'Rep: ' + fmtUSD(k.raw_rep_date || k.raw_cost, 0) },
             { label: 'Snapshot Rows Logged', value: fmtNum(dtRows.length), sub: 'Daily totals ledger' },
-            { label: 'Date Gaps > 31 Days', value: fmtNum(paritySn.date_basis_anomalies_gt_31d_count || gaps.length), sub: 'Flagged by Sentinel S8', tone: 'warn' },
-            { label: '60-Day Gap Guard', value: 'Active', sub: 'Requires explanation on entry', tone: 'good' }
+            { label: `Date Gaps > ${_s8GapDays} Days`, value: fmtNum(paritySn.date_basis_anomalies_gt_31d_count || gaps.length), sub: 'Flagged by Sentinel S8', tone: 'warn' },
+            { label: `${_repGapDays}-Day Gap Guard`, value: _repGapOn ? 'Active' : 'Paused', sub: _repGapOn ? 'Requires explanation on entry' : 'Paused in Alerts & Thresholds', tone: _repGapOn ? 'good' : 'warn' }
           ])}
         </div>
 
@@ -7470,7 +7524,7 @@
       tableKey: meta.key,
       ignoreCompany: isUniv,
       ignoreRls: isUniv,
-      ignorePeriod: isUniv || !['sales_tickets', 'raw_purchases', 'receipts', 'settlements', 'fuel_intakes', 'expenses', 'salaries', 'attendance', 'external_movements', 'loan_settlements', 'conversions', 'jv_distributions', 'daily_totals'].includes(meta.key)
+      ignorePeriod: isUniv || !['sales_tickets', 'raw_purchases', 'receipts', 'settlements', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'salaries', 'attendance', 'external_movements', 'loan_settlements', 'conversions', 'jv_distributions', 'daily_totals'].includes(meta.key)
     });
     const views = meta.views || [{ id: 'all', label: 'All ' + meta.label }];
     const activeViewId = (STATE.tableViews && STATE.tableViews[meta.key]) || 'all';
@@ -7673,6 +7727,12 @@
                     const c = activeCols[ci];
                     const { isM: isMoney, isN: isNum, isL, isSU, isSL } = isColNumeric(c);
                     if (!isMoney && !isNum && !isL && !isSU && !isSL) { out.push(`<td></td>`); continue; }
+                    if (c === 'tank_remaining_litres') {
+                      const dt = typeof window.MFG_DIESEL_TANK === 'function' ? window.MFG_DIESEL_TANK() : null;
+                      const rem = dt ? dt.closingTankL : null;
+                      out.push(`<td class="r">${rem != null ? `<span class="tfoot-avg-tag">Rem. </span><b>${fmtNum(rem, 0)}</b>` : '-'}</td>`);
+                      continue;
+                    }
                     let sum = 0, cnt = 0;
                     rows.forEach(r => {
                       const v = cellValue(r, c, meta.key, rel);
@@ -7739,7 +7799,10 @@
     action_type: 'Action',
     defect_ref: 'Prior Defect',
     linked_part_log: 'Part Log',
-    meter_reading: 'Meter (km/h)'
+    meter_reading: 'Meter (km/h)',
+    tank_remaining_litres: 'Tank Rem. (L)',
+    tank_delta_litres: 'Tank Impact (L)',
+    discrepancy_type: 'Discrepancy Type'
   };
 
   function hubColLabel(c, tableKey) {
@@ -8659,21 +8722,32 @@
     let totalExpEngineL = 0, totalExpHydL = 0, totalExcessHydL = 0, leakingUnitsCount = 0;
     let sumActiveDays = 0, sumGreasedDays = 0, totalExpGreaseKg = 0;
 
+    const _acLube = window.MFG_ALERT_CONFIG || null;
+    const _hydOn = _acLube ? _acLube.enabled('G_HYD_LEAK_30D') : true;
+    const _hydWatchL = _acLube ? _acLube.param('G_HYD_LEAK_30D', 'audit_watch_excess_l', 30) : 30;
+    const _hydCritL = _acLube ? _acLube.param('G_HYD_LEAK_30D', 'audit_crit_excess_l', 80) : 80;
+    const _oilOn = _acLube ? _acLube.enabled('G_OIL_DRAIN') : true;
+    const _oilTruckOverdueL = _acLube ? _acLube.param('G_OIL_DRAIN', 'truck_overdue_diesel_l', 14000) : 14000;
+    const _oilMachOverdueL = _acLube ? _acLube.param('G_OIL_DRAIN', 'machine_overdue_diesel_l', 6500) : 6500;
+    const _grTruckKg = _acLube ? _acLube.param('G_GREASE_COMP', 'truck_kg_day', 0.15) : 0.15;
+    const _grMachKg = _acLube ? _acLube.param('G_GREASE_COMP', 'machine_kg_day', 0.30) : 0.30;
+    const _grPlantKg = _acLube ? _acLube.param('G_GREASE_COMP', 'plant_kg_day', 0.60) : 0.60;
+
     unitMap.forEach(u => {
       const D = u.diesel_l;
       const actDays = u.activeDates.size;
       const grDays = u.greasedDates.size;
       const isOwn = /own|company/i.test(String(u.Ownership || ''));
 
-      let expEng = 0, expHyd = 0, dailyGr = 0.15;
+      let expEng = 0, expHyd = 0, dailyGr = _grTruckKg;
       if (u.cat === 'Truck') {
         expEng = D * (32 / 12000);
         expHyd = D * (2 / 12000);
-        dailyGr = 0.15;
+        dailyGr = _grTruckKg;
       } else if (u.cat === 'Machinery' || u.cat === 'Bobcat') {
         expEng = D * ((u.cat === 'Bobcat' ? 10 : 28) / 5000);
         expHyd = D * ((u.cat === 'Bobcat' ? 6 : 15) / 5000);
-        dailyGr = u.cat === 'Bobcat' ? 0.15 : 0.30;
+        dailyGr = u.cat === 'Bobcat' ? _grTruckKg : _grMachKg;
       } else if (u.cat === 'Generator') {
         expEng = D * (30 / 6250);
         expHyd = 0;
@@ -8681,7 +8755,7 @@
       } else if (u.cat === 'Plant') {
         expEng = 0;
         expHyd = actDays > 0 || u.hyd_oil_l > 0 ? Math.max(10, actDays * 0.25) : 0;
-        dailyGr = 0.60;
+        dailyGr = _grPlantKg;
       } else {
         expEng = D * (7 / 1200);
         expHyd = 0;
@@ -8708,16 +8782,16 @@
 
       let status = 'HEALTHY';
       let alertFlag = 0;
-      if (excessHyd >= 80 || (u.hyd_oil_l >= 100 && (D <= 0 || u.hyd_oil_l / D >= 0.04))) {
+      if (_hydOn && (excessHyd >= _hydCritL || (u.hyd_oil_l >= Math.max(100, _hydCritL + 20) && (D <= 0 || u.hyd_oil_l / D >= 0.04)))) {
         status = 'CRITICAL LEAK';
         alertFlag = 3;
-      } else if (excessHyd >= 30 || (u.hyd_oil_l >= 40 && (D <= 0 || u.hyd_oil_l / D >= 0.015))) {
+      } else if (_hydOn && (excessHyd >= _hydWatchL || (u.hyd_oil_l >= Math.max(40, _hydWatchL + 10) && (D <= 0 || u.hyd_oil_l / D >= 0.015)))) {
         status = 'WATCH LEAK';
         alertFlag = 2;
-      } else if ((u.cat === 'Truck' && (D >= 14000 && dieselSinceChange > 14000)) || ((u.cat === 'Machinery' || u.cat === 'Generator') && (D >= 6500 && dieselSinceChange > 6500))) {
+      } else if (_oilOn && ((u.cat === 'Truck' && (D >= _oilTruckOverdueL && dieselSinceChange > _oilTruckOverdueL)) || ((u.cat === 'Machinery' || u.cat === 'Generator') && (D >= _oilMachOverdueL && dieselSinceChange > _oilMachOverdueL)))) {
         status = 'OVERDUE OIL';
         alertFlag = 1;
-      } else if (u.eng_changes >= 2 && expEng > 0 && u.engine_oil_l > expEng * 1.6) {
+      } else if (_oilOn && u.eng_changes >= 2 && expEng > 0 && u.engine_oil_l > expEng * 1.6) {
         status = 'EARLY CHANGE';
         alertFlag = 1;
       }
@@ -8822,9 +8896,19 @@
       return `<span class="badge badge-ok">${esc(v)}</span>`;
     };
 
+    const _acUi = window.MFG_ALERT_CONFIG || null;
+    const _uiWatchHydL = _acUi ? _acUi.param('G_HYD_LEAK_30D', 'audit_watch_excess_l', 30) : 30;
+    const _uiMinGreasePct = (_acUi && _acUi.enabled('G_GREASE_COMP')) ? _acUi.param('G_GREASE_COMP', 'min_compliance_pct', 25) : 0;
+    const _uiGrTruck = _acUi ? _acUi.param('G_GREASE_COMP', 'truck_kg_day', 0.15) : 0.15;
+    const _uiGrMach = _acUi ? _acUi.param('G_GREASE_COMP', 'machine_kg_day', 0.30) : 0.30;
+    const _uiGrPlant = _acUi ? _acUi.param('G_GREASE_COMP', 'plant_kg_day', 0.60) : 0.60;
+
     return `
       <div id="lubricationBenchPanel" style="margin-top:14px">
-        ${pbiHeading('2 · Lubrication benchmarks, hydraulic leak detection & daily greasing', 'Auto-updating OEM severe-duty quarry benchmarks: 15W-40 every 15,000 km / 250 hrs · Hydraulic 68 sealed-circuit tolerance · Daily chassis & pin greasing (kg)')}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div style="flex:1;min-width:220px">${pbiHeading('2 · Lubrication benchmarks, hydraulic leak detection & daily greasing', 'Auto-updating OEM severe-duty quarry benchmarks: 15W-40 every 15,000 km / 250 hrs · Hydraulic 68 sealed-circuit tolerance · Daily chassis & pin greasing (kg)')}</div>
+          <button type="button" class="btn-sn-act" data-open-alert-rule="G_HYD_LEAK_30D" style="margin-bottom:8px">Thresholds &amp; Why</button>
+        </div>
         <div class="pbi-overview-bands">
           ${kpiBand('', [
             { label: 'Engine Oil 15W-40', value: fmtNum(lub.totalEngineL, 0) + ' L', sub: 'Expected benchmark: ' + fmtNum(lub.totalExpEngineL, 0) + ' L', tone: lub.totalEngineL > lub.totalExpEngineL * 1.35 ? 'warn' : 'good' },
@@ -8870,7 +8954,7 @@
             { label: 'Hyd / Diesel', key: 'hyd_pct', r: true, agg: 'none', fmt: v => v > 0 ? fmtNum(v, 1) + '%' : '-' },
             { label: 'Leak Loss ($)', key: 'leak_loss_usd', r: true, fmt: v => v > 0 ? `<b>${fmtUSD(v, 0)}</b>` : '-' }
           ], lub.auditRows, {
-            subtitle: 'Amber row = hydraulic leak (>30 L excess), overdue 15W-40 service, or early oil drain · click any row for 360° Equipment Inspector',
+            subtitle: `Amber row = hydraulic leak (>${fmtNum(_uiWatchHydL, 0)} L excess), overdue 15W-40 service, or early oil drain · click any row for 360° Equipment Inspector`,
             rowAmber: r => r.alert_flag > 0,
             unitLabel: 'audited units'
           })}
@@ -8889,8 +8973,8 @@
             { label: 'Issued (kg)', key: 'grease_kg', r: true, fmt: v => v > 0 ? `<b>${fmtNum(v, 2)} kg</b>` : '0.00 kg' },
             { label: 'Last Greased', key: 'last_greased', mono: true, fmt: v => v ? esc(v) : 'Never logged' }
           ], lub.greaseRows, {
-            subtitle: 'Target: 0.15 kg/day per working truck (fifth wheel, kingpins, S-cams, U-joints), 0.30 kg/day per loader/excavator, 0.60 kg/day per plant',
-            rowAmber: r => r.active_days >= 10 && r.compliance_pct < 25,
+            subtitle: `Target: ${fmtNum(_uiGrTruck, 2)} kg/day per working truck (fifth wheel, kingpins, S-cams, U-joints), ${fmtNum(_uiGrMach, 2)} kg/day per loader/excavator, ${fmtNum(_uiGrPlant, 2)} kg/day per plant`,
+            rowAmber: r => _uiMinGreasePct > 0 && r.active_days >= 10 && r.compliance_pct < _uiMinGreasePct,
             unitLabel: 'fleet units'
           })}
         </div>
