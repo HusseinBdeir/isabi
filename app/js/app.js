@@ -27717,23 +27717,33 @@
     const dt = val('f_date') || todayISO();
     const repDt = val('f_repdate') || dt;
     const discType = val('f_disctype') || 'Malfunction';
-    const dir = val('f_malf_dir') || 'out';
-    const rawQty = num('f_qty');
-    const unit = val('f_truck');
-    if (unit !== FORM_UI.lastTruck) {
-      const prevUnit = FORM_UI.lastTruck;
-      const prevEq = prevUnit ? equipInfo(prevUnit, coName) : null;
-      const curEq = unit ? equipInfo(unit, coName) : null;
-      FORM_UI.lastTruck = unit;
-      if (curEq && curEq.default_driver && $('f_driver') && (!val('f_driver') || (prevEq && val('f_driver') === prevEq.default_driver))) {
-        $('f_driver').value = curEq.default_driver;
-      } else if (!unit && prevEq && prevEq.default_driver && $('f_driver') && val('f_driver') === prevEq.default_driver) {
-        $('f_driver').value = '';
+    const isWash = /^wash$/i.test(discType);
+    if ($('sec_malf_wash')) $('sec_malf_wash').hidden = !isWash;
+    setFieldVisible('wrap_malf_ticketno', isWash);
+    setFieldVisible('wrap_malf_truck', isWash);
+    setFieldVisible('wrap_malf_driver', isWash);
+    if (!isWash) {
+      if ($('f_ticketno') && $('f_ticketno').value) $('f_ticketno').value = '';
+      if ($('f_truck') && $('f_truck').value) $('f_truck').value = '';
+      if ($('f_driver') && $('f_driver').value) $('f_driver').value = '';
+      FORM_UI.lastTruck = '';
+    } else {
+      const unit = val('f_truck');
+      if (unit !== FORM_UI.lastTruck) {
+        const prevUnit = FORM_UI.lastTruck;
+        const prevEq = prevUnit ? equipInfo(prevUnit, coName) : null;
+        const curEq = unit ? equipInfo(unit, coName) : null;
+        FORM_UI.lastTruck = unit;
+        if (curEq && curEq.default_driver && $('f_driver') && (!val('f_driver') || (prevEq && val('f_driver') === prevEq.default_driver))) {
+          $('f_driver').value = curEq.default_driver;
+        } else if (!unit && prevEq && prevEq.default_driver && $('f_driver') && val('f_driver') === prevEq.default_driver) {
+          $('f_driver').value = '';
+        }
       }
     }
-    const absQty = Math.abs(Number(rawQty || 0));
-    const effDir = rawQty < 0 ? 'in' : dir;
-    const signedLitres = round2(effDir === 'in' ? -absQty : absQty);
+    const rawQty = num('f_qty');
+    const signedLitres = round2(Number(rawQty || 0));
+    const absQty = Math.abs(signedLitres);
     const tankDelta = round2(-signedLitres);
     const dtAll = getDieselTankLedger(coKey, null);
     const tankBefore = dtAll ? Number(dtAll.closingTankL || 0) : 0;
@@ -27755,9 +27765,10 @@
     setText('calc_malf_after', `${fmtNum(tankAfter, 1)} L`);
     setText('calc_malf_pct', `${projWatch.malfunctionPct.toFixed(1)}%`);
 
+    const pmRule = '+ deducts from tank (used / shortage) · − adds to tank (surplus)';
     setHint('hint_malf_qty', absQty > 0
-      ? `Tank ${tankDelta >= 0 ? 'surplus' : 'shortage'} (${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L): ${fmtNum(tankBefore, 1)} L -> ${fmtNum(tankAfter, 1)} L`
-      : 'Positive litres; direction sets tank +/- impact', absQty > 0 ? (tankAfter < 0 ? 'warn' : 'ok') : '');
+      ? `${signedLitres > 0 ? '+' : '−'}${fmtNum(absQty, 1)} L ${signedLitres > 0 ? 'deducts from' : 'adds to'} tank (${fmtNum(tankBefore, 1)} L -> ${fmtNum(tankAfter, 1)} L) · ${pmRule}`
+      : pmRule, absQty > 0 ? (tankAfter < 0 ? 'warn' : 'ok') : '');
 
     const banner = $('malfLiveAlertBanner');
     if (banner) {
@@ -29775,13 +29786,14 @@
       };
     } else if (f === 'malfunction') {
       const discType = val('f_disctype') || 'Malfunction';
-      const dir = val('f_malf_dir') || 'out';
+      const isWash = /^wash$/i.test(discType);
       const rawQty = num('f_qty');
-      const absQty = Math.abs(Number(rawQty || 0));
-      const effDir = rawQty < 0 ? 'in' : dir;
-      const signedLitres = round2(effDir === 'in' ? -absQty : absQty);
-      const ticket = val('f_ticketno');
-      if (!(absQty > 0)) addErr('f_qty', 'Quantity (Litres L) must be above zero.');
+      const signedLitres = round2(Number(rawQty || 0));
+      const absQty = Math.abs(signedLitres);
+      const ticket = isWash ? val('f_ticketno') : '';
+      const equip = isWash ? val('f_truck') : '';
+      const driver = isWash ? val('f_driver') : '';
+      if (!(absQty > 0)) addErr('f_qty', 'Enter a non-zero quantity in Litres (+ deducts from tank, − adds to tank).');
       if (absQty >= 1000 && !notes) addErr('f_notes', 'Please explain any malfunction or discrepancy of 1,000 L or more in Reason / Audit Notes.');
       crKey = 'fuel_malfunctions';
       record = {
@@ -29792,8 +29804,8 @@
         item: 'Diesel',
         discrepancy_type: discType,
         litres: signedLitres,
-        equipment: val('f_truck'),
-        driver: val('f_driver')
+        equipment: equip,
+        driver
       };
     }
     return { errors, fieldErrors, record, crKey };
@@ -30370,7 +30382,7 @@
         $('f_company').value = pfCo;
       }
       if (prefill.disctype && $('f_disctype')) $('f_disctype').value = prefill.disctype;
-      if (prefill.dir && $('f_malf_dir')) $('f_malf_dir').value = prefill.dir;
+      if (prefill.qty != null && $('f_qty')) $('f_qty').value = String(prefill.qty);
       if (prefill.ticket && $('f_ticketno')) $('f_ticketno').value = prefill.ticket;
       if (prefill.driver && $('f_driver')) $('f_driver').value = prefill.driver;
       if (prefill.cat && $('f_category')) {
@@ -31449,10 +31461,9 @@
       fuel_malfunctions: [
         { key: 'date', label: 'Transaction Date *', type: 'date', sec: 1 },
         { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
-        { key: 'ticket_no', label: 'Invoice / Ticket No.', type: 'text', sec: 1 },
         { key: 'discrepancy_type', label: 'Discrepancy Type *', type: 'select', options: ['Malfunction', 'Wash', 'Ghassanieh', 'Configuration'], sec: 2 },
-        { key: 'item', label: 'Fuel Item', type: 'select', options: ['Diesel'], sec: 2 },
-        { key: 'litres', label: 'Discrepancy Litres (+Shortage / -Surplus) *', type: 'number', step: '0.1', sec: 3 },
+        { key: 'litres', label: 'Quantity (Litres L · + deducts / − adds) *', type: 'number', step: '0.1', sec: 3 },
+        { key: 'ticket_no', label: 'Invoice / Ticket No.', type: 'text', sec: 1 },
         { key: 'equipment', label: 'Equipment / Unit (Optional)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'driver', label: 'Driver / Operator (Optional)', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
         { key: 'notes', label: 'Reason / Audit Notes', type: 'text', sec: 3, span: true }
@@ -31848,6 +31859,11 @@
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
     if (key === 'salaries') { hidden.add('equipment'); }
+    if (key === 'fuel_malfunctions' && !/^wash$/i.test(String((row && row.discrepancy_type) || ''))) {
+      if (!row || !row.ticket_no) hidden.add('ticket_no');
+      if (!row || !row.equipment) hidden.add('equipment');
+      if (!row || !row.driver) hidden.add('driver');
+    }
     if (key === 'price_rules') {
       hidden.add('name');
       hidden.add('price');
@@ -32202,7 +32218,7 @@
         `;
       }
       const inpType = fDef.type === 'number' ? 'number' : (fDef.type === 'date' ? 'date' : (fDef.type === 'time' ? 'time' : (fDef.type === 'month' ? 'month' : (fDef.type === 'tel' ? 'tel' : 'text'))));
-      const stepAttr = fDef.type === 'number' ? ` step="${esc(fDef.step || '0.01')}"${fDef.min != null ? ` min="${esc(fDef.min)}"` : ''}${fDef.max != null ? ` max="${esc(fDef.max)}"` : ''} inputmode="decimal"` : '';
+      const stepAttr = fDef.type === 'number' ? ` step="${esc(fDef.step || '0.01')}"${fDef.min != null ? ` min="${esc(fDef.min)}"` : ''}${fDef.max != null ? ` max="${esc(fDef.max)}"` : ''}${fDef.min != null && Number(fDef.min) >= 0 ? ' inputmode="decimal"' : ''}` : '';
       const phAttr = fDef.placeholder ? ` placeholder="${esc(fDef.placeholder)}"` : '';
       return `
         <div class="form-field${spanCls}">
@@ -32715,8 +32731,15 @@
       } else if (key === 'fuel_malfunctions') {
         const mLit = getModNum('litres');
         const mType = getModVal('discrepancy_type') || row.discrepancy_type || 'Malfunction';
+        const isWashMod = /^wash$/i.test(mType);
+        ['ticket_no', 'equipment', 'driver'].forEach(fk => {
+          const el = $('insp_edit_' + fk);
+          const wrap = el && el.closest('.form-field');
+          const hasOrig = Boolean(row && String(row[fk] || '').trim());
+          if (wrap) wrap.hidden = !isWashMod && !hasOrig;
+        });
         const tankDelta = round2(-mLit);
-        html = `<span>Type: <b>${esc(mType)}</b></span><span>Discrepancy: <b>${mLit > 0 ? '+' : ''}${fmtNum(mLit, 1)} L</b></span><span>Tank Impact: <b>${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L</b></span>`;
+        html = `<span>Type: <b>${esc(mType)}</b></span><span>Quantity: <b>${mLit > 0 ? '+' : ''}${fmtNum(mLit, 1)} L</b></span><span>Tank Impact: <b>${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L (${mLit >= 0 ? '+ deducts from tank' : '− adds to tank'})</b></span>`;
       }
       modLiveCalcEl.innerHTML = html;
       modLiveCalcEl.hidden = !html;
@@ -33095,6 +33118,11 @@
           }
         } else if (key === 'fuel_malfunctions') {
           row.litres = round2(Number(row.litres || 0));
+          if ('discrepancy_type' in pendingUpdates && !/^wash$/i.test(String(row.discrepancy_type || ''))) {
+            row.ticket_no = '';
+            row.equipment = '';
+            row.driver = '';
+          }
           row.name = `MALF ${row.date || ''} ${row.discrepancy_type || 'Malfunction'}${row.ticket_no ? ' #' + row.ticket_no : ''}`;
         }
 
@@ -36865,21 +36893,19 @@
     if (kMode === 'fuel') {
       if (STATE.kioskFuelSubmode === 'malfunction') {
         const discType = val('f_disctype') || 'Malfunction';
-        const dir = val('f_malf_dir') || 'out';
-        const rawQty = num('f_qty') || 0;
-        const absQty = Math.abs(rawQty);
-        const signed = (rawQty < 0 || dir === 'in') ? -absQty : absQty;
+        const isWash = /^wash$/i.test(discType);
+        const signed = round2(num('f_qty') || 0);
         return {
           id: 'DRAFT-FUEL-MALF',
           company,
           date,
           rep_date: repDate,
           time,
-          ticket_no: val('f_ticketno') || 'TANK-MALF',
+          ticket_no: (isWash && val('f_ticketno')) || 'TANK-MALF',
           fuel_type: discType,
           item: `Diesel (${signed >= 0 ? 'Shortage -Tank' : 'Surplus +Tank'})`,
-          equipment: val('f_truck') || 'Main Plant Tank',
-          driver: val('f_driver') || 'Tank Reconciliation',
+          equipment: (isWash && val('f_truck')) || 'Main Plant Tank',
+          driver: (isWash && val('f_driver')) || 'Tank Reconciliation',
           litres: signed,
           location: 'Main Plant Tank',
           entered_by: who.full_name,

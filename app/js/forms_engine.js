@@ -1194,17 +1194,13 @@
             ['Wash', 'Wash (Equipment Cleaning)'],
             ['Ghassanieh', 'Ghassanieh (House / Generator Supply)'],
             ['Configuration', 'Configuration (Tank Dip Calibration)']
-          ], 'Malfunction'))}
-          ${fld('Tank Impact Direction *', sel('f_malf_dir', [
-            ['out', 'Tank Shortage / Outflow (-Tank · +Used)'],
-            ['in', 'Tank Surplus / Over-Read (+Tank · -Used)']
-          ], 'out'))}
-          ${fld('Quantity (Litres L) *', inp('f_qty', 'number', '', 'step="0.1" min="0.1" inputmode="decimal" placeholder="Litres..."'), { hintId: 'hint_malf_qty', hint: 'Positive litres; direction sets tank +/- impact' })}
-          ${secHdr('2. Invoice / Reference, Unit Attribution & Audit Notes')}
-          ${fld('Invoice / Ticket No.', inp('f_ticketno', 'text', '', 'placeholder="Optional invoice or slip #..."'))}
-          ${fld('Equipment / Unit (Optional)', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional unit..."') + dl('dl_equip', equipNames))}
-          ${fld('Driver / Operator (Optional)', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Optional driver..."') + dl('dl_drivers', driverNames))}
-          ${fld('Reason / Audit Notes', inp('f_notes', 'text', '', 'placeholder="Explain meter variance, dip calibration, or quarantined slip..."'), { span: true })}
+          ], 'Malfunction'), { id: 'wrap_malf_type' })}
+          ${fld('Quantity (Litres L) *', inp('f_qty', 'number', '', 'step="0.1" placeholder="e.g. 50 or -50"'), { id: 'wrap_malf_qty', hintId: 'hint_malf_qty', hint: '+ deducts from tank (used / shortage) · − adds to tank (surplus)' })}
+          <div class="pa-form-sec-hdr" id="sec_malf_wash" hidden><span>2. Wash Ticket, Equipment &amp; Driver</span></div>
+          ${fld('Invoice / Ticket No.', inp('f_ticketno', 'text', '', 'placeholder="Optional wash slip or ticket #..."'), { id: 'wrap_malf_ticketno', hidden: true })}
+          ${fld('Equipment / Unit (Optional)', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional unit..."') + dl('dl_equip', equipNames), { id: 'wrap_malf_truck', hidden: true })}
+          ${fld('Driver / Operator (Optional)', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Optional driver..."') + dl('dl_drivers', driverNames), { id: 'wrap_malf_driver', hidden: true })}
+          ${fld('Reason / Audit Notes', inp('f_notes', 'text', '', 'placeholder="Explain meter variance, dip calibration, or wash note..."'), { id: 'wrap_malf_notes', span: true })}
         </div>
         <div id="malfLiveAlertBanner" class="att-contract-strip" hidden></div>
         <div class="live-calc" id="malfLiveCalc">
