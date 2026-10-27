@@ -135,6 +135,10 @@
     arChartMode: 'collections',
     salesChartMode: 'payment',
     payrollCutoffMode: 'closed_month',
+    payrollStaffStatus: 'active',
+    payrollFxPopoverBar: '',
+    lbpFxRate: (!IS_AUTOMATED_TEST ? Number(localStorage.getItem('isabi_mfg_lbp_fx_rate_v1') || 0) : 0) || 89500,
+    lbpFxUpdatedAt: (!IS_AUTOMATED_TEST ? (localStorage.getItem('isabi_mfg_lbp_fx_updated_v1') || '') : ''),
     commLedgerMode: 'monthly',
     rawSupFilter: 'all',
     salesHaulFilter: 'all',
@@ -169,8 +173,12 @@
     kioskPunches: lsGet('isabi_mfg_kiosk_punches_v1', null) || [],
     kioskAttDir: 'auto',
     kioskAttSite: 'WTC Main Plant',
+    kioskAttSiteCustom: false,
     kioskAttStaff: '',
     kioskAttPin: '',
+    kioskAttPinMsg: '',
+    kioskAttPinMsgCls: '',
+    kioskAttFeedFilter: 'all',
     kioskLastPunch: null,
     activeUserIdx: 0,
     authed: false,
@@ -507,7 +515,60 @@
     return fc !== 'LBP';
   }
 
-  function convSignedDeltas(cv, fallbackRate = 89500) {
+  const DEFAULT_LBP_FX_RATE = 89500;
+  function getLbpFxRate() {
+    const r = Number(STATE.lbpFxRate || 0);
+    return (Number.isFinite(r) && r >= 1000 && r <= 10000000) ? r : DEFAULT_LBP_FX_RATE;
+  }
+  function setLbpFxRate(nextVal, opts = {}) {
+    const parsed = Math.round(Number(String(nextVal == null ? '' : nextVal).replace(/,/g, '').trim()));
+    if (!Number.isFinite(parsed) || parsed < 1000 || parsed > 10000000) return false;
+    const prev = getLbpFxRate();
+    STATE.lbpFxRate = parsed;
+    STATE.lbpFxUpdatedAt = opts.updatedAt || new Date().toISOString();
+    try {
+      localStorage.setItem('isabi_mfg_lbp_fx_rate_v1', String(parsed));
+      localStorage.setItem('isabi_mfg_lbp_fx_updated_v1', STATE.lbpFxUpdatedAt);
+    } catch (_) {}
+    if (parsed !== prev || opts.force) {
+      _PAYROLL_INTEL_CACHE = null;
+      _liveSentinelCache = null;
+      _cashMovesCacheKey = '';
+      _FORM_INTEL_CACHE = null;
+      if (typeof _sortedRowsCache !== 'undefined' && _sortedRowsCache && typeof _sortedRowsCache.clear === 'function') {
+        _sortedRowsCache.clear();
+      }
+      SEED._customRev = (SEED._customRev || 0) + 1;
+    }
+    if (!IS_AUTOMATED_TEST && opts.sync !== false && typeof syncWithCloud === 'function') {
+      syncWithCloud(true);
+    }
+    if (opts.render !== false && typeof renderApp === 'function') {
+      const anchorId = opts.anchorBarId || '';
+      const anchorEl = anchorId ? document.getElementById(anchorId) : null;
+      const beforeTop = anchorEl ? anchorEl.getBoundingClientRect().top : null;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) {
+        const afterEl = anchorId ? document.getElementById(anchorId) : null;
+        if (afterEl && beforeTop !== null) {
+          ws.scrollTop = Math.max(0, y + (afterEl.getBoundingClientRect().top - beforeTop));
+        } else {
+          ws.scrollTop = y;
+        }
+      }
+    }
+    return true;
+  }
+  window.MFG_FX = {
+    getRate: getLbpFxRate,
+    setRate: setLbpFxRate,
+    resetRate: (opts = {}) => setLbpFxRate(DEFAULT_LBP_FX_RATE, opts),
+    defaultRate: DEFAULT_LBP_FX_RATE
+  };
+
+  function convSignedDeltas(cv, fallbackRate = getLbpFxRate()) {
     const u2l = convDirectionIsU2L(cv);
     const usdMag = Math.abs(Number(cv && (cv.usd_amount != null ? cv.usd_amount : cv.usd_delta) || 0));
     const lbpMag = Math.round(Math.abs(Number(cv && (cv.lbp_amount != null ? cv.lbp_amount : cv.lbp_delta) || 0)));
@@ -3993,7 +4054,7 @@
       case 'products': return ['sales_loads', 'fuel_fills', 'active_rules', 'list_price'];
       case 'product_types': return ['sales_loads', 'products_count'];
       case 'uoms': return ['tickets_count', 'products_count'];
-      case 'employments': return ['total_paid', 'salary_usd', 'daily_rate', 'payments_count'];
+      case 'employments': return ['salary_usd', 'daily_rate', 'total_paid', 'payments_count'];
       case 'logistics_allowances': return ['daily_usd', 'lbp_amount'];
       case 'price_rules': return ['matched_tickets', 'unit_price', 'trans_unit_price'];
       case 'loans': return ['principal', 'settled_amount'];
@@ -4003,6 +4064,11 @@
 
   function compareRowTie(ra, rb, primaryKey, view) {
     const tk = viewToTableKey(view);
+    if (tk === 'employments' && primaryKey === 'start_date') {
+      const endA = ra && (ra.status === 'Ended' || (ra.end_date && String(ra.end_date) < SEED_DATE)) ? 1 : 0;
+      const endB = rb && (rb.status === 'Ended' || (rb.end_date && String(rb.end_date) < SEED_DATE)) ? 1 : 0;
+      if (endA !== endB) return endA - endB;
+    }
     const secKeys = getSecondaryNumericKeys(tk);
     for (let i = 0; i < secKeys.length; i++) {
       const sk = secKeys[i];
@@ -16351,10 +16417,11 @@
       return String(b.start_date || '').localeCompare(String(a.start_date || ''));
     });
     const best = sorted[0];
+    const fxRate = getLbpFxRate();
     const wDays = Number(best.working_days || 0) > 0 ? Number(best.working_days) : 30;
     const wHrs = Number(best.working_hours || best.shift_hours || 0) > 0 ? Number(best.working_hours || best.shift_hours) : 8;
     const dRateIn = Number(best.daily_rate || 0);
-    const mSalRaw = (Number(best.salary_usd || best.base_salary || 0) + (Number(best.salary_lbp || 0) / 89500)) || (dRateIn > 0 ? round2(dRateIn * wDays) : 0);
+    const mSalRaw = (Number(best.salary_usd || best.base_salary || 0) + (Number(best.salary_lbp || 0) / fxRate)) || (dRateIn > 0 ? round2(dRateIn * wDays) : 0);
     const extDays = Number(best.extended || 0);
     const mSal = mSalRaw + (extDays && wDays > 0 ? (extDays * (mSalRaw / wDays)) : 0);
     const otMult = Number(best.overtime_multiplier || 0) > 0 ? Number(best.overtime_multiplier) : 1.0;
@@ -16370,7 +16437,7 @@
       endDate: best.end_date || '',
       contractCount: allForStaff.length,
       type: best.type || 'Staff',
-      status: isEnded(best) ? 'Ended' : 'Current',
+      status: isEnded(best) ? 'Inactive' : 'Active',
       role: best.role || '',
       monthlySalary: mSal,
       dailyRateInput: dRateIn,
@@ -16378,8 +16445,8 @@
       workingHours: wHrs,
       otMultiplier: otMult,
       lateMultiplier: ltMult,
-      reimbursement: Number(best.reimbursement || 0) + (Number(best.reimbursement_lbp || 0) / 89500),
-      deduction: Number(best.deduction || 0) + (Number(best.deduction_lbp || 0) / 89500),
+      reimbursement: Number(best.reimbursement || 0) + (Number(best.reimbursement_lbp || 0) / fxRate),
+      deduction: Number(best.deduction || 0) + (Number(best.deduction_lbp || 0) / fxRate),
       dailyRate,
       hourlyRate,
       otHourlyRate: hourlyRate * otMult,
@@ -16423,7 +16490,8 @@
 
   let _PAYROLL_INTEL_CACHE = null;
   function _getPayrollIntelIndex() {
-    const rev = `${SEED._customRev || 0}|${(SEED.records && SEED.records.salaries && SEED.records.salaries.length) || 0}|${(SEED.records && SEED.records.attendance && SEED.records.attendance.length) || 0}|${(SEED.records && SEED.records.employments && SEED.records.employments.length) || 0}|${(SEED.records && SEED.records.sales_tickets && SEED.records.sales_tickets.length) || 0}|${(SEED.records && SEED.records.raw_purchases && SEED.records.raw_purchases.length) || 0}|${(SEED.records && SEED.records.overtime_rates && SEED.records.overtime_rates.length) || 0}|${(SEED.records && SEED.records.sites && SEED.records.sites.length) || 0}|${(SEED.records && SEED.records.company_drivers && SEED.records.company_drivers.length) || 0}|${(SEED.records && SEED.records.loans && SEED.records.loans.length) || 0}|${(SEED.records && SEED.records.loan_settlements && SEED.records.loan_settlements.length) || 0}`;
+    const fxRate = getLbpFxRate();
+    const rev = `${SEED._customRev || 0}|${fxRate}|${(SEED.records && SEED.records.salaries && SEED.records.salaries.length) || 0}|${(SEED.records && SEED.records.attendance && SEED.records.attendance.length) || 0}|${(SEED.records && SEED.records.employments && SEED.records.employments.length) || 0}|${(SEED.records && SEED.records.sales_tickets && SEED.records.sales_tickets.length) || 0}|${(SEED.records && SEED.records.raw_purchases && SEED.records.raw_purchases.length) || 0}|${(SEED.records && SEED.records.overtime_rates && SEED.records.overtime_rates.length) || 0}|${(SEED.records && SEED.records.sites && SEED.records.sites.length) || 0}|${(SEED.records && SEED.records.company_drivers && SEED.records.company_drivers.length) || 0}|${(SEED.records && SEED.records.loans && SEED.records.loans.length) || 0}|${(SEED.records && SEED.records.loan_settlements && SEED.records.loan_settlements.length) || 0}`;
     if (_PAYROLL_INTEL_CACHE && _PAYROLL_INTEL_CACHE.rev === rev) return _PAYROLL_INTEL_CACHE;
     const salByStaffMonth = new Map();
     const salByStaff = new Map();
@@ -16559,7 +16627,8 @@
       const regN = (siteN && siteToReg.get(siteN)) || 'excluded';
       const regLabel = (siteN && siteRegLabel.get(siteN)) || 'Default / Unmapped';
       const rateDate = isSale ? repDate : shiftDate;
-      const rules = otRulesByCoReg.get(`${coN}|${regN}`);
+      let rules = otRulesByCoReg.get(`${coN}|${regN}`);
+      if ((!rules || !rules.length) && siteN) rules = otRulesByCoReg.get(`${coN}|excluded`);
       if (!rules || !rules.length) return null;
       let rate = 0;
       for (let i = 0; i < rules.length; i++) {
@@ -16618,7 +16687,7 @@
       if (!stem) return;
       const isCompanyLends = /lends|outflow|advance/i.test(String(l.direction || '')) || !/borrows/i.test(String(l.direction || ''));
       if (!isCompanyLends) return;
-      const amt = Number(l.principal || l.amount || l.usd_amount || 0) + (Number(l.lbp_amount || 0) / 89500);
+      const amt = Number(l.principal || l.amount || l.usd_amount || 0) + (Number(l.lbp_amount || 0) / fxRate);
       if (!(amt > 0)) return;
       if (!loanMap.has(stem)) loanMap.set(stem, { party, principal: 0, settled: 0, vouchers: [] });
       const entry = loanMap.get(stem);
@@ -16629,7 +16698,7 @@
       if (!ls || ls.voided) return;
       const stem = normStaffStem(ls.borrower || ls.lender || ls.counterparty || '');
       if (!stem || !loanMap.has(stem)) return;
-      const amt = Number(ls.amount || ls.usd_amount || 0) + (Number(ls.lbp_amount || 0) / 89500);
+      const amt = Number(ls.amount || ls.usd_amount || 0) + (Number(ls.lbp_amount || 0) / fxRate);
       loanMap.get(stem).settled = round2(loanMap.get(stem).settled + amt);
     });
     loanMap.forEach((v, stem) => {
@@ -16653,16 +16722,18 @@
 
   function salaryVoucherUsd895(p) {
     if (!p) return 0;
+    const fxRate = getLbpFxRate();
     const isLbp = String(p.currency || 'USD').toUpperCase() === 'LBP';
     const uIn = p.usd_amount != null ? Number(p.usd_amount || 0) : null;
     const lIn = Number(p.lbp_amount || 0);
-    if (isLbp && !uIn && lIn) return lIn / 89500;
-    if (uIn != null && lIn) return uIn + (lIn / 89500);
+    if (isLbp && !uIn && lIn) return lIn / fxRate;
+    if (uIn != null && lIn) return uIn + (lIn / fxRate);
     return Number(p.amount || 0);
   }
 
   function computeStaffPayrollRegister(opts = {}) {
     const today = SEED_DATE;
+    const fxRate = getLbpFxRate();
     const todayYm = String(today || '').slice(0, 7);
     const lastClosedYm = shiftYearMonth(todayYm, -1);
     const lastClosedEnd = getPayrollMonthBounds(lastClosedYm).mEnd;
@@ -16781,6 +16852,15 @@
       return profCache.get(ck);
     };
 
+    const activeTodayStaffSet = new Set();
+    empAll.forEach(e => {
+      if (!e || e.voided) return;
+      const coNorm = norm(e.company || 'WTC');
+      const sk = norm(e.staff || '(Unassigned)');
+      const endedToday = e.status === 'Ended' || e.status === 'Inactive' || e.status === 'Terminated' || (e.end_date && String(e.end_date).slice(0, 10) < today);
+      if (!endedToday) activeTodayStaffSet.add(`${coNorm}|${sk}`);
+    });
+
     const staffMap = new Map();
     const ensureStaff = (name, co) => {
       const coNorm = norm(co || 'WTC');
@@ -16788,11 +16868,13 @@
       const key = `${coNorm}|${sk}`;
       if (!staffMap.has(key)) {
         const prof = profOf(name, co, effSiteCutoff);
+        const isActive = activeTodayStaffSet.has(key);
         staffMap.set(key, {
           staff: name || '(Unassigned)',
           company: co || prof.company || 'WTC',
           type: prof.hasContract ? prof.type : 'Monthly',
-          status: prof.hasContract ? prof.status : 'Current',
+          is_active: isActive,
+          status: isActive ? 'Active' : 'Inactive',
           base: 0,
           base_usd_only: 0,
           base_lbp: 0,
@@ -16893,12 +16975,17 @@
 
       const attType = String(a.type || a.status || 'Present').trim();
       const tally = Number(a.tally != null ? a.tally : 0);
+      const effAbsDate = String(a.set_date || aDate || '').slice(0, 10);
       if ((/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType) && a.pay_treatment !== 'paid') || /^vacabsence$|^paid\s*leave$/i.test(attType) || (a.pay_treatment === 'paid' && Number(a.leave_days || 0) > 0)) {
-        const dCnt = Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (/^half\s*day$/i.test(attType) ? (tally > 0 ? tally : 0.5) : (tally > 0 ? tally : 1));
-        if (aDate && dCnt > 0) {
+        const dCnt = Number(a.leave_days || 0) > 0
+          ? Number(a.leave_days)
+          : (/^half\s*day$/i.test(attType)
+              ? (tally > 0 ? tally : 0.5)
+              : (/^vacabsence$|^paid\s*leave$/i.test(attType) ? (tally > 0 ? tally : (a.source === 'app' ? 1 : 0)) : (tally > 0 ? tally : 1)));
+        if (effAbsDate && dCnt > 0) {
           const pk = `${coNorm}|${sk}`;
           if (!absVacEventsByStaff.has(pk)) absVacEventsByStaff.set(pk, []);
-          absVacEventsByStaff.get(pk).push({ date: aDate, ym, days: dCnt });
+          absVacEventsByStaff.get(pk).push({ date: effAbsDate, ym, days: dCnt });
         }
       }
     });
@@ -16910,8 +16997,6 @@
       const s = ensureStaff(e.staff, e.company);
       s.hasContract = true;
       if (e.type) s.type = e.type;
-      const ended = e.status === 'Ended' || e.status === 'Inactive' || e.status === 'Terminated' || (e.end_date && String(e.end_date).slice(0, 10) < effSiteCutoff);
-      if (!ended) s.status = 'Current';
       const coNorm = norm(e.company || s.company || 'WTC');
       const sk = norm(e.staff || '(Unassigned)');
       const cStart = String(e.start_date || '2025-01-01').slice(0, 10);
@@ -16982,14 +17067,14 @@
 
         const salUsdExt = salUsdRaw + (extDays && wDays > 0 ? extDays * (salUsdRaw / wDays) : 0);
         const salLbpExt = salLbpRaw + (extDays && wDays > 0 ? extDays * (salLbpRaw / wDays) : 0);
-        const mBase = salUsdExt + (salLbpExt / 89500);
+        const mBase = salUsdExt + (salLbpExt / fxRate);
 
         const reimbU = Number(prim.reimbursement || 0);
         const reimbL = Number(prim.reimbursement_lbp || 0);
-        const mReimb = reimbU + (reimbL / 89500);
+        const mReimb = reimbU + (reimbL / fxRate);
         const dedRateU = Number(prim.deduction || 0);
         const dedRateL = Number(prim.deduction_lbp || 0);
-        const dedRate = dedRateU + (dedRateL / 89500);
+        const dedRate = dedRateU + (dedRateL / fxRate);
 
         // Cumulative annual vacation entitlement (granted in January) vs taken VacAbsence + ConfigVacAbs
         let vacInYm = 0;
@@ -16999,7 +17084,7 @@
           const tl = Number(a.tally != null ? a.tally : 0);
           if (/^config\s*vac/i.test(tp)) cfgVacInYm += tl;
           else if (/^vacabsence$|^paid\s*leave$/i.test(tp) || (a.pay_treatment === 'paid' && Number(a.leave_days || 0) > 0)) {
-            vacInYm += Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tl > 0 ? tl : 1);
+            vacInYm += Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tl > 0 ? tl : (a.source === 'app' ? 1 : 0));
           }
         });
         const vacGranted = ym.endsWith('-01') ? Number(prim.vacation_days || 0) : 0;
@@ -17012,10 +17097,10 @@
 
         const dayRateU = wDays > 0 ? (salUsdExt / wDays) : 0;
         const dayRateL = wDays > 0 ? (salLbpExt / wDays) : 0;
-        const dayRate = dayRateU + (dayRateL / 89500);
+        const dayRate = dayRateU + (dayRateL / fxRate);
         const hrRateU = (wDays * wHrs) > 0 ? (salUsdExt / (wDays * wHrs)) : 0;
         const hrRateL = (wDays * wHrs) > 0 ? (salLbpExt / (wDays * wHrs)) : 0;
-        const hrRate = hrRateU + (hrRateL / 89500);
+        const hrRate = hrRateU + (hrRateL / fxRate);
 
         const gapAndUnaccAbsDed = (gapDays + unaccVac) * dayRate;
         const gapDed = gapDays * dedRate;
@@ -17066,7 +17151,7 @@
         return;
       }
       if (/^config\s*lbp$/i.test(attType)) {
-        const cfgUsd = tally / 89500;
+        const cfgUsd = tally / fxRate;
         s.config_paid += cfgUsd;
         s.paid_lbp += tally;
         if (mb) mb.paid_m += cfgUsd;
@@ -17108,7 +17193,7 @@
         s.earnings_lbp -= (dCnt * dayRateL) + (dCnt * dedRateL);
         if (mb) mb.earnings_m -= (absDedRow + dedRow);
       } else if (/^vacabsence$|^paid\s*leave$/i.test(attType) || (a.pay_treatment === 'paid' && Number(a.leave_days || 0) > 0)) {
-        const vCnt = Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : 1);
+        const vCnt = Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : (a.source === 'app' ? 1 : 0));
         s.vac_days += vCnt;
         const dedRow = vCnt * dedRate;
         s.ded += dedRow;
@@ -17128,7 +17213,7 @@
         s.earnings_usd += tally;
         if (mb) mb.earnings_m += tally;
       } else if (/^extra\s*lbp$/i.test(attType)) {
-        const extUsd = tally / 89500;
+        const extUsd = tally / fxRate;
         s.extras += extUsd;
         s.earnings_lbp += tally;
         if (mb) mb.earnings_m += extUsd;
@@ -17217,7 +17302,7 @@
       const srKey = `${coNorm}|${sk}`;
       const uDaily = Number(l.usd_amount || 0) || (!l.lbp_amount ? Number(l.daily_usd || 0) : 0);
       const lDaily = Number(l.lbp_amount || 0);
-      const daily = uDaily + (lDaily / 89500);
+      const daily = uDaily + (lDaily / fxRate);
       if (!siteStaffMap.has(srKey)) {
         siteStaffMap.set(srKey, {
           staff: l.staff || '(Unassigned)',
@@ -17282,7 +17367,7 @@
       const paidDays = Math.max(0, daysCnt - invDays);
       const accU = paidDays * uDaily;
       const accL = paidDays * lDaily;
-      const accrued = accU + (accL / 89500);
+      const accrued = accU + (accL / fxRate);
 
       s.site_days_counted += daysCnt;
       s.site_days += paidDays;
@@ -17372,7 +17457,7 @@
       s.config_paid = round2(s.config_paid);
       s.paid = round2(rawPaid);
       s.earnings = round2(rawEarn);
-      s.balance = round2(rawEarn - rawPaid);
+      s.balance = round2(s.earnings - s.paid);
       s.earnings_usd = round2(s.earnings_usd);
       s.paid_usd = round2(s.paid_usd);
       s.rem_usd = round2(s.earnings_usd - s.paid_usd);
@@ -17396,7 +17481,7 @@
         sr.sitesStr = s.sitesStr;
       }
       return s;
-    }).sort((a, b) => b.paid - a.paid || b.earnings - a.earnings);
+    }).sort((a, b) => b.balance - a.balance || b.earnings - a.earnings || a.staff.localeCompare(b.staff));
 
     const siteStaffRowsBase = Array.from(siteStaffMap.values()).sort((a, b) => b.accrued - a.accrued);
 
@@ -17423,7 +17508,7 @@
         return m;
       });
 
-    return { staffRows, driverOtRows, siteStaffRowsBase, salByStaffMap, payMonths, profOf, cutoffMeta };
+    return { staffRows, driverOtRows, siteStaffRowsBase, salByStaffMap, payMonths, profOf, cutoffMeta, fxRate };
   }
   window.__mfgComputeStaffPayrollRegister = computeStaffPayrollRegister;
 
@@ -17433,7 +17518,8 @@
     const ym = String(payrollMonth || (txDate || SEED_DATE || '').slice(0, 7)).slice(0, 7);
     const refTxDate = String(txDate || SEED_DATE || '').slice(0, 10);
     const idx = _getPayrollIntelIndex();
-    const cacheKey = `${sk}|${norm(company)}|${ym}|${refTxDate}|${excludeSalId || ''}|${_skipPrev ? 1 : 0}`;
+    const fxRate = getLbpFxRate();
+    const cacheKey = `${sk}|${norm(company)}|${ym}|${refTxDate}|${excludeSalId || ''}|${_skipPrev ? 1 : 0}|${fxRate}`;
     if (idx.posCache.has(cacheKey)) return idx.posCache.get(cacheKey);
 
     const monthMidDate = /^\d{4}-\d{2}$/.test(ym) ? `${ym}-15` : refTxDate;
@@ -17467,7 +17553,7 @@
       } else if (/^extra\s*usd$/i.test(attType)) {
         extraUsd = round2(extraUsd + tally);
       } else if (/^extra\s*lbp$/i.test(attType)) {
-        extraUsd = round2(extraUsd + (tally / 89500));
+        extraUsd = round2(extraUsd + (tally / fxRate));
       }
       if (!/^absence$|^absent$|unpaid/i.test(attType)) workedDays += 1;
     });
@@ -17484,7 +17570,7 @@
         const s = String(l.start_date || '2026-01-01').slice(0, 10);
         const e = String(l.end_date || '2099-12-31').slice(0, 10);
         if (s <= mEnd && e >= mStart) {
-          const daily = Number(l.daily_usd || l.usd_amount || 0) || (Number(l.lbp_amount || 0) / 89500);
+          const daily = Number(l.daily_usd || l.usd_amount || 0) || (Number(l.lbp_amount || 0) / fxRate);
           const daysPerWk = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].filter(d => l[d]).length || 6;
           siteAllowUsd = round2(siteAllowUsd + (daily * Math.round(26 * (daysPerWk / 6))));
         }
@@ -17499,7 +17585,7 @@
       allStaffSals.forEach(s => {
         if (excludeSalId && String(s.id) === String(excludeSalId)) return;
         const m = String(s.payroll_month || (s.date || '').slice(0, 7)).slice(0, 7);
-        if (m) byM.set(m, round2((byM.get(m) || 0) + Number(s.amount || 0)));
+        if (m) byM.set(m, round2((byM.get(m) || 0) + salaryVoucherUsd895(s)));
       });
       if (byM.size > 0) {
         let sumM = 0;
@@ -17517,7 +17603,7 @@
     const vouchers = excludeSalId
       ? rawVouchers.filter(v => String(v.id) !== String(excludeSalId))
       : rawVouchers;
-    const paidSoFar = round2(vouchers.reduce((sum, v) => sum + Number(v.amount || 0), 0));
+    const paidSoFar = round2(vouchers.reduce((sum, v) => sum + salaryVoucherUsd895(v), 0));
     const remainingNet = round2(monthNetEarned - paidSoFar);
     const remainingBase = round2(contractNetBase - paidSoFar);
 
@@ -17633,10 +17719,116 @@
     return result;
   }
 
+  function buildPayrollCutoffAndStatusBarHtml(barId, opts = {}) {
+    const today = SEED_DATE;
+    const fxRate = opts.fxRate || getLbpFxRate();
+    const cm = opts.cutoffMeta || {
+      mode: STATE.payrollCutoffMode || 'closed_month',
+      applicable: true,
+      effEndYm: shiftYearMonth(today.slice(0, 7), -1),
+      effToDate: today,
+      lastClosedEnd: today,
+      currentMonthEnd: today,
+      today,
+      lastClosedLabel: formatPayrollMonthLabel(shiftYearMonth(today.slice(0, 7), -1)),
+      todayYmLabel: formatPayrollMonthLabel(today.slice(0, 7)),
+      effEndLabel: formatPayrollMonthLabel(shiftYearMonth(today.slice(0, 7), -1))
+    };
+    const allRows = Array.isArray(opts.allRows) ? opts.allRows : [];
+    const scopeRows = Array.isArray(opts.scopeRows) ? opts.scopeRows : allRows;
+    const activeCnt = opts.activeCnt != null ? opts.activeCnt : allRows.filter(s => s && s.is_active).length;
+    const allCnt = opts.allCnt != null ? opts.allCnt : allRows.length;
+    const inactiveCnt = opts.inactiveCnt != null ? opts.inactiveCnt : Math.max(0, allCnt - activeCnt);
+    const stMode = STATE.payrollStaffStatus || 'active';
+    const isPbi = Boolean(opts.isPbi);
+    const fxOpen = STATE.payrollFxPopoverBar === barId;
+
+    let fxPopoverHtml = '';
+    if (fxOpen) {
+      const sumEarnLbp = Math.round(scopeRows.reduce((a, r) => a + Number((r && r.earnings_lbp) || 0), 0));
+      const sumPaidLbp = Math.round(scopeRows.reduce((a, r) => a + Number((r && r.paid_lbp) || 0), 0));
+      const sumRemLbp = sumEarnLbp - sumPaidLbp;
+      const earnUsdEq = round2(sumEarnLbp / fxRate);
+      const paidUsdEq = round2(sumPaidLbp / fxRate);
+      const remUsdEq = round2(sumRemLbp / fxRate);
+      const stLbl = stMode === 'all' ? 'All' : (stMode === 'inactive' ? 'Inactive' : 'Active');
+      fxPopoverHtml = `
+        <div class="payroll-fx-popover" id="${esc(barId)}_fxPopover" role="dialog" aria-label="LBP to USD conversion rate">
+          <div class="pfx-head">
+            <span class="pfx-title">LBP to USD Conversion Rate</span>
+            <button type="button" class="pfx-close" data-close-payroll-fx="1" aria-label="Close rate panel">&times;</button>
+          </div>
+          <div class="pfx-explain">
+            Every LBP contract base, bonus, opening balance, site allowance, and salary payment divides by <strong>${fmtNum(fxRate, 0)} LL/$</strong> into the single USD <strong>Earnings ($)</strong>, <strong>Paid ($)</strong>, and <strong>Rem. ($)</strong> columns.
+          </div>
+          <div class="pfx-breakdown">
+            <div class="pfx-bd-row"><span>LBP in Earnings (${fmtNum(scopeRows.length)} ${stLbl})</span><span class="mono">${fmtNum(sumEarnLbp, 0)} LL = <b>${fmtUSD(earnUsdEq, 2)}</b></span></div>
+            <div class="pfx-bd-row"><span>LBP in Paid</span><span class="mono">${fmtNum(sumPaidLbp, 0)} LL = <b>${fmtUSD(paidUsdEq, 2)}</b></span></div>
+            <div class="pfx-bd-row is-net"><span>Net LBP in Rem. ($)</span><span class="mono">${fmtNum(sumRemLbp, 0)} LL = <b>${fmtSignedUSD(remUsdEq, 2)}</b></span></div>
+          </div>
+          <label class="pfx-input-lbl" for="${esc(barId)}_fxInput">Reference Rate (LL per $1 USD)</label>
+          <div class="pfx-edit-row">
+            <input type="number" class="pfx-rate-input mono" id="${esc(barId)}_fxInput" value="${esc(Math.round(fxRate))}" min="1000" max="10000000" step="100">
+            <span class="pfx-unit">LL/$</span>
+            <button type="button" class="btn btn-primary pfx-apply-btn" data-apply-payroll-fx="${esc(barId)}">Apply</button>
+          </div>
+          <div class="pfx-presets-row">
+            <button type="button" class="pfx-preset-pill ${Math.round(fxRate) === 89500 ? 'active' : ''}" data-preset-payroll-fx="89500" data-fx-bar="${esc(barId)}">89,500 Default</button>
+            <button type="button" class="pfx-preset-pill ${Math.round(fxRate) === 89700 ? 'active' : ''}" data-preset-payroll-fx="89700" data-fx-bar="${esc(barId)}">89,700</button>
+            <button type="button" class="pfx-preset-pill ${Math.round(fxRate) === 90000 ? 'active' : ''}" data-preset-payroll-fx="90000" data-fx-bar="${esc(barId)}">90,000</button>
+            <button type="button" class="pfx-desk-link" data-nav-jump="conversions">FX Conversions Desk</button>
+          </div>
+        </div>`;
+    }
+
+    return `
+      <div class="payroll-cutoff-bar ${isPbi ? 'is-pbi ' : ''}${cm.applicable ? '' : 'is-custom-period'}" id="${esc(barId)}" data-cutoff-mode="${esc(cm.applicable ? cm.mode : 'custom')}" data-staff-status="${esc(stMode)}">
+        <div class="payroll-cutoff-ctrl">
+          ${cm.applicable ? `
+          <div class="payroll-cutoff-pills" role="group" aria-label="Payroll period cutoff">
+            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'closed_month' ? 'active' : ''}" data-payroll-cutoff="closed_month" data-tone="closed" title="Closed month cutoff through ${esc(cm.lastClosedLabel)} (${esc(fmtDateDMY(cm.lastClosedEnd || cm.effToDate))})">
+              <span class="pcp-dot" aria-hidden="true"></span>
+              <span class="pcp-lbl">${esc(cm.lastClosedLabel)} · Closed</span>
+            </button>
+            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'mtd' ? 'active' : ''}" data-payroll-cutoff="mtd" data-tone="mtd" title="Include pro-rata ${esc(cm.todayYmLabel)} earnings up to today (${esc(fmtDateDMY(cm.today))})">
+              <span class="pcp-dot" aria-hidden="true"></span>
+              <span class="pcp-lbl">${esc(cm.todayYmLabel)} · MTD (${esc(String(cm.today || today).slice(8, 10))}d)</span>
+            </button>
+            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'full_month' ? 'active' : ''}" data-payroll-cutoff="full_month" data-tone="full" title="Project full ${esc(cm.todayYmLabel)} salary base through ${esc(fmtDateDMY(cm.currentMonthEnd || cm.effToDate))}">
+              <span class="pcp-dot" aria-hidden="true"></span>
+              <span class="pcp-lbl">${esc(cm.todayYmLabel)} · Full</span>
+            </button>
+          </div>` : `
+          <div class="payroll-cutoff-custom-slot">
+            <span class="pcc-pill"><span class="pcp-dot is-locked" aria-hidden="true"></span><span>Period Filter · ${esc(cm.effEndLabel)}</span></span>
+            <button type="button" class="pcc-reset-btn" data-payroll-cutoff-reset="1" title="Return to standard closed-month cutoff">Standard Cutoff</button>
+          </div>`}
+        </div>
+        <div class="payroll-bar-aux">
+          <div class="payroll-status-pills" role="group" aria-label="Staff status filter">
+            <button type="button" class="payroll-status-pill ${stMode === 'active' ? 'active' : ''}" data-payroll-status="active" title="Show currently active staff (${fmtNum(activeCnt)})">Active <span class="psp-cnt">${fmtNum(activeCnt)}</span></button>
+            <button type="button" class="payroll-status-pill ${stMode === 'inactive' ? 'active' : ''}" data-payroll-status="inactive" title="Show ended or inactive staff (${fmtNum(inactiveCnt)})">Inactive <span class="psp-cnt">${fmtNum(inactiveCnt)}</span></button>
+            <button type="button" class="payroll-status-pill ${stMode === 'all' ? 'active' : ''}" data-payroll-status="all" title="Show all staff (${fmtNum(allCnt)})">All <span class="psp-cnt">${fmtNum(allCnt)}</span></button>
+          </div>
+          <div class="payroll-fx-slot">
+            <button type="button" class="payroll-fx-btn ${fxOpen ? 'active' : ''} ${Math.round(fxRate) !== DEFAULT_LBP_FX_RATE ? 'is-custom' : ''}" id="${esc(barId)}_fxBtn" data-toggle-payroll-fx="${esc(barId)}" aria-expanded="${fxOpen ? 'true' : 'false'}" title="LBP amounts convert to USD by dividing by ${fmtNum(fxRate, 0)} LL/$. Click to view breakdown or change rate.">
+              <span class="pfx-lbl">LBP &divide; ${fmtNum(fxRate, 0)} LL/$</span>
+              <span class="pfx-chg">Change</span>
+            </button>
+            ${fxPopoverHtml}
+          </div>
+        </div>
+      </div>`;
+  }
+  window.__mfgRenderPayrollCutoffBar = buildPayrollCutoffAndStatusBarHtml;
+  window.__mfgGetPayrollStaffStatus = () => STATE.payrollStaffStatus || 'active';
+
   function renderPayroll(subMode = 'main') {
     const k = getKPI();
     const { fleet, pricing } = sentinelSlice();
     const today = SEED_DATE;
+    const fxRate = getLbpFxRate();
+    const fxShortLbl = `${fmtNum(fxRate / 1000, 1).replace(/\.0$/, '')}k`;
     const empAll = filterRecords(SEED.records.employments, { ignorePeriod: true });
     const salAll = filterRecords(SEED.records.salaries);
     const attAll = filterRecords(SEED.records.attendance);
@@ -17645,6 +17837,12 @@
 
     const regData = computeStaffPayrollRegister({ empRows: empAll, salRows: salAll, attRows: attAll, logRows: logAll });
     const { staffRows, driverOtRows = [], siteStaffRowsBase, salByStaffMap, payMonths, profOf, cutoffMeta } = regData;
+    const statusMode = STATE.payrollStaffStatus || 'active';
+    const activeStaffCnt = staffRows.filter(s => s.is_active).length;
+    const inactiveStaffCnt = staffRows.length - activeStaffCnt;
+    const allStaffCnt = staffRows.length;
+    const matchStaffStatus = s => statusMode === 'all' ? true : (statusMode === 'inactive' ? !s.is_active : Boolean(s.is_active));
+    const scopedStaffRows = staffRows.filter(matchStaffStatus);
 
     // Normalize attendance fields & derive intuitive shift basis + $ payroll impact per row
     attAll.forEach(a => {
@@ -17664,8 +17862,10 @@
         ? tally
         : (/^half\s*day$/i.test(attType)
           ? (tally > 0 ? tally : 0.5)
-          : (/Absence|VacAbsence|Sick|Leave|Unpaid/i.test(attType) && !/Config/i.test(attType) ? (tally > 0 ? tally : 1) : 0));
-      const extUsd = /^(?:extra|config)\s*usd$/i.test(attType) ? tally : (/^(?:extra|config)\s*lbp$/i.test(attType) ? round2(tally / 89500) : 0);
+          : (/^vacabsence$|^paid\s*leave$/i.test(attType)
+            ? (Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : (a.source === 'app' ? 1 : 0)))
+            : (/Absence|Sick|Leave|Unpaid/i.test(attType) && !/Config/i.test(attType) ? (Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : 1)) : 0)));
+      const extUsd = /^(?:extra|config)\s*usd$/i.test(attType) ? tally : (/^(?:extra|config)\s*lbp$/i.test(attType) ? round2(tally / fxRate) : 0);
       const shiftStr = (inFmt || outFmt)
         ? `${inFmt || '—'} → ${outFmt || '—'}`
         : (regH > 0 ? `${fmtNum(regH, 1)}h reg` : '—');
@@ -17687,7 +17887,7 @@
       if (/^config/i.test(attType)) {
         shiftBasisLbl = 'Opening Balance';
       } else if (/^extra/i.test(attType)) {
-        shiftBasisLbl = /lbp/i.test(attType) ? 'LBP Bonus (89.5k)' : 'USD Bonus';
+        shiftBasisLbl = /lbp/i.test(attType) ? `LBP Bonus (${fxShortLbl})` : 'USD Bonus';
       } else if (/^half\s*day$/i.test(attType) && workedH === 0) {
         shiftBasisLbl = a.pay_treatment === 'paid' ? 'Half Day (Paid)' : 'Half Day Off (0.5d)';
       } else if (lvD > 0 || (/Absence|VacAbsence|Sick|Leave|Unpaid/i.test(attType) && workedH === 0)) {
@@ -17751,7 +17951,8 @@
     const filteredSiteStaff = sortRows(siteStaffRowsBase, 'pay_site_staff', 'accrued', 'desc');
     const shownSiteStaff = filteredSiteStaff.slice(0, shownCount('pay_site_staff'));
 
-    const attStaffRowsBase = staffRows.filter(s => s.logs_cnt > 0 || s.ot_hrs > 0 || s.trip_ot_pay > 0 || s.trip_ot_cnt > 0 || s.late_hrs > 0 || s.absent_days > 0 || s.vac_days > 0 || s.sick_days > 0);
+    const attStaffAllBase = staffRows.filter(s => s.logs_cnt > 0 || s.ot_hrs > 0 || s.trip_ot_pay > 0 || s.trip_ot_cnt > 0 || s.late_hrs > 0 || s.absent_days > 0 || s.vac_days > 0 || s.sick_days > 0);
+    const attStaffRowsBase = attStaffAllBase.filter(matchStaffStatus);
     const filteredAttStaff = sortRows(attStaffRowsBase, 'pay_att_sum', 'ot_hrs', 'desc');
     const shownAttStaff = filteredAttStaff.slice(0, shownCount('pay_att_sum'));
 
@@ -17777,37 +17978,22 @@
       todayYmLabel: formatPayrollMonthLabel(today.slice(0, 7)),
       effEndLabel: formatPayrollMonthLabel(shiftYearMonth(today.slice(0, 7), -1))
     };
-    const renderPayrollCutoffBarHtml = barId => `
-      <div class="payroll-cutoff-bar ${cm.applicable ? '' : 'is-custom-period'}" id="${esc(barId)}" data-cutoff-mode="${esc(cm.applicable ? cm.mode : 'custom')}">
-        <div class="payroll-cutoff-ctrl">
-          ${cm.applicable ? `
-          <div class="payroll-cutoff-pills" role="group" aria-label="Remaining earnings accrual cutoff">
-            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'closed_month' ? 'active' : ''}" data-payroll-cutoff="closed_month" data-tone="closed" title="Closed month cutoff through ${esc(cm.lastClosedLabel)} (${esc(fmtDateDMY(cm.lastClosedEnd || cm.effToDate))})">
-              <span class="pcp-dot" aria-hidden="true"></span>
-              <span class="pcp-lbl">${esc(cm.lastClosedLabel)} · Closed</span>
-            </button>
-            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'mtd' ? 'active' : ''}" data-payroll-cutoff="mtd" data-tone="mtd" title="Include pro-rata ${esc(cm.todayYmLabel)} accrual up to today (${esc(fmtDateDMY(cm.today))})">
-              <span class="pcp-dot" aria-hidden="true"></span>
-              <span class="pcp-lbl">${esc(cm.todayYmLabel)} · MTD (${esc(String(cm.today || today).slice(8, 10))}d)</span>
-            </button>
-            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'full_month' ? 'active' : ''}" data-payroll-cutoff="full_month" data-tone="full" title="Project full ${esc(cm.todayYmLabel)} salary base through ${esc(fmtDateDMY(cm.currentMonthEnd || cm.effToDate))}">
-              <span class="pcp-dot" aria-hidden="true"></span>
-              <span class="pcp-lbl">${esc(cm.todayYmLabel)} · Full</span>
-            </button>
-          </div>` : `
-          <div class="payroll-cutoff-custom-slot">
-            <span class="pcc-pill"><span class="pcp-dot is-locked" aria-hidden="true"></span><span>Period Filter · ${esc(cm.effEndLabel)}</span></span>
-            <button type="button" class="pcc-reset-btn" data-payroll-cutoff-reset="1" title="Return to All-Time standard accrual cutoff">Standard Cutoff</button>
-          </div>`}
-        </div>
-      </div>`;
+    const renderPayrollCutoffBarHtml = (barId, barRows = scopedStaffRows) => buildPayrollCutoffAndStatusBarHtml(barId, {
+      cutoffMeta: cm,
+      allRows: staffRows,
+      scopeRows: barRows,
+      activeCnt: activeStaffCnt,
+      inactiveCnt: inactiveStaffCnt,
+      allCnt: allStaffCnt,
+      fxRate
+    });
 
     const driverOtPanelHtml = `
       <div class="panel-card" id="payDriverOtPanel">
         <div class="panel-head">
           <div>
             <div class="panel-title"><span>DRIVER NIGHT-TRIP OVERTIME BY DRIVER · SALES &amp; QUARRY TRIPS (${fmtNum(filteredDriverOt.length)} DRIVERS · ${fmtUSD(totDriverOtUsd, 2)})</span></div>
-            <span class="ph-sub">Valued per dated regional trip rate ($5 / $7 / $10 / $14) through ${esc(fmtDateDMY(cm.effToDate))} · Contracted drivers automatically accrue into Driver OT ($) on Staff Payroll (${fmtUSD(totDriverInPayUsd, 2)})</span>
+            <span class="ph-sub">Valued per dated regional trip rate ($5 / $7 / $10 / $14) through ${esc(fmtDateDMY(cm.effToDate))} · Contracted drivers are included in Driver OT ($) on Staff Payroll (${fmtUSD(totDriverInPayUsd, 2)})</span>
           </div>
           <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_drivers">Drivers &amp; Overtime</button>
@@ -17836,7 +18022,7 @@
                   <td class="r"><strong>${fmtNum(dr.total_trips, 0)}</strong></td>
                   <td class="r">${dr.sales_ot_usd ? fmtUSD(dr.sales_ot_usd, 2) : '-'}</td>
                   <td class="r">${dr.raw_ot_usd ? fmtUSD(dr.raw_ot_usd, 2) : '-'}</td>
-                  <td class="r"><strong style="color:var(--brass)">${fmtUSD(dr.total_ot_usd, 2)}</strong></td>
+                  <td class="r"><strong>${fmtUSD(dr.total_ot_usd, 2)}</strong></td>
                   <td class="r">${dr.in_payroll_usd ? `<strong>${fmtUSD(dr.in_payroll_usd, 2)}</strong>` : '<span class="mu">$0.00</span>'}</td>
                 </tr>
               `).join('') || emptyRow(11, 'No driver night-trip overtime records match the active filter')}
@@ -17858,7 +18044,7 @@
         </div>
       </div>`;
 
-    const filteredStaff = sortRows(staffRows, 'pay_staff', 'paid', 'desc');
+    const filteredStaff = sortRows(scopedStaffRows, 'pay_staff', 'balance', 'desc');
     const shownStaff = filteredStaff.slice(0, shownCount('pay_staff'));
     const hasContractStaffSet = new Set(staffRows.filter(s => s.hasContract).map(s => norm(s.staff)));
     const unmatchedRaw = pricing.unmatched_salary_by_staff || [];
@@ -17953,7 +18139,7 @@
       if (STATE.chipFilter === 'app') return isAppRecord(e);
       return true;
     });
-    const filteredEmp = sortRows(filteredEmpBase, 'pay_emp', 'salary_usd', 'desc');
+    const filteredEmp = sortRows(filteredEmpBase, 'pay_emp', 'start_date', 'desc');
     const shownEmp = filteredEmp.slice(0, shownCount('pay_emp'));
 
     const otAttCount = attAll.filter(a => Number(a.overtime_hours || 0) > 0).length;
@@ -17976,7 +18162,7 @@
     });
     const filteredAtt = sortRows(filteredAttBase, 'pay_att', 'date', 'desc');
     const shownAtt = filteredAtt.slice(0, shownCount('pay_att'));
-    const filteredLog = sortRows(logAll, 'pay_log', 'daily_usd', 'desc');
+    const filteredLog = sortRows(logAll, 'pay_log', 'start_date', 'desc');
     const shownLog = filteredLog.slice(0, shownCount('pay_log'));
     const totalSiteAllow = filteredStaff.reduce((a, r) => a + r.site_allow, 0);
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
@@ -18046,7 +18232,7 @@
             badgeChip: 'ot_att',
             val: `${fmtNum(totalOtHrs, 1)} <small>hrs</small>`,
             valCls: 'brass',
-            sub: `Accrued OT pay <b>${fmtUSD(totalOtPay, 0)}</b> · Driver trip &amp; OT bonus <b>${fmtUSD(k.overtime_bonus || 0, 0)}</b>`,
+            sub: `Overtime pay <b>${fmtUSD(totalOtPay, 0)}</b> · Driver trip &amp; OT bonus <b>${fmtUSD(k.overtime_bonus || 0, 0)}</b>`,
             tone: 'brass'
           })}
           ${insightCard({
@@ -18108,10 +18294,10 @@
             tone: 'brass'
           })}
           ${insightCard({
-            label: 'Site Allowances (Mon–Sun)',
+            label: 'Site Allowances (Mon-Sun)',
             badge: `${fmtNum(logAll.length)} Arrangements`,
             badgeCls: 'info',
-            val: `${fmtUSD(totalSiteAllow, 0)} <small>Accrued</small>`,
+            val: `${fmtUSD(totalSiteAllow, 0)} <small>Earned</small>`,
             sub: `<b>${fmtNum(siteStaffRowsBase.length)}</b> staff on site allowances · <span class="insight-drill" data-scroll-panel="paySiteStaffPanel">Staff Allowance Breakdown ↘</span>`,
             tone: 'steel'
           })}
@@ -18306,7 +18492,7 @@
             </div>
             <span class="panel-meta">${exportBtn('payAttStaffSumPanel', 'Staff_Attendance_Summary')}</span>
           </div>
-          ${renderPayrollCutoffBarHtml('payrollAttCutoffBar')}
+          ${renderPayrollCutoffBarHtml('payrollAttCutoffBar', attStaffRowsBase)}
           ${renderColFilterBar('pay_att_sum')}
           <div class="table-wrap">
             <table class="ledger-table">
@@ -18323,12 +18509,12 @@
                   <tr class="rrow" data-rkey="employments" data-rid="${esc(r.staff)}">
                     <td>${relLink('employments', r.staff, r.staff, true)}</td>
                     <td>${coBadge(r.company)}</td>
-                    <td><span class="badge ${r.contract_status === 'Current' ? 'badge-ok' : 'badge-warn'}">${esc(r.contract_status)}</span></td>
+                    <td><span class="badge ${r.is_active ? 'badge-ok' : 'badge-warn'}">${esc(r.contract_status)}</span></td>
                     <td class="r">${fmtNum(r.logs_cnt, 0)}</td>
                     <td class="r">${r.ot_hrs ? `<strong>${fmtNum(r.ot_hrs, 1)}</strong>` : '-'}</td>
                     <td class="r">${r.att_ot_pay ? `<strong>${fmtUSD(r.att_ot_pay, 2)}</strong>` : '-'}</td>
-                    <td class="r">${r.trip_ot_cnt ? `<span class="badge badge-warn">${fmtNum(r.trip_ot_cnt, 0)}</span>` : '-'}</td>
-                    <td class="r">${r.trip_ot_pay ? `<strong style="color:var(--brass)">${fmtUSD(r.trip_ot_pay, 2)}</strong>` : '-'}</td>
+                    <td class="r">${r.trip_ot_cnt ? fmtNum(r.trip_ot_cnt, 0) : '-'}</td>
+                    <td class="r">${r.trip_ot_pay ? fmtUSD(r.trip_ot_pay, 2) : '-'}</td>
                     <td class="r">${r.late_hrs ? fmtNum(r.late_hrs, 1) : '-'}</td>
                     <td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '-'}</td>
                     <td class="r">${r.rec_absent_days ? fmtNum(r.rec_absent_days, 1) : '-'}</td>
@@ -18430,8 +18616,8 @@
         <div class="panel-card" id="paySiteStaffPanel">
           <div class="panel-head">
             <div>
-              <div class="panel-title"><span>SITE ALLOWANCE BY STAFF MEMBER — DAYS COUNTED, ACTIVITY DAYS, ACCRUED, FIFO PAID &amp; OUTSTANDING (${fmtNum(filteredSiteStaff.length)} STAFF)</span></div>
-              <span class="ph-sub">Consolidated from Workforce Analytics (P12) · FIFO allocation of salary disbursements against accrued Mon–Sun site allowances</span>
+              <div class="panel-title"><span>SITE ALLOWANCE BY STAFF MEMBER · DAYS COUNTED, ACTIVITY DAYS, EARNED, FIFO PAID &amp; OUTSTANDING (${fmtNum(filteredSiteStaff.length)} STAFF)</span></div>
+              <span class="ph-sub">Consolidated from Workforce Analytics (P12) · FIFO allocation of salary disbursements against earned Mon-Sun site allowances</span>
             </div>
             <span class="panel-meta">${exportBtn('paySiteStaffPanel', 'Site_Allowance_By_Staff')}</span>
           </div>
@@ -18442,7 +18628,7 @@
                 <tr>
                   ${th('pay_site_staff', 'Staff Member', 'staff')}${th('pay_site_staff', 'Co.', 'company')}${th('pay_site_staff', 'Primary Site', 'site')}${th('pay_site_staff', 'Equipment', 'equipment')}
                   ${th('pay_site_staff', 'Schedule', 'working_days')}${th('pay_site_staff', 'Rules', 'arrangements', 'r')}${th('pay_site_staff', 'Daily ($)', 'daily_usd', 'r')}
-                  ${th('pay_site_staff', 'Days Counted', 'days_counted', 'r')}${th('pay_site_staff', 'Activity Days', 'activity_days', 'r')}${th('pay_site_staff', 'Accrued ($)', 'accrued', 'r')}${th('pay_site_staff', 'Paid (FIFO)', 'paid_fifo', 'r')}${th('pay_site_staff', 'Outstanding ($)', 'outstanding', 'r')}
+                  ${th('pay_site_staff', 'Days Counted', 'days_counted', 'r')}${th('pay_site_staff', 'Activity Days', 'activity_days', 'r')}${th('pay_site_staff', 'Earned ($)', 'accrued', 'r')}${th('pay_site_staff', 'Paid (FIFO)', 'paid_fifo', 'r')}${th('pay_site_staff', 'Outstanding ($)', 'outstanding', 'r')}
                 </tr>
               </thead>
               <tbody>
@@ -18500,7 +18686,7 @@
                       <td class="mono">${esc(fmtDateDMY(l.start_date))}</td>
                       <td class="mono">${esc(l.end_date ? fmtDateDMY(l.end_date) : 'Open')}</td>
                       <td>${esc(l.working_days || 'Mon–Sat')}</td>
-                      <td class="r"><strong>${fmtUSD(l.daily_usd || l.usd_amount || (Number(l.lbp_amount || 0) / 89500), 2)}</strong></td>
+                      <td class="r"><strong>${fmtUSD(l.daily_usd || l.usd_amount || (Number(l.lbp_amount || 0) / fxRate), 2)}</strong></td>
                     </tr>`;
                   }).join('') || emptyRow(7, 'No site allowances match filter')}
                   ${showMoreRow('pay_log', logAll.length, 7)}
@@ -18508,7 +18694,7 @@
                 <tfoot>
                   <tr>
                     <td colspan="6"><b>TOTAL (${fmtNum(logAll.length)} ARRANGEMENTS)</b></td>
-                    <td class="r"><b>${fmtUSD(logAll.reduce((a, l) => a + Number(l.daily_usd || l.usd_amount || (Number(l.lbp_amount || 0) / 89500) || 0), 0), 2)} / day</b></td>
+                    <td class="r"><b>${fmtUSD(logAll.reduce((a, l) => a + Number(l.daily_usd || l.usd_amount || (Number(l.lbp_amount || 0) / fxRate) || 0), 0), 2)} / day</b></td>
                   </tr>
                 </tfoot>
               </table>
@@ -18652,11 +18838,11 @@
         <div class="panel-head">
           <div>
             <div class="panel-title"><span>PAYROLL BY STAFF MEMBER · BASE, SHIFT OT, DRIVER OT, SITE ALLOWANCE, DEDUCTIONS, EARNINGS, PAID, REMAINING &amp; ADVANCES</span></div>
-            <span class="ph-sub">Site allowances &amp; driver night-trip overtime are included inside Earnings · Remaining = Earnings minus Paid for Period · Post-cutoff payouts appear in Advances ($)</span>
+            <span class="ph-sub">Site allowances &amp; driver night-trip overtime are included inside Earnings · LBP amounts divide by ${fmtNum(fxRate, 0)} LL/$ into USD · Remaining = Earnings minus Paid · Post-cutoff payouts appear in Advances ($)</span>
           </div>
           <span class="panel-meta">${fmtNum(filteredStaff.length)} Staff ${exportBtn('payStaffRegPanel', 'Payroll_By_Staff')}</span>
         </div>
-        ${renderPayrollCutoffBarHtml('payrollCutoffBar')}
+        ${renderPayrollCutoffBarHtml('payrollCutoffBar', filteredStaff)}
         ${renderColFilterBar('pay_staff')}
         <div class="table-wrap">
           <table class="ledger-table">
@@ -18670,23 +18856,23 @@
             </thead>
             <tbody>
               ${shownStaff.map(r => {
-                const lbpNote = (r.earnings_lbp || r.paid_lbp) ? `USD Rem: ${fmtUSD(r.rem_usd, 2)} · LBP Earn: ${fmtNum(r.earnings_lbp, 0)} LL · LBP Paid: ${fmtNum(r.paid_lbp, 0)} LL · LBP Rem: ${fmtNum(r.rem_lbp, 0)} LL` : '';
+                const lbpNote = (r.earnings_lbp || r.paid_lbp) ? `USD Rem: ${fmtUSD(r.rem_usd, 2)} · LBP Earn: ${fmtNum(r.earnings_lbp, 0)} LL · LBP Paid: ${fmtNum(r.paid_lbp, 0)} LL · LBP Rem: ${fmtNum(r.rem_lbp, 0)} LL ÷ ${fmtNum(fxRate, 0)} = ${fmtSignedUSD(round2(r.rem_lbp / fxRate), 2)}` : '';
                 return `
-                <tr class="rrow ${r.status === 'Ended' ? 'pbi-row-amber' : ''}" data-rkey="employments" data-rid="${esc(r.staff)}">
+                <tr class="rrow ${!r.is_active ? 'pbi-row-amber' : ''}" data-rkey="employments" data-rid="${esc(r.staff)}">
                   <td>${relLink('employments', r.staff, r.staff, true)}${!r.hasContract ? ' <span class="badge badge-warn" title="Salary payment without an employment contract">No contract</span>' : ''}</td>
                   <td>${coBadge(r.company)}</td>
-                  <td><span class="badge ${r.status === 'Ended' ? 'badge-warn' : 'badge-ok'}">${esc(r.status)}</span></td>
+                  <td><span class="badge ${r.is_active ? 'badge-ok' : 'badge-warn'}">${esc(r.status)}</span></td>
                   <td class="r" title="${r.active_months ? `${r.active_months} active contract months${r.vac_rem ? ` · Rem Vacation: ${fmtNum(r.vac_rem, 1)}d` : ''}` : ''}">${fmtUSD(r.base, 2)}</td>
                   <td class="r">${r.ot_hrs ? fmtNum(r.ot_hrs, 1) : '-'}</td>
                   <td class="r">${r.att_ot_pay ? fmtUSD(r.att_ot_pay, 2) : '-'}</td>
-                  <td class="r" title="${r.trip_ot_cnt ? `${fmtNum(r.trip_ot_cnt, 0)} night OT trips (${fmtNum(r.sales_ot_trips || 0, 0)} Sales · ${fmtNum(r.raw_ot_trips || 0, 0)} Quarry)` : ''}">${r.trip_ot_pay ? `<strong style="color:var(--brass)">${fmtUSD(r.trip_ot_pay, 2)}</strong>` : '-'}</td>
+                  <td class="r" title="${r.trip_ot_cnt ? `${fmtNum(r.trip_ot_cnt, 0)} night OT trips (${fmtNum(r.sales_ot_trips || 0, 0)} Sales · ${fmtNum(r.raw_ot_trips || 0, 0)} Quarry)` : ''}">${r.trip_ot_pay ? fmtUSD(r.trip_ot_pay, 2) : '-'}</td>
                   <td class="r">${r.site_allow ? fmtUSD(r.site_allow, 2) : '-'}</td>
                   <td class="r">${r.late_hrs ? fmtNum(r.late_hrs, 1) : '-'}</td>
                   <td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '-'}</td>
                   <td class="r" title="${r.gap_days > 0 ? `${fmtNum(r.rec_absent_days, 1)}d recorded absence (${fmtNum(r.gap_days, 0)}d contract start/end gap deducted in Absence $)` : ''}">${r.absent_days ? fmtNum(r.absent_days, 1).replace(/\.0$/, '') : '-'}</td>
                   <td class="r">${r.abs_ded ? fmtUSD(r.abs_ded, 2) : '-'}</td>
                   <td class="r" title="${(r.reimb || r.extras || r.ded) ? `Reimb: ${fmtUSD(r.reimb, 2)} · Extras: ${fmtUSD(r.extras, 2)} · Ded: -${fmtUSD(r.ded, 2)}` : ''}"><strong>${fmtUSD(r.earnings, 2)}</strong></td>
-                  <td class="r pbi-bar-cell" title="${r.config_paid ? `Vouchers: ${fmtUSD(r.vouchers_paid, 2)} · Opening Config: ${fmtUSD(r.config_paid, 2)}` : ''}"><span class="pbi-bar-bg pos" style="width:${Math.min(94, Math.round((r.paid / Math.max(1, staffRows[0] ? staffRows[0].paid : 1)) * 90))}%"></span><strong>${fmtUSD(r.paid, 2)}</strong></td>
+                  <td class="r" title="${r.config_paid ? `Vouchers: ${fmtUSD(r.vouchers_paid, 2)} · Opening Config: ${fmtUSD(r.config_paid, 2)}` : ''}"><strong>${fmtUSD(r.paid, 2)}</strong></td>
                   <td class="r ${r.balance < 0 ? 'pbi-neg' : ''}" title="${esc(lbpNote)}"><strong>${fmtUSD(r.balance, 2)}</strong></td>
                   <td class="r" title="${r.advance_cnt ? `${fmtNum(r.advance_cnt, 0)} post-cutoff advance voucher(s)` : ''}">${r.advances ? `<span class="badge badge-brass">${fmtUSD(r.advances, 2)}</span>` : '-'}</td>
                 </tr>`;
@@ -18695,7 +18881,7 @@
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="3">TOTAL (${fmtNum(filteredStaff.length)} STAFF)</td>
+                <td colspan="3">TOTAL (${fmtNum(filteredStaff.length)} ${statusMode === 'all' ? '' : statusMode.toUpperCase() + ' '}STAFF)</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.base, 0), 2)}</td>
                 <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.ot_hrs, 0), 1)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.att_ot_pay, 0), 2)}</td>
@@ -22433,10 +22619,11 @@
 
     const u2lCount = fxAll.filter(f => !isLbpToUsd(f)).length;
     const l2uCount = fxAll.filter(isLbpToUsd).length;
+    const refRate = getLbpFxRate();
     const sumFxVolUsd = fxRows.reduce((a, f) => a + convSignedDeltas(f).usdMag, 0);
     const sumFxNetUsd = round2(fxRows.reduce((a, f) => a + convSignedDeltas(f).usd, 0));
     const sumFxNetLbp = Math.round(fxRows.reduce((a, f) => a + convSignedDeltas(f).lbp, 0));
-    const avgRate = fxRows.length ? Math.round(fxRows.reduce((a, f) => a + (convSignedDeltas(f).rate || 89500), 0) / fxRows.length) : 89500;
+    const avgRate = fxRows.length ? Math.round(fxRows.reduce((a, f) => a + (convSignedDeltas(f).rate || refRate), 0) / fxRows.length) : refRate;
 
     const dirSummary = [
       { dir: 'USD → LBP (Sell USD / Buy LBP)', key: 'fx_u2l', rows: fxAll.filter(f => !isLbpToUsd(f)) },
@@ -22448,7 +22635,7 @@
       volUsd: g.rows.reduce((a, f) => a + convSignedDeltas(f).usdMag, 0),
       netUsd: round2(g.rows.reduce((a, f) => a + convSignedDeltas(f).usd, 0)),
       netLbp: Math.round(g.rows.reduce((a, f) => a + convSignedDeltas(f).lbp, 0)),
-      avgRate: g.rows.length ? Math.round(g.rows.reduce((a, f) => a + (convSignedDeltas(f).rate || 89500), 0) / g.rows.length) : 89500
+      avgRate: g.rows.length ? Math.round(g.rows.reduce((a, f) => a + (convSignedDeltas(f).rate || refRate), 0) / g.rows.length) : refRate
     }));
 
     return `
@@ -22492,6 +22679,25 @@
             sub: `Across <b>${fmtNum(fxRows.length)}</b> conversions in active scope`,
             tone: 'steel'
           })}
+        </div>
+      </div>
+
+      <div class="fx-ref-rate-bar" id="fxRefRateBar">
+        <div class="fx-ref-copy">
+          <div class="fx-ref-title">Accounting &amp; Payroll Reference Rate <span>(${fmtNum(refRate, 0)} LL/$)</span></div>
+          <div class="fx-ref-sub">Divides LBP contract bases, bonuses, site allowances, and salary vouchers into USD across Payroll &amp; Workforce and Dual-Currency Forms. Physical FX tickets below retain their own traded rate.</div>
+        </div>
+        <div class="fx-ref-controls">
+          <div class="pfx-edit-row">
+            <input type="number" class="pfx-rate-input mono" id="fxRefRateInput" value="${esc(Math.round(refRate))}" min="1000" max="10000000" step="100" aria-label="Accounting and payroll reference LBP exchange rate">
+            <span class="pfx-unit">LL/$</span>
+            <button type="button" class="btn btn-primary pfx-apply-btn" id="fxRefRateApplyBtn">Apply Rate</button>
+          </div>
+          <div class="pfx-presets-row">
+            <button type="button" class="pfx-preset-pill ${Math.round(refRate) === 89500 ? 'active' : ''}" data-fx-ref-preset="89500">89,500 Default</button>
+            <button type="button" class="pfx-preset-pill ${Math.round(refRate) === 89700 ? 'active' : ''}" data-fx-ref-preset="89700">89,700</button>
+            <button type="button" class="pfx-preset-pill ${Math.round(refRate) === 90000 ? 'active' : ''}" data-fx-ref-preset="90000">90,000</button>
+          </div>
         </div>
       </div>
 
@@ -23011,8 +23217,8 @@
       const att = filterRecords(SEED.records.attendance, { ignoreSearch: true });
       const g = groupBy(sal, s => s.staff + '|' + s.payroll_month);
       const rows = Array.from(g.entries()).map(([key, list]) => ({ staff: list[0].staff, month: list[0].payroll_month, company: list[0].company, payments: list.length, amount: sum(list, 'amount'), last: list.map(x => x.date).sort().pop() })).sort((a, b) => String(b.month).localeCompare(String(a.month)) || (b.amount - a.amount));
-      emp.sort((a, b) => (Number(b.salary_usd || 0) || Number(b.daily_rate || 0) * 26) - (Number(a.salary_usd || 0) || Number(a.daily_rate || 0) * 26));
-      log.sort((a, b) => Number(b.daily_usd || b.usd_amount || 0) - Number(a.daily_usd || a.usd_amount || 0));
+      emp.sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')) || ((Number(b.salary_usd || 0) || Number(b.daily_rate || 0) * 26) - (Number(a.salary_usd || 0) || Number(a.daily_rate || 0) * 26)));
+      log.sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')) || (Number(b.daily_usd || b.usd_amount || 0) - Number(a.daily_usd || a.usd_amount || 0)));
       bodyHtml = `
         <div class="live-calc">
           <div><small>Salaries Paid (Book)</small><b>${fmtUSD(k.salaries_paid, 2)}</b></div>
@@ -27190,7 +27396,7 @@
           if (fxEl && usd > 0 && lbp > 0 && document.activeElement !== fxEl) {
             fxEl.value = String(Math.round(lbp / usd));
           }
-          const fxRate = num('f_fxrate') || 89500;
+          const fxRate = num('f_fxrate') || getLbpFxRate();
           const isU2L = !/LBP/i.test(String(val('f_conv_dir') || 'USD to LBP').slice(0, 4));
           const trStrip = $('trLiveContextStrip');
           if (trStrip) trStrip.hidden = true;
@@ -27206,9 +27412,16 @@
           renderAdminLockBar();
           return { usd, lbp, amount: usd };
         }
-        const tot = round2(usd + lbp / 90000);
+        const activeFx = getLbpFxRate();
+        const tot = round2(usd + lbp / activeFx);
         const aEl = $('f_amount');
-        const amtLocked = applyFieldLockState('f_amount', true, 'Dual-Currency FX Lock: Total USD = USD + LBP ÷ 90,000');
+        const amtLblEl = document.querySelector('#wrap_f_amount .pa-fld-lbl');
+        if (amtLblEl && /Total USD/i.test(amtLblEl.textContent || '')) {
+          amtLblEl.textContent = STATE.modalForm === 'logistics'
+            ? `Daily Rate USD (${fmtNum(activeFx, 0)} LL/$) *`
+            : `Total USD Value (${fmtNum(activeFx, 0)} LL/$) *`;
+        }
+        const amtLocked = applyFieldLockState('f_amount', true, `Dual-Currency FX Lock: Total USD = USD + LBP ÷ ${fmtNum(activeFx, 0)}`);
         if (aEl && amtLocked) aEl.value = (usd > 0 || lbp > 0) ? tot.toFixed(2) : '';
         const thisPay = num('f_amount');
 
@@ -30660,7 +30873,7 @@
         const lbp = Math.round(num('f_lbp'));
         if (!(usd > 0)) addErr('f_usd', isU2L ? 'USD Decreased ($) > 0 is required.' : 'USD Increased ($) > 0 is required.');
         if (!(lbp > 0)) addErr('f_lbp', isU2L ? 'LBP Increased (LL) > 0 is required.' : 'LBP Decreased (LL) > 0 is required.');
-        const fxRate = (usd > 0 && lbp > 0) ? round2(lbp / usd) : (num('f_fxrate') || 89500);
+        const fxRate = (usd > 0 && lbp > 0) ? round2(lbp / usd) : (num('f_fxrate') || getLbpFxRate());
         crKey = 'conversions';
         const refVal = val('f_reference');
         record = {
@@ -30685,7 +30898,8 @@
         if (!(amt > 0)) addErr('f_usd', 'Amount > 0 is required.');
         crKey = trt === 'loan_settlement' ? 'loan_settlements' : (trt === 'external' ? 'external_movements' : 'loans');
         const dirn = val('f_direction') || 'Inflow';
-        record = { ...base, name: `${trt.toUpperCase()} ${date} ${cp}`, rep_date: repDate, counterparty: cp, lender: cp, borrower: company, loan: cp, direction: dirn, method: dirn, type: trt === 'loan_settlement' ? 'Repayment' : (trt === 'loan' ? 'Drawdown' : ''), from_currency: 'USD', to_currency: '', usd_amount: round2(num('f_usd')), lbp_amount: round2(num('f_lbp')), fx_rate: 90000, exchange_rate: 90000, amount: amt, principal: amt, interest_rate: 0, balance: amt, start_date: date, reference: val('f_reference') };
+        const activeRefFx = getLbpFxRate();
+        record = { ...base, name: `${trt.toUpperCase()} ${date} ${cp}`, rep_date: repDate, counterparty: cp, lender: cp, borrower: company, loan: cp, direction: dirn, method: dirn, type: trt === 'loan_settlement' ? 'Repayment' : (trt === 'loan' ? 'Drawdown' : ''), from_currency: 'USD', to_currency: '', usd_amount: round2(num('f_usd')), lbp_amount: round2(num('f_lbp')), fx_rate: activeRefFx, exchange_rate: activeRefFx, amount: amt, principal: amt, interest_rate: 0, balance: amt, start_date: date, reference: val('f_reference') };
       }
     } else if (f === 'jv') {
       const jvt = val('f_jvtype') || 'distribution', st = val('f_site'), pt = val('f_counterparty');
@@ -32111,17 +32325,25 @@
       if (scoped.length > 1) {
         const viewId = targetKey ? ('tbl_' + targetKey) : '';
         const hasDate = Array.isArray(cols) && cols.includes('date');
+        const hasStartDate = !hasDate && (targetKey === 'employments' || targetKey === 'logistics_allowances') && Array.isArray(cols) && cols.includes('start_date');
         scoped.sort((a, b) => {
           if (hasDate) {
             const da = recordDate(a), db = recordDate(b);
             if (da !== db) return db < da ? -1 : 1;
+          } else if (hasStartDate) {
+            const sa = String(a.start_date || ''), sb = String(b.start_date || '');
+            if (sa !== sb) {
+              if (!sa) return 1;
+              if (!sb) return -1;
+              return sb < sa ? -1 : 1;
+            }
           }
           if (sumCol) {
             const va = Number(a[sumCol] != null ? a[sumCol] : (resolveColVal(a, sumCol, viewId) || 0));
             const vb = Number(b[sumCol] != null ? b[sumCol] : (resolveColVal(b, sumCol, viewId) || 0));
             if (Number.isFinite(va) && Number.isFinite(vb) && va !== vb) return vb - va;
           }
-          return compareRowTie(a, b, sumCol || (hasDate ? 'date' : ''), viewId);
+          return compareRowTie(a, b, hasStartDate ? 'start_date' : (sumCol || (hasDate ? 'date' : '')), viewId);
         });
       }
       const cleanBadge = String(relBadge || '')
@@ -34327,6 +34549,8 @@
       localStorage.setItem('isabi_mfg_face_settings_v2', JSON.stringify(STATE.faceSettings));
       localStorage.setItem('isabi_mfg_face_settings_v1', JSON.stringify(STATE.faceSettings));
       localStorage.setItem('isabi_mfg_kiosk_punches_v1', JSON.stringify((STATE.kioskPunches || []).slice(0, 300)));
+      localStorage.setItem('isabi_mfg_lbp_fx_rate_v1', String(getLbpFxRate()));
+      if (STATE.lbpFxUpdatedAt) localStorage.setItem('isabi_mfg_lbp_fx_updated_v1', STATE.lbpFxUpdatedAt);
     } catch (_) { /* storage full or blocked — the cloud copy still holds the state */ }
   }
 
@@ -34780,6 +35004,8 @@
       sentinelReviews: STATE.sentinelReviews || {},
       alertRules: STATE.alertRules || { overrides: {}, custom: [] },
       faceSettings: STATE.faceSettings,
+      lbpFxRate: getLbpFxRate(),
+      lbpFxUpdatedAt: STATE.lbpFxUpdatedAt || '',
       updatedAt: new Date().toISOString(),
       updatedBy: activeUser().email,
       appVersion: '4.5'
@@ -34795,7 +35021,7 @@
     const ins = $('recordInspector');
     if (ins && !ins.hidden) return true;
     if ((STATE.view === 'users' && STATE.userFormDirty) || FACE_STATE.enrolCamActive || KIOSK_ATT_STATE.camActive) return true;
-    if (document.querySelector('.pa-suggest-wrap.open, .rdl-combo.open, #companySwitch.open, #nuCompanySelector.open')) return true;
+    if (document.querySelector('.pa-suggest-wrap.open, .rdl-combo.open, #companySwitch.open, #nuCompanySelector.open, .payroll-fx-popover')) return true;
     const a = document.activeElement;
     return !!(a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName) && a.id !== 'aiInput');
   }
@@ -34980,6 +35206,11 @@
       if (remote.customRecords && mergeCustomRecords(remote.customRecords)) { changed = true; applyCustomRecordsToSeed(); }
       if (remote.sentinelReviews && mergeSentinelReviews(remote.sentinelReviews)) { changed = true; }
       if (remote.alertRules && mergeAlertRules(remote.alertRules)) { changed = true; }
+      if (remote.lbpFxRate && remote.lbpFxUpdatedAt && String(remote.lbpFxUpdatedAt) > String(STATE.lbpFxUpdatedAt || '')) {
+        if (setLbpFxRate(remote.lbpFxRate, { updatedAt: remote.lbpFxUpdatedAt, sync: false, render: false })) changed = true;
+      } else if (!pushChanges && STATE.lbpFxUpdatedAt && String(STATE.lbpFxUpdatedAt) > String(remote.lbpFxUpdatedAt || '')) {
+        pushChanges = true;
+      }
       // anything only we hold -> push
       if (!pushChanges && remote.customRecords) {
         const remoteIds = new Set();
@@ -37846,9 +38077,10 @@
     streakStaff: '',
     streakCount: 0,
     bestDist: 9,
-    statusText: 'Camera standby — tap "Start Biometric Camera" or enter 4-digit PIN on the right',
+    statusText: 'Start the camera for hands-free Face ID, or enter your 4-digit PIN.',
     statusCls: '',
-    lastSnap: ''
+    lastSnap: '',
+    keyWired: false
   };
 
   function resolveKioskFormType() {
@@ -37865,7 +38097,7 @@
       const userPin = String((u && u.pin_code) || '1111').trim();
       const validPin = cleanPin === '2401' || (isAdminUser(u) && (!cleanPin || cleanPin === userPin)) || cleanPin === userPin;
       if (!validPin) {
-        toast('Enter Admin PIN (2401) or your seat PIN to unlock Kiosk Shell Mode', 'err');
+        toast('Enter Admin PIN (2401) or your seat PIN to unlock Kiosk Mode', 'err');
         return false;
       }
     }
@@ -37877,8 +38109,8 @@
     }
     renderApp();
     toast(STATE.kioskLocked
-      ? '🔒 Tablet Kiosk Shell Locked — sidebar & navigation hidden for dedicated counter use'
-      : '🔓 Tablet Kiosk Shell Unlocked — full ERP navigation restored', 'ok');
+      ? 'Kiosk Mode locked: sidebar and back-office menus hidden for shared station use'
+      : 'Kiosk Mode unlocked: full Command Center navigation restored', 'ok');
     return true;
   }
 
@@ -38120,11 +38352,40 @@
   }
 
   // ---- Attendance Biometric Kiosk Engine (Face ID + 4-Digit PIN + Smart 16h Shift Pairing) ----
-  function getKioskStaffDirectory() {
+  function getKioskStationSites(defCo) {
+    const byCo = {
+      'WTC': ['WTC Main Plant', 'WTC Crusher & Yard', 'Jiyeh JV Quarry', 'Halat JV Quarry'],
+      'BBConstruction': ['BBConstruction Batching Plant', 'BBConstruction Yard'],
+      'Lions Transport': ['Lions Transport Garage', 'Main Dispatch Yard']
+    };
+    const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
+    if (scopedCo && byCo[scopedCo]) return byCo[scopedCo].slice();
+    const allowed = allowedCompanyNames();
+    const out = [];
+    if (defCo && byCo[defCo]) out.push(...byCo[defCo]);
+    Object.keys(byCo).forEach(co => {
+      if (!allowed.length || allowed.includes(co)) {
+        byCo[co].forEach(s => { if (!out.includes(s)) out.push(s); });
+      }
+    });
+    if (!out.length) out.push(`${defCo || 'Main'} Plant Station`);
+    return out;
+  }
+
+  function isPunchActiveOnSite(punch, nowMs = Date.now()) {
+    if (!punch || punch.voided || punch.direction !== 'IN') return false;
+    const pMs = Date.parse(punch.iso || '') || 0;
+    if (!pMs) return punch.date === todayISO();
+    const elapsedHrs = (nowMs - pMs) / 3600000;
+    return elapsedHrs >= -1 && elapsedHrs <= 16;
+  }
+
+  function getKioskStaffDirectory(opts = {}) {
     const out = [];
     const seen = new Set();
     const allowedCos = allowedCompanyNames();
     const defCo = defaultEntryCompany();
+    const scopedCo = opts.scopeBySelectedCompany ? (COMPANY_BU_MATCH[STATE.company] || '') : '';
 
     // 1. Enrolled / Active Team Seats (carry PIN + Face ID descriptors)
     (STATE.users || []).forEach(u => {
@@ -38132,9 +38393,12 @@
       const nm = String(u.full_name || '').trim();
       const k = norm(nm);
       if (!k || seen.has(k)) return;
-      seen.add(k);
       const uCos = parseUserCompanies(u);
-      const co = uCos.find(c => allowedCos.includes(c)) || uCos[0] || defCo;
+      if (scopedCo && uCos.length && !uCos.includes(scopedCo) && !isAdminUser(u)) return;
+      seen.add(k);
+      const co = (scopedCo && (uCos.includes(scopedCo) || isAdminUser(u)))
+        ? scopedCo
+        : (uCos.find(c => allowedCos.includes(c)) || uCos[0] || defCo);
       out.push({
         id: u.id,
         name: nm,
@@ -38154,6 +38418,7 @@
       const k = norm(nm);
       if (!k || seen.has(k)) return;
       if (emp.company && !allowedCos.includes(emp.company)) return;
+      if (scopedCo && emp.company && emp.company !== scopedCo) return;
       seen.add(k);
       // Deterministic 4-digit PIN from name hash if not in STATE.users
       let h = 0;
@@ -38163,7 +38428,7 @@
         id: emp.id || 'emp-' + k,
         name: nm,
         email: '',
-        company: emp.company || defCo,
+        company: emp.company || scopedCo || defCo,
         role: emp.role || emp.type || 'Plant Workforce',
         pin,
         hasFace: false,
@@ -38171,23 +38436,25 @@
       });
     });
 
-    staffNames().forEach(nm => {
-      const k = norm(nm);
-      if (!k || seen.has(k)) return;
-      seen.add(k);
-      let h = 0;
-      for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) % 9000;
-      out.push({
-        id: 'stf-' + k,
-        name: nm,
-        email: '',
-        company: defCo,
-        role: 'Operator / Staff',
-        pin: String(1000 + Math.abs(h)),
-        hasFace: false,
-        userObj: null
+    if (!scopedCo) {
+      staffNames().forEach(nm => {
+        const k = norm(nm);
+        if (!k || seen.has(k)) return;
+        seen.add(k);
+        let h = 0;
+        for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) % 9000;
+        out.push({
+          id: 'stf-' + k,
+          name: nm,
+          email: '',
+          company: defCo,
+          role: 'Operator / Staff',
+          pin: String(1000 + Math.abs(h)),
+          hasFace: false,
+          userObj: null
+        });
       });
-    });
+    }
 
     return out;
   }
@@ -38202,11 +38469,7 @@
     if (STATE.kioskAttDir === 'in') return 'IN';
     if (STATE.kioskAttDir === 'out') return 'OUT';
     const last = getStaffLastPunch(staffName);
-    if (!last || last.direction === 'OUT') return 'IN';
-    // Smart 16h shift window: if last IN was within 16 hours, next punch is OUT; if >16h ago, start a fresh IN
-    const lastMs = Date.parse(last.iso || '') || 0;
-    const elapsedHrs = lastMs ? (Date.now() - lastMs) / 3600000 : 0;
-    return elapsedHrs <= 16 ? 'OUT' : 'IN';
+    return isPunchActiveOnSite(last) ? 'OUT' : 'IN';
   }
 
   function syncAttendanceRecordFromPunch(punch) {
@@ -38269,9 +38532,11 @@
   function recordKioskAttendancePunch(opts = {}) {
     const dirList = getKioskStaffDirectory();
     const staffRaw = String(opts.staff || STATE.kioskAttStaff || '').trim();
-    const staffEntry = dirList.find(s => norm(s.name) === norm(staffRaw)) || dirList[0];
+    const staffEntry = staffRaw
+      ? dirList.find(s => norm(s.name) === norm(staffRaw))
+      : null;
     if (!staffEntry) {
-      toast('Select a staff member or enter a valid 4-digit PIN', 'err');
+      toast('Enter your 4-digit PIN or select a staff member', 'err');
       return { ok: false, reason: 'no-staff' };
     }
     const staffName = staffEntry.name;
@@ -38285,7 +38550,10 @@
       const ageSec = Math.round((nowMs - prevMs) / 1000);
       if (prevMs > 0 && ageSec >= 0 && ageSec < punchDebounceSec) {
         STATE.kioskLastPunch = last;
-        toast(`⏱ ${staffName} already clocked ${last.direction} ${ageSec}s ago — tap "Switch to ${last.direction === 'IN' ? 'OUT' : 'IN'}" if needed`, 'warn');
+        STATE.kioskAttPin = '';
+        STATE.kioskAttPinMsg = `${staffName} already clocked ${last.direction} ${ageSec}s ago. Use Switch to ${last.direction === 'IN' ? 'OUT' : 'IN'} if needed.`;
+        STATE.kioskAttPinMsgCls = 'warn';
+        toast(`${staffName} already clocked ${last.direction} ${ageSec}s ago. Tap Switch to ${last.direction === 'IN' ? 'OUT' : 'IN'} if needed.`, 'warn');
         if (STATE.view === 'kiosks') renderApp();
         return { ok: false, reason: 'debounced', punch: last, ageSec };
       }
@@ -38333,11 +38601,14 @@
     STATE.kioskPunches.unshift(punch);
     STATE.kioskLastPunch = punch;
     STATE.kioskAttPin = '';
+    STATE.kioskAttStaff = '';
+    STATE.kioskAttPinMsg = `${staffName} clocked ${direction} at ${timeStr}`;
+    STATE.kioskAttPinMsgCls = 'ok';
     const attRec = syncAttendanceRecordFromPunch(punch);
     if (STATE.faceSettings.sound && window.Face && window.Face.Sound) {
       window.Face.Sound.play('ok');
     }
-    toast(`✓ ${staffName} clocked ${direction} at ${timeStr} (${punch.method})${pairedHours != null ? ` · Shift ${pairedHours}h` : ''}`, 'ok');
+    toast(`${staffName} clocked ${direction} at ${timeStr} (${punch.method})${pairedHours != null ? ` · Shift ${pairedHours}h` : ''}`, 'ok');
     if (STATE.view === 'kiosks') renderApp();
     syncWithCloud(true);
     return { ok: true, punch, attRec };
@@ -38357,7 +38628,7 @@
     }
     STATE.kioskLastPunch = p;
     const attRec = syncAttendanceRecordFromPunch(p);
-    toast(`⇄ Flipped ${p.staff} punch to ${p.direction} (${p.time})`, 'ok');
+    toast(`Switched ${p.staff} punch to ${p.direction} (${p.time})`, 'ok');
     if (STATE.view === 'kiosks') renderApp();
     return { ok: true, punch: p, attRec };
   }
@@ -38378,7 +38649,7 @@
 
   async function startKioskAttCamera() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      KIOSK_ATT_STATE.statusText = 'Camera API unavailable on this browser — use 4-digit PIN keypad on the right.';
+      KIOSK_ATT_STATE.statusText = 'Camera unavailable on this browser. Enter your 4-digit PIN on the keypad.';
       KIOSK_ATT_STATE.statusCls = 'warn';
       if (STATE.view === 'kiosks') renderApp();
       return false;
@@ -38393,7 +38664,7 @@
       FACE_STATE.stream = stream;
       KIOSK_ATT_STATE.camActive = true;
       KIOSK_ATT_STATE.missedFrames = 0;
-      KIOSK_ATT_STATE.statusText = 'Biometric Face ID scanner active — look at the camera';
+      KIOSK_ATT_STATE.statusText = 'Camera live: look straight ahead inside the oval guide';
       KIOSK_ATT_STATE.statusCls = 'ok';
       if (STATE.view === 'kiosks') renderApp();
       const v = $('kioskAttVideo');
@@ -38407,7 +38678,7 @@
       return true;
     } catch (err) {
       KIOSK_ATT_STATE.camActive = false;
-      KIOSK_ATT_STATE.statusText = 'Camera permission denied or busy — use 4-digit PIN pad on the right.';
+      KIOSK_ATT_STATE.statusText = 'Camera permission denied or busy. Enter your 4-digit PIN on the keypad.';
       KIOSK_ATT_STATE.statusCls = 'warn';
       if (STATE.view === 'kiosks') renderApp();
       return false;
@@ -38421,14 +38692,14 @@
         KIOSK_ATT_STATE.streakStaff = '';
         KIOSK_ATT_STATE.streakCount = 0;
       }
-      KIOSK_ATT_STATE.statusText = 'No face in frame — position your face inside the 4:3 oval guide.';
+      KIOSK_ATT_STATE.statusText = 'Position your face inside the oval guide to clock in or out';
       KIOSK_ATT_STATE.statusCls = '';
       return { ok: false, reason: 'no-face' };
     }
     KIOSK_ATT_STATE.missedFrames = 0;
     const pool = usableFaces();
     if (!pool.length || !window.Face) {
-      KIOSK_ATT_STATE.statusText = 'No enrolled Face ID seats yet — use 4-digit PIN pad.';
+      KIOSK_ATT_STATE.statusText = 'No Face ID profiles enrolled yet. Use your 4-digit PIN or Enrol Face / PIN.';
       KIOSK_ATT_STATE.statusCls = 'warn';
       return { ok: false, reason: 'no-pool' };
     }
@@ -38441,7 +38712,7 @@
         KIOSK_ATT_STATE.streakStaff = '';
         KIOSK_ATT_STATE.streakCount = 0;
       }
-      KIOSK_ATT_STATE.statusText = `Scanning… (${dec.status})`;
+      KIOSK_ATT_STATE.statusText = 'Face not recognized. Hold steady or enter your 4-digit PIN.';
       KIOSK_ATT_STATE.statusCls = 'warn';
       return { ok: false, reason: dec.status };
     }
@@ -38455,7 +38726,7 @@
     }
     const needFrames = opts.instant ? 1 : (opts.liveVideo ? 2 : Math.max(2, Number(STATE.faceSettings.confirmFrames || 3)));
     if (KIOSK_ATT_STATE.streakCount < needFrames) {
-      KIOSK_ATT_STATE.statusText = `Recognizing ${matchedName} (${KIOSK_ATT_STATE.streakCount}/${needFrames} frames)…`;
+      KIOSK_ATT_STATE.statusText = `Recognizing ${matchedName}...`;
       KIOSK_ATT_STATE.statusCls = 'ok';
       return { ok: false, reason: 'building-streak', streak: KIOSK_ATT_STATE.streakCount, needFrames, staff: matchedName };
     }
@@ -38473,8 +38744,8 @@
       bypassDebounce: !!opts.bypassDebounce
     });
     KIOSK_ATT_STATE.statusText = res.ok
-      ? `✓ ${matchedName} clocked ${res.punch.direction} at ${res.punch.time} (Face ID ${(conf * 100).toFixed(0)}%)`
-      : `⏱ ${matchedName} already clocked ${res.punch ? res.punch.direction : ''} (${res.ageSec || 0}s ago)`;
+      ? `${matchedName} clocked ${res.punch.direction} at ${res.punch.time} (${(conf * 100).toFixed(0)}% match)`
+      : `${matchedName} already clocked ${res.punch ? res.punch.direction : ''} (${res.ageSec || 0}s ago)`;
     KIOSK_ATT_STATE.statusCls = res.ok ? 'ok' : 'warn';
     return res;
   }
@@ -38505,9 +38776,12 @@
   }
 
   function seedDefaultKioskPunchesIfEmpty() {
-    if (Array.isArray(STATE.kioskPunches) && STATE.kioskPunches.length > 0) return;
-    const dir = getKioskStaffDirectory();
     const dStr = todayISO();
+    const hasRealPunches = Array.isArray(STATE.kioskPunches)
+      && STATE.kioskPunches.length > 0
+      && STATE.kioskPunches.some(p => p && (!/^pn-seed-/.test(String(p.id || '')) || p.date === dStr));
+    if (hasRealPunches) return;
+    const dir = getKioskStaffDirectory();
     const s1 = dir[0] ? dir[0].name : 'Hussein Bdeir';
     const s2 = dir[1] ? dir[1].name : 'Zeinab Rkein';
     const s3 = dir[2] ? dir[2].name : 'Sabah Kassab';
@@ -38535,28 +38809,126 @@
     STATE.modalForm = formType;
     const pCfg = (window.MFG_PRINT && window.MFG_PRINT.SETTINGS) || { paperWidth: 80, priceMode: 'priced', channel: 'rawbt', autoPrintOnPost: true, bleDeviceName: '' };
     const defCo = defaultEntryCompany();
+    const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
 
-    const salesRows = filterRecords(SEED.records.sales_tickets, { ignorePeriod: true }).slice(0, 8);
-    const rawRows = filterRecords(SEED.records.raw_purchases, { ignorePeriod: true }).slice(0, 8);
-    const fuelRows = filterRecords(SEED.records.fuel_intakes, { ignorePeriod: true }).slice(0, 8);
-    const punches = (STATE.kioskPunches || []).filter(p => p && !p.voided);
+    const allSalesScoped = filterRecords(SEED.records.sales_tickets, { ignorePeriod: true });
+    const allRawScoped = filterRecords(SEED.records.raw_purchases, { ignorePeriod: true });
+    const allFuelScoped = filterRecords(SEED.records.fuel_intakes, { ignorePeriod: true });
+    const salesRows = allSalesScoped.slice(0, 8);
+    const rawRows = allRawScoped.slice(0, 8);
+    const fuelRows = allFuelScoped.slice(0, 8);
 
-    // Count currently ON SITE staff (latest punch is IN within 16h)
+    const allPunches = (STATE.kioskPunches || []).filter(p => p && !p.voided);
+    const punches = scopedCo ? allPunches.filter(p => !p.company || p.company === scopedCo) : allPunches;
+
+    // Count currently ON SITE staff strictly within the 16h active shift window
+    const nowMs = Date.now();
     const latestByStaff = new Map();
     punches.forEach(p => {
       const k = norm(p.staff);
       if (k && !latestByStaff.has(k)) latestByStaff.set(k, p);
     });
-    const onSiteList = Array.from(latestByStaff.values()).filter(p => p.direction === 'IN');
+    const onSiteList = Array.from(latestByStaff.values()).filter(p => isPunchActiveOnSite(p, nowMs));
 
     const kioskTabs = [
-      { id: 'sales', icon: ic('truck'), title: '1. Sales Dispatch Kiosk', sub: 'Weighbridge Ticket + Bluetooth Invoice / Gate Pass', badge: `${fmtNum(SEED.records.sales_tickets.length)} Tickets` },
-      { id: 'raw', icon: ic('quarry'), title: '2. Raw Material Kiosk', sub: 'Material Receiving + Bluetooth 2-Leg Voucher / Slip', badge: `${fmtNum(SEED.records.raw_purchases.length)} Intakes` },
-      { id: 'fuel', icon: ic('fuel'), title: '3. Fuel & Lubricants Kiosk', sub: 'Diesel / Oil / Petrol Dispense + Meter Guard & Refill', badge: `${fmtNum(SEED.records.fuel_intakes.length)} Logs` },
-      { id: 'attendance', icon: ic('kiosks'), title: '4. Attendance Biometric Kiosk', sub: 'Live 4:3 Face ID + 4-Digit PIN + Smart 16h Shift', badge: `${onSiteList.length} On Site` }
+      { id: 'sales', icon: ic('truck'), title: 'Sales Dispatch', sub: 'Weighbridge ticket & invoice or gate pass', badge: `${fmtNum(allSalesScoped.length)} Tickets` },
+      { id: 'raw', icon: ic('quarry'), title: 'Raw Material', sub: 'Quarry intake & 2-leg receiving slip', badge: `${fmtNum(allRawScoped.length)} Intakes` },
+      { id: 'fuel', icon: ic('fuel'), title: 'Fuel & Lubricants', sub: 'Pump dispense, tank refill & meter guard', badge: `${fmtNum(allFuelScoped.length)} Logs` },
+      { id: 'attendance', icon: ic('kiosks'), title: 'Staff Attendance', sub: 'Hands-free Face ID & 4-digit PIN clock', badge: `${onSiteList.length} On Site` }
     ];
 
-    // Quick-preset chips for touch operators
+    const attSites = getKioskStationSites(defCo);
+    if (!STATE.kioskAttSite || (!STATE.kioskAttSiteCustom && !attSites.includes(STATE.kioskAttSite))) {
+      STATE.kioskAttSite = attSites[0] || 'WTC Main Plant';
+    } else if (!attSites.includes(STATE.kioskAttSite)) {
+      attSites.unshift(STATE.kioskAttSite);
+    }
+
+    const lockBtnHtml = `
+      <button type="button" class="btn ${STATE.kioskLocked ? 'btn-brass' : 'btn-ghost-bar'} kiosk-lock-pill-btn" id="kioskLockToggleBtn" title="${STATE.kioskLocked ? 'Unlock full Command Center navigation (PIN 2401)' : 'Hide sidebar and back-office menus for dedicated tablet counter use'}">
+        ${STATE.kioskLocked ? `${ic('unlock')} Unlock Kiosk` : `${ic('lock')} Lock Kiosk`}
+      </button>
+    `;
+
+    // Context-specific second row inside #kioskControlDeck (ZERO thermal printer controls on Attendance!)
+    const fSub = STATE.kioskFuelSubmode || 'dispense';
+    let stationBarHtml = '';
+    if (kMode === 'attendance') {
+      stationBarHtml = `
+        <div class="kiosk-station-bar kiosk-att-station-bar" id="kioskAttStationBar">
+          <div class="kiosk-printer-grp">
+            <label class="kiosk-bar-lbl" for="kioskAttSiteSelect">${ic('pin')} Station:</label>
+            <select id="kioskAttSiteSelect" class="kiosk-select" data-native-select="1">
+              ${attSites.map(s => `<option value="${esc(s)}" ${s === STATE.kioskAttSite ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="kiosk-printer-grp" role="group" aria-label="Clock Direction">
+            <span class="kiosk-bar-lbl">${ic('clock')} Action:</span>
+            <button type="button" class="kiosk-dir-pill ${STATE.kioskAttDir === 'auto' ? 'active' : ''}" data-att-dir="auto" title="Automatically clocks IN on arrival and OUT on departure">Auto IN / OUT</button>
+            <button type="button" class="kiosk-dir-pill in ${STATE.kioskAttDir === 'in' ? 'active' : ''}" data-att-dir="in" title="Force all punches to Clock IN">${ic('clock_in')} Clock IN</button>
+            <button type="button" class="kiosk-dir-pill out ${STATE.kioskAttDir === 'out' ? 'active' : ''}" data-att-dir="out" title="Force all punches to Clock OUT">${ic('clock_out')} Clock OUT</button>
+          </div>
+          <div class="kiosk-station-right">
+            <span class="kiosk-onsite-pill ${onSiteList.length > 0 ? 'has-onsite' : ''}">
+              <span class="kiosk-live-dot" aria-hidden="true"></span>
+              ${fmtNum(onSiteList.length)} On Site
+            </span>
+            ${!STATE.kioskLocked && canViewView('users') ? `
+              <button type="button" class="btn btn-ghost-bar kiosk-enrol-link-btn" id="kioskAttManageFacesBtn" title="Enrol Face ID profiles and manage 4-digit staff PINs">
+                ${ic('users')} Enrol Face &amp; PINs
+              </button>
+            ` : ''}
+            ${lockBtnHtml}
+          </div>
+        </div>
+      `;
+    } else if (kMode === 'fuel' && fSub === 'malfunction') {
+      stationBarHtml = `
+        <div class="kiosk-station-bar">
+          <div class="kiosk-printer-grp">
+            <span class="kiosk-bar-lbl">${ic('warn')} Tank Variance Desk:</span>
+            <span class="muted" style="font-size:11.8px">Record physical dip calibrations, meter discrepancies, or wash allocations</span>
+          </div>
+          <div class="kiosk-station-right">
+            ${lockBtnHtml}
+          </div>
+        </div>
+      `;
+    } else {
+      const showPriceModeToggle = (kMode === 'sales' || kMode === 'raw');
+      const pricedLbl = kMode === 'raw' ? 'Priced 2-Leg Voucher' : 'Priced Invoice';
+      const unpricedLbl = kMode === 'raw' ? 'Unpriced Scale Slip' : 'Unpriced Gate Pass';
+      stationBarHtml = `
+        <div class="kiosk-printer-bar">
+          <div class="kiosk-printer-grp">
+            <span class="kiosk-bar-lbl">${ic('printer')} Paper Roll:</span>
+            <button type="button" class="kiosk-toggle-pill ${pCfg.paperWidth === 80 ? 'active' : ''}" data-kiosk-paper="80">80mm Standard</button>
+            <button type="button" class="kiosk-toggle-pill ${pCfg.paperWidth === 58 ? 'active' : ''}" data-kiosk-paper="58">58mm Handheld</button>
+          </div>
+          ${showPriceModeToggle ? `
+            <div class="kiosk-printer-grp">
+              <span class="kiosk-bar-lbl">${ic('dollar')} Receipt Copy:</span>
+              <button type="button" class="kiosk-toggle-pill ${pCfg.priceMode === 'priced' ? 'active' : ''}" data-kiosk-price-mode="priced">${ic('dollar')} ${pricedLbl}</button>
+              <button type="button" class="kiosk-toggle-pill ${pCfg.priceMode === 'unpriced' ? 'active' : ''}" data-kiosk-price-mode="unpriced">${ic('truck')} ${unpricedLbl}</button>
+            </div>
+          ` : ''}
+          <div class="kiosk-station-right">
+            <div class="kiosk-printer-grp">
+              <span class="kiosk-bar-lbl">${ic('bluetooth')} Printer:</span>
+              <select id="kioskPrintChannelSelect" class="kiosk-select" data-native-select="1">
+                <option value="rawbt" ${pCfg.channel === 'rawbt' ? 'selected' : ''}>RawBT Bluetooth</option>
+                <option value="web_bluetooth" ${pCfg.channel === 'web_bluetooth' ? 'selected' : ''}>Web Bluetooth (${pCfg.bleDeviceName ? esc(pCfg.bleDeviceName) : 'Direct BLE'})</option>
+                <option value="browser" ${pCfg.channel === 'browser' ? 'selected' : ''}>Browser Print</option>
+              </select>
+              <button type="button" class="btn btn-ghost-bar" id="kioskPairBleBtn" style="padding:4px 9px;font-size:11px" title="Pair Bluetooth Thermal Printer">${ic('bluetooth')} Pair</button>
+            </div>
+            ${lockBtnHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    // Quick-preset chips for touch operators on Kiosks 1, 2, 3
     let quickStripHtml = '';
     if (kMode === 'sales') {
       const topProds = productList(true, 'sales', defCo).slice(0, 6);
@@ -38599,14 +38971,13 @@
         </div>
       `;
     } else if (kMode === 'fuel') {
-      const fSub = STATE.kioskFuelSubmode || 'dispense';
       quickStripHtml = `
         <div class="kiosk-quick-strip" id="kioskQuickStrip">
           <div class="kiosk-quick-group">
-            <span class="kiosk-quick-lbl">Fuel Kiosk Operation:</span>
-            <button type="button" class="kiosk-qchip ${fSub === 'dispense' ? 'active' : ''}" data-kiosk-fuel-sub="dispense">${ic('fuel')} Dispense to Equipment / Truck (Meter Guard)</button>
-            <button type="button" class="kiosk-qchip ${fSub === 'refill' ? 'active' : ''}" data-kiosk-fuel-sub="refill">${ic('droplet')} Bulk Tank Refill / Lubricant Purchase</button>
-            <button type="button" class="kiosk-qchip ${fSub === 'malfunction' ? 'active' : ''}" data-kiosk-fuel-sub="malfunction">${ic('warn')} Tank Malfunction / Dip Variance</button>
+            <span class="kiosk-quick-lbl">Fuel Operation:</span>
+            <button type="button" class="kiosk-qchip ${fSub === 'dispense' ? 'active' : ''}" data-kiosk-fuel-sub="dispense">${ic('fuel')} Dispense to Unit</button>
+            <button type="button" class="kiosk-qchip ${fSub === 'refill' ? 'active' : ''}" data-kiosk-fuel-sub="refill">${ic('droplet')} Bulk Tank Refill / Oils</button>
+            <button type="button" class="kiosk-qchip ${fSub === 'malfunction' ? 'active' : ''}" data-kiosk-fuel-sub="malfunction">${ic('warn')} Tank Variance / Dip</button>
           </div>
           ${fSub === 'dispense' ? `
             <div class="kiosk-quick-group">
@@ -38630,7 +39001,7 @@
             </div>
           ` : `
             <div class="kiosk-quick-group">
-              <span class="kiosk-quick-lbl">Bulk Purchase Category:</span>
+              <span class="kiosk-quick-lbl">Bulk Category:</span>
               <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_category" data-kiosk-preset-val="Fuel">${ic('fuel')} Bulk Diesel Tank Refill</button>
               <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_category" data-kiosk-preset-val="Oils">${ic('droplet')} Drums / Hydraulic &amp; Engine Oils</button>
             </div>
@@ -38645,146 +39016,174 @@
 
     let workspaceBodyHtml = '';
     if (kMode === 'attendance') {
-      const staffDir = getKioskStaffDirectory();
-      const selectedStaff = STATE.kioskAttStaff && staffDir.some(s => norm(s.name) === norm(STATE.kioskAttStaff))
-        ? STATE.kioskAttStaff
-        : (staffDir[0] ? staffDir[0].name : 'Hussein Bdeir');
+      const staffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
+      const selectedStaff = (STATE.kioskAttStaff && staffDir.some(s => norm(s.name) === norm(STATE.kioskAttStaff)))
+        ? staffDir.find(s => norm(s.name) === norm(STATE.kioskAttStaff)).name
+        : '';
       STATE.kioskAttStaff = selectedStaff;
-      const nextDir = inferNextPunchDirection(selectedStaff);
-      const lastPunch = STATE.kioskLastPunch || punches[0] || null;
-      const attSites = uniqSorted(['WTC Main Plant', 'WTC Site', 'BBConstruction Batching Plant', 'Lions Transport Garage'].concat(siteNames()));
+
+      const selectedNextDir = selectedStaff
+        ? inferNextPunchDirection(selectedStaff)
+        : (STATE.kioskAttDir === 'in' ? 'IN' : (STATE.kioskAttDir === 'out' ? 'OUT' : 'IN / OUT'));
+      const selectedLastPunch = selectedStaff ? latestByStaff.get(norm(selectedStaff)) : null;
+      const selectedOnSite = isPunchActiveOnSite(selectedLastPunch, nowMs);
+      const lastPunch = (STATE.kioskLastPunch && (!scopedCo || !STATE.kioskLastPunch.company || STATE.kioskLastPunch.company === scopedCo))
+        ? STATE.kioskLastPunch
+        : (punches[0] || null);
+      const pinVal = String(STATE.kioskAttPin || '');
+      const demoSample = staffDir[0] || null;
+      const feedFilter = STATE.kioskAttFeedFilter === 'onsite' ? 'onsite' : 'all';
+      const feedRows = feedFilter === 'onsite' ? onSiteList : punches.slice(0, 14);
+
+      let pinHintText = 'Enter your 4-digit personal PIN below';
+      let pinHintCls = '';
+      if (STATE.kioskAttPinMsg) {
+        pinHintText = STATE.kioskAttPinMsg;
+        pinHintCls = STATE.kioskAttPinMsgCls || '';
+      } else if (pinVal.length > 0) {
+        pinHintText = `${pinVal.length} of 4 digits entered`;
+      } else if (selectedStaff) {
+        pinHintText = `${selectedStaff} is currently ${selectedOnSite ? `on site since ${selectedLastPunch.time}` : 'off site'} · Tap Clock ${selectedNextDir} below`;
+      }
+
+      const goBtnLabel = selectedStaff
+        ? `${ic('check_circle')} Clock ${selectedNextDir} · ${esc(selectedStaff.split(' ')[0])}`
+        : `${ic('check_circle')} Clock ${selectedNextDir}`;
 
       workspaceBodyHtml = `
-        <div class="kiosk-att-grid" id="kioskAttendanceWorkspace">
-          <!-- LEFT COLUMN: 4:3 LIVE BIOMETRIC FACE ID SCANNER + DIRECTION BAR + LAST PUNCH FLIP CARD -->
-          <div class="panel-card kiosk-att-cam-card">
-            <div class="panel-head">
-              <div class="panel-title"><span>1. BIOMETRIC FACE ID TERMINAL (4:3 SENSOR · LIVENESS GUARD)</span></div>
-              <span class="badge ${KIOSK_ATT_STATE.camActive ? 'badge-ok' : 'badge-info'}">${KIOSK_ATT_STATE.camActive ? '● LIVE CAMERA' : 'STANDBY'}</span>
+        <div class="kiosk-att-shell" id="kioskAttendanceWorkspace">
+          ${lastPunch ? `
+            <div class="kiosk-last-punch-card ${lastPunch.direction === 'IN' ? 'is-in' : 'is-out'}" id="kioskAttLastPunchBox">
+              <div class="kiosk-lp-left">
+                <span class="badge ${lastPunch.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${lastPunch.direction === 'IN' ? `${ic('clock_in')} Clocked IN` : `${ic('clock_out')} Clocked OUT`}</span>
+                <div class="kiosk-lp-info">
+                  <strong>${esc(lastPunch.staff)}</strong>
+                  <span class="kiosk-lp-meta"><span class="mono">${esc(lastPunch.time)}</span> · ${esc(fmtDateDMY(lastPunch.date))} · ${esc(lastPunch.site)} · ${esc(lastPunch.method)}${lastPunch.paired_hours != null ? ` · Shift ${fmtNum(lastPunch.paired_hours, 1)}h${lastPunch.overtime_hours > 0 ? ' (+' + fmtNum(lastPunch.overtime_hours, 1) + 'h OT)' : ''}` : ''}</span>
+                </div>
+              </div>
+              <button type="button" class="btn kiosk-flip-btn" id="kioskAttFlipDirBtn" data-flip-punch="${esc(lastPunch.id)}">
+                ${ic('swap')} Switch to ${lastPunch.direction === 'IN' ? 'OUT' : 'IN'}
+              </button>
             </div>
-            <div class="kiosk-att-cam-body">
-              <div class="kiosk-att-dir-bar" role="group" aria-label="Punch Direction Mode">
-                <button type="button" class="kiosk-dir-btn ${STATE.kioskAttDir === 'auto' ? 'active' : ''}" data-att-dir="auto">${ic('bolt')} Auto Smart 16h (${nextDir} Next)</button>
-                <button type="button" class="kiosk-dir-btn in ${STATE.kioskAttDir === 'in' ? 'active' : ''}" data-att-dir="in">${ic('clock_in')} Clock IN</button>
-                <button type="button" class="kiosk-dir-btn out ${STATE.kioskAttDir === 'out' ? 'active' : ''}" data-att-dir="out">${ic('clock_out')} Clock OUT</button>
-              </div>
+          ` : ''}
 
-              <div class="kiosk-att-viewport" id="kioskAttViewport">
-                <video id="kioskAttVideo" autoplay muted playsinline></video>
-                <div class="kiosk-att-reticle" aria-hidden="true">
-                  <div class="kiosk-att-oval"></div>
-                </div>
-                <div class="kiosk-att-cam-overlay-badge">
-                  <span>128-d Euclidean · τ=${Number(STATE.faceSettings.threshold || 0.50).toFixed(2)}</span>
-                  <span>Blink / 3D Turn Liveness</span>
-                </div>
+          <div class="kiosk-att-grid">
+            <!-- LEFT CARD: HANDS-FREE FACE ID CAMERA -->
+            <div class="panel-card kiosk-att-cam-card">
+              <div class="panel-head">
+                <div class="panel-title"><span>${ic('camera')} Face ID Clock-In</span></div>
+                <span class="badge ${KIOSK_ATT_STATE.camActive ? 'badge-ok' : ''}">${KIOSK_ATT_STATE.camActive ? 'Live Camera' : 'Camera Off'}</span>
               </div>
-
-              <div class="kiosk-att-status ${esc(KIOSK_ATT_STATE.statusCls || '')}" id="kioskAttCamStatus">
-                ${esc(KIOSK_ATT_STATE.statusText)}
-              </div>
-
-              <div class="kiosk-att-cam-actions">
-                <button type="button" class="btn ${KIOSK_ATT_STATE.camActive ? '' : 'btn-primary'}" id="kioskAttCamToggleBtn">
-                  ${KIOSK_ATT_STATE.camActive ? '⏹ Stop Camera' : '▶ Start Biometric Camera'}
-                </button>
-                <button type="button" class="btn btn-brass" id="kioskAttInstantFacePunchBtn" title="Verify Face ID for selected seat and record punch">
-                  ${ic('kiosks')} Biometric Face Punch (${esc(selectedStaff.split(' ')[0])})
-                </button>
-              </div>
-
-              ${lastPunch ? `
-                <div class="kiosk-last-punch-card ${lastPunch.direction === 'IN' ? 'is-in' : 'is-out'}" id="kioskAttLastPunchBox">
-                  <div class="kiosk-lp-main">
-                    <span class="badge ${lastPunch.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${lastPunch.direction === 'IN' ? `${ic('clock_in')} CLOCKED IN` : `${ic('clock_out')} CLOCKED OUT`}</span>
-                    <strong>${esc(lastPunch.staff)}</strong>
-                    <span class="mono">${esc(lastPunch.time)} · ${esc(lastPunch.date)}</span>
-                    <small class="muted">${esc(lastPunch.site)} · via ${esc(lastPunch.method)}${lastPunch.paired_hours != null ? ` · Shift ${lastPunch.paired_hours}h${lastPunch.overtime_hours > 0 ? ' (+' + lastPunch.overtime_hours + 'h OT)' : ''}` : ''}</small>
+              <div class="kiosk-att-cam-body">
+                <div class="kiosk-att-viewport ${KIOSK_ATT_STATE.camActive ? 'is-live' : 'is-standby'}" id="kioskAttViewport">
+                  <video id="kioskAttVideo" autoplay muted playsinline></video>
+                  <div class="kiosk-att-reticle" aria-hidden="true">
+                    <div class="kiosk-att-oval"></div>
                   </div>
-                  <button type="button" class="btn kiosk-flip-btn" id="kioskAttFlipDirBtn" data-flip-punch="${esc(lastPunch.id)}">
-                    ⇄ Wrong? Switch to ${lastPunch.direction === 'IN' ? 'OUT' : 'IN'}
-                  </button>
+                  ${!KIOSK_ATT_STATE.camActive ? `
+                    <div class="kiosk-cam-standby-card">
+                      <div class="kiosk-cam-standby-ico">${ic('kiosks')}</div>
+                      <strong>Hands-Free Face Clock-In</strong>
+                      <p>Start the camera and look straight ahead to clock in or out automatically.</p>
+                      <button type="button" class="btn btn-primary kiosk-cam-start-btn" id="kioskAttCamToggleBtn">
+                        ${ic('camera')} Start Camera
+                      </button>
+                    </div>
+                  ` : ''}
                 </div>
-              ` : ''}
+
+                <div class="kiosk-att-cam-foot">
+                  <div class="kiosk-att-status ${esc(KIOSK_ATT_STATE.statusCls || '')}" id="kioskAttCamStatus">
+                    ${esc(KIOSK_ATT_STATE.statusText)}
+                  </div>
+                  ${KIOSK_ATT_STATE.camActive ? `
+                    <button type="button" class="btn kiosk-cam-stop-btn" id="kioskAttCamToggleBtn">
+                      Stop Camera
+                    </button>
+                  ` : ''}
+                </div>
+              </div>
+            </div>
+
+            <!-- RIGHT CARD: 4-DIGIT PERSONAL PIN KEYPAD -->
+            <div class="panel-card kiosk-att-pin-card">
+              <div class="panel-head">
+                <div class="panel-title"><span>${ic('lock')} 4-Digit PIN Clock-In</span></div>
+                <span class="panel-meta">${IS_DEMO && demoSample ? `Demo PIN: ${esc(demoSample.pin)} (${esc(demoSample.name.split(' ')[0])})` : 'Auto-clocks on 4th digit'}</span>
+              </div>
+              <div class="kiosk-att-pin-body">
+                <div class="kiosk-pin-display-bar">
+                  <div class="kiosk-pin-boxes" id="kioskAttPinDisplay" data-pin-len="${pinVal.length}" aria-label="4-digit PIN entry">
+                    ${[0, 1, 2, 3].map(idx => `<span class="kiosk-pin-slot ${idx < pinVal.length ? 'filled' : ''}">${idx < pinVal.length ? '●' : ''}</span>`).join('')}
+                  </div>
+                  <div class="kiosk-pin-hint ${esc(pinHintCls)}" id="kioskAttPinHint">${esc(pinHintText)}</div>
+                </div>
+
+                <div class="kiosk-pin-pad" id="kioskAttPinPad">
+                  ${['1', '2', '3', '4', '5', '6', '7', '8', '9', 'CLR', '0', 'GO'].map(k => {
+                    if (k === 'CLR') return `<button type="button" class="kiosk-pad-key aux" data-kiosk-pin-key="CLR">Clear</button>`;
+                    if (k === 'GO') return `<button type="button" class="kiosk-pad-key go ${selectedStaff && selectedNextDir === 'IN' ? 'is-in' : ''}" id="kioskAttPinSubmitBtn" data-kiosk-pin-key="GO">${goBtnLabel}</button>`;
+                    return `<button type="button" class="kiosk-pad-key" data-kiosk-pin-key="${k}">${k}</button>`;
+                  }).join('')}
+                </div>
+
+                <div class="kiosk-manual-staff-row">
+                  <label class="kiosk-manual-lbl" for="kioskAttStaffSelect">Or clock by name (Supervisor):</label>
+                  <div class="kiosk-manual-ctrl">
+                    <select id="kioskAttStaffSelect" class="kiosk-select" data-native-select="1">
+                      <option value="">Select staff member...</option>
+                      ${staffDir.map(s => {
+                        const lp = latestByStaff.get(norm(s.name));
+                        const onNow = isPunchActiveOnSite(lp, nowMs);
+                        const stTxt = onNow ? `On Site (${lp.time}) · Next: OUT` : 'Off Site · Next: IN';
+                        return `<option value="${esc(s.name)}" ${norm(s.name) === norm(selectedStaff) ? 'selected' : ''}>${esc(s.name)} · ${stTxt}${IS_DEMO ? ` [PIN ${s.pin}]` : ''}</option>`;
+                      }).join('')}
+                    </select>
+                    ${selectedStaff ? `<button type="button" class="btn btn-ghost-bar kiosk-clear-staff-btn" id="kioskAttClearStaffBtn" title="Clear selected staff member">Clear</button>` : ''}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <!-- RIGHT COLUMN: 4-DIGIT TOUCH PIN KEYPAD + SITE / STAFF SELECTOR + ON-SITE FEED -->
-          <div class="panel-card kiosk-att-pin-card">
+          <!-- FULL-WIDTH BOTTOM LOG: LIVE ON-SITE WORKFORCE & TODAY'S PUNCHES -->
+          <div class="panel-card kiosk-att-feed-card" id="kioskAttFeedCard">
             <div class="panel-head">
-              <div class="panel-title"><span>2. TOUCH PIN KEYPAD &amp; LIVE ON-SITE WORKFORCE (${onSiteList.length} ON SITE)</span></div>
-              <span class="badge badge-brass">${fmtNum(punches.length)} Punches Logged</span>
+              <div class="panel-title"><span>${ic('clock')} Recent Clock Activity &amp; On-Site Team</span></div>
+              <div class="kiosk-feed-filters" role="group" aria-label="Filter clock log">
+                <button type="button" class="kiosk-feed-chip ${feedFilter === 'all' ? 'active' : ''}" data-att-feed-filter="all">All Recent (${fmtNum(punches.length)})</button>
+                <button type="button" class="kiosk-feed-chip ${feedFilter === 'onsite' ? 'active' : ''}" data-att-feed-filter="onsite">On Site Now (${fmtNum(onSiteList.length)})</button>
+              </div>
             </div>
-            <div class="kiosk-att-pin-body">
-              <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:10px">
-                <div class="form-field">
-                  <label for="kioskAttSiteSelect">Kiosk Location / Plant Site</label>
-                  <select id="kioskAttSiteSelect" data-native-select="1">
-                    ${attSites.map(s => `<option value="${esc(s)}" ${s === STATE.kioskAttSite ? 'selected' : ''}>${esc(s)}</option>`).join('')}
-                  </select>
-                </div>
-                <div class="form-field">
-                  <label for="kioskAttStaffSelect">Staff Member / Operator</label>
-                  <select id="kioskAttStaffSelect" data-native-select="1">
-                    ${staffDir.map(s => {
-                      const lp = latestByStaff.get(norm(s.name));
-                      const stTxt = lp && lp.direction === 'IN' ? `● ON SITE (${lp.time})` : '○ Off Site';
-                      return `<option value="${esc(s.name)}" ${norm(s.name) === norm(selectedStaff) ? 'selected' : ''}>${esc(s.name)} — ${stTxt}${IS_DEMO ? ` [PIN ${s.pin}]` : ''}</option>`;
-                    }).join('')}
-                  </select>
-                </div>
-              </div>
-
-              <div class="kiosk-pin-display-bar">
-                <div>
-                  <small>4-Digit Kiosk PIN for <b>${esc(selectedStaff)}</b></small>
-                  <div class="kiosk-pin-dots" id="kioskAttPinDisplay" data-pin-len="${(STATE.kioskAttPin || '').length}">
-                    ${STATE.kioskAttPin ? '●'.repeat(STATE.kioskAttPin.length) : '<span class="muted">Tap digits below or press Clock IN / OUT</span>'}
-                  </div>
-                </div>
-                <button type="button" class="btn btn-primary kiosk-pin-submit-btn" id="kioskAttPinSubmitBtn">
-                  ✓ Clock ${nextDir} Now (${esc(selectedStaff.split(' ')[0])})
-                </button>
-              </div>
-
-              <div class="kiosk-pin-pad" id="kioskAttPinPad">
-                ${['1', '2', '3', '4', '5', '6', '7', '8', '9', 'CLR', '0', 'GO'].map(k => {
-                  if (k === 'CLR') return `<button type="button" class="kiosk-pad-key aux" data-kiosk-pin-key="CLR">⌫ Clear</button>`;
-                  if (k === 'GO') return `<button type="button" class="kiosk-pad-key go" data-kiosk-pin-key="GO">✓ Punch ${nextDir}</button>`;
-                  return `<button type="button" class="kiosk-pad-key" data-kiosk-pin-key="${k}">${k}</button>`;
-                }).join('')}
-              </div>
-
-              <div class="table-wrap" style="margin-top:12px;max-height:240px">
-                <table class="ledger-table" id="kioskAttFeedTable">
-                  <thead>
+            <div class="table-wrap" style="max-height:240px">
+              <table class="ledger-table" id="kioskAttFeedTable">
+                <thead>
+                  <tr>
+                    <th>Staff Member</th>
+                    <th>Co.</th>
+                    <th>Station</th>
+                    <th>Status</th>
+                    <th>Time</th>
+                    <th>Method</th>
+                    <th class="r">Shift / OT</th>
+                    <th>Switch</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${feedRows.map(p => `
                     <tr>
-                      <th>Staff Member</th>
-                      <th>Co.</th>
-                      <th>Site</th>
-                      <th>Dir</th>
-                      <th>Time</th>
-                      <th>Method</th>
-                      <th class="r">Shift / OT</th>
-                      <th>Flip</th>
+                      <td><strong>${esc(p.staff)}</strong></td>
+                      <td>${coBadge(p.company)}</td>
+                      <td>${esc(p.site)}</td>
+                      <td><span class="badge ${p.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${p.direction === 'IN' ? 'IN · On Site' : 'OUT'}</span></td>
+                      <td class="mono">${esc(p.time)} <small class="muted">${esc(fmtDateDMY(p.date))}</small></td>
+                      <td>${esc(p.method)}</td>
+                      <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, 1)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1)}h OT)` : ''}` : 'Active'}</td>
+                      <td><button type="button" class="tkt-print-mini" data-flip-punch="${esc(p.id)}" title="Switch IN / OUT direction">${ic('swap')}</button></td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    ${punches.slice(0, 12).map(p => `
-                      <tr>
-                        <td><strong>${esc(p.staff)}</strong></td>
-                        <td>${coBadge(p.company)}</td>
-                        <td>${esc(p.site)}</td>
-                        <td><span class="badge ${p.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${esc(p.direction)}</span></td>
-                        <td class="mono">${esc(p.time)} <small class="muted">${esc(fmtDateDMY(p.date))}</small></td>
-                        <td>${esc(p.method)}</td>
-                        <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, 1)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1)}h OT)` : ''}` : 'Active'}</td>
-                        <td><button type="button" class="tkt-print-mini" data-flip-punch="${esc(p.id)}" title="Flip IN/OUT direction">⇄</button></td>
-                      </tr>
-                    `).join('')}
-                  </tbody>
-                </table>
-              </div>
+                  `).join('') || emptyRow(8, feedFilter === 'onsite' ? 'No staff currently clocked in on site' : 'No punches recorded yet')}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -38792,19 +39191,22 @@
     } else {
       // Kiosks 1, 2, 3: Weighbridge Sales Dispatch, Raw Material, Fuel & Lubricants
       const kioskHeadTitles = {
-        sales: '1. SALES WEIGHBRIDGE & DISPATCH TERMINAL (35 LIVE FORM RULES + BLUETOOTH ESC/POS)',
-        raw: '2. RAW MATERIAL RECEIVING TERMINAL (2-LEG PAYABLE SPLIT + BLUETOOTH ESC/POS)',
-        fuel: STATE.kioskFuelSubmode === 'refill'
-          ? '3B. BULK FUEL TANK REFILL & LUBRICANT PURCHASE TERMINAL'
-          : (STATE.kioskFuelSubmode === 'malfunction'
-            ? '3C. TANK MALFUNCTION, METER VARIANCE & DIP CALIBRATION TERMINAL'
-            : '3A. FUEL, DIESEL & LUBRICANT DISPENSE TERMINAL (M142 METER GUARD + PUMP SLIP)')
+        sales: 'Sales Weighbridge & Dispatch',
+        raw: 'Quarry & Raw Material Receiving',
+        fuel: fSub === 'refill'
+          ? 'Bulk Fuel Tank Refill & Lubricant Purchase'
+          : (fSub === 'malfunction'
+            ? 'Tank Variance & Physical Dip Calibration'
+            : 'Fuel, Diesel & Lubricant Dispense')
       };
+      const showThermalPane = !(kMode === 'fuel' && fSub === 'malfunction');
+      const footerThermalNote = showThermalPane
+        ? ` · Print: <b id="kioskFooterPrintModeLbl">${pCfg.paperWidth}mm${(kMode === 'sales' || kMode === 'raw') ? ` · ${pCfg.priceMode === 'unpriced' ? (kMode === 'raw' ? 'Unpriced Scale Slip' : 'Unpriced Gate Pass') : (kMode === 'raw' ? 'Priced 2-Leg Voucher' : 'Priced Invoice')}` : ' Pump Slip'}</b>`
+        : '';
 
       workspaceBodyHtml = `
         ${quickStripHtml}
-        <div class="kiosk-work-grid">
-          <!-- LEFT PANE: TOUCH ENTRY FORM HOSTING ALL 35 DATAVERSE RULES -->
+        <div class="kiosk-work-grid ${showThermalPane ? '' : 'is-single-col'}">
           <div class="panel-card kiosk-form-pane">
             <div class="panel-head">
               <div class="panel-title"><span>${esc(kioskHeadTitles[kMode] || kioskHeadTitles.sales)}</span></div>
@@ -38815,107 +39217,98 @@
             </div>
             <div class="kiosk-action-bar">
               <div class="kiosk-action-note">
-                Operator: <b>${esc(activeUser().full_name)}</b> · Thermal: <b id="kioskFooterPrintModeLbl">${pCfg.paperWidth}mm · ${pCfg.priceMode === 'unpriced' ? 'Unpriced Gate Pass' : 'Priced Voucher'}</b>
+                Operator: <b>${esc(activeUser().full_name)}</b>${footerThermalNote}
               </div>
               <div class="kiosk-action-btns">
                 <button type="button" class="btn" id="kioskResetFormBtn">${ic('rotate')} Reset</button>
-                <button type="button" class="btn" id="kioskPostOnlyBtn">✓ Post Only (No Print)</button>
-                <button type="button" class="btn btn-brass kiosk-big-print-btn" id="kioskPostAndPrintBtn">
-                  ${ic('printer')} Post &amp; Print ${pCfg.priceMode === 'unpriced' ? 'Gate Pass' : 'Thermal Ticket'} (${pCfg.paperWidth}mm)
-                </button>
+                ${showThermalPane ? `
+                  <button type="button" class="btn" id="kioskPostOnlyBtn">Post Only (No Print)</button>
+                  <button type="button" class="btn btn-brass kiosk-big-print-btn" id="kioskPostAndPrintBtn">
+                    ${ic('printer')} Post &amp; Print ${(kMode === 'sales' || kMode === 'raw') && pCfg.priceMode === 'unpriced' ? (kMode === 'raw' ? 'Scale Slip' : 'Gate Pass') : 'Ticket'} (${pCfg.paperWidth}mm)
+                  </button>
+                ` : `
+                  <button type="button" class="btn btn-brass kiosk-big-print-btn" id="kioskPostOnlyBtn">
+                    ${ic('check_circle')} Post Tank Variance
+                  </button>
+                `}
               </div>
             </div>
           </div>
 
-          <!-- RIGHT PANE: LIVE BLUETOOTH THERMAL ROLL PREVIEW + RECENT TICKETS REPRINT QUEUE -->
-          <div class="kiosk-preview-pane">
-            <div class="panel-card kiosk-thermal-card">
-              <div class="panel-head">
-                <div class="panel-title"><span>LIVE BLUETOOTH THERMAL ROLL PREVIEW (${pCfg.paperWidth}MM · ${pCfg.priceMode === 'unpriced' ? 'UNPRICED GATE PASS' : 'PRICED'})</span></div>
-                <div style="display:flex;gap:6px">
-                  <button type="button" class="btn btn-ghost-bar" id="kioskOpenModalPreviewBtn" style="padding:3px 8px;font-size:11px">${ic('expand')} Expand</button>
-                  <button type="button" class="btn btn-primary" id="kioskPrintDraftBtn" style="padding:3px 9px;font-size:11px">${ic('printer')} Print Preview</button>
+          ${showThermalPane ? `
+            <div class="kiosk-preview-pane">
+              <div class="panel-card kiosk-thermal-card">
+                <div class="panel-head">
+                  <div class="panel-title"><span>Thermal Ticket Preview (${pCfg.paperWidth}mm${(kMode === 'sales' || kMode === 'raw') ? ` · ${pCfg.priceMode === 'unpriced' ? 'Unpriced' : 'Priced'}` : ''})</span></div>
+                  <div style="display:flex;gap:6px">
+                    <button type="button" class="btn btn-ghost-bar" id="kioskOpenModalPreviewBtn" style="padding:3px 8px;font-size:11px">${ic('expand')} Expand</button>
+                    <button type="button" class="btn btn-primary" id="kioskPrintDraftBtn" style="padding:3px 9px;font-size:11px">${ic('printer')} Print Preview</button>
+                  </div>
+                </div>
+                <div class="kiosk-thermal-meta" id="kioskEscPosByteMeta">
+                  Ready · ${pCfg.paperWidth}mm (${pCfg.paperWidth === 58 ? '32 cols' : '48 cols'})
+                </div>
+                <div class="kiosk-thermal-stage" id="kioskLiveThermalPreview"></div>
+              </div>
+
+              <div class="panel-card kiosk-recent-card">
+                <div class="panel-head">
+                  <div class="panel-title"><span>Recent ${kMode === 'raw' ? 'Raw Material Intakes' : (kMode === 'fuel' ? 'Fuel &amp; Lube Logs' : 'Sales Dispatch Tickets')}</span></div>
+                  <span class="panel-meta">${fmtNum(activeRecentRows.length)} Recent</span>
+                </div>
+                <div class="table-wrap">
+                  <table class="ledger-table" id="kioskRecentTable">
+                    <thead>
+                      <tr>
+                        <th>Ticket</th>
+                        <th>${kMode === 'raw' ? 'Site / Material' : (kMode === 'fuel' ? 'Unit / Fuel' : 'Customer / Grade')}</th>
+                        <th class="r">Qty</th>
+                        <th class="r">${kMode === 'fuel' ? 'Meter' : 'Total ($)'}</th>
+                        <th>Reprint</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${activeRecentRows.map(r => `
+                        <tr class="rrow" data-rkey="${kMode === 'raw' ? 'raw_purchases' : (kMode === 'fuel' ? 'fuel_intakes' : 'sales_tickets')}" data-rid="${esc(r.id)}">
+                          <td class="mono"><strong>#${esc(r.ticket_no || '-')}</strong><div class="drv-sub">${esc(fmtDateDMY(r.date))}</div></td>
+                          <td class="kiosk-rec-name-cell">
+                            <strong>${esc(kMode === 'raw' ? (r.site || r.site_owner) : (kMode === 'fuel' ? r.equipment : r.customer))}</strong>
+                            <div class="drv-sub">${esc(kMode === 'raw' ? (r.product || '') : (kMode === 'fuel' ? (r.item || r.fuel_type || 'Diesel') : (r.product || '')))}</div>
+                          </td>
+                          <td class="r mono">${kMode === 'fuel' ? `${fmtNum(r.litres, 0)} L` : `${fmtNum(r.qty, 1)} ${esc(r.uom || 'm³')}`}</td>
+                          <td class="r mono">${kMode === 'fuel' ? (() => { const em = effectiveFuelMeter(r); return em.reading != null ? fmtNum(em.reading, em.type === 'hours' && em.reading % 1 !== 0 ? 1 : 0) + ' ' + em.unit : '-'; })() : fmtUSD(r.total_ttc != null ? r.total_ttc : r.total, 0)}</td>
+                          <td class="kiosk-rec-print-cell">
+                            <button type="button" class="tkt-print-mini" data-print-ticket="${activeDocType}" data-print-id="${esc(r.id)}" data-print-mode="priced" title="${kMode === 'fuel' ? 'Reprint Pump Slip' : 'Print Priced Copy'}">${ic(kMode === 'fuel' ? 'printer' : 'dollar')}</button>
+                            ${kMode !== 'fuel' ? `<button type="button" class="tkt-print-mini" data-print-ticket="${activeDocType}" data-print-id="${esc(r.id)}" data-print-mode="unpriced" title="Print Unpriced Gate Pass / Slip">${ic('truck')}</button>` : ''}
+                          </td>
+                        </tr>
+                      `).join('') || emptyRow(5, 'No recent kiosk tickets')}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-              <div class="kiosk-thermal-meta" id="kioskEscPosByteMeta">
-                ESC/POS Binary Stream Ready · ${pCfg.paperWidth}mm (${pCfg.paperWidth === 58 ? '32 cols' : '48 cols'})
-              </div>
-              <div class="kiosk-thermal-stage" id="kioskLiveThermalPreview"></div>
             </div>
-
-            <div class="panel-card kiosk-recent-card">
-              <div class="panel-head">
-                <div class="panel-title"><span>RECENT ${kMode === 'raw' ? 'RAW MATERIAL RECEIPTS' : (kMode === 'fuel' ? 'FUEL &amp; LUBE INTAKES' : 'SALES DISPATCH TICKETS')} (1-TAP REPRINT)</span></div>
-                <span class="panel-meta">${fmtNum(activeRecentRows.length)} Recent</span>
-              </div>
-              <div class="table-wrap">
-                <table class="ledger-table" id="kioskRecentTable">
-                  <thead>
-                    <tr>
-                      <th>Ticket</th>
-                      <th>${kMode === 'raw' ? 'Site / Material' : (kMode === 'fuel' ? 'Unit / Fuel' : 'Customer / Grade')}</th>
-                      <th class="r">Qty</th>
-                      <th class="r">${kMode === 'fuel' ? 'Meter' : 'Total ($)'}</th>
-                      <th>Reprint</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${activeRecentRows.map(r => `
-                      <tr class="rrow" data-rkey="${kMode === 'raw' ? 'raw_purchases' : (kMode === 'fuel' ? 'fuel_intakes' : 'sales_tickets')}" data-rid="${esc(r.id)}">
-                        <td class="mono"><strong>#${esc(r.ticket_no || '—')}</strong><div class="drv-sub">${esc(fmtDateDMY(r.date))}</div></td>
-                        <td class="kiosk-rec-name-cell">
-                          <strong>${esc(kMode === 'raw' ? (r.site || r.site_owner) : (kMode === 'fuel' ? r.equipment : r.customer))}</strong>
-                          <div class="drv-sub">${esc(kMode === 'raw' ? (r.product || '') : (kMode === 'fuel' ? (r.item || r.fuel_type || 'Diesel') : (r.product || '')))}</div>
-                        </td>
-                        <td class="r mono">${kMode === 'fuel' ? `${fmtNum(r.litres, 0)} L` : `${fmtNum(r.qty, 1)} ${esc(r.uom || 'm³')}`}</td>
-                        <td class="r mono">${kMode === 'fuel' ? (() => { const em = effectiveFuelMeter(r); return em.reading != null ? fmtNum(em.reading, em.type === 'hours' && em.reading % 1 !== 0 ? 1 : 0) + ' ' + em.unit : '—'; })() : fmtUSD(r.total_ttc != null ? r.total_ttc : r.total, 0)}</td>
-                        <td class="kiosk-rec-print-cell">
-                          <button type="button" class="tkt-print-mini" data-print-ticket="${activeDocType}" data-print-id="${esc(r.id)}" data-print-mode="priced" title="Print Priced Invoice / Voucher">${ic('dollar')}</button>
-                          <button type="button" class="tkt-print-mini" data-print-ticket="${activeDocType}" data-print-id="${esc(r.id)}" data-print-mode="unpriced" title="Print Unpriced Delivery Gate Pass / Receiving Slip">${ic('truck')}</button>
-                        </td>
-                      </tr>
-                    `).join('') || emptyRow(5, 'No recent kiosk tickets')}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
+          ` : ''}
         </div>
       `;
     }
 
     return `
-      <div class="cockpit-banner">
-        <div class="cockpit-title-block">
-          <div class="cockpit-eyebrow">UNIFIED 4-KIOSK TERMINAL SUITE · WEIGHBRIDGE, RAW MATERIAL, FUEL DEPOT &amp; BIOMETRIC ATTENDANCE</div>
-          <div class="cockpit-title">Plant Kiosks</div>
-          <div class="cockpit-sub">Touch-first plant terminals linked directly to ISABI's 35 smart form rules, 3-leg AP/AR ledgers &amp; Bluetooth ESC/POS thermal receipt printers (80mm &amp; 58mm · Priced Invoice vs Unpriced Gate Pass).</div>
-        </div>
-        <div class="cockpit-pills">
-          <div class="cockpit-pill"><div class="cockpit-pill-lbl">Active Terminal</div><div class="cockpit-pill-val brass">${esc(kMode.toUpperCase())}</div></div>
-          <div class="cockpit-pill"><div class="cockpit-pill-lbl">Thermal Roll</div><div class="cockpit-pill-val emerald">${pCfg.paperWidth}mm (${pCfg.paperWidth === 58 ? '32c' : '48c'})</div></div>
-          <div class="cockpit-pill"><div class="cockpit-pill-lbl">Receipt Mode</div><div class="cockpit-pill-val">${pCfg.priceMode === 'unpriced' ? 'Gate Pass ($ Hidden)' : 'Priced ($ Shown)'}</div></div>
-          <div class="cockpit-pill"><div class="cockpit-pill-lbl">Staff On Site</div><div class="cockpit-pill-val emerald">${fmtNum(onSiteList.length)}</div></div>
-          <div class="cockpit-pill">
-            <button type="button" class="btn ${STATE.kioskLocked ? 'btn-brass' : 'btn-ghost-bar'}" id="kioskLockToggleBtn" style="padding:5px 10px;font-size:11px">
-              ${STATE.kioskLocked ? `${ic('unlock')} Unlock Kiosk Shell (PIN 2401)` : `${ic('lock')} Lock Tablet Kiosk Shell`}
-            </button>
-          </div>
-        </div>
+      <div class="cockpit-title-block sr-only">
+        <div class="cockpit-title">Plant Kiosks</div>
       </div>
 
       ${STATE.kioskUnlockPromptOpen ? `
         <div class="kiosk-unlock-bar" id="kioskUnlockPromptBar">
-          <span>${ic('lock')} <b>Tablet Kiosk Shell is Locked</b> — Enter Admin PIN (<b>2401</b>) or your seat PIN to restore full ERP navigation:</span>
+          <span>${ic('lock')} <b>Kiosk Mode is Locked</b> · Enter Admin PIN (<b>2401</b>) or your seat PIN to restore full navigation:</span>
           <div style="display:flex;gap:8px;align-items:center">
-            <input type="password" id="kioskUnlockPinInput" placeholder="PIN (2401)..." style="max-width:140px;padding:5px 9px;border-radius:6px;border:1px solid var(--line-strong)">
+            <input type="text" inputmode="numeric" autocomplete="off" maxlength="6" class="kiosk-unlock-pin-input" id="kioskUnlockPinInput" placeholder="PIN (2401)...">
             <button type="button" class="btn btn-primary" id="kioskConfirmUnlockBtn">${ic('unlock')} Unlock Now</button>
             <button type="button" class="btn" id="kioskCancelUnlockBtn">Cancel</button>
           </div>
         </div>
       ` : ''}
 
-      <!-- 4-KIOSK TERMINAL SWITCHER + BLUETOOTH PRINTER CONTROL DECK -->
       <div class="panel-card kiosk-control-deck" id="kioskControlDeck">
         <div class="kiosk-mode-tabs" role="tablist" aria-label="Kiosk Terminal Mode">
           ${kioskTabs.map(t => `
@@ -38929,36 +39322,42 @@
             </button>
           `).join('')}
         </div>
-
-        <div class="kiosk-printer-bar">
-          <div class="kiosk-printer-grp">
-            <span class="kiosk-bar-lbl">${ic('printer')} Paper Roll Width:</span>
-            <button type="button" class="kiosk-toggle-pill ${pCfg.paperWidth === 80 ? 'active' : ''}" data-kiosk-paper="80">80mm Standard (48 cols)</button>
-            <button type="button" class="kiosk-toggle-pill ${pCfg.paperWidth === 58 ? 'active' : ''}" data-kiosk-paper="58">58mm Handheld (32 cols)</button>
-          </div>
-          <div class="kiosk-printer-grp">
-            <span class="kiosk-bar-lbl">${ic('dollar')} Ticket Price Mode:</span>
-            <button type="button" class="kiosk-toggle-pill ${pCfg.priceMode === 'priced' ? 'active' : ''}" data-kiosk-price-mode="priced">${ic('dollar')} Priced (Invoice / 2-Leg Voucher)</button>
-            <button type="button" class="kiosk-toggle-pill ${pCfg.priceMode === 'unpriced' ? 'active' : ''}" data-kiosk-price-mode="unpriced">${ic('truck')} Unpriced (Gate Pass / Scale Slip)</button>
-          </div>
-          <div class="kiosk-printer-grp">
-            <span class="kiosk-bar-lbl">${ic('bluetooth')} Bluetooth Channel:</span>
-            <select id="kioskPrintChannelSelect" data-native-select="1" style="padding:4px 8px;border-radius:6px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font-size:12px">
-              <option value="rawbt" ${pCfg.channel === 'rawbt' ? 'selected' : ''}>RawBT Bluetooth ESC/POS</option>
-              <option value="web_bluetooth" ${pCfg.channel === 'web_bluetooth' ? 'selected' : ''}>Web Bluetooth GATT (${pCfg.bleDeviceName ? esc(pCfg.bleDeviceName) : 'Direct BLE'})</option>
-              <option value="browser" ${pCfg.channel === 'browser' ? 'selected' : ''}>Browser Thermal Dialog</option>
-            </select>
-            <button type="button" class="btn btn-ghost-bar" id="kioskPairBleBtn" style="padding:4px 9px;font-size:11px" title="Pair Bluetooth Thermal Printer via Web Bluetooth GATT">${ic('bluetooth')} Pair BLE</button>
-          </div>
-        </div>
+        ${stationBarHtml}
       </div>
 
       ${workspaceBodyHtml}
     `;
   }
 
+  function wireKioskAttendanceKeyboardOnce() {
+    if (KIOSK_ATT_STATE.keyWired || typeof window === 'undefined') return;
+    KIOSK_ATT_STATE.keyWired = true;
+    window.addEventListener('keydown', e => {
+      if (!STATE.authed || STATE.view !== 'kiosks' || STATE.activeKiosk !== 'attendance') return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const ae = document.activeElement;
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return;
+      const openModal = ($('entryModal') && !$('entryModal').hidden)
+        || ($('recordInspector') && !$('recordInspector').hidden)
+        || ($('thermalPrintModal') && !$('thermalPrintModal').hidden)
+        || ($('aiDrawer') && !$('aiDrawer').hidden);
+      if (openModal) return;
+      if (e.key >= '0' && e.key <= '9') {
+        const b = document.querySelector(`#kioskAttPinPad [data-kiosk-pin-key="${e.key}"]`);
+        if (b) { e.preventDefault(); b.click(); }
+      } else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Escape') {
+        const b = document.querySelector('#kioskAttPinPad [data-kiosk-pin-key="CLR"]');
+        if (b && (STATE.kioskAttPin || STATE.kioskAttPinMsg)) { e.preventDefault(); b.click(); }
+      } else if (e.key === 'Enter') {
+        const b = document.querySelector('#kioskAttPinPad [data-kiosk-pin-key="GO"]');
+        if (b) { e.preventDefault(); b.click(); }
+      }
+    });
+  }
+
   function wireKiosks(container) {
     if (!container) return;
+    wireKioskAttendanceKeyboardOnce();
 
     // 1. Kiosk Mode Tabs (Sales | Raw | Fuel | Attendance)
     container.querySelectorAll('[data-kiosk-tab]').forEach(btn => {
@@ -38968,6 +39367,7 @@
           stopKioskAttCamera();
         }
         STATE.activeKiosk = nextKiosk;
+        STATE.kioskAttPinMsg = '';
         renderApp();
       });
     });
@@ -38984,7 +39384,7 @@
           STATE.kioskUnlockPromptOpen = !STATE.kioskUnlockPromptOpen;
           renderApp();
           const pinInp = $('kioskUnlockPinInput');
-          if (pinInp) setTimeout(() => { try { pinInp.focus(); } catch (_) {} }, 30);
+          if (pinInp) setTimeout(() => { try { pinInp.focus({ preventScroll: true }); } catch (_) {} }, 30);
         }
       });
     }
@@ -38993,6 +39393,15 @@
       confirmUnlockBtn.addEventListener('click', () => {
         const pinInp = $('kioskUnlockPinInput');
         setKioskLockMode(false, pinInp ? pinInp.value : '');
+      });
+    }
+    const unlockPinInp = $('kioskUnlockPinInput');
+    if (unlockPinInp) {
+      unlockPinInp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          setKioskLockMode(false, unlockPinInp.value || '');
+        }
       });
     }
     const cancelUnlockBtn = $('kioskCancelUnlockBtn');
@@ -39022,7 +39431,7 @@
     if (chSel && window.MFG_PRINT) {
       chSel.addEventListener('change', () => {
         window.MFG_PRINT.savePrintSettings({ channel: chSel.value });
-        toast(`Bluetooth thermal channel set to ${chSel.value}`);
+        toast(`Printer channel set to ${chSel.value}`);
       });
     }
     const pairBleBtn = $('kioskPairBleBtn');
@@ -39030,7 +39439,7 @@
       pairBleBtn.addEventListener('click', async () => {
         const r = await window.MFG_PRINT.pairWebBluetoothPrinter();
         if (r.ok) {
-          toast(`✓ Connected to Bluetooth printer: ${r.name}`, 'ok');
+          toast(`Connected to Bluetooth printer: ${r.name}`, 'ok');
           renderApp();
         } else {
           toast(`Bluetooth pairing: ${r.error}`, 'warn');
@@ -39072,7 +39481,7 @@
       });
     });
 
-    // 6. Wire either the Form Kiosk (Sales / Raw / Fuel) or Attendance Biometric Kiosk
+    // 6. Wire either the Form Kiosk (Sales / Raw / Fuel) or Staff Attendance Kiosk
     if (STATE.activeKiosk === 'attendance') {
       if (KIOSK_ATT_STATE.camActive && streamAlive()) {
         const kv = $('kioskAttVideo');
@@ -39086,13 +39495,32 @@
       }
       const siteSel = $('kioskAttSiteSelect');
       if (siteSel) {
-        siteSel.addEventListener('change', () => { STATE.kioskAttSite = siteSel.value; });
+        siteSel.addEventListener('change', () => {
+          STATE.kioskAttSite = siteSel.value;
+          STATE.kioskAttSiteCustom = true;
+        });
+      }
+      const manageFacesBtn = $('kioskAttManageFacesBtn');
+      if (manageFacesBtn) {
+        manageFacesBtn.addEventListener('click', () => {
+          stopKioskAttCamera();
+          setView('users');
+        });
       }
       const staffSel = $('kioskAttStaffSelect');
       if (staffSel) {
         staffSel.addEventListener('change', () => {
-          STATE.kioskAttStaff = staffSel.value;
+          STATE.kioskAttStaff = staffSel.value || '';
           STATE.kioskAttPin = '';
+          STATE.kioskAttPinMsg = '';
+          renderApp();
+        });
+      }
+      const clearStaffBtn = $('kioskAttClearStaffBtn');
+      if (clearStaffBtn) {
+        clearStaffBtn.addEventListener('click', () => {
+          STATE.kioskAttStaff = '';
+          STATE.kioskAttPinMsg = '';
           renderApp();
         });
       }
@@ -39102,12 +39530,18 @@
           renderApp();
         });
       });
+      container.querySelectorAll('[data-att-feed-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          STATE.kioskAttFeedFilter = btn.getAttribute('data-att-feed-filter') === 'onsite' ? 'onsite' : 'all';
+          renderApp();
+        });
+      });
       const camBtn = $('kioskAttCamToggleBtn');
       if (camBtn) {
         camBtn.addEventListener('click', () => {
           if (KIOSK_ATT_STATE.camActive) {
             stopKioskAttCamera();
-            KIOSK_ATT_STATE.statusText = 'Camera stopped — tap "Start Biometric Camera" or use 4-digit PIN pad.';
+            KIOSK_ATT_STATE.statusText = 'Camera stopped. Start the camera or enter your 4-digit PIN.';
             KIOSK_ATT_STATE.statusCls = '';
             renderApp();
           } else {
@@ -39115,52 +39549,82 @@
           }
         });
       }
-      const instantFaceBtn = $('kioskAttInstantFacePunchBtn');
-      if (instantFaceBtn) {
-        instantFaceBtn.addEventListener('click', () => {
-          recordKioskAttendancePunch({
-            staff: STATE.kioskAttStaff,
-            method: 'Face ID',
-            confidence: 0.98
+
+      const updatePinVisualInPlace = () => {
+        const pv = String(STATE.kioskAttPin || '');
+        const disp = $('kioskAttPinDisplay');
+        if (disp) {
+          disp.dataset.pinLen = String(pv.length);
+          Array.from(disp.querySelectorAll('.kiosk-pin-slot')).forEach((slot, idx) => {
+            const filled = idx < pv.length;
+            slot.classList.toggle('filled', filled);
+            slot.textContent = filled ? '●' : '';
           });
-        });
-      }
-      const pinSubmitBtn = $('kioskAttPinSubmitBtn');
-      if (pinSubmitBtn) {
-        pinSubmitBtn.addEventListener('click', () => {
-          const staffDir = getKioskStaffDirectory();
-          let targetStaff = STATE.kioskAttStaff;
-          if (STATE.kioskAttPin && STATE.kioskAttPin.length >= 4) {
-            const byPin = staffDir.find(s => String(s.pin) === String(STATE.kioskAttPin));
-            if (byPin) targetStaff = byPin.name;
+        }
+        const hintEl = $('kioskAttPinHint');
+        if (hintEl) {
+          hintEl.className = 'kiosk-pin-hint' + (STATE.kioskAttPinMsgCls ? ' ' + STATE.kioskAttPinMsgCls : '');
+          hintEl.textContent = STATE.kioskAttPinMsg || (pv.length > 0 ? `${pv.length} of 4 digits entered` : 'Enter your 4-digit personal PIN below');
+        }
+      };
+
+      const submitKioskPinOrSelectedStaff = () => {
+        const pv = String(STATE.kioskAttPin || '').trim();
+        const fullDir = getKioskStaffDirectory();
+        const scopedDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
+        if (pv.length >= 4) {
+          const match = scopedDir.find(s => String(s.pin) === pv) || fullDir.find(s => String(s.pin) === pv);
+          if (match) {
+            recordKioskAttendancePunch({ staff: match.name, method: 'PIN' });
+          } else {
+            STATE.kioskAttPin = '';
+            STATE.kioskAttPinMsg = 'Unrecognized 4-digit PIN. Try again or select a name below.';
+            STATE.kioskAttPinMsgCls = 'warn';
+            toast('Unrecognized 4-digit PIN', 'warn');
+            updatePinVisualInPlace();
           }
-          recordKioskAttendancePunch({ staff: targetStaff, method: 'PIN' });
-        });
-      }
+          return;
+        }
+        if (pv.length > 0 && pv.length < 4) {
+          STATE.kioskAttPinMsg = 'Enter all 4 digits of your PIN, or tap Clear.';
+          STATE.kioskAttPinMsgCls = 'warn';
+          updatePinVisualInPlace();
+          return;
+        }
+        if (STATE.kioskAttStaff) {
+          recordKioskAttendancePunch({ staff: STATE.kioskAttStaff, method: 'Supervisor' });
+          return;
+        }
+        STATE.kioskAttPinMsg = 'Enter your 4-digit PIN, or pick a name below to clock manually.';
+        STATE.kioskAttPinMsgCls = 'warn';
+        updatePinVisualInPlace();
+        if (staffSel) {
+          try { staffSel.focus({ preventScroll: true }); } catch (_) {}
+        }
+      };
+
       container.querySelectorAll('[data-kiosk-pin-key]').forEach(kBtn => {
         kBtn.addEventListener('click', () => {
           const key = kBtn.getAttribute('data-kiosk-pin-key');
           if (key === 'CLR') {
             STATE.kioskAttPin = '';
-            renderApp();
+            STATE.kioskAttPinMsg = '';
+            STATE.kioskAttPinMsgCls = '';
+            updatePinVisualInPlace();
             return;
           }
           if (key === 'GO') {
-            if (pinSubmitBtn) pinSubmitBtn.click();
+            submitKioskPinOrSelectedStaff();
             return;
           }
+          STATE.kioskAttPinMsg = '';
+          STATE.kioskAttPinMsgCls = '';
           STATE.kioskAttPin = String(STATE.kioskAttPin || '').slice(0, 3) + key;
           if (STATE.kioskAttPin.length === 4) {
-            const staffDir = getKioskStaffDirectory();
-            const match = staffDir.find(s => String(s.pin) === String(STATE.kioskAttPin));
-            if (match) {
-              STATE.kioskAttStaff = match.name;
-              recordKioskAttendancePunch({ staff: match.name, method: 'PIN' });
-              return;
-            }
+            submitKioskPinOrSelectedStaff();
+            return;
           }
-          const disp = $('kioskAttPinDisplay');
-          if (disp) disp.textContent = '●'.repeat(STATE.kioskAttPin.length);
+          updatePinVisualInPlace();
         });
       });
       container.querySelectorAll('[data-flip-punch]').forEach(fBtn => {
@@ -39209,7 +39673,7 @@
           const draft = buildDraftThermalRecordFromForm();
           const res = await window.MFG_PRINT.printThermalTicket(draft, { docType });
           if (res && res.ok) {
-            toast(`🖨️ Sent ${res.paperWidth}mm ${res.priceMode === 'unpriced' ? 'Gate Pass' : 'Ticket'} (${res.byteLength} B) via ${res.channel}`, 'ok');
+            toast(`Sent ${res.paperWidth}mm ${res.priceMode === 'unpriced' ? 'Gate Pass' : 'Ticket'} (${res.byteLength} B) via ${res.channel}`, 'ok');
           }
         });
       }
@@ -39267,6 +39731,9 @@
     const coFullLbl = COMPANY_LABELS[STATE.company] || COMPANY_BU_MATCH[STATE.company] || STATE.company || 'Manufacturing Group';
     const coMobLbl = COMPANY_MOBILE_LABELS[STATE.company] || coFullLbl;
     const isUnivView = Boolean(UNIV_VIEW_TO_TABLE_KEY[STATE.view]);
+    const isKiosksView = STATE.view === 'kiosks';
+    document.body.classList.toggle('is-kiosks-view', isKiosksView);
+    if (isKiosksView && _dateFacState.open) closeDateFacilitator();
     const univGroupKeys = isUnivView ? (UNIV_REGISTRY_GROUPS[STATE.view] || [UNIV_VIEW_TO_TABLE_KEY[STATE.view]]) : [];
     if (isUnivView && (!STATE.activeUnivRegKey || !univGroupKeys.includes(STATE.activeUnivRegKey))) {
       STATE.activeUnivRegKey = UNIV_VIEW_TO_TABLE_KEY[STATE.view];
@@ -39274,9 +39741,11 @@
     if (eyeEl) {
       const eyeTxt = isUnivView
         ? (isMobileViewport ? 'All BUs · Universal Registry' : 'All Business Units (Universal Registry) · WTC · BBConstruction · Lions Transport')
-        : (isMobileViewport
-          ? `${coMobLbl} · ${STATE.basis === 'rep' ? 'Rep Date' : 'Tx Date'}`
-          : `${coFullLbl} · ${k.label || 'All-Time'} · ${STATE.basis === 'rep' ? 'Reporting Date Basis' : 'Transaction Date Basis'}`);
+        : isKiosksView
+          ? (isMobileViewport ? `${coMobLbl} · Live Terminals` : `${coFullLbl} · Live Plant Terminals`)
+          : (isMobileViewport
+            ? `${coMobLbl} · ${STATE.basis === 'rep' ? 'Rep Date' : 'Tx Date'}`
+            : `${coFullLbl} · ${k.label || 'All-Time'} · ${STATE.basis === 'rep' ? 'Reporting Date Basis' : 'Transaction Date Basis'}`);
       eyeEl.textContent = eyeTxt;
       eyeEl.title = eyeTxt;
     }
@@ -40165,15 +40634,11 @@
       renderApp();
       if (ws) ws.scrollTop = y;
     }));
-    container.querySelectorAll('[data-payroll-cutoff]').forEach(btn => btn.addEventListener('click', () => {
-      const nextMode = btn.getAttribute('data-payroll-cutoff') || 'closed_month';
-      if (STATE.payrollCutoffMode === nextMode) return;
-      const barEl = btn.closest('.payroll-cutoff-bar');
+    const rerenderAnchoredPayrollBar = barEl => {
       const barId = barEl ? barEl.id : '';
       const beforeTop = barEl ? barEl.getBoundingClientRect().top : null;
       const ws = $('workspace');
       const y = ws ? ws.scrollTop : 0;
-      STATE.payrollCutoffMode = nextMode;
       renderApp();
       if (ws) {
         const afterEl = barId ? document.getElementById(barId) : null;
@@ -40184,11 +40649,134 @@
           ws.scrollTop = y;
         }
       }
+    };
+    container.querySelectorAll('[data-payroll-cutoff]').forEach(btn => btn.addEventListener('click', () => {
+      const nextMode = btn.getAttribute('data-payroll-cutoff') || 'closed_month';
+      if (STATE.payrollCutoffMode === nextMode) return;
+      const barEl = btn.closest('.payroll-cutoff-bar');
+      STATE.payrollCutoffMode = nextMode;
+      rerenderAnchoredPayrollBar(barEl);
     }));
     container.querySelectorAll('[data-payroll-cutoff-reset]').forEach(btn => btn.addEventListener('click', () => {
       STATE.payrollCutoffMode = 'closed_month';
       setDateFilter({ reset: true });
     }));
+    container.querySelectorAll('[data-payroll-status]').forEach(btn => btn.addEventListener('click', () => {
+      const nextStatus = btn.getAttribute('data-payroll-status') || 'active';
+      if (STATE.payrollStaffStatus === nextStatus) return;
+      const barEl = btn.closest('.payroll-cutoff-bar');
+      STATE.payrollStaffStatus = nextStatus;
+      STATE.shown = {};
+      STATE.pbiTablePage = {};
+      rerenderAnchoredPayrollBar(barEl);
+    }));
+    container.querySelectorAll('[data-toggle-payroll-fx]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const barId = btn.getAttribute('data-toggle-payroll-fx') || '';
+      const barEl = btn.closest('.payroll-cutoff-bar') || (barId ? document.getElementById(barId) : null);
+      STATE.payrollFxPopoverBar = STATE.payrollFxPopoverBar === barId ? '' : barId;
+      rerenderAnchoredPayrollBar(barEl);
+      if (STATE.payrollFxPopoverBar) {
+        const inp = document.getElementById(`${barId}_fxInput`);
+        if (inp) {
+          inp.focus({ preventScroll: true });
+          try { inp.select(); } catch (_) {}
+        }
+      }
+    }));
+    container.querySelectorAll('[data-close-payroll-fx]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const barEl = btn.closest('.payroll-cutoff-bar');
+      STATE.payrollFxPopoverBar = '';
+      rerenderAnchoredPayrollBar(barEl);
+    }));
+    container.querySelectorAll('[data-apply-payroll-fx]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const barId = btn.getAttribute('data-apply-payroll-fx') || '';
+      const inp = document.getElementById(`${barId}_fxInput`);
+      const nextVal = inp ? inp.value : '';
+      STATE.payrollFxPopoverBar = '';
+      if (setLbpFxRate(nextVal, { anchorBarId: barId })) {
+        toast(`LBP conversion rate set to ${fmtNum(getLbpFxRate(), 0)} LL/$`);
+      } else {
+        toast('Enter a valid LBP exchange rate (e.g. 89,500)', 'err');
+      }
+    }));
+    container.querySelectorAll('[data-preset-payroll-fx]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const barId = btn.getAttribute('data-fx-bar') || '';
+      const preset = btn.getAttribute('data-preset-payroll-fx') || String(DEFAULT_LBP_FX_RATE);
+      STATE.payrollFxPopoverBar = '';
+      if (setLbpFxRate(preset, { anchorBarId: barId })) {
+        toast(`LBP conversion rate set to ${fmtNum(getLbpFxRate(), 0)} LL/$`);
+      }
+    }));
+    container.querySelectorAll('.payroll-fx-popover').forEach(pop => {
+      pop.addEventListener('click', ev => ev.stopPropagation());
+    });
+    container.querySelectorAll('.payroll-fx-popover .pfx-rate-input').forEach(inp => {
+      inp.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          const barEl = inp.closest('.payroll-cutoff-bar');
+          const barId = barEl ? barEl.id : '';
+          STATE.payrollFxPopoverBar = '';
+          if (setLbpFxRate(inp.value, { anchorBarId: barId })) {
+            toast(`LBP conversion rate set to ${fmtNum(getLbpFxRate(), 0)} LL/$`);
+          }
+        } else if (ev.key === 'Escape') {
+          ev.preventDefault();
+          const barEl = inp.closest('.payroll-cutoff-bar');
+          STATE.payrollFxPopoverBar = '';
+          rerenderAnchoredPayrollBar(barEl);
+        }
+      });
+    });
+    const fxRefApplyBtn = $('fxRefRateApplyBtn');
+    if (fxRefApplyBtn) {
+      fxRefApplyBtn.addEventListener('click', () => {
+        const inp = $('fxRefRateInput');
+        if (inp && setLbpFxRate(inp.value, { anchorBarId: 'fxRefRateBar' })) {
+          toast(`LBP conversion rate set to ${fmtNum(getLbpFxRate(), 0)} LL/$`);
+        } else {
+          toast('Enter a valid LBP exchange rate (e.g. 89,500)', 'err');
+        }
+      });
+    }
+    const fxRefInput = $('fxRefRateInput');
+    if (fxRefInput) {
+      fxRefInput.addEventListener('keydown', ev => {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          if (setLbpFxRate(fxRefInput.value, { anchorBarId: 'fxRefRateBar' })) {
+            toast(`LBP conversion rate set to ${fmtNum(getLbpFxRate(), 0)} LL/$`);
+          }
+        }
+      });
+    }
+    container.querySelectorAll('[data-fx-ref-preset]').forEach(btn => btn.addEventListener('click', () => {
+      const preset = btn.getAttribute('data-fx-ref-preset') || String(DEFAULT_LBP_FX_RATE);
+      if (setLbpFxRate(preset, { anchorBarId: 'fxRefRateBar' })) {
+        toast(`LBP conversion rate set to ${fmtNum(getLbpFxRate(), 0)} LL/$`);
+      }
+    }));
+    if (!window.__mfgPayrollFxDismissWired) {
+      window.__mfgPayrollFxDismissWired = true;
+      document.addEventListener('click', ev => {
+        if (!STATE.payrollFxPopoverBar) return;
+        if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('.payroll-fx-slot')) return;
+        const barEl = document.getElementById(STATE.payrollFxPopoverBar);
+        STATE.payrollFxPopoverBar = '';
+        rerenderAnchoredPayrollBar(barEl);
+      });
+      document.addEventListener('keydown', ev => {
+        if (ev.key === 'Escape' && STATE.payrollFxPopoverBar) {
+          const barEl = document.getElementById(STATE.payrollFxPopoverBar);
+          STATE.payrollFxPopoverBar = '';
+          rerenderAnchoredPayrollBar(barEl);
+        }
+      });
+    }
     container.querySelectorAll('[data-cf-focus-date]').forEach(el => el.addEventListener('click', ev => {
       ev.stopPropagation();
       const dt = el.getAttribute('data-cf-focus-date') || '';
@@ -40939,6 +41527,7 @@
     container.querySelectorAll('[data-nav-jump]').forEach(btn => {
       if (btn.hasAttribute('data-dtank-jump-chip')) return;
       const go = () => {
+        STATE.payrollFxPopoverBar = '';
         const stmt = btn.getAttribute('data-stmt-jump');
         if (stmt) STATE.activeStatement = stmt;
         const targetView = btn.getAttribute('data-nav-jump');

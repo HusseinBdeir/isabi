@@ -21,7 +21,11 @@
 (function () {
   'use strict';
 
-  const FX_RATE = 90000;
+  const DEFAULT_FX_RATE = 89500;
+  const getActiveFxRate = () => (typeof window !== 'undefined' && window.MFG_FX && typeof window.MFG_FX.getRate === 'function')
+    ? Number(window.MFG_FX.getRate() || DEFAULT_FX_RATE)
+    : DEFAULT_FX_RATE;
+  const fmtFxRateLbl = r => Number(r || DEFAULT_FX_RATE).toLocaleString('en-US');
   const VAT_RATE = 0.11;
   const MIN_DATE = '2024-01-01';
   const ic = (name, cls) => (typeof window !== 'undefined' && window.MFG_ICONS ? window.MFG_ICONS.svg(name, cls) : '');
@@ -1021,7 +1025,7 @@
           <div id="salQuickFillBar" class="att-preset-bar" hidden></div>
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { hintId: 'hint_sal_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'))}
-          ${fld('Total USD Value (90k FX) *', inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: 'Locked to Dual-Currency FX formula (USD + LBP ÷ 90,000)' })}
+          ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional payroll note, bonus reason, or voucher ref..."'), { span: true })}
         </div>
         <div id="paSalSubgridWrap"></div>
@@ -1123,7 +1127,7 @@
           ${fld('USD Allowance ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'))}
           <div id="logStaffContextStrip" class="att-contract-strip" hidden></div>
           ${fld('LBP Allowance (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0"'))}
-          ${fld('Total USD Value *', inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: 'Locked to Dual-Currency FX formula (USD + LBP ÷ 90,000)' })}
+          ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
           <div class="form-field span-3" style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding-top:4px">
             <strong style="font-size:12px">Days Worked:</strong>
             ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => `<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="f_day_${d.toLowerCase()}" ${i < 6 ? 'checked' : ''}> ${d}</label>`).join('')}
@@ -1173,10 +1177,10 @@
             ['USD to LBP', 'USD → LBP (USD Decreases · LBP Increases)'],
             ['LBP to USD', 'LBP → USD (LBP Decreases · USD Increases)']
           ], 'USD to LBP'), { id: 'wrap_conv_dir', hidden: true })}
-          ${fld('Exchange Rate (LL / $)', inp('f_fxrate', 'number', '89500', 'step="10" min="1"'), { id: 'wrap_conv_rate', hidden: true })}
+          ${fld('Exchange Rate (LL / $)', inp('f_fxrate', 'number', String(getActiveFxRate()), 'step="10" min="1"'), { id: 'wrap_conv_rate', hidden: true })}
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0"'), { id: 'wrap_tr_lbp' })}
-          ${fld('Total USD Value *', inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: 'Locked to Dual-Currency FX formula (USD + LBP ÷ 90,000)' })}
+          ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
           ${fld('Reference / Voucher', inp('f_reference', 'text', ''))}
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
@@ -1246,7 +1250,7 @@
 
   // ==================== PUBLIC API MOUNT ====================
   window.MFG_FORMS = {
-    FX_RATE,
+    get FX_RATE() { return getActiveFxRate(); },
     VAT_RATE,
     MIN_DATE,
     FORM_GROUPS,

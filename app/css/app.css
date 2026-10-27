@@ -19205,11 +19205,12 @@ table.ledger-table tbody td.td-databar {
   color: var(--brass);
 }
 
-/* ==================== PAYROLL ACCRUAL CUTOFF LEDGER STRIP (REV 10) ==================== */
+/* ==================== PAYROLL CUTOFF, STAFF STATUS & LBP FX LEDGER STRIP ==================== */
 .payroll-cutoff-bar {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: 10px;
   flex-wrap: nowrap;
   height: 40px;
@@ -19225,7 +19226,8 @@ table.ledger-table tbody td.td-databar {
 }
 
 .payroll-cutoff-bar.is-pbi {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   height: auto;
   min-height: 0;
   padding: 0;
@@ -19412,27 +19414,455 @@ table.ledger-table tbody td.td-databar {
   border-color: var(--brass);
 }
 
+.payroll-bar-aux {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.payroll-status-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: rgba(15, 30, 56, 0.048);
+  border: 1px solid var(--line-strong);
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+:root[data-theme="dark"] .payroll-status-pills {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--line-strong);
+}
+
+.payroll-status-pill {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 27px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 4.5px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11.2px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+  box-sizing: border-box;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.payroll-status-pill:hover:not(.active) {
+  background: rgba(15, 30, 56, 0.038);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .payroll-status-pill:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--ink);
+}
+
+.payroll-status-pill.active {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line-strong);
+  box-shadow: 0 1px 2.5px rgba(15, 30, 56, 0.08), inset 0 -1.5px 0 #1F7A4C;
+}
+
+.payroll-status-pill[data-payroll-status="inactive"].active {
+  box-shadow: 0 1px 2.5px rgba(15, 30, 56, 0.08), inset 0 -1.5px 0 #C0892F;
+}
+
+.payroll-status-pill[data-payroll-status="all"].active {
+  box-shadow: 0 1px 2.5px rgba(15, 30, 56, 0.08), inset 0 -1.5px 0 var(--brass);
+}
+
+:root[data-theme="dark"] .payroll-status-pill.active {
+  background: var(--surface-elev);
+  color: var(--ink);
+  border-color: var(--line-strong);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 -1.5px 0 #4AD28A;
+}
+
+:root[data-theme="dark"] .payroll-status-pill[data-payroll-status="inactive"].active {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 -1.5px 0 #E0A84B;
+}
+
+:root[data-theme="dark"] .payroll-status-pill[data-payroll-status="all"].active {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 -1.5px 0 var(--brass);
+}
+
+.payroll-status-pill .psp-cnt {
+  font-size: 10.3px;
+  font-weight: 700;
+  color: var(--muted);
+  opacity: 0.9;
+}
+
+.payroll-status-pill.active .psp-cnt {
+  color: var(--ink);
+  opacity: 1;
+}
+
+.payroll-fx-slot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.payroll-fx-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 31px;
+  padding: 0 9px 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11.2px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+  box-sizing: border-box;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+:root[data-theme="dark"] .payroll-fx-btn {
+  background: var(--surface-elev);
+}
+
+.payroll-fx-btn:hover,
+.payroll-fx-btn.active {
+  border-color: var(--brass);
+  box-shadow: 0 1px 3px rgba(15, 30, 56, 0.08);
+}
+
+.payroll-fx-btn.is-custom {
+  box-shadow: inset 0 -1.5px 0 var(--brass);
+}
+
+.payroll-fx-btn .pfx-chg {
+  display: inline-flex;
+  align-items: center;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(15, 30, 56, 0.055);
+  color: var(--muted);
+  font-size: 10.2px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+:root[data-theme="dark"] .payroll-fx-btn .pfx-chg {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+}
+
+.payroll-fx-btn:hover .pfx-chg,
+.payroll-fx-btn.active .pfx-chg {
+  background: var(--brass-tint);
+  color: var(--brass);
+}
+
+.payroll-fx-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(356px, calc(100vw - 28px));
+  padding: 12px 13px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 12px 28px rgba(15, 30, 56, 0.16), 0 2px 6px rgba(15, 30, 56, 0.08);
+  z-index: 85;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+:root[data-theme="dark"] .payroll-fx-popover {
+  background: var(--surface-elev, #162033);
+  border-color: var(--line-strong);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.48);
+}
+
+.pfx-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.pfx-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.pfx-close {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pfx-close:hover {
+  background: rgba(15, 30, 56, 0.06);
+  color: var(--ink);
+}
+
+.pfx-explain {
+  font-size: 11.2px;
+  line-height: 1.42;
+  color: var(--muted);
+  margin-bottom: 9px;
+}
+
+.pfx-explain strong {
+  color: var(--ink);
+}
+
+.pfx-breakdown {
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: var(--surface-2, #F5F7FA);
+  border: 1px solid var(--line);
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+:root[data-theme="dark"] .pfx-breakdown {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.pfx-bd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.pfx-bd-row b {
+  color: var(--ink);
+}
+
+.pfx-bd-row.is-net {
+  padding-top: 4px;
+  margin-top: 2px;
+  border-top: 1px dashed var(--line-strong);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.pfx-input-lbl {
+  display: block;
+  font-size: 10.6px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
+.pfx-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pfx-rate-input {
+  width: 118px;
+  height: 31px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  box-sizing: border-box;
+}
+
+:root[data-theme="dark"] .pfx-rate-input {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.pfx-rate-input:focus {
+  outline: none;
+  border-color: var(--brass);
+}
+
+.pfx-unit {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.pfx-apply-btn {
+  height: 31px;
+  padding: 0 11px;
+  font-size: 11.3px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pfx-presets-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.pfx-preset-pill,
+.pfx-desk-link {
+  appearance: none;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10.6px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+:root[data-theme="dark"] .pfx-preset-pill,
+:root[data-theme="dark"] .pfx-desk-link {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pfx-preset-pill:hover,
+.pfx-desk-link:hover {
+  color: var(--ink);
+  border-color: var(--brass);
+}
+
+.pfx-preset-pill.active {
+  color: var(--ink);
+  border-color: var(--brass);
+  background: var(--brass-tint);
+}
+
+.pfx-desk-link {
+  margin-left: auto;
+  color: var(--brass);
+  border-color: var(--brass-border, var(--line-strong));
+}
+
+.fx-ref-rate-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.fx-ref-copy {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.fx-ref-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 3px;
+}
+
+.fx-ref-title span {
+  color: var(--brass);
+  font-variant-numeric: tabular-nums;
+}
+
+.fx-ref-sub {
+  font-size: 11.4px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.fx-ref-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.fx-ref-controls .pfx-presets-row {
+  margin-top: 0;
+}
+
 @media (max-width: 1280px) and (min-width: 861px) {
   .payroll-cutoff-pills {
-    grid-template-columns: repeat(3, 140px);
+    grid-template-columns: repeat(3, 134px);
+  }
+  .payroll-status-pill {
+    padding: 0 7px;
+    font-size: 10.9px;
   }
 }
 
 @media (max-width: 1120px) and (min-width: 861px) {
   .payroll-cutoff-pills {
-    grid-template-columns: repeat(3, 132px);
+    grid-template-columns: repeat(3, 118px);
   }
   .payroll-cutoff-pill {
-    font-size: 10.8px;
-    padding: 0 6px;
+    font-size: 10.5px;
+    padding: 0 5px;
+  }
+  .payroll-fx-btn .pfx-chg {
+    display: none;
   }
 }
 
 @media (max-width: 860px) {
   .payroll-cutoff-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
     height: auto;
     min-height: 0;
-    padding: 6px 10px;
+    padding: 7px 10px;
   }
   .payroll-cutoff-bar.is-pbi {
     display: flex;
@@ -19455,6 +19885,42 @@ table.ledger-table tbody td.td-databar {
   .payroll-cutoff-pill .pcp-lbl {
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .payroll-bar-aux {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+    margin-left: 0;
+  }
+  .payroll-status-pills {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .payroll-status-pill {
+    padding: 0 4px;
+    font-size: 10.5px;
+    gap: 3px;
+    min-width: 0;
+  }
+  .payroll-fx-btn {
+    height: 31px;
+    padding: 0 8px;
+    font-size: 10.5px;
+    gap: 5px;
+  }
+  .payroll-fx-btn .pfx-chg {
+    padding: 0 5px;
+    font-size: 9.8px;
+  }
+  .fx-ref-controls {
+    align-items: stretch;
+    width: 100%;
+  }
+  .fx-ref-controls .pfx-rate-input {
+    flex: 1 1 auto;
   }
 }
 

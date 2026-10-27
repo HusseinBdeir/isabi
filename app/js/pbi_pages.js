@@ -1598,7 +1598,7 @@
       case 'uoms':
         return { key: 'tickets_count', dir: 'desc' };
       case 'employments':
-        return { key: 'total_paid', dir: 'desc' };
+        return { key: 'start_date', dir: 'desc' };
       case 'credit_terms':
         return { key: 'ar_balance', dir: 'desc' };
       case 'loans':
@@ -1606,9 +1606,9 @@
       case 'jv_partnerships':
         return { key: 'distributions_total', dir: 'desc' };
       case 'overtime_rates':
-        return { key: 'amount', dir: 'desc' };
+        return { key: 'start_date', dir: 'desc' };
       case 'logistics_allowances':
-        return { key: 'daily_usd', dir: 'desc' };
+        return { key: 'start_date', dir: 'desc' };
       case 'price_rules':
         return { key: 'start_date', dir: 'desc' };
       default: {
@@ -6153,17 +6153,24 @@
       const attRows = filterRecords(rec.attendance, { ignoreSearch: true }).filter(matchCommon);
       const logRows = filterRecords(rec.logistics_allowances, { ignorePeriod: true, ignoreSearch: true }).filter(matchCommon);
 
-      // Build 17-column Payroll by Staff Member table via Staff × Month accrual engine (m246 / m247 / m252 + Driver Trip OT)
+      // Build 17-column Payroll by Staff Member table via Staff × Month payroll engine (m246 / m247 / m252 + Driver Trip OT)
       const regData = (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function')
         ? window.__mfgComputeStaffPayrollRegister({ empRows, salRows, attRows, logRows, matchFn: matchCommon, activeRange })
         : { staffRows: [], driverOtRows: [], payMonths: [] };
-      const staffPayrollRows = (regData.staffRows || []).slice().sort((a, b) => b.earnings - a.earnings || b.paid - a.paid);
+      const allPayrollRows = (regData.staffRows || []).slice();
+      const pbiStaffStatus = (typeof window !== 'undefined' && typeof window.__mfgGetPayrollStaffStatus === 'function')
+        ? window.__mfgGetPayrollStaffStatus()
+        : 'active';
+      const staffPayrollRows = allPayrollRows
+        .filter(s => pbiStaffStatus === 'all' ? true : (pbiStaffStatus === 'inactive' ? !s.is_active : Boolean(s.is_active)))
+        .sort((a, b) => b.balance - a.balance || b.earnings - a.earnings || b.paid - a.paid);
+      const topEarnersRows = staffPayrollRows.slice().sort((a, b) => b.earnings - a.earnings || b.paid - a.paid);
       const driverOtRows = (regData.driverOtRows || []).slice();
       const cm = regData.cutoffMeta || null;
 
       const siteStaffRows = staffPayrollRows.filter(s => s.site_days_counted > 0 || s.site_days > 0 || s.site_allow > 0).sort((a, b) => b.site_allow - a.site_allow || b.earnings - a.earnings);
-      logRows.sort((a, b) => Number(b.daily_usd || b.usd_amount || 0) - Number(a.daily_usd || a.usd_amount || 0) || String(b.start_date || '').localeCompare(String(a.start_date || '')));
-      const freelanceContractStaff = empRows.filter(e => /Freelance|Daily/i.test(String(e.type || ''))).sort((a, b) => Number(b.daily_rate || b.salary_usd || 0) - Number(a.daily_rate || a.salary_usd || 0));
+      logRows.sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')) || (Number(b.daily_usd || b.usd_amount || 0) - Number(a.daily_usd || a.usd_amount || 0)));
+      const freelanceContractStaff = empRows.filter(e => /Freelance|Daily/i.test(String(e.type || ''))).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')) || (Number(b.daily_rate || b.salary_usd || 0) - Number(a.daily_rate || a.salary_usd || 0)));
       const unmatchedSal = (prSn.unmatched_salary_by_staff || []).filter(matchCommon);
 
       const totBase = staffPayrollRows.reduce((a, r) => a + r.base, 0);
@@ -6210,33 +6217,19 @@
             };
           });
 
-      const pbiCutoffBar = cm ? `
-        <div class="payroll-cutoff-bar is-pbi ${cm.applicable ? '' : 'is-custom-period'}" id="pbiPayrollCutoffBar" data-cutoff-mode="${esc(cm.applicable ? cm.mode : 'custom')}">
-          <div class="payroll-cutoff-ctrl">
-            ${cm.applicable ? `
-            <div class="payroll-cutoff-pills" role="group" aria-label="Remaining earnings accrual cutoff">
-              <button type="button" class="payroll-cutoff-pill ${cm.mode === 'closed_month' ? 'active' : ''}" data-payroll-cutoff="closed_month" data-tone="closed">
-                <span class="pcp-dot" aria-hidden="true"></span>
-                <span class="pcp-lbl">${esc(cm.lastClosedLabel)} · Closed</span>
-              </button>
-              <button type="button" class="payroll-cutoff-pill ${cm.mode === 'mtd' ? 'active' : ''}" data-payroll-cutoff="mtd" data-tone="mtd">
-                <span class="pcp-dot" aria-hidden="true"></span>
-                <span class="pcp-lbl">${esc(cm.todayYmLabel)} · MTD (${esc(String(cm.today || '').slice(8, 10))}d)</span>
-              </button>
-              <button type="button" class="payroll-cutoff-pill ${cm.mode === 'full_month' ? 'active' : ''}" data-payroll-cutoff="full_month" data-tone="full">
-                <span class="pcp-dot" aria-hidden="true"></span>
-                <span class="pcp-lbl">${esc(cm.todayYmLabel)} · Full</span>
-              </button>
-            </div>` : `
-            <div class="payroll-cutoff-custom-slot">
-              <span class="pcc-pill"><span class="pcp-dot is-locked" aria-hidden="true"></span><span>Period Filter · ${esc(cm.effEndLabel)}</span></span>
-              <button type="button" class="pcc-reset-btn" data-payroll-cutoff-reset="1">Standard Cutoff</button>
-            </div>`}
-          </div>
-        </div>` : '';
+      const pbiCutoffBar = cm
+        ? ((typeof window !== 'undefined' && typeof window.__mfgRenderPayrollCutoffBar === 'function')
+          ? window.__mfgRenderPayrollCutoffBar('pbiPayrollCutoffBar', {
+              cutoffMeta: cm,
+              allRows: allPayrollRows,
+              scopeRows: staffPayrollRows,
+              isPbi: true
+            })
+          : '')
+        : '';
 
       bodyHtml = `
-        ${pbiHeading('Staff payroll & attendance', 'Monthly salary accruals, shift & driver overtime, deductions, remaining earnings, and post-cutoff advances')}
+        ${pbiHeading('Staff payroll & attendance', 'Monthly salary earnings, shift & driver overtime, deductions, remaining payment, and post-cutoff advances')}
         ${pbiCutoffBar}
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Payroll Earnings, Base Salaries, Overtime & Disbursements', [
@@ -6247,8 +6240,8 @@
             { label: 'Total earnings', value: fmtUSD(totEarn, 0), sub: 'Base + OT + Allowances - Ded', tone: 'brass' },
             { label: 'Paid (for period)', value: fmtUSD(totStaffPaid, 0), sub: `Advances after cutoff: ${fmtUSD(totAdvances, 0)}`, tone: 'good' }
           ])}
-          ${kpiBand('2 · Remaining Earnings, Advances, Hours & Contract Hygiene', [
-            { label: 'Remaining earnings', value: fmtUSD(totBal, 0), sub: 'Accrued Earnings - Paid', neg: true, tone: totBal < 0 ? 'crit' : 'brass' },
+          ${kpiBand('2 · Remaining Payment, Advances, Hours & Contract Hygiene', [
+            { label: 'Remaining payment', value: fmtUSD(totBal, 0), sub: 'Earnings minus Paid', neg: true, tone: totBal < 0 ? 'crit' : 'brass' },
             { label: 'Post-cutoff advances', value: fmtUSD(totAdvances, 0), sub: 'Future payroll-month payouts', tone: 'brass' },
             { label: 'Overtime hours', value: fmtNum(totOtHrs, 1) + ' h', sub: 'Logged on attendance sheets' },
             { label: 'Lateness hours', value: fmtNum(totLateHrs, 1) + ' h', sub: 'Deducted at hourly rate' },
@@ -6260,7 +6253,7 @@
             { label: 'Staff paid', value: fmtNum(staffPayrollRows.filter(s => s.paid > 0).length), sub: fmtNum(salRows.length) + ' vouchers in sample' },
             { label: 'Avg salary payment', value: fmtUSD(salRows.length ? salRows.reduce((a, r) => a + Number(r.amount || 0), 0) / salRows.length : 0, 2), sub: 'Per disbursement voucher' },
             { label: 'Staff cost % of sales', value: fmtPct(staffCostPct), sub: 'Salaries ÷ Net sales' },
-            { label: 'Avg earnings per staff', value: fmtUSD(staffPayrollRows.length ? totEarn / staffPayrollRows.length : 0, 0), sub: 'Across active roster' },
+            { label: 'Avg earnings per staff', value: fmtUSD(staffPayrollRows.length ? totEarn / staffPayrollRows.length : 0, 0), sub: 'Across selected roster' },
             { label: 'Overtime % of earnings', value: fmtPct(totEarn > 0 ? totOtPay / totEarn : 0), sub: 'Overtime share of pay' }
           ])}
         </div>
@@ -6271,7 +6264,7 @@
             { key: 'earnings_m', label: 'Earnings', color: C.slate },
             { key: 'paid_m', label: 'Paid', color: C.navy }
           ]), {
-            subtitle: 'Monthly accrued staff earnings (base + overtime + site allowance) vs salary cash disbursements',
+            subtitle: 'Monthly staff earnings (base + overtime + site allowance) vs salary cash disbursements',
             legend: [{ label: 'Earnings', color: C.slate }, { label: 'Paid', color: C.navy }]
           })}
           ${pbiPanel('Overtime and lateness hours by month', buildClusteredColumnSvg(payMonths, [
@@ -6284,11 +6277,11 @@
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('Earnings by staff member', buildHorizontalBarChart(staffPayrollRows, 'staff', 'earnings', v => fmtUSD(v, 0), { subKey: 'company', color: C.navy, maxItems: 10 }), {
+          ${pbiPanel('Earnings by staff member', buildHorizontalBarChart(topEarnersRows, 'staff', 'earnings', v => fmtUSD(v, 0), { subKey: 'company', color: C.navy, maxItems: 10 }), {
             subtitle: 'Top staff members ranked by total earnings in period'
           })}
-          ${pbiPanel('Overtime & allowance by staff member', buildHorizontalBarChart(staffPayrollRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
-            subtitle: 'Staff ranked by accrued site allowance & overtime'
+          ${pbiPanel('Overtime & allowance by staff member', buildHorizontalBarChart(topEarnersRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
+            subtitle: 'Staff ranked by earned site allowance & overtime'
           })}
         </div>
 
@@ -6308,13 +6301,13 @@
             { label: 'Absent Days', key: 'rec_absent_days', r: true, fmt: v => fmtNum(v, 0) },
             { label: 'Absence', key: 'abs_ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
             { label: 'Ded.', key: 'ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
-            { label: 'Earnings', key: 'earnings', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
+            { label: 'Earnings', key: 'earnings', r: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
             { label: 'Paid', key: 'paid', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Rem. ($)', key: 'balance', r: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
             { label: 'Advances', key: 'advances', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' }
           ], staffPayrollRows, {
             subtitle: 'Site allowances & driver night-trip overtime are included inside Earnings · Post-cutoff payouts appear in Advances',
-            rowAmber: r => r.status === 'Ended',
+            rowAmber: r => !r.is_active,
             unitLabel: 'staff',
             foot: [
               { v: `Total (${staffPayrollRows.length} staff)`, span: 2 },
@@ -6347,10 +6340,10 @@
             { label: 'Total OT trips', key: 'total_trips', r: true, fmt: v => `<b>${fmtNum(v, 0)}</b>` },
             { label: 'Sales OT ($)', key: 'sales_ot_usd', r: true, fmt: v => v ? fmtUSD(v, 2) : '-' },
             { label: 'Quarry OT ($)', key: 'raw_ot_usd', r: true, fmt: v => v ? fmtUSD(v, 2) : '-' },
-            { label: 'Total Driver OT ($)', key: 'total_ot_usd', r: true, bar: 'brass', fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
+            { label: 'Total Driver OT ($)', key: 'total_ot_usd', r: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
             { label: 'In Staff Payroll ($)', key: 'in_payroll_usd', r: true, fmt: v => v ? fmtUSD(v, 2) : '$0.00' }
           ], driverOtRows, {
-            subtitle: 'Dated regional night-trip rates ($5 / $7 / $10 / $14) · Contracted drivers automatically accrue into Driver OT on Staff Payroll',
+            subtitle: 'Dated regional night-trip rates ($5 / $7 / $10 / $14) · Contracted drivers are included in Driver OT on Staff Payroll',
             unitLabel: 'drivers',
             foot: [
               { v: `Total (${driverOtRows.length} drivers)`, span: 3 },
@@ -6385,31 +6378,31 @@
             { label: 'Staff on allowance', value: fmtNum(siteStaffRows.length), sub: fmtNum(logRows.length) + ' arrangements' },
             { label: 'Days paid for', value: fmtNum(totSiteDays, 0) + ' d', sub: 'Ticked weekdays − absence' },
             { label: 'Days with activity', value: fmtNum(totSiteAct, 0) + ' d', sub: 'Ticket, fuel or attendance log', tone: 'good' },
-            { label: 'Accrued', value: fmtUSD(totSiteAcc, 0), sub: 'Included inside Earnings', tone: 'brass' },
+            { label: 'Earned', value: fmtUSD(totSiteAcc, 0), sub: 'Included inside Earnings', tone: 'brass' },
             { label: 'Paid (oldest first)', value: fmtUSD(totSitePaid, 0), sub: 'FIFO salary before allowance', tone: 'good' },
-            { label: 'Outstanding', value: fmtUSD(totSiteOut, 0), sub: 'Accrued − Paid at period end', neg: true }
+            { label: 'Outstanding', value: fmtUSD(totSiteOut, 0), sub: 'Earned minus Paid at period end', neg: true }
           ])}
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('Site allowance accrued vs paid by month', buildClusteredColumnSvg(payMonths, [
-            { key: 'sa_accrued', label: 'Accrued', color: C.slate },
+          ${pbiPanel('Site allowance earned vs paid by month', buildClusteredColumnSvg(payMonths, [
+            { key: 'sa_accrued', label: 'Earned', color: C.slate },
             { key: 'sa_paid', label: 'Paid', color: C.navy }
-          ]), { legend: [{ label: 'Accrued', color: C.slate }, { label: 'Paid', color: C.navy }] })}
-          ${pbiPanel('Site allowance accrued by staff member', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
-            subtitle: 'Accrued daily site allowance by posted staff member'
+          ]), { legend: [{ label: 'Earned', color: C.slate }, { label: 'Paid', color: C.navy }] })}
+          ${pbiPanel('Site allowance earned by staff member', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
+            subtitle: 'Earned daily site allowance by posted staff member'
           })}
         </div>
 
         <div class="pbi-grid-1">
-          ${pbiTable('Site allowance by staff member — days, accrued, paid, outstanding', [
+          ${pbiTable('Site allowance by staff member · days, earned, paid & outstanding', [
             { label: 'Staff', key: 'staff', bold: true },
             { label: 'Sites', key: 'sitesStr' },
             { label: 'Days counted', key: 'site_days_counted', r: true, fmt: v => fmtNum(v, 0) },
             { label: 'Absent days', key: 'rec_absent_days', r: true, fmt: v => fmtNum(v, 0) },
             { label: 'Days paid for', key: 'site_days', r: true, fmt: v => fmtNum(v, 0) },
             { label: 'Days with activity', key: 'site_act_days', r: true, fmt: v => fmtNum(v, 0) },
-            { label: 'Accrued ($)', key: 'site_allow', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
+            { label: 'Earned ($)', key: 'site_allow', r: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
             { label: 'Paid ($)', key: 'site_paid', r: true, fmt: v => fmtUSD(v, 2) },
             { label: 'Outstanding ($)', key: 'site_out', r: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` }
           ], siteStaffRows, {
@@ -6419,7 +6412,7 @@
         </div>
 
         <div class="pbi-grid-1">
-          ${pbiTable('Site allowance arrangements — who, where, on which unit, at what daily rate', [
+          ${pbiTable('Site allowance arrangements · who, where, on which unit & daily rate', [
             { label: 'Staff', key: 'staff', bold: true },
             { label: 'Co.', key: 'company' },
             { label: 'Location / Site', key: 'site' },
@@ -9721,20 +9714,20 @@
 
   function renderPayrollVisualsSection(ctx) {
     const payMonths = (ctx && ctx.payMonths) || [];
-    const staffRows = (ctx && ctx.staffRows) || [];
+    const staffRows = ((ctx && ctx.staffRows) || []).slice().sort((a, b) => Number(b.earnings || 0) - Number(a.earnings || 0));
     return `
       <div class="pbi-grid-2" id="payrollChartsRow" style="margin-bottom:14px">
-        ${pbiPanel('Monthly Accrued Staff Earnings vs. Salary Disbursements ($)', buildClusteredColumnSvg(payMonths, [
-          { key: 'earnings_m', label: 'Accrued Earnings', color: C.slate },
+        ${pbiPanel('Monthly Staff Earnings vs. Salary Disbursements ($)', buildClusteredColumnSvg(payMonths, [
+          { key: 'earnings_m', label: 'Staff Earnings', color: C.slate },
           { key: 'paid_m', label: 'Salary Paid', color: C.navy }
         ]), {
-          subtitle: 'Monthly accrued staff earnings (base + overtime + site allowance + extras) vs salary cash disbursements',
+          subtitle: 'Monthly staff earnings (base + overtime + site allowance + extras) vs salary cash disbursements',
           legend: [
-            { label: 'Accrued Earnings', color: C.slate },
+            { label: 'Staff Earnings', color: C.slate },
             { label: 'Salary Paid', color: C.navy }
           ]
         })}
-        ${pbiPanel('Top Staff Members by Accrued Earnings & Paid ($)', buildHorizontalBarChart(staffRows, 'staff', 'earnings', v => fmtUSD(v, 0), { subKey: 'company', color: C.navy, maxItems: 10 }), {
+        ${pbiPanel('Top Staff Members by Earnings ($)', buildHorizontalBarChart(staffRows, 'staff', 'earnings', v => fmtUSD(v, 0), { subKey: 'company', color: C.navy, maxItems: 10 }), {
           subtitle: 'Top staff members ranked by total earnings in the active period'
         })}
       </div>
@@ -9768,18 +9761,18 @@
     const siteStaffRows = (ctx && ctx.siteStaffRows) || [];
     return `
       <div class="pbi-grid-2" id="allowancesChartsRow" style="margin-bottom:14px">
-        ${pbiPanel('Monthly Site Allowance Accrued vs. Paid ($)', buildClusteredColumnSvg(payMonths, [
-          { key: 'sa_accrued', label: 'Accrued', color: C.slate },
+        ${pbiPanel('Monthly Site Allowance Earned vs. Paid ($)', buildClusteredColumnSvg(payMonths, [
+          { key: 'sa_accrued', label: 'Earned', color: C.slate },
           { key: 'sa_paid', label: 'Paid (FIFO)', color: C.navy }
         ]), {
-          subtitle: 'Monthly site allowance accrued on posted working days vs FIFO paid inside salary disbursements',
+          subtitle: 'Monthly site allowance earned on posted working days vs FIFO paid inside salary disbursements',
           legend: [
-            { label: 'Accrued', color: C.slate },
+            { label: 'Earned', color: C.slate },
             { label: 'Paid (FIFO)', color: C.navy }
           ]
         })}
-        ${pbiPanel('Site Allowance Accrued by Staff Member ($)', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
-          subtitle: 'Posted staff members ranked by accrued daily site allowance ($)'
+        ${pbiPanel('Site Allowance Earned by Staff Member ($)', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
+          subtitle: 'Posted staff members ranked by earned daily site allowance ($)'
         })}
       </div>
     `;
