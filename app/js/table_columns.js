@@ -1,11 +1,14 @@
 /* ============================================================================
    ISABI Systems — Interactive Table Column Manager (js/table_columns.js)
    Features:
+   - Automatic hiding of redundant "Co." / "Company" / "BU" columns across all
+     workspace tables whenever a single corporation is selected (can still be
+     toggled back on temporarily from the toolbar Columns popover)
    - Hide / Show any table column (via toolbar Columns popover or header quick-hide)
    - Widen / Narrow any table column (drag header edge resizer or click − / + buttons)
-   - Dynamic tfoot / tbody colspan alignment when columns are hidden
-   - Ephemeral by design: automatically reverts to default on view/table switch or
-     page reload, plus 1-click "↺ Default" reset button & double-click resizer reset
+   - Dynamic tfoot / tbody colspan alignment & first-visible-column artifact sync
+   - Ephemeral by design: automatically reverts to default on view/table/company
+     switch or page reload, plus 1-click "↺ Default" reset & double-click border reset
    ============================================================================ */
 
 (function () {
@@ -16,12 +19,14 @@
   const STEP_COL_W = 24;
 
   // Ephemeral in-memory map (never written to localStorage so reload always starts at default)
-  // tableId -> { hiddenCols: Set<number>, colWidths: Map<number, number>, baseWidths: number[] }
+  // tableId -> { hiddenCols: Set<number>, shownCols: Set<number>, colWidths: Map<number, number>, baseWidths: number[] }
   const TABLE_COL_STATE = new Map();
   let currentScopeSig = '';
+  let currentSingleCorp = false;
   let openPopoverTableId = '';
   let lastResizeEndAt = 0;
   let globalListenersWired = false;
+  let firstVisStyleInjected = false;
 
   const ICONS = {
     cols: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.8"/><line x1="6" y1="2.5" x2="6" y2="13.5"/><line x1="10.5" y1="2.5" x2="10.5" y2="13.5"/></svg>',
@@ -30,6 +35,22 @@
     narrow: '<svg viewBox="0 0 12 12" width="9.5" height="9.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><line x1="2.5" y1="6" x2="9.5" y2="6"/></svg>',
     widen: '<svg viewBox="0 0 12 12" width="9.5" height="9.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="2.5" x2="6" y2="9.5"/><line x1="2.5" y1="6" x2="9.5" y2="6"/></svg>'
   };
+
+  function ensureFirstVisStyle() {
+    if (firstVisStyleInjected || typeof document === 'undefined' || !document.head) return;
+    firstVisStyleInjected = true;
+    if (document.getElementById('mfg-col-mgr-first-vis')) return;
+    const stEl = document.createElement('style');
+    stEl.id = 'mfg-col-mgr-first-vis';
+    stEl.textContent = [
+      'table.ledger-table th.tbl-first-vis-cell, table.ledger-table td.tbl-first-vis-cell { padding-left: 12px; }',
+      'table.m-grid th.tbl-first-vis-cell, table.m-grid td.tbl-first-vis-cell { padding-left: 14px; }',
+      'tr.rrow td.tbl-first-vis-cell { position: relative; }',
+      '.ledger-table tbody td.tbl-first-vis-cell u.row-sel-dot { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); margin-left: 0; z-index: 2; }',
+      '.tbl-col-auto-tag { font-size: 9.5px; font-weight: 600; opacity: 0.62; margin-left: 3px; }'
+    ].join('\n');
+    document.head.appendChild(stEl);
+  }
 
   function esc(str) {
     return String(str == null ? '' : str)
@@ -48,15 +69,30 @@
     return Math.max(MIN_COL_W, Math.min(MAX_COL_W, n));
   }
 
+  function isSingleCorporationScope(stateObj) {
+    const st = stateObj || (typeof window !== 'undefined' ? window.STATE : null);
+    if (!st) return false;
+    const co = String(st.company || '').trim();
+    if (!co) return false;
+    if (co === 'manufacturing-group') {
+      return Array.isArray(st.allowedCompanyNames) && st.allowedCompanyNames.length === 1;
+    }
+    if (co.startsWith('industry:')) {
+      return false;
+    }
+    return true;
+  }
+
   function buildScopeSignature(stateObj) {
     if (!stateObj) return 'default';
     const v = String(stateObj.view || 'overview');
+    const co = String(stateObj.company || '');
     const uk = String(stateObj.activeUnivRegKey || '');
     const tk = String(stateObj.activeTableKey || '');
     const pp = String(stateObj.pbiPage || '');
     const st = String(stateObj.activeStatement || '');
     const tv = stateObj.tableViews ? JSON.stringify(stateObj.tableViews) : '';
-    return [v, uk, tk, pp, st, tv].join('|');
+    return [v, co, uk, tk, pp, st, tv].join('|');
   }
 
   function getOrCreateState(tableId, createIfMissing) {
@@ -64,6 +100,7 @@
       if (!createIfMissing) return null;
       TABLE_COL_STATE.set(tableId, {
         hiddenCols: new Set(),
+        shownCols: new Set(),
         colWidths: new Map(),
         baseWidths: []
       });
@@ -73,7 +110,9 @@
 
   function isStateCustomized(st) {
     if (!st) return false;
-    return (st.hiddenCols && st.hiddenCols.size > 0) || (st.colWidths && st.colWidths.size > 0);
+    return (st.hiddenCols && st.hiddenCols.size > 0) ||
+           (st.shownCols && st.shownCols.size > 0) ||
+           (st.colWidths && st.colWidths.size > 0);
   }
 
   function getTableId(table, idx) {
@@ -116,6 +155,49 @@
     });
   }
 
+  function getAutoHiddenCols(table, labelsOpt) {
+    const out = new Set();
+    if (!table || !currentSingleCorp) return out;
+    if (table.hasAttribute('data-keep-co')) return out;
+    const stGlobal = typeof window !== 'undefined' ? window.STATE : null;
+    const singleRlsOnly = Boolean(stGlobal && Array.isArray(stGlobal.allowedCompanyNames) && stGlobal.allowedCompanyNames.length === 1);
+    if (!singleRlsOnly && table.closest('#recordInspector, #entryModal')) return out;
+
+    const headRow = table.querySelector('thead tr');
+    if (!headRow) return out;
+    const ths = Array.from(headRow.children).filter(el => el.tagName === 'TH' || el.tagName === 'TD');
+    if (ths.length < 2) return out;
+    const labels = labelsOpt || extractHeaderLabels(table);
+
+    ths.forEach((th, ci) => {
+      const lbl = String(labels[ci] || '').trim();
+      const sortKey = String(th.getAttribute('data-sort-key') || '').trim().toLowerCase();
+      if (/^(co\.?|company|bu)$/i.test(lbl) || sortKey === 'company') {
+        out.add(ci);
+      }
+    });
+    if (out.size >= ths.length) out.clear();
+    return out;
+  }
+
+  function computeEffectiveHidden(table, st, colCount, labelsOpt) {
+    const autoSet = getAutoHiddenCols(table, labelsOpt);
+    const eff = new Set();
+    autoSet.forEach(ci => {
+      if (!(st && st.shownCols && st.shownCols.has(ci))) {
+        eff.add(ci);
+      }
+    });
+    if (st && st.hiddenCols) {
+      st.hiddenCols.forEach(ci => eff.add(ci));
+    }
+    if (colCount > 0 && eff.size >= colCount) {
+      const firstHidden = eff.values().next().value;
+      eff.delete(firstHidden);
+    }
+    return { eff, autoSet };
+  }
+
   function indexTableCells(table) {
     if (table._cellsIndexed) return;
     table._cellsIndexed = true;
@@ -139,6 +221,7 @@
     const headRow = table.querySelector('thead tr');
     if (!headRow) return;
     const ths = Array.from(headRow.children).filter(el => el.tagName === 'TH' || el.tagName === 'TD');
+    const labels = extractHeaderLabels(table);
     if (!Array.isArray(table._naturalWidths) || table._naturalWidths.length !== ths.length) {
       const natWidths = ths.map(th => Math.round(th.getBoundingClientRect().width || 0));
       if (natWidths.some(w => w >= MIN_COL_W)) table._naturalWidths = natWidths;
@@ -147,7 +230,8 @@
     if (!st.baseWidths || st.baseWidths.length !== ths.length) {
       st.baseWidths = ths.map((th, i) => {
         const w = (nat && nat[i] >= MIN_COL_W) ? nat[i] : Math.round(th.getBoundingClientRect().width || 0);
-        return w >= MIN_COL_W ? w : 96;
+        const fallback = /^(co\.?|bu)$/i.test(String(labels[i] || '').trim()) ? 68 : 96;
+        return w >= MIN_COL_W ? w : fallback;
       });
     } else {
       ths.forEach((th, i) => {
@@ -159,6 +243,40 @@
     }
   }
 
+  function syncFirstVisibleCellArtifacts(table, firstVisCol) {
+    if (!table._hadCol0Shift && firstVisCol <= 0) return;
+    table._hadCol0Shift = firstVisCol > 0;
+    const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
+    bodyRows.forEach(tr => {
+      let col0Td = null;
+      let firstVisTd = null;
+      for (let i = 0; i < tr.children.length; i++) {
+        const cell = tr.children[i];
+        if (cell.tagName !== 'TD') continue;
+        const origSpan = Number(cell.getAttribute('data-col-orig-span') || 1);
+        if (origSpan > 1) return;
+        const start = Number(cell.getAttribute('data-col-start') || 0);
+        if (start === 0) col0Td = cell;
+        if (start === firstVisCol) firstVisTd = cell;
+      }
+      if (firstVisCol > 0 && col0Td && firstVisTd && col0Td !== firstVisTd) {
+        const dot = col0Td.querySelector('u.row-sel-dot');
+        if (dot) firstVisTd.appendChild(dot);
+        col0Td.querySelectorAll('.badge-app, button.void-btn').forEach(el => {
+          el.setAttribute('data-from-col0', '1');
+          firstVisTd.appendChild(el);
+        });
+      } else if (firstVisCol === 0 && col0Td) {
+        const movedDot = tr.querySelector('td:not(:first-child) u.row-sel-dot');
+        if (movedDot) col0Td.appendChild(movedDot);
+        tr.querySelectorAll('[data-from-col0="1"]').forEach(el => {
+          el.removeAttribute('data-from-col0');
+          col0Td.appendChild(el);
+        });
+      }
+    });
+  }
+
   function applyTableColumnState(table) {
     if (!table) return;
     const tableId = table.dataset.colMgrId;
@@ -168,24 +286,28 @@
     if (colCount < 2) return;
 
     const st = getOrCreateState(tableId, false);
-    const hiddenSet = (st && st.hiddenCols) ? st.hiddenCols : new Set();
+    const { eff: hiddenSet } = computeEffectiveHidden(table, st, colCount, labels);
     const widthMap = (st && st.colWidths) ? st.colWidths : new Map();
 
     if (hiddenSet.size === 0 && widthMap.size === 0 && !table._hadColCustom) {
       return;
     }
     table._hadColCustom = hiddenSet.size > 0 || widthMap.size > 0;
+    ensureFirstVisStyle();
     indexTableCells(table);
 
-    // Never allow all columns to be hidden; keep at least 1 visible
-    if (hiddenSet.size >= colCount) {
-      const firstHidden = hiddenSet.values().next().value;
-      hiddenSet.delete(firstHidden);
+    let firstVisCol = 0;
+    for (let c = 0; c < colCount; c++) {
+      if (!hiddenSet.has(c)) {
+        firstVisCol = c;
+        break;
+      }
     }
 
     // 1. Apply column visibility & adjust colspans across thead, tbody, tfoot
     const allRows = Array.from(table.querySelectorAll('thead tr, tbody tr, tfoot tr'));
     allRows.forEach(tr => {
+      const inFoot = tr.parentElement && tr.parentElement.tagName === 'TFOOT';
       Array.from(tr.children).forEach(cell => {
         if (cell.tagName !== 'TH' && cell.tagName !== 'TD') return;
         const start = Number(cell.getAttribute('data-col-start') || 0);
@@ -193,7 +315,9 @@
         if (origSpan <= 1) {
           const isHidden = hiddenSet.has(start);
           cell.classList.toggle('tbl-col-hidden', isHidden);
+          cell.classList.toggle('tbl-first-vis-cell', !inFoot && firstVisCol > 0 && start === firstVisCol);
         } else {
+          cell.classList.remove('tbl-first-vis-cell');
           let visSpan = 0;
           for (let c = start; c < start + origSpan; c++) {
             if (!hiddenSet.has(c)) visSpan++;
@@ -208,6 +332,8 @@
         }
       });
     });
+
+    syncFirstVisibleCellArtifacts(table, firstVisCol);
 
     // 2. Apply custom column widths
     const hasCustomWidths = widthMap.size > 0;
@@ -241,8 +367,7 @@
       table.style.width = Math.max(180, totalVisWidth) + 'px';
       table.style.minWidth = '0px';
 
-      const bodyAndHeadRows = Array.from(table.querySelectorAll('thead tr, tbody tr, tfoot tr'));
-      bodyAndHeadRows.forEach(tr => {
+      allRows.forEach(tr => {
         Array.from(tr.children).forEach(cell => {
           const origSpan = Number(cell.getAttribute('data-col-orig-span') || 1);
           if (origSpan !== 1) {
@@ -268,15 +393,24 @@
     const colCount = labels.length;
     const st = getOrCreateState(tableId, true);
     snapshotBaseWidthsIfNeeded(table, st);
-    const currentlyHidden = st.hiddenCols.has(colIdx);
+    const { eff: curEff, autoSet } = computeEffectiveHidden(table, st, colCount, labels);
+    const currentlyHidden = curEff.has(colIdx);
     const wantVisible = forceVisible != null ? Boolean(forceVisible) : currentlyHidden;
+    const isAutoCol = autoSet.has(colIdx);
 
     if (!wantVisible) {
-      const visibleCount = colCount - st.hiddenCols.size;
+      const visibleCount = colCount - curEff.size;
       if (visibleCount <= 1) return false; // Keep at least 1 column visible
-      st.hiddenCols.add(colIdx);
+      if (isAutoCol) {
+        st.shownCols.delete(colIdx);
+      } else {
+        st.hiddenCols.add(colIdx);
+      }
     } else {
       st.hiddenCols.delete(colIdx);
+      if (isAutoCol) {
+        st.shownCols.add(colIdx);
+      }
     }
 
     if (!isStateCustomized(st)) {
@@ -341,7 +475,7 @@
     const labels = extractHeaderLabels(table);
     const colCount = labels.length;
     const st = getOrCreateState(tableId, false);
-    const hiddenSet = (st && st.hiddenCols) ? st.hiddenCols : new Set();
+    const { eff: hiddenSet, autoSet } = computeEffectiveHidden(table, st, colCount, labels);
     const widthMap = (st && st.colWidths) ? st.colWidths : new Map();
     const visibleCount = colCount - hiddenSet.size;
     const customized = isStateCustomized(st);
@@ -362,6 +496,7 @@
       <div class="tbl-col-pop-list" role="group" aria-label="Table columns">
         ${labels.map((lbl, ci) => {
           const isHidden = hiddenSet.has(ci);
+          const isAuto = autoSet.has(ci);
           const hasCustomW = widthMap.has(ci);
           const measuredW = ths[ci] && !isHidden ? Math.round(ths[ci].getBoundingClientRect().width || 0) : ((st && st.baseWidths && st.baseWidths[ci]) || 0);
           const dispW = hasCustomW ? `${widthMap.get(ci)}px` : (measuredW ? `${measuredW}px` : 'Auto');
@@ -370,7 +505,7 @@
             <div class="tbl-col-pop-row ${isHidden ? 'is-hidden' : ''} ${hasCustomW ? 'is-resized' : ''}" data-col-idx="${ci}">
               <label class="tbl-col-pop-chk">
                 <input type="checkbox" data-col-toggle-idx="${ci}" ${isHidden ? '' : 'checked'} ${disableHide ? 'disabled' : ''}>
-                <span class="tbl-col-pop-name" title="${esc(lbl)}">${esc(lbl)}</span>
+                <span class="tbl-col-pop-name" title="${esc(lbl)}${isAuto ? ' (Auto-hidden when 1 corporation is selected)' : ''}">${esc(lbl)}${isAuto ? '<em class="tbl-col-auto-tag">(Single Co.)</em>' : ''}</span>
               </label>
               <div class="tbl-col-pop-size">
                 <button type="button" class="tbl-col-sz-btn" data-col-narrow-idx="${ci}" ${isHidden ? 'disabled' : ''} title="Narrow ${esc(lbl)} (−${STEP_COL_W}px)" aria-label="Narrow ${esc(lbl)}">−</button>
@@ -396,10 +531,12 @@
     const labels = extractHeaderLabels(table);
     const colCount = labels.length;
     const st = getOrCreateState(tableId, false);
-    const hiddenCount = (st && st.hiddenCols) ? st.hiddenCols.size : 0;
+    const { eff: hiddenSet } = computeEffectiveHidden(table, st, colCount, labels);
+    const manualHiddenCount = (st && st.hiddenCols) ? st.hiddenCols.size : 0;
+    const manualShownCount = (st && st.shownCols) ? st.shownCols.size : 0;
     const resizedCount = (st && st.colWidths) ? st.colWidths.size : 0;
-    const customized = hiddenCount > 0 || resizedCount > 0;
-    const visibleCount = colCount - hiddenCount;
+    const customized = manualHiddenCount > 0 || manualShownCount > 0 || resizedCount > 0;
+    const visibleCount = colCount - hiddenSet.size;
 
     const triggerBtn = mgrWrap.querySelector('.tbl-col-trigger-btn');
     const resetBtn = mgrWrap.querySelector('.tbl-col-inline-reset');
@@ -407,7 +544,7 @@
 
     if (triggerBtn) {
       triggerBtn.classList.toggle('is-customized', customized);
-      const countBadge = hiddenCount > 0
+      const countBadge = (manualHiddenCount > 0 || manualShownCount > 0)
         ? ` <span class="tbl-col-badge">${visibleCount}/${colCount}</span>`
         : (resizedCount > 0 ? ` <span class="tbl-col-badge">${resizedCount}W</span>` : '');
       triggerBtn.innerHTML = `${ICONS.cols}<span class="tbl-col-btn-lbl">Columns</span>${countBadge}`;
@@ -422,7 +559,6 @@
       if (existingRows.length !== colCount) {
         popover.innerHTML = renderPopoverInnerHtml(table);
       } else {
-        const hiddenSet = (st && st.hiddenCols) ? st.hiddenCols : new Set();
         const widthMap = (st && st.colWidths) ? st.colWidths : new Map();
         const headRow = table.querySelector('thead tr');
         const ths = headRow ? Array.from(headRow.children) : [];
@@ -719,7 +855,7 @@
       }
     }
 
-    // 3. Apply any active in-memory column state for this table
+    // 3. Apply any active in-memory & scope-driven column state for this table
     applyTableColumnState(table);
   }
 
@@ -797,7 +933,6 @@
         const hasSearch = Boolean(searchEl && String(searchEl.value || '').trim().length > 0);
         const isFiltered = hasSlice || hasSearch;
         chipBar.classList.toggle('has-active-filter', isFiltered);
-
         let resetBtn = chipBar.querySelector(':scope > .tb-chip-reset-btn');
         if (isFiltered) {
           if (!resetBtn) {
@@ -832,10 +967,11 @@
 
   function enhanceAllTables(rootContainer, stateObj) {
     ensureGlobalListeners();
+    currentSingleCorp = isSingleCorporationScope(stateObj);
     if (stateObj) {
       const nextSig = buildScopeSignature(stateObj);
       if (currentScopeSig && currentScopeSig !== nextSig) {
-        // User navigated to a different view / table / system view -> automatically revert back to default
+        // User navigated to a different view / company / table / system view -> automatically revert back to default
         TABLE_COL_STATE.clear();
         openPopoverTableId = '';
       }
@@ -864,6 +1000,8 @@
     resetSingleColumnWidth,
     resetTableToDefault,
     resetAllTablesToDefault,
-    getStateForTable: table => table ? getOrCreateState(table.dataset.colMgrId, false) : null
+    isSingleCorporationScope,
+    getStateForTable: table => table ? getOrCreateState(table.dataset.colMgrId, false) : null,
+    getEffectiveHiddenCols: table => table ? computeEffectiveHidden(table, getOrCreateState(table.dataset.colMgrId, false), extractHeaderLabels(table).length).eff : new Set()
   };
 })();
