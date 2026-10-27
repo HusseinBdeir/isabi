@@ -7041,7 +7041,7 @@
 
   function evaluateFuelUnusedWarning(company, equipment, dateIso, curReading, curType, prevMeterRow, isFuelFill, excludeId) {
     if (!isFuelFill || !equipment || !curType || curType === 'none') {
-      return { warn: false, badge: '', message: '', tripsSince: null, lastFill: null };
+      return { warn: false, badge: '', message: '', lastFill: null, missingOnLastFill: false };
     }
     const idx = _getFuelUsageAuditIndex();
     const eqKey = norm(equipment);
@@ -7057,51 +7057,30 @@
     const prevEff = prevMeterRow ? effectiveFuelMeter(prevMeterRow) : null;
     const prevVal = prevEff ? prevEff.reading : null;
     const unitLbl = curType === 'hours' ? 'h' : 'km';
+    const meterWord = curType === 'hours' ? 'Hour-meter' : 'Odometer';
     const zeroDelta = curReading != null && prevVal != null && prevEff && prevEff.type === curType && curReading === prevVal;
-    const isDispatchTruck = idx.hydrated && idx.dispatchTruckSet.has(eqKey);
     const lastFillDate = lastFill ? String(lastFill.date || '').slice(0, 10) : '';
-    const tripsSince = (isDispatchTruck && lastFillDate) ? idx.countTripsBetween(equipment, lastFillDate, refIso) : null;
-    const tripInfo = idx.tripsByTruck.get(eqKey);
-    const lastTripStr = (tripInfo && tripInfo.lastDate) ? fmtDateDMY(tripInfo.lastDate) : '';
     const lastFillRef = lastFill ? `${lastFill.ticket_no ? '#' + lastFill.ticket_no + ' · ' : ''}${fmtNum(lastFill.litres || 0, 0)} L on ${fmtDateDMY(lastFillDate)}` : '';
 
-    if (zeroDelta && tripsSince === 0 && lastFill) {
-      return {
-        warn: true,
-        badge: `Not used · 0 ${unitLbl} & 0 trips`,
-        message: `${equipment} was not used since its last fill-up (${lastFillRef}) · 0 ${unitLbl} moved and 0 trips logged`,
-        tripsSince,
-        lastFill
-      };
-    }
     if (zeroDelta && prevMeterRow) {
       return {
         warn: true,
-        badge: `Not used · 0 ${unitLbl}`,
-        message: `${equipment} meter unchanged (0 ${unitLbl} since ${fmtNum(prevMeterRow.litres || 0, 0)} L fill on ${fmtDateDMY(String(prevMeterRow.date || '').slice(0, 10))}) · unit was not used`,
-        tripsSince,
-        lastFill
-      };
-    }
-    if (tripsSince === 0 && lastFill) {
-      return {
-        warn: true,
-        badge: 'Not used · 0 trips',
-        message: `${equipment} was not used since its last fill-up (${lastFillRef}${lastTripStr ? ', last trip ' + lastTripStr : ''}) · 0 dispatch trips logged`,
-        tripsSince,
-        lastFill
+        badge: `Unchanged · 0 ${unitLbl}`,
+        message: `Same ${meterWord.toLowerCase()} reading as prior fill-up (${fmtNum(prevVal, curType === 'hours' && prevVal % 1 !== 0 ? 1 : 0)} ${unitLbl} on ${fmtDateDMY(String(prevMeterRow.date || '').slice(0, 10))})`,
+        lastFill,
+        missingOnLastFill: false
       };
     }
     if (lastFill && effectiveFuelMeter(lastFill).reading == null) {
       return {
         warn: true,
         badge: curType === 'hours' ? 'No meter on last fill' : 'No odometer on last fill',
-        message: `Last fill-up (${lastFillRef}) had no ${curType === 'hours' ? 'hour-meter' : 'odometer'} recorded${prevMeterRow && prevVal != null ? ' · comparing against ' + fmtNum(prevVal, 0) + ' ' + unitLbl + ' on ' + fmtDateDMY(String(prevMeterRow.date || '').slice(0, 10)) : ''}`,
-        tripsSince,
-        lastFill
+        message: `${meterWord} was not entered on ${equipment}'s last fill-up (${lastFillRef})${prevMeterRow && prevVal != null ? ' · last recorded: ' + fmtNum(prevVal, curType === 'hours' && prevVal % 1 !== 0 ? 1 : 0) + ' ' + unitLbl + ' on ' + fmtDateDMY(String(prevMeterRow.date || '').slice(0, 10)) : ''}`,
+        lastFill,
+        missingOnLastFill: true
       };
     }
-    return { warn: false, badge: '', message: '', tripsSince, lastFill };
+    return { warn: false, badge: '', message: '', lastFill, missingOnLastFill: false };
   }
 
   function openArBalance(customer) {
@@ -7371,6 +7350,8 @@
         } else if (mv.litres > 0 && mv.amountUsd > 0) {
           st.pricedLitres += mv.litres;
           st.pricedUsd += mv.amountUsd;
+          if (!st._pricedBuys) st._pricedBuys = [];
+          st._pricedBuys.push({ date: mv.date, litres: mv.litres, amountUsd: mv.amountUsd });
         }
       } else if (mv.kind === 'sold') {
         st.sold = round2(st.sold + mv.litres);
@@ -7395,7 +7376,43 @@
     Object.keys(byCo).forEach(co => {
       const st = byCo[co];
       st.balance = round2(st.bought - st.issued - st.discrepancy - st.sold);
-      st.avgUsdPerL = st.pricedLitres > 0 ? round2(st.pricedUsd / st.pricedLitres) : 0.85;
+      st.allRefillsAvgUsdPerL = st.pricedLitres > 0 ? round2(st.pricedUsd / st.pricedLitres) : 0;
+      const buys = st._pricedBuys || [];
+      if (st.balance > 0 && buys.length > 0) {
+        let needL = st.balance;
+        let remCostUsd = 0;
+        let remCoveredL = 0;
+        for (let i = buys.length - 1; i >= 0 && needL > 0.0001; i--) {
+          const b = buys[i];
+          const takeL = Math.min(needL, b.litres);
+          remCostUsd += takeL * (b.amountUsd / b.litres);
+          remCoveredL += takeL;
+          needL = round2(needL - takeL);
+        }
+        st.remCoveredLitres = round2(remCoveredL);
+        st.remValueUsd = round2(remCostUsd);
+        st.avgUsdPerL = remCoveredL > 0 ? round2(remCostUsd / remCoveredL) : st.allRefillsAvgUsdPerL;
+      } else if (buys.length > 0) {
+        const lastDate = buys[buys.length - 1].date;
+        let lastDayL = 0, lastDayUsd = 0;
+        for (let i = buys.length - 1; i >= 0; i--) {
+          if (buys[i].date !== lastDate) break;
+          lastDayL += buys[i].litres;
+          lastDayUsd += buys[i].amountUsd;
+        }
+        st.remCoveredLitres = 0;
+        st.remValueUsd = 0;
+        st.avgUsdPerL = lastDayL > 0 ? round2(lastDayUsd / lastDayL) : st.allRefillsAvgUsdPerL;
+      } else {
+        st.remCoveredLitres = 0;
+        st.remValueUsd = 0;
+        st.avgUsdPerL = 0;
+      }
+      delete st._pricedBuys;
+    });
+    const fallbackRemRate = (byCo.WTC && byCo.WTC.avgUsdPerL > 0) ? byCo.WTC.avgUsdPerL : 1.36;
+    Object.keys(byCo).forEach(co => {
+      if (!(byCo[co].avgUsdPerL > 0)) byCo[co].avgUsdPerL = fallbackRemRate;
     });
 
     _dieselAllIdxCache = { cacheKey, hydrated, movements, byCo, tankAfterById };
@@ -7421,11 +7438,13 @@
 
     const perCo = {};
     ['WTC', 'BBConstruction', 'Lions Transport'].forEach(co => {
+      const coBase = idx.byCo[co] || {};
       perCo[co] = {
         openingL: 0, boughtL: 0, boughtUsd: 0, boughtCount: 0,
         consumedOwnL: 0, consumedHaulerL: 0, consumedL: 0, consumedCount: 0,
         discrepancyL: 0, discrepancyCount: 0, malfNetL: 0, malfAbsL: 0, malfCount: 0, otherDiscOutL: 0,
         soldL: 0, soldUsd: 0, soldCount: 0, closingL: 0, pendingCount: 0, pendingLitres: 0,
+        avgUsdPerL: coBase.avgUsdPerL || 1.36, remValueUsd: coBase.remValueUsd || 0,
         companyDieselUsedL: 0, malfunctionPct: 0, malfunctionAlert: false, malfunctionSeverity: 'ok'
       };
     });
@@ -7793,7 +7812,7 @@
     const idx = _getAllDieselMovementsIndex();
     const byCo = {};
     ['WTC', 'BBConstruction', 'Lions Transport'].forEach(co => {
-      const st = idx.byCo[co] || { bought: 0, issued: 0, discrepancy: 0, sold: 0, balance: 0, avgUsdPerL: 0.85, pendingCount: 0, pendingLitres: 0 };
+      const st = idx.byCo[co] || { bought: 0, issued: 0, discrepancy: 0, sold: 0, balance: 0, avgUsdPerL: 1.36, remValueUsd: 0, allRefillsAvgUsdPerL: 0, pendingCount: 0, pendingLitres: 0 };
       byCo[co] = {
         bought: st.bought,
         issued: st.issued,
@@ -7801,6 +7820,8 @@
         sold: st.sold,
         balance: st.balance,
         avgUsdPerL: st.avgUsdPerL,
+        remValueUsd: st.remValueUsd || 0,
+        allRefillsAvgUsdPerL: st.allRefillsAvgUsdPerL || st.avgUsdPerL,
         pendingCount: st.pendingCount,
         pendingLitres: st.pendingLitres
       };
@@ -12280,13 +12301,12 @@
   let _meterGuardCacheKey = '';
   let _meterGuardCacheVal = null;
   function meterGuardMap(fuelRows) {
-    const usageIdx = _getFuelUsageAuditIndex();
-    const cacheKey = `${STATE.company}|${fuelRows.length}|${SEED._customRev || 0}|${_ALERT_RULES_REV || 0}|${usageIdx.cacheKey}`;
+    const cacheKey = `${STATE.company}|${fuelRows.length}|${SEED._customRev || 0}|${_ALERT_RULES_REV || 0}`;
     if (_meterGuardCacheKey === cacheKey && _meterGuardCacheVal) return _meterGuardCacheVal;
     const meterGuardOn = isAlertRuleEnabled('G_METER_JUMP');
     const warnJumpKm = getAlertParam('G_METER_JUMP', 'warn_jump_km', 5000);
     const warnJumpHr = getAlertParam('G_METER_JUMP', 'warn_jump_hr', 500);
-    // Walk each unit's readings in date + ticket order; flag backwards readings, km/h jumps, and refuels when truck was not used
+    // Walk each unit's readings in date + ticket order; flag backwards readings and abnormal km/h jumps
     const byUnit = new Map();
     fuelRows.forEach(f => {
       const key = norm(f.company) + '|' + norm(f.equipment);
@@ -12304,44 +12324,21 @@
         return ia < ib ? -1 : (ia > ib ? 1 : 0);
       });
       let prev = null;
-      let prevFuelFill = null;
       list.forEach(f => {
-        let flag = { cls: 'badge-ok', label: '● OK', unusedWarn: '' };
+        let flag = { cls: 'badge-ok', label: '● OK' };
         const curM = effectiveFuelMeter(f);
         const cur = curM.reading;
         const pvM = prev ? effectiveFuelMeter(prev) : null;
         const pv = pvM ? pvM.reading : null;
         const isHours = curM.type === 'hours';
-        const isFuel = /diesel|mazout|petrol|benzin|gasoline/i.test(String(f.item || f.fuel_type || 'Diesel')) && Number(f.litres || 0) > 0;
-        const eqKey = norm(f.equipment);
-        const isDispTruck = usageIdx.hydrated && usageIdx.dispatchTruckSet.has(eqKey);
-        let unusedWarn = '';
-        let unusedShort = '';
-        if (isFuel && meterGuardOn) {
-          if (cur != null && pv != null && pvM && pvM.type === curM.type && cur === pv) {
-            unusedShort = isHours ? '0 h · Not used' : '0 km · Not used';
-            unusedWarn = `Meter unchanged (0 ${isHours ? 'h' : 'km'}) since prior fill of ${fmtNum(prev.litres || 0, 0)} L on ${fmtDateDMY(String(prev.date || '').slice(0, 10))} · unit was not used`;
-          } else if (isDispTruck && prevFuelFill) {
-            const pDate = String(prevFuelFill.date || '').slice(0, 10);
-            const cDate = String(f.date || '').slice(0, 10);
-            if (pDate && cDate && usageIdx.countTripsBetween(f.equipment, pDate, cDate) === 0) {
-              unusedShort = 'Not used (0 trips)';
-              unusedWarn = `0 recorded trips since prior fill (${prevFuelFill.ticket_no ? '#' + prevFuelFill.ticket_no + ' · ' : ''}${fmtNum(prevFuelFill.litres || 0, 0)} L on ${fmtDateDMY(pDate)})`;
-            }
-          }
-        }
-        if (cur == null) flag = { cls: '', label: 'No meter', unusedWarn };
+        if (cur == null) flag = { cls: '', label: 'No meter' };
         else if (meterGuardOn && pv != null && pvM && pvM.type === curM.type) {
-          if (cur < pv) flag = { cls: 'badge-err', label: '▼ Backwards', unusedWarn };
-          else if (!isHours && cur - pv > warnJumpKm) flag = { cls: 'badge-warn', label: '▲ +' + fmtNum(cur - pv, 0) + ' km', unusedWarn };
-          else if (isHours && cur - pv > warnJumpHr) flag = { cls: 'badge-warn', label: '▲ +' + fmtNum(cur - pv, 0) + ' h', unusedWarn };
-        }
-        if (unusedWarn && flag.cls !== 'badge-err' && !/^▲/.test(flag.label || '')) {
-          flag = { cls: 'badge-warn', label: unusedShort, unusedWarn };
+          if (cur < pv) flag = { cls: 'badge-err', label: '▼ Backwards' };
+          else if (!isHours && cur - pv > warnJumpKm) flag = { cls: 'badge-warn', label: '▲ +' + fmtNum(cur - pv, 0) + ' km' };
+          else if (isHours && cur - pv > warnJumpHr) flag = { cls: 'badge-warn', label: '▲ +' + fmtNum(cur - pv, 0) + ' h' };
         }
         out.set(f.id, flag);
         if (cur != null) prev = f;
-        if (isFuel) prevFuelFill = f;
       });
     });
     _meterGuardCacheKey = cacheKey;
@@ -12691,8 +12688,8 @@
                   <td>${relLink('products', f.item || f.fuel_type || 'Diesel')}</td>
                   <td class="r"><strong>${!isDieselFill(f) && isGreaseFill(f) ? fmtNum(f.litres, 2) + ' kg' : fmtNum(f.litres, 1) + ' L'}</strong></td>
                   <td class="r mono">${remVal != null ? `<span style="color:${remVal < 0 ? 'var(--warn)' : 'var(--ink-2)'}">${fmtNum(remVal, 1)} L</span>` : '-'}</td>
-                  <td class="r">${effM.reading != null ? fmtNum(effM.reading, effM.type === 'hours' && effM.reading % 1 !== 0 ? 1 : 0) + ' ' + effM.unit : '-'}${g.unusedWarn ? ` <span class="badge badge-warn" style="margin-left:4px;font-size:10px;padding:1px 5px" title="${esc(g.unusedWarn)}">Not used</span>` : ''}</td>
-                  <td><span class="badge ${g.cls}"${g.unusedWarn ? ` title="${esc(g.unusedWarn)}"` : ''}>${esc(g.label)}</span></td>
+                  <td class="r">${effM.reading != null ? fmtNum(effM.reading, effM.type === 'hours' && effM.reading % 1 !== 0 ? 1 : 0) + ' ' + effM.unit : '-'}</td>
+                  <td><span class="badge ${g.cls}">${esc(g.label)}</span></td>
                 </tr>`;
               }).join('') || emptyRow(10, periodEmptyMsg(SEED.records.fuel_intakes, 'fuel intakes'))}
               ${showMoreRow('fuel', fuelRows.length, 10)}
@@ -26770,7 +26767,7 @@
     }
     const unusedCheck = (meterGuardActive && showMeterReading && type !== '')
       ? evaluateFuelUnusedWarning(company, eqRow ? eqRow.name : equipment, effDate || date, reading, type, prev, !isLubricant, null)
-      : { warn: false, badge: '', message: '', tripsSince: null, lastFill: null };
+      : { warn: false, badge: '', message: '', lastFill: null, missingOnLastFill: false };
     const badgeMeterWarnEl = $('badge_meter_warn');
     if (badgeMeterWarnEl) {
       if (unusedCheck.warn && unusedCheck.badge) {
@@ -26900,7 +26897,7 @@
           </div>
           <div class="att-contract-metrics">
             ${!isLubricant && fuelType === 'Diesel' && litres > 0 ? `<span><small>Tank After Issue</small><b class="${tankAfter < 0 ? 'red' : ''}">${fmtNum(tankAfter, 0)} L</b></span>` : ''}
-            ${coTank.avgUsdPerL > 0 && !isLubricant ? `<span title="Weighted-average bulk diesel purchase cost (${fmtUSD(coTank.avgUsdPerL, 2)}/L across priced deliveries)"><small>Est. Cost (${fmtUSD(coTank.avgUsdPerL, 2)}/L)</small><b>${fmtUSD(litres > 0 ? litres * coTank.avgUsdPerL : coTank.avgUsdPerL, 2)}${litres > 0 ? '' : '/L'}</b></span>` : ''}
+            ${coTank.avgUsdPerL > 0 && !isLubricant ? `<span title="${coTank.balance > 0 ? `Average cost of remaining diesel in tank (${fmtUSD(coTank.avgUsdPerL, 2)}/L · ${fmtUSD(coTank.remValueUsd || (coTank.balance * coTank.avgUsdPerL), 0)} across ${fmtNum(coTank.balance, 0)} L remaining)` : `Latest bulk diesel refill average (${fmtUSD(coTank.avgUsdPerL, 2)}/L)`}"><small>Est. Cost (${fmtUSD(coTank.avgUsdPerL, 2)}/L)</small><b>${fmtUSD(litres > 0 ? litres * coTank.avgUsdPerL : coTank.avgUsdPerL, 2)}${litres > 0 ? '' : '/L'}</b></span>` : ''}
             ${refLastFill ? `<span><small>Last Refuel</small><b>${fmtNum(refLastFill.litres || 0, 0)} L on ${esc(String(refLastFill.date || '').slice(0, 10))}</b></span>` : ''}
             ${delta != null && delta >= 0 ? `<span><small>Interval</small><b>+${fmtNum(delta, type === 'hours' && delta % 1 !== 0 ? 1 : 0)} ${type === 'hours' ? 'h' : 'km'}</b></span>` : ''}
           </div>
