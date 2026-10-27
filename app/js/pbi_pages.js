@@ -28,6 +28,19 @@
     return String(v == null ? '' : v).trim().toLowerCase();
   }
 
+  function isArSettlingRecpt(r) {
+    if (!r || r.voided) return false;
+    const mth = String(r.method || '').trim();
+    return !(mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Cash Return' || mth === 'Cash Discount' || mth === 'IVA' || mth === 'RentConfig' || mth === 'Rent' || mth === 'VATRent');
+  }
+
+  function saleTicketSign(s) {
+    const mth = String((s && s.method) || '').trim();
+    if (mth === 'C Return' || mth === 'CR Return' || mth === 'Cash Return' || mth === 'Credit Return') return -1;
+    if (mth === 'Free' || mth === 'Remove' || mth === 'Config' || mth === 'VATConfig') return 0;
+    return 1;
+  }
+
   const _NON_AGG_PROD_RE = /\b(truck|shacman|mixer|pump|excavator|excavation|loader|bulldozer|diesel|oil|grease|benzin|gasoline|mazout|fuel|atf|hydraulic|rent|rental|transportation|commission|discount|vat|insurance|tire|tyre|wheel|battery|filter|hammer|salary|salaries|spare\s*part|service|remove|tip|tips|iron|ghirbal|electricity)\b/i;
 
   function pickTopAggregateGrades(prodRows, limit = 4, productsCatalog = null) {
@@ -1327,7 +1340,7 @@
     { key: 'sales_tickets', group: '1 · Sales, Pricing & Receivables', label: 'Sales Tickets', dvn: 'bhf_salesticket', form: 'sales', cols: ['date', 'rep_date', 'ticket_no', 'company', 'sale_type', 'customer', 'product', 'site', 'truck', 'driver', 'qty', 'uom', 'unit_price', 'price', 'trans_price', 'vat', 'total_ttc', 'method'], relTables: ['customers', 'price_rules', 'products', 'sites', 'equipment', 'drivers', 'receipts', 'vat_invoices'], views: [{ id: 'all', label: 'All Sales Tickets' }, { id: 'delivery', label: 'Delivery Loads', fn: r => /deliv/i.test(r.sale_type) }, { id: 'pickup', label: 'Pick-up (Material Only)', fn: r => /pick/i.test(r.sale_type) }, { id: 'credit', label: 'Credit / Account', fn: r => !/cash/i.test(r.method) }, { id: 'iva', label: 'IVA / VAT 11%', fn: r => r.iva || Number(r.vat || 0) > 0 }] },
     { key: 'receipts', group: '1 · Sales, Pricing & Receivables', label: 'Customer Receipts (AR)', dvn: 'bhf_mfgcustomerreceipt', form: 'receipt', cols: ['date', 'rep_date', 'name', 'company', 'customer', 'method', 'kind', 'amount', 'discount', 'vat_invoice', 'record_ticket', 'reference', 'notes'], relTables: ['customers', 'sales_tickets', 'vat_invoices', 'credit_terms'], views: [{ id: 'all', label: 'All Customer Receipts' }, { id: 'cash', label: 'Cash / Check', fn: r => /cash|check|cheque/i.test(r.method || '') }, { id: 'disc', label: 'With Discount / Rebate', fn: r => Number(r.discount || 0) > 0 }] },
     { key: 'vat_invoices', group: '1 · Sales, Pricing & Receivables', label: 'VAT 11% Tax Invoices', dvn: 'bhf_vatinvoice', form: 'vatinvoice', cols: ['invoice_no', 'date', 'company', 'customer', 'start_date', 'end_date', 'net_amount', 'vat_amount', 'total_ttc', 'tickets_count', 'notes'], relTables: ['customers', 'sales_tickets', 'receipts'], views: [{ id: 'all', label: 'All VAT Invoices' }] },
-    { key: 'price_rules', group: '1 · Sales, Pricing & Receivables', label: 'Price & Commission Agreements', dvn: 'bhf_pricerule', form: 'pricerule', cols: ['company', 'rule_type', 'customer', 'supplier', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'total1', 'qty2', 'adj2', 'total2', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'], relTables: ['customers', 'suppliers', 'products', 'sites', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Price Agreements' }, { id: 'active', label: 'Active Agreements', fn: r => !r.end_date }, { id: 'sales', label: 'Customer Sales Rules', fn: r => /sale|pickup|deliv/i.test(r.rule_type || '') && !/^commission$/i.test(r.rule_type || '') }, { id: 'transport', label: 'Transport & Raw Rules', fn: r => /trans|raw|purch/i.test(r.rule_type || '') }, { id: 'list', label: 'List Prices', fn: r => /list/i.test(r.rule_type || '') }, { id: 'commission', label: 'Commission Rules', fn: r => /^commission$/i.test(r.rule_type || ''), cols: ['company', 'supplier', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }] },
+    { key: 'price_rules', group: '1 · Sales, Pricing & Receivables', label: 'Price & Commission Agreements', dvn: 'bhf_pricerule', form: 'pricerule', cols: ['company', 'rule_type', 'customer', 'supplier', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'total1', 'qty2', 'adj2', 'total2', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'], relTables: ['customers', 'suppliers', 'products', 'sites', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'Sales & Commission Agreements', fn: r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '') }, { id: 'active', label: 'Active Sales Agreements', fn: r => !r.end_date && !/^(Purchase Price \(Site\)|Transport Price \(Site\)|Commission)$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'sales', label: 'Customer Delivery & Pickup', fn: r => /sale|pickup|deliv/i.test(r.rule_type || '') && !/^commission$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'list', label: 'List Prices', fn: r => /list/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'commission', label: 'Commission Rules', fn: r => /^commission$/i.test(r.rule_type || ''), cols: ['company', 'supplier', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_all', label: 'Raw & Site Haulage Agreements', fn: r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_purch', label: 'Site Material Cost Rules', fn: r => r.rule_type === 'Purchase Price (Site)', cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_haul', label: 'Site Haulage Rate Rules', fn: r => r.rule_type === 'Transport Price (Site)', cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'trans_unit_price', 'indiff_price', 'start_date', 'end_date', 'matched_tickets'] }] },
     { key: 'credit_terms', group: '1 · Sales, Pricing & Receivables', label: 'Customer Credit Terms', dvn: 'bhf_creditterm', form: 'creditterm', cols: ['name', 'company', 'customer', 'credit_days', 'credit_limit', 'ar_balance', 'start_date', 'end_date', 'notes'], relTables: ['customers', 'sales_tickets', 'receipts'], views: [{ id: 'all', label: 'All Credit Terms' }, { id: 'active', label: 'Active Policies', fn: r => !r.end_date }] },
     { key: 'customers', group: '1 · Sales, Pricing & Receivables', universal: true, navView: 'reg_customers', label: 'Customers Registry', dvn: 'bhf_customer', form: 'customer', cols: ['name', 'method', 'vat_registered', 'mof_no', 'phone', 'address', 'credit_days', 'credit_limit', 'active_rules', 'sales_loads', 'ar_balance'], relTables: ['sales_tickets', 'receipts', 'price_rules', 'credit_terms', 'vat_invoices'], views: [{ id: 'all', label: 'All Customers' }, { id: 'open_ar', label: 'Open AR Balance > $0', fn: (r, rel) => ((rel.custByName[norm(r.name)] || {}).ar_balance || 0) > 1 }, { id: 'vat', label: 'VAT Registered (MOF)', fn: r => Boolean(r.vat_registered || r.mof_no) }] },
     { key: 'products', group: '1 · Sales, Pricing & Receivables', universal: true, navView: 'reg_products', label: 'Products & Grades', dvn: 'bhf_product', form: 'product', cols: ['name', 'type', 'uom', 'ton_factor', 'list_price', 'ticket_product', 'fuel_item', 'input_product', 'active_rules', 'sales_loads', 'revenue_account'], relTables: ['sales_tickets', 'raw_purchases', 'price_rules', 'fuel_intakes', 'product_types', 'uoms'], views: [{ id: 'all', label: 'All Products & Grades' }, { id: 'agg', label: 'Ticket / Aggregate Grades', fn: r => Boolean(r.ticket_product) }, { id: 'fuel', label: 'Fuel & Lube Items', fn: r => Boolean(r.fuel_item) }] },
@@ -3210,7 +3223,7 @@
       const recDateForBasis = r => String((STATE.basis === 'rep' ? (r.rep_date || r.date) : r.date) || '').slice(0, 10);
       const isValidRecpt = r => {
         const mth = String((r && r.method) || '').trim();
-        return !(mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Config' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis');
+        return !(mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'Config' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis' || mth === 'Cash Return' || mth === 'Cash Discount' || mth === 'IVA' || mth === 'RentConfig' || mth === 'Rent' || mth === 'VATRent');
       };
       const isValidSettle = sp => {
         const mth = String((sp && sp.method) || '').trim();
@@ -3226,31 +3239,37 @@
       const buildScopedCusts = (salesPool, recPool, forceScope = false) => {
         if (!activeRange && !forceScope) {
           return (m.customers || []).map(c => {
-            const crNet = Number(c.credit_sales || 0);
-            const crTtc = round2(c['VAT Registered'] === 'Yes' ? crNet * 1.11 : crNet);
+            const crNet = round2(Number(c.credit_sales || 0));
+            const crTtc = round2(c.sales_ttc != null ? (Number(c.sales_ttc || 0) - Number(c.cash_sales || 0)) : (c['VAT Registered'] === 'Yes' ? crNet * 1.11 : crNet));
             const bal = round2(Number(c.ar_balance || 0));
-            const rcpt = round2(Number(c.receipts || 0));
+            const settled = round2(crTtc - bal);
+            const cashRcpt = round2(Number(c.receipts != null ? c.receipts : settled));
             return Object.assign({}, c, {
+              credit_sales: crNet,
               credit_sales_ttc: crTtc,
+              ar_settled: settled,
+              receipts_cash: cashRcpt,
               opening_ar: 0,
               ar_balance: bal,
-              receipts: rcpt
+              receipts: settled
             });
           });
         }
         const cMap = new Map();
         const ensureCust = name => {
           const ck = norm(name);
-          if (!cMap.has(ck)) cMap.set(ck, { displayName: name, loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, receipts: 0, last_sale: '' });
+          if (!cMap.has(ck)) cMap.set(ck, { displayName: name, loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, receipts: 0, ar_settled: 0, last_sale: '' });
           return cMap.get(ck);
         };
         salesPool.forEach(s => {
           if (!s.customer) return;
+          const sgn = saleTicketSign(s);
+          if (sgn === 0) return;
           const cur = ensureCust(s.customer);
-          const ttc = Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
-          const vat = Number(s.vat || 0);
-          const net = Number(s.total != null ? s.total : (ttc - vat));
-          cur.loads += 1;
+          const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+          const vat = sgn * Number(s.vat || 0);
+          const net = sgn * Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0)));
+          if (sgn === 1) cur.loads += 1;
           cur.sales_ttc += ttc;
           cur.net_sales += net;
           cur.sales_vat += vat;
@@ -3262,24 +3281,28 @@
           if (s.date && String(s.date) > cur.last_sale) cur.last_sale = String(s.date).slice(0, 10);
         });
         recPool.forEach(r => {
-          if (!r.customer || !isValidRecpt(r)) return;
+          if (!r.customer || !isArSettlingRecpt(r)) return;
           const cur = ensureCust(r.customer);
-          cur.receipts += Number(r.amount || 0) + Number(r.discount || 0);
+          const amt = Number(r.amount || 0) + Number(r.discount || 0);
+          cur.ar_settled += amt;
+          if (isValidRecpt(r)) cur.receipts += amt;
         });
         const postCustMap = new Map();
-        if (activeRange && activeRange.to && activeRange.to < '2026-10-25') {
+        if (activeRange && activeRange.to) {
           const allSalesCo = filterRecords(rec.sales_tickets, { ignorePeriod: true, ignoreSearch: true });
           const allRecCo = filterRecords(rec.receipts, { ignorePeriod: true, ignoreSearch: true });
           allSalesCo.forEach(s => {
             if (!s.customer || recDateForBasis(s) <= activeRange.to) return;
             if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') return;
+            const sgn = saleTicketSign(s);
+            if (sgn === 0) return;
             const ck = norm(s.customer);
             const p = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
-            p.crTtc += Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+            p.crTtc += sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
             postCustMap.set(ck, p);
           });
           allRecCo.forEach(r => {
-            if (!r.customer || !isValidRecpt(r) || recDateForBasis(r) <= activeRange.to) return;
+            if (!r.customer || !isArSettlingRecpt(r) || recDateForBasis(r) <= activeRange.to) return;
             const ck = norm(r.customer);
             const p = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
             p.rcpt += Number(r.amount || 0) + Number(r.discount || 0);
@@ -3288,12 +3311,12 @@
         }
         return (m.customers || []).map(c => {
           const ck = norm(c.Customer);
-          const st = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, receipts: 0, last_sale: '' };
+          const st = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, receipts: 0, ar_settled: 0, last_sale: '' };
           const post = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
           const crTtc = round2(st.credit_sales_ttc);
-          const rcpt = round2(st.receipts);
+          const settled = round2(st.ar_settled);
           const bal = round2(Number(c.ar_balance || 0) - post.crTtc + post.rcpt);
-          const openAr = round2(bal - crTtc + rcpt);
+          const openAr = round2(bal - crTtc + settled);
           return Object.assign({}, c, {
             loads: st.loads,
             sales_ttc: round2(st.sales_ttc),
@@ -3302,7 +3325,9 @@
             credit_sales: round2(st.credit_sales),
             credit_sales_ttc: crTtc,
             cash_sales: round2(st.cash_sales),
-            receipts: rcpt,
+            ar_settled: settled,
+            receipts_cash: round2(st.receipts),
+            receipts: settled,
             opening_ar: openAr,
             ar_balance: bal,
             last_sale: st.last_sale || c.last_sale
@@ -3374,7 +3399,7 @@
         });
 
         const postSupMap = new Map();
-        if (activeRange && activeRange.to && activeRange.to < '2026-10-25') {
+        if (activeRange && activeRange.to) {
           const allRawCo = filterRecords(rec.raw_purchases, { ignorePeriod: true, ignoreSearch: true });
           const allExpCo = filterRecords(rec.expenses, { ignorePeriod: true, ignoreSearch: true });
           const allSetCo = filterRecords(rec.settlements, { ignorePeriod: true, ignoreSearch: true });
@@ -4716,13 +4741,19 @@
         { label: 'On account', value: onAcctSigned, color: C.slate }
       ];
 
-      // Build Customer Running Statement (every ticket + receipt in chronological order with running balance)
+      // Build Customer Running Statement (every credit ticket + AR-settling receipt in chronological order with running balance)
       const stmtItems = [];
-      salesRows.filter(s => s.method === 'Credit' || sl.customer).forEach(s => {
-        stmtItems.push({ id: s.id, rkey: 'sales_tickets', date: s.date, type: 'Sale Ticket', doc: '#' + (s.ticket_no || '—'), customer: s.customer, detail: `${s.product || ''} (${fmtNum(s.qty, 1)} ${s.uom || ''})`, debit: Number(s.total_ttc || 0), credit: 0 });
+      salesRows.forEach(s => {
+        if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') return;
+        const sgn = saleTicketSign(s);
+        if (sgn === 0) return;
+        const amt = round2(Math.abs(Number(s.total_ttc != null ? s.total_ttc : s.total || 0)));
+        stmtItems.push({ id: s.id, rkey: 'sales_tickets', date: s.date, type: sgn < 0 ? 'Credit Return' : 'Sale Ticket', doc: '#' + (s.ticket_no || '—'), customer: s.customer, detail: `${s.product || ''} (${fmtNum(s.qty, 1)} ${s.uom || ''})`, debit: sgn > 0 ? amt : 0, credit: sgn < 0 ? amt : 0 });
       });
       recRows.forEach(r => {
-        stmtItems.push({ id: r.id, rkey: 'receipts', date: r.date, type: 'Receipt (' + (r.method || 'Cash') + ')', doc: r.reference || r.name || 'RCPT', customer: r.customer, detail: r.kind || 'Payment', debit: 0, credit: Number(r.amount || 0) });
+        if (!isArSettlingRecpt(r)) return;
+        const amt = round2(Number(r.amount || 0) + Number(r.discount || 0));
+        stmtItems.push({ id: r.id, rkey: 'receipts', date: r.date, type: 'Receipt (' + (r.method || 'Cash') + ')', doc: r.reference || r.name || 'RCPT', customer: r.customer, detail: r.kind || 'Payment', debit: 0, credit: amt });
       });
       stmtItems.sort((a, b) => {
         const da = String(a.date || ''), db = String(b.date || '');
@@ -4800,8 +4831,8 @@
             { label: 'On account', raw: r => Number(r.ar_balance || 0) < 0 ? Number(r.ar_balance) : (Number(r.ar_advances || 0) ? -Math.abs(Number(r.ar_advances)) : 0), r: true, negRed: true, fmt: v => v ? fmtUSD(v, 0) : '—' },
             { label: 'Limit', raw: r => (limitMap.get(norm(r.Customer)) || {}).credit_limit, r: true, fmt: v => v ? fmtUSD(v, 0) : '—' },
             { label: 'Limit used', raw: r => { const lim = Number((limitMap.get(norm(r.Customer)) || {}).credit_limit || 0); return lim > 0 ? (Number(r.ar_balance || 0) / lim) : null; }, r: true, fmt: v => v != null ? fmtPct(v) : '—' },
-            { label: 'Sales', key: 'sales_ttc', r: true, fmt: v => fmtUSD(v, 0) },
-            { label: 'Receipts', key: 'receipts', r: true, fmt: v => fmtUSD(v, 0) },
+            { label: 'Sales', raw: r => r.credit_sales_ttc != null ? r.credit_sales_ttc : r.sales_ttc, r: true, fmt: v => fmtUSD(v, 0) },
+            { label: 'Receipts', raw: r => r.ar_settled != null ? r.ar_settled : r.receipts, r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v) },
             { label: 'Last sale', key: 'last_sale', mono: true, fmt: v => esc(String(v || '—').slice(0, 10)) }
           ], arCustRows, {
@@ -4819,8 +4850,8 @@
               { v: fmtUSD(onAcctSigned, 0), r: true, neg: onAcctSigned < 0 },
               { v: fmtUSD(totalCreditLimits, 0), r: true },
               { v: '—', r: true },
-              { v: fmtUSD(sumC('sales_ttc'), 0), r: true },
-              { v: fmtUSD(sumC('receipts'), 0), r: true },
+              { v: fmtUSD(custRows.reduce((a, r) => a + Number(r.credit_sales_ttc != null ? r.credit_sales_ttc : (r.sales_ttc || 0)), 0), 0), r: true },
+              { v: fmtUSD(custRows.reduce((a, r) => a + Number(r.ar_settled != null ? r.ar_settled : (r.receipts || 0)), 0), 0), r: true },
               { v: fmtNum(sumC('loads')), r: true },
               { v: '' }
             ]
@@ -5623,91 +5654,13 @@
       const attRows = filterRecords(rec.attendance, { ignoreSearch: true }).filter(matchCommon);
       const logRows = filterRecords(rec.logistics_allowances, { ignorePeriod: true, ignoreSearch: true }).filter(matchCommon);
 
-      // Build 16-column Payroll by Staff Member table (Base, OT hrs, OT pay, Late hrs, Lateness, Absent d, Gap d, Absence, Extras, Reimb, Ded, Site Allowance, Earnings, Paid, Balance)
-      const staffMap = new Map();
-      const getSt = (name, co) => {
-        const key = norm(name || '(Unassigned)');
-        if (!staffMap.has(key)) {
-          staffMap.set(key, {
-            staff: name || '(Unassigned)', company: co || 'WTC', type: 'Regular', status: 'Current',
-            base: 0, ot_hrs: 0, ot_pay: 0, late_hrs: 0, late_ded: 0, absent_days: 0, gap_days: 0, abs_ded: 0,
-            extras: 0, reimb: 0, ded: 0, site_allow: 0, site_days: 0, site_act_days: 0, site_paid: 0, site_out: 0,
-            sites: new Set(), earnings: 0, paid: 0, balance: 0, hasContract: false
-          });
-        }
-        return staffMap.get(key);
-      };
-      empRows.forEach(e => {
-        const s = getSt(e.staff, e.company);
-        s.hasContract = true;
-        s.type = e.type || 'Staff';
-        const ended = e.status === 'Ended' || (e.end_date && String(e.end_date) < today);
-        if (!ended) s.status = 'Current';
-        else if (s.status !== 'Current') s.status = 'Ended';
-        const mSal = Number(e.salary_usd || 0) || (Number(e.daily_rate || 0) * 26);
-        if (mSal > s.month_sal || !s.month_sal) {
-          s.month_sal = mSal;
-          s.w_days = Number(e.working_days || 30) || 30;
-          s.w_hrs = Number(e.working_hours || 8) || 8;
-          s.ot_mult = Number(e.overtime_multiplier != null ? e.overtime_multiplier : 1) || 1;
-          s.lt_mult = Number(e.lateness_multiplier != null ? e.lateness_multiplier : 1) || 1;
-        }
-        s.base += mSal;
-        s.reimb = round2((s.reimb || 0) + Number(e.reimbursement || 0));
-        s.ded = round2((s.ded || 0) + Number(e.deduction || 0));
-      });
-      attRows.forEach(a => {
-        const s = getSt(a.staff, a.company);
-        const tp = String(a.type || a.status || '').trim();
-        const tal = Number(a.tally || 0);
-        const otH = tp === 'Overtime' ? tal : Number(a.overtime_hours || 0);
-        const ltH = tp === 'Lateness' ? tal : Number(a.late_hours || 0);
-        const absD = tp === 'Absence' ? (tal || 1) : (/^Absent|Unpaid/i.test(tp) ? 1 : 0);
-        s.ot_hrs = round2(s.ot_hrs + otH);
-        s.late_hrs = round2(s.late_hrs + ltH);
-        if (absD > 0) s.absent_days = round2(s.absent_days + absD);
-        if (tp === 'Extra USD') s.extras = round2(s.extras + tal);
-        else if (tp === 'Extra LBP') s.extras = round2(s.extras + (tal / 89500));
-        else if (tp === 'Config USD') s.paid = round2(s.paid + tal);
-        else if (tp === 'Config LBP') s.paid = round2(s.paid + (tal / 89500));
-        const mSal = s.month_sal || s.base || 600;
-        const wDays = s.w_days || 30;
-        const wHrs = s.w_hrs || 8;
-        const hrRate = (wDays * wHrs) > 0 ? (mSal / (wDays * wHrs)) : 2.5;
-        s.ot_pay = round2(s.ot_pay + otH * hrRate * (s.ot_mult || 1));
-        s.late_ded = round2(s.late_ded + ltH * hrRate * (s.lt_mult || 1));
-        if (absD > 0) s.abs_ded = round2(s.abs_ded + absD * (mSal / wDays));
-      });
-      logRows.forEach(l => {
-        const s = getSt(l.staff, l.company);
-        if (l.site) s.sites.add(l.site);
-        const daily = Number(l.daily_usd || l.usd_amount || 0) || (Number(l.lbp_amount || 0) / 89500);
-        const daysWk = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].filter(d => l[d]).length || 6;
-        const start = String(l.start_date || '2026-01-01');
-        const end = String(l.end_date || today);
-        const span = Math.max(1, Math.min(180, Math.round((new Date(end < today ? end : today) - new Date(start)) / 86400000) + 1));
-        const pDays = Math.max(1, Math.round(span * (daysWk / 7)));
-        const acc = round2(pDays * daily);
-        s.site_days += pDays;
-        s.site_act_days += Math.max(1, Math.round(pDays * 0.88));
-        s.site_allow += acc;
-      });
-      salRows.forEach(p => {
-        const s = getSt(p.staff, p.company);
-        s.paid += Number(p.amount || 0);
-      });
-      const staffPayrollRows = Array.from(staffMap.values()).map(s => {
-        if (s.base === 0 && s.paid > 0) s.base = s.paid;
-        s.earnings = round2(s.base + s.ot_pay + s.extras + s.reimb + s.site_allow - s.late_ded - s.abs_ded - s.ded);
-        s.balance = round2(s.earnings - s.paid);
-        // FIFO site allowance paid vs outstanding (m247)
-        s.site_paid = round2(Math.min(s.site_allow, Math.max(0, s.paid - s.base * 0.7)));
-        s.site_out = round2(s.site_allow - s.site_paid);
-        s.sitesStr = Array.from(s.sites).join(', ') || 'Main Plant';
-        return s;
-      }).sort((a, b) => b.earnings - a.earnings || b.paid - a.paid);
+      // Build 17-column Payroll by Staff Member table via Staff × Month accrual engine (m246 / m247 / m252 + Driver Trip OT)
+      const regData = (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function')
+        ? window.__mfgComputeStaffPayrollRegister({ empRows, salRows, attRows, logRows, matchFn: matchCommon, activeRange })
+        : { staffRows: [], payMonths: [] };
+      const staffPayrollRows = (regData.staffRows || []).slice().sort((a, b) => b.earnings - a.earnings || b.paid - a.paid);
 
-      const siteStaffRows = staffPayrollRows.filter(s => s.site_days > 0 || s.site_allow > 0).sort((a, b) => b.site_allow - a.site_allow || b.earnings - a.earnings);
+      const siteStaffRows = staffPayrollRows.filter(s => s.site_days_counted > 0 || s.site_days > 0 || s.site_allow > 0).sort((a, b) => b.site_allow - a.site_allow || b.earnings - a.earnings);
       logRows.sort((a, b) => Number(b.daily_usd || b.usd_amount || 0) - Number(a.daily_usd || a.usd_amount || 0) || String(b.start_date || '').localeCompare(String(a.start_date || '')));
       const freelanceContractStaff = empRows.filter(e => /Freelance|Daily/i.test(String(e.type || ''))).sort((a, b) => Number(b.daily_rate || b.salary_usd || 0) - Number(a.daily_rate || a.salary_usd || 0));
       const unmatchedSal = (prSn.unmatched_salary_by_staff || []).filter(matchCommon);
@@ -5716,34 +5669,44 @@
       const totOtPay = staffPayrollRows.reduce((a, r) => a + r.ot_pay, 0) || Number(k.overtime_bonus || 0);
       const totOtHrs = staffPayrollRows.reduce((a, r) => a + r.ot_hrs, 0);
       const totLateHrs = staffPayrollRows.reduce((a, r) => a + r.late_hrs, 0);
+      const totLateDed = staffPayrollRows.reduce((a, r) => a + r.late_ded, 0);
+      const totRecAbsDays = staffPayrollRows.reduce((a, r) => a + (r.rec_absent_days != null ? r.rec_absent_days : r.absent_days), 0);
+      const totGapDays = staffPayrollRows.reduce((a, r) => a + (r.gap_days || 0), 0);
       const totAbsDays = staffPayrollRows.reduce((a, r) => a + r.absent_days, 0);
+      const totAbsDed = staffPayrollRows.reduce((a, r) => a + r.abs_ded, 0);
+      const totExtras = staffPayrollRows.reduce((a, r) => a + r.extras, 0);
+      const totReimb = staffPayrollRows.reduce((a, r) => a + r.reimb, 0);
+      const totDed = staffPayrollRows.reduce((a, r) => a + r.ded, 0);
       const totSiteAcc = staffPayrollRows.reduce((a, r) => a + r.site_allow, 0);
       const totSitePaid = staffPayrollRows.reduce((a, r) => a + r.site_paid, 0);
       const totSiteOut = round2(totSiteAcc - totSitePaid);
       const totSiteDays = staffPayrollRows.reduce((a, r) => a + r.site_days, 0);
       const totSiteAct = staffPayrollRows.reduce((a, r) => a + r.site_act_days, 0);
       const totEarn = staffPayrollRows.reduce((a, r) => a + r.earnings, 0);
-      const totPaid = Number(k.salaries_paid || staffPayrollRows.reduce((a, r) => a + r.paid, 0));
-      const totBal = round2(totEarn - staffPayrollRows.reduce((a, r) => a + r.paid, 0));
-      const sickDays = attRows.filter(a => /Sick/i.test(String(a.status || '') || String(a.name || ''))).length;
+      const totStaffPaid = staffPayrollRows.reduce((a, r) => a + r.paid, 0);
+      const totPaid = Number(k.salaries_paid || totStaffPaid);
+      const totBal = round2(totEarn - totStaffPaid);
+      const sickDays = staffPayrollRows.reduce((a, r) => a + (r.sick_days || 0), 0);
       const staffCostPct = Number(k.net_sales || 0) > 0 ? (totPaid / Number(k.net_sales)) : 0;
 
       // Monthly payroll & site allowance series
-      const payMonths = months.map((mRow, idx) => {
-        const paidM = Number(mRow.salaries || 0);
-        const earnM = round2(paidM * 1.04 + Number(mRow.overtime_due || 0));
-        const saAcc = round2(totSiteAcc / Math.max(1, months.length) * (0.85 + (idx % 3) * 0.12));
-        const saPaid = round2(saAcc * 0.82);
-        return {
-          'Year Month': mRow['Year Month'],
-          earnings_m: earnM,
-          paid_m: paidM,
-          ot_hrs_m: Math.round((Number(mRow.overtime_due || 0) / 7) * 2.5),
-          late_hrs_m: (idx % 4) * 2,
-          sa_accrued: saAcc,
-          sa_paid: saPaid
-        };
-      });
+      const payMonths = (regData.payMonths && regData.payMonths.length)
+        ? regData.payMonths
+        : months.map((mRow, idx) => {
+            const paidM = Number(mRow.salaries || 0);
+            const earnM = round2(paidM * 1.04 + Number(mRow.overtime_due || 0));
+            const saAcc = round2(totSiteAcc / Math.max(1, months.length) * (0.85 + (idx % 3) * 0.12));
+            const saPaid = round2(saAcc * 0.82);
+            return {
+              'Year Month': mRow['Year Month'],
+              earnings_m: earnM,
+              paid_m: paidM,
+              ot_hrs_m: Math.round((Number(mRow.overtime_due || 0) / 7) * 2.5),
+              late_hrs_m: (idx % 4) * 2,
+              sa_accrued: saAcc,
+              sa_paid: saPaid
+            };
+          });
 
       bodyHtml = `
         ${pbiHeading('Staff payroll & attendance', 'Monthly salary accruals, attendance days, deductions, bonuses, and net balance by employee')}
@@ -5811,7 +5774,7 @@
             { label: 'OT pay', key: 'ot_pay', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Late hrs', key: 'late_hrs', r: true, fmt: v => fmtNum(v, 1) },
             { label: 'Lateness', key: 'late_ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '—' },
-            { label: 'Absent days', key: 'absent_days', r: true, fmt: v => fmtNum(v, 0) },
+            { label: 'Absent days', key: 'rec_absent_days', r: true, fmt: v => fmtNum(v, 0) },
             { label: 'Gap days', key: 'gap_days', r: true, fmt: v => fmtNum(v, 0) },
             { label: 'Absence', key: 'abs_ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '—' },
             { label: 'Extras', key: 'extras', r: true, fmt: v => v ? fmtUSD(v, 0) : '—' },
@@ -5831,16 +5794,16 @@
               { v: fmtNum(totOtHrs, 1), r: true },
               { v: fmtUSD(totOtPay, 0), r: true },
               { v: fmtNum(totLateHrs, 1), r: true },
-              { v: '—', r: true },
-              { v: fmtNum(totAbsDays, 0), r: true },
-              { v: '0', r: true },
-              { v: '—', r: true },
-              { v: '—', r: true },
-              { v: '—', r: true },
-              { v: '—', r: true },
+              { v: totLateDed ? fmtUSD(totLateDed, 0) : '—', r: true },
+              { v: fmtNum(totRecAbsDays, 0), r: true },
+              { v: fmtNum(totGapDays, 0), r: true },
+              { v: totAbsDed ? fmtUSD(totAbsDed, 0) : '—', r: true },
+              { v: totExtras ? fmtUSD(totExtras, 0) : '—', r: true },
+              { v: totReimb ? fmtUSD(totReimb, 0) : '—', r: true },
+              { v: totDed ? fmtUSD(totDed, 0) : '—', r: true },
               { v: fmtUSD(totSiteAcc, 0), r: true },
               { v: fmtUSD(totEarn, 0), r: true },
-              { v: fmtUSD(staffPayrollRows.reduce((a, r) => a + r.paid, 0), 0), r: true },
+              { v: fmtUSD(totStaffPaid, 0), r: true },
               { v: fmtUSD(totBal, 0), r: true, neg: totBal < 0 }
             ]
           })}
@@ -5886,8 +5849,8 @@
           ${pbiTable('Site allowance by staff member — days, accrued, paid, outstanding', [
             { label: 'Staff', key: 'staff', bold: true },
             { label: 'Sites', key: 'sitesStr' },
-            { label: 'Days counted', key: 'site_days', r: true, fmt: v => fmtNum(v, 0) },
-            { label: 'Absent days', key: 'absent_days', r: true, fmt: v => fmtNum(v, 0) },
+            { label: 'Days counted', key: 'site_days_counted', r: true, fmt: v => fmtNum(v, 0) },
+            { label: 'Absent days', key: 'rec_absent_days', r: true, fmt: v => fmtNum(v, 0) },
             { label: 'Days paid for', key: 'site_days', r: true, fmt: v => fmtNum(v, 0) },
             { label: 'Days with activity', key: 'site_act_days', r: true, fmt: v => fmtNum(v, 0) },
             { label: 'Accrued ($)', key: 'site_allow', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
@@ -7576,8 +7539,18 @@
             <div class="chip-bar">
               ${tablePool.filter(t => t.group === g).map(t => {
                 const tUniv = Boolean(t.universal);
-                const cnt = filterRecords((SEED.records && SEED.records[t.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: tUniv, ignoreRls: tUniv }).length;
-                return `<button type="button" class="filter-chip ${t.key === meta.key ? 'active' : ''}" data-table-key="${esc(t.key)}">${esc(t.label)} <span class="mono" style="opacity:.75">(${fmtNum(cnt)})</span>${tUniv ? '<span class="tbl-univ-tag">All BUs</span>' : ''}</button>`;
+                const tRows = filterRecords((SEED.records && SEED.records[t.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: tUniv, ignoreRls: tUniv });
+                const cnt = t.key === 'price_rules'
+                  ? tRows.filter(r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '')).length
+                  : tRows.length;
+                const isChipAct = t.key === meta.key && !(t.key === 'price_rules' && /^raw_/i.test(activeView.id));
+                const mainChip = `<button type="button" class="filter-chip ${isChipAct ? 'active' : ''}" data-table-key="${esc(t.key)}">${esc(t.label)} <span class="mono" style="opacity:.75">(${fmtNum(cnt)})</span>${tUniv ? '<span class="tbl-univ-tag">All BUs</span>' : ''}</button>`;
+                if (t.key === 'settlements' && (!ctx.canAccessTable || ctx.canAccessTable('price_rules'))) {
+                  const rawPrCnt = filterRecords((SEED.records && SEED.records.price_rules) || [], { ignorePeriod: true, ignoreSearch: true }).filter(r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '')).length;
+                  const isRawPrAct = meta.key === 'price_rules' && /^raw_/i.test(activeView.id);
+                  return mainChip + `<button type="button" class="filter-chip ${isRawPrAct ? 'active' : ''}" data-tbl-key="price_rules" data-tbl-view="raw_all" title="Raw Material &amp; Site Haulage Price Agreements">Raw &amp; Haulage Agreements <span class="mono" style="opacity:.75">(${fmtNum(rawPrCnt)})</span></button>`;
+                }
+                return mainChip;
               }).join('')}
             </div>
           </div>
@@ -7612,7 +7585,15 @@
           </div>
           <div style="display:flex;gap:6px">
             ${exportBtn('tablesHubPanel', meta.key)}
-            ${canEnterForm(meta.form) ? `<button type="button" class="btn btn-primary" data-open-modal="${esc(meta.form)}">+ New ${esc(meta.label.replace(/ies$/, 'y').replace(/s$/, ''))}</button>` : ''}
+            ${(() => {
+              const modalFormId = meta.key === 'price_rules'
+                ? (/^raw_/i.test(activeView.id) ? 'pricerule_raw' : (activeView.id === 'commission' ? 'pricerule_comm' : 'pricerule'))
+                : meta.form;
+              const modalBtnLbl = meta.key === 'price_rules'
+                ? (/^raw_/i.test(activeView.id) ? 'Raw & Haulage Agreement' : (activeView.id === 'commission' ? 'Commission Rule' : 'Sales Price Agreement'))
+                : meta.label.replace(/ies$/, 'y').replace(/s$/, '');
+              return canEnterForm(modalFormId) ? `<button type="button" class="btn btn-primary" data-open-modal="${esc(modalFormId)}">+ New ${esc(modalBtnLbl)}</button>` : '';
+            })()}
           </div>
         </div>
         ${typeof ctx.renderColFilterBar === 'function' ? ctx.renderColFilterBar('tbl_' + meta.key, activeCols) : ''}

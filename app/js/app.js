@@ -158,6 +158,9 @@
     pbiPageSize: 15,
     activeTableKey: 'sales_tickets',
     modalForm: 'sales',
+    dieselTankMode: 'monthly',
+    dieselTankChip: 'all',
+    dieselTankFocusYm: '',
     activeKiosk: 'sales',
     kioskFuelSubmode: 'dispense',
     kioskLocked: false,
@@ -1077,6 +1080,7 @@
     if (m === 'Free' || m === 'Remove' || m === 'Config' || m === 'VATConfig') return 0;
     return 1;
   }
+  const saleTicketSign = ticketSign;
 
   // m18a EXP_BASE: Expense = +1 (Cash/Credit/Barter), Return = -1 (C Return/CR Return), VAT = +1 (IVA/VAT/VAT Dis/Cash VAT Dis), Excluded = 0
   function expenseKind(x) {
@@ -1095,6 +1099,29 @@
   function isCreditExpense(x) {
     const m = String((x && x.method) || '').trim();
     return m === 'Credit' || m === 'Barter' || m === 'CR Return' || m === 'IVA' || m === 'VAT' || m === 'VAT Dis';
+  }
+  function isBulkDieselExpense(x) {
+    if (!x || x.voided) return false;
+    const sub = String(x.subcategory || '').trim();
+    const cat = String(x.category || '').trim();
+    return /^fuel$/i.test(cat) && (!sub || /^diesel$|^mazout$/i.test(sub)) && Number(x.qty || 0) > 0;
+  }
+  function isDieselTankRefillIntake(f) {
+    if (!f || f.voided) return false;
+    const isDiesel = /diesel|mazout/i.test(String(f.item || f.fuel_type || 'Diesel'));
+    return isDiesel && /refill|purchase|intake|tank/i.test(String(f.fuel_type || f.location || '')) && !String(f.equipment || '').trim() && Number(f.litres || 0) > 0;
+  }
+  function isDieselDispenseIntake(f) {
+    if (!f || f.voided) return false;
+    const isDiesel = /diesel|mazout/i.test(String(f.item || f.fuel_type || 'Diesel'));
+    return isDiesel && !isDieselTankRefillIntake(f) && Number(f.litres || 0) !== 0;
+  }
+  function isDieselSaleTicket(s) {
+    if (!s || s.voided || ticketSign(s) === 0) return false;
+    return /^diesel(\s*trans)?$|^mazout$/i.test(String(s.product || '').trim()) && Number(s.qty || 0) !== 0;
+  }
+  function isPendingPriceExpense(x) {
+    return Boolean(x && !x.voided && x.price_pending);
   }
 
   // m18a RECEIPTS_BASE & SETTLE_BASE
@@ -1116,6 +1143,11 @@
     if (m === 'Commission') return 'Commission paid';
     if (m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return 'Rent & Barter';
     return 'Payment';
+  }
+  function isArSettlingReceipt(r) {
+    if (!r || r.voided) return false;
+    const m = String(r.method || '').trim();
+    return !(m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'IVA' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent');
   }
 
   function saveFilterState() {
@@ -1250,7 +1282,7 @@
     let loads = 0, delivery_loads = 0, pickup_loads = 0, unregistered_loads = 0;
     let sales_ttc = 0, sales_vat = 0, net_sales = 0, gross_sales = 0, trans_rev = 0, qty_sold = 0, tons_sold = 0;
     let agg_qty_sold = 0, agg_sales_net = 0, agg_sales_ttc = 0;
-    let cash_sales = 0, credit_sales = 0, sales_haulage_credit = 0, commission_due_calc = 0;
+    let cash_sales = 0, credit_sales = 0, sales_haulage_credit = 0, commission_due_calc = 0, diesel_sold = 0;
     sales.forEach(s => {
       const sgn = ticketSign(s);
       if (sgn === 1) {
@@ -1259,6 +1291,9 @@
         else if (s.sale_type === 'Delivery') delivery_loads += 1;
         else unregistered_loads += 1;
         commission_due_calc += ticketCommissionUsd(s);
+      }
+      if (sgn !== 0 && /^diesel(\s*trans)?$|^mazout$/i.test(String(s.product || '').trim())) {
+        diesel_sold += Number(s.qty || 0) * sgn;
       }
       const ttc = Number(s.total_ttc != null ? s.total_ttc : s.total || 0) * sgn;
       const vat = Number(s.vat || 0) * sgn;
@@ -1719,14 +1754,31 @@
     const m = mOverride || getModel();
     const mdlCusts = m.customers || [];
     const range = periodRange(STATE.period);
-    if (!range) return mdlCusts;
+    if (!range) {
+      return mdlCusts.map(c => {
+        const crNet = round2(Number(c.credit_sales || 0));
+        const crTtc = round2(c.sales_ttc != null ? (Number(c.sales_ttc || 0) - Number(c.cash_sales || 0)) : (c['VAT Registered'] === 'Yes' ? crNet * 1.11 : crNet));
+        const bal = round2(Number(c.ar_balance || 0));
+        const settled = round2(crTtc - bal);
+        const cashRcpt = round2(Number(c.receipts != null ? c.receipts : settled));
+        return Object.assign({}, c, {
+          credit_sales: crNet,
+          credit_sales_ttc: crTtc,
+          ar_settled: settled,
+          receipts_cash: cashRcpt,
+          receipts: settled,
+          opening_ar: 0,
+          ar_balance: bal
+        });
+      });
+    }
     const salesPool = filterRecords(SEED.records.sales_tickets, { ignoreSearch: true });
     const recPool = filterRecords(SEED.records.receipts, { ignoreSearch: true });
     const cMap = new Map();
     salesPool.forEach(s => {
       const ck = norm(s.customer);
       if (!ck) return;
-      const cur = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, cash_sales: 0, receipts: 0, last_sale: '' };
+      const cur = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, receipts: 0, ar_settled: 0, last_sale: '' };
       const sgn = ticketSign(s);
       const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
       const vat = sgn * Number(s.vat || 0);
@@ -1736,27 +1788,66 @@
       cur.net_sales += net;
       cur.sales_vat += vat;
       if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') cur.cash_sales += net;
-      else cur.credit_sales += net;
+      else {
+        cur.credit_sales += net;
+        cur.credit_sales_ttc += ttc;
+      }
       if (s.date && String(s.date) > cur.last_sale) cur.last_sale = String(s.date).slice(0, 10);
       cMap.set(ck, cur);
     });
     recPool.forEach(r => {
       const ck = norm(r.customer);
-      if (!ck || receiptKind(r) === 'Excluded' || receiptKind(r) === 'VAT received') return;
-      const cur = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, cash_sales: 0, receipts: 0, last_sale: '' };
-      cur.receipts += Number(r.amount || 0) + Number(r.discount || 0);
+      if (!ck || !isArSettlingReceipt(r)) return;
+      const cur = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, receipts: 0, ar_settled: 0, last_sale: '' };
+      const amt = Number(r.amount || 0) + Number(r.discount || 0);
+      cur.ar_settled += amt;
+      if (receiptKind(r) !== 'Excluded' && receiptKind(r) !== 'VAT received') cur.receipts += amt;
       cMap.set(ck, cur);
     });
+    const postCustMap = new Map();
+    if (range.to) {
+      const recDate = r => String((STATE.basis === 'rep' ? (r.rep_date || r.date) : r.date) || '').slice(0, 10);
+      const allSalesCo = filterRecords(SEED.records.sales_tickets, { ignorePeriod: true, ignoreSearch: true });
+      const allRecCo = filterRecords(SEED.records.receipts, { ignorePeriod: true, ignoreSearch: true });
+      allSalesCo.forEach(s => {
+        if (!s.customer || recDate(s) <= range.to) return;
+        if (s.method === 'Cash' || s.method === 'C Return' || s.method === 'Cash Return') return;
+        const sgn = ticketSign(s);
+        if (sgn === 0) return;
+        const ck = norm(s.customer);
+        const p = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
+        p.crTtc += sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+        postCustMap.set(ck, p);
+      });
+      allRecCo.forEach(r => {
+        if (!r.customer || !isArSettlingReceipt(r) || recDate(r) <= range.to) return;
+        const ck = norm(r.customer);
+        const p = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
+        p.rcpt += Number(r.amount || 0) + Number(r.discount || 0);
+        postCustMap.set(ck, p);
+      });
+    }
     return mdlCusts.map(c => {
-      const st = cMap.get(norm(c.Customer)) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, cash_sales: 0, receipts: 0, last_sale: '' };
+      const ck = norm(c.Customer);
+      const st = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, receipts: 0, ar_settled: 0, last_sale: '' };
+      const post = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
+      const crTtc = round2(st.credit_sales_ttc);
+      const settled = round2(st.ar_settled);
+      const bal = round2(Number(c.ar_balance || 0) - post.crTtc + post.rcpt);
+      const openAr = round2(bal - crTtc + settled);
       return Object.assign({}, c, {
         loads: st.loads,
         sales_ttc: round2(st.sales_ttc),
         net_sales: round2(st.net_sales),
         sales_vat: round2(st.sales_vat),
         credit_sales: round2(st.credit_sales),
+        credit_sales_ttc: crTtc,
         cash_sales: round2(st.cash_sales),
-        receipts: round2(st.receipts),
+        ar_settled: settled,
+        receipts_cash: round2(st.receipts),
+        receipts: settled,
+        opening_ar: openAr,
+        ar_balance: bal,
         last_sale: st.last_sale || c.last_sale
       });
     });
@@ -1835,7 +1926,7 @@
     });
 
     const postSupMap = new Map();
-    if (range.to && range.to < '2026-10-25') {
+    if (range.to) {
       const recDate = r => String((STATE.basis === 'rep' ? (r.rep_date || r.date) : r.date) || '').slice(0, 10);
       const allRawCo = filterRecords(SEED.records.raw_purchases, { ignorePeriod: true, ignoreSearch: true });
       const allExpCo = filterRecords(SEED.records.expenses, { ignorePeriod: true, ignoreSearch: true });
@@ -4419,7 +4510,8 @@
   }
 
   function canEnterForm(form, u) {
-    if (form === 'pricerule_raw' || form === 'pricerule_haul') form = 'pricerule';
+    const isRawPriceForm = form === 'pricerule_raw' || form === 'pricerule_haul';
+    if (isRawPriceForm || form === 'pricerule_comm') form = 'pricerule';
     u = u || activeUser();
     const role = String(u.role || '').trim();
     if (/^Custom/i.test(role)) {
@@ -4435,6 +4527,7 @@
     if (/Supervisor\s*\+\s*Entry/i.test(role)) return true;
     if (/^Supervisor$/i.test(role)) return false; // Supervisor = strictly read-only oversight
     if (/Sales/i.test(role)) {
+      if (isRawPriceForm) return false;
       return ['sales', 'receipt', 'pricerule', 'vatinvoice', 'creditterm', 'customer', 'site'].includes(form);
     }
     if (/Entry/i.test(role)) {
@@ -5430,16 +5523,20 @@
     if (!n) return null;
     const fIdx = getFreqIndex();
     if (!fIdx._custInfoMap) fIdx._custInfoMap = new Map();
-    if (fIdx._custInfoMap.has(n)) return fIdx._custInfoMap.get(n);
+    const cacheKey = `${STATE.company || 'all'}|${n}`;
+    if (fIdx._custInfoMap.has(cacheKey)) return fIdx._custInfoMap.get(cacheKey);
     ensureCustFlagSets();
     const dvn = (SEED.records.customers || []).find(x => norm(x.name) === n) || null;
     let mdl = null;
-    for (const m of Object.values(SEED.models)) {
+    const activeMdl = getModel();
+    const orderedModels = [activeMdl, ...Object.values(SEED.models || {}).filter(x => x !== activeMdl)];
+    for (const m of orderedModels) {
+      if (!m) continue;
       const c = (m.customers || []).find(x => norm(x.Customer) === n);
       if (c) { mdl = c; break; }
     }
     if (!dvn && !mdl) {
-      fIdx._custInfoMap.set(n, null);
+      fIdx._custInfoMap.set(cacheKey, null);
       return null;
     }
     const hasDvnVat = dvn && typeof dvn.vat_registered === 'boolean';
@@ -5459,7 +5556,7 @@
       ar_balance: mdl ? Number(mdl.ar_balance || 0) : null,
       in_ar_book: !!mdl
     });
-    fIdx._custInfoMap.set(n, res);
+    fIdx._custInfoMap.set(cacheKey, res);
     return res;
   }
   function supplierInfo(name) {
@@ -6038,6 +6135,50 @@
     const s = supplierInfo(supplier);
     return s && s.in_ap_book ? Number(s.ap_balance || 0) : null;
   }
+  function computeDieselTank() {
+    const snByModel = ((SEED.sentinels || {}).fleet_fuel_overtime_auditor || {}).by_model || {};
+    const byCo = {};
+    ['WTC', 'BBConstruction', 'Lions Transport'].forEach(co => {
+      const coKey = co === 'BBConstruction' ? 'bbconstruction' : (co === 'Lions Transport' ? 'lionstransport' : 'wtc');
+      const sn = snByModel[co] || {};
+      const mdl = (SEED.models && SEED.models[coKey]) || {};
+      const allKpi = (mdl.periods && mdl.periods.all) || {};
+      let bought = sn.diesel_purchased_l != null ? Number(sn.diesel_purchased_l) : Number(allKpi.diesel_purchased || 0);
+      let issued = sn.diesel_issued_l != null ? Number(sn.diesel_issued_l) : Number(allKpi.diesel_litres || 0);
+      let sold = Number(allKpi.diesel_sold || 0);
+      let pricedLitres = 0, pricedUsd = 0, pendingCount = 0, pendingLitres = 0;
+      ((SEED.records && SEED.records.expenses) || []).forEach(e => {
+        if (!e || e.voided || e.company !== co || !isBulkDieselExpense(e)) return;
+        const q = Number(e.qty || 0);
+        const amt = Number(e.amount || 0);
+        if (isAppRecord(e) && q > 0) bought += q;
+        if (isPendingPriceExpense(e)) {
+          pendingCount += 1;
+          pendingLitres += q;
+        } else if (q > 0 && amt > 0) {
+          pricedLitres += q;
+          pricedUsd += amt;
+        }
+      });
+      ((SEED.records && SEED.records.fuel_intakes) || []).forEach(f => {
+        if (!f || f.voided || !isAppRecord(f) || f.company !== co) return;
+        if (!/diesel|mazout/i.test(String(f.item || f.fuel_type || 'Diesel'))) return;
+        const l = Number(f.litres || 0);
+        if (/refill|purchase|intake|tank/i.test(String(f.fuel_type || f.location || '')) && !f.equipment) bought += l;
+        else issued += l;
+      });
+      ((SEED.records && SEED.records.sales_tickets) || []).forEach(t => {
+        if (!t || t.voided || !isAppRecord(t) || t.company !== co) return;
+        if (['diesel', 'diesel trans'].includes(String(t.product || '').toLowerCase())) {
+          sold += Number(t.qty || 0);
+        }
+      });
+      const balance = round2(bought - issued - sold);
+      const avgUsdPerL = pricedLitres > 0 ? round2(pricedUsd / pricedLitres) : 0.85;
+      byCo[co] = { bought: round2(bought), issued: round2(issued), sold: round2(sold), balance, avgUsdPerL, pendingCount, pendingLitres: round2(pendingLitres) };
+    });
+    return { byCo };
+  }
 
   function isOvertimeTime(hhmm) {
     const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm || ''));
@@ -6571,7 +6712,7 @@
       };
     }
 
-    const cacheKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${salesArr.length}|${(SEED.records.raw_purchases || []).length}|${(SEED.records.fuel_intakes || []).length}|${(SEED.records.salaries || []).length}|${(SEED.records.employments || []).length}|${(SEED.records.price_rules || []).length}|${(SEED.records.vat_invoices || []).length}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${allowedCompanyNames().join(',')}`;
+    const cacheKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${salesArr.length}|${(SEED.records.raw_purchases || []).length}|${(SEED.records.expenses || []).length}|${(SEED.records.fuel_intakes || []).length}|${(SEED.records.salaries || []).length}|${(SEED.records.employments || []).length}|${(SEED.records.price_rules || []).length}|${(SEED.records.vat_invoices || []).length}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${allowedCompanyNames().join(',')}`;
     if (_liveSentinelCache && _liveSentinelCache.key === cacheKey) {
       return _liveSentinelCache.val;
     }
@@ -6600,6 +6741,17 @@
     const unitFuelStats = new Map();
     const meterIssues = [];
     let appRefillDelta = 0, appDispenseDelta = 0;
+    let pendingDieselCount = 0, pendingDieselLitres = 0;
+    const expsScopedForFuel = filterRecords(SEED.records.expenses, { ignoreSearch: true });
+    expsScopedForFuel.forEach(e => {
+      if (!e || e.voided || !isBulkDieselExpense(e)) return;
+      const l = Number(e.qty || 0);
+      if (isAppRecord(e) && l > 0) appRefillDelta += l;
+      if (isPendingPriceExpense(e) && l > 0) {
+        pendingDieselCount += 1;
+        pendingDieselLitres += l;
+      }
+    });
     fuelsScoped.forEach(f => {
       if (!f || f.voided) return;
       const isDiesel = /diesel|mazout/i.test(String(f.item || f.fuel_type || 'Diesel'));
@@ -6687,7 +6839,9 @@
       consumption_outliers_count: liveOutliers.length,
       diesel_purchased_l: baseFleet.diesel_purchased_l != null ? round2(Number(baseFleet.diesel_purchased_l) + appRefillDelta) : null,
       diesel_issued_l: baseFleet.diesel_issued_l != null ? round2(Number(baseFleet.diesel_issued_l) + appDispenseDelta) : null,
-      diesel_stock_balance_l: baseTank != null ? round2(baseTank + appRefillDelta - appDispenseDelta) : null
+      diesel_stock_balance_l: baseTank != null ? round2(baseTank + appRefillDelta - appDispenseDelta) : null,
+      pending_diesel_deliveries_count: pendingDieselCount,
+      pending_diesel_deliveries_l: round2(pendingDieselLitres)
     });
 
     // 2. Live Price Agreement Enforcement (S5) + Weighbridge Pad Audit (S6) + Payroll Contract Match (S7)
@@ -7027,16 +7181,18 @@
     });
 
     const tank = fleet.diesel_stock_balance_l != null ? Number(fleet.diesel_stock_balance_l) : (k.diesel_in_tank == null ? null : Number(k.diesel_in_tank));
+    const pendDieselCnt = Number(fleet.pending_diesel_deliveries_count || 0);
+    const pendDieselL = Number(fleet.pending_diesel_deliveries_l || 0);
     rawItems.push({
       id: 'S2',
       code: 'S2 · DIESEL_TANK_RECONCILIATION', title: 'Diesel Tank Physical vs Ledger Reconciliation',
-      detail: tank == null ? 'No diesel ledger for this entity.' : `Purchased ${fmtNum(fleet.diesel_purchased_l, 0)} L minus issued ${fmtNum(fleet.diesel_issued_l, 0)} L minus sold = ${fmtNum(tank, 0)} L in tank.${tank < -1000 ? ' A negative tank means bulk diesel invoices were booked under General Expenses instead of Fuel Purchases; correct the historical intake before booking new diesel.' : ''}`,
-      severity: tank == null ? 'warn' : (tank < -1000 ? 'crit' : (tank < 0 ? 'warn' : 'ok')),
-      badge: tank == null ? 'NO DATA' : (tank < 0 ? 'ACTION · ' + fmtNum(tank, 0) + ' L' : 'OK · ' + fmtNum(tank, 0) + ' L'),
+      detail: tank == null ? 'No diesel ledger for this entity.' : `Purchased ${fmtNum(fleet.diesel_purchased_l, 0)} L minus issued ${fmtNum(fleet.diesel_issued_l, 0)} L minus sold = ${fmtNum(tank, 0)} L in tank.${pendDieselCnt > 0 ? ` · ${fmtNum(pendDieselCnt)} delivery voucher${pendDieselCnt === 1 ? '' : 's'} (${fmtNum(pendDieselL, 0)} L) in tank with Pending Invoice Price ($0.00 AP) awaiting supplier invoice.` : ''}${tank < -1000 ? ' A negative tank means bulk diesel invoices were booked under General Expenses instead of Fuel Purchases; correct the historical intake before booking new diesel.' : ''}`,
+      severity: tank == null ? 'warn' : (tank < -1000 ? 'crit' : ((tank < 0 || pendDieselCnt > 0) ? 'warn' : 'ok')),
+      badge: tank == null ? 'NO DATA' : (tank < 0 ? 'ACTION · ' + fmtNum(tank, 0) + ' L' : (pendDieselCnt > 0 ? `PENDING PRICE · ${fmtNum(pendDieselCnt)} (${fmtNum(pendDieselL, 0)} L)` : 'OK · ' + fmtNum(tank, 0) + ' L')),
       company: scope,
-      rawMetric: tank == null ? 1 : (tank < 0 ? Math.abs(Math.round(tank)) : 0),
-      rawSecondary: 0,
-      navView: 'fleet', navLabel: 'Open Diesel'
+      rawMetric: tank == null ? 1 : (tank < 0 ? Math.abs(Math.round(tank)) : pendDieselCnt),
+      rawSecondary: Math.round(pendDieselL),
+      navView: pendDieselCnt > 0 ? 'expenses' : 'fleet', navLabel: pendDieselCnt > 0 ? 'Pending Invoices' : 'Open Diesel'
     });
 
     const meters = Number(fleet.meter_readings_to_check || 0);
@@ -10712,20 +10868,19 @@
     const allTypes = uniqSorted(CANON_SALES_TYPES.concat(base.map(r => r.rule_type)).filter(Boolean));
     const rules = sortRows(base.filter(r => {
       if (STATE.chipFilter === 'Commission') return isCommRule(r);
-      if (STATE.chipFilter === 'all_domains') return !isCommRule(r);
       if (STATE.chipFilter === 'active') return !isQuarryOnlyRule(r) && !isCommRule(r) && isActive(r);
       if (STATE.chipFilter === 'lapsed') return !isQuarryOnlyRule(r) && !isCommRule(r) && !isActive(r);
-      if (STATE.chipFilter === 'indiff') return !isCommRule(r) && ruleAnyIndiffPrice(r) != null;
-      if (STATE.chipFilter === 'customer') return !!r.customer && !isCommRule(r);
+      if (STATE.chipFilter === 'indiff') return !isQuarryOnlyRule(r) && !isCommRule(r) && ruleAnyIndiffPrice(r) != null;
+      if (STATE.chipFilter === 'customer') return !!r.customer && !isQuarryOnlyRule(r) && !isCommRule(r);
       if (STATE.chipFilter === 'quarry') return isQuarryOnlyRule(r) || (!r.customer && (r.supplier || r.site) && !isCommRule(r));
-      if (STATE.chipFilter === 'app') return isAppRecord(r);
+      if (STATE.chipFilter === 'app') return !isQuarryOnlyRule(r) && isAppRecord(r);
       if (allTypes.includes(STATE.chipFilter)) return r.rule_type === STATE.chipFilter;
       return !isQuarryOnlyRule(r) && !isCommRule(r);
     }), 'pricing', 'start_date', 'desc');
     const shown = rules.slice(0, shownCount('pricing'));
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const activeCount = salesBase.filter(isActive).length;
-    const indiffCount = base.filter(r => ruleAnyIndiffPrice(r) != null).length;
+    const indiffCount = salesBase.filter(r => ruleAnyIndiffPrice(r) != null).length;
     const salesIndiffRules = salesBase.filter(r => ruleAnyIndiffPrice(r) != null);
     const shortRuleType = t => ({
       'Sales (Delivery)': 'Delivery',
@@ -10839,10 +10994,10 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search customer, product, delivery site...')}
-            <div class="chip-bar">${chip('all', `Commercial (${salesBase.length})`)}${chip('active', `Active (${activeCount})`)}${chip('lapsed', 'Lapsed')}${chip('indiff', `Indifference (${indiffCount})`)}${typeChips}${chip('all_domains', `All Domains (${base.length})`)}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `Sales Rules (${salesBase.length})`)}${chip('active', `Active (${activeCount})`)}${chip('lapsed', 'Lapsed')}${chip('indiff', `Indifference (${indiffCount})`)}${typeChips}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw_pricing" title="Open Raw Material Purchase &amp; Quarry Haulage Agreements">${ic('raw')} Quarry &amp; Haulage Rates</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw_pricing" title="Open Raw Material Purchase &amp; Site Haulage Agreements in Purchases, Expenses &amp; Payables">${ic('raw')} Raw &amp; Haulage Agreements</button>
             ${canEnterForm('pricerule') ? '<button type="button" class="btn btn-ghost-bar" data-open-modal="pricerule_comm" title="Create a per-unit Sales Commission rule for a plant owner">+ Commission Rule</button>' : ''}
             ${exportBtn('pricingPanel', isCommView ? 'Commission_Rules' : 'Price_Agreements')}
             ${canEnterForm('pricerule') ? '<button class="btn btn-primary" data-open-modal="pricerule">+ New Price Agreement</button>' : ''}
@@ -10858,7 +11013,7 @@
               </tr>
               ` : `
               <tr>
-                ${th('pricing', 'Co.', 'company')}${th('pricing', 'Rule Type', 'rule_type')}${th('pricing', 'Customer / Owner', 'customer')}${th('pricing', 'Product', 'product')}${th('pricing', 'Site', 'site')}
+                ${th('pricing', 'Co.', 'company')}${th('pricing', 'Rule Type', 'rule_type')}${th('pricing', 'Customer', 'customer')}${th('pricing', 'Product', 'product')}${th('pricing', 'Delivery Site', 'site')}
                 ${th('pricing', 'Unit', 'unit')}${th('pricing', 'Unit ($)', 'unit_price', 'r')}${th('pricing', 'Transport ($)', 'trans_unit_price', 'r')}${th('pricing', 'Indifference ($)', 'indiff_price', 'r')}${th('pricing', 'Start', 'start_date')}${th('pricing', 'End', 'end_date')}<th>Status</th>
               </tr>
               `}
@@ -11920,8 +12075,8 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('custs', 'Customer', 'Customer')}${th('custs', 'IVA & Term', 'VAT Registered')}${th('custs', 'Loads', 'loads', 'r')}${th('custs', 'Sales TTC', 'sales_ttc', 'r')}${th('custs', 'Output VAT', 'sales_vat', 'r')}
-                ${th('custs', 'Receipts', 'receipts', 'r')}${th('custs', 'VAT Due', 'vat_receivable', 'r')}${th('custs', 'Current', 'ar_current', 'r')}${th('custs', '1–60d', 'ar_1_60', 'r')}${th('custs', 'Overdue 60+', 'ar_60_plus', 'r')}${th('custs', 'Open AR ($)', 'ar_balance', 'r')}${th('custs', 'Last Sale', 'last_sale')}
+                ${th('custs', 'Customer', 'Customer')}${th('custs', 'IVA & Term', 'VAT Registered')}${th('custs', 'Loads', 'loads', 'r')}${th('custs', 'Sales TTC', 'credit_sales_ttc', 'r')}${th('custs', 'Output VAT', 'sales_vat', 'r')}
+                ${th('custs', 'Receipts', 'ar_settled', 'r')}${th('custs', 'VAT Due', 'vat_receivable', 'r')}${th('custs', 'Current', 'ar_current', 'r')}${th('custs', '1–60d', 'ar_1_60', 'r')}${th('custs', 'Overdue 60+', 'ar_60_plus', 'r')}${th('custs', 'Open AR ($)', 'ar_balance', 'r')}${th('custs', 'Last Sale', 'last_sale')}
               </tr>
             </thead>
             <tbody>
@@ -11930,9 +12085,9 @@
                   <td>${relLink('customers', c.Customer, c.Customer, true)}${appCell(customerInfo(c.Customer) || { id: c.Customer, name: c.Customer }, 'customers')}</td>
                   <td>${c['VAT Registered'] === 'Yes' ? '<span class="badge badge-info">11% VAT</span>' : '<span class="mu">No</span>'} <span class="mono mu" style="font-size:10px">· ${fmtNum(c.credit_days || 30)}d${c.credit_limit > 0 ? ' / ' + fmtUSDk(c.credit_limit) : ''}</span></td>
                   <td class="r">${fmtNum(c.loads)}</td>
-                  <td class="r">${fmtUSD(c.sales_ttc, 0)}</td>
+                  <td class="r">${fmtUSD(c.credit_sales_ttc != null ? c.credit_sales_ttc : c.sales_ttc, 0)}</td>
                   <td class="r">${Number(c.sales_vat || 0) > 0 ? fmtUSD(c.sales_vat, 0) : '—'}</td>
-                  <td class="r">${fmtUSD(c.receipts, 0)}</td>
+                  <td class="r">${fmtUSD(c.ar_settled != null ? c.ar_settled : c.receipts, 0)}</td>
                   <td class="r">${Number(c.vat_receivable || 0) !== 0 ? fmtUSD(c.vat_receivable, 0) : '—'}</td>
                   <td class="r">${fmtUSD(c.ar_current, 0)}</td>
                   <td class="r">${Number(c.ar_1_60 || 0) > 0 ? `<span style="color:var(--warn)">${fmtUSD(c.ar_1_60, 0)}</span>` : '—'}</td>
@@ -11947,9 +12102,9 @@
               <tr>
                 <td colspan="2"><b>TOTAL (${fmtNum(custs.length)} CUSTOMERS)</b></td>
                 <td class="r"><b>${fmtNum(custs.reduce((a, c) => a + Number(c.loads || 0), 0))}</b></td>
-                <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.sales_ttc || 0), 0), 0)}</b></td>
+                <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.credit_sales_ttc != null ? c.credit_sales_ttc : (c.sales_ttc || 0)), 0), 0)}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.sales_vat || 0), 0), 0)}</b></td>
-                <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.receipts || 0), 0), 0)}</b></td>
+                <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_settled != null ? c.ar_settled : (c.receipts || 0)), 0), 0)}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.vat_receivable || 0), 0), 0)}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_current || 0), 0), 0)}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_1_60 || 0), 0), 0)}</b></td>
@@ -12431,9 +12586,11 @@
   function renderExpenses() {
     const k = getKPI();
     const base = filterRecords(SEED.records.expenses);
+    const pendingPriceCnt = base.filter(isPendingPriceExpense).length;
     const expRows = sortRows(base.filter(x => {
       if (STATE.chipFilter === 'cash') return !isCreditExpense(x) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'credit') return isCreditExpense(x) && expenseSign(x) !== 0;
+      if (STATE.chipFilter === 'pending_price') return isPendingPriceExpense(x);
       if (STATE.chipFilter === 'fleet_exp') return Boolean(x.equipment) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'overhead_exp') return !x.equipment && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'app') return isAppRecord(x);
@@ -12570,7 +12727,7 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search category, subcategory, supplier, equipment, reference...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('pending_price', `Pending Price (${pendingPriceCnt})`)}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="suppliers" title="Open Unified Supplier, Hauler &amp; Vendor 3-Leg AP + Cash Spend Sub-Ledger">${ic('suppliers')} Suppliers &amp; Payables</button>
@@ -12625,16 +12782,20 @@
             <tbody>
               ${shownExp.map(x => {
                 const sgn = expenseSign(x);
+                const isPend = isPendingPriceExpense(x);
+                const isDieselRow = isBulkDieselExpense(x);
+                const qtyVal = Number(x.qty || 0);
+                const showQtyBadge = qtyVal > 0 && (isPend || isDieselRow || qtyVal !== 1);
                 return `
                 <tr class="rrow" data-rkey="expenses" data-rid="${esc(x.id)}">
                   <td class="mono">${esc(recordDateDMY(x))}${appCell(x, 'expenses')}</td>
                   <td>${coBadge(x.company)}</td>
                   <td>${relLink('expense_categories', x.category, x.category, true)}</td>
-                  <td>${x.subcategory ? relLink('expense_subcategories', x.subcategory) : '—'}${x.reference ? ` <span class="mu">· ${esc(x.reference)}</span>` : ''}</td>
+                  <td>${x.subcategory ? relLink('expense_subcategories', x.subcategory) : '—'}${showQtyBadge ? ` <span class="badge ${isPend ? 'badge-warn' : 'badge-info'}">${fmtNum(qtyVal, qtyVal % 1 ? 2 : 0)}${isDieselRow ? ' L' : ' qty'}</span>` : ''}${x.reference ? ` <span class="mu">· ${esc(x.reference)}</span>` : ''}</td>
                   <td>${x.supplier ? relLink('suppliers', x.supplier) : '—'}</td>
                   <td class="mono">${x.equipment ? relLink('equipment', x.equipment) : '—'}</td>
                   <td>${methodBadge(x.method, sgn)}</td>
-                  <td class="r"><strong>${fmtUSD(sgn * Number(x.amount || 0), 2)}</strong></td>
+                  <td class="r">${isPend ? `<span class="badge badge-warn" title="Quantity received (${fmtNum(qtyVal, 0)}${isDieselRow ? ' L' : ''}); awaiting supplier invoice price — click row to enter final Amount ($)">⏳ Pending Price</span>` : `<strong>${fmtUSD(sgn * Number(x.amount || 0), 2)}</strong>`}</td>
                 </tr>
               `;
               }).join('') || emptyRow(8, periodEmptyMsg(SEED.records.expenses, 'expenses'))}
@@ -12843,6 +13004,18 @@
     const dt = new Date(Date.UTC(y, (m - 1) + Number(deltaMonths || 0), 1));
     return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}`;
   }
+  function getPayrollMonthBounds(ym) {
+    const s = String(ym || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(s)) return { ym: s, mStart: '2025-01-01', mEnd: '2025-01-31', daysInMonth: 31 };
+    const [y, m] = s.split('-').map(Number);
+    const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    return {
+      ym: s,
+      mStart: `${s}-01`,
+      mEnd: `${s}-${String(daysInMonth).padStart(2, '0')}`,
+      daysInMonth
+    };
+  }
   function normStaffStem(name) {
     return norm(name).replace(/(?:e|y)\b/g, 'i');
   }
@@ -12858,6 +13031,7 @@
     const logByStaffYm = {};
     const openLoansByStem = new Map();
     const posCache = new Map();
+    const regCache = new Map();
 
     const recs = SEED.records || {};
     (recs.salaries || []).forEach(s => {
@@ -12885,10 +13059,12 @@
       attByStaffMonth.get(mk).push(a);
     });
 
+    const siteStaffSet = new Set();
     (recs.logistics_allowances || []).forEach(l => {
       if (!l || l.voided) return;
       const sk = norm(l.staff);
       if (!sk) return;
+      siteStaffSet.add(sk);
       if (!logByStaff.has(sk)) logByStaff.set(sk, []);
       logByStaff.get(sk).push(l);
       const sStem = normStaffStem(l.staff);
@@ -12899,6 +13075,89 @@
         logByStaffYm[sStem][lym].push(l);
       }
     });
+
+    // Pre-index driver night-trip overtime ([Staff Overtime T]) & site allowance activity dates
+    const siteToReg = new Map();
+    (recs.sites || []).forEach(st => {
+      if (st && st.name && st.region) siteToReg.set(norm(st.name), norm(st.region));
+    });
+    const otRulesByCoReg = new Map();
+    (recs.overtime_rates || []).forEach(or => {
+      if (!or || or.voided || !or.region) return;
+      const rk = `${norm(or.company || 'WTC')}|${norm(or.region)}`;
+      if (!otRulesByCoReg.has(rk)) otRulesByCoReg.set(rk, []);
+      otRulesByCoReg.get(rk).push({
+        start: String(or.start_date || '2020-01-01').slice(0, 10),
+        end: String(or.end_date || '2035-12-31').slice(0, 10),
+        rate: Number(or.amount != null ? or.amount : or.usd_amount || 0)
+      });
+    });
+    const drvToStaff = new Map();
+    (recs.company_drivers || []).forEach(cd => {
+      if (!cd || cd.voided || !cd.driver) return;
+      const dk = `${norm(cd.company || 'WTC')}|${norm(cd.driver)}`;
+      if (!drvToStaff.has(dk)) drvToStaff.set(dk, []);
+      drvToStaff.get(dk).push({
+        staff: cd.staff || cd.driver,
+        start: String(cd.start_date || '2020-01-01').slice(0, 10),
+        end: String(cd.end_date || '2035-12-31').slice(0, 10)
+      });
+    });
+
+    const siteActivityByStaff = new Map();
+    siteStaffSet.forEach(sk => siteActivityByStaff.set(sk, new Set()));
+    if (siteStaffSet.size > 0) {
+      (recs.attendance || []).forEach(a => {
+        if (!a || a.voided) return;
+        const sk = norm(a.staff);
+        if (siteStaffSet.has(sk) && a.date) siteActivityByStaff.get(sk).add(String(a.date).slice(0, 10));
+      });
+      (recs.fuel_intakes || []).forEach(f => {
+        if (!f || f.voided) return;
+        const sk = norm(f.driver);
+        if (siteStaffSet.has(sk) && f.date) siteActivityByStaff.get(sk).add(String(f.date).slice(0, 10));
+      });
+    }
+
+    const driverOtTrips = [];
+    const scanOtTicket = (t, isSale) => {
+      if (!t || t.voided) return;
+      if (isSale && saleTicketSign(t) <= 0) return;
+      const d = String(t.date || '').slice(0, 10);
+      const drvN = norm(t.driver);
+      if (siteStaffSet.has(drvN) && d) siteActivityByStaff.get(drvN).add(d);
+      if (!(Number(t.overtime || 0) > 0) || !drvN || !t.site) return;
+      const co = t.company || 'WTC';
+      const coN = norm(co);
+      const regN = siteToReg.get(norm(t.site));
+      if (!regN) return;
+      const rules = otRulesByCoReg.get(`${coN}|${regN}`);
+      if (!rules || !rules.length) return;
+      let rate = 0;
+      for (let i = 0; i < rules.length; i++) {
+        if (rules[i].start <= d && d <= rules[i].end) { rate = rules[i].rate; break; }
+      }
+      if (!(rate > 0)) return;
+      const cdList = drvToStaff.get(`${coN}|${drvN}`);
+      let staffName = '';
+      if (cdList && cdList.length) {
+        for (let i = 0; i < cdList.length; i++) {
+          if (cdList[i].start <= d && d <= cdList[i].end) { staffName = cdList[i].staff; break; }
+        }
+      }
+      if (!staffName) return;
+      driverOtTrips.push({
+        company: co,
+        coNorm: coN,
+        staff: staffName,
+        sk: norm(staffName),
+        date: d,
+        rep_date: String(t.rep_date || t.date || '').slice(0, 10),
+        rate
+      });
+    };
+    (recs.sales_tickets || []).forEach(t => scanOtTicket(t, true));
+    (recs.raw_purchases || []).forEach(t => scanOtTicket(t, false));
 
     // Staff loans / advances from SEED.records.loans & loan_settlements (when Company lends to staff)
     const loanMap = new Map();
@@ -12938,9 +13197,520 @@
       }
     });
 
-    _PAYROLL_INTEL_CACHE = { rev, salByStaffMonth, salByStaff, attByStaffMonth, logByStaff, logByStaffYm, openLoansByStem, posCache };
+    _PAYROLL_INTEL_CACHE = { rev, salByStaffMonth, salByStaff, attByStaffMonth, logByStaff, logByStaffYm, openLoansByStem, posCache, regCache, driverOtTrips, siteActivityByStaff };
     return _PAYROLL_INTEL_CACHE;
   }
+
+  function computeStaffPayrollRegister(opts = {}) {
+    const today = SEED_DATE;
+    const idx = _getPayrollIntelIndex();
+    const matchFn = typeof opts.matchFn === 'function' ? opts.matchFn : null;
+    const activeRange = opts.activeRange !== undefined ? opts.activeRange : periodRange(STATE.period);
+    const rangeFromVal = activeRange ? (activeRange.from || activeRange[0] || '') : '';
+    const rangeToVal = activeRange ? (activeRange.to || activeRange[1] || '') : '';
+    const isOpenEnd = !rangeToVal || String(rangeToVal).slice(0, 10) >= today;
+    const rawFrom = rangeFromVal ? String(rangeFromVal).slice(0, 10) : '2024-01-01';
+    const rawTo = rangeToVal ? String(rangeToVal).slice(0, 10) : today;
+    const effStartYm = rawFrom.slice(0, 7);
+    const effEndYm = (isOpenEnd ? today : rawTo).slice(0, 7);
+    const effSiteCutoff = rawTo < today ? rawTo : today;
+    const effFromDate = rawFrom;
+    const effToDate = isOpenEnd ? getPayrollMonthBounds(effEndYm).mEnd : rawTo;
+
+    const empAll = opts.empRows || filterRecords(SEED.records.employments, { ignorePeriod: true });
+    let salAll = opts.salRows || filterRecords(SEED.records.salaries);
+    if (STATE.basis === 'rep' && activeRange && !isOpenEnd) {
+      const salScoped = filterRecords(SEED.records.salaries, { ignorePeriod: true, ignoreSearch: Boolean(opts.salRows) });
+      salAll = (matchFn ? salScoped.filter(matchFn) : salScoped).filter(p => {
+        const pym = String(p.payroll_month || (p.date || '').slice(0, 7)).slice(0, 7);
+        if (pym >= effStartYm && pym <= effEndYm) return true;
+        if (effStartYm === '2025-01' && pym === '2024-12' && String(p.date || '').slice(0, 7) === '2025-01') return true;
+        return false;
+      });
+    }
+    const attAll = opts.attRows || filterRecords(SEED.records.attendance);
+    const logAll = opts.logRows || filterRecords(SEED.records.logistics_allowances, { ignorePeriod: true });
+
+    const profCache = new Map();
+    const profOf = (name, co, onDate) => {
+      const refD = String(onDate || today).slice(0, 10);
+      const ck = `${norm(name)}|${norm(co)}|${refD.slice(0, 7)}`;
+      if (!profCache.has(ck)) profCache.set(ck, getStaffContractProfile(name, co, refD));
+      return profCache.get(ck);
+    };
+
+    const staffMap = new Map();
+    const ensureStaff = (name, co) => {
+      const coNorm = norm(co || 'WTC');
+      const sk = norm(name || '(Unassigned)');
+      const key = `${coNorm}|${sk}`;
+      if (!staffMap.has(key)) {
+        const prof = profOf(name, co, effSiteCutoff);
+        staffMap.set(key, {
+          staff: name || '(Unassigned)',
+          company: co || prof.company || 'WTC',
+          type: prof.hasContract ? prof.type : 'Monthly',
+          status: prof.hasContract ? prof.status : 'Current',
+          base: 0,
+          contract_monthly: prof.hasContract ? prof.monthlySalary : 0,
+          work_days: prof.workingDays || 30,
+          work_hrs: prof.workingHours || 8,
+          ot_mult: prof.otMultiplier || 1.0,
+          late_mult: prof.lateMultiplier || 1.0,
+          ot_hrs: 0,
+          att_ot_pay: 0,
+          trip_ot_pay: 0,
+          ot_pay: 0,
+          late_hrs: 0,
+          late_ded: 0,
+          rec_absent_days: 0,
+          gap_days: 0,
+          absent_days: 0,
+          vac_days: 0,
+          sick_days: 0,
+          config_vac: 0,
+          abs_ded: 0,
+          extras: 0,
+          reimb: 0,
+          ded: 0,
+          site_allow: 0,
+          site_days_counted: 0,
+          site_days: 0,
+          site_act_days: 0,
+          site_paid: 0,
+          site_out: 0,
+          sites: new Set(),
+          sitesStr: 'Main Plant',
+          earnings: 0,
+          vouchers_paid: 0,
+          config_paid: 0,
+          paid: 0,
+          balance: 0,
+          payments: 0,
+          logs_cnt: 0,
+          ot_logs: 0,
+          late_logs: 0,
+          active_months: 0,
+          hasContract: prof.hasContract
+        });
+      }
+      return staffMap.get(key);
+    };
+
+    const monthBucket = new Map();
+    const ensureMonth = ym => {
+      if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return null;
+      if (!monthBucket.has(ym)) {
+        monthBucket.set(ym, {
+          ym,
+          'Year Month': formatPayrollMonthLabel(ym),
+          earnings_m: 0,
+          paid_m: 0,
+          ot_hrs_m: 0,
+          late_hrs_m: 0,
+          sa_accrued: 0,
+          sa_paid: 0,
+          accrued: 0,
+          paid: 0,
+          ot_hrs: 0,
+          late_hrs: 0,
+          ot_pay: 0,
+          site_allow: 0,
+          vouchers: 0
+        });
+      }
+      return monthBucket.get(ym);
+    };
+
+    // 1. Expand employment contracts across Staff × Month (m246 one-salary-per-staff-month + Inactive Gap Days)
+    const empGrid = new Map();
+    empAll.forEach(e => {
+      if (!e || e.voided) return;
+      const s = ensureStaff(e.staff, e.company);
+      s.hasContract = true;
+      if (e.type) s.type = e.type;
+      const ended = e.status === 'Ended' || e.status === 'Inactive' || e.status === 'Terminated' || (e.end_date && String(e.end_date).slice(0, 10) < effSiteCutoff);
+      if (!ended) s.status = 'Current';
+      const coNorm = norm(e.company || s.company || 'WTC');
+      const sk = norm(e.staff || '(Unassigned)');
+      const cStart = String(e.start_date || '2025-01-01').slice(0, 10);
+      const cEnd = String(e.end_date || '2030-12-31').slice(0, 10);
+      const startYm = cStart.slice(0, 7) > effStartYm ? cStart.slice(0, 7) : effStartYm;
+      const endYm = cEnd.slice(0, 7) < effEndYm ? cEnd.slice(0, 7) : effEndYm;
+      if (startYm > endYm) return;
+      let curYm = startYm;
+      let guard = 0;
+      while (curYm <= endYm && guard < 120) {
+        guard += 1;
+        const { mStart, mEnd, daysInMonth } = getPayrollMonthBounds(curYm);
+        const ovStart = cStart > mStart ? cStart : mStart;
+        const ovEnd = cEnd < mEnd ? cEnd : mEnd;
+        if (ovStart <= ovEnd) {
+          const actDays = Math.max(0, daysBetween(ovStart, ovEnd) + 1);
+          if (actDays > 0) {
+            const gk = `${coNorm}|${sk}|${curYm}`;
+            if (!empGrid.has(gk)) empGrid.set(gk, []);
+            empGrid.get(gk).push({ contract: e, actDays, cStart, daysInMonth });
+          }
+        }
+        curYm = shiftYearMonth(curYm, 1);
+      }
+    });
+
+    const monthContractMap = new Map();
+    empGrid.forEach((cList, gk) => {
+      cList.sort((a, b) => (b.actDays - a.actDays) || b.cStart.localeCompare(a.cStart) || (Number(b.contract.salary_usd || 0) - Number(a.contract.salary_usd || 0)));
+      const daysInMonth = cList[0].daysInMonth;
+      const totActDays = Math.min(daysInMonth, cList.reduce((sum, x) => sum + x.actDays, 0));
+      const gapDays = Math.max(0, daysInMonth - totActDays);
+      const prim = cList[0].contract;
+      const s = ensureStaff(prim.staff, prim.company);
+      s.active_months += 1;
+
+      let mBase = 0;
+      let mReimb = 0;
+      cList.forEach((item, idx) => {
+        const ce = item.contract;
+        const share = totActDays > 0 ? (item.actDays / totActDays) : 1;
+        const sal = Number(ce.salary_usd || 0) || (Number(ce.daily_rate || 0) * (Number(ce.working_days || 26) || 26));
+        mBase += sal * share;
+        if (idx === 0) mReimb += Number(ce.reimbursement || 0);
+      });
+
+      const pSal = Number(prim.salary_usd || 0) || (Number(prim.daily_rate || 0) * (Number(prim.working_days || 26) || 26));
+      const wDays = Number(prim.working_days || 30) || 30;
+      const wHrs = Number(prim.working_hours || 8) || 8;
+      const otMult = Number(prim.overtime_multiplier != null ? prim.overtime_multiplier : 1) || 1;
+      const ltMult = Number(prim.lateness_multiplier != null ? prim.lateness_multiplier : 1) || 1;
+      const dayRate = wDays > 0 ? (pSal / wDays) : 0;
+      const hrRate = (wDays * wHrs) > 0 ? (pSal / (wDays * wHrs)) : 0;
+      const dedRate = Number(prim.deduction || 0);
+      const gapAbsDed = gapDays * dayRate;
+      const gapDed = gapDays * dedRate;
+
+      s.base += mBase;
+      s.reimb += mReimb;
+      s.gap_days += gapDays;
+      s.abs_ded += gapAbsDed;
+      s.ded += gapDed;
+
+      monthContractMap.set(gk, { dayRate, hrRate, otMult, ltMult, dedRate, mBase, mReimb, gapDays, gapAbsDed, gapDed });
+      const ym = gk.split('|')[2];
+      const mb = ensureMonth(ym);
+      if (mb) mb.earnings_m += (mBase + mReimb - gapAbsDed - gapDed);
+    });
+
+    // 2. Accrue attendance & Config opening balances using each month's contract rate
+    const attAbsVacByStaffYm = new Map();
+    attAll.forEach(a => {
+      if (!a || a.voided) return;
+      const s = ensureStaff(a.staff, a.company);
+      s.logs_cnt += 1;
+      const coNorm = norm(a.company || s.company || 'WTC');
+      const sk = norm(a.staff || '(Unassigned)');
+      const ym = String(a.month || (a.date || '').slice(0, 7)).slice(0, 7);
+      const gk = `${coNorm}|${sk}|${ym}`;
+      const mc = monthContractMap.get(gk);
+      let dayRate = 0, hrRate = 0, otMult = 1, ltMult = 1, dedRate = 0;
+      if (mc) {
+        dayRate = mc.dayRate;
+        hrRate = mc.hrRate;
+        otMult = mc.otMult;
+        ltMult = mc.ltMult;
+        dedRate = mc.dedRate;
+      } else {
+        const prof = profOf(a.staff, a.company, a.date || `${ym}-15`);
+        if (prof.hasContract) {
+          dayRate = prof.dailyRate;
+          hrRate = prof.hourlyRate;
+          otMult = prof.otMultiplier;
+          ltMult = prof.lateMultiplier;
+          dedRate = prof.deduction;
+        }
+      }
+
+      const attType = String(a.type || a.status || 'Present').trim();
+      const tally = Number(a.tally != null ? a.tally : 0);
+      const mb = ensureMonth(ym);
+
+      if (/^config\s*usd$/i.test(attType)) {
+        s.config_paid += tally;
+        if (mb) mb.paid_m += tally;
+        return;
+      }
+      if (/^config\s*lbp$/i.test(attType)) {
+        const cfgUsd = tally / 89500;
+        s.config_paid += cfgUsd;
+        if (mb) mb.paid_m += cfgUsd;
+        return;
+      }
+      if (/^config\s*vac/i.test(attType)) {
+        s.config_vac += tally;
+        return;
+      }
+
+      const otH = Number(a.overtime_hours != null && a.overtime_hours > 0 ? a.overtime_hours : (/^overtime$/i.test(attType) ? tally : 0));
+      const ltH = Number(a.late_hours != null && a.late_hours > 0 ? a.late_hours : (/^lateness$/i.test(attType) ? tally : 0));
+      s.ot_hrs += otH;
+      if (otH > 0) s.ot_logs += 1;
+      s.late_hrs += ltH;
+      if (ltH > 0) s.late_logs += 1;
+
+      const otPayRow = otH * hrRate * otMult;
+      const lateDedRow = ltH * hrRate * ltMult;
+      s.att_ot_pay += otPayRow;
+      s.late_ded += lateDedRow;
+      if (mb) {
+        mb.ot_hrs_m += otH;
+        mb.late_hrs_m += ltH;
+        mb.ot_pay += otPayRow;
+        mb.earnings_m += (otPayRow - lateDedRow);
+      }
+
+      if ((/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType)) && a.pay_treatment !== 'paid') {
+        const dCnt = Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (/^half\s*day$/i.test(attType) ? (tally > 0 ? tally : 0.5) : (tally > 0 ? tally : 1));
+        s.rec_absent_days += dCnt;
+        const absDedRow = dCnt * dayRate;
+        const dedRow = dCnt * dedRate;
+        s.abs_ded += absDedRow;
+        s.ded += dedRow;
+        attAbsVacByStaffYm.set(gk, (attAbsVacByStaffYm.get(gk) || 0) + dCnt);
+        if (mb) mb.earnings_m -= (absDedRow + dedRow);
+      } else if (/^vacabsence$|^paid\s*leave$/i.test(attType) || (a.pay_treatment === 'paid' && Number(a.leave_days || 0) > 0)) {
+        const vCnt = Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : 1);
+        s.vac_days += vCnt;
+        const dedRow = vCnt * dedRate;
+        s.ded += dedRow;
+        attAbsVacByStaffYm.set(gk, (attAbsVacByStaffYm.get(gk) || 0) + vCnt);
+        if (mb) mb.earnings_m -= dedRow;
+      } else if (/^sick/i.test(attType)) {
+        const skCnt = Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : 1);
+        s.sick_days += skCnt;
+        const dedRow = skCnt * dedRate;
+        s.ded += dedRow;
+        if (mb) mb.earnings_m -= dedRow;
+      } else if (/^extra\s*usd$/i.test(attType)) {
+        s.extras += tally;
+        if (mb) mb.earnings_m += tally;
+      } else if (/^extra\s*lbp$/i.test(attType)) {
+        const extUsd = tally / 89500;
+        s.extras += extUsd;
+        if (mb) mb.earnings_m += extUsd;
+      }
+    });
+
+    // 3. Add driver night-trip overtime ([Staff Overtime T]) to Staff OT Pay
+    const allowedCos = new Set((allowedCompanyNames() || []).map(norm));
+    (idx.driverOtTrips || []).forEach(tr => {
+      if (allowedCos.size && !allowedCos.has(tr.coNorm)) return;
+      const d = STATE.basis === 'rep' ? tr.rep_date : tr.date;
+      if (d < effFromDate || d > effToDate) return;
+      if (matchFn && !matchFn({ company: tr.company, staff: tr.staff, driver: tr.staff })) return;
+      const key = `${tr.coNorm}|${tr.sk}`;
+      const s = staffMap.get(key) || ensureStaff(tr.staff, tr.company);
+      s.trip_ot_pay += tr.rate;
+      const ym = d.slice(0, 7);
+      const mb = ensureMonth(ym);
+      if (mb) {
+        mb.ot_pay += tr.rate;
+        mb.earnings_m += tr.rate;
+      }
+    });
+
+    // 4. Site allowances (m247 exact ticked weekday count minus recorded absence/vacation)
+    const siteStaffMap = new Map();
+    const siteGridByStaffYm = new Map();
+    const DOW_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    logAll.forEach(l => {
+      if (!l || l.voided) return;
+      const s = ensureStaff(l.staff, l.company);
+      if (l.site) s.sites.add(l.site);
+      const coNorm = norm(l.company || s.company || 'WTC');
+      const sk = norm(l.staff || '(Unassigned)');
+      const srKey = `${coNorm}|${sk}`;
+      const daily = Number(l.daily_usd || l.usd_amount || 0) || (Number(l.lbp_amount || 0) / 89500);
+      if (!siteStaffMap.has(srKey)) {
+        siteStaffMap.set(srKey, {
+          staff: l.staff || '(Unassigned)',
+          company: l.company || 'WTC',
+          site: l.site || '—',
+          sitesStr: l.site || 'Main Plant',
+          equipment: l.equipment || '—',
+          working_days: l.working_days || 'Mon–Sat',
+          arrangements: 0,
+          daily_usd: 0,
+          days_counted: 0,
+          absent_days: 0,
+          days_paid: 0,
+          activity_days: 0,
+          accrued: 0,
+          site_allow: 0,
+          paid_fifo: 0,
+          outstanding: 0
+        });
+      }
+      const sr = siteStaffMap.get(srKey);
+      sr.arrangements += 1;
+      sr.daily_usd = round2(sr.daily_usd + daily);
+      if (sr.site === '—' && l.site) sr.site = l.site;
+      if (sr.equipment === '—' && l.equipment) sr.equipment = l.equipment;
+
+      const tickedDow = new Set();
+      DOW_KEYS.forEach((dk, di) => { if (l[dk]) tickedDow.add(di); });
+      if (!tickedDow.size) [1, 2, 3, 4, 5, 6].forEach(di => tickedDow.add(di));
+
+      const lStart = String(l.start_date || '2025-01-01').slice(0, 10);
+      const lEnd = String(l.end_date || effSiteCutoff).slice(0, 10);
+      const wStart = lStart > effFromDate ? lStart : effFromDate;
+      const wEnd = lEnd < effSiteCutoff ? lEnd : effSiteCutoff;
+      if (wStart > wEnd) return;
+
+      const actSet = idx.siteActivityByStaff.get(sk);
+      const [sy, sm, sd] = wStart.split('-').map(Number);
+      const [ey, em, ed] = wEnd.split('-').map(Number);
+      const curDt = new Date(Date.UTC(sy, sm - 1, sd));
+      const endMs = Date.UTC(ey, em - 1, ed);
+      while (curDt.getTime() <= endMs) {
+        if (tickedDow.has(curDt.getUTCDay())) {
+          const iso = `${curDt.getUTCFullYear()}-${String(curDt.getUTCMonth() + 1).padStart(2, '0')}-${String(curDt.getUTCDate()).padStart(2, '0')}`;
+          const ym = iso.slice(0, 7);
+          const gk = `${coNorm}|${sk}|${ym}`;
+          if (!siteGridByStaffYm.has(gk)) siteGridByStaffYm.set(gk, { coNorm, sk, ym, daysCounted: 0, actDays: 0, grossUsd: 0 });
+          const sg = siteGridByStaffYm.get(gk);
+          sg.daysCounted += 1;
+          sg.grossUsd += daily;
+          if (actSet && actSet.has(iso)) sg.actDays += 1;
+        }
+        curDt.setUTCDate(curDt.getUTCDate() + 1);
+      }
+    });
+
+    siteGridByStaffYm.forEach(sg => {
+      const srKey = `${sg.coNorm}|${sg.sk}`;
+      const gk = `${sg.coNorm}|${sg.sk}|${sg.ym}`;
+      const s = staffMap.get(srKey);
+      const sr = siteStaffMap.get(srKey);
+      const absInYm = attAbsVacByStaffYm.get(gk) || 0;
+      const paidDays = Math.max(0, sg.daysCounted - absInYm);
+      const avgDaily = sg.daysCounted > 0 ? (sg.grossUsd / sg.daysCounted) : 0;
+      const accrued = round2(paidDays * avgDaily);
+      if (s) {
+        s.site_days_counted += sg.daysCounted;
+        s.site_days += paidDays;
+        s.site_act_days += sg.actDays;
+        s.site_allow = round2(s.site_allow + accrued);
+      }
+      if (sr) {
+        sr.days_counted += sg.daysCounted;
+        sr.absent_days += absInYm;
+        sr.days_paid += paidDays;
+        sr.activity_days += sg.actDays;
+        sr.accrued = round2(sr.accrued + accrued);
+        sr.site_allow = sr.accrued;
+      }
+      const mb = ensureMonth(sg.ym);
+      if (mb) {
+        mb.sa_accrued = round2(mb.sa_accrued + accrued);
+        mb.site_allow = mb.sa_accrued;
+        mb.earnings_m += accrued;
+      }
+    });
+
+    // 5. Salary disbursements
+    const salByStaffMap = new Map();
+    salAll.forEach(p => {
+      if (!p || p.voided) return;
+      const s = ensureStaff(p.staff, p.company);
+      const amt = Number(p.amount || 0);
+      s.vouchers_paid += amt;
+      s.payments += 1;
+      const sk = norm(p.staff || '(Unassigned)');
+      if (!salByStaffMap.has(sk)) {
+        salByStaffMap.set(sk, { vouchers: 0, cash_usd: 0, bank_usd: 0, total_usd: 0, first_month: '', last_month: '', company: p.company || 'WTC' });
+      }
+      const sb = salByStaffMap.get(sk);
+      sb.vouchers += 1;
+      sb.total_usd = round2(sb.total_usd + amt);
+      if (/cash/i.test(String(p.method || 'Cash'))) sb.cash_usd = round2(sb.cash_usd + amt);
+      else sb.bank_usd = round2(sb.bank_usd + amt);
+      const ym = String(p.payroll_month || (p.date || '').slice(0, 7)).slice(0, 7);
+      if (ym && (!sb.first_month || ym < sb.first_month)) sb.first_month = ym;
+      if (ym && (!sb.last_month || ym > sb.last_month)) sb.last_month = ym;
+      const mb = ensureMonth(ym);
+      if (mb) {
+        mb.paid_m += amt;
+        mb.vouchers += 1;
+      }
+    });
+
+    // 6. Finalize per-staff earnings, paid, balance & FIFO site allowance settlement (m247)
+    const staffRows = Array.from(staffMap.values()).map(s => {
+      s.base = round2(s.base);
+      s.att_ot_pay = round2(s.att_ot_pay);
+      s.trip_ot_pay = round2(s.trip_ot_pay);
+      s.ot_pay = round2(s.att_ot_pay + s.trip_ot_pay);
+      s.ot_hrs = round2(s.ot_hrs);
+      s.late_hrs = round2(s.late_hrs);
+      s.late_ded = round2(s.late_ded);
+      s.rec_absent_days = round2(s.rec_absent_days);
+      s.gap_days = round2(s.gap_days);
+      s.absent_days = round2(s.rec_absent_days + s.gap_days);
+      s.abs_ded = round2(s.abs_ded);
+      s.extras = round2(s.extras);
+      s.reimb = round2(s.reimb);
+      s.ded = round2(s.ded);
+      s.site_allow = round2(s.site_allow);
+      s.vouchers_paid = round2(s.vouchers_paid);
+      s.config_paid = round2(s.config_paid);
+      s.paid = round2(s.vouchers_paid + s.config_paid);
+      s.earnings = round2(s.base + s.ot_pay + s.extras + s.reimb + s.site_allow - s.late_ded - s.abs_ded - s.ded);
+      s.balance = round2(s.earnings - s.paid);
+      s.net_att_impact = round2(s.ot_pay + s.extras - s.late_ded - s.abs_ded);
+      s.contract_status = s.hasContract ? s.status : 'No Contract';
+      s.sitesStr = Array.from(s.sites).join(', ') || 'Main Plant';
+
+      const nonSaEarn = Math.max(0, s.earnings - s.site_allow);
+      s.site_paid = round2(Math.min(s.site_allow, Math.max(0, s.paid - nonSaEarn)));
+      s.site_out = round2(Math.max(0, s.site_allow - s.site_paid));
+
+      const srKey = `${norm(s.company)}|${norm(s.staff)}`;
+      const sr = siteStaffMap.get(srKey);
+      if (sr) {
+        sr.paid_fifo = s.site_paid;
+        sr.outstanding = s.site_out;
+        sr.sitesStr = s.sitesStr;
+      }
+      return s;
+    }).sort((a, b) => b.paid - a.paid || b.earnings - a.earnings);
+
+    const siteStaffRowsBase = Array.from(siteStaffMap.values()).sort((a, b) => b.accrued - a.accrued);
+
+    const totSaAcc = siteStaffRowsBase.reduce((a, r) => a + r.accrued, 0);
+    const totSaPaid = siteStaffRowsBase.reduce((a, r) => a + r.paid_fifo, 0);
+    const saPaidRatio = totSaAcc > 0 ? Math.min(1, totSaPaid / totSaAcc) : 1;
+
+    const payMonths = Array.from(monthBucket.values())
+      .filter(m => m.ym >= effStartYm && m.ym <= effEndYm && (m.earnings_m !== 0 || m.paid_m !== 0 || m.ot_hrs_m > 0 || m.sa_accrued > 0))
+      .sort((a, b) => a.ym.localeCompare(b.ym))
+      .slice(-14)
+      .map(m => {
+        m.earnings_m = round2(m.earnings_m);
+        m.paid_m = round2(m.paid_m);
+        m.ot_hrs_m = round2(m.ot_hrs_m);
+        m.late_hrs_m = round2(m.late_hrs_m);
+        m.sa_accrued = round2(m.sa_accrued);
+        m.sa_paid = round2(m.sa_accrued * saPaidRatio);
+        m.accrued = m.earnings_m;
+        m.paid = m.paid_m;
+        m.ot_hrs = m.ot_hrs_m;
+        m.late_hrs = m.late_hrs_m;
+        m.ot_pay = round2(m.ot_pay);
+        return m;
+      });
+
+    return { staffRows, siteStaffRowsBase, salByStaffMap, payMonths, profOf };
+  }
+  window.__mfgComputeStaffPayrollRegister = computeStaffPayrollRegister;
 
   function computeStaffMonthPayrollPosition(staffName, company, payrollMonth, txDate, excludeSalId = null, _skipPrev = false) {
     const sk = norm(staffName);
@@ -13156,12 +13926,8 @@
     const logAll = filterRecords(SEED.records.logistics_allowances, { ignorePeriod: true });
     const otRates = filterRecords(SEED.records.overtime_rates, { ignorePeriod: true });
 
-    const profCache = new Map();
-    const profOf = (name, co) => {
-      const ck = `${norm(name)}|${norm(co)}`;
-      if (!profCache.has(ck)) profCache.set(ck, getStaffContractProfile(name, co, today));
-      return profCache.get(ck);
-    };
+    const regData = computeStaffPayrollRegister({ empRows: empAll, salRows: salAll, attRows: attAll, logRows: logAll });
+    const { staffRows, siteStaffRowsBase, salByStaffMap, payMonths, profOf } = regData;
 
     // Normalize attendance fields & derive intuitive shift basis + $ payroll impact per row
     attAll.forEach(a => {
@@ -13237,7 +14003,7 @@
         shiftBasisLbl = 'Standard Day';
       }
 
-      const prof = profOf(a.staff, a.company);
+      const prof = profOf(a.staff, a.company, a.date || today);
       const otPayRow = round2(otH * prof.otHourlyRate);
       const lateDedRow = round2(ltH * prof.lateHourlyRate);
       const isUnpaidAbs = (/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType)) && !/^config/i.test(attType) && a.pay_treatment !== 'paid';
@@ -13265,181 +14031,12 @@
       a.shift_str = shiftStr;
     });
 
-    // Build per-staff 15-column payroll register & attendance summary (using active primary contract per staff, never summing rolled-over contracts)
-    const staffMap = new Map();
-    const ensureStaff = (name, co) => {
-      const key = norm(name || '(Unassigned)');
-      if (!staffMap.has(key)) {
-        const prof = profOf(name, co);
-        staffMap.set(key, {
-          staff: name || '(Unassigned)', company: co || prof.company || 'WTC',
-          type: prof.hasContract ? prof.type : 'Monthly',
-          status: prof.hasContract ? prof.status : 'Current',
-          base: prof.hasContract ? prof.monthlySalary : 0,
-          work_days: prof.workingDays || 30,
-          work_hrs: prof.workingHours || 8,
-          ot_mult: prof.otMultiplier || 1.0,
-          late_mult: prof.lateMultiplier || 1.0,
-          ot_hrs: 0, ot_pay: 0, late_hrs: 0, late_ded: 0, absent_days: 0, vac_days: 0, sick_days: 0, gap_days: 0, abs_ded: 0,
-          extras: 0, reimb: prof.hasContract ? prof.reimbursement : 0, ded: prof.hasContract ? prof.deduction : 0,
-          site_allow: 0, earnings: 0, paid: 0, balance: 0, payments: 0,
-          logs_cnt: 0, ot_logs: 0, late_logs: 0, hasContract: prof.hasContract
-        });
-      }
-      return staffMap.get(key);
-    };
-    empAll.forEach(e => {
-      ensureStaff(e.staff, e.company);
-    });
-    attAll.forEach(a => {
-      const s = ensureStaff(a.staff, a.company);
-      s.logs_cnt += 1;
-      const attType = String(a.type || '');
-      const tally = Number(a.tally || 0);
-      const otH = Number(a.overtime_hours || 0);
-      const ltH = Number(a.late_hours || 0);
-      s.ot_hrs += otH;
-      if (otH > 0) s.ot_logs += 1;
-      s.late_hrs += ltH;
-      if (ltH > 0) s.late_logs += 1;
-      const wDays = s.work_days || 30;
-      const wHrs = s.work_hrs || 8;
-      const hrRate = s.base > 0 ? (s.base / (wDays * wHrs)) : (25 / 8);
-      const dayRate = s.base > 0 ? (s.base / wDays) : 25;
-      s.ot_pay += round2(otH * hrRate * (s.ot_mult || 1.0));
-      s.late_ded += round2(ltH * hrRate * (s.late_mult || 1.0));
-      if ((/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType)) && !/^config/i.test(attType) && a.pay_treatment !== 'paid') {
-        const dCnt = Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (/^half\s*day$/i.test(attType) ? 0.5 : (tally > 0 ? tally : 1));
-        s.absent_days += dCnt;
-        s.abs_ded += round2(dCnt * dayRate);
-      } else if (/^vacabsence$|^paid\s*leave$/i.test(attType) || (a.pay_treatment === 'paid' && Number(a.leave_days || 0) > 0)) {
-        s.vac_days += (Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : 1));
-      } else if (/^sick/i.test(attType)) {
-        s.sick_days += (Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : 1));
-      } else if (/^extra\s*usd$/i.test(attType)) {
-        s.extras += round2(tally);
-      } else if (/^extra\s*lbp$/i.test(attType)) {
-        s.extras += round2(tally / 89500);
-      } else if (/^config\s*usd$/i.test(attType)) {
-        s.extras += round2(tally);
-      } else if (/^config\s*lbp$/i.test(attType)) {
-        s.extras += round2(tally / 89500);
-      }
-    });
-
-    // Site allowance arrangements & per-staff Site Allowance summary (for Tab 3 #paySiteStaffPanel)
-    const siteStaffMap = new Map();
-    logAll.forEach(l => {
-      const s = ensureStaff(l.staff, l.company);
-      const daily = Number(l.daily_usd || l.usd_amount || 0) || (Number(l.lbp_amount || 0) / 89500);
-      const daysPerWk = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].filter(d => l[d]).length || 6;
-      const start = String(l.start_date || '2026-01-01');
-      const end = String(l.end_date || today);
-      const spanDays = Math.max(1, Math.min(180, daysBetween(start, end < today ? end : today) + 1));
-      const paidDays = Math.max(1, Math.round(spanDays * (daysPerWk / 7)));
-      const accrued = round2(paidDays * daily);
-      s.site_allow += accrued;
-
-      const sk = norm(l.staff || '(Unassigned)');
-      if (!siteStaffMap.has(sk)) {
-        siteStaffMap.set(sk, {
-          staff: l.staff || '(Unassigned)',
-          company: l.company || 'WTC',
-          site: l.site || '—',
-          equipment: l.equipment || '—',
-          working_days: l.working_days || 'Mon–Sat',
-          arrangements: 0,
-          daily_usd: 0,
-          days_counted: 0,
-          activity_days: 0,
-          accrued: 0,
-          paid_fifo: 0,
-          outstanding: 0
-        });
-      }
-      const sr = siteStaffMap.get(sk);
-      sr.arrangements += 1;
-      sr.daily_usd = round2(sr.daily_usd + daily);
-      sr.days_counted += spanDays;
-      sr.activity_days += paidDays;
-      sr.accrued = round2(sr.accrued + accrued);
-      if (sr.site === '—' && l.site) sr.site = l.site;
-      if (sr.equipment === '—' && l.equipment) sr.equipment = l.equipment;
-    });
-
-    const salByStaffMap = new Map();
-    salAll.forEach(p => {
-      const s = ensureStaff(p.staff, p.company);
-      const amt = Number(p.amount || 0);
-      s.paid += amt;
-      s.payments += 1;
-      const sk = norm(p.staff || '(Unassigned)');
-      if (!salByStaffMap.has(sk)) {
-        salByStaffMap.set(sk, { vouchers: 0, cash_usd: 0, bank_usd: 0, total_usd: 0, first_month: '', last_month: '', company: p.company || 'WTC' });
-      }
-      const sb = salByStaffMap.get(sk);
-      sb.vouchers += 1;
-      sb.total_usd = round2(sb.total_usd + amt);
-      if (/cash/i.test(String(p.method || 'Cash'))) sb.cash_usd = round2(sb.cash_usd + amt);
-      else sb.bank_usd = round2(sb.bank_usd + amt);
-      const ym = String(p.payroll_month || (p.date || '').slice(0, 7));
-      if (ym && (!sb.first_month || ym < sb.first_month)) sb.first_month = ym;
-      if (ym && (!sb.last_month || ym > sb.last_month)) sb.last_month = ym;
-    });
-
-    const staffRows = Array.from(staffMap.values()).map(s => {
-      if (s.base === 0 && s.paid > 0) s.base = s.paid; // historical disbursed baseline when contract salary is 0
-      s.earnings = round2(s.base + s.ot_pay + s.extras + s.reimb + s.site_allow - s.late_ded - s.abs_ded - s.ded);
-      s.balance = round2(s.earnings - s.paid);
-      s.net_att_impact = round2(s.ot_pay + s.extras - s.late_ded - s.abs_ded);
-      s.contract_status = s.hasContract ? s.status : 'No Contract';
-      return s;
-    }).sort((a, b) => b.paid - a.paid || b.earnings - a.earnings);
-
-    let remSitePool = Number(k.salaries_paid || 0);
-    const siteStaffRowsBase = Array.from(siteStaffMap.values()).sort((a, b) => b.accrued - a.accrued).map(r => {
-      const fifo = Math.min(r.accrued, Math.max(0, remSitePool));
-      remSitePool = Math.max(0, remSitePool - fifo);
-      r.paid_fifo = round2(fifo);
-      r.outstanding = round2(r.accrued - fifo);
-      return r;
-    });
     const filteredSiteStaff = sortRows(siteStaffRowsBase, 'pay_site_staff', 'accrued', 'desc');
     const shownSiteStaff = filteredSiteStaff.slice(0, shownCount('pay_site_staff'));
 
     const attStaffRowsBase = staffRows.filter(s => s.logs_cnt > 0 || s.ot_hrs > 0 || s.late_hrs > 0 || s.absent_days > 0 || s.vac_days > 0 || s.sick_days > 0);
     const filteredAttStaff = sortRows(attStaffRowsBase, 'pay_att_sum', 'ot_hrs', 'desc');
     const shownAttStaff = filteredAttStaff.slice(0, shownCount('pay_att_sum'));
-
-    // Build monthly time-series for embedded charts across all 3 tabs
-    const monthBucket = new Map();
-    const ensureMonth = ym => {
-      if (!ym || ym.length < 7) return null;
-      if (!monthBucket.has(ym)) {
-        monthBucket.set(ym, { ym, paid: 0, ot_hrs: 0, late_hrs: 0, ot_pay: 0, site_allow: 0, base_est: 0, vouchers: 0 });
-      }
-      return monthBucket.get(ym);
-    };
-    salAll.forEach(p => {
-      const ym = String(p.payroll_month || (p.date || '').slice(0, 7)).slice(0, 7);
-      const b = ensureMonth(ym);
-      if (b) { b.paid += Number(p.amount || 0); b.vouchers += 1; }
-    });
-    attAll.forEach(a => {
-      const ym = String(a.month || (a.date || '').slice(0, 7)).slice(0, 7);
-      const b = ensureMonth(ym);
-      if (b) {
-        b.ot_hrs += Number(a.overtime_hours || 0);
-        b.late_hrs += Number(a.late_hours || 0);
-      }
-    });
-    const payMonths = Array.from(monthBucket.values()).sort((a, b) => a.ym.localeCompare(b.ym)).slice(-14);
-    const avgSitePerMonth = payMonths.length ? round2(siteStaffRowsBase.reduce((a, r) => a + r.accrued, 0) / payMonths.length) : 0;
-    payMonths.forEach(m => {
-      m.ot_pay = round2(m.ot_hrs * 6.5);
-      m.site_allow = avgSitePerMonth;
-      m.accrued = round2(Math.max(m.paid * 0.92, m.paid + m.ot_pay + m.site_allow - (m.late_hrs * 4.5)));
-    });
 
     const filteredStaff = sortRows(staffRows, 'pay_staff', 'paid', 'desc');
     const shownStaff = filteredStaff.slice(0, shownCount('pay_staff'));
@@ -13903,10 +14500,10 @@
                     <td class="r">${fmtNum(r.logs_cnt, 0)}</td>
                     <td class="r">${fmtNum(r.ot_logs, 0)}</td>
                     <td class="r"><strong>${fmtNum(r.ot_hrs, 1)}</strong></td>
-                    <td class="r"><strong>${fmtUSD(r.ot_pay, 2)}</strong></td>
+                    <td class="r" title="${r.trip_ot_pay > 0 ? `Shift OT: ${fmtUSD(r.att_ot_pay, 2)} · Driver Trip OT: ${fmtUSD(r.trip_ot_pay, 2)}` : ''}"><strong>${fmtUSD(r.ot_pay, 2)}</strong></td>
                     <td class="r">${r.late_hrs ? fmtNum(r.late_hrs, 1) : '—'}</td>
                     <td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '—'}</td>
-                    <td class="r">${r.absent_days ? fmtNum(r.absent_days, 1) : '—'}</td>
+                    <td class="r">${r.rec_absent_days ? fmtNum(r.rec_absent_days, 1) : '—'}</td>
                     <td class="r">${(r.vac_days + r.sick_days) ? fmtNum(r.vac_days + r.sick_days, 1) : '—'}</td>
                     <td class="r">${r.extras ? fmtUSD(r.extras, 2) : '—'}</td>
                     <td class="r ${r.net_att_impact < 0 ? 'pbi-neg' : ''}"><strong>${fmtUSD(r.net_att_impact, 2)}</strong></td>
@@ -13923,7 +14520,7 @@
                   <td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.ot_pay, 0), 2)}</b></td>
                   <td class="r"><b>${fmtNum(filteredAttStaff.reduce((a, r) => a + r.late_hrs, 0), 1)} hrs</b></td>
                   <td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.late_ded, 0), 2)}</b></td>
-                  <td class="r"><b>${fmtNum(filteredAttStaff.reduce((a, r) => a + r.absent_days, 0), 1)} d</b></td>
+                  <td class="r"><b>${fmtNum(filteredAttStaff.reduce((a, r) => a + r.rec_absent_days, 0), 1)} d</b></td>
                   <td class="r"><b>${fmtNum(filteredAttStaff.reduce((a, r) => a + r.vac_days + r.sick_days, 0), 1)} d</b></td>
                   <td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.extras, 0), 2)}</b></td>
                   <td class="r"><b>${fmtUSD(filteredAttStaff.reduce((a, r) => a + r.net_att_impact, 0), 2)}</b></td>
@@ -14228,7 +14825,7 @@
               <tr>
                 ${th('pay_staff', 'Staff Member', 'staff')}${th('pay_staff', 'Co.', 'company')}${th('pay_staff', 'Contract', 'type')}${th('pay_staff', 'Status', 'status')}
                 ${th('pay_staff', 'Base ($)', 'base', 'r')}${th('pay_staff', 'OT Hrs', 'ot_hrs', 'r')}${th('pay_staff', 'OT Pay ($)', 'ot_pay', 'r')}
-                ${th('pay_staff', 'Late Hrs', 'late_hrs', 'r')}${th('pay_staff', 'Lateness ($)', 'late_ded', 'r')}${th('pay_staff', 'Absent d', 'absent_days', 'r')}${th('pay_staff', 'Absence ($)', 'abs_ded', 'r')}
+                ${th('pay_staff', 'Late Hrs', 'late_hrs', 'r')}${th('pay_staff', 'Lateness ($)', 'late_ded', 'r')}${th('pay_staff', 'Absent d', 'rec_absent_days', 'r')}${th('pay_staff', 'Absence ($)', 'abs_ded', 'r')}
                 ${th('pay_staff', 'Site Allowance', 'site_allow', 'r')}${th('pay_staff', 'Earnings ($)', 'earnings', 'r')}${th('pay_staff', 'Paid ($)', 'paid', 'r')}${th('pay_staff', 'Balance ($)', 'balance', 'r')}
               </tr>
             </thead>
@@ -14239,16 +14836,16 @@
                   <td>${coBadge(r.company)}</td>
                   <td>${esc(r.type)}</td>
                   <td><span class="badge ${r.status === 'Ended' ? 'badge-warn' : 'badge-ok'}">${esc(r.status)}</span></td>
-                  <td class="r">${fmtUSD(r.base, 2)}</td>
+                  <td class="r" title="${r.active_months ? `${r.active_months} active contract months` : ''}">${fmtUSD(r.base, 2)}</td>
                   <td class="r">${fmtNum(r.ot_hrs, 1)}</td>
-                  <td class="r">${fmtUSD(r.ot_pay, 2)}</td>
+                  <td class="r" title="${r.trip_ot_pay > 0 ? `Shift OT: ${fmtUSD(r.att_ot_pay, 2)} · Driver Trip OT: ${fmtUSD(r.trip_ot_pay, 2)}` : ''}">${fmtUSD(r.ot_pay, 2)}</td>
                   <td class="r">${fmtNum(r.late_hrs, 1)}</td>
                   <td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '—'}</td>
-                  <td class="r">${fmtNum(r.absent_days, 0)}</td>
+                  <td class="r" title="${r.gap_days > 0 ? `${fmtNum(r.rec_absent_days, 1)}d recorded absence + ${fmtNum(r.gap_days, 0)}d mid-month contract start/end gap` : ''}">${fmtNum(r.rec_absent_days, 0)}</td>
                   <td class="r">${r.abs_ded ? fmtUSD(r.abs_ded, 2) : '—'}</td>
                   <td class="r">${r.site_allow ? fmtUSD(r.site_allow, 2) : '—'}</td>
-                  <td class="r"><strong>${fmtUSD(r.earnings, 2)}</strong></td>
-                  <td class="r pbi-bar-cell"><span class="pbi-bar-bg pos" style="width:${Math.min(94, Math.round((r.paid / Math.max(1, staffRows[0] ? staffRows[0].paid : 1)) * 90))}%"></span><strong>${fmtUSD(r.paid, 2)}</strong></td>
+                  <td class="r" title="${(r.reimb || r.extras || r.ded) ? `Reimb: ${fmtUSD(r.reimb, 2)} · Extras: ${fmtUSD(r.extras, 2)} · Ded: -${fmtUSD(r.ded, 2)}` : ''}"><strong>${fmtUSD(r.earnings, 2)}</strong></td>
+                  <td class="r pbi-bar-cell" title="${r.config_paid ? `Vouchers: ${fmtUSD(r.vouchers_paid, 2)} · Opening Config: ${fmtUSD(r.config_paid, 2)}` : ''}"><span class="pbi-bar-bg pos" style="width:${Math.min(94, Math.round((r.paid / Math.max(1, staffRows[0] ? staffRows[0].paid : 1)) * 90))}%"></span><strong>${fmtUSD(r.paid, 2)}</strong></td>
                   <td class="r ${r.balance < 0 ? 'pbi-neg' : ''}"><strong>${fmtUSD(r.balance, 2)}</strong></td>
                 </tr>
               `).join('') || emptyRow(15, 'No staff records match filter')}
@@ -14262,7 +14859,7 @@
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.ot_pay, 0), 2)}</td>
                 <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.late_hrs, 0), 1)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.late_ded, 0), 2)}</td>
-                <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.absent_days, 0), 0)}</td>
+                <td class="r">${fmtNum(filteredStaff.reduce((a, r) => a + r.rec_absent_days, 0), 0)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.abs_ded, 0), 2)}</td>
                 <td class="r">${fmtUSD(totalSiteAllow, 2)}</td>
                 <td class="r">${fmtUSD(filteredStaff.reduce((a, r) => a + r.earnings, 0), 2)}</td>
@@ -19854,9 +20451,9 @@
           ${fld(`Quantity (<span id="lbl_uom">${initSalesUom}</span>) *`, inp('f_qty', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to Truck Capacity (m³) when measured in m³; unlocked & blank when Unit = Ton so you can enter weighed tons', hintId: 'hint_qty', hint: '' })}
           ${fld(`Unit (UoM) * <span class="uom-quick-pills" id="uomQuickPills"><button type="button" class="uom-qpill${initSalesUom === 'm³' ? ' active' : ''}" data-set-uom="m³">m³</button><button type="button" class="uom-qpill${initSalesUom === 'Ton' ? ' active' : ''}" data-set-uom="Ton">Ton</button><button type="button" class="uom-qpill" data-set-uom="Truck">Truck</button></span>`, sel('f_uom', uoms, initSalesUom), { id: 'wrap_f_uom', hintId: 'hint_uom', hint: '' })}
           ${fld('Customer-declared Qty', inp('f_extqty', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="Customer ticket qty"'), { id: 'wrap_f_extqty', hidden: true })}
-          ${fld('Unit Price ($) * <span id="lbl_pricelock" hidden>—</span>', inp('f_unitprice', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="Auto from Agreement..." readonly'), { id: 'wrap_f_unitprice', lockField: 'f_unitprice', lockReason: 'Locked on Pickup & Delivery to active Price Agreement or List Price', hintId: 'hint_price', hint: '' })}
+          ${fld(`<span id="lbl_unitprice">Unit Price ($ / ${initSalesUom}) *</span> <span id="lbl_pricelock" hidden>—</span>`, inp('f_unitprice', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="Auto from Agreement..." readonly'), { id: 'wrap_f_unitprice', lockField: 'f_unitprice', lockReason: 'Locked on Pickup & Delivery to active Price Agreement or List Price', hintId: 'hint_price', hint: '' })}
           ${fld('<span id="lbl_mat_total">Material Total (USD) *</span>', inp('f_mat_total', 'number', '0.00', 'step="0.01" readonly'), { id: 'wrap_f_mat_total', lockField: 'f_mat_total', lockReason: 'Computed as Quantity × Unit Price + Tier Adjustment − Discount', hintId: 'hint_mat_total', hint: 'Qty × Unit Price + Tier Adj − Discount' })}
-          ${fld('Transport Unit Price ($)', inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_transunitprice', hidden: true, lockField: 'f_transunitprice', lockReason: 'Locked to Price Agreement transport rate on Delivery; hidden on Pickup', hintId: 'hint_trans', hint: '' })}
+          ${fld(`<span id="lbl_transunitprice">Transport Unit Price ($ / ${initSalesUom})</span>`, inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_transunitprice', hidden: true, lockField: 'f_transunitprice', lockReason: 'Locked to Price Agreement transport rate on Delivery; hidden on Pickup', hintId: 'hint_trans', hint: '' })}
           ${fld('Transport Total (USD)', inp('f_trans_total', 'number', '0.00', 'step="0.01" readonly'), { id: 'wrap_f_trans_total', hidden: true, lockField: 'f_trans_total', lockReason: 'Computed as Quantity × Transport Unit Price + Tier Transport Adjustment', hintId: 'hint_trans_total', hint: 'Qty × Transport Unit Price' })}
           ${fld('Driver Tip ($)', inp('f_tip', 'number', '0.00', 'step="0.50" min="0" inputmode="decimal"'), { id: 'wrap_f_tip' })}
           ${fld('Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { id: 'wrap_f_discount', hintId: 'hint_disc', hint: '' })}
@@ -19906,9 +20503,9 @@
           ${fld('Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { id: 'wrap_f_discount' })}
           ${fld(`Quantity (<span id="lbl_uom">${initRawUom}</span>) *`, inp('f_qty', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to Truck Capacity (m³) when measured in m³; unlocked & blank when Unit = Ton so you can enter weighed tons', hintId: 'hint_qty', hint: '' })}
           ${fld(`Unit (UoM) * <span class="uom-quick-pills" id="uomQuickPills"><button type="button" class="uom-qpill${initRawUom === 'm³' ? ' active' : ''}" data-set-uom="m³">m³</button><button type="button" class="uom-qpill${initRawUom === 'Ton' ? ' active' : ''}" data-set-uom="Ton">Ton</button><button type="button" class="uom-qpill" data-set-uom="Truck">Truck</button></span>`, sel('f_uom', uoms, initRawUom), { id: 'wrap_f_uom', hintId: 'hint_uom', hint: '' })}
-          ${fld('Material Unit Cost ($) * <span id="lbl_pricelock" hidden>—</span>', inp('f_unitprice', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="Auto from Site Rule..." readonly'), { id: 'wrap_f_unitprice', lockField: 'f_unitprice', lockReason: 'Locked to Purchase Price (Site) or List Price', hintId: 'hint_price', hint: '' })}
+          ${fld(`<span id="lbl_unitprice">Material Unit Cost ($ / ${initRawUom}) *</span> <span id="lbl_pricelock" hidden>—</span>`, inp('f_unitprice', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="Auto from Site Rule..." readonly'), { id: 'wrap_f_unitprice', lockField: 'f_unitprice', lockReason: 'Locked to Purchase Price (Site) or List Price', hintId: 'hint_price', hint: '' })}
           ${fld('Material Cost (USD) *', inp('f_mat_total', 'number', '0.00', 'step="0.01" readonly'), { id: 'wrap_f_mat_total', lockField: 'f_mat_total', lockReason: 'Computed as Quantity × Material Unit Cost − Discount' })}
-          ${fld('Haulage Unit Cost ($)', inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_transunitprice', lockField: 'f_transunitprice', lockReason: 'Locked to Transport Price (Site) agreement on third-party loads', hintId: 'hint_trans', hint: '' })}
+          ${fld(`<span id="lbl_transunitprice">Haulage Unit Cost ($ / ${initRawUom})</span>`, inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal" readonly'), { id: 'wrap_f_transunitprice', lockField: 'f_transunitprice', lockReason: 'Locked to Transport Price (Site) agreement on third-party loads', hintId: 'hint_trans', hint: '' })}
           ${fld('Haulage Cost (USD)', inp('f_trans_total', 'number', '0.00', 'step="0.01" readonly'), { id: 'wrap_f_trans_total', lockField: 'f_trans_total', lockReason: 'Computed as Quantity × Haulage Unit Cost' })}
           ${fld('Total Payable (USD) *', inp('f_total_usd', 'number', '0.00', 'step="0.01" readonly'), { id: 'wrap_f_total_usd', lockField: 'f_total_usd', lockReason: 'Computed as Material Cost + Haulage Cost' })}
           ${fld('Payment Method *', sel('f_method', [['Credit', 'Credit'], ['Cash', 'Cash']], 'Credit'), { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to Credit (2-leg AP split) by default' })}
@@ -19976,6 +20573,7 @@
           ${fld('Tank / Location', inp('f_location', 'text', 'Main Plant Tank', 'list="dl_fuel_locs" placeholder="Select or type tank / location..."') + dl('dl_fuel_locs', fuelLocs), { id: 'wrap_f_location' })}
           ${notesField}
         </div>
+        <div id="fuelLiveContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
         <div class="live-calc">
           <div><small>Previous reading</small><b id="calc_prev">—</b></div>
           <div><small id="lbl_calc_delta">Distance / hours since</small><b id="calc_delta">—</b></div>
@@ -19989,6 +20587,7 @@
       const cats = expenseCategories();
       return cockpitHtml + `
         ${adminHeaderHtml}
+        <input type="hidden" id="f_price_pending" value="0">
         <div class="form-grid-3">
           ${companyField}
           ${dateField}
@@ -19998,8 +20597,8 @@
           ${fld('Subcategory', inp('f_subcategory', 'text', '', 'list="dl_subcats" placeholder="Pick Category first..." readonly') + dl('dl_subcats', uniqSorted(cats.flatMap(c => c.subs), getFreqIndex().subcategory)), { id: 'wrap_f_subcategory', lockField: 'f_subcategory', lockReason: 'Locked until Category is selected', hintId: 'hint_subcat', hint: '' })}
           ${fld('Supplier / Vendor', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supplierNames('expense')), { id: 'wrap_f_supplier', hintId: 'hint_supplier', hint: 'Required for Credit' })}
           ${fld('Equipment (cost centre)', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type equipment..."') + dl('dl_equip', equipmentNames()), { id: 'wrap_f_truck' })}
-          ${fld('Quantity', inp('f_qty', 'number', '1', 'step="0.01" min="0" inputmode="decimal"'), { id: 'wrap_f_qty' })}
-          ${fld('Amount ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_amount', hintId: 'hint_amount', hint: '' })}
+          ${fld('<span id="lbl_exp_qty">Quantity</span>', inp('f_qty', 'number', '1', 'step="0.01" min="0" inputmode="decimal"'), { id: 'wrap_f_qty', hintId: 'hint_qty', hint: '' })}
+          ${fld('<span id="lbl_exp_amount">Amount ($) *</span> <span class="uom-quick-pills" id="expPriceModePills"><button type="button" class="uom-qpill active" data-exp-price-mode="priced" title="Invoice price is known now">Priced</button><button type="button" class="uom-qpill" data-exp-price-mode="pending" title="Delivery received before supplier invoice price — logs quantity now at $0.00 on Credit and flags as Pending Price">Price Pending ($0)</button></span>', inp('f_amount', 'number', '', 'step="0.01" min="0" inputmode="decimal"'), { id: 'wrap_f_amount', hintId: 'hint_amount', hint: '' })}
           ${fld('Reference / Invoice', inp('f_reference', 'text', ''), { id: 'wrap_f_reference' })}
           ${notesField}
         </div>
@@ -21022,6 +21621,40 @@
     return 0;
   }
 
+  function effectiveRuleMatUnit(rule, prod, company, customer, effDate) {
+    if (!rule) return (prod && prod.uom) || 'm³';
+    if (isMatIndiffRule(rule)) return 'Truck';
+    const u = String(rule.unit || '').trim();
+    if (/^tons?$/i.test(u)) return 'Ton';
+    const rRate = Number(rule.unit_price ?? rule.price ?? 0);
+    const d = String(effDate || rule.start_date || '').slice(0, 10);
+    const co = company || rule.company || '';
+    const cu = customer || rule.customer || '';
+    if (prod && /^m/i.test(prod.uom || 'm³') && Number(prod.ton_factor) > 1 && rRate > 0) {
+      if (co === 'BBConstruction' && /sibline\s*baton/i.test(cu) && rRate <= 11.5) return 'Ton';
+      if (/^soime\b/i.test(cu) && (!d || d >= '2024-12-01') && rRate <= 15.5) return 'Ton';
+      if (/^sibline\s*s\.?a\.?l/i.test(cu) && (!d || d >= '2025-07-01') && rRate <= 14.5) return 'Ton';
+    }
+    return u || (prod && prod.uom) || 'm³';
+  }
+
+  function convertRateForTicketUom(rawRate, srcUnit, ticketUom, tonFactor) {
+    const rate = Number(rawRate || 0);
+    if (!(rate > 0)) return { rate: 0, converted: false, note: '' };
+    const sU = String(srcUnit || 'm³').trim();
+    const tU = String(ticketUom || 'm³').trim();
+    const tf = Number(tonFactor) > 0 ? Number(tonFactor) : 0;
+    if (/^m/i.test(sU) && /^tons?$/i.test(tU) && tf > 0 && tf !== 1) {
+      const conv = round2(rate / tf);
+      return { rate: conv, converted: true, note: `converted from ${fmtUSD(rate, 2)}/m³ ÷ ${tf} t/m³` };
+    }
+    if (/^tons?$/i.test(sU) && /^m/i.test(tU) && tf > 0 && tf !== 1) {
+      const conv = round2(rate * tf);
+      return { rate: conv, converted: true, note: `converted from ${fmtUSD(rate, 2)}/Ton × ${tf} t/m³` };
+    }
+    return { rate: round2(rate), converted: false, note: '' };
+  }
+
   const TON_EST_MIN_RATIO = 0.70;
   const TON_EST_MAX_RATIO = 1.50;
   function evaluateTonEstimateGuard(qty, estTons, effCap, tonFactor, adminUnlocked = false, defaultTonFactor = 1.6) {
@@ -21310,27 +21943,39 @@
       )
     );
     const transIsIndiff = isDelivery && !isUnreg && isTransIndiffRule(activeTransRule);
-    const agreedMatRate = rule ? (matIsIndiff ? Number(ruleIndiffPrice(rule) || 0) : Number(rule.unit_price ?? rule.price ?? 0)) : 0;
-    const agreedTransRate = activeTransRule
+    setText('lbl_unitprice', (isTruckUom || matIsIndiff) ? 'Unit Price ($ / Load) *' : `Unit Price ($ / ${uom}) *`);
+    setText('lbl_transunitprice', (isTruckUom || transIsIndiff) ? 'Transport Price ($ / Load)' : `Transport Unit Price ($ / ${uom})`);
+
+    const ruleMatUnit = effectiveRuleMatUnit(rule, prod, company, customer, effDate);
+    const rawMatRate = rule ? (matIsIndiff ? Number(ruleIndiffPrice(rule) || 0) : Number(rule.unit_price ?? rule.price ?? 0)) : 0;
+    const matConv = (rule && !matIsIndiff) ? convertRateForTicketUom(rawMatRate, ruleMatUnit, uom, tonFactor) : { rate: rawMatRate, converted: false, note: '' };
+    const agreedMatRate = matConv.rate;
+    const rawTransRate = activeTransRule
       ? (transIsIndiff
           ? Number(ruleTransIndiffPrice(activeTransRule) || 0)
           : Number(activeTransRule.trans_unit_price || activeTransRule.trans_price || activeTransRule.unit_price || 0))
       : 0;
+    const transRuleUnit = activeTransRule ? (activeTransRule.rate_per || activeTransRule.unit || 'm³') : 'm³';
+    const transConv = (activeTransRule && !transIsIndiff) ? convertRateForTicketUom(rawTransRate, transRuleUnit, uom, tonFactor) : { rate: rawTransRate, converted: false, note: '' };
+    const agreedTransRate = transConv.rate;
 
     if (priceLocked && !FORM_UI.priceManual && upEl) {
       if (rule) {
         upEl.value = agreedMatRate.toFixed(2);
         if (tpEl && isDelivery && transLocked && !FORM_UI.transManual) tpEl.value = agreedTransRate.toFixed(2);
         setText('lbl_pricelock', 'AGREEMENT');
-        setHint('hint_price', `${rule.rule_type || 'Agreement'}${matIsIndiff ? ' · Indifference Price (Flat / Load)' : ''} · ${rule.name}${rule.site ? ' · ' + rule.site : ''}${rule.end_date ? ' · to ' + rule.end_date : ''}${!matIsIndiff && rule.unit && rule.unit !== baseUom ? ' · priced per ' + rule.unit : ''}`, 'ok');
+        setHint('hint_price', `${rule.rule_type || 'Agreement'}${matIsIndiff ? ' · Indifference Price (Flat / Load)' : ''} · ${rule.name}${rule.site ? ' · ' + rule.site : ''}${rule.end_date ? ' · to ' + rule.end_date : ''}${matConv.converted ? ' · ' + matConv.note : (!matIsIndiff && ruleMatUnit && ruleMatUnit !== baseUom ? ' · priced per ' + ruleMatUnit : '')}`, 'ok');
       } else {
         if (tpEl && isDelivery && transLocked && !FORM_UI.transManual) tpEl.value = agreedTransRate.toFixed(2);
         const lpRule = product ? listPriceRule(company, product, effDate) : null;
-        const lp = lpRule ? Number(lpRule.unit_price || 0) : (product ? listPrice(product) : null);
+        const rawLp = lpRule ? Number(lpRule.unit_price || 0) : (product ? listPrice(product) : null);
+        const lpUnit = (lpRule && lpRule.unit) ? lpRule.unit : baseUom;
+        const lpConv = rawLp != null ? convertRateForTicketUom(rawLp, lpUnit, uom, tonFactor) : null;
+        const lp = lpConv ? lpConv.rate : null;
         if (lp != null) {
           upEl.value = lp.toFixed(2);
           setText('lbl_pricelock', 'LIST PRICE');
-          setHint('hint_price', (crossType ? `No ${wantType} agreement (customer has ${crossType.rule_type} at ${fmtUSD(crossType.unit_price ?? ruleAnyIndiffPrice(crossType), 2)}) — ` : 'No customer agreement — ') + (lpRule ? lpRule.name : 'model list price'), 'warn');
+          setHint('hint_price', (crossType ? `No ${wantType} agreement (customer has ${crossType.rule_type} at ${fmtUSD(crossType.unit_price ?? ruleAnyIndiffPrice(crossType), 2)}) — ` : 'No customer agreement — ') + (lpRule ? lpRule.name : 'model list price') + (lpConv && lpConv.converted ? ' · ' + lpConv.note : ''), 'warn');
         } else {
           upEl.value = '';
           setText('lbl_pricelock', 'LOCKED');
@@ -21346,11 +21991,13 @@
       if (!isDelivery) {
         tpEl.value = '0.00';
       } else if (activeTransRule && activeTransRule === transRule) {
-        setHint('hint_trans', `Site transport agreement${transIsIndiff ? ' · Indifference Price (Flat / Load)' : ''} · ${transRule.name}${transRule.site ? ' · ' + transRule.site : ''}`, 'ok');
+        setHint('hint_trans', `Site transport agreement${transIsIndiff ? ' · Indifference Price (Flat / Load)' : ''}${transConv.converted ? ' · ' + transConv.note : ''} · ${transRule.name}${transRule.site ? ' · ' + transRule.site : ''}`, 'ok');
       } else if (activeTransRule && activeTransRule === haulCustRule) {
-        setHint('hint_trans', `Customer site haulage${transIsIndiff ? ' · Indifference Price (Flat / Load)' : ''} · ${haulCustRule.name}${haulCustRule.site ? ' · ' + haulCustRule.site : ''}`, 'ok');
+        setHint('hint_trans', `Customer site haulage${transIsIndiff ? ' · Indifference Price (Flat / Load)' : ''}${transConv.converted ? ' · ' + transConv.note : ''} · ${haulCustRule.name}${haulCustRule.site ? ' · ' + haulCustRule.site : ''}`, 'ok');
       } else if (activeTransRule && transIsIndiff) {
         setHint('hint_trans', `${activeTransRule.rule_type || 'Delivery'} · Indifference Price (Flat / Load) · ${activeTransRule.name}`, 'ok');
+      } else if (activeTransRule && transConv.converted) {
+        setHint('hint_trans', `${activeTransRule.rule_type || 'Delivery'} · ${transConv.note} · ${activeTransRule.name}`, 'ok');
       } else {
         setHint('hint_trans', transportBy === 'Third-party truck' ? 'Hauler delivers — transport price billed to customer' : 'Company fleet delivery rate', '');
       }
@@ -21753,26 +22400,36 @@
     // 6. Purchase Price (Site) & Transport Price (Site) Lock
     const priceLocked = applyFieldLockState('f_unitprice', true, 'Locked to Purchase Price (Site) or List Price');
     const transLocked = applyFieldLockState('f_transunitprice', !isCoFleet, 'Locked to Transport Price (Site) agreement');
-    const agreedMatCost = rule ? (matIsIndiff ? Number(ruleIndiffPrice(rule) || 0) : Number(rule.unit_price ?? rule.price ?? 0)) : 0;
-    const haulPerTon = Boolean(haulRule && !haulIsIndiff && /^tons?$/i.test(haulRule.rate_per || haulRule.unit || '') && !/^tons?$/i.test(uom));
-    const haulTonFactor = (haulPerTon && rawTonFactor > 0) ? rawTonFactor : 1;
-    const agreedHaulCost = haulRule
+    setText('lbl_unitprice', (isTruckUom || matIsIndiff) ? 'Material Cost ($ / Load) *' : `Material Unit Cost ($ / ${uom}) *`);
+    setText('lbl_transunitprice', (isTruckUom || haulIsIndiff) ? 'Haulage Cost ($ / Load)' : `Haulage Unit Cost ($ / ${uom})`);
+
+    const rawMatUnit = effectiveRuleMatUnit(rule, prod, company, owner, effDate);
+    const baseMatCost = rule ? (matIsIndiff ? Number(ruleIndiffPrice(rule) || 0) : Number(rule.unit_price ?? rule.price ?? 0)) : 0;
+    const rawMatConv = (rule && !matIsIndiff) ? convertRateForTicketUom(baseMatCost, rawMatUnit, uom, rawTonFactor) : { rate: baseMatCost, converted: false, note: '' };
+    const agreedMatCost = rawMatConv.rate;
+
+    const haulSrcUnit = haulRule ? (haulRule.rate_per || haulRule.unit || 'm³') : 'm³';
+    const baseHaulCost = haulRule
       ? (haulIsIndiff
           ? Number(ruleTransIndiffPrice(haulRule) || 0)
-          : round2(Number(haulRule.trans_unit_price || haulRule.price || haulRule.unit_price || 0) * haulTonFactor))
+          : Number(haulRule.trans_unit_price || haulRule.price || haulRule.unit_price || 0))
       : 0;
+    const rawHaulConv = (haulRule && !haulIsIndiff) ? convertRateForTicketUom(baseHaulCost, haulSrcUnit, uom, rawTonFactor) : { rate: baseHaulCost, converted: false, note: '' };
+    const agreedHaulCost = rawHaulConv.rate;
 
     if (priceLocked && !FORM_UI.priceManual && upEl) {
       if (rule) {
         upEl.value = agreedMatCost.toFixed(2);
         setText('lbl_pricelock', 'AGREEMENT');
-        setHint('hint_price', `${rule.rule_type || 'Agreement'}${matIsIndiff ? ' · Indifference Price (Flat / Load)' : ''} · ${rule.name}`, 'ok');
+        setHint('hint_price', `${rule.rule_type || 'Agreement'}${matIsIndiff ? ' · Indifference Price (Flat / Load)' : ''}${rawMatConv.converted ? ' · ' + rawMatConv.note : ''} · ${rule.name}`, 'ok');
       } else {
         const lpRule = product ? listPriceRule(company, product, effDate) : null;
         if (lpRule) {
-          upEl.value = Number(lpRule.unit_price || 0).toFixed(2);
+          const lpUnit = lpRule.unit || baseUom;
+          const lpConv = convertRateForTicketUom(Number(lpRule.unit_price || 0), lpUnit, uom, rawTonFactor);
+          upEl.value = lpConv.rate.toFixed(2);
           setText('lbl_pricelock', 'LIST PRICE');
-          setHint('hint_price', 'No purchase agreement — ' + lpRule.name, 'warn');
+          setHint('hint_price', 'No purchase agreement — ' + lpRule.name + (lpConv.converted ? ' · ' + lpConv.note : ''), 'warn');
         } else {
           upEl.value = '';
           setText('lbl_pricelock', 'LOCKED');
@@ -21791,7 +22448,7 @@
         if (transLocked && !FORM_UI.transManual) {
           tpEl.value = haulRule ? agreedHaulCost.toFixed(2) : '0.00';
         }
-        setHint('hint_trans', haulRule ? `${haulRule.rule_type}${haulIsIndiff ? ' · Indifference Price (Flat / Load)' : (haulPerTon && haulTonFactor !== 1 ? ` · Per Ton (×${haulTonFactor})` : '')} · ${haulRule.name}` : '', haulRule ? 'ok' : '');
+        setHint('hint_trans', haulRule ? `${haulRule.rule_type}${haulIsIndiff ? ' · Indifference Price (Flat / Load)' : (rawHaulConv.converted ? ` · ${rawHaulConv.note}` : '')} · ${haulRule.name}` : '', haulRule ? 'ok' : '');
       }
     }
     setHint('hint_truckowner', !isCoFleet
@@ -22193,7 +22850,11 @@
           ? `${(eqRow && eqRow.type) || 'Equipment'}${mSpec.unit ? ' (' + mSpec.unit + ')' : (mSpec.type === 'none' ? ' (No meter)' : '')}${defDriver ? ' · Default driver: ' + defDriver : ''}${eqRow && eqRow.supplier ? ' · Owner: ' + eqRow.supplier : ''}`
           : 'Not in the equipment registry — check the plate')
       : '', equipment ? (known ? 'ok' : 'warn') : '');
-    const bbcTankNegative = company === 'BBConstruction' && (fuelType === 'Diesel' || /diesel/i.test(val('f_item'))) && Number((((SEED.sentinels.fleet_fuel_overtime_auditor || {}).by_model || {}).BBConstruction || {}).diesel_stock_balance_l || 0) < 0;
+    const liveTankAll = computeDieselTank();
+    const bbcTankBal = (liveTankAll.byCo && liveTankAll.byCo.BBConstruction)
+      ? Number(liveTankAll.byCo.BBConstruction.balance || 0)
+      : Number((((SEED.sentinels.fleet_fuel_overtime_auditor || {}).by_model || {}).BBConstruction || {}).diesel_stock_balance_l || 0);
+    const bbcTankNegative = company === 'BBConstruction' && (fuelType === 'Diesel' || /diesel/i.test(val('f_item'))) && bbcTankBal < 0;
     if (bbcTankNegative) {
       setHint('hint_qty', 'BBConstruction tank is negative — diesel intakes are refused until the history is corrected', 'crit');
     } else if (litres <= 0 && val('f_qty')) {
@@ -22207,7 +22868,7 @@
     }
     const fuelStrip = $('fuelLiveContextStrip');
     if (fuelStrip) {
-      if (isKioskActive()) {
+      if (STATE.view === 'kiosks') {
         fuelStrip.hidden = true;
       } else {
         const tankAll = computeDieselTank();
@@ -22239,7 +22900,39 @@
   }
 
   function recalcExpense() {
-    const method = val('f_method'), supplier = val('f_supplier'), amount = num('f_amount');
+    const pricePending = val('f_price_pending') === '1';
+    const modePills = $('expPriceModePills');
+    if (modePills) {
+      modePills.querySelectorAll('[data-exp-price-mode]').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-exp-price-mode') === (pricePending ? 'pending' : 'priced'));
+      });
+    }
+    const mthEl = $('f_method');
+    const amtEl = $('f_amount');
+    if (pricePending) {
+      if (mthEl && mthEl.value !== 'Credit') mthEl.value = 'Credit';
+      if (mthEl) mthEl.disabled = true;
+      if (amtEl) {
+        amtEl.value = '0.00';
+        amtEl.readOnly = true;
+        amtEl.classList.add('pa-locked-input');
+        amtEl.dataset.wasPendingZero = '1';
+      }
+    } else {
+      if (mthEl) mthEl.disabled = false;
+      if (amtEl) {
+        amtEl.readOnly = false;
+        amtEl.classList.remove('pa-locked-input');
+        if (amtEl.dataset.wasPendingZero === '1') {
+          if (amtEl.value === '0.00' || amtEl.value === '0') amtEl.value = '';
+          delete amtEl.dataset.wasPendingZero;
+        }
+      }
+    }
+    const method = pricePending ? 'Credit' : val('f_method');
+    const supplier = val('f_supplier');
+    const amount = pricePending ? 0 : num('f_amount');
+    const qty = num('f_qty');
     const catNow = val('f_category');
     const subLocked = applyFieldLockState('f_subcategory', !catNow, !catNow
       ? 'Pick a Category first to unlock Subcategory'
@@ -22259,13 +22952,38 @@
       }
       if (subEl) subEl.placeholder = !catNow ? 'Pick Category first...' : (hit && hit.subs.length ? `${hit.subs.length} subcategories under ${catNow}` : 'Subcategory...');
     }
+    const subNow = val('f_subcategory');
+    const isFuelDiesel = /^diesel$|^mazout$/i.test(subNow) || (/^fuel$/i.test(catNow) && (!subNow || /diesel|mazout/i.test(subNow)));
+    setText('lbl_exp_qty', isFuelDiesel ? 'Quantity (Litres L) *' : (pricePending ? 'Quantity Received *' : 'Quantity'));
+    setText('lbl_exp_amount', pricePending ? 'Amount ($) · Pending' : 'Amount ($) *');
     setHint('hint_subcat', subLocked ? 'Pick a Category first' : (catNow ? `Scoped to ${catNow}` : 'Admin override active'), '');
-    setText('calc_total', fmtUSD(amount, 2));
-    setText('calc_post', method === 'Cash' ? 'Cash' : 'Credit');
+    setText('calc_total', pricePending ? 'PENDING ($0.00)' : fmtUSD(amount, 2));
+    setText('calc_post', pricePending ? 'Credit · Pending Price' : (method === 'Cash' ? 'Cash' : 'Credit'));
     const ap = openApBalance(supplier);
     setText('calc_before', ap == null ? '—' : fmtUSD(ap, 2));
-    setHint('hint_supplier', method === 'Credit' && !supplier ? 'Required for Credit' : '', (FORM_UI.postAttempted && method === 'Credit' && !supplier) ? 'crit' : '');
-    setHint('hint_amount', amount <= 0 && val('f_amount') ? 'Must be above zero' : '', amount <= 0 && val('f_amount') ? 'crit' : '');
+    setHint(
+      'hint_supplier',
+      (method === 'Credit' || pricePending) && !supplier
+        ? (pricePending ? 'Required when Price is Pending' : 'Required for Credit')
+        : '',
+      (FORM_UI.postAttempted && (method === 'Credit' || pricePending) && !supplier) ? 'crit' : ''
+    );
+    if (pricePending && !(qty > 0)) {
+      setHint('hint_qty', isFuelDiesel ? 'Enter delivered Litres (L) from delivery slip' : 'Enter quantity received', FORM_UI.postAttempted ? 'crit' : 'warn');
+    } else if (isFuelDiesel && qty > 0) {
+      setHint('hint_qty', `+${fmtNum(qty, 0)} L added to ${val('f_company') || 'WTC'} Diesel Tank`, 'ok');
+    } else {
+      setHint('hint_qty', '', '');
+    }
+    if (pricePending) {
+      setHint('hint_amount', 'Locked to $0.00 AP — update Amount via Modify Record once supplier invoice arrives', 'ok');
+    } else if (amount <= 0 && val('f_amount')) {
+      setHint('hint_amount', 'Must be above zero (or click "Price Pending ($0)" above)', 'crit');
+    } else if (isFuelDiesel && !val('f_amount')) {
+      setHint('hint_amount', 'Price arriving later? Click "Price Pending ($0)" above to add Litres now', '');
+    } else {
+      setHint('hint_amount', '', '');
+    }
     const cat = val('f_category');
     setText('calc_gl', /fuel|oil/i.test(cat) ? '60 · Fuel & lubricants' : (/repair|spare|tool|minor/i.test(cat) ? '61 · Repairs & parts' : (/tip/i.test(cat) ? '64 · Staff' : '62 · Operating')));
     const expStrip = $('expLiveContextStrip');
@@ -22273,23 +22991,31 @@
       const fIntel = _getFormIntelIndex();
       const sInfo = supplier ? supplierInfo(supplier) : null;
       const lastExp = supplier ? fIntel.lastExpBySup[norm(supplier)] : null;
-      const litres = num('f_qty');
-      const isDieselBulk = /fuel|oil|mazout|diesel/i.test(`${catNow} ${val('f_subcategory')}`) && litres > 0;
-      if (!supplier && !isDieselBulk) {
+      const litres = qty;
+      const isDieselBulk = /fuel|oil|mazout|diesel/i.test(`${catNow} ${subNow}`) && litres > 0;
+      if (!supplier && !isDieselBulk && !pricePending) {
         expStrip.hidden = true;
         expStrip.innerHTML = '';
       } else {
+        const coName = val('f_company') || 'WTC';
+        const tankAll = isFuelDiesel ? computeDieselTank() : null;
+        const coTank = (tankAll && tankAll.byCo && tankAll.byCo[coName]) || null;
         const afterAp = (ap != null ? ap : 0) + (method === 'Credit' ? amount : 0);
         expStrip.hidden = false;
-        expStrip.className = 'att-contract-strip';
+        expStrip.className = 'att-contract-strip' + (pricePending ? ' is-warn' : '');
         expStrip.innerHTML = `
           <div>
             <strong>${esc(supplier || catNow || 'Expense Context')}</strong>
-            <span class="badge ${method === 'Credit' ? 'badge-warn' : 'badge-ok'}">${method === 'Credit' ? 'Adds to Leg 3 AP' : 'Immediate Cash Out'}</span>
+            ${pricePending
+              ? '<span class="badge badge-warn">⏳ Price Pending ($0.00 AP Now)</span>'
+              : `<span class="badge ${method === 'Credit' ? 'badge-warn' : 'badge-ok'}">${method === 'Credit' ? 'Adds to Leg 3 AP' : 'Immediate Cash Out'}</span>`}
+            ${isFuelDiesel && litres > 0 ? `<span class="badge badge-ok">+${fmtNum(litres, 0)} L → ${esc(coName)} Tank</span>` : ''}
           </div>
           <div class="att-contract-metrics">
             ${supplier ? `<span><small>Open AP Before</small><b>${ap != null ? fmtUSD(ap, 2) : '$0.00'}</b></span>` : ''}
             ${supplier && method === 'Credit' && amount > 0 ? `<span><small>AP After</small><b>${fmtUSD(afterAp, 2)}</b></span>` : ''}
+            ${pricePending ? `<span><small>AP Impact Now</small><b>$0.00 (Update on Invoice)</b></span>` : ''}
+            ${coTank && isFuelDiesel && litres > 0 ? `<span><small>${esc(coName)} Tank After</small><b>${fmtNum(coTank.balance + litres, 0)} L</b></span>` : ''}
             ${sInfo && Number(sInfo.ap_expense || 0) > 0 ? `<span><small>Leg 3 Credit Exp.</small><b>${fmtUSD(sInfo.ap_expense, 0)}</b></span>` : ''}
             ${lastExp ? `<span><small>Last Voucher</small><b>${fmtUSD(lastExp.amount || 0, 2)} on ${esc(String(lastExp.date || '').slice(0, 10))}</b></span>` : ''}
             ${isDieselBulk && amount > 0 ? `<span><small>Implied Rate</small><b>${fmtUSD(amount / litres, 3)} / L (${fmtNum(litres, 0)} L)</b></span>` : ''}
@@ -22299,7 +23025,7 @@
     }
     commonDateChecks([]);
     renderAdminLockBar();
-    return { method, supplier, amount };
+    return { method, supplier, amount, qty, pricePending };
   }
 
   function recalcSettlement() {
@@ -22859,7 +23585,8 @@
         return { usd, lbp, amount: thisPay };
       }
       if (STATE.modalForm === 'pricerule') {
-        const rt = val('f_ruletype') || 'Sales (Delivery)';
+        const isRawGrp = STATE.modalGroupOverride === 'raw';
+        const rt = val('f_ruletype') || (isRawGrp ? 'Purchase Price (Site)' : 'Sales (Delivery)');
         const isSalesDel = rt === 'Sales (Delivery)';
         const isSalesPick = rt === 'Sales (Pickup)';
         const isList = rt === 'List Price';
@@ -22867,6 +23594,7 @@
         const isPurch = rt === 'Purchase Price (Site)';
         const isTransSite = rt === 'Transport Price (Site)';
         const isHaulCust = rt === 'Haulage (Customer Site)';
+        const isRawDomain = isPurch || isTransSite;
         const hasTrans = isSalesDel || isTransSite || isHaulCust;
         const hasMat = !isTransSite && !isHaulCust;
         const showCustomer = isSalesDel || isSalesPick || isHaulCust;
@@ -22880,16 +23608,29 @@
         const sec2Hdr = $('pr_sec2_hdr');
         const startLbl = document.querySelector('#wrap_pr_startdate .pa-fld-lbl');
         const endLbl = document.querySelector('#wrap_pr_enddate .pa-fld-lbl');
+        const prodLbl = document.querySelector('#wrap_pr_product .pa-fld-lbl');
+        const custLbl = document.querySelector('#wrap_pr_customer .pa-fld-lbl');
         const uomLbl = document.querySelector('#wrap_pr_uom .pa-fld-lbl');
         const supLbl = document.querySelector('#wrap_pr_supplier .pa-fld-lbl');
+        const siteLbl = document.querySelector('#wrap_pr_site .pa-fld-lbl');
         const matLbl = document.querySelector('#wrap_pr_matprice .pa-fld-lbl');
-        if (sec1Hdr) sec1Hdr.textContent = isComm ? '1. Commission Product, Plant Owner & Effective Date Window' : '1. Rule Scope & Counterparty';
+        const transRateLbl = document.querySelector('#wrap_pr_transrate .pa-fld-lbl');
+        const transPriceLbl = document.querySelector('#wrap_pr_transprice .pa-fld-lbl');
+        const adj1Lbl = document.querySelector('#wrap_pr_adj1 .pa-fld-lbl');
+        const adj2Lbl = document.querySelector('#wrap_pr_adj2 .pa-fld-lbl');
+        if (sec1Hdr) sec1Hdr.textContent = isComm ? '1. Commission Product, Plant Owner & Effective Date Window' : (isRawDomain ? '1. Raw Material Site, Supplier / Hauler & Effective Window' : '1. Sales Agreement Scope & Customer');
         if (sec2Hdr) sec2Hdr.textContent = isComm ? '2. Commission Unit (m³ / Ton) & Per-Unit Rate' : '2. Unit Pricing, Flat / Indifference Rate & Volume Tiers';
         if (startLbl) startLbl.textContent = isComm ? 'Effective Start Date *' : 'Start Date *';
         if (endLbl) endLbl.textContent = isComm ? 'Effective End Date (Optional · blank = Open)' : 'End Date (Optional)';
-        if (uomLbl) uomLbl.textContent = isComm ? 'Commission Unit (m³ / Ton) *' : 'Pricing Unit';
-        if (supLbl) supLbl.textContent = isComm ? 'Plant Owner / Beneficiary *' : 'Supplier / Hauler *';
-        if (matLbl) matLbl.textContent = isComm ? `Commission Rate ($ / ${val('f_uom') || 'Unit'}) *` : 'Material Unit Price ($) *';
+        if (prodLbl) prodLbl.textContent = isTransSite ? 'Raw Material / Grade (Optional)' : (isPurch ? 'Raw Material / Grade *' : 'Product / Grade *');
+        if (custLbl) custLbl.textContent = 'Customer *';
+        if (uomLbl) uomLbl.textContent = isComm ? 'Commission Unit (m³ / Ton) *' : (isList ? 'Product Pricing Unit *' : 'Material Pricing Unit *');
+        if (supLbl) supLbl.textContent = isComm ? 'Plant Owner / Beneficiary *' : (isPurch ? 'Site Owner / Material Supplier *' : (isTransSite ? 'Hauler / Truck Owner *' : 'Supplier / Hauler *'));
+        if (siteLbl) siteLbl.textContent = isRawDomain ? 'Source Site *' : 'Delivery Site';
+        if (transRateLbl) transRateLbl.textContent = 'Transport Pricing Unit';
+        if (transPriceLbl) transPriceLbl.textContent = ratePer === 'Truck' ? 'Transport Flat Price ($ / Truck Load)' : `Transport Unit Price ($ / ${ratePer})`;
+        if (adj1Lbl) adj1Lbl.textContent = 'Tier 1 Material Adj ($)';
+        if (adj2Lbl) adj2Lbl.textContent = 'Tier 2 Material Adj ($)';
 
         const prProduct = val('f_product');
         const prCo = val('f_company');
@@ -22908,8 +23649,15 @@
             if (existingComm && existingComm.supplier && $('f_supplier') && !val('f_supplier')) {
               $('f_supplier').value = existingComm.supplier;
             }
-          } else if (pInfo && pInfo.uom && $('f_uom') && !FORM_UI.uomManual) {
-            $('f_uom').value = pInfo.uom;
+          } else if (prProduct && $('f_uom') && !FORM_UI.uomManual) {
+            const prTonMode = isPurch
+              ? resolveRawSiteProductTonMode(prCo, val('f_site'), val('f_supplier'), prProduct, val('f_date'), null, pInfo)
+              : resolveCustomerProductTonMode(prCo, val('f_customer'), prProduct, val('f_date'), null, pInfo);
+            if (prTonMode && prTonMode.isTon) {
+              $('f_uom').value = 'Ton';
+            } else if (pInfo && pInfo.uom) {
+              $('f_uom').value = pInfo.uom;
+            }
           }
         }
 
@@ -22947,6 +23695,18 @@
           $('f_uom').value = ratePer;
         }
         const uomVal = hasMat ? (val('f_uom') || 'm³') : ratePer;
+        const isTruckMat = hasMat && uomVal === 'Truck';
+        if (matLbl) {
+          matLbl.textContent = isComm
+            ? `Commission Rate ($ / ${uomVal}) *`
+            : (isPurch
+                ? (isTruckMat ? 'Material Flat Cost ($ / Truck Load) *' : `Material Unit Cost ($ / ${uomVal}) *`)
+                : (isTruckMat
+                    ? 'Material Flat Price ($ / Truck Load) *'
+                    : (isList
+                        ? `List Price ($ / ${uomVal}) *`
+                        : `Material Unit Price ($ / ${uomVal}) *`)));
+        }
         const matIsM3 = hasMat && /^m/i.test(uomVal);
         const transIsM3 = hasTrans && /^m/i.test(ratePer);
         const isM3Rule = !isList && !isComm && (hasTrans ? (transIsM3 && (!hasMat || matIsM3)) : matIsM3);
@@ -22968,6 +23728,10 @@
         if (!showSite && $('f_site') && $('f_site').value) $('f_site').value = '';
         if (!hasMat) {
           if ($('f_unitprice') && $('f_unitprice').value !== '0.00') $('f_unitprice').value = '0.00';
+          if ($('f_adj1') && $('f_adj1').value !== '0.00') $('f_adj1').value = '0.00';
+          if ($('f_adj2') && $('f_adj2').value !== '0.00') $('f_adj2').value = '0.00';
+        }
+        if (!matIsM3) {
           if ($('f_adj1') && $('f_adj1').value !== '0.00') $('f_adj1').value = '0.00';
           if ($('f_adj2') && $('f_adj2').value !== '0.00') $('f_adj2').value = '0.00';
         }
@@ -23014,14 +23778,14 @@
         }
 
         setFieldVisible('wrap_pr_tier1', isM3Rule);
-        setFieldVisible('wrap_pr_adj1', isM3Rule && hasMat);
+        setFieldVisible('wrap_pr_adj1', isM3Rule && hasMat && matIsM3);
         setFieldVisible('wrap_pr_transadj1', isM3Rule && hasTrans && transIsM3);
 
         const q1 = num('f_qty1');
         const tSize = num('f_trucksize');
         const showTier2 = isM3Rule && q1 > 0;
         setFieldVisible('wrap_pr_tier2', showTier2);
-        setFieldVisible('wrap_pr_adj2', showTier2 && hasMat);
+        setFieldVisible('wrap_pr_adj2', showTier2 && hasMat && matIsM3);
         setFieldVisible('wrap_pr_transadj2', showTier2 && hasTrans && transIsM3);
         if (!showTier2) {
           if ($('f_qty2') && $('f_qty2').value) $('f_qty2').value = '';
@@ -23030,6 +23794,38 @@
         }
 
         const up = num('f_unitprice'), tp = (hasTrans && !isTruckRate) ? num('f_transunitprice') : 0, ind = num('f_indiff'), a1 = num('f_adj1'), ta1 = num('f_transadj1'), q2 = num('f_qty2'), a2 = num('f_adj2'), ta2 = num('f_transadj2');
+        const prProdInfo = prProduct ? productInfo(prProduct) : null;
+        const prTf = resolveProductTonFactor(prProdInfo, prProduct);
+        if (hasMat && prProduct && prTf > 0 && prTf !== 1) {
+          setHint('hint_pr_uom', `1 m³ = ${prTf} Tons (${prProduct})`, '');
+        } else {
+          setHint('hint_pr_uom', '', '');
+        }
+        if (hasMat && !isComm) {
+          if (up > 0 && prTf > 0 && prTf !== 1) {
+            if (/^m/i.test(uomVal)) {
+              setHint('hint_pr_matprice', `≈ ${fmtUSD(up / prTf, 2)} / Ton (÷ ${prTf} t/m³)`, 'ok');
+            } else if (/^tons?$/i.test(uomVal)) {
+              setHint('hint_pr_matprice', `≈ ${fmtUSD(up * prTf, 2)} / m³ (× ${prTf} t/m³)`, 'ok');
+            } else {
+              setHint('hint_pr_matprice', '', '');
+            }
+          } else if (!(up > 0) && prProduct && !isList) {
+            const lpR = listPriceRule(prCo, prProduct, val('f_date') || SEED_DATE);
+            const rawLp = lpR ? Number(lpR.unit_price || 0) : listPrice(prProduct);
+            if (rawLp > 0) {
+              const lpConv = convertRateForTicketUom(rawLp, (lpR && lpR.unit) || (prProdInfo && prProdInfo.uom) || 'm³', uomVal, prTf);
+              setHint('hint_pr_matprice', `List benchmark: ${fmtUSD(lpConv.rate, 2)} / ${uomVal}${lpConv.converted ? ' (' + lpConv.note + ')' : ''}`, '');
+            } else {
+              setHint('hint_pr_matprice', '', '');
+            }
+          } else {
+            setHint('hint_pr_matprice', '', '');
+          }
+        } else {
+          setHint('hint_pr_matprice', '', '');
+        }
+
         const lMat = $('lbl_calc_mat'), lTr = $('lbl_calc_tr'), lVat = $('lbl_calc_vat'), lTot = $('lbl_calc_total');
         if (isComm) {
           const uLbl = val('f_uom') || 'Ton';
@@ -23049,14 +23845,25 @@
           setText('calc_vat', `${fmtDateDMY(startDt)} to ${endDt ? fmtDateDMY(endDt) : 'Open'}`);
           setText('calc_total', `${fmtUSD(up, 2)} / ${uLbl}`);
         } else {
-          if (lMat) lMat.textContent = 'Base Rate (Mat + Trans)';
-          if (lTr) lTr.textContent = 'Tier 1 Sample';
+          if (lMat) lMat.textContent = hasMat && hasTrans ? 'Base Rate (Mat + Trans)' : (hasMat ? 'Material Rate' : 'Transport Rate');
+          if (lTr) lTr.textContent = (q1 > 0 || tSize > 0) ? 'Tier 1 Sample' : 'Unit Equivalence';
           if (lVat) lVat.textContent = 'Tier 2 Sample';
           if (lTot) lTot.textContent = 'Headline Rate';
-          setText('calc_mat', (ind > 0 && !(up > 0) && !(tp > 0)) ? `${fmtUSD(ind, 2)} flat / load (Indifference)` : `${fmtUSD(up, 2)} + ${fmtUSD(tp, 2)} / ${val('f_uom') || 'm³'}${ind > 0 ? ` · Indiff ${fmtUSD(ind, 2)}` : ''}${tSize > 0 ? ` · Size ${tSize} m³` : ''}`);
-          setText('calc_tr', q1 > 0 ? `${q1} ${val('f_uom') || 'm³'} → ${fmtUSD(q1 * up + a1, 2)}${tp ? ' + trans ' + fmtUSD(q1 * tp + ta1, 2) : ''}` : (ind > 0 && !(up > 0) && !(tp > 0) ? `${fmtUSD(ind, 2)} flat / load` : (tSize > 0 ? `${tSize} m³ → ${fmtUSD(tSize * (up + tp), 2)}` : '—')));
-          setText('calc_vat', q2 > 0 ? `${q2} ${val('f_uom') || 'm³'} → ${fmtUSD(q2 * up + a2, 2)}${tp ? ' + trans ' + fmtUSD(q2 * tp + ta2, 2) : ''}` : '—');
-          setText('calc_total', (ind > 0 && !(up > 0) && !(tp > 0)) ? `${fmtUSD(ind, 2)} (Flat)` : fmtUSD(up + tp, 2));
+          const matPart = hasMat ? `${fmtUSD(up, 2)} / ${uomVal === 'Truck' ? 'load' : uomVal}` : '';
+          const trPart = (hasTrans && !isTruckRate) ? `${fmtUSD(tp, 2)} / ${ratePer}` : (isTruckRate && ind > 0 ? `${fmtUSD(ind, 2)} / load` : '');
+          const sameUnit = hasMat && hasTrans && !isTruckRate && norm(uomVal) === norm(ratePer);
+          const baseStr = (ind > 0 && !(up > 0) && !(tp > 0))
+            ? `${fmtUSD(ind, 2)} flat / load (Indifference)`
+            : (sameUnit
+                ? `${fmtUSD(up, 2)} + ${fmtUSD(tp, 2)} / ${uomVal}`
+                : [matPart, trPart].filter(Boolean).join(' + ') || `${fmtUSD(0, 2)} / ${uomVal}`);
+          const eqPreview = (up > 0 && prTf > 0 && prTf !== 1)
+            ? (/^m/i.test(uomVal) ? `≈ ${fmtUSD(up / prTf, 2)} / Ton (${prTf} t/m³)` : (/^tons?$/i.test(uomVal) ? `≈ ${fmtUSD(up * prTf, 2)} / m³ (${prTf} t/m³)` : '—'))
+            : '—';
+          setText('calc_mat', `${baseStr}${ind > 0 && (up > 0 || tp > 0) ? ` · Indiff ${fmtUSD(ind, 2)}` : ''}${tSize > 0 ? ` · Size ${tSize} m³` : ''}`);
+          setText('calc_tr', q1 > 0 ? `${q1} m³ → ${fmtUSD(q1 * up + a1, 2)}${tp && transIsM3 ? ' + trans ' + fmtUSD(q1 * tp + ta1, 2) : ''}` : (ind > 0 && !(up > 0) && !(tp > 0) ? `${fmtUSD(ind, 2)} flat / load` : (tSize > 0 && isM3Rule ? `${tSize} m³ → ${fmtUSD(tSize * ((matIsM3 ? up : 0) + (transIsM3 ? tp : 0)), 2)}` : eqPreview)));
+          setText('calc_vat', q2 > 0 ? `${q2} m³ → ${fmtUSD(q2 * up + a2, 2)}${tp && transIsM3 ? ' + trans ' + fmtUSD(q2 * tp + ta2, 2) : ''}` : '—');
+          setText('calc_total', (ind > 0 && !(up > 0) && !(tp > 0)) ? `${fmtUSD(ind, 2)} (Flat)` : (sameUnit ? `${fmtUSD(up + tp, 2)} / ${uomVal}` : (hasMat && !hasTrans ? `${fmtUSD(up, 2)} / ${uomVal === 'Truck' ? 'load' : uomVal}` : (!hasMat && hasTrans ? `${fmtUSD(tp, 2)} / ${ratePer}` : `${matPart}${trPart ? ' + ' + trPart : ''}`))));
         }
         renderAdminLockBar();
         return { up, tp, ind };
@@ -24953,6 +25760,19 @@
         recalcForm();
       });
     }
+    body.querySelectorAll('[data-exp-price-mode]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const mode = btn.getAttribute('data-exp-price-mode') || 'priced';
+        if ($('f_price_pending')) $('f_price_pending').value = mode === 'pending' ? '1' : '0';
+        recalcForm();
+        if (mode === 'priced' && $('f_amount')) {
+          try { $('f_amount').focus(); } catch (_) {}
+        } else if (mode === 'pending' && $('f_qty')) {
+          try { $('f_qty').focus(); if ($('f_qty').select) $('f_qty').select(); } catch (_) {}
+        }
+      });
+    });
 
     // Wire lock pills & locked field clicks to the Admin Privilege Unlock Process
     body.querySelectorAll('[data-lock-pill]').forEach(pill => {
@@ -25243,9 +26063,27 @@
       record = { ...base, name: `FUEL ${date} ${c.equipment}${ticket ? ' #' + ticket : ''}`, ticket_no: ticket, rep_date: repDate, fuel_type: c.fuelType, item: resolvedItem, equipment: c.equipment, driver: val('f_driver'), litres: round2(c.litres), odometer: c.type === 'odometer' ? c.reading : null, hours: c.type === 'hours' ? c.reading : null, location: val('f_location'), meter_delta: c.delta };
     } else if (f === 'expense') {
       if (!val('f_category')) addErr('f_category', 'Category is required.');
-      if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero.');
-      if (c.method === 'Credit' && !c.supplier) addErr('f_supplier', 'A credit expense needs the supplier it is owed to.');
-      record = { ...base, name: `EXP ${date} ${c.supplier || val('f_category')}`, rep_date: repDate, category: val('f_category'), subcategory: val('f_subcategory'), supplier: c.supplier, equipment: val('f_truck'), method: c.method, qty: num('f_qty') || 1, amount: round2(c.amount), reference: val('f_reference') };
+      if (c.pricePending) {
+        if (!(c.qty > 0)) addErr('f_qty', 'Quantity received (e.g. Litres) must be above zero when Price is Pending.');
+        if (!c.supplier) addErr('f_supplier', 'Supplier / Vendor is required when Price is Pending so the unpriced delivery is tracked on their account.');
+      } else {
+        if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero (or switch Amount to "Price Pending ($0)").');
+        if (c.method === 'Credit' && !c.supplier) addErr('f_supplier', 'A credit expense needs the supplier it is owed to.');
+      }
+      record = {
+        ...base,
+        name: `EXP ${date} ${c.supplier || val('f_category')}`,
+        rep_date: repDate,
+        category: val('f_category'),
+        subcategory: val('f_subcategory'),
+        supplier: c.supplier,
+        equipment: val('f_truck'),
+        method: c.pricePending ? 'Credit' : c.method,
+        qty: c.qty > 0 ? c.qty : (num('f_qty') || 1),
+        amount: c.pricePending ? 0 : round2(c.amount),
+        price_pending: Boolean(c.pricePending),
+        reference: val('f_reference')
+      };
     } else if (f === 'settlement') {
       if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
       if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero.');
@@ -26472,6 +27310,21 @@
         };
       }
     }
+    if (key === 'expenses') {
+      const isPend = isPendingPriceExpense(row);
+      const isDiesel = isBulkDieselExpense(row);
+      const q = Number(row.qty || 1);
+      if (isPend) {
+        return {
+          tone: 'warn',
+          text: `PENDING INVOICE PRICE: ${fmtNum(q, q % 1 ? 2 : 0)}${isDiesel ? ' L Diesel added to ' + (row.company || 'WTC') + ' Plant Tank' : ' units received'} from ${row.supplier || 'Vendor'} at $0.00 AP · Click "Enter Final Invoice Price" or "Modify Record" once the supplier invoice arrives to book the final USD amount.`
+        };
+      }
+      return {
+        tone: 'info',
+        text: `Expense Voucher ${row.name || ('#' + row.id)}: ${row.category || 'Operating'}${row.subcategory ? ' · ' + row.subcategory : ''}  |  Amount: ${fmtUSD(row.amount || 0, 2)} (${row.method || 'Cash'})  |  Vendor: ${row.supplier || '—'}  |  Quantity: ${fmtNum(q, q % 1 ? 2 : 0)}${isDiesel && q > 0 ? ' L (' + fmtUSD(Number(row.amount || 0) / q, 3) + '/L)' : ''}`
+      };
+    }
     return {
       tone: 'info',
       text: `Relational Record (${INSPECT_LABELS[key] || key}) · Connected to live relational SQL tables & SOA double-entry ledger (${SEED_DATE}). Click any blue lookup pill or related subgrid row below to drill across entities.`
@@ -26482,8 +27335,9 @@
   function buildInspectorCockpit(key, row) {
     const bu = row.company || COMPANY_BU_MATCH[STATE.company] || 'MFG';
     const isCommRow = key === 'price_rules' && isCommRule(row);
+    const isQuarryPr = key === 'price_rules' && !isCommRow && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(row.rule_type || '').trim());
     const title = key === 'price_rules'
-      ? `${isCommRow ? 'Sales Commission Rule' : 'Price Agreement'} · ${row.customer || row.supplier || row.site || 'Standard List'}${row.product ? ' · ' + row.product : ''}`
+      ? `${isCommRow ? 'Sales Commission Rule' : (isQuarryPr ? 'Raw & Haulage Agreement' : 'Sales Price Agreement')} · ${row.customer || row.supplier || row.site || 'Standard List'}${row.product ? ' · ' + row.product : ''}`
       : (row.ticket_no ? `${INSPECT_LABELS[key] || key} #${row.ticket_no} · ${row.customer || row.site || row.equipment || row.name || ''}` : `${INSPECT_LABELS[key] || key} · ${row.name || row.invoice_no || row.staff || row.driver || row.equipment || row.id}`);
 
     if (key === 'sales_tickets') {
@@ -26649,12 +27503,14 @@
     const totalRel = subgrids.reduce((a, sg) => a + sg.rows.length, 0);
     const prMoney = key === 'price_rules' ? (Number(row.unit_price || 0) > 0 ? row.unit_price : ruleAnyIndiffPrice(row)) : row.unit_price;
     const primaryMoney = row.total_ttc ?? row.total ?? row.amount ?? row.usd_amount ?? prMoney ?? row.salary_usd ?? row.principal ?? row.credit_limit ?? row.list_price;
+    const isPendExp = key === 'expenses' && isPendingPriceExpense(row);
+    const isDieselExp = key === 'expenses' && isBulkDieselExpense(row);
     return {
       bu,
       title,
-      pill: primaryMoney != null ? fmtUSD(primaryMoney, 2) : `${fmtNum(totalRel)} Linked Rows`,
+      pill: isPendExp ? '⏳ PENDING PRICE ($0.00)' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : `${fmtNum(totalRel)} Linked Rows`),
       cards: [
-        { lbl: 'PRIMARY RECORD VALUE', tag: (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18), tone: 'good', val: primaryMoney != null ? fmtUSD(primaryMoney, 2) : (row.name || row.ticket_no || String(row.id).slice(0, 10)), sub1: `Entity: ${INSPECT_LABELS[key] || key}`, sub2: `Company Scope: ${row.company || 'Shared / Root BU'}`, pct: 82 },
+        { lbl: 'PRIMARY RECORD VALUE', tag: isPendExp ? 'PENDING PRICE' : (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18), tone: isPendExp ? 'warn' : 'good', val: isPendExp ? `${fmtNum(row.qty || 1, 0)}${isDieselExp ? ' L ($0.00)' : ' Qty ($0.00)'}` : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : (row.name || row.ticket_no || String(row.id).slice(0, 10))), sub1: isPendExp ? `Vendor: ${row.supplier || '—'} · Awaiting Invoice` : `Entity: ${INSPECT_LABELS[key] || key}`, sub2: `Company Scope: ${row.company || 'Shared / Root BU'}`, pct: 82 },
         { lbl: 'CONNECTED SUBGRIDS', tag: `${subgrids.length} TABLES`, tone: 'info', val: `${fmtNum(totalRel)} Rows`, sub1: subgrids.slice(0, 2).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Direct master record', sub2: subgrids.slice(2, 4).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Click any row below to inspect', pct: Math.min(100, Math.max(25, totalRel * 5)) },
         { lbl: 'EFFECTIVE DATES & TIMELINE', tag: row.end_date ? 'DATED' : 'ACTIVE', tone: row.end_date && String(row.end_date) < SEED_DATE ? 'warn' : 'good', val: String(row.date || row.start_date || SEED_DATE).slice(0, 10), sub1: `Rep / Start: ${row.rep_date || row.start_date || row.date || '—'}`, sub2: `End Date: ${row.end_date || 'Open / Current'}`, pct: 75 },
         { lbl: 'AUDIT & LEDGER SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: isAppRecord(row) ? 'App Entry' : 'Synced Book', sub1: isAppRecord(row) ? `Posted by ${row.entered_by || 'User'}` : `Snapshot ${SEED_DATE}`, sub2: `Double-Entry SOA Verified`, pct: 100 }
@@ -26857,7 +27713,7 @@
     };
 
     if (key === 'sales_tickets') {
-      const custRules = (rec.price_rules || []).filter(r => !isCommRule(r) && ((row.customer && norm(r.customer) === norm(row.customer)) || (row.product && norm(r.product) === norm(row.product) && !r.customer)));
+      const custRules = (rec.price_rules || []).filter(r => !isCommRule(r) && !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '') && ((row.customer && norm(r.customer) === norm(row.customer)) || (row.product && norm(r.product) === norm(row.product) && !r.customer)));
       const sibTickets = (rec.sales_tickets || []).filter(t => norm(t.customer) === norm(row.customer) && String(t.id) !== String(row.id));
       const custRcpts = (rec.receipts || []).filter(r => norm(r.customer) === norm(row.customer));
       const custVat = (rec.vat_invoices || []).filter(v => norm(v.customer) === norm(row.customer));
@@ -26870,7 +27726,7 @@
       if (row.truck) addGrid('sg_trk_fuel', `Fuel & Meter Log for Truck ${row.truck}`, 'Truck Fuel Log', 'Fleet Telemetry', 'fuel_intakes', trkFuel, ['date', 'ticket_no', 'company', 'equipment', 'driver', 'item', 'litres', 'odometer'], 'litres');
     }
     else if (key === 'raw_purchases') {
-      const rawRules = (rec.price_rules || []).filter(r => !isCommRule(r) && ((row.site_owner && norm(r.supplier) === norm(row.site_owner)) || (row.truck_owner && norm(r.supplier) === norm(row.truck_owner)) || (row.site && norm(r.site) === norm(row.site))));
+      const rawRules = (rec.price_rules || []).filter(r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '') && ((row.site_owner && norm(r.supplier) === norm(row.site_owner)) || (row.truck_owner && norm(r.supplier) === norm(row.truck_owner)) || (row.site && norm(r.site) === norm(row.site))));
       const siteLoads = (rec.raw_purchases || []).filter(t => norm(t.site) === norm(row.site) && String(t.id) !== String(row.id));
       const suppSettle = (rec.settlements || []).filter(s => (row.site_owner && norm(s.supplier) === norm(row.site_owner)) || (row.truck_owner && norm(s.supplier) === norm(row.truck_owner)));
 
@@ -26961,21 +27817,28 @@
     }
     else if (key === 'price_rules') {
       const isCommPr = /^commission$/i.test(String(row.rule_type || '').trim());
+      const isQuarryPr = !isCommPr && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(row.rule_type || '').trim());
       const prLabel = `${row.customer || row.supplier || row.site || 'Standard List'}${row.product ? ' · ' + row.product : ''}`;
-      const mSales = (rec.sales_tickets || []).filter(t =>
-        (!row.company || norm(t.company) === norm(row.company)) &&
-        (!row.customer || norm(t.customer) === norm(row.customer)) &&
-        (!row.product || norm(t.product) === norm(row.product)) &&
-        (!row.site || norm(t.site) === norm(row.site)) &&
-        (!isCommPr || ((!row.start_date || String(t.date || '').slice(0, 10) >= String(row.start_date).slice(0, 10)) && (!row.end_date || String(t.date || '').slice(0, 10) <= String(row.end_date).slice(0, 10))))
-      );
-      const mRaw = isCommPr ? [] : (rec.raw_purchases || []).filter(t => ((row.supplier && (norm(t.site_owner) === norm(row.supplier) || norm(t.truck_owner) === norm(row.supplier))) || (row.site && norm(t.site) === norm(row.site))) && (!row.product || norm(t.product) === norm(row.product)));
-      addGrid('sg_pr_sales', `Sales Tickets Governed by Rule (${prLabel})`, 'Matched Sales', 'Rule Execution', 'sales_tickets', mSales, ['date', 'ticket_no', 'company', 'customer', 'product', 'site', 'qty', 'unit_price', 'trans_price', 'total_ttc'], 'total_ttc');
-      if (isCommPr && row.supplier) {
-        const commRcpts = (rec.receipts || []).filter(r => norm(r.customer) === norm(row.supplier) && ['Rent', 'VATRent', 'RentConfig'].includes(String(r.method || '').trim()));
-        addGrid('sg_pr_comm_rcpt', `Commission Payout Vouchers (${row.supplier})`, 'Commission Payouts', 'GL 6222 & 449', 'receipts', commRcpts, ['date', 'name', 'company', 'method', 'amount', 'discount', 'reference'], 'amount');
-      } else {
+      if (isQuarryPr) {
+        const mRaw = (rec.raw_purchases || []).filter(t =>
+          (!row.company || norm(t.company) === norm(row.company)) &&
+          ((row.supplier && (norm(t.site_owner) === norm(row.supplier) || norm(t.truck_owner) === norm(row.supplier))) || (row.site && norm(t.site) === norm(row.site))) &&
+          (!row.product || norm(t.product) === norm(row.product))
+        );
         addGrid('sg_pr_raw', `Raw Material Tickets Governed by Rule (${prLabel})`, 'Matched Raw', 'Rule Execution', 'raw_purchases', mRaw, ['date', 'ticket_no', 'company', 'site', 'site_owner', 'truck_owner', 'product', 'qty', 'unit_cost', 'total'], 'total');
+      } else {
+        const mSales = (rec.sales_tickets || []).filter(t =>
+          (!row.company || norm(t.company) === norm(row.company)) &&
+          (!row.customer || norm(t.customer) === norm(row.customer)) &&
+          (!row.product || norm(t.product) === norm(row.product)) &&
+          (!row.site || norm(t.site) === norm(row.site)) &&
+          (!isCommPr || ((!row.start_date || String(t.date || '').slice(0, 10) >= String(row.start_date).slice(0, 10)) && (!row.end_date || String(t.date || '').slice(0, 10) <= String(row.end_date).slice(0, 10))))
+        );
+        addGrid('sg_pr_sales', `Sales Tickets Governed by Rule (${prLabel})`, 'Matched Sales', 'Rule Execution', 'sales_tickets', mSales, ['date', 'ticket_no', 'company', 'customer', 'product', 'site', 'qty', 'unit_price', 'trans_price', 'total_ttc'], 'total_ttc');
+        if (isCommPr && row.supplier) {
+          const commRcpts = (rec.receipts || []).filter(r => norm(r.customer) === norm(row.supplier) && ['Rent', 'VATRent', 'RentConfig'].includes(String(r.method || '').trim()));
+          addGrid('sg_pr_comm_rcpt', `Commission Payout Vouchers (${row.supplier})`, 'Commission Payouts', 'GL 6222 & 449', 'receipts', commRcpts, ['date', 'name', 'company', 'method', 'amount', 'discount', 'reference'], 'amount');
+        }
       }
     }
     else if (['employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries'].includes(key)) {
@@ -27172,6 +28035,7 @@
         { key: 'qty', label: 'Quantity', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'amount', label: 'Total Amount ($) *', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'method', label: 'Payment Method *', type: 'select', options: [['Cash', 'Cash'], ['Credit', 'Credit (Vendor AP)'], ['Check', 'Check'], ['Bank Transfer', 'Bank Transfer'], ['CR Return', 'CR Return'], ['C Return', 'C Return']], sec: 3 },
+        { key: 'price_pending', label: 'Awaiting Invoice Price ($0 Pending)', type: 'bool', sec: 3, getVal: r => Boolean(isPendingPriceExpense(r)) },
         { key: 'reference', label: 'Invoice / Reference #', type: 'text', sec: 3 },
         { key: 'notes', label: 'Notes / Description', type: 'text', sec: 3, span: true }
       ],
@@ -27217,29 +28081,49 @@
         { key: 'start_date', label: 'Effective Start Date *', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Open)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
-      ] : [
-        { key: 'rule_type', label: 'Agreement Type *', type: 'select', options: ['Sales (Delivery)', 'Sales (Pickup)', 'Purchase Price (Site)', 'Transport Price (Site)', 'List Price'], sec: 1 },
-        { key: 'customer', label: 'Customer', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
-        { key: 'supplier', label: 'Supplier / Hauler', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
-        { key: 'site', label: 'Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
-        { key: 'product', label: 'Product / Grade', type: 'combo', dl: 'dl_insp_products', sec: 2 },
-        { key: 'unit', label: 'Pricing Unit', type: 'select', options: uomOpts, sec: 3 },
-        { key: 'rate_per', label: 'Rate Basis', type: 'select', options: ['m³', 'Ton', 'Truck', 'Unit'], sec: 3 },
-        { key: 'unit_price', label: 'Material Unit Price ($)', type: 'number', step: '0.01', sec: 3 },
+      ] : (/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String((row && row.rule_type) || '').trim()) ? [
+        { key: 'rule_type', label: 'Raw & Haulage Agreement Type *', type: 'select', options: ['Purchase Price (Site)', 'Transport Price (Site)'], sec: 1 },
+        { key: 'supplier', label: 'Site Owner / Hauler *', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
+        { key: 'site', label: 'Source Site *', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
+        { key: 'product', label: 'Raw Material / Grade', type: 'combo', dl: 'dl_insp_products', sec: 2 },
+        { key: 'unit', label: 'Material Pricing Unit', type: 'select', options: uomOpts, sec: 3 },
+        { key: 'rate_per', label: 'Haulage Pricing Unit', type: 'select', options: ['m³', 'Ton', 'Truck', 'Unit'], sec: 3 },
+        { key: 'unit_price', label: 'Material Unit Cost ($)', type: 'number', step: '0.01', sec: 3 },
         { key: 'indiff_price', label: 'Indifference Price ($ · Flat / Load)', type: 'number', step: '0.01', sec: 3 },
-        { key: 'trans_unit_price', label: 'Transport Unit Price ($)', type: 'number', step: '0.01', sec: 3 },
+        { key: 'trans_unit_price', label: 'Site Haulage Rate ($)', type: 'number', step: '0.01', sec: 3 },
         { key: 'truck', label: 'Target Truck Plate (Optional)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
-        { key: 'truck_size', label: 'Client / Site Truck Size (m³)', type: 'number', step: '0.5', sec: 2 },
+        { key: 'truck_size', label: 'Site Truck Size (m³)', type: 'number', step: '0.5', sec: 2 },
         { key: 'qty1', label: 'Tier 1 Truck Size (m³)', type: 'number', step: '0.5', sec: 3 },
-        { key: 'adj1', label: 'Tier 1 Price Adj ($)', type: 'number', step: '0.01', sec: 3 },
+        { key: 'adj1', label: 'Tier 1 Material Adj ($)', type: 'number', step: '0.01', sec: 3 },
         { key: 'trans_adj1', label: 'Tier 1 Trans Adj ($)', type: 'number', step: '0.01', sec: 3 },
         { key: 'qty2', label: 'Tier 2 Truck Size (m³)', type: 'number', step: '0.5', sec: 3 },
-        { key: 'adj2', label: 'Tier 2 Price Adj ($)', type: 'number', step: '0.01', sec: 3 },
+        { key: 'adj2', label: 'Tier 2 Material Adj ($)', type: 'number', step: '0.01', sec: 3 },
         { key: 'trans_adj2', label: 'Tier 2 Trans Adj ($)', type: 'number', step: '0.01', sec: 3 },
         { key: 'start_date', label: 'Effective Start Date', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Open)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
-      ],
+      ] : [
+        { key: 'rule_type', label: 'Sales Agreement Type *', type: 'select', options: ['Sales (Delivery)', 'Sales (Pickup)', 'List Price'], sec: 1 },
+        { key: 'customer', label: 'Customer', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
+        { key: 'site', label: 'Delivery Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
+        { key: 'product', label: 'Product / Grade', type: 'combo', dl: 'dl_insp_products', sec: 2 },
+        { key: 'unit', label: 'Material Pricing Unit', type: 'select', options: uomOpts, sec: 3 },
+        { key: 'rate_per', label: 'Transport Pricing Unit', type: 'select', options: ['m³', 'Ton', 'Truck', 'Unit'], sec: 3 },
+        { key: 'unit_price', label: 'Material Unit Price ($)', type: 'number', step: '0.01', sec: 3 },
+        { key: 'indiff_price', label: 'Indifference Price ($ · Flat / Load)', type: 'number', step: '0.01', sec: 3 },
+        { key: 'trans_unit_price', label: 'Transport Unit Price ($)', type: 'number', step: '0.01', sec: 3 },
+        { key: 'truck', label: 'Target Truck Plate (Optional)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
+        { key: 'truck_size', label: 'Client Truck Size (m³)', type: 'number', step: '0.5', sec: 2 },
+        { key: 'qty1', label: 'Tier 1 Truck Size (m³)', type: 'number', step: '0.5', sec: 3 },
+        { key: 'adj1', label: 'Tier 1 Material Adj ($)', type: 'number', step: '0.01', sec: 3 },
+        { key: 'trans_adj1', label: 'Tier 1 Trans Adj ($)', type: 'number', step: '0.01', sec: 3 },
+        { key: 'qty2', label: 'Tier 2 Truck Size (m³)', type: 'number', step: '0.5', sec: 3 },
+        { key: 'adj2', label: 'Tier 2 Material Adj ($)', type: 'number', step: '0.01', sec: 3 },
+        { key: 'trans_adj2', label: 'Tier 2 Trans Adj ($)', type: 'number', step: '0.01', sec: 3 },
+        { key: 'start_date', label: 'Effective Start Date', type: 'date', sec: 2 },
+        { key: 'end_date', label: 'End Date (Blank = Open)', type: 'date', sec: 2 },
+        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+      ]),
       credit_terms: [
         { key: 'customer', label: 'Customer *', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
         { key: 'credit_days', label: 'Credit Terms (Days) *', type: 'number', step: '1', min: '0', sec: 3 },
@@ -27536,7 +28420,8 @@
     if (key === 'salaries') { hidden.add('equipment'); }
     if (key === 'price_rules') {
       hidden.add('name');
-      if (/^commission$/i.test(String((row && row.rule_type) || '').trim())) {
+      const rtTrim = String((row && row.rule_type) || '').trim();
+      if (/^commission$/i.test(rtTrim)) {
         hidden.add('rule_type');
         hidden.add('customer');
         hidden.add('site');
@@ -27545,6 +28430,10 @@
         hidden.add('trans_unit_price');
         hidden.add('truck_size');
         hidden.add('truck');
+      } else if (/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(rtTrim)) {
+        hidden.add('customer');
+      } else {
+        hidden.add('supplier');
       }
     }
 
@@ -27889,6 +28778,7 @@
         </div>
         <div class="pa-cmd-actions">
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
+          ${key === 'expenses' && isPendingPriceExpense(row) && canModifyData() ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn" title="Enter the final supplier invoice price to clear Pending Price status">💲 Enter Final Invoice Price</button>` : ''}
           ${canModifyData() ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} Modify Record</button>` : ''}
           ${isEquipInspect && canEnterForm('defect') ? `<button type="button" class="pa-cmd-btn" id="inspReportDefectBtn">${ic('warn')} + Report Defect</button>` : ''}
           ${isEquipInspect && canEnterForm('partlog') ? `<button type="button" class="pa-cmd-btn" id="inspLogPartBtn">${ic('cog')} + Log Part</button>` : ''}
@@ -28318,6 +29208,25 @@
         } else {
           html = `<span>Total USD: <b>${fmtUSD(totAmt, 2)}</b></span><span>Month: <b>${esc(formatPayrollMonthLabel(payMo))}</b></span>`;
         }
+      } else if (key === 'expenses') {
+        const mQty = getModNum('qty') || 1;
+        const mAmt = getModNum('amount');
+        const mMethod = getModVal('method') || row.method || 'Cash';
+        const mCat = getModVal('category') || row.category || '';
+        const mSub = getModVal('subcategory') || row.subcategory || '';
+        const isFuel = /fuel|diesel|mazout|oil/i.test(`${mCat} ${mSub}`);
+        const pendSel = $('insp_edit_price_pending');
+        if (mAmt > 0 && pendSel && pendSel.value === 'Yes' && pendSel.dataset.userEdited !== '1') {
+          pendSel.value = 'No';
+        }
+        const stillPend = pendSel ? pendSel.value === 'Yes' : (mAmt === 0 && isPendingPriceExpense(row));
+        if (stillPend) {
+          html = `<span>Quantity Received: <b>${fmtNum(mQty, mQty % 1 ? 2 : 0)}${isFuel ? ' L' : ''}</b></span><span>Status: <b style="color:var(--warn)">⏳ Pending Invoice Price ($0.00 AP)</b></span>`;
+        } else if (isPendingPriceExpense(row) && mAmt > 0) {
+          html = `<span>Final Invoice Price: <b>${fmtUSD(mAmt, 2)}</b></span>${isFuel && mQty > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}<span>Status: <b style="color:var(--ok)">✓ Clears Pending Price → Books to ${esc(mMethod)}</b></span>`;
+        } else {
+          html = `<span>Total Amount: <b>${fmtUSD(mAmt, 2)}</b></span><span>Method: <b>${esc(mMethod)}</b></span>${isFuel && mQty > 0 && mAmt > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}`;
+        }
       }
       modLiveCalcEl.innerHTML = html;
       modLiveCalcEl.hidden = !html;
@@ -28345,6 +29254,12 @@
       }
     };
 
+    const setPriceBtn = $('inspSetInvoicePriceBtn');
+    if (setPriceBtn && modDrawer) {
+      setPriceBtn.addEventListener('click', () => {
+        openModifyDrawerAndFocus('amount');
+      });
+    }
     if (modBtn && modDrawer) {
       modBtn.addEventListener('click', () => {
         if (modDrawer.hidden) openModifyDrawerAndFocus('');
@@ -28353,8 +29268,9 @@
     }
     if (modDrawer) {
       modDrawer.querySelectorAll('input, select').forEach(el => {
-        if (el.id === 'insp_edit_vat_amount') {
+        if (el.id === 'insp_edit_vat_amount' || el.id === 'insp_edit_price_pending') {
           el.addEventListener('input', () => { el.dataset.userEdited = '1'; syncModifyLiveSummary(); });
+          el.addEventListener('change', () => { el.dataset.userEdited = '1'; syncModifyLiveSummary(); });
         } else {
           el.addEventListener('input', syncModifyLiveSummary);
           el.addEventListener('change', syncModifyLiveSummary);
@@ -28621,6 +29537,16 @@
         } else if (key === 'part_movements') {
           if ('defect_ref' in pendingUpdates && !('prior_defect_notified' in pendingUpdates)) {
             row.prior_defect_notified = Boolean(row.defect_ref);
+          }
+        } else if (key === 'expenses') {
+          const amt = round2(Number(row.amount || 0));
+          row.amount = amt;
+          if (amt > 0 && row.price_pending && !('price_pending' in pendingUpdates && pendingUpdates.price_pending === true)) {
+            row.price_pending = false;
+            changedCount++;
+          } else if ('price_pending' in pendingUpdates && row.price_pending) {
+            row.amount = 0;
+            row.method = 'Credit';
           }
         }
 
@@ -29032,6 +29958,24 @@
     (SEED.records.suppliers || []).forEach(s => {
       if (s && s.name) suppByNorm.set(normOwnerName(s.name), s);
     });
+    const appExpByModelSup = {};
+    ((STATE.customRecords && STATE.customRecords.expenses) || []).forEach(e => {
+      if (!e || e.source !== 'app' || e.voided || !e.supplier) return;
+      const sgn = expenseSign(e);
+      if (sgn === 0) return;
+      const amt = round2(sgn * Number(e.amount || 0));
+      if (amt === 0) return;
+      const isCr = isCreditExpense(e);
+      const sn = normOwnerName(e.supplier);
+      const coMk = e.company === 'BBConstruction' ? 'bbconstruction' : (e.company === 'Lions Transport' ? 'lionstransport' : 'wtc');
+      [coMk, 'manufacturing-group'].forEach(tMk => {
+        if (!appExpByModelSup[tMk]) appExpByModelSup[tMk] = new Map();
+        const cur = appExpByModelSup[tMk].get(sn) || { tot: 0, cr: 0 };
+        cur.tot = round2(cur.tot + amt);
+        if (isCr) cur.cr = round2(cur.cr + amt);
+        appExpByModelSup[tMk].set(sn, cur);
+      });
+    });
     Object.entries(SEED.models || {}).forEach(([mk, m]) => {
       const orig = SEED._origModelMasters[mk];
       if (!m || !orig) return;
@@ -29052,15 +29996,26 @@
       }
       if (orig.suppliers) {
         const baseSupps = voidedMasterNames.suppliers.size ? orig.suppliers.filter(x => !voidedMasterNames.suppliers.has(norm(x.Supplier || x.name))) : orig.suppliers.slice();
+        const expDeltaMap = appExpByModelSup[mk] || null;
         m.suppliers = baseSupps.map(x => {
-          const dvn = suppByNorm.get(normOwnerName(x.Supplier || x.name));
-          if (!dvn) return x;
+          const sKey = normOwnerName(x.Supplier || x.name);
+          const dvn = suppByNorm.get(sKey);
+          const ed = expDeltaMap ? expDeltaMap.get(sKey) : null;
+          if (!dvn && !ed) return x;
           const out = Object.assign({}, x);
-          if (dvn.method) { out.Method = dvn.method; out.method = dvn.method; }
-          if (typeof dvn.iva === 'boolean') { out.IVA = dvn.iva ? 'Yes' : 'No'; out.iva = dvn.iva; }
-          if (dvn.phone || dvn.contact) { out.phone = dvn.phone || dvn.contact; out.contact = dvn.contact || dvn.phone; }
-          if (dvn.location || dvn.region) { out.location = dvn.location || dvn.region; out.region = dvn.region || dvn.location; }
-          if (dvn.mof_no || dvn.financial_no) { out.mof_no = dvn.mof_no || dvn.financial_no; out.financial_no = dvn.financial_no || dvn.mof_no; }
+          if (dvn) {
+            if (dvn.method) { out.Method = dvn.method; out.method = dvn.method; }
+            if (typeof dvn.iva === 'boolean') { out.IVA = dvn.iva ? 'Yes' : 'No'; out.iva = dvn.iva; }
+            if (dvn.phone || dvn.contact) { out.phone = dvn.phone || dvn.contact; out.contact = dvn.contact || dvn.phone; }
+            if (dvn.location || dvn.region) { out.location = dvn.location || dvn.region; out.region = dvn.region || dvn.location; }
+            if (dvn.mof_no || dvn.financial_no) { out.mof_no = dvn.mof_no || dvn.financial_no; out.financial_no = dvn.financial_no || dvn.mof_no; }
+          }
+          if (ed) {
+            out.expenses = round2(Number(out.expenses || 0) + ed.tot);
+            out.ap_expense = round2(Number(out.ap_expense || 0) + ed.cr);
+            out.ap_on_credit = round2(Number(out.ap_on_credit || 0) + ed.cr);
+            out.ap_balance = round2(Number(out.ap_balance || 0) + ed.cr);
+          }
           return out;
         });
       }
@@ -34338,6 +35293,10 @@
         }
       } else {
         STATE.activeTableKey = targetKey;
+        if (targetKey === 'price_rules' && btn.hasAttribute('data-table-key')) {
+          if (!STATE.tableViews) STATE.tableViews = {};
+          if (/^raw_/i.test(STATE.tableViews.price_rules || '')) STATE.tableViews.price_rules = 'all';
+        }
         if (UNIV_VIEW_TO_TABLE_KEY[STATE.view]) STATE.view = 'tables';
       }
       STATE.search = '';
@@ -34356,6 +35315,7 @@
     container.querySelectorAll('[data-tbl-view]').forEach(btn => btn.addEventListener('click', () => {
       if (!STATE.tableViews) STATE.tableViews = {};
       const tk = btn.getAttribute('data-tbl-key') || STATE.activeTableKey || 'price_rules';
+      if (STATE.view === 'tables' && tk) STATE.activeTableKey = tk;
       STATE.tableViews[tk] = btn.getAttribute('data-tbl-view') || 'all';
       STATE.shown = {};
       renderApp();

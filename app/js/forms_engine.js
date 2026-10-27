@@ -213,7 +213,10 @@
     let sold = Number(allKpi.diesel_sold || 0);
 
     (rec.expenses || []).forEach(e => {
-      if (e && e.source === 'app' && !e.voided && e.company === companyName && String(e.subcategory || '').toLowerCase() === 'diesel') {
+      if (!e || e.source !== 'app' || e.voided || e.company !== companyName) return;
+      const sub = String(e.subcategory || '').trim();
+      const cat = String(e.category || '').trim();
+      if (/^diesel$|^mazout$/i.test(sub) || (/^fuel$/i.test(cat) && (!sub || /diesel|mazout/i.test(sub)))) {
         bought += Number(e.qty || 0);
       }
     });
@@ -288,14 +291,37 @@
       return `<div class="pa-subgrid-empty">No open Credit Sales Tickets in the current sample for <b>${esc(customerName)}</b> — receipt posts against prior book balance / customer advance.</div>`;
     }
 
-    let pool = Math.max(0, Number(payAmount || 0));
     const vatOnly = method === 'VAT' || method === 'VATRent';
-    const rowsHtml = tickets.slice(0, 12).map(t => {
-      const due = vatOnly ? Number(t.vat || 0) : Number(t.total_ttc || t.total || 0);
+    const priorReceipts = (rec.receipts || []).reduce((sum, r) => {
+      if (!r || r.voided || (company && r.company && r.company !== company) || norm(r.customer) !== cNorm) return sum;
+      const m = String(r.method || '').trim();
+      if (m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'IVA' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return sum;
+      if (vatOnly && !(m === 'VAT' || m === 'VATConfig' || m === 'VAT Dis' || m === 'Cash VAT Dis')) return sum;
+      return sum + Number(r.amount || 0) + Number(r.discount || 0);
+    }, 0);
+    const priorCrReturns = (rec.sales_tickets || []).reduce((sum, t) => {
+      if (!t || t.voided || (company && t.company && t.company !== company) || norm(t.customer) !== cNorm) return sum;
+      if (String(t.method || '') !== 'CR Return' && String(t.method || '') !== 'Credit Return') return sum;
+      return sum + (vatOnly ? Number(t.vat || 0) : Number(t.total_ttc || t.total || 0));
+    }, 0);
+    let priorPool = Math.max(0, round2(priorReceipts + priorCrReturns));
+    const afterPrior = tickets.map(t => {
+      const origDue = vatOnly ? Number(t.vat || 0) : Number(t.total_ttc || t.total || 0);
+      const priorUsed = Math.min(priorPool, Math.max(0, origDue));
+      priorPool = round2(priorPool - priorUsed);
+      const openDue = round2(Math.max(0, origDue - priorUsed));
+      return { t, origDue, openDue };
+    });
+    const openTickets = afterPrior.filter(x => x.openDue > 0.005);
+    const displayTickets = openTickets.length ? openTickets.slice(0, 12) : afterPrior.slice(-12);
+
+    let pool = Math.max(0, Number(payAmount || 0));
+    const rowsHtml = displayTickets.map(({ t, openDue }) => {
+      const due = openDue;
       const alloc = Math.min(pool, Math.max(0, due));
       pool = round2(pool - alloc);
       const rem = round2(Math.max(0, due - alloc));
-      const status = rem <= 0.005 && due > 0 ? 'SETTLED' : (alloc > 0 ? 'PARTIAL' : 'OPEN');
+      const status = rem <= 0.005 ? 'SETTLED' : (alloc > 0 ? 'PARTIAL' : 'OPEN');
       const badgeCls = status === 'SETTLED' ? 'badge-ok' : (status === 'PARTIAL' ? 'badge-warn' : 'badge-info');
       return `
         <tr>
@@ -315,7 +341,7 @@
       <div class="pa-subgrid">
         <div class="pa-subgrid-hdr">
           <span>OPEN CUSTOMER TICKETS · LIVE FIFO ALLOCATION PREVIEW (Oldest First)</span>
-          <span>${tickets.length} Credit Tickets Found${pool > 0 ? ` · Unallocated Advance: ${fmtUsd(pool)}` : ''}</span>
+          <span>${openTickets.length} Open of ${tickets.length} Credit Tickets${pool > 0 ? ` · Unallocated Advance: ${fmtUsd(pool)}` : ''}</span>
         </div>
         <div class="table-wrap" style="max-height:190px;overflow:auto">
           <table class="ledger-table">
@@ -413,13 +439,6 @@
     const info = FORM_MAP[activeForm] || FORM_MAP.sales;
     const effectiveGroupId = groupOverride === 'comm' ? 'sales' : groupOverride;
     const activeGroup = (effectiveGroupId && FORM_GROUPS.find(g => g.id === effectiveGroupId)) || FORM_GROUPS.find(g => g.id === info.groupId) || FORM_GROUPS[0];
-    const extraQuarryTab = (activeGroup.id === 'raw' && (!canEnterFn || canEnterFn('pricerule')))
-      ? `
-          <button type="button" class="modal-tab ${groupOverride === 'raw' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_raw">
-            <span>Site &amp; Haulage Pricing</span>
-          </button>
-        `
-      : '';
     return `
       <div class="pa-modal-groups">
         ${FORM_GROUPS.map(g => {
@@ -440,8 +459,14 @@
             <span>Commission Rule</span>
           </button>`;
           }
+          if (activeGroup.id === 'raw' && f.id === 'settlement' && (!canEnterFn || canEnterFn('pricerule_raw'))) {
+            return baseTab + `
+          <button type="button" class="modal-tab ${groupOverride === 'raw' && activeForm === 'pricerule' ? 'active' : ''}" data-form="pricerule_raw" title="Add or update a Raw Material Site Cost or Site Haulage Rate agreement">
+            <span>Price Agreement</span>
+          </button>`;
+          }
           return baseTab;
-        }).join('')}${extraQuarryTab}
+        }).join('')}
       </div>
     `;
   }
@@ -539,42 +564,55 @@
     });
 
     if (fType === 'pricerule') {
-      const isCommForm = Boolean(ctx && ctx.STATE && ctx.STATE.modalGroupOverride === 'comm');
+      const grpOverride = (ctx && ctx.STATE && ctx.STATE.modalGroupOverride) || '';
+      const isCommForm = grpOverride === 'comm';
+      const isRawForm = grpOverride === 'raw';
+      const prUomOpts = uoms.map(u => [
+        u,
+        u === 'm³' ? 'Per m³' :
+        u === 'Ton' ? 'Per Ton' :
+        u === 'Truck' ? 'Flat Per Truck Load' :
+        `Per ${u}`
+      ]);
+      const ruleTypeOpts = isRawForm
+        ? [
+            ['Purchase Price (Site)', 'Purchase Price (Site) — Raw Material Site Cost'],
+            ['Transport Price (Site)', 'Transport Price (Site) — Site Haulage Rate']
+          ]
+        : [
+            ['Sales (Delivery)', 'Sales (Delivery) — Customer + Site + Material/Trans'],
+            ['Sales (Pickup)', 'Sales (Pickup) — Customer Material Price (Pick-up)'],
+            ['List Price', 'List Price — Benchmark Product Price']
+          ];
+      const defRuleType = isRawForm ? 'Purchase Price (Site)' : 'Sales (Delivery)';
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
-          <div class="pa-form-sec-hdr"><span id="pr_sec1_hdr">${isCommForm ? '1. Commission Product, Plant Owner &amp; Effective Date Window' : '1. Agreement Scope &amp; Counterparty'}</span></div>
+          <div class="pa-form-sec-hdr"><span id="pr_sec1_hdr">${isCommForm ? '1. Commission Product, Plant Owner &amp; Effective Date Window' : (isRawForm ? '1. Raw Material Site, Supplier / Hauler &amp; Effective Window' : '1. Sales Agreement Scope &amp; Customer')}</span></div>
           ${companyField}
           ${fld(isCommForm ? 'Effective Start Date *' : 'Start Date *', inp('f_date', 'date', today), { id: 'wrap_pr_startdate' })}
-          ${fld(isCommForm ? 'Effective End Date (Optional · blank = Open)' : 'End Date', inp('f_enddate', 'date', ''), { id: 'wrap_pr_enddate' })}
+          ${fld(isCommForm ? 'Effective End Date (Optional · blank = Open)' : 'End Date (Optional)', inp('f_enddate', 'date', ''), { id: 'wrap_pr_enddate' })}
           ${isCommForm
             ? `<input type="hidden" id="f_ruletype" value="Commission">`
-            : fld('Rule Type *', sel('f_ruletype', [
-                ['Sales (Delivery)', 'Sales (Delivery) — Customer + Site + Material/Trans'],
-                ['Sales (Pickup)', 'Sales (Pickup) — Customer Material Price (Pick-up)'],
-                ['List Price', 'List Price — Benchmark Product Price'],
-                ['Purchase Price (Site)', 'Purchase Price (Site) — Site Material Cost'],
-                ['Transport Price (Site)', 'Transport Price (Site) — Site Haulage Rate'],
-                ['Haulage (Customer Site)', 'Haulage (Customer Site) — 3P Delivery Hauler Rate']
-              ], 'Sales (Delivery)'), { id: 'wrap_pr_ruletype' })}
-          ${fld('Product / Grade *', inp('f_product', 'text', '', 'list="dl_pr_prods" placeholder="Select or type grade..."') + dlMeta('dl_pr_prods', prodMetaItems))}
-          ${fld('Customer (Sales Rules) *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_pr_customer', hidden: isCommForm })}
-          ${fld(isCommForm ? 'Plant Owner / Beneficiary *' : 'Supplier / Hauler *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_pr_supplier', hidden: !isCommForm })}
-          ${fld('Site / Destination', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames), { id: 'wrap_pr_site', hidden: isCommForm })}
+            : fld('Rule Type *', sel('f_ruletype', ruleTypeOpts, defRuleType), { id: 'wrap_pr_ruletype' })}
+          ${fld(isRawForm ? 'Raw Material / Grade *' : 'Product / Grade *', inp('f_product', 'text', '', 'list="dl_pr_prods" placeholder="Select or type grade..."') + dlMeta('dl_pr_prods', prodMetaItems), { id: 'wrap_pr_product' })}
+          ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_pr_customer', hidden: isCommForm || isRawForm })}
+          ${fld(isCommForm ? 'Plant Owner / Beneficiary *' : (isRawForm ? 'Site Owner / Material Supplier *' : 'Supplier / Hauler *'), inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_pr_supplier', hidden: !isCommForm && !isRawForm })}
+          ${fld(isRawForm ? 'Source Site *' : 'Delivery Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames), { id: 'wrap_pr_site', hidden: isCommForm })}
           <div id="pr_comm_history_box" class="form-field span-3" ${isCommForm ? '' : 'hidden'} style="background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.45"></div>
           <div class="pa-form-sec-hdr"><span id="pr_sec2_hdr">${isCommForm ? '2. Commission Unit (m³ / Ton) &amp; Per-Unit Rate' : '2. Unit Pricing, Client/Site Truck Size &amp; Tier 1 / Tier 2 Adjustments'}</span></div>
-          ${fld(isCommForm ? 'Commission Unit (m³ / Ton) *' : 'Priced Per Unit *', sel('f_uom', uoms, 'm³'), { id: 'wrap_pr_uom' })}
-          ${fld(isCommForm ? 'Commission Rate ($ / m³) *' : 'Material Unit Price ($) *', inp('f_unitprice', 'number', '0.00', 'step="0.01" min="0"'), { id: 'wrap_pr_matprice' })}
-          ${fld('Transport Rate Per', sel('f_rateper', [['m³', 'Per m³'], ['Ton', 'Per Ton (× Ton Factor)'], ['Truck', 'Flat Per Truck Load']], 'm³'), { id: 'wrap_pr_transrate', hidden: isCommForm })}
-          ${fld('Transport Unit Price ($)', inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0"'), { id: 'wrap_pr_transprice', hidden: isCommForm })}
+          ${fld(isCommForm ? 'Commission Unit (m³ / Ton) *' : 'Material Pricing Unit *', sel('f_uom', prUomOpts, 'm³'), { id: 'wrap_pr_uom', hintId: 'hint_pr_uom', hint: '' })}
+          ${fld(isCommForm ? 'Commission Rate ($ / m³) *' : (isRawForm ? 'Material Unit Cost ($ / m³) *' : 'Material Unit Price ($ / m³) *'), inp('f_unitprice', 'number', '0.00', 'step="0.01" min="0"'), { id: 'wrap_pr_matprice', hintId: 'hint_pr_matprice', hint: '' })}
+          ${fld('Transport Pricing Unit', sel('f_rateper', [['m³', 'Per m³'], ['Ton', 'Per Ton (× Ton Factor)'], ['Truck', 'Flat Per Truck Load']], 'm³'), { id: 'wrap_pr_transrate', hidden: isCommForm || isRawForm, hintId: 'hint_pr_transrate', hint: '' })}
+          ${fld('Transport Unit Price ($ / m³)', inp('f_transunitprice', 'number', '0.00', 'step="0.01" min="0"'), { id: 'wrap_pr_transprice', hidden: isCommForm || isRawForm, hintId: 'hint_pr_transprice', hint: '' })}
           ${fld('Indifference Price ($)', inp('f_indiff', 'number', '', 'step="0.01" min="0" placeholder="Optional benchmark"'), { id: 'wrap_pr_indiff', hidden: isCommForm })}
           ${fld('Target Truck Plate (Optional)', inp('f_pr_truck', 'text', '', 'list="dl_equip" placeholder="Select specific truck to adjust its m³..."') + dl('dl_equip', equipNames), { id: 'wrap_pr_truck', hidden: isCommForm, hintId: 'hint_pr_truck', hint: 'Select a specific truck first to override its m³ capacity for this client or site.' })}
           ${fld('Client / Site Truck Size (m³)', inp('f_trucksize', 'number', '', 'step="0.5" min="0" placeholder="Overrides selected truck m³..."'), { id: 'wrap_pr_trucksize', hidden: true, hintId: 'hint_pr_trucksize', hint: 'Overrides the selected truck capacity (m³) on matching m³ tickets.' })}
           ${fld('Tier 1 Truck Size (m³)', inp('f_qty1', 'number', '', 'step="0.5" min="0" placeholder="e.g. 14 or 20 m³"'), { id: 'wrap_pr_tier1', hidden: isCommForm })}
-          ${fld('Tier 1 Price Adj ($)', inp('f_adj1', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_adj1', hidden: isCommForm })}
-          ${fld('Tier 1 Trans Adj ($)', inp('f_transadj1', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_transadj1', hidden: isCommForm })}
+          ${fld('Tier 1 Material Adj ($)', inp('f_adj1', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_adj1', hidden: isCommForm })}
+          ${fld('Tier 1 Trans Adj ($)', inp('f_transadj1', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_transadj1', hidden: isCommForm || isRawForm })}
           ${fld('Tier 2 Truck Size (m³)', inp('f_qty2', 'number', '', 'step="0.5" min="0" placeholder="e.g. 22 or 25 m³"'), { id: 'wrap_pr_tier2', hidden: true })}
-          ${fld('Tier 2 Price Adj ($)', inp('f_adj2', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_adj2', hidden: true })}
+          ${fld('Tier 2 Material Adj ($)', inp('f_adj2', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_adj2', hidden: true })}
           ${fld('Tier 2 Trans Adj ($)', inp('f_transadj2', 'number', '0.00', 'step="0.01"'), { id: 'wrap_pr_transadj2', hidden: true })}
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>

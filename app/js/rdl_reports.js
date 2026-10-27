@@ -353,7 +353,7 @@
       const receiptLedgerAll = [];
       rawReceipts.forEach(rc => {
         const m = String(rc.method || '').trim();
-        if (m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Config') return;
+        if (m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'IVA' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent') return;
         const amt = Number(rc.usd_amount !== undefined ? rc.usd_amount : (rc.amount || 0)) + Number(rc.discount || 0);
         if (Math.abs(amt) < 0.005) return;
         receiptLedgerAll.push({
