@@ -554,7 +554,7 @@ body.is-resizing-rail .rail-resizer::before {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
-  padding: 6px 8px 2px;
+  padding: 5px 8px 2px;
 }
 
 .rail-nav .grp:first-child {
@@ -562,8 +562,8 @@ body.is-resizing-rail .rail-resizer::before {
 }
 
 .rail-nav .grp.grp-univ {
-  margin-top: 4px;
-  padding-top: 6px;
+  margin-top: 3px;
+  padding-top: 5px;
   border-top: 1px solid var(--line);
   color: var(--brass-strong, var(--brass));
 }
@@ -579,7 +579,7 @@ body.is-resizing-rail .rail-resizer::before {
   background: transparent;
   border: 0;
   border-left: 3px solid transparent;
-  padding: 5.5px 8px;
+  padding: 5px 8px;
   border-radius: 5px;
   color: var(--muted);
   margin: 0.5px 0;
@@ -20505,276 +20505,6 @@ table.ledger-table tbody td.td-databar {
   opacity: 1;
 }
 
-.payroll-fx-slot {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.payroll-fx-btn {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 31px;
-  padding: 0 9px 0 10px;
-  border-radius: 6px;
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
-  color: var(--ink);
-  font-family: inherit;
-  font-size: 11.2px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  white-space: nowrap;
-  box-sizing: border-box;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
-}
-
-:root[data-theme="dark"] .payroll-fx-btn {
-  background: var(--surface-elev);
-}
-
-.payroll-fx-btn:hover,
-.payroll-fx-btn.active {
-  border-color: var(--brass);
-  box-shadow: 0 1px 3px rgba(15, 30, 56, 0.08);
-}
-
-.payroll-fx-btn.is-custom {
-  box-shadow: inset 0 -1.5px 0 var(--brass);
-}
-
-.payroll-fx-btn .pfx-chg {
-  display: inline-flex;
-  align-items: center;
-  height: 19px;
-  padding: 0 6px;
-  border-radius: 4px;
-  background: rgba(15, 30, 56, 0.055);
-  color: var(--muted);
-  font-size: 10.2px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-}
-
-:root[data-theme="dark"] .payroll-fx-btn .pfx-chg {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--ink);
-}
-
-.payroll-fx-btn:hover .pfx-chg,
-.payroll-fx-btn.active .pfx-chg {
-  background: var(--brass-tint);
-  color: var(--brass);
-}
-
-.payroll-fx-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  width: min(356px, calc(100vw - 28px));
-  padding: 12px 13px;
-  border-radius: 9px;
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  box-shadow: 0 12px 28px rgba(15, 30, 56, 0.16), 0 2px 6px rgba(15, 30, 56, 0.08);
-  z-index: 85;
-  box-sizing: border-box;
-  text-align: left;
-}
-
-:root[data-theme="dark"] .payroll-fx-popover {
-  background: var(--surface-elev, #162033);
-  border-color: var(--line-strong);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.48);
-}
-
-.pfx-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.pfx-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.pfx-close {
-  appearance: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.pfx-close:hover {
-  background: rgba(15, 30, 56, 0.06);
-  color: var(--ink);
-}
-
-.pfx-explain {
-  font-size: 11.2px;
-  line-height: 1.42;
-  color: var(--muted);
-  margin-bottom: 9px;
-}
-
-.pfx-explain strong {
-  color: var(--ink);
-}
-
-.pfx-breakdown {
-  padding: 7px 9px;
-  border-radius: 6px;
-  background: var(--surface-2, #F5F7FA);
-  border: 1px solid var(--line);
-  margin-bottom: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-:root[data-theme="dark"] .pfx-breakdown {
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.pfx-bd-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.pfx-bd-row b {
-  color: var(--ink);
-}
-
-.pfx-bd-row.is-net {
-  padding-top: 4px;
-  margin-top: 2px;
-  border-top: 1px dashed var(--line-strong);
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.pfx-input-lbl {
-  display: block;
-  font-size: 10.6px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--muted);
-  margin-bottom: 5px;
-}
-
-.pfx-edit-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.pfx-rate-input {
-  width: 118px;
-  height: 31px;
-  padding: 0 9px;
-  border-radius: 6px;
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
-  color: var(--ink);
-  font-size: 12.5px;
-  font-weight: 700;
-  box-sizing: border-box;
-}
-
-:root[data-theme="dark"] .pfx-rate-input {
-  background: rgba(0, 0, 0, 0.22);
-}
-
-.pfx-rate-input:focus {
-  outline: none;
-  border-color: var(--brass);
-}
-
-.pfx-unit {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.pfx-apply-btn {
-  height: 31px;
-  padding: 0 11px;
-  font-size: 11.3px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.pfx-presets-row {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin-top: 8px;
-}
-
-.pfx-preset-pill,
-.pfx-desk-link {
-  appearance: none;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 5px;
-  border: 1px solid var(--line-strong);
-  background: var(--surface);
-  color: var(--muted);
-  font-family: inherit;
-  font-size: 10.6px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-:root[data-theme="dark"] .pfx-preset-pill,
-:root[data-theme="dark"] .pfx-desk-link {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.pfx-preset-pill:hover,
-.pfx-desk-link:hover {
-  color: var(--ink);
-  border-color: var(--brass);
-}
-
-.pfx-preset-pill.active {
-  color: var(--ink);
-  border-color: var(--brass);
-  background: var(--brass-tint);
-}
-
-.pfx-desk-link {
-  margin-left: auto;
-  color: var(--brass);
-  border-color: var(--brass-border, var(--line-strong));
-}
-
 .fx-ref-rate-bar {
   display: flex;
   align-items: center;
@@ -20813,14 +20543,10 @@ table.ledger-table tbody td.td-databar {
 
 .fx-ref-controls {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 5px;
+  align-items: center;
+  gap: 8px;
   flex: 0 0 auto;
-}
-
-.fx-ref-controls .pfx-presets-row {
-  margin-top: 0;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 1280px) and (min-width: 861px) {
@@ -20840,9 +20566,6 @@ table.ledger-table tbody td.td-databar {
   .payroll-cutoff-pill {
     font-size: 10.5px;
     padding: 0 5px;
-  }
-  .payroll-fx-btn .pfx-chg {
-    display: none;
   }
 }
 
@@ -20896,22 +20619,9 @@ table.ledger-table tbody td.td-databar {
     gap: 3px;
     min-width: 0;
   }
-  .payroll-fx-btn {
-    height: 31px;
-    padding: 0 8px;
-    font-size: 10.5px;
-    gap: 5px;
-  }
-  .payroll-fx-btn .pfx-chg {
-    padding: 0 5px;
-    font-size: 9.8px;
-  }
   .fx-ref-controls {
-    align-items: stretch;
     width: 100%;
-  }
-  .fx-ref-controls .pfx-rate-input {
-    flex: 1 1 auto;
+    justify-content: flex-start;
   }
 }
 

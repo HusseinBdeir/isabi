@@ -22,11 +22,19 @@
   'use strict';
 
   const DEFAULT_FX_RATE = 89500;
-  const getActiveFxRate = () => (typeof window !== 'undefined' && window.MFG_FX && typeof window.MFG_FX.getRate === 'function')
-    ? Number(window.MFG_FX.getRate() || DEFAULT_FX_RATE)
+  const DEFAULT_VAT_PCT = 11;
+  const getActiveFxRate = (dateStr, currency) => (typeof window !== 'undefined' && window.MFG_FX && typeof window.MFG_FX.getRate === 'function')
+    ? Number(window.MFG_FX.getRate(dateStr, currency) || DEFAULT_FX_RATE)
     : DEFAULT_FX_RATE;
   const fmtFxRateLbl = r => Number(r || DEFAULT_FX_RATE).toLocaleString('en-US');
-  const VAT_RATE = 0.11;
+  const getActiveVatPct = dateStr => (typeof window !== 'undefined' && window.MFG_VAT && typeof window.MFG_VAT.getPct === 'function')
+    ? Number(window.MFG_VAT.getPct(dateStr) ?? DEFAULT_VAT_PCT)
+    : DEFAULT_VAT_PCT;
+  const getActiveVatFraction = dateStr => getActiveVatPct(dateStr) / 100;
+  const fmtVatPctLbl = p => {
+    const n = Number(p ?? DEFAULT_VAT_PCT);
+    return (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '')) + '%';
+  };
   const MIN_DATE = '2024-01-01';
   const ic = (name, cls) => (typeof window !== 'undefined' && window.MFG_ICONS ? window.MFG_ICONS.svg(name, cls) : '');
 
@@ -100,7 +108,10 @@
         { id: 'site', label: 'Site', badge: 'bhf_site', crKey: 'sites', title: 'New Site (Universal Registry)', universal: true },
         { id: 'region', label: 'Region / Zone', badge: 'bhf_region', crKey: 'regions', title: 'New Region / Zone (Universal Registry)', universal: true },
         { id: 'equipment', label: 'Equipment / Truck', badge: 'bhf_equipment', crKey: 'equipment', title: 'New Equipment / Truck (Universal Registry)', universal: true },
-        { id: 'driver', label: 'Driver / Operator', badge: 'bhf_driver', crKey: 'drivers', title: 'New Driver / Operator (Universal Registry)', universal: true }
+        { id: 'driver', label: 'Driver / Operator', badge: 'bhf_driver', crKey: 'drivers', title: 'New Driver / Operator (Universal Registry)', universal: true },
+        { id: 'fxrate', label: 'FX Rate', badge: 'bhf_fxrate', crKey: 'fx_rates', title: 'New FX Rate (Universal Registry)', universal: true },
+        { id: 'vatrate', label: 'VAT Rate', badge: 'bhf_vatrate', crKey: 'vat_rates', title: 'New VAT Rate (Universal Registry)', universal: true },
+        { id: 'currency', label: 'Currency', badge: 'bhf_currency', crKey: 'currencies', title: 'New Currency (Universal Registry)', universal: true }
       ]
     }
   ];
@@ -715,6 +726,7 @@
     }
 
     if (fType === 'vatinvoice') {
+      const vPctLbl = fmtVatPctLbl(getActiveVatPct(today));
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
@@ -725,15 +737,15 @@
           ${fld('Invoice Serial No. *', inp('f_ticketno', 'text', '', 'placeholder="e.g. VAT-2026-0412"'))}
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { hintId: 'hint_vat_cust', hint: '' })}
           ${fld('Net Amount Ex-VAT ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'))}
-          ${fld('VAT 11% ($)', inp('f_vat', 'number', '', 'step="0.01" min="0" readonly'), { id: 'wrap_f_vat', lockField: 'f_vat', lockReason: 'Locked to 11% Statutory Tax formula (Net HT × 11%)' })}
+          ${fld(`VAT ${vPctLbl} ($)`, inp('f_vat', 'number', '', 'step="0.01" min="0" readonly'), { id: 'wrap_f_vat', lockField: 'f_vat', lockReason: `Locked to ${vPctLbl} Statutory Tax formula (Net HT × ${vPctLbl})` })}
           ${fld('Payment Status', sel('f_status', [['Open', 'Open'], ['Settled', 'Settled'], ['Partial', 'Partial']], 'Open'))}
           ${fld('Notes', inp('f_notes', 'text', ''))}
         </div>
         <div class="live-calc">
           <div><small>Net HT</small><b id="calc_mat">$0.00</b></div>
-          <div><small>11% VAT</small><b id="calc_vat">$0.00</b></div>
+          <div><small id="lbl_vatinv_pct">${vPctLbl} VAT</small><b id="calc_vat">$0.00</b></div>
           <div><small>Total TTC</small><b id="calc_total">$0.00</b></div>
-          <div><small>Customer VAT Status</small><b id="calc_vat_status">11% Statutory VAT</b></div>
+          <div><small>Customer VAT Status</small><b id="calc_vat_status">${vPctLbl} Statutory VAT</b></div>
         </div>
       `;
     }
@@ -908,6 +920,72 @@
           ], 'Mount Lebanon'))}
           ${fld('Reference Haulage Distance (km)', inp('f_distance_km', 'number', '', 'step="1" min="0" placeholder="Optional one-way km"'))}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional corridor notes, toll/checkpoint info, or zone scope..."'), { span: true })}
+        </div>
+      `;
+    }
+
+    if (fType === 'fxrate') {
+      const currList = ((rec.currencies || []).filter(c => c && !c.voided && !c.is_base && String(c.code || '').toUpperCase() !== 'USD'));
+      const currOpts = currList.length
+        ? currList.map(c => [c.code, `${c.code} · ${c.name || c.code}`])
+        : [['LBP', 'LBP · Lebanese Pound']];
+      return `
+        <div class="form-grid-3">
+          ${secHdr('1. Global Currency Exchange Rate Window (Universal Registry · All BUs)')}
+          ${fld('Currency *', sel('f_currency', currOpts, 'LBP'), { id: 'wrap_fx_currency', hintId: 'hint_fx_currency', hint: 'Evaluated against $1.00 USD base currency across all Business Units.' })}
+          ${fld('Effective Start Date *', inp('f_date', 'date', today), { id: 'wrap_fx_startdate', hintId: 'hint_fx_startdate', hint: 'Open-ended window; prior rate closes automatically on Start Date minus 1 day.' })}
+          ${fld('Exchange Rate (per $1.00 USD) *', inp('f_fxrate', 'number', String(getActiveFxRate()), 'step="10" min="0.0001" placeholder="e.g. 89500"'), { id: 'wrap_fx_rate', hintId: 'hint_fx_rate', hint: '' })}
+          <div id="fxRateContextStrip" class="att-contract-strip" hidden></div>
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional central bank circular, board resolution, or rate note..."'), { span: true })}
+        </div>
+        <div class="live-calc" id="fxRateLiveCalc">
+          <div><small>Currency Pair</small><b id="calc_fx_pair">LBP / USD</b></div>
+          <div><small>Effective Window</small><b id="calc_fx_window">Open</b></div>
+          <div><small>Prior Window</small><b id="calc_fx_prior">Auto-closed</b></div>
+          <div><small>1,000,000 Units in USD</small><b id="calc_fx_sample">$11.17</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'vatrate') {
+      const glOpts = uniqSorted(
+        ['4427 State - VAT collected', '4426 State - VAT deductible']
+          .concat((rec.coa || []).filter(a => a && /^442/.test(String(a.code || a.name || ''))).map(a => a.code && a.name ? `${a.code} ${a.name}` : (a.name || a.code)))
+      );
+      return `
+        <div class="form-grid-3">
+          ${secHdr('1. Statutory VAT Rate & Ministry of Finance LBP Rate (Universal Registry · All BUs)')}
+          ${fld('Effective Start Date *', inp('f_date', 'date', today), { id: 'wrap_vat_startdate', hintId: 'hint_vat_startdate', hint: 'Open-ended statutory window; prior VAT window closes automatically on Start Date minus 1 day.' })}
+          ${fld('Statutory VAT Rate (%) *', inp('f_vat_pct', 'number', String(getActiveVatPct(today)), 'step="0.1" min="0" max="100" placeholder="e.g. 11.0"'), { id: 'wrap_vat_pct', hintId: 'hint_vat_pct', hint: '' })}
+          ${fld('Official MoF LBP VAT Rate (LL / $) *', inp('f_fxrate', 'number', String(getActiveFxRate(today, 'LBP')), 'step="10" min="1" placeholder="e.g. 89500"'), { id: 'wrap_vat_fxrate', hintId: 'hint_vat_fxrate', hint: 'Official Ministry of Finance LBP/$ exchange rate for VAT declarations.' })}
+          <div id="vatRateContextStrip" class="att-contract-strip" hidden></div>
+          ${fld('Output VAT GL Account *', inp('f_output_vat_gl', 'text', '4427 State - VAT collected', 'list="dl_vat_gl"') + dl('dl_vat_gl', glOpts))}
+          ${fld('Input VAT GL Account *', inp('f_input_vat_gl', 'text', '4426 State - VAT deductible', 'list="dl_vat_gl"'))}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional statutory law or MoF circular reference..."'))}
+        </div>
+        <div class="live-calc" id="vatRateLiveCalc">
+          <div><small>Statutory VAT %</small><b id="calc_vatr_pct">11.0%</b></div>
+          <div><small>MoF LBP VAT Rate</small><b id="calc_vatr_fx">89,500 LL/$</b></div>
+          <div><small>$100.00 Net HT Sample</small><b id="calc_vatr_sample">$11.00 VAT · $111.00 TTC</b></div>
+          <div><small>Prior Window</small><b id="calc_vatr_prior">Auto-closed</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'currency') {
+      return `
+        <div class="form-grid-3">
+          ${secHdr('1. Currency Definition (Universal Registry · All BUs)')}
+          ${fld('ISO Currency Code *', inp('f_code', 'text', '', 'maxlength="6" placeholder="e.g. EUR, GBP, AED"'), { id: 'wrap_curr_code', hintId: 'hint_curr_code', hint: '3-letter ISO 4217 currency code.' })}
+          ${fld('Currency Name *', inp('f_name', 'text', '', 'placeholder="e.g. Euro, Pound Sterling, UAE Dirham"'))}
+          ${fld('Symbol *', inp('f_symbol', 'text', '', 'maxlength="6" placeholder="e.g. €, £, AED"'))}
+          ${fld('Decimal Precision', sel('f_precision', [
+            ['2', '2 Decimals (0.01)'],
+            ['0', '0 Decimals (Whole Units)'],
+            ['3', '3 Decimals (0.001)']
+          ], '2'))}
+          ${fld('Operational Role', inp('f_role', 'text', 'Foreign Settlement Currency', 'placeholder="e.g. Foreign Trade & Settlement Currency"'), { span2: true })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional settlement or rounding notes..."'), { span: true })}
         </div>
       `;
     }
@@ -1365,7 +1443,8 @@
   // ==================== PUBLIC API MOUNT ====================
   window.MFG_FORMS = {
     get FX_RATE() { return getActiveFxRate(); },
-    VAT_RATE,
+    get VAT_RATE() { return getActiveVatFraction(); },
+    get VAT_PCT() { return getActiveVatPct(); },
     MIN_DATE,
     FORM_GROUPS,
     FORM_MAP,

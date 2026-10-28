@@ -2685,13 +2685,21 @@
     const outVat = vatableSales.reduce((s, r) => s + Number(r.vat_usd || 0), 0);
     const exemptBase = exemptSales.reduce((s, r) => s + Number(r.total_usd || 0), 0);
 
+    const vatRow = (typeof window !== 'undefined' && window.MFG_VAT && typeof window.MFG_VAT.getRow === 'function')
+      ? window.MFG_VAT.getRow(p.to)
+      : null;
+    const vatPct = vatRow ? Number(vatRow.vat_percent || 11) : 11;
+    const vatFrac = vatPct > 0 ? (vatPct / 100) : 0.11;
+    const vatFxRate = vatRow ? Number(vatRow.vat_fx_rate || 89500) : 89500;
+    const vatPctStr = Number.isInteger(vatPct) ? String(vatPct) : vatPct.toFixed(1).replace(/\.0$/, '');
+
     const inVat = vatPaidRows.reduce((s, r) => s + Number(r.vat_usd || 0), 0);
-    const inTaxable = inVat > 0 ? (inVat / 0.11) : 0;
+    const inTaxable = inVat > 0 ? (inVat / vatFrac) : 0;
     const netVat = outVat - inVat;
 
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Lebanese Ministry of Finance VAT Declaration (11% Standard Rate)`)}
-      <div class="rdl-sec-title">1. VAT Summary Box (Account 442 — الضريبة على القيمة المضافة)</div>
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Lebanese Ministry of Finance VAT Declaration (${vatPctStr}% Standard Rate · ${fmtNum(vatFxRate, vatFxRate % 1 ? 1 : 0)} LL/$)`)}
+      <div class="rdl-sec-title">1. VAT Summary Box (Account 442 · الضريبة على القيمة المضافة)</div>
       <table class="rdl-table">
         <thead>
           <tr>
@@ -2699,14 +2707,14 @@
             <th>Description (EN / AR)</th>
             <th class="num">Vouchers / Invoices</th>
             <th class="num">Taxable Base ($)</th>
-            <th class="num">VAT 11% Amount ($)</th>
+            <th class="num">VAT ${vatPctStr}% Amount ($)</th>
             <th class="num">Gross Incl. VAT ($)</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td class="mono bold">Box A1</td>
-            <td>Taxable Supplies at Standard 11% Rate (عمليات خاضعة للضريبة ١١٪)</td>
+            <td>Taxable Supplies at Standard ${vatPctStr}% Rate (عمليات خاضعة للضريبة)</td>
             <td class="num">${fmtNum(vatableSales.length, 0)}</td>
             <td class="num">${fmtUsd(outTaxable, 2)}</td>
             <td class="num bold">${fmtUsd(outVat, 2)}</td>

@@ -1459,11 +1459,17 @@
     ] },
     { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region / Zone', dvn: 'bhf_region', form: 'region', cols: ['name', 'code', 'sites_count', 'overtime_rate', 'sales_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
     { key: 'equipment', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', singularLabel: 'Equipment / Truck', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
-    { key: 'drivers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', singularLabel: 'Driver / Operator', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] }
+    { key: 'drivers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', singularLabel: 'Driver / Operator', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] },
+    { key: 'fx_rates', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_fx_rates', label: 'Currency Exchange Rates', singularLabel: 'FX Rate', dvn: 'bhf_fxrate', form: 'fxrate', cols: ['name', 'currency', 'rate', 'start_date', 'effective_to', 'status', 'notes'], relTables: ['currencies', 'conversions'], views: [{ id: 'all', label: 'All Exchange Rates' }, { id: 'current', label: 'Current Active Rates', fn: r => r.status === 'Current' }, { id: 'historical', label: 'Historical Windows', fn: r => r.status === 'Historical' }] },
+    { key: 'vat_rates', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_vat_rates', label: 'VAT Rates', singularLabel: 'VAT Rate', dvn: 'bhf_vatrate', form: 'vatrate', cols: ['name', 'start_date', 'effective_to', 'vat_percent', 'vat_fx_rate', 'output_vat_account', 'input_vat_account', 'status', 'notes'], relTables: ['vat_invoices', 'coa', 'fx_rates'], views: [{ id: 'all', label: 'All Statutory VAT Windows' }, { id: 'current', label: 'Current Active Rate', fn: r => r.status === 'Current' }] },
+    { key: 'currencies', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_fx_rates', label: 'Currencies', singularLabel: 'Currency', dvn: 'bhf_currency', form: 'currency', cols: ['code', 'name', 'symbol', 'precision', 'is_base', 'active_rate', 'role', 'status'], relTables: ['fx_rates', 'conversions'], views: [{ id: 'all', label: 'All Currencies' }] }
   ];
 
-  // Lookup column target table map (renders clickable relational pills in 34-Table Hub)
+  // Lookup column target table map (renders clickable relational pills in 40-Table Hub)
   const HUB_LOOKUP_TARGETS = {
+    currency: 'currencies',
+    from_currency: 'currencies',
+    to_currency: 'currencies',
     customer: 'customers',
     supplier: 'suppliers',
     site_owner: 'suppliers',
@@ -1571,7 +1577,7 @@
     return `<span class="badge ${cls}">${esc(s)}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(cost_class|cost_bucket|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(cost_class|cost_bucket|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|status)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -1616,7 +1622,11 @@
       case 'logistics_allowances':
         return { key: 'start_date', dir: 'desc' };
       case 'price_rules':
+      case 'fx_rates':
+      case 'vat_rates':
         return { key: 'start_date', dir: 'desc' };
+      case 'currencies':
+        return { key: 'is_base', dir: 'desc' };
       default: {
         const cols = (meta && meta.cols) || [];
         if (cols.includes('date')) return { key: 'date', dir: 'desc' };
@@ -2141,6 +2151,10 @@
     }
     if (tableKey === 'logistics_allowances' && c === 'daily_usd' && window.MFG_FX && typeof window.MFG_FX.siteDailyUsd === 'function') {
       return window.MFG_FX.siteDailyUsd(r);
+    }
+    if (tableKey === 'currencies' && c === 'active_rate') {
+      if (r.is_base || String(r.code || '').toUpperCase() === 'USD') return 1;
+      return (window.MFG_FX && typeof window.MFG_FX.getRate === 'function') ? window.MFG_FX.getRate(null, r.code) : 89500;
     }
     if (c === 'cost_class') return deriveExpenseCostClass(r);
     if (r[c] != null && r[c] !== '') {
@@ -8200,7 +8214,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading/.test(c) ? 'r' : '')).join('')}
+                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
@@ -8214,13 +8228,16 @@
                     const isSignedLbp = !isBool && !nonNum && c === 'lbp_delta';
                     const isLbp = !isBool && !nonNum && !isSignedLbp && /^lbp_|_lbp$/.test(c);
                     const isMoney = !isBool && !nonNum && !isLbp && !isSignedLbp && /price|cost|amount|total|vat_amount|limit|salary|balance|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(c) && !/rate$/.test(c);
-                    const isNum = !isBool && !nonNum && !isMoney && !isLbp && !isSignedLbp && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets/.test(c);
+                    const isNum = !isBool && !nonNum && !isMoney && !isLbp && !isSignedLbp && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
                     let cell = v == null || v === '' ? '—' : (isBool ? (v && v !== 0 ? 'Yes' : 'No') : String(v));
                     if (isSignedUsd && v != null && v !== '') cell = fmtSignedUSD(v, 2);
                     else if (isSignedLbp && v != null && v !== '') cell = fmtSignedLBP(v);
                     else if (isLbp && v != null && v !== '') cell = fmtNum(v, 0) + ' LL';
                     else if (isMoney && v != null && v !== '') cell = fmtUSD(v, 2);
+                    else if (c === 'vat_percent' && v != null && v !== '') cell = fmtNum(v, 1) + '%';
+                    else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
+                    else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
                     else if (/date/.test(c) && v) cell = fmtDateDMY(v);
 
                     const lkTarget = HUB_LOOKUP_TARGETS[c];
@@ -8247,7 +8264,7 @@
                     const isSL = !isBoolCol && col === 'lbp_delta';
                     const isL = !isBoolCol && !isSL && /^lbp_|_lbp$/.test(col);
                     const isM = !isBoolCol && !isL && !isSL && /price|cost|amount|total|vat_amount|limit|salary|balance|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(col) && !/rate$/.test(col);
-                    const isN = !isBoolCol && !isM && !isL && !isSL && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|loads|fills|rules|tickets/.test(col);
+                    const isN = !isBoolCol && !isM && !isL && !isSL && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(col);
                     return { isM, isN, isL, isSU, isSL, num: isM || isN || isL || isSU || isSL };
                   };
                   let firstNum = activeCols.findIndex((col, idx) => idx > 0 && isColNumeric(col).num);
@@ -8264,7 +8281,7 @@
                       out.push(`<td class="r">${rem != null ? `<span class="tfoot-avg-tag">Rem. </span><b>${fmtNum(rem, 0)}</b>` : '-'}</td>`);
                       continue;
                     }
-                    const isAvg = /price|rate|factor|pct|percentage|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
+                    const isAvg = /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
                     let sum = 0, cnt = 0;
                     rows.forEach(r => {
                       const rowSgn = meta.key === 'sales_tickets' ? saleTicketSign(r) : (meta.key === 'expenses' ? hubExpenseSign(r) : 1);
@@ -8280,7 +8297,7 @@
                     const txt = isSU ? fmtSignedUSD(val, 2)
                       : (isSL ? fmtSignedLBP(val)
                         : (isL ? fmtNum(val, 0) + ' LL'
-                          : (isMoney ? fmtUSD(val, 2) : fmtNum(val, /factor|qty|capacity|percentage|interest/.test(c) ? 2 : 0))));
+                          : (isMoney ? fmtUSD(val, 2) : (c === 'vat_percent' ? fmtNum(val, 1) + '%' : fmtNum(val, /factor|qty|capacity|percentage|interest/.test(c) ? 2 : 0)))));
                     const footHtml = (isSU || isSL)
                       ? `<strong style="color:${val >= 0 ? 'var(--good)' : 'var(--crit)'}">${esc(txt)}</strong>`
                       : `<b>${txt}</b>`;
@@ -8335,16 +8352,30 @@
     meter_reading: 'Meter (km/h)',
     tank_remaining_litres: 'Tank Rem. (L)',
     tank_delta_litres: 'Tank Impact (L)',
-    discrepancy_type: 'Discrepancy Type'
+    discrepancy_type: 'Discrepancy Type',
+    start_date: 'Start Date',
+    effective_to: 'Effective To',
+    vat_percent: 'VAT Rate (%)',
+    vat_fx_rate: 'MoF Rate (LL/$)',
+    output_vat_account: 'Output VAT GL',
+    input_vat_account: 'Input VAT GL',
+    active_rate: 'Active Rate (per $1)',
+    is_base: 'Base USD',
+    precision: 'Decimals'
   };
 
   function hubColLabel(c, tableKey) {
     if (c === 'type' && tableKey === 'conversions') return 'Direction';
+    if (tableKey === 'fx_rates' && c === 'rate') return 'Rate (per $1)';
+    if (tableKey === 'currencies' && c === 'code') return 'ISO Code';
+    if (tableKey === 'currencies' && c === 'name') return 'Currency Name';
     if (tableKey === 'sites') {
       if (c === 'raw_loads') return 'Source Raw Loads';
       if (c === 'sales_loads') return 'Delivery Loads';
     }
     if (c === 'name') {
+      if (tableKey === 'fx_rates') return 'Rate Window Ref';
+      if (tableKey === 'vat_rates') return 'Statutory Window';
       if (tableKey === 'conversions') return 'Voucher / Ref';
       if (tableKey === 'equipment_defects') return 'Defect Ref';
       if (tableKey === 'part_movements') return 'Part Log Ref';
@@ -8444,7 +8475,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${meta.cols.map(c => th('ureg_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets/.test(c) ? 'r' : '')).join('')}
+                ${meta.cols.map(c => th('ureg_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
@@ -8455,10 +8486,13 @@
                     const nonNum = NON_NUMERIC_HUB_COLS.test(c);
                     const isBool = typeof v === 'boolean' || (/^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|iva$|overtime$)/.test(c) && (v === 0 || v === 1));
                     const isMoney = !isBool && !nonNum && /price|cost|amount|total|vat_amount|limit|salary|balance|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate/.test(c) && !/rate$/.test(c);
-                    const isNum = !isBool && !nonNum && !isMoney && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets/.test(c);
+                    const isNum = !isBool && !nonNum && !isMoney && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
                     let cell = v == null || v === '' ? '—' : (isBool ? (v && v !== 0 ? 'Yes' : 'No') : String(v));
                     if (isMoney && v != null && v !== '') cell = fmtUSD(v, 2);
+                    else if (c === 'vat_percent' && v != null && v !== '') cell = fmtNum(v, 1) + '%';
+                    else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
+                    else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
                     else if (/date/.test(c) && v) cell = fmtDateDMY(v);
 
                     const lkTarget = HUB_LOOKUP_TARGETS[c];
@@ -8466,7 +8500,7 @@
                     const innerHtml = isLookup
                       ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}" title="Open related ${esc(c.replace(/_/g, ' '))}: ${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
                       : (c === 'company' ? shortCoHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : esc(cell))));
-                    return `<td class="${isMoney || isNum ? 'r' : ''}${/date|ticket|code|_no$|plate|version/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
+                    return `<td class="${isMoney || isNum ? 'r' : ''}${/date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
               `).join('') || emptyRow(meta.cols.length, 'No rows match the active filter.')}
@@ -8479,7 +8513,7 @@
                     if (NON_NUMERIC_HUB_COLS.test(col)) return { isM: false, isN: false, num: false };
                     const isBoolCol = /^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|iva$|overtime$)/.test(col);
                     const isM = !isBoolCol && /price|cost|amount|total|vat_amount|limit|salary|balance|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate/.test(col) && !/rate$/.test(col);
-                    const isN = !isBoolCol && !isM && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|loads|fills|rules|tickets/.test(col);
+                    const isN = !isBoolCol && !isM && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(col);
                     return { isM, isN, num: isM || isN };
                   };
                   let firstNum = meta.cols.findIndex((col, idx) => idx > 0 && isColNumeric(col).num);
@@ -8490,7 +8524,7 @@
                     const c = meta.cols[ci];
                     const { isM: isMoney, isN: isNum } = isColNumeric(c);
                     if (!isMoney && !isNum) { out.push(`<td></td>`); continue; }
-                    const isAvg = /price|rate|factor|pct|percentage|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
+                    const isAvg = /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
                     let sum = 0, cnt = 0;
                     rows.forEach(r => {
                       const rowSgn = meta.key === 'sales_tickets' ? saleTicketSign(r) : (meta.key === 'expenses' ? hubExpenseSign(r) : 1);
@@ -8503,7 +8537,7 @@
                     });
                     if (!cnt) { out.push(`<td class="r">—</td>`); continue; }
                     const val = isAvg ? (sum / cnt) : sum;
-                    const txt = isMoney ? fmtUSD(val, 2) : fmtNum(val, /factor|qty|capacity|percentage|interest/.test(c) ? 2 : 0);
+                    const txt = isMoney ? fmtUSD(val, 2) : (c === 'vat_percent' ? fmtNum(val, 1) + '%' : fmtNum(val, /factor|qty|capacity|percentage|interest/.test(c) ? 2 : 0));
                     out.push(`<td class="r">${isAvg ? '<span class="tfoot-avg-tag">Avg </span>' : ''}<b>${txt}</b></td>`);
                   }
                   return out.join('');

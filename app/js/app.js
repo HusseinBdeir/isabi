@@ -66,7 +66,7 @@
   const HAS_LOCAL_API = IS_LOCAL && !IS_HEADLESS_HARNESS; // server.py REST endpoints exist only on the local / LAN host (quarantined in headless test harness)
   const MIN_DATE = '2024-01-01';   // bhf_mindate on every manufacturing BU
   const MAX_DATE = '2030-12-31';   // Power BI Dates calendar ceiling (2024-01-01 .. 2030-12-31)
-  const VAT_RATE = 0.11;
+  const DEFAULT_VAT_RATE = 0.11;
   const DAY_SHIFT_FROM = 6 * 60;   // m48: Day shift 06:00–17:59, Night otherwise
   const DAY_SHIFT_TO = 17 * 60 + 59;
   const PAGE = 100;
@@ -136,7 +136,6 @@
     salesChartMode: 'payment',
     payrollCutoffMode: 'closed_month',
     payrollStaffStatus: 'active',
-    payrollFxPopoverBar: '',
     lbpFxRate: (!IS_AUTOMATED_TEST ? Number(localStorage.getItem('isabi_mfg_lbp_fx_rate_v1') || 0) : 0) || 89500,
     lbpFxUpdatedAt: (!IS_AUTOMATED_TEST ? (localStorage.getItem('isabi_mfg_lbp_fx_updated_v1') || '') : ''),
     commLedgerMode: 'monthly',
@@ -292,7 +291,8 @@
     'drivers', 'company_drivers', 'expense_categories', 'expense_subcategories',
     'salaries', 'attendance', 'employments', 'freelance_entries', 'logistics_allowances',
     'overtime_rates', 'external_movements', 'loans', 'loan_settlements',
-    'conversions', 'jv_partnerships', 'jv_distributions'
+    'conversions', 'jv_partnerships', 'jv_distributions',
+    'currencies', 'fx_rates', 'vat_rates'
   ];
   const CR_TABLE = {
     sales_tickets: 'sales_tickets', raw_purchases: 'raw_purchases', receipts: 'customer_receipts',
@@ -308,7 +308,8 @@
     freelance_entries: 'freelance_entries',
     logistics_allowances: 'logistics_allowances', overtime_rates: 'overtime_rates',
     external_movements: 'external_movements', loans: 'loans', loan_settlements: 'loan_settlements',
-    conversions: 'conversions', jv_partnerships: 'jv_partnerships', jv_distributions: 'jv_distributions'
+    conversions: 'conversions', jv_partnerships: 'jv_partnerships', jv_distributions: 'jv_distributions',
+    currencies: 'currencies', fx_rates: 'fx_rates', vat_rates: 'vat_rates'
   };
   const CR_LABEL = {
     sales_tickets: 'sales ticket', raw_purchases: 'raw receipt', receipts: 'customer receipt',
@@ -324,7 +325,8 @@
     freelance_entries: 'freelance entry',
     logistics_allowances: 'site allowance', overtime_rates: 'overtime rate',
     external_movements: 'external movement', loans: 'partner loan', loan_settlements: 'loan settlement',
-    conversions: 'currency conversion', jv_partnerships: 'JV partnership', jv_distributions: 'JV distribution'
+    conversions: 'currency conversion', jv_partnerships: 'JV partnership', jv_distributions: 'JV distribution',
+    currencies: 'currency', fx_rates: 'FX rate', vat_rates: 'VAT rate'
   };
   CR_KEYS.forEach(k => { if (!Array.isArray(STATE.customRecords[k])) STATE.customRecords[k] = []; });
   if (!Array.isArray(STATE.users) || !STATE.users.length) STATE.users = DEFAULT_USERS.map(u => ({ ...u }));
@@ -519,54 +521,402 @@
   }
 
   const DEFAULT_LBP_FX_RATE = 89500;
-  function getLbpFxRate() {
+  let _GLOBAL_RATES_REV = 1;
+
+  function prevDayISO(dateStr) {
+    const s = String(dateStr || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+    const [y, m, d] = s.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() - 1);
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+  }
+
+  function buildFxRateRefName(currency, rate, startDate) {
+    const cUp = String(currency || 'LBP').trim().toUpperCase();
+    const dt = String(startDate || '2024-01-01').slice(0, 10).replace(/-/g, '');
+    const rClean = Number(rate || DEFAULT_LBP_FX_RATE);
+    const rTag = Number.isInteger(rClean) ? String(rClean) : String(rClean).replace('.', '_');
+    return `FX-${dt}-${cUp}-${rTag}`;
+  }
+
+  function buildVatRateRefName(vatPct, vatFxRate, startDate) {
+    const pct = Number(vatPct ?? 11);
+    const fx = Number(vatFxRate ?? DEFAULT_LBP_FX_RATE);
+    const pctStr = pct.toFixed(1);
+    const fxStr = fx.toLocaleString('en-US', { maximumFractionDigits: fx % 1 ? 1 : 0 });
+    return `VAT ${pctStr}% · ${fxStr} LL/$ (from ${String(startDate || '2024-01-01').slice(0, 10)})`;
+  }
+
+  const CANONICAL_CURRENCIES_SEED = [
+    {
+      id: 'curr-usd',
+      code: 'USD',
+      name: 'US Dollar',
+      symbol: '$',
+      precision: 2,
+      is_base: true,
+      role: 'Base Functional Currency',
+      status: 'Active',
+      date: '2021-01-01',
+      rep_date: '2021-01-01',
+      source: 'seed',
+      voided: false,
+      notes: 'Primary functional and consolidated reporting currency across all Business Units ($1.00 = 1.00 USD).'
+    },
+    {
+      id: 'curr-lbp',
+      code: 'LBP',
+      name: 'Lebanese Pound',
+      symbol: 'LL',
+      precision: 0,
+      is_base: false,
+      role: 'Local Statutory & Cash Currency',
+      status: 'Active',
+      date: '2021-01-01',
+      rep_date: '2021-01-01',
+      source: 'seed',
+      voided: false,
+      notes: 'Lebanese Pound (LBP / LL) converted to USD using the active dated rate in Currency Exchange Rates.'
+    }
+  ];
+
+  const CANONICAL_FX_RATES_SEED = [
+    {
+      id: 'fx-20240101-lbp-89500-001',
+      name: 'FX-20240101-LBP-89500-001',
+      currency: 'LBP',
+      rate: 89500,
+      start_date: '2024-01-01',
+      effective_to: 'Open',
+      status: 'Current',
+      date: '2024-01-01',
+      rep_date: '2024-01-01',
+      source: 'seed',
+      voided: false,
+      notes: 'Unified Lebanese Pound accounting & payroll reference rate across all Business Units (89,500 LL/$).'
+    }
+  ];
+
+  const CANONICAL_VAT_RATES_SEED = [
+    {
+      id: 'vat-20210101',
+      name: 'VAT 11.0% · 1,507.5 LL/$ (from 2021-01-01)',
+      start_date: '2021-01-01',
+      effective_to: '2023-01-31',
+      vat_percent: 11.0,
+      vat_fx_rate: 1507.5,
+      output_vat_account: '4427 State - VAT collected',
+      input_vat_account: '4426 State - VAT deductible',
+      status: 'Historical',
+      date: '2021-01-01',
+      rep_date: '2021-01-01',
+      source: 'seed',
+      voided: false,
+      notes: 'Official Lebanese MoF 1,507.5 LL/$ parity window.'
+    },
+    {
+      id: 'vat-20230201',
+      name: 'VAT 11.0% · 15,000 LL/$ (from 2023-02-01)',
+      start_date: '2023-02-01',
+      effective_to: '2023-04-27',
+      vat_percent: 11.0,
+      vat_fx_rate: 15000,
+      output_vat_account: '4427 State - VAT collected',
+      input_vat_account: '4426 State - VAT deductible',
+      status: 'Historical',
+      date: '2023-02-01',
+      rep_date: '2023-02-01',
+      source: 'seed',
+      voided: false,
+      notes: 'Official Lebanese MoF adjustment to 15,000 LL/$ for VAT declarations.'
+    },
+    {
+      id: 'vat-20230428',
+      name: 'VAT 11.0% · 86,000 LL/$ (from 2023-04-28)',
+      start_date: '2023-04-28',
+      effective_to: '2023-06-30',
+      vat_percent: 11.0,
+      vat_fx_rate: 86000,
+      output_vat_account: '4427 State - VAT collected',
+      input_vat_account: '4426 State - VAT deductible',
+      status: 'Historical',
+      date: '2023-04-28',
+      rep_date: '2023-04-28',
+      source: 'seed',
+      voided: false,
+      notes: 'MoF Sayrafa alignment window (86,000 LL/$).'
+    },
+    {
+      id: 'vat-20230701',
+      name: 'VAT 11.0% · 85,500 LL/$ (from 2023-07-01)',
+      start_date: '2023-07-01',
+      effective_to: '2023-12-18',
+      vat_percent: 11.0,
+      vat_fx_rate: 85500,
+      output_vat_account: '4427 State - VAT collected',
+      input_vat_account: '4426 State - VAT deductible',
+      status: 'Historical',
+      date: '2023-07-01',
+      rep_date: '2023-07-01',
+      source: 'seed',
+      voided: false,
+      notes: 'Q3 2023 MoF VAT exchange rate (85,500 LL/$).'
+    },
+    {
+      id: 'vat-20231219',
+      name: 'VAT 11.0% · 89,500 LL/$ (from 2023-12-19)',
+      start_date: '2023-12-19',
+      effective_to: '2023-12-31',
+      vat_percent: 11.0,
+      vat_fx_rate: 89500,
+      output_vat_account: '4427 State - VAT collected',
+      input_vat_account: '4426 State - VAT deductible',
+      status: 'Historical',
+      date: '2023-12-19',
+      rep_date: '2023-12-19',
+      source: 'seed',
+      voided: false,
+      notes: 'BdL / MoF unified 89,500 LL/$ VAT reporting rate.'
+    },
+    {
+      id: 'vat-20240101',
+      name: 'VAT 11.0% · 89,500 LL/$ (from 2024-01-01)',
+      start_date: '2024-01-01',
+      effective_to: 'Open',
+      vat_percent: 11.0,
+      vat_fx_rate: 89500,
+      output_vat_account: '4427 State - VAT collected',
+      input_vat_account: '4426 State - VAT deductible',
+      status: 'Current',
+      date: '2024-01-01',
+      rep_date: '2024-01-01',
+      source: 'seed',
+      voided: false,
+      notes: 'Active statutory Lebanese VAT rate (11.0% at 89,500 LL/$; Law 379/2001).'
+    }
+  ];
+
+  function invalidateGlobalRateCaches() {
+    _GLOBAL_RATES_REV++;
+    _PAYROLL_INTEL_CACHE = null;
+    _liveSentinelCache = null;
+    _cashMovesCacheKey = '';
+    _FORM_INTEL_CACHE = null;
+    if (typeof _sortedRowsCache !== 'undefined' && _sortedRowsCache && typeof _sortedRowsCache.clear === 'function') {
+      _sortedRowsCache.clear();
+    }
+    SEED._customRev = (SEED._customRev || 0) + 1;
+  }
+
+  function enrichGlobalRateTables(opts = {}) {
+    if (!SEED.records || typeof SEED.records !== 'object') return;
+    if (!Array.isArray(SEED.records.currencies)) SEED.records.currencies = [];
+    if (!Array.isArray(SEED.records.fx_rates)) SEED.records.fx_rates = [];
+    if (!Array.isArray(SEED.records.vat_rates)) SEED.records.vat_rates = [];
+
+    const tIso = todayISO();
+    const refDate = tIso > SEED_DATE ? tIso : SEED_DATE;
+
+    // 1. Enrich & derive Effective To on fx_rates per currency
+    const byCurr = new Map();
+    SEED.records.fx_rates.forEach(r => {
+      if (!r || r.voided) return;
+      r.currency = String(r.currency || 'LBP').trim().toUpperCase();
+      r.start_date = String(r.start_date || r.date || '2024-01-01').slice(0, 10);
+      r.date = r.start_date;
+      r.rep_date = r.start_date;
+      r.rate = Number(r.rate || DEFAULT_LBP_FX_RATE);
+      if (!byCurr.has(r.currency)) byCurr.set(r.currency, []);
+      byCurr.get(r.currency).push(r);
+    });
+    byCurr.forEach(list => {
+      list.sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)));
+      for (let i = 0; i < list.length; i++) {
+        const cur = list[i];
+        const nxt = list[i + 1] || null;
+        cur.effective_to = nxt ? prevDayISO(nxt.start_date) : 'Open';
+        cur.status = cur.start_date > refDate
+          ? 'Scheduled'
+          : ((cur.effective_to === 'Open' || cur.effective_to >= refDate) ? 'Current' : 'Historical');
+      }
+    });
+    SEED.records.fx_rates.sort((a, b) => String((b && b.start_date) || '').localeCompare(String((a && a.start_date) || '')) || String((a && a.currency) || '').localeCompare(String((b && b.currency) || '')));
+
+    // 2. Enrich & derive Effective To on vat_rates
+    const activeVat = SEED.records.vat_rates.filter(r => r && !r.voided);
+    activeVat.forEach(r => {
+      r.start_date = String(r.start_date || r.date || '2024-01-01').slice(0, 10);
+      r.date = r.start_date;
+      r.rep_date = r.start_date;
+      r.vat_percent = Number(r.vat_percent ?? 11);
+      r.vat_fx_rate = Number(r.vat_fx_rate ?? DEFAULT_LBP_FX_RATE);
+      if (!r.output_vat_account) r.output_vat_account = '4427 State - VAT collected';
+      if (!r.input_vat_account) r.input_vat_account = '4426 State - VAT deductible';
+    });
+    activeVat.sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)));
+    for (let i = 0; i < activeVat.length; i++) {
+      const cur = activeVat[i];
+      const nxt = activeVat[i + 1] || null;
+      cur.effective_to = nxt ? prevDayISO(nxt.start_date) : 'Open';
+      cur.status = cur.start_date > refDate
+        ? 'Scheduled'
+        : ((cur.effective_to === 'Open' || cur.effective_to >= refDate) ? 'Current' : 'Historical');
+    }
+    SEED.records.vat_rates.sort((a, b) => String((b && b.start_date) || '').localeCompare(String((a && a.start_date) || '')));
+
+    // 3. Sync STATE.lbpFxRate to the active LBP rate
+    const lbpList = byCurr.get('LBP') || [];
+    let activeLbpRow = null;
+    for (let i = lbpList.length - 1; i >= 0; i--) {
+      if (lbpList[i].start_date <= refDate) { activeLbpRow = lbpList[i]; break; }
+    }
+    if (!activeLbpRow && lbpList.length) activeLbpRow = lbpList[0];
+    if (activeLbpRow && Number(activeLbpRow.rate) > 0) {
+      STATE.lbpFxRate = Number(activeLbpRow.rate);
+    }
+
+    if (!opts.quiet) invalidateGlobalRateCaches();
+  }
+
+  function ensureGlobalFinanceTablesSeeded() {
+    if (!SEED.records || typeof SEED.records !== 'object') return;
+    if (SEED.records._globalFinSeeded) return;
+    Object.defineProperty(SEED.records, '_globalFinSeeded', { value: true, enumerable: false, configurable: true, writable: true });
+
+    const mergeSeedList = (key, defaults) => {
+      if (!Array.isArray(SEED.records[key])) SEED.records[key] = [];
+      const existingIds = new Set(SEED.records[key].map(x => x && String(x.id)));
+      defaults.forEach(item => {
+        if (!existingIds.has(String(item.id))) {
+          SEED.records[key].push(Object.assign({}, item));
+        }
+      });
+    };
+    mergeSeedList('currencies', CANONICAL_CURRENCIES_SEED);
+    mergeSeedList('fx_rates', CANONICAL_FX_RATES_SEED);
+    mergeSeedList('vat_rates', CANONICAL_VAT_RATES_SEED);
+
+    // Honour any legacy localStorage custom LBP rate if no custom fx_rates rows exist yet
+    if (!IS_AUTOMATED_TEST && Number(STATE.lbpFxRate) >= 1000 && Number(STATE.lbpFxRate) !== DEFAULT_LBP_FX_RATE) {
+      const hasCustomFx = Array.isArray(STATE.customRecords && STATE.customRecords.fx_rates) && STATE.customRecords.fx_rates.length > 0;
+      if (!hasCustomFx) {
+        const baseSeed = SEED.records.fx_rates.find(r => r && String(r.id) === 'fx-20240101-lbp-89500-001');
+        if (baseSeed) {
+          baseSeed.rate = Number(STATE.lbpFxRate);
+          baseSeed.name = buildFxRateRefName('LBP', baseSeed.rate, baseSeed.start_date);
+        }
+      }
+    }
+    enrichGlobalRateTables({ quiet: true });
+  }
+
+  function getFxRateRow(dateStr, currency = 'LBP') {
+    ensureGlobalFinanceTablesSeeded();
+    const cUp = String(currency || 'LBP').trim().toUpperCase();
+    if (cUp === 'USD') return { id: 'curr-usd', currency: 'USD', rate: 1, start_date: '2021-01-01', effective_to: 'Open', status: 'Current' };
+    const list = ((SEED.records && SEED.records.fx_rates) || [])
+      .filter(r => r && !r.voided && String(r.currency || 'LBP').trim().toUpperCase() === cUp && Number(r.rate) > 0)
+      .slice()
+      .sort((a, b) => String(a.start_date || a.date || '').localeCompare(String(b.start_date || b.date || '')));
+    if (!list.length) return null;
+    const tIso = todayISO();
+    const refDt = (dateStr && /^\d{4}-\d{2}-\d{2}/.test(String(dateStr)))
+      ? String(dateStr).slice(0, 10)
+      : (tIso > SEED_DATE ? tIso : SEED_DATE);
+    let chosen = null;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const sd = String(list[i].start_date || list[i].date || '');
+      if (sd <= refDt) { chosen = list[i]; break; }
+    }
+    return chosen || list[0];
+  }
+
+  function getLbpFxRate(dateStr, currency = 'LBP') {
+    const cUp = String(currency || 'LBP').trim().toUpperCase();
+    if (cUp === 'USD') return 1;
+    const row = getFxRateRow(dateStr, cUp);
+    if (row && Number(row.rate) > 0) return Number(row.rate);
     const r = Number(STATE.lbpFxRate || 0);
     return (Number.isFinite(r) && r >= 1000 && r <= 10000000) ? r : DEFAULT_LBP_FX_RATE;
   }
+
   function setLbpFxRate(nextVal, opts = {}) {
     const parsed = Math.round(Number(String(nextVal == null ? '' : nextVal).replace(/,/g, '').trim()));
     if (!Number.isFinite(parsed) || parsed < 1000 || parsed > 10000000) return false;
-    const prev = getLbpFxRate();
+    ensureGlobalFinanceTablesSeeded();
+    const prev = getLbpFxRate(opts.startDate || null, 'LBP');
+    const targetStart = opts.startDate ? String(opts.startDate).slice(0, 10) : '';
+    const targetRow = targetStart
+      ? ((SEED.records.fx_rates || []).find(r => r && !r.voided && String(r.currency || 'LBP').toUpperCase() === 'LBP' && r.start_date === targetStart) || null)
+      : getFxRateRow(null, 'LBP');
+    if (targetRow) {
+      targetRow.rate = parsed;
+      targetRow.name = targetRow.id === 'fx-20240101-lbp-89500-001' && parsed === DEFAULT_LBP_FX_RATE
+        ? 'FX-20240101-LBP-89500-001'
+        : buildFxRateRefName('LBP', parsed, targetRow.start_date);
+      if (opts.persistRecord !== false) {
+        if (!Array.isArray(STATE.customRecords.fx_rates)) STATE.customRecords.fx_rates = [];
+        const cIdx = STATE.customRecords.fx_rates.findIndex(x => x && String(x.id) === String(targetRow.id));
+        if (cIdx >= 0) Object.assign(STATE.customRecords.fx_rates[cIdx], targetRow);
+        else STATE.customRecords.fx_rates.unshift(Object.assign({}, targetRow));
+      }
+    }
     STATE.lbpFxRate = parsed;
     STATE.lbpFxUpdatedAt = opts.updatedAt || new Date().toISOString();
     try {
       localStorage.setItem('isabi_mfg_lbp_fx_rate_v1', String(parsed));
       localStorage.setItem('isabi_mfg_lbp_fx_updated_v1', STATE.lbpFxUpdatedAt);
     } catch (_) {}
-    if (parsed !== prev || opts.force) {
-      _PAYROLL_INTEL_CACHE = null;
-      _liveSentinelCache = null;
-      _cashMovesCacheKey = '';
-      _FORM_INTEL_CACHE = null;
-      if (typeof _sortedRowsCache !== 'undefined' && _sortedRowsCache && typeof _sortedRowsCache.clear === 'function') {
-        _sortedRowsCache.clear();
-      }
-      SEED._customRev = (SEED._customRev || 0) + 1;
-    }
+    enrichGlobalRateTables({ quiet: true });
+    if (parsed !== prev || opts.force) invalidateGlobalRateCaches();
     if (!IS_AUTOMATED_TEST && opts.sync !== false && typeof syncWithCloud === 'function') {
       syncWithCloud(true);
     }
     if (opts.render !== false && typeof renderApp === 'function') {
-      const anchorId = opts.anchorBarId || '';
-      const anchorEl = anchorId ? document.getElementById(anchorId) : null;
-      const beforeTop = anchorEl ? anchorEl.getBoundingClientRect().top : null;
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
       renderApp();
-      if (ws) {
-        const afterEl = anchorId ? document.getElementById(anchorId) : null;
-        if (afterEl && beforeTop !== null) {
-          ws.scrollTop = Math.max(0, y + (afterEl.getBoundingClientRect().top - beforeTop));
-        } else {
-          ws.scrollTop = y;
-        }
-      }
     }
     return true;
   }
+
+  function getVatRateRow(dateStr) {
+    ensureGlobalFinanceTablesSeeded();
+    const list = ((SEED.records && SEED.records.vat_rates) || [])
+      .filter(r => r && !r.voided && Number.isFinite(Number(r.vat_percent)))
+      .slice()
+      .sort((a, b) => String(a.start_date || a.date || '').localeCompare(String(b.start_date || b.date || '')));
+    if (!list.length) return null;
+    const tIso = todayISO();
+    const refDt = (dateStr && /^\d{4}-\d{2}-\d{2}/.test(String(dateStr)))
+      ? String(dateStr).slice(0, 10)
+      : (tIso > SEED_DATE ? tIso : SEED_DATE);
+    let chosen = null;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const sd = String(list[i].start_date || list[i].date || '');
+      if (sd <= refDt) { chosen = list[i]; break; }
+    }
+    return chosen || list[0];
+  }
+
+  function getVatPct(dateStr) {
+    const row = getVatRateRow(dateStr);
+    return row && Number.isFinite(Number(row.vat_percent)) ? Number(row.vat_percent) : (DEFAULT_VAT_RATE * 100);
+  }
+
+  function getVatFraction(dateStr) {
+    return getVatPct(dateStr) / 100;
+  }
+
+  function fmtVatPctStr(dateStr) {
+    const p = getVatPct(dateStr);
+    return (Number.isInteger(p) ? String(p) : p.toFixed(1).replace(/\.0$/, '')) + '%';
+  }
+
+  ensureGlobalFinanceTablesSeeded();
+
   function salaryVoucherUsd895(p, fxOverride) {
     if (!p) return 0;
-    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate();
+    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate(p.date || p.rep_date, p.currency || 'LBP');
     const isLbp = String(p.currency || 'USD').toUpperCase() === 'LBP';
     const uIn = p.usd_amount != null && p.usd_amount !== '' ? Number(p.usd_amount || 0) : null;
     const lIn = Number(p.lbp_amount || 0);
@@ -577,36 +927,46 @@
   }
   function empContractMonthlyUsd(e, fxOverride) {
     if (!e) return 0;
-    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate();
+    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate(e.end_date || SEED_DATE, 'LBP');
     const uSal = Number(e.salary_usd || 0) || ((!e.salary_lbp && Number(e.daily_rate || 0)) ? (Number(e.daily_rate || 0) * (Number(e.working_days || 26) || 26)) : 0);
     return round2(uSal + (Number(e.salary_lbp || 0) / fxRate));
   }
   function empContractReimbUsd(e, fxOverride) {
     if (!e) return 0;
-    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate();
+    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate(e.end_date || SEED_DATE, 'LBP');
     return round2(Number(e.reimbursement || 0) + (Number(e.reimbursement_lbp || 0) / fxRate));
   }
   function empContractDedUsd(e, fxOverride) {
     if (!e) return 0;
-    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate();
+    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate(e.end_date || SEED_DATE, 'LBP');
     return round2(Number(e.deduction || 0) + (Number(e.deduction_lbp || 0) / fxRate));
   }
   function siteAllowanceDailyUsd(l, fxOverride) {
     if (!l) return 0;
-    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate();
+    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate(l.end_date || SEED_DATE, 'LBP');
     const uDaily = Number(l.usd_amount || 0) || (!l.lbp_amount ? Number(l.daily_usd || 0) : 0);
     return round2(uDaily + (Number(l.lbp_amount || 0) / fxRate));
   }
   window.MFG_FX = {
     getRate: getLbpFxRate,
+    getRow: getFxRateRow,
     setRate: setLbpFxRate,
     resetRate: (opts = {}) => setLbpFxRate(DEFAULT_LBP_FX_RATE, opts),
+    enrich: enrichGlobalRateTables,
     defaultRate: DEFAULT_LBP_FX_RATE,
     voucherUsd: salaryVoucherUsd895,
     contractMonthlyUsd: empContractMonthlyUsd,
     contractReimbUsd: empContractReimbUsd,
     contractDedUsd: empContractDedUsd,
     siteDailyUsd: siteAllowanceDailyUsd
+  };
+  window.MFG_VAT = {
+    getRow: getVatRateRow,
+    getPct: getVatPct,
+    getFraction: getVatFraction,
+    fmtPct: fmtVatPctStr,
+    defaultPct: 11,
+    defaultFraction: DEFAULT_VAT_RATE
   };
 
   function convSignedDeltas(cv, fallbackRate = getLbpFxRate()) {
@@ -2225,7 +2585,7 @@
       }
       return mdlCusts.map(c => {
         const crNet = round2(Number(c.credit_sales || 0));
-        const crTtc = round2(c.sales_ttc != null ? (Number(c.sales_ttc || 0) - Number(c.cash_sales || 0)) : (c['VAT Registered'] === 'Yes' ? crNet * 1.11 : crNet));
+        const crTtc = round2(c.sales_ttc != null ? (Number(c.sales_ttc || 0) - Number(c.cash_sales || 0)) : (c['VAT Registered'] === 'Yes' ? crNet * (1 + getVatFraction()) : crNet));
         const bal = round2(Number(c.ar_balance || 0));
         const settled = round2(crTtc - bal);
         const cashRcpt = round2(Number(c.receipts != null ? c.receipts : settled));
@@ -5205,7 +5565,7 @@
       if (['sales', 'raw', 'fuel', 'malfunction'].includes(form)) return !!p.rights.enter_dispatch;
       if (['defect', 'partlog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master);
       if (['receipt', 'expense', 'settlement'].includes(form)) return !!p.rights.enter_accounting;
-      if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'attendance'].includes(form)) return !!p.rights.enter_master;
+      if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'attendance', 'fxrate', 'vatrate', 'currency'].includes(form)) return !!p.rights.enter_master;
       if (['salary', 'employment', 'allowance', 'logistics', 'overtimerate', 'triprate', 'treasury', 'external', 'extmovement', 'loan', 'loansettlement', 'conversion', 'jv', 'jvpartnership', 'jvdistribution'].includes(form)) return !!p.rights.enter_payroll_jv;
       return !!(p.rights.enter_dispatch || p.rights.enter_accounting || p.rights.enter_master);
     }
@@ -5257,7 +5617,10 @@
     reg_products: 'products',
     reg_customers: 'customers',
     reg_suppliers: 'suppliers',
-    reg_categories: 'expense_categories'
+    reg_categories: 'expense_categories',
+    reg_fx_rates: 'fx_rates',
+    reg_currencies: 'currencies',
+    reg_vat_rates: 'vat_rates'
   };
 
   const UNIV_REGISTRY_GROUPS = {
@@ -5268,7 +5631,10 @@
     reg_sites: ['sites', 'regions'],
     reg_regions: ['sites', 'regions'],
     reg_equipment: ['equipment'],
-    reg_drivers: ['drivers']
+    reg_drivers: ['drivers'],
+    reg_fx_rates: ['fx_rates', 'currencies'],
+    reg_currencies: ['fx_rates', 'currencies'],
+    reg_vat_rates: ['vat_rates']
   };
 
   const HUB_TITLES = {
@@ -5284,6 +5650,7 @@
     univ_parties: 'Counterparties & Sites',
     univ_catalog: 'Products & Categories',
     univ_fleet: 'Equipment & Drivers',
+    univ_rates: 'Currencies & VAT',
     tables: 'All Tables & Registers',
     kiosks: 'Plant Kiosks',
     users: 'Users & Security',
@@ -5558,6 +5925,16 @@
       ]
     },
     {
+      id: 'univ_rates',
+      title: HUB_TITLES.univ_rates,
+      group: 'universal',
+      universal: true,
+      tabs: [
+        { view: 'reg_fx_rates', match: ['reg_fx_rates', 'reg_currencies'], label: 'Currency & FX Rates', icon: 'reg_fx_rates', universal: true },
+        { view: 'reg_vat_rates', label: 'VAT Rates', icon: 'reg_vat_rates', universal: true }
+      ]
+    },
+    {
       id: 'tables',
       title: HUB_TITLES.tables,
       shortLabel: 'Tables',
@@ -5707,7 +6084,7 @@
     }
     if (pbi === 'full' || isOwner(u)) return true;
     if (/Sales/i.test(role)) {
-      return ['sales_tickets', 'receipts', 'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'products', 'sites', 'regions', 'uoms', 'product_types', 'daily_totals'].includes(tableKey);
+      return ['sales_tickets', 'receipts', 'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'products', 'sites', 'regions', 'uoms', 'product_types', 'daily_totals', 'currencies', 'fx_rates', 'vat_rates'].includes(tableKey);
     }
     return !finTables.includes(tableKey);
   }
@@ -17185,7 +17562,7 @@
   let _PAYROLL_INTEL_CACHE = null;
   function _getPayrollIntelIndex() {
     const fxRate = getLbpFxRate();
-    const rev = `${SEED._customRev || 0}|${fxRate}|${(SEED.records && SEED.records.salaries && SEED.records.salaries.length) || 0}|${(SEED.records && SEED.records.attendance && SEED.records.attendance.length) || 0}|${(SEED.records && SEED.records.employments && SEED.records.employments.length) || 0}|${(SEED.records && SEED.records.logistics_allowances && SEED.records.logistics_allowances.length) || 0}|${(SEED.records && SEED.records.fuel_intakes && SEED.records.fuel_intakes.length) || 0}|${(SEED.records && SEED.records.sales_tickets && SEED.records.sales_tickets.length) || 0}|${(SEED.records && SEED.records.raw_purchases && SEED.records.raw_purchases.length) || 0}|${(SEED.records && SEED.records.overtime_rates && SEED.records.overtime_rates.length) || 0}|${(SEED.records && SEED.records.sites && SEED.records.sites.length) || 0}|${(SEED.records && SEED.records.company_drivers && SEED.records.company_drivers.length) || 0}|${(SEED.records && SEED.records.loans && SEED.records.loans.length) || 0}|${(SEED.records && SEED.records.loan_settlements && SEED.records.loan_settlements.length) || 0}`;
+    const rev = `${SEED._customRev || 0}|${_GLOBAL_RATES_REV}|${fxRate}|${(SEED.records && SEED.records.salaries && SEED.records.salaries.length) || 0}|${(SEED.records && SEED.records.attendance && SEED.records.attendance.length) || 0}|${(SEED.records && SEED.records.employments && SEED.records.employments.length) || 0}|${(SEED.records && SEED.records.logistics_allowances && SEED.records.logistics_allowances.length) || 0}|${(SEED.records && SEED.records.fuel_intakes && SEED.records.fuel_intakes.length) || 0}|${(SEED.records && SEED.records.sales_tickets && SEED.records.sales_tickets.length) || 0}|${(SEED.records && SEED.records.raw_purchases && SEED.records.raw_purchases.length) || 0}|${(SEED.records && SEED.records.overtime_rates && SEED.records.overtime_rates.length) || 0}|${(SEED.records && SEED.records.sites && SEED.records.sites.length) || 0}|${(SEED.records && SEED.records.company_drivers && SEED.records.company_drivers.length) || 0}|${(SEED.records && SEED.records.loans && SEED.records.loans.length) || 0}|${(SEED.records && SEED.records.loan_settlements && SEED.records.loan_settlements.length) || 0}`;
     if (_PAYROLL_INTEL_CACHE && _PAYROLL_INTEL_CACHE.rev === rev) return _PAYROLL_INTEL_CACHE;
     const salByStaffMonth = new Map();
     const salByStaff = new Map();
@@ -17943,16 +18320,17 @@
           salLbpRaw += lSal * share;
         });
 
+        const mFx = getLbpFxRate(effCList[0].effMEnd || `${ym}-28`, 'LBP');
         const salUsdExt = salUsdRaw + (extDays && wDays > 0 ? extDays * (salUsdRaw / wDays) : 0);
         const salLbpExt = salLbpRaw + (extDays && wDays > 0 ? extDays * (salLbpRaw / wDays) : 0);
-        const mBase = salUsdExt + (salLbpExt / fxRate);
+        const mBase = salUsdExt + (salLbpExt / mFx);
 
         const reimbU = Number(prim.reimbursement || 0);
         const reimbL = Number(prim.reimbursement_lbp || 0);
-        const mReimb = reimbU + (reimbL / fxRate);
+        const mReimb = reimbU + (reimbL / mFx);
         const dedRateU = Number(prim.deduction || 0);
         const dedRateL = Number(prim.deduction_lbp || 0);
-        const dedRate = dedRateU + (dedRateL / fxRate);
+        const dedRate = dedRateU + (dedRateL / mFx);
 
         // Cumulative annual vacation entitlement (granted in January) vs taken VacAbsence + ConfigVacAbs
         let vacInYm = 0;
@@ -17975,10 +18353,10 @@
 
         const dayRateU = wDays > 0 ? (salUsdExt / wDays) : 0;
         const dayRateL = wDays > 0 ? (salLbpExt / wDays) : 0;
-        const dayRate = dayRateU + (dayRateL / fxRate);
+        const dayRate = dayRateU + (dayRateL / mFx);
         const hrRateU = (wDays * wHrs) > 0 ? (salUsdExt / (wDays * wHrs)) : 0;
         const hrRateL = (wDays * wHrs) > 0 ? (salLbpExt / (wDays * wHrs)) : 0;
-        const hrRate = hrRateU + (hrRateL / fxRate);
+        const hrRate = hrRateU + (hrRateL / mFx);
 
         const gapAndUnaccAbsDed = (gapDays + unaccVac) * dayRate;
         const gapDed = gapDays * dedRate;
@@ -18030,7 +18408,7 @@
         return;
       }
       if (/^config\s*lbp$/i.test(attType)) {
-        const cfgUsd = tally / fxRate;
+        const cfgUsd = tally / getLbpFxRate(a.date || `${ym}-15`, 'LBP');
         s.config_paid += cfgUsd;
         s.paid_lbp += tally;
         if (mb) mb.paid_m += cfgUsd;
@@ -18092,7 +18470,7 @@
         s.earnings_usd += tally;
         if (mb) mb.earnings_m += tally;
       } else if (/^extra\s*lbp$/i.test(attType)) {
-        const extUsd = tally / fxRate;
+        const extUsd = tally / getLbpFxRate(a.date || `${ym}-15`, 'LBP');
         s.extras += extUsd;
         s.earnings_lbp += tally;
         if (mb) mb.earnings_m += extUsd;
@@ -18192,7 +18570,7 @@
       const srKey = `${coNorm}|${sk}`;
       const uDaily = Number(l.usd_amount || 0) || (!l.lbp_amount ? Number(l.daily_usd || 0) : 0);
       const lDaily = Number(l.lbp_amount || 0);
-      const daily = uDaily + (lDaily / fxRate);
+      const daily = uDaily + (lDaily / getLbpFxRate(l.end_date || SEED_DATE, 'LBP'));
       if (!siteStaffMap.has(srKey)) {
         siteStaffMap.set(srKey, {
           staff: l.staff || '(Unassigned)',
@@ -18275,6 +18653,7 @@
       const ymCountMap = new Map();
       const winDays = [];
       let daysCnt = 0;
+      let sumDayLbpUsd = 0;
       while (curDt.getTime() <= endMs) {
         const dowIdx = curDt.getUTCDay();
         if (tickedDow.has(dowIdx)) {
@@ -18283,6 +18662,7 @@
             claimedDates.add(iso);
             const ym = iso.slice(0, 7);
             daysCnt += 1;
+            if (lDaily > 0) sumDayLbpUsd += lDaily / getLbpFxRate(iso, 'LBP');
             ymCountMap.set(ym, (ymCountMap.get(ym) || 0) + 1);
             winDays.push({ iso, ym, dowLbl: DOW_LBLS[dowIdx] });
           }
@@ -18323,7 +18703,8 @@
       const paidDays = Math.max(0, daysCnt - invDays);
       const accU = paidDays * uDaily;
       const accL = paidDays * lDaily;
-      const accrued = accU + (accL / fxRate);
+      const avgDailyLbpUsd = daysCnt > 0 ? (sumDayLbpUsd / daysCnt) : 0;
+      const accrued = accU + (paidDays * avgDailyLbpUsd);
 
       // Reconcile per-day deductions to exact invDays across winDays
       let matchedAbs = 0;
@@ -18661,11 +19042,11 @@
     const ym = String(payrollMonth || (txDate || SEED_DATE || '').slice(0, 7)).slice(0, 7);
     const refTxDate = String(txDate || SEED_DATE || '').slice(0, 10);
     const idx = _getPayrollIntelIndex();
-    const fxRate = getLbpFxRate();
-    const cacheKey = `${sk}|${norm(company)}|${ym}|${refTxDate}|${excludeSalId || ''}|${_skipPrev ? 1 : 0}|${fxRate}`;
+    const monthMidDate = /^\d{4}-\d{2}$/.test(ym) ? `${ym}-15` : refTxDate;
+    const fxRate = getLbpFxRate(monthMidDate, 'LBP');
+    const cacheKey = `${sk}|${norm(company)}|${ym}|${refTxDate}|${excludeSalId || ''}|${_skipPrev ? 1 : 0}|${_GLOBAL_RATES_REV}|${fxRate}`;
     if (idx.posCache.has(cacheKey)) return idx.posCache.get(cacheKey);
 
-    const monthMidDate = /^\d{4}-\d{2}$/.test(ym) ? `${ym}-15` : refTxDate;
     const prof = getStaffContractProfile(staffName, company, monthMidDate);
     let midMonthGapDed = 0;
     if (prof.hasContract && /^\d{4}-\d{2}$/.test(ym) && SEED.records && Array.isArray(SEED.records.employments)) {
@@ -18894,7 +19275,6 @@
 
   function buildPayrollCutoffAndStatusBarHtml(barId, opts = {}) {
     const today = SEED_DATE;
-    const fxRate = opts.fxRate || getLbpFxRate();
     const cm = opts.cutoffMeta || {
       mode: STATE.payrollCutoffMode || 'closed_month',
       applicable: true,
@@ -18908,51 +19288,11 @@
       effEndLabel: formatPayrollMonthLabel(shiftYearMonth(today.slice(0, 7), -1))
     };
     const allRows = Array.isArray(opts.allRows) ? opts.allRows : [];
-    const scopeRows = Array.isArray(opts.scopeRows) ? opts.scopeRows : allRows;
     const activeCnt = opts.activeCnt != null ? opts.activeCnt : allRows.filter(s => s && s.is_active).length;
     const allCnt = opts.allCnt != null ? opts.allCnt : allRows.length;
     const inactiveCnt = opts.inactiveCnt != null ? opts.inactiveCnt : Math.max(0, allCnt - activeCnt);
     const stMode = STATE.payrollStaffStatus || 'active';
     const isPbi = Boolean(opts.isPbi);
-    const fxOpen = STATE.payrollFxPopoverBar === barId;
-
-    let fxPopoverHtml = '';
-    if (fxOpen) {
-      const sumEarnLbp = Math.round(scopeRows.reduce((a, r) => a + Number((r && r.earnings_lbp) || 0), 0));
-      const sumPaidLbp = Math.round(scopeRows.reduce((a, r) => a + Number((r && r.paid_lbp) || 0), 0));
-      const sumRemLbp = sumEarnLbp - sumPaidLbp;
-      const earnUsdEq = round2(sumEarnLbp / fxRate);
-      const paidUsdEq = round2(sumPaidLbp / fxRate);
-      const remUsdEq = round2(sumRemLbp / fxRate);
-      const stLbl = stMode === 'all' ? 'All' : (stMode === 'inactive' ? 'Inactive' : 'Active');
-      fxPopoverHtml = `
-        <div class="payroll-fx-popover" id="${esc(barId)}_fxPopover" role="dialog" aria-label="LBP to USD conversion rate">
-          <div class="pfx-head">
-            <span class="pfx-title">LBP to USD Conversion Rate</span>
-            <button type="button" class="pfx-close" data-close-payroll-fx="1" aria-label="Close rate panel">&times;</button>
-          </div>
-          <div class="pfx-explain">
-            Every LBP contract base, bonus, opening balance, site allowance, and salary payment divides by <strong>${fmtNum(fxRate, 0)} LL/$</strong> into the single USD <strong>Earnings ($)</strong>, <strong>Paid ($)</strong>, and <strong>Rem. ($)</strong> columns.
-          </div>
-          <div class="pfx-breakdown">
-            <div class="pfx-bd-row"><span>LBP in Earnings (${fmtNum(scopeRows.length)} ${stLbl})</span><span class="mono">${fmtNum(sumEarnLbp, 0)} LL = <b>${fmtUSD(earnUsdEq, 2)}</b></span></div>
-            <div class="pfx-bd-row"><span>LBP in Paid</span><span class="mono">${fmtNum(sumPaidLbp, 0)} LL = <b>${fmtUSD(paidUsdEq, 2)}</b></span></div>
-            <div class="pfx-bd-row is-net"><span>Net LBP in Rem. ($)</span><span class="mono">${fmtNum(sumRemLbp, 0)} LL = <b>${fmtSignedUSD(remUsdEq, 2)}</b></span></div>
-          </div>
-          <label class="pfx-input-lbl" for="${esc(barId)}_fxInput">Reference Rate (LL per $1 USD)</label>
-          <div class="pfx-edit-row">
-            <input type="number" class="pfx-rate-input mono" id="${esc(barId)}_fxInput" value="${esc(Math.round(fxRate))}" min="1000" max="10000000" step="100">
-            <span class="pfx-unit">LL/$</span>
-            <button type="button" class="btn btn-primary pfx-apply-btn" data-apply-payroll-fx="${esc(barId)}">Apply</button>
-          </div>
-          <div class="pfx-presets-row">
-            <button type="button" class="pfx-preset-pill ${Math.round(fxRate) === 89500 ? 'active' : ''}" data-preset-payroll-fx="89500" data-fx-bar="${esc(barId)}">89,500 Default</button>
-            <button type="button" class="pfx-preset-pill ${Math.round(fxRate) === 89700 ? 'active' : ''}" data-preset-payroll-fx="89700" data-fx-bar="${esc(barId)}">89,700</button>
-            <button type="button" class="pfx-preset-pill ${Math.round(fxRate) === 90000 ? 'active' : ''}" data-preset-payroll-fx="90000" data-fx-bar="${esc(barId)}">90,000</button>
-            <button type="button" class="pfx-desk-link" data-nav-jump="conversions">FX Conversions Desk</button>
-          </div>
-        </div>`;
-    }
 
     return `
       <div class="payroll-cutoff-bar ${isPbi ? 'is-pbi ' : ''}${cm.applicable ? '' : 'is-custom-period'}" id="${esc(barId)}" data-cutoff-mode="${esc(cm.applicable ? cm.mode : 'custom')}" data-staff-status="${esc(stMode)}">
@@ -18982,13 +19322,6 @@
             <button type="button" class="payroll-status-pill ${stMode === 'active' ? 'active' : ''}" data-payroll-status="active">Active <span class="psp-cnt">${fmtNum(activeCnt)}</span></button>
             <button type="button" class="payroll-status-pill ${stMode === 'inactive' ? 'active' : ''}" data-payroll-status="inactive">Inactive <span class="psp-cnt">${fmtNum(inactiveCnt)}</span></button>
             <button type="button" class="payroll-status-pill ${stMode === 'all' ? 'active' : ''}" data-payroll-status="all">All <span class="psp-cnt">${fmtNum(allCnt)}</span></button>
-          </div>
-          <div class="payroll-fx-slot">
-            <button type="button" class="payroll-fx-btn ${fxOpen ? 'active' : ''} ${Math.round(fxRate) !== DEFAULT_LBP_FX_RATE ? 'is-custom' : ''}" id="${esc(barId)}_fxBtn" data-toggle-payroll-fx="${esc(barId)}" aria-expanded="${fxOpen ? 'true' : 'false'}" aria-label="LBP conversion rate ${fmtNum(fxRate, 0)} LL per USD, click to change">
-              <span class="pfx-lbl">LBP &divide; ${fmtNum(fxRate, 0)} LL/$</span>
-              <span class="pfx-chg">Change</span>
-            </button>
-            ${fxPopoverHtml}
           </div>
         </div>
       </div>`;
@@ -24330,20 +24663,11 @@
 
       <div class="fx-ref-rate-bar" id="fxRefRateBar">
         <div class="fx-ref-copy">
-          <div class="fx-ref-title">Accounting &amp; Payroll Reference Rate <span>(${fmtNum(refRate, 0)} LL/$)</span></div>
-          <div class="fx-ref-sub">Divides LBP contract bases, bonuses, site allowances, and salary vouchers into USD across Payroll &amp; Workforce and Dual-Currency Forms. Physical FX tickets below retain their own traded rate.</div>
+          <div class="fx-ref-title">Global LBP Accounting &amp; Payroll Rate <span>(${fmtNum(refRate, 0)} LL/$ · from ${esc(fmtDateDMY((getFxRateRow(null, 'LBP') && getFxRateRow(null, 'LBP').start_date) || '2024-01-01'))})</span></div>
+          <div class="fx-ref-sub">Governed centrally by the Universal <b>Currency Exchange Rates</b> table across all Business Units. Physical FX vouchers below retain their own traded exchange rate.</div>
         </div>
         <div class="fx-ref-controls">
-          <div class="pfx-edit-row">
-            <input type="number" class="pfx-rate-input mono" id="fxRefRateInput" value="${esc(Math.round(refRate))}" min="1000" max="10000000" step="100" aria-label="Accounting and payroll reference LBP exchange rate">
-            <span class="pfx-unit">LL/$</span>
-            <button type="button" class="btn btn-primary pfx-apply-btn" id="fxRefRateApplyBtn">Apply Rate</button>
-          </div>
-          <div class="pfx-presets-row">
-            <button type="button" class="pfx-preset-pill ${Math.round(refRate) === 89500 ? 'active' : ''}" data-fx-ref-preset="89500">89,500 Default</button>
-            <button type="button" class="pfx-preset-pill ${Math.round(refRate) === 89700 ? 'active' : ''}" data-fx-ref-preset="89700">89,700</button>
-            <button type="button" class="pfx-preset-pill ${Math.round(refRate) === 90000 ? 'active' : ''}" data-fx-ref-preset="90000">90,000</button>
-          </div>
+          <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_fx_rates">Global Currencies &amp; VAT Rates</button>
         </div>
       </div>
 
@@ -26988,7 +27312,7 @@
           prev.count += 1;
           prev.netUsd = round2(prev.netUsd + net);
           prev.net = prev.netUsd;
-          prev.vat = round2(prev.netUsd * VAT_RATE);
+          prev.vat = round2((prev.vat || 0) + net * getVatFraction(d));
           unbilledVatByCust.set(ck, prev);
         }
       }
@@ -27897,7 +28221,7 @@
     const net = round2(($('f_mat_total') && !matLocked ? finalMat : (matGross - disc)) + finalTr);
     if ($('f_total_usd') && totUsdLocked) $('f_total_usd').value = net.toFixed(2);
 
-    const vat = vatReg ? round2(net * VAT_RATE) : 0;
+    const vat = vatReg ? round2(net * getVatFraction(val('f_date') || todayISO())) : 0;
     const ttc = round2(net + vat);
     setText('calc_mat', fmtUSD(matGross, 2) + (useMatIndiff ? ' (flat / load)' : (tierAdj ? ` (tier ${tier.tier} ${tierAdj > 0 ? '+' : '−'}$${Math.abs(tierAdj).toFixed(2)})` : '')));
     setText('calc_tr', fmtUSD(finalTr, 2) + (transIsIndiff ? ' (flat / load)' : (tierTrAdj ? ` (tier ${tierTrAdj > 0 ? '+' : '−'}$${Math.abs(tierTrAdj).toFixed(2)})` : '')));
@@ -29043,7 +29367,7 @@
           if (fxEl && usd > 0 && lbp > 0 && document.activeElement !== fxEl) {
             fxEl.value = String(Math.round(lbp / usd));
           }
-          const fxRate = num('f_fxrate') || getLbpFxRate();
+          const fxRate = num('f_fxrate') || getLbpFxRate(val('f_date') || todayISO());
           const isU2L = !/LBP/i.test(String(val('f_conv_dir') || 'USD to LBP').slice(0, 4));
           const trStrip = $('trLiveContextStrip');
           if (trStrip) trStrip.hidden = true;
@@ -29059,7 +29383,7 @@
           renderAdminLockBar();
           return { usd, lbp, amount: usd };
         }
-        const activeFx = getLbpFxRate();
+        const activeFx = getLbpFxRate(val('f_date') || todayISO());
         const tot = round2(usd + lbp / activeFx);
         const aEl = $('f_amount');
         const amtLblEl = document.querySelector('#wrap_f_amount .pa-fld-lbl');
@@ -30003,8 +30327,13 @@
         const vatTickets = custName ? fIntel.vatTicketsByCust[norm(custName)] : null;
         const net = num('f_amount');
         const vEl = $('f_vat');
-        const vatLocked = applyFieldLockState('f_vat', true, 'Statutory 11% VAT Lock: Computed as Net HT × 11%');
-        if (vEl && vatLocked && !FORM_UI.priceManual) vEl.value = net > 0 ? round2(net * VAT_RATE).toFixed(2) : '';
+        const activeVatFrac = getVatFraction(val('f_date') || todayISO());
+        const activeVatLbl = fmtVatPctStr(val('f_date') || todayISO());
+        const vatLocked = applyFieldLockState('f_vat', true, `Statutory ${activeVatLbl} VAT Lock: Computed as Net HT × ${activeVatLbl}`);
+        if (vEl && vatLocked && !FORM_UI.priceManual) vEl.value = net > 0 ? round2(net * activeVatFrac).toFixed(2) : '';
+        if ($('lbl_vatinv_pct')) $('lbl_vatinv_pct').textContent = `${activeVatLbl} VAT`;
+        const vatLblEl = document.querySelector('#wrap_f_vat .pa-fld-lbl');
+        if (vatLblEl) vatLblEl.textContent = `VAT ${activeVatLbl} ($)`;
         const vat = num('f_vat');
         const isVatReg = Boolean(cInfo && (cInfo['VAT Registered'] === 'Yes' || cInfo.vat_registered || Number(cInfo.vat_11 || 0) > 0));
         setHint('hint_vat_cust', custName
@@ -30105,6 +30434,73 @@
       if (STATE.modalForm === 'region') {
         syncUniversalMainDupHint('f_region', 'regions', 'Region');
         return {};
+      }
+      if (STATE.modalForm === 'currency') {
+        syncUniversalMainDupHint('f_code', 'currencies', 'Currency');
+        return {};
+      }
+      if (STATE.modalForm === 'fxrate') {
+        const curr = String(val('f_currency') || 'LBP').trim().toUpperCase();
+        const startDt = val('f_date') || todayISO();
+        const rate = num('f_fxrate');
+        syncUniversalMainDupHint('f_date', 'fx_rates', 'Currency Exchange Rate', { currency: curr });
+        const existing = ((SEED.records && SEED.records.fx_rates) || [])
+          .filter(r => r && !r.voided && String(r.currency || 'LBP').toUpperCase() === curr)
+          .slice()
+          .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
+        let priorRow = null;
+        let nextRow = null;
+        existing.forEach(r => {
+          if (r.start_date < startDt) priorRow = r;
+          else if (r.start_date > startDt && !nextRow) nextRow = r;
+        });
+        const effToPreview = nextRow ? prevDayISO(nextRow.start_date) : 'Open';
+        const strip = $('fxRateContextStrip');
+        if (strip) {
+          strip.hidden = !existing.length;
+          if (existing.length) {
+            const pills = existing.map(r => `<span class="badge ${r.status === 'Current' ? 'badge-ok' : 'badge-neutral'}">${esc(fmtDateDMY(r.start_date))} to ${esc(r.effective_to === 'Open' ? 'Open' : fmtDateDMY(r.effective_to))} · <b>${fmtNum(r.rate, r.rate % 1 ? 1 : 0)} ${esc(curr)}/$</b></span>`).join(' ');
+            const closeMsg = priorRow
+              ? `<div style="margin-top:4px;color:var(--brass)">Posting <b>${esc(fmtDateDMY(startDt))}</b> automatically sets <b>${esc(priorRow.name || fmtDateDMY(priorRow.start_date))}</b> Effective To = <b>${esc(fmtDateDMY(prevDayISO(startDt)))}</b>.</div>`
+              : '';
+            strip.innerHTML = `<div><strong>Existing ${esc(curr)} Exchange Rate Windows:</strong><div style="margin-top:3px;display:flex;gap:6px;flex-wrap:wrap">${pills}</div>${closeMsg}</div>`;
+          }
+        }
+        setText('calc_fx_pair', `${curr} / USD`);
+        setText('calc_fx_window', `${fmtDateDMY(startDt)} to ${effToPreview === 'Open' ? 'Open' : fmtDateDMY(effToPreview)}`);
+        setText('calc_fx_prior', priorRow ? `Closes ${fmtDateDMY(prevDayISO(startDt))}` : 'First Window');
+        setText('calc_fx_sample', rate > 0 ? fmtUSD(1000000 / rate, 2) : '$0.00');
+        return { curr, startDt, rate };
+      }
+      if (STATE.modalForm === 'vatrate') {
+        const startDt = val('f_date') || todayISO();
+        const vatPct = num('f_vat_pct');
+        const vatFx = num('f_fxrate') || getLbpFxRate(startDt, 'LBP');
+        syncUniversalMainDupHint('f_date', 'vat_rates', 'VAT Rate');
+        const existing = ((SEED.records && SEED.records.vat_rates) || [])
+          .filter(r => r && !r.voided)
+          .slice()
+          .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
+        let priorRow = null;
+        existing.forEach(r => { if (r.start_date < startDt) priorRow = r; });
+        const strip = $('vatRateContextStrip');
+        if (strip) {
+          strip.hidden = !existing.length;
+          if (existing.length) {
+            const recent = existing.slice(-3);
+            const pills = recent.map(r => `<span class="badge ${r.status === 'Current' ? 'badge-ok' : 'badge-neutral'}">${esc(fmtDateDMY(r.start_date))} to ${esc(r.effective_to === 'Open' ? 'Open' : fmtDateDMY(r.effective_to))} · <b>${fmtNum(r.vat_percent, 1)}% @ ${fmtNum(r.vat_fx_rate, r.vat_fx_rate % 1 ? 1 : 0)} LL/$</b></span>`).join(' ');
+            const closeMsg = priorRow
+              ? `<div style="margin-top:4px;color:var(--brass)">Posting <b>${esc(fmtDateDMY(startDt))}</b> automatically sets <b>${esc(fmtDateDMY(priorRow.start_date))}</b> Effective To = <b>${esc(fmtDateDMY(prevDayISO(startDt)))}</b>.</div>`
+              : '';
+            strip.innerHTML = `<div><strong>Statutory Lebanese MoF VAT Schedule (${existing.length} windows):</strong><div style="margin-top:3px;display:flex;gap:6px;flex-wrap:wrap">${pills}</div>${closeMsg}</div>`;
+          }
+        }
+        const sampleVat = round2(100 * (vatPct / 100));
+        setText('calc_vatr_pct', `${fmtNum(vatPct, 1)}%`);
+        setText('calc_vatr_fx', `${fmtNum(vatFx, vatFx % 1 ? 1 : 0)} LL/$`);
+        setText('calc_vatr_sample', `${fmtUSD(sampleVat, 2)} VAT · ${fmtUSD(100 + sampleVat, 2)} TTC`);
+        setText('calc_vatr_prior', priorRow ? `Closes ${fmtDateDMY(prevDayISO(startDt))}` : 'First Window');
+        return { startDt, vatPct, vatFx };
       }
       if (STATE.modalForm === 'expensecategory') {
         const lvl = val('f_cat_level') || 'category';
@@ -32424,11 +32820,16 @@
     equipment: { label: 'Equipment / Truck', field: 'f_truck', prop: 'name', altField: 'f_plateno', altProp: 'plate_no' },
     drivers: { label: 'Driver', field: 'f_driver', prop: 'name' },
     expense_categories: { label: 'Expense Category', field: 'f_category', prop: 'name' },
-    expense_subcategories: { label: 'Expense Subcategory', field: 'f_subcategory', prop: 'name', compositeProp: 'category' }
+    expense_subcategories: { label: 'Expense Subcategory', field: 'f_subcategory', prop: 'name', compositeProp: 'category' },
+    currencies: { label: 'Currency', field: 'f_code', prop: 'code' },
+    fx_rates: { label: 'Currency Exchange Rate', field: 'f_date', prop: 'start_date', compositeProp: 'currency' },
+    vat_rates: { label: 'VAT Rate', field: 'f_date', prop: 'start_date' }
   };
 
   function universalMainValue(crKey, r) {
     if (!r) return '';
+    if (crKey === 'currencies') return String(r.code || r.name || '').trim();
+    if (crKey === 'fx_rates' || crKey === 'vat_rates') return String(r.start_date || r.date || '').trim();
     if (crKey === 'drivers') return String(r.name || r.driver || '').trim();
     if (crKey === 'equipment') return String(r.name || r.equipment || r.Equipment || '').trim();
     if (crKey === 'expense_categories') return String(r.name || r.category || '').trim();
@@ -32442,6 +32843,7 @@
     const m = norm(universalMainValue(crKey, r));
     if (!m) return '';
     if (crKey === 'expense_subcategories') return norm(r.category) + '|' + m;
+    if (crKey === 'fx_rates') return norm(r.currency || 'LBP') + '|' + m;
     return m;
   }
 
@@ -32450,6 +32852,7 @@
     const q = norm(mainVal);
     const qPlate = opts.plateNo ? norm(opts.plateNo) : '';
     const qCat = opts.category ? norm(opts.category) : '';
+    const qCurr = opts.currency ? norm(opts.currency) : '';
     if (!q && !qPlate) return null;
     const excludeId = opts.excludeId != null ? String(opts.excludeId) : '';
     const pool = [].concat(
@@ -32462,6 +32865,10 @@
       const rMain = norm(universalMainValue(crKey, r));
       if (crKey === 'expense_subcategories') {
         if (q && rMain === q && (!qCat || norm(r.category) === qCat)) return r;
+        continue;
+      }
+      if (crKey === 'fx_rates') {
+        if (q && rMain === q && (!qCurr || norm(r.currency || 'LBP') === qCurr)) return r;
         continue;
       }
       if (q && rMain && rMain === q) return r;
@@ -32510,8 +32917,8 @@
     const today = todayISO();
     const notes = val('f_notes');
     const who = activeUser();
-    const isUniversalForm = ['customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'driver'].includes(f);
-    const needsDate = !['customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver'].includes(f);
+    const isUniversalForm = ['customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'fxrate', 'vatrate', 'currency'].includes(f);
+    const needsDate = !['customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'fxrate', 'vatrate', 'currency'].includes(f);
     if (!isUniversalForm && !allowedCompanyNames().includes(company)) addErr('f_company', 'Your seat cannot post to ' + (company || 'that company') + '.');
     if (needsDate) {
       const bdDaysLimit = getAlertParam('G_BACKDATE_NOTE', 'backdate_warn_days', 30);
@@ -32875,6 +33282,50 @@
         if (dup) addErr('f_region', `Region "${universalMainValue('regions', dup) || regNm}" already exists in the Universal Region Registry. Duplicate names are not allowed.`);
       }
       record = { ...base, name: regNm, region: regNm, code: val('f_code'), corridor: val('f_corridor') || 'Coastal Corridor', distance_km: val('f_distance_km') ? num('f_distance_km') : null };
+    } else if (f === 'currency') {
+      crKey = 'currencies';
+      const code = String(val('f_code') || '').trim().toUpperCase();
+      const nm = val('f_name');
+      const sym = val('f_symbol');
+      if (!code || !/^[A-Z]{3,6}$/.test(code)) addErr('f_code', 'Enter a valid 3-letter ISO Currency Code (e.g. EUR, GBP, AED).');
+      else {
+        const dup = findUniversalDuplicate('currencies', code);
+        if (dup) addErr('f_code', `Currency "${code}" already exists in the Universal Currency Registry.`);
+      }
+      if (!nm) addErr('f_name', 'Currency Name is required.');
+      if (!sym) addErr('f_symbol', 'Currency Symbol is required.');
+      record = { ...base, code, name: nm, symbol: sym, precision: Math.max(0, Math.min(4, Math.round(num('f_precision')))), is_base: false, role: val('f_role') || 'Foreign Settlement Currency', status: 'Active' };
+    } else if (f === 'fxrate') {
+      crKey = 'fx_rates';
+      const curr = String(val('f_currency') || 'LBP').trim().toUpperCase();
+      const startDt = val('f_date');
+      const rate = num('f_fxrate');
+      if (!curr || curr === 'USD') addErr('f_currency', 'Select a non-base currency to price against $1.00 USD.');
+      if (!startDt) addErr('f_date', 'Effective Start Date is required.');
+      else {
+        const dup = findUniversalDuplicate('fx_rates', startDt, { currency: curr });
+        if (dup) addErr('f_date', `An exchange rate for ${curr} starting ${startDt} already exists in Currency Exchange Rates. Modify that row instead.`);
+      }
+      if (!(rate > 0)) addErr('f_fxrate', 'Exchange Rate > 0 is required.');
+      const refNm = buildFxRateRefName(curr, rate, startDt);
+      record = { ...base, name: refNm, currency: curr, rate, start_date: startDt, date: startDt, rep_date: startDt, effective_to: 'Open', status: 'Current' };
+    } else if (f === 'vatrate') {
+      crKey = 'vat_rates';
+      const startDt = val('f_date');
+      const vatPctRaw = val('f_vat_pct');
+      const vatPct = num('f_vat_pct');
+      const vatFx = num('f_fxrate');
+      const outGl = val('f_output_vat_gl') || '4427 State - VAT collected';
+      const inGl = val('f_input_vat_gl') || '4426 State - VAT deductible';
+      if (!startDt) addErr('f_date', 'Effective Start Date is required.');
+      else {
+        const dup = findUniversalDuplicate('vat_rates', startDt);
+        if (dup) addErr('f_date', `A statutory VAT rate window starting ${startDt} already exists in VAT Rates. Modify that row instead.`);
+      }
+      if (vatPctRaw === '' || vatPct < 0 || vatPct > 100) addErr('f_vat_pct', 'Enter a valid Statutory VAT Rate (%) between 0 and 100.');
+      if (!(vatFx > 0)) addErr('f_fxrate', 'Enter the Official MoF LBP VAT Rate (LL/$) > 0.');
+      const refNm = buildVatRateRefName(vatPct, vatFx, startDt);
+      record = { ...base, name: refNm, start_date: startDt, date: startDt, rep_date: startDt, effective_to: 'Open', vat_percent: vatPct, vat_fx_rate: vatFx, output_vat_account: outGl, input_vat_account: inGl, status: 'Current' };
     } else if (f === 'salary') {
       const st = val('f_staff'), amt = round2(num('f_amount'));
       const salType = val('f_sal_type') || 'payment';
@@ -33137,7 +33588,7 @@
         const lbp = Math.round(num('f_lbp'));
         if (!(usd > 0)) addErr('f_usd', isU2L ? 'USD Decreased ($) > 0 is required.' : 'USD Increased ($) > 0 is required.');
         if (!(lbp > 0)) addErr('f_lbp', isU2L ? 'LBP Increased (LL) > 0 is required.' : 'LBP Decreased (LL) > 0 is required.');
-        const fxRate = (usd > 0 && lbp > 0) ? round2(lbp / usd) : (num('f_fxrate') || getLbpFxRate());
+        const fxRate = (usd > 0 && lbp > 0) ? round2(lbp / usd) : (num('f_fxrate') || getLbpFxRate(date));
         crKey = 'conversions';
         const refVal = val('f_reference');
         record = {
@@ -33162,7 +33613,7 @@
         if (!(amt > 0)) addErr('f_usd', 'Amount > 0 is required.');
         crKey = trt === 'loan_settlement' ? 'loan_settlements' : (trt === 'external' ? 'external_movements' : 'loans');
         const dirn = val('f_direction') || 'Inflow';
-        const activeRefFx = getLbpFxRate();
+        const activeRefFx = getLbpFxRate(date);
         record = { ...base, name: `${trt.toUpperCase()} ${date} ${cp}`, rep_date: repDate, counterparty: cp, lender: cp, borrower: company, loan: cp, direction: dirn, method: dirn, type: trt === 'loan_settlement' ? 'Repayment' : (trt === 'loan' ? 'Drawdown' : ''), from_currency: 'USD', to_currency: '', usd_amount: round2(num('f_usd')), lbp_amount: round2(num('f_lbp')), fx_rate: activeRefFx, exchange_rate: activeRefFx, amount: amt, principal: amt, interest_rate: 0, balance: amt, start_date: date, reference: val('f_reference') };
       }
     } else if (f === 'jv') {
@@ -33418,6 +33869,7 @@
         if (cIdx >= 0) Object.assign(STATE.customRecords.expenses[cIdx], record);
         else STATE.customRecords.expenses.unshift(record);
       } else {
+        if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
         STATE.customRecords[crKey].unshift(record);
       }
       // Cross-persist linked drivers & default drivers when saving Truck Owners (suppliers), Trucks (equipment), or Drivers
@@ -33810,7 +34262,7 @@
     const title = $('modalTitle');
     const modalEye = $('modalEyebrow');
     const tabsWrap = $('modalTabs');
-    const isUnivModalForm = ['customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'driver'].includes(form);
+    const isUnivModalForm = ['customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'fxrate', 'vatrate', 'currency'].includes(form);
     if (modalEye) {
       modalEye.textContent = isUnivModalForm
         ? 'ISABI Universal Registry · Shared Across All Business Units'
@@ -34012,7 +34464,7 @@
     fuel_malfunctions: 'Tank Malfunction / Discrepancy',
     expenses: 'General / Fleet Expense', receipts: 'Customer Receipt (AR)', settlements: 'Supplier Settlement (AP)',
     salaries: 'Salary Payment', price_rules: 'Price & Commission Agreement', credit_terms: 'Customer Credit Policy',
-    vat_invoices: 'VAT 11% Tax Invoice', customers: 'Customer 360° Master', suppliers: 'Supplier & Hauler 360° Master',
+    vat_invoices: 'VAT Tax Invoice', customers: 'Customer 360° Master', suppliers: 'Supplier & Hauler 360° Master',
     products: 'Product & Aggregate Grade', product_types: 'Product Family', uoms: 'Unit of Measure',
     sites: 'Site 360°', regions: 'Delivery Region / Zone', equipment: 'Equipment & Truck 360°',
     company_equipment: 'Company-Equipment Assignment', drivers: 'Driver & Operator 360°',
@@ -34023,7 +34475,8 @@
     external_movements: 'External Treasury Movement', loans: 'Loan & Partner Advance',
     loan_settlements: 'Loan Repayment / Drawdown', conversions: 'USD ↔ LBP FX Conversion',
     jv_partnerships: 'JV 50/50 Site Partnership', jv_distributions: 'JV Profit Distribution',
-    equipment_defects: 'Equipment Defect Report', part_movements: 'Part Change & Custody'
+    equipment_defects: 'Equipment Defect Report', part_movements: 'Part Change & Custody',
+    currencies: 'Currency Master', fx_rates: 'Currency Exchange Rate (Global)', vat_rates: 'VAT Rate Schedule (Global)'
   };
 
   const INSPECT_DVN = {
@@ -34040,7 +34493,8 @@
     logistics_allowances: 'bhf_mfglogistics', overtime_rates: 'bhf_mfgovertimerate',
     external_movements: 'bhf_mfgexternal', loans: 'bhf_mfgloan', loan_settlements: 'bhf_mfgloansettlement',
     conversions: 'bhf_mfgconversion', jv_partnerships: 'bhf_mfgjvpartnership', jv_distributions: 'bhf_mfgjvdistribution',
-    equipment_defects: 'bhf_equipmentdefect', part_movements: 'bhf_partmovement'
+    equipment_defects: 'bhf_equipmentdefect', part_movements: 'bhf_partmovement',
+    currencies: 'bhf_currency', fx_rates: 'bhf_fxrate', vat_rates: 'bhf_vatrate'
   };
 
   const INSPECT_LOOKUP_FIELD_TARGET = {
@@ -34050,7 +34504,7 @@
     default_driver: 'drivers', day_operator: 'drivers', night_operator: 'drivers',
     staff: 'employments', vat_invoice: 'vat_invoices', category: 'expense_categories',
     subcategory: 'expense_subcategories', uom: 'uoms', unit: 'uoms', type: 'product_types',
-    defect_ref: 'equipment_defects', linked_part_log: 'part_movements'
+    defect_ref: 'equipment_defects', linked_part_log: 'part_movements', currency: 'currencies'
   };
 
   function inspectorValue(key, v) {
@@ -34059,12 +34513,15 @@
     if (Array.isArray(v)) return v.length ? v.join(', ') : '—';
     if (typeof v === 'object') return JSON.stringify(v);
     if (typeof v === 'number') {
+      if (key === 'vat_percent') return fmtNum(v, Number.isInteger(v) ? 1 : 2) + '%';
+      if (key === 'rate' || key === 'vat_fx_rate' || key === 'active_rate') return fmtNum(v, Number.isInteger(v) ? 0 : 2);
       if (key === 'lbp_delta') return fmtSignedLBP(v);
       if (/^lbp_|_lbp$/.test(key)) return fmtLBP(v);
       if (key === 'usd_delta') return fmtSignedUSD(v, 2);
-      if (/price|cost|amount|total|vat|discount|tip|limit|salary|balance|adj|principal|value|change|rate_usd|daily_usd|paid|spent|sales_ttc|raw_cost|proceeds/.test(key) && !/rate$|pct|factor|ton_factor|exchange|count|loads|days|hours|meter_reading|cost_class|cost_bucket/.test(key)) return fmtUSD(v, 2);
+      if (/price|cost|amount|total|vat|discount|tip|limit|salary|balance|adj|principal|value|change|rate_usd|daily_usd|paid|spent|sales_ttc|raw_cost|proceeds/.test(key) && !/rate$|pct|percent|factor|ton_factor|exchange|count|loads|days|hours|meter_reading|cost_class|cost_bucket/.test(key)) return fmtUSD(v, 2);
       return fmtNum(v, Number.isInteger(v) ? 0 : 2);
     }
+    if (key === 'effective_to') return /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? fmtDateDMY(v) : String(v);
     if (/date|last_sale|last_purchase/i.test(key)) return fmtDateDMY(v);
     return String(v);
   }
@@ -34075,7 +34532,7 @@
     const nq = norm(q);
     const list = (SEED.records[key] || []).concat(STATE.customRecords[key] || []);
     let hit = list.find(r => r && String(r.id) === q) ||
-              list.find(r => r && (norm(r.name) === nq || norm(r.ticket_no) === nq || norm(r.invoice_no) === nq || norm(r.staff) === nq || norm(r.driver) === nq || norm(r.equipment) === nq || norm(r.plate_no) === nq));
+              list.find(r => r && (norm(r.name) === nq || norm(r.code) === nq || norm(r.ticket_no) === nq || norm(r.invoice_no) === nq || norm(r.staff) === nq || norm(r.driver) === nq || norm(r.equipment) === nq || norm(r.plate_no) === nq));
     if (hit) return hit;
 
     // Synthesize a rich 360° master record if a lookup name exists in transactions or semantic summaries
@@ -34903,6 +35360,18 @@
         addGrid('sg_malf_fuel', `Fuel & Meter Readings for ${row.equipment}`, 'Unit Fuel History', 'Meter Series', 'fuel_intakes', (rec.fuel_intakes || []).filter(f => norm(f.equipment) === norm(row.equipment)), ['date', 'ticket_no', 'company', 'equipment', 'driver', 'item', 'litres', 'odometer', 'hours'], 'litres');
       }
     }
+    else if (key === 'currencies' || key === 'fx_rates' || key === 'vat_rates') {
+      const currCode = String(row.code || row.currency || '').trim().toUpperCase();
+      if (key === 'currencies' || key === 'fx_rates') {
+        const fxRows = (rec.fx_rates || []).filter(r => r && !r.voided && (!currCode || String(r.currency || '').toUpperCase() === currCode));
+        addGrid('sg_fx_hist', `FX Exchange Rate Schedule${currCode ? ' (' + currCode + ')' : ''}`, 'FX Rates', 'Currency Exchange Rates', 'fx_rates', fxRows, ['name', 'currency', 'start_date', 'effective_to', 'rate', 'status', 'notes'], null);
+      }
+      if (key === 'vat_rates') {
+        const vatRows = (rec.vat_rates || []).filter(r => r && !r.voided);
+        addGrid('sg_vat_hist', 'VAT Rate Schedule (All Effective Windows)', 'VAT Schedule', 'VAT Rates', 'vat_rates', vatRows, ['name', 'start_date', 'effective_to', 'vat_percent', 'vat_fx_rate', 'status', 'output_vat_account', 'input_vat_account'], null);
+        addGrid('sg_vat_invs', 'Recent VAT Tax Invoices', 'VAT Invoices', 'VAT Invoices', 'vat_invoices', (rec.vat_invoices || []).slice(0, 25), ['date', 'company', 'invoice_no', 'customer', 'net_amount', 'vat_amount', 'total_ttc'], 'total_ttc');
+      }
+    }
     else {
       // Treasury, Loans, JV Partnerships & Distributions
       if (row.site) {
@@ -35431,6 +35900,28 @@
         { key: 'sale_proceeds', label: 'Used / Scrap Sale Proceeds ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'approved_by', label: 'Approved / Verified By', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
         { key: 'notes', label: 'Notes & Custody Remarks', type: 'text', sec: 3, span: true }
+      ],
+      currencies: [
+        { key: 'code', label: 'Currency Code (ISO 4217) *', type: 'text', sec: 1, placeholder: 'e.g. LBP, EUR' },
+        { key: 'name', label: 'Currency Name *', type: 'text', sec: 1, placeholder: 'e.g. Lebanese Pound' },
+        { key: 'symbol', label: 'Currency Symbol *', type: 'text', sec: 2, placeholder: 'e.g. LL, €' },
+        { key: 'decimals', label: 'Decimal Places', type: 'select', options: [['0', '0 Decimals'], ['2', '2 Decimals'], ['3', '3 Decimals']], sec: 2 },
+        { key: 'is_base', label: 'Functional Base Currency (USD = 1.00)', type: 'bool', sec: 2 },
+        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+      ],
+      fx_rates: [
+        { key: 'currency', label: 'Currency *', type: 'text', sec: 1, placeholder: 'LBP' },
+        { key: 'start_date', label: 'Effective From Date *', type: 'date', sec: 1 },
+        { key: 'rate', label: 'Units per $1.00 USD *', type: 'number', step: 'any', min: '0.0001', sec: 3 },
+        { key: 'notes', label: 'Notes & Reference Circular', type: 'text', sec: 3, span: true }
+      ],
+      vat_rates: [
+        { key: 'start_date', label: 'Effective From Date *', type: 'date', sec: 1 },
+        { key: 'vat_percent', label: 'VAT Rate (%) *', type: 'number', step: '0.1', min: '0', max: '100', sec: 3 },
+        { key: 'vat_fx_rate', label: 'MoF Official VAT FX Rate (LL / $1)', type: 'number', step: 'any', min: '1', sec: 3 },
+        { key: 'output_vat_account', label: 'Output VAT GL Account', type: 'select', options: [['4427 State - VAT collected', '4427 · State - VAT collected'], ['4425 State - VAT payable', '4425 · State - VAT payable']], sec: 2 },
+        { key: 'input_vat_account', label: 'Input VAT GL Account', type: 'select', options: [['4426 State - VAT deductible', '4426 · State - VAT deductible'], ['44262 VAT deductible on purchases & expenses', '44262 · VAT deductible on purchases & expenses'], ['44261 VAT deductible on fixed assets', '44261 · VAT deductible on fixed assets']], sec: 2 },
+        { key: 'notes', label: 'Regulatory / MoF Circular Notes', type: 'text', sec: 3, span: true }
       ]
     };
 
@@ -35453,6 +35944,11 @@
     });
 
     const hidden = new Set(['id', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status']);
+    if (key === 'currencies' || key === 'fx_rates' || key === 'vat_rates') {
+      hidden.add('company');
+      hidden.add('date');
+      hidden.add('rep_date');
+    }
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
     if (key === 'employments') {
@@ -36260,9 +36756,11 @@
         const hasVat = mSgn === 0 ? false : (vatCtxChanged
           ? Boolean(modVatInv || ci.vat_registered || ci['VAT Registered'] === 'Yes')
           : Boolean(row.vat > 0 || modVatInv || ci.vat_registered || ci['VAT Registered'] === 'Yes'));
-        const vat = hasVat ? round2(net * VAT_RATE) : 0;
+        const effStDate = getModVal('date') || row.date || todayISO();
+        const vatFrac = getVatFraction(effStDate);
+        const vat = hasVat ? round2(net * vatFrac) : 0;
         const ttc = round2(net + vat);
-        html = `<span>Material: <b>${fmtUSD(mat, 2)}</b></span><span>Transport: <b>${fmtUSD(tr, 2)}</b></span><span>VAT 11%: <b>${fmtUSD(vat, 2)}</b></span><span>Total TTC: <b>${fmtUSD(ttc, 2)}</b></span>`;
+        html = `<span>Material: <b>${fmtUSD(mat, 2)}</b></span><span>Transport: <b>${fmtUSD(tr, 2)}</b></span><span>VAT ${esc(fmtVatPctStr(effStDate))}: <b>${fmtUSD(vat, 2)}</b></span><span>Total TTC: <b>${fmtUSD(ttc, 2)}</b></span>`;
       } else if (key === 'raw_purchases') {
         const qty = getModNum('qty');
         const uc = getModNum('unit_cost');
@@ -36274,23 +36772,41 @@
         html = `<span>Material Leg: <b>${fmtUSD(cost, 2)}</b></span><span>Haulage Leg: <b>${fmtUSD(trCost, 2)}</b></span><span>Total Payable: <b>${fmtUSD(tot, 2)}</b></span>`;
       } else if (key === 'vat_invoices') {
         const net = getModNum('net_amount');
+        const effViDate = getModVal('date') || row.date || todayISO();
+        const vatFrac = getVatFraction(effViDate);
         const vat = $('insp_edit_vat_amount') && $('insp_edit_vat_amount').dataset.userEdited === '1'
           ? getModNum('vat_amount')
-          : round2(net * VAT_RATE);
+          : round2(net * vatFrac);
         if ($('insp_edit_vat_amount') && $('insp_edit_vat_amount').dataset.userEdited !== '1') {
           $('insp_edit_vat_amount').value = vat.toFixed(2);
         }
         const ttc = round2(net + vat);
         if ($('insp_edit_total_ttc')) $('insp_edit_total_ttc').value = ttc.toFixed(2);
-        html = `<span>Net HT: <b>${fmtUSD(net, 2)}</b></span><span>VAT 11%: <b>${fmtUSD(vat, 2)}</b></span><span>Total TTC: <b>${fmtUSD(ttc, 2)}</b></span>`;
+        html = `<span>Net HT: <b>${fmtUSD(net, 2)}</b></span><span>VAT ${esc(fmtVatPctStr(effViDate))}: <b>${fmtUSD(vat, 2)}</b></span><span>Total TTC: <b>${fmtUSD(ttc, 2)}</b></span>`;
       } else if (key === 'conversions') {
         const dir = getModVal('type') || row.type || 'USD to LBP';
         const isU2L = !/^lbp/i.test(dir);
         const usd = getModNum('usd_amount');
         const lbp = Math.round(getModNum('lbp_amount'));
-        const rate = (usd > 0 && lbp > 0) ? round2(lbp / usd) : (getModNum('exchange_rate') || getLbpFxRate());
+        const effCvDate = getModVal('date') || row.date || todayISO();
+        const rate = (usd > 0 && lbp > 0) ? round2(lbp / usd) : (getModNum('exchange_rate') || getLbpFxRate(effCvDate));
         if ($('insp_edit_exchange_rate') && usd > 0 && lbp > 0) $('insp_edit_exchange_rate').value = String(rate);
         html = `<span>USD Drawer: <b>${fmtSignedUSD(isU2L ? -usd : usd, 2)}</b></span><span>LBP Drawer: <b>${fmtSignedLBP(isU2L ? lbp : -lbp)}</b></span><span>Rate: <b>${fmtNum(rate, 2)} LL/$</b></span>`;
+      } else if (key === 'fx_rates') {
+        const curr = String(getModVal('currency') || row.currency || 'LBP').toUpperCase();
+        const sd = getModVal('start_date') || row.start_date || todayISO();
+        const rt = getModNum('rate');
+        html = `<span>Currency: <b>${esc(curr)}</b></span><span>Effective From: <b>${esc(fmtDateDMY(sd))}</b></span><span>Rate: <b>${rt > 0 ? fmtNum(rt, Number.isInteger(rt) ? 0 : 4) + ' ' + esc(curr) + '/$1' : '—'}</b></span>`;
+      } else if (key === 'vat_rates') {
+        const sd = getModVal('start_date') || row.start_date || todayISO();
+        const vp = getModNum('vat_percent');
+        const vfx = getModNum('vat_fx_rate') || getLbpFxRate(sd, 'LBP');
+        html = `<span>Effective From: <b>${esc(fmtDateDMY(sd))}</b></span><span>VAT Rate: <b>${fmtNum(vp, 1)}%</b></span><span>MoF VAT FX: <b>${fmtNum(vfx, Number.isInteger(vfx) ? 0 : 1)} LL/$1</b></span>`;
+      } else if (key === 'currencies') {
+        const cd = String(getModVal('code') || row.code || '').toUpperCase();
+        const nm = getModVal('name') || row.name || '';
+        const sym = getModVal('symbol') || row.symbol || cd;
+        html = `<span>ISO Code: <b>${esc(cd)}</b></span><span>Name: <b>${esc(nm)}</b></span><span>Symbol: <b>${esc(sym)}</b></span>`;
       } else if (key === 'customers') {
         const m = getModVal('method') || 'Credit';
         const vr = getModVal('vat_registered') === 'Yes';
@@ -36316,9 +36832,10 @@
       } else if (key === 'salaries') {
         const stName = getModVal('staff') || row.staff;
         const payMo = getModVal('payroll_month') || row.payroll_month || String(getModVal('date') || row.date || '').slice(0, 7);
+        const salDt = getModVal('date') || row.date || todayISO();
         const usd = getModNum('usd_amount');
         const lbp = getModNum('lbp_amount');
-        const totAmt = (usd > 0 || lbp > 0) ? round2(usd + lbp / getLbpFxRate()) : getModNum('amount');
+        const totAmt = (usd > 0 || lbp > 0) ? round2(usd + lbp / getLbpFxRate(salDt, row.currency || 'LBP')) : getModNum('amount');
         if ($('insp_edit_amount') && (usd > 0 || lbp > 0)) $('insp_edit_amount').value = totAmt.toFixed(2);
         const pos = computeStaffMonthPayrollPosition(stName, getModVal('company') || row.company, payMo, getModVal('date') || row.date, row.id, true);
         if (pos && pos.hasContract) {
@@ -36624,7 +37141,7 @@
             const hasVat = vatContextEdited
               ? Boolean(row.vat_invoice || ci.vat_registered || ci['VAT Registered'] === 'Yes')
               : Boolean(row.vat > 0 || row.vat_invoice || ci.vat_registered || ci['VAT Registered'] === 'Yes');
-            row.vat = hasVat ? round2(row.total * VAT_RATE) : 0;
+            row.vat = hasVat ? round2(row.total * getVatFraction(row.date || row.rep_date)) : 0;
             row.total_ttc = round2(row.total + row.vat);
           }
         } else if (key === 'raw_purchases') {
@@ -36637,7 +37154,7 @@
           row.total = round2(row.cost + row.trans_cost);
         } else if (key === 'vat_invoices') {
           const net = round2(Number(row.net_amount || 0));
-          const vat = ('vat_amount' in pendingUpdates && row.vat_amount != null) ? round2(Number(row.vat_amount)) : round2(net * VAT_RATE);
+          const vat = ('vat_amount' in pendingUpdates && row.vat_amount != null) ? round2(Number(row.vat_amount)) : round2(net * getVatFraction(row.date || row.rep_date));
           row.net_amount = net;
           row.vat_amount = vat;
           row.total_ttc = round2(net + vat);
@@ -36645,7 +37162,7 @@
         } else if (key === 'salaries') {
           if (('usd_amount' in pendingUpdates || 'lbp_amount' in pendingUpdates) && !('amount' in pendingUpdates)) {
             if (row.usd_amount == null) row.usd_amount = 0;
-            row.amount = round2(Number(row.usd_amount || 0) + Number(row.lbp_amount || 0) / getLbpFxRate());
+            row.amount = round2(Number(row.usd_amount || 0) + Number(row.lbp_amount || 0) / getLbpFxRate(row.date || row.rep_date, row.currency || 'LBP'));
           }
         } else if (key === 'logistics_allowances') {
           if ('usd_amount' in pendingUpdates || 'lbp_amount' in pendingUpdates) {
@@ -36671,7 +37188,7 @@
           const isU2L = !/^lbp/i.test(row.type || 'USD to LBP');
           const usd = round2(Number(row.usd_amount || 0));
           const lbp = Math.round(Number(row.lbp_amount || 0));
-          const fx = (usd > 0 && lbp > 0) ? round2(lbp / usd) : Number(row.exchange_rate || row.fx_rate || getLbpFxRate());
+          const fx = (usd > 0 && lbp > 0) ? round2(lbp / usd) : Number(row.exchange_rate || row.fx_rate || getLbpFxRate(row.date || row.rep_date));
           row.from_currency = isU2L ? 'USD' : 'LBP';
           row.to_currency = isU2L ? 'LBP' : 'USD';
           row.usd_delta = isU2L ? -usd : usd;
@@ -36679,6 +37196,25 @@
           row.exchange_rate = fx;
           row.fx_rate = fx;
           row.amount = usd;
+        } else if (key === 'fx_rates') {
+          row.currency = String(row.currency || 'LBP').trim().toUpperCase();
+          row.start_date = String(row.start_date || row.date || todayISO()).slice(0, 10);
+          row.date = row.start_date;
+          row.rep_date = row.start_date;
+          row.rate = Number(row.rate || 0);
+          row.name = (String(row.id) === 'fx-20240101-lbp-89500-001' && row.currency === 'LBP' && row.start_date === '2024-01-01' && row.rate === DEFAULT_LBP_FX_RATE)
+            ? 'FX-20240101-LBP-89500-001'
+            : buildFxRateRefName(row.currency, row.rate, row.start_date);
+        } else if (key === 'vat_rates') {
+          row.start_date = String(row.start_date || row.date || todayISO()).slice(0, 10);
+          row.date = row.start_date;
+          row.rep_date = row.start_date;
+          row.vat_percent = Number(row.vat_percent || 0);
+          row.vat_fx_rate = Number(row.vat_fx_rate || getLbpFxRate(row.start_date, 'LBP'));
+          row.name = buildVatRateRefName(row.vat_percent, row.vat_fx_rate, row.start_date);
+        } else if (key === 'currencies') {
+          row.code = String(row.code || '').trim().toUpperCase();
+          row.decimals = Number.isFinite(Number(row.decimals)) ? Number(row.decimals) : 2;
         } else if (key === 'jv_distributions') {
           if (('amount' in pendingUpdates || 'difference' in pendingUpdates) && !('total' in pendingUpdates)) {
             row.total = round2(Number(row.amount || 0) + Number(row.difference || 0));
@@ -37097,10 +37633,11 @@
 
   // Project the app entries onto the seed registers (voided rows drop out, new rows sort in by date, and fleet owner/driver links stay synchronized)
   function applyCustomRecordsToSeed() {
+    ensureGlobalFinanceTablesSeeded();
     ensureUniversalCanonicalIndex();
     sanitizeUniversalCustomRecords();
     SEED._customRev = (SEED._customRev || 0) + 1;
-    const masterByNameKeys = new Set(['suppliers', 'equipment', 'company_equipment', 'drivers', 'customers', 'products', 'sites', 'regions', 'expense_categories', 'expense_subcategories']);
+    const masterByNameKeys = new Set(['suppliers', 'equipment', 'company_equipment', 'drivers', 'customers', 'products', 'sites', 'regions', 'expense_categories', 'expense_subcategories', 'currencies', 'fx_rates', 'vat_rates']);
     const allKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {})]));
     allKeys.forEach(k => {
       const list = SEED.records[k];
@@ -37162,6 +37699,8 @@
       }
       if (touched && list.some(x => x && x.date)) list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     });
+
+    enrichGlobalRateTables();
 
     // Keep SEED.models summary arrays in sync when master records are voided or restored
     if (!SEED._origModelMasters) {
@@ -37471,7 +38010,7 @@
     const ins = $('recordInspector');
     if (ins && !ins.hidden) return true;
     if ((STATE.view === 'users' && STATE.userFormDirty) || FACE_STATE.enrolCamActive || KIOSK_ATT_STATE.camActive) return true;
-    if (document.querySelector('.pa-suggest-wrap.open, .rdl-combo.open, #companySwitch.open, #nuCompanySelector.open, .payroll-fx-popover')) return true;
+    if (document.querySelector('.pa-suggest-wrap.open, .rdl-combo.open, #companySwitch.open, #nuCompanySelector.open')) return true;
     const a = document.activeElement;
     return !!(a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName) && a.id !== 'aiInput');
   }
@@ -39653,6 +40192,9 @@
     reg_customers: 'Customers Registry',
     reg_suppliers: 'Suppliers & Haulers',
     reg_categories: 'Expense Categories',
+    reg_fx_rates: 'Currency & FX Rates',
+    reg_currencies: 'Currencies Registry',
+    reg_vat_rates: 'VAT Rates',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -39706,6 +40248,9 @@
     reg_customers: 'Customers Registry',
     reg_suppliers: 'Suppliers & Haulers',
     reg_categories: 'Expense Categories',
+    reg_fx_rates: 'Currency & FX Rates',
+    reg_currencies: 'Currencies Registry',
+    reg_vat_rates: 'VAT Rates',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -40517,7 +41062,8 @@
       ledger: 'treasury', gl: 'treasury', ledger_treasury: 'treasury',
       tables: 'pricerule',
       reg_equipment: 'equipment', reg_drivers: 'driver', reg_sites: 'site', reg_regions: 'region',
-      reg_products: 'product', reg_customers: 'customer', reg_suppliers: 'supplier', reg_categories: 'expensecategory'
+      reg_products: 'product', reg_customers: 'customer', reg_suppliers: 'supplier', reg_categories: 'expensecategory',
+      reg_fx_rates: 'fxrate', reg_currencies: 'currency', reg_vat_rates: 'vatrate'
     };
     let preferred = map[view] || 'sales';
     if (view === 'tables' && window.MFG_PBI) { // the hub's active table owns the form (e.g. Loans → Treasury desk)
@@ -40571,7 +41117,8 @@
           treasury: 'Post Treasury', pricerule: 'New Agreement', pricerule_raw: 'New Site Rate',
           jv: 'Post JV Entry', defect: 'Report Defect', partlog: 'Log Part', companyequipment: 'Assign Unit',
           customer: 'New Customer', supplier: 'New Supplier', product: 'New Product', expensecategory: 'New Category',
-          site: 'New Site', region: 'New Region', equipment: 'New Equipment', driver: 'New Driver'
+          site: 'New Site', region: 'New Region', equipment: 'New Equipment', driver: 'New Driver',
+          fxrate: 'New FX Rate', vatrate: 'New VAT Rate', currency: 'New Currency'
         };
         dEntryLbl.textContent = formLabels[contextFormForView(v, user)] || 'Post Entry';
       } else {
@@ -40821,7 +41368,7 @@
     const cust = val('f_customer') || 'Walk-In / Customer';
     const ci = customerInfo(cust);
     const vatReg = !!(ci && (ci['VAT Registered'] === 'Yes' || ci.vat_registered));
-    const vat = vatReg ? round2(net * VAT_RATE) : 0;
+    const vat = vatReg ? round2(net * getVatFraction(val('f_date') || todayISO())) : 0;
     const ttc = round2(net + vat);
     return {
       id: 'DRAFT-SALES',
@@ -42794,6 +43341,9 @@
       case 'reg_customers':
       case 'reg_suppliers':
       case 'reg_categories':
+      case 'reg_fx_rates':
+      case 'reg_currencies':
+      case 'reg_vat_rates':
         wsHtml = window.MFG_PBI ? window.MFG_PBI.renderUniversalRegistriesView({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, pageTitle: canonicalViewTitle, registryGroupKeys: univGroupKeys }) : renderOverview();
         break;
       case 'statements': wsHtml = renderStatements(); break;
@@ -43604,113 +44154,6 @@
       STATE.pbiTablePage = {};
       rerenderAnchoredPayrollBar(barEl);
     }));
-    container.querySelectorAll('[data-toggle-payroll-fx]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const barId = btn.getAttribute('data-toggle-payroll-fx') || '';
-      const barEl = btn.closest('.payroll-cutoff-bar') || (barId ? document.getElementById(barId) : null);
-      STATE.payrollFxPopoverBar = STATE.payrollFxPopoverBar === barId ? '' : barId;
-      rerenderAnchoredPayrollBar(barEl);
-      if (STATE.payrollFxPopoverBar) {
-        const inp = document.getElementById(`${barId}_fxInput`);
-        if (inp) {
-          inp.focus({ preventScroll: true });
-          try { inp.select(); } catch (_) {}
-        }
-      }
-    }));
-    container.querySelectorAll('[data-close-payroll-fx]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const barEl = btn.closest('.payroll-cutoff-bar');
-      STATE.payrollFxPopoverBar = '';
-      rerenderAnchoredPayrollBar(barEl);
-    }));
-    container.querySelectorAll('[data-apply-payroll-fx]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const barId = btn.getAttribute('data-apply-payroll-fx') || '';
-      const inp = document.getElementById(`${barId}_fxInput`);
-      const nextVal = inp ? inp.value : '';
-      STATE.payrollFxPopoverBar = '';
-      if (setLbpFxRate(nextVal, { anchorBarId: barId })) {
-        toast(`LBP conversion rate set to ${fmtNum(getLbpFxRate(), 0)} LL/$`);
-      } else {
-        toast('Enter a valid LBP exchange rate (e.g. 89,500)', 'err');
-      }
-    }));
-    container.querySelectorAll('[data-preset-payroll-fx]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const barId = btn.getAttribute('data-fx-bar') || '';
-      const preset = btn.getAttribute('data-preset-payroll-fx') || String(DEFAULT_LBP_FX_RATE);
-      STATE.payrollFxPopoverBar = '';
-      if (setLbpFxRate(preset, { anchorBarId: barId })) {
-        toast(`LBP conversion rate set to ${fmtNum(getLbpFxRate(), 0)} LL/$`);
-      }
-    }));
-    container.querySelectorAll('.payroll-fx-popover').forEach(pop => {
-      pop.addEventListener('click', ev => ev.stopPropagation());
-    });
-    container.querySelectorAll('.payroll-fx-popover .pfx-rate-input').forEach(inp => {
-      inp.addEventListener('keydown', ev => {
-        if (ev.key === 'Enter') {
-          ev.preventDefault();
-          const barEl = inp.closest('.payroll-cutoff-bar');
-          const barId = barEl ? barEl.id : '';
-          STATE.payrollFxPopoverBar = '';
-          if (setLbpFxRate(inp.value, { anchorBarId: barId })) {
-            toast(`LBP conversion rate set to ${fmtNum(getLbpFxRate(), 0)} LL/$`);
-          }
-        } else if (ev.key === 'Escape') {
-          ev.preventDefault();
-          const barEl = inp.closest('.payroll-cutoff-bar');
-          STATE.payrollFxPopoverBar = '';
-          rerenderAnchoredPayrollBar(barEl);
-        }
-      });
-    });
-    const fxRefApplyBtn = $('fxRefRateApplyBtn');
-    if (fxRefApplyBtn) {
-      fxRefApplyBtn.addEventListener('click', () => {
-        const inp = $('fxRefRateInput');
-        if (inp && setLbpFxRate(inp.value, { anchorBarId: 'fxRefRateBar' })) {
-          toast(`LBP conversion rate set to ${fmtNum(getLbpFxRate(), 0)} LL/$`);
-        } else {
-          toast('Enter a valid LBP exchange rate (e.g. 89,500)', 'err');
-        }
-      });
-    }
-    const fxRefInput = $('fxRefRateInput');
-    if (fxRefInput) {
-      fxRefInput.addEventListener('keydown', ev => {
-        if (ev.key === 'Enter') {
-          ev.preventDefault();
-          if (setLbpFxRate(fxRefInput.value, { anchorBarId: 'fxRefRateBar' })) {
-            toast(`LBP conversion rate set to ${fmtNum(getLbpFxRate(), 0)} LL/$`);
-          }
-        }
-      });
-    }
-    container.querySelectorAll('[data-fx-ref-preset]').forEach(btn => btn.addEventListener('click', () => {
-      const preset = btn.getAttribute('data-fx-ref-preset') || String(DEFAULT_LBP_FX_RATE);
-      if (setLbpFxRate(preset, { anchorBarId: 'fxRefRateBar' })) {
-        toast(`LBP conversion rate set to ${fmtNum(getLbpFxRate(), 0)} LL/$`);
-      }
-    }));
-    if (!window.__mfgPayrollFxDismissWired) {
-      window.__mfgPayrollFxDismissWired = true;
-      document.addEventListener('click', ev => {
-        if (!STATE.payrollFxPopoverBar) return;
-        if (ev.target && typeof ev.target.closest === 'function' && ev.target.closest('.payroll-fx-slot')) return;
-        const barEl = document.getElementById(STATE.payrollFxPopoverBar);
-        STATE.payrollFxPopoverBar = '';
-        rerenderAnchoredPayrollBar(barEl);
-      });
-      document.addEventListener('keydown', ev => {
-        if (ev.key === 'Escape' && STATE.payrollFxPopoverBar) {
-          const barEl = document.getElementById(STATE.payrollFxPopoverBar);
-          STATE.payrollFxPopoverBar = '';
-          rerenderAnchoredPayrollBar(barEl);
-        }
-      });
-    }
     container.querySelectorAll('[data-cf-focus-date]').forEach(el => el.addEventListener('click', ev => {
       ev.stopPropagation();
       const dt = el.getAttribute('data-cf-focus-date') || '';
@@ -46241,7 +46684,7 @@
   let _uiTipWired = false;
   let _uiTipActiveEl = null;
   const UI_TIP_SUPPRESS_SEL = [
-    '.payroll-fx-btn', '.payroll-cutoff-pill', '.payroll-status-pill', '.pcc-reset-btn',
+    '.payroll-cutoff-pill', '.payroll-status-pill', '.pcc-reset-btn',
     '.grain-btn', '.basis-btn', '.date-seg-part', '.entity-picker-trigger', '.entity-picker-act-btn',
     '.ask-isabi-trigger', '.mobile-theme-btn', '#themeToggleBtn', '#signOutBtn', '#authShowcaseLink',
     '.sales-recon-card', '.recon-co-pill', '.rel-link', '.inspector-cell[data-edit-field]',

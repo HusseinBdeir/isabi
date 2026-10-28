@@ -78,6 +78,10 @@
     reg_customers: s('<rect x="4" y="3" width="9.5" height="18" rx="1.2"/><path d="M13.5 9h6.5v12h-6.5"/><line x1="7.2" y1="7" x2="10.3" y2="7"/><line x1="7.2" y1="11" x2="10.3" y2="11"/><line x1="7.2" y1="15" x2="10.3" y2="15"/><line x1="16.2" y1="13" x2="17.4" y2="13"/><line x1="16.2" y1="17" x2="17.4" y2="17"/>'),
     reg_suppliers: s('<path d="M3 20.5V8.5L12 3.5l9 5v12"/><path d="M7.5 20.5v-6.5h9v6.5"/><line x1="7.5" y1="17.2" x2="16.5" y2="17.2"/>'),
     reg_categories: s('<path d="M21.5 18.5a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2h4.8l2.2 2.8h8a2 2 0 0 1 2 2z"/>'),
+    univ_rates: s('<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2a2.6 2.6 0 0 0-5.2.5c0 2 5.2 1.8 5.2 4.3a2.6 2.6 0 0 1-5.2.5"/><line x1="12" y1="6.2" x2="12" y2="17.8"/>'),
+    reg_fx_rates: s('<polyline points="17 2.5 21 6.5 17 10.5"/><path d="M3 11.5v-2a3 3 0 0 1 3-3h15"/><polyline points="7 21.5 3 17.5 7 13.5"/><path d="M21 12.5v2a3 3 0 0 1-3 3H3"/>'),
+    reg_currencies: s('<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2a2.6 2.6 0 0 0-5.2.5c0 2 5.2 1.8 5.2 4.3a2.6 2.6 0 0 1-5.2.5"/><line x1="12" y1="6.2" x2="12" y2="17.8"/>'),
+    reg_vat_rates: s('<line x1="18.5" y1="5.5" x2="5.5" y2="18.5"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/>'),
 
     // ---- Thermal Printing, Actions & UI Controls ----
     printer: s('<path d="M6.5 8.5V3.5h11v5"/><rect x="3" y="8.5" width="18" height="7.5" rx="1.8"/><path d="M6.5 13.5h11V21l-2.2-1.4-1.8 1.4-1.5-1.4-1.8 1.4-1.7-1.4-2 1.4v-7.5z"/>'),
