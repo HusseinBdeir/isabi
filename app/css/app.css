@@ -21057,6 +21057,371 @@ table.ledger-table tbody td.td-databar {
   }
 }
 
+/* ==========================================================================
+   Site Allowance Smart Entry Desk & Daily Work Verification Ledger (v19.4.5)
+   ========================================================================== */
+.log-mode-bar {
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  gap: 6px;
+}
+.log-mode-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--line-strong);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+#modalBody:has(.log-compact-grid) {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.log-compact-grid {
+  gap: 5px 10px !important;
+}
+.log-compact-grid .form-field > label {
+  margin-bottom: 1px;
+}
+.log-mode-bar {
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+.log-mode-bar .log-win-pill {
+  font-size: 11px;
+  padding: 3px 9px;
+}
+#logStaffContextStrip {
+  padding: 4px 10px;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+.log-strip-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+#logLiveCalc {
+  margin-top: 6px;
+  padding: 6px 12px;
+}
+.form-field.check-field.log-dow-field {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  min-width: 0;
+}
+.form-field.check-field.log-dow-field[hidden] {
+  display: none !important;
+}
+#logDowBar[hidden] + #wrap_log_notes {
+  grid-column: 1 / -1;
+}
+.log-dow-lbl-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 2px;
+  min-height: 17px;
+}
+.log-dow-lbl-row .pa-fld-lbl {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  line-height: 1.25;
+}
+.log-dow-presets {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.log-dow-preset {
+  appearance: none;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.35;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.log-dow-preset:hover {
+  border-color: var(--brass);
+  color: var(--ink);
+}
+.log-dow-preset.is-active {
+  background: var(--surface);
+  border-color: var(--brass);
+  color: var(--ink);
+  font-weight: 700;
+}
+.log-dow-pills {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.log-dow-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 4px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.12s, background 0.12s, color 0.12s, box-shadow 0.12s;
+}
+.log-dow-pill input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+.log-dow-pill:hover {
+  border-color: var(--brass);
+  color: var(--ink);
+}
+.log-dow-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  flex-shrink: 0;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.log-dow-pill.is-on {
+  background: var(--surface);
+  border-color: var(--good);
+  color: var(--ink);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(31, 122, 76, 0.1), inset 0 -2px 0 var(--good);
+}
+.log-dow-pill.is-on .log-dow-dot {
+  background: var(--good);
+  box-shadow: 0 0 0 2px rgba(31, 122, 76, 0.16);
+}
+.log-dow-pill.is-sun.is-on {
+  border-color: var(--brass);
+  box-shadow: 0 1px 3px rgba(192, 137, 47, 0.12), inset 0 -2px 0 var(--brass);
+}
+.log-dow-pill.is-sun.is-on .log-dow-dot {
+  background: var(--brass);
+  box-shadow: 0 0 0 2px rgba(192, 137, 47, 0.18);
+}
+:root[data-theme="dark"] .log-dow-pill.is-on {
+  background: #1C2E4A;
+}
+
+.log-day-mini-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.log-day-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10.6px;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+.log-day-mini.is-ok {
+  border-color: rgba(31, 122, 76, 0.35);
+  color: var(--good);
+}
+.log-day-mini.is-site {
+  border-color: rgba(74, 144, 217, 0.38);
+  color: var(--chart-steel, #2356A8);
+}
+.log-day-mini.is-abs {
+  border-color: rgba(200, 51, 59, 0.35);
+  color: var(--crit);
+  text-decoration: line-through;
+}
+.log-day-mini.is-unv {
+  border-color: rgba(201, 106, 34, 0.35);
+  color: var(--warn);
+}
+
+.site-proof-chips,
+.site-proof-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.site-proof-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1.5px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  white-space: nowrap;
+}
+.site-proof-chip.is-direct,
+.site-proof-chip.is-shift,
+.site-proof-chip.is-tallied {
+  border-color: rgba(31, 122, 76, 0.34);
+  color: var(--good);
+}
+.site-proof-chip.is-site,
+.site-proof-chip.is-trips {
+  border-color: rgba(74, 144, 217, 0.36);
+  color: var(--chart-steel, #2356A8);
+}
+.site-proof-chip.is-fuel {
+  border-color: rgba(192, 137, 47, 0.38);
+  color: var(--brass-ink, var(--ink));
+}
+.site-proof-chip.is-abs,
+.site-proof-chip.is-off {
+  border-color: rgba(200, 51, 59, 0.34);
+  color: var(--crit);
+}
+.site-tally-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.site-tally-btn {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 10.8px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.site-tally-btn:hover {
+  border-color: var(--brass);
+}
+.site-tally-btn.is-confirm {
+  border-color: rgba(31, 122, 76, 0.42);
+  color: var(--good);
+}
+.site-tally-btn.is-confirm:hover,
+.site-tally-btn.is-confirm.is-active {
+  background: rgba(31, 122, 76, 0.12);
+  border-color: var(--good);
+}
+.site-tally-btn.is-absent {
+  border-color: rgba(200, 51, 59, 0.36);
+  color: var(--crit);
+}
+.site-tally-btn.is-absent:hover,
+.site-tally-btn.is-absent.is-active {
+  background: rgba(200, 51, 59, 0.12);
+  border-color: var(--crit);
+}
+.site-tally-btn.is-undo {
+  color: var(--muted);
+  font-weight: 600;
+}
+.site-staff-filter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.site-verif-pill {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  font-size: 11.2px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+.site-verif-pill:hover {
+  border-color: var(--brass);
+}
+.site-verif-pill.is-high {
+  border-color: rgba(31, 122, 76, 0.38);
+  color: var(--good);
+}
+.site-verif-pill.is-mid {
+  border-color: rgba(74, 144, 217, 0.4);
+}
+.site-verif-pill.is-low {
+  border-color: rgba(201, 106, 34, 0.4);
+  color: var(--warn);
+}
+
+@media (max-width: 640px) {
+  #logStaffContextStrip,
+  .log-strip-left {
+    flex-wrap: wrap;
+  }
+  .form-field.check-field.log-dow-field {
+    grid-column: 1 / -1;
+  }
+  .log-dow-pills {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+  }
+  .log-dow-pill {
+    padding: 0 4px;
+    height: 34px;
+    font-size: 11px;
+    gap: 4px;
+  }
+  .log-dow-dot {
+    width: 5px;
+    height: 5px;
+  }
+  .log-mode-sep {
+    display: none;
+  }
+}
+
+
 
 
 

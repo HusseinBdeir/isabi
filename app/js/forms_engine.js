@@ -76,7 +76,7 @@
         { id: 'attendance', label: 'Attendance', badge: 'bhf_attendance', crKey: 'attendance', title: 'New Staff Attendance' },
         { id: 'employment', label: 'Employment Contract', badge: 'bhf_employment', crKey: 'employments', title: 'New Employment Contract' },
         { id: 'freelance', label: 'Freelance Work', badge: 'bhf_freelancework', crKey: 'employments', title: 'New Freelance Work' },
-        { id: 'logistics', label: 'Site Allowance (Mon–Sun)', badge: 'bhf_logistics', crKey: 'logistics_allowances', title: 'New Weekly Site Allowance' }
+        { id: 'logistics', label: 'Site Allowance', badge: 'bhf_logistics', crKey: 'logistics_allowances', title: 'New Site Allowance' }
       ]
     },
     {
@@ -1203,29 +1203,52 @@
     if (fType === 'logistics') {
       return `
         ${adminHeaderHtml}
-        <div class="form-grid-3">
+        <div class="form-grid-3 att-compact-grid log-compact-grid">
+          <input type="hidden" id="f_log_mode" value="range">
+          <div class="att-preset-bar log-mode-bar" id="logModeDeck" role="tablist" aria-label="Site Allowance Mode">
+            <span class="att-preset-lbl">Posting:</span>
+            <button type="button" class="att-preset-pill active" data-log-mode="range">Date Range Posting</button>
+            <button type="button" class="att-preset-pill" data-log-mode="single">Single Day Worked</button>
+            <span class="log-mode-sep" aria-hidden="true"></span>
+            <button type="button" class="att-preset-pill log-win-pill" data-log-win="week">This Week</button>
+            <button type="button" class="att-preset-pill log-win-pill" data-log-win="month">This Month</button>
+            <button type="button" class="att-preset-pill log-win-pill" data-log-win="open">Open-Ended</button>
+          </div>
           ${companyField}
-          ${fld('Start Date *', inp('f_date', 'date', today))}
-          ${fld('End Date', inp('f_enddate', 'date', ''), { id: 'wrap_log_enddate' })}
+          ${fld('Start Date *', inp('f_date', 'date', today), { id: 'wrap_log_start', hintId: 'hint_log_dates', hint: '' })}
+          ${fld('End Date (Blank = Open)', inp('f_enddate', 'date', today), { id: 'wrap_log_end' })}
           ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_log_staff', hintId: 'hint_log_staff', hint: '' })}
-          <div class="form-field span-2" id="wrap_log_days">
-            <label><span class="pa-fld-lbl">Days Worked</span></label>
-            <div class="log-days-inline">
-              ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => `<label class="log-day-chk"><input type="checkbox" id="f_day_${d.toLowerCase()}" ${i < 6 ? 'checked' : ''}><span>${d}</span></label>`).join('')}
+          ${fld('Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames), { id: 'wrap_log_site' })}
+          ${fld('Equipment', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional excavator, loader, truck..."') + dl('dl_equip', equipNames), { id: 'wrap_log_equip' })}
+          <div id="logStaffContextStrip" class="att-contract-strip" hidden></div>
+          ${fld('Daily USD ($ / day)', inp('f_usd', 'number', '', 'step="0.50" min="0" placeholder="0.00"'))}
+          ${fld('Daily LBP (L.L. / day)', inp('f_lbp', 'number', '', 'step="50000" min="0" placeholder="e.g. 500000"'))}
+          ${fld(`Daily Rate USD (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
+          <div class="form-field check-field log-dow-field span-2" id="logDowBar" role="group" aria-label="Scheduled Working Days">
+            <div class="log-dow-lbl-row">
+              <span class="pa-fld-lbl">Scheduled Days *</span>
+              <span class="log-dow-presets">
+                <button type="button" class="log-dow-preset is-active" data-log-dow-preset="mon_sat">Mon–Sat</button>
+                <button type="button" class="log-dow-preset" data-log-dow-preset="mon_fri">Mon–Fri</button>
+                <button type="button" class="log-dow-preset" data-log-dow-preset="all_7">7d</button>
+              </span>
+            </div>
+            <div class="log-dow-pills">
+              ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => `
+                <label class="log-dow-pill${i < 6 ? ' is-on' : ''}${i === 6 ? ' is-sun' : ''}">
+                  <input type="checkbox" id="f_day_${d.toLowerCase()}" ${i < 6 ? 'checked' : ''}>
+                  <span class="log-dow-dot" aria-hidden="true"></span>
+                  <span class="log-dow-txt">${d}</span>
+                </label>`).join('')}
             </div>
           </div>
-          <div id="logStaffContextStrip" class="att-contract-strip" hidden></div>
-          ${fld('USD Allowance ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'))}
-          ${fld('LBP Allowance (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'))}
-          ${fld(`Daily Rate USD (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
-          ${fld('Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames), { id: 'wrap_log_site' })}
-          ${fld('Notes', inp('f_notes', 'text', ''), { span2: true })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional site task or note..."'), { id: 'wrap_log_notes' })}
         </div>
-        <div class="live-calc" id="logLiveCalc">
-          <div><small>Active Days</small><b id="calc_log_days">6 days (Mon–Sat)</b></div>
-          <div><small>Per Day</small><b id="calc_log_daily">$0.00 / day</b></div>
-          <div><small>Month Allowances</small><b id="calc_log_month">$0.00 prior</b></div>
-          <div><small>Weekly Est.</small><b id="calc_log_total">$0.00</b></div>
+        <div class="live-calc att-live-calc-compact" id="logLiveCalc">
+          <div><small id="lbl_log_days">Posted Window</small><b id="calc_log_days">1 day</b></div>
+          <div><small>Daily Rate (USD)</small><b id="calc_log_daily">$0.00 / day</b></div>
+          <div><small>Work Proof in Window</small><b id="calc_log_month">Select Staff</b></div>
+          <div><small id="lbl_log_total">Window Allowance</small><b id="calc_log_total">$0.00</b></div>
         </div>
       `;
     }

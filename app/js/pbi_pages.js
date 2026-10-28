@@ -1410,7 +1410,11 @@
     ] },
     { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'working_days', 'working_hours', 'overtime_multiplier', 'reimbursement', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'freelance', label: 'Freelance / Daily', fn: r => /free|daily/i.test(r.type || '') }] },
     { key: 'freelance_entries', group: '4 · Payroll, Attendance & Workforce', label: 'Freelance Work Entries', dvn: 'bhf_mfgfreelance', form: 'freelance', cols: ['date', 'company', 'staff', 'hours', 'extra_hours', 'rate_usd', 'total', 'notes'], relTables: ['employments', 'salaries'], views: [{ id: 'all', label: 'All Freelance Entries' }] },
-    { key: 'logistics_allowances', group: '4 · Payroll, Attendance & Workforce', label: 'Site Allowances (Mon–Sun)', dvn: 'bhf_mfglogistics', form: 'logistics', cols: ['name', 'company', 'staff', 'site', 'equipment', 'daily_usd', 'lbp_amount', 'working_days', 'start_date', 'end_date'], relTables: ['employments', 'sites', 'equipment', 'salaries'], views: [{ id: 'all', label: 'All Site Allowances' }] },
+    { key: 'logistics_allowances', group: '4 · Payroll, Attendance & Workforce', navView: 'payroll_allowances', label: 'Site Allowances', dvn: 'bhf_mfglogistics', form: 'logistics', cols: ['name', 'company', 'staff', 'site', 'equipment', 'daily_usd', 'lbp_amount', 'working_days', 'start_date', 'end_date'], relTables: ['employments', 'sites', 'equipment', 'attendance', 'salaries'], views: [
+      { id: 'all', label: 'All Site Allowances' },
+      { id: 'active', label: 'Current / Open', fn: r => !r.end_date || String(r.end_date) >= '2026-10-01' },
+      { id: 'ended', label: 'Ended Windows', fn: r => Boolean(r.end_date && String(r.end_date) < '2026-10-01') }
+    ] },
 
     // 5 · Cash Flow, Treasury & FX (4 BU-scoped)
     { key: 'external_movements', group: '5 · Cash Flow, Treasury & FX', label: 'External & Extended Movements', dvn: 'bhf_mfgexternal', form: 'treasury', cols: ['date', 'company', 'kind', 'counterparty', 'direction', 'usd_amount', 'lbp_amount', 'notes'], relTables: ['loans', 'loan_settlements'], views: [
@@ -9773,7 +9777,9 @@
 
   function renderAllowancesVisualsSection(ctx) {
     const payMonths = (ctx && ctx.payMonths) || [];
-    const siteStaffRows = (ctx && ctx.siteStaffRows) || [];
+    const siteStaffRows = ((ctx && ctx.siteStaffRows) || []).map(r => Object.assign({}, r, {
+      verifSub: `${r.sitesStr || r.site || 'Site'}${r.days_paid > 0 ? ` · ${fmtNum(r.activity_days || 0, 0)}/${fmtNum(r.days_paid, 0)}d verified` : ''}`
+    }));
     return `
       <div class="pbi-grid-2" id="allowancesChartsRow" style="margin-bottom:14px">
         ${pbiPanel('Monthly Site Allowance Earned vs. Paid ($)', buildClusteredColumnSvg(payMonths, [
@@ -9786,8 +9792,8 @@
             { label: 'Paid (FIFO)', color: C.navy }
           ]
         })}
-        ${pbiPanel('Site Allowance Earned by Staff Member ($)', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
-          subtitle: 'Posted staff members ranked by earned daily site allowance ($)'
+        ${pbiPanel('Site Allowance & Verified Work Days by Staff ($)', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'verifSub', color: C.brass, maxItems: 10 }), {
+          subtitle: 'Posted staff ranked by earned site allowance ($) with verified work-day coverage'
         })}
       </div>
     `;

@@ -33,6 +33,7 @@
     expenses_analytics: s('<rect x="3.5" y="13" width="4.2" height="8" rx="1"/><rect x="9.9" y="8" width="4.2" height="13" rx="1"/><rect x="16.3" y="3" width="4.2" height="18" rx="1"/>'),
     payroll_attendance: s('<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/>'),
     workforce_map: s('<polygon points="2.5 6 8.8 3 15.2 6 21.5 3 21.5 18 15.2 21 8.8 18 2.5 21 2.5 6"/><line x1="8.8" y1="3" x2="8.8" y2="18"/><line x1="15.2" y1="6" x2="15.2" y2="21"/><circle cx="12" cy="10.5" r="2.3"/>'),
+    payroll_allowances: s('<path d="M12 21.2s6.5-5.6 6.5-10.7a6.5 6.5 0 0 0-13 0c0 5.1 6.5 10.7 6.5 10.7z"/><circle cx="12" cy="10.5" r="2.4"/>'),
     payroll_contracts: s('<path d="M14 2.5H6.5A2 2 0 0 0 4.5 4.5v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8z"/><polyline points="14 2.5 14 8 19.5 8"/><path d="m9 14.5 2 2 4-4"/>'),
     payroll_analytics: s('<rect x="3.5" y="13" width="4.2" height="8" rx="1"/><rect x="9.9" y="8" width="4.2" height="13" rx="1"/><rect x="16.3" y="3" width="4.2" height="18" rx="1"/>'),
     ledger_treasury: s('<polyline points="17 2.5 21 6.5 17 10.5"/><line x1="3" y1="6.5" x2="21" y2="6.5"/><polyline points="7 21.5 3 17.5 7 13.5"/><line x1="21" y1="17.5" x2="3" y2="17.5"/>'),
