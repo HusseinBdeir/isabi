@@ -21,9 +21,11 @@
   SEED.records = SEED.records || {};
   SEED.sentinels = SEED.sentinels || {};
   const SEED_RECORD_KEYS = [
-    'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'receipts', 'settlements', 'salaries',
+    'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'expense_items', 'warehouse_movements',
+    'receipts', 'settlements', 'salaries',
     'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products', 'sites',
-    'regions', 'uoms', 'product_types', 'equipment', 'company_equipment', 'equipment_defects', 'part_movements',
+    'regions', 'uoms', 'product_types', 'equipment', 'company_equipment', 'equipment_defects',
+    'equipment_repairs', 'repair_items', 'equipment_oil_logs', 'part_movements',
     'drivers', 'company_drivers', 'expense_categories', 'expense_subcategories', 'employments', 'attendance',
     'freelance_entries', 'freelance_payments', 'logistics_allowances', 'overtime_rates', 'external_movements',
     'loans', 'loan_settlements', 'conversions', 'jv_partnerships', 'jv_distributions', 'daily_totals'
@@ -146,6 +148,9 @@
     rawSiteFilter: 'expense',
     partDispFilter: 'all',
     unitHealthFilter: 'all',
+    whChipFilter: 'all',
+    repSrcFilter: 'all',
+    oilFilter: 'all',
     sentinelFilter: 'all',
     dailyOpsDate: '',
     dailyOpsIncludeAfterHours: true,
@@ -310,10 +315,10 @@
 
   // App-entered record pools (localStorage + cloud relay) → server table + SEED list
   const CR_KEYS = [
-    'sales_tickets', 'raw_purchases', 'receipts', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'settlements',
+    'sales_tickets', 'raw_purchases', 'receipts', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'expense_items', 'warehouse_movements', 'settlements',
     'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products',
     'product_types', 'uoms', 'sites', 'regions', 'equipment', 'company_equipment',
-    'equipment_defects', 'part_movements',
+    'equipment_defects', 'equipment_repairs', 'repair_items', 'equipment_oil_logs', 'part_movements',
     'drivers', 'company_drivers', 'expense_categories', 'expense_subcategories',
     'salaries', 'attendance', 'employments', 'freelance_entries', 'logistics_allowances',
     'overtime_rates', 'external_movements', 'loans', 'loan_settlements',
@@ -322,12 +327,14 @@
   ];
   const CR_TABLE = {
     sales_tickets: 'sales_tickets', raw_purchases: 'raw_purchases', receipts: 'customer_receipts',
-    fuel_intakes: 'fuel_intakes', fuel_malfunctions: 'fuel_malfunctions', expenses: 'expenses', settlements: 'supplier_payments',
+    fuel_intakes: 'fuel_intakes', fuel_malfunctions: 'fuel_malfunctions', expenses: 'expenses',
+    expense_items: 'expense_items', warehouse_movements: 'warehouse_movements', settlements: 'supplier_payments',
     price_rules: 'price_rules', vat_invoices: 'vat_invoices', credit_terms: 'credit_terms',
     customers: 'customers', suppliers: 'suppliers', products: 'products',
     product_types: 'product_types', uoms: 'uoms', sites: 'sites', regions: 'regions',
     equipment: 'equipment', company_equipment: 'company_equipment',
-    equipment_defects: 'equipment_defects', part_movements: 'part_movements',
+    equipment_defects: 'equipment_defects', equipment_repairs: 'equipment_repairs',
+    repair_items: 'repair_items', equipment_oil_logs: 'equipment_oil_logs', part_movements: 'part_movements',
     drivers: 'drivers', company_drivers: 'company_drivers',
     expense_categories: 'expense_categories', expense_subcategories: 'expense_subcategories',
     salaries: 'salaries', attendance: 'attendance', employments: 'employments',
@@ -339,12 +346,14 @@
   };
   const CR_LABEL = {
     sales_tickets: 'sales ticket', raw_purchases: 'raw receipt', receipts: 'customer receipt',
-    fuel_intakes: 'fuel intake', fuel_malfunctions: 'tank malfunction', expenses: 'expense', settlements: 'supplier settlement',
+    fuel_intakes: 'fuel intake', fuel_malfunctions: 'tank malfunction', expenses: 'expense',
+    expense_items: 'expense item', warehouse_movements: 'warehouse movement', settlements: 'supplier settlement',
     price_rules: 'price agreement', vat_invoices: 'vat invoice', credit_terms: 'credit terms',
     customers: 'customer', suppliers: 'supplier', products: 'product',
     product_types: 'product family', uoms: 'unit of measure', sites: 'site', regions: 'region',
     equipment: 'equipment', company_equipment: 'company fleet unit',
-    equipment_defects: 'equipment defect', part_movements: 'part movement',
+    equipment_defects: 'equipment warning', equipment_repairs: 'equipment repair',
+    repair_items: 'repair item', equipment_oil_logs: 'oil & service log', part_movements: 'part movement',
     drivers: 'driver', company_drivers: 'company driver',
     expense_categories: 'expense category', expense_subcategories: 'expense subcategory',
     salaries: 'salary payment', attendance: 'attendance log', employments: 'contract / freelance',
@@ -5634,8 +5643,8 @@
     if (/^Custom/i.test(role)) {
       const p = getEffectivePermissions(u);
       if (['sales', 'raw', 'fuel', 'malfunction'].includes(form)) return !!p.rights.enter_dispatch;
-      if (['defect', 'partlog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master);
-      if (['receipt', 'expense', 'settlement'].includes(form)) return !!p.rights.enter_accounting;
+      if (['defect', 'partlog', 'repair', 'oillog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master);
+      if (['receipt', 'expense', 'warehousestock', 'settlement'].includes(form)) return !!p.rights.enter_accounting;
       if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'attendance', 'fxrate', 'vatrate', 'currency'].includes(form)) return !!p.rights.enter_master;
       if (['salary', 'employment', 'allowance', 'logistics', 'overtimerate', 'triprate', 'treasury', 'external', 'extmovement', 'loan', 'loansettlement', 'conversion', 'jv', 'jvpartnership', 'jvdistribution'].includes(form)) return !!p.rights.enter_payroll_jv;
       return !!(p.rights.enter_dispatch || p.rights.enter_accounting || p.rights.enter_master);
@@ -5649,8 +5658,8 @@
     }
     if (/Entry/i.test(role)) {
       return [
-        'sales', 'raw', 'receipt', 'fuel', 'malfunction', 'expense', 'settlement',
-        'defect', 'partlog',
+        'sales', 'raw', 'receipt', 'fuel', 'malfunction', 'expense', 'warehousestock', 'settlement',
+        'defect', 'repair', 'oillog', 'partlog',
         'customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'attendance'
       ].includes(form);
     }
@@ -5918,6 +5927,7 @@
       tabs: [
         { view: 'raw', match: ['raw', 'raw_analytics'], label: 'Quarry & Haulage', icon: 'raw' },
         { view: 'expenses', match: ['expenses', 'expenses_analytics'], label: 'Expenses & Overhead', icon: 'expenses', badgeFn: u => getPendingPriceExceptionBadge(u, 'expenses') },
+        { view: 'warehouse', label: 'Warehouse', icon: 'warehouse' },
         { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers' },
         { view: 'raw_pricing', label: 'Quarry & Haulage Rates', icon: 'pricing' },
         { view: 'raw_jv', match: ['raw_jv', 'jv'], label: 'JV & Partnerships', icon: 'raw_jv' }
@@ -5930,7 +5940,7 @@
       tabs: [
         { view: 'fleet', label: 'Diesel & Lubricants', icon: 'fleet', badgeFn: u => getDieselExceptionBadge(u) },
         { view: 'fleet_equip', label: 'Fleet & Running Costs', icon: 'fleet_equip' },
-        { view: 'fleet_maint', label: 'Defects & Parts', icon: 'fleet_maint', badgeFn: u => getFleetExceptionBadge(u) },
+        { view: 'fleet_maint', label: 'Repairs, Warnings & Oil Logs', icon: 'fleet_maint', badgeFn: u => getFleetExceptionBadge(u) },
         { view: 'fleet_drivers', match: ['fleet_drivers', 'fleet_analytics'], label: 'Drivers & Overtime', icon: 'fleet_drivers' }
       ]
     },
@@ -6055,6 +6065,7 @@
     if (view === 'fleet_equip' || view === 'fleet_maint' || view === 'fleet_drivers') return canViewView('fleet', u);
     if (view === 'fleet_analytics') return canViewView('fleet', u) && (canAccessPbiPage('p11_drivers', u) || canAccessPbiPage('p09_fuel', u) || canAccessPbiPage('p10_fleet', u));
     if (view === 'cashflow_analytics') return canViewView('cashflow', u) && canAccessPbiPage('p14_cashflow', u);
+    if (view === 'warehouse') return canViewView('expenses', u) || canViewView('raw', u);
     if (view === 'expenses_analytics') return canViewView('expenses', u) && canAccessPbiPage('p07_ap', u);
     if (view === 'workforce_map' || view === 'payroll_attendance' || view === 'payroll_allowances' || view === 'payroll_contracts') return canViewView('payroll', u);
     if (view === 'alert_rules') return canViewView('sentinels', u);
@@ -6813,7 +6824,7 @@
       if (!map.has(x.category)) map.set(x.category, new Set());
       if (x.subcategory) map.get(x.category).add(x.subcategory);
     });
-    ['Fuel', 'Repairs and Maintenance', 'Spare Parts', 'Oils', 'Tools', 'Office Supplies', 'Utilities', 'Licences and Fees', 'Transportation', 'Tips', 'Minor Equipment', 'Other Costs'].forEach(c => { if (!map.has(c)) map.set(c, new Set()); });
+    ['Fuel', 'Oils & Lubricants', 'Spare Parts', 'Repairs and Maintenance', 'Tools & Garage', 'Transport & Site Logistics', 'Staff & Social Security', 'Utilities & Telecom', 'Office & Facility', 'Insurance, Permits & Taxes', 'Capital Expenditures'].forEach(c => { if (!map.has(c)) map.set(c, new Set()); });
     const fIdx = getFreqIndex();
     const catFreq = fIdx.category;
     const subFreq = fIdx.subcategory;
@@ -14287,7 +14298,7 @@
     if (!e || e.voided || !String(e.equipment || '').trim()) return false;
     const cat = String(e.category || '').trim();
     const sub = String(e.subcategory || '').trim();
-    if (/^(Repairs and Maintenance|Spare Parts|Oils|Minor Equipment|Tools|Skilled Labor)$/i.test(cat)) {
+    if (/^(Repairs and Maintenance|Spare Parts|Oils|Oils & Lubricants|Minor Equipment|Tools|Tools & Garage|Skilled Labor)$/i.test(cat)) {
       return !/^(diesel|benzine?|gas|fuel|مازوت|بنزين)$/i.test(sub);
     }
     if (/^Fuel$/i.test(cat)) {
@@ -14315,8 +14326,8 @@
     const equipExpenses = filterRecords(SEED.records.expenses || [], { ignoreSearch: true }).filter(isFleetMaintExpense);
 
     const openDefects = liveDefectsAll.filter(isDefectOpen);
-    const openCrit = openDefects.filter(d => /Critical/i.test(d.severity || ''));
-    const openMod = openDefects.filter(d => /Moderate/i.test(d.severity || ''));
+    const openCrit = openDefects.filter(d => /Grave|Critical/i.test(d.severity || ''));
+    const openMod = openDefects.filter(d => /Mild|Moderate/i.test(d.severity || ''));
     const openMinor = openDefects.filter(d => /Minor/i.test(d.severity || ''));
     const inWorkshopDefects = openDefects.filter(d => /Workshop|Maintenance/i.test(d.status || ''));
 
@@ -14458,8 +14469,10 @@
     const mi = getMaintIndex();
     const uEntry = mi.byUnit.get(k);
 
-    const critCount = openDef.filter(d => /Critical/i.test(d.severity || '')).length;
-    const modCount = openDef.filter(d => /Moderate/i.test(d.severity || '')).length;
+    const graveCount = openDef.filter(d => /Grave/i.test(d.severity || '')).length;
+    const critCount = openDef.filter(d => /Grave|Critical/i.test(d.severity || '')).length;
+    const mildCount = openDef.filter(d => /Mild/i.test(d.severity || '')).length;
+    const modCount = openDef.filter(d => /Mild|Moderate/i.test(d.severity || '')).length;
     const minorCount = openDef.filter(d => /Minor/i.test(d.severity || '')).length;
     const inWs = openDef.some(d => /Workshop|Maintenance/i.test(d.status || ''));
 
@@ -14470,7 +14483,7 @@
     let severityRank = 5;
 
     if (critCount > 0) {
-      status = 'Critical — Down';
+      status = graveCount > 0 ? 'Grave - Critical Down' : 'Critical - Down';
       shortBadge = 'DOWN';
       badgeCls = 'badge-err';
       tone = 'crit';
@@ -14482,8 +14495,8 @@
       tone = 'warn';
       severityRank = 1;
     } else if (modCount > 0 || /defect/i.test(coEqStatus)) {
-      status = 'Needs Part Soon';
-      shortBadge = 'DEFECT';
+      status = mildCount > 0 ? 'Mild Warning · Schedule Repair' : 'Needs Part Soon';
+      shortBadge = mildCount > 0 ? 'MILD' : 'DEFECT';
       badgeCls = 'badge-warn';
       tone = 'warn';
       severityRank = 2;
@@ -14519,9 +14532,12 @@
       allDefects: allDef,
       openDefects: openDef,
       openCount: openDef.length,
+      graveCount,
       critCount,
+      mildCount,
       modCount,
       minorCount,
+      affectedParts: openDef.map(d => d.part_name || d.subsystem).filter(Boolean),
       resolvedCount: Math.max(0, allDef.length - openDef.length),
       parts: allParts,
       partMovements: allParts,
@@ -14534,6 +14550,461 @@
       expTotal: uEntry ? uEntry.expTotal : 0,
       latestOpenDefect: openDef[0] || null
     };
+  }
+
+  let _WAREHOUSE_IDX = null;
+  function getWarehouseIndex(coOpt) {
+    const scopeCo = coOpt ? String(coOpt).trim() : '';
+    const revKey = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${scopeCo || STATE.company}|${allowedCompanyNames().join(',')}`;
+    if (!scopeCo && _WAREHOUSE_IDX && _WAREHOUSE_IDX.revKey === revKey) return _WAREHOUSE_IDX;
+
+    const allowedCos = allowedCompanyNames();
+    const matchScope = r => {
+      if (!r || r.voided) return false;
+      const rc = String(r.company || '').trim();
+      if (rc && !allowedCos.includes(rc)) return false;
+      if (scopeCo) return !rc || norm(rc) === norm(scopeCo);
+      if (STATE.company && STATE.company !== 'manufacturing-group') {
+        if (String(STATE.company).startsWith('industry:')) {
+          const ind = String(STATE.company).slice(9);
+          const coMeta = getCompanyCatalog().find(c => norm(c.name) === norm(rc));
+          return !coMeta || coMeta.industry === ind;
+        }
+        const targetBu = COMPANY_BU_MATCH[STATE.company] || STATE.company;
+        return !rc || norm(rc) === norm(targetBu);
+      }
+      return true;
+    };
+
+    const byItem = new Map();
+    const rawMovements = [];
+    const ensureItem = (rawName, defaults = {}) => {
+      const cleanName = String(rawName || '').trim();
+      const k = norm(cleanName);
+      if (!k) return null;
+      let it = byItem.get(k);
+      if (!it) {
+        it = {
+          key: k,
+          item_name: cleanName,
+          category: defaults.category || 'Spare Parts',
+          uom: defaults.uom || 'Piece',
+          location: defaults.location || 'Main Warehouse',
+          min_stock: Number(defaults.min_stock || 0),
+          company: defaults.company || defaultEntryCompany(),
+          stockedInQty: 0,
+          stockedInCostUsd: 0,
+          usedInRepairsQty: 0,
+          usedInOilQty: 0,
+          adjustedOutQty: 0,
+          onHandQty: 0,
+          avgUnitCost: 0,
+          onHandValue: 0,
+          lastDate: '',
+          repairsUsedIn: [],
+          movements: []
+        };
+        byItem.set(k, it);
+      } else {
+        if (defaults.category && (!it.category || it.category === 'Spare Parts')) it.category = defaults.category;
+        if (defaults.uom && (!it.uom || it.uom === 'Piece')) it.uom = defaults.uom;
+        if (defaults.location && (!it.location || it.location === 'Main Warehouse')) it.location = defaults.location;
+        if (Number(defaults.min_stock || 0) > 0) it.min_stock = Number(defaults.min_stock);
+      }
+      return it;
+    };
+
+    // 1. +IN from Expense Item Tickets routed to Warehouse (excluding historical pre-consumed items)
+    (SEED.records.expense_items || []).forEach(r => {
+      if (!matchScope(r)) return;
+      if (r.historical_consumed) return;
+      if (!/^warehouse$/i.test(String(r.allocation_mode || '').trim())) return;
+      const qty = Number(r.qty != null ? r.qty : 1);
+      if (!(qty > 0)) return;
+      const uCost = Number(r.unit_cost != null ? r.unit_cost : (Number(r.line_total || 0) / qty));
+      const totCost = round2(Number(r.line_total != null ? r.line_total : qty * uCost));
+      const it = ensureItem(r.item_name, { category: r.category, uom: r.uom, location: r.warehouse_location, company: r.company });
+      if (!it) return;
+      it.stockedInQty = round2(it.stockedInQty + qty);
+      it.stockedInCostUsd = round2(it.stockedInCostUsd + totCost);
+      const dt = String(r.date || '').slice(0, 10);
+      if (dt > it.lastDate) it.lastDate = dt;
+      const mv = {
+        id: r.id || r.name,
+        rkey: 'expense_items',
+        date: dt,
+        company: r.company || 'WTC',
+        item_name: it.item_name,
+        category: r.category || it.category,
+        direction: 'IN',
+        movement_type: 'Expense Stored',
+        qty,
+        signedQty: qty,
+        uom: r.uom || it.uom,
+        unit_cost: round2(uCost),
+        total_cost: totCost,
+        location: r.warehouse_location || it.location,
+        equipment: '',
+        counterparty: r.supplier || '',
+        ref: r.expense_ref || r.name || '',
+        notes: r.notes || ''
+      };
+      it.movements.push(mv);
+      rawMovements.push(mv);
+    });
+
+    // 2. +IN / -OUT from Warehouse Stock Movements (Opening Stock, Adjustments, Direct Issues)
+    (SEED.records.warehouse_movements || []).forEach(r => {
+      if (!matchScope(r)) return;
+      const qty = Math.abs(Number(r.qty != null ? r.qty : 1));
+      if (!(qty > 0)) return;
+      const dir = /^OUT$/i.test(String(r.direction || '').trim()) ? 'OUT' : 'IN';
+      const uCost = Number(r.unit_cost || 0);
+      const totCost = round2(Number(r.total_cost != null && Number(r.total_cost) > 0 ? r.total_cost : qty * uCost));
+      const locVal = r.warehouse_location || r.location || '';
+      const moveVal = r.movement_type || r.move_type || (dir === 'IN' ? 'Opening Stock' : 'Stock Adjustment (-)');
+      const eqVal = r.equipment || r.target_equipment || '';
+      const it = ensureItem(r.item_name, { category: r.category, uom: r.uom, location: locVal, min_stock: r.min_stock, company: r.company });
+      if (!it) return;
+      if (dir === 'IN') {
+        it.stockedInQty = round2(it.stockedInQty + qty);
+        it.stockedInCostUsd = round2(it.stockedInCostUsd + totCost);
+      } else {
+        it.adjustedOutQty = round2(it.adjustedOutQty + qty);
+      }
+      const dt = String(r.date || '').slice(0, 10);
+      if (dt > it.lastDate) it.lastDate = dt;
+      const mv = {
+        id: r.id || r.name,
+        rkey: 'warehouse_movements',
+        date: dt,
+        company: r.company || 'WTC',
+        item_name: it.item_name,
+        category: r.category || it.category,
+        direction: dir,
+        movement_type: moveVal,
+        qty,
+        signedQty: dir === 'IN' ? qty : -qty,
+        uom: r.uom || it.uom,
+        unit_cost: round2(uCost),
+        total_cost: totCost,
+        location: locVal || it.location,
+        equipment: eqVal,
+        counterparty: '',
+        ref: r.name || '',
+        notes: r.notes || ''
+      };
+      it.movements.push(mv);
+      rawMovements.push(mv);
+    });
+
+    // 3. -OUT from Repair Items sourced from Warehouse
+    (SEED.records.repair_items || []).forEach(r => {
+      if (!matchScope(r)) return;
+      if (!/^warehouse$/i.test(String(r.source || '').trim())) return;
+      const qty = Math.abs(Number(r.qty != null ? r.qty : 1));
+      if (!(qty > 0)) return;
+      const it = ensureItem(r.item_name, { uom: r.uom, location: r.warehouse_location, company: r.company });
+      if (!it) return;
+      it.usedInRepairsQty = round2(it.usedInRepairsQty + qty);
+      const dt = String(r.date || '').slice(0, 10);
+      if (dt > it.lastDate) it.lastDate = dt;
+      it.repairsUsedIn.push({
+        id: r.repair_id || r.id,
+        repair_ref: r.repair_ref || r.name || 'REP',
+        date: dt,
+        company: r.company || 'WTC',
+        equipment: r.equipment || '',
+        qty,
+        uom: r.uom || it.uom
+      });
+      const uCost = Number(r.unit_cost || 0);
+      const totCost = round2(Number(r.line_total != null ? r.line_total : qty * uCost));
+      const mv = {
+        id: r.id || r.name,
+        rkey: 'repair_items',
+        date: dt,
+        company: r.company || 'WTC',
+        item_name: it.item_name,
+        category: it.category,
+        direction: 'OUT',
+        movement_type: 'Used in Repair',
+        qty,
+        signedQty: -qty,
+        uom: r.uom || it.uom,
+        unit_cost: round2(uCost),
+        total_cost: totCost,
+        location: r.warehouse_location || it.location,
+        equipment: r.equipment || '',
+        counterparty: '',
+        ref: r.repair_ref || r.name || '',
+        notes: r.notes || ''
+      };
+      it.movements.push(mv);
+      rawMovements.push(mv);
+    });
+
+    // 4. -OUT from Oil & Service Logs sourced from Warehouse
+    (SEED.records.equipment_oil_logs || []).forEach(r => {
+      if (!matchScope(r)) return;
+      if (!/^warehouse$/i.test(String(r.source || '').trim())) return;
+      const qty = Math.abs(Number(r.qty != null ? r.qty : 1));
+      if (!(qty > 0)) return;
+      const it = ensureItem(r.oil_type || 'Engine Oil 15W-40', { category: 'Oils & Lubricants', uom: r.uom || 'Litre', company: r.company });
+      if (!it) return;
+      it.usedInOilQty = round2(it.usedInOilQty + qty);
+      const dt = String(r.date || '').slice(0, 10);
+      if (dt > it.lastDate) it.lastDate = dt;
+      const mv = {
+        id: r.id || r.name,
+        rkey: 'equipment_oil_logs',
+        date: dt,
+        company: r.company || 'WTC',
+        item_name: it.item_name,
+        category: 'Oils & Lubricants',
+        direction: 'OUT',
+        movement_type: 'Used in Oil Change',
+        qty,
+        signedQty: -qty,
+        uom: r.uom || 'Litre',
+        unit_cost: round2(qty > 0 ? Number(r.cost_usd || 0) / qty : 0),
+        total_cost: round2(Number(r.cost_usd || 0)),
+        location: it.location,
+        equipment: r.equipment || '',
+        counterparty: '',
+        ref: r.name || '',
+        notes: r.notes || ''
+      };
+      it.movements.push(mv);
+      rawMovements.push(mv);
+    });
+
+    let totalSkusInStock = 0;
+    let totalUnitsOnHand = 0;
+    let totalValueUsd = 0;
+    let totalStockedInQty = 0;
+    let totalUsedInRepairsQty = 0;
+    let lowStockCount = 0;
+
+    const items = Array.from(byItem.values()).map(it => {
+      it.movements.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || (a.direction === 'IN' ? -1 : 1));
+      let running = 0;
+      it.movements.forEach(m => {
+        running = round2(running + m.signedQty);
+        m.balanceAfter = running;
+      });
+      it.movements.reverse();
+      it.onHandQty = round2(it.stockedInQty - it.usedInRepairsQty - it.usedInOilQty - it.adjustedOutQty);
+      it.avgUnitCost = it.stockedInQty > 0 ? round2(it.stockedInCostUsd / it.stockedInQty) : 0;
+      it.onHandValue = round2(Math.max(0, it.onHandQty) * it.avgUnitCost);
+      it.isLowStock = it.min_stock > 0 && it.onHandQty <= it.min_stock;
+      if (it.onHandQty > 0.001) {
+        totalSkusInStock += 1;
+        totalUnitsOnHand = round2(totalUnitsOnHand + it.onHandQty);
+        totalValueUsd = round2(totalValueUsd + it.onHandValue);
+      }
+      if (it.isLowStock) lowStockCount += 1;
+      totalStockedInQty = round2(totalStockedInQty + it.stockedInQty);
+      totalUsedInRepairsQty = round2(totalUsedInRepairsQty + it.usedInRepairsQty);
+      return it;
+    }).sort((a, b) => (b.onHandQty > 0 ? 1 : 0) - (a.onHandQty > 0 ? 1 : 0) || b.onHandValue - a.onHandValue || a.item_name.localeCompare(b.item_name));
+
+    rawMovements.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const byKey = Object.fromEntries(byItem.entries());
+    const usedInRepairsMovementCount = rawMovements.filter(m => m.rkey === 'repair_items').length;
+
+    const out = {
+      revKey,
+      items,
+      byItem,
+      byKey,
+      movements: rawMovements,
+      totalSkus: items.length,
+      totalSkusInStock,
+      totalUnitsOnHand,
+      totalValueUsd,
+      totalStockedInQty,
+      totalUsedInRepairsQty,
+      usedInRepairsMovementCount,
+      lowStockCount
+    };
+    if (!scopeCo) _WAREHOUSE_IDX = out;
+    return out;
+  }
+
+  function warehouseCatalogItemNames(coOpt) {
+    const wh = getWarehouseIndex(coOpt);
+    const names = wh.items.map(it => it.item_name);
+    (SEED.records.expense_items || []).forEach(r => {
+      if (r && !r.voided && r.item_name) names.push(r.item_name);
+    });
+    ['Engine Oil 15W-40', 'Hydraulic Oil 68', 'Gear / Transmission Oil 90', 'Fuel Filter', 'Engine Oil Filter', 'Air Filter', 'Bearing (Roulement)', 'Conveyor / Drive Belt', 'High-Pressure Hydraulic Hose', 'Heavy-Duty Truck Battery', 'Heavy Truck / Loader Tire', 'Alternator (Dynamo)', 'Starter Motor (March)'].forEach(n => names.push(n));
+    return uniqSorted(names);
+  }
+
+  let _OIL_SERVICE_IDX = null;
+  function getOilServiceIndex(coOpt) {
+    const scopeCo = coOpt ? String(coOpt).trim() : '';
+    const today = todayISO();
+    const revKey = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${scopeCo || STATE.company}|${today}|${allowedCompanyNames().join(',')}`;
+    if (!scopeCo && _OIL_SERVICE_IDX && _OIL_SERVICE_IDX.revKey === revKey) return _OIL_SERVICE_IDX;
+
+    const allowedCos = allowedCompanyNames();
+    const matchScope = r => {
+      if (!r || r.voided) return false;
+      const rc = String(r.company || '').trim();
+      if (rc && !allowedCos.includes(rc)) return false;
+      if (scopeCo) return !rc || norm(rc) === norm(scopeCo);
+      if (STATE.company && STATE.company !== 'manufacturing-group' && !String(STATE.company).startsWith('industry:')) {
+        const targetBu = COMPANY_BU_MATCH[STATE.company] || STATE.company;
+        return !rc || norm(rc) === norm(targetBu);
+      }
+      return true;
+    };
+
+    // Latest meter reading per equipment across fuel_intakes, equipment_repairs, and equipment_oil_logs
+    const metersByEq = new Map();
+    const bumpMeter = (eqRaw, dtRaw, hrsRaw, odoRaw, coRaw) => {
+      const k = norm(eqRaw);
+      if (!k) return;
+      const dt = String(dtRaw || '').slice(0, 10);
+      let m = metersByEq.get(k);
+      if (!m) {
+        m = { equipment: String(eqRaw).trim(), company: coRaw || 'WTC', hours: null, hoursDate: '', odometer: null, odoDate: '' };
+        metersByEq.set(k, m);
+      }
+      const hrs = Number(hrsRaw);
+      if (Number.isFinite(hrs) && hrs > 0 && (m.hours == null || dt >= m.hoursDate || hrs > m.hours)) {
+        m.hours = hrs;
+        m.hoursDate = dt;
+      }
+      const odo = Number(odoRaw);
+      if (Number.isFinite(odo) && odo > 0 && (m.odometer == null || dt >= m.odoDate || odo > m.odometer)) {
+        m.odometer = odo;
+        m.km = odo;
+        m.odoDate = dt;
+      }
+    };
+
+    (SEED.records.fuel_intakes || []).forEach(f => {
+      if (f && !f.voided && f.equipment) bumpMeter(f.equipment, f.date, f.hours, f.odometer, f.company);
+    });
+    (SEED.records.equipment_repairs || []).forEach(r => {
+      if (r && !r.voided && r.equipment && r.meter_reading) {
+        const mv = Number(r.meter_reading);
+        if (mv > 50000) bumpMeter(r.equipment, r.date, null, mv, r.company);
+        else bumpMeter(r.equipment, r.date, mv, null, r.company);
+      }
+    });
+    (SEED.records.equipment_oil_logs || []).forEach(o => {
+      if (o && !o.voided && o.equipment) bumpMeter(o.equipment, o.date, o.hours_reading, o.odometer_km, o.company);
+    });
+
+    const allLogs = (SEED.records.equipment_oil_logs || [])
+      .filter(matchScope)
+      .slice()
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+    const latestByEqOil = new Map();
+    allLogs.forEach(log => {
+      if (/top[-\s]*up/i.test(String(log.service_action || ''))) return;
+      const key = `${norm(log.equipment)}|${norm(log.oil_type || 'Engine Oil 15W-40')}`;
+      if (!latestByEqOil.has(key)) latestByEqOil.set(key, log);
+    });
+
+    const todayMs = Date.parse(today + 'T00:00:00Z') || Date.now();
+    const schedules = [];
+    const byUnit = new Map();
+    let overdueCount = 0;
+    let dueSoonCount = 0;
+    let okCount = 0;
+
+    latestByEqOil.forEach(log => {
+      const eqKey = norm(log.equipment);
+      const m = metersByEq.get(eqKey) || {};
+      const svcDate = String(log.date || '').slice(0, 10);
+      const svcMs = svcDate ? Date.parse(svcDate + 'T00:00:00Z') : todayMs;
+      const daysElapsed = Number.isFinite(svcMs) ? Math.max(0, Math.round((todayMs - svcMs) / 86400000)) : 0;
+
+      const svcHrs = log.hours_reading != null && Number(log.hours_reading) > 0 ? Number(log.hours_reading) : null;
+      const curHrs = m.hours != null ? m.hours : svcHrs;
+      const hrsWorked = (svcHrs != null && curHrs != null) ? Math.max(0, round2(curHrs - svcHrs)) : null;
+      const intHrs = Number(log.interval_hours || 0) > 0 ? Number(log.interval_hours) : null;
+      const remHrs = (intHrs != null && hrsWorked != null) ? round2(intHrs - hrsWorked) : null;
+      const pctHrs = (intHrs != null && hrsWorked != null) ? (hrsWorked / intHrs) * 100 : 0;
+
+      const svcOdo = log.odometer_km != null && Number(log.odometer_km) > 0 ? Number(log.odometer_km) : null;
+      const curOdo = m.odometer != null ? m.odometer : svcOdo;
+      const kmDriven = (svcOdo != null && curOdo != null) ? Math.max(0, round2(curOdo - svcOdo)) : null;
+      const intKm = Number(log.interval_km || 0) > 0 ? Number(log.interval_km) : null;
+      const remKm = (intKm != null && kmDriven != null) ? round2(intKm - kmDriven) : null;
+      const pctKm = (intKm != null && kmDriven != null) ? (kmDriven / intKm) * 100 : 0;
+
+      const intDays = Number(log.interval_days || 0) > 0 ? Number(log.interval_days) : null;
+      const remDays = intDays != null ? Math.round(intDays - daysElapsed) : null;
+      const pctDays = intDays != null ? (daysElapsed / intDays) * 100 : 0;
+
+      const maxPct = Math.max(pctHrs, pctKm, pctDays);
+      let status = 'OK';
+      let badgeCls = 'badge-ok';
+      let rank = 2;
+      if ((remHrs != null && remHrs <= 0) || (remKm != null && remKm <= 0) || (remDays != null && remDays <= 0) || maxPct >= 100) {
+        status = 'OVERDUE';
+        badgeCls = 'badge-err';
+        rank = 0;
+        overdueCount += 1;
+      } else if (maxPct >= 80) {
+        status = 'DUE SOON';
+        badgeCls = 'badge-warn';
+        rank = 1;
+        dueSoonCount += 1;
+      } else {
+        okCount += 1;
+      }
+
+      const trigParts = [];
+      if (hrsWorked != null && intHrs != null) trigParts.push(`${fmtNum(hrsWorked, 0)}/${fmtNum(intHrs, 0)} h (${remHrs >= 0 ? fmtNum(remHrs, 0) + ' h left' : fmtNum(Math.abs(remHrs), 0) + ' h overdue'})`);
+      if (kmDriven != null && intKm != null) trigParts.push(`${fmtNum(kmDriven, 0)}/${fmtNum(intKm, 0)} km (${remKm >= 0 ? fmtNum(remKm, 0) + ' km left' : fmtNum(Math.abs(remKm), 0) + ' km overdue'})`);
+      if (intDays != null) trigParts.push(`${fmtNum(daysElapsed, 0)}/${fmtNum(intDays, 0)} d (${remDays >= 0 ? fmtNum(remDays, 0) + ' d left' : fmtNum(Math.abs(remDays), 0) + ' d overdue'})`);
+
+      const item = {
+        id: log.id || log.name,
+        log,
+        company: log.company || m.company || 'WTC',
+        equipment: log.equipment,
+        oil_type: log.oil_type || 'Engine Oil 15W-40',
+        last_date: svcDate,
+        qty: Number(log.qty || 0),
+        uom: log.uom || 'Litre',
+        source: log.source || 'Plant Lube Bay',
+        svcHrs, curHrs, hrsWorked, intHrs, remHrs, nextDueHrs: (svcHrs != null && intHrs != null) ? round2(svcHrs + intHrs) : null,
+        svcOdo, curOdo, kmDriven, intKm, remKm, nextDueKm: (svcOdo != null && intKm != null) ? round2(svcOdo + intKm) : null,
+        daysElapsed, intDays, remDays,
+        maxPct: round2(maxPct),
+        trigger_summary: trigParts.join(' · ') || 'Scheduled',
+        status,
+        badgeCls,
+        rank
+      };
+      schedules.push(item);
+      if (!byUnit.has(eqKey)) byUnit.set(eqKey, []);
+      byUnit.get(eqKey).push(item);
+    });
+
+    schedules.sort((a, b) => a.rank - b.rank || b.maxPct - a.maxPct || a.equipment.localeCompare(b.equipment));
+
+    const out = {
+      revKey,
+      logs: allLogs,
+      schedules,
+      byUnit,
+      metersByEq,
+      overdueCount,
+      dueSoonCount,
+      okCount
+    };
+    if (!scopeCo) _OIL_SERVICE_IDX = out;
+    return out;
   }
 
   function renderEquipmentHealthBadge(unitName, coOpt, compact = false) {
@@ -14747,26 +15218,57 @@
 
   function renderFleetMaintenance() {
     const mi = getMaintIndex();
+    const oilIdx = getOilServiceIndex();
+    const whIdx = getWarehouseIndex();
     const q = String(STATE.search || '').trim().toLowerCase();
     const matchQ = vals => !q || vals.filter(Boolean).join(' ').toLowerCase().includes(q);
 
-    // 1. Scoped Equipment Defects Register
+    // 1. Scoped Equipment Warnings / Defects Register (Mild vs Grave + Affected Equipment Part)
     const defBase = mi.periodDefects.filter(d => matchQ([d.name, d.equipment, d.subsystem, d.part_name, d.severity, d.status, d.reported_by, d.description, d.company]));
     const defOpenCnt = defBase.filter(isDefectOpen).length;
-    const defCritCnt = defBase.filter(d => isDefectOpen(d) && /Critical/i.test(d.severity || '')).length;
-    const defModCnt = defBase.filter(d => isDefectOpen(d) && /Moderate/i.test(d.severity || '')).length;
+    const defCritCnt = defBase.filter(d => isDefectOpen(d) && /Grave|Critical/i.test(d.severity || '')).length;
+    const defModCnt = defBase.filter(d => isDefectOpen(d) && /Mild|Moderate/i.test(d.severity || '')).length;
     const defWsCnt = defBase.filter(d => /Workshop|Maintenance/i.test(d.status || '')).length;
     const defResCnt = defBase.filter(d => !isDefectOpen(d)).length;
 
     const defFiltered = sortRows(defBase.filter(d => {
       if (STATE.chipFilter === 'open') return isDefectOpen(d);
-      if (STATE.chipFilter === 'critical') return isDefectOpen(d) && /Critical/i.test(d.severity || '');
-      if (STATE.chipFilter === 'moderate') return isDefectOpen(d) && /Moderate/i.test(d.severity || '');
+      if (STATE.chipFilter === 'critical') return isDefectOpen(d) && /Grave|Critical/i.test(d.severity || '');
+      if (STATE.chipFilter === 'moderate') return isDefectOpen(d) && /Mild|Moderate/i.test(d.severity || '');
       if (STATE.chipFilter === 'workshop') return /Workshop|Maintenance/i.test(d.status || '');
       if (STATE.chipFilter === 'resolved') return !isDefectOpen(d);
       return true;
     }), 'defects', 'date', 'desc');
     const shownDefects = defFiltered.slice(0, shownCount('defects'));
+
+    // 1B. Scoped Equipment Repairs Register (Warehouse Only | Partially Warehouse + Outside | Outside Only)
+    const repBase = filterRecords(SEED.records.equipment_repairs || [], { ignoreSearch: true })
+      .filter(r => matchQ([r.name, r.equipment, r.subsystem, r.repair_source, r.items_summary, r.supplier, r.defect_ref, r.status, r.company]));
+    const repSrcF = STATE.repSrcFilter || 'all';
+    const repFiltered = sortRows(repBase.filter(r => {
+      const rs = String(r.repair_source || '');
+      if (repSrcF === 'warehouse') return /^Warehouse Only/i.test(rs);
+      if (repSrcF === 'partial') return /Partially/i.test(rs);
+      if (repSrcF === 'outside') return /^Outside Only/i.test(rs);
+      return true;
+    }), 'repairs', 'date', 'desc');
+    const shownRepairs = repFiltered.slice(0, shownCount('repairs'));
+    const repWhUsdSum = repFiltered.reduce((a, r) => a + Number(r.warehouse_parts_usd || 0), 0);
+    const repOutUsdSum = repFiltered.reduce((a, r) => a + Number(r.outside_parts_usd || 0) + Number(r.external_labor_usd || 0), 0);
+    const repTotalUsdSum = repFiltered.reduce((a, r) => a + Number(r.total_cost_usd || 0), 0);
+
+    // 1C. Preventive Oil & Service Schedules (Hours / Km / Days)
+    const oilBase = oilIdx.schedules.filter(s => matchQ([s.equipment, s.company, s.oil_type, s.status, s.source, s.trigger_summary]));
+    const oilF = STATE.oilFilter || 'all';
+    const oilFiltered = sortRows(oilBase.filter(s => {
+      if (oilF === 'overdue') return s.status === 'OVERDUE';
+      if (oilF === 'due_soon') return s.status === 'DUE SOON';
+      if (oilF === '15w40') return /15W-40|Engine/i.test(s.oil_type || '');
+      if (oilF === 'hyd68') return /Hydraulic/i.test(s.oil_type || '');
+      if (oilF === 'gear') return /Gear|ATF|Differential|Axle/i.test(s.oil_type || '');
+      return true;
+    }), 'oilsched', 'rank', 'asc');
+    const shownOil = oilFiltered.slice(0, shownCount('oilsched'));
 
     // 2. Scoped Changed / Removed Parts Custody & Disposition Ledger
     const partBase = mi.periodParts.filter(p => matchQ([p.name, p.equipment, p.part_name, p.part_serial, p.subsystem, p.action_type, p.condition, p.removed_disposition, p.storage_location, p.vendor_or_buyer, p.defect_ref, p.company]));
@@ -14851,27 +15353,33 @@
     const issueUnitsCount = boardAll.filter(u => u.severityRank <= 3).length;
     const healthyUnitsCount = boardAll.filter(u => u.severityRank === 5).length;
     const readyPct = Math.round(((totalUnits - boardAll.filter(u => u.severityRank <= 1).length) / totalUnits) * 100);
-    const notifCompliancePct = mi.partTotalCount > 0 ? Math.round((mi.notifiedParts.length / mi.partTotalCount) * 100) : 100;
 
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+    const rChip = (key, label) => `<button type="button" class="filter-chip ${repSrcF === key ? 'active' : ''}" data-repsrc-chip="${esc(key)}">${label}</button>`;
+    const oChip = (key, label) => `<button type="button" class="filter-chip ${oilF === key ? 'active' : ''}" data-oil-chip="${esc(key)}">${label}</button>`;
     const pChip = (key, label) => `<button type="button" class="filter-chip ${pDisp === key ? 'active' : ''}" data-partdisp-chip="${esc(key)}">${label}</button>`;
     const uChip = (key, label) => `<button type="button" class="filter-chip ${uFilter === key ? 'active' : ''}" data-unithealth-chip="${esc(key)}">${label}</button>`;
     const canPostMaint = canEnterForm('defect');
+    const canPostRepair = canEnterForm('repair');
+    const canPostOil = canEnterForm('oillog');
 
     const partOutlaySum = partFiltered.reduce((a, p) => a + Number(p.new_part_cost || 0) + Number(p.repair_cost || 0), 0);
     const partSaleSum = partFiltered.reduce((a, p) => a + Number(p.sale_proceeds || 0), 0);
     const partNetSum = partOutlaySum - partSaleSum;
+    const oilCompliancePct = oilIdx.schedules.length > 0
+      ? Math.round(((oilIdx.schedules.length - oilIdx.overdueCount) / oilIdx.schedules.length) * 100)
+      : 100;
 
     return `
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
-          <div class="cockpit-eyebrow">LIVE TRUCK &amp; MACHINERY HEALTH, PRE-REPLACEMENT DEFECT NOTICES &amp; REMOVED PARTS CUSTODY</div>
-          <div class="cockpit-title">Defects &amp; Parts</div>
+          <div class="cockpit-eyebrow">EQUIPMENT REPAIRS, GRAVE / MILD PART WARNINGS &amp; PREVENTIVE OIL SCHEDULES</div>
+          <div class="cockpit-title">Repairs, Warnings &amp; Oil Logs</div>
         </div>
         <div class="cockpit-pills insight-grid">
           ${insightCard({
             label: 'Fleet Operational Readiness',
-            badge: mi.openCritCount > 0 ? `${fmtNum(mi.openCritCount)} Critical Down` : `${fmtNum(healthyUnitsCount)}/${fmtNum(boardAll.length)} Healthy`,
+            badge: mi.openCritCount > 0 ? `${fmtNum(mi.openCritCount)} Grave Down` : `${fmtNum(healthyUnitsCount)}/${fmtNum(boardAll.length)} Healthy`,
             badgeCls: mi.openCritCount > 0 ? 'crit' : (issueUnitsCount > 0 ? 'warn' : 'emerald'),
             val: `${readyPct}% <small>Ready</small>`,
             valCls: mi.openCritCount > 0 ? 'amber' : 'emerald',
@@ -14881,57 +15389,60 @@
             tone: mi.openCritCount > 0 ? 'amber' : 'emerald'
           })}
           ${insightCard({
-            label: 'Open Defects & Pre-Notices',
-            badge: mi.openCount > 0 ? `${fmtNum(mi.openModCount)} Needs Part · ${fmtNum(mi.inWorkshopCount)} Workshop` : '0 Open Defects',
+            label: 'Equipment Warnings (Grave vs Mild)',
+            badge: mi.openCount > 0 ? `${fmtNum(mi.openCritCount)} Grave · ${fmtNum(mi.openModCount)} Mild` : '0 Open Warnings',
             badgeCls: mi.openCritCount > 0 ? 'crit' : (mi.openCount > 0 ? 'warn' : 'good'),
             val: `${fmtNum(mi.openCount)} <small>Open</small>`,
             valCls: mi.openCount > 0 ? 'brass' : 'emerald',
             pct: mi.liveDefectsAll.length > 0 ? Math.round(((mi.liveDefectsAll.length - mi.openCount) / mi.liveDefectsAll.length) * 100) : 100,
-            sub: `Logged before part failure · <b>${fmtNum(mi.liveDefectsAll.length - mi.openCount)}</b> resolved to date`,
+            sub: `Part-specific warnings · <b>${fmtNum(mi.liveDefectsAll.length - mi.openCount)}</b> resolved to date`,
             tone: 'brass'
           })}
           ${insightCard({
-            label: 'Removed & Changed Parts Custody',
-            badge: `${fmtNum(mi.partsStored.length)} Stored · ${fmtNum(mi.partsInMaint.length)} Maint · ${fmtNum(mi.partsSold.length)} Sold`,
+            label: 'Equipment Repairs & Warehouse',
+            badge: `${fmtNum(whIdx.totalSkusInStock)} Warehouse SKUs (${fmtUSDk(whIdx.totalValueUsd)})`,
             badgeCls: 'brass',
-            val: `<span class="insight-drill" data-scroll-panel="partsLifecyclePanel">${fmtNum(mi.partTotalCount)} <small>Pieces ↘</small></span>`,
+            val: `<span class="insight-drill" data-scroll-panel="repairsPanel">${fmtNum(repBase.length)} <small>Repairs</small></span>`,
             valCls: 'brass',
-            pct: mi.partTotalCount > 0 ? Math.min(100, Math.max(20, Math.round(((mi.partsStored.length + mi.partsInstalled.length) / mi.partTotalCount) * 100))) : 100,
-            sub: `Outlay <b>${fmtUSD(mi.totalNewCost + mi.totalRepairCost, 0)}</b> · Used/Scrap Sold <b>${fmtUSD(mi.totalSaleProceeds, 0)}</b>`,
+            pct: repBase.length > 0 ? 85 : 100,
+            sub: `Repair Cost <b>${fmtUSD(repTotalUsdSum, 0)}</b> · Warehouse Used <b>${fmtUSD(repWhUsdSum, 0)}</b>`,
             tone: 'steel'
           })}
           ${insightCard({
-            label: 'Pre-Defect Notice Compliance',
-            badge: mi.unnotifiedParts.length > 0 ? `${fmtNum(mi.unnotifiedParts.length)} Unnotified` : '100% Pre-Notified',
-            badgeCls: mi.unnotifiedParts.length > 0 ? 'warn' : 'emerald',
-            val: `${notifCompliancePct}% <small>Verified</small>`,
-            valCls: mi.unnotifiedParts.length > 0 ? 'amber' : 'emerald',
-            pct: notifCompliancePct,
-            pct2: 100 - notifCompliancePct,
-            sub: `Fleet spare/repair vouchers: <span class="insight-drill" data-scroll-panel="fleetPartsExpPanel"><b>${fmtNum(mi.equipExpenses.length)}</b> (${fmtUSDk(expSum)}) ↘</span>`,
-            tone: mi.unnotifiedParts.length > 0 ? 'amber' : 'emerald'
+            label: 'Preventive Oil Service Schedule',
+            badge: oilIdx.overdueCount > 0 ? `${fmtNum(oilIdx.overdueCount)} Overdue` : (oilIdx.dueSoonCount > 0 ? `${fmtNum(oilIdx.dueSoonCount)} Due Soon` : `${fmtNum(oilIdx.okCount)} On Schedule`),
+            badgeCls: oilIdx.overdueCount > 0 ? 'crit' : (oilIdx.dueSoonCount > 0 ? 'warn' : 'emerald'),
+            val: `<span class="insight-drill" data-scroll-panel="oilSchedulePanel">${oilCompliancePct}% <small>On Time</small></span>`,
+            valCls: oilIdx.overdueCount > 0 ? 'amber' : 'emerald',
+            pct: oilCompliancePct,
+            pct2: 100 - oilCompliancePct,
+            sub: `Tracked by Hours, Km &amp; Days across <b>${fmtNum(oilIdx.schedules.length)}</b> active schedules`,
+            tone: oilIdx.overdueCount > 0 ? 'amber' : 'emerald'
           })}
         </div>
       </div>
 
-      <!-- 1st Panel: Primary Equipment & Truck Defect Pre-Notification Register -->
+      <!-- 1st Panel: Equipment Issue Warnings (Grave vs Mild + Affected Equipment Part) -->
       <div class="panel-card" id="defectsPanel">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search defect ref, unit, subsystem, part, symptom...')}
+            ${searchBox('Search warning, unit, affected part, repair, oil type...')}
             <div class="chip-bar">
-              ${chip('all', `All Defects (${defBase.length})`)}
+              ${chip('all', `All Warnings (${defBase.length})`)}
               ${chip('open', `Open (${defOpenCnt})`)}
-              ${chip('critical', `Critical — Down (${defCritCnt})`)}
-              ${chip('moderate', `Needs Part Soon (${defModCnt})`)}
+              ${chip('critical', `Grave - Serious (${defCritCnt})`)}
+              ${chip('moderate', `Mild Warning (${defModCnt})`)}
               ${chip('workshop', `In Workshop (${defWsCnt})`)}
               ${chip('resolved', `Resolved (${defResCnt})`)}
             </div>
           </div>
-          <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
-            ${exportBtn('defectsPanel', 'Equipment_Defects')}
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="warehouse">${ic('warehouse')} Warehouse</button>
+            ${exportBtn('defectsPanel', 'Equipment_Warnings')}
+            ${canPostOil ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="oillog">${ic('oillog')} + Log Oil</button>` : ''}
+            ${canPostRepair ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="repair">${ic('repair')} + Log Repair</button>` : ''}
             ${canPostMaint ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="partlog">${ic('cog')} + Log Part Change</button>` : ''}
-            ${canPostMaint ? `<button type="button" class="btn btn-primary" data-open-modal="defect">+ Report Defect</button>` : ''}
+            ${canPostMaint ? `<button type="button" class="btn btn-primary" data-open-modal="defect">+ Report Warning</button>` : ''}
           </div>
         </div>
         ${renderColFilterBar('defects')}
@@ -14939,37 +15450,43 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('defects', 'Defect Ref', 'name')}${th('defects', 'Date', 'date')}${th('defects', 'Co.', 'company')}${th('defects', 'Unit', 'equipment')}
-                ${th('defects', 'Subsystem & Part', 'subsystem')}${th('defects', 'Severity', 'severity')}${th('defects', 'Status', 'status')}${th('defects', 'Symptom & Action', 'description')}
+                ${th('defects', 'Warning Ref', 'name')}${th('defects', 'Date', 'date')}${th('defects', 'Co.', 'company')}${th('defects', 'Unit', 'equipment')}
+                ${th('defects', 'Affected Part & Area', 'part_name')}${th('defects', 'Warning Label', 'severity')}${th('defects', 'Status', 'status')}${th('defects', 'Issue & Action', 'description')}
               </tr>
             </thead>
             <tbody>
               ${shownDefects.map(d => {
                 const open = isDefectOpen(d);
-                const sevCls = /Critical/i.test(d.severity || '') ? 'badge-err' : (/Moderate/i.test(d.severity || '') ? 'badge-warn' : 'badge-info');
+                const isGrave = /Grave|Critical/i.test(d.severity || '');
+                const isMild = /Mild|Moderate/i.test(d.severity || '');
+                const sevCls = isGrave ? 'badge-err' : (isMild ? 'badge-warn' : 'badge-info');
                 const stCls = !open ? 'badge-ok' : (/Workshop/i.test(d.status || '') ? 'badge-warn' : 'badge-brass');
-                const sevShort = /Critical/i.test(d.severity || '') ? 'Critical — Down' : (/Moderate/i.test(d.severity || '') ? 'Needs Part Soon' : 'Minor — Monitor');
+                const sevShort = isGrave ? 'Grave - Serious Issue' : (isMild ? 'Mild Warning' : 'Mild - Monitor');
+                const stClean = String(d.status || 'Open - Warning Reported').replace(/—/g, '-');
+                const partPrimary = d.part_name || d.subsystem || 'General';
+                const subNote = d.part_name && d.subsystem ? d.subsystem : '';
                 return `
                   <tr class="rrow" data-rkey="equipment_defects" data-rid="${esc(d.id || d.name)}">
                     <td class="mono"><strong>${esc(d.name || d.id)}</strong>${appCell(d, 'equipment_defects')}</td>
                     <td class="mono">${esc(fmtDateDMY(d.date))}</td>
                     <td>${coBadge(d.company)}</td>
                     <td class="mono">${relLink('equipment', d.equipment, d.equipment, true)}</td>
-                    <td style="max-width:190px;overflow:hidden;text-overflow:ellipsis"><strong>${esc(d.subsystem || 'General')}</strong>${d.part_name ? ` · <span class="mu">${esc(d.part_name)}</span>` : ''}</td>
+                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis"><strong>${esc(partPrimary)}</strong>${subNote ? ` · <span class="mu">${esc(subNote)}</span>` : ''}</td>
                     <td><span class="badge ${sevCls}">${esc(sevShort)}</span></td>
-                    <td><span class="badge ${stCls}">${esc(d.status || 'Open — Defect Reported')}</span>${d.linked_part_log ? ` ${relLink('part_movements', d.linked_part_log, d.linked_part_log, true)}` : ''}</td>
-                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis">
-                      <span title="${esc(d.description || '')}">${esc(d.description || '—')}</span>
-                      ${open && canPostMaint ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px;margin-left:6px" data-open-modal="partlog" data-prefill-co="${esc(d.company || '')}" data-prefill-eq="${esc(d.equipment || '')}" data-prefill-def="${esc(d.name || d.id)}" data-prefill-part="${esc(d.part_name || '')}" data-prefill-sub="${esc(d.subsystem || '')}">+ Change Part</button>` : ''}
+                    <td><span class="badge ${stCls}">${esc(stClean)}</span>${d.linked_part_log ? ` ${/^REP-/i.test(d.linked_part_log) ? relLink('equipment_repairs', d.linked_part_log, d.linked_part_log, true) : relLink('part_movements', d.linked_part_log, d.linked_part_log, true)}` : ''}</td>
+                    <td style="max-width:270px;overflow:hidden;text-overflow:ellipsis">
+                      <span>${esc(d.description || 'N/A')}</span>
+                      ${open && canPostRepair ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px;margin-left:6px" data-open-modal="repair" data-prefill-co="${esc(d.company || '')}" data-prefill-eq="${esc(d.equipment || '')}" data-prefill-def="${esc(d.name || d.id)}" data-prefill-part="${esc(d.part_name || '')}" data-prefill-sub="${esc(d.subsystem || '')}">+ Repair</button>` : ''}
+                      ${open && canPostMaint ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px;margin-left:4px" data-open-modal="partlog" data-prefill-co="${esc(d.company || '')}" data-prefill-eq="${esc(d.equipment || '')}" data-prefill-def="${esc(d.name || d.id)}" data-prefill-part="${esc(d.part_name || '')}" data-prefill-sub="${esc(d.subsystem || '')}">+ Change Part</button>` : ''}
                     </td>
                   </tr>
                 `;
-              }).join('') || emptyRow(8, 'No equipment defects logged in this scope. Click "+ Report Defect" as soon as a truck or machine shows wear or a fault so future part changes are pre-notified.')}
+              }).join('') || emptyRow(8, 'No equipment warnings logged in this scope. Click "+ Report Warning" whenever an equipment part needs attention (Mild or Grave).')}
               ${showMoreRow('defects', defFiltered.length, 8)}
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="5"><b>TOTAL (${fmtNum(defFiltered.length)} DEFECTS · ${fmtNum(defOpenCnt)} OPEN)</b></td>
+                <td colspan="5"><b>TOTAL (${fmtNum(defFiltered.length)} WARNINGS · ${fmtNum(defOpenCnt)} OPEN)</b></td>
                 <td colspan="3"></td>
               </tr>
             </tfoot>
@@ -14987,7 +15504,128 @@
           })
         : ''}
 
-      <!-- 2nd Panel: Changed & Removed Parts Custody & Disposition Ledger -->
+      <!-- Equipment Repairs & Warehouse / Outside Items Used -->
+      <div class="panel-card" id="repairsPanel" style="margin-bottom:14px">
+        <div class="panel-head">
+          <div class="panel-title"><span>EQUIPMENT REPAIRS &amp; WAREHOUSE / OUTSIDE ITEMS USED (${fmtNum(repFiltered.length)} REPAIRS)</span></div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+            <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="warehouse">${ic('warehouse')} Open Warehouse</button>
+            ${exportBtn('repairsPanel', 'Equipment_Repairs')}
+            ${canPostRepair ? `<button type="button" class="btn btn-primary" data-open-modal="repair">+ Log Equipment Repair</button>` : ''}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${rChip('all', `All Repairs (${repBase.length})`)}
+            ${rChip('warehouse', `Warehouse Only (${repBase.filter(r => /^Warehouse Only/i.test(r.repair_source || '')).length})`)}
+            ${rChip('partial', `Partially Warehouse + Outside (${repBase.filter(r => /Partially/i.test(r.repair_source || '')).length})`)}
+            ${rChip('outside', `Outside Only (${repBase.filter(r => /^Outside Only/i.test(r.repair_source || '')).length})`)}
+          </div>
+        </div>
+        ${renderColFilterBar('repairs')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('repairs', 'Repair #', 'name')}${th('repairs', 'Date', 'date')}${th('repairs', 'Co.', 'company')}${th('repairs', 'Equipment', 'equipment')}
+                ${th('repairs', 'Repair Source', 'repair_source')}${th('repairs', 'Items Used in Repair', 'items_summary')}${th('repairs', 'Warehouse ($)', 'warehouse_parts_usd', 'r')}${th('repairs', 'Total ($)', 'total_cost_usd', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownRepairs.map(r => {
+                const rs = r.repair_source || 'Warehouse Only';
+                const rsCls = /^Warehouse Only/i.test(rs) ? 'badge-ok' : (/Partially/i.test(rs) ? 'badge-brass' : 'badge-info');
+                const outPlusLab = round2(Number(r.outside_parts_usd || 0) + Number(r.external_labor_usd || 0));
+                return `
+                  <tr class="rrow" data-rkey="equipment_repairs" data-rid="${esc(r.id || r.name)}">
+                    <td class="mono"><strong>${esc(r.name || r.id)}</strong>${appCell(r, 'equipment_repairs')}</td>
+                    <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td class="mono">${relLink('equipment', r.equipment, r.equipment, true)}</td>
+                    <td><span class="badge ${rsCls}">${esc(rs)}</span>${r.defect_ref ? ` ${relLink('equipment_defects', r.defect_ref, r.defect_ref, true)}` : ''}</td>
+                    <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis"><strong>${esc(r.items_summary || 'Workshop service')}</strong>${outPlusLab > 0 ? ` <span class="mu">· Outside/Labor ${fmtUSD(outPlusLab, 2)}</span>` : ''}</td>
+                    <td class="r mono">${fmtUSD(r.warehouse_parts_usd || 0, 2)}</td>
+                    <td class="r mono"><strong>${fmtUSD(r.total_cost_usd || 0, 2)}</strong></td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(8, 'No equipment repairs logged yet. Click "+ Log Equipment Repair" to record repairs using Warehouse stock (-Qty), Outside vendors, or Partially Warehouse + Outside.')}
+              ${showMoreRow('repairs', repFiltered.length, 8)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>TOTAL (${fmtNum(repFiltered.length)} REPAIRS · Outside/Labor ${fmtUSD(repOutUsdSum, 2)})</b></td>
+                <td class="r"><b>${fmtUSD(repWhUsdSum, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(repTotalUsdSum, 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Equipment Oil & Preventive Service Schedule (Hours / Km / Days) -->
+      <div class="panel-card" id="oilSchedulePanel" style="margin-bottom:14px">
+        <div class="panel-head">
+          <div class="panel-title"><span>EQUIPMENT OIL &amp; PREVENTIVE SERVICE LOGS (${fmtNum(oilFiltered.length)} SCHEDULES · HOURS / KM / DAYS)</span></div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+            ${exportBtn('oilSchedulePanel', 'Equipment_Oil_Schedule')}
+            ${canPostOil ? `<button type="button" class="btn btn-primary" data-open-modal="oillog">+ Log Oil / Filter Service</button>` : ''}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${oChip('all', `All Schedules (${oilBase.length})`)}
+            ${oChip('overdue', `Overdue (${oilBase.filter(s => s.status === 'OVERDUE').length})`)}
+            ${oChip('due_soon', `Due Soon (${oilBase.filter(s => s.status === 'DUE SOON').length})`)}
+            ${oChip('15w40', `Engine Oil 15W-40 (${oilBase.filter(s => /15W-40|Engine/i.test(s.oil_type || '')).length})`)}
+            ${oChip('hyd68', `Hydraulic Oil 68 (${oilBase.filter(s => /Hydraulic/i.test(s.oil_type || '')).length})`)}
+            ${oChip('gear', `Gear / ATF / Axle (${oilBase.filter(s => /Gear|ATF|Differential|Axle/i.test(s.oil_type || '')).length})`)}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('oilsched', 'Equipment', 'equipment')}${th('oilsched', 'Co.', 'company')}${th('oilsched', 'Oil / Service Type', 'oil_type')}${th('oilsched', 'Last Change', 'last_date')}
+                ${th('oilsched', 'Hours Worked', 'hrsWorked', 'r')}${th('oilsched', 'Distance (km)', 'kmDriven', 'r')}${th('oilsched', 'Time Elapsed', 'daysElapsed', 'r')}${th('oilsched', 'Next Change Status', 'rank')}${canPostOil ? '<th>Action</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownOil.map(s => {
+                const hrsTxt = (s.hrsWorked != null && s.intHrs != null)
+                  ? `${fmtNum(s.hrsWorked, 0)} / ${fmtNum(s.intHrs, 0)} h (${s.remHrs >= 0 ? fmtNum(s.remHrs, 0) + 'h left' : fmtNum(Math.abs(s.remHrs), 0) + 'h over'})`
+                  : (s.curHrs != null ? `${fmtNum(s.curHrs, 0)} h` : 'N/A');
+                const kmTxt = (s.kmDriven != null && s.intKm != null)
+                  ? `${fmtNum(s.kmDriven, 0)} / ${fmtNum(s.intKm, 0)} km (${s.remKm >= 0 ? fmtNum(s.remKm, 0) + 'km left' : fmtNum(Math.abs(s.remKm), 0) + 'km over'})`
+                  : (s.curOdo != null ? `${fmtNum(s.curOdo, 0)} km` : 'N/A');
+                const dayTxt = s.intDays != null
+                  ? `${fmtNum(s.daysElapsed, 0)} / ${fmtNum(s.intDays, 0)} d (${s.remDays >= 0 ? fmtNum(s.remDays, 0) + 'd left' : fmtNum(Math.abs(s.remDays), 0) + 'd over'})`
+                  : `${fmtNum(s.daysElapsed, 0)} d`;
+                return `
+                  <tr class="rrow" data-rkey="equipment_oil_logs" data-rid="${esc(s.id)}">
+                    <td class="mono">${relLink('equipment', s.equipment, s.equipment, true)}</td>
+                    <td>${coBadge(s.company)}</td>
+                    <td><strong>${esc(s.oil_type)}</strong> <span class="mu">(${fmtNum(s.qty || 1, 0)} ${esc(s.uom)})</span></td>
+                    <td class="mono">${esc(fmtDateDMY(s.last_date))}</td>
+                    <td class="r mono">${esc(hrsTxt)}</td>
+                    <td class="r mono">${esc(kmTxt)}</td>
+                    <td class="r mono">${esc(dayTxt)}</td>
+                    <td><span class="badge ${s.badgeCls}">${esc(s.status)}</span></td>
+                    ${canPostOil ? `<td><button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px" data-open-modal="oillog" data-prefill-co="${esc(s.company)}" data-prefill-eq="${esc(s.equipment)}" data-prefill-oil="${esc(s.oil_type)}">+ Log Change</button></td>` : ''}
+                  </tr>
+                `;
+              }).join('') || emptyRow(canPostOil ? 9 : 8, 'No preventive oil schedules match this filter. Click "+ Log Oil / Filter Service" to set a unit interval by hours, km, or days.')}
+              ${showMoreRow('oilsched', oilFiltered.length, canPostOil ? 9 : 8)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="${canPostOil ? 9 : 8}"><b>TOTAL (${fmtNum(oilFiltered.length)} OIL SCHEDULES · ${fmtNum(oilFiltered.filter(s => s.status === 'OVERDUE').length)} OVERDUE · ${fmtNum(oilFiltered.filter(s => s.status === 'DUE SOON').length)} DUE SOON)</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Changed & Removed Parts Custody & Disposition Ledger -->
       <div class="panel-card" id="partsLifecyclePanel" style="margin-bottom:14px">
         <div class="panel-head">
           <div class="panel-title"><span>CHANGED &amp; REMOVED PARTS CUSTODY &amp; DISPOSITION LEDGER (${fmtNum(partFiltered.length)} MOVEMENTS)</span></div>
@@ -15031,13 +15669,13 @@
                     <td class="mono">${esc(fmtDateDMY(p.date))}</td>
                     <td>${coBadge(p.company)}</td>
                     <td class="mono">${relLink('equipment', p.equipment, p.equipment, true)}</td>
-                    <td style="max-width:175px;overflow:hidden;text-overflow:ellipsis"><strong>${esc(p.part_name || '—')}</strong>${p.part_serial ? ` <span class="mono mu">(${esc(p.part_serial)})</span>` : ''}</td>
+                    <td style="max-width:175px;overflow:hidden;text-overflow:ellipsis"><strong>${esc(p.part_name || 'N/A')}</strong>${p.part_serial ? ` <span class="mono mu">(${esc(p.part_serial)})</span>` : ''}</td>
                     <td class="r">${fmtNum(p.qty || 1, 0)}</td>
-                    <td>${esc(p.condition || '—')}</td>
+                    <td>${esc(p.condition || 'N/A')}</td>
                     <td style="max-width:210px;overflow:hidden;text-overflow:ellipsis"><span class="badge ${dispCls}">${esc(disp)}</span>${custodyLoc ? ` <span class="mu" style="font-size:11px">${esc(custodyLoc)}</span>` : ''}</td>
                     <td>${p.prior_defect_notified
                       ? `<span class="badge badge-ok">Pre-Notified</span>${p.defect_ref ? ' ' + relLink('equipment_defects', p.defect_ref, p.defect_ref, true) : ''}`
-                      : `<span class="badge badge-warn" title="No prior defect report was linked before this part change">Unnotified</span>`}</td>
+                      : `<span class="badge badge-warn">Unnotified</span>`}</td>
                     <td class="r mono">${sale > 0 && outlay === 0 ? `<span style="color:var(--good)">+${fmtUSD(sale, 2)}</span>` : fmtUSD(netCash, 2)}</td>
                   </tr>
                 `;
@@ -15056,7 +15694,7 @@
         </div>
       </div>
 
-      <!-- 3rd Panel: Live Truck & Equipment Operational Health Status Board -->
+      <!-- Live Truck & Equipment Operational Health Status Board -->
       <div class="panel-card" id="unitHealthPanel" style="margin-bottom:14px">
         <div class="panel-head">
           <div class="panel-title"><span>LIVE TRUCK &amp; EQUIPMENT HEALTH STATUS BOARD (${fmtNum(boardRows.length)} UNITS)</span></div>
@@ -15067,7 +15705,7 @@
         <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
           <div class="chip-bar">
             ${uChip('all', `All Fleet Units (${boardAll.length})`)}
-            ${uChip('issues', `Flagged / Open Issues (${issueUnitsCount})`)}
+            ${uChip('issues', `Flagged / Open Warnings (${issueUnitsCount})`)}
             ${uChip('healthy', `Healthy (${healthyUnitsCount})`)}
             ${uChip('own', `Own Fleet (${boardAll.filter(u => /^own/i.test(u.ownership || '')).length})`)}
             ${uChip('machinery', `Machinery & Plant (${boardAll.filter(u => !/truck/i.test(u.type || 'Truck')).length})`)}
@@ -15078,7 +15716,7 @@
             <thead>
               <tr>
                 ${th('uhealth', 'Unit / Plate', 'equipment')}${th('uhealth', 'Co.', 'company')}${th('uhealth', 'Category', 'type')}${th('uhealth', 'Driver / Operator', 'driver')}
-                ${th('uhealth', 'Live Health Status', 'severityRank')}${th('uhealth', 'Open Defects', 'openCount', 'r')}${th('uhealth', 'Parts Logged', 'partCount', 'r')}${th('uhealth', 'Spare/Repair ($)', 'expTotal', 'r')}${canPostMaint ? '<th>Quick Log</th>' : ''}
+                ${th('uhealth', 'Live Health Status', 'severityRank')}${th('uhealth', 'Open Warnings', 'openCount', 'r')}${th('uhealth', 'Parts Logged', 'partCount', 'r')}${th('uhealth', 'Spare/Repair ($)', 'expTotal', 'r')}${canPostMaint ? '<th>Quick Log</th>' : ''}
               </tr>
             </thead>
             <tbody>
@@ -15087,12 +15725,12 @@
                   <td class="mono">${relLink('equipment', u.equipment, u.equipment, true)}</td>
                   <td>${coBadge(u.company)}</td>
                   <td>${esc(u.type || 'Truck')}</td>
-                  <td>${u.driver ? relLink('drivers', u.driver) : '—'}</td>
-                  <td style="max-width:230px;overflow:hidden;text-overflow:ellipsis"><span class="badge ${u.healthBadgeCls}">${esc(u.healthStatus)}</span>${u.latestOpenDefect ? ` <span class="mu" style="font-size:11px">${esc(u.latestOpenDefect.subsystem || '')}${u.latestOpenDefect.part_name ? ' · ' + esc(u.latestOpenDefect.part_name) : ''}</span>` : ''}</td>
+                  <td>${u.driver ? relLink('drivers', u.driver) : 'N/A'}</td>
+                  <td style="max-width:230px;overflow:hidden;text-overflow:ellipsis"><span class="badge ${u.healthBadgeCls}">${esc(u.healthStatus)}</span>${u.latestOpenDefect ? ` <span class="mu" style="font-size:11px">${esc(u.latestOpenDefect.part_name || u.latestOpenDefect.subsystem || '')}</span>` : ''}</td>
                   <td class="r">${u.openCount > 0 ? `<strong>${fmtNum(u.openCount)}</strong>` : '0'}</td>
                   <td class="r">${fmtNum(u.partCount)}</td>
                   <td class="r">${fmtUSD(u.expTotal, 0)}</td>
-                  ${canPostMaint ? `<td><div style="display:flex;gap:4px"><button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px" data-open-modal="defect" data-prefill-co="${esc(u.company)}" data-prefill-eq="${esc(u.equipment)}">+ Defect</button><button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px" data-open-modal="partlog" data-prefill-co="${esc(u.company)}" data-prefill-eq="${esc(u.equipment)}">+ Part</button></div></td>` : ''}
+                  ${canPostMaint ? `<td><div style="display:flex;gap:4px"><button type="button" class="btn btn-ghost-bar" style="padding:2px 6px;font-size:10.5px" data-open-modal="defect" data-prefill-co="${esc(u.company)}" data-prefill-eq="${esc(u.equipment)}">+ Warn</button><button type="button" class="btn btn-ghost-bar" style="padding:2px 6px;font-size:10.5px" data-open-modal="repair" data-prefill-co="${esc(u.company)}" data-prefill-eq="${esc(u.equipment)}">+ Repair</button><button type="button" class="btn btn-ghost-bar" style="padding:2px 6px;font-size:10.5px" data-open-modal="oillog" data-prefill-co="${esc(u.company)}" data-prefill-eq="${esc(u.equipment)}">+ Oil</button></div></td>` : ''}
                 </tr>
               `).join('') || emptyRow(canPostMaint ? 9 : 8, 'No fleet units match the active health filter')}
               ${showMoreRow('uhealth', boardRows.length, canPostMaint ? 9 : 8)}
@@ -15110,7 +15748,7 @@
         </div>
       </div>
 
-      <!-- 4th Panel: Equipment Spare Parts & Maintenance Expense Vouchers (1-Click Custody Bridge) -->
+      <!-- Equipment Spare Parts & Maintenance Expense Vouchers -->
       <div class="panel-card" id="fleetPartsExpPanel">
         <div class="panel-head">
           <div class="panel-title"><span>EQUIPMENT SPARE PARTS &amp; REPAIRS EXPENSE VOUCHERS (${fmtNum(expRows.length)} VOUCHERS)</span></div>
@@ -15135,8 +15773,8 @@
                     <td style="max-width:170px;overflow:hidden;text-overflow:ellipsis"><strong>${esc(e.name || e.id)}</strong></td>
                     <td>${coBadge(e.company)}</td>
                     <td class="mono">${relLink('equipment', e.equipment, e.equipment, true)}</td>
-                    <td style="max-width:190px;overflow:hidden;text-overflow:ellipsis">${esc(subLbl)}</td>
-                    <td style="max-width:170px;overflow:hidden;text-overflow:ellipsis">${e.supplier ? relLink('suppliers', e.supplier) : '—'}</td>
+                    <td style="max-width:190px;overflow:hidden;text-overflow:ellipsis">${esc(subLbl)}${e.item_summary ? ` <span class="mu">· ${esc(e.item_summary)}</span>` : ''}</td>
+                    <td style="max-width:170px;overflow:hidden;text-overflow:ellipsis">${e.supplier ? relLink('suppliers', e.supplier) : 'N/A'}</td>
                     <td class="r"><strong>${fmtUSD(e.amount, 2)}</strong></td>
                     ${canPostMaint ? `<td><button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px" data-open-modal="partlog" data-prefill-co="${esc(e.company || '')}" data-prefill-eq="${esc(e.equipment || '')}" data-prefill-part="${esc(e.subcategory || e.category || '')}" data-prefill-party="${esc(e.supplier || '')}" data-prefill-cost="${esc(e.amount || '')}" data-prefill-notes="${esc('Linked to expense voucher ' + (e.name || ''))}">+ Track Piece</button></td>` : ''}
                   </tr>
@@ -17192,12 +17830,14 @@
     const k = getKPI();
     const base = filterRecords(SEED.records.expenses);
     const pendingPriceCnt = base.filter(isPendingPriceExpense).length;
+    const storedWhCnt = base.filter(x => Boolean(x.stored_in_warehouse) && expenseSign(x) !== 0).length;
     const expRows = sortRows(base.filter(x => {
       if (STATE.chipFilter === 'cash') return isCashExpense(x) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'credit') return isApCreditExpense(x) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'pending_price') return isPendingPriceExpense(x);
       if (STATE.chipFilter === 'fleet_exp') return Boolean(x.equipment) && expenseSign(x) !== 0;
-      if (STATE.chipFilter === 'overhead_exp') return !x.equipment && expenseSign(x) !== 0;
+      if (STATE.chipFilter === 'stored_wh') return Boolean(x.stored_in_warehouse) && expenseSign(x) !== 0;
+      if (STATE.chipFilter === 'overhead_exp') return !x.equipment && !x.stored_in_warehouse && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'app') return isAppRecord(x);
       return true;
     }), 'expenses', 'date', 'desc');
@@ -17335,12 +17975,13 @@
       <div class="panel-card" id="expPanel" style="margin-bottom:14px">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search category, subcategory, supplier, equipment, reference...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('pending_price', `Pending Price (${pendingPriceCnt})`)}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${chip('app', 'App-entered')}</div>
+            ${searchBox('Search category, subcategory, item, supplier, equipment, reference...')}
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('pending_price', `Pending Price (${pendingPriceCnt})`)}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('stored_wh', `Stored in Warehouse (${storedWhCnt})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${chip('app', 'App-entered')}</div>
           </div>
-          <div style="display:flex;gap:6px">
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="suppliers" title="Open Unified Supplier, Hauler &amp; Vendor 3-Leg AP + Cash Spend Sub-Ledger">${ic('suppliers')} Suppliers &amp; Payables</button>
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_categories" title="Open Master Expense Categories &amp; Subcategories">${ic('reg_categories')} Expense Categories</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="warehouse">${ic('warehouse')} Warehouse</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="suppliers">${ic('suppliers')} Suppliers &amp; Payables</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_categories">${ic('reg_categories')} Expense Categories</button>
             ${exportBtn('expPanel', 'Expense_Register')}
             ${canEnterForm('expense') ? '<button class="btn btn-primary" data-open-modal="expense">+ New Expense</button>' : ''}
           </div>
@@ -17395,16 +18036,18 @@
                 const isDieselRow = isBulkDieselExpense(x);
                 const qtyVal = Number(x.qty || 0);
                 const showQtyBadge = qtyVal > 0 && (isPend || isDieselRow || qtyVal !== 1);
+                const multiCnt = Number(x.item_count || 0);
+                const isStoredWh = Boolean(x.stored_in_warehouse);
                 return `
                 <tr class="rrow" data-rkey="expenses" data-rid="${esc(x.id)}">
                   <td class="mono">${esc(recordDateDMY(x))}${appCell(x, 'expenses')}</td>
                   <td>${coBadge(x.company)}</td>
                   <td>${relLink('expense_categories', x.category, x.category, true)}</td>
-                  <td>${x.subcategory ? relLink('expense_subcategories', x.subcategory) : '—'}${showQtyBadge ? ` <span class="badge ${isPend ? 'badge-warn' : 'badge-info'}">${fmtNum(qtyVal, qtyVal % 1 ? 2 : 0)}${isDieselRow ? ' L' : ' qty'}</span>` : ''}${x.reference ? ` <span class="mu">· ${esc(x.reference)}</span>` : ''}</td>
-                  <td>${x.supplier ? relLink('suppliers', x.supplier) : '—'}</td>
-                  <td class="mono">${x.equipment ? relLink('equipment', x.equipment) : '—'}</td>
+                  <td>${x.subcategory ? relLink('expense_subcategories', x.subcategory) : 'N/A'}${multiCnt > 1 ? ` <span class="badge badge-brass">${fmtNum(multiCnt)} Items</span>` : ''}${isStoredWh ? ` <span class="badge badge-ok">Warehouse (+Stock)</span>` : ''}${showQtyBadge && multiCnt <= 1 ? ` <span class="badge ${isPend ? 'badge-warn' : 'badge-info'}">${fmtNum(qtyVal, qtyVal % 1 ? 2 : 0)}${isDieselRow ? ' L' : ' qty'}</span>` : ''}${x.item_summary ? ` <span class="mu">· ${esc(x.item_summary)}</span>` : ''}${x.reference ? ` <span class="mu">· ${esc(x.reference)}</span>` : ''}</td>
+                  <td>${x.supplier ? relLink('suppliers', x.supplier) : 'N/A'}</td>
+                  <td class="mono">${x.equipment ? relLink('equipment', x.equipment) : (isStoredWh ? '<span class="badge badge-ok">Warehouse</span>' : 'N/A')}</td>
                   <td>${methodBadge(x.method, sgn)}</td>
-                  <td class="r">${isPend ? `<span class="badge badge-warn" title="Quantity received (${fmtNum(qtyVal, 0)}${isDieselRow ? ' L' : ''}); awaiting supplier invoice price">Pending Price</span>${(canModifyData() || canEnterForm('expense')) ? ` <button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px;margin-left:4px" data-set-pending-price-id="${esc(x.id)}">Enter Price</button>` : ''}` : `<strong>${fmtUSD(sgn * Number(x.amount || 0), 2)}</strong>`}</td>
+                  <td class="r">${isPend ? `<span class="badge badge-warn">Pending Price</span>${(canModifyData() || canEnterForm('expense')) ? ` <button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px;margin-left:4px" data-set-pending-price-id="${esc(x.id)}">Enter Price</button>` : ''}` : `<strong>${fmtUSD(sgn * Number(x.amount || 0), 2)}</strong>`}</td>
                 </tr>
               `;
               }).join('') || emptyRow(8, periodEmptyMsg(SEED.records.expenses, 'expenses'))}
@@ -17477,7 +18120,225 @@
   }
 
   // ==========================================================================
-  // VIEW 09B: PAYROLL, ATTENDANCE, SITE ALLOWANCES & FREELANCE COMMAND (M239/M245/M247)
+  // VIEW 09A: WAREHOUSE (STORED SPARE PARTS, OILS & REPAIR CONSUMPTION LEDGER)
+  // ==========================================================================
+  function renderWarehouse() {
+    const wh = getWarehouseIndex();
+    const q = String(STATE.search || '').trim().toLowerCase();
+    const matchQ = vals => !q || vals.filter(Boolean).join(' ').toLowerCase().includes(q);
+    const wChipKey = STATE.whChipFilter || 'all';
+    const wChip = (key, label) => `<button type="button" class="filter-chip ${wChipKey === key ? 'active' : ''}" data-wh-chip="${esc(key)}">${label}</button>`;
+
+    const itemsBase = wh.items.filter(it => matchQ([
+      it.item_name,
+      it.category,
+      it.location,
+      it.uom,
+      it.repairsUsedIn.map(rp => `${rp.repair_ref} ${rp.equipment}`).join(' ')
+    ]));
+    const itemsFiltered = sortRows(itemsBase.filter(it => {
+      if (wChipKey === 'in_stock') return it.onHandQty > 0.0001;
+      if (wChipKey === 'used_repairs') return it.usedInRepairsQty > 0 || it.repairsUsedIn.length > 0;
+      if (wChipKey === 'low_stock') return it.isLowStock || it.onHandQty <= 0.0001;
+      return true;
+    }), 'whitems', 'onHandQty', 'desc');
+    const shownItems = itemsFiltered.slice(0, shownCount('whitems'));
+
+    const movesBase = wh.movements.filter(m => matchQ([
+      m.item_name, m.category, m.movement_type, m.location, m.equipment, m.counterparty, m.ref, m.company, m.notes
+    ]));
+    const movesFiltered = sortRows(movesBase.filter(m => {
+      if (wChipKey === 'used_repairs') return m.rkey === 'repair_items' || /Repair/i.test(m.movement_type || '');
+      return true;
+    }), 'whmoves', 'date', 'desc');
+    const shownMoves = movesFiltered.slice(0, shownCount('whmoves'));
+
+    const usedSkusCount = wh.items.filter(it => it.repairsUsedIn.length > 0 || it.usedInRepairsQty > 0).length;
+    const totStockedIn = itemsFiltered.reduce((a, it) => a + Number(it.stockedInQty || 0), 0);
+    const totUsedOut = itemsFiltered.reduce((a, it) => a + Number(it.usedInRepairsQty || 0) + Number(it.usedInOilQty || 0) + Number(it.adjustedOutQty || 0), 0);
+    const totOnHand = itemsFiltered.reduce((a, it) => a + Number(it.onHandQty || 0), 0);
+    const totStockVal = itemsFiltered.reduce((a, it) => a + Number(it.onHandValue || 0), 0);
+    const movesNetQty = movesFiltered.reduce((a, m) => a + Number(m.signedQty || 0), 0);
+    const movesGrossVal = movesFiltered.reduce((a, m) => a + Number(m.total_cost || 0), 0);
+
+    const canPostExp = canEnterForm('expense');
+    const canPostWh = canEnterForm('warehousestock');
+    const canPostRep = canEnterForm('repair');
+    const hasWhActions = canPostWh || canPostRep;
+
+    return `
+      <div class="cockpit-banner has-insights">
+        <div class="cockpit-title-block sr-only">
+          <div class="cockpit-eyebrow">STORED SPARE PARTS, OILS, LIVE ON-HAND BALANCES &amp; REPAIR CONSUMPTION</div>
+          <div class="cockpit-title">Warehouse</div>
+        </div>
+        <div class="cockpit-pills insight-grid">
+          ${insightCard({
+            label: 'Stored SKUs in Stock',
+            badge: wh.lowStockCount > 0 ? `${fmtNum(wh.lowStockCount)} Reorder Alert` : `${fmtNum(wh.totalSkus)} Tracked SKUs`,
+            badgeCls: wh.lowStockCount > 0 ? 'warn' : 'emerald',
+            val: `${fmtNum(wh.totalSkusInStock)} <small>Active SKUs</small>`,
+            valCls: 'emerald',
+            pct: wh.totalSkus > 0 ? Math.min(100, Math.round((wh.totalSkusInStock / wh.totalSkus) * 100)) : 100,
+            sub: `Increases when expense items are stored · Decreases when used in repairs`,
+            tone: 'emerald'
+          })}
+          ${insightCard({
+            label: 'Total Units On Hand',
+            badge: `+${fmtNum(wh.totalStockedInQty, wh.totalStockedInQty % 1 ? 1 : 0)} In · -${fmtNum(wh.totalUsedInRepairsQty, wh.totalUsedInRepairsQty % 1 ? 1 : 0)} Repairs`,
+            badgeCls: 'brass',
+            val: `${fmtNum(wh.totalUnitsOnHand, wh.totalUnitsOnHand % 1 ? 2 : 0)} <small>Units</small>`,
+            valCls: 'brass',
+            pct: wh.totalStockedInQty > 0 ? Math.min(100, Math.max(10, Math.round((wh.totalUnitsOnHand / wh.totalStockedInQty) * 100))) : 100,
+            sub: `Live running balance across stored parts, filters, tires &amp; lubricants`,
+            tone: 'brass'
+          })}
+          ${insightCard({
+            label: 'Warehouse Stock Value',
+            badge: 'Weighted Avg Cost',
+            badgeCls: 'emerald',
+            val: fmtUSD(wh.totalValueUsd, 2),
+            valCls: 'emerald',
+            pct: wh.totalValueUsd > 0 ? 85 : 100,
+            sub: `Valued automatically from stored supplier expense invoices &amp; opening stock`,
+            tone: 'steel'
+          })}
+          ${insightCard({
+            label: 'Items Used in Repairs',
+            badge: `${fmtNum(usedSkusCount)} SKUs Issued`,
+            badgeCls: wh.usedInRepairsMovementCount > 0 ? 'brass' : 'good',
+            val: `<span class="insight-drill" data-scroll-panel="warehouseMovesPanel">${fmtNum(wh.usedInRepairsMovementCount)} <small>Repair Uses</small></span>`,
+            valCls: 'brass',
+            pct: wh.usedInRepairsMovementCount > 0 ? 80 : 100,
+            sub: `<span class="insight-drill" data-nav-jump="fleet_maint">Open Repairs, Warnings &amp; Oil Logs</span>`,
+            tone: 'amber'
+          })}
+        </div>
+      </div>
+
+      <!-- 1st Panel: Stored Items Inventory & Where Used in Repairs -->
+      <div class="panel-card" id="warehouseStockPanel" style="margin-bottom:14px">
+        <div class="table-toolbar">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search stored item, category, shelf location, repair ticket...')}
+            <div class="chip-bar">
+              ${wChip('all', `All Stored Items (${itemsBase.length})`)}
+              ${wChip('in_stock', `In Stock > 0 (${itemsBase.filter(it => it.onHandQty > 0.0001).length})`)}
+              ${wChip('used_repairs', `Used in Repairs (${itemsBase.filter(it => it.usedInRepairsQty > 0 || it.repairsUsedIn.length > 0).length})`)}
+              ${wChip('low_stock', `Zero / Reorder (${itemsBase.filter(it => it.isLowStock || it.onHandQty <= 0.0001).length})`)}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="expenses">${ic('expenses')} Expenses</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_maint">${ic('repair')} Repairs</button>
+            ${exportBtn('warehouseStockPanel', 'Warehouse_Stored_Items')}
+            ${canPostWh ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="warehousestock">${ic('warehouse')} + Add / Adjust Stock</button>` : ''}
+            ${canPostRep ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="repair">${ic('repair')} + Use in Repair</button>` : ''}
+            ${canPostExp ? `<button type="button" class="btn btn-primary" data-open-modal="expense" data-prefill-storewh="1">+ Buy &amp; Store Item</button>` : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('whitems', 'Stored Item / Part', 'item_name')}${th('whitems', 'Category', 'category')}${th('whitems', 'Warehouse Location', 'location')}
+                ${th('whitems', 'Stocked In (+)', 'stockedInQty', 'r')}${th('whitems', 'Used Out (-)', 'usedInRepairsQty', 'r')}${th('whitems', 'On-Hand Qty', 'onHandQty', 'r')}
+                ${th('whitems', 'Avg Cost ($)', 'avgUnitCost', 'r')}${th('whitems', 'Stock Value ($)', 'onHandValue', 'r')}<th>Used In Repairs</th>${hasWhActions ? '<th>Quick Action</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownItems.map(it => {
+                const usedOutTot = round2(Number(it.usedInRepairsQty || 0) + Number(it.usedInOilQty || 0) + Number(it.adjustedOutQty || 0));
+                const latestMv = it.movements && it.movements[0] ? it.movements[0] : null;
+                const onHandCls = it.onHandQty <= 0.0001 ? 'badge-warn' : (it.isLowStock ? 'badge-warn' : 'badge-ok');
+                const usedLinksHtml = it.repairsUsedIn.length
+                  ? it.repairsUsedIn.slice(0, 3).map(rp => relLink('equipment_repairs', rp.repair_ref, `${rp.repair_ref}${rp.equipment ? ' (' + rp.equipment + ')' : ''} -${fmtNum(rp.qty, rp.qty % 1 ? 2 : 0)}`, true)).join(' ')
+                    + (it.repairsUsedIn.length > 3 ? ` <span class="mu">+${it.repairsUsedIn.length - 3} more</span>` : '')
+                  : '<span class="mu">Unused in repairs</span>';
+                return `
+                  <tr class="${latestMv ? 'rrow' : ''}" ${latestMv ? `data-rkey="${esc(latestMv.rkey)}" data-rid="${esc(latestMv.id)}"` : ''}>
+                    <td><strong>${esc(it.item_name)}</strong> <span class="mu">(${esc(it.uom)})</span></td>
+                    <td>${esc(it.category || 'Spare Parts')}</td>
+                    <td>${esc(it.location || 'Main Warehouse')}</td>
+                    <td class="r mono" style="color:var(--good)">+${fmtNum(it.stockedInQty, it.stockedInQty % 1 ? 2 : 0)}</td>
+                    <td class="r mono">${usedOutTot > 0 ? `<span style="color:var(--warn)">-${fmtNum(usedOutTot, usedOutTot % 1 ? 2 : 0)}</span>` : '0'}</td>
+                    <td class="r mono"><span class="badge ${onHandCls}">${fmtNum(it.onHandQty, it.onHandQty % 1 ? 2 : 0)} ${esc(it.uom)}</span></td>
+                    <td class="r mono">${fmtUSD(it.avgUnitCost, 2)}</td>
+                    <td class="r mono"><strong>${fmtUSD(it.onHandValue, 2)}</strong></td>
+                    <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${usedLinksHtml}</td>
+                    ${hasWhActions ? `<td><div style="display:flex;gap:4px">${canPostWh ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 6px;font-size:10.5px" data-open-modal="warehousestock" data-prefill-item="${esc(it.item_name)}">+ Stock</button>` : ''}${canPostRep && it.onHandQty > 0 ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 6px;font-size:10.5px" data-open-modal="repair" data-prefill-item="${esc(it.item_name)}">+ Repair</button>` : ''}</div></td>` : ''}
+                  </tr>
+                `;
+              }).join('') || emptyRow(hasWhActions ? 10 : 9, 'Warehouse has 0 stored items right now. Click "+ Buy & Store Item" when purchasing filters, hoses, tires, or oil for stock, or "+ Add / Adjust Stock" to enter opening inventory.')}
+              ${showMoreRow('whitems', itemsFiltered.length, hasWhActions ? 10 : 9)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3"><b>TOTAL (${fmtNum(itemsFiltered.length)} STORED SKUS)</b></td>
+                <td class="r"><b>+${fmtNum(totStockedIn, totStockedIn % 1 ? 2 : 0)}</b></td>
+                <td class="r"><b>-${fmtNum(totUsedOut, totUsedOut % 1 ? 2 : 0)}</b></td>
+                <td class="r"><b>${fmtNum(totOnHand, totOnHand % 1 ? 2 : 0)}</b></td>
+                <td></td>
+                <td class="r"><b>${fmtUSD(totStockVal, 2)}</b></td>
+                <td colspan="${hasWhActions ? 2 : 1}"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- 2nd Panel: Chronological Warehouse Stock Movements (+IN / -OUT) -->
+      <div class="panel-card" id="warehouseMovesPanel">
+        <div class="panel-head">
+          <div class="panel-title"><span>WAREHOUSE STOCK MOVEMENTS LEDGER (+IN STORED / -OUT USED IN REPAIRS · ${fmtNum(movesFiltered.length)} MOVEMENTS)</span></div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+            ${exportBtn('warehouseMovesPanel', 'Warehouse_Movements_Ledger')}
+          </span>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('whmoves', 'Date', 'date')}${th('whmoves', 'Ref', 'ref')}${th('whmoves', 'Co.', 'company')}${th('whmoves', 'Movement', 'movement_type')}
+                ${th('whmoves', 'Item / Part', 'item_name')}${th('whmoves', 'Equipment / Location', 'equipment')}${th('whmoves', 'Qty (+IN / -OUT)', 'signedQty', 'r')}${th('whmoves', 'Balance After', 'balanceAfter', 'r')}${th('whmoves', 'Value ($)', 'total_cost', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownMoves.map(m => {
+                const isIn = m.direction === 'IN';
+                const mvCls = isIn ? 'badge-ok' : (/Repair/i.test(m.movement_type || '') ? 'badge-brass' : 'badge-warn');
+                const refHtml = m.rkey === 'repair_items' && m.ref
+                  ? relLink('equipment_repairs', m.ref, m.ref, true)
+                  : (m.rkey === 'expense_items' && m.ref ? relLink('expenses', m.ref, m.ref, true) : `<strong>${esc(m.ref || m.id)}</strong>`);
+                return `
+                  <tr class="rrow" data-rkey="${esc(m.rkey)}" data-rid="${esc(m.id)}">
+                    <td class="mono">${esc(fmtDateDMY(m.date))}</td>
+                    <td class="mono">${refHtml}</td>
+                    <td>${coBadge(m.company)}</td>
+                    <td><span class="badge ${mvCls}">${esc(m.movement_type)}</span></td>
+                    <td><strong>${esc(m.item_name)}</strong></td>
+                    <td>${m.equipment ? relLink('equipment', m.equipment, m.equipment, true) : esc(m.location || 'Main Warehouse')}</td>
+                    <td class="r mono" style="color:${isIn ? 'var(--good)' : 'var(--warn)'}"><strong>${isIn ? '+' : ''}${fmtNum(m.signedQty, m.signedQty % 1 ? 2 : 0)} ${esc(m.uom)}</strong></td>
+                    <td class="r mono">${fmtNum(m.balanceAfter, m.balanceAfter % 1 ? 2 : 0)} ${esc(m.uom)}</td>
+                    <td class="r mono">${fmtUSD(m.total_cost || 0, 2)}</td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(9, 'No warehouse stock movements recorded yet. Every stored expense item (+IN) and every warehouse item used in an equipment repair (-OUT) appears here automatically.')}
+              ${showMoreRow('whmoves', movesFiltered.length, 9)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>TOTAL (${fmtNum(movesFiltered.length)} WAREHOUSE MOVEMENTS)</b></td>
+                <td class="r"><b>${movesNetQty >= 0 ? '+' : ''}${fmtNum(movesNetQty, movesNetQty % 1 ? 2 : 0)}</b></td>
+                <td></td>
+                <td class="r"><b>${fmtUSD(movesGrossVal, 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
   // ==========================================================================
   function parseAttClockHour(raw) {
     const s = String(raw == null ? '' : raw).trim();
@@ -26423,11 +27284,16 @@
     fuel: 'New Fuel & Lubricant Intake',
     malfunction: 'New Tank Malfunction / Discrepancy',
     expense: 'New Expense',
-    settlement: 'New Supplier Settlement'
+    warehousestock: 'Warehouse Stock Entry / Adjustment',
+    settlement: 'New Supplier Settlement',
+    repair: 'New Equipment Repair (Warehouse / Outside)',
+    oillog: 'New Equipment Oil & Service Log'
   }, (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES) || {});
   const FORM_CR_KEY = Object.assign({
     sales: 'sales_tickets', raw: 'raw_purchases', receipt: 'receipts',
-    fuel: 'fuel_intakes', malfunction: 'fuel_malfunctions', expense: 'expenses', settlement: 'settlements'
+    fuel: 'fuel_intakes', malfunction: 'fuel_malfunctions', expense: 'expenses',
+    warehousestock: 'warehouse_movements', settlement: 'settlements',
+    repair: 'equipment_repairs', oillog: 'equipment_oil_logs'
   }, (window.MFG_FORMS && window.MFG_FORMS.FORM_CR_KEY) || {});
 
   function secHdr(title, sub) {
@@ -26776,10 +27642,15 @@
       const expNotesField = pendEditRow
         ? fld('Notes', inp('f_notes', 'text', expNotesVal, 'placeholder="Optional invoice or pricing note..."'), { id: 'wrap_f_notes', span: true })
         : notesField;
+      const whItemsList = pendEditRow ? [] : warehouseCatalogItemNames(expCoVal);
+      const whLocsList = ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'];
       return cockpitHtml + `
         ${adminHeaderHtml}
         ${pendEditRow ? `<div class="exp-complete-pending-banner" id="expCompletePendingBanner"><span>${ic('lock')} Delivery fields on <b>${esc(pendEditRow.name || pendEditRow.id)}</b> are locked. Enter the final supplier invoice <b>Amount ($)</b>${!expRefVal ? ' and <b>Reference / Invoice</b>' : ''} below.</span></div>` : ''}
         <input type="hidden" id="f_price_pending" value="0">
+        <input type="hidden" id="f_for_equipment" value="${expEqVal ? '1' : '0'}">
+        <input type="hidden" id="f_store_warehouse" value="0">
+        ${pendEditRow ? '' : dl('dl_exp_wh_items', whItemsList) + dl('dl_exp_wh_locs', whLocsList)}
         <div class="form-grid-3">
           ${expCompanyField}
           ${expDateField}
@@ -26790,8 +27661,11 @@
           ${fld('Category *', inp('f_category', 'text', expCatVal, `list="dl_categories" placeholder="Select or type category..."${pendEditRow ? ' readonly' : ''}`) + dlMeta('dl_categories', cats.map(c => [c.category, c.subs && c.subs.length ? `${c.subs.length} subcats` : ''])), pendEditRow ? { id: 'wrap_f_category', lockField: 'f_category', lockReason: 'Locked to the category recorded on delivery' } : { id: 'wrap_f_category' })}
           ${fld('Subcategory', inp('f_subcategory', 'text', expSubVal, 'list="dl_subcats" placeholder="Pick Category first..." readonly') + dl('dl_subcats', uniqSorted(cats.flatMap(c => c.subs), getFreqIndex().subcategory)), { id: 'wrap_f_subcategory', lockField: 'f_subcategory', lockReason: pendEditRow ? 'Locked to the subcategory recorded on delivery' : 'Locked until Category is selected', hintId: 'hint_subcat', hint: '' })}
           ${fld('Supplier / Vendor', inp('f_supplier', 'text', expSupVal, `list="dl_suppliers" placeholder="Select or type supplier..."${pendEditRow && expSupVal ? ' readonly' : ''}`) + dl('dl_suppliers', supplierNames('expense')), pendEditRow && expSupVal ? { id: 'wrap_f_supplier', lockField: 'f_supplier', lockReason: 'Locked to the supplier recorded on delivery', hintId: 'hint_supplier', hint: '' } : { id: 'wrap_f_supplier', hintId: 'hint_supplier', hint: 'Required for Credit' })}
-          ${fld('Equipment (cost centre)', inp('f_truck', 'text', expEqVal, `list="dl_equip" placeholder="${pendEditRow ? 'None (Plant / General)' : 'Select or type equipment...'}"${pendEditRow ? ' readonly' : ''}`) + dl('dl_equip', equipmentNames()), pendEditRow ? { id: 'wrap_f_truck', lockField: 'f_truck', lockReason: 'Locked to the equipment unit recorded on delivery' } : { id: 'wrap_f_truck' })}
-          ${fld('<span id="lbl_exp_qty">Quantity</span>', inp('f_qty', 'number', expQtyVal, `step="0.01" min="0" inputmode="decimal"${pendEditRow ? ' readonly' : ''}`), pendEditRow ? { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to the physical quantity received on delivery', hintId: 'hint_qty', hint: '' } : { id: 'wrap_f_qty', hintId: 'hint_qty', hint: '' })}
+          ${pendEditRow ? '' : `<div class="form-field span-2" id="wrap_f_exp_scope"><label><span class="pa-fld-lbl">Is This for Equipment or Warehouse?</span></label><div class="exp-price-mode-bar exp-route-bar" id="expRoutingBar" role="group" aria-label="Expense target and warehouse option"><button type="button" class="uom-qpill active" data-exp-route="general">Not for Equipment</button><button type="button" class="uom-qpill" data-exp-route="equipment">For Equipment</button><button type="button" class="uom-qpill" data-exp-route="warehouse">Store in Warehouse (+Stock)</button></div><span class="hint" id="hint_exp_route">Choose whether this ticket is general overhead, tied to a unit, or stored in Warehouse</span></div>`}
+          ${fld('Equipment (cost centre)', inp('f_truck', 'text', expEqVal, `list="dl_equip" placeholder="${pendEditRow ? 'None (Plant / General)' : 'Select or type equipment...'}"${pendEditRow ? ' readonly' : ''}`) + dl('dl_equip', equipmentNames()), pendEditRow ? { id: 'wrap_f_truck', lockField: 'f_truck', lockReason: 'Locked to the equipment unit recorded on delivery' } : { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
+          ${pendEditRow ? '' : fld('Item / Part Name *', inp('f_exp_item_name', 'text', '', 'list="dl_exp_wh_items" placeholder="Select or type spare part, filter, belt, oil..."'), { id: 'wrap_f_exp_item_name', hidden: true, hintId: 'hint_exp_item', hint: 'Stored directly into Warehouse inventory (+Qty)' })}
+          ${pendEditRow ? '' : fld('Warehouse Location', inp('f_exp_wh_loc', 'text', 'WTC Main Warehouse', 'list="dl_exp_wh_locs" placeholder="Warehouse store..."'), { id: 'wrap_f_exp_wh_loc', hidden: true })}
+          ${fld('<span id="lbl_exp_qty">Quantity</span>', inp('f_qty', 'number', expQtyVal, `step="0.01" min="0" inputmode="decimal"${pendEditRow ? ' readonly' : ''}`), pendEditRow ? { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to the physical quantity received on delivery', hintId: 'hint_qty', hint: '' } : { id: 'wrap_f_qty', hintId: 'hint_qty', hint: 'Defaults to 1' })}
           ${fld('<span id="lbl_exp_amount">Amount ($) *</span>', `<div class="exp-amt-input-wrap" id="expAmtInputWrap">${inp('f_amount', 'number', expAmtVal, 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"')}<button type="button" class="exp-switch-priced-btn" id="expSwitchToPricedBtn" data-exp-price-mode="priced" hidden title="Switch back to entering the invoice amount now">${ic('dollar')} Enter Price</button></div>`, {
             id: 'wrap_f_amount',
             hintId: 'hint_amount',
@@ -26801,6 +27675,17 @@
           ${fld('Reference / Invoice', inp('f_reference', 'text', expRefVal, pendEditRow ? 'placeholder="Enter supplier invoice #..."' : ''), { id: 'wrap_f_reference' })}
           ${expNotesField}
         </div>
+        ${pendEditRow ? '' : `
+        <div class="line-items-builder" id="expItemsPanel" style="margin-top:10px">
+          <div class="line-items-head">
+            <div>
+              <strong>Invoice Item Tickets (Multiple Items, Quantities &amp; Routing)</strong>
+              <span>Add item lines when an invoice covers multiple parts/quantities across Same Equipment, Different Equipment, or Warehouse (+Stock)</span>
+            </div>
+            <button type="button" class="btn btn-ghost-bar" id="addExpItemLineBtn">+ Add Item Line</button>
+          </div>
+          <div id="expItemsRowsWrap"></div>
+        </div>`}
         <div id="expLiveContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
         <div class="live-calc">
           <div><small>Amount</small><b id="calc_total">$0.00</b></div>
@@ -26841,9 +27726,10 @@
     priceManual: false, transManual: false, methodManual: false, uomManual: false, meterTypeManual: false,
     otManual: false, ticketManual: false, qtyManual: false, repDateManual: false, showRepDate: false, afterHoursYesterday: false,
     ownerManuallyPicked: false, driverManual: false, postAttempted: false,
-    stagedOwnerDrivers: [],
+    stagedOwnerDrivers: [], expItems: [], repairItems: [],
     lastCompany: '', lastDate: '', lastCategory: null, catCache: null,
-    lastTruck: '', lastTruckOwner: '', lastSaleType: '', lastTransportBy: '',
+    lastTruck: '', lastExpTruck: '', lastWhItem: '', lastOilUnit: '', lastOilType: '',
+    lastTruckOwner: '', lastSaleType: '', lastTransportBy: '',
     lastSite: '', lastSiteOwner: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastRuleType: '', lastPrCoSide: '',
     lastWinKey: '', lastFuelWinKey: '', lastFuelItem: '', greaseAutoPreset: false,
     adminUnlocked: {}, unlockTargetField: '', unlockNote: ''
@@ -26855,6 +27741,150 @@
   const setHint = (id, text, cls) => { const el = $(id); if (!el) return; el.textContent = text || ''; el.className = 'hint' + (cls ? ' ' + cls : ''); };
   const setText = (id, text) => { const el = $(id); if (el) el.textContent = text; };
   const setFieldVisible = (wrapId, visible) => { const w = $(wrapId); if (w) w.hidden = !visible; };
+
+  function defaultExpItemDestMode() {
+    if (val('f_store_warehouse') === '1') return 'warehouse';
+    if (val('f_for_equipment') === '1' || val('f_truck')) return 'same_equipment';
+    if (/^(Spare Parts|Oils & Lubricants|Tools & Garage)$/i.test(val('f_category'))) return 'warehouse';
+    return 'general';
+  }
+
+  function renderExpenseItemsBuilderRows() {
+    const wrap = $('expItemsRowsWrap');
+    if (!wrap) return;
+    const items = Array.isArray(FORM_UI.expItems) ? FORM_UI.expItems : [];
+    if (!items.length) {
+      wrap.innerHTML = `<div class="line-items-empty">Single-item ticket mode (Quantity defaults to <b>1</b>). Click <b>+ Add Item Line</b> if this invoice has multiple items, quantities, equipments, or Warehouse stock splits.</div>`;
+      return;
+    }
+    const headerUnit = val('f_truck');
+    const uomOpts = ['Piece', 'Set', 'Litre', 'kg', 'Box', 'm'];
+    const destOpts = [
+      ['same_equipment', 'Same Equipment'],
+      ['different_equipment', 'Different Equipment'],
+      ['warehouse', 'Warehouse (+Stock)'],
+      ['general', 'Not for Equipment']
+    ];
+    wrap.innerHTML = `
+      <div class="line-items-cols-hdr is-exp-grid">
+        <span>Item / Part Name *</span>
+        <span>Destination *</span>
+        <span>Target Unit / Store</span>
+        <span>Qty *</span>
+        <span>Unit</span>
+        <span>Unit Price ($)</span>
+        <span class="r">Line Total</span>
+      </div>
+      ${items.map((it, idx) => {
+        const mode = it.allocation_mode || 'same_equipment';
+        const lineTot = round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0));
+        let targetHtml = '';
+        if (mode === 'different_equipment') {
+          targetHtml = `<input type="text" id="f_exi_eq_${idx}" data-exi-idx="${idx}" data-exi-field="target_equipment" list="dl_equip" value="${esc(it.target_equipment || '')}" placeholder="Select unit...">`;
+        } else if (mode === 'warehouse') {
+          targetHtml = `<input type="text" id="f_exi_loc_${idx}" data-exi-idx="${idx}" data-exi-field="warehouse_location" list="dl_exp_wh_locs" value="${esc(it.warehouse_location || 'WTC Main Warehouse')}" placeholder="Warehouse store...">`;
+        } else if (mode === 'same_equipment') {
+          targetHtml = `<div class="line-item-static-pill" data-exi-same-eq="1">${esc(headerUnit || 'Pick Equipment above')}</div>`;
+        } else {
+          targetHtml = `<div class="line-item-static-pill is-muted">Plant / General</div>`;
+        }
+        return `
+          <div class="line-item-row is-exp-grid" data-exi-row="${idx}">
+            <div class="li-cell"><input type="text" id="f_exi_name_${idx}" data-exi-idx="${idx}" data-exi-field="item_name" list="dl_exp_wh_items" value="${esc(it.item_name || '')}" placeholder="Item, filter, hose, oil..."></div>
+            <div class="li-cell"><select id="f_exi_mode_${idx}" data-exi-idx="${idx}" data-exi-field="allocation_mode" data-plain-options="1">${destOpts.map(([ov, ol]) => `<option value="${esc(ov)}"${ov === mode ? ' selected' : ''}>${esc(ol)}</option>`).join('')}</select></div>
+            <div class="li-cell">${targetHtml}</div>
+            <div class="li-cell"><input type="number" id="f_exi_qty_${idx}" data-exi-idx="${idx}" data-exi-field="qty" step="0.01" min="0.01" inputmode="decimal" value="${esc(it.qty != null ? it.qty : 1)}"></div>
+            <div class="li-cell"><select id="f_exi_uom_${idx}" data-exi-idx="${idx}" data-exi-field="uom" data-plain-options="1">${uomOpts.map(u => `<option value="${esc(u)}"${u === (it.uom || 'Piece') ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select></div>
+            <div class="li-cell"><input type="number" id="f_exi_cost_${idx}" data-exi-idx="${idx}" data-exi-field="unit_cost" step="0.01" min="0" inputmode="decimal" value="${esc(it.unit_cost !== undefined && it.unit_cost !== '' ? it.unit_cost : '')}" placeholder="0.00"></div>
+            <div class="li-cell line-item-tot-cell"><strong data-exi-tot="${idx}">${fmtUSD(lineTot, 2)}</strong><button type="button" class="line-item-del-btn" data-exi-remove="${idx}" aria-label="Remove item line">×</button></div>
+          </div>
+        `;
+      }).join('')}
+    `;
+    wireModalSuggestions(wrap);
+  }
+
+  function syncRepairItemStockHints(company) {
+    const wrap = $('repairItemsRowsWrap');
+    if (!wrap) return;
+    const whIdx = getWarehouseIndex(company || val('f_company') || defaultEntryCompany());
+    (FORM_UI.repairItems || []).forEach((it, idx) => {
+      const totEl = wrap.querySelector(`[data-repi-tot="${idx}"]`);
+      if (totEl) {
+        totEl.textContent = fmtUSD(round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0)), 2);
+      }
+      const hintEl = wrap.querySelector(`[data-repi-stock-hint="${idx}"]`);
+      if (!hintEl) return;
+      if ((it.source || 'warehouse') !== 'warehouse') {
+        hintEl.textContent = 'Outside item (does not deduct Warehouse stock)';
+        hintEl.className = 'hint';
+        return;
+      }
+      const nm = String(it.item_name || '').trim();
+      if (!nm) {
+        hintEl.textContent = 'Pick a stored Warehouse item';
+        hintEl.className = 'hint';
+        return;
+      }
+      const whRow = whIdx.byKey[norm(nm)];
+      const onHand = whRow ? whRow.onHandQty : 0;
+      const reqQty = Number(it.qty) || 0;
+      if (!whRow || onHand <= 0) {
+        hintEl.textContent = `0 in Warehouse - store item first or switch source to Outside`;
+        hintEl.className = 'hint crit';
+      } else if (reqQty > onHand + 0.0001) {
+        hintEl.textContent = `Exceeds Warehouse stock (${fmtNum(onHand, onHand % 1 ? 2 : 0)} ${whRow.uom} available)`;
+        hintEl.className = 'hint crit';
+      } else {
+        hintEl.textContent = `In Warehouse: ${fmtNum(onHand, onHand % 1 ? 2 : 0)} ${whRow.uom} (${fmtNum(round2(onHand - reqQty), (onHand - reqQty) % 1 ? 2 : 0)} left after)`;
+        hintEl.className = 'hint ok';
+      }
+    });
+  }
+
+  function renderRepairItemsBuilderRows() {
+    const wrap = $('repairItemsRowsWrap');
+    if (!wrap) return;
+    const items = Array.isArray(FORM_UI.repairItems) ? FORM_UI.repairItems : [];
+    if (!items.length) {
+      wrap.innerHTML = `<div class="line-items-empty">No items listed yet (external labor-only repair). Click <b>+ Add Item Used</b> to record Warehouse or Outside parts.</div>`;
+      return;
+    }
+    const uomOpts = ['Piece', 'Set', 'Litre', 'kg', 'Box', 'm'];
+    const srcOpts = [
+      ['warehouse', 'From Warehouse (-Stock)'],
+      ['outside', 'Outside Purchase']
+    ];
+    wrap.innerHTML = `
+      <div class="line-items-cols-hdr is-rep-grid">
+        <span>Item / Part Used *</span>
+        <span>Item Source *</span>
+        <span>Qty *</span>
+        <span>Unit</span>
+        <span>Unit Cost ($)</span>
+        <span class="r">Line Cost</span>
+      </div>
+      ${items.map((it, idx) => {
+        const src = it.source || 'warehouse';
+        const lineTot = round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0));
+        return `
+          <div class="line-item-row is-rep-grid" data-repi-row="${idx}">
+            <div class="li-cell">
+              <input type="text" id="f_repi_name_${idx}" data-repi-idx="${idx}" data-repi-field="item_name" list="dl_repair_items_catalog" value="${esc(it.item_name || '')}" placeholder="Select stored item or part...">
+              <span class="hint" data-repi-stock-hint="${idx}"></span>
+            </div>
+            <div class="li-cell"><select id="f_repi_src_${idx}" data-repi-idx="${idx}" data-repi-field="source" data-plain-options="1">${srcOpts.map(([ov, ol]) => `<option value="${esc(ov)}"${ov === src ? ' selected' : ''}>${esc(ol)}</option>`).join('')}</select></div>
+            <div class="li-cell"><input type="number" id="f_repi_qty_${idx}" data-repi-idx="${idx}" data-repi-field="qty" step="0.01" min="0.01" inputmode="decimal" value="${esc(it.qty != null ? it.qty : 1)}"></div>
+            <div class="li-cell"><select id="f_repi_uom_${idx}" data-repi-idx="${idx}" data-repi-field="uom" data-plain-options="1">${uomOpts.map(u => `<option value="${esc(u)}"${u === (it.uom || 'Piece') ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select></div>
+            <div class="li-cell"><input type="number" id="f_repi_cost_${idx}" data-repi-idx="${idx}" data-repi-field="unit_cost" step="0.01" min="0" inputmode="decimal" value="${esc(it.unit_cost !== undefined && it.unit_cost !== '' ? it.unit_cost : '')}" placeholder="0.00"></div>
+            <div class="li-cell line-item-tot-cell"><strong data-repi-tot="${idx}">${fmtUSD(lineTot, 2)}</strong><button type="button" class="line-item-del-btn" data-repi-remove="${idx}" aria-label="Remove repair item">×</button></div>
+          </div>
+        `;
+      }).join('')}
+    `;
+    wireModalSuggestions(wrap);
+    syncRepairItemStockHints(val('f_company') || defaultEntryCompany());
+  }
 
   function isAdminUser(u) {
     u = u || activeUser();
@@ -29212,6 +30242,56 @@
 
     const mthEl = $('f_method');
     const amtEl = $('f_amount');
+    const qtyInpEl = $('f_qty');
+    const hasMultiItems = !pendEditRow && Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length > 0;
+    if (!pendEditRow) {
+      const curUnit = val('f_truck');
+      if (curUnit && curUnit !== FORM_UI.lastExpTruck && val('f_store_warehouse') !== '1') {
+        if ($('f_for_equipment')) $('f_for_equipment').value = '1';
+      }
+      if (curUnit !== FORM_UI.lastExpTruck) {
+        FORM_UI.lastExpTruck = curUnit;
+        document.querySelectorAll('[data-exi-same-eq]').forEach(el => {
+          el.textContent = curUnit || 'Pick Equipment above';
+        });
+      }
+      const storeWh = val('f_store_warehouse') === '1';
+      const forEq = !storeWh && (val('f_for_equipment') === '1' || Boolean(curUnit));
+      const activeRoute = storeWh ? 'warehouse' : (forEq ? 'equipment' : 'general');
+      const rBar = $('expRoutingBar');
+      if (rBar) {
+        rBar.querySelectorAll('[data-exp-route]').forEach(btn => {
+          btn.classList.toggle('active', btn.getAttribute('data-exp-route') === activeRoute);
+        });
+      }
+      setFieldVisible('wrap_f_exp_item_name', storeWh && !hasMultiItems);
+      setFieldVisible('wrap_f_exp_wh_loc', storeWh && !hasMultiItems);
+      setHint(
+        'hint_exp_route',
+        hasMultiItems
+          ? `Multi-item invoice (${FORM_UI.expItems.length} item lines below) - each line sets its own Equipment or Warehouse destination`
+          : (storeWh
+              ? 'Item & Quantity (+Stock) will be added directly into Warehouse inventory'
+              : (forEq
+                  ? (curUnit ? `Allocated to equipment ${curUnit}` : 'Select the target equipment in Equipment (cost centre) below')
+                  : 'General overhead / plant expense (not tied to a single unit)')),
+        storeWh || (forEq && curUnit) || hasMultiItems ? 'ok' : ''
+      );
+      if (curUnit) {
+        const uHealth = getEquipmentHealth(curUnit, val('f_company') || defaultEntryCompany());
+        if (uHealth && uHealth.critCount > 0) {
+          const prt = uHealth.affectedParts && uHealth.affectedParts.length ? ` (${uHealth.affectedParts[0]})` : '';
+          setHint('hint_truck', `Grave warning active on ${curUnit}${prt}`, 'warn');
+        } else if (uHealth && uHealth.openCount > 0) {
+          const prt = uHealth.affectedParts && uHealth.affectedParts.length ? ` (${uHealth.affectedParts[0]})` : '';
+          setHint('hint_truck', `Mild warning open on ${curUnit}${prt}`, 'ok');
+        } else {
+          setHint('hint_truck', '', '');
+        }
+      } else {
+        setHint('hint_truck', forEq ? 'Select primary equipment for this ticket' : '', '');
+      }
+    }
     if (pendEditRow) {
       const targetMth = pendEditRow.method || 'Credit';
       const mthLocked = applyFieldLockState(
@@ -29243,6 +30323,15 @@
         amtEl.classList.add('pa-locked-input');
         amtEl.dataset.wasPendingZero = '1';
       }
+      if (qtyInpEl) {
+        if (hasMultiItems) {
+          const sumQ = round2(FORM_UI.expItems.reduce((s, it) => s + (Number(it.qty) || 0), 0));
+          qtyInpEl.value = String(sumQ || 1);
+          qtyInpEl.readOnly = true;
+        } else {
+          qtyInpEl.readOnly = false;
+        }
+      }
     } else {
       applyFieldLockState('f_method', false, 'Select Cash or Credit');
       if (mthEl) {
@@ -29254,13 +30343,28 @@
           FORM_UI.wasPricePending = false;
         }
       }
-      if (amtEl) {
-        amtEl.readOnly = false;
-        amtEl.classList.remove('pa-locked-input');
-        if (amtEl.dataset.wasPendingZero === '1') {
-          if (amtEl.value === '0.00' || amtEl.value === '0') amtEl.value = '';
-          delete amtEl.dataset.wasPendingZero;
+      if (hasMultiItems) {
+        const sumAmt = round2(FORM_UI.expItems.reduce((s, it) => s + round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0)), 0));
+        const sumQty = round2(FORM_UI.expItems.reduce((s, it) => s + (Number(it.qty) || 0), 0));
+        if (amtEl) {
+          amtEl.value = sumAmt.toFixed(2);
+          amtEl.readOnly = true;
+          amtEl.classList.add('pa-locked-input');
         }
+        if (qtyInpEl) {
+          qtyInpEl.value = String(sumQty || 1);
+          qtyInpEl.readOnly = true;
+        }
+      } else {
+        if (amtEl) {
+          amtEl.readOnly = false;
+          amtEl.classList.remove('pa-locked-input');
+          if (amtEl.dataset.wasPendingZero === '1') {
+            if (amtEl.value === '0.00' || amtEl.value === '0') amtEl.value = '';
+            delete amtEl.dataset.wasPendingZero;
+          }
+        }
+        if (qtyInpEl) qtyInpEl.readOnly = false;
       }
     }
     if (pendEditRow) {
@@ -31174,10 +32278,20 @@
       if (STATE.modalForm === 'defect') {
         const company = val('f_company') || defaultEntryCompany();
         const unit = val('f_truck');
-        const sev = val('f_severity') || 'Moderate — Needs Part Soon';
+        const sev = val('f_severity') || 'Mild - Monitor & Schedule Repair';
         const st = val('f_status') || 'Open — Defect Reported';
         const sub = val('f_subsystem') || 'Engine & Powertrain';
+        const partNm = val('f_part_name');
         const eq = unit ? equipInfo(unit, company) : null;
+        const sevPills = $('defSeverityPills');
+        if (sevPills) {
+          sevPills.querySelectorAll('[data-def-sev-pill]').forEach(btn => {
+            const pVal = btn.getAttribute('data-def-sev-pill') || '';
+            const isGraveBtn = /Grave/i.test(pVal);
+            const isGraveCur = /Grave|Critical/i.test(sev);
+            btn.classList.toggle('active', isGraveBtn === isGraveCur);
+          });
+        }
         if (unit !== FORM_UI.lastTruck) {
           const prevUnit = FORM_UI.lastTruck;
           const prevEq = prevUnit ? equipInfo(prevUnit, company) : null;
@@ -31190,7 +32304,7 @@
         }
         if (sev !== FORM_UI.lastSeverity) {
           FORM_UI.lastSeverity = sev;
-          if (/Critical/i.test(sev) && $('f_sync_unit_status')) {
+          if (/Grave|Critical/i.test(sev) && $('f_sync_unit_status')) {
             $('f_sync_unit_status').checked = true;
           }
         }
@@ -31201,16 +32315,229 @@
             const lm = lastMeter(company, unit, val('f_date'));
             const lmEff = lm ? effectiveFuelMeter(lm) : null;
             const toneCls = h && h.critCount > 0 ? 'crit' : (h && h.openCount > 0 ? 'warn' : 'ok');
-            qvEl.innerHTML = `<div class="pa-rec-banner ${toneCls}" style="margin:2px 0 4px">${ic(h && h.openCount > 0 ? 'warn' : 'truck')} <span><b>${esc(unit)}</b> (${esc((eq && eq.type) || 'Truck')} · ${esc((eq && eq.ownership) || 'Fleet')}) · Current Health: <b>${esc(h ? h.status : 'Healthy')}</b> · Prior Open Defects: <b>${h ? h.openCount : 0}</b>${eq && eq.default_driver ? ' · Driver: <b>' + esc(eq.default_driver) + '</b>' : ''}${lmEff && lmEff.reading != null ? ' · Last Meter: <b>' + fmtNum(lmEff.reading, 0) + ' ' + esc(lmEff.unit) + '</b>' : ''}</span></div>`;
+            qvEl.innerHTML = `<div class="pa-rec-banner ${toneCls}" style="margin:2px 0 4px">${ic(h && h.openCount > 0 ? 'warn' : 'truck')} <span><b>${esc(unit)}</b> (${esc((eq && eq.type) || 'Truck')} · ${esc((eq && eq.ownership) || 'Fleet')}) · Current Health: <b>${esc(h ? h.status : 'Healthy')}</b> · Prior Open Warnings: <b>${h ? h.openCount : 0}</b>${eq && eq.default_driver ? ' · Driver: <b>' + esc(eq.default_driver) + '</b>' : ''}${lmEff && lmEff.reading != null ? ' · Last Meter: <b>' + fmtNum(lmEff.reading, 0) + ' ' + esc(lmEff.unit) + '</b>' : ''}</span></div>`;
           } else {
             qvEl.innerHTML = '';
           }
         }
-        setHint('hint_truck', unit ? `${(eq && eq.type) || 'Truck'} · ${(eq && eq.ownership) || 'Fleet'}${h && h.openCount ? ' · ' + h.openCount + ' open defect(s)' : ' · Currently healthy'}` : '', h && h.critCount > 0 ? 'warn' : (unit ? 'ok' : ''));
-        setText('calc_def_health', /^(Resolved|Closed)/i.test(st) ? 'Resolved · Healthy' : (/Critical/i.test(sev) ? 'Critical — Down' : (/Moderate/i.test(sev) ? 'Needs Part Soon' : 'Monitor (Minor)')));
+        setHint('hint_truck', unit ? `${(eq && eq.type) || 'Truck'} · ${(eq && eq.ownership) || 'Fleet'}${h && h.openCount ? ' · ' + h.openCount + ' open warning(s)' : ' · Currently healthy'}` : '', h && h.critCount > 0 ? 'warn' : (unit ? 'ok' : ''));
+        setText('calc_def_health', /^(Resolved|Closed)/i.test(st) ? 'Resolved · Healthy' : (/Grave|Critical/i.test(sev) ? 'Grave Warning · Down' : 'Mild Warning'));
         setText('calc_def_open', `${h ? h.openCount : 0} open`);
-        setText('calc_def_sub', sub);
-        setText('calc_def_notif', 'Logged Before Replacement');
+        setText('calc_def_sub', partNm ? `${sub} · ${partNm}` : sub);
+        setText('calc_def_notif', 'Logged Before Repair');
+        commonDateChecks([]);
+        renderAdminLockBar();
+        return {};
+      }
+      if (STATE.modalForm === 'warehousestock') {
+        const company = val('f_company') || defaultEntryCompany();
+        const moveType = val('f_wh_move_type') || 'Opening Stock';
+        const isOut = /Adjustment|Direct/i.test(moveType);
+        const itemName = val('f_item_name');
+        const whIdx = getWarehouseIndex(company);
+        const curItem = itemName ? whIdx.byKey[norm(itemName)] : null;
+        if (curItem && itemName !== FORM_UI.lastWhItem) {
+          FORM_UI.lastWhItem = itemName;
+          if ($('f_uom') && curItem.uom) $('f_uom').value = curItem.uom;
+          if ($('f_category') && curItem.category && ['Spare Parts', 'Oils & Lubricants', 'Tools & Garage'].includes(curItem.category)) {
+            $('f_category').value = curItem.category;
+          }
+          if ($('f_location') && curItem.location) $('f_location').value = curItem.location;
+          if ($('f_unitprice') && !val('f_unitprice') && curItem.avgUnitCost > 0) {
+            $('f_unitprice').value = String(round2(curItem.avgUnitCost));
+          }
+        } else if (!itemName) {
+          FORM_UI.lastWhItem = '';
+        }
+        const qty = num('f_qty');
+        const uom = val('f_uom') || (curItem && curItem.uom) || 'Piece';
+        const up = num('f_unitprice') || (curItem ? curItem.avgUnitCost : 0);
+        const beforeQty = curItem ? curItem.onHandQty : 0;
+        const afterQty = round2(beforeQty + (isOut ? -qty : qty));
+        setFieldVisible('wrap_f_truck', /Direct/i.test(moveType));
+        setHint(
+          'hint_wh_item',
+          itemName
+            ? (curItem
+                ? `Current Warehouse Stock: ${fmtNum(beforeQty, beforeQty % 1 ? 2 : 0)} ${curItem.uom} @ ${fmtUSD(curItem.avgUnitCost, 2)}`
+                : (isOut ? 'Item has 0 balance in Warehouse' : 'New Warehouse SKU - will be added to stored inventory'))
+            : '',
+          isOut && afterQty < -0.0001 ? 'crit' : (curItem ? 'ok' : '')
+        );
+        setText('calc_wh_dir', isOut ? '-OUT (Deducts Stock)' : '+IN (Adds Stock)');
+        setText('calc_wh_before', `${fmtNum(beforeQty, beforeQty % 1 ? 2 : 0)} ${uom}`);
+        setText('calc_wh_after', `${fmtNum(afterQty, afterQty % 1 ? 2 : 0)} ${uom}`);
+        setText('calc_wh_val', fmtUSD(round2(qty * up), 2));
+        commonDateChecks([]);
+        renderAdminLockBar();
+        return { isOut, beforeQty, afterQty, up };
+      }
+      if (STATE.modalForm === 'repair') {
+        const company = val('f_company') || defaultEntryCompany();
+        const unit = val('f_truck');
+        const repSrc = val('f_repair_source') || 'Warehouse Only';
+        const srcPills = $('repairSourcePills');
+        if (srcPills) {
+          srcPills.querySelectorAll('[data-rep-src-pill]').forEach(btn => {
+            btn.classList.toggle('active', btn.getAttribute('data-rep-src-pill') === repSrc);
+          });
+        }
+        const selDef = $('f_defect_ref');
+        const unitDefs = unit
+          ? (SEED.records.equipment_defects || [])
+              .filter(d => d && !d.voided && norm(d.equipment) === norm(unit))
+              .slice()
+              .sort((a, b) => (isDefectOpen(b) ? 1 : 0) - (isDefectOpen(a) ? 1 : 0) || String(b.date || '').localeCompare(String(a.date || '')))
+          : [];
+        if (selDef) {
+          const uKey = `${norm(unit)}|${SEED._customRev || 0}`;
+          const prevVal = selDef.value;
+          if (selDef.dataset.unitKey !== uKey) {
+            selDef.dataset.unitKey = uKey;
+            const opts = [['', 'None (Routine / Unlinked Repair)']].concat(
+              unitDefs.map(d => [
+                d.name || d.id,
+                `${d.name || d.id} · ${isDefectOpen(d) ? (/Grave|Critical/i.test(d.severity || '') ? 'GRAVE' : 'MILD') : 'RESOLVED'} · ${d.part_name || d.subsystem || 'Issue'}`
+              ])
+            );
+            selDef.innerHTML = opts.map(([ov, ol]) => `<option value="${esc(ov)}">${esc(ol)}</option>`).join('');
+            if (prevVal && opts.some(([ov]) => ov === prevVal)) selDef.value = prevVal;
+          }
+          if (unit !== FORM_UI.lastTruck) {
+            FORM_UI.lastTruck = unit;
+            if (!FORM_UI.defectRefPreset) {
+              const firstOpen = unitDefs.find(isDefectOpen);
+              selDef.value = firstOpen ? (firstOpen.name || firstOpen.id) : '';
+              if (firstOpen && firstOpen.subsystem && $('f_subsystem')) {
+                $('f_subsystem').value = firstOpen.subsystem;
+              }
+            }
+          }
+        }
+        const defRef = val('f_defect_ref');
+        const linkedDef = defRef ? unitDefs.find(d => (d.name || d.id) === defRef) : null;
+        setFieldVisible('wrap_resolve_defect', Boolean(defRef && (!linkedDef || isDefectOpen(linkedDef))));
+        const h = unit ? getEquipmentHealth(unit, company) : null;
+        const qvRep = $('qv_truck_repair');
+        if (qvRep) {
+          if (unit) {
+            const toneCls = h && h.critCount > 0 ? 'crit' : (h && h.openCount > 0 ? 'warn' : 'ok');
+            const partTxt = linkedDef && linkedDef.part_name ? ` · Linked Warning Part: <b>${esc(linkedDef.part_name)}</b>` : '';
+            qvRep.innerHTML = `<div class="pa-rec-banner ${toneCls}">${ic(h && h.openCount > 0 ? 'warn' : 'truck')} <span><b>${esc(unit)}</b> · Health: <b>${esc(h ? h.status : 'Healthy')}</b> (${h ? h.openCount : 0} open warning${h && h.openCount === 1 ? '' : 's'})${partTxt}</span></div>`;
+          } else {
+            qvRep.innerHTML = '';
+          }
+        }
+        syncRepairItemStockHints(company);
+        const rItems = Array.isArray(FORM_UI.repairItems) ? FORM_UI.repairItems : [];
+        let whPcs = 0, whCost = 0, outCost = 0;
+        rItems.forEach(it => {
+          const q = Number(it.qty) || 0;
+          const lc = round2(q * (Number(it.unit_cost) || 0));
+          if ((it.source || 'warehouse') === 'warehouse') {
+            whPcs = round2(whPcs + q);
+            whCost = round2(whCost + lc);
+          } else {
+            outCost = round2(outCost + lc);
+          }
+        });
+        const labor = round2(num('f_labor_cost'));
+        const outPlusLabor = round2(outCost + labor);
+        const totCost = round2(whCost + outPlusLabor);
+        setText('calc_rep_src', repSrc);
+        setText('calc_rep_wh', `${fmtNum(whPcs, whPcs % 1 ? 2 : 0)} pcs (${fmtUSD(whCost, 2)})`);
+        setText('calc_rep_out', fmtUSD(outPlusLabor, 2));
+        setText('calc_rep_total', fmtUSD(totCost, 2));
+        commonDateChecks([]);
+        renderAdminLockBar();
+        return { whPcs, whCost, outCost, labor, totCost };
+      }
+      if (STATE.modalForm === 'oillog') {
+        const company = val('f_company') || defaultEntryCompany();
+        const unit = val('f_truck');
+        const oilType = val('f_oil_type') || 'Engine Oil 15W-40';
+        const oilSrc = val('f_oil_source') || 'Plant Lube Bay';
+        const oilIdx = getOilServiceIndex(company);
+        if (unit !== FORM_UI.lastOilUnit) {
+          FORM_UI.lastOilUnit = unit;
+          const m = unit ? oilIdx.metersByEq.get(norm(unit)) : null;
+          if (m) {
+            if ($('f_hours') && !val('f_hours') && m.hours > 0) $('f_hours').value = String(Math.round(m.hours));
+            if ($('f_odometer') && !val('f_odometer') && (m.odometer || m.km) > 0) $('f_odometer').value = String(Math.round(m.odometer || m.km));
+          }
+        }
+        if (oilType !== FORM_UI.lastOilType) {
+          FORM_UI.lastOilType = oilType;
+          if (/Hydraulic/i.test(oilType)) {
+            if ($('f_int_hours')) $('f_int_hours').value = '1000';
+            if ($('f_int_km')) $('f_int_km').value = '0';
+            if ($('f_int_days')) $('f_int_days').value = '365';
+            if ($('f_uom')) $('f_uom').value = 'Litre';
+          } else if (/Gear|ATF|Differential/i.test(oilType)) {
+            if ($('f_int_hours')) $('f_int_hours').value = '500';
+            if ($('f_int_km')) $('f_int_km').value = '40000';
+            if ($('f_int_days')) $('f_int_days').value = '180';
+            if ($('f_uom')) $('f_uom').value = 'Litre';
+          } else if (/Filter/i.test(oilType)) {
+            if ($('f_int_hours')) $('f_int_hours').value = '250';
+            if ($('f_int_km')) $('f_int_km').value = '15000';
+            if ($('f_int_days')) $('f_int_days').value = '90';
+            if ($('f_uom')) $('f_uom').value = 'Set';
+          } else {
+            if ($('f_int_hours')) $('f_int_hours').value = '250';
+            if ($('f_int_km')) $('f_int_km').value = '15000';
+            if ($('f_int_days')) $('f_int_days').value = '90';
+            if ($('f_uom')) $('f_uom').value = 'Litre';
+          }
+        }
+        const curHrs = num('f_hours');
+        const curKm = num('f_odometer');
+        const intHrs = num('f_int_hours');
+        const intKm = num('f_int_km');
+        const intDays = num('f_int_days');
+        const qty = num('f_qty');
+        const dtStr = val('f_date') || todayISO();
+        let dueDateTxt = intDays > 0 ? `In ${fmtNum(intDays, 0)} days` : 'Not tracked';
+        if (intDays > 0 && /^\d{4}-\d{2}-\d{2}$/.test(dtStr)) {
+          const dObj = new Date(dtStr + 'T00:00:00Z');
+          if (!isNaN(dObj.getTime())) {
+            dObj.setUTCDate(dObj.getUTCDate() + Math.round(intDays));
+            dueDateTxt = `${dObj.toISOString().slice(0, 10)} (${fmtNum(intDays, 0)}d)`;
+          }
+        }
+        const qvOil = $('qv_truck_oil');
+        if (qvOil) {
+          const prevSched = unit
+            ? oilIdx.schedules.find(s => norm(s.equipment) === norm(unit) && norm(s.oil_type) === norm(oilType))
+            : null;
+          if (prevSched) {
+            const toneCls = prevSched.status === 'OVERDUE' ? 'crit' : (prevSched.status === 'DUE SOON' ? 'warn' : 'ok');
+            qvOil.innerHTML = `<div class="pa-rec-banner ${toneCls}">${ic('info')} <span><b>${esc(unit)}</b> · Last <b>${esc(oilType)}</b> change: <b>${esc(prevSched.last_date)}</b> (${esc(prevSched.status)} · ${esc(prevSched.trigger_summary)})</span></div>`;
+          } else {
+            qvOil.innerHTML = '';
+          }
+        }
+        if (oilSrc === 'Warehouse') {
+          const whIdx = getWarehouseIndex(company);
+          const whOil = whIdx.byKey[norm(oilType)];
+          const onHand = whOil ? whOil.onHandQty : 0;
+          setHint(
+            'hint_oil_src',
+            whOil && onHand >= qty
+              ? `Deducts ${fmtNum(qty, 1)} from Warehouse (${fmtNum(onHand, 1)} ${whOil.uom} available)`
+              : `Insufficient ${oilType} in Warehouse (${fmtNum(onHand, 1)} available)`,
+            whOil && onHand >= qty ? 'ok' : 'crit'
+          );
+          if ($('f_amount') && num('f_amount') <= 0 && whOil && whOil.avgUnitCost > 0) {
+            $('f_amount').value = String(round2(qty * whOil.avgUnitCost));
+          }
+        } else {
+          setHint('hint_oil_src', '', '');
+        }
+        setText('calc_oil_hrs', intHrs > 0 ? (curHrs > 0 ? `At ${fmtNum(curHrs + intHrs, 0)} h (+${fmtNum(intHrs, 0)}h)` : `+${fmtNum(intHrs, 0)} h`) : 'Not tracked');
+        setText('calc_oil_km', intKm > 0 ? (curKm > 0 ? `At ${fmtNum(curKm + intKm, 0)} km (+${fmtNum(intKm, 0)}km)` : `+${fmtNum(intKm, 0)} km`) : 'Not tracked');
+        setText('calc_oil_days', dueDateTxt);
+        setText('calc_oil_wh', oilSrc === 'Warehouse' ? `-OUT (${fmtNum(qty, 1)} ${val('f_uom') || 'L'})` : oilSrc);
         commonDateChecks([]);
         renderAdminLockBar();
         return {};
@@ -32543,9 +33870,14 @@
     FORM_UI.otManual = false; FORM_UI.ticketManual = false; FORM_UI.qtyManual = false; FORM_UI.repDateManual = false; FORM_UI.showRepDate = false; FORM_UI.afterHoursYesterday = false;
     FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; FORM_UI.postAttempted = false;
     FORM_UI.stagedOwnerDrivers = [];
+    FORM_UI.expItems = [];
+    FORM_UI.repairItems = STATE.modalForm === 'repair'
+      ? [{ item_name: '', source: 'warehouse', qty: 1, uom: 'Piece', unit_cost: '', costManual: false }]
+      : [];
     FORM_UI.adminUnlocked = {}; FORM_UI.unlockTargetField = ''; FORM_UI.unlockNote = '';
     FORM_UI.lastCompany = val('f_company'); FORM_UI.lastDate = val('f_date'); FORM_UI.lastCategory = null; FORM_UI.catCache = null;
-    FORM_UI.lastTruck = val('f_truck'); FORM_UI.lastTruckOwner = val('f_truckowner');
+    FORM_UI.lastTruck = val('f_truck'); FORM_UI.lastExpTruck = val('f_truck'); FORM_UI.lastWhItem = ''; FORM_UI.lastOilUnit = ''; FORM_UI.lastOilType = '';
+    FORM_UI.lastTruckOwner = val('f_truckowner');
     FORM_UI.lastSaleType = val('f_saletype'); FORM_UI.lastTransportBy = val('f_transportby');
     FORM_UI.lastSite = val('f_site'); FORM_UI.lastSiteOwner = val('f_siteowner'); FORM_UI.lastProduct = val('f_product');
     FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier'); FORM_UI.lastUom = val('f_uom') || ''; FORM_UI.lastPrCoSide = '';
@@ -32849,10 +34181,237 @@
         const mode = btn.getAttribute('data-exp-price-mode') || 'priced';
         if ($('f_price_pending')) $('f_price_pending').value = mode === 'pending' ? '1' : '0';
         recalcForm();
-        if (mode === 'priced' && $('f_amount')) {
+        if (mode === 'priced' && $('f_amount') && !($('f_amount').readOnly)) {
           try { $('f_amount').focus(); } catch (_) {}
-        } else if (mode === 'pending' && $('f_qty')) {
+        } else if (mode === 'pending' && $('f_qty') && !($('f_qty').readOnly)) {
           try { $('f_qty').focus(); if ($('f_qty').select) $('f_qty').select(); } catch (_) {}
+        }
+      });
+    });
+
+    body.querySelectorAll('[data-exp-route]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const rt = btn.getAttribute('data-exp-route') || 'general';
+        if (rt === 'warehouse') {
+          if ($('f_store_warehouse')) $('f_store_warehouse').value = '1';
+          if ($('f_for_equipment')) $('f_for_equipment').value = '0';
+          if ($('f_truck')) $('f_truck').value = '';
+          FORM_UI.lastExpTruck = '';
+        } else if (rt === 'equipment') {
+          if ($('f_store_warehouse')) $('f_store_warehouse').value = '0';
+          if ($('f_for_equipment')) $('f_for_equipment').value = '1';
+        } else {
+          if ($('f_store_warehouse')) $('f_store_warehouse').value = '0';
+          if ($('f_for_equipment')) $('f_for_equipment').value = '0';
+          if ($('f_truck')) $('f_truck').value = '';
+          FORM_UI.lastExpTruck = '';
+        }
+        recalcForm();
+        if (rt === 'equipment' && $('f_truck') && !val('f_truck')) {
+          try { $('f_truck').focus(); } catch (_) {}
+        } else if (rt === 'warehouse' && $('f_exp_item_name') && !(FORM_UI.expItems && FORM_UI.expItems.length)) {
+          try { $('f_exp_item_name').focus(); } catch (_) {}
+        }
+      });
+    });
+
+    const addExpItemBtn = $('addExpItemLineBtn');
+    const expItemsWrap = $('expItemsRowsWrap');
+    if (addExpItemBtn && expItemsWrap) {
+      renderExpenseItemsBuilderRows();
+      addExpItemBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const defMode = defaultExpItemDestMode();
+        const seedFirstFromHeader = FORM_UI.expItems.length === 0 && (val('f_exp_item_name') || Number(val('f_amount')) > 0);
+        const initQty = seedFirstFromHeader ? (num('f_qty') || 1) : 1;
+        const initAmt = seedFirstFromHeader ? num('f_amount') : 0;
+        const initUc = (seedFirstFromHeader && initAmt > 0 && initQty > 0) ? round2(initAmt / initQty) : '';
+        FORM_UI.expItems.push({
+          item_name: seedFirstFromHeader ? (val('f_exp_item_name') || val('f_subcategory') || '') : '',
+          allocation_mode: defMode,
+          target_equipment: '',
+          warehouse_location: val('f_exp_wh_loc') || 'WTC Main Warehouse',
+          qty: initQty,
+          uom: /^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece',
+          unit_cost: initUc
+        });
+        renderExpenseItemsBuilderRows();
+        recalcForm();
+        const newIdx = FORM_UI.expItems.length - 1;
+        const nmInp = $('f_exi_name_' + newIdx);
+        if (nmInp) { try { nmInp.focus(); } catch (_) {} }
+      });
+      const syncExpItemRow = ev => {
+        const t = ev.target;
+        if (!t || !t.hasAttribute('data-exi-idx')) return;
+        const idx = Number(t.getAttribute('data-exi-idx'));
+        const field = t.getAttribute('data-exi-field');
+        const rowObj = FORM_UI.expItems[idx];
+        if (!rowObj || !field) return;
+        if (field === 'qty' || field === 'unit_cost') {
+          rowObj[field] = t.value === '' ? '' : Number(t.value);
+        } else {
+          rowObj[field] = t.value;
+        }
+        if (field === 'allocation_mode') {
+          if (rowObj.allocation_mode === 'same_equipment' && $('f_for_equipment')) {
+            $('f_for_equipment').value = '1';
+            if ($('f_store_warehouse')) $('f_store_warehouse').value = '0';
+          }
+          renderExpenseItemsBuilderRows();
+        } else {
+          const totEl = expItemsWrap.querySelector(`[data-exi-tot="${idx}"]`);
+          if (totEl) {
+            totEl.textContent = fmtUSD(round2((Number(rowObj.qty) || 0) * (Number(rowObj.unit_cost) || 0)), 2);
+          }
+        }
+        recalcForm();
+      };
+      expItemsWrap.addEventListener('input', syncExpItemRow);
+      expItemsWrap.addEventListener('change', syncExpItemRow);
+      expItemsWrap.addEventListener('click', ev => {
+        const rmBtn = ev.target && ev.target.closest ? ev.target.closest('[data-exi-remove]') : null;
+        if (!rmBtn) return;
+        ev.preventDefault();
+        const idx = Number(rmBtn.getAttribute('data-exi-remove'));
+        if (idx >= 0 && idx < FORM_UI.expItems.length) {
+          FORM_UI.expItems.splice(idx, 1);
+          if (FORM_UI.expItems.length === 0) {
+            if ($('f_qty')) { $('f_qty').readOnly = false; $('f_qty').value = '1'; }
+            if ($('f_amount') && val('f_price_pending') !== '1') {
+              $('f_amount').readOnly = false;
+              $('f_amount').classList.remove('pa-locked-input');
+            }
+          }
+          renderExpenseItemsBuilderRows();
+          recalcForm();
+        }
+      });
+    }
+
+    body.querySelectorAll('[data-def-sev-pill]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const sv = btn.getAttribute('data-def-sev-pill');
+        if (sv && $('f_severity')) {
+          $('f_severity').value = sv;
+          $('f_severity').dispatchEvent(new Event('change', { bubbles: true }));
+          recalcForm();
+        }
+      });
+    });
+
+    const applyRepSourceToItems = srcMode => {
+      if (!Array.isArray(FORM_UI.repairItems)) return;
+      if (srcMode === 'Warehouse Only') {
+        FORM_UI.repairItems.forEach(it => { it.source = 'warehouse'; });
+      } else if (srcMode === 'Outside Only') {
+        FORM_UI.repairItems.forEach(it => { it.source = 'outside'; });
+      }
+      renderRepairItemsBuilderRows();
+    };
+    body.querySelectorAll('[data-rep-src-pill]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const rs = btn.getAttribute('data-rep-src-pill') || 'Warehouse Only';
+        if ($('f_repair_source')) {
+          $('f_repair_source').value = rs;
+        }
+        applyRepSourceToItems(rs);
+        recalcForm();
+      });
+    });
+    if ($('f_repair_source')) {
+      $('f_repair_source').addEventListener('change', () => {
+        applyRepSourceToItems(val('f_repair_source'));
+        recalcForm();
+      });
+    }
+
+    const addRepItemBtn = $('addRepairItemLineBtn');
+    const repItemsWrap = $('repairItemsRowsWrap');
+    if (addRepItemBtn && repItemsWrap) {
+      renderRepairItemsBuilderRows();
+      addRepItemBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const curSrc = val('f_repair_source') === 'Outside Only' ? 'outside' : 'warehouse';
+        FORM_UI.repairItems.push({
+          item_name: '',
+          source: curSrc,
+          qty: 1,
+          uom: 'Piece',
+          unit_cost: '',
+          costManual: false
+        });
+        renderRepairItemsBuilderRows();
+        recalcForm();
+        const newIdx = FORM_UI.repairItems.length - 1;
+        const nmInp = $('f_repi_name_' + newIdx);
+        if (nmInp) { try { nmInp.focus(); } catch (_) {} }
+      });
+      const syncRepItemRow = ev => {
+        const t = ev.target;
+        if (!t || !t.hasAttribute('data-repi-idx')) return;
+        const idx = Number(t.getAttribute('data-repi-idx'));
+        const field = t.getAttribute('data-repi-field');
+        const rowObj = FORM_UI.repairItems[idx];
+        if (!rowObj || !field) return;
+        if (field === 'qty' || field === 'unit_cost') {
+          rowObj[field] = t.value === '' ? '' : Number(t.value);
+          if (field === 'unit_cost' && ev && ev.isTrusted) rowObj.costManual = t.value !== '';
+        } else {
+          rowObj[field] = t.value;
+        }
+        if (field === 'item_name' || field === 'source') {
+          if ((rowObj.source || 'warehouse') === 'warehouse' && rowObj.item_name) {
+            const whIdx = getWarehouseIndex(val('f_company') || defaultEntryCompany());
+            const whRow = whIdx.byKey[norm(rowObj.item_name)];
+            if (whRow) {
+              if (whRow.uom) {
+                rowObj.uom = whRow.uom;
+                const uSel = $('f_repi_uom_' + idx);
+                if (uSel) uSel.value = whRow.uom;
+              }
+              if (!rowObj.costManual && whRow.avgUnitCost > 0) {
+                rowObj.unit_cost = round2(whRow.avgUnitCost);
+                const cInp = $('f_repi_cost_' + idx);
+                if (cInp) cInp.value = String(rowObj.unit_cost);
+              }
+            }
+          }
+          if (field === 'source' && $('f_repair_source') && FORM_UI.repairItems.length > 0) {
+            const hasWh = FORM_UI.repairItems.some(x => (x.source || 'warehouse') === 'warehouse');
+            const hasOut = FORM_UI.repairItems.some(x => x.source === 'outside');
+            if (hasWh && hasOut) $('f_repair_source').value = 'Partially Warehouse + Outside';
+            else if (hasWh && val('f_repair_source') === 'Outside Only') $('f_repair_source').value = 'Warehouse Only';
+            else if (hasOut && val('f_repair_source') === 'Warehouse Only') $('f_repair_source').value = 'Outside Only';
+          }
+        }
+        recalcForm();
+      };
+      repItemsWrap.addEventListener('input', syncRepItemRow);
+      repItemsWrap.addEventListener('change', syncRepItemRow);
+      repItemsWrap.addEventListener('click', ev => {
+        const rmBtn = ev.target && ev.target.closest ? ev.target.closest('[data-repi-remove]') : null;
+        if (!rmBtn) return;
+        ev.preventDefault();
+        const idx = Number(rmBtn.getAttribute('data-repi-remove'));
+        if (idx >= 0 && idx < FORM_UI.repairItems.length) {
+          FORM_UI.repairItems.splice(idx, 1);
+          renderRepairItemsBuilderRows();
+          recalcForm();
+        }
+      });
+    }
+
+    body.querySelectorAll('[data-oil-qty-preset]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const qv = btn.getAttribute('data-oil-qty-preset');
+        if (qv && $('f_qty')) {
+          $('f_qty').value = qv;
+          recalcForm();
         }
       });
     });
@@ -33202,6 +34761,68 @@
           ...(adminOverrides.length ? { admin_overrides: adminOverrides } : {})
         });
       } else {
+        const hasMultiItems = Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length > 0;
+        const storeWhSingle = !hasMultiItems && val('f_store_warehouse') === '1';
+        const forEqSingle = !hasMultiItems && !storeWhSingle && (val('f_for_equipment') === '1' || Boolean(val('f_truck')));
+        let stagedItems = [];
+        if (hasMultiItems) {
+          FORM_UI.expItems.forEach((it, idx) => {
+            const nm = String(it.item_name || '').trim();
+            const q = Number(it.qty) || 0;
+            const uc = Number(it.unit_cost) || 0;
+            const mode = it.allocation_mode || 'same_equipment';
+            const diffEq = String(it.target_equipment || '').trim();
+            const whLoc = String(it.warehouse_location || 'WTC Main Warehouse').trim() || 'WTC Main Warehouse';
+            if (!nm) addErr('f_exi_name_' + idx, `Item line ${idx + 1}: Item / Part Name is required.`);
+            if (!(q > 0)) addErr('f_exi_qty_' + idx, `Item line ${idx + 1}: Quantity must be above zero.`);
+            if (!c.pricePending && !(uc >= 0)) addErr('f_exi_cost_' + idx, `Item line ${idx + 1}: Unit price cannot be negative.`);
+            if (mode === 'same_equipment' && !val('f_truck')) {
+              addErr('f_truck', `Item line ${idx + 1} is routed to Same Equipment - select Equipment (cost centre) above.`);
+            }
+            if (mode === 'different_equipment' && !diffEq) {
+              addErr('f_exi_eq_' + idx, `Item line ${idx + 1}: Select the Different Equipment unit.`);
+            }
+            const effUnitCost = c.pricePending ? 0 : round2(uc);
+            stagedItems.push({
+              item_name: nm,
+              category: val('f_category'),
+              subcategory: val('f_subcategory'),
+              qty: round2(q || 1),
+              uom: it.uom || 'Piece',
+              unit_cost: effUnitCost,
+              line_total: c.pricePending ? 0 : round2((q || 1) * effUnitCost),
+              allocation_mode: mode,
+              target_equipment: mode === 'same_equipment' ? val('f_truck') : (mode === 'different_equipment' ? diffEq : ''),
+              warehouse_location: mode === 'warehouse' ? whLoc : '',
+              historical_consumed: 0
+            });
+          });
+        } else {
+          if (storeWhSingle && !val('f_exp_item_name') && !val('f_subcategory')) {
+            addErr('f_exp_item_name', 'Enter the Item / Part Name to store in Warehouse.');
+          }
+          if (val('f_for_equipment') === '1' && !val('f_truck')) {
+            addErr('f_truck', 'Select the Equipment unit for this expense (or switch to Not for Equipment).');
+          }
+          const singleQty = c.qty > 0 ? c.qty : (num('f_qty') || 1);
+          const singleAmt = c.pricePending ? 0 : round2(c.amount);
+          const singleItemName = val('f_exp_item_name') || val('f_subcategory') || val('f_category');
+          if (storeWhSingle || Boolean(val('f_exp_item_name')) || (forEqSingle && !/^fuel$/i.test(val('f_category')))) {
+            stagedItems.push({
+              item_name: singleItemName,
+              category: val('f_category'),
+              subcategory: val('f_subcategory'),
+              qty: round2(singleQty),
+              uom: /^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece',
+              unit_cost: singleQty > 0 ? round2(singleAmt / singleQty) : singleAmt,
+              line_total: singleAmt,
+              allocation_mode: storeWhSingle ? 'warehouse' : (forEqSingle ? 'same_equipment' : 'general'),
+              target_equipment: forEqSingle ? val('f_truck') : '',
+              warehouse_location: storeWhSingle ? (val('f_exp_wh_loc') || 'WTC Main Warehouse') : '',
+              historical_consumed: 0
+            });
+          }
+        }
         if (c.pricePending) {
           if (!(c.qty > 0)) addErr('f_qty', 'Quantity received (e.g. Litres) must be above zero when Price is Pending.');
           if (!c.supplier) addErr('f_supplier', 'Supplier / Vendor is required when Price is Pending so the unpriced delivery is tracked on their account.');
@@ -33209,6 +34830,19 @@
           if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero (or switch Amount to "Price Pending ($0)").');
           if (c.method === 'Credit' && !c.supplier) addErr('f_supplier', 'A credit expense needs the supplier it is owed to.');
         }
+        const forEquipBool = Boolean(
+          val('f_truck') ||
+          stagedItems.some(x => x.allocation_mode === 'same_equipment' || x.allocation_mode === 'different_equipment')
+        );
+        const storedWhBool = stagedItems.some(x => x.allocation_mode === 'warehouse');
+        const itemSummary = stagedItems.length
+          ? stagedItems.map(x => {
+              const destLbl = x.allocation_mode === 'warehouse'
+                ? 'Warehouse'
+                : (x.target_equipment ? x.target_equipment : 'General');
+              return `${x.qty}x ${x.item_name} (${destLbl})`;
+            }).join(' · ')
+          : '';
         record = {
           ...base,
           name: `EXP ${date} ${c.supplier || val('f_category')}`,
@@ -33217,11 +34851,16 @@
           subcategory: val('f_subcategory'),
           supplier: c.supplier,
           equipment: val('f_truck'),
+          for_equipment: forEquipBool,
+          stored_in_warehouse: storedWhBool,
+          item_count: stagedItems.length || 1,
+          item_summary: itemSummary,
           method: c.pricePending ? 'Credit' : c.method,
           qty: c.qty > 0 ? c.qty : (num('f_qty') || 1),
           amount: c.pricePending ? 0 : round2(c.amount),
           price_pending: Boolean(c.pricePending),
-          reference: val('f_reference')
+          reference: val('f_reference'),
+          _staged_expense_items: stagedItems
         };
       }
     } else if (f === 'settlement') {
@@ -33872,6 +35511,167 @@
         equipment: equip,
         driver
       };
+    } else if (f === 'warehousestock') {
+      const moveType = val('f_wh_move_type') || 'Opening Stock';
+      const isOut = /Adjustment|Direct/i.test(moveType);
+      const itemName = val('f_item_name');
+      const qty = round2(num('f_qty'));
+      const uom = val('f_uom') || 'Piece';
+      const whIdx = getWarehouseIndex(company);
+      const curItem = itemName ? whIdx.byKey[norm(itemName)] : null;
+      const beforeQty = curItem ? curItem.onHandQty : 0;
+      if (!itemName) addErr('f_item_name', 'Item / Part Name is required.');
+      if (!(qty > 0)) addErr('f_qty', 'Quantity must be above zero.');
+      if (isOut && itemName && qty > beforeQty + 0.0001) {
+        addErr('f_qty', `Cannot deduct ${qty} ${uom} - only ${beforeQty} ${curItem ? curItem.uom : uom} available in Warehouse.`);
+      }
+      if (/Direct/i.test(moveType) && !val('f_truck')) {
+        addErr('f_truck', 'Select Target Equipment for a Direct Issue from Warehouse.');
+      }
+      const up = round2(num('f_unitprice') || (curItem ? curItem.avgUnitCost : 0));
+      const seq = String(((SEED.records.warehouse_movements || []).length + (STATE.customRecords.warehouse_movements || []).length) + 1).padStart(3, '0');
+      const locVal = val('f_location') || 'WTC Main Warehouse';
+      const tgtEq = /Direct/i.test(moveType) ? val('f_truck') : '';
+      crKey = 'warehouse_movements';
+      record = {
+        ...base,
+        name: `WHS-${date.replace(/-/g, '')}-${seq}`,
+        rep_date: repDate,
+        movement_type: moveType,
+        move_type: moveType,
+        direction: isOut ? 'OUT' : 'IN',
+        item_name: itemName,
+        category: val('f_category') || 'Spare Parts',
+        qty: qty || 1,
+        uom,
+        unit_cost: up,
+        total_cost: round2((qty || 1) * up),
+        warehouse_location: locVal,
+        location: locVal,
+        min_stock: Math.max(0, num('f_min_stock')),
+        equipment: tgtEq,
+        target_equipment: tgtEq
+      };
+    } else if (f === 'repair') {
+      const unit = val('f_truck');
+      if (!unit) addErr('f_truck', 'Equipment / Truck unit is required.');
+      const rItems = Array.isArray(FORM_UI.repairItems) ? FORM_UI.repairItems.filter(it => String(it.item_name || '').trim() !== '' || Number(it.unit_cost) > 0) : [];
+      const labor = round2(num('f_labor_cost'));
+      if (!rItems.length && !(labor > 0)) {
+        addErr('f_repi_name_0', 'Add at least one item used in the repair (or enter external workshop labor > $0).');
+      }
+      const whIdx = getWarehouseIndex(company);
+      const cumWhByKey = {};
+      const stagedRepItems = [];
+      let whPcs = 0, whCost = 0, outCost = 0, hasWh = false, hasOut = false;
+      (FORM_UI.repairItems || []).forEach((it, idx) => {
+        const nm = String(it.item_name || '').trim();
+        if (!nm && (FORM_UI.repairItems.length > 1 || labor > 0)) return;
+        if (!nm) return;
+        const q = round2(Number(it.qty) || 0);
+        const src = (it.source || 'warehouse') === 'outside' ? 'outside' : 'warehouse';
+        if (!(q > 0)) addErr('f_repi_qty_' + idx, `Repair item ${idx + 1}: Quantity must be above zero.`);
+        const whRow = whIdx.byKey[norm(nm)];
+        if (src === 'warehouse') {
+          hasWh = true;
+          const k = norm(nm);
+          cumWhByKey[k] = round2((cumWhByKey[k] || 0) + q);
+          const avail = whRow ? whRow.onHandQty : 0;
+          if (cumWhByKey[k] > avail + 0.0001) {
+            addErr('f_repi_qty_' + idx, `Warehouse has ${avail} of "${nm}" on hand (requested ${cumWhByKey[k]}). Store more first or switch item source to Outside.`);
+          }
+        } else {
+          hasOut = true;
+        }
+        const uc = round2(it.unit_cost !== '' && it.unit_cost != null ? Number(it.unit_cost) : (src === 'warehouse' && whRow ? whRow.avgUnitCost : 0));
+        const lc = round2(q * uc);
+        if (src === 'warehouse') {
+          whPcs = round2(whPcs + q);
+          whCost = round2(whCost + lc);
+        } else {
+          outCost = round2(outCost + lc);
+        }
+        stagedRepItems.push({
+          item_name: nm,
+          source: src,
+          qty: q || 1,
+          uom: it.uom || (whRow && whRow.uom) || 'Piece',
+          unit_cost: uc,
+          line_total: lc
+        });
+      });
+      let effRepSource = val('f_repair_source') || 'Warehouse Only';
+      if (hasWh && (hasOut || (labor > 0 && effRepSource === 'Partially Warehouse + Outside'))) {
+        effRepSource = 'Partially Warehouse + Outside';
+      } else if (hasWh && !hasOut && labor === 0) {
+        effRepSource = 'Warehouse Only';
+      } else if (!hasWh && (hasOut || labor > 0)) {
+        effRepSource = 'Outside Only';
+      }
+      const defRef = val('f_defect_ref');
+      const unitSlug = String(unit || 'UNIT').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'UNIT';
+      const seq = String(((SEED.records.equipment_repairs || []).length + (STATE.customRecords.equipment_repairs || []).length) + 1).padStart(3, '0');
+      const itemsSummary = stagedRepItems.length
+        ? stagedRepItems.map(x => `${x.qty}x ${x.item_name} (${x.source === 'warehouse' ? 'Warehouse' : 'Outside'})`).join(' · ')
+        : 'External Workshop Labor Only';
+      crKey = 'equipment_repairs';
+      record = {
+        ...base,
+        name: `REP-${date.replace(/-/g, '')}-${unitSlug}-${seq}`,
+        rep_date: repDate,
+        equipment: unit,
+        subsystem: val('f_subsystem') || 'Engine & Powertrain',
+        meter_reading: val('f_meter') !== '' ? num('f_meter') : null,
+        repair_source: effRepSource,
+        items_summary: itemsSummary,
+        item_count: stagedRepItems.length,
+        warehouse_qty: whPcs,
+        warehouse_parts_usd: whCost,
+        outside_parts_usd: outCost,
+        external_labor_usd: labor,
+        total_cost_usd: round2(whCost + outCost + labor),
+        supplier: val('f_supplier'),
+        defect_ref: defRef,
+        resolve_defect: Boolean(defRef && $('f_resolve_defect') && $('f_resolve_defect').checked),
+        status: val('f_status') || 'Completed',
+        _staged_repair_items: stagedRepItems
+      };
+    } else if (f === 'oillog') {
+      const unit = val('f_truck');
+      const oilType = val('f_oil_type') || 'Engine Oil 15W-40';
+      const oilSrc = val('f_oil_source') || 'Plant Lube Bay';
+      const qty = round2(num('f_qty'));
+      if (!unit) addErr('f_truck', 'Equipment / Truck unit is required.');
+      if (!(qty > 0)) addErr('f_qty', 'Quantity must be above zero.');
+      const whIdx = getWarehouseIndex(company);
+      const whOil = whIdx.byKey[norm(oilType)];
+      if (oilSrc === 'Warehouse') {
+        const avail = whOil ? whOil.onHandQty : 0;
+        if (qty > avail + 0.0001) {
+          addErr('f_qty', `Warehouse has ${avail} of "${oilType}" available (requested ${qty}).`);
+        }
+      }
+      const costUsd = round2(num('f_amount') > 0 ? num('f_amount') : (oilSrc === 'Warehouse' && whOil ? qty * whOil.avgUnitCost : 0));
+      const unitSlug = String(unit || 'UNIT').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'UNIT';
+      const seq = String(((SEED.records.equipment_oil_logs || []).length + (STATE.customRecords.equipment_oil_logs || []).length) + 1).padStart(3, '0');
+      crKey = 'equipment_oil_logs';
+      record = {
+        ...base,
+        name: `OIL-${date.replace(/-/g, '')}-${unitSlug}-${seq}`,
+        rep_date: repDate,
+        equipment: unit,
+        oil_type: oilType,
+        service_action: val('f_service_action') || 'Full Change',
+        qty: qty || 1,
+        uom: val('f_uom') || 'Litre',
+        source: oilSrc,
+        hours_reading: val('f_hours') !== '' ? num('f_hours') : null,
+        odometer_km: val('f_odometer') !== '' ? num('f_odometer') : null,
+        interval_hours: Math.max(0, num('f_int_hours')),
+        interval_km: Math.max(0, num('f_int_km')),
+        interval_days: Math.max(0, num('f_int_days')),
+        cost_usd: costUsd
+      };
     }
     return { errors, fieldErrors, record, crKey };
   }
@@ -34025,6 +35825,10 @@
     const sBtn = $('dynSaveModalBtn');
     if (sBtn) { sBtn.disabled = true; sBtn.textContent = isUpdatingPending ? 'Saving…' : 'Posting…'; }
     try {
+      const stagedExpenseItems = Array.isArray(record._staged_expense_items) ? record._staged_expense_items : [];
+      const stagedRepairItems = Array.isArray(record._staged_repair_items) ? record._staged_repair_items : [];
+      delete record._staged_expense_items;
+      delete record._staged_repair_items;
       if (isUpdatingPending && crKey === 'expenses') {
         const sArr = (SEED.records && Array.isArray(SEED.records.expenses)) ? SEED.records.expenses : [];
         sArr.forEach(r => {
@@ -34105,6 +35909,66 @@
         }
       }
       const extraApiPosts = [];
+      if (crKey === 'expenses' && stagedExpenseItems.length) {
+        if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
+        stagedExpenseItems.forEach((it, li) => {
+          const itemRec = {
+            id: uid('ei'),
+            name: `${record.name} · L${li + 1} · ${it.item_name}`,
+            company: record.company,
+            date: record.date,
+            rep_date: record.rep_date,
+            expense_id: record.id,
+            expense_ref: record.name,
+            supplier: record.supplier || '',
+            category: it.category || record.category || '',
+            subcategory: it.subcategory || record.subcategory || '',
+            item_name: it.item_name,
+            qty: it.qty,
+            uom: it.uom || 'Piece',
+            unit_cost: it.unit_cost,
+            line_total: it.line_total,
+            allocation_mode: it.allocation_mode,
+            target_equipment: it.target_equipment || '',
+            warehouse_location: it.warehouse_location || '',
+            historical_consumed: 0,
+            source: 'app',
+            entered_by: record.entered_by,
+            entered_by_email: record.entered_by_email,
+            entered_at: record.entered_at,
+            voided: false
+          };
+          STATE.customRecords.expense_items.unshift(itemRec);
+          extraApiPosts.push(['expense_items', itemRec]);
+        });
+      }
+      if (crKey === 'equipment_repairs' && stagedRepairItems.length) {
+        if (!Array.isArray(STATE.customRecords.repair_items)) STATE.customRecords.repair_items = [];
+        stagedRepairItems.forEach((it, li) => {
+          const rItemRec = {
+            id: uid('ri'),
+            name: `${record.name} · L${li + 1} · ${it.item_name}`,
+            company: record.company,
+            date: record.date,
+            rep_date: record.rep_date,
+            repair_id: record.id,
+            repair_ref: record.name,
+            equipment: record.equipment,
+            item_name: it.item_name,
+            source: it.source,
+            qty: it.qty,
+            uom: it.uom || 'Piece',
+            unit_cost: it.unit_cost,
+            line_total: it.line_total,
+            entered_by: record.entered_by,
+            entered_by_email: record.entered_by_email,
+            entered_at: record.entered_at,
+            voided: false
+          };
+          STATE.customRecords.repair_items.unshift(rItemRec);
+          extraApiPosts.push(['repair_items', rItemRec]);
+        });
+      }
       if (crKey === 'equipment_defects' && record.sync_unit_status && isDefectOpen(record)) {
         if (!Array.isArray(STATE.customRecords.company_equipment)) STATE.customRecords.company_equipment = [];
         const allCoEq = (SEED.records.company_equipment || []).concat(STATE.customRecords.company_equipment || []);
@@ -34124,12 +35988,12 @@
           extraApiPosts.push(['company_equipment', ce]);
         });
       }
-      if (crKey === 'part_movements' && record.defect_ref && record.resolve_defect) {
+      if ((crKey === 'part_movements' || crKey === 'equipment_repairs') && record.defect_ref && record.resolve_defect) {
         if (!Array.isArray(STATE.customRecords.equipment_defects)) STATE.customRecords.equipment_defects = [];
         const defPool = STATE.customRecords.equipment_defects.concat(SEED.records.equipment_defects || []);
         const dMatch = defPool.find(d => d && !d.voided && (norm(d.name) === norm(record.defect_ref) || String(d.id) === String(record.defect_ref)));
         if (dMatch) {
-          dMatch.status = 'Resolved — Part Changed';
+          dMatch.status = crKey === 'equipment_repairs' ? 'Resolved - Repaired' : 'Resolved - Part Changed';
           dMatch.resolved_date = record.date;
           dMatch.linked_part_log = record.name;
           const dIdx = STATE.customRecords.equipment_defects.findIndex(x => x && String(x.id) === String(dMatch.id));
@@ -34309,12 +36173,34 @@
       delete r.voided_by;
       delete r.voided_at;
     }
+    const extraRestorePosts = [];
+    if (crKey === 'expenses' || crKey === 'equipment_repairs') {
+      const childKey = crKey === 'expenses' ? 'expense_items' : 'repair_items';
+      const idField = crKey === 'expenses' ? 'expense_id' : 'repair_id';
+      const refField = crKey === 'expenses' ? 'expense_ref' : 'repair_ref';
+      const parentId = String((r && r.id) || (archivedSeed && archivedSeed.id) || q);
+      const parentRef = norm((r && r.name) || (archivedSeed && archivedSeed.name) || '');
+      const childPool = (STATE.customRecords[childKey] || []).concat((SEED.records && SEED.records[childKey]) || []);
+      const seenChild = new Set();
+      childPool.forEach(ch => {
+        if (!ch || !ch.voided) return;
+        if (String(ch[idField] || '') !== parentId && (!parentRef || norm(ch[refField] || '') !== parentRef)) return;
+        const cid = String(ch.id || ch.name || '');
+        if (cid && seenChild.has(cid)) return;
+        if (cid) seenChild.add(cid);
+        ch.voided = false;
+        delete ch.voided_by;
+        delete ch.voided_at;
+        extraRestorePosts.push([childKey, ch]);
+      });
+    }
     applyCustomRecordsToSeed();
     saveLocalAuthAndRecords();
     renderApp();
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || (archivedSeed && (archivedSeed.name || archivedSeed.ticket_no)) || q;
     toast('✓ Record restored · ' + label, 'ok');
     if (r) postRecordToLocalApi(crKey, r);
+    extraRestorePosts.forEach(([ck, cr]) => postRecordToLocalApi(ck, cr));
     syncWithCloud(true);
   }
 
@@ -34350,6 +36236,30 @@
       list.unshift(r);
     }
     const extraVoidPosts = [];
+    if (crKey === 'expenses' || crKey === 'equipment_repairs') {
+      const childKey = crKey === 'expenses' ? 'expense_items' : 'repair_items';
+      const idField = crKey === 'expenses' ? 'expense_id' : 'repair_id';
+      const refField = crKey === 'expenses' ? 'expense_ref' : 'repair_ref';
+      const parentId = String((r && r.id) || (seedRow && seedRow.id) || q);
+      const parentRef = norm((r && r.name) || (seedRow && seedRow.name) || '');
+      if (!Array.isArray(STATE.customRecords[childKey])) STATE.customRecords[childKey] = [];
+      const childPool = STATE.customRecords[childKey].concat((SEED.records && SEED.records[childKey]) || []);
+      const seenChild = new Set();
+      childPool.forEach(ch => {
+        if (!ch || ch.voided) return;
+        if (String(ch[idField] || '') !== parentId && (!parentRef || norm(ch[refField] || '') !== parentRef)) return;
+        const cid = String(ch.id || ch.name || '');
+        if (cid && seenChild.has(cid)) return;
+        if (cid) seenChild.add(cid);
+        ch.voided = true;
+        ch.voided_by = who;
+        ch.voided_at = when;
+        const cIdx = STATE.customRecords[childKey].findIndex(x => x && String(x.id || x.name) === cid);
+        if (cIdx >= 0) Object.assign(STATE.customRecords[childKey][cIdx], ch);
+        else STATE.customRecords[childKey].unshift(Object.assign({}, ch));
+        extraVoidPosts.push([childKey, ch]);
+      });
+    }
     if (crKey === 'equipment_defects' && r && r.equipment && Array.isArray(STATE.customRecords.company_equipment)) {
       const defPool = (STATE.customRecords.equipment_defects || []).concat(SEED.records.equipment_defects || []);
       const remOpen = defPool.some(d => d && !d.voided && norm(d.equipment) === norm(r.equipment) && isDefectOpen(d));
@@ -34594,6 +36504,38 @@
         FORM_UI.lastDefectRef = $('f_defect_ref').value;
       }
       if (prefill.part && $('f_part_name')) $('f_part_name').value = prefill.part;
+      if (prefill.part && form === 'repair' && FORM_UI.repairItems && FORM_UI.repairItems[0] && !FORM_UI.repairItems[0].item_name) {
+        FORM_UI.repairItems[0].item_name = prefill.part;
+        renderRepairItemsBuilderRows();
+      }
+      if (prefill.item) {
+        if ($('f_item_name')) {
+          $('f_item_name').value = prefill.item;
+          FORM_UI.lastWhItem = '';
+        } else if (form === 'repair' && FORM_UI.repairItems && FORM_UI.repairItems[0]) {
+          FORM_UI.repairItems[0].item_name = prefill.item;
+          const whIdx = getWarehouseIndex(val('f_company') || defaultEntryCompany());
+          const whRow = whIdx.byKey[norm(prefill.item)];
+          if (whRow) {
+            if (whRow.uom) FORM_UI.repairItems[0].uom = whRow.uom;
+            if (whRow.avgUnitCost > 0) FORM_UI.repairItems[0].unit_cost = round2(whRow.avgUnitCost);
+          }
+          renderRepairItemsBuilderRows();
+        }
+      }
+      const pfOil = prefill.oilType || prefill.oil || '';
+      if (pfOil && $('f_oil_type')) {
+        $('f_oil_type').value = pfOil;
+        FORM_UI.lastOilType = '';
+      }
+      const pfRepSrc = prefill.repSrc || prefill.repsrc || '';
+      if (pfRepSrc && $('f_repair_source')) {
+        $('f_repair_source').value = pfRepSrc;
+      }
+      if ((prefill.storeWh || prefill.storewh) && $('f_store_warehouse')) {
+        $('f_store_warehouse').value = '1';
+        if ($('f_for_equipment')) $('f_for_equipment').value = '0';
+      }
       if (prefill.sub && $('f_subsystem')) $('f_subsystem').value = prefill.sub;
       if (prefill.disp && $('f_disposition')) $('f_disposition').value = prefill.disp;
       if (prefill.party && $('f_vendor_buyer')) $('f_vendor_buyer').value = prefill.party;
@@ -34641,8 +36583,11 @@
     external_movements: 'External Treasury Movement', loans: 'Loan & Partner Advance',
     loan_settlements: 'Loan Repayment / Drawdown', conversions: 'USD ↔ LBP FX Conversion',
     jv_partnerships: 'JV 50/50 Site Partnership', jv_distributions: 'JV Profit Distribution',
-    equipment_defects: 'Equipment Defect Report', part_movements: 'Part Change & Custody',
-    currencies: 'Currency Master', fx_rates: 'Currency Exchange Rate (Global)', vat_rates: 'VAT Rate Schedule (Global)'
+    equipment_defects: 'Equipment Warning / Defect', part_movements: 'Part Change & Custody',
+    currencies: 'Currency Master', fx_rates: 'Currency Exchange Rate (Global)', vat_rates: 'VAT Rate Schedule (Global)',
+    expense_items: 'Expense Invoice Item', warehouse_movements: 'Warehouse Stock Movement',
+    equipment_repairs: 'Equipment Repair', repair_items: 'Repair Item Used',
+    equipment_oil_logs: 'Oil & Service Log'
   };
 
   const INSPECT_DVN = {
@@ -34660,17 +36605,21 @@
     external_movements: 'bhf_mfgexternal', loans: 'bhf_mfgloan', loan_settlements: 'bhf_mfgloansettlement',
     conversions: 'bhf_mfgconversion', jv_partnerships: 'bhf_mfgjvpartnership', jv_distributions: 'bhf_mfgjvdistribution',
     equipment_defects: 'bhf_equipmentdefect', part_movements: 'bhf_partmovement',
-    currencies: 'bhf_currency', fx_rates: 'bhf_fxrate', vat_rates: 'bhf_vatrate'
+    currencies: 'bhf_currency', fx_rates: 'bhf_fxrate', vat_rates: 'bhf_vatrate',
+    expense_items: 'bhf_expenseitem', warehouse_movements: 'bhf_warehousemovement',
+    equipment_repairs: 'bhf_equipmentrepair', repair_items: 'bhf_repairitem',
+    equipment_oil_logs: 'bhf_equipmentoillog'
   };
 
   const INSPECT_LOOKUP_FIELD_TARGET = {
     customer: 'customers', supplier: 'suppliers', site_owner: 'suppliers', truck_owner: 'suppliers',
     product: 'products', item: 'products', input_product: 'products', site: 'sites',
-    region: 'regions', truck: 'equipment', equipment: 'equipment', driver: 'drivers',
+    region: 'regions', truck: 'equipment', equipment: 'equipment', target_equipment: 'equipment', driver: 'drivers',
     default_driver: 'drivers', day_operator: 'drivers', night_operator: 'drivers',
     staff: 'employments', vat_invoice: 'vat_invoices', category: 'expense_categories',
     subcategory: 'expense_subcategories', uom: 'uoms', unit: 'uoms', type: 'product_types',
-    defect_ref: 'equipment_defects', linked_part_log: 'part_movements', currency: 'currencies'
+    defect_ref: 'equipment_defects', linked_part_log: 'part_movements', currency: 'currencies',
+    expense_ref: 'expenses', repair_ref: 'equipment_repairs'
   };
 
   function inspectorValue(key, v) {
@@ -34811,10 +36760,37 @@
     }
     if (key === 'equipment_defects') {
       const open = isDefectOpen(row);
-      const isCrit = /^Critical/i.test(row.severity || '');
+      const isCrit = /Grave|Critical/i.test(row.severity || '');
       return {
         tone: open ? (isCrit ? 'crit' : 'warn') : 'ok',
-        text: `Equipment Defect Report ${row.name}: Unit ${row.equipment || '—'} · Subsystem: ${row.subsystem || '—'}${row.part_name ? ' (' + row.part_name + ')' : ''}  |  Severity: ${row.severity || '—'}  |  Status: ${row.status || 'Open'}${row.linked_part_log ? ' · Resolved by ' + row.linked_part_log : ''}`
+        text: `Equipment Warning ${row.name}: Unit ${row.equipment || '-'} · Subsystem: ${row.subsystem || '-'} · Affected Part: ${row.part_name || 'General'}  |  Severity: ${row.severity || '-'}  |  Status: ${row.status || 'Open'}${row.linked_part_log ? ' · Resolved by ' + row.linked_part_log : ''}`
+      };
+    }
+    if (key === 'equipment_repairs') {
+      const whC = Number(row.warehouse_parts_usd != null ? row.warehouse_parts_usd : (row.warehouse_cost || 0));
+      const outC = Number(row.outside_parts_usd != null ? row.outside_parts_usd : (row.outside_parts_cost || 0));
+      const labC = Number(row.external_labor_usd != null ? row.external_labor_usd : (row.outside_labor_cost || 0));
+      const totC = Number(row.total_cost_usd != null ? row.total_cost_usd : (row.total_cost != null ? row.total_cost : (whC + outC + labC)));
+      return {
+        tone: 'info',
+        text: `Equipment Repair ${row.name}: Unit ${row.equipment || '-'} · Source: ${row.repair_source || 'Warehouse Only'}  |  Warehouse Stock Cost: ${fmtUSD(whC, 2)} · Outside Parts: ${fmtUSD(outC, 2)} · Outside Labor: ${fmtUSD(labC, 2)}  |  Total Cost: ${fmtUSD(totC, 2)}`
+      };
+    }
+    if (key === 'equipment_oil_logs') {
+      const hrsVal = row.hours_reading != null ? row.hours_reading : row.meter_hours;
+      const dueHrs = row.next_due_hours || (hrsVal != null && Number(row.interval_hours) > 0 ? Number(hrsVal) + Number(row.interval_hours) : null);
+      const dueKm = row.next_due_km || (row.odometer_km != null && Number(row.interval_km) > 0 ? Number(row.odometer_km) + Number(row.interval_km) : null);
+      const nextDueStr = [dueHrs ? fmtNum(dueHrs, 0) + ' hr' : '', dueKm ? fmtNum(dueKm, 0) + ' km' : '', row.next_due_date || (Number(row.interval_days) > 0 ? 'every ' + fmtNum(row.interval_days, 0) + 'd' : '')].filter(Boolean).join(' / ') || 'Open';
+      return {
+        tone: 'info',
+        text: `Oil & Service Log ${row.name}: Unit ${row.equipment || '-'} · ${row.oil_type || 'Engine Oil'} (${fmtNum(row.qty || 1, 1)} ${row.uom || 'Litre'})  |  Hours: ${hrsVal != null ? fmtNum(hrsVal, 1) + ' hr' : '-'} · Odometer: ${row.odometer_km != null ? fmtNum(row.odometer_km, 0) + ' km' : '-'}  |  Next Due: ${nextDueStr}`
+      };
+    }
+    if (key === 'warehouse_movements') {
+      const isOut = /OUT|Repair|Issued/i.test(row.movement_type || row.move_type || '');
+      return {
+        tone: isOut ? 'warn' : 'ok',
+        text: `Warehouse Stock Movement ${row.name}: ${isOut ? '-OUT' : '+IN'} ${fmtNum(row.qty || 1, 2)} ${row.uom || 'Unit'} of ${row.item_name || '-'}  |  Unit Cost: ${fmtUSD(row.unit_cost || 0, 2)} · Total: ${fmtUSD(row.total_cost || 0, 2)}  |  ${isOut ? 'Equipment: ' + (row.equipment || row.target_equipment || '-') : 'Supplier: ' + (row.supplier || '-')}`
       };
     }
     if (key === 'part_movements') {
@@ -35056,15 +37032,66 @@
 
     if (key === 'equipment_defects') {
       const open = isDefectOpen(row);
-      const isCrit = /^Critical/i.test(row.severity || '');
+      const isCrit = /Grave|Critical/i.test(row.severity || '');
       const h = getEquipmentHealth(row.equipment);
+      const sevShort = isCrit ? 'GRAVE' : (/Mild/i.test(row.severity || '') ? 'MILD' : String(row.severity || 'Mild').split(/[-—]/)[0].trim());
       return {
         bu, title, pill: row.status || 'Open',
         cards: [
-          { lbl: 'DEFECT SEVERITY', tag: open ? 'OPEN DEFECT' : 'RESOLVED', tone: open ? (isCrit ? 'crit' : 'warn') : 'good', val: String(row.severity || 'Moderate').split('—')[0].trim(), sub1: `Subsystem: ${row.subsystem || '—'}`, sub2: `Affected Part: ${row.part_name || 'General'}`, pct: isCrit ? 95 : 65 },
-          { lbl: 'UNIT LIVE HEALTH', tag: String(h.shortBadge || 'OK').toUpperCase(), tone: h.critCount > 0 ? 'crit' : (h.openCount > 0 ? 'warn' : 'good'), val: row.equipment || '—', sub1: `Health: ${h.status}`, sub2: `Open Defects on Unit: ${fmtNum(h.openCount)}`, pct: 80 },
-          { lbl: 'REPORTED TELEMETRY', tag: row.meter_reading != null ? 'METER LOGGED' : 'INSPECTION', tone: 'info', val: row.meter_reading != null ? fmtNum(row.meter_reading, 0) : (row.date || '—'), sub1: `Reported By: ${row.reported_by || row.entered_by || '—'}`, sub2: `Report Date: ${row.date || '—'}`, pct: 75 },
-          { lbl: 'PART RESOLUTION LINK', tag: row.linked_part_log ? 'LINKED PART' : 'AWAITING PART', tone: row.linked_part_log ? 'good' : 'warn', val: row.linked_part_log || 'Pending', sub1: `Resolved Date: ${row.resolved_date || 'Open'}`, sub2: `Pre-Replacement Governance`, pct: row.linked_part_log ? 100 : 40 }
+          { lbl: 'WARNING SEVERITY', tag: open ? (isCrit ? 'GRAVE ISSUE' : 'MILD WARNING') : 'RESOLVED', tone: open ? (isCrit ? 'crit' : 'warn') : 'good', val: sevShort, sub1: `Subsystem: ${row.subsystem || '-'}`, sub2: `Affected Part: ${row.part_name || 'General'}`, pct: isCrit ? 95 : 65 },
+          { lbl: 'UNIT LIVE HEALTH', tag: String(h.shortBadge || 'OK').toUpperCase(), tone: h.critCount > 0 ? 'crit' : (h.openCount > 0 ? 'warn' : 'good'), val: row.equipment || '-', sub1: `Health: ${h.status}`, sub2: `Open Warnings on Unit: ${fmtNum(h.openCount)}`, pct: 80 },
+          { lbl: 'REPORTED TELEMETRY', tag: row.meter_reading != null ? 'METER LOGGED' : 'INSPECTION', tone: 'info', val: row.meter_reading != null ? fmtNum(row.meter_reading, 0) : (row.date || '-'), sub1: `Reported By: ${row.reported_by || row.entered_by || '-'}`, sub2: `Report Date: ${row.date || '-'}`, pct: 75 },
+          { lbl: 'REPAIR / PART LINK', tag: row.linked_part_log ? 'LINKED' : 'AWAITING REPAIR', tone: row.linked_part_log ? 'good' : 'warn', val: row.linked_part_log || 'Pending', sub1: `Resolved Date: ${row.resolved_date || 'Open'}`, sub2: `Pre-Replacement Governance`, pct: row.linked_part_log ? 100 : 40 }
+        ]
+      };
+    }
+
+    if (key === 'equipment_repairs') {
+      const whCost = round2(Number(row.warehouse_parts_usd != null ? row.warehouse_parts_usd : (row.warehouse_cost || 0)));
+      const outParts = round2(Number(row.outside_parts_usd != null ? row.outside_parts_usd : (row.outside_parts_cost || 0)));
+      const outLabor = round2(Number(row.external_labor_usd != null ? row.external_labor_usd : (row.outside_labor_cost || 0)));
+      const outCost = round2(outParts + outLabor);
+      const totCost = round2(Number(row.total_cost_usd != null ? row.total_cost_usd : (row.total_cost != null ? row.total_cost : (whCost + outCost))));
+      return {
+        bu, title, pill: fmtUSD(totCost, 2),
+        cards: [
+          { lbl: 'REPAIR SOURCE', tag: (row.repair_source || 'WAREHOUSE').toUpperCase().slice(0, 18), tone: /Warehouse/i.test(row.repair_source || '') ? 'good' : 'info', val: row.repair_source || 'Warehouse Only', sub1: `Unit: ${row.equipment || '-'} · ${row.subsystem || 'General'}`, sub2: `Workshop / Vendor: ${row.supplier || 'Internal Workshop'}`, pct: 85 },
+          { lbl: 'WAREHOUSE STOCK USED', tag: whCost > 0 ? '-STOCK ISSUED' : 'NO STOCK', tone: whCost > 0 ? 'good' : 'info', val: fmtUSD(whCost, 2), sub1: `Items: ${row.items_summary || '-'}`, sub2: `Deducted from live Warehouse`, pct: totCost > 0 ? Math.max(15, Math.round((whCost / totCost) * 100)) : 50 },
+          { lbl: 'OUTSIDE PARTS & LABOR', tag: outCost > 0 ? 'OUTSIDE SPEND' : '$0 OUTSIDE', tone: outCost > 0 ? 'warn' : 'good', val: fmtUSD(outCost, 2), sub1: `Outside Parts: ${fmtUSD(outParts, 2)}`, sub2: `Outside Labor: ${fmtUSD(outLabor, 2)}`, pct: totCost > 0 ? Math.max(15, Math.round((outCost / totCost) * 100)) : 30 },
+          { lbl: 'TOTAL REPAIR COST', tag: row.defect_ref ? 'LINKED WARNING' : 'REPAIR LOG', tone: 'info', val: fmtUSD(totCost, 2), sub1: `Linked Warning: ${row.defect_ref || 'Direct Repair'}`, sub2: `Tx Date: ${row.date || '-'} · Status: ${row.status || 'Completed'}`, pct: 90 }
+        ]
+      };
+    }
+
+    if (key === 'equipment_oil_logs') {
+      const hrsVal = row.hours_reading != null ? row.hours_reading : row.meter_hours;
+      const costVal = Number(row.cost_usd != null ? row.cost_usd : (row.cost || 0));
+      const dueHrs = row.next_due_hours || (hrsVal != null && Number(row.interval_hours) > 0 ? Number(hrsVal) + Number(row.interval_hours) : null);
+      const dueKm = row.next_due_km || (row.odometer_km != null && Number(row.interval_km) > 0 ? Number(row.odometer_km) + Number(row.interval_km) : null);
+      const nextDueStr = [dueHrs ? fmtNum(dueHrs, 0) + ' hr' : '', dueKm ? fmtNum(dueKm, 0) + ' km' : '', row.next_due_date || (Number(row.interval_days) > 0 ? 'Every ' + fmtNum(row.interval_days, 0) + ' d' : '')].filter(Boolean).join(' · ') || 'Scheduled';
+      const intStr = [row.interval_hours ? fmtNum(row.interval_hours, 0) + ' hr' : '', row.interval_km ? fmtNum(row.interval_km, 0) + ' km' : '', row.interval_days ? fmtNum(row.interval_days, 0) + ' d' : ''].filter(Boolean).join(' · ') || 'Standard';
+      return {
+        bu, title, pill: `${fmtNum(row.qty || 1, 1)} ${row.uom || 'Litre'}`,
+        cards: [
+          { lbl: 'OIL / SERVICE TYPE', tag: `${fmtNum(row.qty || 1, 1)} ${row.uom || 'Litre'}`, tone: 'good', val: row.oil_type || 'Engine Oil 15W-40', sub1: `Unit: ${row.equipment || '-'} · ${row.service_action || 'Full Change'}`, sub2: `Source: ${row.source || 'Plant Lube Bay'}`, pct: 85 },
+          { lbl: 'METER AT SERVICE', tag: hrsVal != null ? 'HOURS' : (row.odometer_km != null ? 'ODOMETER' : 'DATE'), tone: 'info', val: hrsVal != null ? `${fmtNum(hrsVal, 1)} hr` : (row.odometer_km != null ? `${fmtNum(row.odometer_km, 0)} km` : (row.date || '-')), sub1: `Hours: ${hrsVal != null ? fmtNum(hrsVal, 1) + ' hr' : '-'}`, sub2: `Odometer: ${row.odometer_km != null ? fmtNum(row.odometer_km, 0) + ' km' : '-'}`, pct: 80 },
+          { lbl: 'CHANGE INTERVAL', tag: 'PREVENTIVE', tone: 'info', val: intStr, sub1: `Service Date: ${row.date || '-'}`, sub2: `Cost: ${fmtUSD(costVal, 2)}`, pct: 75 },
+          { lbl: 'NEXT CHANGE DUE', tag: 'SCHEDULED', tone: 'good', val: nextDueStr, sub1: `Auto-tracked against live meters`, sub2: `Notes: ${row.notes || '-'}`, pct: 90 }
+        ]
+      };
+    }
+
+    if (key === 'warehouse_movements') {
+      const isOut = /^OUT$/i.test(row.direction || '') || /OUT|Repair|Issued|Damaged/i.test(row.movement_type || row.move_type || '');
+      const whItem = getWarehouseIndex(row.company).byKey[norm(row.item_name)] || null;
+      const balQty = whItem ? Number(whItem.onHandQty || 0) : 0;
+      return {
+        bu, title, pill: `${isOut ? '-' : '+'}${fmtNum(row.qty || 1, 2)} ${row.uom || 'Piece'}`,
+        cards: [
+          { lbl: 'MOVEMENT DIRECTION', tag: isOut ? '-OUT (REPAIR / ISSUE)' : '+IN (STORED)', tone: isOut ? 'warn' : 'good', val: row.item_name || '-', sub1: `Type: ${row.movement_type || row.move_type || '-'}`, sub2: `Location: ${row.warehouse_location || row.location || 'WTC Main Warehouse'}`, pct: 85 },
+          { lbl: 'MOVEMENT QUANTITY', tag: (row.uom || 'PIECE').toUpperCase(), tone: isOut ? 'warn' : 'good', val: `${isOut ? '-' : '+'}${fmtNum(row.qty || 1, 2)} ${row.uom || 'Piece'}`, sub1: `Unit Cost: ${fmtUSD(row.unit_cost || 0, 2)}`, sub2: `Total Value: ${fmtUSD(row.total_cost || 0, 2)}`, pct: 80 },
+          { lbl: 'LIVE WAREHOUSE BALANCE', tag: balQty > 0 ? 'IN STOCK' : 'DEPLETED', tone: balQty > 0 ? 'good' : 'warn', val: whItem ? `${fmtNum(balQty, 2)} ${whItem.uom || 'Piece'}` : '0', sub1: whItem ? `Stocked In: ${fmtNum(whItem.stockedInQty || 0, 2)} · Repairs Out: ${fmtNum(whItem.usedInRepairsQty || 0, 2)}` : 'Item summary', sub2: whItem ? `Avg Cost: ${fmtUSD(whItem.avgUnitCost || 0, 2)}` : '-', pct: 75 },
+          { lbl: 'SOURCE / DESTINATION', tag: isOut ? 'EQUIPMENT / REPAIR' : 'PURCHASE / STOCK', tone: 'info', val: isOut ? (row.equipment || row.target_equipment || row.repair_ref || '-') : (row.supplier || row.expense_ref || 'Opening Stock'), sub1: `Repair Link: ${row.repair_ref || '-'}`, sub2: `Expense Link: ${row.expense_ref || '-'}`, pct: 90 }
         ]
       };
     }
@@ -35411,7 +37438,9 @@
     }
     else if (key === 'equipment' || key === 'company_equipment') {
       const name = row.equipment || row.name || row.Equipment;
-      addGrid('sg_eq_defects', `Equipment Defect Reports (${name})`, 'Defects', 'Health & Issues', 'equipment_defects', (rec.equipment_defects || []).filter(d => norm(d.equipment) === norm(name)), ['name', 'date', 'company', 'subsystem', 'part_name', 'severity', 'status', 'description'], null);
+      addGrid('sg_eq_defects', `Equipment Warnings & Defects (${name})`, 'Warnings', 'Health & Issues', 'equipment_defects', (rec.equipment_defects || []).filter(d => norm(d.equipment) === norm(name)), ['name', 'date', 'company', 'subsystem', 'part_name', 'severity', 'status', 'description'], null);
+      addGrid('sg_eq_repairs', `Equipment Repairs (${name})`, 'Repairs', 'Repairs & Stock', 'equipment_repairs', (rec.equipment_repairs || []).filter(r => norm(r.equipment) === norm(name)), ['name', 'date', 'company', 'repair_source', 'subsystem', 'items_summary', 'warehouse_parts_usd', 'outside_parts_usd', 'external_labor_usd', 'total_cost_usd'], 'total_cost_usd');
+      addGrid('sg_eq_oil', `Oil & Preventive Service Logs (${name})`, 'Oil Logs', 'Preventive Service', 'equipment_oil_logs', (rec.equipment_oil_logs || []).filter(o => norm(o.equipment) === norm(name)), ['name', 'date', 'company', 'oil_type', 'service_action', 'qty', 'hours_reading', 'odometer_km', 'interval_hours', 'interval_km', 'interval_days', 'cost_usd'], 'cost_usd');
       addGrid('sg_eq_parts', `Part Changes, Removals & Custody (${name})`, 'Part Custody', 'Parts Lifecycle', 'part_movements', (rec.part_movements || []).filter(p => norm(p.equipment) === norm(name)), ['name', 'date', 'company', 'action_type', 'part_name', 'qty', 'condition', 'removed_disposition', 'new_part_cost', 'sale_proceeds'], 'new_part_cost');
       addGrid('sg_eq_co', `Company-Equipment Assignments (${name})`, 'BU Assignments', 'BU Assignments', 'company_equipment', (rec.company_equipment || []).filter(ce => norm(ce.equipment) === norm(name)), ['company', 'equipment', 'ownership', 'status', 'supplier', 'default_driver', 'site', 'start_date', 'end_date'], null);
       addGrid('sg_eq_sales', `Sales Loads Hauled by ${name}`, 'Sales Loads', 'Sales Loads', 'sales_tickets', (rec.sales_tickets || []).filter(t => norm(t.truck) === norm(name)), ['date', 'ticket_no', 'company', 'customer', 'product', 'site', 'driver', 'qty', 'trans_price', 'total_ttc'], 'total_ttc');
@@ -35419,11 +37448,25 @@
       addGrid('sg_eq_fuel', `Fuel & Lubricant Intakes + Meter Log (${name})`, 'Fuel & Meters', 'Fuel & Meters', 'fuel_intakes', (rec.fuel_intakes || []).filter(f => norm(f.equipment) === norm(name)), ['date', 'ticket_no', 'company', 'driver', 'item', 'litres', 'odometer', 'hours'], 'litres');
       addGrid('sg_eq_exp', `Maintenance, Spare Parts & Fleet Expenses (${name})`, 'Fleet Expenses', 'Fleet Expenses', 'expenses', (rec.expenses || []).filter(x => norm(x.equipment) === norm(name)), ['date', 'name', 'company', 'category', 'subcategory', 'supplier', 'method', 'amount', 'reference'], 'amount');
     }
-    else if (key === 'equipment_defects' || key === 'part_movements') {
+    else if (key === 'equipment_defects' || key === 'part_movements' || key === 'equipment_repairs' || key === 'equipment_oil_logs') {
       const eq = row.equipment;
-      addGrid('sg_m_defects', `All Defect Reports on ${eq}`, 'Unit Defects', 'Health Log', 'equipment_defects', (rec.equipment_defects || []).filter(d => norm(d.equipment) === norm(eq)), ['name', 'date', 'company', 'subsystem', 'part_name', 'severity', 'status', 'linked_part_log'], null);
+      if (key === 'equipment_repairs') {
+        const rItems = (rec.repair_items || []).filter(i => String(i.repair_id) === String(row.id) || norm(i.repair_ref) === norm(row.name));
+        addGrid('sg_rep_items', `Items Used in Repair (${row.name})`, 'Items Used', 'Repair Breakdown', 'repair_items', rItems, ['name', 'item_name', 'source', 'qty', 'uom', 'unit_cost', 'line_total'], 'line_total');
+      }
+      addGrid('sg_m_defects', `All Warnings & Defects on ${eq}`, 'Unit Warnings', 'Health Log', 'equipment_defects', (rec.equipment_defects || []).filter(d => norm(d.equipment) === norm(eq)), ['name', 'date', 'company', 'subsystem', 'part_name', 'severity', 'status', 'linked_part_log'], null);
+      addGrid('sg_m_repairs', `All Repairs on ${eq}`, 'Unit Repairs', 'Repairs & Stock', 'equipment_repairs', (rec.equipment_repairs || []).filter(r => norm(r.equipment) === norm(eq)), ['name', 'date', 'company', 'repair_source', 'subsystem', 'items_summary', 'warehouse_parts_usd', 'outside_parts_usd', 'external_labor_usd', 'total_cost_usd'], 'total_cost_usd');
+      addGrid('sg_m_oil', `Oil & Preventive Service Logs on ${eq}`, 'Oil Logs', 'Preventive Service', 'equipment_oil_logs', (rec.equipment_oil_logs || []).filter(o => norm(o.equipment) === norm(eq)), ['name', 'date', 'company', 'oil_type', 'service_action', 'qty', 'hours_reading', 'odometer_km', 'interval_hours', 'interval_km', 'interval_days', 'cost_usd'], 'cost_usd');
       addGrid('sg_m_parts', `All Part Movements & Dispositions on ${eq}`, 'Unit Parts', 'Parts Custody', 'part_movements', (rec.part_movements || []).filter(p => norm(p.equipment) === norm(eq)), ['name', 'date', 'company', 'action_type', 'part_name', 'qty', 'condition', 'removed_disposition', 'defect_ref', 'new_part_cost', 'sale_proceeds'], 'new_part_cost');
       addGrid('sg_m_exp', `Maintenance & Spare Parts Expenses (${eq})`, 'Fleet Expenses', 'Expense Ledger', 'expenses', (rec.expenses || []).filter(x => norm(x.equipment) === norm(eq)), ['date', 'name', 'company', 'category', 'subcategory', 'supplier', 'method', 'amount', 'reference'], 'amount');
+    }
+    else if (key === 'warehouse_movements' || key === 'expense_items' || key === 'repair_items') {
+      const itName = row.item_name;
+      if (itName) {
+        addGrid('sg_wh_moves', `Warehouse Stock Movements (${itName})`, 'Stock Ledger', 'Warehouse +IN / -OUT', 'warehouse_movements', (rec.warehouse_movements || []).filter(m => norm(m.item_name) === norm(itName)), ['date', 'name', 'company', 'movement_type', 'qty', 'uom', 'unit_cost', 'total_cost', 'equipment', 'repair_ref', 'expense_ref'], 'total_cost');
+        addGrid('sg_wh_repitems', `Repairs Using ${itName}`, 'Used in Repairs', 'Repair Consumption', 'repair_items', (rec.repair_items || []).filter(ri => norm(ri.item_name) === norm(itName)), ['date', 'repair_ref', 'company', 'equipment', 'source', 'qty', 'uom', 'unit_cost', 'line_total'], 'line_total');
+        addGrid('sg_wh_expitems', `Expense Invoices Purchasing ${itName}`, 'Purchase Lines', 'Expense Items', 'expense_items', (rec.expense_items || []).filter(ei => norm(ei.item_name) === norm(itName)), ['date', 'expense_ref', 'company', 'supplier', 'allocation_mode', 'target_equipment', 'qty', 'uom', 'unit_cost', 'line_total'], 'line_total');
+      }
     }
     else if (key === 'drivers' || key === 'company_drivers') {
       const name = row.driver || row.name;
@@ -35485,6 +37528,10 @@
     }
     else if (key === 'expense_categories' || key === 'expense_subcategories' || key === 'expenses') {
       const cat = row.category || row.name;
+      if (key === 'expenses') {
+        const expLines = (rec.expense_items || []).filter(i => String(i.expense_id) === String(row.id) || norm(i.expense_ref) === norm(row.name));
+        addGrid('sg_exp_items', `Invoice Item Lines (${row.name})`, 'Invoice Items', 'Item Breakdown', 'expense_items', expLines, ['name', 'item_name', 'allocation_mode', 'target_equipment', 'qty', 'uom', 'unit_cost', 'line_total'], 'line_total');
+      }
       if (key === 'expense_categories') {
         const relIdx = window.MFG_PBI && window.MFG_PBI.getHubRelIndex ? window.MFG_PBI.getHubRelIndex(SEED) : null;
         const subRows = (rec.expense_subcategories || []).filter(s => norm(s.category) === norm(cat)).map(s => {
@@ -36037,15 +38084,90 @@
         { key: 'date', label: 'Report Date *', type: 'date', sec: 1 },
         { key: 'equipment', label: 'Equipment / Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 1 },
         { key: 'subsystem', label: 'Subsystem / Area *', type: 'select', options: ['Engine & Powertrain', 'Brakes & Suspension', 'Hydraulics & Hoist', 'Tyres & Wheels', 'Electrical & Battery', 'Transmission & Gearbox', 'Body, Chassis & Bucket', 'Crusher / Plant Screen', 'Cooling & Exhaust', 'Other'], sec: 2 },
-        { key: 'part_name', label: 'Suspected / Affected Part', type: 'combo', dl: 'dl_insp_parts', sec: 2 },
-        { key: 'severity', label: 'Defect Severity *', type: 'select', options: ['Minor — Monitor (Running)', 'Moderate — Needs Part Soon', 'Critical — Down / Do Not Dispatch'], sec: 1 },
-        { key: 'status', label: 'Defect Status *', type: 'select', options: ['Open — Defect Reported', 'Part Ordered / Scheduled', 'In Maintenance / Workshop', 'Resolved — Part Changed', 'Closed — Inspected OK'], sec: 1 },
+        { key: 'part_name', label: 'Affected Equipment Part *', type: 'combo', dl: 'dl_insp_parts', sec: 2 },
+        { key: 'severity', label: 'Warning Severity *', type: 'select', options: ['Mild - Monitor & Schedule Repair', 'Grave - Serious Issue / Do Not Dispatch', 'Minor — Monitor (Running)', 'Moderate — Needs Part Soon', 'Critical — Down / Do Not Dispatch'], sec: 1 },
+        { key: 'status', label: 'Warning Status *', type: 'select', options: ['Open - Warning Active', 'Part Ordered / Scheduled', 'In Maintenance / Workshop', 'Resolved - Repaired', 'Closed - Inspected OK', 'Open — Defect Reported', 'Resolved — Part Changed', 'Closed — Inspected OK'], sec: 1 },
         { key: 'reported_by', label: 'Reported By (Driver / Mechanic)', type: 'combo', dl: 'dl_insp_drivers', sec: 1 },
         { key: 'meter_reading', label: 'Meter Reading (km / hr)', type: 'number', step: '0.1', min: '0', sec: 2 },
         { key: 'resolved_date', label: 'Resolved Date', type: 'date', sec: 2 },
-        { key: 'linked_part_log', label: 'Linked Part Log #', type: 'text', sec: 1 },
-        { key: 'description', label: 'Defect / Symptom Description *', type: 'text', sec: 2, span: true },
+        { key: 'linked_part_log', label: 'Linked Repair / Part Log #', type: 'text', sec: 1 },
+        { key: 'description', label: 'Issue / Symptom Description *', type: 'text', sec: 2, span: true },
         { key: 'notes', label: 'Workshop Notes', type: 'text', sec: 3, span: true }
+      ],
+      equipment_repairs: [
+        { key: 'date', label: 'Repair Date *', type: 'date', sec: 1 },
+        { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
+        { key: 'equipment', label: 'Equipment / Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 1 },
+        { key: 'repair_source', label: 'Repair Source *', type: 'select', options: ['Warehouse Only', 'Outside Only', 'Partially Warehouse + Outside'], sec: 1 },
+        { key: 'defect_ref', label: 'Linked Warning / Defect', type: 'text', sec: 1 },
+        { key: 'status', label: 'Repair Status', type: 'select', options: ['Completed', 'In Progress', 'Awaiting Parts'], sec: 1 },
+        { key: 'subsystem', label: 'Subsystem / Area *', type: 'select', options: ['Engine & Powertrain', 'Brakes & Suspension', 'Hydraulics & Hoist', 'Tyres & Wheels', 'Electrical & Battery', 'Transmission & Gearbox', 'Body, Chassis & Bucket', 'Crusher / Plant Screen', 'Cooling & Exhaust', 'Other'], sec: 2 },
+        { key: 'supplier', label: 'Outside Workshop / Supplier', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
+        { key: 'meter_reading', label: 'Meter Reading (km / hr)', type: 'number', step: '0.1', min: '0', sec: 2 },
+        { key: 'warehouse_parts_usd', label: 'Warehouse Stock Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'outside_parts_usd', label: 'Outside Parts Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'external_labor_usd', label: 'Outside Labor Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'total_cost_usd', label: 'Total Repair Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'items_summary', label: 'Items Used Summary', type: 'text', sec: 2, span: true },
+        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+      ],
+      repair_items: [
+        { key: 'date', label: 'Date *', type: 'date', sec: 1 },
+        { key: 'repair_ref', label: 'Repair Voucher #', type: 'text', sec: 1 },
+        { key: 'equipment', label: 'Equipment / Truck', type: 'combo', dl: 'dl_insp_equip', sec: 1 },
+        { key: 'item_name', label: 'Item / Part Used *', type: 'combo', dl: 'dl_insp_parts', sec: 2 },
+        { key: 'source', label: 'Item Source *', type: 'select', options: [['warehouse', 'Warehouse (-Stock)'], ['outside', 'Outside Purchase']], sec: 2 },
+        { key: 'qty', label: 'Quantity *', type: 'number', step: '0.01', min: '0.01', sec: 3 },
+        { key: 'uom', label: 'Unit (UoM)', type: 'select', options: uomOpts, sec: 3 },
+        { key: 'unit_cost', label: 'Unit Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'line_total', label: 'Line Total ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+      ],
+      equipment_oil_logs: [
+        { key: 'date', label: 'Service Date *', type: 'date', sec: 1 },
+        { key: 'equipment', label: 'Equipment / Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 1 },
+        { key: 'oil_type', label: 'Oil / Preventive Service Type *', type: 'select', options: ['Engine Oil 15W-40', 'Hydraulic Oil 68', 'Gear / Transmission Oil 90', 'ATF / Torque Converter Oil', 'Differential / Axle Oil 85W-140', 'Oil & Fuel Filter Service'], sec: 1 },
+        { key: 'service_action', label: 'Service Action', type: 'select', options: ['Full Change', 'Top-Up', 'Filter Only'], sec: 1 },
+        { key: 'source', label: 'Oil Source', type: 'select', options: ['Plant Lube Bay', 'Warehouse', 'Outside Workshop'], sec: 1 },
+        { key: 'qty', label: 'Quantity *', type: 'number', step: '0.5', min: '0.1', sec: 3 },
+        { key: 'uom', label: 'Unit (UoM)', type: 'select', options: ['Litre', 'Piece', 'Set', 'Unit'], sec: 3 },
+        { key: 'hours_reading', label: 'Engine Hours at Service (hr)', type: 'number', step: '0.1', min: '0', sec: 2 },
+        { key: 'odometer_km', label: 'Odometer at Service (km)', type: 'number', step: '1', min: '0', sec: 2 },
+        { key: 'interval_hours', label: 'Interval (Hours)', type: 'number', step: '10', min: '0', sec: 2 },
+        { key: 'interval_km', label: 'Interval (Km)', type: 'number', step: '500', min: '0', sec: 2 },
+        { key: 'interval_days', label: 'Interval (Days)', type: 'number', step: '1', min: '0', sec: 2 },
+        { key: 'cost_usd', label: 'Service Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'notes', label: 'Service Notes', type: 'text', sec: 3, span: true }
+      ],
+      expense_items: [
+        { key: 'date', label: 'Invoice Date *', type: 'date', sec: 1 },
+        { key: 'expense_ref', label: 'Expense Ticket #', type: 'text', sec: 1 },
+        { key: 'supplier', label: 'Supplier / Vendor', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
+        { key: 'item_name', label: 'Item Name *', type: 'combo', dl: 'dl_insp_parts', sec: 2 },
+        { key: 'allocation_mode', label: 'Item Routing *', type: 'select', options: [['same_equipment', 'Same Equipment'], ['different_equipment', 'Different Equipment'], ['warehouse', 'Warehouse (+Stock)'], ['general', 'Not for Equipment']], sec: 2 },
+        { key: 'target_equipment', label: 'Target Equipment', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
+        { key: 'warehouse_location', label: 'Warehouse Location', type: 'combo', dl: 'dl_insp_locations', sec: 2 },
+        { key: 'qty', label: 'Quantity *', type: 'number', step: '0.01', min: '0.01', sec: 3 },
+        { key: 'uom', label: 'Unit (UoM)', type: 'select', options: uomOpts, sec: 3 },
+        { key: 'unit_cost', label: 'Unit Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'line_total', label: 'Line Total ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+      ],
+      warehouse_movements: [
+        { key: 'date', label: 'Movement Date *', type: 'date', sec: 1 },
+        { key: 'movement_type', label: 'Movement Direction *', type: 'select', options: ['Opening Stock (+IN)', 'Purchase Stored (+IN)', 'Returned Unused (+IN)', 'Used in Repair (-OUT)', 'Issued to Equipment (-OUT)', 'Stock Adjustment (+IN)', 'Damaged / Lost (-OUT)'], sec: 1 },
+        { key: 'item_name', label: 'Stored Item Name *', type: 'combo', dl: 'dl_insp_parts', sec: 2 },
+        { key: 'category', label: 'Item Category', type: 'select', options: expCatOpts, sec: 2 },
+        { key: 'warehouse_location', label: 'Warehouse / Shelf Location', type: 'combo', dl: 'dl_insp_locations', sec: 2 },
+        { key: 'qty', label: 'Quantity *', type: 'number', step: '0.01', min: '0.01', sec: 3 },
+        { key: 'uom', label: 'Unit (UoM)', type: 'select', options: uomOpts, sec: 3 },
+        { key: 'unit_cost', label: 'Unit Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'total_cost', label: 'Total Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'supplier', label: 'Supplier', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
+        { key: 'equipment', label: 'Target Equipment', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
+        { key: 'expense_ref', label: 'Linked Expense Ticket', type: 'text', sec: 1 },
+        { key: 'repair_ref', label: 'Linked Repair Voucher', type: 'text', sec: 1 },
+        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       part_movements: [
         { key: 'date', label: 'Action Date *', type: 'date', sec: 1 },
@@ -36109,12 +38231,13 @@
       if (!f.drawerOnly) schemaByKey.set(f.key, f);
     });
 
-    const hidden = new Set(['id', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status']);
+    const hidden = new Set(['id', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status', '_staged_expense_items', '_staged_repair_items', 'historical_consumed', 'move_type', 'expense_id', 'repair_id']);
     if (key === 'currencies' || key === 'fx_rates' || key === 'vat_rates') {
       hidden.add('company');
       hidden.add('date');
       hidden.add('rep_date');
     }
+    if (key === 'warehouse_movements') { hidden.add('location'); hidden.add('target_equipment'); }
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
     if (key === 'employments') {
@@ -36241,7 +38364,7 @@
       const v = valOverride !== undefined ? valOverride : (fDef && typeof fDef.getVal === 'function' ? fDef.getVal(row) : row[k]);
       const formatted = inspectorValue(k, v);
       const isEmpty = formatted === '—';
-      const lkTarget = (k === 'type' && key !== 'products') ? null : INSPECT_LOOKUP_FIELD_TARGET[k];
+      const lkTarget = (k === 'type' && key !== 'products') ? null : (k === 'linked_part_log' && /^REP-/i.test(String(v || '')) ? 'equipment_repairs' : INSPECT_LOOKUP_FIELD_TARGET[k]);
       const canLink = lkTarget && lkTarget !== key && v != null && v !== '' && !isEmpty;
       const lblText = fDef ? fDef.label.replace(/\s*\*$/, '') : k.replace(/_/g, ' ');
       const editableAttr = (canEdit && fDef && valOverride === undefined) ? ` data-edit-field="${esc(k)}" title="Click to modify ${esc(lblText)}"` : '';
@@ -36322,7 +38445,7 @@
                       if (isMoney && v != null && v !== '') txt = fmtUSD(v, 2);
                       else if (isNum && v != null && v !== '') txt = fmtNum(v, /qty|capacity|percentage/.test(c) ? 2 : 0);
                       else if (/date/.test(c) && v) txt = fmtDateDMY(v);
-                      const lk = INSPECT_LOOKUP_FIELD_TARGET[c];
+                      const lk = (c === 'linked_part_log' && /^REP-/i.test(String(v || ''))) ? 'equipment_repairs' : INSPECT_LOOKUP_FIELD_TARGET[c];
                       const cellHtml = (lk && lk !== sg.targetKey && v != null && v !== '' && txt !== '—')
                         ? `<span class="rel-link" data-rel-key="${esc(lk)}" data-rel-val="${esc(v)}">${esc(txt)}<span class="rel-arr">↗</span></span>`
                         : esc(txt);
@@ -36563,9 +38686,12 @@
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
           ${key === 'expenses' && isPendingPriceExpense(row) && (canModifyData() || canEnterForm('expense')) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn" title="Open the Expense form with delivery fields locked to enter the final supplier invoice price">${ic('dollar')} Enter Final Price</button>` : ''}
           ${canModifyData() ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} Modify Record</button>` : ''}
-          ${isEquipInspect && canEnterForm('defect') ? `<button type="button" class="pa-cmd-btn" id="inspReportDefectBtn">${ic('warn')} + Report Defect</button>` : ''}
+          ${isEquipInspect && canEnterForm('defect') ? `<button type="button" class="pa-cmd-btn" id="inspReportDefectBtn">${ic('warn')} + Report Warning</button>` : ''}
+          ${isEquipInspect && canEnterForm('repair') ? `<button type="button" class="pa-cmd-btn" id="inspLogRepairBtn">${ic('repair')} + Log Repair</button>` : ''}
+          ${isEquipInspect && canEnterForm('oillog') ? `<button type="button" class="pa-cmd-btn" id="inspLogOilBtn">${ic('oillog')} + Log Oil</button>` : ''}
           ${isEquipInspect && canEnterForm('partlog') ? `<button type="button" class="pa-cmd-btn" id="inspLogPartBtn">${ic('cog')} + Log Part</button>` : ''}
-          ${key === 'equipment_defects' && isDefectOpen(row) && canEnterForm('partlog') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspResolveWithPartBtn">${ic('cog')} + Log Part Change</button>` : ''}
+          ${key === 'equipment_defects' && isDefectOpen(row) && canEnterForm('repair') ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspResolveWithRepairBtn">${ic('repair')} + Log Repair</button>` : ''}
+          ${key === 'equipment_defects' && isDefectOpen(row) && canEnterForm('partlog') ? `<button type="button" class="pa-cmd-btn" id="inspResolveWithPartBtn">${ic('cog')} + Log Part Change</button>` : ''}
           ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">${ic('ruler')} Truck Size Windows (${eqWindows.length})</button>` : ''}
           ${!row.voided && canVoid() ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
           ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
@@ -36867,12 +38993,35 @@
         openEntryModal('defect', { eq: eqName, co: row.company || '' });
       });
     }
+    const inspLogRepairBtn = $('inspLogRepairBtn');
+    if (inspLogRepairBtn) {
+      inspLogRepairBtn.addEventListener('click', () => {
+        const eqName = row.equipment || row.name || '';
+        closeRecordInspector();
+        openEntryModal('repair', { eq: eqName, co: row.company || '' });
+      });
+    }
+    const inspLogOilBtn = $('inspLogOilBtn');
+    if (inspLogOilBtn) {
+      inspLogOilBtn.addEventListener('click', () => {
+        const eqName = row.equipment || row.name || '';
+        closeRecordInspector();
+        openEntryModal('oillog', { eq: eqName, co: row.company || '' });
+      });
+    }
     const inspLogPartBtn = $('inspLogPartBtn');
     if (inspLogPartBtn) {
       inspLogPartBtn.addEventListener('click', () => {
         const eqName = row.equipment || row.name || '';
         closeRecordInspector();
         openEntryModal('partlog', { eq: eqName, co: row.company || '' });
+      });
+    }
+    const inspResRepBtn = $('inspResolveWithRepairBtn');
+    if (inspResRepBtn) {
+      inspResRepBtn.addEventListener('click', () => {
+        closeRecordInspector();
+        openEntryModal('repair', { eq: row.equipment || '', def: row.name || '', sub: row.subsystem || '', co: row.company || '' });
       });
     }
     const inspResPartBtn = $('inspResolveWithPartBtn');
@@ -40501,7 +42650,7 @@
     jv: 'JV & Partnerships',
     fleet: 'Diesel & Lubricants',
     fleet_equip: 'Fleet & Running Costs',
-    fleet_maint: 'Defects & Parts',
+    fleet_maint: 'Repairs, Warnings & Oil Logs',
     fleet_drivers: 'Drivers & Overtime',
     fleet_analytics: 'Drivers & Overtime',
     pricing: 'Pricing & Commissions',
@@ -40515,6 +42664,7 @@
     ap: 'Suppliers & Payables',
     expenses: 'Expenses & Overhead',
     expenses_analytics: 'Expenses & Overhead',
+    warehouse: 'Warehouse',
     payroll: 'Payroll & Workforce',
     workforce_map: 'Daily Plant & Machine Map',
     payroll_attendance: 'Attendance & Overtime',
@@ -40558,7 +42708,7 @@
     jv: 'JV & Partnerships',
     fleet: 'Diesel & Lubricants',
     fleet_equip: 'Fleet & Running Costs',
-    fleet_maint: 'Defects & Parts',
+    fleet_maint: 'Repairs, Warnings & Oil Logs',
     fleet_drivers: 'Drivers & Overtime',
     fleet_analytics: 'Drivers & Overtime',
     pricing: 'Pricing & Commissions',
@@ -40572,6 +42722,7 @@
     ap: 'Suppliers & Payables',
     expenses: 'Expenses & Overhead',
     expenses_analytics: 'Expenses & Overhead',
+    warehouse: 'Warehouse',
     payroll: 'Payroll & Workforce',
     workforce_map: 'Daily Plant & Machine Map',
     payroll_attendance: 'Attendance & Overtime',
@@ -41399,7 +43550,7 @@
       external: 'external', conversions: 'conversion',
       customers: 'receipt', ar: 'receipt',
       suppliers: 'settlement', ap: 'settlement',
-      expenses: 'expense', expenses_analytics: 'expense',
+      expenses: 'expense', expenses_analytics: 'expense', warehouse: 'warehousestock',
       payroll: 'salary', workforce_map: 'attendance', payroll_attendance: 'attendance', payroll_allowances: 'logistics', payroll_contracts: 'employment', payroll_analytics: 'salary',
       ledger: 'treasury', gl: 'treasury', ledger_treasury: 'treasury',
       tables: 'pricerule',
@@ -41454,10 +43605,10 @@
         dEntry.hidden = false;
         const formLabels = {
           sales: 'Post Ticket', raw: 'Post Raw', fuel: 'Log Fuel', malfunction: 'Log Malfunction', receipt: 'Post Receipt',
-          settlement: 'Settle AP', expense: 'Post Expense', salary: 'Pay Salary',
+          settlement: 'Settle AP', expense: 'Post Expense', warehousestock: 'Warehouse Stock', salary: 'Pay Salary',
           vatinvoice: 'Post VAT Inv', attendance: 'Log Attendance', logistics: 'Site Allowance', employment: 'New Contract',
           treasury: 'Post Treasury', pricerule: 'New Agreement', pricerule_raw: 'New Site Rate',
-          jv: 'Post JV Entry', defect: 'Report Defect', partlog: 'Log Part', companyequipment: 'Assign Unit',
+          jv: 'Post JV Entry', defect: 'Report Warning', repair: 'Log Repair', oillog: 'Log Oil', partlog: 'Log Part', companyequipment: 'Assign Unit',
           customer: 'New Customer', supplier: 'New Supplier', product: 'New Product', expensecategory: 'New Category',
           site: 'New Site', region: 'New Region', equipment: 'New Equipment', driver: 'New Driver',
           fxrate: 'New FX Rate', vatrate: 'New VAT Rate', currency: 'New Currency'
@@ -45810,6 +47961,7 @@
       case 'ap': wsHtml = renderAP(); break;
       case 'expenses_analytics':
       case 'expenses': wsHtml = renderExpenses(); break;
+      case 'warehouse': wsHtml = renderWarehouse(); break;
       case 'payroll':
       case 'payroll_analytics': wsHtml = renderPayroll('main'); break;
       case 'workforce_map': wsHtml = renderWorkforceMap(); break;
@@ -46714,6 +48866,31 @@
     container.querySelectorAll('[data-unithealth-chip]').forEach(btn => btn.addEventListener('click', () => {
       STATE.unitHealthFilter = btn.getAttribute('data-unithealth-chip') || 'all';
       STATE.shown.unit_health = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-wh-chip]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.whChipFilter = btn.getAttribute('data-wh-chip') || 'all';
+      STATE.shown.whitems = PAGE;
+      STATE.shown.whmoves = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-repsrc-chip]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.repSrcFilter = btn.getAttribute('data-repsrc-chip') || 'all';
+      STATE.shown.repairs = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-oil-chip]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.oilFilter = btn.getAttribute('data-oil-chip') || 'all';
+      STATE.shown.oilsched = PAGE;
       const ws = $('workspace');
       const y = ws ? ws.scrollTop : 0;
       renderApp();
@@ -47642,7 +49819,7 @@
       e.stopPropagation();
       const pf = {};
       let hasPf = false;
-      ['co', 'eq', 'def', 'part', 'sub', 'disp', 'party', 'cost', 'notes'].forEach(k => {
+      ['co', 'eq', 'def', 'part', 'sub', 'disp', 'party', 'cost', 'notes', 'item', 'oil', 'repsrc', 'storewh'].forEach(k => {
         const attr = 'data-prefill-' + k;
         if (btn.hasAttribute(attr)) {
           pf[k] = btn.getAttribute(attr) || '';

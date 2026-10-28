@@ -1361,14 +1361,26 @@
     { key: 'price_rules', group: '1 · Sales, Pricing & Receivables', label: 'Price & Commission Agreements', dvn: 'bhf_pricerule', form: 'pricerule', cols: ['company', 'rule_type', 'customer', 'supplier', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'total1', 'qty2', 'adj2', 'total2', 'start_date', 'end_date', 'matched_tickets'], relTables: ['customers', 'suppliers', 'products', 'sites', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'Sales & Commission Agreements', fn: r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '') }, { id: 'active', label: 'Active Sales Agreements', fn: r => !r.end_date && !/^(Purchase Price \(Site\)|Transport Price \(Site\)|Commission)$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'sales', label: 'Customer Delivery & Pickup', fn: r => /sale|pickup|deliv/i.test(r.rule_type || '') && !/^commission$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'list', label: 'List Prices', fn: r => /list/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'commission', label: 'Commission Rules', fn: r => /^commission$/i.test(r.rule_type || ''), cols: ['company', 'supplier', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_all', label: 'Raw & Site Haulage Agreements', fn: r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_active', label: 'Active Raw & Haulage', fn: r => !r.end_date && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_purch', label: 'Site Material Cost Rules', fn: r => r.rule_type === 'Purchase Price (Site)', cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_haul', label: 'Site Haulage Rate Rules', fn: r => r.rule_type === 'Transport Price (Site)', cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }] },
     { key: 'credit_terms', group: '1 · Sales, Pricing & Receivables', label: 'Customer Credit Terms', dvn: 'bhf_creditterm', form: 'creditterm', cols: ['name', 'company', 'customer', 'credit_days', 'credit_limit', 'ar_balance', 'start_date', 'end_date', 'notes'], relTables: ['customers', 'sales_tickets', 'receipts'], views: [{ id: 'all', label: 'All Credit Terms' }, { id: 'active', label: 'Active Policies', fn: r => !r.end_date }] },
 
-    // 2 · Purchases, Expenses & Payables (5 BU-scoped)
+    // 2 · Purchases, Expenses & Payables (7 BU-scoped)
     { key: 'raw_purchases', group: '2 · Purchases, Expenses & Payables', label: 'Raw Material Purchases', dvn: 'bhf_rawpurchase', form: 'raw', cols: ['date', 'rep_date', 'ticket_no', 'company', 'site', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'driver', 'product', 'qty', 'uom', 'unit_cost', 'cost', 'trans_cost', 'total'], relTables: ['sites', 'suppliers', 'price_rules', 'equipment', 'drivers', 'products', 'settlements'], views: [{ id: 'all', label: 'All Raw Purchases' }, { id: 'supplier_haul', label: 'Third-Party Haulage', fn: r => Number(r.trans_cost || 0) > 0 }, { id: 'company_haul', label: 'Company Fleet Haul', fn: r => /company/i.test(r.transport_by) }] },
-    { key: 'expenses', group: '2 · Purchases, Expenses & Payables', label: 'General & Fleet Expenses', dvn: 'bhf_mfgexpense', form: 'expense', cols: ['date', 'rep_date', 'name', 'company', 'category', 'subcategory', 'supplier', 'equipment', 'method', 'qty', 'amount', 'vat', 'total_ttc', 'invoice', 'reference', 'notes'], relTables: ['expense_categories', 'expense_subcategories', 'suppliers', 'equipment', 'settlements'], views: [{ id: 'all', label: 'All Expenses' }, { id: 'pending_price', label: 'Pending Invoice Price ($0)', fn: r => Boolean(r.price_pending) }, { id: 'fleet', label: 'Equipment & Fleet Tagged', fn: r => Boolean(r.equipment) }, { id: 'overhead', label: 'Plant & General Overhead', fn: r => !r.equipment }] },
+    { key: 'expenses', group: '2 · Purchases, Expenses & Payables', label: 'General & Fleet Expenses', dvn: 'bhf_mfgexpense', form: 'expense', cols: ['date', 'rep_date', 'name', 'company', 'category', 'subcategory', 'item_summary', 'supplier', 'equipment', 'method', 'qty', 'amount', 'vat', 'total_ttc', 'invoice', 'reference', 'notes'], relTables: ['expense_items', 'expense_categories', 'expense_subcategories', 'suppliers', 'equipment', 'settlements'], views: [{ id: 'all', label: 'All Expenses' }, { id: 'pending_price', label: 'Pending Invoice Price ($0)', fn: r => Boolean(r.price_pending) }, { id: 'fleet', label: 'Equipment & Fleet Tagged', fn: r => Boolean(r.equipment || r.for_equipment) }, { id: 'overhead', label: 'Plant & General Overhead', fn: r => !r.equipment && !r.for_equipment }] },
+    { key: 'expense_items', group: '2 · Purchases, Expenses & Payables', navView: 'expenses', label: 'Expense Item Tickets', dvn: 'bhf_mfgexpenseitem', form: 'expense', cols: ['date', 'name', 'expense_ref', 'company', 'item_name', 'category', 'subcategory', 'allocation_mode', 'target_equipment', 'warehouse_location', 'qty', 'uom', 'unit_cost', 'line_total', 'supplier'], relTables: ['expenses', 'equipment', 'warehouse_movements', 'suppliers'], views: [
+      { id: 'all', label: 'All Expense Items' },
+      { id: 'warehouse', label: 'Stored in Warehouse', fn: r => /^warehouse$/i.test(r.allocation_mode || '') },
+      { id: 'same_eq', label: 'Same Equipment', fn: r => /^same_equipment$/i.test(r.allocation_mode || '') },
+      { id: 'diff_eq', label: 'Different Equipment', fn: r => /^different_equipment$/i.test(r.allocation_mode || '') },
+      { id: 'general', label: 'General / Non-Equipment', fn: r => /^general$/i.test(r.allocation_mode || '') }
+    ] },
+    { key: 'warehouse_movements', group: '2 · Purchases, Expenses & Payables', navView: 'warehouse', label: 'Warehouse Stock Movements', dvn: 'bhf_warehousemovement', form: 'warehousestock', cols: ['date', 'name', 'company', 'item_name', 'category', 'direction', 'movement_type', 'qty', 'uom', 'unit_cost', 'total_cost', 'warehouse_location', 'equipment', 'notes'], relTables: ['expense_items', 'equipment_repairs', 'repair_items', 'equipment'], views: [
+      { id: 'all', label: 'All Stock Movements' },
+      { id: 'in', label: 'Stock In (+)', fn: r => /^IN$/i.test(r.direction || '') },
+      { id: 'out', label: 'Stock Out (-)', fn: r => /^OUT$/i.test(r.direction || '') }
+    ] },
     { key: 'settlements', group: '2 · Purchases, Expenses & Payables', label: 'Supplier Settlements (AP)', dvn: 'bhf_mfgsupplierpayment', form: 'settlement', cols: ['date', 'rep_date', 'name', 'company', 'supplier', 'payable_leg', 'method', 'kind', 'amount', 'discount', 'raw_ticket', 'expense_record', 'reference', 'notes'], relTables: ['suppliers', 'raw_purchases', 'expenses', 'price_rules'], views: [{ id: 'all', label: 'All Supplier Settlements' }, { id: 'raw_leg', label: 'Raw / Haulage Leg', fn: r => Boolean(r.raw_ticket) }, { id: 'exp_leg', label: 'Expense Leg', fn: r => Boolean(r.expense_record) }] },
     { key: 'jv_partnerships', group: '2 · Purchases, Expenses & Payables', label: 'JV Site Partnerships', dvn: 'bhf_mfgjvpartnership', form: 'jv', cols: ['name', 'company', 'site', 'partner', 'percentage', 'distributions_total', 'notes'], relTables: ['sites', 'jv_distributions', 'raw_purchases'], views: [{ id: 'all', label: 'All JV Partnerships' }] },
     { key: 'jv_distributions', group: '2 · Purchases, Expenses & Payables', label: 'JV Profit Distributions', dvn: 'bhf_mfgjvdistribution', form: 'jv', cols: ['date', 'rep_date', 'company', 'site', 'partner', 'basis', 'amount', 'total', 'notes'], relTables: ['jv_partnerships', 'sites'], views: [{ id: 'all', label: 'All JV Distributions' }] },
 
-    // 3 · Fleet, Fuel, Maintenance & Drivers (7 BU-scoped)
+    // 3 · Fleet, Fuel, Maintenance & Drivers (10 BU-scoped)
     { key: 'fuel_intakes', group: '3 · Fleet, Fuel, Maintenance & Drivers', label: 'Fuel & Lubricant Intakes', dvn: 'bhf_fuelintake', form: 'fuel', cols: ['date', 'ticket_no', 'company', 'equipment', 'driver', 'item', 'litres', 'tank_remaining_litres', 'uom', 'odometer', 'hours', 'notes'], relTables: ['equipment', 'company_equipment', 'drivers', 'products', 'fuel_malfunctions'], views: [{ id: 'all', label: 'All Fuel & Lube Fills' }, { id: 'diesel', label: 'Diesel Only', fn: r => /diesel|fuel|mazout/i.test(r.item || '') }, { id: 'lube', label: 'Oils & Lubricants', fn: r => !/diesel|fuel|mazout|grease/i.test(r.item || '') }, { id: 'grease', label: 'Daily Greasing (kg)', fn: r => /grease/i.test(r.item || '') }] },
     { key: 'fuel_malfunctions', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet', label: 'Tank Malfunctions & Discrepancies', dvn: 'bhf_fuelmalfunction', form: 'malfunction', cols: ['date', 'rep_date', 'ticket_no', 'company', 'discrepancy_type', 'item', 'litres', 'tank_delta_litres', 'tank_remaining_litres', 'equipment', 'driver', 'notes'], relTables: ['fuel_intakes', 'equipment', 'drivers', 'expenses'], views: [
       { id: 'all', label: 'All Discrepancies' },
@@ -1376,12 +1388,30 @@
       { id: 'outflow', label: 'Shortages / Outflows (-Tank)', fn: r => Number(r.litres || 0) > 0 },
       { id: 'surplus', label: 'Surpluses / Over-Reads (+Tank)', fn: r => Number(r.litres || 0) < 0 }
     ] },
-    { key: 'company_equipment', group: '3 · Fleet, Fuel, Maintenance & Drivers', label: 'Company-Equipment Assignments', dvn: 'bhf_companyequipment', form: 'companyequipment', cols: ['equipment', 'company', 'ownership', 'status', 'supplier', 'default_driver', 'site', 'day_operator', 'night_operator', 'start_date', 'end_date'], relTables: ['equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sites'], views: [{ id: 'all', label: 'All Fleet Assignments' }, { id: 'active', label: 'Active Assignments', fn: r => /active/i.test(r.status || '') && !r.end_date }] },
-    { key: 'equipment_defects', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet_maint', label: 'Equipment Defects & Issues', dvn: 'bhf_equipmentdefect', form: 'defect', cols: ['name', 'date', 'company', 'equipment', 'subsystem', 'part_name', 'severity', 'status', 'reported_by', 'description'], relTables: ['equipment', 'company_equipment', 'part_movements', 'expenses'], views: [
-      { id: 'all', label: 'All Defect Reports' },
+    { key: 'company_equipment', group: '3 · Fleet, Fuel, Maintenance & Drivers', label: 'Company-Equipment Assignments', dvn: 'bhf_companyequipment', form: 'companyequipment', cols: ['equipment', 'company', 'ownership', 'status', 'supplier', 'default_driver', 'site', 'day_operator', 'night_operator', 'start_date', 'end_date'], relTables: ['equipment', 'equipment_defects', 'equipment_repairs', 'equipment_oil_logs', 'part_movements', 'suppliers', 'drivers', 'sites'], views: [{ id: 'all', label: 'All Fleet Assignments' }, { id: 'active', label: 'Active Assignments', fn: r => /active/i.test(r.status || '') && !r.end_date }] },
+    { key: 'equipment_defects', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet_maint', label: 'Equipment Warnings & Defects', dvn: 'bhf_equipmentdefect', form: 'defect', cols: ['name', 'date', 'company', 'equipment', 'subsystem', 'part_name', 'severity', 'status', 'reported_by', 'description'], relTables: ['equipment', 'company_equipment', 'equipment_repairs', 'part_movements', 'expenses'], views: [
+      { id: 'all', label: 'All Warnings & Defects' },
       { id: 'open', label: 'Open / Unresolved', fn: r => !/resolved|closed/i.test(r.status || '') },
-      { id: 'critical', label: 'Critical — Down', fn: r => /critical/i.test(r.severity || '') && !/resolved|closed/i.test(r.status || '') },
-      { id: 'resolved', label: 'Resolved / Part Changed', fn: r => /resolved|closed/i.test(r.status || '') }
+      { id: 'critical', label: 'Grave / Critical', fn: r => /grave|critical/i.test(r.severity || '') && !/resolved|closed/i.test(r.status || '') },
+      { id: 'mild', label: 'Mild Warnings', fn: r => /mild|moderate|minor/i.test(r.severity || '') && !/resolved|closed/i.test(r.status || '') },
+      { id: 'resolved', label: 'Resolved', fn: r => /resolved|closed/i.test(r.status || '') }
+    ] },
+    { key: 'equipment_repairs', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet_maint', label: 'Equipment Repairs', dvn: 'bhf_equipmentrepair', form: 'repair', cols: ['date', 'name', 'company', 'equipment', 'subsystem', 'repair_source', 'items_summary', 'warehouse_parts_usd', 'outside_parts_usd', 'external_labor_usd', 'total_cost_usd', 'supplier', 'defect_ref', 'status'], relTables: ['repair_items', 'equipment', 'equipment_defects', 'warehouse_movements', 'suppliers'], views: [
+      { id: 'all', label: 'All Repairs' },
+      { id: 'wh_only', label: 'Warehouse Only', fn: r => /^warehouse only$/i.test(r.repair_source || '') },
+      { id: 'out_only', label: 'Outside Only', fn: r => /^outside only$/i.test(r.repair_source || '') },
+      { id: 'partial', label: 'Partially Warehouse + Outside', fn: r => /partial/i.test(r.repair_source || '') }
+    ] },
+    { key: 'repair_items', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet_maint', label: 'Items Used in Repairs', dvn: 'bhf_repairitem', form: 'repair', cols: ['date', 'name', 'repair_ref', 'company', 'equipment', 'item_name', 'source', 'qty', 'uom', 'unit_cost', 'line_total', 'warehouse_location', 'supplier'], relTables: ['equipment_repairs', 'equipment', 'warehouse_movements', 'suppliers'], views: [
+      { id: 'all', label: 'All Repair Items' },
+      { id: 'warehouse', label: 'From Warehouse (-Stock)', fn: r => /^warehouse$/i.test(r.source || '') },
+      { id: 'outside', label: 'Purchased Outside', fn: r => /^outside$/i.test(r.source || '') }
+    ] },
+    { key: 'equipment_oil_logs', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet_maint', label: 'Equipment Oil & Service Logs', dvn: 'bhf_equipmentoillog', form: 'oillog', cols: ['date', 'name', 'company', 'equipment', 'oil_type', 'service_action', 'qty', 'uom', 'source', 'hours_reading', 'odometer_km', 'interval_hours', 'interval_km', 'interval_days', 'cost_usd'], relTables: ['equipment', 'company_equipment', 'fuel_intakes'], views: [
+      { id: 'all', label: 'All Oil & Service Logs' },
+      { id: 'engine', label: 'Engine Oil (15W-40)', fn: r => /15w|engine|motor/i.test(r.oil_type || '') },
+      { id: 'hyd', label: 'Hydraulic Oil (68)', fn: r => /68|hydraulic/i.test(r.oil_type || '') },
+      { id: 'gear', label: 'Gear & Transmission (90/ATF)', fn: r => /90|gear|trans|atf|diff/i.test(r.oil_type || '') }
     ] },
     { key: 'part_movements', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet_maint', label: 'Changed & Removed Parts', dvn: 'bhf_partmovement', form: 'partlog', cols: ['name', 'date', 'company', 'equipment', 'part_name', 'qty', 'removed_disposition', 'storage_location', 'prior_defect_notified', 'new_part_cost', 'sale_proceeds'], relTables: ['equipment', 'equipment_defects', 'company_equipment', 'expenses'], views: [
       { id: 'all', label: 'All Part Movements' },
@@ -1457,7 +1487,7 @@
       { id: 'jv', label: 'JV 50/50 Sites', fn: r => Boolean(r.is_jv) },
       { id: 'gps', label: 'Verified GPS Pin', fn: r => r.latitude != null && r.longitude != null }
     ] },
-    { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region / Zone', dvn: 'bhf_region', form: 'region', cols: ['name', 'code', 'sites_count', 'overtime_rate', 'sales_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
+    { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region / Zone', dvn: 'bhf_region', form: 'region', cols: ['name', 'code', 'zone_shape', 'distance_km', 'sites_count', 'overtime_rate', 'sales_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
     { key: 'equipment', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', singularLabel: 'Equipment / Truck', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
     { key: 'drivers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', singularLabel: 'Driver / Operator', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] },
     { key: 'fx_rates', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_fx_rates', label: 'Currency Exchange Rates', singularLabel: 'FX Rate', dvn: 'bhf_fxrate', form: 'fxrate', cols: ['name', 'currency', 'rate', 'start_date', 'effective_to', 'status', 'notes'], relTables: ['currencies', 'conversions'], views: [{ id: 'all', label: 'All Exchange Rates' }, { id: 'current', label: 'Current Active Rates', fn: r => r.status === 'Current' }, { id: 'historical', label: 'Historical Windows', fn: r => r.status === 'Historical' }] },
@@ -1481,6 +1511,9 @@
     region: 'regions',
     truck: 'equipment',
     equipment: 'equipment',
+    target_equipment: 'equipment',
+    expense_ref: 'expenses',
+    repair_ref: 'equipment_repairs',
     defect_ref: 'equipment_defects',
     linked_part_log: 'part_movements',
     driver: 'drivers',
@@ -1518,6 +1551,13 @@
     'nicotine supplies': '6111',
     'office supplies': '61125',
     'oils': '6122',
+    'oils & lubricants': '6122',
+    'office & facility': '6269',
+    'insurance, permits & taxes': '6268',
+    'staff & social security': '635',
+    'tools & garage': '61123',
+    'transport & site logistics': '62611',
+    'utilities & telecom': '6261',
     'other costs': '6269',
     'palms': '186',
     'pool supplies': '6112',
@@ -1577,7 +1617,7 @@
     return `<span class="badge ${cls}">${esc(s)}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(cost_class|cost_bucket|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|status)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(cost_class|cost_bucket|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|status|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -1639,6 +1679,9 @@
   let _hubRelCache = null;
   let _hubRelStamp = '';
   function getHubRelIndex(SEED) {
+    if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
+      window.MFG_GEO.hydrateSeedGeo(SEED);
+    }
     const rec = (SEED && SEED.records) || {};
     const stamp = `${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.salaries || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(SEED && SEED._customRev) || 0}`;
     if (_hubRelCache && _hubRelStamp === stamp) return _hubRelCache;
@@ -8064,7 +8107,7 @@
       tableKey: meta.key,
       ignoreCompany: isUniv,
       ignoreRls: isUniv,
-      ignorePeriod: isUniv || !['sales_tickets', 'raw_purchases', 'receipts', 'settlements', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'salaries', 'attendance', 'external_movements', 'loan_settlements', 'conversions', 'jv_distributions', 'daily_totals'].includes(meta.key)
+      ignorePeriod: isUniv || !['sales_tickets', 'raw_purchases', 'receipts', 'settlements', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'expense_items', 'salaries', 'attendance', 'external_movements', 'loan_settlements', 'conversions', 'jv_distributions', 'daily_totals'].includes(meta.key)
     });
     const views = meta.views || [{ id: 'all', label: 'All ' + meta.label }];
     const activeViewId = (STATE.tableViews && STATE.tableViews[meta.key]) || 'all';
@@ -8191,6 +8234,10 @@
             ` : ''}
           </div>
         ` : ''}
+
+        ${(meta.key === 'sites' || meta.key === 'regions') && window.MFG_GEO && typeof window.MFG_GEO.renderGeoStudioHtml === 'function'
+          ? window.MFG_GEO.renderGeoStudioHtml({ metaKey: meta.key, STATE, SEED, rel })
+          : ''}
 
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -8335,6 +8382,8 @@
     site_owner: 'Site Owner',
     is_jv: 'JV 50/50',
     gps_status: 'GPS Pin',
+    zone_shape: 'Map Zone',
+    distance_km: 'Ref KM (WTC)',
     usd_delta: 'USD Change ($)',
     lbp_delta: 'LBP Change (LL)',
     exchange_rate: 'Rate (LL/$)',
@@ -8460,6 +8509,10 @@
             ` : ''}
           </div>
         ` : ''}
+
+        ${(meta.key === 'sites' || meta.key === 'regions') && window.MFG_GEO && typeof window.MFG_GEO.renderGeoStudioHtml === 'function'
+          ? window.MFG_GEO.renderGeoStudioHtml({ metaKey: meta.key, STATE, SEED, rel })
+          : ''}
 
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -9209,7 +9262,7 @@
       const amt = sign * Number(ex.amount || 0);
       const blob = `${ex.category || ''} ${ex.subcategory || ''} ${ex.notes || ''} ${ex.name || ''}`;
       const d = String(ex.date || '').slice(0, 10);
-      if (/^oils$/i.test(String(ex.category || '').trim()) && !/grease|تشحيم|مشحمة/i.test(blob)) {
+      if (/^oils(\s*&\s*lubricants)?$/i.test(String(ex.category || '').trim()) && !/grease|تشحيم|مشحمة/i.test(blob)) {
         oilExpUsd += amt;
       }
       if (/grease|تشحيم|مشحمة/i.test(blob)) {

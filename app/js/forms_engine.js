@@ -58,6 +58,7 @@
       forms: [
         { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', title: 'New Raw Material Ticket' },
         { id: 'expense', label: 'Expense (Cash / Credit)', badge: 'bhf_expense', crKey: 'expenses', title: 'New Expense' },
+        { id: 'warehousestock', label: 'Warehouse Stock / Adjust', badge: 'bhf_warehousemovement', crKey: 'warehouse_movements', title: 'Warehouse Stock Entry / Adjustment' },
         { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', title: 'New Supplier Settlement' },
         { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', title: 'New Joint-Venture Entry' }
       ]
@@ -70,7 +71,9 @@
         { id: 'fuel', label: 'Fuel & Lubricant Intake', badge: 'bhf_fuelintake', crKey: 'fuel_intakes', title: 'New Fuel & Lubricant Intake' },
         { id: 'malfunction', label: 'Tank Malfunction / Discrepancy', badge: 'bhf_fuelmalfunction', crKey: 'fuel_malfunctions', title: 'New Tank Malfunction / Discrepancy' },
         { id: 'companyequipment', label: 'Company Fleet Unit', badge: 'bhf_companyequipment', crKey: 'company_equipment', title: 'New Company Fleet Unit (BU Assignment)' },
-        { id: 'defect', label: 'Equipment Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', title: 'Report Equipment / Truck Defect' },
+        { id: 'defect', label: 'Equipment Warning / Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', title: 'Report Equipment Warning / Issue' },
+        { id: 'repair', label: 'Equipment Repair', badge: 'bhf_equipmentrepair', crKey: 'equipment_repairs', title: 'New Equipment Repair (Warehouse / Outside)' },
+        { id: 'oillog', label: 'Oil & Service Log', badge: 'bhf_equipmentoillog', crKey: 'equipment_oil_logs', title: 'New Equipment Oil & Service Log' },
         { id: 'partlog', label: 'Part Change & Custody', badge: 'bhf_partmovement', crKey: 'part_movements', title: 'Part Change, Removal & Disposition' },
         { id: 'triprate', label: 'Overtime Trip Rate', badge: 'bhf_triprate', crKey: 'overtime_rates', title: 'New Overtime Trip Rate' }
       ]
@@ -893,12 +896,20 @@
       return `
         <div class="form-grid-3">
           ${fld('Site Name *', inp('f_site', 'text', '', 'placeholder="Site name"'))}
-          ${fld('Region *', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Select or type region..."') + dl('dl_regions', regNames))}
+          ${fld('Region *', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Auto-filled from map zone or select..."') + dl('dl_regions', regNames))}
           ${fld('Default Site Owner (Supplier)', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames))}
           ${fld('Associated Customer (if Delivery Site)', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames))}
-          ${fld('Latitude (GPS)', inp('f_lat', 'number', '', 'step="0.000001" placeholder="33.8938"'))}
-          ${fld('Longitude (GPS)', inp('f_lng', 'number', '', 'step="0.000001" placeholder="35.5018"'))}
+          ${fld('Latitude (GPS)', inp('f_lat', 'number', '', 'step="0.00001" placeholder="33.89380"'))}
+          ${fld('Longitude (GPS)', inp('f_lng', 'number', '', 'step="0.00001" placeholder="35.48200"'))}
+          ${fld('Quick Paste Coords / Maps URL', inp('f_site_coord_paste', 'text', '', 'placeholder="Paste 33.8938, 35.4820 or Maps link"'))}
           <div class="form-field check-field"><input type="checkbox" id="f_isjv"><label for="f_isjv">Joint-Venture (JV) Site</label></div>
+          <div class="geo-modal-map-wrap">
+            <div class="geo-modal-map-bar">
+              <span><b>Pin Site on Map:</b> Click anywhere inside a Region Circle or Polygon to pin GPS &amp; auto-detect Region</span>
+              <span id="modalSiteKmReadout" style="font-weight:700;color:var(--accent,#1D4ED8)">Click map to estimate KM</span>
+            </div>
+            <div class="geo-modal-map-canvas" id="modalSiteMapCanvas"></div>
+          </div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
       `;
@@ -907,7 +918,7 @@
     if (fType === 'region') {
       return `
         <div class="form-grid-3">
-          ${secHdr('1. Geographic Region Identity (Universal Registry · All BUs)')}
+          ${secHdr('1. Geographic Region & Map Zone (Universal Registry · All BUs)')}
           ${fld('Region *', inp('f_region', 'text', '', 'placeholder="e.g. Metn, Keserwan, Chouf, Bekaa Central..."'))}
           ${fld('Region Code', inp('f_code', 'text', '', 'placeholder="e.g. MTN, KSR, BKA"'))}
           ${fld('Governorate', sel('f_corridor', [
@@ -918,7 +929,22 @@
             ['Bekaa', 'Bekaa & Baalbek-Hermel'],
             ['North', 'North & Akkar']
           ], 'Mount Lebanon'))}
-          ${fld('Reference Haulage Distance (km)', inp('f_distance_km', 'number', '', 'step="1" min="0" placeholder="Optional one-way km"'))}
+          ${fld('Map Zone Shape', sel('f_zone_type', [
+            ['circle', 'Circle Radius on Map'],
+            ['polygon', 'Custom Polygon Boundary']
+          ], 'circle'))}
+          ${fld('Circle Radius (km)', inp('f_radius_km', 'number', '1.5', 'step="0.1" min="0.2" max="50"'))}
+          ${fld('Reference Haulage Distance (km)', inp('f_distance_km', 'number', '', 'step="0.5" min="0" placeholder="Auto-estimated from WTC Hub"'))}
+          <input type="hidden" id="f_center_lat" value="">
+          <input type="hidden" id="f_center_lng" value="">
+          <input type="hidden" id="f_zone_geojson" value="">
+          <div class="geo-modal-map-wrap">
+            <div class="geo-modal-map-bar">
+              <span id="modalRegionZoneHint">Click anywhere on the map to place the Region Circle center</span>
+              <button type="button" class="geo-mini-btn" id="modalRegionClearPtsBtn">Clear Zone</button>
+            </div>
+            <div class="geo-modal-map-canvas" id="modalRegionMapCanvas"></div>
+          </div>
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional corridor notes, toll/checkpoint info, or zone scope..."'), { span: true })}
         </div>
       `;
@@ -1039,7 +1065,7 @@
         return `
           ${adminHeaderHtml}
           <div class="form-grid-3">
-            ${secHdr('1. Unit Identity & Pre-Replacement Defect Notice', 'Notify management & garage ahead of failure so part replacements are pre-verified')}
+            ${secHdr('1. Equipment Unit & Warning Notice', 'Flag Grave or Mild equipment issues and specify the affected part before failure')}
             ${companyField}
             ${lockedDateField('Reported Date *')}
             ${collapsibleRepDateField()}
@@ -1047,30 +1073,32 @@
             ${fld('Reported By (Driver / Staff)', inp('f_reported_by', 'text', '', 'list="dl_staff_drivers" placeholder="Select driver, operator, or mechanic..."') + dl('dl_staff_drivers', staffAndDrivers))}
             ${fld('Meter Reading (km / h)', inp('f_meter', 'number', '', 'step="1" min="0" placeholder="Optional km or hours"'))}
             <div id="qv_truck_defect" class="span-3" style="grid-column:1 / -1"></div>
-            ${secHdr('2. Affected Subsystem, Severity & Operational Status')}
+            ${secHdr('2. Affected Equipment Part, Warning Label (Mild / Grave) & Status')}
             ${fld('Affected Subsystem *', sel('f_subsystem', subsystems, 'Engine & Powertrain'))}
-            ${fld('Suspected Part / Piece', inp('f_part_name', 'text', '', 'list="dl_part_names" placeholder="e.g. Dynamo, Hydraulic Pump, Brake Drum..."') + dl('dl_part_names', partNames))}
-            ${fld('Defect Severity *', sel('f_severity', [
-              ['Minor — Monitor (Running)', 'Minor — Monitor (Running)'],
-              ['Moderate — Needs Part Soon', 'Moderate — Needs Part Soon'],
-              ['Critical — Down / Do Not Dispatch', 'Critical — Down / Do Not Dispatch']
-            ], 'Moderate — Needs Part Soon'))}
-            ${fld('Defect Status *', sel('f_status', [
-              ['Open — Defect Reported', 'Open — Defect Reported'],
+            ${fld('Affected Equipment Part *', inp('f_part_name', 'text', '', 'list="dl_part_names" placeholder="e.g. Hydraulic Pump, Alternator, Brake Drum..."') + dl('dl_part_names', partNames), { id: 'wrap_f_part_name' })}
+            ${fld('Warning Label (Mild / Grave) *', sel('f_severity', [
+              ['Mild - Monitor & Schedule Repair', 'Mild - Monitor & Schedule Repair'],
+              ['Grave - Serious Issue / Do Not Dispatch', 'Grave - Serious Issue / Do Not Dispatch']
+            ], 'Mild - Monitor & Schedule Repair'), {
+              id: 'wrap_f_severity',
+              afterHtml: `<div class="exp-price-mode-bar" id="defSeverityPills" role="group" aria-label="Warning severity" style="margin-top:5px"><button type="button" class="uom-qpill active" data-def-sev-pill="Mild - Monitor & Schedule Repair">Mild Warning</button><button type="button" class="uom-qpill" data-def-sev-pill="Grave - Serious Issue / Do Not Dispatch">Grave Warning</button></div>`
+            })}
+            ${fld('Warning Status *', sel('f_status', [
+              ['Open - Warning Active', 'Open - Warning Active'],
               ['Part Ordered / Scheduled', 'Part Ordered / Scheduled'],
               ['In Maintenance / Workshop', 'In Maintenance / Workshop'],
-              ['Resolved — Part Changed', 'Resolved — Part Changed'],
-              ['Closed — Inspected OK', 'Closed — Inspected OK']
-            ], 'Open — Defect Reported'))}
+              ['Resolved - Repaired / Part Changed', 'Resolved - Repaired / Part Changed'],
+              ['Closed - Inspected OK', 'Closed - Inspected OK']
+            ], 'Open - Warning Active'))}
             <div class="form-field check-field" style="grid-column:span 2"><input type="checkbox" id="f_sync_unit_status"><label for="f_sync_unit_status">Flag unit Fleet Status as "Under repair" until resolved</label></div>
-            ${fld('Issue / Defect Description *', inp('f_description', 'text', '', 'placeholder="Describe symptom, leak, noise, warning light, or worn component..."'), { span: true })}
-            ${fld('Notes / Action Plan', inp('f_notes', 'text', '', 'placeholder="Parts to order, vendor inspection, or target repair date..."'), { span: true })}
+            ${fld('Issue / Warning Description *', inp('f_description', 'text', '', 'placeholder="Describe symptom, leak, noise, warning light, or worn component..."'), { span: true })}
+            ${fld('Notes / Action Plan', inp('f_notes', 'text', '', 'placeholder="Parts to check in warehouse, vendor inspection, or target repair date..."'), { span: true })}
           </div>
           <div class="live-calc">
-            <div><small>Unit Health Impact</small><b id="calc_def_health">Needs Part Soon</b></div>
+            <div><small>Warning Level</small><b id="calc_def_health">Mild Warning</b></div>
             <div><small>Prior Open Issues</small><b id="calc_def_open">0 open</b></div>
-            <div><small>Subsystem</small><b id="calc_def_sub">Engine &amp; Powertrain</b></div>
-            <div><small>Pre-Notification</small><b id="calc_def_notif">Logged Before Replacement</b></div>
+            <div><small>Subsystem / Part</small><b id="calc_def_sub">Engine &amp; Powertrain</b></div>
+            <div><small>Pre-Notification</small><b id="calc_def_notif">Logged Before Repair</b></div>
           </div>
         `;
       }
@@ -1128,6 +1156,168 @@
           <div><small>Piece Custody</small><b id="calc_part_disp">Stored in Warehouse</b></div>
           <div><small>Outlay (New + Repair)</small><b id="calc_part_cost">$0.00</b></div>
           <div><small>Net Cash Impact</small><b id="calc_part_net">$0.00</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'warehousestock') {
+      const whItemCatalog = uniqSorted(
+        (rec.expense_items || []).map(x => x && x.item_name)
+          .concat((rec.warehouse_movements || []).map(x => x && x.item_name))
+          .concat(['Engine Oil 15W-40', 'Hydraulic Oil 68', 'Gear / Transmission Oil 90', 'Fuel Filter', 'Engine Oil Filter', 'Air Filter', 'Bearing (Roulement)', 'Conveyor / Drive Belt', 'High-Pressure Hydraulic Hose', 'Heavy-Duty Truck Battery', 'Heavy Truck / Loader Tire', 'Alternator (Dynamo)', 'Starter Motor (March)'])
+      );
+      const whLocations = ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'];
+      return `
+        ${adminHeaderHtml}
+        <div class="form-grid-3">
+          ${secHdr('1. Warehouse Stock Addition or Adjustment', 'Record opening stock, spare returns (+Stock), or physical count adjustments (-Stock)')}
+          ${companyField}
+          ${lockedDateField('Movement Date *')}
+          ${collapsibleRepDateField()}
+          ${fld('Movement Type *', sel('f_wh_move_type', [
+            ['Opening Stock', 'Opening Stock (+ Add to Warehouse)'],
+            ['Stock Addition / Return', 'Stock Addition / Spare Return (+ Add)'],
+            ['Stock Adjustment (-)', 'Stock Count Adjustment (- Deduct)'],
+            ['Direct Workshop Issue', 'Direct Issue to Unit (- Deduct)']
+          ], 'Opening Stock'), { id: 'wrap_f_wh_move_type' })}
+          ${fld('Item / Part Name *', inp('f_item_name', 'text', '', 'list="dl_wh_items_modal" placeholder="Select or type spare part, filter, belt, oil..."') + dl('dl_wh_items_modal', whItemCatalog), { id: 'wrap_f_item_name', hintId: 'hint_wh_item', hint: '' })}
+          ${fld('Item Category *', sel('f_category', [
+            ['Spare Parts', 'Spare Parts'],
+            ['Oils & Lubricants', 'Oils & Lubricants'],
+            ['Tools & Garage', 'Tools & Garage']
+          ], 'Spare Parts'))}
+          ${fld('Quantity *', inp('f_qty', 'number', '1', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', hintId: 'hint_qty', hint: 'Defaults to 1' })}
+          ${fld('Unit *', sel('f_uom', [['Piece', 'Piece'], ['Set', 'Set'], ['Litre', 'Litre'], ['kg', 'kg'], ['Box', 'Box'], ['m', 'm']], 'Piece'))}
+          ${fld('Unit Cost ($)', inp('f_unitprice', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_f_unitprice' })}
+          ${fld('Warehouse Location', inp('f_location', 'text', 'WTC Main Warehouse', 'list="dl_wh_locs" placeholder="Warehouse or store shelf..."') + dl('dl_wh_locs', whLocations))}
+          ${fld('Min Stock Reorder Alert', inp('f_min_stock', 'number', '0', 'step="1" min="0" placeholder="0"'))}
+          ${fld('Target Equipment (if Direct Issue)', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional unit..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck' })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Shelf bin, physical stocktake reference, or return note..."'), { span: true })}
+        </div>
+        <div class="live-calc">
+          <div><small>Warehouse Direction</small><b id="calc_wh_dir">+IN (Adds Stock)</b></div>
+          <div><small>Current On-Hand</small><b id="calc_wh_before">0</b></div>
+          <div><small>Balance After</small><b id="calc_wh_after">+1</b></div>
+          <div><small>Movement Value</small><b id="calc_wh_val">$0.00</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'repair') {
+      const subsystems = [
+        ['Engine & Powertrain', 'Engine & Powertrain'],
+        ['Brakes & Suspension', 'Brakes & Suspension'],
+        ['Hydraulics & Hoist', 'Hydraulics & Hoist'],
+        ['Tyres & Wheels', 'Tyres & Wheels'],
+        ['Electrical & Battery', 'Electrical & Battery'],
+        ['Transmission & Gearbox', 'Transmission & Gearbox'],
+        ['Body, Chassis & Bucket', 'Body, Chassis & Bucket'],
+        ['Crusher / Plant Screen', 'Crusher / Plant Screen'],
+        ['Cooling & Exhaust', 'Cooling & Exhaust'],
+        ['Other', 'Other']
+      ];
+      const whItemCatalog = uniqSorted(
+        (rec.warehouse_movements || []).map(x => x && x.item_name)
+          .concat((rec.expense_items || []).map(x => x && x.item_name))
+          .concat(['Engine Oil 15W-40', 'Hydraulic Oil 68', 'Gear / Transmission Oil 90', 'Fuel Filter', 'Engine Oil Filter', 'Air Filter', 'Bearing (Roulement)', 'Conveyor / Drive Belt', 'High-Pressure Hydraulic Hose', 'Heavy-Duty Truck Battery', 'Heavy Truck / Loader Tire', 'Alternator (Dynamo)', 'Starter Motor (March)'])
+      );
+      return `
+        ${adminHeaderHtml}
+        <div id="qv_truck_repair" style="margin-bottom:8px"></div>
+        <div class="form-grid-3">
+          ${secHdr('1. Equipment Unit, Linked Warning & Repair Source', 'Select whether items came from Warehouse (-Stock), Outside, or Partially Both')}
+          ${companyField}
+          ${lockedDateField('Repair Date *')}
+          ${collapsibleRepDateField()}
+          ${fld('Equipment / Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select truck, mixer, loader, crusher..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
+          ${fld('Subsystem *', sel('f_subsystem', subsystems, 'Engine & Powertrain'))}
+          ${fld('Meter Reading (hrs / km)', inp('f_meter', 'number', '', 'step="1" min="0" placeholder="Optional hours or km"'))}
+          ${fld('Repair Source *', sel('f_repair_source', [
+            ['Warehouse Only', 'Warehouse Only (Deducts Stored Stock)'],
+            ['Outside Only', 'Outside Only (External Parts / Workshop)'],
+            ['Partially Warehouse + Outside', 'Partially Warehouse + Outside']
+          ], 'Warehouse Only'), {
+            id: 'wrap_f_repair_source',
+            span2: true,
+            afterHtml: `<div class="exp-price-mode-bar" id="repairSourcePills" role="group" aria-label="Repair parts source" style="margin-top:5px"><button type="button" class="uom-qpill active" data-rep-src-pill="Warehouse Only">Warehouse Only</button><button type="button" class="uom-qpill" data-rep-src-pill="Outside Only">Outside Only</button><button type="button" class="uom-qpill" data-rep-src-pill="Partially Warehouse + Outside">Partially Warehouse + Outside</button></div>`
+          })}
+          ${fld('Linked Equipment Warning', sel('f_defect_ref', [['', 'None (Routine / Unlinked Repair)']], ''), { id: 'wrap_f_defect_ref' })}
+          <div class="form-field check-field span-3" id="wrap_resolve_defect" hidden><input type="checkbox" id="f_resolve_defect" checked><label for="f_resolve_defect">Mark linked Equipment Warning as Resolved and restore Fleet Status to Active</label></div>
+        </div>
+        ${dl('dl_repair_items_catalog', whItemCatalog)}
+        <div class="line-items-builder" id="repairItemsPanel" style="margin-top:10px">
+          <div class="line-items-head">
+            <div>
+              <strong>2. Items Used in Repair</strong>
+              <span>Warehouse items decrease stored inventory automatically; Qty defaults to 1</span>
+            </div>
+            <button type="button" class="btn btn-ghost-bar" id="addRepairItemLineBtn">+ Add Item Used</button>
+          </div>
+          <div id="repairItemsRowsWrap"></div>
+        </div>
+        <div class="form-grid-3" style="margin-top:10px">
+          ${secHdr('3. External Workshop / Mechanic Labor & Notes')}
+          ${fld('External Workshop / Mechanic Labor ($)', inp('f_labor_cost', 'number', '0', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_f_labor_cost' })}
+          ${fld('External Workshop / Supplier', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Optional outside workshop or parts vendor..."') + dl('dl_suppliers', supNames), { id: 'wrap_f_supplier' })}
+          ${fld('Repair Status *', sel('f_status', [['Completed', 'Completed'], ['In Progress', 'In Progress / Awaiting Part']], 'Completed'))}
+          ${fld('Work Performed / Notes', inp('f_notes', 'text', '', 'placeholder="Describe repair work performed, mechanic name, or warranty note..."'), { span: true })}
+        </div>
+        <div class="live-calc">
+          <div><small>Repair Source</small><b id="calc_rep_src">Warehouse Only</b></div>
+          <div><small>Warehouse Stock Used</small><b id="calc_rep_wh">0 pcs ($0.00)</b></div>
+          <div><small>Outside Parts + Labor</small><b id="calc_rep_out">$0.00</b></div>
+          <div><small>Total Repair Cost</small><b id="calc_rep_total">$0.00</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'oillog') {
+      const oilTypes = [
+        ['Engine Oil 15W-40', 'Engine Oil 15W-40'],
+        ['Hydraulic Oil 68', 'Hydraulic Oil 68'],
+        ['Gear / Transmission Oil 90', 'Gear / Transmission Oil 90'],
+        ['ATF / Torque Converter Oil', 'ATF / Torque Converter Oil'],
+        ['Differential / Axle Oil 85W-140', 'Differential / Axle Oil 85W-140'],
+        ['Oil & Fuel Filter Service', 'Oil & Fuel Filter Service']
+      ];
+      return `
+        ${adminHeaderHtml}
+        <div id="qv_truck_oil" style="margin-bottom:8px"></div>
+        <div class="form-grid-3">
+          ${secHdr('1. Equipment Unit & Oil / Preventive Service Entry', 'Track oil changes and next service thresholds by Hours worked, Km driven, or Days elapsed')}
+          ${companyField}
+          ${lockedDateField('Service Date *')}
+          ${collapsibleRepDateField()}
+          ${fld('Equipment / Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select truck, mixer, loader, generator..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
+          ${fld('Oil / Service Type *', sel('f_oil_type', oilTypes, 'Engine Oil 15W-40'), { id: 'wrap_f_oil_type' })}
+          ${fld('Service Action *', sel('f_service_action', [
+            ['Full Change', 'Full Oil Change (Resets Schedule)'],
+            ['Top-Up', 'Top-Up Only (Keep Schedule)']
+          ], 'Full Change'))}
+          ${fld('Quantity *', inp('f_qty', 'number', '1', 'step="0.5" min="0.5" inputmode="decimal"'), {
+            id: 'wrap_f_qty',
+            afterHtml: `<div class="exp-price-mode-bar" style="margin-top:5px"><button type="button" class="uom-qpill" data-oil-qty-preset="20">20 L</button><button type="button" class="uom-qpill" data-oil-qty-preset="36">36 L</button><button type="button" class="uom-qpill" data-oil-qty-preset="40">40 L</button><button type="button" class="uom-qpill" data-oil-qty-preset="54">54 L</button></div>`
+          })}
+          ${fld('Unit *', sel('f_uom', [['Litre', 'Litre'], ['Piece', 'Piece'], ['Set', 'Set'], ['kg', 'kg']], 'Litre'))}
+          ${fld('Oil Source *', sel('f_oil_source', [
+            ['Plant Lube Bay', 'Plant Lube Bay (Bulk Drum)'],
+            ['Warehouse', 'Warehouse Stock (Deducts Stored Oil)'],
+            ['Outside Workshop', 'Outside Service Station']
+          ], 'Plant Lube Bay'), { id: 'wrap_f_oil_source', hintId: 'hint_oil_src', hint: '' })}
+          ${secHdr('2. Meter Readings at Service & Next Change Intervals (Hours / Km / Days)')}
+          ${fld('Hours Worked Reading (h)', inp('f_hours', 'number', '', 'step="1" min="0" placeholder="Current engine hours"'), { id: 'wrap_f_hours' })}
+          ${fld('Odometer Reading (km)', inp('f_odometer', 'number', '', 'step="1" min="0" placeholder="Current km reading"'), { id: 'wrap_f_odometer' })}
+          ${fld('Service Cost ($)', inp('f_amount', 'number', '0', 'step="0.01" min="0" placeholder="0.00"'))}
+          ${fld('Change Every Hours (h)', inp('f_int_hours', 'number', '250', 'step="10" min="0" placeholder="e.g. 250"'))}
+          ${fld('Change Every Distance (km)', inp('f_int_km', 'number', '15000', 'step="500" min="0" placeholder="e.g. 15000"'))}
+          ${fld('Change Every Time (Days)', inp('f_int_days', 'number', '90', 'step="5" min="0" placeholder="e.g. 90"'))}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Filter brand, oil grade note, or mechanic..."'), { span: true })}
+        </div>
+        <div class="live-calc">
+          <div><small>Next Due (Hours)</small><b id="calc_oil_hrs">+250 h</b></div>
+          <div><small>Next Due (Km)</small><b id="calc_oil_km">+15,000 km</b></div>
+          <div><small>Next Due (Date)</small><b id="calc_oil_days">In 90 days</b></div>
+          <div><small>Warehouse Impact</small><b id="calc_oil_wh">Plant Lube Bay</b></div>
         </div>
       `;
     }
