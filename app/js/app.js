@@ -171,6 +171,7 @@
     kioskUnlockPromptOpen: false,
     kioskPunches: ((!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_kiosk_punches_v1', null) : null) || []).filter(p => p && !/^pn-seed-/.test(String(p.id || ''))),
     staffBiometrics: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_staff_bio_v1', null) : null) || {},
+    workSchedules: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_work_sched_v1', null) : null) || { shiftTypes: [], staffRules: {} },
     kioskAttDir: 'auto',
     kioskAttSite: 'WTC Main Plant',
     kioskAttSiteCustom: false,
@@ -181,6 +182,9 @@
     kioskAttFeedFilter: 'roster',
     kioskAttRosterSearch: '',
     kioskEditingPinStaff: '',
+    kioskSchedShiftFilter: 'all',
+    kioskSchedOtFilter: 'all',
+    kioskSchedWeekOffset: 0,
     kioskLastPunch: null,
     activeUserIdx: 0,
     authed: false,
@@ -280,6 +284,23 @@
     enrolStatusText: '',
     enrolStatusCls: '',
     calibReportHtml: ''
+  };
+
+  const STAFF_FACE_MODAL_STATE = {
+    open: false,
+    staffName: '',
+    camActive: false,
+    loopTimer: null,
+    busy: false,
+    captures: [],
+    thumbs: [],
+    lastDet: null,
+    lastAt: 0,
+    lastSnap: '',
+    autoStreak: 0,
+    nextAutoAt: 0,
+    statusText: '',
+    statusCls: ''
   };
 
   // App-entered record pools (localStorage + cloud relay) → server table + SEED list
@@ -5246,9 +5267,38 @@
     if (!u || !userHasFaceId(u)) return false;
     return effectiveSeatAuthMode(u) === 'both';
   }
+  function buildKioskStaffTargetObject(staffNameOrKey) {
+    const k = norm(String(staffNameOrKey || '').replace(/^stfbio:/i, ''));
+    if (!k) return null;
+    const dir = typeof getKioskStaffDirectory === 'function' ? getKioskStaffDirectory() : [];
+    const entry = dir.find(s => norm(s.name) === k);
+    const bio = (STATE.staffBiometrics && STATE.staffBiometrics[k]) || {};
+    const dispName = (entry && entry.name) || bio.name || String(staffNameOrKey || '').replace(/^stfbio:/i, '').trim();
+    if (!dispName) return null;
+    return {
+      id: 'stfbio:' + k,
+      isKioskStaffOnly: true,
+      staffKey: k,
+      full_name: dispName,
+      email: 'staff+' + k.replace(/[^a-z0-9]+/g, '.') + '@kiosk.local',
+      role: (entry && entry.role) || bio.role || 'Staff',
+      companies: (entry && entry.company) || bio.company || defaultEntryCompany(),
+      auth_mode: 'inherit',
+      face_samples: Array.isArray(bio.face_samples) ? bio.face_samples : [],
+      face_thumbs: Array.isArray(bio.face_thumbs) ? bio.face_thumbs : [],
+      face_required: false,
+      face_cleared: Boolean(bio.face_cleared),
+      face_updated_at: bio.face_updated_at || bio.updated_at || ''
+    };
+  }
   function enrolTargetUser() {
-    if (!isOwner()) return activeUser();
-    const hit = STATE.users.find(u => u && String(u.id) === String(FACE_STATE.enrolUserId));
+    if (!isOwner() && !isAdminUser(activeUser())) return activeUser();
+    const rawId = String(FACE_STATE.enrolUserId || '');
+    if (/^stfbio:/i.test(rawId)) {
+      const stObj = buildKioskStaffTargetObject(rawId);
+      if (stObj) return stObj;
+    }
+    const hit = STATE.users.find(u => u && String(u.id) === rawId);
     return hit || activeUser();
   }
   function usableFaces(includeUnsavedForUser, opts = {}) {
@@ -5263,12 +5313,21 @@
     if (opts && opts.includeKioskStaff && STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') {
       const seenNames = new Set(list.map(x => norm(x.name)));
       Object.entries(STATE.staffBiometrics).forEach(([k, bio]) => {
-        if (!bio || seenNames.has(k)) return;
+        if (!bio || bio.face_cleared) return;
         const samples = Array.isArray(bio.face_samples) ? bio.face_samples.filter(s => Array.isArray(s) && s.length === 128) : [];
         if (!samples.length || !bio.name) return;
-        seenNames.add(k);
+        const nk = norm(bio.name || k);
+        if (seenNames.has(nk)) {
+          // If staffBiometrics has newer face samples for a human seat, keep the fresher samples
+          const existIdx = list.findIndex(x => norm(x.name) === nk);
+          if (existIdx >= 0 && samples.length >= list[existIdx].samples.length) {
+            list[existIdx].samples = samples;
+          }
+          return;
+        }
+        seenNames.add(nk);
         list.push({
-          id: 'stfbio-' + k,
+          id: 'stfbio:' + nk,
           email: '',
           name: bio.name,
           role: bio.role || 'Staff',
@@ -5278,10 +5337,10 @@
       });
     }
     if (includeUnsavedForUser && FACE_STATE.enrolCaptures.length) {
-      const idx = list.findIndex(x => norm(x.email) === norm(includeUnsavedForUser.email));
+      const idx = list.findIndex(x => (includeUnsavedForUser.email && x.email && norm(x.email) === norm(includeUnsavedForUser.email)) || norm(x.name) === norm(includeUnsavedForUser.full_name));
       const row = {
         id: includeUnsavedForUser.id,
-        email: includeUnsavedForUser.email,
+        email: includeUnsavedForUser.email || '',
         name: includeUnsavedForUser.full_name + ' (unsaved)',
         role: includeUnsavedForUser.role,
         companies: includeUnsavedForUser.companies,
@@ -19426,6 +19485,8 @@
         if (otH > 0 && Math.abs(workedH - otH) <= 0.15) {
           isCallout = true;
           shiftBasisLbl = wk.isSunday ? 'Sun Off (100% OT)' : 'Call-Out (100% OT)';
+        } else if (a.shift_label) {
+          shiftBasisLbl = String(a.shift_label);
         } else if (otH > 0) {
           const impliedBase = round2(Math.max(0, workedH - otH));
           shiftBasisLbl = Math.abs(impliedBase - 9) <= 0.15 ? '9.0h (8h+1h brk)' : `${fmtNum(impliedBase, 1)}h base`;
@@ -19988,6 +20049,7 @@
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
+              <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="attendance" data-kiosk-feed="schedule">${ic('clock')} Shift Schedule &amp; OT</button>
               <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="attendance">${ic('kiosks')} Attendance Kiosk</button>
               ${exportBtn('payAttPanel', 'Attendance_Records')}
               ${canEnterForm('attendance') ? '<button type="button" class="btn btn-primary" data-open-modal="attendance">+ Log Attendance</button>' : ''}
@@ -26132,16 +26194,29 @@
           <div class="enrol-controls-col">
             <div class="enrol-config-grid">
               <div class="enrol-config-card">
-                <label class="enrol-config-lbl" for="enrolUserSelect">Team Seat</label>
+                <label class="enrol-config-lbl" for="enrolUserSelect">Seat or Active Staff</label>
                 <select id="enrolUserSelect" class="enrol-select" ${owner ? '' : 'disabled'}>
-                  ${STATE.users.filter(u => u.status !== 'Suspended').map(u => `
-                    <option value="${esc(u.id)}" ${String(u.id) === String(enrolUser.id) ? 'selected' : ''}>
-                      ${esc(u.full_name)} (${userFaceSamples(u).length ? userFaceSamples(u).length + '/3 poses' : 'no Face ID'})
-                    </option>
-                  `).join('')}
+                  <optgroup label="Team Login Seats">
+                    ${STATE.users.filter(u => u.status !== 'Suspended').map(u => `
+                      <option value="${esc(u.id)}" ${String(u.id) === String(enrolUser.id) ? 'selected' : ''}>
+                        ${esc(u.full_name)} (${userFaceSamples(u).length ? userFaceSamples(u).length + '/3 poses' : 'no Face ID'})
+                      </option>
+                    `).join('')}
+                  </optgroup>
+                  <optgroup label="Active Staff (Kiosk Face ID)">
+                    ${getKioskStaffDirectory().filter(s => !s.userObj).map(s => {
+                      const stVal = 'stfbio:' + norm(s.name);
+                      const fCnt = s.faceCount || 0;
+                      return `
+                        <option value="${esc(stVal)}" ${String(enrolUser.id) === stVal ? 'selected' : ''}>
+                          ${esc(s.name)} · ${esc(s.company)} (${fCnt ? fCnt + '/3 poses' : 'no Face ID'})
+                        </option>
+                      `;
+                    }).join('')}
+                  </optgroup>
                 </select>
                 <label class="enrol-config-lbl" for="enrolSeatAuthModeSelect" style="margin-top:6px">Seat Sign-In Requirement</label>
-                <select id="enrolSeatAuthModeSelect" class="enrol-select" ${owner ? '' : 'disabled'}>
+                <select id="enrolSeatAuthModeSelect" class="enrol-select" ${(owner && !enrolUser.isKioskStaffOnly) ? '' : 'disabled'}>
                   <option value="inherit" ${(!enrolUser.auth_mode || enrolUser.auth_mode === 'inherit') ? 'selected' : ''}>Workspace Default (${esc((AUTH_MODE_OPTIONS.find(o => o.value === getWorkspaceAuthMode()) || AUTH_MODE_OPTIONS[1]).short)})</option>
                   ${AUTH_MODE_OPTIONS.map(o => `<option value="${esc(o.value)}" ${enrolUser.auth_mode === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
                 </select>
@@ -30706,6 +30781,9 @@
           ? `<span class="badge badge-warn">Already logged on ${esc(fmtDateDMY(attDate))}: ${esc(existingAttOnDate.map(a => a.type || a.status || 'Shift').join(', '))}</span>`
           : '';
         const cardEl = $('attStaffContractCard');
+        const hasStaffRule = curStaff ? hasExplicitStaffWorkRule(curStaff) : false;
+        const staffShiftCfg = curStaff ? resolveStaffShiftForDate(curStaff, curCo, attDate) : null;
+        const staffOtCfg = curStaff ? describeStaffOvertimeRule(curStaff, curCo, attDate) : null;
         if (cardEl) {
           if (!curStaff) {
             cardEl.hidden = true;
@@ -30717,8 +30795,8 @@
               <div><strong>${esc(prof.staff)}</strong> <span class="badge ${prof.status === 'Current' ? 'badge-ok' : 'badge-warn'}">${esc(prof.status)}</span> ${dupWarnHtml}</div>
               <div class="att-contract-metrics">
                 <span><small>Monthly</small><b>${fmtUSD(prof.monthlySalary, 0)}</b></span>
-                <span><small>Schedule</small><b>${prof.workingDays}d × ${fmtNum(prof.workingHours, 1)}h</b></span>
-                <span><small>Hourly</small><b>${fmtUSD(prof.hourlyRate, 2)}/hr</b></span>
+                <span><small>Schedule</small><b>${hasStaffRule && staffShiftCfg ? esc(staffShiftCfg.badgeLabel) : `${prof.workingDays}d × ${fmtNum(prof.workingHours, 1)}h`}</b></span>
+                <span><small>OT Policy</small><b>${hasStaffRule && staffOtCfg ? esc(staffOtCfg.badgeText) : 'Contract Rate'}</b></span>
                 <span><small>OT Rate</small><b>${fmtUSD(prof.otHourlyRate, 2)}/hr (${prof.otMultiplier}×)</b></span>
                 <span><small>Daily</small><b>${fmtUSD(prof.dailyRate, 2)}/d</b></span>
               </div>
@@ -30726,7 +30804,7 @@
           } else {
             cardEl.hidden = false;
             cardEl.className = 'att-contract-strip is-warn';
-            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file · using default <b>8.0h</b> shift &amp; fallback rate (<b>${fmtUSD(prof.hourlyRate, 2)}/hr</b>). ${dupWarnHtml}</span>`;
+            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file · Shift: <b>${esc(staffShiftCfg ? staffShiftCfg.badgeLabel : '08:00-16:00 (8.0h)')}</b> · OT: <b>${esc(hasStaffRule && staffOtCfg ? staffOtCfg.badgeText : 'Fallback Rate')}</b> (${fmtUSD(prof.hourlyRate, 2)}/hr). ${dupWarnHtml}</span>`;
           }
         }
         setHint(
@@ -30790,16 +30868,22 @@
         const activePreset = FORM_UI.attPreset || 'regular';
         const isNoClock = activePreset === 'noclock';
         const isCallout = activePreset === 'callout';
+        const effShiftHrs = (hasStaffRule && staffShiftCfg && staffShiftCfg.hours > 0) ? Number(staffShiftCfg.hours) : contractHrs;
 
         if (curStaff !== FORM_UI.lastAttStaff) {
           FORM_UI.lastAttStaff = curStaff;
           if (curStaff && !isNoClock && !FORM_UI.attClockManual && $('f_in') && $('f_out')) {
-            const inStart = parseAttClockHour(val('f_in') || '08:00');
-            if (inStart != null) {
-              const endTotalMin = Math.round(((inStart + contractHrs) % 24) * 60);
-              const hh = String(Math.floor(endTotalMin / 60) % 24).padStart(2, '0');
-              const mm = String(endTotalMin % 60).padStart(2, '0');
-              $('f_out').value = `${hh}:${mm}`;
+            if (hasStaffRule && staffShiftCfg && staffShiftCfg.start_time && staffShiftCfg.end_time) {
+              $('f_in').value = staffShiftCfg.start_time;
+              $('f_out').value = staffShiftCfg.end_time;
+            } else {
+              const inStart = parseAttClockHour(val('f_in') || '08:00');
+              if (inStart != null) {
+                const endTotalMin = Math.round(((inStart + contractHrs) % 24) * 60);
+                const hh = String(Math.floor(endTotalMin / 60) % 24).padStart(2, '0');
+                const mm = String(endTotalMin % 60).padStart(2, '0');
+                $('f_out').value = `${hh}:${mm}`;
+              }
             }
           }
         }
@@ -30807,7 +30891,7 @@
         const regBtn = $('attPresetRegularBtn');
         if (regBtn) {
           regBtn.textContent = curStaff
-            ? `Regular Shift (${fmtNum(contractHrs, 1)}h Contract)`
+            ? (hasStaffRule && staffShiftCfg ? `${staffShiftCfg.name} (${fmtNum(effShiftHrs, 1)}h Contract)` : `Regular Shift (${fmtNum(contractHrs, 1)}h Contract)`)
             : 'Regular Shift (Contract)';
         }
         const deckEl = $('attModeDeck');
@@ -30824,7 +30908,7 @@
         setFieldVisible('wrap_f_out', !isNoClock);
         setFieldVisible('wrap_f_worked_hours', !isNoClock);
 
-        const sched = (isNoClock || isCallout) ? 0 : contractHrs;
+        const sched = (isNoClock || isCallout) ? 0 : effShiftHrs;
         if ($('f_sched_hours')) $('f_sched_hours').value = String(sched);
 
         const inVal = isNoClock ? '' : val('f_in');
@@ -30833,16 +30917,23 @@
         const inH = parseAttClockHour(inVal);
         const outH = parseAttClockHour(outVal);
         const isOvernight = Boolean(!isNoClock && inH != null && outH != null && outH < inH);
-        setHint('hint_att_out', isOvernight ? `Overnight (+1d) · ${fmtNum(worked, 1)}h` : '', isOvernight ? 'ok' : '');
+        const timingEval = (!isNoClock && !isCallout && hasStaffRule && curStaff && inVal && outVal)
+          ? evaluateShiftPunchTiming(curStaff, curCo, attDate, inVal, outVal)
+          : null;
+        if (timingEval && timingEval.unapproved_ot_hours > 0) {
+          setHint('hint_att_out', `${staffOtCfg ? staffOtCfg.badgeText : 'OT Restricted'} · ${fmtNum(timingEval.unapproved_ot_hours, 1)}h extra not paid`, 'warn');
+        } else {
+          setHint('hint_att_out', isOvernight ? `Overnight (+1d) · ${fmtNum(worked, 1)}h` : '', isOvernight ? 'ok' : '');
+        }
 
         if (!isNoClock && $('f_worked_hours') && document.activeElement !== $('f_worked_hours')) {
           $('f_worked_hours').value = String(worked);
         }
-        const attTimeKey = `${curStaff}|${curCo}|${activePreset}|${inVal}|${outVal}|${sched}`;
+        const attTimeKey = `${curStaff}|${curCo}|${attDate}|${activePreset}|${inVal}|${outVal}|${sched}`;
         if (!isNoClock && attTimeKey !== FORM_UI.lastAttTimeKey) {
           FORM_UI.lastAttTimeKey = attTimeKey;
-          const autoOt = Math.round(Math.max(0, worked - sched) * 10) / 10;
-          const autoLate = Math.round(Math.max(0, sched - worked) * 10) / 10;
+          const autoOt = timingEval ? timingEval.overtime_hours : (Math.round(Math.max(0, worked - sched) * 10) / 10);
+          const autoLate = timingEval ? timingEval.late_hours : (Math.round(Math.max(0, sched - worked) * 10) / 10);
           if ($('f_hours') && document.activeElement !== $('f_hours')) {
             $('f_hours').value = String(autoOt);
           }
@@ -33501,6 +33592,9 @@
         const regH = isNoClock ? 0 : round2(Math.max(0, workedH - otH));
         const effType = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
         const tallyVal = otH > 0 ? otH : (ltH > 0 ? ltH : workedH);
+        const hasStaffRuleSave = st ? hasExplicitStaffWorkRule(st) : false;
+        const staffShiftSave = (!isNoClock && !isCallout && hasStaffRuleSave && st) ? resolveStaffShiftForDate(st, company, date) : null;
+        const timingSave = (staffShiftSave && inFmt && outFmt) ? evaluateShiftPunchTiming(st, company, date, inFmt, outFmt) : null;
         record = {
           ...base,
           name: `ATT ${date} ${st}`,
@@ -33514,10 +33608,13 @@
           out_time: outFmt,
           check_in: inFmt,
           check_out: outFmt,
+          shift_id: staffShiftSave ? staffShiftSave.id : '',
+          shift_label: staffShiftSave ? staffShiftSave.badgeLabel : '',
           scheduled_hours: schedH,
           worked_hours: workedH,
           regular_hours: regH,
           overtime_hours: otH,
+          unapproved_ot_hours: timingSave ? timingSave.unapproved_ot_hours : 0,
           late_hours: ltH,
           leave_days: 0,
           extra_usd: 0,
@@ -37542,6 +37639,7 @@
       localStorage.setItem('isabi_mfg_face_settings_v1', JSON.stringify(STATE.faceSettings));
       localStorage.setItem('isabi_mfg_kiosk_punches_v1', JSON.stringify((STATE.kioskPunches || []).slice(0, 300)));
       localStorage.setItem('isabi_mfg_staff_bio_v1', JSON.stringify(STATE.staffBiometrics || {}));
+      localStorage.setItem('isabi_mfg_work_sched_v1', JSON.stringify(STATE.workSchedules || { shiftTypes: [], staffRules: {} }));
       localStorage.setItem('isabi_mfg_lbp_fx_rate_v1', String(getLbpFxRate()));
       if (STATE.lbpFxUpdatedAt) localStorage.setItem('isabi_mfg_lbp_fx_updated_v1', STATE.lbpFxUpdatedAt);
     } catch (_) { /* storage full or blocked — the cloud copy still holds the state */ }
@@ -38032,13 +38130,71 @@
       const key = norm(inc.name || rk);
       if (!key) return;
       const cur = STATE.staffBiometrics[key];
-      const inTs = String(inc.updated_at || '');
-      const curTs = cur ? String(cur.updated_at || '') : '';
-      if (!cur || inTs > curTs) {
-        STATE.staffBiometrics[key] = Object.assign({}, cur || {}, inc);
+      const inTs = String(inc.updated_at || inc.face_updated_at || '');
+      const curTs = cur ? String(cur.updated_at || cur.face_updated_at || '') : '';
+      if (!cur) {
+        STATE.staffBiometrics[key] = Object.assign({}, inc);
+        changed = true;
+        return;
+      }
+      if (inTs > curTs) {
+        const merged = Object.assign({}, cur, inc);
+        const curFaceTs = String(cur.face_updated_at || '');
+        const inFaceTs = String(inc.face_updated_at || '');
+        if (curFaceTs > inFaceTs) {
+          merged.face_samples = cur.face_samples || [];
+          merged.face_thumbs = cur.face_thumbs || [];
+          merged.face_cleared = Boolean(cur.face_cleared);
+          merged.face_updated_at = curFaceTs;
+        }
+        STATE.staffBiometrics[key] = merged;
         changed = true;
       }
     });
+    return changed;
+  }
+
+  function mergeWorkSchedules(remoteSched) {
+    if (!remoteSched || typeof remoteSched !== 'object') return false;
+    if (!STATE.workSchedules || typeof STATE.workSchedules !== 'object') {
+      STATE.workSchedules = { shiftTypes: [], staffRules: {} };
+    }
+    if (!Array.isArray(STATE.workSchedules.shiftTypes)) STATE.workSchedules.shiftTypes = [];
+    if (!STATE.workSchedules.staffRules || typeof STATE.workSchedules.staffRules !== 'object') STATE.workSchedules.staffRules = {};
+    let changed = false;
+    if (Array.isArray(remoteSched.shiftTypes)) {
+      const byId = new Map(STATE.workSchedules.shiftTypes.filter(s => s && s.id).map(s => [String(s.id), s]));
+      remoteSched.shiftTypes.forEach(inc => {
+        if (!inc || !inc.id) return;
+        const id = String(inc.id);
+        const cur = byId.get(id);
+        const inTs = String(inc.updated_at || '');
+        const curTs = cur ? String(cur.updated_at || '') : '';
+        if (!cur) {
+          const copy = Object.assign({}, inc);
+          STATE.workSchedules.shiftTypes.push(copy);
+          byId.set(id, copy);
+          changed = true;
+        } else if (inTs > curTs) {
+          Object.assign(cur, inc);
+          changed = true;
+        }
+      });
+    }
+    if (remoteSched.staffRules && typeof remoteSched.staffRules === 'object') {
+      Object.entries(remoteSched.staffRules).forEach(([rk, inc]) => {
+        if (!inc || typeof inc !== 'object') return;
+        const key = norm(inc.staff || rk);
+        if (!key) return;
+        const cur = STATE.workSchedules.staffRules[key];
+        const inTs = String(inc.updated_at || '');
+        const curTs = cur ? String(cur.updated_at || '') : '';
+        if (!cur || inTs > curTs) {
+          STATE.workSchedules.staffRules[key] = Object.assign({}, cur || {}, inc);
+          changed = true;
+        }
+      });
+    }
     return changed;
   }
 
@@ -38051,6 +38207,7 @@
       customRecords: trimmed,
       kioskPunches: sanitizeKioskPunchesList(STATE.kioskPunches).slice(0, 300),
       staffBiometrics: STATE.staffBiometrics || {},
+      workSchedules: STATE.workSchedules || { shiftTypes: [], staffRules: {} },
       sentinelReviews: STATE.sentinelReviews || {},
       alertRules: STATE.alertRules || { overrides: {}, custom: [] },
       faceSettings: STATE.faceSettings,
@@ -38058,7 +38215,7 @@
       lbpFxUpdatedAt: STATE.lbpFxUpdatedAt || '',
       updatedAt: new Date().toISOString(),
       updatedBy: activeUser().email,
-      appVersion: '4.6'
+      appVersion: '4.7'
     };
   }
 
@@ -38070,7 +38227,10 @@
     if (m && !m.hidden) return true;
     const ins = $('recordInspector');
     if (ins && !ins.hidden) return true;
-    if ((STATE.view === 'users' && STATE.userFormDirty) || FACE_STATE.enrolCamActive || KIOSK_ATT_STATE.camActive) return true;
+    if (($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden)
+      || ($('staffScheduleModal') && !$('staffScheduleModal').hidden)
+      || ($('shiftTypeModal') && !$('shiftTypeModal').hidden)) return true;
+    if ((STATE.view === 'users' && STATE.userFormDirty) || FACE_STATE.enrolCamActive || KIOSK_ATT_STATE.camActive || STAFF_FACE_MODAL_STATE.camActive) return true;
     if (document.querySelector('.pa-suggest-wrap.open, .rdl-combo.open, #companySwitch.open, #nuCompanySelector.open')) return true;
     const a = document.activeElement;
     return !!(a && ['INPUT', 'SELECT', 'TEXTAREA'].includes(a.tagName) && a.id !== 'aiInput');
@@ -38191,6 +38351,26 @@
             saveLocalAuthAndRecords();
           }
         }
+        const ctrlSb = new AbortController();
+        const tSb = setTimeout(() => ctrlSb.abort(), 5000);
+        const rSb = await fetch('./api/staff_biometrics', { signal: ctrlSb.signal });
+        clearTimeout(tSb);
+        if (rSb.ok) {
+          const dSb = await rSb.json();
+          if (dSb && dSb.staff_biometrics && mergeStaffBiometrics(dSb.staff_biometrics)) {
+            saveLocalAuthAndRecords();
+          }
+        }
+        const ctrlWs = new AbortController();
+        const tWs = setTimeout(() => ctrlWs.abort(), 5000);
+        const rWs = await fetch('./api/work_schedules', { signal: ctrlWs.signal });
+        clearTimeout(tWs);
+        if (rWs.ok) {
+          const dWs = await rWs.json();
+          if (dWs && dWs.work_schedules && mergeWorkSchedules(dWs.work_schedules)) {
+            saveLocalAuthAndRecords();
+          }
+        }
       } catch (_) { /* server.py not running */ }
     }
 
@@ -38256,6 +38436,7 @@
       if (remote.customRecords && mergeCustomRecords(remote.customRecords)) { changed = true; applyCustomRecordsToSeed(); }
       if (Array.isArray(remote.kioskPunches) && mergeKioskPunches(remote.kioskPunches)) { changed = true; }
       if (remote.staffBiometrics && mergeStaffBiometrics(remote.staffBiometrics)) { changed = true; }
+      if (remote.workSchedules && mergeWorkSchedules(remote.workSchedules)) { changed = true; }
       if (remote.sentinelReviews && mergeSentinelReviews(remote.sentinelReviews)) { changed = true; }
       if (remote.alertRules && mergeAlertRules(remote.alertRules)) { changed = true; }
       if (remote.lbpFxRate && remote.lbpFxUpdatedAt && String(remote.lbpFxUpdatedAt) > String(STATE.lbpFxUpdatedAt || '')) {
@@ -38276,6 +38457,20 @@
         Object.entries(STATE.staffBiometrics).forEach(([bk, bv]) => {
           const rb = remBio[bk];
           if (!rb || String((bv && bv.updated_at) || '') > String(rb.updated_at || '')) pushChanges = true;
+        });
+      }
+      if (!pushChanges && STATE.workSchedules) {
+        const remWs = remote.workSchedules || { shiftTypes: [], staffRules: {} };
+        const remStMap = new Map((remWs.shiftTypes || []).filter(s => s && s.id).map(s => [String(s.id), s]));
+        (STATE.workSchedules.shiftTypes || []).forEach(st => {
+          if (!st || !st.id) return;
+          const rs = remStMap.get(String(st.id));
+          if (!rs || String(st.updated_at || '') > String(rs.updated_at || '')) pushChanges = true;
+        });
+        const remSr = remWs.staffRules || {};
+        Object.entries(STATE.workSchedules.staffRules || {}).forEach(([rk, rv]) => {
+          const rr = remSr[rk];
+          if (!rr || String((rv && rv.updated_at) || '') > String(rr.updated_at || '')) pushChanges = true;
         });
       }
       if (!pushChanges && remote.customRecords) {
@@ -39823,7 +40018,17 @@
     const sel = $('enrolUserSelect');
     if (sel) {
       Array.from(sel.options).forEach(opt => {
-        const u = STATE.users.find(x => String(x.id) === String(opt.value));
+        const valStr = String(opt.value || '');
+        if (valStr.startsWith('stfbio:')) {
+          const stObj = buildKioskStaffTargetObject(valStr.slice(7));
+          if (stObj) {
+            const n = userFaceSamples(stObj).length;
+            opt.textContent = `${stObj.full_name} · ${stObj.companies} (${n ? n + '/3 poses' : 'no Face ID'})`;
+            opt.selected = String(enrolUser.id) === valStr;
+          }
+          return;
+        }
+        const u = STATE.users.find(x => String(x.id) === valStr);
         if (u) {
           const n = userFaceSamples(u).length;
           opt.textContent = `${u.full_name} (${n ? n + '/3 poses' : 'no Face ID'})`;
@@ -39837,7 +40042,8 @@
       const wsModeObj = AUTH_MODE_OPTIONS.find(o => o.value === getWorkspaceAuthMode()) || AUTH_MODE_OPTIONS[1];
       const inheritOpt = seatAuthSel.querySelector('option[value="inherit"]');
       if (inheritOpt) inheritOpt.textContent = `Workspace Default (${wsModeObj.short})`;
-      seatAuthSel.value = (enrolUser.auth_mode && enrolUser.auth_mode !== 'inherit') ? enrolUser.auth_mode : 'inherit';
+      seatAuthSel.value = (!enrolUser.isKioskStaffOnly && enrolUser.auth_mode && enrolUser.auth_mode !== 'inherit') ? enrolUser.auth_mode : 'inherit';
+      seatAuthSel.disabled = !(isOwner() && !enrolUser.isKioskStaffOnly);
     }
 
     const wsAuthSel = $('enrolAuthModeSelect');
@@ -39964,27 +40170,65 @@
     return ok;
   }
 
+  async function persistStaffBiometricEntryNow(staffKey, entryObj) {
+    if (!staffKey || !entryObj) return;
+    if (HAS_LOCAL_API) {
+      try {
+        await fetch('./api/staff_biometrics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: staffKey, entry: entryObj })
+        });
+      } catch (_) {}
+    }
+  }
+
   async function persistTargetFaceNow(target) {
     if (!target) return;
-    target.face_samples = FACE_STATE.enrolCaptures.slice(0, 5);
-    target.face_thumbs = FACE_STATE.enrolThumbs.slice(0, 3);
-    target.face_required = target.face_samples.length > 0;
-    target.face_cleared = target.face_samples.length === 0;
-    target.face_updated_at = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+    const samples = FACE_STATE.enrolCaptures.slice(0, 5);
+    const thumbs = FACE_STATE.enrolThumbs.slice(0, 3);
+    target.face_samples = samples;
+    target.face_thumbs = thumbs;
+    target.face_required = samples.length > 0;
+    target.face_cleared = samples.length === 0;
+    target.face_updated_at = nowIso;
     FACE_STATE.enrolLoadedForUserId = String(target.id);
+
+    let bioKey = '';
+    let bioEntry = null;
+    if (target.isKioskStaffOnly) {
+      bioKey = target.staffKey || norm(target.full_name);
+    } else if (!isGenericTerminalSeat(target) && norm(target.full_name)) {
+      bioKey = norm(target.full_name);
+    }
+    if (bioKey) {
+      if (!STATE.staffBiometrics || typeof STATE.staffBiometrics !== 'object') STATE.staffBiometrics = {};
+      bioEntry = Object.assign({}, STATE.staffBiometrics[bioKey] || {}, {
+        name: target.full_name,
+        company: target.companies || defaultEntryCompany(),
+        role: target.role || 'Active Staff',
+        face_samples: samples,
+        face_thumbs: thumbs,
+        face_cleared: samples.length === 0,
+        face_updated_at: nowIso,
+        updated_at: nowIso
+      });
+      STATE.staffBiometrics[bioKey] = bioEntry;
+    }
+
     saveLocalAuthAndRecords();
-    if (navigator.webdriver || window.__MFG_HEADLESS_TEST) {
-      if (HAS_LOCAL_API) {
+    const syncTask = async () => {
+      if (!target.isKioskStaffOnly && HAS_LOCAL_API) {
         try { await fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
       }
+      if (bioKey && bioEntry) await persistStaffBiometricEntryNow(bioKey, bioEntry);
       await syncWithCloud(true);
+    };
+    if (navigator.webdriver || window.__MFG_HEADLESS_TEST) {
+      await syncTask();
     } else {
-      Promise.resolve().then(async () => {
-        if (HAS_LOCAL_API) {
-          try { await fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
-        }
-        await syncWithCloud(true);
-      }).catch(() => {});
+      Promise.resolve().then(syncTask).catch(() => {});
     }
   }
 
@@ -40073,17 +40317,21 @@
       return { ok: false, reason: 'too-small' };
     }
 
-    // Duplicate-person guard: refuse if this face already belongs to a DIFFERENT enrolled seat
-    const others = usableFaces().filter(x => norm(x.email) !== norm(target.email));
+    // Duplicate-person guard: refuse if this face already belongs to a DIFFERENT enrolled seat or staff member
+    const others = usableFaces(null, { includeKioskStaff: true }).filter(x => {
+      if (target.email && x.email && norm(x.email) === norm(target.email)) return false;
+      if (norm(x.name) === norm(target.full_name)) return false;
+      return true;
+    });
     if (others.length && window.Face && window.Face.match) {
       const dupMatch = window.Face.match(det.descriptor, others);
       const thr = Number(STATE.faceSettings.threshold || 0.50);
       if (dupMatch.best && dupMatch.bestDist <= thr) {
-        FACE_STATE.enrolStatusText = `Refused: this face is already enrolled under ${dupMatch.best.name} (d=${dupMatch.bestDist.toFixed(3)} ≤ τ=${thr.toFixed(2)}). Each team seat must have a distinct person.`;
+        FACE_STATE.enrolStatusText = `Refused: this face is already enrolled under ${dupMatch.best.name} (d=${dupMatch.bestDist.toFixed(3)} ≤ τ=${thr.toFixed(2)}). Each person must have a distinct Face ID.`;
         FACE_STATE.enrolStatusCls = 'crit';
         if (STATE.faceSettings.sound && window.Face.Sound) window.Face.Sound.playError();
         updateEnrolStudioDom();
-        return { ok: false, reason: 'duplicate-person', other: dupMatch.best.email, dist: dupMatch.bestDist };
+        return { ok: false, reason: 'duplicate-person', other: dupMatch.best.email || dupMatch.best.name, dist: dupMatch.bestDist };
       }
     }
 
@@ -40130,22 +40378,44 @@
   async function clearFaceEnrolment() {
     const target = enrolTargetUser();
     if (!target) return false;
+    const nowIso = new Date().toISOString();
     FACE_STATE.enrolCaptures = [];
     FACE_STATE.enrolThumbs = [];
     target.face_samples = [];
     target.face_thumbs = [];
     target.face_required = false;
     target.face_cleared = true;
-    target.face_updated_at = new Date().toISOString();
+    target.face_updated_at = nowIso;
     FACE_STATE.enrolLoadedForUserId = String(target.id);
     FACE_STATE.enrolStatusText = '';
     FACE_STATE.enrolStatusCls = '';
+
+    let bioKey = '';
+    let bioEntry = null;
+    if (target.isKioskStaffOnly) {
+      bioKey = target.staffKey || norm(target.full_name);
+    } else if (!isGenericTerminalSeat(target) && norm(target.full_name)) {
+      bioKey = norm(target.full_name);
+    }
+    if (bioKey && STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') {
+      bioEntry = Object.assign({}, STATE.staffBiometrics[bioKey] || {}, {
+        name: target.full_name,
+        face_samples: [],
+        face_thumbs: [],
+        face_cleared: true,
+        face_updated_at: nowIso,
+        updated_at: nowIso
+      });
+      STATE.staffBiometrics[bioKey] = bioEntry;
+    }
+
     saveLocalAuthAndRecords();
     updateEnrolStudioDom();
     toast(`Cleared Face ID for ${target.full_name}`);
-    if (HAS_LOCAL_API) {
+    if (!target.isKioskStaffOnly && HAS_LOCAL_API) {
       try { await fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: target }) }); } catch (_) {}
     }
+    if (bioKey && bioEntry) await persistStaffBiometricEntryNow(bioKey, bioEntry);
     await syncWithCloud(true);
     return true;
   }
@@ -41556,12 +41826,625 @@
     return out;
   }
 
+  const DEFAULT_SHIFT_TYPES = [
+    { id: 'day_8_4', name: 'Day Shift', short: 'Day', start_time: '08:00', end_time: '16:00', hours: 8.0, overnight: false, days: [1, 2, 3, 4, 5, 6], grace_min: 10, tone: 'amber', isBuiltin: true },
+    { id: 'night_7_3', name: 'Night Shift', short: 'Night', start_time: '19:00', end_time: '03:00', hours: 8.0, overnight: true, days: [1, 2, 3, 4, 5, 6], grace_min: 10, tone: 'indigo', isBuiltin: true },
+    { id: 'ext_7_4', name: 'Extended Day', short: 'Ext', start_time: '07:00', end_time: '16:00', hours: 9.0, overnight: false, days: [1, 2, 3, 4, 5, 6], grace_min: 10, tone: 'sapphire', isBuiltin: true }
+  ];
+
+  function ensureWorkSchedulesState() {
+    if (!STATE.workSchedules || typeof STATE.workSchedules !== 'object') {
+      STATE.workSchedules = { shiftTypes: [], staffRules: {} };
+    }
+    if (!Array.isArray(STATE.workSchedules.shiftTypes)) STATE.workSchedules.shiftTypes = [];
+    if (!STATE.workSchedules.staffRules || typeof STATE.workSchedules.staffRules !== 'object') {
+      STATE.workSchedules.staffRules = {};
+    }
+    return STATE.workSchedules;
+  }
+
+  function parseClockMinutes(hhmm) {
+    const f = fmtAttClockTime(hhmm);
+    if (!f || !/^\d{2}:\d{2}$/.test(f)) return null;
+    const [h, m] = f.split(':').map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    return (h % 24) * 60 + Math.max(0, Math.min(59, m));
+  }
+
+  function shiftIsoDateByDays(isoDate, deltaDays) {
+    const s = String(isoDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return todayISO();
+    const [y, m, d] = s.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d + Number(deltaDays || 0)));
+    return dt.toISOString().slice(0, 10);
+  }
+
+  function fmtShortDayMonth(isoDate) {
+    const s = String(isoDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const [, m, d] = s.split('-').map(Number);
+    return `${String(d).padStart(2, '0')} ${MONTH_SHORT_NAMES[(m - 1) % 12] || ''}`.trim();
+  }
+
+  function buildLocalPunchDateObj(dateStr, timeStr, fallbackMs = Date.now()) {
+    const dStr = String(dateStr || '').slice(0, 10);
+    const tFmt = fmtAttClockTime(timeStr || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dStr) && /^\d{2}:\d{2}$/.test(tFmt)) {
+      const [y, mo, da] = dStr.split('-').map(Number);
+      const [hh, mm] = tFmt.split(':').map(Number);
+      return new Date(y, mo - 1, da, hh, mm, 0, 0);
+    }
+    return new Date(fallbackMs);
+  }
+
+  function normalizeShiftTypeObj(raw, fallback = null) {
+    const base = Object.assign({}, fallback || {}, raw || {});
+    const st = fmtAttClockTime(base.start_time || '08:00') || '08:00';
+    const et = fmtAttClockTime(base.end_time || '16:00') || '16:00';
+    const sMin = parseClockMinutes(st);
+    const eMin = parseClockMinutes(et);
+    const overnight = Boolean(sMin != null && eMin != null && eMin <= sMin);
+    const durHrs = computeShiftWorkedHours(st, et) || 8.0;
+    const daysArr = Array.isArray(base.days) && base.days.length
+      ? Array.from(new Set(base.days.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))).sort((a, b) => a - b)
+      : [1, 2, 3, 4, 5, 6];
+    const nameStr = String(base.name || 'Custom Shift').trim() || 'Custom Shift';
+    const shortStr = String(base.short || nameStr.split(/\s+/)[0] || 'Shift').trim().slice(0, 12);
+    return {
+      id: String(base.id || uid('shf')),
+      name: nameStr,
+      short: shortStr,
+      start_time: st,
+      end_time: et,
+      hours: durHrs,
+      overnight,
+      days: daysArr,
+      grace_min: Math.max(0, Math.min(60, Number(base.grace_min != null ? base.grace_min : 10))),
+      tone: ['amber', 'indigo', 'sapphire', 'emerald'].includes(base.tone) ? base.tone : (overnight ? 'indigo' : 'amber'),
+      isBuiltin: Boolean(base.isBuiltin || DEFAULT_SHIFT_TYPES.some(d => d.id === base.id)),
+      voided: Boolean(base.voided),
+      updated_at: String(base.updated_at || '')
+    };
+  }
+
+  function getShiftTypes() {
+    const ws = ensureWorkSchedulesState();
+    const customById = new Map();
+    ws.shiftTypes.forEach(s => {
+      if (s && s.id) customById.set(String(s.id), s);
+    });
+    const out = [];
+    DEFAULT_SHIFT_TYPES.forEach(def => {
+      const ov = customById.get(def.id);
+      out.push(normalizeShiftTypeObj(ov || def, def));
+      customById.delete(def.id);
+    });
+    customById.forEach(custom => {
+      if (custom && !custom.voided) {
+        out.push(normalizeShiftTypeObj(custom));
+      }
+    });
+    return out;
+  }
+
+  async function postWorkScheduleMutation(bodyObj) {
+    if (!HAS_LOCAL_API) return;
+    try {
+      await fetch('./api/work_schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyObj)
+      });
+    } catch (_) {}
+  }
+
+  function saveShiftType(spec = {}) {
+    const ws = ensureWorkSchedulesState();
+    const nowIso = new Date().toISOString();
+    const existingBuiltin = DEFAULT_SHIFT_TYPES.find(d => d.id === spec.id) || null;
+    const existingCustomIdx = ws.shiftTypes.findIndex(s => s && String(s.id) === String(spec.id || ''));
+    const prev = existingCustomIdx >= 0 ? ws.shiftTypes[existingCustomIdx] : existingBuiltin;
+    const normalized = normalizeShiftTypeObj(Object.assign({}, prev || {}, spec, { voided: false, updated_at: nowIso }), existingBuiltin);
+    if (!normalized.name || !normalized.start_time || !normalized.end_time) {
+      return { ok: false, error: 'Shift name, start time, and end time are required' };
+    }
+    if (existingCustomIdx >= 0) ws.shiftTypes[existingCustomIdx] = normalized;
+    else ws.shiftTypes.push(normalized);
+    saveLocalAuthAndRecords();
+    postWorkScheduleMutation({ op: 'upsert_shift', item: normalized });
+    syncWithCloud(true);
+    return { ok: true, shiftType: normalized };
+  }
+
+  function deleteShiftType(shiftId) {
+    const id = String(shiftId || '');
+    if (!id || DEFAULT_SHIFT_TYPES.some(d => d.id === id)) {
+      return { ok: false, error: 'Built-in shift types cannot be deleted (you can edit their timing)' };
+    }
+    const ws = ensureWorkSchedulesState();
+    const nowIso = new Date().toISOString();
+    const idx = ws.shiftTypes.findIndex(s => s && String(s.id) === id);
+    if (idx < 0) return { ok: false, error: 'Shift type not found' };
+    ws.shiftTypes[idx] = Object.assign({}, ws.shiftTypes[idx], { voided: true, updated_at: nowIso });
+    Object.values(ws.staffRules).forEach(r => {
+      if (r && r.shift_id === id) {
+        r.shift_id = 'day_8_4';
+        r.updated_at = nowIso;
+      }
+    });
+    saveLocalAuthAndRecords();
+    postWorkScheduleMutation({ op: 'upsert_shift', item: ws.shiftTypes[idx] });
+    syncWithCloud(true);
+    return { ok: true };
+  }
+
+  function hasExplicitStaffWorkRule(staffName) {
+    const k = norm(staffName);
+    if (!k) return false;
+    const ws = ensureWorkSchedulesState();
+    return Boolean(ws.staffRules[k] && !ws.staffRules[k].reset_default);
+  }
+
+  function getStaffWorkRule(staffName, company) {
+    const k = norm(staffName);
+    const ws = ensureWorkSchedulesState();
+    const raw = (k && ws.staffRules[k]) ? ws.staffRules[k] : null;
+    const prof = getStaffContractProfile(staffName, company);
+    const defaultShiftId = (prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4';
+    const base = Object.assign({
+      staff: staffName || '',
+      company: company || prof.company || defaultEntryCompany(),
+      shift_id: defaultShiftId,
+      custom_name: 'Custom Shift',
+      custom_start: '08:00',
+      custom_end: '16:00',
+      custom_days: [1, 2, 3, 4, 5, 6],
+      grace_min: 10,
+      shift_overrides: [],
+      ot_mode: 'none',
+      ot_max_hours: 2,
+      ot_window_start: '',
+      ot_window_end: '',
+      ot_passes: [],
+      updated_at: ''
+    }, raw && !raw.reset_default ? raw : {});
+    base.ot_mode = ['none', 'always', 'max_hours', 'date_range'].includes(base.ot_mode) ? base.ot_mode : 'none';
+    base.ot_max_hours = Math.max(0, Number(base.ot_max_hours != null ? base.ot_max_hours : 2));
+    base.ot_window_start = fmtAttClockTime(base.ot_window_start || '');
+    base.ot_window_end = fmtAttClockTime(base.ot_window_end || '');
+    base.custom_start = fmtAttClockTime(base.custom_start || '08:00') || '08:00';
+    base.custom_end = fmtAttClockTime(base.custom_end || '16:00') || '16:00';
+    base.custom_days = Array.isArray(base.custom_days) && base.custom_days.length
+      ? Array.from(new Set(base.custom_days.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))).sort((a, b) => a - b)
+      : [1, 2, 3, 4, 5, 6];
+    base.shift_overrides = Array.isArray(base.shift_overrides) ? base.shift_overrides.filter(o => o && o.start_date) : [];
+    base.ot_passes = Array.isArray(base.ot_passes) ? base.ot_passes.filter(p => p && p.start_date) : [];
+    return base;
+  }
+
+  function saveStaffWorkRule(staffName, patch = {}) {
+    const k = norm(staffName);
+    if (!k) return { ok: false, error: 'Staff member is required' };
+    const ws = ensureWorkSchedulesState();
+    const cur = getStaffWorkRule(staffName, patch.company);
+    const nowIso = new Date().toISOString();
+    const next = Object.assign({}, cur, patch, {
+      staff: cur.staff || staffName,
+      reset_default: false,
+      updated_at: nowIso
+    });
+    next.ot_mode = ['none', 'always', 'max_hours', 'date_range'].includes(next.ot_mode) ? next.ot_mode : 'none';
+    next.ot_max_hours = Math.max(0, Number(next.ot_max_hours != null ? next.ot_max_hours : 0));
+    next.ot_window_start = fmtAttClockTime(next.ot_window_start || '');
+    next.ot_window_end = fmtAttClockTime(next.ot_window_end || '');
+    next.custom_start = fmtAttClockTime(next.custom_start || '08:00') || '08:00';
+    next.custom_end = fmtAttClockTime(next.custom_end || '16:00') || '16:00';
+    if (Array.isArray(next.custom_days)) {
+      next.custom_days = Array.from(new Set(next.custom_days.map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))).sort((a, b) => a - b);
+    }
+    next.shift_overrides = Array.isArray(next.shift_overrides) ? next.shift_overrides.filter(o => o && o.start_date) : [];
+    next.ot_passes = Array.isArray(next.ot_passes) ? next.ot_passes.filter(p => p && p.start_date) : [];
+    ws.staffRules[k] = next;
+    saveLocalAuthAndRecords();
+    postWorkScheduleMutation({ op: 'upsert_staff_rule', key: k, item: next });
+    syncWithCloud(true);
+    return { ok: true, rule: next };
+  }
+
+  function resetStaffWorkRule(staffName) {
+    const k = norm(staffName);
+    if (!k) return { ok: false };
+    const ws = ensureWorkSchedulesState();
+    const nowIso = new Date().toISOString();
+    const tomb = { staff: staffName, reset_default: true, updated_at: nowIso };
+    ws.staffRules[k] = tomb;
+    saveLocalAuthAndRecords();
+    postWorkScheduleMutation({ op: 'upsert_staff_rule', key: k, item: tomb });
+    syncWithCloud(true);
+    return { ok: true };
+  }
+
+  function addStaffShiftOverride(staffName, ovSpec = {}) {
+    const startD = String(ovSpec.start_date || todayISO()).slice(0, 10);
+    const endD = String(ovSpec.end_date || startD).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startD) || !/^\d{4}-\d{2}-\d{2}$/.test(endD) || endD < startD) {
+      return { ok: false, error: 'Valid start and end dates are required' };
+    }
+    const cur = getStaffWorkRule(staffName);
+    const ov = {
+      id: ovSpec.id || uid('sov'),
+      shift_id: String(ovSpec.shift_id || 'night_7_3'),
+      custom_start: fmtAttClockTime(ovSpec.custom_start || '08:00') || '08:00',
+      custom_end: fmtAttClockTime(ovSpec.custom_end || '16:00') || '16:00',
+      start_date: startD,
+      end_date: endD,
+      note: String(ovSpec.note || '').trim()
+    };
+    const filtered = (cur.shift_overrides || []).filter(x => !(x.start_date === startD && x.end_date === endD));
+    filtered.unshift(ov);
+    return saveStaffWorkRule(staffName, { shift_overrides: filtered.slice(0, 30) });
+  }
+
+  function removeStaffShiftOverride(staffName, ovId) {
+    const cur = getStaffWorkRule(staffName);
+    const nextList = (cur.shift_overrides || []).filter(x => String(x.id) !== String(ovId));
+    return saveStaffWorkRule(staffName, { shift_overrides: nextList });
+  }
+
+  function addStaffOtPass(staffName, passSpec = {}) {
+    const startD = String(passSpec.start_date || todayISO()).slice(0, 10);
+    const endD = String(passSpec.end_date || startD).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startD) || !/^\d{4}-\d{2}-\d{2}$/.test(endD) || endD < startD) {
+      return { ok: false, error: 'Valid Overtime start and end dates are required' };
+    }
+    const cur = getStaffWorkRule(staffName);
+    const pass = {
+      id: passSpec.id || uid('otp'),
+      start_date: startD,
+      end_date: endD,
+      max_hours: Math.max(0, Number(passSpec.max_hours || 0)),
+      note: String(passSpec.note || '').trim()
+    };
+    const filtered = (cur.ot_passes || []).filter(x => !(x.start_date === startD && x.end_date === endD));
+    filtered.unshift(pass);
+    const nextMode = passSpec.keepMode ? cur.ot_mode : 'date_range';
+    return saveStaffWorkRule(staffName, { ot_mode: nextMode, ot_passes: filtered.slice(0, 40) });
+  }
+
+  function removeStaffOtPass(staffName, passId) {
+    const cur = getStaffWorkRule(staffName);
+    const nextList = (cur.ot_passes || []).filter(x => String(x.id) !== String(passId));
+    return saveStaffWorkRule(staffName, { ot_passes: nextList });
+  }
+
+  function resolveStaffShiftForDate(staffName, company, isoDate = todayISO()) {
+    const dStr = String(isoDate || todayISO()).slice(0, 10);
+    const rule = getStaffWorkRule(staffName, company);
+    const types = getShiftTypes();
+    const wk = attDateWeekdayInfo(dStr);
+    const activeOv = (rule.shift_overrides || []).find(o => o && o.start_date <= dStr && dStr <= (o.end_date || o.start_date)) || null;
+
+    let chosenShift = null;
+    if (activeOv) {
+      if (activeOv.shift_id === 'off') {
+        return {
+          id: 'off',
+          name: 'Scheduled Day Off',
+          short: 'Off',
+          start_time: '08:00',
+          end_time: '16:00',
+          hours: 0,
+          overnight: false,
+          days: [],
+          grace_min: Number(rule.grace_min != null ? rule.grace_min : 10),
+          tone: 'muted',
+          isOverride: true,
+          overrideObj: activeOv,
+          isWorkday: false,
+          windowLabel: 'Day Off',
+          badgeLabel: 'Day Off'
+        };
+      }
+      if (activeOv.shift_id === 'custom') {
+        chosenShift = normalizeShiftTypeObj({
+          id: 'custom',
+          name: activeOv.note || 'Custom Rotation',
+          short: 'Custom',
+          start_time: activeOv.custom_start || rule.custom_start,
+          end_time: activeOv.custom_end || rule.custom_end,
+          days: [0, 1, 2, 3, 4, 5, 6],
+          grace_min: rule.grace_min,
+          tone: 'emerald'
+        });
+      } else {
+        const foundOv = types.find(t => t.id === activeOv.shift_id) || types[0];
+        chosenShift = Object.assign({}, foundOv, { days: [0, 1, 2, 3, 4, 5, 6] });
+      }
+    } else if (rule.shift_id === 'custom') {
+      chosenShift = normalizeShiftTypeObj({
+        id: 'custom',
+        name: rule.custom_name || 'Custom Shift',
+        short: 'Custom',
+        start_time: rule.custom_start,
+        end_time: rule.custom_end,
+        days: rule.custom_days,
+        grace_min: rule.grace_min,
+        tone: 'emerald'
+      });
+    } else {
+      const found = types.find(t => t.id === rule.shift_id) || types[0];
+      chosenShift = Object.assign({}, found);
+      if (hasExplicitStaffWorkRule(staffName) && Array.isArray(rule.custom_days) && rule.use_custom_days) {
+        chosenShift.days = rule.custom_days;
+      }
+      if (hasExplicitStaffWorkRule(staffName) && rule.grace_min != null) {
+        chosenShift.grace_min = Number(rule.grace_min);
+      }
+    }
+
+    const isWorkday = activeOv ? true : (wk.dayIdx < 0 ? true : chosenShift.days.includes(wk.dayIdx));
+    const winSuffix = chosenShift.overnight ? ' (+1d)' : '';
+    const windowLabel = `${chosenShift.start_time} - ${chosenShift.end_time}${winSuffix}`;
+    const badgeLabel = `${chosenShift.short} · ${chosenShift.start_time}-${chosenShift.end_time}${chosenShift.overnight ? ' +1d' : ''}`;
+    return Object.assign({}, chosenShift, {
+      isOverride: Boolean(activeOv),
+      overrideObj: activeOv,
+      isWorkday,
+      windowLabel,
+      badgeLabel
+    });
+  }
+
+  function describeStaffOvertimeRule(staffName, company, refDate = todayISO()) {
+    const dStr = String(refDate || todayISO()).slice(0, 10);
+    const rule = getStaffWorkRule(staffName, company);
+    const activePass = (rule.ot_passes || []).find(p => p && p.start_date <= dStr && dStr <= (p.end_date || p.start_date)) || null;
+    if (activePass && (rule.ot_mode === 'date_range' || rule.ot_mode === 'none')) {
+      const sameDay = activePass.start_date === (activePass.end_date || activePass.start_date);
+      const dateLbl = sameDay
+        ? (activePass.start_date === todayISO() ? 'Today' : fmtShortDayMonth(activePass.start_date))
+        : `${fmtShortDayMonth(activePass.start_date)}-${fmtShortDayMonth(activePass.end_date)}`;
+      const capLbl = activePass.max_hours > 0 ? ` (${fmtNum(activePass.max_hours, 1)}h)` : '';
+      return {
+        mode: 'date_range',
+        badgeText: `OT: ${dateLbl}${capLbl}`,
+        detailText: `Approved for ${dateLbl}${capLbl}`,
+        tone: 'emerald',
+        activeToday: true,
+        pass: activePass
+      };
+    }
+    if (rule.ot_mode === 'always') {
+      return {
+        mode: 'always',
+        badgeText: 'OT: Anytime',
+        detailText: 'Open overtime authorized anytime beyond shift',
+        tone: 'emerald',
+        activeToday: true
+      };
+    }
+    if (rule.ot_mode === 'max_hours') {
+      const cap = Number(rule.ot_max_hours || 0);
+      const hasWin = Boolean(rule.ot_window_start && rule.ot_window_end);
+      const capPart = cap > 0 ? `Max ${fmtNum(cap, cap % 1 ? 1 : 0)}h/d` : 'Window';
+      const winPart = hasWin ? ` (${rule.ot_window_start}-${rule.ot_window_end})` : '';
+      return {
+        mode: 'max_hours',
+        badgeText: `OT: ${capPart}${winPart}`,
+        detailText: `${cap > 0 ? `Up to ${fmtNum(cap, 1)}h/day` : 'Allowed'}${hasWin ? ` between ${rule.ot_window_start} and ${rule.ot_window_end}` : ' beyond shift'}`,
+        tone: 'sapphire',
+        activeToday: true
+      };
+    }
+    if (rule.ot_mode === 'date_range') {
+      const upcoming = (rule.ot_passes || [])
+        .filter(p => p && (p.end_date || p.start_date) >= dStr)
+        .sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)))[0] || null;
+      if (upcoming) {
+        const sameDay = upcoming.start_date === (upcoming.end_date || upcoming.start_date);
+        const lbl = sameDay ? fmtShortDayMonth(upcoming.start_date) : `${fmtShortDayMonth(upcoming.start_date)}-${fmtShortDayMonth(upcoming.end_date)}`;
+        return {
+          mode: 'date_range',
+          badgeText: `OT: ${lbl}`,
+          detailText: `Scheduled OT pass (${lbl}); 0h paid OT today`,
+          tone: 'amber',
+          activeToday: false,
+          pass: upcoming
+        };
+      }
+      return {
+        mode: 'date_range',
+        badgeText: 'OT: Date Pass (None)',
+        detailText: 'Date-range mode with no active date today (0h paid OT)',
+        tone: 'muted',
+        activeToday: false
+      };
+    }
+    return {
+      mode: 'none',
+      badgeText: 'No Overtime',
+      detailText: 'Late clock-out logs actual time with 0h paid overtime',
+      tone: 'muted',
+      activeToday: false
+    };
+  }
+
+  function intervalOverlapMinutes(aStart, aEnd, bStart, bEnd) {
+    if (aEnd <= aStart || bEnd <= bStart) return 0;
+    return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
+  }
+
+  function evaluateShiftPunchTiming(staffName, company, shiftDate, inTime, outTime, opts = {}) {
+    const dStr = String(shiftDate || todayISO()).slice(0, 10);
+    const rule = getStaffWorkRule(staffName, company);
+    const shift = resolveStaffShiftForDate(staffName, company, dStr);
+    const round1 = v => Math.round(Math.max(0, Number(v || 0)) * 10) / 10;
+
+    const schedStartMin = parseClockMinutes(shift.start_time) ?? 480;
+    const schedEndRaw = parseClockMinutes(shift.end_time) ?? 960;
+    const schedEndMin = schedEndRaw <= schedStartMin ? (schedEndRaw + 1440) : schedEndRaw;
+    const schedDurMin = shift.isWorkday ? Math.max(0, schedEndMin - schedStartMin) : 0;
+    const scheduledHours = round1(schedDurMin / 60);
+
+    const rawInMin = parseClockMinutes(inTime);
+    if (rawInMin == null) {
+      return {
+        shift,
+        rule,
+        hasOut: false,
+        scheduledHours,
+        workedHours: 0,
+        regularHours: 0,
+        lateHours: 0,
+        arrivalLateMin: 0,
+        earlyLeaveMin: 0,
+        rawExtraHours: 0,
+        overtimeHours: 0,
+        unapprovedOtHours: 0,
+        otReason: ''
+      };
+    }
+
+    const actualInMin = (shift.overnight && rawInMin < 480 && schedStartMin >= 960 && (!opts.inSameCalendarDay))
+      ? (rawInMin + 1440)
+      : rawInMin;
+    const graceMin = Math.max(0, Number(shift.grace_min != null ? shift.grace_min : 10));
+    const rawLateIn = shift.isWorkday ? Math.max(0, actualInMin - schedStartMin) : 0;
+    const arrivalLateMin = rawLateIn > graceMin ? rawLateIn : 0;
+
+    const rawOutMin = parseClockMinutes(outTime);
+    if (rawOutMin == null) {
+      return {
+        shift,
+        rule,
+        hasOut: false,
+        scheduledHours,
+        workedHours: 0,
+        regularHours: 0,
+        lateHours: round1(arrivalLateMin / 60),
+        arrivalLateMin,
+        earlyLeaveMin: 0,
+        rawExtraHours: 0,
+        overtimeHours: 0,
+        unapprovedOtHours: 0,
+        otReason: ''
+      };
+    }
+
+    let actualOutMin = rawOutMin;
+    if (opts.outDate && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.outDate).slice(0, 10)) && String(opts.outDate).slice(0, 10) > dStr) {
+      const diffDays = Math.max(1, Math.round((Date.parse(String(opts.outDate).slice(0, 10) + 'T00:00:00Z') - Date.parse(dStr + 'T00:00:00Z')) / 86400000));
+      actualOutMin = rawOutMin + diffDays * 1440;
+      if (actualOutMin <= actualInMin) actualOutMin += 1440;
+    } else if (actualOutMin <= actualInMin) {
+      actualOutMin += 1440;
+    }
+
+    const workedMin = Math.max(0, Math.min(24 * 60, actualOutMin - actualInMin));
+    const workedHours = round1(workedMin / 60);
+
+    let inWindowMin = 0;
+    let earlyLeaveMin = 0;
+    let extraIntervals = [];
+    if (!shift.isWorkday) {
+      extraIntervals = [[actualInMin, actualOutMin]];
+    } else {
+      inWindowMin = intervalOverlapMinutes(actualInMin, actualOutMin, schedStartMin, schedEndMin);
+      const rawEarlyOut = Math.max(0, schedEndMin - actualOutMin);
+      earlyLeaveMin = rawEarlyOut > 5 ? rawEarlyOut : 0;
+      if ((schedStartMin - actualInMin) >= 15) {
+        extraIntervals.push([actualInMin, Math.min(actualOutMin, schedStartMin)]);
+      }
+      if ((actualOutMin - schedEndMin) >= 10) {
+        extraIntervals.push([Math.max(actualInMin, schedEndMin), actualOutMin]);
+      }
+    }
+
+    const rawExtraMin = extraIntervals.reduce((acc, [s, e]) => acc + Math.max(0, e - s), 0);
+    const rawExtraHours = round1(rawExtraMin / 60);
+    const lateHours = round1((arrivalLateMin + earlyLeaveMin) / 60);
+
+    let approvedOtMin = 0;
+    let otReason = '';
+    const activePass = (rule.ot_passes || []).find(p => p && p.start_date <= dStr && dStr <= (p.end_date || p.start_date)) || null;
+
+    if (activePass && (rule.ot_mode === 'date_range' || rule.ot_mode === 'none')) {
+      const capMin = Number(activePass.max_hours || 0) > 0 ? Math.round(Number(activePass.max_hours) * 60) : Infinity;
+      approvedOtMin = Math.min(rawExtraMin, capMin);
+      otReason = activePass.start_date === (activePass.end_date || activePass.start_date)
+        ? `Approved OT (${fmtDateDMY(activePass.start_date)})`
+        : `Approved OT (${fmtDateDMY(activePass.start_date)} to ${fmtDateDMY(activePass.end_date)})`;
+    } else if (rule.ot_mode === 'always') {
+      approvedOtMin = rawExtraMin;
+      otReason = 'Anytime OT authorized';
+    } else if (rule.ot_mode === 'max_hours') {
+      let eligibleMin = rawExtraMin;
+      const winS = parseClockMinutes(rule.ot_window_start);
+      const winE = parseClockMinutes(rule.ot_window_end);
+      if (winS != null && winE != null) {
+        const wEndBase = winE <= winS ? (winE + 1440) : winE;
+        let winOverlap = 0;
+        extraIntervals.forEach(([es, ee]) => {
+          winOverlap += intervalOverlapMinutes(es, ee, winS, wEndBase);
+          winOverlap += intervalOverlapMinutes(es, ee, winS + 1440, wEndBase + 1440);
+        });
+        eligibleMin = Math.min(rawExtraMin, winOverlap);
+      }
+      const capMin = Number(rule.ot_max_hours || 0) > 0 ? Math.round(Number(rule.ot_max_hours) * 60) : Infinity;
+      approvedOtMin = Math.min(eligibleMin, capMin);
+      otReason = capMin < Infinity ? `OT cap ${round1(capMin / 60)}h/day` : 'OT window';
+    } else if (rule.ot_mode === 'date_range') {
+      approvedOtMin = 0;
+      otReason = rawExtraMin > 0 ? 'Outside approved OT dates' : 'Date-range OT';
+    } else {
+      approvedOtMin = 0;
+      otReason = rawExtraMin > 0 ? 'Unapproved late clock-out (No OT)' : 'No Overtime';
+    }
+
+    const overtimeHours = round1(approvedOtMin / 60);
+    const unapprovedOtHours = round1(Math.max(0, rawExtraHours - overtimeHours));
+    const regularHours = shift.isWorkday ? round1(inWindowMin / 60) : 0;
+
+    return {
+      shift,
+      rule,
+      hasOut: true,
+      isOvernight: actualOutMin >= 1440 && actualInMin < 1440,
+      scheduledHours,
+      workedHours,
+      regularHours,
+      lateHours,
+      arrivalLateMin,
+      earlyLeaveMin,
+      rawExtraHours,
+      overtimeHours,
+      unapprovedOtHours,
+      otReason
+    };
+  }
+
+  function inferShiftDateForInPunch(staffName, company, punchDate, punchTime) {
+    const dStr = String(punchDate || todayISO()).slice(0, 10);
+    const tMin = parseClockMinutes(punchTime);
+    if (tMin != null && tMin < 360) {
+      const prevDate = shiftIsoDateByDays(dStr, -1);
+      const prevShift = resolveStaffShiftForDate(staffName, company, prevDate);
+      if (prevShift && prevShift.overnight) {
+        const endMin = parseClockMinutes(prevShift.end_time) ?? 180;
+        if (tMin <= endMin + 120) {
+          return prevDate;
+        }
+      }
+    }
+    return dStr;
+  }
+
   function isPunchActiveOnSite(punch, nowMs = Date.now()) {
     if (!punch || punch.voided || punch.direction !== 'IN') return false;
     const pMs = Date.parse(punch.iso || '') || 0;
     if (!pMs) return punch.date === todayISO();
     const elapsedHrs = (nowMs - pMs) / 3600000;
-    return elapsedHrs >= -1 && elapsedHrs <= 16;
+    return elapsedHrs >= -1 && elapsedHrs <= 18;
   }
 
   function isGenericTerminalSeat(u) {
@@ -41577,6 +42460,139 @@
     if (emp.status === 'Ended' || emp.status === 'Inactive' || emp.status === 'Terminated') return false;
     if (emp.end_date && String(emp.end_date).slice(0, 10) < refDate) return false;
     return true;
+  }
+
+  function getStaffFaceSamplesAndThumbs(staffName, userObj = null) {
+    const k = norm(staffName);
+    const bio = (k && STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') ? STATE.staffBiometrics[k] : null;
+    const bioCleared = Boolean(bio && bio.face_cleared);
+    const bioSamples = (!bioCleared && bio && Array.isArray(bio.face_samples))
+      ? bio.face_samples.filter(s => Array.isArray(s) && s.length === 128)
+      : [];
+    const bioThumbs = (!bioCleared && bio && Array.isArray(bio.face_thumbs)) ? bio.face_thumbs.slice(0, 3) : [];
+    if (bioSamples.length) return { samples: bioSamples, thumbs: bioThumbs };
+    if (userObj && !bioCleared) {
+      const uSamples = userFaceSamples(userObj);
+      if (uSamples.length) return { samples: uSamples, thumbs: userFaceThumbs(userObj) };
+    }
+    return { samples: [], thumbs: [] };
+  }
+
+  async function enrolStaffFacePose(staffName, detOrVec, thumbStr = '', slotOverride = null) {
+    const dir = getKioskStaffDirectory();
+    const entry = dir.find(s => norm(s.name) === norm(staffName));
+    if (!entry) return { ok: false, reason: 'no-staff', error: 'Staff member not found in active roster' };
+
+    const rawDesc = (detOrVec && detOrVec.descriptor) ? detOrVec.descriptor : detOrVec;
+    if (!rawDesc || (rawDesc.length !== 128)) {
+      return { ok: false, reason: 'no-face', error: 'Valid 128-d face descriptor required' };
+    }
+    const vecArr = Array.from(rawDesc);
+
+    const others = usableFaces(null, { includeKioskStaff: true }).filter(x => {
+      if (norm(x.name) === norm(entry.name)) return false;
+      if (entry.email && x.email && norm(x.email) === norm(entry.email)) return false;
+      return true;
+    });
+    if (others.length && window.Face && window.Face.match) {
+      const dupMatch = window.Face.match(vecArr, others);
+      const thr = Number(STATE.faceSettings.threshold || 0.50);
+      if (dupMatch.best && dupMatch.bestDist <= thr) {
+        return {
+          ok: false,
+          reason: 'duplicate-person',
+          other: dupMatch.best.name,
+          dist: dupMatch.bestDist,
+          error: `This face is already enrolled under ${dupMatch.best.name}. Each staff member must have a unique Face ID.`
+        };
+      }
+    }
+
+    const cur = getStaffFaceSamplesAndThumbs(entry.name, entry.userObj);
+    const samples = cur.samples.slice(0, 3);
+    const thumbs = cur.thumbs.slice(0, 3);
+    const isSlot = typeof slotOverride === 'number' && slotOverride >= 0 && slotOverride < 3;
+    let usedSlot = samples.length;
+    if (isSlot && slotOverride < samples.length) {
+      usedSlot = slotOverride;
+      samples[usedSlot] = vecArr;
+      thumbs[usedSlot] = thumbStr || thumbs[usedSlot] || '';
+    } else if (samples.length >= 3) {
+      samples.length = 0;
+      thumbs.length = 0;
+      samples.push(vecArr);
+      thumbs.push(thumbStr || '');
+      usedSlot = 0;
+    } else {
+      samples.push(vecArr);
+      thumbs.push(thumbStr || '');
+      usedSlot = samples.length - 1;
+    }
+
+    const nowIso = new Date().toISOString();
+    const targetKey = norm(entry.name);
+    if (!STATE.staffBiometrics || typeof STATE.staffBiometrics !== 'object') STATE.staffBiometrics = {};
+    const bioObj = Object.assign({}, STATE.staffBiometrics[targetKey] || {}, {
+      name: entry.name,
+      company: entry.company,
+      role: entry.role,
+      face_samples: samples,
+      face_thumbs: thumbs,
+      face_cleared: false,
+      face_updated_at: nowIso,
+      updated_at: nowIso
+    });
+    STATE.staffBiometrics[targetKey] = bioObj;
+
+    if (entry.userObj) {
+      entry.userObj.face_samples = samples.slice();
+      entry.userObj.face_thumbs = thumbs.slice();
+      entry.userObj.face_required = true;
+      entry.userObj.face_cleared = false;
+      entry.userObj.face_updated_at = nowIso;
+    }
+
+    saveLocalAuthAndRecords();
+    await persistStaffBiometricEntryNow(targetKey, bioObj);
+    if (entry.userObj && HAS_LOCAL_API) {
+      try { await fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }); } catch (_) {}
+    }
+    syncWithCloud(true);
+    return { ok: true, staff: entry.name, count: samples.length, slot: usedSlot };
+  }
+
+  async function clearStaffFaceId(staffName) {
+    const dir = getKioskStaffDirectory();
+    const entry = dir.find(s => norm(s.name) === norm(staffName));
+    if (!entry) return { ok: false, error: 'Staff member not found' };
+    const nowIso = new Date().toISOString();
+    const targetKey = norm(entry.name);
+    if (!STATE.staffBiometrics || typeof STATE.staffBiometrics !== 'object') STATE.staffBiometrics = {};
+    const bioObj = Object.assign({}, STATE.staffBiometrics[targetKey] || {}, {
+      name: entry.name,
+      company: entry.company,
+      role: entry.role,
+      face_samples: [],
+      face_thumbs: [],
+      face_cleared: true,
+      face_updated_at: nowIso,
+      updated_at: nowIso
+    });
+    STATE.staffBiometrics[targetKey] = bioObj;
+    if (entry.userObj) {
+      entry.userObj.face_samples = [];
+      entry.userObj.face_thumbs = [];
+      entry.userObj.face_required = false;
+      entry.userObj.face_cleared = true;
+      entry.userObj.face_updated_at = nowIso;
+    }
+    saveLocalAuthAndRecords();
+    await persistStaffBiometricEntryNow(targetKey, bioObj);
+    if (entry.userObj && HAS_LOCAL_API) {
+      try { await fetch('./api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: entry.userObj }) }); } catch (_) {}
+    }
+    syncWithCloud(true);
+    return { ok: true, staff: entry.name };
   }
 
   function getKioskStaffDirectory(opts = {}) {
@@ -41651,17 +42667,22 @@
           ? scopedCo
           : (uCos.find(c => allowedCos.includes(c)) || uCos[0] || defCo));
       const explicitPin = String((bio && bio.pin_code) || u.pin_code || '').trim();
-      const bioFaces = bio && Array.isArray(bio.face_samples) ? bio.face_samples.filter(s => Array.isArray(s) && s.length === 128) : [];
+      const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
+      const shiftToday = resolveStaffShiftForDate(nm, co, today);
+      const otToday = describeStaffOvertimeRule(nm, co, today);
       out.push({
         id: u.id,
         name: nm,
         email: u.email || '',
         company: co,
         role: matchingEmp ? (matchingEmp.emp.role || matchingEmp.emp.type || u.role || 'Staff') : (u.role || 'Management'),
-        schedHours: staffScheduledHours(nm, co),
+        schedHours: shiftToday.hours || staffScheduledHours(nm, co),
+        shift: shiftToday,
+        otDesc: otToday,
         pin: explicitPin || (IS_DEMO ? makeDemoPin(k) : ''),
         hasExplicitPin: Boolean(explicitPin),
-        hasFace: userHasFaceId(u) || bioFaces.length > 0,
+        hasFace: faceInfo.samples.length > 0,
+        faceCount: faceInfo.samples.length,
         hasActiveContract: Boolean(matchingEmp),
         userObj: u
       });
@@ -41677,17 +42698,22 @@
         const u = humanUsersByNorm.get(k) || null;
         const bio = bioMap[k] || null;
         const explicitPin = String((bio && bio.pin_code) || (u && u.pin_code) || '').trim();
-        const bioFaces = bio && Array.isArray(bio.face_samples) ? bio.face_samples.filter(s => Array.isArray(s) && s.length === 128) : [];
+        const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
+        const shiftToday = resolveStaffShiftForDate(nm, empCo, today);
+        const otToday = describeStaffOvertimeRule(nm, empCo, today);
         out.push({
           id: emp.id || ('emp-' + k),
           name: nm,
           email: u ? (u.email || '') : '',
           company: empCo,
           role: emp.role || emp.type || 'Active Staff',
-          schedHours: Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo),
+          schedHours: shiftToday.hours || Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo),
+          shift: shiftToday,
+          otDesc: otToday,
           pin: explicitPin || (IS_DEMO ? makeDemoPin(k) : ''),
           hasExplicitPin: Boolean(explicitPin),
-          hasFace: (u ? userHasFaceId(u) : false) || bioFaces.length > 0,
+          hasFace: faceInfo.samples.length > 0,
+          faceCount: faceInfo.samples.length,
           hasActiveContract: true,
           userObj: u
         });
@@ -41716,19 +42742,21 @@
     }
     if (!STATE.staffBiometrics || typeof STATE.staffBiometrics !== 'object') STATE.staffBiometrics = {};
     const nowIso = new Date().toISOString();
-    STATE.staffBiometrics[targetKey] = Object.assign({}, STATE.staffBiometrics[targetKey] || {}, {
+    const bioObj = Object.assign({}, STATE.staffBiometrics[targetKey] || {}, {
       name: entry.name,
       company: entry.company,
       role: entry.role,
       pin_code: clean,
       updated_at: nowIso
     });
+    STATE.staffBiometrics[targetKey] = bioObj;
     if (entry.userObj) {
       entry.userObj.pin_code = clean;
       entry.userObj.seat_updated_at = nowIso;
     }
     STATE.kioskEditingPinStaff = '';
     saveLocalAuthAndRecords();
+    persistStaffBiometricEntryNow(targetKey, bioObj);
     syncWithCloud(true);
     return { ok: true, staff: entry.name, pin: clean };
   }
@@ -41739,64 +42767,119 @@
     return (STATE.kioskPunches || []).find(p => p && !p.voided && norm(p.staff) === k) || null;
   }
 
-  function inferNextPunchDirection(staffName) {
+  function inferNextPunchDirection(staffName, refMs = Date.now()) {
     if (STATE.kioskAttDir === 'in') return 'IN';
     if (STATE.kioskAttDir === 'out') return 'OUT';
     const last = getStaffLastPunch(staffName);
-    return isPunchActiveOnSite(last) ? 'OUT' : 'IN';
+    return isPunchActiveOnSite(last, refMs) ? 'OUT' : 'IN';
   }
 
   function syncAttendanceRecordFromPunch(punch) {
     if (!punch || !punch.staff) return null;
     if (!Array.isArray(STATE.customRecords.attendance)) STATE.customRecords.attendance = [];
     const staffNorm = norm(punch.staff);
-    const dateStr = punch.date || todayISO();
-    const schedH = staffScheduledHours(punch.staff, punch.company);
-    let attRec = STATE.customRecords.attendance.find(a => a && !a.voided && norm(a.staff) === staffNorm && String(a.date || '').slice(0, 10) === dateStr);
+    const shiftDateStr = String(punch.shift_date || punch.date || todayISO()).slice(0, 10);
+    const coName = punch.company || defaultEntryCompany();
+    const shiftObj = resolveStaffShiftForDate(punch.staff, coName, shiftDateStr);
+    const schedH = shiftObj.isWorkday ? (shiftObj.hours || staffScheduledHours(punch.staff, coName, shiftDateStr)) : 0;
+
+    let attRec = STATE.customRecords.attendance.find(a =>
+      a && !a.voided
+      && norm(a.staff) === staffNorm
+      && String(a.set_date || a.date || '').slice(0, 10) === shiftDateStr
+      && !/^(extra|config)/i.test(String(a.type || a.status || ''))
+    );
+
     if (!attRec) {
-      const inT = punch.direction === 'IN' ? punch.time : '';
+      const inT = punch.direction === 'IN' ? punch.time : (punch.in_time || '');
       const outT = punch.direction === 'OUT' ? punch.time : '';
-      const workedH = punch.paired_hours != null ? punch.paired_hours : computeShiftWorkedHours(inT, outT);
+      const evalRes = evaluateShiftPunchTiming(punch.staff, coName, shiftDateStr, inT, outT, { outDate: punch.date });
+      const workedH = punch.paired_hours != null ? punch.paired_hours : evalRes.workedHours;
+      const otH = punch.overtime_hours != null ? punch.overtime_hours : evalRes.overtimeHours;
+      const ltH = punch.late_hours != null ? punch.late_hours : evalRes.lateHours;
+      const unappOt = punch.unapproved_ot_hours != null ? punch.unapproved_ot_hours : evalRes.unapprovedOtHours;
+      const effType = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
+      const noteParts = [`Kiosk ${punch.method} (${inT ? 'IN ' + inT : ''}${outT ? (inT ? ' · ' : '') + 'OUT ' + outT : ''})`];
+      noteParts.push(shiftObj.badgeLabel);
+      if (unappOt > 0) noteParts.push(`${fmtNum(unappOt, 1)}h unapproved OT (0h paid)`);
       attRec = {
         id: uid('at'),
-        date: dateStr,
-        rep_date: dateStr,
-        company: punch.company || defaultEntryCompany(),
-        name: `ATT ${dateStr} ${punch.staff}`,
+        date: shiftDateStr,
+        rep_date: shiftDateStr,
+        set_date: shiftDateStr,
+        month: shiftDateStr.slice(0, 7),
+        company: coName,
+        name: `ATT ${shiftDateStr} ${punch.staff}`,
         staff: punch.staff,
-        status: 'Present',
+        type: effType,
+        status: effType,
+        shift_id: shiftObj.id,
+        shift_label: shiftObj.badgeLabel,
+        scheduled_hours: schedH,
         in_time: inT,
         out_time: outT,
         check_in: inT,
         check_out: outT,
         worked_hours: workedH,
-        regular_hours: punch.paired_hours != null ? Math.min(schedH, punch.paired_hours) : schedH,
-        overtime_hours: punch.overtime_hours || 0,
-        late_hours: 0,
+        regular_hours: evalRes.hasOut ? evalRes.regularHours : (workedH > 0 ? Math.min(schedH, workedH) : 0),
+        overtime_hours: otH,
+        unapproved_ot_hours: unappOt,
+        late_hours: ltH,
+        tally: otH > 0 ? otH : (ltH > 0 ? ltH : workedH),
         source: 'app',
         entered_by: activeUser().full_name,
         entered_by_email: activeUser().email,
         entered_at: nowStamp(),
         voided: false,
-        notes: `Kiosk ${punch.method} (${punch.direction} @ ${punch.time})`
+        notes: noteParts.join(' · ')
       };
       STATE.customRecords.attendance.unshift(attRec);
     } else {
       if (punch.direction === 'IN') {
         attRec.check_in = punch.time;
         attRec.in_time = punch.time;
-      }
-      if (punch.direction === 'OUT') {
+        attRec.out_time = '';
+        attRec.check_out = '';
+        const evalIn = evaluateShiftPunchTiming(punch.staff, coName, shiftDateStr, punch.time, '');
+        attRec.worked_hours = 0;
+        attRec.regular_hours = 0;
+        attRec.overtime_hours = 0;
+        attRec.unapproved_ot_hours = 0;
+        attRec.late_hours = punch.late_hours != null ? punch.late_hours : evalIn.lateHours;
+        attRec.type = attRec.late_hours > 0 ? 'Lateness' : 'Present';
+        attRec.status = attRec.type;
+        attRec.tally = attRec.late_hours > 0 ? attRec.late_hours : 0;
+      } else if (punch.direction === 'OUT') {
         attRec.check_out = punch.time;
         attRec.out_time = punch.time;
-        const workedH = punch.paired_hours != null ? punch.paired_hours : computeShiftWorkedHours(attRec.in_time || attRec.check_in, punch.time);
-        if (workedH > 0) {
-          attRec.worked_hours = workedH;
-          attRec.regular_hours = Math.round(Math.min(schedH, workedH) * 10) / 10;
-          attRec.overtime_hours = Math.round(Math.max(0, workedH - schedH) * 10) / 10;
+        if (!attRec.in_time && punch.in_time) {
+          attRec.in_time = punch.in_time;
+          attRec.check_in = punch.in_time;
         }
+        const inTimeRef = attRec.in_time || attRec.check_in || '';
+        const evalOut = inTimeRef
+          ? evaluateShiftPunchTiming(punch.staff, coName, shiftDateStr, inTimeRef, punch.time, { outDate: punch.date })
+          : null;
+        const workedH = punch.paired_hours != null ? punch.paired_hours : (evalOut ? evalOut.workedHours : 0);
+        const otH = punch.overtime_hours != null ? punch.overtime_hours : (evalOut ? evalOut.overtimeHours : 0);
+        const ltH = punch.late_hours != null ? punch.late_hours : (evalOut ? evalOut.lateHours : 0);
+        const unappOt = punch.unapproved_ot_hours != null ? punch.unapproved_ot_hours : (evalOut ? evalOut.unapprovedOtHours : 0);
+        attRec.worked_hours = workedH;
+        attRec.regular_hours = evalOut && evalOut.hasOut ? evalOut.regularHours : Math.round(Math.min(schedH, workedH) * 10) / 10;
+        attRec.overtime_hours = otH;
+        attRec.unapproved_ot_hours = unappOt;
+        attRec.late_hours = ltH;
+        attRec.type = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
+        attRec.status = attRec.type;
+        attRec.tally = otH > 0 ? otH : (ltH > 0 ? ltH : workedH);
       }
-      attRec.notes = `Kiosk ${punch.method} (${attRec.check_in ? 'IN ' + attRec.check_in : ''}${attRec.check_out ? ' · OUT ' + attRec.check_out : ''})`;
+      attRec.shift_id = shiftObj.id;
+      attRec.shift_label = shiftObj.badgeLabel;
+      attRec.scheduled_hours = schedH;
+      const noteParts = [`Kiosk ${punch.method} (${attRec.check_in ? 'IN ' + attRec.check_in : ''}${attRec.check_out ? ' · OUT ' + attRec.check_out : ''})`];
+      noteParts.push(shiftObj.badgeLabel);
+      if (attRec.unapproved_ot_hours > 0) noteParts.push(`${fmtNum(attRec.unapproved_ot_hours, 1)}h unapproved OT (0h paid)`);
+      attRec.notes = noteParts.join(' · ');
     }
     applyCustomRecordsToSeed();
     saveLocalAuthAndRecords();
@@ -41814,14 +42897,21 @@
       return { ok: false, reason: 'no-staff' };
     }
     const staffName = staffEntry.name;
-    const nowMs = Date.now();
+    const coName = staffEntry.company || defaultEntryCompany();
+    const nowWallMs = Date.now();
+    const hasCustomClock = Boolean(opts.date || opts.time);
+    const defaultNowObj = new Date(nowWallMs);
+    const timeStr = fmtAttClockTime(opts.time || defaultNowObj.toTimeString().slice(0, 5)) || defaultNowObj.toTimeString().slice(0, 5);
+    const dateStr = String(opts.date || todayISO()).slice(0, 10);
+    const punchDateObj = hasCustomClock ? buildLocalPunchDateObj(dateStr, timeStr, nowWallMs) : defaultNowObj;
+    const punchMs = punchDateObj.getTime();
     const last = getStaffLastPunch(staffName);
 
     // Configurable anti-double-punch debounce guard (default 120s)
     const punchDebounceSec = isAlertRuleEnabled('G_KIOSK_PUNCH') ? getAlertParam('G_KIOSK_PUNCH', 'debounce_sec', 120) : 0;
     if (!opts.bypassDebounce && punchDebounceSec > 0 && last && last.iso) {
       const prevMs = Date.parse(last.iso) || 0;
-      const ageSec = Math.round((nowMs - prevMs) / 1000);
+      const ageSec = Math.round((punchMs - prevMs) / 1000);
       if (prevMs > 0 && ageSec >= 0 && ageSec < punchDebounceSec) {
         STATE.kioskLastPunch = last;
         STATE.kioskAttPin = '';
@@ -41833,41 +42923,70 @@
       }
     }
 
-    const direction = opts.direction || inferNextPunchDirection(staffName);
-    const nowObj = new Date(nowMs);
-    const timeStr = String(opts.time || nowObj.toTimeString().slice(0, 5));
-    const dateStr = String(opts.date || todayISO());
+    const direction = opts.direction || inferNextPunchDirection(staffName, punchMs);
     const siteStr = String(opts.site || STATE.kioskAttSite || 'WTC Main Plant');
 
+    let shiftDate = dateStr;
+    let inTimeRef = '';
     let pairedHours = null;
     let overtimeHours = 0;
-    if (direction === 'OUT') {
-      const openIn = (STATE.kioskPunches || []).find(p => p && !p.voided && norm(p.staff) === norm(staffName) && p.direction === 'IN');
-      if (openIn && openIn.iso) {
-        const inMs = Date.parse(openIn.iso) || (nowMs - 8.5 * 3600000);
-        const rawHrs = Math.max(0.5, Math.min(20, (nowMs - inMs) / 3600000));
-        pairedHours = Math.round(rawHrs * 10) / 10;
-        overtimeHours = Math.round(Math.max(0, pairedHours - 9) * 10) / 10;
+    let unapprovedOtHours = 0;
+    let lateHours = 0;
+    let shiftMeta = null;
+
+    if (direction === 'IN') {
+      shiftDate = inferShiftDateForInPunch(staffName, coName, dateStr, timeStr);
+      const evalIn = evaluateShiftPunchTiming(staffName, coName, shiftDate, timeStr, '', { inSameCalendarDay: shiftDate === dateStr });
+      shiftMeta = evalIn.shift;
+      lateHours = evalIn.lateHours;
+    } else {
+      const openIn = (STATE.kioskPunches || []).find(p => {
+        if (!p || p.voided || norm(p.staff) !== norm(staffName) || p.direction !== 'IN') return false;
+        const pMs = Date.parse(p.iso || '') || 0;
+        if (!pMs) return true;
+        const hrs = (punchMs - pMs) / 3600000;
+        return hrs >= -0.5 && hrs <= 22;
+      }) || null;
+
+      if (openIn) {
+        shiftDate = String(openIn.shift_date || openIn.date || dateStr).slice(0, 10);
+        inTimeRef = openIn.time || '';
+        const evalOut = evaluateShiftPunchTiming(staffName, coName, shiftDate, inTimeRef, timeStr, { outDate: dateStr });
+        shiftMeta = evalOut.shift;
+        pairedHours = evalOut.workedHours;
+        overtimeHours = evalOut.overtimeHours;
+        unapprovedOtHours = evalOut.unapprovedOtHours;
+        lateHours = evalOut.lateHours;
       } else {
-        pairedHours = 8.0;
+        shiftMeta = resolveStaffShiftForDate(staffName, coName, dateStr);
+        pairedHours = shiftMeta.hours || 8.0;
+        overtimeHours = 0;
+        unapprovedOtHours = 0;
+        lateHours = 0;
       }
     }
 
     const punch = {
       id: uid('pn'),
       staff: staffName,
-      company: staffEntry.company || defaultEntryCompany(),
+      company: coName,
       role: staffEntry.role || 'Staff',
       site: siteStr,
       direction,
       date: dateStr,
+      shift_date: shiftDate,
+      shift_id: shiftMeta ? shiftMeta.id : 'day_8_4',
+      shift_label: shiftMeta ? shiftMeta.badgeLabel : 'Day · 08:00-16:00',
+      in_time: direction === 'OUT' ? inTimeRef : timeStr,
       time: timeStr,
-      iso: nowObj.toISOString(),
+      iso: punchDateObj.toISOString(),
       method: opts.method || 'PIN',
       confidence: opts.confidence != null ? Number(opts.confidence) : null,
       snapshot: opts.snapshot || KIOSK_ATT_STATE.lastSnap || '',
       paired_hours: pairedHours,
       overtime_hours: overtimeHours,
+      unapproved_ot_hours: unapprovedOtHours,
+      late_hours: lateHours,
       voided: false
     };
 
@@ -41876,13 +42995,18 @@
     STATE.kioskLastPunch = punch;
     STATE.kioskAttPin = '';
     STATE.kioskAttStaff = '';
-    STATE.kioskAttPinMsg = `${staffName} clocked ${direction} at ${timeStr}`;
+    const otSummaryTxt = pairedHours != null
+      ? (overtimeHours > 0
+        ? ` · ${pairedHours}h (+${overtimeHours}h OT)`
+        : (unapprovedOtHours > 0 ? ` · ${pairedHours}h (0h OT, No OT rule)` : ` · ${pairedHours}h`))
+      : (lateHours > 0 ? ` · Late ${lateHours}h` : '');
+    STATE.kioskAttPinMsg = `${staffName} clocked ${direction} at ${timeStr}${otSummaryTxt}`;
     STATE.kioskAttPinMsgCls = 'ok';
     const attRec = syncAttendanceRecordFromPunch(punch);
     if (STATE.faceSettings.sound && window.Face && window.Face.Sound) {
       window.Face.Sound.play('ok');
     }
-    toast(`${staffName} clocked ${direction} at ${timeStr} (${punch.method})${pairedHours != null ? ` · Shift ${pairedHours}h` : ''}`, 'ok');
+    toast(`${staffName} clocked ${direction} at ${timeStr} (${punch.method})${otSummaryTxt}`, 'ok');
     if (STATE.view === 'kiosks') renderApp();
     syncWithCloud(true);
     return { ok: true, punch, attRec };
@@ -41893,12 +43017,15 @@
     const p = (STATE.kioskPunches || []).find(x => x && x.id === targetId) || (STATE.kioskPunches || [])[0];
     if (!p) return { ok: false, reason: 'not-found' };
     p.direction = p.direction === 'IN' ? 'OUT' : 'IN';
+    const sMeta = resolveStaffShiftForDate(p.staff, p.company, p.shift_date || p.date);
     if (p.direction === 'OUT' && p.paired_hours == null) {
-      p.paired_hours = 8.0;
+      p.paired_hours = sMeta.hours || 8.0;
       p.overtime_hours = 0;
+      p.unapproved_ot_hours = 0;
     } else if (p.direction === 'IN') {
       p.paired_hours = null;
       p.overtime_hours = 0;
+      p.unapproved_ot_hours = 0;
     }
     p.rev = Number(p.rev || 0) + 1;
     p.updated_at = new Date().toISOString();
@@ -42064,6 +43191,1063 @@
     }
   }
 
+  function getScheduleWeekDates(weekOffset = 0) {
+    const today = todayISO();
+    const [y, m, d] = today.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    const dow = dt.getUTCDay(); // 0=Sun..6=Sat
+    const diffToMon = dow === 0 ? -6 : (1 - dow);
+    const monDt = new Date(Date.UTC(y, m - 1, d + diffToMon + (Number(weekOffset || 0) * 7)));
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const cur = new Date(Date.UTC(monDt.getUTCFullYear(), monDt.getUTCMonth(), monDt.getUTCDate() + i));
+      const iso = cur.toISOString().slice(0, 10);
+      const dayIdx = cur.getUTCDay();
+      days.push({
+        iso,
+        dayIdx,
+        short: ATT_WEEKDAYS[dayIdx] || '',
+        dayNum: String(cur.getUTCDate()).padStart(2, '0'),
+        monthShort: MONTH_SHORT_NAMES[cur.getUTCMonth()] || '',
+        isToday: iso === today,
+        isSunday: dayIdx === 0
+      });
+    }
+    return days;
+  }
+
+  function formatWorkdaysCompact(daysArr) {
+    if (!Array.isArray(daysArr) || !daysArr.length) return 'No Days';
+    const sorted = Array.from(new Set(daysArr)).sort((a, b) => a - b);
+    if (sorted.length === 7) return 'Mon-Sun';
+    if (sorted.length === 6 && !sorted.includes(0)) return 'Mon-Sat';
+    if (sorted.length === 5 && [1, 2, 3, 4, 5].every(x => sorted.includes(x))) return 'Mon-Fri';
+    return sorted.map(d => ATT_WEEKDAYS[d] || '').filter(Boolean).join(', ');
+  }
+
+  function stopStaffEnrolModalCamera() {
+    STAFF_FACE_MODAL_STATE.camActive = false;
+    clearTimeout(STAFF_FACE_MODAL_STATE.loopTimer);
+    STAFF_FACE_MODAL_STATE.loopTimer = null;
+    STAFF_FACE_MODAL_STATE.busy = false;
+    STAFF_FACE_MODAL_STATE.autoStreak = 0;
+    const v = $('staffEnrolVideo');
+    if (v && v.srcObject) {
+      try { v.srcObject.getTracks().forEach(t => t.stop()); } catch (_) {}
+      v.srcObject = null;
+    }
+    if (FACE_STATE.stream) {
+      try { FACE_STATE.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+      FACE_STATE.stream = null;
+    }
+  }
+
+  function closeStaffFaceEnrolModal() {
+    stopStaffEnrolModalCamera();
+    STAFF_FACE_MODAL_STATE.open = false;
+    const modal = $('staffFaceEnrolModal');
+    if (modal) modal.hidden = true;
+    document.body.classList.remove('modal-open');
+    if (STATE.view === 'kiosks') renderApp();
+  }
+
+  async function staffEnrolModalTick() {
+    if (!STAFF_FACE_MODAL_STATE.open || !STAFF_FACE_MODAL_STATE.camActive) return;
+    const videoEl = $('staffEnrolVideo');
+    const overlayEl = $('staffEnrolOverlay');
+    const badgeEl = $('staffEnrolLiveBadge');
+    if (videoEl && !STAFF_FACE_MODAL_STATE.busy && videoEl.readyState >= 2 && videoEl.videoWidth > 0 && window.Face) {
+      STAFF_FACE_MODAL_STATE.busy = true;
+      try {
+        await ensureFaceModelsLoaded();
+        const det = await window.Face.detectOne(videoEl, false);
+        if (det && det.descriptor) {
+          STAFF_FACE_MODAL_STATE.lastDet = det;
+          STAFF_FACE_MODAL_STATE.lastAt = Date.now();
+          if (window.Face.snapshot) STAFF_FACE_MODAL_STATE.lastSnap = window.Face.snapshot(videoEl);
+        }
+        if (overlayEl && window.Face.drawOverlay) {
+          window.Face.drawOverlay(overlayEl, videoEl, det, det && det.descriptor ? '#22c55e' : '#D9A54A');
+        }
+        if (badgeEl) {
+          if (det && det.descriptor) {
+            const pct = Math.round(Math.max(0.74, Number(det.score || det.detScore || 0.9)) * 100);
+            const cLen = STAFF_FACE_MODAL_STATE.captures.length;
+            badgeEl.textContent = cLen < 3 ? `Face Locked · ${pct}% (Pose ${cLen + 1}/3)` : `3/3 Poses Saved · ${pct}%`;
+            badgeEl.className = 'badge badge-ok';
+          } else {
+            badgeEl.textContent = 'Center face inside oval';
+            badgeEl.className = 'badge';
+          }
+        }
+        if (
+          det && det.descriptor && !det.multiple
+          && !navigator.webdriver && !window.__MFG_HEADLESS_TEST
+          && STAFF_FACE_MODAL_STATE.captures.length < 3
+          && Date.now() >= (STAFF_FACE_MODAL_STATE.nextAutoAt || 0)
+        ) {
+          const fracVal = det.faceSizeFrac != null ? det.faceSizeFrac : det.frac;
+          const scoreVal = det.detScore != null ? det.detScore : det.score;
+          if ((fracVal == null || fracVal >= Number(STATE.faceSettings.minFaceFrac || 0.14)) && (scoreVal == null || scoreVal >= 0.28)) {
+            STAFF_FACE_MODAL_STATE.autoStreak = (STAFF_FACE_MODAL_STATE.autoStreak || 0) + 1;
+            if (STAFF_FACE_MODAL_STATE.autoStreak >= 2) {
+              STAFF_FACE_MODAL_STATE.autoStreak = 0;
+              STAFF_FACE_MODAL_STATE.nextAutoAt = Date.now() + 900;
+              await captureStaffModalPose(det, STAFF_FACE_MODAL_STATE.lastSnap || '');
+            }
+          } else {
+            STAFF_FACE_MODAL_STATE.autoStreak = 0;
+          }
+        } else if (!det || !det.descriptor) {
+          STAFF_FACE_MODAL_STATE.autoStreak = 0;
+        }
+      } catch (_) {}
+      STAFF_FACE_MODAL_STATE.busy = false;
+    }
+    if (STAFF_FACE_MODAL_STATE.open && STAFF_FACE_MODAL_STATE.camActive) {
+      STAFF_FACE_MODAL_STATE.loopTimer = setTimeout(staffEnrolModalTick, 60);
+    }
+  }
+
+  async function startStaffEnrolModalCamera() {
+    const videoEl = $('staffEnrolVideo');
+    if (!videoEl) return false;
+    stopKioskAttCamera();
+    STAFF_FACE_MODAL_STATE.statusText = 'Starting front camera...';
+    STAFF_FACE_MODAL_STATE.statusCls = '';
+    STAFF_FACE_MODAL_STATE.autoStreak = 0;
+    STAFF_FACE_MODAL_STATE.nextAutoAt = Date.now() + 300;
+    syncStaffFaceEnrolModalDom();
+    const modelsP = ensureFaceModelsLoaded().catch(() => {});
+    const ok = await startFaceCamera(videoEl);
+    await modelsP;
+    STAFF_FACE_MODAL_STATE.camActive = ok;
+    if (ok) {
+      for (let i = 0; i < 12; i++) {
+        if (videoEl.readyState >= 2 && videoEl.videoWidth > 0) break;
+        await new Promise(r => setTimeout(r, 25));
+      }
+      clearTimeout(STAFF_FACE_MODAL_STATE.loopTimer);
+      STAFF_FACE_MODAL_STATE.loopTimer = setTimeout(staffEnrolModalTick, 20);
+      STAFF_FACE_MODAL_STATE.statusText = 'Hold steady for 3 quick poses: straight ahead, slightly left, slightly right.';
+      STAFF_FACE_MODAL_STATE.statusCls = 'ok';
+    } else {
+      STAFF_FACE_MODAL_STATE.statusText = 'Camera unavailable or permission denied on this device.';
+      STAFF_FACE_MODAL_STATE.statusCls = 'warn';
+    }
+    syncStaffFaceEnrolModalDom();
+    return ok;
+  }
+
+  async function captureStaffModalPose(syntheticDet = null, syntheticThumb = '', slotOverride = null) {
+    const staffName = STAFF_FACE_MODAL_STATE.staffName;
+    if (!staffName) return { ok: false, reason: 'no-staff' };
+    let det = syntheticDet;
+    let thumb = syntheticThumb || '';
+    if (!det) {
+      let videoEl = $('staffEnrolVideo');
+      if (!STAFF_FACE_MODAL_STATE.camActive || !streamAlive() || !videoEl || videoEl.readyState < 2) {
+        const started = await startStaffEnrolModalCamera();
+        videoEl = $('staffEnrolVideo');
+        if (!started || !videoEl || videoEl.readyState < 2) {
+          return { ok: false, reason: 'no-camera' };
+        }
+      }
+      STAFF_FACE_MODAL_STATE.nextAutoAt = Date.now() + 950;
+      if (STAFF_FACE_MODAL_STATE.lastDet && STAFF_FACE_MODAL_STATE.lastDet.descriptor && (Date.now() - (STAFF_FACE_MODAL_STATE.lastAt || 0)) < 1600) {
+        det = STAFF_FACE_MODAL_STATE.lastDet;
+        thumb = (window.Face && window.Face.snapshot && window.Face.snapshot(videoEl)) || STAFF_FACE_MODAL_STATE.lastSnap || '';
+      } else if (window.Face) {
+        await ensureFaceModelsLoaded();
+        det = await window.Face.detectOne(videoEl, true);
+        if (window.Face.snapshot) thumb = window.Face.snapshot(videoEl) || STAFF_FACE_MODAL_STATE.lastSnap || '';
+      }
+    }
+    if (!det || !det.descriptor) {
+      STAFF_FACE_MODAL_STATE.statusText = 'No face detected. Position face inside the oval guide and try again.';
+      STAFF_FACE_MODAL_STATE.statusCls = 'warn';
+      syncStaffFaceEnrolModalDom();
+      return { ok: false, reason: 'no-face' };
+    }
+    if (det.multiple) {
+      STAFF_FACE_MODAL_STATE.statusText = 'Multiple faces in frame. Only one staff member should be in view during enrolment.';
+      STAFF_FACE_MODAL_STATE.statusCls = 'crit';
+      syncStaffFaceEnrolModalDom();
+      return { ok: false, reason: 'multiple' };
+    }
+    const res = await enrolStaffFacePose(staffName, det, thumb, slotOverride);
+    if (!res.ok) {
+      STAFF_FACE_MODAL_STATE.statusText = res.error || 'Could not enrol pose';
+      STAFF_FACE_MODAL_STATE.statusCls = 'crit';
+      syncStaffFaceEnrolModalDom();
+      return res;
+    }
+    const dir = getKioskStaffDirectory();
+    const entry = dir.find(s => norm(s.name) === norm(staffName));
+    const faceInfo = getStaffFaceSamplesAndThumbs(staffName, entry ? entry.userObj : null);
+    STAFF_FACE_MODAL_STATE.captures = faceInfo.samples;
+    STAFF_FACE_MODAL_STATE.thumbs = faceInfo.thumbs;
+    STAFF_FACE_MODAL_STATE.statusText = res.count >= 3
+      ? `All 3 Face ID poses enrolled and ready for ${staffName}.`
+      : `Saved Pose ${res.count} of 3 for ${staffName}.`;
+    STAFF_FACE_MODAL_STATE.statusCls = 'ok';
+    syncStaffFaceEnrolModalDom();
+    if (!syntheticDet && res.count >= 3) toast(`Face ID enrolled for ${staffName} (3/3 poses)`, 'ok');
+    return res;
+  }
+
+  function syncStaffFaceEnrolModalDom() {
+    const modal = $('staffFaceEnrolModal');
+    if (!modal || modal.hidden) return;
+    const allStaff = getKioskStaffDirectory();
+    const curEntry = allStaff.find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || allStaff[0] || null;
+    if (curEntry) STAFF_FACE_MODAL_STATE.staffName = curEntry.name;
+    const faceInfo = curEntry ? getStaffFaceSamplesAndThumbs(curEntry.name, curEntry.userObj) : { samples: [], thumbs: [] };
+    STAFF_FACE_MODAL_STATE.captures = faceInfo.samples;
+    STAFF_FACE_MODAL_STATE.thumbs = faceInfo.thumbs;
+    const capCount = faceInfo.samples.length;
+
+    const sel = $('staffEnrolSelect');
+    if (sel) {
+      Array.from(sel.options).forEach(opt => {
+        const st = allStaff.find(x => norm(x.name) === norm(opt.value));
+        if (st) {
+          opt.textContent = `${st.name} · ${st.company} (${st.faceCount ? st.faceCount + '/3 Face ID' : 'No Face ID'}${st.hasExplicitPin ? ' · PIN Set' : ''})`;
+          opt.selected = Boolean(curEntry && norm(st.name) === norm(curEntry.name));
+        }
+      });
+    }
+    const vp = $('staffEnrolViewport');
+    if (vp) vp.classList.toggle('is-live', STAFF_FACE_MODAL_STATE.camActive);
+    const ph = $('staffEnrolStandby');
+    if (ph) ph.hidden = STAFF_FACE_MODAL_STATE.camActive;
+    const camBtn = $('staffEnrolStartCamBtn');
+    if (camBtn) camBtn.innerHTML = STAFF_FACE_MODAL_STATE.camActive ? 'Stop Camera' : `${ic('camera')} Start Camera`;
+    const capBtn = $('staffEnrolCaptureBtn');
+    if (capBtn) {
+      capBtn.innerHTML = capCount >= 3
+        ? `${ic('rotate')} Retake All 3 Poses`
+        : `${ic('camera')} Capture Pose (${capCount + 1}/3)`;
+    }
+    const clrBtn = $('staffEnrolClearBtn');
+    if (clrBtn) clrBtn.disabled = capCount === 0;
+    const testBtn = $('staffEnrolTestBtn');
+    if (testBtn) testBtn.disabled = capCount === 0;
+
+    const poseGuide = $('staffEnrolPosePrompt');
+    if (poseGuide) {
+      const prompts = [
+        'Pose 1 of 3: Look straight ahead at the camera',
+        'Pose 2 of 3: Turn head slightly left while looking at camera',
+        'Pose 3 of 3: Turn head slightly right while looking at camera'
+      ];
+      poseGuide.textContent = capCount >= 3
+        ? 'Face ID profile complete (3/3 poses saved). Ready for hands-free Kiosk clock-in.'
+        : prompts[capCount];
+    }
+
+    const strip = $('staffEnrolThumbs');
+    if (strip) {
+      const poseNames = ['1 · Straight', '2 · Slight Left', '3 · Slight Right'];
+      strip.innerHTML = [0, 1, 2].map(idx => {
+        const done = idx < capCount;
+        const th = faceInfo.thumbs[idx] || '';
+        return `
+          <button type="button" class="staff-pose-slot ${done ? 'is-done' : (idx === capCount ? 'is-next' : '')}" data-staff-pose-slot="${idx}">
+            ${th ? `<img src="${esc(th)}" alt="Pose ${idx + 1}">` : `<span class="staff-pose-placeholder">${done ? '✓ Saved' : 'Empty'}</span>`}
+            <span class="staff-pose-lbl">${poseNames[idx]}${done ? ' · Retake' : ''}</span>
+          </button>
+        `;
+      }).join('');
+      strip.querySelectorAll('[data-staff-pose-slot]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const slotIdx = Number(btn.getAttribute('data-staff-pose-slot'));
+          captureStaffModalPose(null, '', slotIdx);
+        });
+      });
+    }
+
+    const stEl = $('staffEnrolStatusMsg');
+    if (stEl) {
+      stEl.textContent = STAFF_FACE_MODAL_STATE.statusText || (capCount > 0 ? `${capCount}/3 Face ID poses stored for ${curEntry ? curEntry.name : ''}.` : 'Start camera to capture 3 quick Face ID poses.');
+      stEl.className = 'kiosk-att-status ' + (STAFF_FACE_MODAL_STATE.statusCls || '');
+    }
+
+    const pinInp = $('staffEnrolPinInput');
+    if (pinInp && curEntry && document.activeElement !== pinInp) {
+      pinInp.value = curEntry.hasExplicitPin ? curEntry.pin : '';
+    }
+    stripNativeTitles(modal);
+  }
+
+  function openStaffFaceEnrolModal(staffName = '') {
+    stopKioskAttCamera();
+    const allStaff = getKioskStaffDirectory({ scopeBySelectedCompany: true });
+    const fullStaff = getKioskStaffDirectory();
+    const pool = allStaff.length ? allStaff : fullStaff;
+    const picked = (staffName && fullStaff.find(s => norm(s.name) === norm(staffName))) || pool[0] || null;
+    if (!picked) {
+      toast('No active staff available to enrol', 'warn');
+      return null;
+    }
+    STAFF_FACE_MODAL_STATE.open = true;
+    STAFF_FACE_MODAL_STATE.staffName = picked.name;
+    STAFF_FACE_MODAL_STATE.statusText = '';
+    STAFF_FACE_MODAL_STATE.statusCls = '';
+
+    let modal = $('staffFaceEnrolModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'staffFaceEnrolModal';
+      modal.className = 'modal-backdrop kiosk-submodal-backdrop';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.addEventListener('click', e => {
+        if (e.target === modal) closeStaffFaceEnrolModal();
+      });
+      document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+      <div class="modal-card staff-enrol-modal-card">
+        <div class="modal-head">
+          <div>
+            <div class="modal-title">${ic('camera')} Staff Face ID &amp; PIN Enrolment</div>
+            <div class="modal-sub">Enrol 3-pose hands-free Face ID and 4-digit PIN for any active employee</div>
+          </div>
+          <button type="button" class="icon-btn" id="closeStaffEnrolModalBtn" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body staff-enrol-modal-body">
+          <div class="staff-enrol-top-row">
+            <div class="staff-enrol-field" style="flex:1;min-width:220px">
+              <label for="staffEnrolSelect">Staff Member</label>
+              <select id="staffEnrolSelect" class="kiosk-select" data-plain-options="1">
+                ${fullStaff.map(s => `<option value="${esc(s.name)}" ${norm(s.name) === norm(picked.name) ? 'selected' : ''}>${esc(s.name)} · ${esc(s.company)} (${s.faceCount ? s.faceCount + '/3 Face ID' : 'No Face ID'})</option>`).join('')}
+              </select>
+            </div>
+            <div class="staff-enrol-pin-inline">
+              <label for="staffEnrolPinInput">4-Digit Kiosk PIN</label>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="text" inputmode="numeric" maxlength="4" autocomplete="off" id="staffEnrolPinInput" class="kiosk-inline-pin-input" style="width:96px;height:36px" placeholder="4 digits" value="${esc(picked.hasExplicitPin ? picked.pin : '')}">
+                <button type="button" class="btn" id="staffEnrolPinSaveBtn">Save PIN</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="staff-enrol-grid">
+            <div class="staff-enrol-cam-col">
+              <div class="kiosk-att-viewport" id="staffEnrolViewport">
+                <video id="staffEnrolVideo" autoplay muted playsinline></video>
+                <canvas id="staffEnrolOverlay" class="staff-enrol-overlay"></canvas>
+                <div class="kiosk-att-reticle" aria-hidden="true">
+                  <span class="kiosk-finder-corner tl"></span>
+                  <span class="kiosk-finder-corner tr"></span>
+                  <span class="kiosk-finder-corner bl"></span>
+                  <span class="kiosk-finder-corner br"></span>
+                  <div class="kiosk-att-oval"></div>
+                </div>
+                <span class="badge staff-enrol-live-pill" id="staffEnrolLiveBadge">Camera Standby</span>
+                <div class="kiosk-cam-standby-card" id="staffEnrolStandby">
+                  <div class="kiosk-cam-standby-ico">${ic('camera')}</div>
+                  <strong>3-Pose Staff Face Enrolment</strong>
+                  <p>Start the camera to capture straight, slight left, and slight right poses automatically.</p>
+                </div>
+              </div>
+              <div class="staff-enrol-btn-bar">
+                <button type="button" class="btn" id="staffEnrolStartCamBtn">${ic('camera')} Start Camera</button>
+                <button type="button" class="btn btn-primary" id="staffEnrolCaptureBtn">${ic('camera')} Capture Pose</button>
+                <button type="button" class="btn" id="staffEnrolTestBtn">Test Match</button>
+                <button type="button" class="btn" id="staffEnrolClearBtn">Clear Face</button>
+              </div>
+            </div>
+
+            <div class="staff-enrol-poses-col">
+              <div class="staff-enrol-pose-prompt" id="staffEnrolPosePrompt"></div>
+              <div class="staff-enrol-thumbs" id="staffEnrolThumbs"></div>
+              <div class="kiosk-att-status" id="staffEnrolStatusMsg"></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <span class="muted" style="font-size:12px">Face ID profiles sync across plant kiosks and never grant back-office ERP login unless the employee also holds a user seat.</span>
+          <button type="button" class="btn btn-primary" id="doneStaffEnrolModalBtn">Done</button>
+        </div>
+      </div>
+    `;
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+
+    $('closeStaffEnrolModalBtn')?.addEventListener('click', closeStaffFaceEnrolModal);
+    $('doneStaffEnrolModalBtn')?.addEventListener('click', closeStaffFaceEnrolModal);
+    $('staffEnrolSelect')?.addEventListener('change', e => {
+      STAFF_FACE_MODAL_STATE.staffName = e.target.value;
+      STAFF_FACE_MODAL_STATE.statusText = '';
+      STAFF_FACE_MODAL_STATE.statusCls = '';
+      syncStaffFaceEnrolModalDom();
+    });
+    $('staffEnrolStartCamBtn')?.addEventListener('click', () => {
+      if (STAFF_FACE_MODAL_STATE.camActive) {
+        stopStaffEnrolModalCamera();
+        STAFF_FACE_MODAL_STATE.statusText = 'Camera stopped.';
+        STAFF_FACE_MODAL_STATE.statusCls = '';
+        syncStaffFaceEnrolModalDom();
+      } else {
+        startStaffEnrolModalCamera();
+      }
+    });
+    $('staffEnrolCaptureBtn')?.addEventListener('click', () => captureStaffModalPose());
+    $('staffEnrolClearBtn')?.addEventListener('click', async () => {
+      const res = await clearStaffFaceId(STAFF_FACE_MODAL_STATE.staffName);
+      if (res.ok) {
+        STAFF_FACE_MODAL_STATE.statusText = `Cleared Face ID for ${res.staff}.`;
+        STAFF_FACE_MODAL_STATE.statusCls = '';
+        toast(`Cleared Face ID for ${res.staff}`);
+        syncStaffFaceEnrolModalDom();
+      }
+    });
+    $('staffEnrolTestBtn')?.addEventListener('click', async () => {
+      const pool = usableFaces(null, { includeKioskStaff: true });
+      const probeVec = STAFF_FACE_MODAL_STATE.captures[0];
+      if (!pool.length || !probeVec || !window.Face) return;
+      if (STAFF_FACE_MODAL_STATE.camActive && streamAlive()) {
+        const v = $('staffEnrolVideo');
+        await ensureFaceModelsLoaded();
+        const det = await window.Face.detectOne(v, true);
+        if (!det || !det.descriptor) {
+          STAFF_FACE_MODAL_STATE.statusText = 'No face in camera frame to test.';
+          STAFF_FACE_MODAL_STATE.statusCls = 'warn';
+        } else {
+          const m = window.Face.match(det.descriptor, pool);
+          const thr = Number(STATE.faceSettings.threshold || 0.50);
+          STAFF_FACE_MODAL_STATE.statusText = (m.best && m.bestDist <= thr)
+            ? `Recognized: ${m.best.name} (${Math.round((1 - m.bestDist * 0.6) * 100)}% confidence)`
+            : 'Face did not match enrolled threshold.';
+          STAFF_FACE_MODAL_STATE.statusCls = (m.best && m.bestDist <= thr) ? 'ok' : 'warn';
+        }
+      } else {
+        const m = window.Face.match(probeVec, pool);
+        STAFF_FACE_MODAL_STATE.statusText = m.best ? `Verified profile ready: ${m.best.name}` : 'No match found.';
+        STAFF_FACE_MODAL_STATE.statusCls = m.best ? 'ok' : 'warn';
+      }
+      syncStaffFaceEnrolModalDom();
+    });
+    $('staffEnrolPinSaveBtn')?.addEventListener('click', () => {
+      const pinInp = $('staffEnrolPinInput');
+      const rawVal = String(pinInp ? pinInp.value : '').replace(/\D+/g, '').slice(0, 4);
+      if (rawVal.length !== 4 && String(pinInp ? pinInp.value : '').trim() !== '') {
+        toast('PIN must be 4 digits (or leave blank to clear)', 'warn');
+        return;
+      }
+      const res = setKioskStaffPin(STAFF_FACE_MODAL_STATE.staffName, rawVal);
+      if (!res.ok) {
+        toast(res.error || 'Could not save PIN', 'err');
+        return;
+      }
+      toast(res.pin ? `Saved 4-digit PIN for ${res.staff}` : `Cleared PIN for ${res.staff}`, 'ok');
+      syncStaffFaceEnrolModalDom();
+    });
+
+    wireModalSuggestions(modal);
+    syncStaffFaceEnrolModalDom();
+    return modal;
+  }
+
+  function closeStaffScheduleModal() {
+    const m = $('staffScheduleModal');
+    if (m) m.hidden = true;
+    document.body.classList.remove('modal-open');
+    if (STATE.view === 'kiosks' || STATE.view === 'payroll_attendance') renderApp();
+  }
+
+  function openStaffScheduleModal(staffName, opts = {}) {
+    const fullDir = getKioskStaffDirectory();
+    const entry = fullDir.find(s => norm(s.name) === norm(staffName)) || fullDir[0] || null;
+    if (!entry) {
+      toast('Staff member not found', 'warn');
+      return null;
+    }
+    const rule = getStaffWorkRule(entry.name, entry.company);
+    const shiftTypes = getShiftTypes();
+    const today = todayISO();
+    const focusDate = opts.focusDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.focusDate) ? opts.focusDate : today;
+
+    let draftShiftId = rule.shift_id || 'day_8_4';
+    let draftCustomStart = rule.custom_start || '08:00';
+    let draftCustomEnd = rule.custom_end || '16:00';
+    let draftCustomName = rule.custom_name || 'Custom Shift';
+    let draftGrace = Number(rule.grace_min != null ? rule.grace_min : 10);
+    const activeShiftObj = shiftTypes.find(t => t.id === draftShiftId);
+    let draftDays = (draftShiftId === 'custom' || rule.use_custom_days)
+      ? rule.custom_days.slice()
+      : (activeShiftObj ? activeShiftObj.days.slice() : [1, 2, 3, 4, 5, 6]);
+    let draftUseCustomDays = Boolean(rule.use_custom_days);
+    let draftOtMode = rule.ot_mode || 'none';
+    let draftOtMaxHours = Number(rule.ot_max_hours != null ? rule.ot_max_hours : 2);
+    let draftOtWinStart = rule.ot_window_start || '';
+    let draftOtWinEnd = rule.ot_window_end || '';
+    let draftPasses = (rule.ot_passes || []).map(p => Object.assign({}, p));
+    let draftOverrides = (rule.shift_overrides || []).map(o => Object.assign({}, o));
+
+    let modal = $('staffScheduleModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'staffScheduleModal';
+      modal.className = 'modal-backdrop kiosk-submodal-backdrop';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.addEventListener('click', e => {
+        if (e.target === modal) closeStaffScheduleModal();
+      });
+      document.body.appendChild(modal);
+    }
+
+    const renderModalInner = () => {
+      const cDur = computeShiftWorkedHours(draftCustomStart, draftCustomEnd) || 8.0;
+      const cOvernight = Boolean(parseClockMinutes(draftCustomEnd) != null && parseClockMinutes(draftCustomStart) != null && parseClockMinutes(draftCustomEnd) <= parseClockMinutes(draftCustomStart));
+      const dayOrder = [1, 2, 3, 4, 5, 6, 0];
+
+      modal.innerHTML = `
+        <div class="modal-card staff-sched-modal-card">
+          <div class="modal-head">
+            <div>
+              <div class="modal-title">${ic('clock')} Shift Timing &amp; Overtime Rules · ${esc(entry.name)}</div>
+              <div class="modal-sub">${esc(entry.company)} · ${esc(entry.role)} · Configure shift hours, schedule rotations, and overtime approval</div>
+            </div>
+            <button type="button" class="icon-btn" id="ssmCloseBtn" aria-label="Close">✕</button>
+          </div>
+          <div class="modal-body staff-sched-modal-body">
+            <!-- SECTION 1: REGULAR SHIFT TIMING -->
+            <div class="ssm-section">
+              <div class="ssm-sec-head">
+                <strong>1. Regular Shift &amp; Clock Timing</strong>
+                <span class="muted">Arrival lateness and shift completion are measured against this exact window</span>
+              </div>
+              <div class="ssm-shift-cards">
+                ${shiftTypes.map(st => `
+                  <button type="button" class="ssm-shift-card ${draftShiftId === st.id ? 'active' : ''}" data-tone="${esc(st.tone)}" data-ssm-shift="${esc(st.id)}">
+                    <span class="ssm-sc-top">
+                      <b>${esc(st.name)}</b>
+                      <span class="ssm-sc-hrs mono">${fmtNum(st.hours, 1)}h</span>
+                    </span>
+                    <span class="ssm-sc-win mono">${esc(st.start_time)} - ${esc(st.end_time)}${st.overnight ? ' (+1d)' : ''}</span>
+                  </button>
+                `).join('')}
+                <button type="button" class="ssm-shift-card ${draftShiftId === 'custom' ? 'active' : ''}" data-tone="emerald" data-ssm-shift="custom">
+                  <span class="ssm-sc-top">
+                    <b>Custom Timing</b>
+                    <span class="ssm-sc-hrs mono">${fmtNum(cDur, 1)}h</span>
+                  </span>
+                  <span class="ssm-sc-win mono">${esc(draftCustomStart)} - ${esc(draftCustomEnd)}${cOvernight ? ' (+1d)' : ''}</span>
+                </button>
+              </div>
+
+              ${draftShiftId === 'custom' ? `
+                <div class="ssm-custom-bar">
+                  <div class="ssm-field">
+                    <label for="ssmCustomName">Custom Label</label>
+                    <input type="text" id="ssmCustomName" value="${esc(draftCustomName)}" placeholder="e.g. Split / Early Shift">
+                  </div>
+                  <div class="ssm-field">
+                    <label for="ssmCustomStart">Shift Start</label>
+                    <input type="time" id="ssmCustomStart" value="${esc(draftCustomStart)}">
+                  </div>
+                  <div class="ssm-field">
+                    <label for="ssmCustomEnd">Shift End</label>
+                    <input type="time" id="ssmCustomEnd" value="${esc(draftCustomEnd)}">
+                  </div>
+                  <div class="ssm-field">
+                    <label>Calculated Shift</label>
+                    <div class="ssm-calc-pill mono">${fmtNum(cDur, 1)}h${cOvernight ? ' · Overnight (+1d)' : ' · Same Day'}</div>
+                  </div>
+                </div>
+              ` : ''}
+
+              <div class="ssm-days-row">
+                <div class="ssm-days-left">
+                  <span class="ssm-lbl">Scheduled Workdays:</span>
+                  <div class="ssm-day-pills">
+                    ${dayOrder.map(dIdx => `
+                      <button type="button" class="ssm-day-pill ${draftDays.includes(dIdx) ? 'active' : ''}" data-ssm-day="${dIdx}">
+                        ${ATT_WEEKDAYS[dIdx]}
+                      </button>
+                    `).join('')}
+                  </div>
+                </div>
+                <div class="ssm-grace-wrap">
+                  <label for="ssmGraceMin">Arrival Grace (min)</label>
+                  <input type="number" id="ssmGraceMin" min="0" max="60" step="5" value="${draftGrace}" style="width:74px">
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION 2: OVERTIME ELIGIBILITY -->
+            <div class="ssm-section" id="ssmOvertimeSection">
+              <div class="ssm-sec-head">
+                <strong>2. Overtime Eligibility &amp; Approval</strong>
+                <span class="muted">Prevent unauthorized late clock-outs from generating paid overtime</span>
+              </div>
+              <div class="ot-mode-grid">
+                <button type="button" class="ot-mode-card ${draftOtMode === 'none' ? 'active' : ''}" data-ssm-ot-mode="none">
+                  <div class="ot-mc-title"><span class="ot-dot muted"></span>No Overtime</div>
+                  <div class="ot-mc-desc">Late clock-outs record real departure time with 0h paid overtime.</div>
+                </button>
+                <button type="button" class="ot-mode-card ${draftOtMode === 'always' ? 'active' : ''}" data-ssm-ot-mode="always">
+                  <div class="ot-mc-title"><span class="ot-dot emerald"></span>Anytime (Open OT)</div>
+                  <div class="ot-mc-desc">Authorized to receive paid overtime whenever working past shift hours.</div>
+                </button>
+                <button type="button" class="ot-mode-card ${draftOtMode === 'max_hours' ? 'active' : ''}" data-ssm-ot-mode="max_hours">
+                  <div class="ot-mc-title"><span class="ot-dot sapphire"></span>Specific Hours Limit</div>
+                  <div class="ot-mc-desc">Allow overtime up to a daily hour cap or inside a specific clock window.</div>
+                </button>
+                <button type="button" class="ot-mode-card ${draftOtMode === 'date_range' ? 'active' : ''}" data-ssm-ot-mode="date_range">
+                  <div class="ot-mc-title"><span class="ot-dot amber"></span>Specific Day or Date Range</div>
+                  <div class="ot-mc-desc">Approve overtime only on selected single day(s) or a date range.</div>
+                </button>
+              </div>
+
+              ${draftOtMode === 'max_hours' ? `
+                <div class="ssm-ot-subpanel">
+                  <div class="ssm-ot-cap-row">
+                    <div class="ssm-field">
+                      <label for="ssmOtMaxHours">Max Paid Overtime / Day (Hours)</label>
+                      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                        <input type="number" id="ssmOtMaxHours" min="0.5" max="12" step="0.5" value="${draftOtMaxHours || 2}" style="width:86px">
+                        ${[1, 1.5, 2, 3, 4].map(h => `<button type="button" class="kiosk-qchip ${Number(draftOtMaxHours) === h ? 'active' : ''}" data-ssm-cap-chip="${h}">${h}h</button>`).join('')}
+                      </div>
+                    </div>
+                    <div class="ssm-field">
+                      <label for="ssmOtWinStart">Optional Clock Window From</label>
+                      <input type="time" id="ssmOtWinStart" value="${esc(draftOtWinStart)}">
+                    </div>
+                    <div class="ssm-field">
+                      <label for="ssmOtWinEnd">Window To</label>
+                      <input type="time" id="ssmOtWinEnd" value="${esc(draftOtWinEnd)}">
+                    </div>
+                  </div>
+                  <div class="ssm-helper">Leave the clock window empty to allow up to ${fmtNum(draftOtMaxHours || 2, 1)}h/day immediately after shift end.</div>
+                </div>
+              ` : ''}
+
+              ${draftOtMode === 'date_range' ? `
+                <div class="ssm-ot-subpanel">
+                  <div class="ssm-preset-strip">
+                    <span class="ssm-lbl">Quick Approve:</span>
+                    <button type="button" class="kiosk-qchip" data-ssm-pass-preset="today">Today Only (${esc(fmtShortDayMonth(today))})</button>
+                    <button type="button" class="kiosk-qchip" data-ssm-pass-preset="tomorrow">Tomorrow (${esc(fmtShortDayMonth(shiftIsoDateByDays(today, 1)))})</button>
+                    <button type="button" class="kiosk-qchip" data-ssm-pass-preset="week">Next 7 Days</button>
+                  </div>
+                  <div class="ssm-pass-builder">
+                    <div class="ssm-field">
+                      <label for="ssmPassStart">From Date</label>
+                      <input type="date" id="ssmPassStart" value="${esc(focusDate)}">
+                    </div>
+                    <div class="ssm-field">
+                      <label for="ssmPassEnd">To Date (Same = 1 Day)</label>
+                      <input type="date" id="ssmPassEnd" value="${esc(focusDate)}">
+                    </div>
+                    <div class="ssm-field">
+                      <label for="ssmPassMaxHrs">Max Hrs/Day (Optional)</label>
+                      <input type="number" id="ssmPassMaxHrs" min="0" max="12" step="0.5" placeholder="No cap">
+                    </div>
+                    <div class="ssm-field" style="flex:1;min-width:130px">
+                      <label for="ssmPassNote">Note (Optional)</label>
+                      <input type="text" id="ssmPassNote" placeholder="e.g. Night pour">
+                    </div>
+                    <button type="button" class="btn btn-primary" id="ssmAddPassBtn" style="align-self:flex-end">+ Add Dates</button>
+                  </div>
+                  <div class="ssm-pass-list" id="ssmPassList">
+                    ${draftPasses.length ? draftPasses.map(p => `
+                      <div class="ot-pass-row">
+                        <span>
+                          <b>${p.start_date === (p.end_date || p.start_date) ? esc(fmtDateDMY(p.start_date)) : `${esc(fmtDateDMY(p.start_date))} to ${esc(fmtDateDMY(p.end_date))}`}</b>
+                          ${p.max_hours > 0 ? ` · Max ${fmtNum(p.max_hours, 1)}h/day` : ' · Open hours'}
+                          ${p.note ? ` · <span class="muted">${esc(p.note)}</span>` : ''}
+                        </span>
+                        <button type="button" class="tkt-print-mini" data-remove-ot-pass="${esc(p.id)}" aria-label="Remove OT pass">✕</button>
+                      </div>
+                    `).join('') : '<div class="ssm-helper">Pick a single day or date range above (saving will automatically include the selected dates).</div>'}
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+
+            <!-- SECTION 3: DATE / ROTATION SHIFT OVERRIDES -->
+            <div class="ssm-section">
+              <div class="ssm-sec-head">
+                <strong>3. Temporary Shift Rotation (Specific Date or Range)</strong>
+                <span class="muted">Temporarily assign Night Shift, Day Shift, or Day Off on specific dates</span>
+              </div>
+              <div class="ssm-pass-builder">
+                <div class="ssm-field" style="min-width:165px">
+                  <label for="ssmOvShift">Rotation Shift</label>
+                  <select id="ssmOvShift" class="kiosk-select" data-plain-options="1">
+                    ${shiftTypes.map(st => `<option value="${esc(st.id)}" ${st.id === 'night_7_3' ? 'selected' : ''}>${esc(st.name)} (${esc(st.start_time)}-${esc(st.end_time)})</option>`).join('')}
+                    <option value="off">Scheduled Day Off</option>
+                  </select>
+                </div>
+                <div class="ssm-field">
+                  <label for="ssmOvStart">From Date</label>
+                  <input type="date" id="ssmOvStart" value="${esc(opts.focusDate || '')}">
+                </div>
+                <div class="ssm-field">
+                  <label for="ssmOvEnd">To Date</label>
+                  <input type="date" id="ssmOvEnd" value="${esc(opts.focusDate || '')}">
+                </div>
+                <button type="button" class="btn" id="ssmAddOvBtn" style="align-self:flex-end">+ Add Rotation</button>
+              </div>
+              ${draftOverrides.length ? `
+                <div class="ssm-pass-list">
+                  ${draftOverrides.map(ov => {
+                    const stMatch = shiftTypes.find(t => t.id === ov.shift_id);
+                    const ovLbl = ov.shift_id === 'off' ? 'Scheduled Day Off' : (stMatch ? `${stMatch.name} (${stMatch.start_time}-${stMatch.end_time})` : 'Custom Rotation');
+                    return `
+                      <div class="ot-pass-row">
+                        <span><b>${esc(ovLbl)}</b> · ${ov.start_date === (ov.end_date || ov.start_date) ? esc(fmtDateDMY(ov.start_date)) : `${esc(fmtDateDMY(ov.start_date))} to ${esc(fmtDateDMY(ov.end_date))}`}</span>
+                        <button type="button" class="tkt-print-mini" data-remove-shift-ov="${esc(ov.id)}" aria-label="Remove rotation">✕</button>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              ` : ''}
+            </div>
+          </div>
+          <div class="modal-foot" style="justify-content:space-between">
+            <button type="button" class="btn" id="ssmResetBtn">Reset Default</button>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn" id="ssmCancelBtn">Cancel</button>
+              <button type="button" class="btn btn-primary" id="ssmSaveBtn">${ic('check_circle')} Save Schedule &amp; Rules</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const syncLiveInputs = () => {
+        if ($('ssmCustomName')) draftCustomName = $('ssmCustomName').value || 'Custom Shift';
+        if ($('ssmCustomStart')) draftCustomStart = $('ssmCustomStart').value || '08:00';
+        if ($('ssmCustomEnd')) draftCustomEnd = $('ssmCustomEnd').value || '16:00';
+        if ($('ssmGraceMin')) draftGrace = Math.max(0, Math.min(60, Number($('ssmGraceMin').value || 10)));
+        if ($('ssmOtMaxHours')) draftOtMaxHours = Math.max(0, Number($('ssmOtMaxHours').value || 0));
+        if ($('ssmOtWinStart')) draftOtWinStart = $('ssmOtWinStart').value || '';
+        if ($('ssmOtWinEnd')) draftOtWinEnd = $('ssmOtWinEnd').value || '';
+      };
+
+      $('ssmCloseBtn')?.addEventListener('click', closeStaffScheduleModal);
+      $('ssmCancelBtn')?.addEventListener('click', closeStaffScheduleModal);
+      $('ssmResetBtn')?.addEventListener('click', () => {
+        resetStaffWorkRule(entry.name);
+        toast(`Reset ${entry.name} to default Day Shift (08:00-16:00) & No Overtime`, 'ok');
+        closeStaffScheduleModal();
+      });
+
+      modal.querySelectorAll('[data-ssm-shift]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftShiftId = btn.getAttribute('data-ssm-shift') || 'day_8_4';
+          if (draftShiftId !== 'custom' && !draftUseCustomDays) {
+            const st = shiftTypes.find(t => t.id === draftShiftId);
+            if (st) draftDays = st.days.slice();
+          }
+          renderModalInner();
+        });
+      });
+
+      ['ssmCustomStart', 'ssmCustomEnd'].forEach(id => {
+        $(id)?.addEventListener('change', () => {
+          syncLiveInputs();
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-day]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const dIdx = Number(btn.getAttribute('data-ssm-day'));
+          draftUseCustomDays = true;
+          if (draftDays.includes(dIdx)) draftDays = draftDays.filter(x => x !== dIdx);
+          else draftDays = draftDays.concat([dIdx]).sort((a, b) => a - b);
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-ot-mode]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftOtMode = btn.getAttribute('data-ssm-ot-mode') || 'none';
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-cap-chip]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftOtMaxHours = Number(btn.getAttribute('data-ssm-cap-chip') || 2);
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-pass-preset]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const preset = btn.getAttribute('data-ssm-pass-preset');
+          const sDate = preset === 'tomorrow' ? shiftIsoDateByDays(today, 1) : today;
+          const eDate = preset === 'week' ? shiftIsoDateByDays(today, 6) : sDate;
+          draftPasses = draftPasses.filter(x => !(x.start_date === sDate && x.end_date === eDate));
+          draftPasses.unshift({ id: uid('otp'), start_date: sDate, end_date: eDate, max_hours: 0, note: preset === 'week' ? '7-day approval' : '' });
+          renderModalInner();
+        });
+      });
+
+      $('ssmAddPassBtn')?.addEventListener('click', () => {
+        syncLiveInputs();
+        const sD = String($('ssmPassStart')?.value || '').slice(0, 10);
+        const eD = String($('ssmPassEnd')?.value || sD).slice(0, 10);
+        if (!sD || !eD || eD < sD) {
+          toast('Choose a valid From and To date', 'warn');
+          return;
+        }
+        const maxH = Math.max(0, Number($('ssmPassMaxHrs')?.value || 0));
+        const noteStr = String($('ssmPassNote')?.value || '').trim();
+        draftPasses = draftPasses.filter(x => !(x.start_date === sD && x.end_date === eD));
+        draftPasses.unshift({ id: uid('otp'), start_date: sD, end_date: eD, max_hours: maxH, note: noteStr });
+        renderModalInner();
+      });
+
+      modal.querySelectorAll('[data-remove-ot-pass]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const pid = btn.getAttribute('data-remove-ot-pass');
+          draftPasses = draftPasses.filter(x => String(x.id) !== String(pid));
+          renderModalInner();
+        });
+      });
+
+      $('ssmAddOvBtn')?.addEventListener('click', () => {
+        syncLiveInputs();
+        const ovShift = $('ssmOvShift')?.value || 'night_7_3';
+        const sD = String($('ssmOvStart')?.value || '').slice(0, 10);
+        const eD = String($('ssmOvEnd')?.value || sD).slice(0, 10);
+        if (!sD || !eD || eD < sD) {
+          toast('Choose From and To dates for the shift rotation', 'warn');
+          return;
+        }
+        draftOverrides = draftOverrides.filter(x => !(x.start_date === sD && x.end_date === eD));
+        draftOverrides.unshift({ id: uid('sov'), shift_id: ovShift, start_date: sD, end_date: eD, note: '' });
+        renderModalInner();
+      });
+
+      modal.querySelectorAll('[data-remove-shift-ov]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          const oid = btn.getAttribute('data-remove-shift-ov');
+          draftOverrides = draftOverrides.filter(x => String(x.id) !== String(oid));
+          renderModalInner();
+        });
+      });
+
+      $('ssmSaveBtn')?.addEventListener('click', () => {
+        syncLiveInputs();
+        if (draftOtMode === 'date_range') {
+          const pendingS = String($('ssmPassStart')?.value || '').slice(0, 10);
+          const pendingE = String($('ssmPassEnd')?.value || pendingS).slice(0, 10);
+          const pendingMax = Math.max(0, Number($('ssmPassMaxHrs')?.value || 0));
+          const pendingNote = String($('ssmPassNote')?.value || '').trim();
+          if (pendingS && pendingE && pendingE >= pendingS && (!draftPasses.length || pendingNote || pendingMax > 0)) {
+            const exists = draftPasses.some(x => x.start_date === pendingS && x.end_date === pendingE);
+            if (!exists) {
+              draftPasses.unshift({ id: uid('otp'), start_date: pendingS, end_date: pendingE, max_hours: pendingMax, note: pendingNote });
+            }
+          }
+        }
+        const pendingOvS = String($('ssmOvStart')?.value || '').slice(0, 10);
+        const pendingOvE = String($('ssmOvEnd')?.value || pendingOvS).slice(0, 10);
+        const pendingOvShift = $('ssmOvShift')?.value || 'night_7_3';
+        if (opts.focusDate && pendingOvS && pendingOvE && pendingOvE >= pendingOvS && !draftOverrides.some(x => x.start_date === pendingOvS && x.end_date === pendingOvE) && pendingOvShift !== draftShiftId) {
+          // Only auto-add rotation if user deliberately picked a date in the rotation fields while no overrides exist yet and they changed it
+        }
+        saveStaffWorkRule(entry.name, {
+          company: entry.company,
+          shift_id: draftShiftId,
+          custom_name: draftCustomName,
+          custom_start: draftCustomStart,
+          custom_end: draftCustomEnd,
+          custom_days: draftDays,
+          use_custom_days: draftUseCustomDays || draftShiftId === 'custom',
+          grace_min: draftGrace,
+          ot_mode: draftOtMode,
+          ot_max_hours: draftOtMaxHours,
+          ot_window_start: draftOtWinStart,
+          ot_window_end: draftOtWinEnd,
+          ot_passes: draftPasses,
+          shift_overrides: draftOverrides
+        });
+        toast(`Saved shift & overtime rules for ${entry.name}`, 'ok');
+        closeStaffScheduleModal();
+      });
+
+      wireModalSuggestions(modal);
+      stripNativeTitles(modal);
+    };
+
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+    renderModalInner();
+    if (opts.focusSection === 'ot') {
+      setTimeout(() => { $('ssmOvertimeSection')?.scrollIntoView({ block: 'nearest' }); }, 20);
+    }
+    return modal;
+  }
+
+  function closeShiftTypeModal() {
+    const m = $('shiftTypeModal');
+    if (m) m.hidden = true;
+    document.body.classList.remove('modal-open');
+    if (STATE.view === 'kiosks') renderApp();
+  }
+
+  function openShiftTypeModal(shiftId = '') {
+    const types = getShiftTypes();
+    const existing = shiftId ? types.find(t => t.id === shiftId) : null;
+    let draftDays = existing ? existing.days.slice() : [1, 2, 3, 4, 5, 6];
+    let draftTone = existing ? existing.tone : 'emerald';
+
+    let modal = $('shiftTypeModal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'shiftTypeModal';
+      modal.className = 'modal-backdrop kiosk-submodal-backdrop';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.addEventListener('click', e => {
+        if (e.target === modal) closeShiftTypeModal();
+      });
+      document.body.appendChild(modal);
+    }
+
+    modal.innerHTML = `
+      <div class="modal-card" style="max-width:540px">
+        <div class="modal-head">
+          <div>
+            <div class="modal-title">${ic('clock')} ${existing ? `Edit ${esc(existing.name)}` : 'New Shift Type'}</div>
+            <div class="modal-sub">Define reusable shift start and end hours (supports overnight cross-midnight shifts)</div>
+          </div>
+          <button type="button" class="icon-btn" id="stmCloseBtn" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body" style="display:flex;flex-direction:column;gap:12px">
+          <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:10px">
+            <div class="ssm-field">
+              <label for="stmName">Shift Name</label>
+              <input type="text" id="stmName" value="${esc(existing ? existing.name : '')}" placeholder="e.g. Early Batching / Split Shift">
+            </div>
+            <div class="ssm-field">
+              <label for="stmShort">Short Tag</label>
+              <input type="text" id="stmShort" maxlength="10" value="${esc(existing ? existing.short : '')}" placeholder="e.g. Early">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+            <div class="ssm-field">
+              <label for="stmStart">Start Time</label>
+              <input type="time" id="stmStart" value="${esc(existing ? existing.start_time : '06:00')}">
+            </div>
+            <div class="ssm-field">
+              <label for="stmEnd">End Time</label>
+              <input type="time" id="stmEnd" value="${esc(existing ? existing.end_time : '14:00')}">
+            </div>
+            <div class="ssm-field">
+              <label for="stmGrace">Arrival Grace (min)</label>
+              <input type="number" id="stmGrace" min="0" max="60" step="5" value="${existing ? existing.grace_min : 10}">
+            </div>
+          </div>
+          <div class="ssm-field">
+            <label>Active Workdays</label>
+            <div class="ssm-day-pills" id="stmDaysBar">
+              ${[1, 2, 3, 4, 5, 6, 0].map(dIdx => `
+                <button type="button" class="ssm-day-pill ${draftDays.includes(dIdx) ? 'active' : ''}" data-stm-day="${dIdx}">${ATT_WEEKDAYS[dIdx]}</button>
+              `).join('')}
+            </div>
+          </div>
+          <div class="ssm-field">
+            <label>Badge Color</label>
+            <div style="display:flex;gap:8px" id="stmToneBar">
+              ${[
+                { id: 'amber', lbl: 'Day Gold' },
+                { id: 'indigo', lbl: 'Night Indigo' },
+                { id: 'sapphire', lbl: 'Blue' },
+                { id: 'emerald', lbl: 'Custom Green' }
+              ].map(t => `<button type="button" class="kiosk-qchip ${draftTone === t.id ? 'active' : ''}" data-stm-tone="${t.id}">${t.lbl}</button>`).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="modal-foot" style="justify-content:space-between">
+          <div>
+            ${existing && !existing.isBuiltin ? `<button type="button" class="btn" id="stmDeleteBtn">Delete Shift Type</button>` : ''}
+          </div>
+          <div style="display:flex;gap:8px">
+            <button type="button" class="btn" id="stmCancelBtn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="stmSaveBtn">Save Shift Type</button>
+          </div>
+        </div>
+      </div>
+    `;
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+    stripNativeTitles(modal);
+
+    $('stmCloseBtn')?.addEventListener('click', closeShiftTypeModal);
+    $('stmCancelBtn')?.addEventListener('click', closeShiftTypeModal);
+    modal.querySelectorAll('[data-stm-day]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const d = Number(btn.getAttribute('data-stm-day'));
+        if (draftDays.includes(d)) draftDays = draftDays.filter(x => x !== d);
+        else draftDays = draftDays.concat([d]).sort((a, b) => a - b);
+        btn.classList.toggle('active', draftDays.includes(d));
+      });
+    });
+    modal.querySelectorAll('[data-stm-tone]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        draftTone = btn.getAttribute('data-stm-tone') || 'emerald';
+        modal.querySelectorAll('[data-stm-tone]').forEach(b => b.classList.toggle('active', b === btn));
+      });
+    });
+    $('stmDeleteBtn')?.addEventListener('click', () => {
+      if (!existing) return;
+      const r = deleteShiftType(existing.id);
+      if (r.ok) {
+        toast(`Removed shift type ${existing.name}`);
+        closeShiftTypeModal();
+      } else {
+        toast(r.error || 'Cannot delete', 'warn');
+      }
+    });
+    $('stmSaveBtn')?.addEventListener('click', () => {
+      const nm = String($('stmName')?.value || '').trim();
+      const sh = String($('stmShort')?.value || '').trim();
+      const st = $('stmStart')?.value || '08:00';
+      const et = $('stmEnd')?.value || '16:00';
+      const gr = Number($('stmGrace')?.value || 10);
+      if (!nm) {
+        toast('Enter a shift type name', 'warn');
+        return;
+      }
+      const res = saveShiftType({
+        id: existing ? existing.id : uid('shf'),
+        name: nm,
+        short: sh || nm.split(/\s+/)[0],
+        start_time: st,
+        end_time: et,
+        days: draftDays,
+        grace_min: gr,
+        tone: draftTone
+      });
+      if (res.ok) {
+        toast(`Saved shift type: ${res.shiftType.name} (${res.shiftType.start_time} - ${res.shiftType.end_time})`, 'ok');
+        closeShiftTypeModal();
+      } else {
+        toast(res.error || 'Could not save shift type', 'err');
+      }
+    });
+    return modal;
+  }
+
   function renderKiosks() {
     sanitizeKioskPunchesState();
     const kMode = ['sales', 'raw', 'fuel', 'attendance'].includes(STATE.activeKiosk) ? STATE.activeKiosk : 'sales';
@@ -42179,14 +44363,17 @@
                 ${fmtNum(onSiteList.length)} On Site
               </span>
             ` : ''}
-            ${!STATE.kioskLocked && canViewView('payroll_attendance') ? `
-              <button type="button" class="btn btn-ghost-bar kiosk-enrol-link-btn" id="kioskAttOpenRegisterBtn" title="Open daily Attendance & Overtime ledger for historical dates, absences, and leave">
-                ${ic('payroll_attendance')} Attendance Register
+            ${!STATE.kioskLocked ? `
+              <button type="button" class="btn ${STATE.kioskAttFeedFilter === 'schedule' ? 'btn-primary' : 'btn-ghost-bar'} kiosk-enrol-link-btn" id="kioskAttOpenSchedBtn">
+                ${ic('clock')} Shift Schedule
+              </button>
+              <button type="button" class="btn btn-ghost-bar kiosk-enrol-link-btn" id="kioskAttManageFacesBtn">
+                ${ic('camera')} Enrol Face ID
               </button>
             ` : ''}
-            ${!STATE.kioskLocked && canViewView('users') ? `
-              <button type="button" class="btn btn-ghost-bar kiosk-enrol-link-btn" id="kioskAttManageFacesBtn" title="Enrol 3-pose Face ID profiles and manage team security">
-                ${ic('users')} Face ID Studio
+            ${!STATE.kioskLocked && canViewView('payroll_attendance') ? `
+              <button type="button" class="btn btn-ghost-bar kiosk-enrol-link-btn" id="kioskAttOpenRegisterBtn">
+                ${ic('payroll_attendance')} Attendance Register
               </button>
             ` : ''}
           </div>
@@ -42343,16 +44530,35 @@
         : (punches[0] || null);
       const pinVal = String(STATE.kioskAttPin || '');
       const demoSample = staffDir.find(s => s.pin) || null;
-      const allowedFeedModes = STATE.kioskLocked ? ['all', 'onsite'] : ['roster', 'onsite', 'all'];
+      const allowedFeedModes = STATE.kioskLocked ? ['all', 'onsite'] : ['roster', 'schedule', 'onsite', 'all'];
       const feedFilter = allowedFeedModes.includes(STATE.kioskAttFeedFilter) ? STATE.kioskAttFeedFilter : allowedFeedModes[0];
       const rosterQuery = norm(STATE.kioskAttRosterSearch || '');
       const filteredRoster = rosterQuery
-        ? staffDir.filter(s => norm(s.name).includes(rosterQuery) || norm(s.role).includes(rosterQuery) || norm(s.company).includes(rosterQuery))
+        ? staffDir.filter(s => norm(s.name).includes(rosterQuery) || norm(s.role).includes(rosterQuery) || norm(s.company).includes(rosterQuery) || norm(s.shift && s.shift.name).includes(rosterQuery))
         : staffDir;
       const basePunches = feedFilter === 'onsite' ? onSiteList : punches.slice(0, 25);
       const feedRows = rosterQuery
         ? basePunches.filter(p => norm(p.staff).includes(rosterQuery) || norm(p.site).includes(rosterQuery) || norm(p.company).includes(rosterQuery))
         : basePunches;
+
+      const shiftTypesCatalog = getShiftTypes();
+      const weekDates = getScheduleWeekDates(STATE.kioskSchedWeekOffset || 0);
+      const weekRangeLbl = `${weekDates[0].dayNum} ${weekDates[0].monthShort} - ${weekDates[6].dayNum} ${weekDates[6].monthShort}`;
+      const schedShiftFilter = STATE.kioskSchedShiftFilter || 'all';
+      const schedOtFilter = STATE.kioskSchedOtFilter || 'all';
+      const schedRoster = filteredRoster.filter(s => {
+        if (schedShiftFilter !== 'all') {
+          const rId = getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4';
+          if (rId !== schedShiftFilter) return false;
+        }
+        if (schedOtFilter !== 'all') {
+          const otM = (s.otDesc && s.otDesc.mode) || 'none';
+          if (schedOtFilter === 'allowed' && otM === 'none') return false;
+          if (schedOtFilter === 'none' && otM !== 'none') return false;
+          if (schedOtFilter === 'date_range' && otM !== 'date_range') return false;
+        }
+        return true;
+      });
 
       let pinHintText = 'Enter your 4-digit personal PIN below';
       let pinHintCls = '';
@@ -42381,7 +44587,7 @@
                 <div class="kiosk-lp-info">
                   <strong>${esc(lastPunch.staff)}</strong>
                   ${showCoCol ? coBadge(lastPunch.company) : ''}
-                  <span class="kiosk-lp-meta"><span class="mono">${esc(lastPunch.time)}</span> · ${esc(fmtDateDMY(lastPunch.date))} · ${esc(lastPunch.site)} · ${esc(lastPunch.method)}${lastPunch.paired_hours != null ? ` · Shift ${fmtNum(lastPunch.paired_hours, 1)}h${lastPunch.overtime_hours > 0 ? ' (+' + fmtNum(lastPunch.overtime_hours, 1) + 'h OT)' : ''}` : ''}</span>
+                  <span class="kiosk-lp-meta"><span class="mono">${esc(lastPunch.time)}</span> · ${esc(fmtDateDMY(lastPunch.date))} · ${esc(lastPunch.site)} · ${esc(lastPunch.method)}${lastPunch.paired_hours != null ? ` · Shift ${fmtNum(lastPunch.paired_hours, 1)}h${lastPunch.overtime_hours > 0 ? ' (+' + fmtNum(lastPunch.overtime_hours, 1) + 'h OT)' : (lastPunch.unapproved_ot_hours > 0 ? ' (0h paid OT)' : '')}` : ''}</span>
                 </div>
               </div>
               <button type="button" class="btn kiosk-flip-btn" id="kioskAttFlipDirBtn" data-flip-punch="${esc(lastPunch.id)}">
@@ -42476,19 +44682,22 @@
             </div>
           </div>
 
-          <!-- FULL-WIDTH BOTTOM ROSTER & LIVE CLOCK LOG -->
+          <!-- FULL-WIDTH BOTTOM ROSTER, SHIFT SCHEDULE & LIVE CLOCK LOG -->
           <div class="panel-card kiosk-att-feed-card" id="kioskAttFeedCard">
             <div class="panel-head kiosk-feed-head">
               <div class="panel-title">
-                <span>${ic('payroll')} Active Staff &amp; Daily Clock Log</span>
+                <span>${ic('payroll')} ${feedFilter === 'schedule' ? 'Shift Types &amp; Weekly Staff Schedule' : 'Active Staff &amp; Daily Clock Log'}</span>
                 <small class="kiosk-feed-sub">${esc(scopeTitleLabel)} · ${fmtNum(staffDir.length)} Active Staff · Station: ${esc(STATE.kioskAttSite)}</small>
               </div>
               <div class="kiosk-feed-tools">
-                <input type="search" class="search-input kiosk-roster-search" id="kioskAttRosterSearch" placeholder="Search active staff or role..." value="${esc(STATE.kioskAttRosterSearch || '')}">
+                <input type="search" class="search-input kiosk-roster-search" id="kioskAttRosterSearch" placeholder="Search staff, role, or shift..." value="${esc(STATE.kioskAttRosterSearch || '')}">
                 <div class="kiosk-seg-group" role="group" aria-label="Attendance View">
                   ${!STATE.kioskLocked ? `
                     <button type="button" class="kiosk-seg-btn ${feedFilter === 'roster' ? 'active' : ''}" data-tone="sapphire" data-att-feed-filter="roster">
                       Active Staff (${fmtNum(staffDir.length)})
+                    </button>
+                    <button type="button" class="kiosk-seg-btn ${feedFilter === 'schedule' ? 'active' : ''}" data-tone="indigo" data-att-feed-filter="schedule">
+                      Shift Schedule
                     </button>
                   ` : ''}
                   <button type="button" class="kiosk-seg-btn ${feedFilter === 'onsite' ? 'active' : ''}" data-tone="emerald" data-att-feed-filter="onsite">
@@ -42500,98 +44709,214 @@
                 </div>
               </div>
             </div>
-            <div class="table-wrap" style="max-height:310px">
-              ${feedFilter === 'roster' && !STATE.kioskLocked ? `
-                <table class="ledger-table" id="kioskAttFeedTable">
-                  <thead>
-                    <tr>
-                      <th>Staff Member</th>
-                      ${showCoCol ? '<th>Co.</th>' : ''}
-                      <th>Role / Contract</th>
-                      <th class="r">Schedule</th>
-                      <th>Today's Status</th>
-                      <th>Kiosk Biometrics &amp; PIN</th>
-                      <th class="r">Supervisor Clock</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${filteredRoster.map(s => {
-                      const sKey = norm(s.name);
-                      const lp = latestByStaff.get(sKey);
-                      const onNow = isPunchActiveOnSite(lp, nowMs);
-                      const outToday = !onNow && lp && lp.direction === 'OUT' && lp.date === todayISO();
-                      const isEditingPin = STATE.kioskEditingPinStaff === sKey;
-                      return `
-                        <tr>
-                          <td><strong>${esc(s.name)}</strong></td>
-                          ${showCoCol ? `<td>${coBadge(s.company)}</td>` : ''}
-                          <td class="muted">${esc(s.role)}</td>
-                          <td class="r mono">${fmtNum(s.schedHours || 8, 0)}h/d</td>
-                          <td>
-                            ${onNow
-                              ? `<span class="badge badge-ok">${ic('clock_in')} On Site · ${esc(lp.time)}</span>`
-                              : (outToday
-                                ? `<span class="badge badge-warn">${ic('clock_out')} Clocked OUT · ${esc(lp.time)}</span>`
-                                : `<span class="kiosk-status-quiet">Off Site</span>`)}
-                          </td>
-                          <td>
-                            ${isEditingPin ? `
-                              <div class="kiosk-inline-pin-form" data-pin-form-staff="${esc(s.name)}">
-                                <input type="text" inputmode="numeric" maxlength="4" autocomplete="off" class="kiosk-inline-pin-input" id="kioskInlinePinInput" placeholder="4 digits" value="${esc(s.hasExplicitPin ? s.pin : '')}">
-                                <button type="button" class="btn btn-primary kiosk-mini-btn" id="kioskSaveInlinePinBtn" data-save-staff-pin="${esc(s.name)}">Save</button>
-                                <button type="button" class="btn kiosk-mini-btn" id="kioskCancelInlinePinBtn">Cancel</button>
-                              </div>
-                            ` : `
-                              <div class="kiosk-bio-cell">
-                                ${s.hasFace ? `<span class="kiosk-bio-tag ok">${ic('camera')} Face ID</span>` : ''}
-                                ${s.hasExplicitPin
-                                  ? `<span class="kiosk-bio-tag ok">${ic('lock')} PIN Set</span>`
-                                  : `<span class="kiosk-bio-tag">${IS_DEMO && s.pin ? `Demo ${esc(s.pin)}` : 'No PIN'}</span>`}
-                                <button type="button" class="kiosk-pin-edit-link" data-edit-staff-pin="${esc(s.name)}">${s.hasExplicitPin ? 'Change PIN' : 'Set PIN'}</button>
-                              </div>
-                            `}
-                          </td>
-                          <td class="r">
-                            <button type="button" class="btn kiosk-quick-clock-btn ${onNow ? 'is-out' : 'is-in'}" data-quick-clock-staff="${esc(s.name)}" data-quick-clock-dir="${onNow ? 'OUT' : 'IN'}">
-                              ${onNow ? `${ic('clock_out')} Clock OUT` : `${ic('clock_in')} Clock IN`}
-                            </button>
-                          </td>
-                        </tr>
-                      `;
-                    }).join('') || emptyRow(showCoCol ? 7 : 6, 'No active staff match your search in this company')}
-                  </tbody>
-                </table>
-              ` : `
-                <table class="ledger-table" id="kioskAttFeedTable">
-                  <thead>
-                    <tr>
-                      <th>Staff Member</th>
-                      ${showCoCol ? '<th>Co.</th>' : ''}
-                      <th>Station</th>
-                      <th>Status</th>
-                      <th>Time</th>
-                      <th>Method</th>
-                      <th class="r">Shift / OT</th>
-                      <th>Switch</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${feedRows.map(p => `
+            ${feedFilter === 'schedule' && !STATE.kioskLocked ? `
+              <div class="kiosk-sched-workspace" id="kioskSchedWorkspace">
+                <div class="shift-types-strip">
+                  ${shiftTypesCatalog.map(st => {
+                    const assignedCnt = staffDir.filter(s => (getStaffWorkRule(s.name, s.company).shift_id || 'day_8_4') === st.id).length;
+                    return `
+                      <button type="button" class="shift-type-card" data-tone="${esc(st.tone)}" data-edit-shift-type="${esc(st.id)}">
+                        <div class="stc-head">
+                          <strong>${esc(st.name)}</strong>
+                          <span class="stc-cnt">${fmtNum(assignedCnt)} staff</span>
+                        </div>
+                        <div class="stc-time mono">${esc(st.start_time)} - ${esc(st.end_time)}${st.overnight ? ' (+1d)' : ''}</div>
+                        <div class="stc-sub">${fmtNum(st.hours, 1)}h · ${esc(formatWorkdaysCompact(st.days))} · Edit</div>
+                      </button>
+                    `;
+                  }).join('')}
+                  <button type="button" class="shift-type-card is-add" id="kioskNewShiftTypeBtn">
+                    <div class="stc-head"><strong>+ New Shift Type</strong></div>
+                    <div class="stc-time">Custom Hours</div>
+                    <div class="stc-sub">Add split, early, or custom shift</div>
+                  </button>
+                </div>
+
+                <div class="sched-toolbar">
+                  <div class="sched-filter-group">
+                    <span class="kiosk-bar-lbl">Shift:</span>
+                    <button type="button" class="kiosk-qchip ${schedShiftFilter === 'all' ? 'active' : ''}" data-sched-shift-filter="all">All</button>
+                    ${shiftTypesCatalog.map(st => `<button type="button" class="kiosk-qchip ${schedShiftFilter === st.id ? 'active' : ''}" data-sched-shift-filter="${esc(st.id)}">${esc(st.short)}</button>`).join('')}
+                    <button type="button" class="kiosk-qchip ${schedShiftFilter === 'custom' ? 'active' : ''}" data-sched-shift-filter="custom">Custom</button>
+                  </div>
+                  <div class="sched-filter-group">
+                    <span class="kiosk-bar-lbl">Overtime:</span>
+                    <button type="button" class="kiosk-qchip ${schedOtFilter === 'all' ? 'active' : ''}" data-sched-ot-filter="all">All Rules</button>
+                    <button type="button" class="kiosk-qchip ${schedOtFilter === 'allowed' ? 'active' : ''}" data-sched-ot-filter="allowed">OT Allowed</button>
+                    <button type="button" class="kiosk-qchip ${schedOtFilter === 'date_range' ? 'active' : ''}" data-sched-ot-filter="date_range">Date Pass</button>
+                    <button type="button" class="kiosk-qchip ${schedOtFilter === 'none' ? 'active' : ''}" data-sched-ot-filter="none">No Overtime</button>
+                  </div>
+                  <div class="sched-week-nav">
+                    <button type="button" class="btn kiosk-mini-btn" id="kioskSchedPrevWeekBtn" aria-label="Previous week">‹ Prev</button>
+                    <button type="button" class="btn kiosk-mini-btn ${(STATE.kioskSchedWeekOffset || 0) === 0 ? 'btn-primary' : ''}" id="kioskSchedThisWeekBtn">${esc(weekRangeLbl)}</button>
+                    <button type="button" class="btn kiosk-mini-btn" id="kioskSchedNextWeekBtn" aria-label="Next week">Next ›</button>
+                  </div>
+                </div>
+
+                <div class="table-wrap" style="max-height:360px">
+                  <table class="ledger-table sched-matrix-table" id="kioskShiftScheduleTable">
+                    <thead>
                       <tr>
-                        <td><strong>${esc(p.staff)}</strong></td>
-                        ${showCoCol ? `<td>${coBadge(p.company)}</td>` : ''}
-                        <td>${esc(p.site)}</td>
-                        <td><span class="badge ${p.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${p.direction === 'IN' ? 'IN · On Site' : 'OUT'}</span></td>
-                        <td class="mono">${esc(p.time)} <small class="muted">${esc(fmtDateDMY(p.date))}</small></td>
-                        <td>${esc(p.method)}</td>
-                        <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, 1)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1) + 'h OT'})` : ''}` : 'Active'}</td>
-                        <td><button type="button" class="tkt-print-mini" data-flip-punch="${esc(p.id)}" title="Switch IN / OUT direction">${ic('swap')}</button></td>
+                        <th>Staff Member</th>
+                        ${showCoCol ? '<th>Co.</th>' : ''}
+                        <th>Regular Shift</th>
+                        <th>Overtime Rule</th>
+                        ${weekDates.map(wd => `<th class="c ${wd.isToday ? 'is-today-col' : ''}">${esc(wd.short)} <small class="mono">${esc(wd.dayNum)}</small></th>`).join('')}
                       </tr>
-                    `).join('') || emptyRow(showCoCol ? 8 : 7, feedFilter === 'onsite' ? 'No staff currently clocked in on site' : 'No punches recorded yet today. Clock in with Face ID, 4-digit PIN, or Active Staff')}
-                  </tbody>
-                </table>
-              `}
-            </div>
+                    </thead>
+                    <tbody>
+                      ${schedRoster.map(s => {
+                        const sh = s.shift || resolveStaffShiftForDate(s.name, s.company, todayISO());
+                        const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, todayISO());
+                        return `
+                          <tr>
+                            <td>
+                              <strong>${esc(s.name)}</strong>
+                              <div class="drv-sub">${esc(s.role)}</div>
+                            </td>
+                            ${showCoCol ? `<td>${coBadge(s.company)}</td>` : ''}
+                            <td>
+                              <button type="button" class="kiosk-shift-pill" data-tone="${esc(sh.tone || 'amber')}" data-open-staff-sched="${esc(s.name)}">
+                                ${esc(sh.badgeLabel)}
+                              </button>
+                            </td>
+                            <td>
+                              <button type="button" class="kiosk-ot-pill" data-tone="${esc(ot.tone || 'muted')}" data-open-staff-ot="${esc(s.name)}">
+                                ${esc(ot.badgeText)}
+                              </button>
+                            </td>
+                            ${weekDates.map(wd => {
+                              const dayShift = resolveStaffShiftForDate(s.name, s.company, wd.iso);
+                              const dayOt = describeStaffOvertimeRule(s.name, s.company, wd.iso);
+                              const hasPass = Boolean(dayOt.pass && dayOt.activeToday);
+                              const cellTxt = !dayShift.isWorkday
+                                ? 'Off'
+                                : `${dayShift.start_time.slice(0, 5)}-${dayShift.end_time.slice(0, 5)}`;
+                              return `
+                                <td class="c ${wd.isToday ? 'is-today-col' : ''}">
+                                  <button type="button" class="sched-day-cell ${!dayShift.isWorkday ? 'is-off' : ''} ${dayShift.isOverride ? 'is-override' : ''}" data-tone="${esc(dayShift.isWorkday ? (dayShift.tone || 'amber') : 'muted')}" data-sched-cell-staff="${esc(s.name)}" data-sched-cell-date="${esc(wd.iso)}">
+                                    <span class="sdc-main mono">${esc(cellTxt)}</span>
+                                    ${hasPass ? '<span class="sdc-ot">+OT</span>' : ''}
+                                  </button>
+                                </td>
+                              `;
+                            }).join('')}
+                          </tr>
+                        `;
+                      }).join('') || emptyRow(showCoCol ? 11 : 10, 'No active staff match the selected shift or overtime filter')}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ` : `
+              <div class="table-wrap" style="max-height:340px">
+                ${feedFilter === 'roster' && !STATE.kioskLocked ? `
+                  <table class="ledger-table" id="kioskAttFeedTable">
+                    <thead>
+                      <tr>
+                        <th>Staff Member</th>
+                        ${showCoCol ? '<th>Co.</th>' : ''}
+                        <th>Shift &amp; Timing</th>
+                        <th>Overtime Rule</th>
+                        <th>Today's Status</th>
+                        <th>Face ID &amp; PIN</th>
+                        <th class="r">Supervisor Clock</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${filteredRoster.map(s => {
+                        const sKey = norm(s.name);
+                        const lp = latestByStaff.get(sKey);
+                        const onNow = isPunchActiveOnSite(lp, nowMs);
+                        const outToday = !onNow && lp && lp.direction === 'OUT' && (lp.date === todayISO() || lp.shift_date === todayISO());
+                        const isEditingPin = STATE.kioskEditingPinStaff === sKey;
+                        const sh = s.shift || resolveStaffShiftForDate(s.name, s.company, todayISO());
+                        const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, todayISO());
+                        return `
+                          <tr>
+                            <td>
+                              <strong>${esc(s.name)}</strong>
+                              <div class="drv-sub">${esc(s.role)}</div>
+                            </td>
+                            ${showCoCol ? `<td>${coBadge(s.company)}</td>` : ''}
+                            <td>
+                              <button type="button" class="kiosk-shift-pill" data-tone="${esc(sh.tone || 'amber')}" data-open-staff-sched="${esc(s.name)}">
+                                ${esc(sh.badgeLabel)}
+                              </button>
+                            </td>
+                            <td>
+                              <button type="button" class="kiosk-ot-pill" data-tone="${esc(ot.tone || 'muted')}" data-open-staff-ot="${esc(s.name)}">
+                                ${esc(ot.badgeText)}
+                              </button>
+                            </td>
+                            <td>
+                              ${onNow
+                                ? `<span class="badge badge-ok">${ic('clock_in')} On Site · ${esc(lp.time)}</span>`
+                                : (outToday
+                                  ? `<span class="badge badge-warn">${ic('clock_out')} OUT · ${esc(lp.time)}${lp.paired_hours != null ? ` (${fmtNum(lp.paired_hours, 1)}h)` : ''}</span>`
+                                  : `<span class="kiosk-status-quiet">Off Site</span>`)}
+                            </td>
+                            <td>
+                              ${isEditingPin ? `
+                                <div class="kiosk-inline-pin-form" data-pin-form-staff="${esc(s.name)}">
+                                  <input type="text" inputmode="numeric" maxlength="4" autocomplete="off" class="kiosk-inline-pin-input" id="kioskInlinePinInput" placeholder="4 digits" value="${esc(s.hasExplicitPin ? s.pin : '')}">
+                                  <button type="button" class="btn btn-primary kiosk-mini-btn" id="kioskSaveInlinePinBtn" data-save-staff-pin="${esc(s.name)}">Save</button>
+                                  <button type="button" class="btn kiosk-mini-btn" id="kioskCancelInlinePinBtn">Cancel</button>
+                                </div>
+                              ` : `
+                                <div class="kiosk-bio-cell">
+                                  <button type="button" class="kiosk-bio-btn ${s.hasFace ? 'is-enrolled' : ''}" data-enrol-staff-face="${esc(s.name)}">
+                                    ${ic('camera')} ${s.hasFace ? `Face ID (${s.faceCount}/3)` : 'Enrol Face'}
+                                  </button>
+                                  ${s.hasExplicitPin
+                                    ? `<span class="kiosk-bio-tag ok">${ic('lock')} PIN Set</span>`
+                                    : `<span class="kiosk-bio-tag">${IS_DEMO && s.pin ? `Demo ${esc(s.pin)}` : 'No PIN'}</span>`}
+                                  <button type="button" class="kiosk-pin-edit-link" data-edit-staff-pin="${esc(s.name)}">${s.hasExplicitPin ? 'Change PIN' : 'Set PIN'}</button>
+                                </div>
+                              `}
+                            </td>
+                            <td class="r">
+                              <button type="button" class="btn kiosk-quick-clock-btn ${onNow ? 'is-out' : 'is-in'}" data-quick-clock-staff="${esc(s.name)}" data-quick-clock-dir="${onNow ? 'OUT' : 'IN'}">
+                                ${onNow ? `${ic('clock_out')} Clock OUT` : `${ic('clock_in')} Clock IN`}
+                              </button>
+                            </td>
+                          </tr>
+                        `;
+                      }).join('') || emptyRow(showCoCol ? 7 : 6, 'No active staff match your search in this company')}
+                    </tbody>
+                  </table>
+                ` : `
+                  <table class="ledger-table" id="kioskAttFeedTable">
+                    <thead>
+                      <tr>
+                        <th>Staff Member</th>
+                        ${showCoCol ? '<th>Co.</th>' : ''}
+                        <th>Shift</th>
+                        <th>Status</th>
+                        <th>Time</th>
+                        <th>Method</th>
+                        <th class="r">Worked / OT</th>
+                        <th>Switch</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${feedRows.map(p => `
+                        <tr>
+                          <td><strong>${esc(p.staff)}</strong></td>
+                          ${showCoCol ? `<td>${coBadge(p.company)}</td>` : ''}
+                          <td><span class="kiosk-shift-tag">${esc(p.shift_label || 'Day · 08:00-16:00')}</span></td>
+                          <td><span class="badge ${p.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${p.direction === 'IN' ? 'IN · On Site' : 'OUT'}</span></td>
+                          <td class="mono">${esc(p.time)} <small class="muted">${esc(fmtDateDMY(p.date))}</small></td>
+                          <td>${esc(p.method)}</td>
+                          <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, 1)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1)}h OT)` : (p.unapproved_ot_hours > 0 ? ' (0h OT)' : '')}` : (p.late_hours > 0 ? `Late ${fmtNum(p.late_hours, 1)}h` : 'Active')}</td>
+                          <td><button type="button" class="tkt-print-mini" data-flip-punch="${esc(p.id)}" aria-label="Switch IN / OUT direction">${ic('swap')}</button></td>
+                        </tr>
+                      `).join('') || emptyRow(showCoCol ? 8 : 7, feedFilter === 'onsite' ? 'No staff currently clocked in on site' : 'No punches recorded yet today. Clock in with Face ID, 4-digit PIN, or Active Staff')}
+                    </tbody>
+                  </table>
+                `}
+              </div>
+            `}
           </div>
         </div>
       `;
@@ -42750,6 +45075,9 @@
       const openModal = ($('entryModal') && !$('entryModal').hidden)
         || ($('recordInspector') && !$('recordInspector').hidden)
         || ($('thermalPrintModal') && !$('thermalPrintModal').hidden)
+        || ($('staffFaceEnrolModal') && !$('staffFaceEnrolModal').hidden)
+        || ($('staffScheduleModal') && !$('staffScheduleModal').hidden)
+        || ($('shiftTypeModal') && !$('shiftTypeModal').hidden)
         || ($('aiDrawer') && !$('aiDrawer').hidden);
       if (openModal) return;
       if (e.key >= '0' && e.key <= '9') {
@@ -42936,11 +45264,21 @@
           setView('payroll_attendance');
         });
       }
+      const openSchedBtn = $('kioskAttOpenSchedBtn');
+      if (openSchedBtn) {
+        openSchedBtn.addEventListener('click', () => {
+          STATE.kioskAttFeedFilter = STATE.kioskAttFeedFilter === 'schedule' ? 'roster' : 'schedule';
+          renderApp();
+          if (STATE.kioskAttFeedFilter === 'schedule') {
+            const fc = $('kioskAttFeedCard');
+            if (fc) scrollWorkspaceTo(fc, 8);
+          }
+        });
+      }
       const manageFacesBtn = $('kioskAttManageFacesBtn');
       if (manageFacesBtn) {
         manageFacesBtn.addEventListener('click', () => {
-          stopKioskAttCamera();
-          setView('users');
+          openStaffFaceEnrolModal(STATE.kioskAttStaff || '');
         });
       }
       const staffSel = $('kioskAttStaffSelect');
@@ -42963,8 +45301,16 @@
       const rosterSearchInp = $('kioskAttRosterSearch');
       if (rosterSearchInp) {
         rosterSearchInp.addEventListener('input', () => {
+          const pos = rosterSearchInp.selectionStart;
           STATE.kioskAttRosterSearch = rosterSearchInp.value || '';
           renderApp();
+          const nextInp = $('kioskAttRosterSearch');
+          if (nextInp && document.activeElement !== nextInp) {
+            try {
+              nextInp.focus({ preventScroll: true });
+              if (pos != null) nextInp.setSelectionRange(pos, pos);
+            } catch (_) {}
+          }
         });
       }
       container.querySelectorAll('[data-att-dir]').forEach(btn => {
@@ -42976,9 +45322,73 @@
       container.querySelectorAll('[data-att-feed-filter]').forEach(btn => {
         btn.addEventListener('click', () => {
           const nextF = btn.getAttribute('data-att-feed-filter') || 'all';
-          STATE.kioskAttFeedFilter = ['roster', 'onsite', 'all'].includes(nextF) ? nextF : 'all';
+          STATE.kioskAttFeedFilter = ['roster', 'schedule', 'onsite', 'all'].includes(nextF) ? nextF : 'all';
           renderApp();
         });
+      });
+      container.querySelectorAll('[data-enrol-staff-face]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          openStaffFaceEnrolModal(btn.getAttribute('data-enrol-staff-face') || '');
+        });
+      });
+      container.querySelectorAll('[data-open-staff-sched]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          openStaffScheduleModal(btn.getAttribute('data-open-staff-sched') || '');
+        });
+      });
+      container.querySelectorAll('[data-open-staff-ot]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          openStaffScheduleModal(btn.getAttribute('data-open-staff-ot') || '', { focusSection: 'ot' });
+        });
+      });
+      container.querySelectorAll('[data-sched-cell-staff]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          openStaffScheduleModal(
+            btn.getAttribute('data-sched-cell-staff') || '',
+            { focusDate: btn.getAttribute('data-sched-cell-date') || '' }
+          );
+        });
+      });
+      container.querySelectorAll('[data-edit-shift-type]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          openShiftTypeModal(btn.getAttribute('data-edit-shift-type') || '');
+        });
+      });
+      const newShiftBtn = $('kioskNewShiftTypeBtn');
+      if (newShiftBtn) {
+        newShiftBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          openShiftTypeModal('');
+        });
+      }
+      container.querySelectorAll('[data-sched-shift-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          STATE.kioskSchedShiftFilter = btn.getAttribute('data-sched-shift-filter') || 'all';
+          renderApp();
+        });
+      });
+      container.querySelectorAll('[data-sched-ot-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          STATE.kioskSchedOtFilter = btn.getAttribute('data-sched-ot-filter') || 'all';
+          renderApp();
+        });
+      });
+      $('kioskSchedPrevWeekBtn')?.addEventListener('click', () => {
+        STATE.kioskSchedWeekOffset = Number(STATE.kioskSchedWeekOffset || 0) - 1;
+        renderApp();
+      });
+      $('kioskSchedThisWeekBtn')?.addEventListener('click', () => {
+        STATE.kioskSchedWeekOffset = 0;
+        renderApp();
+      });
+      $('kioskSchedNextWeekBtn')?.addEventListener('click', () => {
+        STATE.kioskSchedWeekOffset = Number(STATE.kioskSchedWeekOffset || 0) + 1;
+        renderApp();
       });
       container.querySelectorAll('[data-quick-clock-staff]').forEach(btn => {
         btn.addEventListener('click', e => {
@@ -45228,7 +47638,9 @@
     container.querySelectorAll('[data-kiosk-jump]').forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
       const targetKiosk = btn.getAttribute('data-kiosk-jump') || 'sales';
+      const targetFeed = btn.getAttribute('data-kiosk-feed') || '';
       STATE.activeKiosk = targetKiosk;
+      if (targetFeed) STATE.kioskAttFeedFilter = targetFeed;
       setView('kiosks');
     }));
     container.querySelectorAll('[data-print-ticket]').forEach(btn => btn.addEventListener('click', e => {
@@ -46458,6 +48870,12 @@
           return;
         }
         if (_dateFacState.open) { closeDateFacilitator(); return; }
+        const stmModal = $('shiftTypeModal');
+        if (stmModal && !stmModal.hidden) { closeShiftTypeModal(); return; }
+        const ssmModal = $('staffScheduleModal');
+        if (ssmModal && !ssmModal.hidden) { closeStaffScheduleModal(); return; }
+        const sfeModal = $('staffFaceEnrolModal');
+        if (sfeModal && !sfeModal.hidden) { closeStaffFaceEnrolModal(); return; }
         const thModal = $('thermalPrintModal');
         if (thModal && !thModal.hidden) { thModal.hidden = true; return; }
         const ins = $('recordInspector');
@@ -46696,6 +49114,42 @@
         }
         STATE.kioskLastPunch = STATE.kioskPunches[0] || null;
         STATE.kioskAttPinMsg = '';
+        saveLocalAuthAndRecords();
+        if (STATE.view === 'kiosks') renderApp();
+      },
+      getShiftTypes: () => getShiftTypes(),
+      saveShiftType: (spec = {}) => saveShiftType(spec),
+      deleteShiftType: shiftId => deleteShiftType(shiftId),
+      hasExplicitStaffWorkRule: staff => hasExplicitStaffWorkRule(staff),
+      getStaffWorkRule: (staff, co) => getStaffWorkRule(staff, co),
+      saveStaffWorkRule: (staff, patch = {}) => saveStaffWorkRule(staff, patch),
+      resetStaffWorkRule: staff => resetStaffWorkRule(staff),
+      addStaffShiftOverride: (staff, spec = {}) => addStaffShiftOverride(staff, spec),
+      removeStaffShiftOverride: (staff, id) => removeStaffShiftOverride(staff, id),
+      addStaffOtPass: (staff, spec = {}) => addStaffOtPass(staff, spec),
+      removeStaffOtPass: (staff, id) => removeStaffOtPass(staff, id),
+      resolveStaffShiftForDate: (staff, co, dateStr) => resolveStaffShiftForDate(staff, co, dateStr),
+      describeStaffOvertimeRule: (staff, co, dateStr) => describeStaffOvertimeRule(staff, co, dateStr),
+      evaluateShiftPunchTiming: (staff, co, dateStr, inTime, outTime, opts = {}) => evaluateShiftPunchTiming(staff, co, dateStr, inTime, outTime, opts),
+      enrolStaffFacePose: (staff, vec, opts = {}) => enrolStaffFacePose(staff, vec, (opts && opts.thumb) || '', (opts && typeof opts.poseIndex === 'number') ? opts.poseIndex : null),
+      clearStaffFaceId: staff => clearStaffFaceId(staff),
+      openStaffFaceEnrolModal: staff => openStaffFaceEnrolModal(staff),
+      closeStaffFaceEnrolModal: () => closeStaffFaceEnrolModal(),
+      openStaffScheduleModal: (staff, opts = {}) => openStaffScheduleModal(staff, opts),
+      closeStaffScheduleModal: () => closeStaffScheduleModal(),
+      openShiftTypeModal: shiftId => openShiftTypeModal(shiftId),
+      closeShiftTypeModal: () => closeShiftTypeModal(),
+      clearTestStaffConfig: (staffNames = [], shiftTypeIds = []) => {
+        (staffNames || []).forEach(nm => {
+          const k = norm(nm);
+          if (!k) return;
+          if (STATE.workSchedules && STATE.workSchedules.staffRules) delete STATE.workSchedules.staffRules[k];
+          if (STATE.staffBiometrics) delete STATE.staffBiometrics[k];
+        });
+        if (Array.isArray(shiftTypeIds) && shiftTypeIds.length && STATE.workSchedules && Array.isArray(STATE.workSchedules.shiftTypes)) {
+          const idSet = new Set(shiftTypeIds.map(String));
+          STATE.workSchedules.shiftTypes = STATE.workSchedules.shiftTypes.filter(t => t && !idSet.has(String(t.id)));
+        }
         saveLocalAuthAndRecords();
         if (STATE.view === 'kiosks') renderApp();
       },
