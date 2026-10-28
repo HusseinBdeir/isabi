@@ -101,6 +101,13 @@ const Face = (() => {
     try { s.getTracks().forEach(t => t.stop()); } catch (_) {}
   }
 
+  function preferredVideoConstraints() {
+    const portrait = typeof window !== "undefined" && window.innerHeight > window.innerWidth;
+    return portrait
+      ? { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 } }
+      : { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } };
+  }
+
   function stopAllStreams() {
     earlyCancelled = true;
     if (earlyStreamObj) {
@@ -111,6 +118,8 @@ const Face = (() => {
     trackedStreams.forEach(s => stopStreamTracks(s));
     trackedStreams.clear();
     if (typeof document !== "undefined") {
+      const vp = document.getElementById("authCamViewport");
+      if (vp) vp.classList.remove("is-video-ready", "is-matching");
       ["authFaceVideo", "enrolFaceVideo"].forEach(id => {
         const v = document.getElementById(id);
         if (v) {
@@ -132,32 +141,42 @@ const Face = (() => {
     if (!earlyStreamPromise) {
       earlyCancelled = false;
       earlyStreamPromise = navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+        video: preferredVideoConstraints(),
         audio: false
-      }).then(s => {
+      }).catch(() => navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })).then(s => {
         trackStream(s);
         const gNow = document.getElementById("authGate");
         const vNow = document.getElementById("authFaceVideo");
         if (!earlyCancelled && gNow && !gNow.hidden && vNow) {
           earlyStreamObj = s;
           if (vNow.srcObject !== s) vNow.srcObject = s;
-          vNow.play().catch(() => {});
-          const dot = document.getElementById("authFacePulse");
-          if (dot) dot.className = "auth-face-pulse live";
-          const btn = document.getElementById("authCamToggleBtn");
-          const lbl = document.getElementById("authCamToggleLabel");
-          if (lbl) lbl.textContent = "Pause camera";
-          else if (btn) btn.textContent = "Pause camera";
-          if (btn) { btn.hidden = false; btn.classList.add("cam-live"); }
           const offEl = document.getElementById("authCamOffOverlay");
           if (offEl) offEl.hidden = true;
-          const hint = document.getElementById("authFaceHint");
-          if (hint && (!hint.textContent || /Loading Face ID|Starting camera/i.test(hint.textContent))) {
-            hint.textContent = ready
-              ? "Look at the camera for Face ID"
-              : "Preparing Face ID…";
-            hint.className = ready ? "auth-face-hint ok" : "auth-face-hint";
+          const revealLiveVideo = () => {
+            if (earlyCancelled || vNow.srcObject !== s || !vNow.videoWidth) return;
+            const vp = document.getElementById("authCamViewport");
+            if (vp) vp.classList.add("is-video-ready");
+            const dot = document.getElementById("authFacePulse");
+            if (dot) dot.className = "auth-face-pulse live";
+            const btn = document.getElementById("authCamToggleBtn");
+            const lbl = document.getElementById("authCamToggleLabel");
+            if (lbl) lbl.textContent = "Pause";
+            else if (btn) btn.textContent = "Pause";
+            if (btn) { btn.hidden = false; btn.classList.add("cam-live"); }
+            const hint = document.getElementById("authFaceHint");
+            if (hint && (!hint.textContent || /Loading Face ID|Starting/i.test(hint.textContent))) {
+              hint.textContent = ready
+                ? "Look at camera for automatic Face ID"
+                : "Preparing Face ID…";
+              hint.className = ready ? "auth-face-hint ok" : "auth-face-hint";
+            }
+          };
+          if (vNow.readyState >= 2 && vNow.videoWidth > 0) revealLiveVideo();
+          else {
+            vNow.addEventListener("loadeddata", revealLiveVideo, { once: true });
+            vNow.addEventListener("playing", revealLiveVideo, { once: true });
           }
+          vNow.play().then(revealLiveVideo).catch(() => {});
         } else {
           stopStreamTracks(s);
           trackedStreams.delete(s);

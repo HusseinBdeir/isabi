@@ -12,7 +12,7 @@
       if (location.hostname === 'husseinbdeir.github.io' && /^\/mfg-web(\/|$)/.test(location.pathname) && !/[?&]noredirect=1\b/.test(location.search)) {
         location.replace('https://husseinbdeir.github.io/isabi/app/' + (location.search || '') + (location.hash || ''));
       }
-      window.__MFG_SHELL_VER = '19.6.4';
+      window.__MFG_SHELL_VER = '19.6.5';
       var t = localStorage.getItem('isabi_mfg_theme');
       if (t === 'dark' || t === 'light') { document.documentElement.setAttribute('data-theme', t); var tm = document.querySelector('meta[name="theme-color"]'); if (tm) tm.setAttribute('content', t === 'dark' ? '#081124' : '#F4F2EE'); }
       var rw = parseInt(localStorage.getItem('isabi_mfg_rail_width'), 10);
@@ -39,9 +39,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap"></noscript>
-  <link rel="stylesheet" href="css/app.css?v=19.6.4">
-  <link rel="stylesheet" href="css/geo_dispatch.css?v=19.6.4">
-  <link rel="stylesheet" href="css/daily_ops.css?v=19.6.4">
+  <link rel="stylesheet" href="css/app.css?v=19.6.5">
+  <link rel="stylesheet" href="css/geo_dispatch.css?v=19.6.5">
+  <link rel="stylesheet" href="css/daily_ops.css?v=19.6.5">
 </head>
 <body class="locked">
   <div class="app-shell" id="appShell">
@@ -472,7 +472,7 @@
         <div class="auth-top-actions">
           <button type="button" class="auth-hud-btn" id="authCamToggleBtn" hidden>
             <span class="auth-face-pulse" id="authFacePulse" aria-hidden="true"></span>
-            <span id="authCamToggleLabel">Pause camera</span>
+            <span id="authCamToggleLabel">Pause</span>
           </button>
         </div>
       </div>
@@ -486,17 +486,24 @@
 
         <div class="auth-face-body">
           <div class="auth-cam-viewport" id="authCamViewport">
+            <div class="auth-cam-backdrop" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="10" r="3"/><path d="M7 18a5 5 0 0 1 10 0"/></svg>
+              <span>Starting Face ID…</span>
+            </div>
             <video id="authFaceVideo" autoplay muted playsinline></video>
             <canvas id="authFaceOverlay"></canvas>
             <div class="auth-cam-reticle" aria-hidden="true">
+              <svg class="auth-face-oval" viewBox="0 0 160 200" fill="none">
+                <ellipse cx="80" cy="94" rx="50" ry="67" stroke="currentColor" stroke-width="1.5" stroke-dasharray="5 4"/>
+              </svg>
               <span class="auth-finder-corner tl"></span>
               <span class="auth-finder-corner tr"></span>
               <span class="auth-finder-corner bl"></span>
               <span class="auth-finder-corner br"></span>
             </div>
             <div class="auth-cam-off" id="authCamOffOverlay" hidden>
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="10" r="3"/><path d="M7 18a5 5 0 0 1 10 0"/></svg>
-              <span id="authCamOffLabel">Enable Face ID</span>
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="10" r="3"/><path d="M7 18a5 5 0 0 1 10 0"/></svg>
+              <span id="authCamOffLabel">Tap for Face ID</span>
             </div>
           </div>
 
@@ -524,36 +531,42 @@
         </div>
       </div>
 
-      <div class="auth-divider"><span>or enter PIN</span></div>
+      <div class="auth-divider" id="authMethodDivider"><span id="authMethodDividerLabel">or select account for PIN</span></div>
 
       <form id="authLoginForm" class="auth-form" autocomplete="off" novalidate>
-        <div class="auth-selected-seat" id="authSelectedSeatBar" hidden>
-          <span class="auth-seat-av" id="authSelectedSeatAvatar">HB</span>
-          <div class="auth-seat-info">
-            <b id="authSelectedSeatName"></b>
-            <small id="authSelectedSeatMeta"></small>
+        <!-- Step 1: Select Account first (never show an orphan PIN box without an account) -->
+        <div class="auth-seat-drawer" id="authSeatDrawer">
+          <div class="auth-seat-search-wrap">
+            <svg class="auth-seat-search-ic" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="text" id="authEmailInput" class="auth-input auth-seat-search" inputmode="search" placeholder="Select or search your account…" aria-label="Select or search your account" autocomplete="username">
           </div>
-          <button type="button" class="auth-seat-clear" id="authClearSeatBtn" aria-label="Clear selected account">✕</button>
+          <div class="quick-seat-list" id="quickSeatList"></div>
         </div>
 
-        <div class="auth-pin-row">
-          <input type="text" id="authPinInput" class="auth-input pin-disc" inputmode="numeric" pattern="[0-9]{4,8}" maxlength="8" placeholder="Access PIN" aria-label="Access PIN" required autocomplete="off" autocapitalize="off" spellcheck="false">
-          <button type="submit" class="btn btn-brass auth-submit-btn" id="authSubmitBtn">Sign In</button>
+        <!-- Step 2: Enter PIN for the selected account -->
+        <div class="auth-selected-group" id="authSelectedGroup" hidden>
+          <div class="auth-selected-seat" id="authSelectedSeatBar">
+            <span class="auth-seat-av" id="authSelectedSeatAvatar">HB</span>
+            <div class="auth-seat-info">
+              <b id="authSelectedSeatName"></b>
+              <small id="authSelectedSeatMeta"></small>
+            </div>
+            <button type="button" class="auth-seat-clear" id="authClearSeatBtn" aria-label="Switch account">Switch</button>
+          </div>
+
+          <div class="auth-pin-row" id="authPinRow">
+            <input type="text" id="authPinInput" class="auth-input pin-disc" inputmode="numeric" pattern="[0-9]{4,8}" maxlength="8" placeholder="Access PIN" aria-label="Access PIN" autocomplete="off" autocapitalize="off" spellcheck="false">
+            <button type="submit" class="btn btn-brass auth-submit-btn" id="authSubmitBtn">Sign In</button>
+          </div>
         </div>
 
         <div id="authErrorBox" class="auth-error" hidden></div>
-
-        <div class="auth-seat-drawer" id="authSeatDrawer" hidden>
-          <input type="text" id="authEmailInput" class="auth-input auth-seat-search" inputmode="email" placeholder="Search name or enter email…" aria-label="Search name or enter email" autocomplete="username">
-          <div class="quick-seat-list" id="quickSeatList"></div>
-        </div>
       </form>
 
       <div class="auth-footer-note">
-        <button type="button" class="auth-link-btn" id="authToggleAccountBtn" aria-expanded="false">Choose account</button>
+        <a href="../" id="authShowcaseLink" class="auth-showcase-link">Public Showcase</a>
         <div class="auth-footer-right">
           <span id="authCloudStatusBadge" class="auth-cloud-warn" hidden>Offline Cache</span>
-          <a href="../" id="authShowcaseLink" class="auth-showcase-link">Public Showcase</a>
         </div>
       </div>
     </div>
@@ -574,18 +587,18 @@
   <!-- Toast Notification -->
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script defer src="js/face.js?v=19.6.4"></script>
-  <script defer src="js/endpoints.js?v=19.6.4"></script>
-  <script defer src="js/seed_manifest.js?v=19.6.4"></script>
-  <script defer src="js/icons.js?v=19.6.4"></script>
-  <script defer src="js/geo_dispatch.js?v=19.6.4"></script>
-  <script defer src="js/forms_engine.js?v=19.6.4"></script>
-  <script defer src="js/pbi_pages.js?v=19.6.4"></script>
-  <script defer src="js/rdl_reports.js?v=19.6.4"></script>
-  <script defer src="js/kiosk_print.js?v=19.6.4"></script>
-  <script defer src="js/table_columns.js?v=19.6.4"></script>
-  <script defer src="js/daily_ops.js?v=19.6.4"></script>
-  <script defer src="js/app.js?v=19.6.4"></script>
+  <script defer src="js/face.js?v=19.6.5"></script>
+  <script defer src="js/endpoints.js?v=19.6.5"></script>
+  <script defer src="js/seed_manifest.js?v=19.6.5"></script>
+  <script defer src="js/icons.js?v=19.6.5"></script>
+  <script defer src="js/geo_dispatch.js?v=19.6.5"></script>
+  <script defer src="js/forms_engine.js?v=19.6.5"></script>
+  <script defer src="js/pbi_pages.js?v=19.6.5"></script>
+  <script defer src="js/rdl_reports.js?v=19.6.5"></script>
+  <script defer src="js/kiosk_print.js?v=19.6.5"></script>
+  <script defer src="js/table_columns.js?v=19.6.5"></script>
+  <script defer src="js/daily_ops.js?v=19.6.5"></script>
+  <script defer src="js/app.js?v=19.6.5"></script>
   <script>
     window.addEventListener('load', () => {
       // Load Google Fonts after window.load so webfont fetches never spin Chrome's tab loading indicator
@@ -605,8 +618,9 @@
         // Never reload if the user has already signed in or is actively signing in (prevents post-login portal flash)
         const g = document.getElementById('authGate');
         const pinInp = document.getElementById('authPinInput');
+        const emailInp = document.getElementById('authEmailInput');
         const faceSt = window.MFG_FACE_TEST && typeof window.MFG_FACE_TEST.state === 'function' ? window.MFG_FACE_TEST.state() : null;
-        if ((g && g.hidden) || window.__mfgAuthedEmail || (faceSt && (faceSt.authed || faceSt.streakCount > 0 || faceSt.pending2fa || faceSt.pendingPin)) || (pinInp && pinInp.value)) {
+        if ((g && g.hidden) || window.__mfgAuthedEmail || (faceSt && (faceSt.authed || faceSt.streakCount > 0 || faceSt.pending2fa || faceSt.pendingPin)) || (pinInp && pinInp.value) || (emailInp && emailInp.value)) {
           return;
         }
         // Because sw.js serves navigation network-first, if this page already loaded the current SHELL version, do not reload
