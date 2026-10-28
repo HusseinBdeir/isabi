@@ -1431,7 +1431,7 @@
       { id: 'usd', label: 'USD Salaries', fn: r => String(r.currency || 'USD').toUpperCase() !== 'LBP' && !r.lbp_amount },
       { id: 'lbp', label: 'LBP Salaries (LL)', fn: r => String(r.currency || '').toUpperCase() === 'LBP' || Number(r.lbp_amount || 0) > 0 }
     ] },
-    { key: 'attendance', group: '4 · Payroll, Attendance & Workforce', label: 'Attendance & Overtime Log', dvn: 'bhf_mfgattendance', form: 'attendance', cols: ['date', 'month', 'company', 'staff', 'type', 'tally', 'in_time', 'out_time', 'worked_hours', 'overtime_hours', 'late_hours', 'leave_days', 'extra_usd', 'notes'], relTables: ['employments', 'salaries'], views: [
+    { key: 'attendance', group: '4 · Payroll, Attendance & Workforce', label: 'Attendance & Overtime Log', dvn: 'bhf_mfgattendance', form: 'attendance', cols: ['set_date', 'tx_date', 'month', 'company', 'staff', 'type', 'tally', 'in_time', 'out_time', 'worked_hours', 'overtime_hours', 'late_hours', 'leave_days', 'extra_usd', 'notes'], relTables: ['employments', 'salaries'], views: [
       { id: 'all', label: 'All Attendance Rows' },
       { id: 'ot', label: 'Overtime', fn: r => Number(r.overtime_hours || 0) > 0 || /^overtime$/i.test(r.type || r.status || '') },
       { id: 'late', label: 'Lateness', fn: r => Number(r.late_hours || 0) > 0 || /^lateness$/i.test(r.type || r.status || '') },
@@ -1669,6 +1669,7 @@
         return { key: 'is_base', dir: 'desc' };
       default: {
         const cols = (meta && meta.cols) || [];
+        if (cols.includes('set_date')) return { key: 'set_date', dir: 'desc' };
         if (cols.includes('date')) return { key: 'date', dir: 'desc' };
         if (cols.includes('start_date')) return { key: 'start_date', dir: 'desc' };
         return { key: cols[0] || 'name', dir: 'asc' };
@@ -2101,6 +2102,8 @@
 
   function cellValue(r, c, tableKey, rel) {
     if (!r) return null;
+    if (c === 'set_date') return r.set_date || r.rep_date || r.date || null;
+    if (c === 'tx_date') return r.date || null;
     if (tableKey === 'suppliers' && (c === 'category1' || c === 'category')) {
       const rawCats = [];
       if (Array.isArray(r.categories)) rawCats.push(...r.categories);
@@ -8410,7 +8413,9 @@
     input_vat_account: 'Input VAT GL',
     active_rate: 'Active Rate (per $1)',
     is_base: 'Base USD',
-    precision: 'Decimals'
+    precision: 'Decimals',
+    set_date: 'Set Date',
+    tx_date: 'Tx Date'
   };
 
   function hubColLabel(c, tableKey) {

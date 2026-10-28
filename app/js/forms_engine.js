@@ -583,7 +583,7 @@
   function fld(label, inner, opts = {}) {
     const lockAttr = opts.lockField ? ` data-policy-lock="${esc(opts.lockField)}" data-lock-reason="${esc(opts.lockReason || 'Locked by business rule')}"` : '';
     const lockPill = opts.lockField ? `<span class="pa-lock-pill locked" data-lock-pill="${esc(opts.lockField)}" data-toggle-field-lock="${esc(opts.lockField)}" title="${esc(opts.lockReason || 'Locked by policy')}">${ic('lock')} <span class="lp-short">Locked</span><span class="sr-only"> LOCKED</span></span>` : '';
-    return `<div class="form-field${opts.span ? ' span-3' : ''}${opts.span2 ? ' span-2' : ''}${opts.cls ? ' ' + opts.cls : ''}${opts.lockField ? ' is-policy-locked' : ''}"${opts.id ? ` id="${opts.id}"` : ''}${lockAttr}${opts.hidden ? ' hidden' : ''}><label><span class="pa-fld-lbl">${label}</span>${lockPill}</label>${inner}${opts.afterHtml || ''}${opts.hint != null ? `<span class="hint"${opts.hintId ? ` id="${opts.hintId}"` : ''}>${opts.hint}</span>` : ''}</div>`;
+    return `<div class="form-field${opts.span ? ' span-3' : ''}${opts.span2 ? ' span-2' : ''}${opts.cls ? ' ' + opts.cls : ''}${opts.lockField ? ' is-policy-locked' : ''}"${opts.id ? ` id="${opts.id}"` : ''}${lockAttr}${opts.hidden ? ' hidden' : ''}><label><span class="pa-fld-lbl">${label}</span>${lockPill}${opts.labelRightHtml || ''}</label>${inner}${opts.afterHtml || ''}${opts.hint != null ? `<span class="hint"${opts.hintId ? ` id="${opts.hintId}"` : ''}>${opts.hint}</span>` : ''}</div>`;
   }
   function inp(id, type, value, attrs = '') {
     return `<input type="${type}" id="${id}" value="${esc(value == null ? '' : value)}" autocomplete="off" ${attrs}>`;
@@ -1368,11 +1368,26 @@
     }
 
     if (fType === 'attendance') {
+      const attStepBtns = `<span class="att-step-pills"><button type="button" class="att-step-btn" data-att-step-day="-1" title="Step Reporting Date back 1 day">-1d</button><button type="button" class="att-step-btn" data-att-step-day="1" title="Step Reporting Date forward 1 day">+1d</button></span>`;
       return `
         <div class="form-grid-3 att-compact-grid">
-          ${companyField}
-          ${fld('Attendance Date *', inp('f_date', 'date', today), { hintId: 'hint_att_date', hint: '' })}
-          ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_att_staff' })}
+          <div class="att-top-row">
+            ${companyField}
+            ${fld('Transaction Date *', inp('f_date', 'date', today, `${dateAttrs} readonly`), {
+              id: 'wrap_f_date',
+              lockField: 'f_date',
+              lockReason: 'Locked to entry date for audit trail accuracy; set the actual shift or absence day in Reporting Date (Set Date)',
+              hintId: 'hint_date',
+              hint: ''
+            })}
+            ${fld('Reporting Date (Set Date) *', inp('f_repdate', 'date', today, dateAttrs), {
+              id: 'wrap_f_repdate',
+              labelRightHtml: attStepBtns,
+              hintId: 'hint_att_date',
+              hint: ''
+            })}
+            ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_att_staff' })}
+          </div>
           <div id="attStaffContractCard" class="att-contract-strip" hidden></div>
 
           <input type="hidden" id="f_att_mode" value="shift">

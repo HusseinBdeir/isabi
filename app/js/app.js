@@ -3728,7 +3728,7 @@
   }
 
   function recordDateFor(r, basis) {
-    return String((basis === 'rep' && r.rep_date) ? r.rep_date : (r.date || '')).slice(0, 10);
+    return String((basis === 'rep' && (r.rep_date || r.set_date)) ? (r.rep_date || r.set_date) : (r.date || '')).slice(0, 10);
   }
 
   function recordDate(r) {
@@ -3880,7 +3880,10 @@
     close_lbp: 'Closing LBP (LL)',
     close_combined: 'Closing Till ($)',
     month_earnings: 'Month Paid / Earned',
-    sal_status_lbl: 'Month Status'
+    sal_status_lbl: 'Month Status',
+    set_date: 'Set Date',
+    eff_date: 'Set Date',
+    tx_date: 'Tx Date'
   };
 
   const VIEW_COL_DEFS = {
@@ -4095,6 +4098,8 @@
       { key: 'amount', label: 'Amount ($)', kind: 'numeric' }
     ],
     pay_att: [
+      { key: 'eff_date', label: 'Set Date' },
+      { key: 'tx_date', label: 'Tx Date' },
       { key: 'company', label: 'Company' },
       { key: 'staff', label: 'Staff Member' },
       { key: 'display_type', label: 'Category' },
@@ -4216,6 +4221,8 @@
 
   function resolveColVal(r, colKey, view) {
     if (!r || !colKey) return null;
+    if (colKey === 'set_date' || colKey === 'eff_date') return String(r.set_date || r.rep_date || r.date || '').slice(0, 10) || null;
+    if (colKey === 'tx_date') return String(r.date || '').slice(0, 10) || null;
     if (colKey === 'date' && r.date !== undefined) return recordDate(r);
     if (colKey === 'tank_rem' || colKey === 'tank_remaining_litres') {
       const dt = getDieselTankLedger();
@@ -9959,7 +9966,7 @@
           const otUsd = Number(r.extra_usd || 0) + (Number(r.extra_lbp || 0) / fxRate);
           const otHrs = Number(r.overtime_hours || 0);
           if (!(otUsd > 0 || otHrs > 0) || !r.staff) return;
-          const ym = String(r.month || r.date || '').slice(0, 7) || 'Month';
+          const ym = String(STATE.basis === 'tx' ? r.date : (r.month || r.set_date || r.rep_date || r.date || '')).slice(0, 7) || 'Month';
           const co = r.company || 'WTC';
           const k = `${co}|${ym}|${r.staff}`;
           const cur = map.get(k) || { id: k, rid: k, rkey: 'attendance', date: ym + '-01', company: co, target: r.staff, party: r.staff, hrs: 0, value: 0 };
@@ -9980,7 +9987,7 @@
         const map = new Map();
         filterRecords(SEED.records.attendance, { ignoreSearch: true }).forEach(r => {
           if (!r.staff || !/absent/i.test(String(r.status || ''))) return;
-          const ym = String(r.month || r.date || '').slice(0, 7) || 'Month';
+          const ym = String(STATE.basis === 'tx' ? r.date : (r.month || r.set_date || r.rep_date || r.date || '')).slice(0, 7) || 'Month';
           const co = r.company || 'WTC';
           const k = `${co}|${ym}|${r.staff}`;
           const cur = map.get(k) || { id: k, rid: k, rkey: 'attendance', date: ym + '-01', company: co, target: r.staff, party: r.staff, value: 0 };
@@ -20333,7 +20340,9 @@
       const inH = parseAttClockHour(inFmt);
       const outH = parseAttClockHour(outFmt);
       const isOvernight = Boolean(inH != null && outH != null && outH < inH);
-      const wk = attDateWeekdayInfo(a.date);
+      const effAttDate = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      const txAttDate = String(a.date || effAttDate || '').slice(0, 10);
+      const wk = attDateWeekdayInfo(effAttDate);
       const workedH = Number(a.worked_hours != null && a.worked_hours > 0 ? a.worked_hours : computeShiftWorkedHours(inFmt, outFmt));
       const otH = Number(a.overtime_hours != null && a.overtime_hours > 0 ? a.overtime_hours : (/^overtime$/i.test(attType) ? tally : 0));
       const regH = Number(a.regular_hours != null && a.regular_hours > 0 ? a.regular_hours : (workedH > 0 ? round2(Math.max(0, workedH - otH)) : 0));
@@ -20408,7 +20417,7 @@
         shiftBasisLbl = 'Standard Day';
       }
 
-      const prof = profOf(a.staff, a.company, a.date || today);
+      const prof = profOf(a.staff, a.company, effAttDate || today);
       const otPayRow = round2(otH * prof.otHourlyRate);
       const lateDedRow = round2(ltH * prof.lateHourlyRate);
       const isUnpaidAbs = (/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType)) && !/^config/i.test(attType) && a.pay_treatment !== 'paid';
@@ -20421,6 +20430,8 @@
       a.tally = tally;
       a.in_time = inFmt;
       a.out_time = outFmt;
+      a.eff_date = effAttDate;
+      a.tx_date = txAttDate;
       a.weekday = wk.short;
       a.is_sunday = wk.isSunday;
       a.is_overnight = isOvernight;
@@ -20648,7 +20659,7 @@
       if (STATE.chipFilter === 'app') return isAppRecord(a);
       return true;
     });
-    const filteredAtt = sortRows(filteredAttBase, 'pay_att', 'date', 'desc');
+    const filteredAtt = sortRows(filteredAttBase, 'pay_att', STATE.basis === 'tx' ? 'tx_date' : 'eff_date', 'desc');
     const shownAtt = filteredAtt.slice(0, shownCount('pay_att'));
     const filteredLog = sortRows(logAll, 'pay_log', 'start_date', 'desc');
     const shownLog = filteredLog.slice(0, shownCount('pay_log'));
@@ -20993,7 +21004,7 @@
           ${renderColFilterBar('pay_att')}
           <div class="table-wrap">
             <table class="ledger-table">
-              <thead><tr>${th('pay_att', 'Date', 'date')}${th('pay_att', 'Co.', 'company')}${th('pay_att', 'Staff', 'staff')}${th('pay_att', 'Category', 'display_type')}${th('pay_att', 'In', 'in_time')}${th('pay_att', 'Out', 'out_time')}${th('pay_att', 'Work Hrs', 'worked_hours', 'r')}${th('pay_att', 'Shift Basis', 'shift_basis_lbl')}${th('pay_att', 'OT Hrs', 'overtime_hours', 'r')}${th('pay_att', 'Late Hrs', 'late_hours', 'r')}${th('pay_att', 'Leave (d)', 'leave_days', 'r')}${th('pay_att', 'Pay Impact ($)', 'payroll_impact_usd', 'r')}${th('pay_att', 'Notes', 'notes')}</tr></thead>
+              <thead><tr>${th('pay_att', 'Set Date', 'eff_date')}${th('pay_att', 'Tx Date', 'tx_date')}${th('pay_att', 'Co.', 'company')}${th('pay_att', 'Staff', 'staff')}${th('pay_att', 'Category', 'display_type')}${th('pay_att', 'In', 'in_time')}${th('pay_att', 'Out', 'out_time')}${th('pay_att', 'Work Hrs', 'worked_hours', 'r')}${th('pay_att', 'Shift Basis', 'shift_basis_lbl')}${th('pay_att', 'OT Hrs', 'overtime_hours', 'r')}${th('pay_att', 'Late Hrs', 'late_hours', 'r')}${th('pay_att', 'Leave (d)', 'leave_days', 'r')}${th('pay_att', 'Pay Impact ($)', 'payroll_impact_usd', 'r')}${th('pay_att', 'Notes', 'notes')}</tr></thead>
               <tbody>
                 ${shownAtt.map(a => {
                   const tp = String(a.type || 'Present');
@@ -21001,9 +21012,12 @@
                   const badgeCls = /Absence|Absent|Sick|Lateness|Half\s*Day|Unpaid/i.test(tp) ? 'badge-warn' : (/^Extra/i.test(tp) ? 'badge-brass' : (/^Config|Vac/i.test(tp) ? 'badge-info' : 'badge-ok'));
                   const dayPill = a.weekday ? `<span class="att-day-pill${a.is_sunday ? ' is-sun' : ''}">${esc(a.weekday)}</span>` : '';
                   const outCell = a.out_time ? `${esc(a.out_time)}${a.is_overnight ? '<span class="att-nextday-tag" title="Overnight shift finishing next morning">+1d</span>' : ''}` : '—';
+                  const effDtDisp = a.eff_date || a.set_date || a.rep_date || a.date;
+                  const txDtDisp = a.tx_date || a.date || effDtDisp;
                   return `
                   <tr class="rrow" data-rkey="attendance" data-rid="${esc(a.id)}">
-                    <td class="mono">${esc(fmtDateDMY(a.date))}${dayPill}${appCell(a, 'attendance')}</td>
+                    <td class="mono" title="Reporting / Set Date (actual attendance day)">${esc(fmtDateDMY(effDtDisp))}${dayPill}${appCell(a, 'attendance')}</td>
+                    <td class="mono${txDtDisp === effDtDisp ? ' mu' : ''}" title="Transaction Date (entry date)">${esc(fmtDateDMY(txDtDisp))}</td>
                     <td>${coBadge(a.company)}</td>
                     <td>${relLink('employments', a.staff, a.staff, true)}</td>
                     <td><span class="badge ${badgeCls}">${esc(dispTp)}</span></td>
@@ -21017,12 +21031,12 @@
                     <td class="r">${fmtSignedImpact(a.payroll_impact_usd)}</td>
                     <td class="mu">${esc(a.notes || '—')}</td>
                   </tr>`;
-                }).join('') || emptyRow(13, 'No attendance records match filter')}
-                ${showMoreRow('pay_att', filteredAtt.length, 13)}
+                }).join('') || emptyRow(14, 'No attendance records match filter')}
+                ${showMoreRow('pay_att', filteredAtt.length, 14)}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="6"><b>TOTAL (${fmtNum(filteredAtt.length)} LOGS)</b></td>
+                  <td colspan="7"><b>TOTAL (${fmtNum(filteredAtt.length)} LOGS)</b></td>
                   <td class="r"><b>${fmtNum(sumAttWorked, 1)} hrs</b></td>
                   <td></td>
                   <td class="r"><b>${fmtNum(sumAttOt, 1)} hrs</b></td>
@@ -22013,7 +22027,7 @@
       return _WF_MAP_CACHE.val;
     }
 
-    const effDt = r => String((STATE.basis === 'tx' ? r.date : (r.rep_date || r.date)) || r.date || '').slice(0, 10);
+    const effDt = r => String((STATE.basis === 'tx' ? r.date : (r.rep_date || r.set_date || r.date)) || r.date || '').slice(0, 10);
 
     let audit = (_WF_AUDIT_CACHE && _WF_AUDIT_CACHE.key === auditKey) ? _WF_AUDIT_CACHE.val : null;
     if (!audit) {
@@ -28460,13 +28474,22 @@
     const repEl = $('f_repdate');
     const pendEditRow = STATE.editingPendingExpenseId ? findExpenseRecordById(STATE.editingPendingExpenseId) : null;
     if (repEl) {
+      const isAttModal = STATE.modalForm === 'attendance';
       applyFieldLockState('f_date', true, pendEditRow
         ? 'Locked to the delivery date recorded on the voucher'
-        : (isAfterHoursYest
-          ? `Locked to yesterday (${yest}) for after-hours plant entry · click Yesterday's After-Hours again for today`
-          : 'Locked to entry date for Cash Flow accuracy — use Reporting Date for report adjustments'));
+        : (isAttModal
+          ? 'Locked to entry date for audit trail accuracy; set the actual shift or absence day in Reporting Date (Set Date)'
+          : (isAfterHoursYest
+            ? `Locked to yesterday (${yest}) for after-hours plant entry · click Yesterday's After-Hours again for today`
+            : 'Locked to entry date for Cash Flow accuracy — use Reporting Date for report adjustments')));
       let showRep = false;
-      if (pendEditRow) {
+      if (isAttModal) {
+        if (!FORM_UI.repDateManual || !repEl.value || repEl.value === FORM_UI.lastDate) {
+          repEl.value = d;
+        }
+        showRep = true;
+        setFieldVisible('wrap_f_repdate', true);
+      } else if (pendEditRow) {
         applyFieldLockState('f_repdate', true, 'Locked to the reporting date recorded on the voucher');
         const origRep = pendEditRow.rep_date || pendEditRow.date || d;
         if (!isFieldAdminUnlocked('f_repdate')) repEl.value = origRep;
@@ -28484,13 +28507,15 @@
         tBtn.innerHTML = showRep ? `${ic('calendar')} Reporting Date (${esc(repEl.value)})` : `${ic('calendar')} Different Reporting Date?`;
         tBtn.classList.toggle('active', showRep);
       }
-      const gap = daysBetween(d, repEl.value);
-      const repGapDays = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
-      if (isAlertRuleEnabled('G_REPDATE_GAP') && Math.abs(gap) > repGapDays) {
-        setHint('hint_repdate', `Reporting Date is ${Math.abs(gap)} days from Transaction Date (>${fmtNum(repGapDays, 0)}d)`, 'warn');
-        warnings.push('repdate_gap');
-      } else {
-        setHint('hint_repdate', repEl.value === d ? 'Same as Transaction Date' : `For reports & statements (${repEl.value})`, '');
+      if (!isAttModal) {
+        const gap = daysBetween(d, repEl.value);
+        const repGapDays = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
+        if (isAlertRuleEnabled('G_REPDATE_GAP') && Math.abs(gap) > repGapDays) {
+          setHint('hint_repdate', `Reporting Date is ${Math.abs(gap)} days from Transaction Date (>${fmtNum(repGapDays, 0)}d)`, 'warn');
+          warnings.push('repdate_gap');
+        } else {
+          setHint('hint_repdate', repEl.value === d ? 'Same as Transaction Date' : `For reports & statements (${repEl.value})`, '');
+        }
       }
     }
     FORM_UI.lastDate = d;
@@ -30515,7 +30540,7 @@
         const coTank = (tankAll.byCo && tankAll.byCo[company]) || { balance: 0, avgUsdPerL: 0 };
         const tankAfter = (!isLubricant && fuelType === 'Diesel' && litres > 0) ? (coTank.balance - litres) : coTank.balance;
         const activeDrv = val('f_driver') || defDriver;
-        const absRec = (isAlertRuleEnabled('S9') && activeDrv && effDate) ? (SEED.records.attendance || []).find(a => a && !a.voided && String(a.date || '').slice(0, 10) === effDate.slice(0, 10) && normStaffStem(a.staff) === normStaffStem(activeDrv) && /absen|sick|vac/i.test(String(a.type || a.status || ''))) : null;
+        const absRec = (isAlertRuleEnabled('S9') && activeDrv && effDate) ? (SEED.records.attendance || []).find(a => a && !a.voided && String(a.set_date || a.rep_date || a.date || '').slice(0, 10) === effDate.slice(0, 10) && normStaffStem(a.staff) === normStaffStem(activeDrv) && /absen|sick|vac/i.test(String(a.type || a.status || ''))) : null;
         const refLastFill = unusedCheck.lastFill || prev;
         fuelStrip.hidden = false;
         fuelStrip.className = 'att-contract-strip' + ((bbcTankNegative || absRec || !guard.ok || unusedCheck.warn) ? ' is-warn' : '');
@@ -32187,11 +32212,16 @@
       if (STATE.modalForm === 'attendance') {
         const curStaff = val('f_staff');
         const curCo = val('f_company') || defaultEntryCompany();
-        const attDate = val('f_date') || todayISO();
+        const txDate = val('f_date') || todayISO();
+        const attDate = val('f_repdate') || txDate;
         const wk = attDateWeekdayInfo(attDate);
         const prof = getStaffContractProfile(curStaff, curCo, attDate);
         const attMode = val('f_att_mode') || 'shift';
         const preset = FORM_UI.attPreset || 'regular';
+        const attGapDays = Math.abs(daysBetween(txDate, attDate));
+        const attRepGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
+        const attGapWarn = isAlertRuleEnabled('G_REPDATE_GAP') && attGapDays > attRepGapLimit;
+        if (attGapWarn) warnings.push('repdate_gap');
 
         // 1. Live Employee Contract Strip (#attStaffContractCard — hidden when blank) & Date Sunday / Existing-Log Hint
         const existingAttOnDate = curStaff
@@ -32238,8 +32268,12 @@
           'hint_att_date',
           existingLeaveRow && attMode === 'leave'
             ? `Duplicate leave/absence on ${fmtDateDMY(attDate)} (${existingLeaveRow.type || existingLeaveRow.status})`
-            : (wk.isSunday ? 'Sunday · Weekly Day Off (100% OT)' : ''),
-          (existingLeaveRow && attMode === 'leave') || wk.isSunday ? 'warn' : ''
+            : (wk.isSunday
+              ? `Sunday (${fmtDateDMY(attDate)}) · Weekly Day Off (100% OT)`
+              : (attGapWarn
+                ? `Set Date is ${attGapDays}d from Tx Date · add a note`
+                : (attDate !== txDate ? `${wk.short} ${fmtDateDMY(attDate)} · Tx Date ${fmtDateDMY(txDate)}` : ''))),
+          (existingLeaveRow && attMode === 'leave') || wk.isSunday || attGapWarn ? 'warn' : ''
         );
 
         // 2. Sync Unified Entry Mode / Shift Basis Pill Bar & Sub-Panels
@@ -32272,12 +32306,13 @@
           setHint('hint_att_leave_pay', lvPay === 'unpaid' && curStaff
             ? `Deducts ${fmtNum(lvDays, 1)}d × ${fmtUSD(prof.dailyRate, 2)}/d = ${fmtUSD(dedUsd, 2)}`
             : '', '');
+          const datePrefixLv = attDate !== txDate ? `${wk.short} ${fmtDateDMY(attDate).slice(0, 5)} · ` : '';
           setText('calc_att_type', typeDisp);
-          setText('calc_att_math', `${fmtNum(lvDays, 1)} day${lvDays === 1 ? '' : 's'} (No Clock)`);
+          setText('calc_att_math', `${datePrefixLv}${fmtNum(lvDays, 1)} day${lvDays === 1 ? '' : 's'} (No Clock)`);
           setText('calc_att_rate', `${fmtUSD(prof.dailyRate, 2)}/day (${prof.workingDays}d mo.)`);
           setText('calc_att_impact', dedUsd > 0 ? `-${fmtUSD(dedUsd, 2)} Deduction` : '$0.00 (Paid Leave)');
           FORM_UI.lastAttTimeKey = '';
-          return { mode: 'leave', lvType: effSt, lvDays, dedUsd };
+          return { mode: 'leave', lvType: effSt, lvDays, dedUsd, attDate, txDate };
         }
 
         // Shift Mode ('shift'): Time In & Time Out compared directly against the employee's contract shift
@@ -32378,9 +32413,10 @@
         const typeLbl = otH > 0
           ? (sched === 0 && !isNoClock ? `Call-Out / 100% OT (+${fmtNum(otH, 1)}h)` : `Overtime (+${fmtNum(otH, 1)}h)`)
           : (ltH > 0 ? `Short / Late (-${fmtNum(ltH, 1)}h)` : 'Full Shift (On Time)');
-        const mathLbl = isNoClock
+        const datePrefixSh = attDate !== txDate ? `${wk.short} ${fmtDateDMY(attDate).slice(0, 5)} · ` : '';
+        const mathLbl = datePrefixSh + (isNoClock
           ? `Hours Tally · +${fmtNum(otH, 1)}h OT / -${fmtNum(ltH, 1)}h Late`
-          : `${inVal || '-'} to ${outVal || '-'}${isOvernight ? ' (+1d)' : ''} = ${fmtNum(worked, 1)}h (${isCallout ? 'Call-Out 0h Base' : fmtNum(sched, 1) + 'h Contract'})`;
+          : `${inVal || '-'} to ${outVal || '-'}${isOvernight ? ' (+1d)' : ''} = ${fmtNum(worked, 1)}h (${isCallout ? 'Call-Out 0h Base' : fmtNum(sched, 1) + 'h Contract'})`);
         setText('calc_att_type', typeLbl);
         setText('calc_att_math', mathLbl);
         setText('calc_att_rate', `${fmtUSD(prof.otHourlyRate, 2)}/hr OT · ${fmtUSD(prof.lateHourlyRate, 2)}/hr Late`);
@@ -34786,6 +34822,27 @@
       });
     });
 
+    body.querySelectorAll('[data-att-step-day]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const rEl = $('f_repdate');
+        if (!rEl) return;
+        const delta = parseInt(btn.getAttribute('data-att-step-day') || '0', 10);
+        if (!delta) return;
+        const curIso = String(rEl.value || val('f_date') || todayISO()).slice(0, 10);
+        const dt = new Date(curIso + 'T00:00:00Z');
+        if (isNaN(dt.getTime())) return;
+        dt.setUTCDate(dt.getUTCDate() + delta);
+        let nextIso = dt.toISOString().slice(0, 10);
+        const maxIso = todayISO();
+        if (nextIso > maxIso) nextIso = maxIso;
+        if (nextIso < MIN_DATE) nextIso = MIN_DATE;
+        rEl.value = nextIso;
+        FORM_UI.repDateManual = nextIso !== val('f_date');
+        recalcForm();
+      });
+    });
+
     body.querySelectorAll('input, select').forEach(el => {
       // Clicking a policy-locked input/select opens the Admin Privilege Unlock Process
       el.addEventListener('mousedown', ev => {
@@ -35565,13 +35622,17 @@
     } else if (f === 'attendance') {
       const st = val('f_staff');
       if (!st) addErr('f_staff', 'Staff is required.');
+      const attDate = val('f_repdate') || date;
+      if (!val('f_repdate') && !val('f_date')) addErr('f_repdate', 'Reporting Date (Set Date) is required.');
+      else if (attDate > today) addErr('f_repdate', 'Future attendance dates are not allowed.');
+      else if (attDate < MIN_DATE) addErr('f_repdate', 'Reporting Date is before the books opened (' + MIN_DATE + ').');
       const attMode = val('f_att_mode') || 'shift';
       const existingAttSameDate = st
         ? ((SEED.records && SEED.records.attendance) || []).filter(a =>
             a && !a.voided
             && norm(a.company || 'WTC') === norm(company)
             && norm(a.staff) === norm(st)
-            && String(a.set_date || a.rep_date || a.date || '').slice(0, 10) === date
+            && String(a.set_date || a.rep_date || a.date || '').slice(0, 10) === attDate
             && !/^(extra|config)/i.test(String(a.type || a.status || ''))
           )
         : [];
@@ -35582,15 +35643,15 @@
         if (!(lvDays > 0)) addErr('f_leave_days', 'Leave Days must be at least 0.5.');
         const dupLeave = existingAttSameDate.find(a => /Absence|VacAbsence|Half\s*Day|Sick|Leave|Unpaid/i.test(String(a.type || a.status || '')));
         if (dupLeave) {
-          addErr('f_date', `Duplicate leave/absence already logged for ${st} on ${fmtDateDMY(date)} (${dupLeave.type || dupLeave.status}).`);
+          addErr('f_repdate', `Duplicate leave/absence already logged for ${st} on ${fmtDateDMY(attDate)} (${dupLeave.type || dupLeave.status}).`);
         }
         const effType = lvType === 'Half Day' ? 'Half Day' : (lvType === 'Sick Leave' ? 'Sick Leave' : ((lvType === 'VacAbsence' || lvPay === 'paid') ? 'VacAbsence' : 'Absence'));
         record = {
           ...base,
-          name: `ATT ${date} ${st}`,
-          rep_date: date,
-          set_date: date,
-          month: date.slice(0, 7),
+          name: `ATT ${attDate} ${st}`,
+          rep_date: attDate,
+          set_date: attDate,
+          month: attDate.slice(0, 7),
           staff: st,
           type: effType,
           status: effType,
@@ -35614,7 +35675,7 @@
         const inFmt = isNoClock ? '' : fmtAttClockTime(val('f_in'));
         const outFmt = isNoClock ? '' : fmtAttClockTime(val('f_out'));
         const schedEl = $('f_sched_hours');
-        const schedH = (isNoClock || isCallout) ? 0 : ((schedEl && String(schedEl.value).trim() !== '') ? Math.max(0, num('f_sched_hours')) : staffScheduledHours(st, company, date));
+        const schedH = (isNoClock || isCallout) ? 0 : ((schedEl && String(schedEl.value).trim() !== '') ? Math.max(0, num('f_sched_hours')) : staffScheduledHours(st, company, attDate));
         const workedH = isNoClock ? 0 : (num('f_worked_hours') > 0 ? num('f_worked_hours') : computeShiftWorkedHours(inFmt, outFmt));
         const otH = Math.max(0, num('f_hours'));
         const ltH = Math.max(0, num('f_late_hours'));
@@ -35631,20 +35692,20 @@
           && Number(a.late_hours || 0) === ltH
         );
         if (dupShift) {
-          addErr('f_date', `Duplicate attendance shift already logged for ${st} on ${fmtDateDMY(date)}.`);
+          addErr('f_repdate', `Duplicate attendance shift already logged for ${st} on ${fmtDateDMY(attDate)}.`);
         }
         const regH = isNoClock ? 0 : round2(Math.max(0, workedH - otH));
         const effType = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
         const tallyVal = otH > 0 ? otH : (ltH > 0 ? ltH : workedH);
         const hasStaffRuleSave = st ? hasExplicitStaffWorkRule(st) : false;
-        const staffShiftSave = (!isNoClock && !isCallout && hasStaffRuleSave && st) ? resolveStaffShiftForDate(st, company, date) : null;
-        const timingSave = (staffShiftSave && inFmt && outFmt) ? evaluateShiftPunchTiming(st, company, date, inFmt, outFmt) : null;
+        const staffShiftSave = (!isNoClock && !isCallout && hasStaffRuleSave && st) ? resolveStaffShiftForDate(st, company, attDate) : null;
+        const timingSave = (staffShiftSave && inFmt && outFmt) ? evaluateShiftPunchTiming(st, company, attDate, inFmt, outFmt) : null;
         record = {
           ...base,
-          name: `ATT ${date} ${st}`,
-          rep_date: date,
-          set_date: date,
-          month: date.slice(0, 7),
+          name: `ATT ${attDate} ${st}`,
+          rep_date: attDate,
+          set_date: attDate,
+          month: attDate.slice(0, 7),
           staff: st,
           type: effType,
           status: effType,
@@ -36201,8 +36262,9 @@
     } catch (_) { /* offline or static host */ }
   }
 
-  async function saveModalEntry() {
+  async function saveModalEntry(evOrOpts) {
     if (STATE.saving) return;
+    const keepOpenNextDay = Boolean(evOrOpts && typeof evOrOpts === 'object' && evOrOpts.nextDay && STATE.modalForm === 'attendance');
     const isUpdatingPending = Boolean(STATE.editingPendingExpenseId && STATE.modalForm === 'expense');
     if (!(isUpdatingPending ? (canModifyData() || canEnterForm(STATE.modalForm)) : canEnterForm(STATE.modalForm))) {
       toast('Your seat cannot post this entry', 'err');
@@ -36220,7 +36282,9 @@
 
     STATE.saving = true;
     const sBtn = $('dynSaveModalBtn');
+    const nBtn = $('dynSaveNextDayModalBtn');
     if (sBtn) { sBtn.disabled = true; sBtn.textContent = isUpdatingPending ? 'Saving…' : 'Posting…'; }
+    if (nBtn) { nBtn.disabled = true; }
     try {
       const stagedExpenseItems = Array.isArray(record._staged_expense_items) ? record._staged_expense_items : [];
       const stagedRepairItems = Array.isArray(record._staged_repair_items) ? record._staged_repair_items : [];
@@ -36514,7 +36578,27 @@
       applyCustomRecordsToSeed();
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
       STATE.saving = false;
-      closeEntryModal(true);
+      if (keepOpenNextDay) {
+        if (sBtn) { sBtn.disabled = false; sBtn.textContent = 'Post to Cloud Ledger'; }
+        if (nBtn) { nBtn.disabled = false; }
+        const rEl = $('f_repdate');
+        if (rEl) {
+          const baseSd = String(record.set_date || record.rep_date || rEl.value || todayISO()).slice(0, 10);
+          const dt = new Date(baseSd + 'T00:00:00Z');
+          if (!isNaN(dt.getTime())) {
+            dt.setUTCDate(dt.getUTCDate() + 1);
+            let nextIso = dt.toISOString().slice(0, 10);
+            const maxIso = todayISO();
+            if (nextIso > maxIso) nextIso = maxIso;
+            rEl.value = nextIso;
+            FORM_UI.repDateManual = nextIso !== val('f_date');
+          }
+        }
+        if ($('f_notes')) $('f_notes').value = '';
+        recalcForm();
+      } else {
+        closeEntryModal(true);
+      }
       const malfHit = crKey === 'fuel_malfunctions' ? getMalfunctionSaveWatchdogHit(record) : null;
       if (malfHit) {
         toast(`Malfunction posted (${record.name}) · ⚠️ High Diesel Malfunction Alert (${malfHit.scopeLbl}): ${malfHit.hit.malfunctionPct.toFixed(1)}% of company diesel used (${fmtNum(malfHit.hit.malfAbsL, 0)} L / ${fmtNum(malfHit.hit.companyDieselUsedL, 0)} L >= ${malfHit.hit.malfunctionThresholdPct.toFixed(1)}% threshold)`, 'warn');
@@ -36798,18 +36882,24 @@
         ? `Updating voucher <b>${esc(pendingTargetRow.name || pendingTargetRow.id)}</b> as <b>${esc(activeUser().full_name)}</b> · delivery fields stay locked`
         : `Posting as <b>${esc(activeUser().full_name)}</b> · stored on this device, the cloud ledger${HAS_LOCAL_API ? ' and SQLite' : ''}`;
       const saveBtnLbl = pendingTargetRow ? 'Save Final Price' : 'Post to Cloud Ledger';
+      const nextDayBtnHtml = (!pendingTargetRow && form === 'attendance')
+        ? `<button type="button" class="btn-ghost-bar" id="dynSaveNextDayModalBtn" title="Post this attendance day and step Reporting Date (Set Date) forward by 1 day for the same staff member">Post &amp; Next Day (+1d)</button>`
+        : '';
       body.innerHTML = renderEntryModalBody() + `
         <div class="modal-foot">
           <span class="form-note">${footNoteHtml}</span>
           <div>
             <button type="button" class="btn-ghost-bar" id="dynCancelModalBtn">Cancel</button>
+            ${nextDayBtnHtml}
             <button type="button" class="btn btn-brass" id="dynSaveModalBtn">${saveBtnLbl}</button>
           </div>
         </div>
       `;
       const cBtn = $('dynCancelModalBtn');
+      const nBtn = $('dynSaveNextDayModalBtn');
       const sBtn = $('dynSaveModalBtn');
       if (cBtn) cBtn.addEventListener('click', () => closeEntryModal());
+      if (nBtn) nBtn.addEventListener('click', () => saveModalEntry({ nextDay: true }));
       if (sBtn) sBtn.addEventListener('click', saveModalEntry);
       if (!body.dataset.enterWired) { // #modalBody persists across opens — bind once; Enter advances to next editable field instead of prematurely posting
         body.dataset.enterWired = '1';
@@ -37241,6 +37331,19 @@
       return {
         tone: 'info',
         text: `Staff Contract · ${stName || 'Staff'} (${row.role || 'Staff'} · ${row.status || 'Current'}): ${(Number(row.salary_usd || 0) > 0 || Number(row.salary_lbp || 0) > 0) ? fmtUSD(mContractUsd, 2) + '/mo' : (baseAmt > 0 ? fmtUSD(baseAmt, 2) + '/d' : '-')}  |  ${eqTxt}`
+      };
+    }
+    if (key === 'attendance') {
+      const effSd = String(row.set_date || row.rep_date || row.date || '').slice(0, 10);
+      const txDt = String(row.date || effSd || '').slice(0, 10);
+      const wkInfo = attDateWeekdayInfo(effSd);
+      const tp = row.type || row.status || 'Present';
+      const shTxt = (row.in_time || row.out_time)
+        ? `${fmtAttClockTime(row.in_time)} to ${fmtAttClockTime(row.out_time)} (${fmtNum(row.worked_hours || 0, 1)}h)`
+        : (row.leave_days ? `${fmtNum(row.leave_days, 1)}d Leave` : `${fmtNum(row.tally || 0, 1)} Tally`);
+      return {
+        tone: /Absence|Absent|Lateness|Half\s*Day/i.test(tp) ? 'warn' : 'info',
+        text: `Attendance Log · ${row.staff || 'Staff'} (${row.company || 'WTC'}): Reporting Date (Set Date) ${fmtDateDMY(effSd)}${wkInfo.short ? ' ' + wkInfo.short : ''}  |  Transaction Date ${fmtDateDMY(txDt)}  |  Category: ${tp} (${shTxt})`
       };
     }
     if (key === 'salaries') {
@@ -38380,7 +38483,8 @@
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       attendance: [
-        { key: 'date', label: 'Date *', type: 'date', sec: 1 },
+        { key: 'set_date', label: 'Reporting Date (Set Date) *', type: 'date', sec: 1, getVal: r => r.set_date || r.rep_date || r.date || '' },
+        { key: 'date', label: 'Transaction Date *', type: 'date', sec: 1 },
         { key: 'staff', label: 'Staff *', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
         { key: 'status', label: 'Type *', type: 'select', options: ['Present', 'Overtime', 'Lateness', 'Absence', 'Absent', 'VacAbsence', 'Sick Leave', 'Leave', 'Half Day', 'Extra USD', 'Extra LBP', 'Config USD', 'Config LBP', 'Config VacAbsence'], sec: 1, getVal: r => r.type || r.status || 'Present' },
         { key: 'in_time', label: 'Time In', type: 'time', sec: 2, getVal: r => fmtAttClockTime(r.in_time || r.check_in || '') },
@@ -38650,6 +38754,20 @@
     if (key === 'employments') {
       hidden.add('equipment');
       hidden.add('truck');
+    }
+    if (key === 'attendance') {
+      hidden.add('rep_date');
+      hidden.add('eff_date');
+      hidden.add('tx_date');
+      hidden.add('display_type');
+      hidden.add('shift_basis_lbl');
+      hidden.add('weekday');
+      hidden.add('is_sunday');
+      hidden.add('is_overnight');
+      hidden.add('is_callout');
+      hidden.add('shift_str');
+      hidden.add('check_in');
+      hidden.add('check_out');
     }
     if (key === 'salaries') {
       hidden.add('name');
@@ -39543,6 +39661,12 @@
         const c2 = getModVal('category2');
         const iva = getModVal('iva') === 'Yes';
         html = `<span>Default Method: <b>${esc(m)}</b></span><span>Category: <b>${esc([c1, c2].filter(Boolean).join(', ') || 'General')}</b></span><span>IVA: <b>${iva ? 'Yes' : 'No'}</b></span>`;
+      } else if (key === 'attendance') {
+        const sd = getModVal('set_date') || row.set_date || row.rep_date || row.date || todayISO();
+        const td = getModVal('date') || row.date || sd;
+        const wkInfo = attDateWeekdayInfo(sd);
+        const stTp = getModVal('status') || row.type || row.status || 'Present';
+        html = `<span>Set Date: <b>${esc(fmtDateDMY(sd))}${wkInfo.short ? ' (' + esc(wkInfo.short) + ')' : ''}</b></span><span>Tx Date: <b>${esc(fmtDateDMY(td))}</b></span><span>Month: <b>${esc(sd.slice(0, 7))}</b></span><span>Type: <b>${esc(stTp)}</b></span>`;
       } else if (key === 'equipment_defects') {
         const sev = getModVal('severity') || row.severity || 'Moderate';
         const st = getModVal('status') || row.status || 'Open';
@@ -39883,6 +40007,30 @@
           row.vat_amount = vat;
           row.total_ttc = round2(net + vat);
           if ('invoice_no' in pendingUpdates && row.invoice_no) row.name = row.invoice_no;
+        } else if (key === 'attendance') {
+          if ('status' in pendingUpdates) {
+            row.type = row.status;
+          }
+          if ('set_date' in pendingUpdates || 'date' in pendingUpdates) {
+            const effSd = String(row.set_date || row.rep_date || row.date || '').slice(0, 10);
+            if (effSd) {
+              row.set_date = effSd;
+              row.rep_date = effSd;
+              row.month = effSd.slice(0, 7);
+            }
+          }
+          if (('in_time' in pendingUpdates || 'out_time' in pendingUpdates) && !('worked_hours' in pendingUpdates)) {
+            const inF = fmtAttClockTime(row.in_time || '');
+            const outF = fmtAttClockTime(row.out_time || '');
+            row.in_time = inF;
+            row.out_time = outF;
+            row.check_in = inF;
+            row.check_out = outF;
+            if (inF && outF) {
+              row.worked_hours = computeShiftWorkedHours(inF, outF);
+              row.regular_hours = round2(Math.max(0, row.worked_hours - Number(row.overtime_hours || 0)));
+            }
+          }
         } else if (key === 'salaries') {
           if (('usd_amount' in pendingUpdates || 'lbp_amount' in pendingUpdates) && !('amount' in pendingUpdates)) {
             if (row.usd_amount == null) row.usd_amount = 0;
@@ -51748,11 +51896,16 @@
       flipPunchDirection: (punchId) => flipKioskPunchDirection(punchId),
       clearTestPunches: (staffNames = []) => {
         const normSet = new Set((staffNames || []).map(x => norm(x)));
+        const isTargetKioskAtt = a => a && /^Kiosk /i.test(String(a.notes || '')) && (!normSet.size || normSet.has(norm(a.staff)));
         STATE.kioskPunches = sanitizeKioskPunchesList(STATE.kioskPunches).filter(p => !normSet.size || !normSet.has(norm(p.staff)));
         if (Array.isArray(STATE.customRecords.attendance)) {
-          STATE.customRecords.attendance = STATE.customRecords.attendance.filter(a => !a || !(/^Kiosk /i.test(String(a.notes || '')) && (!normSet.size || normSet.has(norm(a.staff)))));
-          applyCustomRecordsToSeed();
+          STATE.customRecords.attendance = STATE.customRecords.attendance.filter(a => !isTargetKioskAtt(a));
         }
+        if (SEED && SEED.records && Array.isArray(SEED.records.attendance)) {
+          SEED.records.attendance = SEED.records.attendance.filter(a => !(a && (a.source === 'app' || a.is_app) && isTargetKioskAtt(a)));
+        }
+        applyCustomRecordsToSeed();
+        invalidateAllSeedCaches();
         STATE.kioskLastPunch = STATE.kioskPunches[0] || null;
         STATE.kioskAttPinMsg = '';
         saveLocalAuthAndRecords();
