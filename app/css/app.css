@@ -648,6 +648,38 @@ body.is-resizing-rail .rail-resizer::before {
   box-shadow: 0 12px 28px rgba(3, 8, 18, 0.52), 0 2px 6px rgba(3, 8, 18, 0.35);
 }
 
+/* Light Porcelain UI Tooltip Card (zero native black OS [title] tooltips) */
+.mfg-ui-tooltip {
+  position: fixed;
+  z-index: 10005;
+  pointer-events: none;
+  max-width: min(340px, calc(100vw - 24px));
+  background: var(--surface-elev, #FFFFFF);
+  color: var(--ink, #0F1E38);
+  border: 1px solid var(--line-strong, #C6CDD8);
+  border-top: 2px solid var(--brass, #C0892F);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 11.8px;
+  font-weight: 500;
+  line-height: 1.38;
+  font-variant-numeric: tabular-nums;
+  white-space: normal;
+  box-shadow: 0 10px 24px rgba(15, 30, 56, 0.13), 0 2px 6px rgba(15, 30, 56, 0.07);
+}
+.mfg-ui-tooltip[hidden] {
+  display: none !important;
+}
+
+:root[data-theme="dark"] .mfg-ui-tooltip {
+  background: #152238;
+  color: #F4F2EE;
+  border-color: rgba(217, 165, 74, 0.55);
+  border-top-color: var(--brass, #D9A54A);
+  box-shadow: 0 12px 28px rgba(3, 8, 18, 0.52), 0 2px 6px rgba(3, 8, 18, 0.35);
+}
+
 .nav-pill.warn {
   background: #FEF3C7;
   color: #9A4A06;

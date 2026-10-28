@@ -561,11 +561,49 @@
     }
     return true;
   }
+  function salaryVoucherUsd895(p, fxOverride) {
+    if (!p) return 0;
+    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate();
+    const isLbp = String(p.currency || 'USD').toUpperCase() === 'LBP';
+    const uIn = p.usd_amount != null && p.usd_amount !== '' ? Number(p.usd_amount || 0) : null;
+    const lIn = Number(p.lbp_amount || 0);
+    if (isLbp && !uIn && lIn) return lIn / fxRate;
+    if (uIn != null && lIn) return uIn + (lIn / fxRate);
+    if (uIn === null && lIn && !Number(p.amount || 0)) return lIn / fxRate;
+    return Number(p.amount || 0);
+  }
+  function empContractMonthlyUsd(e, fxOverride) {
+    if (!e) return 0;
+    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate();
+    const uSal = Number(e.salary_usd || 0) || ((!e.salary_lbp && Number(e.daily_rate || 0)) ? (Number(e.daily_rate || 0) * (Number(e.working_days || 26) || 26)) : 0);
+    return round2(uSal + (Number(e.salary_lbp || 0) / fxRate));
+  }
+  function empContractReimbUsd(e, fxOverride) {
+    if (!e) return 0;
+    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate();
+    return round2(Number(e.reimbursement || 0) + (Number(e.reimbursement_lbp || 0) / fxRate));
+  }
+  function empContractDedUsd(e, fxOverride) {
+    if (!e) return 0;
+    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate();
+    return round2(Number(e.deduction || 0) + (Number(e.deduction_lbp || 0) / fxRate));
+  }
+  function siteAllowanceDailyUsd(l, fxOverride) {
+    if (!l) return 0;
+    const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate();
+    const uDaily = Number(l.usd_amount || 0) || (!l.lbp_amount ? Number(l.daily_usd || 0) : 0);
+    return round2(uDaily + (Number(l.lbp_amount || 0) / fxRate));
+  }
   window.MFG_FX = {
     getRate: getLbpFxRate,
     setRate: setLbpFxRate,
     resetRate: (opts = {}) => setLbpFxRate(DEFAULT_LBP_FX_RATE, opts),
-    defaultRate: DEFAULT_LBP_FX_RATE
+    defaultRate: DEFAULT_LBP_FX_RATE,
+    voucherUsd: salaryVoucherUsd895,
+    contractMonthlyUsd: empContractMonthlyUsd,
+    contractReimbUsd: empContractReimbUsd,
+    contractDedUsd: empContractDedUsd,
+    siteDailyUsd: siteAllowanceDailyUsd
   };
 
   function convSignedDeltas(cv, fallbackRate = getLbpFxRate()) {
@@ -9310,15 +9348,15 @@
     salary_voucher_usd: {
       label: 'Single Salary / Advance Payment ($)',
       unit: '$', domainKey: 'payroll', domain: 'Payroll & Workforce', targetKind: 'staff',
-      explain: 'USD equivalent of a single Salary or Cash Advance voucher (converting LBP payments at 89,500 LBP per USD).',
+      explain: 'USD equivalent of a single Salary or Cash Advance voucher (converting LBP payments at the active LBP reference rate).',
       formTypes: ['salary'], whereLabel: 'Salary Form & Payroll Audit', jumpForm: 'salary',
       formTargetFn: () => val('f_staff'),
-      formValFn: () => num('f_amount') > 0 ? num('f_amount') : round2(num('f_lbp_amount') / 89500),
+      formValFn: () => num('f_amount') > 0 ? num('f_amount') : round2(num('f_lbp_amount') / getLbpFxRate()),
       recordsFn: () => filterRecords(SEED.records.salaries, { ignoreSearch: true }).map(r => ({
         id: r.id, rid: r.id, rkey: 'salaries', date: String(r.date || '').slice(0, 10),
         company: r.company || 'WTC', target: r.staff || '', party: r.staff || 'Staff',
         detail: r.payroll_month || r.notes || 'Salary payment',
-        value: Number(r.amount || 0) > 0 ? Number(r.amount) : round2(Number(r.lbp_amount || 0) / 89500)
+        value: round2(salaryVoucherUsd895(r))
       }))
     },
     staff_rem_due_usd: {
@@ -9329,18 +9367,19 @@
       formTargetFn: () => val('f_staff'),
       formValFn: () => 0,
       recordsFn: () => {
+        const fxRate = getLbpFxRate();
         const paidMap = new Map();
         filterRecords(SEED.records.salaries, { ignoreSearch: true }).forEach(r => {
           const stf = r.staff || '';
           const ym = String(r.payroll_month || r.date || '').slice(0, 7);
           if (!stf || !ym) return;
           const k = `${r.company || 'WTC'}|${ym}|${norm(stf)}`;
-          const v = Number(r.amount || 0) > 0 ? Number(r.amount) : (Number(r.lbp_amount || 0) / 89500);
+          const v = salaryVoucherUsd895(r, fxRate);
           paidMap.set(k, (paidMap.get(k) || 0) + v);
         });
         const ymNow = String(SEED_DATE || '').slice(0, 7);
         return filterRecords(SEED.records.employments, { ignoreSearch: true }).filter(e => e.staff && norm(e.status || 'Active') === 'active').map(e => {
-          const baseUsd = Number(e.salary_usd || 0) + (Number(e.salary_lbp || 0) / 89500);
+          const baseUsd = empContractMonthlyUsd(e, fxRate);
           const co = e.company || 'WTC';
           const paid = paidMap.get(`${co}|${ymNow}|${norm(e.staff)}`) || 0;
           const rem = Math.max(0, round2(baseUsd - paid));
@@ -9356,9 +9395,10 @@
       formTargetFn: () => '',
       formValFn: () => 0,
       recordsFn: () => {
+        const fxRate = getLbpFxRate();
         const map = new Map();
         filterRecords(SEED.records.attendance, { ignoreSearch: true }).forEach(r => {
-          const otUsd = Number(r.extra_usd || 0) + (Number(r.extra_lbp || 0) / 89500);
+          const otUsd = Number(r.extra_usd || 0) + (Number(r.extra_lbp || 0) / fxRate);
           const otHrs = Number(r.overtime_hours || 0);
           if (!(otUsd > 0 || otHrs > 0) || !r.staff) return;
           const ym = String(r.month || r.date || '').slice(0, 7) || 'Month';
@@ -10504,7 +10544,7 @@
     salsScoped.forEach(s => {
       if (!s || s.voided || !s.staff) return;
       const ym = String(s.payroll_month || s.date || '').slice(0, 7);
-      const usd = Number(s.amount || 0) > 0 ? Number(s.amount) : (Number(s.lbp_amount || 0) > 0 ? Number(s.lbp_amount) / 89500 : 0);
+      const usd = salaryVoucherUsd895(s);
       if (!(usd > 0) || !ym) return;
       const ek = `${norm(s.company)}|${norm(s.staff)}`;
       const wins = empWindows.get(ek) || [];
@@ -17308,17 +17348,6 @@
     return _PAYROLL_INTEL_CACHE;
   }
 
-  function salaryVoucherUsd895(p) {
-    if (!p) return 0;
-    const fxRate = getLbpFxRate();
-    const isLbp = String(p.currency || 'USD').toUpperCase() === 'LBP';
-    const uIn = p.usd_amount != null ? Number(p.usd_amount || 0) : null;
-    const lIn = Number(p.lbp_amount || 0);
-    if (isLbp && !uIn && lIn) return lIn / fxRate;
-    if (uIn != null && lIn) return uIn + (lIn / fxRate);
-    return Number(p.amount || 0);
-  }
-
   function computeStaffPayrollRegister(opts = {}) {
     const today = SEED_DATE;
     const fxRate = getLbpFxRate();
@@ -18158,7 +18187,7 @@
         const s = String(l.start_date || '2026-01-01').slice(0, 10);
         const e = String(l.end_date || '2099-12-31').slice(0, 10);
         if (s <= mEnd && e >= mStart) {
-          const daily = Number(l.daily_usd || l.usd_amount || 0) || (Number(l.lbp_amount || 0) / fxRate);
+          const daily = siteAllowanceDailyUsd(l, fxRate);
           const daysPerWk = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].filter(d => l[d]).length || 6;
           siteAllowUsd = round2(siteAllowUsd + (daily * Math.round(26 * (daysPerWk / 6))));
         }
@@ -18374,32 +18403,32 @@
         <div class="payroll-cutoff-ctrl">
           ${cm.applicable ? `
           <div class="payroll-cutoff-pills" role="group" aria-label="Payroll period cutoff">
-            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'closed_month' ? 'active' : ''}" data-payroll-cutoff="closed_month" data-tone="closed" title="Closed month cutoff through ${esc(cm.lastClosedLabel)} (${esc(fmtDateDMY(cm.lastClosedEnd || cm.effToDate))})">
+            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'closed_month' ? 'active' : ''}" data-payroll-cutoff="closed_month" data-tone="closed">
               <span class="pcp-dot" aria-hidden="true"></span>
               <span class="pcp-lbl">${esc(cm.lastClosedLabel)} · Closed</span>
             </button>
-            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'mtd' ? 'active' : ''}" data-payroll-cutoff="mtd" data-tone="mtd" title="Include pro-rata ${esc(cm.todayYmLabel)} earnings up to today (${esc(fmtDateDMY(cm.today))})">
+            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'mtd' ? 'active' : ''}" data-payroll-cutoff="mtd" data-tone="mtd">
               <span class="pcp-dot" aria-hidden="true"></span>
               <span class="pcp-lbl">${esc(cm.todayYmLabel)} · MTD (${esc(String(cm.today || today).slice(8, 10))}d)</span>
             </button>
-            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'full_month' ? 'active' : ''}" data-payroll-cutoff="full_month" data-tone="full" title="Project full ${esc(cm.todayYmLabel)} salary base through ${esc(fmtDateDMY(cm.currentMonthEnd || cm.effToDate))}">
+            <button type="button" class="payroll-cutoff-pill ${cm.mode === 'full_month' ? 'active' : ''}" data-payroll-cutoff="full_month" data-tone="full">
               <span class="pcp-dot" aria-hidden="true"></span>
               <span class="pcp-lbl">${esc(cm.todayYmLabel)} · Full</span>
             </button>
           </div>` : `
           <div class="payroll-cutoff-custom-slot">
             <span class="pcc-pill"><span class="pcp-dot is-locked" aria-hidden="true"></span><span>Period Filter · ${esc(cm.effEndLabel)}</span></span>
-            <button type="button" class="pcc-reset-btn" data-payroll-cutoff-reset="1" title="Return to standard closed-month cutoff">Standard Cutoff</button>
+            <button type="button" class="pcc-reset-btn" data-payroll-cutoff-reset="1">Standard Cutoff</button>
           </div>`}
         </div>
         <div class="payroll-bar-aux">
           <div class="payroll-status-pills" role="group" aria-label="Staff status filter">
-            <button type="button" class="payroll-status-pill ${stMode === 'active' ? 'active' : ''}" data-payroll-status="active" title="Show currently active staff (${fmtNum(activeCnt)})">Active <span class="psp-cnt">${fmtNum(activeCnt)}</span></button>
-            <button type="button" class="payroll-status-pill ${stMode === 'inactive' ? 'active' : ''}" data-payroll-status="inactive" title="Show ended or inactive staff (${fmtNum(inactiveCnt)})">Inactive <span class="psp-cnt">${fmtNum(inactiveCnt)}</span></button>
-            <button type="button" class="payroll-status-pill ${stMode === 'all' ? 'active' : ''}" data-payroll-status="all" title="Show all staff (${fmtNum(allCnt)})">All <span class="psp-cnt">${fmtNum(allCnt)}</span></button>
+            <button type="button" class="payroll-status-pill ${stMode === 'active' ? 'active' : ''}" data-payroll-status="active">Active <span class="psp-cnt">${fmtNum(activeCnt)}</span></button>
+            <button type="button" class="payroll-status-pill ${stMode === 'inactive' ? 'active' : ''}" data-payroll-status="inactive">Inactive <span class="psp-cnt">${fmtNum(inactiveCnt)}</span></button>
+            <button type="button" class="payroll-status-pill ${stMode === 'all' ? 'active' : ''}" data-payroll-status="all">All <span class="psp-cnt">${fmtNum(allCnt)}</span></button>
           </div>
           <div class="payroll-fx-slot">
-            <button type="button" class="payroll-fx-btn ${fxOpen ? 'active' : ''} ${Math.round(fxRate) !== DEFAULT_LBP_FX_RATE ? 'is-custom' : ''}" id="${esc(barId)}_fxBtn" data-toggle-payroll-fx="${esc(barId)}" aria-expanded="${fxOpen ? 'true' : 'false'}" title="LBP amounts convert to USD by dividing by ${fmtNum(fxRate, 0)} LL/$. Click to view breakdown or change rate.">
+            <button type="button" class="payroll-fx-btn ${fxOpen ? 'active' : ''} ${Math.round(fxRate) !== DEFAULT_LBP_FX_RATE ? 'is-custom' : ''}" id="${esc(barId)}_fxBtn" data-toggle-payroll-fx="${esc(barId)}" aria-expanded="${fxOpen ? 'true' : 'false'}" aria-label="LBP conversion rate ${fmtNum(fxRate, 0)} LL per USD, click to change">
               <span class="pfx-lbl">LBP &divide; ${fmtNum(fxRate, 0)} LL/$</span>
               <span class="pfx-chg">Change</span>
             </button>
@@ -18665,7 +18694,7 @@
       const ym = String(s.payroll_month || (s.date || '').slice(0, 7)).slice(0, 7);
       const mk = `${sk}|${ym}`;
       const prevCum = salRunMap.get(mk) || 0;
-      const amt = Number(s.amount || 0);
+      const amt = round2(salaryVoucherUsd895(s, fxRate));
       const cumPaid = round2(prevCum + amt);
       salRunMap.set(mk, cumPaid);
       const pos = computeStaffMonthPayrollPosition(s.staff, s.company, ym, s.date || today, null, true);
@@ -18723,7 +18752,7 @@
       if (STATE.chipFilter === 'active_emp') return !ended;
       if (STATE.chipFilter === 'ended_emp') return ended;
       if (STATE.chipFilter === 'freelance_emp') return /free|daily/i.test(String(e.type || ''));
-      if (STATE.chipFilter === 'reimb_emp') return Number(e.reimbursement || 0) > 0 || Number(e.deduction || 0) > 0;
+      if (STATE.chipFilter === 'reimb_emp') return empContractReimbUsd(e, fxRate) > 0 || empContractDedUsd(e, fxRate) > 0;
       if (STATE.chipFilter === 'app') return isAppRecord(e);
       return true;
     });
@@ -18761,7 +18790,7 @@
       BBConstruction: { n: 0, tot: 0, cash: 0, bank: 0 }
     };
     filteredSal.forEach(s => {
-      const a = Number(s.amount || 0);
+      const a = round2(salaryVoucherUsd895(s, fxRate));
       const isC = /cash/i.test(String(s.method || 'Cash'));
       sumSalFiltered += a;
       if (isC) sumCashSal += a; else sumBankSal += a;
@@ -18799,7 +18828,7 @@
     const totalLateDed = filteredStaff.reduce((a, r) => a + Number(r.late_ded || 0), 0);
     const totalAbsentDays = filteredStaff.reduce((a, r) => a + Number(r.absent_days || 0), 0);
     const totalVacDays = filteredStaff.reduce((a, r) => a + Number(r.vac_days || 0) + Number(r.sick_days || 0), 0);
-    const totalContractMonthly = empAll.filter(e => e.status !== 'Ended' && (!e.end_date || e.end_date >= today)).reduce((a, e) => a + Number(e.salary_usd || 0), 0);
+    const totalContractMonthly = empAll.filter(e => e.status !== 'Ended' && (!e.end_date || e.end_date >= today)).reduce((a, e) => a + empContractMonthlyUsd(e, fxRate), 0);
     const unmatchedUsd = Number(pricing.unmatched_salary_payments_usd || 0);
 
     const heroTitle = subMode === 'attendance'
@@ -18878,7 +18907,7 @@
             badgeCls: 'brass',
             val: `${fmtUSD(totalContractMonthly, 0)} <small>/ mo</small>`,
             valCls: 'brass',
-            sub: `Avg active base <b>${fmtUSD(activeEmpCount > 0 ? totalContractMonthly / activeEmpCount : 0, 0)}/mo</b> · Cumulative contract value <b>${fmtUSD(empAll.reduce((a, e) => a + Number(e.salary_usd || 0), 0), 0)}</b>`,
+            sub: `Avg active base <b>${fmtUSD(activeEmpCount > 0 ? totalContractMonthly / activeEmpCount : 0, 0)}/mo</b> · Cumulative contract value <b>${fmtUSD(empAll.reduce((a, e) => a + empContractMonthlyUsd(e, fxRate), 0), 0)}</b>`,
             tone: 'brass'
           })}
           ${insightCard({
@@ -19138,7 +19167,7 @@
     }
 
     if (subMode === 'contracts') {
-      const reimbEmpCount = empAll.filter(e => Number(e.reimbursement || 0) > 0 || Number(e.deduction || 0) > 0).length;
+      const reimbEmpCount = empAll.filter(e => empContractReimbUsd(e, fxRate) > 0 || empContractDedUsd(e, fxRate) > 0).length;
       return `
         ${bannerHtml}
         <div class="panel-card" id="payEmpPanel">
@@ -19178,9 +19207,9 @@
                     <td class="r">${fmtNum(e.working_days || 26, 0)}d</td>
                     <td class="r">${fmtNum(e.working_hours || 9, 0)}h</td>
                     <td class="r">${fmtNum(e.overtime_multiplier || 1.5, 1)}×</td>
-                    <td class="r"><strong>${fmtUSD(e.salary_usd, 2)}</strong></td>
-                    <td class="r">${e.reimbursement ? fmtUSD(e.reimbursement, 2) : '—'}</td>
-                    <td class="r">${e.deduction ? fmtUSD(e.deduction, 2) : '—'}</td>
+                    <td class="r"><strong>${fmtUSD(empContractMonthlyUsd(e, fxRate), 2)}</strong></td>
+                    <td class="r">${empContractReimbUsd(e, fxRate) ? fmtUSD(empContractReimbUsd(e, fxRate), 2) : '—'}</td>
+                    <td class="r">${empContractDedUsd(e, fxRate) ? fmtUSD(empContractDedUsd(e, fxRate), 2) : '—'}</td>
                   </tr>`;
                 }).join('') || emptyRow(12, 'No contracts match filter')}
                 ${showMoreRow('pay_emp', filteredEmp.length, 12)}
@@ -19188,9 +19217,9 @@
               <tfoot>
                 <tr>
                   <td colspan="9"><b>TOTAL (${fmtNum(filteredEmp.length)} CONTRACTS · ${fmtNum(filteredEmp.filter(e => e.status !== 'Ended' && (!e.end_date || e.end_date >= today)).length)} CURRENT)</b></td>
-                  <td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + Number(e.salary_usd || 0), 0), 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + Number(e.reimbursement || 0), 0), 2)}</b></td>
-                  <td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + Number(e.deduction || 0), 0), 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + empContractMonthlyUsd(e, fxRate), 0), 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + empContractReimbUsd(e, fxRate), 0), 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + empContractDedUsd(e, fxRate), 0), 2)}</b></td>
                 </tr>
               </tfoot>
             </table>
@@ -19274,7 +19303,7 @@
                       <td class="mono">${esc(fmtDateDMY(l.start_date))}</td>
                       <td class="mono">${esc(l.end_date ? fmtDateDMY(l.end_date) : 'Open')}</td>
                       <td>${esc(l.working_days || 'Mon–Sat')}</td>
-                      <td class="r"><strong>${fmtUSD(l.daily_usd || l.usd_amount || (Number(l.lbp_amount || 0) / fxRate), 2)}</strong></td>
+                      <td class="r"><strong>${fmtUSD(siteAllowanceDailyUsd(l, fxRate), 2)}</strong></td>
                     </tr>`;
                   }).join('') || emptyRow(7, 'No site allowances match filter')}
                   ${showMoreRow('pay_log', logAll.length, 7)}
@@ -19282,7 +19311,7 @@
                 <tfoot>
                   <tr>
                     <td colspan="6"><b>TOTAL (${fmtNum(logAll.length)} ARRANGEMENTS)</b></td>
-                    <td class="r"><b>${fmtUSD(logAll.reduce((a, l) => a + Number(l.daily_usd || l.usd_amount || (Number(l.lbp_amount || 0) / fxRate) || 0), 0), 2)} / day</b></td>
+                    <td class="r"><b>${fmtUSD(logAll.reduce((a, l) => a + siteAllowanceDailyUsd(l, fxRate), 0), 2)} / day</b></td>
                   </tr>
                 </tfoot>
               </table>
@@ -19388,7 +19417,8 @@
             <thead><tr>${th('pay_sal', 'Date', 'date')}${th('pay_sal', 'Payroll Month', 'payroll_month')}${th('pay_sal', 'Co.', 'company')}${th('pay_sal', 'Staff Member', 'staff')}${th('pay_sal', 'Method', 'method')}${th('pay_sal', 'Month Paid / Earned', 'month_earnings')}${th('pay_sal', 'Month Status', 'sal_status_lbl')}${th('pay_sal', 'Amount ($)', 'amount', 'r')}</tr></thead>
             <tbody>
               ${shownSal.map(s => {
-                const cumPaidVal = Number(s.month_cum_paid != null ? s.month_cum_paid : s.amount || 0);
+                const rowSalUsd = round2(salaryVoucherUsd895(s, fxRate));
+                const cumPaidVal = Number(s.month_cum_paid != null ? s.month_cum_paid : rowSalUsd);
                 const monthEarnHtml = !s.month_has_contract
                   ? `<span>${fmtUSD(cumPaidVal, 2)} <span class="mu">/ No contract</span></span>`
                   : (s.month_is_future
@@ -19401,9 +19431,9 @@
                   <td>${coBadge(s.company)}</td>
                   <td>${relLink('employments', s.staff, s.staff, true)}</td>
                   <td>${esc(s.method || 'Cash')}</td>
-                  <td class="mono sal-paid-earned-cell" title="${esc(s.sal_status_tip || '')}">${monthEarnHtml}</td>
-                  <td><span class="badge ${esc(s.sal_status_cls || 'badge-info')}" title="${esc(s.sal_status_tip || '')}">${esc(s.sal_status_lbl || '—')}</span></td>
-                  <td class="r"><strong>${fmtUSD(s.amount, 2)}</strong></td>
+                  <td class="mono sal-paid-earned-cell"${s.sal_status_tip ? ` data-ui-tip="${esc(s.sal_status_tip)}"` : ''}>${monthEarnHtml}</td>
+                  <td><span class="badge ${esc(s.sal_status_cls || 'badge-info')}"${s.sal_status_tip ? ` data-ui-tip="${esc(s.sal_status_tip)}"` : ''}>${esc(s.sal_status_lbl || '—')}</span></td>
+                  <td class="r"><strong>${fmtUSD(rowSalUsd, 2)}</strong></td>
                 </tr>`;
               }).join('') || emptyRow(8, 'No salary payments match filter')}
               ${showMoreRow('pay_sal', filteredSal.length, 8)}
@@ -19447,22 +19477,22 @@
                 const lbpNote = (r.earnings_lbp || r.paid_lbp) ? `USD Rem: ${fmtUSD(r.rem_usd, 2)} · LBP Earn: ${fmtNum(r.earnings_lbp, 0)} LL · LBP Paid: ${fmtNum(r.paid_lbp, 0)} LL · LBP Rem: ${fmtNum(r.rem_lbp, 0)} LL ÷ ${fmtNum(fxRate, 0)} = ${fmtSignedUSD(round2(r.rem_lbp / fxRate), 2)}` : '';
                 return `
                 <tr class="rrow ${!r.is_active ? 'pbi-row-amber' : ''}" data-rkey="employments" data-rid="${esc(r.staff)}">
-                  <td>${relLink('employments', r.staff, r.staff, true)}${!r.hasContract ? ' <span class="badge badge-warn" title="Salary payment without an employment contract">No contract</span>' : ''}</td>
+                  <td>${relLink('employments', r.staff, r.staff, true)}${!r.hasContract ? ' <span class="badge badge-warn" data-ui-tip="Salary payment without an employment contract">No contract</span>' : ''}</td>
                   <td>${coBadge(r.company)}</td>
                   <td><span class="badge ${r.is_active ? 'badge-ok' : 'badge-warn'}">${esc(r.status)}</span></td>
-                  <td class="r" title="${r.active_months ? `${r.active_months} active contract months${r.vac_rem ? ` · Rem Vacation: ${fmtNum(r.vac_rem, 1)}d` : ''}` : ''}">${fmtUSD(r.base, 2)}</td>
+                  <td class="r"${r.active_months ? ` data-ui-tip="${esc(`${r.active_months} active contract months${r.vac_rem ? ` · Rem Vacation: ${fmtNum(r.vac_rem, 1)}d` : ''}`)}"` : ''}>${fmtUSD(r.base, 2)}</td>
                   <td class="r">${r.ot_hrs ? fmtNum(r.ot_hrs, 1) : '-'}</td>
                   <td class="r">${r.att_ot_pay ? fmtUSD(r.att_ot_pay, 2) : '-'}</td>
-                  <td class="r" title="${r.trip_ot_cnt ? `${fmtNum(r.trip_ot_cnt, 0)} night OT trips (${fmtNum(r.sales_ot_trips || 0, 0)} Sales · ${fmtNum(r.raw_ot_trips || 0, 0)} Quarry)` : ''}">${r.trip_ot_pay ? fmtUSD(r.trip_ot_pay, 2) : '-'}</td>
+                  <td class="r"${r.trip_ot_cnt ? ` data-ui-tip="${esc(`${fmtNum(r.trip_ot_cnt, 0)} night OT trips (${fmtNum(r.sales_ot_trips || 0, 0)} Sales · ${fmtNum(r.raw_ot_trips || 0, 0)} Quarry)`)}"` : ''}>${r.trip_ot_pay ? fmtUSD(r.trip_ot_pay, 2) : '-'}</td>
                   <td class="r">${r.site_allow ? fmtUSD(r.site_allow, 2) : '-'}</td>
                   <td class="r">${r.late_hrs ? fmtNum(r.late_hrs, 1) : '-'}</td>
                   <td class="r">${r.late_ded ? fmtUSD(r.late_ded, 2) : '-'}</td>
-                  <td class="r" title="${r.gap_days > 0 ? `${fmtNum(r.rec_absent_days, 1)}d recorded absence (${fmtNum(r.gap_days, 0)}d contract start/end gap deducted in Absence $)` : ''}">${r.absent_days ? fmtNum(r.absent_days, 1).replace(/\.0$/, '') : '-'}</td>
+                  <td class="r"${r.gap_days > 0 ? ` data-ui-tip="${esc(`${fmtNum(r.rec_absent_days, 1)}d recorded absence (${fmtNum(r.gap_days, 0)}d contract start/end gap deducted in Absence $)`)}"` : ''}>${r.absent_days ? fmtNum(r.absent_days, 1).replace(/\.0$/, '') : '-'}</td>
                   <td class="r">${r.abs_ded ? fmtUSD(r.abs_ded, 2) : '-'}</td>
-                  <td class="r" title="${(r.reimb || r.extras || r.ded) ? `Reimb: ${fmtUSD(r.reimb, 2)} · Extras: ${fmtUSD(r.extras, 2)} · Ded: -${fmtUSD(r.ded, 2)}` : ''}"><strong>${fmtUSD(r.earnings, 2)}</strong></td>
-                  <td class="r" title="${r.config_paid ? `Vouchers: ${fmtUSD(r.vouchers_paid, 2)} · Opening Config: ${fmtUSD(r.config_paid, 2)}` : ''}"><strong>${fmtUSD(r.paid, 2)}</strong></td>
-                  <td class="r ${r.balance < 0 ? 'pbi-neg' : ''}" title="${esc(lbpNote)}"><strong>${fmtUSD(r.balance, 2)}</strong></td>
-                  <td class="r" title="${r.advance_cnt ? `${fmtNum(r.advance_cnt, 0)} post-cutoff advance voucher(s)` : ''}">${r.advances ? `<span class="badge badge-brass">${fmtUSD(r.advances, 2)}</span>` : '-'}</td>
+                  <td class="r"${(r.reimb || r.extras || r.ded) ? ` data-ui-tip="${esc(`Reimb: ${fmtUSD(r.reimb, 2)} · Extras: ${fmtUSD(r.extras, 2)} · Ded: -${fmtUSD(r.ded, 2)}`)}"` : ''}><strong>${fmtUSD(r.earnings, 2)}</strong></td>
+                  <td class="r"${r.config_paid ? ` data-ui-tip="${esc(`Vouchers: ${fmtUSD(r.vouchers_paid, 2)} · Opening Config: ${fmtUSD(r.config_paid, 2)}`)}"` : ''}><strong>${fmtUSD(r.paid, 2)}</strong></td>
+                  <td class="r ${r.balance < 0 ? 'pbi-neg' : ''}"${lbpNote ? ` data-ui-tip="${esc(lbpNote)}"` : ''}><strong>${fmtUSD(r.balance, 2)}</strong></td>
+                  <td class="r"${r.advance_cnt ? ` data-ui-tip="${esc(`${fmtNum(r.advance_cnt, 0)} post-cutoff advance voucher(s)`)}"` : ''}>${r.advances ? `<span class="badge badge-brass">${fmtUSD(r.advances, 2)}</span>` : '-'}</td>
                 </tr>`;
               }).join('') || emptyRow(16, 'No staff records match filter')}
               ${showMoreRow('pay_staff', filteredStaff.length, 16)}
@@ -24014,15 +24044,16 @@
         { label: 'Date', key: 'date', mono: true }, { label: 'Ticket', key: 'ticket_no', mono: true }, { label: 'VAT Invoice', key: 'vat_invoice', mono: true }, { label: 'Co.', key: 'company' }, { label: 'Customer', key: 'customer' }, { label: 'Net', key: 'total', r: true, fmt: C.usd2 }, { label: 'VAT 11%', key: 'vat', r: true, fmt: v => `<strong>${fmtUSD(v, 2)}</strong>` }, { label: 'Total TTC', key: 'total_ttc', r: true, fmt: C.usd2 }
       ], vatTickets, [{ v: `${fmtNum(vatTickets.length)} TICKETS`, span: 5 }, { v: fmtUSD(vSum(vatTickets, 'total'), 2), r: true }, { v: fmtUSD(vSum(vatTickets, 'vat'), 2), r: true }, { v: fmtUSD(vSum(vatTickets, 'total_ttc'), 2), r: true }]);
     } else if (code === '19') {
+      const fxRate = getLbpFxRate();
       const { pricing } = sentinelSlice();
       const sal = filterRecords(SEED.records.salaries, { ignoreSearch: true });
       const emp = filterRecords(SEED.records.employments, { ignoreSearch: true, ignorePeriod: true });
       const log = filterRecords(SEED.records.logistics_allowances, { ignoreSearch: true, ignorePeriod: true });
       const att = filterRecords(SEED.records.attendance, { ignoreSearch: true });
       const g = groupBy(sal, s => s.staff + '|' + s.payroll_month);
-      const rows = Array.from(g.entries()).map(([key, list]) => ({ staff: list[0].staff, month: list[0].payroll_month, company: list[0].company, payments: list.length, amount: sum(list, 'amount'), last: list.map(x => x.date).sort().pop() })).sort((a, b) => String(b.month).localeCompare(String(a.month)) || (b.amount - a.amount));
-      emp.sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')) || ((Number(b.salary_usd || 0) || Number(b.daily_rate || 0) * 26) - (Number(a.salary_usd || 0) || Number(a.daily_rate || 0) * 26)));
-      log.sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')) || (Number(b.daily_usd || b.usd_amount || 0) - Number(a.daily_usd || a.usd_amount || 0)));
+      const rows = Array.from(g.entries()).map(([key, list]) => ({ staff: list[0].staff, month: list[0].payroll_month, company: list[0].company, payments: list.length, amount: round2(list.reduce((a, x) => a + salaryVoucherUsd895(x, fxRate), 0)), last: list.map(x => x.date).sort().pop() })).sort((a, b) => String(b.month).localeCompare(String(a.month)) || (b.amount - a.amount));
+      emp.sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')) || (empContractMonthlyUsd(b, fxRate) - empContractMonthlyUsd(a, fxRate)));
+      log.sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')) || (siteAllowanceDailyUsd(b, fxRate) - siteAllowanceDailyUsd(a, fxRate)));
       bodyHtml = `
         <div class="live-calc">
           <div><small>Salaries Paid (Book)</small><b>${fmtUSD(k.salaries_paid, 2)}</b></div>
@@ -24036,11 +24067,11 @@
         ], rows, [{ v: `${rows.length} STAFF-MONTHS · BOOK PAYROLL ${fmtUSD(k.salaries_paid, 2)}`, span: 3 }, { v: fmtNum(sum(rows, 'payments')), r: true }, { v: '' }, { v: fmtUSD(sum(rows, 'amount'), 2), r: true }]) +
         `<h4>2 · Employment &amp; Freelance Contracts Register</h4>` +
         stTable([
-          { label: 'Staff Member', key: 'staff', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'Co.', key: 'company' }, { label: 'Type', key: 'type' }, { label: 'Status', key: 'status' }, { label: 'Start Date', key: 'start_date', mono: true }, { label: 'End Date', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }, { label: 'Monthly Salary ($)', key: 'salary_usd', r: true, fmt: C.usd2 }, { label: 'Daily Rate ($)', key: 'daily_rate', r: true, fmt: C.usd2 }
-        ], emp.slice(0, 80), [{ v: `${emp.length} CONTRACTS`, span: 6 }, { v: fmtUSD(sum(emp, 'salary_usd'), 2), r: true }, { v: '' }]) +
+          { label: 'Staff Member', key: 'staff', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'Co.', key: 'company' }, { label: 'Type', key: 'type' }, { label: 'Status', key: 'status' }, { label: 'Start Date', key: 'start_date', mono: true }, { label: 'End Date', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }, { label: 'Monthly Salary ($)', key: 'salary_usd', r: true, fmt: (_, r) => fmtUSD(empContractMonthlyUsd(r, fxRate), 2) }, { label: 'Daily Rate ($)', key: 'daily_rate', r: true, fmt: C.usd2 }
+        ], emp.slice(0, 80), [{ v: `${emp.length} CONTRACTS`, span: 6 }, { v: fmtUSD(emp.reduce((a, e) => a + empContractMonthlyUsd(e, fxRate), 0), 2), r: true }, { v: '' }]) +
         `<h4>3 · Weekly Site Allowances (Mon–Sun) &amp; Attendance</h4>` +
         stTable([
-          { label: 'Staff Member', key: 'staff', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'Co.', key: 'company' }, { label: 'Site / Location', key: 'site' }, { label: 'Equipment', key: 'equipment', mono: true }, { label: 'Start', key: 'start_date', mono: true }, { label: 'End', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }, { label: 'Working Days', key: 'working_days' }, { label: 'Daily ($)', key: 'daily_usd', r: true, fmt: (v, r) => fmtUSD(v || r.usd_amount || (Number(r.lbp_amount || 0) / 89500), 2) }
+          { label: 'Staff Member', key: 'staff', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'Co.', key: 'company' }, { label: 'Site / Location', key: 'site' }, { label: 'Equipment', key: 'equipment', mono: true }, { label: 'Start', key: 'start_date', mono: true }, { label: 'End', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }, { label: 'Working Days', key: 'working_days' }, { label: 'Daily ($)', key: 'daily_usd', r: true, fmt: (_, r) => fmtUSD(siteAllowanceDailyUsd(r, fxRate), 2) }
         ], log.slice(0, 60), [{ v: `${log.length} SITE ALLOWANCE ARRANGEMENTS · ${att.length} ATTENDANCE LOGS IN SAMPLE`, span: 8 }]);
     } else if (code === '21') {
       const tb = (m.gl_tb || []).filter(r => [1, 5].includes(Number(r.Class)) || /^(16|17|45|455|53|51|512|5300)/.test(String(r.Code)));
@@ -24080,7 +24111,7 @@
           </div>
           <div style="text-align:right;font-family:var(--font-mono);font-size:11px;color:#2C364C">
             <div><strong>PRINTED:</strong> ${todayISO()} · ${esc(activeUser().full_name)}</div>
-            <div><strong>CURRENCY:</strong> USD ($1 = 90,000 LBP)</div>
+            <div><strong>CURRENCY:</strong> USD ($1 = ${fmtNum(getLbpFxRate(), 0)} LBP)</div>
             <div><strong>TB VARIANCE:</strong> ${fmtUSD(k.tb_check || 0, 2)}</div>
           </div>
         </div>
@@ -26314,7 +26345,7 @@
       if (!pk) return;
       if (!loansByParty.has(pk)) loansByParty.set(pk, { name: party, party, borrowed: 0, lent: 0, repaidOut: 0, repaidIn: 0, count: 0, settledCount: 0 });
       const entry = loansByParty.get(pk);
-      const amt = round2(Number(l.principal || l.amount || l.usd_amount || 0) + (Number(l.lbp_amount || 0) / 89500));
+      const amt = round2(Number(l.principal || l.amount || l.usd_amount || 0) + (Number(l.lbp_amount || 0) / getLbpFxRate()));
       if (/lends|outflow/i.test(String(l.direction || ''))) entry.lent = round2(entry.lent + amt);
       else entry.borrowed = round2(entry.borrowed + amt);
       entry.count += 1;
@@ -26326,7 +26357,7 @@
       if (!pk) return;
       if (!loansByParty.has(pk)) loansByParty.set(pk, { name: party, party, borrowed: 0, lent: 0, repaidOut: 0, repaidIn: 0, count: 0, settledCount: 0 });
       const entry = loansByParty.get(pk);
-      const amt = round2(Number(ls.amount || ls.usd_amount || 0) + (Number(ls.lbp_amount || 0) / 89500));
+      const amt = round2(Number(ls.amount || ls.usd_amount || 0) + (Number(ls.lbp_amount || 0) / getLbpFxRate()));
       if (/inflow|lends/i.test(String(ls.direction || '')) || (!ls.direction && entry.lent > entry.borrowed)) entry.repaidIn = round2(entry.repaidIn + amt);
       else entry.repaidOut = round2(entry.repaidOut + amt);
       entry.settledCount += 1;
@@ -26352,7 +26383,7 @@
       const ek = norm(cpName);
       if (!ek) return;
       if (!extByCp[ek]) extByCp[ek] = { name: cpName, inflow: 0, outflow: 0, count: 0 };
-      const amt = round2(Number(ex.amount || ex.usd_amount || 0) + (Number(ex.lbp_amount || 0) / 89500));
+      const amt = round2(Number(ex.amount || ex.usd_amount || 0) + (Number(ex.lbp_amount || 0) / getLbpFxRate()));
       if (/outflow/i.test(String(ex.direction || ex.type || ''))) extByCp[ek].outflow = round2(extByCp[ek].outflow + amt);
       else extByCp[ek].inflow = round2(extByCp[ek].inflow + amt);
       extByCp[ek].count += 1;
@@ -28460,7 +28491,7 @@
               if (pos.monthPayments.length > 0) {
                 let runPaid = 0;
                 const rowsHtml = pos.monthPayments.map(p => {
-                  const pAmt = round2(Number(p.amount != null ? p.amount : (Number(p.usd_amount || 0) + Number(p.lbp_amount || 0) / 89500)));
+                  const pAmt = round2(salaryVoucherUsd895(p));
                   runPaid = round2(runPaid + pAmt);
                   const remAfter = round2(pos.monthNetEarned - runPaid);
                   const st = !pos.hasContract
@@ -28472,12 +28503,15 @@
                             : (remAfter <= 0.01
                                 ? `<span class="badge badge-ok">Settled</span>`
                                 : `<span class="badge badge-info">${fmtUSD(remAfter, 2)} Left</span>`)));
+                  const usdLegCell = Number(p.lbp_amount || 0) > 0
+                    ? (Number(p.usd_amount || 0) > 0 ? fmtUSD(p.usd_amount, 2) : '—')
+                    : fmtUSD(p.usd_amount != null ? p.usd_amount : pAmt, 2);
                   return `
                     <tr>
                       <td class="mono">${esc(String(p.date || '').slice(0, 10))}</td>
                       <td>${esc(p.company || curCo)}</td>
                       <td><span class="badge ${p.method === 'Bank' ? 'badge-info' : 'badge-ok'}">${esc(p.method || 'Cash')}</span></td>
-                      <td class="r">${fmtUSD(p.usd_amount || pAmt, 2)}</td>
+                      <td class="r">${usdLegCell}</td>
                       <td class="r">${Number(p.lbp_amount || 0) > 0 ? fmtNum(p.lbp_amount, 0) + ' LL' : '—'}</td>
                       <td class="r"><b>${fmtUSD(pAmt, 2)}</b></td>
                       <td class="r">${st}</td>
@@ -32851,16 +32885,17 @@
       const eqTxt = eqInfo && eqInfo.hasConnection
         ? `Connected Equipment: ${eqInfo.registeredUnits.map(u => u.equipment + (u.site ? ' @ ' + u.site : '')).slice(0, 3).join(', ')}${eqInfo.siteLogs.length ? ` (${eqInfo.siteLogs.length} Equipment Sites Log ${eqInfo.siteLogs.length === 1 ? 'entry' : 'entries'})` : ''}`
         : 'No Equipment Assignment';
-      const baseAmt = Number(row.salary_usd || row.daily_rate || row.amount || 0);
+      const mContractUsd = empContractMonthlyUsd(row);
+      const baseAmt = Number(row.daily_rate || row.amount || 0);
       return {
         tone: 'info',
-        text: `Staff Contract · ${stName || 'Staff'} (${row.role || 'Staff'} · ${row.status || 'Current'}): ${Number(row.salary_usd || 0) > 0 ? fmtUSD(row.salary_usd, 2) + '/mo' : (baseAmt > 0 ? fmtUSD(baseAmt, 2) + '/d' : '-')}  |  ${eqTxt}`
+        text: `Staff Contract · ${stName || 'Staff'} (${row.role || 'Staff'} · ${row.status || 'Current'}): ${(Number(row.salary_usd || 0) > 0 || Number(row.salary_lbp || 0) > 0) ? fmtUSD(mContractUsd, 2) + '/mo' : (baseAmt > 0 ? fmtUSD(baseAmt, 2) + '/d' : '-')}  |  ${eqTxt}`
       };
     }
     if (key === 'salaries') {
       const payMo = row.payroll_month || String(row.date || '').slice(0, 7);
       const pos = computeStaffMonthPayrollPosition(row.staff, row.company, payMo, row.date, row.id, true);
-      const thisAmt = round2(Number(row.amount != null ? row.amount : (Number(row.usd_amount || 0) + Number(row.lbp_amount || 0) / 89500)));
+      const thisAmt = round2(salaryVoucherUsd895(row));
       if (pos && pos.hasContract) {
         const afterRem = round2(pos.monthNetEarned - (pos.paidSoFar + thisAmt));
         if (pos.isFutureMonth) {
@@ -34908,7 +34943,7 @@
         const isU2L = !/^lbp/i.test(dir);
         const usd = getModNum('usd_amount');
         const lbp = Math.round(getModNum('lbp_amount'));
-        const rate = (usd > 0 && lbp > 0) ? round2(lbp / usd) : (getModNum('exchange_rate') || 89500);
+        const rate = (usd > 0 && lbp > 0) ? round2(lbp / usd) : (getModNum('exchange_rate') || getLbpFxRate());
         if ($('insp_edit_exchange_rate') && usd > 0 && lbp > 0) $('insp_edit_exchange_rate').value = String(rate);
         html = `<span>USD Drawer: <b>${fmtSignedUSD(isU2L ? -usd : usd, 2)}</b></span><span>LBP Drawer: <b>${fmtSignedLBP(isU2L ? lbp : -lbp)}</b></span><span>Rate: <b>${fmtNum(rate, 2)} LL/$</b></span>`;
       } else if (key === 'customers') {
@@ -34938,7 +34973,7 @@
         const payMo = getModVal('payroll_month') || row.payroll_month || String(getModVal('date') || row.date || '').slice(0, 7);
         const usd = getModNum('usd_amount');
         const lbp = getModNum('lbp_amount');
-        const totAmt = (usd > 0 || lbp > 0) ? round2(usd + lbp / 89500) : getModNum('amount');
+        const totAmt = (usd > 0 || lbp > 0) ? round2(usd + lbp / getLbpFxRate()) : getModNum('amount');
         if ($('insp_edit_amount') && (usd > 0 || lbp > 0)) $('insp_edit_amount').value = totAmt.toFixed(2);
         const pos = computeStaffMonthPayrollPosition(stName, getModVal('company') || row.company, payMo, getModVal('date') || row.date, row.id, true);
         if (pos && pos.hasContract) {
@@ -35258,7 +35293,8 @@
           if ('invoice_no' in pendingUpdates && row.invoice_no) row.name = row.invoice_no;
         } else if (key === 'salaries') {
           if (('usd_amount' in pendingUpdates || 'lbp_amount' in pendingUpdates) && !('amount' in pendingUpdates)) {
-            row.amount = round2(Number(row.usd_amount || 0) + Number(row.lbp_amount || 0) / 89500);
+            if (row.usd_amount == null) row.usd_amount = 0;
+            row.amount = round2(Number(row.usd_amount || 0) + Number(row.lbp_amount || 0) / getLbpFxRate());
           }
         } else if (key === 'logistics_allowances') {
           if ('days_count' in pendingUpdates || 'daily_usd' in pendingUpdates) {
@@ -35278,7 +35314,7 @@
           const isU2L = !/^lbp/i.test(row.type || 'USD to LBP');
           const usd = round2(Number(row.usd_amount || 0));
           const lbp = Math.round(Number(row.lbp_amount || 0));
-          const fx = (usd > 0 && lbp > 0) ? round2(lbp / usd) : Number(row.exchange_rate || row.fx_rate || 89500);
+          const fx = (usd > 0 && lbp > 0) ? round2(lbp / usd) : Number(row.exchange_rate || row.fx_rate || getLbpFxRate());
           row.from_currency = isU2L ? 'USD' : 'LBP';
           row.to_currency = isU2L ? 'LBP' : 'USD';
           row.usd_delta = isU2L ? -usd : usd;
@@ -40740,7 +40776,7 @@
             ? `${coMobLbl} · ${STATE.basis === 'rep' ? 'Rep Date' : 'Tx Date'}`
             : `${coFullLbl} · ${k.label || 'All-Time'} · ${STATE.basis === 'rep' ? 'Reporting Date Basis' : 'Transaction Date Basis'}`);
       eyeEl.textContent = eyeTxt;
-      eyeEl.title = eyeTxt;
+      eyeEl.removeAttribute('title');
     }
     let canonicalViewTitle = VIEW_TITLES[STATE.view] || VIEW_TITLES.overview;
     if (isUnivView && window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG)) {
@@ -40749,7 +40785,7 @@
     }
     if (titEl) {
       titEl.textContent = canonicalViewTitle;
-      titEl.title = canonicalViewTitle;
+      titEl.removeAttribute('title');
     }
     document.title = `${canonicalViewTitle} · ISABI Command Center`;
 
@@ -40883,6 +40919,7 @@
     }
     setContainerHtmlPreservingActiveInput(container, wsHtml);
     wireWorkspace(container, user);
+    stripNativeTitles(document);
   }
 
   function updateLiveSelectionBar(container) {
@@ -41152,7 +41189,7 @@
           const rPct = Math.max(0, Math.round((100 - cPct) * 10) / 10);
           const mixWrap = document.createElement('dfn');
           mixWrap.className = 'recon-head-mix';
-          mixWrap.title = `${cashTile.lbl}: ${cPct}% (${cashTile.rawVal}) vs ${credTile.lbl}: ${rPct}% (${credTile.rawVal})`;
+          mixWrap.setAttribute('data-ui-tip', `${cashTile.lbl}: ${cPct}% (${cashTile.rawVal}) vs ${credTile.lbl}: ${rPct}% (${credTile.rawVal})`);
           mixWrap.innerHTML = `<i class="rhm-seg rhm-emerald" style="width:${cPct}%"></i><i class="rhm-seg rhm-steel" style="width:${rPct}%"></i>`;
           const mixLbl = document.createElement('ins');
           mixLbl.className = 'recon-head-mix-lbl';
@@ -41171,7 +41208,7 @@
           nav.innerHTML = coKeys.map(k => {
             const fullLbl = COMPANY_BU_MATCH[k] || k;
             const activeCls = STATE.company === k ? ' active' : '';
-            return `<button type="button" class="recon-co-pill${activeCls}" data-jump-co="${esc(k)}" title="Switch to ${esc(fullLbl)}">${esc(fullLbl)}</button>`;
+            return `<button type="button" class="recon-co-pill${activeCls}" data-jump-co="${esc(k)}">${esc(fullLbl)}</button>`;
           }).join('');
           headEl.insertBefore(nav, resetBtn);
         }
@@ -44096,11 +44133,129 @@
       }, 160);
     });
 
+    initZeroBlackBoxTooltips();
     scheduleSeedHydration();
     const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
     if (STATE.authed || isAutoTest) {
       renderApp();
     }
+  }
+
+  let _uiTipWired = false;
+  let _uiTipActiveEl = null;
+  const UI_TIP_SUPPRESS_SEL = [
+    '.payroll-fx-btn', '.payroll-cutoff-pill', '.payroll-status-pill', '.pcc-reset-btn',
+    '.grain-btn', '.basis-btn', '.date-seg-part', '.entity-picker-trigger', '.entity-picker-act-btn',
+    '.ask-isabi-trigger', '.mobile-theme-btn', '#themeToggleBtn', '#signOutBtn', '#authShowcaseLink',
+    '.sales-recon-card', '.recon-co-pill', '.rel-link', '.inspector-cell[data-edit-field]',
+    '.row-sel-dot', '.lsb-btn', '#topbarEyebrow', '#topbarTitle', '#sidebarNav .nav-item'
+  ].join(', ');
+
+  function stripOneNativeTitle(el) {
+    if (!el || el.nodeType !== 1 || !el.hasAttribute('title')) return;
+    const raw = (el.getAttribute('title') || '').trim();
+    el.removeAttribute('title');
+    if (!raw) return;
+    if (!el.closest('#sidebarNav') && !el.hasAttribute('data-ui-tip')) {
+      el.setAttribute('data-ui-tip', raw);
+    }
+    if (el.matches('button, a, input, select, [role="button"]') && !el.getAttribute('aria-label') && !(el.textContent || '').trim()) {
+      el.setAttribute('aria-label', raw);
+    }
+  }
+
+  function stripNativeTitles(root = document) {
+    if (!root) return;
+    if (root.nodeType === 1 && root.hasAttribute('title')) stripOneNativeTitle(root);
+    if (typeof root.querySelectorAll === 'function') {
+      const nodes = root.querySelectorAll('[title]');
+      for (let i = 0; i < nodes.length; i++) stripOneNativeTitle(nodes[i]);
+    }
+  }
+
+  function hideUiTooltip() {
+    const tipEl = $('mfgUiTooltip');
+    if (tipEl && !tipEl.hidden) {
+      tipEl.hidden = true;
+      tipEl.textContent = '';
+    }
+    _uiTipActiveEl = null;
+  }
+
+  function showUiTooltipFor(targetEl) {
+    const tipEl = $('mfgUiTooltip');
+    if (!tipEl || !targetEl || window.innerWidth <= 860) { hideUiTooltip(); return; }
+    if (targetEl.getAttribute('aria-expanded') === 'true') { hideUiTooltip(); return; }
+    if (targetEl.matches(UI_TIP_SUPPRESS_SEL) || targetEl.closest('#sidebarNav')) { hideUiTooltip(); return; }
+    const tipTxt = (targetEl.getAttribute('data-ui-tip') || '').trim();
+    if (!tipTxt) { hideUiTooltip(); return; }
+    const visTxt = (targetEl.textContent || '').replace(/\s+/g, ' ').trim();
+    if (visTxt && norm(visTxt) === norm(tipTxt)) { hideUiTooltip(); return; }
+    // Self-labeled buttons with >= 4 characters of visible label do not need redundant hover boxes unless explicitly inside a table breakdown cell
+    if (targetEl.tagName === 'BUTTON' && visTxt.length >= 4 && !targetEl.closest('td, th')) {
+      hideUiTooltip();
+      return;
+    }
+    _uiTipActiveEl = targetEl;
+    tipEl.textContent = tipTxt;
+    tipEl.hidden = false;
+    const rect = targetEl.getBoundingClientRect();
+    const tw = tipEl.offsetWidth || 220;
+    const th = tipEl.offsetHeight || 32;
+    let left = rect.left + (rect.width / 2) - (tw / 2);
+    left = Math.max(10, Math.min(window.innerWidth - tw - 10, left));
+    let top = rect.top - th - 8;
+    if (top < 10) top = Math.min(window.innerHeight - th - 10, rect.bottom + 8);
+    tipEl.style.left = Math.round(left) + 'px';
+    tipEl.style.top = Math.round(top) + 'px';
+  }
+
+  function initZeroBlackBoxTooltips() {
+    stripNativeTitles(document);
+    if (_uiTipWired) return;
+    _uiTipWired = true;
+    if (typeof MutationObserver === 'function' && document.body) {
+      const obs = new MutationObserver(records => {
+        for (let i = 0; i < records.length; i++) {
+          const rec = records[i];
+          if (rec.type === 'attributes') {
+            if (rec.target && rec.target.nodeType === 1 && rec.target.hasAttribute('title')) stripOneNativeTitle(rec.target);
+          } else if (rec.addedNodes && rec.addedNodes.length) {
+            for (let j = 0; j < rec.addedNodes.length; j++) {
+              const n = rec.addedNodes[j];
+              if (n && n.nodeType === 1) stripNativeTitles(n);
+            }
+          }
+        }
+      });
+      obs.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
+    }
+    document.addEventListener('pointerover', e => {
+      if (e.pointerType === 'touch') return;
+      const t = e.target && e.target.nodeType === 1 ? e.target : null;
+      if (!t) return;
+      const titled = t.closest('[title]');
+      if (titled) stripNativeTitles(titled);
+      const tipHost = t.closest('[data-ui-tip]');
+      if (!tipHost) {
+        if (_uiTipActiveEl) hideUiTooltip();
+        return;
+      }
+      if (tipHost !== _uiTipActiveEl) showUiTooltipFor(tipHost);
+    }, true);
+    document.addEventListener('pointerout', e => {
+      if (!_uiTipActiveEl) return;
+      const rel = e.relatedTarget && e.relatedTarget.nodeType === 1 ? e.relatedTarget : null;
+      if (rel && _uiTipActiveEl.contains(rel)) return;
+      hideUiTooltip();
+    }, true);
+    document.addEventListener('pointerdown', hideUiTooltip, true);
+    document.addEventListener('click', hideUiTooltip, true);
+    document.addEventListener('wheel', hideUiTooltip, { capture: true, passive: true });
+    document.addEventListener('scroll', hideUiTooltip, { capture: true, passive: true });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') hideUiTooltip(); }, true);
+    window.__mfgShowUiTooltipFor = showUiTooltipFor;
+    window.__mfgHideUiTooltip = hideUiTooltip;
   }
 
   function invalidateAllSeedCaches() {

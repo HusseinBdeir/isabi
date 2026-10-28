@@ -2125,6 +2125,17 @@
       if (c === 'lbp_delta') return cd.lbp;
       if (c === 'exchange_rate') return cd.rate;
     }
+    if (tableKey === 'salaries' && c === 'amount' && window.MFG_FX && typeof window.MFG_FX.voucherUsd === 'function') {
+      return round2(window.MFG_FX.voucherUsd(r));
+    }
+    if (tableKey === 'employments' && window.MFG_FX) {
+      if (c === 'salary_usd' && typeof window.MFG_FX.contractMonthlyUsd === 'function') return window.MFG_FX.contractMonthlyUsd(r);
+      if (c === 'reimbursement' && typeof window.MFG_FX.contractReimbUsd === 'function') return window.MFG_FX.contractReimbUsd(r);
+      if (c === 'deduction' && typeof window.MFG_FX.contractDedUsd === 'function') return window.MFG_FX.contractDedUsd(r);
+    }
+    if (tableKey === 'logistics_allowances' && c === 'daily_usd' && window.MFG_FX && typeof window.MFG_FX.siteDailyUsd === 'function') {
+      return window.MFG_FX.siteDailyUsd(r);
+    }
     if (c === 'cost_class') return deriveExpenseCostClass(r);
     if (r[c] != null && r[c] !== '') {
       if (Array.isArray(r[c])) return r[c].join(', ');
@@ -2343,7 +2354,8 @@
     const usd = r && r.usd_delta != null && Number(r.usd_delta) !== 0 ? Number(r.usd_delta) : round2(usdMag * (u2l ? -1 : 1));
     const lbp = r && r.lbp_delta != null && Number(r.lbp_delta) !== 0 ? Math.round(Number(r.lbp_delta)) : lbpMag * (u2l ? 1 : -1);
     const ex = Number((r && (r.exchange_rate || r.fx_rate)) || 0);
-    const rate = ex > 0 ? ex : (usdMag > 0 && lbpMag > 0 ? lbpMag / usdMag : 89500);
+    const activeFx = (window.MFG_FX && typeof window.MFG_FX.getRate === 'function' ? window.MFG_FX.getRate() : 89500) || 89500;
+    const rate = ex > 0 ? ex : (usdMag > 0 && lbpMag > 0 ? lbpMag / usdMag : activeFx);
     return { u2l, dirLabel: u2l ? 'USD → LBP' : 'LBP → USD', usd: round2(usd), lbp, rate };
   }
   function fmtPct(v, num, den) {
@@ -6251,7 +6263,7 @@
           ${kpiBand('3 · All-Time Salary Disbursements & Workforce Ratios', [
             { label: 'Salaries paid (all payments)', value: fmtUSD(prSn.salaries_paid_all_usd || k.salaries_paid, 0), sub: 'Book Class 641 / 421 total', tone: 'brass' },
             { label: 'Staff paid', value: fmtNum(staffPayrollRows.filter(s => s.paid > 0).length), sub: fmtNum(salRows.length) + ' vouchers in sample' },
-            { label: 'Avg salary payment', value: fmtUSD(salRows.length ? salRows.reduce((a, r) => a + Number(r.amount || 0), 0) / salRows.length : 0, 2), sub: 'Per disbursement voucher' },
+            { label: 'Avg salary payment', value: fmtUSD(salRows.length ? salRows.reduce((a, r) => a + (window.MFG_FX && typeof window.MFG_FX.voucherUsd === 'function' ? window.MFG_FX.voucherUsd(r) : Number(r.amount || 0)), 0) / salRows.length : 0, 2), sub: 'Per disbursement voucher' },
             { label: 'Staff cost % of sales', value: fmtPct(staffCostPct), sub: 'Salaries ÷ Net sales' },
             { label: 'Avg earnings per staff', value: fmtUSD(staffPayrollRows.length ? totEarn / staffPayrollRows.length : 0, 0), sub: 'Across selected roster' },
             { label: 'Overtime % of earnings', value: fmtPct(totEarn > 0 ? totOtPay / totEarn : 0), sub: 'Overtime share of pay' }
@@ -6421,7 +6433,7 @@
             { label: 'End', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') },
             { label: 'Status', raw: r => (r.end_date && String(r.end_date) < today) ? 'Ended' : 'Current', fmt: v => `<span class="badge ${v === 'Ended' ? 'badge-warn' : 'badge-ok'}">${v}</span>` },
             { label: 'Days / week', key: 'working_days' },
-            { label: 'Per working day ($)', raw: r => r.daily_usd || r.usd_amount || (Number(r.lbp_amount || 0) / 89500), r: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
+            { label: 'Per working day ($)', raw: r => (window.MFG_FX && typeof window.MFG_FX.siteDailyUsd === 'function') ? window.MFG_FX.siteDailyUsd(r) : ((Number(r.usd_amount || 0) || (!r.lbp_amount ? Number(r.daily_usd || 0) : 0)) + (Number(r.lbp_amount || 0) / ((window.MFG_FX && window.MFG_FX.getRate()) || 89500))), r: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
             { label: 'LBP Rate', key: 'lbp_amount', r: true, mono: true, fmt: v => v ? fmtNum(v, 0) + ' LBP' : '—' }
           ], logRows, {
             subtitle: 'Amber shaded row = the arrangement has ended · an arrangement without an end date runs until today · latest first',
