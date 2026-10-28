@@ -32210,6 +32210,8 @@
         return {};
       }
       if (STATE.modalForm === 'attendance') {
+        const attWarnings = [];
+        commonDateChecks(attWarnings);
         const curStaff = val('f_staff');
         const curCo = val('f_company') || defaultEntryCompany();
         const txDate = val('f_date') || todayISO();
@@ -32221,7 +32223,7 @@
         const attGapDays = Math.abs(daysBetween(txDate, attDate));
         const attRepGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
         const attGapWarn = isAlertRuleEnabled('G_REPDATE_GAP') && attGapDays > attRepGapLimit;
-        if (attGapWarn) warnings.push('repdate_gap');
+        if (attGapWarn) attWarnings.push('repdate_gap');
 
         // 1. Live Employee Contract Strip (#attStaffContractCard — hidden when blank) & Date Sunday / Existing-Log Hint
         const existingAttOnDate = curStaff
@@ -38852,7 +38854,7 @@
     });
     const allKeys = Array.from(allKeysSet);
 
-    const idFields = new Set(['name', 'official_name', 'ticket_no', 'invoice_no', 'date', 'rep_date', 'time', 'payroll_month', 'company', 'sale_type', 'rule_type', 'type', 'status', 'severity', 'customer', 'supplier', 'staff', 'driver', 'reported_by', 'approved_by', 'prior_defect_notified', 'defect_ref', 'linked_part_log', 'partner', 'counterparty', 'loan', 'role', 'mof_no', 'financial_no', 'vat_registered', 'iva', 'phone', 'contact', 'email', 'address', 'location', 'direction', 'is_company_driver']);
+    const idFields = new Set(['name', 'official_name', 'ticket_no', 'invoice_no', 'set_date', 'date', 'rep_date', 'month', 'time', 'payroll_month', 'company', 'sale_type', 'rule_type', 'type', 'status', 'severity', 'customer', 'supplier', 'staff', 'driver', 'reported_by', 'approved_by', 'prior_defect_notified', 'defect_ref', 'linked_part_log', 'partner', 'counterparty', 'loan', 'role', 'mof_no', 'financial_no', 'vat_registered', 'iva', 'phone', 'contact', 'email', 'address', 'location', 'direction', 'is_company_driver']);
     const opsFields = new Set(['product', 'item', 'input_product', 'fuel_type', 'site', 'region', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'equipment', 'equipment_category', 'subsystem', 'action_type', 'part_name', 'part_serial', 'condition', 'removed_disposition', 'storage_location', 'vendor_or_buyer', 'meter_reading', 'resolved_date', 'description', 'plate_no', 'ownership', 'capacity', 'truck_size', 'default_driver', 'day_operator', 'night_operator', 'model', 'working_days', 'start_date', 'end_date', 'latitude', 'longitude', 'is_jv', 'is_truck_owner', 'ticket_product', 'fuel_item', 'customer_declared_qty', 'external_invoice', 'trucks_count', 'trucks', 'drivers', 'category', 'subcategory', 'category1', 'category2', 'cost_class', 'from_currency', 'to_currency']);
     const finFields = new Set(['qty', 'external_qty', 'uom', 'unit', 'rate_per', 'ton_factor', 'litres', 'odometer', 'hours', 'regular_hours', 'overtime_hours', 'late_hours', 'extra_hours', 'days_count', 'unit_price', 'price', 'list_price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'delivered_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'new_part_cost', 'repair_cost', 'sale_proceeds', 'qty1', 'adj1', 'trans_adj1', 'qty2', 'adj2', 'trans_adj2', 'vat', 'vat_amount', 'net_amount', 'total', 'total_ttc', 'amount', 'usd_amount', 'lbp_amount', 'usd_delta', 'lbp_delta', 'discount', 'tip', 'salary_usd', 'daily_rate', 'daily_usd', 'rate_usd', 'credit_days', 'credit_limit', 'principal', 'interest_rate', 'exchange_rate', 'percentage', 'basis', 'difference', 'ar_balance', 'ap_balance', 'loads', 'raw_loads', 'sales_ttc', 'raw_cost', 'receipts', 'settlements_paid', 'method', 'vat_invoice', 'record_ticket', 'raw_ticket', 'expense_record', 'invoice', 'reference', 'revenue_account', 'purchase_account', 'notes']);
 
@@ -51965,6 +51967,7 @@
       setRailWidth: (w, persist) => setRailWidth(w, persist)
     };
     window.__openModalForm = (fid, prefill) => openEntryModal(fid, prefill);
+    window.__openInspector = (crKey, id, opts) => showRecordInspector(crKey, id, opts);
     window.__voidRecord = (crKey, id) => voidRecord(crKey, id);
     if (!window.__navToView) window.__navToView = v => setView(v);
 
