@@ -1155,23 +1155,47 @@
 
     if (fType === 'freelance' || fType === 'employment') {
       const isContract = fType === 'employment';
+      if (isContract) {
+        return `
+          <div class="form-grid-3">
+            ${companyField}
+            ${fld('Start Date *', inp('f_date', 'date', today))}
+            ${fld('End Date', inp('f_enddate', 'date', ''), { id: 'wrap_emp_enddate' })}
+            ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
+            ${fld('Role', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type role..."') + dl('dl_roles', roleNames), { id: 'wrap_emp_role' })}
+            ${fld('Pay Basis', sel('f_paytype', [['Monthly', 'Monthly'], ['Daily', 'Daily']], 'Monthly'), { id: 'wrap_emp_paytype' })}
+            <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
+            <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
+            ${fld('Base Salary ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_emp_amount' })}
+            ${fld('Work Days / Mo', inp('f_workdays', 'number', '30', 'step="1" min="1" max="31"'), { id: 'wrap_emp_workdays' })}
+            ${fld('Hours / Day', inp('f_workhours', 'number', '8', 'step="0.5" min="1" max="24"'), { id: 'wrap_emp_workhours' })}
+            ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+          </div>
+          <div class="live-calc" id="empLiveCalc">
+            <div><small>Contract</small><b id="calc_emp_prior">Select Staff</b></div>
+            <div><small>Pay Basis</small><b id="calc_emp_basis">Monthly</b></div>
+            <div><small>Daily / Hourly</small><b id="calc_emp_rates">—</b></div>
+            <div><small>Monthly Salary</small><b id="calc_emp_total">$0.00</b></div>
+          </div>
+        `;
+      }
       return `
         <div class="form-grid-3">
           ${companyField}
-          ${fld(isContract ? 'Start Date *' : 'Work Date *', inp('f_date', 'date', today))}
+          ${fld('Work Date *', inp('f_date', 'date', today))}
           ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
           <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
           <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
           ${fld('Role', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type role..."') + dl('dl_roles', roleNames), { id: 'wrap_emp_role' })}
-          ${fld('Pay Basis', sel('f_paytype', isContract ? [['Monthly', 'Monthly'], ['Daily', 'Daily']] : [['Daily', 'Daily'], ['Lump Sum', 'Lump Sum']], isContract ? 'Monthly' : 'Daily'), { id: 'wrap_emp_paytype' })}
-          ${fld(isContract ? 'Base Salary ($) *' : 'Amount ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_emp_amount' })}
+          ${fld('Pay Basis', sel('f_paytype', [['Daily', 'Daily'], ['Lump Sum', 'Lump Sum']], 'Daily'), { id: 'wrap_emp_paytype' })}
+          ${fld('Amount ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_emp_amount' })}
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
         <div class="live-calc" id="empLiveCalc">
-          <div><small>${isContract ? 'Contract' : 'Status'}</small><b id="calc_emp_prior">Select Staff</b></div>
-          <div><small>Pay Basis</small><b id="calc_emp_basis">${isContract ? 'Monthly' : 'Daily'}</b></div>
+          <div><small>Status</small><b id="calc_emp_prior">Select Staff</b></div>
+          <div><small>Pay Basis</small><b id="calc_emp_basis">Daily</b></div>
           <div><small>Daily / Hourly</small><b id="calc_emp_rates">—</b></div>
-          <div><small>${isContract ? 'Monthly Salary' : 'Amount'}</small><b id="calc_emp_total">$0.00</b></div>
+          <div><small>Amount</small><b id="calc_emp_total">$0.00</b></div>
         </div>
       `;
     }
@@ -1181,41 +1205,45 @@
         ${adminHeaderHtml}
         <div class="form-grid-3">
           ${companyField}
-          ${lockedDateField('Transaction Date *')}
-          ${collapsibleRepDateField()}
+          ${fld('Start Date *', inp('f_date', 'date', today))}
+          ${fld('End Date', inp('f_enddate', 'date', ''), { id: 'wrap_log_enddate' })}
           ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_log_staff', hintId: 'hint_log_staff', hint: '' })}
-          <div id="logStaffContextStrip" class="att-contract-strip" hidden></div>
-          ${fld('USD Allowance ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'))}
-          ${fld('LBP Allowance (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'))}
-          ${fld(`Daily Rate USD (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
-          ${fld('Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames), { id: 'wrap_log_site' })}
           <div class="form-field span-2" id="wrap_log_days">
             <label><span class="pa-fld-lbl">Days Worked</span></label>
             <div class="log-days-inline">
               ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d, i) => `<label class="log-day-chk"><input type="checkbox" id="f_day_${d.toLowerCase()}" ${i < 6 ? 'checked' : ''}><span>${d}</span></label>`).join('')}
             </div>
           </div>
-          ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+          <div id="logStaffContextStrip" class="att-contract-strip" hidden></div>
+          ${fld('USD Allowance ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'))}
+          ${fld('LBP Allowance (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'))}
+          ${fld(`Daily Rate USD (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
+          ${fld('Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames), { id: 'wrap_log_site' })}
+          ${fld('Notes', inp('f_notes', 'text', ''), { span2: true })}
         </div>
         <div class="live-calc" id="logLiveCalc">
           <div><small>Active Days</small><b id="calc_log_days">6 days (Mon–Sat)</b></div>
           <div><small>Per Day</small><b id="calc_log_daily">$0.00 / day</b></div>
           <div><small>Month Allowances</small><b id="calc_log_month">$0.00 prior</b></div>
-          <div><small>Allowance</small><b id="calc_log_total">$0.00</b></div>
+          <div><small>Weekly Est.</small><b id="calc_log_total">$0.00</b></div>
         </div>
       `;
     }
 
     if (fType === 'triprate') {
+      const otRegNames = uniqSorted(['Beirut', 'Sibline', 'Dekwaneh', 'Jnoub', 'Excluded'].concat((rec.overtime_rates || []).map(o => o && o.region)).concat(regNames), fIdx && fIdx.region);
       return `
         <div class="form-grid-3">
           ${companyField}
-          ${fld('Effective From *', inp('f_date', 'date', today))}
-          ${fld('Rate Name *', inp('f_name', 'text', '', 'placeholder="e.g. WTC Site → Beirut Night Trip"'))}
-          ${fld('Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames))}
+          ${fld('Start Date *', inp('f_date', 'date', today))}
+          ${fld('End Date', inp('f_enddate', 'date', ''), { id: 'wrap_ot_enddate' })}
+          ${fld('Region *', inp('f_region', 'text', '', 'list="dl_ot_regions" placeholder="e.g. Beirut, Sibline, Excluded..."') + dl('dl_ot_regions', otRegNames), { id: 'wrap_ot_region', hintId: 'hint_ot_region', hint: '' })}
+          ${fld('Site (Optional)', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Auto-fills Region from site..."') + dl('dl_sites', siteNames), { id: 'wrap_ot_site' })}
+          ${fld('Rate / Trip ($) *', inp('f_amount', 'number', '10.00', 'step="0.50" min="0"'))}
+          <div id="otRateContextStrip" class="att-contract-strip" hidden></div>
+          ${fld('Rate Name', inp('f_name', 'text', '', 'placeholder="Auto-generated if left blank..."'))}
           ${fld('Equipment Category', sel('f_category', [['Truck', 'Dump Truck'], ['Mixer', 'Mixer'], ['All', 'All Fleet Units']], 'Truck'))}
-          ${fld('Overtime Bonus per Trip ($) *', inp('f_amount', 'number', '10.00', 'step="0.50" min="0"'))}
-          ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+          ${fld('Notes', inp('f_notes', 'text', ''))}
         </div>
       `;
     }

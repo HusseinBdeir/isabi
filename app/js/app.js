@@ -17306,10 +17306,13 @@
       const hr = /^\d+$/.test(hrStr) ? parseInt(hrStr, 10) : 0;
       const shiftDate = (d && hr >= 12) ? shiftIsoPlus1(d) : d;
       const repDate = String(t.rep_date || d).slice(0, 10);
+      const isApp = isAppRecord(t);
+      const hasCustomRep = Boolean(isApp && t.rep_date && repDate && repDate !== d);
+      const repShiftDate = hasCustomRep ? ((hr >= 12) ? shiftIsoPlus1(repDate) : repDate) : shiftDate;
       const siteN = t.site ? norm(t.site) : '';
       const regN = (siteN && siteToReg.get(siteN)) || 'excluded';
       const regLabel = (siteN && siteRegLabel.get(siteN)) || 'Default / Unmapped';
-      const rateDate = isSale ? repDate : shiftDate;
+      const rateDate = isSale ? repDate : (hasCustomRep ? repDate : shiftDate);
       let rules = otRulesByCoReg.get(`${coN}|${regN}`);
       if ((!rules || !rules.length) && siteN) rules = otRulesByCoReg.get(`${coN}|excluded`);
       if (!rules || !rules.length) return null;
@@ -17341,6 +17344,9 @@
         date: d,
         shift_date: shiftDate,
         rep_date: repDate,
+        rep_shift_date: repShiftDate,
+        is_app: isApp,
+        has_custom_rep: hasCustomRep,
         is_sale: Boolean(isSale),
         site: t.site || '',
         region: regLabel,
@@ -17507,10 +17513,11 @@
     const attAll = attPool.filter(a => {
       if (!a || a.voided) return false;
       const aDate = String(a.date || '').slice(0, 10);
-      const ym = String(a.month || aDate.slice(0, 7)).slice(0, 7);
+      const effAttDate = String(a.set_date || a.rep_date || aDate).slice(0, 10);
+      const ym = String(a.month || effAttDate.slice(0, 7) || aDate.slice(0, 7)).slice(0, 7);
       if (STATE.basis === 'rep') {
         if (ym < effStartYm || ym > effEndYm) return false;
-        if (isPartialEndMonth && ym === effEndYm && aDate > effToDate && !/^config/i.test(String(a.type || ''))) return false;
+        if (isPartialEndMonth && ym === effEndYm && effAttDate > effToDate && !/^config/i.test(String(a.type || ''))) return false;
         return true;
       }
       return aDate >= effFromDate && aDate <= effToDate;
@@ -17690,7 +17697,7 @@
           if (actDays > 0) {
             const gk = `${coNorm}|${sk}|${curYm}`;
             if (!empGrid.has(gk)) empGrid.set(gk, []);
-            empGrid.get(gk).push({ contract: e, actDays, cStart, daysInMonth });
+            empGrid.get(gk).push({ contract: e, actDays, cStart, ovStart, ovEnd, mStart, effMEnd, daysInMonth });
           }
         }
         curYm = shiftYearMonth(curYm, 1);
@@ -17712,11 +17719,42 @@
       let cumVacAbs = 0;
       let cumUnacc = 0;
       ymEntries.forEach(({ ym, gk, cList }) => {
-        cList.sort((a, b) => (b.actDays - a.actDays) || b.cStart.localeCompare(a.cStart) || (Number(b.contract.salary_usd || 0) - Number(a.contract.salary_usd || 0)));
-        const daysInMonth = cList[0].daysInMonth;
-        const totActDays = Math.min(daysInMonth, cList.reduce((sum, x) => sum + x.actDays, 0));
+        let effCList = cList;
+        if (cList.length > 1) {
+          const isCurStatus = ce => /^(current|active)$/i.test(String((ce && ce.status) || '').trim()) ? 1 : 0;
+          const ranked = cList.slice().sort((a, b) =>
+            (isCurStatus(b.contract) - isCurStatus(a.contract))
+            || b.cStart.localeCompare(a.cStart)
+            || (Number(b.contract.salary_usd || 0) - Number(a.contract.salary_usd || 0))
+            || String(b.contract.name || '').localeCompare(String(a.contract.name || ''))
+            || String(b.contract.id || '').localeCompare(String(a.contract.id || ''))
+          );
+          const dayCounts = new Array(ranked.length).fill(0);
+          const [msY, msM, msD] = ranked[0].mStart.split('-').map(Number);
+          const [meY, meM, meD] = ranked[0].effMEnd.split('-').map(Number);
+          const curDay = new Date(Date.UTC(msY, msM - 1, msD));
+          const endDayMs = Date.UTC(meY, meM - 1, meD);
+          while (curDay.getTime() <= endDayMs) {
+            const iso = `${curDay.getUTCFullYear()}-${String(curDay.getUTCMonth() + 1).padStart(2, '0')}-${String(curDay.getUTCDate()).padStart(2, '0')}`;
+            for (let ci = 0; ci < ranked.length; ci++) {
+              if (ranked[ci].ovStart <= iso && iso <= ranked[ci].ovEnd) {
+                dayCounts[ci] += 1;
+                break;
+              }
+            }
+            curDay.setUTCDate(curDay.getUTCDate() + 1);
+          }
+          const deduped = [];
+          for (let ci = 0; ci < ranked.length; ci++) {
+            if (dayCounts[ci] > 0) deduped.push({ ...ranked[ci], actDays: dayCounts[ci] });
+          }
+          if (deduped.length) effCList = deduped;
+        }
+        effCList.sort((a, b) => (b.actDays - a.actDays) || b.cStart.localeCompare(a.cStart) || (Number(b.contract.salary_usd || 0) - Number(a.contract.salary_usd || 0)));
+        const daysInMonth = effCList[0].daysInMonth;
+        const totActDays = Math.min(daysInMonth, effCList.reduce((sum, x) => sum + x.actDays, 0));
         const gapDays = Math.max(0, daysInMonth - totActDays);
-        const prim = cList[0].contract;
+        const prim = effCList[0].contract;
         const s = ensureStaff(prim.staff, prim.company);
         s.active_months += 1;
 
@@ -17728,7 +17766,7 @@
 
         let salUsdRaw = 0;
         let salLbpRaw = 0;
-        cList.forEach(item => {
+        effCList.forEach(item => {
           const ce = item.contract;
           const share = totActDays > 0 ? (item.actDays / totActDays) : 1;
           const uSal = Number(ce.salary_usd || 0) || ((!ce.salary_lbp && Number(ce.daily_rate || 0)) ? (Number(ce.daily_rate || 0) * (Number(ce.working_days || 26) || 26)) : 0);
@@ -17897,10 +17935,11 @@
     const scopedDriverOtTrips = filterRecords(idx.driverOtTrips || [], { ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
     scopedDriverOtTrips.forEach(tr => {
       if (matchFn && !matchFn({ company: tr.company, staff: tr.staff, driver: tr.driver })) return;
-      const drvD = STATE.basis === 'rep' ? (tr.is_sale ? tr.rep_date : tr.shift_date) : tr.date;
+      const useAppRepDate = Boolean(STATE.basis === 'rep' && tr.is_app && tr.has_custom_rep && tr.rep_date);
+      const drvD = STATE.basis === 'rep' ? (useAppRepDate ? tr.rep_date : (tr.is_sale ? tr.rep_date : tr.shift_date)) : tr.date;
       const inDrvWin = drvD >= effFromDate && drvD <= effToDate && drvD.slice(0, 7) <= effEndYm;
-      const salD = STATE.basis === 'rep' ? tr.shift_date : tr.date;
-      const ym = tr.shift_date.slice(0, 7);
+      const salD = STATE.basis === 'rep' ? (useAppRepDate ? tr.rep_date : tr.shift_date) : tr.date;
+      const ym = salD.slice(0, 7);
       const inSalWin = salD >= effFromDate && salD <= effToDate && ym <= effEndYm;
       if (!inDrvWin && !inSalWin) return;
       const key = `${tr.coNorm}|${tr.sk}`;
@@ -17962,10 +18001,16 @@
       regionsStr: Array.from(dr.regions).slice(0, 3).join(', ') || 'Default ($5)'
     })).sort((a, b) => b.total_ot_usd - a.total_ot_usd || b.total_trips - a.total_trips);
 
-    // 4. Site allowances (exact [wStart, wEnd] window absence deduction per Salary.tmdl lines 210-230)
+    // 4. Site allowances (exact [wStart, wEnd] window absence deduction per Salary.tmdl lines 210-230, deduplicated per calendar day)
     const siteStaffMap = new Map();
+    const claimedAllowDatesByStaff = new Map();
+    const claimedAbsDatesByStaff = new Map();
     const DOW_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-    logAll.forEach(l => {
+    const sortedLogAll = logAll.slice().sort((a, b) =>
+      String((b && b.start_date) || '').localeCompare(String((a && a.start_date) || ''))
+      || ((isAppRecord(b) ? 1 : 0) - (isAppRecord(a) ? 1 : 0))
+    );
+    sortedLogAll.forEach(l => {
       if (!l || l.voided) return;
       const s = ensureStaff(l.staff, l.company);
       if (l.site) s.sites.add(l.site);
@@ -18011,6 +18056,8 @@
       const wEnd = lEnd < effSiteCutoff ? lEnd : effSiteCutoff;
       if (wStart > wEnd) return;
 
+      if (!claimedAllowDatesByStaff.has(srKey)) claimedAllowDatesByStaff.set(srKey, new Set());
+      const claimedDates = claimedAllowDatesByStaff.get(srKey);
       const actSet = idx.siteActivityByStaff.get(sk);
       const [sy, sm, sd] = wStart.split('-').map(Number);
       const [ey, em, ed] = wEnd.split('-').map(Number);
@@ -18022,19 +18069,27 @@
       while (curDt.getTime() <= endMs) {
         if (tickedDow.has(curDt.getUTCDay())) {
           const iso = `${curDt.getUTCFullYear()}-${String(curDt.getUTCMonth() + 1).padStart(2, '0')}-${String(curDt.getUTCDate()).padStart(2, '0')}`;
-          const ym = iso.slice(0, 7);
-          daysCnt += 1;
-          ymCountMap.set(ym, (ymCountMap.get(ym) || 0) + 1);
-          if (actSet && actSet.has(iso)) actCnt += 1;
+          if (!claimedDates.has(iso)) {
+            claimedDates.add(iso);
+            const ym = iso.slice(0, 7);
+            daysCnt += 1;
+            ymCountMap.set(ym, (ymCountMap.get(ym) || 0) + 1);
+            if (actSet && actSet.has(iso)) actCnt += 1;
+          }
         }
         curDt.setUTCDate(curDt.getUTCDate() + 1);
       }
       if (!daysCnt) return;
 
+      if (!claimedAbsDatesByStaff.has(srKey)) claimedAbsDatesByStaff.set(srKey, new Set());
+      const claimedAbs = claimedAbsDatesByStaff.get(srKey);
       const evList = absVacEventsByStaff.get(srKey) || [];
       let invDays = 0;
-      evList.forEach(ev => {
-        if (ev.date >= wStart && ev.date <= wEnd) invDays += ev.days;
+      evList.forEach((ev, evIdx) => {
+        if (ev.date >= wStart && ev.date <= wEnd && !claimedAbs.has(evIdx)) {
+          claimedAbs.add(evIdx);
+          invDays += ev.days;
+        }
       });
       const paidDays = Math.max(0, daysCnt - invDays);
       const accU = paidDays * uDaily;
@@ -18196,7 +18251,37 @@
 
     const monthMidDate = /^\d{4}-\d{2}$/.test(ym) ? `${ym}-15` : refTxDate;
     const prof = getStaffContractProfile(staffName, company, monthMidDate);
-    const baseSalary = round2(prof.hasContract ? prof.monthlySalary : 0);
+    let midMonthGapDed = 0;
+    if (prof.hasContract && /^\d{4}-\d{2}$/.test(ym) && SEED.records && Array.isArray(SEED.records.employments)) {
+      const { mStart, mEnd, daysInMonth } = getPayrollMonthBounds(ym);
+      const coN = norm(prof.company || company);
+      const empRows = SEED.records.employments.filter(e => e && !e.voided && norm(e.staff) === sk && (!coN || norm(e.company) === coN));
+      if (empRows.length) {
+        const covDays = new Set();
+        empRows.forEach(e => {
+          const cs = String(e.start_date || '2025-01-01').slice(0, 10);
+          const ce = String(e.end_date || '2030-12-31').slice(0, 10);
+          const ovS = cs > mStart ? cs : mStart;
+          const ovE = ce < mEnd ? ce : mEnd;
+          if (ovS <= ovE) {
+            const [y1, m1, d1] = ovS.split('-').map(Number);
+            const [y2, m2, d2] = ovE.split('-').map(Number);
+            const cur = new Date(Date.UTC(y1, m1 - 1, d1));
+            const endMs = Date.UTC(y2, m2 - 1, d2);
+            while (cur.getTime() <= endMs) {
+              covDays.add(`${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, '0')}-${String(cur.getUTCDate()).padStart(2, '0')}`);
+              cur.setUTCDate(cur.getUTCDate() + 1);
+            }
+          }
+        });
+        if (covDays.size > 0 && covDays.size < daysInMonth) {
+          const gapD = daysInMonth - covDays.size;
+          const exactDaily = (prof.workingDays > 0 && prof.monthlySalary > 0) ? (prof.monthlySalary / prof.workingDays) : prof.dailyRate;
+          midMonthGapDed = round2(gapD * (exactDaily + round2(prof.deduction || 0)));
+        }
+      }
+    }
+    const baseSalary = round2(prof.hasContract ? Math.max(0, prof.monthlySalary - midMonthGapDed) : 0);
     const reimbursement = round2(prof.hasContract ? prof.reimbursement : 0);
     const contractDed = round2(prof.hasContract ? prof.deduction : 0);
     const contractNetBase = round2(baseSalary + reimbursement);
@@ -28647,6 +28732,10 @@
             });
           }
           const logStrip = $('logStaffContextStrip');
+          const endDate = val('f_enddate');
+          const openPriorLog = curStaff
+            ? ((SEED.records && SEED.records.logistics_allowances) || []).find(l => l && !l.voided && norm(l.company || 'WTC') === norm(curCo) && norm(l.staff) === norm(curStaff) && !l.end_date && String(l.start_date || '').slice(0, 10) < txDate)
+            : null;
           if (logStrip) {
             if (!curStaff) {
               logStrip.hidden = true;
@@ -28659,6 +28748,7 @@
                 <div>
                   <strong>${esc(prof.staff || curStaff)}</strong>
                   <span class="badge ${prof.hasContract ? 'badge-ok' : 'badge-neutral'}">${esc(prof.role || (prof.hasContract ? 'Contract' : 'Staff'))}</span>
+                  ${openPriorLog ? `<span class="badge badge-info">Auto-closes prior open allowance (since ${esc(fmtDateDMY(openPriorLog.start_date))})</span>` : ''}
                 </div>
                 <div class="att-contract-metrics">
                   ${eqInfo.primaryEquipment ? `<span><small>Equipment</small><b>${relLink('equipment', eqInfo.primaryEquipment)}</b></span>` : ''}
@@ -28672,9 +28762,10 @@
           }
           setHint('hint_log_staff', curStaff && prof.hasContract ? `${prof.role || 'Staff'} · ${prof.company || curCo}` : '', 'ok');
           setText('calc_log_days', `${daysCount} day${daysCount === 1 ? '' : 's'} (${checkedDays.map(d => d[0].toUpperCase() + d.slice(1)).join(', ') || 'None'})`);
-          setText('calc_log_daily', daysCount > 0 && thisPay > 0 ? `${fmtUSD(thisPay / daysCount, 2)} / day` : '$0.00 / day');
-          setText('calc_log_month', `${fmtUSD(priorMoAllow, 2)} prior${thisPay > 0 ? ' + ' + fmtUSD(thisPay, 2) + ' = ' + fmtUSD(priorMoAllow + thisPay, 2) : ''}`);
-          setText('calc_log_total', fmtUSD(thisPay, 2));
+          setText('calc_log_daily', thisPay > 0 ? `${fmtUSD(thisPay, 2)} / day` : '$0.00 / day');
+          const estWeekly = round2(thisPay * daysCount);
+          setText('calc_log_month', `${fmtUSD(priorMoAllow, 2)} prior${endDate ? ` · Thru ${fmtDateDMY(endDate)}` : ' · Open Window'}`);
+          setText('calc_log_total', estWeekly > 0 ? `${fmtUSD(estWeekly, 2)} / wk` : '$0.00');
         }
 
         // 3. Live Treasury / Loans / External Cash Strip & 4-Tile Footer (#trLiveContextStrip & #trLiveCalc)
@@ -29368,7 +29459,20 @@
         const attMode = val('f_att_mode') || 'shift';
         const preset = FORM_UI.attPreset || 'regular';
 
-        // 1. Live Employee Contract Strip (#attStaffContractCard — hidden when blank) & Date Sunday Hint
+        // 1. Live Employee Contract Strip (#attStaffContractCard — hidden when blank) & Date Sunday / Existing-Log Hint
+        const existingAttOnDate = curStaff
+          ? ((SEED.records && SEED.records.attendance) || []).filter(a =>
+              a && !a.voided
+              && norm(a.company || 'WTC') === norm(curCo)
+              && norm(a.staff) === norm(curStaff)
+              && String(a.set_date || a.rep_date || a.date || '').slice(0, 10) === attDate
+              && !/^(extra|config)/i.test(String(a.type || a.status || ''))
+            )
+          : [];
+        const existingLeaveRow = existingAttOnDate.find(a => /Absence|VacAbsence|Half\s*Day|Sick|Leave|Unpaid/i.test(String(a.type || a.status || '')));
+        const dupWarnHtml = existingAttOnDate.length
+          ? `<span class="badge badge-warn">Already logged on ${esc(fmtDateDMY(attDate))}: ${esc(existingAttOnDate.map(a => a.type || a.status || 'Shift').join(', '))}</span>`
+          : '';
         const cardEl = $('attStaffContractCard');
         if (cardEl) {
           if (!curStaff) {
@@ -29376,9 +29480,9 @@
             cardEl.innerHTML = '';
           } else if (prof.hasContract) {
             cardEl.hidden = false;
-            cardEl.className = 'att-contract-strip';
+            cardEl.className = 'att-contract-strip' + (existingLeaveRow && attMode === 'leave' ? ' is-warn' : '');
             cardEl.innerHTML = `
-              <div><strong>${esc(prof.staff)}</strong> <span class="badge ${prof.status === 'Current' ? 'badge-ok' : 'badge-warn'}">${esc(prof.status)}</span></div>
+              <div><strong>${esc(prof.staff)}</strong> <span class="badge ${prof.status === 'Current' ? 'badge-ok' : 'badge-warn'}">${esc(prof.status)}</span> ${dupWarnHtml}</div>
               <div class="att-contract-metrics">
                 <span><small>Monthly</small><b>${fmtUSD(prof.monthlySalary, 0)}</b></span>
                 <span><small>Schedule</small><b>${prof.workingDays}d × ${fmtNum(prof.workingHours, 1)}h</b></span>
@@ -29390,13 +29494,15 @@
           } else {
             cardEl.hidden = false;
             cardEl.className = 'att-contract-strip is-warn';
-            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file · using default <b>8.0h</b> shift &amp; fallback rate (<b>${fmtUSD(prof.hourlyRate, 2)}/hr</b>).</span>`;
+            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file · using default <b>8.0h</b> shift &amp; fallback rate (<b>${fmtUSD(prof.hourlyRate, 2)}/hr</b>). ${dupWarnHtml}</span>`;
           }
         }
         setHint(
           'hint_att_date',
-          wk.isSunday ? 'Sunday · Weekly Day Off (100% OT)' : '',
-          wk.isSunday ? 'warn' : ''
+          existingLeaveRow && attMode === 'leave'
+            ? `Duplicate leave/absence on ${fmtDateDMY(attDate)} (${existingLeaveRow.type || existingLeaveRow.status})`
+            : (wk.isSunday ? 'Sunday · Weekly Day Off (100% OT)' : ''),
+          (existingLeaveRow && attMode === 'leave') || wk.isSunday ? 'warn' : ''
         );
 
         // 2. Sync Unified Entry Mode / Shift Basis Pill Bar & Sub-Panels
@@ -29538,6 +29644,7 @@
         const curStaff = val('f_staff');
         const curCo = val('f_company') || defaultEntryCompany();
         const txDate = val('f_date') || todayISO();
+        const endDate = isContract ? val('f_enddate') : '';
         const prof = getStaffContractProfile(curStaff, curCo, txDate);
         const eqInfo = resolveStaffEquipmentSitesInfo(curStaff, curCo, txDate);
         const payBasis = val('f_paytype') || (isContract ? 'Monthly' : 'Daily');
@@ -29562,6 +29669,12 @@
               }
             }
           }
+          if (isContract && curStaff && prof.hasContract) {
+            const wdEl = $('f_workdays');
+            const whEl = $('f_workhours');
+            if (wdEl && wdEl.dataset.userEdited !== '1') wdEl.value = String(prof.workingDays || 30);
+            if (whEl && whEl.dataset.userEdited !== '1') whEl.value = String(prof.workingHours || 8);
+          }
         }
         const eqBox = $('empEquipSiteBox');
         if (eqBox) {
@@ -29573,6 +29686,14 @@
             eqBox.innerHTML = renderStaffEquipSiteBoxHtml(eqInfo);
           }
         }
+        const staffContracts = (isContract && curStaff)
+          ? ((SEED.records && SEED.records.employments) || []).filter(e => e && !e.voided && norm(e.company || 'WTC') === norm(curCo) && norm(e.staff) === norm(curStaff))
+          : [];
+        const sameDayDup = staffContracts.find(e => String(e.start_date || '').slice(0, 10) === txDate);
+        const openPriorEmp = staffContracts.find(e => !e.end_date && String(e.start_date || '').slice(0, 10) < txDate);
+        const nextNewerEmp = (!endDate && staffContracts.length)
+          ? staffContracts.filter(e => String(e.start_date || '').slice(0, 10) > txDate).sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')))[0]
+          : null;
         const empStrip = $('empStaffContextStrip');
         if (empStrip) {
           if (!curStaff) {
@@ -29581,12 +29702,15 @@
           } else if (prof.hasContract) {
             const diffBase = amt > 0 && payBasis === 'Monthly' ? round2(amt - prof.monthlySalary) : null;
             empStrip.hidden = false;
-            empStrip.className = 'att-contract-strip';
+            empStrip.className = 'att-contract-strip' + (sameDayDup ? ' is-warn' : '');
             empStrip.innerHTML = `
               <div>
                 <strong>${esc(prof.staff)}</strong>
                 <span class="badge ${prof.status === 'Current' ? 'badge-ok' : 'badge-neutral'}">${esc(prof.status)} Contract (${esc(prof.company || curCo)})</span>
                 ${diffBase != null && Math.abs(diffBase) > 0.01 ? `<span class="badge ${diffBase > 0 ? 'badge-info' : 'badge-warn'}">${diffBase > 0 ? '+' : ''}${fmtUSD(diffBase, 2)} vs Current Base</span>` : ''}
+                ${sameDayDup ? `<span class="badge badge-warn">Duplicate Start Date (${esc(fmtDateDMY(txDate))})</span>` : ''}
+                ${!sameDayDup && openPriorEmp ? `<span class="badge badge-info">Auto-closes prior open contract (since ${esc(fmtDateDMY(openPriorEmp.start_date))})</span>` : ''}
+                ${!sameDayDup && nextNewerEmp ? `<span class="badge badge-info">Auto-caps before ${esc(fmtDateDMY(nextNewerEmp.start_date))}</span>` : ''}
               </div>
               <div class="att-contract-metrics">
                 <span><small>Current Base</small><b>${fmtUSD(prof.monthlySalary, 2)}/mo</b></span>
@@ -29601,8 +29725,8 @@
             empStrip.innerHTML = `<span><b>${esc(curStaff)}</b> has no existing contract on file in ${esc(curCo)} · this entry establishes their ${isContract ? 'active contract' : 'freelance work log'}.</span>`;
           }
         }
-        const wDays = prof.workingDays || 26;
-        const wHours = prof.workingHours || 8;
+        const wDays = isContract ? Math.max(1, num('f_workdays') || (prof.workingDays || 30)) : (prof.workingDays || 26);
+        const wHours = isContract ? Math.max(1, num('f_workhours') || (prof.workingHours || 8)) : (prof.workingHours || 8);
         const impDaily = payBasis === 'Monthly' ? (amt / wDays) : amt;
         const impHourly = impDaily / wHours;
         const impMonthly = payBasis === 'Monthly' ? amt : (payBasis === 'Daily' ? amt * wDays : amt);
@@ -29612,6 +29736,50 @@
         setText('calc_emp_rates', amt > 0 ? `${fmtUSD(impDaily, 2)}/d · ${fmtUSD(impHourly, 2)}/hr` : '-');
         setText('calc_emp_total', fmtUSD(isContract ? impMonthly : amt, 2));
         return { curStaff, payBasis, amt };
+      }
+      if (STATE.modalForm === 'triprate') {
+        const curCo = val('f_company') || defaultEntryCompany();
+        const startDt = val('f_date') || todayISO();
+        const siteVal = val('f_site');
+        const regEl = $('f_region');
+        if (siteVal !== FORM_UI.lastSite) {
+          FORM_UI.lastSite = siteVal;
+          const sObj = siteVal ? siteInfo(siteVal) : null;
+          const derivedReg = (sObj && sObj.region) || siteVal || '';
+          if (regEl && (!val('f_region') || regEl.dataset.autoFilledRegion === '1')) {
+            regEl.value = derivedReg;
+            regEl.dataset.autoFilledRegion = derivedReg ? '1' : '0';
+          }
+        }
+        const effReg = val('f_region') || (siteVal && (siteInfo(siteVal) || {}).region) || siteVal;
+        const otStrip = $('otRateContextStrip');
+        const rules = effReg
+          ? ((SEED.records && SEED.records.overtime_rates) || [])
+              .filter(o => o && !o.voided && norm(o.company || 'WTC') === norm(curCo) && norm(o.region) === norm(effReg))
+              .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')))
+          : [];
+        const openPriorOt = rules.find(o => !o.end_date && String(o.start_date || '').slice(0, 10) < startDt);
+        const sameDayOt = rules.find(o => String(o.start_date || '').slice(0, 10) === startDt);
+        if (otStrip) {
+          if (!effReg) {
+            otStrip.hidden = true;
+            otStrip.innerHTML = '';
+          } else {
+            otStrip.hidden = false;
+            otStrip.className = 'att-contract-strip' + (sameDayOt ? ' is-warn' : '');
+            const pillsHtml = rules.slice(0, 3).map(o => `<span class="badge ${!o.end_date ? 'badge-ok' : 'badge-neutral'}">${esc(fmtDateDMY(o.start_date))} to ${esc(o.end_date ? fmtDateDMY(o.end_date) : 'Open')} · <b>${fmtUSD(o.amount != null ? o.amount : o.usd_amount, 2)}/trip</b></span>`).join(' ');
+            otStrip.innerHTML = `
+              <div>
+                <strong>${esc(effReg)} (${esc(curCo)})</strong>
+                ${sameDayOt ? `<span class="badge badge-warn">Duplicate Start Date (${esc(fmtDateDMY(startDt))})</span>` : ''}
+                ${!sameDayOt && openPriorOt ? `<span class="badge badge-info">Auto-closes open ${fmtUSD(openPriorOt.amount != null ? openPriorOt.amount : openPriorOt.usd_amount, 2)}/trip rate on day before</span>` : ''}
+              </div>
+              <div class="att-contract-metrics">${pillsHtml || `<span>No prior rate on file for <b>${esc(effReg)}</b> · establishes initial regional rate.</span>`}</div>
+            `;
+          }
+        }
+        setHint('hint_ot_region', siteVal && effReg ? `Mapped from site "${siteVal}": ${effReg}` : '', siteVal && effReg ? 'ok' : '');
+        return { effReg, rulesCount: rules.length };
       }
       if (STATE.modalForm === 'jv') {
         const jvt = val('f_jvtype') || 'distribution';
@@ -31859,11 +32027,15 @@
         const eLbp = Math.round(Math.max(0, num('f_lbp')));
         const effType = (eLbp > 0 && !(eUsd > 0)) ? 'Extra LBP' : 'Extra USD';
         const tallyVal = effType === 'Extra LBP' ? eLbp : amt;
+        const payMo = val('f_paymonth') || repDate.slice(0, 7) || date.slice(0, 7);
+        const effSetDate = payMo === repDate.slice(0, 7) ? repDate : `${payMo}-28`;
         crKey = 'attendance';
         record = {
           ...base,
           name: `BON ${date} ${st}`,
-          month: val('f_paymonth') || date.slice(0, 7),
+          rep_date: repDate,
+          set_date: effSetDate,
+          month: payMo,
           staff: st,
           type: effType,
           status: effType,
@@ -31889,15 +32061,31 @@
       const st = val('f_staff');
       if (!st) addErr('f_staff', 'Staff is required.');
       const attMode = val('f_att_mode') || 'shift';
+      const existingAttSameDate = st
+        ? ((SEED.records && SEED.records.attendance) || []).filter(a =>
+            a && !a.voided
+            && norm(a.company || 'WTC') === norm(company)
+            && norm(a.staff) === norm(st)
+            && String(a.set_date || a.rep_date || a.date || '').slice(0, 10) === date
+            && !/^(extra|config)/i.test(String(a.type || a.status || ''))
+          )
+        : [];
       if (attMode === 'leave') {
         const lvType = val('f_leave_type') || 'Half Day';
         const lvDays = round2(num('f_leave_days'));
         const lvPay = val('f_leave_pay') || 'unpaid';
         if (!(lvDays > 0)) addErr('f_leave_days', 'Leave Days must be at least 0.5.');
+        const dupLeave = existingAttSameDate.find(a => /Absence|VacAbsence|Half\s*Day|Sick|Leave|Unpaid/i.test(String(a.type || a.status || '')));
+        if (dupLeave) {
+          addErr('f_date', `Duplicate leave/absence already logged for ${st} on ${fmtDateDMY(date)} (${dupLeave.type || dupLeave.status}).`);
+        }
         const effType = lvType === 'Half Day' ? 'Half Day' : (lvType === 'Sick Leave' ? 'Sick Leave' : ((lvType === 'VacAbsence' || lvPay === 'paid') ? 'VacAbsence' : 'Absence'));
         record = {
           ...base,
           name: `ATT ${date} ${st}`,
+          rep_date: date,
+          set_date: date,
+          month: date.slice(0, 7),
           staff: st,
           type: effType,
           status: effType,
@@ -31930,12 +32118,25 @@
         } else if (isNoClock && !(otH > 0) && !(ltH > 0)) {
           addErr('f_hours', 'Enter Overtime Hours or Late Hours.');
         }
+        const dupShift = existingAttSameDate.find(a =>
+          !/Absence|VacAbsence|Half\s*Day|Sick|Leave|Unpaid/i.test(String(a.type || a.status || ''))
+          && String(a.in_time || '') === String(inFmt || '')
+          && String(a.out_time || '') === String(outFmt || '')
+          && Number(a.overtime_hours || 0) === otH
+          && Number(a.late_hours || 0) === ltH
+        );
+        if (dupShift) {
+          addErr('f_date', `Duplicate attendance shift already logged for ${st} on ${fmtDateDMY(date)}.`);
+        }
         const regH = isNoClock ? 0 : round2(Math.max(0, workedH - otH));
         const effType = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
         const tallyVal = otH > 0 ? otH : (ltH > 0 ? ltH : workedH);
         record = {
           ...base,
           name: `ATT ${date} ${st}`,
+          rep_date: date,
+          set_date: date,
+          month: date.slice(0, 7),
           staff: st,
           type: effType,
           status: effType,
@@ -31958,23 +32159,88 @@
       if (!st) addErr('f_staff', 'Staff is required.');
       if (!(amt > 0)) addErr('f_amount', f === 'employment' ? 'Base Salary > 0 is required.' : 'Amount > 0 is required.');
       const payType = val('f_paytype');
-      // seed / SQLite keys (type · salary_usd · daily_rate) beside the form keys so the registers and mfg.db read both
-      record = { ...base, name: `${f === 'employment' ? 'EMP' : 'FRL'} ${st}`, staff: st, role: val('f_role'), pay_type: payType, type: f === 'employment' ? (payType === 'Daily' ? 'Daily' : 'Regular') : 'Freelance', salary_usd: /Monthly/i.test(payType) ? amt : 0, daily_rate: /Daily/i.test(payType) ? amt : 0, base_salary: amt, amount: amt, start_date: date, status: 'Active' };
+      if (f === 'employment') {
+        const endDate = val('f_enddate');
+        if (endDate && endDate < date) addErr('f_enddate', 'End Date cannot be before Start Date.');
+        const sameDayContract = st && ((SEED.records && SEED.records.employments) || []).find(e =>
+          e && !e.voided
+          && norm(e.company || 'WTC') === norm(company)
+          && norm(e.staff) === norm(st)
+          && String(e.start_date || '').slice(0, 10) === date
+        );
+        if (sameDayContract) {
+          addErr('f_date', `A contract for ${st} already starts on ${fmtDateDMY(date)}. Modify the existing contract or pick a new Start Date.`);
+        }
+        const wDays = Math.max(1, Math.round(num('f_workdays') || (/Daily/i.test(payType) ? 26 : 30)));
+        const wHours = Math.max(1, round2(num('f_workhours') || 8));
+        const empSlug = String(st || 'STAFF').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 14) || 'STAFF';
+        const empSeq = String((((SEED.records && SEED.records.employments) || []).filter(e => e && norm(e.staff) === norm(st)).length) + 1).padStart(3, '0');
+        const effStatus = (endDate && endDate < todayISO()) ? 'Ended' : 'Current';
+        record = {
+          ...base,
+          name: `EMPL-${date.replace(/-/g, '')}-${empSlug}-${empSeq}`,
+          staff: st,
+          role: val('f_role'),
+          pay_type: payType,
+          type: /Daily/i.test(payType) ? 'Daily' : 'Staff',
+          salary_usd: /Monthly/i.test(payType) ? amt : 0,
+          daily_rate: /Daily/i.test(payType) ? amt : round2(amt / wDays),
+          working_days: wDays,
+          working_hours: wHours,
+          overtime_multiplier: 1,
+          lateness_multiplier: 1,
+          base_salary: amt,
+          amount: amt,
+          start_date: date,
+          end_date: endDate || '',
+          status: effStatus
+        };
+      } else {
+        record = { ...base, name: `FRL ${st}`, staff: st, role: val('f_role'), pay_type: payType, type: 'Freelance', salary_usd: 0, daily_rate: /Daily/i.test(payType) ? amt : 0, base_salary: amt, amount: amt, start_date: date, status: 'Active' };
+      }
     } else if (f === 'logistics') {
       const st = val('f_staff'), amt = round2(num('f_amount'));
+      const endDate = val('f_enddate');
       if (!st) addErr('f_staff', 'Staff is required.');
       if (!(amt > 0)) addErr('f_usd', 'Allowance > 0 is required.');
+      if (endDate && endDate < date) addErr('f_enddate', 'End Date cannot be before Start Date.');
       const dayKeys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
       const dayFlags = Object.fromEntries(dayKeys.map(d => [d, !!($('f_day_' + d) && $('f_day_' + d).checked)]));
       const days = dayKeys.filter(d => dayFlags[d]).length;
+      if (!(days > 0)) addErr('f_usd', 'Select at least one working day (Mon-Sun).');
+      const sameDayLog = st && ((SEED.records && SEED.records.logistics_allowances) || []).find(l =>
+        l && !l.voided
+        && norm(l.company || 'WTC') === norm(company)
+        && norm(l.staff) === norm(st)
+        && String(l.start_date || '').slice(0, 10) === date
+      );
+      if (sameDayLog) {
+        addErr('f_date', `A site allowance for ${st} already starts on ${fmtDateDMY(date)}.`);
+      }
       const eqInfo = st ? resolveStaffEquipmentSitesInfo(st, company, date) : null;
       const linkedEq = (eqInfo && eqInfo.primaryEquipment) || '';
-      record = { ...base, name: `ALLOW ${date} ${st}`, rep_date: repDate, staff: st, site: val('f_site'), equipment: linkedEq, days_count: days, working_days: dayKeys.filter(d => dayFlags[d]).map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', '), ...dayFlags, start_date: date, end_date: date, usd_amount: round2(num('f_usd')), lbp_amount: round2(num('f_lbp')), daily_usd: days ? round2(amt / days) : amt, amount: amt };
+      record = { ...base, name: `ALLOW ${date} ${st}`, rep_date: date, staff: st, site: val('f_site'), equipment: linkedEq, days_count: days, working_days: dayKeys.filter(d => dayFlags[d]).map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', '), ...dayFlags, start_date: date, end_date: endDate || '', usd_amount: round2(num('f_usd')), lbp_amount: round2(num('f_lbp')), daily_usd: amt, amount: amt };
     } else if (f === 'triprate') {
-      const nm = val('f_name') || val('f_site'), amt = round2(num('f_amount'));
-      if (!nm) addErr('f_name', 'Rate Name or Site is required.');
+      const siteVal = val('f_site');
+      const sObj = siteVal ? siteInfo(siteVal) : null;
+      const regVal = val('f_region') || (sObj && sObj.region) || siteVal;
+      const endDate = val('f_enddate');
+      const amt = round2(num('f_amount'));
+      if (!regVal) addErr('f_region', 'Region (or Site) is required.');
       if (!(amt > 0)) addErr('f_amount', 'Rate > 0 is required.');
-      record = { ...base, name: nm, site: val('f_site'), region: val('f_site'), category: val('f_category') || 'Truck', rate_usd: amt, amount: amt, start_date: date };
+      if (endDate && endDate < date) addErr('f_enddate', 'End Date cannot be before Start Date.');
+      const sameDayOt = regVal && ((SEED.records && SEED.records.overtime_rates) || []).find(o =>
+        o && !o.voided
+        && norm(o.company || 'WTC') === norm(company)
+        && norm(o.region) === norm(regVal)
+        && String(o.start_date || '').slice(0, 10) === date
+      );
+      if (sameDayOt) {
+        addErr('f_date', `An overtime rate for ${regVal} already starts on ${fmtDateDMY(date)}.`);
+      }
+      const regSlug = String(regVal || 'REG').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10) || 'REG';
+      const nm = val('f_name') || `OT-${regSlug}-${date.slice(0, 7)}`;
+      record = { ...base, name: nm, site: siteVal, region: regVal, category: val('f_category') || 'Truck', rate_usd: amt, amount: amt, start_date: date, end_date: endDate || '' };
     } else if (f === 'treasury') {
       const trt = val('f_trtype') || 'loan';
       if (trt === 'conversion') {
@@ -32410,6 +32676,66 @@
           });
         }
       }
+      if ((crKey === 'employments' || crKey === 'logistics_allowances' || crKey === 'overtime_rates') && record.start_date) {
+        if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
+        const dt = new Date(record.start_date + 'T00:00:00Z');
+        if (!isNaN(dt.getTime())) {
+          dt.setUTCDate(dt.getUTCDate() - 1);
+          const prevCloseDate = dt.toISOString().slice(0, 10);
+          const allRows = ((SEED.records && SEED.records[crKey]) || []).concat(STATE.customRecords[crKey] || []);
+          const seenIds = new Set();
+          const closedIds = [];
+          allRows.forEach(prev => {
+            if (!prev || prev.voided || String(prev.id) === String(record.id)) return;
+            if (norm(prev.company || 'WTC') !== norm(record.company || 'WTC')) return;
+            if (crKey === 'overtime_rates') {
+              if (norm(prev.region) !== norm(record.region)) return;
+            } else {
+              if (norm(prev.staff) !== norm(record.staff)) return;
+            }
+            const pid = String(prev.id || '');
+            if (pid && seenIds.has(pid)) return;
+            if (pid) seenIds.add(pid);
+            const pStart = String(prev.start_date || '').slice(0, 10);
+            if (!prev.end_date && pStart && pStart < String(record.start_date)) {
+              prev._prev_end_date = prev.end_date || '';
+              if (crKey === 'employments') {
+                prev._prev_status = prev.status || 'Current';
+                prev.status = 'Ended';
+              }
+              prev.end_date = prevCloseDate;
+              if (pid) closedIds.push(pid);
+              const cIdx = STATE.customRecords[crKey].findIndex(x => x && String(x.id) === pid);
+              if (cIdx >= 0) Object.assign(STATE.customRecords[crKey][cIdx], prev);
+              else STATE.customRecords[crKey].push(Object.assign({}, prev));
+              extraApiPosts.push([crKey, prev]);
+            }
+          });
+          if (closedIds.length) {
+            record._auto_closed_prev_id = closedIds[0];
+            record._auto_closed_prev_ids = closedIds;
+          }
+          // If entering a backdated rule/contract with blank end_date before an existing newer rule/contract, cap end_date to nextStart - 1d
+          if (!record.end_date) {
+            const nextNewer = allRows
+              .filter(nx => nx && !nx.voided && String(nx.id) !== String(record.id)
+                && norm(nx.company || 'WTC') === norm(record.company || 'WTC')
+                && (crKey === 'overtime_rates' ? norm(nx.region) === norm(record.region) : norm(nx.staff) === norm(record.staff))
+                && String(nx.start_date || '').slice(0, 10) > String(record.start_date))
+              .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')))[0];
+            if (nextNewer && nextNewer.start_date) {
+              const ndt = new Date(String(nextNewer.start_date).slice(0, 10) + 'T00:00:00Z');
+              if (!isNaN(ndt.getTime())) {
+                ndt.setUTCDate(ndt.getUTCDate() - 1);
+                record.end_date = ndt.toISOString().slice(0, 10);
+                if (crKey === 'employments' && record.end_date < todayISO()) {
+                  record.status = 'Ended';
+                }
+              }
+            }
+          }
+        }
+      }
       applyCustomRecordsToSeed();
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
       STATE.saving = false;
@@ -32537,13 +32863,23 @@
         });
       }
     }
-    if (crKey === 'price_rules' && r && r._auto_closed_prev_id) {
-      const prevId = String(r._auto_closed_prev_id);
-      const allPr = ((SEED.records && SEED.records.price_rules) || []).concat(STATE.customRecords.price_rules || []);
-      allPr.forEach(pr => {
-        if (!pr || String(pr.id) !== prevId) return;
+    if ((crKey === 'price_rules' || crKey === 'employments' || crKey === 'logistics_allowances' || crKey === 'overtime_rates') && r && (r._auto_closed_prev_ids || r._auto_closed_prev_id)) {
+      const prevIds = new Set((Array.isArray(r._auto_closed_prev_ids) ? r._auto_closed_prev_ids : [r._auto_closed_prev_id]).filter(Boolean).map(String));
+      const allPool = ((SEED.records && SEED.records[crKey]) || []).concat(STATE.customRecords[crKey] || []);
+      const seenRestore = new Set();
+      allPool.forEach(pr => {
+        if (!pr || !prevIds.has(String(pr.id))) return;
         pr.end_date = pr._prev_end_date || '';
-        extraVoidPosts.push(['price_rules', pr]);
+        if (crKey === 'employments') {
+          pr.status = pr._prev_status || 'Current';
+        }
+        const pid = String(pr.id);
+        if (!seenRestore.has(pid)) {
+          seenRestore.add(pid);
+          const cIdx = (STATE.customRecords[crKey] || []).findIndex(x => x && String(x.id) === pid);
+          if (cIdx >= 0) Object.assign(STATE.customRecords[crKey][cIdx], pr);
+          extraVoidPosts.push([crKey, pr]);
+        }
       });
     }
     applyCustomRecordsToSeed();
@@ -35283,6 +35619,12 @@
           toast('Effective To Date cannot be before Effective From Date.', 'err');
           return;
         }
+        const candStartDt = String((pendingUpdates.start_date !== undefined ? pendingUpdates.start_date : row.start_date) || '').slice(0, 10);
+        const candEndDt = String((pendingUpdates.end_date !== undefined ? pendingUpdates.end_date : row.end_date) || '').slice(0, 10);
+        if (candStartDt && candEndDt && candEndDt < candStartDt) {
+          toast('End Date cannot be before Start Date.', 'err');
+          return;
+        }
         if (UNIVERSAL_MAIN_SPEC[key]) {
           const candidate = Object.assign({}, row, pendingUpdates);
           const mainVal = universalMainValue(key, candidate);
@@ -35309,7 +35651,7 @@
           }
           if (key === 'drivers' && (fk === 'driver' || fk === 'name')) { row.name = nextVal; row.driver = nextVal; }
           if (key === 'equipment' && (fk === 'equipment' || fk === 'name')) { row.name = nextVal; row.equipment = nextVal; }
-          if (key === 'employments' && (fk === 'staff' || fk === 'name')) { row.staff = nextVal; row.name = nextVal; }
+          if (key === 'employments' && fk === 'staff') { row.staff = nextVal; }
           changedCount++;
         });
 
@@ -44715,6 +45057,7 @@
       setRailWidth: (w, persist) => setRailWidth(w, persist)
     };
     window.__openModalForm = (fid, prefill) => openEntryModal(fid, prefill);
+    window.__voidRecord = (crKey, id) => voidRecord(crKey, id);
     if (!window.__navToView) window.__navToView = v => setView(v);
 
     document.addEventListener('mousedown', () => { lastPointerDownAt = Date.now(); }, true);
