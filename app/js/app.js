@@ -6764,6 +6764,37 @@
     fIdx._lists[cKey] = uniqSorted(SEED.records.sites.map(s => s.name).concat(SEED.records.sales_tickets.map(r => r.site), SEED.records.raw_purchases.map(r => r.site)), fMap);
     return fIdx._lists[cKey];
   }
+  function siteMetaItems(side) {
+    const names = siteNames(side);
+    const stats = (window.MFG_GEO && typeof window.MFG_GEO.getUnifiedSiteStats === 'function')
+      ? window.MFG_GEO.getUnifiedSiteStats(SEED, STATE)
+      : null;
+    if (!stats || !stats.byNorm) return names.map(n => [n, '']);
+    const seen = new Set();
+    const out = [];
+    const fmt = (nm, st) => {
+      if (!st) return [nm, ''];
+      const parts = [];
+      if (st.raw > 0 && st.sales > 0) parts.push(`${st.raw} Raw · ${st.sales} Sales`);
+      else if (st.raw > 0) parts.push(`${st.raw} Raw loads`);
+      else if (st.sales > 0) parts.push(`${st.sales} Sales loads`);
+      if (st.region) parts.push(st.region);
+      return [nm, parts.join(' · ')];
+    };
+    names.forEach(nm => {
+      const nk = norm(nm);
+      if (!nk || seen.has(nk)) return;
+      seen.add(nk);
+      out.push(fmt(nm, stats.byNorm.get(nk)));
+    });
+    (stats.list || []).forEach(st => {
+      const nk = norm(st.name);
+      if (!nk || seen.has(nk)) return;
+      seen.add(nk);
+      out.push(fmt(st.name, st));
+    });
+    return out;
+  }
   function equipmentNames() {
     const fIdx = getFreqIndex();
     if (!fIdx._lists) fIdx._lists = {};
@@ -27396,6 +27427,285 @@
     });
   }
 
+  function buildOriginModePillsInnerHtml(company, mode, originBu) {
+    const allBus = (window.MFG_GEO && Array.isArray(window.MFG_GEO.BU_LIST))
+      ? window.MFG_GEO.BU_LIST
+      : ['WTC', 'BBConstruction', 'Lions Transport'];
+    const sibBus = allBus.filter(b => norm(b) !== norm(company));
+    return `
+      <button type="button" class="origin-pill${mode === 'company' ? ' active' : ''}" data-origin-mode="company"><span id="originDefaultBuLbl">${esc(company)}</span></button>
+      ${sibBus.map(b => `<button type="button" class="origin-pill${mode === 'bu' && norm(originBu) === norm(b) ? ' active' : ''}" data-origin-mode="bu" data-origin-bu="${esc(b)}">${esc(b)}</button>`).join('')}
+      <button type="button" class="origin-pill${mode === 'site' ? ' active' : ''}" data-origin-mode="site">Other Site</button>
+    `;
+  }
+
+  function renderOriginDispatchBarHtml(company, side) {
+    const initOriginSites = (window.MFG_GEO && typeof window.MFG_GEO.getUnifiedSiteMetaItems === 'function')
+      ? window.MFG_GEO.getUnifiedSiteMetaItems(SEED, STATE, { side: 'both', date: todayISO(), time: nowHHMM(), truck: '' })
+      : siteNames().map(n => [n, '']);
+    return `
+      <div class="origin-dispatch-card" id="wrap_f_origin_bar" data-origin-side="${esc(side)}">
+        <div class="origin-dispatch-top">
+          <span class="origin-dispatch-lbl">Starting Point</span>
+          <div class="origin-mode-pills" id="originModePills" data-rendered-co="${esc(company)}" data-rendered-mode="company:">
+            ${buildOriginModePillsInnerHtml(company, 'company', '')}
+          </div>
+          <span class="origin-km-badge" id="originKmBadge">Start: ${esc(company)} Hub</span>
+        </div>
+        <div class="origin-site-subgrid" id="wrap_origin_site_fields" hidden>
+          ${fld('Starting Site (Raw & Sales) *', inp('f_origin_site', 'text', '', 'list="dl_origin_sites" placeholder="Search site by frequency (Raw & Sales)..."') + dlMeta('dl_origin_sites', initOriginSites), { id: 'wrap_f_origin_site', hintId: 'hint_origin_site', hint: '' })}
+          ${fld('Prior Ticket # at Site (Last 24h · Optional)', inp('f_origin_ticket', 'text', '', 'list="dl_origin_tickets" placeholder="Select 24h Raw or Sales ticket (optional)..."') + dlMeta('dl_origin_tickets', []), { id: 'wrap_f_origin_ticket', hintId: 'hint_origin_ticket', hint: '' })}
+        </div>
+        <div class="origin-redirect-banner" id="originRedirectBanner" hidden></div>
+      </div>
+    `;
+  }
+
+  function syncOriginDispatchUI(side, allowAutoFill = true) {
+    const company = val('f_company') || defaultEntryCompany();
+    if (!window.MFG_GEO || !$('wrap_f_origin_bar')) {
+      return {
+        originType: 'company',
+        originName: company,
+        originSite: '',
+        originTicketNo: '',
+        originTicketKind: '',
+        originTicketId: '',
+        estKm: null,
+        estRoundTripKm: null,
+        priorDisposition: 'keep',
+        matchedPrior: null
+      };
+    }
+
+    let mode = FORM_UI.originMode || 'company';
+    let originBu = FORM_UI.originBu || '';
+    if (mode === 'bu' && (!originBu || norm(originBu) === norm(company))) {
+      mode = 'company';
+      originBu = '';
+      FORM_UI.originMode = 'company';
+      FORM_UI.originBu = '';
+    }
+
+    const pillsEl = $('originModePills');
+    const modeStamp = `${mode}:${originBu}`;
+    if (pillsEl && (pillsEl.dataset.renderedCo !== company || pillsEl.dataset.renderedMode !== modeStamp)) {
+      pillsEl.innerHTML = buildOriginModePillsInnerHtml(company, mode, originBu);
+      pillsEl.dataset.renderedCo = company;
+      pillsEl.dataset.renderedMode = modeStamp;
+    }
+
+    const siteSubEl = $('wrap_origin_site_fields');
+    if (siteSubEl) siteSubEl.hidden = mode !== 'site';
+
+    const effDate = (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : (val('f_date') || todayISO());
+    const effTime = val('f_time') || nowHHMM();
+    const curTruck = val('f_truck');
+    let originSite = '';
+    let matchedPrior = null;
+    let rawTktVal = '';
+
+    if (mode === 'site') {
+      const dlSitesEl = $('dl_origin_sites');
+      const sitesCacheKey = `${company}|${effDate}|${curTruck}|${SEED._customRev || 0}`;
+      if (dlSitesEl && dlSitesEl.dataset.cacheKey !== sitesCacheKey) {
+        const metaItems = window.MFG_GEO.getUnifiedSiteMetaItems(SEED, STATE, {
+          side: 'both',
+          date: effDate,
+          time: effTime,
+          truck: curTruck
+        });
+        dlSitesEl.innerHTML = metaItems.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+        dlSitesEl.dataset.cacheKey = sitesCacheKey;
+      }
+
+      originSite = val('f_origin_site');
+      const stats = window.MFG_GEO.getUnifiedSiteStats(SEED, STATE);
+      const stObj = originSite && stats && stats.byNorm ? stats.byNorm.get(norm(originSite)) : null;
+      if (originSite && stObj) {
+        setHint('hint_origin_site', `${stObj.region ? 'Zone: ' + stObj.region + ' · ' : ''}${fmtNum(stObj.raw)} Raw · ${fmtNum(stObj.sales)} Sales loads`, '');
+      } else if (originSite) {
+        setHint('hint_origin_site', 'Custom starting site', '');
+      } else {
+        setHint('hint_origin_site', 'Ranked by combined Raw & Sales frequency (24h truck stops boosted)', '');
+      }
+
+      const recent24h = originSite
+        ? window.MFG_GEO.getSiteLast24hTickets(SEED, STATE, { site: originSite, date: effDate, time: effTime, truck: curTruck })
+        : [];
+      const dlTktsEl = $('dl_origin_tickets');
+      const tktsCacheKey = `${norm(originSite)}|${effDate}|${effTime}|${curTruck}|${recent24h.length}|${SEED._customRev || 0}`;
+      if (dlTktsEl && dlTktsEl.dataset.cacheKey !== tktsCacheKey) {
+        const noCounts = new Map();
+        recent24h.forEach(t => noCounts.set(norm(t.ticket_no), (noCounts.get(norm(t.ticket_no)) || 0) + 1));
+        dlTktsEl.innerHTML = recent24h.map(t => {
+          const optVal = (noCounts.get(norm(t.ticket_no)) > 1) ? `${t.ticket_no} (${t.kindLabel})` : t.ticket_no;
+          return `<option value="${esc(optVal)}" data-meta="${esc(t.metaLabel)}">`;
+        }).join('');
+        dlTktsEl.dataset.cacheKey = tktsCacheKey;
+      }
+
+      rawTktVal = val('f_origin_ticket');
+      if (rawTktVal) {
+        matchedPrior = recent24h.find(t =>
+          norm(t.ticket_no) === norm(rawTktVal) ||
+          norm(`${t.ticket_no} (${t.kindLabel})`) === norm(rawTktVal)
+        ) || null;
+      }
+
+      if (!rawTktVal) {
+        FORM_UI.lastAutoFilledOriginTicket = '';
+      } else if (allowAutoFill && matchedPrior && FORM_UI.lastAutoFilledOriginTicket !== matchedPrior.id) {
+        FORM_UI.lastAutoFilledOriginTicket = matchedPrior.id;
+        if (!val('f_truck') && matchedPrior.truck && $('f_truck')) {
+          if (side === 'sales' && $('f_saletype') && val('f_saletype') === 'Pickup' && !val('f_customer')) {
+            $('f_saletype').value = 'Delivery';
+          }
+          const eq = equipInfo(matchedPrior.truck, company, false);
+          const isOwn = eq ? isOwnUnit(eq, company) : /^company/i.test(matchedPrior.transport_by || '');
+          if ($('f_transportby')) {
+            $('f_transportby').value = isOwn ? 'Company fleet' : 'Third-party truck';
+          }
+          $('f_truck').value = matchedPrior.truck;
+          FORM_UI.qtyManual = false;
+          FORM_UI.driverManual = false;
+        }
+        if (!val('f_product') && matchedPrior.product && $('f_product')) {
+          $('f_product').value = matchedPrior.product;
+          if (!isFieldAdminUnlocked('f_unitprice')) FORM_UI.priceManual = false;
+        }
+      }
+
+      if (!originSite) {
+        setHint('hint_origin_ticket', 'Pick a Starting Site first to suggest last-24h Raw & Sales tickets', '');
+      } else if (matchedPrior) {
+        setHint('hint_origin_ticket', `Linked ${matchedPrior.kindLabel} #${matchedPrior.ticket_no} (${matchedPrior.ageLabel}${matchedPrior.truck ? ' · Truck ' + matchedPrior.truck : ''}${matchedPrior.product ? ' · ' + matchedPrior.product : ''})`, 'ok');
+      } else if (recent24h.length > 0) {
+        const sCnt = recent24h.filter(x => x.kind === 'sales').length;
+        const rCnt = recent24h.filter(x => x.kind === 'raw').length;
+        setHint('hint_origin_ticket', `${recent24h.length} ticket${recent24h.length === 1 ? '' : 's'} at ${originSite} in last 24h (${sCnt} Sales · ${rCnt} Raw) · optional`, '');
+      } else {
+        setHint('hint_origin_ticket', `No Raw or Sales tickets at ${originSite} in last 24h · optional`, '');
+      }
+    }
+
+    const redirEl = $('originRedirectBanner');
+    if (redirEl) {
+      if (side === 'sales' && mode === 'site' && matchedPrior && matchedPrior.kind === 'sales') {
+        const disp = FORM_UI.originPriorDisposition || 'keep';
+        const pNo = matchedPrior.ticket_no;
+        const qtyTxt = matchedPrior.qty > 0 ? ` · ${fmtNum(matchedPrior.qty, 2)} ${matchedPrior.uom || 'm³'}` : '';
+        redirEl.hidden = false;
+        redirEl.innerHTML = `
+          <span><b>Redirected from Sales #${esc(pNo)}</b> (${esc(matchedPrior.customer || 'Customer')}${esc(qtyTxt)}${matchedPrior.product ? ' ' + esc(matchedPrior.product) : ''}) · Original Ticket Action:</span>
+          <div class="origin-redirect-actions">
+            <button type="button" class="origin-disp-btn${disp === 'keep' ? ' active' : ''}" data-origin-disp="keep">Keep #${esc(pNo)} As-Is</button>
+            <button type="button" class="origin-disp-btn${disp === 'return' ? ' active' : ''}" data-origin-disp="return">Return #${esc(pNo)} on Save</button>
+            <button type="button" class="origin-disp-btn${disp === 'void' ? ' active' : ''}" data-origin-disp="void">Void #${esc(pNo)} on Save</button>
+          </div>
+        `;
+      } else {
+        redirEl.hidden = true;
+        redirEl.innerHTML = '';
+        if (FORM_UI.originPriorDisposition && FORM_UI.originPriorDisposition !== 'keep') {
+          FORM_UI.originPriorDisposition = 'keep';
+        }
+      }
+    }
+
+    const fromSpec = mode === 'site'
+      ? { type: 'site', name: originSite }
+      : { type: 'bu', name: mode === 'bu' ? (originBu || company) : company };
+    const destSite = (side === 'sales' && val('f_saletype') !== 'Delivery') ? '' : val('f_site');
+    const est = (fromSpec.name && destSite)
+      ? window.MFG_GEO.estimateLegKm(fromSpec, { type: 'site', name: destSite }, SEED)
+      : null;
+
+    const kmBadge = $('originKmBadge');
+    if (kmBadge) {
+      if (est && est.available) {
+        kmBadge.hidden = false;
+        kmBadge.textContent = (est.showRoundTrip && est.roundTripKm != null)
+          ? `One-Way: ${est.oneWayKm.toFixed(1)} km · Round-Trip: ${est.roundTripKm.toFixed(1)} km`
+          : `One-Way: ${est.oneWayKm.toFixed(1)} km`;
+      } else if (fromSpec.name) {
+        kmBadge.hidden = false;
+        kmBadge.textContent = `Start: ${fromSpec.name}${fromSpec.type === 'bu' ? ' Hub' : ''}`;
+      } else {
+        kmBadge.hidden = true;
+      }
+    }
+
+    const originName = mode === 'site' ? originSite : (mode === 'bu' ? (originBu || company) : company);
+    const originPointLabel = mode === 'site'
+      ? (originSite ? `${originSite}${matchedPrior ? ' (#' + matchedPrior.ticket_no + ')' : (rawTktVal ? ' (#' + rawTktVal + ')' : '')}` : 'Other Site')
+      : originName;
+
+    return {
+      originType: mode,
+      originName,
+      originPoint: originPointLabel,
+      originSite: mode === 'site' ? originSite : '',
+      originTicketNo: mode === 'site' ? (matchedPrior ? matchedPrior.ticket_no : rawTktVal) : '',
+      originTicketKind: (mode === 'site' && matchedPrior) ? matchedPrior.kind : '',
+      originTicketId: (mode === 'site' && matchedPrior && matchedPrior.rawRow && matchedPrior.rawRow.id) ? String(matchedPrior.rawRow.id) : '',
+      estKm: (est && est.available) ? est.oneWayKm : null,
+      estRoundTripKm: (est && est.available && est.showRoundTrip) ? est.roundTripKm : null,
+      priorDisposition: (side === 'sales' && mode === 'site' && matchedPrior && matchedPrior.kind === 'sales')
+        ? (FORM_UI.originPriorDisposition || 'keep')
+        : 'keep',
+      matchedPrior
+    };
+  }
+
+  function applyOriginPriorDisposition(record, extraApiPosts) {
+    if (!record || !record.prior_disposition || record.prior_disposition === 'keep') return null;
+    if (record.origin_ticket_kind !== 'sales') return null;
+    const pool = (STATE.customRecords.sales_tickets || []).concat(SEED.records.sales_tickets || []);
+    const orig = pool.find(t => t && !t.voided && (
+      (record.origin_ticket_id && String(t.id) === String(record.origin_ticket_id)) ||
+      (record.origin_ticket_no && norm(t.ticket_no) === norm(record.origin_ticket_no) && (!record.origin_site || norm(t.site) === norm(record.origin_site)))
+    ));
+    if (!orig) return null;
+
+    if (!Array.isArray(STATE.customRecords.sales_tickets)) STATE.customRecords.sales_tickets = [];
+    if (record.prior_disposition === 'void') {
+      orig.voided = true;
+      orig.voided_by = record.entered_by_email || '';
+      orig.voided_at = record.entered_at || nowStamp();
+      orig.redirected_to_ticket = record.ticket_no;
+      orig.notes = [orig.notes, `Redirected load to Ticket #${record.ticket_no} (${record.customer || ''})`].filter(Boolean).join(' · ');
+      const cIdx = STATE.customRecords.sales_tickets.findIndex(x => x && String(x.id) === String(orig.id));
+      if (cIdx >= 0) Object.assign(STATE.customRecords.sales_tickets[cIdx], orig);
+      else STATE.customRecords.sales_tickets.unshift(Object.assign({}, orig));
+      if (Array.isArray(extraApiPosts)) extraApiPosts.push(['sales_tickets', orig]);
+      return { action: 'void', ticketNo: orig.ticket_no };
+    }
+    if (record.prior_disposition === 'return') {
+      const retMethod = isCashSaleTicket(orig) ? 'C Return' : 'CR Return';
+      const retTicketNo = `${orig.ticket_no}-RET`;
+      const retRec = Object.assign({}, orig, {
+        id: uid('sr'),
+        name: `RET ${record.date} ${orig.customer || ''} #${retTicketNo}`,
+        ticket_no: retTicketNo,
+        date: record.date,
+        rep_date: record.rep_date || record.date,
+        method: retMethod,
+        reference: `Redirected to #${record.ticket_no}`,
+        notes: `Rejected load returned & redirected to ${record.customer || 'another customer'} on Ticket #${record.ticket_no}`,
+        source: 'app',
+        entered_by: record.entered_by,
+        entered_by_email: record.entered_by_email,
+        entered_at: record.entered_at,
+        voided: false
+      });
+      STATE.customRecords.sales_tickets.unshift(retRec);
+      if (Array.isArray(extraApiPosts)) extraApiPosts.push(['sales_tickets', retRec]);
+      return { action: 'return', ticketNo: orig.ticket_no, returnTicketNo: retTicketNo };
+    }
+    return null;
+  }
+
   function renderEntryModalBody() {
     const fType = STATE.modalForm;
     const comps = allowedCompanyNames();
@@ -27458,7 +27768,8 @@
           ${fld('Ticket / Invoice No. *', inp('f_ticketno', 'text', '', 'inputmode="numeric" placeholder="Enter pad ticket no."'), { id: 'wrap_f_ticketno', hintId: 'hint_ticket', hint: '' })}
           ${fld('Product / Aggregate Grade *', inp('f_product', 'text', '', 'list="dl_sales_prods" placeholder="Select or type grade..."') + dlMeta('dl_sales_prods', prodMetaItems), { id: 'wrap_f_product', hintId: 'hint_product', hint: '' })}
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', customerNames()), { id: 'wrap_f_customer', hintId: 'hint_customer', hint: '' })}
-          ${fld('Destination Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames('sales')), { id: 'wrap_f_site', hidden: true, hintId: 'hint_site', hint: '' })}
+          ${renderOriginDispatchBarHtml(company, 'sales')}
+          ${fld('Destination Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', siteMetaItems('sales')), { id: 'wrap_f_site', hidden: true, hintId: 'hint_site', hint: '' })}
           ${fld('Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type truck..."') + dl('dl_equip', truckNames()), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
           ${fld('Truck Owner (Hauler) *', inp('f_truckowner', 'text', '', 'list="dl_truckowners" placeholder="Auto-filled from Truck..."') + dl('dl_truckowners', truckOwnerNames()), { id: 'wrap_f_truckowner', lockField: 'f_truckowner', lockReason: 'Auto-populated from the selected Truck; auto-unlocks if truck has no registered owner', hintId: 'hint_truckowner', hint: '' })}
           ${fld('Driver *', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Pick Truck first..." readonly') + dl('dl_drivers', []), { id: 'wrap_f_driver', hidden: true, lockField: 'f_driver', lockReason: 'Locked to the active driver in the Equipment Log — update Equipment Log if absent or changed', hintId: 'hint_driver', hint: '' })}
@@ -27510,7 +27821,8 @@
             ['Third-party truck', 'Third-party truck (Hauler)']
           ], 'Company fleet'), { id: 'wrap_f_transportby' })}
           ${fld('Raw Material (Product) *', inp('f_product', 'text', '', 'list="dl_products" placeholder="Select or type grade..."') + dlMeta('dl_products', rawProdMeta), { id: 'wrap_f_product', hintId: 'hint_product', hint: '' })}
-          ${fld('Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', siteNames('raw')), { id: 'wrap_f_site', hintId: 'hint_site', hint: '' })}
+          ${renderOriginDispatchBarHtml(company, 'raw')}
+          ${fld('Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', siteMetaItems('raw')), { id: 'wrap_f_site', hintId: 'hint_site', hint: '' })}
           ${fld('Site Owner (Material Payee)', inp('f_siteowner', 'text', '', 'list="dl_suppliers" placeholder="Select or type site owner..."') + dl('dl_suppliers', supplierNames('raw_owner')), { id: 'wrap_f_siteowner', lockField: 'f_siteowner', lockReason: 'Locked to the Site default supplier when configured', hintId: 'hint_owner', hint: '' })}
           ${fld('Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type truck..."') + dl('dl_equip', truckNames()), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
           ${fld('Truck Owner (Hauler) *', inp('f_truckowner', 'text', '', 'list="dl_truckowners" placeholder="Auto-filled from Truck..."') + dl('dl_truckowners', truckOwnerNames()), { id: 'wrap_f_truckowner', hidden: true, lockField: 'f_truckowner', lockReason: 'Auto-populated from the selected Truck; auto-unlocks if truck has no registered owner', hintId: 'hint_truckowner', hint: '' })}
@@ -29005,6 +29317,7 @@
   }
 
   function recalcSales() {
+    syncOriginDispatchUI('sales', true);
     const company = val('f_company');
     const saleType = val('f_saletype') || 'Pickup';
     const isDelivery = saleType === 'Delivery';
@@ -29443,11 +29756,13 @@
         `;
       }
     }
+    const origin = syncOriginDispatchUI('sales', false);
     renderAdminLockBar();
-    return { company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule, tier, tierAdj, tierTrAdj, qty, up, tp, disc, tip, mat: matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard };
+    return { origin, company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule, tier, tierAdj, tierTrAdj, qty, up, tp, disc, tip, mat: matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard };
   }
 
   function recalcRaw() {
+    syncOriginDispatchUI('raw', true);
     const company = val('f_company');
     const transportBy = val('f_transportby') || 'Company fleet';
     const isCoFleet = transportBy === 'Company fleet';
@@ -29796,8 +30111,9 @@
         `;
       }
     }
+    const origin = syncOriginDispatchUI('raw', false);
     renderAdminLockBar();
-    return { company, transportBy, site, owner, product, date, repDate: val('f_repdate') || date, prod, uom, rule, haulRule, tierAdj, tierTrAdj, qty, up, tp, disc, mat, tr, estTons: rawEstTons, effCap, tonFactor: rawTonFactor, tonGuard: rawTonGuard };
+    return { origin, company, transportBy, site, owner, product, date, repDate: val('f_repdate') || date, prod, uom, rule, haulRule, tierAdj, tierTrAdj, qty, up, tp, disc, mat, tr, estTons: rawEstTons, effCap, tonFactor: rawTonFactor, tonGuard: rawTonGuard };
   }
 
   function recalcReceipt() {
@@ -33887,6 +34203,7 @@
     FORM_UI.lastAttStaff = ''; FORM_UI.lastAttDate = val('f_date'); FORM_UI.lastAttTimeKey = '';
     FORM_UI.lastSalStaffMonthKey = '';
     FORM_UI.wasPricePending = false; FORM_UI.methodBeforePending = '';
+    FORM_UI.originMode = 'company'; FORM_UI.originBu = ''; FORM_UI.originPriorDisposition = 'keep'; FORM_UI.lastAutoFilledOriginTicket = '';
 
     const salUsdInp = $('f_usd');
     if (salUsdInp && !salUsdInp.dataset.salManualWired) {
@@ -33928,6 +34245,29 @@
     if (!body.dataset.quickFillWired) {
       body.dataset.quickFillWired = '1';
       body.addEventListener('click', ev => {
+        const origModeBtn = ev.target && ev.target.closest ? ev.target.closest('[data-origin-mode]') : null;
+        if (origModeBtn) {
+          ev.preventDefault();
+          const nextMode = origModeBtn.getAttribute('data-origin-mode') || 'company';
+          const nextBu = origModeBtn.getAttribute('data-origin-bu') || '';
+          FORM_UI.originMode = nextMode;
+          FORM_UI.originBu = nextMode === 'bu' ? nextBu : '';
+          if (nextMode !== 'site') {
+            FORM_UI.originPriorDisposition = 'keep';
+            FORM_UI.lastAutoFilledOriginTicket = '';
+          } else if (STATE.modalForm === 'sales' && $('f_saletype') && val('f_saletype') === 'Pickup' && !val('f_customer')) {
+            $('f_saletype').value = 'Delivery';
+          }
+          recalcForm();
+          return;
+        }
+        const origDispBtn = ev.target && ev.target.closest ? ev.target.closest('[data-origin-disp]') : null;
+        if (origDispBtn) {
+          ev.preventDefault();
+          FORM_UI.originPriorDisposition = origDispBtn.getAttribute('data-origin-disp') || 'keep';
+          recalcForm();
+          return;
+        }
         const salBtn = ev.target && ev.target.closest ? ev.target.closest('[data-sal-quick]') : null;
         if (salBtn) {
           ev.preventDefault();
@@ -34501,6 +34841,9 @@
     });
     recalcForm();
     wireModalSuggestions(body);
+    if (window.MFG_GEO && (STATE.modalForm === 'site' || STATE.modalForm === 'region')) {
+      window.MFG_GEO.wireModalSiteOrRegionMap(body, STATE.modalForm, SEED);
+    }
     if (autoFocus && (STATE.editingPendingExpenseId || window.matchMedia('(min-width: 861px)').matches)) {
       const first = STATE.editingPendingExpenseId
         ? ($('f_amount') || body.querySelector('#f_reference'))
@@ -34692,7 +35035,21 @@
       const maxDiscPostPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
       if (c.disc > c.mat && c.mat > 0) addErr('f_discount', 'Discount exceeds the material subtotal.');
       if (isAlertRuleEnabled('G_DISCOUNT_WARN') && c.mat > 0 && c.disc > c.mat * (maxDiscPostPct / 100) && !notes) addErr('f_notes', `Discount above ${fmtNum(maxDiscPostPct, 0)}% of material needs a note.`);
-      record = { ...base, name: `TKT ${date} ${c.customer} #${ticket}`, ticket_no: ticket, rep_date: repDate, sale_type: c.saleType, transport_by: c.transportBy, customer: c.customer, product: c.product, site: c.site, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: c.saleType === 'Delivery' ? val('f_driver') : '', uom: c.uom, ton_factor: resolveProductTonFactor(c.prod, c.product) || 1, qty: c.qty, external_qty: val('f_extqty') ? num('f_extqty') : null, unit_price: c.up, price: c.mat, tier: c.tier ? c.tier.tier : 0, tier_adj: c.tierAdj || 0, trans_unit_price: c.tp, trans_price: c.tr, trans_tier_adj: c.tierTrAdj || 0, tip: c.tip || 0, discount: c.disc, total: c.net, vat: c.vat, total_ttc: c.ttc, method: val('f_method'), vat_invoice: c.vatReg ? val('f_vatinvoice') : '', external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : (c.up ? (FORM_UI.priceManual ? 'Manual' : 'List Price') : ''), duplicate_confirmed: !!(dup && dup.warn) };
+      const origS = c.origin || syncOriginDispatchUI('sales', false);
+      if (origS.originType === 'site' && !origS.originSite) addErr('f_origin_site', 'Starting Site is required when Starting Point is Other Site.');
+      const salesOriginFields = {
+        origin_type: origS.originType || 'company',
+        origin_name: origS.originName || company,
+        origin_point: origS.originPoint || origS.originName || company,
+        ...(origS.originSite ? { origin_site: origS.originSite } : {}),
+        ...(origS.originTicketNo ? { origin_ticket_no: origS.originTicketNo } : {}),
+        ...(origS.originTicketKind ? { origin_ticket_kind: origS.originTicketKind } : {}),
+        ...(origS.originTicketId ? { origin_ticket_id: origS.originTicketId } : {}),
+        ...(origS.estKm != null ? { est_km: origS.estKm } : {}),
+        ...(origS.estRoundTripKm != null ? { est_round_trip_km: origS.estRoundTripKm } : {}),
+        ...(origS.priorDisposition && origS.priorDisposition !== 'keep' ? { prior_disposition: origS.priorDisposition } : {})
+      };
+      record = { ...base, ...salesOriginFields, name: `TKT ${date} ${c.customer} #${ticket}`, ticket_no: ticket, rep_date: repDate, sale_type: c.saleType, transport_by: c.transportBy, customer: c.customer, product: c.product, site: c.site, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: c.saleType === 'Delivery' ? val('f_driver') : '', uom: c.uom, ton_factor: resolveProductTonFactor(c.prod, c.product) || 1, qty: c.qty, external_qty: val('f_extqty') ? num('f_extqty') : null, unit_price: c.up, price: c.mat, tier: c.tier ? c.tier.tier : 0, tier_adj: c.tierAdj || 0, trans_unit_price: c.tp, trans_price: c.tr, trans_tier_adj: c.tierTrAdj || 0, tip: c.tip || 0, discount: c.disc, total: c.net, vat: c.vat, total_ttc: c.ttc, method: val('f_method'), vat_invoice: c.vatReg ? val('f_vatinvoice') : '', external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : (c.up ? (FORM_UI.priceManual ? 'Manual' : 'List Price') : ''), duplicate_confirmed: !!(dup && dup.warn) };
     } else if (f === 'raw') {
       const ticket = val('f_ticketno');
       if (!ticket) addErr('f_ticketno', 'Ticket number is required.');
@@ -34718,7 +35075,20 @@
           addErr('f_truckowner', `Truck ${val('f_truck')} is registered to ${tRow.supplier}, not ${val('f_truckowner')}.`);
         }
       }
-      record = { ...base, name: `RAW ${date} ${c.site} #${ticket}`, ticket_no: ticket, rep_date: repDate, product: c.product, site: c.site, site_owner: c.owner, transport_by: c.transportBy, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: val('f_driver'), uom: c.uom || (c.prod ? c.prod.uom : 'm³'), ton_factor: resolveProductTonFactor(c.prod, c.product) || 1, qty: c.qty, discount: c.disc || 0, unit_cost: c.up, cost: c.mat, trans_unit_cost: c.tp, trans_cost: c.tr, total: round2(c.mat + c.tr), method: val('f_method'), external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : '', duplicate_confirmed: !!(dup && dup.warn) };
+      const origR = c.origin || syncOriginDispatchUI('raw', false);
+      if (origR.originType === 'site' && !origR.originSite) addErr('f_origin_site', 'Starting Site is required when Starting Point is Other Site.');
+      const rawOriginFields = {
+        origin_type: origR.originType || 'company',
+        origin_name: origR.originName || company,
+        origin_point: origR.originPoint || origR.originName || company,
+        ...(origR.originSite ? { origin_site: origR.originSite } : {}),
+        ...(origR.originTicketNo ? { origin_ticket_no: origR.originTicketNo } : {}),
+        ...(origR.originTicketKind ? { origin_ticket_kind: origR.originTicketKind } : {}),
+        ...(origR.originTicketId ? { origin_ticket_id: origR.originTicketId } : {}),
+        ...(origR.estKm != null ? { est_km: origR.estKm } : {}),
+        ...(origR.estRoundTripKm != null ? { est_round_trip_km: origR.estRoundTripKm } : {})
+      };
+      record = { ...base, ...rawOriginFields, name: `RAW ${date} ${c.site} #${ticket}`, ticket_no: ticket, rep_date: repDate, product: c.product, site: c.site, site_owner: c.owner, transport_by: c.transportBy, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: val('f_driver'), uom: c.uom || (c.prod ? c.prod.uom : 'm³'), ton_factor: resolveProductTonFactor(c.prod, c.product) || 1, qty: c.qty, discount: c.disc || 0, unit_cost: c.up, cost: c.mat, trans_unit_cost: c.tp, trans_cost: c.tr, total: round2(c.mat + c.tr), method: val('f_method'), external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : '', duplicate_confirmed: !!(dup && dup.warn) };
     } else if (f === 'receipt') {
       if (!c.customer) addErr('f_customer', 'Customer is required.');
       if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero.');
@@ -35017,7 +35387,14 @@
         const dup = findUniversalDuplicate('sites', nm);
         if (dup) addErr('f_site', `Site "${universalMainValue('sites', dup) || nm}" already exists in the Universal Site Registry. Duplicate names are not allowed.`);
       }
-      record = { ...base, name: nm, region: val('f_region'), supplier: val('f_supplier'), customer: val('f_customer'), latitude: val('f_lat') ? num('f_lat') : null, longitude: val('f_lng') ? num('f_lng') : null, is_jv: !!($('f_isjv') && $('f_isjv').checked) };
+      const siteLat = val('f_lat') !== '' ? num('f_lat') : null;
+      const siteLng = val('f_lng') !== '' ? num('f_lng') : null;
+      let siteReg = val('f_region');
+      if (!siteReg && siteLat != null && siteLng != null && window.MFG_GEO && typeof window.MFG_GEO.findContainingRegion === 'function') {
+        const hitReg = window.MFG_GEO.findContainingRegion(siteLat, siteLng, SEED);
+        if (hitReg) siteReg = hitReg.name;
+      }
+      record = { ...base, name: nm, region: siteReg, supplier: val('f_supplier'), customer: val('f_customer'), latitude: siteLat, longitude: siteLng, is_jv: !!($('f_isjv') && $('f_isjv').checked) };
     } else if (f === 'equipment' || f === 'companyequipment') {
       const nm = val('f_truck');
       const pl = val('f_plateno') || nm;
@@ -35080,7 +35457,27 @@
         const dup = findUniversalDuplicate('regions', regNm);
         if (dup) addErr('f_region', `Region "${universalMainValue('regions', dup) || regNm}" already exists in the Universal Region Registry. Duplicate names are not allowed.`);
       }
-      record = { ...base, name: regNm, region: regNm, code: val('f_code'), corridor: val('f_corridor') || 'Coastal Corridor', distance_km: val('f_distance_km') ? num('f_distance_km') : null };
+      const zType = val('f_zone_type') || 'circle';
+      const zRad = val('f_radius_km') !== '' ? num('f_radius_km') : 1.5;
+      const zClat = val('f_center_lat') !== '' ? num('f_center_lat') : null;
+      const zClng = val('f_center_lng') !== '' ? num('f_center_lng') : null;
+      let zGeo = null;
+      if (zType === 'polygon' && val('f_zone_geojson')) {
+        try { zGeo = JSON.parse(val('f_zone_geojson')); } catch (_) { zGeo = null; }
+      }
+      record = {
+        ...base,
+        name: regNm,
+        region: regNm,
+        code: val('f_code'),
+        corridor: val('f_corridor') || 'Mount Lebanon',
+        zone_type: zType,
+        radius_km: zType === 'circle' ? zRad : null,
+        center_lat: zClat,
+        center_lng: zClng,
+        ...(zGeo ? { zone_geojson: zGeo } : {}),
+        distance_km: val('f_distance_km') !== '' ? num('f_distance_km') : null
+      };
     } else if (f === 'currency') {
       crKey = 'currencies';
       const code = String(val('f_code') || '').trim().toUpperCase();
@@ -35909,6 +36306,15 @@
         }
       }
       const extraApiPosts = [];
+      if (crKey === 'sales_tickets') {
+        applyOriginPriorDisposition(record, extraApiPosts);
+      }
+      if (crKey === 'sites' && window.MFG_GEO && record.latitude != null && record.longitude != null) {
+        window.MFG_GEO.persistLocationPin({ targetType: 'site', name: record.name, lat: record.latitude, lng: record.longitude, region: record.region }, { SEED, STATE });
+      }
+      if (crKey === 'regions' && window.MFG_GEO && (record.center_lat != null || record.zone_geojson)) {
+        window.MFG_GEO.persistRegionZone(record, { SEED, STATE });
+      }
       if (crKey === 'expenses' && stagedExpenseItems.length) {
         if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
         stagedExpenseItems.forEach((it, li) => {
@@ -36618,7 +37024,7 @@
     default_driver: 'drivers', day_operator: 'drivers', night_operator: 'drivers',
     staff: 'employments', vat_invoice: 'vat_invoices', category: 'expense_categories',
     subcategory: 'expense_subcategories', uom: 'uoms', unit: 'uoms', type: 'product_types',
-    defect_ref: 'equipment_defects', linked_part_log: 'part_movements', currency: 'currencies',
+    defect_ref: 'equipment_defects', linked_part_log: 'part_movements', origin_site: 'sites', currency: 'currencies',
     expense_ref: 'expenses', repair_ref: 'equipment_repairs'
   };
 
@@ -36630,6 +37036,7 @@
     if (typeof v === 'number') {
       if (key === 'vat_percent') return fmtNum(v, Number.isInteger(v) ? 1 : 2) + '%';
       if (key === 'rate' || key === 'vat_fx_rate' || key === 'active_rate') return fmtNum(v, Number.isInteger(v) ? 0 : 2);
+      if (key === 'est_km' || key === 'est_round_trip_km' || key === 'distance_km' || key === 'radius_km') return `${fmtNum(v, 1)} km`;
       if (key === 'lbp_delta') return fmtSignedLBP(v);
       if (/^lbp_|_lbp$/.test(key)) return fmtLBP(v);
       if (key === 'usd_delta') return fmtSignedUSD(v, 2);
@@ -38231,7 +38638,7 @@
       if (!f.drawerOnly) schemaByKey.set(f.key, f);
     });
 
-    const hidden = new Set(['id', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status', '_staged_expense_items', '_staged_repair_items', 'historical_consumed', 'move_type', 'expense_id', 'repair_id']);
+    const hidden = new Set(['id', 'origin_ticket_id', 'zone_geojson', 'geo_zone', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status', '_staged_expense_items', '_staged_repair_items', 'historical_consumed', 'move_type', 'expense_id', 'repair_id']);
     if (key === 'currencies' || key === 'fx_rates' || key === 'vat_rates') {
       hidden.add('company');
       hidden.add('date');
@@ -38364,7 +38771,7 @@
       const v = valOverride !== undefined ? valOverride : (fDef && typeof fDef.getVal === 'function' ? fDef.getVal(row) : row[k]);
       const formatted = inspectorValue(k, v);
       const isEmpty = formatted === '—';
-      const lkTarget = (k === 'type' && key !== 'products') ? null : (k === 'linked_part_log' && /^REP-/i.test(String(v || '')) ? 'equipment_repairs' : INSPECT_LOOKUP_FIELD_TARGET[k]);
+      const lkTarget = (k === 'origin_ticket_no') ? (row.origin_ticket_kind === 'raw' ? 'raw_purchases' : 'sales_tickets') : ((k === 'type' && key !== 'products') ? null : (k === 'linked_part_log' && /^REP-/i.test(String(v || '')) ? 'equipment_repairs' : INSPECT_LOOKUP_FIELD_TARGET[k]));
       const canLink = lkTarget && lkTarget !== key && v != null && v !== '' && !isEmpty;
       const lblText = fDef ? fDef.label.replace(/\s*\*$/, '') : k.replace(/_/g, ' ');
       const editableAttr = (canEdit && fDef && valOverride === undefined) ? ` data-edit-field="${esc(k)}" title="Click to modify ${esc(lblText)}"` : '';
@@ -38695,6 +39102,7 @@
           ${isEquipInspect ? `<button type="button" class="pa-cmd-btn" data-insp-scroll-sg="truck_windows">${ic('ruler')} Truck Size Windows (${eqWindows.length})</button>` : ''}
           ${!row.voided && canVoid() ? `<button type="button" class="pa-cmd-btn pa-cmd-btn-danger" id="inspCmdVoidBtn" title="Void or delete this record (2-click confirmation)">${ic('trash')} Void / Delete</button>` : ''}
           ${['sales_tickets', 'raw_purchases', 'fuel_intakes'].includes(key) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspThermalPrintBtn">${ic('printer')} Thermal Receipt (80/58mm)</button>` : ''}
+          ${(key === 'sites' || key === 'regions' || ((key === 'sales_tickets' || key === 'raw_purchases') && row.site)) ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspViewOnMapBtn">${ic('reg_sites')} View on Map</button>` : ''}
           <button type="button" class="pa-cmd-btn" data-insp-open-hub="${esc(key)}">${ic('tables')} Open ${esc(INSPECT_LABELS[key] || key)} Table</button>
           <button type="button" class="pa-cmd-btn" id="inspPrintBtn">${ic('printer')} Print Form</button>
         </div>
@@ -39716,6 +40124,22 @@
       }
     }));
 
+    const viewMapBtn = $('inspViewOnMapBtn');
+    if (viewMapBtn && window.MFG_GEO) {
+      viewMapBtn.addEventListener('click', () => {
+        if (key === 'regions') {
+          window.MFG_GEO.jumpToMapRegionOrSite({ region: row.name || row.region });
+          closeRecordInspector();
+          setView('reg_regions');
+        } else {
+          const siteNm = key === 'sites' ? (row.name || row.Site) : row.site;
+          window.MFG_GEO.jumpToMapRegionOrSite({ site: siteNm, region: row.region || '', bu: row.company || '' });
+          closeRecordInspector();
+          setView('reg_sites');
+        }
+      });
+    }
+
     // Wire clickable lookup pills inside the inspector
     bodyEl.querySelectorAll('[data-rel-key]').forEach(el => el.addEventListener('click', e => {
       e.stopPropagation();
@@ -40018,6 +40442,9 @@
     });
 
     enrichGlobalRateTables();
+    if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
+      window.MFG_GEO.hydrateSeedGeo(SEED);
+    }
 
     // Keep SEED.models summary arrays in sync when master records are voided or restored
     if (!SEED._origModelMasters) {
@@ -43936,6 +44363,10 @@
     if (btnPost) { btnPost.disabled = true; }
     try {
       STATE.customRecords[crKey].unshift(record);
+      const kioskExtraPosts = [];
+      if (crKey === 'sales_tickets') {
+        applyOriginPriorDisposition(record, kioskExtraPosts);
+      }
       applyCustomRecordsToSeed();
       saveLocalAuthAndRecords();
       const malfHit = crKey === 'fuel_malfunctions' ? getMalfunctionSaveWatchdogHit(record) : null;
@@ -43960,6 +44391,9 @@
       }
       renderApp();
       await postRecordToLocalApi(crKey, record);
+      for (const [ek, er] of kioskExtraPosts) {
+        await postRecordToLocalApi(ek, er);
+      }
       syncWithCloud(true);
       return { ok: true, record, crKey, printResult };
     } finally {
@@ -48357,6 +48791,17 @@
 
   function wireWorkspace(container, activeUserRow) {
     wireModalSuggestions(container);
+    if (window.MFG_GEO && typeof window.MFG_GEO.wireGeoStudio === 'function') {
+      window.MFG_GEO.wireGeoStudio(container, {
+        SEED,
+        STATE,
+        rerenderWorkspace: () => renderApp(),
+        postRecordToLocalApi,
+        toast,
+        uid,
+        userEmail: (activeUserRow && activeUserRow.email) || ''
+      });
+    }
     const subtabRoot = $('hubSubtabBar') || container;
     subtabRoot.querySelectorAll('[data-hub-subtab]').forEach(btn => {
       btn.addEventListener('click', () => {
