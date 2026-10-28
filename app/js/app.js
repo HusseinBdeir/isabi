@@ -170,7 +170,8 @@
     kioskFuelSubmode: 'dispense',
     kioskLocked: false,
     kioskUnlockPromptOpen: false,
-    kioskPunches: lsGet('isabi_mfg_kiosk_punches_v1', null) || [],
+    kioskPunches: ((!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_kiosk_punches_v1', null) : null) || []).filter(p => p && !/^pn-seed-/.test(String(p.id || ''))),
+    staffBiometrics: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_staff_bio_v1', null) : null) || {},
     kioskAttDir: 'auto',
     kioskAttSite: 'WTC Main Plant',
     kioskAttSiteCustom: false,
@@ -178,7 +179,9 @@
     kioskAttPin: '',
     kioskAttPinMsg: '',
     kioskAttPinMsgCls: '',
-    kioskAttFeedFilter: 'all',
+    kioskAttFeedFilter: 'roster',
+    kioskAttRosterSearch: '',
+    kioskEditingPinStaff: '',
     kioskLastPunch: null,
     activeUserIdx: 0,
     authed: false,
@@ -4871,7 +4874,7 @@
     const hit = STATE.users.find(u => u && String(u.id) === String(FACE_STATE.enrolUserId));
     return hit || activeUser();
   }
-  function usableFaces(includeUnsavedForUser) {
+  function usableFaces(includeUnsavedForUser, opts = {}) {
     const list = STATE.users.filter(u => u && u.status !== 'Suspended' && userFaceSamples(u).length > 0).map(u => ({
       id: u.id,
       email: u.email,
@@ -4880,6 +4883,23 @@
       companies: u.companies,
       samples: userFaceSamples(u)
     }));
+    if (opts && opts.includeKioskStaff && STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') {
+      const seenNames = new Set(list.map(x => norm(x.name)));
+      Object.entries(STATE.staffBiometrics).forEach(([k, bio]) => {
+        if (!bio || seenNames.has(k)) return;
+        const samples = Array.isArray(bio.face_samples) ? bio.face_samples.filter(s => Array.isArray(s) && s.length === 128) : [];
+        if (!samples.length || !bio.name) return;
+        seenNames.add(k);
+        list.push({
+          id: 'stfbio-' + k,
+          email: '',
+          name: bio.name,
+          role: bio.role || 'Staff',
+          companies: bio.company || '',
+          samples
+        });
+      });
+    }
     if (includeUnsavedForUser && FACE_STATE.enrolCaptures.length) {
       const idx = list.findIndex(x => norm(x.email) === norm(includeUnsavedForUser.email));
       const row = {
@@ -35670,8 +35690,17 @@
   // ==========================================================================
   // MULTI-DEVICE CLOUD RELAY + LOCAL PERSISTENCE
   // ==========================================================================
+  function sanitizeKioskPunchesList(list) {
+    if (!Array.isArray(list)) return [];
+    return list.filter(p => p && p.id && !/^pn-seed-/.test(String(p.id)));
+  }
+
   function saveLocalAuthAndRecords() {
     try {
+      STATE.kioskPunches = sanitizeKioskPunchesList(STATE.kioskPunches);
+      if (STATE.kioskLastPunch && /^pn-seed-/.test(String(STATE.kioskLastPunch.id || ''))) {
+        STATE.kioskLastPunch = STATE.kioskPunches[0] || null;
+      }
       localStorage.setItem('isabi_mfg_users_v2', JSON.stringify(STATE.users));
       localStorage.setItem('isabi_mfg_sessions_v2', JSON.stringify(STATE.sessions.slice(0, 50)));
       localStorage.setItem('isabi_mfg_custom_recs_v2', JSON.stringify(STATE.customRecords));
@@ -35680,6 +35709,7 @@
       localStorage.setItem('isabi_mfg_face_settings_v2', JSON.stringify(STATE.faceSettings));
       localStorage.setItem('isabi_mfg_face_settings_v1', JSON.stringify(STATE.faceSettings));
       localStorage.setItem('isabi_mfg_kiosk_punches_v1', JSON.stringify((STATE.kioskPunches || []).slice(0, 300)));
+      localStorage.setItem('isabi_mfg_staff_bio_v1', JSON.stringify(STATE.staffBiometrics || {}));
       localStorage.setItem('isabi_mfg_lbp_fx_rate_v1', String(getLbpFxRate()));
       if (STATE.lbpFxUpdatedAt) localStorage.setItem('isabi_mfg_lbp_fx_updated_v1', STATE.lbpFxUpdatedAt);
     } catch (_) { /* storage full or blocked — the cloud copy still holds the state */ }
@@ -36125,6 +36155,58 @@
     return changed;
   }
 
+  function mergeKioskPunches(remoteList) {
+    if (!Array.isArray(remoteList) || !remoteList.length) return false;
+    STATE.kioskPunches = sanitizeKioskPunchesList(STATE.kioskPunches);
+    const byId = new Map(STATE.kioskPunches.map(p => [String(p.id), p]));
+    let changed = false;
+    sanitizeKioskPunchesList(remoteList).forEach(inc => {
+      const id = String(inc.id);
+      const cur = byId.get(id);
+      if (!cur) {
+        STATE.kioskPunches.push(Object.assign({}, inc));
+        byId.set(id, inc);
+        changed = true;
+      } else {
+        const inRev = Number(inc.rev || 0);
+        const curRev = Number(cur.rev || 0);
+        const inTs = String(inc.updated_at || inc.iso || '');
+        const curTs = String(cur.updated_at || cur.iso || '');
+        if ((inc.voided && !cur.voided) || inRev > curRev || (inRev === curRev && inTs > curTs)) {
+          Object.assign(cur, inc);
+          changed = true;
+        }
+      }
+    });
+    if (changed) {
+      STATE.kioskPunches.sort((a, b) => String(b.iso || `${b.date || ''}T${b.time || ''}`).localeCompare(String(a.iso || `${a.date || ''}T${a.time || ''}`)));
+      STATE.kioskPunches = STATE.kioskPunches.slice(0, 300);
+      if (!STATE.kioskLastPunch || /^pn-seed-/.test(String(STATE.kioskLastPunch.id || ''))) {
+        STATE.kioskLastPunch = STATE.kioskPunches[0] || null;
+      }
+    }
+    return changed;
+  }
+
+  function mergeStaffBiometrics(remoteMap) {
+    if (!remoteMap || typeof remoteMap !== 'object') return false;
+    if (!STATE.staffBiometrics || typeof STATE.staffBiometrics !== 'object') STATE.staffBiometrics = {};
+    let changed = false;
+    Object.entries(remoteMap).forEach(([rk, inc]) => {
+      if (!inc || typeof inc !== 'object') return;
+      const key = norm(inc.name || rk);
+      if (!key) return;
+      const cur = STATE.staffBiometrics[key];
+      const inTs = String(inc.updated_at || '');
+      const curTs = cur ? String(cur.updated_at || '') : '';
+      if (!cur || inTs > curTs) {
+        STATE.staffBiometrics[key] = Object.assign({}, cur || {}, inc);
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
   function cloudPayload() {
     const trimmed = {};
     CR_KEYS.forEach(k => { trimmed[k] = STATE.customRecords[k].slice(0, 1500); });
@@ -36132,6 +36214,8 @@
       users: STATE.users,
       sessions: STATE.sessions.slice(0, 25),
       customRecords: trimmed,
+      kioskPunches: sanitizeKioskPunchesList(STATE.kioskPunches).slice(0, 300),
+      staffBiometrics: STATE.staffBiometrics || {},
       sentinelReviews: STATE.sentinelReviews || {},
       alertRules: STATE.alertRules || { overrides: {}, custom: [] },
       faceSettings: STATE.faceSettings,
@@ -36139,7 +36223,7 @@
       lbpFxUpdatedAt: STATE.lbpFxUpdatedAt || '',
       updatedAt: new Date().toISOString(),
       updatedBy: activeUser().email,
-      appVersion: '4.5'
+      appVersion: '4.6'
     };
   }
 
@@ -36163,7 +36247,7 @@
 
   function setContainerHtmlPreservingActiveInput(container, newHtml) {
     const active = document.activeElement;
-    const preserveId = (active && container.contains(active) && (active.id === 'tableSearchInput' || active.id === 'pbiSlicerSearch' || active.id === 'alertRulesSearchInput'))
+    const preserveId = (active && container.contains(active) && (active.id === 'tableSearchInput' || active.id === 'pbiSlicerSearch' || active.id === 'alertRulesSearchInput' || active.id === 'kioskAttRosterSearch'))
       ? active.id
       : '';
     if (!preserveId) {
@@ -36335,6 +36419,8 @@
       }
 
       if (remote.customRecords && mergeCustomRecords(remote.customRecords)) { changed = true; applyCustomRecordsToSeed(); }
+      if (Array.isArray(remote.kioskPunches) && mergeKioskPunches(remote.kioskPunches)) { changed = true; }
+      if (remote.staffBiometrics && mergeStaffBiometrics(remote.staffBiometrics)) { changed = true; }
       if (remote.sentinelReviews && mergeSentinelReviews(remote.sentinelReviews)) { changed = true; }
       if (remote.alertRules && mergeAlertRules(remote.alertRules)) { changed = true; }
       if (remote.lbpFxRate && remote.lbpFxUpdatedAt && String(remote.lbpFxUpdatedAt) > String(STATE.lbpFxUpdatedAt || '')) {
@@ -36343,6 +36429,20 @@
         pushChanges = true;
       }
       // anything only we hold -> push
+      if (!pushChanges && Array.isArray(STATE.kioskPunches) && STATE.kioskPunches.length) {
+        const remMap = new Map(sanitizeKioskPunchesList(remote.kioskPunches).map(p => [String(p.id), p]));
+        sanitizeKioskPunchesList(STATE.kioskPunches).forEach(p => {
+          const rp = remMap.get(String(p.id));
+          if (!rp || Number(p.rev || 0) > Number(rp.rev || 0) || Boolean(p.voided) !== Boolean(rp.voided)) pushChanges = true;
+        });
+      }
+      if (!pushChanges && STATE.staffBiometrics && Object.keys(STATE.staffBiometrics).length) {
+        const remBio = remote.staffBiometrics || {};
+        Object.entries(STATE.staffBiometrics).forEach(([bk, bv]) => {
+          const rb = remBio[bk];
+          if (!rb || String((bv && bv.updated_at) || '') > String(rb.updated_at || '')) pushChanges = true;
+        });
+      }
       if (!pushChanges && remote.customRecords) {
         const remoteIds = new Set();
         CR_KEYS.forEach(k => (remote.customRecords[k] || []).forEach(r => r && remoteIds.add(r.id + (r.voided ? '|v' : ''))));
@@ -39526,83 +39626,173 @@
     return elapsedHrs >= -1 && elapsedHrs <= 16;
   }
 
+  function isGenericTerminalSeat(u) {
+    if (!u) return true;
+    const idStr = String(u.id || '').trim();
+    const nmStr = String(u.full_name || '').trim();
+    if (/^(u4|u5|u6|u7|u8|u9|u10)$/i.test(idStr)) return true;
+    return /\b(weighbridge|site dispatch|batching desk|site supervisor|fleet controller|garage officer|collector|kiosk|terminal)\b/i.test(nmStr);
+  }
+
+  function isEmploymentActiveToday(emp, refDate = todayISO()) {
+    if (!emp || emp.voided) return false;
+    if (emp.status === 'Ended' || emp.status === 'Inactive' || emp.status === 'Terminated') return false;
+    if (emp.end_date && String(emp.end_date).slice(0, 10) < refDate) return false;
+    return true;
+  }
+
   function getKioskStaffDirectory(opts = {}) {
     const out = [];
     const seen = new Set();
+    const usedPins = new Set();
     const allowedCos = allowedCompanyNames();
     const defCo = defaultEntryCompany();
     const scopedCo = opts.scopeBySelectedCompany ? (COMPANY_BU_MATCH[STATE.company] || '') : '';
+    const today = todayISO();
+    const bioMap = (STATE.staffBiometrics && typeof STATE.staffBiometrics === 'object') ? STATE.staffBiometrics : {};
 
-    // 1. Enrolled / Active Team Seats (carry PIN + Face ID descriptors)
+    const humanUsersByNorm = new Map();
     (STATE.users || []).forEach(u => {
-      if (!u || u.status === 'Suspended') return;
+      if (!u || u.status === 'Suspended' || isGenericTerminalSeat(u)) return;
+      const nm = String(u.full_name || '').trim();
+      const k = norm(nm);
+      if (!k) return;
+      if (!humanUsersByNorm.has(k)) humanUsersByNorm.set(k, u);
+      const up = String(u.pin_code || '').trim();
+      if (/^\d{4}$/.test(up)) usedPins.add(up);
+    });
+    Object.values(bioMap).forEach(b => {
+      const bp = String((b && b.pin_code) || '').trim();
+      if (/^\d{4}$/.test(bp)) usedPins.add(bp);
+    });
+
+    const makeDemoPin = k => {
+      let h = 0;
+      for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) % 8900;
+      let cand = 1050 + Math.abs(h);
+      while (usedPins.has(String(cand).slice(0, 4)) || cand === 2401) {
+        cand = ((cand - 1000 + 7) % 8999) + 1000;
+      }
+      const p = String(cand).slice(0, 4);
+      usedPins.add(p);
+      return p;
+    };
+
+    // 1. Active Contract Workforce per Company (exact parity with Payroll & Workforce Active Staff)
+    const activeEmps = [];
+    (SEED.records.employments || []).concat(STATE.customRecords.employments || []).forEach(emp => {
+      if (!isEmploymentActiveToday(emp, today)) return;
+      const nm = String(emp.staff || emp.name || '').trim();
+      const k = norm(nm);
+      if (!k || nm === '(Unassigned)') return;
+      const empCo = emp.company || 'WTC';
+      if (allowedCos.length && !allowedCos.includes(empCo)) return;
+      if (scopedCo && empCo !== scopedCo) return;
+      activeEmps.push({ emp, nm, k, empCo });
+    });
+
+    // 2. Named Human Seats (Owner / Supervisor / Entry individuals, excluding generic terminal accounts)
+    (STATE.users || []).forEach(u => {
+      if (!u || u.status === 'Suspended' || isGenericTerminalSeat(u)) return;
       const nm = String(u.full_name || '').trim();
       const k = norm(nm);
       if (!k || seen.has(k)) return;
       const uCos = parseUserCompanies(u);
-      if (scopedCo && uCos.length && !uCos.includes(scopedCo) && !isAdminUser(u)) return;
+      const matchingEmp = activeEmps.find(x => x.k === k);
+      if (scopedCo) {
+        const hasCoAccess = Boolean(matchingEmp) || uCos.includes(scopedCo) || isAdminUser(u);
+        if (!hasCoAccess) return;
+      } else if (allowedCos.length && uCos.length && !uCos.some(c => allowedCos.includes(c)) && !isAdminUser(u)) {
+        return;
+      }
       seen.add(k);
-      const co = (scopedCo && (uCos.includes(scopedCo) || isAdminUser(u)))
-        ? scopedCo
-        : (uCos.find(c => allowedCos.includes(c)) || uCos[0] || defCo);
+      const bio = bioMap[k] || null;
+      const co = matchingEmp
+        ? matchingEmp.empCo
+        : ((scopedCo && (uCos.includes(scopedCo) || isAdminUser(u)))
+          ? scopedCo
+          : (uCos.find(c => allowedCos.includes(c)) || uCos[0] || defCo));
+      const explicitPin = String((bio && bio.pin_code) || u.pin_code || '').trim();
+      const bioFaces = bio && Array.isArray(bio.face_samples) ? bio.face_samples.filter(s => Array.isArray(s) && s.length === 128) : [];
       out.push({
         id: u.id,
         name: nm,
         email: u.email || '',
         company: co,
-        role: u.role || 'Team Seat',
-        pin: String(u.pin_code || '1111').trim(),
-        hasFace: userHasFaceId(u),
+        role: matchingEmp ? (matchingEmp.emp.role || matchingEmp.emp.type || u.role || 'Staff') : (u.role || 'Management'),
+        schedHours: staffScheduledHours(nm, co),
+        pin: explicitPin || (IS_DEMO ? makeDemoPin(k) : ''),
+        hasExplicitPin: Boolean(explicitPin),
+        hasFace: userHasFaceId(u) || bioFaces.length > 0,
+        hasActiveContract: Boolean(matchingEmp),
         userObj: u
       });
     });
 
-    // 2. Plant & Workforce Employments + Salaries
-    (SEED.records.employments || []).concat(STATE.customRecords.employments || []).forEach(emp => {
-      if (!emp || emp.voided) return;
-      const nm = String(emp.staff || emp.name || '').trim();
-      const k = norm(nm);
-      if (!k || seen.has(k)) return;
-      if (emp.company && !allowedCos.includes(emp.company)) return;
-      if (scopedCo && emp.company && emp.company !== scopedCo) return;
-      seen.add(k);
-      // Deterministic 4-digit PIN from name hash if not in STATE.users
-      let h = 0;
-      for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) % 9000;
-      const pin = String(1000 + Math.abs(h));
-      out.push({
-        id: emp.id || 'emp-' + k,
-        name: nm,
-        email: '',
-        company: emp.company || scopedCo || defCo,
-        role: emp.role || emp.type || 'Plant Workforce',
-        pin,
-        hasFace: false,
-        userObj: null
-      });
-    });
-
-    if (!scopedCo) {
-      staffNames().forEach(nm => {
-        const k = norm(nm);
-        if (!k || seen.has(k)) return;
+    // 3. Remaining Active Contract Employees ($0 ERP login seat required)
+    activeEmps
+      .slice()
+      .sort((a, b) => a.nm.localeCompare(b.nm))
+      .forEach(({ emp, nm, k, empCo }) => {
+        if (seen.has(k)) return;
         seen.add(k);
-        let h = 0;
-        for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) % 9000;
+        const u = humanUsersByNorm.get(k) || null;
+        const bio = bioMap[k] || null;
+        const explicitPin = String((bio && bio.pin_code) || (u && u.pin_code) || '').trim();
+        const bioFaces = bio && Array.isArray(bio.face_samples) ? bio.face_samples.filter(s => Array.isArray(s) && s.length === 128) : [];
         out.push({
-          id: 'stf-' + k,
+          id: emp.id || ('emp-' + k),
           name: nm,
-          email: '',
-          company: defCo,
-          role: 'Operator / Staff',
-          pin: String(1000 + Math.abs(h)),
-          hasFace: false,
-          userObj: null
+          email: u ? (u.email || '') : '',
+          company: empCo,
+          role: emp.role || emp.type || 'Active Staff',
+          schedHours: Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo),
+          pin: explicitPin || (IS_DEMO ? makeDemoPin(k) : ''),
+          hasExplicitPin: Boolean(explicitPin),
+          hasFace: (u ? userHasFaceId(u) : false) || bioFaces.length > 0,
+          hasActiveContract: true,
+          userObj: u
         });
       });
-    }
 
     return out;
+  }
+
+  function setKioskStaffPin(staffName, rawPin) {
+    const dir = getKioskStaffDirectory();
+    const entry = dir.find(s => norm(s.name) === norm(staffName));
+    if (!entry) return { ok: false, error: 'Staff member not found in active roster' };
+    const clean = String(rawPin == null ? '' : rawPin).trim();
+    if (clean !== '' && !/^\d{4}$/.test(clean)) {
+      return { ok: false, error: 'PIN must be exactly 4 digits (0000 to 9999)' };
+    }
+    if (clean === '2401') {
+      return { ok: false, error: 'PIN 2401 is reserved for unlocking Locked Kiosk Mode' };
+    }
+    const targetKey = norm(entry.name);
+    if (clean) {
+      const clash = dir.find(s => norm(s.name) !== targetKey && s.hasExplicitPin && String(s.pin) === clean);
+      if (clash) {
+        return { ok: false, error: `PIN ${clean} is already assigned to ${clash.name}` };
+      }
+    }
+    if (!STATE.staffBiometrics || typeof STATE.staffBiometrics !== 'object') STATE.staffBiometrics = {};
+    const nowIso = new Date().toISOString();
+    STATE.staffBiometrics[targetKey] = Object.assign({}, STATE.staffBiometrics[targetKey] || {}, {
+      name: entry.name,
+      company: entry.company,
+      role: entry.role,
+      pin_code: clean,
+      updated_at: nowIso
+    });
+    if (entry.userObj) {
+      entry.userObj.pin_code = clean;
+      entry.userObj.seat_updated_at = nowIso;
+    }
+    STATE.kioskEditingPinStaff = '';
+    saveLocalAuthAndRecords();
+    syncWithCloud(true);
+    return { ok: true, staff: entry.name, pin: clean };
   }
 
   function getStaffLastPunch(staffName) {
@@ -39772,10 +39962,13 @@
       p.paired_hours = null;
       p.overtime_hours = 0;
     }
+    p.rev = Number(p.rev || 0) + 1;
+    p.updated_at = new Date().toISOString();
     STATE.kioskLastPunch = p;
     const attRec = syncAttendanceRecordFromPunch(p);
     toast(`Switched ${p.staff} punch to ${p.direction} (${p.time})`, 'ok');
     if (STATE.view === 'kiosks') renderApp();
+    syncWithCloud(true);
     return { ok: true, punch: p, attRec };
   }
 
@@ -39843,7 +40036,7 @@
       return { ok: false, reason: 'no-face' };
     }
     KIOSK_ATT_STATE.missedFrames = 0;
-    const pool = usableFaces();
+    const pool = usableFaces(null, { includeKioskStaff: true });
     if (!pool.length || !window.Face) {
       KIOSK_ATT_STATE.statusText = 'No Face ID profiles enrolled yet. Use your 4-digit PIN or Enrol Face / PIN.';
       KIOSK_ATT_STATE.statusCls = 'warn';
@@ -39921,26 +40114,20 @@
     }
   }
 
-  function seedDefaultKioskPunchesIfEmpty() {
-    const dStr = todayISO();
-    const hasRealPunches = Array.isArray(STATE.kioskPunches)
-      && STATE.kioskPunches.length > 0
-      && STATE.kioskPunches.some(p => p && (!/^pn-seed-/.test(String(p.id || '')) || p.date === dStr));
-    if (hasRealPunches) return;
-    const dir = getKioskStaffDirectory();
-    const s1 = dir[0] ? dir[0].name : 'Hussein Bdeir';
-    const s2 = dir[1] ? dir[1].name : 'Zeinab Rkein';
-    const s3 = dir[2] ? dir[2].name : 'Sabah Kassab';
-    STATE.kioskPunches = [
-      { id: 'pn-seed-3', staff: s3, company: 'WTC', role: 'Entry', site: 'WTC Main Plant', direction: 'IN', date: dStr, time: '07:12', iso: new Date(Date.now() - 3 * 3600000).toISOString(), method: 'PIN', confidence: null, snapshot: '', paired_hours: null, overtime_hours: 0, voided: false },
-      { id: 'pn-seed-2', staff: s2, company: 'WTC', role: 'Supervisor + Entry', site: 'WTC Main Plant', direction: 'IN', date: dStr, time: '07:04', iso: new Date(Date.now() - 3.2 * 3600000).toISOString(), method: 'Face ID', confidence: 0.96, snapshot: '', paired_hours: null, overtime_hours: 0, voided: false },
-      { id: 'pn-seed-1', staff: s1, company: 'WTC', role: 'Full Access (Owner)', site: 'WTC Main Plant', direction: 'IN', date: dStr, time: '06:55', iso: new Date(Date.now() - 3.5 * 3600000).toISOString(), method: 'Face ID', confidence: 0.98, snapshot: '', paired_hours: null, overtime_hours: 0, voided: false }
-    ];
-    STATE.kioskLastPunch = STATE.kioskPunches[0];
+  function sanitizeKioskPunchesState() {
+    const raw = Array.isArray(STATE.kioskPunches) ? STATE.kioskPunches : [];
+    const cleaned = sanitizeKioskPunchesList(raw);
+    if (cleaned.length !== raw.length) {
+      STATE.kioskPunches = cleaned;
+      saveLocalAuthAndRecords();
+    }
+    if (STATE.kioskLastPunch && /^pn-seed-/.test(String(STATE.kioskLastPunch.id || ''))) {
+      STATE.kioskLastPunch = STATE.kioskPunches[0] || null;
+    }
   }
 
   function renderKiosks() {
-    seedDefaultKioskPunchesIfEmpty();
+    sanitizeKioskPunchesState();
     const kMode = ['sales', 'raw', 'fuel', 'attendance'].includes(STATE.activeKiosk) ? STATE.activeKiosk : 'sales';
     STATE.activeKiosk = kMode;
 
@@ -39956,6 +40143,13 @@
     const pCfg = (window.MFG_PRINT && window.MFG_PRINT.SETTINGS) || { paperWidth: 80, priceMode: 'priced', channel: 'rawbt', autoPrintOnPost: true, bleDeviceName: '' };
     const defCo = defaultEntryCompany();
     const scopedCo = COMPANY_BU_MATCH[STATE.company] || '';
+    const allowedCoKeys = getAllowedCompanyKeys(activeUser()).filter(k => ['manufacturing-group', 'wtc', 'bbconstruction', 'lionstransport'].includes(k));
+    const coChipCatalog = [
+      { key: 'manufacturing-group', label: 'All Companies', short: 'All' },
+      { key: 'wtc', label: 'WTC', short: 'WTC' },
+      { key: 'bbconstruction', label: 'BBConstruction', short: 'BBC' },
+      { key: 'lionstransport', label: 'Lions Transport', short: 'Lions' }
+    ].filter(c => allowedCoKeys.includes(c.key));
 
     const allSalesScoped = filterRecords(SEED.records.sales_tickets, { ignorePeriod: true });
     const allRawScoped = filterRecords(SEED.records.raw_purchases, { ignorePeriod: true });
@@ -39964,7 +40158,7 @@
     const rawRows = allRawScoped.slice(0, 8);
     const fuelRows = allFuelScoped.slice(0, 8);
 
-    const allPunches = (STATE.kioskPunches || []).filter(p => p && !p.voided);
+    const allPunches = sanitizeKioskPunchesList(STATE.kioskPunches).filter(p => p && !p.voided);
     const punches = scopedCo ? allPunches.filter(p => !p.company || p.company === scopedCo) : allPunches;
 
     // Count currently ON SITE staff strictly within the 16h active shift window
@@ -39977,10 +40171,10 @@
     const onSiteList = Array.from(latestByStaff.values()).filter(p => isPunchActiveOnSite(p, nowMs));
 
     const kioskTabs = [
-      { id: 'sales', icon: ic('truck'), title: 'Sales Dispatch', sub: 'Weighbridge ticket & invoice or gate pass', badge: `${fmtNum(allSalesScoped.length)} Tickets` },
-      { id: 'raw', icon: ic('quarry'), title: 'Raw Material', sub: 'Quarry intake & 2-leg receiving slip', badge: `${fmtNum(allRawScoped.length)} Intakes` },
-      { id: 'fuel', icon: ic('fuel'), title: 'Fuel & Lubricants', sub: 'Pump dispense, tank refill & meter guard', badge: `${fmtNum(allFuelScoped.length)} Logs` },
-      { id: 'attendance', icon: ic('kiosks'), title: 'Staff Attendance', sub: 'Hands-free Face ID & 4-digit PIN clock', badge: `${onSiteList.length} On Site` }
+      { id: 'sales', icon: ic('truck'), title: 'Sales Dispatch' },
+      { id: 'raw', icon: ic('quarry'), title: 'Raw Material' },
+      { id: 'fuel', icon: ic('fuel'), title: 'Fuel & Lubricants' },
+      { id: 'attendance', icon: ic('kiosks'), title: 'Staff Attendance', liveCount: onSiteList.length }
     ];
 
     const attSites = getKioskStationSites(defCo);
@@ -39991,40 +40185,72 @@
     }
 
     const lockBtnHtml = `
-      <button type="button" class="btn ${STATE.kioskLocked ? 'btn-brass' : 'btn-ghost-bar'} kiosk-lock-pill-btn" id="kioskLockToggleBtn" title="${STATE.kioskLocked ? 'Unlock full Command Center navigation (PIN 2401)' : 'Hide sidebar and back-office menus for dedicated tablet counter use'}">
+      <button type="button" class="btn ${STATE.kioskLocked ? 'btn-primary' : 'btn-ghost-bar'} kiosk-lock-pill-btn" id="kioskLockToggleBtn" title="${STATE.kioskLocked ? 'Unlock full Command Center navigation (PIN 2401)' : 'Hide sidebar and back-office menus for dedicated tablet counter use'}">
         ${STATE.kioskLocked ? `${ic('unlock')} Unlock Kiosk` : `${ic('lock')} Lock Kiosk`}
       </button>
     `;
 
-    // Context-specific second row inside #kioskControlDeck (ZERO thermal printer controls on Attendance!)
+    // Context-specific second row inside #kioskControlDeck (Porcelain segmented keycaps + Rev 10 custom popovers)
     const fSub = STATE.kioskFuelSubmode || 'dispense';
     let stationBarHtml = '';
     if (kMode === 'attendance') {
+      const showCoKeycaps = !STATE.kioskLocked && coChipCatalog.length > 1;
       stationBarHtml = `
         <div class="kiosk-station-bar kiosk-att-station-bar" id="kioskAttStationBar">
+          ${showCoKeycaps ? `
+            <div class="kiosk-printer-grp" role="group" aria-label="Company Scope">
+              <span class="kiosk-bar-lbl">${ic('building')} Company</span>
+              <div class="kiosk-seg-group">
+                ${coChipCatalog.map(c => `
+                  <button type="button" class="kiosk-seg-btn ${STATE.company === c.key ? 'active' : ''}" data-tone="sapphire" data-kiosk-co="${esc(c.key)}" title="Filter active staff and punches to ${esc(c.label)}">
+                    ${esc(c.short)}
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+          ` : `
+            <div class="kiosk-printer-grp">
+              <span class="kiosk-bar-lbl">${ic('building')} Company</span>
+              ${coBadge(scopedCo || defCo)}
+            </div>
+          `}
           <div class="kiosk-printer-grp">
-            <label class="kiosk-bar-lbl" for="kioskAttSiteSelect">${ic('pin')} Station:</label>
-            <select id="kioskAttSiteSelect" class="kiosk-select" data-native-select="1">
+            <label class="kiosk-bar-lbl" for="kioskAttSiteSelect">${ic('pin')} Station</label>
+            <select id="kioskAttSiteSelect" class="kiosk-select" data-plain-options="1">
               ${attSites.map(s => `<option value="${esc(s)}" ${s === STATE.kioskAttSite ? 'selected' : ''}>${esc(s)}</option>`).join('')}
             </select>
           </div>
           <div class="kiosk-printer-grp" role="group" aria-label="Clock Direction">
-            <span class="kiosk-bar-lbl">${ic('clock')} Action:</span>
-            <button type="button" class="kiosk-dir-pill ${STATE.kioskAttDir === 'auto' ? 'active' : ''}" data-att-dir="auto" title="Automatically clocks IN on arrival and OUT on departure">Auto IN / OUT</button>
-            <button type="button" class="kiosk-dir-pill in ${STATE.kioskAttDir === 'in' ? 'active' : ''}" data-att-dir="in" title="Force all punches to Clock IN">${ic('clock_in')} Clock IN</button>
-            <button type="button" class="kiosk-dir-pill out ${STATE.kioskAttDir === 'out' ? 'active' : ''}" data-att-dir="out" title="Force all punches to Clock OUT">${ic('clock_out')} Clock OUT</button>
+            <span class="kiosk-bar-lbl">${ic('clock')} Mode</span>
+            <div class="kiosk-seg-group">
+              <button type="button" class="kiosk-seg-btn ${STATE.kioskAttDir === 'auto' ? 'active' : ''}" data-tone="sapphire" data-att-dir="auto" title="Automatically clocks IN on arrival and OUT on departure">
+                <span class="ksg-dot" aria-hidden="true"></span>Auto
+              </button>
+              <button type="button" class="kiosk-seg-btn ${STATE.kioskAttDir === 'in' ? 'active' : ''}" data-tone="emerald" data-att-dir="in" title="Force punches to Clock IN">
+                <span class="ksg-dot" aria-hidden="true"></span>Clock IN
+              </button>
+              <button type="button" class="kiosk-seg-btn ${STATE.kioskAttDir === 'out' ? 'active' : ''}" data-tone="amber" data-att-dir="out" title="Force punches to Clock OUT">
+                <span class="ksg-dot" aria-hidden="true"></span>Clock OUT
+              </button>
+            </div>
           </div>
           <div class="kiosk-station-right">
-            <span class="kiosk-onsite-pill ${onSiteList.length > 0 ? 'has-onsite' : ''}">
-              <span class="kiosk-live-dot" aria-hidden="true"></span>
-              ${fmtNum(onSiteList.length)} On Site
-            </span>
-            ${!STATE.kioskLocked && canViewView('users') ? `
-              <button type="button" class="btn btn-ghost-bar kiosk-enrol-link-btn" id="kioskAttManageFacesBtn" title="Enrol Face ID profiles and manage 4-digit staff PINs">
-                ${ic('users')} Enrol Face &amp; PINs
+            ${(STATE.kioskLocked || onSiteList.length > 0) ? `
+              <span class="kiosk-onsite-pill ${onSiteList.length > 0 ? 'has-onsite' : ''}">
+                <span class="kiosk-live-dot" aria-hidden="true"></span>
+                ${fmtNum(onSiteList.length)} On Site
+              </span>
+            ` : ''}
+            ${!STATE.kioskLocked && canViewView('payroll_attendance') ? `
+              <button type="button" class="btn btn-ghost-bar kiosk-enrol-link-btn" id="kioskAttOpenRegisterBtn" title="Open daily Attendance & Overtime ledger for historical dates, absences, and leave">
+                ${ic('payroll_attendance')} Attendance Register
               </button>
             ` : ''}
-            ${lockBtnHtml}
+            ${!STATE.kioskLocked && canViewView('users') ? `
+              <button type="button" class="btn btn-ghost-bar kiosk-enrol-link-btn" id="kioskAttManageFacesBtn" title="Enrol 3-pose Face ID profiles and manage team security">
+                ${ic('users')} Face ID Studio
+              </button>
+            ` : ''}
           </div>
         </div>
       `;
@@ -40032,11 +40258,8 @@
       stationBarHtml = `
         <div class="kiosk-station-bar">
           <div class="kiosk-printer-grp">
-            <span class="kiosk-bar-lbl">${ic('warn')} Tank Variance Desk:</span>
+            <span class="kiosk-bar-lbl">${ic('warn')} Tank Variance Desk</span>
             <span class="muted" style="font-size:11.8px">Record physical dip calibrations, meter discrepancies, or wash allocations</span>
-          </div>
-          <div class="kiosk-station-right">
-            ${lockBtnHtml}
           </div>
         </div>
       `;
@@ -40047,28 +40270,31 @@
       stationBarHtml = `
         <div class="kiosk-printer-bar">
           <div class="kiosk-printer-grp">
-            <span class="kiosk-bar-lbl">${ic('printer')} Paper Roll:</span>
-            <button type="button" class="kiosk-toggle-pill ${pCfg.paperWidth === 80 ? 'active' : ''}" data-kiosk-paper="80">80mm Standard</button>
-            <button type="button" class="kiosk-toggle-pill ${pCfg.paperWidth === 58 ? 'active' : ''}" data-kiosk-paper="58">58mm Handheld</button>
+            <span class="kiosk-bar-lbl">${ic('printer')} Paper</span>
+            <div class="kiosk-seg-group">
+              <button type="button" class="kiosk-seg-btn ${pCfg.paperWidth === 80 ? 'active' : ''}" data-tone="sapphire" data-kiosk-paper="80"><span class="ksg-dot" aria-hidden="true"></span>80mm Standard</button>
+              <button type="button" class="kiosk-seg-btn ${pCfg.paperWidth === 58 ? 'active' : ''}" data-tone="sapphire" data-kiosk-paper="58"><span class="ksg-dot" aria-hidden="true"></span>58mm Handheld</button>
+            </div>
           </div>
           ${showPriceModeToggle ? `
             <div class="kiosk-printer-grp">
-              <span class="kiosk-bar-lbl">${ic('dollar')} Receipt Copy:</span>
-              <button type="button" class="kiosk-toggle-pill ${pCfg.priceMode === 'priced' ? 'active' : ''}" data-kiosk-price-mode="priced">${ic('dollar')} ${pricedLbl}</button>
-              <button type="button" class="kiosk-toggle-pill ${pCfg.priceMode === 'unpriced' ? 'active' : ''}" data-kiosk-price-mode="unpriced">${ic('truck')} ${unpricedLbl}</button>
+              <span class="kiosk-bar-lbl">${ic('dollar')} Receipt</span>
+              <div class="kiosk-seg-group">
+                <button type="button" class="kiosk-seg-btn ${pCfg.priceMode === 'priced' ? 'active' : ''}" data-tone="emerald" data-kiosk-price-mode="priced"><span class="ksg-dot" aria-hidden="true"></span>${pricedLbl}</button>
+                <button type="button" class="kiosk-seg-btn ${pCfg.priceMode === 'unpriced' ? 'active' : ''}" data-tone="amber" data-kiosk-price-mode="unpriced"><span class="ksg-dot" aria-hidden="true"></span>${unpricedLbl}</button>
+              </div>
             </div>
           ` : ''}
           <div class="kiosk-station-right">
             <div class="kiosk-printer-grp">
-              <span class="kiosk-bar-lbl">${ic('bluetooth')} Printer:</span>
-              <select id="kioskPrintChannelSelect" class="kiosk-select" data-native-select="1">
+              <span class="kiosk-bar-lbl">${ic('bluetooth')} Printer</span>
+              <select id="kioskPrintChannelSelect" class="kiosk-select" data-plain-options="1">
                 <option value="rawbt" ${pCfg.channel === 'rawbt' ? 'selected' : ''}>RawBT Bluetooth</option>
                 <option value="web_bluetooth" ${pCfg.channel === 'web_bluetooth' ? 'selected' : ''}>Web Bluetooth (${pCfg.bleDeviceName ? esc(pCfg.bleDeviceName) : 'Direct BLE'})</option>
                 <option value="browser" ${pCfg.channel === 'browser' ? 'selected' : ''}>Browser Print</option>
               </select>
-              <button type="button" class="btn btn-ghost-bar" id="kioskPairBleBtn" style="padding:4px 9px;font-size:11px" title="Pair Bluetooth Thermal Printer">${ic('bluetooth')} Pair</button>
+              <button type="button" class="btn btn-ghost-bar kiosk-enrol-link-btn" id="kioskPairBleBtn" title="Pair Bluetooth Thermal Printer">${ic('bluetooth')} Pair</button>
             </div>
-            ${lockBtnHtml}
           </div>
         </div>
       `;
@@ -40163,6 +40389,7 @@
     let workspaceBodyHtml = '';
     if (kMode === 'attendance') {
       const staffDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
+      const enrolledFaceCount = usableFaces(null, { includeKioskStaff: true }).length;
       const selectedStaff = (STATE.kioskAttStaff && staffDir.some(s => norm(s.name) === norm(STATE.kioskAttStaff)))
         ? staffDir.find(s => norm(s.name) === norm(STATE.kioskAttStaff)).name
         : '';
@@ -40173,13 +40400,21 @@
         : (STATE.kioskAttDir === 'in' ? 'IN' : (STATE.kioskAttDir === 'out' ? 'OUT' : 'IN / OUT'));
       const selectedLastPunch = selectedStaff ? latestByStaff.get(norm(selectedStaff)) : null;
       const selectedOnSite = isPunchActiveOnSite(selectedLastPunch, nowMs);
-      const lastPunch = (STATE.kioskLastPunch && (!scopedCo || !STATE.kioskLastPunch.company || STATE.kioskLastPunch.company === scopedCo))
+      const lastPunch = (STATE.kioskLastPunch && !/^pn-seed-/.test(String(STATE.kioskLastPunch.id || '')) && (!scopedCo || !STATE.kioskLastPunch.company || STATE.kioskLastPunch.company === scopedCo))
         ? STATE.kioskLastPunch
         : (punches[0] || null);
       const pinVal = String(STATE.kioskAttPin || '');
-      const demoSample = staffDir[0] || null;
-      const feedFilter = STATE.kioskAttFeedFilter === 'onsite' ? 'onsite' : 'all';
-      const feedRows = feedFilter === 'onsite' ? onSiteList : punches.slice(0, 14);
+      const demoSample = staffDir.find(s => s.pin) || null;
+      const allowedFeedModes = STATE.kioskLocked ? ['all', 'onsite'] : ['roster', 'onsite', 'all'];
+      const feedFilter = allowedFeedModes.includes(STATE.kioskAttFeedFilter) ? STATE.kioskAttFeedFilter : allowedFeedModes[0];
+      const rosterQuery = norm(STATE.kioskAttRosterSearch || '');
+      const filteredRoster = rosterQuery
+        ? staffDir.filter(s => norm(s.name).includes(rosterQuery) || norm(s.role).includes(rosterQuery) || norm(s.company).includes(rosterQuery))
+        : staffDir;
+      const basePunches = feedFilter === 'onsite' ? onSiteList : punches.slice(0, 25);
+      const feedRows = rosterQuery
+        ? basePunches.filter(p => norm(p.staff).includes(rosterQuery) || norm(p.site).includes(rosterQuery) || norm(p.company).includes(rosterQuery))
+        : basePunches;
 
       let pinHintText = 'Enter your 4-digit personal PIN below';
       let pinHintCls = '';
@@ -40189,12 +40424,15 @@
       } else if (pinVal.length > 0) {
         pinHintText = `${pinVal.length} of 4 digits entered`;
       } else if (selectedStaff) {
-        pinHintText = `${selectedStaff} is currently ${selectedOnSite ? `on site since ${selectedLastPunch.time}` : 'off site'} · Tap Clock ${selectedNextDir} below`;
+        pinHintText = `${selectedStaff} is ${selectedOnSite ? `on site since ${selectedLastPunch.time}` : 'off site'} · Tap Clock ${selectedNextDir}`;
       }
 
       const goBtnLabel = selectedStaff
         ? `${ic('check_circle')} Clock ${selectedNextDir} · ${esc(selectedStaff.split(' ')[0])}`
         : `${ic('check_circle')} Clock ${selectedNextDir}`;
+
+      const scopeTitleLabel = scopedCo || 'All Companies';
+      const showCoCol = !scopedCo;
 
       workspaceBodyHtml = `
         <div class="kiosk-att-shell" id="kioskAttendanceWorkspace">
@@ -40204,6 +40442,7 @@
                 <span class="badge ${lastPunch.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${lastPunch.direction === 'IN' ? `${ic('clock_in')} Clocked IN` : `${ic('clock_out')} Clocked OUT`}</span>
                 <div class="kiosk-lp-info">
                   <strong>${esc(lastPunch.staff)}</strong>
+                  ${showCoCol ? coBadge(lastPunch.company) : ''}
                   <span class="kiosk-lp-meta"><span class="mono">${esc(lastPunch.time)}</span> · ${esc(fmtDateDMY(lastPunch.date))} · ${esc(lastPunch.site)} · ${esc(lastPunch.method)}${lastPunch.paired_hours != null ? ` · Shift ${fmtNum(lastPunch.paired_hours, 1)}h${lastPunch.overtime_hours > 0 ? ' (+' + fmtNum(lastPunch.overtime_hours, 1) + 'h OT)' : ''}` : ''}</span>
                 </div>
               </div>
@@ -40218,21 +40457,25 @@
             <div class="panel-card kiosk-att-cam-card">
               <div class="panel-head">
                 <div class="panel-title"><span>${ic('camera')} Face ID Clock-In</span></div>
-                <span class="badge ${KIOSK_ATT_STATE.camActive ? 'badge-ok' : ''}">${KIOSK_ATT_STATE.camActive ? 'Live Camera' : 'Camera Off'}</span>
+                <span class="badge ${KIOSK_ATT_STATE.camActive ? 'badge-ok' : ''}">${KIOSK_ATT_STATE.camActive ? 'Live Camera' : `${fmtNum(enrolledFaceCount)} Face ID Ready`}</span>
               </div>
               <div class="kiosk-att-cam-body">
                 <div class="kiosk-att-viewport ${KIOSK_ATT_STATE.camActive ? 'is-live' : 'is-standby'}" id="kioskAttViewport">
                   <video id="kioskAttVideo" autoplay muted playsinline></video>
                   <div class="kiosk-att-reticle" aria-hidden="true">
+                    <span class="kiosk-finder-corner tl"></span>
+                    <span class="kiosk-finder-corner tr"></span>
+                    <span class="kiosk-finder-corner bl"></span>
+                    <span class="kiosk-finder-corner br"></span>
                     <div class="kiosk-att-oval"></div>
                   </div>
                   ${!KIOSK_ATT_STATE.camActive ? `
                     <div class="kiosk-cam-standby-card">
-                      <div class="kiosk-cam-standby-ico">${ic('kiosks')}</div>
-                      <strong>Hands-Free Face Clock-In</strong>
-                      <p>Start the camera and look straight ahead to clock in or out automatically.</p>
+                      <div class="kiosk-cam-standby-ico">${ic('camera')}</div>
+                      <strong>Hands-Free Face Recognition</strong>
+                      <p>Start the front camera on any wall tablet or desktop to clock enrolled staff in and out automatically.</p>
                       <button type="button" class="btn btn-primary kiosk-cam-start-btn" id="kioskAttCamToggleBtn">
-                        ${ic('camera')} Start Camera
+                        ${ic('camera')} Start Face Camera
                       </button>
                     </div>
                   ` : ''}
@@ -40258,78 +40501,158 @@
                 <span class="panel-meta">${IS_DEMO && demoSample ? `Demo PIN: ${esc(demoSample.pin)} (${esc(demoSample.name.split(' ')[0])})` : 'Auto-clocks on 4th digit'}</span>
               </div>
               <div class="kiosk-att-pin-body">
-                <div class="kiosk-pin-display-bar">
-                  <div class="kiosk-pin-boxes" id="kioskAttPinDisplay" data-pin-len="${pinVal.length}" aria-label="4-digit PIN entry">
-                    ${[0, 1, 2, 3].map(idx => `<span class="kiosk-pin-slot ${idx < pinVal.length ? 'filled' : ''}">${idx < pinVal.length ? '●' : ''}</span>`).join('')}
+                <div class="kiosk-pin-module">
+                  <div class="kiosk-pin-display-bar">
+                    <div class="kiosk-pin-boxes" id="kioskAttPinDisplay" data-pin-len="${pinVal.length}" aria-label="4-digit PIN entry">
+                      ${[0, 1, 2, 3].map(idx => `<span class="kiosk-pin-slot ${idx < pinVal.length ? 'filled' : (idx === pinVal.length ? 'next' : '')}">${idx < pinVal.length ? '●' : ''}</span>`).join('')}
+                    </div>
+                    <div class="kiosk-pin-hint ${esc(pinHintCls)}" id="kioskAttPinHint">${esc(pinHintText)}</div>
                   </div>
-                  <div class="kiosk-pin-hint ${esc(pinHintCls)}" id="kioskAttPinHint">${esc(pinHintText)}</div>
-                </div>
 
-                <div class="kiosk-pin-pad" id="kioskAttPinPad">
-                  ${['1', '2', '3', '4', '5', '6', '7', '8', '9', 'CLR', '0', 'GO'].map(k => {
-                    if (k === 'CLR') return `<button type="button" class="kiosk-pad-key aux" data-kiosk-pin-key="CLR">Clear</button>`;
-                    if (k === 'GO') return `<button type="button" class="kiosk-pad-key go ${selectedStaff && selectedNextDir === 'IN' ? 'is-in' : ''}" id="kioskAttPinSubmitBtn" data-kiosk-pin-key="GO">${goBtnLabel}</button>`;
-                    return `<button type="button" class="kiosk-pad-key" data-kiosk-pin-key="${k}">${k}</button>`;
-                  }).join('')}
-                </div>
-
-                <div class="kiosk-manual-staff-row">
-                  <label class="kiosk-manual-lbl" for="kioskAttStaffSelect">Or clock by name (Supervisor):</label>
-                  <div class="kiosk-manual-ctrl">
-                    <select id="kioskAttStaffSelect" class="kiosk-select" data-native-select="1">
-                      <option value="">Select staff member...</option>
-                      ${staffDir.map(s => {
-                        const lp = latestByStaff.get(norm(s.name));
-                        const onNow = isPunchActiveOnSite(lp, nowMs);
-                        const stTxt = onNow ? `On Site (${lp.time}) · Next: OUT` : 'Off Site · Next: IN';
-                        return `<option value="${esc(s.name)}" ${norm(s.name) === norm(selectedStaff) ? 'selected' : ''}>${esc(s.name)} · ${stTxt}${IS_DEMO ? ` [PIN ${s.pin}]` : ''}</option>`;
-                      }).join('')}
-                    </select>
-                    ${selectedStaff ? `<button type="button" class="btn btn-ghost-bar kiosk-clear-staff-btn" id="kioskAttClearStaffBtn" title="Clear selected staff member">Clear</button>` : ''}
+                  <div class="kiosk-pin-pad" id="kioskAttPinPad">
+                    ${['1', '2', '3', '4', '5', '6', '7', '8', '9', 'CLR', '0', 'GO'].map(k => {
+                      if (k === 'CLR') return `<button type="button" class="kiosk-pad-key aux" data-kiosk-pin-key="CLR">Clear</button>`;
+                      if (k === 'GO') return `<button type="button" class="kiosk-pad-key go ${selectedStaff && selectedNextDir === 'IN' ? 'is-in' : ''}" id="kioskAttPinSubmitBtn" data-kiosk-pin-key="GO">${goBtnLabel}</button>`;
+                      return `<button type="button" class="kiosk-pad-key" data-kiosk-pin-key="${k}">${k}</button>`;
+                    }).join('')}
                   </div>
                 </div>
+
+                ${!STATE.kioskLocked ? `
+                  <div class="kiosk-manual-staff-row">
+                    <label class="kiosk-manual-lbl" for="kioskAttStaffSelect">Supervisor Override</label>
+                    <div class="kiosk-manual-ctrl">
+                      <select id="kioskAttStaffSelect" class="kiosk-select">
+                        <option value="">Select active staff member...</option>
+                        ${staffDir.map(s => {
+                          const lp = latestByStaff.get(norm(s.name));
+                          const onNow = isPunchActiveOnSite(lp, nowMs);
+                          const stTxt = onNow ? `On Site (${lp.time}) · Next: OUT` : 'Off Site · Next: IN';
+                          return `<option value="${esc(s.name)}" ${norm(s.name) === norm(selectedStaff) ? 'selected' : ''}>${esc(s.name)} · ${stTxt}${IS_DEMO && s.pin ? ` [PIN ${s.pin}]` : ''}</option>`;
+                        }).join('')}
+                      </select>
+                    </div>
+                  </div>
+                ` : ''}
               </div>
             </div>
           </div>
 
-          <!-- FULL-WIDTH BOTTOM LOG: LIVE ON-SITE WORKFORCE & TODAY'S PUNCHES -->
+          <!-- FULL-WIDTH BOTTOM ROSTER & LIVE CLOCK LOG -->
           <div class="panel-card kiosk-att-feed-card" id="kioskAttFeedCard">
-            <div class="panel-head">
-              <div class="panel-title"><span>${ic('clock')} Recent Clock Activity &amp; On-Site Team</span></div>
-              <div class="kiosk-feed-filters" role="group" aria-label="Filter clock log">
-                <button type="button" class="kiosk-feed-chip ${feedFilter === 'all' ? 'active' : ''}" data-att-feed-filter="all">All Recent (${fmtNum(punches.length)})</button>
-                <button type="button" class="kiosk-feed-chip ${feedFilter === 'onsite' ? 'active' : ''}" data-att-feed-filter="onsite">On Site Now (${fmtNum(onSiteList.length)})</button>
+            <div class="panel-head kiosk-feed-head">
+              <div class="panel-title">
+                <span>${ic('payroll')} Active Staff &amp; Daily Clock Log</span>
+                <small class="kiosk-feed-sub">${esc(scopeTitleLabel)} · ${fmtNum(staffDir.length)} Active Staff · Station: ${esc(STATE.kioskAttSite)}</small>
+              </div>
+              <div class="kiosk-feed-tools">
+                <input type="search" class="search-input kiosk-roster-search" id="kioskAttRosterSearch" placeholder="Search active staff or role..." value="${esc(STATE.kioskAttRosterSearch || '')}">
+                <div class="kiosk-seg-group" role="group" aria-label="Attendance View">
+                  ${!STATE.kioskLocked ? `
+                    <button type="button" class="kiosk-seg-btn ${feedFilter === 'roster' ? 'active' : ''}" data-tone="sapphire" data-att-feed-filter="roster">
+                      Active Staff (${fmtNum(staffDir.length)})
+                    </button>
+                  ` : ''}
+                  <button type="button" class="kiosk-seg-btn ${feedFilter === 'onsite' ? 'active' : ''}" data-tone="emerald" data-att-feed-filter="onsite">
+                    On Site (${fmtNum(onSiteList.length)})
+                  </button>
+                  <button type="button" class="kiosk-seg-btn ${feedFilter === 'all' ? 'active' : ''}" data-tone="amber" data-att-feed-filter="all">
+                    Punch Log (${fmtNum(punches.length)})
+                  </button>
+                </div>
               </div>
             </div>
-            <div class="table-wrap" style="max-height:240px">
-              <table class="ledger-table" id="kioskAttFeedTable">
-                <thead>
-                  <tr>
-                    <th>Staff Member</th>
-                    <th>Co.</th>
-                    <th>Station</th>
-                    <th>Status</th>
-                    <th>Time</th>
-                    <th>Method</th>
-                    <th class="r">Shift / OT</th>
-                    <th>Switch</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${feedRows.map(p => `
+            <div class="table-wrap" style="max-height:310px">
+              ${feedFilter === 'roster' && !STATE.kioskLocked ? `
+                <table class="ledger-table" id="kioskAttFeedTable">
+                  <thead>
                     <tr>
-                      <td><strong>${esc(p.staff)}</strong></td>
-                      <td>${coBadge(p.company)}</td>
-                      <td>${esc(p.site)}</td>
-                      <td><span class="badge ${p.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${p.direction === 'IN' ? 'IN · On Site' : 'OUT'}</span></td>
-                      <td class="mono">${esc(p.time)} <small class="muted">${esc(fmtDateDMY(p.date))}</small></td>
-                      <td>${esc(p.method)}</td>
-                      <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, 1)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1)}h OT)` : ''}` : 'Active'}</td>
-                      <td><button type="button" class="tkt-print-mini" data-flip-punch="${esc(p.id)}" title="Switch IN / OUT direction">${ic('swap')}</button></td>
+                      <th>Staff Member</th>
+                      ${showCoCol ? '<th>Co.</th>' : ''}
+                      <th>Role / Contract</th>
+                      <th class="r">Schedule</th>
+                      <th>Today's Status</th>
+                      <th>Kiosk Biometrics &amp; PIN</th>
+                      <th class="r">Supervisor Clock</th>
                     </tr>
-                  `).join('') || emptyRow(8, feedFilter === 'onsite' ? 'No staff currently clocked in on site' : 'No punches recorded yet')}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    ${filteredRoster.map(s => {
+                      const sKey = norm(s.name);
+                      const lp = latestByStaff.get(sKey);
+                      const onNow = isPunchActiveOnSite(lp, nowMs);
+                      const outToday = !onNow && lp && lp.direction === 'OUT' && lp.date === todayISO();
+                      const isEditingPin = STATE.kioskEditingPinStaff === sKey;
+                      return `
+                        <tr>
+                          <td><strong>${esc(s.name)}</strong></td>
+                          ${showCoCol ? `<td>${coBadge(s.company)}</td>` : ''}
+                          <td class="muted">${esc(s.role)}</td>
+                          <td class="r mono">${fmtNum(s.schedHours || 8, 0)}h/d</td>
+                          <td>
+                            ${onNow
+                              ? `<span class="badge badge-ok">${ic('clock_in')} On Site · ${esc(lp.time)}</span>`
+                              : (outToday
+                                ? `<span class="badge badge-warn">${ic('clock_out')} Clocked OUT · ${esc(lp.time)}</span>`
+                                : `<span class="kiosk-status-quiet">Off Site</span>`)}
+                          </td>
+                          <td>
+                            ${isEditingPin ? `
+                              <div class="kiosk-inline-pin-form" data-pin-form-staff="${esc(s.name)}">
+                                <input type="text" inputmode="numeric" maxlength="4" autocomplete="off" class="kiosk-inline-pin-input" id="kioskInlinePinInput" placeholder="4 digits" value="${esc(s.hasExplicitPin ? s.pin : '')}">
+                                <button type="button" class="btn btn-primary kiosk-mini-btn" id="kioskSaveInlinePinBtn" data-save-staff-pin="${esc(s.name)}">Save</button>
+                                <button type="button" class="btn kiosk-mini-btn" id="kioskCancelInlinePinBtn">Cancel</button>
+                              </div>
+                            ` : `
+                              <div class="kiosk-bio-cell">
+                                ${s.hasFace ? `<span class="kiosk-bio-tag ok">${ic('camera')} Face ID</span>` : ''}
+                                ${s.hasExplicitPin
+                                  ? `<span class="kiosk-bio-tag ok">${ic('lock')} PIN Set</span>`
+                                  : `<span class="kiosk-bio-tag">${IS_DEMO && s.pin ? `Demo ${esc(s.pin)}` : 'No PIN'}</span>`}
+                                <button type="button" class="kiosk-pin-edit-link" data-edit-staff-pin="${esc(s.name)}">${s.hasExplicitPin ? 'Change PIN' : 'Set PIN'}</button>
+                              </div>
+                            `}
+                          </td>
+                          <td class="r">
+                            <button type="button" class="btn kiosk-quick-clock-btn ${onNow ? 'is-out' : 'is-in'}" data-quick-clock-staff="${esc(s.name)}" data-quick-clock-dir="${onNow ? 'OUT' : 'IN'}">
+                              ${onNow ? `${ic('clock_out')} Clock OUT` : `${ic('clock_in')} Clock IN`}
+                            </button>
+                          </td>
+                        </tr>
+                      `;
+                    }).join('') || emptyRow(showCoCol ? 7 : 6, 'No active staff match your search in this company')}
+                  </tbody>
+                </table>
+              ` : `
+                <table class="ledger-table" id="kioskAttFeedTable">
+                  <thead>
+                    <tr>
+                      <th>Staff Member</th>
+                      ${showCoCol ? '<th>Co.</th>' : ''}
+                      <th>Station</th>
+                      <th>Status</th>
+                      <th>Time</th>
+                      <th>Method</th>
+                      <th class="r">Shift / OT</th>
+                      <th>Switch</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${feedRows.map(p => `
+                      <tr>
+                        <td><strong>${esc(p.staff)}</strong></td>
+                        ${showCoCol ? `<td>${coBadge(p.company)}</td>` : ''}
+                        <td>${esc(p.site)}</td>
+                        <td><span class="badge ${p.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${p.direction === 'IN' ? 'IN · On Site' : 'OUT'}</span></td>
+                        <td class="mono">${esc(p.time)} <small class="muted">${esc(fmtDateDMY(p.date))}</small></td>
+                        <td>${esc(p.method)}</td>
+                        <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, 1)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1) + 'h OT'})` : ''}` : 'Active'}</td>
+                        <td><button type="button" class="tkt-print-mini" data-flip-punch="${esc(p.id)}" title="Switch IN / OUT direction">${ic('swap')}</button></td>
+                      </tr>
+                    `).join('') || emptyRow(showCoCol ? 8 : 7, feedFilter === 'onsite' ? 'No staff currently clocked in on site' : 'No punches recorded yet today. Clock in with Face ID, 4-digit PIN, or Active Staff')}
+                  </tbody>
+                </table>
+              `}
             </div>
           </div>
         </div>
@@ -40356,7 +40679,7 @@
           <div class="panel-card kiosk-form-pane">
             <div class="panel-head">
               <div class="panel-title"><span>${esc(kioskHeadTitles[kMode] || kioskHeadTitles.sales)}</span></div>
-              <span class="badge badge-brass">Posting to ${esc(defCo)}</span>
+              <span class="badge">Posting to ${esc(defCo)}</span>
             </div>
             <div class="kiosk-form-body" id="kioskFormBody">
               ${renderEntryModalBody()}
@@ -40369,11 +40692,11 @@
                 <button type="button" class="btn" id="kioskResetFormBtn">${ic('rotate')} Reset</button>
                 ${showThermalPane ? `
                   <button type="button" class="btn" id="kioskPostOnlyBtn">Post Only (No Print)</button>
-                  <button type="button" class="btn btn-brass kiosk-big-print-btn" id="kioskPostAndPrintBtn">
+                  <button type="button" class="btn btn-primary kiosk-big-print-btn" id="kioskPostAndPrintBtn">
                     ${ic('printer')} Post &amp; Print ${(kMode === 'sales' || kMode === 'raw') && pCfg.priceMode === 'unpriced' ? (kMode === 'raw' ? 'Scale Slip' : 'Gate Pass') : 'Ticket'} (${pCfg.paperWidth}mm)
                   </button>
                 ` : `
-                  <button type="button" class="btn btn-brass kiosk-big-print-btn" id="kioskPostOnlyBtn">
+                  <button type="button" class="btn btn-primary kiosk-big-print-btn" id="kioskPostOnlyBtn">
                     ${ic('check_circle')} Post Tank Variance
                   </button>
                 `}
@@ -40456,17 +40779,20 @@
       ` : ''}
 
       <div class="panel-card kiosk-control-deck" id="kioskControlDeck">
-        <div class="kiosk-mode-tabs" role="tablist" aria-label="Kiosk Terminal Mode">
-          ${kioskTabs.map(t => `
-            <button type="button" role="tab" aria-selected="${kMode === t.id}" class="kiosk-mode-tab ${kMode === t.id ? 'active' : ''}" data-kiosk-tab="${t.id}">
-              <div class="kiosk-tab-top">
+        <div class="kiosk-nav-strip" role="tablist" aria-label="Kiosk Terminal Mode">
+          <div class="kiosk-mode-tabs">
+            ${kioskTabs.map(t => `
+              <button type="button" role="tab" aria-selected="${kMode === t.id}" class="kiosk-mode-tab ${kMode === t.id ? 'active' : ''}" data-kiosk-tab="${t.id}">
                 <span class="kiosk-tab-ico">${t.icon}</span>
-                <strong>${esc(t.title)}</strong>
-                <span class="badge ${kMode === t.id ? 'badge-brass' : ''}">${esc(t.badge)}</span>
-              </div>
-              <small>${esc(t.sub)}</small>
-            </button>
-          `).join('')}
+                <span class="kiosk-tab-lbl">${esc(t.title)}</span>
+                ${t.liveCount > 0 ? `<span class="kiosk-tab-live-pill">${fmtNum(t.liveCount)} On Site</span>` : ''}
+              </button>
+            `).join('')}
+          </div>
+          <div class="kiosk-nav-meta">
+            <span class="kiosk-nav-date mono">${esc(fmtDateDMY(todayISO()))}</span>
+            ${lockBtnHtml}
+          </div>
         </div>
         ${stationBarHtml}
       </div>
@@ -40628,6 +40954,24 @@
     });
 
     // 6. Wire either the Form Kiosk (Sales / Raw / Fuel) or Staff Attendance Kiosk
+    container.querySelectorAll('[data-kiosk-co]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetCo = btn.getAttribute('data-kiosk-co') || 'manufacturing-group';
+        if (!getAllowedCompanyKeys(activeUser()).includes(targetCo)) {
+          toast('Your seat is not scoped to that company', 'err');
+          return;
+        }
+        STATE.company = targetCo;
+        STATE.kioskAttSiteCustom = false;
+        STATE.kioskAttStaff = '';
+        STATE.kioskEditingPinStaff = '';
+        STATE.shown = {};
+        STATE.pbiTablePage = {};
+        saveFilterState();
+        renderApp();
+      });
+    });
+
     if (STATE.activeKiosk === 'attendance') {
       if (KIOSK_ATT_STATE.camActive && streamAlive()) {
         const kv = $('kioskAttVideo');
@@ -40644,6 +40988,14 @@
         siteSel.addEventListener('change', () => {
           STATE.kioskAttSite = siteSel.value;
           STATE.kioskAttSiteCustom = true;
+          renderApp();
+        });
+      }
+      const openRegBtn = $('kioskAttOpenRegisterBtn');
+      if (openRegBtn) {
+        openRegBtn.addEventListener('click', () => {
+          stopKioskAttCamera();
+          setView('payroll_attendance');
         });
       }
       const manageFacesBtn = $('kioskAttManageFacesBtn');
@@ -40670,6 +41022,13 @@
           renderApp();
         });
       }
+      const rosterSearchInp = $('kioskAttRosterSearch');
+      if (rosterSearchInp) {
+        rosterSearchInp.addEventListener('input', () => {
+          STATE.kioskAttRosterSearch = rosterSearchInp.value || '';
+          renderApp();
+        });
+      }
       container.querySelectorAll('[data-att-dir]').forEach(btn => {
         btn.addEventListener('click', () => {
           STATE.kioskAttDir = btn.getAttribute('data-att-dir') || 'auto';
@@ -40678,10 +41037,79 @@
       });
       container.querySelectorAll('[data-att-feed-filter]').forEach(btn => {
         btn.addEventListener('click', () => {
-          STATE.kioskAttFeedFilter = btn.getAttribute('data-att-feed-filter') === 'onsite' ? 'onsite' : 'all';
+          const nextF = btn.getAttribute('data-att-feed-filter') || 'all';
+          STATE.kioskAttFeedFilter = ['roster', 'onsite', 'all'].includes(nextF) ? nextF : 'all';
           renderApp();
         });
       });
+      container.querySelectorAll('[data-quick-clock-staff]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          const stf = btn.getAttribute('data-quick-clock-staff') || '';
+          const dir = btn.getAttribute('data-quick-clock-dir') || '';
+          if (!stf) return;
+          recordKioskAttendancePunch({
+            staff: stf,
+            direction: (dir === 'IN' || dir === 'OUT') ? dir : undefined,
+            method: 'Supervisor'
+          });
+        });
+      });
+      container.querySelectorAll('[data-edit-staff-pin]').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          const stf = btn.getAttribute('data-edit-staff-pin') || '';
+          STATE.kioskEditingPinStaff = norm(stf);
+          renderApp();
+          const pinInp = $('kioskInlinePinInput');
+          if (pinInp) setTimeout(() => { try { pinInp.focus({ preventScroll: true }); pinInp.select(); } catch (_) {} }, 25);
+        });
+      });
+      const saveInlinePinBtn = $('kioskSaveInlinePinBtn');
+      const inlinePinInp = $('kioskInlinePinInput');
+      const commitInlineStaffPin = () => {
+        if (!saveInlinePinBtn || !inlinePinInp) return;
+        const stf = saveInlinePinBtn.getAttribute('data-save-staff-pin') || '';
+        const valPin = String(inlinePinInp.value || '').replace(/\D+/g, '').slice(0, 4);
+        if (valPin.length !== 4 && String(inlinePinInp.value || '').trim() !== '') {
+          toast('Enter a 4-digit PIN (for example 4820), or leave empty to clear', 'warn');
+          return;
+        }
+        const res = setKioskStaffPin(stf, valPin);
+        if (!res.ok) {
+          toast(res.error || 'Could not save PIN', 'err');
+          return;
+        }
+        toast(res.pin ? `Saved 4-digit PIN for ${res.staff}` : `Cleared PIN for ${res.staff}`, 'ok');
+        renderApp();
+      };
+      if (saveInlinePinBtn) {
+        saveInlinePinBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          commitInlineStaffPin();
+        });
+      }
+      if (inlinePinInp) {
+        inlinePinInp.addEventListener('keydown', e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commitInlineStaffPin();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            STATE.kioskEditingPinStaff = '';
+            renderApp();
+          }
+        });
+      }
+      const cancelInlinePinBtn = $('kioskCancelInlinePinBtn');
+      if (cancelInlinePinBtn) {
+        cancelInlinePinBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          STATE.kioskEditingPinStaff = '';
+          renderApp();
+        });
+      }
+
       const camBtn = $('kioskAttCamToggleBtn');
       if (camBtn) {
         camBtn.addEventListener('click', () => {
@@ -40704,6 +41132,7 @@
           Array.from(disp.querySelectorAll('.kiosk-pin-slot')).forEach((slot, idx) => {
             const filled = idx < pv.length;
             slot.classList.toggle('filled', filled);
+            slot.classList.toggle('next', idx === pv.length);
             slot.textContent = filled ? '●' : '';
           });
         }
@@ -40719,12 +41148,12 @@
         const fullDir = getKioskStaffDirectory();
         const scopedDir = getKioskStaffDirectory({ scopeBySelectedCompany: true });
         if (pv.length >= 4) {
-          const match = scopedDir.find(s => String(s.pin) === pv) || fullDir.find(s => String(s.pin) === pv);
+          const match = scopedDir.find(s => s.pin && String(s.pin) === pv) || fullDir.find(s => s.pin && String(s.pin) === pv);
           if (match) {
             recordKioskAttendancePunch({ staff: match.name, method: 'PIN' });
           } else {
             STATE.kioskAttPin = '';
-            STATE.kioskAttPinMsg = 'Unrecognized 4-digit PIN. Try again or select a name below.';
+            STATE.kioskAttPinMsg = 'Unrecognized 4-digit PIN. Set a staff PIN below or use Supervisor Override.';
             STATE.kioskAttPinMsgCls = 'warn';
             toast('Unrecognized 4-digit PIN', 'warn');
             updatePinVisualInPlace();
@@ -40741,7 +41170,7 @@
           recordKioskAttendancePunch({ staff: STATE.kioskAttStaff, method: 'Supervisor' });
           return;
         }
-        STATE.kioskAttPinMsg = 'Enter your 4-digit PIN, or pick a name below to clock manually.';
+        STATE.kioskAttPinMsg = 'Enter a 4-digit PIN, or pick an active staff member below.';
         STATE.kioskAttPinMsgCls = 'warn';
         updatePinVisualInPlace();
         if (staffSel) {
@@ -40779,7 +41208,10 @@
           flipKioskPunchDirection(fBtn.getAttribute('data-flip-punch'));
         });
       });
+      if ($('kioskControlDeck')) wireModalSuggestions($('kioskControlDeck'));
+      if ($('kioskAttendanceWorkspace')) wireModalSuggestions($('kioskAttendanceWorkspace'));
     } else {
+      if ($('kioskControlDeck')) wireModalSuggestions($('kioskControlDeck'));
       // Kiosks 1, 2, 3 (Sales, Raw Material, Fuel & Lubricants)
       if (STATE.activeKiosk === 'fuel' && STATE.kioskFuelSubmode === 'refill') {
         if ($('f_category') && !val('f_category')) $('f_category').value = 'Fuel';
@@ -44249,8 +44681,22 @@
       },
       buildDraftRecord: () => buildDraftThermalRecordFromForm(),
       saveKioskEntry: (opts = {}) => saveKioskEntry(opts),
+      getStaffDirectory: (opts = {}) => getKioskStaffDirectory(opts),
+      setStaffPin: (staff, pin) => setKioskStaffPin(staff, pin),
       recordAttendancePunch: (opts = {}) => recordKioskAttendancePunch(opts),
       flipPunchDirection: (punchId) => flipKioskPunchDirection(punchId),
+      clearTestPunches: (staffNames = []) => {
+        const normSet = new Set((staffNames || []).map(x => norm(x)));
+        STATE.kioskPunches = sanitizeKioskPunchesList(STATE.kioskPunches).filter(p => !normSet.size || !normSet.has(norm(p.staff)));
+        if (Array.isArray(STATE.customRecords.attendance)) {
+          STATE.customRecords.attendance = STATE.customRecords.attendance.filter(a => !a || !(/^Kiosk /i.test(String(a.notes || '')) && (!normSet.size || normSet.has(norm(a.staff)))));
+          applyCustomRecordsToSeed();
+        }
+        STATE.kioskLastPunch = STATE.kioskPunches[0] || null;
+        STATE.kioskAttPinMsg = '';
+        saveLocalAuthAndRecords();
+        if (STATE.view === 'kiosks') renderApp();
+      },
       feedKioskFaceDescriptor: (vec, opts = {}) => handleKioskAttDescriptor({ descriptor: vec, detScore: 0.96, faceSizeFrac: 0.26, multiple: false }, opts),
       setKioskLock: (locked, pin = '2401') => setKioskLockMode(locked, pin)
     };

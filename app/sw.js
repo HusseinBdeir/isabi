@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.5.0';
+const SHELL_CACHE = 'isabi-mfg-v19.5.1';
 const DATA_CACHE = 'isabi-mfg-data-v1';
 
 // Lightweight UI shell (~500 KB gz). Heavy seed JSONs (1.7 MB gz) and Face ID models (8.2 MB gz)
@@ -6,17 +6,17 @@ const DATA_CACHE = 'isabi-mfg-data-v1';
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.5.0',
-  './js/face.js?v=19.5.0',
-  './js/endpoints.js?v=19.5.0',
-  './js/seed_manifest.js?v=19.5.0',
-  './js/icons.js?v=19.5.0',
-  './js/forms_engine.js?v=19.5.0',
-  './js/pbi_pages.js?v=19.5.0',
-  './js/rdl_reports.js?v=19.5.0',
-  './js/kiosk_print.js?v=19.5.0',
-  './js/table_columns.js?v=19.5.0',
-  './js/app.js?v=19.5.0',
+  './css/app.css?v=19.5.1',
+  './js/face.js?v=19.5.1',
+  './js/endpoints.js?v=19.5.1',
+  './js/seed_manifest.js?v=19.5.1',
+  './js/icons.js?v=19.5.1',
+  './js/forms_engine.js?v=19.5.1',
+  './js/pbi_pages.js?v=19.5.1',
+  './js/rdl_reports.js?v=19.5.1',
+  './js/kiosk_print.js?v=19.5.1',
+  './js/table_columns.js?v=19.5.1',
+  './js/app.js?v=19.5.1',
   './manifest.json',
   './icon.svg',
   './icon-192.png',
@@ -59,7 +59,7 @@ self.addEventListener('install', event => {
           if (url.includes('?v=')) {
             return caches.match(url).then(cached => {
               if (cached) return cache.put(url, cached.clone());
-              return fetchDedup(url)
+              return fetchDedup(url, { cache: 'no-cache' })
                 .then(res => (res && res.status === 200 ? cache.put(url, res) : null))
                 .catch(() => null);
             });
@@ -175,7 +175,7 @@ self.addEventListener('fetch', event => {
         try {
           const ctrl = new AbortController();
           const timer = setTimeout(() => ctrl.abort(), 3000);
-          const res = await fetch(event.request, { signal: ctrl.signal });
+          const res = await fetch(new Request(event.request, { cache: 'no-cache' }), { signal: ctrl.signal });
           clearTimeout(timer);
           if (res && res.status === 200) {
             cache.put('./index.html', res.clone());
