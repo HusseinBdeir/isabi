@@ -8093,7 +8093,7 @@
               <span class="cockpit-pill-tag brass">${esc(effGroup)}</span>
             </div>
             <div class="cockpit-pill-val brass">${esc(effLabel)}</div>
-            <div class="cockpit-pill-sub">${activeCols.length} columns · ${visibleViews.length} system views</div>
+            <div class="cockpit-pill-sub">${activeCols.length} columns${visibleViews.length > 1 ? ` · ${visibleViews.length} views` : ''}</div>
           </div>
           <div class="cockpit-pill insight-card tone-emerald">
             <div class="cockpit-pill-top">
@@ -8153,26 +8153,30 @@
       </div>
 
       <div class="panel-card" id="tablesHubPanel">
-        <!-- System Views & Connected Tables Relational Bar -->
-        <div class="pa-hub-rel-strip">
-          <div class="pa-hub-views">
-            <span class="pa-hub-lbl">System Views:</span>
-            ${visibleViews.map(vw => {
-              const vCnt = vw.fn ? baseFiltered.filter(r => vw.fn(r, rel)).length : baseFiltered.length;
-              return `<button type="button" class="filter-chip ${vw.id === activeView.id ? 'active' : ''}" data-tbl-view="${esc(vw.id)}" data-tbl-key="${esc(meta.key)}">${esc(vw.label)} <span class="mono" style="opacity:.75">(${fmtNum(vCnt)})</span></button>`;
-            }).join('')}
+        <!-- Views & Connected Tables Relational Bar -->
+        ${(visibleViews.length > 1 || relTablesMeta.length) ? `
+          <div class="pa-hub-rel-strip">
+            ${visibleViews.length > 1 ? `
+              <div class="pa-hub-views">
+                <span class="pa-hub-lbl">Views:</span>
+                ${visibleViews.map(vw => {
+                  const vCnt = vw.fn ? baseFiltered.filter(r => vw.fn(r, rel)).length : baseFiltered.length;
+                  return `<button type="button" class="filter-chip ${vw.id === activeView.id ? 'active' : ''}" data-tbl-view="${esc(vw.id)}" data-tbl-key="${esc(meta.key)}">${esc(vw.label)} <span class="mono" style="opacity:.75">(${fmtNum(vCnt)})</span></button>`;
+                }).join('')}
+              </div>
+            ` : ''}
+            ${relTablesMeta.length ? `
+              <div class="pa-hub-conns">
+                <span class="pa-hub-lbl">Connected Tables:</span>
+                ${relTablesMeta.map(rt => {
+                  const rtUniv = Boolean(rt.universal);
+                  const rCnt = filterRecords((SEED.records && SEED.records[rt.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: rtUniv, ignoreRls: rtUniv }).length;
+                  return `<button type="button" class="filter-chip" data-conn-table-key="${esc(rt.key)}" title="Jump to related table ${esc(rt.label)}">⇄ ${esc(rt.label)} <span class="mono" style="opacity:.7">(${fmtNum(rCnt)})</span></button>`;
+                }).join('')}
+              </div>
+            ` : ''}
           </div>
-          ${relTablesMeta.length ? `
-            <div class="pa-hub-conns">
-              <span class="pa-hub-lbl">Connected Tables:</span>
-              ${relTablesMeta.map(rt => {
-                const rtUniv = Boolean(rt.universal);
-                const rCnt = filterRecords((SEED.records && SEED.records[rt.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: rtUniv, ignoreRls: rtUniv }).length;
-                return `<button type="button" class="filter-chip" data-conn-table-key="${esc(rt.key)}" title="Jump to related table ${esc(rt.label)}">⇄ ${esc(rt.label)} <span class="mono" style="opacity:.7">(${fmtNum(rCnt)})</span></button>`;
-              }).join('')}
-            </div>
-          ` : ''}
-        </div>
+        ` : ''}
 
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -8393,34 +8397,38 @@
 
     return `
       <div class="panel-card" id="univRegPanel">
-        <div class="pa-hub-rel-strip">
-          ${groupTabsMeta.length > 1 ? `
-            <div class="pa-hub-views" style="padding-bottom:6px;margin-bottom:6px;border-bottom:1px dashed var(--line)">
-              <span class="pa-hub-lbl">Registries (All BUs):</span>
-              ${groupTabsMeta.map(gt => {
-                const gCnt = filterRecords((SEED.records && SEED.records[gt.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: true, ignoreRls: true }).length;
-                return `<button type="button" class="filter-chip ${gt.key === meta.key ? 'active' : ''}" data-univ-reg-key="${esc(gt.key)}" ${gt.navView ? `data-univ-nav-view="${esc(gt.navView)}"` : ''}>${esc(gt.label)} <span class="mono" style="opacity:.75">(${fmtNum(gCnt)})</span></button>`;
-              }).join('')}
-            </div>
-          ` : ''}
-          <div class="pa-hub-views">
-            <span class="pa-hub-lbl">System Views:</span>
-            ${views.map(vw => {
-              const vCnt = vw.fn ? baseFiltered.filter(r => vw.fn(r, rel)).length : baseFiltered.length;
-              return `<button type="button" class="filter-chip ${vw.id === activeView.id ? 'active' : ''}" data-tbl-view="${esc(vw.id)}" data-tbl-key="${esc(meta.key)}">${esc(vw.label)} <span class="mono" style="opacity:.75">(${fmtNum(vCnt)})</span></button>`;
-            }).join('')}
+        ${(groupTabsMeta.length > 1 || views.length > 1 || relTablesMeta.length) ? `
+          <div class="pa-hub-rel-strip">
+            ${groupTabsMeta.length > 1 ? `
+              <div class="pa-hub-views"${views.length > 1 ? ' style="flex:1 1 100%;padding-bottom:6px;margin-bottom:2px;border-bottom:1px dashed var(--line)"' : ''}>
+                <span class="pa-hub-lbl">Registries (All BUs):</span>
+                ${groupTabsMeta.map(gt => {
+                  const gCnt = filterRecords((SEED.records && SEED.records[gt.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: true, ignoreRls: true }).length;
+                  return `<button type="button" class="filter-chip ${gt.key === meta.key ? 'active' : ''}" data-univ-reg-key="${esc(gt.key)}" ${gt.navView ? `data-univ-nav-view="${esc(gt.navView)}"` : ''}>${esc(gt.label)} <span class="mono" style="opacity:.75">(${fmtNum(gCnt)})</span></button>`;
+                }).join('')}
+              </div>
+            ` : ''}
+            ${views.length > 1 ? `
+              <div class="pa-hub-views">
+                <span class="pa-hub-lbl">Views:</span>
+                ${views.map(vw => {
+                  const vCnt = vw.fn ? baseFiltered.filter(r => vw.fn(r, rel)).length : baseFiltered.length;
+                  return `<button type="button" class="filter-chip ${vw.id === activeView.id ? 'active' : ''}" data-tbl-view="${esc(vw.id)}" data-tbl-key="${esc(meta.key)}">${esc(vw.label)} <span class="mono" style="opacity:.75">(${fmtNum(vCnt)})</span></button>`;
+                }).join('')}
+              </div>
+            ` : ''}
+            ${relTablesMeta.length ? `
+              <div class="pa-hub-conns">
+                <span class="pa-hub-lbl">Connected Tables:</span>
+                ${relTablesMeta.map(rt => {
+                  const rtUniv = Boolean(rt.universal);
+                  const rCnt = filterRecords((SEED.records && SEED.records[rt.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: rtUniv, ignoreRls: rtUniv }).length;
+                  return `<button type="button" class="filter-chip" data-conn-table-key="${esc(rt.key)}" title="Jump to related table ${esc(rt.label)}">⇄ ${esc(rt.label)} <span class="mono" style="opacity:.7">(${fmtNum(rCnt)})</span></button>`;
+                }).join('')}
+              </div>
+            ` : ''}
           </div>
-          ${relTablesMeta.length ? `
-            <div class="pa-hub-conns">
-              <span class="pa-hub-lbl">Connected Tables:</span>
-              ${relTablesMeta.map(rt => {
-                const rtUniv = Boolean(rt.universal);
-                const rCnt = filterRecords((SEED.records && SEED.records[rt.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: rtUniv, ignoreRls: rtUniv }).length;
-                return `<button type="button" class="filter-chip" data-conn-table-key="${esc(rt.key)}" title="Jump to related table ${esc(rt.label)}">⇄ ${esc(rt.label)} <span class="mono" style="opacity:.7">(${fmtNum(rCnt)})</span></button>`;
-              }).join('')}
-            </div>
-          ` : ''}
-        </div>
+        ` : ''}
 
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
