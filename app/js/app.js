@@ -147,6 +147,11 @@
     partDispFilter: 'all',
     unitHealthFilter: 'all',
     sentinelFilter: 'all',
+    dailyOpsDate: '',
+    dailyOpsIncludeAfterHours: true,
+    dailyOpsChartMode: 'pulse',
+    dailyOpsTab: '',
+    dailyOpsStreamFilter: 'all',
     wfMapDate: '',
     wfIncludeHaulers: false,
     wfAuditScope: 'period',
@@ -5881,6 +5886,7 @@
       group: 'exec',
       tabs: [
         { view: 'overview', label: 'Executive Overview', icon: 'overview' },
+        { view: 'daily_ops', label: 'Daily Operations', icon: 'daily_ops' },
         { view: 'entities', label: 'Entity Comparison', icon: 'entities' },
         { view: 'sentinels', label: 'AI Sentinels & Audit', icon: 'sentinels', badgeFn: (u, _k, sn) => getSentinelExceptionBadge(u, sn) },
         { view: 'alert_rules', label: 'Alerts & Thresholds', icon: 'alert_rules' }
@@ -6071,6 +6077,7 @@
       if (view === 'kiosks') return !!(p.rights.enter_dispatch || p.rights.enter_accounting || p.rights.enter_master || p.rights.read_ops);
       if (view === 'cashflow') return !!(p.rights.read_ops || p.rights.read_fin || p.rights.enter_accounting || p.rights.enter_dispatch || p.dashboards.dash_financial_gl || p.dashboards.dash_expenses_vat);
       if (view === 'overview' || view === 'pbi') return anyDash;
+      if (view === 'daily_ops') return !!(p.rights.read_fin || p.dashboards.dash_executive || p.dashboards.dash_financial_gl);
       if (view === 'statements') return anyStmt;
       if (view === 'payroll') return !!(p.rights.read_fin || p.dashboards.dash_payroll_hr || p.rights.enter_payroll_jv);
       if (view === 'ledger' || view === 'gl' || view === 'sentinels') return !!(p.rights.read_fin || p.dashboards.dash_financial_gl);
@@ -6084,7 +6091,7 @@
     if (view === 'overview' || view === 'pbi') return pbi !== 'none';
     if (view === 'expenses') return pbi !== 'none' && !/Sales/i.test(role);
     if (view === 'raw' || view === 'fleet' || view === 'suppliers' || view === 'ap') return !/Sales/i.test(role);
-    if (view === 'payroll' || view === 'sentinels' || view === 'ledger' || view === 'gl') return (pbi === 'full' || isOwner(u)) && !/Sales/i.test(role);
+    if (view === 'daily_ops' || view === 'payroll' || view === 'sentinels' || view === 'ledger' || view === 'gl') return (pbi === 'full' || isOwner(u)) && !/Sales/i.test(role);
     if (view === 'statements') return st !== 'none';
     return true;
   }
@@ -33089,7 +33096,8 @@
     }
 
     const adminOverrides = Object.keys(FORM_UI.adminUnlocked || {}).filter(k => k !== '__all' && FORM_UI.adminUnlocked[k]);
-    const base = { id: uid(f.slice(0, 2)), date, rep_date: repDate, company: isUniversalForm ? '' : company, notes, source: 'app', entered_by: who.full_name, entered_by_email: who.email, entered_at: nowStamp(), voided: false, ...(adminOverrides.length ? { admin_overrides: adminOverrides } : {}) };
+    const isAfterHoursPost = (f === 'sales' || f === 'raw') && Boolean(FORM_UI.afterHoursYesterday && date === yesterdayISO(today));
+    const base = { id: uid(f.slice(0, 2)), date, rep_date: repDate, company: isUniversalForm ? '' : company, notes, source: 'app', entered_by: who.full_name, entered_by_email: who.email, entered_at: nowStamp(), voided: false, ...(adminOverrides.length ? { admin_overrides: adminOverrides } : {}), ...(isAfterHoursPost ? { after_hours: true, after_hours_logged_on: today } : {}) };
     let record = null;
     let crKey = FORM_CR_KEY[f] || 'sales_tickets';
 
@@ -36399,7 +36407,8 @@
     }
 
     const app = isAppRecord(row);
-    $('inspectorEyebrow').textContent = `RECORD INSPECTOR · ${(INSPECT_LABELS[key] || key).toUpperCase()} · ${app ? 'ENTERED IN WEB APP' : 'CLOUD LEDGER ' + SEED_DATE}`;
+    const isAhRow = row && (row.after_hours === true || row.after_hours === 1 || row.after_hours === '1' || row.after_hours === 'true');
+    $('inspectorEyebrow').textContent = `RECORD INSPECTOR · ${(INSPECT_LABELS[key] || key).toUpperCase()} · ${app ? 'ENTERED IN WEB APP' : 'CLOUD LEDGER ' + SEED_DATE}${isAhRow ? " · YESTERDAY'S AFTER-HOURS" : ''}`;
     $('inspectorTitle').textContent = row.name || row.ticket_no || row.invoice_no || row.staff || String(idOrName);
 
     const banner = buildInspectorLiveBanner(key, row);
@@ -40475,6 +40484,7 @@
   // ==========================================================================
   const VIEW_TITLES = {
     overview: 'Executive Overview',
+    daily_ops: 'Daily Operations',
     entities: 'Entity Comparison',
     pbi: 'Analytics & Insights',
     tables: 'All Tables & Registers',
@@ -40531,6 +40541,7 @@
   };
   const VIEW_MOBILE_TITLES = {
     overview: 'Executive Overview',
+    daily_ops: 'Daily Operations',
     entities: 'Entity Comparison',
     pbi: 'Analytics & Insights',
     tables: 'All Tables & Registers',
@@ -45658,11 +45669,13 @@
     const coMobLbl = COMPANY_MOBILE_LABELS[STATE.company] || coFullLbl;
     const isUnivView = Boolean(UNIV_VIEW_TO_TABLE_KEY[STATE.view]);
     const isKiosksView = STATE.view === 'kiosks';
+    const isDailyOpsView = STATE.view === 'daily_ops';
     document.body.classList.toggle('is-kiosks-view', isKiosksView);
     document.body.classList.toggle('is-universal-view', isUnivView);
+    document.body.classList.toggle('is-daily-ops-view', isDailyOpsView);
     const univPill = $('topbarUnivScopePill');
     if (univPill) univPill.hidden = !isUnivView;
-    if ((isKiosksView || isUnivView) && _dateFacState.open) closeDateFacilitator();
+    if ((isKiosksView || isUnivView || isDailyOpsView) && _dateFacState.open) closeDateFacilitator();
     const univGroupKeys = isUnivView ? (UNIV_REGISTRY_GROUPS[STATE.view] || [UNIV_VIEW_TO_TABLE_KEY[STATE.view]]) : [];
     if (isUnivView && (!STATE.activeUnivRegKey || !univGroupKeys.includes(STATE.activeUnivRegKey))) {
       STATE.activeUnivRegKey = UNIV_VIEW_TO_TABLE_KEY[STATE.view];
@@ -45672,9 +45685,11 @@
         ? (isMobileViewport ? 'All BUs · Universal Registry' : 'All Business Units (Universal Registry) · WTC · BBConstruction · Lions Transport')
         : isKiosksView
           ? (isMobileViewport ? `${coMobLbl} · Live Terminals` : `${coFullLbl} · Live Plant Terminals`)
-          : (isMobileViewport
-            ? `${coMobLbl} · ${STATE.basis === 'rep' ? 'Rep Date' : 'Tx Date'}`
-            : `${coFullLbl} · ${k.label || 'All-Time'} · ${STATE.basis === 'rep' ? 'Reporting Date Basis' : 'Transaction Date Basis'}`);
+          : isDailyOpsView
+            ? (isMobileViewport ? `${coMobLbl} · Tx Date Locked` : `${coFullLbl} · Daily Operations · Transaction Date Basis`)
+            : (isMobileViewport
+              ? `${coMobLbl} · ${STATE.basis === 'rep' ? 'Rep Date' : 'Tx Date'}`
+              : `${coFullLbl} · ${k.label || 'All-Time'} · ${STATE.basis === 'rep' ? 'Reporting Date Basis' : 'Transaction Date Basis'}`);
       eyeEl.textContent = eyeTxt;
       eyeEl.removeAttribute('title');
     }
@@ -45762,6 +45777,7 @@
     let wsHtml = '';
     switch (STATE.view) {
       case 'overview': wsHtml = renderOverview(); break;
+      case 'daily_ops': wsHtml = window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isDieselTankRefillIntake, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview(); break;
       case 'entities': wsHtml = renderEntitiesComparison(); break;
       case 'pbi': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview(); break;
       case 'tables': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview(); break;
@@ -47660,6 +47676,9 @@
     }));
     if (STATE.view === 'kiosks') {
       wireKiosks(container);
+    }
+    if (STATE.view === 'daily_ops' && window.MFG_DAILY_OPS && typeof window.MFG_DAILY_OPS.wire === 'function') {
+      window.MFG_DAILY_OPS.wire(container, { STATE, MIN_DATE, MAX_DATE, renderApp });
     }
     if (STATE.view === 'statements' && window.MFG_RDL && typeof window.MFG_RDL.wireStatementsEvents === 'function') {
       window.MFG_RDL.wireStatementsEvents(container, SEED, STATE, renderApp);

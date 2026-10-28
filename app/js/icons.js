@@ -13,6 +13,7 @@
   const ICONS = {
     // ---- Executive & Governance ----
     overview: s('<rect x="3" y="3" width="7.5" height="8.5" rx="1.6"/><rect x="13.5" y="3" width="7.5" height="5" rx="1.6"/><rect x="13.5" y="11" width="7.5" height="10" rx="1.6"/><rect x="3" y="14.5" width="7.5" height="6.5" rx="1.6"/>'),
+    daily_ops: s('<rect x="3" y="4.2" width="18" height="16.8" rx="2"/><line x1="16" y1="2.5" x2="16" y2="6"/><line x1="8" y1="2.5" x2="8" y2="6"/><line x1="3" y1="9.2" x2="21" y2="9.2"/><polyline points="6.8 15.2 9.8 15.2 11.4 12.2 13.4 17.6 15.1 14.5 17.4 14.5"/>'),
     reports: s('<rect x="3" y="3.5" width="18" height="17" rx="2"/><line x1="7.5" y1="16.5" x2="7.5" y2="11.5"/><line x1="12" y1="16.5" x2="12" y2="8"/><line x1="16.5" y1="16.5" x2="16.5" y2="10"/>'),
     master: s('<ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v6.5c0 1.55 3.36 2.8 7.5 2.8s7.5-1.25 7.5-2.8V5.5"/><path d="M4.5 12v6.5c0 1.55 3.36 2.8 7.5 2.8s7.5-1.25 7.5-2.8V12"/>'),
     coa_classes: s('<rect x="3.5" y="3.5" width="6.5" height="4.5" rx="1"/><rect x="13.5" y="9.8" width="7" height="4.4" rx="1"/><rect x="13.5" y="16" width="7" height="4.4" rx="1"/><path d="M6.8 8v10.2h6.7"/><line x1="6.8" y1="12" x2="13.5" y2="12"/>'),
