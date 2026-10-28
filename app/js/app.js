@@ -20265,6 +20265,7 @@
     const inactiveCnt = opts.inactiveCnt != null ? opts.inactiveCnt : Math.max(0, allCnt - activeCnt);
     const stMode = STATE.payrollStaffStatus || 'active';
     const isPbi = Boolean(opts.isPbi);
+    const actionsHtml = opts.actionsHtml ? String(opts.actionsHtml) : '';
 
     return `
       <div class="payroll-cutoff-bar ${isPbi ? 'is-pbi ' : ''}${cm.applicable ? '' : 'is-custom-period'}" id="${esc(barId)}" data-cutoff-mode="${esc(cm.applicable ? cm.mode : 'custom')}" data-staff-status="${esc(stMode)}">
@@ -20294,7 +20295,7 @@
             <button type="button" class="payroll-status-pill ${stMode === 'active' ? 'active' : ''}" data-payroll-status="active">Active <span class="psp-cnt">${fmtNum(activeCnt)}</span></button>
             <button type="button" class="payroll-status-pill ${stMode === 'inactive' ? 'active' : ''}" data-payroll-status="inactive">Inactive <span class="psp-cnt">${fmtNum(inactiveCnt)}</span></button>
             <button type="button" class="payroll-status-pill ${stMode === 'all' ? 'active' : ''}" data-payroll-status="all">All <span class="psp-cnt">${fmtNum(allCnt)}</span></button>
-          </div>
+          </div>${actionsHtml ? `<div class="payroll-bar-actions">${actionsHtml}</div>` : ''}
         </div>
       </div>`;
   }
@@ -20477,14 +20478,15 @@
       todayYmLabel: formatPayrollMonthLabel(today.slice(0, 7)),
       effEndLabel: formatPayrollMonthLabel(shiftYearMonth(today.slice(0, 7), -1))
     };
-    const renderPayrollCutoffBarHtml = (barId, barRows = scopedStaffRows) => buildPayrollCutoffAndStatusBarHtml(barId, {
+    const renderPayrollCutoffBarHtml = (barId, barRows = scopedStaffRows, extraOpts = {}) => buildPayrollCutoffAndStatusBarHtml(barId, {
       cutoffMeta: cm,
       allRows: staffRows,
       scopeRows: barRows,
       activeCnt: activeStaffCnt,
       inactiveCnt: inactiveStaffCnt,
       allCnt: allStaffCnt,
-      fxRate
+      fxRate,
+      ...extraOpts
     });
 
     const driverOtPanelHtml = `
@@ -21057,12 +21059,11 @@
         <div class="panel-card" id="payAttStaffSumPanel">
           <div class="panel-head">
             <div>
-              <div class="panel-title"><span>STAFF ATTENDANCE, SHIFT OVERTIME, DRIVER TRIP OT &amp; LEAVE SUMMARY (${fmtNum(filteredAttStaff.length)} STAFF)</span></div>
+              <div class="panel-title"><span>STAFF ATTENDANCE, SHIFT OVERTIME, DRIVER TRIP OT &amp; LEAVE SUMMARY</span></div>
               <span class="ph-sub">Shift overtime valued at contract multiplier · Driver night-trip overtime valued at regional trip rates ($5 / $7 / $10 / $14) · Click any employee to inspect 360° profile</span>
             </div>
-            <span class="panel-meta">${exportBtn('payAttStaffSumPanel', 'Staff_Attendance_Summary')}</span>
           </div>
-          ${renderPayrollCutoffBarHtml('payrollAttCutoffBar', attStaffRowsBase)}
+          ${renderPayrollCutoffBarHtml('payrollAttCutoffBar', attStaffRowsBase, { actionsHtml: exportBtn('payAttStaffSumPanel', 'Staff_Attendance_Summary') })}
           ${renderColFilterBar('pay_att_sum')}
           <div class="table-wrap">
             <table class="ledger-table">
@@ -21585,9 +21586,8 @@
             <div class="panel-title"><span>PAYROLL BY STAFF MEMBER · BASE, SHIFT OT, DRIVER OT, SITE ALLOWANCE, DEDUCTIONS, EARNINGS, PAID, REMAINING &amp; ADVANCES</span></div>
             <span class="ph-sub">Site allowances &amp; driver night-trip overtime are included inside Earnings · LBP amounts divide by ${fmtNum(fxRate, 0)} LL/$ into USD · Remaining = Earnings minus Paid · Post-cutoff payouts appear in Advances ($)</span>
           </div>
-          <span class="panel-meta">${fmtNum(filteredStaff.length)} Staff ${exportBtn('payStaffRegPanel', 'Payroll_By_Staff')}</span>
         </div>
-        ${renderPayrollCutoffBarHtml('payrollCutoffBar', filteredStaff)}
+        ${renderPayrollCutoffBarHtml('payrollCutoffBar', filteredStaff, { actionsHtml: exportBtn('payStaffRegPanel', 'Payroll_By_Staff') })}
         ${renderColFilterBar('pay_staff')}
         <div class="table-wrap">
           <table class="ledger-table">

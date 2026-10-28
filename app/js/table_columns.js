@@ -632,6 +632,17 @@
       if (tb) {
         return { host: ensureToolbarActionSlot(tb), prepend: true };
       }
+      const cutoffBar = parentCard.querySelector(':scope > .payroll-cutoff-bar:not(.is-pbi)');
+      if (cutoffBar) {
+        let actSlot = cutoffBar.querySelector(':scope > .payroll-bar-aux > .payroll-bar-actions');
+        if (!actSlot) {
+          const aux = cutoffBar.querySelector(':scope > .payroll-bar-aux') || cutoffBar;
+          actSlot = document.createElement('div');
+          actSlot.className = 'payroll-bar-actions';
+          aux.appendChild(actSlot);
+        }
+        return { host: actSlot, prepend: false };
+      }
       const pbiHdr = parentCard.querySelector(':scope > .pbi-panel-hdr');
       if (pbiHdr) {
         return { host: pbiHdr, prepend: false };

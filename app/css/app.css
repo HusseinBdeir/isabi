@@ -17069,10 +17069,10 @@ svg .cf-chart-bar:hover .cf-bar-hit {
     max-height: clamp(385px, calc(100dvh - 215px), 665px);
   }
   .panel-card:has(> .payroll-cutoff-bar:not(.is-pbi)) > .table-wrap {
-    max-height: clamp(310px, calc(100dvh - 248px), 635px);
+    max-height: clamp(330px, calc(100dvh - 224px), 660px);
   }
   .panel-card:has(> .payroll-cutoff-bar:not(.is-pbi)):has(> .col-filter-bar.has-active) > .table-wrap {
-    max-height: clamp(290px, calc(100dvh - 282px), 604px);
+    max-height: clamp(305px, calc(100dvh - 258px), 628px);
   }
 }
 
@@ -20519,6 +20519,10 @@ table.ledger-table tbody td.td-databar {
   border-color: var(--brass);
 }
 
+.payroll-cutoff-bar:has(.tbl-col-popover:not([hidden])) {
+  z-index: 45;
+}
+
 .payroll-bar-aux {
   display: inline-flex;
   align-items: center;
@@ -20526,6 +20530,61 @@ table.ledger-table tbody td.td-databar {
   flex: 0 0 auto;
   min-width: 0;
   margin-left: auto;
+}
+
+.payroll-bar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.payroll-bar-actions .btn[data-export-csv],
+.payroll-bar-actions .tbl-col-trigger-btn,
+.payroll-bar-actions .tbl-col-inline-reset {
+  height: 29px;
+  padding: 0 9px;
+  font-size: 11.2px;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: 5.5px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  box-sizing: border-box;
+}
+
+.payroll-bar-actions .tbl-col-inline-reset {
+  border-color: var(--brass-border);
+  color: var(--brass);
+  background: var(--brass-tint);
+  font-weight: 700;
+}
+
+.payroll-bar-actions .btn[data-export-csv]:hover:not(:disabled),
+.payroll-bar-actions .tbl-col-trigger-btn:hover,
+.payroll-bar-actions .tbl-col-inline-reset:hover {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+  color: var(--ink);
+}
+
+.payroll-bar-actions .tbl-col-trigger-btn.is-customized {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+}
+
+:root[data-theme="dark"] .payroll-bar-actions .btn[data-export-csv],
+:root[data-theme="dark"] .payroll-bar-actions .tbl-col-trigger-btn {
+  background: var(--surface-elev);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .payroll-bar-actions .btn[data-export-csv]:hover:not(:disabled),
+:root[data-theme="dark"] .payroll-bar-actions .tbl-col-trigger-btn:hover {
+  border-color: var(--brass);
+  background: var(--brass-tint);
 }
 
 .payroll-status-pills {
@@ -20681,6 +20740,18 @@ table.ledger-table tbody td.td-databar {
     font-size: 10.5px;
     padding: 0 5px;
   }
+  .payroll-bar-aux {
+    gap: 6px;
+  }
+  .payroll-bar-actions {
+    gap: 4px;
+  }
+  .payroll-bar-actions .btn[data-export-csv],
+  .payroll-bar-actions .tbl-col-trigger-btn,
+  .payroll-bar-actions .tbl-col-inline-reset {
+    padding: 0 7px;
+    font-size: 10.7px;
+  }
 }
 
 @media (max-width: 860px) {
@@ -20718,12 +20789,14 @@ table.ledger-table tbody td.td-databar {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 6px;
     width: 100%;
     margin-left: 0;
   }
   .payroll-status-pills {
     flex: 1 1 auto;
+    min-width: 0;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -20732,6 +20805,17 @@ table.ledger-table tbody td.td-databar {
     font-size: 10.5px;
     gap: 3px;
     min-width: 0;
+  }
+  .payroll-bar-actions {
+    gap: 4px;
+  }
+  .payroll-bar-actions .btn[data-export-csv],
+  .payroll-bar-actions .tbl-col-trigger-btn,
+  .payroll-bar-actions .tbl-col-inline-reset {
+    height: 29px;
+    padding: 0 7px;
+    font-size: 10.5px;
+    gap: 4px;
   }
   .fx-ref-controls {
     width: 100%;
