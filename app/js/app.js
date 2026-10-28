@@ -1039,6 +1039,13 @@
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
+  function yesterdayISO(refIso) {
+    const d = (refIso && /^\d{4}-\d{2}-\d{2}$/.test(refIso))
+      ? new Date(Number(refIso.slice(0, 4)), Number(refIso.slice(5, 7)) - 1, Number(refIso.slice(8, 10)))
+      : new Date();
+    d.setDate(d.getDate() - 1);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
   function nowStamp() { return new Date().toISOString().replace('T', ' ').slice(0, 19); }
   function uid(prefix) { return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); }
   function daysBetween(a, b) { return Math.round((new Date(b) - new Date(a)) / 86400000); }
@@ -26448,11 +26455,15 @@
     const today = todayISO();
     const dateAttrs = `min="${MIN_DATE}" max="${today}" required`;
     const companyField = fld('Company (BU) *', sel('f_company', comps, company), { id: 'wrap_f_company', hint: comps.length === 1 ? 'Your seat is scoped to this entity' : '' });
+    const hasAfterHoursBtn = fType === 'sales' || fType === 'raw';
+    const afterHoursBtnHtml = hasAfterHoursBtn
+      ? `<button type="button" class="repdate-toggle-btn afterhours-toggle-btn" id="toggleAfterHoursBtn" aria-pressed="false">${ic('moon')} Yesterday's After-Hours</button>`
+      : '';
     const dateField = fld('Transaction Date *', inp('f_date', 'date', today, `${dateAttrs} readonly`), {
       id: 'wrap_f_date',
       lockField: 'f_date',
       lockReason: 'Locked to entry date for Cash Flow accuracy — use Reporting Date for report adjustments',
-      afterHtml: `<div class="repdate-bar"><button type="button" class="repdate-toggle-btn" id="toggleRepDateBtn">${ic('calendar')} Different Reporting Date?</button><span class="hint" id="hint_date"></span></div>`
+      afterHtml: `<div class="repdate-bar${hasAfterHoursBtn ? ' has-afterhours' : ''}"><div class="repdate-actions"><button type="button" class="repdate-toggle-btn" id="toggleRepDateBtn">${ic('calendar')} Different Reporting Date?</button>${afterHoursBtnHtml}</div><span class="hint" id="hint_date"></span></div>`
     });
     const repDateField = fld('Reporting Date *', inp('f_repdate', 'date', today, dateAttrs), {
       id: 'wrap_f_repdate',
@@ -26746,7 +26757,7 @@
   // ---- live rule & policy-lock engine -----------------------------------------
   const FORM_UI = {
     priceManual: false, transManual: false, methodManual: false, uomManual: false, meterTypeManual: false,
-    otManual: false, ticketManual: false, qtyManual: false, repDateManual: false, showRepDate: false,
+    otManual: false, ticketManual: false, qtyManual: false, repDateManual: false, showRepDate: false, afterHoursYesterday: false,
     ownerManuallyPicked: false, driverManual: false, postAttempted: false,
     stagedOwnerDrivers: [],
     lastCompany: '', lastDate: '', lastCategory: null, catCache: null,
@@ -26986,6 +26997,11 @@
         FORM_UI.uomManual = false;
         FORM_UI.qtyManual = false;
         FORM_UI.driverManual = false;
+        FORM_UI.afterHoursYesterday = false;
+        if ($('f_date')) {
+          const pendRow = STATE.editingPendingExpenseId ? findExpenseRecordById(STATE.editingPendingExpenseId) : null;
+          $('f_date').value = (pendRow && pendRow.date) || todayISO();
+        }
         box.hidden = true;
         recalcForm();
         toast('All policy-locked fields restored to standard form rules', 'ok');
@@ -27002,11 +27018,29 @@
     const d = val('f_date');
     const today = todayISO();
     if (!d) return;
+    const yest = yesterdayISO(today);
+    const ahBtn = $('toggleAfterHoursBtn');
+    const isAfterHoursYest = Boolean(ahBtn && FORM_UI.afterHoursYesterday && d === yest);
+    if (!isAfterHoursYest) FORM_UI.afterHoursYesterday = false;
+    const dateWrap = $('wrap_f_date');
+    if (dateWrap) dateWrap.classList.toggle('is-afterhours-yesterday', isAfterHoursYest);
+    if (ahBtn) {
+      ahBtn.classList.toggle('active', isAfterHoursYest);
+      ahBtn.classList.toggle('is-afterhours', isAfterHoursYest);
+      ahBtn.setAttribute('aria-pressed', isAfterHoursYest ? 'true' : 'false');
+      ahBtn.innerHTML = isAfterHoursYest
+        ? `${ic('check_circle')} Yesterday's After-Hours`
+        : `${ic('moon')} Yesterday's After-Hours`;
+    }
     // Sync Reporting Date (f_repdate) to Transaction Date (f_date) unless manually edited
     const repEl = $('f_repdate');
     const pendEditRow = STATE.editingPendingExpenseId ? findExpenseRecordById(STATE.editingPendingExpenseId) : null;
     if (repEl) {
-      applyFieldLockState('f_date', true, pendEditRow ? 'Locked to the delivery date recorded on the voucher' : 'Locked to entry date for Cash Flow accuracy — use Reporting Date for report adjustments');
+      applyFieldLockState('f_date', true, pendEditRow
+        ? 'Locked to the delivery date recorded on the voucher'
+        : (isAfterHoursYest
+          ? `Locked to yesterday (${yest}) for after-hours plant entry · click Yesterday's After-Hours again for today`
+          : 'Locked to entry date for Cash Flow accuracy — use Reporting Date for report adjustments'));
       let showRep = false;
       if (pendEditRow) {
         applyFieldLockState('f_repdate', true, 'Locked to the reporting date recorded on the voucher');
@@ -32408,7 +32442,7 @@
     if (!body) return;
     clearTimeout(modalFocusTimer);
     FORM_UI.priceManual = false; FORM_UI.transManual = false; FORM_UI.methodManual = false; FORM_UI.uomManual = false; FORM_UI.meterTypeManual = false;
-    FORM_UI.otManual = false; FORM_UI.ticketManual = false; FORM_UI.qtyManual = false; FORM_UI.repDateManual = false; FORM_UI.showRepDate = false;
+    FORM_UI.otManual = false; FORM_UI.ticketManual = false; FORM_UI.qtyManual = false; FORM_UI.repDateManual = false; FORM_UI.showRepDate = false; FORM_UI.afterHoursYesterday = false;
     FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; FORM_UI.postAttempted = false;
     FORM_UI.stagedOwnerDrivers = [];
     FORM_UI.adminUnlocked = {}; FORM_UI.unlockTargetField = ''; FORM_UI.unlockNote = '';
@@ -32677,6 +32711,29 @@
         recalcForm();
       });
     }
+    const toggleAhBtn = $('toggleAfterHoursBtn');
+    if (toggleAhBtn) {
+      toggleAhBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const dEl = $('f_date');
+        if (!dEl) return;
+        const today = todayISO();
+        const yest = yesterdayISO(today);
+        const turningOn = !(FORM_UI.afterHoursYesterday && dEl.value === yest);
+        if (turningOn) {
+          if (yest < MIN_DATE) return;
+          if (!FORM_UI.adminUnlocked.__all) delete FORM_UI.adminUnlocked.f_date;
+          FORM_UI.afterHoursYesterday = true;
+          dEl.value = yest;
+        } else {
+          FORM_UI.afterHoursYesterday = false;
+          dEl.value = today;
+        }
+        if (!isFieldAdminUnlocked('f_unitprice')) FORM_UI.priceManual = false;
+        if (!isFieldAdminUnlocked('f_transunitprice')) FORM_UI.transManual = false;
+        recalcForm();
+      });
+    }
     const toggleOtBtn = $('toggleOvertimeBtn');
     if (toggleOtBtn) {
       toggleOtBtn.addEventListener('click', ev => {
@@ -32721,6 +32778,7 @@
           if (fid === 'f_driver') FORM_UI.driverManual = false;
           if (fid === 'f_date' && $('f_date')) {
             const pendRow = STATE.editingPendingExpenseId ? findExpenseRecordById(STATE.editingPendingExpenseId) : null;
+            FORM_UI.afterHoursYesterday = false;
             $('f_date').value = (pendRow && pendRow.date) || todayISO();
           }
           recalcForm();
@@ -32749,6 +32807,9 @@
         }
         if (el.id === 'f_metertype' && (isFieldAdminUnlocked('f_metertype') || el.dataset.policyLockedNow !== '1')) FORM_UI.meterTypeManual = true;
         if (el.id === 'f_qty') { FORM_UI.qtyManual = !!el.value; FORM_UI.greaseAutoPreset = false; }
+        if (el.id === 'f_date' && val('f_date') !== yesterdayISO(todayISO())) {
+          FORM_UI.afterHoursYesterday = false;
+        }
         if (el.id === 'f_repdate') {
           FORM_UI.repDateManual = val('f_repdate') !== val('f_date');
           if (FORM_UI.repDateManual) FORM_UI.showRepDate = true;
