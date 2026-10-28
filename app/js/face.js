@@ -145,14 +145,17 @@ const Face = (() => {
           const dot = document.getElementById("authFacePulse");
           if (dot) dot.className = "auth-face-pulse live";
           const btn = document.getElementById("authCamToggleBtn");
-          if (btn) btn.textContent = "Turn Off Camera";
+          const lbl = document.getElementById("authCamToggleLabel");
+          if (lbl) lbl.textContent = "Pause camera";
+          else if (btn) btn.textContent = "Pause camera";
+          if (btn) { btn.hidden = false; btn.classList.add("cam-live"); }
           const offEl = document.getElementById("authCamOffOverlay");
           if (offEl) offEl.hidden = true;
           const hint = document.getElementById("authFaceHint");
-          if (hint && /Loading Face ID/i.test(hint.textContent || "")) {
+          if (hint && (!hint.textContent || /Loading Face ID|Starting camera/i.test(hint.textContent))) {
             hint.textContent = ready
-              ? "Camera active — scanning Face ID…"
-              : "Camera active — preparing Face ID (or enter PIN below)…";
+              ? "Look at the camera for Face ID"
+              : "Preparing Face ID…";
             hint.className = ready ? "auth-face-hint ok" : "auth-face-hint";
           }
         } else {

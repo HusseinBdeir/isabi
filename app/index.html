@@ -12,7 +12,7 @@
       if (location.hostname === 'husseinbdeir.github.io' && /^\/mfg-web(\/|$)/.test(location.pathname) && !/[?&]noredirect=1\b/.test(location.search)) {
         location.replace('https://husseinbdeir.github.io/isabi/app/' + (location.search || '') + (location.hash || ''));
       }
-      window.__MFG_SHELL_VER = '19.5.4';
+      window.__MFG_SHELL_VER = '19.5.5';
       var t = localStorage.getItem('isabi_mfg_theme');
       if (t === 'dark' || t === 'light') { document.documentElement.setAttribute('data-theme', t); var tm = document.querySelector('meta[name="theme-color"]'); if (tm) tm.setAttribute('content', t === 'dark' ? '#081124' : '#F4F2EE'); }
       var rw = parseInt(localStorage.getItem('isabi_mfg_rail_width'), 10);
@@ -39,7 +39,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap"></noscript>
-  <link rel="stylesheet" href="css/app.css?v=19.5.4">
+  <link rel="stylesheet" href="css/app.css?v=19.5.5">
 </head>
 <body class="locked">
   <div class="app-shell" id="appShell">
@@ -443,7 +443,7 @@
   <!-- Fail-closed: the gate ships visible and only JS hides it once a valid Face ID or PIN session unlocks it -->
   <div class="auth-gate" id="authGate">
     <div class="auth-card">
-      <div class="auth-left">
+      <div class="auth-top-bar">
         <div class="auth-brand">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="auth-badge" role="img" aria-label="ISABI Systems Badge">
             <rect width="120" height="120" rx="26" fill="#081124" stroke="rgba(217,165,74,0.45)" stroke-width="3"/>
@@ -460,120 +460,94 @@
           </svg>
           <div>
             <div class="auth-brand-title">ISABI SYSTEMS</div>
-            <div class="auth-brand-sub">Command Center · Biometric Face ID &amp; Cloud Auth</div>
+            <div class="auth-brand-sub">Command Center</div>
           </div>
         </div>
-
-        <h1 class="auth-heading">The Books Close on <span class="brass-text">ISABI</span>.</h1>
-        <p class="auth-desc">
-          Look at the camera to sign in with on-device <b>Face ID</b>, or enter your <b>Access PIN</b> below. Your workspace opens directly with your assigned role and permissions.
-        </p>
-
-        <!-- Biometric Face ID Scanner Stage (Attendance PWA Kiosk Architecture) -->
-        <div class="auth-face-stage" id="authFaceStage">
-          <div class="auth-face-top">
-            <div class="auth-face-pill">
-              <span class="auth-face-pulse" id="authFacePulse"></span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="10" r="3"/><path d="M7 18a5 5 0 0 1 10 0"/></svg>
-              <span id="authFaceStats">Face ID &amp; PIN Ready</span>
-            </div>
-            <div class="auth-face-actions">
-              <label class="auth-req-pill" for="authGateReqSelect" title="Select Sign-In Requirement: Either PIN or Face ID, Both (PIN + Face ID 2FA), Face ID Only, or Access PIN Only">
-                <span class="auth-req-lbl">Req:</span>
-                <select id="authGateReqSelect" class="auth-req-select" data-native-select="1" aria-label="Sign-In Requirement Mode">
-                  <option value="either" selected>Either: PIN or Face ID</option>
-                  <option value="both">Both: PIN + Face ID (2FA)</option>
-                  <option value="face_only">Face ID Only (Live 3D)</option>
-                  <option value="pin_only">Access PIN Only</option>
-                </select>
-              </label>
-              <button type="button" class="auth-hud-btn" id="authCamToggleBtn" title="Turn camera on or off">
-                Turn Off Camera
-              </button>
-            </div>
-          </div>
-
-          <div class="auth-face-target" id="authFaceTargetBanner" hidden>
-            <span id="authFaceTargetText"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="11" width="15" height="9.5" rx="2"/><path d="M8 11V7.2a4 4 0 0 1 8 0V11"/></svg> 2FA Face ID Required — look at the camera</span>
-            <button type="button" class="auth-target-cancel" id="authCancel2faBtn">Switch Seat</button>
-          </div>
-
-          <div class="auth-face-body">
-            <div class="auth-cam-viewport" id="authCamViewport">
-              <video id="authFaceVideo" autoplay muted playsinline></video>
-              <canvas id="authFaceOverlay"></canvas>
-              <div class="auth-cam-vignette"></div>
-              <div class="auth-cam-off" id="authCamOffOverlay" hidden>
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                <span>Camera Off</span>
-              </div>
-            </div>
-
-            <div class="auth-face-side">
-              <!-- Verified Confirmation Overlay Card (Attendance PWA style) -->
-              <div class="auth-face-card" id="authFaceCard" hidden>
-                <div class="auth-face-card-av">
-                  <img id="authFaceCardImg" src="icon.svg" alt="">
-                  <span class="auth-face-card-check">✓</span>
-                </div>
-                <div class="auth-face-card-body">
-                  <div class="auth-face-card-top">
-                    <span class="auth-face-card-badge" id="authFaceCardBadge">FACE ID VERIFIED</span>
-                    <span class="auth-face-card-meta" id="authFaceCardMeta"></span>
-                  </div>
-                  <div class="auth-face-card-name" id="authFaceCardName"></div>
-                  <div class="auth-face-card-sub" id="authFaceCardSub"></div>
-                </div>
-              </div>
-
-              <div class="auth-hint-wrap">
-                <div id="authFaceHint" class="auth-face-hint">Loading Face ID…</div>
-                <div id="authStreakBar" class="auth-streak-bar"><div id="authStreakFill" class="auth-streak-fill"></div></div>
-                <small class="auth-cam-note" id="authCamNote">Anti-screenshot: 3+ frames + live blink or 3D head-turn required</small>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="auth-divider"><span>OR SIGN IN WITH EMAIL &amp; ACCESS PIN</span></div>
-
-        <form id="authLoginForm" class="auth-form" autocomplete="on">
-          <div class="auth-form-row">
-            <label class="auth-label">
-              <span>Team Email Address <em>Or tap seat on right</em></span>
-              <input type="email" id="authEmailInput" class="auth-input" placeholder="name@bhfirms.com (or PIN only)" autocomplete="username">
-            </label>
-            <label class="auth-label">
-              <span>Access PIN <em>4–8 Digits</em></span>
-              <input type="text" id="authPinInput" class="auth-input pin-disc" inputmode="numeric" pattern="[0-9]{4,8}" maxlength="8" placeholder="••••" required autocomplete="off" autocapitalize="off" spellcheck="false">
-            </label>
-          </div>
-          <div id="authErrorBox" class="auth-error" hidden></div>
-          <div class="auth-submit-row">
-            <button type="submit" class="btn btn-brass auth-submit-btn" id="authSubmitBtn">
-              Sign In to Command Center
-            </button>
-            <button type="button" class="btn auth-enrol-btn" id="authEnrolJumpBtn" title="Sign in with your PIN and immediately launch 3-pose Face ID Auto-Enrolment">
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin-right:4px"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="10" r="3"/><path d="M7 18a5 5 0 0 1 10 0"/></svg>
-              Sign In &amp; Enrol Face ID
-            </button>
-          </div>
-        </form>
-
-        <div class="auth-footer-note">
-          <span>Tailored Custom Setup · Per-Seat Plans · <a href="../" id="authShowcaseLink" style="color:inherit;text-decoration:underline;font-weight:600" title="Return to ISABI Public Showcase &amp; Industry Blueprints">← Public Showcase</a></span>
-          <span id="authCloudStatusBadge" class="auth-cloud-warn" hidden>● Offline Cache</span>
+        <div class="auth-top-actions">
+          <button type="button" class="auth-hud-btn" id="authCamToggleBtn" hidden>
+            <span class="auth-face-pulse" id="authFacePulse" aria-hidden="true"></span>
+            <span id="authCamToggleLabel">Pause camera</span>
+          </button>
         </div>
       </div>
 
-      <div class="auth-right">
-        <div class="auth-right-hdr">
-          <span>Quick Role &amp; Device Simulator (1-Click Fill)</span>
-          <small>Select any plant, dispatch, or executive seat below to test how Row-Level Security scopes the interface:</small>
+      <!-- Biometric Face ID Scanner Stage -->
+      <div class="auth-face-stage" id="authFaceStage">
+        <div class="auth-face-target" id="authFaceTargetBanner" hidden>
+          <span id="authFaceTargetText"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="11" width="15" height="9.5" rx="2"/><path d="M8 11V7.2a4 4 0 0 1 8 0V11"/></svg> Step 2: Look at the camera to verify</span>
+          <button type="button" class="auth-target-cancel" id="authCancel2faBtn">Cancel</button>
         </div>
-        <div class="quick-seat-list" id="quickSeatList"></div>
-        <div class="auth-right-ftr">
-          Enrol <b>Face ID (3 Poses)</b> or issue PINs &amp; invite links under <b>Users &amp; Security</b>. Face ID templates sync across all devices via the BHFIRMS Cloud Relay.
+
+        <div class="auth-face-body">
+          <div class="auth-cam-viewport" id="authCamViewport">
+            <video id="authFaceVideo" autoplay muted playsinline></video>
+            <canvas id="authFaceOverlay"></canvas>
+            <div class="auth-cam-reticle" aria-hidden="true">
+              <span class="auth-finder-corner tl"></span>
+              <span class="auth-finder-corner tr"></span>
+              <span class="auth-finder-corner bl"></span>
+              <span class="auth-finder-corner br"></span>
+            </div>
+            <div class="auth-cam-off" id="authCamOffOverlay" hidden>
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="10" r="3"/><path d="M7 18a5 5 0 0 1 10 0"/></svg>
+              <span id="authCamOffLabel">Enable Face ID</span>
+            </div>
+          </div>
+
+          <div class="auth-face-side">
+            <div class="auth-face-card" id="authFaceCard" hidden>
+              <div class="auth-face-card-av">
+                <img id="authFaceCardImg" src="icon.svg" alt="">
+                <span class="auth-face-card-check">✓</span>
+              </div>
+              <div class="auth-face-card-body">
+                <div class="auth-face-card-top">
+                  <span class="auth-face-card-badge" id="authFaceCardBadge">FACE ID VERIFIED</span>
+                  <span class="auth-face-card-meta" id="authFaceCardMeta"></span>
+                </div>
+                <div class="auth-face-card-name" id="authFaceCardName"></div>
+                <div class="auth-face-card-sub" id="authFaceCardSub"></div>
+              </div>
+            </div>
+
+            <div class="auth-hint-wrap">
+              <div id="authFaceHint" class="auth-face-hint"></div>
+              <div id="authStreakBar" class="auth-streak-bar"><div id="authStreakFill" class="auth-streak-fill"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="auth-divider"><span>or enter PIN</span></div>
+
+      <form id="authLoginForm" class="auth-form" autocomplete="off" novalidate>
+        <div class="auth-selected-seat" id="authSelectedSeatBar" hidden>
+          <span class="auth-seat-av" id="authSelectedSeatAvatar">HB</span>
+          <div class="auth-seat-info">
+            <b id="authSelectedSeatName"></b>
+            <small id="authSelectedSeatMeta"></small>
+          </div>
+          <button type="button" class="auth-seat-clear" id="authClearSeatBtn" aria-label="Clear selected account">✕</button>
+        </div>
+
+        <div class="auth-pin-row">
+          <input type="text" id="authPinInput" class="auth-input pin-disc" inputmode="numeric" pattern="[0-9]{4,8}" maxlength="8" placeholder="Access PIN" aria-label="Access PIN" required autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button type="submit" class="btn btn-brass auth-submit-btn" id="authSubmitBtn">Sign In</button>
+        </div>
+
+        <div id="authErrorBox" class="auth-error" hidden></div>
+
+        <div class="auth-seat-drawer" id="authSeatDrawer" hidden>
+          <input type="text" id="authEmailInput" class="auth-input auth-seat-search" inputmode="email" placeholder="Search name or enter email…" aria-label="Search name or enter email" autocomplete="username">
+          <div class="quick-seat-list" id="quickSeatList"></div>
+        </div>
+      </form>
+
+      <div class="auth-footer-note">
+        <button type="button" class="auth-link-btn" id="authToggleAccountBtn" aria-expanded="false">Choose account</button>
+        <div class="auth-footer-right">
+          <span id="authCloudStatusBadge" class="auth-cloud-warn" hidden>Offline Cache</span>
+          <a href="../" id="authShowcaseLink" class="auth-showcase-link">Public Showcase</a>
         </div>
       </div>
     </div>
@@ -594,16 +568,16 @@
   <!-- Toast Notification -->
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script defer src="js/face.js?v=19.5.4"></script>
-  <script defer src="js/endpoints.js?v=19.5.4"></script>
-  <script defer src="js/seed_manifest.js?v=19.5.4"></script>
-  <script defer src="js/icons.js?v=19.5.4"></script>
-  <script defer src="js/forms_engine.js?v=19.5.4"></script>
-  <script defer src="js/pbi_pages.js?v=19.5.4"></script>
-  <script defer src="js/rdl_reports.js?v=19.5.4"></script>
-  <script defer src="js/kiosk_print.js?v=19.5.4"></script>
-  <script defer src="js/table_columns.js?v=19.5.4"></script>
-  <script defer src="js/app.js?v=19.5.4"></script>
+  <script defer src="js/face.js?v=19.5.5"></script>
+  <script defer src="js/endpoints.js?v=19.5.5"></script>
+  <script defer src="js/seed_manifest.js?v=19.5.5"></script>
+  <script defer src="js/icons.js?v=19.5.5"></script>
+  <script defer src="js/forms_engine.js?v=19.5.5"></script>
+  <script defer src="js/pbi_pages.js?v=19.5.5"></script>
+  <script defer src="js/rdl_reports.js?v=19.5.5"></script>
+  <script defer src="js/kiosk_print.js?v=19.5.5"></script>
+  <script defer src="js/table_columns.js?v=19.5.5"></script>
+  <script defer src="js/app.js?v=19.5.5"></script>
   <script>
     window.addEventListener('load', () => {
       // Load Google Fonts after window.load so webfont fetches never spin Chrome's tab loading indicator

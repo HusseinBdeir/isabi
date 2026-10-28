@@ -37835,67 +37835,57 @@
   }
 
   function setAuthStreak(count, needed) {
+    const bar = $('authStreakBar');
     const fill = $('authStreakFill');
-    if (fill) fill.style.width = Math.min(100, Math.round((count / Math.max(1, needed)) * 100)) + '%';
+    const pct = count > 0 ? Math.min(100, Math.round((count / Math.max(1, needed)) * 100)) : 0;
+    if (bar) bar.classList.toggle('is-active', pct > 0);
+    if (fill) fill.style.width = pct + '%';
   }
 
   function updateAuthFaceUi() {
     const enrolled = STATE.users.filter(userHasFaceId);
-    const statsEl = $('authFaceStats');
     const camBtn = $('authCamToggleBtn');
+    const camLbl = $('authCamToggleLabel');
     const offEl = $('authCamOffOverlay');
+    const offLbl = $('authCamOffLabel');
     const dotEl = $('authFacePulse') || $('authFaceDot');
     const bannerEl = $('authFaceTargetBanner');
     const targetNameEl = $('authFaceTargetText') || $('authFaceTargetName');
-    const reqSel = $('authGateReqSelect');
-    const camNote = $('authCamNote');
     const wsMode = getWorkspaceAuthMode();
-    const minFrames = Math.max(3, Number(STATE.faceSettings.confirmFrames || 3));
-
-    if (reqSel && reqSel.value !== wsMode) {
-      reqSel.value = wsMode;
-    }
-    if (camNote) {
-      const liveMode = String(STATE.faceSettings.livenessMode || 'blink_or_turn');
-      const liveText = STATE.faceSettings.liveness === false
-        ? `${minFrames}+ consecutive frames required`
-        : (liveMode === 'blink'
-          ? `Anti-screenshot: ${minFrames}+ frames + live eye blink required`
-          : (liveMode === 'turn3d'
-            ? `Anti-screenshot: ${minFrames}+ frames + 3D head-turn parallax required`
-            : `Anti-screenshot: ${minFrames}+ frames + live blink or 3D head-turn required`));
-      camNote.textContent = wsMode === 'pin_only'
-        ? 'PIN-Only Policy active — Face ID camera sign-in is disabled'
-        : liveText;
-    }
 
     if (camBtn) {
-      camBtn.textContent = FACE_STATE.camActive ? 'Turn Off Camera' : 'Turn On Camera';
+      camBtn.hidden = !FACE_STATE.camActive || (wsMode === 'pin_only');
       camBtn.classList.toggle('cam-live', !!FACE_STATE.camActive);
+      if (camLbl) camLbl.textContent = 'Pause camera';
     }
-    if (offEl) offEl.hidden = !!FACE_STATE.camActive;
+    if (offEl) {
+      offEl.hidden = !!FACE_STATE.camActive;
+      offEl.classList.toggle('is-pin-only', wsMode === 'pin_only');
+    }
+    if (offLbl) {
+      offLbl.textContent = wsMode === 'pin_only' ? 'PIN sign-in active' : 'Enable Face ID';
+    }
     if (dotEl) dotEl.className = 'auth-face-pulse' + (FACE_STATE.camActive ? ' live' : '');
 
     if (bannerEl) {
       if (FACE_STATE.pending2faUser) {
         bannerEl.hidden = false;
-        if (targetNameEl) targetNameEl.innerHTML = `${ic('lock')} Step 2 of 2: Live Face ID Required for ${esc(FACE_STATE.pending2faUser.full_name)} — blink or turn slightly`;
+        if (targetNameEl) targetNameEl.innerHTML = `${ic('lock')} Step 2: Look at the camera to verify ${esc(FACE_STATE.pending2faUser.full_name)}`;
       } else if (FACE_STATE.pendingPinUser) {
         bannerEl.hidden = false;
-        if (targetNameEl) targetNameEl.innerHTML = `${ic('lock')} Step 2 of 2: Face ID verified for ${esc(FACE_STATE.pendingPinUser.full_name)} — enter 4-digit PIN below`;
+        if (targetNameEl) targetNameEl.innerHTML = `${ic('lock')} Step 2: Enter PIN for ${esc(FACE_STATE.pendingPinUser.full_name)}`;
       } else {
         bannerEl.hidden = true;
       }
     }
 
-    if (statsEl) {
-      const ready = !!(window.Face && window.Face.ready);
-      const modeOpt = AUTH_MODE_OPTIONS.find(o => o.value === wsMode) || AUTH_MODE_OPTIONS[1];
-      statsEl.textContent = `${enrolled.length}/${STATE.users.length} Enrolled · ${modeOpt.short} · ${ready ? 'Live 3D Ready' : 'Face ID'}`;
-    }
+    if (typeof syncAuthSelectedSeatUi === 'function') syncAuthSelectedSeatUi();
+
     const hintEl = $('authFaceHint');
-    if (enrolled.length && hintEl && /No Face ID seats enrolled|open Team Auth to enrol/i.test(hintEl.textContent || '')) {
-      setAuthHint(`Look at the camera & blink or turn slightly for Live Face ID (${enrolled.length} enrolled)`, 'ok');
+    if (wsMode === 'pin_only' && hintEl && !FACE_STATE.pending2faUser) {
+      setAuthHint('', '');
+    } else if (enrolled.length && hintEl && !hintEl.textContent && FACE_STATE.camActive && !FACE_STATE.pending2faUser) {
+      setAuthHint('Look at the camera for Face ID', 'ok');
     }
   }
 
@@ -38042,6 +38032,7 @@
         methodLabel = methodLabel ? `${methodLabel} + PIN 2FA` : 'Face ID + PIN 2FA';
       } else {
         FACE_STATE.pendingPinUser = user;
+        FACE_STATE.selectedAuthEmail = user.email;
         FACE_STATE.streakUser = null;
         FACE_STATE.streakCount = 0;
         const emEl = $('authEmailInput');
@@ -38051,9 +38042,9 @@
         if (errEl) errEl.hidden = true;
         setAuthStreak(3, 3);
         updateAuthFaceUi();
-        setAuthHint(`✓ Live Face ID verified for ${user.full_name} — enter your 4-digit PIN below to complete 2FA`, 'ok');
+        setAuthHint(`Face ID verified. Enter PIN for ${user.full_name}.`, 'ok');
         if (pinEl && document.activeElement !== pinEl) {
-          setTimeout(() => { try { pinEl.focus(); } catch (_) {} }, 40);
+          setTimeout(() => { try { pinEl.focus({ preventScroll: true }); } catch (_) {} }, 40);
         }
         return '2fa_pin_pending';
       }
@@ -38104,7 +38095,7 @@
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
       setAuthStreak(0, needed);
-      setAuthHint('No Face ID seats enrolled yet — sign in with PIN below, then open Team Auth to enrol your 3 poses.', 'warn');
+      setAuthHint('', '');
       return { status: 'no-enrolled' };
     }
     if (!det || !det.descriptor) {
@@ -38113,7 +38104,7 @@
         FACE_STATE.streakUser = null;
         FACE_STATE.streakCount = 0;
         setAuthStreak(0, needed);
-        setAuthHint(FACE_STATE.pending2faUser ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}` : 'Position your face inside the frame for Live Face ID sign-in', '');
+        setAuthHint(FACE_STATE.pending2faUser ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}` : (FACE_STATE.camActive ? 'Look at the camera for Face ID' : ''), '');
       }
       return { status: 'no-face' };
     }
@@ -38122,7 +38113,7 @@
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
       setAuthStreak(0, needed);
-      setAuthHint('One person at a time in front of the camera', 'warn');
+      setAuthHint('One person in frame at a time', 'warn');
       return { status: 'multiple' };
     }
 
@@ -38149,9 +38140,9 @@
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
       setAuthStreak(0, needed);
-      if (dec.status === 'too-small') setAuthHint('Move closer to the camera', 'warn');
-      else if (dec.status === 'ambiguous') setAuthHint('Hold still — close match between two seats', 'warn');
-      else setAuthHint('Face not recognized — sign in with PIN or re-enrol Face ID', 'crit');
+      if (dec.status === 'too-small') setAuthHint('Move slightly closer', 'warn');
+      else if (dec.status === 'ambiguous') setAuthHint('Hold still to confirm match', 'warn');
+      else setAuthHint('Face not recognized', 'crit');
       return { status: dec.status, match: m };
     }
     FACE_STATE.weakFrames = 0;
@@ -38162,7 +38153,7 @@
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
       setAuthStreak(0, needed);
-      setAuthHint(`${dec.best.name} is configured for Access PIN Only — enter your 4-digit PIN below.`, 'warn');
+      setAuthHint(`Enter PIN below for ${dec.best.name}`, 'warn');
       return { status: 'face-disabled', best: dec.best, dist: m.bestDist };
     }
 
@@ -38183,7 +38174,7 @@
       FACE_STATE.streakCount = 0;
       setAuthStreak(0, needed);
       if (STATE.faceSettings.sound && window.Face && window.Face.Sound) window.Face.Sound.playWarn();
-      setAuthHint(`2FA mismatch: expected ${FACE_STATE.pending2faUser.full_name}, saw ${dec.best.name}`, 'crit');
+      setAuthHint(`Expected ${FACE_STATE.pending2faUser.full_name}, saw ${dec.best.name}`, 'crit');
       return { status: '2fa-mismatch', expected: FACE_STATE.pending2faUser.email, actual: dec.best.email };
     }
 
@@ -38201,10 +38192,7 @@
 
     if (FACE_STATE.streakCount < needed) {
       setAuthStreak(FACE_STATE.streakCount, needed);
-      const livenessHint = liveRes.ok
-        ? `Verifying ${dec.best.name} (frame ${FACE_STATE.streakCount} of ${needed})…`
-        : `${dec.best.name} recognized (frame ${FACE_STATE.streakCount}/${needed}) — hold steady`;
-      setAuthHint(livenessHint, liveRes.ok ? 'ok' : 'warn');
+      setAuthHint(`Verifying ${dec.best.name}…`, liveRes.ok ? 'ok' : 'warn');
       return { status: 'streak', count: FACE_STATE.streakCount, needed, livenessOk: liveRes.ok, best: dec.best, dist: m.bestDist };
     }
 
@@ -38214,10 +38202,10 @@
       setAuthStreak(FACE_STATE.streakCount, needed);
       const liveMode = String(STATE.faceSettings.livenessMode || 'blink_or_turn');
       const promptMsg = liveMode === 'blink'
-        ? `${dec.best.name} matched (${needed} frames) — blink once to prove live person (blocks screenshots)`
+        ? `Blink once to confirm ${dec.best.name}`
         : (liveMode === 'turn3d'
-          ? `${dec.best.name} matched (${needed} frames) — turn head slightly left/right to prove 3D face`
-          : `${dec.best.name} matched (${needed} frames) — blink once OR turn head slightly (anti-screenshot check)`);
+          ? `Turn slightly to confirm ${dec.best.name}`
+          : 'Blink or turn slightly to confirm');
       setAuthHint(promptMsg, 'warn');
       return { status: 'awaiting-blink', livenessStatus: 'awaiting-liveness', livenessDetail: liveRes, count: FACE_STATE.streakCount, needed, best: dec.best, dist: m.bestDist };
     }
@@ -38289,7 +38277,7 @@
     }
     updateAuthFaceUi();
     if ((navigator.webdriver || window.__MFG_HEADLESS_TEST) && !forceStart) {
-      setAuthHint('Biometric Face ID Scanner ready · Look at the camera or sign in with Email + PIN below', '');
+      setAuthHint('', '');
       return false;
     }
     const videoEl = $('authFaceVideo');
@@ -38304,19 +38292,19 @@
     FACE_STATE.camActive = camOk;
     updateAuthFaceUi();
     if (!camOk) {
-      setAuthHint('Camera off or permission declined — click "Turn On Camera" above or sign in with Email + PIN.', 'warn');
+      setAuthHint('Camera unavailable', 'warn');
       return false;
     }
     const enrolled = usableFaces();
     const faceAlreadyReady = Boolean(window.Face && window.Face.ready);
     setAuthHint(
       FACE_STATE.pending2faUser
-        ? `🔒 Look at the camera to complete 2FA for ${FACE_STATE.pending2faUser.full_name}`
+        ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}`
         : (enrolled.length
           ? (faceAlreadyReady
-            ? `Look at the camera for instant Face ID sign-in (${enrolled.length} enrolled)`
-            : 'Camera active — preparing Face ID (or enter PIN below)…')
-          : 'Camera active · Sign in with PIN below, then open Team Auth to enrol your 3 Face ID poses'),
+            ? 'Look at the camera for Face ID'
+            : 'Preparing Face ID…')
+          : ''),
       (enrolled.length && faceAlreadyReady) ? 'ok' : ''
     );
     const startModelsWhenReady = () => {
@@ -38325,7 +38313,7 @@
         if (!STATE.authed && FACE_STATE.camActive) {
           const enrNow = usableFaces();
           if (!FACE_STATE.pending2faUser && enrNow.length && FACE_STATE.streakCount === 0) {
-            setAuthHint(`Look at the camera for instant Face ID sign-in (${enrNow.length} enrolled)`, 'ok');
+            setAuthHint('Look at the camera for Face ID', 'ok');
           }
           updateAuthFaceUi();
         }
@@ -40080,32 +40068,91 @@
     }
   }
 
+  function resolveSelectedAuthUser() {
+    if (FACE_STATE.pending2faUser || FACE_STATE.pendingPinUser) return null;
+    const sel = norm(FACE_STATE.selectedAuthEmail || '');
+    if (!sel) return null;
+    return STATE.users.find(u => u.status !== 'Suspended' && norm(u.email) === sel) || null;
+  }
+
+  function syncAuthSelectedSeatUi() {
+    const bar = $('authSelectedSeatBar');
+    const avEl = $('authSelectedSeatAvatar');
+    const nmEl = $('authSelectedSeatName');
+    const metaEl = $('authSelectedSeatMeta');
+    const drawer = $('authSeatDrawer');
+    const toggleBtn = $('authToggleAccountBtn');
+    const selUser = resolveSelectedAuthUser();
+
+    if (bar) {
+      if (selUser) {
+        bar.hidden = false;
+        if (avEl) avEl.textContent = getInitials(selUser.full_name);
+        if (nmEl) nmEl.textContent = selUser.full_name;
+        if (metaEl) metaEl.textContent = `${formatCleanSeatRole(selUser.role)} · ${formatSeatEntityCountLabel(selUser)}`;
+      } else {
+        bar.hidden = true;
+      }
+    }
+    if (drawer) {
+      drawer.hidden = !FACE_STATE.seatDrawerOpen;
+    }
+    if (toggleBtn) {
+      toggleBtn.setAttribute('aria-expanded', FACE_STATE.seatDrawerOpen ? 'true' : 'false');
+      toggleBtn.textContent = FACE_STATE.seatDrawerOpen
+        ? 'Hide accounts'
+        : (IS_DEMO ? 'Switch demo role' : (selUser ? 'Switch account' : 'Choose account'));
+    }
+  }
+
+  function setAuthSeatDrawerOpen(open, opts = {}) {
+    FACE_STATE.seatDrawerOpen = !!open;
+    if (!open) FACE_STATE.disambiguatePin = '';
+    const emEl = $('authEmailInput');
+    const pinEl = $('authPinInput');
+    if (emEl) {
+      emEl.value = open ? '' : (FACE_STATE.selectedAuthEmail || '');
+    }
+    renderQuickSeatsInAuthGate();
+    syncAuthSelectedSeatUi();
+    if (!opts.silentFocus && !navigator.webdriver && !window.__MFG_HEADLESS_TEST) {
+      const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+      if (open && emEl && !coarse) {
+        setTimeout(() => { try { emEl.focus({ preventScroll: true }); } catch (_) {} }, 30);
+      } else if (!open && pinEl && !coarse) {
+        setTimeout(() => { try { pinEl.focus({ preventScroll: true }); } catch (_) {} }, 30);
+      }
+    }
+  }
+
   function renderQuickSeatsInAuthGate() {
     const listEl = $('quickSeatList');
     if (!listEl) return;
-    const hdr = document.querySelector('.auth-right-hdr span');
-    const sub = document.querySelector('.auth-right-hdr small');
-    if (hdr) hdr.textContent = IS_DEMO ? 'Quick Role & Device Simulator (1-Click Fill)' : 'Team Seats on this Workspace';
-    if (sub) sub.textContent = IS_DEMO ? 'Demo mode — tap any seat to sign in (or test Face ID 2FA if enrolled):' : 'Look at the camera for Face ID, or tap your seat to fill your email:';
-    listEl.innerHTML = STATE.users.filter(u => u.status !== 'Suspended').map((u, idx) => {
-      const hasFace = userHasFaceId(u);
-      const seatMode = effectiveSeatAuthMode(u);
-      const facePillText = (!hasFace || seatMode === 'pin_only')
-        ? 'PIN Only'
-        : (seatMode === 'face_only'
-          ? '✓ Face ID Only'
-          : (seatMode === 'both' ? '✓ Face ID · 2FA' : '✓ PIN or Face ID'));
+    const emEl = $('authEmailInput');
+    const rawFilter = FACE_STATE.seatDrawerOpen && emEl ? norm(emEl.value) : '';
+    const disPin = String(FACE_STATE.disambiguatePin || '').trim();
+    const activeSeats = STATE.users.filter(u => u.status !== 'Suspended');
+    const filtered = activeSeats.filter(u => {
+      if (disPin && String(u.pin_code || '1111').trim() !== disPin) return false;
+      if (!rawFilter) return true;
+      return norm(u.full_name).includes(rawFilter) || norm(u.email).includes(rawFilter) || norm(u.role).includes(rawFilter);
+    });
+
+    if (!filtered.length) {
+      listEl.innerHTML = `<div class="quick-seat-empty">No matching team account</div>`;
+      return;
+    }
+
+    listEl.innerHTML = filtered.map(u => {
+      const active = norm(FACE_STATE.selectedAuthEmail || '') === norm(u.email);
       return `
-      <button type="button" class="quick-seat-item" data-quick-seat="${esc(u.email)}">
-        <div>
+      <button type="button" class="quick-seat-item${active ? ' is-selected' : ''}" data-quick-seat="${esc(u.email)}">
+        <span class="quick-seat-av" aria-hidden="true">${esc(getInitials(u.full_name))}</span>
+        <div class="quick-seat-copy">
           <b>${esc(u.full_name)}</b>
-          <small>${esc(u.email)} · ${esc(formatSeatEntityCountLabel(u))}</small>
+          <small>${esc(formatCleanSeatRole(u.role))} · ${esc(formatSeatEntityCountLabel(u))}</small>
         </div>
-        <div class="quick-seat-meta">
-          <span class="quick-seat-role">${esc(u.role)}</span>
-          <span class="quick-seat-face ${hasFace && seatMode !== 'pin_only' ? 'on' : ''}">${facePillText}</span>
-          ${IS_DEMO ? `<span class="quick-seat-pin">PIN: ${esc(u.pin_code || '1111')}</span>` : ''}
-        </div>
+        ${IS_DEMO ? `<span class="quick-seat-demo-tag">1-Click</span>` : ''}
       </button>
     `;
     }).join('');
@@ -40114,11 +40161,30 @@
       btn.addEventListener('click', () => {
         const u = STATE.users.find(x => norm(x.email) === norm(btn.getAttribute('data-quick-seat')));
         if (!u) return;
-        const emEl = $('authEmailInput');
         const pinEl = $('authPinInput');
+        const pendingDisPin = String(FACE_STATE.disambiguatePin || '').trim();
+        FACE_STATE.selectedAuthEmail = u.email;
+        FACE_STATE.disambiguatePin = '';
+        FACE_STATE.seatDrawerOpen = false;
         if (emEl) emEl.value = u.email;
-        if (IS_DEMO) { if (pinEl) pinEl.value = u.pin_code || '1111'; performLogin(u.email, u.pin_code || '1111', { bypass2FA: true }); }
-        else if (pinEl) { pinEl.value = ''; pinEl.focus(); }
+        const errEl = $('authErrorBox');
+        if (errEl) errEl.hidden = true;
+        syncAuthSelectedSeatUi();
+        if (IS_DEMO) {
+          if (pinEl) pinEl.value = u.pin_code || '1111';
+          performLogin(u.email, u.pin_code || '1111', { bypass2FA: true });
+          return;
+        }
+        const typedNow = pinEl ? String(pinEl.value || '').trim() : '';
+        const pinToTry = pendingDisPin || typedNow;
+        if (pinToTry && pinToTry === String(u.pin_code || '1111').trim()) {
+          performLogin(u.email, pinToTry);
+          return;
+        }
+        if (pinEl) {
+          pinEl.value = '';
+          try { pinEl.focus({ preventScroll: true }); } catch (_) {}
+        }
       });
     });
   }
@@ -40131,22 +40197,35 @@
     FACE_STATE.pendingPinUser = null;
     FACE_STATE.streakUser = null;
     FACE_STATE.streakCount = 0;
+    FACE_STATE.seatDrawerOpen = false;
+    FACE_STATE.disambiguatePin = '';
+    setAuthStreak(0, 3);
+    const preUser = prefillEmail ? STATE.users.find(u => u.status !== 'Suspended' && norm(u.email) === norm(prefillEmail)) : null;
+    FACE_STATE.selectedAuthEmail = preUser ? preUser.email : '';
     resetLivenessState();
     window.__mfgAuthedEmail = '';
-    renderQuickSeatsInAuthGate();
-    updateCloudBadges();
-    updateAuthFaceUi();
     const emEl = $('authEmailInput');
     const pinEl = $('authPinInput');
     if (emEl) emEl.value = prefillEmail || '';
     if (pinEl) pinEl.value = '';
     const errEl = $('authErrorBox');
     if (errEl) errEl.hidden = true;
+    renderQuickSeatsInAuthGate();
+    updateCloudBadges();
+    updateAuthFaceUi();
+    syncAuthSelectedSeatUi();
     const gate = $('authGate');
     if (gate) gate.hidden = false;
     document.body.classList.add('locked');
     if (!FACE_STATE.authCamStoppedByUser) startAuthFaceScanner(false);
-    setTimeout(() => { if (!STATE.authed) { const t = prefillEmail ? pinEl : emEl; if (t) t.focus(); } }, 80);
+    setTimeout(() => {
+      if (!STATE.authed && pinEl) {
+        const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        if (!coarse && window.innerWidth > 860) {
+          try { pinEl.focus({ preventScroll: true }); } catch (_) {}
+        }
+      }
+    }, 60);
   }
 
   function closeAuthGate() {
@@ -40155,7 +40234,12 @@
     document.documentElement.classList.remove('sw-resuming');
     FACE_STATE.pending2faUser = null;
     FACE_STATE.pendingPinUser = null;
+    FACE_STATE.streakUser = null;
+    FACE_STATE.streakCount = 0;
+    FACE_STATE.seatDrawerOpen = false;
+    FACE_STATE.disambiguatePin = '';
     FACE_STATE.enrolCamActive = false;
+    setAuthStreak(0, 3);
     resetLivenessState();
     stopAuthFaceScanner();
     stopFaceCamera();
@@ -40172,7 +40256,6 @@
   }
 
   function signOut() {
-    const email = activeUser().email;
     try { localStorage.removeItem('isabi_mfg_active_email'); } catch (_) {}
     try { sessionStorage.removeItem('isabi_mfg_sw_resume'); } catch (_) {}
     clearTimeout(toastTimer);
@@ -40183,51 +40266,61 @@
     const keep = new URLSearchParams();
     ['demo', 'nosse'].forEach(p => { if (PARAMS.has(p)) keep.set(p, PARAMS.get(p)); });
     history.replaceState({ view: STATE.view }, '', location.pathname + (keep.toString() ? '?' + keep.toString() : ''));
-    openAuthGate(email);
+    openAuthGate('');
   }
 
-  function authError(msg) {
+  function authError(msg, opts = {}) {
     const errEl = $('authErrorBox');
     if (errEl) { errEl.textContent = msg; errEl.hidden = false; }
     const card = document.querySelector('.auth-card');
-    if (card) { card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake'); }
+    if (card && !opts.noShake) { card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake'); }
     const pinEl = $('authPinInput');
-    if (pinEl) { pinEl.value = ''; pinEl.focus(); }
+    if (pinEl && !opts.keepPin) {
+      pinEl.value = '';
+      try { pinEl.focus({ preventScroll: true }); } catch (_) {}
+    }
   }
 
   let loginAttempts = 0;
   let loginLockUntil = 0;
+  let authUiLoginBusy = false;
   async function performLogin(emailRaw, pinRaw, opts = {}) {
     let email = norm(emailRaw);
     const pin = String(pinRaw || '').trim();
-    if (Date.now() < loginLockUntil) { authError(`Too many attempts — wait ${Math.ceil((loginLockUntil - Date.now()) / 1000)} s.`); return false; }
+    if (Date.now() < loginLockUntil) { authError(`Too many attempts. Wait ${Math.ceil((loginLockUntil - Date.now()) / 1000)}s.`); return false; }
     if (!email && pin) {
       const matches = STATE.users.filter(u => u.status !== 'Suspended' && String(u.pin_code || '1111').trim() === pin);
       if (matches.length === 1) {
         email = norm(matches[0].email);
         const emEl = $('authEmailInput');
-        if (emEl) emEl.value = matches[0].email;
+        if (emEl && !FACE_STATE.seatDrawerOpen) emEl.value = matches[0].email;
       } else if (matches.length > 1) {
-        authError('Multiple seats share this PIN — tap your seat on the right or enter your email.');
+        FACE_STATE.disambiguatePin = pin;
+        setAuthSeatDrawerOpen(true, { silentFocus: true });
+        authError('Select your account below to finish signing in.', { keepPin: true, noShake: true });
         return false;
       } else {
         loginAttempts += 1;
-        if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs — locked for 30 seconds.'); }
-        else authError('Incorrect access PIN — tap your seat on the right or check your 4-digit PIN.');
+        if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs. Locked for 30 seconds.'); }
+        else authError('Incorrect Access PIN.');
         return false;
       }
     }
-    if (!email) { authError('Tap your seat on the right or enter your Access PIN.'); return false; }
-    if (!pin) { authError('Enter your 4-digit Access PIN.'); return false; }
+    if (!email) { authError('Enter your Access PIN.'); return false; }
+    if (!pin) { authError('Enter your Access PIN.'); return false; }
 
-    const idx = STATE.users.findIndex(u => norm(u.email) === email);
-    if (idx < 0) { authError('Email not found in the Manufacturing team directory.'); return false; }
+    let idx = STATE.users.findIndex(u => norm(u.email) === email);
+    if (idx < 0 && !email.includes('@')) {
+      const subMatches = STATE.users.filter(u => u.status !== 'Suspended' && (norm(u.full_name).includes(email) || norm(u.email).includes(email)));
+      if (subMatches.length === 1) idx = STATE.users.indexOf(subMatches[0]);
+    }
+    if (idx < 0) { authError('Account not found in this workspace.'); return false; }
     const user = STATE.users[idx];
-    if (user.status === 'Suspended') { authError('This seat is suspended — ask the owner to re-activate it.'); return false; }
+    if (user.status === 'Suspended') { authError('This seat is suspended. Contact an administrator.'); return false; }
     if (pin !== String(user.pin_code || '1111').trim()) {
       loginAttempts += 1;
-      if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs — locked for 30 seconds.'); }
-      else authError('Incorrect access PIN for ' + user.full_name + '.');
+      if (loginAttempts >= 5) { loginLockUntil = Date.now() + 30000; loginAttempts = 0; authError('Too many wrong PINs. Locked for 30 seconds.'); }
+      else authError('Incorrect PIN for ' + user.full_name + '.');
       return false;
     }
     loginAttempts = 0;
@@ -40235,8 +40328,8 @@
     const seatMode = effectiveSeatAuthMode(user);
     // If seat is configured for Face ID Only, block PIN-only sign-in and prompt for live camera scan
     if (!opts.bypass2FA && seatMode === 'face_only') {
-      authError(`${user.full_name} requires Live Biometric Face ID Only (3+ frames + blink or 3D turn). Look at the camera above to sign in.`);
-      setAuthHint(`🔒 Face ID Only required for ${user.full_name} — look at the camera & blink or turn slightly`, 'warn');
+      authError(`${user.full_name} requires Face ID to sign in. Look at the camera above.`);
+      setAuthHint(`Look at the camera to sign in as ${user.full_name}`, 'warn');
       if (!FACE_STATE.camActive && !navigator.webdriver) startAuthFaceScanner(true);
       return 'face_only_required';
     }
@@ -40258,7 +40351,7 @@
       const errEl = $('authErrorBox');
       if (errEl) errEl.hidden = true;
       updateAuthFaceUi();
-      setAuthHint(`🔒 PIN verified for ${user.full_name} — look at the camera & blink or turn slightly to complete Face ID 2FA`, 'ok');
+      setAuthHint(`PIN verified. Look at the camera to verify ${user.full_name}.`, 'ok');
       if (!FACE_STATE.camActive && !navigator.webdriver) startAuthFaceScanner(true);
       return '2fa_pending';
     }
@@ -45104,99 +45197,143 @@
     const signOutBtn = $('signOutBtn');
     if (signOutBtn) signOutBtn.addEventListener('click', signOut);
 
+    const resolveUiSubmitEmail = () => {
+      if (FACE_STATE.pendingPinUser) return FACE_STATE.pendingPinUser.email;
+      const typedEm = val('authEmailInput');
+      if (FACE_STATE.seatDrawerOpen && typedEm && typedEm.includes('@')) return typedEm;
+      if (FACE_STATE.selectedAuthEmail) return FACE_STATE.selectedAuthEmail;
+      return typedEm && typedEm.includes('@') ? typedEm : '';
+    };
+
     const authForm = $('authLoginForm');
-    if (authForm) authForm.addEventListener('submit', e => { e.preventDefault(); performLogin(val('authEmailInput'), val('authPinInput')); });
+    if (authForm) {
+      authForm.addEventListener('submit', async e => {
+        e.preventDefault();
+        if (authUiLoginBusy || STATE.authed) return;
+        authUiLoginBusy = true;
+        try {
+          await performLogin(resolveUiSubmitEmail(), val('authPinInput'));
+        } finally {
+          authUiLoginBusy = false;
+        }
+      });
+    }
     const authPinInp = $('authPinInput');
     if (authPinInp) {
-      authPinInp.addEventListener('input', () => {
+      authPinInp.addEventListener('input', async () => {
+        const cleaned = String(authPinInp.value || '').replace(/\D+/g, '').slice(0, 8);
+        if (authPinInp.value !== cleaned) authPinInp.value = cleaned;
+        const errEl = $('authErrorBox');
+        if (errEl && !errEl.hidden && !FACE_STATE.disambiguatePin) errEl.hidden = true;
+        if (!cleaned || authUiLoginBusy || STATE.authed) return;
+
         if (FACE_STATE.pendingPinUser) {
-          const typed = String(authPinInp.value || '').trim();
           const expected = String(FACE_STATE.pendingPinUser.pin_code || '1111').trim();
-          if (typed && typed === expected) {
-            performLogin(FACE_STATE.pendingPinUser.email, typed);
+          if (cleaned === expected) {
+            authUiLoginBusy = true;
+            try { await performLogin(FACE_STATE.pendingPinUser.email, cleaned); } finally { authUiLoginBusy = false; }
+          }
+          return;
+        }
+
+        if (!navigator.webdriver && !window.__MFG_HEADLESS_TEST && cleaned.length >= 4 && Date.now() >= loginLockUntil) {
+          const activeSeats = STATE.users.filter(u => u.status !== 'Suspended');
+          const targetEmail = norm(resolveUiSubmitEmail());
+          if (targetEmail) {
+            const targetSeat = activeSeats.find(u => norm(u.email) === targetEmail);
+            if (targetSeat && String(targetSeat.pin_code || '1111').trim() === cleaned) {
+              authUiLoginBusy = true;
+              try { await performLogin(targetSeat.email, cleaned); } finally { authUiLoginBusy = false; }
+            }
+            return;
+          }
+          const exact = activeSeats.filter(u => String(u.pin_code || '1111').trim() === cleaned);
+          const hasLongerPrefix = activeSeats.some(u => {
+            const p = String(u.pin_code || '1111').trim();
+            return p.length > cleaned.length && p.startsWith(cleaned);
+          });
+          if (exact.length === 1 && !hasLongerPrefix) {
+            authUiLoginBusy = true;
+            try { await performLogin(exact[0].email, cleaned); } finally { authUiLoginBusy = false; }
+          } else if (exact.length > 1 && !hasLongerPrefix) {
+            FACE_STATE.disambiguatePin = cleaned;
+            setAuthSeatDrawerOpen(true, { silentFocus: true });
+            authError('Select your account below to finish signing in.', { keepPin: true, noShake: true });
           }
         }
       });
     }
 
-    const authEnrolJumpBtn = $('authEnrolJumpBtn');
-    if (authEnrolJumpBtn) authEnrolJumpBtn.addEventListener('click', async () => {
-      const em = val('authEmailInput') || (IS_DEMO ? 'husseinbdeir@bhfirms.com' : '');
-      const pn = val('authPinInput') || (IS_DEMO ? '1111' : '');
-      if (!pn) {
-        authError('Enter your 4-digit Access PIN above (or tap your seat on the right + PIN), then click "Sign In & Auto-Enrol Face ID".');
-        return;
-      }
-      const ok = await performLogin(em, pn, { bypass2FA: true });
-      if (ok === true) {
-        const me = activeUser();
-        FACE_STATE.enrolUserId = me.id;
-        FACE_STATE.enrolCaptures = [];
-        FACE_STATE.enrolThumbs = [];
-        FACE_STATE.enrolLoadedForUserId = String(me.id);
-        setView('users');
-        setTimeout(async () => {
-          const panel = $('faceEnrolPanel');
-          if (panel) scrollWorkspaceTo(panel);
-          const camOk = await startEnrolCamera();
-          if (camOk && !navigator.webdriver) {
-            // Auto-capture 3 poses hands-free as soon as the camera sees the user's face
-            for (let step = 0; step < 3; step++) {
-              await new Promise(r => setTimeout(r, 700));
-              if (STATE.view !== 'users' || !FACE_STATE.enrolCamActive || FACE_STATE.enrolCaptures.length > step) break;
-              await captureEnrolDescriptor();
-            }
-          }
-        }, 120);
-      }
-    });
-
-    const authGateReqSel = $('authGateReqSelect');
-    if (authGateReqSel) authGateReqSel.addEventListener('change', e => {
-      const m = setWorkspaceAuthMode(e.target.value);
-      // Clear any per-seat override when the user sets the requirement mode directly on the login gate
-      STATE.users.forEach(u => {
-        if (u) {
-          u.auth_mode = '';
-          u.face_required = (m === 'both' || m === 'face_only');
+    const authEmailInp = $('authEmailInput');
+    if (authEmailInp) {
+      authEmailInp.addEventListener('input', () => {
+        if (FACE_STATE.seatDrawerOpen) renderQuickSeatsInAuthGate();
+      });
+      authEmailInp.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && FACE_STATE.seatDrawerOpen) {
+          e.preventDefault();
+          e.stopPropagation();
+          setAuthSeatDrawerOpen(false);
         }
       });
-      saveLocalAuthAndRecords();
-      renderQuickSeatsInAuthGate();
-      updateAuthFaceUi();
-      const opt = AUTH_MODE_OPTIONS.find(o => o.value === m) || AUTH_MODE_OPTIONS[0];
-      toast(`Sign-in requirement: ${opt.label}`);
-      syncWithCloud(true);
-      // If Face ID was already verified and waiting on PIN ('both' mode), switching to 'either' or 'face_only' logs in immediately!
-      if (FACE_STATE.pendingPinUser && (m === 'either' || m === 'face_only')) {
-        const verifiedUser = FACE_STATE.pendingPinUser;
-        FACE_STATE.pendingPinUser = null;
-        completeFaceLogin(verifiedUser, FACE_STATE.bestDist || 0.2, '', 'Face ID');
-      }
-    });
+    }
 
-    const authCamBtn = $('authCamToggleBtn');
-    if (authCamBtn) authCamBtn.addEventListener('click', () => {
+    const toggleAcctBtn = $('authToggleAccountBtn');
+    if (toggleAcctBtn) {
+      toggleAcctBtn.addEventListener('click', () => {
+        setAuthSeatDrawerOpen(!FACE_STATE.seatDrawerOpen);
+      });
+    }
+
+    const clearSeatBtn = $('authClearSeatBtn');
+    if (clearSeatBtn) {
+      clearSeatBtn.addEventListener('click', () => {
+        FACE_STATE.pending2faUser = null;
+        FACE_STATE.pendingPinUser = null;
+        FACE_STATE.selectedAuthEmail = '';
+        FACE_STATE.disambiguatePin = '';
+        const errEl = $('authErrorBox');
+        if (errEl) errEl.hidden = true;
+        resetLivenessState();
+        setAuthStreak(0, 3);
+        updateAuthFaceUi();
+        setAuthSeatDrawerOpen(false);
+      });
+    }
+
+    const toggleAuthCamAction = () => {
+      if (getWorkspaceAuthMode() === 'pin_only') return;
       if (FACE_STATE.camActive || streamAlive()) {
         FACE_STATE.authCamStoppedByUser = true;
         stopAuthFaceScanner();
         stopFaceCamera();
-        setAuthHint('Camera turned off — click "Turn On Camera" above or sign in with Email + PIN.', '');
+        setAuthHint('', '');
       } else {
         FACE_STATE.authCamStoppedByUser = false;
         startAuthFaceScanner(true);
       }
+    };
+    const authCamBtn = $('authCamToggleBtn');
+    if (authCamBtn) authCamBtn.addEventListener('click', toggleAuthCamAction);
+    const authCamOffEl = $('authCamOffOverlay');
+    if (authCamOffEl) authCamOffEl.addEventListener('click', () => {
+      if (!FACE_STATE.camActive && getWorkspaceAuthMode() !== 'pin_only') {
+        FACE_STATE.authCamStoppedByUser = false;
+        startAuthFaceScanner(true);
+      }
     });
+
     const cancel2faBtn = $('authCancel2faBtn');
     if (cancel2faBtn) cancel2faBtn.addEventListener('click', () => {
       FACE_STATE.pending2faUser = null;
       FACE_STATE.pendingPinUser = null;
+      FACE_STATE.selectedAuthEmail = '';
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
       resetLivenessState();
       setAuthStreak(0, 3);
       updateAuthFaceUi();
-      setAuthHint('2FA step-up cancelled — select another seat or look at the camera.', '');
+      setAuthHint(FACE_STATE.camActive ? 'Look at the camera for Face ID' : '', '');
     });
 
     const mobileMenuBtn = $('mobileMenuBtn');
@@ -46012,6 +46149,7 @@
         updateAuthFaceUi();
       },
       performLogin: (email, pin, opts) => performLogin(email, pin, opts),
+      openAuthGate: email => openAuthGate(email),
       signOut: () => signOut()
     };
 
