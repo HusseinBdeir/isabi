@@ -521,31 +521,55 @@ body.is-resizing-rail .rail-resizer::before {
     font-size: 11.6px;
     gap: 4px;
   }
+  .app-shell.rail-narrow .rail-system-bar {
+    padding: 5px 6px;
+    gap: 3px;
+  }
+  .app-shell.rail-narrow .rail-sys-btn {
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 2px;
+    font-size: 9.8px;
+  }
+  .app-shell.rail-narrow .rail-sys-btn .nav-ico {
+    font-size: 13px;
+  }
   .app-shell.rail-narrow .rail-footer {
-    padding: 9px 9px 10px;
+    padding: 8px 9px 9px;
   }
 }
 
 .rail-nav {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 8px 6px;
+  padding: 4px 8px 5px;
   display: flex;
   flex-direction: column;
 }
 
 .rail-nav .grp {
   font-family: "Archivo", sans-serif;
-  font-size: 9.5px;
+  font-size: 9.4px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
-  padding: 7px 8px 2px;
+  padding: 6px 8px 2px;
 }
 
 .rail-nav .grp:first-child {
   padding-top: 2px;
+}
+
+.rail-nav .grp.grp-univ {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  color: var(--brass-strong, var(--brass));
+}
+
+:root[data-theme="dark"] .rail-nav .grp.grp-univ {
+  color: var(--brass);
 }
 
 .rail-nav button.nav-item,
@@ -704,9 +728,75 @@ body.is-resizing-rail .rail-resizer::before {
   border-color: rgba(239, 68, 68, 0.40);
 }
 
+/* Compact Pinned System Utility Bar (Tables · Kiosks · Users) */
+.rail-system-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 5px 8px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-alt);
+  flex-shrink: 0;
+}
+
+.rail-system-bar[hidden] {
+  display: none !important;
+}
+
+.rail-sys-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4.5px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s, border-color 0.14s, box-shadow 0.14s;
+}
+
+.rail-sys-btn[hidden] {
+  display: none !important;
+}
+
+.rail-sys-btn .nav-ico {
+  font-size: 13.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.rail-sys-btn > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rail-sys-btn:hover {
+  background: var(--brass-tint);
+  color: var(--ink);
+}
+
+.rail-sys-btn.on {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--brass);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
 /* Rail User Profile & RLS Footer */
 .rail-footer {
-  padding: 10px 12px;
+  padding: 9px 12px;
   border-top: 1px solid var(--line);
   background: var(--bg-alt);
   display: flex;
@@ -4103,13 +4193,25 @@ html.sw-resuming body.locked .app-shell { pointer-events: auto; user-select: aut
   font-weight: 700;
   letter-spacing: 0.02em;
 }
-.pa-group-btn.active {
+.pa-group-btn.is-universal-group {
+  border-color: rgba(192, 137, 47, 0.42);
+  background: var(--bg-alt);
+  color: var(--ink);
+}
+:root[data-theme="dark"] .pa-group-btn.is-universal-group {
+  border-color: rgba(217, 165, 74, 0.36);
+  background: rgba(217, 165, 74, 0.07);
+  color: #F4F2EE;
+}
+.pa-group-btn.active,
+.pa-group-btn.is-universal-group.active {
   background: var(--brass);
   color: #0B1730;
   border-color: var(--brass);
 }
-:root[data-theme="dark"] .pa-group-btn.active {
-  background: rgba(217, 165, 74, 0.20);
+:root[data-theme="dark"] .pa-group-btn.active,
+:root[data-theme="dark"] .pa-group-btn.is-universal-group.active {
+  background: rgba(217, 165, 74, 0.22);
   color: #D9A54A;
   border-color: var(--brass);
 }
@@ -11965,10 +12067,47 @@ table.ledger-table:has(#usersDirectoryTbody) .user-actions-wrap .btn {
   border-color: var(--brass);
 }
 
-/* Context-Clean Topbar on Plant Kiosks (kiosks operate live in real time; hide accounting date filters & generic + New Entry) */
+/* Context-Clean Topbar on Plant Kiosks & Universal Shared Registries */
 body.is-kiosks-view .period-basis-row,
-body.is-kiosks-view #newEntryBtn {
+body.is-kiosks-view #newEntryBtn,
+body.is-universal-view .period-basis-row {
   display: none !important;
+}
+
+.univ-scope-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid rgba(192, 137, 47, 0.45);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.univ-scope-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brass);
+  flex-shrink: 0;
+}
+
+.univ-scope-pill[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 860px) {
+  .univ-scope-pill {
+    display: none !important;
+  }
 }
 
 /* Locked Tablet Kiosk Shell Mode */

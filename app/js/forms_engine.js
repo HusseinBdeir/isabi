@@ -40,9 +40,7 @@
         { id: 'receipt', label: 'Customer Receipt (AR)', badge: 'bhf_customerreceipt', crKey: 'receipts', title: 'New Customer Settlement' },
         { id: 'vatinvoice', label: 'VAT Invoice', badge: 'bhf_vatinvoice', crKey: 'vat_invoices', title: 'New VAT Invoice' },
         { id: 'pricerule', label: 'Price Agreement', badge: 'bhf_pricerule', crKey: 'price_rules', title: 'New Price Agreement' },
-        { id: 'creditterm', label: 'Credit Terms', badge: 'bhf_creditterm', crKey: 'credit_terms', title: 'New Customer Credit Terms' },
-        { id: 'customer', label: 'Customer', badge: 'bhf_customer', crKey: 'customers', title: 'New Customer (Universal Registry)', universal: true },
-        { id: 'product', label: 'Product / Grade', badge: 'bhf_product', crKey: 'products', title: 'New Product / Aggregate Grade (Universal Registry)', universal: true }
+        { id: 'creditterm', label: 'Credit Terms', badge: 'bhf_creditterm', crKey: 'credit_terms', title: 'New Customer Credit Terms' }
       ]
     },
     {
@@ -53,9 +51,7 @@
         { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', title: 'New Raw Material Ticket' },
         { id: 'expense', label: 'Expense (Cash / Credit)', badge: 'bhf_expense', crKey: 'expenses', title: 'New Expense' },
         { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', title: 'New Supplier Settlement' },
-        { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', title: 'New Joint-Venture Entry' },
-        { id: 'supplier', label: 'Supplier / Hauler', badge: 'bhf_supplier', crKey: 'suppliers', title: 'New Supplier / Hauler (Universal Registry)', universal: true },
-        { id: 'site', label: 'Site', badge: 'bhf_site', crKey: 'sites', title: 'New Site (Universal Registry)', universal: true }
+        { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', title: 'New Joint-Venture Entry' }
       ]
     },
     {
@@ -68,9 +64,7 @@
         { id: 'companyequipment', label: 'Company Fleet Unit', badge: 'bhf_companyequipment', crKey: 'company_equipment', title: 'New Company Fleet Unit (BU Assignment)' },
         { id: 'defect', label: 'Equipment Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', title: 'Report Equipment / Truck Defect' },
         { id: 'partlog', label: 'Part Change & Custody', badge: 'bhf_partmovement', crKey: 'part_movements', title: 'Part Change, Removal & Disposition' },
-        { id: 'triprate', label: 'Overtime Trip Rate', badge: 'bhf_triprate', crKey: 'overtime_rates', title: 'New Overtime Trip Rate' },
-        { id: 'equipment', label: 'Equipment / Truck', badge: 'bhf_equipment', crKey: 'equipment', title: 'New Equipment / Truck (Universal Registry)', universal: true },
-        { id: 'driver', label: 'Driver / Operator', badge: 'bhf_driver', crKey: 'drivers', title: 'New Driver / Operator (Universal Registry)', universal: true }
+        { id: 'triprate', label: 'Overtime Trip Rate', badge: 'bhf_triprate', crKey: 'overtime_rates', title: 'New Overtime Trip Rate' }
       ]
     },
     {
@@ -91,6 +85,22 @@
       label: '5. Treasury & FX',
       forms: [
         { id: 'treasury', label: 'Treasury / Loans / FX', badge: 'bhf_external', crKey: 'loans', title: 'New Treasury Entry' }
+      ]
+    },
+    {
+      id: 'universal',
+      icon: 'globe',
+      label: '6. Universal (All BUs)',
+      universalGroup: true,
+      forms: [
+        { id: 'customer', label: 'Customer', badge: 'bhf_customer', crKey: 'customers', title: 'New Customer (Universal Registry)', universal: true },
+        { id: 'supplier', label: 'Supplier / Hauler', badge: 'bhf_supplier', crKey: 'suppliers', title: 'New Supplier / Hauler (Universal Registry)', universal: true },
+        { id: 'product', label: 'Product / Grade', badge: 'bhf_product', crKey: 'products', title: 'New Product / Aggregate Grade (Universal Registry)', universal: true },
+        { id: 'expensecategory', label: 'Expense Category', badge: 'bhf_expensecategory', crKey: 'expense_categories', title: 'New Expense Category (Universal Registry)', universal: true },
+        { id: 'site', label: 'Site', badge: 'bhf_site', crKey: 'sites', title: 'New Site (Universal Registry)', universal: true },
+        { id: 'region', label: 'Region / Zone', badge: 'bhf_region', crKey: 'regions', title: 'New Region / Zone (Universal Registry)', universal: true },
+        { id: 'equipment', label: 'Equipment / Truck', badge: 'bhf_equipment', crKey: 'equipment', title: 'New Equipment / Truck (Universal Registry)', universal: true },
+        { id: 'driver', label: 'Driver / Operator', badge: 'bhf_driver', crKey: 'drivers', title: 'New Driver / Operator (Universal Registry)', universal: true }
       ]
     }
   ];
@@ -517,10 +527,10 @@
         ${FORM_GROUPS.map(g => {
           const visibleForms = g.forms.filter(f => !canEnterFn || canEnterFn(f.id));
           if (!visibleForms.length) return '';
-          return `<button type="button" class="pa-group-btn ${g.id === activeGroup.id ? 'active' : ''}" data-pa-group="${esc(g.id)}">${g.icon ? ic(g.icon) : ''}<span>${esc(g.label)}</span></button>`;
+          return `<button type="button" class="pa-group-btn${g.universalGroup ? ' is-universal-group' : ''} ${g.id === activeGroup.id ? 'active' : ''}" data-pa-group="${esc(g.id)}">${g.icon ? ic(g.icon) : ''}<span>${esc(g.label)}</span></button>`;
         }).join('')}
       </div>
-      <div class="pa-modal-subtabs">
+      <div class="pa-modal-subtabs${activeGroup.universalGroup ? ' is-universal-subtabs' : ''}">
         ${(() => {
           const vis = activeGroup.forms.filter(f => !canEnterFn || canEnterFn(f.id));
           const showRawPr = activeGroup.id === 'raw' && (!canEnterFn || canEnterFn('pricerule_raw'));
@@ -532,7 +542,7 @@
           let html = vis.map(f => {
             const baseTab = `
           <button type="button" class="modal-tab ${!groupOverride && f.id === activeForm ? 'active' : ''}" data-form="${esc(f.id)}">
-            <span>${esc(f.label)}</span>${f.universal ? '<span class="tbl-univ-tag">All BUs</span>' : ''}
+            <span>${esc(f.label)}</span>${f.universal && !activeGroup.universalGroup ? '<span class="tbl-univ-tag">All BUs</span>' : ''}
           </button>`;
             if (activeGroup.id === 'sales' && f.id === 'pricerule') {
               return baseTab + `
@@ -836,6 +846,37 @@
       `;
     }
 
+    if (fType === 'expensecategory') {
+      const expCatNames = uniqSorted(
+        (rec.expense_categories || []).map(c => c && c.name).concat((rec.expenses || []).map(x => x && x.category)),
+        fIdx && fIdx.category
+      );
+      const defaultSubcat = Boolean(ctx && ctx.STATE && (
+        (ctx.STATE.view === 'reg_categories' && ctx.STATE.activeUnivRegKey === 'expense_subcategories') ||
+        (ctx.STATE.view === 'tables' && ctx.STATE.activeTableKey === 'expense_subcategories')
+      ));
+      const defLvl = defaultSubcat ? 'subcategory' : 'category';
+      return `
+        <div class="form-grid-3">
+          ${secHdr('1. Expense Taxonomy Identity (Universal Registry · All BUs)')}
+          ${fld('Registry Level *', sel('f_cat_level', [
+            ['category', 'Main Expense Category (Parent)'],
+            ['subcategory', 'Expense Subcategory (Under Parent Category)']
+          ], defLvl), { id: 'wrap_expcat_level' })}
+          ${fld('Expense Category Name *', inp('f_category', 'text', '', 'placeholder="e.g. Plant Maintenance, Crusher Consumables..."'), { id: 'wrap_expcat_name', hidden: defaultSubcat })}
+          ${fld('Accounting Cost Class *', sel('f_cost_class', [
+            ['Operating Expense', 'Operating Expense (Class 62–67)'],
+            ['Production Cost', 'Production Cost (Class 60/61)'],
+            ['Capital Expenditure', 'Capital Expenditure (Class 22)']
+          ], 'Operating Expense'), { id: 'wrap_expcat_class', hidden: defaultSubcat })}
+          ${fld('GL Account Code', inp('f_gl_code', 'text', '', 'placeholder="Optional CoA code, e.g. 6121 or 6250"'), { id: 'wrap_expcat_gl', hidden: defaultSubcat })}
+          ${fld('Parent Expense Category *', inp('f_parent_cat', 'text', '', 'list="dl_exp_cats" placeholder="Select parent expense category..."') + dl('dl_exp_cats', expCatNames), { id: 'wrap_expcat_parent', hidden: !defaultSubcat })}
+          ${fld('Expense Subcategory Name *', inp('f_subcategory', 'text', '', 'placeholder="e.g. Hydraulic Hoses, Jaw Plates, Generator Filters..."'), { id: 'wrap_expcat_sub', hidden: !defaultSubcat })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional accounting classification or usage guidance..."'), { span: true })}
+        </div>
+      `;
+    }
+
     if (fType === 'site') {
       return `
         <div class="form-grid-3">
@@ -847,6 +888,26 @@
           ${fld('Longitude (GPS)', inp('f_lng', 'number', '', 'step="0.000001" placeholder="35.5018"'))}
           <div class="form-field check-field"><input type="checkbox" id="f_isjv"><label for="f_isjv">Joint-Venture (JV) Site</label></div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+        </div>
+      `;
+    }
+
+    if (fType === 'region') {
+      return `
+        <div class="form-grid-3">
+          ${secHdr('1. Geographic Region Identity (Universal Registry · All BUs)')}
+          ${fld('Region *', inp('f_region', 'text', '', 'placeholder="e.g. Metn, Keserwan, Chouf, Bekaa Central..."'))}
+          ${fld('Region Code', inp('f_code', 'text', '', 'placeholder="e.g. MTN, KSR, BKA"'))}
+          ${fld('Governorate', sel('f_corridor', [
+            ['Mount Lebanon', 'Mount Lebanon'],
+            ['Beirut', 'Beirut'],
+            ['South', 'South Lebanon'],
+            ['Nabatieh', 'Nabatieh'],
+            ['Bekaa', 'Bekaa & Baalbek-Hermel'],
+            ['North', 'North & Akkar']
+          ], 'Mount Lebanon'))}
+          ${fld('Reference Haulage Distance (km)', inp('f_distance_km', 'number', '', 'step="1" min="0" placeholder="Optional one-way km"'))}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional corridor notes, toll/checkpoint info, or zone scope..."'), { span: true })}
         </div>
       `;
     }

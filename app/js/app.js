@@ -4902,7 +4902,7 @@
       { id: 'read_fin', label: 'Read Confidential Payroll, Treasury, General Ledger & Sentinels', sub: '11 Confidential Tables · Payroll & Workforce, Cash Flow & Loans, JV Partnerships, Class 1–7 CoA GL & AI Sentinels', badge: 'READ FIN' },
       { id: 'enter_dispatch', label: 'Enter Sales Dispatch, Quarry Intake, Fuel & Fleet Defects', sub: 'Sales Tickets, 2-Leg Quarry Purchases, Diesel/Lubricants/Grease, Equipment Defects, Part Changes & Plant Kiosks', badge: 'ENTER DISPATCH' },
       { id: 'enter_accounting', label: 'Enter Customer Receipts, Expenses & Supplier Settlements', sub: 'FIFO Customer Receipts, Cash/Credit Operating Expenses & 3-Leg Supplier AP Settlements', badge: 'ENTER ACCT' },
-      { id: 'enter_master', label: 'Enter Master Registries, Pricing Agreements & Attendance', sub: 'Customers, Suppliers, Products, Quarry/Delivery Sites, Fleet Units, Drivers, Price Agreements & Staff Attendance', badge: 'ENTER MASTER' },
+      { id: 'enter_master', label: 'Enter Universal Registries, Pricing Agreements & Attendance', sub: 'Universal (All BUs) Customers, Suppliers, Products, Expense Categories, Sites, Regions, Equipment & Drivers + BU Fleet Units, Price Agreements & Staff Attendance', badge: 'ENTER MASTER' },
       { id: 'enter_payroll_jv', label: 'Enter Confidential Payroll, Treasury, Loans & JV Splits', sub: 'Monthly Salaries, Employment Contracts, Allowances, Partner Loans, External Cash, FX Conversions & 50/50 JV Vouchers', badge: 'ENTER PAYROLL' },
       { id: 'modify_data', label: 'Modify Posted Records (360° Inspector & Inline Edit)', sub: 'Edit posted quantities, unit prices, references & 5-state part custody via the 360° Modify Drawer', badge: 'MODIFY DATA' },
       { id: 'void_data', label: 'Void / Delete Posted Records (With 1-Click Undo)', sub: 'Void or delete records via multi-device cloud tombstones & instant 1-click Undo', badge: 'VOID DATA' },
@@ -5175,7 +5175,7 @@
       if (['sales', 'raw', 'fuel', 'malfunction'].includes(form)) return !!p.rights.enter_dispatch;
       if (['defect', 'partlog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master);
       if (['receipt', 'expense', 'settlement'].includes(form)) return !!p.rights.enter_accounting;
-      if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'site', 'equipment', 'companyequipment', 'driver', 'attendance'].includes(form)) return !!p.rights.enter_master;
+      if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'attendance'].includes(form)) return !!p.rights.enter_master;
       if (['salary', 'employment', 'allowance', 'logistics', 'overtimerate', 'triprate', 'treasury', 'external', 'extmovement', 'loan', 'loansettlement', 'conversion', 'jv', 'jvpartnership', 'jvdistribution'].includes(form)) return !!p.rights.enter_payroll_jv;
       return !!(p.rights.enter_dispatch || p.rights.enter_accounting || p.rights.enter_master);
     }
@@ -5184,13 +5184,13 @@
     if (/^Supervisor$/i.test(role)) return false; // Supervisor = strictly read-only oversight
     if (/Sales/i.test(role)) {
       if (isRawPriceForm) return false;
-      return ['sales', 'receipt', 'pricerule', 'vatinvoice', 'creditterm', 'customer', 'site'].includes(form);
+      return ['sales', 'receipt', 'pricerule', 'vatinvoice', 'creditterm', 'customer', 'site', 'region'].includes(form);
     }
     if (/Entry/i.test(role)) {
       return [
         'sales', 'raw', 'receipt', 'fuel', 'malfunction', 'expense', 'settlement',
         'defect', 'partlog',
-        'customer', 'supplier', 'product', 'site', 'equipment', 'companyequipment', 'driver', 'attendance'
+        'customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'attendance'
       ].includes(form);
     }
     return false;
@@ -5237,8 +5237,8 @@
     reg_categories: ['expense_categories', 'expense_subcategories'],
     reg_sites: ['sites', 'regions'],
     reg_regions: ['sites', 'regions'],
-    reg_equipment: ['equipment', 'drivers'],
-    reg_drivers: ['equipment', 'drivers']
+    reg_equipment: ['equipment'],
+    reg_drivers: ['drivers']
   };
 
   const HUB_TITLES = {
@@ -5249,11 +5249,15 @@
     expenses: 'Purchases, Expenses & Payables',
     fleet: 'Fleet, Fuel & Drivers',
     payroll: 'Payroll & Workforce',
-    kiosks: 'Plant Kiosks',
     cashflow: 'Cash Flow & Treasury',
     ledger: 'General Ledger & COA',
-    master: 'Master Data & Tables',
-    users: 'Users & Security'
+    univ_parties: 'Counterparties & Sites',
+    univ_catalog: 'Products & Categories',
+    univ_fleet: 'Equipment & Drivers',
+    tables: 'All Tables & Registers',
+    kiosks: 'Plant Kiosks',
+    users: 'Users & Security',
+    master: 'Counterparties & Sites'
   };
 
   function getSentinelExceptionBadge(u, sentinelsOpen) {
@@ -5473,14 +5477,6 @@
       ]
     },
     {
-      id: 'kiosks',
-      title: HUB_TITLES.kiosks,
-      group: 'plant',
-      tabs: [
-        { view: 'kiosks', label: 'Plant Kiosks', icon: 'kiosks' }
-      ]
-    },
-    {
       id: 'cashflow',
       title: HUB_TITLES.cashflow,
       group: 'books',
@@ -5501,22 +5497,58 @@
       ]
     },
     {
-      id: 'master',
-      title: HUB_TITLES.master,
-      group: 'master',
+      id: 'univ_parties',
+      title: HUB_TITLES.univ_parties,
+      group: 'universal',
+      universal: true,
       tabs: [
         { view: 'reg_customers', match: ['reg_customers', 'reg_suppliers'], label: 'Counterparties', icon: 'reg_customers', universal: true },
+        { view: 'reg_sites', match: ['reg_sites', 'reg_regions'], label: 'Sites & Regions', icon: 'reg_sites', universal: true }
+      ]
+    },
+    {
+      id: 'univ_catalog',
+      title: HUB_TITLES.univ_catalog,
+      group: 'universal',
+      universal: true,
+      tabs: [
         { view: 'reg_products', label: 'Products & Catalog', icon: 'reg_products', universal: true },
-        { view: 'reg_categories', label: 'Expense Categories', icon: 'reg_categories', universal: true },
-        { view: 'reg_sites', match: ['reg_sites', 'reg_regions'], label: 'Sites & Regions', icon: 'reg_sites', universal: true },
-        { view: 'reg_equipment', match: ['reg_equipment', 'reg_drivers'], label: 'Equipment & Drivers', icon: 'reg_equipment', universal: true },
+        { view: 'reg_categories', label: 'Expense Categories', icon: 'reg_categories', universal: true }
+      ]
+    },
+    {
+      id: 'univ_fleet',
+      title: HUB_TITLES.univ_fleet,
+      group: 'universal',
+      universal: true,
+      tabs: [
+        { view: 'reg_equipment', label: 'Equipment & Trucks', icon: 'reg_equipment', universal: true },
+        { view: 'reg_drivers', label: 'Drivers & Operators', icon: 'reg_drivers', universal: true }
+      ]
+    },
+    {
+      id: 'tables',
+      title: HUB_TITLES.tables,
+      shortLabel: 'Tables',
+      group: 'system',
+      tabs: [
         { view: 'tables', label: 'All Tables & Registers', icon: 'tables' }
+      ]
+    },
+    {
+      id: 'kiosks',
+      title: HUB_TITLES.kiosks,
+      shortLabel: 'Kiosks',
+      group: 'system',
+      tabs: [
+        { view: 'kiosks', label: 'Plant Kiosks', icon: 'kiosks' }
       ]
     },
     {
       id: 'users',
       title: HUB_TITLES.users,
-      group: 'master',
+      shortLabel: 'Users',
+      group: 'system',
       tabs: [
         { view: 'users', label: 'Users & Security', icon: 'users' }
       ]
@@ -5584,12 +5616,14 @@
   }
 
   function getHubDef(hubId) {
+    if (hubId === 'master') hubId = 'univ_parties';
     return HUB_CATALOG.find(h => h.id === hubId) || null;
   }
 
   function canViewHub(hubId, u) {
     u = u || activeUser();
     if (hubId === 'expenses') hubId = 'raw';
+    if (hubId === 'master') hubId = 'univ_parties';
     const h = getHubDef(hubId);
     if (!h) return canViewView(hubId, u);
     if (hubId === 'reports') return canViewView('pbi', u) || canViewView('statements', u);
@@ -5601,6 +5635,7 @@
   function resolveHubView(hubId, u) {
     u = u || activeUser();
     if (hubId === 'expenses') hubId = 'raw';
+    if (hubId === 'master') hubId = 'univ_parties';
     const h = getHubDef(hubId);
     if (!h) return canViewView(hubId, u) ? hubId : defaultViewFor(u);
     const first = h.tabs.find(t => canViewView(t.view, u));
@@ -29154,6 +29189,31 @@
         syncUniversalMainDupHint('f_site', 'sites', 'Site');
         return {};
       }
+      if (STATE.modalForm === 'region') {
+        syncUniversalMainDupHint('f_region', 'regions', 'Region');
+        return {};
+      }
+      if (STATE.modalForm === 'expensecategory') {
+        const lvl = val('f_cat_level') || 'category';
+        const isSub = lvl === 'subcategory';
+        setFieldVisible('wrap_expcat_name', !isSub);
+        setFieldVisible('wrap_expcat_class', !isSub);
+        setFieldVisible('wrap_expcat_gl', !isSub);
+        setFieldVisible('wrap_expcat_parent', isSub);
+        setFieldVisible('wrap_expcat_sub', isSub);
+        const mTitle = $('modalTitle');
+        if (mTitle && !STATE.editingPendingExpenseId) {
+          mTitle.textContent = isSub
+            ? 'New Universal Expense Subcategory (All BUs)'
+            : 'New Universal Expense Category (All BUs)';
+        }
+        if (isSub) {
+          syncUniversalMainDupHint('f_subcategory', 'expense_subcategories', 'Expense Subcategory', { category: val('f_parent_cat') });
+        } else {
+          syncUniversalMainDupHint('f_category', 'expense_categories', 'Expense Category');
+        }
+        return { level: lvl, isSub };
+      }
       if (STATE.modalForm === 'supplier') {
         const supName = val('f_supplier');
         const company = val('f_company');
@@ -31284,7 +31344,7 @@
     if (autoFocus && (STATE.editingPendingExpenseId || window.matchMedia('(min-width: 861px)').matches)) {
       const first = STATE.editingPendingExpenseId
         ? ($('f_amount') || body.querySelector('#f_reference'))
-        : body.querySelector('#f_ticketno, #f_customer, #f_supplier, #f_staff, #f_name, #f_counterparty, #f_truck, #f_category');
+        : body.querySelector('#f_ticketno, #f_customer, #f_supplier, #f_staff, #f_name, #f_counterparty, #f_truck, #f_category, #f_subcategory, #f_region');
       if (first) {
         modalFocusTimer = setTimeout(() => {
           if (body.contains(document.activeElement) && document.activeElement !== document.body) return;
@@ -31325,6 +31385,9 @@
     if (!r) return '';
     if (crKey === 'drivers') return String(r.name || r.driver || '').trim();
     if (crKey === 'equipment') return String(r.name || r.equipment || r.Equipment || '').trim();
+    if (crKey === 'expense_categories') return String(r.name || r.category || '').trim();
+    if (crKey === 'expense_subcategories') return String(r.name || r.subcategory || '').trim();
+    if (crKey === 'regions') return String(r.name || r.region || '').trim();
     return String(r.name || r.Customer || r.Supplier || r.Product || r.Site || '').trim();
   }
 
@@ -31401,8 +31464,8 @@
     const today = todayISO();
     const notes = val('f_notes');
     const who = activeUser();
-    const isUniversalForm = ['customer', 'supplier', 'product', 'site', 'equipment', 'driver'].includes(f);
-    const needsDate = !['customer', 'supplier', 'product', 'site', 'equipment', 'companyequipment', 'driver'].includes(f);
+    const isUniversalForm = ['customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'driver'].includes(f);
+    const needsDate = !['customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver'].includes(f);
     if (!isUniversalForm && !allowedCompanyNames().includes(company)) addErr('f_company', 'Your seat cannot post to ' + (company || 'that company') + '.');
     if (needsDate) {
       const bdDaysLimit = getAlertParam('G_BACKDATE_NOTE', 'backdate_warn_days', 30);
@@ -31734,6 +31797,38 @@
         if (dup) addErr('f_driver', `Driver "${universalMainValue('drivers', dup) || nm}" already exists in the Universal Driver Registry. Duplicate names are not allowed.`);
       }
       record = { ...base, name: nm, driver: nm, truck_owner: val('f_supplier'), truck: val('f_truck'), phone: val('f_phone'), is_company_driver: !!($('f_iscompanydriver') && $('f_iscompanydriver').checked) };
+    } else if (f === 'expensecategory') {
+      const lvl = val('f_cat_level') || 'category';
+      if (lvl === 'subcategory') {
+        crKey = 'expense_subcategories';
+        const parentCat = val('f_parent_cat');
+        const subNm = val('f_subcategory');
+        if (!parentCat) addErr('f_parent_cat', 'Parent Expense Category is required.');
+        if (!subNm) addErr('f_subcategory', 'Expense Subcategory Name is required.');
+        else {
+          const dup = findUniversalDuplicate('expense_subcategories', subNm, { category: parentCat });
+          if (dup) addErr('f_subcategory', `Expense Subcategory "${universalMainValue('expense_subcategories', dup) || subNm}" already exists under "${dup.category || parentCat}" in the Universal Expense Subcategory Registry. Duplicate names are not allowed.`);
+        }
+        record = { ...base, name: subNm, subcategory: subNm, category: parentCat };
+      } else {
+        crKey = 'expense_categories';
+        const catNm = val('f_category');
+        if (!catNm) addErr('f_category', 'Expense Category Name is required.');
+        else {
+          const dup = findUniversalDuplicate('expense_categories', catNm);
+          if (dup) addErr('f_category', `Expense Category "${universalMainValue('expense_categories', dup) || catNm}" already exists in the Universal Expense Category Registry. Duplicate names are not allowed.`);
+        }
+        record = { ...base, name: catNm, category: catNm, cost_class: val('f_cost_class') || 'General & Admin', gl_code: val('f_gl_code') };
+      }
+    } else if (f === 'region') {
+      crKey = 'regions';
+      const regNm = val('f_region');
+      if (!regNm) addErr('f_region', 'Region / Zone Name is required.');
+      else {
+        const dup = findUniversalDuplicate('regions', regNm);
+        if (dup) addErr('f_region', `Region "${universalMainValue('regions', dup) || regNm}" already exists in the Universal Region Registry. Duplicate names are not allowed.`);
+      }
+      record = { ...base, name: regNm, region: regNm, code: val('f_code'), corridor: val('f_corridor') || 'Coastal Corridor', distance_km: val('f_distance_km') ? num('f_distance_km') : null };
     } else if (f === 'salary') {
       const st = val('f_staff'), amt = round2(num('f_amount'));
       const salType = val('f_sal_type') || 'payment';
@@ -32470,7 +32565,14 @@
     const wasClosed = !modal || modal.hidden;
     const body = $('modalBody');
     const title = $('modalTitle');
+    const modalEye = $('modalEyebrow');
     const tabsWrap = $('modalTabs');
+    const isUnivModalForm = ['customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'driver'].includes(form);
+    if (modalEye) {
+      modalEye.textContent = isUnivModalForm
+        ? 'ISABI Universal Registry · Shared Across All Business Units'
+        : 'ISABI Double-Entry Operational Desk · Auto-Journal & Price Matrix';
+    }
     if (title) {
       title.textContent = pendingTargetRow
         ? ('Enter Final Price · ' + (pendingTargetRow.name || pendingTargetRow.id))
@@ -35733,7 +35835,7 @@
     ensureUniversalCanonicalIndex();
     sanitizeUniversalCustomRecords();
     SEED._customRev = (SEED._customRev || 0) + 1;
-    const masterByNameKeys = new Set(['suppliers', 'equipment', 'company_equipment', 'drivers', 'customers', 'products', 'sites']);
+    const masterByNameKeys = new Set(['suppliers', 'equipment', 'company_equipment', 'drivers', 'customers', 'products', 'sites', 'regions', 'expense_categories', 'expense_subcategories']);
     const allKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {})]));
     allKeys.forEach(k => {
       const list = SEED.records[k];
@@ -38597,6 +38699,17 @@
       }
       grpEl.hidden = !anyVisible;
     });
+    const sysBar = $('railSystemBar');
+    if (sysBar) {
+      let anySysVisible = false;
+      sysBar.querySelectorAll('.rail-sys-btn').forEach(btn => {
+        const hubId = btn.getAttribute('data-hub') || btn.getAttribute('data-view');
+        const vis = canViewHub(hubId, user);
+        btn.hidden = !vis;
+        if (vis) anySysVisible = true;
+      });
+      sysBar.hidden = !anySysVisible;
+    }
     if (!canViewView(STATE.view, user)) STATE.view = defaultViewFor(user);
 
     if (STATE.pbiPage && !canAccessPbiPage(STATE.pbiPage, user)) {
@@ -38973,8 +39086,8 @@
       payroll: 'salary', workforce_map: 'attendance', payroll_attendance: 'attendance', payroll_contracts: 'employment', payroll_analytics: 'salary',
       ledger: 'treasury', gl: 'treasury', ledger_treasury: 'treasury',
       tables: 'pricerule',
-      reg_equipment: 'equipment', reg_drivers: 'driver', reg_sites: 'site', reg_regions: 'site',
-      reg_products: 'product', reg_customers: 'customer', reg_suppliers: 'supplier', reg_categories: 'expense'
+      reg_equipment: 'equipment', reg_drivers: 'driver', reg_sites: 'site', reg_regions: 'region',
+      reg_products: 'product', reg_customers: 'customer', reg_suppliers: 'supplier', reg_categories: 'expensecategory'
     };
     let preferred = map[view] || 'sales';
     if (view === 'tables' && window.MFG_PBI) { // the hub's active table owns the form (e.g. Loans → Treasury desk)
@@ -39001,7 +39114,9 @@
     const hubsInGroup = HUB_CATALOG.filter(h => {
       const sameDock = (group === 'commercial' || group === 'plant')
         ? (h.group === 'commercial' || h.group === 'plant')
-        : ((group === 'books' || group === 'master') ? (h.group === 'books' || h.group === 'master') : h.group === group);
+        : ((group === 'books' || group === 'universal' || group === 'system' || group === 'master')
+          ? (h.group === 'books' || h.group === 'universal' || h.group === 'system' || h.group === 'master')
+          : h.group === group);
       return sameDock && canViewHub(h.id, user);
     });
     el.innerHTML = hubsInGroup.map(h => {
@@ -39015,7 +39130,7 @@
     const dOver = $('dockBtnOverview'), dDisp = $('dockBtnDispatch'), dBooks = $('dockBtnBooks'), dEntry = $('mobileDockEntryBtn'), dEntryLbl = $('mobileDockEntryLabel');
     if (dOver) dOver.classList.toggle('on', group === 'exec');
     if (dDisp) dDisp.classList.toggle('on', group === 'commercial' || group === 'plant' || group === 'dispatch');
-    if (dBooks) dBooks.classList.toggle('on', group === 'books' || group === 'master');
+    if (dBooks) dBooks.classList.toggle('on', group === 'books' || group === 'universal' || group === 'system' || group === 'master');
     if (dEntry && dEntryLbl) {
       if (canEnterAny(user)) {
         dEntry.hidden = false;
@@ -39024,7 +39139,9 @@
           settlement: 'Settle AP', expense: 'Post Expense', salary: 'Pay Salary',
           vatinvoice: 'Post VAT Inv', attendance: 'Log Attendance', employment: 'New Contract',
           treasury: 'Post Treasury', pricerule: 'New Agreement', pricerule_raw: 'New Site Rate',
-          jv: 'Post JV Entry', defect: 'Report Defect', partlog: 'Log Part'
+          jv: 'Post JV Entry', defect: 'Report Defect', partlog: 'Log Part', companyequipment: 'Assign Unit',
+          customer: 'New Customer', supplier: 'New Supplier', product: 'New Product', expensecategory: 'New Category',
+          site: 'New Site', region: 'New Region', equipment: 'New Equipment', driver: 'New Driver'
         };
         dEntryLbl.textContent = formLabels[contextFormForView(v, user)] || 'Post Entry';
       } else {
@@ -40762,7 +40879,10 @@
     const isUnivView = Boolean(UNIV_VIEW_TO_TABLE_KEY[STATE.view]);
     const isKiosksView = STATE.view === 'kiosks';
     document.body.classList.toggle('is-kiosks-view', isKiosksView);
-    if (isKiosksView && _dateFacState.open) closeDateFacilitator();
+    document.body.classList.toggle('is-universal-view', isUnivView);
+    const univPill = $('topbarUnivScopePill');
+    if (univPill) univPill.hidden = !isUnivView;
+    if ((isKiosksView || isUnivView) && _dateFacState.open) closeDateFacilitator();
     const univGroupKeys = isUnivView ? (UNIV_REGISTRY_GROUPS[STATE.view] || [UNIV_VIEW_TO_TABLE_KEY[STATE.view]]) : [];
     if (isUnivView && (!STATE.activeUnivRegKey || !univGroupKeys.includes(STATE.activeUnivRegKey))) {
       STATE.activeUnivRegKey = UNIV_VIEW_TO_TABLE_KEY[STATE.view];
@@ -40807,6 +40927,27 @@
         lblSpan.removeAttribute('title');
       }
       if (canonicalLbl) btn.setAttribute('aria-label', canonicalLbl);
+      btn.removeAttribute('title');
+    });
+    document.querySelectorAll('#railSystemBar .rail-sys-btn').forEach(btn => {
+      const hubId = btn.getAttribute('data-hub') || btn.getAttribute('data-view');
+      const v = btn.getAttribute('data-view') || hubId;
+      const hubDef = getHubDef(hubId);
+      if (!btn.querySelector('.nav-ico') && window.MFG_ICONS) {
+        btn.insertAdjacentHTML('afterbegin', window.MFG_ICONS.nav(v));
+      }
+      btn.classList.toggle('on', hubId === activeHubId);
+      const lblSpan = btn.querySelector('span');
+      const canonicalFullLbl = HUB_TITLES[hubId] || VIEW_TITLES[v] || '';
+      const shortLbl = (hubDef && hubDef.shortLabel) || (lblSpan ? lblSpan.textContent.trim() : canonicalFullLbl);
+      if (lblSpan && shortLbl) {
+        if (lblSpan.textContent !== shortLbl) lblSpan.textContent = shortLbl;
+        lblSpan.removeAttribute('title');
+      }
+      if (canonicalFullLbl) {
+        btn.setAttribute('aria-label', canonicalFullLbl);
+        btn.setAttribute('data-full-text', canonicalFullLbl);
+      }
       btn.removeAttribute('title');
     });
     syncCompanySwitchUi();
@@ -43013,6 +43154,7 @@
 
   function clickHub(hubId) {
     if (hubId === 'expenses') hubId = 'raw';
+    if (hubId === 'master') hubId = 'univ_parties';
     const u = activeUser();
     const target = resolveHubView(hubId, u);
     setView(target);
@@ -43375,15 +43517,24 @@
         return;
       }
       const navBtn = rawTarget.closest('#sidebarNav button.nav-item');
+      const sysBtn = !navBtn ? rawTarget.closest('#railSystemBar button.rail-sys-btn') : null;
       let textEl = null;
       let anchorEl = null;
       let fullText = '';
+      let alwaysShowTooltip = false;
       if (navBtn) {
         textEl = navBtn.querySelector('span') || navBtn;
         anchorEl = navBtn;
         navBtn.removeAttribute('title');
         if (textEl) textEl.removeAttribute('title');
         fullText = (textEl.textContent || navBtn.getAttribute('aria-label') || '').trim();
+      } else if (sysBtn) {
+        textEl = sysBtn.querySelector('span') || sysBtn;
+        anchorEl = sysBtn;
+        sysBtn.removeAttribute('title');
+        if (textEl) textEl.removeAttribute('title');
+        fullText = (sysBtn.getAttribute('data-full-text') || sysBtn.getAttribute('aria-label') || textEl.textContent || '').trim();
+        alwaysShowTooltip = Boolean(fullText && fullText !== (textEl.textContent || '').trim());
       } else {
         const footTruncEl = rawTarget.closest('#railUserName, #activeRoleBadge, #railRlsScope, #sqlStatusText');
         if (footTruncEl) {
@@ -43393,7 +43544,7 @@
           fullText = (footTruncEl.getAttribute('data-full-text') || footTruncEl.textContent || '').trim();
         }
       }
-      if (!textEl || !fullText || !isElementTextTruncated(textEl)) {
+      if (!textEl || !fullText || (!alwaysShowTooltip && !isElementTextTruncated(textEl))) {
         hideRailHoverTooltip();
         return;
       }
@@ -43511,11 +43662,11 @@
     }
     window.addEventListener('scroll', hideAllChartTooltips, { passive: true });
 
-    document.querySelectorAll('#sidebarNav .nav-item').forEach(btn => btn.addEventListener('click', () => clickHub(btn.getAttribute('data-hub') || btn.getAttribute('data-view'))));
+    document.querySelectorAll('#sidebarNav .nav-item, #railSystemBar .rail-sys-btn').forEach(btn => btn.addEventListener('click', () => clickHub(btn.getAttribute('data-hub') || btn.getAttribute('data-view'))));
     document.querySelectorAll('#mobileBottomDock [data-dock-view]').forEach(btn => btn.addEventListener('click', () => {
       const dv = btn.getAttribute('data-dock-view');
       const u = activeUser();
-      const grps = dv === 'overview' ? ['exec'] : (dv === 'sales' ? ['commercial', 'plant'] : ['books', 'master']);
+      const grps = dv === 'overview' ? ['exec'] : (dv === 'sales' ? ['commercial', 'plant'] : ['books', 'universal', 'system', 'master']);
       const firstHub = HUB_CATALOG.find(h => grps.includes(h.group) && canViewHub(h.id, u));
       if (firstHub) clickHub(firstHub.id);
       else setView(dv);
@@ -44114,7 +44265,8 @@
       canViewView: (view, u) => canViewView(view, u || activeUser()),
       resolveHubView: (hubId, u) => resolveHubView(hubId, u || activeUser()),
       clickHub: hubId => clickHub(hubId),
-      setView: (view, opts) => setView(view, opts)
+      setView: (view, opts) => setView(view, opts),
+      setRailWidth: (w, persist) => setRailWidth(w, persist)
     };
     window.__openModalForm = (fid, prefill) => openEntryModal(fid, prefill);
     if (!window.__navToView) window.__navToView = v => setView(v);
@@ -44156,7 +44308,7 @@
     const raw = (el.getAttribute('title') || '').trim();
     el.removeAttribute('title');
     if (!raw) return;
-    if (!el.closest('#sidebarNav') && !el.hasAttribute('data-ui-tip')) {
+    if (!el.closest('#sidebarNav, #railSystemBar') && !el.hasAttribute('data-ui-tip')) {
       el.setAttribute('data-ui-tip', raw);
     }
     if (el.matches('button, a, input, select, [role="button"]') && !el.getAttribute('aria-label') && !(el.textContent || '').trim()) {
@@ -44186,7 +44338,7 @@
     const tipEl = $('mfgUiTooltip');
     if (!tipEl || !targetEl || window.innerWidth <= 860) { hideUiTooltip(); return; }
     if (targetEl.getAttribute('aria-expanded') === 'true') { hideUiTooltip(); return; }
-    if (targetEl.matches(UI_TIP_SUPPRESS_SEL) || targetEl.closest('#sidebarNav')) { hideUiTooltip(); return; }
+    if (targetEl.matches(UI_TIP_SUPPRESS_SEL) || targetEl.closest('#sidebarNav, #railSystemBar')) { hideUiTooltip(); return; }
     const tipTxt = (targetEl.getAttribute('data-ui-tip') || '').trim();
     if (!tipTxt) { hideUiTooltip(); return; }
     const visTxt = (targetEl.textContent || '').replace(/\s+/g, ' ').trim();
