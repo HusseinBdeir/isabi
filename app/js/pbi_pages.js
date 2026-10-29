@@ -1470,14 +1470,14 @@
       { id: 'open_ap', label: 'Open AP Balance > $0', fn: (r, rel) => ((rel.suppByName[norm(r.name)] || {}).ap_balance || 0) > 1 },
       { id: 'iva', label: 'IVA / VAT Registered', fn: r => Boolean(r.iva || r.financial_no || r.mof_no) }
     ] },
-    { key: 'products', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Products & Grades', singularLabel: 'Product / Grade', dvn: 'bhf_product', form: 'product', cols: ['name', 'type', 'uom', 'ton_factor', 'list_price', 'ticket_product', 'fuel_item', 'input_product', 'active_rules', 'sales_loads', 'revenue_account'], relTables: ['sales_tickets', 'raw_purchases', 'price_rules', 'fuel_intakes', 'product_types', 'uoms'], views: [{ id: 'all', label: 'All Products & Grades' }, { id: 'agg', label: 'Ticket / Aggregate Grades', fn: r => Boolean(r.ticket_product) }, { id: 'fuel', label: 'Fuel & Lube Items', fn: r => Boolean(r.fuel_item) }] },
+    { key: 'products', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Products & Grades', singularLabel: 'Product / Grade', dvn: 'bhf_product', form: 'product', cols: ['name', 'type', 'uom', 'ton_factor', 'list_price', 'ticket_product', 'fuel_item', 'input_product', 'active_rules', 'sales_loads'], relTables: ['sales_tickets', 'raw_purchases', 'price_rules', 'fuel_intakes', 'product_types', 'uoms'], views: [{ id: 'all', label: 'All Products & Grades' }, { id: 'agg', label: 'Ticket / Aggregate Grades', fn: r => Boolean(r.ticket_product) }, { id: 'fuel', label: 'Fuel & Lube Items', fn: r => Boolean(r.fuel_item) }] },
     { key: 'product_types', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Product Types (Families)', singularLabel: 'Product / Grade', dvn: 'bhf_producttype', form: 'product', cols: ['name', 'code', 'products_count', 'sales_loads'], relTables: ['products', 'sales_tickets'], views: [{ id: 'all', label: 'All Product Families' }] },
     { key: 'uoms', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Units of Measure (UoM)', singularLabel: 'Product / Grade', dvn: 'bhf_uom', form: 'product', cols: ['name', 'code', 'products_count', 'tickets_count'], relTables: ['products', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Units of Measure' }] },
     { key: 'expense_categories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Categories', singularLabel: 'Expense Category', dvn: 'bhf_expensecategory', form: 'expensecategory', cols: ['name', 'cost_class', 'subcategories_count', 'expenses_count', 'total_spent'], relTables: ['expense_subcategories', 'expenses'], views: [
       { id: 'all', label: 'All Expense Categories' },
-      { id: 'prod', label: 'Production Cost (60/61)', fn: r => deriveExpenseCostClass(r) === 'Production Cost' },
-      { id: 'opex', label: 'Operating Expense (62–67)', fn: r => deriveExpenseCostClass(r) === 'Operating Expense' },
-      { id: 'capex', label: 'Capital Expenditure (22)', fn: r => deriveExpenseCostClass(r) === 'Capital Expenditure' }
+      { id: 'prod', label: 'Production Cost', fn: r => deriveExpenseCostClass(r) === 'Production Cost' },
+      { id: 'opex', label: 'Operating Expense', fn: r => deriveExpenseCostClass(r) === 'Operating Expense' },
+      { id: 'capex', label: 'Capital Expenditure', fn: r => deriveExpenseCostClass(r) === 'Capital Expenditure' }
     ] },
     { key: 'expense_subcategories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Subcategories', singularLabel: 'Expense Subcategory', dvn: 'bhf_expensesubcategory', form: 'expensecategory', cols: ['name', 'category', 'expenses_count', 'total_spent'], relTables: ['expense_categories', 'expenses'], views: [{ id: 'all', label: 'All Expense Subcategories' }] },
     { key: 'sites', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_sites', label: 'Sites', singularLabel: 'Site', dvn: 'bhf_site', form: 'site', cols: ['name', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads', 'sales_loads'], relTables: ['regions', 'suppliers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [
@@ -1491,8 +1491,9 @@
     { key: 'equipment', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', singularLabel: 'Equipment / Truck', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
     { key: 'drivers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', singularLabel: 'Driver / Operator', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] },
     { key: 'fx_rates', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_fx_rates', label: 'Currency Exchange Rates', singularLabel: 'FX Rate', dvn: 'bhf_fxrate', form: 'fxrate', cols: ['name', 'currency', 'rate', 'start_date', 'effective_to', 'status', 'notes'], relTables: ['currencies', 'conversions'], views: [{ id: 'all', label: 'All Exchange Rates' }, { id: 'current', label: 'Current Active Rates', fn: r => r.status === 'Current' }, { id: 'historical', label: 'Historical Windows', fn: r => r.status === 'Historical' }] },
-    { key: 'vat_rates', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_vat_rates', label: 'VAT Rates', singularLabel: 'VAT Rate', dvn: 'bhf_vatrate', form: 'vatrate', cols: ['name', 'start_date', 'effective_to', 'vat_percent', 'vat_fx_rate', 'output_vat_account', 'input_vat_account', 'status', 'notes'], relTables: ['vat_invoices', 'coa', 'fx_rates'], views: [{ id: 'all', label: 'All Statutory VAT Windows' }, { id: 'current', label: 'Current Active Rate', fn: r => r.status === 'Current' }] },
-    { key: 'currencies', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_fx_rates', label: 'Currencies', singularLabel: 'Currency', dvn: 'bhf_currency', form: 'currency', cols: ['code', 'name', 'symbol', 'precision', 'is_base', 'active_rate', 'role', 'status'], relTables: ['fx_rates', 'conversions'], views: [{ id: 'all', label: 'All Currencies' }] }
+    { key: 'vat_rates', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_vat_rates', label: 'VAT Rates', singularLabel: 'VAT Rate', dvn: 'bhf_vatrate', form: 'vatrate', cols: ['name', 'start_date', 'effective_to', 'vat_percent', 'vat_fx_rate', 'status', 'notes'], relTables: ['vat_invoices', 'fx_rates'], views: [{ id: 'all', label: 'All Statutory VAT Windows' }, { id: 'current', label: 'Current Active Rate', fn: r => r.status === 'Current' }] },
+    { key: 'currencies', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_fx_rates', label: 'Currencies', singularLabel: 'Currency', dvn: 'bhf_currency', form: 'currency', cols: ['code', 'name', 'symbol', 'precision', 'is_base', 'active_rate', 'role', 'status'], relTables: ['fx_rates', 'conversions'], views: [{ id: 'all', label: 'All Currencies' }] },
+    { key: 'gl_accounts', group: '6 · Universal (All BUs)', universal: true, navView: 'gl_automation', label: 'GL Accounts & Automation', singularLabel: 'GL Account', dvn: 'bhf_glaccount', cols: ['code', 'name', 'pcg_class', 'automation_mode', 'source_module', 'debit_rule', 'credit_rule', 'debit', 'credit', 'balance'], relTables: ['expenses', 'expense_categories', 'vat_rates', 'fx_rates', 'conversions'], views: [{ id: 'all', label: 'All GL Accounts' }, { id: 'automated', label: 'Automated Accounts', fn: r => r.is_automated !== false }, { id: 'direct', label: 'Direct Formula Rules', fn: r => r.automation_mode === 'Direct Formula' }, { id: 'cat_map', label: 'Category Auto-Mapped', fn: r => r.automation_mode === 'Category Auto-Map' }] }
   ];
 
   // Lookup column target table map (renders clickable relational pills in 40-Table Hub)
@@ -1617,7 +1618,7 @@
     return `<span class="badge ${cls}">${esc(s)}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(cost_class|cost_bucket|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|status|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|status|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -1667,6 +1668,8 @@
         return { key: 'start_date', dir: 'desc' };
       case 'currencies':
         return { key: 'is_base', dir: 'desc' };
+      case 'gl_accounts':
+        return { key: 'code', dir: 'asc' };
       default: {
         const cols = (meta && meta.cols) || [];
         if (cols.includes('set_date')) return { key: 'set_date', dir: 'desc' };
@@ -8264,7 +8267,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
+                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
@@ -8277,7 +8280,7 @@
                     const isSignedUsd = !isBool && !nonNum && c === 'usd_delta';
                     const isSignedLbp = !isBool && !nonNum && c === 'lbp_delta';
                     const isLbp = !isBool && !nonNum && !isSignedLbp && /^lbp_|_lbp$/.test(c);
-                    const isMoney = !isBool && !nonNum && !isLbp && !isSignedLbp && /price|cost|amount|total|vat_amount|limit|salary|balance|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(c) && !/rate$/.test(c);
+                    const isMoney = !isBool && !nonNum && !isLbp && !isSignedLbp && /price|cost|amount|total|vat_amount|limit|salary|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(c) && !/rate$/.test(c);
                     const isNum = !isBool && !nonNum && !isMoney && !isLbp && !isSignedLbp && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
                     let cell = v == null || v === '' ? '—' : (isBool ? (v && v !== 0 ? 'Yes' : 'No') : String(v));
                     if (isSignedUsd && v != null && v !== '') cell = fmtSignedUSD(v, 2);
@@ -8296,8 +8299,8 @@
                       ? `<strong style="color:${Number(v) >= 0 ? 'var(--good)' : 'var(--crit)'}">${esc(cell)}</strong>`
                       : null;
                     const innerHtml = isLookup
-                      ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}" title="Open related ${esc(c.replace(/_/g, ' '))}: ${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-                      : (signedHtml || (c === 'company' ? shortCoHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : esc(cell)))));
+                      ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
+                      : (signedHtml || (c === 'company' ? shortCoHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell))))));
                     return `<td class="${isMoney || isNum || isLbp || isSignedLbp ? 'r' : ''}${/date|ticket|code|_no$|plate|version|_delta$|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
@@ -8313,7 +8316,7 @@
                     const isSU = !isBoolCol && col === 'usd_delta';
                     const isSL = !isBoolCol && col === 'lbp_delta';
                     const isL = !isBoolCol && !isSL && /^lbp_|_lbp$/.test(col);
-                    const isM = !isBoolCol && !isL && !isSL && /price|cost|amount|total|vat_amount|limit|salary|balance|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(col) && !/rate$/.test(col);
+                    const isM = !isBoolCol && !isL && !isSL && /price|cost|amount|total|vat_amount|limit|salary|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(col) && !/rate$/.test(col);
                     const isN = !isBoolCol && !isM && !isL && !isSL && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(col);
                     return { isM, isN, isL, isSU, isSL, num: isM || isN || isL || isSU || isSL };
                   };
@@ -8414,6 +8417,14 @@
     active_rate: 'Active Rate (per $1)',
     is_base: 'Base USD',
     precision: 'Decimals',
+    pcg_class: 'CoA Class',
+    automation_mode: 'Automation',
+    source_module: 'Driven By',
+    debit_rule: 'Hidden Debit Rule',
+    credit_rule: 'Hidden Credit Rule',
+    debit: 'Total Debit ($)',
+    credit: 'Total Credit ($)',
+    balance: 'Net Balance ($)',
     set_date: 'Set Date',
     tx_date: 'Tx Date'
   };
@@ -8423,6 +8434,8 @@
     if (tableKey === 'fx_rates' && c === 'rate') return 'Rate (per $1)';
     if (tableKey === 'currencies' && c === 'code') return 'ISO Code';
     if (tableKey === 'currencies' && c === 'name') return 'Currency Name';
+    if (tableKey === 'gl_accounts' && c === 'code') return 'GL Code';
+    if (tableKey === 'gl_accounts' && c === 'name') return 'GL Account';
     if (tableKey === 'sites') {
       if (c === 'raw_loads') return 'Source Raw Loads';
       if (c === 'sales_loads') return 'Delivery Loads';
@@ -8451,6 +8464,15 @@
       ? 'badge-brass'
       : (/Quarry|Site|Material/i.test(r) ? 'badge-info' : 'badge');
     return `<span class="badge ${cls}">${esc(r)}</span>`;
+  }
+
+  function formatAutomationModeHtml(modeTxt) {
+    const m = String(modeTxt || '').trim();
+    if (!m || m === '-') return '-';
+    const cls = /Direct Formula/i.test(m)
+      ? 'badge-info'
+      : (/Category Auto-Map/i.test(m) ? 'badge-brass' : 'badge');
+    return `<span class="badge ${cls}">${esc(m)}</span>`;
   }
 
   // ==================== DEDICATED UNIVERSAL REGISTRIES WORKSPACE RENDERER ====================
@@ -8533,7 +8555,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${meta.cols.map(c => th('ureg_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
+                ${meta.cols.map(c => th('ureg_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
@@ -8543,7 +8565,7 @@
                     const v = cellValue(r, c, meta.key, rel);
                     const nonNum = NON_NUMERIC_HUB_COLS.test(c);
                     const isBool = typeof v === 'boolean' || (/^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|iva$|overtime$)/.test(c) && (v === 0 || v === 1));
-                    const isMoney = !isBool && !nonNum && /price|cost|amount|total|vat_amount|limit|salary|balance|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate/.test(c) && !/rate$/.test(c);
+                    const isMoney = !isBool && !nonNum && /price|cost|amount|total|vat_amount|limit|salary|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate/.test(c) && !/rate$/.test(c);
                     const isNum = !isBool && !nonNum && !isMoney && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
                     let cell = v == null || v === '' ? '—' : (isBool ? (v && v !== 0 ? 'Yes' : 'No') : String(v));
                     if (isMoney && v != null && v !== '') cell = fmtUSD(v, 2);
@@ -8556,8 +8578,8 @@
                     const lkTarget = HUB_LOOKUP_TARGETS[c];
                     const isLookup = lkTarget && lkTarget !== meta.key && v != null && v !== '' && cell !== '—';
                     const innerHtml = isLookup
-                      ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}" title="Open related ${esc(c.replace(/_/g, ' '))}: ${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-                      : (c === 'company' ? shortCoHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : esc(cell))));
+                      ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
+                      : (c === 'company' ? shortCoHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell)))));
                     return `<td class="${isMoney || isNum ? 'r' : ''}${/date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
@@ -8570,7 +8592,7 @@
                   const isColNumeric = col => {
                     if (NON_NUMERIC_HUB_COLS.test(col)) return { isM: false, isN: false, num: false };
                     const isBoolCol = /^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|iva$|overtime$)/.test(col);
-                    const isM = !isBoolCol && /price|cost|amount|total|vat_amount|limit|salary|balance|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate/.test(col) && !/rate$/.test(col);
+                    const isM = !isBoolCol && /price|cost|amount|total|vat_amount|limit|salary|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate/.test(col) && !/rate$/.test(col);
                     const isN = !isBoolCol && !isM && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(col);
                     return { isM, isN, num: isM || isN };
                   };

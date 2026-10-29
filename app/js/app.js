@@ -323,7 +323,7 @@
     'salaries', 'attendance', 'employments', 'freelance_entries', 'logistics_allowances',
     'overtime_rates', 'external_movements', 'loans', 'loan_settlements',
     'conversions', 'jv_partnerships', 'jv_distributions',
-    'currencies', 'fx_rates', 'vat_rates'
+    'currencies', 'fx_rates', 'vat_rates', 'gl_accounts'
   ];
   const CR_TABLE = {
     sales_tickets: 'sales_tickets', raw_purchases: 'raw_purchases', receipts: 'customer_receipts',
@@ -342,7 +342,7 @@
     logistics_allowances: 'logistics_allowances', overtime_rates: 'overtime_rates',
     external_movements: 'external_movements', loans: 'loans', loan_settlements: 'loan_settlements',
     conversions: 'conversions', jv_partnerships: 'jv_partnerships', jv_distributions: 'jv_distributions',
-    currencies: 'currencies', fx_rates: 'fx_rates', vat_rates: 'vat_rates'
+    currencies: 'currencies', fx_rates: 'fx_rates', vat_rates: 'vat_rates', gl_accounts: 'gl_accounts'
   };
   const CR_LABEL = {
     sales_tickets: 'sales ticket', raw_purchases: 'raw receipt', receipts: 'customer receipt',
@@ -361,7 +361,7 @@
     logistics_allowances: 'site allowance', overtime_rates: 'overtime rate',
     external_movements: 'external movement', loans: 'partner loan', loan_settlements: 'loan settlement',
     conversions: 'currency conversion', jv_partnerships: 'JV partnership', jv_distributions: 'JV distribution',
-    currencies: 'currency', fx_rates: 'FX rate', vat_rates: 'VAT rate'
+    currencies: 'currency', fx_rates: 'FX rate', vat_rates: 'VAT rate', gl_accounts: 'GL account'
   };
   CR_KEYS.forEach(k => { if (!Array.isArray(STATE.customRecords[k])) STATE.customRecords[k] = []; });
   if (!Array.isArray(STATE.users) || !STATE.users.length) STATE.users = DEFAULT_USERS.map(u => ({ ...u }));
@@ -814,6 +814,152 @@
     if (!opts.quiet) invalidateGlobalRateCaches();
   }
 
+  const PCG_CLASS_LABELS = {
+    '1': 'Class 1 · Capital & Equity',
+    '2': 'Class 2 · Fixed Assets',
+    '3': 'Class 3 · Inventory & Stock',
+    '4': 'Class 4 · Third-Party & Tax',
+    '5': 'Class 5 · Cash & Treasury',
+    '6': 'Class 6 · Costs & Expenses',
+    '7': 'Class 7 · Revenue & Income'
+  };
+
+  const CANONICAL_GL_AUTOMATION_SPEC = [
+    { code: '121', name: 'Profits brought forward', cls: '1', automation_mode: 'Opening / Equity', is_automated: false, source_module: 'Opening Trial Balance', debit_rule: 'Prior-year retained deficit or equity adjustment', credit_rule: 'Cumulative prior-year retained earnings brought forward' },
+    { code: '181', name: 'Current accounts with related companies', cls: '1', automation_mode: 'Direct Formula', is_automated: true, source_module: 'External Movements & Inter-BU', debit_rule: 'Outflows and transfers paid on behalf of sister Business Units', credit_rule: 'Inflows and funding received from sister Business Units' },
+    { code: '2243', name: 'Industrial equipment', cls: '2', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Capital Expenditures)', debit_rule: 'Machinery, crusher, and heavy plant Capex vouchers (ex-VAT)', credit_rule: 'Equipment disposal or asset reclassification', mapped_categories: ['Capital Expenditures'] },
+    { code: '2262', name: 'Office and computer equipment', cls: '2', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Minor & IT Capex)', debit_rule: 'Office hardware, weighbridge IT, and minor equipment Capex', credit_rule: 'Asset retirement or reclassification', mapped_categories: ['Minor Equipment', 'Capital Expenditures'] },
+    { code: '401', name: 'Suppliers', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: '3-Leg AP & Supplier Settlements', debit_rule: 'Supplier settlement vouchers paid plus rebates received', credit_rule: 'Raw Material Leg 1, Third-Party Haulage Leg 2, and Credit Expenses Leg 3' },
+    { code: '4011', name: 'Trade suppliers - goods', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Quarry Purchases & Settlements', debit_rule: 'Trade supplier payments and purchase returns', credit_rule: 'Billed trade material purchases (TTC when IVA registered)' },
+    { code: '4111', name: 'Trade customers', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Sales Tickets, VAT Invoices & Receipts', debit_rule: 'Credit sales tickets and VAT tax invoices at full TTC', credit_rule: 'Customer receipt vouchers collected plus discounts and sales returns' },
+    { code: '421', name: 'Amounts due to staff', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Payroll, Freelance & Allowances', debit_rule: 'Salary and freelance settlement vouchers paid out', credit_rule: 'Earned freelance shifts, site allowances, and unpaid staff balances' },
+    { code: '4281', name: 'Loans and advances to staff', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Payroll Post-Cutoff Advances', debit_rule: 'Post-cutoff and future-month salary advances disbursed to staff', credit_rule: 'Applied against subsequent closed-month payroll earnings' },
+    { code: '4425', name: 'VAT on expenses (deductible)', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'VAT Rates & IVA Expense Vouchers', debit_rule: 'Deductible input VAT calculated automatically from active MoF VAT window on IVA expenses and VATRent commissions', credit_rule: 'Quarterly MoF VAT declaration offset or expense reversal' },
+    { code: '4426', name: 'VAT on purchases (deductible)', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'VAT Rates & IVA Quarry / AP Purchases', debit_rule: 'Deductible input VAT calculated automatically from active MoF VAT window on IVA supplier purchases and settlements', credit_rule: 'Quarterly MoF VAT declaration offset or purchase return' },
+    { code: '4427', name: 'VAT on sales (collected)', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'VAT Rates, Sales Tickets & VAT Invoices', debit_rule: 'VAT on sales returns or quarterly MoF VAT settlement', credit_rule: 'Output VAT collected automatically using active MoF VAT % on taxable sales tickets and VAT invoices' },
+    { code: '455', name: 'Other amounts due to partners', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Partner Loans & JV Distributions', debit_rule: 'Loan repayments and JV profit payouts disbursed to partners', credit_rule: 'Partner loan drawdowns, funding inflows, and 50/50 JV site shares' },
+    { code: '512', name: 'Banks', cls: '5', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Bank & Cheque Receipts / Settlements', debit_rule: 'Bank transfer and cheque customer receipts or treasury inflows', credit_rule: 'Bank transfer and cheque supplier settlements, salaries, and expenses' },
+    { code: '53', name: 'Cash', cls: '5', automation_mode: 'Direct Formula', is_automated: true, source_module: 'USD & LBP Cash Till (FX Rates)', debit_rule: 'Cash sales, cash AR receipts, and FX conversion cash inflows (LBP valued via active FX window)', credit_rule: 'Cash expenses, cash AP settlements, cash salaries, and FX conversion cash outflows' },
+    { code: '58', name: 'Internal transfers', cls: '5', automation_mode: 'Direct Formula', is_automated: true, source_module: 'FX Conversions (USD / LBP)', debit_rule: 'Outgoing currency drawer leg on USD / LBP till conversion', credit_rule: 'Incoming currency drawer leg on USD / LBP till conversion (nets to $0.00)' },
+    { code: '601', name: 'Purchase of goods for resale', cls: '6', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Raw Material Tickets (Leg 1)', debit_rule: 'Quarry material intake cost (Qty multiplied by agreed Site Purchase Rate)', credit_rule: 'Rejected-load returns or supplier purchase rebates' },
+    { code: '60186', name: 'Other purchase charges', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Other Purchase Costs)', debit_rule: 'Ancillary procurement charges and customs/weighing vouchers', credit_rule: 'Vendor credit notes or cost reclassifications', mapped_categories: ['Other Costs', 'Raw Material Settlements'] },
+    { code: '6111', name: 'Purchases of raw materials', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Production Inputs)', debit_rule: 'Direct raw material and batching additive expense vouchers', credit_rule: 'Supplier credit notes or stock returns', mapped_categories: ['Raw Material Settlements'] },
+    { code: '6112', name: 'Consumable materials and supplies', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Plant Consumables)', debit_rule: 'Crusher wear parts, screens, and plant consumable vouchers', credit_rule: 'Warehouse stock returns or supplier credits', mapped_categories: ['Consumables', 'Other Costs'] },
+    { code: '61121', name: 'Fuel', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Fuel & Bulk Diesel)', debit_rule: 'Bulk plant diesel deliveries and fleet fuel expense vouchers (ex-VAT)', credit_rule: 'Fuel vendor price adjustments or credits', mapped_categories: ['Fuel'] },
+    { code: '61123', name: 'Operating tools and supplies', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Tools)', debit_rule: 'Workshop hand tools, safety gear, and site operating supplies', credit_rule: 'Tool recovery or vendor credit notes', mapped_categories: ['Tools', 'Minor Equipment'] },
+    { code: '61125', name: 'Stationery and office supplies', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Office Supplies)', debit_rule: 'Ticket pads, printer rolls, and office supply vouchers', credit_rule: 'Expense reversals or refunds', mapped_categories: ['Office Supplies'] },
+    { code: '6122', name: 'Maintenance products and workshop consumables', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Spare Parts & Oils)', debit_rule: 'Spare parts, tyres, hydraulic oil, engine oil, and grease vouchers', credit_rule: 'Used/scrap part sale recoveries or warehouse adjustments', mapped_categories: ['Spare Parts', 'Oils'] },
+    { code: '621', name: 'Purchases from sub-contractors', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Sub-Contractors)', debit_rule: 'External sub-contracted site, drilling, or crushing works', credit_rule: 'Sub-contractor back-charges or credit notes', mapped_categories: ['Skilled Labor', 'Other Costs'] },
+    { code: '6222', name: 'Commissions and brokerage', cls: '6', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Sales Commission Rules & Rent Receipts', debit_rule: 'Per-unit plant-owner commission vouchers (Rent and ex-VAT portion of VATRent)', credit_rule: 'Commission reversals or volume adjustments' },
+    { code: '6241', name: 'Haulage on purchases (raw material transport)', cls: '6', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Raw Material Tickets (Leg 2)', debit_rule: 'Third-party truck haulage cost on raw material intakes (Qty multiplied by agreed Site Transport Rate)', credit_rule: 'Haulage rate adjustments or rejected-load reversals' },
+    { code: '62611', name: 'Transport of goods', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Transportation)', debit_rule: 'External freight, lowbed machinery transport, and delivery vouchers', credit_rule: 'Freight rebates or reversals', mapped_categories: ['Transportation'] },
+    { code: '62615', name: 'Postage and telecommunications', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Utilities & Telecom)', debit_rule: 'Plant internet, mobile lines, electricity, and utility vouchers', credit_rule: 'Utility deposit refunds or adjustments', mapped_categories: ['Utilities'] },
+    { code: '6262', name: 'Repairs and maintenance', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories & Equipment Repairs', debit_rule: 'External workshop labor and equipment repair vouchers', credit_rule: 'Warranty recoveries or vendor credits', mapped_categories: ['Repairs and Maintenance'] },
+    { code: '62651', name: 'Casual labourers', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Skilled & Casual Labor)', debit_rule: 'Daily casual site labor and technician vouchers', credit_rule: 'Labor voucher adjustments', mapped_categories: ['Skilled Labor', 'Tips'] },
+    { code: '6268', name: 'Insurance premiums', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Insurance)', debit_rule: 'Fleet motor, plant all-risk, and workmen insurance policies', credit_rule: 'Policy cancellation rebates or claim refunds', mapped_categories: ['Insurance'] },
+    { code: '6269', name: 'Other external services', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (External Services)', debit_rule: 'Rental, legal, audit, consulting, and general service vouchers', credit_rule: 'Service fee credits or reversals', mapped_categories: ['Rent', 'Tips', 'Other Costs'] },
+    { code: '6311', name: 'Salaries', cls: '6', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Payroll & Salary Vouchers', debit_rule: 'Monthly staff salary vouchers in USD plus LBP converted via active FX window', credit_rule: 'Payroll deduction recoveries or voided salary vouchers' },
+    { code: '635', name: 'Social security charges', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Social Security)', debit_rule: 'Statutory NSSF employer contributions and staff social charges', credit_rule: 'NSSF settlement adjustments', mapped_categories: ['Social Security'] },
+    { code: '644', name: 'Registration fees and stamps', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Licences & Stamps)', debit_rule: 'Fiscal stamps, truck mechanic registration, and quarry permits', credit_rule: 'Fee refunds or reclassifications', mapped_categories: ['Licences and Fees'] },
+    { code: '645', name: 'Other taxes and fees', cls: '6', automation_mode: 'Category Auto-Map', is_automated: true, source_module: 'Expense Categories (Municipal & Taxes)', debit_rule: 'Municipal fees, road tolls, and non-VAT statutory charges', credit_rule: 'Tax assessment credits', mapped_categories: ['Licences and Fees'] },
+    { code: '665', name: "Partners' share of results (joint operations)", cls: '6', automation_mode: 'Direct Formula', is_automated: true, source_module: 'JV 50/50 Partnerships & Distributions', debit_rule: 'Partner profit share allocated on 50/50 JV site operations', credit_rule: 'Partner share of JV site net loss or reconciliation adjustment' },
+    { code: '666', name: 'Foreign exchange losses', cls: '6', automation_mode: 'Direct Formula', is_automated: true, source_module: 'FX Conversions & Multi-Currency Till', debit_rule: 'Unfavorable spread between actual conversion rate and active global LBP / USD window', credit_rule: 'FX revaluation reversal' },
+    { code: '701', name: 'Sales of goods (resale)', cls: '7', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Sales Tickets (Material Leg)', debit_rule: 'Rejected-load returns and material credit notes (ex-VAT)', credit_rule: 'Weighbridge material sales revenue (Qty multiplied by Unit Price, ex-VAT)' },
+    { code: '7085', name: 'Transport and ancillary charges invoiced', cls: '7', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Sales Tickets (Delivery Transport Leg)', debit_rule: 'Delivery transport reversals on returned loads', credit_rule: 'Invoiced customer delivery transport revenue on Delivered sales tickets (ex-VAT)' },
+    { code: '709', name: 'Discounts allowed on goods', cls: '7', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Customer Receipts & Sales Discounts', debit_rule: 'Commercial discounts and rebates granted on customer receipts and settlements', credit_rule: 'Discount reversal' },
+    { code: '713', name: 'Services revenue', cls: '7', automation_mode: 'Direct Formula', is_automated: true, source_module: 'External & Fleet Service Revenue', debit_rule: 'Service credit notes', credit_rule: 'Machinery hire, crushing service, and haulage service income' },
+    { code: '7612', name: 'Rental income', cls: '7', automation_mode: 'Direct Formula', is_automated: true, source_module: 'External & Equipment Rental', debit_rule: 'Rental credit notes', credit_rule: 'Plant, site, or equipment rental revenue' },
+    { code: '766', name: 'Foreign exchange gains', cls: '7', automation_mode: 'Direct Formula', is_automated: true, source_module: 'FX Conversions & Multi-Currency Till', debit_rule: 'FX gain reversal', credit_rule: 'Favorable spread between actual conversion rate and active global LBP / USD window' },
+    { code: '7733', name: 'Discounts received', cls: '7', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Supplier Settlements (AP Rebates)', debit_rule: 'Supplier rebate reversal', credit_rule: 'Discounts and settlement rebates earned when paying supplier AP balances' }
+  ];
+
+  let _lastGlSyncModelRef = null;
+  let _lastGlSyncCustomRev = -1;
+  function syncGlAccountsRegistry(modelOverride) {
+    if (!SEED || !SEED.records) return [];
+    const m = modelOverride || (typeof getModel === 'function' ? getModel() : null) || ((SEED.models && SEED.models['manufacturing-group']) || {});
+    const glCustList = (STATE.customRecords && STATE.customRecords.gl_accounts) || [];
+    const curRev = String((SEED && SEED._customRev) || 0) + ':' + glCustList.length + ':' + glCustList.map(x => (x && x.modified_at) || '').join(',');
+    if (_lastGlSyncModelRef === m && _lastGlSyncCustomRev === curRev && Array.isArray(SEED.records.gl_accounts) && SEED.records.gl_accounts.length >= 46) {
+      return SEED.records.gl_accounts;
+    }
+    _lastGlSyncModelRef = m;
+    _lastGlSyncCustomRev = curRev;
+
+    const tbByCode = new Map();
+    ((m && m.gl_tb) || []).forEach(r => {
+      if (r && r.Code != null) tbByCode.set(String(r.Code).trim(), r);
+    });
+    const legCountByCode = new Map();
+    ((m && m.soa_stream) || []).forEach(s => {
+      if (!s || s.code == null) return;
+      const c = String(s.code).trim();
+      legCountByCode.set(c, (legCountByCode.get(c) || 0) + 1);
+    });
+    const customNotesByCode = new Map();
+    glCustList.forEach(cr => {
+      if (cr && !cr.voided && cr.code != null) customNotesByCode.set(String(cr.code).trim(), cr);
+    });
+
+    const specCodes = new Set();
+    const out = CANONICAL_GL_AUTOMATION_SPEC.map(sp => {
+      const code = String(sp.code).trim();
+      specCodes.add(code);
+      const tb = tbByCode.get(code);
+      const cr = customNotesByCode.get(code);
+      const dr = round2(Number(tb ? tb.debit : 0));
+      const cred = round2(Number(tb ? tb.credit : 0));
+      const bal = round2(tb && tb.balance != null ? Number(tb.balance) : (dr - cred));
+      return {
+        id: 'gl-' + code,
+        code,
+        name: (cr && cr.name) || sp.name,
+        pcg_class: PCG_CLASS_LABELS[String(sp.cls)] || `Class ${sp.cls}`,
+        automation_mode: sp.automation_mode,
+        is_automated: sp.is_automated !== false,
+        source_module: sp.source_module,
+        debit_rule: (cr && cr.debit_rule) || sp.debit_rule,
+        credit_rule: (cr && cr.credit_rule) || sp.credit_rule,
+        mapped_categories: sp.mapped_categories || [],
+        soa_legs: legCountByCode.get(code) || 0,
+        debit: dr,
+        credit: cred,
+        balance: bal,
+        notes: (cr && cr.notes) || ''
+      };
+    });
+
+    // Include any dynamically generated GL account from gl_tb not yet in the static catalog
+    tbByCode.forEach((tb, code) => {
+      if (specCodes.has(code)) return;
+      const clsRaw = String(tb.Class || code.slice(0, 1) || '6').trim();
+      const dr = round2(Number(tb.debit || 0));
+      const cred = round2(Number(tb.credit || 0));
+      const bal = round2(tb.balance != null ? Number(tb.balance) : (dr - cred));
+      out.push({
+        id: 'gl-' + code,
+        code,
+        name: String(tb.Account || `GL ${code}`).replace(/[\u2013\u2014]/g, '-'),
+        pcg_class: PCG_CLASS_LABELS[clsRaw] || `Class ${clsRaw}`,
+        automation_mode: 'Direct Formula',
+        is_automated: true,
+        source_module: 'Automated Double-Entry Engine',
+        debit_rule: 'Posted automatically from operational vouchers',
+        credit_rule: 'Posted automatically from operational vouchers',
+        mapped_categories: [],
+        soa_legs: legCountByCode.get(code) || 0,
+        debit: dr,
+        credit: cred,
+        balance: bal,
+        notes: ''
+      });
+    });
+
+    out.sort((a, b) => String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
+    SEED.records.gl_accounts = out;
+    return out;
+  }
+
   function ensureGlobalFinanceTablesSeeded() {
     if (!SEED.records || typeof SEED.records !== 'object') return;
     if (SEED.records._globalFinSeeded) return;
@@ -844,6 +990,7 @@
       }
     }
     enrichGlobalRateTables({ quiet: true });
+    syncGlAccountsRegistry();
   }
 
   function getFxRateRow(dateStr, currency = 'LBP') {
@@ -5980,7 +6127,8 @@
       group: 'books',
       tabs: [
         { view: 'ledger', match: ['ledger', 'gl'], label: 'General Ledger & SOA', icon: 'ledger', badgeFn: (u, k) => getLedgerExceptionBadge(u, k) },
-        { view: 'coa_classes', label: 'Chart of Accounts & Classes', icon: 'coa_classes' }
+        { view: 'coa_classes', label: 'Chart of Accounts & Classes', icon: 'coa_classes' },
+        { view: 'gl_automation', label: 'Automated GL Accounts', icon: 'gl_automation' }
       ]
     },
     {
@@ -6062,7 +6210,7 @@
 
   function canViewView(view, u) {
     u = u || activeUser();
-    if (view === 'coa_classes') return canViewView('ledger', u);
+    if (view === 'coa_classes' || view === 'gl_automation') return canViewView('ledger', u);
     if (view === 'entities') return canAccessPbiPage('p02_companies', u);
     if (view === 'sales_vat') return canAccessTable('vat_invoices', u) || canAccessTable('credit_terms', u) || canAccessPbiPage('p13_vat', u);
     if (view === 'sales_analytics') return canAccessPbiPage('p18_tickets', u) || canAccessPbiPage('p04_sales', u) || canAccessPbiPage('p05_pricing', u) || canAccessPbiPage('p06_ar', u);
@@ -6166,7 +6314,7 @@
     const pbi = u.pbi_access || 'partial';
     const finTables = [
       'salaries', 'employments', 'freelance_entries', 'logistics_allowances', 'overtime_rates',
-      'external_movements', 'loans', 'loan_settlements', 'conversions', 'jv_partnerships', 'jv_distributions'
+      'external_movements', 'loans', 'loan_settlements', 'conversions', 'jv_partnerships', 'jv_distributions', 'gl_accounts'
     ];
     if (/^Custom/i.test(role) || pbi === 'custom') {
       const p = getEffectivePermissions(u);
@@ -24868,7 +25016,7 @@
         <div class="panel-card" id="glPanel">
           <div class="panel-head">
             <div class="panel-title"><span>LEBANESE COA TRIAL BALANCE SUMMARY (${fmtNum(tb.length)} ACTIVE GL ACCOUNTS)</span></div>
-            <span class="panel-meta" style="display:flex;gap:6px;align-items:center"><button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-nav-jump="statements" data-stmt-jump="05">Print Official Trial Balance RDL (#05) →</button>${exportBtn('glPanel', 'Trial_Balance')}</span>
+            <span class="panel-meta" style="display:flex;gap:6px;align-items:center"><button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-nav-jump="gl_automation">${ic('gl_automation')} Automated GL Rules</button><button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-nav-jump="statements" data-stmt-jump="05">Print Official Trial Balance (#05)</button>${exportBtn('glPanel', 'Trial_Balance')}</span>
           </div>
           ${renderColFilterBar('gl')}
           <div class="table-wrap">
@@ -24880,7 +25028,7 @@
               </thead>
               <tbody>
                 ${tb.map(r => `
-                  <tr>
+                  <tr class="rrow" data-rkey="gl_accounts" data-rid="gl-${esc(r.Code)}">
                     <td class="mono"><strong>${esc(r.Code)}</strong></td>
                     <td><strong>${esc(r.Account)}</strong></td>
                     <td><span class="badge badge-info">${esc(r.Class)}</span></td>
@@ -25005,8 +25153,9 @@
             </div>
           </div>
           <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="gl_automation">${ic('gl_automation')} Automated GL Rules</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="ledger">${ic('ledger')} SOA Journal Stream</button>
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="05">${ic('printer')} Trial Balance RDL (#05)</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="05">${ic('printer')} Trial Balance (#05)</button>
             ${exportBtn('coaClassesPanel', 'Chart_of_Accounts_Classes')}
           </div>
         </div>
@@ -25020,7 +25169,7 @@
             </thead>
             <tbody>
               ${filtered.map(r => `
-                <tr>
+                <tr class="rrow" data-rkey="gl_accounts" data-rid="gl-${esc(r.Code)}">
                   <td class="mono"><strong>${esc(r.Code)}</strong></td>
                   <td><strong>${esc(r.Account)}</strong></td>
                   <td><span class="badge badge-info">${esc(r.Class)}</span></td>
@@ -25069,13 +25218,150 @@
                 </tr>
               `).join('') || emptyRow(5, 'No class summary rows')}
             </tbody>
+              <tfoot>
+                <tr>
+                  <td><b>ALL LEBANESE COA CLASSES</b></td>
+                  <td class="r"><b>${fmtNum(tbAll.length)}</b></td>
+                  <td class="r"><b>${fmtUSD(totDr, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(totCr, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(diff, 2)}</b></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+  function renderGlAutomation() {
+    const m = getModel();
+    const k = getKPI();
+    const q = STATE.search.trim().toLowerCase();
+    const allRows = syncGlAccountsRegistry(m);
+    const autoRows = allRows.filter(r => r.is_automated !== false);
+    const directRows = allRows.filter(r => r.automation_mode === 'Direct Formula');
+    const catMapRows = allRows.filter(r => r.automation_mode === 'Category Auto-Map');
+
+    const activeChip = (STATE.chipFilter && ['all', 'direct', 'cat_map', 'all_coa'].includes(STATE.chipFilter)) ? STATE.chipFilter : 'all';
+    const chip = (key, label) => `<button type="button" class="filter-chip ${activeChip === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+
+    const glCols = ['code', 'name', 'pcg_class', 'automation_mode', 'source_module', 'debit_rule', 'credit_rule', 'debit', 'credit', 'balance'];
+    const basePool = allRows.filter(r => {
+      if (activeChip === 'all' && r.is_automated === false) return false;
+      if (activeChip === 'direct' && r.automation_mode !== 'Direct Formula') return false;
+      if (activeChip === 'cat_map' && r.automation_mode !== 'Category Auto-Map') return false;
+      if (q && !`${r.code} ${r.name} ${r.pcg_class} ${r.automation_mode} ${r.source_module} ${r.debit_rule} ${r.credit_rule}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    const filtered = sortRows(basePool, 'glauto', 'code', 'asc');
+
+    let totDr = 0, totCr = 0;
+    allRows.forEach(r => { totDr += Number(r.debit || 0); totCr += Number(r.credit || 0); });
+    const tbDiff = round2(totDr - totCr);
+    const tied = Math.abs(tbDiff) < 0.005;
+
+    let fDr = 0, fCr = 0, fBal = 0;
+    filtered.forEach(r => {
+      fDr += Number(r.debit || 0);
+      fCr += Number(r.credit || 0);
+      fBal += Number(r.balance || 0);
+    });
+
+    const modeBadge = mode => {
+      const cls = /Direct Formula/i.test(mode) ? 'badge-info' : (/Category Auto-Map/i.test(mode) ? 'badge-brass' : 'badge');
+      return `<span class="badge ${cls}">${esc(mode)}</span>`;
+    };
+
+    return `
+      <div class="cockpit-banner has-insights">
+        <div class="cockpit-title-block sr-only">
+          <div class="cockpit-eyebrow">HIDDEN DOUBLE-ENTRY POSTING ENGINE · LEBANESE PCG CLASSES 1 TO 7</div>
+          <div class="cockpit-title">Automated GL Accounts</div>
+        </div>
+        <div class="cockpit-pills insight-grid">
+          ${insightCard({
+            label: 'Automated GL Accounts',
+            badge: 'Hidden Engine',
+            badgeCls: 'brass',
+            val: `${fmtNum(autoRows.length)} <small>/ ${fmtNum(allRows.length)}</small>`,
+            valCls: 'brass',
+            sub: `Zero manual GL entry on operational forms or registries`,
+            tone: 'brass'
+          })}
+          ${insightCard({
+            label: 'Direct Formula Rules',
+            badge: 'Ticket & Rate Driven',
+            val: `${fmtNum(directRows.length)} <small>Accounts</small>`,
+            sub: `Sales, VAT windows, 3-Leg AP, Cash Till, FX &amp; Payroll`,
+            tone: 'steel'
+          })}
+          ${insightCard({
+            label: 'Category Auto-Mapped',
+            badge: 'Taxonomy Driven',
+            val: `${fmtNum(catMapRows.length)} <small>Accounts</small>`,
+            sub: `Expense Categories, Fuel, Spare Parts &amp; Capex`,
+            tone: 'steel'
+          })}
+          ${insightCard({
+            label: 'Trial Balance Parity',
+            badge: tied ? 'Balanced' : 'Variance',
+            badgeCls: tied ? 'emerald' : 'amber',
+            val: tied ? '$0.00 <small>TIED</small>' : fmtUSD(tbDiff, 2),
+            valCls: tied ? 'emerald' : 'amber',
+            pct: 100,
+            sub: `Model TB check <b>${fmtUSD(k.tb_check || 0, 2)}</b>`,
+            tone: tied ? 'emerald' : 'amber'
+          })}
+        </div>
+      </div>
+
+      <div class="panel-card" id="glAutoPanel">
+        <div class="table-toolbar">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search GL code, account name, source module, or calculation rule...')}
+            <div class="chip-bar">
+              ${chip('all', `Automated (${autoRows.length})`)}
+              ${chip('direct', `Direct Formula (${directRows.length})`)}
+              ${chip('cat_map', `Category Auto-Map (${catMapRows.length})`)}
+              ${chip('all_coa', `All GL Accounts (${allRows.length})`)}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="ledger">${ic('ledger')} SOA Journal Stream</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="coa_classes">${ic('coa_classes')} PCG Classes</button>
+            ${exportBtn('glAutoPanel', 'Automated_GL_Accounts')}
+          </div>
+        </div>
+        ${renderColFilterBar('glauto', glCols)}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('glauto', 'GL Code', 'code')}${th('glauto', 'GL Account', 'name')}${th('glauto', 'CoA Class', 'pcg_class')}${th('glauto', 'Automation', 'automation_mode')}${th('glauto', 'Driven By', 'source_module')}${th('glauto', 'Hidden Debit Calculation', 'debit_rule')}${th('glauto', 'Hidden Credit Calculation', 'credit_rule')}${th('glauto', 'Total Debit ($)', 'debit', 'r')}${th('glauto', 'Total Credit ($)', 'credit', 'r')}${th('glauto', 'Net Balance ($)', 'balance', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${filtered.map(r => `
+                <tr class="rrow" data-rkey="gl_accounts" data-rid="${esc(r.id)}">
+                  <td class="mono"><strong>${esc(r.code)}</strong></td>
+                  <td><strong>${esc(r.name)}</strong></td>
+                  <td><span class="badge">${esc(r.pcg_class)}</span></td>
+                  <td>${modeBadge(r.automation_mode)}</td>
+                  <td>${esc(r.source_module)}</td>
+                  <td>${esc(r.debit_rule)}</td>
+                  <td>${esc(r.credit_rule)}</td>
+                  <td class="r">${fmtUSD(r.debit, 2)}</td>
+                  <td class="r">${fmtUSD(r.credit, 2)}</td>
+                  <td class="r"><strong>${fmtUSD(r.balance, 2)}</strong></td>
+                </tr>
+              `).join('') || emptyRow(10, 'No GL accounts match the active filter.')}
+            </tbody>
             <tfoot>
               <tr>
-                <td><b>ALL LEBANESE COA CLASSES</b></td>
-                <td class="r"><b>${fmtNum(tbAll.length)}</b></td>
-                <td class="r"><b>${fmtUSD(totDr, 2)}</b></td>
-                <td class="r"><b>${fmtUSD(totCr, 2)}</b></td>
-                <td class="r"><b>${fmtUSD(diff, 2)}</b></td>
+                <td colspan="7"><b>TOTAL AUTOMATION LEDGER (${fmtNum(filtered.length)} GL ACCOUNTS)</b></td>
+                <td class="r"><b>${fmtUSD(fDr, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(fCr, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(round2(fBal), 2)}</b></td>
               </tr>
             </tfoot>
           </table>
@@ -32068,7 +32354,6 @@
         const isSub = lvl === 'subcategory';
         setFieldVisible('wrap_expcat_name', !isSub);
         setFieldVisible('wrap_expcat_class', !isSub);
-        setFieldVisible('wrap_expcat_gl', !isSub);
         setFieldVisible('wrap_expcat_parent', isSub);
         setFieldVisible('wrap_expcat_sub', isSub);
         const mTitle = $('modalTitle');
@@ -35506,7 +35791,7 @@
           const dup = findUniversalDuplicate('expense_categories', catNm);
           if (dup) addErr('f_category', `Expense Category "${universalMainValue('expense_categories', dup) || catNm}" already exists in the Universal Expense Category Registry. Duplicate names are not allowed.`);
         }
-        record = { ...base, name: catNm, category: catNm, cost_class: val('f_cost_class') || 'General & Admin', gl_code: val('f_gl_code') };
+        record = { ...base, name: catNm, category: catNm, cost_class: val('f_cost_class') || 'Operating Expense' };
       }
     } else if (f === 'region') {
       crKey = 'regions';
@@ -37083,6 +37368,7 @@
     jv_partnerships: 'JV 50/50 Site Partnership', jv_distributions: 'JV Profit Distribution',
     equipment_defects: 'Equipment Warning / Defect', part_movements: 'Part Change & Custody',
     currencies: 'Currency Master', fx_rates: 'Currency Exchange Rate (Global)', vat_rates: 'VAT Rate Schedule (Global)',
+    gl_accounts: 'GL Account & Automation Rule',
     expense_items: 'Expense Invoice Item', warehouse_movements: 'Warehouse Stock Movement',
     equipment_repairs: 'Equipment Repair', repair_items: 'Repair Item Used',
     equipment_oil_logs: 'Oil & Service Log'
@@ -37103,7 +37389,7 @@
     external_movements: 'bhf_mfgexternal', loans: 'bhf_mfgloan', loan_settlements: 'bhf_mfgloansettlement',
     conversions: 'bhf_mfgconversion', jv_partnerships: 'bhf_mfgjvpartnership', jv_distributions: 'bhf_mfgjvdistribution',
     equipment_defects: 'bhf_equipmentdefect', part_movements: 'bhf_partmovement',
-    currencies: 'bhf_currency', fx_rates: 'bhf_fxrate', vat_rates: 'bhf_vatrate',
+    currencies: 'bhf_currency', fx_rates: 'bhf_fxrate', vat_rates: 'bhf_vatrate', gl_accounts: 'bhf_glaccount',
     expense_items: 'bhf_expenseitem', warehouse_movements: 'bhf_warehousemovement',
     equipment_repairs: 'bhf_equipmentrepair', repair_items: 'bhf_repairitem',
     equipment_oil_logs: 'bhf_equipmentoillog'
@@ -37132,7 +37418,7 @@
       if (key === 'lbp_delta') return fmtSignedLBP(v);
       if (/^lbp_|_lbp$/.test(key)) return fmtLBP(v);
       if (key === 'usd_delta') return fmtSignedUSD(v, 2);
-      if (/price|cost|amount|total|vat|discount|tip|limit|salary|balance|adj|principal|value|change|rate_usd|daily_usd|paid|spent|sales_ttc|raw_cost|proceeds/.test(key) && !/rate$|pct|percent|factor|ton_factor|exchange|count|loads|days|hours|meter_reading|cost_class|cost_bucket/.test(key)) return fmtUSD(v, 2);
+      if (/price|cost|amount|total|vat|discount|tip|limit|salary|balance|^debit$|^credit$|adj|principal|value|change|rate_usd|daily_usd|paid|spent|sales_ttc|raw_cost|proceeds/.test(key) && !/rate$|pct|percent|factor|ton_factor|exchange|count|loads|days|hours|meter_reading|cost_class|cost_bucket/.test(key)) return fmtUSD(v, 2);
       return fmtNum(v, Number.isInteger(v) ? 0 : 2);
     }
     if (key === 'effective_to') return /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? fmtDateDMY(v) : String(v);
@@ -37143,6 +37429,7 @@
   function resolveInspectorRecord(key, idOrName) {
     const q = String(idOrName == null ? '' : idOrName).trim();
     if (!q) return null;
+    if (key === 'gl_accounts') syncGlAccountsRegistry();
     const nq = norm(q);
     const list = (SEED.records[key] || []).concat(STATE.customRecords[key] || []);
     let hit = list.find(r => r && String(r.id) === q) ||
@@ -37312,7 +37599,13 @@
       const rulesCnt = activeRulesCountFor('product', row.name);
       return {
         tone: 'info',
-        text: `Product & Grade Master: ${row.name} (${row.type || 'Material'} · Default UoM ${row.uom || 'm³'} · Tonnage Factor ${row.ton_factor || 1.5} t/m³)  |  List Price Benchmark: ${lp != null ? fmtUSD(lp, 2) : '—'}  |  Active Price Agreements: ${rulesCnt}  |  CoA Revenue Account: ${row.revenue_account || '701001'}`
+        text: `Product & Grade Master: ${row.name} (${row.type || 'Material'} · Default UoM ${row.uom || 'm³'} · Tonnage Factor ${row.ton_factor || 1.5} t/m³)  |  List Price Benchmark: ${lp != null ? fmtUSD(lp, 2) : '-'}  |  Active Price Agreements: ${rulesCnt}`
+      };
+    }
+    if (key === 'gl_accounts') {
+      return {
+        tone: 'info',
+        text: `GL ${row.code} · ${row.name} (${row.pcg_class || 'Lebanese PCG'})  |  Automation: ${row.automation_mode || 'Direct Formula'} (${row.source_module || 'Double-Entry Engine'})  |  Debit Rule: ${row.debit_rule || '-'}  |  Credit Rule: ${row.credit_rule || '-'}`
       };
     }
     if (key === 'conversions') {
@@ -37643,6 +37936,24 @@
       };
     }
 
+    if (key === 'gl_accounts') {
+      const dr = round2(Number(row.debit || 0));
+      const cr = round2(Number(row.credit || 0));
+      const bal = round2(Number(row.balance || 0));
+      const legs = Number(row.soa_legs || 0);
+      return {
+        bu: 'ALL BUs',
+        title: `GL ${row.code} · ${row.name}`,
+        pill: fmtUSD(bal, 2),
+        cards: [
+          { lbl: 'AUTOMATION ENGINE', tag: (row.automation_mode || 'AUTOMATED').toUpperCase(), tone: row.is_automated !== false ? 'good' : 'info', val: `GL ${row.code}`, sub1: `${row.pcg_class || 'Lebanese PCG'}`, sub2: `Driven By: ${row.source_module || 'Double-Entry Engine'}`, pct: 95 },
+          { lbl: 'SCOPED GROSS DEBITS', tag: 'DEBIT LEG', tone: 'info', val: fmtUSD(dr, 2), sub1: `${row.debit_rule || 'Automated debit leg'}`, sub2: `Posted SOA Legs: ${fmtNum(legs)}`, pct: Math.min(100, Math.max(20, (dr + cr) > 0 ? Math.round((dr / (dr + cr)) * 100) : 50)) },
+          { lbl: 'SCOPED GROSS CREDITS', tag: 'CREDIT LEG', tone: 'info', val: fmtUSD(cr, 2), sub1: `${row.credit_rule || 'Automated credit leg'}`, sub2: `Zero manual GL input on forms`, pct: Math.min(100, Math.max(20, (dr + cr) > 0 ? Math.round((cr / (dr + cr)) * 100) : 50)) },
+          { lbl: 'NET ACCOUNT BALANCE', tag: Math.abs(bal) < 0.005 ? 'CLEARED ($0)' : (bal > 0 ? 'NET DEBIT' : 'NET CREDIT'), tone: Math.abs(bal) < 0.005 ? 'good' : 'info', val: fmtUSD(bal, 2), sub1: `Debit minus Credit in active scope`, sub2: `Tied 1-to-1 to Trial Balance`, pct: 100 }
+        ]
+      };
+    }
+
     // Generic rich 4-card cockpit for all other 30 tables
     const subgrids = buildInspectorSubgrids(key, row);
     const totalRel = subgrids.reduce((a, sg) => a + sg.rows.length, 0);
@@ -37929,7 +38240,7 @@
       const name = row.name || row.Product;
       const matchField = key === 'product_types' ? 'type' : (key === 'uoms' ? 'uom' : 'product');
       if (key !== 'products') {
-        addGrid('sg_p_prods', `Products in ${name}`, 'Products', 'Products', 'products', (rec.products || []).filter(p => norm(p[matchField]) === norm(name)), ['name', 'type', 'uom', 'ton_factor', 'ticket_product', 'fuel_item', 'revenue_account'], 'ton_factor');
+        addGrid('sg_p_prods', `Products in ${name}`, 'Products', 'Products', 'products', (rec.products || []).filter(p => norm(p[matchField]) === norm(name)), ['name', 'type', 'uom', 'ton_factor', 'ticket_product', 'fuel_item'], 'ton_factor');
       }
       addGrid('sg_p_rules', `Price Agreements for ${name}`, 'Price Rules', 'Price Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.product) === norm(name) && !isCommRule(r)), ['company', 'rule_type', 'customer', 'supplier', 'site', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
       addGrid('sg_p_sales', `Sales Tickets (${name})`, 'Sales Tickets', 'Sales Tickets', 'sales_tickets', (rec.sales_tickets || []).filter(t => norm(t.product) === norm(name) || norm(t.uom) === norm(name)), ['date', 'ticket_no', 'company', 'customer', 'site', 'truck', 'qty', 'unit_price', 'total_ttc'], 'total_ttc');
@@ -38093,8 +38404,29 @@
       }
       if (key === 'vat_rates') {
         const vatRows = (rec.vat_rates || []).filter(r => r && !r.voided);
-        addGrid('sg_vat_hist', 'VAT Rate Schedule (All Effective Windows)', 'VAT Schedule', 'VAT Rates', 'vat_rates', vatRows, ['name', 'start_date', 'effective_to', 'vat_percent', 'vat_fx_rate', 'status', 'output_vat_account', 'input_vat_account'], null);
+        addGrid('sg_vat_hist', 'VAT Rate Schedule (All Effective Windows)', 'VAT Schedule', 'VAT Rates', 'vat_rates', vatRows, ['name', 'start_date', 'effective_to', 'vat_percent', 'vat_fx_rate', 'status', 'notes'], null);
         addGrid('sg_vat_invs', 'Recent VAT Tax Invoices', 'VAT Invoices', 'VAT Invoices', 'vat_invoices', (rec.vat_invoices || []).slice(0, 25), ['date', 'company', 'invoice_no', 'customer', 'net_amount', 'vat_amount', 'total_ttc'], 'total_ttc');
+      }
+    }
+    else if (key === 'gl_accounts') {
+      const m = getModel();
+      const glCode = String(row.code || '').trim();
+      const soaRows = ((m && m.soa_stream) || []).filter(s => s && String(s.code || '').trim() === glCode);
+      subgrids.push({
+        id: 'sg_gl_soa',
+        title: `Automated SOA Journal Stream (GL ${glCode} · ${row.name || ''})`,
+        shortLabel: 'SOA Journal Legs',
+        relBadge: 'Double-Entry Ledger',
+        targetKey: 'ledger',
+        noRowInspect: true,
+        rows: soaRows,
+        cols: ['date', 'company', 'doc', 'detail', 'desc', 'debit', 'credit'],
+        sumCol: 'debit'
+      });
+      if (Array.isArray(row.mapped_categories) && row.mapped_categories.length) {
+        const catSet = new Set(row.mapped_categories.map(c => norm(c)));
+        const matchExps = (rec.expenses || []).filter(x => x && !x.voided && catSet.has(norm(x.category)));
+        addGrid('sg_gl_exp', `Auto-Mapped Expense Vouchers (GL ${glCode})`, 'Expense Vouchers', 'Category Auto-Map', 'expenses', matchExps, ['date', 'name', 'company', 'category', 'subcategory', 'supplier', 'method', 'amount'], 'amount');
       }
     }
     else {
@@ -38385,14 +38717,10 @@
         { key: 'ticket_product', label: 'Weighbridge Ticket Grade', type: 'bool', sec: 2 },
         { key: 'fuel_item', label: 'Fuel / Lubricant Item', type: 'bool', sec: 2 },
         { key: 'input_product', label: 'Raw Material Input', type: 'bool', sec: 2 },
-        { key: 'revenue_account', label: 'CoA Revenue Account', type: 'select', options: [['', '— Default Revenue Account —']].concat(revAcctOpts), sec: 3 },
-        { key: 'purchase_account', label: 'CoA Purchase Account', type: 'select', options: [['', '— Default Purchase Account —']].concat(purAcctOpts), sec: 3 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       product_types: [
         { key: 'name', label: 'Product Family Name *', type: 'text', sec: 1 },
-        { key: 'revenue_account', label: 'Default CoA Revenue Account', type: 'select', options: [['', '— Select Revenue Account —']].concat(revAcctOpts), sec: 3 },
-        { key: 'purchase_account', label: 'Default CoA Purchase Account', type: 'select', options: [['', '— Select Purchase Account —']].concat(purAcctOpts), sec: 3 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       uoms: [
@@ -38720,9 +39048,13 @@
         { key: 'start_date', label: 'Effective From Date *', type: 'date', sec: 1 },
         { key: 'vat_percent', label: 'VAT Rate (%) *', type: 'number', step: '0.1', min: '0', max: '100', sec: 3 },
         { key: 'vat_fx_rate', label: 'MoF Official VAT FX Rate (LL / $1)', type: 'number', step: 'any', min: '1', sec: 3 },
-        { key: 'output_vat_account', label: 'Output VAT GL Account', type: 'select', options: [['4427 State - VAT collected', '4427 · State - VAT collected'], ['4425 State - VAT payable', '4425 · State - VAT payable']], sec: 2 },
-        { key: 'input_vat_account', label: 'Input VAT GL Account', type: 'select', options: [['4426 State - VAT deductible', '4426 · State - VAT deductible'], ['44262 VAT deductible on purchases & expenses', '44262 · VAT deductible on purchases & expenses'], ['44261 VAT deductible on fixed assets', '44261 · VAT deductible on fixed assets']], sec: 2 },
         { key: 'notes', label: 'Regulatory / MoF Circular Notes', type: 'text', sec: 3, span: true }
+      ],
+      gl_accounts: [
+        { key: 'name', label: 'GL Account Title *', type: 'text', sec: 1 },
+        { key: 'debit_rule', label: 'Automated Debit Rule', type: 'text', sec: 2, span: true },
+        { key: 'credit_rule', label: 'Automated Credit Rule', type: 'text', sec: 2, span: true },
+        { key: 'notes', label: 'Accounting Governance Notes', type: 'text', sec: 3, span: true }
       ]
     };
 
@@ -38745,6 +39077,12 @@
     });
 
     const hidden = new Set(['id', 'origin_ticket_id', 'zone_geojson', 'geo_zone', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status', '_staged_expense_items', '_staged_repair_items', 'historical_consumed', 'move_type', 'expense_id', 'repair_id']);
+    if (key !== 'gl_accounts') {
+      ['output_vat_account', 'input_vat_account', 'revenue_account', 'purchase_account', 'gl_code', 'gl_account', 'receivable_account', 'payable_account', 'salary_account', 'asset_account', 'depreciation_account'].forEach(gk => hidden.add(gk));
+    } else {
+      hidden.add('mapped_categories');
+      hidden.add('is_automated');
+    }
     if (key === 'currencies' || key === 'fx_rates' || key === 'vat_rates') {
       hidden.add('company');
       hidden.add('date');
@@ -38854,9 +39192,9 @@
     });
     const allKeys = Array.from(allKeysSet);
 
-    const idFields = new Set(['name', 'official_name', 'ticket_no', 'invoice_no', 'set_date', 'date', 'rep_date', 'month', 'time', 'payroll_month', 'company', 'sale_type', 'rule_type', 'type', 'status', 'severity', 'customer', 'supplier', 'staff', 'driver', 'reported_by', 'approved_by', 'prior_defect_notified', 'defect_ref', 'linked_part_log', 'partner', 'counterparty', 'loan', 'role', 'mof_no', 'financial_no', 'vat_registered', 'iva', 'phone', 'contact', 'email', 'address', 'location', 'direction', 'is_company_driver']);
-    const opsFields = new Set(['product', 'item', 'input_product', 'fuel_type', 'site', 'region', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'equipment', 'equipment_category', 'subsystem', 'action_type', 'part_name', 'part_serial', 'condition', 'removed_disposition', 'storage_location', 'vendor_or_buyer', 'meter_reading', 'resolved_date', 'description', 'plate_no', 'ownership', 'capacity', 'truck_size', 'default_driver', 'day_operator', 'night_operator', 'model', 'working_days', 'start_date', 'end_date', 'latitude', 'longitude', 'is_jv', 'is_truck_owner', 'ticket_product', 'fuel_item', 'customer_declared_qty', 'external_invoice', 'trucks_count', 'trucks', 'drivers', 'category', 'subcategory', 'category1', 'category2', 'cost_class', 'from_currency', 'to_currency']);
-    const finFields = new Set(['qty', 'external_qty', 'uom', 'unit', 'rate_per', 'ton_factor', 'litres', 'odometer', 'hours', 'regular_hours', 'overtime_hours', 'late_hours', 'extra_hours', 'days_count', 'unit_price', 'price', 'list_price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'delivered_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'new_part_cost', 'repair_cost', 'sale_proceeds', 'qty1', 'adj1', 'trans_adj1', 'qty2', 'adj2', 'trans_adj2', 'vat', 'vat_amount', 'net_amount', 'total', 'total_ttc', 'amount', 'usd_amount', 'lbp_amount', 'usd_delta', 'lbp_delta', 'discount', 'tip', 'salary_usd', 'daily_rate', 'daily_usd', 'rate_usd', 'credit_days', 'credit_limit', 'principal', 'interest_rate', 'exchange_rate', 'percentage', 'basis', 'difference', 'ar_balance', 'ap_balance', 'loads', 'raw_loads', 'sales_ttc', 'raw_cost', 'receipts', 'settlements_paid', 'method', 'vat_invoice', 'record_ticket', 'raw_ticket', 'expense_record', 'invoice', 'reference', 'revenue_account', 'purchase_account', 'notes']);
+    const idFields = new Set(['code', 'pcg_class', 'automation_mode', 'name', 'official_name', 'ticket_no', 'invoice_no', 'set_date', 'date', 'rep_date', 'month', 'time', 'payroll_month', 'company', 'sale_type', 'rule_type', 'type', 'status', 'severity', 'customer', 'supplier', 'staff', 'driver', 'reported_by', 'approved_by', 'prior_defect_notified', 'defect_ref', 'linked_part_log', 'partner', 'counterparty', 'loan', 'role', 'mof_no', 'financial_no', 'vat_registered', 'iva', 'phone', 'contact', 'email', 'address', 'location', 'direction', 'is_company_driver']);
+    const opsFields = new Set(['source_module', 'debit_rule', 'credit_rule', 'product', 'item', 'input_product', 'fuel_type', 'site', 'region', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'equipment', 'equipment_category', 'subsystem', 'action_type', 'part_name', 'part_serial', 'condition', 'removed_disposition', 'storage_location', 'vendor_or_buyer', 'meter_reading', 'resolved_date', 'description', 'plate_no', 'ownership', 'capacity', 'truck_size', 'default_driver', 'day_operator', 'night_operator', 'model', 'working_days', 'start_date', 'end_date', 'latitude', 'longitude', 'is_jv', 'is_truck_owner', 'ticket_product', 'fuel_item', 'customer_declared_qty', 'external_invoice', 'trucks_count', 'trucks', 'drivers', 'category', 'subcategory', 'category1', 'category2', 'cost_class', 'from_currency', 'to_currency']);
+    const finFields = new Set(['soa_legs', 'debit', 'credit', 'qty', 'external_qty', 'uom', 'unit', 'rate_per', 'ton_factor', 'litres', 'odometer', 'hours', 'regular_hours', 'overtime_hours', 'late_hours', 'extra_hours', 'days_count', 'unit_price', 'price', 'list_price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'delivered_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'new_part_cost', 'repair_cost', 'sale_proceeds', 'qty1', 'adj1', 'trans_adj1', 'qty2', 'adj2', 'trans_adj2', 'vat', 'vat_amount', 'net_amount', 'total', 'total_ttc', 'amount', 'usd_amount', 'lbp_amount', 'usd_delta', 'lbp_delta', 'discount', 'tip', 'salary_usd', 'daily_rate', 'daily_usd', 'rate_usd', 'credit_days', 'credit_limit', 'principal', 'interest_rate', 'exchange_rate', 'percentage', 'basis', 'difference', 'ar_balance', 'ap_balance', 'balance', 'loads', 'raw_loads', 'sales_ttc', 'raw_cost', 'receipts', 'settlements_paid', 'method', 'vat_invoice', 'record_ticket', 'raw_ticket', 'expense_record', 'invoice', 'reference', 'revenue_account', 'purchase_account', 'notes']);
 
     const s1 = [], s2 = [], s3 = [];
     allKeys.forEach(k => {
@@ -38893,7 +39231,12 @@
       const isEmpty = formatted === '—';
       const lkTarget = (k === 'origin_ticket_no') ? (row.origin_ticket_kind === 'raw' ? 'raw_purchases' : 'sales_tickets') : ((k === 'type' && key !== 'products') ? null : (k === 'linked_part_log' && /^REP-/i.test(String(v || '')) ? 'equipment_repairs' : INSPECT_LOOKUP_FIELD_TARGET[k]));
       const canLink = lkTarget && lkTarget !== key && v != null && v !== '' && !isEmpty;
-      const lblText = fDef ? fDef.label.replace(/\s*\*$/, '') : k.replace(/_/g, ' ');
+      const roLabels = key === 'gl_accounts' ? {
+        code: 'GL Code', name: 'GL Account', pcg_class: 'CoA Class', automation_mode: 'Automation Mode',
+        source_module: 'Driven By', debit_rule: 'Hidden Debit Calculation', credit_rule: 'Hidden Credit Calculation',
+        soa_legs: 'Posted SOA Legs', debit: 'Total Debit ($)', credit: 'Total Credit ($)', balance: 'Net Balance ($)'
+      } : null;
+      const lblText = fDef ? fDef.label.replace(/\s*\*$/, '') : ((roLabels && roLabels[k]) || k.replace(/_/g, ' '));
       const editableAttr = (canEdit && fDef && valOverride === undefined) ? ` data-edit-field="${esc(k)}" title="Click to modify ${esc(lblText)}"` : '';
       const cellCls = `inspector-cell${editableAttr ? ' is-editable-cell' : ''}${isEmpty && editableAttr ? ' is-empty-cell' : ''}`;
       let valHtml;
@@ -38928,7 +39271,7 @@
         }
       });
     }
-    const isMoneySum = sg.sumCol && /price|cost|amount|total|vat|limit|salary|daily_usd|principal|proceeds/.test(sg.sumCol);
+    const isMoneySum = sg.sumCol && /price|cost|amount|total|vat|limit|salary|daily_usd|principal|proceeds|^debit$|^credit$|balance/.test(sg.sumCol);
 
     return `
       <div class="pa-subgrid-box" id="subgrid_${esc(sg.id)}" data-subgrid-box="${esc(sg.id)}">
@@ -38948,12 +39291,12 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${sg.cols.map(c => `<th class="${!/^(cost_class|cost_bucket|working_days)$/i.test(c) && /price|cost|amount|total|vat|limit|salary|qty|litres|capacity|hours|days|percentage|_count|proceeds$/.test(c) ? 'r' : ''}">${esc(c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</th>`).join('')}
+                  ${sg.cols.map(c => `<th class="${!/^(cost_class|cost_bucket|working_days)$/i.test(c) && /price|cost|amount|total|vat|limit|salary|qty|litres|capacity|hours|days|percentage|_count|proceeds|^debit$|^credit$|balance$/.test(c) ? 'r' : ''}">${esc(c.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))}</th>`).join('')}
                 </tr>
               </thead>
               <tbody data-sg-tbody="${esc(sg.id)}">
                 ${shown.map(r => `
-                  <tr class="rrow" data-rkey="${esc(sg.targetKey)}" data-rid="${esc(r.id || r.name || r.ticket_no)}">
+                  <tr${sg.noRowInspect ? '' : ` class="rrow" data-rkey="${esc(sg.targetKey)}" data-rid="${esc(r.id || r.name || r.ticket_no)}"`}>
                     ${sg.cols.map((c, ci) => {
                       let v = r[c] !== undefined ? r[c] : resolveColVal(r, c, 'tbl_' + sg.targetKey);
                       if (sg.targetKey === 'price_rules') {
@@ -38966,7 +39309,7 @@
                         }
                       }
                       const nonNum = /^(cost_class|cost_bucket|working_days)$/i.test(c);
-                      const isMoney = !nonNum && /price|cost|amount|total|vat|limit|salary|daily_usd|rate_usd|principal|discount|proceeds/.test(c) && !/rate$/.test(c);
+                      const isMoney = !nonNum && /price|cost|amount|total|vat|limit|salary|daily_usd|rate_usd|principal|discount|proceeds|^debit$|^credit$|balance/.test(c) && !/rate$/.test(c);
                       const isNum = !nonNum && !isMoney && /qty|litres|capacity|hours|days|odometer|percentage|_count$/.test(c);
                       let txt = v == null || v === '' ? '—' : String(v);
                       if (isMoney && v != null && v !== '') txt = fmtUSD(v, 2);
@@ -39490,6 +39833,11 @@
     bodyEl.querySelectorAll('[data-insp-open-hub], [data-sg-open-hub]').forEach(btn => btn.addEventListener('click', () => {
       const targetKey = btn.getAttribute('data-insp-open-hub') || btn.getAttribute('data-sg-open-hub');
       closeRecordInspector();
+      if (targetKey === 'ledger') {
+        if (key === 'gl_accounts' && row && row.code) STATE.search = String(row.code);
+        setView('ledger');
+        return;
+      }
       STATE.activeTableKey = targetKey;
       setView('tables');
     }));
@@ -43279,6 +43627,7 @@
     ledger: 'General Ledger & SOA',
     gl: 'General Ledger & SOA',
     coa_classes: 'Chart of Accounts & Classes',
+    gl_automation: 'Automated GL Accounts',
     ledger_treasury: 'Loans & Settlements',
     reg_equipment: 'Equipment & Trucks',
     reg_drivers: 'Drivers & Operators',
@@ -43337,6 +43686,7 @@
     ledger: 'General Ledger & SOA',
     gl: 'General Ledger & SOA',
     coa_classes: 'Chart of Accounts & Classes',
+    gl_automation: 'Automated GL Accounts',
     ledger_treasury: 'Loans & Settlements',
     reg_equipment: 'Equipment & Trucks',
     reg_drivers: 'Drivers & Operators',
@@ -48599,7 +48949,7 @@
       case 'daily_ops': wsHtml = window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isDieselTankRefillIntake, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview(); break;
       case 'entities': wsHtml = renderEntitiesComparison(); break;
       case 'pbi': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview(); break;
-      case 'tables': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview(); break;
+      case 'tables': syncGlAccountsRegistry(); wsHtml = window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview(); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
       case 'alert_rules': wsHtml = renderAlertRules(); break;
       case 'kiosks': wsHtml = renderKiosks(); break;
@@ -48639,6 +48989,7 @@
       case 'ledger':
       case 'gl': wsHtml = renderGL(); break;
       case 'coa_classes': wsHtml = renderCoaClasses(); break;
+      case 'gl_automation': wsHtml = renderGlAutomation(); break;
       case 'ledger_treasury': wsHtml = renderLedgerTreasury(); break;
       case 'reg_equipment':
       case 'reg_drivers':

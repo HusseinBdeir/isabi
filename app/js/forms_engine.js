@@ -880,11 +880,10 @@
           ], defLvl), { id: 'wrap_expcat_level' })}
           ${fld('Expense Category Name *', inp('f_category', 'text', '', 'placeholder="e.g. Plant Maintenance, Crusher Consumables..."'), { id: 'wrap_expcat_name', hidden: defaultSubcat })}
           ${fld('Accounting Cost Class *', sel('f_cost_class', [
-            ['Operating Expense', 'Operating Expense (Class 62–67)'],
-            ['Production Cost', 'Production Cost (Class 60/61)'],
-            ['Capital Expenditure', 'Capital Expenditure (Class 22)']
+            ['Operating Expense', 'Operating Expense'],
+            ['Production Cost', 'Production Cost'],
+            ['Capital Expenditure', 'Capital Expenditure']
           ], 'Operating Expense'), { id: 'wrap_expcat_class', hidden: defaultSubcat })}
-          ${fld('GL Account Code', inp('f_gl_code', 'text', '', 'placeholder="Optional CoA code, e.g. 6121 or 6250"'), { id: 'wrap_expcat_gl', hidden: defaultSubcat })}
           ${fld('Parent Expense Category *', inp('f_parent_cat', 'text', '', 'list="dl_exp_cats" placeholder="Select parent expense category..."') + dl('dl_exp_cats', expCatNames), { id: 'wrap_expcat_parent', hidden: !defaultSubcat })}
           ${fld('Expense Subcategory Name *', inp('f_subcategory', 'text', '', 'placeholder="e.g. Hydraulic Hoses, Jaw Plates, Generator Filters..."'), { id: 'wrap_expcat_sub', hidden: !defaultSubcat })}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional accounting classification or usage guidance..."'), { span: true })}
@@ -974,10 +973,6 @@
     }
 
     if (fType === 'vatrate') {
-      const glOpts = uniqSorted(
-        ['4427 State - VAT collected', '4426 State - VAT deductible']
-          .concat((rec.coa || []).filter(a => a && /^442/.test(String(a.code || a.name || ''))).map(a => a.code && a.name ? `${a.code} ${a.name}` : (a.name || a.code)))
-      );
       return `
         <div class="form-grid-3">
           ${secHdr('1. Statutory VAT Rate & Ministry of Finance LBP Rate (Universal Registry · All BUs)')}
@@ -985,9 +980,7 @@
           ${fld('Statutory VAT Rate (%) *', inp('f_vat_pct', 'number', String(getActiveVatPct(today)), 'step="0.1" min="0" max="100" placeholder="e.g. 11.0"'), { id: 'wrap_vat_pct', hintId: 'hint_vat_pct', hint: '' })}
           ${fld('Official MoF LBP VAT Rate (LL / $) *', inp('f_fxrate', 'number', String(getActiveFxRate(today, 'LBP')), 'step="10" min="1" placeholder="e.g. 89500"'), { id: 'wrap_vat_fxrate', hintId: 'hint_vat_fxrate', hint: 'Official Ministry of Finance LBP/$ exchange rate for VAT declarations.' })}
           <div id="vatRateContextStrip" class="att-contract-strip" hidden></div>
-          ${fld('Output VAT GL Account *', inp('f_output_vat_gl', 'text', '4427 State - VAT collected', 'list="dl_vat_gl"') + dl('dl_vat_gl', glOpts))}
-          ${fld('Input VAT GL Account *', inp('f_input_vat_gl', 'text', '4426 State - VAT deductible', 'list="dl_vat_gl"'))}
-          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional statutory law or MoF circular reference..."'))}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional statutory law or MoF circular reference..."'), { span: true })}
         </div>
         <div class="live-calc" id="vatRateLiveCalc">
           <div><small>Statutory VAT %</small><b id="calc_vatr_pct">11.0%</b></div>
