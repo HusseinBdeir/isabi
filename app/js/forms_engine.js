@@ -924,8 +924,8 @@
       return `
         <div class="form-grid-3">
           ${secHdr('1. Geographic Region & Map Zone (Universal Registry · All BUs)')}
-          ${fld('Region *', inp('f_region', 'text', '', 'placeholder="e.g. Metn, Keserwan, Chouf, Bekaa Central..."'))}
-          ${fld('Region Code', inp('f_code', 'text', '', 'placeholder="e.g. MTN, KSR, BKA"'))}
+          ${fld('Search Map Region', inp('f_map_region_search', 'text', '', 'placeholder="Search Beirut, Saida, Tripoli, Metn, Zahle..." autocomplete="off"'), { id: 'wrap_f_map_region_search' })}
+          ${fld('Region *', inp('f_region', 'text', '', 'placeholder="Auto-filled from search or type name..." autocomplete="off"'), { id: 'wrap_f_region_name' })}
           ${fld('Governorate', sel('f_corridor', [
             ['Mount Lebanon', 'Mount Lebanon'],
             ['Beirut', 'Beirut'],
@@ -933,20 +933,41 @@
             ['Nabatieh', 'Nabatieh'],
             ['Bekaa', 'Bekaa & Baalbek-Hermel'],
             ['North', 'North & Akkar']
-          ], 'Mount Lebanon'))}
+          ], 'Mount Lebanon'), { id: 'wrap_f_corridor' })}
           ${fld('Map Zone Shape', sel('f_zone_type', [
+            ['boundary', 'Map Region Search (Boundary)'],
             ['circle', 'Circle Radius on Map'],
             ['polygon', 'Custom Polygon Boundary']
-          ], 'circle'))}
-          ${fld('Circle Radius (km)', inp('f_radius_km', 'number', '1.5', 'step="0.1" min="0.2" max="50"'))}
-          ${fld('Reference Haulage Distance (km)', inp('f_distance_km', 'number', '', 'step="0.5" min="0" placeholder="Auto-estimated from WTC Hub"'))}
+          ], 'boundary'), { id: 'wrap_f_zone_type' })}
+          ${fld('Circle Radius (km)', inp('f_radius_km', 'number', '1.5', 'step="0.1" min="0.2" max="50"'), { id: 'wrap_f_radius_km', hidden: true })}
+          ${fld('Reference Haulage Distance (km)', inp('f_distance_km', 'number', '', 'step="0.5" min="0" placeholder="Auto-estimated from WTC Hub"'), { id: 'wrap_f_distance_km' })}
+          <input type="hidden" id="f_auto_code" value="">
           <input type="hidden" id="f_center_lat" value="">
           <input type="hidden" id="f_center_lng" value="">
           <input type="hidden" id="f_zone_geojson" value="">
-          <div class="geo-modal-map-wrap">
-            <div class="geo-modal-map-bar">
-              <span id="modalRegionZoneHint">Click anywhere on the map to place the Region Circle center</span>
-              <button type="button" class="geo-mini-btn" id="modalRegionClearPtsBtn">Clear Zone</button>
+          <div class="geo-modal-map-wrap" id="modalRegionMapWrap">
+            <div class="geo-modal-map-bar" id="modalRegionMapBar">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
+                <span id="modalRegionZoneHint">Type a city or district above (e.g. Beirut, Saida, Metn) or pick a quick region:</span>
+                <span class="geo-live-inside-pill" id="modalRegionLiveInsidePill" hidden>0 Sites inside</span>
+              </div>
+              <div class="geo-poly-toolbar" id="modalRegionToolbar">
+                <div class="geo-quick-region-strip" id="modalRegionQuickStrip">
+                  <button type="button" class="geo-quick-reg-chip" data-pick-map-region="Beirut">Beirut</button>
+                  <button type="button" class="geo-quick-reg-chip" data-pick-map-region="Saida">Saida</button>
+                  <button type="button" class="geo-quick-reg-chip" data-pick-map-region="Metn">Metn</button>
+                  <button type="button" class="geo-quick-reg-chip" data-pick-map-region="Keserwan">Keserwan</button>
+                  <button type="button" class="geo-quick-reg-chip" data-pick-map-region="Chouf">Chouf</button>
+                  <button type="button" class="geo-quick-reg-chip" data-pick-map-region="Tripoli">Tripoli</button>
+                  <button type="button" class="geo-quick-reg-chip" data-pick-map-region="Zahle">Zahle</button>
+                  <button type="button" class="geo-quick-reg-chip" data-pick-map-region="Tyre">Tyre</button>
+                </div>
+                <input type="range" id="modalCircleRadiusSlider" class="geo-radius-slider" min="0.3" max="25" step="0.1" value="1.5" aria-label="Circle Radius Slider" hidden>
+                <button type="button" class="geo-mini-btn" id="modalRegionEditCornersBtn" hidden>Adjust Corners</button>
+                <button type="button" class="geo-mini-btn" id="modalPolyUndoBtn" hidden>Undo Corner</button>
+                <button type="button" class="geo-mini-btn primary" id="modalPolyFinishBtn" hidden>Finish Shape</button>
+                <button type="button" class="geo-mini-btn" id="modalRegionClearPtsBtn">Clear Zone</button>
+              </div>
             </div>
             <div class="geo-modal-map-canvas" id="modalRegionMapCanvas"></div>
           </div>

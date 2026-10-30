@@ -36375,20 +36375,35 @@
         const dup = findUniversalDuplicate('regions', regNm);
         if (dup) addErr('f_region', `Region "${universalMainValue('regions', dup) || regNm}" already exists in the Universal Region Registry. Duplicate names are not allowed.`);
       }
-      const zType = val('f_zone_type') || 'circle';
+      const zType = val('f_zone_type') || 'boundary';
       const zRad = val('f_radius_km') !== '' ? num('f_radius_km') : 1.5;
-      const zClat = val('f_center_lat') !== '' ? num('f_center_lat') : null;
-      const zClng = val('f_center_lng') !== '' ? num('f_center_lng') : null;
+      let zClat = val('f_center_lat') !== '' ? num('f_center_lat') : null;
+      let zClng = val('f_center_lng') !== '' ? num('f_center_lng') : null;
       let zGeo = null;
-      if (zType === 'polygon' && val('f_zone_geojson')) {
+      if ((zType === 'polygon' || zType === 'boundary') && val('f_zone_geojson')) {
         try { zGeo = JSON.parse(val('f_zone_geojson')); } catch (_) { zGeo = null; }
+      }
+      let autoCorr = val('f_corridor') || 'Mount Lebanon';
+      let autoCode = val('f_auto_code') || '';
+      if (!zGeo && zClat == null && regNm && window.MFG_GEO && typeof window.MFG_GEO.findAtlasRegionByName === 'function') {
+        const hit = window.MFG_GEO.findAtlasRegionByName(regNm);
+        if (hit) {
+          if (hit.geojson && (zType === 'boundary' || zType === 'polygon')) zGeo = hit.geojson;
+          if (hit.lat != null) zClat = hit.lat;
+          if (hit.lng != null) zClng = hit.lng;
+          if (hit.corridor && !val('f_auto_code')) autoCorr = hit.corridor;
+          if (hit.code && !autoCode) autoCode = hit.code;
+        }
+      }
+      if (!autoCode && regNm) {
+        autoCode = regNm.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 8);
       }
       record = {
         ...base,
         name: regNm,
         region: regNm,
-        code: val('f_code'),
-        corridor: val('f_corridor') || 'Mount Lebanon',
+        code: autoCode,
+        corridor: autoCorr,
         zone_type: zType,
         radius_km: zType === 'circle' ? zRad : null,
         center_lat: zClat,
