@@ -4639,7 +4639,7 @@ html.sw-resuming body.locked .app-shell { pointer-events: auto; user-select: aut
   font-size: 20px;
   font-weight: 800;
   color: var(--ink);
-  margin: 2px 0 0;
+  margin: 0;
 }
 .pbi-page-strip {
   display: flex;

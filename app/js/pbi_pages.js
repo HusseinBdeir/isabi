@@ -4393,19 +4393,23 @@
         product: 'pbiSlicerProduct', customer: 'pbiSlicerCustomer', supplier: 'pbiSlicerSupplier',
         site: 'pbiSlicerSite', saleType: 'pbiSlicerSaleType', method: 'pbiSlicerMethod'
       };
-      const grainCat = ctx.getDateGrainCatalog ? ctx.getDateGrainCatalog() : { all: [] };
-      const activeGrainOpts = grainCat[STATE.dateGrain] || grainCat.all || [];
-      const curFrom = activeRange ? activeRange.from : minDate;
-      const curTo = activeRange ? activeRange.to : maxDate;
-      const isDateFiltered = STATE.period !== 'all' || STATE.dateGrain !== 'all' || Boolean(STATE.dateFrom || STATE.dateTo);
+      const pluralSlicerLabel = lbl => {
+        const s = String(lbl || '').trim();
+        if (!s) return 'Items';
+        if (s.includes('/') || /status|equipment|staff|workforce|cash|credit/i.test(s)) {
+          return /status$/i.test(s) ? `${s}es` : s;
+        }
+        if (/(?:s|x|z|ch|sh)$/i.test(s)) return `${s}es`;
+        if (/[^aeiou]y$/i.test(s)) return `${s.slice(0, -1)}ies`;
+        return `${s}s`;
+      };
 
       headerHtml = `
       <div class="pbi-studio-hdr">
         <div class="pbi-studio-top">
           <div>
-            <div class="cockpit-eyebrow">ANALYTICS &amp; INSIGHTS STUDIO · ${pagePool.length} ANALYTICAL PAGES · ${esc(COMPANY_LABELS[STATE.company] || STATE.company)}</div>
             <h2 class="pbi-studio-title">Analytics &amp; Insights</h2>
-            <div class="cockpit-sub" style="color:var(--muted);margin-top:2px"><b>Page ${esc(activePage.num)} · ${esc(activePage.label)}</b> — ${esc(activePage.title)}</div>
+            <div class="cockpit-sub" style="color:var(--muted);margin-top:2px"><b>Page ${esc(activePage.num)} · ${esc(activePage.label)}</b> · ${esc(activePage.title)}</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${activeSlicerCount ? `<span class="badge badge-warn">${activeSlicerCount} Active Slicer${activeSlicerCount > 1 ? 's' : ''}</span>` : '<span class="badge badge-ok">All Slicers Open</span>'}
@@ -4424,51 +4428,8 @@
           `).join('')}
         </div>
 
-        <!-- 8 Domain Pages Embedded directly inside their respective Sidebar Modules -->
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 10px;margin-bottom:8px;background:rgba(184,136,59,0.06);border:1px dashed var(--border-strong);border-radius:8px;font-size:11px">
-          <span style="font-weight:700;color:var(--brass);text-transform:uppercase;letter-spacing:.04em;margin-right:4px">Embedded in Sidebar Modules:</span>
-          ${Object.values(MOVED_PBI_PAGES).filter(mp => !ctx.canAccessPbiPage || ctx.canAccessPbiPage(mp.id)).map(mp => `
-            <button type="button" class="filter-chip" style="padding:2px 8px;font-size:10.5px" data-pbi-jump="${esc(mp.id)}">${esc(mp.short)} <span style="opacity:.7">· ${esc(mp.targetLabel)}</span></button>
-          `).join('')}
-        </div>
-
-        <!-- Page-Specific Slicer Strip (adapts dynamically to each of the 20 pages) -->
+        <!-- Page-Specific Slicer Strip (adapts dynamically to each of the 12 pages; date/period/basis lives in top bar) -->
         <div class="pbi-slicer-wrap">
-          <!-- Power BI / Power Apps Date Grain (All | Year | Month | Week | Day) + Period (between) Range Bar -->
-          <div class="pbi-date-slicer-row">
-            <div class="pbi-date-left">
-              <span class="pbi-date-lbl">Period Grain</span>
-              <div class="pbi-grain-group" role="group" aria-label="Analytics Date Grain">
-                ${[
-                  ['all', 'All'],
-                  ['year', 'Year'],
-                  ['month', 'Month'],
-                  ['week', 'Week'],
-                  ['day', 'Day']
-                ].map(([gKey, gLbl]) => `
-                  <button type="button" class="pbi-grain-btn ${STATE.dateGrain === gKey ? 'active' : ''}" data-pbi-grain="${gKey}">${gLbl}</button>
-                `).join('')}
-              </div>
-              <select id="pbiPeriodSelect" class="pbi-period-select" aria-label="Analytics Period Value" hidden aria-hidden="true">
-                ${STATE.period === 'custom' ? `<option value="custom" selected>Range: ${esc(curFrom)} → ${esc(curTo)}</option>` : ''}
-                ${activeGrainOpts.map(o => `<option value="${esc(o.value)}" ${STATE.period === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
-              </select>
-            </div>
-            <div class="pbi-date-right">
-              <span class="pbi-date-lbl">Period (Between)</span>
-              <div class="date-seg-slot pbi-seg-slot" data-date-slot="from">
-                <input type="date" id="pbiDateFrom" class="pbi-date-input date-native-proxy" min="2024-01-01" max="2030-12-31" value="${esc(curFrom)}" aria-label="Analytics From Date" tabindex="-1">
-                ${ctx.renderDateSegPillHtml ? ctx.renderDateSegPillHtml('from', curFrom, 'pbi') : ''}
-              </div>
-              <span style="color:var(--muted);font-weight:700">–</span>
-              <div class="date-seg-slot pbi-seg-slot" data-date-slot="to">
-                <input type="date" id="pbiDateTo" class="pbi-date-input date-native-proxy" min="2024-01-01" max="2030-12-31" value="${esc(curTo)}" aria-label="Analytics To Date" tabindex="-1">
-                ${ctx.renderDateSegPillHtml ? ctx.renderDateSegPillHtml('to', curTo, 'pbi') : ''}
-              </div>
-              <button type="button" id="pbiDateResetBtn" class="btn" style="padding:3px 8px;font-size:10.5px" ${isDateFiltered ? '' : 'hidden'}>✕ All-Time</button>
-            </div>
-          </div>
-
           <div class="pbi-slicer-meta">
             <span>Page ${esc(activePage.num)} Slicers · <b>${esc(activePage.label)}</b> (${pageSlicerDefs.length} page filters + cross-search)</span>
             <span>Period: <b>${esc(k.label || 'All-Time')}</b> · Basis: <b>${STATE.basis === 'rep' ? 'Reporting Date' : 'Transaction Date'}</b></span>
@@ -4481,7 +4442,7 @@
                 <div class="pbi-slicer-item">
                   <label>${esc(def.label)}</label>
                   <select ${legId} data-pbi-slicer="${esc(def.key)}">
-                    <option value="">All ${esc(def.label)}s</option>
+                    <option value="">All ${esc(pluralSlicerLabel(def.label))}</option>
                     ${(def.opts || []).map(o => {
                       const val = typeof o === 'object' ? o.v : o;
                       const lbl = typeof o === 'object' ? o.l : o;
