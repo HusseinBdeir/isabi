@@ -1885,3 +1885,43 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Frozen auto-detected Governorate field on Region modal & Map Studio */
+.form-field.is-geo-frozen-field input[readonly] {
+  background: var(--surface-2, #F3F5F9) !important;
+  border-style: dashed !important;
+  border-color: var(--line-strong, #CBD5E1) !important;
+  cursor: not-allowed !important;
+  user-select: none;
+  box-shadow: none !important;
+}
+.form-field.is-geo-frozen-field input[readonly]:placeholder-shown {
+  color: var(--muted, #64748B) !important;
+  font-weight: 500 !important;
+}
+.form-field.is-geo-frozen-field.has-gov-val input[readonly],
+.form-field.is-geo-frozen-field input[readonly]:not(:placeholder-shown) {
+  color: var(--ink, #0F172A) !important;
+  font-weight: 700 !important;
+  background: rgba(37, 99, 235, 0.05) !important;
+  border-color: rgba(37, 99, 235, 0.34) !important;
+}
+:root[data-theme="dark"] .form-field.is-geo-frozen-field.has-gov-val input[readonly],
+:root[data-theme="dark"] .form-field.is-geo-frozen-field input[readonly]:not(:placeholder-shown) {
+  color: #F8FAFC !important;
+  background: rgba(59, 130, 246, 0.12) !important;
+  border-color: rgba(96, 165, 250, 0.38) !important;
+}
+.geo-studio-gov-readout {
+  width: 142px;
+  background: var(--surface-2, #F3F5F9) !important;
+  border: 1px dashed var(--line-strong, #CBD5E1) !important;
+  color: var(--ink, #0F172A) !important;
+  font-weight: 600 !important;
+  cursor: not-allowed !important;
+}
+.geo-studio-gov-readout:placeholder-shown {
+  color: var(--muted, #64748B) !important;
+  font-weight: 500 !important;
+}

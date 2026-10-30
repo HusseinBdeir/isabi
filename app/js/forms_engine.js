@@ -943,14 +943,11 @@
           ${secHdr('1. Geographic Region & Map Zone (Universal Registry · All BUs)')}
           ${fld('Search Map Region', inp('f_map_region_search', 'text', '', 'placeholder="Search Beirut, Saida, Tripoli, Metn, Zahle..." autocomplete="off"'), { id: 'wrap_f_map_region_search' })}
           ${fld('Region *', inp('f_region', 'text', '', 'placeholder="Auto-filled from search or type name..." autocomplete="off"'), { id: 'wrap_f_region_name' })}
-          ${fld('Governorate', sel('f_corridor', [
-            ['Mount Lebanon', 'Mount Lebanon'],
-            ['Beirut', 'Beirut'],
-            ['South', 'South Lebanon'],
-            ['Nabatieh', 'Nabatieh'],
-            ['Bekaa', 'Bekaa & Baalbek-Hermel'],
-            ['North', 'North & Akkar']
-          ], 'Mount Lebanon'), { id: 'wrap_f_corridor' })}
+          ${fld('Governorate', inp('f_corridor_display', 'text', '', 'placeholder="Auto-detected from map..." readonly tabindex="-1" aria-readonly="true"') + '<input type="hidden" id="f_corridor" value="">', {
+            id: 'wrap_f_corridor',
+            cls: 'is-policy-locked is-geo-frozen-field',
+            labelRightHtml: `<span class="pa-lock-pill locked" data-corridor-frozen="1" style="pointer-events:none;cursor:default">${ic('lock')} <span class="lp-short">Locked</span><span class="sr-only"> LOCKED</span></span>`
+          })}
           ${fld('Map Zone Shape', sel('f_zone_type', [
             ['boundary', 'Map Region Search (Boundary)'],
             ['circle', 'Circle Radius on Map'],

@@ -38136,18 +38136,31 @@
       if ((zType === 'polygon' || zType === 'boundary') && val('f_zone_geojson')) {
         try { zGeo = JSON.parse(val('f_zone_geojson')); } catch (_) { zGeo = null; }
       }
-      let autoCorr = val('f_corridor') || 'Mount Lebanon';
+      let autoCorr = val('f_corridor') || '';
       let autoCode = val('f_auto_code') || '';
       if (!zGeo && zClat == null && regNm && window.MFG_GEO && typeof window.MFG_GEO.findAtlasRegionByName === 'function') {
-        const hit = window.MFG_GEO.findAtlasRegionByName(regNm);
+        const hit = window.MFG_GEO.findAtlasRegionByName(regNm, SEED);
         if (hit) {
           if (hit.geojson && (zType === 'boundary' || zType === 'polygon')) zGeo = hit.geojson;
           if (hit.lat != null) zClat = hit.lat;
           if (hit.lng != null) zClng = hit.lng;
-          if (hit.corridor && !val('f_auto_code')) autoCorr = hit.corridor;
+          if (hit.corridor && !autoCorr) autoCorr = hit.corridor;
           if (hit.code && !autoCode) autoCode = hit.code;
         }
       }
+      if (window.MFG_GEO && typeof window.MFG_GEO.resolveGovernorate === 'function') {
+        const gRes = window.MFG_GEO.resolveGovernorate({
+          zoneType: zType,
+          geojson: zGeo,
+          lat: zClat,
+          lng: zClng,
+          radiusKm: zType === 'circle' ? zRad : null,
+          corridor: autoCorr,
+          name: regNm
+        }, SEED);
+        if (gRes && gRes.code) autoCorr = gRes.code;
+      }
+      if (!autoCorr) autoCorr = 'Mount Lebanon';
       if (!autoCode && regNm) {
         autoCode = regNm.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 8);
       }
