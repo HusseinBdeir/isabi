@@ -2469,6 +2469,37 @@ table.m-grid tfoot tr td {
   flex-shrink: 0;
 }
 
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.modal-hdr-act-btn {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 5px;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.modal-void-record-btn {
+  border-color: rgba(196, 56, 56, 0.35);
+  color: var(--crit);
+  background: transparent;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.modal-void-record-btn:hover,
+.modal-void-record-btn.is-armed {
+  border-color: var(--crit);
+  background: var(--crit-bg);
+  color: var(--crit);
+}
+
 .modal-tabs {
   display: flex;
   gap: 6px;
@@ -4321,6 +4352,8 @@ html.sw-resuming body.locked .app-shell { pointer-events: auto; user-select: aut
   }
   .modal-foot .form-note { font-size: 10.5px; width: 100%; }
   .modal-foot > div { width: 100%; display: grid; grid-template-columns: 1fr 1.6fr; gap: 8px; }
+  .modal-foot > div.has-void { grid-template-columns: auto auto 1fr; gap: 6px; }
+  .modal-hdr-act-btn { font-size: 10.5px; padding: 4px 7px; }
 
   .app-strip { padding: 8px 12px; }
   .auth-gate { padding: calc(12px + var(--safe-top)) 12px calc(16px + var(--safe-bottom)); align-items: flex-start; }

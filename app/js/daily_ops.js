@@ -2490,7 +2490,7 @@
             </thead>
             <tbody>
               ${dm.expCategoryRows.map(r => `
-                <tr class="rrow" data-rkey="expenses" data-rid="${esc(String(r.sampleId || ''))}">
+                <tr class="rrow" data-rkey="expenses" data-rid="${esc(String(r.sampleId || ''))}" data-dops-summary="1">
                   <td class="dops-trunc"><strong>${esc(r.label)}</strong></td>
                   <td><span class="dops-kind ${r.pending ? 'maint' : 'exp'}">${r.pending ? 'Pending' : esc(r.method)}</span></td>
                   <td class="r">${fmtNum(r.count)}</td>
@@ -3173,7 +3173,7 @@
             <div class="dops-drawer-hd">
               <div>
                 <h2 class="dops-drawer-title" id="dopsDrawerTitle">Day Records Ledger · ${esc(fmtHumanDay(dm.targetDate))}</h2>
-                <div class="dops-drawer-sub">Strict Transaction Date Basis${dm.includeAh && ahCnt > 0 ? ` · Includes ${ahCnt} Yesterday After-Hours` : ''} · Click any row for 360° Inspector</div>
+                <div class="dops-drawer-sub">Strict Transaction Date Basis${dm.includeAh && ahCnt > 0 ? ` · Includes ${ahCnt} Yesterday After-Hours` : ''} · Click any row to edit</div>
               </div>
               <button type="button" class="dops-drawer-close" id="dopsCloseDrawerBtn" aria-label="Close Day Records Drawer">&times;</button>
             </div>
@@ -3304,7 +3304,9 @@
       document.addEventListener('keydown', ev => {
         if (ev.key === 'Escape' && STATE.view === 'daily_ops' && STATE.dailyOpsDrawerOpen) {
           const insp = document.getElementById('recordInspector');
-          if (insp && insp.classList.contains('open')) return;
+          if (insp && (insp.classList.contains('open') || !insp.hidden)) return;
+          const em = document.getElementById('entryModal');
+          if (em && !em.hidden) return;
           STATE.dailyOpsDrawerOpen = false;
           renderApp();
         }
@@ -3333,11 +3335,14 @@
         const isSingleCo = STATE.company !== 'manufacturing-group' && !String(STATE.company || '').startsWith('industry:') || allowedCos.length === 1;
         scrollBox.innerHTML = renderDrawerTableHtml(lCtx, lDm, STATE.dailyOpsStreamFilter || 'all', STATE.dailyOpsDrawerSearch, isSingleCo);
         if (typeof stripNativeTitles === 'function') stripNativeTitles(scrollBox);
-        if (typeof showRecordInspector === 'function') {
+        const openRowFn = (ctx && typeof ctx.openRecordFromTableRow === 'function')
+          ? ctx.openRecordFromTableRow
+          : (typeof showRecordInspector === 'function' ? showRecordInspector : null);
+        if (openRowFn) {
           scrollBox.querySelectorAll('tr.rrow[data-rid]').forEach(tr => {
             tr.addEventListener('click', e => {
               if (e.target && e.target.closest && e.target.closest('[data-rel-key], button, a, input, select')) return;
-              showRecordInspector(tr.getAttribute('data-rkey'), tr.getAttribute('data-rid'));
+              openRowFn(tr.getAttribute('data-rkey'), tr.getAttribute('data-rid'), tr);
             });
           });
         }
