@@ -2545,16 +2545,16 @@ table.m-grid tfoot tr td {
 
 .auth-card {
   width: 100%;
-  max-width: 428px;
+  max-width: 500px;
   margin: auto;
   background: var(--surface);
   border: 1px solid var(--brass-border);
   border-top: 3px solid var(--brass);
-  border-radius: 14px;
+  border-radius: 16px;
   box-shadow: 0 22px 54px rgba(15, 30, 56, 0.09);
   display: flex;
   flex-direction: column;
-  padding: 20px 24px 17px;
+  padding: 20px 26px 16px;
   color: var(--ink);
 }
 
@@ -2569,7 +2569,7 @@ table.m-grid tfoot tr td {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .auth-brand {
@@ -2580,8 +2580,8 @@ table.m-grid tfoot tr td {
 }
 
 .auth-badge {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
 }
 
@@ -2589,7 +2589,7 @@ table.m-grid tfoot tr td {
   font-family: "Archivo", sans-serif;
   font-stretch: 125%;
   font-weight: 800;
-  font-size: 13.5px;
+  font-size: 14px;
   letter-spacing: 0.08em;
   line-height: 1.15;
   color: var(--ink);
@@ -2627,13 +2627,13 @@ table.m-grid tfoot tr td {
 .auth-input {
   width: 100%;
   min-width: 0;
-  padding: 9px 13px;
-  height: 40px;
+  padding: 9px 14px;
+  height: 42px;
   background: var(--surface-2);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: 9px;
   color: var(--ink);
-  font-size: 14px;
+  font-size: 14.5px;
   outline: none;
   box-sizing: border-box;
   transition: border-color 0.14s, box-shadow 0.14s;
@@ -2664,12 +2664,12 @@ table.m-grid tfoot tr td {
 
 .auth-submit-btn {
   margin: 0;
-  padding: 0 20px;
-  height: 40px;
-  min-width: 106px;
-  font-size: 13.5px;
+  padding: 0 22px;
+  height: 42px;
+  min-width: 112px;
+  font-size: 14px;
   font-weight: 700;
-  border-radius: 8px;
+  border-radius: 9px;
   white-space: nowrap;
 }
 
@@ -2824,10 +2824,23 @@ table.m-grid tfoot tr td {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  max-height: 156px;
+  max-height: 142px;
   overflow-y: auto;
-  padding-right: 2px;
+  padding-right: 3px;
   scrollbar-width: thin;
+}
+
+.quick-seat-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.quick-seat-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.quick-seat-list::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
 }
 
 .quick-seat-empty {
@@ -5226,19 +5239,19 @@ td.pbi-cell-amber {
   gap: 8px;
 }
 .auth-cam-viewport {
-  --auth-cam-zoom: 1.22;
-  --auth-cam-origin-y: 42%;
+  --auth-cam-zoom: 1.44;
+  --auth-cam-origin-y: 52%;
   position: relative;
-  width: clamp(148px, 21.5dvh, 172px);
-  aspect-ratio: 4 / 5;
+  width: clamp(268px, 38.5dvh, 336px);
+  aspect-ratio: 6 / 7;
   height: auto;
   max-width: 100%;
   flex-shrink: 0;
-  background: radial-gradient(circle at 50% 42%, #FFFFFF 0%, #F4F2EE 100%);
-  border-radius: 18px;
+  background: radial-gradient(circle at 50% 44%, #FFFFFF 0%, #F4F2EE 100%);
+  border-radius: 20px;
   overflow: hidden;
   border: 1.5px solid var(--brass-border);
-  box-shadow: 0 8px 22px rgba(15, 30, 56, 0.06), inset 0 0 14px rgba(15, 30, 56, 0.04);
+  box-shadow: 0 10px 28px rgba(15, 30, 56, 0.07), inset 0 0 16px rgba(15, 30, 56, 0.04);
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 .auth-cam-viewport.is-matching {
@@ -5276,9 +5289,9 @@ td.pbi-cell-amber {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center center;
-  transform-origin: 50% var(--auth-cam-origin-y, 42%);
-  transform: scaleX(calc(-1 * var(--auth-cam-zoom, 1.22))) scaleY(var(--auth-cam-zoom, 1.22));
+  object-position: 50% var(--auth-cam-origin-y, 52%);
+  transform-origin: 50% var(--auth-cam-origin-y, 52%);
+  transform: scaleX(calc(-1 * var(--auth-cam-zoom, 1.44))) scaleY(var(--auth-cam-zoom, 1.44));
   opacity: 0;
   transition: opacity 0.18s ease;
   display: block;
@@ -5293,8 +5306,8 @@ td.pbi-cell-amber {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  transform-origin: 50% var(--auth-cam-origin-y, 42%);
-  transform: scaleX(calc(-1 * var(--auth-cam-zoom, 1.22))) scaleY(var(--auth-cam-zoom, 1.22));
+  transform-origin: 50% var(--auth-cam-origin-y, 52%);
+  transform: scaleX(calc(-1 * var(--auth-cam-zoom, 1.44))) scaleY(var(--auth-cam-zoom, 1.44));
 }
 .auth-cam-reticle {
   position: absolute;
@@ -7585,25 +7598,46 @@ table.ledger-table tfoot tr td:last-child {
   text-align: right;
 }
 
-/* v6.0 / v19.6.4 — Portrait-Framed Biometric Scanner + Ordered Account-Then-PIN Gate (Zero Top/Bottom Cutoff on Scaled Laptops & Mobile) */
+/* v6.0 / v19.6.8 — Enlarged Laptop & Mobile Portrait Biometric Scanner + Ordered Account-Then-PIN Gate (Zero Top/Bottom Cutoff on Scaled Laptops & Mobile) */
 .auth-gate {
   align-items: flex-start;
   justify-content: center;
-  padding: clamp(8px, 2dvh, 22px) clamp(12px, 2vw, 22px);
+  padding: clamp(8px, 1.8dvh, 22px) clamp(12px, 2vw, 22px);
   overflow-y: auto;
 }
 .auth-card {
   margin: auto;
-  max-width: 428px;
+  max-width: 500px;
+}
+@media (min-width: 769px) and (max-height: 700px) {
+  .auth-card {
+    max-width: 472px;
+    padding: 15px 22px 13px;
+  }
+  .auth-top-bar {
+    margin-bottom: 8px;
+  }
+  .auth-cam-viewport {
+    width: clamp(210px, 35dvh, 252px);
+    aspect-ratio: 6 / 7;
+    border-radius: 18px;
+  }
+  .auth-divider {
+    margin: 8px 0 7px;
+  }
+  .quick-seat-list {
+    max-height: 118px;
+  }
 }
 @media (max-width: 768px) {
   .auth-card {
+    max-width: 428px;
     padding: 16px 16px 14px;
   }
   .auth-cam-viewport {
-    --auth-cam-zoom: 1.35;
+    --auth-cam-zoom: 1.38;
     --auth-cam-origin-y: 38%;
-    width: min(224px, 62vw);
+    width: min(244px, 66vw);
     aspect-ratio: 4 / 5;
     height: auto;
     border-radius: 22px;
@@ -7621,37 +7655,38 @@ table.ledger-table tfoot tr td:last-child {
 }
 @media (max-width: 768px) and (max-height: 720px) {
   .auth-cam-viewport {
-    width: min(168px, 48vw);
+    width: min(180px, 50vw);
   }
   .quick-seat-list {
     max-height: 132px;
   }
 }
-@media (max-height: 620px) {
+@media (max-height: 555px) {
   .auth-gate {
     padding: 6px 14px;
   }
   .auth-card {
-    padding: 12px 18px 11px;
+    max-width: 452px;
+    padding: 11px 18px 10px;
   }
   .auth-top-bar {
-    margin-bottom: 6px;
+    margin-bottom: 5px;
   }
   .auth-badge {
     width: 28px;
     height: 28px;
   }
   .auth-cam-viewport {
-    width: 96px;
-    aspect-ratio: 4 / 5;
+    width: 120px;
+    aspect-ratio: 6 / 7;
     height: auto;
     border-radius: 14px;
   }
   .auth-face-body {
-    gap: 5px;
+    gap: 4px;
   }
   .auth-divider {
-    margin: 7px 0 6px;
+    margin: 6px 0 5px;
   }
   .auth-input,
   .auth-submit-btn {
@@ -7661,11 +7696,11 @@ table.ledger-table tfoot tr td:last-child {
     height: 32px;
   }
   .auth-footer-note {
-    margin-top: 8px;
-    padding-top: 6px;
+    margin-top: 7px;
+    padding-top: 5px;
   }
   .quick-seat-list {
-    max-height: 104px;
+    max-height: 100px;
   }
 }
 

@@ -105,7 +105,7 @@ const Face = (() => {
     const portrait = typeof window !== "undefined" && window.innerHeight > window.innerWidth;
     return portrait
       ? { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 } }
-      : { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } };
+      : { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } };
   }
 
   function stopAllStreams() {
@@ -710,6 +710,7 @@ const Face = (() => {
     CONFIG: MFG_FACE_CONFIG.match,
     load,
     prewarm,
+    isPrewarming: () => Boolean(earlyStreamPromise && !earlyCancelled),
     consumeEarlyStream,
     trackStream,
     stopAllStreams,
