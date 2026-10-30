@@ -514,10 +514,27 @@
   // ==========================================================================
   // FORMATTERS & SMALL HELPERS
   // ==========================================================================
+  const _NF_US_CACHE = [];
+  function _fmtUsNum(n, decimals = 0) {
+    if (decimals === 0) {
+      if (n === 0) return (1 / n < 0) ? '-0' : '0';
+      if (n > 0 && n < 1000 && (n | 0) === n) return '' + n;
+      if (n < 0 && n > -1000 && (n | 0) === n) return '' + n;
+    }
+    if (decimals >= 0 && decimals <= 6 && (decimals | 0) === decimals) {
+      let nf = _NF_US_CACHE[decimals];
+      if (!nf) {
+        nf = _NF_US_CACHE[decimals] = new Intl.NumberFormat('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+      }
+      return nf.format(n);
+    }
+    return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  }
+
   function fmtUSD(v, decimals = 0) {
     const n = Number(v || 0);
     const abs = Math.abs(n);
-    const s = abs.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    const s = _fmtUsNum(abs, decimals);
     return (n < 0 && !/^0(?:\.0+)?$/.test(s) ? '-$' : '$') + s;
   }
 
@@ -532,7 +549,7 @@
   function fmtLBP(v) {
     const n = Math.round(Number(v || 0));
     if (Math.abs(n) <= 1) return '0 LL';
-    const s = Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    const s = _fmtUsNum(Math.abs(n), 0);
     return (n < 0 ? '-' : '') + s + ' LL';
   }
 
@@ -540,14 +557,14 @@
     const n = Number(v || 0);
     if (Math.abs(n) < 0.005) return fmtUSD(0, decimals);
     const abs = Math.abs(n);
-    const s = abs.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    const s = _fmtUsNum(abs, decimals);
     return (n < 0 ? '-$' : '+$') + s;
   }
 
   function fmtSignedLBP(v) {
     const n = Math.round(Number(v || 0));
     if (Math.abs(n) <= 1) return '0 LL';
-    const s = Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    const s = _fmtUsNum(Math.abs(n), 0);
     return (n < 0 ? '-' : '+') + s + ' LL';
   }
 
@@ -746,7 +763,10 @@
     _GLOBAL_RATES_REV++;
     _PAYROLL_INTEL_CACHE = null;
     _liveSentinelCache = null;
+    _customAlertEvalCache = null;
+    _sentinelRawItemsCache = null;
     _cashMovesCacheKey = '';
+    if (typeof _localKpiRawCache !== 'undefined' && _localKpiRawCache) _localKpiRawCache.clear();
     _FORM_INTEL_CACHE = null;
     if (typeof _sortedRowsCache !== 'undefined' && _sortedRowsCache && typeof _sortedRowsCache.clear === 'function') {
       _sortedRowsCache.clear();
@@ -1214,7 +1234,7 @@
 
   function fmtNum(v, decimals = 0) {
     const n = Number(v || 0);
-    return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    return _fmtUsNum(n, decimals);
   }
 
   function fmtPct(v, num, den) {
@@ -1655,19 +1675,43 @@
     return 0;
   }
 
+  let _ticketUnitCacheRev = '';
+  let _ticketTonsWM = new WeakMap();
+  let _ticketMetersWM = new WeakMap();
+  const _aggProdCache = new Map();
+  function _syncTicketUnitCaches() {
+    const rev = `${SEED._customRev || 0}|${typeof _WIN_REV === 'number' ? _WIN_REV : 0}|${(SEED.records && SEED.records.products && SEED.records.products.length) || 0}`;
+    if (_ticketUnitCacheRev !== rev) {
+      _ticketUnitCacheRev = rev;
+      _ticketTonsWM = new WeakMap();
+      _ticketMetersWM = new WeakMap();
+      _aggProdCache.clear();
+    }
+  }
+
   // Tonnage rule of the semantic models (m167): Qty when the ticket's UoM is Ton, else m³ x the product's ton factor (1 Truck = 27 m³).
   function ticketTons(r) {
     if (!r) return 0;
+    _syncTicketUnitCaches();
+    const cached = _ticketTonsWM.get(r);
+    if (cached !== undefined) return cached;
     const q = Number(r.qty || 0);
-    if (!q) return 0;
-    const p = productByName(r.product);
-    const uom = String(r.uom || (p && p.uom) || '').trim();
-    if (/^ton/i.test(uom)) return q;
-    const f = effectiveTonFactor(p, r);
-    if (!(f > 0)) return 0;
-    const pType = String((p && p.type) || '').trim().toLowerCase();
-    if (/^truck/i.test(uom) || (/^unit/i.test(uom) && pType === 'material')) return q * 27 * f;
-    return q * f;
+    let out = 0;
+    if (q) {
+      const p = productByName(r.product);
+      const uom = String(r.uom || (p && p.uom) || '').trim();
+      if (/^ton/i.test(uom)) {
+        out = q;
+      } else {
+        const f = effectiveTonFactor(p, r);
+        if (f > 0) {
+          const pType = String((p && p.type) || '').trim().toLowerCase();
+          out = (/^truck/i.test(uom) || (/^unit/i.test(uom) && pType === 'material')) ? (q * 27 * f) : (q * f);
+        }
+      }
+    }
+    _ticketTonsWM.set(r, out);
+    return out;
   }
 
   // Canonical Meter conversion rule: all material volume totals are in cubic meters (m³).
@@ -1677,33 +1721,43 @@
   // - Non-material units (Litre, Remove, Spare Parts, equipment units): 0 m³
   function ticketMeters(r) {
     if (!r) return 0;
+    _syncTicketUnitCaches();
+    const cached = _ticketMetersWM.get(r);
+    if (cached !== undefined) return cached;
     const q = Number(r.qty || 0);
-    if (!q) return 0;
+    if (!q) {
+      _ticketMetersWM.set(r, 0);
+      return 0;
+    }
     const p = productByName(r.product);
     const pName = norm((p && p.name) || r.product || '');
-    if (pName === 'remove') return 0;
-    const tUom = String(r.uom || (p && p.uom) || '').trim().toLowerCase();
-    const pType = String((p && p.type) || '').trim().toLowerCase();
-    if (tUom === 'm³' || tUom === 'm3' || tUom === 'meter' || tUom === 'meters') return q;
-    if (tUom === 'ton' || tUom === 'tons') {
-      const f = effectiveTonFactor(p, r);
-      if (!(f > 0)) return 0;
-      const rawM3 = q / f;
-      const halfSnap = Math.round(rawM3 * 2) / 2;
-      return Math.abs(rawM3 - halfSnap) < 0.01 ? halfSnap : round2(rawM3);
-    }
-    if (tUom === 'truck' || tUom === 'trucks' || (tUom === 'unit' && pType === 'material')) {
-      if (r.truck) {
-        const eq = getFleetIndex().eqByName.get(norm(r.truck));
-        if (eq) {
-          const win = resolveTruckWindow(eq, r.company, String(r.date || '').slice(0, 10), { side: r.customer ? 'sales' : 'raw', customer: r.customer, site: r.site });
-          const cap = Number((win && win.cap) || eq.capacity || 0);
-          if (cap > 0) return q * cap;
+    let out = 0;
+    if (pName !== 'remove') {
+      const tUom = String(r.uom || (p && p.uom) || '').trim().toLowerCase();
+      const pType = String((p && p.type) || '').trim().toLowerCase();
+      if (tUom === 'm³' || tUom === 'm3' || tUom === 'meter' || tUom === 'meters') {
+        out = q;
+      } else if (tUom === 'ton' || tUom === 'tons') {
+        const f = effectiveTonFactor(p, r);
+        if (f > 0) {
+          const rawM3 = q / f;
+          const halfSnap = Math.round(rawM3 * 2) / 2;
+          out = Math.abs(rawM3 - halfSnap) < 0.01 ? halfSnap : round2(rawM3);
+        }
+      } else if (tUom === 'truck' || tUom === 'trucks' || (tUom === 'unit' && pType === 'material')) {
+        out = q * 27;
+        if (r.truck) {
+          const eq = getFleetIndex().eqByName.get(norm(r.truck));
+          if (eq) {
+            const win = resolveTruckWindow(eq, r.company, String(r.date || '').slice(0, 10), { side: r.customer ? 'sales' : 'raw', customer: r.customer, site: r.site });
+            const cap = Number((win && win.cap) || eq.capacity || 0);
+            if (cap > 0) out = q * cap;
+          }
         }
       }
-      return q * 27;
     }
-    return 0;
+    _ticketMetersWM.set(r, out);
+    return out;
   }
 
   const _NON_AGG_MATERIAL_RE = /\b(shacman|truck|mixer|pump|excavator|excavation|loader|bulldozer|diesel|mazout|fuel|benzin|gasoline|oil|lubricant|grease|atf|hydraulic|rent|rental|insurance|salary|salaries|spare\s*part|jack\s*hammer|hammer|filter|tire|tyre|wheel|battery|service|discount|remove|tip|tips|iron|ghirbal|transportation|vat\s*invoice|electricity|commission)\b/i;
@@ -1711,17 +1765,25 @@
   function isAggregateMaterialProduct(prodName, uomHint, famHint) {
     const raw = String(prodName || '').trim();
     if (!raw) return false;
+    _syncTicketUnitCaches();
+    const cKey = `${raw}${uomHint || ''}${famHint || ''}`;
+    const hit = _aggProdCache.get(cKey);
+    if (hit !== undefined) return hit;
     const p = productByName(raw);
     const u = String(uomHint || (p && p.uom) || '').trim().toLowerCase();
+    let res = true;
     if (u === 'litre' || u === 'litres' || u === 'liter' || u === 'liters' || u === 'l' || u === 'kg' || u === 'kgs' || u === 'hr' || u === 'hrs' || u === 'hour' || u === 'hours' || u === 'day' || u === 'days' || u === 'month' || u === 'months') {
-      return false;
+      res = false;
+    } else if (_NON_AGG_MATERIAL_RE.test(`${raw} ${famHint || ''}`)) {
+      res = false;
+    } else if (p && p.type) {
+      res = String(p.type).trim().toLowerCase() === 'material';
+    } else if (u === 'unit') {
+      res = false;
     }
-    if (_NON_AGG_MATERIAL_RE.test(`${raw} ${famHint || ''}`)) return false;
-    if (p && p.type) {
-      return String(p.type).trim().toLowerCase() === 'material';
-    }
-    if (u === 'unit') return false;
-    return true;
+    if (_aggProdCache.size > 2048) _aggProdCache.clear();
+    _aggProdCache.set(cKey, res);
+    return res;
   }
 
   function productMeters(prodName, qty, uomHint) {
@@ -2164,12 +2226,21 @@
 
   // Local record engine for one date basis ('tx' = transaction date, 'rep' = reporting date). Exact m18a/m18b DAX rules
   // across sales_tickets, raw_purchases, expenses, receipts, settlements, salaries & fuel_intakes.
+  const _localKpiRawCache = new Map();
   function computeLocalKPI(m, range, basis, coKey) {
+    const effCoKey = coKey || STATE.company;
+    const offScope = isOfficialScopeActive();
+    const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
+    const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
+    const rawCacheKey = `${effCoKey}|${allowedCompanyNames().join(',')}|${offScope ? 'OFF' : 'ALL'}|${range ? (range.from + '..' + range.to) : 'ALL'}|${basis}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}`;
+    if (_localKpiRawCache.has(rawCacheKey)) {
+      return Object.assign({}, _localKpiRawCache.get(rawCacheKey));
+    }
     const periods = m.periods || {};
     const t = range ? range.to : SEED_DATE;
     const baseKey = t >= '2026-01-01' ? 'ytd' : (t >= '2025-01-01' ? 'fy2025' : 'fy2024');
     const baseKpi = Object.assign({}, periods.all || {}, periods[baseKey] || {});
-    const fo = { ignoreSearch: true, basis, company: coKey || STATE.company };
+    const fo = { ignoreSearch: true, basis, company: effCoKey };
 
     const sales = filterRecords(SEED.records.sales_tickets, fo);
     const raws = filterRecords(SEED.records.raw_purchases, fo);
@@ -2289,7 +2360,7 @@
     const apOnCrOut = round2(apMatOut + apHaulOut + apExpOut);
     const apSetOut = (hasHydratedSales || range) ? round2(ap_settled) : round2(Number(baseKpi.settlements_paid != null ? baseKpi.settlements_paid : ap_settled));
 
-    return finishKpiRatios(Object.assign(baseKpi, {
+    const resKpi = finishKpiRatios(Object.assign(baseKpi, {
       sales_ttc: round2(sales_ttc),
       gross_sales: round2(gross_sales || sales_ttc),
       net_sales: round2(net_sales),
@@ -2344,6 +2415,9 @@
       basis,
       label: range ? range.label : 'All-Time (2024\u20132030)'
     }));
+    if (_localKpiRawCache.size > 64) _localKpiRawCache.clear();
+    _localKpiRawCache.set(rawCacheKey, resKpi);
+    return Object.assign({}, resKpi);
   }
 
   // A single calendar month on the transaction basis: overlay the exact DAX monthly figures on the headline totals.
@@ -4661,6 +4735,7 @@
 
   const _NUM_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
   let _filterRecordsWeakCache = new WeakMap();
+  const _recordSearchHayWeakMap = new WeakMap();
   const _sortedRowsCache = new Map();
   const _colFilterOptsCache = new Map();
 
@@ -4719,25 +4794,37 @@
             if (!matchedCol) return false;
           } else {
             if (hay === null) {
-              const parts = [];
-              const keys = Object.keys(r);
-              for (let i = 0; i < keys.length; i++) {
-                const k = keys[i];
-                if (k === 'id' || (k === 'notes' && !showNotes)) continue;
-                const val = r[k];
-                if (val != null && val !== '') parts.push(val);
+              const curRev = SEED._customRev || 0;
+              let baseHay = '';
+              const cachedHay = _recordSearchHayWeakMap.get(r);
+              if (cachedHay && cachedHay.rev === curRev && cachedHay.notes === showNotes) {
+                baseHay = cachedHay.hay;
+              } else {
+                const parts = [];
+                const keys = Object.keys(r);
+                for (let i = 0; i < keys.length; i++) {
+                  const k = keys[i];
+                  if (k === 'id' || (k === 'notes' && !showNotes)) continue;
+                  const val = r[k];
+                  if (val != null && val !== '') parts.push(val);
+                }
+                parts.push(recordDateDMY(r));
+                baseHay = parts.join(' ').toLowerCase();
+                _recordSearchHayWeakMap.set(r, { rev: curRev, notes: showNotes, hay: baseHay });
               }
               if (Array.isArray(opts.cols) && rel && window.MFG_PBI && window.MFG_PBI.cellValue) {
+                const extraParts = [];
                 for (let i = 0; i < opts.cols.length; i++) {
                   const ck = opts.cols[i];
                   if (r[ck] === undefined) {
                     const cv = window.MFG_PBI.cellValue(r, ck, tk, rel);
-                    if (cv != null && cv !== '') parts.push(cv);
+                    if (cv != null && cv !== '') extraParts.push(cv);
                   }
                 }
+                hay = extraParts.length ? (baseHay + ' ' + extraParts.join(' ').toLowerCase()) : baseHay;
+              } else {
+                hay = baseHay;
               }
-              parts.push(recordDateDMY(r));
-              hay = parts.join(' ').toLowerCase();
             }
             if (!hay.includes(t.val)) return false;
           }
@@ -4840,13 +4927,21 @@
         const ta = a.ticket_no != null ? a.ticket_no : a.ref;
         const tb = b.ticket_no != null ? b.ticket_no : b.ref;
         if (ta || tb) {
-          const tc = _NUM_COLLATOR.compare(String(ta || ''), String(tb || ''));
-          if (tc !== 0) return tc * dir;
+          if (ta !== tb) {
+            if (ta != null && tb != null && ta !== '' && tb !== '') {
+              const na = +ta, nb = +tb;
+              if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return (na - nb) * dir;
+            }
+            const tc = _NUM_COLLATOR.compare(String(ta || ''), String(tb || ''));
+            if (tc !== 0) return tc * dir;
+          }
         }
-        return String(a.id || '').localeCompare(String(b.id || '')) * dir;
+        if (a.id !== b.id) return (String(a.id || '') < String(b.id || '') ? -1 : 1) * dir;
+        return 0;
       });
     } else if (filteredRows.length > 60) {
       const decorated = new Array(filteredRows.length);
+      const isIsoKey = /^(?:date|eff_date|tx_date|rep_date|start_date|end_date|month|payroll_month|ym|first_month|last_month|last_sale)$/i.test(s.key);
       for (let i = 0, len = filteredRows.length; i < len; i++) {
         const r = filteredRows[i];
         const v = resolveColVal(r, s.key, view);
@@ -4864,6 +4959,10 @@
         if (a.isBool && b.isBool) {
           const d = ((a.v ? 1 : 0) - (b.v ? 1 : 0)) * dir;
           return d !== 0 ? d : compareRowTie(a.r, b.r, s.key, view);
+        }
+        if (isIsoKey) {
+          if (a.str !== b.str) return (a.str < b.str ? -1 : 1) * dir;
+          return compareRowTie(a.r, b.r, s.key, view);
         }
         const sc = _NUM_COLLATOR.compare(a.str, b.str) * dir;
         return sc !== 0 ? sc : compareRowTie(a.r, b.r, s.key, view);
@@ -4904,7 +5003,7 @@
     const on = s.key === key;
     const cf = (STATE.colFilters && STATE.colFilters[view]) || {};
     const hasFilter = Boolean(cf[key] && String(cf[key]).trim());
-    return `<th class="${cls || ''} sortable${on ? ' on' : ''}${hasFilter ? ' col-filtered th-filtered' : ''}" data-sort-view="${esc(view)}" data-sort-key="${esc(key)}" title="Click to sort by ${esc(label)}"><span class="th-lbl">${label}</span><i>${on ? (s.dir === 'asc' ? '▲' : '▼') : ''}</i><span class="th-filter-btn${hasFilter ? ' active' : ''}" data-th-filter-view="${esc(view)}" data-th-filter-key="${esc(key)}" data-th-filter-label="${esc(label)}" title="Filter ${esc(label)} column">${TH_FUNNEL_SVG}</span></th>`;
+    return `<th class="${cls || ''} sortable${on ? ' on' : ''}${hasFilter ? ' col-filtered th-filtered' : ''}" data-sort-view="${esc(view)}" data-sort-key="${esc(key)}" data-ui-tip="Click to sort by ${esc(label)}"><span class="th-lbl">${label}</span><i>${on ? (s.dir === 'asc' ? '▲' : '▼') : ''}</i><span class="th-filter-btn${hasFilter ? ' active' : ''}" data-th-filter-view="${esc(view)}" data-th-filter-key="${esc(key)}" data-th-filter-label="${esc(label)}" data-ui-tip="Filter ${esc(label)} column" aria-label="Filter ${esc(label)} column">${TH_FUNNEL_SVG}</span></th>`;
   }
 
   function getColLabel(colKey) {
@@ -5428,7 +5527,9 @@
 
   function tableToCsv(table) {
     return Array.from(table.querySelectorAll('tr')).map(tr =>
-      Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)')).map(td => '"' + td.innerText.replace(/\s+/g, ' ').trim().replace(/"/g, '""') + '"').join(',')
+      Array.from(tr.querySelectorAll('th:not(.tbl-col-hidden),td:not(.tbl-col-hidden)'))
+        .filter(td => td.hasAttribute('colspan') || getComputedStyle(td).display !== 'none')
+        .map(td => '"' + td.innerText.replace(/\s+/g, ' ').trim().replace(/"/g, '""') + '"').join(',')
     ).join('\r\n');
   }
 
@@ -6926,7 +7027,8 @@
     const fuels = SEED.records.fuel_intakes || [];
     const drvs = SEED.records.drivers || [];
     const sups = SEED.records.suppliers || [];
-    const key = `${eqs.length}:${sales.length}:${raws.length}:${fuels.length}:${drvs.length}:${sups.length}:${_WIN_REV}`;
+    const coEqs = SEED.records.company_equipment || [];
+    const key = `${eqs.length}:${coEqs.length}:${sales.length}:${raws.length}:${fuels.length}:${drvs.length}:${sups.length}:${_WIN_REV}:${SEED._customRev || 0}`;
     if (_FLEET_IDX && _FLEET_IDX.key === key) return _FLEET_IDX;
     const eqByName = new Map();
     eqs.forEach(e => {
@@ -7018,7 +7120,20 @@
       const res = resolveFuelBest(arr);
       if (res.best) currentFuelDriverByCoEq.set(k, res.best);
     });
-    _FLEET_IDX = { key, eqByName, txTrucksByOwner, txDriversByOwner, fuelDriversByEq, currentFuelDriverByEq, currentFuelDriverByCoEq, truckNamesList: null };
+    _FLEET_IDX = {
+      key,
+      eqByName,
+      txTrucksByOwner,
+      txDriversByOwner,
+      fuelDriversByEq,
+      currentFuelDriverByEq,
+      currentFuelDriverByCoEq,
+      truckNamesList: null,
+      coFleetLookupCache: new Map(),
+      coEqAnyLookupCache: new Map(),
+      equipInfoCache: new Map(),
+      drvLookupCache: new Map()
+    };
     return _FLEET_IDX;
   }
   function isTruckUnit(eOrName) {
@@ -7036,14 +7151,19 @@
   function companyFleetRow(name, company) {
     const n = norm(name);
     if (!n) return null;
-    const eq = getFleetIndex().eqByName.get(n);
+    const idx = getFleetIndex();
+    const lk = `${company || ''}${n}`;
+    if (idx.coFleetLookupCache.has(lk)) return idx.coFleetLookupCache.get(lk);
+    const eq = idx.eqByName.get(n);
     const eqName = eq ? norm(eq.name) : n;
-    return (SEED.records.company_equipment || []).find(e =>
+    const found = (SEED.records.company_equipment || []).find(e =>
       e && !e.voided && e.status !== 'Sold / retired' &&
       (!company || e.company === company) &&
       (e.is_company_fleet === true || /^(own|rent)/i.test(e.ownership || '')) &&
       (norm(e.equipment || e.name) === n || norm(e.equipment || e.name) === eqName)
     ) || null;
+    idx.coFleetLookupCache.set(lk, found);
+    return found;
   }
   function customerNames() {
     const fIdx = getFreqIndex();
@@ -7781,9 +7901,12 @@
     const n = norm(name);
     if (!n) return null;
     const idx = getFleetIndex();
+    const hasWinDate = Boolean(winOpts && winOpts.date);
+    const isFuelSide = !!(winOpts && winOpts.side === 'fuel');
+    const cKey = !hasWinDate ? `${n}${company || ''}${isCoFleet ? 1 : 0}${isFuelSide ? 1 : 0}` : '';
+    if (cKey && idx.equipInfoCache.has(cKey)) return idx.equipInfoCache.get(cKey);
     const eq = idx.eqByName.get(n) || null;
     const eqKey = norm((eq && eq.name) || name);
-    const isFuelSide = !!(winOpts && winOpts.side === 'fuel');
     let baseRow = eq;
     if (company || isCoFleet || isFuelSide) {
       const ce = companyFleetRow(name, company);
@@ -7802,14 +7925,24 @@
           const isAppOwn = (eq.company === company && /^(own|rent)/i.test(eq.ownership || '')) || (company && norm(eq.supplier) === norm(company));
           baseRow = isAppOwn ? eq : Object.assign({}, eq, { default_driver: '' });
         } else {
+          if (cKey) idx.equipInfoCache.set(cKey, null);
           return null;
         }
       } else if (isFuelSide) {
-        const ceAny = ce || (SEED.records.company_equipment || []).find(e =>
-          e && !e.voided && e.status !== 'Sold / retired' &&
-          (!company || e.company === company) &&
-          (norm(e.equipment || e.name) === n || norm(e.equipment || e.name) === eqKey)
-        ) || null;
+        const anyKey = `${company || ''}${n}${eqKey}`;
+        let ceAny = ce;
+        if (!ceAny) {
+          if (idx.coEqAnyLookupCache.has(anyKey)) {
+            ceAny = idx.coEqAnyLookupCache.get(anyKey);
+          } else {
+            ceAny = (SEED.records.company_equipment || []).find(e =>
+              e && !e.voided && e.status !== 'Sold / retired' &&
+              (!company || e.company === company) &&
+              (norm(e.equipment || e.name) === n || norm(e.equipment || e.name) === eqKey)
+            ) || null;
+            idx.coEqAnyLookupCache.set(anyKey, ceAny);
+          }
+        }
         const fuelDrv = (ceAny && (ceAny.default_driver || ceAny.day_operator || ceAny.night_operator)) ||
           (eq && eq.default_driver) ||
           (company && idx.currentFuelDriverByCoEq ? idx.currentFuelDriverByCoEq.get(`${norm(company)}|${eqKey}`) : '') ||
@@ -7820,13 +7953,16 @@
         });
       }
     }
-    if (!baseRow) return null;
+    if (!baseRow) {
+      if (cKey) idx.equipInfoCache.set(cKey, null);
+      return null;
+    }
     if (!baseRow.default_driver && !isCoFleet && idx.currentFuelDriverByEq && idx.currentFuelDriverByEq.has(eqKey)) {
       baseRow = Object.assign({}, baseRow, {
         default_driver: (company && idx.currentFuelDriverByCoEq && idx.currentFuelDriverByCoEq.get(`${norm(company)}|${eqKey}`)) || idx.currentFuelDriverByEq.get(eqKey) || ''
       });
     }
-    if (winOpts && winOpts.date && eq && Array.isArray(eq.adj_windows) && eq.adj_windows.length) {
+    if (hasWinDate && eq && Array.isArray(eq.adj_windows) && eq.adj_windows.length) {
       const w = resolveTruckWindow(eq, company, winOpts.date, winOpts);
       if (w) {
         const effCap = Number(w.cap) > 0 ? Number(w.cap) : baseRow.capacity;
@@ -7840,12 +7976,17 @@
         });
       }
     }
+    if (cKey) idx.equipInfoCache.set(cKey, baseRow);
     return baseRow;
   }
   function driverInfo(name) {
     const n = norm(name);
     if (!n) return null;
-    return (SEED.records.drivers || []).find(d => norm(d.name) === n || norm(d.driver) === n) || null;
+    const idx = getFleetIndex();
+    if (idx.drvLookupCache.has(n)) return idx.drvLookupCache.get(n);
+    const found = (SEED.records.drivers || []).find(d => norm(d.name) === n || norm(d.driver) === n) || null;
+    idx.drvLookupCache.set(n, found);
+    return found;
   }
   function truckOptionHtml(v, company, isCoFleet, winOpts) {
     if (typeof company !== 'string') company = '';
@@ -8138,18 +8279,56 @@
     return uniqSorted(SEED.records.equipment.filter(e => /^own/i.test(e.ownership || '')).map(e => e.name));
   }
 
+  let _arrUidSeq = 1;
+  const _arrUidWM = new WeakMap();
+  function _getArrUid(arr) {
+    if (!arr || typeof arr !== 'object') return 0;
+    let id = _arrUidWM.get(arr);
+    if (!id) {
+      id = _arrUidSeq++;
+      _arrUidWM.set(arr, id);
+    }
+    return id;
+  }
+  const _chipFilteredWM = new WeakMap();
+  function _getChipFilteredRows(base, chipKey, predFn) {
+    if (!Array.isArray(base) || chipKey === 'all') return base;
+    let byChip = _chipFilteredWM.get(base);
+    if (!byChip) {
+      byChip = new Map();
+      _chipFilteredWM.set(base, byChip);
+    }
+    const k = `${SEED._customRev || 0}|${chipKey}`;
+    if (byChip.has(k)) return byChip.get(k);
+    const out = base.filter(predFn);
+    if (byChip.size > 24) byChip.clear();
+    byChip.set(k, out);
+    return out;
+  }
+  const _nextTicketNoCache = new Map();
   // Suggest the number after the most recently dated ticket of the pad (not the max — one mistyped
   // 7-digit number would otherwise push every suggestion into the millions)
   function nextTicketNo(company, lists) {
+    const arrs = Array.isArray(lists) ? lists : [];
+    const cKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${company || ''}|${arrs.map(l => l ? `${_getArrUid(l)}:${l.length}` : '0').join(',')}`;
+    if (_nextTicketNoCache.has(cKey)) return _nextTicketNoCache.get(cKey);
     let latest = null;
-    lists.forEach(l => (l || []).forEach(r => {
+    arrs.forEach(l => (l || []).forEach(r => {
       if (!r || r.voided || r.company !== company) return;
-      const n = parseInt(String(r.ticket_no || '').replace(/\D/g, ''), 10);
+      const rawNo = String(r.ticket_no || '');
+      let n = 0;
+      for (let i = 0; i < rawNo.length; i++) {
+        const ch = rawNo.charCodeAt(i);
+        if (ch >= 48 && ch <= 57) n = n * 10 + (ch - 48);
+      }
       if (!n || n >= 1000000) return;
       const key = String(r.date || '') + '|' + String(n).padStart(7, '0');
       if (!latest || key > latest.key) latest = { key, n };
     }));
-    return latest ? String(latest.n + 1) : '';
+    const res = latest ? String(latest.n + 1) : '';
+    if (_nextTicketNoCache.size > 64) _nextTicketNoCache.clear();
+    _nextTicketNoCache.set(cKey, res);
+    return res;
   }
 
   // duplicateTicketGuard: checks only the active table (sales_tickets, raw_purchases, or fuel_intakes) in the same BU
@@ -10802,9 +10981,16 @@
     isEnabled: ruleId => isAlertRuleEnabled(ruleId)
   };
 
+  let _customAlertEvalCache = null;
+  let _sentinelRawItemsCache = null;
+  const _txRepGapWeakMap = new WeakMap();
+  let _linkedVatRefsCache = { rev: -1, len: -1, set: null };
+
   function invalidateAlertRuleCaches() {
     _ALERT_RULES_REV += 1;
     _liveSentinelCache = null;
+    _customAlertEvalCache = null;
+    _sentinelRawItemsCache = null;
     _ticketAuditCache = null;
     _meterGuardCacheKey = '';
     _meterGuardCacheVal = null;
@@ -10869,10 +11055,14 @@
   function evaluateSingleCustomAlert(cr) {
     const spec = CUSTOM_ALERT_METRICS[cr.metric];
     if (!spec) return [];
+    if (!(_customAlertEvalCache instanceof Map)) _customAlertEvalCache = new Map();
     const thresh = Number(cr.threshold || 0);
     const op = cr.op === '<' ? '<' : '>';
     const coScope = String(cr.company || 'all');
     const targetScope = String(cr.target || '').trim();
+    const salesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
+    const evalKey = `${cr.id || ''}|${cr.updated_at || ''}|${cr.metric}|${op}|${thresh}|${coScope}|${targetScope}|${cr.code || ''}|${cr.name || ''}|${SEED._customRev || 0}|${STATE._customRev || 0}|${_ALERT_RULES_REV || 0}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${allowedCompanyNames().join(',')}|${getLbpFxRate()}|${salesLen}`;
+    if (_customAlertEvalCache.has(evalKey)) return _customAlertEvalCache.get(evalKey);
     const rows = spec.recordsFn(targetScope) || [];
     const hits = [];
     for (let i = 0; i < rows.length; i++) {
@@ -10891,6 +11081,8 @@
       }
     }
     hits.sort((a, b) => (op === '<' ? (a.value - b.value) : (b.value - a.value)));
+    if (_customAlertEvalCache.size > 96) _customAlertEvalCache.clear();
+    _customAlertEvalCache.set(evalKey, hits);
     return hits;
   }
 
@@ -11380,9 +11572,10 @@
       };
     }
 
-    const cacheKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${_ALERT_RULES_REV || 0}|${salesArr.length}|${(SEED.records.raw_purchases || []).length}|${(SEED.records.expenses || []).length}|${(SEED.records.fuel_intakes || []).length}|${(SEED.records.salaries || []).length}|${(SEED.records.employments || []).length}|${(SEED.records.price_rules || []).length}|${(SEED.records.vat_invoices || []).length}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${allowedCompanyNames().join(',')}`;
-    if (_liveSentinelCache && _liveSentinelCache.key === cacheKey) {
-      return _liveSentinelCache.val;
+    const cacheKey = `${SEED._customRev || 0}|${STATE._customRev || 0}|${_WIN_REV || 0}|${_ALERT_RULES_REV || 0}|${salesArr.length}|${(SEED.records.raw_purchases || []).length}|${(SEED.records.expenses || []).length}|${(SEED.records.fuel_intakes || []).length}|${(SEED.records.salaries || []).length}|${(SEED.records.employments || []).length}|${(SEED.records.price_rules || []).length}|${(SEED.records.vat_invoices || []).length}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${allowedCompanyNames().join(',')}`;
+    if (!(_liveSentinelCache instanceof Map)) _liveSentinelCache = new Map();
+    if (_liveSentinelCache.has(cacheKey)) {
+      return _liveSentinelCache.get(cacheKey);
     }
 
     const isPeriodFiltered = Boolean(periodRange(STATE.period));
@@ -11779,10 +11972,18 @@
         const d1 = String(r.date).slice(0, 10);
         const d2 = String(r.rep_date).slice(0, 10);
         if (d1 === d2 || d1.length < 10 || d2.length < 10) return;
-        const t1 = Date.parse(d1 + 'T00:00:00Z');
-        const t2 = Date.parse(d2 + 'T00:00:00Z');
-        if (!Number.isFinite(t1) || !Number.isFinite(t2)) return;
-        const gap = Math.round((t2 - t1) / 86400000);
+        const pairKey = d1 + '|' + d2;
+        let gap;
+        const cg = _txRepGapWeakMap.get(r);
+        if (cg && cg.k === pairKey) {
+          gap = cg.g;
+        } else {
+          const t1 = Date.parse(d1 + 'T00:00:00Z');
+          const t2 = Date.parse(d2 + 'T00:00:00Z');
+          gap = (Number.isFinite(t1) && Number.isFinite(t2)) ? Math.round((t2 - t1) / 86400000) : NaN;
+          _txRepGapWeakMap.set(r, { k: pairKey, g: gap });
+        }
+        if (!Number.isFinite(gap)) return;
         if (Math.abs(gap) > s8GapDays) {
           dateGaps.push({
             id: r.id, rid: r.id, rkey,
@@ -11803,12 +12004,17 @@
     scanDateGaps('Expenses', 'expenses', SEED.records.expenses, r => r.amount);
     dateGaps.sort((a, b) => Math.abs(b.gap_days) - Math.abs(a.gap_days));
 
-    const linkedVatRefs = new Set();
-    (SEED.records.sales_tickets || []).forEach(s => {
-      if (s && !s.voided && s.vat_invoice) {
-        linkedVatRefs.add(`${norm(s.company)}|${norm(s.vat_invoice)}`);
-      }
-    });
+    const curSeedRev = SEED._customRev || 0;
+    if (!_linkedVatRefsCache.set || _linkedVatRefsCache.rev !== curSeedRev || _linkedVatRefsCache.len !== salesArr.length) {
+      const nextRefs = new Set();
+      salesArr.forEach(s => {
+        if (s && !s.voided && s.vat_invoice) {
+          nextRefs.add(`${norm(s.company)}|${norm(s.vat_invoice)}`);
+        }
+      });
+      _linkedVatRefsCache = { rev: curSeedRev, len: salesArr.length, set: nextRefs };
+    }
+    const linkedVatRefs = _linkedVatRefsCache.set;
     const unlinkedVats = [];
     filterRecords(SEED.records.vat_invoices, { ignoreSearch: true }).forEach(v => {
       if (!v || v.voided) return;
@@ -11875,17 +12081,26 @@
       overdueArRows,
       wfAnomalies,
       generated: SEED_DATE,
-      isLive: true
+      isLive: true,
+      _cacheKey: cacheKey
     };
-    _liveSentinelCache = { key: cacheKey, val: outVal };
+    if (_liveSentinelCache.size > 16) _liveSentinelCache.clear();
+    _liveSentinelCache.set(cacheKey, outVal);
     return outVal;
   }
 
   function buildSentinelItems() {
     const k = getKPI();
-    const { fleet, pricing, parity } = sentinelSlice();
+    const snSlice = sentinelSlice();
+    const { fleet, pricing, parity } = snSlice;
     const scope = STATE.company === 'manufacturing-group' ? 'WTC & BBConstruction' : COMPANY_BU_MATCH[STATE.company];
-    const rawItems = [];
+    const customList = getActiveCustomAlertRules();
+    const customSig = customList.map(c => `${c.id}:${c.updated_at || ''}:${c.enabled !== false ? 1 : 0}:${c.threshold}:${c.op}:${c.metric}:${c.company || ''}:${c.target || ''}:${c.mode || ''}:${c.name || ''}:${c.why || ''}`).join(';');
+    const rawItemsKey = `${snSlice._cacheKey || 'seed'}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${k.tb_check}|${k.diesel_in_tank}|${k.ar_60_plus}|${k.ar_balance}|${k.dso_days}|${_ALERT_RULES_REV}|${getLbpFxRate()}|${customSig}`;
+    if (!(_sentinelRawItemsCache instanceof Map)) _sentinelRawItemsCache = new Map();
+    let rawItems = _sentinelRawItemsCache.get(rawItemsKey);
+    if (!rawItems) {
+      rawItems = [];
 
     const tbv = k.tb_check == null ? null : Number(k.tb_check);
     const s1Tol = getAlertParam('S1', 'tb_tolerance_usd', 0.005);
@@ -12066,7 +12281,6 @@
       navLabel: 'Open Tank Recon'
     });
 
-    const customList = getActiveCustomAlertRules();
     customList.forEach((cr, idx) => {
       const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
       const hits = cr.enabled === false ? [] : evaluateSingleCustomAlert(cr);
@@ -12092,6 +12306,9 @@
         navLabel: spec.jumpView ? 'Open Module' : ''
       });
     });
+      if (_sentinelRawItemsCache.size > 16) _sentinelRawItemsCache.clear();
+      _sentinelRawItemsCache.set(rawItemsKey, rawItems);
+    }
 
     const revStore = STATE.sentinelReviews || {};
     return rawItems.map(item => {
@@ -12672,91 +12889,116 @@
       if (STATE.chipFilter === 'app') return isAppRecord(r);
       return true;
     };
-    const rows = sortRows(base.filter(chipPredicate), 'sales', 'date', 'desc');
+    const filteredSales = _getChipFilteredRows(base, `sales:${STATE.chipFilter}`, chipPredicate);
+    const rows = sortRows(filteredSales, 'sales', 'date', 'desc');
     const shown = rows.slice(0, shownCount('sales'));
-    let saleLoads = 0, sumQty = 0, sumAggQty = 0, sumTons = 0, sumMat = 0, sumTr = 0, sumMatTtc = 0, sumTrTtc = 0, sumNet = 0, sumVat = 0, sumTtc = 0, sumCash = 0, sumCredit = 0, sumCashTtc = 0, sumCreditTtc = 0, sumDisc = 0;
-    let sumVolMat = 0, sumVolTtc = 0;
-    let delivLoads = 0, pickupLoads = 0, ownFleetLoads = 0, thirdPartyLoads = 0, otLoads = 0, vatLoads = 0, cashLoads = 0, creditLoads = 0;
-    const custMap = new Map();
-    const prodMap = new Map();
-    const siteSet = new Set();
-    const byCo = {
-      WTC: { loads: 0, net: 0, matTtc: 0, trTtc: 0, cash: 0, credit: 0, cashTtc: 0, creditTtc: 0, vat: 0, ttc: 0, disc: 0 },
-      BBConstruction: { loads: 0, net: 0, matTtc: 0, trTtc: 0, cash: 0, credit: 0, cashTtc: 0, creditTtc: 0, vat: 0, ttc: 0, disc: 0 }
-    };
-    rows.forEach(r => {
-      const sgn = ticketSign(r);
-      if (sgn === 1) {
-        saleLoads += 1;
-        if (r.sale_type === 'Delivery') delivLoads += 1;
-        else if (r.sale_type === 'Pickup') pickupLoads += 1;
-        if (r.transport_by === 'Company fleet') ownFleetLoads += 1;
-        else if (r.transport_by === 'Third-party truck') thirdPartyLoads += 1;
-        if (r.overtime) otLoads += 1;
-        if (Number(r.vat || 0) > 0) vatLoads += 1;
+    const salesAggKey = `${SEED._customRev || 0}|${_WIN_REV}`;
+    let sAgg = filteredSales._salesAgg && filteredSales._salesAgg.key === salesAggKey ? filteredSales._salesAgg : null;
+    if (!sAgg) {
+      let _saleLoads = 0, _sumQty = 0, _sumAggQty = 0, _sumTons = 0, _sumMat = 0, _sumTr = 0, _sumMatTtc = 0, _sumTrTtc = 0, _sumNet = 0, _sumVat = 0, _sumTtc = 0, _sumCash = 0, _sumCredit = 0, _sumCashTtc = 0, _sumCreditTtc = 0, _sumDisc = 0;
+      let _sumVolMat = 0, _sumVolTtc = 0;
+      let _delivLoads = 0, _pickupLoads = 0, _ownFleetLoads = 0, _thirdPartyLoads = 0, _otLoads = 0, _vatLoads = 0, _cashLoads = 0, _creditLoads = 0;
+      const _custMap = new Map();
+      const _prodMap = new Map();
+      const _siteSet = new Set();
+      const _byCo = {
+        WTC: { loads: 0, net: 0, matTtc: 0, trTtc: 0, cash: 0, credit: 0, cashTtc: 0, creditTtc: 0, vat: 0, ttc: 0, disc: 0 },
+        BBConstruction: { loads: 0, net: 0, matTtc: 0, trTtc: 0, cash: 0, credit: 0, cashTtc: 0, creditTtc: 0, vat: 0, ttc: 0, disc: 0 }
+      };
+      for (let i = 0; i < filteredSales.length; i++) {
+        const r = filteredSales[i];
+        const sgn = ticketSign(r);
+        if (sgn === 1) {
+          _saleLoads += 1;
+          if (r.sale_type === 'Delivery') _delivLoads += 1;
+          else if (r.sale_type === 'Pickup') _pickupLoads += 1;
+          if (r.transport_by === 'Company fleet') _ownFleetLoads += 1;
+          else if (r.transport_by === 'Third-party truck') _thirdPartyLoads += 1;
+          if (r.overtime) _otLoads += 1;
+          if (Number(r.vat || 0) > 0) _vatLoads += 1;
+        }
+        const q = sgn * ticketProductQty(r);
+        const t = sgn * ticketTons(r);
+        const mat = sgn * Number(r.price || 0);
+        const tr = sgn * Number(r.trans_price || 0);
+        const net = sgn * Number(r.total != null ? r.total : (Number(r.price || 0) + Number(r.trans_price || 0)));
+        const vat = sgn * Number(r.vat || 0);
+        const ttc = round2(sgn * Number(r.total_ttc != null ? r.total_ttc : (Number(r.total || 0) + Number(r.vat || 0))));
+        const trTtc = tr !== 0
+          ? ((Math.abs(vat) > 0 && (mat + tr) !== 0) ? round2(ttc * (tr / (mat + tr))) : round2(tr))
+          : 0;
+        const matTtc = round2(ttc - trTtc);
+        const disc = Number(r.discount || 0);
+        const isCash = /^cash|^c\b/i.test(String(r.method || ''));
+        _sumQty += q;
+        _sumTons += t;
+        _sumMat += mat;
+        _sumTr += tr;
+        _sumMatTtc += matTtc;
+        _sumTrTtc += trTtc;
+        _sumNet += net;
+        _sumVat += vat;
+        _sumTtc += ttc;
+        _sumDisc += disc;
+        if (q !== 0 && isAggregateMaterialProduct(r.product, r.uom)) {
+          _sumAggQty += q;
+          _sumVolMat += net;
+          _sumVolTtc += ttc;
+        }
+        if (isCash) {
+          _sumCash += net;
+          _sumCashTtc += ttc;
+          if (sgn === 1) _cashLoads += 1;
+        } else {
+          _sumCredit += net;
+          _sumCreditTtc += ttc;
+          if (sgn === 1) _creditLoads += 1;
+        }
+        if (r.customer) {
+          let prevC = _custMap.get(r.customer);
+          if (!prevC) { prevC = { loads: 0, ttc: 0 }; _custMap.set(r.customer, prevC); }
+          if (sgn === 1) prevC.loads += 1;
+          prevC.ttc += ttc;
+        }
+        if (r.product) {
+          let prevP = _prodMap.get(r.product);
+          if (!prevP) { prevP = { loads: 0, ttc: 0 }; _prodMap.set(r.product, prevP); }
+          if (sgn === 1) prevP.loads += 1;
+          prevP.ttc += ttc;
+        }
+        if (r.site) _siteSet.add(r.site);
+        const bucket = _byCo[r.company];
+        if (bucket) {
+          if (sgn === 1) bucket.loads += 1;
+          bucket.net += net;
+          bucket.matTtc += matTtc;
+          bucket.trTtc += trTtc;
+          if (isCash) { bucket.cash += net; bucket.cashTtc += ttc; } else { bucket.credit += net; bucket.creditTtc += ttc; }
+          bucket.vat += vat;
+          bucket.ttc += ttc;
+          bucket.disc += disc;
+        }
       }
-      const q = sgn * ticketProductQty(r);
-      const t = sgn * ticketTons(r);
-      const mat = sgn * Number(r.price || 0);
-      const tr = sgn * Number(r.trans_price || 0);
-      const net = sgn * Number(r.total != null ? r.total : (Number(r.price || 0) + Number(r.trans_price || 0)));
-      const vat = sgn * Number(r.vat || 0);
-      const ttc = round2(sgn * Number(r.total_ttc != null ? r.total_ttc : (Number(r.total || 0) + Number(r.vat || 0))));
-      const trTtc = tr !== 0
-        ? ((Math.abs(vat) > 0 && (mat + tr) !== 0) ? round2(ttc * (tr / (mat + tr))) : round2(tr))
-        : 0;
-      const matTtc = round2(ttc - trTtc);
-      const disc = Number(r.discount || 0);
-      const isCash = /^cash|^c\b/i.test(String(r.method || ''));
-      sumQty += q;
-      sumTons += t;
-      sumMat += mat;
-      sumTr += tr;
-      sumMatTtc += matTtc;
-      sumTrTtc += trTtc;
-      sumNet += net;
-      sumVat += vat;
-      sumTtc += ttc;
-      sumDisc += disc;
-      if (q !== 0 && isAggregateMaterialProduct(r.product, r.uom)) {
-        sumAggQty += q;
-        sumVolMat += net;
-        sumVolTtc += ttc;
-      }
-      if (isCash) {
-        sumCash += net;
-        sumCashTtc += ttc;
-        if (sgn === 1) cashLoads += 1;
-      } else {
-        sumCredit += net;
-        sumCreditTtc += ttc;
-        if (sgn === 1) creditLoads += 1;
-      }
-      if (r.customer) {
-        const prevC = custMap.get(r.customer) || { loads: 0, ttc: 0 };
-        if (sgn === 1) prevC.loads += 1;
-        prevC.ttc += ttc;
-        custMap.set(r.customer, prevC);
-      }
-      if (r.product) {
-        const prevP = prodMap.get(r.product) || { loads: 0, ttc: 0 };
-        if (sgn === 1) prevP.loads += 1;
-        prevP.ttc += ttc;
-        prodMap.set(r.product, prevP);
-      }
-      if (r.site) siteSet.add(r.site);
-      const bucket = byCo[r.company];
-      if (bucket) {
-        if (sgn === 1) bucket.loads += 1;
-        bucket.net += net;
-        bucket.matTtc += matTtc;
-        bucket.trTtc += trTtc;
-        if (isCash) { bucket.cash += net; bucket.cashTtc += ttc; } else { bucket.credit += net; bucket.creditTtc += ttc; }
-        bucket.vat += vat;
-        bucket.ttc += ttc;
-        bucket.disc += disc;
-      }
-    });
+      sAgg = {
+        key: salesAggKey,
+        saleLoads: _saleLoads, sumQty: _sumQty, sumAggQty: _sumAggQty, sumTons: _sumTons,
+        sumMat: _sumMat, sumTr: _sumTr, sumMatTtc: _sumMatTtc, sumTrTtc: _sumTrTtc,
+        sumNet: _sumNet, sumVat: _sumVat, sumTtc: _sumTtc, sumCash: _sumCash, sumCredit: _sumCredit,
+        sumCashTtc: _sumCashTtc, sumCreditTtc: _sumCreditTtc, sumDisc: _sumDisc,
+        sumVolMat: _sumVolMat, sumVolTtc: _sumVolTtc,
+        delivLoads: _delivLoads, pickupLoads: _pickupLoads, ownFleetLoads: _ownFleetLoads,
+        thirdPartyLoads: _thirdPartyLoads, otLoads: _otLoads, vatLoads: _vatLoads,
+        cashLoads: _cashLoads, creditLoads: _creditLoads,
+        custMap: _custMap, prodMap: _prodMap, siteSet: _siteSet, byCo: _byCo
+      };
+      Object.defineProperty(filteredSales, '_salesAgg', { value: sAgg, configurable: true });
+    }
+    const {
+      saleLoads, sumQty, sumAggQty, sumTons, sumMat, sumTr, sumMatTtc, sumTrTtc,
+      sumNet, sumVat, sumTtc, sumCash, sumCredit, sumCashTtc, sumCreditTtc, sumDisc,
+      sumVolMat, sumVolTtc, delivLoads, pickupLoads, ownFleetLoads, thirdPartyLoads,
+      otLoads, vatLoads, cashLoads, creditLoads, custMap, prodMap, siteSet, byCo
+    } = sAgg;
     const isSalesFiltered = Boolean(offScopeOn || periodRange(STATE.period) || STATE.search.trim() || STATE.chipFilter !== 'all' || hasActiveColFilters('sales'));
     const mdlProds = getModel().products || [];
     const mdlSites = getModel().sites || [];
@@ -13096,7 +13338,7 @@
               k,
               chartMode: STATE.salesChartMode || 'payment',
               hasTicketSource: allCoSalesForTrends.length > 0,
-              trendSalesRows: allCoSalesForTrends.filter(chipPredicate),
+              trendSalesRows: _getChipFilteredRows(allCoSalesForTrends, `salesTrend:${STATE.chipFilter}`, chipPredicate),
               ticketMeters,
               ticketSign,
               basis: STATE.basis,
@@ -13197,12 +13439,14 @@
     const m = getModel();
     const qRaw = STATE.search.trim().toLowerCase();
     const base = filterRecords(SEED.records.raw_purchases);
-    const rows = sortRows(base.filter(r => {
+    const rawChipPred = r => {
       if (STATE.chipFilter === 'fleet') return r.transport_by === 'Company fleet';
       if (STATE.chipFilter === 'third') return r.transport_by === 'Third-party truck';
       if (STATE.chipFilter === 'app') return isAppRecord(r);
       return true;
-    }), 'raw', 'date', 'desc');
+    };
+    const filteredRaw = _getChipFilteredRows(base, `raw:${STATE.chipFilter}`, rawChipPred);
+    const rows = sortRows(filteredRaw, 'raw', 'date', 'desc');
     const shown = rows.slice(0, shownCount('raw'));
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     const supChip = (key, label) => `<button type="button" class="filter-chip ${STATE.rawSupFilter === key ? 'active' : ''}" data-rawsup-chip="${esc(key)}">${label}</button>`;
@@ -13219,7 +13463,8 @@
     const rawProdMap = new Map();
     const rawHaulerSet = new Set();
     const rawTruckSet = new Set();
-    rows.forEach(r => {
+    for (let i = 0; i < filteredRaw.length; i++) {
+      const r = filteredRaw[i];
       const q = ticketProductQty(r);
       const t = ticketTons(r);
       const mat = Number(r.cost || 0);
@@ -13245,7 +13490,7 @@
       if (r.product) rawProdMap.set(r.product, (rawProdMap.get(r.product) || 0) + 1);
       if (r.truck_owner) rawHaulerSet.add(r.truck_owner);
       if (r.truck) rawTruckSet.add(r.truck);
-    });
+    }
     const wtcR = byCo.WTC;
     const bbcR = byCo.BBConstruction;
     wtcR.salesHaul = 0;
@@ -13256,205 +13501,248 @@
     const scopeSales = filterRecords(SEED.records.sales_tickets, { ignoreSearch: true });
     const scopeSettles = filterRecords(SEED.records.settlements, { ignoreSearch: true });
 
-    let sumSalesHaul = 0;
-    scopeSales.forEach(s => {
-      if (s.transport_by !== 'Third-party truck') return;
-      const mth = String(s.method || '').trim();
-      if (mth !== 'Credit' && mth !== 'CR Return' && mth !== 'Credit Return') return;
-      const sgn = ticketSign(s);
-      const tp = sgn * Number(s.trans_price || 0);
-      if (!tp) return;
-      if (!qRaw && STATE.chipFilter !== 'fleet' && !hasActiveColFilters('raw')) {
-        sumSalesHaul += tp;
+    const rawScopeKey = `${SEED._customRev || 0}|${_WIN_REV}|${_getArrUid(scopeRaws)}:${scopeRaws.length}|${_getArrUid(scopeSales)}:${scopeSales.length}|${_getArrUid(scopeSettles)}:${scopeSettles.length}|${(SEED.records.suppliers || []).length}|${(SEED.records.sites || []).length}`;
+    if (!SEED._rawScopeReconCache) SEED._rawScopeReconCache = new Map();
+    let rawRecon = SEED._rawScopeReconCache.get(rawScopeKey);
+    if (!rawRecon) {
+      let totalSalesHaulAll = 0;
+      let wtcSalesHaulAll = 0;
+      let bbcSalesHaulAll = 0;
+      const scopeHaulers = [];
+      for (let i = 0; i < scopeSales.length; i++) {
+        const s = scopeSales[i];
+        if (s.transport_by !== 'Third-party truck') continue;
+        const mth = String(s.method || '').trim();
+        if (mth !== 'Credit' && mth !== 'CR Return' && mth !== 'Credit Return') continue;
+        const sgn = ticketSign(s);
+        const tp = sgn * Number(s.trans_price || 0);
+        if (!tp) continue;
+        totalSalesHaulAll += tp;
+        if (s.company === 'WTC') wtcSalesHaulAll += tp;
+        else if (s.company === 'BBConstruction') bbcSalesHaulAll += tp;
       }
-      if (byCo[s.company]) byCo[s.company].salesHaul += tp;
-    });
 
-    // ---- Canonical Supplier & Site Registries ----
-    const supCanon = new Map();
-    (SEED.records.suppliers || []).forEach(s => {
-      if (s && s.name) supCanon.set(norm(s.name), String(s.name).trim());
-    });
-    const normSupKey = name => {
-      const k = norm(name);
-      if (k === 'kareem bdeir') return 'karim bdeir';
-      return k;
-    };
-    const siteCanon = new Map();
-    const jvSiteKeys = new Set();
-    (SEED.records.sites || []).forEach(st => {
-      if (!st || !st.name) return;
-      const sk = norm(st.name);
-      siteCanon.set(sk, String(st.name).trim());
-      if (st.is_jv || /\bjv\b/i.test(st.name)) jvSiteKeys.add(sk);
-    });
-    (m.sites || []).forEach(st => {
-      if (!st || !st.Site) return;
-      const sk = norm(st.Site);
-      if (!siteCanon.has(sk)) siteCanon.set(sk, String(st.Site).trim());
-      if (st.JV === 'Yes' || /\bjv\b/i.test(st.Site)) jvSiteKeys.add(sk);
-    });
+      const supCanon = new Map();
+      (SEED.records.suppliers || []).forEach(s => {
+        if (s && s.name) supCanon.set(norm(s.name), String(s.name).trim());
+      });
+      const normSupKey = name => {
+        const k = norm(name);
+        if (k === 'kareem bdeir') return 'karim bdeir';
+        return k;
+      };
+      const siteCanon = new Map();
+      const jvSiteKeys = new Set();
+      (SEED.records.sites || []).forEach(st => {
+        if (!st || !st.name) return;
+        const sk = norm(st.name);
+        siteCanon.set(sk, String(st.name).trim());
+        if (st.is_jv || /\bjv\b/i.test(st.name)) jvSiteKeys.add(sk);
+      });
+      (m.sites || []).forEach(st => {
+        if (!st || !st.Site) return;
+        const sk = norm(st.Site);
+        if (!siteCanon.has(sk)) siteCanon.set(sk, String(st.Site).trim());
+        if (st.JV === 'Yes' || /\bjv\b/i.test(st.Site)) jvSiteKeys.add(sk);
+      });
 
-    // ---- 1) Supplier & Hauler Material + Supplier-Site Haul + Customer-Site Haul + Settlements & Remaining ----
-    const supAgg = new Map();
-    const ensureSup = rawName => {
-      const nk = normSupKey(rawName);
-      if (!nk) return null;
-      let o = supAgg.get(nk);
-      if (!o) {
-        const disp = supCanon.get(nk) || (nk === 'karim bdeir' ? 'Karim Bdeir' : String(rawName).trim());
-        o = {
-          supplier: disp,
-          raw_loads: 0,
-          haul_loads: 0,
-          mat_qty: 0,
-          mat_credit: 0,
-          quarry_haul: 0,
-          sales_haul: 0,
-          mat_paid: 0,
-          haul_paid: 0
-        };
-        supAgg.set(nk, o);
+      const supAgg = new Map();
+      const ensureSup = rawName => {
+        const nk = normSupKey(rawName);
+        if (!nk) return null;
+        let o = supAgg.get(nk);
+        if (!o) {
+          const disp = supCanon.get(nk) || (nk === 'karim bdeir' ? 'Karim Bdeir' : String(rawName).trim());
+          o = {
+            supplier: disp,
+            raw_loads: 0,
+            haul_loads: 0,
+            mat_qty: 0,
+            mat_credit: 0,
+            quarry_haul: 0,
+            sales_haul: 0,
+            mat_paid: 0,
+            haul_paid: 0
+          };
+          supAgg.set(nk, o);
+        }
+        return o;
+      };
+
+      const siteAgg = new Map();
+      const ensureSite = rawSite => {
+        const label = String(rawSite || '').trim() || '(General / Multi-Site)';
+        const sk = norm(label);
+        let o = siteAgg.get(sk);
+        if (!o) {
+          const disp = siteCanon.get(sk) || label;
+          o = {
+            site: disp,
+            is_jv: jvSiteKeys.has(sk) || /\bjv\b/i.test(disp),
+            raw_loads: 0,
+            sales_loads: 0,
+            sales_haul_loads: 0,
+            mat_qty: 0,
+            mat_credit: 0,
+            quarry_haul: 0,
+            sales_haul: 0,
+            paid: 0,
+            sales_ttc: 0
+          };
+          siteAgg.set(sk, o);
+        }
+        return o;
+      };
+
+      for (let i = 0; i < scopeRaws.length; i++) {
+        const r = scopeRaws[i];
+        const rm = String(r.method || 'Credit').trim();
+        if (rm === 'Remove' || rm === 'Free') continue;
+        const q = ticketProductQty(r);
+        const mat = rm === 'Cash' ? 0 : Number(r.cost || 0);
+        const haul = rm === 'Cash' ? 0 : Number(r.trans_cost || 0);
+        if (r.site_owner || mat !== 0) {
+          const so = ensureSup(r.site_owner || '(Own Material / Unassigned)');
+          if (so) {
+            so.raw_loads += 1;
+            so.mat_qty += q;
+            so.mat_credit += mat;
+          }
+        }
+        if (r.truck_owner || haul !== 0) {
+          const ho = ensureSup(r.truck_owner || '(Own Fleet / Unassigned)');
+          if (ho) {
+            ho.haul_loads += 1;
+            ho.quarry_haul += haul;
+          }
+          if (r.truck_owner) scopeHaulers.push(ho ? ho.supplier : r.truck_owner);
+        } else if (r.transport_by === 'Third-party truck' && r.truck_owner) {
+          const ho = ensureSup(r.truck_owner);
+          if (ho) ho.haul_loads += 1;
+          scopeHaulers.push(ho ? ho.supplier : r.truck_owner);
+        }
+        const st = ensureSite(r.site || '(Unassigned Site)');
+        st.raw_loads += 1;
+        st.mat_qty += q;
+        st.mat_credit += mat;
+        st.quarry_haul += haul;
       }
-      return o;
-    };
 
-    const siteAgg = new Map();
-    const ensureSite = rawSite => {
-      const label = String(rawSite || '').trim() || '(General / Multi-Site)';
-      const sk = norm(label);
-      let o = siteAgg.get(sk);
-      if (!o) {
-        const disp = siteCanon.get(sk) || label;
-        o = {
-          site: disp,
-          is_jv: jvSiteKeys.has(sk) || /\bjv\b/i.test(disp),
-          raw_loads: 0,
-          sales_loads: 0,
-          sales_haul_loads: 0,
-          mat_qty: 0,
-          mat_credit: 0,
-          quarry_haul: 0,
-          sales_haul: 0,
-          paid: 0,
-          sales_ttc: 0
-        };
-        siteAgg.set(sk, o);
+      for (let i = 0; i < scopeSales.length; i++) {
+        const s = scopeSales[i];
+        const sgn = ticketSign(s);
+        if (!sgn) continue;
+        const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+        if (s.site) {
+          const dst = ensureSite(s.site);
+          if (sgn > 0) dst.sales_loads += 1;
+          dst.sales_ttc += ttc;
+        }
+        if (s.transport_by !== 'Third-party truck') continue;
+        const tp = sgn * Number(s.trans_price || 0);
+        if (!tp) continue;
+        const mth = String(s.method || '').trim();
+        const isCred = (mth === 'Credit' || mth === 'CR Return' || mth === 'Credit Return');
+        if (isCred) {
+          const ho = ensureSup(s.truck_owner || '(Unassigned Hauler)');
+          if (ho) {
+            ho.haul_loads += 1;
+            ho.sales_haul += tp;
+            if (s.truck_owner) scopeHaulers.push(ho.supplier);
+          }
+          const dst = ensureSite(s.site || '(Unassigned Customer Site)');
+          dst.sales_haul_loads += 1;
+          dst.sales_haul += tp;
+        }
       }
-      return o;
-    };
 
-    scopeRaws.forEach(r => {
-      const rm = String(r.method || 'Credit').trim();
-      if (rm === 'Remove' || rm === 'Free') return;
-      const q = ticketProductQty(r);
-      const mat = rm === 'Cash' ? 0 : Number(r.cost || 0);
-      const haul = rm === 'Cash' ? 0 : Number(r.trans_cost || 0);
-      if (r.site_owner || mat !== 0) {
-        const so = ensureSup(r.site_owner || '(Own Material / Unassigned)');
+      for (let i = 0; i < scopeSettles.length; i++) {
+        const s = scopeSettles[i];
+        const mth = String(s.method || '').trim();
+        if (mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission') continue;
+        const notes = String(s.notes || '');
+        const cm = notes.match(/Category:\s*([^·\n]+)/i);
+        const cat = cm ? cm[1].trim() : '';
+        if (mth === 'Config' && !/Raw Material Settlements/i.test(cat)) continue;
+        const pm = notes.match(/Product:\s*([^·\n]+)/i);
+        const prod = pm ? pm[1].trim() : '';
+        const sm = notes.match(/Site:\s*([^·\n]+)/i);
+        const siteTag = sm ? sm[1].trim() : '';
+        const legHint = String(s.payable_leg || s.leg || '').trim();
+        const nk = normSupKey(s.supplier);
+        const existingSup = nk ? supAgg.get(nk) : null;
+        const isStockSettle =
+          /Raw Material Settlements/i.test(cat) ||
+          /material|quarry|haul/i.test(legHint) ||
+          (!cat && existingSup && (existingSup.mat_credit !== 0 || existingSup.quarry_haul !== 0 || existingSup.sales_haul !== 0 || existingSup.mat_qty > 0));
+        if (!isStockSettle) continue;
+        const amt = Number(s.amount || 0) + Number(s.discount || 0);
+        if (!amt) continue;
+        const so = ensureSup(s.supplier);
         if (so) {
-          so.raw_loads += 1;
-          so.mat_qty += q;
-          so.mat_credit += mat;
+          const isTrans = /Transportation/i.test(prod) || /haul|trans/i.test(legHint) || (!prod && so.mat_credit === 0 && so.mat_qty === 0 && (so.quarry_haul !== 0 || so.sales_haul !== 0));
+          if (isTrans) so.haul_paid += amt;
+          else so.mat_paid += amt;
         }
+        const st = ensureSite(siteTag || s.site || '(General / Multi-Site)');
+        st.paid += amt;
       }
-      if (r.truck_owner || haul !== 0) {
-        const ho = ensureSup(r.truck_owner || '(Own Fleet / Unassigned)');
-        if (ho) {
-          ho.haul_loads += 1;
-          ho.quarry_haul += haul;
-        }
-        if (r.truck_owner) rawHaulerSet.add(ho ? ho.supplier : r.truck_owner);
-      } else if (r.transport_by === 'Third-party truck' && r.truck_owner) {
-        const ho = ensureSup(r.truck_owner);
-        if (ho) ho.haul_loads += 1;
-        rawHaulerSet.add(ho ? ho.supplier : r.truck_owner);
-      }
-      const st = ensureSite(r.site || '(Unassigned Site)');
-      st.raw_loads += 1;
-      st.mat_qty += q;
-      st.mat_credit += mat;
-      st.quarry_haul += haul;
-    });
 
-    scopeSales.forEach(s => {
-      const sgn = ticketSign(s);
-      if (!sgn) return;
-      const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
-      if (s.site) {
-        const dst = ensureSite(s.site);
-        if (sgn > 0) dst.sales_loads += 1;
-        dst.sales_ttc += ttc;
-      }
-      if (s.transport_by !== 'Third-party truck') return;
-      const tp = sgn * Number(s.trans_price || 0);
-      if (!tp) return;
-      const mth = String(s.method || '').trim();
-      const isCred = (mth === 'Credit' || mth === 'CR Return' || mth === 'Credit Return');
-      if (isCred) {
-        const ho = ensureSup(s.truck_owner || '(Unassigned Hauler)');
-        if (ho) {
-          ho.haul_loads += 1;
-          ho.sales_haul += tp;
-          if (s.truck_owner) rawHaulerSet.add(ho.supplier);
-        }
-      }
-      if (isCred) {
-        const dst = ensureSite(s.site || '(Unassigned Customer Site)');
-        dst.sales_haul_loads += 1;
-        dst.sales_haul += tp;
-      }
-    });
+      const _rawSupAll = [];
+      supAgg.forEach(o => {
+        o.mat_qty = round2(o.mat_qty);
+        o.mat_credit = round2(o.mat_credit);
+        o.quarry_haul = round2(o.quarry_haul);
+        o.sales_haul = round2(o.sales_haul);
+        o.total_haul = round2(o.quarry_haul + o.sales_haul);
+        o.total_credit = round2(o.mat_credit + o.total_haul);
+        o.mat_paid = round2(o.mat_paid);
+        o.haul_paid = round2(o.haul_paid);
+        o.paid = round2(o.mat_paid + o.haul_paid);
+        o.remaining = round2(o.total_credit - o.paid);
+        const hasMat = o.mat_credit !== 0 || o.mat_qty > 0 || o.mat_paid !== 0;
+        const hasHaul = o.total_haul !== 0 || o.haul_paid !== 0 || o.haul_loads > 0;
+        if (!hasMat && !hasHaul && o.paid === 0) return;
+        o.role = (hasMat && hasHaul) ? 'Both' : (hasHaul ? 'Hauler' : 'Material');
+        _rawSupAll.push(o);
+      });
 
-    scopeSettles.forEach(s => {
-      const mth = String(s.method || '').trim();
-      if (mth === 'JV Adjusted' || mth === 'Remove' || mth === 'Adjusted' || mth === 'Free' || mth === 'VAT' || mth === 'VATConfig' || mth === 'VAT Dis' || mth === 'Cash VAT Dis' || mth === 'IVA' || mth === 'Commission') return;
-      const notes = String(s.notes || '');
-      const cm = notes.match(/Category:\s*([^·\n]+)/i);
-      const cat = cm ? cm[1].trim() : '';
-      if (mth === 'Config' && !/Raw Material Settlements/i.test(cat)) return;
-      const pm = notes.match(/Product:\s*([^·\n]+)/i);
-      const prod = pm ? pm[1].trim() : '';
-      const sm = notes.match(/Site:\s*([^·\n]+)/i);
-      const siteTag = sm ? sm[1].trim() : '';
-      const legHint = String(s.payable_leg || s.leg || '').trim();
-      const nk = normSupKey(s.supplier);
-      const existingSup = nk ? supAgg.get(nk) : null;
-      const isStockSettle =
-        /Raw Material Settlements/i.test(cat) ||
-        /material|quarry|haul/i.test(legHint) ||
-        (!cat && existingSup && (existingSup.mat_credit !== 0 || existingSup.quarry_haul !== 0 || existingSup.sales_haul !== 0 || existingSup.mat_qty > 0));
-      if (!isStockSettle) return;
-      const amt = Number(s.amount || 0) + Number(s.discount || 0);
-      if (!amt) return;
-      const so = ensureSup(s.supplier);
-      if (so) {
-        const isTrans = /Transportation/i.test(prod) || /haul|trans/i.test(legHint) || (!prod && so.mat_credit === 0 && so.mat_qty === 0 && (so.quarry_haul !== 0 || so.sales_haul !== 0));
-        if (isTrans) so.haul_paid += amt;
-        else so.mat_paid += amt;
-      }
-      const st = ensureSite(siteTag || s.site || '(General / Multi-Site)');
-      st.paid += amt;
-    });
+      const _siteAllList = [];
+      siteAgg.forEach(o => {
+        o.mat_qty = round2(o.mat_qty);
+        o.mat_credit = round2(o.mat_credit);
+        o.quarry_haul = round2(o.quarry_haul);
+        o.sales_haul = round2(o.sales_haul);
+        o.total_credit = round2(o.mat_credit + o.quarry_haul + o.sales_haul);
+        o.paid = round2(o.paid);
+        o.remaining = round2(o.total_credit - o.paid);
+        o.has_expense = Boolean(o.mat_qty > 0 || o.total_credit !== 0 || o.paid !== 0 || o.raw_loads > 0);
+        if (!o.has_expense) return;
+        o.has_raw = Boolean(o.raw_loads > 0 || o.mat_credit !== 0 || o.quarry_haul !== 0 || o.mat_qty > 0);
+        o.has_cust_haul = Boolean(o.sales_haul !== 0 || o.sales_haul_loads > 0);
+        o.site_kind = o.is_jv
+          ? 'JV 50/50'
+          : (o.has_raw && o.has_cust_haul ? 'Source + 3P Haul' : (o.has_raw ? 'Source Site' : (o.has_cust_haul ? '3P Customer Haul' : 'Settlement')));
+        _siteAllList.push(o);
+      });
 
-    const rawSupAll = [];
-    supAgg.forEach(o => {
-      o.mat_qty = round2(o.mat_qty);
-      o.mat_credit = round2(o.mat_credit);
-      o.quarry_haul = round2(o.quarry_haul);
-      o.sales_haul = round2(o.sales_haul);
-      o.total_haul = round2(o.quarry_haul + o.sales_haul);
-      o.total_credit = round2(o.mat_credit + o.total_haul);
-      o.mat_paid = round2(o.mat_paid);
-      o.haul_paid = round2(o.haul_paid);
-      o.paid = round2(o.mat_paid + o.haul_paid);
-      o.remaining = round2(o.total_credit - o.paid);
-      const hasMat = o.mat_credit !== 0 || o.mat_qty > 0 || o.mat_paid !== 0;
-      const hasHaul = o.total_haul !== 0 || o.haul_paid !== 0 || o.haul_loads > 0;
-      if (!hasMat && !hasHaul && o.paid === 0) return;
-      o.role = (hasMat && hasHaul) ? 'Both' : (hasHaul ? 'Hauler' : 'Material');
-      rawSupAll.push(o);
-    });
+      rawRecon = {
+        rawSupAll: _rawSupAll,
+        siteAllList: _siteAllList,
+        totalSalesHaulAll,
+        wtcSalesHaulAll,
+        bbcSalesHaulAll,
+        scopeHaulers
+      };
+      if (SEED._rawScopeReconCache.size > 16) SEED._rawScopeReconCache.clear();
+      SEED._rawScopeReconCache.set(rawScopeKey, rawRecon);
+    }
+
+    wtcR.salesHaul = rawRecon.wtcSalesHaulAll;
+    bbcR.salesHaul = rawRecon.bbcSalesHaulAll;
+    const sumSalesHaul = (!qRaw && STATE.chipFilter !== 'fleet' && !hasActiveColFilters('raw')) ? rawRecon.totalSalesHaulAll : 0;
+    for (let i = 0; i < rawRecon.scopeHaulers.length; i++) rawHaulerSet.add(rawRecon.scopeHaulers[i]);
+    const rawSupAll = rawRecon.rawSupAll;
 
     const matSupCnt = rawSupAll.filter(r => r.mat_credit !== 0 || r.mat_qty > 0 || r.mat_paid !== 0).length;
     const haulSupCnt = rawSupAll.filter(r => r.total_haul !== 0 || r.haul_paid !== 0 || r.haul_loads > 0).length;
@@ -13504,24 +13792,7 @@
     });
 
     // ---- 3) Site-Level Material, Supplier-Site Haul, Customer-Site Haul, Paid & Remaining ----
-    const siteAllList = [];
-    siteAgg.forEach(o => {
-      o.mat_qty = round2(o.mat_qty);
-      o.mat_credit = round2(o.mat_credit);
-      o.quarry_haul = round2(o.quarry_haul);
-      o.sales_haul = round2(o.sales_haul);
-      o.total_credit = round2(o.mat_credit + o.quarry_haul + o.sales_haul);
-      o.paid = round2(o.paid);
-      o.remaining = round2(o.total_credit - o.paid);
-      o.has_expense = Boolean(o.mat_qty > 0 || o.total_credit !== 0 || o.paid !== 0 || o.raw_loads > 0);
-      if (!o.has_expense) return;
-      o.has_raw = Boolean(o.raw_loads > 0 || o.mat_credit !== 0 || o.quarry_haul !== 0 || o.mat_qty > 0);
-      o.has_cust_haul = Boolean(o.sales_haul !== 0 || o.sales_haul_loads > 0);
-      o.site_kind = o.is_jv
-        ? 'JV 50/50'
-        : (o.has_raw && o.has_cust_haul ? 'Source + 3P Haul' : (o.has_raw ? 'Source Site' : (o.has_cust_haul ? '3P Customer Haul' : 'Settlement')));
-      siteAllList.push(o);
-    });
+    const siteAllList = rawRecon.siteAllList;
     const srcSiteCnt = siteAllList.filter(s => s.has_raw).length;
     const custHaulSiteCnt = siteAllList.filter(s => s.has_cust_haul).length;
     const sitePool = siteAllList.filter(s => {
@@ -14286,7 +14557,7 @@
     const dieselBaseCount = base.filter(isDieselFill).length;
     const greaseBaseCount = base.filter(f => !isDieselFill(f) && isGreaseFill(f)).length;
     const lubeBaseCount = base.length - dieselBaseCount;
-    const fuelRows = sortRows(base.filter(f => {
+    const fuelRows = sortRows(STATE.chipFilter === 'all' ? base : base.filter(f => {
       if (STATE.chipFilter === 'flag') { const g = guards.get(f.id); return g && g.cls !== 'badge-ok' && g.cls !== ''; }
       if (STATE.chipFilter === 'diesel') return isDieselFill(f);
       if (STATE.chipFilter === 'lube') return !isDieselFill(f);
@@ -15017,7 +15288,7 @@
 
   let _MAINT_IDX = null;
   function getMaintIndex() {
-    const revKey = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${allowedCompanyNames().join(',')}`;
+    const revKey = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${STATE.company}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${allowedCompanyNames().join(',')}`;
     if (_MAINT_IDX && _MAINT_IDX.revKey === revKey) return _MAINT_IDX;
 
     const liveDefectsAll = filterRecords(SEED.records.equipment_defects || [], { ignorePeriod: true, ignoreSearch: true });
@@ -15079,6 +15350,15 @@
         u.expCount += 1;
         u.expTotal += Number(e.amount || 0);
       }
+    });
+    const coEqByUnit = new Map();
+    filterRecords(SEED.records.company_equipment || [], { ignorePeriod: true, ignoreSearch: true }).forEach(ce => {
+      if (!ce || ce.voided) return;
+      const uk = norm(ce.equipment);
+      if (!uk) return;
+      let list = coEqByUnit.get(uk);
+      if (!list) { list = []; coEqByUnit.set(uk, list); }
+      list.push(ce);
     });
 
     const sentinelExceptions = [];
@@ -15149,6 +15429,7 @@
       totalRepairCost,
       totalSaleProceeds,
       byUnit,
+      coEqByUnit,
       sentinelExceptions
     };
     return _MAINT_IDX;
@@ -15159,16 +15440,28 @@
     if (!k) {
       return { status: 'Healthy · Operational', label: 'Healthy · Operational', shortBadge: 'OK', code: 'OK', badgeCls: 'badge-ok', tone: 'good', severityRank: 5, openDefects: [], openCount: 0, critCount: 0, modCount: 0, minorCount: 0, parts: [], partMovements: [], partCount: 0, storedCount: 0, maintPartCount: 0, soldPartCount: 0, unnotifiedCount: 0, expCount: 0, expTotal: 0, latestOpenDefect: null };
     }
-    const allowedCos = allowedCompanyNames();
-    const coMatch = r => (!r.company || allowedCos.includes(r.company)) && (!coOpt || !r.company || norm(r.company) === norm(coOpt));
-    const allDef = (SEED.records.equipment_defects || []).filter(d => d && !d.voided && norm(d.equipment) === k && coMatch(d));
-    const openDef = allDef.filter(isDefectOpen).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
-    const allParts = (SEED.records.part_movements || []).filter(p => p && !p.voided && norm(p.equipment) === k && coMatch(p));
-    const coEqs = (SEED.records.company_equipment || []).filter(ce => ce && !ce.voided && norm(ce.equipment) === k && coMatch(ce));
-    const activeCoEq = coEqs.find(ce => !ce.end_date) || coEqs[0] || null;
-    const coEqStatus = String((activeCoEq && activeCoEq.status) || '');
     const mi = getMaintIndex();
     const uEntry = mi.byUnit.get(k);
+    const activeBu = COMPANY_BU_MATCH[STATE.company] || '';
+    const canUseIndexedScope = !isOfficialScopeActive() && (!coOpt || (activeBu && norm(coOpt) === norm(activeBu)));
+    let allDef, openDef, allParts, coEqs;
+    if (canUseIndexedScope) {
+      allDef = uEntry ? uEntry.defects : [];
+      openDef = uEntry && uEntry.openDefects.length
+        ? uEntry.openDefects.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+        : [];
+      allParts = uEntry ? uEntry.parts : [];
+      coEqs = (mi.coEqByUnit && mi.coEqByUnit.get(k)) || [];
+    } else {
+      const allowedCos = allowedCompanyNames();
+      const coMatch = r => (!r.company || allowedCos.includes(r.company)) && (!coOpt || !r.company || norm(r.company) === norm(coOpt));
+      allDef = (SEED.records.equipment_defects || []).filter(d => d && !d.voided && norm(d.equipment) === k && coMatch(d));
+      openDef = allDef.filter(isDefectOpen).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+      allParts = (SEED.records.part_movements || []).filter(p => p && !p.voided && norm(p.equipment) === k && coMatch(p));
+      coEqs = (SEED.records.company_equipment || []).filter(ce => ce && !ce.voided && norm(ce.equipment) === k && coMatch(ce));
+    }
+    const activeCoEq = coEqs.find(ce => !ce.end_date) || coEqs[0] || null;
+    const coEqStatus = String((activeCoEq && activeCoEq.status) || '');
 
     const graveCount = openDef.filter(d => /Grave/i.test(d.severity || '')).length;
     const critCount = openDef.filter(d => /Grave|Critical/i.test(d.severity || '')).length;
@@ -18616,7 +18909,7 @@
     const base = filterRecords(SEED.records.expenses);
     const pendingPriceCnt = base.filter(isPendingPriceExpense).length;
     const storedWhCnt = base.filter(x => Boolean(x.stored_in_warehouse) && expenseSign(x) !== 0).length;
-    const expRows = sortRows(base.filter(x => {
+    const expRows = sortRows(STATE.chipFilter === 'all' ? base : base.filter(x => {
       if (STATE.chipFilter === 'cash') return isCashExpense(x) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'credit') return isApCreditExpense(x) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'pending_price') return isPendingPriceExpense(x);
@@ -19209,8 +19502,19 @@
     };
     if (!k || !SEED.records || !Array.isArray(SEED.records.employments)) return def;
     const co = norm(company);
-    const allForStaff = SEED.records.employments.filter(e => e && !e.voided && norm(e.staff) === k);
-    if (!allForStaff.length) return def;
+    const refDateKey = String(onDate || SEED_DATE || '').slice(0, 10);
+    const hasExpKey = onDate ? 1 : 0;
+    const payIdx = _getPayrollIntelIndex();
+    const profKey = `${k}${co}${refDateKey}${hasExpKey}`;
+    if (payIdx.profCache && payIdx.profCache.has(profKey)) {
+      const hit = payIdx.profCache.get(profKey);
+      return hit || def;
+    }
+    const allForStaff = payIdx.empByStaff ? (payIdx.empByStaff.get(k) || []) : SEED.records.employments.filter(e => e && !e.voided && norm(e.staff) === k);
+    if (!allForStaff.length) {
+      if (payIdx.profCache) payIdx.profCache.set(profKey, null);
+      return def;
+    }
     const pool = co ? allForStaff.filter(e => norm(e.company) === co) : allForStaff;
     const candidates = pool.length ? pool : allForStaff;
     const refDate = String(onDate || SEED_DATE || '').slice(0, 10);
@@ -19238,7 +19542,7 @@
     const ltMult = Number(best.lateness_multiplier || 0) > 0 ? Number(best.lateness_multiplier) : 1.0;
     const dailyRate = dRateIn > 0 ? dRateIn : (mSal > 0 ? (mSal / wDays) : 25);
     const hourlyRate = mSal > 0 ? (mSal / (wDays * wHrs)) : (dailyRate / wHrs);
-    return {
+    const outProf = {
       hasContract: true,
       staff: best.staff || staffName,
       company: best.company || company || 'WTC',
@@ -19262,6 +19566,11 @@
       otHourlyRate: hourlyRate * otMult,
       lateHourlyRate: hourlyRate * ltMult
     };
+    if (payIdx.profCache) {
+      if (payIdx.profCache.size > 4096) payIdx.profCache.clear();
+      payIdx.profCache.set(profKey, outProf);
+    }
+    return outProf;
   }
 
   function staffScheduledHours(staffName, company, onDate) {
@@ -19395,9 +19704,15 @@
       });
     });
     const empNameByCoStaff = new Map();
+    const empByStaff = new Map();
+    const profCache = new Map();
     (recs.employments || []).forEach(e => {
       if (!e || e.voided || !e.staff) return;
-      empNameByCoStaff.set(`${norm(e.company || 'WTC')}|${norm(e.staff)}`, e.staff);
+      const sk = norm(e.staff);
+      empNameByCoStaff.set(`${norm(e.company || 'WTC')}|${sk}`, e.staff);
+      let arr = empByStaff.get(sk);
+      if (!arr) { arr = []; empByStaff.set(sk, arr); }
+      arr.push(e);
     });
 
     const siteActivityByStaff = new Map();
@@ -19667,6 +19982,8 @@
       logByStaff,
       logByStaffYm,
       openLoansByStem,
+      empByStaff,
+      profCache,
       posCache,
       regCache,
       driverOtTrips,
@@ -19747,9 +20064,16 @@
       todayYmLabel: formatPayrollMonthLabel(todayYm)
     };
 
-    const empAll = opts.empRows || filterRecords(SEED.records.employments, { ignorePeriod: true });
-    const logAll = opts.logRows || filterRecords(SEED.records.logistics_allowances, { ignorePeriod: true });
     const ignoreSearchFlag = Boolean(opts.ignoreSearch);
+    const canMemoReg = !matchFn && !opts.empRows && !opts.logRows;
+    const regCacheKey = canMemoReg
+      ? `${idx.rev}|${STATE.company}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${rawFrom}..${rawTo}|${isOpenEnd ? 1 : 0}|${STATE.basis}|${cutoffMode}|${ignoreSearchFlag ? '' : STATE.search.trim().toLowerCase()}|${fxRate}`
+      : '';
+    if (canMemoReg && idx.regCache.has(regCacheKey)) {
+      return idx.regCache.get(regCacheKey);
+    }
+    const empAll = opts.empRows || filterRecords(SEED.records.employments, { ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
+    const logAll = opts.logRows || filterRecords(SEED.records.logistics_allowances, { ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
 
     const salScopedBase = filterRecords(SEED.records.salaries, { ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
     const salPool = matchFn ? salScopedBase.filter(matchFn) : salScopedBase;
@@ -20853,7 +21177,12 @@
         return m;
       });
 
-    return { staffRows, driverOtRows, siteStaffRowsBase, siteDailyRows, siteLogRows, salByStaffMap, payMonths, profOf, cutoffMeta, fxRate };
+    const regOut = { staffRows, driverOtRows, siteStaffRowsBase, siteDailyRows, siteLogRows, salByStaffMap, payMonths, profOf, cutoffMeta, fxRate };
+    if (canMemoReg) {
+      if (idx.regCache.size > 24) idx.regCache.clear();
+      idx.regCache.set(regCacheKey, regOut);
+    }
+    return regOut;
   }
   window.__mfgComputeStaffPayrollRegister = computeStaffPayrollRegister;
 
@@ -20873,7 +21202,8 @@
     if (prof.hasContract && /^\d{4}-\d{2}$/.test(ym) && SEED.records && Array.isArray(SEED.records.employments)) {
       const { mStart, mEnd, daysInMonth } = getPayrollMonthBounds(ym);
       const coN = norm(prof.company || company);
-      const empRows = SEED.records.employments.filter(e => e && !e.voided && norm(e.staff) === sk && (!coN || norm(e.company) === coN));
+      const staffEmps = idx.empByStaff ? (idx.empByStaff.get(sk) || []) : SEED.records.employments.filter(e => e && !e.voided && norm(e.staff) === sk);
+      const empRows = coN ? staffEmps.filter(e => norm(e.company) === coN) : staffEmps;
       if (empRows.length) {
         const covDays = new Set();
         empRows.forEach(e => {
@@ -21185,10 +21515,12 @@
   }
   window.__mfgRenderPayrollCutoffBar = buildPayrollCutoffAndStatusBarHtml;
   window.__mfgGetPayrollStaffStatus = () => STATE.payrollStaffStatus || 'active';
+  const _attNormWeakMap = new WeakMap();
 
   function renderPayroll(subMode = 'main') {
     const k = getKPI();
     const { fleet, pricing } = sentinelSlice();
+    const payIdx = _getPayrollIntelIndex();
     const today = SEED_DATE;
     const fxRate = getLbpFxRate();
     const fxShortLbl = `${fmtNum(fxRate / 1000, 1).replace(/\.0$/, '')}k`;
@@ -21196,18 +21528,11 @@
     const salAll = filterRecords(SEED.records.salaries);
     const attAll = filterRecords(SEED.records.attendance);
     const logAll = filterRecords(SEED.records.logistics_allowances, { ignorePeriod: true });
-    const otRates = filterRecords(SEED.records.overtime_rates, { ignorePeriod: true });
+    const otRates = subMode === 'contracts' ? filterRecords(SEED.records.overtime_rates, { ignorePeriod: true }) : [];
 
     const regOpts = subMode === 'allowances'
-      ? {
-          empRows: filterRecords(SEED.records.employments, { ignorePeriod: true, ignoreSearch: true }),
-          salRows: filterRecords(SEED.records.salaries, { ignoreSearch: true }),
-          attRows: filterRecords(SEED.records.attendance, { ignoreSearch: true }),
-          logRows: filterRecords(SEED.records.logistics_allowances, { ignorePeriod: true, ignoreSearch: true }),
-          cutoffMode: STATE.allowancesCutoffMode || 'mtd',
-          ignoreSearch: true
-        }
-      : { empRows: empAll, salRows: salAll, attRows: attAll, logRows: logAll };
+      ? { cutoffMode: STATE.allowancesCutoffMode || 'mtd', ignoreSearch: true }
+      : {};
     const regData = computeStaffPayrollRegister(regOpts);
     const { staffRows, driverOtRows = [], siteStaffRowsBase, siteDailyRows = [], siteLogRows = [], salByStaffMap, payMonths, profOf, cutoffMeta } = regData;
     const statusMode = STATE.payrollStaffStatus || 'active';
@@ -21217,8 +21542,10 @@
     const matchStaffStatus = s => statusMode === 'all' ? true : (statusMode === 'inactive' ? !s.is_active : Boolean(s.is_active));
     const scopedStaffRows = staffRows.filter(matchStaffStatus);
 
-    // Normalize attendance fields & derive intuitive shift basis + $ payroll impact per row
-    attAll.forEach(a => {
+    // Normalize attendance fields & derive intuitive shift basis + $ payroll impact per row (attendance view only, WeakMap-cached)
+    const attNormKey = `${payIdx.rev}|${fxRate}|${today}`;
+    if (subMode === 'attendance') attAll.forEach(a => {
+      if (_attNormWeakMap.get(a) === attNormKey) return;
       const attType = String(a.type || a.status || 'Present');
       const tally = Number(a.tally != null ? a.tally : 0);
       const inFmt = fmtAttClockTime(a.in_time || a.check_in || '');
@@ -21331,18 +21658,22 @@
       a.extra_usd = extUsd;
       a.payroll_impact_usd = impactUsd;
       a.shift_str = shiftStr;
+      _attNormWeakMap.set(a, attNormKey);
     });
 
-    const filteredSiteStaff = sortRows(siteStaffRowsBase, 'pay_site_staff', 'accrued', 'desc');
-    const shownSiteStaff = filteredSiteStaff.slice(0, shownCount('pay_site_staff'));
+    const filteredSiteStaff = subMode === 'allowances' ? sortRows(siteStaffRowsBase, 'pay_site_staff', 'accrued', 'desc') : siteStaffRowsBase;
+    const shownSiteStaff = subMode === 'allowances' ? filteredSiteStaff.slice(0, shownCount('pay_site_staff')) : [];
 
-    const attStaffAllBase = staffRows.filter(s => s.logs_cnt > 0 || s.ot_hrs > 0 || s.trip_ot_pay > 0 || s.trip_ot_cnt > 0 || s.late_hrs > 0 || s.absent_days > 0 || s.vac_days > 0 || s.sick_days > 0);
-    const attStaffRowsBase = attStaffAllBase.filter(matchStaffStatus);
-    const filteredAttStaff = sortRows(attStaffRowsBase, 'pay_att_sum', 'ot_hrs', 'desc');
-    const shownAttStaff = filteredAttStaff.slice(0, shownCount('pay_att_sum'));
+    const attStaffAllBase = subMode === 'attendance'
+      ? staffRows.filter(s => s.logs_cnt > 0 || s.ot_hrs > 0 || s.trip_ot_pay > 0 || s.trip_ot_cnt > 0 || s.late_hrs > 0 || s.absent_days > 0 || s.vac_days > 0 || s.sick_days > 0)
+      : [];
+    const attStaffRowsBase = subMode === 'attendance' ? attStaffAllBase.filter(matchStaffStatus) : [];
+    const filteredAttStaff = subMode === 'attendance' ? sortRows(attStaffRowsBase, 'pay_att_sum', 'ot_hrs', 'desc') : [];
+    const shownAttStaff = subMode === 'attendance' ? filteredAttStaff.slice(0, shownCount('pay_att_sum')) : [];
 
-    const filteredDriverOt = sortRows(driverOtRows, 'pay_drv_ot', 'total_ot_usd', 'desc');
-    const shownDriverOt = filteredDriverOt.slice(0, shownCount('pay_drv_ot'));
+    const needDriverOt = subMode === 'main' || subMode === 'attendance';
+    const filteredDriverOt = needDriverOt ? sortRows(driverOtRows, 'pay_drv_ot', 'total_ot_usd', 'desc') : [];
+    const shownDriverOt = needDriverOt ? filteredDriverOt.slice(0, shownCount('pay_drv_ot')) : [];
     const totDriverOtTrips = filteredDriverOt.reduce((a, r) => a + Number(r.total_trips || 0), 0);
     const totDriverSalesTrips = filteredDriverOt.reduce((a, r) => a + Number(r.sales_trips || 0), 0);
     const totDriverRawTrips = filteredDriverOt.reduce((a, r) => a + Number(r.raw_trips || 0), 0);
@@ -21455,10 +21786,18 @@
     const filteredUnmatched = sortRows(unmatchedRowsDetailed, 'pay_unmatched', 'unmatched_usd', 'desc');
     const shownUnmatched = filteredUnmatched.slice(0, shownCount('pay_unmatched'));
 
-    // Annotate each salary payment with its full-month running entitlement & settlement / advance posture
-    const salRunMap = new Map();
-    const salScopeForRun = filterRecords(SEED.records.salaries, { ignorePeriod: true, ignoreSearch: true });
-    salScopeForRun.slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || String(a.id || '').localeCompare(String(b.id || ''))).forEach(s => {
+    // Annotate each salary payment with its full-month running entitlement & settlement / advance posture (main payroll view only, memoized on payIdx)
+    const salRunCacheKey = `${payIdx.rev}|${STATE.company}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${fxRate}`;
+    if (subMode === 'main' && payIdx._salRunKey !== salRunCacheKey) {
+      payIdx._salRunKey = salRunCacheKey;
+      const salRunMap = new Map();
+      const salScopeForRun = filterRecords(SEED.records.salaries, { ignorePeriod: true, ignoreSearch: true });
+      salScopeForRun.slice().sort((a, b) => {
+        const da = String(a.date || ''), db = String(b.date || '');
+        if (da !== db) return da < db ? -1 : 1;
+        const ia = String(a.id || ''), ib = String(b.id || '');
+        return ia === ib ? 0 : (ia < ib ? -1 : 1);
+      }).forEach(s => {
       const sk = norm(s.staff);
       const ym = String(s.payroll_month || (s.date || '').slice(0, 7)).slice(0, 7);
       const mk = `${sk}|${ym}`;
@@ -21502,54 +21841,66 @@
         s.sal_status_tip = `${pos.ymLabel} Net Earned: ${fmtUSD(pos.monthNetEarned, 2)} · Paid through this entry: ${fmtUSD(cumPaid, 2)} (${fmtUSD(remAfterThis, 2)} remaining then · ${fmtUSD(remMonthNow, 2)} remaining now)`;
         s.is_advance_sal = false;
       }
-    });
-    const advanceSalCount = salAll.filter(s => Boolean(s.is_advance_sal)).length;
+      });
+    }
+    const advanceSalCount = subMode === 'main' ? salAll.filter(s => Boolean(s.is_advance_sal)).length : 0;
 
-    const salFilteredBase = salAll.filter(s => {
-      if (STATE.chipFilter === 'cash_sal') return /cash/i.test(String(s.method || 'Cash'));
-      if (STATE.chipFilter === 'bank_sal') return !/cash/i.test(String(s.method || 'Cash'));
-      if (STATE.chipFilter === 'advance_sal') return Boolean(s.is_advance_sal);
-      if (STATE.chipFilter === 'unmatched_sal') return !hasContractStaffSet.has(norm(s.staff)) || unmatchedStaffSet.has(norm(s.staff));
-      if (STATE.chipFilter === 'app') return isAppRecord(s);
-      return true;
-    });
-    const filteredSal = sortRows(salFilteredBase, 'pay_sal', 'date', 'desc');
-    const shownSal = filteredSal.slice(0, shownCount('pay_sal'));
-    const filteredEmpBase = empAll.filter(e => {
-      if (subMode !== 'contracts') return true;
-      const ended = e.status === 'Ended' || (e.end_date && String(e.end_date) < today);
-      if (STATE.chipFilter === 'active_emp') return !ended;
-      if (STATE.chipFilter === 'ended_emp') return ended;
-      if (STATE.chipFilter === 'freelance_emp') return /free|daily/i.test(String(e.type || ''));
-      if (STATE.chipFilter === 'reimb_emp') return empContractReimbUsd(e, fxRate) > 0 || empContractDedUsd(e, fxRate) > 0;
-      if (STATE.chipFilter === 'app') return isAppRecord(e);
-      return true;
-    });
-    const filteredEmp = sortRows(filteredEmpBase, 'pay_emp', 'start_date', 'desc');
-    const shownEmp = filteredEmp.slice(0, shownCount('pay_emp'));
+    const salFilteredBase = subMode === 'main'
+      ? (STATE.chipFilter === 'all' ? salAll : salAll.filter(s => {
+          if (STATE.chipFilter === 'cash_sal') return /cash/i.test(String(s.method || 'Cash'));
+          if (STATE.chipFilter === 'bank_sal') return !/cash/i.test(String(s.method || 'Cash'));
+          if (STATE.chipFilter === 'advance_sal') return Boolean(s.is_advance_sal);
+          if (STATE.chipFilter === 'unmatched_sal') return !hasContractStaffSet.has(norm(s.staff)) || unmatchedStaffSet.has(norm(s.staff));
+          if (STATE.chipFilter === 'app') return isAppRecord(s);
+          return true;
+        }))
+      : [];
+    const filteredSal = subMode === 'main' ? sortRows(salFilteredBase, 'pay_sal', 'date', 'desc') : [];
+    const shownSal = subMode === 'main' ? filteredSal.slice(0, shownCount('pay_sal')) : [];
+    const filteredEmpBase = subMode === 'contracts'
+      ? (STATE.chipFilter === 'all' ? empAll : empAll.filter(e => {
+          const ended = e.status === 'Ended' || (e.end_date && String(e.end_date) < today);
+          if (STATE.chipFilter === 'active_emp') return !ended;
+          if (STATE.chipFilter === 'ended_emp') return ended;
+          if (STATE.chipFilter === 'freelance_emp') return /free|daily/i.test(String(e.type || ''));
+          if (STATE.chipFilter === 'reimb_emp') return empContractReimbUsd(e, fxRate) > 0 || empContractDedUsd(e, fxRate) > 0;
+          if (STATE.chipFilter === 'app') return isAppRecord(e);
+          return true;
+        }))
+      : [];
+    const filteredEmp = subMode === 'contracts' ? sortRows(filteredEmpBase, 'pay_emp', 'start_date', 'desc') : [];
+    const shownEmp = subMode === 'contracts' ? filteredEmp.slice(0, shownCount('pay_emp')) : [];
 
-    const otAttCount = attAll.filter(a => Number(a.overtime_hours || 0) > 0).length;
-    const calloutAttCount = attAll.filter(a => Boolean(a.is_callout)).length;
-    const lateAttCount = attAll.filter(a => Number(a.late_hours || 0) > 0).length;
-    const absentAttCount = attAll.filter(a => !/^config/i.test(String(a.type || '')) && (Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Half\s*Day|Unpaid/i.test(String(a.type || '')))).length;
-    const extraAttCount = attAll.filter(a => /^extra/i.test(String(a.type || ''))).length;
-    const configAttCount = attAll.filter(a => /^config/i.test(String(a.type || ''))).length;
+    let otAttCount = 0, calloutAttCount = 0, lateAttCount = 0, absentAttCount = 0, extraAttCount = 0, configAttCount = 0;
+    if (subMode === 'attendance') {
+      for (let i = 0; i < attAll.length; i++) {
+        const a = attAll[i];
+        const tp = String(a.type || '');
+        if (Number(a.overtime_hours || 0) > 0) otAttCount++;
+        if (a.is_callout) calloutAttCount++;
+        if (Number(a.late_hours || 0) > 0) lateAttCount++;
+        if (/^config/i.test(tp)) configAttCount++;
+        else if (Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Half\s*Day|Unpaid/i.test(tp)) absentAttCount++;
+        if (/^extra/i.test(tp)) extraAttCount++;
+      }
+    }
 
-    const filteredAttBase = attAll.filter(a => {
-      if (subMode !== 'attendance') return true;
-      if (STATE.chipFilter === 'ot_att') return Number(a.overtime_hours || 0) > 0;
-      if (STATE.chipFilter === 'callout_att') return Boolean(a.is_callout);
-      if (STATE.chipFilter === 'late_att') return Number(a.late_hours || 0) > 0;
-      if (STATE.chipFilter === 'absent_att') return !/^config/i.test(String(a.type || '')) && (Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Half\s*Day|Unpaid/i.test(String(a.type || '')));
-      if (STATE.chipFilter === 'extra_att') return /^extra/i.test(String(a.type || ''));
-      if (STATE.chipFilter === 'config_att') return /^config/i.test(String(a.type || ''));
-      if (STATE.chipFilter === 'app') return isAppRecord(a);
-      return true;
-    });
-    const filteredAtt = sortRows(filteredAttBase, 'pay_att', STATE.basis === 'tx' ? 'tx_date' : 'eff_date', 'desc');
-    const shownAtt = filteredAtt.slice(0, shownCount('pay_att'));
-    const filteredLog = sortRows(logAll, 'pay_log', 'start_date', 'desc');
-    const shownLog = filteredLog.slice(0, shownCount('pay_log'));
+    const filteredAttBase = subMode === 'attendance'
+      ? (STATE.chipFilter === 'all' ? attAll : attAll.filter(a => {
+          if (STATE.chipFilter === 'ot_att') return Number(a.overtime_hours || 0) > 0;
+          if (STATE.chipFilter === 'callout_att') return Boolean(a.is_callout);
+          if (STATE.chipFilter === 'late_att') return Number(a.late_hours || 0) > 0;
+          if (STATE.chipFilter === 'absent_att') return !/^config/i.test(String(a.type || '')) && (Number(a.leave_days || 0) > 0 || /Absence|VacAbsence|Sick|Leave|Half\s*Day|Unpaid/i.test(String(a.type || '')));
+          if (STATE.chipFilter === 'extra_att') return /^extra/i.test(String(a.type || ''));
+          if (STATE.chipFilter === 'config_att') return /^config/i.test(String(a.type || ''));
+          if (STATE.chipFilter === 'app') return isAppRecord(a);
+          return true;
+        }))
+      : [];
+    const filteredAtt = subMode === 'attendance' ? sortRows(filteredAttBase, 'pay_att', STATE.basis === 'tx' ? 'tx_date' : 'eff_date', 'desc') : [];
+    const shownAtt = subMode === 'attendance' ? filteredAtt.slice(0, shownCount('pay_att')) : [];
+    const filteredLog = subMode === 'allowances' ? sortRows(logAll, 'pay_log', 'start_date', 'desc') : [];
+    const shownLog = subMode === 'allowances' ? filteredLog.slice(0, shownCount('pay_log')) : [];
     const totalSiteAllow = filteredStaff.reduce((a, r) => a + r.site_allow, 0);
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
@@ -24452,6 +24803,8 @@
 
   let _cashMovesCacheKey = '';
   let _cashMovesCacheVal = null;
+  const _cashMovesCacheMap = new Map();
+  const _dailyTillCacheMap = new Map();
 
   function buildCashTillMoves(opts = {}) {
     const u = opts.user || activeUser();
@@ -24461,8 +24814,23 @@
     const fullFin = isOwner(u) || u.pbi_access === 'full' || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
     const range = opts.ignorePeriod ? null : periodRange(STATE.period);
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
-    const cacheKey = `${STATE.company}|${allowedCompanyNames(u).join(',')}|${range ? (range.from + '..' + range.to) : 'ALL'}|${fullFin ? 1 : 0}|${rate}|${SEED._customRev || 0}|${crCount}`;
-    if (_cashMovesCacheKey === cacheKey && _cashMovesCacheVal) return _cashMovesCacheVal;
+    const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
+    const offScope = isOfficialScopeActive(u);
+    if (!_cashMovesCacheKey) {
+      _cashMovesCacheMap.clear();
+      _dailyTillCacheMap.clear();
+      _cashMovesCacheKey = 'active';
+    }
+    const baseScopeKey = `${STATE.company}|${allowedCompanyNames(u).join(',')}|${offScope ? 'OFF' : 'ALL'}|${fullFin ? 1 : 0}|${rate}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}`;
+    const cacheKey = `${baseScopeKey}|${range ? (range.from + '..' + range.to) : 'ALL'}`;
+    if (_cashMovesCacheMap.has(cacheKey)) return _cashMovesCacheMap.get(cacheKey);
+    if (range && _cashMovesCacheMap.has(baseScopeKey + '|ALL')) {
+      const allCached = _cashMovesCacheMap.get(baseScopeKey + '|ALL');
+      const sliced = allCached.filter(mv => !mv.date || (mv.date >= range.from && mv.date <= range.to));
+      if (_cashMovesCacheMap.size > 24) _cashMovesCacheMap.clear();
+      _cashMovesCacheMap.set(cacheKey, sliced);
+      return sliced;
+    }
 
     const moves = [];
     const pushMove = row => {
@@ -24713,9 +25081,15 @@
       });
     });
 
-    moves.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || _NUM_COLLATOR.compare(String(b.ref || ''), String(a.ref || '')));
-    _cashMovesCacheKey = cacheKey;
-    _cashMovesCacheVal = moves;
+    moves.sort((a, b) => {
+      const da = a.date || '', db = b.date || '';
+      if (da !== db) return da < db ? 1 : -1;
+      const ra = a.ref || '', rb = b.ref || '';
+      if (ra === rb) return 0;
+      return _NUM_COLLATOR.compare(String(rb), String(ra));
+    });
+    if (_cashMovesCacheMap.size > 24) _cashMovesCacheMap.clear();
+    _cashMovesCacheMap.set(cacheKey, moves);
     return moves;
   }
 
@@ -24726,6 +25100,13 @@
     const rate = Number(cf.rate_lbp || 89500);
     const dailySrc = Array.isArray(cf.daily) ? cf.daily : [];
     const range = opts.ignorePeriod ? null : periodRange(STATE.period);
+    const fullFin = isOwner(u) || u.pbi_access === 'full' || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
+    const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
+    const dailyCacheKey = `${STATE.company}|${allowedCompanyNames(u).join(',')}|${isOfficialScopeActive(u) ? 'OFF' : 'ALL'}|${range ? (range.from + '..' + range.to) : 'ALL'}|${fullFin ? 1 : 0}|${rate}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${dailySrc.length}`;
+    if (_dailyTillCacheMap.has(dailyCacheKey)) {
+      return _dailyTillCacheMap.get(dailyCacheKey);
+    }
 
     // Count individual entries per date + fold any unseeded app-entered customRecords cash deltas per date
     const allTimeMoves = buildCashTillMoves({ user: u, ignorePeriod: true });
@@ -24811,6 +25192,8 @@
       });
     }
     out.reverse();
+    if (_dailyTillCacheMap.size > 24) _dailyTillCacheMap.clear();
+    _dailyTillCacheMap.set(dailyCacheKey, out);
     return out;
   }
 
@@ -51654,7 +52037,7 @@
     setExceptionPill('navCountFleet', getHubExceptionBadge('fleet', user, k, sentinelsOpen));
     setExceptionPill('navCountTB', getHubExceptionBadge('ledger', user, k, sentinelsOpen));
 
-    renderMobileSubnav(user, k, sentinelsOpen);
+    if (window.innerWidth <= 860) renderMobileSubnav(user, k, sentinelsOpen);
 
     const container = $('workspace');
     if (!container) return;
@@ -51747,7 +52130,25 @@
     }
     setContainerHtmlPreservingActiveInput(container, wsHtml);
     wireWorkspace(container, user);
-    stripNativeTitles(document);
+    stripNativeTitles(container);
+    const liveSubBar = $('hubSubtabBar');
+    if (liveSubBar && !container.contains(liveSubBar)) stripNativeTitles(liveSubBar);
+    if (_uiTipObserver) {
+      const recs = _uiTipObserver.takeRecords();
+      for (let i = 0; i < recs.length; i++) {
+        const rec = recs[i];
+        if (rec.type === 'attributes') {
+          const t = rec.target;
+          if (t && t.nodeType === 1 && t !== container && !container.contains(t) && t.hasAttribute('title')) stripOneNativeTitle(t);
+        } else if (rec.addedNodes && rec.addedNodes.length) {
+          if (rec.target === container || (rec.target && container.contains(rec.target))) continue;
+          for (let j = 0; j < rec.addedNodes.length; j++) {
+            const n = rec.addedNodes[j];
+            if (n && n.nodeType === 1 && n !== container) stripNativeTitles(n);
+          }
+        }
+      }
+    }
   }
 
   function updateLiveSelectionBar(container) {
@@ -52077,16 +52478,20 @@
     });
 
     // 3. Multi-row selection dots (.row-sel-dot) for Live Calculator Bar
-    container.querySelectorAll('tr.rrow[data-rid]').forEach(tr => {
-      const firstTd = tr.querySelector('td:first-child');
-      if (firstTd && !firstTd.querySelector('.row-sel-dot')) {
+    const rrows = container.querySelectorAll('tr.rrow[data-rid]');
+    for (let i = 0; i < rrows.length; i++) {
+      const tr = rrows[i];
+      if (tr._hasSelDot) continue;
+      const firstTd = tr.firstElementChild;
+      if (firstTd && firstTd.tagName === 'TD') {
+        tr._hasSelDot = true;
         const dot = document.createElement('u');
         dot.className = 'row-sel-dot';
         dot.setAttribute('data-row-sel', '1');
-        dot.title = 'Select row for Live Calculator sum (or Shift/Ctrl+Click row)';
+        dot.setAttribute('data-ui-tip', 'Select row for Live Calculator sum (or Shift/Ctrl+Click row)');
         firstTd.appendChild(dot);
       }
-    });
+    }
     updateLiveSelectionBar(container);
   }
 
@@ -52504,17 +52909,17 @@
       if (ws) ws.scrollTop = y;
     }));
     const rerenderAnchoredPayrollBar = barEl => {
-      const barId = barEl ? barEl.id : '';
-      const beforeTop = barEl ? barEl.getBoundingClientRect().top : null;
       const ws = $('workspace');
       const y = ws ? ws.scrollTop : 0;
+      const barId = (barEl && y > 0) ? barEl.id : '';
+      const beforeTop = (barEl && y > 0) ? barEl.getBoundingClientRect().top : null;
       renderApp();
       if (ws) {
         const afterEl = barId ? document.getElementById(barId) : null;
         if (afterEl && beforeTop !== null) {
           const afterTop = afterEl.getBoundingClientRect().top;
           ws.scrollTop = Math.max(0, y + (afterTop - beforeTop));
-        } else {
+        } else if (ws.scrollTop !== y) {
           ws.scrollTop = y;
         }
       }
@@ -53990,10 +54395,9 @@
     if (sidebar) sidebar.classList.remove('open');
     const bd = $('railBackdrop');
     if (bd) bd.hidden = true;
-    renderApp();
     const ws = $('workspace');
-    if (ws) ws.scrollTop = 0;
-    lockShellScroll();
+    if (ws && ws.scrollTop !== 0) ws.scrollTop = 0;
+    renderApp();
   }
 
   // Global Event Listeners
@@ -55216,6 +55620,7 @@
   }
 
   let _uiTipWired = false;
+  let _uiTipObserver = null;
   let _uiTipActiveEl = null;
   const UI_TIP_SUPPRESS_SEL = [
     '.payroll-cutoff-pill', '.payroll-status-pill', '.pcc-reset-btn',
@@ -55303,6 +55708,7 @@
         }
       });
       obs.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
+      _uiTipObserver = obs;
     }
     document.addEventListener('pointerover', e => {
       if (e.pointerType === 'touch') return;
@@ -55354,6 +55760,10 @@
     _meterGuardCacheVal = null;
     _WF_MAP_CACHE = null;
     _MAINT_IDX = null;
+    _liveSentinelCache = null;
+    _customAlertEvalCache = null;
+    _sentinelRawItemsCache = null;
+    if (_localKpiRawCache) _localKpiRawCache.clear();
     _cashMovesCacheKey = '';
     _cashMovesCacheVal = null;
     if (typeof FORM_UI !== 'undefined' && FORM_UI) FORM_UI.catCache = null;

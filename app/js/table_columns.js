@@ -21,12 +21,51 @@
   // Ephemeral in-memory map (never written to localStorage so reload always starts at default)
   // tableId -> { hiddenCols: Set<number>, shownCols: Set<number>, colWidths: Map<number, number>, baseWidths: number[] }
   const TABLE_COL_STATE = new Map();
+  const DYNAMIC_HIDE_CSS = new Map();
+  let batchingDynHide = false;
+  let lastDynCssText = '';
   let currentScopeSig = '';
   let currentSingleCorp = false;
   let openPopoverTableId = '';
   let lastResizeEndAt = 0;
   let globalListenersWired = false;
   let firstVisStyleInjected = false;
+  let _thProtos = null;
+
+  function getThControlProtos() {
+    if (_thProtos) return _thProtos;
+    const tools = document.createElement('span');
+    tools.className = 'tbl-th-tools';
+    tools.setAttribute('aria-hidden', 'true');
+    tools.innerHTML =
+      `<button type="button" class="tbl-th-tool-btn" data-th-narrow="0" tabindex="-1" data-ui-tip="Narrow column (−${STEP_COL_W}px)" aria-label="Narrow column (−${STEP_COL_W}px)">${ICONS.narrow}</button>` +
+      `<button type="button" class="tbl-th-tool-btn" data-th-widen="0" tabindex="-1" data-ui-tip="Widen column (+${STEP_COL_W}px)" aria-label="Widen column (+${STEP_COL_W}px)">${ICONS.widen}</button>` +
+      `<button type="button" class="tbl-th-tool-btn hide" data-th-hide="0" tabindex="-1" data-ui-tip="Hide this column" aria-label="Hide this column">${ICONS.hide}</button>`;
+    const resizer = document.createElement('span');
+    resizer.className = 'tbl-col-resizer';
+    resizer.setAttribute('aria-hidden', 'true');
+    resizer.setAttribute('data-ui-tip', 'Drag left or right to narrow or widen column · Double-click to revert to default width');
+    _thProtos = { tools, resizer };
+    return _thProtos;
+  }
+
+  function flushDynamicHideCss() {
+    if (typeof document === 'undefined' || !document.head) return;
+    const nextCss = Array.from(DYNAMIC_HIDE_CSS.values()).join('\n');
+    if (nextCss === lastDynCssText && document.getElementById('mfg-col-mgr-dyn-hide')) return;
+    lastDynCssText = nextCss;
+    let stEl = document.getElementById('mfg-col-mgr-dyn-hide');
+    if (!nextCss) {
+      if (stEl) stEl.textContent = '';
+      return;
+    }
+    if (!stEl) {
+      stEl = document.createElement('style');
+      stEl.id = 'mfg-col-mgr-dyn-hide';
+      document.head.appendChild(stEl);
+    }
+    stEl.textContent = nextCss;
+  }
 
   const ICONS = {
     cols: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.8"/><line x1="6" y1="2.5" x2="6" y2="13.5"/><line x1="10.5" y1="2.5" x2="10.5" y2="13.5"/></svg>',
@@ -257,9 +296,9 @@
       for (let i = 0; i < tr.children.length; i++) {
         const cell = tr.children[i];
         if (cell.tagName !== 'TD') continue;
-        const origSpan = Number(cell.getAttribute('data-col-orig-span') || 1);
+        const origSpan = Number(cell.getAttribute('data-col-orig-span') || cell.getAttribute('colspan') || 1);
         if (origSpan > 1) return;
-        const start = Number(cell.getAttribute('data-col-start') || 0);
+        const start = cell.hasAttribute('data-col-start') ? Number(cell.getAttribute('data-col-start') || 0) : i;
         if (start === 0) col0Td = cell;
         if (start === firstVisCol) firstVisTd = cell;
       }
@@ -268,7 +307,10 @@
           el.setAttribute('data-from-col0', '1');
           firstVisTd.appendChild(el);
         });
-        const dot = col0Td.querySelector('u.row-sel-dot');
+        tr.querySelectorAll('[data-from-col0="1"]').forEach(el => {
+          if (el.parentElement !== firstVisTd) firstVisTd.appendChild(el);
+        });
+        const dot = tr.querySelector('u.row-sel-dot');
         if (dot) firstVisTd.appendChild(dot);
       } else if (firstVisCol === 0 && col0Td) {
         let restoredAny = false;
@@ -281,6 +323,31 @@
         if (movedDot && (movedDot.parentElement !== col0Td || restoredAny)) col0Td.appendChild(movedDot);
       }
     });
+  }
+
+  function canUseCssHideFastPath(table, colCount, widthMap) {
+    if (widthMap.size > 0 || table._cellsIndexed) return false;
+    const headRows = table.querySelectorAll('thead tr');
+    if (headRows.length !== 1) return false;
+    const headCells = headRows[0].children;
+    let hc = 0;
+    for (let i = 0; i < headCells.length; i++) {
+      const el = headCells[i];
+      if (el.tagName !== 'TH' && el.tagName !== 'TD') continue;
+      if (Number(el.getAttribute('colspan') || 1) > 1) return false;
+      hc++;
+    }
+    if (hc !== colCount) return false;
+    const tbodySpans = table.querySelectorAll('tbody td[colspan], tbody th[colspan]');
+    for (let i = 0; i < tbodySpans.length; i++) {
+      const sc = tbodySpans[i];
+      const tr = sc.parentElement;
+      const origSpan = Number(sc.getAttribute('data-col-orig-span') || sc.getAttribute('colspan') || 1);
+      if (origSpan > 1 && (!tr || tr.children.length > 1 || origSpan < colCount)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   function applyTableColumnState(table) {
@@ -296,11 +363,11 @@
     const widthMap = (st && st.colWidths) ? st.colWidths : new Map();
 
     if (hiddenSet.size === 0 && widthMap.size === 0 && !table._hadColCustom) {
+      if (DYNAMIC_HIDE_CSS.delete(tableId) && !batchingDynHide) flushDynamicHideCss();
       return;
     }
     table._hadColCustom = hiddenSet.size > 0 || widthMap.size > 0;
     ensureFirstVisStyle();
-    indexTableCells(table);
 
     let firstVisCol = 0;
     for (let c = 0; c < colCount; c++) {
@@ -309,6 +376,125 @@
         break;
       }
     }
+
+    // Fast-path when no custom column widths are active: hide body columns via scoped :nth-child CSS
+    // instead of indexing & mutating classLists on tens of thousands of <td> cells.
+    if (canUseCssHideFastPath(table, colCount, widthMap)) {
+      const headRow = table.querySelector('thead tr');
+      let ci = 0;
+      for (let i = 0; i < headRow.children.length; i++) {
+        const cell = headRow.children[i];
+        if (cell.tagName !== 'TH' && cell.tagName !== 'TD') continue;
+        const isHidden = hiddenSet.has(ci);
+        cell.classList.toggle('tbl-col-hidden', isHidden);
+        cell.classList.toggle('tbl-first-vis-cell', firstVisCol > 0 && ci === firstVisCol);
+        ci++;
+      }
+
+      if (hiddenSet.size > 0) {
+        const escId = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(tableId) : tableId.replace(/"/g, '\\"');
+        const sels = [];
+        hiddenSet.forEach(colIdx => {
+          const nth = colIdx + 1;
+          sels.push(`table[data-col-mgr-id="${escId}"] > tbody > tr > td:nth-child(${nth}):not([colspan])`);
+          sels.push(`table[data-col-mgr-id="${escId}"] > tbody > tr > th:nth-child(${nth}):not([colspan])`);
+        });
+        DYNAMIC_HIDE_CSS.set(tableId, `${sels.join(', ')} { display: none !important; }`);
+      } else {
+        DYNAMIC_HIDE_CSS.delete(tableId);
+      }
+      if (!batchingDynHide) flushDynamicHideCss();
+
+      const visTotal = colCount - hiddenSet.size;
+      const tbodySpans = table.querySelectorAll('tbody td[colspan], tbody th[colspan]');
+      for (let i = 0; i < tbodySpans.length; i++) {
+        const sc = tbodySpans[i];
+        if (!sc.hasAttribute('data-col-orig-span')) {
+          sc.setAttribute('data-col-orig-span', sc.getAttribute('colspan') || String(colCount));
+        }
+        const origSpan = Number(sc.getAttribute('data-col-orig-span') || 1);
+        if (origSpan > 1) {
+          if (visTotal <= 0) {
+            sc.classList.add('tbl-col-hidden');
+            sc.setAttribute('colspan', '1');
+          } else {
+            sc.classList.remove('tbl-col-hidden');
+            sc.setAttribute('colspan', String(visTotal));
+          }
+        }
+      }
+
+      const footRows = table.querySelectorAll('tfoot tr');
+      for (let r = 0; r < footRows.length; r++) {
+        const tr = footRows[r];
+        if (!tr._footIndexed) {
+          tr._footIndexed = true;
+          let colCursor = 0;
+          for (let i = 0; i < tr.children.length; i++) {
+            const cell = tr.children[i];
+            if (cell.tagName !== 'TH' && cell.tagName !== 'TD') continue;
+            let origSpan = Number(cell.getAttribute('data-col-orig-span') || 0);
+            if (!origSpan || origSpan < 1) {
+              origSpan = Math.max(1, Number(cell.getAttribute('colspan') || 1));
+              cell.setAttribute('data-col-orig-span', String(origSpan));
+            }
+            cell.setAttribute('data-col-start', String(colCursor));
+            colCursor += origSpan;
+          }
+        }
+        for (let i = 0; i < tr.children.length; i++) {
+          const cell = tr.children[i];
+          if (cell.tagName !== 'TH' && cell.tagName !== 'TD') continue;
+          const start = Number(cell.getAttribute('data-col-start') || 0);
+          const origSpan = Number(cell.getAttribute('data-col-orig-span') || 1);
+          if (origSpan <= 1) {
+            cell.classList.toggle('tbl-col-hidden', hiddenSet.has(start));
+          } else {
+            let visSpan = 0;
+            for (let c = start; c < start + origSpan; c++) {
+              if (!hiddenSet.has(c)) visSpan++;
+            }
+            if (visSpan <= 0) {
+              cell.classList.add('tbl-col-hidden');
+              cell.setAttribute('colspan', '1');
+            } else {
+              cell.classList.remove('tbl-col-hidden');
+              cell.setAttribute('colspan', String(visSpan));
+            }
+          }
+        }
+      }
+
+      if (firstVisCol > 0 || table._hadCol0Shift || table._lastFirstVisCol) {
+        const prevFirst = table._lastFirstVisCol || 0;
+        table._lastFirstVisCol = firstVisCol;
+        const bodyRows = table.querySelectorAll('tbody tr');
+        for (let r = 0; r < bodyRows.length; r++) {
+          const tr = bodyRows[r];
+          if (tr.children.length <= 1) continue;
+          if (prevFirst > 0 && prevFirst !== firstVisCol && tr.children[prevFirst]) {
+            tr.children[prevFirst].classList.remove('tbl-first-vis-cell');
+          }
+          if (firstVisCol > 0 && tr.children[firstVisCol]) {
+            tr.children[firstVisCol].classList.add('tbl-first-vis-cell');
+          }
+        }
+        syncFirstVisibleCellArtifacts(table, firstVisCol);
+      }
+
+      table.classList.remove('has-col-resize');
+      table.style.removeProperty('width');
+      table.style.removeProperty('min-width');
+      const cgFast = table.querySelector(':scope > colgroup.tbl-col-mgr-colgroup');
+      if (cgFast) cgFast.remove();
+      updateToolbarControlUI(table);
+      return;
+    }
+
+    if (DYNAMIC_HIDE_CSS.delete(tableId) && !batchingDynHide) {
+      flushDynamicHideCss();
+    }
+    indexTableCells(table);
 
     // 1. Apply column visibility & adjust colspans across thead, tbody, tfoot
     const allRows = Array.from(table.querySelectorAll('thead tr, tbody tr, tfoot tr'));
@@ -470,10 +656,12 @@
 
   function resetAllTablesToDefault() {
     TABLE_COL_STATE.clear();
+    DYNAMIC_HIDE_CSS.clear();
     openPopoverTableId = '';
     document.querySelectorAll('table[data-col-mgr-id]').forEach(table => {
       applyTableColumnState(table);
     });
+    flushDynamicHideCss();
   }
 
   function renderPopoverInnerHtml(table) {
@@ -690,88 +878,89 @@
     const tableId = getTableId(table, idx);
     extractHeaderLabels(table);
 
-    // 1. Enhance every <th> with a drag resizer + hover quick-actions (narrow / widen / hide)
+    // 1. Enhance every <th> with cloned prototype controls + single thead delegated listeners
     const thead = table.querySelector('thead');
     if (thead && thead.dataset.colMgrCaptureWired !== '1') {
       thead.dataset.colMgrCaptureWired = '1';
       thead.addEventListener('click', e => {
+        const toolBtn = e.target.closest('.tbl-th-tools button');
+        if (toolBtn) {
+          e.stopPropagation();
+          e.preventDefault();
+          const th = toolBtn.closest('th, td');
+          const ci = th ? Number(th.getAttribute('data-col-idx')) : -1;
+          if (ci >= 0) {
+            if (toolBtn.hasAttribute('data-th-narrow')) nudgeColumnWidth(table, ci, -STEP_COL_W);
+            else if (toolBtn.hasAttribute('data-th-widen')) nudgeColumnWidth(table, ci, STEP_COL_W);
+            else if (toolBtn.hasAttribute('data-th-hide')) toggleColumnVisible(table, ci, false);
+          }
+          return;
+        }
         if (Date.now() - lastResizeEndAt < 260 || e.target.closest('.tbl-col-resizer')) {
           e.stopPropagation();
           e.preventDefault();
         }
       }, true);
+      thead.addEventListener('dblclick', e => {
+        const resizer = e.target.closest('.tbl-col-resizer');
+        if (!resizer) return;
+        e.stopPropagation();
+        e.preventDefault();
+        lastResizeEndAt = Date.now();
+        const th = resizer.closest('th, td');
+        const ci = th ? Number(th.getAttribute('data-col-idx')) : -1;
+        if (ci >= 0) resetSingleColumnWidth(table, ci);
+      });
+      thead.addEventListener('pointerdown', e => {
+        if (e.button && e.button !== 0) return;
+        const resizer = e.target.closest('.tbl-col-resizer');
+        if (!resizer) return;
+        const th = resizer.closest('th, td');
+        const ci = th ? Number(th.getAttribute('data-col-idx')) : -1;
+        if (ci < 0) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const curTableId = getTableId(table, idx);
+        const st = getOrCreateState(curTableId, true);
+        snapshotBaseWidthsIfNeeded(table, st);
+        const startX = e.clientX;
+        const startW = Math.round(th.getBoundingClientRect().width || st.baseWidths[ci] || 96);
+        resizer.classList.add('dragging');
+        document.body.classList.add('is-col-resizing');
+        try { resizer.setPointerCapture(e.pointerId); } catch (_) {}
+
+        const onMove = moveEv => {
+          const delta = moveEv.clientX - startX;
+          setColumnWidth(table, ci, startW + delta);
+        };
+        const onUp = upEv => {
+          lastResizeEndAt = Date.now();
+          resizer.classList.remove('dragging');
+          document.body.classList.remove('is-col-resizing');
+          try { resizer.releasePointerCapture(upEv.pointerId); } catch (_) {}
+          resizer.removeEventListener('pointermove', onMove);
+          resizer.removeEventListener('pointerup', onUp);
+          resizer.removeEventListener('pointercancel', onUp);
+        };
+        resizer.addEventListener('pointermove', onMove);
+        resizer.addEventListener('pointerup', onUp);
+        resizer.addEventListener('pointercancel', onUp);
+      });
     }
 
+    const protos = getThControlProtos();
     ths.forEach((th, ci) => {
-      th.setAttribute('data-col-idx', String(ci));
+      const ciStr = String(ci);
+      th.setAttribute('data-col-idx', ciStr);
       if (!th.querySelector('.tbl-th-tools')) {
-        const tools = document.createElement('span');
-        tools.className = 'tbl-th-tools';
-        tools.setAttribute('aria-hidden', 'true');
-        tools.innerHTML =
-          `<button type="button" class="tbl-th-tool-btn" data-th-narrow="${ci}" tabindex="-1" title="Narrow column (−${STEP_COL_W}px)">${ICONS.narrow}</button>` +
-          `<button type="button" class="tbl-th-tool-btn" data-th-widen="${ci}" tabindex="-1" title="Widen column (+${STEP_COL_W}px)">${ICONS.widen}</button>` +
-          `<button type="button" class="tbl-th-tool-btn hide" data-th-hide="${ci}" tabindex="-1" title="Hide this column">${ICONS.hide}</button>`;
-        tools.addEventListener('click', e => {
-          e.stopPropagation();
-          e.preventDefault();
-          const btn = e.target.closest('button');
-          if (!btn) return;
-          if (btn.hasAttribute('data-th-narrow')) {
-            nudgeColumnWidth(table, ci, -STEP_COL_W);
-          } else if (btn.hasAttribute('data-th-widen')) {
-            nudgeColumnWidth(table, ci, STEP_COL_W);
-          } else if (btn.hasAttribute('data-th-hide')) {
-            toggleColumnVisible(table, ci, false);
-          }
-        });
+        const tools = protos.tools.cloneNode(true);
+        tools.children[0].setAttribute('data-th-narrow', ciStr);
+        tools.children[1].setAttribute('data-th-widen', ciStr);
+        tools.children[2].setAttribute('data-th-hide', ciStr);
         th.appendChild(tools);
       }
-
       if (!th.querySelector('.tbl-col-resizer')) {
-        const resizer = document.createElement('span');
-        resizer.className = 'tbl-col-resizer';
-        resizer.setAttribute('aria-hidden', 'true');
-        resizer.title = 'Drag left or right to narrow or widen column · Double-click to revert to default width';
-
-        resizer.addEventListener('dblclick', e => {
-          e.stopPropagation();
-          e.preventDefault();
-          lastResizeEndAt = Date.now();
-          resetSingleColumnWidth(table, ci);
-        });
-
-        resizer.addEventListener('pointerdown', e => {
-          if (e.button && e.button !== 0) return;
-          e.stopPropagation();
-          e.preventDefault();
-          const st = getOrCreateState(tableId, true);
-          snapshotBaseWidthsIfNeeded(table, st);
-          const startX = e.clientX;
-          const startW = Math.round(th.getBoundingClientRect().width || st.baseWidths[ci] || 96);
-          resizer.classList.add('dragging');
-          document.body.classList.add('is-col-resizing');
-          try { resizer.setPointerCapture(e.pointerId); } catch (_) {}
-
-          const onMove = moveEv => {
-            const delta = moveEv.clientX - startX;
-            setColumnWidth(table, ci, startW + delta);
-          };
-          const onUp = upEv => {
-            lastResizeEndAt = Date.now();
-            resizer.classList.remove('dragging');
-            document.body.classList.remove('is-col-resizing');
-            try { resizer.releasePointerCapture(upEv.pointerId); } catch (_) {}
-            resizer.removeEventListener('pointermove', onMove);
-            resizer.removeEventListener('pointerup', onUp);
-            resizer.removeEventListener('pointercancel', onUp);
-          };
-          resizer.addEventListener('pointermove', onMove);
-          resizer.addEventListener('pointerup', onUp);
-          resizer.addEventListener('pointercancel', onUp);
-        });
-
-        th.appendChild(resizer);
+        th.appendChild(protos.resizer.cloneNode(true));
       }
     });
 
@@ -788,10 +977,10 @@
         mgr.className = 'tbl-col-mgr-wrap';
         mgr.setAttribute('data-for-table', tableId);
         mgr.innerHTML = `
-          <button type="button" class="btn btn-ghost-bar tbl-col-inline-reset" data-col-inline-reset="${esc(tableId)}" hidden title="Revert hidden columns and column widths back to default">
+          <button type="button" class="btn btn-ghost-bar tbl-col-inline-reset" data-col-inline-reset="${esc(tableId)}" hidden data-ui-tip="Revert hidden columns and column widths back to default" aria-label="Revert hidden columns and column widths back to default">
             ${ICONS.reset}<span>Default</span>
           </button>
-          <button type="button" class="btn btn-ghost-bar tbl-col-trigger-btn" data-col-trigger="${esc(tableId)}" aria-haspopup="dialog" aria-expanded="false" title="Hide or show columns &amp; widen or narrow column widths">
+          <button type="button" class="btn btn-ghost-bar tbl-col-trigger-btn" data-col-trigger="${esc(tableId)}" aria-haspopup="dialog" aria-expanded="false" data-ui-tip="Hide or show columns &amp; widen or narrow column widths" aria-label="Hide or show columns &amp; widen or narrow column widths">
             ${ICONS.cols}<span class="tbl-col-btn-lbl">Columns</span>
           </button>
           <div class="tbl-col-popover" data-col-popover="${esc(tableId)}" hidden></div>
@@ -927,7 +1116,7 @@
       const directDivs = Array.from(tb.children).filter(el => el.tagName === 'DIV');
       const actionSlot = directDivs.length >= 2 ? directDivs[directDivs.length - 1] : null;
       if (actionSlot) {
-        const items = Array.from(actionSlot.children).filter(el => el.offsetParent !== null || el.tagName === 'BUTTON' || el.classList.contains('tbl-col-mgr-wrap'));
+        const items = Array.from(actionSlot.children).filter(el => !el.hidden && !el.classList.contains('hidden') && el.style.display !== 'none');
         let seenUtility = false;
         let markedSep = false;
         items.forEach(el => {
@@ -956,7 +1145,8 @@
             resetBtn = document.createElement('button');
             resetBtn.type = 'button';
             resetBtn.className = 'tb-chip-reset-btn';
-            resetBtn.title = 'Clear active filter slice and search query';
+            resetBtn.setAttribute('data-ui-tip', 'Clear active filter slice and search query');
+            resetBtn.setAttribute('aria-label', 'Clear active filter slice and search query');
             resetBtn.innerHTML = ICONS.reset + '<span>Reset</span>';
             resetBtn.addEventListener('click', e => {
               e.preventDefault();
@@ -990,6 +1180,7 @@
       if (currentScopeSig && currentScopeSig !== nextSig) {
         // User navigated to a different view / company / table / system view -> automatically revert back to default
         TABLE_COL_STATE.clear();
+        DYNAMIC_HIDE_CSS.clear();
         openPopoverTableId = '';
       }
       currentScopeSig = nextSig;
@@ -1003,9 +1194,15 @@
       return Boolean(t.querySelector('thead tr th'));
     });
 
-    tables.forEach((table, idx) => {
-      mountTableControls(table, idx);
-    });
+    batchingDynHide = true;
+    try {
+      tables.forEach((table, idx) => {
+        mountTableControls(table, idx);
+      });
+    } finally {
+      batchingDynHide = false;
+      flushDynamicHideCss();
+    }
     enhanceToolbarStructure(root);
   }
 

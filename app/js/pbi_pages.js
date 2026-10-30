@@ -68,9 +68,24 @@
     return pool.slice(0, limit);
   }
 
+  let _pbiArrUidSeq = 1;
+  const _pbiArrUidWM = new WeakMap();
+  function _pbiArrUid(arr) {
+    if (!arr || typeof arr !== 'object') return 0;
+    let id = _pbiArrUidWM.get(arr);
+    if (!id) { id = _pbiArrUidSeq++; _pbiArrUidWM.set(arr, id); }
+    return id;
+  }
+  const _enrichMonthsCache = new Map();
+  const _delivMonthsCache = new Map();
+  const _gradeSeriesCache = new Map();
+
   function enrichMonthsWithTicketUnitEconomics(months, salesRows, rawRows, opts = {}) {
     const mList = Array.isArray(months) ? months : [];
     if (!mList.length) return mList;
+    const seedRev = (typeof window !== 'undefined' && window.SEED && window.SEED._customRev) || 0;
+    const eKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${opts.hasSalesTicketSource}|${opts.hasRawTicketSource}|${_pbiArrUid(mList)}:${mList.length}:${monthRowToYmKey(mList[0])}:${monthRowToYmKey(mList[mList.length - 1])}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}|${_pbiArrUid(rawRows)}:${(rawRows && rawRows.length) || 0}`;
+    if (_enrichMonthsCache.has(eKey)) return _enrichMonthsCache.get(eKey);
     const sList = Array.isArray(salesRows) ? salesRows : [];
     const rList = Array.isArray(rawRows) ? rawRows : [];
     const basis = opts.basis === 'tx' ? 'tx' : 'rep';
@@ -174,7 +189,7 @@
     const hasSalesSource = opts.hasSalesTicketSource != null ? Boolean(opts.hasSalesTicketSource) : (sList.length > 0 && (salesByYm.size > 0 || delivByYm.size > 0));
     const hasRawSource = opts.hasRawTicketSource != null ? Boolean(opts.hasRawTicketSource) : hasRawPool;
 
-    return mList.map(mRow => {
+    const enrichedOut = mList.map(mRow => {
       const ym = monthRowToYmKey(mRow);
       const sb = ym ? salesByYm.get(ym) : null;
       const db = ym ? delivByYm.get(ym) : null;
@@ -203,11 +218,17 @@
         pickup_loads_m: hasSalesSource ? (db ? db.pickupLoads : 0) : Number(mRow.pickup_loads != null ? mRow.pickup_loads : Math.max(0, Number(mRow.loads || 0) - Number(mRow.delivery_loads || 0)))
       });
     });
+    if (_enrichMonthsCache.size > 32) _enrichMonthsCache.clear();
+    _enrichMonthsCache.set(eKey, enrichedOut);
+    return enrichedOut;
   }
 
   function buildMonthlyDeliveryTransportRows(months, salesRows, opts = {}) {
     const mList = Array.isArray(months) ? months : [];
     if (!mList.length) return mList;
+    const seedRev = (typeof window !== 'undefined' && window.SEED && window.SEED._customRev) || 0;
+    const dKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${opts.hasTicketSource}|${_pbiArrUid(mList)}:${mList.length}:${monthRowToYmKey(mList[0])}:${monthRowToYmKey(mList[mList.length - 1])}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}`;
+    if (_delivMonthsCache.has(dKey)) return _delivMonthsCache.get(dKey);
     const sList = Array.isArray(salesRows) ? salesRows : [];
     const basis = opts.basis === 'tx' ? 'tx' : 'rep';
     const ticketSignFn = typeof opts.ticketSign === 'function' ? opts.ticketSign : null;
@@ -241,7 +262,7 @@
       if (sgn > 0 && /deliv/i.test(String(s.sale_type || ''))) b.delivLoads += 1;
     }
     const hasSource = opts.hasTicketSource != null ? Boolean(opts.hasTicketSource) : (sList.length > 0 && byYm.size > 0);
-    return mList.map(mRow => {
+    const delivOut = mList.map(mRow => {
       const ym = monthRowToYmKey(mRow);
       const b = ym ? byYm.get(ym) : null;
       return Object.assign({}, mRow, {
@@ -250,6 +271,9 @@
         deliv_loads_m: hasSource ? (b ? b.delivLoads : 0) : Number(mRow.delivery_loads || 0)
       });
     });
+    if (_delivMonthsCache.size > 32) _delivMonthsCache.clear();
+    _delivMonthsCache.set(dKey, delivOut);
+    return delivOut;
   }
 
   const _YM_SHORT_IDX = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
@@ -273,6 +297,9 @@
     const mList = Array.isArray(months) ? months : [];
     const pList = Array.isArray(topProds) ? topProds : [];
     const tickets = Array.isArray(salesRows) ? salesRows : [];
+    const seedRev = (typeof window !== 'undefined' && window.SEED && window.SEED._customRev) || 0;
+    const gKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${_pbiArrUid(mList)}:${mList.length}:${monthRowToYmKey(mList[0])}:${monthRowToYmKey(mList[mList.length - 1])}|${pList.map(p => `${(p && p.Product) || ''}:${(p && p.avg_price_net) || 0}`).join(',')}|${_pbiArrUid(tickets)}:${tickets.length}`;
+    if (_gradeSeriesCache.has(gKey)) return _gradeSeriesCache.get(gKey);
     const basis = opts.basis === 'tx' ? 'tx' : 'rep';
     const ticketMetersFn = typeof opts.ticketMeters === 'function' ? opts.ticketMeters : null;
     const ticketSignFn = typeof opts.ticketSign === 'function' ? opts.ticketSign : null;
@@ -314,7 +341,7 @@
       }
     }
 
-    return pList.map((p, idx) => {
+    const seriesOut = pList.map((p, idx) => {
       const pk = normKey(p.Product);
       const hasTickets = prodHasTickets.has(pk);
       return {
@@ -332,6 +359,9 @@
         }
       };
     });
+    if (_gradeSeriesCache.size > 32) _gradeSeriesCache.clear();
+    _gradeSeriesCache.set(gKey, seriesOut);
+    return seriesOut;
   }
 
   const _MONTH_SHORT_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -2445,11 +2475,27 @@
     });
   }
 
+  const _PBI_NF_US = [];
+  function _pbiFmtUsNum(n, decimals = 0) {
+    if (decimals === 0) {
+      if (n === 0) return (1 / n < 0) ? '-0' : '0';
+      if (n > 0 && n < 1000 && (n | 0) === n) return '' + n;
+      if (n < 0 && n > -1000 && (n | 0) === n) return '' + n;
+    }
+    if (decimals >= 0 && decimals <= 6 && (decimals | 0) === decimals) {
+      let nf = _PBI_NF_US[decimals];
+      if (!nf) {
+        nf = _PBI_NF_US[decimals] = new Intl.NumberFormat('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+      }
+      return nf.format(n);
+    }
+    return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  }
   function fmtUSD(v, decimals = 0) {
     const n = Number(v ?? 0);
     if (!Number.isFinite(n)) return String(v ?? '—');
     const abs = Math.abs(n);
-    const s = abs.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    const s = _pbiFmtUsNum(abs, decimals);
     return (n < 0 && !/^0(?:\.0+)?$/.test(s) ? '-$' : '$') + s;
   }
   function fmtUSDk(v) {
@@ -2457,24 +2503,24 @@
     if (!Number.isFinite(n)) return String(v ?? '—');
     const a = Math.abs(n);
     if (a >= 1e6) return (n < 0 ? '-$' : '$') + (a / 1e6).toFixed(2) + 'M';
-    if (a >= 1e3) return (n < 0 ? '-$' : '$') + Math.round(a / 1e3).toLocaleString('en-US') + 'K';
+    if (a >= 1e3) return (n < 0 ? '-$' : '$') + _pbiFmtUsNum(Math.round(a / 1e3), 0) + 'K';
     return fmtUSD(n, 0);
   }
   function fmtNum(v, decimals = 0) {
     const n = Number(v ?? 0);
     if (!Number.isFinite(n)) return String(v ?? '—');
-    return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    return _pbiFmtUsNum(n, decimals);
   }
   function fmtSignedUSD(v, decimals = 2) {
     const n = Number(v || 0);
     if (Math.abs(n) < 0.005) return fmtUSD(0, decimals);
     const abs = Math.abs(n);
-    return (n < 0 ? '-$' : '+$') + abs.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    return (n < 0 ? '-$' : '+$') + _pbiFmtUsNum(abs, decimals);
   }
   function fmtSignedLBP(v) {
     const n = Math.round(Number(v || 0));
     if (Math.abs(n) <= 1) return '0 LL';
-    return (n < 0 ? '-' : '+') + Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' LL';
+    return (n < 0 ? '-' : '+') + _pbiFmtUsNum(Math.abs(n), 0) + ' LL';
   }
   function convDeltasPbi(r) {
     const t = String((r && (r.type || r.name)) || '');

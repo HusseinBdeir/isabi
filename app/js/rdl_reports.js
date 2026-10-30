@@ -89,24 +89,41 @@
       .replace(/"/g, '&quot;');
   }
 
+  const _RDL_NF_US = [];
+  function _rdlFmtUsNum(n, dp = 0) {
+    if (dp === 0) {
+      if (n === 0) return (1 / n < 0) ? '-0' : '0';
+      if (n > 0 && n < 1000 && (n | 0) === n) return '' + n;
+      if (n < 0 && n > -1000 && (n | 0) === n) return '' + n;
+    }
+    if (dp >= 0 && dp <= 6 && (dp | 0) === dp) {
+      let nf = _RDL_NF_US[dp];
+      if (!nf) {
+        nf = _RDL_NF_US[dp] = new Intl.NumberFormat('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+      }
+      return nf.format(n);
+    }
+    return n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  }
+
   function fmtUsd(v, dp = 0) {
     const n = Number(v || 0);
     if (!Number.isFinite(n)) return '$0';
-    const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+    const abs = _rdlFmtUsNum(Math.abs(n), dp);
     return (n < -0.0005 ? '-$' : '$') + abs;
   }
 
   function fmtUsdSigned(v, dp = 0) {
     const n = Number(v || 0);
     if (!Number.isFinite(n)) return '$0';
-    const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+    const abs = _rdlFmtUsNum(Math.abs(n), dp);
     return n < -0.0005 ? `($${abs})` : `$${abs}`;
   }
 
   function fmtNum(v, dp = 0) {
     const n = Number(v || 0);
     if (!Number.isFinite(n)) return '0';
-    return n.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+    return _rdlFmtUsNum(n, dp);
   }
 
   function ensureRdlState(STATE, SEED) {
