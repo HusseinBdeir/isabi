@@ -661,12 +661,18 @@
     });
     const staffMetaItems = staffNames.map(n => {
       const e = empByStaff[norm(n)];
-      if (!e) return [n, ''];
-      const baseNet = round2(Number(e.salary_usd || e.amount || 0) + Number(e.reimbursement || 0) - Number(e.deduction || 0));
+      const coForShift = (e && e.company) || company;
+      const sh = (fType === 'attendance' && helpers && typeof helpers.resolveStaffShiftForDate === 'function')
+        ? helpers.resolveStaffShiftForDate(n, coForShift, today)
+        : null;
       const parts = [];
-      if (e.role || e.position) parts.push(e.role || e.position);
-      if (baseNet > 0) parts.push(`${fmtUsd(baseNet)}/mo`);
-      if (e.company) parts.push(e.company);
+      if (sh && sh.badgeLabel && sh.id !== 'off') parts.push(sh.badgeLabel);
+      if (e) {
+        if (e.role || e.position) parts.push(e.role || e.position);
+        const baseNet = round2(Number(e.salary_usd || e.amount || 0) + Number(e.reimbursement || 0) - Number(e.deduction || 0));
+        if (baseNet > 0 && fType !== 'attendance') parts.push(`${fmtUsd(baseNet)}/mo`);
+        if (e.company) parts.push(e.company);
+      }
       return [n, parts.join(' · ')];
     });
 

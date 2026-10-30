@@ -32946,7 +32946,7 @@
         const regBtn = $('attPresetRegularBtn');
         if (regBtn) {
           regBtn.textContent = (curStaff && attShiftWin)
-            ? `${attShiftWin.name} (${attShiftWin.start_time}-${attShiftWin.end_time}${attShiftWin.overnight ? ' +1d' : ''})`
+            ? `${attShiftWin.name} (${attShiftWin.start_time}-${attShiftWin.end_time}${attShiftWin.overnight ? ' +1d' : ''} Contract)`
             : 'Regular Shift (Contract)';
         }
         const deckEl = $('attModeDeck');
@@ -32975,8 +32975,9 @@
         const timingEval = (!isNoClock && !isCallout && hasStaffRule && curStaff && inVal && outVal)
           ? evaluateShiftPunchTiming(curStaff, curCo, attDate, inVal, outVal)
           : null;
-        if (timingEval && timingEval.unapproved_ot_hours > 0) {
-          setHint('hint_att_out', `${staffOtCfg ? staffOtCfg.badgeText : 'OT Restricted'} · ${fmtNum(timingEval.unapproved_ot_hours, 1)}h extra not paid`, 'warn');
+        const evalUnapprovedOt = timingEval ? Number(timingEval.unapprovedOtHours ?? timingEval.unapproved_ot_hours ?? 0) : 0;
+        if (timingEval && evalUnapprovedOt > 0) {
+          setHint('hint_att_out', `${staffOtCfg ? staffOtCfg.badgeText : 'OT Restricted'} · ${fmtNum(evalUnapprovedOt, 1)}h extra not paid`, 'warn');
         } else {
           setHint('hint_att_out', isOvernight ? `Overnight (+1d) · ${fmtNum(worked, 1)}h` : '', isOvernight ? 'ok' : '');
         }
@@ -32987,8 +32988,8 @@
         const attTimeKey = `${curStaff}|${curCo}|${attDate}|${activePreset}|${inVal}|${outVal}|${sched}`;
         if (!isNoClock && attTimeKey !== FORM_UI.lastAttTimeKey) {
           FORM_UI.lastAttTimeKey = attTimeKey;
-          const autoOt = timingEval ? timingEval.overtime_hours : (Math.round(Math.max(0, worked - sched) * 10) / 10);
-          const autoLate = timingEval ? timingEval.late_hours : (Math.round(Math.max(0, sched - worked) * 10) / 10);
+          const autoOt = timingEval ? Number(timingEval.overtimeHours ?? timingEval.overtime_hours ?? 0) : (Math.round(Math.max(0, worked - sched) * 10) / 10);
+          const autoLate = timingEval ? Number(timingEval.lateHours ?? timingEval.late_hours ?? 0) : (Math.round(Math.max(0, sched - worked) * 10) / 10);
           if ($('f_hours') && document.activeElement !== $('f_hours')) {
             $('f_hours').value = String(autoOt);
           }
@@ -36438,7 +36439,7 @@
           worked_hours: workedH,
           regular_hours: regH,
           overtime_hours: otH,
-          unapproved_ot_hours: timingSave ? timingSave.unapproved_ot_hours : 0,
+          unapproved_ot_hours: timingSave ? Number(timingSave.unapprovedOtHours ?? timingSave.unapproved_ot_hours ?? 0) : 0,
           late_hours: ltH,
           leave_days: 0,
           extra_usd: 0,
@@ -45621,46 +45622,55 @@
   }
 
   let _habitualShiftCacheRev = '';
-  let _habitualShiftByStaff = new Map();
+  let _habitualNightCrewSet = new Set();
+
+  function ensureHabitualNightCrewSet() {
+    const attArr = (SEED.records && Array.isArray(SEED.records.attendance)) ? SEED.records.attendance : [];
+    const rev = `${attArr.length}|${STATE._customRev || 0}`;
+    if (rev === _habitualShiftCacheRev) return _habitualNightCrewSet;
+    _habitualShiftCacheRev = rev;
+    const byKey = new Map();
+    for (let i = 0; i < attArr.length; i++) {
+      const a = attArr[i];
+      if (!a || a.voided) continue;
+      const rawIn = a.in_time || a.check_in;
+      const rawOut = a.out_time || a.check_out;
+      if (!rawIn || !rawOut) continue;
+      const tin = fmtAttClockTime(rawIn);
+      if (!tin || !fmtAttClockTime(rawOut)) continue;
+      const sk = norm(a.staff);
+      if (!sk) continue;
+      const ck = `${norm(a.company || 'WTC')}|${sk}`;
+      const d = String(a.set_date || a.rep_date || a.date || '').slice(0, 10);
+      let arr = byKey.get(ck);
+      if (!arr) { arr = []; byKey.set(ck, arr); }
+      arr.push({ d, tin });
+    }
+    const nightSet = new Set();
+    byKey.forEach((arr, ck) => {
+      if (arr.length < 3) return;
+      arr.sort((a, b) => a.d.localeCompare(b.d));
+      const recent = arr.length > 15 ? arr.slice(-15) : arr;
+      let nightCnt = 0;
+      for (let i = 0; i < recent.length; i++) {
+        const inMin = parseClockMinutes(recent[i].tin);
+        if (inMin != null && inMin >= 17 * 60) nightCnt++;
+      }
+      if (nightCnt / recent.length >= 0.65) {
+        nightSet.add(ck);
+      }
+    });
+    _habitualNightCrewSet = nightSet;
+    return nightSet;
+  }
 
   function inferHabitualStaffShiftId(staffName, company) {
     const k = norm(staffName);
     const prof = getStaffContractProfile(staffName, company);
     const fallbackId = (prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4';
     if (!k) return fallbackId;
-    const attArr = (SEED.records && Array.isArray(SEED.records.attendance)) ? SEED.records.attendance : [];
-    const rev = `${attArr.length}|${(STATE.customRecords && Array.isArray(STATE.customRecords.attendance)) ? STATE.customRecords.attendance.length : 0}`;
-    if (rev !== _habitualShiftCacheRev) {
-      _habitualShiftCacheRev = rev;
-      _habitualShiftByStaff = new Map();
-    }
     const coNorm = norm(company || prof.company || 'WTC');
-    const cacheKey = `${coNorm}|${k}|${fallbackId}`;
-    if (_habitualShiftByStaff.has(cacheKey)) return _habitualShiftByStaff.get(cacheKey);
-    const matching = [];
-    for (let i = 0; i < attArr.length; i++) {
-      const a = attArr[i];
-      if (!a || a.voided || norm(a.staff) !== k) continue;
-      if (coNorm && a.company && norm(a.company) !== coNorm) continue;
-      const tin = fmtAttClockTime(a.in_time || a.check_in || '');
-      const tout = fmtAttClockTime(a.out_time || a.check_out || '');
-      if (!tin || !tout) continue;
-      matching.push({ d: String(a.set_date || a.rep_date || a.date || '').slice(0, 10), tin });
-    }
-    if (matching.length < 3) {
-      _habitualShiftByStaff.set(cacheKey, fallbackId);
-      return fallbackId;
-    }
-    matching.sort((a, b) => a.d.localeCompare(b.d));
-    const recent = matching.slice(-15);
-    let nightCnt = 0;
-    for (let i = 0; i < recent.length; i++) {
-      const inMin = parseClockMinutes(recent[i].tin);
-      if (inMin != null && inMin >= 17 * 60) nightCnt++;
-    }
-    const inferred = (nightCnt / recent.length >= 0.65) ? 'night_7_3' : fallbackId;
-    _habitualShiftByStaff.set(cacheKey, inferred);
-    return inferred;
+    return ensureHabitualNightCrewSet().has(`${coNorm}|${k}`) ? 'night_7_3' : fallbackId;
   }
 
   function getStaffWorkRule(staffName, company) {
@@ -45668,9 +45678,11 @@
     const ws = ensureWorkSchedulesState();
     const raw = (k && ws.staffRules[k]) ? ws.staffRules[k] : null;
     const prof = getStaffContractProfile(staffName, company);
-    const defaultShiftId = (raw && raw.reset_default)
-      ? ((prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4')
-      : inferHabitualStaffShiftId(staffName, company);
+    const defaultShiftId = (raw && !raw.reset_default && raw.shift_id)
+      ? raw.shift_id
+      : ((raw && raw.reset_default)
+        ? ((prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4')
+        : inferHabitualStaffShiftId(staffName, company));
     const base = Object.assign({
       staff: staffName || '',
       company: company || prof.company || defaultEntryCompany(),
