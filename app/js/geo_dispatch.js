@@ -855,6 +855,19 @@
     return getCompanyHub(canon, SEED);
   }
 
+  function resolveGeoSiteCat(s) {
+    if (typeof window !== 'undefined' && typeof window.MFG_RESOLVE_SITE_CATEGORY === 'function') {
+      return window.MFG_RESOLVE_SITE_CATEGORY(s);
+    }
+    if (!s) return 'supplier';
+    const c = String(s.site_category || '').trim().toLowerCase();
+    if (c === 'customer' || c === 'delivery' || c === 'sales') return 'customer';
+    if (c === 'supplier' || c === 'quarry' || c === 'raw') return 'supplier';
+    if (s.is_jv || s.supplier) return 'supplier';
+    if (s.customer) return 'customer';
+    return 'supplier';
+  }
+
   function hydrateSeedGeo(SEED, force = false) {
     if (!SEED || !SEED.records) return;
     const regions = SEED.records.regions || [];
@@ -906,7 +919,8 @@
     sites.forEach(s => {
       if (!s || !s.name) return;
       const nk = norm(s.name);
-      const ov = GEO_STORE.sites[nk];
+      const cat = resolveGeoSiteCat(s);
+      const ov = GEO_STORE.sites[`${cat}:${nk}`] || GEO_STORE.sites[nk];
       const basePin = BASELINE_SITE_PINS[nk];
       let geoZone = s.region || '';
       if (basePin) {
@@ -973,9 +987,15 @@
       return { lat: hub.lat, lng: hub.lng, pinned: true, label: hub.name, region: hub.region, type: 'bu' };
     }
     const nk = norm(spec.name);
+    const prefCat = (spec.category === 'customer' || spec.side === 'sales')
+      ? 'customer'
+      : ((spec.category === 'supplier' || spec.side === 'raw') ? 'supplier' : '');
     const sites = (SEED && SEED.records && SEED.records.sites) || [];
-    const sRow = sites.find(s => s && norm(s.name) === nk);
-    const ov = GEO_STORE.sites[nk];
+    const sRow = (prefCat && sites.find(s => s && !s.voided && norm(s.name) === nk && resolveGeoSiteCat(s) === prefCat))
+      || sites.find(s => s && !s.voided && norm(s.name) === nk && s.latitude != null && s.latitude !== '')
+      || sites.find(s => s && norm(s.name) === nk);
+    const rowCat = sRow ? resolveGeoSiteCat(sRow) : (prefCat || 'supplier');
+    const ov = GEO_STORE.sites[`${rowCat}:${nk}`] || GEO_STORE.sites[nk];
     const basePin = BASELINE_SITE_PINS[nk];
     const lat = ov && ov.latitude != null ? Number(ov.latitude) : (sRow && sRow.latitude != null && sRow.latitude !== '' ? Number(sRow.latitude) : (basePin ? basePin.lat : null));
     const lng = ov && ov.longitude != null ? Number(ov.longitude) : (sRow && sRow.longitude != null && sRow.longitude !== '' ? Number(sRow.longitude) : (basePin ? basePin.lng : null));
@@ -1391,7 +1411,7 @@
     mode: 'view',         // 'view' | 'search' | 'circle' | 'polygon' | 'pin'
     selectedRegion: '',   // '' = All Regions overview
     regionSearch: '',
-    pinFilter: 'all',     // 'all' | 'bu' | 'raw' | 'sales' | 'dual'
+    pinFilter: 'all',     // 'all' | 'bu' | 'raw' | 'sales' | 'jv'
     distFrom: 'bu:WTC',
     distTo: 'site:Choueifat',
     drawRegionName: '',
@@ -1401,6 +1421,7 @@
     polyPoints: [],       // [[lng, lat], ...]
     polyLocked: false,
     pinTargetType: 'site',// 'site' | 'bu'
+    pinSiteCategory: 'supplier',
     pinTargetName: '',
     pinLat: null,
     pinLng: null,
@@ -1645,6 +1666,12 @@
       `;
     } else if (!STUDIO.collapsed && STUDIO.mode === 'pin') {
       const isBuPin = STUDIO.pinTargetType === 'bu';
+      const pinCat = STUDIO.pinSiteCategory === 'customer' ? 'customer' : 'supplier';
+      const catSiteNames = Array.from(new Set(
+        ((SEED && SEED.records && SEED.records.sites) || [])
+          .filter(s => s && !s.voided && s.name && resolveGeoSiteCat(s) === pinCat)
+          .map(s => s.name)
+      ));
       toolDrawerHtml = `
         <div class="geo-tool-drawer" id="geoToolDrawer">
           <div class="geo-tool-fields">
@@ -1661,9 +1688,15 @@
                 </select>
               </label>
             ` : `
+              <label class="geo-tool-field">Site Category
+                <select id="geoPinSiteCatSel">
+                  <option value="supplier"${pinCat === 'supplier' ? ' selected' : ''}>Supplier / Quarry Site</option>
+                  <option value="customer"${pinCat === 'customer' ? ' selected' : ''}>Customer Delivery Site</option>
+                </select>
+              </label>
               <label class="geo-tool-field">Site
                 <input type="text" id="geoPinSiteInp" list="dl_geo_pin_sites" value="${esc(STUDIO.pinTargetName)}" placeholder="Search or type site...">
-                <datalist id="dl_geo_pin_sites">${siteStats.list.map(s => `<option value="${esc(s.name)}">`).join('')}</datalist>
+                <datalist id="dl_geo_pin_sites">${catSiteNames.map(nm => `<option value="${esc(nm)}">`).join('')}</datalist>
               </label>
             `}
             <label class="geo-tool-field">Coords / Link
@@ -1761,9 +1794,9 @@
                 <div class="geo-pin-filters">
                   <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'all' ? ' active' : ''}" data-geo-pin-filter="all">All Pins</button>
                   <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'bu' ? ' active' : ''}" data-geo-pin-filter="bu"><span class="geo-dot bu"></span>Company BUs (3)</button>
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'dual' ? ' active' : ''}" data-geo-pin-filter="dual"><span class="geo-dot dual"></span>Dual Raw+Sales</button>
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'raw' ? ' active' : ''}" data-geo-pin-filter="raw"><span class="geo-dot raw"></span>Raw / Quarry</button>
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'sales' ? ' active' : ''}" data-geo-pin-filter="sales"><span class="geo-dot sales"></span>Sales Delivery</button>
+                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'jv' ? ' active' : ''}" data-geo-pin-filter="jv"><span class="geo-dot dual"></span>JV 50/50</button>
+                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'raw' ? ' active' : ''}" data-geo-pin-filter="raw"><span class="geo-dot raw"></span>Supplier / Quarry</button>
+                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'sales' ? ' active' : ''}" data-geo-pin-filter="sales"><span class="geo-dot sales"></span>Customer Delivery</button>
                 </div>
                 <button type="button" class="geo-mini-btn" id="geoResetLebanonViewBtn">Reset Lebanon View</button>
               </div>
@@ -1950,32 +1983,41 @@
           const selR = regions.find(r => norm(r.name) === selRegNorm);
           if (!selR || !isPointInRegion(lat, lng, selR)) return;
         }
+        const siteCat = resolveGeoSiteCat(s);
+        const isJvSite = siteCat === 'supplier' && Boolean(s.is_jv || /\bjv\b/i.test(s.name || ''));
         const st = siteStats.byNorm.get(norm(s.name)) || { raw: 0, sales: 0, total: 0 };
-        const isDual = st.raw > 0 && st.sales > 0;
-        const isRaw = st.raw > 0 && st.sales === 0;
-        const isSales = st.sales > 0 && st.raw === 0;
-        if (STUDIO.pinFilter === 'dual' && !isDual) return;
-        if (STUDIO.pinFilter === 'raw' && !(st.raw > 0)) return;
-        if (STUDIO.pinFilter === 'sales' && !(st.sales > 0)) return;
+        if (STUDIO.pinFilter === 'jv' && !isJvSite) return;
+        if (STUDIO.pinFilter === 'raw' && siteCat !== 'supplier') return;
+        if (STUDIO.pinFilter === 'sales' && siteCat !== 'customer') return;
 
-        const color = isDual ? '#7C3AED' : (isRaw ? '#059669' : (isSales ? '#2563EB' : '#475569'));
-        const showTopLabel = selRegNorm || st.total >= 700;
+        const color = isJvSite ? '#7C3AED' : (siteCat === 'supplier' ? '#059669' : '#2563EB');
+        const catLoads = siteCat === 'customer' ? st.sales : st.raw;
+        const showTopLabel = selRegNorm || catLoads >= 700;
         const marker = L.marker([lat, lng], {
           icon: makeSvgPinIcon(L, color, showTopLabel ? s.name : '', false)
         }).addTo(lg);
 
-        const wtcEst = estimateLegKm({ type: 'bu', name: 'WTC' }, { type: 'site', name: s.name }, SEED);
-        const bbcEst = estimateLegKm({ type: 'bu', name: 'BBConstruction' }, { type: 'site', name: s.name }, SEED);
+        const wtcEst = estimateLegKm({ type: 'bu', name: 'WTC' }, { type: 'site', name: s.name, category: siteCat }, SEED);
+        const bbcEst = estimateLegKm({ type: 'bu', name: 'BBConstruction' }, { type: 'site', name: s.name, category: siteCat }, SEED);
+        const catLbl = siteCat === 'customer' ? 'Customer Delivery Site' : (isJvSite ? 'Supplier / Quarry Site (JV 50/50)' : 'Supplier / Quarry Site');
+        const partyLine = siteCat === 'customer'
+          ? (s.customer ? `<div>Linked Customer: <b>${esc(s.customer)}</b></div>` : '')
+          : (s.supplier ? `<div>Site Owner: <b>${esc(s.supplier)}</b></div>` : '');
+        const loadsLine = siteCat === 'customer'
+          ? `<div>Delivery Loads: <b>${st.sales}</b></div>`
+          : `<div>Source Raw Loads: <b>${st.raw}</b></div>`;
         marker.bindPopup(`
           <div style="min-width:190px;font-family:inherit;font-size:12px;line-height:1.45">
             <div style="font-weight:700;font-size:13px">${esc(s.name)}</div>
+            <div style="color:#64748B">Category: <b>${esc(catLbl)}</b></div>
             <div style="color:#64748B">Region Zone: <b>${esc(s.region || s.geo_zone || 'Unassigned')}</b></div>
-            <div>Loads: <b>${st.sales}</b> Sales · <b>${st.raw}</b> Raw</div>
+            ${partyLine}
+            ${loadsLine}
             ${wtcEst && wtcEst.available ? `<div>From WTC: <b>${wtcEst.oneWayKm.toFixed(1)} km</b> (RT ${wtcEst.roundTripKm.toFixed(1)} km)</div>` : ''}
             ${bbcEst && bbcEst.available ? `<div>From BBConstruction: <b>${bbcEst.oneWayKm.toFixed(1)} km</b> (RT ${bbcEst.roundTripKm.toFixed(1)} km)</div>` : ''}
             <div style="display:flex;gap:5px;margin-top:6px">
               <button type="button" class="geo-mini-btn primary" data-popup-measure-to="site:${esc(s.name)}">Measure KM</button>
-              <button type="button" class="geo-mini-btn" data-popup-repin-site="${esc(s.name)}">Move Pin</button>
+              <button type="button" class="geo-mini-btn" data-popup-repin-site="${esc(s.name)}" data-popup-repin-cat="${esc(siteCat)}">Move Pin</button>
             </div>
           </div>
         `);
@@ -2220,6 +2262,8 @@
   }
 
   function persistLocationPin(targetType, targetName, lat, lng, explicitRegion, ctx) {
+    let explicitSiteId = '';
+    let explicitSiteCat = '';
     if (targetType && typeof targetType === 'object') {
       ctx = targetName || {};
       const obj = targetType;
@@ -2228,6 +2272,11 @@
       lat = obj.lat != null ? obj.lat : obj.latitude;
       targetName = obj.name || obj.site || '';
       targetType = obj.targetType || 'site';
+      explicitSiteId = String(obj.siteId || '').trim();
+      explicitSiteCat = String(obj.siteCategory || '').trim().toLowerCase();
+    } else if (ctx && typeof ctx === 'object') {
+      explicitSiteId = String(ctx.siteId || '').trim();
+      explicitSiteCat = String(ctx.siteCategory || '').trim().toLowerCase();
     }
     ctx = ctx || {};
     const { SEED, STATE, postRecordToLocalApi, toast, uid } = ctx;
@@ -2249,15 +2298,34 @@
     }
 
     const nk = norm(cleanName);
+    const normCat = (explicitSiteCat === 'customer' || explicitSiteCat === 'delivery' || explicitSiteCat === 'sales')
+      ? 'customer'
+      : ((explicitSiteCat === 'supplier' || explicitSiteCat === 'quarry' || explicitSiteCat === 'raw') ? 'supplier' : '');
     const det = findContainingRegion(nLat, nLng, SEED);
     const region = explicitRegion || det.best || '';
     const nowIso = new Date().toISOString();
-    GEO_STORE.sites[nk] = { name: cleanName, latitude: nLat, longitude: nLng, region, updated_at: nowIso };
-    saveStoredConfig(true);
 
     const sites = (SEED.records && SEED.records.sites) || [];
-    let row = sites.find(s => s && !s.voided && norm(s.name) === nk);
+    let row = (explicitSiteId && sites.find(s => s && !s.voided && String(s.id || '') === explicitSiteId))
+      || (normCat && sites.find(s => s && !s.voided && norm(s.name) === nk && resolveGeoSiteCat(s) === normCat))
+      || (!normCat ? sites.find(s => s && !s.voided && norm(s.name) === nk) : null);
+    const effCat = normCat || (row ? resolveGeoSiteCat(row) : 'supplier');
+
+    GEO_STORE.sites[`${effCat}:${nk}`] = { name: cleanName, site_category: effCat, latitude: nLat, longitude: nLng, region, updated_at: nowIso };
+    const hasOppositeSameName = sites.some(s => s && !s.voided && norm(s.name) === nk && resolveGeoSiteCat(s) !== effCat);
+    if (!hasOppositeSameName) {
+      GEO_STORE.sites[nk] = { name: cleanName, site_category: effCat, latitude: nLat, longitude: nLng, region, updated_at: nowIso };
+    }
+    saveStoredConfig(true);
+
     if (row) {
+      row.site_category = effCat;
+      if (effCat === 'customer') {
+        row.supplier = '';
+        row.is_jv = false;
+      } else {
+        row.customer = '';
+      }
       row.latitude = nLat;
       row.longitude = nLng;
       if (region) row.region = region;
@@ -2267,10 +2335,13 @@
       row = {
         id: typeof uid === 'function' ? uid('si') : ('si_' + Date.now()),
         name: cleanName,
+        site_category: effCat,
+        supplier: '',
+        customer: '',
         region,
         latitude: nLat,
         longitude: nLng,
-        is_jv: /\bjv\b/i.test(cleanName),
+        is_jv: effCat === 'supplier' ? /\bjv\b/i.test(cleanName) : false,
         source: 'app',
         entered_at: nowIso,
         voided: false
@@ -2705,11 +2776,21 @@
         rerenderWorkspace();
       });
     }
+    const pinSiteCatSel = deck.querySelector('#geoPinSiteCatSel');
+    if (pinSiteCatSel) {
+      pinSiteCatSel.addEventListener('change', () => {
+        STUDIO.pinSiteCategory = pinSiteCatSel.value === 'customer' ? 'customer' : 'supplier';
+        STUDIO.pinTargetName = '';
+        rerenderWorkspace();
+      });
+    }
     const pinSiteInp = deck.querySelector('#geoPinSiteInp');
     if (pinSiteInp) {
       const onSiteInp = () => {
         STUDIO.pinTargetName = pinSiteInp.value;
-        const sRow = ((SEED.records && SEED.records.sites) || []).find(s => s && norm(s.name) === norm(STUDIO.pinTargetName));
+        const pinCat = STUDIO.pinSiteCategory === 'customer' ? 'customer' : 'supplier';
+        const sRow = ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && norm(s.name) === norm(STUDIO.pinTargetName) && resolveGeoSiteCat(s) === pinCat)
+          || ((SEED.records && SEED.records.sites) || []).find(s => s && norm(s.name) === norm(STUDIO.pinTargetName));
         if (sRow && sRow.latitude != null && sRow.longitude != null) {
           STUDIO.pinLat = Number(sRow.latitude);
           STUDIO.pinLng = Number(sRow.longitude);
@@ -2757,7 +2838,10 @@
           if (parsed) { STUDIO.pinLat = parsed.lat; STUDIO.pinLng = parsed.lng; }
         }
         const regVal = (pinRegInp && pinRegInp.value.trim()) || STUDIO.pinRegion || '';
-        if (persistLocationPin(STUDIO.pinTargetType, tName, STUDIO.pinLat, STUDIO.pinLng, regVal, ctx)) {
+        const pinCtx = STUDIO.pinTargetType === 'site'
+          ? Object.assign({}, ctx, { siteCategory: STUDIO.pinSiteCategory === 'customer' ? 'customer' : 'supplier' })
+          : ctx;
+        if (persistLocationPin(STUDIO.pinTargetType, tName, STUDIO.pinLat, STUDIO.pinLng, regVal, pinCtx)) {
           STUDIO.mode = 'view';
           if (STUDIO.pinTargetType === 'site') STUDIO.distTo = `site:${tName}`;
           else STUDIO.distFrom = `bu:${tName}`;
@@ -2910,10 +2994,13 @@
         popEl.querySelectorAll('[data-popup-repin-site]').forEach(b => {
           b.addEventListener('click', () => {
             const nm = b.getAttribute('data-popup-repin-site') || '';
+            const rCat = b.getAttribute('data-popup-repin-cat') === 'customer' ? 'customer' : 'supplier';
             STUDIO.mode = 'pin';
             STUDIO.pinTargetType = 'site';
+            STUDIO.pinSiteCategory = rCat;
             STUDIO.pinTargetName = nm;
-            const sRow = ((SEED.records && SEED.records.sites) || []).find(s => s && norm(s.name) === norm(nm));
+            const sRow = ((SEED.records && SEED.records.sites) || []).find(s => s && !s.voided && norm(s.name) === norm(nm) && resolveGeoSiteCat(s) === rCat)
+              || ((SEED.records && SEED.records.sites) || []).find(s => s && norm(s.name) === norm(nm));
             if (sRow && sRow.latitude != null) { STUDIO.pinLat = Number(sRow.latitude); STUDIO.pinLng = Number(sRow.longitude); STUDIO.pinRegion = sRow.region || ''; }
             rerenderWorkspace();
           });

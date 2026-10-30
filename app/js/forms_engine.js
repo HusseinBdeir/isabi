@@ -684,7 +684,9 @@
       const prProdMetaItems = (helpers && typeof helpers.domainProductMetaItems === 'function')
         ? helpers.domainProductMetaItems(prSide, company)
         : buildFallbackProdMetaItems(prSide);
-      const prSiteNames = helpers.siteNames(isRawForm ? 'raw' : 'sales');
+      const prSiteItems = (helpers && typeof helpers.siteMetaItems === 'function')
+        ? helpers.siteMetaItems(isRawForm ? 'raw' : 'sales')
+        : helpers.siteNames(isRawForm ? 'raw' : 'sales').map(n => [n, '']);
       const prSupNames = helpers.supplierNames(isRawForm ? 'raw_owner' : 'all');
       const prUomOpts = [
         ['m³', 'Per m³'],
@@ -708,7 +710,7 @@
           ${fld(isRawForm ? 'Raw Material / Grade *' : 'Product / Grade *', inp('f_product', 'text', '', 'list="dl_pr_prods" placeholder="Select or type grade..."') + dlMeta('dl_pr_prods', prProdMetaItems), { id: 'wrap_pr_product' })}
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_pr_customer', hidden: isCommForm || isRawForm })}
           ${fld(isCommForm ? 'Plant Owner / Beneficiary *' : (isRawForm ? 'Site Owner / Material Supplier *' : 'Supplier / Hauler *'), inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', prSupNames), { id: 'wrap_pr_supplier', hidden: !isCommForm && !isRawForm })}
-          ${fld(isRawForm ? 'Source Site *' : 'Delivery Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dl('dl_sites', prSiteNames), { id: 'wrap_pr_site', hidden: isCommForm })}
+          ${fld(isRawForm ? 'Source Site *' : 'Delivery Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', prSiteItems), { id: 'wrap_pr_site', hidden: isCommForm })}
           <div id="pr_comm_history_box" class="form-field span-3" ${isCommForm ? '' : 'hidden'} style="background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.45"></div>
           <div class="pa-form-sec-hdr"><span id="pr_sec2_hdr">${isCommForm ? '2. Commission Unit &amp; Rate' : '2. Pricing &amp; Volume Tiers'}</span></div>
           ${fld(isCommForm ? 'Commission Unit *' : 'Material Pricing Unit *', sel('f_uom', prUomOpts, 'm³'), { id: 'wrap_pr_uom', hintId: 'hint_pr_uom', hint: '' })}
@@ -898,16 +900,31 @@
     }
 
     if (fType === 'site') {
+      const st = (ctx && ctx.STATE) || {};
+      const activeSitesTblVw = (st.tableViews && st.tableViews.sites) || '';
+      const defSiteCat = (st.view === 'sales' || st.view === 'customers' || st.view === 'pricing' || activeSitesTblVw === 'delivery')
+        ? 'customer'
+        : 'supplier';
+      const isCustSite = defSiteCat === 'customer';
       return `
         <div class="form-grid-3">
+          <div class="form-field span-3" id="siteCategoryDeck">
+            <label><span class="pa-fld-lbl">Site Category *</span></label>
+            <div class="att-preset-bar" role="group" aria-label="Site Category">
+              <button type="button" class="att-preset-btn${!isCustSite ? ' active' : ''}" data-site-cat="supplier" aria-pressed="${!isCustSite ? 'true' : 'false'}">Supplier / Quarry Site</button>
+              <button type="button" class="att-preset-btn${isCustSite ? ' active' : ''}" data-site-cat="customer" aria-pressed="${isCustSite ? 'true' : 'false'}">Customer Delivery Site</button>
+            </div>
+            <input type="hidden" id="f_site_category" value="${defSiteCat}">
+            <span class="hint">Supplier / Quarry Sites link only to Suppliers and JV partnerships. Customer Delivery Sites link only to Customers.</span>
+          </div>
           ${fld('Site Name *', inp('f_site', 'text', '', 'placeholder="Site name"'))}
           ${fld('Region *', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Auto-filled from map zone or select..."') + dl('dl_regions', regNames))}
-          ${fld('Default Site Owner (Supplier)', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames))}
-          ${fld('Associated Customer (if Delivery Site)', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames))}
+          ${fld('Default Site Owner (Supplier)', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_site_supplier', hidden: isCustSite })}
+          ${fld('Linked Customer', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_site_customer', hidden: !isCustSite })}
           ${fld('Latitude (GPS)', inp('f_lat', 'number', '', 'step="0.00001" placeholder="33.89380"'))}
           ${fld('Longitude (GPS)', inp('f_lng', 'number', '', 'step="0.00001" placeholder="35.48200"'))}
           ${fld('Quick Paste Coords / Maps URL', inp('f_site_coord_paste', 'text', '', 'placeholder="Paste 33.8938, 35.4820 or Maps link"'))}
-          <div class="form-field check-field"><input type="checkbox" id="f_isjv"><label for="f_isjv">Joint-Venture (JV) Site</label></div>
+          <div class="form-field check-field" id="wrap_site_jv"${isCustSite ? ' hidden' : ''}><input type="checkbox" id="f_isjv"><label for="f_isjv">Joint-Venture (JV) Site</label></div>
           <div class="geo-modal-map-wrap">
             <div class="geo-modal-map-bar">
               <span><b>Pin Site on Map:</b> Click anywhere inside a Region Circle or Polygon to pin GPS &amp; auto-detect Region</span>
@@ -1642,6 +1659,9 @@
     }
 
     // jv
+    const jvSiteItems = (helpers && typeof helpers.siteMetaItems === 'function')
+      ? helpers.siteMetaItems('jv')
+      : helpers.siteNames('jv').map(n => [n, '']);
     return `
       ${adminHeaderHtml}
       <div class="form-grid-3">
@@ -1649,7 +1669,7 @@
         ${lockedDateField('Transaction Date *')}
         ${collapsibleRepDateField()}
         ${fld('JV Entry Type *', sel('f_jvtype', [['distribution', 'JV Profit / Cash Distribution'], ['partnership', 'New JV Site Partnership Setup']], 'distribution'))}
-        ${fld('JV Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type JV site..."') + dl('dl_sites', siteNames), { hintId: 'hint_jv_site', hint: '' })}
+        ${fld('JV Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type JV site..."') + dlMeta('dl_sites', jvSiteItems), { hintId: 'hint_jv_site', hint: '' })}
         ${fld('JV Partner *', inp('f_counterparty', 'text', '', 'list="dl_suppliers" placeholder="Select or type JV partner..."') + dl('dl_suppliers', supNames))}
         <div id="jvLiveContextStrip" class="att-contract-strip" hidden></div>
         ${fld('Partner Share (%)', inp('f_share', 'number', '50', 'step="0.5" min="0" max="100"'), { id: 'wrap_jv_share', hidden: true })}

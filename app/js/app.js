@@ -7129,27 +7129,211 @@
     }
     return list;
   }
-  function siteInfo(name) {
+  function resolveSiteCategory(s) {
+    if (!s || typeof s !== 'object') return 'supplier';
+    const rawCat = String(s.site_category || '').trim().toLowerCase();
+    if (rawCat === 'customer' || rawCat === 'delivery') return 'customer';
+    if (rawCat === 'supplier' || rawCat === 'quarry' || rawCat === 'source') return 'supplier';
+    if (s.customer && !s.supplier && !s.is_jv) return 'customer';
+    return 'supplier';
+  }
+  function formatSiteCategoryLabel(s) {
+    const cat = typeof s === 'string'
+      ? (String(s).trim().toLowerCase() === 'customer' ? 'customer' : 'supplier')
+      : resolveSiteCategory(s);
+    return cat === 'customer' ? 'Customer Delivery Site' : 'Supplier / Quarry Site';
+  }
+  window.MFG_RESOLVE_SITE_CATEGORY = resolveSiteCategory;
+
+  function normalizeDistinctSiteCategories(seedObj) {
+    const recs = seedObj && seedObj.records;
+    if (!recs || !Array.isArray(recs.sites)) return;
+    const msByNorm = new Map();
+    const grpSites = (seedObj.models && seedObj.models['manufacturing-group'] && seedObj.models['manufacturing-group'].sites) || [];
+    grpSites.forEach(ms => {
+      const k = norm(ms && (ms.Site || ms.name));
+      if (k && !msByNorm.has(k)) msByNorm.set(k, ms);
+    });
+    const stLoadsByNorm = new Map();
+    const rawLoadsByNorm = new Map();
+    const salesCustSetByNorm = new Map();
+    const hasSalesRuleByNorm = new Set();
+    const hasRawRuleByNorm = new Set();
+
+    const addCust = (k, cust) => {
+      const c = String(cust || '').trim();
+      if (!k || !c) return;
+      if (!salesCustSetByNorm.has(k)) salesCustSetByNorm.set(k, new Map());
+      const m = salesCustSetByNorm.get(k);
+      const ck = norm(c);
+      if (ck && !m.has(ck)) m.set(ck, c);
+    };
+
+    (recs.sales_tickets || []).forEach(t => {
+      if (!t || t.voided || !t.site) return;
+      const k = norm(t.site);
+      if (!k) return;
+      stLoadsByNorm.set(k, (stLoadsByNorm.get(k) || 0) + 1);
+      addCust(k, t.customer);
+    });
+    (recs.raw_purchases || []).forEach(r => {
+      if (!r || r.voided || !r.site) return;
+      const k = norm(r.site);
+      if (!k) return;
+      rawLoadsByNorm.set(k, (rawLoadsByNorm.get(k) || 0) + 1);
+    });
+    (recs.price_rules || []).forEach(pr => {
+      if (!pr || pr.voided || !pr.site) return;
+      const k = norm(pr.site);
+      if (!k) return;
+      const rt = String(pr.rule_type || '').trim();
+      if (/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(rt)) {
+        hasRawRuleByNorm.add(k);
+      } else if (!/^Commission$/i.test(rt)) {
+        hasSalesRuleByNorm.add(k);
+        addCust(k, pr.customer);
+      }
+    });
+
+    const singleSalesCust = k => {
+      const m = salesCustSetByNorm.get(k);
+      if (!m || m.size !== 1) return '';
+      return Array.from(m.values())[0] || '';
+    };
+
+    const existingCustNorms = new Set();
+    recs.sites.forEach(s => {
+      if (!s || s.voided || !s.name) return;
+      if (String(s.id || '').endsWith('__cust') || (s.site_category === 'customer' && !s._seedCatAuto)) {
+        existingCustNorms.add(norm(s.name));
+      }
+    });
+
+    const stagedClones = [];
+    recs.sites.forEach(s => {
+      if (!s || !s.name) return;
+      const k = norm(s.name);
+      const soloCust = singleSalesCust(k);
+      if (String(s.id || '').endsWith('__cust')) {
+        s.site_category = 'customer';
+        s._seedCatAuto = true;
+        s.supplier = '';
+        s.is_jv = false;
+        if (!s.customer && soloCust) s.customer = soloCust;
+        existingCustNorms.add(k);
+        return;
+      }
+      if (s.source !== 'app' && (!s.site_category || s._seedCatAuto)) {
+        const ms = msByNorm.get(k);
+        const salesLoads = Math.max(Number((ms && ms.loads) || 0), stLoadsByNorm.get(k) || 0);
+        const rawLoads = Math.max(Number((ms && ms.raw_loads) || 0), rawLoadsByNorm.get(k) || 0);
+        const inRaw = rawLoads > 0 || hasRawRuleByNorm.has(k);
+        const inSales = salesLoads > 0 || hasSalesRuleByNorm.has(k);
+        if (!s.is_jv && !inRaw && inSales) {
+          s.site_category = 'customer';
+          s._seedCatAuto = true;
+          s.supplier = '';
+          s.is_jv = false;
+          s.customer = s.customer || soloCust || '';
+          existingCustNorms.add(k);
+          return;
+        }
+        s.site_category = 'supplier';
+        s._seedCatAuto = true;
+        s.customer = '';
+        if (!s.is_jv && inRaw && salesLoads > 0 && !existingCustNorms.has(k)) {
+          existingCustNorms.add(k);
+          stagedClones.push({
+            id: String(s.id || ('st_' + k)) + '__cust',
+            name: s.name,
+            site_category: 'customer',
+            _seedCatAuto: true,
+            region: s.region || '',
+            geo_zone: s.geo_zone || '',
+            supplier: '',
+            customer: soloCust || '',
+            latitude: s.latitude != null ? s.latitude : null,
+            longitude: s.longitude != null ? s.longitude : null,
+            is_jv: false
+          });
+        }
+        return;
+      }
+      const cat = resolveSiteCategory(s);
+      s.site_category = cat;
+      if (cat === 'customer') {
+        s.supplier = '';
+        s.is_jv = false;
+      } else {
+        s.customer = '';
+      }
+    });
+
+    if (stagedClones.length) {
+      stagedClones.forEach(cl => recs.sites.push(cl));
+    }
+  }
+
+  function siteInfo(name, side) {
     const n = norm(name);
     if (!n) return null;
     const fIdx = getFreqIndex();
-    if (!fIdx._siteByNorm) {
+    if (!fIdx._siteByNorm || !fIdx._siteByCustNorm || !fIdx._siteBySuppNorm) {
       fIdx._siteByNorm = new Map();
-      (SEED.records.sites || []).forEach(s => { if (s && s.name) fIdx._siteByNorm.set(norm(s.name), s); });
+      fIdx._siteByCustNorm = new Map();
+      fIdx._siteBySuppNorm = new Map();
+      (SEED.records.sites || []).forEach(s => {
+        if (!s || !s.name || s.voided) return;
+        const k = norm(s.name);
+        if (!k) return;
+        if (resolveSiteCategory(s) === 'customer') {
+          if (!fIdx._siteByCustNorm.has(k)) fIdx._siteByCustNorm.set(k, s);
+        } else {
+          if (!fIdx._siteBySuppNorm.has(k)) fIdx._siteBySuppNorm.set(k, s);
+        }
+        if (!fIdx._siteByNorm.has(k)) fIdx._siteByNorm.set(k, s);
+      });
     }
-    return fIdx._siteByNorm.get(n) || null;
+    if (side === 'sales' || side === 'customer') return fIdx._siteByCustNorm.get(n) || null;
+    if (side === 'raw' || side === 'supplier' || side === 'jv') return fIdx._siteBySuppNorm.get(n) || null;
+    const preferCust = Boolean(STATE && (STATE.view === 'sales' || STATE.view === 'customers' || STATE.view === 'pricing' || (STATE.tableViews && STATE.tableViews.sites === 'delivery')));
+    if (preferCust) return fIdx._siteByCustNorm.get(n) || fIdx._siteBySuppNorm.get(n) || null;
+    return fIdx._siteBySuppNorm.get(n) || fIdx._siteByCustNorm.get(n) || null;
   }
   function siteNames(side) {
     const fIdx = getFreqIndex();
     if (!fIdx._lists) fIdx._lists = {};
-    const cKey = 'sites_' + (side || 'all');
+    const effSide = (side === 'customer' ? 'sales' : (side === 'supplier' ? 'raw' : (side || 'all')));
+    const cKey = 'sites_' + effSide;
     if (fIdx._lists[cKey]) return fIdx._lists[cKey];
-    const fMap = side === 'raw' ? fIdx.siteRaw : (side === 'sales' ? fIdx.siteSales : fIdx.site);
-    fIdx._lists[cKey] = uniqSorted(SEED.records.sites.map(s => s.name).concat(SEED.records.sales_tickets.map(r => r.site), SEED.records.raw_purchases.map(r => r.site)), fMap);
+    const sitesArr = (SEED.records.sites || []).filter(s => s && !s.voided && s.name);
+    const rulesArr = (SEED.records.price_rules || []).filter(r => r && !r.voided && r.site);
+    if (effSide === 'sales') {
+      const pool = sitesArr.filter(s => resolveSiteCategory(s) === 'customer').map(s => s.name)
+        .concat((SEED.records.sales_tickets || []).filter(r => r && !r.voided && r.site).map(r => r.site))
+        .concat(rulesArr.filter(r => !/^(Purchase Price \(Site\)|Transport Price \(Site\)|Commission)$/i.test(String(r.rule_type || '').trim())).map(r => r.site));
+      fIdx._lists[cKey] = uniqSorted(pool, fIdx.siteSales);
+    } else if (effSide === 'raw') {
+      const pool = sitesArr.filter(s => resolveSiteCategory(s) === 'supplier').map(s => s.name)
+        .concat((SEED.records.raw_purchases || []).filter(r => r && !r.voided && r.site).map(r => r.site))
+        .concat(rulesArr.filter(r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim())).map(r => r.site));
+      fIdx._lists[cKey] = uniqSorted(pool, fIdx.siteRaw);
+    } else if (effSide === 'jv') {
+      const pool = sitesArr.filter(s => resolveSiteCategory(s) === 'supplier' && (s.is_jv || /\bjv\b/i.test(s.name))).map(s => s.name)
+        .concat((SEED.records.jv_partnerships || []).filter(r => r && !r.voided && r.site).map(r => r.site))
+        .concat((SEED.records.jv_distributions || []).filter(r => r && !r.voided && r.site).map(r => r.site));
+      fIdx._lists[cKey] = uniqSorted(pool, fIdx.siteRaw);
+    } else {
+      const pool = sitesArr.map(s => s.name)
+        .concat((SEED.records.sales_tickets || []).filter(r => r && !r.voided && r.site).map(r => r.site))
+        .concat((SEED.records.raw_purchases || []).filter(r => r && !r.voided && r.site).map(r => r.site));
+      fIdx._lists[cKey] = uniqSorted(pool, fIdx.site);
+    }
     return fIdx._lists[cKey];
   }
   function siteMetaItems(side) {
-    const names = siteNames(side);
+    const effSide = (side === 'customer' ? 'sales' : (side === 'supplier' ? 'raw' : (side || 'all')));
+    const names = siteNames(effSide);
     const stats = (window.MFG_GEO && typeof window.MFG_GEO.getUnifiedSiteStats === 'function')
       ? window.MFG_GEO.getUnifiedSiteStats(SEED, STATE)
       : null;
@@ -7157,12 +7341,19 @@
     const seen = new Set();
     const out = [];
     const fmt = (nm, st) => {
-      if (!st) return [nm, ''];
+      const sObj = effSide === 'sales' ? siteInfo(nm, 'sales') : (effSide === 'raw' || effSide === 'jv' ? siteInfo(nm, 'raw') : siteInfo(nm));
+      const reg = (sObj && sObj.region) || (st && st.region) || '';
       const parts = [];
-      if (st.raw > 0 && st.sales > 0) parts.push(`${st.raw} Raw · ${st.sales} Sales`);
-      else if (st.raw > 0) parts.push(`${st.raw} Raw loads`);
-      else if (st.sales > 0) parts.push(`${st.sales} Sales loads`);
-      if (st.region) parts.push(st.region);
+      if (effSide === 'sales') {
+        if (st && st.sales > 0) parts.push(`${st.sales} Sales loads`);
+      } else if (effSide === 'raw' || effSide === 'jv') {
+        if (st && st.raw > 0) parts.push(`${st.raw} Raw loads`);
+      } else if (st) {
+        if (st.raw > 0 && st.sales > 0) parts.push(`${st.raw} Raw · ${st.sales} Sales`);
+        else if (st.raw > 0) parts.push(`${st.raw} Raw loads`);
+        else if (st.sales > 0) parts.push(`${st.sales} Sales loads`);
+      }
+      if (reg) parts.push(reg);
       return [nm, parts.join(' · ')];
     };
     names.forEach(nm => {
@@ -7171,12 +7362,14 @@
       seen.add(nk);
       out.push(fmt(nm, stats.byNorm.get(nk)));
     });
-    (stats.list || []).forEach(st => {
-      const nk = norm(st.name);
-      if (!nk || seen.has(nk)) return;
-      seen.add(nk);
-      out.push(fmt(st.name, st));
-    });
+    if (effSide === 'all') {
+      (stats.list || []).forEach(st => {
+        const nk = norm(st.name);
+        if (!nk || seen.has(nk)) return;
+        seen.add(nk);
+        out.push(fmt(st.name, st));
+      });
+    }
     return out;
   }
   function equipmentNames() {
@@ -7737,10 +7930,19 @@
     return (SEED.records.credit_terms || []).find(ct => norm(ct.customer) === n && !ct.end_date) ||
            (SEED.records.credit_terms || []).find(ct => norm(ct.customer) === n) || null;
   }
-  function activeRulesCountFor(field, name) {
+  function activeRulesCountFor(field, name, side) {
     const n = norm(name);
     if (!n) return 0;
-    return (SEED.records.price_rules || []).filter(r => !r.end_date && norm(r[field]) === n).length;
+    return (SEED.records.price_rules || []).filter(r => {
+      if (!r || r.voided || r.end_date || norm(r[field]) !== n) return false;
+      if (field === 'site' && side) {
+        const rt = String(r.rule_type || '').trim();
+        const isRawRt = /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(rt);
+        if (side === 'sales' || side === 'customer') return !isRawRt && !/^Commission$/i.test(rt);
+        if (side === 'raw' || side === 'supplier' || side === 'jv') return isRawRt;
+      }
+      return true;
+    }).length;
   }
   function relLink(targetKey, val, label, bold) {
     const v = String(val == null ? '' : val).trim();
@@ -13578,7 +13780,7 @@
               </thead>
               <tbody>
                 ${shownSites.map(s => `
-                  <tr class="rrow" data-rkey="sites" data-rid="${esc((siteInfo(s.site) || {}).id || s.site)}">
+                  <tr class="rrow" data-rkey="sites" data-rid="${esc((siteInfo(s.site, s.site_kind === '3P Customer Haul' ? 'sales' : 'raw') || {}).id || s.site)}">
                     <td>${s.site.startsWith('(') ? esc(s.site) : relLink('sites', s.site, s.site, true)}</td>
                     <td><span class="badge ${s.site_kind === 'JV 50/50' ? 'badge-brass' : (s.site_kind === '3P Customer Haul' ? 'badge-info' : 'badge-neutral')}">${esc(s.site_kind)}</span></td>
                     <td class="r">${s.mat_qty > 0 ? `${fmtNum(s.mat_qty, 0)} m³` : '—'}</td>
@@ -29916,7 +30118,7 @@
       if (r.site) {
         const sitK = norm(r.site);
         if (!jvBySite.has(sitK)) {
-          const sObj = siteInfo(r.site);
+          const sObj = siteInfo(r.site, 'raw');
           jvBySite.set(sitK, {
             site: r.site,
             isJv: Boolean(sObj && (sObj.is_jv || sObj.jv)),
@@ -29935,7 +30137,7 @@
     });
 
     (recs.sites || []).forEach(s => {
-      if (!s || s.voided || !s.name) return;
+      if (!s || s.voided || !s.name || resolveSiteCategory(s) === 'customer') return;
       const sitK = norm(s.name);
       if (!jvBySite.has(sitK)) {
         jvBySite.set(sitK, {
@@ -30426,7 +30628,7 @@
     const isDelivery = saleType === 'Delivery';
     const isPickup = saleType === 'Pickup';
     const isUnreg = saleType === 'Unregistered';
-    const customer = val('f_customer');
+    let customer = val('f_customer');
     const product = val('f_product');
     let site = val('f_site');
     const date = val('f_date');
@@ -30439,7 +30641,7 @@
     const saleTypeChanged = FORM_UI.lastSaleType !== '' && FORM_UI.lastSaleType !== saleType;
     const transportByChanged = FORM_UI.lastTransportBy !== '' && FORM_UI.lastTransportBy !== transportBy;
     const companyChanged = FORM_UI.lastCompany !== '' && FORM_UI.lastCompany !== company;
-    const customerChanged = FORM_UI.lastCustomer !== '' && FORM_UI.lastCustomer !== customer;
+    let customerChanged = FORM_UI.lastCustomer !== '' && FORM_UI.lastCustomer !== customer;
     const productChanged = FORM_UI.lastProduct !== '' && FORM_UI.lastProduct !== product;
     const siteChanged = FORM_UI.lastSite !== '' && FORM_UI.lastSite !== site;
 
@@ -30510,7 +30712,17 @@
         if (qtyEl()) qtyEl().value = '';
       }
     }
+    const sitePickedOrChanged = Boolean(site && site !== FORM_UI.lastSite);
     FORM_UI.lastSite = site;
+    if (isDelivery && !isUnreg && sitePickedOrChanged && !customer && $('f_customer')) {
+      const sInf = siteInfo(site, 'sales');
+      if (sInf && sInf.customer) {
+        $('f_customer').value = sInf.customer;
+        customer = sInf.customer;
+        FORM_UI.lastCustomer = customer;
+        customerChanged = true;
+      }
+    }
 
     // 2. Product -> UoM + ton factor
     const prod = productInfo(product);
@@ -30840,7 +31052,7 @@
         const ct = customer ? fIdx.creditTermsByCust.get(norm(customer)) : null;
         const ov60 = customer ? (fIdx.custOverdue60ByCust.get(norm(customer)) || 0) : 0;
         const trkLoads = (truckName && salesEffDate) ? (fIdx.loadsByTruckDate.get(`${norm(truckName)}|${salesEffDate.slice(0, 10)}`) || 0) : 0;
-        const sObj = site ? siteInfo(site) : null;
+        const sObj = site ? siteInfo(site, 'sales') : null;
         const isJvSite = Boolean(sObj && (sObj.is_jv || sObj.jv));
         const afterAr = ar != null && val('f_method') === 'Credit' ? round2(ar + ttc) : ar;
         const overLimit = Boolean(ct && ct.limit > 0 && afterAr != null && afterAr > ct.limit);
@@ -30930,7 +31142,7 @@
     }
 
     // 2. Site -> Default Quarry Site Owner (Material Payee)
-    const sInfo = site ? siteInfo(site) : null;
+    const sInfo = site ? siteInfo(site, 'raw') : null;
     const siteHasOwner = !!(sInfo && sInfo.supplier);
     const ownerLocked = applyFieldLockState('f_siteowner', siteHasOwner, siteHasOwner
       ? `Locked to ${site} default supplier (${sInfo.supplier})`
@@ -32701,7 +32913,7 @@
           }
           const dlPrSites = $('dl_sites');
           if (dlPrSites) {
-            dlPrSites.innerHTML = siteNames(isRawDomain ? 'raw' : 'sales').map(v => `<option value="${esc(v)}">`).join('');
+            dlPrSites.innerHTML = siteMetaItems(isRawDomain ? 'raw' : 'sales').map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
           }
           const dlPrSups = $('dl_suppliers');
           if (dlPrSups) {
@@ -33069,7 +33281,30 @@
         return {};
       }
       if (STATE.modalForm === 'site') {
-        syncUniversalMainDupHint('f_site', 'sites', 'Site');
+        const cat = val('f_site_category') === 'customer' ? 'customer' : 'supplier';
+        const isCust = cat === 'customer';
+        const host = activeFormHost();
+        if (host) {
+          host.querySelectorAll('[data-site-cat]').forEach(b => {
+            const on = b.getAttribute('data-site-cat') === cat;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+          });
+        }
+        setFieldVisible('wrap_site_supplier', !isCust);
+        setFieldVisible('wrap_site_jv', !isCust);
+        setFieldVisible('wrap_site_customer', isCust);
+        if (isCust) {
+          if ($('f_supplier') && $('f_supplier').value) $('f_supplier').value = '';
+          if ($('f_isjv') && $('f_isjv').checked) $('f_isjv').checked = false;
+        } else {
+          if ($('f_customer') && $('f_customer').value) $('f_customer').value = '';
+        }
+        const mTitle = $('modalTitle');
+        if (mTitle && !STATE.editingPendingExpenseId) {
+          mTitle.textContent = isCust ? 'New Customer Delivery Site (All BUs)' : 'New Supplier / Quarry Site (All BUs)';
+        }
+        syncUniversalMainDupHint('f_site', 'sites', isCust ? 'Customer Delivery Site' : 'Supplier / Quarry Site', { siteCategory: cat });
         return {};
       }
       if (STATE.modalForm === 'region') {
@@ -35575,6 +35810,15 @@
       });
     }
 
+    body.querySelectorAll('[data-site-cat]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const cat = btn.getAttribute('data-site-cat') === 'customer' ? 'customer' : 'supplier';
+        if ($('f_site_category')) $('f_site_category').value = cat;
+        recalcForm();
+      });
+    });
+
     body.querySelectorAll('[data-log-mode]').forEach(btn => {
       btn.addEventListener('click', ev => {
         ev.preventDefault();
@@ -36115,7 +36359,9 @@
     if (autoFocus && (STATE.editingPendingExpenseId || window.matchMedia('(min-width: 861px)').matches)) {
       const first = STATE.editingPendingExpenseId
         ? ($('f_amount') || body.querySelector('#f_reference'))
-        : body.querySelector('#f_ticketno, #f_customer, #f_supplier, #f_staff, #f_name, #f_counterparty, #f_truck, #f_category, #f_subcategory, #f_region');
+        : (STATE.modalForm === 'site'
+          ? body.querySelector('#f_site')
+          : body.querySelector('#f_ticketno, #f_customer, #f_supplier, #f_staff, #f_name, #f_counterparty, #f_truck, #f_category, #f_subcategory, #f_site, #f_region'));
       if (first) {
         modalFocusTimer = setTimeout(() => {
           if (body.contains(document.activeElement) && document.activeElement !== document.body) return;
@@ -36144,7 +36390,7 @@
     products: { label: 'Product', field: 'f_product', prop: 'name' },
     product_types: { label: 'Product Type', field: 'f_name', prop: 'name' },
     uoms: { label: 'Unit of Measure', field: 'f_name', prop: 'name' },
-    sites: { label: 'Site', field: 'f_site', prop: 'name' },
+    sites: { label: 'Site', field: 'f_site', prop: 'name', compositeProp: 'site_category' },
     regions: { label: 'Region', field: 'f_region', prop: 'name' },
     equipment: { label: 'Equipment / Truck', field: 'f_truck', prop: 'name', altField: 'f_plateno', altProp: 'plate_no' },
     drivers: { label: 'Driver', field: 'f_driver', prop: 'name' },
@@ -36171,6 +36417,7 @@
     if (!r) return '';
     const m = norm(universalMainValue(crKey, r));
     if (!m) return '';
+    if (crKey === 'sites') return resolveSiteCategory(r) + '|' + m;
     if (crKey === 'expense_subcategories') return norm(r.category) + '|' + m;
     if (crKey === 'fx_rates') return norm(r.currency || 'LBP') + '|' + m;
     return m;
@@ -36182,6 +36429,7 @@
     const qPlate = opts.plateNo ? norm(opts.plateNo) : '';
     const qCat = opts.category ? norm(opts.category) : '';
     const qCurr = opts.currency ? norm(opts.currency) : '';
+    const qSiteCat = opts.siteCategory ? (norm(opts.siteCategory) === 'customer' ? 'customer' : 'supplier') : '';
     if (!q && !qPlate) return null;
     const excludeId = opts.excludeId != null ? String(opts.excludeId) : '';
     const pool = [].concat(
@@ -36192,6 +36440,11 @@
       if (!r || r.voided) continue;
       if (excludeId && r.id != null && String(r.id) === excludeId) continue;
       const rMain = norm(universalMainValue(crKey, r));
+      if (crKey === 'sites') {
+        const effTargetCat = qSiteCat || 'supplier';
+        if (q && rMain === q && resolveSiteCategory(r) === effTargetCat) return r;
+        continue;
+      }
       if (crKey === 'expense_subcategories') {
         if (q && rMain === q && (!qCat || norm(r.category) === qCat)) return r;
         continue;
@@ -36224,7 +36477,7 @@
         wrap.appendChild(span);
       }
       const existingName = universalMainValue(crKey, dup) || v;
-      span.innerHTML = `${ic('warn')} "${esc(existingName)}" already exists in the Universal ${esc(label)} Registry — duplicates are blocked on post.`;
+      span.innerHTML = `${ic('warn')} "${esc(existingName)}" already exists in the Universal ${esc(label)} Registry · duplicates are blocked on post.`;
     } else if (span) {
       span.remove();
     }
@@ -36650,10 +36903,12 @@
       record = { ...base, name: nm, uom: val('f_uom') || 'm³', type: val('f_prodtype') || 'Material', ton_factor: num('f_tonfactor') || 1, list_price: round2(num('f_unitprice')), ticket_product: !!($('f_ticketprod') && $('f_ticketprod').checked), fuel_item: !!($('f_fuelitem') && $('f_fuelitem').checked), input_product: !!($('f_inputprod') && $('f_inputprod').checked) };
     } else if (f === 'site') {
       const nm = val('f_site');
+      const siteCat = val('f_site_category') === 'customer' ? 'customer' : 'supplier';
+      const catLbl = formatSiteCategoryLabel(siteCat);
       if (!nm) addErr('f_site', 'Site Name is required.');
       else {
-        const dup = findUniversalDuplicate('sites', nm);
-        if (dup) addErr('f_site', `Site "${universalMainValue('sites', dup) || nm}" already exists in the Universal Site Registry. Duplicate names are not allowed.`);
+        const dup = findUniversalDuplicate('sites', nm, { siteCategory: siteCat });
+        if (dup) addErr('f_site', `${catLbl} "${universalMainValue('sites', dup) || nm}" already exists. Duplicate site names in the same category are not allowed.`);
       }
       const siteLat = val('f_lat') !== '' ? num('f_lat') : null;
       const siteLng = val('f_lng') !== '' ? num('f_lng') : null;
@@ -36662,7 +36917,17 @@
         const hitReg = window.MFG_GEO.findContainingRegion(siteLat, siteLng, SEED);
         if (hitReg) siteReg = hitReg.name;
       }
-      record = { ...base, name: nm, region: siteReg, supplier: val('f_supplier'), customer: val('f_customer'), latitude: siteLat, longitude: siteLng, is_jv: !!($('f_isjv') && $('f_isjv').checked) };
+      record = {
+        ...base,
+        name: nm,
+        site_category: siteCat,
+        region: siteReg,
+        supplier: siteCat === 'supplier' ? val('f_supplier') : '',
+        customer: siteCat === 'customer' ? val('f_customer') : '',
+        latitude: siteLat,
+        longitude: siteLng,
+        is_jv: siteCat === 'supplier' ? !!($('f_isjv') && $('f_isjv').checked) : false
+      };
     } else if (f === 'equipment' || f === 'companyequipment') {
       const nm = val('f_truck');
       const pl = val('f_plateno') || nm;
@@ -36719,7 +36984,7 @@
       }
     } else if (f === 'region') {
       crKey = 'regions';
-      const regNm = val('f_region');
+      const regNm = val('f_region') || val('f_map_region_search');
       if (!regNm) addErr('f_region', 'Region / Zone Name is required.');
       else {
         const dup = findUniversalDuplicate('regions', regNm);
@@ -37602,7 +37867,7 @@
         applyOriginPriorDisposition(record, extraApiPosts);
       }
       if (crKey === 'sites' && window.MFG_GEO && record.latitude != null && record.longitude != null) {
-        window.MFG_GEO.persistLocationPin({ targetType: 'site', name: record.name, lat: record.latitude, lng: record.longitude, region: record.region }, { SEED, STATE });
+        window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: record.id, siteCategory: record.site_category, name: record.name, lat: record.latitude, lng: record.longitude, region: record.region }, { SEED, STATE });
       }
       if (crKey === 'regions' && window.MFG_GEO && (record.center_lat != null || record.zone_geojson)) {
         window.MFG_GEO.persistRegionZone(record, { SEED, STATE });
@@ -38368,6 +38633,7 @@
       if (/price|cost|amount|total|vat|discount|tip|limit|salary|balance|^debit$|^credit$|adj|principal|value|change|rate_usd|daily_usd|paid|spent|sales_ttc|raw_cost|proceeds/.test(key) && !/rate$|pct|percent|factor|ton_factor|exchange|count|loads|days|hours|meter_reading|cost_class|cost_bucket/.test(key)) return fmtUSD(v, 2);
       return fmtNum(v, Number.isInteger(v) ? 0 : 2);
     }
+    if (key === 'site_category') return formatSiteCategoryLabel(v);
     if (key === 'effective_to') return /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? fmtDateDMY(v) : String(v);
     if (/date|last_sale|last_purchase/i.test(key)) return fmtDateDMY(v);
     return String(v);
@@ -38379,8 +38645,16 @@
     if (key === 'gl_accounts') syncGlAccountsRegistry();
     const nq = norm(q);
     const list = (SEED.records[key] || []).concat(STATE.customRecords[key] || []);
-    let hit = list.find(r => r && String(r.id) === q) ||
-              list.find(r => r && (norm(r.name) === nq || norm(r.code) === nq || norm(r.ticket_no) === nq || norm(r.invoice_no) === nq || norm(r.staff) === nq || norm(r.driver) === nq || norm(r.equipment) === nq || norm(r.plate_no) === nq));
+    let hit = list.find(r => r && String(r.id) === q);
+    if (!hit && key === 'sites') {
+      const preferCust = Boolean(STATE && (STATE.view === 'sales' || STATE.view === 'customers' || STATE.view === 'pricing' || (STATE.tableViews && STATE.tableViews.sites === 'delivery')));
+      const wantCat = preferCust ? 'customer' : 'supplier';
+      hit = list.find(r => r && !r.voided && norm(r.name) === nq && resolveSiteCategory(r) === wantCat) ||
+            list.find(r => r && !r.voided && norm(r.name) === nq);
+    }
+    if (!hit) {
+      hit = list.find(r => r && (norm(r.name) === nq || norm(r.code) === nq || norm(r.ticket_no) === nq || norm(r.invoice_no) === nq || norm(r.staff) === nq || norm(r.driver) === nq || norm(r.equipment) === nq || norm(r.plate_no) === nq));
+    }
     if (hit) return hit;
 
     // Synthesize a rich 360° master record if a lookup name exists in transactions or semantic summaries
@@ -38395,7 +38669,10 @@
       return { id: q, name: q, official_name: q };
     }
     if (key === 'products') return { id: q, name: q, type: 'Material', uom: 'm³', list_price: listPrice(q) };
-    if (key === 'sites') return { id: q, name: q, region: 'Lebanon', is_jv: false };
+    if (key === 'sites') {
+      const defCat = (STATE && (STATE.view === 'sales' || STATE.view === 'customers' || STATE.view === 'pricing' || (STATE.tableViews && STATE.tableViews.sites === 'delivery'))) ? 'customer' : 'supplier';
+      return { id: q, name: q, site_category: defCat, region: 'Lebanon', is_jv: false };
+    }
     if (key === 'equipment') return { id: q, name: q, plate_no: q, type: 'Truck', ownership: 'Third-Party' };
     if (key === 'drivers') return { id: q, name: q };
     if (key === 'employments') return { id: q, name: q, staff: q, type: 'Regular', status: 'Active' };
@@ -38535,10 +38812,14 @@
       };
     }
     if (key === 'sites') {
-      const rulesCnt = activeRulesCountFor('site', row.name);
+      const isCustSite = resolveSiteCategory(row) === 'customer';
+      const rulesCnt = activeRulesCountFor('site', row.name, isCustSite ? 'sales' : 'raw');
+      const gpsTxt = row.latitude != null ? `${row.latitude}, ${row.longitude}` : 'Pending coordinates';
       return {
         tone: 'info',
-        text: `Site 360°: ${row.name} (${row.region || 'Lebanon'})  |  Default Site Owner: ${row.supplier || '—'}  |  JV 50/50 Status: ${row.is_jv ? 'Active JV Site' : 'Standard Site'}  |  Active Site Price Rules: ${rulesCnt}  |  GPS Pin: ${row.latitude != null ? row.latitude + ', ' + row.longitude : 'Pending coordinates'}`
+        text: isCustSite
+          ? `Customer Delivery Site: ${row.name} (${row.region || 'Lebanon'})  |  Linked Customer: ${row.customer || 'Open Delivery'}  |  Active Sales Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
+          : `Supplier / Quarry Site: ${row.name} (${row.region || 'Lebanon'})  |  Default Site Owner: ${row.supplier || 'Open Source'}  |  JV 50/50 Status: ${row.is_jv ? 'Active JV Site' : 'Standard Quarry Site'}  |  Active Quarry Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
       };
     }
     if (key === 'products') {
@@ -38977,20 +39258,29 @@
         ]
       });
     };
-    const addSiteQv = (siteName) => {
+    const addSiteQv = (siteName, side) => {
       if (!siteName) return;
-      const si = siteInfo(siteName) || {};
+      const isCustSide = side === 'sales' || side === 'customer';
+      const si = siteInfo(siteName, isCustSide ? 'sales' : (side ? 'raw' : undefined)) || {};
+      const effCat = si && si.id ? resolveSiteCategory(si) : (isCustSide ? 'customer' : 'supplier');
       cards.push({
-        tag: 'QUICK VIEW · SITE',
+        tag: effCat === 'customer' ? 'QUICK VIEW · CUSTOMER DELIVERY SITE' : 'QUICK VIEW · SUPPLIER / QUARRY SITE',
         targetKey: 'sites',
-        targetVal: siteName,
+        targetVal: (si && si.id) || siteName,
         title: siteName,
-        kvs: [
-          ['Region / Zone', si.region || 'Lebanon'],
-          ['Site Owner', si.supplier || row.site_owner || '—'],
-          ['JV 50/50 Site', si.is_jv ? 'Yes (JV Partner)' : 'No'],
-          ['Active Site Rules', fmtNum(activeRulesCountFor('site', siteName))]
-        ]
+        kvs: effCat === 'customer'
+          ? [
+              ['Site Category', 'Customer Delivery Site'],
+              ['Region / Zone', si.region || 'Lebanon'],
+              ['Linked Customer', si.customer || row.customer || 'Open Delivery'],
+              ['Active Sales Rules', fmtNum(activeRulesCountFor('site', siteName, 'sales'))]
+            ]
+          : [
+              ['Site Category', 'Supplier / Quarry Site'],
+              ['Region / Zone', si.region || 'Lebanon'],
+              ['Site Owner', si.supplier || row.site_owner || 'Open Source'],
+              ['JV / Quarry Rules', `${si.is_jv ? 'JV 50/50' : 'Standard'} · ${fmtNum(activeRulesCountFor('site', siteName, 'raw'))} rules`]
+            ]
       });
     };
     const addProductQv = (prodName) => {
@@ -39034,10 +39324,10 @@
     if (key === 'sales_tickets') {
       addCustomerQv(row.customer);
       addProductQv(row.product);
-      addSiteQv(row.site);
+      addSiteQv(row.site, 'sales');
       addTruckQv(row.truck, row.driver);
     } else if (key === 'raw_purchases') {
-      addSiteQv(row.site);
+      addSiteQv(row.site, 'raw');
       addSupplierQv(row.site_owner, 'SITE OWNER');
       if (row.truck_owner && row.truck_owner !== row.site_owner) addSupplierQv(row.truck_owner, 'HAULER');
       addTruckQv(row.truck, row.driver);
@@ -39045,10 +39335,17 @@
       addTruckQv(row.equipment, row.driver);
       addProductQv(row.item || 'Diesel');
     } else if (key === 'price_rules') {
+      const isRawRule = /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(row.rule_type || '').trim());
       if (row.customer) addCustomerQv(row.customer);
       if (row.supplier) addSupplierQv(row.supplier, 'SUPPLIER');
       if (row.product) addProductQv(row.product);
-      if (row.site) addSiteQv(row.site);
+      if (row.site) addSiteQv(row.site, isRawRule ? 'raw' : 'sales');
+    } else if (key === 'sites') {
+      if (resolveSiteCategory(row) === 'customer') {
+        if (row.customer) addCustomerQv(row.customer);
+      } else if (row.supplier) {
+        addSupplierQv(row.supplier, 'SITE OWNER');
+      }
     } else if (key === 'receipts' || key === 'credit_terms' || key === 'vat_invoices') {
       addCustomerQv(row.customer);
     } else if (key === 'settlements') {
@@ -39063,7 +39360,7 @@
       addTruckQv(row.equipment, row.default_driver);
       if (row.supplier) addSupplierQv(row.supplier, 'OWNER');
       if (row.default_driver) addDriverQv(row.default_driver, 'DEFAULT DRIVER');
-      if (row.site) addSiteQv(row.site);
+      if (row.site) addSiteQv(row.site, 'raw');
     } else if (key === 'drivers' || key === 'company_drivers') {
       const drvName = row.driver || row.name;
       const dObj = driverInfo(drvName) || row;
@@ -39196,11 +39493,13 @@
     else if (key === 'sites' || key === 'regions') {
       const name = row.name || row.Site;
       if (key === 'regions') {
-        addGrid('sg_r_sites', `Sites in Region ${name}`, 'Sites', 'Sites', 'sites', (rec.sites || []).filter(s => norm(s.region) === norm(name)), ['name', 'region', 'supplier', 'is_jv', 'latitude', 'longitude'], null);
+        addGrid('sg_r_sites', `Sites in Region ${name}`, 'Sites', 'Sites', 'sites', (rec.sites || []).filter(s => norm(s.region) === norm(name)), ['name', 'site_category', 'region', 'supplier', 'customer', 'is_jv', 'latitude', 'longitude'], null);
         addGrid('sg_r_ot', `Driver Trip & Overtime Rates (${name})`, 'Overtime Rates', 'Overtime Rates', 'overtime_rates', (rec.overtime_rates || []).filter(o => norm(o.region) === norm(name)), ['name', 'company', 'region', 'amount', 'start_date', 'end_date'], 'amount');
-      } else {
-        addGrid('sg_st_rules', `Price & Transport Agreements at ${name}`, 'Site Rules', 'Site Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.site) === norm(name) && !isCommRule(r)), ['company', 'rule_type', 'customer', 'supplier', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
+      } else if (resolveSiteCategory(row) === 'customer') {
+        addGrid('sg_st_rules', `Sales & Delivery Agreements at ${name}`, 'Sales Rules', 'Sales Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.site) === norm(name) && !isCommRule(r) && !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim())), ['company', 'rule_type', 'customer', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
         addGrid('sg_st_sales', `Sales Deliveries to ${name}`, 'Sales Deliveries', 'Sales Deliveries', 'sales_tickets', (rec.sales_tickets || []).filter(t => norm(t.site) === norm(name)), ['date', 'ticket_no', 'company', 'customer', 'product', 'truck', 'qty', 'trans_price', 'total_ttc'], 'total_ttc');
+      } else {
+        addGrid('sg_st_rules', `Quarry & Haulage Agreements at ${name}`, 'Quarry Rules', 'Quarry Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.site) === norm(name) && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim())), ['company', 'rule_type', 'supplier', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
         addGrid('sg_st_raw', `Raw Material Loads from ${name}`, 'Raw Loads', 'Raw Loads', 'raw_purchases', (rec.raw_purchases || []).filter(t => norm(t.site) === norm(name)), ['date', 'ticket_no', 'company', 'site_owner', 'truck_owner', 'truck', 'product', 'qty', 'cost', 'trans_cost', 'total'], 'total');
         addGrid('sg_st_jv', `JV Partnerships & Profit Split (${name})`, 'JV Partners', 'JV Partners', 'jv_partnerships', (rec.jv_partnerships || []).filter(j => norm(j.site) === norm(name)), ['name', 'company', 'partner', 'percentage', 'notes'], 'percentage');
         addGrid('sg_st_log', `Site Transport (${name})`, 'Site Transport', 'Site Transport', 'logistics_allowances', (rec.logistics_allowances || []).filter(l => norm(l.site) === norm(name)), ['name', 'company', 'staff', 'equipment', 'daily_usd', 'working_days', 'start_date', 'end_date'], 'daily_usd');
@@ -39938,10 +40237,11 @@
         { key: 'notes', label: 'Description / Notes', type: 'text', sec: 3, span: true }
       ],
       sites: [
+        { key: 'site_category', label: 'Site Category *', type: 'select', options: [['supplier', 'Supplier / Quarry Site'], ['customer', 'Customer Delivery Site']], sec: 1, getVal: r => resolveSiteCategory(r) },
         { key: 'name', label: 'Site Name *', type: 'text', sec: 1 },
         { key: 'region', label: 'Region / Zone *', type: 'combo', dl: 'dl_insp_regions', sec: 2 },
         { key: 'supplier', label: 'Default Site Owner (Supplier)', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
-        { key: 'customer', label: 'Linked Customer (if Client Site)', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
+        { key: 'customer', label: 'Linked Customer', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
         { key: 'is_jv', label: 'JV 50/50 Partnership Site', type: 'bool', sec: 2 },
         { key: 'latitude', label: 'GPS Latitude', type: 'number', step: '0.000001', sec: 2 },
         { key: 'longitude', label: 'GPS Longitude', type: 'number', step: '0.000001', sec: 2 },
@@ -40286,7 +40586,7 @@
       if (!f.drawerOnly) schemaByKey.set(f.key, f);
     });
 
-    const hidden = new Set(['id', 'origin_ticket_id', 'zone_geojson', 'geo_zone', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status', '_staged_expense_items', '_staged_repair_items', 'historical_consumed', 'move_type', 'expense_id', 'repair_id']);
+    const hidden = new Set(['id', 'origin_ticket_id', 'zone_geojson', 'geo_zone', '_seedCatAuto', 'customer_id', 'sale_type_code', 'transport_by_code', 'fuel_type_code', 'rule_type_code', 'rate_per_code', 'category_code', 'ownership_code', 'entered_by_email', 'adj_windows', 'driver_rows', 'sync_unit_status', 'resolve_defect', '_prev_status', '_staged_expense_items', '_staged_repair_items', 'historical_consumed', 'move_type', 'expense_id', 'repair_id']);
     if (key !== 'gl_accounts') {
       ['output_vat_account', 'input_vat_account', 'revenue_account', 'purchase_account', 'gl_code', 'gl_account', 'receivable_account', 'payable_account', 'salary_account', 'asset_account', 'depreciation_account'].forEach(gk => hidden.add(gk));
     } else {
@@ -40301,6 +40601,14 @@
     if (key === 'warehouse_movements') { hidden.add('location'); hidden.add('target_equipment'); }
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
+    if (key === 'sites') {
+      if (resolveSiteCategory(row) === 'customer') {
+        hidden.add('supplier');
+        hidden.add('is_jv');
+      } else {
+        hidden.add('customer');
+      }
+    }
     if (key === 'employments') {
       hidden.add('equipment');
       hidden.add('truck');
@@ -41343,6 +41651,26 @@
         });
         const tankDelta = round2(-mLit);
         html = `<span>Type: <b>${esc(mType)}</b></span><span>Quantity: <b>${mLit > 0 ? '+' : ''}${fmtNum(mLit, 1)} L</b></span><span>Tank Impact: <b>${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L (${mLit >= 0 ? '+ deducts from tank' : '− adds to tank'})</b></span>`;
+      } else if (key === 'sites') {
+        const mCat = getModVal('site_category') === 'customer' ? 'customer' : 'supplier';
+        const isCustSite = mCat === 'customer';
+        ['supplier', 'is_jv'].forEach(fk => {
+          const el = $('insp_edit_' + fk);
+          const wrap = el && el.closest('.form-field');
+          if (wrap) wrap.hidden = isCustSite;
+        });
+        const custEl = $('insp_edit_customer');
+        const custWrap = custEl && custEl.closest('.form-field');
+        if (custWrap) custWrap.hidden = !isCustSite;
+        if (isCustSite) {
+          if ($('insp_edit_supplier')) $('insp_edit_supplier').value = '';
+          if ($('insp_edit_is_jv')) $('insp_edit_is_jv').value = 'No';
+        } else if (custEl) {
+          custEl.value = '';
+        }
+        const mReg = getModVal('region') || row.region || 'Lebanon';
+        const mParty = isCustSite ? (getModVal('customer') || 'Open Delivery') : (getModVal('supplier') || 'Open Source');
+        html = `<span>Category: <b>${esc(formatSiteCategoryLabel(mCat))}</b></span><span>Region: <b>${esc(mReg)}</b></span><span>${isCustSite ? 'Linked Customer' : 'Site Owner'}: <b>${esc(mParty)}</b></span>`;
       }
       modLiveCalcEl.innerHTML = html;
       modLiveCalcEl.hidden = !html;
@@ -41486,9 +41814,9 @@
             toast(`${UNIVERSAL_MAIN_SPEC[key].label} Name cannot be blank.`, 'err');
             return;
           }
-          const dup = findUniversalDuplicate(key, mainVal, { excludeId: row.id, plateNo: candidate.plate_no, category: candidate.category });
+          const dup = findUniversalDuplicate(key, mainVal, { excludeId: row.id, plateNo: candidate.plate_no, category: candidate.category, siteCategory: resolveSiteCategory(candidate) });
           if (dup) {
-            toast(`Duplicate ${UNIVERSAL_MAIN_SPEC[key].label} "${mainVal}" already exists — modification blocked.`, 'err');
+            toast(`Duplicate ${key === 'sites' ? formatSiteCategoryLabel(candidate) : UNIVERSAL_MAIN_SPEC[key].label} "${mainVal}" already exists · modification blocked.`, 'err');
             return;
           }
         }
@@ -41781,6 +42109,19 @@
             row.driver = '';
           }
           row.name = `MALF ${row.date || ''} ${row.discrepancy_type || 'Malfunction'}${row.ticket_no ? ' #' + row.ticket_no : ''}`;
+        } else if (key === 'sites') {
+          const effCat = resolveSiteCategory(row);
+          row.site_category = effCat;
+          delete row._seedCatAuto;
+          if (effCat === 'customer') {
+            row.supplier = '';
+            row.is_jv = false;
+          } else {
+            row.customer = '';
+          }
+          if (window.MFG_GEO && row.latitude != null && row.longitude != null) {
+            window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: effCat, name: row.name, lat: row.latitude, lng: row.longitude, region: row.region }, { SEED, STATE });
+          }
         }
 
         if (isEquipInspect && targetEqRow && ('capacity' in pendingUpdates || 'supplier' in pendingUpdates || 'default_driver' in pendingUpdates || Boolean(effToDate))) {
@@ -42243,6 +42584,11 @@
           if (nm) s.add(nm);
         }
       });
+      if (mk === 'sites' && s.size) {
+        (SEED.records.sites || []).forEach(x => {
+          if (x && !x.voided && x.name) s.delete(norm(x.name));
+        });
+      }
       voidedMasterNames[mk] = s;
     });
     const custByNorm = new Map();
@@ -54297,6 +54643,7 @@
       });
     });
 
+    normalizeDistinctSiteCategories(SEED);
     _demoSanitizedActive = true;
     _officialLookupSig = '';
     SEED._canonicalById = null;
@@ -54314,6 +54661,7 @@
         SEED.records[k] = _demoSanitizeBackup.recSnap[k].map(r => Object.assign({}, r));
       });
     }
+    normalizeDistinctSiteCategories(SEED);
     STATE.demoVisitor = _demoSanitizeBackup.demoVisitor;
     _demoSanitizedActive = false;
     _demoSanitizeBackup = null;
@@ -54343,7 +54691,8 @@
         if (!coreRes.ok) throw new Error('seed_core HTTP ' + coreRes.status);
         const corePayload = await coreRes.json();
         await unpackPackedRecordsIntoSeed(corePayload, shouldYield);
-            SEED._coreReady = true;
+        normalizeDistinctSiteCategories(SEED);
+        SEED._coreReady = true;
         SEED._canonicalById = null;
         SEED._canonicalByMain = null;
         SEED._origModelMasters = null;
@@ -54361,7 +54710,8 @@
         if (!recRes.ok) throw new Error('seed_records HTTP ' + recRes.status);
         const recPayload = await recRes.json();
         await unpackPackedRecordsIntoSeed(recPayload, shouldYield);
-            SEED._canonicalById = null;
+        normalizeDistinctSiteCategories(SEED);
+        SEED._canonicalById = null;
         SEED._canonicalByMain = null;
         SEED._recordsReady = true;
         if (shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();

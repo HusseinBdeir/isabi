@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.17';
+const SHELL_CACHE = 'isabi-mfg-v19.6.18';
 const DATA_CACHE = 'isabi-mfg-data-v1';
 
 // Lightweight UI shell (~500 KB gz). Heavy seed JSONs (1.7 MB gz) and Face ID models (8.2 MB gz)
@@ -6,21 +6,21 @@ const DATA_CACHE = 'isabi-mfg-data-v1';
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.17',
-  './css/geo_dispatch.css?v=19.6.17',
-  './css/daily_ops.css?v=19.6.17',
-  './js/face.js?v=19.6.17',
-  './js/endpoints.js?v=19.6.17',
-  './js/seed_manifest.js?v=19.6.17',
-  './js/icons.js?v=19.6.17',
-  './js/geo_dispatch.js?v=19.6.17',
-  './js/forms_engine.js?v=19.6.17',
-  './js/pbi_pages.js?v=19.6.17',
-  './js/rdl_reports.js?v=19.6.17',
-  './js/kiosk_print.js?v=19.6.17',
-  './js/table_columns.js?v=19.6.17',
-  './js/daily_ops.js?v=19.6.17',
-  './js/app.js?v=19.6.17',
+  './css/app.css?v=19.6.18',
+  './css/geo_dispatch.css?v=19.6.18',
+  './css/daily_ops.css?v=19.6.18',
+  './js/face.js?v=19.6.18',
+  './js/endpoints.js?v=19.6.18',
+  './js/seed_manifest.js?v=19.6.18',
+  './js/icons.js?v=19.6.18',
+  './js/geo_dispatch.js?v=19.6.18',
+  './js/forms_engine.js?v=19.6.18',
+  './js/pbi_pages.js?v=19.6.18',
+  './js/rdl_reports.js?v=19.6.18',
+  './js/kiosk_print.js?v=19.6.18',
+  './js/table_columns.js?v=19.6.18',
+  './js/daily_ops.js?v=19.6.18',
+  './js/app.js?v=19.6.18',
   './manifest.json',
   './icon.svg',
   './icon-192.png',
