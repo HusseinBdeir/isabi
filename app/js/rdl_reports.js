@@ -292,17 +292,19 @@
     const recs = (SEED && SEED.records) || {};
     const allowedCos = Array.isArray(STATE.allowedCompanyNames) && STATE.allowedCompanyNames.length ? STATE.allowedCompanyNames : null;
     const allowedSig = allowedCos ? allowedCos.join(',') : 'ALL';
-    const sig = `${co}|${allowedSig}|${basis}|${(SEED && SEED._customRev) || 0}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.vat_invoices || []).length}`;
+    const offScope = Boolean(STATE._officialScopeActive);
+    const sig = `${co}|${allowedSig}|${basis}|${offScope ? 'OFF' : 'ALL'}|${(SEED && SEED._customRev) || 0}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.receipts || []).length}|${(recs.settlements || []).length}|${(recs.fuel_intakes || []).length}|${(recs.salaries || []).length}|${(recs.vat_invoices || []).length}`;
 
     if (_cachedCoKey !== sig || !_cachedCtxData) {
-      const rawSales = (recs.sales_tickets || recs.sales || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos));
-      const rawExp = (recs.expenses || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos));
+      const offPred = (r, tk) => !offScope || typeof STATE.isOfficialRecord !== 'function' || STATE.isOfficialRecord(r, tk);
+      const rawSales = (recs.sales_tickets || recs.sales || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'sales_tickets'));
+      const rawExp = (recs.expenses || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'expenses'));
       const rawPay = (recs.salaries || recs.payroll || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos));
-      const rawRm = (recs.raw_purchases || recs.rm || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos));
+      const rawRm = (recs.raw_purchases || recs.rm || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'raw_purchases'));
       const rawFuel = (recs.fuel_intakes || recs.fuel || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos));
-      const rawReceipts = (recs.receipts || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos));
-      const rawSettlements = (recs.settlements || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos));
-      const rawVatInvs = (recs.vat_invoices || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos));
+      const rawReceipts = (recs.receipts || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'receipts'));
+      const rawSettlements = (recs.settlements || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'settlements'));
+      const rawVatInvs = (recs.vat_invoices || []).filter(r => r && !r.voided && coMatch(r.company || r.co, co, allowedCos) && offPred(r, 'vat_invoices'));
 
       // Map official VAT invoices by customer+date window so sales tickets inherit vat_inv when matching
       const vatInvByCust = new Map();
@@ -789,6 +791,8 @@
 
     return {
       rdl, co, basis,
+      showTaxBreakdown: Boolean(STATE._canSeeTaxBreakdown && STATE.showSalesTaxBreakdown),
+      officialScope: Boolean(STATE._officialScopeActive),
       ...d
     };
   }
@@ -1898,6 +1902,7 @@
     const totPaid = rows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
     const viewRows = rows.slice(0, 160);
 
+    const showTaxCols = Boolean(ctx.showTaxBreakdown || ctx.officialScope);
     return `
       ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Customer: ${p.customer} · Product: ${p.product} · Site: ${p.site} · ${rows.length} tickets (showing ${viewRows.length})`)}
       <table class="rdl-table">
@@ -1905,14 +1910,13 @@
           <tr>
             <th>Date</th>
             <th>Ticket / Inv</th>
-            <th>VAT Inv</th>
+            ${showTaxCols ? '<th>VAT Inv</th>' : ''}
             <th>Customer</th>
             <th>Site</th>
             <th>Product</th>
             <th class="num">Qty (m³)</th>
             <th class="num">Price ($)</th>
-            <th class="num">Net ($)</th>
-            <th class="num">VAT ($)</th>
+            ${showTaxCols ? '<th class="num">Net ($)</th><th class="num">VAT ($)</th>' : ''}
             <th class="num">Total ($)</th>
             <th class="num">Paid ($)</th>
           </tr>
@@ -1920,18 +1924,20 @@
         <tbody>
           ${viewRows.map(r => {
             const net = Number(r.total_usd || 0) - Number(r.vat_usd || 0);
+            const unitRate = Number(r.qty || 0) > 0 && !showTaxCols
+              ? Math.abs(Number(r.total_usd || 0) / Number(r.qty || 1))
+              : Number(r.unit_price || 0);
             return `
               <tr>
                 <td class="mono">${esc(rowDate(r, ctx.basis))}</td>
-                <td class="mono">${esc(r.ticket_no || r.invoice_no || '—')}</td>
-                <td class="mono bold">${esc(r.vat_inv || '—')}</td>
-                <td class="bold">${esc(r.customer || '—')}</td>
-                <td>${esc(r.site || '—')}</td>
-                <td>${esc(r.product || '—')}</td>
+                <td class="mono">${esc(r.ticket_no || r.invoice_no || '-')}</td>
+                ${showTaxCols ? `<td class="mono bold">${esc(r.vat_inv || '-')}</td>` : ''}
+                <td class="bold">${esc(r.customer || '-')}</td>
+                <td>${esc(r.site || '-')}</td>
+                <td>${esc(r.product || '-')}</td>
                 <td class="num">${fmtNum(r.qty, 1)}</td>
-                <td class="num">${fmtUsd(r.unit_price, 2)}</td>
-                <td class="num">${fmtUsdSigned(net, 2)}</td>
-                <td class="num">${fmtUsdSigned(r.vat_usd, 2)}</td>
+                <td class="num">${fmtUsd(unitRate, 2)}</td>
+                ${showTaxCols ? `<td class="num">${fmtUsdSigned(net, 2)}</td><td class="num">${fmtUsdSigned(r.vat_usd, 2)}</td>` : ''}
                 <td class="num bold">${fmtUsdSigned(r.total_usd, 2)}</td>
                 <td class="num">${fmtUsdSigned(r.paid_usd, 2)}</td>
               </tr>
@@ -1940,11 +1946,10 @@
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
-            <td colspan="6">TOTAL SALES REGISTER (${fmtNum(rows.length, 0)} tickets)</td>
+            <td colspan="${showTaxCols ? 6 : 5}">TOTAL SALES REGISTER (${fmtNum(rows.length, 0)} tickets)</td>
             <td class="num">${fmtNum(totQty, 1)}</td>
             <td class="num">${fmtUsd(totQty > 0 ? totGross / totQty : 0, 2)}</td>
-            <td class="num">${fmtUsd(totSub, 2)}</td>
-            <td class="num">${fmtUsd(totVat, 2)}</td>
+            ${showTaxCols ? `<td class="num">${fmtUsd(totSub, 2)}</td><td class="num">${fmtUsd(totVat, 2)}</td>` : ''}
             <td class="num">${fmtUsd(totGross, 2)}</td>
             <td class="num">${fmtUsd(totPaid, 2)}</td>
           </tr>
@@ -2719,14 +2724,6 @@
             <td class="num">${fmtUsd(outTaxable, 2)}</td>
             <td class="num bold">${fmtUsd(outVat, 2)}</td>
             <td class="num">${fmtUsd(outTaxable + outVat, 2)}</td>
-          </tr>
-          <tr>
-            <td class="mono bold">Box A2</td>
-            <td>Non-VAT / Direct Commercial Deliveries (عمليات غير خاضعة)</td>
-            <td class="num">${fmtNum(exemptSales.length, 0)}</td>
-            <td class="num">${fmtUsd(exemptBase, 2)}</td>
-            <td class="num">$0.00</td>
-            <td class="num">${fmtUsd(exemptBase, 2)}</td>
           </tr>
           <tr>
             <td class="mono bold">Box B1</td>

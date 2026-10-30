@@ -92,7 +92,9 @@
     const pp = String(stateObj.pbiPage || '');
     const st = String(stateObj.activeStatement || '');
     const tv = stateObj.tableViews ? JSON.stringify(stateObj.tableViews) : '';
-    return [v, co, uk, tk, pp, st, tv].join('|');
+    const taxBrk = stateObj.showSalesTaxBreakdown ? 'tax1' : 'tax0';
+    const offBk = (stateObj._officialScopeActive || stateObj.officialBookScope) ? 'off1' : 'off0';
+    return [v, co, uk, tk, pp, st, tv, taxBrk, offBk].join('|');
   }
 
   function getOrCreateState(tableId, createIfMissing) {

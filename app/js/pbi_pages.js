@@ -3360,7 +3360,7 @@
     const paritySn = sentinels.sharepoint_parity_sentinel || {};
 
     const allowedCosKey = typeof ctx.allowedCompanyNames === 'function' ? ctx.allowedCompanyNames().join(',') : '';
-    const baseCacheKey = `${STATE.company}|${STATE.period}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis}|${allowedCosKey}|${SEED._customRev || 0}|${(rec.sales_tickets || []).length}|${(rec.raw_purchases || []).length}`;
+    const baseCacheKey = `${STATE.company}|${STATE.period}|${STATE.dateFrom || ''}|${STATE.dateTo || ''}|${STATE.basis}|${allowedCosKey}|${STATE._officialScopeActive ? 'OFF' : 'ALL'}|${SEED._customRev || 0}|${(rec.sales_tickets || []).length}|${(rec.raw_purchases || []).length}`;
     if (_pbiBaseCacheKey !== baseCacheKey || !_pbiBaseCacheVal) {
       const custIvaMap = new Map();
       (rec.customers || []).forEach(c => custIvaMap.set(norm(c.name), c.vat_registered ? 'Yes' : 'No'));
@@ -3490,7 +3490,7 @@
           if (!cMap.has(ck)) cMap.set(ck, { displayName: label, loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, cash_sales_ttc: 0, receipts: 0, ar_settled: 0, last_sale: '' });
           return cMap.get(ck);
         };
-        if (!activeRange && !forceScope && !(isMfgCo && hasHydratedSales)) {
+        if (!activeRange && !forceScope && !STATE._officialScopeActive && !(isMfgCo && hasHydratedSales)) {
           return (m.customers || []).map(c => {
             const crNet = round2(Number(c.credit_sales || 0));
             const crTtc = round2(c.sales_ttc != null ? (Number(c.sales_ttc || 0) - Number(c.cash_sales || 0)) : (c['VAT Registered'] === 'Yes' ? crNet * 1.11 : crNet));
@@ -3540,7 +3540,10 @@
 
         if (!activeRange && !forceScope) {
           const seenCustNorm = new Set();
-          const out = (m.customers || []).map(c => {
+          const baseModelCusts = STATE._officialScopeActive
+            ? (m.customers || []).filter(c => cMap.has(norm(c.Customer)) || c['VAT Registered'] === 'Yes')
+            : (m.customers || []);
+          const out = baseModelCusts.map(c => {
             const ck = norm(c.Customer);
             if (ck) seenCustNorm.add(ck);
             const st = cMap.get(ck);
@@ -3555,8 +3558,13 @@
             const settled = round2(st.ar_settled);
             const bal = round2(crTtc - settled);
             const balDelta = round2(bal - Number(c.ar_balance || 0));
-            const arCur = Math.abs(balDelta) > 0.005 ? round2(Math.max(0, Number(c.ar_current || 0) + balDelta)) : Number(c.ar_current || 0);
-            return Object.assign({}, c, {
+            const arCur = STATE._officialScopeActive
+              ? Math.max(0, bal)
+              : (Math.abs(balDelta) > 0.005 ? round2(Math.max(0, Number(c.ar_current || 0) + balDelta)) : Number(c.ar_current || 0));
+            const offZeroBuckets = STATE._officialScopeActive
+              ? { ar_1_10: 0, ar_11_30: 0, ar_31_60: 0, ar_1_60: 0, ar_60_plus: 0, ar_overdue: 0 }
+              : {};
+            return Object.assign({}, c, offZeroBuckets, {
               loads: st.loads,
               sales_ttc: round2(st.sales_ttc),
               net_sales: round2(st.net_sales),
@@ -3728,7 +3736,7 @@
       };
 
       const buildScopedSupps = (rawPool, expPool, setPool, forceScope = false) => {
-        if (!activeRange && !forceScope && !(isMfgCo && hasHydratedAp)) {
+        if (!activeRange && !forceScope && !STATE._officialScopeActive && !(isMfgCo && hasHydratedAp)) {
           return (m.suppliers || []).map(s => {
             const mat = round2(Number(s.ap_material != null ? s.ap_material : (s.raw_mat_cost || 0)));
             const haul = round2(Number(s.ap_haulage != null ? s.ap_haulage : 0));
@@ -3801,7 +3809,10 @@
 
         if (!activeRange && !forceScope) {
           const seenSupNorm = new Set();
-          const result = (m.suppliers || []).map(s => {
+          const baseModelSupps = STATE._officialScopeActive
+            ? (m.suppliers || []).filter(s => sMap.has(norm(s.Supplier || '(Unassigned Supplier)')) || s.IVA === 'Yes')
+            : (m.suppliers || []);
+          const result = baseModelSupps.map(s => {
             const sName = s.Supplier || '(Unassigned Supplier)';
             const sk = norm(sName);
             if (sk) seenSupNorm.add(sk);
@@ -3998,7 +4009,7 @@
       };
 
       const buildScopedSites = (salesPool, rawPool, forceScope = false) => {
-        if (!activeRange && !forceScope) return m.sites || [];
+        if (!activeRange && !forceScope && !STATE._officialScopeActive) return m.sites || [];
         const stMap = new Map();
         const ensureSite = name => {
           const label = name || '(Unassigned Site)';
@@ -4073,7 +4084,7 @@
       };
 
       const buildScopedEquip = (salesPool, rawPool, expPool, fuelPool, forceScope = false) => {
-        if (!activeRange && !forceScope) return m.equipment || [];
+        if (!activeRange && !forceScope && !STATE._officialScopeActive) return m.equipment || [];
         const eqMap = new Map();
         const ensureEq = name => {
           const ek = norm(name);
@@ -4132,7 +4143,7 @@
         });
       };
 
-      if (activeRange) {
+      if (activeRange || STATE._officialScopeActive) {
         baseProds = buildScopedProds(baseSalesRows, baseRawRows);
       }
       let baseCusts = buildScopedCusts(baseSalesRows, baseRecRows);
@@ -4343,8 +4354,8 @@
         <!-- 8 Domain Pages Embedded directly inside their respective Sidebar Modules -->
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 10px;margin-bottom:8px;background:rgba(184,136,59,0.06);border:1px dashed var(--border-strong);border-radius:8px;font-size:11px">
           <span style="font-weight:700;color:var(--brass);text-transform:uppercase;letter-spacing:.04em;margin-right:4px">Embedded in Sidebar Modules:</span>
-          ${Object.values(MOVED_PBI_PAGES).map(mp => `
-            <button type="button" class="filter-chip" style="padding:2px 8px;font-size:10.5px" data-pbi-jump="${esc(mp.id)}">${esc(mp.short)} <span style="opacity:.7">→ ${esc(mp.targetLabel)}</span></button>
+          ${Object.values(MOVED_PBI_PAGES).filter(mp => !ctx.canAccessPbiPage || ctx.canAccessPbiPage(mp.id)).map(mp => `
+            <button type="button" class="filter-chip" style="padding:2px 8px;font-size:10.5px" data-pbi-jump="${esc(mp.id)}">${esc(mp.short)} <span style="opacity:.7">· ${esc(mp.targetLabel)}</span></button>
           `).join('')}
         </div>
 
@@ -4468,12 +4479,12 @@
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Sales & Revenue (Click any card to drill into its page)', [
-            { label: 'Sales incl. VAT (TTC)', value: fmtUSD(sc(k.sales_ttc), 0), sub: fmtNum(sc(k.loads), 0) + ' weighbridge loads', tone: 'brass', navPage: 'p04_sales' },
-            { label: 'Sales Ex-VAT (Mat + Trans)', value: fmtUSD(sc(k.gross_sales || k.net_sales), 0), sub: 'Mat ' + fmtUSDk(sc(k.net_sales)) + ' + Trans ' + fmtUSDk(sc(k.trans_rev)), navPage: 'p04_sales' },
+            { label: 'Total Sales', value: fmtUSD(sc(k.sales_ttc), 0), sub: fmtNum(sc(k.loads), 0) + ' weighbridge loads', tone: 'brass', navPage: 'p04_sales' },
+            { label: 'Cash Sales', value: fmtUSD(sc(k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales), 0), sub: fmtPct(null, k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales, k.sales_ttc) + ' of Total Sales', tone: 'good', navPage: 'p04_sales' },
+            { label: 'Credit Sales', value: fmtUSD(sc(k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales), 0), sub: fmtPct(null, k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales, k.sales_ttc) + ' of Total Sales', navPage: 'p04_sales' },
             { label: 'Transport Revenue', value: fmtUSD(sc(k.trans_rev), 0), sub: fmtNum(sc(k.delivery_loads), 0) + ' delivery loads', navPage: 'p04_sales' },
-            { label: 'Output VAT (11%)', value: fmtUSD(sc(k.sales_vat), 0), sub: 'Account 4427 invoiced', navPage: 'p13_vat' },
             { label: 'Tons Sold', value: fmtNum(sc(k.tons_sold), 0) + ' t', sub: fmtNum(sc(k.qty_sold), 0) + ' m³ sold', navPage: 'p04_sales' },
-            { label: 'Avg Price / m³ (TTC)', value: fmtUSD(k.avg_price_ttc, 2), sub: 'Net: ' + fmtUSD(k.avg_price_net, 2) + '/m³', navPage: 'p05_pricing' }
+            { label: 'Avg Price / m³', value: fmtUSD(k.avg_price_ttc, 2), sub: fmtUSD(sc(k.loads ? k.sales_ttc / k.loads : 0), 0) + ' avg / load', navPage: 'p05_pricing' }
           ])}
           ${kpiBand('2 · Direct Costs, Expenses, Payroll & Margins', [
             { label: 'Raw Material Cost', value: fmtUSD(sc(k.raw_cost), 0), sub: 'Mat ' + fmtUSDk(sc(k.raw_mat_cost)) + ' + Haul ' + fmtUSDk(sc(k.raw_haulage)), navPage: 'p08_stock' },
@@ -4503,12 +4514,12 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Sales vs costs by month', buildComboChartSvg(months, [
-            { key: 'sales_ttc', label: 'Sales incl. VAT', color: C.navy },
+            { key: 'sales_ttc', label: 'Total Sales', color: C.navy },
             { key: 'raw_cost', label: 'Raw material cost', color: C.slate },
             { key: 'expenses', label: 'Expenses', color: C.crit }
           ], { label: 'Operating profit', key: 'operating_profit', color: C.brass, isMoney: true }, { shareAxis: true }), {
-            subtitle: 'Monthly Sales TTC vs Raw Material Cost & Operating Expenses with Operating Profit line',
-            legend: [{ label: 'Sales TTC', color: C.navy }, { label: 'Raw Cost', color: C.slate }, { label: 'Expenses', color: C.crit }, { label: 'Op. Profit', color: C.brass, line: true }]
+            subtitle: 'Monthly Total Sales vs Raw Material Cost & Operating Expenses with Operating Profit line',
+            legend: [{ label: 'Total Sales', color: C.navy }, { label: 'Raw Cost', color: C.slate }, { label: 'Expenses', color: C.crit }, { label: 'Op. Profit', color: C.brass, line: true }]
           })}
           ${pbiPanel('Cash in vs cash out by month', buildClusteredColumnSvg(months, [
             { key: 'cash_in', label: 'Cash In', color: C.good },
@@ -4521,10 +4532,10 @@
 
         <div class="pbi-grid-2">
           ${pbiPanel('Sales by material (Top aggregate grades)', buildHorizontalBarChart(prodRows, 'Product', 'sales_ttc', v => fmtUSD(v, 0), { subKey: 'Material Family', color: C.navy }), {
-            subtitle: 'Ranked by gross revenue incl. VAT (TTC)'
+            subtitle: 'Ranked by total revenue ($)'
           })}
-          ${pbiPanel('Top customers by sales & open AR', buildHorizontalBarChart(custRows, 'Customer', 'sales_ttc', v => fmtUSD(v, 0), { subKey: 'VAT Registered', color: C.steel }), {
-            subtitle: 'Ranked by total sales TTC in selected period'
+          ${pbiPanel('Top customers by sales & open AR', buildHorizontalBarChart(custRows, 'Customer', 'sales_ttc', v => fmtUSD(v, 0), { color: C.steel }), {
+            subtitle: 'Ranked by total sales in selected period'
           })}
         </div>
 
@@ -4533,8 +4544,7 @@
             { label: 'Month', key: 'Year Month', bold: true },
             { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v) },
             { label: 'Tons Sold', key: 'tons', r: true, fmt: v => fmtNum(v, 0) },
-            { label: 'Sales TTC ($)', key: 'sales_ttc', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
-            { label: 'Net Sales ($)', key: 'net_sales', r: true, fmt: v => fmtUSD(v, 0) },
+            { label: 'Total Sales ($)', key: 'sales_ttc', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
             { label: 'Raw Cost ($)', key: 'raw_cost', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Gross Margin ($)', key: 'gross_margin', r: true, negRed: true, fmt: v => fmtUSD(v, 0) },
             { label: 'Expenses ($)', key: 'expenses', r: true, fmt: v => fmtUSD(v, 0) },
@@ -4548,7 +4558,6 @@
             foot: [
               { v: `PERIOD TOTAL (${esc(k.label || 'All-Time')})`, span: 3 },
               { v: fmtUSD(sc(k.sales_ttc), 0), r: true },
-              { v: fmtUSD(sc(k.net_sales), 0), r: true },
               { v: fmtUSD(sc(k.raw_cost), 0), r: true },
               { v: fmtUSD(sc(k.gross_margin), 0), r: true },
               { v: fmtUSD(sc(k.expenses), 0), r: true },
@@ -4798,12 +4807,12 @@
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Sales Revenue, Volumes & Payment Mix', [
-            { label: 'Sales incl. VAT (TTC)', value: fmtUSD(sc(k.sales_ttc), 0), sub: 'Ex-VAT: ' + fmtUSD(sc(k.gross_sales || k.net_sales), 0), tone: 'brass' },
-            { label: 'Material Sales (ex-VAT)', value: fmtUSD(sc(k.net_sales), 0), sub: 'Aggregate grade value' },
+            { label: 'Total Sales', value: fmtUSD(sc(k.sales_ttc), 0), sub: fmtNum(sc(k.loads), 0) + ' weighbridge loads', tone: 'brass' },
+            { label: 'Material Sales', value: fmtUSD(round2(sc(k.sales_ttc) - sc(k.trans_rev)), 0), sub: 'Aggregate grade value' },
             { label: 'Transport Revenue', value: fmtUSD(sc(k.trans_rev), 0), sub: 'Delivery haulage billed' },
-            { label: 'Output VAT (11%)', value: fmtUSD(sc(k.sales_vat), 0), sub: 'Invoiced on IVA customers' },
-            { label: 'Cash Sales (ex-VAT)', value: fmtUSD(sc(k.cash_sales), 0), sub: fmtPct(null, k.cash_sales, k.gross_sales || k.net_sales) + ' of Sales', tone: 'good' },
-            { label: 'Credit Sales (ex-VAT)', value: fmtUSD(sc(k.credit_sales), 0), sub: fmtPct(null, k.credit_sales, k.gross_sales || k.net_sales) + ' of Sales' }
+            { label: 'Cash Sales', value: fmtUSD(sc(k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales), 0), sub: fmtPct(null, k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales, k.sales_ttc) + ' of Sales', tone: 'good' },
+            { label: 'Credit Sales', value: fmtUSD(sc(k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales), 0), sub: fmtPct(null, k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales, k.sales_ttc) + ' of Sales' },
+            { label: 'Active Customers', value: fmtNum(custRows.filter(c => Number(c.loads || 0) > 0).length), sub: 'Billed in selected period' }
           ])}
           ${kpiBand('2 · Weighbridge Loads, Tonnage & Unit Realisation', [
             { label: 'Total Loads', value: fmtNum(sc(k.loads), 0), sub: fmtNum(salesRows.length) + ' in web sample' },
@@ -4811,7 +4820,7 @@
             { label: 'Pick-up Loads', value: fmtNum(sc(k.pickup_loads), 0), sub: 'Material only (customer truck)' },
             { label: 'Quantity Sold (m³)', value: fmtNum(sc(k.qty_sold), 0) + ' m³', sub: 'Converted to m³ (1 Truck = 27 m³)' },
             { label: 'Tons Sold (Converted)', value: fmtNum(sc(k.tons_sold), 0) + ' t', sub: 'Using grade ton_factor', tone: 'good' },
-            { label: 'Avg Realised Price', value: fmtUSD(volTtcAvg, 2), sub: 'Ex-VAT: ' + fmtUSD(volMatAvg, 2) + '/m³', tone: 'brass' }
+            { label: 'Avg Realised Price', value: fmtUSD(volTtcAvg, 2), sub: 'Aggregate grades ($/m³)', tone: 'brass' }
           ])}
         </div>
 
@@ -4821,7 +4830,7 @@
             { label: 'Cash Sales', color: C.steel, get: r => Number(r.cash_sales_ttc != null ? r.cash_sales_ttc : (r.cash_sales || 0)) }
           ]), { legend: [{ label: 'Credit', color: C.navy }, { label: 'Cash', color: C.steel }] })}
           ${pbiPanel('Realised price per unit ($/m³) by month · top aggregate grades', buildMultiLineSvg(months, priceSeries, { isMoney: true, decimals: 2 }), {
-            subtitle: 'Monthly realised material price ($/m³ ex-transport & VAT) from weighbridge tickets across top 4 aggregate grades',
+            subtitle: 'Monthly realised unit price ($/m³) from weighbridge tickets across top 4 aggregate grades',
             legend: priceSeries.map(s => ({ label: s.label, color: s.color, line: true }))
           })}
         </div>
@@ -4862,31 +4871,31 @@
         </div>
 
         <div class="pbi-grid-3">
-          ${pbiPanel('Sales by material', buildHorizontalBarChart(prodRows, 'Product', 'sales_ttc', v => fmtUSD(v, 0), { color: C.navy, maxItems: 8 }), { subtitle: 'Gross revenue TTC ($)' })}
+          ${pbiPanel('Sales by material', buildHorizontalBarChart(prodRows, 'Product', 'sales_ttc', v => fmtUSD(v, 0), { color: C.navy, maxItems: 8 }), { subtitle: 'Total revenue ($)' })}
           ${pbiPanel('Quantity sold by material (m³)', buildHorizontalBarChart(prodRows, 'Product', 'qty_sold', v => fmtNum(v, 0) + ' m³', { color: C.slate, maxItems: 8 }), { subtitle: 'Volume converted to m³ (1 Truck = 27 m³)' })}
-          ${pbiPanel('Average price per m³ by material', buildHorizontalBarChart(pickTopAggregateGrades(prodRows, 8, rec.products), 'Product', 'avg_price_net', v => fmtUSD(v, 2), { color: C.brass, maxItems: 8 }), { subtitle: 'Realised material ex-VAT $/m³' })}
+          ${pbiPanel('Average price per m³ by material', buildHorizontalBarChart(pickTopAggregateGrades(prodRows, 8, rec.products), 'Product', 'avg_price_ttc', v => fmtUSD(v, 2), { color: C.brass, maxItems: 8 }), { subtitle: 'Realised unit price ($/m³)' })}
         </div>
 
         <div class="pbi-grid-2">
           ${pbiTable('Products · volume, revenue, list vs realised price', [
-            { label: 'Product / Grade', key: 'Product', fmt: (v, r) => `<b>${esc(v || '—')}</b>${r && r['Material Family'] && r['Material Family'] !== v ? ` <span class="mu">· ${esc(r['Material Family'])}</span>` : ''}` },
+            { label: 'Product / Grade', key: 'Product', fmt: (v, r) => `<b>${esc(v || '-')}</b>${r && r['Material Family'] && r['Material Family'] !== v ? ` <span class="mu">· ${esc(r['Material Family'])}</span>` : ''}` },
             { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v) },
-            { label: 'Qty (m³)', key: 'qty_sold', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '—' },
+            { label: 'Qty (m³)', key: 'qty_sold', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '-' },
             { label: 'Tons', key: 'tons_sold', r: true, fmt: v => fmtNum(v, 0) },
-            { label: 'List ($)', key: 'list_price', r: true, fmt: v => v != null ? fmtUSD(v, 2) : '—' },
+            { label: 'List ($)', key: 'list_price', r: true, fmt: v => v != null ? fmtUSD(v, 2) : '-' },
             {
-              label: 'Avg Net ($)',
-              key: 'avg_price_net',
+              label: 'Avg Price ($)',
+              key: 'avg_price_ttc',
               r: true,
               fmt: v => fmtUSD(v, 2),
               foot: list => {
                 const agg = pickTopAggregateGrades(list, 999, rec.products);
-                const ts = agg.reduce((a, r) => a + Number(r.net_sales != null ? r.net_sales : (Number(r.avg_price_net || 0) * Number(r.qty_sold || 0))), 0);
+                const ts = agg.reduce((a, r) => a + Number(r.sales_ttc != null ? r.sales_ttc : (Number(r.avg_price_ttc || 0) * Number(r.qty_sold || 0))), 0);
                 const tq = agg.reduce((a, r) => a + Number(r.qty_sold || 0), 0);
-                return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(ts / tq, 2)}</b>` : '—';
+                return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(ts / tq, 2)}</b>` : '-';
               }
             },
-            { label: 'Sales TTC ($)', key: 'sales_ttc', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` }
+            { label: 'Total Sales ($)', key: 'sales_ttc', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` }
           ], prodRows, { subtitle: 'Complete aggregate grade breakdown with inline revenue bars', unitLabel: 'grades' })}
 
           ${(() => {
@@ -4898,7 +4907,7 @@
               { label: 'Loads', key: 'loads', r: true, fmt: v => fmtNum(v) },
               { label: 'Tons Sold', key: 'tons_sold', r: true, fmt: v => fmtNum(v, 0) },
               { label: 'Transport ($)', key: 'trans_rev', r: true, fmt: v => fmtUSD(v, 0) },
-              { label: 'Sales TTC ($)', key: 'sales_ttc', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` }
+              { label: 'Total Sales ($)', key: 'sales_ttc', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 0)}</b>` }
             ], destSiteRows, { subtitle: 'Customer delivery destination sites and plant pick-up dispatches (excludes raw material quarry source sites)', unitLabel: 'destination sites' });
           })()}
         </div>
@@ -6551,8 +6560,21 @@
     else if (activePageId === 'p13_vat') {
       const isVatMethod = m => m === 'VAT' || m === 'VATConfig' || m === 'VAT Dis' || m === 'Cash VAT Dis';
       const isExpVatMethod = m => m === 'IVA' || m === 'VAT' || m === 'VAT Dis' || m === 'Cash VAT Dis';
-      const vatInvRows = filterRecords(rec.vat_invoices, { ignorePeriod: true, ignoreSearch: true }).filter(matchCommon);
-      const vatCusts = custRows.filter(c => c['VAT Registered'] === 'Yes' || Number(c.sales_vat || 0) > 0 || Number(c.vat_receivable || 0) > 0).sort((a, b) => Number(b.sales_vat || 0) - Number(a.sales_vat || 0) || Number(b.vat_receivable || 0) - Number(a.vat_receivable || 0));
+      const vatInvRows = filterRecords(rec.vat_invoices, { ignorePeriod: true, ignoreSearch: true })
+        .filter(matchCommon)
+        .filter(vi => Math.abs(Number(vi.total_ttc || vi.vat_amount || vi.net_amount || 0)) > 0.005 || Number(vi.tickets_count || 0) > 0);
+      const vatCustsBilled = custRows.filter(c => Number(c.sales_vat || 0) > 0 || Number(c.vat_receivable || 0) > 0);
+      const vatCusts = (vatCustsBilled.length ? vatCustsBilled : custRows.filter(c => c['VAT Registered'] === 'Yes'))
+        .sort((a, b) => Number(b.sales_vat || 0) - Number(a.sales_vat || 0) || Number(b.vat_receivable || 0) - Number(a.vat_receivable || 0));
+      const vatableBaseRaw = salesRows.reduce((acc, s) => {
+        const v = Number(s.vat || 0);
+        if (Math.abs(v) <= 0.005) return acc;
+        const sgn = saleTicketSign(s);
+        if (sgn === 0) return acc;
+        const net = Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - v));
+        return acc + sgn * net;
+      }, 0);
+      const vatableBase = vatableBaseRaw > 0.005 ? round2(vatableBaseRaw) : round2(Number(k.sales_vat || 0) / 0.11);
       const vatSupps = suppRows.filter(s => s.IVA === 'Yes');
       const vatRecs = recRows.filter(r => isVatMethod(String(r.method || '').trim()) || /VAT/i.test(String(r.kind || '')) || r.vat_invoice);
       const vatCollected = Math.max(0, Number(k.sales_vat || 0) - Number(k.vat_receivable || 0));
@@ -6610,7 +6632,7 @@
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Output VAT 11%, Collections, Receivable & Net Cash VAT Position', [
             { label: 'Output VAT invoiced', value: fmtUSD(k.sales_vat, 2), sub: 'Account 4427 (11%)', tone: 'brass' },
-            { label: 'Net invoiced (ex-VAT)', value: fmtUSD(k.gross_sales || k.net_sales, 0), sub: 'Sales TTC minus Output VAT' },
+            { label: 'Taxable Base (11% Sales)', value: fmtUSD(vatableBase, 2), sub: '11.0% statutory VAT rate' },
             { label: 'VAT collected', value: fmtUSD(vatCollected, 2), sub: 'Tagged VAT + paid beyond net', tone: 'good' },
             { label: 'VAT due (customers)', value: fmtUSD(k.vat_receivable, 2), sub: '11% inside open customer AR', tone: 'warn' },
             { label: 'Input VAT paid', value: fmtUSD(inputVat, 2), sub: 'Deductible VAT settlements' },
@@ -7952,12 +7974,12 @@
       ]
     },
     customers: {
-      title: 'Receivables Aging, Running Statement & 11% VAT Invoices',
-      subtitle: '11% Output/Input VAT & Quarterly MOF Position, FIFO AR Aging & Customer Running Sub-Ledger',
-      defaultSec: 'vat',
+      title: 'Receivables Aging & Customer Running Sub-Ledger',
+      subtitle: 'FIFO AR Aging, Customer Running Statement & Tax Position',
+      defaultSec: 'aging',
       sections: [
-        { id: 'vat', label: '11% VAT Position, Quarterly MOF & Tax Invoices', pageId: 'p13_vat', badge: 'Moved Page' },
-        { id: 'aging', label: 'FIFO AR Aging & Customer Running Statement', pageId: 'p06_ar', badge: 'Analytics' }
+        { id: 'aging', label: 'FIFO AR Aging & Customer Running Statement', pageId: 'p06_ar', badge: 'Analytics' },
+        { id: 'vat', label: '11% VAT Position, Quarterly MOF & Tax Invoices', pageId: 'p13_vat', badge: 'Moved Page' }
       ]
     },
     suppliers: {
@@ -8115,7 +8137,10 @@
       ignoreRls: isUniv,
       ignorePeriod: isUniv || !['sales_tickets', 'raw_purchases', 'receipts', 'settlements', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'expense_items', 'salaries', 'attendance', 'external_movements', 'loan_settlements', 'conversions', 'jv_distributions', 'daily_totals'].includes(meta.key)
     });
-    const views = meta.views || [{ id: 'all', label: 'All ' + meta.label }];
+    const rawViews = meta.views || [{ id: 'all', label: 'All ' + meta.label }];
+    const views = (meta.key === 'sales_tickets' && !STATE._canSeeTaxBreakdown)
+      ? rawViews.filter(v => v.id !== 'iva')
+      : rawViews;
     const activeViewId = (STATE.tableViews && STATE.tableViews[meta.key]) || 'all';
     const activeView = views.find(v => v.id === activeViewId) || views[0];
     const isRawPrMode = meta.key === 'price_rules' && /^raw_/i.test(activeView.id);
@@ -8129,7 +8154,11 @@
           ? rlsScopedRaw.filter(r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''))
           : rlsScopedRaw.filter(r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '')))
       : rlsScopedRaw;
-    const activeCols = (activeView && Array.isArray(activeView.cols) && activeView.cols.length) ? activeView.cols : meta.cols;
+    const rawActiveCols = (activeView && Array.isArray(activeView.cols) && activeView.cols.length) ? activeView.cols : meta.cols;
+    const taxColsVisibleOnHub = Boolean((STATE._canSeeTaxBreakdown && STATE.showSalesTaxBreakdown) || STATE._officialScopeActive || activeView.id === 'iva');
+    const activeCols = (meta.key === 'sales_tickets' && !taxColsVisibleOnHub)
+      ? rawActiveCols.filter(c => c !== 'vat')
+      : rawActiveCols;
     const filtered = activeView && activeView.fn ? baseFiltered.filter(r => activeView.fn(r, rel)) : baseFiltered;
     const defSortSpec = getHubTableDefaultSort(meta, activeView.id);
     const rows = sortRows(filtered, 'tbl_' + meta.key, defSortSpec.key, defSortSpec.dir);
@@ -9001,7 +9030,7 @@
           { label: 'Credit Sales', color: C.navy, get: r => Number(r.credit_sales_ttc != null ? r.credit_sales_ttc : (r.credit_sales || 0)) },
           { label: 'Cash Sales', color: C.steel, get: r => Number(r.cash_sales_ttc != null ? r.cash_sales_ttc : (r.cash_sales || 0)) }
         ]), {
-          subtitle: 'Monthly TTC credit billings vs cash weighbridge sales',
+          subtitle: 'Monthly credit billings vs cash weighbridge sales',
           headerRight: modeSwitchHtml,
           legend: [{ label: 'Credit', color: C.navy }, { label: 'Cash', color: C.steel }]
         });
@@ -9009,7 +9038,7 @@
       <div class="pbi-grid-2" id="salesChartsRow" style="margin-bottom:14px">
         ${leftPanelHtml}
         ${pbiPanel('Realised Price per Unit ($/m³) by Month · Top Aggregate Grades', buildMultiLineSvg(months, priceSeries, { isMoney: true, decimals: 2 }), {
-          subtitle: 'Monthly realised material price ($/m³ ex-transport & VAT) from weighbridge tickets across top 4 aggregate grades',
+          subtitle: 'Monthly realised unit price ($/m³) from weighbridge tickets across top 4 aggregate grades',
           legend: priceSeries.map(s => ({ label: s.label, color: s.color, line: true }))
         })}
       </div>
@@ -9019,17 +9048,18 @@
   function renderCustomersVisualsSection(ctx) {
     const months = (ctx && ctx.months) || [];
     const agingBuckets = (ctx && ctx.agingBuckets) || [];
-    const chartMode = (ctx && ctx.chartMode) === 'vat' ? 'vat' : 'collections';
+    const canSeeVat = !ctx || ctx.canSeeVat !== false;
+    const chartMode = (canSeeVat && (ctx && ctx.chartMode) === 'vat') ? 'vat' : 'collections';
     const sumInfo = (ctx && ctx.arSummary) || null;
     const agingSubtitle = sumInfo && (sumInfo.grossAr > 0 || sumInfo.advancesUsd > 0)
       ? `Gross owing ${fmtUSDk(sumInfo.grossAr)} (${fmtNum(sumInfo.openCustCount, 0)} customers) minus ${fmtUSDk(sumInfo.advancesUsd)} customer advances (On Acct) = ${fmtUSDk(sumInfo.netAr)} Net Open AR`
       : 'FIFO open receivables by aging bucket · On Acct (unapplied customer advances) shown below zero';
-    const modeSwitchHtml = `
+    const modeSwitchHtml = canSeeVat ? `
       <div class="cf-mode-switch" role="group" aria-label="Monthly Receivables Chart View">
         <button type="button" class="cf-mode-btn ${chartMode === 'collections' ? 'active' : ''}" data-ar-chart-mode="collections">Credit vs. Receipts</button>
         <button type="button" class="cf-mode-btn ${chartMode === 'vat' ? 'active' : ''}" data-ar-chart-mode="vat">11% Customer VAT</button>
       </div>
-    `;
+    ` : '';
     const rightPanelHtml = chartMode === 'vat'
       ? pbiPanel('Monthly 11% Customer VAT · Invoiced vs. Collected ($)', buildClusteredColumnSvg(months, [
           { key: 'sales_vat', label: 'Output VAT Invoiced (11%)', color: C.navy },

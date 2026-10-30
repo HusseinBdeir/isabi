@@ -145,7 +145,12 @@
     rawSupFilter: 'all',
     salesHaulFilter: 'all',
     salesPadFilter: 'all',
-    vatInvFilter: 'all',
+    vatInvFilter: 'billed',
+    showSalesTaxBreakdown: false,
+    officialBookScope: false,
+    draftBookScopeOverride: '',
+    _officialScopeActive: false,
+    _canSeeTaxBreakdown: false,
     rawSiteFilter: 'expense',
     partDispFilter: 'all',
     unitHealthFilter: 'all',
@@ -1879,7 +1884,8 @@
     const hasAp = raws.length > 0 || exps.length > 0 || spays.length > 0;
     if (!hasSales && !hasAp) return null;
     const allowed = allowedCompanyNames();
-    const cacheKey = `${allowed.join(',')}|${SEED._customRev || 0}|${sales.length}|${rcpts.length}|${raws.length}|${exps.length}|${spays.length}`;
+    const offScope = isOfficialScopeActive();
+    const cacheKey = `${allowed.join(',')}|${offScope ? 'OFF' : 'ALL'}|${SEED._customRev || 0}|${sales.length}|${rcpts.length}|${raws.length}|${exps.length}|${spays.length}`;
     if (_canonCpCacheVal && _canonCpCacheKey === cacheKey) return _canonCpCacheVal;
 
     const MODEL_KEYS = ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'];
@@ -1934,6 +1940,7 @@
     for (let i = 0; i < sales.length; i++) {
       const s = sales[i];
       if (!s || s.voided || !isCoAllowed(s.company)) continue;
+      if (offScope && !isOfficialRecord(s, 'sales_tickets')) continue;
       const sgn = ticketSign(s);
       if (sgn === 0) continue;
       const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
@@ -1964,6 +1971,7 @@
     for (let i = 0; i < rcpts.length; i++) {
       const r = rcpts[i];
       if (!r || r.voided || !r.customer || !isCoAllowed(r.company)) continue;
+      if (offScope && !isOfficialRecord(r, 'receipts')) continue;
       const amt = Number(r.amount || 0) + Number(r.discount || 0);
       const settlesAr = isArSettlingReceipt(r);
       const kd = receiptKind(r);
@@ -1980,6 +1988,7 @@
     for (let i = 0; i < raws.length; i++) {
       const r = raws[i];
       if (!r || r.voided || !isCoAllowed(r.company)) continue;
+      if (offScope && !isOfficialRecord(r, 'raw_purchases')) continue;
       const mk = coToMk(r.company);
       const costVal = Number(r.cost || 0);
       const haulVal = Number(r.trans_cost || 0);
@@ -2004,6 +2013,7 @@
     for (let i = 0; i < exps.length; i++) {
       const x = exps[i];
       if (!x || x.voided || !isCoAllowed(x.company)) continue;
+      if (offScope && !isOfficialRecord(x, 'expenses')) continue;
       const sgn = expenseSign(x);
       if (sgn === 0) continue;
       const amt = sgn * Number(x.amount || 0);
@@ -2023,6 +2033,7 @@
     for (let i = 0; i < spays.length; i++) {
       const sp = spays[i];
       if (!sp || sp.voided || !sp.supplier || !isCoAllowed(sp.company)) continue;
+      if (offScope && !isOfficialRecord(sp, 'settlements')) continue;
       const settlesAp = isApSettlingSettlement(sp);
       const isPay = settlementKind(sp) === 'Payment';
       if (!settlesAp && !isPay) continue;
@@ -2547,14 +2558,17 @@
     const m = SEED.models[coKey] || SEED.models['manufacturing-group'] || {};
     const periods = m.periods || {};
     const range = periodRange(STATE.period);
+    const offScope = isOfficialScopeActive();
     let anchor = null;
-    if (!range) anchor = periods.all ? Object.assign({}, periods.all, { label: 'All-Time (2024–2030)' }) : null;
-    else if (range.daxKey && periods[range.daxKey]) anchor = Object.assign({}, periods[range.daxKey], { label: range.label || periods[range.daxKey].label });
+    if (!offScope) {
+      if (!range) anchor = periods.all ? Object.assign({}, periods.all, { label: 'All-Time (2024–2030)' }) : null;
+      else if (range.daxKey && periods[range.daxKey]) anchor = Object.assign({}, periods[range.daxKey], { label: range.label || periods[range.daxKey].label });
+    }
     const f = range ? range.from : MIN_DATE;
     const t = range ? range.to : MAX_DATE;
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
     const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
-    const cacheKey = `${coKey}|${allowedCompanyNames().join(',')}|${STATE.basis}|${STATE.period}|${f}|${t}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}`;
+    const cacheKey = `${coKey}|${allowedCompanyNames().join(',')}|${offScope ? 'OFF' : 'ALL'}|${STATE.basis}|${STATE.period}|${f}|${t}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}`;
     if (_kpiRangeCacheMap.has(cacheKey)) return _kpiRangeCacheMap.get(cacheKey);
 
     const txRaw = computeLocalKPI(m, range, 'tx', coKey);
@@ -2591,11 +2605,25 @@
     }
     const txFinal = anchor
       ? Object.assign({}, anchor, { sales_rep_date: anchor.sales_ttc, raw_rep_date: anchor.raw_cost, exp_rep_date: anchor.expenses, op_profit_rep_date: anchor.operating_profit, basis: STATE.basis })
-      : applyMonthlyDax(Object.assign({}, txRaw), m, range);
-    const computed = (STATE.basis === 'rep' && (range || (STATE.customRecords.sales_tickets || []).length))
+      : (offScope ? Object.assign({}, txRaw) : applyMonthlyDax(Object.assign({}, txRaw), m, range));
+    const computed = (STATE.basis === 'rep' && (offScope || range || (STATE.customRecords.sales_tickets || []).length))
       ? bridgeKpiToBasis(txFinal, txRaw, computeLocalKPI(m, range, 'rep', coKey))
       : txFinal;
-    applyCashFlowParityToKpi(computed, m, range, coKey);
+    if (offScope) {
+      const offAr = round2(Number(computed.credit_sales_ttc || 0) - Number(computed.receipts || 0));
+      computed.ar_balance = offAr;
+      computed.ar_current = offAr > 0 ? offAr : 0;
+      computed.ar_1_10 = 0;
+      computed.ar_11_30 = 0;
+      computed.ar_31_60 = 0;
+      computed.ar_60_plus = 0;
+      computed.ar_overdue = 0;
+      computed.ar_advances = offAr < 0 ? Math.abs(offAr) : 0;
+      computed.ap_balance = round2(Number(computed.ap_on_credit || 0) - Number(computed.ap_settled || 0));
+      computed.tb_check = 0;
+    } else {
+      applyCashFlowParityToKpi(computed, m, range, coKey);
+    }
     const dtSnap = getDieselTankLedger(coKey, range);
     if (dtSnap) {
       const noDieselLedger = coKey === 'lionstransport' && !dtSnap.boughtL && !dtSnap.consumedL && !dtSnap.discrepancyL && !dtSnap.soldL && !dtSnap.closingTankL;
@@ -2617,7 +2645,7 @@
     const m = mOverride || getModel();
     const mdlProds = m.products || [];
     const range = periodRange(STATE.period);
-    if (!range) {
+    if (!range && !isOfficialScopeActive()) {
       return mdlProds.map(p => {
         const m3 = productMeters(p.Product, p.qty_sold, p.UoM);
         const rawM3 = productMeters(p.Product, p.raw_qty, p.UoM);
@@ -2693,10 +2721,11 @@
     const isMfgModel = ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].includes(mk);
     const canon = isMfgModel ? getCanonicalCounterpartyRollups() : null;
     const canonMap = (canon && canon.hasSales && canon.custByModel[mk]) || null;
+    const offScope = isOfficialScopeActive();
     if (!range) {
       if (canonMap) {
         const seenCustNorm = new Set();
-        const out = mdlCusts.map(c => {
+        const out = mdlCusts.filter(c => !offScope || canonMap.has(norm(c.Customer)) || isOfficialCustomerName(c.Customer)).map(c => {
           const ck = norm(c.Customer);
           if (ck) seenCustNorm.add(ck);
           const st = canonMap.get(ck);
@@ -2716,6 +2745,9 @@
               opening_ar: 0,
               ar_balance: 0,
               ar_current: 0,
+              ar_1_10: 0,
+              ar_11_30: 0,
+              ar_31_60: 0,
               ar_1_60: 0,
               ar_60_plus: 0
             });
@@ -2728,7 +2760,7 @@
           const cashRcpt = round2(st.receipts_cash);
           const bal = round2(crTtc - settled);
           const balDelta = round2(bal - Number(c.ar_balance || 0));
-          const arCur = Math.abs(balDelta) > 0.005 ? round2(Math.max(0, Number(c.ar_current || 0) + balDelta)) : Number(c.ar_current || 0);
+          const arCur = offScope ? Math.max(0, bal) : (Math.abs(balDelta) > 0.005 ? round2(Math.max(0, Number(c.ar_current || 0) + balDelta)) : Number(c.ar_current || 0));
           return Object.assign({}, c, {
             loads: st.loads,
             sales_ttc: round2(st.sales_ttc),
@@ -2743,6 +2775,7 @@
             receipts: settled,
             opening_ar: 0,
             ar_current: arCur,
+            ...(offScope ? { ar_1_10: 0, ar_11_30: 0, ar_31_60: 0, ar_1_60: 0, ar_60_plus: 0 } : {}),
             ar_balance: bal,
             last_sale: st.last_sale || c.last_sale
           });
@@ -2936,10 +2969,11 @@
     const isMfgModel = ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].includes(mk);
     const canon = isMfgModel ? getCanonicalCounterpartyRollups() : null;
     const canonMap = (canon && canon.hasAp && canon.suppByModel[mk]) || null;
+    const offScope = isOfficialScopeActive();
     if (!range) {
       if (canonMap) {
         const seenSupNorm = new Set();
-        const out = mdlSups.map(s => {
+        const out = mdlSups.filter(s => !offScope || canonMap.has(norm(s.Supplier || '(Unassigned Supplier)')) || isOfficialSupplierName(s.Supplier)).map(s => {
           const sName = s.Supplier || '(Unassigned Supplier)';
           const sk = norm(sName);
           if (sk) seenSupNorm.add(sk);
@@ -3218,6 +3252,73 @@
       ? getCanonicalCounterpartyRollups()
       : null;
     const mMap = canon && canon.hasSales ? (STATE.basis === 'rep' ? canon.monthlyRepByModel[mk] : canon.monthlyTxByModel[mk]) : null;
+    if (isOfficialScopeActive()) {
+      const coOpt = mk === 'manufacturing-group' ? 'manufacturing-group' : mk;
+      const offSales = filterRecords(SEED.records.sales_tickets, { ignorePeriod: true, ignoreSearch: true, company: coOpt });
+      const offRaws = filterRecords(SEED.records.raw_purchases, { ignorePeriod: true, ignoreSearch: true, company: coOpt });
+      const offExps = filterRecords(SEED.records.expenses, { ignorePeriod: true, ignoreSearch: true, company: coOpt });
+      const offRcpts = filterRecords(SEED.records.receipts, { ignorePeriod: true, ignoreSearch: true, company: coOpt });
+      const byYm = new Map();
+      const getBk = ds => {
+        const ymNo = ds && ds.length >= 7 ? (ds.slice(0, 4) + ds.slice(5, 7)) : '';
+        if (!/^\d{6}$/.test(ymNo)) return null;
+        if (!byYm.has(ymNo)) byYm.set(ymNo, { loads: 0, tons: 0, sales_ttc: 0, net_sales: 0, gross_sales: 0, sales_vat: 0, cash_sales: 0, credit_sales: 0, cash_sales_ttc: 0, credit_sales_ttc: 0, raw_cost: 0, expenses: 0, receipts: 0 });
+        return byYm.get(ymNo);
+      };
+      offSales.forEach(s => {
+        const sgn = ticketSign(s);
+        if (sgn === 0) return;
+        const bk = getBk(recordDateFor(s, STATE.basis));
+        if (!bk) return;
+        const ttc = sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+        const net = sgn * Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0)));
+        const vat = sgn * Number(s.vat || 0);
+        if (sgn === 1) bk.loads += 1;
+        bk.tons += sgn * ticketTons(s);
+        bk.sales_ttc += ttc;
+        bk.net_sales += net;
+        bk.gross_sales += net;
+        bk.sales_vat += vat;
+        if (isCashSaleTicket(s)) { bk.cash_sales += net; bk.cash_sales_ttc += ttc; }
+        else if (isCreditSaleTicket(s)) { bk.credit_sales += net; bk.credit_sales_ttc += ttc; }
+      });
+      offRaws.forEach(r => {
+        const bk = getBk(recordDateFor(r, STATE.basis));
+        if (bk) bk.raw_cost += Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0)));
+      });
+      offExps.forEach(x => {
+        const sgn = expenseSign(x);
+        const bk = sgn !== 0 ? getBk(recordDateFor(x, STATE.basis)) : null;
+        if (bk && expenseKind(x) !== 'VAT') bk.expenses += sgn * Number(x.amount || 0);
+      });
+      offRcpts.forEach(rc => {
+        const bk = receiptKind(rc) === 'Settlement' ? getBk(recordDateFor(rc, STATE.basis)) : null;
+        if (bk) bk.receipts += Number(rc.amount || 0) + Number(rc.discount || 0);
+      });
+      return sliced.map(r => {
+        const ymNo = String(r.YearMonthNo || monthLabelToYm(r['Year Month']).replace('-', ''));
+        const bk = byYm.get(ymNo) || { loads: 0, tons: 0, sales_ttc: 0, net_sales: 0, gross_sales: 0, sales_vat: 0, cash_sales: 0, credit_sales: 0, cash_sales_ttc: 0, credit_sales_ttc: 0, raw_cost: 0, expenses: 0, receipts: 0 };
+        const opProf = round2(bk.gross_sales - bk.raw_cost - bk.expenses);
+        return Object.assign({}, r, {
+          loads: bk.loads,
+          tons: round2(bk.tons),
+          sales_ttc: round2(bk.sales_ttc),
+          sales_rep: round2(bk.sales_ttc),
+          net_sales: round2(bk.net_sales),
+          gross_sales: round2(bk.gross_sales),
+          sales_vat: round2(bk.sales_vat),
+          cash_sales: round2(bk.cash_sales),
+          credit_sales: round2(bk.credit_sales),
+          cash_sales_ttc: round2(bk.cash_sales_ttc),
+          credit_sales_ttc: round2(bk.credit_sales_ttc),
+          raw_cost: round2(bk.raw_cost),
+          expenses: round2(bk.expenses),
+          receipts: round2(bk.receipts),
+          gross_margin: round2(bk.net_sales - bk.raw_cost),
+          operating_profit: opProf
+        });
+      });
+    }
     return sliced.map(r => {
       const ymNo = String(r.YearMonthNo || monthLabelToYm(r['Year Month']).replace('-', ''));
       const mt = mMap && ymNo ? mMap.get(ymNo) : null;
@@ -4013,7 +4114,7 @@
     sales_loads: 'Sales Loads',
     raw_loads: 'Raw Loads',
     active_rules: 'Price Rules',
-    total_ttc: 'Total TTC ($)',
+    total_ttc: 'Total ($)',
     total: 'Total ($)',
     amount: 'Amount ($)',
     litres: 'Litres (L)',
@@ -4055,7 +4156,7 @@
       { key: 'truck', label: 'Truck' },
       { key: 'driver', label: 'Driver' },
       { key: 'method', label: 'Method' },
-      { key: 'total_ttc', label: 'Total TTC ($)', kind: 'numeric' }
+      { key: 'total_ttc', label: 'Total ($)', kind: 'numeric' }
     ],
     raw: [
       { key: 'company', label: 'Company' },
@@ -4573,11 +4674,12 @@
     const qTokens = qRaw ? parseSearchTokens(qRaw) : [];
     const range = opts.ignorePeriod ? null : periodRange(STATE.period);
     const basis = opts.basis || STATE.basis;
+    const offScope = !opts.ignoreBookScope && isOfficialScopeActive(opts.user);
 
     let listCache = null;
     let fastKey = '';
     if (!qTokens.length) {
-      fastKey = `${scopeKey}|${Boolean(opts.ignoreCompany)}|${Boolean(opts.ignoreRls)}|${allowedCos ? allowedCos.join(',') : ''}|${range ? (range.from + '..' + range.to) : 'ALL'}|${basis}|${list.length}|${SEED._customRev || 0}`;
+      fastKey = `${scopeKey}|${Boolean(opts.ignoreCompany)}|${Boolean(opts.ignoreRls)}|${offScope ? 'OFF' : 'ALL'}|${allowedCos ? allowedCos.join(',') : ''}|${range ? (range.from + '..' + range.to) : 'ALL'}|${basis}|${list.length}|${SEED._customRev || 0}`;
       listCache = _filterRecordsWeakCache.get(list);
       if (listCache && listCache.has(fastKey)) return listCache.get(fastKey);
     }
@@ -4589,12 +4691,14 @@
     const showNotes = Array.isArray(opts.cols) && opts.cols.includes('notes');
     const rel = (qTokens.length && window.MFG_PBI && window.MFG_PBI.getHubRelIndex) ? window.MFG_PBI.getHubRelIndex(SEED) : null;
     const tk = opts.tableKey || '';
+    const effTk = offScope ? inferRecordTableKey(list[0], list, tk) : tk;
 
     const out = list.filter(r => {
       if (!r || r.voided) return false;
       if (bu && r.company && r.company !== bu) return false;
       if (indCoSet && r.company && !indCoSet.has(r.company)) return false;
       if (allowedCos && r.company && !allowedCos.includes(r.company)) return false;
+      if (offScope && !isOfficialRecord(r, effTk)) return false;
       if (range) {
         const d = recordDateFor(r, basis);
         if (d && (d < range.from || d > range.to)) return false;
@@ -5346,6 +5450,116 @@
     return STATE.users[STATE.activeUserIdx] || STATE.users[0] || DEFAULT_USERS[0];
   }
   function isOwner(u) { return /Owner/i.test(String((u || activeUser()).role || '')); }
+  function canSeeTaxBreakdown(u) {
+    u = u || activeUser();
+    if (STATE.demoVisitor) return false;
+    if (isOwner(u)) return true;
+    const p = getEffectivePermissions(u);
+    return Boolean(p && p.rights && p.rights.read_fin);
+  }
+  function getUserBookScope(u) {
+    u = u || activeUser();
+    return String((u && u.book_scope) || '').toLowerCase() === 'official' ? 'official' : 'all';
+  }
+  function isOfficialScopeActive(u) {
+    u = u || activeUser();
+    if (getUserBookScope(u) === 'official') return true;
+    return Boolean(isOwner(u) && !STATE.demoVisitor && STATE.officialBookScope);
+  }
+  let _officialLookupSig = '';
+  let _officialCustSet = new Set();
+  let _officialSuppSet = new Set();
+  let _recordArrayKeyWeak = new WeakMap();
+  function ensureOfficialLookups() {
+    const rec = (SEED && SEED.records) || {};
+    const sig = `${SEED._customRev || 0}|${(rec.sales_tickets || []).length}|${(rec.customers || []).length}|${(rec.suppliers || []).length}|${(rec.expenses || []).length}`;
+    if (_officialLookupSig === sig) return;
+    _officialLookupSig = sig;
+    const cSet = new Set();
+    const sSet = new Set();
+    (rec.customers || []).forEach(c => {
+      if (c && (c.vat_registered === true || c.vat_registered === 'Yes' || c['VAT Registered'] === 'Yes')) {
+        const nk = norm(c.name || c.Customer);
+        if (nk) cSet.add(nk);
+      }
+    });
+    Object.values((SEED && SEED.models) || {}).forEach(m => {
+      ((m && m.customers) || []).forEach(c => {
+        if (c && (c['VAT Registered'] === 'Yes' || Number(c.sales_vat || 0) > 0)) {
+          const nk = norm(c.Customer);
+          if (nk) cSet.add(nk);
+        }
+      });
+      ((m && m.suppliers) || []).forEach(s => {
+        if (s && s.IVA === 'Yes') {
+          const nk = norm(s.Supplier);
+          if (nk) sSet.add(nk);
+        }
+      });
+    });
+    (rec.sales_tickets || []).forEach(t => {
+      if (t && !t.voided && (t.iva || Math.abs(Number(t.vat || 0)) > 0 || t.vat_invoice)) {
+        const nk = norm(t.customer);
+        if (nk) cSet.add(nk);
+      }
+    });
+    (rec.suppliers || []).forEach(s => {
+      if (s && (s.iva === true || s.iva === 'Yes' || s.IVA === 'Yes')) {
+        const nk = norm(s.name || s.Supplier);
+        if (nk) sSet.add(nk);
+      }
+    });
+    (rec.expenses || []).forEach(x => {
+      if (x && !x.voided && (Math.abs(Number(x.vat || 0)) > 0 || /^(IVA|VAT|VAT Dis|Cash VAT Dis)$/i.test(String(x.method || '').trim()))) {
+        const nk = norm(x.supplier);
+        if (nk) sSet.add(nk);
+      }
+    });
+    _officialCustSet = cSet;
+    _officialSuppSet = sSet;
+    _recordArrayKeyWeak = new WeakMap();
+    Object.keys(rec).forEach(k => {
+      if (Array.isArray(rec[k])) _recordArrayKeyWeak.set(rec[k], k);
+    });
+  }
+  function isOfficialCustomerName(name) {
+    const nk = norm(name);
+    if (!nk) return false;
+    ensureOfficialLookups();
+    return _officialCustSet.has(nk);
+  }
+  function isOfficialSupplierName(name) {
+    const nk = norm(name);
+    if (!nk) return false;
+    ensureOfficialLookups();
+    return _officialSuppSet.has(nk);
+  }
+  function inferRecordTableKey(r, list, explicitTk) {
+    if (explicitTk) return explicitTk;
+    ensureOfficialLookups();
+    const wk = list ? _recordArrayKeyWeak.get(list) : '';
+    if (wk) return wk;
+    if (!r || typeof r !== 'object') return '';
+    if ('sale_type' in r && ('total_ttc' in r || 'trans_price' in r)) return 'sales_tickets';
+    if ('invoice_no' in r && 'vat_amount' in r) return 'vat_invoices';
+    if ('customer' in r && ('record_ticket' in r || 'vat_invoice' in r || ('amount' in r && !('sale_type' in r)))) return 'receipts';
+    if ('site_owner' in r || 'trans_cost' in r) return 'raw_purchases';
+    if ('payable_leg' in r || 'raw_ticket' in r || 'expense_record' in r) return 'settlements';
+    if ('category' in r && 'subcategory' in r) return 'expenses';
+    return '';
+  }
+  function isOfficialRecord(r, tk) {
+    if (!r) return false;
+    if (tk === 'sales_tickets') return Boolean(r.iva || Math.abs(Number(r.vat || 0)) > 0 || r.vat_invoice);
+    if (tk === 'vat_invoices') return Number(r.net_amount || 0) > 0 || Number(r.vat_amount || 0) > 0 || Number(r.total_ttc || 0) > 0 || Number(r.tickets_count || 0) > 0;
+    if (tk === 'receipts') return Boolean(r.vat_invoice || /^(VAT|VATRent)$/i.test(String(r.method || '').trim()) || isOfficialCustomerName(r.customer));
+    if (tk === 'expenses') return Boolean(Math.abs(Number(r.vat || 0)) > 0 || /^(IVA|VAT|VAT Dis|Cash VAT Dis)$/i.test(String(r.method || '').trim()) || (r.invoice && r.invoice !== '-' && isOfficialSupplierName(r.supplier)));
+    if (tk === 'raw_purchases') return Boolean(isOfficialSupplierName(r.site_owner) || isOfficialSupplierName(r.truck_owner));
+    if (tk === 'settlements') return Boolean(isOfficialSupplierName(r.supplier));
+    if (tk === 'customers') return Boolean(r.vat_registered === true || r.vat_registered === 'Yes' || isOfficialCustomerName(r.name || r.Customer));
+    if (tk === 'suppliers') return Boolean(r.iva === true || r.iva === 'Yes' || isOfficialSupplierName(r.name || r.Supplier));
+    return true;
+  }
   function userFaceSamples(u) {
     if (!u) return [];
     let raw = u.face_samples;
@@ -6303,6 +6517,7 @@
 
   function canAccessPbiPage(pageId, u) {
     u = u || activeUser();
+    if (pageId === 'p13_vat' && !canSeeTaxBreakdown(u)) return false;
     if (pageId === 'p08_stock_ap') return canAccessPbiPage('p08_stock', u) || canAccessPbiPage('p07_ap', u);
     const role = String(u.role || '');
     const pbi = u.pbi_access || 'partial';
@@ -6315,13 +6530,14 @@
     if (pbi === 'none') return false;
     if (pbi === 'full' || isOwner(u)) return true;
     if (/Sales/i.test(role)) {
-      return ['p01_overview', 'p02_companies', 'p03_exceptions', 'p04_sales', 'p05_pricing', 'p06_ar', 'p13_vat', 'p18_tickets'].includes(pageId);
+      return ['p01_overview', 'p02_companies', 'p03_exceptions', 'p04_sales', 'p05_pricing', 'p06_ar', 'p18_tickets'].includes(pageId);
     }
-    return !['p12_payroll', 'p15_treasury', 'p16_financial', 'p17_jv'].includes(pageId);
+    return !['p12_payroll', 'p13_vat', 'p15_treasury', 'p16_financial', 'p17_jv'].includes(pageId);
   }
 
   function canAccessTable(tableKey, u) {
     u = u || activeUser();
+    if ((tableKey === 'vat_invoices' || tableKey === 'vat_rates') && !canSeeTaxBreakdown(u)) return false;
     const role = String(u.role || '');
     const pbi = u.pbi_access || 'partial';
     const finTables = [
@@ -6335,7 +6551,7 @@
     }
     if (pbi === 'full' || isOwner(u)) return true;
     if (/Sales/i.test(role)) {
-      return ['sales_tickets', 'receipts', 'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'products', 'sites', 'regions', 'uoms', 'product_types', 'daily_totals', 'currencies', 'fx_rates', 'vat_rates'].includes(tableKey);
+      return ['sales_tickets', 'receipts', 'price_rules', 'credit_terms', 'customers', 'products', 'sites', 'regions', 'uoms', 'product_types', 'daily_totals', 'currencies', 'fx_rates'].includes(tableKey);
     }
     return !finTables.includes(tableKey);
   }
@@ -6345,6 +6561,7 @@
     const role = String(u.role || '');
     const st = u.statements_access || 'partial';
     const code = String((typeof report === 'string' ? report : (report && (report.id || report.code))) || '').padStart(2, '0');
+    if (code === '18' && !canSeeTaxBreakdown(u)) return false;
     if (/^Custom/i.test(role) || st === 'custom') {
       const p = getEffectivePermissions(u);
       const grp = PERM_CATALOG.statements.find(s => s.codes.includes(code));
@@ -8720,12 +8937,12 @@
         return `<rect class="${b.cls}" data-series-idx="${b.idx}" x="${b.x.toFixed(1)}" y="${top.toFixed(1)}" width="${subW.toFixed(1)}" height="${h.toFixed(1)}" rx="1.5"/>`;
       }).join('');
 
-      const tip = `Sales TTC: $${sK.toFixed(1)}k · Raw Cost: $${rK.toFixed(1)}k · Cash Profit: $${pK.toFixed(1)}k · Loads: ${fmtNum(row.loads)}`;
+      const tip = `Total Sales: $${sK.toFixed(1)}k · Raw Cost: $${rK.toFixed(1)}k · Cash Profit: $${pK.toFixed(1)}k · Loads: ${fmtNum(row.loads)}`;
       const popSpec = JSON.stringify({
         t: ymFull,
         b: `${fmtNum(row.loads)} loads`,
         r: [
-          { l: 'Sales TTC', v: `$${sK.toFixed(1)}k`, c: 'var(--s1)' },
+          { l: 'Total Sales', v: `$${sK.toFixed(1)}k`, c: 'var(--s1)' },
           { l: 'Raw Material Cost', v: `$${rK.toFixed(1)}k`, c: 'var(--s2)' },
           { l: 'Operating Cash Profit', v: `$${pK.toFixed(1)}k`, c: 'var(--s3)', tot: true }
         ]
@@ -8802,9 +9019,9 @@
       <!-- 1. UNIFIED 6-COLUMN EXECUTIVE KPI BAND (REV 10 "LEDGER" SURFACE) -->
       <section class="kpis" aria-label="Executive Key Performance Indicators">
         <div class="kpi kpi-link" data-nav-jump="sales" role="button" tabindex="0" title="Open the Sales & Deliveries register">
-          <span class="k">Consolidated Revenue (TTC)</span>
+          <span class="k">Consolidated Revenue</span>
           <span class="v num">${fmtUSD(salesVal, 0)}</span>
-          <span class="d good">Sales Ex-VAT: ${fmtUSD(k.gross_sales || k.net_sales, 0)} · VAT 11%: ${fmtUSD(k.sales_vat, 0)}</span>
+          <span class="d good">Cash: ${fmtUSD(k.cash_sales_ttc != null ? k.cash_sales_ttc : k.cash_sales, 0)} · Credit: ${fmtUSD(k.credit_sales_ttc != null ? k.credit_sales_ttc : k.credit_sales, 0)}</span>
         </div>
         <div class="kpi kpi-link" data-nav-jump="raw" role="button" tabindex="0" title="Open Material &amp; Transportation">
           <span class="k">Realized Gross Margin</span>
@@ -8836,7 +9053,7 @@
       <!-- 2. SECONDARY OPERATIONAL PROOF STRIP -->
       <section class="ops-strip" aria-label="Operational Unit Economics">
         <div class="ops-cell kpi-link" data-nav-jump="sales" role="button" tabindex="0"><span>Sales Loads &amp; Volume</span><b class="num">${fmtNum(k.loads)} (${fmtNum(k.tons_sold, 0)} t)</b></div>
-        <div class="ops-cell kpi-link" data-nav-jump="pricing" role="button" tabindex="0"><span>Avg Selling Price (TTC)</span><b class="num">${fmtUSD(k.avg_price_ttc, 2)} / m³</b></div>
+        <div class="ops-cell kpi-link" data-nav-jump="pricing" role="button" tabindex="0"><span>Avg Selling Price</span><b class="num">${fmtUSD(k.avg_price_ttc, 2)} / m³</b></div>
         <div class="ops-cell kpi-link" data-nav-jump="raw" role="button" tabindex="0"><span>Raw Material Intake</span><b class="num">${fmtNum(k.raw_loads)} loads (${fmtUSD(k.avg_raw_cost, 2)}/m³)</b></div>
         <div class="ops-cell kpi-link" data-nav-jump="fleet" role="button" tabindex="0"><span>Active Fleet &amp; Cost/Ton</span><b class="num">${fmtNum(k.active_equip)} units · ${fmtUSD(k.cost_per_ton, 2)}/t</b></div>
         <div class="ops-cell kpi-link" data-nav-jump="pricing" role="button" tabindex="0"><span>Customer Price Matrix</span><b class="num">${fmtNum(k.active_agreements)} active rules</b></div>
@@ -8853,7 +9070,7 @@
               <span class="ph-sub">${esc(COMPANY_LABELS[STATE.company])} · Tap or hover bars to inspect monthly ledger totals</span>
             </div>
             <div class="legend">
-              <span><i class="sw-box s-1"></i>Sales TTC</span>
+              <span><i class="sw-box s-1"></i>Total Sales</span>
               <span><i class="sw-box s-2"></i>Raw Material Cost</span>
               <span><i class="sw-box s-3"></i>Operating Profit</span>
             </div>
@@ -12216,6 +12433,11 @@
   // ==========================================================================
   function renderSales() {
     const k = getKPI();
+    const canTax = canSeeTaxBreakdown();
+    const canSwitchOffScope = isOwner() && !STATE.demoVisitor && getUserBookScope() !== 'official';
+    const offScopeOn = isOfficialScopeActive();
+    const showTaxCols = Boolean((canTax && STATE.showSalesTaxBreakdown) || offScopeOn);
+    if (!showTaxCols && STATE.chipFilter === 'vat') STATE.chipFilter = 'all';
     const base = filterRecords(SEED.records.sales_tickets);
     const chipPredicate = r => {
       if (STATE.chipFilter === 'delivery') return r.sale_type === 'Delivery';
@@ -12229,15 +12451,15 @@
     };
     const rows = sortRows(base.filter(chipPredicate), 'sales', 'date', 'desc');
     const shown = rows.slice(0, shownCount('sales'));
-    let saleLoads = 0, sumQty = 0, sumAggQty = 0, sumTons = 0, sumMat = 0, sumTr = 0, sumNet = 0, sumVat = 0, sumTtc = 0, sumCash = 0, sumCredit = 0, sumDisc = 0;
+    let saleLoads = 0, sumQty = 0, sumAggQty = 0, sumTons = 0, sumMat = 0, sumTr = 0, sumMatTtc = 0, sumTrTtc = 0, sumNet = 0, sumVat = 0, sumTtc = 0, sumCash = 0, sumCredit = 0, sumCashTtc = 0, sumCreditTtc = 0, sumDisc = 0;
     let sumVolMat = 0, sumVolTtc = 0;
     let delivLoads = 0, pickupLoads = 0, ownFleetLoads = 0, thirdPartyLoads = 0, otLoads = 0, vatLoads = 0, cashLoads = 0, creditLoads = 0;
     const custMap = new Map();
     const prodMap = new Map();
     const siteSet = new Set();
     const byCo = {
-      WTC: { loads: 0, net: 0, cash: 0, credit: 0, vat: 0, ttc: 0, disc: 0 },
-      BBConstruction: { loads: 0, net: 0, cash: 0, credit: 0, vat: 0, ttc: 0, disc: 0 }
+      WTC: { loads: 0, net: 0, matTtc: 0, trTtc: 0, cash: 0, credit: 0, cashTtc: 0, creditTtc: 0, vat: 0, ttc: 0, disc: 0 },
+      BBConstruction: { loads: 0, net: 0, matTtc: 0, trTtc: 0, cash: 0, credit: 0, cashTtc: 0, creditTtc: 0, vat: 0, ttc: 0, disc: 0 }
     };
     rows.forEach(r => {
       const sgn = ticketSign(r);
@@ -12256,13 +12478,19 @@
       const tr = sgn * Number(r.trans_price || 0);
       const net = sgn * Number(r.total != null ? r.total : (Number(r.price || 0) + Number(r.trans_price || 0)));
       const vat = sgn * Number(r.vat || 0);
-      const ttc = sgn * Number(r.total_ttc != null ? r.total_ttc : (Number(r.total || 0) + Number(r.vat || 0)));
+      const ttc = round2(sgn * Number(r.total_ttc != null ? r.total_ttc : (Number(r.total || 0) + Number(r.vat || 0))));
+      const trTtc = tr !== 0
+        ? ((Math.abs(vat) > 0 && (mat + tr) !== 0) ? round2(ttc * (tr / (mat + tr))) : round2(tr))
+        : 0;
+      const matTtc = round2(ttc - trTtc);
       const disc = Number(r.discount || 0);
       const isCash = /^cash|^c\b/i.test(String(r.method || ''));
       sumQty += q;
       sumTons += t;
       sumMat += mat;
       sumTr += tr;
+      sumMatTtc += matTtc;
+      sumTrTtc += trTtc;
       sumNet += net;
       sumVat += vat;
       sumTtc += ttc;
@@ -12274,9 +12502,11 @@
       }
       if (isCash) {
         sumCash += net;
+        sumCashTtc += ttc;
         if (sgn === 1) cashLoads += 1;
       } else {
         sumCredit += net;
+        sumCreditTtc += ttc;
         if (sgn === 1) creditLoads += 1;
       }
       if (r.customer) {
@@ -12296,13 +12526,15 @@
       if (bucket) {
         if (sgn === 1) bucket.loads += 1;
         bucket.net += net;
-        if (isCash) bucket.cash += net; else bucket.credit += net;
+        bucket.matTtc += matTtc;
+        bucket.trTtc += trTtc;
+        if (isCash) { bucket.cash += net; bucket.cashTtc += ttc; } else { bucket.credit += net; bucket.creditTtc += ttc; }
         bucket.vat += vat;
         bucket.ttc += ttc;
         bucket.disc += disc;
       }
     });
-    const isSalesFiltered = Boolean(periodRange(STATE.period) || STATE.search.trim() || STATE.chipFilter !== 'all' || hasActiveColFilters('sales'));
+    const isSalesFiltered = Boolean(offScopeOn || periodRange(STATE.period) || STATE.search.trim() || STATE.chipFilter !== 'all' || hasActiveColFilters('sales'));
     const mdlProds = getModel().products || [];
     const mdlSites = getModel().sites || [];
     const allProds = !isSalesFiltered ? mdlProds.map(p => {
@@ -12388,12 +12620,12 @@
     const avgUnitNet = sumAggQty > 0 ? (sumVolMat / sumAggQty) : (prodAvgNet || 0);
     const avgLoadTtc = saleLoads > 0 ? (sumTtc / saleLoads) : 0;
     const avgLoadQty = saleLoads > 0 ? (sumQty / saleLoads) : 0;
-    const matRevShare = sumNet > 0 ? Math.round((sumMat / sumNet) * 100) : 82;
+    const matRevShare = sumTtc > 0 ? Math.round((sumMatTtc / sumTtc) * 100) : 82;
     const trRevShare = Math.max(0, 100 - matRevShare);
     const delivPct = saleLoads > 0 ? Math.round((delivLoads / saleLoads) * 1000) / 10 : 0;
     const pickupPct = saleLoads > 0 ? Math.round((pickupLoads / saleLoads) * 1000) / 10 : 0;
-    const creditPct = sumNet > 0 ? Math.round((sumCredit / sumNet) * 1000) / 10 : 0;
-    const cashPct = sumNet > 0 ? Math.round((100 - creditPct) * 10) / 10 : 0;
+    const creditPct = sumTtc > 0 ? Math.round((sumCreditTtc / sumTtc) * 1000) / 10 : 0;
+    const cashPct = sumTtc > 0 ? Math.round((100 - creditPct) * 10) / 10 : 0;
     const vatLoadPct = saleLoads > 0 ? Math.round((vatLoads / saleLoads) * 100) : 0;
     const otPct = saleLoads > 0 ? Math.round((otLoads / saleLoads) * 1000) / 10 : 0;
     const topCustEntry = Array.from(custMap.entries()).sort((a, b) => b[1].loads - a[1].loads || b[1].ttc - a[1].ttc)[0];
@@ -12402,13 +12634,14 @@
     const topCustShare = saleLoads > 0 ? Math.min(100, Math.round((topCustLoads / saleLoads) * 100)) : 0;
     const topProdEntry = Array.from(prodMap.entries()).sort((a, b) => b[1].loads - a[1].loads || b[1].ttc - a[1].ttc)[0];
     const topProdName = topProdEntry ? topProdEntry[0] : '—';
+    const mainTableCols = showTaxCols ? 15 : 13;
 
     return `
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
           <div class="cockpit-eyebrow">WEIGHBRIDGE &amp; DISPATCH LEDGER · ${isGroupScope ? 'ALL GROUP (WTC + BBCONSTRUCTION)' : esc((COMPANY_BU_MATCH[STATE.company] || STATE.company).toUpperCase()) + ' SCOPE'}</div>
           <div class="cockpit-title">Sales &amp; Deliveries</div>
-          <div class="cockpit-sub">Automatic Price Agreement lookup · Delivery vs Pickup transport gating · 11% VAT invoice calculation · Overtime shift detection.</div>
+          <div class="cockpit-sub">Automatic Price Agreement lookup · Delivery vs Pickup transport gating · Overtime shift detection.</div>
         </div>
         <div class="cockpit-pills insight-grid">
           ${insightCard({
@@ -12418,7 +12651,7 @@
             val: `${fmtUSD(avgUnitTtc, 2)} <small>/ m³</small>`,
             valCls: 'brass',
             pct: 100,
-            sub: `Ex-VAT <b>${fmtUSD(avgUnitNet, 2)}/m³</b> · Avg <b>${fmtNum(avgLoadQty, 1)} m³/load</b> · <span class="insight-drill" data-scroll-panel="salesProdPanel" title="Click to jump to Sales by Product &amp; Aggregate Grade"><b>${fmtNum(sumTons, 0)} t ↘</b></span>`,
+            sub: `${showTaxCols ? `Ex-VAT <b>${fmtUSD(avgUnitNet, 2)}/m³</b> · ` : ''}Avg <b>${fmtNum(avgLoadQty, 1)} m³/load</b> · <span class="insight-drill" data-scroll-panel="salesProdPanel" title="Click to jump to Sales by Product &amp; Aggregate Grade"><b>${fmtNum(sumTons, 0)} t ↘</b></span>`,
             tone: 'brass'
           })}
           ${insightCard({
@@ -12432,15 +12665,15 @@
             tone: 'emerald'
           })}
           ${insightCard({
-            label: 'Settlement & VAT Profile',
-            badge: `${vatLoadPct}% VAT-Billed`,
+            label: showTaxCols ? 'Settlement & VAT Profile' : 'Payment & Settlement Mix',
+            badge: showTaxCols ? `${vatLoadPct}% VAT-Billed` : `${fmtNum(saleLoads)} Loads`,
             badgeCls: 'info',
-            badgeChip: 'vat',
+            badgeChip: showTaxCols ? 'vat' : '',
             val: `<span class="insight-drill ${STATE.chipFilter === 'credit' ? 'is-active' : ''}" data-insight-chip="credit" title="Click to toggle Credit filter">${fmtNum(creditPct, 1)}% <small>Credit</small></span> · <span class="insight-drill ${STATE.chipFilter === 'cash' ? 'is-active' : ''}" data-insight-chip="cash" title="Click to toggle Cash filter">${fmtNum(cashPct, 1)}% <small>Cash</small></span>`,
             valCls: '',
             pct: creditPct,
             pct2: cashPct,
-            sub: `<span class="insight-drill ${STATE.chipFilter === 'credit' ? 'is-active' : ''}" data-insight-chip="credit">Credit <b>${fmtNum(creditLoads)}</b> loads</span> · <span class="insight-drill ${STATE.chipFilter === 'cash' ? 'is-active' : ''}" data-insight-chip="cash">Cash <b>${fmtNum(cashLoads)}</b></span> · <span class="insight-drill ${STATE.chipFilter === 'vat' ? 'is-active' : ''}" data-insight-chip="vat">VAT <b>${fmtNum(vatLoads)}</b> loads</span>`,
+            sub: `<span class="insight-drill ${STATE.chipFilter === 'credit' ? 'is-active' : ''}" data-insight-chip="credit">Credit <b>${fmtNum(creditLoads)}</b> loads</span> · <span class="insight-drill ${STATE.chipFilter === 'cash' ? 'is-active' : ''}" data-insight-chip="cash">Cash <b>${fmtNum(cashLoads)}</b> loads</span>${showTaxCols ? ` · <span class="insight-drill ${STATE.chipFilter === 'vat' ? 'is-active' : ''}" data-insight-chip="vat">VAT <b>${fmtNum(vatLoads)}</b> loads</span>` : ''}`,
             tone: 'steel',
             tone2: 'emerald'
           })}
@@ -12464,10 +12697,12 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search ticket #, customer, product, site, truck, driver...')}
             <div class="chip-bar">
-              ${chip('all', `All (${base.length})`)}${chip('delivery', 'Delivery')}${chip('pickup', 'Pickup')}${chip('credit', 'Credit')}${chip('cash', 'Cash')}${chip('vat', 'VAT')}${chip('overtime', 'Overtime')}${chip('app', 'App-entered')}
+              ${chip('all', `All (${base.length})`)}${chip('delivery', 'Delivery')}${chip('pickup', 'Pickup')}${chip('credit', 'Credit')}${chip('cash', 'Cash')}${showTaxCols ? chip('vat', 'VAT') : ''}${chip('overtime', 'Overtime')}${chip('app', 'App-entered')}
             </div>
           </div>
-          <div style="display:flex;gap:6px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${canSwitchOffScope ? `<button type="button" class="btn ${offScopeOn ? 'btn-brass' : 'btn-ghost-bar'}" id="salesOfficialScopeBtn" title="Switch between complete operational books and official VAT-invoiced scope">${ic('shield')} ${offScopeOn ? 'Official Books' : 'All Books'}</button>` : ''}
+            ${canTax ? `<button type="button" class="btn ${showTaxCols ? 'btn-brass' : 'btn-ghost-bar'}" id="toggleSalesTaxBreakdownBtn" title="Show or hide Ex-VAT and VAT breakdown columns">${ic('sliders')} Tax Columns</button>` : ''}
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_customers" title="Open Master Customers &amp; Suppliers Registry">${ic('reg_customers')} Master Registry</button>
             <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="sales" title="Open Touch Sales Dispatch Kiosk &amp; Bluetooth Thermal Printer">${ic('printer')} Sales Kiosk</button>
             ${exportBtn('salesPanel', 'Sales_Register')}
@@ -12481,30 +12716,48 @@
             <div class="sales-recon-head">
               <span class="badge badge-brass">WTC</span>
               <b>${fmtNum(wtcS.loads)} Loads</b>
-              <span class="sales-recon-act">Filter WTC Only →</span>
+              <span class="sales-recon-act">Filter WTC Only</span>
             </div>
             <div class="sales-recon-metrics">
+              ${showTaxCols ? `
               <span class="recon-metric-slice" data-recon-co="wtc" data-recon-chip="all" title="Click to filter WTC All Sales"><small>Sales Ex-VAT</small><b>${fmtUSD(wtcS.net, 2)}</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'cash' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="cash" title="Click to filter WTC Cash Sales"><small>Cash</small><b>${fmtUSD(wtcS.cash, 2)}</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'credit' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="credit" title="Click to filter WTC Credit Sales"><small>Credit</small><b>${fmtUSD(wtcS.credit, 2)}</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'vat' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="vat" title="Click to filter WTC VAT-Billed Sales"><small>VAT (11%)</small><b>${fmtUSD(wtcS.vat, 2)}</b></span>
               <span class="recon-metric-slice" data-recon-co="wtc" data-recon-chip="all" title="Click to filter WTC All Sales"><small>Sales VAT Incl.</small><b class="brass">${fmtUSD(wtcS.ttc, 2)}</b></span>
               <span class="recon-metric-slice" data-recon-co="wtc" data-recon-chip="all" title="WTC Discounts"><small>Discount</small><b>${fmtUSD(wtcS.disc, 2)}</b></span>
+              ` : `
+              <span class="recon-metric-slice" data-recon-co="wtc" data-recon-chip="all" title="Click to filter WTC Material Sales"><small>Material Sales</small><b>${fmtUSD(wtcS.matTtc, 2)}</b></span>
+              <span class="recon-metric-slice ${STATE.chipFilter === 'cash' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="cash" title="Click to filter WTC Cash Sales"><small>Cash</small><b>${fmtUSD(wtcS.cashTtc, 2)}</b></span>
+              <span class="recon-metric-slice ${STATE.chipFilter === 'credit' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="credit" title="Click to filter WTC Credit Sales"><small>Credit</small><b>${fmtUSD(wtcS.creditTtc, 2)}</b></span>
+              <span class="recon-metric-slice ${STATE.chipFilter === 'delivery' ? 'is-active' : ''}" data-recon-co="wtc" data-recon-chip="delivery" title="Click to filter WTC Delivery Transport"><small>Transport</small><b>${fmtUSD(wtcS.trTtc, 2)}</b></span>
+              <span class="recon-metric-slice" data-recon-co="wtc" data-recon-chip="all" title="Click to filter WTC Total Sales"><small>Total Sales</small><b class="brass">${fmtUSD(wtcS.ttc, 2)}</b></span>
+              <span class="recon-metric-slice" data-recon-co="wtc" data-recon-chip="all" title="WTC Discounts"><small>Discount</small><b>${fmtUSD(wtcS.disc, 2)}</b></span>
+              `}
             </div>
           </div>
           <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
             <div class="sales-recon-head">
               <span class="badge badge-info">BBConstruction</span>
               <b>${fmtNum(bbcS.loads)} Loads</b>
-              <span class="sales-recon-act">Filter BBC Only →</span>
+              <span class="sales-recon-act">Filter BBC Only</span>
             </div>
             <div class="sales-recon-metrics">
+              ${showTaxCols ? `
               <span class="recon-metric-slice" data-recon-co="bbconstruction" data-recon-chip="all" title="Click to filter BBConstruction All Sales"><small>Sales Ex-VAT</small><b>${fmtUSD(bbcS.net, 2)}</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'cash' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="cash" title="Click to filter BBConstruction Cash Sales"><small>Cash</small><b>${fmtUSD(bbcS.cash, 2)}</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'credit' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="credit" title="Click to filter BBConstruction Credit Sales"><small>Credit</small><b>${fmtUSD(bbcS.credit, 2)}</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'vat' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="vat" title="Click to filter BBConstruction VAT-Billed Sales"><small>VAT (11%)</small><b>${fmtUSD(bbcS.vat, 2)}</b></span>
               <span class="recon-metric-slice" data-recon-co="bbconstruction" data-recon-chip="all" title="Click to filter BBConstruction All Sales"><small>Sales VAT Incl.</small><b class="brass">${fmtUSD(bbcS.ttc, 2)}</b></span>
               <span class="recon-metric-slice" data-recon-co="bbconstruction" data-recon-chip="all" title="BBConstruction Discounts"><small>Discount</small><b>${fmtUSD(bbcS.disc, 2)}</b></span>
+              ` : `
+              <span class="recon-metric-slice" data-recon-co="bbconstruction" data-recon-chip="all" title="Click to filter BBConstruction Material Sales"><small>Material Sales</small><b>${fmtUSD(bbcS.matTtc, 2)}</b></span>
+              <span class="recon-metric-slice ${STATE.chipFilter === 'cash' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="cash" title="Click to filter BBConstruction Cash Sales"><small>Cash</small><b>${fmtUSD(bbcS.cashTtc, 2)}</b></span>
+              <span class="recon-metric-slice ${STATE.chipFilter === 'credit' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="credit" title="Click to filter BBConstruction Credit Sales"><small>Credit</small><b>${fmtUSD(bbcS.creditTtc, 2)}</b></span>
+              <span class="recon-metric-slice ${STATE.chipFilter === 'delivery' ? 'is-active' : ''}" data-recon-co="bbconstruction" data-recon-chip="delivery" title="Click to filter BBConstruction Delivery Transport"><small>Transport</small><b>${fmtUSD(bbcS.trTtc, 2)}</b></span>
+              <span class="recon-metric-slice" data-recon-co="bbconstruction" data-recon-chip="all" title="Click to filter BBConstruction Total Sales"><small>Total Sales</small><b class="brass">${fmtUSD(bbcS.ttc, 2)}</b></span>
+              <span class="recon-metric-slice" data-recon-co="bbconstruction" data-recon-chip="all" title="BBConstruction Discounts"><small>Discount</small><b>${fmtUSD(bbcS.disc, 2)}</b></span>
+              `}
             </div>
           </div>
         </div>
@@ -12517,12 +12770,21 @@
               <button type="button" class="btn sales-recon-reset" data-jump-co="manufacturing-group">Show All Group (3)</button>
             </div>
             <div class="sales-recon-metrics">
+              ${showTaxCols ? `
               <span class="${STATE.chipFilter !== 'all' ? 'recon-metric-slice' : ''}" data-recon-chip="all" title="Net sales revenue excluding VAT"><small>Sales Ex-VAT</small><b>${fmtUSD(sumNet, 2)}</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'cash' ? 'is-active' : ''}" data-recon-chip="cash" title="Click to toggle Cash filter"><small>Cash</small><b>${fmtUSD(sumCash, 2)}</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'credit' ? 'is-active' : ''}" data-recon-chip="credit" title="Click to toggle Credit filter"><small>Credit</small><b>${fmtUSD(sumCredit, 2)}</b></span>
               <span class="recon-metric-slice ${STATE.chipFilter === 'vat' ? 'is-active' : ''}" data-recon-chip="vat" title="Click to toggle VAT filter"><small>VAT (11%)</small><b>${fmtUSD(sumVat, 2)}</b></span>
               <span class="${STATE.chipFilter !== 'all' ? 'recon-metric-slice' : ''}" data-recon-chip="all" title="Gross billed sales including 11% VAT"><small>Sales VAT Incl.</small><b class="brass">${fmtUSD(sumTtc, 2)}</b></span>
               <span><small>Discount</small><b>${fmtUSD(sumDisc, 2)}</b></span>
+              ` : `
+              <span class="${STATE.chipFilter !== 'all' ? 'recon-metric-slice' : ''}" data-recon-chip="all" title="Material sales revenue"><small>Material Sales</small><b>${fmtUSD(sumMatTtc, 2)}</b></span>
+              <span class="recon-metric-slice ${STATE.chipFilter === 'cash' ? 'is-active' : ''}" data-recon-chip="cash" title="Click to toggle Cash filter"><small>Cash</small><b>${fmtUSD(sumCashTtc, 2)}</b></span>
+              <span class="recon-metric-slice ${STATE.chipFilter === 'credit' ? 'is-active' : ''}" data-recon-chip="credit" title="Click to toggle Credit filter"><small>Credit</small><b>${fmtUSD(sumCreditTtc, 2)}</b></span>
+              <span class="recon-metric-slice ${STATE.chipFilter === 'delivery' ? 'is-active' : ''}" data-recon-chip="delivery" title="Click to toggle Delivery filter"><small>Transport</small><b>${fmtUSD(sumTrTtc, 2)}</b></span>
+              <span class="${STATE.chipFilter !== 'all' ? 'recon-metric-slice' : ''}" data-recon-chip="all" title="Total billed sales"><small>Total Sales</small><b class="brass">${fmtUSD(sumTtc, 2)}</b></span>
+              <span><small>Discount</small><b>${fmtUSD(sumDisc, 2)}</b></span>
+              `}
             </div>
           </div>
         </div>
@@ -12535,15 +12797,21 @@
               <tr>
                 ${th('sales', 'Date', 'date')}${th('sales', 'Ticket #', 'ticket_no')}${th('sales', 'Co.', 'company')}${th('sales', 'Type', 'sale_type')}
                 ${th('sales', 'Customer', 'customer')}${th('sales', 'Product', 'product')}${th('sales', 'Site', 'site')}${th('sales', 'Truck / Driver', 'truck', 'th-truck-drv')}
-                ${th('sales', 'Qty', 'qty', 'r')}${th('sales', 'Mat ($)', 'price', 'r')}${th('sales', 'Trans ($)', 'trans_price', 'r')}${th('sales', 'Ex-VAT ($)', 'total', 'r')}${th('sales', 'VAT ($)', 'vat', 'r')}${th('sales', 'VAT Incl. ($)', 'total_ttc', 'r')}${th('sales', 'Method', 'method')}
+                ${th('sales', 'Qty', 'qty', 'r')}${th('sales', 'Mat ($)', 'price', 'r')}${th('sales', 'Trans ($)', 'trans_price', 'r')}${showTaxCols ? `${th('sales', 'Ex-VAT ($)', 'total', 'r')}${th('sales', 'VAT ($)', 'vat', 'r')}${th('sales', 'VAT Incl. ($)', 'total_ttc', 'r')}` : th('sales', 'Total ($)', 'total_ttc', 'r')}${th('sales', 'Method', 'method')}
               </tr>
             </thead>
             <tbody>
               ${shown.map(r => {
                 const sgn = ticketSign(r);
+                const matRaw = sgn * Number(r.price || 0);
+                const trRaw = sgn * Number(r.trans_price || 0);
                 const netVal = sgn * (r.total != null ? Number(r.total) : (Number(r.price || 0) + Number(r.trans_price || 0)));
-                const qVal = sgn * Number(r.qty || 0);
-                const qFmt = Math.abs(qVal - Math.round(qVal)) < 0.005 ? fmtNum(qVal, 0) : fmtNum(qVal, 2);
+                const vatVal = sgn * Number(r.vat || 0);
+                const ttcVal = round2(sgn * (r.total_ttc != null ? Number(r.total_ttc) : (netVal + vatVal)));
+                const trDisp = trRaw !== 0
+                  ? ((Math.abs(vatVal) > 0 && (matRaw + trRaw) !== 0) ? round2(ttcVal * (trRaw / (matRaw + trRaw))) : round2(trRaw))
+                  : 0;
+                const matDisp = round2(ttcVal - trDisp);
                 return `
                 <tr class="rrow" data-rkey="sales_tickets" data-rid="${esc(r.id)}">
                   <td class="mono">${esc(recordDateDMY(r))}${appCell(r, 'sales_tickets')}</td>
@@ -12555,16 +12823,22 @@
                   <td>${r.site ? relLink('sites', r.site) : '—'}</td>
                   <td class="td-truck-drv"><span class="mono">${r.truck ? relLink('equipment', r.truck) : esc(r.transport_by === 'Third-party truck' ? '3rd-party' : (r.transport_by || '—'))}</span>${r.driver ? `<div class="drv-sub">${relLink('drivers', r.driver)}</div>` : ''}</td>
                   <td class="r">${fmtTicketQtyCell(r, sgn, true)}</td>
-                  <td class="r">${fmtUSD(sgn * Number(r.price || 0), 2)}</td>
-                  <td class="r">${fmtUSD(sgn * Number(r.trans_price || 0), 2)}</td>
+                  ${showTaxCols ? `
+                  <td class="r">${fmtUSD(matRaw, 2)}</td>
+                  <td class="r">${fmtUSD(trRaw, 2)}</td>
                   <td class="r"><strong>${fmtUSD(netVal, 2)}</strong></td>
-                  <td class="r">${Number(r.vat || 0) ? fmtUSD(sgn * Number(r.vat || 0), 2) : '—'}</td>
-                  <td class="r"><strong>${fmtUSD(sgn * Number(r.total_ttc || 0), 2)}</strong></td>
+                  <td class="r">${Number(r.vat || 0) ? fmtUSD(vatVal, 2) : '—'}</td>
+                  <td class="r"><strong>${fmtUSD(ttcVal, 2)}</strong></td>
+                  ` : `
+                  <td class="r">${fmtUSD(matDisp, 2)}</td>
+                  <td class="r">${fmtUSD(trDisp, 2)}</td>
+                  <td class="r"><strong>${fmtUSD(ttcVal, 2)}</strong></td>
+                  `}
                   <td>${methodBadge(r.method, sgn)}</td>
                 </tr>
               `;
-              }).join('') || emptyRow(15, periodEmptyMsg(SEED.records.sales_tickets, 'sales tickets'))}
-              ${showMoreRow('sales', rows.length, 15)}
+              }).join('') || emptyRow(mainTableCols, periodEmptyMsg(SEED.records.sales_tickets, 'sales tickets'))}
+              ${showMoreRow('sales', rows.length, mainTableCols)}
             </tbody>
             <tfoot>
               <tr>
@@ -12572,11 +12846,17 @@
                   <b>TOTAL (${fmtNum(saleLoads)} LOADS)</b>
                 </td>
                 <td class="r"><b>${fmtNum(sumQty, 0)} m³</b></td>
+                ${showTaxCols ? `
                 <td class="r"><b>${fmtUSD(sumMat, 2)}</b></td>
                 <td class="r"><b>${fmtUSD(sumTr, 2)}</b></td>
                 <td class="r"><b>${fmtUSD(sumNet, 2)}</b></td>
                 <td class="r"><b>${fmtUSD(sumVat, 2)}</b></td>
                 <td class="r"><b>${fmtUSD(sumTtc, 2)}</b></td>
+                ` : `
+                <td class="r"><b>${fmtUSD(sumMatTtc, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(sumTrTtc, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(sumTtc, 2)}</b></td>
+                `}
                 <td></td>
               </tr>
             </tfoot>
@@ -12613,7 +12893,7 @@
               <thead>
                 <tr>
                   ${th('sprod', 'Product / Grade', 'Product')}${th('sprod', 'Family', 'Material Family')}${th('sprod', 'UoM', 'UoM')}${th('sprod', 'Loads', 'loads', 'r')}
-                  ${th('sprod', 'Qty (m³)', 'qty_sold', 'r')}${th('sprod', 'Tons Sold', 'tons_sold', 'r')}${th('sprod', 'List Price', 'list_price', 'r')}${th('sprod', 'Avg Net', 'avg_price_net', 'r')}${th('sprod', 'Avg TTC', 'avg_price_ttc', 'r')}${th('sprod', 'Sales TTC ($)', 'sales_ttc', 'r')}
+                  ${th('sprod', 'Qty (m³)', 'qty_sold', 'r')}${th('sprod', 'Tons Sold', 'tons_sold', 'r')}${th('sprod', 'List Price', 'list_price', 'r')}${showTaxCols ? `${th('sprod', 'Avg Net', 'avg_price_net', 'r')}${th('sprod', 'Avg TTC', 'avg_price_ttc', 'r')}` : th('sprod', 'Avg Price', 'avg_price_ttc', 'r')}${th('sprod', 'Total Sales ($)', 'sales_ttc', 'r')}
                 </tr>
               </thead>
               <tbody>
@@ -12626,11 +12906,11 @@
                     <td class="r">${p.qty_sold > 0 ? fmtNum(p.qty_sold, 0) + ' m³' : `<span class="muted" title="Non-material unit (${fmtNum(p.native_qty_sold || 0, 0)} ${esc(p.UoM || '')})">—</span>`}</td>
                     <td class="r">${fmtNum(p.tons_sold, 0)}</td>
                     <td class="r">${p.list_price != null ? fmtUSD(p.list_price, 2) : '—'}</td>
-                    <td class="r">${fmtUSD(p.avg_price_net, 2)}</td>
+                    ${showTaxCols ? `<td class="r">${fmtUSD(p.avg_price_net, 2)}</td>` : ''}
                     <td class="r">${fmtUSD(p.avg_price_ttc, 2)}</td>
                     <td class="r"><strong>${fmtUSD(p.sales_ttc, 0)}</strong></td>
                   </tr>
-                `).join('') || emptyRow(10, 'No product breakdown for this entity')}
+                `).join('') || emptyRow(showTaxCols ? 10 : 9, 'No product breakdown for this entity')}
               </tbody>
               <tfoot>
                 <tr>
@@ -12639,7 +12919,7 @@
                   <td class="r"><b>${fmtNum(allProds.reduce((a, p) => a + Number(p.qty_sold || 0), 0), 0)} m³</b></td>
                   <td class="r"><b>${fmtNum(allProds.reduce((a, p) => a + Number(p.tons_sold || 0), 0), 0)}</b></td>
                   <td class="r">—</td>
-                  <td class="r"><b>${fmtUSD(prodAvgNet, 2)}</b></td>
+                  ${showTaxCols ? `<td class="r"><b>${fmtUSD(prodAvgNet, 2)}</b></td>` : ''}
                   <td class="r"><b>${fmtUSD(prodAvgTtc, 2)}</b></td>
                   <td class="r"><b>${fmtUSD(prodTotTtc, 0)}</b></td>
                 </tr>
@@ -12657,12 +12937,12 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${th('ssite', 'Destination Site', 'Site')}${th('ssite', 'Sales Loads', 'loads', 'r')}${th('ssite', 'Tons Sold', 'tons_sold', 'r')}${th('ssite', 'Transport Rev ($)', 'trans_rev', 'r')}${th('ssite', 'Sales TTC ($)', 'sales_ttc', 'r')}
+                  ${th('ssite', 'Destination Site', 'Site')}${th('ssite', 'Sales Loads', 'loads', 'r')}${th('ssite', 'Tons Sold', 'tons_sold', 'r')}${th('ssite', 'Transport Rev ($)', 'trans_rev', 'r')}${th('ssite', 'Total Sales ($)', 'sales_ttc', 'r')}
                 </tr>
               </thead>
               <tbody>
                 ${sortRows(allSites, 'ssite', 'sales_ttc', 'desc').map(s => `
-                  <tr class="rrow" data-rkey="sites" data-rid="${esc((siteInfo(s.Site) || {}).id || s.Site)}">
+                  <tr class="rrow" data-rkey="sites" data-rid="${esc((siteInfo(s.Site, 'sales') || {}).id || s.Site)}">
                     <td>${relLink('sites', s.Site, s.Site || '(no site on ticket)', true)}${siteJvMarker(s.JV === 'Yes' || s.is_jv)}</td>
                     <td class="r">${fmtNum(s.loads)}</td>
                     <td class="r">${fmtNum(s.tons_sold, 0)}</td>
@@ -17172,6 +17452,12 @@
   function renderAR() {
     const k = getKPI();
     const m = getModel();
+    const canTax = canSeeTaxBreakdown();
+    const showTaxCols = canTax && Boolean(STATE.showSalesTaxBreakdown);
+    if (!canTax && (STATE.chipFilter === 'vat_rec' || STATE.chipFilter === 'vat_reg' || /^vat/i.test(String(STATE.chipFilter || '')))) {
+      STATE.chipFilter = 'all';
+    }
+    if (!canTax && STATE.arChartMode === 'vat') STATE.arChartMode = 'collections';
     const q = STATE.search.trim().toLowerCase();
     const ctMap = new Map();
     filterRecords(SEED.records.credit_terms, { ignorePeriod: true, ignoreSearch: true }).forEach(ct => {
@@ -17218,12 +17504,12 @@
       return STATE.chipFilter === 'all' || r.method === STATE.chipFilter;
     }), 'receipts', 'date', 'desc');
     const shown = rcpts.slice(0, shownCount('receipts'));
-    const methods = uniqSorted(SEED.records.receipts.map(r => r.method));
+    const methods = uniqSorted(SEED.records.receipts.map(r => r.method)).filter(mm => canTax || !/^vat/i.test(String(mm || '')));
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     let sumAmt = 0, sumDisc = 0, sumSettle = 0, sumVatRec = 0, sumIvaInv = 0;
     const byCoRcpt = {
-      WTC: { n: 0, settle: 0, vat: 0, iva: 0 },
-      BBConstruction: { n: 0, settle: 0, vat: 0, iva: 0 }
+      WTC: { n: 0, settle: 0, cash: 0, disc: 0, vat: 0, iva: 0 },
+      BBConstruction: { n: 0, settle: 0, cash: 0, disc: 0, vat: 0, iva: 0 }
     };
     rcpts.forEach(r => {
       const a = Number(r.amount || 0);
@@ -17237,7 +17523,7 @@
       else if (kd === 'Customer invoice') sumIvaInv += tot;
       const b = byCoRcpt[r.company];
       if (b) {
-        if (kd === 'Settlement') { b.n += 1; b.settle += tot; }
+        if (kd === 'Settlement') { b.n += 1; b.settle += tot; b.cash += a; b.disc += d; }
         else if (kd === 'VAT received') b.vat += tot;
         else if (kd === 'Customer invoice') b.iva += tot;
       }
@@ -17251,7 +17537,7 @@
     const isBilledVat = v => Number(v.net_amount || 0) > 0 || Number(v.total_ttc || 0) > 0 || Number(v.tickets_count || 0) > 0;
     const billedVatCount = vatBase.filter(isBilledVat).length;
     const unlinkedVatCount = vatBase.length - billedVatCount;
-    const vatFilter = STATE.vatInvFilter || 'all';
+    const vatFilter = STATE.vatInvFilter || 'billed';
     const vatFiltered = vatBase.filter(v => {
       if (vatFilter === 'billed') return isBilledVat(v);
       if (vatFilter === 'unlinked') return !isBilledVat(v);
@@ -17346,6 +17632,7 @@
           months: arMonthsSeries,
           agingBuckets,
           chartMode: STATE.arChartMode || 'collections',
+          canSeeVat: canTax,
           arSummary: {
             grossAr: grossArChart,
             advancesUsd: Math.abs(onAcct),
@@ -17355,11 +17642,12 @@
           }
         })
       : '';
+    const custCols = showTaxCols ? 12 : 10;
 
     return `
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
-          <div class="cockpit-eyebrow">ACCOUNTS RECEIVABLE · M165 FIFO ALLOCATION + 11% VAT &amp; CREDIT TERMS</div>
+          <div class="cockpit-eyebrow">ACCOUNTS RECEIVABLE · M165 FIFO ALLOCATION &amp; CREDIT TERMS</div>
           <div class="cockpit-title">Customers &amp; Receivables</div>
         </div>
         <div class="cockpit-pills insight-grid">
@@ -17371,7 +17659,7 @@
             valCls: 'emerald',
             pct: collPct,
             pct2: 100 - collPct,
-            sub: `Collected <b>${fmtUSD(k.receipts, 0)}</b> of <b>${fmtUSD(k.sales_ttc, 0)}</b> invoiced TTC`,
+            sub: `Collected <b>${fmtUSD(k.receipts, 0)}</b> of <b>${fmtUSD(k.sales_ttc, 0)}</b> invoiced`,
             tone: 'emerald'
           })}
           ${insightCard({
@@ -17384,15 +17672,23 @@
             sub: `0–10d <b>${fmtUSD(arCur, 0)}</b> · 11–60d <b>${fmtUSD(arMid, 0)}</b> · 60+d <b>${fmtUSD(ar60, 0)}</b>`,
             tone: 'brass'
           })}
-          ${insightCard({
+          ${canTax ? insightCard({
             label: '11% Output VAT (4427)',
-            badge: `${fmtNum(billedVatCount)} Billed / ${fmtNum(vatBase.length)} Inv.`,
+            badge: `${fmtNum(billedVatCount)} Billed`,
             badgeCls: 'brass',
             val: fmtUSD(k.sales_vat || totVatAmt, 0),
             valCls: 'brass',
             sub: `Header VAT <b>${fmtUSD(totVatAmt, 0)}</b> · VAT rec. <b>${fmtUSD(sumVatRec, 0)}</b> · <u>Jump to Tax Invoices ↓</u>`,
             tone: 'steel',
             attr: 'data-scroll-panel="vatInvPanel" role="button" tabindex="0"'
+          }) : insightCard({
+            label: 'Settlement Channel Mix',
+            badge: `${fmtNum(rcpts.length)} Receipts`,
+            badgeCls: 'info',
+            val: fmtUSD(sumSettle, 0),
+            valCls: 'brass',
+            sub: `Cash settled <b>${fmtUSD(sumAmt, 0)}</b> · Rebates &amp; disc. <b>${fmtUSD(sumDisc, 0)}</b>`,
+            tone: 'steel'
           })}
           ${insightCard({
             label: 'Customer Credit Exposure',
@@ -17411,10 +17707,10 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search voucher #, customer, invoice #, method, reference...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('settlement_only', 'Settlements Only')}${chip('vat_rec', 'VAT Received')}${methods.map(mm => chip(mm, mm)).join('')}${chip('open_ar', 'Open AR')}${chip('overdue60', 'Overdue 60+')}${chip('vat_reg', '11% VAT')}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('settlement_only', 'Settlements Only')}${canTax ? chip('vat_rec', 'VAT Received') : ''}${methods.map(mm => chip(mm, mm)).join('')}${chip('open_ar', 'Open AR')}${chip('overdue60', 'Overdue 60+')}${canTax ? chip('vat_reg', '11% VAT') : ''}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="18">${ic('printer')} VAT Return RDL (#18)</button>
+            ${canTax ? `<button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="18">${ic('printer')} VAT Return RDL (#18)</button>` : ''}
             ${canEnterForm('creditterm') ? '<button type="button" class="btn" data-open-modal="creditterm">+ Credit Term</button>' : ''}
             ${canEnterForm('vatinvoice') ? '<button type="button" class="btn" data-open-modal="vatinvoice">+ New VAT Invoice</button>' : ''}
             ${exportBtn('rcptPanel', 'Customer_Receipts')}
@@ -17424,19 +17720,29 @@
         ${isGroupScope ? `
         <div class="sales-entity-recon">
           <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
-            <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcRc.n)} Settlements</b><span class="sales-recon-act">Filter WTC Only →</span></div>
+            <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcRc.n)} Settlements</b><span class="sales-recon-act">Filter WTC Only</span></div>
             <div class="sales-recon-metrics">
               <span><small>Receipts (Cash + Disc)</small><b class="brass">${fmtUSD(wtcRc.settle, 2)}</b></span>
+              ${canTax ? `
               <span><small>VAT Received</small><b>${fmtUSD(wtcRc.vat, 2)}</b></span>
               <span><small>IVA Invoices</small><b>${fmtUSD(wtcRc.iva, 2)}</b></span>
+              ` : `
+              <span><small>Cash Collected</small><b>${fmtUSD(wtcRc.cash, 2)}</b></span>
+              <span><small>Discounts</small><b>${fmtUSD(wtcRc.disc, 2)}</b></span>
+              `}
             </div>
           </div>
           <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
-            <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcRc.n)} Settlements</b><span class="sales-recon-act">Filter BBC Only →</span></div>
+            <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcRc.n)} Settlements</b><span class="sales-recon-act">Filter BBC Only</span></div>
             <div class="sales-recon-metrics">
               <span><small>Receipts (Cash + Disc)</small><b class="brass">${fmtUSD(bbcRc.settle, 2)}</b></span>
+              ${canTax ? `
               <span><small>VAT Received</small><b>${fmtUSD(bbcRc.vat, 2)}</b></span>
               <span><small>IVA Invoices</small><b>${fmtUSD(bbcRc.iva, 2)}</b></span>
+              ` : `
+              <span><small>Cash Collected</small><b>${fmtUSD(bbcRc.cash, 2)}</b></span>
+              <span><small>Discounts</small><b>${fmtUSD(bbcRc.disc, 2)}</b></span>
+              `}
             </div>
           </div>
         </div>
@@ -17450,8 +17756,13 @@
             </div>
             <div class="sales-recon-metrics">
               <span><small>Receipts (Cash + Disc)</small><b class="brass">${fmtUSD(sumSettle, 2)}</b></span>
+              ${canTax ? `
               <span><small>VAT Received</small><b>${fmtUSD(sumVatRec, 2)}</b></span>
               <span><small>IVA Invoices</small><b>${fmtUSD(sumIvaInv, 2)}</b></span>
+              ` : `
+              <span><small>Cash Collected</small><b>${fmtUSD(sumAmt, 2)}</b></span>
+              <span><small>Discounts</small><b>${fmtUSD(sumDisc, 2)}</b></span>
+              `}
             </div>
           </div>
         </div>
@@ -17495,11 +17806,12 @@
 
       <div class="panel-card" id="custPanel" style="margin-bottom:14px">
         <div class="panel-head">
-          <div class="panel-title"><span>CUSTOMER AR AGING, 11% VAT &amp; CREDIT TERMS SUB-LEDGER (${fmtNum(custs.length)} CUSTOMERS)</span></div>
+          <div class="panel-title"><span>${showTaxCols ? 'CUSTOMER AR AGING, 11% VAT &amp; CREDIT TERMS SUB-LEDGER' : 'CUSTOMER AR AGING &amp; CREDIT TERMS SUB-LEDGER'} (${fmtNum(custs.length)} CUSTOMERS)</span></div>
           <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${canTax ? `<button type="button" class="btn ${showTaxCols ? 'btn-brass' : 'btn-ghost-bar'}" style="padding:4px 9px;font-size:11px" id="custToggleTaxColsBtn">${ic('sliders')} Tax Columns</button>` : ''}
             ${canEnterForm('creditterm') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-modal="creditterm">+ Credit Term</button>' : ''}
-            <button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-nav-jump="reg_customers">Universal Customers Registry →</button>
-            ${exportBtn('custPanel', 'AR_Aging_VAT_SubLedger')}
+            <button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-nav-jump="reg_customers">Universal Customers Registry</button>
+            ${exportBtn('custPanel', 'AR_Aging_SubLedger')}
           </span>
         </div>
         ${renderColFilterBar('custs')}
@@ -17507,37 +17819,39 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('custs', 'Customer', 'Customer')}${th('custs', 'IVA & Term', 'VAT Registered')}${th('custs', 'Loads', 'loads', 'r')}${th('custs', 'Sales TTC', 'credit_sales_ttc', 'r')}${th('custs', 'Output VAT', 'sales_vat', 'r')}
-                ${th('custs', 'Receipts', 'ar_settled', 'r')}${th('custs', 'VAT Due', 'vat_receivable', 'r')}${th('custs', 'Current', 'ar_current', 'r')}${th('custs', '1–60d', 'ar_1_60', 'r')}${th('custs', 'Overdue 60+', 'ar_60_plus', 'r')}${th('custs', 'Open AR ($)', 'ar_balance', 'r')}${th('custs', 'Last Sale', 'last_sale')}
+                ${th('custs', 'Customer', 'Customer')}${showTaxCols ? th('custs', 'IVA & Term', 'VAT Registered') : th('custs', 'Credit Terms', 'credit_days')}${th('custs', 'Loads', 'loads', 'r')}${th('custs', showTaxCols ? 'Sales TTC' : 'Credit Sales', 'credit_sales_ttc', 'r')}${showTaxCols ? th('custs', 'Output VAT', 'sales_vat', 'r') : ''}
+                ${th('custs', 'Receipts', 'ar_settled', 'r')}${showTaxCols ? th('custs', 'VAT Due', 'vat_receivable', 'r') : ''}${th('custs', 'Current', 'ar_current', 'r')}${th('custs', '1–60d', 'ar_1_60', 'r')}${th('custs', 'Overdue 60+', 'ar_60_plus', 'r')}${th('custs', 'Open AR ($)', 'ar_balance', 'r')}${th('custs', 'Last Sale', 'last_sale')}
               </tr>
             </thead>
             <tbody>
               ${shownCusts.map(c => `
                 <tr class="rrow" data-rkey="customers" data-rid="${esc((customerInfo(c.Customer) || {}).id || c.Customer)}">
                   <td>${relLink('customers', c.Customer, c.Customer, true)}${appCell(customerInfo(c.Customer) || { id: c.Customer, name: c.Customer }, 'customers')}</td>
-                  <td>${c['VAT Registered'] === 'Yes' ? '<span class="badge badge-info">11% VAT</span>' : '<span class="mu">No</span>'} <span class="mono mu" style="font-size:10px">· ${fmtNum(c.credit_days || 30)}d${c.credit_limit > 0 ? ' / ' + fmtUSDk(c.credit_limit) : ''}</span></td>
+                  ${showTaxCols
+                    ? `<td>${c['VAT Registered'] === 'Yes' ? '<span class="badge badge-info">11% VAT</span>' : '<span class="mu">No</span>'} <span class="mono mu" style="font-size:10px">· ${fmtNum(c.credit_days || 30)}d${c.credit_limit > 0 ? ' / ' + fmtUSDk(c.credit_limit) : ''}</span></td>`
+                    : `<td><span class="mono">${fmtNum(c.credit_days || 30)}d${c.credit_limit > 0 ? ' · ' + fmtUSDk(c.credit_limit) : ''}</span></td>`}
                   <td class="r">${fmtNum(c.loads)}</td>
                   <td class="r">${fmtUSD(c.credit_sales_ttc != null ? c.credit_sales_ttc : c.sales_ttc, 0)}</td>
-                  <td class="r">${Number(c.sales_vat || 0) > 0 ? fmtUSD(c.sales_vat, 0) : '—'}</td>
+                  ${showTaxCols ? `<td class="r">${Number(c.sales_vat || 0) > 0 ? fmtUSD(c.sales_vat, 0) : '—'}</td>` : ''}
                   <td class="r">${fmtUSD(c.ar_settled != null ? c.ar_settled : c.receipts, 0)}</td>
-                  <td class="r">${Number(c.vat_receivable || 0) !== 0 ? fmtUSD(c.vat_receivable, 0) : '—'}</td>
+                  ${showTaxCols ? `<td class="r">${Number(c.vat_receivable || 0) !== 0 ? fmtUSD(c.vat_receivable, 0) : '—'}</td>` : ''}
                   <td class="r">${fmtUSD(c.ar_current, 0)}</td>
                   <td class="r">${Number(c.ar_1_60 || 0) > 0 ? `<span style="color:var(--warn)">${fmtUSD(c.ar_1_60, 0)}</span>` : '—'}</td>
                   <td class="r">${Number(c.ar_60_plus || 0) > 0 ? `<span style="color:var(--crit)">${fmtUSD(c.ar_60_plus, 0)}</span>` : '—'}</td>
                   <td class="r"><strong>${fmtUSD(c.ar_balance, 2)}</strong></td>
                   <td class="mono">${esc(fmtDateDMY(c.last_sale))}</td>
                 </tr>
-              `).join('') || emptyRow(12, q ? `No customers match "${STATE.search}".` : 'No customer balances for this entity')}
-              ${showMoreRow('custs', custs.length, 12)}
+              `).join('') || emptyRow(custCols, q ? `No customers match "${STATE.search}".` : 'No customer balances for this entity')}
+              ${showMoreRow('custs', custs.length, custCols)}
             </tbody>
             <tfoot>
               <tr>
                 <td colspan="2"><b>TOTAL (${fmtNum(custs.length)} CUSTOMERS)</b></td>
                 <td class="r"><b>${fmtNum(custs.reduce((a, c) => a + Number(c.loads || 0), 0))}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.credit_sales_ttc != null ? c.credit_sales_ttc : (c.sales_ttc || 0)), 0), 0)}</b></td>
-                <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.sales_vat || 0), 0), 0)}</b></td>
+                ${showTaxCols ? `<td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.sales_vat || 0), 0), 0)}</b></td>` : ''}
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_settled != null ? c.ar_settled : (c.receipts || 0)), 0), 0)}</b></td>
-                <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.vat_receivable || 0), 0), 0)}</b></td>
+                ${showTaxCols ? `<td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.vat_receivable || 0), 0), 0)}</b></td>` : ''}
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_current || 0), 0), 0)}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_1_60 || 0), 0), 0)}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_60_plus || 0), 0), 0)}</b></td>
@@ -17549,9 +17863,10 @@
         </div>
       </div>
 
+      ${canTax ? `
       <div class="panel-card" id="vatInvPanel">
         <div class="panel-head">
-          <div class="panel-title"><span>11% OUTPUT VAT TAX INVOICES &amp; MOF REGISTER (${fmtNum(vatRows.length)} INVOICES · ${fmtNum(billedVatCount)} BILLED)</span></div>
+          <div class="panel-title"><span>11% OUTPUT VAT TAX INVOICES &amp; MOF REGISTER (${fmtNum(vatRows.length)} SHOWN · ${fmtNum(billedVatCount)} BILLED)</span></div>
           <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-nav-jump="statements" data-stmt-jump="18">${ic('printer')} VAT Return RDL (#18)</button>
             ${canEnterForm('vatinvoice') ? '<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-open-modal="vatinvoice">+ New VAT Invoice</button>' : ''}
@@ -17560,8 +17875,8 @@
         </div>
         <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
           <div class="chip-bar">
-            ${vatChip('all', `All (${vatBase.length})`)}
             ${vatChip('billed', `Billed Invoices (${billedVatCount})`)}
+            ${vatChip('all', `All Serials (${vatBase.length})`)}
             ${vatChip('unlinked', `Blank Serials (${unlinkedVatCount})`)}
             ${vatChip('wtc', 'WTC')}
             ${vatChip('bbc', 'BBConstruction')}
@@ -17574,7 +17889,7 @@
             <thead>
               <tr>
                 ${th('vatinv', 'Invoice #', 'invoice_no')}${th('vatinv', 'Date', 'date')}${th('vatinv', 'Co.', 'company')}${th('vatinv', 'Customer', 'customer')}${th('vatinv', 'Status', 'net_amount')}
-                ${th('vatinv', 'Tickets', 'tickets_count', 'r')}${th('vatinv', 'Net ($)', 'net_amount', 'r')}${th('vatinv', 'VAT 11% ($)', 'vat_amount', 'r')}${th('vatinv', 'Total TTC ($)', 'total_ttc', 'r')}
+                ${th('vatinv', 'Tickets', 'tickets_count', 'r')}${th('vatinv', 'Net ($)', 'net_amount', 'r')}${th('vatinv', 'VAT 11% ($)', 'vat_amount', 'r')}${th('vatinv', 'Total ($)', 'total_ttc', 'r')}
               </tr>
             </thead>
             <tbody>
@@ -17608,6 +17923,7 @@
           </table>
         </div>
       </div>
+      ` : ''}
     `;
   }
 
@@ -27244,6 +27560,7 @@
     const curRole = STATE.draftRoleOverride || (editUser ? (editUser.role || 'Entry') : 'Entry');
     const curCompanies = STATE.draftCompaniesOverride || (editUser ? normalizeCompaniesScope(editUser.companies) : 'WTC');
     const curAccess = STATE.draftAccessOverride || (editUser ? seatAccessValue(editUser) : 'partial|partial');
+    const curBookScope = STATE.draftBookScopeOverride || (editUser ? getUserBookScope(editUser) : 'all');
     const curStatus = editUser ? (editUser.status || 'Active') : 'Active';
     const curPin = editUser ? (editUser.pin_code || '1111') : (STATE.newDraftPin || '3564');
     const isSelfOwner = editUser && editIdx === STATE.activeUserIdx;
@@ -27273,9 +27590,10 @@
             <select id="nu_seat_select" class="seat-select-dropdown">
               ${STATE.users.map((u, idx) => {
                 const cBadge = formatCompactCompaniesBadge(u.companies, 3);
+                const dispPin = STATE.demoVisitor ? '••••' : (u.pin_code || '1111');
                 return `
                 <option value="${esc(u.id)}" ${!isNewMode && String(u.id) === String(editUser.id) ? 'selected' : ''}>
-                  ${idx + 1}. ${esc(u.full_name)} (${esc(u.email)}) — PIN ${esc(u.pin_code || '1111')} · ${esc(u.role)} · ${esc(cBadge.text)}
+                  ${idx + 1}. ${esc(u.full_name)} (${esc(u.email)}) · PIN ${esc(dispPin)} · ${esc(u.role)} · ${esc(cBadge.text)}
                 </option>`;
               }).join('')}
               <option value="__new__" ${isNewMode ? 'selected' : ''}>+ Create New Team Login Seat (Blank Form)</option>
@@ -27284,10 +27602,11 @@
           <div class="seat-pill-strip" role="tablist" aria-label="Team login seats">
             ${STATE.users.map((u, idx) => {
               const active = !isNewMode && String(u.id) === String(editUser.id);
+              const dispPin = STATE.demoVisitor ? '••••' : (u.pin_code || '1111');
               return `<button type="button" class="seat-pick-pill ${active ? 'active' : ''} ${u.status === 'Suspended' ? 'suspended' : ''}" data-pick-seat="${esc(u.id)}" title="Inspect & update ${esc(u.full_name)} (${esc(u.email)})">
                 <span class="seat-pick-num">${idx + 1}</span>
                 <span class="seat-pick-name">${esc(u.full_name)}</span>
-                <small class="mono">${esc(u.pin_code || '1111')}</small>
+                <small class="mono">${esc(dispPin)}</small>
               </button>`;
             }).join('')}
             <button type="button" class="seat-pick-pill new-seat ${isNewMode ? 'active' : ''}" data-pick-seat="__new__" title="Create a new team login seat">
@@ -27351,6 +27670,14 @@
               </select>
               <span class="hint">Choose Either (PIN or Face ID), Both (2FA), Face ID Only (3+ live frames), or PIN Only.</span>
             </div>
+            <div class="form-field">
+              <label for="nu_book_scope">Accounting Book Scope</label>
+              <select id="nu_book_scope">
+                <option value="all" ${curBookScope !== 'official' ? 'selected' : ''}>All Books (Complete Operational Ledger)</option>
+                <option value="official" ${curBookScope === 'official' ? 'selected' : ''}>Official / Fiscal Scope (11% VAT Books Only)</option>
+              </select>
+              <span class="hint">Official scope restricts registers, AR/AP, and statements to VAT-invoiced activity.</span>
+            </div>
           </div>
 
           <div id="rolePermissionsMatrixWrap">
@@ -27398,7 +27725,7 @@
       <tr class="user-dir-row ${isTarget ? 'enrol-selected-row' : ''} ${isEditing ? 'seat-editing-row' : ''}" data-user-row="${esc(u.id)}" title="${owner ? `Click to inspect & update ${esc(u.full_name)}` : ''}">
         <td><strong>${esc(u.full_name)}</strong>${idx === STATE.activeUserIdx ? ' <span class="badge badge-ok">you</span>' : ''}</td>
         <td class="mono">${esc(u.email)}</td>
-        ${owner ? `<td class="mono"><span class="badge badge-info">${esc(u.pin_code || '1111')}</span></td>` : ''}
+        ${owner && !STATE.demoVisitor ? `<td class="mono"><span class="badge badge-info">${esc(u.pin_code || '1111')}</span></td>` : ''}
         <td>
           <span class="badge ${fSamples.length && effectiveSeatAuthMode(u) !== 'pin_only' ? 'badge-ok' : 'badge-warn'}">
             ${esc(seatAuthBadgeLabel(u))}
@@ -27407,6 +27734,7 @@
         <td>
           <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
             <span class="badge badge-brass">${esc(u.role)}</span>
+            ${getUserBookScope(u) === 'official' ? '<span class="badge badge-ok" title="Scoped strictly to Official 11% VAT Books">Official Books</span>' : ''}
             <span class="badge badge-info" title="${pm.rightsCount}/${pm.rightsTotal} Data Rights · ${pm.unlockCount}/9 Policy Locks Unlockable">${ic('unlock')} ${pm.unlockCount}/9</span>
           </div>
         </td>
@@ -27634,7 +27962,7 @@
               <tr>
                 <th>User Name</th>
                 <th>Login Email</th>
-                ${owner ? '<th>PIN</th>' : ''}
+                ${owner && !STATE.demoVisitor ? '<th>PIN</th>' : ''}
                 <th>Face ID (2FA)</th>
                 <th>Role</th>
                 <th>Allowed Companies (RLS)</th>
@@ -43334,6 +43662,7 @@
     const statusVal = isSelfOwner ? 'Active' : ((statusEl && statusEl.value === 'Suspended') ? 'Suspended' : (prev.status || 'Active'));
     const authModeRaw = val('nu_auth_mode');
     const authModeVal = (authModeRaw && authModeRaw !== 'inherit') ? normalizeAuthMode(authModeRaw, 'both') : '';
+    const bookScopeVal = val('nu_book_scope') === 'official' ? 'official' : 'all';
     const customPermsObj = isCustomRole
       ? (STATE.draftCustomPerms || cloneEffectivePermsToCustomDraft(editUser || prev))
       : {};
@@ -43352,6 +43681,7 @@
       pbi_access: acc[0] || 'partial',
       statements_access: acc[1] || 'partial',
       custom_perms: customPermsJson,
+      book_scope: bookScopeVal,
       status: statusVal,
       auth_mode: authModeVal,
       last_login_at: prev.last_login_at || '',
@@ -43369,6 +43699,7 @@
     STATE.draftRoleOverride = null;
     STATE.draftCompaniesOverride = null;
     STATE.draftAccessOverride = null;
+    STATE.draftBookScopeOverride = '';
     STATE.draftCustomPerms = isCustomRole ? customPermsObj : null;
     saveLocalAuthAndRecords();
     applyUserRlsAndPermissions();
@@ -43944,7 +44275,7 @@
         if (panel) scrollWorkspaceTo(panel);
       });
     });
-    root.querySelectorAll('#nu_name, #nu_email, #nu_pin, #nu_role, #nu_companies, #nu_access, #nu_auth_mode, #nu_status').forEach(inp => {
+    root.querySelectorAll('#nu_name, #nu_email, #nu_pin, #nu_role, #nu_companies, #nu_access, #nu_auth_mode, #nu_book_scope, #nu_status').forEach(inp => {
       inp.addEventListener('input', () => { STATE.userFormDirty = true; });
       inp.addEventListener('change', () => { STATE.userFormDirty = true; });
     });
@@ -44862,6 +45193,14 @@
         ? `${ic('check_circle')} 10 Ind × 150 Co Preview (Reset to 3)`
         : `${ic('bolt')} Preview 10 Ind × 150 Co`;
     }
+    const offBtn = $('officialScopeToggleBtn');
+    if (offBtn) {
+      const showOffToggle = isOwner(user) && !STATE.demoVisitor && getUserBookScope(user) !== 'official';
+      const offOn = isOfficialScopeActive(user);
+      offBtn.hidden = !showOffToggle;
+      offBtn.classList.toggle('active', offOn);
+      offBtn.innerHTML = offOn ? `${ic('shield')} Official Books (11% VAT)` : `${ic('shield')} All Books`;
+    }
   }
 
   function wireCompanySwitch() {
@@ -44873,6 +45212,7 @@
     const searchEl = $('companySwitchSearch');
     const allBtn = $('companySwitchSelectAllBtn');
     const demoBtn = $('companySwitchScalePreviewBtn');
+    const offBtn = $('officialScopeToggleBtn');
     const doneBtn = $('companySwitchDoneBtn');
 
     const setOpen = (open) => {
@@ -44933,6 +45273,20 @@
           : 'Restored live 3-company Manufacturing catalog (WTC · BBConstruction · Lions Transport)');
       });
     }
+    if (offBtn) {
+      offBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (!isOwner() || STATE.demoVisitor || getUserBookScope() === 'official') return;
+        STATE.officialBookScope = !STATE.officialBookScope;
+        STATE.shown = {};
+        STATE.pbiTablePage = {};
+        applyUserRlsAndPermissions();
+        renderApp();
+        toast(STATE.officialBookScope
+          ? 'Official Books active: scoped strictly to 11% VAT-invoiced activity'
+          : 'All Books active: showing complete operational ledger');
+      });
+    }
     switchEl.querySelectorAll('.entity-btn').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
@@ -44958,6 +45312,9 @@
     const allowedNames = allowedCompanyNames(user);
     const catalog = getCompanyCatalog();
     STATE.allowedCompanyNames = allowedNames;
+    STATE._officialScopeActive = isOfficialScopeActive(user);
+    STATE._canSeeTaxBreakdown = canSeeTaxBreakdown(user);
+    STATE.isOfficialRecord = isOfficialRecord;
     STATE.canAccessRdlReport = r => canAccessRdlReport(r, user);
 
     if (!allowedCos.includes(STATE.company)) STATE.company = allowedCos[0];
@@ -51869,6 +52226,30 @@
         });
       });
     });
+    const salesOffBtn = container.querySelector('#salesOfficialScopeBtn');
+    if (salesOffBtn) {
+      salesOffBtn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (!isOwner() || STATE.demoVisitor || getUserBookScope() === 'official') return;
+        STATE.officialBookScope = !STATE.officialBookScope;
+        STATE.shown = {};
+        STATE.pbiTablePage = {};
+        applyUserRlsAndPermissions();
+        renderApp();
+        toast(STATE.officialBookScope
+          ? 'Official Books active: scoped strictly to 11% VAT-invoiced activity'
+          : 'All Books active: showing complete operational ledger');
+      });
+    }
+    container.querySelectorAll('#toggleSalesTaxBreakdownBtn, #custToggleTaxColsBtn').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (!canSeeTaxBreakdown()) return;
+        STATE.showSalesTaxBreakdown = !STATE.showSalesTaxBreakdown;
+        if (!STATE.showSalesTaxBreakdown && STATE.chipFilter === 'vat') STATE.chipFilter = 'all';
+        renderApp();
+      });
+    });
     container.querySelectorAll('[data-jump-co], [data-switch-comm-co]').forEach(row => {
       const goCo = () => {
         const targetCo = row.getAttribute('data-jump-co') || row.getAttribute('data-switch-comm-co');
@@ -53749,6 +54130,204 @@
     }
   }
 
+  let _demoSanitizeBackup = null;
+  let _demoSanitizedActive = false;
+  function shouldAutoSanitizePublicDemo() {
+    if (IS_LOCAL || window.__MFG_HEADLESS_TEST || navigator.webdriver) return false;
+    const p = new URLSearchParams(location.search);
+    return p.get('demo') === '1' || p.get('autologin') === '1' || Boolean(STATE.demoVisitor);
+  }
+  function applyPublicDemoSanitization() {
+    if (!SEED) return false;
+    if (!_demoSanitizeBackup) {
+      const recSnap = {};
+      const recKeys = ['customers', 'suppliers', 'sites', 'drivers', 'employments', 'salaries', 'sales_tickets', 'receipts', 'vat_invoices', 'price_rules', 'credit_terms', 'raw_purchases', 'expenses', 'settlements', 'company_drivers', 'company_equipment', 'attendance'];
+      recKeys.forEach(k => {
+        if (SEED.records && Array.isArray(SEED.records[k]) && SEED.records[k].length) {
+          recSnap[k] = SEED.records[k].map(r => Object.assign({}, r));
+        }
+      });
+      _demoSanitizeBackup = {
+        modelsJson: JSON.stringify(SEED.models || {}),
+        recSnap,
+        demoVisitor: STATE.demoVisitor
+      };
+    } else if (_demoSanitizeBackup.recSnap && SEED.records) {
+      ['customers', 'suppliers', 'sites', 'drivers', 'employments', 'salaries', 'sales_tickets', 'receipts', 'vat_invoices', 'price_rules', 'credit_terms', 'raw_purchases', 'expenses', 'settlements', 'company_drivers', 'company_equipment', 'attendance'].forEach(k => {
+        if (!_demoSanitizeBackup.recSnap[k] && Array.isArray(SEED.records[k]) && SEED.records[k].length) {
+          _demoSanitizeBackup.recSnap[k] = SEED.records[k].map(r => Object.assign({}, r));
+        }
+      });
+    }
+    const DEMO_CUSTS = [
+      'Cedar Ready-Mix S.A.L.', 'Levant Infrastructure Corp.', 'Bekaa Concrete & Aggregates',
+      'Mediterranean Civil Works', 'Mount Lebanon Builders Co.', 'Byblos Structural Contracting',
+      'Phoenicia Urban Development', 'Horizon Foundations S.A.R.L.', 'Summit Roads & Bridges',
+      'Metn Industrial Concrete', 'Batroun Marine & Quarry Works', 'Koura Engineering Group',
+      'Matn Civil Constructors', 'Keserwan Aggregate Supply', 'Nabatieh Concrete Works', 'Saida Port Contractors'
+    ];
+    const DEMO_SUPPS = [
+      'Al-Jabal Quarry Partners', 'Eastern Haulage & Aggregates', 'Tripoli Industrial Supply',
+      'Zahle Heavy Logistics Co.', 'Chouf Stone & Crushing', 'Litani Fuel & Lubricants',
+      'Apex Machinery Parts S.A.L.', 'Northern Aggregate Carriers', 'Bekaavalley Transport Co.', 'Highland Crushing Ltd.'
+    ];
+    const DEMO_SITES = [
+      'Zouk Industrial Zone', 'Dbayeh Highway Lot 4', 'Zahle Bypass Sector B',
+      'Batroun Coastal Project', 'Choueifat Logistics Park', 'Jbeil Commercial Hub',
+      'Baabda Retaining Wall', 'Chtaura Industrial Yard', 'Antelias Bridge Approach', 'Halat Industrial Lot'
+    ];
+    const DEMO_PEOPLE = [
+      'Rami Haddad', 'Karim Mansour', 'Nabil Khoury', 'Tarek Nassar', 'Sami Farah',
+      'Walid Azar', 'Jad Karam', 'Fadi Rizk', 'Ziad Saab', 'Marwan Ghanem',
+      'Elie Bassil', 'fouad Salameh'.replace(/^f/, 'F')
+    ];
+    const makeMapper = (pool, prefix) => {
+      const map = new Map();
+      return raw => {
+        const s = String(raw || '').trim();
+        if (!s || s === '—' || s === '-' || s.startsWith('(')) return raw;
+        const k = norm(s);
+        if (!k) return raw;
+        if (!map.has(k)) {
+          const idx = map.size;
+          map.set(k, idx < pool.length ? pool[idx] : `${prefix} #${idx + 1}`);
+        }
+        return map.get(k);
+      };
+    };
+    const mapCust = makeMapper(DEMO_CUSTS, 'Corporate Client');
+    const mapSupp = makeMapper(DEMO_SUPPS, 'Industrial Vendor');
+    const mapSite = makeMapper(DEMO_SITES, 'Project Site');
+    const mapPerson = makeMapper(DEMO_PEOPLE, 'Plant Operator');
+
+    const rec = SEED.records || {};
+    (rec.customers || []).forEach(c => {
+      if (!c) return;
+      c.name = mapCust(c.name);
+      if (c.Customer) c.Customer = mapCust(c.Customer);
+      c.vat_registered = true;
+    });
+    (rec.suppliers || []).forEach(s => {
+      if (!s) return;
+      s.name = mapSupp(s.name);
+      if (s.Supplier) s.Supplier = mapSupp(s.Supplier);
+    });
+    (rec.sites || []).forEach(st => { if (st) { st.name = mapSite(st.name); if (st.Site) st.Site = mapSite(st.Site); } });
+    (rec.drivers || []).forEach(d => { if (d) d.name = mapPerson(d.name); });
+    (rec.company_drivers || []).forEach(d => { if (d) { d.driver = mapPerson(d.driver); d.name = mapPerson(d.name); } });
+    (rec.company_equipment || []).forEach(e => {
+      if (!e) return;
+      if (e.supplier) e.supplier = mapSupp(e.supplier);
+      if (e.default_driver) e.default_driver = mapPerson(e.default_driver);
+      if (e.site) e.site = mapSite(e.site);
+      if (e.day_operator) e.day_operator = mapPerson(e.day_operator);
+      if (e.night_operator) e.night_operator = mapPerson(e.night_operator);
+    });
+    (rec.employments || []).forEach(em => { if (em) { em.staff = mapPerson(em.staff); em.name = mapPerson(em.name || em.staff); } });
+    (rec.salaries || []).forEach(sl => { if (sl && sl.staff) sl.staff = mapPerson(sl.staff); });
+    (rec.attendance || []).forEach(at => { if (at && at.staff) at.staff = mapPerson(at.staff); });
+    (rec.sales_tickets || []).forEach(t => {
+      if (!t) return;
+      if (t.customer) t.customer = mapCust(t.customer);
+      if (t.site) t.site = mapSite(t.site);
+      if (t.driver) t.driver = mapPerson(t.driver);
+      if (t.truck_owner) t.truck_owner = mapSupp(t.truck_owner);
+      const sgn = ticketSign(t);
+      if (sgn !== 0) {
+        const net = Number(t.total != null ? t.total : (Number(t.price || 0) + Number(t.trans_price || 0)));
+        if (Math.abs(Number(t.vat || 0)) < 0.005 && Math.abs(net) > 0.005) {
+          const v = round2(net * 0.11);
+          t.vat = v;
+          t.total_ttc = round2(net + v);
+        }
+        t.iva = true;
+      }
+    });
+    (rec.receipts || []).forEach(r => { if (r && r.customer) r.customer = mapCust(r.customer); });
+    (rec.vat_invoices || []).forEach(v => { if (v && v.customer) v.customer = mapCust(v.customer); });
+    (rec.price_rules || []).forEach(pr => {
+      if (!pr) return;
+      if (pr.customer) pr.customer = mapCust(pr.customer);
+      if (pr.supplier) pr.supplier = mapSupp(pr.supplier);
+      if (pr.site) pr.site = mapSite(pr.site);
+    });
+    (rec.credit_terms || []).forEach(ct => { if (ct && ct.customer) ct.customer = mapCust(ct.customer); });
+    (rec.raw_purchases || []).forEach(r => {
+      if (!r) return;
+      if (r.site) r.site = mapSite(r.site);
+      if (r.site_owner) r.site_owner = mapSupp(r.site_owner);
+      if (r.truck_owner) r.truck_owner = mapSupp(r.truck_owner);
+      if (r.driver) r.driver = mapPerson(r.driver);
+    });
+    (rec.expenses || []).forEach(x => { if (x && x.supplier) x.supplier = mapSupp(x.supplier); });
+    (rec.settlements || []).forEach(sp => { if (sp && sp.supplier) sp.supplier = mapSupp(sp.supplier); });
+
+    Object.values(SEED.models || {}).forEach(m => {
+      if (!m) return;
+      (m.customers || []).forEach(c => {
+        if (!c) return;
+        c.Customer = mapCust(c.Customer);
+        c['VAT Registered'] = 'Yes';
+        const net = Number(c.net_sales || 0);
+        if (net > 0) {
+          c.sales_vat = round2(net * 0.11);
+          c.sales_ttc = round2(net + c.sales_vat);
+        }
+      });
+      (m.suppliers || []).forEach(s => { if (s && s.Supplier) s.Supplier = mapSupp(s.Supplier); });
+      (m.sites || []).forEach(st => { if (st && st.Site) st.Site = mapSite(st.Site); });
+      (m.soa_stream || []).forEach(sr => { if (sr && sr.party) sr.party = mapCust(sr.party); });
+      Object.values(m.periods || {}).forEach(pk => {
+        if (!pk) return;
+        const gs = Number(pk.gross_sales != null ? pk.gross_sales : pk.net_sales || 0);
+        if (gs > 0) {
+          pk.sales_vat = round2(gs * 0.11);
+          pk.sales_ttc = round2(gs + pk.sales_vat);
+          pk.sales_rep_date = pk.sales_ttc;
+        }
+      });
+      (m.monthly || []).forEach(mr => {
+        if (!mr) return;
+        const gs = Number(mr.gross_sales != null ? mr.gross_sales : mr.net_sales || 0);
+        if (gs > 0) {
+          mr.sales_vat = round2(gs * 0.11);
+          mr.sales_ttc = round2(gs + mr.sales_vat);
+          mr.sales_rep = mr.sales_ttc;
+        }
+      });
+    });
+
+    _demoSanitizedActive = true;
+    _officialLookupSig = '';
+    SEED._canonicalById = null;
+    SEED._canonicalByMain = null;
+    SEED._origModelMasters = null;
+    SEED._customRev = (SEED._customRev || 0) + 1;
+    invalidateAllSeedCaches();
+    return true;
+  }
+  function restorePublicDemoSanitization() {
+    if (!_demoSanitizeBackup || !SEED) return false;
+    try { SEED.models = JSON.parse(_demoSanitizeBackup.modelsJson); } catch (_) {}
+    if (_demoSanitizeBackup.recSnap && SEED.records) {
+      Object.keys(_demoSanitizeBackup.recSnap).forEach(k => {
+        SEED.records[k] = _demoSanitizeBackup.recSnap[k].map(r => Object.assign({}, r));
+      });
+    }
+    STATE.demoVisitor = _demoSanitizeBackup.demoVisitor;
+    _demoSanitizedActive = false;
+    _demoSanitizeBackup = null;
+    _officialLookupSig = '';
+    SEED._canonicalById = null;
+    SEED._canonicalByMain = null;
+    SEED._origModelMasters = null;
+    SEED._customRev = (SEED._customRev || 0) + 1;
+    invalidateAllSeedCaches();
+    return true;
+  }
+  window.__applyPublicDemoSanitization = applyPublicDemoSanitization;
+  window.__restorePublicDemoSanitization = restorePublicDemoSanitization;
+
   let _seedHydrationPromise = null;
   function hydrateSeedData() {
     if (SEED._recordsReady && window.MFG_SEED) return Promise.resolve(SEED);
@@ -53764,10 +54343,11 @@
         if (!coreRes.ok) throw new Error('seed_core HTTP ' + coreRes.status);
         const corePayload = await coreRes.json();
         await unpackPackedRecordsIntoSeed(corePayload, shouldYield);
-        SEED._coreReady = true;
+            SEED._coreReady = true;
         SEED._canonicalById = null;
         SEED._canonicalByMain = null;
         SEED._origModelMasters = null;
+        if (shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
         const periodSelInit = $('periodSelect');
         const gp = ((SEED.models['manufacturing-group'] || {}).periods) || {};
         if (periodSelInit) Array.from(periodSelInit.options).forEach(o => { const lbl = gp[o.value] && gp[o.value].label; if (lbl) o.textContent = lbl; });
@@ -53781,7 +54361,10 @@
         if (!recRes.ok) throw new Error('seed_records HTTP ' + recRes.status);
         const recPayload = await recRes.json();
         await unpackPackedRecordsIntoSeed(recPayload, shouldYield);
+            SEED._canonicalById = null;
+        SEED._canonicalByMain = null;
         SEED._recordsReady = true;
+        if (shouldAutoSanitizePublicDemo()) applyPublicDemoSanitization();
         applyCustomRecordsToSeed();
         invalidateAllSeedCaches();
         window.MFG_SEED = SEED;

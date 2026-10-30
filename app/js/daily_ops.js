@@ -2118,9 +2118,9 @@
               <div class="dops-event-item" data-dops-open-drawer="sales">
                 <div class="dops-event-left">
                   <span class="dops-kind sales">Commercial</span>
-                  <div class="dops-event-txt"><strong>Ticket VAT ${fmtUSD(dm.salesSum.vat, 0)}</strong> <span>· Comm ${fmtUSD(dm.salesSum.commUsd, 0)} · Total Disc ${fmtUSD(totDiscAll, 0)}</span></div>
+                  <div class="dops-event-txt"><strong>Transport ${fmtUSD(dm.salesSum.transRev, 0)}</strong> <span>· Comm ${fmtUSD(dm.salesSum.commUsd, 0)} · Total Disc ${fmtUSD(totDiscAll, 0)}</span></div>
                 </div>
-                <span class="dops-event-right">${fmtUSD(dm.salesSum.grossExVat, 0)} Ex-VAT</span>
+                <span class="dops-event-right">${fmtUSD(dm.salesSum.ttc, 0)} Total</span>
               </div>
             ` : ''}
           </div>
@@ -2872,13 +2872,14 @@
     }
 
     // Hover Popovers for all 6 KPI Cards
+    const salesMatDisplay = ctx.round2(Number(dm.salesSum.ttc || 0) - Number(dm.salesSum.transRev || 0));
     const salesPop = JSON.stringify({
       title: `Sales & Dispatch · ${fmtHumanDay(dm.targetDate)}`,
       badge: `${fmtNum(dm.salesSum.loads)} loads`,
       rows: [
-        { label: 'Sales Revenue (TTC)', value: fmtUSD(dm.salesSum.ttc, 0), color: '#2356A8', isTotal: true },
-        { label: 'Net Ex-VAT + 11% VAT', value: `${fmtUSD(dm.salesSum.grossExVat, 0)} + ${fmtUSD(dm.salesSum.vat, 0)}`, color: '#4A90D9' },
-        { label: 'Cash vs Credit (TTC)', value: `${fmtUSD(dm.salesSum.cashTtc, 0)} / ${fmtUSD(dm.salesSum.creditTtc, 0)}`, color: '#1F7A4C' },
+        { label: 'Total Sales Revenue', value: fmtUSD(dm.salesSum.ttc, 0), color: '#2356A8', isTotal: true },
+        { label: 'Material vs Transport', value: `${fmtUSD(salesMatDisplay, 0)} + ${fmtUSD(dm.salesSum.transRev, 0)}`, color: '#4A90D9' },
+        { label: 'Cash vs Credit', value: `${fmtUSD(dm.salesSum.cashTtc, 0)} / ${fmtUSD(dm.salesSum.creditTtc, 0)}`, color: '#1F7A4C' },
         { label: 'Delivery vs Pickup', value: `${dm.salesSum.deliveryLoads} Deliv · ${dm.salesSum.pickupLoads} Pickup`, color: '#C0892F' }
       ],
       footer: dm.ahSalesCount > 0 ? `Includes ${dm.ahSalesCount} Yesterday After-Hours sales · Click to inspect` : 'Click to inspect sales dispatches'
