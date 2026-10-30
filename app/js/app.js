@@ -5142,6 +5142,15 @@
       pop.dataset.openKey = '';
       pop._anchorEl = null;
     }
+    if (typeof hideRoleHoverCard === 'function') hideRoleHoverCard(true);
+    const roleWrap = document.getElementById('nuRolePermsSelector');
+    if (roleWrap && roleWrap.classList.contains('open')) {
+      roleWrap.classList.remove('open');
+      const rPop = document.getElementById('nuRolePopover');
+      if (rPop) rPop.hidden = true;
+      const rTrig = document.getElementById('nuRoleTrigger');
+      if (rTrig) rTrig.setAttribute('aria-expanded', 'false');
+    }
   }
 
   function openColFilterPopover(btnEl) {
@@ -5764,18 +5773,18 @@
       { id: 'unlock_qty_cap', fields: ['f_qty'], label: 'Quantity & Truck Capacity Lock', rule: 'CAPACITY', sub: 'Override auto-filled truck m³ capacity window or 1-load Truck UoM quantity lock' },
       { id: 'unlock_uom', fields: ['f_uom'], label: 'Billing Unit of Measure (UoM) Lock', rule: 'UNIT', sub: 'Switch ticket billing unit between m³, Ton, Truck load, Litre, kg, Bag or Piece' },
       { id: 'unlock_method', fields: ['f_method'], label: 'Payment Method Lock (Cash / Credit)', rule: 'METHOD', sub: 'Override Customer default Cash/Credit terms or Quarry Credit payable rule' },
-      { id: 'unlock_fleet_cascade', fields: ['f_truckowner', 'f_truck', 'f_driver', 'f_metertype', 'f_subcategory'], label: 'Truck, Driver & Category Cascade Lock', rule: 'CASCADE', sub: 'Override Truck → Owner / Assigned Driver / Meter cascade or Expense Category → Subcategory lock' },
+      { id: 'unlock_fleet_cascade', fields: ['f_truckowner', 'f_truck', 'f_driver', 'f_metertype', 'f_subcategory'], label: 'Truck, Driver & Category Cascade Lock', rule: 'CASCADE', sub: 'Override Truck to Owner / Assigned Driver / Meter cascade or Expense Category to Subcategory lock' },
       { id: 'unlock_site_owner', fields: ['f_siteowner'], label: 'Quarry Site Default Supplier Lock', rule: 'SITE', sub: 'Override the default quarry supplier bound to a raw material source site' },
       { id: 'unlock_vat_serial', fields: ['f_vatinvoice'], label: 'Statutory 11% VAT Invoice Serial Lock', rule: 'VAT 11%', sub: 'Manually bind or override a statutory 11% VAT invoice serial number' },
       { id: 'unlock_formula_totals', fields: ['f_date', 'f_mat_total', 'f_trans_total', 'f_total_usd'], label: 'Transaction Date & Computed Total Locks', rule: 'DATE / TOTAL', sub: 'Unlock past Transaction Date or override computed Material, Transport & Total USD' }
     ],
     dashboards: [
-      { id: 'dash_overview', pages: ['p01_overview', 'p02_companies', 'p03_exceptions'], livePages: ['p01_overview', 'p02_companies'], count: 2, label: 'Executive Overview, Entity Comparison & AI Sentinels', sub: '#01 Executive Pulse & #02 Entity Comparison dashboards + Executive Overview & S1–S10 AI Sentinels hub', badge: '2 Dashboards' },
+      { id: 'dash_overview', pages: ['p01_overview', 'p02_companies', 'p03_exceptions'], livePages: ['p01_overview', 'p02_companies'], count: 2, label: 'Executive Overview, Entity Comparison & AI Sentinels', sub: '#01 Executive Pulse & #02 Entity Comparison dashboards + Executive Overview & AI Sentinels hub', badge: '2 Dashboards' },
       { id: 'dash_commercial', pages: ['p04_sales', 'p05_pricing', 'p06_ar', 'p18_tickets', 'p20_recon'], livePages: ['p04_sales', 'p05_pricing', 'p06_ar'], count: 3, label: 'Sales, Pricing, Commissions & Receivables', sub: '#03 Sales Analytics, #04 Pricing & Spreads, #05 Receivables & Aging + inline Sales & AR hub charts', badge: '3 Dashboards' },
       { id: 'dash_plant_fleet', pages: ['p07_ap', 'p08_stock', 'p09_fuel', 'p10_fleet', 'p11_drivers'], livePages: ['p07_ap', 'p08_stock', 'p09_fuel', 'p10_fleet'], count: 4, label: 'Purchases, 3-Leg Payables, Quarry Stock & Fleet', sub: '#06 Payables & Spend, #07 Stock & Unit Margin, #08 Diesel & Tank Burn, #09 Fleet Economics + Procurement & Fleet charts', badge: '4 Dashboards' },
-      { id: 'dash_expenses_vat', pages: ['p13_vat', 'p14_cashflow', 'p19_changelog'], livePages: ['p14_cashflow'], count: 1, label: 'Cash Flow, Daily Till & 11% VAT Analytics', sub: '#11 Cash Flow & Till dashboard + 610-Day Daily Till Sheet & 11% Statutory VAT charts', badge: '1 Dashboard' },
+      { id: 'dash_expenses_vat', pages: ['p13_vat', 'p14_cashflow', 'p19_changelog'], livePages: ['p14_cashflow'], count: 1, label: 'Cash Flow, Daily Till & 11% VAT Analytics', sub: '#11 Cash Flow & Till dashboard + Daily Till Sheet & 11% Statutory VAT charts', badge: '1 Dashboard' },
       { id: 'dash_payroll_hr', pages: ['p12_payroll'], livePages: ['p12_payroll'], count: 1, label: 'Payroll, Daily Plant Map & Workforce (Confidential)', sub: '#10 Workforce Analytics dashboard + Payroll, Daily Plant & Machine Map, Attendance & Contracts hub', badge: '1 Dashboard' },
-      { id: 'dash_financial_gl', pages: ['p15_treasury', 'p16_financial', 'p17_jv'], livePages: ['p16_financial'], count: 1, label: 'General Ledger, Lebanese CoA, Loans & 50/50 JV (Confidential)', sub: '#12 Financial GL & Ratios dashboard + Class 1–7 CoA, Trial Balance, Partner Loans & JV Partnerships', badge: '1 Dashboard' }
+      { id: 'dash_financial_gl', pages: ['p15_treasury', 'p16_financial', 'p17_jv'], livePages: ['p16_financial'], count: 1, label: 'General Ledger, Lebanese CoA, Loans & 50/50 JV (Confidential)', sub: '#12 Financial GL & Ratios dashboard + Class 1-7 CoA, Trial Balance, Partner Loans & JV Partnerships', badge: '1 Dashboard' }
     ],
     statements: [
       { id: 'stmt_digest_ops', codes: ['01', '08', '09', '11', '12'], count: 5, label: 'Executive Digest & Operational Registers', sub: '#01 Daily Operations Digest, #08 Sales Register, #09 Expense Register, #11 Quarry & Raw Material, #12 Fuel & Lube Log', badge: '5 Statements' },
@@ -5807,66 +5816,78 @@
 
   const ROLE_PRESETS = {
     'Full Access (Owner)': {
-      title: 'Admin / Owner (Full Access across All 5 Domains)',
-      tierBadge: 'TIER 1 · ADMIN / OWNER',
+      shortTitle: 'Admin / Owner',
+      tagline: 'Full executive, operational & security control',
+      title: 'Admin / Owner',
+      tierBadge: 'ADMIN / OWNER',
       badgeCls: 'badge-ok',
       defaultAccess: 'full|full',
-      summary: 'Unrestricted access across all 11 sidebar hubs, 36 tables, 26 entry forms, 360° record modification, voiding, seat administration, all 9 field-lock overrides, all 12 executive dashboards & all 22 A4 statements.',
+      summary: 'Complete access across every operational and financial hub, AI Sentinel, dashboard, and statement. Can create, modify, or void any record, override any locked field without a PIN, and manage user seats.',
       rights: { read_ops: true, read_fin: true, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: true, modify_data: true, void_data: true, manage_users: true },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: true, unlock_method: true, unlock_fleet_cascade: true, unlock_site_owner: true, unlock_vat_serial: true, unlock_formula_totals: true },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: true },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: true }
     },
     'Supervisor + Entry': {
-      title: 'Supervisor + Entry (Operations & Override Lead)',
-      tierBadge: 'TIER 2 · SUPERVISOR + ENTRY',
+      shortTitle: 'Supervisor + Entry',
+      tagline: 'Operations lead with entry, modify, void & overrides',
+      title: 'Supervisor + Entry',
+      tierBadge: 'SUPERVISOR + ENTRY',
       badgeCls: 'badge-ok',
       defaultAccess: 'full|full',
-      summary: 'Full operational & financial visibility across all hubs, 26 entry forms, 360° record modification, record voiding, all 9 policy-lock overrides, 12 executive dashboards & 22 printable statements.',
+      summary: 'Full visibility across operational and financial hubs. Enters daily transactions, modifies or voids posted records, and overrides locked pricing or capacity fields without an Admin PIN, without altering user security.',
       rights: { read_ops: true, read_fin: true, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: true, modify_data: true, void_data: true, manage_users: false },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: true, unlock_method: true, unlock_fleet_cascade: true, unlock_site_owner: true, unlock_vat_serial: true, unlock_formula_totals: true },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: true },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: true }
     },
     'Supervisor': {
-      title: 'Supervisor (Oversight, Sentinels & Void)',
-      tierBadge: 'TIER 3 · SUPERVISOR',
+      shortTitle: 'Supervisor',
+      tagline: 'Read-only oversight, audit watchdogs & void control',
+      title: 'Supervisor',
+      tierBadge: 'SUPERVISOR',
       badgeCls: 'badge-info',
       defaultAccess: 'full|full',
-      summary: 'Oversight across all domain hubs, S1–S10 AI sentinels, 12 executive dashboards & 22 statements; can void records & unlock policy-locked fields (read-only on entry forms).',
+      summary: 'Monitors all hubs, AI Sentinels, executive dashboards, and printable statements without creating or editing daily entries. Can void erroneous records and authorize price or capacity overrides.',
       rights: { read_ops: true, read_fin: true, enter_dispatch: false, enter_accounting: false, enter_master: false, enter_payroll_jv: false, modify_data: false, void_data: true, manage_users: false },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: true, unlock_method: true, unlock_fleet_cascade: true, unlock_site_owner: true, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: true },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: true }
     },
     'Entry': {
-      title: 'Entry Operator (Weighbridge, Procurement, Fleet & Kiosks)',
-      tierBadge: 'TIER 4 · ENTRY OPERATOR',
+      shortTitle: 'Entry Operator',
+      tagline: 'Daily weighbridge, quarry, fuel & expense entry',
+      title: 'Entry Operator',
+      tierBadge: 'ENTRY OPERATOR',
       badgeCls: 'badge-brass',
       defaultAccess: 'partial|partial',
-      summary: 'Posts Sales Tickets, Quarry Purchases, Fuel/Grease, Defects/Parts, Expenses, Customer Receipts & Master Registries (create-only; hides confidential Payroll & GL). Policy locks require Admin PIN unless customized.',
+      summary: 'Creates daily dispatch tickets, quarry intakes, fuel logs, fleet defects, customer receipts, and operating expenses. Cannot modify or void posted records, hides confidential Payroll and General Ledger, and requires Admin PIN on locked fields.',
       rights: { read_ops: true, read_fin: false, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: false, modify_data: false, void_data: false, manage_users: false },
       unlocks: { unlock_unit_price: false, unlock_trans_price: false, unlock_qty_cap: false, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: false, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: false, dash_financial_gl: false },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: false, stmt_financial_board: false }
     },
     'Sales': {
-      title: 'Commercial & AR Desk (Sales, Pricing & Receivables)',
-      tierBadge: 'TIER 4 · COMMERCIAL & AR',
+      shortTitle: 'Commercial & AR',
+      tagline: 'Sales, pricing, billing & collections desk',
+      title: 'Commercial & AR',
+      tierBadge: 'COMMERCIAL & AR',
       badgeCls: 'badge-info',
       defaultAccess: 'partial|full',
-      summary: 'Scoped to Sales & Receivables (Deliveries, Customers & AR Aging, Commercial Pricing & Commissions, VAT Invoices); hides Purchases/Payables, Fleet, Payroll & General Ledger hubs.',
+      summary: 'Dedicated to Sales & Receivables, Customer Statements, Commercial Pricing, and 11% VAT Invoices. Hides Quarry Purchases, Fleet & Fuel, Payroll, and General Ledger.',
       rights: { read_ops: true, read_fin: false, enter_dispatch: false, enter_accounting: true, enter_master: false, enter_payroll_jv: false, modify_data: false, void_data: false, manage_users: false },
       unlocks: { unlock_unit_price: false, unlock_trans_price: false, unlock_qty_cap: false, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: false, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: false, dash_expenses_vat: false, dash_payroll_hr: false, dash_financial_gl: false },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: true }
     },
     'Custom': {
-      title: 'Custom Role (Granular Hub, Lock & Analytics Matrix)',
-      tierBadge: 'CUSTOM · GRANULAR MATRIX',
+      shortTitle: 'Custom Role',
+      tagline: 'Granular hubs, field locks, dashboards & statements',
+      title: 'Custom Role',
+      tierBadge: 'CUSTOM MATRIX',
       badgeCls: 'badge-brass',
       defaultAccess: 'custom|custom',
-      summary: 'Tailored seat profile — pick exact Hub Read/Enter/Modify/Void rights, specific policy-locked form fields this seat can unlock without Admin PIN, and custom Executive Dashboards & Statements.',
+      summary: 'Tailored seat profile. Pick exact read/create/modify/void rights, specific locked form fields this user can override without an Admin PIN, and individual dashboard and statement suites.',
       rights: { read_ops: true, read_fin: false, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: false, modify_data: true, void_data: true, manage_users: false },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: true, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: false, dash_financial_gl: false },
@@ -27326,23 +27347,40 @@
   ];
 
   const SEAT_ROLE_OPTIONS = [
-    { value: 'Full Access (Owner)', label: 'Admin / Owner (Full Access · All 5 Domains)' },
-    { value: 'Supervisor + Entry', label: 'Supervisor + Entry (All Hubs, Entry & Overrides)' },
-    { value: 'Supervisor', label: 'Supervisor (Oversight, Sentinels & Void)' },
-    { value: 'Entry', label: 'Entry Operator (Sales, Procurement, Fleet & Kiosks)' },
-    { value: 'Sales', label: 'Commercial & AR Desk (Sales, Pricing & Receipts)' },
-    { value: 'Custom', label: 'Custom Role (Granular Hubs, Locks & Suites)' }
+    { value: 'Full Access (Owner)', label: 'Admin / Owner', sub: 'Full executive, operational & security control' },
+    { value: 'Supervisor + Entry', label: 'Supervisor + Entry', sub: 'Operations lead with entry, modify, void & overrides' },
+    { value: 'Supervisor', label: 'Supervisor', sub: 'Read-only oversight, audit watchdogs & void control' },
+    { value: 'Entry', label: 'Entry Operator', sub: 'Daily weighbridge, quarry, fuel & expense entry' },
+    { value: 'Sales', label: 'Commercial & AR', sub: 'Sales, pricing, billing & collections desk' },
+    { value: 'Custom', label: 'Custom Role', sub: 'Granular hubs, field locks, dashboards & statements' }
   ];
 
   const SEAT_ACCESS_OPTIONS = [
-    { value: 'full|full', label: 'All 12 Dashboards + All 22 Statements (Full Executive)', short: 'All Dashboards + 22 Statements', badgeCls: 'badge-ok' },
-    { value: 'full|partial', label: 'All 12 Dashboards + Operational Statements (13)', short: 'All Dashboards + Ops Statements', badgeCls: 'badge-ok' },
-    { value: 'partial|full', label: 'Operational Dashboards + All 22 Statements', short: 'Ops Dashboards + 22 Statements', badgeCls: 'badge-info' },
-    { value: 'partial|partial', label: 'Operational Dashboards + Operational Statements', short: 'Ops Dashboards + Statements', badgeCls: 'badge-info' },
-    { value: 'none|partial', label: 'Hub Registers + Operational Statements (No Dashboards)', short: 'Registers + Ops Statements', badgeCls: 'badge-brass' },
-    { value: 'none|none', label: 'Entry & Kiosks Only (No Dashboards or Statements)', short: 'Entry & Kiosks Only', badgeCls: 'badge-warn' },
-    { value: 'custom|custom', label: 'Custom Dashboards & Statements (Granular Matrix)', short: 'Custom Dashboards & Statements', badgeCls: 'badge-brass' }
+    { value: 'full|full', label: 'Full Executive (All Dashboards & All Statements)', short: 'All Dashboards + 22 Statements', pill: 'Full Executive', badgeCls: 'badge-ok' },
+    { value: 'full|partial', label: 'All Dashboards + Operational Statements', short: 'All Dashboards + Ops Statements', pill: 'All Dash + Ops Stmt', badgeCls: 'badge-ok' },
+    { value: 'partial|full', label: 'Operational Dashboards + All Statements', short: 'Ops Dashboards + 22 Statements', pill: 'Ops Dash + All Stmt', badgeCls: 'badge-info' },
+    { value: 'partial|partial', label: 'Operational Dashboards & Statements', short: 'Ops Dashboards + Statements', pill: 'Operational Only', badgeCls: 'badge-info' },
+    { value: 'none|partial', label: 'Hub Registers + Operational Statements', short: 'Registers + Ops Statements', pill: 'Statements Only', badgeCls: 'badge-brass' },
+    { value: 'none|none', label: 'Entry & Kiosks Only (No Reports)', short: 'Entry & Kiosks Only', pill: 'No Reports', badgeCls: 'badge-warn' },
+    { value: 'custom|custom', label: 'Custom Granular Selection', short: 'Custom Dashboards & Statements', pill: 'Custom Matrix', badgeCls: 'badge-brass' }
   ];
+
+  const DASH_SUITE_SHORT_NAMES = {
+    dash_overview: 'Overview & Sentinels',
+    dash_commercial: 'Sales & Receivables',
+    dash_plant_fleet: 'Purchases & Fleet',
+    dash_expenses_vat: 'Cash Flow & VAT',
+    dash_payroll_hr: 'Payroll & Workforce',
+    dash_financial_gl: 'General Ledger & CoA'
+  };
+
+  const STMT_SUITE_SHORT_NAMES = {
+    stmt_digest_ops: 'Daily Ops Registers',
+    stmt_counterparty: 'Counterparty SOAs',
+    stmt_vouchers: 'Invoices & Vouchers',
+    stmt_payroll: 'Payroll Register',
+    stmt_financial_board: 'Audited Financial Pack'
+  };
 
   function normalizeCompaniesScope(cStr) {
     const names = parseUserCompanies(cStr);
@@ -27396,7 +27434,7 @@
     return shown.map(name => `
       <span class="co-multi-chip" data-co-chip="${esc(name)}">
         <span>${esc(name)}</span>
-        <button type="button" data-remove-co="${esc(name)}" title="Remove ${esc(name)}" aria-label="Remove ${esc(name)}">✕</button>
+        <button type="button" data-remove-co="${esc(name)}" aria-label="Remove ${esc(name)}">✕</button>
       </span>
     `).join('') + (extra > 0 ? `<span class="co-multi-chip co-multi-chip-more"><span>+${extra} more selected</span></span>` : '');
   }
@@ -27541,39 +27579,398 @@
     };
   }
 
-  function renderRolePostureStripHtml(previewUser) {
+  function buildRoleCapabilityBreakdown(previewUser) {
     const perms = getEffectivePermissions(previewUser);
     const m = countPermissionMetrics(perms, previewUser);
-    const canRead = perms.rights.read_ops || perms.rights.read_fin;
-    const canEnter = perms.rights.enter_dispatch || perms.rights.enter_accounting || perms.rights.enter_master || perms.rights.enter_payroll_jv;
-    const canModify = perms.rights.modify_data;
-    const canVoidRec = perms.rights.void_data;
+    const accVal = seatAccessValue(previewUser);
+    const accMeta = seatAccessMeta(previewUser);
+    const defaultRoleAcc = perms.preset.defaultAccess || 'partial|partial';
+    const isModifiedScope = !perms.isCustomRole && accVal !== defaultRoleAcc && accVal !== 'custom|custom';
+    const canEnter = !!(perms.rights.enter_dispatch || perms.rights.enter_accounting || perms.rights.enter_master || perms.rights.enter_payroll_jv);
+    const enterDesc = (perms.rights.enter_dispatch && perms.rights.enter_payroll_jv)
+      ? 'All Forms'
+      : (perms.rights.enter_dispatch ? 'Ops & Billing' : (perms.rights.enter_accounting ? 'Sales & AR' : 'Read-Only'));
+    const capabilities = [
+      { key: 'ops', label: 'Operational Hubs', allowed: !!perms.rights.read_ops, state: perms.rights.read_ops ? 'Allowed' : 'Hidden' },
+      { key: 'fin', label: 'Payroll & General Ledger', allowed: !!perms.rights.read_fin, state: perms.rights.read_fin ? 'Allowed' : 'Confidential' },
+      { key: 'enter', label: 'Create New Entries', allowed: canEnter, state: enterDesc },
+      { key: 'modify', label: 'Modify Posted Records', allowed: !!perms.rights.modify_data, state: perms.rights.modify_data ? 'Allowed' : 'Locked' },
+      { key: 'void', label: 'Void / Delete Records', allowed: !!perms.rights.void_data, state: perms.rights.void_data ? 'Allowed' : 'Locked' },
+      {
+        key: 'unlocks',
+        label: 'Field-Lock Overrides',
+        allowed: m.unlockCount > 0,
+        partial: m.unlockCount > 0 && m.unlockCount < m.unlockTotal,
+        state: m.unlockCount === m.unlockTotal
+          ? `All ${m.unlockTotal} (No PIN)`
+          : (m.unlockCount > 0 ? `${m.unlockCount}/${m.unlockTotal} No PIN` : 'Admin PIN Req')
+      }
+    ];
+    const hubs = (typeof HUB_CATALOG !== 'undefined' ? HUB_CATALOG : []).map(h => ({
+      id: h.id,
+      title: h.title,
+      visible: canViewHub(h.id, previewUser)
+    }));
+    const dashSuites = PERM_CATALOG.dashboards.map(d => ({
+      id: d.id,
+      short: DASH_SUITE_SHORT_NAMES[d.id] || d.label,
+      on: !!perms.dashboards[d.id],
+      count: d.count
+    }));
+    const stmtSuites = PERM_CATALOG.statements.map(s => ({
+      id: s.id,
+      short: STMT_SUITE_SHORT_NAMES[s.id] || s.label,
+      on: !!perms.statements[s.id],
+      count: s.count
+    }));
+    const scopeShortLbl = (perms.isCustomRole || accVal === 'custom|custom')
+      ? `${m.pbiPageCount}/${m.pbiPageTotal} Dash · ${m.stmtCount}/${m.stmtTotal} Stmt`
+      : accMeta.short;
+    return {
+      perms,
+      m,
+      accVal,
+      accMeta,
+      defaultRoleAcc,
+      isModifiedScope,
+      canEnter,
+      capabilities,
+      hubs,
+      dashSuites,
+      stmtSuites,
+      scopeShortLbl
+    };
+  }
+
+  function renderRoleTriggerInnerHtml(previewUser) {
+    const b = buildRoleCapabilityBreakdown(previewUser);
+    const roleTitle = b.perms.preset.shortTitle || b.perms.preset.title;
+    const pillText = b.perms.isCustomRole ? 'Custom Matrix' : (b.isModifiedScope ? 'Custom Scope' : 'Preset');
+    const pillCls = (b.perms.isCustomRole || b.isModifiedScope) ? 'is-custom' : '';
     return `
-      <span class="role-posture-pill tier ${perms.preset.badgeCls}">${esc(perms.preset.tierBadge)}</span>
-      <span class="role-posture-pill ${canRead ? 'on' : 'off'}">${perms.rights.read_fin ? '✓ All 36 Tables' : (canRead ? `✓ ${m.tableCount}/${m.tableTotal} Ops Tables` : '✕ No Read')}</span>
-      <span class="role-posture-pill ${canEnter ? 'on' : 'off'}">${canEnter ? '✓ Enter New Data' : 'Read-Only'}</span>
-      <span class="role-posture-pill ${canModify ? 'on' : 'off'}">${canModify ? '✓ Modify Data' : 'No Modify'}</span>
-      <span class="role-posture-pill ${canVoidRec ? 'on' : 'off'}">${canVoidRec ? '✓ Void Entries' : 'No Void'}</span>
-      <span class="role-posture-pill ${m.unlockCount ? 'brass' : 'off'}">${ic('unlock')} ${m.unlockCount}/${m.unlockTotal} Field Locks</span>
+      <span class="role-perm-trigger-main" id="nuRoleSummaryText">
+        <strong>${esc(roleTitle)}</strong>
+        <span class="rp-trig-sep">·</span>
+        <span class="rp-trig-scope">${esc(b.scopeShortLbl)}</span>
+      </span>
+      <span class="role-perm-trigger-meta">
+        <span class="role-perm-mode-pill ${pillCls}" id="nuRoleTierPill">${esc(pillText)}</span>
+        <span class="co-multi-caret" aria-hidden="true">▾</span>
+      </span>
     `;
   }
 
-  function renderDashPostureStripHtml(previewUser, curAccess) {
-    const perms = getEffectivePermissions(previewUser);
-    const m = countPermissionMetrics(perms, previewUser);
-    const isCustomAcc = curAccess === 'custom|custom' || perms.isCustomRole;
+  function renderRolePostureStripHtml(previewUser) {
+    const b = buildRoleCapabilityBreakdown(previewUser);
+    const { perms, m, canEnter } = b;
+    const actionSummary = canEnter
+      ? (perms.rights.modify_data && perms.rights.void_data
+          ? '✓ Create · Modify · Void'
+          : (perms.rights.modify_data ? '✓ Create & Modify' : '✓ Create Only'))
+      : (perms.rights.void_data ? 'Read & Void Only' : 'Read-Only');
+    const unlockSummary = m.unlockCount === m.unlockTotal
+      ? `✓ All ${m.unlockTotal} Overrides`
+      : (m.unlockCount > 0 ? `${ic('unlock')} ${m.unlockCount}/${m.unlockTotal} Overrides` : `${ic('lock')} PIN Required`);
     return `
-      <span class="role-posture-pill ${isCustomAcc ? 'brass' : 'linked'}">${isCustomAcc ? `${ic('sliders')} Custom Matrix` : `${ic('link')} Linked to Role`}</span>
-      <span class="role-posture-pill on">${m.hubCount}/${m.hubTotal} Sidebar Hubs</span>
-      <span class="role-posture-pill ${m.pbiPageCount ? 'on' : 'off'}">${ic('pbi')} ${m.pbiPageCount}/${m.pbiPageTotal} Dashboards</span>
-      <span class="role-posture-pill ${m.stmtCount ? 'on' : 'off'}">${ic('statements')} ${m.stmtCount}/${m.stmtTotal} Statements</span>
+      <button type="button" class="role-posture-pill interactive ${canEnter || perms.rights.void_data ? 'on' : 'off'}" data-role-chip-jump="rights">${actionSummary}</button>
+      <button type="button" class="role-posture-pill interactive ${m.unlockCount ? 'brass' : 'off'}" data-role-chip-jump="unlocks">${unlockSummary}</button>
+      <button type="button" class="role-posture-pill interactive ${m.pbiPageCount ? 'on' : 'off'}" data-role-chip-jump="dashboards">${m.hubCount} Hubs · ${m.pbiPageCount}/${m.pbiPageTotal} Dash</button>
+      <button type="button" class="role-posture-pill interactive ${m.stmtCount ? 'on' : 'off'}" data-role-chip-jump="statements">${m.stmtCount}/${m.stmtTotal} Statements</button>
     `;
+  }
+
+  function buildPreviewUserForRoleKey(roleKey, baseCompanies, currentAccess, isSelectedRole) {
+    const canonical = resolveCanonicalRoleKey(roleKey);
+    const preset = ROLE_PRESETS[canonical] || ROLE_PRESETS['Entry'];
+    if (isSelectedRole) {
+      return getDraftSeatPreviewUser(undefined, canonical === 'Custom' ? 'Custom' : roleKey, baseCompanies, currentAccess);
+    }
+    const accStr = canonical === 'Custom' ? 'custom|custom' : (preset.defaultAccess || 'partial|partial');
+    const [pTier, sTier] = accStr.split('|');
+    return {
+      id: '__preview__',
+      full_name: preset.shortTitle || preset.title,
+      role: canonical === 'Custom' ? 'Custom' : roleKey,
+      companies: baseCompanies || val('nu_companies') || 'WTC, BBConstruction, Lions Transport',
+      pbi_access: pTier || 'partial',
+      statements_access: sTier || 'partial',
+      custom_perms: canonical === 'Custom' ? (STATE.draftCustomPerms || {}) : {}
+    };
+  }
+
+  function renderRolePopoverPreviewHtml(previewUser, opts = {}) {
+    const b = buildRoleCapabilityBreakdown(previewUser);
+    const { perms, m, accVal, defaultRoleAcc, capabilities, hubs, dashSuites, stmtSuites } = b;
+    const isPreviewOnly = !!opts.isPreviewOnly;
+    const visibleHubCount = hubs.filter(h => h.visible).length;
+    const quickScopes = [
+      { value: 'full|full', label: 'Full Executive' },
+      { value: 'full|partial', label: 'All Dash + Ops Stmt' },
+      { value: 'partial|full', label: 'Ops Dash + All Stmt' },
+      { value: 'partial|partial', label: 'Operational Only' },
+      { value: 'none|partial', label: 'Statements Only' },
+      { value: 'none|none', label: 'No Reports' },
+      { value: 'custom|custom', label: 'Custom Matrix' }
+    ];
+    return `
+      <div class="rp-preview-hdr">
+        <div class="rp-preview-title-row">
+          <strong class="rp-preview-title">${esc(perms.preset.shortTitle || perms.preset.title)}</strong>
+          <span class="badge ${isPreviewOnly ? 'badge-brass' : perms.preset.badgeCls}">${isPreviewOnly ? 'HOVER PREVIEW · CLICK TO SELECT' : 'SELECTED ROLE'}</span>
+        </div>
+        <p class="rp-preview-desc">${esc(perms.preset.summary)}</p>
+      </div>
+
+      <div class="rp-cap-grid">
+        ${capabilities.map(c => `
+          <div class="rp-cap-item ${c.allowed ? (c.partial ? 'is-partial' : 'is-on') : 'is-off'}">
+            <span class="rp-cap-icon" aria-hidden="true">${c.allowed ? '✓' : '✕'}</span>
+            <span class="rp-cap-lbl">${esc(c.label)}</span>
+            <em class="rp-cap-state">${esc(c.state)}</em>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="rp-hubs-block">
+        <div class="rp-sec-lbl">
+          <span>Sidebar Navigation (${visibleHubCount}/${hubs.length} Hubs)</span>
+          <span>${m.tableCount}/${m.tableTotal} Tables</span>
+        </div>
+        <div class="rp-hub-tags">
+          ${hubs.map(h => `
+            <span class="rp-hub-tag ${h.visible ? 'on' : 'off'}">
+              <i>${h.visible ? '✓' : '✕'}</i>${esc(h.title)}
+            </span>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="rp-reports-box">
+        <div class="rp-sec-lbl">
+          <span>Dashboards &amp; Statements (${m.pbiPageCount}/${m.pbiPageTotal} Dash · ${m.stmtCount}/${m.stmtTotal} Stmt)</span>
+          ${!isPreviewOnly && !perms.isCustomRole && accVal !== defaultRoleAcc
+            ? `<button type="button" class="rp-reset-scope-btn" data-quick-access="${esc(defaultRoleAcc)}">Reset to Role Default</button>`
+            : `<span class="rp-scope-mode-note">${perms.isCustomRole ? 'Granular Custom Matrix' : (accVal === defaultRoleAcc ? 'Role Default' : 'Custom Scope')}</span>`}
+        </div>
+        <div class="rp-suite-tags">
+          ${dashSuites.map(d => `<span class="rp-suite-tag ${d.on ? 'on' : 'off'}"><i>${d.on ? '✓' : '✕'}</i>${esc(d.short)}</span>`).join('')}
+          ${stmtSuites.map(s => `<span class="rp-suite-tag stmt ${s.on ? 'on' : 'off'}"><i>${s.on ? '✓' : '✕'}</i>${esc(s.short)}</span>`).join('')}
+        </div>
+        ${!isPreviewOnly ? `
+          <div class="rp-quick-scopes" role="group" aria-label="Dashboard and statement scope">
+            ${quickScopes.map(qs => {
+              const active = accVal === qs.value || (perms.isCustomRole && qs.value === 'custom|custom');
+              const isDef = !perms.isCustomRole && qs.value === defaultRoleAcc;
+              return `<button type="button" class="rp-scope-pill ${active ? 'active' : ''}" data-quick-access="${esc(qs.value)}">${esc(qs.label)}${isDef ? ' · Default' : ''}</button>`;
+            }).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  function renderRolePermSelectorHtml(previewUser, curRole, curAccess) {
+    const canonicalCur = resolveCanonicalRoleKey(curRole);
+    return `
+      <div class="role-perm-select" id="nuRolePermsSelector">
+        <select id="nu_role" data-native-select="1" hidden>
+          ${SEAT_ROLE_OPTIONS.map(o => `<option value="${esc(o.value)}" ${resolveCanonicalRoleKey(curRole) === resolveCanonicalRoleKey(o.value) ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
+        </select>
+        <select id="nu_access" data-native-select="1" hidden>
+          ${SEAT_ACCESS_OPTIONS.map(o => `<option value="${esc(o.value)}" ${curAccess === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
+        </select>
+        <button type="button" class="role-perm-trigger" id="nuRoleTrigger" aria-haspopup="dialog" aria-expanded="false">
+          ${renderRoleTriggerInnerHtml(previewUser)}
+        </button>
+        <div class="role-posture-strip" id="nuRolePostureStrip">
+          ${renderRolePostureStripHtml(previewUser)}
+        </div>
+        <div class="role-perm-popover" id="nuRolePopover" hidden>
+          <div class="role-perm-popover-body">
+            <div class="role-perm-opt-col" role="listbox" aria-label="Select Role">
+              <div class="role-perm-col-hdr">Select Role · Hover to Preview</div>
+              ${SEAT_ROLE_OPTIONS.map(o => {
+                const isSel = canonicalCur === resolveCanonicalRoleKey(o.value);
+                return `
+                  <button type="button" class="role-perm-opt ${isSel ? 'is-selected is-preview' : ''}" role="option" aria-selected="${isSel ? 'true' : 'false'}" data-role-opt="${esc(o.value)}">
+                    <span class="role-perm-opt-copy">
+                      <b>${esc(o.label)}</b>
+                      <small>${esc(o.sub)}</small>
+                    </span>
+                    <span class="role-perm-opt-check" aria-hidden="true">${isSel ? '✓' : '›'}</span>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+            <div class="role-perm-preview-col" id="nuRolePreviewPane">
+              ${renderRolePopoverPreviewHtml(previewUser, { isPreviewOnly: false })}
+            </div>
+          </div>
+          <div class="role-perm-foot">
+            <button type="button" class="role-perm-custom-btn" id="nuRoleOpenMatrixBtn">${ic('sliders')} Customize Granular Permissions</button>
+            <button type="button" class="btn btn-brass" style="padding:3px 11px;font-size:11px" id="nuRoleDoneBtn">Done</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  let _roleHoverHideTimer = null;
+  let _roleHoverAnchor = null;
+
+  function ensureRoleHoverCardEl() {
+    let el = document.getElementById('roleHoverPreviewCard');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'roleHoverPreviewCard';
+      el.className = 'role-hover-card';
+      el.setAttribute('role', 'region');
+      el.setAttribute('aria-label', 'Role and permissions breakdown');
+      el.hidden = true;
+      el.addEventListener('mouseenter', () => {
+        if (_roleHoverHideTimer) { clearTimeout(_roleHoverHideTimer); _roleHoverHideTimer = null; }
+      });
+      el.addEventListener('mouseleave', () => {
+        hideRoleHoverCard(false);
+      });
+      el.addEventListener('click', e => {
+        const btn = e.target && e.target.closest ? e.target.closest('[data-hover-open-perms]') : null;
+        if (!btn) return;
+        e.stopPropagation();
+        const targetUid = btn.getAttribute('data-hover-open-perms');
+        const targetTab = btn.getAttribute('data-hover-perm-tab') || 'all';
+        hideRoleHoverCard(true);
+        if (!isOwner()) return;
+        if (targetUid && targetUid !== '__draft__') {
+          selectSeatForEdit(targetUid, { scroll: true, openPerms: true, permTab: targetTab });
+        } else {
+          STATE.showRolePermMatrix = true;
+          STATE.permMatrixTab = targetTab;
+          refreshRoleAndAccessMatrixUi($('seatEditorWrap') || document);
+          const mw = $('rolePermissionsMatrixWrap');
+          if (mw) scrollWorkspaceTo(mw);
+        }
+      });
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+
+  function renderRoleHoverCardBodyHtml(userObj, opts = {}) {
+    const b = buildRoleCapabilityBreakdown(userObj);
+    const { perms, m, capabilities, hubs, dashSuites, stmtSuites, scopeShortLbl } = b;
+    const owner = isOwner(activeUser());
+    const visibleHubs = hubs.filter(h => h.visible);
+    const hiddenHubs = hubs.filter(h => !h.visible);
+    const seatName = opts.seatName || (userObj && userObj.id && userObj.id !== '__preview__' && userObj.id !== '__new__' ? userObj.full_name : '');
+    const actionUid = opts.userId || '';
+    const focusCat = opts.focusCat || 'all';
+    return `
+      <div class="rhc-head">
+        <div class="rhc-title-wrap">
+          <div class="rhc-eyebrow">${seatName ? `${esc(seatName)} · ROLES &amp; PERMISSIONS` : 'ROLE PRESET PREVIEW'}</div>
+          <div class="rhc-title-row">
+            <strong>${esc(perms.preset.shortTitle || perms.preset.title)}</strong>
+            <span class="badge ${perms.preset.badgeCls}">${esc(scopeShortLbl)}</span>
+            ${userObj && getUserBookScope(userObj) === 'official' ? '<span class="badge badge-ok">Official 11% VAT Books</span>' : ''}
+          </div>
+        </div>
+      </div>
+      <p class="rhc-summary">${esc(perms.preset.summary)}</p>
+      <div class="rp-cap-grid compact">
+        ${capabilities.map(c => `
+          <div class="rp-cap-item ${c.allowed ? (c.partial ? 'is-partial' : 'is-on') : 'is-off'}">
+            <span class="rp-cap-icon" aria-hidden="true">${c.allowed ? '✓' : '✕'}</span>
+            <span class="rp-cap-lbl">${esc(c.label)}</span>
+            <em class="rp-cap-state">${esc(c.state)}</em>
+          </div>
+        `).join('')}
+      </div>
+      <div class="rhc-section">
+        <div class="rp-sec-lbl">
+          <span>Visible Hubs (${visibleHubs.length}/${hubs.length})</span>
+          <span>${m.pbiPageCount}/${m.pbiPageTotal} Dashboards · ${m.stmtCount}/${m.stmtTotal} Statements</span>
+        </div>
+        <div class="rp-suite-tags">
+          ${dashSuites.map(d => `<span class="rp-suite-tag ${d.on ? 'on' : 'off'}"><i>${d.on ? '✓' : '✕'}</i>${esc(d.short)}</span>`).join('')}
+          ${stmtSuites.map(s => `<span class="rp-suite-tag stmt ${s.on ? 'on' : 'off'}"><i>${s.on ? '✓' : '✕'}</i>${esc(s.short)}</span>`).join('')}
+        </div>
+        ${hiddenHubs.length ? `<div class="rhc-hidden-note">Hidden from sidebar: ${esc(hiddenHubs.map(h => h.title).join(', '))}</div>` : ''}
+      </div>
+      ${owner && actionUid ? `
+        <div class="rhc-foot">
+          <span>Click to inspect or customize granular permissions</span>
+          <button type="button" class="btn btn-brass" style="padding:3px 9px;font-size:10.5px" data-hover-open-perms="${esc(actionUid)}" data-hover-perm-tab="${esc(focusCat)}">${ic('sliders')} Customize</button>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  function showRoleHoverCard(anchorEl, userObj, opts = {}) {
+    if (!anchorEl || !userObj) return;
+    if (_roleHoverHideTimer) { clearTimeout(_roleHoverHideTimer); _roleHoverHideTimer = null; }
+    if (typeof window.__mfgHideUiTooltip === 'function') window.__mfgHideUiTooltip();
+    if (!anchorEl.closest || !anchorEl.closest('#nuRolePermsSelector')) {
+      const rWrap = document.getElementById('nuRolePermsSelector');
+      if (rWrap && rWrap.classList.contains('open')) {
+        rWrap.classList.remove('open');
+        const rPop = document.getElementById('nuRolePopover');
+        if (rPop) rPop.hidden = true;
+        const rTrig = document.getElementById('nuRoleTrigger');
+        if (rTrig) rTrig.setAttribute('aria-expanded', 'false');
+      }
+    }
+    const card = ensureRoleHoverCardEl();
+    _roleHoverAnchor = anchorEl;
+    card.innerHTML = renderRoleHoverCardBodyHtml(userObj, opts);
+    const vw = window.innerWidth || document.documentElement.clientWidth || 1280;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 768;
+    const cardW = Math.min(430, Math.max(240, vw - 24));
+    card.style.boxSizing = 'border-box';
+    card.style.width = `${cardW}px`;
+    card.style.maxHeight = `${Math.max(180, vh - 24)}px`;
+    card.style.left = '12px';
+    card.style.top = '12px';
+    card.hidden = false;
+
+    const rect = anchorEl.getBoundingClientRect();
+    const cRect = card.getBoundingClientRect();
+    const actualW = cRect.width || cardW;
+    const actualH = cRect.height || 280;
+
+    let left = rect.left;
+    if (left + actualW > vw - 12) left = Math.max(12, vw - actualW - 12);
+    if (left < 12) left = 12;
+
+    let top = rect.bottom + 8;
+    if (top + actualH > vh - 12 && rect.top - actualH - 8 >= 12) {
+      top = rect.top - actualH - 8;
+    }
+    if (top + actualH > vh - 12) {
+      top = vh - actualH - 12;
+    }
+    if (top < 12) top = 12;
+    card.style.left = `${Math.round(left)}px`;
+    card.style.top = `${Math.round(top)}px`;
+  }
+
+  function hideRoleHoverCard(immediate) {
+    if (_roleHoverHideTimer) { clearTimeout(_roleHoverHideTimer); _roleHoverHideTimer = null; }
+    const doHide = () => {
+      const card = document.getElementById('roleHoverPreviewCard');
+      if (card) card.hidden = true;
+      _roleHoverAnchor = null;
+    };
+    if (immediate) doHide();
+    else _roleHoverHideTimer = setTimeout(doHide, 130);
   }
 
   function renderRolePermissionsMatrixHtml(previewUser, curAccess) {
+    const isOpen = !!STATE.showRolePermMatrix;
+    if (!isOpen) return '';
     const perms = getEffectivePermissions(previewUser);
     const m = countPermissionMetrics(perms, previewUser);
-    const isOpen = !!STATE.showRolePermMatrix;
+    const activeCat = STATE.permMatrixTab || 'all';
     const roleTabs = [
       { key: 'Entry', label: 'Entry Operator' },
       { key: 'Supervisor', label: 'Supervisor' },
@@ -27582,22 +27979,6 @@
       { key: 'Sales', label: 'Commercial & AR' },
       { key: 'Custom', label: 'Custom Role', icon: 'sliders' }
     ];
-    if (!isOpen) {
-      return `
-        <div class="perm-matrix-collapsed" id="rolePermissionsMatrixPanel">
-          <div class="perm-collapsed-left">
-            <span class="perm-collapsed-badge">${ENROL_SVGS.shield}<span>5-DOMAIN HUB, LOCK &amp; ANALYTICS POSTURE</span></span>
-            <span class="perm-collapsed-text">
-              <b>${esc(perms.preset.title)}</b> · ${m.hubCount}/${m.hubTotal} Sidebar Hubs · ${m.rightsCount}/${m.rightsTotal} Data Rights · ${m.unlockCount}/${m.unlockTotal} Field-Lock Overrides · ${m.pbiPageCount}/${m.pbiPageTotal} Executive Dashboards · ${m.stmtCount}/${m.stmtTotal} Printable Statements
-            </span>
-          </div>
-          <div class="perm-collapsed-actions">
-            <button type="button" class="btn btn-brass" style="padding:4px 10px;font-size:11px" id="expandPermMatrixBtn">${ic('shield')} Check Permissions &amp; Suites</button>
-            <button type="button" class="btn" style="padding:4px 10px;font-size:11px" id="quickSwitchCustomRoleBtn">${ic('sliders')} Customize Role</button>
-          </div>
-        </div>
-      `;
-    }
 
     const hubVisibilityList = (typeof HUB_CATALOG !== 'undefined' ? HUB_CATALOG : []).map(h => ({
       id: h.id,
@@ -27609,45 +27990,43 @@
       <div class="perm-matrix-card ${perms.isCustomRole ? 'is-custom' : ''}" id="rolePermissionsMatrixPanel">
         <div class="perm-matrix-hdr">
           <div class="perm-matrix-title-wrap">
-            <div class="perm-matrix-eyebrow">ROLE PERMISSIONS · FIELD-LOCK OVERRIDES · 5-DOMAIN HUBS, DASHBOARDS &amp; STATEMENTS</div>
+            <div class="perm-matrix-eyebrow">GRANULAR ROLES &amp; PERMISSIONS MATRIX</div>
             <div class="perm-matrix-title">
-              <span>${esc(perms.preset.title)}</span>
-              <span class="badge ${perms.preset.badgeCls}">${esc(perms.preset.tierBadge)}</span>
-              ${perms.isCustomRole
-                ? `<span class="badge badge-brass">CUSTOM INTERACTIVE MATRIX ACTIVE</span>`
-                : `<span class="badge badge-info">DEFAULT PRESET · CLICK ANY CHECKBOX TO CUSTOMIZE</span>`}
+              <span>${esc(perms.preset.shortTitle || perms.preset.title)}</span>
+              <span class="badge ${perms.isCustomRole ? 'badge-brass' : perms.preset.badgeCls}">${perms.isCustomRole ? 'CUSTOM GRANULAR MATRIX' : 'PRESET · TOGGLE ANY ITEM TO CUSTOMIZE'}</span>
+              ${activeCat !== 'all' ? `<button type="button" class="perm-mini-btn" data-perm-tab="all">Show All 4 Sections</button>` : ''}
             </div>
             <div class="perm-matrix-sub">${esc(perms.preset.summary)}</div>
           </div>
           <div class="perm-matrix-hdr-actions">
-            <div class="perm-role-switcher" role="tablist" aria-label="Inspect or switch role preset">
+            <div class="perm-role-switcher" role="tablist" aria-label="Hover to preview or click to switch role preset">
               ${roleTabs.map(rt => `
                 <button type="button" class="perm-role-tab ${perms.roleKey === rt.key ? 'active' : ''} ${rt.key === 'Custom' ? 'custom-tab' : ''}" data-matrix-role="${esc(rt.key)}">
                   ${rt.icon ? ic(rt.icon) + ' ' : ''}${esc(rt.label)}
                 </button>
               `).join('')}
             </div>
-            <button type="button" class="btn perm-close-btn" id="collapsePermMatrixBtn">✕ Close Inspector</button>
+            <button type="button" class="btn perm-close-btn" id="collapsePermMatrixBtn">✕ Done</button>
           </div>
         </div>
 
         <div class="perm-summary-strip">
-          <div class="perm-summary-cell">
+          <div class="perm-summary-cell interactive ${activeCat === 'rights' ? 'is-focused' : ''}" role="button" tabindex="0" data-perm-tab="${activeCat === 'rights' ? 'all' : 'rights'}">
             <span class="perm-sum-lbl">01 · Hub &amp; Data Rights</span>
             <strong class="perm-sum-val" id="permSumRights">${m.rightsCount} / ${m.rightsTotal} Enabled</strong>
             <small>${m.hubCount}/${m.hubTotal} Sidebar Hubs · ${m.tableCount}/${m.tableTotal} Tables</small>
           </div>
-          <div class="perm-summary-cell">
+          <div class="perm-summary-cell interactive ${activeCat === 'unlocks' ? 'is-focused' : ''}" role="button" tabindex="0" data-perm-tab="${activeCat === 'unlocks' ? 'all' : 'unlocks'}">
             <span class="perm-sum-lbl">02 · Policy-Locked Fields</span>
             <strong class="perm-sum-val brass" id="permSumUnlocks">${m.unlockCount} / ${m.unlockTotal} Unlockable</strong>
-            <small>${m.unlockCount === 9 ? 'All 9 locks overrideable without PIN' : (m.unlockCount > 0 ? `${m.unlockCount} field locks open without Admin PIN` : 'All 9 locks require Admin PIN 2401')}</small>
+            <small>${m.unlockCount === 9 ? 'All 9 locks open without Admin PIN' : (m.unlockCount > 0 ? `${m.unlockCount} field locks open without Admin PIN` : 'All 9 locks require Admin PIN 2401')}</small>
           </div>
-          <div class="perm-summary-cell">
+          <div class="perm-summary-cell interactive ${activeCat === 'dashboards' ? 'is-focused' : ''}" role="button" tabindex="0" data-perm-tab="${activeCat === 'dashboards' ? 'all' : 'dashboards'}">
             <span class="perm-sum-lbl">03 · Executive Dashboards</span>
             <strong class="perm-sum-val" id="permSumDash">${m.pbiPageCount} / ${m.pbiPageTotal} Dashboards</strong>
             <small>${Object.values(perms.dashboards).filter(Boolean).length} of 6 Analytics &amp; Hub Suites</small>
           </div>
-          <div class="perm-summary-cell">
+          <div class="perm-summary-cell interactive ${activeCat === 'statements' ? 'is-focused' : ''}" role="button" tabindex="0" data-perm-tab="${activeCat === 'statements' ? 'all' : 'statements'}">
             <span class="perm-sum-lbl">04 · Printable A4 Statements</span>
             <strong class="perm-sum-val" id="permSumStmts">${m.stmtCount} / ${m.stmtTotal} Statements</strong>
             <small>${Object.values(perms.statements).filter(Boolean).length} of 5 Statement &amp; Voucher Suites</small>
@@ -27658,7 +28037,7 @@
           <span class="perm-hub-preview-lbl">Visible Sidebar Hubs (${m.hubCount}/${m.hubTotal}):</span>
           <div class="perm-hub-preview-pills">
             ${hubVisibilityList.map(h => `
-              <span class="perm-hub-pill ${h.visible ? 'is-visible' : 'is-hidden'}" title="${h.visible ? `${esc(h.title)} is visible in the left sidebar for this seat` : `${esc(h.title)} is hidden from the left sidebar for this seat`}">
+              <span class="perm-hub-pill ${h.visible ? 'is-visible' : 'is-hidden'}">
                 <i>${h.visible ? '✓' : '🔒'}</i>
                 <span>${esc(h.title)}</span>
               </span>
@@ -27666,13 +28045,13 @@
           </div>
         </div>
 
-        <div class="perm-section-grid">
+        <div class="perm-section-grid ${activeCat !== 'all' ? 'is-single-focus' : ''}">
           <!-- SECTION 1: DATA READ, ENTER, MODIFY & VOID RIGHTS -->
-          <div class="perm-sec-box">
+          <div class="perm-sec-box" id="permSecRights" ${activeCat !== 'all' && activeCat !== 'rights' ? 'hidden' : ''}>
             <div class="perm-sec-head">
               <div>
                 <span class="perm-sec-num">01</span>
-                <strong>Hub Access, Data Entry, Modify &amp; Void Rights (36 Tables · 26 Forms)</strong>
+                <strong>Hub Access, Data Entry, Modify &amp; Void Rights</strong>
               </div>
               <div class="perm-sec-quick">
                 <button type="button" class="perm-mini-btn" data-perm-bulk="rights:all">All On</button>
@@ -27701,11 +28080,11 @@
           </div>
 
           <!-- SECTION 2: POLICY-LOCKED ITEMS THEY CAN UNLOCK -->
-          <div class="perm-sec-box">
+          <div class="perm-sec-box" id="permSecUnlocks" ${activeCat !== 'all' && activeCat !== 'unlocks' ? 'hidden' : ''}>
             <div class="perm-sec-head">
               <div>
                 <span class="perm-sec-num">02</span>
-                <strong>Policy-Locked Form Fields This Role Can Unlock (No Admin PIN)</strong>
+                <strong>Policy-Locked Form Fields This Role Can Override (No Admin PIN)</strong>
               </div>
               <div class="perm-sec-quick">
                 <button type="button" class="perm-mini-btn" data-perm-bulk="unlocks:all">Unlock All 9</button>
@@ -27733,8 +28112,8 @@
             </div>
           </div>
 
-          <!-- SECTION 3: LINKED EXECUTIVE DASHBOARDS & HUB ANALYTICS (12 DASHBOARDS) -->
-          <div class="perm-sec-box" id="permSecDashboards">
+          <!-- SECTION 3: LINKED EXECUTIVE DASHBOARDS & HUB ANALYTICS -->
+          <div class="perm-sec-box" id="permSecDashboards" ${activeCat !== 'all' && activeCat !== 'dashboards' ? 'hidden' : ''}>
             <div class="perm-sec-head">
               <div>
                 <span class="perm-sec-num">03</span>
@@ -27767,7 +28146,7 @@
           </div>
 
           <!-- SECTION 4: LINKED PRINTABLE A4 STATEMENTS (22 REPORTS) -->
-          <div class="perm-sec-box" id="permSecStatements">
+          <div class="perm-sec-box" id="permSecStatements" ${activeCat !== 'all' && activeCat !== 'statements' ? 'hidden' : ''}>
             <div class="perm-sec-head">
               <div>
                 <span class="perm-sec-num">04</span>
@@ -27813,7 +28192,7 @@
           <div class="seat-collapsed-inner">
             <div>
               <strong>Team Seat Inspector &amp; Multi-Device Access Editor</strong>
-              <span class="seat-collapsed-sub">— Check and update Full Name, Login Email, PIN, Role, Assigned Companies (RLS) &amp; Dashboards for any of the ${uCount} current users.</span>
+              <span class="seat-collapsed-sub"> · Inspect and update Full Name, Login Email, PIN, Roles &amp; Permissions, and Assigned Companies (RLS) for any of the ${uCount} current users.</span>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button type="button" class="btn btn-brass" id="openSeatInspectorBtn">${ic('edit')} Check / Update Current Users (${uCount})</button>
@@ -27847,9 +28226,9 @@
               : `<span class="badge badge-brass" id="nuModeBadge">NEW TEAM LOGIN SEAT</span>`}
           </div>
           <div class="seat-head-actions">
-            <button type="button" class="btn" id="nuPrevSeatBtn" style="padding:3px 8px;font-size:11px" title="Inspect previous team user">‹ Prev User</button>
-            <button type="button" class="btn" id="nuNextSeatBtn" style="padding:3px 8px;font-size:11px" title="Inspect next team user">Next User ›</button>
-            <button type="button" class="btn ${isNewMode ? 'btn-brass' : ''}" id="nuNewBlankBtn" style="padding:3px 9px;font-size:11px" title="Switch form to create a brand-new team seat">+ New Blank Seat</button>
+            <button type="button" class="btn" id="nuPrevSeatBtn" style="padding:3px 8px;font-size:11px">‹ Prev User</button>
+            <button type="button" class="btn" id="nuNextSeatBtn" style="padding:3px 8px;font-size:11px">Next User ›</button>
+            <button type="button" class="btn ${isNewMode ? 'btn-brass' : ''}" id="nuNewBlankBtn" style="padding:3px 9px;font-size:11px">+ New Blank Seat</button>
             <button type="button" class="btn" id="cancelAddUserBtn" style="padding:3px 9px;font-size:11px">✕ Hide</button>
           </div>
         </div>
@@ -27861,9 +28240,10 @@
               ${STATE.users.map((u, idx) => {
                 const cBadge = formatCompactCompaniesBadge(u.companies, 3);
                 const dispPin = STATE.demoVisitor ? '••••' : (u.pin_code || '1111');
+                const uPerms = getEffectivePermissions(u);
                 return `
                 <option value="${esc(u.id)}" ${!isNewMode && String(u.id) === String(editUser.id) ? 'selected' : ''}>
-                  ${idx + 1}. ${esc(u.full_name)} (${esc(u.email)}) · PIN ${esc(dispPin)} · ${esc(u.role)} · ${esc(cBadge.text)}
+                  ${idx + 1}. ${esc(u.full_name)} (${esc(u.email)}) · PIN ${esc(dispPin)} · ${esc(uPerms.preset.shortTitle || u.role)} · ${esc(cBadge.text)}
                 </option>`;
               }).join('')}
               <option value="__new__" ${isNewMode ? 'selected' : ''}>+ Create New Team Login Seat (Blank Form)</option>
@@ -27873,13 +28253,13 @@
             ${STATE.users.map((u, idx) => {
               const active = !isNewMode && String(u.id) === String(editUser.id);
               const dispPin = STATE.demoVisitor ? '••••' : (u.pin_code || '1111');
-              return `<button type="button" class="seat-pick-pill ${active ? 'active' : ''} ${u.status === 'Suspended' ? 'suspended' : ''}" data-pick-seat="${esc(u.id)}" title="Inspect & update ${esc(u.full_name)} (${esc(u.email)})">
+              return `<button type="button" class="seat-pick-pill ${active ? 'active' : ''} ${u.status === 'Suspended' ? 'suspended' : ''}" data-pick-seat="${esc(u.id)}">
                 <span class="seat-pick-num">${idx + 1}</span>
                 <span class="seat-pick-name">${esc(u.full_name)}</span>
                 <small class="mono">${esc(dispPin)}</small>
               </button>`;
             }).join('')}
-            <button type="button" class="seat-pick-pill new-seat ${isNewMode ? 'active' : ''}" data-pick-seat="__new__" title="Create a new team login seat">
+            <button type="button" class="seat-pick-pill new-seat ${isNewMode ? 'active' : ''}" data-pick-seat="__new__">
               <span>+ New Seat</span>
             </button>
           </div>
@@ -27897,40 +28277,21 @@
               <span class="hint">${editUser ? `Seat ID: ${esc(editUser.id)} · Last login: ${esc(editUser.last_login_at || 'Never')}` : 'An existing email updates that seat instead of creating a new one.'}</span>
             </div>
             <div class="form-field">
-              <label for="nu_pin">Access PIN (4–8 Digits) *</label>
+              <label for="nu_pin">Access PIN (4 to 8 Digits) *</label>
               <input type="text" inputmode="numeric" pattern="[0-9]{4,8}" id="nu_pin" value="${esc(curPin)}" class="mono" autocomplete="off">
             </div>
-            <div class="form-field">
+            <div class="form-field" id="nuRolePermsField">
               <div class="field-lbl-with-btn">
-                <label for="nu_role">Role &amp; Permissions *</label>
-                <button type="button" class="role-inspect-btn ${STATE.showRolePermMatrix ? 'active' : ''}" id="checkRolePermsBtn" title="Inspect or customize Hub Access, Field-Lock Overrides, Dashboards & Statements for this role">
-                  ${STATE.showRolePermMatrix ? `${ic('shield')} Hide Permissions` : (curRole === 'Custom' ? `${ic('sliders')} Configure Matrix` : `${ic('shield')} Check Permissions`)}
+                <label for="nuRoleTrigger">Roles &amp; Permissions *</label>
+                <button type="button" class="role-inspect-btn ${STATE.showRolePermMatrix ? 'active' : ''}" id="checkRolePermsBtn">
+                  ${STATE.showRolePermMatrix ? `${ic('shield')} Hide Matrix` : `${ic('sliders')} Customize`}
                 </button>
               </div>
-              <select id="nu_role">
-                ${SEAT_ROLE_OPTIONS.map(o => `<option value="${esc(o.value)}" ${curRole === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
-              </select>
-              <div class="role-posture-strip" id="nuRolePostureStrip">
-                ${renderRolePostureStripHtml(previewUser)}
-              </div>
+              ${renderRolePermSelectorHtml(previewUser, curRole, curAccess)}
             </div>
             <div class="form-field">
               <label for="nuCompanyTrigger">Assigned Companies (Row-Level Security) *</label>
               ${renderCompanyMultiSelectHtml(curCompanies)}
-            </div>
-            <div class="form-field">
-              <div class="field-lbl-with-btn">
-                <label for="nu_access">Dashboards &amp; Statements</label>
-                <button type="button" class="role-inspect-btn ${STATE.showRolePermMatrix ? 'active' : ''}" id="checkDashAccessBtn" title="Inspect or customize which of the 12 Executive Dashboards and 22 Printable Statements this seat can open">
-                  ${ic('pbi')} ${STATE.showRolePermMatrix ? 'Inspect Suites ↓' : 'Configure Suites'}
-                </button>
-              </div>
-              <select id="nu_access">
-                ${SEAT_ACCESS_OPTIONS.map(o => `<option value="${esc(o.value)}" ${curAccess === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
-              </select>
-              <div class="dash-posture-strip" id="nuDashPostureStrip">
-                ${renderDashPostureStripHtml(previewUser, curAccess)}
-              </div>
             </div>
             <div class="form-field">
               <label for="nu_auth_mode">Sign-In Requirement (PIN / Face ID)</label>
@@ -27939,14 +28300,6 @@
                 ${AUTH_MODE_OPTIONS.map(o => `<option value="${esc(o.value)}" ${(editUser && editUser.auth_mode === o.value) ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
               </select>
               <span class="hint">Choose Either (PIN or Face ID), Both (2FA), Face ID Only (3+ live frames), or PIN Only.</span>
-            </div>
-            <div class="form-field">
-              <label for="nu_book_scope">Accounting Book Scope</label>
-              <select id="nu_book_scope">
-                <option value="all" ${curBookScope !== 'official' ? 'selected' : ''}>All Books (Complete Operational Ledger)</option>
-                <option value="official" ${curBookScope === 'official' ? 'selected' : ''}>Official / Fiscal Scope (11% VAT Books Only)</option>
-              </select>
-              <span class="hint">Official scope restricts registers, AR/AP, and statements to VAT-invoiced activity.</span>
             </div>
           </div>
 
@@ -27959,9 +28312,16 @@
             <div class="seat-editor-meta">
               <label class="seat-status-inline" for="nu_status">
                 <span>Seat Status:</span>
-                <select id="nu_status" ${isSelfOwner ? 'disabled title="Your active owner seat cannot be suspended"' : ''}>
+                <select id="nu_status" ${isSelfOwner ? 'disabled' : ''}>
                   <option value="Active" ${curStatus !== 'Suspended' ? 'selected' : ''}>Active (Can Sign In)</option>
                   <option value="Suspended" ${curStatus === 'Suspended' ? 'selected' : ''}>Suspended (Sign-In Blocked)</option>
+                </select>
+              </label>
+              <label class="seat-status-inline" for="nu_book_scope">
+                <span>Book Scope:</span>
+                <select id="nu_book_scope">
+                  <option value="all" ${curBookScope !== 'official' ? 'selected' : ''}>All Books (Complete Ledger)</option>
+                  <option value="official" ${curBookScope === 'official' ? 'selected' : ''}>Official / Fiscal (11% VAT Only)</option>
                 </select>
               </label>
               ${editUser ? `
@@ -27987,12 +28347,23 @@
       const fSamples = userFaceSamples(u);
       const isTarget = String(u.id) === String(enrolTargetUser().id);
       const isEditing = String(u.id) === editId;
-      const accMeta = seatAccessMeta(u);
       const compBadge = formatCompactCompaniesBadge(u.companies, 3);
-      const perms = getEffectivePermissions(u);
-      const pm = countPermissionMetrics(perms, u);
+      const b = buildRoleCapabilityBreakdown(u);
+      const { perms, m: pm, scopeShortLbl } = b;
+      const roleTitle = perms.preset.shortTitle || u.role;
+      const roleCellInner = `
+        <span class="urp-main">
+          <span class="badge ${perms.preset.badgeCls} urp-role-badge">${esc(roleTitle)}</span>
+          <span class="urp-sep">·</span>
+          <span class="urp-scope-lbl">${esc(scopeShortLbl)}</span>
+        </span>
+        <span class="urp-meta">
+          ${getUserBookScope(u) === 'official' ? '<span class="urp-tag official">Official Books</span>' : ''}
+          <span class="urp-tag ${pm.unlockCount ? 'brass' : 'muted'}">${pm.unlockCount ? `${pm.unlockCount}/${pm.unlockTotal} Overrides` : 'PIN Lock'}</span>
+        </span>
+      `;
       return `
-      <tr class="user-dir-row ${isTarget ? 'enrol-selected-row' : ''} ${isEditing ? 'seat-editing-row' : ''}" data-user-row="${esc(u.id)}" title="${owner ? `Click to inspect & update ${esc(u.full_name)}` : ''}">
+      <tr class="user-dir-row ${isTarget ? 'enrol-selected-row' : ''} ${isEditing ? 'seat-editing-row' : ''}" data-user-row="${esc(u.id)}">
         <td><strong>${esc(u.full_name)}</strong>${idx === STATE.activeUserIdx ? ' <span class="badge badge-ok">you</span>' : ''}</td>
         <td class="mono">${esc(u.email)}</td>
         ${owner && !STATE.demoVisitor ? `<td class="mono"><span class="badge badge-info">${esc(u.pin_code || '1111')}</span></td>` : ''}
@@ -28001,31 +28372,27 @@
             ${esc(seatAuthBadgeLabel(u))}
           </span>
         </td>
-        <td>
-          <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
-            <span class="badge badge-brass">${esc(u.role)}</span>
-            ${getUserBookScope(u) === 'official' ? '<span class="badge badge-ok" title="Scoped strictly to Official 11% VAT Books">Official Books</span>' : ''}
-            <span class="badge badge-info" title="${pm.rightsCount}/${pm.rightsTotal} Data Rights · ${pm.unlockCount}/9 Policy Locks Unlockable">${ic('unlock')} ${pm.unlockCount}/9</span>
-          </div>
+        <td class="user-role-perm-cell">
+          ${owner
+            ? `<button type="button" class="user-role-perm-btn ${isEditing && STATE.showRolePermMatrix ? 'is-active' : ''}" data-check-perms="${esc(u.id)}" data-role-hover-user="${esc(u.id)}">${roleCellInner}</button>`
+            : `<div class="user-role-perm-btn is-readonly" tabindex="0" data-role-hover-user="${esc(u.id)}">${roleCellInner}</div>`}
         </td>
-        <td title="${esc(compBadge.fullTitle)}">
+        <td>
           <div class="rls-co-cell">
             <strong>${esc(compBadge.text)}</strong>
             ${compBadge.indCount > 1 ? `<span class="badge badge-info">${compBadge.indCount} Ind</span>` : ''}
           </div>
         </td>
-        <td><span class="badge ${accMeta.badgeCls}" title="${pm.hubCount}/${pm.hubTotal} Sidebar Hubs · ${pm.pbiPageCount}/${pm.pbiPageTotal} Executive Dashboards · ${pm.stmtCount}/22 Printable Statements">${esc(accMeta.short)}</span></td>
         <td><span class="badge ${u.status === 'Suspended' ? 'badge-err' : 'badge-ok'}">${esc(u.status || 'Active')}</span></td>
         <td class="mono" style="font-size:10.5px">${esc(u.last_login_at || 'Never')}</td>
         <td class="user-actions-cell">
           <div class="user-actions-wrap">
-            ${owner ? `<button type="button" class="btn ${isEditing ? 'btn-primary' : ''}" style="padding:3px 7px;font-size:10px" data-edit-user="${esc(u.id)}" title="Inspect and update ${esc(u.full_name)}'s name, email, PIN, role, companies & dashboard access">${ic('edit')} Edit</button>` : ''}
-            ${owner ? `<button type="button" class="btn ${isEditing && STATE.showRolePermMatrix ? 'btn-brass' : ''}" style="padding:3px 7px;font-size:10px" data-check-perms="${esc(u.id)}" title="Check & configure ${esc(u.full_name)}'s Role Permissions, Policy-Lock Unlocks & Executive Dashboards">${ic('shield')} Perms</button>` : ''}
-            ${(owner || idx === STATE.activeUserIdx) ? `<button type="button" class="btn ${isTarget ? 'btn-brass' : ''}" style="padding:3px 7px;font-size:10px" data-enrol-user="${esc(u.id)}" title="Enrol or update Face ID for ${esc(u.full_name)}">Face ID</button>` : ''}
+            ${owner ? `<button type="button" class="btn ${isEditing ? 'btn-primary' : ''}" style="padding:3px 7px;font-size:10px" data-edit-user="${esc(u.id)}">${ic('edit')} Edit</button>` : ''}
+            ${(owner || idx === STATE.activeUserIdx) ? `<button type="button" class="btn ${isTarget ? 'btn-brass' : ''}" style="padding:3px 7px;font-size:10px" data-enrol-user="${esc(u.id)}">Face ID</button>` : ''}
             ${owner ? `
-              <button type="button" class="btn" style="padding:3px 6px;font-size:10px" data-sim-user="${idx}" title="Open the app as this seat to check their RLS scope">${STATE.activeUserIdx === idx ? '● Active' : 'Impersonate'}</button>
-              <button type="button" class="btn" style="padding:3px 6px;font-size:10px" data-invite-user="${idx}" title="Copy a 1-click login link for WhatsApp / Email (carries the PIN — share privately)">Invite Link</button>
-              <button type="button" class="btn" style="padding:3px 6px;font-size:10px" data-toggle-user="${idx}" title="${u.status === 'Suspended' ? 'Re-activate this seat' : 'Suspend this seat (cannot sign in)'}">${u.status === 'Suspended' ? 'Activate' : 'Suspend'}</button>
+              <button type="button" class="btn" style="padding:3px 6px;font-size:10px" data-sim-user="${idx}">${STATE.activeUserIdx === idx ? '● Active' : 'Impersonate'}</button>
+              <button type="button" class="btn" style="padding:3px 6px;font-size:10px" data-invite-user="${idx}">Invite Link</button>
+              <button type="button" class="btn" style="padding:3px 6px;font-size:10px" data-toggle-user="${idx}">${u.status === 'Suspended' ? 'Activate' : 'Suspend'}</button>
             ` : ''}
           </div>
         </td>
@@ -28234,9 +28601,8 @@
                 <th>Login Email</th>
                 ${owner && !STATE.demoVisitor ? '<th>PIN</th>' : ''}
                 <th>Face ID (2FA)</th>
-                <th>Role</th>
+                <th>Roles &amp; Permissions</th>
                 <th>Allowed Companies (RLS)</th>
-                <th>Dashboards &amp; Statements</th>
                 <th>Status</th>
                 <th>Last Login</th>
                 <th>Actions</th>
@@ -44238,11 +44604,12 @@
     STATE.draftCompaniesOverride = null;
     STATE.draftAccessOverride = null;
     STATE.draftCustomPerms = null;
-    if (opts.permTab) STATE.permMatrixTab = opts.permTab;
+    hideRoleHoverCard(true);
+    STATE.permMatrixTab = opts.permTab || 'all';
     if (targetId === '__new__') {
       STATE.editingUserId = '__new__';
       STATE.newDraftPin = String(Math.floor(1000 + Math.random() * 9000));
-      if (opts.openPerms != null) STATE.showRolePermMatrix = !!opts.openPerms;
+      STATE.showRolePermMatrix = !!opts.openPerms;
     } else {
       let u = STATE.users.find(x => String(x.id) === String(targetId) || norm(x.email) === norm(String(targetId || '')));
       if (!u && /^u(\d+)$/i.test(String(targetId || ''))) {
@@ -44253,8 +44620,8 @@
       STATE.editingUserId = String(u.id);
       if (resolveCanonicalRoleKey(u.role) === 'Custom') {
         STATE.draftCustomPerms = cloneEffectivePermsToCustomDraft(u);
-        STATE.showRolePermMatrix = true;
-      } else if (opts.openPerms != null) {
+        STATE.showRolePermMatrix = opts.openPerms != null ? !!opts.openPerms : true;
+      } else {
         STATE.showRolePermMatrix = !!opts.openPerms;
       }
     }
@@ -44599,6 +44966,200 @@
     syncFromCheckboxes();
   }
 
+  function wireRolePreviewQuickScopes(previewPane, root) {
+    if (!previewPane) return;
+    const scope = root || $('seatEditorWrap') || document;
+    const accEl = scope.querySelector('#nu_access');
+    previewPane.querySelectorAll('[data-quick-access]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const nextAcc = btn.getAttribute('data-quick-access') || 'partial|partial';
+        if (accEl) {
+          accEl.value = nextAcc;
+          accEl.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (nextAcc === 'custom|custom') {
+          const roleWrap = scope.querySelector('#nuRolePermsSelector');
+          const rolePop = scope.querySelector('#nuRolePopover');
+          const roleTrig = scope.querySelector('#nuRoleTrigger');
+          if (roleWrap) roleWrap.classList.remove('open');
+          if (rolePop) rolePop.hidden = true;
+          if (roleTrig) roleTrig.setAttribute('aria-expanded', 'false');
+          const mw = scope.querySelector('#rolePermissionsMatrixWrap');
+          if (mw) mw.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
+    });
+  }
+
+  function wireRolePermSelector(root) {
+    if (!root) return;
+    const wrap = root.querySelector('#nuRolePermsSelector');
+    if (!wrap) return;
+    const triggerBtn = wrap.querySelector('#nuRoleTrigger');
+    const popoverEl = wrap.querySelector('#nuRolePopover');
+    const previewPane = wrap.querySelector('#nuRolePreviewPane');
+    const postureStrip = wrap.querySelector('#nuRolePostureStrip');
+    const openMatrixBtn = wrap.querySelector('#nuRoleOpenMatrixBtn');
+    const doneBtn = wrap.querySelector('#nuRoleDoneBtn');
+    const roleEl = wrap.querySelector('#nu_role');
+    const accEl = wrap.querySelector('#nu_access');
+
+    const closePop = () => {
+      wrap.classList.remove('open');
+      if (popoverEl) popoverEl.hidden = true;
+      if (triggerBtn) triggerBtn.setAttribute('aria-expanded', 'false');
+    };
+
+    const showPreviewForRole = roleVal => {
+      if (!previewPane) return;
+      const curSelKey = resolveCanonicalRoleKey(roleEl ? roleEl.value : 'Entry');
+      const targetKey = resolveCanonicalRoleKey(roleVal);
+      const isSelectedRole = curSelKey === targetKey;
+      wrap.querySelectorAll('[data-role-opt]').forEach(optBtn => {
+        const optKey = resolveCanonicalRoleKey(optBtn.getAttribute('data-role-opt'));
+        optBtn.classList.toggle('is-preview', optKey === targetKey);
+      });
+      const coVal = val('nu_companies') || 'WTC';
+      const accVal = accEl ? accEl.value : 'partial|partial';
+      const pUser = buildPreviewUserForRoleKey(roleVal, coVal, accVal, isSelectedRole);
+      previewPane.innerHTML = renderRolePopoverPreviewHtml(pUser, { isPreviewOnly: !isSelectedRole });
+      if (isSelectedRole) wireRolePreviewQuickScopes(previewPane, root);
+    };
+
+    const openPop = () => {
+      hideRoleHoverCard(true);
+      const coWrap = document.getElementById('nuCompanySelector');
+      if (coWrap && coWrap.classList.contains('open')) {
+        coWrap.classList.remove('open');
+        const coPop = document.getElementById('nuCompanyPopover');
+        if (coPop) coPop.hidden = true;
+        const coTrig = document.getElementById('nuCompanyTrigger');
+        if (coTrig) coTrig.setAttribute('aria-expanded', 'false');
+      }
+      wrap.classList.add('open');
+      if (popoverEl) popoverEl.hidden = false;
+      if (triggerBtn) triggerBtn.setAttribute('aria-expanded', 'true');
+      showPreviewForRole(roleEl ? roleEl.value : 'Entry');
+    };
+
+    if (triggerBtn) {
+      triggerBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (wrap.classList.contains('open')) closePop();
+        else openPop();
+      });
+    }
+    if (doneBtn) {
+      doneBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        closePop();
+      });
+    }
+    if (openMatrixBtn) {
+      openMatrixBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        closePop();
+        STATE.showRolePermMatrix = true;
+        STATE.permMatrixTab = 'all';
+        refreshRoleAndAccessMatrixUi(root);
+        const mw = root.querySelector('#rolePermissionsMatrixWrap');
+        if (mw) mw.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    }
+    wrap.querySelectorAll('[data-role-opt]').forEach(optBtn => {
+      const optVal = optBtn.getAttribute('data-role-opt') || 'Entry';
+      optBtn.addEventListener('mouseenter', () => showPreviewForRole(optVal));
+      optBtn.addEventListener('focus', () => showPreviewForRole(optVal));
+      optBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const prevCanon = resolveCanonicalRoleKey(roleEl ? roleEl.value : 'Entry');
+        const nextCanon = resolveCanonicalRoleKey(optVal);
+        if (roleEl) {
+          roleEl.value = optVal;
+          roleEl.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (nextCanon === 'Custom') {
+          closePop();
+          const mw = root.querySelector('#rolePermissionsMatrixWrap');
+          if (mw) mw.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else if (prevCanon === nextCanon) {
+          closePop();
+        } else {
+          showPreviewForRole(optVal);
+        }
+      });
+    });
+
+    const optCol = wrap.querySelector('.role-perm-opt-col');
+    if (optCol) {
+      optCol.addEventListener('mouseleave', () => {
+        if (wrap.classList.contains('open')) showPreviewForRole(roleEl ? roleEl.value : 'Entry');
+      });
+    }
+
+    if (postureStrip) {
+      postureStrip.addEventListener('mouseover', e => {
+        const chip = e.target && e.target.closest ? e.target.closest('[data-role-chip-jump]') : null;
+        if (!chip || wrap.classList.contains('open')) return;
+        const cat = chip.getAttribute('data-role-chip-jump') || 'all';
+        showRoleHoverCard(chip, getDraftSeatPreviewUser(), {
+          seatName: val('nu_name') || 'Current Seat',
+          userId: '__draft__',
+          focusCat: cat
+        });
+      });
+      postureStrip.addEventListener('mouseout', e => {
+        const chip = e.target && e.target.closest ? e.target.closest('[data-role-chip-jump]') : null;
+        if (!chip) return;
+        const rel = e.relatedTarget;
+        if (rel && chip.contains(rel)) return;
+        hideRoleHoverCard(false);
+      });
+      postureStrip.addEventListener('click', e => {
+        const chip = e.target && e.target.closest ? e.target.closest('[data-role-chip-jump]') : null;
+        if (!chip) return;
+        e.stopPropagation();
+        hideRoleHoverCard(true);
+        closePop();
+        const cat = chip.getAttribute('data-role-chip-jump') || 'all';
+        if (STATE.showRolePermMatrix && STATE.permMatrixTab === cat) {
+          STATE.permMatrixTab = 'all';
+        } else {
+          STATE.showRolePermMatrix = true;
+          STATE.permMatrixTab = cat;
+        }
+        refreshRoleAndAccessMatrixUi(root);
+        const mw = root.querySelector('#rolePermissionsMatrixWrap');
+        if (mw) mw.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    }
+
+    wireRolePreviewQuickScopes(previewPane, root);
+
+    if (!document.body.dataset.rolePermDocWired) {
+      document.body.dataset.rolePermDocWired = '1';
+      document.addEventListener('mousedown', e => {
+        const activeWrap = document.getElementById('nuRolePermsSelector');
+        if (activeWrap && activeWrap.classList.contains('open') && (!e.target || !e.target.closest('#nuRolePermsSelector'))) {
+          activeWrap.classList.remove('open');
+          const pop = document.getElementById('nuRolePopover');
+          if (pop) pop.hidden = true;
+          const trig = document.getElementById('nuRoleTrigger');
+          if (trig) trig.setAttribute('aria-expanded', 'false');
+        }
+        const hc = document.getElementById('roleHoverPreviewCard');
+        if (hc && !hc.hidden && (!e.target || !e.target.closest('#roleHoverPreviewCard'))) {
+          hideRoleHoverCard(true);
+        }
+      });
+      document.addEventListener('scroll', () => {
+        const hc = document.getElementById('roleHoverPreviewCard');
+        if (hc && !hc.hidden) hideRoleHoverCard(true);
+      }, { capture: true, passive: true });
+    }
+  }
+
   function refreshRoleAndAccessMatrixUi(root) {
     const scope = root || $('seatEditorWrap') || document;
     const roleEl = scope.querySelector('#nu_role');
@@ -44610,13 +45171,31 @@
 
     const previewUser = getDraftSeatPreviewUser();
     const previewPerms = getEffectivePermissions(previewUser);
-    const previewMetrics = countPermissionMetrics(previewPerms, previewUser);
+
+    const roleTrigger = scope.querySelector('#nuRoleTrigger');
+    if (roleTrigger) roleTrigger.innerHTML = renderRoleTriggerInnerHtml(previewUser);
+
+    const roleWrap = scope.querySelector('#nuRolePermsSelector');
+    if (roleWrap) {
+      const curCanon = previewPerms.roleKey;
+      roleWrap.querySelectorAll('[data-role-opt]').forEach(optBtn => {
+        const optCanon = resolveCanonicalRoleKey(optBtn.getAttribute('data-role-opt'));
+        const isSel = optCanon === curCanon;
+        optBtn.classList.toggle('is-selected', isSel);
+        optBtn.classList.toggle('is-preview', isSel);
+        optBtn.setAttribute('aria-selected', isSel ? 'true' : 'false');
+        const chk = optBtn.querySelector('.role-perm-opt-check');
+        if (chk) chk.textContent = isSel ? '✓' : '›';
+      });
+      const previewPane = roleWrap.querySelector('#nuRolePreviewPane');
+      if (previewPane) {
+        previewPane.innerHTML = renderRolePopoverPreviewHtml(previewUser, { isPreviewOnly: false });
+        wireRolePreviewQuickScopes(previewPane, scope);
+      }
+    }
 
     const roleStrip = scope.querySelector('#nuRolePostureStrip');
     if (roleStrip) roleStrip.innerHTML = renderRolePostureStripHtml(previewUser);
-
-    const dashStrip = scope.querySelector('#nuDashPostureStrip');
-    if (dashStrip) dashStrip.innerHTML = renderDashPostureStripHtml(previewUser, STATE.draftAccessOverride);
 
     const matrixWrap = scope.querySelector('#rolePermissionsMatrixWrap');
     if (matrixWrap) {
@@ -44626,14 +45205,10 @@
 
     const checkRoleBtn = scope.querySelector('#checkRolePermsBtn');
     if (checkRoleBtn) {
-      const isCustom = previewPerms.roleKey === 'Custom';
       checkRoleBtn.classList.toggle('active', !!STATE.showRolePermMatrix);
-      checkRoleBtn.innerHTML = `${ic(isCustom ? 'sliders' : 'shield')} <span>${STATE.showRolePermMatrix ? 'Hide Permissions' : (isCustom ? 'Configure Matrix' : 'Check Permissions')}</span>`;
-    }
-    const checkDashBtn = scope.querySelector('#checkDashAccessBtn');
-    if (checkDashBtn) {
-      checkDashBtn.classList.toggle('active', !!STATE.showRolePermMatrix);
-      checkDashBtn.innerHTML = `${ic('pbi')} <span>${STATE.showRolePermMatrix ? 'Inspect Suites ↓' : 'Configure Suites'}</span>`;
+      checkRoleBtn.innerHTML = STATE.showRolePermMatrix
+        ? `${ic('shield')} Hide Matrix`
+        : `${ic('sliders')} Customize`;
     }
   }
 
@@ -44651,13 +45226,23 @@
     const closeBtn = root.querySelector('#collapsePermMatrixBtn, #closePermMatrixBtn');
     if (closeBtn) {
       closeBtn.addEventListener('click', () => {
+        hideRoleHoverCard(true);
         STATE.showRolePermMatrix = false;
+        STATE.permMatrixTab = 'all';
         refreshRoleAndAccessMatrixUi(root);
       });
     }
     root.querySelectorAll('[data-matrix-role]').forEach(btn => {
+      const targetRole = btn.getAttribute('data-matrix-role') || 'Entry';
+      btn.addEventListener('mouseenter', () => {
+        const curCanon = resolveCanonicalRoleKey(roleEl ? roleEl.value : 'Entry');
+        const isSel = curCanon === resolveCanonicalRoleKey(targetRole);
+        const pUser = buildPreviewUserForRoleKey(targetRole, val('nu_companies') || 'WTC', accEl ? accEl.value : 'partial|partial', isSel);
+        showRoleHoverCard(btn, pUser, { seatName: '' });
+      });
+      btn.addEventListener('mouseleave', () => hideRoleHoverCard(false));
       btn.addEventListener('click', () => {
-        const targetRole = btn.getAttribute('data-matrix-role') || 'Entry';
+        hideRoleHoverCard(true);
         if (roleEl) {
           roleEl.value = targetRole;
           roleEl.dispatchEvent(new Event('change', { bubbles: true }));
@@ -44675,7 +45260,7 @@
         STATE.showRolePermMatrix = true;
         STATE.userFormDirty = true;
         refreshRoleAndAccessMatrixUi(root);
-        toast('Switched to Custom Role — pick granular permissions, field unlocks, dashboards & statements');
+        toast('Switched to Custom Role · pick granular permissions, field overrides, dashboards & statements');
       });
     }
     root.querySelectorAll('[data-apply-preset-to-custom]').forEach(btn => {
@@ -44699,10 +45284,19 @@
       });
     });
     root.querySelectorAll('[data-perm-tab]').forEach(btn => {
-      btn.addEventListener('click', () => {
+      const activateTab = () => {
         STATE.permMatrixTab = btn.getAttribute('data-perm-tab') || 'all';
         refreshRoleAndAccessMatrixUi(root);
-      });
+      };
+      btn.addEventListener('click', activateTab);
+      if (btn.tagName !== 'BUTTON') {
+        btn.addEventListener('keydown', ev => {
+          if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            activateTab();
+          }
+        });
+      }
     });
     root.querySelectorAll('[data-perm-bulk]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -44758,6 +45352,7 @@
   function wireSeatEditorActions(root) {
     if (!root) return;
     wireCompanyMultiSelect(root);
+    wireRolePermSelector(root);
     wireRolePermissionsMatrix(root);
     const sel = root.querySelector('#nu_seat_select');
     if (sel) {
@@ -44800,6 +45395,7 @@
     const cancelBtn = root.querySelector('#cancelAddUserBtn');
     if (cancelBtn) {
       cancelBtn.addEventListener('click', () => {
+        hideRoleHoverCard(true);
         STATE.showAddUserForm = false;
         STATE.userFormDirty = false;
         updateSeatEditorDom();
@@ -44842,28 +45438,19 @@
     const checkRoleBtn = root.querySelector('#checkRolePermsBtn');
     if (checkRoleBtn) {
       checkRoleBtn.addEventListener('click', () => {
+        hideRoleHoverCard(true);
+        const roleWrap = root.querySelector('#nuRolePermsSelector');
+        const rolePop = root.querySelector('#nuRolePopover');
+        const roleTrig = root.querySelector('#nuRoleTrigger');
+        if (roleWrap) roleWrap.classList.remove('open');
+        if (rolePop) rolePop.hidden = true;
+        if (roleTrig) roleTrig.setAttribute('aria-expanded', 'false');
         STATE.showRolePermMatrix = !STATE.showRolePermMatrix;
+        if (!STATE.showRolePermMatrix) STATE.permMatrixTab = 'all';
         refreshRoleAndAccessMatrixUi(root);
         if (STATE.showRolePermMatrix) {
           const mw = root.querySelector('#rolePermissionsMatrixWrap');
           if (mw) mw.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-      });
-    }
-    const checkDashBtn = root.querySelector('#checkDashAccessBtn');
-    if (checkDashBtn) {
-      checkDashBtn.addEventListener('click', () => {
-        if (STATE.showRolePermMatrix && STATE.permMatrixTab === 'dashboards') {
-          STATE.showRolePermMatrix = false;
-          STATE.permMatrixTab = 'all';
-        } else {
-          STATE.showRolePermMatrix = true;
-          STATE.permMatrixTab = 'dashboards';
-        }
-        refreshRoleAndAccessMatrixUi(root);
-        if (STATE.showRolePermMatrix) {
-          const targetEl = root.querySelector('#permSecDashboards') || root.querySelector('#rolePermissionsMatrixWrap');
-          if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       });
     }
@@ -44906,7 +45493,7 @@
           }
           if (roleSelectEl && roleSelectEl.value !== 'Custom') roleSelectEl.value = 'Custom';
           STATE.showRolePermMatrix = true;
-          STATE.permMatrixTab = 'dashboards';
+          STATE.permMatrixTab = 'all';
         } else if (roleSelectEl && resolveCanonicalRoleKey(roleSelectEl.value) === 'Custom') {
           if (!STATE.draftCustomPerms) {
             STATE.draftCustomPerms = cloneEffectivePermsToCustomDraft(getDraftSeatPreviewUser());
@@ -44941,13 +45528,26 @@
 
   function wireUsersDirectoryActions(root) {
     if (!root) return;
+    root.querySelectorAll('[data-role-hover-user]').forEach(el => {
+      const uidTarget = el.getAttribute('data-role-hover-user');
+      const openHover = () => {
+        const u = STATE.users.find(x => String(x.id) === String(uidTarget));
+        if (u) showRoleHoverCard(el, u, { seatName: u.full_name, userId: u.id, focusCat: 'all' });
+      };
+      el.addEventListener('mouseenter', openHover);
+      el.addEventListener('focus', openHover);
+      el.addEventListener('mouseleave', () => hideRoleHoverCard(false));
+      el.addEventListener('blur', () => hideRoleHoverCard(false));
+    });
     root.querySelectorAll('[data-edit-user]').forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
+      hideRoleHoverCard(true);
       const uidTarget = btn.getAttribute('data-edit-user');
       selectSeatForEdit(uidTarget, { scroll: true });
     }));
     root.querySelectorAll('[data-check-perms]').forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
+      hideRoleHoverCard(true);
       if (!isOwner()) return;
       const uidTarget = btn.getAttribute('data-check-perms');
       selectSeatForEdit(uidTarget, { scroll: true, openPerms: true, permTab: 'all' });
@@ -54246,6 +54846,26 @@
     // Keyboard: Escape closes the innermost open popover / drawer / modal / rail; Ctrl+K focuses search
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
+        const hc = $('roleHoverPreviewCard');
+        if (hc && !hc.hidden) { hideRoleHoverCard(true); return; }
+        const roleWrap = $('nuRolePermsSelector');
+        if (roleWrap && roleWrap.classList.contains('open')) {
+          roleWrap.classList.remove('open');
+          const rPop = $('nuRolePopover');
+          if (rPop) rPop.hidden = true;
+          const rTrig = $('nuRoleTrigger');
+          if (rTrig) rTrig.setAttribute('aria-expanded', 'false');
+          return;
+        }
+        const coWrap = $('nuCompanySelector');
+        if (coWrap && coWrap.classList.contains('open')) {
+          coWrap.classList.remove('open');
+          const cPop = $('nuCompanyPopover');
+          if (cPop) cPop.hidden = true;
+          const cTrig = $('nuCompanyTrigger');
+          if (cTrig) cTrig.setAttribute('aria-expanded', 'false');
+          return;
+        }
         const openSuggestMenus = document.querySelectorAll('.pa-suggest-menu:not([hidden]), .pa-select-menu:not([hidden]), #supCategoryMenu:not([hidden]), .rdl-combo-menu:not([hidden])');
         if (openSuggestMenus.length) {
           openSuggestMenus.forEach(m => { m.hidden = true; });
