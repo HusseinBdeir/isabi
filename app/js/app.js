@@ -41426,6 +41426,31 @@
         STATE.customRecords[k] = cleaned;
       }
     });
+    if (SEED._recordsReady) {
+      const posRe = /^(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+$/;
+      CR_KEYS.forEach(k => {
+        const arr = STATE.customRecords && STATE.customRecords[k];
+        const seedArr = SEED.records && SEED.records[k];
+        if (!Array.isArray(arr) || !arr.length || !Array.isArray(seedArr) || !seedArr.length) return;
+        const seedById = new Map(seedArr.map(x => [String(x.id), x]));
+        const nextArr = arr.filter(r => {
+          if (!r) return false;
+          const rid = String(r.id == null ? '' : r.id);
+          if (!posRe.test(rid)) return true;
+          const sRow = seedById.get(rid);
+          if (!sRow) return false;
+          if (r.date && sRow.date && String(r.date) !== String(sRow.date)) return false;
+          if (r.staff && sRow.staff && norm(r.staff) !== norm(sRow.staff)) return false;
+          if (r.supplier && sRow.supplier && norm(r.supplier) !== norm(sRow.supplier)) return false;
+          if (r.customer && sRow.customer && norm(r.customer) !== norm(sRow.customer)) return false;
+          return true;
+        });
+        if (nextArr.length !== arr.length) {
+          STATE.customRecords[k] = nextArr;
+          removedAny = true;
+        }
+      });
+    }
     if (removedAny) {
       saveLocalAuthAndRecords();
     }
