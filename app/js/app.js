@@ -27731,15 +27731,21 @@
     });
   }
 
+  const ORIGIN_COMPASS_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>';
+  const ORIGIN_HOME_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.8V20h14V9.8"/></svg>';
+  const ORIGIN_BU_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 20V8h6v12"/></svg>';
+  const ORIGIN_PIN_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>';
+  const ORIGIN_MAP_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>';
+
   function buildOriginModePillsInnerHtml(company, mode, originBu) {
     const allBus = (window.MFG_GEO && Array.isArray(window.MFG_GEO.BU_LIST))
       ? window.MFG_GEO.BU_LIST
       : ['WTC', 'BBConstruction', 'Lions Transport'];
     const sibBus = allBus.filter(b => norm(b) !== norm(company));
     return `
-      <button type="button" class="origin-pill${mode === 'company' ? ' active' : ''}" data-origin-mode="company"><span id="originDefaultBuLbl">${esc(company)}</span></button>
-      ${sibBus.map(b => `<button type="button" class="origin-pill${mode === 'bu' && norm(originBu) === norm(b) ? ' active' : ''}" data-origin-mode="bu" data-origin-bu="${esc(b)}">${esc(b)}</button>`).join('')}
-      <button type="button" class="origin-pill${mode === 'site' ? ' active' : ''}" data-origin-mode="site">Other Site</button>
+      <button type="button" class="origin-pill${mode === 'company' ? ' active' : ''}" data-origin-mode="company">${ORIGIN_HOME_SVG}<span id="originDefaultBuLbl">${esc(company)}</span></button>
+      ${sibBus.map(b => `<button type="button" class="origin-pill${mode === 'bu' && norm(originBu) === norm(b) ? ' active' : ''}" data-origin-mode="bu" data-origin-bu="${esc(b)}">${ORIGIN_BU_SVG}<span>${esc(b)}</span></button>`).join('')}
+      <button type="button" class="origin-pill${mode === 'site' ? ' active' : ''}" data-origin-mode="site">${ORIGIN_PIN_SVG}<span>Other Site</span></button>
     `;
   }
 
@@ -27748,17 +27754,67 @@
       ? window.MFG_GEO.getUnifiedSiteMetaItems(SEED, STATE, { side: 'both', date: todayISO(), time: nowHHMM(), truck: '' })
       : siteNames().map(n => [n, '']);
     return `
-      <div class="origin-dispatch-card" id="wrap_f_origin_bar" data-origin-side="${esc(side)}">
+      <div class="origin-dispatch-card" id="wrap_f_origin_bar" data-origin-side="${esc(side)}" data-active-mode="company">
         <div class="origin-dispatch-top">
-          <span class="origin-dispatch-lbl">Starting Point</span>
-          <div class="origin-mode-pills" id="originModePills" data-rendered-co="${esc(company)}" data-rendered-mode="company:">
-            ${buildOriginModePillsInnerHtml(company, 'company', '')}
+          <div class="origin-dispatch-left">
+            <span class="origin-dispatch-lbl">${ORIGIN_COMPASS_SVG}Starting Point</span>
+            <div class="origin-mode-pills" id="originModePills" role="group" aria-label="Starting Point" data-rendered-co="${esc(company)}" data-rendered-mode="company:">
+              ${buildOriginModePillsInnerHtml(company, 'company', '')}
+            </div>
           </div>
-          <span class="origin-km-badge" id="originKmBadge">Start: ${esc(company)} Hub</span>
+          <div class="origin-top-actions">
+            <button type="button" class="origin-map-toggle-btn" id="toggleOriginMiniMapBtn" aria-expanded="false">${ORIGIN_MAP_SVG}<span>Route Map</span></button>
+          </div>
         </div>
-        <div class="origin-site-subgrid" id="wrap_origin_site_fields" hidden>
-          ${fld('Starting Site (Raw & Sales) *', inp('f_origin_site', 'text', '', 'list="dl_origin_sites" placeholder="Search site by frequency (Raw & Sales)..."') + dlMeta('dl_origin_sites', initOriginSites), { id: 'wrap_f_origin_site', hintId: 'hint_origin_site', hint: '' })}
-          ${fld('Prior Ticket # at Site (Last 24h · Optional)', inp('f_origin_ticket', 'text', '', 'list="dl_origin_tickets" placeholder="Select 24h Raw or Sales ticket (optional)..."') + dlMeta('dl_origin_tickets', []), { id: 'wrap_f_origin_ticket', hintId: 'hint_origin_ticket', hint: '' })}
+        <div class="origin-route-strip" id="originRouteStrip">
+          <button type="button" class="origin-stop-node is-from is-static" id="originRouteFromBtn">
+            <span class="origin-stop-dot" id="originFromDot" aria-hidden="true"></span>
+            <span class="origin-stop-copy">
+              <span class="origin-stop-title" id="originFromTitle">${esc(company)} Hub</span>
+              <span class="origin-stop-sub" id="originFromSub">Default Plant</span>
+            </span>
+          </button>
+          <div class="origin-route-mid">
+            <div class="origin-route-mid-pills">
+              <span class="origin-km-badge is-idle" id="originKmBadge">Start: ${esc(company)} Hub</span>
+              <span class="origin-eta-pill" id="originEtaPill" hidden></span>
+              <button type="button" class="origin-edit-km-btn" id="originEditKmBtn" hidden>Set KM</button>
+            </div>
+          </div>
+          <button type="button" class="origin-stop-node is-to is-empty" id="originRouteToBtn">
+            <span class="origin-stop-dot is-dest" id="originToDot" aria-hidden="true"></span>
+            <span class="origin-stop-copy">
+              <span class="origin-stop-title" id="originToTitle">${side === 'sales' ? 'Customer Pickup' : 'Select Quarry / Site'}</span>
+              <span class="origin-stop-sub" id="originToSub">${side === 'sales' ? 'At Plant · click for Delivery' : 'Click to search or pick on map'}</span>
+            </span>
+          </button>
+        </div>
+        <div class="origin-km-edit-bar" id="originKmEditBar" hidden>
+          <span style="font-weight:600;color:var(--ink)">Exact One-Way KM:</span>
+          <div style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <input type="number" id="originInlineKmInp" step="0.1" min="0" placeholder="km">
+            <button type="button" class="geo-mini-btn primary" id="originSaveKmBtn">Save KM</button>
+            <button type="button" class="geo-mini-btn" id="originResetKmBtn">Auto Map KM</button>
+          </div>
+        </div>
+        <div class="origin-minimap-drawer" id="originMiniMapDrawer" hidden>
+          <div class="origin-minimap-bar">
+            <div class="origin-minimap-targets">
+              <span style="font-weight:700;color:var(--muted)">Map Click Action:</span>
+              <button type="button" class="origin-map-target-pill active" data-origin-map-target="dest" id="originMapTargetDestBtn">${side === 'raw' ? 'Set Site' : 'Set Destination'}</button>
+              <button type="button" class="origin-map-target-pill" data-origin-map-target="origin" id="originMapTargetOrigBtn">Set Starting Point</button>
+            </div>
+            <span class="muted" id="originMiniMapHint" style="font-size:0.7rem">Click any pin or BU hub on map</span>
+          </div>
+          <div class="origin-minimap-canvas" id="originMiniMapCanvas"></div>
+        </div>
+        <div class="origin-site-drawer" id="wrap_origin_site_fields" hidden>
+          <div class="origin-freq-strip" id="originFreqStrip"></div>
+          <div class="origin-site-subgrid">
+            ${fld('Starting Site *', inp('f_origin_site', 'text', '', 'list="dl_origin_sites" placeholder="Search site by frequency (Raw & Sales)..."') + dlMeta('dl_origin_sites', initOriginSites), { id: 'wrap_f_origin_site', hintId: 'hint_origin_site', hint: '' })}
+            ${fld('Prior Ticket # (Last 24h · Optional)', inp('f_origin_ticket', 'text', '', 'list="dl_origin_tickets" placeholder="Select 24h Raw or Sales ticket (optional)..."') + dlMeta('dl_origin_tickets', []), { id: 'wrap_f_origin_ticket', hintId: 'hint_origin_ticket', hint: '' })}
+          </div>
+          <div class="origin-24h-cards-wrap" id="origin24hCardsWrap" hidden></div>
         </div>
         <div class="origin-redirect-banner" id="originRedirectBanner" hidden></div>
       </div>
@@ -27767,7 +27823,8 @@
 
   function syncOriginDispatchUI(side, allowAutoFill = true) {
     const company = val('f_company') || defaultEntryCompany();
-    if (!window.MFG_GEO || !$('wrap_f_origin_bar')) {
+    const originBarEl = $('wrap_f_origin_bar');
+    if (!window.MFG_GEO || !originBarEl) {
       return {
         originType: 'company',
         originName: company,
@@ -27790,6 +27847,7 @@
       FORM_UI.originMode = 'company';
       FORM_UI.originBu = '';
     }
+    originBarEl.setAttribute('data-active-mode', mode);
 
     const pillsEl = $('originModePills');
     const modeStamp = `${mode}:${originBu}`;
@@ -27805,15 +27863,17 @@
     const effDate = (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : (val('f_date') || todayISO());
     const effTime = val('f_time') || nowHHMM();
     const curTruck = val('f_truck');
+    const stats = window.MFG_GEO.getUnifiedSiteStats(SEED, STATE);
     let originSite = '';
     let matchedPrior = null;
     let rawTktVal = '';
 
     if (mode === 'site') {
       const dlSitesEl = $('dl_origin_sites');
-      const sitesCacheKey = `${company}|${effDate}|${curTruck}|${SEED._customRev || 0}`;
+      const sitesCacheKey = `${company}|${effDate}|${effTime}|${curTruck}|${SEED._customRev || 0}`;
+      let metaItems = null;
       if (dlSitesEl && dlSitesEl.dataset.cacheKey !== sitesCacheKey) {
-        const metaItems = window.MFG_GEO.getUnifiedSiteMetaItems(SEED, STATE, {
+        metaItems = window.MFG_GEO.getUnifiedSiteMetaItems(SEED, STATE, {
           side: 'both',
           date: effDate,
           time: effTime,
@@ -27824,24 +27884,48 @@
       }
 
       originSite = val('f_origin_site');
-      const stats = window.MFG_GEO.getUnifiedSiteStats(SEED, STATE);
+      const freqStripEl = $('originFreqStrip');
+      const freqStamp = `${sitesCacheKey}|${norm(originSite)}`;
+      if (freqStripEl && freqStripEl.dataset.cacheKey !== freqStamp) {
+        if (!metaItems) {
+          metaItems = window.MFG_GEO.getUnifiedSiteMetaItems(SEED, STATE, {
+            side: 'both',
+            date: effDate,
+            time: effTime,
+            truck: curTruck
+          });
+        }
+        const topSites = metaItems.slice(0, 6);
+        freqStripEl.innerHTML = topSites.length
+          ? `<span class="origin-freq-lbl">Frequent Sites:</span>` + topSites.map(([sName, sMeta]) => {
+              const isAct = Boolean(originSite && norm(originSite) === norm(sName));
+              const isTruckStop = /stop \(/i.test(String(sMeta || ''));
+              const stRow = stats && stats.byNorm ? stats.byNorm.get(norm(sName)) : null;
+              const cntBadge = isTruckStop ? '24h Truck' : (stRow && stRow.total > 0 ? fmtNum(stRow.total) : '');
+              return `<button type="button" class="origin-freq-chip${isTruckStop ? ' is-truck-stop' : ''}${isAct ? ' active' : ''}" data-pick-origin-site="${esc(sName)}"><span>${esc(sName)}</span>${cntBadge ? `<span class="origin-freq-chip-cnt">${esc(cntBadge)}</span>` : ''}</button>`;
+            }).join('')
+          : '';
+        freqStripEl.dataset.cacheKey = freqStamp;
+      }
+
       const stObj = originSite && stats && stats.byNorm ? stats.byNorm.get(norm(originSite)) : null;
       if (originSite && stObj) {
         setHint('hint_origin_site', `${stObj.region ? 'Zone: ' + stObj.region + ' · ' : ''}${fmtNum(stObj.raw)} Raw · ${fmtNum(stObj.sales)} Sales loads`, '');
       } else if (originSite) {
         setHint('hint_origin_site', 'Custom starting site', '');
       } else {
-        setHint('hint_origin_site', 'Ranked by combined Raw & Sales frequency (24h truck stops boosted)', '');
+        setHint('hint_origin_site', 'Click a frequent site above or search by Raw & Sales frequency', '');
       }
 
       const recent24h = originSite
         ? window.MFG_GEO.getSiteLast24hTickets(SEED, STATE, { site: originSite, date: effDate, time: effTime, truck: curTruck })
         : [];
+      const noCounts = new Map();
+      recent24h.forEach(t => noCounts.set(norm(t.ticket_no), (noCounts.get(norm(t.ticket_no)) || 0) + 1));
+
       const dlTktsEl = $('dl_origin_tickets');
       const tktsCacheKey = `${norm(originSite)}|${effDate}|${effTime}|${curTruck}|${recent24h.length}|${SEED._customRev || 0}`;
       if (dlTktsEl && dlTktsEl.dataset.cacheKey !== tktsCacheKey) {
-        const noCounts = new Map();
-        recent24h.forEach(t => noCounts.set(norm(t.ticket_no), (noCounts.get(norm(t.ticket_no)) || 0) + 1));
         dlTktsEl.innerHTML = recent24h.map(t => {
           const optVal = (noCounts.get(norm(t.ticket_no)) > 1) ? `${t.ticket_no} (${t.kindLabel})` : t.ticket_no;
           return `<option value="${esc(optVal)}" data-meta="${esc(t.metaLabel)}">`;
@@ -27880,6 +27964,48 @@
         }
       }
 
+      const cardsWrapEl = $('origin24hCardsWrap');
+      if (cardsWrapEl) {
+        if (originSite && recent24h.length > 0) {
+          cardsWrapEl.hidden = false;
+          const cardsStamp = `${tktsCacheKey}|${norm(rawTktVal)}|${matchedPrior ? matchedPrior.id : ''}`;
+          if (cardsWrapEl.dataset.cacheKey !== cardsStamp) {
+            cardsWrapEl.innerHTML = `
+              <div class="origin-24h-hdr">
+                <span>Last 24h at <b>${esc(originSite)}</b> (${recent24h.length} ${recent24h.length === 1 ? 'ticket' : 'tickets'} · click to link or clear)</span>
+                ${matchedPrior ? `<span class="origin-autofill-pill">Linked ${esc(matchedPrior.kindLabel)} #${esc(matchedPrior.ticket_no)}${matchedPrior.truck ? ' · Truck ' + esc(matchedPrior.truck) : ''}</span>` : ''}
+              </div>
+              <div class="origin-24h-cards-grid">
+                ${recent24h.slice(0, 6).map(t => {
+                  const optVal = (noCounts.get(norm(t.ticket_no)) > 1) ? `${t.ticket_no} (${t.kindLabel})` : t.ticket_no;
+                  const isPicked = Boolean(matchedPrior && matchedPrior.id === t.id);
+                  const partyLbl = t.kind === 'sales' ? (t.customer || '') : (t.site_owner || t.truck_owner || '');
+                  const prodQtyLbl = t.product ? (t.qty > 0 ? `${t.product} (${fmtNum(t.qty, 2)} ${t.uom || 'm³'})` : t.product) : '';
+                  const subLine = [t.truck ? `Truck ${t.truck}` : '', prodQtyLbl, partyLbl].filter(Boolean).join(' · ') || t.company || '';
+                  return `
+                    <button type="button" class="origin-tkt-card${isPicked ? ' active' : ''}" data-pick-origin-ticket="${esc(optVal)}">
+                      <span class="origin-tkt-card-top">
+                        <span style="display:inline-flex;align-items:center;gap:6px">
+                          <span class="origin-tkt-kind ${t.kind === 'sales' ? 'is-sales' : 'is-raw'}">${esc(t.kindLabel)}</span>
+                          <span class="origin-tkt-no">#${esc(t.ticket_no)}</span>
+                        </span>
+                        <span class="origin-tkt-age">${esc(t.ageLabel)}</span>
+                      </span>
+                      <span class="origin-tkt-card-sub">${esc(subLine)}</span>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+            `;
+            cardsWrapEl.dataset.cacheKey = cardsStamp;
+          }
+        } else {
+          cardsWrapEl.hidden = true;
+          cardsWrapEl.innerHTML = '';
+          cardsWrapEl.dataset.cacheKey = '';
+        }
+      }
+
       if (!originSite) {
         setHint('hint_origin_ticket', 'Pick a Starting Site first to suggest last-24h Raw & Sales tickets', '');
       } else if (matchedPrior) {
@@ -27901,7 +28027,7 @@
         const qtyTxt = matchedPrior.qty > 0 ? ` · ${fmtNum(matchedPrior.qty, 2)} ${matchedPrior.uom || 'm³'}` : '';
         redirEl.hidden = false;
         redirEl.innerHTML = `
-          <span><b>Redirected from Sales #${esc(pNo)}</b> (${esc(matchedPrior.customer || 'Customer')}${esc(qtyTxt)}${matchedPrior.product ? ' ' + esc(matchedPrior.product) : ''}) · Original Ticket Action:</span>
+          <span class="origin-redirect-copy"><b>Redirected from Sales #${esc(pNo)}</b> (${esc(matchedPrior.customer || 'Customer')}${esc(qtyTxt)}${matchedPrior.product ? ' ' + esc(matchedPrior.product) : ''}) · Original Ticket Action:</span>
           <div class="origin-redirect-actions">
             <button type="button" class="origin-disp-btn${disp === 'keep' ? ' active' : ''}" data-origin-disp="keep">Keep #${esc(pNo)} As-Is</button>
             <button type="button" class="origin-disp-btn${disp === 'return' ? ' active' : ''}" data-origin-disp="return">Return #${esc(pNo)} on Save</button>
@@ -27920,24 +28046,197 @@
     const fromSpec = mode === 'site'
       ? { type: 'site', name: originSite }
       : { type: 'bu', name: mode === 'bu' ? (originBu || company) : company };
-    const destSite = (side === 'sales' && val('f_saletype') !== 'Delivery') ? '' : val('f_site');
+    const saleTypeVal = side === 'sales' ? (val('f_saletype') || 'Pickup') : 'Delivery';
+    const isSalesNonDelivery = side === 'sales' && saleTypeVal !== 'Delivery';
+    const destSite = isSalesNonDelivery ? '' : val('f_site');
     const est = (fromSpec.name && destSite)
       ? window.MFG_GEO.estimateLegKm(fromSpec, { type: 'site', name: destSite }, SEED)
       : null;
 
+    // Sync Visual Origin <-> Destination Route Strip
+    const fromBtn = $('originRouteFromBtn');
+    const fromDot = $('originFromDot');
+    const fromTitle = $('originFromTitle');
+    const fromSub = $('originFromSub');
+    if (fromBtn && fromDot && fromTitle && fromSub) {
+      if (mode === 'site') {
+        fromDot.className = 'origin-stop-dot is-site';
+        fromBtn.classList.remove('is-static');
+        fromBtn.classList.toggle('is-empty', !originSite);
+        fromTitle.textContent = originSite || 'Pick Starting Site';
+        const origStats = originSite && stats && stats.byNorm ? stats.byNorm.get(norm(originSite)) : null;
+        fromSub.textContent = !originSite
+          ? 'Click chip or search below'
+          : (matchedPrior ? `Linked ${matchedPrior.kindLabel} #${matchedPrior.ticket_no}` : (origStats && origStats.region ? `Zone: ${origStats.region}` : 'Site Origin'));
+      } else {
+        const buTarget = mode === 'bu' ? (originBu || company) : company;
+        const hubObj = window.MFG_GEO.getCompanyHub ? window.MFG_GEO.getCompanyHub(buTarget, SEED) : null;
+        fromDot.className = mode === 'bu' ? 'origin-stop-dot is-bu' : 'origin-stop-dot';
+        fromBtn.classList.add('is-static');
+        fromBtn.classList.remove('is-empty');
+        fromTitle.textContent = `${buTarget} Hub`;
+        fromSub.textContent = mode === 'bu'
+          ? `${hubObj && hubObj.region ? hubObj.region + ' · ' : ''}Cross-BU Start`
+          : `${hubObj && hubObj.region ? hubObj.region + ' · ' : ''}Default Plant`;
+      }
+    }
+
+    const toBtn = $('originRouteToBtn');
+    const toDot = $('originToDot');
+    const toTitle = $('originToTitle');
+    const toSub = $('originToSub');
+    if (toBtn && toDot && toTitle && toSub) {
+      if (isSalesNonDelivery) {
+        toDot.className = 'origin-stop-dot is-muted';
+        toBtn.classList.remove('is-empty', 'is-static');
+        toTitle.textContent = saleTypeVal === 'Unregistered' ? 'Spot Cash Pickup' : 'Customer Pickup';
+        toSub.textContent = 'At Plant · click for Delivery';
+      } else if (!destSite) {
+        toDot.className = 'origin-stop-dot is-dest';
+        toBtn.classList.add('is-empty');
+        toBtn.classList.remove('is-static');
+        toTitle.textContent = side === 'raw' ? 'Select Quarry / Site' : 'Select Destination Site';
+        toSub.textContent = 'Click to search or pick on map';
+      } else {
+        const destStats = stats && stats.byNorm ? stats.byNorm.get(norm(destSite)) : null;
+        toDot.className = 'origin-stop-dot is-dest';
+        toBtn.classList.remove('is-empty', 'is-static');
+        toTitle.textContent = destSite;
+        toSub.textContent = destStats && destStats.region
+          ? `Zone: ${destStats.region}`
+          : (side === 'raw' ? 'Receiving / Quarry Site' : 'Delivery Destination');
+      }
+    }
+
     const kmBadge = $('originKmBadge');
+    const etaPill = $('originEtaPill');
+    const editKmBtn = $('originEditKmBtn');
+    const kmEditBar = $('originKmEditBar');
     if (kmBadge) {
       if (est && est.available) {
         kmBadge.hidden = false;
+        kmBadge.classList.remove('is-idle');
         kmBadge.textContent = (est.showRoundTrip && est.roundTripKm != null)
           ? `One-Way: ${est.oneWayKm.toFixed(1)} km · Round-Trip: ${est.roundTripKm.toFixed(1)} km`
           : `One-Way: ${est.oneWayKm.toFixed(1)} km`;
-      } else if (fromSpec.name) {
-        kmBadge.hidden = false;
-        kmBadge.textContent = `Start: ${fromSpec.name}${fromSpec.type === 'bu' ? ' Hub' : ''}`;
+        if (etaPill) {
+          etaPill.hidden = false;
+          etaPill.textContent = `~${est.estMinutes} min`;
+        }
+        if (editKmBtn) {
+          editKmBtn.hidden = false;
+          editKmBtn.classList.toggle('active', Boolean(FORM_UI.originKmEditOpen));
+          editKmBtn.textContent = est.source === 'Custom KM' ? 'Custom KM' : 'Adjust KM';
+        }
       } else {
-        kmBadge.hidden = true;
+        kmBadge.hidden = false;
+        kmBadge.classList.add('is-idle');
+        if (isSalesNonDelivery) {
+          kmBadge.textContent = `Loaded at ${fromSpec.name || company} · 0 km Haul`;
+        } else if (fromSpec.name) {
+          kmBadge.textContent = `Start: ${fromSpec.name}${fromSpec.type === 'bu' ? ' Hub' : ''}`;
+        } else {
+          kmBadge.textContent = 'Select Starting Site below';
+        }
+        if (etaPill) etaPill.hidden = true;
+        if (editKmBtn) {
+          const canSetManualKm = Boolean(!isSalesNonDelivery && fromSpec.name && destSite);
+          editKmBtn.hidden = !canSetManualKm;
+          editKmBtn.classList.toggle('active', Boolean(canSetManualKm && FORM_UI.originKmEditOpen));
+          editKmBtn.textContent = 'Set KM';
+        }
       }
+    }
+    if (kmEditBar) {
+      const showKmBar = Boolean(!isSalesNonDelivery && FORM_UI.originKmEditOpen && fromSpec.name && destSite);
+      if (!showKmBar) FORM_UI.originKmEditOpen = false;
+      kmEditBar.hidden = !showKmBar;
+      const kmInp = $('originInlineKmInp');
+      if (showKmBar && kmInp && document.activeElement !== kmInp) {
+        kmInp.value = (est && est.available) ? est.oneWayKm.toFixed(1) : '';
+      }
+    }
+
+    // Sync Inline Interactive Route Mini-Map Drawer
+    const mapToggleBtn = $('toggleOriginMiniMapBtn');
+    const miniDrawer = $('originMiniMapDrawer');
+    const miniCanvas = $('originMiniMapCanvas');
+    const mapOpen = Boolean(FORM_UI.originMiniMapOpen);
+    if (mapToggleBtn) {
+      mapToggleBtn.classList.toggle('active', mapOpen);
+      mapToggleBtn.setAttribute('aria-expanded', mapOpen ? 'true' : 'false');
+    }
+    if (miniDrawer) miniDrawer.hidden = !mapOpen;
+    if (mapOpen && miniCanvas && typeof window.MFG_GEO.wireTicketOriginMiniMap === 'function') {
+      const mapTarget = FORM_UI.originMapTarget === 'origin' ? 'origin' : 'dest';
+      const tDestBtn = $('originMapTargetDestBtn');
+      const tOrigBtn = $('originMapTargetOrigBtn');
+      if (tDestBtn) tDestBtn.classList.toggle('active', mapTarget === 'dest');
+      if (tOrigBtn) tOrigBtn.classList.toggle('active', mapTarget === 'origin');
+      const mapHint = $('originMiniMapHint');
+      if (mapHint && !mapHint.dataset.gpsPinned) {
+        mapHint.textContent = mapTarget === 'origin'
+          ? 'Click a site pin or BU hub on map to set Starting Point'
+          : (side === 'raw' ? 'Click any site pin on map to set Quarry / Site' : 'Click any site pin on map to set Destination');
+      }
+      window.MFG_GEO.wireTicketOriginMiniMap(miniCanvas, {
+        SEED,
+        STATE,
+        fromSpec,
+        toSpec: destSite ? { type: 'site', name: destSite } : null,
+        onPickBu: buName => {
+          const curCo = val('f_company') || defaultEntryCompany();
+          if (norm(buName) === norm(curCo)) {
+            FORM_UI.originMode = 'company';
+            FORM_UI.originBu = '';
+          } else {
+            FORM_UI.originMode = 'bu';
+            FORM_UI.originBu = buName;
+          }
+          FORM_UI.originPriorDisposition = 'keep';
+          FORM_UI.lastAutoFilledOriginTicket = '';
+          recalcForm();
+        },
+        onPickSite: sName => {
+          const curTarget = FORM_UI.originMapTarget === 'origin' ? 'origin' : 'dest';
+          if (curTarget === 'origin') {
+            FORM_UI.originMode = 'site';
+            FORM_UI.originBu = '';
+            const origInp = $('f_origin_site');
+            if (origInp) {
+              origInp.value = sName;
+              if (!val('f_site')) FORM_UI.originMapTarget = 'dest';
+              origInp.dispatchEvent(new Event('change', { bubbles: true }));
+            } else {
+              recalcForm();
+            }
+          } else {
+            if (side === 'sales' && $('f_saletype') && val('f_saletype') !== 'Delivery') {
+              $('f_saletype').value = 'Delivery';
+            }
+            const siteInp = $('f_site');
+            if (siteInp) {
+              siteInp.value = sName;
+              siteInp.dispatchEvent(new Event('change', { bubbles: true }));
+            } else {
+              recalcForm();
+            }
+          }
+        },
+        onClickMapCoord: (lat, lng) => {
+          const det = window.MFG_GEO.findContainingRegion ? window.MFG_GEO.findContainingRegion(lat, lng, SEED) : null;
+          const mapHintEl = $('originMiniMapHint');
+          if (mapHintEl) {
+            mapHintEl.dataset.gpsPinned = '1';
+            mapHintEl.textContent = `${det && det.best ? 'Zone: ' + det.best + ' · ' : ''}GPS ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          }
+        },
+        onRouteResolved: () => {
+          recalcForm();
+        }
+      });
+    } else if (!mapOpen && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
+      window.MFG_GEO.cleanupTicketOriginMiniMap();
     }
 
     const originName = mode === 'site' ? originSite : (mode === 'bu' ? (originBu || company) : company);
@@ -28045,7 +28344,7 @@
 
     if (window.MFG_FORMS && !['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement'].includes(fType)) {
       return cockpitHtml + window.MFG_FORMS.renderExtendedFormBody(fType, { SEED, STATE }, {
-        allowedCompanyNames, defaultEntryCompany, customerNames, supplierNames, siteNames, equipmentNames, driverNames, getFreqIndex, uniqSorted, domainProductMetaItems
+        allowedCompanyNames, defaultEntryCompany, customerNames, supplierNames, siteNames, equipmentNames, driverNames, getFreqIndex, uniqSorted, domainProductMetaItems, resolveStaffShiftForDate
       });
     }
 
@@ -32531,6 +32830,7 @@
         const cardEl = $('attStaffContractCard');
         const hasStaffRule = curStaff ? hasExplicitStaffWorkRule(curStaff) : false;
         const staffShiftCfg = curStaff ? resolveStaffShiftForDate(curStaff, curCo, attDate) : null;
+        const attShiftWin = curStaff ? resolveStaffAttendanceDefaultWindow(curStaff, curCo, attDate) : null;
         const staffOtCfg = curStaff ? describeStaffOvertimeRule(curStaff, curCo, attDate) : null;
         if (cardEl) {
           if (!curStaff) {
@@ -32543,7 +32843,7 @@
               <div><strong>${esc(prof.staff)}</strong> <span class="badge ${prof.status === 'Current' ? 'badge-ok' : 'badge-warn'}">${esc(prof.status)}</span> ${dupWarnHtml}</div>
               <div class="att-contract-metrics">
                 <span><small>Monthly</small><b>${fmtUSD(prof.monthlySalary, 0)}</b></span>
-                <span><small>Schedule</small><b>${hasStaffRule && staffShiftCfg ? esc(staffShiftCfg.badgeLabel) : `${prof.workingDays}d × ${fmtNum(prof.workingHours, 1)}h`}</b></span>
+                <span><small>Schedule</small><b>${attShiftWin ? esc(attShiftWin.badgeLabel) : `${prof.workingDays}d × ${fmtNum(prof.workingHours, 1)}h`}</b></span>
                 <span><small>OT Policy</small><b>${hasStaffRule && staffOtCfg ? esc(staffOtCfg.badgeText) : 'Contract Rate'}</b></span>
                 <span><small>OT Rate</small><b>${fmtUSD(prof.otHourlyRate, 2)}/hr (${prof.otMultiplier}×)</b></span>
                 <span><small>Daily</small><b>${fmtUSD(prof.dailyRate, 2)}/d</b></span>
@@ -32552,7 +32852,7 @@
           } else {
             cardEl.hidden = false;
             cardEl.className = 'att-contract-strip is-warn';
-            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file · Shift: <b>${esc(staffShiftCfg ? staffShiftCfg.badgeLabel : '08:00-16:00 (8.0h)')}</b> · OT: <b>${esc(hasStaffRule && staffOtCfg ? staffOtCfg.badgeText : 'Fallback Rate')}</b> (${fmtUSD(prof.hourlyRate, 2)}/hr). ${dupWarnHtml}</span>`;
+            cardEl.innerHTML = `<span><b>${esc(curStaff)}</b> has no active contract on file · Shift: <b>${esc(attShiftWin ? attShiftWin.badgeLabel : '08:00-16:00 (8.0h)')}</b> · OT: <b>${esc(hasStaffRule && staffOtCfg ? staffOtCfg.badgeText : 'Fallback Rate')}</b> (${fmtUSD(prof.hourlyRate, 2)}/hr). ${dupWarnHtml}</span>`;
           }
         }
         setHint(
@@ -32621,30 +32921,32 @@
         const activePreset = FORM_UI.attPreset || 'regular';
         const isNoClock = activePreset === 'noclock';
         const isCallout = activePreset === 'callout';
-        const effShiftHrs = (hasStaffRule && staffShiftCfg && staffShiftCfg.hours > 0) ? Number(staffShiftCfg.hours) : contractHrs;
+        const effShiftHrs = (attShiftWin && attShiftWin.hours > 0) ? Number(attShiftWin.hours) : contractHrs;
 
         if (curStaff !== FORM_UI.lastAttStaff) {
           FORM_UI.lastAttStaff = curStaff;
-          if (curStaff && !isNoClock && !FORM_UI.attClockManual && $('f_in') && $('f_out')) {
-            if (hasStaffRule && staffShiftCfg && staffShiftCfg.start_time && staffShiftCfg.end_time) {
-              $('f_in').value = staffShiftCfg.start_time;
-              $('f_out').value = staffShiftCfg.end_time;
+          FORM_UI.attClockManual = false;
+        }
+        const attShiftKey = curStaff
+          ? `${norm(curStaff)}|${norm(curCo)}|${attDate}|${attShiftWin ? attShiftWin.start_time : ''}|${attShiftWin ? attShiftWin.end_time : ''}`
+          : '__empty__';
+        if (attShiftKey !== FORM_UI.lastAttShiftKey) {
+          FORM_UI.lastAttShiftKey = attShiftKey;
+          if (!isNoClock && !FORM_UI.attClockManual && $('f_in') && $('f_out')) {
+            if (curStaff && attShiftWin && attShiftWin.start_time && attShiftWin.end_time) {
+              $('f_in').value = attShiftWin.start_time;
+              $('f_out').value = attShiftWin.end_time;
             } else {
-              const inStart = parseAttClockHour(val('f_in') || '08:00');
-              if (inStart != null) {
-                const endTotalMin = Math.round(((inStart + contractHrs) % 24) * 60);
-                const hh = String(Math.floor(endTotalMin / 60) % 24).padStart(2, '0');
-                const mm = String(endTotalMin % 60).padStart(2, '0');
-                $('f_out').value = `${hh}:${mm}`;
-              }
+              $('f_in').value = '08:00';
+              $('f_out').value = '16:00';
             }
           }
         }
 
         const regBtn = $('attPresetRegularBtn');
         if (regBtn) {
-          regBtn.textContent = curStaff
-            ? (hasStaffRule && staffShiftCfg ? `${staffShiftCfg.name} (${fmtNum(effShiftHrs, 1)}h Contract)` : `Regular Shift (${fmtNum(contractHrs, 1)}h Contract)`)
+          regBtn.textContent = (curStaff && attShiftWin)
+            ? `${attShiftWin.name} (${attShiftWin.start_time}-${attShiftWin.end_time}${attShiftWin.overnight ? ' +1d' : ''})`
             : 'Regular Shift (Contract)';
         }
         const deckEl = $('attModeDeck');
@@ -34527,10 +34829,14 @@
     FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = ''; FORM_UI.lastFuelItem = val('f_item'); FORM_UI.greaseAutoPreset = false;
     FORM_UI.defectRefPreset = false; FORM_UI.lastSeverity = ''; FORM_UI.lastDefectRef = '';
     FORM_UI.attPreset = 'regular'; FORM_UI.attClockManual = false;
-    FORM_UI.lastAttStaff = ''; FORM_UI.lastAttDate = val('f_date'); FORM_UI.lastAttTimeKey = '';
+    FORM_UI.lastAttStaff = ''; FORM_UI.lastAttShiftKey = ''; FORM_UI.lastAttDate = val('f_date'); FORM_UI.lastAttTimeKey = '';
     FORM_UI.lastSalStaffMonthKey = '';
     FORM_UI.wasPricePending = false; FORM_UI.methodBeforePending = '';
     FORM_UI.originMode = 'company'; FORM_UI.originBu = ''; FORM_UI.originPriorDisposition = 'keep'; FORM_UI.lastAutoFilledOriginTicket = '';
+    FORM_UI.originMiniMapOpen = false; FORM_UI.originMapTarget = 'dest'; FORM_UI.originKmEditOpen = false;
+    if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
+      window.MFG_GEO.cleanupTicketOriginMiniMap();
+    }
 
     const salUsdInp = $('f_usd');
     if (salUsdInp && !salUsdInp.dataset.salManualWired) {
@@ -34582,10 +34888,125 @@
           if (nextMode !== 'site') {
             FORM_UI.originPriorDisposition = 'keep';
             FORM_UI.lastAutoFilledOriginTicket = '';
+            FORM_UI.originMapTarget = 'dest';
           } else if (STATE.modalForm === 'sales' && $('f_saletype') && val('f_saletype') === 'Pickup' && !val('f_customer')) {
             $('f_saletype').value = 'Delivery';
           }
           recalcForm();
+          return;
+        }
+        const origMapBtn = ev.target && ev.target.closest ? ev.target.closest('#toggleOriginMiniMapBtn') : null;
+        if (origMapBtn) {
+          ev.preventDefault();
+          FORM_UI.originMiniMapOpen = !FORM_UI.originMiniMapOpen;
+          if (FORM_UI.originMiniMapOpen) {
+            FORM_UI.originMapTarget = (FORM_UI.originMode === 'site' && !val('f_origin_site')) ? 'origin' : 'dest';
+          }
+          recalcForm();
+          return;
+        }
+        const origMapTargetBtn = ev.target && ev.target.closest ? ev.target.closest('[data-origin-map-target]') : null;
+        if (origMapTargetBtn) {
+          ev.preventDefault();
+          FORM_UI.originMapTarget = origMapTargetBtn.getAttribute('data-origin-map-target') || 'dest';
+          const mh = $('originMiniMapHint');
+          if (mh) delete mh.dataset.gpsPinned;
+          recalcForm();
+          return;
+        }
+        const origFromNodeBtn = ev.target && ev.target.closest ? ev.target.closest('#originRouteFromBtn') : null;
+        if (origFromNodeBtn) {
+          ev.preventDefault();
+          if (FORM_UI.originMode === 'site') {
+            const osInp = $('f_origin_site');
+            if (osInp) { try { osInp.focus({ preventScroll: true }); } catch (_) {} }
+          } else if (FORM_UI.originMiniMapOpen) {
+            FORM_UI.originMapTarget = 'origin';
+            recalcForm();
+          }
+          return;
+        }
+        const origToNodeBtn = ev.target && ev.target.closest ? ev.target.closest('#originRouteToBtn') : null;
+        if (origToNodeBtn) {
+          ev.preventDefault();
+          if (STATE.modalForm === 'sales' && $('f_saletype') && val('f_saletype') !== 'Delivery') {
+            $('f_saletype').value = 'Delivery';
+            recalcForm();
+          }
+          const sInp = $('f_site');
+          if (sInp && !sInp.closest('[hidden]')) {
+            try { sInp.focus({ preventScroll: true }); } catch (_) {}
+          }
+          return;
+        }
+        const editKmToggle = ev.target && ev.target.closest ? ev.target.closest('#originEditKmBtn') : null;
+        if (editKmToggle) {
+          ev.preventDefault();
+          FORM_UI.originKmEditOpen = !FORM_UI.originKmEditOpen;
+          recalcForm();
+          if (FORM_UI.originKmEditOpen && $('originInlineKmInp')) {
+            try { $('originInlineKmInp').focus({ preventScroll: true }); $('originInlineKmInp').select(); } catch (_) {}
+          }
+          return;
+        }
+        const saveKmBtn = ev.target && ev.target.closest ? ev.target.closest('#originSaveKmBtn') : null;
+        if (saveKmBtn) {
+          ev.preventDefault();
+          const kmInp = $('originInlineKmInp');
+          const v = kmInp ? parseFloat(kmInp.value) : NaN;
+          if (!Number.isFinite(v) || v < 0) {
+            toast('Enter a valid non-negative KM value', 'err');
+            return;
+          }
+          const co = val('f_company') || defaultEntryCompany();
+          const fSpec = FORM_UI.originMode === 'site'
+            ? { type: 'site', name: val('f_origin_site') }
+            : { type: 'bu', name: FORM_UI.originMode === 'bu' ? (FORM_UI.originBu || co) : co };
+          const dSite = val('f_site');
+          if (window.MFG_GEO && fSpec.name && dSite) {
+            window.MFG_GEO.setPairKmOverride(fSpec, { type: 'site', name: dSite }, v);
+            FORM_UI.originKmEditOpen = false;
+            toast(`Saved ${v.toFixed(1)} km route distance`, 'ok');
+            recalcForm();
+          }
+          return;
+        }
+        const resetKmBtn = ev.target && ev.target.closest ? ev.target.closest('#originResetKmBtn') : null;
+        if (resetKmBtn) {
+          ev.preventDefault();
+          const co = val('f_company') || defaultEntryCompany();
+          const fSpec = FORM_UI.originMode === 'site'
+            ? { type: 'site', name: val('f_origin_site') }
+            : { type: 'bu', name: FORM_UI.originMode === 'bu' ? (FORM_UI.originBu || co) : co };
+          const dSite = val('f_site');
+          if (window.MFG_GEO && fSpec.name && dSite) {
+            window.MFG_GEO.setPairKmOverride(fSpec, { type: 'site', name: dSite }, null);
+            FORM_UI.originKmEditOpen = false;
+            recalcForm();
+          }
+          return;
+        }
+        const pickOrigSiteBtn = ev.target && ev.target.closest ? ev.target.closest('[data-pick-origin-site]') : null;
+        if (pickOrigSiteBtn) {
+          ev.preventDefault();
+          const pickedSite = pickOrigSiteBtn.getAttribute('data-pick-origin-site') || '';
+          const osInp = $('f_origin_site');
+          if (osInp && pickedSite) {
+            osInp.value = pickedSite;
+            osInp.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          return;
+        }
+        const pickOrigTktBtn = ev.target && ev.target.closest ? ev.target.closest('[data-pick-origin-ticket]') : null;
+        if (pickOrigTktBtn) {
+          ev.preventDefault();
+          const pickedTkt = pickOrigTktBtn.getAttribute('data-pick-origin-ticket') || '';
+          const otInp = $('f_origin_ticket');
+          if (otInp && pickedTkt) {
+            const curVal = val('f_origin_ticket');
+            otInp.value = norm(curVal) === norm(pickedTkt) ? '' : pickedTkt;
+            otInp.dispatchEvent(new Event('change', { bubbles: true }));
+          }
           return;
         }
         const origDispBtn = ev.target && ev.target.closest ? ev.target.closest('[data-origin-disp]') : null;
@@ -34726,14 +35147,19 @@
           const p = btn.getAttribute('data-att-preset') || 'regular';
           FORM_UI.attPreset = p;
           FORM_UI.lastAttTimeKey = '';
-          const prof = getStaffContractProfile(val('f_staff'), val('f_company'), val('f_date'));
+          const curSt = val('f_staff');
+          const curCo = val('f_company') || defaultEntryCompany();
+          const curAttD = val('f_repdate') || val('f_date') || todayISO();
+          const shWin = curSt ? resolveStaffAttendanceDefaultWindow(curSt, curCo, curAttD) : null;
           if (p === 'regular') {
-            if ($('f_in') && !val('f_in')) $('f_in').value = '08:00';
-            if ($('f_out') && !val('f_out')) $('f_out').value = '16:00';
-            if ($('f_sched_hours')) $('f_sched_hours').value = String(prof.workingHours || 8);
+            FORM_UI.attClockManual = false;
+            FORM_UI.lastAttShiftKey = '';
+            if ($('f_in')) $('f_in').value = shWin ? shWin.start_time : '08:00';
+            if ($('f_out')) $('f_out').value = shWin ? shWin.end_time : '16:00';
+            if ($('f_sched_hours')) $('f_sched_hours').value = String((shWin && shWin.hours > 0) ? shWin.hours : (getStaffContractProfile(curSt, curCo, curAttD).workingHours || 8));
           } else if (p === 'callout') {
-            if ($('f_in') && !val('f_in')) $('f_in').value = '08:00';
-            if ($('f_out') && !val('f_out')) $('f_out').value = '16:00';
+            if ($('f_in') && (!val('f_in') || !FORM_UI.attClockManual)) $('f_in').value = shWin ? shWin.start_time : '08:00';
+            if ($('f_out') && (!val('f_out') || !FORM_UI.attClockManual)) $('f_out').value = shWin ? shWin.end_time : '16:00';
             if ($('f_sched_hours')) $('f_sched_hours').value = '0';
           } else if (p === 'noclock') {
             if ($('f_hours')) $('f_hours').value = '0';
@@ -35135,6 +35561,7 @@
     });
 
     body.querySelectorAll('input, select').forEach(el => {
+      if (el.id === 'originInlineKmInp') return;
       // Clicking a policy-locked input/select opens the Admin Privilege Unlock Process
       el.addEventListener('mousedown', ev => {
         if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id)) {
@@ -35161,6 +35588,7 @@
         }
         if (el.id === 'f_time') FORM_UI.otManual = false;
         if (el.id === 'f_overtime') FORM_UI.otManual = true;
+        if (el.id === 'f_staff') { FORM_UI.attClockManual = false; FORM_UI.lastAttShiftKey = ''; FORM_UI.lastAttTimeKey = ''; }
         if (el.id === 'f_ticketno') FORM_UI.ticketManual = !!el.value;
         // Selecting or clearing a truck resets manual quantity, meter type & driver so the unit's category, capacity and default driver populate first
         if (el.id === 'f_truck') { FORM_UI.qtyManual = false; FORM_UI.meterTypeManual = false; FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; }
@@ -35989,8 +36417,8 @@
         const effType = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
         const tallyVal = otH > 0 ? otH : (ltH > 0 ? ltH : workedH);
         const hasStaffRuleSave = st ? hasExplicitStaffWorkRule(st) : false;
-        const staffShiftSave = (!isNoClock && !isCallout && hasStaffRuleSave && st) ? resolveStaffShiftForDate(st, company, attDate) : null;
-        const timingSave = (staffShiftSave && inFmt && outFmt) ? evaluateShiftPunchTiming(st, company, attDate, inFmt, outFmt) : null;
+        const staffShiftSave = (!isNoClock && !isCallout && st) ? resolveStaffAttendanceDefaultWindow(st, company, attDate) : null;
+        const timingSave = (hasStaffRuleSave && staffShiftSave && inFmt && outFmt) ? evaluateShiftPunchTiming(st, company, attDate, inFmt, outFmt) : null;
         record = {
           ...base,
           name: `ATT ${attDate} ${st}`,
@@ -36886,6 +37314,9 @@
           }
         }
         if ($('f_notes')) $('f_notes').value = '';
+        FORM_UI.attClockManual = false;
+        FORM_UI.lastAttShiftKey = '';
+        FORM_UI.lastAttTimeKey = '';
         recalcForm();
       } else {
         closeEntryModal(true);
@@ -37334,6 +37765,9 @@
 
   function closeEntryModal(force) {
     if (STATE.saving && !force) return;
+    if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
+      window.MFG_GEO.cleanupTicketOriginMiniMap();
+    }
     STATE.editingPendingExpenseId = '';
     const tw = $('modalTabs');
     if (tw) tw.hidden = false;
@@ -41654,7 +42088,7 @@
         const portrait = window.innerHeight > window.innerWidth;
         const prefVideo = portrait
           ? { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 960 } }
-          : { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } };
+          : { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } };
         const s = await navigator.mediaDevices.getUserMedia({
           video: prefVideo,
           audio: false
@@ -41702,6 +42136,7 @@
     if (FACE_STATE.enrolLoopTimer) { clearTimeout(FACE_STATE.enrolLoopTimer); FACE_STATE.enrolLoopTimer = null; }
     if (FACE_STATE.enrolTestTimer) { clearTimeout(FACE_STATE.enrolTestTimer); FACE_STATE.enrolTestTimer = null; }
     FACE_STATE.camActive = false;
+    FACE_STATE.camStarting = false;
     FACE_STATE.enrolCamActive = false;
     FACE_STATE.enrolTestActive = false;
     const vp = $('authCamViewport');
@@ -41762,6 +42197,13 @@
     const vpEl = $('authCamViewport');
     const videoReady = Boolean(vpEl && vpEl.classList.contains('is-video-ready'));
     const wsMode = getWorkspaceAuthMode();
+    const camPrewarming = Boolean(
+      !FACE_STATE.authCamStoppedByUser &&
+      window.Face &&
+      typeof window.Face.isPrewarming === 'function' &&
+      window.Face.isPrewarming()
+    );
+    const camBusyOrLive = Boolean(FACE_STATE.camActive || FACE_STATE.camStarting || camPrewarming);
 
     if (camBtn) {
       camBtn.hidden = !FACE_STATE.camActive || !videoReady || (wsMode === 'pin_only');
@@ -41769,7 +42211,7 @@
       if (camLbl) camLbl.textContent = 'Pause';
     }
     if (offEl) {
-      offEl.hidden = !!FACE_STATE.camActive && wsMode !== 'pin_only';
+      offEl.hidden = camBusyOrLive && wsMode !== 'pin_only';
       offEl.classList.toggle('is-pin-only', wsMode === 'pin_only');
     }
     if (offLbl) {
@@ -41794,8 +42236,10 @@
     const hintEl = $('authFaceHint');
     if (wsMode === 'pin_only' && hintEl && !FACE_STATE.pending2faUser) {
       setAuthHint('', '');
+    } else if (!videoReady && camBusyOrLive && hintEl && !FACE_STATE.pending2faUser) {
+      setAuthHint('', '');
     } else if (enrolled.length && hintEl && !hintEl.textContent && FACE_STATE.camActive && videoReady && !FACE_STATE.pending2faUser) {
-      setAuthHint('Look at camera for automatic Face ID', 'ok');
+      setAuthHint(window.Face && window.Face.ready ? 'Look at camera for automatic Face ID' : 'Preparing Face ID…', (window.Face && window.Face.ready) ? 'ok' : '');
     }
   }
 
@@ -42185,15 +42629,21 @@
       updateAuthFaceUi();
       return false;
     }
-    updateAuthFaceUi();
     if ((navigator.webdriver || window.__MFG_HEADLESS_TEST) && !forceStart) {
+      FACE_STATE.camStarting = false;
+      updateAuthFaceUi();
       setAuthHint('', '');
       return false;
     }
     const videoEl = $('authFaceVideo');
-    if (!videoEl) return false;
-    setAuthHint('Starting camera…', '');
+    if (!videoEl) {
+      updateAuthFaceUi();
+      return false;
+    }
+    FACE_STATE.camStarting = true;
+    updateAuthFaceUi();
     const camOk = await startFaceCamera(videoEl);
+    FACE_STATE.camStarting = false;
     if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) {
       stopFaceCamera();
       updateAuthFaceUi();
@@ -42207,15 +42657,16 @@
     }
     const enrolled = usableFaces();
     const faceAlreadyReady = Boolean(window.Face && window.Face.ready);
+    const videoReadyNow = Boolean($('authCamViewport')?.classList.contains('is-video-ready'));
     setAuthHint(
       FACE_STATE.pending2faUser
         ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}`
-        : (enrolled.length
+        : (videoReadyNow && enrolled.length
           ? (faceAlreadyReady
             ? 'Look at camera for automatic Face ID'
             : 'Preparing Face ID…')
           : ''),
-      (enrolled.length && faceAlreadyReady) ? 'ok' : ''
+      (videoReadyNow && enrolled.length && faceAlreadyReady) ? 'ok' : ''
     );
     const startModelsWhenReady = () => {
       if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) return Promise.resolve(false);
@@ -45169,12 +45620,57 @@
     return Boolean(ws.staffRules[k] && !ws.staffRules[k].reset_default);
   }
 
+  let _habitualShiftCacheRev = '';
+  let _habitualShiftByStaff = new Map();
+
+  function inferHabitualStaffShiftId(staffName, company) {
+    const k = norm(staffName);
+    const prof = getStaffContractProfile(staffName, company);
+    const fallbackId = (prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4';
+    if (!k) return fallbackId;
+    const attArr = (SEED.records && Array.isArray(SEED.records.attendance)) ? SEED.records.attendance : [];
+    const rev = `${attArr.length}|${(STATE.customRecords && Array.isArray(STATE.customRecords.attendance)) ? STATE.customRecords.attendance.length : 0}`;
+    if (rev !== _habitualShiftCacheRev) {
+      _habitualShiftCacheRev = rev;
+      _habitualShiftByStaff = new Map();
+    }
+    const coNorm = norm(company || prof.company || 'WTC');
+    const cacheKey = `${coNorm}|${k}|${fallbackId}`;
+    if (_habitualShiftByStaff.has(cacheKey)) return _habitualShiftByStaff.get(cacheKey);
+    const matching = [];
+    for (let i = 0; i < attArr.length; i++) {
+      const a = attArr[i];
+      if (!a || a.voided || norm(a.staff) !== k) continue;
+      if (coNorm && a.company && norm(a.company) !== coNorm) continue;
+      const tin = fmtAttClockTime(a.in_time || a.check_in || '');
+      const tout = fmtAttClockTime(a.out_time || a.check_out || '');
+      if (!tin || !tout) continue;
+      matching.push({ d: String(a.set_date || a.rep_date || a.date || '').slice(0, 10), tin });
+    }
+    if (matching.length < 3) {
+      _habitualShiftByStaff.set(cacheKey, fallbackId);
+      return fallbackId;
+    }
+    matching.sort((a, b) => a.d.localeCompare(b.d));
+    const recent = matching.slice(-15);
+    let nightCnt = 0;
+    for (let i = 0; i < recent.length; i++) {
+      const inMin = parseClockMinutes(recent[i].tin);
+      if (inMin != null && inMin >= 17 * 60) nightCnt++;
+    }
+    const inferred = (nightCnt / recent.length >= 0.65) ? 'night_7_3' : fallbackId;
+    _habitualShiftByStaff.set(cacheKey, inferred);
+    return inferred;
+  }
+
   function getStaffWorkRule(staffName, company) {
     const k = norm(staffName);
     const ws = ensureWorkSchedulesState();
     const raw = (k && ws.staffRules[k]) ? ws.staffRules[k] : null;
     const prof = getStaffContractProfile(staffName, company);
-    const defaultShiftId = (prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4';
+    const defaultShiftId = (raw && raw.reset_default)
+      ? ((prof.hasContract && Number(prof.workingHours) === 9) ? 'ext_7_4' : 'day_8_4')
+      : inferHabitualStaffShiftId(staffName, company);
     const base = Object.assign({
       staff: staffName || '',
       company: company || prof.company || defaultEntryCompany(),
@@ -45377,6 +45873,72 @@
       windowLabel,
       badgeLabel
     });
+  }
+
+  function resolveStaffAttendanceDefaultWindow(staffName, company, isoDate = todayISO()) {
+    const dStr = String(isoDate || todayISO()).slice(0, 10);
+    const prof = getStaffContractProfile(staffName, company, dStr);
+    const contractHrs = Number(prof.workingHours || 8);
+    const hasRule = staffName ? hasExplicitStaffWorkRule(staffName) : false;
+    let sh = staffName ? resolveStaffShiftForDate(staffName, company, dStr) : null;
+    if (sh && sh.id === 'off' && staffName) {
+      const rule = getStaffWorkRule(staffName, company);
+      const types = getShiftTypes();
+      if (rule.shift_id === 'custom') {
+        sh = normalizeShiftTypeObj({
+          id: 'custom',
+          name: rule.custom_name || 'Custom Shift',
+          short: 'Custom',
+          start_time: rule.custom_start,
+          end_time: rule.custom_end,
+          days: rule.custom_days,
+          grace_min: rule.grace_min,
+          tone: 'emerald'
+        });
+      } else {
+        sh = Object.assign({}, types.find(t => t.id === rule.shift_id) || types[0]);
+      }
+      sh.badgeLabel = `${sh.short} · ${sh.start_time}-${sh.end_time}${sh.overnight ? ' +1d' : ''}`;
+    }
+    if (!sh) {
+      return {
+        id: 'day_8_4',
+        name: 'Day Shift',
+        short: 'Day',
+        start_time: '08:00',
+        end_time: '16:00',
+        hours: contractHrs || 8,
+        overnight: false,
+        isOverride: false,
+        badgeLabel: 'Day · 08:00-16:00'
+      };
+    }
+    let startT = sh.start_time || '08:00';
+    let endT = sh.end_time || '16:00';
+    let durHrs = Number(sh.hours || contractHrs || 8);
+    const defDay = DEFAULT_SHIFT_TYPES[0];
+    if (!hasRule && !sh.isOverride && sh.id === 'day_8_4' && startT === defDay.start_time && endT === defDay.end_time && prof.hasContract && Math.abs(contractHrs - durHrs) > 0.05) {
+      const sMin = parseClockMinutes(startT);
+      if (sMin != null) {
+        const eTotal = ((sMin + Math.round(contractHrs * 60)) % 1440 + 1440) % 1440;
+        endT = `${String(Math.floor(eTotal / 60)).padStart(2, '0')}:${String(eTotal % 60).padStart(2, '0')}`;
+        durHrs = contractHrs;
+      }
+    }
+    const sMinFinal = parseClockMinutes(startT);
+    const eMinFinal = parseClockMinutes(endT);
+    const overnight = Boolean(sMinFinal != null && eMinFinal != null && eMinFinal <= sMinFinal);
+    return {
+      id: sh.id,
+      name: sh.name || 'Regular Shift',
+      short: sh.short || 'Shift',
+      start_time: startT,
+      end_time: endT,
+      hours: durHrs,
+      overnight,
+      isOverride: Boolean(sh.isOverride),
+      badgeLabel: `${sh.short || 'Shift'} · ${startT}-${endT}${overnight ? ' +1d' : ''}`
+    };
   }
 
   function describeStaffOvertimeRule(staffName, company, refDate = todayISO()) {
@@ -52370,6 +52932,7 @@
       addStaffOtPass: (staff, spec = {}) => addStaffOtPass(staff, spec),
       removeStaffOtPass: (staff, id) => removeStaffOtPass(staff, id),
       resolveStaffShiftForDate: (staff, co, dateStr) => resolveStaffShiftForDate(staff, co, dateStr),
+      resolveStaffAttendanceDefaultWindow: (staff, co, dateStr) => resolveStaffAttendanceDefaultWindow(staff, co, dateStr),
       describeStaffOvertimeRule: (staff, co, dateStr) => describeStaffOvertimeRule(staff, co, dateStr),
       evaluateShiftPunchTiming: (staff, co, dateStr, inTime, outTime, opts = {}) => evaluateShiftPunchTiming(staff, co, dateStr, inTime, outTime, opts),
       enrolStaffFacePose: (staff, vec, opts = {}) => enrolStaffFacePose(staff, vec, (opts && opts.thumb) || '', (opts && typeof opts.poseIndex === 'number') ? opts.poseIndex : null),

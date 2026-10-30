@@ -1,4 +1,10 @@
-/* ==================== ISABI GEO STUDIO & DISPATCH CHAINING (v19.6.0) ==================== */
+/* ==================== ISABI GEO STUDIO & INTERACTIVE DISPATCH ROUTE COCKPIT (v19.6.8) ==================== */
+
+.geo-studio-deck [hidden],
+.origin-dispatch-card [hidden],
+.geo-modal-map-wrap [hidden] {
+  display: none !important;
+}
 
 .geo-studio-deck {
   margin: 10px 0 14px;
@@ -6,10 +12,10 @@
   border-radius: 14px;
   background: var(--surface, #FAF8F5);
   overflow: hidden;
-  box-shadow: 0 2px 10px rgba(8, 17, 36, 0.04);
+  box-shadow: 0 3px 14px rgba(8, 17, 36, 0.05);
 }
 [data-theme="dark"] .geo-studio-deck {
-  background: rgba(15, 25, 46, 0.72);
+  background: rgba(15, 25, 46, 0.78);
   border-color: rgba(255, 255, 255, 0.1);
 }
 
@@ -24,7 +30,7 @@
   flex-wrap: wrap;
 }
 [data-theme="dark"] .geo-studio-topbar {
-  background: rgba(10, 18, 36, 0.88);
+  background: rgba(10, 18, 36, 0.9);
 }
 
 .geo-studio-title-grp {
@@ -128,6 +134,7 @@
   padding: 5px 10px;
   border-radius: 8px;
   cursor: pointer;
+  transition: border-color 0.14s ease, color 0.14s ease;
 }
 .geo-collapse-btn:hover {
   color: var(--ink);
@@ -176,6 +183,27 @@
   color: var(--ink);
   font-size: 0.78rem;
   max-width: 100%;
+}
+.geo-radius-slider {
+  width: 108px;
+  accent-color: #1D4ED8;
+  cursor: pointer;
+}
+.geo-live-inside-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(5, 150, 105, 0.12);
+  border: 1px solid rgba(5, 150, 105, 0.32);
+  color: #047857;
+}
+[data-theme="dark"] .geo-live-inside-pill {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6EE7B7;
 }
 .geo-radius-pills {
   display: inline-flex;
@@ -264,6 +292,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 .geo-bu-chip:hover,
 .geo-bu-chip.active {
@@ -293,7 +322,7 @@
   flex-direction: column;
   gap: 3px;
   color: var(--ink);
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.1s ease;
 }
 .geo-reg-card:hover {
   background: rgba(8, 17, 36, 0.04);
@@ -412,6 +441,11 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.geo-pin-chip:hover {
+  color: var(--ink);
+  border-color: var(--ink);
 }
 .geo-pin-chip.active {
   background: var(--ink, #081124);
@@ -443,6 +477,22 @@
 }
 [data-theme="dark"] .geo-leaflet-canvas {
   background: #0F172A;
+}
+
+.leaflet-tooltip.geo-zone-tooltip {
+  background: rgba(255, 255, 255, 0.96);
+  color: #081124;
+  border: 1px solid rgba(8, 17, 36, 0.14);
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(8, 17, 36, 0.12);
+}
+[data-theme="dark"] .leaflet-tooltip.geo-zone-tooltip {
+  background: rgba(10, 18, 36, 0.95);
+  color: #F4F2EE;
+  border-color: rgba(217, 165, 74, 0.35);
 }
 
 /* Selected Region Floating Summary Pill on Map */
@@ -488,6 +538,10 @@
   padding: 3px 8px;
   border-radius: 6px;
   cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.geo-mini-btn:hover {
+  border-color: var(--ink);
 }
 .geo-mini-btn.primary {
   background: #1D4ED8;
@@ -515,7 +569,7 @@
   background: rgba(8, 17, 36, 0.86);
   color: #F4F2EE;
   white-space: nowrap;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   pointer-events: none;
 }
 .geo-pin-lbl.is-bu {
@@ -648,120 +702,697 @@
   background: #E7ECEF;
 }
 
-/* ==================== TICKET STARTING POINT & 24H DISPATCH BAR ==================== */
+/* ==================== INTERACTIVE DISPATCH ORIGIN & ROUTE COCKPIT ==================== */
 .origin-dispatch-card {
   grid-column: 1 / -1;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  padding: 9px 12px;
-  background: rgba(8, 17, 36, 0.025);
+  border: 1px solid rgba(8, 17, 36, 0.11);
+  border-left: 3.5px solid #C89D54;
+  border-radius: 12px;
+  padding: 10px 13px;
+  background: linear-gradient(180deg, #FFFFFF 0%, #FAF8F4 100%);
+  box-shadow: 0 2px 8px rgba(8, 17, 36, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 9px;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.origin-dispatch-card[data-active-mode="bu"] {
+  border-left-color: #D97706;
+}
+.origin-dispatch-card[data-active-mode="site"] {
+  border-left-color: #2563EB;
 }
 [data-theme="dark"] .origin-dispatch-card {
-  background: rgba(255, 255, 255, 0.03);
+  background: linear-gradient(180deg, rgba(16, 28, 52, 0.9) 0%, rgba(11, 20, 39, 0.9) 100%);
+  border-color: rgba(255, 255, 255, 0.11);
+  border-left-color: #D9A54A;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+[data-theme="dark"] .origin-dispatch-card[data-active-mode="bu"] {
+  border-left-color: #F59E0B;
+}
+[data-theme="dark"] .origin-dispatch-card[data-active-mode="site"] {
+  border-left-color: #60A5FA;
 }
 
-.origin-top-row {
+/* Top Bar: Eyebrow + Tactile Segmented Origin Switcher + Route Map Button */
+.origin-dispatch-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
 }
-.origin-pills-grp {
+.origin-dispatch-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   flex-wrap: wrap;
+  min-width: 0;
 }
-.origin-lbl {
-  font-size: 0.75rem;
+.origin-dispatch-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
   font-weight: 700;
-  color: var(--ink);
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted, #5A667A);
+  white-space: nowrap;
 }
-.origin-seg-pills {
+.origin-dispatch-lbl svg {
+  color: #B4883E;
+  flex-shrink: 0;
+}
+[data-theme="dark"] .origin-dispatch-lbl svg {
+  color: #E5B968;
+}
+
+.origin-mode-pills {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   padding: 3px;
-  border-radius: 9px;
-  background: var(--card, #FFFFFF);
-  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #F1EFEA;
+  border: 1px solid rgba(8, 17, 36, 0.09);
   flex-wrap: wrap;
 }
-[data-theme="dark"] .origin-seg-pills {
-  background: rgba(8, 17, 36, 0.65);
+[data-theme="dark"] .origin-mode-pills {
+  background: rgba(8, 14, 28, 0.75);
+  border-color: rgba(255, 255, 255, 0.1);
 }
-.origin-pill-btn {
+
+.origin-pill {
   appearance: none;
-  border: 0;
+  -webkit-appearance: none;
+  border: 1px solid transparent;
   background: transparent;
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 6px;
+  color: var(--muted, #526075);
+  font-family: inherit;
+  font-size: 0.77rem;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 5px 11px;
+  border-radius: 7px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  transition: background 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+  transition: background 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
 }
-.origin-pill-btn:hover {
-  color: var(--ink);
-  background: rgba(8, 17, 36, 0.05);
+.origin-pill svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  opacity: 0.82;
 }
-.origin-pill-btn.active {
-  background: var(--ink, #081124);
+.origin-pill:hover {
+  color: var(--ink, #081124);
+  background: rgba(255, 255, 255, 0.72);
+}
+[data-theme="dark"] .origin-pill:hover {
   color: #F4F2EE;
+  background: rgba(255, 255, 255, 0.07);
 }
-.origin-pill-btn.active.is-cross-bu {
+.origin-pill.active {
+  background: #081124;
+  color: #F4F2EE;
+  border-color: rgba(200, 157, 84, 0.45);
+  box-shadow: 0 2px 5px rgba(8, 17, 36, 0.18);
+  font-weight: 700;
+}
+.origin-pill.active svg {
+  opacity: 1;
+  color: #E5B968;
+}
+.origin-pill[data-origin-mode="bu"].active {
   background: #B45309;
+  border-color: #92400E;
   color: #FFFFFF;
 }
-.origin-pill-btn.active.is-other-site {
+.origin-pill[data-origin-mode="bu"].active svg {
+  color: #FDE68A;
+}
+.origin-pill[data-origin-mode="site"].active {
   background: #1D4ED8;
+  border-color: #1E40AF;
   color: #FFFFFF;
 }
-[data-theme="dark"] .origin-pill-btn.active {
+.origin-pill[data-origin-mode="site"].active svg {
+  color: #BFDBFE;
+}
+[data-theme="dark"] .origin-pill[data-origin-mode="company"].active {
   background: #D9A54A;
+  border-color: #F3CE85;
+  color: #081124;
+}
+[data-theme="dark"] .origin-pill[data-origin-mode="company"].active svg {
   color: #081124;
 }
 
-.origin-km-telemetry {
+.origin-top-actions {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.origin-map-toggle-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(8, 17, 36, 0.13);
+  background: #FFFFFF;
+  color: var(--ink, #081124);
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+.origin-map-toggle-btn:hover {
+  border-color: #2563EB;
+  color: #1D4ED8;
+  background: rgba(37, 99, 235, 0.05);
+}
+.origin-map-toggle-btn.active {
+  background: rgba(37, 99, 235, 0.1);
+  border-color: rgba(37, 99, 235, 0.42);
+  color: #1D4ED8;
+}
+[data-theme="dark"] .origin-map-toggle-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #E2E8F0;
+}
+[data-theme="dark"] .origin-map-toggle-btn.active {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: #93C5FD;
+}
+
+/* Visual Origin <-> Destination Route Strip */
+.origin-route-strip {
+  display: grid;
+  grid-template-columns: minmax(145px, 1fr) minmax(180px, 1.35fr) minmax(145px, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: rgba(8, 17, 36, 0.03);
+  border: 1px solid rgba(8, 17, 36, 0.07);
+}
+[data-theme="dark"] .origin-route-strip {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.origin-stop-node {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(8, 17, 36, 0.1);
+  background: #FFFFFF;
+  border-radius: 8px;
+  padding: 6px 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  font-family: inherit;
+  color: var(--ink, #081124);
+  min-width: 0;
+  cursor: pointer;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+}
+.origin-stop-node:hover {
+  border-color: #2563EB;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.09);
+}
+.origin-stop-node.is-empty {
+  border-style: dashed;
+  border-color: rgba(37, 99, 235, 0.38);
+  background: rgba(37, 99, 235, 0.03);
+}
+.origin-stop-node.is-static {
+  cursor: default;
+}
+.origin-stop-node.is-static:hover {
+  border-color: rgba(8, 17, 36, 0.1);
+  box-shadow: none;
+}
+[data-theme="dark"] .origin-stop-node {
+  background: rgba(10, 18, 36, 0.85);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #F4F2EE;
+}
+[data-theme="dark"] .origin-stop-node.is-empty {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(96, 165, 250, 0.42);
+}
+
+.origin-stop-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #C89D54;
+  box-shadow: 0 0 0 3px rgba(200, 157, 84, 0.2);
+}
+.origin-stop-dot.is-bu {
+  background: #D97706;
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.2);
+}
+.origin-stop-dot.is-site {
+  background: #2563EB;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+.origin-stop-dot.is-dest {
+  background: #059669;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.18);
+}
+.origin-stop-dot.is-muted {
+  background: #94A3B8;
+  box-shadow: none;
+}
+
+.origin-stop-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.origin-stop-title {
+  font-size: 0.79rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ink, #081124);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.origin-stop-node.is-empty .origin-stop-title {
+  color: #1D4ED8;
+}
+[data-theme="dark"] .origin-stop-node.is-empty .origin-stop-title {
+  color: #93C5FD;
+}
+.origin-stop-sub {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--muted, #64748B);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Center Route Track + KM Badge */
+.origin-route-mid {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 2px 4px;
+}
+.origin-route-mid::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  border-top: 1.5px dashed rgba(8, 17, 36, 0.2);
+  z-index: 0;
+}
+[data-theme="dark"] .origin-route-mid::before {
+  border-top-color: rgba(255, 255, 255, 0.22);
+}
+
+.origin-route-mid-pills {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: center;
+  background: #FAF8F4;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+[data-theme="dark"] .origin-route-mid-pills {
+  background: #0D182F;
+}
+
+.origin-km-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 3px 9px;
   border-radius: 999px;
   font-size: 0.74rem;
   font-weight: 700;
-  background: rgba(5, 150, 105, 0.1);
-  border: 1px solid rgba(5, 150, 105, 0.3);
+  background: rgba(5, 150, 105, 0.11);
+  border: 1px solid rgba(5, 150, 105, 0.32);
   color: #065F46;
+  white-space: nowrap;
 }
-[data-theme="dark"] .origin-km-telemetry {
-  background: rgba(16, 185, 129, 0.16);
+.origin-km-badge.is-idle {
+  background: rgba(8, 17, 36, 0.05);
+  border-color: rgba(8, 17, 36, 0.12);
+  color: var(--muted, #526075);
+  font-weight: 600;
+}
+[data-theme="dark"] .origin-km-badge {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(52, 211, 153, 0.38);
   color: #6EE7B7;
 }
-.origin-km-telemetry.is-muted {
-  background: rgba(107, 114, 128, 0.09);
-  border-color: var(--line);
-  color: var(--muted);
+[data-theme="dark"] .origin-km-badge.is-idle {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #94A3B8;
+}
+
+.origin-eta-pill {
+  font-size: 0.69rem;
   font-weight: 600;
+  color: var(--muted, #64748B);
+  white-space: nowrap;
+}
+
+.origin-edit-km-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(8, 17, 36, 0.14);
+  background: #FFFFFF;
+  color: var(--muted, #475569);
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.origin-edit-km-btn:hover,
+.origin-edit-km-btn.active {
+  border-color: #2563EB;
+  color: #1D4ED8;
+}
+[data-theme="dark"] .origin-edit-km-btn {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #CBD5E1;
+}
+
+/* Inline KM Override Mini-Bar */
+.origin-km-edit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.06);
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  font-size: 0.74rem;
+  flex-wrap: wrap;
+}
+.origin-km-edit-bar input[type="number"] {
+  width: 78px;
+  height: 28px;
+  padding: 0 7px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #FFFFFF;
+  color: var(--ink);
+  font-size: 0.76rem;
+}
+[data-theme="dark"] .origin-km-edit-bar input[type="number"] {
+  background: rgba(8, 17, 36, 0.85);
+}
+
+/* Inline Interactive Ticket Route Map Drawer */
+.origin-minimap-drawer {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #FFFFFF;
+}
+[data-theme="dark"] .origin-minimap-drawer {
+  background: rgba(10, 18, 36, 0.9);
+}
+.origin-minimap-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface, #FAF8F5);
+  font-size: 0.73rem;
+  flex-wrap: wrap;
+}
+[data-theme="dark"] .origin-minimap-bar {
+  background: rgba(14, 24, 46, 0.9);
+}
+.origin-minimap-targets {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.origin-map-target-pill {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #FFFFFF;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.origin-map-target-pill.active {
+  background: #1D4ED8;
+  border-color: #1D4ED8;
+  color: #FFFFFF;
+}
+[data-theme="dark"] .origin-map-target-pill {
+  background: rgba(255, 255, 255, 0.06);
+}
+.origin-minimap-canvas {
+  width: 100%;
+  height: 205px;
+  background: #E7ECEF;
+}
+[data-theme="dark"] .origin-minimap-canvas {
+  background: #0F172A;
+}
+
+/* Interactive Other-Site Drawer: Quick Chips + Searchable Comboboxes + 24h Ticket Cards */
+.origin-site-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(8, 17, 36, 0.13);
+}
+[data-theme="dark"] .origin-site-drawer {
+  border-top-color: rgba(255, 255, 255, 0.14);
+}
+
+.origin-freq-strip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.origin-freq-lbl {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--muted, #64748B);
+  margin-right: 2px;
+  white-space: nowrap;
+}
+.origin-freq-chip {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(8, 17, 36, 0.12);
+  background: #FFFFFF;
+  color: var(--ink, #081124);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.origin-freq-chip:hover {
+  border-color: #2563EB;
+  color: #1D4ED8;
+}
+.origin-freq-chip.is-truck-stop {
+  background: rgba(5, 150, 105, 0.09);
+  border-color: rgba(5, 150, 105, 0.35);
+  color: #065F46;
+}
+.origin-freq-chip.active {
+  background: #1D4ED8;
+  border-color: #1D4ED8;
+  color: #FFFFFF;
+}
+.origin-freq-chip-cnt {
+  font-size: 0.65rem;
+  font-weight: 700;
+  opacity: 0.72;
+}
+[data-theme="dark"] .origin-freq-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.13);
+  color: #E2E8F0;
+}
+[data-theme="dark"] .origin-freq-chip.active {
+  background: #2563EB;
+  border-color: #60A5FA;
+  color: #FFFFFF;
 }
 
 .origin-site-subgrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--line);
+}
+
+/* Interactive Last-24h Ticket Cards */
+.origin-24h-cards-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.origin-24h-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.71rem;
+  font-weight: 600;
+  color: var(--muted, #64748B);
+  flex-wrap: wrap;
+}
+.origin-autofill-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.69rem;
+  font-weight: 700;
+  background: rgba(5, 150, 105, 0.12);
+  color: #047857;
+}
+[data-theme="dark"] .origin-autofill-pill {
+  background: rgba(16, 185, 129, 0.2);
+  color: #6EE7B7;
+}
+
+.origin-24h-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(205px, 1fr));
+  gap: 6px;
+}
+.origin-tkt-card {
+  appearance: none;
+  -webkit-appearance: none;
+  text-align: left;
+  font-family: inherit;
+  border: 1px solid rgba(8, 17, 36, 0.12);
+  background: #FFFFFF;
+  color: var(--ink, #081124);
+  border-radius: 8px;
+  padding: 6px 9px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: border-color 0.13s ease, background 0.13s ease, box-shadow 0.13s ease;
+}
+.origin-tkt-card:hover {
+  border-color: #2563EB;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.1);
+}
+.origin-tkt-card.active {
+  border-color: #1D4ED8;
+  background: rgba(37, 99, 235, 0.06);
+  box-shadow: 0 0 0 1.5px rgba(29, 78, 216, 0.28);
+}
+[data-theme="dark"] .origin-tkt-card {
+  background: rgba(10, 18, 36, 0.8);
+  border-color: rgba(255, 255, 255, 0.13);
+  color: #F4F2EE;
+}
+[data-theme="dark"] .origin-tkt-card.active {
+  background: rgba(37, 99, 235, 0.2);
+  border-color: #60A5FA;
+}
+
+.origin-tkt-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.origin-tkt-kind {
+  font-size: 0.64rem;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.03em;
+}
+.origin-tkt-kind.is-raw {
+  background: rgba(5, 150, 105, 0.13);
+  color: #047857;
+}
+.origin-tkt-kind.is-sales {
+  background: rgba(37, 99, 235, 0.13);
+  color: #1D4ED8;
+}
+[data-theme="dark"] .origin-tkt-kind.is-raw {
+  background: rgba(16, 185, 129, 0.22);
+  color: #6EE7B7;
+}
+[data-theme="dark"] .origin-tkt-kind.is-sales {
+  background: rgba(59, 130, 246, 0.24);
+  color: #93C5FD;
+}
+.origin-tkt-no {
+  font-size: 0.77rem;
+  font-weight: 700;
+}
+.origin-tkt-age {
+  font-size: 0.67rem;
+  color: var(--muted, #64748B);
+  font-weight: 600;
+}
+.origin-tkt-card-sub {
+  font-size: 0.7rem;
+  color: var(--muted, #526075);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Rejected Sales Load Redirect Banner (Rule A2) */
@@ -770,35 +1401,67 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: rgba(217, 119, 6, 0.1);
-  border: 1px solid rgba(217, 119, 6, 0.35);
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: rgba(217, 119, 6, 0.09);
+  border: 1px solid rgba(217, 119, 6, 0.34);
   font-size: 0.76rem;
   color: var(--ink);
   flex-wrap: wrap;
 }
+.origin-redirect-copy {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.origin-redirect-actions,
 .origin-redirect-pills {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   flex-wrap: wrap;
 }
 .origin-disp-btn {
   appearance: none;
-  border: 1px solid rgba(217, 119, 6, 0.4);
+  -webkit-appearance: none;
+  border: 1px solid rgba(217, 119, 6, 0.38);
   background: var(--card, #FFFFFF);
   color: var(--ink);
+  font-family: inherit;
   font-size: 0.72rem;
   font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 4px 10px;
+  border-radius: 7px;
   cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.origin-disp-btn:hover {
+  border-color: #B45309;
 }
 .origin-disp-btn.active {
+  background: #081124;
+  border-color: #081124;
+  color: #FFFFFF;
+}
+.origin-disp-btn[data-origin-disp="return"].active {
   background: #B45309;
   border-color: #B45309;
   color: #FFFFFF;
+}
+.origin-disp-btn[data-origin-disp="void"].active {
+  background: #B91C1C;
+  border-color: #B91C1C;
+  color: #FFFFFF;
+}
+[data-theme="dark"] .origin-disp-btn {
+  background: rgba(10, 18, 36, 0.85);
+}
+[data-theme="dark"] .origin-disp-btn[data-origin-disp="keep"].active {
+  background: #D9A54A;
+  border-color: #D9A54A;
+  color: #081124;
 }
 
 /* Responsive Mobile (390x844 zero horizontal overflow) */
@@ -824,7 +1487,17 @@
     max-width: 100%;
     flex: 1 1 135px;
   }
+  .origin-route-strip {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+  .origin-route-mid::before {
+    display: none;
+  }
   .origin-site-subgrid {
+    grid-template-columns: 1fr;
+  }
+  .origin-24h-cards-grid {
     grid-template-columns: 1fr;
   }
 }

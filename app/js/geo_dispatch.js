@@ -835,7 +835,7 @@
     const svg = isBu
       ? `<svg width="26" height="30" viewBox="0 0 26 30" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13 1C6.925 1 2 5.925 2 12c0 7.75 11 17 11 17s11-9.25 11-17c0-6.075-4.925-11-11-11z" fill="#081124" stroke="#D9A54A" stroke-width="2"/><rect x="8.5" y="7.5" width="9" height="9" rx="1.5" fill="#D9A54A"/></svg>`
       : `<svg width="20" height="24" viewBox="0 0 20 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 1C5.03 1 1 5.03 1 10c0 6.2 9 13 9 13s9-6.8 9-13c0-4.97-4.03-9-9-9z" fill="${color}" stroke="#FFFFFF" stroke-width="1.6"/><circle cx="10" cy="10" r="3.2" fill="#FFFFFF"/></svg>`;
-    const showLbl = isBu || Boolean(label);
+    const showLbl = Boolean(label);
     return L.divIcon({
       className: 'geo-pin-marker',
       iconSize: isBu ? [26, 36] : [20, 30],
@@ -943,6 +943,15 @@
     let toolDrawerHtml = '';
     if (!STUDIO.collapsed && STUDIO.mode === 'circle') {
       const rPresets = [0.8, 1.5, 3, 5, 10, 15];
+      let liveInsideSites = 0;
+      if (STUDIO.circleCenter) {
+        const radKm = Math.max(0.2, Number(STUDIO.circleRadiusKm || 1.5));
+        ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
+          if (s && !s.voided && s.latitude != null && s.longitude != null && pointInCircle(Number(s.latitude), Number(s.longitude), STUDIO.circleCenter.lat, STUDIO.circleCenter.lng, radKm)) {
+            liveInsideSites++;
+          }
+        });
+      }
       toolDrawerHtml = `
         <div class="geo-tool-drawer" id="geoToolDrawer">
           <div class="geo-tool-fields">
@@ -951,11 +960,13 @@
               <datalist id="dl_geo_draw_regions">${regions.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
             </label>
             <label class="geo-tool-field">Radius (km)
-              <input type="number" id="geoCircleRadiusInp" step="0.1" min="0.2" max="50" value="${esc(STUDIO.circleRadiusKm)}" style="width:74px">
+              <input type="number" id="geoCircleRadiusInp" step="0.1" min="0.2" max="50" value="${esc(STUDIO.circleRadiusKm)}" style="width:68px">
+              <input type="range" id="geoCircleRadiusSlider" class="geo-radius-slider" min="0.3" max="25" step="0.1" value="${esc(Math.min(25, Math.max(0.3, Number(STUDIO.circleRadiusKm || 1.5))))}" aria-label="Circle Radius Slider">
             </label>
             <div class="geo-radius-pills">
               ${rPresets.map(rk => `<button type="button" class="geo-r-pill${Number(STUDIO.circleRadiusKm) === rk ? ' active' : ''}" data-geo-radius-preset="${rk}">${rk} km</button>`).join('')}
             </div>
+            <span class="geo-live-inside-pill" id="geoLiveInsideCountPill"${STUDIO.circleCenter ? '' : ' hidden'}>${liveInsideSites} ${liveInsideSites === 1 ? 'Site' : 'Sites'} inside</span>
             <span class="geo-tool-hint" id="geoDraftCoordsLbl">${STUDIO.circleCenter ? `Center: ${STUDIO.circleCenter.lat}, ${STUDIO.circleCenter.lng}` : 'Click anywhere on the map to place circle center'}</span>
           </div>
           <div style="display:flex;gap:6px;align-items:center">
@@ -1145,6 +1156,7 @@
                 <span class="geo-km-sub" id="geoDistKmBadge">Pin location on map to compute exact road KM</span>
               `}
               <div class="geo-km-override-grp">
+                ${kmEst && kmEst.fromCoord && kmEst.toCoord && kmEst.fromCoord.lat != null && kmEst.toCoord.lat != null ? `<button type="button" class="geo-mini-btn" id="geoDistZoomBtn">Zoom Route</button>` : ''}
                 <input type="number" step="0.1" min="0" class="geo-km-override-inp" id="geoDistOverrideInp" value="${hasOverride && kmEst ? kmEst.oneWayKm : ''}" placeholder="Exact km">
                 <button type="button" class="geo-mini-btn" id="geoDistSaveOverrideBtn">${hasOverride ? 'Update KM' : 'Set KM'}</button>
                 ${hasOverride ? `<button type="button" class="geo-mini-btn" id="geoDistClearOverrideBtn">Auto</button>` : ''}
@@ -1171,7 +1183,13 @@
     const selRegNorm = norm(STUDIO.selectedRegion);
     let focusBounds = null;
 
-    // 1. Draw Region Polygons & Circles
+    const sitesByRegCnt = new Map();
+    sites.forEach(s => {
+      const rk = norm(s.region || s.geo_zone);
+      if (rk) sitesByRegCnt.set(rk, (sitesByRegCnt.get(rk) || 0) + 1);
+    });
+
+    // 1. Draw Region Polygons & Circles with interactive hover glow + tooltip
     regions.forEach(r => {
       const rk = norm(r.name);
       const isSel = selRegNorm && selRegNorm === rk;
@@ -1179,15 +1197,25 @@
       const fill = isSel ? '#D9A54A' : '#3B82F6';
       const weight = isSel ? 3 : 1.5;
       const fillOp = isSel ? 0.20 : (selRegNorm ? 0.04 : 0.09);
+      const sCnt = sitesByRegCnt.get(rk) || 0;
+      const tipHtml = `${esc(r.name)} · ${sCnt} ${sCnt === 1 ? 'Site' : 'Sites'}`;
 
       if (r.zone_type === 'circle' && r.center_lat != null && r.center_lng != null && Number(r.radius_km) > 0) {
+        const baseColor = isSel ? '#059669' : '#0D9488';
+        const baseOp = isSel ? 0.22 : (selRegNorm ? 0.05 : 0.11);
+        const baseW = isSel ? 3 : 1.6;
         const circ = L.circle([Number(r.center_lat), Number(r.center_lng)], {
           radius: Number(r.radius_km) * 1000,
-          color: isSel ? '#059669' : '#0D9488',
+          color: baseColor,
           fillColor: '#10B981',
-          fillOpacity: isSel ? 0.22 : (selRegNorm ? 0.05 : 0.11),
-          weight: isSel ? 3 : 1.6
+          fillOpacity: baseOp,
+          weight: baseW
         }).addTo(lg);
+        if (STUDIO.mode === 'view' && circ.bindTooltip) {
+          circ.bindTooltip(tipHtml, { sticky: true, className: 'geo-zone-tooltip', direction: 'top' });
+          circ.on('mouseover', () => { circ.setStyle({ weight: baseW + 1.2, fillOpacity: Math.min(0.32, baseOp + 0.1) }); });
+          circ.on('mouseout', () => { circ.setStyle({ weight: baseW, fillOpacity: baseOp }); });
+        }
         circ.on('click', ev => {
           if (STUDIO.mode !== 'view') return;
           L.DomEvent.stopPropagation(ev);
@@ -1201,6 +1229,11 @@
           const geoLayer = L.geoJSON(gj, {
             style: { color: stroke, fillColor: fill, fillOpacity: fillOp, weight }
           }).addTo(lg);
+          if (STUDIO.mode === 'view' && geoLayer.bindTooltip) {
+            geoLayer.bindTooltip(tipHtml, { sticky: true, className: 'geo-zone-tooltip', direction: 'top' });
+            geoLayer.on('mouseover', () => { geoLayer.setStyle({ weight: weight + 1.2, fillOpacity: Math.min(0.3, fillOp + 0.09) }); });
+            geoLayer.on('mouseout', () => { geoLayer.setStyle({ weight, fillOpacity: fillOp }); });
+          }
           geoLayer.on('click', ev => {
             if (STUDIO.mode !== 'view') return;
             L.DomEvent.stopPropagation(ev);
@@ -1610,9 +1643,32 @@
       drawRegInp.addEventListener('input', () => { STUDIO.drawRegionName = drawRegInp.value; });
     }
     const radInp = deck.querySelector('#geoCircleRadiusInp');
+    const radSlider = deck.querySelector('#geoCircleRadiusSlider');
+    const syncLiveCircleInsideBadge = () => {
+      const pill = deck.querySelector('#geoLiveInsideCountPill');
+      if (!pill) return;
+      if (!STUDIO.circleCenter) { pill.hidden = true; return; }
+      let cnt = 0;
+      const radKm = Math.max(0.2, Number(STUDIO.circleRadiusKm || 1.5));
+      ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
+        if (s && !s.voided && s.latitude != null && s.longitude != null && pointInCircle(Number(s.latitude), Number(s.longitude), STUDIO.circleCenter.lat, STUDIO.circleCenter.lng, radKm)) cnt++;
+      });
+      pill.hidden = false;
+      pill.textContent = `${cnt} ${cnt === 1 ? 'Site' : 'Sites'} inside`;
+    };
     if (radInp) {
       radInp.addEventListener('input', () => {
         STUDIO.circleRadiusKm = Math.max(0.2, parseFloat(radInp.value) || 1.5);
+        if (radSlider) radSlider.value = String(Math.min(25, Math.max(0.3, STUDIO.circleRadiusKm)));
+        syncLiveCircleInsideBadge();
+        if (STUDIO.map && window.L) renderStudioMapLayers(window.L, STUDIO.map, ctx);
+      });
+    }
+    if (radSlider) {
+      radSlider.addEventListener('input', () => {
+        STUDIO.circleRadiusKm = Math.max(0.2, parseFloat(radSlider.value) || 1.5);
+        if (radInp) radInp.value = String(round1(STUDIO.circleRadiusKm));
+        syncLiveCircleInsideBadge();
         if (STUDIO.map && window.L) renderStudioMapLayers(window.L, STUDIO.map, ctx);
       });
     }
@@ -1813,6 +1869,17 @@
         rerenderWorkspace();
       });
     }
+    const zoomRouteBtn = deck.querySelector('#geoDistZoomBtn');
+    if (zoomRouteBtn) {
+      zoomRouteBtn.addEventListener('click', () => {
+        const est = estimateLegKm(parseSpec(STUDIO.distFrom), parseSpec(STUDIO.distTo), SEED);
+        if (STUDIO.map && window.L && est && est.fromCoord && est.toCoord && est.fromCoord.lat != null && est.toCoord.lat != null) {
+          STUDIO._userPanned = true;
+          const b = window.L.latLngBounds([[est.fromCoord.lat, est.fromCoord.lng], [est.toCoord.lat, est.toCoord.lng]]);
+          STUDIO.map.fitBounds(b, { padding: [42, 42], maxZoom: 13, animate: false });
+        }
+      });
+    }
 
     // Mount Leaflet Map inside #geoStudioMapCanvas
     const canvas = deck.querySelector('#geoStudioMapCanvas');
@@ -1837,6 +1904,7 @@
           STUDIO.circleCenter = { lat, lng };
           const lbl = deck.querySelector('#geoDraftCoordsLbl');
           if (lbl) lbl.textContent = `Center: ${lat}, ${lng}`;
+          syncLiveCircleInsideBadge();
           renderStudioMapLayers(L, map, ctx);
         } else if (STUDIO.mode === 'polygon') {
           STUDIO.polyPoints.push([lng, lat]);
@@ -2065,6 +2133,168 @@
     }
   }
 
+  // ==================== INLINE TICKET ROUTE MINI-MAP (#originMiniMapCanvas) ====================
+  const _ticketOriginMini = { map: null, layers: null, canvas: null, lastStamp: '', callbacks: null };
+
+  function cleanupTicketOriginMiniMap() {
+    if (_ticketOriginMini.map) {
+      try { _ticketOriginMini.map.remove(); } catch (_) {}
+    }
+    _ticketOriginMini.map = null;
+    _ticketOriginMini.layers = null;
+    _ticketOriginMini.canvas = null;
+    _ticketOriginMini.lastStamp = '';
+    _ticketOriginMini.callbacks = null;
+  }
+
+  function renderTicketOriginMiniLayers(L, SEED, STATE, spec) {
+    const map = _ticketOriginMini.map;
+    if (!map) return;
+    if (_ticketOriginMini.layers) {
+      _ticketOriginMini.layers.clearLayers();
+    } else {
+      _ticketOriginMini.layers = L.layerGroup().addTo(map);
+    }
+    const lg = _ticketOriginMini.layers;
+    hydrateSeedGeo(SEED);
+
+    const regions = ((SEED && SEED.records && SEED.records.regions) || []).filter(r => r && !r.voided);
+    regions.forEach(r => {
+      if (r.zone_type === 'circle' && r.center_lat != null && r.radius_km > 0) {
+        L.circle([Number(r.center_lat), Number(r.center_lng)], {
+          radius: Number(r.radius_km) * 1000,
+          color: '#0D9488',
+          fillColor: '#10B981',
+          fillOpacity: 0.08,
+          weight: 1.2
+        }).addTo(lg);
+      } else if (r.zone_geojson) {
+        const gj = parseZoneGeoJson(r.zone_geojson);
+        if (gj) L.geoJSON(gj, { style: { color: '#2563EB', fillColor: '#3B82F6', fillOpacity: 0.06, weight: 1.1 } }).addTo(lg);
+      }
+    });
+
+    const fromSpec = spec.fromSpec;
+    const toSpec = spec.toSpec;
+    const est = (fromSpec && fromSpec.name && toSpec && toSpec.name)
+      ? estimateLegKm(fromSpec, toSpec, SEED, {
+          onAsyncRoute: () => {
+            _ticketOriginMini.lastStamp = '';
+            if (_ticketOriginMini.callbacks && typeof _ticketOriginMini.callbacks.onRouteResolved === 'function') {
+              _ticketOriginMini.callbacks.onRouteResolved();
+            }
+          }
+        })
+      : null;
+
+    if (est && est.fromCoord && est.toCoord && est.fromCoord.lat != null && est.toCoord.lat != null && est.oneWayKm > 0) {
+      const latlngs = Array.isArray(est.routeCoords) && est.routeCoords.length > 1
+        ? est.routeCoords.map(pt => [pt[1], pt[0]])
+        : [[est.fromCoord.lat, est.fromCoord.lng], [est.toCoord.lat, est.toCoord.lng]];
+      L.polyline(latlngs, { color: '#FFFFFF', weight: 6, opacity: 0.85 }).addTo(lg);
+      L.polyline(latlngs, {
+        color: '#1D4ED8',
+        weight: 3.2,
+        dashArray: Array.isArray(est.routeCoords) ? null : '6, 5',
+        opacity: 0.95
+      }).addTo(lg);
+    }
+
+    const siteStats = getUnifiedSiteStats(SEED, STATE);
+    const activeFromNorm = fromSpec && fromSpec.type === 'site' ? norm(fromSpec.name) : '';
+    const activeToNorm = toSpec && toSpec.type === 'site' ? norm(toSpec.name) : '';
+    const sites = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => s && !s.voided && s.latitude != null && s.longitude != null);
+
+    // Show top frequent sites + active origin/destination sites cleanly
+    sites.forEach(s => {
+      const nk = norm(s.name);
+      const isFrom = nk && nk === activeFromNorm;
+      const isTo = nk && nk === activeToNorm;
+      const st = siteStats.byNorm.get(nk) || { total: 0 };
+      if (!isFrom && !isTo && st.total < 80) return;
+      const lat = Number(s.latitude), lng = Number(s.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      const pinColor = isFrom ? '#2563EB' : (isTo ? '#059669' : '#64748B');
+      const showLbl = isFrom || isTo;
+      const m = L.marker([lat, lng], {
+        icon: makeSvgPinIcon(L, pinColor, showLbl ? s.name : '', false),
+        zIndexOffset: (isFrom || isTo) ? 750 : 100
+      }).addTo(lg);
+      if (m.bindTooltip && !showLbl) {
+        m.bindTooltip(esc(s.name), { className: 'geo-zone-tooltip', direction: 'top' });
+      }
+      m.on('click', ev => {
+        L.DomEvent.stopPropagation(ev);
+        if (_ticketOriginMini.callbacks && typeof _ticketOriginMini.callbacks.onPickSite === 'function') {
+          _ticketOriginMini.callbacks.onPickSite(s.name);
+        }
+      });
+    });
+
+    getAllCompanyHubs(SEED).forEach(h => {
+      const isActiveBu = Boolean(fromSpec && fromSpec.type === 'bu' && norm(fromSpec.name) === norm(h.name));
+      const m = L.marker([h.lat, h.lng], {
+        icon: makeSvgPinIcon(L, isActiveBu ? '#059669' : '#D9A54A', isActiveBu ? h.name : '', true),
+        zIndexOffset: isActiveBu ? 950 : 850
+      }).addTo(lg);
+      if (m.bindTooltip && !isActiveBu) {
+        m.bindTooltip(`${esc(h.name)} Hub`, { className: 'geo-zone-tooltip', direction: 'top' });
+      }
+      m.on('click', ev => {
+        L.DomEvent.stopPropagation(ev);
+        if (_ticketOriginMini.callbacks && typeof _ticketOriginMini.callbacks.onPickBu === 'function') {
+          _ticketOriginMini.callbacks.onPickBu(h.name);
+        }
+      });
+    });
+
+    const cFrom = fromSpec ? resolveEndpointCoord(fromSpec, SEED) : null;
+    const cTo = toSpec ? resolveEndpointCoord(toSpec, SEED) : null;
+    if (cFrom && cFrom.lat != null && cTo && cTo.lat != null && (Math.abs(cFrom.lat - cTo.lat) > 0.0005 || Math.abs(cFrom.lng - cTo.lng) > 0.0005)) {
+      const b = L.latLngBounds([[cFrom.lat, cFrom.lng], [cTo.lat, cTo.lng]]);
+      map.fitBounds(b, { padding: [28, 28], maxZoom: 13, animate: false });
+    } else if (cFrom && cFrom.lat != null) {
+      map.setView([cFrom.lat, cFrom.lng], 11, { animate: false });
+    } else {
+      map.setView([33.83, 35.50], 10, { animate: false });
+    }
+  }
+
+  function wireTicketOriginMiniMap(canvasEl, opts = {}) {
+    if (!canvasEl) return;
+    const { SEED, STATE, fromSpec, toSpec } = opts;
+    _ticketOriginMini.callbacks = opts;
+    const stamp = `${fromSpec ? fromSpec.type + ':' + norm(fromSpec.name) : ''}|${toSpec ? toSpec.type + ':' + norm(toSpec.name) : ''}|${SEED ? (SEED._customRev || 0) : 0}|${GEO_STORE.updatedAt || ''}`;
+
+    ensureLeaflet().then(L => {
+      if (!canvasEl.isConnected) return;
+      if (_ticketOriginMini.map && _ticketOriginMini.canvas === canvasEl) {
+        if (_ticketOriginMini.lastStamp !== stamp) {
+          _ticketOriginMini.lastStamp = stamp;
+          renderTicketOriginMiniLayers(L, SEED, STATE, { fromSpec, toSpec });
+        }
+        setTimeout(() => { try { _ticketOriginMini.map && _ticketOriginMini.map.invalidateSize(); } catch (_) {} }, 25);
+        return;
+      }
+      cleanupTicketOriginMiniMap();
+      const map = L.map(canvasEl, { zoomControl: true, attributionControl: false }).setView([33.83, 35.50], 10);
+      canvasEl.querySelectorAll('[title]').forEach(el => el.removeAttribute('title'));
+      _ticketOriginMini.map = map;
+      _ticketOriginMini.canvas = canvasEl;
+      _ticketOriginMini.lastStamp = stamp;
+      addBaseTiles(L, map);
+      renderTicketOriginMiniLayers(L, SEED, STATE, { fromSpec, toSpec });
+      setTimeout(() => { try { map.invalidateSize(); } catch (_) {} }, 40);
+
+      map.on('click', ev => {
+        const cb = _ticketOriginMini.callbacks;
+        if (cb && typeof cb.onClickMapCoord === 'function') {
+          cb.onClickMapCoord(round5(ev.latlng.lat), round5(ev.latlng.lng));
+        }
+      });
+    }).catch(() => {});
+  }
+
   function jumpToMapRegionOrSite(opts = {}) {
     STUDIO.collapsed = false;
     STUDIO._userPanned = false;
@@ -2105,6 +2335,8 @@
     renderGeoStudioHtml,
     wireGeoStudio,
     wireModalSiteOrRegionMap,
+    wireTicketOriginMiniMap,
+    cleanupTicketOriginMiniMap,
     jumpToMapRegionOrSite
   };
 })();
