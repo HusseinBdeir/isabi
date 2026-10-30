@@ -29325,6 +29325,26 @@
     return /^own/i.test(truckRow.ownership || '') && !truckRow.supplier;
   }
 
+  function isCompanyDriver(driverName, company, dateStr) {
+    const dn = norm(driverName);
+    if (!dn) return false;
+    const dt = String(dateStr || '').slice(0, 10);
+    const coHit = (SEED.records && Array.isArray(SEED.records.company_drivers) ? SEED.records.company_drivers : []).some(cd => {
+      if (!cd || cd.voided) return false;
+      if (company && cd.company && norm(cd.company) !== norm(company)) return false;
+      if (norm(cd.driver || cd.name) !== dn) return false;
+      const sd = String(cd.start_date || '').slice(0, 10);
+      const ed = String(cd.end_date || '').slice(0, 10);
+      if (dt && sd && dt < sd) return false;
+      if (dt && ed && dt > ed) return false;
+      return true;
+    });
+    if (coHit) return true;
+    return (SEED.records && Array.isArray(SEED.records.drivers) ? SEED.records.drivers : []).some(d =>
+      d && !d.voided && d.is_company_driver && (!company || !d.company || norm(d.company) === norm(company)) && norm(d.name || d.driver) === dn
+    );
+  }
+
   function syncFleetCascade(company, isCoFleet, is3P, isUnreg, needDriver = true, winOpts = null) {
     const curTruck = val('f_truck');
     const curOwner = val('f_truckowner');
@@ -30412,8 +30432,9 @@
     else if (truckHasNoCap) setHint('hint_truck', 'No preset capacity on this truck — Quantity unlocked', 'warn');
     else setHint('hint_truck', '', '');
 
-    // 7. Time-linked Overtime registration
-    syncOvertimeControl(isCoFleet);
+    // 7. Time-linked Overtime registration (Company fleet or salaried company driver on Delivery)
+    const canOtSales = isDelivery && (isCoFleet || isCompanyDriver(val('f_driver'), company, (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date));
+    syncOvertimeControl(canOtSales);
 
     // 8. Policy-Locked Totals & Live Calc
     const qty = num('f_qty'), up = num('f_unitprice'), tp = isDelivery ? num('f_transunitprice') : 0, disc = num('f_discount'), tip = num('f_tip');
@@ -30513,7 +30534,7 @@
     }
     const origin = syncOriginDispatchUI('sales', false);
     renderAdminLockBar();
-    return { origin, company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule, tier, tierAdj, tierTrAdj, qty, up, tp, disc, tip, mat: matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard };
+    return { origin, company, saleType, transportBy: isDelivery ? transportBy : (isPickup ? 'Customer truck' : 'Unregistered'), customer, product, site: isDelivery ? site : '', date, repDate: val('f_repdate') || date, prod, uom, cust, vatReg, rule, tier, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, transIsIndiff, qty, up, tp, disc, tip, mat: matGross, tr: finalTr, net, vat, ttc, method: val('f_method'), estTons, effCap, tonFactor, tonGuard };
   }
 
   function recalcRaw() {
@@ -30810,7 +30831,8 @@
     const ap = openApBalance(owner);
     setHint('hint_owner', owner ? (ap != null ? `Open AP ${fmtUSD(ap, 2)}` : 'New payee — not in the AP book yet') : '', '');
 
-    syncOvertimeControl(isCoFleet);
+    const canOtRaw = isCoFleet || isCompanyDriver(val('f_driver'), company, effDate);
+    syncOvertimeControl(canOtRaw);
 
     // 7. Formula Locks, Tier 1/2/3 Adjustments & Method Lock
     const qty = num('f_qty'), up = num('f_unitprice'), tp = isCoFleet ? 0 : num('f_transunitprice'), disc = num('f_discount');
@@ -30868,7 +30890,7 @@
     }
     const origin = syncOriginDispatchUI('raw', false);
     renderAdminLockBar();
-    return { origin, company, transportBy, site, owner, product, date, repDate: val('f_repdate') || date, prod, uom, rule, haulRule, tierAdj, tierTrAdj, qty, up, tp, disc, mat, tr, estTons: rawEstTons, effCap, tonFactor: rawTonFactor, tonGuard: rawTonGuard };
+    return { origin, company, transportBy, site, owner, product, date, repDate: val('f_repdate') || date, prod, uom, rule, haulRule, tierAdj, tierTrAdj, matIsIndiff: useMatIndiff, haulIsIndiff, qty, up, tp, disc, mat, tr, estTons: rawEstTons, effCap, tonFactor: rawTonFactor, tonGuard: rawTonGuard };
   }
 
   function recalcReceipt() {
@@ -35967,7 +35989,7 @@
         ...(origS.estRoundTripKm != null ? { est_round_trip_km: origS.estRoundTripKm } : {}),
         ...(origS.priorDisposition && origS.priorDisposition !== 'keep' ? { prior_disposition: origS.priorDisposition } : {})
       };
-      record = { ...base, ...salesOriginFields, name: `TKT ${date} ${c.customer} #${ticket}`, ticket_no: ticket, rep_date: repDate, sale_type: c.saleType, transport_by: c.transportBy, customer: c.customer, product: c.product, site: c.site, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: c.saleType === 'Delivery' ? val('f_driver') : '', uom: c.uom, ton_factor: resolveProductTonFactor(c.prod, c.product) || 1, qty: c.qty, external_qty: val('f_extqty') ? num('f_extqty') : null, unit_price: c.up, price: c.mat, tier: c.tier ? c.tier.tier : 0, tier_adj: c.tierAdj || 0, trans_unit_price: c.tp, trans_price: c.tr, trans_tier_adj: c.tierTrAdj || 0, tip: c.tip || 0, discount: c.disc, total: c.net, vat: c.vat, total_ttc: c.ttc, method: val('f_method'), vat_invoice: c.vatReg ? val('f_vatinvoice') : '', external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : (c.up ? (FORM_UI.priceManual ? 'Manual' : 'List Price') : ''), duplicate_confirmed: !!(dup && dup.warn) };
+      record = { ...base, ...salesOriginFields, name: `TKT ${date} ${c.customer} #${ticket}`, ticket_no: ticket, rep_date: repDate, sale_type: c.saleType, transport_by: c.transportBy, customer: c.customer, product: c.product, site: c.site, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: c.saleType === 'Delivery' ? val('f_driver') : '', uom: c.uom, ton_factor: resolveProductTonFactor(c.prod, c.product) || 1, qty: c.qty, external_qty: val('f_extqty') ? num('f_extqty') : null, unit_price: c.up, price: c.mat, tier: c.tier ? c.tier.tier : 0, tier_adj: c.tierAdj || 0, trans_unit_price: c.tp, trans_price: c.tr, trans_tier_adj: c.tierTrAdj || 0, ...(c.matIsIndiff ? { mat_indiff: true } : {}), ...(c.transIsIndiff ? { trans_indiff: true } : {}), tip: c.tip || 0, discount: c.disc, total: c.net, vat: c.vat, total_ttc: c.ttc, method: val('f_method'), vat_invoice: c.vatReg ? val('f_vatinvoice') : '', external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : (c.up ? (FORM_UI.priceManual ? 'Manual' : 'List Price') : ''), duplicate_confirmed: !!(dup && dup.warn) };
     } else if (f === 'raw') {
       const ticket = val('f_ticketno');
       if (!ticket) addErr('f_ticketno', 'Ticket number is required.');
@@ -36006,7 +36028,7 @@
         ...(origR.estKm != null ? { est_km: origR.estKm } : {}),
         ...(origR.estRoundTripKm != null ? { est_round_trip_km: origR.estRoundTripKm } : {})
       };
-      record = { ...base, ...rawOriginFields, name: `RAW ${date} ${c.site} #${ticket}`, ticket_no: ticket, rep_date: repDate, product: c.product, site: c.site, site_owner: c.owner, transport_by: c.transportBy, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: val('f_driver'), uom: c.uom || (c.prod ? c.prod.uom : 'm³'), ton_factor: resolveProductTonFactor(c.prod, c.product) || 1, qty: c.qty, discount: c.disc || 0, unit_cost: c.up, cost: c.mat, trans_unit_cost: c.tp, trans_cost: c.tr, total: round2(c.mat + c.tr), method: val('f_method'), external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : '', duplicate_confirmed: !!(dup && dup.warn) };
+      record = { ...base, ...rawOriginFields, name: `RAW ${date} ${c.site} #${ticket}`, ticket_no: ticket, rep_date: repDate, product: c.product, site: c.site, site_owner: c.owner, transport_by: c.transportBy, truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'), truck: val('f_truck'), driver: val('f_driver'), uom: c.uom || (c.prod ? c.prod.uom : 'm³'), ton_factor: resolveProductTonFactor(c.prod, c.product) || 1, qty: c.qty, discount: c.disc || 0, unit_cost: c.up, cost: c.mat, trans_unit_cost: c.tp, trans_cost: c.tr, ...(c.matIsIndiff ? { mat_indiff: true } : {}), ...(c.haulIsIndiff ? { trans_indiff: true } : {}), ...(c.tierAdj ? { tier_adj: c.tierAdj } : {}), ...(c.tierTrAdj ? { trans_tier_adj: c.tierTrAdj } : {}), ...(c.haulRule ? { haul_rule: c.haulRule.name } : {}), total: round2(c.mat + c.tr), method: val('f_method'), external_invoice: val('f_extinvoice'), reference: val('f_reference'), time: val('f_time') || '12:00', overtime: !!($('f_overtime') && $('f_overtime').checked), price_rule: c.rule ? c.rule.name : '', duplicate_confirmed: !!(dup && dup.warn) };
     } else if (f === 'receipt') {
       if (!c.customer) addErr('f_customer', 'Customer is required.');
       if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero.');
@@ -39046,6 +39068,261 @@
     return subgrids;
   }
 
+  function resolveInspectorRawTicketCalc(origRow, overrides = {}, editedSet = null) {
+    const base = origRow || {};
+    const hasOv = k => overrides && Object.prototype.hasOwnProperty.call(overrides, k) && overrides[k] !== undefined;
+    const getStr = k => String((hasOv(k) ? overrides[k] : base[k]) ?? '').trim();
+    const getNum = k => {
+      const raw = hasOv(k) ? overrides[k] : base[k];
+      if (raw === '' || raw == null) return 0;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const wasEdited = k => {
+      if (editedSet instanceof Set) return editedSet.has(k);
+      if (!hasOv(k)) return false;
+      const a = base[k], b = overrides[k];
+      if (typeof a === 'number' || typeof b === 'number' || ['qty', 'unit_cost', 'trans_unit_cost', 'discount'].includes(k)) {
+        return Math.abs(Number(a || 0) - Number(b || 0)) > 1e-6;
+      }
+      return String(a ?? '').trim() !== String(b ?? '').trim();
+    };
+
+    const origQty = Number(base.qty || 0);
+    const origUc = Number(base.unit_cost || 0);
+    const origTuc = Number(base.trans_unit_cost || 0);
+    const origDisc = Number(base.discount || 0);
+    const origCost = Number(base.cost || 0);
+    const origTransCost = Number(base.trans_cost || 0);
+    const origTotal = Number(base.total != null ? base.total : round2(origCost + origTransCost));
+
+    const company = getStr('company') || 'WTC';
+    const date = getStr('date');
+    const repDate = getStr('rep_date') || date;
+    const effDate = repDate || date;
+    const site = getStr('site');
+    const owner = getStr('site_owner');
+    const product = getStr('product');
+    const transportBy = getStr('transport_by') || (origTransCost > 0 || origTuc > 0 ? 'Third-party truck' : 'Company fleet');
+    const isCoFleet = /^company/i.test(transportBy);
+    const truckOwner = isCoFleet ? company : getStr('truck_owner');
+    const uom = getStr('uom') || 'm³';
+    const isTruckUom = /^truck$/i.test(uom);
+    const qty = getNum('qty');
+    const uc = getNum('unit_cost');
+    const tuc = isCoFleet ? 0 : getNum('trans_unit_cost');
+    const disc = getNum('discount');
+
+    const matRule = (owner || site) && product ? findRule({ company, supplier: owner, site, product, date: effDate, types: ['Purchase Price (Site)'] }) : null;
+    const haulRule = !isCoFleet && (site || truckOwner) ? findRule({ company, supplier: truckOwner, site, product, date: effDate, types: ['Transport Price (Site)'] }) : null;
+
+    const storedMatFlat = origQty > 1.001 && origUc > 0 &&
+      Math.abs(origCost - round2(Math.max(0, origUc - origDisc))) <= 0.05 &&
+      Math.abs(origCost - round2(Math.max(0, origQty * origUc - origDisc))) > 0.50;
+    const storedTransFlat = !(/^company/i.test(String(base.transport_by || ''))) && origQty > 1.001 && origTuc > 0 &&
+      Math.abs(origTransCost - round2(Math.max(0, origTuc))) <= 0.05 &&
+      Math.abs(origTransCost - round2(Math.max(0, origQty * origTuc))) > 0.50;
+
+    const matIsFlat = Boolean(isTruckUom || base.mat_indiff === true || isMatIndiffRule(matRule) || storedMatFlat);
+    const transIsFlat = Boolean(!isCoFleet && (isTruckUom || base.trans_indiff === true || isTransIndiffRule(haulRule) || storedTransFlat));
+
+    const matEdited = wasEdited('qty') || wasEdited('uom') || wasEdited('unit_cost') || wasEdited('discount');
+    const transEdited = wasEdited('qty') || wasEdited('uom') || wasEdited('trans_unit_cost') || wasEdited('transport_by');
+
+    let cost;
+    if (!matEdited) {
+      cost = origCost;
+    } else if (uc === 0 && origUc === 0 && origCost > 0 && !wasEdited('unit_cost')) {
+      cost = round2(Math.max(0, origCost + origDisc - disc));
+    } else if (matIsFlat) {
+      cost = round2(Math.max(0, uc - disc));
+    } else {
+      const impliedMatTier = base.tier_adj != null
+        ? Number(base.tier_adj || 0)
+        : ((origQty > 0 && origUc > 0 && !storedMatFlat) ? round2((origCost + origDisc) - origQty * origUc) : 0);
+      const keepMatTier = (!wasEdited('unit_cost') && Math.abs(impliedMatTier) <= 50) ? impliedMatTier : 0;
+      cost = round2(Math.max(0, qty * uc + keepMatTier - disc));
+    }
+
+    let transCost;
+    if (!transEdited) {
+      transCost = origTransCost;
+    } else if (isCoFleet) {
+      transCost = 0;
+    } else if (tuc === 0 && origTuc === 0 && origTransCost > 0 && !wasEdited('trans_unit_cost')) {
+      transCost = origTransCost;
+    } else if (transIsFlat) {
+      transCost = round2(Math.max(0, tuc));
+    } else {
+      const impliedTransTier = base.trans_tier_adj != null
+        ? Number(base.trans_tier_adj || 0)
+        : ((origQty > 0 && origTuc > 0 && !storedTransFlat) ? round2(origTransCost - origQty * origTuc) : 0);
+      const keepTransTier = (!wasEdited('trans_unit_cost') && Math.abs(impliedTransTier) <= 50) ? impliedTransTier : 0;
+      transCost = round2(Math.max(0, qty * tuc + keepTransTier));
+    }
+
+    const total = (!matEdited && !transEdited) ? origTotal : round2(cost + transCost);
+    return { cost, transCost, total, matIsFlat, transIsFlat, matEdited, transEdited, effDate };
+  }
+
+  function resolveInspectorSalesTicketCalc(origRow, overrides = {}, editedSet = null) {
+    const base = origRow || {};
+    const hasOv = k => overrides && Object.prototype.hasOwnProperty.call(overrides, k) && overrides[k] !== undefined;
+    const getStr = k => String((hasOv(k) ? overrides[k] : base[k]) ?? '').trim();
+    const getNum = k => {
+      const raw = hasOv(k) ? overrides[k] : base[k];
+      if (raw === '' || raw == null) return 0;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const wasEdited = k => {
+      if (editedSet instanceof Set) return editedSet.has(k);
+      if (!hasOv(k)) return false;
+      const a = base[k], b = overrides[k];
+      if (typeof a === 'number' || typeof b === 'number' || ['qty', 'external_qty', 'unit_price', 'trans_unit_price', 'discount', 'tip'].includes(k)) {
+        return Math.abs(Number(a || 0) - Number(b || 0)) > 1e-6;
+      }
+      return String(a ?? '').trim() !== String(b ?? '').trim();
+    };
+
+    const origQty = Number(base.qty || 0);
+    const origExtQty = Number(base.external_qty || 0);
+    const origUp = Number(base.unit_price || 0);
+    const origTp = Number(base.trans_unit_price || 0);
+    const origDisc = Number(base.discount || 0);
+    const origPrice = Number(base.price || 0);
+    const origTransPrice = Number(base.trans_price || 0);
+    const origTotal = Number(base.total != null ? base.total : round2(Math.max(0, origPrice + origTransPrice)));
+    const origVat = Number(base.vat || 0);
+    const origTtc = Number(base.total_ttc != null ? base.total_ttc : (origTotal + origVat));
+    const origResidual = round2(origTotal - (origPrice + origTransPrice));
+
+    const company = getStr('company') || 'WTC';
+    const date = getStr('date') || todayISO();
+    const repDate = getStr('rep_date') || date;
+    const effDate = repDate || date;
+    const origEffDate = String(base.rep_date || base.date || date);
+    const saleType = getStr('sale_type') || 'Delivery';
+    const isDelivery = saleType === 'Delivery';
+    const isPickup = saleType === 'Pickup';
+    const isUnreg = saleType === 'Unregistered';
+    const transportBy = getStr('transport_by') || 'Company fleet';
+    const isCoFleet = /^company/i.test(transportBy);
+    const customer = getStr('customer');
+    const product = getStr('product');
+    const site = getStr('site');
+    const truckOwner = isCoFleet ? company : getStr('truck_owner');
+    const uom = getStr('uom') || 'm³';
+    const isTruckUom = /^truck$/i.test(uom);
+    const qty = getNum('qty');
+    const extQty = getNum('external_qty');
+    const up = getNum('unit_price');
+    const tp = isDelivery ? getNum('trans_unit_price') : 0;
+    const disc = getNum('discount');
+
+    const origUsedExtQty = Boolean(
+      origExtQty > 0 && origUp > 0 && Math.abs(origExtQty - origQty) > 0.01 &&
+      Math.abs(origPrice - round2(Math.max(0, origExtQty * origUp + Number(base.tier_adj || 0) - origDisc))) <= 0.20 &&
+      Math.abs(origPrice - round2(Math.max(0, origQty * origUp + Number(base.tier_adj || 0) - origDisc))) > 0.50
+    );
+    const origBillQty = origUsedExtQty ? origExtQty : origQty;
+    const useExtQty = extQty > 0 && (origUsedExtQty || (wasEdited('external_qty') && Boolean((customerInfo(customer) || {}).customer_declared_qty)));
+    const billQty = useExtQty ? extQty : qty;
+
+    const wantType = isPickup ? 'Sales (Pickup)' : 'Sales (Delivery)';
+    let rule = (!isUnreg && customer && product) ? findRule({ company, customer, product, site: isDelivery ? site : '', date: effDate, types: [wantType], requireProduct: true }) : null;
+    if (!rule && !isUnreg && customer && product) {
+      const anyRule = findRule({ company, customer, product, site: isDelivery ? site : '', date: effDate, types: [wantType] });
+      if (anyRule && (Number(anyRule.unit_price || anyRule.price || 0) > 0 || ruleIndiffPrice(anyRule) != null)) rule = anyRule;
+    }
+    const ruleHasTrans = Boolean(rule && (Number(rule.trans_unit_price || rule.trans_price || 0) > 0 || ruleTransIndiffPrice(rule) != null));
+    const transRule = (isDelivery && !isUnreg && customer && !ruleHasTrans)
+      ? findRule({ company, customer, product: '', site, date: effDate, types: ['Sales (Delivery)'] })
+      : null;
+    const haulCustRule = (isDelivery && !isUnreg && (customer || site || truckOwner))
+      ? findRule({ company, customer, supplier: truckOwner, product, site, date: effDate, types: ['Haulage (Customer Site)'] })
+      : null;
+    const activeTransRule = !isDelivery ? null : (
+      ruleHasTrans ? rule : (
+        (transRule && (Number(transRule.trans_unit_price || transRule.trans_price || 0) > 0 || ruleTransIndiffPrice(transRule) != null)) ? transRule : (
+          (haulCustRule && (Number(haulCustRule.trans_unit_price || haulCustRule.unit_price || 0) > 0 || ruleTransIndiffPrice(haulCustRule) != null)) ? haulCustRule : null
+        )
+      )
+    );
+
+    const storedMatFlat = origBillQty > 1.001 && origUp > 0 &&
+      (Math.abs(origPrice - round2(Math.max(0, origUp - origDisc))) <= 0.05 || Math.abs(origPrice - round2(origUp)) <= 0.05) &&
+      Math.abs(origPrice - round2(Math.max(0, origBillQty * origUp + Number(base.tier_adj || 0) - origDisc))) > 0.50;
+    const storedTransFlat = base.sale_type !== 'Pickup' && origBillQty > 1.001 && origTp > 0 &&
+      Math.abs(origTransPrice - round2(Math.max(0, origTp))) <= 0.05 &&
+      Math.abs(origTransPrice - round2(Math.max(0, origBillQty * origTp + Number(base.trans_tier_adj || 0)))) > 0.50;
+
+    const matIsFlat = Boolean(isTruckUom || base.mat_indiff === true || (!isUnreg && isMatIndiffRule(rule)) || storedMatFlat);
+    const transIsFlat = Boolean(isDelivery && (isTruckUom || base.trans_indiff === true || (!isUnreg && isTransIndiffRule(activeTransRule)) || storedTransFlat));
+
+    const matEdited = wasEdited('qty') || (useExtQty && wasEdited('external_qty')) || wasEdited('uom') || wasEdited('unit_price') || wasEdited('discount');
+    const transEdited = wasEdited('qty') || (useExtQty && wasEdited('external_qty')) || wasEdited('uom') || wasEdited('trans_unit_price') || wasEdited('sale_type');
+
+    let price;
+    if (!matEdited) {
+      price = origPrice;
+    } else if (up === 0 && origUp === 0 && origPrice > 0 && !wasEdited('unit_price')) {
+      price = round2(Math.max(0, origPrice + origDisc - disc));
+    } else if (matIsFlat) {
+      price = round2(Math.max(0, up - disc));
+    } else {
+      const keepMatTier = !wasEdited('unit_price') ? Number(base.tier_adj || 0) : 0;
+      price = round2(Math.max(0, billQty * up + keepMatTier - disc));
+    }
+
+    let transPrice;
+    if (!transEdited) {
+      transPrice = origTransPrice;
+    } else if (!isDelivery) {
+      transPrice = 0;
+    } else if (tp === 0 && origTp === 0 && origTransPrice > 0 && !wasEdited('trans_unit_price')) {
+      transPrice = origTransPrice;
+    } else if (transIsFlat) {
+      transPrice = round2(Math.max(0, tp));
+    } else {
+      const keepTransTier = !wasEdited('trans_unit_price') ? Number(base.trans_tier_adj || 0) : 0;
+      transPrice = round2(Math.max(0, billQty * tp + keepTransTier));
+    }
+
+    let total;
+    if (!matEdited && !transEdited) {
+      total = origTotal;
+    } else if (!matEdited && transEdited) {
+      total = round2(Math.max(0, price + transPrice + origResidual));
+    } else {
+      total = round2(Math.max(0, price + transPrice));
+    }
+
+    const modMethod = getStr('method') || base.method || 'Credit';
+    const modVatInv = getStr('vat_invoice');
+    const mSgn = ticketSign({ method: modMethod });
+    const vatRateChanged = wasEdited('date') && Math.abs(getVatFraction(date) - getVatFraction(String(base.date || origEffDate))) > 1e-6;
+    const vatCtxEdited = wasEdited('customer') || wasEdited('method') || wasEdited('vat_invoice') || vatRateChanged;
+
+    let vat, totalTtc;
+    if (!matEdited && !transEdited && !vatCtxEdited) {
+      vat = origVat;
+      totalTtc = origTtc;
+    } else if (mSgn === 0) {
+      vat = 0;
+      totalTtc = round2(total);
+    } else {
+      const ci = customerInfo(customer) || {};
+      const hasVat = vatCtxEdited
+        ? Boolean(modVatInv || ci.vat_registered || ci['VAT Registered'] === 'Yes')
+        : Boolean(origVat > 0 || modVatInv || ci.vat_registered || ci['VAT Registered'] === 'Yes');
+      vat = hasVat ? round2(total * getVatFraction(date)) : 0;
+      totalTtc = round2(total + vat);
+    }
+
+    return { price, transPrice, total, vat, totalTtc, matIsFlat, transIsFlat, matEdited, transEdited, effDate: date };
+  }
+
   function getInspectorEditableSchema(key, row, targetEqRow) {
     const uomOpts = uniqSorted(((SEED.records && SEED.records.uoms) || []).map(u => u.name).concat(['m³', 'Ton', 'Truck', 'Piece', 'Bag', 'Litre', 'Unit']), getFreqIndex().uom);
     const prodTypeOpts = uniqSorted(((SEED.records && SEED.records.product_types) || []).map(pt => pt.name).concat(['Material', 'Aggregate', 'Oil', 'Lubricant', 'Grease', 'Spare Parts', 'Consumables', 'Other']));
@@ -39117,54 +39394,62 @@
         { key: 'is_truck_owner', label: 'Registered Hauler / Truck Owner', type: 'bool', sec: 2, getVal: r => Boolean(r.is_truck_owner || (supplierInfo(r.name || r.Supplier) || {}).is_truck_owner) },
         { key: 'notes', label: 'Notes & Payment Terms', type: 'text', sec: 3, span: true, placeholder: 'Bank IBAN, quarry terms, or hauler instructions...' }
       ],
-      sales_tickets: [
-        { key: 'date', label: 'Transaction Date *', type: 'date', sec: 1 },
-        { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
-        { key: 'time', label: 'Dispatch Time', type: 'time', sec: 1 },
-        { key: 'ticket_no', label: 'Ticket / Invoice No. *', type: 'text', sec: 1 },
-        { key: 'sale_type', label: 'Sale Type *', type: 'select', options: [['Pickup', 'Pick-up (Material Only)'], ['Delivery', 'Delivery (Material + Transport)'], ['Unregistered', 'Unregistered (Spot Cash)']], sec: 1 },
-        { key: 'transport_by', label: 'Transported By', type: 'select', options: [['Company fleet', 'Company fleet (Own Truck)'], ['Third-party truck', 'Third-party truck (Hauler)']], sec: 2 },
-        { key: 'customer', label: 'Customer *', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
-        { key: 'product', label: 'Product / Grade *', type: 'combo', dl: 'dl_insp_products', sec: 2 },
-        { key: 'site', label: 'Destination Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
-        { key: 'truck_owner', label: 'Truck Owner (Hauler)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
-        { key: 'truck', label: 'Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
-        { key: 'driver', label: 'Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
-        { key: 'qty', label: 'Quantity *', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'uom', label: 'Unit (UoM)', type: 'select', options: uomOpts, sec: 3 },
-        { key: 'external_qty', label: 'Customer-Declared Qty', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'unit_price', label: 'Material Unit Price ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'trans_unit_price', label: 'Transport Unit Price ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'discount', label: 'Discount ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'tip', label: 'Driver Tip ($)', type: 'number', step: '0.50', min: '0', sec: 3 },
-        { key: 'method', label: 'Payment Method *', type: 'select', options: [['Credit', 'Credit'], ['Cash', 'Cash'], ['Free', 'Free (Zero Charge)'], ['CR Return', 'CR Return'], ['C Return', 'C Return']], sec: 3 },
-        { key: 'vat_invoice', label: 'VAT Invoice Serial', type: 'text', sec: 3 },
-        { key: 'external_invoice', label: 'External Invoice #', type: 'text', sec: 3 },
-        { key: 'reference', label: 'Reference', type: 'text', sec: 3 },
-        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
-      ],
-      raw_purchases: [
-        { key: 'date', label: 'Transaction Date *', type: 'date', sec: 1 },
-        { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
-        { key: 'time', label: 'Dispatch Time', type: 'time', sec: 1 },
-        { key: 'ticket_no', label: 'Ticket No. *', type: 'text', sec: 1 },
-        { key: 'product', label: 'Raw Material Grade *', type: 'combo', dl: 'dl_insp_products', sec: 2 },
-        { key: 'site', label: 'Source Site *', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
-        { key: 'site_owner', label: 'Site Owner (Material Payee)', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
-        { key: 'transport_by', label: 'Transported By *', type: 'select', options: [['Company fleet', 'Company fleet (Own Truck)'], ['Third-party truck', 'Third-party truck (Hauler)']], sec: 2 },
-        { key: 'truck_owner', label: 'Truck Owner (Hauler Payee)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
-        { key: 'truck', label: 'Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
-        { key: 'driver', label: 'Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
-        { key: 'qty', label: 'Quantity *', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'uom', label: 'Unit (UoM)', type: 'select', options: uomOpts, sec: 3 },
-        { key: 'unit_cost', label: 'Material Unit Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'trans_unit_cost', label: 'Haulage Unit Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'discount', label: 'Discount ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'method', label: 'Settlement Method *', type: 'select', options: [['Credit', 'Credit (AP)'], ['Cash', 'Cash']], sec: 3 },
-        { key: 'external_invoice', label: 'Supplier Invoice #', type: 'text', sec: 3 },
-        { key: 'reference', label: 'Reference', type: 'text', sec: 3 },
-        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
-      ],
+      sales_tickets: (() => {
+        const stInitCalc = (key === 'sales_tickets' && row) ? resolveInspectorSalesTicketCalc(row) : null;
+        return [
+          { key: 'date', label: 'Transaction Date *', type: 'date', sec: 1 },
+          { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
+          { key: 'time', label: 'Dispatch Time', type: 'time', sec: 1 },
+          { key: 'overtime', label: 'Night / Overtime Trip', type: 'bool', sec: 1, getVal: r => Boolean(r.overtime) },
+          { key: 'ticket_no', label: 'Ticket / Invoice No. *', type: 'text', sec: 1 },
+          { key: 'sale_type', label: 'Sale Type *', type: 'select', options: [['Pickup', 'Pick-up (Material Only)'], ['Delivery', 'Delivery (Material + Transport)'], ['Unregistered', 'Unregistered (Spot Cash)']], sec: 1, getVal: r => r.sale_type || 'Delivery' },
+          { key: 'transport_by', label: 'Transported By', type: 'select', options: [['Company fleet', 'Company fleet (Own Truck)'], ['Third-party truck', 'Third-party truck (Hauler)']], sec: 2, getVal: r => r.transport_by || 'Company fleet' },
+          { key: 'customer', label: 'Customer *', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
+          { key: 'product', label: 'Product / Grade *', type: 'combo', dl: 'dl_insp_products', sec: 2 },
+          { key: 'site', label: 'Destination Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
+          { key: 'truck_owner', label: 'Truck Owner (Hauler)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
+          { key: 'truck', label: 'Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
+          { key: 'driver', label: 'Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
+          { key: 'qty', label: 'Quantity *', type: 'number', step: '0.01', min: '0', sec: 3 },
+          { key: 'uom', label: 'Unit (UoM)', type: 'select', options: uomOpts, sec: 3, getVal: r => r.uom || 'm³' },
+          { key: 'external_qty', label: 'Customer-Declared Qty', type: 'number', step: '0.01', min: '0', sec: 3 },
+          { key: 'unit_price', label: stInitCalc && stInitCalc.matIsFlat ? 'Material Price ($ / Load)' : 'Material Unit Price ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+          { key: 'trans_unit_price', label: stInitCalc && stInitCalc.transIsFlat ? 'Transport Price ($ / Load)' : 'Transport Unit Price ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+          { key: 'discount', label: 'Discount ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+          { key: 'tip', label: 'Driver Tip ($)', type: 'number', step: '0.50', min: '0', sec: 3 },
+          { key: 'method', label: 'Payment Method *', type: 'select', options: [['Credit', 'Credit'], ['Cash', 'Cash'], ['Free', 'Free (Zero Charge)'], ['CR Return', 'CR Return'], ['C Return', 'C Return']], sec: 3, getVal: r => r.method || 'Credit' },
+          { key: 'vat_invoice', label: 'VAT Invoice Serial', type: 'text', sec: 3 },
+          { key: 'external_invoice', label: 'External Invoice #', type: 'text', sec: 3 },
+          { key: 'reference', label: 'Reference', type: 'text', sec: 3 },
+          { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+        ];
+      })(),
+      raw_purchases: (() => {
+        const rpInitCalc = (key === 'raw_purchases' && row) ? resolveInspectorRawTicketCalc(row) : null;
+        return [
+          { key: 'date', label: 'Transaction Date *', type: 'date', sec: 1 },
+          { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
+          { key: 'time', label: 'Dispatch Time', type: 'time', sec: 1 },
+          { key: 'overtime', label: 'Night / Overtime Trip', type: 'bool', sec: 1, getVal: r => Boolean(r.overtime) },
+          { key: 'ticket_no', label: 'Ticket No. *', type: 'text', sec: 1 },
+          { key: 'product', label: 'Raw Material Grade *', type: 'combo', dl: 'dl_insp_products', sec: 2 },
+          { key: 'site', label: 'Source Site *', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
+          { key: 'site_owner', label: 'Site Owner (Material Payee)', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
+          { key: 'transport_by', label: 'Transported By *', type: 'select', options: [['Company fleet', 'Company fleet (Own Truck)'], ['Third-party truck', 'Third-party truck (Hauler)']], sec: 2, getVal: r => r.transport_by || (Number(r.trans_cost || r.trans_unit_cost || 0) > 0 ? 'Third-party truck' : 'Company fleet') },
+          { key: 'truck_owner', label: 'Truck Owner (Hauler Payee)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
+          { key: 'truck', label: 'Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
+          { key: 'driver', label: 'Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
+          { key: 'qty', label: 'Quantity *', type: 'number', step: '0.01', min: '0', sec: 3 },
+          { key: 'uom', label: 'Unit (UoM)', type: 'select', options: uomOpts, sec: 3, getVal: r => r.uom || 'm³' },
+          { key: 'unit_cost', label: rpInitCalc && rpInitCalc.matIsFlat ? 'Material Cost ($ / Load)' : 'Material Unit Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+          { key: 'trans_unit_cost', label: rpInitCalc && rpInitCalc.transIsFlat ? 'Haulage Cost ($ / Load)' : 'Haulage Unit Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+          { key: 'discount', label: 'Discount ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+          { key: 'method', label: 'Settlement Method *', type: 'select', options: [['Credit', 'Credit (AP)'], ['Cash', 'Cash']], sec: 3, getVal: r => r.method || 'Credit' },
+          { key: 'external_invoice', label: 'Supplier Invoice #', type: 'text', sec: 3 },
+          { key: 'reference', label: 'Reference', type: 'text', sec: 3 },
+          { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+        ];
+      })(),
       fuel_intakes: [
         { key: 'date', label: 'Intake Date *', type: 'date', sec: 1 },
         { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
@@ -40529,36 +40814,78 @@
       if (!modDrawer || !modLiveCalcEl) return;
       let html = '';
       if (key === 'sales_tickets') {
-        const qty = getModNum('qty');
-        const up = getModNum('unit_price');
-        const tp = getModNum('trans_unit_price');
-        const disc = getModNum('discount');
-        const mat = round2(Math.max(0, qty * up + Number(row.tier_adj || 0) - disc));
-        const tr = round2(Math.max(0, qty * tp + Number(row.trans_tier_adj || 0)));
-        const net = round2(mat + tr);
-        const modCust = getModVal('customer') || row.customer || '';
-        const modMth = getModVal('method') || row.method || '';
-        const modVatInv = $('insp_edit_vat_invoice') ? getModVal('vat_invoice') : String(row.vat_invoice || '');
-        const mSgn = ticketSign({ method: modMth });
-        const ci = customerInfo(modCust) || {};
-        const vatCtxChanged = norm(modCust) !== norm(row.customer) || modMth !== String(row.method || '') || modVatInv !== String(row.vat_invoice || '');
-        const hasVat = mSgn === 0 ? false : (vatCtxChanged
-          ? Boolean(modVatInv || ci.vat_registered || ci['VAT Registered'] === 'Yes')
-          : Boolean(row.vat > 0 || modVatInv || ci.vat_registered || ci['VAT Registered'] === 'Yes'));
-        const effStDate = getModVal('date') || row.date || todayISO();
-        const vatFrac = getVatFraction(effStDate);
-        const vat = hasVat ? round2(net * vatFrac) : 0;
-        const ttc = round2(net + vat);
-        html = `<span>Material: <b>${fmtUSD(mat, 2)}</b></span><span>Transport: <b>${fmtUSD(tr, 2)}</b></span><span>VAT ${esc(fmtVatPctStr(effStDate))}: <b>${fmtUSD(vat, 2)}</b></span><span>Total TTC: <b>${fmtUSD(ttc, 2)}</b></span>`;
+        const otSel = $('insp_edit_overtime');
+        const curTime = getModVal('time');
+        const curDrv = getModVal('driver');
+        const curTrBy = getModVal('transport_by') || row.transport_by || 'Company fleet';
+        const curSaleTp = getModVal('sale_type') || row.sale_type || 'Delivery';
+        const effDtOt = getModVal('rep_date') || getModVal('date') || row.rep_date || row.date || '';
+        if (otSel && otSel.dataset.userEdited !== '1' && (
+          curTime !== String(row.time || '').trim() ||
+          curDrv !== String(row.driver || '').trim() ||
+          curTrBy !== String(row.transport_by || 'Company fleet').trim() ||
+          curSaleTp !== String(row.sale_type || 'Delivery').trim()
+        )) {
+          const canOt = curSaleTp === 'Delivery' && (/^company/i.test(curTrBy) || isCompanyDriver(curDrv, row.company, effDtOt));
+          otSel.value = (canOt && isOvertimeTime(curTime)) ? 'Yes' : 'No';
+        }
+        const sc = resolveInspectorSalesTicketCalc(row, {
+          date: getModVal('date') || row.date,
+          rep_date: getModVal('rep_date') || getModVal('date') || row.rep_date || row.date,
+          sale_type: curSaleTp,
+          transport_by: curTrBy,
+          customer: $('insp_edit_customer') ? getModVal('customer') : row.customer,
+          product: $('insp_edit_product') ? getModVal('product') : row.product,
+          site: $('insp_edit_site') ? getModVal('site') : row.site,
+          truck_owner: $('insp_edit_truck_owner') ? getModVal('truck_owner') : row.truck_owner,
+          uom: getModVal('uom') || row.uom || 'm³',
+          qty: getModNum('qty'),
+          external_qty: getModVal('external_qty') === '' ? null : getModNum('external_qty'),
+          unit_price: getModNum('unit_price'),
+          trans_unit_price: getModNum('trans_unit_price'),
+          discount: getModNum('discount'),
+          method: getModVal('method') || row.method || 'Credit',
+          vat_invoice: $('insp_edit_vat_invoice') ? getModVal('vat_invoice') : String(row.vat_invoice || '')
+        });
+        const upLbl = modDrawer.querySelector('label[for="insp_edit_unit_price"]');
+        if (upLbl) upLbl.textContent = sc.matIsFlat ? 'Material Price ($ / Load)' : 'Material Unit Price ($)';
+        const tpLbl = modDrawer.querySelector('label[for="insp_edit_trans_unit_price"]');
+        if (tpLbl) tpLbl.textContent = sc.transIsFlat ? 'Transport Price ($ / Load)' : 'Transport Unit Price ($)';
+        html = `<span>Material${sc.matIsFlat ? ' (Flat / Load)' : ''}: <b>${fmtUSD(sc.price, 2)}</b></span><span>Transport${sc.transIsFlat ? ' (Flat / Load)' : ''}: <b>${fmtUSD(sc.transPrice, 2)}</b></span><span>VAT ${esc(fmtVatPctStr(sc.effDate))}: <b>${fmtUSD(sc.vat, 2)}</b></span><span>Total TTC: <b>${fmtUSD(sc.totalTtc, 2)}</b></span>`;
       } else if (key === 'raw_purchases') {
-        const qty = getModNum('qty');
-        const uc = getModNum('unit_cost');
-        const tuc = getModNum('trans_unit_cost');
-        const disc = getModNum('discount');
-        const cost = round2(Math.max(0, qty * uc - disc));
-        const trCost = round2(Math.max(0, qty * tuc));
-        const tot = round2(cost + trCost);
-        html = `<span>Material Leg: <b>${fmtUSD(cost, 2)}</b></span><span>Haulage Leg: <b>${fmtUSD(trCost, 2)}</b></span><span>Total Payable: <b>${fmtUSD(tot, 2)}</b></span>`;
+        const otSel = $('insp_edit_overtime');
+        const curTime = getModVal('time');
+        const curDrv = getModVal('driver');
+        const origTrByDef = row.transport_by || (Number(row.trans_cost || row.trans_unit_cost || 0) > 0 ? 'Third-party truck' : 'Company fleet');
+        const curTrBy = getModVal('transport_by') || origTrByDef;
+        const effDtOt = getModVal('rep_date') || getModVal('date') || row.rep_date || row.date || '';
+        if (otSel && otSel.dataset.userEdited !== '1' && (
+          curTime !== String(row.time || '').trim() ||
+          curDrv !== String(row.driver || '').trim() ||
+          curTrBy !== String(origTrByDef).trim()
+        )) {
+          const canOt = /^company/i.test(curTrBy) || isCompanyDriver(curDrv, row.company, effDtOt);
+          otSel.value = (canOt && isOvertimeTime(curTime)) ? 'Yes' : 'No';
+        }
+        const rc = resolveInspectorRawTicketCalc(row, {
+          date: getModVal('date') || row.date,
+          rep_date: getModVal('rep_date') || getModVal('date') || row.rep_date || row.date,
+          product: $('insp_edit_product') ? getModVal('product') : row.product,
+          site: $('insp_edit_site') ? getModVal('site') : row.site,
+          site_owner: $('insp_edit_site_owner') ? getModVal('site_owner') : row.site_owner,
+          transport_by: curTrBy,
+          truck_owner: $('insp_edit_truck_owner') ? getModVal('truck_owner') : row.truck_owner,
+          uom: getModVal('uom') || row.uom || 'm³',
+          qty: getModNum('qty'),
+          unit_cost: getModNum('unit_cost'),
+          trans_unit_cost: getModNum('trans_unit_cost'),
+          discount: getModNum('discount')
+        });
+        const ucLbl = modDrawer.querySelector('label[for="insp_edit_unit_cost"]');
+        if (ucLbl) ucLbl.textContent = rc.matIsFlat ? 'Material Cost ($ / Load)' : 'Material Unit Cost ($)';
+        const tucLbl = modDrawer.querySelector('label[for="insp_edit_trans_unit_cost"]');
+        if (tucLbl) tucLbl.textContent = rc.transIsFlat ? 'Haulage Cost ($ / Load)' : 'Haulage Unit Cost ($)';
+        html = `<span>Material Leg${rc.matIsFlat ? ' (Flat / Load)' : ''}: <b>${fmtUSD(rc.cost, 2)}</b></span><span>Haulage Leg${rc.transIsFlat ? ' (Flat / Load)' : ''}: <b>${fmtUSD(rc.transCost, 2)}</b></span><span>Total Payable: <b>${fmtUSD(rc.total, 2)}</b></span>`;
       } else if (key === 'vat_invoices') {
         const net = getModNum('net_amount');
         const effViDate = getModVal('date') || row.date || todayISO();
@@ -40732,7 +41059,7 @@
     }
     if (modDrawer) {
       modDrawer.querySelectorAll('input, select').forEach(el => {
-        if (el.id === 'insp_edit_vat_amount' || el.id === 'insp_edit_price_pending') {
+        if (el.id === 'insp_edit_vat_amount' || el.id === 'insp_edit_price_pending' || el.id === 'insp_edit_overtime') {
           el.addEventListener('input', () => { el.dataset.userEdited = '1'; syncModifyLiveSummary(); });
           el.addEventListener('change', () => { el.dataset.userEdited = '1'; syncModifyLiveSummary(); });
         } else {
@@ -40837,6 +41164,8 @@
             return;
           }
         }
+        const origRowSnap = Object.assign({}, row);
+        const editedKeySet = new Set(Object.keys(pendingUpdates));
         let changedCount = 0;
         const isBoundedEqSub = Boolean(isEquipInspect && effToDate);
         Object.entries(pendingUpdates).forEach(([fk, nextVal]) => {
@@ -40920,33 +41249,29 @@
             if (cleanCats.some(c => /hauler|truck\s*owner|transport/i.test(String(c)))) row.is_truck_owner = true;
           }
         } else if (key === 'sales_tickets') {
-          const qty = Number(row.qty || 0);
-          const up = Number(row.unit_price || 0);
-          const tp = Number(row.trans_unit_price || 0);
-          const disc = Number(row.discount || 0);
-          row.price = round2(Math.max(0, qty * up + Number(row.tier_adj || 0) - disc));
-          row.trans_price = row.sale_type === 'Pickup' ? 0 : round2(Math.max(0, qty * tp + Number(row.trans_tier_adj || 0)));
-          row.total = round2(row.price + row.trans_price);
-          if (ticketSign(row) === 0) {
-            row.vat = 0;
-            row.total_ttc = round2(row.total);
-          } else {
-            const ci = customerInfo(row.customer) || {};
-            const vatContextEdited = ('customer' in pendingUpdates) || ('vat_invoice' in pendingUpdates) || ('method' in pendingUpdates);
-            const hasVat = vatContextEdited
-              ? Boolean(row.vat_invoice || ci.vat_registered || ci['VAT Registered'] === 'Yes')
-              : Boolean(row.vat > 0 || row.vat_invoice || ci.vat_registered || ci['VAT Registered'] === 'Yes');
-            row.vat = hasVat ? round2(row.total * getVatFraction(row.date || row.rep_date)) : 0;
-            row.total_ttc = round2(row.total + row.vat);
+          const salesCalc = resolveInspectorSalesTicketCalc(origRowSnap, row, editedKeySet);
+          row.price = salesCalc.price;
+          row.trans_price = salesCalc.transPrice;
+          row.total = salesCalc.total;
+          row.vat = salesCalc.vat;
+          row.total_ttc = salesCalc.totalTtc;
+          if (salesCalc.matEdited || salesCalc.transEdited) {
+            if (salesCalc.matIsFlat) row.mat_indiff = true;
+            else delete row.mat_indiff;
+            if (salesCalc.transIsFlat) row.trans_indiff = true;
+            else delete row.trans_indiff;
           }
         } else if (key === 'raw_purchases') {
-          const qty = Number(row.qty || 0);
-          const uc = Number(row.unit_cost || 0);
-          const tuc = Number(row.trans_unit_cost || 0);
-          const disc = Number(row.discount || 0);
-          row.cost = round2(Math.max(0, qty * uc - disc));
-          row.trans_cost = /company/i.test(row.transport_by || '') ? 0 : round2(Math.max(0, qty * tuc));
-          row.total = round2(row.cost + row.trans_cost);
+          const rawCalc = resolveInspectorRawTicketCalc(origRowSnap, row, editedKeySet);
+          row.cost = rawCalc.cost;
+          row.trans_cost = rawCalc.transCost;
+          row.total = rawCalc.total;
+          if (rawCalc.matEdited || rawCalc.transEdited) {
+            if (rawCalc.matIsFlat) row.mat_indiff = true;
+            else delete row.mat_indiff;
+            if (rawCalc.transIsFlat) row.trans_indiff = true;
+            else delete row.trans_indiff;
+          }
         } else if (key === 'vat_invoices') {
           const net = round2(Number(row.net_amount || 0));
           const vat = ('vat_amount' in pendingUpdates && row.vat_amount != null) ? round2(Number(row.vat_amount)) : round2(net * getVatFraction(row.date || row.rep_date));
@@ -41486,6 +41811,7 @@
         const cur = byId.get(r.id);
         if (!cur) { mine.push(r); byId.set(r.id, r); changed = true; }
         else if (r.voided && !cur.voided) { cur.voided = true; cur.voided_by = r.voided_by; cur.voided_at = r.voided_at; changed = true; }
+        else if (!cur.voided && !r.voided && r.modified_at && (!cur.modified_at || String(r.modified_at) > String(cur.modified_at))) { Object.assign(cur, r); changed = true; }
       });
     });
     if (sanitizeUniversalCustomRecords()) changed = true;
@@ -45391,15 +45717,22 @@
     const who = activeUser();
 
     if (kMode === 'raw') {
-      const qty = num('f_qty');
-      const up = num('f_unitprice');
-      const tp = num('f_transunitprice');
-      const disc = num('f_discount');
-      const uom = val('f_uom') || 'm³';
+      const effCalc = calcRes || ($('f_qty') ? recalcRaw() : null);
+      const qty = effCalc && effCalc.qty != null ? effCalc.qty : num('f_qty');
+      const up = effCalc && effCalc.up != null ? effCalc.up : num('f_unitprice');
+      const tp = effCalc && effCalc.tp != null ? effCalc.tp : num('f_transunitprice');
+      const disc = effCalc && effCalc.disc != null ? effCalc.disc : num('f_discount');
+      const uom = (effCalc && effCalc.uom) || val('f_uom') || 'm³';
       const isTruckUom = /truck/i.test(uom);
-      const mat = round2((isTruckUom ? up : qty * up) - disc);
       const isCo = val('f_transportby') === 'Company fleet';
-      const tr = isCo ? 0 : round2(qty * tp);
+      const mat = (effCalc && effCalc.mat != null)
+        ? round2(effCalc.mat)
+        : ($('f_mat_total') && val('f_mat_total') !== '' ? num('f_mat_total') : round2(Math.max(0, (isTruckUom ? up : qty * up) - disc)));
+      const tr = isCo
+        ? 0
+        : ((effCalc && effCalc.tr != null)
+            ? round2(effCalc.tr)
+            : ($('f_trans_total') && val('f_trans_total') !== '' ? num('f_trans_total') : round2(isTruckUom ? tp : qty * tp)));
       return {
         id: 'DRAFT-RAW',
         company,
@@ -45498,15 +45831,22 @@
     }
 
     // Default: Sales Dispatch Kiosk
-    const qty = num('f_qty');
-    const up = num('f_unitprice');
-    const tp = num('f_transunitprice');
-    const disc = num('f_discount');
-    const uom = val('f_uom') || 'm³';
-    const saleType = val('f_saletype') || 'Delivery';
+    const effCalc = calcRes || ($('f_qty') ? recalcSales() : null);
+    const qty = effCalc && effCalc.qty != null ? effCalc.qty : num('f_qty');
+    const up = effCalc && effCalc.up != null ? effCalc.up : num('f_unitprice');
+    const tp = effCalc && effCalc.tp != null ? effCalc.tp : num('f_transunitprice');
+    const disc = effCalc && effCalc.disc != null ? effCalc.disc : num('f_discount');
+    const uom = (effCalc && effCalc.uom) || val('f_uom') || 'm³';
+    const saleType = (effCalc && effCalc.saleType) || val('f_saletype') || 'Delivery';
     const isTruckUom = /truck/i.test(uom);
-    const mat = round2(Math.max(0, (isTruckUom ? up : qty * up) - disc));
-    const tr = saleType === 'Delivery' ? round2(isTruckUom ? tp : qty * tp) : 0;
+    const mat = (effCalc && effCalc.mat != null)
+      ? round2(Math.max(0, effCalc.mat - disc))
+      : ($('f_mat_total') && val('f_mat_total') !== '' ? num('f_mat_total') : round2(Math.max(0, (isTruckUom ? up : qty * up) - disc)));
+    const tr = saleType === 'Delivery'
+      ? ((effCalc && effCalc.tr != null)
+          ? round2(effCalc.tr)
+          : ($('f_trans_total') && val('f_trans_total') !== '' ? num('f_trans_total') : round2(isTruckUom ? tp : qty * tp)))
+      : 0;
     const net = round2(mat + tr);
     const cust = val('f_customer') || 'Walk-In / Customer';
     const ci = customerInfo(cust);
@@ -53182,6 +53522,8 @@
     window.__openModalForm = (fid, prefill) => openEntryModal(fid, prefill);
     window.__openInspector = (crKey, id, opts) => showRecordInspector(crKey, id, opts);
     window.__voidRecord = (crKey, id) => voidRecord(crKey, id);
+    window.__getCustomRecords = () => STATE.customRecords;
+    window.__mergeCustomRecords = incoming => mergeCustomRecords(incoming);
     if (!window.__navToView) window.__navToView = v => setView(v);
 
     document.addEventListener('mousedown', () => { lastPointerDownAt = Date.now(); }, true);
