@@ -46,7 +46,9 @@
       'table.ledger-table th.tbl-first-vis-cell, table.ledger-table td.tbl-first-vis-cell { padding-left: 12px; }',
       'table.m-grid th.tbl-first-vis-cell, table.m-grid td.tbl-first-vis-cell { padding-left: 14px; }',
       'tr.rrow td.tbl-first-vis-cell { position: relative; }',
-      '.ledger-table tbody td.tbl-first-vis-cell u.row-sel-dot { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); margin-left: 0; z-index: 2; }',
+      '.ledger-table tbody td.tbl-first-vis-cell u.row-sel-dot { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); margin-left: 0; z-index: 3; box-shadow: 0 1px 3px rgba(11, 23, 48, 0.10); }',
+      '.ledger-table tbody td.tbl-first-vis-cell:has(.badge-app, .void-btn:not(.row-void-hover)) u.row-sel-dot { position: static; right: auto; top: auto; transform: none; margin-left: 4px; vertical-align: middle; box-shadow: none; }',
+      'td.tbl-first-vis-cell:has(> u.row-sel-dot) > .void-btn.row-void-hover { right: 22px; }',
       '.tbl-col-auto-tag { font-size: 9.5px; font-weight: 600; opacity: 0.62; margin-left: 3px; }'
     ].join('\n');
     document.head.appendChild(stEl);
@@ -262,19 +264,21 @@
         if (start === firstVisCol) firstVisTd = cell;
       }
       if (firstVisCol > 0 && col0Td && firstVisTd && col0Td !== firstVisTd) {
-        const dot = col0Td.querySelector('u.row-sel-dot');
-        if (dot) firstVisTd.appendChild(dot);
         col0Td.querySelectorAll('.badge-app, button.void-btn').forEach(el => {
           el.setAttribute('data-from-col0', '1');
           firstVisTd.appendChild(el);
         });
+        const dot = col0Td.querySelector('u.row-sel-dot');
+        if (dot) firstVisTd.appendChild(dot);
       } else if (firstVisCol === 0 && col0Td) {
-        const movedDot = tr.querySelector('td:not(:first-child) u.row-sel-dot');
-        if (movedDot) col0Td.appendChild(movedDot);
+        let restoredAny = false;
         tr.querySelectorAll('[data-from-col0="1"]').forEach(el => {
           el.removeAttribute('data-from-col0');
           col0Td.appendChild(el);
+          restoredAny = true;
         });
+        const movedDot = tr.querySelector('td u.row-sel-dot');
+        if (movedDot && (movedDot.parentElement !== col0Td || restoredAny)) col0Td.appendChild(movedDot);
       }
     });
   }

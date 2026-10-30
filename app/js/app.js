@@ -14076,8 +14076,8 @@
                 const isStock = /stock/i.test(String(r.basis || ''));
                 return `
                   <tr class="rrow" data-rkey="jv_distributions" data-rid="${esc(r.id)}">
-                    <td class="mono">${esc(recordDateDMY(r))}</td>
-                    <td class="mono">${appCell(r)}<strong>${esc(r.name || r.id || '-')}</strong></td>
+                    <td class="mono">${esc(recordDateDMY(r))}${appCell(r, 'jv_distributions')}</td>
+                    <td class="mono"><strong>${esc(r.name || r.id || '-')}</strong></td>
                     <td>${coBadge(r.company)}</td>
                     <td>${r.site ? relLink('sites', r.site, r.site, true) : '-'}</td>
                     <td>${r.partner ? relLink('suppliers', r.partner, r.partner, true) : '-'}</td>
@@ -14174,7 +14174,7 @@
               <tbody>
                 ${shownParts.map(p => `
                   <tr class="rrow" data-rkey="jv_partnerships" data-rid="${esc(p.id)}">
-                    <td>${appCell(p)}<strong>${esc(p.name || p.id || '-')}</strong></td>
+                    <td><strong>${esc(p.name || p.id || '-')}</strong>${appCell(p, 'jv_partnerships')}</td>
                     <td>${coBadge(p.company)}</td>
                     <td>${p.site ? relLink('sites', p.site, p.site, true) : '-'}</td>
                     <td>${p.partner ? relLink('suppliers', p.partner, p.partner, true) : '-'}</td>
