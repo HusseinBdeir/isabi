@@ -87,7 +87,7 @@
         { id: 'attendance', label: 'Attendance', badge: 'bhf_attendance', crKey: 'attendance', title: 'New Staff Attendance' },
         { id: 'employment', label: 'Employment Contract', badge: 'bhf_employment', crKey: 'employments', title: 'New Employment Contract' },
         { id: 'freelance', label: 'Freelance Work', badge: 'bhf_freelancework', crKey: 'employments', title: 'New Freelance Work' },
-        { id: 'logistics', label: 'Site Allowance', badge: 'bhf_logistics', crKey: 'logistics_allowances', title: 'New Site Allowance' }
+        { id: 'logistics', label: 'Site Transport', badge: 'bhf_logistics', crKey: 'logistics_allowances', title: 'New Site Transport' }
       ]
     },
     {
@@ -1487,10 +1487,10 @@
         ${adminHeaderHtml}
         <div class="form-grid-3 att-compact-grid log-compact-grid">
           <input type="hidden" id="f_log_mode" value="range">
-          <div class="att-preset-bar log-mode-bar" id="logModeDeck" role="tablist" aria-label="Site Allowance Mode">
+          <div class="att-preset-bar log-mode-bar" id="logModeDeck" role="tablist" aria-label="Site Transport Mode">
             <span class="att-preset-lbl">Posting:</span>
-            <button type="button" class="att-preset-pill active" data-log-mode="range">Date Range Posting</button>
-            <button type="button" class="att-preset-pill" data-log-mode="single">Single Day Worked</button>
+            <button type="button" class="att-preset-pill active" data-log-mode="range">Date Range / Schedule</button>
+            <button type="button" class="att-preset-pill" data-log-mode="single">Single Day on Site</button>
             <span class="log-mode-sep" aria-hidden="true"></span>
             <button type="button" class="att-preset-pill log-win-pill" data-log-win="week">This Week</button>
             <button type="button" class="att-preset-pill log-win-pill" data-log-win="month">This Month</button>
@@ -1527,10 +1527,10 @@
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional site task or note..."'), { id: 'wrap_log_notes' })}
         </div>
         <div class="live-calc att-live-calc-compact" id="logLiveCalc">
-          <div><small id="lbl_log_days">Posted Window</small><b id="calc_log_days">1 day</b></div>
-          <div><small>Daily Rate (USD)</small><b id="calc_log_daily">$0.00 / day</b></div>
+          <div><small id="lbl_log_days">Scheduled Window</small><b id="calc_log_days">1 day</b></div>
+          <div><small>Transport / Day</small><b id="calc_log_daily">$0.00 / day</b></div>
           <div><small>Work Proof in Window</small><b id="calc_log_month">Select Staff</b></div>
-          <div><small id="lbl_log_total">Window Allowance</small><b id="calc_log_total">$0.00</b></div>
+          <div><small id="lbl_log_total">Max Window (Tallied)</small><b id="calc_log_total">$0.00</b></div>
         </div>
       `;
     }

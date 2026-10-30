@@ -21257,6 +21257,10 @@ table.ledger-table tbody td.td-databar {
   border-color: rgba(200, 51, 59, 0.34);
   color: var(--crit);
 }
+.site-proof-chip.is-plant {
+  border-color: var(--line-strong);
+  color: var(--muted);
+}
 .site-tally-actions {
   display: inline-flex;
   align-items: center;

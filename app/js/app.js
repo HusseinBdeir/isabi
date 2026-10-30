@@ -137,6 +137,7 @@
     arChartMode: 'collections',
     salesChartMode: 'payment',
     payrollCutoffMode: 'closed_month',
+    allowancesCutoffMode: 'mtd',
     payrollStaffStatus: 'active',
     lbpFxRate: (!IS_AUTOMATED_TEST ? Number(localStorage.getItem('isabi_mfg_lbp_fx_rate_v1') || 0) : 0) || 89500,
     lbpFxUpdatedAt: (!IS_AUTOMATED_TEST ? (localStorage.getItem('isabi_mfg_lbp_fx_updated_v1') || '') : ''),
@@ -362,7 +363,7 @@
     expense_categories: 'expense category', expense_subcategories: 'expense subcategory',
     salaries: 'salary payment', attendance: 'attendance log', employments: 'contract / freelance',
     freelance_entries: 'freelance entry',
-    logistics_allowances: 'site allowance', overtime_rates: 'overtime rate',
+    logistics_allowances: 'site transport', overtime_rates: 'overtime rate',
     external_movements: 'external movement', loans: 'partner loan', loan_settlements: 'loan settlement',
     conversions: 'currency conversion', jv_partnerships: 'JV partnership', jv_distributions: 'JV distribution',
     currencies: 'currency', fx_rates: 'FX rate', vat_rates: 'VAT rate', gl_accounts: 'GL account'
@@ -836,7 +837,7 @@
     { code: '401', name: 'Suppliers', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: '3-Leg AP & Supplier Settlements', debit_rule: 'Supplier settlement vouchers paid plus rebates received', credit_rule: 'Raw Material Leg 1, Third-Party Haulage Leg 2, and Credit Expenses Leg 3' },
     { code: '4011', name: 'Trade suppliers - goods', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Quarry Purchases & Settlements', debit_rule: 'Trade supplier payments and purchase returns', credit_rule: 'Billed trade material purchases (TTC when IVA registered)' },
     { code: '4111', name: 'Trade customers', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Sales Tickets, VAT Invoices & Receipts', debit_rule: 'Credit sales tickets and VAT tax invoices at full TTC', credit_rule: 'Customer receipt vouchers collected plus discounts and sales returns' },
-    { code: '421', name: 'Amounts due to staff', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Payroll, Freelance & Allowances', debit_rule: 'Salary and freelance settlement vouchers paid out', credit_rule: 'Earned freelance shifts, site allowances, and unpaid staff balances' },
+    { code: '421', name: 'Amounts due to staff', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Payroll, Freelance & Site Transport', debit_rule: 'Salary and freelance settlement vouchers paid out', credit_rule: 'Earned freelance shifts, site transport, and unpaid staff balances' },
     { code: '4281', name: 'Loans and advances to staff', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'Payroll Post-Cutoff Advances', debit_rule: 'Post-cutoff and future-month salary advances disbursed to staff', credit_rule: 'Applied against subsequent closed-month payroll earnings' },
     { code: '4425', name: 'VAT on expenses (deductible)', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'VAT Rates & IVA Expense Vouchers', debit_rule: 'Deductible input VAT calculated automatically from active MoF VAT window on IVA expenses and VATRent commissions', credit_rule: 'Quarterly MoF VAT declaration offset or expense reversal' },
     { code: '4426', name: 'VAT on purchases (deductible)', cls: '4', automation_mode: 'Direct Formula', is_automated: true, source_module: 'VAT Rates & IVA Quarry / AP Purchases', debit_rule: 'Deductible input VAT calculated automatically from active MoF VAT window on IVA supplier purchases and settlements', credit_rule: 'Quarterly MoF VAT declaration offset or purchase return' },
@@ -1132,6 +1133,13 @@
     const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate(l.end_date || SEED_DATE, 'LBP');
     const uDaily = Number(l.usd_amount || 0) || (!l.lbp_amount ? Number(l.daily_usd || 0) : 0);
     return round2(uDaily + (Number(l.lbp_amount || 0) / fxRate));
+  }
+  function isSiteTransportTallyRequired(l) {
+    if (!l) return false;
+    if (l.requires_tally === true) return true;
+    if (l.requires_tally === false || l.log_mode === 'single') return false;
+    if (!isAppRecord(l)) return false;
+    return true;
   }
   window.MFG_FX = {
     getRate: getLbpFxRate,
@@ -5531,7 +5539,7 @@
       { id: 'enter_dispatch', label: 'Enter Sales Dispatch, Quarry Intake, Fuel & Fleet Defects', sub: 'Sales Tickets, 2-Leg Quarry Purchases, Diesel/Lubricants/Grease, Equipment Defects, Part Changes & Plant Kiosks', badge: 'ENTER DISPATCH' },
       { id: 'enter_accounting', label: 'Enter Customer Receipts, Expenses & Supplier Settlements', sub: 'FIFO Customer Receipts, Cash/Credit Operating Expenses & 3-Leg Supplier AP Settlements', badge: 'ENTER ACCT' },
       { id: 'enter_master', label: 'Enter Universal Registries, Pricing Agreements & Attendance', sub: 'Universal (All BUs) Customers, Suppliers, Products, Expense Categories, Sites, Regions, Equipment & Drivers + BU Fleet Units, Price Agreements & Staff Attendance', badge: 'ENTER MASTER' },
-      { id: 'enter_payroll_jv', label: 'Enter Confidential Payroll, Treasury, Loans & JV Splits', sub: 'Monthly Salaries, Employment Contracts, Allowances, Partner Loans, External Cash, FX Conversions & 50/50 JV Vouchers', badge: 'ENTER PAYROLL' },
+      { id: 'enter_payroll_jv', label: 'Enter Confidential Payroll, Treasury, Loans & JV Splits', sub: 'Monthly Salaries, Employment Contracts, Site Transport, Partner Loans, External Cash, FX Conversions & 50/50 JV Vouchers', badge: 'ENTER PAYROLL' },
       { id: 'modify_data', label: 'Modify Posted Records (360° Inspector & Inline Edit)', sub: 'Edit posted quantities, unit prices, references & 5-state part custody via the 360° Modify Drawer', badge: 'MODIFY DATA' },
       { id: 'void_data', label: 'Void / Delete Posted Records (With 1-Click Undo)', sub: 'Void or delete records via multi-device cloud tombstones & instant 1-click Undo', badge: 'VOID DATA' },
       { id: 'manage_users', label: 'Administer Team Seats, Company RLS, Permissions & Face ID', sub: 'Create/edit login seats, PINs, Assigned Companies (RLS), custom role matrices & Face ID liveness policies', badge: 'ADMIN SEATS' }
@@ -5559,7 +5567,7 @@
       { id: 'stmt_digest_ops', codes: ['01', '08', '09', '11', '12'], count: 5, label: 'Executive Digest & Operational Registers', sub: '#01 Daily Operations Digest, #08 Sales Register, #09 Expense Register, #11 Quarry & Raw Material, #12 Fuel & Lube Log', badge: '5 Statements' },
       { id: 'stmt_counterparty', codes: ['13', '14', '15', '16', '17'], count: 5, label: 'Customer, Supplier & Driver Statements (SOA)', sub: '#13 Aged Receivables, #14 Customer Statement, #15 Supplier 3-Leg Balances, #16 Quarry & Supplier Statement, #17 Driver Statement', badge: '5 Statements' },
       { id: 'stmt_vouchers', codes: ['20', '21', '22'], count: 3, label: 'Printable Tax Invoices, Delivery Tickets & Vouchers', sub: '#20 Statutory VAT Sales Invoice (2738), #21 Weighbridge Delivery Ticket, #22 Customer Receipt Voucher', badge: '3 Statements' },
-      { id: 'stmt_payroll', codes: ['10'], count: 1, label: 'Payroll, Attendance & Allowances Register (Confidential)', sub: '#10 Monthly Payroll, Overtime, Attendance & Site Allowances Register', badge: '1 Statement' },
+      { id: 'stmt_payroll', codes: ['10'], count: 1, label: 'Payroll, Attendance & Site Transport Register (Confidential)', sub: '#10 Monthly Payroll, Overtime, Attendance & Site Transport Register', badge: '1 Statement' },
       { id: 'stmt_financial_board', codes: ['02', '03', '04', '05', '06', '07', '18', '19'], count: 8, label: 'Audited Financial Statements, CoA Trial Balance, VAT & JV Pack', sub: '#02 Balance Sheet, #03 P&L Statement, #04 Cash Flow, #05 Trial Balance, #06 General Journal, #07 Sub-Account SOA, #18 VAT Return, #19 JV & Recon', badge: '8 Statements' }
     ]
   };
@@ -6110,7 +6118,7 @@
         { view: 'payroll', match: ['payroll', 'payroll_analytics'], label: 'Payroll & Workforce', icon: 'payroll' },
         { view: 'workforce_map', label: 'Daily Plant & Machine Map', icon: 'workforce_map', badgeFn: u => getWorkforceMapExceptionBadge(u) },
         { view: 'payroll_attendance', label: 'Attendance & Overtime', icon: 'payroll_attendance' },
-        { view: 'payroll_allowances', label: 'Site Allowances', icon: 'payroll_allowances' },
+        { view: 'payroll_allowances', label: 'Site Transport', icon: 'payroll_allowances' },
         { view: 'payroll_contracts', label: 'Contracts & OT Rates', icon: 'payroll_contracts' }
       ]
     },
@@ -19808,12 +19816,13 @@
       if (!claimedAbsDatesByStaff.has(srKey)) claimedAbsDatesByStaff.set(srKey, new Set());
       const claimedAbs = claimedAbsDatesByStaff.get(srKey);
       const evList = absVacEventsByStaff.get(srKey) || [];
+      const requiresTally = isSiteTransportTallyRequired(l);
       let invDays = 0;
       const absByDate = new Map();
       evList.forEach((ev, evIdx) => {
         if (ev.date >= wStart && ev.date <= wEnd && !claimedAbs.has(evIdx)) {
           claimedAbs.add(evIdx);
-          invDays += ev.days;
+          if (!requiresTally) invDays += ev.days;
           const prev = absByDate.get(ev.date);
           if (!prev) {
             absByDate.set(ev.date, { days: ev.days, kind: ev.kind || 'absent', tallyId: ev.tallyId || '', notes: ev.notes || '' });
@@ -19824,41 +19833,57 @@
           }
         }
       });
-      const paidDays = Math.max(0, daysCnt - invDays);
-      const accU = paidDays * uDaily;
-      const accL = paidDays * lDaily;
-      const avgDailyLbpUsd = daysCnt > 0 ? (sumDayLbpUsd / daysCnt) : 0;
-      const accrued = accU + (paidDays * avgDailyLbpUsd);
 
-      // Reconcile per-day deductions to exact invDays across winDays
-      let matchedAbs = 0;
-      const dayDeductions = winDays.map(wd => {
-        const ab = absByDate.get(wd.iso);
-        const ded = ab ? Math.min(1, ab.days) : 0;
-        matchedAbs += ded;
-        return { ded, kind: ab ? ab.kind : '', tallyId: ab ? ab.tallyId : '', notes: ab ? ab.notes : '' };
-      });
-      let remUnmatchedAbs = Math.max(0, Math.min(daysCnt, invDays) - matchedAbs);
-      if (remUnmatchedAbs > 0.001) {
-        for (let i = dayDeductions.length - 1; i >= 0 && remUnmatchedAbs > 0.001; i--) {
-          const room = 1 - dayDeductions[i].ded;
-          if (room > 0.001) {
-            const take = Math.min(room, remUnmatchedAbs);
-            dayDeductions[i].ded = round2(dayDeductions[i].ded + take);
-            if (!dayDeductions[i].kind) dayDeductions[i].kind = 'absent';
-            remUnmatchedAbs = round2(remUnmatchedAbs - take);
+      let paidDays = 0;
+      let accU = 0;
+      let accL = 0;
+      let accrued = 0;
+      let dayDeductions = [];
+      let remWinAccrued = 0;
+      let remPaidFactor = 0;
+      const ymEarnedMap = new Map();
+
+      if (!requiresTally) {
+        paidDays = Math.max(0, daysCnt - invDays);
+        accU = paidDays * uDaily;
+        accL = paidDays * lDaily;
+        const avgDailyLbpUsd = daysCnt > 0 ? (sumDayLbpUsd / daysCnt) : 0;
+        accrued = accU + (paidDays * avgDailyLbpUsd);
+
+        // Reconcile per-day deductions to exact invDays across winDays
+        let matchedAbs = 0;
+        dayDeductions = winDays.map(wd => {
+          const ab = absByDate.get(wd.iso);
+          const ded = ab ? Math.min(1, ab.days) : 0;
+          matchedAbs += ded;
+          return { ded, kind: ab ? ab.kind : '', tallyId: ab ? ab.tallyId : '', notes: ab ? ab.notes : '' };
+        });
+        let remUnmatchedAbs = Math.max(0, Math.min(daysCnt, invDays) - matchedAbs);
+        if (remUnmatchedAbs > 0.001) {
+          for (let i = dayDeductions.length - 1; i >= 0 && remUnmatchedAbs > 0.001; i--) {
+            const room = 1 - dayDeductions[i].ded;
+            if (room > 0.001) {
+              const take = Math.min(room, remUnmatchedAbs);
+              dayDeductions[i].ded = round2(dayDeductions[i].ded + take);
+              if (!dayDeductions[i].kind) dayDeductions[i].kind = 'absent';
+              remUnmatchedAbs = round2(remUnmatchedAbs - take);
+            }
           }
         }
+        remWinAccrued = round2(accrued);
+        remPaidFactor = round2(dayDeductions.reduce((s0, d0) => s0 + Math.max(0, round2(1 - d0.ded)), 0));
+      } else {
+        dayDeductions = winDays.map(wd => {
+          const ab = absByDate.get(wd.iso);
+          return { ded: ab ? Math.min(1, ab.days) : 0, kind: ab ? ab.kind : '', tallyId: ab ? ab.tallyId : '', notes: ab ? ab.notes : '' };
+        });
       }
 
       let actCnt = 0;
-      let winDirect = 0, winSiteUnit = 0, winTallied = 0;
-      let remWinAccrued = round2(accrued);
-      let remPaidFactor = round2(dayDeductions.reduce((s0, d0) => s0 + Math.max(0, round2(1 - d0.ded)), 0));
+      let winDirect = 0, winSiteUnit = 0, winTallied = 0, winPending = 0;
       winDays.forEach((wd, di) => {
         const iso = wd.iso;
         const dd = dayDeductions[di];
-        const paidFactor = Math.max(0, round2(1 - dd.ded));
         const attEv = idx.siteAttByStaffDate.get(`${coNorm}|${sk}|${iso}`) || null;
         const drvTrips = idx.siteTripsByDrvDate.get(`${coNorm}|${sk}|${iso}`) || null;
         const drvFuel = idx.siteFuelByDrvDate.get(`${coNorm}|${sk}|${iso}`) || null;
@@ -19892,23 +19917,74 @@
         const tallyInfo = (attEv && attEv.tallyRow) ? attEv.tallyRow : (dd.tallyId ? { id: dd.tallyId, kind: 'off_site', notes: dd.notes } : null);
         const hasDirect = Boolean((attEv && attEv.presentCnt > 0) || (drvTrips && (drvTrips.salesTrips + drvTrips.rawTrips) > 0) || (drvFuel && drvFuel.slips > 0));
         const hasSiteUnit = Boolean((unitFuel && unitFuel.slips > 0) || (unitTrips && unitTrips.trips > 0) || (siteQuarry && siteQuarry.loads > 0));
+        const isClosedHistorical = !requiresTally && !isAppRecord(l) && wd.ym <= lastClosedYm;
+        const canTallyDay = requiresTally || !isClosedHistorical || Boolean(tallyInfo && tallyInfo.id);
 
+        let paidFactor = 0;
+        let earnedDayUsd = 0;
         let proofStatus = 'unverified';
-        let proofLabel = 'Schedule Only';
-        if (paidFactor <= 0.001) {
-          proofStatus = 'absent';
-          proofLabel = dd.kind === 'site_off' ? 'Off Site (-1d)' : (dd.kind === 'vacation' ? 'Vacation (-1d)' : 'Absent (-1d)');
-        } else if (tallyInfo && tallyInfo.kind === 'present') {
-          proofStatus = 'tallied';
-          proofLabel = hasDirect || hasSiteUnit ? 'Tallied + Plant Proof' : 'Tallied Worked';
-        } else if (hasDirect) {
-          proofStatus = 'direct';
-          proofLabel = paidFactor < 0.99 ? 'Half Day · Verified' : 'Direct Work Proof';
-        } else if (hasSiteUnit) {
-          proofStatus = 'site_unit';
-          proofLabel = ((unitFuel && unitFuel.slips > 0) || (unitTrips && unitTrips.trips > 0)) ? 'Machine Active' : 'Quarry Site Active';
-        } else if (paidFactor < 0.99) {
-          proofLabel = 'Half Day · Schedule';
+        let proofLabel = isClosedHistorical ? 'Closed · Paid' : 'Schedule Only';
+
+        if (requiresTally) {
+          if (tallyInfo && tallyInfo.kind === 'present') {
+            paidFactor = 1;
+            const dayFx = getLbpFxRate(iso, 'LBP');
+            earnedDayUsd = round2(uDaily + (lDaily > 0 ? lDaily / dayFx : 0));
+            paidDays += 1;
+            accU += uDaily;
+            accL += lDaily;
+            accrued = round2(accrued + earnedDayUsd);
+            ymEarnedMap.set(wd.ym, round2((ymEarnedMap.get(wd.ym) || 0) + earnedDayUsd));
+            proofStatus = 'tallied';
+            proofLabel = (hasDirect || hasSiteUnit) ? 'On Site + Plant Proof' : 'Confirmed On Site';
+          } else if (tallyInfo && tallyInfo.kind === 'off_site') {
+            paidFactor = 0;
+            earnedDayUsd = 0;
+            invDays = round2(invDays + 1);
+            proofStatus = 'at_plant';
+            proofLabel = 'At Main Plant ($0)';
+          } else if (dd.ded > 0) {
+            paidFactor = 0;
+            earnedDayUsd = 0;
+            invDays = round2(invDays + dd.ded);
+            proofStatus = 'absent';
+            proofLabel = dd.kind === 'vacation' ? 'Vacation ($0)' : 'Absent ($0)';
+          } else {
+            paidFactor = 0;
+            earnedDayUsd = 0;
+            winPending += 1;
+            proofStatus = 'pending_tally';
+            proofLabel = 'Pending Tally ($0)';
+          }
+        } else {
+          paidFactor = Math.max(0, round2(1 - dd.ded));
+          if (paidFactor <= 0.001) {
+            proofStatus = dd.kind === 'site_off' ? 'at_plant' : 'absent';
+            proofLabel = dd.kind === 'site_off' ? 'At Main Plant ($0)' : (dd.kind === 'vacation' ? 'Vacation (-1d)' : 'Absent (-1d)');
+          } else if ((tallyInfo && tallyInfo.kind === 'present') || isAppRecord(l)) {
+            proofStatus = 'tallied';
+            proofLabel = (hasDirect || hasSiteUnit)
+              ? 'On Site + Plant Proof'
+              : (tallyInfo && tallyInfo.kind === 'present' ? 'Confirmed On Site' : 'Single Day · On Site');
+          } else if (hasDirect) {
+            proofStatus = 'direct';
+            proofLabel = paidFactor < 0.99 ? 'Half Day · Verified' : 'Direct Work Proof';
+          } else if (hasSiteUnit) {
+            proofStatus = 'site_unit';
+            proofLabel = ((unitFuel && unitFuel.slips > 0) || (unitTrips && unitTrips.trips > 0)) ? 'Machine Active' : 'Quarry Site Active';
+          } else if (paidFactor < 0.99) {
+            proofLabel = isClosedHistorical ? 'Half Day · Closed' : 'Half Day · Schedule';
+          }
+
+          if (paidFactor > 0.001) {
+            if (Math.abs(remPaidFactor - paidFactor) < 0.001) {
+              earnedDayUsd = Math.max(0, round2(remWinAccrued));
+            } else {
+              earnedDayUsd = round2(paidFactor * daily);
+            }
+            remWinAccrued = round2(remWinAccrued - earnedDayUsd);
+            remPaidFactor = round2(remPaidFactor - paidFactor);
+          }
         }
 
         const isVerified = proofStatus === 'tallied' || proofStatus === 'direct' || proofStatus === 'site_unit';
@@ -19935,24 +20011,19 @@
           chips.push({ cls: 'is-fuel', txt: `${l.equipment ? l.equipment + ': ' : ''}${fParts.join(' · ') || (fuelSlips + ' slip')}` });
         }
         if (siteLoadCnt > 0) {
-          chips.push({ cls: 'is-site', txt: `${l.site || 'Site'}: ${fmtNum(siteLoadCnt, 0)} load${siteLoadCnt === 1 ? '' : 's'} (${fmtNum(siteM3, 0)} m³)` });
+          chips.push({ cls: 'is-site', txt: `${l.site || 'Site'}: ${fmtNum(siteLoadCnt, 0)} load${fmtNum(siteLoadCnt, 0) === '1' ? '' : 's'} (${fmtNum(siteM3, 0)} m³)` });
         }
         if (tallyInfo) {
-          chips.push({ cls: tallyInfo.kind === 'off_site' ? 'is-off' : 'is-tallied', txt: tallyInfo.kind === 'off_site' ? 'Supervisor: Off Site' : 'Supervisor: Worked' });
-        } else if (paidFactor <= 0.001) {
+          chips.push({
+            cls: tallyInfo.kind === 'off_site' ? 'is-plant' : 'is-tallied',
+            txt: tallyInfo.kind === 'off_site' ? 'Stayed at Main Plant ($0)' : 'Confirmed On Site'
+          });
+        } else if (!requiresTally && isAppRecord(l) && paidFactor > 0.001) {
+          chips.push({ cls: 'is-tallied', txt: 'Single-Day Site Entry' });
+        } else if (paidFactor <= 0.001 && dd.ded > 0) {
           chips.push({ cls: 'is-off', txt: dd.notes ? `Leave · ${dd.notes}` : 'Attendance Leave / Absence' });
         }
 
-        let earnedDayUsd = 0;
-        if (paidFactor > 0.001) {
-          if (Math.abs(remPaidFactor - paidFactor) < 0.001) {
-            earnedDayUsd = Math.max(0, round2(remWinAccrued));
-          } else {
-            earnedDayUsd = round2(paidFactor * daily);
-          }
-          remWinAccrued = round2(remWinAccrued - earnedDayUsd);
-          remPaidFactor = round2(remPaidFactor - paidFactor);
-        }
         if (paidFactor > 0) {
           sr.worked_hrs = round2(sr.worked_hrs + workedHrs);
           sr.ot_hrs = round2(sr.ot_hrs + otHrs);
@@ -19964,6 +20035,8 @@
           sr.grease_kg = round2(sr.grease_kg + greaseKg);
         }
 
+        const dayFxEff = getLbpFxRate(iso, 'LBP');
+        const effDayRate = round2(uDaily + (lDaily > 0 ? lDaily / dayFxEff : 0));
         siteDailyRows.push({
           id: `${l.id || srKey}_${iso}`,
           log_id: l.id || '',
@@ -19976,13 +20049,16 @@
           equipment: l.equipment || '—',
           u_daily: uDaily,
           l_daily: lDaily,
-          daily_usd: round2(daily),
+          daily_usd: requiresTally ? effDayRate : round2(daily),
           paid_days: paidFactor,
           deducted_days: dd.ded,
           earned_usd: earnedDayUsd,
           proof_status: proofStatus,
           proof_label: proofLabel,
           is_verified: isVerified,
+          requires_tally: requiresTally,
+          is_closed_historical: isClosedHistorical,
+          can_tally_day: canTallyDay,
           evidence_chips: chips,
           worked_hrs: workedHrs,
           ot_hrs: otHrs,
@@ -20011,28 +20087,42 @@
       sr.direct_days += winDirect;
       sr.site_unit_days += winSiteUnit;
       sr.tallied_days += winTallied;
+      sr.pending_days = (sr.pending_days || 0) + winPending;
       sr.accrued = round2(sr.accrued + accrued);
       sr.site_allow = sr.accrued;
       sr.daily_usd = sr.days_paid > 0 ? round2(sr.accrued / sr.days_paid) : sr.latest_daily_usd;
 
       siteLogRows.push(Object.assign({}, l, {
         daily_rate_eff: round2(daily),
+        requires_tally: requiresTally,
         days_scheduled_win: daysCnt,
         days_absent_win: invDays,
+        days_pending_win: winPending,
         days_paid_win: paidDays,
         verified_days_win: actCnt,
         earned_win_usd: round2(accrued)
       }));
 
-      ymCountMap.forEach((cnt, ym) => {
-        const shareAcc = accrued * (cnt / daysCnt);
-        const mb = ensureMonth(ym);
-        if (mb) {
-          mb.sa_accrued = round2(mb.sa_accrued + shareAcc);
-          mb.site_allow = mb.sa_accrued;
-          mb.earnings_m += shareAcc;
-        }
-      });
+      if (requiresTally) {
+        ymEarnedMap.forEach((shareAcc, ym) => {
+          const mb = ensureMonth(ym);
+          if (mb) {
+            mb.sa_accrued = round2(mb.sa_accrued + shareAcc);
+            mb.site_allow = mb.sa_accrued;
+            mb.earnings_m += shareAcc;
+          }
+        });
+      } else {
+        ymCountMap.forEach((cnt, ym) => {
+          const shareAcc = accrued * (cnt / daysCnt);
+          const mb = ensureMonth(ym);
+          if (mb) {
+            mb.sa_accrued = round2(mb.sa_accrued + shareAcc);
+            mb.site_allow = mb.sa_accrued;
+            mb.earnings_m += shareAcc;
+          }
+        });
+      }
     });
 
     // 5. Salary disbursements (period payments vs post-cutoff advances)
@@ -20236,21 +20326,56 @@
       if (!/^absence$|^absent$|unpaid/i.test(attType)) workedDays += 1;
     });
 
-    // Monthly site allowance if staff has an active arrangement overlapping ym
+    // Monthly site transport if staff has an active arrangement overlapping ym
     let siteAllowUsd = 0;
     let primarySite = '';
     const logArr = sk ? (idx.logByStaff.get(sk) || []) : [];
     if (logArr.length && /^\d{4}-\d{2}$/.test(ym)) {
-      const mStart = `${ym}-01`;
-      const mEnd = `${ym}-31`;
-      logArr.forEach(l => {
+      const { mStart, mEnd } = getPayrollMonthBounds(ym);
+      const effCoNorm = norm(company || prof.contractCompany || prof.company || 'WTC');
+      const claimedYmDates = new Set();
+      logArr.slice().sort((a, b) => String((b && b.start_date) || '').localeCompare(String((a && a.start_date) || ''))).forEach(l => {
         if (!primarySite && l.site) primarySite = l.site;
         const s = String(l.start_date || '2026-01-01').slice(0, 10);
         const e = String(l.end_date || '2099-12-31').slice(0, 10);
         if (s <= mEnd && e >= mStart) {
-          const daily = siteAllowanceDailyUsd(l, fxRate);
-          const daysPerWk = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].filter(d => l[d]).length || 6;
-          siteAllowUsd = round2(siteAllowUsd + (daily * Math.round(26 * (daysPerWk / 6))));
+          if (!isAppRecord(l)) {
+            const daily = siteAllowanceDailyUsd(l, fxRate);
+            const daysPerWk = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].filter(d => l[d]).length || 6;
+            siteAllowUsd = round2(siteAllowUsd + (daily * Math.round(26 * (daysPerWk / 6))));
+          } else {
+            const reqTally = isSiteTransportTallyRequired(l);
+            const daily = siteAllowanceDailyUsd(l, fxRate);
+            const wS = s > mStart ? s : mStart;
+            const wE = e < mEnd ? e : mEnd;
+            const dows = new Set();
+            ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].forEach((dk, di) => { if (l[dk]) dows.add(di); });
+            if (!dows.size) [1, 2, 3, 4, 5, 6].forEach(di => dows.add(di));
+            const [sy, sm, sd] = wS.split('-').map(Number);
+            const [ey, em, ed] = wE.split('-').map(Number);
+            const cur = new Date(Date.UTC(sy, sm - 1, sd));
+            const endT = Date.UTC(ey, em - 1, ed);
+            let cnt = 0;
+            while (cur.getTime() <= endT) {
+              if (dows.has(cur.getUTCDay())) {
+                const iso = `${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, '0')}-${String(cur.getUTCDate()).padStart(2, '0')}`;
+                if (!claimedYmDates.has(iso)) {
+                  claimedYmDates.add(iso);
+                  const lCo = norm(l.company || effCoNorm);
+                  const attEv = idx.siteAttByStaffDate.get(`${lCo}|${sk}|${iso}`) || idx.siteAttByStaffDate.get(`${effCoNorm}|${sk}|${iso}`) || null;
+                  if (reqTally) {
+                    if (attEv && attEv.tallyRow && attEv.tallyRow.kind === 'present') cnt += 1;
+                  } else {
+                    const isOff = Boolean(attEv && attEv.tallyRow && attEv.tallyRow.kind === 'off_site')
+                      || attList.some(a => !a.voided && String(a.set_date || a.date || '').slice(0, 10) === iso && /^site\s*off$|^absence$|^absent$|unpaid/i.test(String(a.type || a.status || '')));
+                    if (!isOff) cnt += 1;
+                  }
+                }
+              }
+              cur.setUTCDate(cur.getUTCDate() + 1);
+            }
+            if (cnt > 0) siteAllowUsd = round2(siteAllowUsd + (daily * cnt));
+          }
         }
       });
     }
@@ -20472,6 +20597,7 @@
           salRows: filterRecords(SEED.records.salaries, { ignoreSearch: true }),
           attRows: filterRecords(SEED.records.attendance, { ignoreSearch: true }),
           logRows: filterRecords(SEED.records.logistics_allowances, { ignorePeriod: true, ignoreSearch: true }),
+          cutoffMode: STATE.allowancesCutoffMode || 'mtd',
           ignoreSearch: true
         }
       : { empRows: empAll, salRows: salAll, attRows: attAll, logRows: logAll };
@@ -20513,8 +20639,8 @@
         : (regH > 0 ? `${fmtNum(regH, 1)}h reg` : '—');
 
       let displayType = attType;
-      if (/^site\s*present$/i.test(attType)) displayType = 'Site Worked';
-      else if (/^site\s*off$/i.test(attType)) displayType = 'Site Off';
+      if (/^site\s*present$/i.test(attType)) displayType = 'On Site';
+      else if (/^site\s*off$/i.test(attType)) displayType = 'At Main Plant';
       else if (/^overtime$/i.test(attType)) displayType = 'Overtime';
       else if (/^present$/i.test(attType)) displayType = 'Full Shift';
       else if (/^lateness$/i.test(attType)) displayType = 'Lateness';
@@ -20529,9 +20655,9 @@
       let isCallout = false;
       let shiftBasisLbl = '—';
       if (/^site\s*present$/i.test(attType)) {
-        shiftBasisLbl = 'Site Tally (Worked)';
+        shiftBasisLbl = 'Site Tally (On Site)';
       } else if (/^site\s*off$/i.test(attType)) {
-        shiftBasisLbl = 'Site Tally (-1d Allow.)';
+        shiftBasisLbl = 'Site Tally (At Plant · $0)';
       } else if (/^config/i.test(attType)) {
         shiftBasisLbl = 'Opening Balance';
       } else if (/^extra/i.test(attType)) {
@@ -20887,7 +21013,7 @@
     const heroTitle = subMode === 'attendance'
       ? 'Attendance & Overtime'
       : (subMode === 'allowances'
-          ? 'Site Allowances'
+          ? 'Site Transport'
           : (subMode === 'contracts' ? 'Contracts & OT Rates' : 'Payroll & Workforce'));
 
     const bannerHtml = subMode === 'attendance' ? `
@@ -20945,8 +21071,8 @@
         </div>
         <div class="cockpit-pills insight-grid">
           ${insightCard({
-            label: 'Site Allowance Earned',
-            badge: `${fmtNum(siteStaffRowsBase.length)} Staff · ${fmtNum(siteLogRows.length || logAll.length)} Windows`,
+            label: 'Site Transport Earned',
+            badge: `${fmtNum(siteStaffRowsBase.length)} Staff · ${fmtNum(siteLogRows.length || logAll.length)} Schedules`,
             badgeCls: 'brass',
             val: `${fmtUSD(saEarnedTot, 2)}`,
             valCls: 'brass',
@@ -20954,16 +21080,16 @@
             tone: 'brass'
           })}
           ${insightCard({
-            label: 'Posted Days & Deductions',
+            label: 'On-Site Paid Days',
             badge: `${fmtNum(saSchedDaysTot, 0)} Scheduled`,
             badgeCls: saAbsDaysTot > 0 ? 'info' : 'emerald',
             badgeChip: 'absent_sa',
             val: `${fmtNum(saPaidDaysTot, 0)} <small>Paid Days</small>`,
-            sub: `<b>${fmtNum(saAbsDaysTot, 1)}</b> absent / off-site days deducted across active windows`,
+            sub: `<b>${fmtNum(saAbsDaysTot, 1)}</b> at-plant / absent days ($0 site transport)`,
             tone: 'steel'
           })}
           ${insightCard({
-            label: 'Verified Work Coverage',
+            label: 'Verified Site Coverage',
             badge: `${fmtNum(saVerifDaysTot, 0)} / ${fmtNum(saPaidDaysTot, 0)} Days`,
             badgeCls: saVerifPct >= 70 ? 'emerald' : 'amber',
             badgeChip: 'unverif_sa',
@@ -20971,7 +21097,7 @@
             valCls: saVerifPct >= 70 ? 'emerald' : 'amber',
             pct: saVerifPct,
             pct2: 100 - saVerifPct,
-            sub: `<b>${fmtNum(saDirectDaysTot, 0)}</b> direct + <b>${fmtNum(saUnitDaysTot, 0)}</b> machine/site + <b>${fmtNum(saTalliedDaysTot, 0)}</b> tallied · <b>${fmtNum(saUnverifDaysTot, 0)}</b> schedule-only`,
+            sub: `<b>${fmtNum(saDirectDaysTot, 0)}</b> direct + <b>${fmtNum(saUnitDaysTot, 0)}</b> machine/site + <b>${fmtNum(saTalliedDaysTot, 0)}</b> tallied · <b>${fmtNum(saUnverifDaysTot, 0)}</b> closed schedule`,
             tone: saVerifPct >= 70 ? 'emerald' : 'amber'
           })}
           ${insightCard({
@@ -20983,7 +21109,7 @@
             sub: `<b>${fmtNum(saTotalFuelL, 0)} L</b> machine fuel · <b>${fmtNum(saTotalOtHrs, 1)}h</b> shift OT · <span class="insight-drill" data-scroll-panel="paySiteStaffPanel">Staff Output ↘</span>`,
             tone: 'emerald'
           })}
-          ${appPill('logistics_allowances', 'daily_usd', 'site allowances')}
+          ${appPill('logistics_allowances', 'daily_usd', 'site transport')}
         </div>
       </div>` : (subMode === 'contracts' ? `
       <div class="cockpit-banner has-insights">
@@ -21014,11 +21140,11 @@
             tone: 'brass'
           })}
           ${insightCard({
-            label: 'Site Allowances',
-            badge: `${fmtNum(logAll.length)} Arrangements`,
+            label: 'Site Transport',
+            badge: `${fmtNum(logAll.length)} Schedules`,
             badgeCls: 'info',
             val: `${fmtUSD(saEarnedTot, 0)} <small>Earned</small>`,
-            sub: `<b>${fmtNum(siteStaffRowsBase.length)}</b> staff (${saVerifPct.toFixed(0)}% verified) · <span class="insight-drill" data-nav-jump="payroll_allowances">Open Site Allowances ↘</span>`,
+            sub: `<b>${fmtNum(siteStaffRowsBase.length)}</b> staff (${saVerifPct.toFixed(0)}% verified) · <span class="insight-drill" data-nav-jump="payroll_allowances">Open Site Transport ↘</span>`,
             tone: 'steel'
           })}
           ${insightCard({
@@ -21059,10 +21185,10 @@
             tone: 'emerald'
           })}
           ${insightCard({
-            label: 'Overtime & Allowances',
+            label: 'Overtime & Site Transport',
             badge: `${fmtNum(totalOtHrs, 0)} OT hrs`,
             val: fmtUSD((k.overtime_bonus || 0) + totalSiteAllow, 0),
-            sub: `OT &amp; trip bonus <b>${fmtUSD(k.overtime_bonus, 0)}</b> · Site allowances <b>${fmtUSD(totalSiteAllow, 0)}</b> (${fmtNum(logAll.length)})`,
+            sub: `OT &amp; trip bonus <b>${fmtUSD(k.overtime_bonus, 0)}</b> · Site transport <b>${fmtUSD(totalSiteAllow, 0)}</b> (${fmtNum(logAll.length)})`,
             tone: 'steel'
           })}
           ${insightCard({
@@ -21295,20 +21421,24 @@
       const directDailyCnt = dailyPreChip.filter(d => d.proof_status === 'direct').length;
       const siteUnitDailyCnt = dailyPreChip.filter(d => d.proof_status === 'site_unit').length;
       const talliedDailyCnt = dailyPreChip.filter(d => d.proof_status === 'tallied' || Boolean(d.tally_id)).length;
+      const pendingDailyCnt = dailyPreChip.filter(d => d.proof_status === 'pending_tally').length;
       const unverifDailyCnt = dailyPreChip.filter(d => d.proof_status === 'unverified').length;
-      const absentDailyCnt = dailyPreChip.filter(d => d.proof_status === 'absent').length;
+      const absentDailyCnt = dailyPreChip.filter(d => d.proof_status === 'absent' || d.proof_status === 'at_plant').length;
 
       const dailyFilteredBase = dailyPreChip.filter(d => {
         if (STATE.chipFilter === 'verif_sa') return d.is_verified;
         if (STATE.chipFilter === 'direct_sa') return d.proof_status === 'direct';
         if (STATE.chipFilter === 'site_sa') return d.proof_status === 'site_unit';
+        if (STATE.chipFilter === 'pending_sa') return d.proof_status === 'pending_tally';
         if (STATE.chipFilter === 'unverif_sa') return d.proof_status === 'unverified';
         if (STATE.chipFilter === 'tallied_sa') return d.proof_status === 'tallied' || Boolean(d.tally_id);
-        if (STATE.chipFilter === 'absent_sa') return d.proof_status === 'absent';
+        if (STATE.chipFilter === 'absent_sa') return d.proof_status === 'absent' || d.proof_status === 'at_plant';
         return true;
       });
       const filteredSiteDaily = sortRows(dailyFilteredBase, 'pay_site_daily', 'date', 'desc');
       const shownSiteDaily = filteredSiteDaily.slice(0, shownCount('pay_site_daily'));
+      const showDayTallyCol = canTallySiteDay && (filteredSiteDaily.length ? filteredSiteDaily.some(d => d.can_tally_day) : dailyPreChip.some(d => d.can_tally_day));
+      const dailyColSpan = showDayTallyCol ? 10 : 9;
 
       const siteStaffScoped = siteStaffRowsBase.filter(r =>
         matchAllowSearch([r.staff, r.company, r.site, r.sitesStr, r.equipment, r.equipListStr, r.working_days])
@@ -21332,7 +21462,11 @@
 
       const proofBadgeCls = st => st === 'direct' || st === 'tallied'
         ? 'badge-ok'
-        : (st === 'site_unit' ? 'badge-info' : (st === 'absent' ? 'badge-danger' : 'badge-warn'));
+        : (st === 'site_unit'
+          ? 'badge-info'
+          : (st === 'absent'
+            ? 'badge-danger'
+            : (st === 'pending_tally' ? 'badge-warn' : 'badge-neutral')));
 
       return `
         ${bannerHtml}
@@ -21344,22 +21478,23 @@
               ${searchBox('Search staff, site, machine, date, or work proof...')}
               <div class="chip-bar">
                 ${chip('all', `All Days (${fmtNum(dailyPreChip.length)})`)}
+                ${pendingDailyCnt ? chip('pending_sa', `Pending Tally (${fmtNum(pendingDailyCnt)})`) : ''}
                 ${chip('verif_sa', `Verified Work (${fmtNum(verifDailyCnt)})`)}
                 ${chip('direct_sa', `Direct Proof (${fmtNum(directDailyCnt)})`)}
                 ${chip('site_sa', `Machine / Site Active (${fmtNum(siteUnitDailyCnt)})`)}
-                ${chip('unverif_sa', `Schedule Only (${fmtNum(unverifDailyCnt)})`)}
+                ${unverifDailyCnt ? chip('unverif_sa', `Closed Schedule (${fmtNum(unverifDailyCnt)})`) : ''}
                 ${talliedDailyCnt ? chip('tallied_sa', `Tallied (${fmtNum(talliedDailyCnt)})`) : ''}
-                ${absentDailyCnt ? chip('absent_sa', `Absent / Off Site (${fmtNum(absentDailyCnt)})`) : ''}
+                ${absentDailyCnt ? chip('absent_sa', `At Plant / Absent (${fmtNum(absentDailyCnt)})`) : ''}
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              ${exportBtn('paySiteDailyPanel', 'Daily_Site_Allowance_Tally')}
-              ${canEnterForm('logistics') ? '<button type="button" class="btn btn-primary" data-open-modal="logistics">+ Site Allowance</button>' : ''}
+              ${exportBtn('paySiteDailyPanel', 'Daily_Site_Transport_Tally')}
+              ${canEnterForm('logistics') ? '<button type="button" class="btn btn-primary" data-open-modal="logistics">+ Site Transport</button>' : ''}
             </div>
           </div>
           ${staffDrill ? `
             <div class="site-staff-filter-banner" id="siteAllowStaffBanner">
-              <span>Showing daily site tally &amp; work proof for <strong>${esc(staffDrill)}</strong> (${fmtNum(filteredSiteDaily.length)} day${filteredSiteDaily.length === 1 ? '' : 's'} · ${fmtUSD(sumDailyEarned, 2)} earned)</span>
+              <span>Showing daily site transport tally &amp; work proof for <strong>${esc(staffDrill)}</strong> (${fmtNum(filteredSiteDaily.length)} day${filteredSiteDaily.length === 1 ? '' : 's'} · ${fmtUSD(sumDailyEarned, 2)} earned)</span>
               <button type="button" class="btn btn-ghost-bar" data-clear-site-staff="1">Show All Staff</button>
             </div>` : ''}
           ${renderColFilterBar('pay_site_daily')}
@@ -21370,15 +21505,20 @@
                   ${th('pay_site_daily', 'Date', 'date')}${th('pay_site_daily', 'Staff Member', 'staff')}${th('pay_site_daily', 'Co.', 'company')}${th('pay_site_daily', 'Posted Site', 'site')}${th('pay_site_daily', 'Machine / Unit', 'equipment')}
                   ${th('pay_site_daily', 'Work Verification', 'proof_label')}${th('pay_site_daily', 'Operational Work Evidence', 'total_loads')}
                   ${th('pay_site_daily', 'Daily Rate', 'daily_usd', 'r')}${th('pay_site_daily', 'Earned ($)', 'earned_usd', 'r')}
-                  ${canTallySiteDay ? '<th class="r">Day Tally</th>' : ''}
+                  ${showDayTallyCol ? '<th class="r">Day Tally</th>' : ''}
                 </tr>
               </thead>
               <tbody>
                 ${shownSiteDaily.map(d => {
                   const rateSub = d.l_daily > 0 ? `<div class="mu" style="font-size:10px">${fmtNum(d.l_daily / 1000, 0)}k LL</div>` : '';
+                  const fallbackEvTxt = d.proof_status === 'pending_tally'
+                    ? 'Awaiting On Site or At Plant click ($0 until tallied)'
+                    : (d.is_closed_historical ? 'Closed payroll period · paid in workbook' : 'No ticket, fuel, or shift log');
                   const chipsHtml = (d.evidence_chips && d.evidence_chips.length)
                     ? `<div class="site-proof-chips">${d.evidence_chips.map(c => `<span class="site-proof-chip ${esc(c.cls)}">${esc(c.txt)}</span>`).join('')}</div>`
-                    : `<span class="mu" style="font-size:11px">No ticket, fuel, or shift log${canTallySiteDay ? ' · tally right' : ''}</span>`;
+                    : `<span class="mu" style="font-size:11px">${fallbackEvTxt}</span>`;
+                  const onSiteActive = d.tally_kind === 'present' || (!d.requires_tally && d.paid_days > 0 && !d.tally_kind);
+                  const atPlantActive = d.tally_kind === 'off_site';
                   return `
                   <tr class="rrow ${d.proof_status === 'absent' ? 'pbi-row-amber' : ''}" data-rkey="logistics_allowances" data-rid="${esc(d.log_id)}" data-site-day-iso="${esc(d.date)}" data-site-day-staff="${esc(d.staff)}">
                     <td class="mono" style="white-space:nowrap"><strong>${esc(fmtDateDMY(d.date))}</strong> <span class="mu">${esc(d.weekday)}</span></td>
@@ -21390,17 +21530,18 @@
                     <td>${chipsHtml}</td>
                     <td class="r">${fmtUSD(d.daily_usd, 2)}${rateSub}</td>
                     <td class="r ${d.earned_usd <= 0 ? 'mu' : ''}"><strong>${fmtUSD(d.earned_usd, 2)}</strong></td>
-                    ${canTallySiteDay ? `
+                    ${showDayTallyCol ? `
                     <td class="r" style="white-space:nowrap">
+                      ${d.can_tally_day ? `
                       <div class="site-tally-actions">
-                        <button type="button" class="site-tally-btn is-confirm ${d.tally_kind === 'present' ? 'is-active' : ''}" data-site-day-tally="present" data-tally-co="${esc(d.company)}" data-tally-staff="${esc(d.staff)}" data-tally-date="${esc(d.date)}" data-tally-site="${esc(d.site)}" aria-label="Confirm ${esc(d.staff)} worked at ${esc(d.site)} on ${esc(fmtDateDMY(d.date))}">&#10003; Worked</button>
-                        <button type="button" class="site-tally-btn is-absent ${d.tally_kind === 'off_site' ? 'is-active' : ''}" data-site-day-tally="off_site" data-tally-co="${esc(d.company)}" data-tally-staff="${esc(d.staff)}" data-tally-date="${esc(d.date)}" data-tally-site="${esc(d.site)}" aria-label="Mark off-site on ${esc(fmtDateDMY(d.date))} (deducts 1 day site allowance)">&#10005; Off Site</button>
+                        <button type="button" class="site-tally-btn is-confirm ${onSiteActive ? 'is-active' : ''}" data-site-day-tally="present" data-tally-explicit="${d.tally_kind === 'present' ? '1' : '0'}" data-tally-co="${esc(d.company)}" data-tally-staff="${esc(d.staff)}" data-tally-date="${esc(d.date)}" data-tally-site="${esc(d.site)}" aria-label="Confirm ${esc(d.staff)} worked at ${esc(d.site)} on ${esc(fmtDateDMY(d.date))}">&#10003; On Site</button>
+                        <button type="button" class="site-tally-btn is-absent ${atPlantActive ? 'is-active' : ''}" data-site-day-tally="off_site" data-tally-explicit="${d.tally_kind === 'off_site' ? '1' : '0'}" data-tally-co="${esc(d.company)}" data-tally-staff="${esc(d.staff)}" data-tally-date="${esc(d.date)}" data-tally-site="${esc(d.site)}" aria-label="Mark ${esc(d.staff)} at main plant on ${esc(fmtDateDMY(d.date))} ($0 site transport)">&#10005; At Plant</button>
                         ${d.tally_id ? `<button type="button" class="site-tally-btn is-undo" data-site-day-tally="undo" data-tally-id="${esc(d.tally_id)}" data-tally-staff="${esc(d.staff)}" data-tally-date="${esc(d.date)}" aria-label="Clear manual day tally">Undo</button>` : ''}
-                      </div>
+                      </div>` : `<span class="badge badge-neutral">${d.paid_days > 0 ? 'Closed · Paid' : 'Deducted'}</span>`}
                     </td>` : ''}
                   </tr>`;
-                }).join('') || emptyRow(canTallySiteDay ? 10 : 9, 'No daily site allowance rows match the active filter')}
-                ${showMoreRow('pay_site_daily', filteredSiteDaily.length, canTallySiteDay ? 10 : 9)}
+                }).join('') || emptyRow(dailyColSpan, 'No daily site transport rows match the active filter')}
+                ${showMoreRow('pay_site_daily', filteredSiteDaily.length, dailyColSpan)}
               </tbody>
               <tfoot>
                 <tr>
@@ -21408,8 +21549,8 @@
                   <td><b>${fmtNum(sumDailyVerifDays)} Verified (${filteredSiteDaily.length > 0 ? ((sumDailyVerifDays / Math.max(1, sumDailyPaidDays || filteredSiteDaily.length)) * 100).toFixed(0) : '0'}%)</b></td>
                   <td><b>${fmtNum(sumDailyLoads)} Loads (${fmtNum(sumDailyM3, 0)} m³) · ${fmtNum(sumDailyFuel, 0)} L Fuel</b></td>
                   <td class="r"><b>${sumDailyPaidDays > 0 ? fmtUSD(sumDailyEarned / sumDailyPaidDays, 2) + '/d' : '—'}</b></td>
-                  <td class="r"><b>${fmtUSD(sumDailyEarned, 2)}</b></td>
-                  ${canTallySiteDay ? '<td></td>' : ''}
+                  <td class="r" data-foot-earned="1"><b>${fmtUSD(sumDailyEarned, 2)}</b></td>
+                  ${showDayTallyCol ? '<td></td>' : ''}
                 </tr>
               </tfoot>
             </table>
@@ -21423,10 +21564,10 @@
         <div class="panel-card" id="paySiteStaffPanel">
           <div class="panel-head">
             <div>
-              <div class="panel-title"><span>STAFF SITE ALLOWANCE &amp; WORK OUTPUT ANALYSIS (${fmtNum(filteredAllowStaff.length)} STAFF · ${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.accrued, 0), 2)})</span></div>
-              <span class="ph-sub">Click any staff member's Verified Work pill to inspect and tally their day-by-day site log above · FIFO salary allocation against earned site allowances</span>
+              <div class="panel-title"><span>STAFF SITE TRANSPORT &amp; WORK OUTPUT ANALYSIS (${fmtNum(filteredAllowStaff.length)} STAFF · ${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.accrued, 0), 2)})</span></div>
+              <span class="ph-sub">Click any staff member's Verified Work pill to inspect and tally their day-by-day site log above · FIFO salary allocation against earned site transport</span>
             </div>
-            <span class="panel-meta">${exportBtn('paySiteStaffPanel', 'Site_Allowance_Work_Analysis')}</span>
+            <span class="panel-meta">${exportBtn('paySiteStaffPanel', 'Site_Transport_Work_Analysis')}</span>
           </div>
           ${renderColFilterBar('pay_site_staff')}
           <div class="table-wrap">
@@ -21434,7 +21575,7 @@
               <thead>
                 <tr>
                   ${th('pay_site_staff', 'Staff', 'staff')}${th('pay_site_staff', 'Co.', 'company')}${th('pay_site_staff', 'Site', 'site')}${th('pay_site_staff', 'Equipment', 'equipment')}
-                  ${th('pay_site_staff', 'Daily ($)', 'daily_usd', 'r')}${th('pay_site_staff', 'Sched.', 'days_counted', 'r')}${th('pay_site_staff', 'Ded.', 'absent_days', 'r')}${th('pay_site_staff', 'Paid Days', 'days_paid', 'r')}
+                  ${th('pay_site_staff', 'Daily ($)', 'daily_usd', 'r')}${th('pay_site_staff', 'Sched.', 'days_counted', 'r')}${th('pay_site_staff', 'At Plant / Ded.', 'absent_days', 'r')}${th('pay_site_staff', 'Paid Days', 'days_paid', 'r')}
                   ${th('pay_site_staff', 'Verified Work', 'activity_days', 'r')}${th('pay_site_staff', 'Loads & Vol.', 'total_loads', 'r')}${th('pay_site_staff', 'Machine Fuel', 'fuel_litres', 'r')}
                   ${th('pay_site_staff', 'Earned ($)', 'accrued', 'r')}${th('pay_site_staff', 'Paid (FIFO)', 'paid_fifo', 'r')}${th('pay_site_staff', 'Outst. ($)', 'outstanding', 'r')}
                 </tr>
@@ -21464,12 +21605,12 @@
                     <td class="r">${fmtUSD(r.paid_fifo, 2)}</td>
                     <td class="r ${r.outstanding > 0 ? 'pbi-warn' : ''}"><strong>${fmtUSD(r.outstanding, 2)}</strong></td>
                   </tr>`;
-                }).join('') || emptyRow(14, 'No site allowance staff records match filter')}
+                }).join('') || emptyRow(14, 'No site transport staff records match filter')}
                 ${showMoreRow('pay_site_staff', filteredAllowStaff.length, 14)}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="4"><b>TOTAL (${fmtNum(filteredAllowStaff.length)} STAFF ON SITE ALLOWANCES)</b></td>
+                  <td colspan="4"><b>TOTAL (${fmtNum(filteredAllowStaff.length)} STAFF ON SITE TRANSPORT)</b></td>
                   <td class="r"><b>${saPaidDaysTot > 0 ? fmtUSD(saEarnedTot / saPaidDaysTot, 2) + '/d' : '—'}</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.days_counted, 0), 0)}d</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.absent_days, 0), 1).replace(/\.0$/, '')}d</b></td>
@@ -21477,7 +21618,7 @@
                   <td class="r"><b>${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.activity_days, 0), 0)}d (${saVerifPct.toFixed(0)}%)</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.total_loads, 0), 0)} (${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.total_m3, 0), 0)} m³)</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowStaff.reduce((a, r) => a + r.fuel_litres, 0), 0)} L</b></td>
-                  <td class="r"><b>${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.accrued, 0), 2)}</b></td>
+                  <td class="r" data-foot-earned="1"><b>${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.accrued, 0), 2)}</b></td>
                   <td class="r"><b>${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.paid_fifo, 0), 2)}</b></td>
                   <td class="r"><b>${fmtUSD(filteredAllowStaff.reduce((a, r) => a + r.outstanding, 0), 2)}</b></td>
                 </tr>
@@ -21489,10 +21630,10 @@
         <div class="panel-card" id="payLogPanel">
           <div class="panel-head">
             <div>
-              <div class="panel-title"><span>SITE ALLOWANCE POSTING WINDOWS &amp; SCHEDULES (${fmtNum(filteredAllowLog.length)} ARRANGEMENTS)</span></div>
-              <span class="ph-sub">Dated site assignment windows (Mon–Sun) generating the daily site allowance tally above</span>
+              <div class="panel-title"><span>SITE TRANSPORT SCHEDULES &amp; POSTINGS (${fmtNum(filteredAllowLog.length)} SCHEDULES)</span></div>
+              <span class="ph-sub">Range &amp; open schedules start at $0 until tallied On Site above · Single-day site entries count immediately</span>
             </div>
-            <span class="panel-meta">${exportBtn('payLogPanel', 'Site_Allowance_Windows')} ${canEnterForm('logistics') ? '<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" data-open-modal="logistics">+ New Site Allowance</button>' : ''}</span>
+            <span class="panel-meta">${exportBtn('payLogPanel', 'Site_Transport_Schedules')} ${canEnterForm('logistics') ? '<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" data-open-modal="logistics">+ New Site Transport</button>' : ''}</span>
           </div>
           <div class="table-wrap">
             <table class="ledger-table">
@@ -21521,12 +21662,12 @@
                     <td class="r">${fmtUSD(effDaily, 2)}${Number(l.lbp_amount || 0) > 0 ? ` <span class="mu" style="font-size:10px">(${fmtNum(l.lbp_amount / 1000, 0)}k LL)</span>` : ''}</td>
                     <td class="r"><strong>${fmtUSD(l.earned_win_usd || 0, 2)}</strong></td>
                   </tr>`;
-                }).join('') || emptyRow(11, 'No site allowance windows match filter')}
+                }).join('') || emptyRow(11, 'No site transport schedules match filter')}
                 ${showMoreRow('pay_log', filteredAllowLog.length, 11)}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="7"><b>TOTAL (${fmtNum(filteredAllowLog.length)} ARRANGEMENTS)</b></td>
+                  <td colspan="7"><b>TOTAL (${fmtNum(filteredAllowLog.length)} SCHEDULES)</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowLog.reduce((a, l) => a + Number(l.days_paid_win || 0), 0), 1).replace(/\.0$/, '')}d</b></td>
                   <td class="r"><b>${fmtNum(filteredAllowLog.reduce((a, l) => a + Number(l.verified_days_win || 0), 0), 0)}d</b></td>
                   <td class="r"><b>Avg ${fmtUSD(filteredAllowLog.length ? filteredAllowLog.reduce((a, l) => a + Number(l.daily_rate_eff || l.daily_usd || 0), 0) / filteredAllowLog.length : 0, 2)}/d</b></td>
@@ -21557,7 +21698,7 @@
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_allowances">Site Allowances (${fmtNum(logAll.length)})</button>
+              <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_allowances">Site Transport (${fmtNum(logAll.length)})</button>
               ${exportBtn('payEmpPanel', 'Employment_Contracts')}
               ${canEnterForm('employment') ? '<button type="button" class="btn btn-primary" data-open-modal="employment">+ New Contract</button>' : ''}
             </div>
@@ -21735,8 +21876,8 @@
       <div class="panel-card" id="payStaffRegPanel">
         <div class="panel-head">
           <div>
-            <div class="panel-title"><span>PAYROLL BY STAFF MEMBER · BASE, SHIFT OT, DRIVER OT, SITE ALLOWANCE, DEDUCTIONS, EARNINGS, PAID, REMAINING &amp; ADVANCES</span></div>
-            <span class="ph-sub">Site allowances &amp; driver night-trip overtime are included inside Earnings · LBP amounts divide by ${fmtNum(fxRate, 0)} LL/$ into USD · Remaining = Earnings minus Paid · Post-cutoff payouts appear in Advances ($)</span>
+            <div class="panel-title"><span>PAYROLL BY STAFF MEMBER · BASE, SHIFT OT, DRIVER OT, SITE TRANSPORT, DEDUCTIONS, EARNINGS, PAID, REMAINING &amp; ADVANCES</span></div>
+            <span class="ph-sub">Site transport &amp; driver night-trip overtime are included inside Earnings · LBP amounts divide by ${fmtNum(fxRate, 0)} LL/$ into USD · Remaining = Earnings minus Paid · Post-cutoff payouts appear in Advances ($)</span>
           </div>
         </div>
         ${renderPayrollCutoffBarHtml('payrollCutoffBar', filteredStaff, { actionsHtml: exportBtn('payStaffRegPanel', 'Payroll_By_Staff') })}
@@ -21746,7 +21887,7 @@
             <thead>
               <tr>
                 ${th('pay_staff', 'Staff Member', 'staff')}${th('pay_staff', 'Co.', 'company')}${th('pay_staff', 'Status', 'status')}
-                ${th('pay_staff', 'Base ($)', 'base', 'r')}${th('pay_staff', 'OT Hrs', 'ot_hrs', 'r')}${th('pay_staff', 'Shift OT ($)', 'att_ot_pay', 'r')}${th('pay_staff', 'Driver OT ($)', 'trip_ot_pay', 'r')}${th('pay_staff', 'Site Allow.', 'site_allow', 'r')}
+                ${th('pay_staff', 'Base ($)', 'base', 'r')}${th('pay_staff', 'OT Hrs', 'ot_hrs', 'r')}${th('pay_staff', 'Shift OT ($)', 'att_ot_pay', 'r')}${th('pay_staff', 'Driver OT ($)', 'trip_ot_pay', 'r')}${th('pay_staff', 'Site Transp.', 'site_allow', 'r')}
                 ${th('pay_staff', 'Late Hrs', 'late_hrs', 'r')}${th('pay_staff', 'Lateness ($)', 'late_ded', 'r')}${th('pay_staff', 'Absent Days', 'absent_days', 'r')}${th('pay_staff', 'Absence ($)', 'abs_ded', 'r')}
                 ${th('pay_staff', 'Earnings ($)', 'earnings', 'r')}${th('pay_staff', 'Paid ($)', 'paid', 'r')}${th('pay_staff', 'Rem. ($)', 'balance', 'r')}${th('pay_staff', 'Advances ($)', 'advances', 'r')}
               </tr>
@@ -26466,7 +26607,7 @@
         <div class="live-calc">
           <div><small>Salaries Paid (Book)</small><b>${fmtUSD(k.salaries_paid, 2)}</b></div>
           <div><small>Employment Contracts</small><b>${fmtNum(emp.length)} (${fmtNum(emp.filter(e => e.status !== 'Ended').length)} active)</b></div>
-          <div><small>Site Allowance Arrangements</small><b>${fmtNum(log.length)} arrangements</b></div>
+          <div><small>Site Transport Schedules</small><b>${fmtNum(log.length)} schedules</b></div>
           <div><small>Unmatched Salary Payments</small><b>${fmtUSD(pricing.unmatched_salary_payments_usd || 0, 2)}</b></div>
         </div>
         <h4>1 · Staff Salary Disbursements by Payroll Month</h4>` +
@@ -26477,10 +26618,10 @@
         stTable([
           { label: 'Staff Member', key: 'staff', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'Co.', key: 'company' }, { label: 'Type', key: 'type' }, { label: 'Status', key: 'status' }, { label: 'Start Date', key: 'start_date', mono: true }, { label: 'End Date', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }, { label: 'Monthly Salary ($)', key: 'salary_usd', r: true, fmt: (_, r) => fmtUSD(empContractMonthlyUsd(r, fxRate), 2) }, { label: 'Daily Rate ($)', key: 'daily_rate', r: true, fmt: C.usd2 }
         ], emp.slice(0, 80), [{ v: `${emp.length} CONTRACTS`, span: 6 }, { v: fmtUSD(emp.reduce((a, e) => a + empContractMonthlyUsd(e, fxRate), 0), 2), r: true }, { v: '' }]) +
-        `<h4>3 · Weekly Site Allowances (Mon–Sun) &amp; Attendance</h4>` +
+        `<h4>3 · Site Transport Schedules (Mon–Sun) &amp; Attendance</h4>` +
         stTable([
           { label: 'Staff Member', key: 'staff', fmt: v => `<strong>${esc(v)}</strong>` }, { label: 'Co.', key: 'company' }, { label: 'Site / Location', key: 'site' }, { label: 'Equipment', key: 'equipment', mono: true }, { label: 'Start', key: 'start_date', mono: true }, { label: 'End', key: 'end_date', mono: true, fmt: v => esc(v || 'Open') }, { label: 'Working Days', key: 'working_days' }, { label: 'Daily ($)', key: 'daily_usd', r: true, fmt: (_, r) => fmtUSD(siteAllowanceDailyUsd(r, fxRate), 2) }
-        ], log.slice(0, 60), [{ v: `${log.length} SITE ALLOWANCE ARRANGEMENTS · ${att.length} ATTENDANCE LOGS IN SAMPLE`, span: 8 }]);
+        ], log.slice(0, 60), [{ v: `${log.length} SITE TRANSPORT SCHEDULES · ${att.length} ATTENDANCE LOGS IN SAMPLE`, span: 8 }]);
     } else if (code === '21') {
       const tb = (m.gl_tb || []).filter(r => [1, 5].includes(Number(r.Class)) || /^(16|17|45|455|53|51|512|5300)/.test(String(r.Code)));
       bodyHtml = stTable([
@@ -31661,7 +31802,7 @@
               const advAmt = round2(Math.abs(afterRemNet));
               setHint('hint_sal_usd', `Exceeds ${pos.monthLabel} remaining salary (${fmtUSD(pos.remainingNet, 2)}) by +${fmtUSD(advAmt, 2)} · creates an Advance / Overpayment`, 'warn');
             } else if (isOverBaseOnly) {
-              setHint('hint_sal_usd', `Covers remaining base (${fmtUSD(pos.remainingBase, 2)}) + ${fmtUSD(effThisPay - pos.remainingBase, 2)} of ${pos.monthLabel} overtime/allowances`, 'ok');
+              setHint('hint_sal_usd', `Covers remaining base (${fmtUSD(pos.remainingBase, 2)}) + ${fmtUSD(effThisPay - pos.remainingBase, 2)} of ${pos.monthLabel} overtime / site transport`, 'ok');
             } else if (isSettledNow) {
               setHint('hint_sal_usd', `Exact remaining balance for ${pos.monthLabel}`, 'ok');
             } else {
@@ -31677,7 +31818,7 @@
               const attParts = [];
               if (pos.otHours > 0) attParts.push(`+${fmtNum(pos.otHours, 1)}h OT (+${fmtUSD(pos.otPay, 2)})`);
               if (pos.extraUsd > 0) attParts.push(`+${fmtUSD(pos.extraUsd, 2)} Bonus`);
-              if (pos.logUsd > 0) attParts.push(`+${fmtUSD(pos.logUsd, 2)} Site Allow.`);
+              if (pos.logUsd > 0) attParts.push(`+${fmtUSD(pos.logUsd, 2)} Site Transp.`);
               if (pos.flUsd > 0) attParts.push(`+${fmtUSD(pos.flUsd, 2)} Freelance`);
               if (pos.lateHours > 0) attParts.push(`-${fmtNum(pos.lateHours, 1)}h Late (-${fmtUSD(pos.lateDed, 2)})`);
               if (pos.unpaidLeaveDays > 0) attParts.push(`-${fmtNum(pos.unpaidLeaveDays, 1)}d Leave (-${fmtUSD(pos.leaveDed, 2)})`);
@@ -32027,18 +32168,18 @@
                 </div>
                 <div class="att-contract-metrics">
                   <span><small>Prior</small><b>${fmtNum(Math.max(staffLogs.length, eqInfo.siteLogs.length))} win</b></span>
-                  <span><small>Paid</small><b>${fmtNum(paidWinDays)}d${absWinDays > 0 ? ` (-${absWinDays}d)` : ''}</b></span>
+                  <span><small>${isSingleDay ? 'Paid' : 'Sched'}</small><b>${fmtNum(paidWinDays)}d${absWinDays > 0 ? ` (-${absWinDays}d)` : ''}</b></span>
                   <span><small>Proof</small><b>${fmtNum(verifWinDays)}/${fmtNum(paidWinDays)}d</b></span>
                 </div>
               `;
             }
           }
           setHint('hint_log_staff', '', '');
-          if ($('lbl_log_days')) $('lbl_log_days').textContent = isSingleDay ? 'Single Work Day' : 'Posted Window';
-          if ($('lbl_log_total')) $('lbl_log_total').textContent = !endRaw && !isSingleDay ? 'Earned to Today' : 'Window Allowance';
+          if ($('lbl_log_days')) $('lbl_log_days').textContent = isSingleDay ? 'Single Site Day' : 'Scheduled Window';
+          if ($('lbl_log_total')) $('lbl_log_total').textContent = isSingleDay ? 'Earned Immediately' : 'Max Window (Tallied)';
           setText('calc_log_days', isSingleDay
             ? `${fmtDateDMY(txDate)} (${paidWinDays}d)`
-            : `${paidWinDays} paid day${paidWinDays === 1 ? '' : 's'}${absWinDays > 0 ? ` (${schedWinDays} - ${absWinDays} abs)` : ''}${!endRaw ? ' · Open' : ''}`);
+            : `${paidWinDays} sched. day${paidWinDays === 1 ? '' : 's'}${absWinDays > 0 ? ` (${schedWinDays} - ${absWinDays} abs)` : ''}${!endRaw ? ' · Open' : ''}`);
           setText('calc_log_daily', thisPay > 0 ? `${fmtUSD(thisPay, 2)} / day${lbp > 0 ? ` (${fmtNum(lbp / 1000, 0)}k LL)` : ''}` : '$0.00 / day');
           setText('calc_log_month', !curStaff ? 'Select Staff' : `${verifWinDays} / ${paidWinDays}d verified (${paidWinDays > 0 ? Math.round((verifWinDays / paidWinDays) * 100) : 0}%)`);
           setText('calc_log_total', fmtUSD(winTotalUsd, 2));
@@ -36502,7 +36643,7 @@
       const endDate = isSingle ? date : (val('f_enddate') || '');
       if (!st) addErr('f_staff', 'Staff is required.');
       if (!siteVal) addErr('f_site', 'Site is required.');
-      if (!(amt > 0)) addErr('f_usd', 'Daily Allowance Rate > 0 is required.');
+      if (!(amt > 0)) addErr('f_usd', 'Daily Site Transport Rate > 0 is required.');
       if (endDate && endDate < date) addErr('f_enddate', 'End Date cannot be before Start Date.');
       const dayKeys = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
       const dayFlags = Object.fromEntries(dayKeys.map(d => [d, !!($('f_day_' + d) && $('f_day_' + d).checked)]));
@@ -36516,7 +36657,7 @@
         && String(l.start_date || '').slice(0, 10) === date
       );
       if (sameDayLog) {
-        addErr('f_date', `A site allowance for ${st} already starts on ${fmtDateDMY(date)}.`);
+        addErr('f_date', `A site transport entry for ${st} already starts on ${fmtDateDMY(date)}.`);
       }
       const wkLabel = days === 6 && !dayFlags.sun
         ? 'Mon–Sat'
@@ -36526,11 +36667,13 @@
       const winDays = Math.max(1, Number((c && c.paidWinDays) || days || 1));
       record = {
         ...base,
-        name: `ALLOW ${date} ${st}`,
+        name: `STRANSP ${date} ${st}`,
         rep_date: repDate,
         staff: st,
         site: siteVal,
         equipment: eqVal,
+        log_mode: isSingle ? 'single' : 'range',
+        requires_tally: !isSingle,
         days_count: days,
         working_days: wkLabel,
         ...dayFlags,
@@ -36539,7 +36682,7 @@
         usd_amount: usdVal,
         lbp_amount: lbpVal,
         daily_usd: amt,
-        amount: round2(amt * winDays)
+        amount: isSingle ? amt : round2(amt * winDays)
       };
     } else if (f === 'triprate') {
       const siteVal = val('f_site');
@@ -37801,7 +37944,7 @@
     company_drivers: 'Company-Driver Assignment', expense_categories: 'Expense Category',
     expense_subcategories: 'Expense Subcategory', employments: 'Staff & Employment 360°',
     attendance: 'Attendance & Overtime Log', freelance_entries: 'Freelance Work Entry',
-    logistics_allowances: 'Site Allowance', overtime_rates: 'Driver Trip & Overtime Rate',
+    logistics_allowances: 'Site Transport', overtime_rates: 'Driver Trip & Overtime Rate',
     external_movements: 'External Treasury Movement', loans: 'Loan & Partner Advance',
     loan_settlements: 'Loan Repayment / Drawdown', conversions: 'USD ↔ LBP FX Conversion',
     jv_partnerships: 'JV 50/50 Site Partnership', jv_distributions: 'JV Profit Distribution',
@@ -38695,7 +38838,7 @@
         addGrid('sg_st_sales', `Sales Deliveries to ${name}`, 'Sales Deliveries', 'Sales Deliveries', 'sales_tickets', (rec.sales_tickets || []).filter(t => norm(t.site) === norm(name)), ['date', 'ticket_no', 'company', 'customer', 'product', 'truck', 'qty', 'trans_price', 'total_ttc'], 'total_ttc');
         addGrid('sg_st_raw', `Raw Material Loads from ${name}`, 'Raw Loads', 'Raw Loads', 'raw_purchases', (rec.raw_purchases || []).filter(t => norm(t.site) === norm(name)), ['date', 'ticket_no', 'company', 'site_owner', 'truck_owner', 'truck', 'product', 'qty', 'cost', 'trans_cost', 'total'], 'total');
         addGrid('sg_st_jv', `JV Partnerships & Profit Split (${name})`, 'JV Partners', 'JV Partners', 'jv_partnerships', (rec.jv_partnerships || []).filter(j => norm(j.site) === norm(name)), ['name', 'company', 'partner', 'percentage', 'notes'], 'percentage');
-        addGrid('sg_st_log', `Site Logistics Allowances (${name})`, 'Site Allowances', 'Site Allowances', 'logistics_allowances', (rec.logistics_allowances || []).filter(l => norm(l.site) === norm(name)), ['name', 'company', 'staff', 'equipment', 'daily_usd', 'working_days', 'start_date', 'end_date'], 'daily_usd');
+        addGrid('sg_st_log', `Site Transport (${name})`, 'Site Transport', 'Site Transport', 'logistics_allowances', (rec.logistics_allowances || []).filter(l => norm(l.site) === norm(name)), ['name', 'company', 'staff', 'equipment', 'daily_usd', 'working_days', 'start_date', 'end_date'], 'daily_usd');
       }
     }
     else if (key === 'equipment' || key === 'company_equipment') {
@@ -44077,7 +44220,7 @@
     payroll: 'Payroll & Workforce',
     workforce_map: 'Daily Plant & Machine Map',
     payroll_attendance: 'Attendance & Overtime',
-    payroll_allowances: 'Site Allowances',
+    payroll_allowances: 'Site Transport',
     payroll_contracts: 'Contracts & OT Rates',
     payroll_analytics: 'Payroll & Workforce',
     ledger: 'General Ledger & SOA',
@@ -44136,7 +44279,7 @@
     payroll: 'Payroll & Workforce',
     workforce_map: 'Daily Plant & Machine Map',
     payroll_attendance: 'Attendance & Overtime',
-    payroll_allowances: 'Site Allowances',
+    payroll_allowances: 'Site Transport',
     payroll_contracts: 'Contracts & OT Rates',
     payroll_analytics: 'Payroll & Workforce',
     ledger: 'General Ledger & SOA',
@@ -45073,7 +45216,7 @@
         const formLabels = {
           sales: 'Post Ticket', raw: 'Post Raw', fuel: 'Log Fuel', malfunction: 'Log Malfunction', receipt: 'Post Receipt',
           settlement: 'Settle AP', expense: 'Post Expense', warehousestock: 'Warehouse Stock', salary: 'Pay Salary',
-          vatinvoice: 'Post VAT Inv', attendance: 'Log Attendance', logistics: 'Site Allowance', employment: 'New Contract',
+          vatinvoice: 'Post VAT Inv', attendance: 'Log Attendance', logistics: 'Site Transport', employment: 'New Contract',
           treasury: 'Post Treasury', pricerule: 'New Agreement', pricerule_raw: 'New Site Rate',
           jv: 'Post JV Entry', defect: 'Report Warning', repair: 'Log Repair', oillog: 'Log Oil', partlog: 'Log Part', companyequipment: 'Assign Unit',
           customer: 'New Customer', supplier: 'New Supplier', product: 'New Product', expensecategory: 'New Category',
@@ -50383,13 +50526,18 @@
     };
     container.querySelectorAll('[data-payroll-cutoff]').forEach(btn => btn.addEventListener('click', () => {
       const nextMode = btn.getAttribute('data-payroll-cutoff') || 'closed_month';
-      if (STATE.payrollCutoffMode === nextMode) return;
       const barEl = btn.closest('.payroll-cutoff-bar');
-      STATE.payrollCutoffMode = nextMode;
+      const isAllowBar = Boolean(barEl && barEl.id === 'payAllowCutoffBar');
+      const curMode = isAllowBar ? (STATE.allowancesCutoffMode || 'mtd') : (STATE.payrollCutoffMode || 'closed_month');
+      if (curMode === nextMode) return;
+      if (isAllowBar) STATE.allowancesCutoffMode = nextMode;
+      else STATE.payrollCutoffMode = nextMode;
       rerenderAnchoredPayrollBar(barEl);
     }));
     container.querySelectorAll('[data-payroll-cutoff-reset]').forEach(btn => btn.addEventListener('click', () => {
-      STATE.payrollCutoffMode = 'closed_month';
+      const barEl = btn.closest('.payroll-cutoff-bar');
+      if (barEl && barEl.id === 'payAllowCutoffBar') STATE.allowancesCutoffMode = 'mtd';
+      else STATE.payrollCutoffMode = 'closed_month';
       setDateFilter({ reset: true });
     }));
     container.querySelectorAll('[data-payroll-status]').forEach(btn => btn.addEventListener('click', () => {
@@ -51112,9 +51260,14 @@
       const detId = 'site_tally_' + String(co + '_' + staff + '_' + dt).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
       const targetId = rawTallyId || detId;
       const existing = existingByRawId || customPool.find(x => x && String(x.id) === detId) || seedPool.find(x => x && String(x.id) === detId) || null;
+      const hasLiveExplicit = Boolean(existing && !existing.voided) && btn.getAttribute('data-tally-explicit') === '1';
+      if (act === 'present' && btn.classList.contains('is-active') && !hasLiveExplicit) {
+        toast(`${staff} is already counted on site (${fmtDateDMY(dt)})`, 'ok');
+        return;
+      }
       const who = activeUser();
       const nowIso = new Date().toISOString();
-      const wantClear = act === 'undo' || btn.classList.contains('is-active');
+      const wantClear = act === 'undo' || hasLiveExplicit;
       let rec;
       if (wantClear) {
         rec = Object.assign({}, existing || {
@@ -51162,7 +51315,7 @@
           late_hours: 0,
           extra_usd: 0,
           site_tally: true,
-          notes: isOff ? ('Off site' + (siteVal ? ' (' + siteVal + ')' : '')) : ('Confirmed worked' + (siteVal ? ' at ' + siteVal : '')),
+          notes: isOff ? ('Stayed at main plant ($0 site transport)' + (siteVal ? ' · ' + siteVal : '')) : ('Confirmed on site' + (siteVal ? ' at ' + siteVal : '')),
           source: 'app',
           entered_by: who.full_name,
           entered_by_email: who.email,
@@ -51185,9 +51338,9 @@
       if (wantClear) {
         toast(`Cleared manual site tally · ${staff} (${fmtDateDMY(dt)})`, 'ok');
       } else if (act === 'off_site') {
-        toast(`Marked off-site (-1d site allowance) · ${staff} (${fmtDateDMY(dt)})`, 'warn');
+        toast(`Marked at main plant ($0 site transport) · ${staff} (${fmtDateDMY(dt)})`, 'info');
       } else {
-        toast(`Confirmed worked on site · ${staff} (${fmtDateDMY(dt)})`, 'ok');
+        toast(`Confirmed on site · ${staff} (${fmtDateDMY(dt)})`, 'ok');
       }
     }));
     container.querySelectorAll('[data-open-eq-sub]').forEach(btn => btn.addEventListener('click', ev => {

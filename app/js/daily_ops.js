@@ -2627,6 +2627,14 @@
                   <td class="r"><strong>${sa.lbp_amount ? fmtCompactLbp(sa.lbp_amount) : fmtUSD(sa.amount || 0, 0)}</strong></td>
                 </tr>
               `).join('')}
+              ${dm.dayLogAllows.slice(0, 6).map(lg => `
+                <tr class="rrow" data-rkey="logistics_allowances" data-rid="${esc(String(lg.id || ''))}">
+                  <td><span class="dops-kind team">Site Transport</span></td>
+                  <td>${!isSingleCo ? `${coBadge(lg.company)} ` : ''}<strong>${esc(lg.staff || '-')}</strong></td>
+                  <td>${esc([lg.site, lg.working_days].filter(Boolean).join(' · ') || 'Site Transport')}</td>
+                  <td class="r"><strong>${lg.lbp_amount ? fmtCompactLbp(lg.lbp_amount) : fmtUSD(lg.daily_usd || lg.usd_amount || 0, 2)}/d</strong></td>
+                </tr>
+              `).join('')}
               ${dm.dayAtt.slice(0, 12).map(at => {
                 const isAbs = /absent|leave|off|sick/i.test(String(at.status || at.type || '')) || Number(at.leave_days || 0) > 0;
                 return `
@@ -2723,7 +2731,7 @@
               <span class="dops-kpi-delta ${dm.dayEmps.length > 0 ? 'brass' : (dm.absentCount > 0 ? 'warn' : 'neutral')}">${dm.dayEmps.length > 0 ? `+${dm.dayEmps.length} Contracts` : (dm.absentCount > 0 ? `${dm.absentCount} Absent` : 'On Shift')}</span>
             </div>
             <div class="dops-pt-main">${fmtNum(dm.activeStaffCount)} Staff <span style="font-size:10.5px;font-weight:600;color:var(--muted)">OT ${fmtNum(dm.otTotalLoads)} loads${dm.attOtHours > 0 ? ` · ${fmtNum(dm.attOtHours, 1)}h` : ''}</span></div>
-            <div class="dops-pt-sub">Paid <b>${fmtUSD(dm.salariesPaid, 0)}</b> (${fmtNum(dm.salCount)})${dm.dayEmps.length > 0 ? ` · <b>${dm.dayEmps.length}</b> new hired` : ''}${dm.dayLogAllows.length > 0 ? ` · <b>${dm.dayLogAllows.length}</b> site allow.` : ''}</div>
+            <div class="dops-pt-sub">Paid <b>${fmtUSD(dm.salariesPaid, 0)}</b> (${fmtNum(dm.salCount)})${dm.dayEmps.length > 0 ? ` · <b>${dm.dayEmps.length}</b> new hired` : ''}${dm.dayLogAllows.length > 0 ? ` · <b>${dm.dayLogAllows.length}</b> site transp.` : ''}</div>
           </div>
         </div>
 

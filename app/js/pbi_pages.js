@@ -1335,7 +1335,7 @@
     { id: 'p08_stock', num: '07', label: 'Stock & Unit Margin', title: 'Raw Material Intake, Unit Economics & Two-Leg Cost Split' },
     { id: 'p09_fuel', num: '08', label: 'Diesel & Tank Burn', title: 'Diesel Tank Balance, Consumption per 100 km / hr & Meter Guard (m142)' },
     { id: 'p10_fleet', num: '09', label: 'Fleet Economics', title: 'Equipment Utilization, Running Cost & Cost per Ton' },
-    { id: 'p12_payroll', num: '10', label: 'Workforce Analytics', title: 'Staff Payroll Analytics, Site Allowances & Freelance' },
+    { id: 'p12_payroll', num: '10', label: 'Workforce Analytics', title: 'Staff Payroll Analytics, Site Transport & Freelance' },
     { id: 'p14_cashflow', num: '11', label: 'Cash Flow & Till', title: 'Cash Inflows vs Outflows, Daily Till & Payment Method Mix' },
     { id: 'p16_financial', num: '12', label: 'Financial GL & Ratios', title: 'Lebanese CoA Income Statement, Balance Sheet & Trial Balance' }
   ];
@@ -1440,8 +1440,8 @@
     ] },
     { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'working_days', 'working_hours', 'overtime_multiplier', 'reimbursement', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'freelance', label: 'Freelance / Daily', fn: r => /free|daily/i.test(r.type || '') }] },
     { key: 'freelance_entries', group: '4 · Payroll, Attendance & Workforce', label: 'Freelance Work Entries', dvn: 'bhf_mfgfreelance', form: 'freelance', cols: ['date', 'company', 'staff', 'hours', 'extra_hours', 'rate_usd', 'total', 'notes'], relTables: ['employments', 'salaries'], views: [{ id: 'all', label: 'All Freelance Entries' }] },
-    { key: 'logistics_allowances', group: '4 · Payroll, Attendance & Workforce', navView: 'payroll_allowances', label: 'Site Allowances', dvn: 'bhf_mfglogistics', form: 'logistics', cols: ['name', 'company', 'staff', 'site', 'equipment', 'daily_usd', 'lbp_amount', 'working_days', 'start_date', 'end_date'], relTables: ['employments', 'sites', 'equipment', 'attendance', 'salaries'], views: [
-      { id: 'all', label: 'All Site Allowances' },
+    { key: 'logistics_allowances', group: '4 · Payroll, Attendance & Workforce', navView: 'payroll_allowances', label: 'Site Transport', dvn: 'bhf_mfglogistics', form: 'logistics', cols: ['name', 'company', 'staff', 'site', 'equipment', 'daily_usd', 'lbp_amount', 'working_days', 'start_date', 'end_date'], relTables: ['employments', 'sites', 'equipment', 'attendance', 'salaries'], views: [
+      { id: 'all', label: 'All Site Transport' },
       { id: 'active', label: 'Current / Open', fn: r => !r.end_date || String(r.end_date) >= '2026-10-01' },
       { id: 'ended', label: 'Ended Windows', fn: r => Boolean(r.end_date && String(r.end_date) < '2026-10-01') }
     ] },
@@ -3272,7 +3272,7 @@
         { key: 'staff', label: 'Staff Member', opts: staffOpts },
         { key: 'contractType', label: 'Contract Type', opts: ['Regular', 'Monthly', 'Daily', 'Freelance'] },
         { key: 'contractStatus', label: 'Contract Status', opts: ['Current', 'Ended'] },
-        { key: 'site', label: 'Allowance Site', opts: siteOpts }
+        { key: 'site', label: 'Site', opts: siteOpts }
       ],
       p13_vat: [
         { key: 'customer', label: 'Customer', opts: custOpts },
@@ -6317,8 +6317,8 @@
             { label: 'Staff on payroll', value: fmtNum(staffPayrollRows.length), sub: fmtNum(empRows.length) + ' employment contracts' },
             { label: 'Base salaries', value: fmtUSD(totBase, 0), sub: 'Contracted monthly + daily base' },
             { label: 'Overtime pay', value: fmtUSD(totOtPay, 0), sub: `Shift ${fmtUSD(totAttOtPay, 0)} + Driver ${fmtUSD(totTripOtPay, 0)}` },
-            { label: 'Site allowances', value: fmtUSD(totSiteAcc, 0), sub: 'Included inside Earnings' },
-            { label: 'Total earnings', value: fmtUSD(totEarn, 0), sub: 'Base + OT + Allowances - Ded', tone: 'brass' },
+            { label: 'Site transport', value: fmtUSD(totSiteAcc, 0), sub: 'Included inside Earnings' },
+            { label: 'Total earnings', value: fmtUSD(totEarn, 0), sub: 'Base + OT + Site Transport - Ded', tone: 'brass' },
             { label: 'Paid (for period)', value: fmtUSD(totStaffPaid, 0), sub: `Advances after cutoff: ${fmtUSD(totAdvances, 0)}`, tone: 'good' }
           ])}
           ${kpiBand('2 · Remaining Payment, Advances, Hours & Contract Hygiene', [
@@ -6345,7 +6345,7 @@
             { key: 'earnings_m', label: 'Earnings', color: C.slate },
             { key: 'paid_m', label: 'Paid', color: C.navy }
           ]), {
-            subtitle: 'Monthly staff earnings (base + overtime + site allowance) vs salary cash disbursements',
+            subtitle: 'Monthly staff earnings (base + overtime + site transport) vs salary cash disbursements',
             legend: [{ label: 'Earnings', color: C.slate }, { label: 'Paid', color: C.navy }]
           })}
           ${pbiPanel('Overtime and lateness hours by month', buildClusteredColumnSvg(payMonths, [
@@ -6361,21 +6361,21 @@
           ${pbiPanel('Earnings by staff member', buildHorizontalBarChart(topEarnersRows, 'staff', 'earnings', v => fmtUSD(v, 0), { subKey: 'company', color: C.navy, maxItems: 10 }), {
             subtitle: 'Top staff members ranked by total earnings in period'
           })}
-          ${pbiPanel('Overtime & allowance by staff member', buildHorizontalBarChart(topEarnersRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
-            subtitle: 'Staff ranked by earned site allowance & overtime'
+          ${pbiPanel('Overtime & site transport by staff member', buildHorizontalBarChart(topEarnersRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
+            subtitle: 'Staff ranked by earned site transport & overtime'
           })}
         </div>
 
         <!-- Full-width 17-column Payroll by staff member table -->
         <div class="pbi-grid-1">
-          ${pbiTable('Payroll by staff member · base, shift OT, driver OT, site allowance, deductions, earnings, paid, remaining & advances', [
+          ${pbiTable('Payroll by staff member · base, shift OT, driver OT, site transport, deductions, earnings, paid, remaining & advances', [
             { label: 'Staff', key: 'staff', bold: true },
             { label: 'Co.', key: 'company' },
             { label: 'Base', key: 'base', r: true, fmt: v => fmtUSD(v, 0) },
             { label: 'OT hrs', key: 'ot_hrs', r: true, fmt: v => fmtNum(v, 1) },
             { label: 'Shift OT', key: 'att_ot_pay', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
             { label: 'Driver OT', key: 'trip_ot_pay', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
-            { label: 'Site allow.', key: 'site_allow', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
+            { label: 'Site transp.', key: 'site_allow', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
             { label: 'Extras/Reimb', key: 'extras', r: true, fmt: (_, r) => ((r.extras || 0) + (r.reimb || 0)) ? fmtUSD((r.extras || 0) + (r.reimb || 0), 0) : '-' },
             { label: 'Late hrs', key: 'late_hrs', r: true, fmt: v => fmtNum(v, 1) },
             { label: 'Lateness', key: 'late_ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
@@ -6387,7 +6387,7 @@
             { label: 'Rem. ($)', key: 'balance', r: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
             { label: 'Advances', key: 'advances', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' }
           ], staffPayrollRows, {
-            subtitle: 'Site allowances & driver night-trip overtime are included inside Earnings · Post-cutoff payouts appear in Advances',
+            subtitle: 'Site transport & driver night-trip overtime are included inside Earnings · Post-cutoff payouts appear in Advances',
             rowAmber: r => !r.is_active,
             unitLabel: 'staff',
             foot: [
@@ -6452,31 +6452,31 @@
           })}
         </div>
 
-        <!-- SECTION 2: SITE ALLOWANCES -->
-        ${pbiHeading('Site allowances', 'A daily amount for staff posted to a site · counted on the ticked weekdays, less recorded absence · paid with the salary')}
+        <!-- SECTION 2: SITE TRANSPORT -->
+        ${pbiHeading('Site transport', 'Daily transport pay when staff commute to an external site instead of the main plant · paid with salary')}
         <div class="pbi-overview-bands" style="padding-top:6px">
           ${kpiBand('', [
-            { label: 'Staff on allowance', value: fmtNum(siteStaffRows.length), sub: fmtNum(logRows.length) + ' arrangements' },
-            { label: 'Days paid for', value: fmtNum(totSiteDays, 0) + ' d', sub: 'Ticked weekdays − absence' },
+            { label: 'Staff on site transport', value: fmtNum(siteStaffRows.length), sub: fmtNum(logRows.length) + ' arrangements' },
+            { label: 'Days paid for', value: fmtNum(totSiteDays, 0) + ' d', sub: 'Confirmed on-site days' },
             { label: 'Days with activity', value: fmtNum(totSiteAct, 0) + ' d', sub: 'Ticket, fuel or attendance log', tone: 'good' },
             { label: 'Earned', value: fmtUSD(totSiteAcc, 0), sub: 'Included inside Earnings', tone: 'brass' },
-            { label: 'Paid (oldest first)', value: fmtUSD(totSitePaid, 0), sub: 'FIFO salary before allowance', tone: 'good' },
+            { label: 'Paid (oldest first)', value: fmtUSD(totSitePaid, 0), sub: 'FIFO salary before site transport', tone: 'good' },
             { label: 'Outstanding', value: fmtUSD(totSiteOut, 0), sub: 'Earned minus Paid at period end', neg: true }
           ])}
         </div>
 
         <div class="pbi-grid-2">
-          ${pbiPanel('Site allowance earned vs paid by month', buildClusteredColumnSvg(payMonths, [
+          ${pbiPanel('Site transport earned vs paid by month', buildClusteredColumnSvg(payMonths, [
             { key: 'sa_accrued', label: 'Earned', color: C.slate },
             { key: 'sa_paid', label: 'Paid', color: C.navy }
           ]), { legend: [{ label: 'Earned', color: C.slate }, { label: 'Paid', color: C.navy }] })}
-          ${pbiPanel('Site allowance earned by staff member', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
-            subtitle: 'Earned daily site allowance by posted staff member'
+          ${pbiPanel('Site transport earned by staff member', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'sitesStr', color: C.brass, maxItems: 10 }), {
+            subtitle: 'Earned daily site transport by posted staff member'
           })}
         </div>
 
         <div class="pbi-grid-1">
-          ${pbiTable('Site allowance by staff member · days, earned, paid & outstanding', [
+          ${pbiTable('Site transport by staff member · days, earned, paid & outstanding', [
             { label: 'Staff', key: 'staff', bold: true },
             { label: 'Sites', key: 'sitesStr' },
             { label: 'Days counted', key: 'site_days_counted', r: true, fmt: v => fmtNum(v, 0) },
@@ -6487,13 +6487,13 @@
             { label: 'Paid ($)', key: 'site_paid', r: true, fmt: v => fmtUSD(v, 2) },
             { label: 'Outstanding ($)', key: 'site_out', r: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` }
           ], siteStaffRows, {
-            subtitle: 'Activity = a ticket, fuel intake or attendance entry on a counted day · paid = payments applied oldest month first, salary before allowance',
+            subtitle: 'Activity = a ticket, fuel intake or attendance entry on a counted day · paid = payments applied oldest month first, salary before site transport',
             unitLabel: 'staff'
           })}
         </div>
 
         <div class="pbi-grid-1">
-          ${pbiTable('Site allowance arrangements · who, where, on which unit & daily rate', [
+          ${pbiTable('Site transport arrangements · who, where, on which unit & daily rate', [
             { label: 'Staff', key: 'staff', bold: true },
             { label: 'Co.', key: 'company' },
             { label: 'Location / Site', key: 'site' },
@@ -7882,11 +7882,11 @@
       ]
     },
     payroll_analytics: {
-      title: 'Workforce Earnings Matrix, Site Allowances, Freelance & Driver OT',
-      subtitle: '16-Column Staff Earnings Matrix, Site Allowances, Freelance Shifts & Driver Overtime',
+      title: 'Workforce Earnings Matrix, Site Transport, Freelance & Driver OT',
+      subtitle: '16-Column Staff Earnings Matrix, Site Transport, Freelance Shifts & Driver Overtime',
       defaultSec: 'allowances',
       sections: [
-        { id: 'allowances', label: 'Staff Earnings Matrix, Site Allowances & Freelance', pageId: 'p12_payroll', badge: 'Analytics' },
+        { id: 'allowances', label: 'Staff Earnings Matrix, Site Transport & Freelance', pageId: 'p12_payroll', badge: 'Analytics' },
         { id: 'drivers_ot', label: 'Driver Trips & Night Overtime Bonus', pageId: 'p11_drivers', badge: 'Moved Page' }
       ]
     },
@@ -7977,11 +7977,11 @@
       ]
     },
     payroll: {
-      title: 'Workforce Earnings Matrix, Site Allowances, Freelance & Driver OT',
-      subtitle: '16-Column Staff Earnings Matrix, Site Allowances, Freelance Shifts & Driver OT',
+      title: 'Workforce Earnings Matrix, Site Transport, Freelance & Driver OT',
+      subtitle: '16-Column Staff Earnings Matrix, Site Transport, Freelance Shifts & Driver OT',
       defaultSec: 'allowances',
       sections: [
-        { id: 'allowances', label: 'Staff Earnings Matrix, Site Allowances & Freelance', pageId: 'p12_payroll', badge: 'Analytics' },
+        { id: 'allowances', label: 'Staff Earnings Matrix, Site Transport & Freelance', pageId: 'p12_payroll', badge: 'Analytics' },
         { id: 'drivers_ot', label: 'Driver Trips & Night Overtime Bonus', pageId: 'p11_drivers', badge: 'Moved Page' }
       ]
     },
@@ -9862,7 +9862,7 @@
           { key: 'earnings_m', label: 'Staff Earnings', color: C.slate },
           { key: 'paid_m', label: 'Salary Paid', color: C.navy }
         ]), {
-          subtitle: 'Monthly staff earnings (base + overtime + site allowance + extras) vs salary cash disbursements',
+          subtitle: 'Monthly staff earnings (base + overtime + site transport + extras) vs salary cash disbursements',
           legend: [
             { label: 'Staff Earnings', color: C.slate },
             { label: 'Salary Paid', color: C.navy }
@@ -9904,18 +9904,18 @@
     }));
     return `
       <div class="pbi-grid-2" id="allowancesChartsRow" style="margin-bottom:14px">
-        ${pbiPanel('Monthly Site Allowance Earned vs. Paid ($)', buildClusteredColumnSvg(payMonths, [
+        ${pbiPanel('Monthly Site Transport Earned vs. Paid ($)', buildClusteredColumnSvg(payMonths, [
           { key: 'sa_accrued', label: 'Earned', color: C.slate },
           { key: 'sa_paid', label: 'Paid (FIFO)', color: C.navy }
         ]), {
-          subtitle: 'Monthly site allowance earned on posted working days vs FIFO paid inside salary disbursements',
+          subtitle: 'Monthly site transport earned on confirmed on-site days vs FIFO paid inside salary disbursements',
           legend: [
             { label: 'Earned', color: C.slate },
             { label: 'Paid (FIFO)', color: C.navy }
           ]
         })}
-        ${pbiPanel('Site Allowance & Verified Work Days by Staff ($)', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'verifSub', color: C.brass, maxItems: 10 }), {
-          subtitle: 'Posted staff ranked by earned site allowance ($) with verified work-day coverage'
+        ${pbiPanel('Site Transport & Verified On-Site Days by Staff ($)', buildHorizontalBarChart(siteStaffRows, 'staff', 'site_allow', v => fmtUSD(v, 0), { subKey: 'verifSub', color: C.brass, maxItems: 10 }), {
+          subtitle: 'Staff ranked by earned site transport ($) with verified on-site day coverage'
         })}
       </div>
     `;
