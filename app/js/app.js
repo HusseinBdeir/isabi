@@ -15333,16 +15333,17 @@
       rawMovements.push(mv);
     });
 
-    // 2. +IN / -OUT from Warehouse Stock Movements (Opening Stock, Adjustments, Direct Issues)
+    // 2. +IN / -OUT from Warehouse Stock Movements (Shelf Stock, Returns, Damaged / Count Adjustments)
     (SEED.records.warehouse_movements || []).forEach(r => {
       if (!matchScope(r)) return;
       const qty = Math.abs(Number(r.qty != null ? r.qty : 1));
       if (!(qty > 0)) return;
-      const dir = /^OUT$/i.test(String(r.direction || '').trim()) ? 'OUT' : 'IN';
+      const moveRaw = String(r.movement_type || r.move_type || '').trim();
+      const dir = isWarehouseOutMove(moveRaw, r.direction) ? 'OUT' : 'IN';
       const uCost = Number(r.unit_cost || 0);
       const totCost = round2(Number(r.total_cost != null && Number(r.total_cost) > 0 ? r.total_cost : qty * uCost));
       const locVal = r.warehouse_location || r.location || '';
-      const moveVal = r.movement_type || r.move_type || (dir === 'IN' ? 'Opening Stock' : 'Stock Adjustment (-)');
+      const moveVal = moveRaw || (dir === 'IN' ? 'Existing / Opening Stock' : 'Count Shortage (-)');
       const eqVal = r.equipment || r.target_equipment || '';
       const it = ensureItem(r.item_name, { category: r.category, uom: r.uom, location: locVal, min_stock: r.min_stock, company: r.company });
       if (!it) return;
@@ -15512,6 +15513,37 @@
     return out;
   }
 
+  function defaultWarehouseLocationForCompany(coOpt) {
+    const c = String(coOpt || '').trim();
+    if (/bbconstruction|bbc/i.test(c)) return 'BBConstruction Spare Store';
+    if (/lions/i.test(c)) return 'Lions Garage Store';
+    return 'WTC Main Warehouse';
+  }
+
+  function isWarehouseOutMove(moveTypeRaw, dirRaw) {
+    const m = String(moveTypeRaw || '').trim();
+    if (/Damaged|Expired|Lost|Shortage|Consumable|Adjustment\s*\(-\)|-\s*OUT|Direct|Issued|Used in Repair|Used in Oil/i.test(m)) return true;
+    if (/Existing|Opening Stock|Return|Salvaged|Surplus|\+\s*IN|Expense Stored|Purchase Stored/i.test(m)) return false;
+    return /^OUT$/i.test(String(dirRaw || '').trim());
+  }
+
+  function formatWarehouseMovementLabel(moveTypeRaw, dirRaw, rkey) {
+    const m = String(moveTypeRaw || '').trim();
+    if (rkey === 'expense_items' || /Expense Stored|Purchase Stored/i.test(m)) return 'Bought & Stored (+IN)';
+    if (rkey === 'repair_items' || /Used in Repair/i.test(m)) return 'Used in Repair (-OUT)';
+    if (rkey === 'equipment_oil_logs' || /Oil Change|Oil Service/i.test(m)) return 'Used in Oil Service (-OUT)';
+    if (/Existing|Opening Stock/i.test(m)) return 'Opening Stock (+IN)';
+    if (/Return|Salvaged/i.test(m)) return 'Returned Spare (+IN)';
+    if (/Surplus/i.test(m)) return 'Count Surplus (+IN)';
+    if (/Damaged|Expired|Lost/i.test(m)) return 'Damaged / Lost (-OUT)';
+    if (/Consumable|Workshop Use|Shop/i.test(m)) return 'Workshop Use (-OUT)';
+    if (/Shortage|Stock Adjustment/i.test(m)) {
+      return isWarehouseOutMove(m, dirRaw) ? 'Count Shortage (-OUT)' : 'Count Surplus (+IN)';
+    }
+    if (/Direct|Issued/i.test(m)) return 'Issued from Shelf (-OUT)';
+    return m || (isWarehouseOutMove(m, dirRaw) ? 'Removed from Shelf (-OUT)' : 'Added to Shelf (+IN)');
+  }
+
   function warehouseCatalogItemNames(coOpt) {
     const wh = getWarehouseIndex(coOpt);
     const names = wh.items.map(it => it.item_name);
@@ -15520,6 +15552,22 @@
     });
     ['Engine Oil 15W-40', 'Hydraulic Oil 68', 'Gear / Transmission Oil 90', 'Fuel Filter', 'Engine Oil Filter', 'Air Filter', 'Bearing (Roulement)', 'Conveyor / Drive Belt', 'High-Pressure Hydraulic Hose', 'Heavy-Duty Truck Battery', 'Heavy Truck / Loader Tire', 'Alternator (Dynamo)', 'Starter Motor (March)'].forEach(n => names.push(n));
     return uniqSorted(names);
+  }
+
+  function warehouseCatalogItemMeta(coOpt) {
+    const wh = getWarehouseIndex(coOpt);
+    const allNames = warehouseCatalogItemNames(coOpt);
+    return allNames
+      .map(nm => {
+        const it = wh.byKey[norm(nm)];
+        const onHand = it ? Number(it.onHandQty || 0) : 0;
+        const meta = it && onHand > 0.0001
+          ? `${fmtNum(onHand, onHand % 1 ? 2 : 0)} ${it.uom || 'Piece'} on shelf${it.avgUnitCost > 0 ? ' · ' + fmtUSD(it.avgUnitCost, 2) : ''}`
+          : (it ? `0 ${it.uom || 'Piece'} on shelf` : '');
+        return { name: nm, onHand, meta };
+      })
+      .sort((a, b) => (b.onHand > 0.0001 ? 1 : 0) - (a.onHand > 0.0001 ? 1 : 0) || a.name.localeCompare(b.name))
+      .map(x => [x.name, x.meta]);
   }
 
   let _OIL_SERVICE_IDX = null;
@@ -18860,11 +18908,22 @@
     }), 'whitems', 'onHandQty', 'desc');
     const shownItems = itemsFiltered.slice(0, shownCount('whitems'));
 
+    const mChipKey = STATE.whMoveFilter || 'all';
+    const mChip = (key, label) => `<button type="button" class="filter-chip ${mChipKey === key ? 'active' : ''}" data-wh-move-chip="${esc(key)}">${label}</button>`;
     const movesBase = wh.movements.filter(m => matchQ([
-      m.item_name, m.category, m.movement_type, m.location, m.equipment, m.counterparty, m.ref, m.company, m.notes
+      m.item_name, m.category, m.movement_type, formatWarehouseMovementLabel(m.movement_type, m.direction, m.rkey), m.location, m.equipment, m.counterparty, m.ref, m.company, m.notes
     ]));
-    const movesFiltered = sortRows(movesBase.filter(m => {
+    const movesScoped = movesBase.filter(m => {
       if (wChipKey === 'used_repairs') return m.rkey === 'repair_items' || /Repair/i.test(m.movement_type || '');
+      return true;
+    });
+    const movesInCnt = movesScoped.filter(m => m.direction === 'IN').length;
+    const movesEqCnt = movesScoped.filter(m => m.rkey === 'repair_items' || m.rkey === 'equipment_oil_logs' || /Repair|Oil/i.test(m.movement_type || '')).length;
+    const movesAdjCnt = movesScoped.filter(m => m.rkey === 'warehouse_movements').length;
+    const movesFiltered = sortRows(movesScoped.filter(m => {
+      if (mChipKey === 'in') return m.direction === 'IN';
+      if (mChipKey === 'repairs') return m.rkey === 'repair_items' || m.rkey === 'equipment_oil_logs' || /Repair|Oil/i.test(m.movement_type || '');
+      if (mChipKey === 'adjust') return m.rkey === 'warehouse_movements';
       return true;
     }), 'whmoves', 'date', 'desc');
     const shownMoves = movesFiltered.slice(0, shownCount('whmoves'));
@@ -18948,7 +19007,7 @@
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="expenses">${ic('expenses')} Expenses</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_maint">${ic('repair')} Repairs</button>
             ${exportBtn('warehouseStockPanel', 'Warehouse_Stored_Items')}
-            ${canPostWh ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="warehousestock">${ic('warehouse')} + Add / Adjust Stock</button>` : ''}
+            ${canPostWh ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="warehousestock">${ic('warehouse')} Shelf Adjust (+/-)</button>` : ''}
             ${canPostRep ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="repair">${ic('repair')} + Use in Repair</button>` : ''}
             ${canPostExp ? `<button type="button" class="btn btn-primary" data-open-modal="expense" data-prefill-storewh="1">+ Buy &amp; Store Item</button>` : ''}
           </div>
@@ -18982,10 +19041,10 @@
                     <td class="r mono">${fmtUSD(it.avgUnitCost, 2)}</td>
                     <td class="r mono"><strong>${fmtUSD(it.onHandValue, 2)}</strong></td>
                     <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${usedLinksHtml}</td>
-                    ${hasWhActions ? `<td><div style="display:flex;gap:4px">${canPostWh ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 6px;font-size:10.5px" data-open-modal="warehousestock" data-prefill-item="${esc(it.item_name)}">+ Stock</button>` : ''}${canPostRep && it.onHandQty > 0 ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 6px;font-size:10.5px" data-open-modal="repair" data-prefill-item="${esc(it.item_name)}">+ Repair</button>` : ''}</div></td>` : ''}
+                    ${hasWhActions ? `<td><div style="display:flex;gap:4px">${canPostRep && it.onHandQty > 0 ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 6px;font-size:10.5px" data-open-modal="repair" data-prefill-item="${esc(it.item_name)}">+ Repair</button>` : ''}${canPostWh ? `<button type="button" class="btn btn-ghost-bar" style="padding:2px 6px;font-size:10.5px" data-open-modal="warehousestock" data-prefill-item="${esc(it.item_name)}">Adjust</button>` : ''}</div></td>` : ''}
                   </tr>
                 `;
-              }).join('') || emptyRow(hasWhActions ? 10 : 9, 'Warehouse has 0 stored items right now. Click "+ Buy & Store Item" when purchasing filters, hoses, tires, or oil for stock, or "+ Add / Adjust Stock" to enter opening inventory.')}
+              }).join('') || emptyRow(hasWhActions ? 10 : 9, 'Warehouse has 0 stored items right now. Click "+ Buy & Store Item" when purchasing filters, hoses, tires, or oil for stock, or "Shelf Adjust (+/-)" to enter existing shelf inventory.')}
               ${showMoreRow('whitems', itemsFiltered.length, hasWhActions ? 10 : 9)}
             </tbody>
             <tfoot>
@@ -19005,9 +19064,15 @@
 
       <!-- 2nd Panel: Chronological Warehouse Stock Movements (+IN / -OUT) -->
       <div class="panel-card" id="warehouseMovesPanel">
-        <div class="panel-head">
-          <div class="panel-title"><span>WAREHOUSE STOCK MOVEMENTS LEDGER (+IN STORED / -OUT USED IN REPAIRS · ${fmtNum(movesFiltered.length)} MOVEMENTS)</span></div>
-          <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div class="panel-title"><span>WAREHOUSE STOCK MOVEMENTS LEDGER (${fmtNum(movesFiltered.length)} MOVEMENTS)</span></div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <div class="chip-bar">
+              ${mChip('all', `All (${movesScoped.length})`)}
+              ${mChip('in', `+ Stored In (${movesInCnt})`)}
+              ${mChip('repairs', `- Used on Equipment (${movesEqCnt})`)}
+              ${mChip('adjust', `Shelf Adjustments (${movesAdjCnt})`)}
+            </div>
             ${exportBtn('warehouseMovesPanel', 'Warehouse_Movements_Ledger')}
           </span>
         </div>
@@ -19022,16 +19087,19 @@
             <tbody>
               ${shownMoves.map(m => {
                 const isIn = m.direction === 'IN';
-                const mvCls = isIn ? 'badge-ok' : (/Repair/i.test(m.movement_type || '') ? 'badge-brass' : 'badge-warn');
+                const mvLbl = formatWarehouseMovementLabel(m.movement_type, m.direction, m.rkey);
+                const mvCls = isIn ? 'badge-ok' : (/Repair|Oil/i.test(mvLbl) ? 'badge-brass' : 'badge-warn');
                 const refHtml = m.rkey === 'repair_items' && m.ref
                   ? relLink('equipment_repairs', m.ref, m.ref, true)
-                  : (m.rkey === 'expense_items' && m.ref ? relLink('expenses', m.ref, m.ref, true) : `<strong>${esc(m.ref || m.id)}</strong>`);
+                  : (m.rkey === 'expense_items' && m.ref
+                      ? relLink('expenses', m.ref, m.ref, true)
+                      : (m.rkey === 'equipment_oil_logs' && m.ref ? relLink('equipment_oil_logs', m.ref, m.ref, true) : `<strong>${esc(m.ref || m.id)}</strong>`));
                 return `
                   <tr class="rrow" data-rkey="${esc(m.rkey)}" data-rid="${esc(m.id)}">
                     <td class="mono">${esc(fmtDateDMY(m.date))}</td>
                     <td class="mono">${refHtml}</td>
                     <td>${coBadge(m.company)}</td>
-                    <td><span class="badge ${mvCls}">${esc(m.movement_type)}</span></td>
+                    <td><span class="badge ${mvCls}">${esc(mvLbl)}</span></td>
                     <td><strong>${esc(m.item_name)}</strong></td>
                     <td>${m.equipment ? relLink('equipment', m.equipment, m.equipment, true) : esc(m.location || 'Main Warehouse')}</td>
                     <td class="r mono" style="color:${isIn ? 'var(--good)' : 'var(--warn)'}"><strong>${isIn ? '+' : ''}${fmtNum(m.signedQty, m.signedQty % 1 ? 2 : 0)} ${esc(m.uom)}</strong></td>
@@ -28290,7 +28358,7 @@
     fuel: 'New Fuel & Lubricant Intake',
     malfunction: 'New Tank Malfunction / Discrepancy',
     expense: 'New Expense',
-    warehousestock: 'Warehouse Stock Entry / Adjustment',
+    warehousestock: 'Warehouse Shelf Stock & Adjustment',
     settlement: 'New Supplier Settlement',
     repair: 'New Equipment Repair (Warehouse / Outside)',
     oillog: 'New Equipment Oil & Service Log'
@@ -29228,15 +29296,17 @@
       const expNotesField = pendEditRow
         ? fld('Notes', inp('f_notes', 'text', expNotesVal, 'placeholder="Optional invoice or pricing note..."'), { id: 'wrap_f_notes', span: true })
         : notesField;
-      const whItemsList = pendEditRow ? [] : warehouseCatalogItemNames(expCoVal);
+      const whItemsMeta = pendEditRow ? [] : warehouseCatalogItemMeta(expCoVal);
       const whLocsList = ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'];
+      const defExpWhLoc = defaultWarehouseLocationForCompany(expCoVal);
+      const initShowEq = Boolean(pendEditRow || expEqVal);
       return cockpitHtml + `
         ${adminHeaderHtml}
         ${pendEditRow ? `<div class="exp-complete-pending-banner" id="expCompletePendingBanner"><span>${ic('lock')} Delivery fields on <b>${esc(pendEditRow.name || pendEditRow.id)}</b> are locked. Enter the final supplier invoice <b>Amount ($)</b>${!expRefVal ? ' and <b>Reference / Invoice</b>' : ''} below.</span></div>` : ''}
         <input type="hidden" id="f_price_pending" value="0">
         <input type="hidden" id="f_for_equipment" value="${expEqVal ? '1' : '0'}">
         <input type="hidden" id="f_store_warehouse" value="0">
-        ${pendEditRow ? '' : dl('dl_exp_wh_items', whItemsList) + dl('dl_exp_wh_locs', whLocsList)}
+        ${pendEditRow ? '' : dlMeta('dl_exp_wh_items', whItemsMeta) + dl('dl_exp_wh_locs', whLocsList)}
         <div class="form-grid-3">
           ${expCompanyField}
           ${expDateField}
@@ -29247,10 +29317,11 @@
           ${fld('Category *', inp('f_category', 'text', expCatVal, `list="dl_categories" placeholder="Select or type category..."${pendEditRow ? ' readonly' : ''}`) + dlMeta('dl_categories', cats.map(c => [c.category, c.subs && c.subs.length ? `${c.subs.length} subcats` : ''])), pendEditRow ? { id: 'wrap_f_category', lockField: 'f_category', lockReason: 'Locked to the category recorded on delivery' } : { id: 'wrap_f_category' })}
           ${fld('Subcategory', inp('f_subcategory', 'text', expSubVal, 'list="dl_subcats" placeholder="Pick Category first..." readonly') + dl('dl_subcats', uniqSorted(cats.flatMap(c => c.subs), getFreqIndex().subcategory)), { id: 'wrap_f_subcategory', lockField: 'f_subcategory', lockReason: pendEditRow ? 'Locked to the subcategory recorded on delivery' : 'Locked until Category is selected', hintId: 'hint_subcat', hint: '' })}
           ${fld('Supplier / Vendor', inp('f_supplier', 'text', expSupVal, `list="dl_suppliers" placeholder="Select or type supplier..."${pendEditRow && expSupVal ? ' readonly' : ''}`) + dl('dl_suppliers', supplierNames('expense')), pendEditRow && expSupVal ? { id: 'wrap_f_supplier', lockField: 'f_supplier', lockReason: 'Locked to the supplier recorded on delivery', hintId: 'hint_supplier', hint: '' } : { id: 'wrap_f_supplier', hintId: 'hint_supplier', hint: 'Required for Credit' })}
-          ${pendEditRow ? '' : `<div class="form-field span-2" id="wrap_f_exp_scope"><label><span class="pa-fld-lbl">Is This for Equipment or Warehouse?</span></label><div class="exp-price-mode-bar exp-route-bar" id="expRoutingBar" role="group" aria-label="Expense target and warehouse option"><button type="button" class="uom-qpill active" data-exp-route="general">Not for Equipment</button><button type="button" class="uom-qpill" data-exp-route="equipment">For Equipment</button><button type="button" class="uom-qpill" data-exp-route="warehouse">Store in Warehouse (+Stock)</button></div><span class="hint" id="hint_exp_route">Choose whether this ticket is general overhead, tied to a unit, or stored in Warehouse</span></div>`}
-          ${fld('Equipment (cost centre)', inp('f_truck', 'text', expEqVal, `list="dl_equip" placeholder="${pendEditRow ? 'None (Plant / General)' : 'Select or type equipment...'}"${pendEditRow ? ' readonly' : ''}`) + dl('dl_equip', equipmentNames()), pendEditRow ? { id: 'wrap_f_truck', lockField: 'f_truck', lockReason: 'Locked to the equipment unit recorded on delivery' } : { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
+          ${pendEditRow ? '' : `<div class="form-field ${initShowEq ? 'span-2' : 'span-3'}" id="wrap_f_exp_scope"><label><span class="pa-fld-lbl">Where Is This Expense Going?</span></label><div class="exp-price-mode-bar exp-route-bar" id="expRoutingBar" role="group" aria-label="Expense target and warehouse option"><button type="button" class="uom-qpill ${expEqVal ? '' : 'active'}" data-exp-route="general">Not for Equipment</button><button type="button" class="uom-qpill ${expEqVal ? 'active' : ''}" data-exp-route="equipment">For Equipment</button><button type="button" class="uom-qpill" data-exp-route="warehouse">Store in Warehouse (+Stock)</button></div><span class="hint" id="hint_exp_route">General plant/admin overhead (Equipment box stays hidden unless For Equipment is chosen)</span></div>`}
+          ${fld('<span id="lbl_exp_equip">Equipment (cost centre) *</span>', inp('f_truck', 'text', expEqVal, `list="dl_equip" placeholder="${pendEditRow ? 'None (Plant / General)' : 'Select or type equipment...'}"${pendEditRow ? ' readonly' : ''}`) + dl('dl_equip', equipmentNames()), pendEditRow ? { id: 'wrap_f_truck', lockField: 'f_truck', lockReason: 'Locked to the equipment unit recorded on delivery' } : { id: 'wrap_f_truck', hidden: !initShowEq, hintId: 'hint_truck', hint: '' })}
           ${pendEditRow ? '' : fld('Item / Part Name *', inp('f_exp_item_name', 'text', '', 'list="dl_exp_wh_items" placeholder="Select or type spare part, filter, belt, oil..."'), { id: 'wrap_f_exp_item_name', hidden: true, hintId: 'hint_exp_item', hint: 'Stored directly into Warehouse inventory (+Qty)' })}
-          ${pendEditRow ? '' : fld('Warehouse Location', inp('f_exp_wh_loc', 'text', 'WTC Main Warehouse', 'list="dl_exp_wh_locs" placeholder="Warehouse store..."'), { id: 'wrap_f_exp_wh_loc', hidden: true })}
+          ${pendEditRow ? '' : fld('Unit *', sel('f_exp_uom', [['Piece', 'Piece'], ['Set', 'Set'], ['Litre', 'Litre'], ['kg', 'kg'], ['Box', 'Box'], ['m', 'm']], 'Piece'), { id: 'wrap_f_exp_uom', hidden: true })}
+          ${pendEditRow ? '' : fld('Warehouse Location', inp('f_exp_wh_loc', 'text', defExpWhLoc, 'list="dl_exp_wh_locs" placeholder="Warehouse store..."'), { id: 'wrap_f_exp_wh_loc', hidden: true })}
           ${fld('<span id="lbl_exp_qty">Quantity</span>', inp('f_qty', 'number', expQtyVal, `step="0.01" min="0" inputmode="decimal"${pendEditRow ? ' readonly' : ''}`), pendEditRow ? { id: 'wrap_f_qty', lockField: 'f_qty', lockReason: 'Locked to the physical quantity received on delivery', hintId: 'hint_qty', hint: '' } : { id: 'wrap_f_qty', hintId: 'hint_qty', hint: 'Defaults to 1' })}
           ${fld('<span id="lbl_exp_amount">Amount ($) *</span>', `<div class="exp-amt-input-wrap" id="expAmtInputWrap">${inp('f_amount', 'number', expAmtVal, 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"')}<button type="button" class="exp-switch-priced-btn" id="expSwitchToPricedBtn" data-exp-price-mode="priced" hidden title="Switch back to entering the invoice amount now">${ic('dollar')} Enter Price</button></div>`, {
             id: 'wrap_f_amount',
@@ -29277,7 +29348,7 @@
           <div><small>Amount</small><b id="calc_total">$0.00</b></div>
           <div><small>Method</small><b id="calc_post">${esc(expMthVal)}</b></div>
           <div><small>Open AP to supplier</small><b id="calc_before">—</b></div>
-          <div><small>GL class</small><b id="calc_gl">6x · Operating</b></div>
+          <div><small>Destination</small><b id="calc_gl">General Overhead</b></div>
         </div>
       `;
     }
@@ -29335,6 +29406,35 @@
     return 'general';
   }
 
+  function syncExpenseItemStockHints(company) {
+    const wrap = $('expItemsRowsWrap');
+    if (!wrap) return;
+    const whIdx = getWarehouseIndex(company || val('f_company') || defaultEntryCompany());
+    (FORM_UI.expItems || []).forEach((it, idx) => {
+      const hintEl = wrap.querySelector(`[data-exi-stock-hint="${idx}"]`);
+      if (!hintEl) return;
+      if ((it.allocation_mode || 'same_equipment') !== 'warehouse') {
+        hintEl.textContent = '';
+        hintEl.className = 'hint';
+        return;
+      }
+      const nm = String(it.item_name || '').trim();
+      const q = Number(it.qty) || 1;
+      if (!nm) {
+        hintEl.textContent = 'Will be stored in Warehouse (+Stock)';
+        hintEl.className = 'hint';
+        return;
+      }
+      const whRow = whIdx.byKey[norm(nm)];
+      const onHand = whRow ? whRow.onHandQty : 0;
+      const afterQ = round2(onHand + q);
+      hintEl.textContent = whRow
+        ? `On shelf: ${fmtNum(onHand, onHand % 1 ? 2 : 0)} ${whRow.uom} · After: ${fmtNum(afterQ, afterQ % 1 ? 2 : 0)} (+${fmtNum(q, q % 1 ? 2 : 0)})`
+        : `New Warehouse SKU · Shelf balance: +${fmtNum(q, q % 1 ? 2 : 0)} ${it.uom || 'Piece'}`;
+      hintEl.className = 'hint ok';
+    });
+  }
+
   function renderExpenseItemsBuilderRows() {
     const wrap = $('expItemsRowsWrap');
     if (!wrap) return;
@@ -29344,9 +29444,10 @@
       return;
     }
     const headerUnit = val('f_truck');
+    const defWhLoc = defaultWarehouseLocationForCompany(val('f_company') || defaultEntryCompany());
     const uomOpts = ['Piece', 'Set', 'Litre', 'kg', 'Box', 'm'];
     const destOpts = [
-      ['same_equipment', 'Same Equipment'],
+      ['same_equipment', headerUnit ? `Same Equipment (${headerUnit})` : 'Same Equipment'],
       ['different_equipment', 'Different Equipment'],
       ['warehouse', 'Warehouse (+Stock)'],
       ['general', 'Not for Equipment']
@@ -29368,7 +29469,7 @@
         if (mode === 'different_equipment') {
           targetHtml = `<input type="text" id="f_exi_eq_${idx}" data-exi-idx="${idx}" data-exi-field="target_equipment" list="dl_equip" value="${esc(it.target_equipment || '')}" placeholder="Select unit...">`;
         } else if (mode === 'warehouse') {
-          targetHtml = `<input type="text" id="f_exi_loc_${idx}" data-exi-idx="${idx}" data-exi-field="warehouse_location" list="dl_exp_wh_locs" value="${esc(it.warehouse_location || 'WTC Main Warehouse')}" placeholder="Warehouse store...">`;
+          targetHtml = `<input type="text" id="f_exi_loc_${idx}" data-exi-idx="${idx}" data-exi-field="warehouse_location" list="dl_exp_wh_locs" value="${esc(it.warehouse_location || defWhLoc)}" placeholder="Warehouse store...">`;
         } else if (mode === 'same_equipment') {
           targetHtml = `<div class="line-item-static-pill" data-exi-same-eq="1">${esc(headerUnit || 'Pick Equipment above')}</div>`;
         } else {
@@ -29376,7 +29477,7 @@
         }
         return `
           <div class="line-item-row is-exp-grid" data-exi-row="${idx}">
-            <div class="li-cell"><input type="text" id="f_exi_name_${idx}" data-exi-idx="${idx}" data-exi-field="item_name" list="dl_exp_wh_items" value="${esc(it.item_name || '')}" placeholder="Item, filter, hose, oil..."></div>
+            <div class="li-cell"><input type="text" id="f_exi_name_${idx}" data-exi-idx="${idx}" data-exi-field="item_name" list="dl_exp_wh_items" value="${esc(it.item_name || '')}" placeholder="Item, filter, hose, oil..."><span class="hint" data-exi-stock-hint="${idx}"></span></div>
             <div class="li-cell"><select id="f_exi_mode_${idx}" data-exi-idx="${idx}" data-exi-field="allocation_mode" data-plain-options="1">${destOpts.map(([ov, ol]) => `<option value="${esc(ov)}"${ov === mode ? ' selected' : ''}>${esc(ol)}</option>`).join('')}</select></div>
             <div class="li-cell">${targetHtml}</div>
             <div class="li-cell"><input type="number" id="f_exi_qty_${idx}" data-exi-idx="${idx}" data-exi-field="qty" step="0.01" min="0.01" inputmode="decimal" value="${esc(it.qty != null ? it.qty : 1)}"></div>
@@ -29388,6 +29489,7 @@
       }).join('')}
     `;
     wireModalSuggestions(wrap);
+    syncExpenseItemStockHints(val('f_company') || defaultEntryCompany());
   }
 
   function syncRepairItemStockHints(company) {
@@ -31878,18 +31980,36 @@
     const qtyInpEl = $('f_qty');
     const hasMultiItems = !pendEditRow && Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length > 0;
     if (!pendEditRow) {
-      const curUnit = val('f_truck');
-      if (curUnit && curUnit !== FORM_UI.lastExpTruck && val('f_store_warehouse') !== '1') {
+      const expCoNow = val('f_company') || defaultEntryCompany();
+      if (expCoNow !== FORM_UI.lastExpCompany) {
+        const prevDefLoc = defaultWarehouseLocationForCompany(FORM_UI.lastExpCompany || expCoNow);
+        const nextDefLoc = defaultWarehouseLocationForCompany(expCoNow);
+        if ($('f_exp_wh_loc') && (!val('f_exp_wh_loc') || val('f_exp_wh_loc') === prevDefLoc)) {
+          $('f_exp_wh_loc').value = nextDefLoc;
+        }
+        if ($('dl_exp_wh_items')) {
+          $('dl_exp_wh_items').innerHTML = warehouseCatalogItemMeta(expCoNow).map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+        }
+        FORM_UI.lastExpCompany = expCoNow;
+      }
+      const rawTruck = val('f_truck');
+      if (rawTruck && rawTruck !== FORM_UI.lastExpTruck && val('f_store_warehouse') !== '1') {
         if ($('f_for_equipment')) $('f_for_equipment').value = '1';
       }
+      const storeWh = val('f_store_warehouse') === '1';
+      const anyLineSameEq = hasMultiItems && FORM_UI.expItems.some(it => (it.allocation_mode || 'same_equipment') === 'same_equipment');
+      const forEq = !storeWh && (val('f_for_equipment') === '1' || anyLineSameEq);
+      const showHeaderEquip = forEq;
+      const curUnit = showHeaderEquip ? rawTruck : '';
       if (curUnit !== FORM_UI.lastExpTruck) {
         FORM_UI.lastExpTruck = curUnit;
         document.querySelectorAll('[data-exi-same-eq]').forEach(el => {
           el.textContent = curUnit || 'Pick Equipment above';
         });
+        document.querySelectorAll('select[id^="f_exi_mode_"] option[value="same_equipment"]').forEach(opt => {
+          opt.textContent = curUnit ? `Same Equipment (${curUnit})` : 'Same Equipment';
+        });
       }
-      const storeWh = val('f_store_warehouse') === '1';
-      const forEq = !storeWh && (val('f_for_equipment') === '1' || Boolean(curUnit));
       const activeRoute = storeWh ? 'warehouse' : (forEq ? 'equipment' : 'general');
       const rBar = $('expRoutingBar');
       if (rBar) {
@@ -31897,21 +32017,57 @@
           btn.classList.toggle('active', btn.getAttribute('data-exp-route') === activeRoute);
         });
       }
+      const scopeWrap = $('wrap_f_exp_scope');
+      if (scopeWrap) {
+        scopeWrap.classList.toggle('span-2', showHeaderEquip);
+        scopeWrap.classList.toggle('span-3', !showHeaderEquip);
+      }
+      setFieldVisible('wrap_f_truck', showHeaderEquip);
       setFieldVisible('wrap_f_exp_item_name', storeWh && !hasMultiItems);
+      setFieldVisible('wrap_f_exp_uom', storeWh && !hasMultiItems);
       setFieldVisible('wrap_f_exp_wh_loc', storeWh && !hasMultiItems);
+      if (storeWh && !hasMultiItems) {
+        const expItemNm = val('f_exp_item_name');
+        const whIdx = getWarehouseIndex(expCoNow);
+        const exWhRow = expItemNm ? whIdx.byKey[norm(expItemNm)] : null;
+        if (exWhRow && expItemNm !== FORM_UI.lastExpStoreItem) {
+          FORM_UI.lastExpStoreItem = expItemNm;
+          if ($('f_exp_uom') && exWhRow.uom) $('f_exp_uom').value = exWhRow.uom;
+          if ($('f_exp_wh_loc') && exWhRow.location) $('f_exp_wh_loc').value = exWhRow.location;
+          if ($('f_category') && !val('f_category') && exWhRow.category) $('f_category').value = exWhRow.category;
+        } else if (!expItemNm) {
+          FORM_UI.lastExpStoreItem = '';
+        }
+        const addQ = num('f_qty') || 1;
+        const uomLbl = val('f_exp_uom') || (exWhRow && exWhRow.uom) || 'Piece';
+        if (expItemNm) {
+          const curOnShelf = exWhRow ? exWhRow.onHandQty : 0;
+          const nextShelf = round2(curOnShelf + addQ);
+          setHint(
+            'hint_exp_item',
+            exWhRow
+              ? `On shelf: ${fmtNum(curOnShelf, curOnShelf % 1 ? 2 : 0)} ${exWhRow.uom} @ ${fmtUSD(exWhRow.avgUnitCost, 2)} · After storing: ${fmtNum(nextShelf, nextShelf % 1 ? 2 : 0)} ${uomLbl} (+${fmtNum(addQ, addQ % 1 ? 2 : 0)})`
+              : `New Warehouse SKU · Shelf balance after storing: +${fmtNum(addQ, addQ % 1 ? 2 : 0)} ${uomLbl}`,
+            'ok'
+          );
+        } else {
+          setHint('hint_exp_item', 'Enter part, filter, belt, or oil name to add onto Warehouse shelf (+Stock)', '');
+        }
+      }
+      if (hasMultiItems) syncExpenseItemStockHints(expCoNow);
       setHint(
         'hint_exp_route',
         hasMultiItems
           ? `Multi-item invoice (${FORM_UI.expItems.length} item lines below) - each line sets its own Equipment or Warehouse destination`
           : (storeWh
-              ? 'Item & Quantity (+Stock) will be added directly into Warehouse inventory'
+              ? 'Adds this purchase directly onto your Warehouse shelf (+Stock) and books the expense/payable together'
               : (forEq
-                  ? (curUnit ? `Allocated to equipment ${curUnit}` : 'Select the target equipment in Equipment (cost centre) below')
-                  : 'General overhead / plant expense (not tied to a single unit)')),
+                  ? (curUnit ? `Direct equipment cost allocated to ${curUnit}` : 'Select the target machine or truck in Equipment (cost centre) on the right')
+                  : 'General plant or overhead expense (Equipment box hidden)')),
         storeWh || (forEq && curUnit) || hasMultiItems ? 'ok' : ''
       );
-      if (curUnit) {
-        const uHealth = getEquipmentHealth(curUnit, val('f_company') || defaultEntryCompany());
+      if (showHeaderEquip && curUnit) {
+        const uHealth = getEquipmentHealth(curUnit, expCoNow);
         if (uHealth && uHealth.critCount > 0) {
           const prt = uHealth.affectedParts && uHealth.affectedParts.length ? ` (${uHealth.affectedParts[0]})` : '';
           setHint('hint_truck', `Grave warning active on ${curUnit}${prt}`, 'warn');
@@ -31922,7 +32078,7 @@
           setHint('hint_truck', '', '');
         }
       } else {
-        setHint('hint_truck', forEq ? 'Select primary equipment for this ticket' : '', '');
+        setHint('hint_truck', showHeaderEquip ? 'Select primary equipment for this ticket' : '', '');
       }
     }
     if (pendEditRow) {
@@ -32075,11 +32231,24 @@
       setHint('hint_amount', 'Must be above zero (or click "Price Pending ($0)" below)', 'crit');
     } else if (isFuelDiesel && !val('f_amount')) {
       setHint('hint_amount', 'Price arriving later? Click "Price Pending ($0)" below to log Litres now', '');
+    } else if (!hasMultiItems && amount > 0 && qty > 0 && (val('f_store_warehouse') === '1' || qty !== 1)) {
+      const uLbl = val('f_store_warehouse') === '1' ? (val('f_exp_uom') || 'Piece') : (isFuelDiesel ? 'L' : 'unit');
+      setHint('hint_amount', `Unit cost: ${fmtUSD(amount / qty, 2)} / ${uLbl} (${fmtNum(qty, qty % 1 ? 2 : 0)} × ${fmtUSD(amount / qty, 2)})`, 'ok');
     } else {
       setHint('hint_amount', '', '');
     }
-    const cat = val('f_category');
-    setText('calc_gl', /fuel|oil/i.test(cat) ? '60 · Fuel & lubricants' : (/repair|spare|tool|minor/i.test(cat) ? '61 · Repairs & parts' : (/tip/i.test(cat) ? '64 · Staff' : '62 · Operating')));
+    if (pendEditRow) {
+      setText('calc_gl', pendEditRow.equipment ? `Equipment · ${pendEditRow.equipment}` : 'General Overhead');
+    } else if (hasMultiItems) {
+      const whLines = FORM_UI.expItems.filter(it => it.allocation_mode === 'warehouse').length;
+      setText('calc_gl', whLines > 0 ? `${FORM_UI.expItems.length} Lines (${whLines} Warehouse)` : `${FORM_UI.expItems.length} Item Lines`);
+    } else if (val('f_store_warehouse') === '1') {
+      setText('calc_gl', 'Warehouse (+Stock)');
+    } else if (val('f_for_equipment') === '1') {
+      setText('calc_gl', val('f_truck') ? `Equipment · ${val('f_truck')}` : 'Pick Equipment');
+    } else {
+      setText('calc_gl', 'General Overhead');
+    }
     const expStrip = $('expLiveContextStrip');
     if (expStrip) {
       const fIntel = _getFormIntelIndex();
@@ -34003,8 +34172,48 @@
       }
       if (STATE.modalForm === 'warehousestock') {
         const company = val('f_company') || defaultEntryCompany();
-        const moveType = val('f_wh_move_type') || 'Opening Stock';
-        const isOut = /Adjustment|Direct/i.test(moveType);
+        if (company !== FORM_UI.lastWhCompany) {
+          const prevLoc = defaultWarehouseLocationForCompany(FORM_UI.lastWhCompany || company);
+          const nextLoc = defaultWarehouseLocationForCompany(company);
+          if ($('f_location') && (!val('f_location') || val('f_location') === prevLoc)) {
+            $('f_location').value = nextLoc;
+          }
+          if ($('dl_wh_items_modal')) {
+            $('dl_wh_items_modal').innerHTML = warehouseCatalogItemMeta(company).map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+          }
+          FORM_UI.lastWhCompany = company;
+        }
+        const whDir = val('f_wh_dir') || 'IN';
+        const moveType = val('f_wh_move_type') || (whDir === 'OUT' ? 'Damaged / Lost' : 'Existing / Opening Stock');
+        const isOut = whDir === 'OUT' || isWarehouseOutMove(moveType, whDir);
+        const dirBar = $('whDirectionBar');
+        if (dirBar) {
+          dirBar.querySelectorAll('[data-wh-dir]').forEach(btn => {
+            btn.classList.toggle('active', btn.getAttribute('data-wh-dir') === (isOut ? 'OUT' : 'IN'));
+          });
+        }
+        setHint(
+          'hint_wh_dir',
+          isOut
+            ? 'Removes broken, missing, or shop-consumed items from your Warehouse shelf'
+            : 'Adds items onto your Warehouse shelf without creating a supplier bill',
+          ''
+        );
+        const reasonExplain = {
+          'Existing / Opening Stock': 'Items already sitting on your shelves (no new Cash or Supplier AP bill created)',
+          'Spare Part Returned': 'Unused part returned from workshop or working part salvaged back onto shelf',
+          'Count Surplus (+)': 'Physical shelf count found extra units above recorded balance',
+          'Damaged / Lost': 'Broken, expired, or lost item written off from Warehouse stock',
+          'Count Shortage (-)': 'Physical shelf count found fewer units than recorded balance',
+          'Workshop Consumable': 'General shop/plant use not tied to a single machine (use Repair for machines)'
+        };
+        setHint('hint_wh_reason', reasonExplain[moveType] || '', '');
+        setFieldVisible('wrap_f_min_stock', !isOut);
+        const notesWrap = $('wrap_f_notes');
+        if (notesWrap) {
+          notesWrap.classList.toggle('span-2', !isOut);
+          notesWrap.classList.toggle('span-3', isOut);
+        }
         const itemName = val('f_item_name');
         const whIdx = getWarehouseIndex(company);
         const curItem = itemName ? whIdx.byKey[norm(itemName)] : null;
@@ -34015,31 +34224,35 @@
             $('f_category').value = curItem.category;
           }
           if ($('f_location') && curItem.location) $('f_location').value = curItem.location;
-          if ($('f_unitprice') && !val('f_unitprice') && curItem.avgUnitCost > 0) {
+          if ($('f_unitprice') && (!val('f_unitprice') || isOut) && curItem.avgUnitCost > 0) {
             $('f_unitprice').value = String(round2(curItem.avgUnitCost));
           }
         } else if (!itemName) {
           FORM_UI.lastWhItem = '';
+        }
+        if (isOut && curItem && curItem.avgUnitCost > 0 && $('f_unitprice') && !val('f_unitprice')) {
+          $('f_unitprice').value = String(round2(curItem.avgUnitCost));
         }
         const qty = num('f_qty');
         const uom = val('f_uom') || (curItem && curItem.uom) || 'Piece';
         const up = num('f_unitprice') || (curItem ? curItem.avgUnitCost : 0);
         const beforeQty = curItem ? curItem.onHandQty : 0;
         const afterQty = round2(beforeQty + (isOut ? -qty : qty));
-        setFieldVisible('wrap_f_truck', /Direct/i.test(moveType));
+        setHint('hint_wh_cost', isOut && curItem && curItem.avgUnitCost > 0 ? `Live shelf avg cost: ${fmtUSD(curItem.avgUnitCost, 2)}/${curItem.uom}` : '', '');
         setHint(
           'hint_wh_item',
           itemName
             ? (curItem
-                ? `Current Warehouse Stock: ${fmtNum(beforeQty, beforeQty % 1 ? 2 : 0)} ${curItem.uom} @ ${fmtUSD(curItem.avgUnitCost, 2)}`
-                : (isOut ? 'Item has 0 balance in Warehouse' : 'New Warehouse SKU - will be added to stored inventory'))
+                ? `On shelf now: ${fmtNum(beforeQty, beforeQty % 1 ? 2 : 0)} ${curItem.uom} @ ${fmtUSD(curItem.avgUnitCost, 2)} · New balance: ${fmtNum(afterQty, afterQty % 1 ? 2 : 0)} ${uom}`
+                : (isOut ? '0 on shelf in Warehouse - pick an item in stock or switch to + Add to Shelf' : `New Warehouse SKU · Shelf will open at +${fmtNum(qty || 1, (qty || 1) % 1 ? 2 : 0)} ${uom}`))
             : '',
-          isOut && afterQty < -0.0001 ? 'crit' : (curItem ? 'ok' : '')
+          isOut && afterQty < -0.0001 ? 'crit' : (curItem || (!isOut && itemName) ? 'ok' : '')
         );
-        setText('calc_wh_dir', isOut ? '-OUT (Deducts Stock)' : '+IN (Adds Stock)');
+        const deltaSign = isOut ? '-' : '+';
+        setText('calc_wh_dir', isOut ? '-Remove from Shelf' : '+Add to Shelf');
         setText('calc_wh_before', `${fmtNum(beforeQty, beforeQty % 1 ? 2 : 0)} ${uom}`);
-        setText('calc_wh_after', `${fmtNum(afterQty, afterQty % 1 ? 2 : 0)} ${uom}`);
-        setText('calc_wh_val', fmtUSD(round2(qty * up), 2));
+        setText('calc_wh_after', `${fmtNum(afterQty, afterQty % 1 ? 2 : 0)} ${uom} (${deltaSign}${fmtNum(qty || 0, (qty || 0) % 1 ? 2 : 0)})`);
+        setText('calc_wh_val', `${deltaSign}${fmtUSD(round2(qty * up), 2)}`);
         commonDateChecks([]);
         renderAdminLockBar();
         return { isOut, beforeQty, afterQty, up };
@@ -36022,11 +36235,20 @@
       btn.addEventListener('click', ev => {
         ev.preventDefault();
         const rt = btn.getAttribute('data-exp-route') || 'general';
+        let rerenderExpLines = false;
         if (rt === 'warehouse') {
           if ($('f_store_warehouse')) $('f_store_warehouse').value = '1';
           if ($('f_for_equipment')) $('f_for_equipment').value = '0';
           if ($('f_truck')) $('f_truck').value = '';
           FORM_UI.lastExpTruck = '';
+          if (Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length) {
+            FORM_UI.expItems.forEach(it => {
+              if (it.allocation_mode === 'same_equipment' || it.allocation_mode === 'general') {
+                it.allocation_mode = 'warehouse';
+                rerenderExpLines = true;
+              }
+            });
+          }
         } else if (rt === 'equipment') {
           if ($('f_store_warehouse')) $('f_store_warehouse').value = '0';
           if ($('f_for_equipment')) $('f_for_equipment').value = '1';
@@ -36035,12 +36257,67 @@
           if ($('f_for_equipment')) $('f_for_equipment').value = '0';
           if ($('f_truck')) $('f_truck').value = '';
           FORM_UI.lastExpTruck = '';
+          if (Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length) {
+            FORM_UI.expItems.forEach(it => {
+              if (it.allocation_mode === 'same_equipment') {
+                it.allocation_mode = 'general';
+                rerenderExpLines = true;
+              }
+            });
+          }
         }
+        if (rerenderExpLines) renderExpenseItemsBuilderRows();
         recalcForm();
         if (rt === 'equipment' && $('f_truck') && !val('f_truck')) {
           try { $('f_truck').focus(); } catch (_) {}
         } else if (rt === 'warehouse' && $('f_exp_item_name') && !(FORM_UI.expItems && FORM_UI.expItems.length)) {
           try { $('f_exp_item_name').focus(); } catch (_) {}
+        }
+      });
+    });
+
+    const setWhReasonOptions = dirMode => {
+      const selEl = $('f_wh_move_type');
+      if (!selEl) return;
+      const opts = dirMode === 'OUT'
+        ? [
+            ['Damaged / Lost', 'Damaged, Expired or Lost (Write-Off)'],
+            ['Count Shortage (-)', 'Physical Count Shortage (-Missing on Shelf)'],
+            ['Workshop Consumable', 'General Shop / Plant Use (Not a Machine Repair)']
+          ]
+        : [
+            ['Existing / Opening Stock', 'Existing / Opening Stock (Already on Shelf)'],
+            ['Spare Part Returned', 'Unused / Salvaged Spare Returned (Back to Shelf)'],
+            ['Count Surplus (+)', 'Physical Count Surplus (+Found on Shelf)']
+          ];
+      const prev = selEl.value;
+      selEl.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+      selEl.value = opts.some(([v]) => v === prev) ? prev : opts[0][0];
+      selEl.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    body.querySelectorAll('[data-wh-dir]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const dirMode = btn.getAttribute('data-wh-dir') === 'OUT' ? 'OUT' : 'IN';
+        if ($('f_wh_dir')) $('f_wh_dir').value = dirMode;
+        setWhReasonOptions(dirMode);
+        recalcForm();
+      });
+    });
+
+    body.querySelectorAll('[data-wh-switch-form]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const target = btn.getAttribute('data-wh-switch-form');
+        const curCo = val('f_company') || defaultEntryCompany();
+        const curItem = val('f_item_name');
+        const curQty = num('f_qty') || 1;
+        const curUom = val('f_uom') || 'Piece';
+        if (target === 'expense_store') {
+          openEntryModal('expense', { co: curCo, item: curItem, qty: curQty, uom: curUom, storeWh: 1 });
+        } else if (target === 'repair') {
+          openEntryModal('repair', { co: curCo, item: curItem, repSrc: 'Warehouse Only' });
         }
       });
     });
@@ -36060,9 +36337,9 @@
           item_name: seedFirstFromHeader ? (val('f_exp_item_name') || val('f_subcategory') || '') : '',
           allocation_mode: defMode,
           target_equipment: '',
-          warehouse_location: val('f_exp_wh_loc') || 'WTC Main Warehouse',
+          warehouse_location: val('f_exp_wh_loc') || defaultWarehouseLocationForCompany(val('f_company') || defaultEntryCompany()),
           qty: initQty,
-          uom: /^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece',
+          uom: (seedFirstFromHeader && val('f_exp_uom')) ? val('f_exp_uom') : (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'),
           unit_cost: initUc
         });
         renderExpenseItemsBuilderRows();
@@ -36090,6 +36367,21 @@
           }
           renderExpenseItemsBuilderRows();
         } else {
+          if (field === 'item_name' && rowObj.item_name) {
+            const whRow = getWarehouseIndex(val('f_company') || defaultEntryCompany()).byKey[norm(rowObj.item_name)];
+            if (whRow) {
+              if (whRow.uom) {
+                rowObj.uom = whRow.uom;
+                const uSel = $('f_exi_uom_' + idx);
+                if (uSel) uSel.value = whRow.uom;
+              }
+              if (rowObj.allocation_mode === 'warehouse' && whRow.location) {
+                rowObj.warehouse_location = whRow.location;
+                const locInp = $('f_exi_loc_' + idx);
+                if (locInp) locInp.value = whRow.location;
+              }
+            }
+          }
           const totEl = expItemsWrap.querySelector(`[data-exi-tot="${idx}"]`);
           if (totEl) {
             totEl.textContent = fmtUSD(round2((Number(rowObj.qty) || 0) * (Number(rowObj.unit_cost) || 0)), 2);
@@ -36655,6 +36947,7 @@
         const hasMultiItems = Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length > 0;
         const storeWhSingle = !hasMultiItems && val('f_store_warehouse') === '1';
         const forEqSingle = !hasMultiItems && !storeWhSingle && (val('f_for_equipment') === '1' || Boolean(val('f_truck')));
+        const defWhLocSave = defaultWarehouseLocationForCompany(company);
         let stagedItems = [];
         if (hasMultiItems) {
           FORM_UI.expItems.forEach((it, idx) => {
@@ -36663,7 +36956,7 @@
             const uc = Number(it.unit_cost) || 0;
             const mode = it.allocation_mode || 'same_equipment';
             const diffEq = String(it.target_equipment || '').trim();
-            const whLoc = String(it.warehouse_location || 'WTC Main Warehouse').trim() || 'WTC Main Warehouse';
+            const whLoc = String(it.warehouse_location || defWhLocSave).trim() || defWhLocSave;
             if (!nm) addErr('f_exi_name_' + idx, `Item line ${idx + 1}: Item / Part Name is required.`);
             if (!(q > 0)) addErr('f_exi_qty_' + idx, `Item line ${idx + 1}: Quantity must be above zero.`);
             if (!c.pricePending && !(uc >= 0)) addErr('f_exi_cost_' + idx, `Item line ${idx + 1}: Unit price cannot be negative.`);
@@ -36698,18 +36991,21 @@
           const singleQty = c.qty > 0 ? c.qty : (num('f_qty') || 1);
           const singleAmt = c.pricePending ? 0 : round2(c.amount);
           const singleItemName = val('f_exp_item_name') || val('f_subcategory') || val('f_category');
+          const singleUom = storeWhSingle
+            ? (val('f_exp_uom') || (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'))
+            : (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece');
           if (storeWhSingle || Boolean(val('f_exp_item_name')) || (forEqSingle && !/^fuel$/i.test(val('f_category')))) {
             stagedItems.push({
               item_name: singleItemName,
               category: val('f_category'),
               subcategory: val('f_subcategory'),
               qty: round2(singleQty),
-              uom: /^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece',
+              uom: singleUom,
               unit_cost: singleQty > 0 ? round2(singleAmt / singleQty) : singleAmt,
               line_total: singleAmt,
               allocation_mode: storeWhSingle ? 'warehouse' : (forEqSingle ? 'same_equipment' : 'general'),
               target_equipment: forEqSingle ? val('f_truck') : '',
-              warehouse_location: storeWhSingle ? (val('f_exp_wh_loc') || 'WTC Main Warehouse') : '',
+              warehouse_location: storeWhSingle ? (val('f_exp_wh_loc') || defWhLocSave) : '',
               historical_consumed: 0
             });
           }
@@ -36721,8 +37017,11 @@
           if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero (or switch Amount to "Price Pending ($0)").');
           if (c.method === 'Credit' && !c.supplier) addErr('f_supplier', 'A credit expense needs the supplier it is owed to.');
         }
+        const effHeaderEq = (forEqSingle || (hasMultiItems && (val('f_for_equipment') === '1' || stagedItems.some(x => x.allocation_mode === 'same_equipment'))))
+          ? val('f_truck')
+          : '';
         const forEquipBool = Boolean(
-          val('f_truck') ||
+          effHeaderEq ||
           stagedItems.some(x => x.allocation_mode === 'same_equipment' || x.allocation_mode === 'different_equipment')
         );
         const storedWhBool = stagedItems.some(x => x.allocation_mode === 'warehouse');
@@ -36741,7 +37040,7 @@
           category: val('f_category'),
           subcategory: val('f_subcategory'),
           supplier: c.supplier,
-          equipment: val('f_truck'),
+          equipment: effHeaderEq,
           for_equipment: forEquipBool,
           stored_in_warehouse: storedWhBool,
           item_count: stagedItems.length || 1,
@@ -37463,8 +37762,9 @@
         driver
       };
     } else if (f === 'warehousestock') {
-      const moveType = val('f_wh_move_type') || 'Opening Stock';
-      const isOut = /Adjustment|Direct/i.test(moveType);
+      const whDir = val('f_wh_dir') || 'IN';
+      const moveType = val('f_wh_move_type') || (whDir === 'OUT' ? 'Damaged / Lost' : 'Existing / Opening Stock');
+      const isOut = whDir === 'OUT' || isWarehouseOutMove(moveType, whDir);
       const itemName = val('f_item_name');
       const qty = round2(num('f_qty'));
       const uom = val('f_uom') || 'Piece';
@@ -37474,15 +37774,11 @@
       if (!itemName) addErr('f_item_name', 'Item / Part Name is required.');
       if (!(qty > 0)) addErr('f_qty', 'Quantity must be above zero.');
       if (isOut && itemName && qty > beforeQty + 0.0001) {
-        addErr('f_qty', `Cannot deduct ${qty} ${uom} - only ${beforeQty} ${curItem ? curItem.uom : uom} available in Warehouse.`);
-      }
-      if (/Direct/i.test(moveType) && !val('f_truck')) {
-        addErr('f_truck', 'Select Target Equipment for a Direct Issue from Warehouse.');
+        addErr('f_qty', `Cannot remove ${qty} ${uom} from shelf - only ${beforeQty} ${curItem ? curItem.uom : uom} available in Warehouse.`);
       }
       const up = round2(num('f_unitprice') || (curItem ? curItem.avgUnitCost : 0));
       const seq = String(((SEED.records.warehouse_movements || []).length + (STATE.customRecords.warehouse_movements || []).length) + 1).padStart(3, '0');
-      const locVal = val('f_location') || 'WTC Main Warehouse';
-      const tgtEq = /Direct/i.test(moveType) ? val('f_truck') : '';
+      const locVal = val('f_location') || defaultWarehouseLocationForCompany(company);
       crKey = 'warehouse_movements';
       record = {
         ...base,
@@ -37499,9 +37795,9 @@
         total_cost: round2((qty || 1) * up),
         warehouse_location: locVal,
         location: locVal,
-        min_stock: Math.max(0, num('f_min_stock')),
-        equipment: tgtEq,
-        target_equipment: tgtEq
+        min_stock: isOut ? (curItem ? Number(curItem.min_stock || 0) : 0) : Math.max(0, num('f_min_stock')),
+        equipment: '',
+        target_equipment: ''
       };
     } else if (f === 'repair') {
       const unit = val('f_truck');
@@ -38474,9 +38770,13 @@
         $('f_product').value = prefill.prod;
         FORM_UI.lastProduct = '';
       }
-      if (prefill.uom && $('f_uom')) {
-        $('f_uom').value = prefill.uom;
-        FORM_UI.uomManual = true;
+      if (prefill.uom) {
+        if ($('f_uom')) {
+          $('f_uom').value = prefill.uom;
+          FORM_UI.uomManual = true;
+        } else if ($('f_exp_uom')) {
+          $('f_exp_uom').value = prefill.uom;
+        }
       }
       if (prefill.owner && $('f_supplier')) {
         $('f_supplier').value = prefill.owner;
@@ -38486,6 +38786,8 @@
         recalcForm();
       }
       if (prefill.eq && $('f_truck')) {
+        if ($('f_for_equipment')) $('f_for_equipment').value = '1';
+        if ($('f_store_warehouse')) $('f_store_warehouse').value = '0';
         $('f_truck').value = prefill.eq;
         FORM_UI.lastTruck = '';
         recalcForm(true);
@@ -38500,10 +38802,18 @@
         FORM_UI.repairItems[0].item_name = prefill.part;
         renderRepairItemsBuilderRows();
       }
+      if ((prefill.storeWh || prefill.storewh) && $('f_store_warehouse')) {
+        $('f_store_warehouse').value = '1';
+        if ($('f_for_equipment')) $('f_for_equipment').value = '0';
+        if ($('f_category') && !val('f_category')) $('f_category').value = 'Spare Parts';
+      }
       if (prefill.item) {
         if ($('f_item_name')) {
           $('f_item_name').value = prefill.item;
           FORM_UI.lastWhItem = '';
+        } else if ($('f_exp_item_name')) {
+          $('f_exp_item_name').value = prefill.item;
+          FORM_UI.lastExpStoreItem = '';
         } else if (form === 'repair' && FORM_UI.repairItems && FORM_UI.repairItems[0]) {
           FORM_UI.repairItems[0].item_name = prefill.item;
           const whIdx = getWarehouseIndex(val('f_company') || defaultEntryCompany());
@@ -38524,9 +38834,9 @@
       if (pfRepSrc && $('f_repair_source')) {
         $('f_repair_source').value = pfRepSrc;
       }
-      if ((prefill.storeWh || prefill.storewh) && $('f_store_warehouse')) {
-        $('f_store_warehouse').value = '1';
-        if ($('f_for_equipment')) $('f_for_equipment').value = '0';
+      if (prefill.whDir && $('whDirectionBar')) {
+        const dirBtn = $('whDirectionBar').querySelector(`[data-wh-dir="${prefill.whDir === 'OUT' ? 'OUT' : 'IN'}"]`);
+        if (dirBtn) dirBtn.click();
       }
       if (prefill.sub && $('f_subsystem')) $('f_subsystem').value = prefill.sub;
       if (prefill.disp && $('f_disposition')) $('f_disposition').value = prefill.disp;
@@ -38797,10 +39107,11 @@
       };
     }
     if (key === 'warehouse_movements') {
-      const isOut = /OUT|Repair|Issued/i.test(row.movement_type || row.move_type || '');
+      const isOut = isWarehouseOutMove(row.movement_type || row.move_type, row.direction);
+      const mvLbl = formatWarehouseMovementLabel(row.movement_type || row.move_type, row.direction, 'warehouse_movements');
       return {
         tone: isOut ? 'warn' : 'ok',
-        text: `Warehouse Stock Movement ${row.name}: ${isOut ? '-OUT' : '+IN'} ${fmtNum(row.qty || 1, 2)} ${row.uom || 'Unit'} of ${row.item_name || '-'}  |  Unit Cost: ${fmtUSD(row.unit_cost || 0, 2)} · Total: ${fmtUSD(row.total_cost || 0, 2)}  |  ${isOut ? 'Equipment: ' + (row.equipment || row.target_equipment || '-') : 'Supplier: ' + (row.supplier || '-')}`
+        text: `Warehouse Shelf Adjustment ${row.name} (${mvLbl}): ${isOut ? '-' : '+'}${fmtNum(row.qty || 1, 2)} ${row.uom || 'Unit'} of ${row.item_name || '-'}  |  Unit Cost: ${fmtUSD(row.unit_cost || 0, 2)} · Total: ${fmtUSD(row.total_cost || 0, 2)}  |  Shelf: ${row.warehouse_location || row.location || 'Main Warehouse'}`
       };
     }
     if (key === 'part_movements') {
@@ -39115,16 +39426,17 @@
     }
 
     if (key === 'warehouse_movements') {
-      const isOut = /^OUT$/i.test(row.direction || '') || /OUT|Repair|Issued|Damaged/i.test(row.movement_type || row.move_type || '');
+      const isOut = isWarehouseOutMove(row.movement_type || row.move_type, row.direction);
+      const mvLbl = formatWarehouseMovementLabel(row.movement_type || row.move_type, row.direction, 'warehouse_movements');
       const whItem = getWarehouseIndex(row.company).byKey[norm(row.item_name)] || null;
       const balQty = whItem ? Number(whItem.onHandQty || 0) : 0;
       return {
         bu, title, pill: `${isOut ? '-' : '+'}${fmtNum(row.qty || 1, 2)} ${row.uom || 'Piece'}`,
         cards: [
-          { lbl: 'MOVEMENT DIRECTION', tag: isOut ? '-OUT (REPAIR / ISSUE)' : '+IN (STORED)', tone: isOut ? 'warn' : 'good', val: row.item_name || '-', sub1: `Type: ${row.movement_type || row.move_type || '-'}`, sub2: `Location: ${row.warehouse_location || row.location || 'WTC Main Warehouse'}`, pct: 85 },
-          { lbl: 'MOVEMENT QUANTITY', tag: (row.uom || 'PIECE').toUpperCase(), tone: isOut ? 'warn' : 'good', val: `${isOut ? '-' : '+'}${fmtNum(row.qty || 1, 2)} ${row.uom || 'Piece'}`, sub1: `Unit Cost: ${fmtUSD(row.unit_cost || 0, 2)}`, sub2: `Total Value: ${fmtUSD(row.total_cost || 0, 2)}`, pct: 80 },
+          { lbl: 'SHELF ACTION & REASON', tag: isOut ? '-REMOVE FROM SHELF' : '+ADD TO SHELF', tone: isOut ? 'warn' : 'good', val: row.item_name || '-', sub1: `Reason: ${mvLbl}`, sub2: `Shelf: ${row.warehouse_location || row.location || 'WTC Main Warehouse'}`, pct: 85 },
+          { lbl: 'ADJUSTMENT QUANTITY', tag: (row.uom || 'PIECE').toUpperCase(), tone: isOut ? 'warn' : 'good', val: `${isOut ? '-' : '+'}${fmtNum(row.qty || 1, 2)} ${row.uom || 'Piece'}`, sub1: `Unit Cost: ${fmtUSD(row.unit_cost || 0, 2)}`, sub2: `Total Value: ${fmtUSD(row.total_cost || 0, 2)}`, pct: 80 },
           { lbl: 'LIVE WAREHOUSE BALANCE', tag: balQty > 0 ? 'IN STOCK' : 'DEPLETED', tone: balQty > 0 ? 'good' : 'warn', val: whItem ? `${fmtNum(balQty, 2)} ${whItem.uom || 'Piece'}` : '0', sub1: whItem ? `Stocked In: ${fmtNum(whItem.stockedInQty || 0, 2)} · Repairs Out: ${fmtNum(whItem.usedInRepairsQty || 0, 2)}` : 'Item summary', sub2: whItem ? `Avg Cost: ${fmtUSD(whItem.avgUnitCost || 0, 2)}` : '-', pct: 75 },
-          { lbl: 'SOURCE / DESTINATION', tag: isOut ? 'EQUIPMENT / REPAIR' : 'PURCHASE / STOCK', tone: 'info', val: isOut ? (row.equipment || row.target_equipment || row.repair_ref || '-') : (row.supplier || row.expense_ref || 'Opening Stock'), sub1: `Repair Link: ${row.repair_ref || '-'}`, sub2: `Expense Link: ${row.expense_ref || '-'}`, pct: 90 }
+          { lbl: 'RECORD ORIGIN', tag: isOut ? 'SHELF DEDUCTION' : 'SHELF ADDITION', tone: 'info', val: mvLbl, sub1: `Repair Link: ${row.repair_ref || '-'}`, sub2: `Expense Link: ${row.expense_ref || '-'}`, pct: 90 }
         ]
       };
     }
@@ -40505,8 +40817,8 @@
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       warehouse_movements: [
-        { key: 'date', label: 'Movement Date *', type: 'date', sec: 1 },
-        { key: 'movement_type', label: 'Movement Direction *', type: 'select', options: ['Opening Stock (+IN)', 'Purchase Stored (+IN)', 'Returned Unused (+IN)', 'Used in Repair (-OUT)', 'Issued to Equipment (-OUT)', 'Stock Adjustment (+IN)', 'Damaged / Lost (-OUT)'], sec: 1 },
+        { key: 'date', label: 'Adjustment Date *', type: 'date', sec: 1 },
+        { key: 'movement_type', label: 'Shelf Reason *', type: 'select', options: [['Existing / Opening Stock', 'Existing / Opening Stock (+Add)'], ['Spare Part Returned', 'Unused / Salvaged Spare Returned (+Add)'], ['Count Surplus (+)', 'Physical Count Surplus (+Add)'], ['Damaged / Lost', 'Damaged, Expired or Lost (-Remove)'], ['Count Shortage (-)', 'Physical Count Shortage (-Remove)'], ['Workshop Consumable', 'General Shop / Plant Use (-Remove)']], sec: 1 },
         { key: 'item_name', label: 'Stored Item Name *', type: 'combo', dl: 'dl_insp_parts', sec: 2 },
         { key: 'category', label: 'Item Category', type: 'select', options: expCatOpts, sec: 2 },
         { key: 'warehouse_location', label: 'Warehouse / Shelf Location', type: 'combo', dl: 'dl_insp_locations', sec: 2 },
@@ -51713,6 +52025,14 @@
     container.querySelectorAll('[data-wh-chip]').forEach(btn => btn.addEventListener('click', () => {
       STATE.whChipFilter = btn.getAttribute('data-wh-chip') || 'all';
       STATE.shown.whitems = PAGE;
+      STATE.shown.whmoves = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-wh-move-chip]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.whMoveFilter = btn.getAttribute('data-wh-move-chip') || 'all';
       STATE.shown.whmoves = PAGE;
       const ws = $('workspace');
       const y = ws ? ws.scrollTop : 0;

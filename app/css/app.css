@@ -22463,6 +22463,93 @@ table.ledger-table tbody td.td-databar {
   }
 }
 
+/* ==========================================================================
+   Shelf-First Warehouse Adjust Guide & Direction Bar
+   ========================================================================== */
+.wh-adjust-guide {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brass);
+  background: var(--surface-2);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+}
+.wh-adjust-guide-copy {
+  min-width: 0;
+  flex: 1 1 260px;
+}
+.wh-adjust-guide-copy strong {
+  display: block;
+  font-size: 12.2px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.wh-adjust-guide-copy span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.35;
+}
+.wh-adjust-guide-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.wh-adjust-guide-actions .wh-guide-btn {
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.wh-dir-bar {
+  margin-top: 0;
+  min-height: 36px;
+}
+.wh-dir-bar .uom-qpill {
+  flex: 1 1 0;
+  padding: 6px 10px;
+  font-size: 11.8px;
+  font-weight: 600;
+  text-align: center;
+}
+.wh-dir-bar .uom-qpill.is-wh-in.active {
+  border-color: color-mix(in srgb, var(--good) 45%, var(--line));
+  color: var(--good);
+}
+.wh-dir-bar .uom-qpill.is-wh-out.active {
+  border-color: color-mix(in srgb, var(--warn) 50%, var(--line));
+  color: var(--warn);
+}
+@media (max-width: 768px) {
+  .wh-dir-bar {
+    flex-wrap: wrap;
+    height: auto;
+  }
+  .wh-dir-bar .uom-qpill {
+    flex: 1 1 calc(50% - 4px);
+    white-space: normal;
+    line-height: 1.25;
+  }
+  .wh-adjust-guide-actions {
+    width: 100%;
+  }
+  .wh-adjust-guide-actions .wh-guide-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+
 
 
 

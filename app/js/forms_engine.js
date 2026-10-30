@@ -58,7 +58,7 @@
       forms: [
         { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', title: 'New Raw Material Ticket' },
         { id: 'expense', label: 'Expense (Cash / Credit)', badge: 'bhf_expense', crKey: 'expenses', title: 'New Expense' },
-        { id: 'warehousestock', label: 'Warehouse Stock / Adjust', badge: 'bhf_warehousemovement', crKey: 'warehouse_movements', title: 'Warehouse Stock Entry / Adjustment' },
+        { id: 'warehousestock', label: 'Warehouse Shelf Adjust', badge: 'bhf_warehousemovement', crKey: 'warehouse_movements', title: 'Warehouse Shelf Stock & Adjustment' },
         { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', title: 'New Supplier Settlement' },
         { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', title: 'New Joint-Venture Entry' }
       ]
@@ -1197,45 +1197,123 @@
       `;
     }
 
-    if (fType === 'warehousestock') {
-      const whItemCatalog = uniqSorted(
-        (rec.expense_items || []).map(x => x && x.item_name)
-          .concat((rec.warehouse_movements || []).map(x => x && x.item_name))
+    const buildWhCatalogMeta = coName => {
+      const balByKey = {};
+      const matchCo = r => !r.company || !coName || norm(r.company) === norm(coName);
+      const touch = (nmRaw, uomRaw) => {
+        const nm = String(nmRaw || '').trim();
+        const k = norm(nm);
+        if (!k) return null;
+        if (!balByKey[k]) balByKey[k] = { name: nm, uom: uomRaw || 'Piece', inQty: 0, inVal: 0, outQty: 0 };
+        return balByKey[k];
+      };
+      (rec.expense_items || []).forEach(r => {
+        if (!r || r.voided || Number(r.historical_consumed) === 1 || !matchCo(r)) return;
+        if (!/^warehouse$/i.test(String(r.allocation_mode || '').trim())) return;
+        const b = touch(r.item_name, r.uom);
+        const q = Math.abs(Number(r.qty != null ? r.qty : 1));
+        if (b && q > 0) {
+          b.inQty = round2(b.inQty + q);
+          b.inVal = round2(b.inVal + Number(r.line_total != null ? r.line_total : q * Number(r.unit_cost || 0)));
+        }
+      });
+      (rec.warehouse_movements || []).forEach(r => {
+        if (!r || r.voided || !matchCo(r)) return;
+        const b = touch(r.item_name, r.uom);
+        const q = Math.abs(Number(r.qty != null ? r.qty : 1));
+        if (!b || !(q > 0)) return;
+        const isOut = /^OUT$/i.test(String(r.direction || '').trim()) || /Damaged|Lost|Shortage|Consumable|Adjustment \(-\)|Direct|Issued/i.test(String(r.movement_type || r.move_type || ''));
+        if (isOut) b.outQty = round2(b.outQty + q);
+        else {
+          b.inQty = round2(b.inQty + q);
+          b.inVal = round2(b.inVal + Number(r.total_cost != null ? r.total_cost : q * Number(r.unit_cost || 0)));
+        }
+      });
+      (rec.repair_items || []).forEach(r => {
+        if (!r || r.voided || !matchCo(r) || !/^warehouse$/i.test(String(r.source || '').trim())) return;
+        const b = touch(r.item_name, r.uom);
+        const q = Math.abs(Number(r.qty != null ? r.qty : 1));
+        if (b && q > 0) b.outQty = round2(b.outQty + q);
+      });
+      (rec.equipment_oil_logs || []).forEach(r => {
+        if (!r || r.voided || !matchCo(r) || !/^warehouse$/i.test(String(r.source || '').trim())) return;
+        const b = touch(r.oil_type || 'Engine Oil 15W-40', r.uom || 'Litre');
+        const q = Math.abs(Number(r.qty != null ? r.qty : 1));
+        if (b && q > 0) b.outQty = round2(b.outQty + q);
+      });
+      const baseCatalog = uniqSorted(
+        Object.values(balByKey).map(x => x.name)
+          .concat((rec.expense_items || []).map(x => x && x.item_name))
           .concat(['Engine Oil 15W-40', 'Hydraulic Oil 68', 'Gear / Transmission Oil 90', 'Fuel Filter', 'Engine Oil Filter', 'Air Filter', 'Bearing (Roulement)', 'Conveyor / Drive Belt', 'High-Pressure Hydraulic Hose', 'Heavy-Duty Truck Battery', 'Heavy Truck / Loader Tire', 'Alternator (Dynamo)', 'Starter Motor (March)'])
       );
+      return baseCatalog
+        .map(nm => {
+          const b = balByKey[norm(nm)];
+          const onHand = b ? round2(b.inQty - b.outQty) : 0;
+          const avg = b && b.inQty > 0 ? round2(b.inVal / b.inQty) : 0;
+          const meta = onHand > 0.0001
+            ? `${onHand} ${b.uom} on shelf${avg > 0 ? ' · ' + fmtUsd(avg) : ''}`
+            : (b ? `0 ${b.uom} on shelf` : '');
+          return { name: nm, onHand, meta };
+        })
+        .sort((a, b) => (b.onHand > 0.0001 ? 1 : 0) - (a.onHand > 0.0001 ? 1 : 0) || a.name.localeCompare(b.name))
+        .map(x => [x.name, x.meta]);
+    };
+
+    if (fType === 'warehousestock') {
+      const whItemMeta = buildWhCatalogMeta(company);
       const whLocations = ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'];
+      const defWhLoc = /bbconstruction|bbc/i.test(company || '')
+        ? 'BBConstruction Spare Store'
+        : (/lions/i.test(company || '') ? 'Lions Garage Store' : 'WTC Main Warehouse');
       return `
         ${adminHeaderHtml}
+        <div class="wh-adjust-guide" id="whAdjustGuideStrip">
+          <div class="wh-adjust-guide-copy">
+            <strong>Physical Shelf Stock &amp; Adjustments</strong>
+            <span>Use this for existing shelf stock, returned spares, or damaged/missing counts (no supplier bill).</span>
+          </div>
+          <div class="wh-adjust-guide-actions">
+            <button type="button" class="btn btn-ghost-bar wh-guide-btn" data-wh-switch-form="expense_store">+ Buy &amp; Store (Expense)</button>
+            <button type="button" class="btn btn-ghost-bar wh-guide-btn" data-wh-switch-form="repair">+ Use on Machine (Repair)</button>
+          </div>
+        </div>
+        <input type="hidden" id="f_wh_dir" value="IN">
         <div class="form-grid-3">
-          ${secHdr('1. Warehouse Stock Addition or Adjustment', 'Record opening stock, spare returns (+Stock), or physical count adjustments (-Stock)')}
           ${companyField}
-          ${lockedDateField('Movement Date *')}
+          ${lockedDateField('Adjustment Date *')}
           ${collapsibleRepDateField()}
-          ${fld('Movement Type *', sel('f_wh_move_type', [
-            ['Opening Stock', 'Opening Stock (+ Add to Warehouse)'],
-            ['Stock Addition / Return', 'Stock Addition / Spare Return (+ Add)'],
-            ['Stock Adjustment (-)', 'Stock Count Adjustment (- Deduct)'],
-            ['Direct Workshop Issue', 'Direct Issue to Unit (- Deduct)']
-          ], 'Opening Stock'), { id: 'wrap_f_wh_move_type' })}
-          ${fld('Item / Part Name *', inp('f_item_name', 'text', '', 'list="dl_wh_items_modal" placeholder="Select or type spare part, filter, belt, oil..."') + dl('dl_wh_items_modal', whItemCatalog), { id: 'wrap_f_item_name', hintId: 'hint_wh_item', hint: '' })}
+          <div class="form-field span-2" id="wrap_f_wh_dir">
+            <label><span class="pa-fld-lbl">Shelf Action *</span></label>
+            <div class="exp-price-mode-bar wh-dir-bar" id="whDirectionBar" role="group" aria-label="Shelf stock direction">
+              <button type="button" class="uom-qpill is-wh-in active" data-wh-dir="IN">+ Add to Shelf (+Stock)</button>
+              <button type="button" class="uom-qpill is-wh-out" data-wh-dir="OUT">- Remove from Shelf (-Stock)</button>
+            </div>
+            <span class="hint" id="hint_wh_dir">Adds items onto your Warehouse shelf without creating a supplier bill</span>
+          </div>
+          ${fld('Reason *', sel('f_wh_move_type', [
+            ['Existing / Opening Stock', 'Existing / Opening Stock (Already on Shelf)'],
+            ['Spare Part Returned', 'Unused / Salvaged Spare Returned (Back to Shelf)'],
+            ['Count Surplus (+)', 'Physical Count Surplus (+Found on Shelf)']
+          ], 'Existing / Opening Stock'), { id: 'wrap_f_wh_move_type', hintId: 'hint_wh_reason', hint: 'Items already owned on your shelves before or outside supplier bills' })}
+          ${fld('Item / Part Name *', inp('f_item_name', 'text', '', 'list="dl_wh_items_modal" placeholder="Select or type spare part, filter, belt, oil..."') + dlMeta('dl_wh_items_modal', whItemMeta), { id: 'wrap_f_item_name', hintId: 'hint_wh_item', hint: '' })}
+          ${fld('Quantity *', inp('f_qty', 'number', '1', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', hintId: 'hint_qty', hint: 'Defaults to 1' })}
+          ${fld('Unit *', sel('f_uom', [['Piece', 'Piece'], ['Set', 'Set'], ['Litre', 'Litre'], ['kg', 'kg'], ['Box', 'Box'], ['m', 'm']], 'Piece'), { id: 'wrap_f_uom' })}
           ${fld('Item Category *', sel('f_category', [
             ['Spare Parts', 'Spare Parts'],
             ['Oils & Lubricants', 'Oils & Lubricants'],
             ['Tools & Garage', 'Tools & Garage']
-          ], 'Spare Parts'))}
-          ${fld('Quantity *', inp('f_qty', 'number', '1', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', hintId: 'hint_qty', hint: 'Defaults to 1' })}
-          ${fld('Unit *', sel('f_uom', [['Piece', 'Piece'], ['Set', 'Set'], ['Litre', 'Litre'], ['kg', 'kg'], ['Box', 'Box'], ['m', 'm']], 'Piece'))}
-          ${fld('Unit Cost ($)', inp('f_unitprice', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_f_unitprice' })}
-          ${fld('Warehouse Location', inp('f_location', 'text', 'WTC Main Warehouse', 'list="dl_wh_locs" placeholder="Warehouse or store shelf..."') + dl('dl_wh_locs', whLocations))}
-          ${fld('Min Stock Reorder Alert', inp('f_min_stock', 'number', '0', 'step="1" min="0" placeholder="0"'))}
-          ${fld('Target Equipment (if Direct Issue)', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional unit..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck' })}
-          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Shelf bin, physical stocktake reference, or return note..."'), { span: true })}
+          ], 'Spare Parts'), { id: 'wrap_f_category' })}
+          ${fld('Unit Cost ($)', inp('f_unitprice', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_f_unitprice', hintId: 'hint_wh_cost', hint: '' })}
+          ${fld('Warehouse Location', inp('f_location', 'text', defWhLoc, 'list="dl_wh_locs" placeholder="Warehouse or store shelf..."') + dl('dl_wh_locs', whLocations), { id: 'wrap_f_location' })}
+          ${fld('Min Stock Reorder Alert', inp('f_min_stock', 'number', '0', 'step="1" min="0" placeholder="0"'), { id: 'wrap_f_min_stock', hint: 'Alert when shelf drops to or below this qty' })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Shelf bin, physical stocktake reference, or return note..."'), { id: 'wrap_f_notes', span2: true })}
         </div>
         <div class="live-calc">
-          <div><small>Warehouse Direction</small><b id="calc_wh_dir">+IN (Adds Stock)</b></div>
-          <div><small>Current On-Hand</small><b id="calc_wh_before">0</b></div>
-          <div><small>Balance After</small><b id="calc_wh_after">+1</b></div>
-          <div><small>Movement Value</small><b id="calc_wh_val">$0.00</b></div>
+          <div><small>Shelf Action</small><b id="calc_wh_dir">+Add to Shelf</b></div>
+          <div><small>Current On Shelf</small><b id="calc_wh_before">0 Piece</b></div>
+          <div><small>New Shelf Balance</small><b id="calc_wh_after">1 Piece (+1)</b></div>
+          <div><small>Shelf Value (No Bill)</small><b id="calc_wh_val">+$0.00</b></div>
         </div>
       `;
     }
@@ -1253,11 +1331,7 @@
         ['Cooling & Exhaust', 'Cooling & Exhaust'],
         ['Other', 'Other']
       ];
-      const whItemCatalog = uniqSorted(
-        (rec.warehouse_movements || []).map(x => x && x.item_name)
-          .concat((rec.expense_items || []).map(x => x && x.item_name))
-          .concat(['Engine Oil 15W-40', 'Hydraulic Oil 68', 'Gear / Transmission Oil 90', 'Fuel Filter', 'Engine Oil Filter', 'Air Filter', 'Bearing (Roulement)', 'Conveyor / Drive Belt', 'High-Pressure Hydraulic Hose', 'Heavy-Duty Truck Battery', 'Heavy Truck / Loader Tire', 'Alternator (Dynamo)', 'Starter Motor (March)'])
-      );
+      const whItemMeta = buildWhCatalogMeta(company);
       return `
         ${adminHeaderHtml}
         <div id="qv_truck_repair" style="margin-bottom:8px"></div>
@@ -1281,7 +1355,7 @@
           ${fld('Linked Equipment Warning', sel('f_defect_ref', [['', 'None (Routine / Unlinked Repair)']], ''), { id: 'wrap_f_defect_ref' })}
           <div class="form-field check-field span-3" id="wrap_resolve_defect" hidden><input type="checkbox" id="f_resolve_defect" checked><label for="f_resolve_defect">Mark linked Equipment Warning as Resolved and restore Fleet Status to Active</label></div>
         </div>
-        ${dl('dl_repair_items_catalog', whItemCatalog)}
+        ${dlMeta('dl_repair_items_catalog', whItemMeta)}
         <div class="line-items-builder" id="repairItemsPanel" style="margin-top:10px">
           <div class="line-items-head">
             <div>
