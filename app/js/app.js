@@ -27962,9 +27962,19 @@
     const lsetAll = filterRecords(SEED.records.loan_settlements || [], { basis: 'tx' });
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
 
+    const isBorrowSide = l => /in|borrow|received/i.test(String(l.direction || ''));
+    const getLoanOpenAmt = l => round2(Math.max(0, Number(l.principal || 0) - Number(l.settled_amount || 0)));
+
+    const openAllLoans = loansAll.filter(l => getLoanOpenAmt(l) > 0.01);
+    const openBorrowLoans = openAllLoans.filter(isBorrowSide);
+    const openLendLoans = openAllLoans.filter(l => !isBorrowSide(l));
+
     const loanRows = sortRows(loansAll.filter(l => {
-      if (STATE.chipFilter === 'in_loan') return /in|borrow|received/i.test(String(l.direction || ''));
-      if (STATE.chipFilter === 'out_loan') return /out|lend|advance/i.test(String(l.direction || ''));
+      if (STATE.chipFilter === 'open_all') return getLoanOpenAmt(l) > 0.01;
+      if (STATE.chipFilter === 'open_in') return isBorrowSide(l) && getLoanOpenAmt(l) > 0.01;
+      if (STATE.chipFilter === 'open_out') return !isBorrowSide(l) && getLoanOpenAmt(l) > 0.01;
+      if (STATE.chipFilter === 'in_loan') return isBorrowSide(l);
+      if (STATE.chipFilter === 'out_loan') return !isBorrowSide(l);
       if (STATE.chipFilter === 'app') return isAppRecord(l);
       return true;
     }), 'tr_loans', 'principal', 'desc');
@@ -27972,8 +27982,10 @@
 
     const settlementMoves = lsetAll.map(s => ({
       id: s.id, rkey: 'loan_settlements', date: s.date, company: s.company,
-      kind: s.type || 'Loan Settlement', party: s.loan || s.counterparty || s.borrower || 'Borrower',
-      method: s.method || 'Cash', usd_amount: Number(s.amount != null ? s.amount : s.usd_amount || 0), raw: s
+      kind: s.type || 'Loan Settlement', party: s.counterparty || s.borrower || s.loan || 'Counterparty',
+      loanRef: s.loan || '—',
+      method: /out/i.test(String(s.method || s.direction || '')) ? 'Outflow (We Repay Lender)' : 'Inflow (Borrower Repays Us)',
+      usd_amount: Number(s.amount != null ? s.amount : s.usd_amount || 0), raw: s
     }));
     const moveRows = sortRows(settlementMoves, 'tr_moves', 'date', 'desc');
     const shownMoves = moveRows.slice(0, shownCount('tr_moves'));
@@ -27981,10 +27993,21 @@
     const sumPrincipal = loanRows.reduce((a, l) => a + Number(l.principal || 0), 0);
     const sumSettled = loanRows.reduce((a, l) => a + Number(l.settled_amount || 0), 0);
     const sumMoves = moveRows.reduce((a, m) => a + Number(m.usd_amount || 0), 0);
-    const openBalance = Math.max(0, sumPrincipal - sumSettled);
-    const openLoansCount = loanRows.filter(l => Number(l.principal || 0) - Number(l.settled_amount || 0) > 0.01).length;
-    const borrowerSet = new Set(loansAll.map(l => norm(l.counterparty || l.lender || l.name)).filter(Boolean));
+    const openBalance = round2(loanRows.reduce((a, l) => a + getLoanOpenAmt(l), 0));
+    const openLentTotal = round2(openLendLoans.reduce((a, l) => a + getLoanOpenAmt(l), 0));
+    const openBorrowedTotal = round2(openBorrowLoans.reduce((a, l) => a + getLoanOpenAmt(l), 0));
     const settledPct = sumPrincipal > 0 ? Math.min(100, (sumSettled / sumPrincipal) * 100) : 0;
+
+    const openSideFilter = STATE.openLoanSideFilter || 'all';
+    const openClosingRows = openAllLoans.filter(l => {
+      if (openSideFilter === 'borrows') return isBorrowSide(l);
+      if (openSideFilter === 'lends') return !isBorrowSide(l);
+      return true;
+    }).sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')) || getLoanOpenAmt(b) - getLoanOpenAmt(a));
+    const shownOpenClosing = openClosingRows.slice(0, shownCount('tr_open_close'));
+    const sumOpenClosingPrin = round2(openClosingRows.reduce((a, l) => a + Number(l.principal || 0), 0));
+    const sumOpenClosingSet = round2(openClosingRows.reduce((a, l) => a + Number(l.settled_amount || 0), 0));
+    const sumOpenClosingBal = round2(openClosingRows.reduce((a, l) => a + getLoanOpenAmt(l), 0));
 
     return `
       <div class="cockpit-banner has-insights">
@@ -27994,37 +28017,37 @@
         </div>
         <div class="cockpit-pills insight-grid">
           ${insightCard({
-            label: 'Loans & Advances Given',
-            badge: `${fmtNum(loansAll.length)} Facilities`,
+            label: 'Open Loans · Company Lends',
+            badge: `${fmtNum(openLendLoans.length)} Open`,
             badgeCls: 'brass',
-            val: fmtUSD(sumPrincipal, 0),
+            val: fmtUSD(openLentTotal, 0),
             valCls: 'brass',
-            sub: `Settled to date <b>${fmtUSD(sumSettled, 0)}</b> · Open <b>${fmtUSD(openBalance, 0)}</b>`,
+            sub: `Owed to company across <b>${fmtNum(loansAll.filter(l => !isBorrowSide(l)).length)}</b> advances given`,
             tone: 'brass'
           })}
           ${insightCard({
-            label: 'Loan Repayments & Settlements',
-            badge: `${fmtNum(lsetAll.length)} Repayments`,
-            badgeCls: 'emerald',
-            val: fmtUSD(sumMoves, 0),
-            valCls: 'emerald',
-            sub: `Principal repayments &amp; settlements in active scope`,
-            tone: 'emerald'
-          })}
-          ${insightCard({
-            label: 'Net Open Loan Balance',
-            badge: `${fmtNum(openLoansCount)} Open`,
+            label: 'Open Loans · Company Borrows',
+            badge: `${fmtNum(openBorrowLoans.length)} Open`,
             badgeCls: 'amber',
-            val: fmtUSD(openBalance, 0),
+            val: fmtUSD(openBorrowedTotal, 0),
             valCls: 'amber',
-            sub: `Outstanding advances &amp; loan principal across borrowers`,
+            sub: `Owed by company across <b>${fmtNum(loansAll.filter(isBorrowSide).length)}</b> loans borrowed`,
             tone: 'amber'
           })}
           ${insightCard({
-            label: 'Borrowers & Recovery Ratio',
-            badge: `${fmtNum(borrowerSet.size)} Borrowers`,
+            label: 'Loan Repayments & Settlements',
+            badge: `${fmtNum(lsetAll.length)} Settlements`,
+            badgeCls: 'emerald',
+            val: fmtUSD(sumMoves, 0),
+            valCls: 'emerald',
+            sub: `Principal repayments &amp; closures across both sides`,
+            tone: 'emerald'
+          })}
+          ${insightCard({
+            label: 'Total Facilities & Recovery',
+            badge: `${fmtNum(openAllLoans.length)} Open of ${fmtNum(loansAll.length)}`,
             val: `${fmtNum(settledPct, 1)}% <small>Settled</small>`,
-            sub: `Across <b>${fmtNum(loansAll.length)}</b> loans and <b>${fmtNum(lsetAll.length)}</b> repayments`,
+            sub: `Principal <b>${fmtUSD(sumPrincipal, 0)}</b> · Settled <b>${fmtUSD(sumSettled, 0)}</b>`,
             tone: 'steel'
           })}
         </div>
@@ -28033,11 +28056,14 @@
       <div class="panel-card" id="treasuryLoansPanel" style="margin-bottom:14px">
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search loan code, counterparty, direction, notes...')}
+            ${searchBox('Search loan code, borrower/lender, side, notes...')}
             <div class="chip-bar">
               ${chip('all', `All (${loansAll.length})`)}
-              ${chip('in_loan', 'Inflow / Borrowed')}
-              ${chip('out_loan', 'Outflow / Advance')}
+              ${chip('open_all', `Open · Both Sides (${openAllLoans.length})`)}
+              ${chip('open_out', `Open · Company Lends (${openLendLoans.length})`)}
+              ${chip('open_in', `Open · Company Borrows (${openBorrowLoans.length})`)}
+              ${chip('out_loan', 'Company Lends')}
+              ${chip('in_loan', 'Company Borrows')}
               ${chip('app', 'App-entered')}
             </div>
           </div>
@@ -28051,37 +28077,50 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('tr_loans', 'Loan', 'name')}${th('tr_loans', 'Co.', 'company')}${th('tr_loans', 'Counterparty', 'counterparty')}
-                ${th('tr_loans', 'Direction', 'direction')}${th('tr_loans', 'Principal ($)', 'principal', 'r')}${th('tr_loans', 'Settled ($)', 'settled_amount', 'r')}${th('tr_loans', 'Start Date', 'start_date')}
+                ${th('tr_loans', 'Loan', 'name')}${th('tr_loans', 'Co.', 'company')}${th('tr_loans', 'Borrower / Lender', 'counterparty')}
+                ${th('tr_loans', 'Loan Side', 'direction')}${th('tr_loans', 'Principal ($)', 'principal', 'r')}${th('tr_loans', 'Settled ($)', 'settled_amount', 'r')}${th('tr_loans', 'Open ($)', 'open_balance', 'r')}${th('tr_loans', 'Start Date', 'start_date')}${canEnterForm('treasury') ? '<th class="r">Close / Settle</th>' : ''}
               </tr>
             </thead>
             <tbody>
-              ${shownLoans.map(l => `
+              ${shownLoans.map(l => {
+                const openAmt = getLoanOpenAmt(l);
+                const isBor = isBorrowSide(l);
+                const party = l.counterparty || l.lender || '—';
+                const sideKey = isBor ? 'Company borrows' : 'Company lends';
+                const sideBadge = isBor
+                  ? '<span class="badge badge-warn">Company Borrows · We Owe</span>'
+                  : '<span class="badge badge-brass">Company Lends · Owed to Us</span>';
+                return `
                 <tr class="rrow" data-rkey="loans" data-rid="${esc(l.id)}">
                   <td class="mono"><strong>${esc(l.name || '—')}</strong>${appCell(l, 'loans')}</td>
                   <td>${coBadge(l.company)}</td>
-                  <td><strong>${esc(l.counterparty || l.lender || '—')}</strong></td>
-                  <td><span class="badge badge-info">${esc(l.direction || 'Loan')}</span></td>
+                  <td><strong>${esc(party)}</strong></td>
+                  <td>${sideBadge}</td>
                   <td class="r"><strong>${fmtUSD(l.principal || 0, 2)}</strong></td>
                   <td class="r">${fmtUSD(l.settled_amount || 0, 2)}</td>
+                  <td class="r"><strong>${openAmt > 0.01 ? fmtUSD(openAmt, 2) : '$0.00'}</strong></td>
                   <td class="mono">${esc(fmtDateDMY(l.start_date))}</td>
+                  ${canEnterForm('treasury') ? `<td class="r">${openAmt > 0.01 ? `<button type="button" class="btn btn-sm" data-open-modal="treasury" data-prefill-co="${esc(l.company || 'WTC')}" data-prefill-trtype="loan_settlement" data-prefill-loanside="${esc(sideKey)}" data-prefill-party="${esc(party)}" data-prefill-loan="${esc(l.name || '')}" data-prefill-usd="${openAmt.toFixed(2)}">Settle (${fmtUSD(openAmt, 2)})</button>` : '<span class="badge badge-ok">Closed</span>'}</td>` : ''}
                 </tr>
-              `).join('') || emptyRow(7, 'No loans or advances match the active filter')}
-              ${showMoreRow('tr_loans', loanRows.length, 7)}
+              `;
+              }).join('') || emptyRow(canEnterForm('treasury') ? 9 : 8, 'No loans or advances match the active filter')}
+              ${showMoreRow('tr_loans', loanRows.length, canEnterForm('treasury') ? 9 : 8)}
             </tbody>
             <tfoot>
               <tr>
                 <td colspan="4"><b>TOTAL (${fmtNum(loanRows.length)} LOANS &amp; ADVANCES)</b></td>
                 <td class="r"><b>${fmtUSD(sumPrincipal, 2)}</b></td>
                 <td class="r"><b>${fmtUSD(sumSettled, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(openBalance, 2)}</b></td>
                 <td></td>
+                ${canEnterForm('treasury') ? '<td></td>' : ''}
               </tr>
             </tfoot>
           </table>
         </div>
       </div>
 
-      <div class="panel-card" id="treasuryExtPanel">
+      <div class="panel-card" id="treasuryExtPanel" style="margin-bottom:14px">
         <div class="panel-head">
           <div class="panel-title"><span>LOAN REPAYMENTS &amp; SETTLEMENTS (${fmtNum(moveRows.length)})</span></div>
           <span class="panel-meta">${exportBtn('treasuryExtPanel', 'Loan_Settlements')}</span>
@@ -28091,7 +28130,7 @@
             <thead>
               <tr>
                 ${th('tr_moves', 'Date', 'date')}${th('tr_moves', 'Co.', 'company')}${th('tr_moves', 'Type', 'kind')}
-                ${th('tr_moves', 'Borrower / Counterparty', 'party')}${th('tr_moves', 'Method', 'method')}${th('tr_moves', 'USD ($)', 'usd_amount', 'r')}
+                ${th('tr_moves', 'Borrower / Lender', 'party')}${th('tr_moves', 'Direction', 'method')}${th('tr_moves', 'USD ($)', 'usd_amount', 'r')}
               </tr>
             </thead>
             <tbody>
@@ -28111,6 +28150,63 @@
               <tr>
                 <td colspan="5"><b>TOTAL (${fmtNum(moveRows.length)} LOAN SETTLEMENTS)</b></td>
                 <td class="r"><b>${fmtUSD(sumMoves, 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel-card" id="treasuryOpenLoansPanel" style="margin-bottom:14px">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="panel-title"><span>OPEN LOANS TO CLOSE · BOTH SIDES (${fmtNum(openClosingRows.length)})</span></div>
+            <div class="chip-bar">
+              <button type="button" class="filter-chip ${openSideFilter === 'all' ? 'active' : ''}" data-open-loan-hub-side="all">All Open (${fmtNum(openAllLoans.length)} · ${fmtUSD(openLentTotal + openBorrowedTotal, 0)})</button>
+              <button type="button" class="filter-chip ${openSideFilter === 'lends' ? 'active' : ''}" data-open-loan-hub-side="lends">Company Lends · Owed to Us (${fmtNum(openLendLoans.length)} · ${fmtUSD(openLentTotal, 0)})</button>
+              <button type="button" class="filter-chip ${openSideFilter === 'borrows' ? 'active' : ''}" data-open-loan-hub-side="borrows">Company Borrows · We Owe (${fmtNum(openBorrowLoans.length)} · ${fmtUSD(openBorrowedTotal, 0)})</button>
+            </div>
+          </div>
+          <span class="panel-meta">${exportBtn('treasuryOpenLoansPanel', 'Open_Loans_To_Close')}</span>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Start Date</th><th>Co.</th><th>Loan Ref</th><th>Loan Side</th><th>Borrower / Lender</th>
+                <th class="r">Principal ($)</th><th class="r">Settled ($)</th><th class="r">Open Balance ($)</th><th class="r">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownOpenClosing.map(l => {
+                const openAmt = getLoanOpenAmt(l);
+                const isBor = isBorrowSide(l);
+                const party = l.counterparty || l.lender || '—';
+                const sideKey = isBor ? 'Company borrows' : 'Company lends';
+                return `
+                  <tr class="rrow" data-rkey="loans" data-rid="${esc(l.id)}">
+                    <td class="mono">${esc(fmtDateDMY(l.start_date))}</td>
+                    <td>${coBadge(l.company)}</td>
+                    <td class="mono"><strong>${esc(l.name || '—')}</strong></td>
+                    <td>${isBor ? '<span class="badge badge-warn">Company Borrows · We Owe</span>' : '<span class="badge badge-brass">Company Lends · Owed to Us</span>'}</td>
+                    <td><strong>${esc(party)}</strong></td>
+                    <td class="r">${fmtUSD(l.principal || 0, 2)}</td>
+                    <td class="r">${fmtUSD(l.settled_amount || 0, 2)}</td>
+                    <td class="r"><strong>${fmtUSD(openAmt, 2)}</strong></td>
+                    <td class="r">
+                      ${canEnterForm('treasury') ? `<button type="button" class="btn btn-sm btn-primary" data-open-modal="treasury" data-prefill-co="${esc(l.company || 'WTC')}" data-prefill-trtype="loan_settlement" data-prefill-loanside="${esc(sideKey)}" data-prefill-party="${esc(party)}" data-prefill-loan="${esc(l.name || '')}" data-prefill-usd="${openAmt.toFixed(2)}">Close / Settle (${fmtUSD(openAmt, 2)})</button>` : '<span class="badge badge-warn">Open</span>'}
+                    </td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(9, 'No open loans remaining for this side')}
+              ${showMoreRow('tr_open_close', openClosingRows.length, 9)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="5"><b>TOTAL OPEN LOANS (${fmtNum(openClosingRows.length)})</b></td>
+                <td class="r"><b>${fmtUSD(sumOpenClosingPrin, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(sumOpenClosingSet, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(sumOpenClosingBal, 2)}</b></td>
+                <td></td>
               </tr>
             </tfoot>
           </table>
@@ -31136,7 +31232,9 @@
     const company = defaultEntryCompany();
     const today = todayISO();
     const dateAttrs = `min="${MIN_DATE}" max="${today}" required`;
-    const companyField = fld('Company (BU) *', sel('f_company', comps, company), { id: 'wrap_f_company', hint: comps.length === 1 ? 'Your seat is scoped to this entity' : '' });
+    const stCo = String(STATE.company || '').trim();
+    const isSingleBuScope = Boolean((stCo && stCo !== 'manufacturing-group' && !stCo.startsWith('industry:')) || comps.length <= 1);
+    const companyField = fld('Company (BU) *', sel('f_company', comps, company), { id: 'wrap_f_company', hidden: isSingleBuScope, hint: comps.length === 1 ? 'Your seat is scoped to this entity' : '' });
     const hasAfterHoursBtn = fType === 'sales' || fType === 'raw';
     const afterHoursBtnHtml = hasAfterHoursBtn
       ? `<button type="button" class="repdate-toggle-btn afterhours-toggle-btn" id="toggleAfterHoursBtn" aria-pressed="false">${ic('moon')} Yesterday's After-Hours</button>`
@@ -31235,7 +31333,7 @@
       const rawProdMeta = rawProductMetaItems(effRawCo);
       const initRawUom = (pendRawEditRow && pendRawEditRow.uom) ? pendRawEditRow.uom : (effRawCo === 'BBConstruction' ? 'Ton' : 'm³');
       const rawCoField = pendRawEditRow
-        ? fld('Company *', sel('f_company', allowedCompanyNames().map(c => [c, c]), effRawCo), { id: 'wrap_f_company', lockField: 'f_company', lockReason: 'Locked while entering final supplier invoice price' })
+        ? fld('Company *', sel('f_company', allowedCompanyNames().map(c => [c, c]), effRawCo), { id: 'wrap_f_company', hidden: isSingleBuScope, lockField: 'f_company', lockReason: 'Locked while entering final supplier invoice price' })
         : companyField;
       const rawDateVal = (pendRawEditRow && pendRawEditRow.date) ? String(pendRawEditRow.date).slice(0, 10) : today;
       const rawRepVal = (pendRawEditRow && (pendRawEditRow.rep_date || pendRawEditRow.date)) ? String(pendRawEditRow.rep_date || pendRawEditRow.date).slice(0, 10) : rawDateVal;
@@ -31390,7 +31488,7 @@
       const expRefVal = pendEditRow ? (pendEditRow.reference || '') : '';
       const expNotesVal = pendEditRow ? (pendEditRow.notes || '') : '';
       const expCompanyField = pendEditRow
-        ? fld('Company (BU) *', sel('f_company', expCoOpts, expCoVal), { id: 'wrap_f_company', lockField: 'f_company', lockReason: 'Locked to the company recorded on delivery' })
+        ? fld('Company (BU) *', sel('f_company', expCoOpts, expCoVal), { id: 'wrap_f_company', hidden: isSingleBuScope, lockField: 'f_company', lockReason: 'Locked to the company recorded on delivery' })
         : companyField;
       const expDateField = pendEditRow
         ? fld('Transaction Date *', inp('f_date', 'date', expDateVal, `${dateAttrs} readonly`), {

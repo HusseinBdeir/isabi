@@ -533,6 +533,154 @@
     `;
   }
 
+  // ==================== OPEN LOANS CLOSING SUBGRID (BOTH SIDES: COMPANY LENDS & COMPANY BORROWS) ====================
+  function renderOpenLoansSubgrid(ctx, company, counterparty, trType, loanSide, settleUsd, targetLoanName, sideTab) {
+    const rec = getRecords(ctx);
+    const coNorm = norm(company || 'WTC');
+    const cpNorm = norm(counterparty || '');
+    const fx = getActiveFxRate();
+    const isSettling = trType === 'loan_settlement';
+    const activeTab = sideTab || (isSettling ? (/borrow/i.test(String(loanSide || '')) ? 'borrows' : 'lends') : 'all');
+
+    const appSettledByLoan = new Map();
+    (rec.loan_settlements || []).forEach(s => {
+      if (!s || s.voided) return;
+      if (!(s.source === 'app' || s.is_app || /^LSET|^LOAN_SETTLEMENT/i.test(String(s.name || '')))) return;
+      if (coNorm && norm(s.company || 'WTC') !== coNorm) return;
+      const lKey = norm(s.loan || '');
+      if (!lKey) return;
+      const amt = round2(Number(s.amount != null ? s.amount : s.usd_amount || 0) || (Number(s.lbp_amount || 0) / fx));
+      if (amt > 0) appSettledByLoan.set(lKey, round2((appSettledByLoan.get(lKey) || 0) + amt));
+    });
+
+    const openAll = [];
+    let openLentCount = 0, openLentUsd = 0;
+    let openBorrowedCount = 0, openBorrowedUsd = 0;
+
+    (rec.loans || []).forEach(l => {
+      if (!l || l.voided) return;
+      if (coNorm && norm(l.company || 'WTC') !== coNorm) return;
+      const principal = round2(Number(l.principal != null ? l.principal : (l.amount || l.usd_amount || 0)) || (Number(l.lbp_amount || 0) / fx));
+      if (!(principal > 0.01)) return;
+      const baseSettled = round2(Number(l.settled_amount || 0));
+      const extraAppSettled = l._app_settled_applied ? 0 : (appSettledByLoan.get(norm(l.name || '')) || 0);
+      const settled = round2(Math.min(principal, baseSettled + extraAppSettled));
+      const openAmt = round2(Math.max(0, principal - settled));
+      if (!(openAmt > 0.01)) return;
+      const rawDir = String(l.direction || '');
+      const side = /borrow|inflow/i.test(rawDir) ? 'Company borrows' : 'Company lends';
+      const party = l.counterparty || (norm(l.lender) !== coNorm ? l.lender : '') || l.name || 'Counterparty';
+      const item = {
+        id: l.id || l.name,
+        name: l.name || 'Loan',
+        date: l.start_date || l.date || '',
+        party,
+        side,
+        principal,
+        settled,
+        openAmt,
+        lbp_amount: Number(l.lbp_amount || 0)
+      };
+      openAll.push(item);
+      if (side === 'Company borrows') {
+        openBorrowedCount++;
+        openBorrowedUsd = round2(openBorrowedUsd + openAmt);
+      } else {
+        openLentCount++;
+        openLentUsd = round2(openLentUsd + openAmt);
+      }
+    });
+
+    openAll.sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.openAmt - a.openAmt);
+
+    const byTab = openAll.filter(item => {
+      if (activeTab === 'borrows') return item.side === 'Company borrows';
+      if (activeTab === 'lends') return item.side === 'Company lends';
+      return true;
+    });
+
+    const cpFiltered = cpNorm
+      ? byTab.filter(item => norm(item.party).includes(cpNorm) || norm(item.name).includes(cpNorm))
+      : byTab;
+    const displayRows = cpFiltered.slice(0, 40);
+
+    let remAlloc = isSettling ? Math.max(0, Number(settleUsd) || 0) : 0;
+    const tgtNorm = norm(targetLoanName || '');
+
+    const rowsHtml = displayRows.length ? displayRows.map(item => {
+      const isTarget = Boolean(tgtNorm && norm(item.name) === tgtNorm);
+      const partyMatches = Boolean(cpNorm && norm(item.party) === cpNorm && (!tgtNorm || isTarget));
+      let allocNow = 0;
+      if (isSettling && (isTarget || (!tgtNorm && partyMatches)) && remAlloc > 0) {
+        allocNow = round2(Math.min(item.openAmt, remAlloc));
+        remAlloc = round2(Math.max(0, remAlloc - allocNow));
+      }
+      const remAfter = round2(Math.max(0, item.openAmt - allocNow));
+      const isClosingFull = allocNow > 0 && remAfter <= 0.01;
+      const sideBadge = item.side === 'Company borrows'
+        ? `<span class="badge badge-warn">Company Borrows · We Owe</span>`
+        : `<span class="badge badge-brass">Company Lends · Owed to Us</span>`;
+      const statusHtml = allocNow > 0
+        ? (isClosingFull
+            ? `<span class="badge badge-ok">CLOSES IN FULL ($0.00)</span>`
+            : `<span class="badge badge-brass">-${fmtUsd(allocNow)} · ${fmtUsd(remAfter)} Left</span>`)
+        : `<span class="badge badge-neutral">Open (${fmtUsd(item.openAmt)})</span>`;
+      return `
+        <tr class="${isTarget || allocNow > 0 ? 'subgrid-row-active' : ''}" data-pick-open-loan="${esc(item.id)}" data-loan-name="${esc(item.name)}" data-loan-party="${esc(item.party)}" data-loan-side="${esc(item.side)}" data-loan-open="${item.openAmt.toFixed(2)}" style="cursor:pointer">
+          <td class="mono">${esc(item.date || '—')}</td>
+          <td class="mono"><strong>${esc(item.name)}</strong></td>
+          <td>${sideBadge}</td>
+          <td><strong>${esc(item.party)}</strong></td>
+          <td class="r">${fmtUsd(item.principal)}</td>
+          <td class="r">${fmtUsd(item.settled)}</td>
+          <td class="r"><strong>${fmtUsd(item.openAmt)}</strong></td>
+          <td>${statusHtml}</td>
+          <td class="r">
+            <button type="button" class="btn btn-sm ${isTarget ? 'btn-primary' : ''}" data-pick-open-loan="${esc(item.id)}" data-loan-name="${esc(item.name)}" data-loan-party="${esc(item.party)}" data-loan-side="${esc(item.side)}" data-loan-open="${item.openAmt.toFixed(2)}">
+              ${isTarget ? '✓ Closing (' + fmtUsd(item.openAmt) + ')' : 'Close / Settle (' + fmtUsd(item.openAmt) + ')'}
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('') : `<tr><td colspan="9" style="text-align:center;padding:14px;color:var(--ink-soft)">No open loans match the current filter${counterparty ? ` for "${esc(counterparty)}"` : ''}.</td></tr>`;
+
+    return `
+      <div class="pa-subgrid" id="openLoansCloseSubgrid" style="margin-top:10px">
+        <div class="pa-subgrid-hdr" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <strong>OPEN LOANS TO CLOSE · CLICK ANY LOAN TO SETTLE</strong>
+            <div class="chip-bar" style="gap:4px">
+              <button type="button" class="filter-chip ${activeTab === 'all' ? 'active' : ''}" data-open-loan-tab="all">All Open (${openAll.length} · ${fmtUsd(openLentUsd + openBorrowedUsd)})</button>
+              <button type="button" class="filter-chip ${activeTab === 'lends' ? 'active' : ''}" data-open-loan-tab="lends">Company Lends · Owed to Us (${openLentCount} · ${fmtUsd(openLentUsd)})</button>
+              <button type="button" class="filter-chip ${activeTab === 'borrows' ? 'active' : ''}" data-open-loan-tab="borrows">Company Borrows · We Owe (${openBorrowedCount} · ${fmtUsd(openBorrowedUsd)})</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            ${counterparty ? `<button type="button" class="att-preset-pill" data-clear-loan-cp="1">Filtered: ${esc(counterparty)} · × Show All</button>` : `<span style="font-size:11.5px;color:var(--ink-soft)">Showing ${displayRows.length} of ${cpFiltered.length} open loans in ${esc(company || 'WTC')}</span>`}
+          </div>
+        </div>
+        <div class="table-wrap" style="max-height:210px;overflow:auto">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Loan Ref</th>
+                <th>Loan Side</th>
+                <th>Borrower / Lender</th>
+                <th class="r">Principal</th>
+                <th class="r">Settled</th>
+                <th class="r">Open Balance</th>
+                <th>Settlement Preview</th>
+                <th class="r">Action</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   // ==================== MODAL GROUP & TAB BAR RENDERER ====================
   function renderModalTabsHtml(activeForm, canEnterFn, groupOverride) {
     if (groupOverride === 'expenses') groupOverride = 'raw';
@@ -613,7 +761,9 @@
     const company = helpers.defaultEntryCompany();
     const today = todayISO();
     const dateAttrs = `min="${MIN_DATE}" max="${today}" required`;
-    const companyField = fld('Company (BU) *', sel('f_company', comps, company), { id: 'wrap_f_company' });
+    const stCo = String((ctx && ctx.STATE && ctx.STATE.company) || '').trim();
+    const isSingleBuScope = Boolean((stCo && stCo !== 'manufacturing-group' && !stCo.startsWith('industry:')) || comps.length <= 1);
+    const companyField = fld('Company (BU) *', sel('f_company', comps, company), { id: 'wrap_f_company', hidden: isSingleBuScope });
     const lockedDateField = (lbl = 'Transaction Date *') => fld(lbl, inp('f_date', 'date', today, `${dateAttrs} readonly`), {
       id: 'wrap_f_date',
       lockField: 'f_date',
@@ -1772,7 +1922,7 @@
           ${collapsibleRepDateField()}
           ${fld('Stakeholder / Counterparty *', inp('f_counterparty', 'text', '', 'list="dl_ext_parties" placeholder="Select or type stakeholder or entity..."') + dl('dl_ext_parties', externalPartyNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
           <div id="trLiveContextStrip" class="att-contract-strip" hidden></div>
-          ${fld('Cash Direction *', sel('f_direction', [['Inflow', 'Cash Inflow (Received)'], ['Outflow', 'Cash Outflow (Paid / Swept)']], 'Inflow'), { id: 'wrap_tr_dir' })}
+          ${fld('Cash Direction *', sel('f_direction', [['Inflow', 'Cash Inflow (Received)'], ['Outflow', 'Cash Outflow (Paid)']], 'Inflow'), { id: 'wrap_tr_dir' })}
           ${fld('Entry Kind *', sel('f_ext_kind', [['External', 'External (Partner / Sister Co.)'], ['Extended', 'Extended (Reserve / Special)']], 'External'), { id: 'wrap_ext_kind' })}
           ${fld('Reference / Voucher', inp('f_reference', 'text', ''))}
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
@@ -1794,27 +1944,50 @@
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
+          <div class="pa-ticket-disp-bar" id="loanModeBar" style="grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span class="pa-disp-title" style="font-weight:700">1. Action:</span>
+              <div class="pa-disp-pills" id="loanActionPills">
+                <button type="button" class="pa-disp-pill active" data-loan-action="loan">+ Open New Loan</button>
+                <button type="button" class="pa-disp-pill" data-loan-action="loan_settlement">✓ Close / Settle Open Loan</button>
+              </div>
+              <span class="pa-disp-title" style="font-weight:700;margin-left:6px">2. Loan Side:</span>
+              <div class="pa-disp-pills" id="loanSidePills">
+                <button type="button" class="pa-disp-pill active" data-loan-side="Company lends">Company Lends (We Lend)</button>
+                <button type="button" class="pa-disp-pill" data-loan-side="Company borrows">Company Borrows (We Borrow)</button>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span class="badge badge-warn" id="loanCashImpactBadge">Cash Outflow · Paid to Borrower</span>
+            </div>
+          </div>
+          <select id="f_trtype" data-native-select="1" hidden>
+            <option value="loan" selected>Open New Loan</option>
+            <option value="loan_settlement">Close / Settle Open Loan</option>
+          </select>
+          <select id="f_loan_side" data-native-select="1" hidden>
+            <option value="Company lends" selected>Company Lends (We Lend)</option>
+            <option value="Company borrows">Company Borrows (We Borrow)</option>
+          </select>
+          <input type="hidden" id="f_direction" value="Outflow">
+          <input type="hidden" id="f_target_loan" value="">
           ${companyField}
           ${lockedDateField('Transaction Date *')}
           ${collapsibleRepDateField()}
-          ${fld('Borrower / Counterparty *', inp('f_counterparty', 'text', '', 'list="dl_loan_parties" placeholder="Select or type staff, borrower, or bank..."') + dl('dl_loan_parties', loanBorrowerNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
-          <div id="trLiveContextStrip" class="att-contract-strip" hidden></div>
-          <input type="hidden" id="f_direction" value="Outflow">
-          ${fld('Loan Leg / Direction *', sel('f_trtype', [
-            ['loan', 'Loan / Advance Given (Cash Outflow)'],
-            ['loan_settlement', 'Loan Repayment / Received (Cash Inflow)']
-          ], 'loan'), { id: 'wrap_tr_type' })}
+          ${fld('<span id="lbl_tr_cp">Borrower (Receiving Loan) *</span>', inp('f_counterparty', 'text', '', 'list="dl_loan_parties" placeholder="Select or type borrower, staff, or lender..."') + dl('dl_loan_parties', loanBorrowerNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
+          ${fld('Reference / Voucher', inp('f_reference', 'text', 'placeholder="Optional voucher or loan ref..."'))}
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0"'), { id: 'wrap_tr_lbp' })}
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
-          ${fld('Reference / Voucher', inp('f_reference', 'text', ''))}
-          ${fld('Notes', inp('f_notes', 'text', ''))}
+          ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
+        <div id="trLiveContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
+        <div id="paLoanSubgridWrap">${renderOpenLoansSubgrid(ctx, company, '', 'loan', 'Company lends', 0, '', 'all')}</div>
         <div class="live-calc" id="trLiveCalc">
           <div><small id="lbl_tr_c1">Open Loan Before</small><b id="calc_tr_c1">—</b></div>
-          <div><small id="lbl_tr_c2">Drawdown Now</small><b id="calc_tr_c2">$0.00</b></div>
+          <div><small id="lbl_tr_c2">Loan Given Now</small><b id="calc_tr_c2">$0.00</b></div>
           <div><small id="lbl_tr_c3">Loan Balance After</small><b id="calc_tr_c3">—</b></div>
-          <div><small id="lbl_tr_c4">Treasury Leg</small><b id="calc_tr_c4">Loan Drawdown</b></div>
+          <div><small id="lbl_tr_c4">Treasury Leg</small><b id="calc_tr_c4">Company Lends (Outflow)</b></div>
         </div>
       `;
     }
@@ -1938,6 +2111,7 @@
     renderTruckQuickView,
     renderCustomerOpenTicketsSubgrid,
     renderSupplierOpenLegsSubgrid,
+    renderOpenLoansSubgrid,
     renderModalTabsHtml,
     renderExtendedFormBody
   };
