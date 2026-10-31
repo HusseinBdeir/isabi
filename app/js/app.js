@@ -6156,12 +6156,12 @@
     },
     'Entry': {
       shortTitle: 'Entry Operator',
-      tagline: 'Weighbridge, quarry, fuel, expenses, pending prices & payroll',
+      tagline: 'Weighbridge, quarry, fuel, expenses, pending prices, payroll & cash till',
       title: 'Entry Operator',
       tierBadge: 'ENTRY OPERATOR',
       badgeCls: 'badge-brass',
       defaultAccess: 'partial|partial',
-      summary: 'Creates daily dispatch tickets, quarry intakes, fuel logs, expenses, and payroll entries (salaries, attendance, site transport, and contracts), and adds pending supplier invoice prices on unpriced deliveries. Cannot void or overwrite posted quantities, hides General Ledger, and requires Admin PIN on locked fields.',
+      summary: 'Creates daily dispatch tickets, quarry intakes, fuel logs, expenses, payroll entries (salaries, attendance, site transport, and contracts), and cash till / treasury transactions (external entries, loans, loan settlements, and FX conversions), and adds pending supplier invoice prices on unpriced deliveries. Cannot void or overwrite posted quantities, hides General Ledger, and requires Admin PIN on locked fields.',
       rights: { read_ops: true, read_fin: false, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: false, modify_data: false, void_data: false, manage_users: false },
       unlocks: { unlock_unit_price: false, unlock_trans_price: false, unlock_qty_cap: false, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: false, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: false },
@@ -6347,7 +6347,8 @@
       if (['defect', 'partlog', 'repair', 'oillog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master);
       if (['receipt', 'expense', 'warehousestock', 'settlement'].includes(form)) return !!p.rights.enter_accounting;
       if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'salary', 'employment', 'freelance', 'allowance', 'logistics', 'overtimerate', 'triprate', 'attendance', 'fxrate', 'vatrate', 'currency'].includes(form)) return !!(p.rights.enter_master || p.rights.enter_payroll_jv);
-      if (['treasury', 'external', 'extmovement', 'loan', 'loansettlement', 'conversion', 'jv', 'jvpartnership', 'jvdistribution'].includes(form)) return !!p.rights.enter_payroll_jv;
+      if (['treasury', 'external', 'extmovement', 'loan', 'loansettlement', 'conversion'].includes(form)) return !!(p.rights.enter_payroll_jv || p.rights.enter_accounting);
+      if (['jv', 'jvpartnership', 'jvdistribution'].includes(form)) return !!p.rights.enter_payroll_jv;
       return !!(p.rights.enter_dispatch || p.rights.enter_accounting || p.rights.enter_master);
     }
     if (/Owner|Full Access/i.test(role)) return true;
@@ -6362,7 +6363,8 @@
         'sales', 'raw', 'receipt', 'fuel', 'malfunction', 'expense', 'warehousestock', 'settlement',
         'defect', 'repair', 'oillog', 'partlog', 'pricerule',
         'customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver',
-        'salary', 'attendance', 'employment', 'freelance', 'allowance', 'logistics', 'triprate', 'overtimerate'
+        'salary', 'attendance', 'employment', 'freelance', 'allowance', 'logistics', 'triprate', 'overtimerate',
+        'external', 'extmovement', 'treasury', 'loan', 'loansettlement', 'conversion', 'fxrate', 'currency'
       ].includes(form);
     }
     return false;
@@ -6862,15 +6864,19 @@
     if ((tableKey === 'vat_invoices' || tableKey === 'vat_rates') && !canSeeTaxBreakdown(u)) return false;
     const role = String(u.role || '');
     const pbi = u.pbi_access || 'partial';
-    const finTables = [
-      'external_movements', 'loans', 'loan_settlements', 'conversions', 'jv_partnerships', 'jv_distributions', 'gl_accounts'
+    const finOnlyTables = [
+      'jv_partnerships', 'jv_distributions', 'gl_accounts'
+    ];
+    const treasuryTables = [
+      'external_movements', 'loans', 'loan_settlements', 'conversions'
     ];
     const payrollTables = [
       'salaries', 'employments', 'attendance', 'freelance_entries', 'logistics_allowances', 'overtime_rates'
     ];
     if (/^Custom/i.test(role) || pbi === 'custom') {
       const p = getEffectivePermissions(u);
-      if (finTables.includes(tableKey)) return !!(p.rights.read_fin || p.dashboards.dash_financial_gl || p.rights.enter_payroll_jv);
+      if (finOnlyTables.includes(tableKey)) return !!(p.rights.read_fin || p.dashboards.dash_financial_gl || p.rights.enter_payroll_jv);
+      if (treasuryTables.includes(tableKey)) return !!(p.rights.read_ops || p.rights.read_fin || p.dashboards.dash_financial_gl || p.dashboards.dash_expenses_vat || p.rights.enter_accounting || p.rights.enter_payroll_jv);
       if (payrollTables.includes(tableKey)) return !!(p.rights.read_ops || p.rights.read_fin || p.dashboards.dash_payroll_hr || p.rights.enter_payroll_jv || p.rights.enter_master);
       return !!(p.rights.read_ops || p.rights.read_fin);
     }
@@ -6878,7 +6884,7 @@
     if (/Sales/i.test(role)) {
       return ['sales_tickets', 'receipts', 'price_rules', 'credit_terms', 'customers', 'products', 'sites', 'regions', 'uoms', 'product_types', 'daily_totals', 'currencies', 'fx_rates'].includes(tableKey);
     }
-    return !finTables.includes(tableKey);
+    return !finOnlyTables.includes(tableKey);
   }
 
   function canAccessRdlReport(report, u) {
@@ -16182,12 +16188,22 @@
     return (SEED.records.items || []).find(r => r && !r.voided && norm(r.name || r.item_name) === k) || null;
   }
 
-  function ensureItemInCatalog(spec) {
+  function ensureItemInCatalog(specOrName, uomArg, categoryArg, costArg, locArg, minStockArg) {
+    const spec = (specOrName && typeof specOrName === 'object')
+      ? specOrName
+      : {
+          name: specOrName,
+          uom: uomArg,
+          category: categoryArg,
+          default_cost: costArg,
+          default_location: locArg,
+          min_stock: minStockArg
+        };
     if (!spec || !spec.name) return null;
     const nm = String(spec.name || '').trim();
     if (!nm) return null;
     const existing = resolveCatalogItem(nm);
-    if (existing) return existing;
+    if (existing) return null;
     const who = activeUser();
     const itemRec = {
       id: uid('it'),
@@ -25540,7 +25556,7 @@
     const m = getModel(effCo);
     const cf = (m && m.cash_flow_sheet) || { rate_lbp: 89500 };
     const rate = Number(cf.rate_lbp || 89500);
-    const fullFin = Boolean(opts.forceFullFin) || isOwner(u) || u.pbi_access === 'full' || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const fullFin = Boolean(opts.forceFullFin) || isOwner(u) || u.pbi_access === 'full' || canAccessTable('external_movements', u) || canAccessTable('loans', u) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
     const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
     const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
@@ -25839,7 +25855,7 @@
     const rate = Number(cf.rate_lbp || 89500);
     const dailySrc = Array.isArray(cf.daily) ? cf.daily : [];
     const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
-    const fullFin = isOwner(u) || u.pbi_access === 'full' || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const fullFin = isOwner(u) || u.pbi_access === 'full' || canAccessTable('external_movements', u) || canAccessTable('loans', u) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
     const crCount = Object.values(STATE.customRecords || {}).reduce((a, arr) => a + (Array.isArray(arr) ? arr.length : 0), 0);
     const hydSalesLen = (SEED.records && Array.isArray(SEED.records.sales_tickets)) ? SEED.records.sales_tickets.length : 0;
     const dailyCacheKey = `${effCo}|${allowedCompanyNames(u).join(',')}|${isOfficialScopeActive(u) ? 'OFF' : 'ALL'}|${range ? (range.from + '..' + range.to) : 'ALL'}|${fullFin ? 1 : 0}|${rate}|${SEED._customRev || 0}|${crCount}|${hydSalesLen}|${dailySrc.length}|${SEED._recordsReady ? 1 : 0}`;
@@ -25968,7 +25984,7 @@
     const liveLbp = Math.round(Number(k.cash_till_lbp != null ? k.cash_till_lbp : 0));
     const liveTot = Number(k.cash_till != null ? k.cash_till : 0);
     const q = STATE.search.trim().toLowerCase();
-    const fullFin = isOwner(u) || u.pbi_access === 'full' || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
+    const fullFin = isOwner(u) || u.pbi_access === 'full' || canAccessTable('external_movements', u) || canAccessTable('loans', u) || Boolean(u.custom_perms && u.custom_perms.rights && u.custom_perms.rights.read_fin);
 
     const allowedNames = allowedCompanyNames(u);
     const showGroupSplit = STATE.company === 'manufacturing-group' && allowedNames.includes('WTC') && allowedNames.includes('BBConstruction');
@@ -28884,12 +28900,12 @@
     const enterDesc = (perms.rights.enter_dispatch && perms.rights.enter_payroll_jv)
       ? 'All Forms'
       : (isEntryRole
-          ? 'Ops, Payroll & Prices'
+          ? 'Ops, Payroll & Treasury'
           : (perms.rights.enter_dispatch ? 'Ops & Billing' : (perms.rights.enter_accounting ? 'Sales & AR' : 'Read-Only')));
     const capabilities = [
-      { key: 'ops', label: 'Operational & Payroll Hubs', allowed: !!perms.rights.read_ops, state: perms.rights.read_ops ? 'Allowed' : 'Hidden' },
-      { key: 'fin', label: 'General Ledger & Treasury', allowed: !!perms.rights.read_fin, state: perms.rights.read_fin ? 'Allowed' : 'Confidential' },
-      { key: 'enter', label: 'Create & Payroll Entry', allowed: canEnter, state: enterDesc },
+      { key: 'ops', label: 'Operational, Payroll & Till Hubs', allowed: !!perms.rights.read_ops, state: perms.rights.read_ops ? 'Allowed' : 'Hidden' },
+      { key: 'fin', label: isEntryRole ? 'General Ledger & Sentinels' : 'General Ledger & Treasury', allowed: !!perms.rights.read_fin, state: perms.rights.read_fin ? 'Allowed' : 'Confidential' },
+      { key: 'enter', label: 'Create, Payroll & Till', allowed: canEnter, state: enterDesc },
       {
         key: 'modify',
         label: 'Modify & Pending Prices',
@@ -28970,7 +28986,7 @@
           ? '✓ Create · Modify · Void'
           : (perms.rights.modify_data
               ? '✓ Create & Modify'
-              : (perms.roleKey === 'Entry' ? '✓ Create · Payroll · Pending Prices' : '✓ Create Only')))
+              : (perms.roleKey === 'Entry' ? '✓ Create · Payroll · Till · Pending Prices' : '✓ Create Only')))
       : (perms.rights.void_data ? 'Read & Void Only' : 'Read-Only');
     const unlockSummary = m.unlockCount === m.unlockTotal
       ? `✓ All ${m.unlockTotal} Overrides`
@@ -35876,7 +35892,6 @@
         if (STATE.modalForm === 'treasury' || STATE.modalForm === 'external') {
           const trType = STATE.modalForm === 'external' ? 'external' : (val('f_trtype') || 'loan');
           const cp = val('f_counterparty');
-          const dir = val('f_direction') || (trType === 'loan_settlement' ? 'Inflow' : (trType === 'loan' ? 'Outflow' : 'Inflow'));
           const fIntel = _getFormIntelIndex();
           const cpStem = normStaffStem(cp) || norm(cp);
           const loanPos = cpStem ? fIntel.loanByCp[cpStem] : null;
@@ -35884,11 +35899,100 @@
           const trStrip = $('trLiveContextStrip');
 
           if (trType === 'loan' || trType === 'loan_settlement') {
-            const openBefore = loanPos ? round2(loanPos.principal - loanPos.settled) : 0;
+            // Compute open loan balances by side (Company lends vs Company borrows) for the selected counterparty
+            let cpLentPrincipal = 0, cpLentSettled = 0, cpBorrowPrincipal = 0, cpBorrowSettled = 0;
+            if (cpStem) {
+              const seenLIds = new Set();
+              const allLoans = ((STATE.customRecords && STATE.customRecords.loans) || []).concat((SEED.records && SEED.records.loans) || []);
+              allLoans.forEach(r => {
+                if (!r || r.voided || isSelfEditingRow(r, 'loans')) return;
+                if (r.id && seenLIds.has(String(r.id))) return;
+                if (r.id) seenLIds.add(String(r.id));
+                const isB = /^company\s+borrows$/i.test(String(r.direction || '')) ||
+                  (r.borrower && norm(r.borrower) === norm(r.company) && norm(r.lender || r.counterparty || '') !== norm(r.company));
+                const pName = isB ? (r.lender || r.counterparty || r.borrower || '') : (r.borrower || r.counterparty || r.lender || '');
+                const pStem = normStaffStem(pName) || norm(pName);
+                if (pStem !== cpStem && norm(pName) !== norm(cp)) return;
+                const pr = Math.abs(Number(r.principal || r.amount || 0));
+                const st = Math.abs(Number(r.settled_amount || 0));
+                if (isB) { cpBorrowPrincipal += pr; cpBorrowSettled += st; }
+                else { cpLentPrincipal += pr; cpLentSettled += st; }
+              });
+            }
+            const openLent = Math.max(0, round2(cpLentPrincipal - cpLentSettled));
+            const openBorrowed = Math.max(0, round2(cpBorrowPrincipal - cpBorrowSettled));
+
+            if (cp && cp !== FORM_UI.lastLoanCp) {
+              FORM_UI.lastLoanCp = cp;
+              if ($('f_loan_side')) {
+                if (openBorrowed > 0.01 && openLent <= 0.01) {
+                  $('f_loan_side').value = 'Company borrows';
+                } else if (openLent > 0.01 && openBorrowed <= 0.01) {
+                  $('f_loan_side').value = 'Company lends';
+                }
+              }
+            } else if (!cp) {
+              FORM_UI.lastLoanCp = '';
+            }
+
+            const loanSide = val('f_loan_side') || 'Company lends';
+            const isBorrowSide = /^company\s+borrows$/i.test(loanSide);
+            const cashDir = isBorrowSide
+              ? (trType === 'loan_settlement' ? 'Outflow' : 'Inflow')
+              : (trType === 'loan_settlement' ? 'Inflow' : 'Outflow');
+            if ($('f_direction')) $('f_direction').value = cashDir;
+
+            const actPills = $('loanActionPills');
+            if (actPills) {
+              actPills.querySelectorAll('[data-loan-action]').forEach(btn => {
+                const isAct = btn.getAttribute('data-loan-action') === trType;
+                btn.classList.toggle('active', isAct);
+                btn.setAttribute('aria-selected', isAct ? 'true' : 'false');
+              });
+            }
+            const sidePills = $('loanSidePills');
+            if (sidePills) {
+              sidePills.querySelectorAll('[data-loan-side]').forEach(btn => {
+                const isAct = btn.getAttribute('data-loan-side') === loanSide;
+                btn.classList.toggle('active', isAct);
+                btn.setAttribute('aria-selected', isAct ? 'true' : 'false');
+              });
+            }
+            const impactBadge = $('loanCashImpactBadge');
+            if (impactBadge) {
+              impactBadge.className = 'badge ' + (cashDir === 'Inflow' ? 'badge-ok' : 'badge-warn');
+              impactBadge.textContent = trType === 'loan_settlement'
+                ? (isBorrowSide ? 'Cash Outflow · Company Repays Lender' : 'Cash Inflow · Borrower Settles Loan')
+                : (isBorrowSide ? 'Cash Inflow · Company Receives Loan' : 'Cash Outflow · Company Gives Loan');
+            }
+            const cpLbl = $('lbl_tr_cp');
+            if (cpLbl) {
+              cpLbl.textContent = trType === 'loan_settlement'
+                ? (isBorrowSide ? 'Lender (Being Settled) *' : 'Borrower (Settling Loan) *')
+                : (isBorrowSide ? 'Lender (Lending to Company) *' : 'Borrower (Receiving Loan) *');
+            }
+
+            const loanSubWrap = $('paLoanSubgridWrap');
+            if (loanSubWrap && window.MFG_FORMS && typeof window.MFG_FORMS.renderOpenLoansSubgrid === 'function') {
+              loanSubWrap.innerHTML = window.MFG_FORMS.renderOpenLoansSubgrid(
+                { SEED, STATE },
+                val('f_company') || defaultEntryCompany(),
+                cp,
+                trType,
+                loanSide,
+                thisPay,
+                val('f_target_loan'),
+                FORM_UI.openLoanTab
+              );
+            }
+
+            const rawOpenBefore = loanPos ? round2(loanPos.principal - loanPos.settled) : 0;
+            const sideOpenBefore = isBorrowSide ? openBorrowed : openLent;
+            const openBefore = sideOpenBefore > 0 ? sideOpenBefore : (rawOpenBefore > 0 ? rawOpenBefore : round2(openLent + openBorrowed));
             const afterOut = trType === 'loan_settlement'
               ? round2(openBefore - thisPay)
               : round2(openBefore + thisPay);
-            const isOverRepay = trType === 'loan_settlement' && loanPos && afterOut < -0.01;
+            const isOverRepay = trType === 'loan_settlement' && (loanPos || openBefore > 0) && afterOut < -0.01;
             if (trStrip) {
               if (!cp) {
                 trStrip.hidden = true;
@@ -35896,16 +36000,21 @@
               } else {
                 trStrip.hidden = false;
                 trStrip.className = 'att-contract-strip' + (isOverRepay ? ' is-warn' : (trType === 'loan_settlement' && openBefore > 0 && Math.abs(afterOut) <= 0.01 ? ' is-ok' : ''));
+                const sideSummaryBadge = openBorrowed > 0 && openLent === 0
+                  ? `<span class="badge badge-warn">Company Owes Lender: ${fmtUSD(openBorrowed, 2)}</span>`
+                  : (openLent > 0 && openBorrowed === 0
+                    ? `<span class="badge badge-brass">Outstanding Loan (Owed to Us): ${fmtUSD(openLent, 2)}</span>`
+                    : `<span class="badge ${openBefore > 0 ? 'badge-brass' : 'badge-ok'}">${openBefore > 0 ? 'Outstanding Loan: ' + fmtUSD(openBefore, 2) : 'No Open Loan Balance'}</span>`);
                 trStrip.innerHTML = `
                   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                     <strong>${esc((loanPos && loanPos.name) || cp)}</strong>
-                    <span class="badge ${openBefore > 0 ? 'badge-brass' : 'badge-ok'}">${openBefore > 0 ? 'Outstanding Loan: ' + fmtUSD(openBefore, 2) : 'No Open Loan Balance'}</span>
-                    ${isOverRepay ? `<span class="badge badge-warn">Over-Repayment (+${fmtUSD(Math.abs(afterOut), 2)})</span>` : ''}
-                    ${trType === 'loan_settlement' && openBefore > 0 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_usd" data-val="${openBefore.toFixed(2)}">Repay Full Balance (${fmtUSD(openBefore, 2)})</button>` : ''}
+                    ${sideSummaryBadge}
+                    ${isOverRepay ? `<span class="badge badge-warn">Over-Settlement (+${fmtUSD(Math.abs(afterOut), 2)})</span>` : ''}
+                    ${trType === 'loan_settlement' && openBefore > 0 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_usd" data-val="${openBefore.toFixed(2)}">Settle Full Balance (${fmtUSD(openBefore, 2)})</button>` : ''}
                   </div>
                   <div class="att-contract-metrics">
-                    <span><small>Principal Drawn (${loanPos ? loanPos.count : 0})</small><b>${fmtUSD(loanPos ? loanPos.principal : 0, 2)}</b></span>
-                    <span><small>Repaid (${loanPos ? loanPos.settledCount : 0})</small><b>${fmtUSD(loanPos ? loanPos.settled : 0, 2)}</b></span>
+                    <span><small>Principal (${loanPos ? loanPos.count : (openBefore > 0 ? 1 : 0)})</small><b>${fmtUSD(loanPos ? loanPos.principal : (cpLentPrincipal + cpBorrowPrincipal), 2)}</b></span>
+                    <span><small>Settled (${loanPos ? loanPos.settledCount : 0})</small><b>${fmtUSD(loanPos ? loanPos.settled : (cpLentSettled + cpBorrowSettled), 2)}</b></span>
                     <span><small>Open Before</small><b>${fmtUSD(openBefore, 2)}</b></span>
                     <span><small>After Entry</small><b>${afterOut < -0.01 ? 'Overpaid +' + fmtUSD(Math.abs(afterOut), 2) : fmtUSD(Math.max(0, afterOut), 2)}</b></span>
                   </div>
@@ -35914,14 +36023,19 @@
             }
             setHint('hint_tr_usd', isOverRepay ? `Exceeds open loan balance (${fmtUSD(openBefore, 2)}) by +${fmtUSD(Math.abs(afterOut), 2)}` : '', isOverRepay ? 'warn' : '');
             if ($('lbl_tr_c1')) $('lbl_tr_c1').textContent = 'Open Loan Before';
-            if ($('lbl_tr_c2')) $('lbl_tr_c2').textContent = trType === 'loan_settlement' ? 'Repayment Now' : 'Drawdown Now';
+            if ($('lbl_tr_c2')) $('lbl_tr_c2').textContent = trType === 'loan_settlement'
+              ? (isBorrowSide ? 'Settlement Paid Now' : 'Settlement Received Now')
+              : (isBorrowSide ? 'Borrowed Now' : 'Loan Given Now');
             if ($('lbl_tr_c3')) $('lbl_tr_c3').textContent = 'Loan Balance After';
             if ($('lbl_tr_c4')) $('lbl_tr_c4').textContent = 'Treasury Leg';
             setText('calc_tr_c1', cp ? fmtUSD(openBefore, 2) : '—');
             setText('calc_tr_c2', fmtUSD(thisPay, 2));
             setText('calc_tr_c3', cp ? (afterOut < -0.01 ? `Overpaid +${fmtUSD(Math.abs(afterOut), 2)}` : fmtUSD(Math.max(0, afterOut), 2)) : '—');
-            setText('calc_tr_c4', trType === 'loan_settlement' ? 'Loan Settlement' : 'Loan Drawdown');
+            setText('calc_tr_c4', trType === 'loan_settlement'
+              ? (isBorrowSide ? 'Settle Borrowed Loan (Outflow)' : 'Settle Lent Loan (Inflow)')
+              : (isBorrowSide ? 'Company Borrows (Inflow)' : 'Company Lends (Outflow)'));
           } else {
+            const dir = val('f_direction') || 'Inflow';
             const netBefore = extPos ? round2(extPos.inflow - extPos.outflow) : 0;
             const netAfter = round2(netBefore + (dir === 'Inflow' ? thisPay : -thisPay));
             if (trStrip) {
@@ -38883,6 +38997,7 @@
     FORM_UI.originMiniMapOpen = false; FORM_UI.originMapTarget = 'dest'; FORM_UI.originKmEditOpen = false;
     FORM_UI.ticketDisposition = 'standard'; FORM_UI.returnWtcSubMode = 'pair'; FORM_UI.returnRtKmManual = false; FORM_UI.lastDispMode = 'standard';
     FORM_UI.convPrimarySide = ''; FORM_UI.convRateFromAmounts = false;
+    FORM_UI.openLoanTab = ''; FORM_UI.lastLoanCp = '';
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
       window.MFG_GEO.cleanupTicketOriginMiniMap();
     }
@@ -39291,6 +39406,64 @@
           if (dEl) {
             dEl.value = /LBP/i.test(String(dEl.value || '').slice(0, 4)) ? 'USD to LBP' : 'LBP to USD';
             dEl.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          recalcForm();
+          return;
+        }
+        const loanActBtn = ev.target && ev.target.closest ? ev.target.closest('[data-loan-action]') : null;
+        if (loanActBtn) {
+          ev.preventDefault();
+          const nextAct = loanActBtn.getAttribute('data-loan-action') || 'loan';
+          if ($('f_trtype')) $('f_trtype').value = nextAct;
+          if (nextAct === 'loan' && $('f_target_loan')) $('f_target_loan').value = '';
+          recalcForm();
+          return;
+        }
+        const loanSideBtn = ev.target && ev.target.closest ? ev.target.closest('[data-loan-side]') : null;
+        if (loanSideBtn) {
+          ev.preventDefault();
+          const nextSide = loanSideBtn.getAttribute('data-loan-side') || 'Company lends';
+          if ($('f_loan_side')) $('f_loan_side').value = nextSide;
+          FORM_UI.openLoanTab = /^company\s+borrows$/i.test(nextSide) ? 'borrows' : 'lends';
+          recalcForm();
+          return;
+        }
+        const openLoanTabBtn = ev.target && ev.target.closest ? ev.target.closest('[data-open-loan-tab]') : null;
+        if (openLoanTabBtn) {
+          ev.preventDefault();
+          const nextTab = openLoanTabBtn.getAttribute('data-open-loan-tab') || 'all';
+          FORM_UI.openLoanTab = nextTab;
+          if (nextTab === 'borrows' && $('f_loan_side')) $('f_loan_side').value = 'Company borrows';
+          else if (nextTab === 'lends' && $('f_loan_side')) $('f_loan_side').value = 'Company lends';
+          recalcForm();
+          return;
+        }
+        const clearLoanCpBtn = ev.target && ev.target.closest ? ev.target.closest('[data-clear-loan-cp]') : null;
+        if (clearLoanCpBtn) {
+          ev.preventDefault();
+          if ($('f_counterparty')) $('f_counterparty').value = '';
+          if ($('f_target_loan')) $('f_target_loan').value = '';
+          FORM_UI.lastLoanCp = '';
+          recalcForm();
+          return;
+        }
+        const pickOpenLoanBtn = ev.target && ev.target.closest ? ev.target.closest('[data-pick-open-loan]') : null;
+        if (pickOpenLoanBtn) {
+          ev.preventDefault();
+          const lName = pickOpenLoanBtn.getAttribute('data-loan-name') || '';
+          const lParty = pickOpenLoanBtn.getAttribute('data-loan-party') || '';
+          const lSide = pickOpenLoanBtn.getAttribute('data-loan-side') || 'Company lends';
+          const lOpen = pickOpenLoanBtn.getAttribute('data-loan-open') || '';
+          if ($('f_trtype')) $('f_trtype').value = 'loan_settlement';
+          if ($('f_loan_side')) $('f_loan_side').value = lSide;
+          if ($('f_target_loan')) $('f_target_loan').value = lName;
+          if (lParty && $('f_counterparty')) {
+            $('f_counterparty').value = lParty;
+            FORM_UI.lastLoanCp = lParty;
+          }
+          if (lOpen && $('f_usd')) {
+            $('f_usd').value = lOpen;
+            if ($('f_lbp')) $('f_lbp').value = '';
           }
           recalcForm();
           return;
@@ -39779,9 +39952,12 @@
               const locInp = $('f_exi_loc_' + idx);
               if (locInp) locInp.value = defLoc;
             }
-            if (ev.type === 'change') {
-              renderExpenseItemsBuilderRows();
+            if (idx === 0) {
+              expItemsWrap.querySelectorAll('[data-exi-quick-item]').forEach(chip => {
+                chip.classList.toggle('active', norm(chip.getAttribute('data-exi-quick-item')) === norm(rowObj.item_name));
+              });
             }
+            syncExpenseItemStockHints(val('f_company') || defaultEntryCompany());
           }
           syncExpenseItemsSummaryUI();
         }
@@ -41562,22 +41738,27 @@
         if (!cp) addErr('f_counterparty', 'Counterparty is required.');
         if (!(amt > 0)) addErr('f_usd', 'Amount > 0 is required.');
         crKey = trt === 'loan_settlement' ? 'loan_settlements' : (trt === 'external' ? 'external_movements' : 'loans');
+        const loanSide = val('f_loan_side') || 'Company lends';
+        const isBorrow = /^company\s+borrows$/i.test(loanSide);
         const dirn = trt === 'external'
           ? (val('f_direction') || 'Inflow')
-          : (trt === 'loan_settlement' ? 'Inflow' : 'Outflow');
+          : (trt === 'loan'
+            ? loanSide
+            : (isBorrow ? 'Outflow' : 'Inflow'));
         const extKind = trt === 'external' ? (val('f_ext_kind') || 'External') : '';
         const activeRefFx = getLbpFxRate(date);
+        const targetLoanRef = val('f_target_loan') || cp;
         record = {
           ...base,
           name: `${trt.toUpperCase()} ${date} ${cp}`,
           rep_date: repDate,
           ...(extKind ? { kind: extKind } : {}),
           counterparty: cp,
-          lender: cp,
-          borrower: company,
-          loan: cp,
+          lender: (trt === 'loan' || trt === 'loan_settlement') ? (isBorrow ? cp : company) : cp,
+          borrower: (trt === 'loan' || trt === 'loan_settlement') ? (isBorrow ? company : cp) : company,
+          loan: trt === 'loan_settlement' ? targetLoanRef : cp,
           direction: dirn,
-          method: dirn,
+          method: trt === 'loan' ? (isBorrow ? 'Inflow' : 'Outflow') : dirn,
           type: trt === 'loan_settlement' ? 'Repayment' : (trt === 'loan' ? 'Drawdown' : extKind),
           from_currency: 'USD',
           to_currency: '',
@@ -41587,6 +41768,7 @@
           exchange_rate: activeRefFx,
           amount: amt,
           principal: amt,
+          settled_amount: trt === 'loan' ? 0 : amt,
           interest_rate: 0,
           balance: amt,
           start_date: date,
@@ -42263,6 +42445,45 @@
       }
       if (crKey === 'sales_tickets') {
         applyOriginPriorDisposition(record, extraApiPosts);
+      }
+      if (!isEditingExisting && crKey === 'loan_settlements') {
+        if (!Array.isArray(STATE.customRecords.loans)) STATE.customRecords.loans = [];
+        let remToSettle = Math.abs(Number(record.amount || 0));
+        const cpKey = norm(record.counterparty || record.loan || '');
+        const targetLoanKey = norm(record.loan || '');
+        const allLoansPool = STATE.customRecords.loans.concat((SEED.records && SEED.records.loans) || []);
+        const seenAllocIds = new Set();
+        const candidateLoans = [];
+        allLoansPool.forEach(l => {
+          if (!l || l.voided) return;
+          const lid = String(l.id || '');
+          if (lid && seenAllocIds.has(lid)) return;
+          if (lid) seenAllocIds.add(lid);
+          const isB = /^company\s+borrows$/i.test(String(l.direction || '')) ||
+            (l.borrower && norm(l.borrower) === norm(l.company) && norm(l.lender || l.counterparty || '') !== norm(l.company));
+          const pName = isB ? (l.lender || l.counterparty || l.borrower || '') : (l.borrower || l.counterparty || l.lender || '');
+          const isTargetMatch = targetLoanKey && norm(l.name) === targetLoanKey;
+          const isPartyMatch = cpKey && (norm(pName) === cpKey || normStaffStem(pName) === normStaffStem(record.counterparty || ''));
+          if (!isTargetMatch && !isPartyMatch) return;
+          const pr = Math.abs(Number(l.principal || l.amount || 0));
+          const st = Math.abs(Number(l.settled_amount || 0));
+          if (pr - st > 0.01) candidateLoans.push({ row: l, isTarget: isTargetMatch });
+        });
+        candidateLoans.sort((a, b) => (b.isTarget ? 1 : 0) - (a.isTarget ? 1 : 0) || String(a.row.date || '').localeCompare(String(b.row.date || '')));
+        candidateLoans.forEach(({ row: l }) => {
+          if (remToSettle <= 0.01) return;
+          const pr = Math.abs(Number(l.principal || l.amount || 0));
+          const st = Math.abs(Number(l.settled_amount || 0));
+          const openBal = Math.max(0, round2(pr - st));
+          if (openBal <= 0.01) return;
+          const applyAmt = round2(Math.min(openBal, remToSettle));
+          l.settled_amount = round2(st + applyAmt);
+          remToSettle = round2(remToSettle - applyAmt);
+          const cIdx = STATE.customRecords.loans.findIndex(x => x && String(x.id) === String(l.id));
+          if (cIdx >= 0) Object.assign(STATE.customRecords.loans[cIdx], l);
+          else STATE.customRecords.loans.unshift(Object.assign({}, l));
+          extraApiPosts.push(['loans', Object.assign({}, l)]);
+        });
       }
       if (crKey === 'sites' && window.MFG_GEO && record.latitude != null && record.longitude != null) {
         window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: record.id, siteCategory: record.site_category, name: record.name, lat: record.latitude, lng: record.longitude, region: record.region }, { SEED, STATE });
@@ -43072,13 +43293,14 @@
         if ($('f_for_equipment')) $('f_for_equipment').value = '0';
         if ($('f_category') && !val('f_category')) $('f_category').value = 'Spare Parts';
         const defLoc = defaultWarehouseLocationForCompany(val('f_company') || defaultEntryCompany());
+        const pfQty = prefill.qty != null ? (Number(prefill.qty) || 1) : 1;
         FORM_UI.expItems = [{
           item_name: prefill.item || '',
           allocation_mode: 'warehouse',
           target_equipment: '',
           warehouse_location: defLoc,
-          qty: 1,
-          uom: (prefill.item && resolveCatalogItem(prefill.item) && resolveCatalogItem(prefill.item).uom) || 'Piece',
+          qty: pfQty,
+          uom: (prefill.item && resolveCatalogItem(prefill.item) && resolveCatalogItem(prefill.item).uom) || prefill.uom || 'Piece',
           unit_cost: 0
         }];
         renderExpenseItemsBuilderRows();
@@ -43092,6 +43314,7 @@
             $('f_exp_item_name').value = prefill.item;
             FORM_UI.lastExpStoreItem = '';
           }
+          const pfQty = prefill.qty != null ? (Number(prefill.qty) || 1) : 1;
           if (!Array.isArray(FORM_UI.expItems) || !FORM_UI.expItems.length) {
             const isWh = val('f_store_warehouse') === '1';
             const defLoc = defaultWarehouseLocationForCompany(val('f_company') || defaultEntryCompany());
@@ -43100,19 +43323,23 @@
               allocation_mode: isWh ? 'warehouse' : 'same_equipment',
               target_equipment: val('f_truck') || '',
               warehouse_location: defLoc,
-              qty: 1,
-              uom: 'Piece',
+              qty: pfQty,
+              uom: prefill.uom || 'Piece',
               unit_cost: 0
             }];
           } else {
             FORM_UI.expItems[0].item_name = prefill.item;
+            if (prefill.qty != null) FORM_UI.expItems[0].qty = pfQty;
           }
           const catIt = resolveCatalogItem(prefill.item);
-          const whMeta = warehouseCatalogItemMeta(prefill.item, val('f_company') || defaultEntryCompany());
+          const whMeta = getWarehouseIndex(val('f_company') || defaultEntryCompany()).byKey[norm(prefill.item)];
           if (catIt && catIt.uom) FORM_UI.expItems[0].uom = catIt.uom;
           else if (whMeta && whMeta.uom) FORM_UI.expItems[0].uom = whMeta.uom;
+          else if (prefill.uom) FORM_UI.expItems[0].uom = prefill.uom;
           if (whMeta && whMeta.avgUnitCost > 0 && !(Number(FORM_UI.expItems[0].unit_cost) > 0)) {
             FORM_UI.expItems[0].unit_cost = round2(whMeta.avgUnitCost);
+          } else if (catIt && Number(catIt.default_cost) > 0 && !(Number(FORM_UI.expItems[0].unit_cost) > 0)) {
+            FORM_UI.expItems[0].unit_cost = round2(Number(catIt.default_cost));
           }
           renderExpenseItemsBuilderRows();
         } else if (form === 'repair' && FORM_UI.repairItems && FORM_UI.repairItems[0]) {
@@ -43143,6 +43370,24 @@
       if (prefill.sub && $('f_subsystem')) $('f_subsystem').value = prefill.sub;
       if (prefill.disp && $('f_disposition')) $('f_disposition').value = prefill.disp;
       if (prefill.party && $('f_vendor_buyer')) $('f_vendor_buyer').value = prefill.party;
+      if (prefill.party && $('f_counterparty')) {
+        $('f_counterparty').value = prefill.party;
+        FORM_UI.lastLoanCp = prefill.party;
+      }
+      if ((prefill.trtype || prefill.trType) && $('f_trtype')) {
+        $('f_trtype').value = prefill.trtype || prefill.trType;
+      }
+      if ((prefill.loanside || prefill.loanSide) && $('f_loan_side')) {
+        $('f_loan_side').value = prefill.loanside || prefill.loanSide;
+        FORM_UI.openLoanTab = /^company\s+borrows$/i.test($('f_loan_side').value) ? 'borrows' : 'lends';
+      }
+      if (prefill.loan && $('f_target_loan')) {
+        $('f_target_loan').value = prefill.loan;
+      }
+      if (prefill.usd != null && prefill.usd !== '' && $('f_usd')) {
+        $('f_usd').value = String(prefill.usd);
+        if ($('f_lbp')) $('f_lbp').value = '';
+      }
       if (prefill.cost != null && prefill.cost !== '' && $('f_new_cost')) $('f_new_cost').value = prefill.cost;
       if (prefill.notes && $('f_notes')) $('f_notes').value = prefill.notes;
       recalcForm();
@@ -43634,7 +43879,16 @@
         setModalControlVal('f_fxrate', row.fx_rate || row.exchange_rate || getLbpFxRate(txDate || todayISO()));
         setModalControlVal('f_reference', row.reference || '');
       } else {
-        setModalControlVal('f_counterparty', row.counterparty || row.lender || row.loan || '');
+        const isBorrowRow = /^company\s+borrows$/i.test(String(row.direction || '')) ||
+          (trt === 'loan_settlement' && /out/i.test(String(row.direction || row.method || ''))) ||
+          (row.borrower && norm(row.borrower) === norm(row.company) && norm(row.lender || row.counterparty || '') !== norm(row.company));
+        const cpVal = isBorrowRow
+          ? (row.lender || row.counterparty || row.loan || '')
+          : (row.borrower || row.counterparty || row.lender || row.loan || '');
+        setModalControlVal('f_counterparty', cpVal);
+        FORM_UI.lastLoanCp = cpVal;
+        if ($('f_loan_side')) setModalControlVal('f_loan_side', isBorrowRow ? 'Company borrows' : 'Company lends');
+        if ($('f_target_loan') && trt === 'loan_settlement') setModalControlVal('f_target_loan', row.loan || '');
         const rawDir = String(row.direction || row.method || '');
         const normDir = /out|lend|gave|sweep/i.test(rawDir) ? 'Outflow' : 'Inflow';
         setModalControlVal('f_direction', normDir);
@@ -44010,7 +44264,7 @@
     if (key === 'items') {
       const catIt = resolveCatalogItem(q);
       if (catIt) return catIt;
-      const whMeta = warehouseCatalogItemMeta(q);
+      const whMeta = getWarehouseIndex().byKey[norm(q)];
       return { id: q, name: q, item_name: q, category: (whMeta && whMeta.category) || 'Spare Parts', uom: (whMeta && whMeta.uom) || 'Piece', default_cost: (whMeta && whMeta.avgUnitCost) || 0, default_location: (whMeta && whMeta.location) || 'WTC Main Warehouse', min_stock: (whMeta && whMeta.min_stock) || 0 };
     }
     if (key === 'sites') {
@@ -44178,7 +44432,7 @@
     }
     if (key === 'items') {
       const itName = row.name || row.item_name || '';
-      const whMeta = warehouseCatalogItemMeta(itName);
+      const whMeta = getWarehouseIndex().byKey[norm(itName)];
       const onHand = whMeta ? whMeta.onHandQty : 0;
       const avgC = whMeta && whMeta.avgUnitCost > 0 ? whMeta.avgUnitCost : Number(row.default_cost || 0);
       return {
@@ -52951,6 +53205,13 @@
       custom_end: '16:00',
       custom_days: [1, 2, 3, 4, 5, 6],
       grace_min: 10,
+      early_leave_grace_min: 5,
+      late_when: 'both',
+      late_count_from: 'shift_start',
+      late_penalty_mode: 'exact_hours',
+      late_multiplier: 1.5,
+      late_half_day_after_min: 60,
+      no_clock_out_rule: 'half_day',
       shift_overrides: [],
       ot_mode: 'none',
       ot_max_hours: 2,
@@ -52959,6 +53220,18 @@
       ot_passes: [],
       updated_at: ''
     }, raw && !raw.reset_default ? raw : {});
+    base.grace_min = Math.max(0, Math.min(120, Number(base.grace_min != null ? base.grace_min : 10)));
+    base.early_leave_grace_min = Math.max(0, Math.min(120, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : 5)));
+    base.late_when = ['both', 'arrival_only', 'short_hours'].includes(base.late_when) ? base.late_when : 'both';
+    base.late_count_from = ['shift_start', 'after_grace'].includes(base.late_count_from) ? base.late_count_from : 'shift_start';
+    base.late_penalty_mode = ['exact_hours', 'multiplier', 'round_hour', 'tiered_half_day', 'half_day_any', 'none'].includes(base.late_penalty_mode)
+      ? base.late_penalty_mode
+      : 'exact_hours';
+    base.late_multiplier = Math.max(1, Math.min(5, Number(base.late_multiplier != null ? base.late_multiplier : 1.5)));
+    base.late_half_day_after_min = Math.max(5, Math.min(360, Number(base.late_half_day_after_min != null ? base.late_half_day_after_min : 60)));
+    base.no_clock_out_rule = ['half_day', 'full_absence', 'deduct_2h', 'auto_shift_end'].includes(base.no_clock_out_rule)
+      ? base.no_clock_out_rule
+      : 'half_day';
     base.ot_mode = ['none', 'always', 'max_hours', 'date_range'].includes(base.ot_mode) ? base.ot_mode : 'none';
     base.ot_max_hours = Math.max(0, Number(base.ot_max_hours != null ? base.ot_max_hours : 2));
     base.ot_window_start = fmtAttClockTime(base.ot_window_start || '');
@@ -52973,7 +53246,7 @@
     return base;
   }
 
-  function saveStaffWorkRule(staffName, patch = {}) {
+  function saveStaffWorkRule(staffName, patch = {}, opts = {}) {
     const k = norm(staffName);
     if (!k) return { ok: false, error: 'Staff member is required' };
     const ws = ensureWorkSchedulesState();
@@ -52984,6 +53257,18 @@
       reset_default: false,
       updated_at: nowIso
     });
+    next.grace_min = Math.max(0, Math.min(120, Number(next.grace_min != null ? next.grace_min : 10)));
+    next.early_leave_grace_min = Math.max(0, Math.min(120, Number(next.early_leave_grace_min != null ? next.early_leave_grace_min : 5)));
+    next.late_when = ['both', 'arrival_only', 'short_hours'].includes(next.late_when) ? next.late_when : 'both';
+    next.late_count_from = ['shift_start', 'after_grace'].includes(next.late_count_from) ? next.late_count_from : 'shift_start';
+    next.late_penalty_mode = ['exact_hours', 'multiplier', 'round_hour', 'tiered_half_day', 'half_day_any', 'none'].includes(next.late_penalty_mode)
+      ? next.late_penalty_mode
+      : 'exact_hours';
+    next.late_multiplier = Math.max(1, Math.min(5, Number(next.late_multiplier != null ? next.late_multiplier : 1.5)));
+    next.late_half_day_after_min = Math.max(5, Math.min(360, Number(next.late_half_day_after_min != null ? next.late_half_day_after_min : 60)));
+    next.no_clock_out_rule = ['half_day', 'full_absence', 'deduct_2h', 'auto_shift_end'].includes(next.no_clock_out_rule)
+      ? next.no_clock_out_rule
+      : 'half_day';
     next.ot_mode = ['none', 'always', 'max_hours', 'date_range'].includes(next.ot_mode) ? next.ot_mode : 'none';
     next.ot_max_hours = Math.max(0, Number(next.ot_max_hours != null ? next.ot_max_hours : 0));
     next.ot_window_start = fmtAttClockTime(next.ot_window_start || '');
@@ -52996,9 +53281,14 @@
     next.shift_overrides = Array.isArray(next.shift_overrides) ? next.shift_overrides.filter(o => o && o.start_date) : [];
     next.ot_passes = Array.isArray(next.ot_passes) ? next.ot_passes.filter(p => p && p.start_date) : [];
     ws.staffRules[k] = next;
-    saveLocalAuthAndRecords();
-    postWorkScheduleMutation({ op: 'upsert_staff_rule', key: k, item: next });
-    syncWithCloud(true);
+    if (!opts.skipRecalc) {
+      recalcStaffTodayPunchAndAttendance(next.staff || staffName);
+    }
+    if (!opts.deferSave) {
+      saveLocalAuthAndRecords();
+      postWorkScheduleMutation({ op: 'upsert_staff_rule', key: k, item: next });
+      syncWithCloud(true);
+    }
     return { ok: true, rule: next };
   }
 
@@ -53009,6 +53299,7 @@
     const nowIso = new Date().toISOString();
     const tomb = { staff: staffName, reset_default: true, updated_at: nowIso };
     ws.staffRules[k] = tomb;
+    recalcStaffTodayPunchAndAttendance(staffName);
     saveLocalAuthAndRecords();
     postWorkScheduleMutation({ op: 'upsert_staff_rule', key: k, item: tomb });
     syncWithCloud(true);
@@ -53286,6 +53577,107 @@
     };
   }
 
+  function formatMinutesAsClockTime(totalMinutes) {
+    const wrapped = ((Math.round(Number(totalMinutes || 0)) % 1440) + 1440) % 1440;
+    const hh = String(Math.floor(wrapped / 60)).padStart(2, '0');
+    const mm = String(wrapped % 60).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+
+  function describeStaffLatenessRule(staffName, company, refDate = todayISO()) {
+    const dStr = String(refDate || todayISO()).slice(0, 10);
+    const rule = getStaffWorkRule(staffName, company);
+    const shift = resolveStaffShiftForDate(staffName, company, dStr);
+    const graceMin = Math.max(0, Number(shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10)));
+    const earlyGraceMin = Math.max(0, Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : 5));
+    const schedStartMin = parseClockMinutes(shift.start_time) ?? 480;
+    const cutoffTime = formatMinutesAsClockTime(schedStartMin + graceMin);
+    const lateWhen = rule.late_when || 'both';
+    const countFrom = rule.late_count_from || 'shift_start';
+    const penaltyMode = rule.late_penalty_mode || 'exact_hours';
+    const mult = Number(rule.late_multiplier || 1.5);
+    const hdMin = Number(rule.late_half_day_after_min || 60);
+    const noOutRule = rule.no_clock_out_rule || 'half_day';
+
+    const whenLabels = {
+      both: 'IN + Early OUT',
+      arrival_only: 'Clock-IN Only',
+      short_hours: 'Shift Shortfall'
+    };
+    const countFromLabels = {
+      shift_start: 'From Shift Start',
+      after_grace: 'After Grace'
+    };
+    let penaltyLabel = 'Exact Hours (1x)';
+    let penaltyShort = '1x Hours';
+    let tone = 'sapphire';
+    if (penaltyMode === 'multiplier') {
+      penaltyLabel = `Rate ${fmtNum(mult, mult % 1 ? 1 : 0)}x`;
+      penaltyShort = `${fmtNum(mult, mult % 1 ? 1 : 0)}x Rate`;
+      tone = 'amber';
+    } else if (penaltyMode === 'round_hour') {
+      penaltyLabel = 'Round Up 1h';
+      penaltyShort = 'Round 1h';
+      tone = 'amber';
+    } else if (penaltyMode === 'tiered_half_day') {
+      penaltyLabel = `1x / >=${hdMin}m = Half Day`;
+      penaltyShort = `>=${hdMin}m = 0.5d`;
+      tone = 'rose';
+    } else if (penaltyMode === 'half_day_any') {
+      penaltyLabel = 'Late = Half Day (0.5d)';
+      penaltyShort = 'Late = 0.5d';
+      tone = 'rose';
+    } else if (penaltyMode === 'none') {
+      penaltyLabel = 'Track Only ($0)';
+      penaltyShort = 'No Ded. ($0)';
+      tone = 'muted';
+    }
+
+    let noOutLabel = 'No OUT = Half Day (0.5d)';
+    let noOutShort = 'No OUT: 0.5d';
+    let noOutTone = 'amber';
+    if (noOutRule === 'full_absence') {
+      noOutLabel = 'No OUT = Absent (1.0d)';
+      noOutShort = 'No OUT: 1.0d';
+      noOutTone = 'rose';
+    } else if (noOutRule === 'deduct_2h') {
+      noOutLabel = 'No OUT = -2.0h Late';
+      noOutShort = 'No OUT: -2h';
+      noOutTone = 'amber';
+    } else if (noOutRule === 'auto_shift_end') {
+      noOutLabel = 'No OUT = Full Shift';
+      noOutShort = 'No OUT: Full';
+      noOutTone = 'emerald';
+    }
+
+    const toleranceBadge = graceMin === 0
+      ? `Strict 0m (>${shift.start_time})`
+      : `Grace ${graceMin}m (>${cutoffTime})`;
+
+    return {
+      graceMin,
+      earlyGraceMin,
+      cutoffTime,
+      toleranceBadge,
+      lateWhen,
+      whenLabel: whenLabels[lateWhen] || whenLabels.both,
+      countFrom,
+      countFromLabel: countFromLabels[countFrom] || countFromLabels.shift_start,
+      penaltyMode,
+      penaltyLabel,
+      penaltyShort,
+      lateMultiplier: mult,
+      lateHalfDayAfterMin: hdMin,
+      noOutRule,
+      noOutLabel,
+      noOutShort,
+      noOutTone,
+      badgeText: `${penaltyShort} · ${noOutShort}`,
+      subText: `${toleranceBadge} · ${whenLabels[lateWhen] || whenLabels.both}`,
+      tone
+    };
+  }
+
   function intervalOverlapMinutes(aStart, aEnd, bStart, bEnd) {
     if (aEnd <= aStart || bEnd <= bStart) return 0;
     return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
@@ -53303,6 +53695,99 @@
     const schedDurMin = shift.isWorkday ? Math.max(0, schedEndMin - schedStartMin) : 0;
     const scheduledHours = round1(schedDurMin / 60);
 
+    const graceMin = Math.max(0, Number(shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10)));
+    const earlyGraceMin = Math.max(0, Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : 5));
+    const lateCutoffTime = formatMinutesAsClockTime(schedStartMin + graceMin);
+    const lateWhen = rule.late_when || 'both';
+    const countFrom = rule.late_count_from || 'shift_start';
+    const penaltyMode = rule.late_penalty_mode || 'exact_hours';
+    const mult = Number(rule.late_multiplier || 1.5);
+    const hdAfterMin = Number(rule.late_half_day_after_min || 60);
+    const noOutRule = rule.no_clock_out_rule || 'half_day';
+
+    const computePenaltyFromRawMin = (rawMin, hasMissingOut) => {
+      const cleanRawMin = Math.max(0, Math.round(Number(rawMin || 0)));
+      const rawLateHours = round1(cleanRawMin / 60);
+      let billableLateHours = 0;
+      let penaltyLeaveDays = 0;
+      let penaltyStatus = 'On Time';
+      let penaltySummary = 'On Time';
+
+      if (cleanRawMin > 0) {
+        if (penaltyMode === 'none') {
+          billableLateHours = 0;
+          penaltyStatus = 'Late (Track Only)';
+          penaltySummary = `Late ${cleanRawMin}m (Track Only, $0 Ded.)`;
+        } else if (penaltyMode === 'half_day_any') {
+          penaltyLeaveDays = 0.5;
+          billableLateHours = 0;
+          penaltyStatus = 'Half Day';
+          penaltySummary = `Late ${cleanRawMin}m = Half Day (0.5d)`;
+        } else if (penaltyMode === 'tiered_half_day') {
+          if (cleanRawMin >= hdAfterMin) {
+            penaltyLeaveDays = 0.5;
+            billableLateHours = 0;
+            penaltyStatus = 'Half Day';
+            penaltySummary = `Late ${cleanRawMin}m (>=${hdAfterMin}m) = Half Day (0.5d)`;
+          } else {
+            billableLateHours = rawLateHours;
+            penaltyStatus = 'Lateness';
+            penaltySummary = `Late ${cleanRawMin}m (-${fmtNum(billableLateHours, 1)}h)`;
+          }
+        } else if (penaltyMode === 'round_hour') {
+          billableLateHours = Math.max(1, Math.ceil(cleanRawMin / 60));
+          penaltyStatus = 'Lateness';
+          penaltySummary = `Late ${cleanRawMin}m -> Rounded -${fmtNum(billableLateHours, 1)}h`;
+        } else if (penaltyMode === 'multiplier') {
+          billableLateHours = round1((cleanRawMin / 60) * mult);
+          penaltyStatus = 'Lateness';
+          penaltySummary = `Late ${cleanRawMin}m x${fmtNum(mult, 1)} = -${fmtNum(billableLateHours, 1)}h`;
+        } else {
+          billableLateHours = rawLateHours;
+          penaltyStatus = 'Lateness';
+          penaltySummary = `Late ${cleanRawMin}m (-${fmtNum(billableLateHours, 1)}h)`;
+        }
+      }
+
+      let noOutPenaltyText = '';
+      if (hasMissingOut && shift.isWorkday) {
+        if (noOutRule === 'half_day') {
+          penaltyLeaveDays = Math.max(penaltyLeaveDays, 0.5);
+          penaltyStatus = penaltyLeaveDays >= 1 ? 'Absence' : 'Half Day';
+          noOutPenaltyText = 'Missing Clock-OUT = Half Day (0.5d)';
+          penaltySummary = cleanRawMin > 0
+            ? `${noOutPenaltyText} · Arrived Late ${cleanRawMin}m`
+            : noOutPenaltyText;
+        } else if (noOutRule === 'full_absence') {
+          penaltyLeaveDays = 1.0;
+          penaltyStatus = 'Absence';
+          noOutPenaltyText = 'Missing Clock-OUT = Full Absence (1.0d)';
+          penaltySummary = cleanRawMin > 0
+            ? `${noOutPenaltyText} · Arrived Late ${cleanRawMin}m`
+            : noOutPenaltyText;
+        } else if (noOutRule === 'deduct_2h') {
+          billableLateHours = round1(billableLateHours + 2.0);
+          penaltyStatus = 'Lateness';
+          noOutPenaltyText = 'Missing Clock-OUT = +2.0h Lateness';
+          penaltySummary = cleanRawMin > 0
+            ? `Late ${cleanRawMin}m + Missing OUT (+2.0h) = -${fmtNum(billableLateHours, 1)}h`
+            : `Missing Clock-OUT = -2.0h Lateness`;
+        } else if (noOutRule === 'auto_shift_end') {
+          noOutPenaltyText = 'Missing Clock-OUT = Auto Full Shift';
+        }
+      }
+
+      return {
+        rawLateMin: cleanRawMin,
+        rawLateHours,
+        billableLateHours,
+        penaltyLeaveDays,
+        penaltyStatus,
+        penaltySummary,
+        noOutPenaltyText
+      };
+    };
+
     const rawInMin = parseClockMinutes(inTime);
     if (rawInMin == null) {
       return {
@@ -53313,8 +53798,19 @@
         workedHours: 0,
         regularHours: 0,
         lateHours: 0,
+        rawLateHours: 0,
+        rawLateMin: 0,
         arrivalLateMin: 0,
         earlyLeaveMin: 0,
+        shortfallMin: 0,
+        penaltyLeaveDays: 0,
+        penaltyStatus: 'Off Site',
+        penaltySummary: 'No Clock-IN',
+        noOutRule,
+        noOutPenaltyText: '',
+        lateCutoffTime,
+        graceMin,
+        earlyGraceMin,
         rawExtraHours: 0,
         overtimeHours: 0,
         unapprovedOtHours: 0,
@@ -53325,22 +53821,40 @@
     const actualInMin = (shift.overnight && rawInMin < 480 && schedStartMin >= 960 && (!opts.inSameCalendarDay))
       ? (rawInMin + 1440)
       : rawInMin;
-    const graceMin = Math.max(0, Number(shift.grace_min != null ? shift.grace_min : 10));
     const rawLateIn = shift.isWorkday ? Math.max(0, actualInMin - schedStartMin) : 0;
-    const arrivalLateMin = rawLateIn > graceMin ? rawLateIn : 0;
+    const arrivalLateMin = rawLateIn > graceMin
+      ? (countFrom === 'after_grace' ? Math.max(0, rawLateIn - graceMin) : rawLateIn)
+      : 0;
 
     const rawOutMin = parseClockMinutes(outTime);
     if (rawOutMin == null) {
+      const effRawMinNoOut = lateWhen === 'short_hours' ? 0 : arrivalLateMin;
+      const penNoOut = computePenaltyFromRawMin(effRawMinNoOut, true);
+      const effWorkedNoOut = noOutRule === 'half_day'
+        ? round1(scheduledHours * 0.5)
+        : (noOutRule === 'auto_shift_end' ? scheduledHours : 0);
       return {
         shift,
         rule,
         hasOut: false,
         scheduledHours,
-        workedHours: 0,
-        regularHours: 0,
-        lateHours: round1(arrivalLateMin / 60),
+        workedHours: effWorkedNoOut,
+        regularHours: effWorkedNoOut,
+        lateHours: penNoOut.penaltyLeaveDays > 0 ? 0 : penNoOut.billableLateHours,
+        rawLateHours: penNoOut.rawLateHours,
+        rawLateMin: penNoOut.rawLateMin,
+        billableLateHours: penNoOut.billableLateHours,
         arrivalLateMin,
         earlyLeaveMin: 0,
+        shortfallMin: 0,
+        penaltyLeaveDays: penNoOut.penaltyLeaveDays,
+        penaltyStatus: penNoOut.penaltyStatus,
+        penaltySummary: penNoOut.penaltySummary,
+        noOutRule,
+        noOutPenaltyText: penNoOut.noOutPenaltyText,
+        lateCutoffTime,
+        graceMin,
+        earlyGraceMin,
         rawExtraHours: 0,
         overtimeHours: 0,
         unapprovedOtHours: 0,
@@ -53368,7 +53882,9 @@
     } else {
       inWindowMin = intervalOverlapMinutes(actualInMin, actualOutMin, schedStartMin, schedEndMin);
       const rawEarlyOut = Math.max(0, schedEndMin - actualOutMin);
-      earlyLeaveMin = rawEarlyOut > 5 ? rawEarlyOut : 0;
+      earlyLeaveMin = rawEarlyOut > earlyGraceMin
+        ? (countFrom === 'after_grace' ? Math.max(0, rawEarlyOut - earlyGraceMin) : rawEarlyOut)
+        : 0;
       if ((schedStartMin - actualInMin) >= 15) {
         extraIntervals.push([actualInMin, Math.min(actualOutMin, schedStartMin)]);
       }
@@ -53377,9 +53893,21 @@
       }
     }
 
+    const shortfallRawMin = shift.isWorkday ? Math.max(0, schedDurMin - workedMin) : 0;
+    const shortfallMin = shortfallRawMin > graceMin
+      ? (countFrom === 'after_grace' ? Math.max(0, shortfallRawMin - graceMin) : shortfallRawMin)
+      : 0;
+    let effectiveRawLateMin = arrivalLateMin + earlyLeaveMin;
+    if (lateWhen === 'arrival_only') {
+      effectiveRawLateMin = arrivalLateMin;
+    } else if (lateWhen === 'short_hours') {
+      effectiveRawLateMin = shortfallMin;
+    }
+
+    const penOut = computePenaltyFromRawMin(effectiveRawLateMin, false);
     const rawExtraMin = extraIntervals.reduce((acc, [s, e]) => acc + Math.max(0, e - s), 0);
     const rawExtraHours = round1(rawExtraMin / 60);
-    const lateHours = round1((arrivalLateMin + earlyLeaveMin) / 60);
+    const lateHours = penOut.penaltyLeaveDays > 0 ? 0 : penOut.billableLateHours;
 
     let approvedOtMin = 0;
     let otReason = '';
@@ -53431,8 +53959,20 @@
       workedHours,
       regularHours,
       lateHours,
+      rawLateHours: penOut.rawLateHours,
+      rawLateMin: penOut.rawLateMin,
+      billableLateHours: penOut.billableLateHours,
       arrivalLateMin,
       earlyLeaveMin,
+      shortfallMin,
+      penaltyLeaveDays: penOut.penaltyLeaveDays,
+      penaltyStatus: penOut.penaltyStatus,
+      penaltySummary: penOut.penaltySummary,
+      noOutRule,
+      noOutPenaltyText: '',
+      lateCutoffTime,
+      graceMin,
+      earlyGraceMin,
       rawExtraHours,
       overtimeHours,
       unapprovedOtHours,
@@ -53687,6 +54227,7 @@
       const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
       const shiftToday = resolveStaffShiftForDate(nm, co, today);
       const otToday = describeStaffOvertimeRule(nm, co, today);
+      const lateToday = describeStaffLatenessRule(nm, co, today);
       out.push({
         id: u.id,
         name: nm,
@@ -53696,6 +54237,7 @@
         schedHours: shiftToday.hours || staffScheduledHours(nm, co),
         shift: shiftToday,
         otDesc: otToday,
+        lateDesc: lateToday,
         pin: explicitPin || (IS_DEMO ? makeDemoPin(k) : ''),
         hasExplicitPin: Boolean(explicitPin),
         hasFace: faceInfo.samples.length > 0,
@@ -53718,6 +54260,7 @@
         const faceInfo = getStaffFaceSamplesAndThumbs(nm, u);
         const shiftToday = resolveStaffShiftForDate(nm, empCo, today);
         const otToday = describeStaffOvertimeRule(nm, empCo, today);
+        const lateToday = describeStaffLatenessRule(nm, empCo, today);
         out.push({
           id: emp.id || ('emp-' + k),
           name: nm,
@@ -53727,6 +54270,7 @@
           schedHours: shiftToday.hours || Number(emp.working_hours || 0) || staffScheduledHours(nm, empCo),
           shift: shiftToday,
           otDesc: otToday,
+          lateDesc: lateToday,
           pin: explicitPin || (IS_DEMO ? makeDemoPin(k) : ''),
           hasExplicitPin: Boolean(explicitPin),
           hasFace: faceInfo.samples.length > 0,
@@ -53807,18 +54351,62 @@
       && !/^(extra|config)/i.test(String(a.type || a.status || ''))
     );
 
+    const inT = punch.direction === 'IN' ? punch.time : (punch.in_time || (attRec ? (attRec.in_time || attRec.check_in || '') : ''));
+    const outT = punch.direction === 'OUT' ? punch.time : '';
+    const evalRes = evaluateShiftPunchTiming(punch.staff, coName, shiftDateStr, inT, outT, {
+      outDate: punch.date,
+      inSameCalendarDay: shiftDateStr === String(punch.date || shiftDateStr).slice(0, 10)
+    });
+
+    const workedH = punch.direction === 'OUT'
+      ? (punch.paired_hours != null ? punch.paired_hours : evalRes.workedHours)
+      : evalRes.workedHours;
+    const otH = punch.direction === 'OUT'
+      ? (punch.overtime_hours != null ? punch.overtime_hours : evalRes.overtimeHours)
+      : 0;
+    const unappOt = punch.direction === 'OUT'
+      ? (punch.unapproved_ot_hours != null ? punch.unapproved_ot_hours : evalRes.unapprovedOtHours)
+      : 0;
+    const penLeaveDays = Number(evalRes.penaltyLeaveDays || 0);
+    const ltH = penLeaveDays > 0 ? 0 : Number(evalRes.lateHours || 0);
+    const rawLtH = Number(evalRes.rawLateHours || 0);
+    const rawLtMin = Number(evalRes.rawLateMin || 0);
+    const effType = otH > 0
+      ? 'Overtime'
+      : (penLeaveDays >= 1
+        ? 'Absence'
+        : (penLeaveDays >= 0.5
+          ? 'Half Day'
+          : (ltH > 0 ? 'Lateness' : 'Present')));
+    const effTally = otH > 0
+      ? otH
+      : (penLeaveDays > 0
+        ? penLeaveDays
+        : (ltH > 0 ? ltH : workedH));
+
+    // Synchronize live evaluation onto the punch object
+    punch.late_hours = ltH;
+    punch.raw_late_hours = rawLtH;
+    punch.raw_late_min = rawLtMin;
+    punch.penalty_leave_days = penLeaveDays;
+    punch.penalty_status = evalRes.penaltyStatus || effType;
+    punch.penalty_summary = evalRes.penaltySummary || '';
+    punch.no_out_rule = punch.direction === 'IN' ? (evalRes.noOutRule || 'half_day') : '';
+    punch.late_cutoff = evalRes.lateCutoffTime || '';
+    if (punch.direction === 'OUT' && inT) {
+      punch.paired_hours = workedH;
+      punch.overtime_hours = otH;
+      punch.unapproved_ot_hours = unappOt;
+    }
+
+    const noteParts = [`Kiosk ${punch.method || 'PIN'} (${inT ? 'IN ' + inT : ''}${outT ? (inT ? ' · ' : '') + 'OUT ' + outT : ' · OUT Pending'})`];
+    noteParts.push(shiftObj.badgeLabel);
+    if (evalRes.penaltySummary && evalRes.penaltySummary !== 'On Time') {
+      noteParts.push(evalRes.penaltySummary);
+    }
+    if (unappOt > 0) noteParts.push(`${fmtNum(unappOt, 1)}h unapproved OT (0h paid)`);
+
     if (!attRec) {
-      const inT = punch.direction === 'IN' ? punch.time : (punch.in_time || '');
-      const outT = punch.direction === 'OUT' ? punch.time : '';
-      const evalRes = evaluateShiftPunchTiming(punch.staff, coName, shiftDateStr, inT, outT, { outDate: punch.date });
-      const workedH = punch.paired_hours != null ? punch.paired_hours : evalRes.workedHours;
-      const otH = punch.overtime_hours != null ? punch.overtime_hours : evalRes.overtimeHours;
-      const ltH = punch.late_hours != null ? punch.late_hours : evalRes.lateHours;
-      const unappOt = punch.unapproved_ot_hours != null ? punch.unapproved_ot_hours : evalRes.unapprovedOtHours;
-      const effType = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
-      const noteParts = [`Kiosk ${punch.method} (${inT ? 'IN ' + inT : ''}${outT ? (inT ? ' · ' : '') + 'OUT ' + outT : ''})`];
-      noteParts.push(shiftObj.badgeLabel);
-      if (unappOt > 0) noteParts.push(`${fmtNum(unappOt, 1)}h unapproved OT (0h paid)`);
       attRec = {
         id: uid('at'),
         date: shiftDateStr,
@@ -53842,7 +54430,13 @@
         overtime_hours: otH,
         unapproved_ot_hours: unappOt,
         late_hours: ltH,
-        tally: otH > 0 ? otH : (ltH > 0 ? ltH : workedH),
+        raw_late_hours: rawLtH,
+        raw_late_min: rawLtMin,
+        leave_days: penLeaveDays,
+        no_out_rule: punch.no_out_rule,
+        penalty_summary: evalRes.penaltySummary || '',
+        late_cutoff: evalRes.lateCutoffTime || '',
+        tally: effTally,
         source: 'app',
         entered_by: activeUser().full_name,
         entered_by_email: activeUser().email,
@@ -53852,55 +54446,43 @@
       };
       STATE.customRecords.attendance.unshift(attRec);
     } else {
-      if (punch.direction === 'IN') {
-        attRec.check_in = punch.time;
-        attRec.in_time = punch.time;
-        attRec.out_time = '';
-        attRec.check_out = '';
-        const evalIn = evaluateShiftPunchTiming(punch.staff, coName, shiftDateStr, punch.time, '');
-        attRec.worked_hours = 0;
-        attRec.regular_hours = 0;
-        attRec.overtime_hours = 0;
-        attRec.unapproved_ot_hours = 0;
-        attRec.late_hours = punch.late_hours != null ? punch.late_hours : evalIn.lateHours;
-        attRec.type = attRec.late_hours > 0 ? 'Lateness' : 'Present';
-        attRec.status = attRec.type;
-        attRec.tally = attRec.late_hours > 0 ? attRec.late_hours : 0;
-      } else if (punch.direction === 'OUT') {
-        attRec.check_out = punch.time;
-        attRec.out_time = punch.time;
-        if (!attRec.in_time && punch.in_time) {
-          attRec.in_time = punch.in_time;
-          attRec.check_in = punch.in_time;
-        }
-        const inTimeRef = attRec.in_time || attRec.check_in || '';
-        const evalOut = inTimeRef
-          ? evaluateShiftPunchTiming(punch.staff, coName, shiftDateStr, inTimeRef, punch.time, { outDate: punch.date })
-          : null;
-        const workedH = punch.paired_hours != null ? punch.paired_hours : (evalOut ? evalOut.workedHours : 0);
-        const otH = punch.overtime_hours != null ? punch.overtime_hours : (evalOut ? evalOut.overtimeHours : 0);
-        const ltH = punch.late_hours != null ? punch.late_hours : (evalOut ? evalOut.lateHours : 0);
-        const unappOt = punch.unapproved_ot_hours != null ? punch.unapproved_ot_hours : (evalOut ? evalOut.unapprovedOtHours : 0);
-        attRec.worked_hours = workedH;
-        attRec.regular_hours = evalOut && evalOut.hasOut ? evalOut.regularHours : Math.round(Math.min(schedH, workedH) * 10) / 10;
-        attRec.overtime_hours = otH;
-        attRec.unapproved_ot_hours = unappOt;
-        attRec.late_hours = ltH;
-        attRec.type = otH > 0 ? 'Overtime' : (ltH > 0 ? 'Lateness' : 'Present');
-        attRec.status = attRec.type;
-        attRec.tally = otH > 0 ? otH : (ltH > 0 ? ltH : workedH);
-      }
+      attRec.check_in = inT;
+      attRec.in_time = inT;
+      attRec.out_time = outT;
+      attRec.check_out = outT;
+      attRec.worked_hours = workedH;
+      attRec.regular_hours = evalRes.hasOut ? evalRes.regularHours : (workedH > 0 ? Math.min(schedH, workedH) : 0);
+      attRec.overtime_hours = otH;
+      attRec.unapproved_ot_hours = unappOt;
+      attRec.late_hours = ltH;
+      attRec.raw_late_hours = rawLtH;
+      attRec.raw_late_min = rawLtMin;
+      attRec.leave_days = penLeaveDays;
+      attRec.no_out_rule = punch.no_out_rule;
+      attRec.penalty_summary = evalRes.penaltySummary || '';
+      attRec.late_cutoff = evalRes.lateCutoffTime || '';
+      attRec.type = effType;
+      attRec.status = effType;
+      attRec.tally = effTally;
       attRec.shift_id = shiftObj.id;
       attRec.shift_label = shiftObj.badgeLabel;
       attRec.scheduled_hours = schedH;
-      const noteParts = [`Kiosk ${punch.method} (${attRec.check_in ? 'IN ' + attRec.check_in : ''}${attRec.check_out ? ' · OUT ' + attRec.check_out : ''})`];
-      noteParts.push(shiftObj.badgeLabel);
-      if (attRec.unapproved_ot_hours > 0) noteParts.push(`${fmtNum(attRec.unapproved_ot_hours, 1)}h unapproved OT (0h paid)`);
       attRec.notes = noteParts.join(' · ');
     }
     applyCustomRecordsToSeed();
     saveLocalAuthAndRecords();
     return attRec;
+  }
+
+  function recalcStaffTodayPunchAndAttendance(staffName) {
+    const k = norm(staffName);
+    if (!k) return null;
+    const today = todayISO();
+    const lp = (STATE.kioskPunches || []).find(p =>
+      p && !p.voided && norm(p.staff) === k && (p.date === today || p.shift_date === today)
+    );
+    if (!lp) return null;
+    return syncAttendanceRecordFromPunch(lp);
   }
 
   function recordKioskAttendancePunch(opts = {}) {
@@ -53994,13 +54576,14 @@
     let overtimeHours = 0;
     let unapprovedOtHours = 0;
     let lateHours = 0;
+    let evalCurrent = null;
     let shiftMeta = null;
 
     if (direction === 'IN') {
       shiftDate = inferShiftDateForInPunch(staffName, coName, dateStr, timeStr);
-      const evalIn = evaluateShiftPunchTiming(staffName, coName, shiftDate, timeStr, '', { inSameCalendarDay: shiftDate === dateStr });
-      shiftMeta = evalIn.shift;
-      lateHours = evalIn.lateHours;
+      evalCurrent = evaluateShiftPunchTiming(staffName, coName, shiftDate, timeStr, '', { inSameCalendarDay: shiftDate === dateStr });
+      shiftMeta = evalCurrent.shift;
+      lateHours = evalCurrent.lateHours;
     } else {
       const openIn = (STATE.kioskPunches || []).find(p => {
         if (!p || p.voided || norm(p.staff) !== norm(staffName) || p.direction !== 'IN') return false;
@@ -54013,12 +54596,12 @@
       if (openIn) {
         shiftDate = String(openIn.shift_date || openIn.date || dateStr).slice(0, 10);
         inTimeRef = openIn.time || '';
-        const evalOut = evaluateShiftPunchTiming(staffName, coName, shiftDate, inTimeRef, timeStr, { outDate: dateStr });
-        shiftMeta = evalOut.shift;
-        pairedHours = evalOut.workedHours;
-        overtimeHours = evalOut.overtimeHours;
-        unapprovedOtHours = evalOut.unapprovedOtHours;
-        lateHours = evalOut.lateHours;
+        evalCurrent = evaluateShiftPunchTiming(staffName, coName, shiftDate, inTimeRef, timeStr, { outDate: dateStr });
+        shiftMeta = evalCurrent.shift;
+        pairedHours = evalCurrent.workedHours;
+        overtimeHours = evalCurrent.overtimeHours;
+        unapprovedOtHours = evalCurrent.unapprovedOtHours;
+        lateHours = evalCurrent.lateHours;
       } else {
         shiftMeta = resolveStaffShiftForDate(staffName, coName, dateStr);
         pairedHours = shiftMeta.hours || 8.0;
@@ -54049,6 +54632,13 @@
       overtime_hours: overtimeHours,
       unapproved_ot_hours: unapprovedOtHours,
       late_hours: lateHours,
+      raw_late_hours: evalCurrent ? evalCurrent.rawLateHours : 0,
+      raw_late_min: evalCurrent ? evalCurrent.rawLateMin : 0,
+      penalty_leave_days: evalCurrent ? evalCurrent.penaltyLeaveDays : 0,
+      penalty_status: evalCurrent ? evalCurrent.penaltyStatus : 'Present',
+      penalty_summary: evalCurrent ? evalCurrent.penaltySummary : '',
+      no_out_rule: direction === 'IN' && evalCurrent ? evalCurrent.noOutRule : '',
+      late_cutoff: evalCurrent ? evalCurrent.lateCutoffTime : '',
       voided: false
     };
 
@@ -54057,11 +54647,17 @@
     STATE.kioskLastPunch = punch;
     STATE.kioskAttPin = '';
     STATE.kioskAttStaff = '';
+    const attRec = syncAttendanceRecordFromPunch(punch);
+    const penSuffix = punch.penalty_leave_days >= 1
+      ? ' · Full Absence (1.0d)'
+      : (punch.penalty_leave_days >= 0.5
+        ? (punch.direction === 'IN' ? ' · Half Day (0.5d until Clock OUT)' : ' · Half Day (0.5d Late Penalty)')
+        : (punch.late_hours > 0 ? ` · Late -${punch.late_hours}h` : ''));
     const otSummaryTxt = pairedHours != null
       ? (overtimeHours > 0
         ? ` · ${pairedHours}h (+${overtimeHours}h OT)`
-        : (unapprovedOtHours > 0 ? ` · ${pairedHours}h (0h OT, No OT rule)` : ` · ${pairedHours}h`))
-      : (lateHours > 0 ? ` · Late ${lateHours}h` : '');
+        : (unapprovedOtHours > 0 ? ` · ${pairedHours}h (0h OT, No OT rule)${penSuffix}` : ` · ${pairedHours}h${penSuffix}`))
+      : penSuffix;
     STATE.kioskAttPinMsg = `${staffName} clocked ${direction} at ${timeStr}${otSummaryTxt}`;
     STATE.kioskAttPinMsgCls = 'ok';
     KIOSK_ATT_STATE.lastScanResult = {
@@ -54073,7 +54669,6 @@
       confidence: opts.confidence,
       snapshot: punch.snapshot || ''
     };
-    const attRec = syncAttendanceRecordFromPunch(punch);
     if (STATE.faceSettings.sound && window.Face && window.Face.Sound) {
       window.Face.Sound.play('ok');
     }
@@ -54816,6 +55411,13 @@
     let draftCustomEnd = rule.custom_end || '16:00';
     let draftCustomName = rule.custom_name || 'Custom Shift';
     let draftGrace = Number(rule.grace_min != null ? rule.grace_min : 10);
+    let draftEarlyGrace = Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : 5);
+    let draftLateWhen = rule.late_when || 'both';
+    let draftLateCountFrom = rule.late_count_from || 'shift_start';
+    let draftLatePenaltyMode = rule.late_penalty_mode || 'exact_hours';
+    let draftLateMultiplier = Number(rule.late_multiplier != null ? rule.late_multiplier : 1.5);
+    let draftLateHalfDayMin = Number(rule.late_half_day_after_min != null ? rule.late_half_day_after_min : 60);
+    let draftNoClockOutRule = rule.no_clock_out_rule || 'half_day';
     const activeShiftObj = shiftTypes.find(t => t.id === draftShiftId);
     let draftDays = (draftShiftId === 'custom' || rule.use_custom_days)
       ? rule.custom_days.slice()
@@ -54845,13 +55447,18 @@
       const cDur = computeShiftWorkedHours(draftCustomStart, draftCustomEnd) || 8.0;
       const cOvernight = Boolean(parseClockMinutes(draftCustomEnd) != null && parseClockMinutes(draftCustomStart) != null && parseClockMinutes(draftCustomEnd) <= parseClockMinutes(draftCustomStart));
       const dayOrder = [1, 2, 3, 4, 5, 6, 0];
+      const curShiftObj = draftShiftId === 'custom'
+        ? { start_time: draftCustomStart, end_time: draftCustomEnd }
+        : (shiftTypes.find(t => t.id === draftShiftId) || shiftTypes[0] || { start_time: '08:00', end_time: '16:00' });
+      const startMinVal = parseClockMinutes(curShiftObj.start_time) ?? 480;
+      const cutoffClockLbl = formatMinutesAsClockTime(startMinVal + draftGrace);
 
       modal.innerHTML = `
         <div class="modal-card staff-sched-modal-card">
           <div class="modal-head">
             <div>
-              <div class="modal-title">${ic('clock')} Shift Timing &amp; Overtime Rules · ${esc(entry.name)}</div>
-              <div class="modal-sub">${esc(entry.company)} · ${esc(entry.role)} · Configure shift hours, schedule rotations, and overtime approval</div>
+              <div class="modal-title">${ic('clock')} Shift, Lateness &amp; Overtime Rules · ${esc(entry.name)}</div>
+              <div class="modal-sub">${esc(entry.company)} · ${esc(entry.role)} · Configure shift timing, lateness tolerances &amp; punishments, missing clock-out rules, and overtime</div>
             </div>
             <button type="button" class="icon-btn" id="ssmCloseBtn" aria-label="Close">✕</button>
           </div>
@@ -54915,15 +55522,134 @@
                 </div>
                 <div class="ssm-grace-wrap">
                   <label for="ssmGraceMin">Arrival Grace (min)</label>
-                  <input type="number" id="ssmGraceMin" min="0" max="60" step="5" value="${draftGrace}" style="width:74px">
+                  <input type="number" id="ssmGraceMin" min="0" max="120" step="5" value="${draftGrace}" style="width:74px">
                 </div>
               </div>
             </div>
 
-            <!-- SECTION 2: OVERTIME ELIGIBILITY -->
+            <!-- SECTION 2: LATENESS TOLERANCE, WHEN LATENESS OCCURS & PUNISHMENT RULES -->
+            <div class="ssm-section" id="ssmLatenessSection">
+              <div class="ssm-sec-head">
+                <strong>2. Lateness Tolerance, When Lateness Occurs &amp; Punishment Rules</strong>
+                <span class="muted">Late arrival cutoff: <b class="mono">${esc(cutoffClockLbl)}</b> (${draftGrace}m grace after ${esc(curShiftObj.start_time)})</span>
+              </div>
+
+              <div class="ssm-late-grid">
+                <div class="ssm-field">
+                  <label>Arrival Tolerance (Grace Minutes)</label>
+                  <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+                    ${[0, 5, 10, 15, 30].map(gm => `
+                      <button type="button" class="kiosk-qchip ${Number(draftGrace) === gm ? 'active' : ''}" data-ssm-grace-chip="${gm}">
+                        ${gm === 0 ? '0m Strict' : `${gm}m (> ${formatMinutesAsClockTime(startMinVal + gm)})`}
+                      </button>
+                    `).join('')}
+                  </div>
+                </div>
+
+                <div class="ssm-field">
+                  <label for="ssmLateWhenSelect">When Lateness Occurs</label>
+                  <select id="ssmLateWhenSelect" class="kiosk-select" data-plain-options="1">
+                    <option value="both" ${draftLateWhen === 'both' ? 'selected' : ''}>Arrival Clock-IN (&gt;${esc(cutoffClockLbl)}) + Early Clock-OUT (&gt;${draftEarlyGrace}m early)</option>
+                    <option value="arrival_only" ${draftLateWhen === 'arrival_only' ? 'selected' : ''}>Arrival Clock-IN Only (Late after ${esc(cutoffClockLbl)})</option>
+                    <option value="short_hours" ${draftLateWhen === 'short_hours' ? 'selected' : ''}>Total Shift Hours Shortfall (Worked &lt; Scheduled Shift)</option>
+                  </select>
+                </div>
+
+                <div class="ssm-field">
+                  <label for="ssmLateCountFromSelect">How Late Minutes Are Counted</label>
+                  <select id="ssmLateCountFromSelect" class="kiosk-select" data-plain-options="1">
+                    <option value="shift_start" ${draftLateCountFrom === 'shift_start' ? 'selected' : ''}>From Shift Start (${esc(curShiftObj.start_time)}) once grace is exceeded</option>
+                    <option value="after_grace" ${draftLateCountFrom === 'after_grace' ? 'selected' : ''}>Only Minutes After Grace Cutoff (${esc(cutoffClockLbl)})</option>
+                  </select>
+                </div>
+
+                <div class="ssm-field">
+                  <label for="ssmEarlyGraceInput">Early Leave Tolerance (min before ${esc(curShiftObj.end_time)})</label>
+                  <input type="number" id="ssmEarlyGraceInput" min="0" max="120" step="5" value="${draftEarlyGrace}" style="width:90px">
+                </div>
+              </div>
+
+              <div class="ssm-subhead-lbl" style="margin-top:6px">Lateness Punishment Rule</div>
+              <div class="ot-mode-grid ssm-penalty-grid">
+                <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'exact_hours' ? 'active' : ''}" data-ssm-late-pen="exact_hours">
+                  <div class="ot-mc-title"><span class="ot-dot sapphire"></span>Exact Hours (1x)</div>
+                  <div class="ot-mc-desc">Deduct exact late time at 1x hourly rate.</div>
+                </button>
+                <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'multiplier' ? 'active' : ''}" data-ssm-late-pen="multiplier">
+                  <div class="ot-mc-title"><span class="ot-dot amber"></span>Multiplier (${fmtNum(draftLateMultiplier, 1)}x)</div>
+                  <div class="ot-mc-desc">Penalize late hours at 1.5x or 2.0x hourly rate.</div>
+                </button>
+                <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'round_hour' ? 'active' : ''}" data-ssm-late-pen="round_hour">
+                  <div class="ot-mc-title"><span class="ot-dot amber"></span>Round Up to Full Hour</div>
+                  <div class="ot-mc-desc">Any lateness beyond grace deducts at least 1 full hour.</div>
+                </button>
+                <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'tiered_half_day' ? 'active' : ''}" data-ssm-late-pen="tiered_half_day">
+                  <div class="ot-mc-title"><span class="ot-dot rose"></span>Late &gt;= ${draftLateHalfDayMin}m = Half Day</div>
+                  <div class="ot-mc-desc">1x hours below ${draftLateHalfDayMin}m; converts to Half Day (0.5d) at ${draftLateHalfDayMin}m+.</div>
+                </button>
+                <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'half_day_any' ? 'active' : ''}" data-ssm-late-pen="half_day_any">
+                  <div class="ot-mc-title"><span class="ot-dot rose"></span>Any Late = Half Day (0.5d)</div>
+                  <div class="ot-mc-desc">Any arrival after ${esc(cutoffClockLbl)} converts the shift to Half Day (0.5d).</div>
+                </button>
+                <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'none' ? 'active' : ''}" data-ssm-late-pen="none">
+                  <div class="ot-mc-title"><span class="ot-dot muted"></span>Track Only ($0)</div>
+                  <div class="ot-mc-desc">Log late minutes on attendance without payroll deduction.</div>
+                </button>
+              </div>
+
+              ${draftLatePenaltyMode === 'multiplier' ? `
+                <div class="ssm-ot-subpanel">
+                  <div class="ssm-ot-cap-row">
+                    <div class="ssm-field">
+                      <label for="ssmLateMultInput">Lateness Penalty Multiplier</label>
+                      <div style="display:flex;gap:6px;align-items:center">
+                        <input type="number" id="ssmLateMultInput" min="1" max="5" step="0.25" value="${draftLateMultiplier}" style="width:84px">
+                        ${[1.25, 1.5, 2, 3].map(m => `<button type="button" class="kiosk-qchip ${Number(draftLateMultiplier) === m ? 'active' : ''}" data-ssm-mult-chip="${m}">${m}x</button>`).join('')}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
+
+              ${draftLatePenaltyMode === 'tiered_half_day' ? `
+                <div class="ssm-ot-subpanel">
+                  <div class="ssm-ot-cap-row">
+                    <div class="ssm-field">
+                      <label for="ssmLateHdMinInput">Convert to Half Day (0.5d) When Late &gt;= (Minutes)</label>
+                      <div style="display:flex;gap:6px;align-items:center">
+                        <input type="number" id="ssmLateHdMinInput" min="10" max="240" step="5" value="${draftLateHalfDayMin}" style="width:84px">
+                        ${[30, 45, 60, 90, 120].map(m => `<button type="button" class="kiosk-qchip ${Number(draftLateHalfDayMin) === m ? 'active' : ''}" data-ssm-hdmin-chip="${m}">${m}m</button>`).join('')}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
+
+              <div class="ssm-subhead-lbl" style="margin-top:6px">If Staff Clocks IN and Does Not Clock OUT (Missing Clock-OUT Rule)</div>
+              <div class="ot-mode-grid">
+                <button type="button" class="ot-mode-card ${draftNoClockOutRule === 'half_day' ? 'active' : ''}" data-ssm-no-out="half_day">
+                  <div class="ot-mc-title"><span class="ot-dot amber"></span>Half Day (0.5d)</div>
+                  <div class="ot-mc-desc">Clocking IN without Clocking OUT counts as Half Day (0.5d deduction) until OUT is recorded.</div>
+                </button>
+                <button type="button" class="ot-mode-card ${draftNoClockOutRule === 'full_absence' ? 'active' : ''}" data-ssm-no-out="full_absence">
+                  <div class="ot-mc-title"><span class="ot-dot rose"></span>Full Absence (1.0d)</div>
+                  <div class="ot-mc-desc">Incomplete punch without Clock-OUT counts as 1 full day unpaid absence.</div>
+                </button>
+                <button type="button" class="ot-mode-card ${draftNoClockOutRule === 'deduct_2h' ? 'active' : ''}" data-ssm-no-out="deduct_2h">
+                  <div class="ot-mc-title"><span class="ot-dot amber"></span>Deduct 2.0h Lateness</div>
+                  <div class="ot-mc-desc">Keep full day present but add a 2.0h missing clock-out lateness penalty.</div>
+                </button>
+                <button type="button" class="ot-mode-card ${draftNoClockOutRule === 'auto_shift_end' ? 'active' : ''}" data-ssm-no-out="auto_shift_end">
+                  <div class="ot-mc-title"><span class="ot-dot emerald"></span>Assume Full Shift (0 Ded.)</div>
+                  <div class="ot-mc-desc">Credit scheduled shift hours with no missing clock-out penalty.</div>
+                </button>
+              </div>
+            </div>
+
+            <!-- SECTION 3: OVERTIME ELIGIBILITY -->
             <div class="ssm-section" id="ssmOvertimeSection">
               <div class="ssm-sec-head">
-                <strong>2. Overtime Eligibility &amp; Approval</strong>
+                <strong>3. Overtime Eligibility &amp; Approval</strong>
                 <span class="muted">Prevent unauthorized late clock-outs from generating paid overtime</span>
               </div>
               <div class="ot-mode-grid">
@@ -55011,10 +55737,10 @@
               ` : ''}
             </div>
 
-            <!-- SECTION 3: DATE / ROTATION SHIFT OVERRIDES -->
+            <!-- SECTION 4: DATE / ROTATION SHIFT OVERRIDES -->
             <div class="ssm-section">
               <div class="ssm-sec-head">
-                <strong>3. Temporary Shift Rotation (Specific Date or Range)</strong>
+                <strong>4. Temporary Shift Rotation (Specific Date or Range)</strong>
                 <span class="muted">Temporarily assign Night Shift, Day Shift, or Day Off on specific dates</span>
               </div>
               <div class="ssm-pass-builder">
@@ -55051,8 +55777,11 @@
               ` : ''}
             </div>
           </div>
-          <div class="modal-foot" style="justify-content:space-between">
-            <button type="button" class="btn" id="ssmResetBtn">Reset Default</button>
+          <div class="modal-foot" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" class="btn" id="ssmResetBtn">Reset Default</button>
+              <button type="button" class="btn" id="ssmApplyCompanyLateBtn">Apply Lateness Policy to All ${esc(entry.company)} Staff</button>
+            </div>
             <div style="display:flex;gap:8px">
               <button type="button" class="btn" id="ssmCancelBtn">Cancel</button>
               <button type="button" class="btn btn-primary" id="ssmSaveBtn">${ic('check_circle')} Save Schedule &amp; Rules</button>
@@ -55065,7 +55794,12 @@
         if ($('ssmCustomName')) draftCustomName = $('ssmCustomName').value || 'Custom Shift';
         if ($('ssmCustomStart')) draftCustomStart = $('ssmCustomStart').value || '08:00';
         if ($('ssmCustomEnd')) draftCustomEnd = $('ssmCustomEnd').value || '16:00';
-        if ($('ssmGraceMin')) draftGrace = Math.max(0, Math.min(60, Number($('ssmGraceMin').value || 10)));
+        if ($('ssmGraceMin')) draftGrace = Math.max(0, Math.min(120, Number($('ssmGraceMin').value || 0)));
+        if ($('ssmEarlyGraceInput')) draftEarlyGrace = Math.max(0, Math.min(120, Number($('ssmEarlyGraceInput').value || 0)));
+        if ($('ssmLateWhenSelect')) draftLateWhen = $('ssmLateWhenSelect').value || 'both';
+        if ($('ssmLateCountFromSelect')) draftLateCountFrom = $('ssmLateCountFromSelect').value || 'shift_start';
+        if ($('ssmLateMultInput')) draftLateMultiplier = Math.max(1, Math.min(5, Number($('ssmLateMultInput').value || 1.5)));
+        if ($('ssmLateHdMinInput')) draftLateHalfDayMin = Math.max(5, Math.min(360, Number($('ssmLateHdMinInput').value || 60)));
         if ($('ssmOtMaxHours')) draftOtMaxHours = Math.max(0, Number($('ssmOtMaxHours').value || 0));
         if ($('ssmOtWinStart')) draftOtWinStart = $('ssmOtWinStart').value || '';
         if ($('ssmOtWinEnd')) draftOtWinEnd = $('ssmOtWinEnd').value || '';
@@ -55075,7 +55809,29 @@
       $('ssmCancelBtn')?.addEventListener('click', closeStaffScheduleModal);
       $('ssmResetBtn')?.addEventListener('click', () => {
         resetStaffWorkRule(entry.name);
-        toast(`Reset ${entry.name} to default Day Shift (08:00-16:00) & No Overtime`, 'ok');
+        toast(`Reset ${entry.name} to default Day Shift (08:00-16:00), 10m Grace & No Overtime`, 'ok');
+        closeStaffScheduleModal();
+      });
+
+      $('ssmApplyCompanyLateBtn')?.addEventListener('click', () => {
+        syncLiveInputs();
+        const coStaff = getKioskStaffDirectory().filter(s => s.company === entry.company);
+        coStaff.forEach(s => {
+          saveStaffWorkRule(s.name, {
+            company: s.company,
+            grace_min: draftGrace,
+            early_leave_grace_min: draftEarlyGrace,
+            late_when: draftLateWhen,
+            late_count_from: draftLateCountFrom,
+            late_penalty_mode: draftLatePenaltyMode,
+            late_multiplier: draftLateMultiplier,
+            late_half_day_after_min: draftLateHalfDayMin,
+            no_clock_out_rule: draftNoClockOutRule
+          }, { deferSave: true });
+        });
+        saveLocalAuthAndRecords();
+        syncWithCloud(true);
+        toast(`Applied lateness & missing clock-out rules to all ${coStaff.length} active staff in ${entry.company}`, 'ok');
         closeStaffScheduleModal();
       });
 
@@ -55091,9 +55847,49 @@
         });
       });
 
-      ['ssmCustomStart', 'ssmCustomEnd'].forEach(id => {
+      ['ssmCustomStart', 'ssmCustomEnd', 'ssmGraceMin', 'ssmEarlyGraceInput', 'ssmLateWhenSelect', 'ssmLateCountFromSelect'].forEach(id => {
         $(id)?.addEventListener('change', () => {
           syncLiveInputs();
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-grace-chip]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftGrace = Number(btn.getAttribute('data-ssm-grace-chip') || 0);
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-late-pen]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftLatePenaltyMode = btn.getAttribute('data-ssm-late-pen') || 'exact_hours';
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-mult-chip]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftLateMultiplier = Number(btn.getAttribute('data-ssm-mult-chip') || 1.5);
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-hdmin-chip]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftLateHalfDayMin = Number(btn.getAttribute('data-ssm-hdmin-chip') || 60);
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-no-out]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftNoClockOutRule = btn.getAttribute('data-ssm-no-out') || 'half_day';
           renderModalInner();
         });
       });
@@ -55198,12 +55994,6 @@
             }
           }
         }
-        const pendingOvS = String($('ssmOvStart')?.value || '').slice(0, 10);
-        const pendingOvE = String($('ssmOvEnd')?.value || pendingOvS).slice(0, 10);
-        const pendingOvShift = $('ssmOvShift')?.value || 'night_7_3';
-        if (opts.focusDate && pendingOvS && pendingOvE && pendingOvE >= pendingOvS && !draftOverrides.some(x => x.start_date === pendingOvS && x.end_date === pendingOvE) && pendingOvShift !== draftShiftId) {
-          // Only auto-add rotation if user deliberately picked a date in the rotation fields while no overrides exist yet and they changed it
-        }
         saveStaffWorkRule(entry.name, {
           company: entry.company,
           shift_id: draftShiftId,
@@ -55213,6 +56003,13 @@
           custom_days: draftDays,
           use_custom_days: draftUseCustomDays || draftShiftId === 'custom',
           grace_min: draftGrace,
+          early_leave_grace_min: draftEarlyGrace,
+          late_when: draftLateWhen,
+          late_count_from: draftLateCountFrom,
+          late_penalty_mode: draftLatePenaltyMode,
+          late_multiplier: draftLateMultiplier,
+          late_half_day_after_min: draftLateHalfDayMin,
+          no_clock_out_rule: draftNoClockOutRule,
           ot_mode: draftOtMode,
           ot_max_hours: draftOtMaxHours,
           ot_window_start: draftOtWinStart,
@@ -55220,7 +56017,7 @@
           ot_passes: draftPasses,
           shift_overrides: draftOverrides
         });
-        toast(`Saved shift & overtime rules for ${entry.name}`, 'ok');
+        toast(`Saved shift, lateness & overtime rules for ${entry.name}`, 'ok');
         closeStaffScheduleModal();
       });
 
@@ -55233,6 +56030,8 @@
     renderModalInner();
     if (opts.focusSection === 'ot') {
       setTimeout(() => { $('ssmOvertimeSection')?.scrollIntoView({ block: 'nearest' }); }, 20);
+    } else if (opts.focusSection === 'lateness') {
+      setTimeout(() => { $('ssmLatenessSection')?.scrollIntoView({ block: 'nearest' }); }, 20);
     }
     return modal;
   }
@@ -55501,6 +56300,9 @@
               </span>
             ` : ''}
             ${!STATE.kioskLocked ? `
+              <button type="button" class="btn ${STATE.kioskAttFeedFilter === 'lateness' ? 'btn-primary' : 'btn-ghost-bar'} kiosk-enrol-link-btn" id="kioskAttOpenLatenessBtn">
+                ${ic('warn')} Lateness &amp; Penalties
+              </button>
               <button type="button" class="btn ${STATE.kioskAttFeedFilter === 'schedule' ? 'btn-primary' : 'btn-ghost-bar'} kiosk-enrol-link-btn" id="kioskAttOpenSchedBtn">
                 ${ic('clock')} Shift Schedule
               </button>
@@ -58911,7 +59713,7 @@
       e.stopPropagation();
       const pf = {};
       let hasPf = false;
-      ['co', 'eq', 'def', 'part', 'sub', 'disp', 'party', 'cost', 'notes', 'item', 'oil', 'repsrc', 'storewh'].forEach(k => {
+      ['co', 'eq', 'def', 'part', 'sub', 'disp', 'party', 'cost', 'notes', 'item', 'oil', 'repsrc', 'storewh', 'trtype', 'loanside', 'loan', 'usd'].forEach(k => {
         const attr = 'data-prefill-' + k;
         if (btn.hasAttribute(attr)) {
           pf[k] = btn.getAttribute(attr) || '';
@@ -58919,6 +59721,11 @@
         }
       });
       openEntryModal(btn.getAttribute('data-open-modal'), hasPf ? pf : null);
+    }));
+    container.querySelectorAll('[data-open-loan-hub-side]').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      STATE.openLoanSideFilter = btn.getAttribute('data-open-loan-hub-side') || 'all';
+      renderApp();
     }));
     container.querySelectorAll('[data-kiosk-jump]').forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
