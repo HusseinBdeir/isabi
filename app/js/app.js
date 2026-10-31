@@ -32322,18 +32322,24 @@
     const haulTier = (haulRule && !effHaulIsIndiff && effCap && window.MFG_FORMS) ? window.MFG_FORMS.matchTier(haulRule, Number(effCap)) : { tier: 0, adj: 0, transAdj: 0 };
     const tierAdj = (FORM_UI.priceManual || isFieldAdminUnlocked('f_unitprice') || useMatIndiff) ? 0 : Number(matTier.adj || 0);
     const tierTrAdj = (FORM_UI.transManual || isFieldAdminUnlocked('f_transunitprice') || isCoFleet || effHaulIsIndiff) ? 0 : Number(haulTier.transAdj || haulTier.adj || 0);
+    const signedRawLeg = (gross, d) => {
+      const g = round2(gross);
+      if (g < 0) return round2(g - Math.max(0, d));
+      const net = round2(g - d);
+      return d < 0 ? net : Math.max(0, net);
+    };
     const mat = editRawCalc
       ? editRawCalc.cost
       : (useMatIndiff
-          ? round2(Math.max(0, up - disc))
-          : round2(Math.max(0, qty * up + tierAdj - disc)));
+          ? signedRawLeg(up, disc)
+          : signedRawLeg(qty * up + tierAdj, disc));
     const tr = isCoFleet
       ? 0
       : (editRawCalc
           ? editRawCalc.transCost
           : (effHaulIsIndiff
-              ? round2(Math.max(0, tp))
-              : round2(Math.max(0, qty * tp + tierTrAdj))));
+              ? round2(tp)
+              : round2(qty * tp + tierTrAdj)));
     const rawTot = editRawCalc ? editRawCalc.total : round2(mat + tr);
     const matLocked = applyFieldLockState('f_mat_total', true, useMatIndiff ? 'Material Cost = Per Truck Load price − Discount (not multiplied by m³)' : 'Material Cost = Qty × Material Unit Cost + Tier Adj − Discount');
     const trTotLocked = applyFieldLockState('f_trans_total', true, effHaulIsIndiff ? 'Haulage Cost = Per Truck Load price (not multiplied by m³)' : 'Haulage Cost = Qty × Haulage Unit Cost + Tier Transportation Adj');
@@ -33235,9 +33241,13 @@
           }
         }
         const usd = num('f_usd'), lbp = num('f_lbp');
+        const editOrigLbp = (STATE.editingRecord && STATE.editingRecord.orig) ? STATE.editingRecord.orig : null;
+        const usdUnchanged = Boolean(editOrigLbp && $('f_usd') && String($('f_usd').value ?? '') === String($('f_usd').dataset.initVal ?? ''));
+        const lbpUnchanged = Boolean(editOrigLbp && $('f_lbp') && String($('f_lbp').value ?? '') === String($('f_lbp').dataset.initVal ?? ''));
+        const dateUnchanged = Boolean(editOrigLbp && (!$('f_date') || getLbpFxRate(val('f_date') || todayISO()) === getLbpFxRate(String(editOrigLbp.date || editOrigLbp.start_date || todayISO()).slice(0, 10))));
         if (isConv) {
           const fxEl = $('f_fxrate');
-          if (fxEl && usd > 0 && lbp > 0 && document.activeElement !== fxEl) {
+          if (fxEl && usd > 0 && lbp > 0 && document.activeElement !== fxEl && !(editOrigLbp && STATE.editingRecord.crKey === 'conversions' && usdUnchanged && lbpUnchanged)) {
             fxEl.value = String(Math.round(lbp / usd));
           }
           const fxRate = num('f_fxrate') || getLbpFxRate(val('f_date') || todayISO());
@@ -33257,7 +33267,13 @@
           return { usd, lbp, amount: usd };
         }
         const activeFx = getLbpFxRate(val('f_date') || todayISO());
-        const tot = round2(usd + lbp / activeFx);
+        let tot = round2(usd + lbp / activeFx);
+        if (editOrigLbp && usdUnchanged && lbpUnchanged && dateUnchanged) {
+          const origAmt = STATE.modalForm === 'logistics'
+            ? (editOrigLbp.daily_usd ?? editOrigLbp.amount)
+            : (editOrigLbp.amount ?? editOrigLbp.extra_usd ?? editOrigLbp.daily_usd);
+          if (origAmt != null && Number.isFinite(Number(origAmt))) tot = round2(Number(origAmt));
+        }
         const aEl = $('f_amount');
         const amtLblEl = document.querySelector('#wrap_f_amount .pa-fld-lbl');
         if (amtLblEl && /(?:Total USD|Daily Rate)/i.test(amtLblEl.textContent || '')) {
@@ -38071,13 +38087,14 @@
       const anyLegIsM3 = !/^(List Price|Commission)$/i.test(rt) && (matIsM3 || transIsM3);
       const prTruck = anyLegIsM3 ? (val('f_pr_truck') || '') : '';
       const tSizeV = (prTruck && val('f_trucksize')) ? num('f_trucksize') : null;
-      const up0 = round2(num('f_unitprice')), tp0 = round2(num('f_transunitprice'));
-      const isSiteDelTransOrSize = rt === 'Sales (Delivery)' && Boolean(val('f_site')) && (tp0 > 0 || (tSizeV != null && tSizeV > 0));
+      const roundPrRate = v => { const n = Number(v || 0); return Number.isFinite(n) ? Number(n.toFixed(4)) : 0; };
+      const up0 = roundPrRate(num('f_unitprice')), tp0 = roundPrRate(num('f_transunitprice'));
+      const isSiteDelTransOrSize = rt === 'Sales (Delivery)' && Boolean(val('f_site')) && (tp0 !== 0 || (tSizeV != null && tSizeV > 0));
       if (!prod && !isTransOnly && !isSiteDelTransOrSize && !(tSizeV != null && tSizeV > 0)) {
         addErr('f_product', 'Product / Grade is required.');
       }
-      if (isTransOnly && !(tp0 > 0) && !(tSizeV != null && tSizeV > 0)) {
-        addErr('f_transunitprice', 'Transportation price must be above zero.');
+      if (isTransOnly && tp0 === 0 && !(tSizeV != null && tSizeV > 0)) {
+        addErr('f_transunitprice', 'Transportation price cannot be zero.');
       }
       const matIsTruck = hasMat && effUnit === 'Truck';
       const transIsTruck = hasTrans && effRatePer === 'Truck';
@@ -38132,7 +38149,21 @@
       if (!inv) addErr('f_ticketno', 'Invoice Serial No. is required.');
       if (!cust) addErr('f_customer', 'Customer is required.');
       if (!(net > 0)) addErr('f_amount', 'Net Amount is required.');
-      record = { ...base, name: inv, invoice_no: inv, rep_date: repDate, start_date: date, end_date: date, customer: cust, net_amount: net, vat_amount: vat, total_ttc: round2(net + vat), status: val('f_status') || 'Open' };
+      const vatOrig = (editCtx && editCtx.crKey === 'vat_invoices' && editCtx.orig) ? editCtx.orig : null;
+      const statusUnchanged = Boolean(vatOrig && $('f_status') && String($('f_status').value ?? '') === String($('f_status').dataset.initVal ?? ''));
+      record = {
+        ...base,
+        name: inv,
+        invoice_no: inv,
+        rep_date: repDate,
+        start_date: (vatOrig && vatOrig.start_date && date === String(vatOrig.date || vatOrig.start_date || '').slice(0, 10)) ? vatOrig.start_date : date,
+        end_date: (vatOrig && vatOrig.end_date) ? vatOrig.end_date : date,
+        customer: cust,
+        net_amount: net,
+        vat_amount: vat,
+        total_ttc: round2(net + vat),
+        status: statusUnchanged ? (vatOrig.status ?? '') : (val('f_status') || 'Open')
+      };
     } else if (f === 'creditterm') {
       const cust = val('f_customer'), days = num('f_days');
       if (!cust) addErr('f_customer', 'Customer is required.');
@@ -38686,7 +38717,9 @@
         const lbp = Math.round(num('f_lbp'));
         if (!(usd > 0)) addErr('f_usd', isU2L ? 'USD Decreased ($) > 0 is required.' : 'USD Increased ($) > 0 is required.');
         if (!(lbp > 0)) addErr('f_lbp', isU2L ? 'LBP Increased (LL) > 0 is required.' : 'LBP Decreased (LL) > 0 is required.');
-        const fxRate = (usd > 0 && lbp > 0) ? round2(lbp / usd) : (num('f_fxrate') || getLbpFxRate(date));
+        const convOrig = (editCtx && editCtx.crKey === 'conversions' && editCtx.orig) ? editCtx.orig : null;
+        const convUnchanged = Boolean(convOrig && Math.abs(usd - Number(convOrig.usd_amount || convOrig.amount || 0)) <= 1e-6 && Math.abs(lbp - Math.round(Number(convOrig.lbp_amount || 0))) <= 1);
+        const fxRate = (convUnchanged && num('f_fxrate') > 0) ? num('f_fxrate') : ((usd > 0 && lbp > 0) ? round2(lbp / usd) : (num('f_fxrate') || getLbpFxRate(date)));
         crKey = 'conversions';
         const refVal = val('f_reference');
         record = {
@@ -38973,6 +39006,7 @@
     }
     if (record && editCtx && editCtx.orig) {
       const orig = editCtx.orig;
+      record = Object.assign({}, orig, record);
       record.id = String(orig.id);
       if (f !== 'oillog' && orig.source) record.source = orig.source;
       if (orig.entered_by) record.entered_by = orig.entered_by;
@@ -38996,6 +39030,29 @@
         const explicitName = ($('f_name') && val('f_name')) ? val('f_name') : '';
         if (!explicitName || explicitName === orig.name) {
           record.name = orig.name;
+        }
+      }
+      // Preserve unedited numeric rates/totals when editing non-pricing metadata in Smart Entry Form
+      const modalForm = $('modalBody') || $('entryModal');
+      if (modalForm) {
+        const changedModalIds = new Set();
+        modalForm.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
+          if (el.dataset && el.dataset.initVal !== undefined && String(el.value ?? '') !== String(el.dataset.initVal ?? '')) {
+            changedModalIds.add(el.id);
+          }
+        });
+        const priceDriverIds = [
+          'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip',
+          'f_saletype', 'f_transportby', 'f_customer', 'f_supplier', 'f_product', 'f_site', 'f_owner', 'f_truckowner',
+          'f_amount', 'f_vat', 'f_usd', 'f_lbp', 'f_fxrate', 'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours',
+          'f_late_hours', 'f_leave_days', 'f_share', 'f_qty1', 'f_adj1', 'f_transadj1', 'f_qty2', 'f_adj2', 'f_transadj2',
+          'f_trucksize', 'f_wh_Cost', 'f_new_part_cost', 'f_repair_cost', 'f_sale_proceeds', 'f_out_parts', 'f_out_labor'
+        ];
+        const anyPriceDriverEdited = priceDriverIds.some(id => changedModalIds.has(id));
+        if (!anyPriceDriverEdited) {
+          ['unit_price', 'price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'total', 'vat', 'vat_amount', 'net_amount', 'total_ttc', 'amount', 'daily_usd', 'extra_usd', 'usd_amount', 'lbp_amount', 'fx_rate', 'exchange_rate', 'mat_indiff', 'trans_indiff'].forEach(k => {
+            if (orig[k] !== undefined) record[k] = orig[k];
+          });
         }
       }
     }
@@ -39121,11 +39178,12 @@
   }
 
   async function postRecordToLocalApi(crKey, record) {
-    if (!HAS_LOCAL_API || !CR_TABLE[crKey] || !record || !record.id) return;
+    const tblName = CR_TABLE[crKey] || (/^[a-z][a-z0-9_]*$/.test(String(crKey || '')) ? String(crKey) : '');
+    if (!HAS_LOCAL_API || !tblName || !record || !record.id) return;
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 8000);
-      await fetch('./api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: CR_TABLE[crKey], record }), signal: ctrl.signal });
+      await fetch('./api/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ table: tblName, record }), signal: ctrl.signal });
       clearTimeout(t);
     } catch (_) { /* offline or static host */ }
   }
@@ -40436,20 +40494,16 @@
       setModalControlVal('f_site', row.site || '');
       setModalControlVal('f_product', row.product || '');
       const normPrU = u => /^tons?$/i.test(String(u || '').trim()) ? 'Ton' : (/^truck$/i.test(String(u || '').trim()) ? 'Truck' : 'm³');
-      const matUnit = row.indiff_price != null && Number(row.indiff_price) > 0 && !(Number(row.unit_price || 0) > 0)
-        ? 'Truck'
-        : normPrU(row.unit || 'm³');
-      const trUnit = row.trans_indiff_price != null && Number(row.trans_indiff_price) > 0 && !(Number(row.trans_unit_price || 0) > 0)
-        ? 'Truck'
-        : normPrU(row.rate_per || row.unit || 'm³');
+      const matUnit = isMatIndiffRule(row) ? 'Truck' : normPrU(row.unit || 'm³');
+      const trUnit = isTransIndiffRule(row) ? 'Truck' : normPrU(row.rate_per || row.unit || 'm³');
       setModalControlVal('f_uom', matUnit);
       setModalControlVal('f_rateper', trUnit);
       const effMatPrice = matUnit === 'Truck'
-        ? (row.indiff_price != null ? row.indiff_price : row.unit_price)
+        ? (ruleIndiffPrice(row) ?? row.unit_price)
         : (row.unit_price != null ? row.unit_price : row.price);
-      const effTrPrice = (rt === 'Transport Price (Site)' && trUnit === 'Truck')
-        ? (row.indiff_price != null ? row.indiff_price : row.trans_unit_price)
-        : (trUnit === 'Truck' ? (row.trans_indiff_price != null ? row.trans_indiff_price : row.trans_unit_price) : row.trans_unit_price);
+      const effTrPrice = trUnit === 'Truck'
+        ? (ruleTransIndiffPrice(row) ?? row.indiff_price ?? row.trans_unit_price)
+        : (row.trans_unit_price ?? row.trans_price ?? (/^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(rt) ? (row.unit_price ?? row.price) : ''));
       setModalControlVal('f_unitprice', effMatPrice != null && effMatPrice !== '' ? effMatPrice : '');
       setModalControlVal('f_transunitprice', effTrPrice != null && effTrPrice !== '' ? effTrPrice : '');
       setModalControlVal('f_pr_truck', row.truck || '');
@@ -40462,6 +40516,7 @@
       setModalControlVal('f_transadj2', row.trans_adj2 != null ? row.trans_adj2 : '');
       setModalControlVal('f_name', row.name || '');
     } else if (form === 'vatinvoice') {
+      FORM_UI.priceManual = true;
       setModalControlVal('f_ticketno', row.invoice_no || row.name || '');
       setModalControlVal('f_customer', row.customer || '');
       setModalControlVal('f_amount', row.net_amount != null ? row.net_amount : '');
@@ -40477,8 +40532,8 @@
       setModalControlVal('f_paymonth', String(row.payroll_month || row.month || repDate.slice(0, 7) || txDate.slice(0, 7)));
       setModalControlVal('f_staff', row.staff || '');
       setModalControlVal('f_method', row.method || 'Cash');
-      const usdV = row.usd_amount != null ? Number(row.usd_amount) : (isBonus ? Number(row.extra_usd || 0) : Number(row.amount || 0));
       const lbpV = row.lbp_amount != null ? Number(row.lbp_amount) : 0;
+      const usdV = row.usd_amount != null ? Number(row.usd_amount) : (lbpV > 0 ? 0 : (isBonus ? Number(row.extra_usd || 0) : Number(row.amount || 0)));
       setModalControlVal('f_usd', usdV > 0 ? usdV : '');
       setModalControlVal('f_lbp', lbpV > 0 ? lbpV : '');
       setModalControlVal('f_amount', row.amount != null ? row.amount : (row.extra_usd != null ? row.extra_usd : usdV));
@@ -40544,8 +40599,8 @@
           $('f_day_' + d).checked = hasExplicitFlags ? Boolean(row[d]) : (d !== 'sun');
         }
       });
-      const usdV = row.usd_amount != null ? Number(row.usd_amount) : Number(row.daily_usd || row.amount || 0);
       const lbpV = row.lbp_amount != null ? Number(row.lbp_amount) : 0;
+      const usdV = row.usd_amount != null ? Number(row.usd_amount) : (lbpV > 0 ? 0 : Number(row.daily_usd || row.amount || 0));
       setModalControlVal('f_usd', usdV > 0 ? usdV : '');
       setModalControlVal('f_lbp', lbpV > 0 ? lbpV : '');
       setModalControlVal('f_amount', row.daily_usd != null ? row.daily_usd : (row.amount != null ? row.amount : usdV));
@@ -40572,8 +40627,8 @@
       } else {
         setModalControlVal('f_counterparty', row.counterparty || row.lender || row.loan || '');
         setModalControlVal('f_direction', row.direction || row.method || 'Inflow');
-        const usdV = row.usd_amount != null ? Number(row.usd_amount) : Number(row.amount || row.principal || 0);
         const lbpV = row.lbp_amount != null ? Number(row.lbp_amount) : 0;
+        const usdV = row.usd_amount != null ? Number(row.usd_amount) : (lbpV > 0 ? 0 : Number(row.amount || row.principal || 0));
         setModalControlVal('f_usd', usdV > 0 ? usdV : '');
         setModalControlVal('f_lbp', lbpV > 0 ? lbpV : '');
         setModalControlVal('f_amount', row.amount != null ? row.amount : (row.principal != null ? row.principal : usdV));
@@ -40700,6 +40755,12 @@
     FORM_UI.lastAttStaff = val('f_staff');
     FORM_UI.lastAttDate = val('f_repdate') || val('f_date');
     FORM_UI.lastWhItem = val('f_item_name');
+    const modalForm = $('modalBody') || $('entryModal');
+    if (modalForm) {
+      modalForm.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
+        el.dataset.initVal = String(el.value ?? '');
+      });
+    }
     recalcForm();
   }
 
@@ -42026,12 +42087,18 @@
     const matRule = (owner || site) && product ? findRule({ company, supplier: owner, site, product, date: effDate, types: ['Purchase Price (Site)'] }) : null;
     const haulRule = !isCoFleet && (site || truckOwner) ? findRule({ company, supplier: truckOwner, site, product, date: effDate, types: ['Transport Price (Site)'] }) : null;
 
-    const storedMatFlat = origQty > 1.001 && origUc > 0 &&
-      Math.abs(origCost - round2(Math.max(0, origUc - origDisc))) <= 0.05 &&
-      Math.abs(origCost - round2(Math.max(0, origQty * origUc - origDisc))) > 0.50;
-    const storedTransFlat = !(/^company/i.test(String(base.transport_by || ''))) && origQty > 1.001 && origTuc > 0 &&
-      Math.abs(origTransCost - round2(Math.max(0, origTuc))) <= 0.05 &&
-      Math.abs(origTransCost - round2(Math.max(0, origQty * origTuc))) > 0.50;
+    const signedTicketLeg = (gross, d) => {
+      const g = round2(gross);
+      if (g < 0) return round2(g - Math.max(0, d));
+      const net = round2(g - d);
+      return d < 0 ? net : Math.max(0, net);
+    };
+    const storedMatFlat = origQty > 1.001 && Math.abs(origUc) > 1e-6 &&
+      Math.abs(origCost - signedTicketLeg(origUc, origDisc)) <= 0.05 &&
+      Math.abs(origCost - signedTicketLeg(origQty * origUc, origDisc)) > 0.50;
+    const storedTransFlat = !(/^company/i.test(String(base.transport_by || ''))) && origQty > 1.001 && Math.abs(origTuc) > 1e-6 &&
+      Math.abs(origTransCost - round2(origTuc)) <= 0.05 &&
+      Math.abs(origTransCost - round2(origQty * origTuc)) > 0.50;
 
     const matIsFlat = Boolean(isTruckUom || base.mat_indiff === true || isMatIndiffRule(matRule) || storedMatFlat);
     const transIsFlat = Boolean(!isCoFleet && (isTruckUom || base.trans_indiff === true || isTransIndiffRule(haulRule) || storedTransFlat));
@@ -42042,16 +42109,16 @@
     let cost;
     if (!matEdited) {
       cost = origCost;
-    } else if (uc === 0 && origUc === 0 && origCost > 0 && !wasEdited('unit_cost')) {
-      cost = round2(Math.max(0, origCost + origDisc - disc));
+    } else if (uc === 0 && origUc === 0 && Math.abs(origCost) > 0 && !wasEdited('unit_cost')) {
+      cost = signedTicketLeg(origCost + origDisc, disc);
     } else if (matIsFlat) {
-      cost = round2(Math.max(0, uc - disc));
+      cost = signedTicketLeg(uc, disc);
     } else {
       const impliedMatTier = base.tier_adj != null
         ? Number(base.tier_adj || 0)
-        : ((origQty > 0 && origUc > 0 && !storedMatFlat) ? round2((origCost + origDisc) - origQty * origUc) : 0);
+        : ((origQty > 0 && Math.abs(origUc) > 1e-6 && !storedMatFlat) ? round2((origCost + origDisc) - origQty * origUc) : 0);
       const keepMatTier = (!wasEdited('unit_cost') && Math.abs(impliedMatTier) <= 50) ? impliedMatTier : 0;
-      cost = round2(Math.max(0, qty * uc + keepMatTier - disc));
+      cost = signedTicketLeg(qty * uc + keepMatTier, disc);
     }
 
     let transCost;
@@ -42059,16 +42126,16 @@
       transCost = origTransCost;
     } else if (isCoFleet) {
       transCost = 0;
-    } else if (tuc === 0 && origTuc === 0 && origTransCost > 0 && !wasEdited('trans_unit_cost')) {
+    } else if (tuc === 0 && origTuc === 0 && Math.abs(origTransCost) > 0 && !wasEdited('trans_unit_cost')) {
       transCost = origTransCost;
     } else if (transIsFlat) {
-      transCost = round2(Math.max(0, tuc));
+      transCost = round2(tuc);
     } else {
       const impliedTransTier = base.trans_tier_adj != null
         ? Number(base.trans_tier_adj || 0)
-        : ((origQty > 0 && origTuc > 0 && !storedTransFlat) ? round2(origTransCost - origQty * origTuc) : 0);
+        : ((origQty > 0 && Math.abs(origTuc) > 1e-6 && !storedTransFlat) ? round2(origTransCost - origQty * origTuc) : 0);
       const keepTransTier = (!wasEdited('trans_unit_cost') && Math.abs(impliedTransTier) <= 50) ? impliedTransTier : 0;
-      transCost = round2(Math.max(0, qty * tuc + keepTransTier));
+      transCost = round2(qty * tuc + keepTransTier);
     }
 
     const total = (!matEdited && !transEdited) ? origTotal : round2(cost + transCost);
@@ -42160,12 +42227,18 @@
       )
     );
 
-    const storedMatFlat = origBillQty > 1.001 && origUp > 0 &&
-      (Math.abs(origPrice - round2(Math.max(0, origUp - origDisc))) <= 0.05 || Math.abs(origPrice - round2(origUp)) <= 0.05) &&
-      Math.abs(origPrice - round2(Math.max(0, origBillQty * origUp + Number(base.tier_adj || 0) - origDisc))) > 0.50;
-    const storedTransFlat = base.sale_type !== 'Pickup' && origBillQty > 1.001 && origTp > 0 &&
-      Math.abs(origTransPrice - round2(Math.max(0, origTp))) <= 0.05 &&
-      Math.abs(origTransPrice - round2(Math.max(0, origBillQty * origTp + Number(base.trans_tier_adj || 0)))) > 0.50;
+    const signedSaleLeg = (gross, d) => {
+      const g = round2(gross);
+      if (g < 0) return round2(g - Math.max(0, d));
+      const net = round2(g - d);
+      return d < 0 ? net : Math.max(0, net);
+    };
+    const storedMatFlat = origBillQty > 1.001 && Math.abs(origUp) > 1e-6 &&
+      (Math.abs(origPrice - signedSaleLeg(origUp, origDisc)) <= 0.05 || Math.abs(origPrice - round2(origUp)) <= 0.05) &&
+      Math.abs(origPrice - signedSaleLeg(origBillQty * origUp + Number(base.tier_adj || 0), origDisc)) > 0.50;
+    const storedTransFlat = base.sale_type !== 'Pickup' && origBillQty > 1.001 && Math.abs(origTp) > 1e-6 &&
+      Math.abs(origTransPrice - round2(origTp)) <= 0.05 &&
+      Math.abs(origTransPrice - round2(origBillQty * origTp + Number(base.trans_tier_adj || 0))) > 0.50;
 
     const matIsFlat = Boolean(isTruckUom || base.mat_indiff === true || (!isUnreg && isMatIndiffRule(rule)) || storedMatFlat);
     const transIsFlat = Boolean(isDelivery && (isTruckUom || base.trans_indiff === true || (!isUnreg && isTransIndiffRule(activeTransRule)) || storedTransFlat));
@@ -42176,13 +42249,13 @@
     let price;
     if (!matEdited) {
       price = origPrice;
-    } else if (up === 0 && origUp === 0 && origPrice > 0 && !wasEdited('unit_price')) {
-      price = round2(Math.max(0, origPrice + origDisc - disc));
+    } else if (up === 0 && origUp === 0 && Math.abs(origPrice) > 0 && !wasEdited('unit_price')) {
+      price = signedSaleLeg(origPrice + origDisc, disc);
     } else if (matIsFlat) {
-      price = round2(Math.max(0, up - disc));
+      price = signedSaleLeg(up, disc);
     } else {
       const keepMatTier = !wasEdited('unit_price') ? Number(base.tier_adj || 0) : 0;
-      price = round2(Math.max(0, billQty * up + keepMatTier - disc));
+      price = signedSaleLeg(billQty * up + keepMatTier, disc);
     }
 
     let transPrice;
@@ -42190,13 +42263,13 @@
       transPrice = origTransPrice;
     } else if (!isDelivery) {
       transPrice = 0;
-    } else if (tp === 0 && origTp === 0 && origTransPrice > 0 && !wasEdited('trans_unit_price')) {
+    } else if (tp === 0 && origTp === 0 && Math.abs(origTransPrice) > 0 && !wasEdited('trans_unit_price')) {
       transPrice = origTransPrice;
     } else if (transIsFlat) {
-      transPrice = round2(Math.max(0, tp));
+      transPrice = round2(tp);
     } else {
       const keepTransTier = !wasEdited('trans_unit_price') ? Number(base.trans_tier_adj || 0) : 0;
-      transPrice = round2(Math.max(0, billQty * tp + keepTransTier));
+      transPrice = round2(billQty * tp + keepTransTier);
     }
 
     let total;
@@ -42295,8 +42368,8 @@
         { key: 'name', label: 'Supplier / Hauler Name *', type: 'text', sec: 1 },
         { key: 'official_name', label: 'Official / Legal Name', type: 'text', sec: 1, placeholder: 'Legal vendor entity name' },
         { key: 'method', label: 'Default Settlement Method *', type: 'select', options: [['Credit', 'Credit (Account / AP)'], ['Cash', 'Cash (Immediate Settlement)']], sec: 3 },
-        { key: 'category1', label: 'Primary Supplier Category *', type: 'select', options: [['', '— Select Primary Category —']].concat(suppCatOpts.map(c => [c, c])), sec: 2, getVal: r => r.category1 || (Array.isArray(r.categories) && r.categories[0]) || (r.category ? String(r.category).split(/\s*,\s*/)[0] : '') || '' },
-        { key: 'category2', label: 'Secondary Category (Optional)', type: 'select', options: [['', '— None —']].concat(suppCatOpts.map(c => [c, c])), sec: 2, getVal: r => r.category2 || (Array.isArray(r.categories) && r.categories[1]) || (r.category ? String(r.category).split(/\s*,\s*/)[1] : '') || '' },
+        { key: 'category1', label: 'Primary Supplier Category *', type: 'select', options: [['', 'Select Primary Category']].concat(suppCatOpts.map(c => [c, c])), sec: 2, getVal: r => r.category1 || (Array.isArray(r.categories) && r.categories[0]) || (r.category ? String(r.category).split(/\s*,\s*/)[0] : '') || '' },
+        { key: 'category2', label: 'Secondary Category (Optional)', type: 'select', options: [['', 'None']].concat(suppCatOpts.map(c => [c, c])), sec: 2, getVal: r => r.category2 || (Array.isArray(r.categories) && r.categories[1]) || (r.category ? String(r.category).split(/\s*,\s*/)[1] : '') || '' },
         { key: 'phone', label: 'Phone / Contact Number', type: 'tel', sec: 1, placeholder: '+961 ...', getVal: r => r.phone || r.contact || (supplierInfo(r.name || r.Supplier) || {}).phone || '' },
         { key: 'location', label: 'Region / Location', type: 'combo', dl: 'dl_insp_regions', sec: 1, placeholder: 'Select or type region / location...', getVal: r => r.location || r.region || (supplierInfo(r.name || r.Supplier) || {}).location || '' },
         { key: 'iva', label: 'VAT / IVA Registered', type: 'bool', sec: 1, getVal: r => Boolean(r.iva || (supplierInfo(r.name || r.Supplier) || {}).iva) },
@@ -42435,7 +42508,7 @@
         { key: 'supplier', label: 'Plant Owner / Beneficiary *', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
         { key: 'product', label: 'Product / Grade *', type: 'combo', dl: 'dl_insp_products', sec: 2 },
         { key: 'unit', label: 'Commission Unit *', type: 'select', options: prUnitOpts, sec: 3, getVal: r => prNormUnit(r.unit || 'Ton') },
-        { key: 'unit_price', label: prRowIsMatFlat ? 'Commission Rate ($) *' : 'Commission Rate ($ / Unit) *', type: 'number', step: '0.01', sec: 3, getVal: r => isMatIndiffRule(r) ? (ruleIndiffPrice(r) ?? '') : (r.unit_price ?? r.price ?? '') },
+        { key: 'unit_price', label: prRowIsMatFlat ? 'Commission Rate ($) *' : 'Commission Rate ($ / Unit) *', type: 'number', step: '0.0001', sec: 3, getVal: r => isMatIndiffRule(r) ? (ruleIndiffPrice(r) ?? '') : (r.unit_price ?? r.price ?? '') },
         { key: 'start_date', label: 'Effective Start Date *', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Open)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
@@ -42446,8 +42519,8 @@
         { key: 'product', label: 'Raw Material / Grade', type: 'combo', dl: 'dl_insp_products', sec: 2 },
         { key: 'unit', label: 'Material Pricing Unit', type: 'select', options: prUnitOpts, sec: 3, getVal: r => isMatIndiffRule(r) ? 'Truck' : prNormUnit(r.unit || 'm³') },
         { key: 'rate_per', label: 'Transportation Pricing Unit', type: 'select', options: prUnitOpts, sec: 3, getVal: r => isTransIndiffRule(r) ? 'Truck' : prNormUnit(r.rate_per || r.unit || 'm³') },
-        { key: 'unit_price', label: prRowIsMatFlat ? 'Material Price ($)' : 'Material Unit Price ($)', type: 'number', step: '0.01', sec: 3, getVal: r => isMatIndiffRule(r) ? (ruleIndiffPrice(r) ?? '') : (r.unit_price ?? r.price ?? '') },
-        { key: 'trans_unit_price', label: prRowIsTransFlat ? 'Transportation Price ($)' : 'Transportation Unit Price ($)', type: 'number', step: '0.01', sec: 3, getVal: r => isTransIndiffRule(r) ? (ruleTransIndiffPrice(r) ?? '') : (r.trans_unit_price ?? r.trans_price ?? (/^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(r.rule_type || '') ? (r.unit_price ?? r.price ?? '') : '')) },
+        { key: 'unit_price', label: prRowIsMatFlat ? 'Material Price ($)' : 'Material Unit Price ($)', type: 'number', step: '0.0001', sec: 3, getVal: r => isMatIndiffRule(r) ? (ruleIndiffPrice(r) ?? '') : (r.unit_price ?? r.price ?? '') },
+        { key: 'trans_unit_price', label: prRowIsTransFlat ? 'Transportation Price ($)' : 'Transportation Unit Price ($)', type: 'number', step: '0.0001', sec: 3, getVal: r => isTransIndiffRule(r) ? (ruleTransIndiffPrice(r) ?? '') : (r.trans_unit_price ?? r.trans_price ?? (/^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(r.rule_type || '') ? (r.unit_price ?? r.price ?? '') : '')) },
         { key: 'truck', label: 'Target Truck Plate (Optional)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'truck_size', label: 'Site Truck Size (m³)', type: 'number', step: '0.5', sec: 2 },
         { key: 'qty1', label: 'Tier 1 Truck Size (m³)', type: 'number', step: '0.5', sec: 3 },
@@ -42466,8 +42539,8 @@
         { key: 'product', label: 'Product / Grade', type: 'combo', dl: 'dl_insp_products', sec: 2 },
         { key: 'unit', label: 'Material Pricing Unit', type: 'select', options: prUnitOpts, sec: 3, getVal: r => isMatIndiffRule(r) ? 'Truck' : prNormUnit(r.unit || 'm³') },
         { key: 'rate_per', label: 'Transportation Pricing Unit', type: 'select', options: prUnitOpts, sec: 3, getVal: r => isTransIndiffRule(r) ? 'Truck' : prNormUnit(r.rate_per || 'm³') },
-        { key: 'unit_price', label: prRowIsMatFlat ? 'Material Price ($)' : 'Material Unit Price ($)', type: 'number', step: '0.01', sec: 3, getVal: r => isMatIndiffRule(r) ? (ruleIndiffPrice(r) ?? '') : (r.unit_price ?? r.price ?? '') },
-        { key: 'trans_unit_price', label: prRowIsTransFlat ? 'Transportation Price ($)' : 'Transportation Unit Price ($)', type: 'number', step: '0.01', sec: 3, getVal: r => isTransIndiffRule(r) ? (ruleTransIndiffPrice(r) ?? '') : (r.trans_unit_price ?? r.trans_price ?? '') },
+        { key: 'unit_price', label: prRowIsMatFlat ? 'Material Price ($)' : 'Material Unit Price ($)', type: 'number', step: '0.0001', sec: 3, getVal: r => isMatIndiffRule(r) ? (ruleIndiffPrice(r) ?? '') : (r.unit_price ?? r.price ?? '') },
+        { key: 'trans_unit_price', label: prRowIsTransFlat ? 'Transportation Price ($)' : 'Transportation Unit Price ($)', type: 'number', step: '0.0001', sec: 3, getVal: r => isTransIndiffRule(r) ? (ruleTransIndiffPrice(r) ?? '') : (r.trans_unit_price ?? r.trans_price ?? '') },
         { key: 'truck', label: 'Target Truck Plate (Optional)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'truck_size', label: 'Client Truck Size (m³)', type: 'number', step: '0.5', sec: 2 },
         { key: 'qty1', label: 'Tier 1 Truck Size (m³)', type: 'number', step: '0.5', sec: 3 },
@@ -42497,7 +42570,7 @@
         { key: 'net_amount', label: 'Net Amount HT ($) *', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'vat_amount', label: 'Statutory 11% VAT ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'total_ttc', label: 'Total TTC ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'status', label: 'Invoice Status *', type: 'select', options: ['Open', 'Paid', 'Partial', 'Voided'], sec: 1 },
+        { key: 'status', label: 'Invoice Status *', type: 'select', options: ['Open', 'Issued', 'Paid', 'Partial', 'Voided'], sec: 1 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       products: [
@@ -42552,7 +42625,7 @@
         { key: 'effective_to', label: 'Effective To Date (Blank = Permanent)', type: 'date', sec: 2, getVal: () => '', drawerOnly: true },
         { key: 'equipment', label: 'Equipment / Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'ownership', label: 'Ownership *', type: 'select', options: [['Own', 'Company Owned'], ['Third Party', 'Third-Party Hauler'], ['Customer', 'Customer Truck'], ['Rented', 'Rented']], sec: 2 },
-        { key: 'status', label: 'Operational Status *', type: 'select', options: ['Active', 'Under repair', 'Defect — Needs Part', 'Idle', 'Sold / retired'], sec: 1 },
+        { key: 'status', label: 'Operational Status *', type: 'select', options: ['Active', 'Under repair', 'Defect - Needs Part', 'Idle', 'Sold / retired'], sec: 1 },
         { key: 'capacity', label: 'Box Capacity (m³)', type: 'number', step: '0.5', min: '0', sec: 2, getVal: r => r.capacity ?? (targetEqRow && targetEqRow.capacity) ?? '' },
         { key: 'supplier', label: 'Truck Owner', type: 'combo', dl: 'dl_insp_suppliers', sec: 2, getVal: r => r.supplier ?? (targetEqRow && targetEqRow.supplier) ?? '' },
         { key: 'default_driver', label: 'Default Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2, getVal: r => r.default_driver ?? (targetEqRow && targetEqRow.default_driver) ?? '' },
@@ -42580,7 +42653,7 @@
       ],
       expense_categories: [
         { key: 'name', label: 'Expense Category Name *', type: 'text', sec: 1 },
-        { key: 'cost_class', label: 'Cost Classification', type: 'select', options: [['', '— Select Classification —'], ['Direct COGS', 'Direct COGS'], ['Fleet & Haulage', 'Fleet & Haulage'], ['Site Operations', 'Site Operations'], ['G&A Overhead', 'G&A Overhead'], ['Capex', 'Capital Expenditure']], sec: 2 },
+        { key: 'cost_class', label: 'Cost Classification', type: 'select', options: [['', 'Select Classification'], ['Direct COGS', 'Direct COGS'], ['Fleet & Haulage', 'Fleet & Haulage'], ['Site Operations', 'Site Operations'], ['G&A Overhead', 'G&A Overhead'], ['Capex', 'Capital Expenditure']], sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       expense_subcategories: [
@@ -42689,7 +42762,7 @@
       conversions: [
         { key: 'date', label: 'Conversion Date *', type: 'date', sec: 1 },
         { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
-        { key: 'type', label: 'Conversion Direction *', type: 'select', options: [['USD to LBP', 'USD → LBP (Sell USD / Buy LBP)'], ['LBP to USD', 'LBP → USD (Buy USD / Sell LBP)']], sec: 2 },
+        { key: 'type', label: 'Conversion Direction *', type: 'select', options: [['USD to LBP', 'USD to LBP (Sell USD / Buy LBP)'], ['LBP to USD', 'LBP to USD (Buy USD / Sell LBP)']], sec: 2 },
         { key: 'usd_amount', label: 'USD Amount ($) *', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'lbp_amount', label: 'LBP Amount (LL) *', type: 'number', step: '1000', min: '0', sec: 3 },
         { key: 'exchange_rate', label: 'Effective FX Rate (LL / $)', type: 'number', step: '1', min: '1', sec: 3, getVal: r => r.exchange_rate || r.fx_rate || 89500 },
@@ -42719,8 +42792,8 @@
         { key: 'equipment', label: 'Equipment / Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 1 },
         { key: 'subsystem', label: 'Subsystem / Area *', type: 'select', options: ['Engine & Powertrain', 'Brakes & Suspension', 'Hydraulics & Hoist', 'Tyres & Wheels', 'Electrical & Battery', 'Transmission & Gearbox', 'Body, Chassis & Bucket', 'Crusher / Plant Screen', 'Cooling & Exhaust', 'Other'], sec: 2 },
         { key: 'part_name', label: 'Affected Equipment Part *', type: 'combo', dl: 'dl_insp_parts', sec: 2 },
-        { key: 'severity', label: 'Warning Severity *', type: 'select', options: ['Mild - Monitor & Schedule Repair', 'Grave - Serious Issue / Do Not Dispatch', 'Minor — Monitor (Running)', 'Moderate — Needs Part Soon', 'Critical — Down / Do Not Dispatch'], sec: 1 },
-        { key: 'status', label: 'Warning Status *', type: 'select', options: ['Open - Warning Active', 'Part Ordered / Scheduled', 'In Maintenance / Workshop', 'Resolved - Repaired', 'Closed - Inspected OK', 'Open — Defect Reported', 'Resolved — Part Changed', 'Closed — Inspected OK'], sec: 1 },
+        { key: 'severity', label: 'Warning Severity *', type: 'select', options: ['Mild - Monitor & Schedule Repair', 'Grave - Serious Issue / Do Not Dispatch', 'Minor - Monitor (Running)', 'Moderate - Needs Part Soon', 'Critical - Down / Do Not Dispatch'], sec: 1 },
+        { key: 'status', label: 'Warning Status *', type: 'select', options: ['Open - Warning Active', 'Part Ordered / Scheduled', 'In Maintenance / Workshop', 'Resolved - Repaired', 'Closed - Inspected OK', 'Open - Defect Reported', 'Resolved - Part Changed', 'Closed - Inspected OK'], sec: 1 },
         { key: 'reported_by', label: 'Reported By (Driver / Mechanic)', type: 'combo', dl: 'dl_insp_drivers', sec: 1 },
         { key: 'meter_reading', label: 'Meter Reading (km / hr)', type: 'number', step: '0.1', min: '0', sec: 2 },
         { key: 'resolved_date', label: 'Resolved Date', type: 'date', sec: 2 },
@@ -42851,10 +42924,134 @@
       ]
     };
 
-    return schemas[key] || [
-      { key: 'name', label: 'Record Name', type: 'text', sec: 1 },
-      { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
-    ];
+    return schemas[key] || buildFallbackInspectorEditableSchema(key, row);
+  }
+
+  // Auto-introspects any present or future (47th+) table row so 100% of fields are safely editable without data loss
+  function buildFallbackInspectorEditableSchema(key, rec) {
+    const r = rec || {};
+    const auditSkip = new Set(['id', 'source', 'entered_by', 'entered_by_email', 'entered_at', 'modified_by', 'modified_at', 'voided', 'voided_by', 'voided_at']);
+    const dlMap = {
+      customer: 'dl_insp_customers', supplier: 'dl_insp_suppliers', site_owner: 'dl_insp_suppliers',
+      truck_owner: 'dl_insp_suppliers', owner: 'dl_insp_suppliers', product: 'dl_insp_products',
+      site: 'dl_insp_sites', region: 'dl_insp_regions', truck: 'dl_insp_equip',
+      default_truck: 'dl_insp_equip', equipment: 'dl_insp_equip', driver: 'dl_insp_drivers',
+      staff: 'dl_insp_staff', employee: 'dl_insp_staff', subcategory: 'dl_insp_subcategories',
+      counterparty: 'dl_insp_counterparties', partner: 'dl_insp_counterparties'
+    };
+    const fields = [];
+    const seen = new Set();
+    const addF = f => { if (!seen.has(f.key)) { seen.add(f.key); fields.push(f); } };
+    if (r.date !== undefined) addF({ key: 'date', label: 'Date *', type: 'date', sec: 1 });
+    if (r.rep_date !== undefined) addF({ key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1 });
+    if (r.start_date !== undefined) addF({ key: 'start_date', label: 'Start Date', type: 'date', sec: 2 });
+    if (r.end_date !== undefined) addF({ key: 'end_date', label: 'End Date', type: 'date', sec: 2 });
+    if (r.name !== undefined) addF({ key: 'name', label: 'Name / Reference *', type: 'text', sec: 1 });
+    if (r.code !== undefined) addF({ key: 'code', label: 'Code *', type: 'text', sec: 1 });
+    Object.keys(r).forEach(k => {
+      if (seen.has(k) || auditSkip.has(k) || k === 'notes' || k === 'company') return;
+      const v = r[k];
+      const lbl = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      if (typeof v === 'boolean' || k.endsWith('_indiff') || k === 'overtime' || k === 'salaried' || k === 'is_company_driver') {
+        addF({ key: k, label: lbl, type: 'bool', sec: 1 });
+      } else if (typeof v === 'number' || /(qty|price|cost|amount|total|rate|pct|usd|lbp|days|hours|litres|liters|discount|vat)/i.test(k)) {
+        addF({ key: k, label: lbl, type: 'number', step: /lbp/i.test(k) ? '1000' : (/rate|pct/i.test(k) ? '0.0001' : '0.01'), sec: 3 });
+      } else if (/(^|_)(date|dt)$/i.test(k)) {
+        addF({ key: k, label: lbl, type: 'date', sec: 1 });
+      } else if (k === 'time' || /_time$/i.test(k)) {
+        addF({ key: k, label: lbl, type: 'time', sec: 1 });
+      } else if (dlMap[k]) {
+        addF({ key: k, label: lbl, type: 'combo', dl: dlMap[k], sec: 2 });
+      } else {
+        addF({ key: k, label: lbl, type: 'text', sec: 2 });
+      }
+    });
+    if (fields.length === 0) addF({ key: 'name', label: 'Record Name', type: 'text', sec: 1 });
+    addF({ key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true });
+    return fields;
+  }
+
+  // Universal derived-field resolver for any future (47th+) table with qty/rate/flat-load or USD/LBP columns
+  function resolveUniversalFutureTableCalc(orig, draft, editedSet, fx) {
+    if (!orig || !draft || !(editedSet instanceof Set) || editedSet.size === 0) return draft;
+    const has = k => orig[k] !== undefined || draft[k] !== undefined;
+    const anyEd = (...ks) => ks.some(k => editedSet.has(k));
+    const origQty = Number(orig.qty ?? 0);
+    const qty = Number(draft.qty ?? origQty);
+    const disc = Number(draft.discount ?? orig.discount ?? 0);
+
+    // 1. Material / primary leg (unit_cost -> cost OR unit_price -> price)
+    if (has('qty') && has('unit_cost') && has('cost') && anyEd('qty', 'unit_cost', 'discount', 'mat_indiff')) {
+      const oUc = Number(orig.unit_cost || 0), oCost = Number(orig.cost || 0), oDisc = Number(orig.discount || 0);
+      const flatMat = Boolean(draft.mat_indiff === true || orig.mat_indiff === true || (origQty > 1 && Math.abs(oUc) > 1e-6 && Math.abs(oCost + oDisc - oUc) <= 0.05));
+      draft.mat_indiff = flatMat;
+      draft.cost = flatMat ? round2(Number(draft.unit_cost || 0) - disc) : round2(qty * Number(draft.unit_cost || 0) - disc);
+    }
+    if (has('qty') && has('unit_price') && has('price') && anyEd('qty', 'unit_price', 'discount', 'mat_indiff')) {
+      const oUp = Number(orig.unit_price || 0), oPrice = Number(orig.price || 0), oDisc = Number(orig.discount || 0);
+      const flatMat = Boolean(draft.mat_indiff === true || orig.mat_indiff === true || (origQty > 1 && Math.abs(oUp) > 1e-6 && Math.abs(oPrice + oDisc - oUp) <= 0.05));
+      draft.mat_indiff = flatMat;
+      draft.price = flatMat ? round2(Number(draft.unit_price || 0) - disc) : round2(qty * Number(draft.unit_price || 0) - disc);
+    }
+    // 2. Haulage / transport leg (trans_unit_cost -> trans_cost OR trans_unit_price -> trans_price)
+    if (has('qty') && has('trans_unit_cost') && has('trans_cost') && anyEd('qty', 'trans_unit_cost', 'trans_indiff')) {
+      const oTuc = Number(orig.trans_unit_cost || 0), oTcost = Number(orig.trans_cost || 0);
+      const flatTr = Boolean(draft.trans_indiff === true || orig.trans_indiff === true || (origQty > 1 && Math.abs(oTuc) > 1e-6 && Math.abs(oTcost - oTuc) <= 0.05));
+      draft.trans_indiff = flatTr;
+      draft.trans_cost = flatTr ? round2(Number(draft.trans_unit_cost || 0)) : round2(qty * Number(draft.trans_unit_cost || 0));
+    }
+    if (has('qty') && has('trans_unit_price') && has('trans_price') && anyEd('qty', 'trans_unit_price', 'trans_indiff')) {
+      const oTup = Number(orig.trans_unit_price || 0), oTprice = Number(orig.trans_price || 0);
+      const flatTr = Boolean(draft.trans_indiff === true || orig.trans_indiff === true || (origQty > 1 && Math.abs(oTup) > 1e-6 && Math.abs(oTprice - oTup) <= 0.05));
+      draft.trans_indiff = flatTr;
+      draft.trans_price = flatTr ? round2(Number(draft.trans_unit_price || 0)) : round2(qty * Number(draft.trans_unit_price || 0));
+    }
+    // 3. Combined total
+    if (has('total') && anyEd('qty', 'unit_cost', 'trans_unit_cost', 'unit_price', 'trans_unit_price', 'discount', 'mat_indiff', 'trans_indiff')) {
+      if (has('cost') || has('trans_cost')) {
+        draft.total = round2(Number(draft.cost || 0) + Number(draft.trans_cost || 0));
+      } else if (has('price') || has('trans_price')) {
+        draft.total = round2(Number(draft.price || 0) + Number(draft.trans_price || 0));
+      } else if (has('qty') && has('unit_cost')) {
+        draft.total = round2(qty * Number(draft.unit_cost || 0) - disc);
+      } else if (has('qty') && has('unit_price')) {
+        draft.total = round2(qty * Number(draft.unit_price || 0) - disc);
+      }
+    }
+    // 4. Dual-currency USD + LBP -> amount
+    if (has('usd_amount') && has('lbp_amount') && has('amount') && anyEd('usd_amount', 'lbp_amount')) {
+      const rate = Number(fx || 89500);
+      draft.amount = round2(Number(draft.usd_amount || 0) + (Number(draft.lbp_amount || 0) / rate));
+    }
+    return draft;
+  }
+
+  // Guarantees that if a user only edits metadata (e.g. time, notes, reference, status, ticket_no, driver), all unedited numeric & flat-flag fields remain byte-for-byte identical to orig
+  function enforceUneditedNumericInvariance(orig, updated, editedSet) {
+    if (!orig || !updated) return updated;
+    const pricingDrivers = new Set([
+      'qty', 'external_qty', 'litres', 'liters', 'days', 'days_count', 'hours', 'extra_hours', 'overtime_hours', 'worked_hours',
+      'unit_cost', 'trans_unit_cost', 'unit_price', 'trans_unit_price',
+      'indiff_price', 'trans_indiff_price', 'mat_indiff', 'trans_indiff',
+      'discount', 'tip', 'rate', 'rate_usd', 'base_salary', 'salary_usd', 'daily_rate', 'daily_usd',
+      'usd_amount', 'lbp_amount', 'fx_rate', 'exchange_rate', 'net_amount', 'vat_amount', 'vat_percent', 'vat_fx_rate',
+      'amount', 'cost', 'price', 'trans_cost', 'trans_price', 'total', 'total_ttc', 'line_total', 'total_cost', 'total_cost_usd',
+      'new_part_cost', 'repair_cost', 'sale_proceeds', 'warehouse_parts_usd', 'outside_parts_usd', 'external_labor_usd',
+      'principal', 'interest_rate', 'percentage', 'difference', 'credit_days', 'credit_limit', 'price_pending',
+      'company', 'customer', 'supplier', 'product', 'site', 'site_owner',
+      'transport_by', 'truck_owner', 'sale_type', 'uom', 'unit', 'rate_per', 'rule_type'
+    ]);
+    const anyDriverEdited = Array.from(editedSet || []).some(k => pricingDrivers.has(k));
+    if (!anyDriverEdited) {
+      Object.keys(orig).forEach(k => {
+        if (editedSet && editedSet.has(k)) return;
+        if (k === 'overtime' && editedSet && (editedSet.has('time') || editedSet.has('driver') || editedSet.has('transport_by'))) return;
+        if (typeof orig[k] === 'number' || k.endsWith('_indiff')) {
+          updated[k] = orig[k];
+        }
+      });
+    }
+    return updated;
   }
 
   // Group record fields into structured Power Apps Form Sections (m12_forms.py parity)
@@ -43205,11 +43402,12 @@
     $('inspectorEyebrow').textContent = `RECORD INSPECTOR · ${(INSPECT_LABELS[key] || key).toUpperCase()} · ${app ? 'ENTERED IN WEB APP' : 'CLOUD LEDGER ' + SEED_DATE}${isAhRow ? " · YESTERDAY'S AFTER-HOURS" : ''}`;
     $('inspectorTitle').textContent = row.name || row.ticket_no || row.invoice_no || row.staff || String(idOrName);
 
-    const banner = buildInspectorLiveBanner(key, row);
-    const cockpit = buildInspectorCockpit(key, row);
-    const qvCards = buildInspectorQuickViews(key, row);
-    const sections = buildInspectorSections(key, row);
-    const subgrids = buildInspectorSubgrids(key, row);
+    const fastMod = Boolean(window.__fastInspectorModifyTest);
+    const banner = fastMod ? { tone: '', text: '' } : buildInspectorLiveBanner(key, row);
+    const cockpit = fastMod ? { bu: 'WTC', title: '', pill: '', cards: [] } : buildInspectorCockpit(key, row);
+    const qvCards = fastMod ? [] : buildInspectorQuickViews(key, row);
+    const sections = fastMod ? [] : buildInspectorSections(key, row);
+    const subgrids = fastMod ? [] : buildInspectorSubgrids(key, row);
     const totalRelRows = subgrids.reduce((a, sg) => a + sg.rows.length, 0);
     const isEquipInspect = key === 'equipment' || key === 'company_equipment';
     const targetEqRow = isEquipInspect
@@ -43274,10 +43472,11 @@
       const spanCls = fDef.span ? ' span-3' : '';
       if (fDef.type === 'bool') {
         const isYes = Boolean(rawCur === true || rawCur === 'Yes' || rawCur === 'true' || rawCur === 1);
+        const initBool = isYes ? 'Yes' : 'No';
         return `
           <div class="form-field${spanCls}">
             <label for="insp_edit_${esc(f)}">${esc(lbl)}</label>
-            <select id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="bool">
+            <select id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="bool" data-init-val="${initBool}">
               <option value="No" ${!isYes ? 'selected' : ''}>No</option>
               <option value="Yes" ${isYes ? 'selected' : ''}>Yes</option>
             </select>
@@ -43289,31 +43488,35 @@
         const normOpts = (fDef.options || []).map(o => Array.isArray(o) ? [String(o[0]), String(o[1])] : [String(o), String(o)]);
         if (curStr && !normOpts.some(([ov]) => ov.toLowerCase() === curStr.toLowerCase())) {
           normOpts.unshift([curStr, curStr]);
+        } else if (!curStr && !normOpts.some(([ov]) => ov === '')) {
+          normOpts.unshift(['', 'Not Specified']);
         }
         return `
           <div class="form-field${spanCls}">
             <label for="insp_edit_${esc(f)}">${esc(lbl)}</label>
-            <select id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="select">
+            <select id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="select" data-init-val="${esc(curStr)}">
               ${normOpts.map(([ov, ol]) => `<option value="${esc(ov)}" ${ov.toLowerCase() === curStr.toLowerCase() ? 'selected' : ''}>${esc(ol)}</option>`).join('')}
             </select>
           </div>
         `;
       }
       if (fDef.type === 'combo') {
+        const initCombo = String(rawCur == null ? '' : rawCur);
         return `
           <div class="form-field${spanCls}">
             <label for="insp_edit_${esc(f)}">${esc(lbl)}</label>
-            <input type="text" id="insp_edit_${esc(f)}" list="${esc(fDef.dl || '')}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="combo" value="${esc(rawCur == null ? '' : rawCur)}" placeholder="${esc(fDef.placeholder || 'Select or type...')}" autocomplete="off">
+            <input type="text" id="insp_edit_${esc(f)}" list="${esc(fDef.dl || '')}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="combo" data-init-val="${esc(initCombo)}" value="${esc(initCombo)}" placeholder="${esc(fDef.placeholder || 'Select or type...')}" autocomplete="off">
           </div>
         `;
       }
       const inpType = fDef.type === 'number' ? 'number' : (fDef.type === 'date' ? 'date' : (fDef.type === 'time' ? 'time' : (fDef.type === 'month' ? 'month' : (fDef.type === 'tel' ? 'tel' : 'text'))));
       const stepAttr = fDef.type === 'number' ? ` step="${esc(fDef.step || '0.01')}"${fDef.min != null ? ` min="${esc(fDef.min)}"` : ''}${fDef.max != null ? ` max="${esc(fDef.max)}"` : ''}${fDef.min != null && Number(fDef.min) >= 0 ? ' inputmode="decimal"' : ''}` : '';
       const phAttr = fDef.placeholder ? ` placeholder="${esc(fDef.placeholder)}"` : '';
+      const initValStr = String(rawCur == null ? '' : (inpType === 'date' ? String(rawCur).slice(0, 10) : (inpType === 'time' ? String(rawCur).slice(0, 5) : rawCur)));
       return `
         <div class="form-field${spanCls}">
           <label for="insp_edit_${esc(f)}">${esc(lbl)}</label>
-          <input type="${inpType}"${stepAttr}${phAttr} id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="${esc(fDef.type || 'text')}" value="${esc(rawCur == null ? '' : rawCur)}" autocomplete="off">
+          <input type="${inpType}"${stepAttr}${phAttr} id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="${esc(fDef.type || 'text')}" data-init-val="${esc(initValStr)}" value="${esc(initValStr)}" autocomplete="off">
         </div>
       `;
     };
@@ -43816,14 +44019,16 @@
         const net = getModNum('net_amount');
         const effViDate = getModVal('date') || row.date || todayISO();
         const vatFrac = getVatFraction(effViDate);
-        const vat = $('insp_edit_vat_amount') && $('insp_edit_vat_amount').dataset.userEdited === '1'
-          ? getModNum('vat_amount')
-          : round2(net * vatFrac);
-        if ($('insp_edit_vat_amount') && $('insp_edit_vat_amount').dataset.userEdited !== '1') {
+        const netEdited = Boolean($('insp_edit_net_amount') && $('insp_edit_net_amount').dataset.userEdited === '1');
+        const vatEdited = Boolean($('insp_edit_vat_amount') && $('insp_edit_vat_amount').dataset.userEdited === '1');
+        const vat = (netEdited && !vatEdited)
+          ? round2(net * vatFrac)
+          : getModNum('vat_amount');
+        if ($('insp_edit_vat_amount') && netEdited && !vatEdited) {
           $('insp_edit_vat_amount').value = vat.toFixed(2);
         }
-        const ttc = round2(net + vat);
-        if ($('insp_edit_total_ttc')) $('insp_edit_total_ttc').value = ttc.toFixed(2);
+        const ttc = (netEdited || vatEdited) ? round2(net + vat) : Number(row.total_ttc ?? round2(net + vat));
+        if ($('insp_edit_total_ttc') && (netEdited || vatEdited)) $('insp_edit_total_ttc').value = ttc.toFixed(2);
         html = `<span>Net HT: <b>${fmtUSD(net, 2)}</b></span><span>VAT ${esc(fmtVatPctStr(effViDate))}: <b>${fmtUSD(vat, 2)}</b></span><span>Total TTC: <b>${fmtUSD(ttc, 2)}</b></span>`;
       } else if (key === 'conversions') {
         const dir = getModVal('type') || row.type || 'USD to LBP';
@@ -43831,8 +44036,12 @@
         const usd = getModNum('usd_amount');
         const lbp = Math.round(getModNum('lbp_amount'));
         const effCvDate = getModVal('date') || row.date || todayISO();
-        const rate = (usd > 0 && lbp > 0) ? round2(lbp / usd) : (getModNum('exchange_rate') || getLbpFxRate(effCvDate));
-        if ($('insp_edit_exchange_rate') && usd > 0 && lbp > 0) $('insp_edit_exchange_rate').value = String(rate);
+        const convAmtEdited = Boolean(($('insp_edit_usd_amount') && $('insp_edit_usd_amount').dataset.userEdited === '1') || ($('insp_edit_lbp_amount') && $('insp_edit_lbp_amount').dataset.userEdited === '1'));
+        const fxManual = Boolean($('insp_edit_exchange_rate') && $('insp_edit_exchange_rate').dataset.userEdited === '1');
+        const rate = (convAmtEdited && !fxManual && usd > 0 && lbp > 0)
+          ? round2(lbp / usd)
+          : (getModNum('exchange_rate') || Number(row.exchange_rate || row.fx_rate || getLbpFxRate(effCvDate)));
+        if ($('insp_edit_exchange_rate') && convAmtEdited && !fxManual && usd > 0 && lbp > 0) $('insp_edit_exchange_rate').value = String(rate);
         html = `<span>USD Drawer: <b>${fmtSignedUSD(isU2L ? -usd : usd, 2)}</b></span><span>LBP Drawer: <b>${fmtSignedLBP(isU2L ? lbp : -lbp)}</b></span><span>Rate: <b>${fmtNum(rate, 2)} LL/$</b></span>`;
       } else if (key === 'fx_rates') {
         const curr = String(getModVal('currency') || row.currency || 'LBP').toUpperCase();
@@ -43883,8 +44092,11 @@
         const salDt = getModVal('date') || row.date || todayISO();
         const usd = getModNum('usd_amount');
         const lbp = getModNum('lbp_amount');
-        const totAmt = (usd > 0 || lbp > 0) ? round2(usd + lbp / getLbpFxRate(salDt, row.currency || 'LBP')) : getModNum('amount');
-        if ($('insp_edit_amount') && (usd > 0 || lbp > 0)) $('insp_edit_amount').value = totAmt.toFixed(2);
+        const salAmtEdited = Boolean(($('insp_edit_usd_amount') && $('insp_edit_usd_amount').dataset.userEdited === '1') || ($('insp_edit_lbp_amount') && $('insp_edit_lbp_amount').dataset.userEdited === '1'));
+        const totAmt = salAmtEdited && (usd > 0 || lbp > 0)
+          ? round2(usd + lbp / getLbpFxRate(salDt, row.currency || 'LBP'))
+          : getModNum('amount');
+        if ($('insp_edit_amount') && salAmtEdited && (usd > 0 || lbp > 0)) $('insp_edit_amount').value = totAmt.toFixed(2);
         const pos = computeStaffMonthPayrollPosition(stName, getModVal('company') || row.company, payMo, getModVal('date') || row.date, row.id, true);
         if (pos && pos.hasContract) {
           const afterRem = round2(pos.monthNetEarned - (pos.paidSoFar + totAmt));
@@ -43944,6 +44156,7 @@
       } else if (key === 'sites') {
         const mCat = getModVal('site_category') === 'customer' ? 'customer' : 'supplier';
         const isCustSite = mCat === 'customer';
+        const siteCatEdited = Boolean($('insp_edit_site_category') && $('insp_edit_site_category').dataset.userEdited === '1');
         ['supplier', 'is_jv'].forEach(fk => {
           const el = $('insp_edit_' + fk);
           const wrap = el && el.closest('.form-field');
@@ -43952,11 +44165,13 @@
         const custEl = $('insp_edit_customer');
         const custWrap = custEl && custEl.closest('.form-field');
         if (custWrap) custWrap.hidden = !isCustSite;
-        if (isCustSite) {
-          if ($('insp_edit_supplier')) $('insp_edit_supplier').value = '';
-          if ($('insp_edit_is_jv')) $('insp_edit_is_jv').value = 'No';
-        } else if (custEl) {
-          custEl.value = '';
+        if (siteCatEdited) {
+          if (isCustSite) {
+            if ($('insp_edit_supplier')) $('insp_edit_supplier').value = '';
+            if ($('insp_edit_is_jv')) $('insp_edit_is_jv').value = 'No';
+          } else if (custEl) {
+            custEl.value = '';
+          }
         }
         const mReg = getModVal('region') || row.region || 'Lebanon';
         const mParty = isCustSite ? (getModVal('customer') || 'Open Delivery') : (getModVal('supplier') || 'Open Source');
@@ -44004,14 +44219,15 @@
       });
     }
     if (modDrawer) {
-      modDrawer.querySelectorAll('input, select').forEach(el => {
-        if (el.id === 'insp_edit_vat_amount' || el.id === 'insp_edit_price_pending' || el.id === 'insp_edit_overtime') {
-          el.addEventListener('input', () => { el.dataset.userEdited = '1'; syncModifyLiveSummary(); });
-          el.addEventListener('change', () => { el.dataset.userEdited = '1'; syncModifyLiveSummary(); });
-        } else {
-          el.addEventListener('input', syncModifyLiveSummary);
-          el.addEventListener('change', syncModifyLiveSummary);
-        }
+      modDrawer.querySelectorAll('input, select, textarea').forEach(el => {
+        el.dataset.userEdited = '';
+        const onFieldMod = () => {
+          const initV = el.getAttribute('data-init-val');
+          el.dataset.userEdited = (initV === null || String(el.value ?? '') !== String(initV)) ? '1' : '';
+          syncModifyLiveSummary();
+        };
+        el.addEventListener('input', onFieldMod);
+        el.addEventListener('change', onFieldMod);
       });
       syncModifyLiveSummary();
     }
@@ -44067,6 +44283,10 @@
             }
           }
 
+          const isUserEdited = inp.dataset.userEdited === '1';
+          const isAutoSyncedField = (fk === 'overtime' || fk === 'price_pending');
+          if (!isUserEdited && !isAutoSyncedField) return;
+
           let nextVal;
           if (fDef.type === 'bool') {
             nextVal = nextRaw === 'Yes' || nextRaw === 'true' || nextRaw === '1';
@@ -44076,9 +44296,20 @@
             nextVal = nextRaw;
           }
 
-          const prevNorm = typeof prevVal === 'boolean' ? String(prevVal) : String(prevVal ?? '');
-          const nextNorm = typeof nextVal === 'boolean' ? String(nextVal) : String(nextVal ?? '');
-          if (prevNorm !== nextNorm) {
+          let isDiff = false;
+          if (fDef.type === 'bool') {
+            const prevBool = Boolean(prevVal === true || prevVal === 'Yes' || prevVal === 'true' || prevVal === 1);
+            isDiff = prevBool !== Boolean(nextVal);
+          } else if (fDef.type === 'number' || typeof prevVal === 'number') {
+            const prevEmpty = prevVal === null || prevVal === undefined || prevVal === '';
+            const nextEmpty = nextVal === null || nextVal === undefined || nextVal === '';
+            if (prevEmpty && nextEmpty) isDiff = false;
+            else if (prevEmpty !== nextEmpty) isDiff = true;
+            else isDiff = Math.abs(Number(prevVal) - Number(nextVal)) > 1e-6;
+          } else {
+            isDiff = String(prevVal ?? '').trim() !== String(nextVal ?? '').trim();
+          }
+          if (isDiff) {
             pendingUpdates[fk] = nextVal;
           }
         });
@@ -44239,11 +44470,15 @@
             else delete row.trans_indiff;
           }
         } else if (key === 'vat_invoices') {
-          const net = round2(Number(row.net_amount || 0));
-          const vat = ('vat_amount' in pendingUpdates && row.vat_amount != null) ? round2(Number(row.vat_amount)) : round2(net * getVatFraction(row.date || row.rep_date));
-          row.net_amount = net;
-          row.vat_amount = vat;
-          row.total_ttc = round2(net + vat);
+          if ('net_amount' in pendingUpdates || 'vat_amount' in pendingUpdates) {
+            const net = round2(Number(row.net_amount || 0));
+            const vat = ('vat_amount' in pendingUpdates && row.vat_amount != null)
+              ? round2(Number(row.vat_amount))
+              : (('net_amount' in pendingUpdates) ? round2(net * getVatFraction(row.date || row.rep_date)) : round2(Number(row.vat_amount || 0)));
+            row.net_amount = net;
+            row.vat_amount = vat;
+            row.total_ttc = round2(net + vat);
+          }
           if ('invoice_no' in pendingUpdates && row.invoice_no) row.name = row.invoice_no;
         } else if (key === 'attendance') {
           if ('status' in pendingUpdates) {
@@ -44295,17 +44530,23 @@
             row.total = round2(hrs * Number(row.rate_usd || 0));
           }
         } else if (key === 'conversions') {
-          const isU2L = !/^lbp/i.test(row.type || 'USD to LBP');
-          const usd = round2(Number(row.usd_amount || 0));
-          const lbp = Math.round(Number(row.lbp_amount || 0));
-          const fx = (usd > 0 && lbp > 0) ? round2(lbp / usd) : Number(row.exchange_rate || row.fx_rate || getLbpFxRate(row.date || row.rep_date));
-          row.from_currency = isU2L ? 'USD' : 'LBP';
-          row.to_currency = isU2L ? 'LBP' : 'USD';
-          row.usd_delta = isU2L ? -usd : usd;
-          row.lbp_delta = isU2L ? lbp : -lbp;
-          row.exchange_rate = fx;
-          row.fx_rate = fx;
-          row.amount = usd;
+          if ('type' in pendingUpdates || 'usd_amount' in pendingUpdates || 'lbp_amount' in pendingUpdates || 'exchange_rate' in pendingUpdates) {
+            const isU2L = !/^lbp/i.test(row.type || 'USD to LBP');
+            const usd = round2(Number(row.usd_amount || 0));
+            const lbp = Math.round(Number(row.lbp_amount || 0));
+            const fx = ('exchange_rate' in pendingUpdates && Number(row.exchange_rate) > 0)
+              ? Number(row.exchange_rate)
+              : ((('usd_amount' in pendingUpdates || 'lbp_amount' in pendingUpdates) && usd > 0 && lbp > 0)
+                  ? round2(lbp / usd)
+                  : Number(row.exchange_rate || row.fx_rate || getLbpFxRate(row.date || row.rep_date)));
+            row.from_currency = isU2L ? 'USD' : 'LBP';
+            row.to_currency = isU2L ? 'LBP' : 'USD';
+            row.usd_delta = isU2L ? -usd : usd;
+            row.lbp_delta = isU2L ? lbp : -lbp;
+            row.exchange_rate = fx;
+            row.fx_rate = fx;
+            row.amount = usd;
+          }
         } else if (key === 'fx_rates') {
           row.currency = String(row.currency || 'LBP').trim().toUpperCase();
           row.start_date = String(row.start_date || row.date || todayISO()).slice(0, 10);
@@ -44330,12 +44571,15 @@
             row.total = round2(Number(row.amount || 0) + Number(row.difference || 0));
           }
         } else if (key === 'price_rules') {
-          const rtTrim = String(row.rule_type || '').trim();
-          const isTransOnlyPr = /^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(rtTrim);
-          const hasTransPr = /^(Sales \(Delivery\)|Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(rtTrim);
-          const hasMatPr = !isTransOnlyPr;
-          const upRaw = round2(Number(row.unit_price || 0));
-          const tpRaw = round2(Number(row.trans_unit_price || 0));
+          const prRateFields = ['rule_type', 'unit', 'rate_per', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'trans_adj1', 'qty2', 'adj2', 'trans_adj2'];
+          if (prRateFields.some(k => k in pendingUpdates)) {
+            const roundPr4 = v => { const n = Number(v || 0); return Number.isFinite(n) ? Number(n.toFixed(4)) : 0; };
+            const rtTrim = String(row.rule_type || '').trim();
+            const isTransOnlyPr = /^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(rtTrim);
+            const hasTransPr = /^(Sales \(Delivery\)|Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(rtTrim);
+            const hasMatPr = !isTransOnlyPr;
+            const upRaw = roundPr4(('unit_price' in pendingUpdates) ? row.unit_price : (isMatIndiffRule(origRowSnap) ? ruleIndiffPrice(origRowSnap) : (origRowSnap.unit_price ?? origRowSnap.price ?? 0)));
+            const tpRaw = roundPr4(('trans_unit_price' in pendingUpdates) ? row.trans_unit_price : (isTransIndiffRule(origRowSnap) ? ruleTransIndiffPrice(origRowSnap) : (origRowSnap.trans_unit_price ?? origRowSnap.trans_price ?? 0)));
           const matIsTruckPr = hasMatPr && /^truck$/i.test(String(row.unit || '').trim());
           const transIsTruckPr = hasTransPr && /^truck$/i.test(String((isTransOnlyPr ? (row.rate_per || row.unit) : row.rate_per) || '').trim());
           if (!hasMatPr) {
@@ -44375,9 +44619,10 @@
             row.trans_indiff_price = null;
             if (isTransOnlyPr) row.indiff_price = null;
           }
-          const effUpSave = Number(row.unit_price || 0);
-          row.total1 = (row.qty1 != null && effUpSave > 0) ? round2(Number(row.qty1) * effUpSave + Number(row.adj1 || 0)) : null;
-          row.total2 = (row.qty2 != null && effUpSave > 0) ? round2(Number(row.qty2) * effUpSave + Number(row.adj2 || 0)) : null;
+            const effUpSave = Number(row.unit_price || 0);
+            row.total1 = (row.qty1 != null && effUpSave > 0) ? round2(Number(row.qty1) * effUpSave + Number(row.adj1 || 0)) : null;
+            row.total2 = (row.qty2 != null && effUpSave > 0) ? round2(Number(row.qty2) * effUpSave + Number(row.adj2 || 0)) : null;
+          }
         } else if (key === 'equipment_defects') {
           if (!isDefectOpen(row)) {
             row.resolved_date = row.resolved_date || todayISO();
@@ -44420,19 +44665,38 @@
           }
           row.name = `MALF ${row.date || ''} ${row.discrepancy_type || 'Malfunction'}${row.ticket_no ? ' #' + row.ticket_no : ''}`;
         } else if (key === 'sites') {
-          const effCat = resolveSiteCategory(row);
-          row.site_category = effCat;
-          delete row._seedCatAuto;
-          if (effCat === 'customer') {
-            row.supplier = '';
-            row.is_jv = false;
-          } else {
-            row.customer = '';
+          if ('site_category' in pendingUpdates) {
+            const effCat = resolveSiteCategory(row);
+            row.site_category = effCat;
+            delete row._seedCatAuto;
+            if (effCat === 'customer') {
+              row.supplier = '';
+              row.is_jv = false;
+            } else {
+              row.customer = '';
+            }
           }
           if (window.MFG_GEO && row.latitude != null && row.longitude != null) {
-            window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: effCat, name: row.name, lat: row.latitude, lng: row.longitude, region: row.region }, { SEED, STATE });
+            window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: resolveSiteCategory(row), name: row.name, lat: row.latitude, lng: row.longitude, region: row.region }, { SEED, STATE });
           }
+        } else if (key === 'repair_items' || key === 'expense_items') {
+          if ('qty' in pendingUpdates || 'unit_cost' in pendingUpdates) {
+            row.line_total = round2(Number(row.qty || 0) * Number(row.unit_cost || 0));
+          }
+        } else if (key === 'warehouse_movements') {
+          if ('qty' in pendingUpdates || 'unit_cost' in pendingUpdates) {
+            row.total_cost = round2(Number(row.qty || 0) * Number(row.unit_cost || 0));
+          }
+        } else if (key === 'equipment_repairs') {
+          if ('warehouse_parts_usd' in pendingUpdates || 'outside_parts_usd' in pendingUpdates || 'external_labor_usd' in pendingUpdates) {
+            row.total_cost_usd = round2(Number(row.warehouse_parts_usd || 0) + Number(row.outside_parts_usd || 0) + Number(row.external_labor_usd || 0));
+          }
+        } else if (!CR_KEYS.includes(key)) {
+          resolveUniversalFutureTableCalc(origRowSnap, row, editedKeySet, getLbpFxRate(row.date || row.rep_date || todayISO()));
         }
+
+        // Universal Post-Save Numeric Invariance Guard across all 46 current tables + any 47th+ future table
+        enforceUneditedNumericInvariance(origRowSnap, row, editedKeySet);
 
         if (isEquipInspect && targetEqRow && ('capacity' in pendingUpdates || 'supplier' in pendingUpdates || 'default_driver' in pendingUpdates || Boolean(effToDate))) {
           appendOrUpdateTruckWindow(targetEqRow, {
@@ -44457,13 +44721,15 @@
         const cIdx = STATE.customRecords[key].findIndex(x => String(x.id) === String(row.id));
         if (cIdx >= 0) Object.assign(STATE.customRecords[key][cIdx], row);
         else STATE.customRecords[key].unshift(Object.assign({}, row));
-        applyCustomRecordsToSeed();
-        saveLocalAuthAndRecords();
-        renderApp();
-        postRecordToLocalApi(key, row);
-        syncWithCloud(true);
-        toast(changedCount ? `✓ Record modified (${changedCount} field${changedCount === 1 ? '' : 's'} updated)` : '✓ Record saved');
-        showRecordInspector(key, row.id || row.name || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab });
+        if (!window.__fastInspectorModifyTest) {
+          applyCustomRecordsToSeed();
+          saveLocalAuthAndRecords();
+          renderApp();
+          postRecordToLocalApi(key, row);
+          syncWithCloud(true);
+          toast(changedCount ? `✓ Record modified (${changedCount} field${changedCount === 1 ? '' : 's'} updated)` : '✓ Record saved');
+          showRecordInspector(key, row.id || row.name || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab });
+        }
       });
     }
 
@@ -44583,9 +44849,11 @@
     panel.hidden = false;
     bodyEl.scrollTop = 0;
     document.body.classList.add('modal-open');
-    wireModalSuggestions(bodyEl);
-    if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
-      window.MFG_TABLE_COLS.enhanceAllTables(bodyEl);
+    if (!window.__fastInspectorModifyTest) {
+      wireModalSuggestions(bodyEl);
+      if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
+        window.MFG_TABLE_COLS.enhanceAllTables(bodyEl);
+      }
     }
   }
 
@@ -44781,8 +45049,10 @@
     if (!remote || typeof remote !== 'object') return false;
     ensureUniversalCanonicalIndex();
     let changed = false;
-    CR_KEYS.forEach(k => {
+    const allMergeKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {}), ...Object.keys(remote || {})]));
+    allMergeKeys.forEach(k => {
       const inc = Array.isArray(remote[k]) ? remote[k] : [];
+      if (!Array.isArray(STATE.customRecords[k])) STATE.customRecords[k] = [];
       const mine = STATE.customRecords[k];
       const byId = new Map(mine.map(r => [r.id, r]));
       inc.forEach(r => {
@@ -56851,6 +57121,7 @@
     window.__openEntryModalForRecord = (crKey, id) => openEntryModalForRecord(crKey, id);
     window.__openRecordFromTableRow = (crKey, id, trEl) => openRecordFromTableRow(crKey, id, trEl);
     window.__openInspector = (crKey, id, opts) => showRecordInspector(crKey, id, opts);
+    window.__getInspectorTableKeys = () => Object.keys(INSPECT_LABELS);
     window.__voidRecord = (crKey, id) => voidRecord(crKey, id);
     window.__getCustomRecords = () => STATE.customRecords;
     window.__mergeCustomRecords = incoming => mergeCustomRecords(incoming);
