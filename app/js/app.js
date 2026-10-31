@@ -45710,7 +45710,7 @@
     if (camBtn) {
       camBtn.hidden = !FACE_STATE.camActive || !videoReady || (wsMode === 'pin_only');
       camBtn.classList.toggle('cam-live', !!(FACE_STATE.camActive && videoReady));
-      if (camLbl) camLbl.textContent = 'Pause';
+      if (camLbl) camLbl.textContent = 'Pause Camera';
     }
     if (offEl) {
       offEl.hidden = camBusyOrLive && wsMode !== 'pin_only';
