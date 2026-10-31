@@ -1356,18 +1356,18 @@
   }
 
   const PBI_PAGES = [
-    { id: 'p01_overview', num: '01', label: 'Executive Pulse', title: 'Executive P&L, Margin, AR/AP & Fleet Overview' },
-    { id: 'p02_companies', num: '02', label: 'Entity Comparison', title: 'Side-by-Side Entity Comparison (WTC · BBConstruction · Lions Transport)' },
-    { id: 'p04_sales', num: '03', label: 'Sales Analytics', title: 'Sales Revenue, Realised Price Trends, Delivery Transport & Site Mix' },
-    { id: 'p05_pricing', num: '04', label: 'Pricing & Spreads', title: 'Price Agreements, Spread, Below-Agreed Exceptions & Commissions' },
-    { id: 'p06_ar', num: '05', label: 'Receivables & Aging', title: 'FIFO Customer Balances, 5-Bucket AR Aging & Running Statement' },
-    { id: 'p07_ap', num: '06', label: 'Payables & Spend', title: '3-Leg Accounts Payable (Material / Haulage / Expense) & Overhead' },
-    { id: 'p08_stock', num: '07', label: 'Stock & Unit Margin', title: 'Raw Material Intake, Unit Economics & Two-Leg Cost Split' },
-    { id: 'p09_fuel', num: '08', label: 'Diesel & Tank Burn', title: 'Diesel Tank Balance, Consumption per 100 km / hr & Meter Guard (m142)' },
-    { id: 'p10_fleet', num: '09', label: 'Fleet Economics', title: 'Equipment Utilization, Running Cost & Cost per Ton' },
-    { id: 'p12_payroll', num: '10', label: 'Workforce Analytics', title: 'Staff Payroll Analytics, Site Transport & Freelance' },
-    { id: 'p14_cashflow', num: '11', label: 'Cash Flow & Till', title: 'Cash Inflows vs Outflows, Daily Till & Payment Method Mix' },
-    { id: 'p16_financial', num: '12', label: 'Financial GL & Ratios', title: 'Lebanese CoA Income Statement, Balance Sheet & Trial Balance' }
+    { id: 'p01_overview', num: '01', group: 'Executive', label: 'Executive Pulse', title: 'Executive P&L, Margin, AR/AP & Fleet Overview' },
+    { id: 'p02_companies', num: '02', group: 'Executive', label: 'Entity Comparison', title: 'Side-by-Side Entity Comparison (WTC · BBConstruction · Lions Transport)' },
+    { id: 'p04_sales', num: '03', group: 'Commercial & AR', label: 'Sales Analytics', title: 'Sales Revenue, Realised Price Trends, Delivery Transport & Site Mix' },
+    { id: 'p05_pricing', num: '04', group: 'Commercial & AR', label: 'Pricing & Spreads', title: 'Price Agreements, Spread, Below-Agreed Exceptions & Commissions' },
+    { id: 'p06_ar', num: '05', group: 'Commercial & AR', label: 'Receivables & Aging', title: 'FIFO Customer Balances, 5-Bucket AR Aging & Running Statement' },
+    { id: 'p07_ap', num: '06', group: 'Procurement & Stock', label: 'Payables & Spend', title: '3-Leg Accounts Payable (Material / Haulage / Expense) & Overhead' },
+    { id: 'p08_stock', num: '07', group: 'Procurement & Stock', label: 'Stock & Unit Margin', title: 'Raw Material Intake, Unit Economics & Two-Leg Cost Split' },
+    { id: 'p09_fuel', num: '08', group: 'Fleet & Workforce', label: 'Diesel & Tank Burn', title: 'Diesel Tank Balance, Consumption per 100 km / hr & Meter Guard (m142)' },
+    { id: 'p10_fleet', num: '09', group: 'Fleet & Workforce', label: 'Fleet Economics', title: 'Equipment Utilization, Running Cost & Cost per Ton' },
+    { id: 'p12_payroll', num: '10', group: 'Fleet & Workforce', label: 'Workforce Analytics', title: 'Staff Payroll Analytics, Site Transport & Freelance' },
+    { id: 'p14_cashflow', num: '11', group: 'Treasury & GL', label: 'Cash Flow & Till', title: 'Cash Inflows vs Outflows, Daily Till & Payment Method Mix' },
+    { id: 'p16_financial', num: '12', group: 'Treasury & GL', label: 'Financial GL & Ratios', title: 'Lebanese CoA Income Statement, Balance Sheet & Trial Balance' }
   ];
 
   // 8 Operational Pages moved out of Analytics & Insights directly into their respective domain hub sub-tabs
@@ -4470,6 +4470,29 @@
       const pluralSlicerLabel = lbl => {
         const s = String(lbl || '').trim();
         if (!s) return 'Items';
+        const exact = {
+          'Customer IVA (VAT)': 'IVA / VAT Statuses',
+          'Customer IVA': 'IVA / VAT Statuses',
+          'Supplier IVA': 'Supplier IVA Statuses',
+          'VAT Registered (IVA)': 'VAT Statuses',
+          'Owed For (AP Leg)': 'AP Legs',
+          'Transported By': 'Transport Modes',
+          'Material / Grade': 'Materials & Grades',
+          'Product / Grade': 'Products & Grades',
+          'Supplier / Hauler': 'Suppliers & Haulers',
+          'Owner / Beneficiary': 'Owners & Beneficiaries',
+          'Site / Truck Owner': 'Site & Truck Owners',
+          'Fuel / Item': 'Fuels & Items',
+          'Region / Route': 'Regions & Routes',
+          'Customer / Counterparty': 'Counterparties',
+          'Counterparty / Lender': 'Counterparties & Lenders',
+          'Flow / Direction': 'Flow Directions',
+          'Ownership': 'Ownership Types',
+          'Overtime': 'Overtime Modes',
+          'Serial Hygiene': 'Serial Statuses',
+          'Distribution Basis': 'Distribution Bases'
+        };
+        if (exact[s]) return exact[s];
         if (s.includes('/') || /status|equipment|staff|workforce|cash|credit/i.test(s)) {
           return /status$/i.test(s) ? `${s}es` : s;
         }
@@ -4478,42 +4501,71 @@
         return `${s}s`;
       };
 
+      const domainOrder = ['Executive', 'Commercial & AR', 'Procurement & Stock', 'Fleet & Workforce', 'Treasury & GL'];
+      const domainGroups = domainOrder.map(gName => ({
+        name: gName,
+        pages: pagePool.filter(p => (p.group || 'Executive') === gName)
+      })).filter(g => g.pages.length > 0);
+      const curPageIdx = Math.max(0, pagePool.findIndex(p => p.id === activePageId));
+      const prevPage = pagePool[(curPageIdx - 1 + pagePool.length) % pagePool.length] || activePage;
+      const nextPage = pagePool[(curPageIdx + 1) % pagePool.length] || activePage;
+
       headerHtml = `
       <div class="pbi-studio-hdr">
         <div class="pbi-studio-top">
-          <div>
-            <h2 class="pbi-studio-title">Analytics &amp; Insights</h2>
-            <div class="cockpit-sub" style="color:var(--muted);margin-top:2px"><b>Page ${esc(activePage.num)} · ${esc(activePage.label)}</b> · ${esc(activePage.title)}</div>
+          <div class="pbi-hero-identity">
+            <h2 class="pbi-studio-title sr-only">Analytics &amp; Insights</h2>
+            <div class="pbi-stepper-pill" role="group" aria-label="Step through analytical pages">
+              <button type="button" class="pbi-step-btn" data-pbi-step-target="${esc(prevPage.id)}" aria-label="Previous analytical page">◁</button>
+              <span class="pbi-step-counter"><b>${esc(activePage.num)}</b><span>/ ${pagePool.length}</span></span>
+              <button type="button" class="pbi-step-btn" data-pbi-step-target="${esc(nextPage.id)}" aria-label="Next analytical page">▷</button>
+            </div>
+            <span class="pbi-domain-badge">${esc(activePage.group || 'Executive')}</span>
+            <div class="pbi-active-heading">
+              <span class="pbi-active-title">${esc(activePage.label)}</span>
+              <span class="pbi-active-sep">·</span>
+              <span class="pbi-active-sub">${esc(activePage.title)}</span>
+            </div>
           </div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${activeSlicerCount ? `<span class="badge badge-warn">${activeSlicerCount} Active Slicer${activeSlicerCount > 1 ? 's' : ''}</span>` : '<span class="badge badge-ok">All Slicers Open</span>'}
+          <div class="pbi-hero-actions">
+            ${activeSlicerCount ? `<span class="badge badge-warn">${activeSlicerCount} Active Slicer${activeSlicerCount > 1 ? 's' : ''}</span>` : '<span class="pbi-calm-filter-pill"><span class="pbi-calm-dot"></span>All Filters Open</span>'}
             <button type="button" class="btn" id="pbiResetSlicersBtn" ${activeSlicerCount ? '' : 'disabled'}>↺ Reset Slicers</button>
             ${exportBtn('pbiCanvasPanel', 'PBI_' + activePage.id)}
           </div>
         </div>
 
-        <!-- 12-Page Analytical Navigation Pill Strip -->
+        <!-- 5-Domain Grouped Analytical Navigation Deck -->
         <div class="pbi-page-strip" role="tablist" aria-label="Analytics &amp; Insights Pages">
-          ${pagePool.map(p => `
-            <button type="button" class="pbi-page-tab ${p.id === activePageId ? 'active' : ''}" data-pbi-page="${esc(p.id)}" role="tab" aria-selected="${p.id === activePageId}">
-              <span class="pbi-page-num">${esc(p.num)}</span>
-              <span>${esc(p.label)}</span>
-            </button>
+          ${domainGroups.map(grp => `
+            <div class="pbi-domain-pod ${grp.pages.some(p => p.id === activePageId) ? 'is-active-pod' : ''}" data-pbi-domain="${esc(grp.name)}">
+              <div class="pbi-domain-pod-hdr" data-pbi-domain-jump="${esc(grp.pages[0].id)}">
+                <span class="pbi-domain-pod-lbl">${esc(grp.name)}</span>
+                <span class="pbi-domain-pod-cnt">${grp.pages.length}</span>
+              </div>
+              <div class="pbi-domain-pod-tabs">
+                ${grp.pages.map(p => `
+                  <button type="button" class="pbi-page-tab ${p.id === activePageId ? 'active' : ''}" data-pbi-page="${esc(p.id)}" role="tab" aria-selected="${p.id === activePageId}">
+                    <span class="pbi-page-num">${esc(p.num)}</span>
+                    <span>${esc(p.label)}</span>
+                  </button>
+                `).join('')}
+              </div>
+            </div>
           `).join('')}
         </div>
 
-        <!-- Page-Specific Slicer Strip (adapts dynamically to each of the 12 pages; date/period/basis lives in top bar) -->
+        <!-- Page-Specific Slicer Tray -->
         <div class="pbi-slicer-wrap">
-          <div class="pbi-slicer-meta">
-            <span>Page ${esc(activePage.num)} Slicers · <b>${esc(activePage.label)}</b> (${pageSlicerDefs.length} page filters + cross-search)</span>
-            <span>Period: <b>${esc(k.label || 'All-Time')}</b> · Basis: <b>${STATE.basis === 'rep' ? 'Reporting Date' : 'Transaction Date'}</b></span>
+          <div class="pbi-slicer-meta sr-only">
+            <span>Page ${esc(activePage.num)} Slicers · <b>${esc(activePage.label)}</b></span>
+            <span>Period: <b>${esc(activeRange ? activeRange.label : 'All-Time (2024–2030)')}</b> · Basis: <b>${STATE.basis === 'rep' ? 'Reporting Date' : 'Transaction Date'}</b></span>
           </div>
           <div class="pbi-slicer-bar dynamic">
             ${pageSlicerDefs.map(def => {
               const curVal = sl[def.key] || '';
               const legId = legacyIdForKey[def.key] ? `id="${legacyIdForKey[def.key]}"` : '';
               return `
-                <div class="pbi-slicer-item">
+                <div class="pbi-slicer-item ${curVal ? 'is-filtered' : ''}">
                   <label>${esc(def.label)}</label>
                   <select ${legId} data-pbi-slicer="${esc(def.key)}">
                     <option value="">All ${esc(pluralSlicerLabel(def.label))}</option>
@@ -4526,7 +4578,7 @@
                 </div>
               `;
             }).join('')}
-            <div class="pbi-slicer-item">
+            <div class="pbi-slicer-item ${sl.search ? 'is-filtered' : ''}">
               <label>Cross-Filter Search</label>
               <input type="search" id="pbiSlicerSearch" value="${esc(sl.search || '')}" placeholder="Filter rows, codes, notes..." autocomplete="off">
             </div>
@@ -7951,7 +8003,169 @@
     }
 
     if (bodyOnly) return bodyHtml;
-    return `<div id="pbiCanvasPanel" style="padding-bottom:24px">${headerHtml}${bodyHtml}</div>`;
+    const enhancedBodyHtml = buildEnhancedPbiBodyHtml(bodyHtml);
+    return `<div id="pbiCanvasPanel" style="padding-bottom:24px">${headerHtml}${enhancedBodyHtml}</div>`;
+  }
+
+  function shortenSecLabel(raw, maxLen = 34) {
+    const clean = String(raw || '')
+      .replace(/^\d+\s*[·.—-]\s*/, '')
+      .replace(/\s*\([^)]*\)\s*/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!clean) return 'Section';
+    return clean.length > maxLen ? clean.slice(0, maxLen - 1).trim() + '…' : clean;
+  }
+
+  function buildEnhancedPbiBodyHtml(rawBodyHtml) {
+    if (typeof document === 'undefined' || !rawBodyHtml) return rawBodyHtml;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = rawBodyHtml;
+    const children = Array.from(tmp.children);
+    if (!children.length) return rawBodyHtml;
+
+    const hasSecHeadings = children.some(el => el.classList.contains('pbi-sec-heading'));
+    const secGroups = [];
+
+    if (hasSecHeadings) {
+      const preEls = [];
+      let curGrp = null;
+      let secIdx = 0;
+      children.forEach(el => {
+        if (el.classList.contains('pbi-sec-heading')) {
+          secIdx++;
+          const h4 = el.querySelector('h4');
+          const rawTitle = h4 ? h4.textContent : el.textContent;
+          curGrp = {
+            id: 'sec_' + secIdx,
+            label: `${secIdx} · ${shortenSecLabel(rawTitle, 32)}`,
+            els: [el],
+            headingEl: el
+          };
+          secGroups.push(curGrp);
+        } else if (curGrp) {
+          curGrp.els.push(el);
+        } else {
+          preEls.push(el);
+        }
+      });
+      if (preEls.length) {
+        const kpiCards = preEls.reduce((n, el) => n + el.querySelectorAll('.pbi-kpi-card').length, 0);
+        secGroups.unshift({
+          id: 'kpis',
+          label: kpiCards ? `KPI Scorecard (${kpiCards})` : 'Overview',
+          els: preEls
+        });
+      }
+    } else {
+      let secIdx = 0;
+      children.forEach(el => {
+        if (el.classList.contains('pbi-overview-bands')) {
+          const kpiCards = el.querySelectorAll('.pbi-kpi-card').length;
+          secGroups.push({
+            id: 'kpis',
+            label: kpiCards ? `KPI Scorecard (${kpiCards})` : 'KPI Scorecard',
+            els: [el]
+          });
+        } else {
+          secIdx++;
+          const titles = Array.from(el.querySelectorAll('.pbi-panel-title, .pbi-kpi-sec-hdr')).map(t => shortenSecLabel(t.textContent, 18)).filter(Boolean);
+          const lbl = titles.length >= 2
+            ? `${secIdx} · ${titles[0]} + ${titles[1]}`
+            : (titles[0] ? `${secIdx} · ${titles[0]}` : `Section ${secIdx}`);
+          secGroups.push({
+            id: 'sec_' + secIdx,
+            label: lbl.length > 28 ? lbl.slice(0, 27).trim() + '…' : lbl,
+            els: [el]
+          });
+        }
+      });
+    }
+
+    // Make KPI bands and Section Headings collapsible on click
+    tmp.querySelectorAll('.pbi-kpi-sec-hdr, .pbi-sec-heading').forEach(h => {
+      h.classList.add('pbi-collapsible-hdr');
+      h.setAttribute('role', 'button');
+      h.setAttribute('tabindex', '0');
+    });
+
+    if (secGroups.length >= 2) {
+      secGroups.forEach(g => {
+        g.els.forEach(el => el.setAttribute('data-pbi-sec-group', g.id));
+      });
+      const navHtml = `
+        <div class="pbi-sec-switcher no-print" id="pbiSecSwitcher" role="tablist" aria-label="Filter analytical sections">
+          <div class="pbi-sec-switcher-left">
+            <span class="pbi-sec-switcher-lbl">View Section:</span>
+            <div class="pbi-sec-switcher-pills">
+              <button type="button" class="pbi-sec-pill active" data-pbi-sec-pill="all" role="tab" aria-selected="true">All Sections (${secGroups.length})</button>
+              ${secGroups.map(g => `<button type="button" class="pbi-sec-pill" data-pbi-sec-pill="${esc(g.id)}" role="tab" aria-selected="false">${esc(g.label)}</button>`).join('')}
+            </div>
+          </div>
+          <span class="pbi-sec-switcher-hint">Click header to fold</span>
+        </div>
+      `;
+      return navHtml + tmp.innerHTML;
+    }
+    return tmp.innerHTML;
+  }
+
+  if (typeof document !== 'undefined' && !document.documentElement.dataset.pbiStudioEventsWired) {
+    document.documentElement.dataset.pbiStudioEventsWired = '1';
+    document.addEventListener('click', e => {
+      const t = e.target;
+      if (!t || typeof t.closest !== 'function') return;
+
+      // 1. Prev / Next page stepper or domain pod header jump
+      const stepBtn = t.closest('[data-pbi-step-target], [data-pbi-domain-jump]');
+      if (stepBtn) {
+        const targetPage = stepBtn.getAttribute('data-pbi-step-target') || stepBtn.getAttribute('data-pbi-domain-jump');
+        if (targetPage) {
+          const tab = document.querySelector(`.pbi-page-tab[data-pbi-page="${targetPage}"]`);
+          if (tab) tab.click();
+        }
+        return;
+      }
+
+      // 2. Section switcher pill inside #pbiCanvasPanel
+      const secPill = t.closest('[data-pbi-sec-pill]');
+      if (secPill) {
+        const canvas = document.getElementById('pbiCanvasPanel');
+        if (!canvas) return;
+        const targetSec = secPill.getAttribute('data-pbi-sec-pill') || 'all';
+        const isAlreadyOnly = secPill.classList.contains('active') && targetSec !== 'all';
+        const effSec = isAlreadyOnly ? 'all' : targetSec;
+        canvas.querySelectorAll('[data-pbi-sec-pill]').forEach(b => {
+          const on = b.getAttribute('data-pbi-sec-pill') === effSec;
+          b.classList.toggle('active', on);
+          b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        canvas.querySelectorAll('[data-pbi-sec-group]').forEach(el => {
+          const match = effSec === 'all' || el.getAttribute('data-pbi-sec-group') === effSec;
+          el.classList.toggle('pbi-sec-filtered-out', !match);
+        });
+        return;
+      }
+
+      // 3. Clickable .pbi-kpi-sec-hdr / .pbi-sec-heading inline fold
+      const kpiHdr = t.closest('.pbi-kpi-sec-hdr');
+      if (kpiHdr && kpiHdr.closest('#pbiCanvasPanel')) {
+        const sec = kpiHdr.closest('.pbi-kpi-sec');
+        if (sec) sec.classList.toggle('is-sec-collapsed');
+        return;
+      }
+      const secHdr = t.closest('.pbi-sec-heading');
+      if (secHdr && secHdr.closest('#pbiCanvasPanel')) {
+        const grpId = secHdr.getAttribute('data-pbi-sec-group');
+        const collapsed = !secHdr.classList.contains('is-sec-collapsed');
+        secHdr.classList.toggle('is-sec-collapsed', collapsed);
+        if (grpId) {
+          secHdr.closest('#pbiCanvasPanel').querySelectorAll(`[data-pbi-sec-group="${grpId}"]`).forEach(el => {
+            if (el !== secHdr) el.classList.toggle('pbi-sec-body-collapsed', collapsed);
+          });
+        }
+      }
+    });
   }
 
   // ==================== HUB ANALYTICS & MOVED PAGES CATALOG ====================

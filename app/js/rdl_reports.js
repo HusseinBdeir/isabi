@@ -1241,10 +1241,10 @@
                   data-display-label="${esc(activeOpt.label)}"
                   value="${esc(activeOpt.label)}"
                   placeholder="${esc(cfg.placeholder)}"
-                  title="Click and type to search by name, number, site or date"
+                  aria-label="${esc(cfg.label)} search"
                   autocomplete="off"
                   spellcheck="false" />
-                <button type="button" class="rdl-combo-clear" data-combo-clear="${esc(k)}" title="${hasAll ? 'Clear search / Reset to All' : 'Clear search text'}" aria-label="Clear">×</button>
+                <button type="button" class="rdl-combo-clear" data-combo-clear="${esc(k)}" aria-label="${hasAll ? 'Clear search or reset to All' : 'Clear search text'}">×</button>
                 <button type="button" class="rdl-combo-caret" data-combo-caret="${esc(k)}" tabindex="-1" aria-label="Open options">
                   <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="2.5 4.5 6 8 9.5 4.5"/></svg>
                 </button>
@@ -1252,8 +1252,8 @@
               </div>
               ${cfg.steppable ? `
                 <div class="rdl-doc-stepper" role="group" aria-label="Step through records">
-                  <button type="button" class="rdl-step-btn" data-rdl-step="${esc(k)}" data-step-dir="-1" title="Previous record">‹</button>
-                  <button type="button" class="rdl-step-btn" data-rdl-step="${esc(k)}" data-step-dir="1" title="Next record">›</button>
+                  <button type="button" class="rdl-step-btn" data-rdl-step="${esc(k)}" data-step-dir="-1" aria-label="Previous record">‹</button>
+                  <button type="button" class="rdl-step-btn" data-rdl-step="${esc(k)}" data-step-dir="1" aria-label="Next record">›</button>
                 </div>
               ` : ''}
             </div>
@@ -1269,7 +1269,7 @@
           ${controls.join('')}
           <div class="rdl-param-actions">
             <button type="button" class="rdl-view-btn" id="rdlViewReportBtn">View report</button>
-            <button type="button" class="rdl-reset-btn" id="rdlResetParamsBtn" title="Reset report parameters to defaults">Reset</button>
+            <button type="button" class="rdl-reset-btn" id="rdlResetParamsBtn" aria-label="Reset report parameters to defaults">Reset</button>
           </div>
         </div>
         <div class="rdl-param-meta">
@@ -3133,6 +3133,8 @@
     return filtered.length ? filtered : RDL_CATALOG;
   }
 
+  const RDL_GROUP_ORDER = ['Digest', 'Statements', 'General Ledger', 'Tax & Recon', 'Documents', 'Registers', 'Counterparties'];
+
   function renderStatementsView(SEED, STATE) {
     const ctx = buildRdlContext(SEED, STATE);
     const catalog = getVisibleRdlCatalog(STATE);
@@ -3143,58 +3145,95 @@
     const q = (ctx.rdl.search || '').trim().toLowerCase();
     const visibleCats = RDL_CATEGORIES.filter(c => c === 'All' || catalog.some(r => r.cat === c));
     const cat = visibleCats.includes(ctx.rdl.cat) ? ctx.rdl.cat : 'All';
+    const catalogCollapsed = Boolean(ctx.rdl.catalogCollapsed);
+
+    const catCounts = {};
+    catalog.forEach(r => {
+      catCounts[r.cat] = (catCounts[r.cat] || 0) + 1;
+    });
+
+    const orderedGroups = RDL_GROUP_ORDER.filter(c => catalog.some(r => r.cat === c));
 
     return `
       <div class="rdl-suite-wrap">
-        <div class="rdl-suite-hdr no-print">
-          <span class="rdl-suite-pill">${esc(L.short)} · ${catalog.length} A4 REPORTS</span>
-          <h1 class="rdl-suite-title">Statements &amp; Reports</h1>
-          <div class="rdl-cats" role="tablist" aria-label="Report categories">
-            ${visibleCats.map(c => `
-              <button type="button" class="rdl-cat-btn ${cat === c ? 'active' : ''}" data-rdl-cat="${esc(c)}">
-                ${c === 'All' ? `All (${catalog.length})` : esc(c)}
-              </button>
-            `).join('')}
-          </div>
-          <input type="search" class="rdl-search-input" id="rdlSearchInput" placeholder="Filter ${catalog.length} reports..." value="${esc(ctx.rdl.search || '')}" aria-label="Filter ${catalog.length} reports" />
-        </div>
-
-        <div class="rdl-tab-bar no-print" role="tablist" aria-label="${catalog.length} Paginated Reports">
-          ${catalog.map(r => {
-            const matchCat = (cat === 'All' || r.cat === cat);
-            const matchQ = !q || r.title.toLowerCase().includes(q) || r.cat.toLowerCase().includes(q) || r.ar.includes(q) || r.id.includes(q);
-            const hiddenClass = (matchCat && matchQ) ? '' : 'rdl-tab-filtered';
-            return `
-              <button type="button"
-                class="rdl-tab stmt-card ${r.id === meta.id ? 'active' : ''} ${hiddenClass}"
-                data-stmt="${r.id}"
-                data-cat="${esc(r.cat)}"
-                title="RDL-${r.id}: ${esc(r.title)} (${esc(r.ar)})">
-                <span class="rdl-tcat">${esc(r.cat)}</span>
-                <span>${esc(r.title)}</span>
-              </button>
-            `;
-          }).join('')}
-        </div>
-
         <div class="rdl-viewer-shell">
-          <div class="rdl-toolbar no-print">
+          <div class="rdl-suite-hdr no-print">
+            <h1 class="rdl-suite-title sr-only">Statements &amp; Reports</h1>
             <div class="rdl-tb-left">
-              <div class="rdl-tb-nav-group">
-                <button type="button" class="rdl-tb-btn rdl-tb-icon-btn" id="rdlPrevBtn" title="Previous report">◁</button>
-                <span class="rdl-tb-page">Report <b>${esc(meta.id)}</b> of ${catalog.length}</span>
-                <button type="button" class="rdl-tb-btn rdl-tb-icon-btn" id="rdlNextBtn" title="Next report">▷</button>
+              <div class="rdl-tb-nav-group" role="group" aria-label="Step between reports">
+                <button type="button" class="rdl-tb-btn rdl-tb-icon-btn" id="rdlPrevBtn" aria-label="Previous report">◁</button>
+                <span class="rdl-tb-page"><b>${esc(meta.id)}</b> / ${String(catalog.length).padStart(2, '0')}</span>
+                <button type="button" class="rdl-tb-btn rdl-tb-icon-btn" id="rdlNextBtn" aria-label="Next report">▷</button>
               </div>
-              <span class="rdl-tb-divider"></span>
-              <span class="rdl-menu-crumb">${esc(meta.cat)} ▸ <b>RDL-${esc(meta.id)} ${esc(meta.title)}</b> <span class="rdl-crumb-ar" dir="rtl">(${esc(meta.ar)})</span></span>
+              <span class="rdl-suite-pill">${esc(meta.cat)}</span>
+              <span class="rdl-menu-crumb"><b>RDL-${esc(meta.id)} ${esc(meta.title)}</b> <span class="rdl-crumb-ar" dir="rtl">${esc(meta.ar)}</span></span>
             </div>
             <div class="rdl-tb-right">
+              <div class="rdl-search-wrap">
+                <input type="search" class="rdl-search-input" id="rdlSearchInput" placeholder="Search ${catalog.length} reports..." value="${esc(ctx.rdl.search || '')}" aria-label="Filter ${catalog.length} reports" />
+              </div>
+              <button type="button" class="rdl-tb-btn rdl-catalog-toggle ${!catalogCollapsed ? 'active' : ''}" id="rdlToggleCatalogBtn" aria-label="Toggle report catalog">
+                ${catalogCollapsed ? '▷' : '▽'} Catalog (${catalog.length})
+              </button>
               <button type="button" class="rdl-tb-btn rdl-param-toggle ${ctx.rdl.paramsOpen ? 'active' : ''}" id="rdlToggleParamsBtn">
                 ${ctx.rdl.paramsOpen ? '▽' : '▷'} Parameters
               </button>
               <span class="rdl-tb-divider"></span>
-              <button type="button" class="rdl-tb-btn" id="printStmtBtn" title="Print / Save as PDF">${ic('printer')} Print / PDF</button>
-              <button type="button" class="rdl-tb-btn" id="rdlExportCsvBtn" title="Export current report to CSV">${ic('download')} Export CSV</button>
+              <button type="button" class="rdl-tb-btn" id="printStmtBtn" aria-label="Print or Save as PDF">${ic('printer')} Print / PDF</button>
+              <button type="button" class="rdl-tb-btn" id="rdlExportCsvBtn" aria-label="Export current report to CSV">${ic('download')} CSV</button>
+            </div>
+          </div>
+
+          <div class="rdl-tab-bar no-print ${catalogCollapsed ? 'is-collapsed' : ''}" role="tablist" aria-label="${catalog.length} Paginated Reports">
+            <div class="rdl-cats" role="tablist" aria-label="Report categories">
+              <span class="rdl-cats-lbl">DOMAIN FILTER</span>
+              ${visibleCats.map(c => `
+                <button type="button" class="rdl-cat-btn ${cat === c ? 'active' : ''}" data-rdl-cat="${esc(c)}">
+                  <span>${c === 'All' ? 'All Domains' : esc(c)}</span>
+                  <span class="rdl-cat-cnt">${c === 'All' ? catalog.length : (catCounts[c] || 0)}</span>
+                </button>
+              `).join('')}
+            </div>
+
+            <div class="rdl-grouped-pods">
+              ${orderedGroups.map(grpCat => {
+                const grpItems = catalog.filter(r => r.cat === grpCat);
+                const hasActive = grpItems.some(r => r.id === meta.id);
+                const matchCat = (cat === 'All' || grpCat === cat);
+                const anyMatchQ = !q || grpItems.some(r =>
+                  r.title.toLowerCase().includes(q) ||
+                  r.cat.toLowerCase().includes(q) ||
+                  r.ar.includes(q) ||
+                  r.id.includes(q)
+                );
+                const podHidden = !(matchCat && anyMatchQ) ? 'rdl-pod-filtered' : '';
+                return `
+                  <div class="rdl-group-pod ${hasActive ? 'is-active-pod' : ''} ${podHidden}" data-rdl-pod="${esc(grpCat)}">
+                    <div class="rdl-pod-hdr" data-rdl-pod-jump="${esc(grpCat)}">
+                      <span class="rdl-pod-title">${esc(grpCat)}</span>
+                      <span class="rdl-pod-count">${grpItems.length}</span>
+                    </div>
+                    <div class="rdl-pod-items">
+                      ${grpItems.map(r => {
+                        const itemMatchCat = (cat === 'All' || r.cat === cat);
+                        const itemMatchQ = !q || r.title.toLowerCase().includes(q) || r.cat.toLowerCase().includes(q) || r.ar.includes(q) || r.id.includes(q);
+                        const hiddenClass = (itemMatchCat && itemMatchQ) ? '' : 'rdl-tab-filtered';
+                        return `
+                          <button type="button"
+                            class="rdl-tab stmt-card ${r.id === meta.id ? 'active' : ''} ${hiddenClass}"
+                            data-stmt="${r.id}"
+                            data-cat="${esc(r.cat)}"
+                            aria-label="RDL-${r.id}: ${esc(r.title)} (${esc(r.ar)})">
+                            <span class="rdl-tcat sr-only">${esc(r.cat)}</span>
+                            <span class="rdl-tid">${esc(r.id)}</span>
+                            <span class="rdl-ttitle">${esc(r.title)}</span>
+                          </button>
+                        `;
+                      }).join('')}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
             </div>
           </div>
 
@@ -3216,18 +3255,32 @@
     if (!root) return;
     const ctx = buildRdlContext(SEED, STATE);
 
+    const syncHeaderMeta = (meta, catalog) => {
+      const crumb = root.querySelector('.rdl-menu-crumb');
+      if (crumb) crumb.innerHTML = `<b>RDL-${esc(meta.id)} ${esc(meta.title)}</b> <span class="rdl-crumb-ar" dir="rtl">${esc(meta.ar)}</span>`;
+      const pill = root.querySelector('.rdl-suite-pill');
+      if (pill) pill.textContent = meta.cat;
+      const pg = root.querySelector('.rdl-tb-page');
+      if (pg) pg.innerHTML = `<b>${esc(meta.id)}</b> / ${String(catalog.length).padStart(2, '0')}`;
+      root.querySelectorAll('.rdl-group-pod').forEach(pod => {
+        pod.classList.toggle('is-active-pod', pod.getAttribute('data-rdl-pod') === meta.cat);
+      });
+    };
+
     const refreshSheetAndParams = () => {
       const updatedCtx = buildRdlContext(SEED, STATE);
       const catalog = getVisibleRdlCatalog(STATE);
       const activeId = String(STATE.activeStatement || '01').padStart(2, '0');
       const meta = catalog.find(x => x.id === activeId) || catalog[0];
       STATE.activeStatement = meta.id;
+      syncHeaderMeta(meta, catalog);
       const paramCont = root.querySelector('#rdlParamContainer');
       if (paramCont) paramCont.innerHTML = renderParamBarHtml(meta, updatedCtx);
       const sheet = root.querySelector('#printableSheet');
       if (sheet) sheet.innerHTML = renderRdlSheet(meta.id, updatedCtx);
       wireParamControls();
       wireTableSorting();
+      wireInteractiveSheetEnhancements(meta, updatedCtx);
       if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
         window.MFG_TABLE_COLS.enhanceAllTables(root, STATE);
       }
@@ -3236,8 +3289,33 @@
     // Category filter buttons
     root.querySelectorAll('[data-rdl-cat]').forEach(btn => {
       btn.addEventListener('click', () => {
-        ctx.rdl.cat = btn.dataset.rdlCat || 'All';
+        const nextCat = btn.dataset.rdlCat || 'All';
+        ctx.rdl.cat = nextCat;
+        ctx.rdl.catalogCollapsed = false;
+        if (nextCat !== 'All') {
+          const catalog = getVisibleRdlCatalog(STATE);
+          const curId = String(STATE.activeStatement || '01').padStart(2, '0');
+          const curMeta = catalog.find(x => x.id === curId);
+          if (!curMeta || curMeta.cat !== nextCat) {
+            const firstInCat = catalog.find(x => x.cat === nextCat);
+            if (firstInCat) STATE.activeStatement = firstInCat.id;
+          }
+        }
         rerenderFn();
+      });
+    });
+
+    // Clicking a domain pod header jumps to the first report in that domain
+    root.querySelectorAll('[data-rdl-pod-jump]').forEach(hdr => {
+      hdr.addEventListener('click', () => {
+        const grpCat = hdr.getAttribute('data-rdl-pod-jump');
+        const catalog = getVisibleRdlCatalog(STATE);
+        const firstInCat = catalog.find(x => x.cat === grpCat);
+        if (firstInCat && STATE.activeStatement !== firstInCat.id) {
+          STATE.activeStatement = firstInCat.id;
+          root.querySelectorAll('.stmt-card[data-stmt]').forEach(b => b.classList.toggle('active', b.dataset.stmt === firstInCat.id));
+          refreshSheetAndParams();
+        }
       });
     });
 
@@ -3248,6 +3326,11 @@
         ctx.rdl.search = searchInput.value || '';
         const q = ctx.rdl.search.trim().toLowerCase();
         const cat = ctx.rdl.cat || 'All';
+        if (q && ctx.rdl.catalogCollapsed) {
+          ctx.rdl.catalogCollapsed = false;
+          const tabBar = root.querySelector('.rdl-tab-bar');
+          if (tabBar) tabBar.classList.remove('is-collapsed');
+        }
         root.querySelectorAll('.rdl-tab[data-stmt]').forEach(tab => {
           const r = RDL_CATALOG.find(x => x.id === tab.dataset.stmt);
           if (!r) return;
@@ -3255,21 +3338,18 @@
           const mQ = !q || r.title.toLowerCase().includes(q) || r.cat.toLowerCase().includes(q) || r.ar.includes(q) || r.id.includes(q);
           tab.classList.toggle('rdl-tab-filtered', !(mCat && mQ));
         });
+        root.querySelectorAll('.rdl-group-pod').forEach(pod => {
+          const anyVisible = [...pod.querySelectorAll('.rdl-tab[data-stmt]')].some(t => !t.classList.contains('rdl-tab-filtered'));
+          pod.classList.toggle('rdl-pod-filtered', !anyVisible);
+        });
       });
     }
 
     // 22 report tab buttons
     root.querySelectorAll('.stmt-card[data-stmt]').forEach(btn => {
       btn.addEventListener('click', () => {
-        const catalog = getVisibleRdlCatalog(STATE);
         STATE.activeStatement = btn.dataset.stmt;
         root.querySelectorAll('.stmt-card[data-stmt]').forEach(b => b.classList.toggle('active', b === btn));
-        const activeId = String(STATE.activeStatement || '01').padStart(2, '0');
-        const meta = catalog.find(x => x.id === activeId) || catalog[0];
-        const crumb = root.querySelector('.rdl-menu-crumb');
-        if (crumb) crumb.innerHTML = `${esc(meta.cat)} ▸ <b>RDL-${esc(meta.id)} ${esc(meta.title)}</b> <span class="rdl-crumb-ar" dir="rtl">(${esc(meta.ar)})</span>`;
-        const pg = root.querySelector('.rdl-tb-page');
-        if (pg) pg.innerHTML = `Report <b>${esc(meta.id)}</b> of ${catalog.length}`;
         refreshSheetAndParams();
       });
     });
@@ -3311,6 +3391,19 @@
     };
     if (csvBtn) csvBtn.addEventListener('click', doCsv);
     if (menuCsv) menuCsv.addEventListener('click', doCsv);
+
+    // Toggle Catalog deck
+    const toggleCatalogBtn = root.querySelector('#rdlToggleCatalogBtn');
+    if (toggleCatalogBtn) {
+      toggleCatalogBtn.addEventListener('click', () => {
+        const catalog = getVisibleRdlCatalog(STATE);
+        ctx.rdl.catalogCollapsed = !ctx.rdl.catalogCollapsed;
+        toggleCatalogBtn.classList.toggle('active', !ctx.rdl.catalogCollapsed);
+        toggleCatalogBtn.innerHTML = `${ctx.rdl.catalogCollapsed ? '▷' : '▽'} Catalog (${catalog.length})`;
+        const tabBar = root.querySelector('.rdl-tab-bar');
+        if (tabBar) tabBar.classList.toggle('is-collapsed', Boolean(ctx.rdl.catalogCollapsed));
+      });
+    }
 
     // Toggle Parameters bar
     const toggleParamsBtn = root.querySelector('#rdlToggleParamsBtn');
@@ -3668,12 +3761,12 @@
     function wireTableSorting() {
       root.querySelectorAll('#printableSheet table.rdl-table thead th').forEach((th, colIdx) => {
         th.style.cursor = 'pointer';
-        th.title = 'Click to sort column';
+        th.setAttribute('aria-label', `${(th.textContent || '').trim()} — click to sort`);
         th.addEventListener('click', () => {
           const tbl = th.closest('table');
           const tbody = tbl && tbl.querySelector('tbody');
           if (!tbody) return;
-          const rows = [...tbody.querySelectorAll('tr')];
+          const rows = [...tbody.querySelectorAll('tr:not(.rdl-interactive-group-row)')];
           if (rows.some(r => r.classList.contains('rdl-group-row') || r.classList.contains('rdl-subtotal-row'))) return;
           const dir = th.dataset.sortDir === 'asc' ? 'desc' : 'asc';
           th.dataset.sortDir = dir;
@@ -3686,12 +3779,405 @@
             return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
           });
           rows.forEach(r => tbody.appendChild(r));
+          if (typeof tbl._rdlRefreshInteractive === 'function') {
+            tbl._rdlRefreshInteractive();
+          }
         });
+      });
+    }
+
+    function wireInteractiveSheetEnhancements(meta) {
+      const sheet = root.querySelector('#printableSheet');
+      if (!sheet) return;
+
+      // 1. Multi-section switcher bar + collapsible section headings (for RDL-01, RDL-02, RDL-18, etc.)
+      const secTitles = [...sheet.querySelectorAll('.rdl-sec-title')];
+      if (secTitles.length >= 2) {
+        const secMeta = secTitles.map((secEl, idx) => {
+          const rawLabel = (secEl.textContent || '').replace(/\s+/g, ' ').trim();
+          const shortLabel = rawLabel.split(/\s+[—–/]\s+/)[0].trim();
+          secEl.dataset.rdlSecIdx = String(idx);
+          if (!secEl.querySelector('.rdl-sec-caret')) {
+            const caret = document.createElement('span');
+            caret.className = 'rdl-sec-caret no-print';
+            caret.textContent = '▾';
+            secEl.appendChild(caret);
+          }
+          const bodyNodes = [];
+          let nxt = secEl.nextElementSibling;
+          while (nxt && !nxt.classList.contains('rdl-sec-title') && !nxt.classList.contains('rdl-sign-row') && !nxt.classList.contains('rdl-footer')) {
+            nxt.dataset.rdlSecBody = String(idx);
+            bodyNodes.push(nxt);
+            nxt = nxt.nextElementSibling;
+          }
+          const tbl = bodyNodes.find(n => n.tagName === 'TABLE') || null;
+          const rowCnt = tbl ? tbl.querySelectorAll('tbody tr:not(.rdl-group-row):not(.rdl-subtotal-row)').length : 0;
+          secEl.addEventListener('click', () => {
+            const collapsed = secEl.classList.toggle('is-sec-collapsed');
+            bodyNodes.forEach(n => n.classList.toggle('rdl-sec-collapsed-body', collapsed));
+          });
+          return { idx, shortLabel, rowCnt, secEl, bodyNodes };
+        });
+
+        const secBar = document.createElement('div');
+        secBar.className = 'rdl-sheet-sec-bar no-print';
+        secBar.innerHTML = `
+          <span class="rdl-sheet-sec-lbl">Report Sections</span>
+          <div class="rdl-sheet-sec-pills" role="tablist" aria-label="Isolate report section">
+            <button type="button" class="rdl-sheet-sec-pill active" data-rdl-sec-pill="all">
+              <span>All Sections</span>
+              <span class="rdl-sec-pill-cnt">${secMeta.length}</span>
+            </button>
+            ${secMeta.map(s => `
+              <button type="button" class="rdl-sheet-sec-pill" data-rdl-sec-pill="${s.idx}">
+                <span>${esc(s.shortLabel)}</span>
+                ${s.rowCnt ? `<span class="rdl-sec-pill-cnt">${s.rowCnt}</span>` : ''}
+              </button>
+            `).join('')}
+          </div>
+        `;
+        secTitles[0].parentNode.insertBefore(secBar, secTitles[0]);
+
+        secBar.querySelectorAll('[data-rdl-sec-pill]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const target = btn.getAttribute('data-rdl-sec-pill');
+            secBar.querySelectorAll('[data-rdl-sec-pill]').forEach(b => b.classList.toggle('active', b === btn));
+            secMeta.forEach(s => {
+              const show = target === 'all' || String(s.idx) === target;
+              s.secEl.classList.toggle('rdl-sec-filtered-out', !show);
+              s.bodyNodes.forEach(n => n.classList.toggle('rdl-sec-filtered-out', !show));
+              if (show && target !== 'all') {
+                s.secEl.classList.remove('is-sec-collapsed');
+                s.bodyNodes.forEach(n => n.classList.remove('rdl-sec-collapsed-body'));
+              }
+            });
+          });
+        });
+      }
+
+      // 2. Interactive table grouping, inline filter & 12-row pagination for data tables
+      const tables = [...sheet.querySelectorAll('table.rdl-table')];
+      tables.forEach((tbl, tblIdx) => {
+        const tbody = tbl.querySelector('tbody');
+        const thead = tbl.querySelector('thead');
+        if (!tbody || !thead) return;
+        const initialRows = [...tbody.querySelectorAll('tr')];
+        if (initialRows.length <= 6) return;
+        if (initialRows.some(r => r.classList.contains('rdl-group-row') || r.classList.contains('rdl-subtotal-row'))) return;
+
+        const ths = [...thead.querySelectorAll('th')];
+        if (!ths.length) return;
+
+        // Discover candidate group-by dimensions
+        const groupOptions = [];
+        ths.forEach((th, colIdx) => {
+          if (th.classList.contains('num')) return;
+          const hdrTxt = (th.textContent || '').replace(/\s+/g, ' ').trim();
+          if (!hdrTxt || /^#$|^no\.?$|^id$|^je\s*#$|^voucher|^ticket|^ref|^description|^notes/i.test(hdrTxt)) return;
+          if (/^date$/i.test(hdrTxt)) {
+            const months = new Set();
+            initialRows.forEach(r => {
+              const cellTxt = (r.children[colIdx] ? r.children[colIdx].textContent : '').trim();
+              if (/^\d{4}-\d{2}/.test(cellTxt)) months.add(cellTxt.slice(0, 7));
+            });
+            if (months.size >= 2) {
+              groupOptions.push({ key: `month:${colIdx}`, label: 'Month', colIdx, mode: 'month' });
+            }
+            return;
+          }
+          const vals = new Set();
+          initialRows.forEach(r => {
+            const v = (r.children[colIdx] ? r.children[colIdx].textContent : '').replace(/\s+/g, ' ').trim();
+            if (v) vals.add(v);
+          });
+          if (vals.size >= 2 && vals.size <= Math.min(48, initialRows.length - 1)) {
+            groupOptions.push({ key: `col:${colIdx}`, label: hdrTxt.replace(/\s*\/.*$/, ''), colIdx, mode: 'col' });
+          }
+        });
+
+        // Fallback smart tier grouping for aging / balance tables (e.g. RDL-13 Aged Receivables, RDL-15 Supplier Balances, RDL-05 Trial Balance)
+        const has90PlusCol = ths.findIndex(th => /90\+\s*days/i.test(th.textContent || ''));
+        if (has90PlusCol >= 0) {
+          groupOptions.unshift({ key: 'tier:aging', label: 'Aging Tier', colIdx: 1, mode: 'aging', idx90: has90PlusCol });
+        }
+        if (groupOptions.length < 2) {
+          const primaryNumIdx = ths.findIndex(th => /total|balance|net|amount/i.test(th.textContent || '') && th.classList.contains('num'));
+          if (primaryNumIdx >= 0) {
+            groupOptions.push({ key: `tier:bal:${primaryNumIdx}`, label: 'Balance Tier', colIdx: 1, mode: 'balance', numIdx: primaryNumIdx });
+          }
+        }
+
+        const topGroups = groupOptions.slice(0, 3);
+        const state = {
+          groupKey: 'none',
+          searchQ: '',
+          pageSize: initialRows.length > 12 ? 12 : 0, // 0 = All
+          page: 1,
+          expandedGroups: new Set()
+        };
+
+        const parseCellNum = (cell) => {
+          if (!cell) return 0;
+          const txt = (cell.textContent || '').replace(/[^0-9.-]/g, '');
+          const n = parseFloat(txt);
+          return Number.isFinite(n) ? n : 0;
+        };
+
+        const getRowGroupValue = (tr, grp) => {
+          if (!grp) return 'All';
+          if (grp.mode === 'month') {
+            const d = (tr.children[grp.colIdx] ? tr.children[grp.colIdx].textContent : '').trim();
+            return /^\d{4}-\d{2}/.test(d) ? d.slice(0, 7) : (d || 'Undated');
+          }
+          if (grp.mode === 'aging') {
+            const c90 = parseCellNum(tr.children[grp.idx90]);
+            const c60 = parseCellNum(tr.children[grp.idx90 - 1]);
+            const c30 = parseCellNum(tr.children[grp.idx90 - 2]);
+            if (c90 > 0) return '1 · 90+ Days Overdue (Critical)';
+            if (c60 > 0) return '2 · 61–90 Days Past Due';
+            if (c30 > 0) return '3 · 31–60 Days Past Due';
+            return '4 · Current (0–30 Days)';
+          }
+          if (grp.mode === 'balance') {
+            const v = Math.abs(parseCellNum(tr.children[grp.numIdx]));
+            if (v >= 25000) return '1 · High Exposure ($25,000+)';
+            if (v >= 5000) return '2 · Medium ($5,000 – $25,000)';
+            if (v > 0) return '3 · Standard (< $5,000)';
+            return '4 · Zero / Settled ($0)';
+          }
+          const raw = (tr.children[grp.colIdx] ? tr.children[grp.colIdx].textContent : '').replace(/\s+/g, ' ').trim();
+          return raw || 'Unspecified';
+        };
+
+        const ctrlBar = document.createElement('div');
+        ctrlBar.className = 'rdl-tbl-ctrl-bar no-print';
+        ctrlBar.dataset.rdlTblIdx = String(tblIdx);
+        tbl.parentNode.insertBefore(ctrlBar, tbl);
+
+        const applyTableState = () => {
+          // Always remove previously injected interactive group summary rows first
+          tbody.querySelectorAll('tr.rdl-interactive-group-row').forEach(r => r.remove());
+          const rawRows = [...tbody.querySelectorAll('tr:not(.rdl-interactive-group-row)')];
+          const q = state.searchQ.trim().toLowerCase();
+
+          const matchedRows = [];
+          rawRows.forEach(tr => {
+            tr.classList.remove('rdl-row-search-hidden', 'rdl-row-paged-hidden', 'rdl-row-grouped-hidden');
+            const match = !q || (tr.textContent || '').toLowerCase().includes(q);
+            if (!match) {
+              tr.classList.add('rdl-row-search-hidden');
+            } else {
+              matchedRows.push(tr);
+            }
+          });
+
+          const activeGrp = topGroups.find(g => g.key === state.groupKey) || null;
+          let totalPages = 1;
+          let rangeLabel = `${matchedRows.length} rows`;
+
+          if (activeGrp) {
+            // Grouped mode: aggregate matchedRows into summary buckets while keeping rawRows in tbody
+            const buckets = new Map();
+            matchedRows.forEach(tr => {
+              const gVal = getRowGroupValue(tr, activeGrp);
+              if (!buckets.has(gVal)) {
+                buckets.set(gVal, { key: gVal, rows: [], sums: new Array(ths.length).fill(0) });
+              }
+              const b = buckets.get(gVal);
+              b.rows.push(tr);
+              ths.forEach((th, cIdx) => {
+                if (!th.classList.contains('num')) return;
+                b.sums[cIdx] += parseCellNum(tr.children[cIdx]);
+              });
+            });
+
+            // Sort buckets: if label starts with "1 ·", sort alphabetically; otherwise sort by last summable column desc
+            const sumColIdx = (() => {
+              for (let i = ths.length - 1; i >= 0; i--) {
+                const h = (ths[i].textContent || '').trim();
+                if (ths[i].classList.contains('num') && !/%|avg|rate|price/i.test(h)) return i;
+              }
+              return -1;
+            })();
+
+            const sortedBuckets = [...buckets.values()].sort((a, b) => {
+              if (/^\d\s*·/.test(a.key) && /^\d\s*·/.test(b.key)) return a.key.localeCompare(b.key);
+              if (activeGrp.mode === 'month') return b.key.localeCompare(a.key);
+              if (sumColIdx >= 0 && Math.abs(b.sums[sumColIdx]) !== Math.abs(a.sums[sumColIdx])) {
+                return Math.abs(b.sums[sumColIdx]) - Math.abs(a.sums[sumColIdx]);
+              }
+              return b.rows.length - a.rows.length;
+            });
+
+            // Reorder tbody so each group header precedes its detail rows
+            const labelSpan = Math.max(1, ths.findIndex(th => th.classList.contains('num')));
+            sortedBuckets.forEach(b => {
+              const isExpanded = state.expandedGroups.has(b.key);
+              const gTr = document.createElement('tr');
+              gTr.className = `rdl-interactive-group-row ${isExpanded ? 'is-expanded' : ''}`;
+              gTr.dataset.groupBucket = b.key;
+
+              const cellsHtml = [];
+              cellsHtml.push(`
+                <td colspan="${labelSpan}" class="rdl-igrp-title-cell">
+                  <span class="rdl-igrp-caret">${isExpanded ? '▾' : '▸'}</span>
+                  <span class="rdl-igrp-label">${esc(b.key)}</span>
+                  <span class="rdl-igrp-count">${b.rows.length} ${b.rows.length === 1 ? 'row' : 'rows'}</span>
+                  <span class="rdl-igrp-hint">${isExpanded ? 'Click to collapse' : 'Click to expand rows'}</span>
+                </td>
+              `);
+              for (let cIdx = labelSpan; cIdx < ths.length; cIdx++) {
+                const th = ths[cIdx];
+                const hdrTxt = (th.textContent || '').trim();
+                if (!th.classList.contains('num')) {
+                  cellsHtml.push(`<td></td>`);
+                } else if (/%|avg|unit|price|rate|running/i.test(hdrTxt)) {
+                  cellsHtml.push(`<td class="num muted">—</td>`);
+                } else {
+                  const isCurrency = /\$|usd|dr|cr|debit|credit|billed|collected|balance|total|amount|net|vat|cost|pay|ar|ap|current|days/i.test(hdrTxt);
+                  const val = b.sums[cIdx];
+                  cellsHtml.push(`<td class="num bold">${isCurrency ? fmtUsd(val) : fmtNum(val, 1)}</td>`);
+                }
+              }
+              gTr.innerHTML = cellsHtml.join('');
+              gTr.addEventListener('click', () => {
+                if (state.expandedGroups.has(b.key)) state.expandedGroups.delete(b.key);
+                else state.expandedGroups.add(b.key);
+                applyTableState();
+              });
+              tbody.appendChild(gTr);
+              b.rows.forEach(r => {
+                r.classList.toggle('rdl-row-grouped-hidden', !isExpanded);
+                tbody.appendChild(r);
+              });
+            });
+            // Keep non-matched rows at the end of tbody (still hidden by .rdl-row-search-hidden)
+            rawRows.filter(r => r.classList.contains('rdl-row-search-hidden')).forEach(r => tbody.appendChild(r));
+            rangeLabel = `${sortedBuckets.length} groups (${matchedRows.length} rows)`;
+          } else {
+            // Detail view with pagination
+            const ps = state.pageSize > 0 ? state.pageSize : matchedRows.length;
+            totalPages = Math.max(1, Math.ceil(matchedRows.length / Math.max(1, ps)));
+            if (state.page > totalPages) state.page = totalPages;
+            if (state.page < 1) state.page = 1;
+            const startIdx = state.pageSize > 0 ? (state.page - 1) * state.pageSize : 0;
+            const endIdx = state.pageSize > 0 ? Math.min(matchedRows.length, startIdx + state.pageSize) : matchedRows.length;
+            matchedRows.forEach((tr, idx) => {
+              const onPage = idx >= startIdx && idx < endIdx;
+              tr.classList.toggle('rdl-row-paged-hidden', !onPage);
+            });
+            rangeLabel = matchedRows.length
+              ? `${startIdx + 1}–${endIdx} of ${matchedRows.length} rows`
+              : `0 of ${rawRows.length} rows`;
+          }
+
+          // Render control bar HTML (preserve focus if user is typing in table search input)
+          const activeSearchEl = ctrlBar.querySelector('.rdl-tbl-search-inp');
+          const hadFocus = activeSearchEl && document.activeElement === activeSearchEl;
+          const selStart = hadFocus ? activeSearchEl.selectionStart : null;
+
+          ctrlBar.innerHTML = `
+            <div class="rdl-tbl-ctrl-left">
+              <span class="rdl-tbl-ctrl-lbl">View</span>
+              <button type="button" class="rdl-tbl-grp-pill ${state.groupKey === 'none' ? 'active' : ''}" data-tbl-grp="none">
+                Detail Rows (${matchedRows.length})
+              </button>
+              ${topGroups.map(g => `
+                <button type="button" class="rdl-tbl-grp-pill ${state.groupKey === g.key ? 'active' : ''}" data-tbl-grp="${esc(g.key)}">
+                  Group by ${esc(g.label)}
+                </button>
+              `).join('')}
+              ${activeGrp ? `
+                <button type="button" class="rdl-tbl-expand-all-btn" data-tbl-expand-toggle="1">
+                  ${state.expandedGroups.size > 0 ? 'Collapse All' : 'Expand All'}
+                </button>
+              ` : ''}
+            </div>
+            <div class="rdl-tbl-ctrl-right">
+              <input type="search" class="rdl-tbl-search-inp" placeholder="Filter table rows..." value="${esc(state.searchQ)}" aria-label="Filter table rows" />
+              ${!activeGrp && rawRows.length > 12 ? `
+                <div class="rdl-tbl-pagesize" role="group" aria-label="Rows per page">
+                  ${[12, 25, 50, 0].map(sz => `
+                    <button type="button" class="rdl-tbl-sz-btn ${state.pageSize === sz ? 'active' : ''}" data-tbl-sz="${sz}">
+                      ${sz === 0 ? 'All' : sz}
+                    </button>
+                  `).join('')}
+                </div>
+                <div class="rdl-tbl-pager" role="group" aria-label="Table pagination">
+                  <button type="button" class="rdl-tbl-pg-btn" data-tbl-pg="-1" ${state.page <= 1 ? 'disabled' : ''} aria-label="Previous page">‹</button>
+                  <span class="rdl-tbl-pg-info">${rangeLabel}</span>
+                  <button type="button" class="rdl-tbl-pg-btn" data-tbl-pg="1" ${state.page >= totalPages ? 'disabled' : ''} aria-label="Next page">›</button>
+                </div>
+              ` : `<span class="rdl-tbl-pg-info">${rangeLabel}</span>`}
+            </div>
+          `;
+
+          ctrlBar.querySelectorAll('[data-tbl-grp]').forEach(btn => {
+            btn.addEventListener('click', () => {
+              state.groupKey = btn.getAttribute('data-tbl-grp') || 'none';
+              state.expandedGroups.clear();
+              state.page = 1;
+              applyTableState();
+            });
+          });
+
+          const expBtn = ctrlBar.querySelector('[data-tbl-expand-toggle]');
+          if (expBtn) {
+            expBtn.addEventListener('click', () => {
+              if (state.expandedGroups.size > 0) {
+                state.expandedGroups.clear();
+              } else {
+                tbody.querySelectorAll('tr.rdl-interactive-group-row').forEach(r => {
+                  if (r.dataset.groupBucket) state.expandedGroups.add(r.dataset.groupBucket);
+                });
+              }
+              applyTableState();
+            });
+          }
+
+          ctrlBar.querySelectorAll('[data-tbl-sz]').forEach(btn => {
+            btn.addEventListener('click', () => {
+              state.pageSize = Number(btn.getAttribute('data-tbl-sz') || 0);
+              state.page = 1;
+              applyTableState();
+            });
+          });
+
+          ctrlBar.querySelectorAll('[data-tbl-pg]').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const dir = Number(btn.getAttribute('data-tbl-pg') || 1);
+              state.page = Math.max(1, Math.min(totalPages, state.page + dir));
+              applyTableState();
+            });
+          });
+
+          const newSearchEl = ctrlBar.querySelector('.rdl-tbl-search-inp');
+          if (newSearchEl) {
+            newSearchEl.addEventListener('input', () => {
+              state.searchQ = newSearchEl.value || '';
+              state.page = 1;
+              applyTableState();
+            });
+            if (hadFocus) {
+              try {
+                newSearchEl.focus({ preventScroll: true });
+                if (typeof selStart === 'number') newSearchEl.setSelectionRange(selStart, selStart);
+              } catch (_) {}
+            }
+          }
+        };
+
+        tbl._rdlRefreshInteractive = applyTableState;
+        applyTableState();
       });
     }
 
     wireParamControls();
     wireTableSorting();
+    const initialCatalog = getVisibleRdlCatalog(STATE);
+    const initialId = String(STATE.activeStatement || '01').padStart(2, '0');
+    const initialMeta = initialCatalog.find(x => x.id === initialId) || initialCatalog[0];
+    wireInteractiveSheetEnhancements(initialMeta, ctx);
   }
 
   window.MFG_RDL = {
