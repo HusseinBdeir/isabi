@@ -1362,18 +1362,18 @@
   }
 
   const PBI_PAGES = [
-    { id: 'p01_overview', num: '01', group: 'Executive', label: 'Executive Pulse', title: 'Executive P&L, Margin, AR/AP & Fleet Overview' },
-    { id: 'p02_companies', num: '02', group: 'Executive', label: 'Entity Comparison', title: 'Side-by-Side Entity Comparison (WTC · BBConstruction · Lions Transport)' },
-    { id: 'p04_sales', num: '03', group: 'Commercial & AR', label: 'Sales Analytics', title: 'Sales Revenue, Realised Price Trends, Delivery Transport & Site Mix' },
-    { id: 'p05_pricing', num: '04', group: 'Commercial & AR', label: 'Pricing & Spreads', title: 'Price Agreements, Spread, Below-Agreed Exceptions & Commissions' },
-    { id: 'p06_ar', num: '05', group: 'Commercial & AR', label: 'Receivables & Aging', title: 'FIFO Customer Balances, 5-Bucket AR Aging & Running Statement' },
-    { id: 'p07_ap', num: '06', group: 'Procurement & Stock', label: 'Payables & Spend', title: '3-Leg Accounts Payable (Material / Haulage / Expense) & Overhead' },
-    { id: 'p08_stock', num: '07', group: 'Procurement & Stock', label: 'Stock & Unit Margin', title: 'Raw Material Intake, Unit Economics & Two-Leg Cost Split' },
-    { id: 'p09_fuel', num: '08', group: 'Fleet & Workforce', label: 'Diesel & Tank Burn', title: 'Diesel Tank Balance, Consumption per 100 km / hr & Meter Guard (m142)' },
-    { id: 'p10_fleet', num: '09', group: 'Fleet & Workforce', label: 'Fleet Economics', title: 'Equipment Utilization, Running Cost & Cost per Ton' },
-    { id: 'p12_payroll', num: '10', group: 'Fleet & Workforce', label: 'Workforce Analytics', title: 'Staff Payroll Analytics, Site Transport & Freelance' },
-    { id: 'p14_cashflow', num: '11', group: 'Treasury & GL', label: 'Cash Flow & Till', title: 'Cash Inflows vs Outflows, Daily Till & Payment Method Mix' },
-    { id: 'p16_financial', num: '12', group: 'Treasury & GL', label: 'Financial GL & Ratios', title: 'Lebanese CoA Income Statement, Balance Sheet & Trial Balance' }
+    { id: 'p01_overview', num: '01', group: 'Executive', label: 'Executive Pulse', title: 'Executive P&L, Margin, AR/AP & Fleet' },
+    { id: 'p02_companies', num: '02', group: 'Executive', label: 'Entity Comparison', title: 'Side-by-Side Entity Performance & Margins' },
+    { id: 'p04_sales', num: '03', group: 'Commercial & AR', label: 'Sales Analytics', title: 'Revenue, Price Trends, Transport & Site Mix' },
+    { id: 'p05_pricing', num: '04', group: 'Commercial & AR', label: 'Pricing & Spreads', title: 'Agreements, Spreads, Shortfalls & Commissions' },
+    { id: 'p06_ar', num: '05', group: 'Commercial & AR', label: 'Receivables & Aging', title: 'Customer Balances, 5-Bucket Aging & Ledger' },
+    { id: 'p07_ap', num: '06', group: 'Procurement & Stock', label: 'Payables & Spend', title: 'Material, Haulage & Expense Payables' },
+    { id: 'p08_stock', num: '07', group: 'Procurement & Stock', label: 'Stock & Unit Margin', title: 'Raw Intake, Unit Economics & Cost Split' },
+    { id: 'p09_fuel', num: '08', group: 'Fleet & Workforce', label: 'Diesel & Tank Burn', title: 'Tank Balance, Burn Rates & Meter Audit' },
+    { id: 'p10_fleet', num: '09', group: 'Fleet & Workforce', label: 'Fleet Economics', title: 'Utilization, Running Cost & Cost per Ton' },
+    { id: 'p12_payroll', num: '10', group: 'Fleet & Workforce', label: 'Workforce Analytics', title: 'Payroll Earnings, Attendance & Allowances' },
+    { id: 'p14_cashflow', num: '11', group: 'Treasury & GL', label: 'Cash Flow & Till', title: 'Inflows vs Outflows, Daily Till & Mix' },
+    { id: 'p16_financial', num: '12', group: 'Treasury & GL', label: 'Financial GL & Ratios', title: 'Income Statement, Balance Sheet & Trial Balance' }
   ];
 
   // 8 Operational Pages moved out of Analytics & Insights directly into their respective domain hub sub-tabs
@@ -4590,7 +4590,7 @@
             </div>
           </div>
           <div class="pbi-hero-actions">
-            ${activeSlicerCount ? `<span class="badge badge-warn">${activeSlicerCount} Active Slicer${activeSlicerCount > 1 ? 's' : ''}</span>` : ''}
+            ${activeSlicerCount ? `<span class="badge badge-warn sr-only">${activeSlicerCount} Active Slicer${activeSlicerCount > 1 ? 's' : ''}</span>` : ''}
             <button type="button" class="pbi-drawer-toggle ${!pbiCatalogCollapsed ? 'active' : ''}" id="pbiToggleCatalogBtn" aria-label="Toggle analytical pages catalog">
               <span class="pbi-dt-caret">${pbiCatalogCollapsed ? '▸' : '▾'}</span> Pages (${pagePool.length})
             </button>
