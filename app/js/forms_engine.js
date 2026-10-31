@@ -109,6 +109,7 @@
         { id: 'customer', label: 'Customer', badge: 'bhf_customer', crKey: 'customers', title: 'New Customer (Universal Registry)', universal: true },
         { id: 'supplier', label: 'Supplier / Hauler', badge: 'bhf_supplier', crKey: 'suppliers', title: 'New Supplier / Hauler (Universal Registry)', universal: true },
         { id: 'product', label: 'Product / Grade', badge: 'bhf_product', crKey: 'products', title: 'New Product / Aggregate Grade (Universal Registry)', universal: true },
+        { id: 'item', label: 'Item / Spare Part', badge: 'bhf_item', crKey: 'items', title: 'New Item / Spare Part (Universal Catalog)', universal: true },
         { id: 'expensecategory', label: 'Expense Category', badge: 'bhf_expensecategory', crKey: 'expense_categories', title: 'New Expense Category (Universal Registry)', universal: true },
         { id: 'site', label: 'Site', badge: 'bhf_site', crKey: 'sites', title: 'New Site (Universal Registry)', universal: true },
         { id: 'region', label: 'Region / Zone', badge: 'bhf_region', crKey: 'regions', title: 'New Region / Zone (Universal Registry)', universal: true },
@@ -863,6 +864,40 @@
       `;
     }
 
+    if (fType === 'item') {
+      const whLocations = ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'];
+      return `
+        <div class="form-grid-3">
+          ${secHdr('1. Item / Spare Part Master Identity & Locked Unit (Universal Catalog · All BUs)')}
+          ${fld('Item / Part Name *', inp('f_item_name', 'text', '', 'placeholder="e.g. Fuel Filter, Hydraulic Oil 68, Drive Belt..."'), { id: 'wrap_f_item_name', hintId: 'hint_item_name', hint: 'Canonical item name shared across Expenses, Warehouse & Equipment Repairs.' })}
+          ${fld('Item Category *', sel('f_item_cat', [
+            ['Spare Parts', 'Spare Parts'],
+            ['Oils & Lubricants', 'Oils & Lubricants'],
+            ['Tools & Garage', 'Tools & Garage'],
+            ['Plant Consumables', 'Plant Consumables']
+          ], 'Spare Parts'), { id: 'wrap_f_item_cat' })}
+          ${fld('Unit (UoM) *', sel('f_uom', [
+            ['Piece', 'Piece (pcs)'],
+            ['Set', 'Set'],
+            ['Litre', 'Litre (L)'],
+            ['kg', 'Kilogram (kg)'],
+            ['Box', 'Box'],
+            ['m', 'Meter (m)']
+          ], 'Piece'), { id: 'wrap_f_uom', hintId: 'hint_item_uom', hint: 'Locks Unit automatically whenever this item is selected on Expense, Warehouse, or Repair tickets.' })}
+          ${fld('Default Unit Cost ($)', inp('f_default_cost', 'number', '0', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_f_default_cost' })}
+          ${fld('Default Warehouse Location', inp('f_wh_loc', 'text', 'WTC Main Warehouse', 'list="dl_item_wh_locs" placeholder="Default store or shelf..."') + dl('dl_item_wh_locs', whLocations), { id: 'wrap_f_wh_loc' })}
+          ${fld('Min Stock Reorder Alert', inp('f_min_stock', 'number', '0', 'step="1" min="0" placeholder="0"'), { id: 'wrap_f_min_stock' })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional OEM code, compatible trucks/machines, or storage note..."'), { span: true })}
+        </div>
+        <div class="live-calc" id="itemCatalogLiveCalc">
+          <div><small>Catalog Scope</small><b id="calc_item_scope">All BUs (Universal)</b></div>
+          <div><small>Locked Unit (UoM)</small><b id="calc_item_uom">Piece</b></div>
+          <div><small>Category</small><b id="calc_item_cat">Spare Parts</b></div>
+          <div><small>Default Cost</small><b id="calc_item_cost">$0.00</b></div>
+        </div>
+      `;
+    }
+
     if (fType === 'product') {
       return `
         <div class="form-grid-3">
@@ -970,12 +1005,15 @@
             hint: 'Must be located inside the selected Region.',
             hintId: 'hint_site_name'
           })}
-          ${fld('Default Site Owner (Supplier)', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_site_supplier', hidden: isCustSite })}
+          ${fld('Default Site Owner (Supplier)', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), {
+            id: 'wrap_site_supplier',
+            hidden: isCustSite,
+            afterHtml: `<div class="site-jv-subbar" id="wrap_site_jv"${isCustSite ? ' hidden' : ''}><label class="site-jv-toggle-pill" for="f_isjv"><input type="checkbox" id="f_isjv"><span class="site-jv-toggle-lbl"><b>Joint-Venture (JV) Site</b> · 50/50 partner split</span></label></div>`
+          })}
           ${fld('Linked Customer', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_site_customer', hidden: !isCustSite })}
           ${fld('Latitude (GPS)', inp('f_lat', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
           ${fld('Longitude (GPS)', inp('f_lng', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
           ${fld('Quick Paste Coords / Maps URL', inp('f_site_coord_paste', 'text', '', 'placeholder="Paste lat, lng or Maps link"'))}
-          <div class="form-field check-field" id="wrap_site_jv"${isCustSite ? ' hidden' : ''}><input type="checkbox" id="f_isjv"><label for="f_isjv">Joint-Venture (JV) Site</label></div>
           <div class="form-field span-3" id="siteRegionConsistencyBanner" hidden></div>
           <div class="geo-modal-map-wrap">
             <div class="geo-modal-map-bar">
@@ -1260,6 +1298,11 @@
         if (!balByKey[k]) balByKey[k] = { name: nm, uom: uomRaw || 'Piece', inQty: 0, inVal: 0, outQty: 0 };
         return balByKey[k];
       };
+      (rec.items || []).forEach(r => {
+        if (!r || r.voided) return;
+        const b = touch(r.name || r.item_name, r.uom || 'Piece');
+        if (b && r.uom) b.uom = r.uom;
+      });
       (rec.expense_items || []).forEach(r => {
         if (!r || r.voided || Number(r.historical_consumed) === 1 || !matchCo(r)) return;
         if (!/^warehouse$/i.test(String(r.allocation_mode || '').trim())) return;
@@ -1296,6 +1339,7 @@
       });
       const baseCatalog = uniqSorted(
         Object.values(balByKey).map(x => x.name)
+          .concat((rec.items || []).filter(x => x && !x.voided).map(x => x.name || x.item_name))
           .concat((rec.expense_items || []).map(x => x && x.item_name))
           .concat(['Engine Oil 15W-40', 'Hydraulic Oil 68', 'Gear / Transmission Oil 90', 'Fuel Filter', 'Engine Oil Filter', 'Air Filter', 'Bearing (Roulement)', 'Conveyor / Drive Belt', 'High-Pressure Hydraulic Hose', 'Heavy-Duty Truck Battery', 'Heavy Truck / Loader Tire', 'Alternator (Dynamo)', 'Starter Motor (March)'])
       );
@@ -1351,7 +1395,7 @@
           ], 'Existing / Opening Stock'), { id: 'wrap_f_wh_move_type', hintId: 'hint_wh_reason', hint: 'Items already owned on your shelves before or outside supplier bills' })}
           ${fld('Item / Part Name *', inp('f_item_name', 'text', '', 'list="dl_wh_items_modal" placeholder="Select or type spare part, filter, belt, oil..."') + dlMeta('dl_wh_items_modal', whItemMeta), { id: 'wrap_f_item_name', hintId: 'hint_wh_item', hint: '' })}
           ${fld('Quantity *', inp('f_qty', 'number', '1', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', hintId: 'hint_qty', hint: 'Defaults to 1' })}
-          ${fld('Unit *', sel('f_uom', [['Piece', 'Piece'], ['Set', 'Set'], ['Litre', 'Litre'], ['kg', 'kg'], ['Box', 'Box'], ['m', 'm']], 'Piece'), { id: 'wrap_f_uom' })}
+          ${fld('Unit *', sel('f_uom', [['Piece', 'Piece'], ['Set', 'Set'], ['Litre', 'Litre'], ['kg', 'kg'], ['Box', 'Box'], ['m', 'm']], 'Piece'), { id: 'wrap_f_uom', lockField: 'f_uom', lockReason: 'Locked to Unit (UoM) defined on the Items table', hintId: 'hint_wh_uom', hint: 'Locked to Items table when an existing catalog item is selected' })}
           ${fld('Item Category *', sel('f_category', [
             ['Spare Parts', 'Spare Parts'],
             ['Oils & Lubricants', 'Oils & Lubricants'],
@@ -1462,7 +1506,7 @@
             id: 'wrap_f_qty',
             afterHtml: `<div class="exp-price-mode-bar" style="margin-top:5px"><button type="button" class="uom-qpill" data-oil-qty-preset="20">20 L</button><button type="button" class="uom-qpill" data-oil-qty-preset="36">36 L</button><button type="button" class="uom-qpill" data-oil-qty-preset="40">40 L</button><button type="button" class="uom-qpill" data-oil-qty-preset="54">54 L</button></div>`
           })}
-          ${fld('Unit *', sel('f_uom', [['Litre', 'Litre'], ['Piece', 'Piece'], ['Set', 'Set'], ['kg', 'kg']], 'Litre'))}
+          ${fld('Unit *', sel('f_uom', [['Litre', 'Litre'], ['Piece', 'Piece'], ['Set', 'Set'], ['kg', 'kg']], 'Litre'), { id: 'wrap_f_uom', lockField: 'f_uom', lockReason: 'Locked to Unit (UoM) defined on the Items table', hintId: 'hint_oil_uom', hint: 'Locked to Items table' })}
           ${fld('Oil Source *', sel('f_oil_source', [
             ['Plant Lube Bay', 'Plant Lube Bay (Bulk Drum)'],
             ['Warehouse', 'Warehouse Stock (Deducts Stored Oil)'],
@@ -1776,6 +1820,7 @@
     }
 
     if (fType === 'conversion') {
+      const initFx = getActiveFxRate(today);
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
@@ -1785,17 +1830,33 @@
           ${fld('Conversion Direction *', sel('f_conv_dir', [
             ['USD to LBP', 'USD → LBP (USD Decreases · LBP Increases)'],
             ['LBP to USD', 'LBP → USD (LBP Decreases · USD Increases)']
-          ], 'USD to LBP'), { id: 'wrap_conv_dir' })}
-          ${fld('USD Decreased ($) *', inp('f_usd', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
-          ${fld('LBP Increased (LL) *', inp('f_lbp', 'number', '', 'step="1000" min="0"'), { id: 'wrap_tr_lbp' })}
-          ${fld('Exchange Rate (LL / $)', inp('f_fxrate', 'number', String(getActiveFxRate()), 'step="10" min="1"'), { id: 'wrap_conv_rate' })}
+          ], 'USD to LBP'), { id: 'wrap_conv_dir', hintId: 'hint_conv_dir', hint: '' })}
+          ${fld('USD Decreased ($) *', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="Enter USD or pick preset..."'), {
+            id: 'wrap_tr_usd',
+            hintId: 'hint_tr_usd',
+            hint: '',
+            afterHtml: `<div class="conv-quick-bar" id="convUsdQuickBar"><button type="button" class="att-preset-pill" data-conv-usd-preset="100">$100</button><button type="button" class="att-preset-pill" data-conv-usd-preset="500">$500</button><button type="button" class="att-preset-pill" data-conv-usd-preset="1000">$1,000</button><button type="button" class="att-preset-pill" data-conv-usd-preset="5000">$5,000</button></div>`
+          })}
+          ${fld('LBP Increased (LL) *', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="Auto-calculates from USD × Rate..."'), {
+            id: 'wrap_tr_lbp',
+            hintId: 'hint_tr_lbp',
+            hint: ''
+          })}
+          ${fld('Exchange Rate (LL / $)', inp('f_fxrate', 'number', String(initFx), 'step="10" min="1"'), {
+            id: 'wrap_conv_rate',
+            lockField: 'f_fxrate',
+            lockReason: `FX Rate Corridor Guard (System Rate ${fmtFxRateLbl(initFx)} LL/$: >5% warning, >10% locked for Supervisor, >50% frozen)`,
+            hintId: 'hint_conv_rate',
+            hint: ''
+          })}
           ${fld('Reference / Voucher', inp('f_reference', 'text', ''))}
           ${fld('Notes', inp('f_notes', 'text', ''), { span2: true })}
+          <div id="convLiveCorridorStrip" class="att-contract-strip span-3" style="grid-column:1 / -1"></div>
         </div>
         <div class="live-calc" id="trLiveCalc">
           <div><small id="lbl_tr_c1">USD Drawer Delta</small><b id="calc_tr_c1">-$0.00</b></div>
           <div><small id="lbl_tr_c2">LBP Drawer Delta</small><b id="calc_tr_c2">+0 LL</b></div>
-          <div><small id="lbl_tr_c3">Effective FX Rate</small><b id="calc_tr_c3">${fmtFxRateLbl(getActiveFxRate())} LL / $</b></div>
+          <div><small id="lbl_tr_c3">Effective FX Rate</small><b id="calc_tr_c3">${fmtFxRateLbl(initFx)} LL / $</b></div>
           <div><small id="lbl_tr_c4">Conversion Leg</small><b id="calc_tr_c4">USD to LBP</b></div>
         </div>
       `;

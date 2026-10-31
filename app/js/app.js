@@ -23,7 +23,7 @@
   const SEED_RECORD_KEYS = [
     'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'expense_items', 'warehouse_movements',
     'receipts', 'settlements', 'salaries',
-    'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products', 'sites',
+    'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products', 'items', 'sites',
     'regions', 'uoms', 'product_types', 'equipment', 'company_equipment', 'equipment_defects',
     'equipment_repairs', 'repair_items', 'equipment_oil_logs', 'part_movements',
     'drivers', 'company_drivers', 'expense_categories', 'expense_subcategories', 'employments', 'attendance',
@@ -190,7 +190,26 @@
     kioskLocked: false,
     kioskUnlockPromptOpen: false,
     kioskPunches: ((!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_kiosk_punches_v1', null) : null) || []).filter(p => p && !/^pn-seed-/.test(String(p.id || ''))),
-    staffBiometrics: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_staff_bio_v1', null) : null) || {},
+    staffBiometrics: (() => {
+      const rawBio = (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_staff_bio_v1', null) : null) || {};
+      if (rawBio && typeof rawBio === 'object') {
+        const ab = rawBio['abdallah ismail'];
+        if (ab && String(ab.face_updated_at || '').startsWith('2026-10-31T10:19:')) {
+          rawBio['abdallah ismail'] = Object.assign({}, ab, {
+            face_samples: [],
+            face_thumbs: [],
+            face_cleared: true,
+            face_updated_at: '2026-10-31T11:00:00.000Z',
+            updated_at: '2026-10-31T11:00:00.000Z'
+          });
+        }
+        const ah = rawBio['ahmad'];
+        if (ah && (!Array.isArray(ah.face_samples) || !ah.face_samples.length) && !ah.pin_code) {
+          delete rawBio['ahmad'];
+        }
+      }
+      return rawBio;
+    })(),
     workSchedules: (!IS_AUTOMATED_TEST ? lsGet('isabi_mfg_work_sched_v1', null) : null) || { shiftTypes: [], staffRules: {} },
     kioskAttDir: 'auto',
     kioskAttSite: 'WTC Main Plant',
@@ -329,7 +348,7 @@
   // App-entered record pools (localStorage + cloud relay) → server table + SEED list
   const CR_KEYS = [
     'sales_tickets', 'raw_purchases', 'receipts', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'expense_items', 'warehouse_movements', 'settlements',
-    'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products',
+    'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products', 'items',
     'product_types', 'uoms', 'sites', 'regions', 'equipment', 'company_equipment',
     'equipment_defects', 'equipment_repairs', 'repair_items', 'equipment_oil_logs', 'part_movements',
     'drivers', 'company_drivers', 'expense_categories', 'expense_subcategories',
@@ -343,7 +362,7 @@
     fuel_intakes: 'fuel_intakes', fuel_malfunctions: 'fuel_malfunctions', expenses: 'expenses',
     expense_items: 'expense_items', warehouse_movements: 'warehouse_movements', settlements: 'supplier_payments',
     price_rules: 'price_rules', vat_invoices: 'vat_invoices', credit_terms: 'credit_terms',
-    customers: 'customers', suppliers: 'suppliers', products: 'products',
+    customers: 'customers', suppliers: 'suppliers', products: 'products', items: 'items',
     product_types: 'product_types', uoms: 'uoms', sites: 'sites', regions: 'regions',
     equipment: 'equipment', company_equipment: 'company_equipment',
     equipment_defects: 'equipment_defects', equipment_repairs: 'equipment_repairs',
@@ -362,7 +381,7 @@
     fuel_intakes: 'fuel intake', fuel_malfunctions: 'tank malfunction', expenses: 'expense',
     expense_items: 'expense item', warehouse_movements: 'warehouse movement', settlements: 'supplier settlement',
     price_rules: 'price agreement', vat_invoices: 'vat invoice', credit_terms: 'credit terms',
-    customers: 'customer', suppliers: 'supplier', products: 'product',
+    customers: 'customer', suppliers: 'supplier', products: 'product', items: 'item / spare part',
     product_types: 'product family', uoms: 'unit of measure', sites: 'site', regions: 'region',
     equipment: 'equipment', company_equipment: 'company fleet unit',
     equipment_defects: 'equipment warning', equipment_repairs: 'equipment repair',
@@ -5376,9 +5395,11 @@
             const curVal = String(cf[def.key] || '');
             const isNum = def.kind === 'numeric' || isNumericColKey(def.key);
             const eagerOpts = view === 'ureg_equipment' || Boolean(curVal);
-            const opts = !eagerOpts ? [] : (isNum
-              ? buildNumericFilterOptions(pool, def.key, view)
-              : buildCategoricalFilterOptions(pool, def.key, view, 75));
+            const opts = !eagerOpts
+              ? (def.key === 'company' ? [{ v: 'WTC', l: 'WTC' }, { v: 'BBConstruction', l: 'BBConstruction' }, { v: 'Lions Transport', l: 'Lions Transport' }] : [])
+              : (isNum
+                ? buildNumericFilterOptions(pool, def.key, view)
+                : buildCategoricalFilterOptions(pool, def.key, view, 75));
             const hasCurInOpts = !curVal || opts.some(o => o.v === curVal);
             const humanVal = curVal ? formatFilterSpecHuman(curVal) : 'All';
             return `
@@ -6089,7 +6110,8 @@
     f_vatinvoice: 'unlock_vat_serial',
     f_mat_total: 'unlock_formula_totals',
     f_trans_total: 'unlock_formula_totals',
-    f_total_usd: 'unlock_formula_totals'
+    f_total_usd: 'unlock_formula_totals',
+    f_fxrate: 'unlock_formula_totals'
   };
 
   const ROLE_PRESETS = {
@@ -6324,7 +6346,7 @@
       if (['sales', 'raw', 'fuel', 'malfunction'].includes(form)) return !!p.rights.enter_dispatch;
       if (['defect', 'partlog', 'repair', 'oillog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master);
       if (['receipt', 'expense', 'warehousestock', 'settlement'].includes(form)) return !!p.rights.enter_accounting;
-      if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'salary', 'employment', 'freelance', 'allowance', 'logistics', 'overtimerate', 'triprate', 'attendance', 'fxrate', 'vatrate', 'currency'].includes(form)) return !!(p.rights.enter_master || p.rights.enter_payroll_jv);
+      if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'salary', 'employment', 'freelance', 'allowance', 'logistics', 'overtimerate', 'triprate', 'attendance', 'fxrate', 'vatrate', 'currency'].includes(form)) return !!(p.rights.enter_master || p.rights.enter_payroll_jv);
       if (['treasury', 'external', 'extmovement', 'loan', 'loansettlement', 'conversion', 'jv', 'jvpartnership', 'jvdistribution'].includes(form)) return !!p.rights.enter_payroll_jv;
       return !!(p.rights.enter_dispatch || p.rights.enter_accounting || p.rights.enter_master);
     }
@@ -6339,7 +6361,7 @@
       return [
         'sales', 'raw', 'receipt', 'fuel', 'malfunction', 'expense', 'warehousestock', 'settlement',
         'defect', 'repair', 'oillog', 'partlog', 'pricerule',
-        'customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver',
+        'customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver',
         'salary', 'attendance', 'employment', 'freelance', 'allowance', 'logistics', 'triprate', 'overtimerate'
       ].includes(form);
     }
@@ -6386,7 +6408,7 @@
   const UNIV_REGISTRY_GROUPS = {
     reg_customers: ['customers', 'suppliers'],
     reg_suppliers: ['customers', 'suppliers'],
-    reg_products: ['products', 'product_types', 'uoms'],
+    reg_products: ['products', 'items', 'product_types', 'uoms'],
     reg_categories: ['expense_categories', 'expense_subcategories'],
     reg_sites: ['sites', 'regions'],
     reg_regions: ['sites', 'regions'],
@@ -6972,8 +6994,16 @@
 
   // ---- master-data lookups for the entry desk ---------------------------------
   let _FREQ_IDX = null;
+  let _FREQ_TKT_CACHE = null;
+  const _cloneMap = m => new Map(m);
+  const _cloneMapOfMaps = m => {
+    const out = new Map();
+    m.forEach((sub, k) => out.set(k, new Map(sub)));
+    return out;
+  };
   function getFreqIndex() {
     const rec = (SEED && SEED.records) || {};
+    const tr = (SEED && SEED._tableRev) || {};
     const sales = rec.sales_tickets || [];
     const raws = rec.raw_purchases || [];
     const exps = rec.expenses || [];
@@ -6988,7 +7018,7 @@
     const loans = rec.loans || [];
     const extMovs = rec.external_movements || [];
     const overs = rec.overtime_rates || [];
-    const key = `${sales.length}:${raws.length}:${exps.length}:${rcpts.length}:${settles.length}:${fuels.length}:${sals.length}:${rules.length}:${SEED._customRev || 0}`;
+    const key = `${sales.length}:${raws.length}:${exps.length}:${rcpts.length}:${settles.length}:${fuels.length}:${sals.length}:${rules.length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.fuel_intakes||0}:${tr.salaries||0}:${tr.attendance||0}:${tr.employments||0}:${tr.freelance_sheets||0}:${tr.price_rules||0}:${tr.loans||0}:${tr.external_movements||0}:${tr.overtime_rates||0}:${tr.sites||0}:${tr.customers||0}:${tr.suppliers||0}:${tr.equipment||0}:${tr.drivers||0}:${_WIN_REV}`;
     if (_FREQ_IDX && _FREQ_IDX.key === key) return _FREQ_IDX;
 
     const inc = (map, val, w = 1) => {
@@ -7009,12 +7039,69 @@
       sub.set(vk, (sub.get(vk) || 0) + w);
     };
 
-    const productSales = new Map();
-    const productRaw = new Map();
-    const productSalesTickets = new Map();
-    const productRawTickets = new Map();
-    const productSalesByCo = new Map();
-    const productRawByCo = new Map();
+    const flIdx = getFleetIndex();
+    const incTruckTo = (tMap, val, w = 1) => {
+      if (!val) return;
+      inc(tMap, val, w);
+      const eq = flIdx.eqByName.get(norm(val));
+      if (eq) {
+        if (eq.name && norm(eq.name) !== norm(val)) inc(tMap, eq.name, w);
+        if (eq.plate_no && norm(eq.plate_no) !== norm(val) && norm(eq.plate_no) !== norm(eq.name)) inc(tMap, eq.plate_no, w);
+      }
+    };
+
+    const tktKey = `${sales.length}:${raws.length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${flIdx.key}`;
+    if (!_FREQ_TKT_CACHE || _FREQ_TKT_CACHE.key !== tktKey) {
+      const bProductSales = new Map(), bProductRaw = new Map(), bProductSalesTickets = new Map(), bProductRawTickets = new Map();
+      const bProductSalesByCo = new Map(), bProductRawByCo = new Map(), bProduct = new Map(), bCustomer = new Map();
+      const bSupplier = new Map(), bSiteOwner = new Map(), bTruckOwner = new Map(), bSiteSales = new Map();
+      const bSiteRaw = new Map(), bSite = new Map(), bTruck = new Map(), bDriver = new Map();
+      const bUom = new Map([['m³', 100], ['ton', 80], ['truck', 60], ['litre', 40], ['piece', 30], ['unit', 20], ['bag', 10]]);
+      sales.forEach(r => {
+        if (!r || r.voided) return;
+        inc(bProductSalesTickets, r.product, 1);
+        inc(bProductSales, r.product, 1);
+        incCo(bProductSalesByCo, r.company, r.product, 1);
+        inc(bProduct, r.product, 1);
+        inc(bCustomer, r.customer, 1);
+        inc(bSiteSales, r.site, 1);
+        inc(bSite, r.site, 1);
+        inc(bTruckOwner, r.truck_owner, 1);
+        inc(bSupplier, r.truck_owner, 1);
+        incTruckTo(bTruck, r.truck, 1);
+        inc(bDriver, r.driver, 1);
+        inc(bUom, r.uom || r.unit, 1);
+      });
+      raws.forEach(r => {
+        if (!r || r.voided) return;
+        inc(bProductRawTickets, r.product, 1);
+        inc(bProductRaw, r.product, 1);
+        incCo(bProductRawByCo, r.company, r.product, 1);
+        inc(bProduct, r.product, 1);
+        inc(bSiteRaw, r.site, 1);
+        inc(bSite, r.site, 1);
+        inc(bSiteOwner, r.site_owner, 2);
+        inc(bSupplier, r.site_owner, 1);
+        inc(bSupplier, r.truck_owner, 1);
+        inc(bTruckOwner, r.truck_owner, 1);
+        incTruckTo(bTruck, r.truck, 1);
+        inc(bDriver, r.driver, 1);
+        inc(bUom, r.uom || r.unit, 1);
+      });
+      _FREQ_TKT_CACHE = {
+        key: tktKey,
+        bProductSales, bProductRaw, bProductSalesTickets, bProductRawTickets,
+        bProductSalesByCo, bProductRawByCo, bProduct, bCustomer,
+        bSupplier, bSiteOwner, bTruckOwner, bSiteSales, bSiteRaw, bSite, bTruck, bDriver, bUom
+      };
+    }
+
+    const productSales = _cloneMap(_FREQ_TKT_CACHE.bProductSales);
+    const productRaw = _cloneMap(_FREQ_TKT_CACHE.bProductRaw);
+    const productSalesTickets = _cloneMap(_FREQ_TKT_CACHE.bProductSalesTickets);
+    const productRawTickets = _cloneMap(_FREQ_TKT_CACHE.bProductRawTickets);
+    const productSalesByCo = _cloneMapOfMaps(_FREQ_TKT_CACHE.bProductSalesByCo);
+    const productRawByCo = _cloneMapOfMaps(_FREQ_TKT_CACHE.bProductRawByCo);
     const productSalesRules = new Map();
     const productSalesRulesByCo = new Map();
     const productRawRules = new Map();
@@ -7023,68 +7110,26 @@
     const productCommRulesByCo = new Map();
     const productFuel = new Map();
     const productFuelByCo = new Map();
-    const product = new Map();
-    const customer = new Map();
-    const supplier = new Map();
-    const siteOwner = new Map();
+    const product = _cloneMap(_FREQ_TKT_CACHE.bProduct);
+    const customer = _cloneMap(_FREQ_TKT_CACHE.bCustomer);
+    const supplier = _cloneMap(_FREQ_TKT_CACHE.bSupplier);
+    const siteOwner = _cloneMap(_FREQ_TKT_CACHE.bSiteOwner);
     const supplierExpense = new Map();
-    const truckOwner = new Map();
-    const siteSales = new Map();
-    const siteRaw = new Map();
-    const site = new Map();
-    const truck = new Map();
-    const driver = new Map();
+    const truckOwner = _cloneMap(_FREQ_TKT_CACHE.bTruckOwner);
+    const siteSales = _cloneMap(_FREQ_TKT_CACHE.bSiteSales);
+    const siteRaw = _cloneMap(_FREQ_TKT_CACHE.bSiteRaw);
+    const site = _cloneMap(_FREQ_TKT_CACHE.bSite);
+    const truck = _cloneMap(_FREQ_TKT_CACHE.bTruck);
+    const driver = _cloneMap(_FREQ_TKT_CACHE.bDriver);
     const staff = new Map();
     const category = new Map();
     const subcategory = new Map();
-    const uom = new Map([['m³', 100], ['ton', 80], ['truck', 60], ['litre', 40], ['piece', 30], ['unit', 20], ['bag', 10]]);
+    const uom = _cloneMap(_FREQ_TKT_CACHE.bUom);
     const fuelLoc = new Map([['main plant tank', 50], ['wtc site tank', 40], ['wtc quarry tank', 40], ['bbconstruction tank', 30], ['mobile bowser', 20], ['external station', 10]]);
     const role = new Map();
     const counterparty = new Map();
     const region = new Map();
-
-    const flIdx = getFleetIndex();
-    const incTruck = (val, w = 1) => {
-      if (!val) return;
-      inc(truck, val, w);
-      const eq = flIdx.eqByName.get(norm(val));
-      if (eq) {
-        if (eq.name && norm(eq.name) !== norm(val)) inc(truck, eq.name, w);
-        if (eq.plate_no && norm(eq.plate_no) !== norm(val) && norm(eq.plate_no) !== norm(eq.name)) inc(truck, eq.plate_no, w);
-      }
-    };
-
-    sales.forEach(r => {
-      if (!r || r.voided) return;
-      inc(productSalesTickets, r.product, 1);
-      inc(productSales, r.product, 1);
-      incCo(productSalesByCo, r.company, r.product, 1);
-      inc(product, r.product, 1);
-      inc(customer, r.customer, 1);
-      inc(siteSales, r.site, 1);
-      inc(site, r.site, 1);
-      inc(truckOwner, r.truck_owner, 1);
-      inc(supplier, r.truck_owner, 1);
-      incTruck(r.truck, 1);
-      inc(driver, r.driver, 1);
-      inc(uom, r.uom || r.unit, 1);
-    });
-    raws.forEach(r => {
-      if (!r || r.voided) return;
-      inc(productRawTickets, r.product, 1);
-      inc(productRaw, r.product, 1);
-      incCo(productRawByCo, r.company, r.product, 1);
-      inc(product, r.product, 1);
-      inc(siteRaw, r.site, 1);
-      inc(site, r.site, 1);
-      inc(siteOwner, r.site_owner, 2);
-      inc(supplier, r.site_owner, 1);
-      inc(supplier, r.truck_owner, 1);
-      inc(truckOwner, r.truck_owner, 1);
-      incTruck(r.truck, 1);
-      inc(driver, r.driver, 1);
-      inc(uom, r.uom || r.unit, 1);
-    });
+    const incTruck = (val, w = 1) => incTruckTo(truck, val, w);
     exps.forEach(x => {
       if (!x || x.voided) return;
       inc(category, x.category, 1);
@@ -7218,7 +7263,8 @@
     const drvs = SEED.records.drivers || [];
     const sups = SEED.records.suppliers || [];
     const coEqs = SEED.records.company_equipment || [];
-    const key = `${eqs.length}:${coEqs.length}:${sales.length}:${raws.length}:${fuels.length}:${drvs.length}:${sups.length}:${_WIN_REV}:${SEED._customRev || 0}`;
+    const tr = (SEED && SEED._tableRev) || {};
+    const key = `${eqs.length}:${coEqs.length}:${sales.length}:${raws.length}:${fuels.length}:${drvs.length}:${sups.length}:${_WIN_REV}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.fuel_intakes||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.sites||0}:${tr.price_rules||0}`;
     if (_FLEET_IDX && _FLEET_IDX.key === key) return _FLEET_IDX;
     const eqByName = new Map();
     eqs.forEach(e => {
@@ -16040,10 +16086,136 @@
     };
   }
 
+  const CANONICAL_ITEMS_SEED = [
+    { id: 'itm_001', name: 'Engine Oil 15W-40', item_name: 'Engine Oil 15W-40', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 4.5, default_location: 'WTC Main Warehouse', min_stock: 100 },
+    { id: 'itm_002', name: 'Hydraulic Oil 68', item_name: 'Hydraulic Oil 68', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 3.8, default_location: 'WTC Main Warehouse', min_stock: 100 },
+    { id: 'itm_003', name: 'Gear / Transmission Oil 90', item_name: 'Gear / Transmission Oil 90', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 5.0, default_location: 'WTC Main Warehouse', min_stock: 40 },
+    { id: 'itm_004', name: 'ATF / Power Steering Fluid', item_name: 'ATF / Power Steering Fluid', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 6.0, default_location: 'WTC Main Warehouse', min_stock: 20 },
+    { id: 'itm_005', name: 'Differential / Axle Oil 85W-140', item_name: 'Differential / Axle Oil 85W-140', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 5.5, default_location: 'WTC Main Warehouse', min_stock: 20 },
+    { id: 'itm_006', name: 'Lithium EP2 Chassis Grease', item_name: 'Lithium EP2 Chassis Grease', category: 'Oils & Lubricants', uom: 'kg', default_cost: 6.5, default_location: 'WTC Main Warehouse', min_stock: 15 },
+    { id: 'itm_007', name: 'Complete Filter Set (Oil + Fuel + Air)', item_name: 'Complete Filter Set (Oil + Fuel + Air)', category: 'Spare Parts', uom: 'Set', default_cost: 85, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_008', name: 'Fuel Filter', item_name: 'Fuel Filter', category: 'Spare Parts', uom: 'Piece', default_cost: 22, default_location: 'WTC Main Warehouse', min_stock: 4 },
+    { id: 'itm_009', name: 'Engine Oil Filter', item_name: 'Engine Oil Filter', category: 'Spare Parts', uom: 'Piece', default_cost: 25, default_location: 'WTC Main Warehouse', min_stock: 4 },
+    { id: 'itm_010', name: 'Air Filter', item_name: 'Air Filter', category: 'Spare Parts', uom: 'Piece', default_cost: 38, default_location: 'WTC Main Warehouse', min_stock: 3 },
+    { id: 'itm_011', name: 'Bearing (Roulement)', item_name: 'Bearing (Roulement)', category: 'Spare Parts', uom: 'Piece', default_cost: 45, default_location: 'WTC Main Warehouse', min_stock: 4 },
+    { id: 'itm_012', name: 'Conveyor / Drive Belt', item_name: 'Conveyor / Drive Belt', category: 'Spare Parts', uom: 'Piece', default_cost: 65, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_013', name: 'High-Pressure Hydraulic Hose', item_name: 'High-Pressure Hydraulic Hose', category: 'Spare Parts', uom: 'Piece', default_cost: 55, default_location: 'WTC Main Warehouse', min_stock: 3 },
+    { id: 'itm_014', name: 'Heavy-Duty Truck Battery', item_name: 'Heavy-Duty Truck Battery', category: 'Spare Parts', uom: 'Piece', default_cost: 165, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_015', name: 'Heavy Truck / Loader Tire', item_name: 'Heavy Truck / Loader Tire', category: 'Spare Parts', uom: 'Piece', default_cost: 380, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_016', name: 'Alternator (Dynamo)', item_name: 'Alternator (Dynamo)', category: 'Spare Parts', uom: 'Piece', default_cost: 185, default_location: 'WTC Main Warehouse', min_stock: 1 },
+    { id: 'itm_017', name: 'Starter Motor (March)', item_name: 'Starter Motor (March)', category: 'Spare Parts', uom: 'Piece', default_cost: 210, default_location: 'WTC Main Warehouse', min_stock: 1 },
+    { id: 'itm_018', name: 'Brake Lining & Shoe Set', item_name: 'Brake Lining & Shoe Set', category: 'Spare Parts', uom: 'Set', default_cost: 95, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_019', name: 'Crusher Jaw / Manganese Plate Set', item_name: 'Crusher Jaw / Manganese Plate Set', category: 'Spare Parts', uom: 'Set', default_cost: 1450, default_location: 'WTC Main Warehouse', min_stock: 1 },
+    { id: 'itm_020', name: 'Welding Electrodes (7018 Box)', item_name: 'Welding Electrodes (7018 Box)', category: 'Tools & Garage', uom: 'Box', default_cost: 28, default_location: 'WTC Main Warehouse', min_stock: 3 }
+  ];
+
+  function ensureItemsCatalogSeeded() {
+    if (!SEED || !SEED.records) return [];
+    if (!Array.isArray(SEED.records.items)) SEED.records.items = [];
+    const byKey = new Map();
+    SEED.records.items.forEach(r => {
+      if (!r || r.voided) return;
+      const nm = String(r.name || r.item_name || '').trim();
+      if (nm) byKey.set(norm(nm), r);
+    });
+    (STATE.customRecords && Array.isArray(STATE.customRecords.items) ? STATE.customRecords.items : []).forEach(r => {
+      if (!r || r.voided) return;
+      const nm = String(r.name || r.item_name || '').trim();
+      if (nm && !byKey.has(norm(nm))) {
+        SEED.records.items.push(r);
+        byKey.set(norm(nm), r);
+      }
+    });
+    CANONICAL_ITEMS_SEED.forEach(seedRow => {
+      const k = norm(seedRow.name);
+      if (!byKey.has(k)) {
+        const clone = Object.assign({ source: 'seed', voided: false }, seedRow);
+        SEED.records.items.push(clone);
+        byKey.set(k, clone);
+      }
+    });
+    const autoInferFromRow = (rawName, uomRaw, catRaw, costRaw, locRaw, minRaw) => {
+      const nm = String(rawName || '').trim();
+      if (!nm) return;
+      const k = norm(nm);
+      if (byKey.has(k)) return;
+      const inferredUom = uomRaw || (/15w|hydraul|oil|fluid|atf|coolant/i.test(nm) ? 'Litre' : (/grease/i.test(nm) ? 'kg' : (/\bset\b/i.test(nm) ? 'Set' : (/\bbox\b/i.test(nm) ? 'Box' : 'Piece'))));
+      const inferredCat = catRaw && ['Spare Parts', 'Oils & Lubricants', 'Tools & Garage', 'Plant Consumables'].includes(catRaw)
+        ? catRaw
+        : (/15w|hydraul|oil|fluid|atf|grease|lubric/i.test(nm) ? 'Oils & Lubricants' : (/tool|weld|electrode|disc|glove/i.test(nm) ? 'Tools & Garage' : 'Spare Parts'));
+      const newRec = {
+        id: 'itm_auto_' + (byKey.size + 1),
+        name: nm,
+        item_name: nm,
+        category: inferredCat,
+        uom: inferredUom,
+        default_cost: Number(costRaw || 0) > 0 ? round2(Number(costRaw)) : 0,
+        default_location: locRaw || 'WTC Main Warehouse',
+        min_stock: Number(minRaw || 0) > 0 ? Number(minRaw) : 0,
+        source: 'seed',
+        voided: false
+      };
+      SEED.records.items.push(newRec);
+      byKey.set(k, newRec);
+    };
+    (SEED.records.warehouse_movements || []).forEach(r => {
+      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, r.category, r.unit_cost, r.warehouse_location || r.location, r.min_stock);
+    });
+    (SEED.records.expense_items || []).forEach(r => {
+      if (r && !r.voided && r.item_name && !r.historical_consumed) autoInferFromRow(r.item_name, r.uom, r.category, r.unit_cost, r.warehouse_location, 0);
+    });
+    (SEED.records.repair_items || []).forEach(r => {
+      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, 'Spare Parts', r.unit_cost, 'WTC Main Warehouse', 0);
+    });
+    return SEED.records.items;
+  }
+
+  function resolveCatalogItem(nameRaw) {
+    const nm = String(nameRaw || '').trim();
+    if (!nm) return null;
+    ensureItemsCatalogSeeded();
+    const k = norm(nm);
+    const customHit = (STATE.customRecords && Array.isArray(STATE.customRecords.items))
+      ? STATE.customRecords.items.find(r => r && !r.voided && norm(r.name || r.item_name) === k)
+      : null;
+    if (customHit) return customHit;
+    return (SEED.records.items || []).find(r => r && !r.voided && norm(r.name || r.item_name) === k) || null;
+  }
+
+  function ensureItemInCatalog(spec) {
+    if (!spec || !spec.name) return null;
+    const nm = String(spec.name || '').trim();
+    if (!nm) return null;
+    const existing = resolveCatalogItem(nm);
+    if (existing) return existing;
+    const who = activeUser();
+    const itemRec = {
+      id: uid('it'),
+      name: nm,
+      item_name: nm,
+      category: spec.category && ['Spare Parts', 'Oils & Lubricants', 'Tools & Garage', 'Plant Consumables'].includes(spec.category) ? spec.category : 'Spare Parts',
+      uom: spec.uom || 'Piece',
+      default_cost: Number(spec.default_cost || 0) > 0 ? round2(Number(spec.default_cost)) : 0,
+      default_location: spec.default_location || 'WTC Main Warehouse',
+      min_stock: Number(spec.min_stock || 0) > 0 ? Number(spec.min_stock) : 0,
+      notes: spec.notes || '',
+      source: 'app',
+      entered_by: who.full_name,
+      entered_by_email: who.email,
+      entered_at: nowStamp(),
+      voided: false
+    };
+    if (!Array.isArray(STATE.customRecords.items)) STATE.customRecords.items = [];
+    STATE.customRecords.items.unshift(itemRec);
+    if (SEED.records && Array.isArray(SEED.records.items)) SEED.records.items.unshift(itemRec);
+    return itemRec;
+  }
+
   let _WAREHOUSE_IDX = null;
   function getWarehouseIndex(coOpt) {
+    ensureItemsCatalogSeeded();
     const scopeCo = coOpt ? String(coOpt).trim() : '';
-    const revKey = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${scopeCo || STATE.company}|${allowedCompanyNames().join(',')}`;
+    const revKey = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${(SEED.records.items || []).length}|${scopeCo || STATE.company}|${allowedCompanyNames().join(',')}`;
     if (!scopeCo && _WAREHOUSE_IDX && _WAREHOUSE_IDX.revKey === revKey) return _WAREHOUSE_IDX;
 
     const allowedCos = allowedCompanyNames();
@@ -16070,15 +16242,20 @@
       const cleanName = String(rawName || '').trim();
       const k = norm(cleanName);
       if (!k) return null;
+      const catDef = resolveCatalogItem(cleanName);
+      const lockedUom = (catDef && catDef.uom) ? catDef.uom : (defaults.uom || 'Piece');
+      const canonCat = (catDef && catDef.category) ? catDef.category : (defaults.category || 'Spare Parts');
+      const canonLoc = defaults.location || (catDef && catDef.default_location) || 'Main Warehouse';
+      const canonMin = Number(defaults.min_stock || (catDef && catDef.min_stock) || 0);
       let it = byItem.get(k);
       if (!it) {
         it = {
           key: k,
-          item_name: cleanName,
-          category: defaults.category || 'Spare Parts',
-          uom: defaults.uom || 'Piece',
-          location: defaults.location || 'Main Warehouse',
-          min_stock: Number(defaults.min_stock || 0),
+          item_name: (catDef && (catDef.name || catDef.item_name)) || cleanName,
+          category: canonCat,
+          uom: lockedUom,
+          location: canonLoc,
+          min_stock: canonMin,
           company: defaults.company || defaultEntryCompany(),
           stockedInQty: 0,
           stockedInCostUsd: 0,
@@ -16086,7 +16263,7 @@
           usedInOilQty: 0,
           adjustedOutQty: 0,
           onHandQty: 0,
-          avgUnitCost: 0,
+          avgUnitCost: (catDef && Number(catDef.default_cost) > 0) ? round2(Number(catDef.default_cost)) : 0,
           onHandValue: 0,
           lastDate: '',
           repairsUsedIn: [],
@@ -16094,10 +16271,12 @@
         };
         byItem.set(k, it);
       } else {
-        if (defaults.category && (!it.category || it.category === 'Spare Parts')) it.category = defaults.category;
-        if (defaults.uom && (!it.uom || it.uom === 'Piece')) it.uom = defaults.uom;
+        if (catDef && catDef.uom) it.uom = catDef.uom;
+        else if (defaults.uom && (!it.uom || it.uom === 'Piece')) it.uom = defaults.uom;
+        if (catDef && catDef.category) it.category = catDef.category;
+        else if (defaults.category && (!it.category || it.category === 'Spare Parts')) it.category = defaults.category;
         if (defaults.location && (!it.location || it.location === 'Main Warehouse')) it.location = defaults.location;
-        if (Number(defaults.min_stock || 0) > 0) it.min_stock = Number(defaults.min_stock);
+        if (canonMin > 0) it.min_stock = canonMin;
       }
       return it;
     };
@@ -16353,25 +16532,32 @@
   }
 
   function warehouseCatalogItemNames(coOpt) {
+    ensureItemsCatalogSeeded();
     const wh = getWarehouseIndex(coOpt);
     const names = wh.items.map(it => it.item_name);
-    (SEED.records.expense_items || []).forEach(r => {
-      if (r && !r.voided && r.item_name) names.push(r.item_name);
+    (SEED.records.items || []).forEach(r => {
+      if (r && !r.voided && (r.name || r.item_name)) names.push(r.name || r.item_name);
     });
-    ['Engine Oil 15W-40', 'Hydraulic Oil 68', 'Gear / Transmission Oil 90', 'Fuel Filter', 'Engine Oil Filter', 'Air Filter', 'Bearing (Roulement)', 'Conveyor / Drive Belt', 'High-Pressure Hydraulic Hose', 'Heavy-Duty Truck Battery', 'Heavy Truck / Loader Tire', 'Alternator (Dynamo)', 'Starter Motor (March)'].forEach(n => names.push(n));
+    (SEED.records.expense_items || []).forEach(r => {
+      if (r && !r.voided && r.item_name && !r.historical_consumed) names.push(r.item_name);
+    });
     return uniqSorted(names);
   }
 
   function warehouseCatalogItemMeta(coOpt) {
+    ensureItemsCatalogSeeded();
     const wh = getWarehouseIndex(coOpt);
     const allNames = warehouseCatalogItemNames(coOpt);
     return allNames
       .map(nm => {
         const it = wh.byKey[norm(nm)];
+        const catDef = resolveCatalogItem(nm);
+        const uomLbl = (catDef && catDef.uom) || (it && it.uom) || 'Piece';
         const onHand = it ? Number(it.onHandQty || 0) : 0;
+        const unitCost = (it && it.avgUnitCost > 0) ? it.avgUnitCost : (catDef && Number(catDef.default_cost) > 0 ? Number(catDef.default_cost) : 0);
         const meta = it && onHand > 0.0001
-          ? `${fmtNum(onHand, onHand % 1 ? 2 : 0)} ${it.uom || 'Piece'} on shelf${it.avgUnitCost > 0 ? ' · ' + fmtUSD(it.avgUnitCost, 2) : ''}`
-          : (it ? `0 ${it.uom || 'Piece'} on shelf` : '');
+          ? `${fmtNum(onHand, onHand % 1 ? 2 : 0)} ${uomLbl} on shelf${unitCost > 0 ? ' · ' + fmtUSD(unitCost, 2) : ''}`
+          : `${uomLbl}${unitCost > 0 ? ' · ' + fmtUSD(unitCost, 2) : ''} · 0 on shelf`;
         return { name: nm, onHand, meta };
       })
       .sort((a, b) => (b.onHand > 0.0001 ? 1 : 0) - (a.onHand > 0.0001 ? 1 : 0) || a.name.localeCompare(b.name))
@@ -19830,6 +20016,7 @@
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="expenses">${ic('expenses')} Expenses</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_maint">${ic('repair')} Repairs</button>
             ${exportBtn('warehouseStockPanel', 'Warehouse_Stored_Items')}
+            ${canEnterForm('item') ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="item">${ic('plus')} New Item (Catalog)</button>` : ''}
             ${canPostWh ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="warehousestock">${ic('warehouse')} Shelf Adjust (+/-)</button>` : ''}
             ${canPostRep ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="repair">${ic('repair')} + Use in Repair</button>` : ''}
             ${canPostExp ? `<button type="button" class="btn btn-primary" data-open-modal="expense" data-prefill-storewh="1">+ Buy &amp; Store Item</button>` : ''}
@@ -29955,13 +30142,14 @@
     warehousestock: 'Warehouse Shelf Stock & Adjustment',
     settlement: 'New Supplier Settlement',
     repair: 'New Equipment Repair (Warehouse / Outside)',
-    oillog: 'New Equipment Oil & Service Log'
+    oillog: 'New Equipment Oil & Service Log',
+    item: 'New Item / Spare Part (Universal Catalog)'
   }, (window.MFG_FORMS && window.MFG_FORMS.FORM_TITLES) || {});
   const FORM_CR_KEY = Object.assign({
     sales: 'sales_tickets', raw: 'raw_purchases', receipt: 'receipts',
     fuel: 'fuel_intakes', malfunction: 'fuel_malfunctions', expense: 'expenses',
     warehousestock: 'warehouse_movements', settlement: 'settlements',
-    repair: 'equipment_repairs', oillog: 'equipment_oil_logs'
+    repair: 'equipment_repairs', oillog: 'equipment_oil_logs', item: 'items'
   }, (window.MFG_FORMS && window.MFG_FORMS.FORM_CR_KEY) || {});
 
   function secHdr(title, sub) {
@@ -30845,17 +31033,36 @@
       const recWrap = $('tktReturnRecentTicketsWrap');
       if (recWrap) {
         if (!isEdit) {
-          const pool = side === 'raw' ? (SEED.records.raw_purchases || []) : (SEED.records.sales_tickets || []);
-          const recentList = [];
-          for (let i = pool.length - 1; i >= 0 && recentList.length < 6; i--) {
-            const r = pool[i];
-            if (!r || r.voided || r.company !== company || isRemovedTicket(r) || isReturnTicket(r)) continue;
-            if (side === 'sales' && r.sale_type === 'Unregistered') continue;
-            recentList.push(r);
+          const crKeyRec = side === 'raw' ? 'raw_purchases' : 'sales_tickets';
+          const pool = (SEED.records && SEED.records[crKeyRec]) || [];
+          const customPool = (STATE.customRecords && STATE.customRecords[crKeyRec]) || [];
+          const curTkt = normTicketNo(rawNo);
+          const candidates = [];
+          const seenRecIds = new Set();
+          const tryPushRec = r => {
+            if (!r || r.voided || r.company !== company || isRemovedTicket(r) || isReturnTicket(r)) return;
+            if (side === 'sales' && r.sale_type === 'Unregistered') return;
+            const rid = String(r.id || r.ticket_no || '');
+            if (rid && seenRecIds.has(rid)) return;
+            if (rid) seenRecIds.add(rid);
+            candidates.push(r);
+          };
+          if (curTkt) {
+            const exactMatch = pool.find(r => r && !r.voided && r.company === company && !isRemovedTicket(r) && !isReturnTicket(r) && normTicketNo(r.ticket_no) === curTkt);
+            if (exactMatch) tryPushRec(exactMatch);
           }
+          for (let i = 0; i < Math.min(customPool.length, 12); i++) tryPushRec(customPool[i]);
+          for (let i = pool.length - 1; i >= Math.max(0, pool.length - 25); i--) tryPushRec(pool[i]);
+          for (let i = 0; i < Math.min(pool.length, 25); i++) tryPushRec(pool[i]);
+          candidates.sort((a, b) => {
+            const aMatch = curTkt && normTicketNo(a.ticket_no) === curTkt ? 1 : 0;
+            const bMatch = curTkt && normTicketNo(b.ticket_no) === curTkt ? 1 : 0;
+            if (aMatch !== bMatch) return bMatch - aMatch;
+            return String(b.date || '').localeCompare(String(a.date || '')) || (Number(String(b.ticket_no || '').replace(/\D/g, '')) - Number(String(a.ticket_no || '').replace(/\D/g, '')));
+          });
+          const recentList = candidates.slice(0, 6);
           if (recentList.length > 0) {
             recWrap.hidden = false;
-            const curTkt = normTicketNo(rawNo);
             recWrap.innerHTML = `
               <div style="font-size:11px;color:var(--muted);margin-bottom:4px"><b>Quick-Fill from Recent ${esc(company)} Outbound Ticket:</b> click a ticket below to auto-fill its serial #, site, truck &amp; load details for return to ${esc(company)}:</div>
               <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -31247,14 +31454,14 @@
             <div class="exp-items-title-block">
               <div class="exp-items-title-row">
                 <span class="exp-items-kicker">INVOICE ITEM TICKETS</span>
-                <span class="exp-items-mode-pill" id="expItemsModeBadge">Single-Item Mode</span>
+                <span class="exp-items-mode-pill" id="expItemsModeBadge">1 Item Ticket</span>
               </div>
-              <strong>Split Supplier Invoice Across Parts, Machines, or Warehouse Stock</strong>
-              <span id="expItemsSubcopy">Stay in single-item mode above, or add item tickets below when one invoice covers multiple parts, quantities, equipments, or Warehouse (+Stock)</span>
+              <strong>Itemize Parts, Quantities &amp; Destinations (Unit Locked to Items Table)</strong>
+              <span id="expItemsSubcopy">Enter your single item on Ticket #01 below, or add more tickets when one supplier invoice splits across multiple parts, machines, or Warehouse (+Stock)</span>
             </div>
             <div class="exp-items-head-actions">
               <div class="exp-items-live-metrics" id="expItemsLiveMetrics" hidden></div>
-              <button type="button" class="btn btn-ghost-bar exp-items-clear-btn" id="clearExpItemsBtn" data-exi-clear-all="1" hidden>Single-Item Mode</button>
+              <button type="button" class="btn btn-ghost-bar exp-items-clear-btn" id="clearExpItemsBtn" data-exi-clear-all="1" hidden>Reset to 1 Ticket</button>
               <button type="button" class="btn btn-brass exp-items-add-btn" id="addExpItemLineBtn">+ Add Item Ticket</button>
             </div>
           </div>
@@ -31329,12 +31536,12 @@
     const footEl = $('expItemsFooterSummary');
     const wrap = $('expItemsRowsWrap');
     if (modeBadge) {
-      modeBadge.textContent = items.length > 0
-        ? `${items.length} Item Ticket${items.length === 1 ? '' : 's'} Active`
-        : 'Single-Item Mode';
-      modeBadge.classList.toggle('is-multi', items.length > 0);
+      modeBadge.textContent = items.length > 1
+        ? `${items.length} Item Tickets (Multi-Split)`
+        : (items.length === 1 ? '1 Item Ticket (Single-Item)' : 'No Item Tickets');
+      modeBadge.classList.toggle('is-multi', items.length > 1);
     }
-    if (clearBtn) clearBtn.hidden = items.length === 0;
+    if (clearBtn) clearBtn.hidden = items.length <= 1;
     if (!items.length) {
       if (metricsEl) { metricsEl.hidden = true; metricsEl.innerHTML = ''; }
       if (footEl) footEl.innerHTML = '';
@@ -31345,6 +31552,10 @@
     let eqLines = 0;
     let whLines = 0;
     items.forEach((it, idx) => {
+      const catItem = resolveCatalogItem(it.item_name);
+      if (catItem && catItem.uom) {
+        it.uom = catItem.uom;
+      }
       const q = Number(it.qty) || 0;
       const uc = Number(it.unit_cost) || 0;
       const lt = round2(q * uc);
@@ -31353,6 +31564,30 @@
       if ((it.allocation_mode || 'same_equipment') === 'warehouse') whLines++;
       else eqLines++;
       if (wrap) {
+        const uSel = wrap.querySelector(`#f_exi_uom_${idx}`);
+        if (uSel) {
+          if (catItem && catItem.uom) {
+            uSel.value = catItem.uom;
+            uSel.disabled = true;
+            uSel.setAttribute('data-locked-by-item', '1');
+          } else {
+            uSel.disabled = false;
+            uSel.removeAttribute('data-locked-by-item');
+          }
+        }
+        const lockEl = wrap.querySelector(`[data-exi-uom-lock="${idx}"]`);
+        if (lockEl) {
+          if (catItem && catItem.uom) {
+            lockEl.textContent = `🔒 Locked to Items Table (${catItem.uom})`;
+            lockEl.className = 'exp-uom-lock-tag is-locked';
+          } else if (String(it.item_name || '').trim()) {
+            lockEl.textContent = `New item · saves to Items Table (${it.uom || 'Piece'})`;
+            lockEl.className = 'exp-uom-lock-tag is-new';
+          } else {
+            lockEl.textContent = 'Unit auto-locks when you pick an item';
+            lockEl.className = 'exp-uom-lock-tag is-open';
+          }
+        }
         const totEl = wrap.querySelector(`[data-exi-tot="${idx}"]`);
         if (totEl) totEl.textContent = fmtUSD(lt, 2);
         const mathEl = wrap.querySelector(`[data-exi-math="${idx}"]`);
@@ -31362,6 +31597,12 @@
         }
       }
     });
+    if ($('f_exp_item_name')) {
+      $('f_exp_item_name').value = items[0] && items[0].item_name ? items[0].item_name : '';
+    }
+    if ($('f_exp_uom') && items[0] && items[0].uom) {
+      $('f_exp_uom').value = items[0].uom;
+    }
     if (metricsEl) {
       metricsEl.hidden = false;
       const pills = [];
@@ -31373,7 +31614,7 @@
     if (footEl) {
       footEl.innerHTML = `
         <span class="exp-rollup-meta">${items.length} Ticket${items.length === 1 ? '' : 's'} · Total Qty: <b>${fmtNum(sumQty || 1, sumQty % 1 ? 2 : 0)}</b></span>
-        <span class="exp-rollup-total">Invoice Total Locked to Tickets: <b>${fmtUSD(sumAmt, 2)}</b></span>
+        <span class="exp-rollup-total">${items.length > 1 ? 'Invoice Total Locked to Tickets:' : 'Ticket Total:'} <b>${fmtUSD(sumAmt, 2)}</b></span>
       `;
     }
   }
@@ -31461,10 +31702,16 @@
       ['warehouse', 'Warehouse (+Stock)'],
       ['general', 'Not for Equipment']
     ];
+    ensureItemsCatalogSeeded();
+    const quickCatalogSample = (SEED.records.items || []).filter(r => r && !r.voided).slice(0, 7);
     wrap.innerHTML = `
       <div class="exp-item-cards-list">
         ${items.map((it, idx) => {
           const mode = it.allocation_mode || 'same_equipment';
+          const catItem = resolveCatalogItem(it.item_name);
+          if (catItem && catItem.uom) it.uom = catItem.uom;
+          const effUom = it.uom || 'Piece';
+          const isUomLocked = Boolean(catItem && catItem.uom);
           const qNum = Number(it.qty) || 1;
           const ucNum = it.unit_cost !== undefined && it.unit_cost !== '' ? Number(it.unit_cost) : 0;
           const lineTot = round2((Number(it.qty) || 0) * ucNum);
@@ -31481,6 +31728,16 @@
           const targetLbl = mode === 'warehouse'
             ? 'Warehouse Shelf / Store *'
             : (mode === 'different_equipment' ? 'Target Equipment Unit *' : 'Assigned Equipment');
+          const quickPickHtml = idx === 0 && quickCatalogSample.length ? `
+            <div class="exp-quick-item-bar" role="group" aria-label="Quick pick catalog item">
+              <span class="exp-quick-item-lbl">Catalog Quick-Pick:</span>
+              ${quickCatalogSample.map(ci => {
+                const cNm = ci.name || ci.item_name;
+                const isAct = norm(it.item_name) === norm(cNm);
+                return `<button type="button" class="exp-quick-item-chip${isAct ? ' active' : ''}" data-exi-quick-item="${esc(cNm)}" data-exi-row-idx="${idx}">${esc(cNm)} <small>${esc(ci.uom || 'Piece')}</small></button>`;
+              }).join('')}
+            </div>
+          ` : '';
           return `
             <div class="line-item-row exp-item-card is-mode-${esc(mode)}" data-exi-row="${idx}">
               <div class="exp-item-card-top">
@@ -31496,13 +31753,14 @@
                 <div class="exp-item-card-actions">
                   <span class="exp-item-tot-badge">Line Total <strong data-exi-tot="${idx}">${fmtUSD(lineTot, 2)}</strong></span>
                   <button type="button" class="exp-item-dup-btn" data-exi-dup="${idx}" aria-label="Duplicate item ticket">Duplicate</button>
-                  <button type="button" class="line-item-del-btn" data-exi-remove="${idx}" aria-label="Remove item line">×</button>
+                  ${items.length > 1 ? `<button type="button" class="line-item-del-btn" data-exi-remove="${idx}" aria-label="Remove item line">×</button>` : ''}
                 </div>
               </div>
+              ${quickPickHtml}
               <div class="exp-item-card-grid">
                 <div class="li-cell exp-item-cell-name">
-                  <label class="exp-item-lbl" for="f_exi_name_${idx}">Item / Part Name *</label>
-                  <input type="text" id="f_exi_name_${idx}" data-exi-idx="${idx}" data-exi-field="item_name" list="dl_exp_wh_items" value="${esc(it.item_name || '')}" placeholder="Select or type filter, hose, belt, tyre, oil...">
+                  <label class="exp-item-lbl" for="f_exi_name_${idx}">Item / Part Name (from Items Table) *</label>
+                  <input type="text" id="f_exi_name_${idx}" data-exi-idx="${idx}" data-exi-field="item_name" list="dl_exp_wh_items" value="${esc(it.item_name || '')}" placeholder="Select catalog item or type new part...">
                   <span class="hint" data-exi-stock-hint="${idx}"></span>
                 </div>
                 <div class="li-cell exp-item-cell-target">
@@ -31517,8 +31775,9 @@
                       <input type="number" id="f_exi_qty_${idx}" data-exi-idx="${idx}" data-exi-field="qty" step="0.01" min="0.01" inputmode="decimal" value="${esc(it.qty != null ? it.qty : 1)}">
                       <button type="button" class="exp-step-btn" data-exi-step-qty="1" data-exi-row-idx="${idx}" aria-label="Increase quantity">+</button>
                     </div>
-                    <select id="f_exi_uom_${idx}" data-exi-idx="${idx}" data-exi-field="uom" data-plain-options="1">${uomOpts.map(u => `<option value="${esc(u)}"${u === (it.uom || 'Piece') ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select>
+                    <select id="f_exi_uom_${idx}" data-exi-idx="${idx}" data-exi-field="uom" data-plain-options="1"${isUomLocked ? ' disabled data-locked-by-item="1"' : ''}>${uomOpts.map(u => `<option value="${esc(u)}"${u === effUom ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select>
                   </div>
+                  <span class="exp-uom-lock-tag ${isUomLocked ? 'is-locked' : (it.item_name ? 'is-new' : 'is-open')}" data-exi-uom-lock="${idx}">${isUomLocked ? `🔒 Locked to Items Table (${esc(effUom)})` : (it.item_name ? `New item · saves to Items Table (${esc(effUom)})` : 'Unit auto-locks when you pick an item')}</span>
                 </div>
                 <div class="li-cell exp-item-cell-cost">
                   <label class="exp-item-lbl" for="f_exi_cost_${idx}">Unit Price ($) *</label>
@@ -31526,7 +31785,7 @@
                     <span class="exp-cost-prefix">$</span>
                     <input type="number" id="f_exi_cost_${idx}" data-exi-idx="${idx}" data-exi-field="unit_cost" step="0.01" min="0" inputmode="decimal" value="${esc(it.unit_cost !== undefined && it.unit_cost !== '' ? it.unit_cost : '')}" placeholder="0.00">
                   </div>
-                  <span class="hint exp-item-math-hint" data-exi-math="${idx}">${fmtNum(qNum, qNum % 1 ? 2 : 0)} ${esc(it.uom || 'Piece')} × ${fmtUSD(ucNum, 2)} = ${fmtUSD(lineTot, 2)}</span>
+                  <span class="hint exp-item-math-hint" data-exi-math="${idx}">${fmtNum(qNum, qNum % 1 ? 2 : 0)} ${esc(effUom)} × ${fmtUSD(ucNum, 2)} = ${fmtUSD(lineTot, 2)}</span>
                 </div>
               </div>
             </div>
@@ -31535,7 +31794,7 @@
       </div>
       <div class="exp-items-footer-bar">
         <div class="exp-items-quick-add-group">
-          <span class="exp-quick-add-lbl">Quick Add Ticket:</span>
+          <span class="exp-quick-add-lbl">Split / Add Another Ticket:</span>
           <button type="button" class="exp-quick-add-pill" data-exi-add-mode="same_equipment">+ Same Equipment</button>
           <button type="button" class="exp-quick-add-pill" data-exi-add-mode="different_equipment">+ Different Equipment</button>
           <button type="button" class="exp-quick-add-pill is-wh" data-exi-add-mode="warehouse">+ Warehouse (+Stock)</button>
@@ -31613,6 +31872,10 @@
       </div>
       ${items.map((it, idx) => {
         const src = it.source || 'warehouse';
+        const catItem = resolveCatalogItem(it.item_name);
+        if (catItem && catItem.uom) it.uom = catItem.uom;
+        const effUom = it.uom || 'Piece';
+        const isUomLocked = Boolean(catItem && catItem.uom);
         const lineTot = round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0));
         return `
           <div class="line-item-row is-rep-grid" data-repi-row="${idx}">
@@ -31622,7 +31885,7 @@
             </div>
             <div class="li-cell"><select id="f_repi_src_${idx}" data-repi-idx="${idx}" data-repi-field="source" data-plain-options="1">${srcOpts.map(([ov, ol]) => `<option value="${esc(ov)}"${ov === src ? ' selected' : ''}>${esc(ol)}</option>`).join('')}</select></div>
             <div class="li-cell"><input type="number" id="f_repi_qty_${idx}" data-repi-idx="${idx}" data-repi-field="qty" step="0.01" min="0.01" inputmode="decimal" value="${esc(it.qty != null ? it.qty : 1)}"></div>
-            <div class="li-cell"><select id="f_repi_uom_${idx}" data-repi-idx="${idx}" data-repi-field="uom" data-plain-options="1">${uomOpts.map(u => `<option value="${esc(u)}"${u === (it.uom || 'Piece') ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select></div>
+            <div class="li-cell"><select id="f_repi_uom_${idx}" data-repi-idx="${idx}" data-repi-field="uom" data-plain-options="1"${isUomLocked ? ' disabled data-locked-by-item="1"' : ''}>${uomOpts.map(u => `<option value="${esc(u)}"${u === effUom ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select></div>
             <div class="li-cell"><input type="number" id="f_repi_cost_${idx}" data-repi-idx="${idx}" data-repi-field="unit_cost" step="0.01" min="0" inputmode="decimal" value="${esc(it.unit_cost !== undefined && it.unit_cost !== '' ? it.unit_cost : '')}" placeholder="0.00"></div>
             <div class="li-cell line-item-tot-cell"><strong data-repi-tot="${idx}">${fmtUSD(lineTot, 2)}</strong><button type="button" class="line-item-del-btn" data-repi-remove="${idx}" aria-label="Remove repair item">×</button></div>
           </div>
@@ -31639,7 +31902,148 @@
   }
 
   function isFieldAdminUnlocked(fieldId) {
+    if (fieldId === 'f_fxrate') {
+      return !!(FORM_UI.adminUnlocked && FORM_UI.adminUnlocked.f_fxrate);
+    }
     return !!(FORM_UI.adminUnlocked && (FORM_UI.adminUnlocked[fieldId] || FORM_UI.adminUnlocked.__all));
+  }
+
+  // ---- 4-Tier FX Conversion Rate Corridor Guard (<=5% OK · >5% Warning · >10% Supervisor Lock · >50% Frozen) ----
+  const FX_CONV_WARN_PCT = 5;
+  const FX_CONV_LOCK_PCT = 10;
+  const FX_CONV_FREEZE_PCT = 50;
+
+  function evaluateFxConversionGuard(usd, lbp, fxInputVal, dateStr, supervisorUnlocked = false) {
+    const sysRate = getLbpFxRate(dateStr || todayISO(), 'LBP') || DEFAULT_LBP_FX_RATE;
+    const u = Number(usd || 0);
+    const l = Number(lbp || 0);
+    const hasBothAmounts = u > 0 && l > 0;
+    const rawRate = hasBothAmounts ? (l / u) : (Number(fxInputVal) > 0 ? Number(fxInputVal) : sysRate);
+    const effRate = rawRate > 0 ? round2(rawRate) : 0;
+    const diffAbs = effRate > 0 ? Math.abs(effRate - sysRate) : sysRate;
+    const diffPct = (sysRate > 0 && effRate > 0) ? (diffAbs / sysRate) * 100 : 100;
+    const signedDiffPct = (sysRate > 0 && effRate > 0) ? ((effRate - sysRate) / sysRate) * 100 : -100;
+    const minNormalRate = Math.round(sysRate * (1 - FX_CONV_WARN_PCT / 100));
+    const maxNormalRate = Math.round(sysRate * (1 + FX_CONV_WARN_PCT / 100));
+    const minWarnRate = Math.round(sysRate * (1 - FX_CONV_LOCK_PCT / 100));
+    const maxWarnRate = Math.round(sysRate * (1 + FX_CONV_LOCK_PCT / 100));
+    const minUnlockableRate = Math.round(sysRate * (1 - FX_CONV_FREEZE_PCT / 100));
+    const maxUnlockableRate = Math.round(sysRate * (1 + FX_CONV_FREEZE_PCT / 100));
+    const expectedLbp = u > 0 ? Math.round(u * sysRate) : 0;
+    const expectedUsd = l > 0 && sysRate > 0 ? round2(l / sysRate) : 0;
+
+    if (!(effRate > 0) || diffPct > FX_CONV_FREEZE_PCT + 1e-6) {
+      return {
+        tier: 'frozen',
+        severity: 'crit',
+        sysRate,
+        effRate,
+        diffPct,
+        signedDiffPct,
+        expectedLbp,
+        expectedUsd,
+        minNormalRate,
+        maxNormalRate,
+        minWarnRate,
+        maxWarnRate,
+        minUnlockableRate,
+        maxUnlockableRate,
+        requiresSupervisor: false,
+        supervisorUnlocked: false,
+        frozen: true,
+        blocked: true,
+        badgeText: 'FROZEN · >50% DIFFERENCE',
+        shortHint: `FROZEN: ${fmtNum(Math.round(effRate), 0)} LL/$ differs by ${diffPct.toFixed(1)}% (>50%) from system rate ${fmtNum(sysRate, 0)} LL/$ · not accepted by anyone.`,
+        reason: `FX conversion frozen: effective rate ${fmtNum(Math.round(effRate), 0)} LL/$ differs by ${diffPct.toFixed(1)}% (>50%) from system rate ${fmtNum(sysRate, 0)} LL/$. Differences above 50% (< ${fmtNum(minUnlockableRate, 0)} or > ${fmtNum(maxUnlockableRate, 0)} LL/$) are not accepted by anyone.`
+      };
+    }
+
+    if (diffPct > FX_CONV_LOCK_PCT + 1e-6) {
+      const unlocked = Boolean(supervisorUnlocked);
+      return {
+        tier: unlocked ? 'supervisor_unlocked' : 'locked',
+        severity: unlocked ? 'warn' : 'crit',
+        sysRate,
+        effRate,
+        diffPct,
+        signedDiffPct,
+        expectedLbp,
+        expectedUsd,
+        minNormalRate,
+        maxNormalRate,
+        minWarnRate,
+        maxWarnRate,
+        minUnlockableRate,
+        maxUnlockableRate,
+        requiresSupervisor: true,
+        supervisorUnlocked: unlocked,
+        frozen: false,
+        blocked: !unlocked,
+        badgeText: unlocked ? 'SUPERVISOR UNLOCKED (>10% DIFF)' : 'LOCKED · SUPERVISOR ONLY (>10% DIFF)',
+        shortHint: unlocked
+          ? `Supervisor Override Active: ${fmtNum(Math.round(effRate), 0)} LL/$ (${signedDiffPct >= 0 ? '+' : ''}${signedDiffPct.toFixed(1)}% vs system rate ${fmtNum(sysRate, 0)} LL/$).`
+          : `LOCKED: ${fmtNum(Math.round(effRate), 0)} LL/$ differs by ${diffPct.toFixed(1)}% (>10%) from system rate ${fmtNum(sysRate, 0)} LL/$ · only unlocked by a Supervisor.`,
+        reason: `FX rate ${fmtNum(Math.round(effRate), 0)} LL/$ differs by ${diffPct.toFixed(1)}% (>10%) from system rate ${fmtNum(sysRate, 0)} LL/$. Locked - requires Supervisor unlock before posting.`
+      };
+    }
+
+    if (diffPct > FX_CONV_WARN_PCT + 1e-6) {
+      return {
+        tier: 'warn',
+        severity: 'warn',
+        sysRate,
+        effRate,
+        diffPct,
+        signedDiffPct,
+        expectedLbp,
+        expectedUsd,
+        minNormalRate,
+        maxNormalRate,
+        minWarnRate,
+        maxWarnRate,
+        minUnlockableRate,
+        maxUnlockableRate,
+        requiresSupervisor: false,
+        supervisorUnlocked: false,
+        frozen: false,
+        blocked: false,
+        badgeText: 'WARNING · >5% FX VARIANCE',
+        shortHint: `Warning: ${fmtNum(Math.round(effRate), 0)} LL/$ differs by ${signedDiffPct >= 0 ? '+' : ''}${signedDiffPct.toFixed(1)}% (>5%) from system rate ${fmtNum(sysRate, 0)} LL/$.`,
+        reason: `Warning: effective rate ${fmtNum(Math.round(effRate), 0)} LL/$ differs by ${diffPct.toFixed(1)}% (>5%) from system rate ${fmtNum(sysRate, 0)} LL/$.`
+      };
+    }
+
+    return {
+      tier: 'ok',
+      severity: 'ok',
+      sysRate,
+      effRate,
+      diffPct,
+      signedDiffPct,
+      expectedLbp,
+      expectedUsd,
+      minNormalRate,
+      maxNormalRate,
+      minWarnRate,
+      maxWarnRate,
+      minUnlockableRate,
+      maxUnlockableRate,
+      requiresSupervisor: false,
+      supervisorUnlocked: false,
+      frozen: false,
+      blocked: false,
+      badgeText: Math.abs(effRate - sysRate) < 0.5 ? 'SYSTEM FX RATE PARITY' : 'WITHIN ±5% FX CORRIDOR',
+      shortHint: Math.abs(effRate - sysRate) < 0.5
+        ? `Matches system FX rate (${fmtNum(sysRate, 0)} LL/$ · ±5% normal corridor: ${fmtNum(minNormalRate, 0)}-${fmtNum(maxNormalRate, 0)} LL/$)`
+        : `Within ±5% normal corridor (${signedDiffPct >= 0 ? '+' : ''}${signedDiffPct.toFixed(2)}% vs system rate ${fmtNum(sysRate, 0)} LL/$)`,
+      reason: ''
+    };
+  }
+  window.__mfgEvaluateFxConversionGuard = evaluateFxConversionGuard;
+
+  function evaluateCurrentModalFxConversionGuard() {
+    if (!(STATE.modalForm === 'conversion' || (STATE.modalForm === 'treasury' && val('f_trtype') === 'conversion'))) return null;
+    return evaluateFxConversionGuard(num('f_usd'), num('f_lbp'), num('f_fxrate'), val('f_date') || todayISO(), isFieldAdminUnlocked('f_fxrate'));
   }
 
   // Updates a field's visual & functional lock state:
@@ -31746,9 +32150,27 @@
   function openAdminUnlockPrompt(targetFieldId) {
     const box = $('paAdminUnlockBox');
     if (!box) return;
+    if (targetFieldId === 'f_fxrate') {
+      const fxG = evaluateCurrentModalFxConversionGuard();
+      if (fxG && fxG.frozen) {
+        box.hidden = true;
+        box.innerHTML = '';
+        toast(fxG.reason, 'err');
+        return;
+      }
+    }
     const fields = getFormPolicyFields();
     const target = fields.find(f => f.id === targetFieldId) || fields.find(f => f.lockedNow) || fields[0];
     if (!target) return;
+    if (target.id === 'f_fxrate') {
+      const fxG = evaluateCurrentModalFxConversionGuard();
+      if (fxG && fxG.frozen) {
+        box.hidden = true;
+        box.innerHTML = '';
+        toast(fxG.reason, 'err');
+        return;
+      }
+    }
     FORM_UI.unlockTargetField = target.id;
     const who = activeUser();
     const isAdmin = isAdminUser(who);
@@ -31763,20 +32185,20 @@
     box.hidden = false;
     box.innerHTML = `
       <div class="pa-admin-unlock-hdr">
-        <strong>${ic('shield')} Admin Privilege Unlock Process · <span id="paUnlockTargetLabel">${esc(target.label)}</span></strong>
-        <span class="pa-admin-badge">${canUnlockTarget ? (isAdmin ? 'ADMIN PRIVILEGE VERIFIED · ' + esc(who.full_name) : 'ROLE UNLOCK AUTHORIZED · ' + esc(who.full_name)) : 'PIN AUTHORIZATION REQUIRED (2401)'}</span>
+        <strong>${ic('shield')} ${target.id === 'f_fxrate' ? 'Supervisor / Admin FX Corridor Unlock' : 'Admin Privilege Unlock Process'} · <span id="paUnlockTargetLabel">${esc(target.label)}</span></strong>
+        <span class="pa-admin-badge">${canUnlockTarget ? (isAdmin ? 'SUPERVISOR / ADMIN VERIFIED · ' + esc(who.full_name) : 'ROLE UNLOCK AUTHORIZED · ' + esc(who.full_name)) : 'SUPERVISOR / ADMIN PIN REQUIRED (2401)'}</span>
       </div>
       <div class="pa-admin-unlock-desc">
         <div><b>Why this field is locked:</b> <span id="paUnlockTargetReason">${esc(target.reason)}</span></div>
         <div style="margin-top:3px"><b>Override Posture:</b> ${canUnlockTarget
-          ? `Your role (<b>${esc(who.role)}</b>) is authorized to unlock <b>${esc(target.label)}</b> directly without an external Admin PIN.`
-          : `Your role (<b>${esc(who.role)}</b>) does not have direct unlock rights for <b>${esc(target.label)}</b> — enter Admin PIN (<b>2401</b>) to override.`} Overrides are logged on the posted record.</div>
+          ? `Your role (<b>${esc(who.role)}</b>) is authorized to unlock <b>${esc(target.label)}</b> directly without an external PIN.`
+          : `Your role (<b>${esc(who.role)}</b>) does not have direct unlock rights for <b>${esc(target.label)}</b> · enter a Supervisor or Admin PIN (<b>2401</b>) to override.`} Overrides are logged on the posted record.</div>
       </div>
       <div class="pa-admin-unlock-controls">
         <select id="paUnlockFieldSelect" style="max-width:230px;padding:5px 8px;border-radius:5px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font-size:12px">
           ${fields.map(f => `<option value="${esc(f.id)}" ${f.id === target.id ? 'selected' : ''}>${esc(f.label)} (${f.adminOpen ? 'Unlocked' : (f.canUnlock ? 'Role Unlockable' : (f.lockedNow ? 'PIN Req' : 'Auto-Open'))})</option>`).join('')}
         </select>
-        ${!canUnlockTarget ? `<input type="password" id="paAdminPinInput" placeholder="Admin PIN (2401)..." style="max-width:150px">` : ''}
+        ${!canUnlockTarget ? `<input type="password" id="paAdminPinInput" placeholder="Supervisor / Admin PIN (2401)..." style="max-width:170px">` : ''}
         <input type="text" id="paAdminUnlockNote" value="${esc(FORM_UI.unlockNote || '')}" placeholder="Optional override reason (e.g. GM spot rate)...">
         <button type="button" class="pa-admin-btn" id="paConfirmFieldUnlockBtn">${ic('unlock')} Authorize &amp; Unlock "${esc(target.label)}"</button>
         <button type="button" class="pa-admin-btn" id="paConfirmAllUnlockBtn">${ic('unlock')} ${isAdmin || roleUnlockableFields.length === fields.length ? `Unlock All Policy Fields (${fields.length})` : (roleUnlockableFields.length ? `Unlock Role-Authorized Fields (${roleUnlockableFields.length})` : `Unlock All Policy Fields (${fields.length})`)}</button>
@@ -31789,11 +32211,18 @@
       selEl.addEventListener('change', () => openAdminUnlockPrompt(selEl.value));
     }
     wireModalSuggestions(box);
+    const isValidSupervisorOrAdminPin = pinRaw => {
+      const p = String(pinRaw || '').trim();
+      if (!p) return false;
+      if (p === '2401') return true;
+      const uList = typeof getEffectiveUsers === 'function' ? getEffectiveUsers() : DEFAULT_USERS;
+      return (uList || []).some(u => u && String(u.pin || '').trim() === p && (isAdminUser(u) || canUnlockField(target.id, u)));
+    };
     const verifyPinForTarget = () => {
       if (canUnlockTarget) return true;
       const pinEl = $('paAdminPinInput');
-      if (pinEl && String(pinEl.value).trim() === '2401') return true;
-      toast('Admin privilege, Role Unlock permission, or valid Admin PIN (2401) is required to unlock this field', 'err');
+      if (pinEl && isValidSupervisorOrAdminPin(pinEl.value)) return true;
+      toast('Supervisor privilege, Role Unlock permission, or valid Supervisor/Admin PIN (2401) is required to unlock this field', 'err');
       return false;
     };
     const saveNote = () => {
@@ -31809,6 +32238,14 @@
     const btnOne = $('paConfirmFieldUnlockBtn');
     if (btnOne) {
       btnOne.addEventListener('click', () => {
+        if (target.id === 'f_fxrate') {
+          const fxG = evaluateCurrentModalFxConversionGuard();
+          if (fxG && fxG.frozen) {
+            box.hidden = true;
+            toast(fxG.reason, 'err');
+            return;
+          }
+        }
         if (!verifyPinForTarget()) return;
         saveNote();
         FORM_UI.adminUnlocked[target.id] = true;
@@ -31818,18 +32255,22 @@
         if (el) {
           try { el.focus(); if (el.select) el.select(); } catch (_) {}
         }
-        toast(`Admin Override: "${target.label}" unlocked for manual editing`, 'ok');
+        toast(`${target.id === 'f_fxrate' ? 'Supervisor' : 'Admin'} Override: "${target.label}" unlocked for manual editing`, 'ok');
       });
     }
     const btnAll = $('paConfirmAllUnlockBtn');
     if (btnAll) {
       btnAll.addEventListener('click', () => {
         const pinEl = $('paAdminPinInput');
-        const hasPin2401 = isAdmin || (pinEl && String(pinEl.value).trim() === '2401');
+        const hasPin2401 = isAdmin || (pinEl && isValidSupervisorOrAdminPin(pinEl.value));
+        const fxG = evaluateCurrentModalFxConversionGuard();
         if (hasPin2401) {
           saveNote();
           FORM_UI.adminUnlocked.__all = true;
-          fields.forEach(f => { FORM_UI.adminUnlocked[f.id] = true; });
+          fields.forEach(f => {
+            if (f.id === 'f_fxrate' && fxG && fxG.frozen) return;
+            FORM_UI.adminUnlocked[f.id] = true;
+          });
           box.hidden = true;
           recalcForm();
           toast(`Admin Override: All ${fields.length} policy-locked fields unlocked`, 'ok');
@@ -31837,7 +32278,10 @@
         }
         if (roleUnlockableFields.length > 0) {
           saveNote();
-          roleUnlockableFields.forEach(f => { FORM_UI.adminUnlocked[f.id] = true; });
+          roleUnlockableFields.forEach(f => {
+            if (f.id === 'f_fxrate' && fxG && fxG.frozen) return;
+            FORM_UI.adminUnlocked[f.id] = true;
+          });
           box.hidden = true;
           recalcForm();
           toast(`Role Override: ${roleUnlockableFields.length} authorized policy-locked field(s) unlocked`, 'ok');
@@ -32194,119 +32638,132 @@
   }
 
   let _FORM_INTEL_CACHE = null;
+  let _FORM_INTEL_TKT_CACHE = null;
   function _getFormIntelIndex() {
     const recs = SEED.records || {};
-    const rev = `${SEED._customRev || 0}|${(recs.sales_tickets && recs.sales_tickets.length) || 0}|${(recs.raw_purchases && recs.raw_purchases.length) || 0}|${(recs.receipts && recs.receipts.length) || 0}|${(recs.settlements && recs.settlements.length) || 0}|${(recs.expenses && recs.expenses.length) || 0}|${(recs.credit_terms && recs.credit_terms.length) || 0}|${(recs.jv_distributions && recs.jv_distributions.length) || 0}|${(recs.loans && recs.loans.length) || 0}|${(recs.loan_settlements && recs.loan_settlements.length) || 0}`;
+    const tr = (SEED && SEED._tableRev) || {};
+    const rev = `${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.expenses||0}:${tr.credit_terms||0}:${tr.jv_distributions||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.external_movements||0}:${tr.logistics_allowances||0}:${tr.attendance||0}:${tr.customers||0}:${tr.sites||0}:${_GLOBAL_RATES_REV||0}:${_WIN_REV}|${(recs.sales_tickets && recs.sales_tickets.length) || 0}|${(recs.raw_purchases && recs.raw_purchases.length) || 0}|${(recs.receipts && recs.receipts.length) || 0}|${(recs.settlements && recs.settlements.length) || 0}|${(recs.expenses && recs.expenses.length) || 0}|${(recs.credit_terms && recs.credit_terms.length) || 0}|${(recs.jv_distributions && recs.jv_distributions.length) || 0}|${(recs.loans && recs.loans.length) || 0}|${(recs.loan_settlements && recs.loan_settlements.length) || 0}`;
     if (_FORM_INTEL_CACHE && _FORM_INTEL_CACHE.rev === rev) return _FORM_INTEL_CACHE;
 
-    const lastSalesTicketByCo = new Map();
-    const lastRawTicketByCo = new Map();
     const creditTermsByCust = new Map();
     const custOverdue60ByCust = new Map();
-    const unbilledVatByCust = new Map();
-    const supLegsBySup = new Map();
-    const jvBySite = new Map();
     const loansByParty = new Map();
     const lastExpenseBySup = new Map();
     const absentStaffByDate = new Map();
-    const loadsByTruckDate = new Map();
 
-    // 1. Latest ticket serial per BU + truck loads per date + unbilled VAT tickets
-    const vatRegCusts = new Set();
-    (SEED.top_customers || []).forEach(c => {
-      if (c && c['VAT Registered'] === 'Yes') vatRegCusts.add(norm(c.Customer));
-    });
-    (recs.customers || []).forEach(c => {
-      if (c && (c.vat_registered === 'Yes' || c['VAT Registered'] === 'Yes' || c.vat)) vatRegCusts.add(norm(c.name || c.Customer));
-    });
+    // 1. Latest ticket serial per BU + truck loads per date + unbilled VAT tickets (cached across non-ticket saves)
+    const tktRev = `${(recs.sales_tickets && recs.sales_tickets.length) || 0}|${(recs.raw_purchases && recs.raw_purchases.length) || 0}|${tr.sales_tickets||0}|${tr.raw_purchases||0}|${tr.customers||0}|${tr.sites||0}|${_GLOBAL_RATES_REV||0}|${_WIN_REV}`;
+    if (!_FORM_INTEL_TKT_CACHE || _FORM_INTEL_TKT_CACHE.rev !== tktRev) {
+      const bLastSales = new Map();
+      const bLastRaw = new Map();
+      const bLoadsByTruckDate = new Map();
+      const bUnbilledVat = new Map();
+      const bSupLegs = new Map();
+      const bJvRaw = new Map();
+      const vatRegCusts = new Set();
+      (SEED.top_customers || []).forEach(c => {
+        if (c && c['VAT Registered'] === 'Yes') vatRegCusts.add(norm(c.Customer));
+      });
+      (recs.customers || []).forEach(c => {
+        if (c && (c.vat_registered === 'Yes' || c['VAT Registered'] === 'Yes' || c.vat)) vatRegCusts.add(norm(c.name || c.Customer));
+      });
 
-    (recs.sales_tickets || []).forEach(t => {
-      if (!t || t.voided) return;
-      const co = String(t.company || 'WTC');
-      const d = String(t.date || '').slice(0, 10);
-      const curSt = lastSalesTicketByCo.get(co);
-      if (!curSt || d >= curSt.date) {
-        const tno = String(t.ticket_no || '').trim();
-        if (tno && /^\d+$/.test(tno)) {
-          if (!curSt || d > curSt.date || (d === curSt.date && Number(tno) > Number(curSt.ticketNo))) {
-            lastSalesTicketByCo.set(co, { ticketNo: tno, date: d, customer: t.customer || '' });
+      (recs.sales_tickets || []).forEach(t => {
+        if (!t || t.voided) return;
+        const co = String(t.company || 'WTC');
+        const d = String(t.date || '').slice(0, 10);
+        const curSt = bLastSales.get(co);
+        if (!curSt || d >= curSt.date) {
+          const tno = String(t.ticket_no || '').trim();
+          if (tno && /^\d+$/.test(tno)) {
+            if (!curSt || d > curSt.date || (d === curSt.date && Number(tno) > Number(curSt.ticketNo))) {
+              bLastSales.set(co, { ticketNo: tno, date: d, customer: t.customer || '' });
+            }
           }
         }
-      }
-      if (t.equipment && d) {
-        const tk = `${norm(t.equipment)}|${d}`;
-        loadsByTruckDate.set(tk, (loadsByTruckDate.get(tk) || 0) + 1);
-      }
-      const ck = norm(t.customer);
-      if (ck && vatRegCusts.has(ck) && !t.vat_invoice) {
-        const net = Number(t.total ?? t.total_usd ?? t.mat_total ?? 0);
-        if (net > 0) {
-          const prev = unbilledVatByCust.get(ck) || { count: 0, netUsd: 0, net: 0, vat: 0 };
-          prev.count += 1;
-          prev.netUsd = round2(prev.netUsd + net);
-          prev.net = prev.netUsd;
-          prev.vat = round2((prev.vat || 0) + net * getVatFraction(d));
-          unbilledVatByCust.set(ck, prev);
+        if (t.equipment && d) {
+          const tk = `${norm(t.equipment)}|${d}`;
+          bLoadsByTruckDate.set(tk, (bLoadsByTruckDate.get(tk) || 0) + 1);
         }
-      }
-      // Track 3P delivery haulage leg on supplier
-      const sHaul = Number(t.trans_price ?? t.trans_total ?? 0);
-      if (t.transport_by === 'Third-party truck' && t.truck_owner && sHaul > 0) {
-        const sk = norm(t.truck_owner);
-        if (!supLegsBySup.has(sk)) supLegsBySup.set(sk, { matGross: 0, haulGross: 0, expGross: 0, paid: 0 });
-        supLegsBySup.get(sk).haulGross = round2(supLegsBySup.get(sk).haulGross + sHaul);
-      }
-    });
-
-    (recs.raw_purchases || []).forEach(r => {
-      if (!r || r.voided) return;
-      const co = String(r.company || 'WTC');
-      const d = String(r.date || '').slice(0, 10);
-      const curRt = lastRawTicketByCo.get(co);
-      if (!curRt || d >= curRt.date) {
-        const tno = String(r.ticket_no || '').trim();
-        if (tno && /^\d+$/.test(tno)) {
-          if (!curRt || d > curRt.date || (d === curRt.date && Number(tno) > Number(curRt.ticketNo))) {
-            lastRawTicketByCo.set(co, { ticketNo: tno, date: d, site: r.site || '' });
+        const ck = norm(t.customer);
+        if (ck && vatRegCusts.has(ck) && !t.vat_invoice) {
+          const net = Number(t.total ?? t.total_usd ?? t.mat_total ?? 0);
+          if (net > 0) {
+            const prev = bUnbilledVat.get(ck) || { count: 0, netUsd: 0, net: 0, vat: 0 };
+            prev.count += 1;
+            prev.netUsd = round2(prev.netUsd + net);
+            prev.net = prev.netUsd;
+            prev.vat = round2((prev.vat || 0) + net * getVatFraction(d));
+            bUnbilledVat.set(ck, prev);
           }
         }
-      }
-      if (r.equipment && d) {
-        const tk = `${norm(r.equipment)}|${d}`;
-        loadsByTruckDate.set(tk, (loadsByTruckDate.get(tk) || 0) + 1);
-      }
-      const rMat = Number(r.cost ?? r.mat_total ?? 0);
-      const rHaul = Number(r.trans_cost ?? r.trans_total ?? 0);
-      if (r.site_owner && rMat > 0) {
-        const sk = norm(r.site_owner);
-        if (!supLegsBySup.has(sk)) supLegsBySup.set(sk, { matGross: 0, haulGross: 0, expGross: 0, paid: 0 });
-        supLegsBySup.get(sk).matGross = round2(supLegsBySup.get(sk).matGross + rMat);
-      }
-      if (r.transport_by === 'Third-party truck' && r.truck_owner && rHaul > 0) {
-        const sk = norm(r.truck_owner);
-        if (!supLegsBySup.has(sk)) supLegsBySup.set(sk, { matGross: 0, haulGross: 0, expGross: 0, paid: 0 });
-        supLegsBySup.get(sk).haulGross = round2(supLegsBySup.get(sk).haulGross + rHaul);
-      }
-      if (r.site) {
-        const sitK = norm(r.site);
-        if (!jvBySite.has(sitK)) {
-          const sObj = siteInfo(r.site, 'raw');
-          jvBySite.set(sitK, {
-            site: r.site,
-            isJv: Boolean(sObj && (sObj.is_jv || sObj.jv)),
-            partner: (sObj && sObj.supplier) || 'Assaf',
-            sharePct: 50,
-            rawMatUsd: 0,
-            distributedUsd: 0,
-            distCount: 0,
-            loads: 0
-          });
+        const sHaul = Number(t.trans_price ?? t.trans_total ?? 0);
+        if (t.transport_by === 'Third-party truck' && t.truck_owner && sHaul > 0) {
+          const sk = norm(t.truck_owner);
+          if (!bSupLegs.has(sk)) bSupLegs.set(sk, { matGross: 0, haulGross: 0 });
+          bSupLegs.get(sk).haulGross = round2(bSupLegs.get(sk).haulGross + sHaul);
         }
-        const jb = jvBySite.get(sitK);
-        jb.rawMatUsd = round2(jb.rawMatUsd + Number(r.total ?? (rMat + rHaul)));
-        jb.loads += 1;
-      }
-    });
+      });
+
+      (recs.raw_purchases || []).forEach(r => {
+        if (!r || r.voided) return;
+        const co = String(r.company || 'WTC');
+        const d = String(r.date || '').slice(0, 10);
+        const curRt = bLastRaw.get(co);
+        if (!curRt || d >= curRt.date) {
+          const tno = String(r.ticket_no || '').trim();
+          if (tno && /^\d+$/.test(tno)) {
+            if (!curRt || d > curRt.date || (d === curRt.date && Number(tno) > Number(curRt.ticketNo))) {
+              bLastRaw.set(co, { ticketNo: tno, date: d, site: r.site || '' });
+            }
+          }
+        }
+        if (r.equipment && d) {
+          const tk = `${norm(r.equipment)}|${d}`;
+          bLoadsByTruckDate.set(tk, (bLoadsByTruckDate.get(tk) || 0) + 1);
+        }
+        const rMat = Number(r.cost ?? r.mat_total ?? 0);
+        const rHaul = Number(r.trans_cost ?? r.trans_total ?? 0);
+        if (r.site_owner && rMat > 0) {
+          const sk = norm(r.site_owner);
+          if (!bSupLegs.has(sk)) bSupLegs.set(sk, { matGross: 0, haulGross: 0 });
+          bSupLegs.get(sk).matGross = round2(bSupLegs.get(sk).matGross + rMat);
+        }
+        if (r.transport_by === 'Third-party truck' && r.truck_owner && rHaul > 0) {
+          const sk = norm(r.truck_owner);
+          if (!bSupLegs.has(sk)) bSupLegs.set(sk, { matGross: 0, haulGross: 0 });
+          bSupLegs.get(sk).haulGross = round2(bSupLegs.get(sk).haulGross + rHaul);
+        }
+        if (r.site) {
+          const sitK = norm(r.site);
+          if (!bJvRaw.has(sitK)) {
+            const sObj = siteInfo(r.site, 'raw');
+            bJvRaw.set(sitK, {
+              site: r.site,
+              isJv: Boolean(sObj && (sObj.is_jv || sObj.jv)),
+              partner: (sObj && sObj.supplier) || 'Assaf',
+              sharePct: 50,
+              rawMatUsd: 0,
+              loads: 0
+            });
+          }
+          const jb = bJvRaw.get(sitK);
+          jb.rawMatUsd = round2(jb.rawMatUsd + Number(r.total ?? (rMat + rHaul)));
+          jb.loads += 1;
+        }
+      });
+      _FORM_INTEL_TKT_CACHE = { rev: tktRev, bLastSales, bLastRaw, bLoadsByTruckDate, bUnbilledVat, bSupLegs, bJvRaw };
+    }
+
+    const lastSalesTicketByCo = new Map(_FORM_INTEL_TKT_CACHE.bLastSales);
+    const lastRawTicketByCo = new Map(_FORM_INTEL_TKT_CACHE.bLastRaw);
+    const loadsByTruckDate = new Map(_FORM_INTEL_TKT_CACHE.bLoadsByTruckDate);
+    const unbilledVatByCust = new Map();
+    _FORM_INTEL_TKT_CACHE.bUnbilledVat.forEach((v, k) => unbilledVatByCust.set(k, Object.assign({}, v)));
+    const supLegsBySup = new Map();
+    _FORM_INTEL_TKT_CACHE.bSupLegs.forEach((v, k) => supLegsBySup.set(k, { matGross: v.matGross, haulGross: v.haulGross, expGross: 0, paid: 0 }));
+    const jvBySite = new Map();
+    _FORM_INTEL_TKT_CACHE.bJvRaw.forEach((v, k) => jvBySite.set(k, Object.assign({}, v, { distributedUsd: 0, distCount: 0 })));
 
     (recs.sites || []).forEach(s => {
       if (!s || s.voided || !s.name || resolveSiteCategory(s) === 'customer') return;
@@ -33119,7 +33576,7 @@
         ? (estTons != null ? `Est. ≈ ${fmtNum(estTons, 2)} t (${fmtNum(effCap, 1)} m³ × ${tonFactor > 0 ? tonFactor : '~1.6'})` : 'Enter weighed tons...')
         : (qtyLocked ? 'Auto-filled from Truck m³...' : 'Enter quantity...');
     }
-    if (qtyEl() && qtyLocked) {
+    if (qtyEl() && qtyLocked && !(FORM_UI.ticketDisposition === 'return_wtc' && FORM_UI.qtyManual && val('f_qty') !== '')) {
       if (isTruckUom) {
         qtyEl().value = '1';
       } else if (!isTonUom) {
@@ -33459,7 +33916,7 @@
         ? (rawEstTons != null ? `Est. ≈ ${fmtNum(rawEstTons, 2)} t (${fmtNum(effCap, 1)} m³ × ${rawTonFactor > 0 ? rawTonFactor : '~1.5'})` : 'Enter weighed tons...')
         : (qtyLocked ? 'Auto-filled from Truck m³...' : 'Enter quantity...');
     }
-    if (qtyEl() && qtyLocked) {
+    if (qtyEl() && qtyLocked && !(FORM_UI.ticketDisposition === 'return_wtc' && FORM_UI.qtyManual && val('f_qty') !== '')) {
       if (isTruckUom) {
         qtyEl().value = '1';
       } else if (!isTonUom) {
@@ -34162,7 +34619,6 @@
     const mthEl = $('f_method');
     const amtEl = $('f_amount');
     const qtyInpEl = $('f_qty');
-    const hasMultiItems = !pendEditRow && Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length > 0;
     if (!pendEditRow) {
       const expCoNow = val('f_company') || defaultEntryCompany();
       if (expCoNow !== FORM_UI.lastExpCompany) {
@@ -34181,8 +34637,37 @@
         if ($('f_for_equipment')) $('f_for_equipment').value = '1';
       }
       const storeWh = val('f_store_warehouse') === '1';
-      const anyLineSameEq = hasMultiItems && FORM_UI.expItems.some(it => (it.allocation_mode || 'same_equipment') === 'same_equipment');
+      const anyLineSameEq = Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.some(it => (it.allocation_mode || 'same_equipment') === 'same_equipment');
       const forEq = !storeWh && (val('f_for_equipment') === '1' || anyLineSameEq);
+      const useItemTickets = Boolean(forEq || storeWh);
+      if (useItemTickets && (!Array.isArray(FORM_UI.expItems) || FORM_UI.expItems.length === 0)) {
+        const initNm = val('f_exp_item_name') || '';
+        const catIt = resolveCatalogItem(initNm);
+        const initQ = num('f_qty') || 1;
+        const initAmt = num('f_amount');
+        const initUc = (initAmt > 0 && initQ > 0) ? round2(initAmt / initQ) : (catIt && Number(catIt.default_cost) > 0 ? round2(Number(catIt.default_cost)) : '');
+        FORM_UI.expItems = [{
+          item_name: initNm,
+          allocation_mode: storeWh ? 'warehouse' : 'same_equipment',
+          target_equipment: '',
+          warehouse_location: val('f_exp_wh_loc') || defaultWarehouseLocationForCompany(expCoNow),
+          qty: initQ,
+          uom: (catIt && catIt.uom) || val('f_exp_uom') || (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'),
+          unit_cost: initUc
+        }];
+        renderExpenseItemsBuilderRows();
+      } else if (!useItemTickets && Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length > 0) {
+        FORM_UI.expItems = [];
+        renderExpenseItemsBuilderRows();
+      } else if (useItemTickets && Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length === 1) {
+        const t0 = FORM_UI.expItems[0];
+        if (!t0.item_name && val('f_exp_item_name')) {
+          t0.item_name = val('f_exp_item_name');
+          const catIt = resolveCatalogItem(t0.item_name);
+          if (catIt && catIt.uom) t0.uom = catIt.uom;
+          renderExpenseItemsBuilderRows();
+        }
+      }
       const showHeaderEquip = forEq;
       const curUnit = showHeaderEquip ? rawTruck : '';
       if (curUnit !== FORM_UI.lastExpTruck) {
@@ -34218,52 +34703,25 @@
       }
       const expItemsPanelEl = $('expItemsPanel');
       if (expItemsPanelEl) {
-        expItemsPanelEl.hidden = Boolean(pendEditRow || (!forEq && !storeWh && !hasMultiItems));
+        expItemsPanelEl.hidden = Boolean(pendEditRow || !useItemTickets);
       }
       setFieldVisible('wrap_f_truck', showHeaderEquip);
-      setFieldVisible('wrap_f_exp_item_name', storeWh && !hasMultiItems);
-      setFieldVisible('wrap_f_exp_uom', storeWh && !hasMultiItems);
-      setFieldVisible('wrap_f_exp_wh_loc', storeWh && !hasMultiItems);
-      if (storeWh && !hasMultiItems) {
-        const expItemNm = val('f_exp_item_name');
-        const whIdx = getWarehouseIndex(expCoNow);
-        const exWhRow = expItemNm ? whIdx.byKey[norm(expItemNm)] : null;
-        if (exWhRow && expItemNm !== FORM_UI.lastExpStoreItem) {
-          FORM_UI.lastExpStoreItem = expItemNm;
-          if ($('f_exp_uom') && exWhRow.uom) $('f_exp_uom').value = exWhRow.uom;
-          if ($('f_exp_wh_loc') && exWhRow.location) $('f_exp_wh_loc').value = exWhRow.location;
-          if ($('f_category') && !val('f_category') && exWhRow.category) $('f_category').value = exWhRow.category;
-        } else if (!expItemNm) {
-          FORM_UI.lastExpStoreItem = '';
-        }
-        const addQ = num('f_qty') || 1;
-        const uomLbl = val('f_exp_uom') || (exWhRow && exWhRow.uom) || 'Piece';
-        if (expItemNm) {
-          const curOnShelf = exWhRow ? exWhRow.onHandQty : 0;
-          const nextShelf = round2(curOnShelf + addQ);
-          setHint(
-            'hint_exp_item',
-            exWhRow
-              ? `On shelf: ${fmtNum(curOnShelf, curOnShelf % 1 ? 2 : 0)} ${exWhRow.uom} @ ${fmtUSD(exWhRow.avgUnitCost, 2)} · After storing: ${fmtNum(nextShelf, nextShelf % 1 ? 2 : 0)} ${uomLbl} (+${fmtNum(addQ, addQ % 1 ? 2 : 0)})`
-              : `New Warehouse SKU · Shelf balance after storing: +${fmtNum(addQ, addQ % 1 ? 2 : 0)} ${uomLbl}`,
-            'ok'
-          );
-        } else {
-          setHint('hint_exp_item', 'Enter part, filter, belt, or oil name to add onto Warehouse shelf (+Stock)', '');
-        }
-      }
-      if (hasMultiItems) syncExpenseItemStockHints(expCoNow);
+      setFieldVisible('wrap_f_exp_item_name', false);
+      setFieldVisible('wrap_f_exp_uom', false);
+      setFieldVisible('wrap_f_exp_wh_loc', false);
+      setFieldVisible('wrap_f_qty', !useItemTickets);
+      if (useItemTickets) syncExpenseItemStockHints(expCoNow);
       syncExpenseItemsSummaryUI();
       setHint(
         'hint_exp_route',
-        hasMultiItems
-          ? `Multi-item invoice (${FORM_UI.expItems.length} item ticket${FORM_UI.expItems.length === 1 ? '' : 's'} below) - each ticket sets its own Equipment or Warehouse destination`
-          : (storeWh
-              ? 'Adds this purchase directly onto your Warehouse shelf (+Stock) and books the expense/payable together'
-              : (forEq
-                  ? (curUnit ? `Direct equipment cost allocated to ${curUnit}` : 'Select the target machine or truck in Equipment (cost centre) below')
-                  : 'General plant or overhead expense (Equipment and Item Tickets hidden)')),
-        storeWh || (forEq && curUnit) || hasMultiItems ? 'ok' : ''
+        useItemTickets
+          ? (FORM_UI.expItems.length > 1
+              ? `Multi-item invoice (${FORM_UI.expItems.length} item tickets below) - each ticket sets its own Equipment or Warehouse destination`
+              : (storeWh
+                  ? 'Enter the item on Ticket #01 below to add directly onto your Warehouse shelf (+Stock) with locked catalog unit'
+                  : (curUnit ? `Direct equipment cost allocated to ${curUnit} - enter item details on Ticket #01 below` : 'Select the target machine or truck in Equipment (cost centre) below')))
+          : 'General plant or overhead expense (Equipment and Item Tickets hidden)',
+        storeWh || (forEq && curUnit) || (useItemTickets && FORM_UI.expItems.length > 1) ? 'ok' : ''
       );
       if (showHeaderEquip && curUnit) {
         const uHealth = getEquipmentHealth(curUnit, expCoNow);
@@ -34280,6 +34738,8 @@
         setHint('hint_truck', showHeaderEquip ? 'Select primary equipment for this ticket' : '', '');
       }
     }
+    const hasItemTickets = !pendEditRow && Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length > 0;
+    const isMultiTicketSplit = hasItemTickets && FORM_UI.expItems.length > 1;
     if (pendEditRow) {
       const targetMth = pendEditRow.method || 'Credit';
       const mthLocked = applyFieldLockState(
@@ -34312,7 +34772,7 @@
         amtEl.dataset.wasPendingZero = '1';
       }
       if (qtyInpEl) {
-        if (hasMultiItems) {
+        if (hasItemTickets) {
           const sumQ = round2(FORM_UI.expItems.reduce((s, it) => s + (Number(it.qty) || 0), 0));
           qtyInpEl.value = String(sumQ || 1);
           qtyInpEl.readOnly = true;
@@ -34331,7 +34791,7 @@
           FORM_UI.wasPricePending = false;
         }
       }
-      if (hasMultiItems) {
+      if (isMultiTicketSplit) {
         const sumAmt = round2(FORM_UI.expItems.reduce((s, it) => s + round2((Number(it.qty) || 0) * (Number(it.unit_cost) || 0)), 0));
         const sumQty = round2(FORM_UI.expItems.reduce((s, it) => s + (Number(it.qty) || 0), 0));
         if (amtEl) {
@@ -34341,6 +34801,39 @@
         }
         if (qtyInpEl) {
           qtyInpEl.value = String(sumQty || 1);
+          qtyInpEl.readOnly = true;
+        }
+      } else if (hasItemTickets && FORM_UI.expItems.length === 1) {
+        const t0 = FORM_UI.expItems[0];
+        const q0 = Number(t0.qty) || 1;
+        const uc0 = Number(t0.unit_cost) || 0;
+        const lineTot0 = round2(q0 * uc0);
+        if (amtEl) {
+          amtEl.readOnly = false;
+          amtEl.classList.remove('pa-locked-input');
+          if (amtEl.dataset.wasPendingZero === '1') {
+            if (amtEl.value === '0.00' || amtEl.value === '0') amtEl.value = '';
+            delete amtEl.dataset.wasPendingZero;
+          }
+          if (document.activeElement === amtEl) {
+            const typedAmt = num('f_amount');
+            t0.unit_cost = typedAmt > 0 ? round2(typedAmt / q0) : '';
+            const cInp0 = $('f_exi_cost_0');
+            if (cInp0 && document.activeElement !== cInp0) {
+              cInp0.value = t0.unit_cost !== '' ? String(t0.unit_cost) : '';
+            }
+            syncExpenseItemsSummaryUI();
+          } else if (uc0 > 0) {
+            amtEl.value = lineTot0.toFixed(2);
+          } else if (num('f_amount') > 0 && (t0.unit_cost === '' || t0.unit_cost == null || Number(t0.unit_cost) === 0)) {
+            t0.unit_cost = round2(num('f_amount') / q0);
+            const cInp0 = $('f_exi_cost_0');
+            if (cInp0 && document.activeElement !== cInp0) cInp0.value = String(t0.unit_cost);
+            syncExpenseItemsSummaryUI();
+          }
+        }
+        if (qtyInpEl) {
+          qtyInpEl.value = String(q0);
           qtyInpEl.readOnly = true;
         }
       } else {
@@ -34582,25 +35075,171 @@
         const lbpUnchanged = Boolean(editOrigLbp && $('f_lbp') && String($('f_lbp').value ?? '') === String($('f_lbp').dataset.initVal ?? ''));
         const dateUnchanged = Boolean(editOrigLbp && (!$('f_date') || getLbpFxRate(val('f_date') || todayISO()) === getLbpFxRate(String(editOrigLbp.date || editOrigLbp.start_date || todayISO()).slice(0, 10))));
         if (isConv) {
-          const fxEl = $('f_fxrate');
-          if (fxEl && usd > 0 && lbp > 0 && document.activeElement !== fxEl && !(editOrigLbp && STATE.editingRecord.crKey === 'conversions' && usdUnchanged && lbpUnchanged)) {
-            fxEl.value = String(Math.round(lbp / usd));
+          const txDate = val('f_date') || todayISO();
+          const sysRate = getLbpFxRate(txDate, 'LBP') || DEFAULT_LBP_FX_RATE;
+          const uEl = $('f_usd'), lEl = $('f_lbp'), fxEl = $('f_fxrate');
+          const uRaw = uEl ? String(uEl.value ?? '').trim() : '';
+          const lRaw = lEl ? String(lEl.value ?? '').trim() : '';
+          let curUsd = usd, curLbp = lbp;
+          if (curUsd > 0 && lRaw === '' && document.activeElement !== lEl) {
+            const rateForAuto = (num('f_fxrate') > 0 && !FORM_UI.convRateFromAmounts) ? num('f_fxrate') : sysRate;
+            if (fxEl && !(num('f_fxrate') > 0)) fxEl.value = String(sysRate);
+            if (lEl) lEl.value = String(Math.round(curUsd * rateForAuto));
+            curLbp = num('f_lbp');
+            if (!FORM_UI.convPrimarySide) FORM_UI.convPrimarySide = 'usd';
+          } else if (curLbp > 0 && uRaw === '' && document.activeElement !== uEl) {
+            const rateForAuto = (num('f_fxrate') > 0 && !FORM_UI.convRateFromAmounts) ? num('f_fxrate') : sysRate;
+            if (fxEl && !(num('f_fxrate') > 0)) fxEl.value = String(sysRate);
+            if (uEl) uEl.value = String(round2(curLbp / rateForAuto));
+            curUsd = num('f_usd');
+            if (!FORM_UI.convPrimarySide) FORM_UI.convPrimarySide = 'lbp';
+          } else if (fxEl && curUsd > 0 && curLbp > 0 && document.activeElement !== fxEl && !(editOrigLbp && STATE.editingRecord.crKey === 'conversions' && usdUnchanged && lbpUnchanged)) {
+            const imp = round2(curLbp / curUsd);
+            fxEl.value = String(imp >= 100 && Math.abs(imp - Math.round(imp)) < 0.05 ? Math.round(imp) : imp);
           }
-          const fxRate = num('f_fxrate') || getLbpFxRate(val('f_date') || todayISO());
+          const rawCheck = evaluateFxConversionGuard(curUsd, curLbp, num('f_fxrate'), txDate, false);
+          if (rawCheck.frozen) {
+            if (FORM_UI.adminUnlocked) delete FORM_UI.adminUnlocked.f_fxrate;
+            const uBox = $('paAdminUnlockBox');
+            if (uBox && !uBox.hidden && FORM_UI.unlockTargetField === 'f_fxrate') uBox.hidden = true;
+          }
+          const fxGuard = evaluateFxConversionGuard(curUsd, curLbp, num('f_fxrate'), txDate, isFieldAdminUnlocked('f_fxrate'));
+          const fxRate = fxGuard.effRate || sysRate;
           const isU2L = !/LBP/i.test(String(val('f_conv_dir') || 'USD to LBP').slice(0, 4));
           const trStrip = $('trLiveContextStrip');
           if (trStrip) trStrip.hidden = true;
+
+          const rateWrap = $('wrap_conv_rate');
+          const lbpWrap = $('wrap_tr_lbp');
+          const ratePill = rateWrap ? rateWrap.querySelector('[data-lock-pill="f_fxrate"]') : null;
+          if (rateWrap) {
+            rateWrap.setAttribute('data-lock-reason', fxGuard.reason || `FX Rate Corridor Guard (System Rate ${fmtNum(fxGuard.sysRate, 0)} LL/$: >5% warning, >10% locked for Supervisor, >50% frozen)`);
+            rateWrap.classList.toggle('is-policy-locked', fxGuard.tier === 'locked' || fxGuard.tier === 'frozen');
+            rateWrap.classList.toggle('is-admin-unlocked', fxGuard.tier === 'supervisor_unlocked');
+            rateWrap.classList.toggle('field-live-invalid', fxGuard.blocked);
+            rateWrap.classList.toggle('is-fx-frozen', fxGuard.frozen);
+          }
+          if (lbpWrap) {
+            lbpWrap.classList.toggle('field-live-invalid', fxGuard.frozen || (fxGuard.blocked && curUsd > 0 && curLbp > 0));
+            lbpWrap.classList.toggle('is-fx-frozen', fxGuard.frozen);
+          }
+          if (fxEl) {
+            fxEl.readOnly = false;
+            fxEl.dataset.policyLockedNow = (fxGuard.tier === 'locked' || fxGuard.tier === 'frozen') ? '1' : '0';
+          }
+          if (ratePill) {
+            ratePill.removeAttribute('title');
+            if (fxGuard.frozen) {
+              ratePill.className = 'pa-lock-pill locked is-frozen';
+              ratePill.innerHTML = `${ic('lock')} <span class="lp-short">Frozen (&gt;50%)</span><span class="sr-only"> FROZEN</span>`;
+            } else if (fxGuard.tier === 'locked') {
+              ratePill.className = 'pa-lock-pill locked';
+              ratePill.innerHTML = `${ic('lock')} <span class="lp-short">Locked · Supervisor</span><span class="sr-only"> LOCKED</span>`;
+            } else if (fxGuard.tier === 'supervisor_unlocked') {
+              ratePill.className = 'pa-lock-pill unlocked';
+              ratePill.innerHTML = `${ic('unlock')} <span class="lp-short">Supervisor Override</span><span class="sr-only"> OVERRIDE</span>`;
+            } else if (fxGuard.tier === 'warn') {
+              ratePill.className = 'pa-lock-pill auto-open is-warn-pill';
+              ratePill.innerHTML = `${ic('alert')} <span class="lp-short">&gt;5% Warning</span>`;
+            } else {
+              ratePill.className = 'pa-lock-pill auto-open';
+              ratePill.innerHTML = `${ic('check')} <span class="lp-short">±5% Corridor OK</span>`;
+            }
+          }
+
+          const qBar = $('convUsdQuickBar');
+          if (qBar) {
+            qBar.querySelectorAll('[data-conv-usd-preset]').forEach(btn => {
+              const pv = Number(btn.getAttribute('data-conv-usd-preset') || 0);
+              btn.classList.toggle('active', curUsd > 0 && Math.abs(curUsd - pv) < 0.005);
+            });
+          }
+
+          setHint('hint_conv_dir', isU2L ? 'Drawer USD decreases and Drawer LBP increases' : 'Drawer LBP decreases and Drawer USD increases', '');
+          if (curUsd > 0) {
+            setHint('hint_tr_usd', `${fmtUSD(curUsd, 2)} at system rate ${fmtNum(fxGuard.sysRate, 0)} LL/$ = ${fmtNum(fxGuard.expectedLbp, 0)} LL`, 'ok');
+          } else {
+            setHint('hint_tr_usd', 'Enter USD amount or click a preset above to auto-calculate LBP', '');
+          }
+          if (fxGuard.frozen) {
+            setHint('hint_tr_lbp', curUsd > 0
+              ? `FROZEN: Expected ${fmtNum(fxGuard.expectedLbp, 0)} LL at ${fmtNum(fxGuard.sysRate, 0)} LL/$ (${fmtNum(curLbp, 0)} LL is ${fxGuard.diffPct.toFixed(1)}% off)`
+              : `FROZEN: Rate ${fmtNum(Math.round(fxGuard.effRate), 0)} LL/$ differs by ${fxGuard.diffPct.toFixed(1)}% (>50%) from ${fmtNum(fxGuard.sysRate, 0)} LL/$`, 'crit');
+          } else if (fxGuard.tier === 'locked') {
+            setHint('hint_tr_lbp', curUsd > 0
+              ? `Locked (>10% diff): Expected ${fmtNum(fxGuard.expectedLbp, 0)} LL at ${fmtNum(fxGuard.sysRate, 0)} LL/$ · Requires Supervisor unlock`
+              : `Locked (>10% diff from ${fmtNum(fxGuard.sysRate, 0)} LL/$) · Requires Supervisor unlock`, 'crit');
+          } else if (fxGuard.tier === 'warn' || fxGuard.tier === 'supervisor_unlocked') {
+            setHint('hint_tr_lbp', curUsd > 0
+              ? `Variance ${fxGuard.signedDiffPct >= 0 ? '+' : ''}${fxGuard.signedDiffPct.toFixed(1)}% vs ${fmtNum(fxGuard.expectedLbp, 0)} LL at system rate ${fmtNum(fxGuard.sysRate, 0)} LL/$`
+              : `Variance ${fxGuard.signedDiffPct >= 0 ? '+' : ''}${fxGuard.signedDiffPct.toFixed(1)}% vs system rate ${fmtNum(fxGuard.sysRate, 0)} LL/$`, 'warn');
+          } else if (curLbp > 0 && curUsd > 0) {
+            setHint('hint_tr_lbp', `${fmtUSD(curUsd, 2)} × ${fmtNum(Math.round(fxGuard.effRate), 0)} LL/$ = ${fmtNum(curLbp, 0)} LL`, 'ok');
+          } else {
+            setHint('hint_tr_lbp', 'Auto-calculates from USD × Rate, or enter LBP to compute implied rate', '');
+          }
+          setHint('hint_conv_rate', fxGuard.shortHint, fxGuard.severity);
+
+          const convStrip = $('convLiveCorridorStrip');
+          if (convStrip) {
+            convStrip.hidden = false;
+            const stripTone = fxGuard.frozen || fxGuard.tier === 'locked'
+              ? 'is-crit'
+              : (fxGuard.tier === 'warn' || fxGuard.tier === 'supervisor_unlocked' ? 'is-warn' : 'is-ok');
+            convStrip.className = `att-contract-strip span-3 ${stripTone}${fxGuard.frozen ? ' is-fx-frozen-strip' : ''}`;
+            const badgeCls = (fxGuard.frozen || fxGuard.tier === 'locked')
+              ? 'badge-crit'
+              : (fxGuard.tier === 'warn' || fxGuard.tier === 'supervisor_unlocked' ? 'badge-warn' : 'badge-ok');
+            const showResetBtn = Math.abs(fxGuard.effRate - fxGuard.sysRate) >= 0.5 || (curUsd > 0 && Math.abs(curLbp - fxGuard.expectedLbp) >= 1);
+            const statusMsgHtml = fxGuard.frozen
+              ? `<div class="conv-corridor-msg is-crit"><b>Conversion Frozen (&gt;50% Difference):</b> ${curUsd > 0 && curLbp > 0 ? `<b>${fmtUSD(curUsd, 2)}</b> for <b>${fmtNum(curLbp, 0)} LL</b> implies ` : ''}<b>${fmtNum(Math.round(fxGuard.effRate), 0)} LL/$</b> (${fxGuard.diffPct.toFixed(2)}% difference from system rate <b>${fmtNum(fxGuard.sysRate, 0)} LL/$</b>). Differences above 50% (&lt; ${fmtNum(fxGuard.minUnlockableRate, 0)} or &gt; ${fmtNum(fxGuard.maxUnlockableRate, 0)} LL/$) are not accepted by anyone and are frozen.</div>`
+              : (fxGuard.tier === 'locked'
+                  ? `<div class="conv-corridor-msg is-crit"><b>Locked (&gt;10% Difference · Supervisor Only):</b> Effective rate <b>${fmtNum(Math.round(fxGuard.effRate), 0)} LL/$</b> differs by <b>${fxGuard.diffPct.toFixed(1)}%</b> from system rate <b>${fmtNum(fxGuard.sysRate, 0)} LL/$</b>. Conversions with &gt;10% difference are locked and can only be unlocked by a Supervisor.</div>`
+                  : (fxGuard.tier === 'supervisor_unlocked'
+                      ? `<div class="conv-corridor-msg is-warn"><b>Supervisor Override Active:</b> Effective rate <b>${fmtNum(Math.round(fxGuard.effRate), 0)} LL/$</b> (${fxGuard.signedDiffPct >= 0 ? '+' : ''}${fxGuard.signedDiffPct.toFixed(1)}% vs <b>${fmtNum(fxGuard.sysRate, 0)} LL/$</b>) is unlocked by Supervisor authorization.</div>`
+                      : (fxGuard.tier === 'warn'
+                          ? `<div class="conv-corridor-msg is-warn"><b>Warning (&gt;5% Difference):</b> Effective rate <b>${fmtNum(Math.round(fxGuard.effRate), 0)} LL/$</b> differs by <b>${fxGuard.signedDiffPct >= 0 ? '+' : ''}${fxGuard.signedDiffPct.toFixed(1)}%</b> from system rate <b>${fmtNum(fxGuard.sysRate, 0)} LL/$</b>. Allowed with warning (exceeding 10% locks for Supervisor approval).</div>`
+                          : `<div class="conv-corridor-msg is-ok"><b>Interactive FX Calculator:</b> Enter <b>USD</b> or <b>LBP</b> to auto-calculate at <b>${fmtNum(fxGuard.sysRate, 0)} LL/$</b>. Editing both amounts computes the live effective rate against the 5% / 10% / 50% corridor guard.</div>`)));
+            convStrip.innerHTML = `
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <span class="badge ${badgeCls}" id="convGuardBadge">${esc(fxGuard.badgeText)}</span>
+                  <span>System Rate: <b>${fmtNum(fxGuard.sysRate, 0)} LL/$</b> · Effective: <b>${fmtNum(Math.round(fxGuard.effRate), 0)} LL/$</b> (${fxGuard.signedDiffPct >= 0 ? '+' : ''}${fxGuard.signedDiffPct.toFixed(2)}%)</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                  ${fxGuard.tier === 'locked' ? `<button type="button" class="att-preset-pill is-sup-unlock-pill" id="convSupervisorUnlockBtn">${ic('unlock')} Unlock (Supervisor)</button>` : ''}
+                  ${fxGuard.tier === 'supervisor_unlocked' ? `<button type="button" class="att-preset-pill" id="convRelockRateBtn">${ic('lock')} Re-Lock</button>` : ''}
+                  ${showResetBtn ? `<button type="button" class="att-preset-pill is-reset-rate-pill" id="convResetSysRateBtn">${fxGuard.frozen ? 'Fix Now: ' : ''}Snap to ${fmtNum(fxGuard.sysRate, 0)} LL/$${curUsd > 0 ? ' (' + fmtNum(fxGuard.expectedLbp, 0) + ' LL)' : ''}</button>` : ''}
+                  <button type="button" class="att-preset-pill" id="convFlipDirBtn">Switch to ${isU2L ? 'LBP to USD' : 'USD to LBP'}</button>
+                </div>
+              </div>
+              ${statusMsgHtml}
+              <div class="att-contract-metrics" style="margin-top:6px">
+                <span><small>Normal (≤5%)</small><b>${fmtNum(fxGuard.minNormalRate, 0)}-${fmtNum(fxGuard.maxNormalRate, 0)} LL/$</b></span>
+                <span><small>Warning (5%-10%)</small><b>${fmtNum(fxGuard.minWarnRate, 0)}-${fmtNum(fxGuard.maxWarnRate, 0)} LL/$</b></span>
+                <span><small>Supervisor Lock (10%-50%)</small><b>${fmtNum(fxGuard.minUnlockableRate, 0)}-${fmtNum(fxGuard.maxUnlockableRate, 0)} LL/$</b></span>
+                <span><small>Frozen (&gt;50%)</small><b>&lt;${fmtNum(fxGuard.minUnlockableRate, 0)} or &gt;${fmtNum(fxGuard.maxUnlockableRate, 0)} LL/$</b></span>
+              </div>
+            `;
+          }
+
           if ($('lbl_tr_c1')) $('lbl_tr_c1').textContent = 'USD Drawer Delta';
           if ($('lbl_tr_c2')) $('lbl_tr_c2').textContent = 'LBP Drawer Delta';
           if ($('lbl_tr_c3')) $('lbl_tr_c3').textContent = 'Effective FX Rate';
           if ($('lbl_tr_c4')) $('lbl_tr_c4').textContent = 'Conversion Leg';
-          setText('calc_tr_c1', isU2L ? `-${fmtUSD(usd, 2)}` : `+${fmtUSD(usd, 2)}`);
-          setText('calc_tr_c2', isU2L ? `+${fmtNum(lbp, 0)} LL` : `-${fmtNum(lbp, 0)} LL`);
-          setText('calc_tr_c3', `${fmtNum(fxRate, 0)} LL / $`);
+          setText('calc_tr_c1', isU2L ? `-${fmtUSD(curUsd, 2)}` : `+${fmtUSD(curUsd, 2)}`);
+          setText('calc_tr_c2', isU2L ? `+${fmtNum(curLbp, 0)} LL` : `-${fmtNum(curLbp, 0)} LL`);
+          setText('calc_tr_c3', `${fmtNum(Math.round(fxRate), 0)} LL / $${fxGuard.frozen ? ' (FROZEN)' : (fxGuard.tier === 'locked' ? ' (LOCKED)' : (fxGuard.tier === 'warn' ? ' (WARN)' : ''))}`);
           setText('calc_tr_c4', isU2L ? 'USD to LBP' : 'LBP to USD');
+          const trCalcEl = $('trLiveCalc');
+          if (trCalcEl) {
+            trCalcEl.classList.toggle('is-fx-frozen-calc', fxGuard.frozen);
+            trCalcEl.classList.toggle('is-fx-locked-calc', fxGuard.tier === 'locked');
+            trCalcEl.classList.toggle('is-fx-warn-calc', fxGuard.tier === 'warn' || fxGuard.tier === 'supervisor_unlocked');
+          }
           commonDateChecks([]);
           renderAdminLockBar();
-          return { usd, lbp, amount: usd };
+          return { usd: curUsd, lbp: curLbp, amount: curUsd, fxGuard };
         }
         const activeFx = getLbpFxRate(val('f_date') || todayISO());
         let tot = round2(usd + lbp / activeFx);
@@ -36522,18 +37161,32 @@
         const itemName = val('f_item_name');
         const whIdx = getWarehouseIndex(company);
         const curItem = itemName ? whIdx.byKey[norm(itemName)] : null;
-        if (curItem && itemName !== FORM_UI.lastWhItem) {
+        const catItem = resolveCatalogItem(itemName);
+        if ((curItem || catItem) && itemName !== FORM_UI.lastWhItem) {
           FORM_UI.lastWhItem = itemName;
-          if ($('f_uom') && curItem.uom) $('f_uom').value = curItem.uom;
-          if ($('f_category') && curItem.category && ['Spare Parts', 'Oils & Lubricants', 'Tools & Garage'].includes(curItem.category)) {
-            $('f_category').value = curItem.category;
+          const lockedUom = (catItem && catItem.uom) || (curItem && curItem.uom) || 'Piece';
+          if ($('f_uom') && lockedUom) $('f_uom').value = lockedUom;
+          const canonCat = (catItem && catItem.category) || (curItem && curItem.category) || '';
+          if ($('f_category') && canonCat && ['Spare Parts', 'Oils & Lubricants', 'Tools & Garage'].includes(canonCat)) {
+            $('f_category').value = canonCat;
           }
-          if ($('f_location') && curItem.location) $('f_location').value = curItem.location;
-          if ($('f_unitprice') && (!val('f_unitprice') || isOut) && curItem.avgUnitCost > 0) {
-            $('f_unitprice').value = String(round2(curItem.avgUnitCost));
+          if ($('f_location') && ((curItem && curItem.location) || (catItem && catItem.default_location))) {
+            $('f_location').value = (curItem && curItem.location) || catItem.default_location;
+          }
+          const defUp = (curItem && curItem.avgUnitCost > 0) ? curItem.avgUnitCost : (catItem && Number(catItem.default_cost) > 0 ? Number(catItem.default_cost) : 0);
+          if ($('f_unitprice') && (!val('f_unitprice') || isOut) && defUp > 0) {
+            $('f_unitprice').value = String(round2(defUp));
           }
         } else if (!itemName) {
           FORM_UI.lastWhItem = '';
+        }
+        if (catItem && catItem.uom) {
+          const uLocked = applyFieldLockState('f_uom', true, `Locked to Items Table (${catItem.uom})`);
+          if (uLocked && $('f_uom') && $('f_uom').value !== catItem.uom) {
+            $('f_uom').value = catItem.uom;
+          }
+        } else {
+          applyFieldLockState('f_uom', false, 'Select unit for new item');
         }
         if (isOut && curItem && curItem.avgUnitCost > 0 && $('f_unitprice') && !val('f_unitprice')) {
           $('f_unitprice').value = String(round2(curItem.avgUnitCost));
@@ -36662,27 +37315,38 @@
         }
         if (oilType !== FORM_UI.lastOilType) {
           FORM_UI.lastOilType = oilType;
+          const catOil = resolveCatalogItem(oilType);
+          const defOilUom = (catOil && catOil.uom) ? catOil.uom : (/Filter/i.test(oilType) ? 'Set' : (/Grease/i.test(oilType) ? 'kg' : 'Litre'));
           if (/Hydraulic/i.test(oilType)) {
             if ($('f_int_hours')) $('f_int_hours').value = '1000';
             if ($('f_int_km')) $('f_int_km').value = '0';
             if ($('f_int_days')) $('f_int_days').value = '365';
-            if ($('f_uom')) $('f_uom').value = 'Litre';
+            if ($('f_uom')) $('f_uom').value = defOilUom;
           } else if (/Gear|ATF|Differential/i.test(oilType)) {
             if ($('f_int_hours')) $('f_int_hours').value = '500';
             if ($('f_int_km')) $('f_int_km').value = '40000';
             if ($('f_int_days')) $('f_int_days').value = '180';
-            if ($('f_uom')) $('f_uom').value = 'Litre';
+            if ($('f_uom')) $('f_uom').value = defOilUom;
           } else if (/Filter/i.test(oilType)) {
             if ($('f_int_hours')) $('f_int_hours').value = '250';
             if ($('f_int_km')) $('f_int_km').value = '15000';
             if ($('f_int_days')) $('f_int_days').value = '90';
-            if ($('f_uom')) $('f_uom').value = 'Set';
+            if ($('f_uom')) $('f_uom').value = defOilUom;
           } else {
             if ($('f_int_hours')) $('f_int_hours').value = '250';
             if ($('f_int_km')) $('f_int_km').value = '15000';
             if ($('f_int_days')) $('f_int_days').value = '90';
-            if ($('f_uom')) $('f_uom').value = 'Litre';
+            if ($('f_uom')) $('f_uom').value = defOilUom;
           }
+        }
+        const catOilNow = resolveCatalogItem(oilType);
+        if (catOilNow && catOilNow.uom) {
+          const uOilLocked = applyFieldLockState('f_uom', true, `Locked to Items Table (${catOilNow.uom})`);
+          if (uOilLocked && $('f_uom') && $('f_uom').value !== catOilNow.uom) {
+            $('f_uom').value = catOilNow.uom;
+          }
+        } else {
+          applyFieldLockState('f_uom', false, 'Select unit');
         }
         const curHrs = num('f_hours');
         const curKm = num('f_odometer');
@@ -36816,6 +37480,20 @@
         setText('calc_part_cost', fmtUSD(outlay, 2));
         setText('calc_part_net', sale > outlay ? `+${fmtUSD(sale - outlay, 2)} Inflow` : fmtUSD(net, 2));
         commonDateChecks([]);
+        renderAdminLockBar();
+        return {};
+      }
+      if (STATE.modalForm === 'item') {
+        ensureItemsCatalogSeeded();
+        const itemName = val('f_item_name');
+        const uom = val('f_uom') || 'Piece';
+        const cat = val('f_category') || 'Spare Parts';
+        const cost = num('f_unitprice');
+        syncUniversalMainDupHint('f_item_name', 'items', 'Item / Part');
+        setText('calc_item_name', itemName || '—');
+        setText('calc_item_uom', `${uom} (Locked on Tickets)`);
+        setText('calc_item_cat', cat);
+        setText('calc_item_cost', fmtUSD(cost, 2));
         renderAdminLockBar();
         return {};
       }
@@ -37729,8 +38407,14 @@
         } catch (_) {}
       }
       syncSelectClearBtn();
-      selEl.addEventListener('change', syncSelectClearBtn);
+      selEl.addEventListener('change', () => {
+        syncSelectClearBtn();
+        closeAll(null);
+      });
       selEl.addEventListener('input', syncSelectClearBtn);
+      selEl.addEventListener('mousedown', ev => {
+        if (ev.button === 0) ev.preventDefault();
+      });
 
       const menu = document.createElement('div');
       menu.className = 'pa-suggest-menu pa-select-menu';
@@ -38084,14 +38768,7 @@
     FORM_UI.originMode = 'company'; FORM_UI.originBu = ''; FORM_UI.originPriorDisposition = 'keep'; FORM_UI.lastAutoFilledOriginTicket = '';
     FORM_UI.originMiniMapOpen = false; FORM_UI.originMapTarget = 'dest'; FORM_UI.originKmEditOpen = false;
     FORM_UI.ticketDisposition = 'standard'; FORM_UI.returnWtcSubMode = 'pair'; FORM_UI.returnRtKmManual = false; FORM_UI.lastDispMode = 'standard';
-    const rtKmInp = $('f_return_rt_km');
-    if (rtKmInp && !rtKmInp.dataset.rtWired) {
-      rtKmInp.dataset.rtWired = '1';
-      rtKmInp.addEventListener('input', ev => {
-        if (ev && ev.isTrusted) FORM_UI.returnRtKmManual = true;
-        recalcForm();
-      });
-    }
+    FORM_UI.convPrimarySide = ''; FORM_UI.convRateFromAmounts = false;
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
       window.MFG_GEO.cleanupTicketOriginMiniMap();
     }
@@ -38326,35 +39003,53 @@
           const pool = rSide === 'raw' ? (SEED.records.raw_purchases || []) : (SEED.records.sales_tickets || []);
           const srcRow = pool.find(x => String(x.id) === rId);
           if (srcRow) {
-            setModalControlVal('f_ticketno', srcRow.ticket_no || '');
-            setModalControlVal('f_product', srcRow.product || '');
-            setModalControlVal('f_site', srcRow.site || '');
-            setModalControlVal('f_truck', srcRow.truck || '');
-            setModalControlVal('f_truckowner', srcRow.truck_owner || '');
-            setModalControlVal('f_driver', srcRow.driver || '');
-            setModalControlVal('f_uom', srcRow.uom || 'm³');
-            setModalControlVal('f_qty', srcRow.qty != null ? srcRow.qty : '');
+            const setF = (fid, v) => { const el = $(fid); if (el) el.value = v == null ? '' : String(v); };
+            setF('f_ticketno', srcRow.ticket_no || '');
+            setF('f_product', srcRow.product || '');
+            setF('f_site', srcRow.site || '');
+            setF('f_truck', srcRow.truck || '');
+            setF('f_truckowner', srcRow.truck_owner || '');
+            setF('f_driver', srcRow.driver || '');
+            setF('f_uom', srcRow.uom || 'm³');
+            setF('f_qty', srcRow.qty != null ? srcRow.qty : '');
+            setF('f_discount', Number(srcRow.discount || 0).toFixed(2));
             if (rSide === 'sales') {
-              setModalControlVal('f_saletype', srcRow.sale_type === 'Unregistered' ? 'Delivery' : (srcRow.sale_type || 'Delivery'));
-              setModalControlVal('f_transportby', srcRow.transport_by || 'Company fleet');
-              setModalControlVal('f_customer', srcRow.customer || '');
-              setModalControlVal('f_unitprice', Number(srcRow.unit_price || 0).toFixed(2));
-              setModalControlVal('f_transunitprice', Number(srcRow.trans_unit_price || 0).toFixed(2));
+              setF('f_saletype', srcRow.sale_type === 'Unregistered' ? 'Delivery' : (srcRow.sale_type || 'Delivery'));
+              setF('f_transportby', srcRow.transport_by || 'Company fleet');
+              setF('f_customer', srcRow.customer || '');
+              setF('f_unitprice', Number(srcRow.unit_price || 0).toFixed(2));
+              setF('f_transunitprice', Number(srcRow.trans_unit_price || 0).toFixed(2));
+              setF('f_tip', Number(srcRow.tip || 0).toFixed(2));
             } else {
-              setModalControlVal('f_transportby', srcRow.transport_by || 'Company fleet');
-              setModalControlVal('f_siteowner', srcRow.site_owner || '');
-              setModalControlVal('f_unitprice', Number(srcRow.unit_cost || 0).toFixed(2));
-              setModalControlVal('f_transunitprice', Number(srcRow.trans_unit_cost || 0).toFixed(2));
+              setF('f_transportby', srcRow.transport_by || 'Company fleet');
+              setF('f_siteowner', srcRow.site_owner || '');
+              setF('f_unitprice', Number(srcRow.unit_cost || 0).toFixed(2));
+              setF('f_transunitprice', Number(srcRow.trans_unit_cost || 0).toFixed(2));
             }
             if ($('f_notes') && !val('f_notes')) {
               $('f_notes').value = `Customer rejected load on #${srcRow.ticket_no} · returned to ${srcRow.company || 'WTC'}`;
             }
+            FORM_UI.lastCompany = val('f_company');
+            FORM_UI.lastSaleType = val('f_saletype');
+            FORM_UI.lastTransportBy = val('f_transportby');
+            FORM_UI.lastCustomer = val('f_customer');
+            FORM_UI.lastProduct = val('f_product');
+            FORM_UI.lastSite = val('f_site');
+            FORM_UI.lastUom = val('f_uom');
+            FORM_UI.lastTruck = val('f_truck');
+            FORM_UI.lastTruckOwner = val('f_truckowner');
             FORM_UI.qtyManual = true;
             FORM_UI.priceManual = true;
             FORM_UI.transManual = true;
             FORM_UI.uomManual = true;
             FORM_UI.driverManual = true;
-            FORM_UI.returnRtKmManual = false;
+            const srcRtKm = Number(srcRow.return_round_trip_km) || Number(srcRow.round_trip_km) || Number(srcRow.est_round_trip_km) || (Number(srcRow.est_km) > 0 ? Number(srcRow.est_km) * 2 : 0);
+            if (srcRtKm > 0 && $('f_return_rt_km')) {
+              $('f_return_rt_km').value = srcRtKm.toFixed(1);
+              FORM_UI.returnRtKmManual = true;
+            } else {
+              FORM_UI.returnRtKmManual = false;
+            }
             recalcForm();
           }
           return;
@@ -38417,6 +39112,73 @@
             closeEntryModal(true);
             openPendingRawPriceModal(rawId);
           }
+          return;
+        }
+        const convPresetBtn = ev.target && ev.target.closest ? ev.target.closest('[data-conv-usd-preset]') : null;
+        if (convPresetBtn) {
+          ev.preventDefault();
+          const pVal = convPresetBtn.getAttribute('data-conv-usd-preset') || '';
+          const uEl = $('f_usd');
+          const lEl = $('f_lbp');
+          const fxEl = $('f_fxrate');
+          const sysR = getLbpFxRate(val('f_date') || todayISO());
+          if (uEl && pVal) {
+            FORM_UI.convPrimarySide = 'usd';
+            if (FORM_UI.convRateFromAmounts && fxEl) {
+              fxEl.value = String(sysR);
+              FORM_UI.convRateFromAmounts = false;
+            }
+            const r = num('f_fxrate') > 0 ? num('f_fxrate') : sysR;
+            if (fxEl && !(num('f_fxrate') > 0)) fxEl.value = String(sysR);
+            uEl.value = pVal;
+            if (lEl) lEl.value = String(Math.round(Number(pVal) * r));
+            recalcForm();
+          }
+          return;
+        }
+        const convResetBtn = ev.target && ev.target.closest ? ev.target.closest('#convResetSysRateBtn') : null;
+        if (convResetBtn) {
+          ev.preventDefault();
+          const sysR = getLbpFxRate(val('f_date') || todayISO());
+          if ($('f_fxrate')) $('f_fxrate').value = String(sysR);
+          FORM_UI.convRateFromAmounts = false;
+          if (FORM_UI.adminUnlocked) delete FORM_UI.adminUnlocked.f_fxrate;
+          if ($('paAdminUnlockBox')) $('paAdminUnlockBox').hidden = true;
+          const curU = num('f_usd'), curL = num('f_lbp');
+          if (curU > 0 && $('f_lbp')) {
+            FORM_UI.convPrimarySide = 'usd';
+            $('f_lbp').value = String(Math.round(curU * sysR));
+          } else if (curL > 0 && $('f_usd')) {
+            FORM_UI.convPrimarySide = 'lbp';
+            $('f_usd').value = String(round2(curL / sysR));
+          }
+          recalcForm();
+          toast(`Reset to system FX rate (${fmtNum(sysR, 0)} LL/$)`, 'ok');
+          return;
+        }
+        const convSupUnlockBtn = ev.target && ev.target.closest ? ev.target.closest('#convSupervisorUnlockBtn') : null;
+        if (convSupUnlockBtn) {
+          ev.preventDefault();
+          openAdminUnlockPrompt('f_fxrate');
+          return;
+        }
+        const convRelockBtn = ev.target && ev.target.closest ? ev.target.closest('#convRelockRateBtn') : null;
+        if (convRelockBtn) {
+          ev.preventDefault();
+          if (FORM_UI.adminUnlocked) delete FORM_UI.adminUnlocked.f_fxrate;
+          recalcForm();
+          toast('FX conversion rate re-locked to 10% corridor policy', 'ok');
+          return;
+        }
+        const convFlipBtn = ev.target && ev.target.closest ? ev.target.closest('#convFlipDirBtn') : null;
+        if (convFlipBtn) {
+          ev.preventDefault();
+          const dEl = $('f_conv_dir');
+          if (dEl) {
+            dEl.value = /LBP/i.test(String(dEl.value || '').slice(0, 4)) ? 'USD to LBP' : 'LBP to USD';
+            dEl.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          recalcForm();
           return;
         }
         const qfBtn = ev.target && ev.target.closest ? ev.target.closest('[data-form-quickfill]') : null;
@@ -38720,6 +39482,10 @@
         } else if (rt === 'equipment') {
           if ($('f_store_warehouse')) $('f_store_warehouse').value = '0';
           if ($('f_for_equipment')) $('f_for_equipment').value = '1';
+          if (Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length === 1 && FORM_UI.expItems[0].allocation_mode === 'warehouse') {
+            FORM_UI.expItems[0].allocation_mode = 'same_equipment';
+            rerenderExpLines = true;
+          }
         } else {
           if ($('f_store_warehouse')) $('f_store_warehouse').value = '0';
           if ($('f_for_equipment')) $('f_for_equipment').value = '0';
@@ -38739,8 +39505,8 @@
         recalcForm();
         if (rt === 'equipment' && $('f_truck') && !val('f_truck')) {
           try { $('f_truck').focus(); } catch (_) {}
-        } else if (rt === 'warehouse' && $('f_exp_item_name') && !(FORM_UI.expItems && FORM_UI.expItems.length)) {
-          try { $('f_exp_item_name').focus(); } catch (_) {}
+        } else if (rt === 'warehouse' && $('f_exi_name_0')) {
+          try { $('f_exi_name_0').focus(); } catch (_) {}
         }
       });
     });
@@ -38805,14 +39571,16 @@
           $('f_for_equipment').value = '1';
           if ($('f_store_warehouse')) $('f_store_warehouse').value = '0';
         }
+        const seedItemName = seedFirstFromHeader ? (val('f_exp_item_name') || val('f_subcategory') || '') : '';
+        const catIt = seedItemName ? resolveCatalogItem(seedItemName) : null;
         FORM_UI.expItems.push({
-          item_name: seedFirstFromHeader ? (val('f_exp_item_name') || val('f_subcategory') || '') : '',
+          item_name: seedItemName,
           allocation_mode: defMode,
           target_equipment: '',
-          warehouse_location: val('f_exp_wh_loc') || defaultWarehouseLocationForCompany(val('f_company') || defaultEntryCompany()),
+          warehouse_location: (catIt && catIt.default_location) || val('f_exp_wh_loc') || defaultWarehouseLocationForCompany(val('f_company') || defaultEntryCompany()),
           qty: initQty,
-          uom: (seedFirstFromHeader && val('f_exp_uom')) ? val('f_exp_uom') : (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'),
-          unit_cost: initUc
+          uom: (catIt && catIt.uom) || ((seedFirstFromHeader && val('f_exp_uom')) ? val('f_exp_uom') : (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece')),
+          unit_cost: initUc !== '' ? initUc : ((catIt && Number(catIt.default_cost) > 0) ? round2(Number(catIt.default_cost)) : '')
         });
       };
       renderExpenseItemsBuilderRows();
@@ -38829,8 +39597,17 @@
       if (clearAllBtn) {
         clearAllBtn.addEventListener('click', ev => {
           ev.preventDefault();
-          FORM_UI.expItems = [];
-          if ($('f_qty')) { $('f_qty').readOnly = false; $('f_qty').value = '1'; }
+          const defMode = val('f_store_warehouse') === '1' ? 'warehouse' : 'same_equipment';
+          const firstRow = FORM_UI.expItems && FORM_UI.expItems[0];
+          FORM_UI.expItems = [{
+            item_name: firstRow ? (firstRow.item_name || '') : '',
+            allocation_mode: firstRow ? (firstRow.allocation_mode || defMode) : defMode,
+            target_equipment: firstRow ? (firstRow.target_equipment || '') : '',
+            warehouse_location: firstRow ? (firstRow.warehouse_location || defaultWarehouseLocationForCompany(val('f_company') || defaultEntryCompany())) : defaultWarehouseLocationForCompany(val('f_company') || defaultEntryCompany()),
+            qty: firstRow ? (Number(firstRow.qty) || 1) : 1,
+            uom: firstRow ? (firstRow.uom || 'Piece') : 'Piece',
+            unit_cost: firstRow ? (firstRow.unit_cost !== undefined ? firstRow.unit_cost : '') : ''
+          }];
           if ($('f_amount') && val('f_price_pending') !== '1') {
             $('f_amount').readOnly = false;
             $('f_amount').classList.remove('pa-locked-input');
@@ -38861,19 +39638,35 @@
             renderExpenseItemsBuilderRows();
           }
         } else {
-          if (field === 'item_name' && rowObj.item_name) {
-            const whRow = getWarehouseIndex(val('f_company') || defaultEntryCompany()).byKey[norm(rowObj.item_name)];
-            if (whRow) {
-              if (whRow.uom) {
-                rowObj.uom = whRow.uom;
-                const uSel = $('f_exi_uom_' + idx);
-                if (uSel) uSel.value = whRow.uom;
+          if (field === 'item_name') {
+            const catItem = rowObj.item_name ? resolveCatalogItem(rowObj.item_name) : null;
+            const whRow = rowObj.item_name ? getWarehouseIndex(val('f_company') || defaultEntryCompany()).byKey[norm(rowObj.item_name)] : null;
+            const lockedUom = (catItem && catItem.uom) || (whRow && whRow.uom) || '';
+            const uSel = $('f_exi_uom_' + idx);
+            if (lockedUom) {
+              rowObj.uom = lockedUom;
+              if (uSel) {
+                uSel.value = lockedUom;
+                uSel.disabled = true;
+                uSel.setAttribute('data-locked-by-item', '1');
               }
-              if (rowObj.allocation_mode === 'warehouse' && whRow.location) {
-                rowObj.warehouse_location = whRow.location;
-                const locInp = $('f_exi_loc_' + idx);
-                if (locInp) locInp.value = whRow.location;
-              }
+            } else if (uSel) {
+              uSel.disabled = false;
+              uSel.removeAttribute('data-locked-by-item');
+            }
+            if (catItem && Number(catItem.default_cost) > 0 && (rowObj.unit_cost === '' || rowObj.unit_cost == null)) {
+              rowObj.unit_cost = round2(Number(catItem.default_cost));
+              const cInp = $('f_exi_cost_' + idx);
+              if (cInp) cInp.value = String(rowObj.unit_cost);
+            }
+            const defLoc = (whRow && whRow.location) || (catItem && catItem.default_location) || '';
+            if (rowObj.allocation_mode === 'warehouse' && defLoc) {
+              rowObj.warehouse_location = defLoc;
+              const locInp = $('f_exi_loc_' + idx);
+              if (locInp) locInp.value = defLoc;
+            }
+            if (ev.type === 'change') {
+              renderExpenseItemsBuilderRows();
             }
           }
           syncExpenseItemsSummaryUI();
@@ -38883,6 +39676,29 @@
       expItemsWrap.addEventListener('input', syncExpItemRow);
       expItemsWrap.addEventListener('change', syncExpItemRow);
       expItemsWrap.addEventListener('click', ev => {
+        const quickItemBtn = ev.target && ev.target.closest ? ev.target.closest('[data-exi-quick-item]') : null;
+        if (quickItemBtn) {
+          ev.preventDefault();
+          const idx = Number(quickItemBtn.getAttribute('data-exi-row-idx') || 0);
+          const qName = quickItemBtn.getAttribute('data-exi-quick-item') || '';
+          const rowObj = FORM_UI.expItems[idx];
+          if (rowObj && qName) {
+            rowObj.item_name = qName;
+            const catItem = resolveCatalogItem(qName);
+            const whRow = getWarehouseIndex(val('f_company') || defaultEntryCompany()).byKey[norm(qName)];
+            if (catItem && catItem.uom) rowObj.uom = catItem.uom;
+            else if (whRow && whRow.uom) rowObj.uom = whRow.uom;
+            if ((rowObj.unit_cost === '' || rowObj.unit_cost == null || Number(rowObj.unit_cost) === 0) && catItem && Number(catItem.default_cost) > 0) {
+              rowObj.unit_cost = round2(Number(catItem.default_cost));
+            }
+            if (rowObj.allocation_mode === 'warehouse') {
+              rowObj.warehouse_location = (whRow && whRow.location) || (catItem && catItem.default_location) || rowObj.warehouse_location;
+            }
+            renderExpenseItemsBuilderRows();
+            recalcForm();
+          }
+          return;
+        }
         const qsBtn = ev.target && ev.target.closest ? ev.target.closest('[data-exi-quick-start]') : null;
         if (qsBtn) {
           ev.preventDefault();
@@ -39056,21 +39872,35 @@
           rowObj[field] = t.value;
         }
         if (field === 'item_name' || field === 'source') {
-          if ((rowObj.source || 'warehouse') === 'warehouse' && rowObj.item_name) {
-            const whIdx = getWarehouseIndex(val('f_company') || defaultEntryCompany());
-            const whRow = whIdx.byKey[norm(rowObj.item_name)];
-            if (whRow) {
-              if (whRow.uom) {
-                rowObj.uom = whRow.uom;
-                const uSel = $('f_repi_uom_' + idx);
-                if (uSel) uSel.value = whRow.uom;
-              }
-              if (!rowObj.costManual && whRow.avgUnitCost > 0) {
-                rowObj.unit_cost = round2(whRow.avgUnitCost);
-                const cInp = $('f_repi_cost_' + idx);
-                if (cInp) cInp.value = String(rowObj.unit_cost);
-              }
+          const catItem = rowObj.item_name ? resolveCatalogItem(rowObj.item_name) : null;
+          const whIdx = getWarehouseIndex(val('f_company') || defaultEntryCompany());
+          const whRow = rowObj.item_name ? whIdx.byKey[norm(rowObj.item_name)] : null;
+          const lockedUom = (catItem && catItem.uom) || (whRow && whRow.uom) || '';
+          const uSel = $('f_repi_uom_' + idx);
+          if (lockedUom) {
+            rowObj.uom = lockedUom;
+            if (uSel) {
+              uSel.value = lockedUom;
+              uSel.disabled = true;
+              uSel.setAttribute('data-locked-by-item', '1');
             }
+          } else if (uSel) {
+            uSel.disabled = false;
+            uSel.removeAttribute('data-locked-by-item');
+          }
+          if ((rowObj.source || 'warehouse') === 'warehouse' && whRow) {
+            if (!rowObj.costManual && whRow.avgUnitCost > 0) {
+              rowObj.unit_cost = round2(whRow.avgUnitCost);
+              const cInp = $('f_repi_cost_' + idx);
+              if (cInp) cInp.value = String(rowObj.unit_cost);
+            }
+          } else if (!rowObj.costManual && catItem && Number(catItem.default_cost) > 0 && (rowObj.unit_cost === '' || rowObj.unit_cost == null)) {
+            rowObj.unit_cost = round2(Number(catItem.default_cost));
+            const cInp = $('f_repi_cost_' + idx);
+            if (cInp) cInp.value = String(rowObj.unit_cost);
+          }
+          if (field === 'item_name' && ev.type === 'change') {
+            renderRepairItemsBuilderRows();
           }
           if (field === 'source' && $('f_repair_source') && FORM_UI.repairItems.length > 0) {
             const hasWh = FORM_UI.repairItems.some(x => (x.source || 'warehouse') === 'warehouse');
@@ -39165,12 +39995,63 @@
       if (el.id === 'originInlineKmInp') return;
       // Clicking a policy-locked input/select opens the Admin Privilege Unlock Process
       el.addEventListener('mousedown', ev => {
+        if (el.id === 'f_fxrate') return;
         if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id)) {
           if (el.tagName === 'SELECT' || el.type === 'date') ev.preventDefault();
           openAdminUnlockPrompt(el.id);
         }
       });
       const handler = () => {
+        const isConvModal = STATE.modalForm === 'conversion' || (STATE.modalForm === 'treasury' && val('f_trtype') === 'conversion');
+        if (isConvModal && (el.id === 'f_usd' || el.id === 'f_lbp' || el.id === 'f_fxrate')) {
+          const sysR = getLbpFxRate(val('f_date') || todayISO());
+          if (el.id === 'f_usd') {
+            const uVal = num('f_usd');
+            if (FORM_UI.convPrimarySide !== 'lbp' || !(num('f_lbp') > 0)) {
+              FORM_UI.convPrimarySide = uVal > 0 ? 'usd' : '';
+              if (FORM_UI.convRateFromAmounts && $('f_fxrate')) {
+                $('f_fxrate').value = String(sysR);
+                FORM_UI.convRateFromAmounts = false;
+              }
+              const r = num('f_fxrate') > 0 ? num('f_fxrate') : sysR;
+              if ($('f_fxrate') && !(num('f_fxrate') > 0)) $('f_fxrate').value = String(sysR);
+              if ($('f_lbp')) $('f_lbp').value = uVal > 0 ? String(Math.round(uVal * r)) : '';
+            } else if (uVal > 0 && num('f_lbp') > 0 && $('f_fxrate')) {
+              const imp = round2(num('f_lbp') / uVal);
+              $('f_fxrate').value = String(imp >= 100 && Math.abs(imp - Math.round(imp)) < 0.05 ? Math.round(imp) : imp);
+              FORM_UI.convRateFromAmounts = true;
+            }
+          } else if (el.id === 'f_lbp') {
+            const lVal = num('f_lbp');
+            if ((!FORM_UI.convPrimarySide && !(num('f_usd') > 0)) || FORM_UI.convPrimarySide === 'lbp') {
+              FORM_UI.convPrimarySide = lVal > 0 ? 'lbp' : '';
+              if (FORM_UI.convRateFromAmounts && $('f_fxrate')) {
+                $('f_fxrate').value = String(sysR);
+                FORM_UI.convRateFromAmounts = false;
+              }
+              const r = num('f_fxrate') > 0 ? num('f_fxrate') : sysR;
+              if ($('f_fxrate') && !(num('f_fxrate') > 0)) $('f_fxrate').value = String(sysR);
+              if ($('f_usd')) $('f_usd').value = lVal > 0 ? String(round2(lVal / r)) : '';
+            } else if (lVal > 0 && num('f_usd') > 0 && $('f_fxrate')) {
+              const imp = round2(lVal / num('f_usd'));
+              $('f_fxrate').value = String(imp >= 100 && Math.abs(imp - Math.round(imp)) < 0.05 ? Math.round(imp) : imp);
+              FORM_UI.convRateFromAmounts = true;
+            }
+          } else if (el.id === 'f_fxrate') {
+            const rVal = num('f_fxrate');
+            FORM_UI.convRateFromAmounts = false;
+            if (rVal > 0) {
+              if (FORM_UI.convPrimarySide === 'lbp' && num('f_lbp') > 0) {
+                if ($('f_usd')) $('f_usd').value = String(round2(num('f_lbp') / rVal));
+              } else if (num('f_usd') > 0) {
+                FORM_UI.convPrimarySide = 'usd';
+                if ($('f_lbp')) $('f_lbp').value = String(Math.round(num('f_usd') * rVal));
+              } else if (num('f_lbp') > 0) {
+                if ($('f_usd')) $('f_usd').value = String(round2(num('f_lbp') / rVal));
+              }
+            }
+          }
+        }
         if (el.id === 'f_unitprice' && (isFieldAdminUnlocked('f_unitprice') || el.dataset.policyLockedNow !== '1')) FORM_UI.priceManual = true;
         if (el.id === 'f_transunitprice' && (isFieldAdminUnlocked('f_transunitprice') || el.dataset.policyLockedNow !== '1')) FORM_UI.transManual = true;
         if (el.id === 'f_method' && (isFieldAdminUnlocked('f_method') || el.dataset.policyLockedNow !== '1')) FORM_UI.methodManual = true;
@@ -39180,6 +40061,7 @@
         }
         if (el.id === 'f_metertype' && (isFieldAdminUnlocked('f_metertype') || el.dataset.policyLockedNow !== '1')) FORM_UI.meterTypeManual = true;
         if (el.id === 'f_qty') { FORM_UI.qtyManual = !!el.value; FORM_UI.greaseAutoPreset = false; }
+        if (el.id === 'f_return_rt_km') { FORM_UI.returnRtKmManual = el.value !== ''; }
         if (el.id === 'f_date' && val('f_date') !== yesterdayISO(todayISO())) {
           FORM_UI.afterHoursYesterday = false;
         }
@@ -39409,6 +40291,7 @@
           origin_point: company,
           est_km: 0,
           est_round_trip_km: 0,
+          round_trip_km: 0,
           removed_slip: true,
           ticket_disposition: 'remove_slip',
           removed_by: who.full_name,
@@ -39437,6 +40320,7 @@
           tip: 0,
           discount: 0,
           total: 0,
+          total_usd: 0,
           vat: 0,
           total_ttc: 0,
           method: 'Remove',
@@ -39450,12 +40334,13 @@
           duplicate_confirmed: true
         };
       } else {
+        const isRetS = dispS.mode === 'return_wtc';
         if (!c.product) addErr('f_product', 'Product is required.');
         if (!c.customer) addErr('f_customer', 'Customer is required.');
         if (c.saleType === 'Delivery') {
           if (!c.site) addErr('f_site', 'Destination site is required on a Delivery.');
           if (!val('f_truck')) addErr('f_truck', 'Truck is required on a Delivery.');
-          if (!val('f_driver')) addErr('f_driver', 'Driver is required on a Delivery.');
+          if (!val('f_driver') && !isRetS) addErr('f_driver', 'Driver is required on a Delivery.');
         }
         if (!(c.qty > 0)) {
           if (c.saleType === 'Pickup' && !val('f_truck') && $('f_qty') && $('f_qty').dataset.policyLockedNow === '1') {
@@ -39479,7 +40364,6 @@
         if (isAlertRuleEnabled('G_DISCOUNT_WARN') && c.mat > 0 && c.disc > c.mat * (maxDiscPostPct / 100) && !notes) addErr('f_notes', `Discount above ${fmtNum(maxDiscPostPct, 0)}% of material needs a note.`);
         const origS = c.origin || syncOriginDispatchUI('sales', false);
         if (origS.originType === 'site' && !origS.originSite) addErr('f_origin_site', 'Starting Site is required when Starting Point is Other Site.');
-        const isRetS = dispS.mode === 'return_wtc';
         const baseMethS = val('f_method') || 'Credit';
         const retMethS = /^cash|^c\b/i.test(baseMethS) ? 'C Return' : 'CR Return';
         const effEstKm = isRetS ? dispS.oneWayKm : origS.estKm;
@@ -39493,9 +40377,9 @@
           ...(origS.originTicketKind ? { origin_ticket_kind: origS.originTicketKind } : {}),
           ...(origS.originTicketId ? { origin_ticket_id: origS.originTicketId } : {}),
           ...(effEstKm != null ? { est_km: effEstKm } : {}),
-          ...(effRtKm != null ? { est_round_trip_km: effRtKm } : {}),
+          ...(effRtKm != null ? { est_round_trip_km: effRtKm, round_trip_km: effRtKm } : {}),
           ...(origS.priorDisposition && origS.priorDisposition !== 'keep' ? { prior_disposition: origS.priorDisposition } : {}),
-          ...(isRetS ? { return_to_wtc: true, ticket_disposition: 'return_wtc', return_round_trip_km: dispS.roundTripKm } : {})
+          ...(isRetS ? { return_to_wtc: true, ticket_disposition: 'return_wtc', return_round_trip_km: dispS.roundTripKm, round_trip_km: dispS.roundTripKm } : {})
         };
         const isPairedPostS = Boolean(isRetS && editCtx && editCtx.orig && !isReturnTicket(editCtx.orig) && dispS.subMode === 'pair');
         record = {
@@ -39581,6 +40465,7 @@
             origin_point: company,
             est_km: 0,
             est_round_trip_km: 0,
+            round_trip_km: 0,
             removed_slip: true,
             ticket_disposition: 'remove_slip',
             removed_by: who.full_name,
@@ -39603,6 +40488,7 @@
             trans_unit_cost: 0,
             trans_cost: 0,
             total: 0,
+            total_usd: 0,
             method: 'Remove',
             external_invoice: '',
             reference: val('f_reference'),
@@ -39613,6 +40499,7 @@
             duplicate_confirmed: true
           };
         } else {
+          const isRetR = dispR.mode === 'return_wtc';
           if (!c.product) addErr('f_product', 'Raw material is required.');
           if (!c.site) addErr('f_site', 'Site is required.');
           if (!(c.qty > 0)) {
@@ -39625,7 +40512,7 @@
           }
           if ((c.up > 0 || c.pricePending) && !c.owner) addErr('f_siteowner', 'Site owner (material payee) is required.');
           if (!val('f_truck')) addErr('f_truck', 'Truck is required.');
-          if (!val('f_driver')) addErr('f_driver', 'Active driver is required (assign in Equipment Log).');
+          if (!val('f_driver') && !isRetR) addErr('f_driver', 'Active driver is required (assign in Equipment Log).');
           if (c.transportBy !== 'Company fleet' && c.tp > 0 && !val('f_truckowner')) addErr('f_truckowner', 'Truck owner (haulage payee) is required for third-party haulage.');
           if (c.transportBy !== 'Company fleet' && val('f_truck') && val('f_truckowner')) {
             const tRow = equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'raw', site: c.site });
@@ -39635,7 +40522,6 @@
           }
           const origR = c.origin || syncOriginDispatchUI('raw', false);
           if (origR.originType === 'site' && !origR.originSite) addErr('f_origin_site', 'Starting Site is required when Starting Point is Other Site.');
-          const isRetR = dispR.mode === 'return_wtc';
           const baseMethR = c.pricePending ? 'Credit' : (val('f_method') || 'Credit');
           const retMethR = /^cash|^c\b/i.test(baseMethR) ? 'C Return' : 'CR Return';
           const effEstKmR = isRetR ? dispR.oneWayKm : origR.estKm;
@@ -39649,8 +40535,8 @@
             ...(origR.originTicketKind ? { origin_ticket_kind: origR.originTicketKind } : {}),
             ...(origR.originTicketId ? { origin_ticket_id: origR.originTicketId } : {}),
             ...(effEstKmR != null ? { est_km: effEstKmR } : {}),
-            ...(effRtKmR != null ? { est_round_trip_km: effRtKmR } : {}),
-            ...(isRetR ? { return_to_wtc: true, ticket_disposition: 'return_wtc', return_round_trip_km: dispR.roundTripKm } : {})
+            ...(effRtKmR != null ? { est_round_trip_km: effRtKmR, round_trip_km: effRtKmR } : {}),
+            ...(isRetR ? { return_to_wtc: true, ticket_disposition: 'return_wtc', return_round_trip_km: dispR.roundTripKm, round_trip_km: dispR.roundTripKm } : {})
           };
           const isPairedPostR = Boolean(isRetR && editCtx && editCtx.orig && !isReturnTicket(editCtx.orig) && dispR.subMode === 'pair');
           record = {
@@ -40495,10 +41381,26 @@
         const convOrig = (editCtx && editCtx.crKey === 'conversions' && editCtx.orig) ? editCtx.orig : null;
         const convUnchanged = Boolean(convOrig && Math.abs(usd - Number(convOrig.usd_amount || convOrig.amount || 0)) <= 1e-6 && Math.abs(lbp - Math.round(Number(convOrig.lbp_amount || 0))) <= 1);
         const fxRate = (convUnchanged && num('f_fxrate') > 0) ? num('f_fxrate') : ((usd > 0 && lbp > 0) ? round2(lbp / usd) : (num('f_fxrate') || getLbpFxRate(date)));
+        const fxGuard = evaluateFxConversionGuard(usd, lbp, fxRate, date, isFieldAdminUnlocked('f_fxrate'));
+        if (fxGuard.frozen) {
+          addErr('f_fxrate', fxGuard.reason);
+          if (usd > 0 && lbp > 0) {
+            addErr('f_lbp', `Illogical conversion frozen (${fmtNum(fxGuard.effRate, fxGuard.effRate < 100 ? 2 : 0)} LL/$ vs system ${fmtNum(fxGuard.sysRate, 0)} LL/$, ${fmtNum(fxGuard.diffPct, 2)}% difference > ${fxGuard.freezePct}% freeze limit).`);
+          }
+        } else if (fxGuard.blocked) {
+          addErr('f_fxrate', fxGuard.reason);
+        }
         crKey = 'conversions';
         const refVal = val('f_reference');
+        const supTag = fxGuard.tier === 'supervisor_unlocked'
+          ? `[Supervisor FX Override: ${fmtNum(fxGuard.effRate, 0)} LL/$ (${fxGuard.signedDiffPct >= 0 ? '+' : ''}${fmtNum(fxGuard.signedDiffPct, 2)}% vs ${fmtNum(fxGuard.sysRate, 0)} LL/$)]`
+          : '';
+        const mergedNotes = supTag && !String(base.notes || '').includes('Supervisor FX Override')
+          ? (base.notes ? `${base.notes} · ${supTag}` : supTag)
+          : base.notes;
         record = {
           ...base,
+          notes: mergedNotes,
           name: `CONV ${date} ${convDir}${refVal ? ' · ' + refVal : ''}`,
           rep_date: repDate,
           type: convDir,
@@ -40510,6 +41412,8 @@
           lbp_delta: isU2L ? lbp : -lbp,
           fx_rate: fxRate,
           exchange_rate: fxRate,
+          fx_corridor_tier: fxGuard.tier,
+          fx_diff_pct: fxGuard.diffPct,
           amount: usd,
           reference: refVal
         };
@@ -41006,6 +41910,15 @@
       FORM_UI.postAttempted = true;
       recalcForm(true);
       syncFormValidationUI(fieldErrors, true);
+      if (STATE.modalForm === 'conversion' || (STATE.modalForm === 'treasury' && val('f_trtype') === 'conversion')) {
+        const fxG = evaluateCurrentModalFxConversionGuard();
+        if (fxG && fxG.tier === 'locked' && !fxG.supervisorUnlocked) {
+          openAdminUnlockPrompt('f_fxrate');
+        }
+        if (fxG && (fxG.frozen || fxG.blocked)) {
+          toast(errors[0], 'err');
+        }
+      }
       return;
     }
     FORM_UI.postAttempted = false;
@@ -41681,7 +42594,7 @@
     const title = $('modalTitle');
     const modalEye = $('modalEyebrow');
     const tabsWrap = $('modalTabs');
-    const isUnivModalForm = ['customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'fxrate', 'vatrate', 'currency'].includes(form);
+    const isUnivModalForm = ['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'fxrate', 'vatrate', 'currency'].includes(form);
     const activeRowForHeader = editTargetRow || pendingTargetRow;
     const isRowAfterHours = Boolean(
       activeRowForHeader && (
@@ -46265,6 +47178,22 @@
             }
           }
         }
+        if (key === 'conversions' && ('usd_amount' in pendingUpdates || 'lbp_amount' in pendingUpdates || 'exchange_rate' in pendingUpdates)) {
+          const nextUsd = round2(Number(('usd_amount' in pendingUpdates) ? pendingUpdates.usd_amount : (row.usd_amount || row.amount || 0)));
+          const nextLbp = Math.round(Number(('lbp_amount' in pendingUpdates) ? pendingUpdates.lbp_amount : (row.lbp_amount || 0)));
+          const nextDate = String(('date' in pendingUpdates ? pendingUpdates.date : (row.date || row.rep_date)) || '').slice(0, 10);
+          const nextFx = ('exchange_rate' in pendingUpdates && Number(pendingUpdates.exchange_rate) > 0 && !('usd_amount' in pendingUpdates) && !('lbp_amount' in pendingUpdates))
+            ? Number(pendingUpdates.exchange_rate)
+            : ((nextUsd > 0 && nextLbp > 0) ? round2(nextLbp / nextUsd) : Number(pendingUpdates.exchange_rate || row.exchange_rate || row.fx_rate || getLbpFxRate(nextDate)));
+          const inspFxGuard = evaluateFxConversionGuard(nextUsd, nextLbp, nextFx, nextDate, canVoid() || isFieldAdminUnlocked('f_fxrate'));
+          if (inspFxGuard.frozen || inspFxGuard.blocked) {
+            toast(inspFxGuard.reason, 'err');
+            return;
+          }
+          if (inspFxGuard.tier === 'warn') {
+            toast(inspFxGuard.reason, 'warn');
+          }
+        }
         const origRowSnap = Object.assign({}, row);
         const editedKeySet = new Set(Object.keys(pendingUpdates));
         let changedCount = 0;
@@ -46997,20 +47926,24 @@
   }
 
   // Project the app entries onto the seed registers (voided rows drop out, new rows sort in by date, and fleet owner/driver links stay synchronized)
+  const _FLEET_DEP_KEYS = new Set(['equipment', 'company_equipment', 'drivers', 'company_drivers', 'suppliers', 'customers', 'sites', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'price_rules']);
   function applyCustomRecordsToSeed() {
     ensureGlobalFinanceTablesSeeded();
     ensureUniversalCanonicalIndex();
     sanitizeUniversalCustomRecords();
     SEED._customRev = (SEED._customRev || 0) + 1;
+    if (!SEED._tableRev) SEED._tableRev = {};
+    let fleetTouched = false;
     const masterByNameKeys = new Set(['suppliers', 'equipment', 'company_equipment', 'drivers', 'customers', 'products', 'sites', 'regions', 'expense_categories', 'expense_subcategories', 'currencies', 'fx_rates', 'vat_rates']);
     const allKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {})]));
     allKeys.forEach(k => {
       const list = SEED.records[k];
       if (!Array.isArray(list)) return;
       if (!Array.isArray(STATE.customRecords[k])) STATE.customRecords[k] = [];
-      const seen = new Set(list.map(x => String(x.id)));
+      const customList = STATE.customRecords[k];
+      if (!customList.length && (!UNIVERSAL_MAIN_SPEC[k] || list._univDeduped)) return;
       let touched = false;
-      STATE.customRecords[k].forEach(r => {
+      customList.forEach(r => {
         if (!r) return;
         const rid = String(r.id == null ? '' : r.id);
         const rNameNorm = norm(r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment);
@@ -47035,19 +47968,20 @@
         if (existingById) {
           Object.assign(existingById, r);
           touched = true;
-        } else if (UNIVERSAL_MAIN_SPEC[k] || (masterByNameKeys.has(k) && r.name)) {
+          return;
+        }
+        if (UNIVERSAL_MAIN_SPEC[k] || (masterByNameKeys.has(k) && r.name)) {
           const mk = UNIVERSAL_MAIN_SPEC[k] ? universalMainNormKey(k, r) : norm(r.name);
           const existingByName = mk ? list.find(x => x && String(x.id) !== rid && (UNIVERSAL_MAIN_SPEC[k] ? universalMainNormKey(k, x) === mk : norm(x.name || x.equipment || x.driver) === mk)) : null;
           if (existingByName) {
             Object.assign(existingByName, r, { id: existingByName.id || r.id });
-            if (rid) seen.add(rid);
             touched = true;
             return;
           }
         }
-        if (rid && !seen.has(rid)) { list.push(r); seen.add(rid); touched = true; }
+        if (rid) { list.push(r); touched = true; }
       });
-      if (UNIVERSAL_MAIN_SPEC[k]) {
+      if (UNIVERSAL_MAIN_SPEC[k] && (!list._univDeduped || touched)) {
         const seenMain = new Set();
         for (let i = 0; i < list.length; i++) {
           const item = list[i];
@@ -47061,6 +47995,12 @@
             seenMain.add(mk);
           }
         }
+        list._univDeduped = true;
+      }
+      const hasActiveCustom = customList.some(r => r && !r.voided);
+      if (touched || hasActiveCustom) {
+        SEED._tableRev[k] = (SEED._tableRev[k] || 0) + 1;
+        if (_FLEET_DEP_KEYS.has(k)) fleetTouched = true;
       }
       if (touched && list.some(x => x && x.date)) list.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
     });
@@ -47289,7 +48229,7 @@
         if (eq && !eq.default_driver) eq.default_driver = dName;
       }
     });
-    _FLEET_IDX = null;
+    if (fleetTouched) _FLEET_IDX = null;
   }
 
   function mergeSentinelReviews(remoteMap) {
@@ -47351,6 +48291,8 @@
       if (!inc || typeof inc !== 'object') return;
       const key = norm(inc.name || rk);
       if (!key) return;
+      if (key === 'abdallah ismail' && String(inc.face_updated_at || '').startsWith('2026-10-31T10:19:')) return;
+      if (key === 'ahmad' && (!Array.isArray(inc.face_samples) || !inc.face_samples.length) && !inc.pin_code) return;
       const cur = STATE.staffBiometrics[key];
       const inTs = String(inc.updated_at || inc.face_updated_at || '');
       const curTs = cur ? String(cur.updated_at || cur.face_updated_at || '') : '';
@@ -48048,7 +48990,7 @@
       (parallaxSpan >= parallaxSpanMin && yawSpan >= yawSpanMin) ||
       (yawSpan >= yawSpanMin && earSpan >= earVarMin && parallaxSpan >= 0.006) ||
       ((pitchSpan + parallaxSpan) >= 0.014 && earSpan >= earVarMin) ||
-      (isRealHardwareVideo && hist.length >= 2 && (parallaxSpan >= 0.0004 || earSpan >= 0.0005 || yawSpan >= 0.0010 || pitchSpan >= 0.0010 || hist.length >= 3))
+      (isRealHardwareVideo && hist.length >= 2)
     ) {
       FACE_STATE.lastTurnAt = now;
     }
@@ -48131,7 +49073,7 @@
       card.hidden = false;
     }
 
-    await new Promise(r => setTimeout(r, (navigator.webdriver || window.__MFG_HEADLESS_TEST) ? 60 : 80));
+    await new Promise(r => setTimeout(r, 35));
     if (card) card.hidden = true;
     return performLogin(user.email, user.pin_code || '1111', {
       bypass2FA: true,
@@ -48141,15 +49083,15 @@
   }
 
   // Evaluates a single 128-d face detection against enrolled seats (used by live camera loop AND headless tests)
-  // Anti-screenshot rule: NEVER unlock on 1 frame — always require >= 3 consecutive matching frames + liveness.
+  // Anti-screenshot rule: NEVER unlock on 1 frame — always require multi-frame streak + liveness.
   async function handleAuthDescriptor(det, snapshotUrl, opts = {}) {
     if (opts && opts.liveCamera && STATE.authed) return { status: 'already-authed' };
-    const needed = Math.max(3, Number(STATE.faceSettings.confirmFrames || 3));
+    const defaultNeeded = Math.max(3, Number(STATE.faceSettings.confirmFrames || 3));
     const enrolled = usableFaces();
     if (!enrolled.length) {
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
-      setAuthStreak(0, needed);
+      setAuthStreak(0, defaultNeeded);
       setAuthHint('', '');
       return { status: 'no-enrolled' };
     }
@@ -48158,7 +49100,7 @@
       if (!FACE_STATE.streakCount || FACE_STATE.missedFrames >= 4) {
         FACE_STATE.streakUser = null;
         FACE_STATE.streakCount = 0;
-        setAuthStreak(0, needed);
+        setAuthStreak(0, defaultNeeded);
         setAuthHint(FACE_STATE.pending2faUser ? `Look at the camera to verify ${FACE_STATE.pending2faUser.full_name}` : (FACE_STATE.camActive ? 'Look at camera for automatic Face ID' : ''), '');
       }
       return { status: 'no-face' };
@@ -48167,13 +49109,17 @@
     if (det.multiple) {
       FACE_STATE.streakUser = null;
       FACE_STATE.streakCount = 0;
-      setAuthStreak(0, needed);
+      setAuthStreak(0, defaultNeeded);
       setAuthHint('One person in frame at a time', 'warn');
       return { status: 'multiple' };
     }
 
     const baseThr = Number(STATE.faceSettings.threshold || 0.50);
     const m = window.Face.match(det.descriptor, enrolled);
+    // On a real hardware camera feed (opts.videoEl), 2 consecutive strong matches + live landmarks unlock immediately (Kiosk 4 parity)
+    const needed = (opts && opts.videoEl && !FACE_STATE.pending2faUser && m && m.bestDist <= (baseThr - 0.03))
+      ? 2
+      : defaultNeeded;
     // When a live webcam already matched a user on frame 1+, allow a +0.06 head-turn/blink tolerance for that same user so movement never resets the streak
     const isSameStreakUserOnLiveVideo = !!(opts && opts.videoEl && FACE_STATE.streakUser && FACE_STATE.streakCount >= 1 && m && m.best && norm(m.best.email) === norm(FACE_STATE.streakUser.email));
     const cfg = Object.assign({}, window.Face.CONFIG, {
@@ -48265,7 +49211,7 @@
       return { status: 'awaiting-blink', livenessStatus: 'awaiting-liveness', livenessDetail: liveRes, count: FACE_STATE.streakCount, needed, best: dec.best, dist: m.bestDist };
     }
 
-    // Confirmed across >= 3 consecutive frames + live anti-screenshot liveness!
+    // Confirmed across consecutive frames + live anti-screenshot liveness!
     FACE_STATE.streakUser = null;
     FACE_STATE.streakCount = 0;
     setAuthStreak(needed, needed);
@@ -48292,7 +49238,7 @@
     const videoEl = $('authFaceVideo');
     const overlayEl = $('authFaceOverlay');
     if (!videoEl || Date.now() < FACE_STATE.cooldownUntil) {
-      FACE_STATE.loopTimer = setTimeout(authFaceTick, 60);
+      FACE_STATE.loopTimer = setTimeout(authFaceTick, 40);
       return;
     }
     if (!FACE_STATE.busy && videoEl.readyState >= 2 && videoEl.videoWidth > 0) {
@@ -48320,7 +49266,7 @@
       }
     }
     if (!STATE.authed && FACE_STATE.camActive) {
-      FACE_STATE.loopTimer = setTimeout(authFaceTick, 30);
+      FACE_STATE.loopTimer = setTimeout(authFaceTick, 16);
     }
   }
 
@@ -48341,6 +49287,26 @@
       updateAuthFaceUi();
       return false;
     }
+    // Start loading Face ID neural models + WebGL shaders immediately in parallel with hardware camera warmup
+    // (never wait for startFaceCamera or mfg:core-seed-ready before starting Face.load)
+    const startModelsWhenReady = () => {
+      if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) return Promise.resolve(false);
+      return ensureFaceModelsLoaded().then(() => {
+        if (!STATE.authed && FACE_STATE.camActive) {
+          const enrNow = usableFaces();
+          if (!FACE_STATE.pending2faUser && enrNow.length && FACE_STATE.streakCount === 0) {
+            setAuthHint('Look at camera for automatic Face ID', 'ok');
+          }
+          updateAuthFaceUi();
+          if (!FACE_STATE.busy) {
+            if (FACE_STATE.loopTimer) clearTimeout(FACE_STATE.loopTimer);
+            FACE_STATE.loopTimer = setTimeout(authFaceTick, 0);
+          }
+        }
+        return true;
+      }).catch(() => false);
+    };
+    const modelsPromise = startModelsWhenReady();
     FACE_STATE.camStarting = true;
     updateAuthFaceUi();
     const camOk = await startFaceCamera(videoEl);
@@ -48369,29 +49335,9 @@
           : ''),
       (videoReadyNow && enrolled.length && faceAlreadyReady) ? 'ok' : ''
     );
-    const startModelsWhenReady = () => {
-      if (STATE.authed || (!forceStart && FACE_STATE.authCamStoppedByUser)) return Promise.resolve(false);
-      return ensureFaceModelsLoaded().then(() => {
-        if (!STATE.authed && FACE_STATE.camActive) {
-          const enrNow = usableFaces();
-          if (!FACE_STATE.pending2faUser && enrNow.length && FACE_STATE.streakCount === 0) {
-            setAuthHint('Look at camera for automatic Face ID', 'ok');
-          }
-          updateAuthFaceUi();
-        }
-        return true;
-      }).catch(() => false);
-    };
-    if (forceStart || FACE_STATE.pending2faUser || window.__mfgCoreSeedLoaded) {
-      startModelsWhenReady();
-    } else {
-      let triggered = false;
-      const runOnce = () => { if (!triggered) { triggered = true; startModelsWhenReady(); } };
-      window.addEventListener('mfg:core-seed-ready', runOnce, { once: true });
-      setTimeout(runOnce, 1200);
-    }
+    if (!faceAlreadyReady) modelsPromise.catch(() => {});
     if (FACE_STATE.loopTimer) clearTimeout(FACE_STATE.loopTimer);
-    FACE_STATE.loopTimer = setTimeout(authFaceTick, 25);
+    FACE_STATE.loopTimer = setTimeout(authFaceTick, 10);
     return true;
   }
 
@@ -49672,35 +50618,14 @@
           if (hudTel) {
             if (det && det.descriptor) {
               const pct = Math.round(Math.max(0.72, Number(det.score || det.detScore || 0.9)) * 100);
-              hudTel.textContent = `FACE LOCKED · ${pct}% (POSE ${activeSlot + 1}/3)`;
+              hudTel.textContent = `FACE READY · ${pct}% · CLICK CAPTURE POSE (${activeSlot + 1}/3)`;
               if (hudDot) hudDot.className = 'enrol-hud-dot live locked';
             } else {
               hudTel.textContent = `POSE ${activeSlot + 1}/3 · CENTER FACE`;
               if (hudDot) hudDot.className = 'enrol-hud-dot live';
             }
           }
-          // Hands-free auto-capture when camera is live and user holds pose in frame (< 0.5s per pose)
-          if (
-            det && det.descriptor && !det.multiple &&
-            !navigator.webdriver && !window.__MFG_HEADLESS_TEST &&
-            Date.now() >= (FACE_STATE.nextAutoEnrolAt || 0)
-          ) {
-            const fracVal = det.faceSizeFrac != null ? det.faceSizeFrac : det.frac;
-            const scoreVal = det.detScore != null ? det.detScore : det.score;
-            if ((fracVal == null || fracVal >= Number(STATE.faceSettings.minFaceFrac || 0.14)) && (scoreVal == null || scoreVal >= 0.28)) {
-              FACE_STATE.autoEnrolStreak = (FACE_STATE.autoEnrolStreak || 0) + 1;
-              if (FACE_STATE.autoEnrolStreak >= 2) {
-                FACE_STATE.autoEnrolStreak = 0;
-                FACE_STATE.nextAutoEnrolAt = Date.now() + 850;
-                triggerEnrolShutterFlash();
-                await captureEnrolDescriptor(det, FACE_STATE.lastLiveEnrolSnap || '', retakeSlot);
-              }
-            } else {
-              FACE_STATE.autoEnrolStreak = 0;
-            }
-          } else if (!det || !det.descriptor) {
-            FACE_STATE.autoEnrolStreak = 0;
-          }
+          FACE_STATE.autoEnrolStreak = 0;
         } else {
           // Automatic Live Recognition & Liveness Verification when 3/3 poses are saved
           const enrolUser = enrolTargetUser();
@@ -52772,23 +53697,68 @@
     const punchMs = punchDateObj.getTime();
     const last = getStaffLastPunch(staffName);
 
-    // Configurable anti-double-punch debounce guard (default 120s)
+    // 1. Configurable anti-double-punch debounce guard (default 120s)
     const punchDebounceSec = isAlertRuleEnabled('G_KIOSK_PUNCH') ? getAlertParam('G_KIOSK_PUNCH', 'debounce_sec', 120) : 0;
-    if (!opts.bypassDebounce && punchDebounceSec > 0 && last && last.iso) {
+    if (!opts.bypassDebounce && !opts.forceEarlyOut && punchDebounceSec > 0 && last && last.iso) {
       const prevMs = Date.parse(last.iso) || 0;
       const ageSec = Math.round((punchMs - prevMs) / 1000);
       if (prevMs > 0 && ageSec >= 0 && ageSec < punchDebounceSec) {
         STATE.kioskLastPunch = last;
         STATE.kioskAttPin = '';
-        STATE.kioskAttPinMsg = `${staffName} already clocked ${last.direction} ${ageSec}s ago. Use Switch to ${last.direction === 'IN' ? 'OUT' : 'IN'} if needed.`;
+        STATE.kioskAttPinMsg = `${staffName} already clocked ${last.direction} at ${last.time} (${ageSec}s ago). Kept ${last.time} Clock-${last.direction}.`;
         STATE.kioskAttPinMsgCls = 'warn';
-        toast(`${staffName} already clocked ${last.direction} ${ageSec}s ago. Tap Switch to ${last.direction === 'IN' ? 'OUT' : 'IN'} if needed.`, 'warn');
+        KIOSK_ATT_STATE.lastScanResult = {
+          ok: false,
+          reason: 'debounced',
+          staff: staffName,
+          punch: last,
+          ageSec,
+          attemptedTime: timeStr,
+          shiftLabel: last.shift_label || 'Day · 08:00-16:00',
+          snapshot: opts.snapshot || KIOSK_ATT_STATE.lastSnap || last.snapshot || ''
+        };
+        toast(`${staffName} already clocked ${last.direction} at ${last.time} (${ageSec}s ago). Tap Switch to ${last.direction === 'IN' ? 'OUT' : 'IN'} if needed.`, 'warn');
         if (STATE.view === 'kiosks') renderApp();
-        return { ok: false, reason: 'debounced', punch: last, ageSec };
+        return { ok: false, reason: 'debounced', punch: last, ageSec, attemptedTime: timeStr };
       }
     }
 
-    const direction = opts.direction || inferNextPunchDirection(staffName, punchMs);
+    // 2. Smart Early Re-Scan Guard (< 30 min after Clock IN in Auto mode, e.g. Clock IN at 09:00 then camera scan at 09:05):
+    //    Keeps the original 09:00 Clock-IN active instead of overwriting 09:00 or prematurely clocking OUT after 5 minutes.
+    const MIN_AUTO_CLOCK_OUT_MIN = 30;
+    const rawDirOpt = String(opts.direction || '').trim().toUpperCase();
+    const explicitDir = (rawDirOpt === 'IN' || rawDirOpt === 'OUT') ? rawDirOpt : '';
+    if (!explicitDir && !opts.forceEarlyOut && last && isPunchActiveOnSite(last, punchMs)) {
+      const prevMs = Date.parse(last.iso || '') || 0;
+      let ageMin = prevMs > 0 ? Math.round((punchMs - prevMs) / 60000) : null;
+      if ((ageMin == null || ageMin < 0) && last.date === dateStr) {
+        const mIn = parseClockMinutes(last.time);
+        const mNow = parseClockMinutes(timeStr);
+        if (mIn != null && mNow != null && mNow >= mIn) ageMin = mNow - mIn;
+      }
+      if (STATE.kioskAttDir === 'in' || (STATE.kioskAttDir === 'auto' && ageMin != null && ageMin >= 0 && ageMin < MIN_AUTO_CLOCK_OUT_MIN)) {
+        const minLbl = ageMin != null ? `${ageMin} min ago` : `at ${last.time}`;
+        STATE.kioskLastPunch = last;
+        STATE.kioskAttPin = '';
+        STATE.kioskAttPinMsg = `${staffName} is already Clocked IN since ${last.time} (${minLbl}). Kept ${last.time} arrival time, or tap Clock OUT Early (${timeStr}) if leaving.`;
+        STATE.kioskAttPinMsgCls = 'ok';
+        KIOSK_ATT_STATE.lastScanResult = {
+          ok: false,
+          reason: 'already-clocked-in-recent',
+          staff: staffName,
+          punch: last,
+          ageMin: ageMin != null ? ageMin : 0,
+          attemptedTime: timeStr,
+          shiftLabel: last.shift_label || 'Day · 08:00-16:00',
+          snapshot: opts.snapshot || KIOSK_ATT_STATE.lastSnap || last.snapshot || ''
+        };
+        toast(`${staffName} is already Clocked IN since ${last.time} (${minLbl}). Original ${last.time} Clock-IN kept.`, 'ok');
+        if (STATE.view === 'kiosks') renderApp();
+        return { ok: false, reason: 'already-clocked-in-recent', punch: last, ageMin: ageMin != null ? ageMin : 0, attemptedTime: timeStr };
+      }
+    }
+
+    const direction = opts.forceEarlyOut ? 'OUT' : (explicitDir || inferNextPunchDirection(staffName, punchMs));
     const siteStr = String(opts.site || STATE.kioskAttSite || 'WTC Main Plant');
 
     let shiftDate = dateStr;
@@ -52867,6 +53837,15 @@
       : (lateHours > 0 ? ` · Late ${lateHours}h` : '');
     STATE.kioskAttPinMsg = `${staffName} clocked ${direction} at ${timeStr}${otSummaryTxt}`;
     STATE.kioskAttPinMsgCls = 'ok';
+    KIOSK_ATT_STATE.lastScanResult = {
+      ok: true,
+      reason: 'recorded',
+      staff: staffName,
+      punch,
+      shiftLabel: punch.shift_label,
+      confidence: opts.confidence,
+      snapshot: punch.snapshot || ''
+    };
     const attRec = syncAttendanceRecordFromPunch(punch);
     if (STATE.faceSettings.sound && window.Face && window.Face.Sound) {
       window.Face.Sound.play('ok');
@@ -52925,6 +53904,7 @@
     }
     try {
       stopFaceCamera();
+      KIOSK_ATT_STATE.lastScanResult = null;
       const modelsP = ensureFaceModelsLoaded();
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
@@ -52933,7 +53913,7 @@
       FACE_STATE.stream = stream;
       KIOSK_ATT_STATE.camActive = true;
       KIOSK_ATT_STATE.missedFrames = 0;
-      KIOSK_ATT_STATE.statusText = 'Camera live: look straight ahead inside the oval guide';
+      KIOSK_ATT_STATE.statusText = 'Camera live: look straight ahead inside the oval guide (auto-stops after 1 scan)';
       KIOSK_ATT_STATE.statusCls = 'ok';
       if (STATE.view === 'kiosks') renderApp();
       const v = $('kioskAttVideo');
@@ -53004,18 +53984,33 @@
     if (opts.videoEl && window.Face && window.Face.snapshot) {
       KIOSK_ATT_STATE.lastSnap = window.Face.snapshot(opts.videoEl, 240) || '';
     }
+    // Single-shot camera behavior: immediately stop live camera once 1 scan locks so it never loops or spams photos
+    if (opts.liveVideo) {
+      stopKioskAttCamera();
+    }
     const conf = Math.max(0.75, Math.min(0.99, 1 - (m.bestDist || 0.2) * 0.6));
     const res = recordKioskAttendancePunch({
       staff: matchedName,
       method: 'Face ID',
       confidence: conf,
       snapshot: opts.snapshot || KIOSK_ATT_STATE.lastSnap || '',
-      bypassDebounce: !!opts.bypassDebounce
+      bypassDebounce: !!opts.bypassDebounce,
+      date: opts.date,
+      time: opts.time,
+      direction: opts.direction,
+      forceEarlyOut: !!opts.forceEarlyOut
     });
-    KIOSK_ATT_STATE.statusText = res.ok
-      ? `${matchedName} clocked ${res.punch.direction} at ${res.punch.time} (${(conf * 100).toFixed(0)}% match)`
-      : `${matchedName} already clocked ${res.punch ? res.punch.direction : ''} (${res.ageSec || 0}s ago)`;
-    KIOSK_ATT_STATE.statusCls = res.ok ? 'ok' : 'warn';
+    if (res.ok) {
+      KIOSK_ATT_STATE.statusText = `✓ ${matchedName} clocked ${res.punch.direction} at ${res.punch.time} (${(conf * 100).toFixed(0)}% match). Camera paused.`;
+      KIOSK_ATT_STATE.statusCls = 'ok';
+    } else if (res.reason === 'already-clocked-in-recent') {
+      KIOSK_ATT_STATE.statusText = `✓ ${matchedName} is already Clocked IN since ${res.punch ? res.punch.time : ''} (${res.ageMin || 0} min ago). Kept ${res.punch ? res.punch.time : ''} arrival time.`;
+      KIOSK_ATT_STATE.statusCls = 'ok';
+    } else {
+      KIOSK_ATT_STATE.statusText = `${matchedName} already clocked ${res.punch ? res.punch.direction : ''} at ${res.punch ? res.punch.time : ''} (${res.ageSec || 0}s ago).`;
+      KIOSK_ATT_STATE.statusCls = 'warn';
+    }
+    if (STATE.view === 'kiosks') renderApp();
     return res;
   }
 
@@ -53156,7 +54151,7 @@
                 badgeEl.className = 'badge badge-warn';
               }
             } else {
-              badgeEl.textContent = `Face Locked · ${pct}% (Pose ${cLen + 1}/3)`;
+              badgeEl.textContent = `Face Ready · ${pct}% · Click Capture Pose (${cLen + 1}/3)`;
               badgeEl.className = 'badge badge-ok';
             }
           } else {
@@ -53164,27 +54159,7 @@
             badgeEl.className = 'badge';
           }
         }
-        if (
-          det && det.descriptor && !det.multiple
-          && !navigator.webdriver && !window.__MFG_HEADLESS_TEST
-          && STAFF_FACE_MODAL_STATE.captures.length < 3
-          && Date.now() >= (STAFF_FACE_MODAL_STATE.nextAutoAt || 0)
-        ) {
-          const fracVal = det.faceSizeFrac != null ? det.faceSizeFrac : det.frac;
-          const scoreVal = det.detScore != null ? det.detScore : det.score;
-          if ((fracVal == null || fracVal >= Number(STATE.faceSettings.minFaceFrac || 0.14)) && (scoreVal == null || scoreVal >= 0.28)) {
-            STAFF_FACE_MODAL_STATE.autoStreak = (STAFF_FACE_MODAL_STATE.autoStreak || 0) + 1;
-            if (STAFF_FACE_MODAL_STATE.autoStreak >= 2) {
-              STAFF_FACE_MODAL_STATE.autoStreak = 0;
-              STAFF_FACE_MODAL_STATE.nextAutoAt = Date.now() + 900;
-              await captureStaffModalPose(det, STAFF_FACE_MODAL_STATE.lastSnap || '');
-            }
-          } else {
-            STAFF_FACE_MODAL_STATE.autoStreak = 0;
-          }
-        } else if (!det || !det.descriptor) {
-          STAFF_FACE_MODAL_STATE.autoStreak = 0;
-        }
+        STAFF_FACE_MODAL_STATE.autoStreak = 0;
       } catch (_) {}
       STAFF_FACE_MODAL_STATE.busy = false;
     }
@@ -53194,13 +54169,19 @@
   }
 
   async function startStaffEnrolModalCamera() {
+    if (!STAFF_FACE_MODAL_STATE.staffName) {
+      STAFF_FACE_MODAL_STATE.statusText = 'Select a staff member from the dropdown above first before starting the camera.';
+      STAFF_FACE_MODAL_STATE.statusCls = 'warn';
+      syncStaffFaceEnrolModalDom();
+      toast('Select a staff member first before starting the camera', 'warn');
+      return false;
+    }
     const videoEl = $('staffEnrolVideo');
     if (!videoEl) return false;
     stopKioskAttCamera();
     STAFF_FACE_MODAL_STATE.statusText = 'Starting front camera...';
     STAFF_FACE_MODAL_STATE.statusCls = '';
     STAFF_FACE_MODAL_STATE.autoStreak = 0;
-    STAFF_FACE_MODAL_STATE.nextAutoAt = Date.now() + 300;
     syncStaffFaceEnrolModalDom();
     const modelsP = ensureFaceModelsLoaded().catch(() => {});
     const ok = await startFaceCamera(videoEl);
@@ -53213,7 +54194,10 @@
       }
       clearTimeout(STAFF_FACE_MODAL_STATE.loopTimer);
       STAFF_FACE_MODAL_STATE.loopTimer = setTimeout(staffEnrolModalTick, 20);
-      STAFF_FACE_MODAL_STATE.statusText = 'Hold steady for 3 quick poses: straight ahead, slightly left, slightly right.';
+      const nextPose = Math.min(3, (STAFF_FACE_MODAL_STATE.captures.length || 0) + 1);
+      STAFF_FACE_MODAL_STATE.statusText = STAFF_FACE_MODAL_STATE.captures.length >= 3
+        ? 'Camera live for verification. Click Retake All 3 Poses if you want to replace stored photos.'
+        : `Camera ready: position face in the oval and click Capture Pose (${nextPose}/3).`;
       STAFF_FACE_MODAL_STATE.statusCls = 'ok';
     } else {
       STAFF_FACE_MODAL_STATE.statusText = 'Camera unavailable or permission denied on this device.';
@@ -53225,7 +54209,13 @@
 
   async function captureStaffModalPose(syntheticDet = null, syntheticThumb = '', slotOverride = null) {
     const staffName = STAFF_FACE_MODAL_STATE.staffName;
-    if (!staffName) return { ok: false, reason: 'no-staff' };
+    if (!staffName) {
+      STAFF_FACE_MODAL_STATE.statusText = 'Select a staff member from the dropdown above first.';
+      STAFF_FACE_MODAL_STATE.statusCls = 'warn';
+      syncStaffFaceEnrolModalDom();
+      toast('Select a staff member first', 'warn');
+      return { ok: false, reason: 'no-staff' };
+    }
     let det = syntheticDet;
     let thumb = syntheticThumb || '';
     if (!det) {
@@ -53237,7 +54227,6 @@
           return { ok: false, reason: 'no-camera' };
         }
       }
-      STAFF_FACE_MODAL_STATE.nextAutoAt = Date.now() + 950;
       if (STAFF_FACE_MODAL_STATE.lastDet && STAFF_FACE_MODAL_STATE.lastDet.descriptor && (Date.now() - (STAFF_FACE_MODAL_STATE.lastAt || 0)) < 1600) {
         det = STAFF_FACE_MODAL_STATE.lastDet;
         thumb = (window.Face && window.Face.snapshot && window.Face.snapshot(videoEl)) || STAFF_FACE_MODAL_STATE.lastSnap || '';
@@ -53248,7 +54237,7 @@
       }
     }
     if (!det || !det.descriptor) {
-      STAFF_FACE_MODAL_STATE.statusText = 'No face detected. Position face inside the oval guide and try again.';
+      STAFF_FACE_MODAL_STATE.statusText = 'No face detected. Position face inside the oval guide and click Capture Pose.';
       STAFF_FACE_MODAL_STATE.statusCls = 'warn';
       syncStaffFaceEnrolModalDom();
       return { ok: false, reason: 'no-face' };
@@ -53271,12 +54260,17 @@
     const faceInfo = getStaffFaceSamplesAndThumbs(staffName, entry ? entry.userObj : null);
     STAFF_FACE_MODAL_STATE.captures = faceInfo.samples;
     STAFF_FACE_MODAL_STATE.thumbs = faceInfo.thumbs;
-    STAFF_FACE_MODAL_STATE.statusText = res.count >= 3
-      ? `All 3 Face ID poses enrolled and ready for ${staffName}.`
-      : `Saved Pose ${res.count} of 3 for ${staffName}.`;
+    if (res.count >= 3) {
+      stopStaffEnrolModalCamera();
+      STAFF_FACE_MODAL_STATE.statusText = `✓ All 3 Face ID poses enrolled and saved for ${staffName}. Camera stopped automatically.`;
+    } else {
+      STAFF_FACE_MODAL_STATE.statusText = `✓ Saved Pose ${res.count} of 3 for ${staffName}. Click Capture Pose (${res.count + 1}/3) for the next angle.`;
+    }
     STAFF_FACE_MODAL_STATE.statusCls = 'ok';
     syncStaffFaceEnrolModalDom();
-    if (!syntheticDet && res.count >= 3) toast(`Face ID enrolled for ${staffName} (3/3 poses)`, 'ok');
+    if (!syntheticDet) {
+      toast(res.count >= 3 ? `Face ID enrolled for ${staffName} (3/3 poses saved)` : `Saved Pose ${res.count} of 3 for ${staffName}`, 'ok');
+    }
     return res;
   }
 
@@ -53284,7 +54278,9 @@
     const modal = $('staffFaceEnrolModal');
     if (!modal || modal.hidden) return;
     const allStaff = getKioskStaffDirectory();
-    const curEntry = allStaff.find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || allStaff[0] || null;
+    const curEntry = STAFF_FACE_MODAL_STATE.staffName
+      ? (allStaff.find(s => norm(s.name) === norm(STAFF_FACE_MODAL_STATE.staffName)) || null)
+      : null;
     if (curEntry) STAFF_FACE_MODAL_STATE.staffName = curEntry.name;
     const faceInfo = curEntry ? getStaffFaceSamplesAndThumbs(curEntry.name, curEntry.userObj) : { samples: [], thumbs: [] };
     STAFF_FACE_MODAL_STATE.captures = faceInfo.samples;
@@ -53294,6 +54290,10 @@
     const sel = $('staffEnrolSelect');
     if (sel) {
       Array.from(sel.options).forEach(opt => {
+        if (!opt.value) {
+          opt.selected = !curEntry;
+          return;
+        }
         const st = allStaff.find(x => norm(x.name) === norm(opt.value));
         if (st) {
           opt.textContent = `${st.name} · ${st.company} (${st.faceCount ? st.faceCount + '/3 Face ID' : 'No Face ID'}${st.hasExplicitPin ? ' · PIN Set' : ''})`;
@@ -53305,6 +54305,11 @@
     if (vp) vp.classList.toggle('is-live', STAFF_FACE_MODAL_STATE.camActive);
     const ph = $('staffEnrolStandby');
     if (ph) ph.hidden = STAFF_FACE_MODAL_STATE.camActive;
+    const badgeEl = $('staffEnrolLiveBadge');
+    if (badgeEl && !STAFF_FACE_MODAL_STATE.camActive) {
+      badgeEl.textContent = capCount >= 3 ? '✓ 3/3 Poses Saved' : 'Camera Standby';
+      badgeEl.className = capCount >= 3 ? 'badge badge-ok staff-enrol-live-pill' : 'badge staff-enrol-live-pill';
+    }
     const camBtn = $('staffEnrolStartCamBtn');
     if (camBtn) {
       camBtn.hidden = !STAFF_FACE_MODAL_STATE.camActive;
@@ -53312,11 +54317,14 @@
     }
     const capBtn = $('staffEnrolCaptureBtn');
     if (capBtn) {
-      capBtn.innerHTML = capCount >= 3
-        ? `${ic('rotate')} Retake All 3 Poses`
-        : (STAFF_FACE_MODAL_STATE.camActive
-            ? `${ic('camera')} Capture Pose (${capCount + 1}/3)`
-            : `${ic('camera')} ${capCount === 0 ? 'Start 3-Pose Capture' : `Continue Capture (${capCount + 1}/3)`}`);
+      capBtn.disabled = !curEntry;
+      capBtn.innerHTML = !curEntry
+        ? `${ic('camera')} Select Staff Member First`
+        : (capCount >= 3
+          ? `${ic('rotate')} Retake All 3 Poses`
+          : (STAFF_FACE_MODAL_STATE.camActive
+              ? `${ic('camera')} Capture Pose (${capCount + 1}/3)`
+              : `${ic('camera')} ${capCount === 0 ? 'Enable Camera (Pose 1/3)' : `Enable Camera (Pose ${capCount + 1}/3)`}`));
     }
     const clrBtn = $('staffEnrolClearBtn');
     if (clrBtn) {
@@ -53327,13 +54335,15 @@
     const poseGuide = $('staffEnrolPosePrompt');
     if (poseGuide) {
       const prompts = [
-        'Pose 1 of 3: Look straight ahead at the camera',
-        'Pose 2 of 3: Turn head slightly left while looking at camera',
-        'Pose 3 of 3: Turn head slightly right while looking at camera'
+        'Step 1 of 3: Look straight ahead at the camera, then click Capture Pose (1/3)',
+        'Step 2 of 3: Turn head slightly left, then click Capture Pose (2/3)',
+        'Step 3 of 3: Turn head slightly right, then click Capture Pose (3/3)'
       ];
-      poseGuide.textContent = capCount >= 3
-        ? 'Face ID profile complete (3/3 poses saved). Ready for hands-free Kiosk clock-in.'
-        : prompts[capCount];
+      poseGuide.textContent = !curEntry
+        ? 'Select a staff member from the dropdown above to enrol their Face ID or 4-digit PIN.'
+        : (capCount >= 3
+          ? `✓ Face ID profile complete for ${curEntry.name} (3/3 poses saved). Ready for Kiosk clock-in.`
+          : prompts[capCount]);
     }
 
     const strip = $('staffEnrolThumbs');
@@ -53343,7 +54353,7 @@
         const done = idx < capCount;
         const th = faceInfo.thumbs[idx] || '';
         return `
-          <button type="button" class="staff-pose-slot ${done ? 'is-done' : (idx === capCount ? 'is-next' : '')}" data-staff-pose-slot="${idx}">
+          <button type="button" class="staff-pose-slot ${done ? 'is-done' : (idx === capCount ? 'is-next' : '')}" data-staff-pose-slot="${idx}" ${!curEntry ? 'disabled' : ''}>
             ${th ? `<img src="${esc(th)}" alt="Pose ${idx + 1}">` : `<span class="staff-pose-placeholder">${done ? '✓ Saved' : 'Empty'}</span>`}
             <span class="staff-pose-lbl">${poseNames[idx]}${done ? ' · Retake' : ''}</span>
           </button>
@@ -53359,29 +54369,40 @@
 
     const stEl = $('staffEnrolStatusMsg');
     if (stEl) {
-      stEl.textContent = STAFF_FACE_MODAL_STATE.statusText || (capCount > 0 ? `${capCount}/3 Face ID poses stored for ${curEntry ? curEntry.name : ''}.` : 'Start camera to capture 3 quick Face ID poses.');
+      stEl.textContent = STAFF_FACE_MODAL_STATE.statusText || (!curEntry ? 'Choose the employee above first so photos are saved to the right person.' : (capCount > 0 ? `${capCount}/3 Face ID poses stored for ${curEntry.name}.` : `Click Enable Camera, then click Capture Pose once for each of the 3 angles.`));
       stEl.className = 'kiosk-att-status ' + (STAFF_FACE_MODAL_STATE.statusCls || '');
     }
 
     const pinInp = $('staffEnrolPinInput');
-    if (pinInp && curEntry && document.activeElement !== pinInp) {
-      pinInp.value = curEntry.hasExplicitPin ? curEntry.pin : '';
+    if (pinInp && document.activeElement !== pinInp) {
+      pinInp.value = (curEntry && curEntry.hasExplicitPin) ? curEntry.pin : '';
+      pinInp.disabled = !curEntry;
     }
+    const pinSaveBtn = $('staffEnrolPinSaveBtn');
+    if (pinSaveBtn) pinSaveBtn.disabled = !curEntry;
     stripNativeTitles(modal);
   }
 
   function openStaffFaceEnrolModal(staffName = '') {
     stopKioskAttCamera();
+    stopStaffEnrolModalCamera();
     const allStaff = getKioskStaffDirectory({ scopeBySelectedCompany: true });
     const fullStaff = getKioskStaffDirectory();
     const pool = allStaff.length ? allStaff : fullStaff;
-    const picked = (staffName && fullStaff.find(s => norm(s.name) === norm(staffName))) || pool[0] || null;
-    if (!picked) {
+    if (!pool.length) {
       toast('No active staff available to enrol', 'warn');
       return null;
     }
+    let picked = staffName ? (fullStaff.find(s => norm(s.name) === norm(staffName)) || null) : null;
+    if (!picked && STATE.kioskAttRosterSearch) {
+      const rq = norm(STATE.kioskAttRosterSearch);
+      const hits = pool.filter(s => norm(s.name).includes(rq));
+      if (hits.length === 1) picked = hits[0];
+    }
     STAFF_FACE_MODAL_STATE.open = true;
-    STAFF_FACE_MODAL_STATE.staffName = picked.name;
+    STAFF_FACE_MODAL_STATE.staffName = picked ? picked.name : '';
+    STAFF_FACE_MODAL_STATE.lastDet = null;
+    STAFF_FACE_MODAL_STATE.lastSnap = '';
     STAFF_FACE_MODAL_STATE.statusText = '';
     STAFF_FACE_MODAL_STATE.statusCls = '';
 
@@ -53403,7 +54424,7 @@
         <div class="modal-head">
           <div>
             <div class="modal-title">${ic('camera')} Staff Face ID &amp; PIN Enrolment</div>
-            <div class="modal-sub">Enrol 3-pose hands-free Face ID and 4-digit PIN for any active employee</div>
+            <div class="modal-sub">Enrol 3-pose Face ID (1 click per pose) and 4-digit PIN for any active employee</div>
           </div>
           <button type="button" class="icon-btn" id="closeStaffEnrolModalBtn" aria-label="Close">✕</button>
         </div>
@@ -53412,13 +54433,14 @@
             <div class="staff-enrol-field" style="flex:1;min-width:220px">
               <label for="staffEnrolSelect">Staff Member</label>
               <select id="staffEnrolSelect" class="kiosk-select" data-plain-options="1">
-                ${fullStaff.map(s => `<option value="${esc(s.name)}" ${norm(s.name) === norm(picked.name) ? 'selected' : ''}>${esc(s.name)} · ${esc(s.company)} (${s.faceCount ? s.faceCount + '/3 Face ID' : 'No Face ID'})</option>`).join('')}
+                <option value="" ${!picked ? 'selected' : ''}>-- Select staff member to enrol --</option>
+                ${fullStaff.map(s => `<option value="${esc(s.name)}" ${picked && norm(s.name) === norm(picked.name) ? 'selected' : ''}>${esc(s.name)} · ${esc(s.company)} (${s.faceCount ? s.faceCount + '/3 Face ID' : 'No Face ID'})</option>`).join('')}
               </select>
             </div>
             <div class="staff-enrol-pin-inline">
               <label for="staffEnrolPinInput">4-Digit Kiosk PIN</label>
               <div style="display:flex;gap:6px;align-items:center">
-                <input type="text" inputmode="numeric" maxlength="4" autocomplete="off" id="staffEnrolPinInput" class="kiosk-inline-pin-input" style="width:96px;height:36px" placeholder="4 digits" value="${esc(picked.hasExplicitPin ? picked.pin : '')}">
+                <input type="text" inputmode="numeric" maxlength="4" autocomplete="off" id="staffEnrolPinInput" class="kiosk-inline-pin-input" style="width:96px;height:36px" placeholder="4 digits" value="${esc(picked && picked.hasExplicitPin ? picked.pin : '')}">
                 <button type="button" class="btn" id="staffEnrolPinSaveBtn">Save PIN</button>
               </div>
             </div>
@@ -53441,12 +54463,12 @@
                 <div class="kiosk-cam-standby-card" id="staffEnrolStandby" style="cursor:pointer">
                   <div class="kiosk-cam-standby-ico">${ic('camera')}</div>
                   <strong>3-Pose Staff Face ID</strong>
-                  <p>Click here to enable the camera for guided 3-pose capture or live recognition.</p>
+                  <p>Enable the camera, then click Capture Pose once for each of the 3 guided angles.</p>
                   <span class="enrol-cam-wake-pill" style="margin-top:4px">${ic('camera')} <span>Click to Enable Camera</span></span>
                 </div>
               </div>
               <div class="staff-enrol-btn-bar">
-                <button type="button" class="btn btn-primary" id="staffEnrolCaptureBtn">${ic('camera')} Start 3-Pose Capture</button>
+                <button type="button" class="btn btn-primary" id="staffEnrolCaptureBtn">${ic('camera')} Enable Camera (Pose 1/3)</button>
                 <button type="button" class="btn" id="staffEnrolClearBtn">Clear Face ID</button>
               </div>
             </div>
@@ -53470,7 +54492,10 @@
     $('closeStaffEnrolModalBtn')?.addEventListener('click', closeStaffFaceEnrolModal);
     $('doneStaffEnrolModalBtn')?.addEventListener('click', closeStaffFaceEnrolModal);
     $('staffEnrolSelect')?.addEventListener('change', e => {
-      STAFF_FACE_MODAL_STATE.staffName = e.target.value;
+      stopStaffEnrolModalCamera();
+      STAFF_FACE_MODAL_STATE.staffName = e.target.value || '';
+      STAFF_FACE_MODAL_STATE.lastDet = null;
+      STAFF_FACE_MODAL_STATE.lastSnap = '';
       STAFF_FACE_MODAL_STATE.statusText = '';
       STAFF_FACE_MODAL_STATE.statusCls = '';
       syncStaffFaceEnrolModalDom();
@@ -53490,6 +54515,19 @@
       }
     });
     $('staffEnrolCaptureBtn')?.addEventListener('click', async () => {
+      if (!STAFF_FACE_MODAL_STATE.staffName) {
+        toast('Select a staff member from the dropdown first', 'warn');
+        syncStaffFaceEnrolModalDom();
+        return;
+      }
+      if (STAFF_FACE_MODAL_STATE.captures.length >= 3) {
+        await clearStaffFaceId(STAFF_FACE_MODAL_STATE.staffName);
+        await startStaffEnrolModalCamera();
+        STAFF_FACE_MODAL_STATE.statusText = `Cleared previous poses for ${STAFF_FACE_MODAL_STATE.staffName}. Position face and click Capture Pose (1/3).`;
+        STAFF_FACE_MODAL_STATE.statusCls = 'ok';
+        syncStaffFaceEnrolModalDom();
+        return;
+      }
       if (!STAFF_FACE_MODAL_STATE.camActive || !streamAlive()) {
         await startStaffEnrolModalCamera();
         return;
@@ -53499,6 +54537,7 @@
     $('staffEnrolClearBtn')?.addEventListener('click', async () => {
       const res = await clearStaffFaceId(STAFF_FACE_MODAL_STATE.staffName);
       if (res.ok) {
+        stopStaffEnrolModalCamera();
         STAFF_FACE_MODAL_STATE.statusText = `Cleared Face ID for ${res.staff}.`;
         STAFF_FACE_MODAL_STATE.statusCls = '';
         toast(`Cleared Face ID for ${res.staff}`);
@@ -54448,6 +55487,7 @@
 
       const scopeTitleLabel = scopedCo || 'All Companies';
       const showCoCol = !scopedCo;
+      const lastScan = KIOSK_ATT_STATE.lastScanResult || null;
 
       workspaceBodyHtml = `
         <div class="kiosk-att-shell" id="kioskAttendanceWorkspace">
@@ -54458,12 +55498,19 @@
                 <div class="kiosk-lp-info">
                   <strong>${esc(lastPunch.staff)}</strong>
                   ${showCoCol ? coBadge(lastPunch.company) : ''}
-                  <span class="kiosk-lp-meta"><span class="mono">${esc(lastPunch.time)}</span> · ${esc(fmtDateDMY(lastPunch.date))} · ${esc(lastPunch.site)} · ${esc(lastPunch.method)}${lastPunch.paired_hours != null ? ` · Shift ${fmtNum(lastPunch.paired_hours, 1)}h${lastPunch.overtime_hours > 0 ? ' (+' + fmtNum(lastPunch.overtime_hours, 1) + 'h OT)' : (lastPunch.unapproved_ot_hours > 0 ? ' (0h paid OT)' : '')}` : ''}</span>
+                  <span class="kiosk-lp-meta"><span class="mono">${lastPunch.direction === 'OUT' && lastPunch.in_time ? `IN ${esc(lastPunch.in_time)} · OUT ${esc(lastPunch.time)}` : `IN ${esc(lastPunch.time)}`}</span> · ${esc(fmtDateDMY(lastPunch.date))} · ${esc(lastPunch.site)} · ${esc(lastPunch.method)}${lastPunch.paired_hours != null ? ` · Worked ${fmtNum(lastPunch.paired_hours, 1)}h${lastPunch.overtime_hours > 0 ? ' (+' + fmtNum(lastPunch.overtime_hours, 1) + 'h OT)' : (lastPunch.unapproved_ot_hours > 0 ? ' (0h paid OT)' : '')}` : (lastPunch.late_hours > 0 ? ` · Late ${fmtNum(lastPunch.late_hours, 1)}h` : '')}</span>
                 </div>
               </div>
-              <button type="button" class="btn kiosk-flip-btn" id="kioskAttFlipDirBtn" data-flip-punch="${esc(lastPunch.id)}">
-                ${ic('swap')} Switch to ${lastPunch.direction === 'IN' ? 'OUT' : 'IN'}
-              </button>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                ${lastScan && lastScan.reason === 'already-clocked-in-recent' && norm(lastScan.staff) === norm(lastPunch.staff) ? `
+                  <button type="button" class="btn kiosk-flip-btn" data-force-early-out="${esc(lastPunch.staff)}" data-force-early-time="${esc(lastScan.attemptedTime || '')}">
+                    ${ic('clock_out')} Clock OUT Early (${esc(lastScan.attemptedTime || 'Now')})
+                  </button>
+                ` : ''}
+                <button type="button" class="btn kiosk-flip-btn" id="kioskAttFlipDirBtn" data-flip-punch="${esc(lastPunch.id)}">
+                  ${ic('swap')} Switch to ${lastPunch.direction === 'IN' ? 'OUT' : 'IN'}
+                </button>
+              </div>
             </div>
           ` : ''}
 
@@ -54484,16 +55531,38 @@
                     <span class="kiosk-finder-corner br"></span>
                     <div class="kiosk-att-oval"></div>
                   </div>
-                  ${!KIOSK_ATT_STATE.camActive ? `
+                  ${!KIOSK_ATT_STATE.camActive ? (lastScan && lastScan.punch ? `
+                    <div class="kiosk-cam-standby-card">
+                      <div class="kiosk-cam-standby-ico">${ic(lastScan.punch.direction === 'OUT' ? 'clock_out' : 'check_circle')}</div>
+                      <strong>${lastScan.reason === 'already-clocked-in-recent'
+                        ? `${esc(lastScan.staff)} · Already Clocked IN (${esc(lastScan.punch.time)})`
+                        : `${esc(lastScan.staff)} · Clocked ${esc(lastScan.punch.direction)} at ${esc(lastScan.punch.time)}`}</strong>
+                      <p>${lastScan.reason === 'already-clocked-in-recent'
+                        ? `Clocked IN ${lastScan.ageMin || 0} min ago for ${esc(lastScan.shiftLabel || 'Day · 08:00-16:00')}. Original ${esc(lastScan.punch.time)} arrival time kept.`
+                        : (lastScan.punch.direction === 'OUT'
+                          ? `Shift ${esc(lastScan.shiftLabel || 'Day · 08:00-16:00')} · IN ${esc(lastScan.punch.in_time || '-')} to OUT ${esc(lastScan.punch.time)}${lastScan.punch.paired_hours != null ? ` (${fmtNum(lastScan.punch.paired_hours, 1)}h worked)` : ''}.`
+                          : `Shift ${esc(lastScan.shiftLabel || 'Day · 08:00-16:00')} · On site since ${esc(lastScan.punch.time)}${lastScan.punch.late_hours > 0 ? ` (Late ${fmtNum(lastScan.punch.late_hours, 1)}h)` : ' (On Time)'}.`)}</p>
+                      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+                        <button type="button" class="btn btn-primary kiosk-cam-start-btn" id="kioskAttCamToggleBtn">
+                          ${ic('camera')} Scan Next Staff Member
+                        </button>
+                        ${lastScan.reason === 'already-clocked-in-recent' ? `
+                          <button type="button" class="btn" data-force-early-out="${esc(lastScan.staff)}" data-force-early-time="${esc(lastScan.attemptedTime || '')}">
+                            ${ic('clock_out')} Clock OUT Early (${esc(lastScan.attemptedTime || 'Now')})
+                          </button>
+                        ` : ''}
+                      </div>
+                    </div>
+                  ` : `
                     <div class="kiosk-cam-standby-card">
                       <div class="kiosk-cam-standby-ico">${ic('camera')}</div>
                       <strong>Hands-Free Face Recognition</strong>
-                      <p>Start the front camera on any wall tablet or desktop to clock enrolled staff in and out automatically.</p>
+                      <p>Start the front camera on any wall tablet or desktop to clock enrolled staff in or out (takes 1 scan and stops automatically).</p>
                       <button type="button" class="btn btn-primary kiosk-cam-start-btn" id="kioskAttCamToggleBtn">
                         ${ic('camera')} Start Face Camera
                       </button>
                     </div>
-                  ` : ''}
+                  `) : ''}
                 </div>
 
                 <div class="kiosk-att-cam-foot">
@@ -54689,7 +55758,7 @@
                         ${showCoCol ? '<th>Co.</th>' : ''}
                         <th>Shift &amp; Timing</th>
                         <th>Overtime Rule</th>
-                        <th>Today's Status</th>
+                        <th>Today's Clock IN / OUT</th>
                         <th>Face ID &amp; PIN</th>
                         <th class="r">Supervisor Clock</th>
                       </tr>
@@ -54722,9 +55791,9 @@
                             </td>
                             <td>
                               ${onNow
-                                ? `<span class="badge badge-ok">${ic('clock_in')} On Site · ${esc(lp.time)}</span>`
+                                ? `<span class="badge badge-ok">${ic('clock_in')} IN ${esc(lp.time)} · On Site</span><div class="drv-sub mono">OUT: Pending${lp.late_hours > 0 ? ` · Late ${fmtNum(lp.late_hours, 1)}h` : ''}</div>`
                                 : (outToday
-                                  ? `<span class="badge badge-warn">${ic('clock_out')} OUT · ${esc(lp.time)}${lp.paired_hours != null ? ` (${fmtNum(lp.paired_hours, 1)}h)` : ''}</span>`
+                                  ? `<span class="badge badge-warn">${ic('clock_out')} IN ${esc(lp.in_time || '-')} · OUT ${esc(lp.time)}</span><div class="drv-sub mono">${lp.paired_hours != null ? `${fmtNum(lp.paired_hours, 1)}h worked` : ''}${lp.late_hours > 0 ? ` · Late ${fmtNum(lp.late_hours, 1)}h` : ''}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, 1)}h OT` : ''}</div>`
                                   : `<span class="kiosk-status-quiet">Off Site</span>`)}
                             </td>
                             <td>
@@ -54764,7 +55833,7 @@
                         ${showCoCol ? '<th>Co.</th>' : ''}
                         <th>Shift</th>
                         <th>Status</th>
-                        <th>Time</th>
+                        <th>Clock IN / OUT</th>
                         <th>Method</th>
                         <th class="r">Worked / OT</th>
                         <th>Switch</th>
@@ -54776,8 +55845,8 @@
                           <td><strong>${esc(p.staff)}</strong></td>
                           ${showCoCol ? `<td>${coBadge(p.company)}</td>` : ''}
                           <td><span class="kiosk-shift-tag">${esc(p.shift_label || 'Day · 08:00-16:00')}</span></td>
-                          <td><span class="badge ${p.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${p.direction === 'IN' ? 'IN · On Site' : 'OUT'}</span></td>
-                          <td class="mono">${esc(p.time)} <small class="muted">${esc(fmtDateDMY(p.date))}</small></td>
+                          <td><span class="badge ${p.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${p.direction === 'IN' ? 'IN · On Site' : 'OUT · Completed'}</span></td>
+                          <td class="mono">${p.direction === 'OUT' && p.in_time ? `IN ${esc(p.in_time)} · OUT ${esc(p.time)}` : `IN ${esc(p.time)}`} <small class="muted">${esc(fmtDateDMY(p.date))}</small></td>
                           <td>${esc(p.method)}</td>
                           <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, 1)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1)}h OT)` : (p.unapproved_ot_hours > 0 ? ' (0h OT)' : '')}` : (p.late_hours > 0 ? `Late ${fmtNum(p.late_hours, 1)}h` : 'Active')}</td>
                           <td><button type="button" class="tkt-print-mini" data-flip-punch="${esc(p.id)}" aria-label="Switch IN / OUT direction">${ic('swap')}</button></td>
@@ -55425,6 +56494,22 @@
         fBtn.addEventListener('click', e => {
           e.stopPropagation();
           flipKioskPunchDirection(fBtn.getAttribute('data-flip-punch'));
+        });
+      });
+      container.querySelectorAll('[data-force-early-out]').forEach(eBtn => {
+        eBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          const stf = eBtn.getAttribute('data-force-early-out') || '';
+          const tStr = eBtn.getAttribute('data-force-early-time') || '';
+          if (!stf) return;
+          recordKioskAttendancePunch({
+            staff: stf,
+            direction: 'OUT',
+            time: tStr || undefined,
+            method: 'Face ID',
+            bypassDebounce: true,
+            forceEarlyOut: true
+          });
         });
       });
       if ($('kioskControlDeck')) wireModalSuggestions($('kioskControlDeck'));
@@ -57782,6 +58867,9 @@
 
     const enrolSel = $('enrolUserSelect');
     if (enrolSel) enrolSel.addEventListener('change', e => {
+      if (FACE_STATE.enrolCamActive) stopFaceCamera();
+      FACE_STATE.lastLiveEnrolDet = null;
+      FACE_STATE.lastLiveEnrolSnap = '';
       FACE_STATE.enrolUserId = e.target.value;
       const u = enrolTargetUser();
       syncEnrolBufferFromUser(u, true);
@@ -57790,6 +58878,9 @@
     const stepEnrolTarget = dir => {
       const sel = $('enrolUserSelect');
       if (!sel || !sel.options || !sel.options.length) return;
+      if (FACE_STATE.enrolCamActive) stopFaceCamera();
+      FACE_STATE.lastLiveEnrolDet = null;
+      FACE_STATE.lastLiveEnrolSnap = '';
       const idx = Math.max(0, sel.selectedIndex);
       const nextIdx = (idx + dir + sel.options.length) % sel.options.length;
       sel.selectedIndex = nextIdx;
@@ -58970,7 +60061,18 @@
     }
 
     // Cloud relay: on start, when the tab comes back, when the network returns
-    syncWithCloud(false);
+    if (!STATE.authed && !navigator.webdriver && !window.__MFG_HEADLESS_TEST && window.Face && !window.Face.ready) {
+      let syncedInit = false;
+      const runInitSync = () => {
+        if (syncedInit) return;
+        syncedInit = true;
+        syncWithCloud(false);
+      };
+      window.addEventListener('mfg:face-models-ready', runInitSync, { once: true });
+      setTimeout(runInitSync, 800);
+    } else {
+      syncWithCloud(false);
+    }
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         syncWithCloud(false);
@@ -59146,6 +60248,7 @@
         invalidateAllSeedCaches();
         STATE.kioskLastPunch = STATE.kioskPunches[0] || null;
         STATE.kioskAttPinMsg = '';
+        KIOSK_ATT_STATE.lastScanResult = null;
         saveLocalAuthAndRecords();
         if (STATE.view === 'kiosks') renderApp();
       },
@@ -59369,7 +60472,14 @@
     _sortedRowsCache.clear();
     _colFilterOptsCache.clear();
     _FREQ_IDX = null;
+    _FREQ_TKT_CACHE = null;
     _FLEET_IDX = null;
+    _FORM_INTEL_CACHE = null;
+    _FORM_INTEL_TKT_CACHE = null;
+    if (SEED) {
+      SEED._tableRev = {};
+      SEED._appliedCustomSig = {};
+    }
     _WIN_REV += 1;
     _CUST_DECL_QTY_SET = null;
     _CUST_EXT_INV_SET = null;
@@ -59431,14 +60541,18 @@
         if (isRaw && !o.method) o.method = 'Credit';
         if (pf && !o.name) o.name = o.ticket_no ? ('#' + o.ticket_no + ' · ' + (o.date || '')) : (pf.toUpperCase() + '-' + idx);
         out[idx] = o;
-        if (shouldYield && (idx & 4095) === 4095 && (performance.now() - sliceStart) > 12) {
-          await new Promise(r => setTimeout(r, 0));
-          sliceStart = performance.now();
+        if (shouldYield) {
+          const mask = STATE.authed ? 4095 : 1023;
+          const budgetMs = STATE.authed ? 12 : 4;
+          if ((idx & mask) === mask && (performance.now() - sliceStart) > budgetMs) {
+            await new Promise(r => setTimeout(r, STATE.authed ? 0 : 12));
+            sliceStart = performance.now();
+          }
         }
       }
       SEED.records[k] = out;
-      if (shouldYield && (performance.now() - sliceStart) > 12) {
-        await new Promise(r => setTimeout(r, 0));
+      if (shouldYield && (performance.now() - sliceStart) > (STATE.authed ? 12 : 4)) {
+        await new Promise(r => setTimeout(r, STATE.authed ? 0 : 12));
         sliceStart = performance.now();
       }
     }
@@ -59700,10 +60814,25 @@
 
   function scheduleSeedHydration() {
     if (SEED._recordsReady && window.MFG_SEED) return;
+    const kickHydration = () => {
+      const isAutoTest = Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
+      if (isAutoTest || STATE.authed || FACE_STATE.authCamStoppedByUser || !window.Face || window.Face.ready) {
+        setTimeout(hydrateSeedData, 0);
+        return;
+      }
+      let started = false;
+      const go = () => {
+        if (started) return;
+        started = true;
+        setTimeout(hydrateSeedData, 0);
+      };
+      window.addEventListener('mfg:face-models-ready', go, { once: true });
+      setTimeout(go, 700);
+    };
     if (document.readyState === 'complete') {
-      setTimeout(hydrateSeedData, 0);
+      kickHydration();
     } else {
-      window.addEventListener('load', () => setTimeout(hydrateSeedData, 0), { once: true });
+      window.addEventListener('load', kickHydration, { once: true });
     }
   }
 

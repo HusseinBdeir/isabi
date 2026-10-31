@@ -1400,14 +1400,14 @@
     // 2 · Purchases, Expenses & Payables (7 BU-scoped)
     { key: 'raw_purchases', group: '2 · Purchases, Expenses & Payables', label: 'Raw Material Purchases', dvn: 'bhf_rawpurchase', form: 'raw', cols: ['date', 'rep_date', 'ticket_no', 'company', 'site', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'driver', 'product', 'qty', 'uom', 'unit_cost', 'cost', 'trans_cost', 'total'], relTables: ['sites', 'suppliers', 'price_rules', 'equipment', 'drivers', 'products', 'settlements'], views: [{ id: 'all', label: 'All Raw Purchases' }, { id: 'supplier_haul', label: 'Third-Party Haulage', fn: r => Number(r.trans_cost || 0) > 0 }, { id: 'company_haul', label: 'Company Fleet Haul', fn: r => /company/i.test(r.transport_by) }] },
     { key: 'expenses', group: '2 · Purchases, Expenses & Payables', label: 'General & Fleet Expenses', dvn: 'bhf_mfgexpense', form: 'expense', cols: ['date', 'rep_date', 'name', 'company', 'category', 'subcategory', 'item_summary', 'supplier', 'equipment', 'method', 'qty', 'amount', 'vat', 'total_ttc', 'invoice', 'reference', 'notes'], relTables: ['expense_items', 'expense_categories', 'expense_subcategories', 'suppliers', 'equipment', 'settlements'], views: [{ id: 'all', label: 'All Expenses' }, { id: 'pending_price', label: 'Pending Invoice Price ($0)', fn: r => Boolean(r.price_pending) }, { id: 'fleet', label: 'Equipment & Fleet Tagged', fn: r => Boolean(r.equipment || r.for_equipment) }, { id: 'overhead', label: 'Plant & General Overhead', fn: r => !r.equipment && !r.for_equipment }] },
-    { key: 'expense_items', group: '2 · Purchases, Expenses & Payables', navView: 'expenses', label: 'Expense Item Tickets', dvn: 'bhf_mfgexpenseitem', form: 'expense', cols: ['date', 'name', 'expense_ref', 'company', 'item_name', 'category', 'subcategory', 'allocation_mode', 'target_equipment', 'warehouse_location', 'qty', 'uom', 'unit_cost', 'line_total', 'supplier'], relTables: ['expenses', 'equipment', 'warehouse_movements', 'suppliers'], views: [
+    { key: 'expense_items', group: '2 · Purchases, Expenses & Payables', navView: 'expenses', label: 'Expense Item Tickets', dvn: 'bhf_mfgexpenseitem', form: 'expense', cols: ['date', 'name', 'expense_ref', 'company', 'item_name', 'category', 'subcategory', 'allocation_mode', 'target_equipment', 'warehouse_location', 'qty', 'uom', 'unit_cost', 'line_total', 'supplier'], relTables: ['expenses', 'items', 'equipment', 'warehouse_movements', 'suppliers'], views: [
       { id: 'all', label: 'All Expense Items' },
       { id: 'warehouse', label: 'Stored in Warehouse', fn: r => /^warehouse$/i.test(r.allocation_mode || '') },
       { id: 'same_eq', label: 'Same Equipment', fn: r => /^same_equipment$/i.test(r.allocation_mode || '') },
       { id: 'diff_eq', label: 'Different Equipment', fn: r => /^different_equipment$/i.test(r.allocation_mode || '') },
       { id: 'general', label: 'General / Non-Equipment', fn: r => /^general$/i.test(r.allocation_mode || '') }
     ] },
-    { key: 'warehouse_movements', group: '2 · Purchases, Expenses & Payables', navView: 'warehouse', label: 'Warehouse Stock Movements', dvn: 'bhf_warehousemovement', form: 'warehousestock', cols: ['date', 'name', 'company', 'item_name', 'category', 'direction', 'movement_type', 'qty', 'uom', 'unit_cost', 'total_cost', 'warehouse_location', 'equipment', 'notes'], relTables: ['expense_items', 'equipment_repairs', 'repair_items', 'equipment'], views: [
+    { key: 'warehouse_movements', group: '2 · Purchases, Expenses & Payables', navView: 'warehouse', label: 'Warehouse Stock Movements', dvn: 'bhf_warehousemovement', form: 'warehousestock', cols: ['date', 'name', 'company', 'item_name', 'category', 'direction', 'movement_type', 'qty', 'uom', 'unit_cost', 'total_cost', 'warehouse_location', 'equipment', 'notes'], relTables: ['items', 'expense_items', 'equipment_repairs', 'repair_items', 'equipment'], views: [
       { id: 'all', label: 'All Stock Movements' },
       { id: 'in', label: 'Stock In (+)', fn: r => /^IN$/i.test(r.direction || '') },
       { id: 'out', label: 'Stock Out (-)', fn: r => /^OUT$/i.test(r.direction || '') }
@@ -1438,12 +1438,12 @@
       { id: 'out_only', label: 'Outside Only', fn: r => /^outside only$/i.test(r.repair_source || '') },
       { id: 'partial', label: 'Partially Warehouse + Outside', fn: r => /partial/i.test(r.repair_source || '') }
     ] },
-    { key: 'repair_items', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet_maint', label: 'Items Used in Repairs', dvn: 'bhf_repairitem', form: 'repair', cols: ['date', 'name', 'repair_ref', 'company', 'equipment', 'item_name', 'source', 'qty', 'uom', 'unit_cost', 'line_total', 'warehouse_location', 'supplier'], relTables: ['equipment_repairs', 'equipment', 'warehouse_movements', 'suppliers'], views: [
+    { key: 'repair_items', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet_maint', label: 'Items Used in Repairs', dvn: 'bhf_repairitem', form: 'repair', cols: ['date', 'name', 'repair_ref', 'company', 'equipment', 'item_name', 'source', 'qty', 'uom', 'unit_cost', 'line_total', 'warehouse_location', 'supplier'], relTables: ['items', 'equipment_repairs', 'equipment', 'warehouse_movements', 'suppliers'], views: [
       { id: 'all', label: 'All Repair Items' },
       { id: 'warehouse', label: 'From Warehouse (-Stock)', fn: r => /^warehouse$/i.test(r.source || '') },
       { id: 'outside', label: 'Purchased Outside', fn: r => /^outside$/i.test(r.source || '') }
     ] },
-    { key: 'equipment_oil_logs', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet_maint', label: 'Equipment Oil & Service Logs', dvn: 'bhf_equipmentoillog', form: 'oillog', cols: ['date', 'name', 'company', 'equipment', 'oil_type', 'service_action', 'qty', 'uom', 'source', 'hours_reading', 'odometer_km', 'interval_hours', 'interval_km', 'interval_days', 'cost_usd'], relTables: ['equipment', 'company_equipment', 'fuel_intakes'], views: [
+    { key: 'equipment_oil_logs', group: '3 · Fleet, Fuel, Maintenance & Drivers', navView: 'fleet_maint', label: 'Equipment Oil & Service Logs', dvn: 'bhf_equipmentoillog', form: 'oillog', cols: ['date', 'name', 'company', 'equipment', 'oil_type', 'service_action', 'qty', 'uom', 'source', 'hours_reading', 'odometer_km', 'interval_hours', 'interval_km', 'interval_days', 'cost_usd'], relTables: ['items', 'equipment', 'company_equipment', 'fuel_intakes'], views: [
       { id: 'all', label: 'All Oil & Service Logs' },
       { id: 'engine', label: 'Engine Oil (15W-40)', fn: r => /15w|engine|motor/i.test(r.oil_type || '') },
       { id: 'hyd', label: 'Hydraulic Oil (68)', fn: r => /68|hydraulic/i.test(r.oil_type || '') },
@@ -1507,8 +1507,9 @@
       { id: 'iva', label: 'IVA / VAT Registered', fn: r => Boolean(r.iva || r.financial_no || r.mof_no) }
     ] },
     { key: 'products', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Products & Grades', singularLabel: 'Product / Grade', dvn: 'bhf_product', form: 'product', cols: ['name', 'type', 'uom', 'ton_factor', 'list_price', 'ticket_product', 'fuel_item', 'input_product', 'active_rules', 'sales_loads'], relTables: ['sales_tickets', 'raw_purchases', 'price_rules', 'fuel_intakes', 'product_types', 'uoms'], views: [{ id: 'all', label: 'All Products & Grades' }, { id: 'agg', label: 'Ticket / Aggregate Grades', fn: r => Boolean(r.ticket_product) }, { id: 'fuel', label: 'Fuel & Lube Items', fn: r => Boolean(r.fuel_item) }] },
+    { key: 'items', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Items & Spare Parts', singularLabel: 'Item / Spare Part', dvn: 'bhf_item', form: 'item', cols: ['name', 'category', 'uom', 'default_cost', 'default_location', 'min_stock', 'status', 'notes'], relTables: ['expense_items', 'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'uoms'], views: [{ id: 'all', label: 'All Items & Spare Parts' }, { id: 'parts', label: 'Spare Parts', fn: r => /spare|part/i.test(r.category || '') }, { id: 'oils', label: 'Oils & Lubricants', fn: r => /oil|lub/i.test(r.category || '') }, { id: 'tools', label: 'Tools & Consumables', fn: r => /tool|consum/i.test(r.category || '') }] },
     { key: 'product_types', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Product Types (Families)', singularLabel: 'Product / Grade', dvn: 'bhf_producttype', form: 'product', cols: ['name', 'code', 'products_count', 'sales_loads'], relTables: ['products', 'sales_tickets'], views: [{ id: 'all', label: 'All Product Families' }] },
-    { key: 'uoms', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Units of Measure (UoM)', singularLabel: 'Product / Grade', dvn: 'bhf_uom', form: 'product', cols: ['name', 'code', 'products_count', 'tickets_count'], relTables: ['products', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Units of Measure' }] },
+    { key: 'uoms', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Units of Measure (UoM)', singularLabel: 'Product / Grade', dvn: 'bhf_uom', form: 'product', cols: ['name', 'code', 'products_count', 'tickets_count'], relTables: ['products', 'items', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Units of Measure' }] },
     { key: 'expense_categories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Categories', singularLabel: 'Expense Category', dvn: 'bhf_expensecategory', form: 'expensecategory', cols: ['name', 'cost_class', 'subcategories_count', 'expenses_count', 'total_spent'], relTables: ['expense_subcategories', 'expenses'], views: [
       { id: 'all', label: 'All Expense Categories' },
       { id: 'prod', label: 'Production Cost', fn: r => deriveExpenseCostClass(r) === 'Production Cost' },
@@ -1543,6 +1544,7 @@
     truck_owner: 'suppliers',
     product: 'products',
     item: 'products',
+    item_name: 'items',
     input_product: 'products',
     site: 'sites',
     region: 'regions',
@@ -1763,7 +1765,8 @@
       window.MFG_GEO.hydrateSeedGeo(SEED);
     }
     const rec = (SEED && SEED.records) || {};
-    const stamp = `${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.salaries || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${(SEED && SEED._customRev) || 0}`;
+    const tr = (SEED && SEED._tableRev) || {};
+    const stamp = `${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.salaries || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
     if (_hubRelCache && _hubRelStamp === stamp) return _hubRelCache;
     _hubRelStamp = stamp;
     const rel = {
@@ -4566,6 +4569,8 @@
       const curPageIdx = Math.max(0, pagePool.findIndex(p => p.id === activePageId));
       const prevPage = pagePool[(curPageIdx - 1 + pagePool.length) % pagePool.length] || activePage;
       const nextPage = pagePool[(curPageIdx + 1) % pagePool.length] || activePage;
+      const pbiCatalogCollapsed = Boolean(STATE.pbiCatalogCollapsed !== undefined ? STATE.pbiCatalogCollapsed : (window.__pbiCatalogCollapsed || false));
+      const pbiSlicersCollapsed = Boolean(STATE.pbiSlicersCollapsed !== undefined ? STATE.pbiSlicersCollapsed : (window.__pbiSlicersCollapsed || false));
 
       headerHtml = `
       <div class="pbi-studio-hdr">
@@ -4585,7 +4590,13 @@
             </div>
           </div>
           <div class="pbi-hero-actions">
-            ${activeSlicerCount ? `<span class="badge badge-warn">${activeSlicerCount} Active Slicer${activeSlicerCount > 1 ? 's' : ''}</span>` : '<span class="pbi-calm-filter-pill"><span class="pbi-calm-dot"></span>All Filters Open</span>'}
+            ${activeSlicerCount ? `<span class="badge badge-warn">${activeSlicerCount} Active Slicer${activeSlicerCount > 1 ? 's' : ''}</span>` : ''}
+            <button type="button" class="pbi-drawer-toggle ${!pbiCatalogCollapsed ? 'active' : ''}" id="pbiToggleCatalogBtn" aria-label="Toggle analytical pages catalog">
+              <span class="pbi-dt-caret">${pbiCatalogCollapsed ? '▸' : '▾'}</span> Pages (${pagePool.length})
+            </button>
+            <button type="button" class="pbi-drawer-toggle ${!pbiSlicersCollapsed ? 'active' : ''}" id="pbiToggleSlicersBtn" aria-label="Toggle page slicers">
+              <span class="pbi-dt-caret">${pbiSlicersCollapsed ? '▸' : '▾'}</span> Filters${activeSlicerCount ? ` (${activeSlicerCount})` : ''}
+            </button>
             <button type="button" class="btn" id="pbiResetSlicersBtn" ${activeSlicerCount ? '' : 'disabled'}>↺ Reset Slicers</button>
             ${exportBtn('pbiCanvasPanel', 'PBI_' + activePage.id)}
           </div>
@@ -8959,6 +8970,7 @@
       if (tableKey === 'customers') return 'Customer';
       if (tableKey === 'sites') return 'Site';
       if (tableKey === 'products') return 'Product';
+      if (tableKey === 'items') return 'Item / Part Name';
     }
     if (HUB_COL_LABELS[c]) return HUB_COL_LABELS[c];
     return String(c || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());

@@ -133,11 +133,13 @@ const Face = (() => {
 
   function prewarm() {
     if (typeof window === "undefined" || navigator.webdriver || window.__MFG_HEADLESS_TEST || window.__mfgSwResuming) return;
-    // Request webcam stream immediately if #authGate is visible so the video preview appears in <150ms,
-    // without downloading 8 MB of neural weights until UI shell + core seed have finished loading.
+    // Request webcam stream AND start neural model loading in parallel immediately when #authGate is visible
+    // so both camera hardware and WebGL shaders are hot at the same time (zero sequential wait).
     const gate = document.getElementById("authGate");
     const videoEl = document.getElementById("authFaceVideo");
-    if (!gate || gate.hidden || !videoEl || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    if (!gate || gate.hidden || !videoEl) return;
+    load().catch(() => {});
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
     if (!earlyStreamPromise) {
       earlyCancelled = false;
       earlyStreamPromise = navigator.mediaDevices.getUserMedia({
@@ -160,11 +162,11 @@ const Face = (() => {
             if (dot) dot.className = "auth-face-pulse live";
             const btn = document.getElementById("authCamToggleBtn");
             const lbl = document.getElementById("authCamToggleLabel");
-            if (lbl) lbl.textContent = "Pause";
-            else if (btn) btn.textContent = "Pause";
+            if (lbl) lbl.textContent = "Pause Camera";
+            else if (btn) btn.textContent = "Pause Camera";
             if (btn) { btn.hidden = false; btn.classList.add("cam-live"); }
             const hint = document.getElementById("authFaceHint");
-            if (hint && (!hint.textContent || /Loading Face ID|Starting/i.test(hint.textContent))) {
+            if (hint && (!hint.textContent || /Loading Face ID|Starting|Preparing/i.test(hint.textContent))) {
               hint.textContent = ready
                 ? "Look at camera for automatic Face ID"
                 : "Preparing Face ID…";
@@ -210,12 +212,28 @@ const Face = (() => {
     return null;
   }
 
+  let ssdLoadingPromise = null;
+  function ensureSsdLoaded() {
+    if (detector === "ssd") return Promise.resolve(true);
+    if (ssdLoadingPromise) return ssdLoadingPromise;
+    if (typeof faceapi === "undefined" || M().detector !== "ssd") return Promise.resolve(false);
+    ssdLoadingPromise = faceapi.nets.ssdMobilenetv1.loadFromUri("./vendor/models").then(() => {
+      detector = "ssd";
+      return true;
+    }).catch(e => {
+      console.warn("SSD detector unavailable, using tiny", e);
+      detector = "tiny";
+      return false;
+    });
+    return ssdLoadingPromise;
+  }
+
   async function load() {
     if (ready) return;
     if (loading) return loading;
     const isAutoTest = typeof navigator !== "undefined" && Boolean(navigator.webdriver || window.__MFG_HEADLESS_TEST);
     loading = (async () => {
-      await ensureFaceApiScript(isAutoTest);
+      await ensureFaceApiScript(true);
       if (typeof faceapi === "undefined") throw new Error("face-api.js not loaded");
       const base = "./vendor/models";
       try {
@@ -226,40 +244,46 @@ const Face = (() => {
         await faceapi.tf.ready();
       }
       backend = faceapi.tf.getBackend();
-      // Load fast live-video recognition pipeline first (~4.4 MB gz: Tiny + Landmarks + Recognition)
-      // so Face ID is live without competing with the 3.4 MB gz SSD fallback detector.
+      // Load ultra-fast live-video recognition pipeline first:
+      // TinyFaceDetector (193 KB) + FaceLandmark68TinyNet (77 KB, 4.6x smaller & 3x faster than full net) + FaceRecognitionNet
       const tinyP = faceapi.nets.tinyFaceDetector.loadFromUri(base);
-      const lmP = faceapi.nets.faceLandmark68Net.loadFromUri(base).then(() => {
-        landmarksTiny = false;
-      }).catch(async e => {
-        console.warn("full landmark net unavailable, using tiny", e);
-        await faceapi.nets.faceLandmark68TinyNet.loadFromUri(base);
+      const lmP = faceapi.nets.faceLandmark68TinyNet.loadFromUri(base).then(() => {
         landmarksTiny = true;
+      }).catch(async e => {
+        console.warn("tiny landmark net unavailable, using full 68 net", e);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(base);
+        landmarksTiny = false;
       });
       const recP = faceapi.nets.faceRecognitionNet.loadFromUri(base);
 
       await Promise.all([tinyP, lmP, recP]);
-      ready = true;
-
-      const loadSsd = () => (M().detector === "ssd"
-        ? faceapi.nets.ssdMobilenetv1.loadFromUri(base).then(() => { detector = "ssd"; }).catch(e => {
-            console.warn("SSD detector unavailable, using tiny", e);
-            detector = "tiny";
-          })
-        : Promise.resolve());
 
       if (isAutoTest) {
-        await loadSsd();
+        await ensureSsdLoaded();
       } else {
-        setTimeout(() => {
-          try {
-            const wcv = document.createElement("canvas");
-            wcv.width = 64; wcv.height = 64;
-            faceapi.detectSingleFace(wcv, new faceapi.TinyFaceDetectorOptions({ inputSize: 128, scoreThreshold: 0.9 }))
-              .withFaceLandmarks(landmarksTiny).withFaceDescriptor().catch(() => {});
-          } catch (_) {}
-          loadSsd();
-        }, 60);
+        // Pre-compile WebGL shaders for all 3 live-video networks while webcam hardware is warming up
+        // so Frame 1 has zero 1,500ms shader-compilation freeze once the user looks at the camera.
+        try {
+          const wcv = document.createElement("canvas");
+          wcv.width = 128;
+          wcv.height = 128;
+          await faceapi.detectSingleFace(wcv, new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.99 })).catch(() => {});
+          await (landmarksTiny && faceapi.detectFaceLandmarksTiny
+            ? faceapi.detectFaceLandmarksTiny(wcv)
+            : faceapi.detectLandmarks(wcv)).catch(() => {});
+          await faceapi.computeFaceDescriptor(wcv).catch(() => {});
+        } catch (_) {}
+      }
+
+      ready = true;
+      if (typeof document !== "undefined") {
+        const vp = document.getElementById("authCamViewport");
+        const hint = document.getElementById("authFaceHint");
+        if (vp && vp.classList.contains("is-video-ready") && hint && /Preparing Face ID|Loading Face ID|Starting/i.test(hint.textContent || "")) {
+          hint.textContent = "Look at camera for automatic Face ID";
+          hint.className = "auth-face-hint ok";
+        }
+        try { window.dispatchEvent(new CustomEvent("mfg:face-models-ready")); } catch (_) {}
       }
     })().catch(err => {
       loading = null;
@@ -271,8 +295,9 @@ const Face = (() => {
   const frameWidth = src => src.videoWidth || src.naturalWidth || src.width || 0;
 
   // Offscreen canvas copy: prevents face-api.js awaitMediaLoaded from hanging forever
-  // when a MediaStream <video> has readyState < 3 or is hidden (PWA.md §4.2), and
-  // downscales live <video> frames to <= 320px width for 4x faster WebGL inference.
+  // when a MediaStream <video> has readyState < 3 or is hidden (PWA.md §4.2), crops
+  // widescreen 16:9 webcam feeds to the active portrait scanner region (eliminating
+  // side-window glare and making faces ~1.8x larger), and downscales to <= 320px for fast WebGL inference.
   let scratchCanvas = null;
   function frameToCanvas(src, maxDim = 320) {
     if (!src) return null;
@@ -281,15 +306,27 @@ const Face = (() => {
     if (src.readyState < 2 || !src.videoWidth || !src.videoHeight) return null;
     const vw = src.videoWidth;
     const vh = src.videoHeight;
-    const scale = (maxDim && Math.max(vw, vh) > maxDim) ? (maxDim / Math.max(vw, vh)) : 1;
-    const cw = Math.max(64, Math.round(vw * scale));
-    const ch = Math.max(48, Math.round(vh * scale));
+    let sx = 0, sy = 0, sw = vw, sh = vh;
+    if (vw > vh * 1.15) {
+      const isAuthCam = src.id === "authFaceVideo";
+      const cropWFrac = isAuthCam ? 0.58 : 0.76;
+      const cropHFrac = isAuthCam ? 0.86 : 0.92;
+      sw = Math.max(160, Math.round(vw * cropWFrac));
+      sh = Math.max(160, Math.round(vh * cropHFrac));
+      sx = Math.round((vw - sw) * 0.50);
+      sy = Math.round((vh - sh) * (isAuthCam ? 0.52 : 0.50));
+    }
+    const scale = (maxDim && Math.max(sw, sh) > maxDim) ? (maxDim / Math.max(sw, sh)) : 1;
+    const cw = Math.max(64, Math.round(sw * scale));
+    const ch = Math.max(48, Math.round(sh * scale));
     const cv = scratchCanvas || (scratchCanvas = document.createElement("canvas"));
     if (cv.width !== cw) cv.width = cw;
     if (cv.height !== ch) cv.height = ch;
-    cv._scaleX = vw / cw;
-    cv._scaleY = vh / ch;
-    cv.getContext("2d").drawImage(src, 0, 0, cw, ch);
+    cv._offsetX = sx;
+    cv._offsetY = sy;
+    cv._scaleX = sw / cw;
+    cv._scaleY = sh / ch;
+    cv.getContext("2d").drawImage(src, sx, sy, sw, sh, 0, 0, cw, ch);
     return cv;
   }
 
@@ -354,8 +391,10 @@ const Face = (() => {
     const fr = fw && rawBox ? rawBox.width / fw : 1;
     const sx = src && src._scaleX ? src._scaleX : 1;
     const sy = src && src._scaleY ? src._scaleY : 1;
-    const box = (rawBox && (sx !== 1 || sy !== 1))
-      ? { x: rawBox.x * sx, y: rawBox.y * sy, width: rawBox.width * sx, height: rawBox.height * sy }
+    const ox = src && src._offsetX ? src._offsetX : 0;
+    const oy = src && src._offsetY ? src._offsetY : 0;
+    const box = (rawBox && (sx !== 1 || sy !== 1 || ox !== 0 || oy !== 0))
+      ? { x: rawBox.x * sx + ox, y: rawBox.y * sy + oy, width: rawBox.width * sx, height: rawBox.height * sy }
       : rawBox;
     return {
       descriptor: r.descriptor,
@@ -373,55 +412,84 @@ const Face = (() => {
 
   let boostCanvas = null;
   let cropCanvas = null;
-  let liveMissTick = 0;
+  let preferBoostPass = false;
   async function detectOne(src, allowCropFallback = false) {
     if (!ready) return null;
     const isLiveVideo = !!(src && src.tagName === "VIDEO");
     const frame = frameToCanvas(src, isLiveVideo && !allowCropFallback ? 320 : 480);
     if (!frame) return null;
-    let r = null;
+
+    const buildBoostFrame = () => {
+      const bw = frameWidth(frame) || 320;
+      const bh = frame.videoHeight || frame.naturalHeight || frame.height || 240;
+      const bcv = boostCanvas || (boostCanvas = document.createElement("canvas"));
+      if (bcv.width !== bw) bcv.width = bw;
+      if (bcv.height !== bh) bcv.height = bh;
+      bcv._scaleX = frame._scaleX || 1;
+      bcv._scaleY = frame._scaleY || 1;
+      bcv._offsetX = frame._offsetX || 0;
+      bcv._offsetY = frame._offsetY || 0;
+      const bctx = bcv.getContext("2d");
+      bctx.filter = "brightness(1.40) contrast(1.20)";
+      bctx.drawImage(frame, 0, 0, bw, bh);
+      bctx.filter = "none";
+      return bcv;
+    };
+
     if (isLiveVideo && !allowCropFallback) {
-      // Fast live-video path (~25-40ms): TinyFaceDetector(256) on 320x240 frame, with immediate SSD fallback
-      const fastTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.22 });
-      r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
-      if (!r && detector === "ssd") {
+      // Fast live-video path (~15-25ms): TinyFaceDetector(256) with sticky backlit shadow-lift memory
+      // Both passes share inputSize: 256 so WebGL reuses the exact same pre-compiled shader pipeline (0ms recompile).
+      const fastTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.20 });
+      const boostTinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.18 });
+      if (preferBoostPass) {
+        try {
+          const bcv = buildBoostFrame();
+          const rb = await faceapi.detectSingleFace(bcv, boostTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+          if (rb) return pack(rb, bcv, false);
+        } catch (_) {}
+        preferBoostPass = false;
+        const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+        if (r) return pack(r, frame, false);
+        return null;
+      } else {
+        const r = await faceapi.detectSingleFace(frame, fastTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+        if (r) return pack(r, frame, false);
+        try {
+          const bcv = buildBoostFrame();
+          const rb = await faceapi.detectSingleFace(bcv, boostTinyOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+          if (rb) {
+            preferBoostPass = true;
+            return pack(rb, bcv, false);
+          }
+        } catch (_) {}
+        return null;
+      }
+    }
+
+    // Static image / manual capture path: Primary detector -> TinyFaceDetector(416) -> SSD fallback
+    let r = await faceapi.detectSingleFace(frame, opts()).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+    if (!r) {
+      const fallbackOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.22 });
+      r = await faceapi.detectSingleFace(frame, fallbackOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+    }
+    if (!r && allowCropFallback) {
+      await ensureSsdLoaded();
+      if (detector === "ssd") {
         r = await faceapi.detectSingleFace(frame, opts("ssd")).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
       }
-    } else {
-      // Static image / manual capture path: Primary detector -> TinyFaceDetector(416)
-      r = await faceapi.detectSingleFace(frame, opts()).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
-      if (!r && detector === "ssd") {
-        const fallbackOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.24 });
-        r = await faceapi.detectSingleFace(frame, fallbackOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+    }
+    if (r) return pack(r, frame, false);
+
+    try {
+      const bcv = buildBoostFrame();
+      const boostOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.18 });
+      r = await faceapi.detectSingleFace(bcv, boostOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
+      if (!r && detector === "ssd" && allowCropFallback) {
+        const boostSsdOpts = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.20 });
+        r = await faceapi.detectSingleFace(bcv, boostSsdOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
       }
-    }
-    if (!r && (allowCropFallback || !isLiveVideo || (++liveMissTick % 3 === 0))) {
-      // Shadow-lift filter for backlit rooms (run on manual capture or every 3rd missed live frame so live ticks never stall)
-      try {
-        const bw = frameWidth(frame) || 320;
-        const bh = frame.videoHeight || frame.naturalHeight || frame.height || 240;
-        const bcv = boostCanvas || (boostCanvas = document.createElement("canvas"));
-        if (bcv.width !== bw) bcv.width = bw;
-        if (bcv.height !== bh) bcv.height = bh;
-        bcv._scaleX = frame._scaleX || 1;
-        bcv._scaleY = frame._scaleY || 1;
-        const bctx = bcv.getContext("2d");
-        bctx.filter = "brightness(1.42) contrast(1.22)";
-        bctx.drawImage(frame, 0, 0, bw, bh);
-        bctx.filter = "none";
-        const boostOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.20 });
-        r = await faceapi.detectSingleFace(bcv, boostOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
-        if (!r && detector === "ssd" && allowCropFallback) {
-          const boostSsdOpts = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.20 });
-          r = await faceapi.detectSingleFace(bcv, boostSsdOpts).withFaceLandmarks(landmarksTiny).withFaceDescriptor();
-        }
-        if (r) return pack(r, bcv, false);
-      } catch (_) {}
-    }
-    if (r) {
-      liveMissTick = 0;
-      return pack(r, frame, false);
-    }
+      if (r) return pack(r, bcv, false);
+    } catch (_) {}
     if (allowCropFallback) {
       // Fallback 3: Explicit manual capture in extreme backlighting -> compute 128-d descriptor from central reticle crop
       try {

@@ -226,9 +226,14 @@
   }
 
   // ---- Monochrome ISABI + Company Crest Raster (GS v 0) --------------------
+  const _brandLogoRasterCache = new Map();
+  const _barcodeRasterCache = new Map();
   function buildBrandLogoRaster(companyName, paperWidth) {
     try {
       if (typeof document === 'undefined') return null;
+      const coShort = String(companyName || 'WTC').toUpperCase();
+      const cacheKey = `${coShort}|${paperWidth || '80mm'}`;
+      if (_brandLogoRasterCache.has(cacheKey)) return _brandLogoRasterCache.get(cacheKey);
       const maxDots = paperDots(paperWidth);
       const w = Math.min(paperWidth === '58mm' ? 200 : 256, maxDots);
       const h = paperWidth === '58mm' ? 64 : 76;
@@ -254,20 +259,21 @@
 
       ctx.textAlign = 'center';
       ctx.font = '900 13px Arial, sans-serif';
-      const coShort = String(companyName || 'WTC').toUpperCase();
       ctx.fillText(`ISABI · ${coShort}`, cx, markTop + pillarH + 23);
 
       ctx.font = '700 9px monospace';
       ctx.fillText('WEIGHBRIDGE & PLANT TERMINAL', cx, markTop + pillarH + 35);
 
       const img = ctx.getImageData(0, 0, w, h).data;
-      return packRaster(w, h, (x, y) => {
+      const raster = packRaster(w, h, (x, y) => {
         const i = (y * w + x) * 4;
         const a = img[i + 3];
         if (a < 64) return false;
         const lum = 0.299 * img[i] + 0.587 * img[i + 1] + 0.114 * img[i + 2];
         return lum < 165;
       });
+      _brandLogoRasterCache.set(cacheKey, raster);
+      return raster;
     } catch (_) {
       return null;
     }
@@ -322,17 +328,22 @@
   }
 
   function buildBarcodeRaster(digits, paperWidth, heightDots = 54) {
+    const cacheKey = `${digits}|${paperWidth}|${heightDots}`;
+    if (_barcodeRasterCache.has(cacheKey)) return _barcodeRasterCache.get(cacheKey);
     const bits = encodeCode128C(digits);
     if (!bits.length) return [];
     const maxDots = paperDots(paperWidth);
     const scale = Math.max(1, Math.min(3, Math.floor((maxDots - 32) / bits.length)));
     const totalW = bits.length * scale;
     const padLeft = Math.max(0, Math.floor((maxDots - totalW) / 2));
-    return packRaster(maxDots, heightDots, (x) => {
+    const res = packRaster(maxDots, heightDots, (x) => {
       const bx = x - padLeft;
       if (bx < 0 || bx >= totalW) return false;
       return bits[Math.floor(bx / scale)] === 1;
     });
+    if (_barcodeRasterCache.size > 64) _barcodeRasterCache.clear();
+    _barcodeRasterCache.set(cacheKey, res);
+    return res;
   }
 
   function renderBarcodeSvg(digits, heightPx = 42) {
