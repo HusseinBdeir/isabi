@@ -76,6 +76,12 @@
     if (!id) { id = _pbiArrUidSeq++; _pbiArrUidWM.set(arr, id); }
     return id;
   }
+  function _monthsSig(mList) {
+    if (!Array.isArray(mList) || !mList.length) return '0';
+    const f = mList[0] || {};
+    const l = mList[mList.length - 1] || {};
+    return `${mList.length}:${monthRowToYmKey(f)}:${monthRowToYmKey(l)}:${f.sales_ttc || 0}:${l.sales_ttc || 0}:${f.raw_cost || 0}:${l.raw_cost || 0}`;
+  }
   const _enrichMonthsCache = new Map();
   const _delivMonthsCache = new Map();
   const _gradeSeriesCache = new Map();
@@ -84,7 +90,7 @@
     const mList = Array.isArray(months) ? months : [];
     if (!mList.length) return mList;
     const seedRev = (typeof window !== 'undefined' && window.SEED && window.SEED._customRev) || 0;
-    const eKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${opts.hasSalesTicketSource}|${opts.hasRawTicketSource}|${_pbiArrUid(mList)}:${mList.length}:${monthRowToYmKey(mList[0])}:${monthRowToYmKey(mList[mList.length - 1])}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}|${_pbiArrUid(rawRows)}:${(rawRows && rawRows.length) || 0}`;
+    const eKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${opts.hasSalesTicketSource}|${opts.hasRawTicketSource}|${_monthsSig(mList)}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}|${_pbiArrUid(rawRows)}:${(rawRows && rawRows.length) || 0}`;
     if (_enrichMonthsCache.has(eKey)) return _enrichMonthsCache.get(eKey);
     const sList = Array.isArray(salesRows) ? salesRows : [];
     const rList = Array.isArray(rawRows) ? rawRows : [];
@@ -227,7 +233,7 @@
     const mList = Array.isArray(months) ? months : [];
     if (!mList.length) return mList;
     const seedRev = (typeof window !== 'undefined' && window.SEED && window.SEED._customRev) || 0;
-    const dKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${opts.hasTicketSource}|${_pbiArrUid(mList)}:${mList.length}:${monthRowToYmKey(mList[0])}:${monthRowToYmKey(mList[mList.length - 1])}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}`;
+    const dKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${opts.hasTicketSource}|${_monthsSig(mList)}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}`;
     if (_delivMonthsCache.has(dKey)) return _delivMonthsCache.get(dKey);
     const sList = Array.isArray(salesRows) ? salesRows : [];
     const basis = opts.basis === 'tx' ? 'tx' : 'rep';
@@ -298,7 +304,7 @@
     const pList = Array.isArray(topProds) ? topProds : [];
     const tickets = Array.isArray(salesRows) ? salesRows : [];
     const seedRev = (typeof window !== 'undefined' && window.SEED && window.SEED._customRev) || 0;
-    const gKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${_pbiArrUid(mList)}:${mList.length}:${monthRowToYmKey(mList[0])}:${monthRowToYmKey(mList[mList.length - 1])}|${pList.map(p => `${(p && p.Product) || ''}:${(p && p.avg_price_net) || 0}`).join(',')}|${_pbiArrUid(tickets)}:${tickets.length}`;
+    const gKey = `${seedRev}|${opts.basis === 'tx' ? 'tx' : 'rep'}|${_monthsSig(mList)}|${pList.map(p => `${(p && p.Product) || ''}:${(p && p.avg_price_net) || 0}`).join(',')}|${_pbiArrUid(tickets)}:${tickets.length}`;
     if (_gradeSeriesCache.has(gKey)) return _gradeSeriesCache.get(gKey);
     const basis = opts.basis === 'tx' ? 'tx' : 'rep';
     const ticketMetersFn = typeof opts.ticketMeters === 'function' ? opts.ticketMeters : null;
@@ -1477,7 +1483,7 @@
     ] },
 
     // 5 · Cash Flow, Treasury & FX (4 BU-scoped)
-    { key: 'external_movements', group: '5 · Cash Flow, Treasury & FX', label: 'External & Extended Movements', dvn: 'bhf_mfgexternal', form: 'treasury', cols: ['date', 'company', 'kind', 'counterparty', 'direction', 'usd_amount', 'lbp_amount', 'notes'], relTables: ['loans', 'loan_settlements'], views: [
+    { key: 'external_movements', group: '5 · Cash Flow, Treasury & FX', label: 'External & Extended Movements', dvn: 'bhf_mfgexternal', form: 'external', cols: ['date', 'company', 'kind', 'counterparty', 'direction', 'usd_amount', 'lbp_amount', 'notes'], relTables: ['loans', 'loan_settlements'], views: [
       { id: 'all', label: 'All External & Extended' },
       { id: 'external', label: 'External Treasury', fn: r => String(r.kind || 'External').toLowerCase() !== 'extended' },
       { id: 'extended', label: 'Extended Stakeholders', fn: r => String(r.kind || '').toLowerCase() === 'extended' }
@@ -1794,6 +1800,16 @@
       drivers: new Set(),
       sites: new Set()
     });
+    const initProd = () => ({ list_price: null, active_rules: 0, sales_loads: 0, fuel_fills: 0 });
+    const initType = () => ({ products_count: 0, sales_loads: 0 });
+    const initUom = () => ({ products_count: 0, tickets_count: 0 });
+    const initSite = () => ({ active_rules: 0, sales_loads: 0, raw_loads: 0 });
+    const initReg = () => ({ sites_count: 0, overtime_rate: null, sales_loads: 0 });
+    const initEquip = () => ({ companies: new Set(), loads_hauled: 0, fuel_fills: 0 });
+    const initDrv = () => ({ trucks: new Set(), companies: new Set(), loads_hauled: 0, fuel_fills: 0 });
+    const initCat = () => ({ subcategories_count: 0, expenses_count: 0, total_spent: 0 });
+    const initSubcat = () => ({ expenses_count: 0, total_spent: 0 });
+    const initStaff = () => ({ payments_count: 0, total_paid: 0 });
 
     // Seed from Manufacturing Group consolidated model + fallback semantic_model summaries, then overlay canonical hydrated AR/AP
     const mgModel = ((SEED && SEED.models) || {})['manufacturing-group'] || {};
@@ -1939,7 +1955,7 @@
         if (e && !pr.end_date) e.active_rules++;
       }
       if (pr.product) {
-        const e = ensure(rel.prodByName, pr.product, () => ({ list_price: null, active_rules: 0, sales_loads: 0, fuel_fills: 0 }));
+        const e = ensure(rel.prodByName, pr.product, initProd);
         if (e) {
           if (!pr.end_date) e.active_rules++;
           if (/list/i.test(pr.rule_type || '') && pr.unit_price != null) e.list_price = pr.unit_price;
@@ -1947,7 +1963,7 @@
         }
       }
       if (pr.site) {
-        const e = ensure(rel.siteByName, pr.site, () => ({ active_rules: 0, sales_loads: 0, raw_loads: 0 }));
+        const e = ensure(rel.siteByName, pr.site, initSite);
         if (e && !pr.end_date) e.active_rules++;
         const rtTrim = String(pr.rule_type || '').trim();
         if (!/^Commission$/i.test(rtTrim) && !pr.end_date) {
@@ -1959,25 +1975,25 @@
     });
 
     const prodTypeMap = {};
-    (rec.product_types || []).forEach(pt => { ensure(rel.typeByName, pt.name, () => ({ products_count: 0, sales_loads: 0 })); });
-    (rec.uoms || []).forEach(u => { ensure(rel.uomByName, u.name, () => ({ products_count: 0, tickets_count: 0 })); });
+    (rec.product_types || []).forEach(pt => { ensure(rel.typeByName, pt.name, initType); });
+    (rec.uoms || []).forEach(u => { ensure(rel.uomByName, u.name, initUom); });
     (rec.products || []).forEach(p => {
-      ensure(rel.prodByName, p.name, () => ({ list_price: null, active_rules: 0, sales_loads: 0, fuel_fills: 0 }));
+      ensure(rel.prodByName, p.name, initProd);
       if (p.name && p.type) prodTypeMap[norm(p.name)] = p.type;
-      const te = ensure(rel.typeByName, p.type, () => ({ products_count: 0, sales_loads: 0 }));
+      const te = ensure(rel.typeByName, p.type, initType);
       if (te) te.products_count++;
-      const ue = ensure(rel.uomByName, p.uom, () => ({ products_count: 0, tickets_count: 0 }));
+      const ue = ensure(rel.uomByName, p.uom, initUom);
       if (ue) ue.products_count++;
     });
 
     const siteRegMap = {};
-    (rec.regions || []).forEach(rg => { ensure(rel.regByName, rg.name, () => ({ sites_count: 0, overtime_rate: null, sales_loads: 0 })); });
+    (rec.regions || []).forEach(rg => { ensure(rel.regByName, rg.name, initReg); });
     (rec.sites || []).forEach(s => {
       const sCat = resolveSiteCategoryPbi(s);
-      ensure(rel.siteByName, s.name, () => ({ active_rules: 0, sales_loads: 0, raw_loads: 0 }));
+      ensure(rel.siteByName, s.name, initSite);
       ensureSiteCat(sCat, s.name);
       if (s.name && s.region) siteRegMap[norm(s.name)] = s.region;
-      const re = ensure(rel.regByName, s.region, () => ({ sites_count: 0, overtime_rate: null, sales_loads: 0 }));
+      const re = ensure(rel.regByName, s.region, initReg);
       if (re) re.sites_count++;
       if (sCat === 'supplier' && s.supplier) {
         const se = ensure(rel.suppByName, s.supplier, initSupp);
@@ -1990,33 +2006,33 @@
         if (!nm) return;
         const sl = Number(ms.loads || 0);
         const rl = Number(ms.raw_loads || 0);
-        const se = ensure(rel.siteByName, nm, () => ({ active_rules: 0, sales_loads: 0, raw_loads: 0 }));
+        const se = ensure(rel.siteByName, nm, initSite);
         if (se) { se.sales_loads = sl; se.raw_loads = rl; }
         if (sl > 0) { const cs = ensureSiteCat('customer', nm); if (cs) cs.sales_loads = sl; }
         if (rl > 0) { const ss = ensureSiteCat('supplier', nm); if (ss) ss.raw_loads = rl; }
       });
     }
     (rec.overtime_rates || []).forEach(ot => {
-      const re = ensure(rel.regByName, ot.region, () => ({ sites_count: 0, overtime_rate: null, sales_loads: 0 }));
+      const re = ensure(rel.regByName, ot.region, initReg);
       if (re && ot.amount != null && (!ot.end_date || re.overtime_rate == null)) re.overtime_rate = ot.amount;
     });
 
     (rec.company_equipment || []).forEach(ce => {
-      const ee = ensure(rel.equipByName, ce.equipment, () => ({ companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
+      const ee = ensure(rel.equipByName, ce.equipment, initEquip);
       if (ee && ce.company) ee.companies.add(ce.company);
       if (ce.default_driver) {
-        const de = ensure(rel.drvByName, ce.default_driver, () => ({ trucks: new Set(), companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
+        const de = ensure(rel.drvByName, ce.default_driver, initDrv);
         if (de && ce.equipment) de.trucks.add(fmtTruckRef(ce.equipment));
       }
     });
     (rec.equipment || []).forEach(eq => {
-      const ee = ensure(rel.equipByName, eq.name, () => ({ companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
+      const ee = ensure(rel.equipByName, eq.name, initEquip);
       if (ee && eq.type) ee.type = eq.type;
       if (ee && eq.plate_no && norm(eq.plate_no) !== norm(eq.name)) {
         rel.equipByName[norm(eq.plate_no)] = ee;
       }
       if (eq.default_driver) {
-        const de = ensure(rel.drvByName, eq.default_driver, () => ({ trucks: new Set(), companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
+        const de = ensure(rel.drvByName, eq.default_driver, initDrv);
         if (de && eq.name) de.trucks.add(fmtTruckRef(eq.name));
       }
       if (eq.supplier) {
@@ -2030,7 +2046,7 @@
       }
     });
     (rec.drivers || []).forEach(drv => {
-      ensure(rel.drvByName, drv.name || drv.driver, () => ({ trucks: new Set(), companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
+      ensure(rel.drvByName, drv.name || drv.driver, initDrv);
       if (drv.truck_owner) {
         const isCustDrv = resolveTruckOwnerTargetPbi(drv.truck_owner, null, SEED) === 'customers';
         const se = isCustDrv ? ensure(rel.custByName, drv.truck_owner, initCust) : ensure(rel.suppByName, drv.truck_owner, initSupp);
@@ -2042,7 +2058,7 @@
       }
     });
     (rec.company_drivers || []).forEach(cd => {
-      const de = ensure(rel.drvByName, cd.driver, () => ({ trucks: new Set(), companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
+      const de = ensure(rel.drvByName, cd.driver, initDrv);
       if (de && cd.company) de.companies.add(cd.company);
     });
 
@@ -2054,27 +2070,34 @@
           if (ce.sample_loads > ce.sales_loads) ce.sales_loads = ce.sample_loads;
         }
       }
-      const pe = ensure(rel.prodByName, t.product, () => ({ list_price: null, active_rules: 0, sales_loads: 0, fuel_fills: 0 }));
-      if (pe) pe.sales_loads++;
-      const pType = t.product ? prodTypeMap[norm(t.product)] : null;
-      if (pType) {
-        const te = ensure(rel.typeByName, pType, () => ({ products_count: 0, sales_loads: 0 }));
-        if (te) te.sales_loads++;
+      const pNorm = t.product ? norm(t.product) : '';
+      if (pNorm) {
+        const pe = rel.prodByName[pNorm] || (rel.prodByName[pNorm] = initProd());
+        pe.sales_loads++;
+        const pType = prodTypeMap[pNorm];
+        if (pType) {
+          const te = ensure(rel.typeByName, pType, initType);
+          if (te) te.sales_loads++;
+        }
       }
-      const ue = ensure(rel.uomByName, t.uom, () => ({ products_count: 0, tickets_count: 0 }));
+      const ue = ensure(rel.uomByName, t.uom, initUom);
       if (ue) ue.tickets_count++;
-      const se = ensure(rel.siteByName, t.site, () => ({ active_rules: 0, sales_loads: 0, raw_loads: 0 }));
-      if (se) se.sales_loads++;
-      const cs = ensureSiteCat('customer', t.site);
-      if (cs) cs.sales_loads++;
-      const sReg = t.site ? siteRegMap[norm(t.site)] : null;
-      if (sReg) {
-        const re = ensure(rel.regByName, sReg, () => ({ sites_count: 0, overtime_rate: null, sales_loads: 0 }));
-        if (re) re.sales_loads++;
+      const sNorm = t.site ? norm(t.site) : '';
+      if (sNorm) {
+        const se = rel.siteByName[sNorm] || (rel.siteByName[sNorm] = initSite());
+        se.sales_loads++;
+        const ck = `customer|${sNorm}`;
+        const cs = rel.siteByCatKey[ck] || (rel.siteByCatKey[ck] = { active_rules: 0, sales_loads: 0, raw_loads: 0 });
+        cs.sales_loads++;
+        const sReg = siteRegMap[sNorm];
+        if (sReg) {
+          const re = ensure(rel.regByName, sReg, initReg);
+          if (re) re.sales_loads++;
+        }
       }
-      const ee = ensure(rel.equipByName, t.truck, () => ({ companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
+      const ee = ensure(rel.equipByName, t.truck, initEquip);
       if (ee) { ee.loads_hauled++; if (t.company) ee.companies.add(t.company); }
-      const de = ensure(rel.drvByName, t.driver, () => ({ trucks: new Set(), companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
+      const de = ensure(rel.drvByName, t.driver, initDrv);
       if (de) { de.loads_hauled++; if (t.truck) de.trucks.add(fmtTruckRef(t.truck)); if (t.company) de.companies.add(t.company); }
       if (t.truck_owner) {
         const isCustHaul = resolveTruckOwnerTargetPbi(t.truck_owner, null, SEED) === 'customers';
@@ -2090,15 +2113,19 @@
     });
 
     (rec.raw_purchases || []).forEach(t => {
-      const ue = ensure(rel.uomByName, t.uom, () => ({ products_count: 0, tickets_count: 0 }));
+      const ue = ensure(rel.uomByName, t.uom, initUom);
       if (ue) ue.tickets_count++;
-      const se = ensure(rel.siteByName, t.site, () => ({ active_rules: 0, sales_loads: 0, raw_loads: 0 }));
-      if (se) se.raw_loads++;
-      const ss = ensureSiteCat('supplier', t.site);
-      if (ss) ss.raw_loads++;
-      const ee = ensure(rel.equipByName, t.truck, () => ({ companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
+      const sNorm = t.site ? norm(t.site) : '';
+      if (sNorm) {
+        const se = rel.siteByName[sNorm] || (rel.siteByName[sNorm] = initSite());
+        se.raw_loads++;
+        const ck = `supplier|${sNorm}`;
+        const ss = rel.siteByCatKey[ck] || (rel.siteByCatKey[ck] = { active_rules: 0, sales_loads: 0, raw_loads: 0 });
+        ss.raw_loads++;
+      }
+      const ee = ensure(rel.equipByName, t.truck, initEquip);
       if (ee) { ee.loads_hauled++; if (t.company) ee.companies.add(t.company); }
-      const de = ensure(rel.drvByName, t.driver, () => ({ trucks: new Set(), companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
+      const de = ensure(rel.drvByName, t.driver, initDrv);
       if (de) { de.loads_hauled++; if (t.truck) de.trucks.add(fmtTruckRef(t.truck)); if (t.company) de.companies.add(t.company); }
       if (t.site_owner) {
         const qe = ensure(rel.suppByName, t.site_owner, initSupp);
@@ -2124,12 +2151,12 @@
     });
 
     (rec.fuel_intakes || []).forEach(f => {
-      const ee = ensure(rel.equipByName, f.equipment, () => ({ companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
+      const ee = ensure(rel.equipByName, f.equipment, initEquip);
       if (ee) ee.fuel_fills++;
-      const de = ensure(rel.drvByName, f.driver, () => ({ trucks: new Set(), companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
+      const de = ensure(rel.drvByName, f.driver, initDrv);
       if (de) de.fuel_fills++;
       if (f.item) {
-        const pe = ensure(rel.prodByName, f.item, () => ({ list_price: null, active_rules: 0, sales_loads: 0, fuel_fills: 0 }));
+        const pe = ensure(rel.prodByName, f.item, initProd);
         if (pe) pe.fuel_fills++;
       }
       if (f.supplier) {
@@ -2142,29 +2169,29 @@
       if (!ec) return;
       if (!ec.gl_code && EXPENSE_CAT_GL_MAP[norm(ec.name)]) ec.gl_code = EXPENSE_CAT_GL_MAP[norm(ec.name)];
       ec.cost_class = deriveExpenseCostClass(ec);
-      ensure(rel.catByName, ec.name, () => ({ subcategories_count: 0, expenses_count: 0, total_spent: 0 }));
+      ensure(rel.catByName, ec.name, initCat);
     });
     (rec.expense_subcategories || []).forEach(sc => {
       if (!sc) return;
-      ensure(rel.subcatByName, sc.name, () => ({ expenses_count: 0, total_spent: 0 }));
+      ensure(rel.subcatByName, sc.name, initSubcat);
       if (sc.name) {
         const sk = subcatKey(sc.category, sc.name);
-        if (!rel.subcatByKey[sk]) rel.subcatByKey[sk] = { expenses_count: 0, total_spent: 0 };
+        if (!rel.subcatByKey[sk]) rel.subcatByKey[sk] = initSubcat();
       }
-      const ce = ensure(rel.catByName, sc.category, () => ({ subcategories_count: 0, expenses_count: 0, total_spent: 0 }));
+      const ce = ensure(rel.catByName, sc.category, initCat);
       if (ce) ce.subcategories_count++;
     });
     (rec.expenses || []).forEach(ex => {
       const sgn = hubExpenseSign(ex);
       if (sgn === 0) return;
       const amt = round2(sgn * Number(ex.amount || ex.usd_amount || 0));
-      const ce = ensure(rel.catByName, ex.category, () => ({ subcategories_count: 0, expenses_count: 0, total_spent: 0 }));
+      const ce = ensure(rel.catByName, ex.category, initCat);
       if (ce) { ce.expenses_count++; ce.total_spent = round2(ce.total_spent + amt); }
-      const se = ensure(rel.subcatByName, ex.subcategory, () => ({ expenses_count: 0, total_spent: 0 }));
+      const se = ensure(rel.subcatByName, ex.subcategory, initSubcat);
       if (se) { se.expenses_count++; se.total_spent = round2(se.total_spent + amt); }
       if (ex.subcategory) {
         const sk = subcatKey(ex.category, ex.subcategory);
-        if (!rel.subcatByKey[sk]) rel.subcatByKey[sk] = { expenses_count: 0, total_spent: 0 };
+        if (!rel.subcatByKey[sk]) rel.subcatByKey[sk] = initSubcat();
         rel.subcatByKey[sk].expenses_count++;
         rel.subcatByKey[sk].total_spent = round2(rel.subcatByKey[sk].total_spent + amt);
       }
@@ -2180,10 +2207,10 @@
     });
 
     (rec.employments || []).forEach(emp => {
-      ensure(rel.staffByName, emp.staff || emp.name, () => ({ payments_count: 0, total_paid: 0 }));
+      ensure(rel.staffByName, emp.staff || emp.name, initStaff);
     });
     (rec.salaries || []).forEach(sal => {
-      const st = ensure(rel.staffByName, sal.staff, () => ({ payments_count: 0, total_paid: 0 }));
+      const st = ensure(rel.staffByName, sal.staff, initStaff);
       if (st) { st.payments_count++; st.total_paid = round2(st.total_paid + Number(sal.amount || sal.usd_amount || 0)); }
     });
 
@@ -3325,142 +3352,161 @@
 
   // ==================== PAGE-SPECIFIC DYNAMIC SLICER ENGINE (m18c_report.py) ====================
   function buildPageSlicerDefs(pageId, data) {
-    const { prodOpts, custOpts, suppOpts, siteOpts, equipOpts, driverOpts, staffOpts, catOpts, subcatOpts, regOpts, cpOpts } = data;
     const yn = [{ v: 'Yes', l: 'Yes' }, { v: 'No', l: 'No' }];
-    const map = {
-      p01_overview: [
-        { key: 'customer', label: 'Customer', opts: custOpts },
-        { key: 'product', label: 'Material / Grade', opts: prodOpts },
-        { key: 'site', label: 'Site', opts: siteOpts },
-        { key: 'iva', label: 'Customer IVA (VAT)', opts: yn },
-        { key: 'method', label: 'Payment Method', opts: ['Cash', 'Credit'] }
-      ],
-      p02_companies: [
-        { key: 'iva', label: 'Customer IVA (VAT)', opts: yn },
-        { key: 'product', label: 'Material / Grade', opts: prodOpts },
-        { key: 'customer', label: 'Customer', opts: custOpts }
-      ],
-      p03_exceptions: [
-        { key: 'severity', label: 'Exception Queue', opts: ['Overdue AR', 'Uninvoiced IVA', 'Pricing & Lapsed', 'Fleet & Telemetry', 'Payroll & Recon'] },
-        { key: 'customer', label: 'Customer', opts: custOpts },
-        { key: 'equipment', label: 'Equipment Unit', opts: equipOpts },
-        { key: 'supplier', label: 'Supplier / Hauler', opts: suppOpts }
-      ],
-      p04_sales: [
-        { key: 'customer', label: 'Customer', opts: custOpts },
-        { key: 'product', label: 'Product / Grade', opts: prodOpts },
-        { key: 'site', label: 'Destination Site', opts: siteOpts },
-        { key: 'saleType', label: 'Sale Type', opts: ['Delivery', 'Pickup'] },
-        { key: 'method', label: 'Method', opts: ['Cash', 'Credit'] },
-        { key: 'iva', label: 'Customer IVA', opts: yn },
-        { key: 'driver', label: 'Driver', opts: driverOpts }
-      ],
-      p05_pricing: [
-        { key: 'ruleType', label: 'Rule Type', opts: ['Sales (Delivery)', 'Sales (Pickup)', 'Purchase Price (Site)', 'Transport Price (Site)', 'Commission', 'List Price'] },
-        { key: 'product', label: 'Product / Grade', opts: prodOpts },
-        { key: 'customer', label: 'Customer', opts: custOpts },
-        { key: 'activeStatus', label: 'Agreement Status', opts: ['Active', 'Ended'] },
-        { key: 'site', label: 'Site', opts: siteOpts },
-        { key: 'supplier', label: 'Owner / Beneficiary', opts: suppOpts }
-      ],
-      p06_ar: [
-        { key: 'customer', label: 'Customer', opts: custOpts },
-        { key: 'iva', label: 'VAT Registered (IVA)', opts: yn },
-        { key: 'creditOnly', label: 'Credit Filter', opts: ['Credit Customers', 'Has Open Balance', 'Overdue (>30d)', 'On Account (<$0)'] },
-        { key: 'agingBucket', label: 'Aging Bucket', opts: ['Current', '1-10 Days', '11-30 Days', '31-60 Days', '60+ Days', 'On Account'] }
-      ],
-      p07_ap: [
-        { key: 'supplier', label: 'Supplier / Hauler', opts: suppOpts },
-        { key: 'category', label: 'Expense Category', opts: catOpts },
-        { key: 'costClass', label: 'Cost Class', opts: ['Production Cost', 'Operating Expense', 'Capital Expenditure'] },
-        { key: 'method', label: 'Method', opts: ['Cash', 'Credit'] },
-        { key: 'iva', label: 'Supplier IVA', opts: yn },
-        { key: 'payableLeg', label: 'Owed For (AP Leg)', opts: ['Material', 'Haulage', 'Supplies & services'] },
-        { key: 'equipment', label: 'Equipment Unit', opts: equipOpts }
-      ],
-      p08_stock: [
-        { key: 'product', label: 'Product / Grade', opts: prodOpts },
-        { key: 'site', label: 'Source Site', opts: siteOpts },
-        { key: 'supplier', label: 'Site / Truck Owner', opts: suppOpts },
-        { key: 'transportBy', label: 'Transported By', opts: ['Third-party truck', 'Company fleet'] }
-      ],
-      p09_fuel: [
-        { key: 'equipment', label: 'Equipment Unit', opts: equipOpts },
-        { key: 'equipType', label: 'Equipment Type', opts: ['Truck', 'Loader', 'Excavator', 'Bulldozer', 'Plant', 'Generator', 'Vehicle'] },
-        { key: 'ownership', label: 'Ownership', opts: ['Own', 'Rented', 'Partner', 'Transporter'] },
-        { key: 'driver', label: 'Driver', opts: driverOpts },
-        { key: 'fuelType', label: 'Fuel / Item', opts: ['Diesel', 'Lubricant / Oil'] }
-      ],
-      p10_fleet: [
-        { key: 'equipment', label: 'Equipment Unit', opts: equipOpts },
-        { key: 'equipType', label: 'Type', opts: ['Truck', 'Loader', 'Excavator', 'Bulldozer', 'Plant', 'Generator', 'Vehicle'] },
-        { key: 'ownership', label: 'Ownership', opts: ['Own', 'Rented', 'Partner', 'Transporter'] },
-        { key: 'equipStatus', label: 'Status', opts: ['Active', 'Idle', 'Under repair', 'Sold'] }
-      ],
-      p11_drivers: [
-        { key: 'driver', label: 'Driver', opts: driverOpts },
-        { key: 'companyDriver', label: 'Company Driver', opts: yn },
-        { key: 'region', label: 'Region / Route', opts: regOpts },
-        { key: 'overtimeFlag', label: 'Overtime', opts: yn },
-        { key: 'shift', label: 'Shift', opts: ['Day', 'Night'] }
-      ],
-      p12_payroll: [
-        { key: 'staff', label: 'Staff Member', opts: staffOpts },
-        { key: 'contractType', label: 'Contract Type', opts: ['Regular', 'Monthly', 'Daily', 'Freelance'] },
-        { key: 'contractStatus', label: 'Contract Status', opts: ['Current', 'Ended'] },
-        { key: 'site', label: 'Site', opts: siteOpts }
-      ],
-      p13_vat: [
-        { key: 'customer', label: 'Customer', opts: custOpts },
-        { key: 'supplier', label: 'Supplier', opts: suppOpts },
-        { key: 'iva', label: 'Customer IVA', opts: yn },
-        { key: 'supplierIva', label: 'Supplier IVA', opts: yn }
-      ],
-      p14_cashflow: [
-        { key: 'currency', label: 'Currency', opts: ['USD', 'LBP'] },
-        { key: 'flowKind', label: 'Cash Stream', opts: ['Customer Receipts', 'Supplier Settlements', 'Cash Expenses', 'Salary Payments', 'External Treasury'] },
-        { key: 'method', label: 'Payment Method', opts: ['Cash', 'Check', 'Bank', 'Whish'] },
-        { key: 'customer', label: 'Customer / Counterparty', opts: custOpts }
-      ],
-      p15_treasury: [
-        { key: 'treasuryType', label: 'Treasury Stream', opts: ['Loans', 'External Movements', 'FX Conversions', 'Barter'] },
-        { key: 'counterparty', label: 'Counterparty / Lender', opts: cpOpts },
-        { key: 'loanDirection', label: 'Flow / Direction', opts: ['Inflow', 'Outflow', 'Repayment', 'Drawdown'] }
-      ],
-      p16_financial: [
-        { key: 'glClass', label: 'Lebanese CoA Class', opts: [
-          { v: '1', l: 'Class 1 · Capital & Long-Term' },
-          { v: '2', l: 'Class 2 · Fixed Assets' },
-          { v: '3', l: 'Class 3 · Inventories' },
-          { v: '4', l: 'Class 4 · AR, AP & VAT' },
-          { v: '5', l: 'Class 5 · Cash & Till' },
-          { v: '6', l: 'Class 6 · Cost & Expenses' },
-          { v: '7', l: 'Class 7 · Revenue' }
-        ] },
-        { key: 'pnlSection', label: 'Journal Filter', opts: ['Sales & VAT', 'Raw & Haulage', 'Expenses & Payroll', 'Receipts & Settlements'] }
-      ],
-      p17_jv: [
-        { key: 'site', label: 'JV Site', opts: ['Halat JV', 'Jiyeh JV', 'Nahr Ibrahim JV'] },
-        { key: 'partner', label: 'JV Partner', opts: ['Assaf', 'WTC', 'Partner 50%'] },
-        { key: 'jvBasis', label: 'Distribution Basis', opts: ['Stock', 'Revenue', 'Profit', 'Cash'] }
-      ],
-      p18_tickets: [
-        { key: 'padType', label: 'Ticket Pad Stream', opts: ['Sales Pad', 'Raw Pad', 'Fuel Pad'] },
-        { key: 'bookStatus', label: 'Serial Hygiene', opts: ['All Serials', 'Incomplete Books', 'Missing Serials'] },
-        { key: 'site', label: 'Site', opts: siteOpts }
-      ],
-      p19_changelog: [
-        { key: 'ledgerDomain', label: 'Ledger Domain', opts: ['Sales', 'RawPurchases', 'Expenses', 'CustomerReceipts', 'SupplierPayments', 'Fuel'] },
-        { key: 'ledgerOrigin', label: 'Origin', opts: ['Reported Snapshot', 'Entered Ledger'] },
-        { key: 'ledgerKind', label: 'Snapshot Kind', opts: ['Changed', 'Baseline', 'Date Gap >31d'] }
-      ],
-      p20_recon: [
-        { key: 'reconSide', label: 'Statement Category', opts: ['Financial', 'Receivables', 'Payables', 'Operations', 'Fleet', 'Workforce', 'Commercial', 'Tax & Compliance', 'Treasury', 'Executive'] },
-        { key: 'customer', label: 'Customer', opts: custOpts },
-        { key: 'supplier', label: 'Supplier', opts: suppOpts }
-      ]
-    };
-    return map[pageId] || map.p01_overview;
+    switch (pageId) {
+      case 'p02_companies':
+        return [
+          { key: 'iva', label: 'Customer IVA (VAT)', opts: yn },
+          { key: 'product', label: 'Material / Grade', opts: data.prodOpts },
+          { key: 'customer', label: 'Customer', opts: data.custOpts }
+        ];
+      case 'p03_exceptions':
+        return [
+          { key: 'severity', label: 'Exception Queue', opts: ['Overdue AR', 'Uninvoiced IVA', 'Pricing & Lapsed', 'Fleet & Telemetry', 'Payroll & Recon'] },
+          { key: 'customer', label: 'Customer', opts: data.custOpts },
+          { key: 'equipment', label: 'Equipment Unit', opts: data.equipOpts },
+          { key: 'supplier', label: 'Supplier / Hauler', opts: data.suppOpts }
+        ];
+      case 'p04_sales':
+        return [
+          { key: 'customer', label: 'Customer', opts: data.custOpts },
+          { key: 'product', label: 'Product / Grade', opts: data.prodOpts },
+          { key: 'site', label: 'Destination Site', opts: data.siteOpts },
+          { key: 'saleType', label: 'Sale Type', opts: ['Delivery', 'Pickup'] },
+          { key: 'method', label: 'Method', opts: ['Cash', 'Credit'] },
+          { key: 'iva', label: 'Customer IVA', opts: yn },
+          { key: 'driver', label: 'Driver', opts: data.driverOpts }
+        ];
+      case 'p05_pricing':
+        return [
+          { key: 'ruleType', label: 'Rule Type', opts: ['Sales (Delivery)', 'Sales (Pickup)', 'Purchase Price (Site)', 'Transport Price (Site)', 'Commission', 'List Price'] },
+          { key: 'product', label: 'Product / Grade', opts: data.prodOpts },
+          { key: 'customer', label: 'Customer', opts: data.custOpts },
+          { key: 'activeStatus', label: 'Agreement Status', opts: ['Active', 'Ended'] },
+          { key: 'site', label: 'Site', opts: data.siteOpts },
+          { key: 'supplier', label: 'Owner / Beneficiary', opts: data.suppOpts }
+        ];
+      case 'p06_ar':
+        return [
+          { key: 'customer', label: 'Customer', opts: data.custOpts },
+          { key: 'iva', label: 'VAT Registered (IVA)', opts: yn },
+          { key: 'creditOnly', label: 'Credit Filter', opts: ['Credit Customers', 'Has Open Balance', 'Overdue (>30d)', 'On Account (<$0)'] },
+          { key: 'agingBucket', label: 'Aging Bucket', opts: ['Current', '1-10 Days', '11-30 Days', '31-60 Days', '60+ Days', 'On Account'] }
+        ];
+      case 'p07_ap':
+        return [
+          { key: 'supplier', label: 'Supplier / Hauler', opts: data.suppOpts },
+          { key: 'category', label: 'Expense Category', opts: data.catOpts },
+          { key: 'costClass', label: 'Cost Class', opts: ['Production Cost', 'Operating Expense', 'Capital Expenditure'] },
+          { key: 'method', label: 'Method', opts: ['Cash', 'Credit'] },
+          { key: 'iva', label: 'Supplier IVA', opts: yn },
+          { key: 'payableLeg', label: 'Owed For (AP Leg)', opts: ['Material', 'Haulage', 'Supplies & services'] },
+          { key: 'equipment', label: 'Equipment Unit', opts: data.equipOpts }
+        ];
+      case 'p08_stock':
+        return [
+          { key: 'product', label: 'Product / Grade', opts: data.prodOpts },
+          { key: 'site', label: 'Source Site', opts: data.siteOpts },
+          { key: 'supplier', label: 'Site / Truck Owner', opts: data.suppOpts },
+          { key: 'transportBy', label: 'Transported By', opts: ['Third-party truck', 'Company fleet'] }
+        ];
+      case 'p09_fuel':
+        return [
+          { key: 'equipment', label: 'Equipment Unit', opts: data.equipOpts },
+          { key: 'equipType', label: 'Equipment Type', opts: ['Truck', 'Loader', 'Excavator', 'Bulldozer', 'Plant', 'Generator', 'Vehicle'] },
+          { key: 'ownership', label: 'Ownership', opts: ['Own', 'Rented', 'Partner', 'Transporter'] },
+          { key: 'driver', label: 'Driver', opts: data.driverOpts },
+          { key: 'fuelType', label: 'Fuel / Item', opts: ['Diesel', 'Lubricant / Oil'] }
+        ];
+      case 'p10_fleet':
+        return [
+          { key: 'equipment', label: 'Equipment Unit', opts: data.equipOpts },
+          { key: 'equipType', label: 'Type', opts: ['Truck', 'Loader', 'Excavator', 'Bulldozer', 'Plant', 'Generator', 'Vehicle'] },
+          { key: 'ownership', label: 'Ownership', opts: ['Own', 'Rented', 'Partner', 'Transporter'] },
+          { key: 'equipStatus', label: 'Status', opts: ['Active', 'Idle', 'Under repair', 'Sold'] }
+        ];
+      case 'p11_drivers':
+        return [
+          { key: 'driver', label: 'Driver', opts: data.driverOpts },
+          { key: 'companyDriver', label: 'Company Driver', opts: yn },
+          { key: 'region', label: 'Region / Route', opts: data.regOpts },
+          { key: 'overtimeFlag', label: 'Overtime', opts: yn },
+          { key: 'shift', label: 'Shift', opts: ['Day', 'Night'] }
+        ];
+      case 'p12_payroll':
+        return [
+          { key: 'staff', label: 'Staff Member', opts: data.staffOpts },
+          { key: 'contractType', label: 'Contract Type', opts: ['Regular', 'Monthly', 'Daily', 'Freelance'] },
+          { key: 'contractStatus', label: 'Contract Status', opts: ['Current', 'Ended'] },
+          { key: 'site', label: 'Site', opts: data.siteOpts }
+        ];
+      case 'p13_vat':
+        return [
+          { key: 'customer', label: 'Customer', opts: data.custOpts },
+          { key: 'supplier', label: 'Supplier', opts: data.suppOpts },
+          { key: 'iva', label: 'Customer IVA', opts: yn },
+          { key: 'supplierIva', label: 'Supplier IVA', opts: yn }
+        ];
+      case 'p14_cashflow':
+        return [
+          { key: 'currency', label: 'Currency', opts: ['USD', 'LBP'] },
+          { key: 'flowKind', label: 'Cash Stream', opts: ['Customer Receipts', 'Supplier Settlements', 'Cash Expenses', 'Salary Payments', 'External Treasury'] },
+          { key: 'method', label: 'Payment Method', opts: ['Cash', 'Check', 'Bank', 'Whish'] },
+          { key: 'customer', label: 'Customer / Counterparty', opts: data.custOpts }
+        ];
+      case 'p15_treasury':
+        return [
+          { key: 'treasuryType', label: 'Treasury Stream', opts: ['Loans', 'External Movements', 'FX Conversions', 'Barter'] },
+          { key: 'counterparty', label: 'Counterparty / Lender', opts: data.cpOpts },
+          { key: 'loanDirection', label: 'Flow / Direction', opts: ['Inflow', 'Outflow', 'Repayment', 'Drawdown'] }
+        ];
+      case 'p16_financial':
+        return [
+          { key: 'glClass', label: 'Lebanese CoA Class', opts: [
+            { v: '1', l: 'Class 1 · Capital & Long-Term' },
+            { v: '2', l: 'Class 2 · Fixed Assets' },
+            { v: '3', l: 'Class 3 · Inventories' },
+            { v: '4', l: 'Class 4 · AR, AP & VAT' },
+            { v: '5', l: 'Class 5 · Cash & Till' },
+            { v: '6', l: 'Class 6 · Cost & Expenses' },
+            { v: '7', l: 'Class 7 · Revenue' }
+          ] },
+          { key: 'pnlSection', label: 'Journal Filter', opts: ['Sales & VAT', 'Raw & Haulage', 'Expenses & Payroll', 'Receipts & Settlements'] }
+        ];
+      case 'p17_jv':
+        return [
+          { key: 'site', label: 'JV Site', opts: ['Halat JV', 'Jiyeh JV', 'Nahr Ibrahim JV'] },
+          { key: 'partner', label: 'JV Partner', opts: ['Assaf', 'WTC', 'Partner 50%'] },
+          { key: 'jvBasis', label: 'Distribution Basis', opts: ['Stock', 'Revenue', 'Profit', 'Cash'] }
+        ];
+      case 'p18_tickets':
+        return [
+          { key: 'padType', label: 'Ticket Pad Stream', opts: ['Sales Pad', 'Raw Pad', 'Fuel Pad'] },
+          { key: 'bookStatus', label: 'Serial Hygiene', opts: ['All Serials', 'Incomplete Books', 'Missing Serials'] },
+          { key: 'site', label: 'Site', opts: data.siteOpts }
+        ];
+      case 'p19_changelog':
+        return [
+          { key: 'ledgerDomain', label: 'Ledger Domain', opts: ['Sales', 'RawPurchases', 'Expenses', 'CustomerReceipts', 'SupplierPayments', 'Fuel'] },
+          { key: 'ledgerOrigin', label: 'Origin', opts: ['Reported Snapshot', 'Entered Ledger'] },
+          { key: 'ledgerKind', label: 'Snapshot Kind', opts: ['Changed', 'Baseline', 'Date Gap >31d'] }
+        ];
+      case 'p20_recon':
+        return [
+          { key: 'reconSide', label: 'Statement Category', opts: ['Financial', 'Receivables', 'Payables', 'Operations', 'Fleet', 'Workforce', 'Commercial', 'Tax & Compliance', 'Treasury', 'Executive'] },
+          { key: 'customer', label: 'Customer', opts: data.custOpts },
+          { key: 'supplier', label: 'Supplier', opts: data.suppOpts }
+        ];
+      case 'p01_overview':
+      default:
+        return [
+          { key: 'customer', label: 'Customer', opts: data.custOpts },
+          { key: 'product', label: 'Material / Grade', opts: data.prodOpts },
+          { key: 'site', label: 'Site', opts: data.siteOpts },
+          { key: 'iva', label: 'Customer IVA (VAT)', opts: yn },
+          { key: 'method', label: 'Payment Method', opts: ['Cash', 'Credit'] }
+        ];
+    }
   }
   // ==================== 12-PAGE ANALYTICS & INSIGHTS STUDIO RENDERER ====================
   let _pbiBaseCacheKey = '';
@@ -4430,6 +4476,15 @@
       const isRawSlicerPage = activePageId === 'p07_ap' || activePageId === 'p08_stock' || activePageId === 'p08_stock_ap';
       const isSalesSlicerPage = activePageId === 'p04_sales' || activePageId === 'p05_pricing' || activePageId === 'p06_ar';
       const activeCoKey = (STATE && STATE.company && !/all|group|manufacturing/i.test(String(STATE.company))) ? norm(STATE.company) : '';
+      const slicerMode = isRawSlicerPage ? 'raw' : (isSalesSlicerPage ? 'sales' : 'all');
+      if (!_pbiBaseCacheVal._slicerCache) _pbiBaseCacheVal._slicerCache = {};
+      const sCache = _pbiBaseCacheVal._slicerCache;
+      const getSlicerPool = (k, fn) => {
+        if (sCache[k] !== undefined) return sCache[k];
+        const v = fn();
+        sCache[k] = v;
+        return v;
+      };
       const prodFreqMap = fIdx
         ? (isRawSlicerPage
             ? ((activeCoKey && fIdx.productRawByCo && fIdx.productRawByCo.get(activeCoKey)) || fIdx.productRaw)
@@ -4438,28 +4493,30 @@
                 : fIdx.product))
         : null;
       const slicerPools = {
-        prodOpts: uniq((m.products || []).map(p => p.Product).concat((rec.products || []).map(p => p.name)), prodFreqMap),
-        custOpts: uniq((m.customers || []).map(c => c.Customer).concat((rec.customers || []).map(c => c.name)), fIdx && fIdx.customer),
-        suppOpts: uniq((m.suppliers || []).map(s => s.Supplier).concat((rec.suppliers || []).map(s => s.name)), fIdx ? (isRawSlicerPage ? fIdx.siteOwner : fIdx.supplier) : null),
-        siteOpts: uniq(
-          isRawSlicerPage
-            ? (m.sites || []).filter(s => Number(s.raw_loads || 0) > 0).map(s => s.Site)
-                .concat((rec.sites || []).filter(s => resolveSiteCategoryPbi(s) === 'supplier').map(s => s.name))
-                .concat((rec.raw_purchases || []).map(r => r.site))
-            : (isSalesSlicerPage
-                ? (m.sites || []).filter(s => Number(s.loads || 0) > 0).map(s => s.Site)
-                    .concat((rec.sites || []).filter(s => resolveSiteCategoryPbi(s) === 'customer').map(s => s.name))
-                    .concat((rec.sales_tickets || []).map(t => t.site))
-                : (m.sites || []).map(s => s.Site).concat((rec.sites || []).map(s => s.name))),
-          fIdx ? (isRawSlicerPage ? fIdx.siteRaw : (isSalesSlicerPage ? fIdx.siteSales : fIdx.site)) : null
-        ),
-        equipOpts: uniq((m.equipment || []).map(e => e.Equipment).concat((rec.equipment || []).map(e => e.name)), fIdx && fIdx.truck),
-        driverOpts: uniq((rec.drivers || []).map(d => d.name).concat((rec.sales_tickets || []).map(t => t.driver)), fIdx && fIdx.driver),
-        staffOpts: uniq((rec.employments || []).map(e => e.staff).concat((rec.salaries || []).map(s => s.staff)).concat((rec.attendance || []).map(a => a.staff)), fIdx && fIdx.staff),
-        catOpts: uniq((rec.expense_categories || []).map(c => c.name).concat((rec.expenses || []).map(x => x.category)), fIdx && fIdx.category),
-        subcatOpts: uniq((rec.expense_subcategories || []).map(c => c.name), fIdx && fIdx.subcategory),
-        regOpts: uniq((rec.regions || []).map(r => r.name).concat((rec.overtime_rates || []).map(o => o.region)), fIdx && fIdx.region),
-        cpOpts: uniq((rec.external_movements || []).map(x => cellValue(x, 'counterparty')).concat((rec.loans || []).map(l => cellValue(l, 'counterparty'))), fIdx && fIdx.counterparty)
+        get prodOpts() { return getSlicerPool(`prod_${slicerMode}_${activeCoKey}`, () => uniq((m.products || []).map(p => p.Product).concat((rec.products || []).map(p => p.name)), prodFreqMap)); },
+        get custOpts() { return getSlicerPool('cust', () => uniq((m.customers || []).map(c => c.Customer).concat((rec.customers || []).map(c => c.name)), fIdx && fIdx.customer)); },
+        get suppOpts() { return getSlicerPool(`supp_${slicerMode}`, () => uniq((m.suppliers || []).map(s => s.Supplier).concat((rec.suppliers || []).map(s => s.name)), fIdx ? (isRawSlicerPage ? fIdx.siteOwner : fIdx.supplier) : null)); },
+        get siteOpts() {
+          return getSlicerPool(`site_${slicerMode}`, () => uniq(
+            isRawSlicerPage
+              ? (m.sites || []).filter(s => Number(s.raw_loads || 0) > 0).map(s => s.Site)
+                  .concat((rec.sites || []).filter(s => resolveSiteCategoryPbi(s) === 'supplier').map(s => s.name))
+                  .concat((rec.raw_purchases || []).map(r => r.site))
+              : (isSalesSlicerPage
+                  ? (m.sites || []).filter(s => Number(s.loads || 0) > 0).map(s => s.Site)
+                      .concat((rec.sites || []).filter(s => resolveSiteCategoryPbi(s) === 'customer').map(s => s.name))
+                      .concat((rec.sales_tickets || []).map(t => t.site))
+                  : (m.sites || []).map(s => s.Site).concat((rec.sites || []).map(s => s.name))),
+            fIdx ? (isRawSlicerPage ? fIdx.siteRaw : (isSalesSlicerPage ? fIdx.siteSales : fIdx.site)) : null
+          ));
+        },
+        get equipOpts() { return getSlicerPool('equip', () => uniq((m.equipment || []).map(e => e.Equipment).concat((rec.equipment || []).map(e => e.name)), fIdx && fIdx.truck)); },
+        get driverOpts() { return getSlicerPool('driver', () => uniq((rec.drivers || []).map(d => d.name).concat((rec.sales_tickets || []).map(t => t.driver)), fIdx && fIdx.driver)); },
+        get staffOpts() { return getSlicerPool('staff', () => uniq((rec.employments || []).map(e => e.staff).concat((rec.salaries || []).map(s => s.staff)).concat((rec.attendance || []).map(a => a.staff)), fIdx && fIdx.staff)); },
+        get catOpts() { return getSlicerPool('cat', () => uniq((rec.expense_categories || []).map(c => c.name).concat((rec.expenses || []).map(x => x.category)), fIdx && fIdx.category)); },
+        get subcatOpts() { return getSlicerPool('subcat', () => uniq((rec.expense_subcategories || []).map(c => c.name), fIdx && fIdx.subcategory)); },
+        get regOpts() { return getSlicerPool('reg', () => uniq((rec.regions || []).map(r => r.name).concat((rec.overtime_rates || []).map(o => o.region)), fIdx && fIdx.region)); },
+        get cpOpts() { return getSlicerPool('cp', () => uniq((rec.external_movements || []).map(x => cellValue(x, 'counterparty')).concat((rec.loans || []).map(l => cellValue(l, 'counterparty'))), fIdx && fIdx.counterparty)); }
       };
 
       const pageSlicerDefs = buildPageSlicerDefs(activePageId, slicerPools);
@@ -7209,8 +7266,15 @@
       }
       mvInUsd = round2(mvInUsd);
       mvOutUsd = round2(mvOutUsd);
-      const mvUsdNet = round2(mvInUsd - mvOutUsd);
+      let mvUsdNet = round2(mvInUsd - mvOutUsd);
       mvLbpSum = Math.round(mvLbpSum);
+      const isAllTimePbi = STATE.period === 'all' && !STATE.dateFrom && !STATE.dateTo;
+      if (isAllTimePbi && !hasDrill && !qComb && cfChip === 'all' && hasFullFinRows && STATE.company !== 'lionstransport') {
+        mvInUsd = round2(Number(k.cash_in_usd != null ? k.cash_in_usd : mvInUsd));
+        mvOutUsd = round2(Number(k.cash_out_usd != null ? k.cash_out_usd : mvOutUsd));
+        mvUsdNet = round2(Number(k.net_cash_usd != null ? k.net_cash_usd : (mvInUsd - mvOutUsd)));
+        mvLbpSum = Math.round(Number(k.net_cash_lbp != null ? k.net_cash_lbp : mvLbpSum));
+      }
 
       const filteredDaily = allDailyRows.filter(dRow => {
         if (focusYm && dRow.ym !== focusYm) return false;
@@ -7481,27 +7545,27 @@
     // PAGE 15: TREASURY & LOANS (m18c_report.py Page 15 — 2 bands + 4 charts + 6 tables)
     // =========================================================================
     else if (activePageId === 'p15_treasury') {
-      const loanRows = filterRecords(rec.loans, { ignorePeriod: true, ignoreSearch: true }).filter(r => {
+      const loanRows = filterRecords(rec.loans, { ignorePeriod: true, ignoreSearch: true, basis: 'tx' }).filter(r => {
         if (!matchSearch(r)) return false;
         const cp = cellValue(r, 'counterparty');
         if (sl.counterparty && norm(cp) !== norm(sl.counterparty)) return false;
         return true;
       }).sort((a, b) => Math.abs(Number(b.principal || 0)) - Math.abs(Number(a.principal || 0)));
-      const loanSetRows = filterRecords(rec.loan_settlements, { ignoreSearch: true }).filter(r => {
+      const loanSetRows = filterRecords(rec.loan_settlements, { ignoreSearch: true, basis: 'tx' }).filter(r => {
         if (!matchSearch(r)) return false;
         const cp = cellValue(r, 'loan') || cellValue(r, 'counterparty');
         if (sl.counterparty && norm(cp) !== norm(sl.counterparty)) return false;
         if (sl.loanDirection && norm(r.method || r.type) !== norm(sl.loanDirection)) return false;
         return true;
       });
-      const extRows = filterRecords(rec.external_movements, { ignoreSearch: true }).filter(r => {
+      const extRows = filterRecords(rec.external_movements, { ignoreSearch: true, basis: 'tx' }).filter(r => {
         if (!matchSearch(r)) return false;
         const cp = cellValue(r, 'counterparty');
         if (sl.counterparty && norm(cp) !== norm(sl.counterparty)) return false;
         if (sl.loanDirection && norm(r.direction) !== norm(sl.loanDirection)) return false;
         return true;
       });
-      const convRows = filterRecords(rec.conversions, { ignoreSearch: true }).filter(matchSearch);
+      const convRows = filterRecords(rec.conversions, { ignoreSearch: true, basis: 'tx' }).filter(matchSearch);
 
       const extRev = extRows.filter(e => /In/i.test(String(e.direction || ''))).reduce((a, r) => a + Number(r.usd_amount || r.amount || 0), 0);
       const extExp = extRows.filter(e => !/In/i.test(String(e.direction || ''))).reduce((a, r) => a + Math.abs(Number(r.usd_amount || r.amount || 0)), 0);
@@ -7785,21 +7849,25 @@
     else if (activePageId === 'p18_tickets') {
       const audit = typeof ctx.buildTicketSerialAudit === 'function'
         ? ctx.buildTicketSerialAudit()
-        : { skipped: [], duplicates: [], unnumbered: [], allExceptions: [] };
+        : { skipped: [], duplicates: [], unnumbered: [], removed: [], returned: [], totalReturnedKm: 0, allExceptions: [] };
       const excRows = (sl.bookStatus === 'Duplicate Serials'
         ? audit.duplicates
-        : (sl.bookStatus === 'Unnumbered' ? audit.unnumbered : audit.skipped)
+        : (sl.bookStatus === 'Removed Slips'
+          ? (audit.removed || [])
+          : (sl.bookStatus === 'Returned Loads'
+            ? (audit.returned || [])
+            : (sl.bookStatus === 'Unnumbered' ? audit.unnumbered : audit.skipped)))
       ).slice().sort((a, b) => (b.date < a.date ? -1 : (b.date > a.date ? 1 : (b.num - a.num))));
       const totSkippedTickets = audit.skipped.reduce((s, r) => s + Number(r.count || 0), 0);
 
       bodyHtml = `
         <div class="pbi-overview-bands">
-          ${kpiBand('1 · Weighbridge Ticket Pad Hygiene, Skipped Serials & Duplicate Guard', [
+          ${kpiBand('1 · Weighbridge 25-Ticket Pad Hygiene, Removed Slips (0 KM) & Returned Loads (Round-Trip KM)', [
             { label: 'Skipped Serial Gaps', value: fmtNum(audit.skipped.length), sub: fmtNum(totSkippedTickets) + ' skipped tickets in books', tone: 'warn' },
-            { label: 'Duplicate Ticket Numbers', value: fmtNum(audit.duplicates.length || prSn.duplicate_ticket_numbers || 0), sub: 'Same doc type in one pad run', tone: 'warn' },
+            { label: 'Duplicate Ticket Numbers', value: fmtNum(audit.duplicates.length || prSn.duplicate_ticket_numbers || 0), sub: 'Excludes paired returns', tone: 'warn' },
+            { label: 'Removed Slips (In 25-Book)', value: fmtNum((audit.removed || []).length), sub: '0.0 km · $0 · Supervisor only', tone: 'good' },
+            { label: 'Returned Loads to Plant', value: fmtNum((audit.returned || []).length), sub: fmtNum(audit.totalReturnedKm || 0, 1) + ' km Round-Trip (2x KM)', tone: 'brass' },
             { label: 'Unnumbered Tickets', value: fmtNum(audit.unnumbered.length || prSn.unnumbered_tickets || 0), sub: 'Tickets missing serial #' },
-            { label: 'Total Serial Exceptions', value: fmtNum(audit.allExceptions.length), sub: 'Skipped + Duplicate + Unnumbered' },
-            { label: 'Entry Desk Duplicate Guard', value: 'Enforced', sub: 'Blocks repeated ticket # per BU', tone: 'good' },
             { label: 'Next Suggested Ticket #', value: (() => { const co = STATE.company === 'bbconstruction' ? 'BBConstruction' : 'WTC'; const n = ctx.nextTicketNo ? ctx.nextTicketNo(co, [rec.sales_tickets, rec.raw_purchases, rec.fuel_intakes]) : ''; return n ? '#' + n + ' · ' + co : 'Auto'; })(), sub: 'Follows latest dated ticket of pad', tone: 'brass' }
           ])}
         </div>
@@ -8441,6 +8509,36 @@
   }
 
   // ==================== 34-TABLE POWER APPS DATA HUB RENDERER ====================
+  let _hubChipCountsCacheKey = '';
+  let _hubChipCountsCacheVal = null;
+  const _hubTfootCache = new Map();
+
+  function _getHubTableChipCounts(SEED, STATE, ctx, tablePool) {
+    const allowedKey = typeof ctx.allowedCompanyNames === 'function' ? ctx.allowedCompanyNames().join(',') : '';
+    const cKey = `${(SEED && SEED._customRev) || 0}|${STATE.company}|${STATE._officialScopeActive ? 1 : 0}|${allowedKey}|${_hubRelStamp}|${tablePool.length}`;
+    if (_hubChipCountsCacheKey === cKey && _hubChipCountsCacheVal) return _hubChipCountsCacheVal;
+    const byKey = {};
+    let rawPrCnt = 0;
+    for (let i = 0; i < TABLE_CATALOG.length; i++) {
+      const t = TABLE_CATALOG[i];
+      const tUniv = Boolean(t.universal);
+      const tRows = ctx.filterRecords((SEED.records && SEED.records[t.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: tUniv, ignoreRls: tUniv });
+      if (t.key === 'price_rules') {
+        let salesCnt = 0;
+        for (let j = 0; j < tRows.length; j++) {
+          if (/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(tRows[j].rule_type || '')) rawPrCnt++;
+          else salesCnt++;
+        }
+        byKey.price_rules = salesCnt;
+      } else {
+        byKey[t.key] = tRows.length;
+      }
+    }
+    _hubChipCountsCacheKey = cKey;
+    _hubChipCountsCacheVal = { byKey, rawPrCnt };
+    return _hubChipCountsCacheVal;
+  }
+
   function renderTablesHub(ctx) {
     const { STATE, SEED, filterRecords, sortRows, th, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm } = ctx;
     const catalog = typeof ctx.canAccessTable === 'function' ? TABLE_CATALOG.filter(t => ctx.canAccessTable(t.key)) : TABLE_CATALOG;
@@ -8449,6 +8547,7 @@
     const meta = tablePool.find(t => t.key === activeKey) || tablePool[0];
     STATE.activeTableKey = meta.key;
     const rel = getHubRelIndex(SEED);
+    const chipCounts = _getHubTableChipCounts(SEED, STATE, ctx, tablePool);
     const rawList = (SEED.records && SEED.records[meta.key]) || [];
     const isUniv = Boolean(meta.universal);
     const rlsScopedRaw = filterRecords(rawList, { ignorePeriod: true, ignoreSearch: true, ignoreCompany: isUniv, ignoreRls: isUniv });
@@ -8550,15 +8649,12 @@
             <div class="chip-bar">
               ${tablePool.filter(t => t.group === g).map(t => {
                 const tUniv = Boolean(t.universal);
-                const tRows = filterRecords((SEED.records && SEED.records[t.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: tUniv, ignoreRls: tUniv });
-                const cnt = t.key === 'price_rules'
-                  ? tRows.filter(r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '')).length
-                  : tRows.length;
+                const cnt = chipCounts.byKey[t.key] != null ? chipCounts.byKey[t.key] : 0;
                 const isChipAct = t.key === meta.key && !(t.key === 'price_rules' && /^raw_/i.test(activeView.id));
                 const showUnivTag = tUniv && !/Universal/i.test(t.group || '');
                 const mainChip = `<button type="button" class="filter-chip ${isChipAct ? 'active' : ''}" data-table-key="${esc(t.key)}">${esc(t.label)} <span class="mono" style="opacity:.75">(${fmtNum(cnt)})</span>${showUnivTag ? '<span class="tbl-univ-tag">All BUs</span>' : ''}</button>`;
                 if (t.key === 'settlements' && (!ctx.canAccessTable || ctx.canAccessTable('price_rules'))) {
-                  const rawPrCnt = filterRecords((SEED.records && SEED.records.price_rules) || [], { ignorePeriod: true, ignoreSearch: true }).filter(r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '')).length;
+                  const rawPrCnt = chipCounts.rawPrCnt;
                   const isRawPrAct = meta.key === 'price_rules' && /^raw_/i.test(activeView.id);
                   return mainChip + `<button type="button" class="filter-chip ${isRawPrAct ? 'active' : ''}" data-tbl-key="price_rules" data-tbl-view="raw_all" title="Raw Material &amp; Site Haulage Price Agreements">Raw &amp; Haulage Agreements <span class="mono" style="opacity:.75">(${fmtNum(rawPrCnt)})</span></button>`;
                 }
@@ -8586,8 +8682,7 @@
               <div class="pa-hub-conns">
                 <span class="pa-hub-lbl">Connected Tables:</span>
                 ${relTablesMeta.map(rt => {
-                  const rtUniv = Boolean(rt.universal);
-                  const rCnt = filterRecords((SEED.records && SEED.records[rt.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: rtUniv, ignoreRls: rtUniv }).length;
+                  const rCnt = chipCounts.byKey[rt.key] != null ? chipCounts.byKey[rt.key] : 0;
                   return `<button type="button" class="filter-chip" data-conn-table-key="${esc(rt.key)}" title="Jump to related table ${esc(rt.label)}">⇄ ${esc(rt.label)} <span class="mono" style="opacity:.7">(${fmtNum(rCnt)})</span></button>`;
                 }).join('')}
               </div>
@@ -8666,6 +8761,10 @@
             <tfoot>
               <tr>
                 ${(() => {
+                  const hasTankCol = activeCols.includes('tank_remaining_litres');
+                  const tankRemVal = hasTankCol && typeof window.MFG_DIESEL_TANK === 'function' ? ((window.MFG_DIESEL_TANK() || {}).closingTankL ?? '') : '';
+                  const tfKey = `tbl|${(SEED && SEED._customRev) || 0}|${_hubRelStamp}|${meta.key}|${activeView.id}|${activeCols.join(',')}|${_pbiArrUid(rows)}:${rows.length}:${rows[0] && rows[0].id}:${rows[rows.length - 1] && rows[rows.length - 1].id}|${tankRemVal}`;
+                  if (_hubTfootCache.has(tfKey)) return _hubTfootCache.get(tfKey);
                   const isColNumeric = col => {
                     if (NON_NUMERIC_HUB_COLS.test(col)) return { isM: false, isN: false, isL: false, isSU: false, isSL: false, num: false };
                     const isBoolCol = /^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|prior_defect_notified|iva$|overtime$)/.test(col);
@@ -8676,31 +8775,42 @@
                     const isN = !isBoolCol && !isM && !isL && !isSL && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(col);
                     return { isM, isN, isL, isSU, isSL, num: isM || isN || isL || isSU || isSL };
                   };
-                  let firstNum = activeCols.findIndex((col, idx) => idx > 0 && isColNumeric(col).num);
+                  const colSpecs = activeCols.map(c => {
+                    const spec = isColNumeric(c);
+                    const isAvg = spec.num && c !== 'tank_remaining_litres' && /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
+                    return { c, ...spec, isAvg, sum: 0, cnt: 0 };
+                  });
+                  let firstNum = colSpecs.findIndex((sp, idx) => idx > 0 && sp.num);
                   if (firstNum < 0) firstNum = activeCols.length;
                   const leadSpan = Math.max(1, firstNum);
+                  const evalCols = colSpecs.slice(leadSpan).filter(sp => sp.num && sp.c !== 'tank_remaining_litres');
+                  if (evalCols.length && rows.length) {
+                    const isSalesTkt = meta.key === 'sales_tickets';
+                    const isExpTbl = meta.key === 'expenses';
+                    for (let ri = 0; ri < rows.length; ri++) {
+                      const r = rows[ri];
+                      const rowSgn = isSalesTkt ? saleTicketSign(r) : (isExpTbl ? hubExpenseSign(r) : 1);
+                      for (let ei = 0; ei < evalCols.length; ei++) {
+                        const sp = evalCols[ei];
+                        if (sp.isAvg && rowSgn === 0) continue;
+                        const v = cellValue(r, sp.c, meta.key, rel);
+                        if (v != null && v !== '' && typeof v !== 'boolean') {
+                          const n = Number(v);
+                          if (Number.isFinite(n)) { sp.sum += sp.isAvg ? n : (n * rowSgn); sp.cnt++; }
+                        }
+                      }
+                    }
+                  }
                   const out = [`<td colspan="${leadSpan}"><b>TOTAL (${fmtNum(rows.length)} RECORDS)</b></td>`];
-                  for (let ci = leadSpan; ci < activeCols.length; ci++) {
-                    const c = activeCols[ci];
-                    const { isM: isMoney, isN: isNum, isL, isSU, isSL } = isColNumeric(c);
+                  for (let ci = leadSpan; ci < colSpecs.length; ci++) {
+                    const sp = colSpecs[ci];
+                    const { c, isM: isMoney, isN: isNum, isL, isSU, isSL, isAvg, sum, cnt } = sp;
                     if (!isMoney && !isNum && !isL && !isSU && !isSL) { out.push(`<td></td>`); continue; }
                     if (c === 'tank_remaining_litres') {
-                      const dt = typeof window.MFG_DIESEL_TANK === 'function' ? window.MFG_DIESEL_TANK() : null;
-                      const rem = dt ? dt.closingTankL : null;
+                      const rem = tankRemVal !== '' ? tankRemVal : null;
                       out.push(`<td class="r">${rem != null ? `<span class="tfoot-avg-tag">Rem. </span><b>${fmtNum(rem, 0)}</b>` : '-'}</td>`);
                       continue;
                     }
-                    const isAvg = /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
-                    let sum = 0, cnt = 0;
-                    rows.forEach(r => {
-                      const rowSgn = meta.key === 'sales_tickets' ? saleTicketSign(r) : (meta.key === 'expenses' ? hubExpenseSign(r) : 1);
-                      if (isAvg && rowSgn === 0) return;
-                      const v = cellValue(r, c, meta.key, rel);
-                      if (v != null && v !== '' && typeof v !== 'boolean') {
-                        const n = Number(v);
-                        if (Number.isFinite(n)) { sum += isAvg ? n : (n * rowSgn); cnt++; }
-                      }
-                    });
                     if (!cnt) { out.push(`<td class="r">—</td>`); continue; }
                     const val = isAvg ? (sum / cnt) : sum;
                     const txt = isSU ? fmtSignedUSD(val, 2)
@@ -8712,7 +8822,10 @@
                       : `<b>${txt}</b>`;
                     out.push(`<td class="r">${isAvg ? '<span class="tfoot-avg-tag">Avg </span>' : ''}${footHtml}</td>`);
                   }
-                  return out.join('');
+                  const htmlOut = out.join('');
+                  if (_hubTfootCache.size > 64) _hubTfootCache.clear();
+                  _hubTfootCache.set(tfKey, htmlOut);
+                  return htmlOut;
                 })()}
               </tr>
             </tfoot>
@@ -8850,6 +8963,7 @@
     const meta = univPool.find(t => t.key === activeKey) || univPool.find(t => groupKeys.includes(t.key)) || univPool[0];
     STATE.activeUnivRegKey = meta.key;
     const rel = getHubRelIndex(SEED);
+    const chipCounts = _getHubTableChipCounts(SEED, STATE, ctx, univPool);
     const rawList = (SEED.records && SEED.records[meta.key]) || [];
     const searchCols = meta.key === 'sites'
       ? Array.from(new Set(meta.cols.concat(['supplier', 'customer', 'site_category', 'linked_party'])))
@@ -8876,7 +8990,7 @@
               <div class="pa-hub-views"${views.length > 1 ? ' style="flex:1 1 100%;padding-bottom:6px;margin-bottom:2px;border-bottom:1px dashed var(--line)"' : ''}>
                 <span class="pa-hub-lbl">Registries (All BUs):</span>
                 ${groupTabsMeta.map(gt => {
-                  const gCnt = filterRecords((SEED.records && SEED.records[gt.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: true, ignoreRls: true }).length;
+                  const gCnt = chipCounts.byKey[gt.key] != null ? chipCounts.byKey[gt.key] : ((SEED.records && SEED.records[gt.key]) || []).length;
                   return `<button type="button" class="filter-chip ${gt.key === meta.key ? 'active' : ''}" data-univ-reg-key="${esc(gt.key)}" ${gt.navView ? `data-univ-nav-view="${esc(gt.navView)}"` : ''}>${esc(gt.label)} <span class="mono" style="opacity:.75">(${fmtNum(gCnt)})</span></button>`;
                 }).join('')}
               </div>
@@ -8894,8 +9008,7 @@
               <div class="pa-hub-conns">
                 <span class="pa-hub-lbl">Connected Tables:</span>
                 ${relTablesMeta.map(rt => {
-                  const rtUniv = Boolean(rt.universal);
-                  const rCnt = filterRecords((SEED.records && SEED.records[rt.key]) || [], { ignorePeriod: true, ignoreSearch: true, ignoreCompany: rtUniv, ignoreRls: rtUniv }).length;
+                  const rCnt = chipCounts.byKey[rt.key] != null ? chipCounts.byKey[rt.key] : 0;
                   return `<button type="button" class="filter-chip" data-conn-table-key="${esc(rt.key)}" title="Jump to related table ${esc(rt.label)}">⇄ ${esc(rt.label)} <span class="mono" style="opacity:.7">(${fmtNum(rCnt)})</span></button>`;
                 }).join('')}
               </div>
@@ -8957,6 +9070,8 @@
             <tfoot>
               <tr>
                 ${(() => {
+                  const tfKey = `ureg|${(SEED && SEED._customRev) || 0}|${_hubRelStamp}|${meta.key}|${activeView.id}|${activeCols.join(',')}|${_pbiArrUid(rows)}:${rows.length}:${rows[0] && rows[0].id}:${rows[rows.length - 1] && rows[rows.length - 1].id}`;
+                  if (_hubTfootCache.has(tfKey)) return _hubTfootCache.get(tfKey);
                   const isColNumeric = col => {
                     if (NON_NUMERIC_HUB_COLS.test(col)) return { isM: false, isN: false, num: false };
                     const isBoolCol = /^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|iva$|overtime$)/.test(col);
@@ -8964,31 +9079,45 @@
                     const isN = !isBoolCol && !isM && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(col);
                     return { isM, isN, num: isM || isN };
                   };
-                  let firstNum = activeCols.findIndex((col, idx) => idx > 0 && isColNumeric(col).num);
+                  const colSpecs = activeCols.map(c => {
+                    const spec = isColNumeric(c);
+                    const isAvg = spec.num && /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
+                    return { c, ...spec, isAvg, sum: 0, cnt: 0 };
+                  });
+                  let firstNum = colSpecs.findIndex((sp, idx) => idx > 0 && sp.num);
                   if (firstNum < 0) firstNum = activeCols.length;
                   const leadSpan = Math.max(1, firstNum);
-                  const out = [`<td colspan="${leadSpan}"><b>TOTAL (${fmtNum(rows.length)} RECORDS)</b></td>`];
-                  for (let ci = leadSpan; ci < activeCols.length; ci++) {
-                    const c = activeCols[ci];
-                    const { isM: isMoney, isN: isNum } = isColNumeric(c);
-                    if (!isMoney && !isNum) { out.push(`<td></td>`); continue; }
-                    const isAvg = /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
-                    let sum = 0, cnt = 0;
-                    rows.forEach(r => {
-                      const rowSgn = meta.key === 'sales_tickets' ? saleTicketSign(r) : (meta.key === 'expenses' ? hubExpenseSign(r) : 1);
-                      if (isAvg && rowSgn === 0) return;
-                      const v = cellValue(r, c, meta.key, rel);
-                      if (v != null && v !== '' && typeof v !== 'boolean') {
-                        const n = Number(v);
-                        if (Number.isFinite(n)) { sum += isAvg ? n : (n * rowSgn); cnt++; }
+                  const evalCols = colSpecs.slice(leadSpan).filter(sp => sp.num);
+                  if (evalCols.length && rows.length) {
+                    const isSalesTkt = meta.key === 'sales_tickets';
+                    const isExpTbl = meta.key === 'expenses';
+                    for (let ri = 0; ri < rows.length; ri++) {
+                      const r = rows[ri];
+                      const rowSgn = isSalesTkt ? saleTicketSign(r) : (isExpTbl ? hubExpenseSign(r) : 1);
+                      for (let ei = 0; ei < evalCols.length; ei++) {
+                        const sp = evalCols[ei];
+                        if (sp.isAvg && rowSgn === 0) continue;
+                        const v = cellValue(r, sp.c, meta.key, rel);
+                        if (v != null && v !== '' && typeof v !== 'boolean') {
+                          const n = Number(v);
+                          if (Number.isFinite(n)) { sp.sum += sp.isAvg ? n : (n * rowSgn); sp.cnt++; }
+                        }
                       }
-                    });
+                    }
+                  }
+                  const out = [`<td colspan="${leadSpan}"><b>TOTAL (${fmtNum(rows.length)} RECORDS)</b></td>`];
+                  for (let ci = leadSpan; ci < colSpecs.length; ci++) {
+                    const { c, isM: isMoney, isN: isNum, isAvg, sum, cnt } = colSpecs[ci];
+                    if (!isMoney && !isNum) { out.push(`<td></td>`); continue; }
                     if (!cnt) { out.push(`<td class="r">—</td>`); continue; }
                     const val = isAvg ? (sum / cnt) : sum;
                     const txt = isMoney ? fmtUSD(val, 2) : (c === 'vat_percent' ? fmtNum(val, 1) + '%' : fmtNum(val, /factor|qty|capacity|percentage|interest/.test(c) ? 2 : 0));
                     out.push(`<td class="r">${isAvg ? '<span class="tfoot-avg-tag">Avg </span>' : ''}<b>${txt}</b></td>`);
                   }
-                  return out.join('');
+                  const htmlOut = out.join('');
+                  if (_hubTfootCache.size > 64) _hubTfootCache.clear();
+                  _hubTfootCache.set(tfKey, htmlOut);
+                  return htmlOut;
                 })()}
               </tr>
             </tfoot>
@@ -9585,7 +9714,13 @@
     return 'Truck';
   }
 
+  const _lubAuditCache = new Map();
   function computeLubricationAudit(opts = {}) {
+    const seedRev = (typeof window !== 'undefined' && window.SEED && window.SEED._customRev) || 0;
+    const acObj = typeof window !== 'undefined' ? window.MFG_ALERT_CONFIG : null;
+    const acSig = acObj ? `${acObj.enabled('G_HYD_LEAK_30D')}:${acObj.param('G_HYD_LEAK_30D', 'audit_watch_excess_l', 30)}:${acObj.param('G_HYD_LEAK_30D', 'audit_crit_excess_l', 80)}:${acObj.enabled('G_OIL_DRAIN')}:${acObj.param('G_OIL_DRAIN', 'truck_overdue_diesel_l', 14000)}:${acObj.param('G_OIL_DRAIN', 'machine_overdue_diesel_l', 6500)}:${acObj.param('G_GREASE_COMP', 'truck_kg_day', 0.15)}:${acObj.param('G_GREASE_COMP', 'machine_kg_day', 0.30)}:${acObj.param('G_GREASE_COMP', 'plant_kg_day', 0.60)}` : 'def';
+    const lubKey = `${seedRev}|${acSig}|${_pbiArrUid(opts.fuelRows)}:${(opts.fuelRows && opts.fuelRows.length) || 0}|${_pbiArrUid(opts.expRows)}:${(opts.expRows && opts.expRows.length) || 0}|${_pbiArrUid(opts.salesRows)}:${(opts.salesRows && opts.salesRows.length) || 0}|${_pbiArrUid(opts.rawRows)}:${(opts.rawRows && opts.rawRows.length) || 0}|${_pbiArrUid(opts.equipList)}:${(opts.equipList && opts.equipList.length) || 0}`;
+    if (_lubAuditCache.has(lubKey)) return _lubAuditCache.get(lubKey);
     const fuelRows = (opts.fuelRows || []).filter(r => r && !r.voided);
     const expRows = (opts.expRows || []).filter(r => r && !r.voided);
     const salesRows = (opts.salesRows || []).filter(r => r && !r.voided);
@@ -9879,7 +10014,7 @@
 
     const overallGreasePct = sumActiveDays > 0 ? Math.min(100, (sumGreasedDays / sumActiveDays) * 100) : 0;
 
-    return {
+    const outObj = {
       totalEngineL: round2(totalEngineL),
       totalExpEngineL: round2(totalExpEngineL),
       totalHydL: round2(totalHydL),
@@ -9899,6 +10034,9 @@
       auditRows,
       greaseRows
     };
+    if (_lubAuditCache.size > 24) _lubAuditCache.clear();
+    _lubAuditCache.set(lubKey, outObj);
+    return outObj;
   }
 
   function renderLubricationBenchmarksSection(opts = {}) {

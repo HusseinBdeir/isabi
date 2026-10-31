@@ -1,18 +1,18 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ISABI Systems | Command Center &amp; Double-Entry Ledger</title>
-  <meta name="description" content="ISABI Systems â€” Command Center &amp; Double-Entry Ledger across 10 Industries (Manufacturing, Hospitality, Trading, Real Estate, Insurance &amp; Holding).">
+  <meta name="description" content="ISABI Systems — Command Center &amp; Double-Entry Ledger across 10 Industries (Manufacturing, Hospitality, Trading, Real Estate, Insurance &amp; Holding).">
   <meta name="theme-color" content="#F4F2EE">
   <script id="pre">
-    // Pre-paint theme + iOS standalone + SW-resume detection (no white flash or auth-gate flash on reload) â€” PWA.md Â§3.1 & Â§3.3
+    // Pre-paint theme + iOS standalone + SW-resume detection (no white flash or auth-gate flash on reload) — PWA.md §3.1 & §3.3
     try {
       if (location.hostname === 'husseinbdeir.github.io' && /^\/mfg-web(\/|$)/.test(location.pathname) && !/[?&]noredirect=1\b/.test(location.search)) {
         location.replace('https://husseinbdeir.github.io/isabi/app/' + (location.search || '') + (location.hash || ''));
       }
-      window.__MFG_SHELL_VER = '19.6.30';
+      window.__MFG_SHELL_VER = '19.6.33';
       var t = localStorage.getItem('isabi_mfg_theme');
       if (t === 'dark' || t === 'light') { document.documentElement.setAttribute('data-theme', t); var tm = document.querySelector('meta[name="theme-color"]'); if (tm) tm.setAttribute('content', t === 'dark' ? '#081124' : '#F4F2EE'); }
       var rw = parseInt(localStorage.getItem('isabi_mfg_rail_width'), 10);
@@ -39,9 +39,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap"></noscript>
-  <link rel="stylesheet" href="css/app.css?v=19.6.30">
-  <link rel="stylesheet" href="css/geo_dispatch.css?v=19.6.30">
-  <link rel="stylesheet" href="css/daily_ops.css?v=19.6.30">
+  <link rel="stylesheet" href="css/app.css?v=19.6.33">
+  <link rel="stylesheet" href="css/geo_dispatch.css?v=19.6.33">
+  <link rel="stylesheet" href="css/daily_ops.css?v=19.6.33">
 </head>
 <body class="locked">
   <div class="app-shell" id="appShell">
@@ -140,7 +140,7 @@
           <em class="nav-pill" id="navCountTB" hidden></em>
         </button>
 
-        <div class="grp grp-univ">Universal Â· All BUs</div>
+        <div class="grp grp-univ">Universal · All BUs</div>
         <button type="button" class="nav-item" data-hub="univ_parties" data-view="reg_customers" aria-label="Counterparties &amp; Sites">
           <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20.5h18"/><path d="M4.5 20.5V7.5L12 4v16.5"/><path d="M12 10h7.5v10.5"/><line x1="7.8" y1="10.5" x2="9.2" y2="10.5"/><line x1="7.8" y1="14" x2="9.2" y2="14"/><line x1="15" y1="13.5" x2="16.4" y2="13.5"/><line x1="15" y1="16.8" x2="16.4" y2="16.8"/></svg></i>
           <span>Counterparties &amp; Sites</span>
@@ -179,12 +179,12 @@
           <span class="av" id="railUserAvatar">HB</span>
           <div class="me-info">
             <strong id="railUserName">Hussein Bdeir</strong>
-            <small id="activeRoleBadge">Full Access Â· 3 Entities</small>
+            <small id="activeRoleBadge">Full Access · 3 Entities</small>
           </div>
           <button type="button" class="rail-switch-btn" id="signOutBtn" title="Lock this session and switch team login">Lock</button>
         </div>
       </div>
-      <div class="rail-resizer" id="railResizer" role="separator" aria-orientation="vertical" aria-valuemin="176" aria-valuemax="420" aria-valuenow="248" tabindex="0" aria-label="Resize left navigation sidebar" title="Drag left or right to make sidebar wider or narrower Â· Double-click to reset">
+      <div class="rail-resizer" id="railResizer" role="separator" aria-orientation="vertical" aria-valuemin="176" aria-valuemax="420" aria-valuenow="248" tabindex="0" aria-label="Resize left navigation sidebar" title="Drag left or right to make sidebar wider or narrower · Double-click to reset">
         <span class="rail-resizer-grip" aria-hidden="true"></span>
       </div>
     </aside>
@@ -199,7 +199,7 @@
             <span class="sidebar-toggle-lbl" id="sidebarToggleLbl">Sidebar</span>
           </button>
           <div class="crumb">
-            <span id="topbarEyebrow">ISABI Systems Â· Manufacturing Operations Â· Double-Entry Ledger</span>
+            <span id="topbarEyebrow">ISABI Systems · Manufacturing Operations · Double-Entry Ledger</span>
             <b id="topbarTitle">Executive Overview</b>
           </div>
           <div class="top-mobile-actions">
@@ -221,9 +221,9 @@
         </div>
 
         <div class="tools">
-          <!-- Scalable Multi-Industry & Multi-Company Selector Box (Fixed Footprint Â· 10 Industries Ã— 200+ Companies) -->
+          <!-- Scalable Multi-Industry & Multi-Company Selector Box (Fixed Footprint · 10 Industries × 200+ Companies) -->
           <div class="entity-bar entity-picker-box" id="companySwitch" role="group" aria-label="Operating Industry &amp; Company">
-            <button type="button" class="entity-picker-trigger" id="companySwitchTrigger" aria-haspopup="listbox" aria-expanded="false" title="Switch Industry &amp; Operating Company (10 Industries Â· 200+ Companies Ready)">
+            <button type="button" class="entity-picker-trigger" id="companySwitchTrigger" aria-haspopup="listbox" aria-expanded="false" title="Switch Industry &amp; Operating Company (10 Industries · 200+ Companies Ready)">
               <span class="ep-seg ep-seg-ind">
                 <small class="ep-seg-kicker">IND</small>
                 <strong id="companySwitchIndText">Manufacturing</strong>
@@ -233,7 +233,7 @@
                 <small class="ep-seg-kicker">CO</small>
                 <strong id="companySwitchCoText">All Group (3)</strong>
               </span>
-              <span class="ep-caret" aria-hidden="true">â–¾</span>
+              <span class="ep-caret" aria-hidden="true">▾</span>
             </button>
             <div class="entity-picker-popover" id="companySwitchPopover" hidden>
               <div class="entity-picker-toolbar">
@@ -241,7 +241,7 @@
                 <div class="entity-picker-actions">
                   <button type="button" class="entity-picker-act-btn" id="companySwitchSelectAllBtn" title="Switch to consolidated view across all permitted companies">All Assigned</button>
                   <button type="button" class="entity-picker-act-btn" id="officialScopeToggleBtn" hidden title="Switch between Full Operational Ledger and Official Fiscal Books Only">All Books</button>
-                  <button type="button" class="entity-picker-act-btn entity-picker-demo-btn" id="companySwitchScalePreviewBtn" title="Toggle 10 Industries Ã— 15 Companies (150 Companies) enterprise scale preview"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2.5 4 13.8 11.8 13.8 11 21.5 20 10.2 12.2 10.2 13 2.5"/></svg> Preview 10 Ind Ã— 150 Co</button>
+                  <button type="button" class="entity-picker-act-btn entity-picker-demo-btn" id="companySwitchScalePreviewBtn" title="Toggle 10 Industries × 15 Companies (150 Companies) enterprise scale preview"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2.5 4 13.8 11.8 13.8 11 21.5 20 10.2 12.2 10.2 13 2.5"/></svg> Preview 10 Ind × 150 Co</button>
                 </div>
               </div>
               <div class="entity-picker-body">
@@ -257,13 +257,13 @@
                 </div>
               </div>
               <div class="entity-picker-foot">
-                <span id="companySwitchFootStatus">1 Industry Â· 3 Companies Permitted (RLS)</span>
+                <span id="companySwitchFootStatus">1 Industry · 3 Companies Permitted (RLS)</span>
                 <button type="button" class="btn btn-brass" style="padding:2px 9px;font-size:10.5px" id="companySwitchDoneBtn">Done</button>
               </div>
             </div>
           </div>
 
-          <span class="univ-scope-pill" id="topbarUnivScopePill" hidden>All BUs Â· Shared Registry</span>
+          <span class="univ-scope-pill" id="topbarUnivScopePill" hidden>All BUs · Shared Registry</span>
 
           <div class="period-basis-row">
             <!-- Executive Date Grain Slicer (All | Year | Month | Week | Day) -->
@@ -271,13 +271,13 @@
               <button type="button" class="grain-btn active" data-grain="all" title="Preset &amp; All-Time Periods">All</button>
               <button type="button" class="grain-btn" data-grain="year" title="Filter by Calendar Year">Year</button>
               <button type="button" class="grain-btn" data-grain="month" title="Filter by Calendar Month">Month</button>
-              <button type="button" class="grain-btn" data-grain="week" title="Filter by Mondayâ€“Sunday Week">Week</button>
+              <button type="button" class="grain-btn" data-grain="week" title="Filter by Monday–Sunday Week">Week</button>
               <button type="button" class="grain-btn" data-grain="day" title="Filter by Specific Day">Day</button>
             </div>
 
             <!-- Period Slicer (retired from visible UI in v11.9 now that Date Grain + Segmented Date Bar are interactive) -->
             <select id="periodSelect" class="pill-select" aria-label="Reporting Period" hidden aria-hidden="true">
-              <option value="all">All-Time (2024â€“2030)</option>
+              <option value="all">All-Time (2024–2030)</option>
               <option value="today">Today</option>
               <option value="yesterday">Yesterday</option>
               <option value="wtd">This Week</option>
@@ -294,22 +294,22 @@
               <option value="last_12m">Last 12 Months</option>
             </select>
 
-            <!-- Custom Date Range Slicer (From â€“ To + Interactive Day/Month/Year Facilitator) -->
+            <!-- Custom Date Range Slicer (From – To + Interactive Day/Month/Year Facilitator) -->
             <div class="date-range-bar" id="dateRangeBar" role="group" aria-label="Date Range Filter">
               <div class="date-seg-slot" data-date-slot="from">
                 <input type="date" id="dateFromInput" class="date-range-input date-native-proxy" min="2024-01-01" max="2030-12-31" value="2024-01-01" aria-label="From Date" title="Start Date (From)" tabindex="-1">
                 <div class="date-seg-pill" id="dateFromSegPill" data-date-end="from" data-date-scope="top">
-                  <button type="button" class="date-seg-part" data-date-end="from" data-date-part="day" data-date-scope="top" title="From Day â€” click for Calendar or â†‘/â†“ to step Â±1 day">01</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part" data-date-end="from" data-date-part="month" data-date-scope="top" title="From Month â€” click for Month Picker or â†‘/â†“ to step Â±1 month">Jan</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part" data-date-end="from" data-date-part="year" data-date-scope="top" title="From Year â€” click for Year Picker or â†‘/â†“ to step Â±1 year">2024</button><button type="button" class="date-seg-cal" data-date-end="from" data-date-part="day" data-date-scope="top" title="Open interactive Date &amp; Period Facilitator (From)" aria-label="Open From Date Picker"><svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.8"/><line x1="5" y1="1.5" x2="5" y2="4.2"/><line x1="11" y1="1.5" x2="11" y2="4.2"/><line x1="2" y1="6.5" x2="14" y2="6.5"/></svg></button>
+                  <button type="button" class="date-seg-part" data-date-end="from" data-date-part="day" data-date-scope="top" title="From Day — click for Calendar or ↑/↓ to step ±1 day">01</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part" data-date-end="from" data-date-part="month" data-date-scope="top" title="From Month — click for Month Picker or ↑/↓ to step ±1 month">Jan</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part" data-date-end="from" data-date-part="year" data-date-scope="top" title="From Year — click for Year Picker or ↑/↓ to step ±1 year">2024</button><button type="button" class="date-seg-cal" data-date-end="from" data-date-part="day" data-date-scope="top" title="Open interactive Date &amp; Period Facilitator (From)" aria-label="Open From Date Picker"><svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.8"/><line x1="5" y1="1.5" x2="5" y2="4.2"/><line x1="11" y1="1.5" x2="11" y2="4.2"/><line x1="2" y1="6.5" x2="14" y2="6.5"/></svg></button>
                 </div>
               </div>
               <span class="date-range-sep" aria-hidden="true"></span>
               <div class="date-seg-slot" data-date-slot="to">
                 <input type="date" id="dateToInput" class="date-range-input date-native-proxy" min="2024-01-01" max="2030-12-31" value="2030-12-31" aria-label="To Date" title="End Date (To)" tabindex="-1">
                 <div class="date-seg-pill" id="dateToSegPill" data-date-end="to" data-date-scope="top">
-                  <button type="button" class="date-seg-part" data-date-end="to" data-date-part="day" data-date-scope="top" title="To Day â€” click for Calendar or â†‘/â†“ to step Â±1 day">31</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part" data-date-end="to" data-date-part="month" data-date-scope="top" title="To Month â€” click for Month Picker or â†‘/â†“ to step Â±1 month">Dec</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part" data-date-end="to" data-date-part="year" data-date-scope="top" title="To Year â€” click for Year Picker or â†‘/â†“ to step Â±1 year">2030</button><button type="button" class="date-seg-cal" data-date-end="to" data-date-part="day" data-date-scope="top" title="Open interactive Date &amp; Period Facilitator (To)" aria-label="Open To Date Picker"><svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.8"/><line x1="5" y1="1.5" x2="5" y2="4.2"/><line x1="11" y1="1.5" x2="11" y2="4.2"/><line x1="2" y1="6.5" x2="14" y2="6.5"/></svg></button>
+                  <button type="button" class="date-seg-part" data-date-end="to" data-date-part="day" data-date-scope="top" title="To Day — click for Calendar or ↑/↓ to step ±1 day">31</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part" data-date-end="to" data-date-part="month" data-date-scope="top" title="To Month — click for Month Picker or ↑/↓ to step ±1 month">Dec</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part" data-date-end="to" data-date-part="year" data-date-scope="top" title="To Year — click for Year Picker or ↑/↓ to step ±1 year">2030</button><button type="button" class="date-seg-cal" data-date-end="to" data-date-part="day" data-date-scope="top" title="Open interactive Date &amp; Period Facilitator (To)" aria-label="Open To Date Picker"><svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.8"/><line x1="5" y1="1.5" x2="5" y2="4.2"/><line x1="11" y1="1.5" x2="11" y2="4.2"/><line x1="2" y1="6.5" x2="14" y2="6.5"/></svg></button>
                 </div>
               </div>
-              <button type="button" id="dateRangeResetBtn" class="date-range-reset" title="Reset to All-Time (2024â€“2030)" aria-label="Reset Date Filter" hidden>âœ•</button>
+              <button type="button" id="dateRangeResetBtn" class="date-range-reset" title="Reset to All-Time (2024–2030)" aria-label="Reset Date Filter" hidden>✕</button>
             </div>
 
             <!-- Date Basis -->
@@ -350,7 +350,7 @@
       <!-- Dynamic Workspace Canvas -->
       <main class="workspace" id="workspace" tabindex="-1"></main>
 
-      <!-- Mobile Bottom Navigation Dock (PWA.md Â§3.1) -->
+      <!-- Mobile Bottom Navigation Dock (PWA.md §3.1) -->
       <nav class="mobile-bottom-dock no-print" id="mobileBottomDock" aria-label="Mobile Navigation">
         <button type="button" class="dock-btn on" data-dock-view="overview" id="dockBtnOverview">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
@@ -396,15 +396,15 @@
           </g>
         </svg>
         <div>
-          <b>Ask ISABI Â· Manufacturing Intelligence</b>
+          <b>Ask ISABI · Manufacturing Intelligence</b>
           <small>Wired to WTC, BBConstruction &amp; Lions Transport SQL books</small>
         </div>
       </div>
-      <button type="button" class="ai-close-btn" id="closeAiDrawerBtn" aria-label="Close Ask ISABI">âœ•</button>
+      <button type="button" class="ai-close-btn" id="closeAiDrawerBtn" aria-label="Close Ask ISABI">✕</button>
     </div>
 
     <div class="ai-scope-bar">
-      <span>Active Context: <b id="aiDrawerScope">All Group Â· USD Â· All-Time</b></span>
+      <span>Active Context: <b id="aiDrawerScope">All Group · USD · All-Time</b></span>
       <button type="button" class="ai-reset-btn" id="resetAiThreadBtn">Reset</button>
     </div>
 
@@ -429,10 +429,10 @@
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-header">
         <div>
-          <span class="modal-eyebrow" id="modalEyebrow">ISABI Double-Entry Operational Desk Â· Auto-Journal &amp; Price Matrix</span>
+          <span class="modal-eyebrow" id="modalEyebrow">ISABI Double-Entry Operational Desk · Auto-Journal &amp; Price Matrix</span>
           <h2 id="modalTitle">New Operational Transaction</h2>
         </div>
-        <div class="modal-header-actions"><button type="button" class="btn-ghost-bar modal-hdr-act-btn" id="modalPrintThermalBtn" hidden>Thermal Slip</button><button type="button" class="btn-ghost-bar modal-hdr-act-btn" id="modalOpenInspectorBtn" hidden>360Â° Details</button><button type="button" class="modal-close-btn" id="closeModalBtn" aria-label="Close">âœ•</button></div>
+        <div class="modal-header-actions"><button type="button" class="btn-ghost-bar modal-hdr-act-btn" id="modalPrintThermalBtn" hidden>Thermal Slip</button><button type="button" class="btn-ghost-bar modal-hdr-act-btn" id="modalOpenInspectorBtn" hidden>360° Details</button><button type="button" class="modal-close-btn" id="closeModalBtn" aria-label="Close">✕</button></div>
       </div>
       <div class="modal-tabs" id="modalTabs">
         <button type="button" class="modal-tab active" data-form="sales">Sales / Weighbridge Ticket</button>
@@ -489,7 +489,7 @@
           <div class="auth-cam-viewport" id="authCamViewport">
             <div class="auth-cam-backdrop" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="10" r="3"/><path d="M7 18a5 5 0 0 1 10 0"/></svg>
-              <span>Starting Face IDâ€¦</span>
+              <span>Starting Face ID…</span>
             </div>
             <video id="authFaceVideo" autoplay muted playsinline></video>
             <canvas id="authFaceOverlay"></canvas>
@@ -512,7 +512,7 @@
             <div class="auth-face-card" id="authFaceCard" hidden>
               <div class="auth-face-card-av">
                 <img id="authFaceCardImg" src="icon.svg" alt="">
-                <span class="auth-face-card-check">âœ“</span>
+                <span class="auth-face-card-check">✓</span>
               </div>
               <div class="auth-face-card-body">
                 <div class="auth-face-card-top">
@@ -539,7 +539,7 @@
         <div class="auth-seat-drawer" id="authSeatDrawer">
           <div class="auth-seat-search-wrap">
             <svg class="auth-seat-search-ic" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-            <input type="text" id="authEmailInput" class="auth-input auth-seat-search" inputmode="search" placeholder="Select or search your accountâ€¦" aria-label="Select or search your account" autocomplete="username">
+            <input type="text" id="authEmailInput" class="auth-input auth-seat-search" inputmode="search" placeholder="Select or search your account…" aria-label="Select or search your account" autocomplete="username">
           </div>
           <div class="quick-seat-list" id="quickSeatList"></div>
         </div>
@@ -588,18 +588,18 @@
   <!-- Toast Notification -->
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script defer src="js/face.js?v=19.6.30"></script>
-  <script defer src="js/endpoints.js?v=19.6.30"></script>
-  <script defer src="js/seed_manifest.js?v=19.6.30"></script>
-  <script defer src="js/icons.js?v=19.6.30"></script>
-  <script defer src="js/geo_dispatch.js?v=19.6.30"></script>
-  <script defer src="js/forms_engine.js?v=19.6.30"></script>
-  <script defer src="js/pbi_pages.js?v=19.6.30"></script>
-  <script defer src="js/rdl_reports.js?v=19.6.30"></script>
-  <script defer src="js/kiosk_print.js?v=19.6.30"></script>
-  <script defer src="js/table_columns.js?v=19.6.30"></script>
-  <script defer src="js/daily_ops.js?v=19.6.30"></script>
-  <script defer src="js/app.js?v=19.6.30"></script>
+  <script defer src="js/face.js?v=19.6.33"></script>
+  <script defer src="js/endpoints.js?v=19.6.33"></script>
+  <script defer src="js/seed_manifest.js?v=19.6.33"></script>
+  <script defer src="js/icons.js?v=19.6.33"></script>
+  <script defer src="js/geo_dispatch.js?v=19.6.33"></script>
+  <script defer src="js/forms_engine.js?v=19.6.33"></script>
+  <script defer src="js/pbi_pages.js?v=19.6.33"></script>
+  <script defer src="js/rdl_reports.js?v=19.6.33"></script>
+  <script defer src="js/kiosk_print.js?v=19.6.33"></script>
+  <script defer src="js/table_columns.js?v=19.6.33"></script>
+  <script defer src="js/daily_ops.js?v=19.6.33"></script>
+  <script defer src="js/app.js?v=19.6.33"></script>
   <script>
     window.addEventListener('load', () => {
       // Load Google Fonts after window.load so webfont fetches never spin Chrome's tab loading indicator

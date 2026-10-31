@@ -1621,14 +1621,15 @@
   function render04CashFlow(meta, ctx) {
     const p = ctx.rdl.params;
     const pMode = p.period || 'Month';
-    const sales = (ctx.arLedgerAll || ctx.salesAll).filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
-    const exps = ctx.expAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
-    const rms = (ctx.apRmLedgerAll || ctx.rmAll).filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
-    const fuels = ctx.fuelAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
-    const pays = ctx.payAll.filter(r => inWindow(rowDate(r, ctx.basis), p.from, p.to));
+    const txDate = r => String((r && (r.date || r.tx_date)) || '').slice(0, 10);
+    const sales = (ctx.arLedgerAll || ctx.salesAll).filter(r => inWindow(txDate(r), p.from, p.to));
+    const exps = ctx.expAll.filter(r => inWindow(txDate(r), p.from, p.to));
+    const rms = (ctx.apRmLedgerAll || ctx.rmAll).filter(r => inWindow(txDate(r), p.from, p.to));
+    const fuels = ctx.fuelAll.filter(r => inWindow(txDate(r), p.from, p.to));
+    const pays = ctx.payAll.filter(r => inWindow(txDate(r), p.from, p.to));
 
     const bucketsSet = new Set();
-    [...sales, ...exps, ...rms, ...fuels, ...pays].forEach(r => bucketsSet.add(periodBucket(rowDate(r, ctx.basis), pMode)));
+    [...sales, ...exps, ...rms, ...fuels, ...pays].forEach(r => bucketsSet.add(periodBucket(txDate(r), pMode)));
     const allB = [...bucketsSet].sort();
     const cols = allB.length > 8 ? allB.slice(-8) : (allB.length ? allB : [periodBucket(p.to, pMode)]);
 
@@ -1646,11 +1647,11 @@
       lines[key].total += val;
     };
 
-    sales.forEach(r => addVal('custIn', rowDate(r, ctx.basis), Number(r.paid_usd || 0)));
-    rms.forEach(r => addVal('rmOut', rowDate(r, ctx.basis), -Number(r.paid_usd || r.total_usd || 0)));
-    fuels.forEach(r => addVal('fuelOut', rowDate(r, ctx.basis), -Number(r.paid_usd || r.total_usd || 0)));
-    exps.forEach(r => addVal('expOut', rowDate(r, ctx.basis), -Number(r.paid_usd || r.total_usd || 0)));
-    pays.forEach(r => addVal('payOut', rowDate(r, ctx.basis), -Number(r.paid_usd || r.net_usd || 0)));
+    sales.forEach(r => addVal('custIn', txDate(r), Number(r.paid_usd || 0)));
+    rms.forEach(r => addVal('rmOut', txDate(r), -Number(r.paid_usd || r.total_usd || 0)));
+    fuels.forEach(r => addVal('fuelOut', txDate(r), -Number(r.paid_usd || r.total_usd || 0)));
+    exps.forEach(r => addVal('expOut', txDate(r), -Number(r.paid_usd || r.total_usd || 0)));
+    pays.forEach(r => addVal('payOut', txDate(r), -Number(r.paid_usd || r.net_usd || 0)));
 
     const rowKeys = ['custIn', 'rmOut', 'fuelOut', 'expOut', 'payOut'];
     return `

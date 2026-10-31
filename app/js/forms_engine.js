@@ -93,9 +93,11 @@
     {
       id: 'treasury',
       icon: 'cashflow',
-      label: '5. Treasury & FX',
+      label: '5. Cash Flow & Treasury',
       forms: [
-        { id: 'treasury', label: 'Treasury / Loans / FX', badge: 'bhf_external', crKey: 'loans', title: 'New Treasury Entry' }
+        { id: 'external', label: 'External Entry', badge: 'bhf_external', crKey: 'external_movements', title: 'New External Cash Entry' },
+        { id: 'treasury', label: 'Loan & Settlement', badge: 'bhf_loan', crKey: 'loans', title: 'New Loan or Settlement' },
+        { id: 'conversion', label: 'FX Conversion', badge: 'bhf_conversion', crKey: 'conversions', title: 'New FX Conversion (USD ↔ LBP)' }
       ]
     },
     {
@@ -1716,38 +1718,85 @@
       `;
     }
 
-    if (fType === 'treasury') {
+    if (fType === 'external') {
+      const externalPartyNames = uniqSorted(['Haj Ali', 'Haj Mohamad', 'WTC', 'BBConstruction', 'Lions Transport', 'La Una', 'Blanca', 'Palms', 'Voile', 'George', 'Bdeir Holding'].concat((rec.external_movements || []).map(x => x.counterparty || x.name)), fIdx && fIdx.counterparty);
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
           ${companyField}
           ${lockedDateField('Transaction Date *')}
           ${collapsibleRepDateField()}
-          ${fld('Treasury Entry Type *', sel('f_trtype', [
-            ['loan', 'Partner / Intercompany Loan Drawdown'],
-            ['loan_settlement', 'Loan Repayment / Settlement'],
-            ['external', 'External Cash Inflow / Outflow'],
-            ['conversion', 'Currency Conversion USD ↔ LBP']
-          ], 'loan'))}
-          ${fld('Counterparty / Partner / Account *', inp('f_counterparty', 'text', '', 'list="dl_counterparties" placeholder="Select or type partner, bank, or entity..."') + dl('dl_counterparties', counterpartyNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
-          ${fld('Direction / Leg *', sel('f_direction', [['Inflow', 'Cash Inflow / Borrowed'], ['Outflow', 'Cash Outflow / Repaid']], 'Inflow'), { id: 'wrap_tr_dir' })}
+          ${fld('Stakeholder / Counterparty *', inp('f_counterparty', 'text', '', 'list="dl_ext_parties" placeholder="Select or type stakeholder or entity..."') + dl('dl_ext_parties', externalPartyNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
           <div id="trLiveContextStrip" class="att-contract-strip" hidden></div>
-          ${fld('Conversion Direction *', sel('f_conv_dir', [
-            ['USD to LBP', 'USD → LBP (USD Decreases · LBP Increases)'],
-            ['LBP to USD', 'LBP → USD (LBP Decreases · USD Increases)']
-          ], 'USD to LBP'), { id: 'wrap_conv_dir', hidden: true })}
-          ${fld('Exchange Rate (LL / $)', inp('f_fxrate', 'number', String(getActiveFxRate()), 'step="10" min="1"'), { id: 'wrap_conv_rate', hidden: true })}
+          ${fld('Cash Direction *', sel('f_direction', [['Inflow', 'Cash Inflow (Received)'], ['Outflow', 'Cash Outflow (Paid / Swept)']], 'Inflow'), { id: 'wrap_tr_dir' })}
+          ${fld('Entry Kind *', sel('f_ext_kind', [['External', 'External (Partner / Sister Co.)'], ['Extended', 'Extended (Reserve / Special)']], 'External'), { id: 'wrap_ext_kind' })}
+          ${fld('Reference / Voucher', inp('f_reference', 'text', ''))}
+          ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
+          ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0"'), { id: 'wrap_tr_lbp' })}
+          ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
+          ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+        </div>
+        <div class="live-calc" id="trLiveCalc">
+          <div><small id="lbl_tr_c1">Prior Net Position</small><b id="calc_tr_c1">—</b></div>
+          <div><small id="lbl_tr_c2">Inflow Now</small><b id="calc_tr_c2">$0.00</b></div>
+          <div><small id="lbl_tr_c3">Net Position After</small><b id="calc_tr_c3">—</b></div>
+          <div><small id="lbl_tr_c4">Treasury Leg</small><b id="calc_tr_c4">External Inflow</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'treasury') {
+      const loanBorrowerNames = uniqSorted((rec.loans || []).map(l => l.counterparty || l.lender || l.name).concat((rec.loan_settlements || []).map(s => s.counterparty || s.loan)).concat(staffNames), fIdx && fIdx.counterparty);
+      return `
+        ${adminHeaderHtml}
+        <div class="form-grid-3">
+          ${companyField}
+          ${lockedDateField('Transaction Date *')}
+          ${collapsibleRepDateField()}
+          ${fld('Borrower / Counterparty *', inp('f_counterparty', 'text', '', 'list="dl_loan_parties" placeholder="Select or type staff, borrower, or bank..."') + dl('dl_loan_parties', loanBorrowerNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
+          <div id="trLiveContextStrip" class="att-contract-strip" hidden></div>
+          <input type="hidden" id="f_direction" value="Outflow">
+          ${fld('Loan Leg / Direction *', sel('f_trtype', [
+            ['loan', 'Loan / Advance Given (Cash Outflow)'],
+            ['loan_settlement', 'Loan Repayment / Received (Cash Inflow)']
+          ], 'loan'), { id: 'wrap_tr_type' })}
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0"'), { id: 'wrap_tr_lbp' })}
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
           ${fld('Reference / Voucher', inp('f_reference', 'text', ''))}
-          ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+          ${fld('Notes', inp('f_notes', 'text', ''))}
         </div>
         <div class="live-calc" id="trLiveCalc">
-          <div><small id="lbl_tr_c1">Counterparty Balance</small><b id="calc_tr_c1">—</b></div>
-          <div><small id="lbl_tr_c2">This Entry (USD Eq.)</small><b id="calc_tr_c2">$0.00</b></div>
-          <div><small id="lbl_tr_c3">Balance After Entry</small><b id="calc_tr_c3">—</b></div>
+          <div><small id="lbl_tr_c1">Open Loan Before</small><b id="calc_tr_c1">—</b></div>
+          <div><small id="lbl_tr_c2">Drawdown Now</small><b id="calc_tr_c2">$0.00</b></div>
+          <div><small id="lbl_tr_c3">Loan Balance After</small><b id="calc_tr_c3">—</b></div>
           <div><small id="lbl_tr_c4">Treasury Leg</small><b id="calc_tr_c4">Loan Drawdown</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'conversion') {
+      return `
+        ${adminHeaderHtml}
+        <div class="form-grid-3">
+          ${companyField}
+          ${lockedDateField('Transaction Date *')}
+          ${collapsibleRepDateField()}
+          ${fld('Conversion Direction *', sel('f_conv_dir', [
+            ['USD to LBP', 'USD → LBP (USD Decreases · LBP Increases)'],
+            ['LBP to USD', 'LBP → USD (LBP Decreases · USD Increases)']
+          ], 'USD to LBP'), { id: 'wrap_conv_dir' })}
+          ${fld('USD Decreased ($) *', inp('f_usd', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
+          ${fld('LBP Increased (LL) *', inp('f_lbp', 'number', '', 'step="1000" min="0"'), { id: 'wrap_tr_lbp' })}
+          ${fld('Exchange Rate (LL / $)', inp('f_fxrate', 'number', String(getActiveFxRate()), 'step="10" min="1"'), { id: 'wrap_conv_rate' })}
+          ${fld('Reference / Voucher', inp('f_reference', 'text', ''))}
+          ${fld('Notes', inp('f_notes', 'text', ''), { span2: true })}
+        </div>
+        <div class="live-calc" id="trLiveCalc">
+          <div><small id="lbl_tr_c1">USD Drawer Delta</small><b id="calc_tr_c1">-$0.00</b></div>
+          <div><small id="lbl_tr_c2">LBP Drawer Delta</small><b id="calc_tr_c2">+0 LL</b></div>
+          <div><small id="lbl_tr_c3">Effective FX Rate</small><b id="calc_tr_c3">${fmtFxRateLbl(getActiveFxRate())} LL / $</b></div>
+          <div><small id="lbl_tr_c4">Conversion Leg</small><b id="calc_tr_c4">USD to LBP</b></div>
         </div>
       `;
     }
