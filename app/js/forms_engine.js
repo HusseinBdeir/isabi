@@ -1109,6 +1109,23 @@
         return Boolean(s.supplier || s.is_jv || !s.customer);
       }).length;
       const custSiteCount = Math.max(0, activeSites.length - suppSiteCount);
+      const jvPartnerNames = (() => {
+        const seen = new Set();
+        const out = [];
+        const addP = v => {
+          const s = String(v || '').trim();
+          const k = s.toLowerCase();
+          if (!s || seen.has(k) || /^(wtc|bbconstruction|bbc|lions\s*transport|lions)$/i.test(s)) return;
+          seen.add(k);
+          out.push(s);
+        };
+        addP('Assaf');
+        ((rec.jv_partnerships || [])).forEach(j => { if (j && !j.voided) addP(j.partner || j.counterparty); });
+        ((rec.jv_distributions || [])).forEach(j => { if (j && !j.voided) addP(j.partner || j.counterparty); });
+        ((rec.sites || [])).forEach(s => { if (s && !s.voided && s.jv_partner) addP(s.jv_partner); });
+        (supNames || []).forEach(addP);
+        return out;
+      })();
       return `
         <div class="form-grid-3">
           <div class="form-field span-3" id="siteCategoryDeck">
@@ -1161,6 +1178,23 @@
             afterHtml: `<div class="site-jv-subbar" id="wrap_site_jv"${isCustSite ? ' hidden' : ''}><label class="site-jv-toggle-pill" for="f_isjv"><input type="checkbox" id="f_isjv"><span class="site-jv-toggle-lbl"><b>Joint-Venture (JV) Site</b> · 50/50 partner split</span></label></div>`
           })}
           ${fld('Linked Customer', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_site_customer', hidden: !isCustSite })}
+          <div class="site-jv-partner-row span-3" id="wrap_site_jv_details" hidden>
+            ${fld('JV Partner (Apart from Site Owner) *', inp('f_jv_partner', 'text', '', 'list="dl_jv_partners" placeholder="Select or type JV partner (e.g. Assaf)..."') + dl('dl_jv_partners', jvPartnerNames), {
+              id: 'wrap_site_jv_partner',
+              hint: 'Profit-sharing JV partner on this quarry site (separate from Default Site Owner).',
+              hintId: 'hint_site_jv_partner'
+            })}
+            ${fld('JV Partner Share (%) *', inp('f_jv_share', 'number', '50', 'step="0.5" min="1" max="99"'), {
+              id: 'wrap_site_jv_share',
+              hint: `Partner: 50% · ${company || 'WTC'}: 50%`,
+              hintId: 'hint_site_jv_share'
+            })}
+            ${fld('JV Operating Company (BU)', sel('f_jv_company', comps, company || 'WTC'), {
+              id: 'wrap_site_jv_company',
+              hint: 'Operating BU that shares the quarry output with the JV Partner.',
+              hintId: 'hint_site_jv_company'
+            })}
+          </div>
           ${fld('Latitude (GPS)', inp('f_lat', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
           ${fld('Longitude (GPS)', inp('f_lng', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
           ${fld('Quick Paste Coords / Maps URL', inp('f_site_coord_paste', 'text', '', 'placeholder="Paste lat, lng or Maps link"'))}

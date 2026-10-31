@@ -7710,6 +7710,99 @@
     if (stagedClones.length) {
       stagedClones.forEach(cl => recs.sites.push(cl));
     }
+
+    const jvPartBySiteNorm = new Map();
+    const isBuName = v => /^(wtc|bbconstruction|bbc|lions\s*transport|lions)$/i.test(String(v || '').trim());
+    (recs.jv_partnerships || []).forEach(jp => {
+      if (!jp || jp.voided || !jp.site) return;
+      const sk = norm(jp.site);
+      const pName = String(jp.partner || jp.counterparty || '').trim();
+      const pct = Number(jp.percentage ?? jp.share_pct ?? 50) || 50;
+      const cur = jvPartBySiteNorm.get(sk) || { partner: '', share: 50, company: jp.company || 'WTC' };
+      if (pName && !isBuName(pName)) {
+        cur.partner = pName;
+        cur.share = pct;
+      } else if (pName && isBuName(pName)) {
+        cur.company = pName;
+      }
+      if (jp.company) cur.company = jp.company;
+      jvPartBySiteNorm.set(sk, cur);
+    });
+    (recs.jv_distributions || []).forEach(jd => {
+      if (!jd || jd.voided || !jd.site) return;
+      const sk = norm(jd.site);
+      const pName = String(jd.partner || jd.counterparty || '').trim();
+      if (!pName || isBuName(pName)) return;
+      const cur = jvPartBySiteNorm.get(sk) || { partner: '', share: 50, company: jd.company || 'WTC' };
+      if (!cur.partner) cur.partner = pName;
+      jvPartBySiteNorm.set(sk, cur);
+    });
+    recs.sites.forEach(s => {
+      if (!s || !s.name) return;
+      if (resolveSiteCategory(s) === 'supplier' && (s.is_jv || s.jv)) {
+        const jpMeta = jvPartBySiteNorm.get(norm(s.name));
+        if (!s.jv_partner) s.jv_partner = (jpMeta && jpMeta.partner) || 'Assaf';
+        if (!(Number(s.jv_share) > 0)) s.jv_share = (jpMeta && jpMeta.share) || 50;
+        if (!s.jv_company) s.jv_company = (jpMeta && jpMeta.company) || s.company || 'WTC';
+      }
+    });
+  }
+
+  function syncSiteJvPartnershipRecords(siteRow, extraApiPosts) {
+    if (!siteRow || !siteRow.name || resolveSiteCategory(siteRow) === 'customer' || !siteRow.is_jv) return;
+    const partner = String(siteRow.jv_partner || 'Assaf').trim() || 'Assaf';
+    const share = Math.max(1, Math.min(99, round2(Number(siteRow.jv_share) || 50)));
+    const coShare = round2(100 - share);
+    const co = String(siteRow.jv_company || siteRow.company || defaultEntryCompany() || 'WTC').trim() || 'WTC';
+    siteRow.jv_partner = partner;
+    siteRow.jv_share = share;
+    siteRow.jv_company = co;
+    if (!SEED.records) return;
+    if (!Array.isArray(SEED.records.jv_partnerships)) SEED.records.jv_partnerships = [];
+    if (!Array.isArray(STATE.customRecords.jv_partnerships)) STATE.customRecords.jv_partnerships = [];
+    const sitK = norm(siteRow.name);
+    const isBuName = v => /^(wtc|bbconstruction|bbc|lions\s*transport|lions)$/i.test(String(v || '').trim());
+    const upsertLeg = (legPartner, legPct, isBuLeg) => {
+      const allPool = STATE.customRecords.jv_partnerships.concat(SEED.records.jv_partnerships);
+      const hit = allPool.find(j => j && !j.voided && norm(j.site) === sitK && (isBuLeg ? isBuName(j.partner) : !isBuName(j.partner)));
+      if (hit) {
+        hit.site = siteRow.name;
+        hit.partner = legPartner;
+        hit.percentage = legPct;
+        hit.share_pct = legPct;
+        hit.company = co;
+        hit.name = `${siteRow.name} · ${legPartner} ${legPct}%`;
+        const cIdx = STATE.customRecords.jv_partnerships.findIndex(x => x && String(x.id) === String(hit.id));
+        if (cIdx >= 0) Object.assign(STATE.customRecords.jv_partnerships[cIdx], hit);
+        else STATE.customRecords.jv_partnerships.unshift(Object.assign({}, hit));
+        const sIdx = SEED.records.jv_partnerships.findIndex(x => x && String(x.id) === String(hit.id));
+        if (sIdx >= 0) Object.assign(SEED.records.jv_partnerships[sIdx], hit);
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push(['jv_partnerships', Object.assign({}, hit)]);
+      } else {
+        const rec = {
+          id: uid('jv'),
+          name: `${siteRow.name} · ${legPartner} ${legPct}%`,
+          company: co,
+          date: siteRow.date || todayISO(),
+          rep_date: siteRow.rep_date || siteRow.date || todayISO(),
+          site: siteRow.name,
+          partner: legPartner,
+          percentage: legPct,
+          share_pct: legPct,
+          basis: 'Revenue',
+          source: 'app',
+          entered_by: siteRow.entered_by || (activeUser() && activeUser().full_name) || 'Admin',
+          entered_by_email: siteRow.entered_by_email || (activeUser() && activeUser().email) || '',
+          entered_at: siteRow.entered_at || new Date().toISOString(),
+          voided: false
+        };
+        STATE.customRecords.jv_partnerships.unshift(rec);
+        SEED.records.jv_partnerships.unshift(Object.assign({}, rec));
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push(['jv_partnerships', Object.assign({}, rec)]);
+      }
+    };
+    upsertLeg(co, coShare, true);
+    upsertLeg(partner, share, false);
   }
 
   function siteInfo(name, side) {
@@ -32951,8 +33044,9 @@
             bJvRaw.set(sitK, {
               site: r.site,
               isJv: Boolean(sObj && (sObj.is_jv || sObj.jv)),
-              partner: (sObj && sObj.supplier) || 'Assaf',
-              sharePct: 50,
+              partner: (sObj && sObj.jv_partner) || 'Assaf',
+              sharePct: (sObj && Number(sObj.jv_share) > 0) ? Number(sObj.jv_share) : 50,
+              siteOwner: (sObj && sObj.supplier) || '',
               rawMatUsd: 0,
               loads: 0
             });
@@ -32975,15 +33069,19 @@
     const jvBySite = new Map();
     _FORM_INTEL_TKT_CACHE.bJvRaw.forEach((v, k) => jvBySite.set(k, Object.assign({}, v, { distributedUsd: 0, distCount: 0 })));
 
+    const isBuJvPartner = v => /^(wtc|bbconstruction|bbc|lions\s*transport|lions)$/i.test(String(v || '').trim());
     (recs.sites || []).forEach(s => {
       if (!s || s.voided || !s.name || resolveSiteCategory(s) === 'customer') return;
       const sitK = norm(s.name);
+      const sJvPartner = String(s.jv_partner || '').trim();
+      const sJvShare = Number(s.jv_share) > 0 ? Number(s.jv_share) : 50;
       if (!jvBySite.has(sitK)) {
         jvBySite.set(sitK, {
           site: s.name,
           isJv: Boolean(s.is_jv || s.jv),
-          partner: s.supplier || 'Assaf',
-          sharePct: 50,
+          partner: sJvPartner || 'Assaf',
+          sharePct: sJvShare,
+          siteOwner: s.supplier || '',
           rawMatUsd: 0,
           distributedUsd: 0,
           distCount: 0,
@@ -32992,7 +33090,22 @@
       } else {
         const jb = jvBySite.get(sitK);
         if (s.is_jv || s.jv) jb.isJv = true;
-        if (s.supplier) jb.partner = s.supplier;
+        if (s.supplier) jb.siteOwner = s.supplier;
+        if (sJvPartner) jb.partner = sJvPartner;
+        if (Number(s.jv_share) > 0) jb.sharePct = Number(s.jv_share);
+      }
+    });
+    (recs.jv_partnerships || []).forEach(jp => {
+      if (!jp || jp.voided || !jp.site) return;
+      const sitK = norm(jp.site);
+      const pName = String(jp.partner || jp.counterparty || '').trim();
+      if (!pName || isBuJvPartner(pName)) return;
+      const pct = Number(jp.percentage ?? jp.share_pct ?? 50) || 50;
+      if (jvBySite.has(sitK)) {
+        const jb = jvBySite.get(sitK);
+        jb.isJv = true;
+        jb.partner = pName;
+        jb.sharePct = pct;
       }
     });
     (recs.jv_distributions || []).forEach(j => {
@@ -36627,14 +36740,35 @@
             if (chk) chk.textContent = on ? '✓ Selected' : 'Select';
           });
         }
+        const isJvSite = !isCust && Boolean($('f_isjv') && $('f_isjv').checked);
         setFieldVisible('wrap_site_supplier', !isCust);
         setFieldVisible('wrap_site_jv', !isCust);
+        setFieldVisible('wrap_site_jv_details', isJvSite);
         setFieldVisible('wrap_site_customer', isCust);
         if (isCust) {
           if ($('f_supplier') && $('f_supplier').value) $('f_supplier').value = '';
           if ($('f_isjv') && $('f_isjv').checked) $('f_isjv').checked = false;
+          if ($('f_jv_partner') && $('f_jv_partner').value) $('f_jv_partner').value = '';
         } else {
           if ($('f_customer') && $('f_customer').value) $('f_customer').value = '';
+          if (!isJvSite && $('f_jv_partner') && $('f_jv_partner').value) $('f_jv_partner').value = '';
+        }
+        if (isJvSite) {
+          const jvP = val('f_jv_partner') || 'Partner';
+          const jvS = Math.max(1, Math.min(99, round2(num('f_jv_share') || 50)));
+          const jvCo = val('f_jv_company') || val('f_company') || defaultEntryCompany() || 'WTC';
+          const supVal = val('f_supplier');
+          const sameAsOwner = Boolean(supVal && val('f_jv_partner') && norm(supVal) === norm(val('f_jv_partner')));
+          setHint(
+            'hint_site_jv_partner',
+            sameAsOwner
+              ? `Note: "${val('f_jv_partner')}" is also set as Default Site Owner above · normally JV Partner is separate from the quarry landowner.`
+              : (supVal
+                ? `Site Owner (AP Leg 1): ${supVal} · JV Profit Partner: ${val('f_jv_partner') || 'Select partner'}`
+                : 'Profit-sharing JV partner on this quarry site (separate from Default Site Owner).'),
+            sameAsOwner ? 'warn' : (val('f_jv_partner') ? 'ok' : '')
+          );
+          setHint('hint_site_jv_share', `${jvP}: ${jvS}% · ${jvCo}: ${round2(100 - jvS)}%`, 'ok');
         }
         const mTitle = $('modalTitle');
         if (mTitle && !STATE.editingPendingExpenseId) {
@@ -39508,7 +39642,7 @@
           recalcForm();
           return;
         }
-        const loanSideBtn = ev.target && ev.target.closest ? ev.target.closest('[data-loan-side]') : null;
+        const loanSideBtn = ev.target && ev.target.closest ? ev.target.closest('#loanSidePills [data-loan-side]') : null;
         if (loanSideBtn) {
           ev.preventDefault();
           const nextSide = loanSideBtn.getAttribute('data-loan-side') || 'Company lends';
@@ -41339,6 +41473,18 @@
           }
         }
       }
+      const isJvSite = siteCat === 'supplier' ? !!($('f_isjv') && $('f_isjv').checked) : false;
+      const jvPartnerVal = isJvSite ? val('f_jv_partner') : '';
+      const jvShareVal = isJvSite ? (num('f_jv_share') || 50) : 0;
+      const jvCoVal = isJvSite ? (val('f_jv_company') || company || 'WTC') : '';
+      if (isJvSite) {
+        if (!jvPartnerVal) {
+          addErr('f_jv_partner', 'JV Partner is required when Joint-Venture (JV) Site is checked (apart from Default Site Owner).');
+        }
+        if (!(jvShareVal > 0 && jvShareVal < 100)) {
+          addErr('f_jv_share', 'JV Partner Share (%) must be between 1% and 99%.');
+        }
+      }
       record = {
         ...base,
         name: nm,
@@ -41348,7 +41494,8 @@
         customer: siteCat === 'customer' ? val('f_customer') : '',
         latitude: siteLat,
         longitude: siteLng,
-        is_jv: siteCat === 'supplier' ? !!($('f_isjv') && $('f_isjv').checked) : false
+        is_jv: isJvSite,
+        ...(isJvSite ? { jv_partner: jvPartnerVal, jv_share: round2(jvShareVal), jv_company: jvCoVal } : { jv_partner: '', jv_share: 0, jv_company: '' })
       };
     } else if (f === 'equipment' || f === 'companyequipment') {
       const nm = val('f_truck') || val('f_plateno');
@@ -42576,6 +42723,23 @@
       }
       if (crKey === 'sites' && window.MFG_GEO && record.latitude != null && record.longitude != null) {
         window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: record.id, siteCategory: record.site_category, name: record.name, lat: record.latitude, lng: record.longitude, region: record.region }, { SEED, STATE });
+      }
+      if (crKey === 'sites' && record.is_jv) {
+        syncSiteJvPartnershipRecords(record, extraApiPosts);
+      }
+      if (crKey === 'jv_partnerships' && record.site && record.partner) {
+        const isBuP = /^(wtc|bbconstruction|bbc|lions\s*transport|lions)$/i.test(String(record.partner || '').trim());
+        if (!isBuP) {
+          const allSites = ((SEED.records && SEED.records.sites) || []).concat(STATE.customRecords.sites || []);
+          allSites.forEach(s => {
+            if (s && !s.voided && norm(s.name) === norm(record.site) && resolveSiteCategory(s) === 'supplier') {
+              s.is_jv = true;
+              s.jv_partner = record.partner;
+              s.jv_share = Number(record.percentage ?? record.share_pct ?? 50) || 50;
+              s.jv_company = record.company || s.jv_company || 'WTC';
+            }
+          });
+        }
       }
       if (crKey === 'regions' && window.MFG_GEO && (record.center_lat != null || record.zone_geojson)) {
         window.MFG_GEO.persistRegionZone(record, { SEED, STATE });
@@ -44289,7 +44453,7 @@
   };
 
   const INSPECT_LOOKUP_FIELD_TARGET = {
-    customer: 'customers', supplier: 'suppliers', site_owner: 'suppliers', truck_owner: 'suppliers',
+    customer: 'customers', supplier: 'suppliers', site_owner: 'suppliers', truck_owner: 'suppliers', jv_partner: 'suppliers', partner: 'suppliers',
     product: 'products', item: 'products', item_name: 'items', input_product: 'products', site: 'sites',
     region: 'regions', truck: 'equipment', equipment: 'equipment', target_equipment: 'equipment', driver: 'drivers',
     default_driver: 'drivers', day_operator: 'drivers', night_operator: 'drivers',
@@ -44306,6 +44470,7 @@
     if (typeof v === 'object') return JSON.stringify(v);
     if (typeof v === 'number') {
       if (key === 'vat_percent') return fmtNum(v, Number.isInteger(v) ? 1 : 2) + '%';
+      if (key === 'jv_share' || key === 'share_pct' || key === 'percentage') return fmtNum(v, Number.isInteger(v) ? 0 : 1) + '%';
       if (key === 'rate' || key === 'vat_fx_rate' || key === 'active_rate') return fmtNum(v, Number.isInteger(v) ? 0 : 2);
       if (key === 'est_km' || key === 'est_round_trip_km' || key === 'distance_km' || key === 'radius_km') return `${fmtNum(v, 1)} km`;
       if (key === 'lbp_delta') return fmtSignedLBP(v);
@@ -44504,11 +44669,12 @@
       const isCustSite = resolveSiteCategory(row) === 'customer';
       const rulesCnt = activeRulesCountFor('site', row.name, isCustSite ? 'sales' : 'raw');
       const gpsTxt = row.latitude != null ? `${row.latitude}, ${row.longitude}` : 'Pending coordinates';
+      const jvPartnerTxt = row.is_jv ? `Active JV (Partner: ${row.jv_partner || 'Assaf'} ${row.jv_share || 50}% · ${row.jv_company || 'WTC'} ${100 - (Number(row.jv_share) || 50)}%)` : 'Standard Quarry Site';
       return {
         tone: 'info',
         text: isCustSite
           ? `Customer Delivery Site: ${row.name} (${row.region || 'Lebanon'})  |  Linked Customer: ${row.customer || 'Open Delivery'}  |  Active Sales Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
-          : `Supplier / Quarry Site: ${row.name} (${row.region || 'Lebanon'})  |  Default Site Owner: ${row.supplier || 'Open Source'}  |  JV 50/50 Status: ${row.is_jv ? 'Active JV Site' : 'Standard Quarry Site'}  |  Active Quarry Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
+          : `Supplier / Quarry Site: ${row.name} (${row.region || 'Lebanon'})  |  Default Site Owner: ${row.supplier || 'Open Source'}  |  JV 50/50 Status: ${jvPartnerTxt}  |  Active Quarry Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
       };
     }
     if (key === 'products') {
@@ -45984,6 +46150,8 @@
         { key: 'supplier', label: 'Default Site Owner (Supplier)', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
         { key: 'customer', label: 'Linked Customer', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
         { key: 'is_jv', label: 'JV 50/50 Partnership Site', type: 'bool', sec: 2 },
+        { key: 'jv_partner', label: 'JV Partner (Apart from Site Owner)', type: 'combo', dl: 'dl_insp_counterparties', sec: 2, getVal: r => r.is_jv ? (r.jv_partner || 'Assaf') : (r.jv_partner || '') },
+        { key: 'jv_share', label: 'JV Partner Share (%)', type: 'number', step: '0.5', min: '0', max: '100', sec: 3, getVal: r => r.is_jv ? (r.jv_share || 50) : (r.jv_share ?? '') },
         { key: 'latitude', label: 'GPS Latitude', type: 'number', step: '0.000001', sec: 2 },
         { key: 'longitude', label: 'GPS Longitude', type: 'number', step: '0.000001', sec: 2 },
         { key: 'notes', label: 'Notes / Directions', type: 'text', sec: 3, span: true }
@@ -46467,11 +46635,18 @@
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
     if (key === 'sites') {
+      hidden.add('jv_company');
       if (resolveSiteCategory(row) === 'customer') {
         hidden.add('supplier');
         hidden.add('is_jv');
+        hidden.add('jv_partner');
+        hidden.add('jv_share');
       } else {
         hidden.add('customer');
+        if (!row.is_jv) {
+          hidden.add('jv_partner');
+          hidden.add('jv_share');
+        }
       }
     }
     if (key === 'employments') {
@@ -47542,25 +47717,34 @@
         const mCat = getModVal('site_category') === 'customer' ? 'customer' : 'supplier';
         const isCustSite = mCat === 'customer';
         const siteCatEdited = Boolean($('insp_edit_site_category') && $('insp_edit_site_category').dataset.userEdited === '1');
+        if (siteCatEdited) {
+          if (isCustSite) {
+            if ($('insp_edit_supplier')) $('insp_edit_supplier').value = '';
+            if ($('insp_edit_is_jv')) $('insp_edit_is_jv').value = 'No';
+            if ($('insp_edit_jv_partner')) $('insp_edit_jv_partner').value = '';
+          } else if ($('insp_edit_customer')) {
+            $('insp_edit_customer').value = '';
+          }
+        }
+        const isJvMod = !isCustSite && (getModVal('is_jv') === 'Yes' || getModVal('is_jv') === 'true' || (!getModVal('is_jv') && Boolean(row.is_jv)));
         ['supplier', 'is_jv'].forEach(fk => {
           const el = $('insp_edit_' + fk);
           const wrap = el && el.closest('.form-field');
           if (wrap) wrap.hidden = isCustSite;
         });
+        ['jv_partner', 'jv_share'].forEach(fk => {
+          const el = $('insp_edit_' + fk);
+          const wrap = el && el.closest('.form-field');
+          if (wrap) wrap.hidden = !isJvMod;
+        });
         const custEl = $('insp_edit_customer');
         const custWrap = custEl && custEl.closest('.form-field');
         if (custWrap) custWrap.hidden = !isCustSite;
-        if (siteCatEdited) {
-          if (isCustSite) {
-            if ($('insp_edit_supplier')) $('insp_edit_supplier').value = '';
-            if ($('insp_edit_is_jv')) $('insp_edit_is_jv').value = 'No';
-          } else if (custEl) {
-            custEl.value = '';
-          }
-        }
         const mReg = getModVal('region') || row.region || 'Lebanon';
         const mParty = isCustSite ? (getModVal('customer') || 'Open Delivery') : (getModVal('supplier') || 'Open Source');
-        html = `<span>Category: <b>${esc(formatSiteCategoryLabel(mCat))}</b></span><span>Region: <b>${esc(mReg)}</b></span><span>${isCustSite ? 'Linked Customer' : 'Site Owner'}: <b>${esc(mParty)}</b></span>`;
+        const mJvPart = isJvMod ? (getModVal('jv_partner') || row.jv_partner || 'Assaf') : '';
+        const mJvPct = isJvMod ? (getModNum('jv_share') || row.jv_share || 50) : 0;
+        html = `<span>Category: <b>${esc(formatSiteCategoryLabel(mCat))}</b></span><span>Region: <b>${esc(mReg)}</b></span><span>${isCustSite ? 'Linked Customer' : 'Site Owner'}: <b>${esc(mParty)}</b></span>${isJvMod ? `<span>JV Partner: <b>${esc(mJvPart)} (${mJvPct}%)</b></span>` : ''}`;
       }
       modLiveCalcEl.innerHTML = html;
       modLiveCalcEl.hidden = !html;
@@ -48078,8 +48262,18 @@
             if (effCat === 'customer') {
               row.supplier = '';
               row.is_jv = false;
+              row.jv_partner = '';
             } else {
               row.customer = '';
+            }
+          }
+          if ('is_jv' in pendingUpdates || 'jv_partner' in pendingUpdates || 'jv_share' in pendingUpdates) {
+            if (row.is_jv && resolveSiteCategory(row) === 'supplier') {
+              row.jv_partner = String(row.jv_partner || 'Assaf').trim() || 'Assaf';
+              row.jv_share = Number(row.jv_share) > 0 ? Number(row.jv_share) : 50;
+              syncSiteJvPartnershipRecords(row);
+            } else if (!row.is_jv) {
+              row.jv_partner = '';
             }
           }
           if (window.MFG_GEO && row.latitude != null && row.longitude != null) {
@@ -54474,7 +54668,7 @@
         : (ltH > 0 ? ltH : workedH));
 
     // Synchronize live evaluation onto the punch object
-    punch.late_hours = ltH;
+    punch.late_hours = punch.direction === 'IN' ? Number(evalRes.billableLateHours ?? evalRes.rawLateHours ?? ltH) : ltH;
     punch.raw_late_hours = rawLtH;
     punch.raw_late_min = rawLtMin;
     punch.penalty_leave_days = penLeaveDays;
@@ -54672,7 +54866,7 @@
       shiftDate = inferShiftDateForInPunch(staffName, coName, dateStr, timeStr);
       evalCurrent = evaluateShiftPunchTiming(staffName, coName, shiftDate, timeStr, '', { inSameCalendarDay: shiftDate === dateStr });
       shiftMeta = evalCurrent.shift;
-      lateHours = evalCurrent.lateHours;
+      lateHours = Number(evalCurrent.billableLateHours ?? evalCurrent.lateHours ?? 0);
     } else {
       const openIn = (STATE.kioskPunches || []).find(p => {
         if (!p || p.voided || norm(p.staff) !== norm(staffName) || p.direction !== 'IN') return false;

@@ -635,6 +635,23 @@
 .site-jv-toggle-lbl b {
   font-weight: 700;
 }
+.site-jv-partner-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(5, 150, 105, 0.35);
+  background: linear-gradient(135deg, rgba(5, 150, 105, 0.07), rgba(200, 157, 84, 0.05));
+}
+.site-jv-partner-row[hidden] {
+  display: none !important;
+}
+@media (max-width: 860px) {
+  .site-jv-partner-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 
 .site-geo-banner {
   display: flex;

@@ -1521,7 +1521,7 @@
       { id: 'all', label: 'All Sites', cols: ['name', 'site_category', 'region', 'linked_party', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'] },
       { id: 'source', label: 'Supplier / Quarry Sites', fn: r => resolveSiteCategoryPbi(r) === 'supplier', cols: ['name', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads'] },
       { id: 'delivery', label: 'Customer Delivery Sites', fn: r => resolveSiteCategoryPbi(r) === 'customer', cols: ['name', 'region', 'customer', 'gps_status', 'latitude', 'longitude', 'active_rules', 'sales_loads'] },
-      { id: 'jv', label: 'JV 50/50 Sites', fn: r => resolveSiteCategoryPbi(r) === 'supplier' && Boolean(r.is_jv), cols: ['name', 'region', 'supplier', 'is_jv', 'gps_status', 'active_rules', 'raw_loads'] },
+      { id: 'jv', label: 'JV 50/50 Sites', fn: r => resolveSiteCategoryPbi(r) === 'supplier' && Boolean(r.is_jv), cols: ['name', 'region', 'supplier', 'jv_partner', 'jv_share', 'is_jv', 'gps_status', 'active_rules', 'raw_loads'] },
       { id: 'gps', label: 'Verified GPS Pin', fn: r => r.latitude != null && r.longitude != null, cols: ['name', 'site_category', 'region', 'linked_party', 'latitude', 'longitude', 'raw_loads', 'sales_loads'] }
     ] },
     { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region / Zone', dvn: 'bhf_region', form: 'region', cols: ['name', 'code', 'zone_shape', 'distance_km', 'sites_count', 'overtime_rate', 'sales_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
@@ -1542,6 +1542,7 @@
     supplier: 'suppliers',
     site_owner: 'suppliers',
     truck_owner: 'suppliers',
+    jv_partner: 'suppliers',
     product: 'products',
     item: 'products',
     item_name: 'items',
@@ -1675,7 +1676,7 @@
     return `<span class="badge ${isCust ? 'badge-info' : 'badge-brass'}">${esc(isCust ? 'Customer Delivery' : 'Supplier / Quarry')}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|linked_party|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|status|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|linked_party|jv_partner|jv_share|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|status|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -2347,6 +2348,8 @@
       if (c === 'supplier') return sCat === 'supplier' ? (r.supplier || null) : null;
       if (c === 'customer') return sCat === 'customer' ? (r.customer || null) : null;
       if (c === 'is_jv') return sCat === 'supplier' ? Boolean(r.is_jv) : false;
+      if (c === 'jv_partner') return (sCat === 'supplier' && r.is_jv) ? (r.jv_partner || 'Assaf') : null;
+      if (c === 'jv_share') return (sCat === 'supplier' && r.is_jv) ? `${Number(r.jv_share) > 0 ? Number(r.jv_share) : 50}%` : null;
     }
     if (c === 'cost_class') return deriveExpenseCostClass(r);
     if (r[c] != null && r[c] !== '') {
@@ -8901,6 +8904,8 @@
     site_owner: 'Site Owner',
     site_category: 'Site Category',
     linked_party: 'Counterparty',
+    jv_partner: 'JV Partner',
+    jv_share: 'Partner Share',
     is_jv: 'JV 50/50',
     gps_status: 'GPS Pin',
     zone_shape: 'Map Zone',
