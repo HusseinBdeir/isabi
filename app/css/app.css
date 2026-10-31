@@ -6469,10 +6469,21 @@ td.pbi-cell-amber {
 }
 
 .date-range-sep {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
+  display: inline-block;
+  width: 1px;
+  height: 14px;
+  background: var(--line-strong);
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+  overflow: hidden;
+  flex-shrink: 0;
+  margin: 0 2px;
   user-select: none;
+}
+
+.date-range-bar.custom-active .date-range-sep {
+  background: var(--brass-border);
 }
 
 .date-range-reset {
@@ -17390,21 +17401,28 @@ svg .cf-chart-bar:hover .cf-bar-hit {
     border-radius: 4px;
   }
   .date-range-bar {
-    padding: 1px 3.5px;
-    gap: 2px;
+    padding: 1px 4.5px;
+    gap: 3.5px;
   }
   .date-seg-slot:not(.pbi-seg-slot) {
-    width: 75px;
-    min-width: 75px;
-    max-width: 75px;
+    width: 88px;
+    min-width: 88px;
+    max-width: 88px;
   }
   .date-seg-slot:not(.pbi-seg-slot) .date-seg-pill {
-    font-size: 9.2px;
-    padding: 1px 1px;
+    font-size: 9.4px;
+    padding: 1px 0;
+    gap: 0.5px;
   }
-  .date-seg-slot:not(.pbi-seg-slot) .date-seg-cal-btn {
-    width: 13px;
-    height: 13px;
+  .date-seg-slot:not(.pbi-seg-slot) .date-seg-part {
+    padding: 1px 1.2px;
+  }
+  .date-seg-slot:not(.pbi-seg-slot) .date-seg-cal {
+    padding: 1.5px 1.5px;
+    margin-left: 1px;
+  }
+  .date-range-bar .date-range-reset {
+    margin-left: 1.5px;
   }
   .basis-btn {
     padding: 3px 4.5px;

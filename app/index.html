@@ -12,7 +12,7 @@
       if (location.hostname === 'husseinbdeir.github.io' && /^\/mfg-web(\/|$)/.test(location.pathname) && !/[?&]noredirect=1\b/.test(location.search)) {
         location.replace('https://husseinbdeir.github.io/isabi/app/' + (location.search || '') + (location.hash || ''));
       }
-      window.__MFG_SHELL_VER = '19.6.26';
+      window.__MFG_SHELL_VER = '19.6.27';
       var t = localStorage.getItem('isabi_mfg_theme');
       if (t === 'dark' || t === 'light') { document.documentElement.setAttribute('data-theme', t); var tm = document.querySelector('meta[name="theme-color"]'); if (tm) tm.setAttribute('content', t === 'dark' ? '#081124' : '#F4F2EE'); }
       var rw = parseInt(localStorage.getItem('isabi_mfg_rail_width'), 10);
@@ -39,9 +39,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap"></noscript>
-  <link rel="stylesheet" href="css/app.css?v=19.6.26">
-  <link rel="stylesheet" href="css/geo_dispatch.css?v=19.6.26">
-  <link rel="stylesheet" href="css/daily_ops.css?v=19.6.26">
+  <link rel="stylesheet" href="css/app.css?v=19.6.27">
+  <link rel="stylesheet" href="css/geo_dispatch.css?v=19.6.27">
+  <link rel="stylesheet" href="css/daily_ops.css?v=19.6.27">
 </head>
 <body class="locked">
   <div class="app-shell" id="appShell">
@@ -302,7 +302,7 @@
                   <button type="button" class="date-seg-part" data-date-end="from" data-date-part="day" data-date-scope="top" title="From Day — click for Calendar or ↑/↓ to step ±1 day">01</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part" data-date-end="from" data-date-part="month" data-date-scope="top" title="From Month — click for Month Picker or ↑/↓ to step ±1 month">Jan</button><span class="date-seg-dash">-</span><button type="button" class="date-seg-part" data-date-end="from" data-date-part="year" data-date-scope="top" title="From Year — click for Year Picker or ↑/↓ to step ±1 year">2024</button><button type="button" class="date-seg-cal" data-date-end="from" data-date-part="day" data-date-scope="top" title="Open interactive Date &amp; Period Facilitator (From)" aria-label="Open From Date Picker"><svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.8"/><line x1="5" y1="1.5" x2="5" y2="4.2"/><line x1="11" y1="1.5" x2="11" y2="4.2"/><line x1="2" y1="6.5" x2="14" y2="6.5"/></svg></button>
                 </div>
               </div>
-              <span class="date-range-sep">–</span>
+              <span class="date-range-sep" aria-hidden="true"></span>
               <div class="date-seg-slot" data-date-slot="to">
                 <input type="date" id="dateToInput" class="date-range-input date-native-proxy" min="2024-01-01" max="2030-12-31" value="2030-12-31" aria-label="To Date" title="End Date (To)" tabindex="-1">
                 <div class="date-seg-pill" id="dateToSegPill" data-date-end="to" data-date-scope="top">
@@ -588,18 +588,18 @@
   <!-- Toast Notification -->
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script defer src="js/face.js?v=19.6.26"></script>
-  <script defer src="js/endpoints.js?v=19.6.26"></script>
-  <script defer src="js/seed_manifest.js?v=19.6.26"></script>
-  <script defer src="js/icons.js?v=19.6.26"></script>
-  <script defer src="js/geo_dispatch.js?v=19.6.26"></script>
-  <script defer src="js/forms_engine.js?v=19.6.26"></script>
-  <script defer src="js/pbi_pages.js?v=19.6.26"></script>
-  <script defer src="js/rdl_reports.js?v=19.6.26"></script>
-  <script defer src="js/kiosk_print.js?v=19.6.26"></script>
-  <script defer src="js/table_columns.js?v=19.6.26"></script>
-  <script defer src="js/daily_ops.js?v=19.6.26"></script>
-  <script defer src="js/app.js?v=19.6.26"></script>
+  <script defer src="js/face.js?v=19.6.27"></script>
+  <script defer src="js/endpoints.js?v=19.6.27"></script>
+  <script defer src="js/seed_manifest.js?v=19.6.27"></script>
+  <script defer src="js/icons.js?v=19.6.27"></script>
+  <script defer src="js/geo_dispatch.js?v=19.6.27"></script>
+  <script defer src="js/forms_engine.js?v=19.6.27"></script>
+  <script defer src="js/pbi_pages.js?v=19.6.27"></script>
+  <script defer src="js/rdl_reports.js?v=19.6.27"></script>
+  <script defer src="js/kiosk_print.js?v=19.6.27"></script>
+  <script defer src="js/table_columns.js?v=19.6.27"></script>
+  <script defer src="js/daily_ops.js?v=19.6.27"></script>
+  <script defer src="js/app.js?v=19.6.27"></script>
   <script>
     window.addEventListener('load', () => {
       // Load Google Fonts after window.load so webfont fetches never spin Chrome's tab loading indicator
