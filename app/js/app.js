@@ -55725,9 +55725,7 @@
     if (_uiTipObserver) _uiTipObserver.disconnect();
     setContainerHtmlPreservingActiveInput(container, wsHtml);
     wireWorkspace(container, user);
-    stripNativeTitles(container);
-    const liveSubBar = $('hubSubtabBar');
-    if (liveSubBar && !container.contains(liveSubBar)) stripNativeTitles(liveSubBar);
+    stripNativeTitles(document);
     if (_uiTipObserver && document.body) {
       _uiTipObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
     }
