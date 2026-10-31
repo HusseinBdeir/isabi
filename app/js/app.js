@@ -31931,6 +31931,9 @@
     const maxUnlockableRate = Math.round(sysRate * (1 + FX_CONV_FREEZE_PCT / 100));
     const expectedLbp = u > 0 ? Math.round(u * sysRate) : 0;
     const expectedUsd = l > 0 && sysRate > 0 ? round2(l / sysRate) : 0;
+    const warnPct = FX_CONV_WARN_PCT;
+    const lockPct = FX_CONV_LOCK_PCT;
+    const freezePct = FX_CONV_FREEZE_PCT;
 
     if (!(effRate > 0) || diffPct > FX_CONV_FREEZE_PCT + 1e-6) {
       return {
@@ -31940,6 +31943,9 @@
         effRate,
         diffPct,
         signedDiffPct,
+        warnPct,
+        lockPct,
+        freezePct,
         expectedLbp,
         expectedUsd,
         minNormalRate,
@@ -31967,6 +31973,9 @@
         effRate,
         diffPct,
         signedDiffPct,
+        warnPct,
+        lockPct,
+        freezePct,
         expectedLbp,
         expectedUsd,
         minNormalRate,
@@ -31995,6 +32004,9 @@
         effRate,
         diffPct,
         signedDiffPct,
+        warnPct,
+        lockPct,
+        freezePct,
         expectedLbp,
         expectedUsd,
         minNormalRate,
@@ -32020,6 +32032,9 @@
       effRate,
       diffPct,
       signedDiffPct,
+      warnPct,
+      lockPct,
+      freezePct,
       expectedLbp,
       expectedUsd,
       minNormalRate,
@@ -34739,6 +34754,7 @@
       }
     }
     const hasItemTickets = !pendEditRow && Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length > 0;
+    const hasMultiItems = hasItemTickets;
     const isMultiTicketSplit = hasItemTickets && FORM_UI.expItems.length > 1;
     if (pendEditRow) {
       const targetMth = pendEditRow.method || 'Credit';
@@ -34923,7 +34939,7 @@
       setHint('hint_amount', 'Must be above zero (or click "Price Pending ($0)" below)', 'crit');
     } else if (isFuelDiesel && !val('f_amount')) {
       setHint('hint_amount', 'Price arriving later? Click "Price Pending ($0)" below to log Litres now', '');
-    } else if (!hasMultiItems && amount > 0 && qty > 0 && (val('f_store_warehouse') === '1' || qty !== 1)) {
+    } else if (!hasItemTickets && amount > 0 && qty > 0 && (val('f_store_warehouse') === '1' || qty !== 1)) {
       const uLbl = val('f_store_warehouse') === '1' ? (val('f_exp_uom') || 'Piece') : (isFuelDiesel ? 'L' : 'unit');
       setHint('hint_amount', `Unit cost: ${fmtUSD(amount / qty, 2)} / ${uLbl} (${fmtNum(qty, qty % 1 ? 2 : 0)} × ${fmtUSD(amount / qty, 2)})`, 'ok');
     } else {
@@ -34931,7 +34947,7 @@
     }
     if (pendEditRow) {
       setText('calc_gl', pendEditRow.equipment ? `Equipment · ${pendEditRow.equipment}` : 'General Overhead');
-    } else if (hasMultiItems) {
+    } else if (hasItemTickets) {
       const whLines = FORM_UI.expItems.filter(it => it.allocation_mode === 'warehouse').length;
       setText('calc_gl', whLines > 0 ? `${FORM_UI.expItems.length} Lines (${whLines} Warehouse)` : `${FORM_UI.expItems.length} Item Lines`);
     } else if (val('f_store_warehouse') === '1') {
@@ -40137,6 +40153,7 @@
     customers: { label: 'Customer', field: 'f_customer', prop: 'name' },
     suppliers: { label: 'Supplier', field: 'f_supplier', prop: 'name' },
     products: { label: 'Product', field: 'f_product', prop: 'name' },
+    items: { label: 'Item / Part', field: 'f_item_name', prop: 'name' },
     product_types: { label: 'Product Type', field: 'f_name', prop: 'name' },
     uoms: { label: 'Unit of Measure', field: 'f_name', prop: 'name' },
     sites: { label: 'Site', field: 'f_site', prop: 'name', compositeProp: 'site_category' },
@@ -40251,8 +40268,8 @@
     const editCtx = STATE.editingRecord;
     const origEditDate = editCtx && editCtx.orig ? String(editCtx.orig.date || editCtx.orig.start_date || '').slice(0, 10) : '';
     const origEditRepDate = editCtx && editCtx.orig ? String(editCtx.orig.rep_date || editCtx.orig.set_date || origEditDate || '').slice(0, 10) : '';
-    const isUniversalForm = ['customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'fxrate', 'vatrate', 'currency'].includes(f);
-    const needsDate = !['customer', 'supplier', 'product', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'fxrate', 'vatrate', 'currency'].includes(f);
+    const isUniversalForm = ['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'driver', 'fxrate', 'vatrate', 'currency'].includes(f);
+    const needsDate = !['customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'fxrate', 'vatrate', 'currency'].includes(f);
     if (!isUniversalForm && !allowedCompanyNames().includes(company)) addErr('f_company', 'Your seat cannot post to ' + (company || 'that company') + '.');
     if (needsDate) {
       const bdDaysLimit = getAlertParam('G_BACKDATE_NOTE', 'backdate_warn_days', 30);
@@ -40628,13 +40645,18 @@
         let stagedItems = [];
         if (hasMultiItems) {
           FORM_UI.expItems.forEach((it, idx) => {
-            const nm = String(it.item_name || '').trim();
-            const q = Number(it.qty) || 0;
-            const uc = Number(it.unit_cost) || 0;
+            const rawNm = String(it.item_name || '').trim();
             const mode = it.allocation_mode || 'same_equipment';
+            const isSingleNonWh = FORM_UI.expItems.length === 1 && mode !== 'warehouse';
+            const nm = rawNm || (isSingleNonWh ? (val('f_exp_item_name') || val('f_subcategory') || val('f_category')) : '');
+            const q = Number(it.qty) || 0;
+            const ucRaw = Number(it.unit_cost) || 0;
+            const uc = (FORM_UI.expItems.length === 1 && !(ucRaw > 0) && c.amount > 0)
+              ? round2(c.amount / (q > 0 ? q : 1))
+              : ucRaw;
             const diffEq = String(it.target_equipment || '').trim();
             const whLoc = String(it.warehouse_location || defWhLocSave).trim() || defWhLocSave;
-            if (!nm) addErr('f_exi_name_' + idx, `Item line ${idx + 1}: Item / Part Name is required.`);
+            if (!nm) addErr('f_exi_name_' + idx, mode === 'warehouse' ? 'Enter the Item / Part Name to store in Warehouse.' : `Item line ${idx + 1}: Item / Part Name is required.`);
             if (!(q > 0)) addErr('f_exi_qty_' + idx, `Item line ${idx + 1}: Quantity must be above zero.`);
             if (!c.pricePending && !(uc >= 0)) addErr('f_exi_cost_' + idx, `Item line ${idx + 1}: Unit price cannot be negative.`);
             if (mode === 'same_equipment' && !val('f_truck')) {
@@ -40643,13 +40665,15 @@
             if (mode === 'different_equipment' && !diffEq) {
               addErr('f_exi_eq_' + idx, `Item line ${idx + 1}: Select the Different Equipment unit.`);
             }
+            const catIt = nm ? resolveCatalogItem(nm) : null;
+            const lockedUom = (catIt && catIt.uom) ? catIt.uom : (it.uom || (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'));
             const effUnitCost = c.pricePending ? 0 : round2(uc);
             stagedItems.push({
               item_name: nm,
               category: val('f_category'),
               subcategory: val('f_subcategory'),
               qty: round2(q || 1),
-              uom: it.uom || 'Piece',
+              uom: lockedUom,
               unit_cost: effUnitCost,
               line_total: c.pricePending ? 0 : round2((q || 1) * effUnitCost),
               allocation_mode: mode,
@@ -40892,6 +40916,24 @@
         if (dup) addErr('f_product', `Product "${universalMainValue('products', dup) || nm}" already exists in the Universal Product Registry. Duplicate names are not allowed.`);
       }
       record = { ...base, name: nm, uom: val('f_uom') || 'm³', type: val('f_prodtype') || 'Material', ton_factor: num('f_tonfactor') || 1, list_price: round2(num('f_unitprice')), ticket_product: !!($('f_ticketprod') && $('f_ticketprod').checked), fuel_item: !!($('f_fuelitem') && $('f_fuelitem').checked), input_product: !!($('f_inputprod') && $('f_inputprod').checked) };
+    } else if (f === 'item') {
+      const nm = val('f_item_name');
+      if (!nm) addErr('f_item_name', 'Item / Part Name is required.');
+      else {
+        const dup = findUniversalDuplicate('items', nm);
+        if (dup) addErr('f_item_name', `Item "${universalMainValue('items', dup) || nm}" already exists in the Universal Items Registry. Duplicate names are not allowed.`);
+      }
+      crKey = 'items';
+      record = {
+        ...base,
+        name: nm,
+        item_name: nm,
+        uom: val('f_uom') || 'Piece',
+        category: val('f_category') || 'Spare Parts',
+        default_cost: round2(num('f_unitprice')),
+        default_location: val('f_location') || 'WTC Main Warehouse',
+        min_stock: Math.max(0, num('f_min_stock'))
+      };
     } else if (f === 'site') {
       const nm = val('f_site');
       const siteCat = val('f_site_category') === 'customer' ? 'customer' : 'supplier';
@@ -41549,7 +41591,8 @@
       const isOut = whDir === 'OUT' || isWarehouseOutMove(moveType, whDir);
       const itemName = val('f_item_name');
       const qty = round2(num('f_qty'));
-      const uom = val('f_uom') || 'Piece';
+      const catItem = itemName ? resolveCatalogItem(itemName) : null;
+      const uom = (catItem && catItem.uom) ? catItem.uom : (val('f_uom') || 'Piece');
       const whIdx = getWarehouseIndex(company);
       const curItem = itemName ? whIdx.byKey[norm(itemName)] : null;
       let beforeQty = curItem ? curItem.onHandQty : 0;
@@ -41562,7 +41605,7 @@
       if (isOut && itemName && qty > beforeQty + 0.0001) {
         addErr('f_qty', `Cannot remove ${qty} ${uom} from shelf - only ${beforeQty} ${curItem ? curItem.uom : uom} available in Warehouse.`);
       }
-      const up = round2(num('f_unitprice') || (curItem ? curItem.avgUnitCost : 0));
+      const up = round2(num('f_unitprice') || (curItem ? curItem.avgUnitCost : (catItem ? Number(catItem.default_cost || 0) : 0)));
       const seq = String(((SEED.records.warehouse_movements || []).length + (STATE.customRecords.warehouse_movements || []).length) + 1).padStart(3, '0');
       const locVal = val('f_location') || defaultWarehouseLocationForCompany(company);
       crKey = 'warehouse_movements';
@@ -41574,7 +41617,7 @@
         move_type: moveType,
         direction: isOut ? 'OUT' : 'IN',
         item_name: itemName,
-        category: val('f_category') || 'Spare Parts',
+        category: val('f_category') || (catItem && catItem.category) || 'Spare Parts',
         qty: qty || 1,
         uom,
         unit_cost: up,
@@ -41625,11 +41668,12 @@
         } else {
           outCost = round2(outCost + lc);
         }
+        const catIt = resolveCatalogItem(nm);
         stagedRepItems.push({
           item_name: nm,
           source: src,
           qty: q || 1,
-          uom: it.uom || (whRow && whRow.uom) || 'Piece',
+          uom: (catIt && catIt.uom) || it.uom || (whRow && whRow.uom) || 'Piece',
           unit_cost: uc,
           line_total: lc
         });
@@ -41688,6 +41732,7 @@
           addErr('f_qty', `Warehouse has ${avail} of "${oilType}" available (requested ${qty}).`);
         }
       }
+      const catOil = resolveCatalogItem(oilType);
       const costUsd = round2(num('f_amount') > 0 ? num('f_amount') : (oilSrc === 'Warehouse' && whOil ? qty * whOil.avgUnitCost : 0));
       const unitSlug = String(unit || 'UNIT').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8) || 'UNIT';
       const seq = String(((SEED.records.equipment_oil_logs || []).length + (STATE.customRecords.equipment_oil_logs || []).length) + 1).padStart(3, '0');
@@ -41700,7 +41745,7 @@
         oil_type: oilType,
         service_action: val('f_service_action') || 'Full Change',
         qty: qty || 1,
-        uom: val('f_uom') || 'Litre',
+        uom: (catOil && catOil.uom) || val('f_uom') || 'Litre',
         source: oilSrc,
         hours_reading: val('f_hours') !== '' ? num('f_hours') : null,
         odometer_km: val('f_odometer') !== '' ? num('f_odometer') : null,
@@ -42127,9 +42172,17 @@
       if (crKey === 'regions' && window.MFG_GEO && (record.center_lat != null || record.zone_geojson)) {
         window.MFG_GEO.persistRegionZone(record, { SEED, STATE });
       }
+      if (crKey === 'warehouse_movements' && record.item_name) {
+        const newCatItem = ensureItemInCatalog(record.item_name, record.uom || 'Piece', record.category || 'Spare Parts', record.unit_cost || 0, record.warehouse_location || 'WTC Main Warehouse', record.min_stock || 0);
+        if (newCatItem && newCatItem.id) extraApiPosts.push(['items', newCatItem]);
+      }
       if (crKey === 'expenses' && stagedExpenseItems.length) {
         if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
         stagedExpenseItems.forEach((it, li) => {
+          if (it.item_name) {
+            const newCatItem = ensureItemInCatalog(it.item_name, it.uom || 'Piece', it.category || record.category || 'Spare Parts', it.unit_cost || 0, it.warehouse_location || 'WTC Main Warehouse', 0);
+            if (newCatItem && newCatItem.id) extraApiPosts.push(['items', newCatItem]);
+          }
           const itemRec = {
             id: uid('ei'),
             name: `${record.name} · L${li + 1} · ${it.item_name}`,
@@ -42163,6 +42216,10 @@
       if (crKey === 'equipment_repairs' && stagedRepairItems.length) {
         if (!Array.isArray(STATE.customRecords.repair_items)) STATE.customRecords.repair_items = [];
         stagedRepairItems.forEach((it, li) => {
+          if (it.item_name) {
+            const newCatItem = ensureItemInCatalog(it.item_name, it.uom || 'Piece', 'Spare Parts', it.unit_cost || 0, 'WTC Main Warehouse', 0);
+            if (newCatItem && newCatItem.id) extraApiPosts.push(['items', newCatItem]);
+          }
           const rItemRec = {
             id: uid('ri'),
             name: `${record.name} · L${li + 1} · ${it.item_name}`,
@@ -42916,22 +42973,59 @@
         $('f_store_warehouse').value = '1';
         if ($('f_for_equipment')) $('f_for_equipment').value = '0';
         if ($('f_category') && !val('f_category')) $('f_category').value = 'Spare Parts';
+        const defLoc = defaultWarehouseLocationForCompany(val('f_company') || defaultEntryCompany());
+        FORM_UI.expItems = [{
+          item_name: prefill.item || '',
+          allocation_mode: 'warehouse',
+          target_equipment: '',
+          warehouse_location: defLoc,
+          qty: 1,
+          uom: (prefill.item && resolveCatalogItem(prefill.item) && resolveCatalogItem(prefill.item).uom) || 'Piece',
+          unit_cost: 0
+        }];
+        renderExpenseItemsBuilderRows();
       }
       if (prefill.item) {
         if ($('f_item_name')) {
           $('f_item_name').value = prefill.item;
           FORM_UI.lastWhItem = '';
-        } else if ($('f_exp_item_name')) {
-          $('f_exp_item_name').value = prefill.item;
-          FORM_UI.lastExpStoreItem = '';
+        } else if (form === 'expense') {
+          if ($('f_exp_item_name')) {
+            $('f_exp_item_name').value = prefill.item;
+            FORM_UI.lastExpStoreItem = '';
+          }
+          if (!Array.isArray(FORM_UI.expItems) || !FORM_UI.expItems.length) {
+            const isWh = val('f_store_warehouse') === '1';
+            const defLoc = defaultWarehouseLocationForCompany(val('f_company') || defaultEntryCompany());
+            FORM_UI.expItems = [{
+              item_name: prefill.item,
+              allocation_mode: isWh ? 'warehouse' : 'same_equipment',
+              target_equipment: val('f_truck') || '',
+              warehouse_location: defLoc,
+              qty: 1,
+              uom: 'Piece',
+              unit_cost: 0
+            }];
+          } else {
+            FORM_UI.expItems[0].item_name = prefill.item;
+          }
+          const catIt = resolveCatalogItem(prefill.item);
+          const whMeta = warehouseCatalogItemMeta(prefill.item, val('f_company') || defaultEntryCompany());
+          if (catIt && catIt.uom) FORM_UI.expItems[0].uom = catIt.uom;
+          else if (whMeta && whMeta.uom) FORM_UI.expItems[0].uom = whMeta.uom;
+          if (whMeta && whMeta.avgUnitCost > 0 && !(Number(FORM_UI.expItems[0].unit_cost) > 0)) {
+            FORM_UI.expItems[0].unit_cost = round2(whMeta.avgUnitCost);
+          }
+          renderExpenseItemsBuilderRows();
         } else if (form === 'repair' && FORM_UI.repairItems && FORM_UI.repairItems[0]) {
           FORM_UI.repairItems[0].item_name = prefill.item;
+          const catIt = resolveCatalogItem(prefill.item);
           const whIdx = getWarehouseIndex(val('f_company') || defaultEntryCompany());
           const whRow = whIdx.byKey[norm(prefill.item)];
-          if (whRow) {
-            if (whRow.uom) FORM_UI.repairItems[0].uom = whRow.uom;
-            if (whRow.avgUnitCost > 0) FORM_UI.repairItems[0].unit_cost = round2(whRow.avgUnitCost);
-          }
+          if (catIt && catIt.uom) FORM_UI.repairItems[0].uom = catIt.uom;
+          else if (whRow && whRow.uom) FORM_UI.repairItems[0].uom = whRow.uom;
+          if (whRow && whRow.avgUnitCost > 0) FORM_UI.repairItems[0].unit_cost = round2(whRow.avgUnitCost);
+          else if (catIt && Number(catIt.default_cost) > 0) FORM_UI.repairItems[0].unit_cost = round2(catIt.default_cost);
           renderRepairItemsBuilderRows();
         }
       }
@@ -42989,6 +43083,7 @@
     'customers',
     'suppliers',
     'products',
+    'items',
     'product_types',
     'uoms',
     'sites',
@@ -43263,31 +43358,39 @@
           if (it.id) seenEi.add(String(it.id));
           return true;
         });
-      if (childItems.length > 1 || childItems.some(it => it.allocation_mode === 'different_equipment')) {
-        if ($('f_for_equipment')) $('f_for_equipment').value = row.equipment ? '1' : '0';
-        if ($('f_store_warehouse')) $('f_store_warehouse').value = '0';
-        FORM_UI.expItems = childItems.map(it => ({
-          item_name: it.item_name || '',
-          allocation_mode: it.allocation_mode || 'same_equipment',
-          target_equipment: it.target_equipment || '',
-          warehouse_location: it.warehouse_location || 'WTC Main Warehouse',
-          qty: Number(it.qty) || 1,
-          uom: it.uom || 'Piece',
-          unit_cost: it.unit_cost != null ? it.unit_cost : 0
-        }));
+      if (childItems.length >= 1) {
+        const isWhOnly = childItems.length === 1 && childItems[0].allocation_mode === 'warehouse';
+        if ($('f_store_warehouse')) $('f_store_warehouse').value = isWhOnly ? '1' : '0';
+        if ($('f_for_equipment')) $('f_for_equipment').value = (!isWhOnly && (row.equipment || row.for_equipment || childItems.some(it => it.allocation_mode !== 'warehouse'))) ? '1' : '0';
+        FORM_UI.expItems = childItems.map(it => {
+          const catIt = it.item_name ? resolveCatalogItem(it.item_name) : null;
+          return {
+            item_name: it.item_name || '',
+            allocation_mode: it.allocation_mode || 'same_equipment',
+            target_equipment: it.target_equipment || '',
+            warehouse_location: it.warehouse_location || defaultWarehouseLocationForCompany(rowCo || defaultEntryCompany()),
+            qty: Number(it.qty) || 1,
+            uom: (catIt && catIt.uom) || it.uom || 'Piece',
+            unit_cost: it.unit_cost != null ? it.unit_cost : 0
+          };
+        });
         renderExpenseItemsBuilderRows();
-      } else if (childItems.length === 1 && childItems[0].allocation_mode === 'warehouse') {
-        if ($('f_store_warehouse')) $('f_store_warehouse').value = '1';
-        if ($('f_for_equipment')) $('f_for_equipment').value = '0';
-        setModalControlVal('f_exp_item_name', childItems[0].item_name || '');
-        setModalControlVal('f_exp_uom', childItems[0].uom || 'Piece');
-        setModalControlVal('f_exp_wh_loc', childItems[0].warehouse_location || defaultWarehouseLocationForCompany(rowCo || defaultEntryCompany()));
       } else if (row.equipment || row.for_equipment) {
         if ($('f_for_equipment')) $('f_for_equipment').value = '1';
         if ($('f_store_warehouse')) $('f_store_warehouse').value = '0';
-        if (childItems.length === 1 && childItems[0].item_name && childItems[0].item_name !== row.subcategory) {
-          setModalControlVal('f_exp_item_name', childItems[0].item_name);
-        }
+        const fallbackItem = row.subcategory || row.category || '';
+        const catIt = fallbackItem ? resolveCatalogItem(fallbackItem) : null;
+        const rQty = Number(row.qty) || 1;
+        FORM_UI.expItems = [{
+          item_name: fallbackItem,
+          allocation_mode: 'same_equipment',
+          target_equipment: row.equipment || '',
+          warehouse_location: defaultWarehouseLocationForCompany(rowCo || defaultEntryCompany()),
+          qty: rQty,
+          uom: (catIt && catIt.uom) || (/^fuel|oil/i.test(row.category || '') ? 'Litre' : 'Piece'),
+          unit_cost: rQty > 0 ? round2((Number(row.amount) || 0) / rQty) : (Number(row.amount) || 0)
+        }];
+        renderExpenseItemsBuilderRows();
       }
       FORM_UI.lastExpCompany = val('f_company');
       FORM_UI.lastExpTruck = val('f_truck');
@@ -43720,7 +43823,7 @@
     gl_accounts: 'GL Account & Automation Rule',
     expense_items: 'Expense Invoice Item', warehouse_movements: 'Warehouse Stock Movement',
     equipment_repairs: 'Equipment Repair', repair_items: 'Repair Item Used',
-    equipment_oil_logs: 'Oil & Service Log'
+    equipment_oil_logs: 'Oil & Service Log', items: 'Warehouse Item & Part Master'
   };
 
   const INSPECT_DVN = {
@@ -43741,12 +43844,12 @@
     currencies: 'bhf_currency', fx_rates: 'bhf_fxrate', vat_rates: 'bhf_vatrate', gl_accounts: 'bhf_glaccount',
     expense_items: 'bhf_expenseitem', warehouse_movements: 'bhf_warehousemovement',
     equipment_repairs: 'bhf_equipmentrepair', repair_items: 'bhf_repairitem',
-    equipment_oil_logs: 'bhf_equipmentoillog'
+    equipment_oil_logs: 'bhf_equipmentoillog', items: 'bhf_item'
   };
 
   const INSPECT_LOOKUP_FIELD_TARGET = {
     customer: 'customers', supplier: 'suppliers', site_owner: 'suppliers', truck_owner: 'suppliers',
-    product: 'products', item: 'products', input_product: 'products', site: 'sites',
+    product: 'products', item: 'products', item_name: 'items', input_product: 'products', site: 'sites',
     region: 'regions', truck: 'equipment', equipment: 'equipment', target_equipment: 'equipment', driver: 'drivers',
     default_driver: 'drivers', day_operator: 'drivers', night_operator: 'drivers',
     staff: 'employments', vat_invoice: 'vat_invoices', category: 'expense_categories',
@@ -43806,6 +43909,12 @@
       return { id: q, name: q, official_name: q };
     }
     if (key === 'products') return { id: q, name: q, type: 'Material', uom: 'm³', list_price: listPrice(q) };
+    if (key === 'items') {
+      const catIt = resolveCatalogItem(q);
+      if (catIt) return catIt;
+      const whMeta = warehouseCatalogItemMeta(q);
+      return { id: q, name: q, item_name: q, category: (whMeta && whMeta.category) || 'Spare Parts', uom: (whMeta && whMeta.uom) || 'Piece', default_cost: (whMeta && whMeta.avgUnitCost) || 0, default_location: (whMeta && whMeta.location) || 'WTC Main Warehouse', min_stock: (whMeta && whMeta.min_stock) || 0 };
+    }
     if (key === 'sites') {
       const defCat = (STATE && (STATE.view === 'sales' || STATE.view === 'customers' || STATE.view === 'pricing' || (STATE.tableViews && STATE.tableViews.sites === 'delivery'))) ? 'customer' : 'supplier';
       return { id: q, name: q, site_category: defCat, region: 'Lebanon', is_jv: false };
@@ -43967,6 +44076,16 @@
       return {
         tone: 'info',
         text: `Product & Grade Master: ${row.name} (${row.type || 'Material'} · Default UoM ${row.uom || 'm³'} · Tonnage Factor ${row.ton_factor || 1.5} t/m³)  |  List Price Benchmark: ${lp != null ? fmtUSD(lp, 2) : '-'}  |  Active Price Agreements: ${rulesCnt}`
+      };
+    }
+    if (key === 'items') {
+      const itName = row.name || row.item_name || '';
+      const whMeta = warehouseCatalogItemMeta(itName);
+      const onHand = whMeta ? whMeta.onHandQty : 0;
+      const avgC = whMeta && whMeta.avgUnitCost > 0 ? whMeta.avgUnitCost : Number(row.default_cost || 0);
+      return {
+        tone: 'info',
+        text: `Universal Item & Part Master: ${itName} (${row.category || 'Spare Parts'} · Locked Unit: ${row.uom || 'Piece'})  |  Warehouse On-Hand: ${fmtNum(onHand, 2)} ${row.uom || 'Piece'}  |  Avg / Default Unit Cost: ${fmtUSD(avgC, 2)}  |  Default Shelf: ${row.default_location || 'WTC Main Warehouse'}`
       };
     }
     if (key === 'gl_accounts') {
@@ -44689,8 +44808,8 @@
       addGrid('sg_m_parts', `All Part Movements & Dispositions on ${eq}`, 'Unit Parts', 'Parts Custody', 'part_movements', (rec.part_movements || []).filter(p => norm(p.equipment) === norm(eq)), ['name', 'date', 'company', 'action_type', 'part_name', 'qty', 'condition', 'removed_disposition', 'defect_ref', 'new_part_cost', 'sale_proceeds'], 'new_part_cost');
       addGrid('sg_m_exp', `Maintenance & Spare Parts Expenses (${eq})`, 'Fleet Expenses', 'Expense Ledger', 'expenses', (rec.expenses || []).filter(x => norm(x.equipment) === norm(eq)), ['date', 'name', 'company', 'category', 'subcategory', 'supplier', 'method', 'amount', 'reference'], 'amount');
     }
-    else if (key === 'warehouse_movements' || key === 'expense_items' || key === 'repair_items') {
-      const itName = row.item_name;
+    else if (key === 'items' || key === 'warehouse_movements' || key === 'expense_items' || key === 'repair_items') {
+      const itName = row.item_name || row.name;
       if (itName) {
         addGrid('sg_wh_moves', `Warehouse Stock Movements (${itName})`, 'Stock Ledger', 'Warehouse +IN / -OUT', 'warehouse_movements', (rec.warehouse_movements || []).filter(m => norm(m.item_name) === norm(itName)), ['date', 'name', 'company', 'movement_type', 'qty', 'uom', 'unit_cost', 'total_cost', 'equipment', 'repair_ref', 'expense_ref'], 'total_cost');
         addGrid('sg_wh_repitems', `Repairs Using ${itName}`, 'Used in Repairs', 'Repair Consumption', 'repair_items', (rec.repair_items || []).filter(ri => norm(ri.item_name) === norm(itName)), ['date', 'repair_ref', 'company', 'equipment', 'source', 'qty', 'uom', 'unit_cost', 'line_total'], 'line_total');
@@ -45399,6 +45518,15 @@
         { key: 'fuel_item', label: 'Fuel / Lubricant Item', type: 'bool', sec: 2 },
         { key: 'input_product', label: 'Raw Material Input', type: 'bool', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
+      ],
+      items: [
+        { key: 'name', label: 'Item / Part Name *', type: 'text', sec: 1 },
+        { key: 'category', label: 'Item Category *', type: 'select', options: ['Spare Parts', 'Oils & Lubricants', 'Tools & Garage', 'Plant Consumables'], sec: 1 },
+        { key: 'uom', label: 'Locked Unit (UoM) *', type: 'select', options: ['Piece', 'Set', 'Litre', 'kg', 'Box', 'm'], sec: 2 },
+        { key: 'default_cost', label: 'Default Unit Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'default_location', label: 'Default Warehouse Location', type: 'text', sec: 2 },
+        { key: 'min_stock', label: 'Min Stock Reorder Alert', type: 'number', step: '1', min: '0', sec: 2 },
+        { key: 'notes', label: 'Notes / Part Number', type: 'text', sec: 3, span: true }
       ],
       product_types: [
         { key: 'name', label: 'Product Family Name *', type: 'text', sec: 1 },
@@ -47929,12 +48057,13 @@
   const _FLEET_DEP_KEYS = new Set(['equipment', 'company_equipment', 'drivers', 'company_drivers', 'suppliers', 'customers', 'sites', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'price_rules']);
   function applyCustomRecordsToSeed() {
     ensureGlobalFinanceTablesSeeded();
+    ensureItemsCatalogSeeded();
     ensureUniversalCanonicalIndex();
     sanitizeUniversalCustomRecords();
     SEED._customRev = (SEED._customRev || 0) + 1;
     if (!SEED._tableRev) SEED._tableRev = {};
     let fleetTouched = false;
-    const masterByNameKeys = new Set(['suppliers', 'equipment', 'company_equipment', 'drivers', 'customers', 'products', 'sites', 'regions', 'expense_categories', 'expense_subcategories', 'currencies', 'fx_rates', 'vat_rates']);
+    const masterByNameKeys = new Set(['suppliers', 'equipment', 'company_equipment', 'drivers', 'customers', 'products', 'items', 'sites', 'regions', 'expense_categories', 'expense_subcategories', 'currencies', 'fx_rates', 'vat_rates']);
     const allKeys = Array.from(new Set([...CR_KEYS, ...Object.keys(STATE.customRecords || {})]));
     allKeys.forEach(k => {
       const list = SEED.records[k];
