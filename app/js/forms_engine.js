@@ -1994,6 +1994,12 @@
 
     if (fType === 'conversion') {
       const initFx = getActiveFxRate(today);
+      const freqPresets = (helpers && typeof helpers.getFrequentFxConversionPresets === 'function')
+        ? helpers.getFrequentFxConversionPresets(company, 'USD to LBP', 5)
+        : ((typeof window !== 'undefined' && typeof window.__mfgGetFrequentFxConversionPresets === 'function')
+            ? window.__mfgGetFrequentFxConversionPresets(company, 'USD to LBP', 5)
+            : [{ amount: 20, label: '$20', count: 0 }, { amount: 5, label: '$5', count: 0 }, { amount: 10, label: '$10', count: 0 }, { amount: 2, label: '$2', count: 0 }, { amount: 100, label: '$100', count: 0 }]);
+      const quickBtnsHtml = freqPresets.map(p => `<button type="button" class="att-preset-pill" data-conv-usd-preset="${esc(p.amount)}" data-conv-freq="${esc(p.count || 0)}">${esc(p.label)}</button>`).join('');
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
@@ -2004,11 +2010,11 @@
             ['USD to LBP', 'USD → LBP (USD Decreases · LBP Increases)'],
             ['LBP to USD', 'LBP → USD (LBP Decreases · USD Increases)']
           ], 'USD to LBP'), { id: 'wrap_conv_dir', hintId: 'hint_conv_dir', hint: '' })}
-          ${fld('USD Decreased ($) *', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="Enter USD or pick preset..."'), {
+          ${fld('USD Decreased ($) *', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="Enter USD or pick frequent amount..."'), {
             id: 'wrap_tr_usd',
             hintId: 'hint_tr_usd',
             hint: '',
-            afterHtml: `<div class="conv-quick-bar" id="convUsdQuickBar"><button type="button" class="att-preset-pill" data-conv-usd-preset="100">$100</button><button type="button" class="att-preset-pill" data-conv-usd-preset="500">$500</button><button type="button" class="att-preset-pill" data-conv-usd-preset="1000">$1,000</button><button type="button" class="att-preset-pill" data-conv-usd-preset="5000">$5,000</button></div>`
+            afterHtml: `<div class="conv-quick-bar" id="convUsdQuickBar">${quickBtnsHtml}</div>`
           })}
           ${fld('LBP Increased (LL) *', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="Auto-calculates from USD × Rate..."'), {
             id: 'wrap_tr_lbp',

@@ -31279,7 +31279,7 @@
 
     if (window.MFG_FORMS && !['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement'].includes(fType)) {
       return cockpitHtml + window.MFG_FORMS.renderExtendedFormBody(fType, { SEED, STATE }, {
-        allowedCompanyNames, defaultEntryCompany, customerNames, supplierNames, siteNames, equipmentNames, driverNames, getFreqIndex, uniqSorted, domainProductMetaItems, resolveStaffShiftForDate
+        allowedCompanyNames, defaultEntryCompany, customerNames, supplierNames, siteNames, equipmentNames, driverNames, getFreqIndex, uniqSorted, domainProductMetaItems, resolveStaffShiftForDate, getFrequentFxConversionPresets
       });
     }
 
@@ -32174,6 +32174,87 @@
     if (!(STATE.modalForm === 'conversion' || (STATE.modalForm === 'treasury' && val('f_trtype') === 'conversion'))) return null;
     return evaluateFxConversionGuard(num('f_usd'), num('f_lbp'), num('f_fxrate'), val('f_date') || todayISO(), isFieldAdminUnlocked('f_fxrate'));
   }
+
+  function getFrequentFxConversionPresets(company, dir, limit = 5) {
+    const maxItems = Math.max(1, Number(limit) || 5);
+    const coKey = norm(company || '');
+    const hasDir = Boolean(dir && String(dir).trim());
+    const wantU2L = !/LBP/i.test(String(dir || 'USD to LBP').slice(0, 4));
+    const coDirFreq = new Map();
+    const coFreq = new Map();
+    const dirFreq = new Map();
+    const allFreq = new Map();
+    const seen = new Set();
+    const customList = (STATE.customRecords && Array.isArray(STATE.customRecords.conversions)) ? STATE.customRecords.conversions : [];
+    const seedList = (SEED && SEED.records && Array.isArray(SEED.records.conversions)) ? SEED.records.conversions : [];
+    const combined = customList.concat(seedList);
+    for (let i = 0; i < combined.length; i++) {
+      const r = combined[i];
+      if (!r || r.voided) continue;
+      const dedupKey = r.id ? `id:${r.id}` : `sig:${r.company || ''}|${r.date || ''}|${r.name || ''}|${r.usd_amount ?? r.from_amt ?? ''}|${r.lbp_amount ?? r.to_amt ?? ''}`;
+      if (seen.has(dedupKey)) continue;
+      seen.add(dedupKey);
+      const d = convSignedDeltas(r);
+      const amt = round2(Math.abs(Number(d.usdMag || 0)));
+      if (!(amt > 0)) continue;
+      const rCo = norm(r.company || '');
+      const rU2L = Boolean(d.u2l);
+      allFreq.set(amt, (allFreq.get(amt) || 0) + 1);
+      if (!hasDir || rU2L === wantU2L) {
+        dirFreq.set(amt, (dirFreq.get(amt) || 0) + 1);
+      }
+      if (coKey && rCo === coKey) {
+        coFreq.set(amt, (coFreq.get(amt) || 0) + 1);
+        if (!hasDir || rU2L === wantU2L) {
+          coDirFreq.set(amt, (coDirFreq.get(amt) || 0) + 1);
+        }
+      }
+    }
+    const picked = [];
+    const pickedSet = new Set();
+    const addFromMap = (freqMap, minCount = 1) => {
+      if (picked.length >= maxItems || !freqMap || !freqMap.size) return;
+      const entries = Array.from(freqMap.entries())
+        .filter(([amt, cnt]) => cnt >= minCount && !pickedSet.has(amt))
+        .sort((a, b) => {
+          if (b[1] !== a[1]) return b[1] - a[1];
+          const coDiff = (coFreq.get(b[0]) || 0) - (coFreq.get(a[0]) || 0);
+          if (coDiff !== 0) return coDiff;
+          const allDiff = (allFreq.get(b[0]) || 0) - (allFreq.get(a[0]) || 0);
+          if (allDiff !== 0) return allDiff;
+          return a[0] - b[0];
+        });
+      for (let i = 0; i < entries.length && picked.length < maxItems; i++) {
+        const [amt] = entries[i];
+        pickedSet.add(amt);
+        picked.push({
+          amount: amt,
+          label: Number.isInteger(amt) ? `$${fmtNum(amt, 0)}` : fmtUSD(amt, 2),
+          count: coDirFreq.get(amt) || coFreq.get(amt) || dirFreq.get(amt) || allFreq.get(amt) || 0,
+          totalCount: allFreq.get(amt) || 0
+        });
+      }
+    };
+    addFromMap(coDirFreq, 2);
+    addFromMap(coFreq, 2);
+    addFromMap(dirFreq, 2);
+    addFromMap(allFreq, 1);
+    if (picked.length < maxItems) {
+      [20, 5, 10, 2, 100].forEach(fallbackAmt => {
+        if (picked.length < maxItems && !pickedSet.has(fallbackAmt)) {
+          pickedSet.add(fallbackAmt);
+          picked.push({
+            amount: fallbackAmt,
+            label: `$${fmtNum(fallbackAmt, 0)}`,
+            count: allFreq.get(fallbackAmt) || 0,
+            totalCount: allFreq.get(fallbackAmt) || 0
+          });
+        }
+      });
+    }
+    return picked;
+  }
+  window.__mfgGetFrequentFxConversionPresets = getFrequentFxConversionPresets;
 
   // Updates a field's visual & functional lock state:
   // mode = 'locked' (policy-locked now) | 'auto-open' (opened by data rule) | 'unlocked' (admin override active)
@@ -35279,6 +35360,14 @@
 
           const qBar = $('convUsdQuickBar');
           if (qBar) {
+            const curCoForPreset = val('f_company') || defaultEntryCompany();
+            const curDirForPreset = isU2L ? 'USD to LBP' : 'LBP to USD';
+            const freqPresets = getFrequentFxConversionPresets(curCoForPreset, curDirForPreset, 5);
+            const scopeSig = `${norm(curCoForPreset)}|${curDirForPreset}|${freqPresets.map(p => `${p.amount}:${p.count}`).join(',')}`;
+            if (qBar.getAttribute('data-freq-sig') !== scopeSig) {
+              qBar.setAttribute('data-freq-sig', scopeSig);
+              qBar.innerHTML = freqPresets.map(p => `<button type="button" class="att-preset-pill" data-conv-usd-preset="${esc(p.amount)}" data-conv-freq="${esc(p.count || 0)}">${esc(p.label)}</button>`).join('');
+            }
             qBar.querySelectorAll('[data-conv-usd-preset]').forEach(btn => {
               const pv = Number(btn.getAttribute('data-conv-usd-preset') || 0);
               btn.classList.toggle('active', curUsd > 0 && Math.abs(curUsd - pv) < 0.005);
@@ -35289,7 +35378,7 @@
           if (curUsd > 0) {
             setHint('hint_tr_usd', `${fmtUSD(curUsd, 2)} at system rate ${fmtNum(fxGuard.sysRate, 0)} LL/$ = ${fmtNum(fxGuard.expectedLbp, 0)} LL`, 'ok');
           } else {
-            setHint('hint_tr_usd', 'Enter USD amount or click a preset above to auto-calculate LBP', '');
+            setHint('hint_tr_usd', 'Enter USD amount or click a frequent amount above to auto-calculate LBP', '');
           }
           if (fxGuard.frozen) {
             setHint('hint_tr_lbp', curUsd > 0
