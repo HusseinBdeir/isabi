@@ -639,13 +639,21 @@
     };
     const custNames = helpers.customerNames();
     const supNames = helpers.supplierNames();
+    const truckOwnerPool = uniqSorted(supNames.concat(custNames), fIdx && fIdx.truckOwner);
     const siteNames = helpers.siteNames();
     const equipNames = helpers.equipmentNames();
     const driverNames = helpers.driverNames();
     const staffNames = uniqSorted((rec.employments || []).map(e => e.staff || e.name).concat((rec.salaries || []).map(s => s.staff)), fIdx && fIdx.staff);
     const roleNames = uniqSorted(['Driver', 'Plant Operator', 'Crusher Operator', 'Loader Operator', 'Mechanic', 'Electrician', 'Weighbridge Clerk', 'Site Supervisor', 'Guard', 'General Labour'].concat((rec.employments || []).map(e => e.role)).concat((rec.freelance_sheets || []).map(f => f.role)), fIdx && fIdx.role);
     const counterpartyNames = uniqSorted(['Bdeir Holding', 'WTC', 'BBConstruction', 'Lions Transport', 'Cash Till', 'Bank Audi', 'Blom Bank'].concat((rec.loans || []).map(l => l.lender || l.counterparty || l.name)).concat((rec.external_movements || []).map(x => x.counterparty || x.name)).concat(supNames), fIdx && fIdx.counterparty);
-    const regNames = uniqSorted((rec.regions || []).map(r => r.name).concat(['Beirut', 'Mount Lebanon', 'South', 'Bekaa', 'North', 'Nabatieh']), fIdx && fIdx.region);
+    const regNames = uniqSorted((rec.regions || []).map(r => r.name).concat([
+      'Beirut', 'Mount Lebanon', 'South Lebanon', 'Bekaa', 'North Lebanon', 'Nabatieh',
+      'Metn', 'Keserwan', 'Baabda', 'Aley', 'Chouf', 'Saida', 'Tyre', 'Jbeil', 'Batroun', 'Chekka',
+      'Tripoli', 'Koura', 'Zgharta', 'Akkar', 'Zahle', 'Chtaura', 'West Bekaa', 'Rachaiya',
+      'Baalbek', 'Hermel', 'Jezzine', 'Bint Jbeil', 'Marjayoun', 'Hasbaya', 'Jounieh', 'Zouk Mosbeh',
+      'Dbayeh', 'Antelias', 'Zalka', 'Broummana', 'Choueifat', 'Khaldeh', 'Damour', 'Sin El Fil',
+      'Hazmieh', 'Hadath', 'Ghaziyeh', 'Sarafand', 'Dekwaneh', 'Jiyeh', 'Sibline', 'Borj Hammoud', 'Aawkar', 'Halat'
+    ]), fIdx && fIdx.region);
     const adminHeaderHtml = `<div id="paAdminUnlockBox" hidden></div>`;
     const empByStaff = {};
     (rec.employments || []).forEach(e => {
@@ -906,29 +914,71 @@
         ? 'customer'
         : 'supplier';
       const isCustSite = defSiteCat === 'customer';
+      const activeSites = (rec.sites || []).filter(s => s && !s.voided);
+      const suppSiteCount = activeSites.filter(s => {
+        const c = String(s.site_category || '').toLowerCase();
+        if (c === 'supplier') return true;
+        if (c === 'customer') return false;
+        return Boolean(s.supplier || s.is_jv || !s.customer);
+      }).length;
+      const custSiteCount = Math.max(0, activeSites.length - suppSiteCount);
       return `
         <div class="form-grid-3">
           <div class="form-field span-3" id="siteCategoryDeck">
-            <label><span class="pa-fld-lbl">Site Category *</span></label>
-            <div class="att-preset-bar" role="group" aria-label="Site Category">
-              <button type="button" class="att-preset-btn${!isCustSite ? ' active' : ''}" data-site-cat="supplier" aria-pressed="${!isCustSite ? 'true' : 'false'}">Supplier / Quarry Site</button>
-              <button type="button" class="att-preset-btn${isCustSite ? ' active' : ''}" data-site-cat="customer" aria-pressed="${isCustSite ? 'true' : 'false'}">Customer Delivery Site</button>
+            <label><span class="pa-fld-lbl">1. Select Site Category *</span></label>
+            <div class="site-cat-deck" role="radiogroup" aria-label="Site Category">
+              <button type="button" class="site-cat-card site-cat-supplier${!isCustSite ? ' active' : ''}" data-site-cat="supplier" aria-pressed="${!isCustSite ? 'true' : 'false'}">
+                <span class="site-cat-icon">${ic('raw')}</span>
+                <span class="site-cat-body">
+                  <span class="site-cat-title-row">
+                    <span class="site-cat-title">Supplier / Quarry Site</span>
+                    <span class="site-cat-count" id="siteCatCountSupp">${suppSiteCount} Quarry Sites</span>
+                  </span>
+                  <span class="site-cat-sub">Raw material origin, quarry, crusher or batching plant source</span>
+                  <span class="site-cat-tags">
+                    <span class="site-cat-tag">Links to Supplier &amp; JV</span>
+                    <span class="site-cat-tag">Purchase Tickets &amp; 3-Leg AP</span>
+                  </span>
+                </span>
+                <span class="site-cat-check" aria-hidden="true">${!isCustSite ? '✓ Selected' : 'Select'}</span>
+              </button>
+              <button type="button" class="site-cat-card site-cat-customer${isCustSite ? ' active' : ''}" data-site-cat="customer" aria-pressed="${isCustSite ? 'true' : 'false'}">
+                <span class="site-cat-icon">${ic('sales')}</span>
+                <span class="site-cat-body">
+                  <span class="site-cat-title-row">
+                    <span class="site-cat-title">Customer Delivery Site</span>
+                    <span class="site-cat-count" id="siteCatCountCust">${custSiteCount} Delivery Sites</span>
+                  </span>
+                  <span class="site-cat-sub">Customer project, jobsite or concrete / material delivery destination</span>
+                  <span class="site-cat-tags">
+                    <span class="site-cat-tag">Links to Customer</span>
+                    <span class="site-cat-tag">Sales Tickets &amp; Price Matrix</span>
+                  </span>
+                </span>
+                <span class="site-cat-check" aria-hidden="true">${isCustSite ? '✓ Selected' : 'Select'}</span>
+              </button>
             </div>
             <input type="hidden" id="f_site_category" value="${defSiteCat}">
-            <span class="hint">Supplier / Quarry Sites link only to Suppliers and JV partnerships. Customer Delivery Sites link only to Customers.</span>
           </div>
-          ${fld('Site Name *', inp('f_site', 'text', '', 'placeholder="Site name"'))}
-          ${fld('Region *', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Auto-filled from map zone or select..."') + dl('dl_regions', regNames))}
+          ${fld('Region *', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Select region or click map zone..."') + dl('dl_regions', regNames), {
+            hint: 'Select the geographic Region first or click inside a zone on the map.',
+            hintId: 'hint_site_region'
+          })}
+          ${fld('Site Name (Inside Region) *', inp('f_site', 'text', '', 'placeholder="Site name inside selected region..."'), {
+            hint: 'Must be located inside the selected Region.',
+            hintId: 'hint_site_name'
+          })}
           ${fld('Default Site Owner (Supplier)', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_site_supplier', hidden: isCustSite })}
           ${fld('Linked Customer', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_site_customer', hidden: !isCustSite })}
-          ${fld('Latitude (GPS)', inp('f_lat', 'number', '', 'step="0.00001" placeholder="33.89380"'))}
-          ${fld('Longitude (GPS)', inp('f_lng', 'number', '', 'step="0.00001" placeholder="35.48200"'))}
-          ${fld('Quick Paste Coords / Maps URL', inp('f_site_coord_paste', 'text', '', 'placeholder="Paste 33.8938, 35.4820 or Maps link"'))}
+          ${fld('Latitude (GPS)', inp('f_lat', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
+          ${fld('Longitude (GPS)', inp('f_lng', 'number', '', 'step="0.00001" placeholder="Auto from map / region"'))}
+          ${fld('Quick Paste Coords / Maps URL', inp('f_site_coord_paste', 'text', '', 'placeholder="Paste lat, lng or Maps link"'))}
           <div class="form-field check-field" id="wrap_site_jv"${isCustSite ? ' hidden' : ''}><input type="checkbox" id="f_isjv"><label for="f_isjv">Joint-Venture (JV) Site</label></div>
+          <div class="form-field span-3" id="siteRegionConsistencyBanner" hidden></div>
           <div class="geo-modal-map-wrap">
             <div class="geo-modal-map-bar">
-              <span><b>Pin Site on Map:</b> Click anywhere inside a Region Circle or Polygon to pin GPS &amp; auto-detect Region</span>
-              <span id="modalSiteKmReadout" style="font-weight:700;color:var(--accent,#1D4ED8)">Click map to estimate KM</span>
+              <span id="modalSiteMapPrompt"><b>Pin Site Inside Region:</b> Select a Region above or click anywhere on the map to pin GPS &amp; auto-detect its containing Region</span>
+              <span id="modalSiteKmReadout" style="font-weight:700;color:var(--accent,#1D4ED8)">Click map or select Region to estimate KM</span>
             </div>
             <div class="geo-modal-map-canvas" id="modalSiteMapCanvas"></div>
           </div>
@@ -941,18 +991,22 @@
       return `
         <div class="form-grid-3">
           ${secHdr('1. Geographic Region & Map Zone (Universal Registry · All BUs)')}
+          ${fld('Region *', inp('f_region', 'text', '', 'placeholder="Locked to Search Map Region..." readonly tabindex="-1" aria-readonly="true" autocomplete="off"'), {
+            id: 'wrap_f_region_name',
+            cls: 'is-policy-locked is-geo-frozen-field',
+            labelRightHtml: `<span class="pa-lock-pill locked" id="f_region_lock_pill" data-region-frozen="1" style="pointer-events:none;cursor:default">${ic('lock')} <span class="lp-short">Locked</span><span class="sr-only"> LOCKED</span></span>`
+          })}
+          ${fld('Search Zone Shape', sel('f_zone_type', [
+            ['boundary', 'Search Map Region (Boundary)'],
+            ['circle', 'Circle Radius on Map'],
+            ['polygon', 'Custom Polygon Boundary']
+          ], 'boundary'), { id: 'wrap_f_zone_type' })}
           ${fld('Search Map Region', inp('f_map_region_search', 'text', '', 'placeholder="Search Beirut, Saida, Tripoli, Metn, Zahle..." autocomplete="off"'), { id: 'wrap_f_map_region_search' })}
-          ${fld('Region *', inp('f_region', 'text', '', 'placeholder="Auto-filled from search or type name..." autocomplete="off"'), { id: 'wrap_f_region_name' })}
           ${fld('Governorate', inp('f_corridor_display', 'text', '', 'placeholder="Auto-detected from map..." readonly tabindex="-1" aria-readonly="true"') + '<input type="hidden" id="f_corridor" value="">', {
             id: 'wrap_f_corridor',
             cls: 'is-policy-locked is-geo-frozen-field',
             labelRightHtml: `<span class="pa-lock-pill locked" data-corridor-frozen="1" style="pointer-events:none;cursor:default">${ic('lock')} <span class="lp-short">Locked</span><span class="sr-only"> LOCKED</span></span>`
           })}
-          ${fld('Map Zone Shape', sel('f_zone_type', [
-            ['boundary', 'Map Region Search (Boundary)'],
-            ['circle', 'Circle Radius on Map'],
-            ['polygon', 'Custom Polygon Boundary']
-          ], 'boundary'), { id: 'wrap_f_zone_type' })}
           ${fld('Circle Radius (km)', inp('f_radius_km', 'number', '1.5', 'step="0.1" min="0.2" max="50"'), { id: 'wrap_f_radius_km', hidden: true })}
           ${fld('Reference Haulage Distance (km)', inp('f_distance_km', 'number', '', 'step="0.5" min="0" placeholder="Auto-estimated from WTC Hub"'), { id: 'wrap_f_distance_km' })}
           <input type="hidden" id="f_auto_code" value="">
@@ -1056,17 +1110,17 @@
         <div class="form-grid-3">
           ${secHdr(isCo ? '1. Company Fleet Unit Assignment (BU-Specific)' : '1. Truck / Equipment Identity & Capacity (Universal Registry · All BUs)')}
           ${isCo ? companyField : ''}
-          ${fld('Unit Code / Plate Identifier *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="e.g. B-123456 or SHACMAN-04"') + dl('dl_equip', equipNames))}
-          ${fld('License Plate No.', inp('f_plateno', 'text', '', 'placeholder="Plate number"'))}
+          ${fld('Unit Code *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="e.g. TB1 or 353387"') + dl('dl_equip', equipNames))}
+          ${fld('Plate Number', inp('f_plateno', 'text', '', 'placeholder="e.g. 360676 (optional if entered above)"'))}
           ${fld('Equipment Category *', sel('f_category', [['Truck', 'Dump Truck / Tipper'], ['Mixer', 'Transit Mixer'], ['Loader', 'Wheel Loader'], ['Excavator', 'Excavator'], ['Bulldozer', 'Bulldozer'], ['Generator', 'Generator / Crusher'], ['Service Vehicle', 'Pickup / Service Vehicle']], 'Truck'))}
           ${fld('Capacity (m³) *', inp('f_capacity', 'number', '18', 'step="0.5" min="0"'), { id: 'wrap_eq_capacity' })}
-          ${fld('Model / Make', inp('f_model', 'text', '', 'placeholder="Mercedes / Volvo / Shacman / CAT"'))}
+          ${fld('Model', inp('f_model', 'text', '', 'placeholder="Mercedes, Volvo, Shacman, CAT"'))}
           ${secHdr('2. Owner & Active Driver Assignment')}
           ${fld('Ownership *', sel('f_ownership', isCo ? [['Owned', 'Company Owned Fleet'], ['Rented', 'Long-Term Rented']] : [['Subcontractor', 'Third-Party Hauler / Subcontractor'], ['Owned', 'Company Owned Fleet'], ['Customer', 'Customer Truck']], isCo ? 'Owned' : 'Subcontractor'))}
-          ${fld('Truck Owner (Supplier / Hauler)', inp('f_supplier', 'text', isCo ? company : '', 'list="dl_suppliers" placeholder="Select or type truck owner..."') + dl('dl_suppliers', supNames), { id: 'wrap_eq_supplier', hidden: isCo, hintId: 'hint_eq_supplier', hint: '' })}
-          ${fld('Default / Active Driver (Locked onto Tickets)', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Select active driver..."') + dl('dl_drivers', driverNames), { id: 'wrap_eq_driver', hintId: 'hint_eq_driver', hint: 'Strictly auto-populated and locked on Sales, Raw Material, Lubricant & Diesel tickets unless changed in the Equipment Log.' })}
+          ${fld('Truck Owner', inp('f_supplier', 'text', isCo ? company : '', 'list="dl_suppliers" placeholder="Select or type truck owner..."') + dl('dl_suppliers', truckOwnerPool), { id: 'wrap_eq_supplier', hidden: isCo, hintId: 'hint_eq_supplier', hint: '' })}
+          ${fld('Active Driver', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Select active driver..."') + dl('dl_drivers', driverNames), { id: 'wrap_eq_driver', hintId: 'hint_eq_driver', hint: 'Strictly auto-populated and locked on Sales, Raw Material, Lubricant & Diesel tickets unless changed in the Equipment Log.' })}
           ${fld('Effective From Date', inp('f_effdate', 'date', today), { id: 'wrap_eq_effdate' })}
-          ${fld('Effective To Date (Blank = Open / Substitute End)', inp('f_effend', 'date', ''), { id: 'wrap_eq_effend' })}
+          ${fld('Effective To Date', inp('f_effend', 'date', ''), { id: 'wrap_eq_effend' })}
         </div>
         <div id="wrap_eq_driver_log" hidden style="margin-top:12px"></div>
       `;
@@ -1436,7 +1490,7 @@
           ${secHdr('1. Driver / Operator Identity & Truck Assignment (Universal Registry · All BUs)')}
           ${fld('Driver *', inp('f_driver', 'text', '', 'placeholder="Driver name"'))}
           ${fld('Default Truck Plate', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type truck plate..."') + dl('dl_equip', equipNames))}
-          ${fld('Truck Owner (Hauler Supplier)', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Auto-filled from Truck Plate (or select hauler)..."') + dl('dl_suppliers', supNames), { id: 'wrap_drv_supplier' })}
+          ${fld('Truck Owner', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Auto-filled from Truck Plate (or select truck owner)..."') + dl('dl_suppliers', truckOwnerPool), { id: 'wrap_drv_supplier' })}
           ${fld('Phone', inp('f_phone', 'text', '', 'placeholder="+961 ..."'))}
           <div class="form-field check-field"><input type="checkbox" id="f_iscompanydriver"><label for="f_iscompanydriver">Company Fleet Driver (WTC / BBC / Lions Payroll)</label></div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}

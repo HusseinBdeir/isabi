@@ -414,6 +414,221 @@
   color: #F3CE85;
 }
 
+/* ==================== INTERACTIVE SITE CATEGORY DECK & GEO CONTAINMENT BANNER ==================== */
+.site-cat-deck {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+.site-cat-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border, #E5DEC9);
+  background: var(--surface, #FFFFFF);
+  color: var(--text, #161616);
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease, transform 0.12s ease;
+  font-family: inherit;
+  position: relative;
+}
+.site-cat-card:hover {
+  border-color: #C89D54;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(20, 20, 20, 0.06);
+}
+.site-cat-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(107, 114, 128, 0.1);
+  color: var(--muted, #6B7280);
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.site-cat-icon svg {
+  width: 19px;
+  height: 19px;
+}
+.site-cat-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.site-cat-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.site-cat-title {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--text, #161616);
+  letter-spacing: -0.01em;
+}
+.site-cat-count {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(107, 114, 128, 0.12);
+  color: var(--muted, #52525B);
+  white-space: nowrap;
+}
+.site-cat-sub {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--muted, #6B7280);
+}
+.site-cat-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.site-cat-tag {
+  font-size: 0.67rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(200, 157, 84, 0.12);
+  color: #7C550F;
+}
+[data-theme="dark"] .site-cat-tag {
+  background: rgba(200, 157, 84, 0.2);
+  color: #F3CE85;
+}
+.site-cat-check {
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #E5DEC9);
+  background: var(--surface-2, #F8F5EE);
+  color: var(--muted, #6B7280);
+  white-space: nowrap;
+  flex-shrink: 0;
+  align-self: center;
+}
+.site-cat-card.site-cat-supplier.active {
+  border-color: #059669;
+  background: linear-gradient(135deg, rgba(5, 150, 105, 0.09), rgba(16, 185, 129, 0.03));
+  box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.16), 0 6px 16px rgba(5, 150, 105, 0.08);
+}
+.site-cat-card.site-cat-supplier.active .site-cat-icon {
+  background: #059669;
+  color: #FFFFFF;
+}
+.site-cat-card.site-cat-supplier.active .site-cat-count {
+  background: rgba(5, 150, 105, 0.15);
+  color: #047857;
+}
+.site-cat-card.site-cat-supplier.active .site-cat-tag {
+  background: rgba(5, 150, 105, 0.12);
+  color: #065F46;
+}
+.site-cat-card.site-cat-supplier.active .site-cat-check {
+  background: #059669;
+  border-color: #059669;
+  color: #FFFFFF;
+}
+.site-cat-card.site-cat-customer.active {
+  border-color: #2563EB;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.09), rgba(59, 130, 246, 0.03));
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16), 0 6px 16px rgba(37, 99, 235, 0.08);
+}
+.site-cat-card.site-cat-customer.active .site-cat-icon {
+  background: #2563EB;
+  color: #FFFFFF;
+}
+.site-cat-card.site-cat-customer.active .site-cat-count {
+  background: rgba(37, 99, 235, 0.15);
+  color: #1D4ED8;
+}
+.site-cat-card.site-cat-customer.active .site-cat-tag {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1E40AF;
+}
+.site-cat-card.site-cat-customer.active .site-cat-check {
+  background: #2563EB;
+  border-color: #2563EB;
+  color: #FFFFFF;
+}
+[data-theme="dark"] .site-cat-card.site-cat-supplier.active .site-cat-count,
+[data-theme="dark"] .site-cat-card.site-cat-supplier.active .site-cat-tag {
+  color: #6EE7B7;
+}
+[data-theme="dark"] .site-cat-card.site-cat-customer.active .site-cat-count,
+[data-theme="dark"] .site-cat-card.site-cat-customer.active .site-cat-tag {
+  color: #93C5FD;
+}
+@media (max-width: 720px) {
+  .site-cat-deck {
+    grid-template-columns: 1fr;
+  }
+}
+
+.site-geo-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid var(--border, #E5DEC9);
+  background: var(--surface-2, #F8F5EE);
+}
+.site-geo-banner.is-ok {
+  border-color: rgba(5, 150, 105, 0.35);
+  background: rgba(5, 150, 105, 0.08);
+  color: #065F46;
+}
+[data-theme="dark"] .site-geo-banner.is-ok {
+  color: #6EE7B7;
+}
+.site-geo-banner.is-crit {
+  border-color: rgba(220, 38, 38, 0.45);
+  background: rgba(220, 38, 38, 0.09);
+  color: #B91C1C;
+}
+[data-theme="dark"] .site-geo-banner.is-crit {
+  color: #FCA5A5;
+}
+.site-geo-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.site-geo-fix-btn {
+  padding: 4px 10px;
+  border-radius: 7px;
+  border: 1px solid currentColor;
+  background: var(--surface, #FFFFFF);
+  color: inherit;
+  font-size: 0.73rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.site-geo-fix-btn:hover {
+  filter: brightness(0.96);
+}
+
 /* Map Stage */
 .geo-map-stage {
   position: relative;
@@ -887,6 +1102,20 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
   border-radius: 10px;
   box-shadow: 0 16px 38px rgba(8, 17, 36, 0.22), 0 3px 10px rgba(8, 17, 36, 0.1);
   padding: 5px;
+}
+#wrap_f_map_region_search .geo-place-menu {
+  left: auto;
+  right: 0;
+  width: min(360px, 88vw);
+  min-width: 100%;
+}
+@media (max-width: 768px) {
+  #wrap_f_map_region_search .geo-place-menu {
+    left: 0;
+    right: 0;
+    width: 100%;
+    min-width: 0;
+  }
 }
 [data-theme="dark"] .geo-place-menu {
   background: #101D36;

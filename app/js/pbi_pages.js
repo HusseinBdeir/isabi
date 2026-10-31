@@ -1731,12 +1731,33 @@
 
   let _hubRelCache = null;
   let _hubRelStamp = '';
+  let _pbiOwnerSetsRev = -1;
+  let _pbiSupSet = null;
+  let _pbiCustSet = null;
+  let _pbiCustEqSet = null;
+  function resolveTruckOwnerTargetPbi(ownerName, row, SEED) {
+    if (!ownerName) return 'suppliers';
+    if (row && /^customer/i.test(String(row.ownership || '').trim())) return 'customers';
+    const seedObj = SEED || window.MFG_SEED || {};
+    const rec = seedObj.records || {};
+    const rev = (seedObj._customRev || 0) * 100000 + ((rec.equipment && rec.equipment.length) || 0) + ((rec.customers && rec.customers.length) || 0);
+    if (_pbiOwnerSetsRev !== rev || !_pbiSupSet) {
+      _pbiSupSet = new Set((rec.suppliers || []).map(s => norm(s && s.name)).filter(Boolean));
+      _pbiCustSet = new Set((rec.customers || []).map(c => norm(c && c.name)).filter(Boolean));
+      _pbiCustEqSet = new Set((rec.equipment || []).filter(e => e && /^customer/i.test(String(e.ownership || '').trim())).map(e => norm(e.supplier)).filter(Boolean));
+      _pbiOwnerSetsRev = rev;
+    }
+    const o = norm(ownerName);
+    if (!o) return 'suppliers';
+    if (_pbiCustSet.has(o) && (!_pbiSupSet.has(o) || _pbiCustEqSet.has(o))) return 'customers';
+    return 'suppliers';
+  }
   function getHubRelIndex(SEED) {
     if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
       window.MFG_GEO.hydrateSeedGeo(SEED);
     }
     const rec = (SEED && SEED.records) || {};
-    const stamp = `${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.salaries || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(SEED && SEED._customRev) || 0}`;
+    const stamp = `${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.salaries || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${(SEED && SEED._customRev) || 0}`;
     if (_hubRelCache && _hubRelStamp === stamp) return _hubRelCache;
     _hubRelStamp = stamp;
     const rel = {
@@ -1754,7 +1775,7 @@
       return rel.siteByCatKey[ck];
     };
 
-    const initCust = () => ({ sales_loads: 0, sample_loads: 0, total_sales: 0, ar_balance: 0, credit_days: null, credit_limit: null, active_rules: 0 });
+    const initCust = () => ({ sales_loads: 0, sample_loads: 0, total_sales: 0, ar_balance: 0, credit_days: null, credit_limit: null, active_rules: 0, trucks: new Set(), drivers: new Set(), haul_loads: 0 });
     const initSupp = () => ({
       raw_loads: 0,
       raw_loads_cnt: 0,
@@ -1999,7 +2020,8 @@
         if (de && eq.name) de.trucks.add(fmtTruckRef(eq.name));
       }
       if (eq.supplier) {
-        const se = ensure(rel.suppByName, eq.supplier, initSupp);
+        const isCustEq = resolveTruckOwnerTargetPbi(eq.supplier, eq, SEED) === 'customers';
+        const se = isCustEq ? ensure(rel.custByName, eq.supplier, initCust) : ensure(rel.suppByName, eq.supplier, initSupp);
         if (se) {
           se.is_hauler = true;
           if (eq.name) se.trucks.add(fmtTruckRef(eq.name));
@@ -2010,7 +2032,8 @@
     (rec.drivers || []).forEach(drv => {
       ensure(rel.drvByName, drv.name || drv.driver, () => ({ trucks: new Set(), companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
       if (drv.truck_owner) {
-        const se = ensure(rel.suppByName, drv.truck_owner, initSupp);
+        const isCustDrv = resolveTruckOwnerTargetPbi(drv.truck_owner, null, SEED) === 'customers';
+        const se = isCustDrv ? ensure(rel.custByName, drv.truck_owner, initCust) : ensure(rel.suppByName, drv.truck_owner, initSupp);
         if (se) {
           se.is_hauler = true;
           if (drv.name || drv.driver) se.drivers.add(drv.name || drv.driver);
@@ -2054,7 +2077,8 @@
       const de = ensure(rel.drvByName, t.driver, () => ({ trucks: new Set(), companies: new Set(), loads_hauled: 0, fuel_fills: 0 }));
       if (de) { de.loads_hauled++; if (t.truck) de.trucks.add(fmtTruckRef(t.truck)); if (t.company) de.companies.add(t.company); }
       if (t.truck_owner) {
-        const he = ensure(rel.suppByName, t.truck_owner, initSupp);
+        const isCustHaul = resolveTruckOwnerTargetPbi(t.truck_owner, null, SEED) === 'customers';
+        const he = isCustHaul ? ensure(rel.custByName, t.truck_owner, initCust) : ensure(rel.suppByName, t.truck_owner, initSupp);
         if (he) {
           he.is_hauler = true;
           he.haul_loads++;
@@ -2087,7 +2111,8 @@
         }
       }
       if (t.truck_owner) {
-        const he = ensure(rel.suppByName, t.truck_owner, initSupp);
+        const isCustHaul = resolveTruckOwnerTargetPbi(t.truck_owner, null, SEED) === 'customers';
+        const he = isCustHaul ? ensure(rel.custByName, t.truck_owner, initCust) : ensure(rel.suppByName, t.truck_owner, initSupp);
         if (he) {
           he.is_hauler = true;
           he.haul_loads++;
@@ -2389,6 +2414,9 @@
         if (re && re[c] != null) return re[c];
       }
       if (tableKey === 'equipment' || tableKey === 'company_equipment') {
+        if (c === 'plate_no' && r.plate_no && norm(r.plate_no) === norm(r.name || r.equipment) && !/\d{3,}/.test(String(r.plate_no)) && !/^(truck|mixer|dump|tipper|tractor|trailer|service)/i.test(String(r.type || ''))) {
+          return null;
+        }
         const ee = rel.equipByName[norm(r.equipment || r.name)];
         if (ee) {
           if (c === 'companies_list') return Array.from(ee.companies).join(', ') || 'Shared';
@@ -8407,7 +8435,7 @@
 
                     const lkTarget = c === 'linked_party'
                       ? (resolveSiteCategoryPbi(r) === 'customer' ? 'customers' : 'suppliers')
-                      : HUB_LOOKUP_TARGETS[c];
+                      : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : HUB_LOOKUP_TARGETS[c]);
                     const isLookup = lkTarget && lkTarget !== meta.key && v != null && v !== '' && cell !== '—';
                     const signedHtml = (isSignedUsd || isSignedLbp) && v != null && v !== ''
                       ? `<strong style="color:${Number(v) >= 0 ? 'var(--good)' : 'var(--crit)'}">${esc(cell)}</strong>`
@@ -8481,7 +8509,8 @@
   }
 
   const HUB_COL_LABELS = {
-    supplier_role: 'Role / Type',
+    plate_no: 'Plate Number',
+    supplier_role: 'Role',
     trucks_list: 'Owned Trucks',
     drivers_list: 'Linked Drivers',
     haul_loads: 'Haul Loads',
@@ -8498,7 +8527,7 @@
     loads_hauled: 'Loads Hauled',
     fuel_fills: 'Fuel Fills',
     default_driver: 'Default Driver',
-    truck_owner: 'Truck Owner (Hauler)',
+    truck_owner: 'Truck Owner',
     site_owner: 'Site Owner',
     site_category: 'Site Category',
     linked_party: 'Counterparty',
@@ -8514,9 +8543,9 @@
     new_part_cost: 'New Cost ($)',
     repair_cost: 'Repair Cost ($)',
     sale_proceeds: 'Sale Proceeds ($)',
-    vendor_or_buyer: 'Vendor / Buyer',
-    storage_location: 'Store / Unit',
-    part_name: 'Part / Piece',
+    vendor_or_buyer: 'Counterparty',
+    storage_location: 'Location',
+    part_name: 'Part',
     action_type: 'Action',
     defect_ref: 'Prior Defect',
     linked_part_log: 'Part Log',
@@ -8558,18 +8587,19 @@
       if (c === 'raw_loads') return 'Source Raw Loads';
       if (c === 'sales_loads') return 'Delivery Loads';
     }
+    if ((tableKey === 'equipment' || tableKey === 'company_equipment') && c === 'supplier') return 'Truck Owner';
     if (c === 'name') {
       if (tableKey === 'fx_rates') return 'Rate Window Ref';
       if (tableKey === 'vat_rates') return 'Statutory Window';
-      if (tableKey === 'conversions') return 'Voucher / Ref';
+      if (tableKey === 'conversions') return 'Voucher';
       if (tableKey === 'equipment_defects') return 'Defect Ref';
       if (tableKey === 'part_movements') return 'Part Log Ref';
-      if (tableKey === 'suppliers') return 'Supplier / Hauler';
-      if (tableKey === 'equipment') return 'Unit / Plate #';
+      if (tableKey === 'suppliers') return 'Supplier';
+      if (tableKey === 'equipment') return 'Unit Code';
       if (tableKey === 'drivers') return 'Driver Name';
       if (tableKey === 'customers') return 'Customer';
       if (tableKey === 'sites') return 'Site';
-      if (tableKey === 'products') return 'Product / Grade';
+      if (tableKey === 'products') return 'Product';
     }
     if (HUB_COL_LABELS[c]) return HUB_COL_LABELS[c];
     return String(c || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -8699,7 +8729,7 @@
 
                     const lkTarget = c === 'linked_party'
                       ? (resolveSiteCategoryPbi(r) === 'customer' ? 'customers' : 'suppliers')
-                      : HUB_LOOKUP_TARGETS[c];
+                      : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : HUB_LOOKUP_TARGETS[c]);
                     const isLookup = lkTarget && lkTarget !== meta.key && v != null && v !== '' && cell !== '—';
                     const innerHtml = isLookup
                       ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`

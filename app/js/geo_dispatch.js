@@ -760,7 +760,7 @@
       }
       if (!items.length) {
         if (String(queryText || '').trim().length >= 2) {
-          menu.innerHTML = `<div class="geo-place-menu-hdr"><span>Map Boundary Search</span><span>0 exact matches</span></div><div style="padding:7px 9px;font-size:11.5px;color:var(--muted)">No pre-mapped boundary for "${esc(queryText)}". Switch Map Zone Shape to Circle or Custom Polygon to outline it on the map.</div>`;
+          menu.innerHTML = `<div class="geo-place-menu-hdr"><span>Map Boundary Search</span><span>0 exact matches</span></div><div style="padding:7px 9px;font-size:11.5px;color:var(--muted)">No pre-mapped boundary for "${esc(queryText)}". Switch Search Zone Shape to Circle or Custom Polygon to outline it on the map.</div>`;
           menu.hidden = false;
           wrap.classList.add('open');
         } else {
@@ -1106,19 +1106,378 @@
   function findContainingRegion(lat, lng, SEED) {
     const regions = ((SEED && SEED.records && SEED.records.regions) || []);
     const matches = [];
+    const seen = new Set();
     for (let i = 0; i < regions.length; i++) {
       const r = regions[i];
       if (!r || r.voided) continue;
       if (isPointInRegion(lat, lng, r)) {
-        matches.push({ region: r.name, areaKm2: regionAreaKm2(r), row: r });
+        const areaKm2 = regionAreaKm2(r);
+        matches.push({ region: r.name, areaKm2, tier: areaKm2 < 180 ? 0 : 2, row: r });
+        seen.add(norm(r.name));
       }
     }
-    matches.sort((a, b) => a.areaKm2 - b.areaKm2);
+    const atlas = getFullBoundaryAtlas();
+    for (let i = 0; i < atlas.length; i++) {
+      const a = atlas[i];
+      const nk = norm(a.label || a.key);
+      if (!nk || seen.has(nk)) continue;
+      const syntheticReg = {
+        name: a.label,
+        zone_type: a.zone_type || (a.poly ? 'boundary' : 'circle'),
+        center_lat: a.lat,
+        center_lng: a.lng,
+        radius_km: a.radius_km || 0,
+        zone_geojson: a.poly ? polyFromPairs(a.poly) : null
+      };
+      if (isPointInRegion(lat, lng, syntheticReg)) {
+        const areaKm2 = regionAreaKm2(syntheticReg);
+        matches.push({ region: a.label, areaKm2, tier: areaKm2 < 350 ? 1 : 2, row: syntheticReg });
+        seen.add(nk);
+      }
+    }
+    matches.sort((a, b) => (a.tier - b.tier) || (a.areaKm2 - b.areaKm2));
     return {
       best: matches[0] ? matches[0].region : '',
       name: matches[0] ? matches[0].region : '',
       matches: matches.map(m => m.region)
     };
+  }
+
+  const LEBANON_PLACE_GAZETTEER = [
+    // Beirut
+    { place: 'Beirut', region: 'Beirut', governorate: 'Beirut', lat: 33.8938, lng: 35.5018, aliases: ['beyrouth'] },
+    { place: 'Hamra', region: 'Beirut', governorate: 'Beirut', lat: 33.8962, lng: 35.4832, aliases: ['ras beirut', 'verdun', 'raouche', 'ramlet el baida', 'ain el mreisseh', 'clemenceau'] },
+    { place: 'Achrafieh', region: 'Beirut', governorate: 'Beirut', lat: 33.8886, lng: 35.5208, aliases: ['ashrafieh', 'badaro', 'gemmayzeh', 'mar mikhael', 'sodeco', 'quarantina', 'karantina', 'downtown beirut', 'solidere', 'mazraa', 'tariq el jdideh'] },
+    // Metn (Mount Lebanon)
+    { place: 'Metn', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8980, lng: 35.5950, aliases: ['el metn', 'matn'] },
+    { place: 'Fanar', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8825, lng: 35.5658, aliases: ['al fanar', 'ain saade', 'mansourieh', 'beit mery', 'mkalles'] },
+    { place: 'Dekwaneh', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8794, lng: 35.5433, aliases: ['dekweneh', 'jisr el bacha', 'slav'] },
+    { place: 'Sin El Fil', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8732, lng: 35.5390, aliases: ['sin el-fil', 'horsh tabet'] },
+    { place: 'Borj Hammoud', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8936, lng: 35.5403, aliases: ['bourj hammoud', 'dora', 'bauchrieh', 'jdeideh', 'sed el bauchrieh'] },
+    { place: 'Zalka', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8989, lng: 35.5504, aliases: ['jal el dib', 'bkennaya'] },
+    { place: 'Antelias', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.9140, lng: 35.5695, aliases: ['naccache', 'rabieh', 'mezher', 'kornet chehwan', 'cornet chehwan', 'bikfaya'] },
+    { place: 'Dbayeh', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.9325, lng: 35.5715, aliases: ['dhour choueir', 'zaarour'] },
+    { place: 'Aawkar', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.9278, lng: 35.5794, aliases: ['awkar', 'belello'] },
+    { place: 'Bsalim', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.9022, lng: 35.5950, aliases: ['majzoub'] },
+    { place: 'Broummana', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8885, lng: 35.6370, aliases: ['broumana', 'baabdat', 'bhersaf'] },
+    // Keserwan (Mount Lebanon)
+    { place: 'Keserwan', region: 'Keserwan', governorate: 'Mount Lebanon', lat: 33.9820, lng: 35.6450, aliases: ['kesrouan', 'kesserwan'] },
+    { place: 'Zouk Mosbeh', region: 'Keserwan', governorate: 'Mount Lebanon', lat: 33.9565, lng: 35.6125, aliases: ['zouk', 'zouk mikael', 'kaslik', 'adma', 'jeita', 'ballouneh', 'ajaltoun', 'feytroun', 'faraya', 'kfardebian', 'harissa', 'ghazir'] },
+    { place: 'Jounieh', region: 'Keserwan', governorate: 'Mount Lebanon', lat: 33.9808, lng: 35.6178, aliases: ['maameltein', 'tabarja', 'safra', 'bouar'] },
+    // Jbeil (Mount Lebanon)
+    { place: 'Jbeil', region: 'Jbeil', governorate: 'Mount Lebanon', lat: 34.1230, lng: 35.6519, aliases: ['byblos', 'amchit', 'blat', 'mastita', 'fidar', 'kartaba', 'annaya'] },
+    { place: 'Halat', region: 'Jbeil', governorate: 'Mount Lebanon', lat: 34.0806, lng: 35.6478, aliases: ['nahr ibrahim'] },
+    // Baabda (Mount Lebanon)
+    { place: 'Baabda', region: 'Baabda', governorate: 'Mount Lebanon', lat: 33.8339, lng: 35.5442, aliases: ['louaize', 'jamhour', 'yarze', 'kahale', 'araya', 'bsaba', 'furn el chebbak', 'chiyah', 'haret hreik', 'ghobeiry', 'bir hassan'] },
+    { place: 'Hazmieh', region: 'Baabda', governorate: 'Mount Lebanon', lat: 33.8548, lng: 35.5370, aliases: ['mar takla'] },
+    { place: 'Hadath', region: 'Baabda', governorate: 'Mount Lebanon', lat: 33.8330, lng: 35.5240, aliases: ['laylakeh', 'baabda hadath'] },
+    // Aley (Mount Lebanon)
+    { place: 'Aley', region: 'Aley', governorate: 'Mount Lebanon', lat: 33.8053, lng: 35.6000, aliases: ['bhamdoun', 'sofar', 'souk el gharb', 'mechref'] },
+    { place: 'Choueifat', region: 'Aley', governorate: 'Mount Lebanon', lat: 33.8160, lng: 35.5120, aliases: ['choueifet', 'aramoun', 'bchamoun', 'dohat aramoun'] },
+    { place: 'Khaldeh', region: 'Aley', governorate: 'Mount Lebanon', lat: 33.7885, lng: 35.4795, aliases: ['khalde', 'ouzai'] },
+    // Chouf (Mount Lebanon)
+    { place: 'Chouf', region: 'Chouf', governorate: 'Mount Lebanon', lat: 33.6650, lng: 35.5100, aliases: ['shouf', 'beiteddine', 'deir el qamar', 'baakline', 'barja', 'ketermaya'] },
+    { place: 'Damour', region: 'Chouf', governorate: 'Mount Lebanon', lat: 33.7330, lng: 35.4520, aliases: ['naameh', 'haret el naameh'] },
+    { place: 'Jiyeh', region: 'Chouf', governorate: 'Mount Lebanon', lat: 33.6669, lng: 35.4244, aliases: ['jiye', 'jadra', 'rmeileh', 'wadi el zeina'] },
+    { place: 'Sibline', region: 'Chouf', governorate: 'Mount Lebanon', lat: 33.6214, lng: 35.4328, aliases: ['siblini'] },
+    // South Lebanon (Saida / Tyre / Jezzine)
+    { place: 'Saida', region: 'Saida', governorate: 'South Lebanon', lat: 33.5614, lng: 35.3758, aliases: ['sidon', 'sayda', 'abra', 'hlalieh', 'majdelyoun', 'bramieh', 'maghdouche', 'miyeh w miyeh', 'zahrani'] },
+    { place: 'Ghaziyeh', region: 'Saida', governorate: 'South Lebanon', lat: 33.5175, lng: 35.3685, aliases: ['ghaziye'] },
+    { place: 'Sarafand', region: 'Saida', governorate: 'South Lebanon', lat: 33.4495, lng: 35.2995, aliases: ['aqbieh', 'saksakieh', 'adloun'] },
+    { place: 'Tyre', region: 'Tyre', governorate: 'South Lebanon', lat: 33.2705, lng: 35.2038, aliases: ['sour', 'abbassieh', 'qana', 'naqoura', 'bazourieh', 'jwaya'] },
+    { place: 'Jezzine', region: 'Jezzine', governorate: 'South Lebanon', lat: 33.5417, lng: 35.5844, aliases: ['bkassine', 'roum', 'lebaa'] },
+    // Nabatieh
+    { place: 'Nabatieh', region: 'Nabatieh', governorate: 'Nabatieh', lat: 33.3772, lng: 35.4836, aliases: ['nabatiye', 'kfar remen', 'habbouch', 'doueir', 'ansar'] },
+    { place: 'Bint Jbeil', region: 'Bint Jbeil', governorate: 'Nabatieh', lat: 33.1194, lng: 35.4333, aliases: ['tebnine'] },
+    { place: 'Marjayoun', region: 'Marjayoun', governorate: 'Nabatieh', lat: 33.3611, lng: 35.5914, aliases: ['khiam', 'kfar kila'] },
+    { place: 'Hasbaya', region: 'Hasbaya', governorate: 'Nabatieh', lat: 33.3978, lng: 35.6850, aliases: ['chebaa'] },
+    // Bekaa & Baalbek-Hermel
+    { place: 'Zahle', region: 'Zahle', governorate: 'Bekaa', lat: 33.8463, lng: 35.9020, aliases: ['zahleh', 'ferzol', 'saadnayel', 'taalabaya', 'kab elias', 'bar elias', 'anjar', 'riyak', 'ksara', 'jdita'] },
+    { place: 'Chtaura', region: 'Zahle', governorate: 'Bekaa', lat: 33.8165, lng: 35.8535, aliases: ['shtaura'] },
+    { place: 'West Bekaa', region: 'West Bekaa', governorate: 'Bekaa', lat: 33.6550, lng: 35.7520, aliases: ['joub jannine', 'kefraya', 'machghara', 'saghbine', 'qaraoun'] },
+    { place: 'Rachaiya', region: 'Rachaiya', governorate: 'Bekaa', lat: 33.5015, lng: 35.8445, aliases: ['rachaya'] },
+    { place: 'Baalbek', region: 'Baalbek', governorate: 'Baalbek-Hermel', lat: 34.0058, lng: 36.2181, aliases: ['baalbeck', 'brital', 'douris', 'chmistar', 'deir el ahmar', 'labweh', 'arsal', 'ras baalbek', 'nabi chit'] },
+    { place: 'Hermel', region: 'Hermel', governorate: 'Baalbek-Hermel', lat: 34.3942, lng: 36.3847, aliases: ['qaa'] },
+    // North Lebanon & Akkar
+    { place: 'Tripoli', region: 'Tripoli', governorate: 'North Lebanon', lat: 34.4367, lng: 35.8497, aliases: ['trablous', 'el mina', 'beddawi', 'qalamoun'] },
+    { place: 'Batroun', region: 'Batroun', governorate: 'North Lebanon', lat: 34.2553, lng: 35.6581, aliases: ['kfarabida', 'tannourine', 'selaata', 'hamat'] },
+    { place: 'Chekka', region: 'Chekka', governorate: 'North Lebanon', lat: 34.3270, lng: 35.7270, aliases: ['herri'] },
+    { place: 'Koura', region: 'Koura', governorate: 'North Lebanon', lat: 34.3000, lng: 35.8150, aliases: ['amioun', 'anfeh', 'kfarhazir', 'deddeh', 'zakroun'] },
+    { place: 'Zgharta', region: 'Zgharta', governorate: 'North Lebanon', lat: 34.3989, lng: 35.8944, aliases: ['ehden', 'mezyara'] },
+    { place: 'Akkar', region: 'Akkar', governorate: 'Akkar', lat: 34.5440, lng: 36.0797, aliases: ['halba', 'qoubaiyat', 'bebnine', 'abdeh'] }
+  ];
+
+  function canonGovernorateName(g) {
+    const k = norm(g);
+    if (!k) return '';
+    if (k === 'south' || k === 'south lebanon') return 'South Lebanon';
+    if (k === 'north' || k === 'north lebanon') return 'North Lebanon';
+    if (k === 'mount lebanon' || k === 'mt lebanon') return 'Mount Lebanon';
+    if (k === 'beirut') return 'Beirut';
+    if (k === 'bekaa') return 'Bekaa';
+    if (k === 'baalbek' || k === 'baalbek-hermel' || k === 'baalbek hermel') return 'Baalbek-Hermel';
+    if (k === 'nabatieh') return 'Nabatieh';
+    if (k === 'akkar') return 'Akkar';
+    return String(g || '').trim();
+  }
+
+  function resolveRegionRecordOrAtlas(regionName, SEED) {
+    const q = norm(regionName);
+    if (!q) return null;
+    const seedRegs = (SEED && SEED.records && SEED.records.regions) || [];
+    const seedHit = seedRegs.find(r => r && !r.voided && norm(r.name) === q);
+    const atlasHit = findAtlasRegionByName(regionName);
+    if (seedHit) {
+      const cLat = seedHit.center_lat != null ? Number(seedHit.center_lat) : (atlasHit ? atlasHit.lat : 33.8938);
+      const cLng = seedHit.center_lng != null ? Number(seedHit.center_lng) : (atlasHit ? atlasHit.lng : 35.5018);
+      const gov = canonGovernorateName(seedHit.governorate || seedHit.corridor || resolveGovernorateForPoint(cLat, cLng).label);
+      return {
+        name: seedHit.name,
+        zone_type: seedHit.zone_type || (atlasHit && atlasHit.zone_type) || 'boundary',
+        center_lat: cLat,
+        center_lng: cLng,
+        radius_km: Number(seedHit.radius_km || (atlasHit && atlasHit.radius_km) || 0),
+        zone_geojson: seedHit.zone_geojson || (atlasHit && atlasHit.poly ? polyFromPairs(atlasHit.poly) : null),
+        governorate: gov,
+        isSeedRecord: true,
+        row: seedHit
+      };
+    }
+    if (atlasHit) {
+      const gov = canonGovernorateName(resolveGovernorateForPoint(atlasHit.lat, atlasHit.lng).label);
+      return {
+        name: atlasHit.label,
+        zone_type: atlasHit.zone_type || (atlasHit.poly ? 'boundary' : 'circle'),
+        center_lat: Number(atlasHit.lat),
+        center_lng: Number(atlasHit.lng),
+        radius_km: Number(atlasHit.radius_km || 0),
+        zone_geojson: atlasHit.poly ? polyFromPairs(atlasHit.poly) : null,
+        governorate: gov,
+        isSeedRecord: false,
+        row: null
+      };
+    }
+    const govCanon = canonGovernorateName(regionName);
+    const govHit = GOVERNORATE_BOUNDARIES.find(g => norm(g.label) === norm(govCanon) || norm(g.code) === q);
+    if (govHit) {
+      const ring = govHit.poly || [];
+      let sLat = 0, sLng = 0;
+      ring.forEach(p => { sLat += p[0]; sLng += p[1]; });
+      const cLat = ring.length ? round5(sLat / ring.length) : 33.8938;
+      const cLng = ring.length ? round5(sLng / ring.length) : 35.5018;
+      return {
+        name: govHit.label,
+        zone_type: 'boundary',
+        center_lat: cLat,
+        center_lng: cLng,
+        radius_km: 0,
+        zone_geojson: polyFromPairs(ring),
+        governorate: govHit.label,
+        isSeedRecord: false,
+        row: null
+      };
+    }
+    return null;
+  }
+
+  function resolvePlaceLocation(siteName, SEED) {
+    const raw = String(siteName || '').trim();
+    if (!raw) return null;
+    const low = raw.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!low) return null;
+    const words = new Set(low.split(' '));
+    let best = null;
+    let bestLen = 0;
+    const checkCandidate = (token, entry) => {
+      const tk = String(token || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!tk || tk.length < 3) return;
+      let matched = false;
+      if (low === tk) {
+        matched = true;
+      } else if (tk.includes(' ')) {
+        const idx = (' ' + low + ' ').indexOf(' ' + tk + ' ');
+        if (idx !== -1) matched = true;
+      } else if (words.has(tk)) {
+        matched = true;
+      }
+      if (matched && tk.length > bestLen) {
+        bestLen = tk.length;
+        best = {
+          matched: true,
+          token: tk,
+          placeName: entry.place,
+          region: entry.region,
+          governorate: canonGovernorateName(entry.governorate),
+          lat: Number(entry.lat),
+          lng: Number(entry.lng)
+        };
+      }
+    };
+    for (let i = 0; i < LEBANON_PLACE_GAZETTEER.length; i++) {
+      const g = LEBANON_PLACE_GAZETTEER[i];
+      checkCandidate(g.place, g);
+      if (Array.isArray(g.aliases)) {
+        for (let j = 0; j < g.aliases.length; j++) checkCandidate(g.aliases[j], g);
+      }
+    }
+    return best;
+  }
+
+  function isPointInsideNamedRegion(lat, lng, regionName, SEED) {
+    if (lat == null || lng == null || !regionName) return true;
+    const nLat = Number(lat), nLng = Number(lng);
+    if (!Number.isFinite(nLat) || !Number.isFinite(nLng)) return true;
+    const regObj = resolveRegionRecordOrAtlas(regionName, SEED);
+    if (!regObj) return true;
+    if (isPointInRegion(nLat, nLng, regObj)) return true;
+    const atlasHit = findAtlasRegionByName(regionName);
+    if (atlasHit) {
+      const synth = {
+        name: atlasHit.label,
+        zone_type: atlasHit.zone_type || (atlasHit.poly ? 'boundary' : 'circle'),
+        center_lat: atlasHit.lat,
+        center_lng: atlasHit.lng,
+        radius_km: atlasHit.radius_km || 0,
+        zone_geojson: atlasHit.poly ? polyFromPairs(atlasHit.poly) : null
+      };
+      if (isPointInRegion(nLat, nLng, synth)) return true;
+    }
+    const q = norm(regionName);
+    const govCanon = canonGovernorateName(regionName);
+    const isBroadGov = ['beirut', 'mount lebanon', 'south lebanon', 'north lebanon', 'bekaa', 'baalbek-hermel', 'nabatieh', 'akkar'].includes(norm(govCanon)) &&
+      (q === norm(govCanon) || q === 'south' || q === 'north');
+    if (isBroadGov) {
+      const ptGov = canonGovernorateName(resolveGovernorateForPoint(nLat, nLng).label);
+      if (norm(ptGov) === norm(govCanon)) return true;
+      if (norm(govCanon) === 'bekaa' && norm(ptGov) === 'baalbek-hermel') return true;
+      if (norm(govCanon) === 'north lebanon' && norm(ptGov) === 'akkar') return true;
+      if (norm(govCanon) === 'south lebanon' && norm(ptGov) === 'nabatieh') return true;
+    }
+    // Small coastal/mountain border buffer (2.2 km from polygon vertices or circle edge)
+    const gj = parseZoneGeoJson(regObj.zone_geojson);
+    if (gj && gj.type === 'Polygon' && Array.isArray(gj.coordinates) && gj.coordinates[0]) {
+      const ring = gj.coordinates[0];
+      for (let i = 0; i < ring.length; i++) {
+        if (haversineKm(nLat, nLng, ring[i][1], ring[i][0]) <= 2.2) return true;
+      }
+    }
+    if (regObj.center_lat != null && regObj.center_lng != null) {
+      const maxR = Number(regObj.radius_km) > 0 ? Number(regObj.radius_km) + 1.5 : 4.2;
+      if (haversineKm(nLat, nLng, Number(regObj.center_lat), Number(regObj.center_lng)) <= maxR) return true;
+    }
+    return false;
+  }
+
+  function validateSiteInsideRegion(params, SEED) {
+    const p = params || {};
+    const siteName = String(p.siteName || '').trim();
+    const regionName = String(p.regionName || '').trim();
+    const hasCoords = p.lat != null && p.lng != null && String(p.lat).trim() !== '' && String(p.lng).trim() !== '' && Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng));
+    const lat = hasCoords ? Number(p.lat) : null;
+    const lng = hasCoords ? Number(p.lng) : null;
+    const placeHit = resolvePlaceLocation(siteName, SEED);
+    const regObj = regionName ? resolveRegionRecordOrAtlas(regionName, SEED) : null;
+
+    if (!regionName) {
+      if (placeHit) {
+        return {
+          ok: false,
+          code: 'missing_region_suggest',
+          field: 'f_region',
+          expectedRegion: placeHit.region,
+          expectedGovernorate: placeHit.governorate,
+          expectedLat: placeHit.lat,
+          expectedLng: placeHit.lng,
+          placeHit,
+          reason: `Select a Region for "${siteName}" (detected inside ${placeHit.region}).`
+        };
+      }
+      return { ok: false, code: 'missing_region', field: 'f_region', reason: 'Region is required. Select a Region or click inside a zone on the map.' };
+    }
+
+    if (placeHit) {
+      const selNorm = norm(regionName);
+      const selGov = canonGovernorateName(regionName);
+      const directMatch =
+        selNorm === norm(placeHit.region) ||
+        selNorm === norm(placeHit.placeName) ||
+        selNorm === norm(placeHit.token) ||
+        (norm(selGov) === norm(placeHit.governorate) && ['beirut', 'mount lebanon', 'south lebanon', 'north lebanon', 'bekaa', 'baalbek-hermel', 'nabatieh', 'akkar'].includes(norm(selGov))) ||
+        (norm(selGov) === 'bekaa' && norm(placeHit.governorate) === 'baalbek-hermel') ||
+        (norm(selGov) === 'south lebanon' && norm(placeHit.governorate) === 'nabatieh') ||
+        (norm(selGov) === 'north lebanon' && norm(placeHit.governorate) === 'akkar');
+      const spatiallyInside = isPointInsideNamedRegion(placeHit.lat, placeHit.lng, regionName, SEED);
+      if (!directMatch && !spatiallyInside) {
+        return {
+          ok: false,
+          code: 'name_region_mismatch',
+          field: 'f_region',
+          expectedRegion: placeHit.region,
+          expectedGovernorate: placeHit.governorate,
+          expectedLat: placeHit.lat,
+          expectedLng: placeHit.lng,
+          placeHit,
+          regObj,
+          reason: `Site "${siteName}" is located in ${placeHit.region} (${placeHit.governorate}), outside selected Region "${regionName}". Switch Region to "${placeHit.region}" or enter a site inside ${regionName}.`
+        };
+      }
+    }
+
+    if (hasCoords && regObj) {
+      const coordInside = isPointInsideNamedRegion(lat, lng, regionName, SEED);
+      if (!coordInside) {
+        const det = findContainingRegion(lat, lng, SEED);
+        const actualReg = det.best || canonGovernorateName(resolveGovernorateForPoint(lat, lng).label) || 'another region';
+        if (norm(actualReg) !== norm(regionName)) {
+          return {
+            ok: false,
+            code: 'coord_region_mismatch',
+            field: 'f_region',
+            expectedRegion: actualReg,
+            expectedLat: regObj.center_lat,
+            expectedLng: regObj.center_lng,
+            placeHit,
+            regObj,
+            reason: `Pinned GPS coordinates (${lat.toFixed(4)}, ${lng.toFixed(4)}) are in ${actualReg}, outside selected Region "${regionName}". Switch Region to "${actualReg}" or pin inside ${regionName}.`
+          };
+        }
+      }
+    }
+
+    const effLat = hasCoords ? lat : (placeHit ? placeHit.lat : (regObj ? regObj.center_lat : 33.8938));
+    const effLng = hasCoords ? lng : (placeHit ? placeHit.lng : (regObj ? regObj.center_lng : 35.5018));
+    return {
+      ok: true,
+      code: 'ok',
+      region: regObj ? regObj.name : regionName,
+      governorate: regObj ? regObj.governorate : (placeHit ? placeHit.governorate : ''),
+      lat: round5(effLat),
+      lng: round5(effLng),
+      placeHit,
+      regObj
+    };
+  }
+
+  function ensureRegionInSeed(regionName, SEED, STATE) {
+    const q = norm(regionName);
+    if (!q || !SEED || !SEED.records) return null;
+    const existing = (SEED.records.regions || []).find(r => r && !r.voided && norm(r.name) === q);
+    if (existing) return existing;
+    const atlasHit = findAtlasRegionByName(regionName);
+    if (atlasHit) {
+      const wtc = getCompanyHub('WTC', SEED);
+      const distKm = round1(roadAdjustedKm(wtc.lat, wtc.lng, atlasHit.lat, atlasHit.lng));
+      return persistRegionZone({
+        name: atlasHit.label,
+        zone_type: atlasHit.zone_type || (atlasHit.poly ? 'boundary' : 'circle'),
+        center_lat: atlasHit.lat,
+        center_lng: atlasHit.lng,
+        radius_km: atlasHit.radius_km || 0,
+        distance_km: distKm,
+        zone_geojson: atlasHit.poly ? polyFromPairs(atlasHit.poly) : null
+      }, { SEED, STATE });
+    }
+    return null;
   }
 
   // ==================== SEED HYDRATION & LIVE REGISTRY ENRICHMENT ====================
@@ -1899,11 +2258,11 @@
       toolDrawerHtml = `
         <div class="geo-tool-drawer" id="geoToolDrawer">
           <div class="geo-tool-fields">
-            <label class="geo-tool-field" style="min-width:255px;flex:0 1 305px">Map Search
-              <input type="text" id="geoSearchRegionInp" value="${esc(sd ? sd.name : '')}" placeholder="Search Beirut, Saida, Tripoli, Metn, Zahle..." autocomplete="off">
+            <label class="geo-tool-field">Region (Locked)
+              <input type="text" id="geoDrawRegionInp" class="geo-studio-gov-readout" value="${esc(sd ? sd.name : (STUDIO.drawRegionName || STUDIO.selectedRegion))}" placeholder="Locked to Search Map Region..." readonly tabindex="-1" aria-readonly="true" style="width:145px">
             </label>
-            <label class="geo-tool-field">Save As Region
-              <input type="text" id="geoDrawRegionInp" value="${esc(STUDIO.drawRegionName || (sd ? sd.name : '') || STUDIO.selectedRegion)}" placeholder="Region name..." style="width:145px">
+            <label class="geo-tool-field" style="min-width:255px;flex:0 1 305px">Search Map Region
+              <input type="text" id="geoSearchRegionInp" value="${esc(sd ? sd.name : '')}" placeholder="Search Beirut, Saida, Tripoli, Metn, Zahle..." autocomplete="off">
             </label>
             <label class="geo-tool-field">Governorate (Locked)
               <input type="text" id="geoStudioGovReadout" class="geo-studio-gov-readout" value="${esc(sdGov.label || '')}" placeholder="Auto-detected..." readonly tabindex="-1" aria-readonly="true">
@@ -1923,9 +2282,6 @@
     } else if (!STUDIO.collapsed && STUDIO.mode === 'circle') {
       const rPresets = [0.8, 1.5, 3, 5, 10, 15];
       let liveInsideSites = 0;
-      const circGov = STUDIO.circleCenter
-        ? resolveGovernorateForCircle(STUDIO.circleCenter.lat, STUDIO.circleCenter.lng, STUDIO.circleRadiusKm)
-        : { label: '' };
       if (STUDIO.circleCenter) {
         const radKm = Math.max(0.2, Number(STUDIO.circleRadiusKm || 1.5));
         ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
@@ -1940,9 +2296,6 @@
             <label class="geo-tool-field">Region Name
               <input type="text" id="geoDrawRegionInp" list="dl_geo_draw_regions" value="${esc(STUDIO.drawRegionName || STUDIO.selectedRegion)}" placeholder="Select or type new region...">
               <datalist id="dl_geo_draw_regions">${regions.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
-            </label>
-            <label class="geo-tool-field">Governorate (Locked)
-              <input type="text" id="geoStudioGovReadout" class="geo-studio-gov-readout" value="${esc(circGov.label || '')}" placeholder="Auto-detected..." readonly tabindex="-1" aria-readonly="true">
             </label>
             <label class="geo-tool-field">Radius (km)
               <input type="number" id="geoCircleRadiusInp" step="0.1" min="0.2" max="50" value="${esc(STUDIO.circleRadiusKm)}" style="width:68px">
@@ -1962,7 +2315,6 @@
       `;
     } else if (!STUDIO.collapsed && STUDIO.mode === 'polygon') {
       let polyInsideSites = 0;
-      const polyGov = STUDIO.polyPoints.length > 0 ? resolveGovernorateForPolygonPoints(STUDIO.polyPoints) : { label: '' };
       if (STUDIO.polyPoints.length >= 3) {
         const ring = STUDIO.polyPoints.concat([[STUDIO.polyPoints[0][0], STUDIO.polyPoints[0][1]]]);
         const gj = { type: 'Polygon', coordinates: [ring] };
@@ -1976,9 +2328,6 @@
             <label class="geo-tool-field">Region Name
               <input type="text" id="geoDrawRegionInp" list="dl_geo_draw_regions" value="${esc(STUDIO.drawRegionName || STUDIO.selectedRegion)}" placeholder="Select or type new region...">
               <datalist id="dl_geo_draw_regions">${regions.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
-            </label>
-            <label class="geo-tool-field">Governorate (Locked)
-              <input type="text" id="geoStudioGovReadout" class="geo-studio-gov-readout" value="${esc(polyGov.label || '')}" placeholder="Auto-detected..." readonly tabindex="-1" aria-readonly="true">
             </label>
             <span class="geo-live-inside-pill" id="geoLiveInsideCountPill"${STUDIO.polyPoints.length >= 3 ? '' : ' hidden'}>${polyInsideSites} ${polyInsideSites === 1 ? 'Site' : 'Sites'} inside</span>
             <span class="geo-tool-hint" id="geoPolyPtsLbl">${STUDIO.polyPoints.length === 0 ? 'Click map to place Corner 1' : (STUDIO.polyPoints.length < 3 ? `Corners: <b>${STUDIO.polyPoints.length}</b> (click ${3 - STUDIO.polyPoints.length} more to form boundary)` : (STUDIO.polyLocked ? `Boundary locked (<b>${STUDIO.polyPoints.length}</b> corners · drag any corner or midpoint to refine)` : `Corners: <b>${STUDIO.polyPoints.length}</b> · Click green Corner 1 or Finish Shape to lock`))}</span>
@@ -2865,7 +3214,16 @@
     // Tool Drawer controls (Circle / Polygon / Pin)
     const drawRegInp = deck.querySelector('#geoDrawRegionInp');
     if (drawRegInp) {
-      drawRegInp.addEventListener('input', () => { STUDIO.drawRegionName = drawRegInp.value; });
+      if (STUDIO.mode === 'search') {
+        drawRegInp.readOnly = true;
+        drawRegInp.addEventListener('mousedown', ev => {
+          ev.preventDefault();
+          const sInp = deck.querySelector('#geoSearchRegionInp');
+          if (sInp) { try { sInp.focus({ preventScroll: true }); } catch (_) {} }
+        });
+      } else {
+        drawRegInp.addEventListener('input', () => { STUDIO.drawRegionName = drawRegInp.value; });
+      }
     }
     const radInp = deck.querySelector('#geoCircleRadiusInp');
     const radSlider = deck.querySelector('#geoCircleRadiusSlider');
@@ -2977,10 +3335,8 @@
     const applyStudioAtlasPick = (hit) => {
       if (!hit) return;
       STUDIO.searchDraft = hit;
-      if (!STUDIO.drawRegionName || findAtlasRegionByName(STUDIO.drawRegionName, SEED)) {
-        STUDIO.drawRegionName = hit.name;
-        if (drawRegInp) drawRegInp.value = hit.name;
-      }
+      STUDIO.drawRegionName = hit.name;
+      if (drawRegInp) drawRegInp.value = hit.name;
       if (studioSearchInp) studioSearchInp.value = hit.name;
       const sGovInp = deck.querySelector('#geoStudioGovReadout');
       if (sGovInp) {
@@ -3005,6 +3361,8 @@
         onSelectRegion: applyStudioAtlasPick,
         onClear: () => {
           STUDIO.searchDraft = null;
+          STUDIO.drawRegionName = '';
+          if (drawRegInp) drawRegInp.value = '';
           const sGovInp = deck.querySelector('#geoStudioGovReadout');
           if (sGovInp) sGovInp.value = '';
         }
@@ -3441,62 +3799,151 @@
         const latInp = hostEl.querySelector('#f_lat');
         const lngInp = hostEl.querySelector('#f_lng');
         const regInp = hostEl.querySelector('#f_region');
+        const siteInp = hostEl.querySelector('#f_site');
+        const catInp = hostEl.querySelector('#f_site_category');
         const pasteInp = hostEl.querySelector('#f_site_coord_paste');
         const kmStatus = hostEl.querySelector('#modalSiteKmReadout');
 
         const map = L.map(canvas, { zoomControl: true, attributionControl: false }).setView([33.85, 35.51], 10);
+        canvas._leafletMap = map;
         stripLeafletTitles(canvas);
         _activeModalMap = map;
         addBaseTiles(L, map);
         const lg = L.layerGroup().addTo(map);
         setTimeout(() => { try { map.invalidateSize(); } catch (_) {} }, 50);
+        let lastFocusedRegion = '';
 
-        const refreshSiteOverlay = () => {
+        const refreshSiteOverlay = (opts) => {
+          const o = opts || {};
           lg.clearLayers();
+          const isCust = (catInp && catInp.value === 'customer');
+          const accentColor = isCust ? '#2563EB' : '#059669';
+          const pinLabel = isCust ? 'Delivery Pin' : 'Quarry Pin';
+          const selRegName = regInp ? String(regInp.value || '').trim() : '';
+          const selRegObj = selRegName ? resolveRegionRecordOrAtlas(selRegName, SEED) : null;
+          const drawnRegNorms = new Set();
+
           ((SEED.records && SEED.records.regions) || []).forEach(r => {
             if (!r || r.voided) return;
+            const isSel = selRegObj && norm(r.name) === norm(selRegObj.name);
+            drawnRegNorms.add(norm(r.name));
             if (r.zone_type === 'circle' && r.center_lat != null && r.radius_km > 0) {
-              L.circle([Number(r.center_lat), Number(r.center_lng)], { radius: Number(r.radius_km) * 1000, color: '#0D9488', fillOpacity: 0.08, weight: 1.4 }).addTo(lg);
+              L.circle([Number(r.center_lat), Number(r.center_lng)], {
+                radius: Number(r.radius_km) * 1000,
+                color: isSel ? accentColor : '#0D9488',
+                fillOpacity: isSel ? 0.16 : 0.06,
+                weight: isSel ? 2.6 : 1.2
+              }).addTo(lg);
             } else if (r.zone_geojson) {
               const gj = parseZoneGeoJson(r.zone_geojson);
-              if (gj) L.geoJSON(gj, { style: { color: '#2563EB', fillOpacity: 0.06, weight: 1.3 } }).addTo(lg);
+              if (gj) L.geoJSON(gj, {
+                style: {
+                  color: isSel ? accentColor : '#64748B',
+                  fillOpacity: isSel ? 0.15 : 0.05,
+                  weight: isSel ? 2.6 : 1.1
+                }
+              }).addTo(lg);
             }
           });
+
+          if (selRegObj && !drawnRegNorms.has(norm(selRegObj.name))) {
+            if (selRegObj.zone_type === 'circle' && selRegObj.center_lat != null && selRegObj.radius_km > 0) {
+              L.circle([Number(selRegObj.center_lat), Number(selRegObj.center_lng)], {
+                radius: Number(selRegObj.radius_km) * 1000,
+                color: accentColor,
+                fillOpacity: 0.16,
+                weight: 2.6
+              }).addTo(lg);
+            } else if (selRegObj.zone_geojson) {
+              const gj = parseZoneGeoJson(selRegObj.zone_geojson);
+              if (gj) L.geoJSON(gj, { style: { color: accentColor, fillOpacity: 0.15, weight: 2.6 } }).addTo(lg);
+            }
+          }
+
           getAllCompanyHubs(SEED).forEach(h => {
             L.marker([h.lat, h.lng], { icon: makeSvgPinIcon(L, '#D9A54A', h.name, true) }).addTo(lg);
           });
-          const lat = latInp && latInp.value ? parseFloat(latInp.value) : null;
-          const lng = lngInp && lngInp.value ? parseFloat(lngInp.value) : null;
-          if (lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)) {
-            L.marker([lat, lng], { icon: makeSvgPinIcon(L, '#DC2626', 'Site Pin', false) }).addTo(lg);
+
+          const rawLat = latInp && latInp.value !== '' ? parseFloat(latInp.value) : null;
+          const rawLng = lngInp && lngInp.value !== '' ? parseFloat(lngInp.value) : null;
+          const hasExplicitPin = rawLat != null && rawLng != null && Number.isFinite(rawLat) && Number.isFinite(rawLng);
+          const placeHit = siteInp && siteInp.value ? resolvePlaceLocation(siteInp.value, SEED) : null;
+          const previewLat = hasExplicitPin ? rawLat : (placeHit ? placeHit.lat : (selRegObj ? selRegObj.center_lat : null));
+          const previewLng = hasExplicitPin ? rawLng : (placeHit ? placeHit.lng : (selRegObj ? selRegObj.center_lng : null));
+
+          if (previewLat != null && previewLng != null && Number.isFinite(previewLat) && Number.isFinite(previewLng)) {
+            const check = validateSiteInsideRegion({
+              siteName: siteInp ? siteInp.value : '',
+              regionName: selRegName,
+              lat: hasExplicitPin ? rawLat : null,
+              lng: hasExplicitPin ? rawLng : null
+            }, SEED);
+            const pinColor = (!check.ok && selRegName) ? '#DC2626' : accentColor;
+            const badgeText = hasExplicitPin ? pinLabel : (placeHit ? placeHit.placeName : (selRegObj ? selRegObj.name + ' Center' : pinLabel));
+            L.marker([previewLat, previewLng], { icon: makeSvgPinIcon(L, pinColor, badgeText, false) }).addTo(lg);
             const wtcHub = getCompanyHub('WTC', SEED);
-            const ow = roadAdjustedKm(wtcHub.lat, wtcHub.lng, lat, lng);
-            const det = findContainingRegion(lat, lng, SEED);
-            if (det.best && regInp && !regInp.value) regInp.value = det.best;
+            const ow = roadAdjustedKm(wtcHub.lat, wtcHub.lng, previewLat, previewLng);
+            const det = findContainingRegion(previewLat, previewLng, SEED);
+            const zoneLbl = selRegName || det.best || (selRegObj && selRegObj.name) || '';
             if (kmStatus) {
-              kmStatus.textContent = `${det.best ? 'Zone: ' + det.best + ' · ' : ''}From WTC: One-Way ${ow.toFixed(1)} km · Round-Trip ${(ow * 2).toFixed(1)} km`;
+              kmStatus.textContent = `${zoneLbl ? 'Region: ' + zoneLbl + ' · ' : ''}From WTC: One-Way ${ow.toFixed(1)} km · Round-Trip ${(ow * 2).toFixed(1)} km`;
+            }
+          }
+
+          if (selRegObj && (o.panToRegion || norm(selRegObj.name) !== lastFocusedRegion)) {
+            lastFocusedRegion = norm(selRegObj.name);
+            if (!hasExplicitPin && selRegObj.center_lat != null && selRegObj.center_lng != null) {
+              map.setView([Number(selRegObj.center_lat), Number(selRegObj.center_lng)], selRegObj.zone_type === 'circle' ? 12 : 11, { animate: false });
             }
           }
         };
 
+        canvas._refreshSiteOverlay = refreshSiteOverlay;
         refreshSiteOverlay();
         map.on('click', ev => {
           const lat = round5(ev.latlng.lat), lng = round5(ev.latlng.lng);
-          if (latInp) latInp.value = String(lat);
-          if (lngInp) lngInp.value = String(lng);
+          if (latInp) {
+            latInp.value = String(lat);
+            latInp.dataset.autoFromPlace = '';
+          }
+          if (lngInp) {
+            lngInp.value = String(lng);
+            lngInp.dataset.autoFromPlace = '';
+          }
           const det = findContainingRegion(lat, lng, SEED);
-          if (det.best && regInp) regInp.value = det.best;
+          const resolvedReg = det.best || canonGovernorateName(resolveGovernorateForPoint(lat, lng).label);
+          if (resolvedReg && regInp) {
+            regInp.value = resolvedReg;
+            regInp.dataset.autoFromPlace = '';
+            regInp.dispatchEvent(new Event('input', { bubbles: true }));
+            regInp.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          if (latInp) latInp.dispatchEvent(new Event('input', { bubbles: true }));
           refreshSiteOverlay();
         });
-        [latInp, lngInp].forEach(el => { if (el) el.addEventListener('change', refreshSiteOverlay); });
+        [latInp, lngInp].forEach(el => {
+          if (el) el.addEventListener('change', () => {
+            el.dataset.autoFromPlace = '';
+            refreshSiteOverlay();
+          });
+        });
+        if (regInp) {
+          regInp.addEventListener('change', () => refreshSiteOverlay({ panToRegion: true }));
+        }
         if (pasteInp) {
           pasteInp.addEventListener('change', () => {
             const p = parsePastedCoordinates(pasteInp.value);
             if (p) {
-              if (latInp) latInp.value = String(p.lat);
-              if (lngInp) lngInp.value = String(p.lng);
+              if (latInp) { latInp.value = String(p.lat); latInp.dataset.autoFromPlace = ''; }
+              if (lngInp) { lngInp.value = String(p.lng); lngInp.dataset.autoFromPlace = ''; }
               const det = findContainingRegion(p.lat, p.lng, SEED);
-              if (det.best && regInp) regInp.value = det.best;
+              const resolvedReg = det.best || canonGovernorateName(resolveGovernorateForPoint(p.lat, p.lng).label);
+              if (resolvedReg && regInp) {
+                regInp.value = resolvedReg;
+                regInp.dataset.autoFromPlace = '';
+                regInp.dispatchEvent(new Event('input', { bubbles: true }));
+                regInp.dispatchEvent(new Event('change', { bubbles: true }));
+              }
               map.setView([p.lat, p.lng], 13, { animate: false });
               refreshSiteOverlay();
             }
@@ -3508,8 +3955,11 @@
       if (!canvas || canvas.dataset.geoWired === '1') return;
       canvas.dataset.geoWired = '1';
 
-      const mapSearchInp = hostEl.querySelector('#f_map_region_search');
+      const regNameWrap = hostEl.querySelector('#wrap_f_region_name');
       const regNameInp = hostEl.querySelector('#f_region');
+      const regLockPill = hostEl.querySelector('#f_region_lock_pill');
+      const mapSearchWrap = hostEl.querySelector('#wrap_f_map_region_search');
+      const mapSearchInp = hostEl.querySelector('#f_map_region_search');
       const corridorSel = hostEl.querySelector('#f_corridor');
       const corridorDispInp = hostEl.querySelector('#f_corridor_display');
       const corridorWrap = hostEl.querySelector('#wrap_f_corridor');
@@ -3540,12 +3990,84 @@
       let activeBoundaryItem = null;
       let previewLine = null;
       let redrawMapLayers = null;
+      let convertingBoundaryToPoly = false;
+      let mapSearchCtl = null;
 
       const setSelectValAndSync = (selEl, val) => {
         if (!selEl) return;
         selEl.value = val;
         selEl.dispatchEvent(new Event('change', { bubbles: true }));
       };
+
+      const setFrozenRegionValue = (val, markFromSearch = true) => {
+        if (!regNameInp) return;
+        const cleanVal = String(val || '').trim();
+        regNameInp.value = cleanVal;
+        if (markFromSearch) regNameInp.dataset.fromMapSearch = cleanVal ? '1' : '0';
+        if (regNameWrap) regNameWrap.classList.toggle('has-gov-val', Boolean(cleanVal && regNameInp.readOnly));
+        regNameInp.dispatchEvent(new Event('input', { bubbles: true }));
+        regNameInp.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+
+      const syncRegionModeFields = () => {
+        const zt = (shapeSel && shapeSel.value) || 'boundary';
+        const isBoundary = zt === 'boundary';
+        if (mapSearchWrap) mapSearchWrap.hidden = !isBoundary;
+        if (corridorWrap) corridorWrap.hidden = !isBoundary;
+        if (regNameInp) {
+          if (isBoundary) {
+            regNameInp.readOnly = true;
+            regNameInp.setAttribute('readonly', 'readonly');
+            regNameInp.setAttribute('tabindex', '-1');
+            regNameInp.setAttribute('aria-readonly', 'true');
+            regNameInp.placeholder = 'Locked to Search Map Region...';
+            if (regLockPill) regLockPill.hidden = false;
+            if (regNameWrap) {
+              regNameWrap.classList.add('is-policy-locked', 'is-geo-frozen-field');
+              regNameWrap.classList.toggle('has-gov-val', Boolean(regNameInp.value && regNameInp.value.trim()));
+            }
+          } else {
+            regNameInp.readOnly = false;
+            regNameInp.removeAttribute('readonly');
+            regNameInp.removeAttribute('tabindex');
+            regNameInp.setAttribute('aria-readonly', 'false');
+            regNameInp.placeholder = 'Type custom region name (e.g. Fanar)...';
+            if (regLockPill) regLockPill.hidden = true;
+            if (regNameWrap) {
+              regNameWrap.classList.remove('is-policy-locked', 'is-geo-frozen-field', 'has-gov-val');
+            }
+          }
+        }
+      };
+
+      if (regNameInp) {
+        regNameInp.addEventListener('mousedown', ev => {
+          const ztNow = (shapeSel && shapeSel.value) || 'boundary';
+          if (ztNow === 'boundary') {
+            ev.preventDefault();
+            if (mapSearchInp && (!mapSearchWrap || !mapSearchWrap.hidden)) {
+              try { mapSearchInp.focus({ preventScroll: true }); } catch (_) { try { mapSearchInp.focus(); } catch (__) {} }
+              if (mapSearchCtl && typeof mapSearchCtl.runQuery === 'function') {
+                setTimeout(() => { try { mapSearchCtl.runQuery(true); } catch (_) {} }, 10);
+              }
+            }
+          }
+        });
+        regNameInp.addEventListener('focus', () => {
+          const ztNow = (shapeSel && shapeSel.value) || 'boundary';
+          if (ztNow === 'boundary' && regNameInp.readOnly) {
+            try { regNameInp.blur(); } catch (_) {}
+          }
+        });
+        regNameInp.addEventListener('input', () => {
+          const ztNow = (shapeSel && shapeSel.value) || 'boundary';
+          if (ztNow !== 'boundary') {
+            regNameInp.dataset.fromMapSearch = '0';
+          } else if (regNameWrap) {
+            regNameWrap.classList.toggle('has-gov-val', Boolean(regNameInp.value && regNameInp.value.trim()));
+          }
+        });
+      }
 
       const setModalGovernorate = (codeVal) => {
         const cleanCode = String(codeVal || '').trim();
@@ -3557,60 +4079,25 @@
 
       const syncModalGovernorate = () => {
         const zt = (shapeSel && shapeSel.value) || 'boundary';
-        if (zt === 'boundary') {
-          if (activeBoundaryItem && activeBoundaryItem.corridor) {
-            setModalGovernorate(activeBoundaryItem.corridor);
-            return;
-          }
-          const parsedGj = gjInp && gjInp.value ? parseZoneGeoJson(gjInp.value) : null;
-          const clat = cLatInp && cLatInp.value !== '' ? parseFloat(cLatInp.value) : null;
-          const clng = cLngInp && cLngInp.value !== '' ? parseFloat(cLngInp.value) : null;
-          if (parsedGj || (clat != null && clng != null && Number.isFinite(clat) && Number.isFinite(clng))) {
-            const det = resolveGovernorate({ zoneType: 'boundary', geojson: parsedGj, lat: clat, lng: clng, name: (regNameInp && regNameInp.value) || '' }, SEED);
-            setModalGovernorate(det.code);
-            return;
-          }
-          const typedCandidate = ((mapSearchInp && mapSearchInp.value) || (regNameInp && regNameInp.value) || '').trim();
-          const typedHit = typedCandidate ? findAtlasRegionByName(typedCandidate, SEED) : null;
-          setModalGovernorate(typedHit && typedHit.corridor ? typedHit.corridor : '');
+        if (zt !== 'boundary') {
+          setModalGovernorate('');
           return;
         }
-        if (zt === 'circle') {
-          const clat = cLatInp && cLatInp.value !== '' ? parseFloat(cLatInp.value) : null;
-          const clng = cLngInp && cLngInp.value !== '' ? parseFloat(cLngInp.value) : null;
-          const rad = radInp && radInp.value !== '' ? Math.max(0.2, parseFloat(radInp.value) || 1.5) : 1.5;
-          if (clat != null && clng != null && Number.isFinite(clat) && Number.isFinite(clng)) {
-            const det = resolveGovernorateForCircle(clat, clng, rad);
-            setModalGovernorate(det.code);
-            if (det.outsideLebanon && !det.code) {
-              maybeReverseGeocodeGovernorate(clat, clng, cd => {
-                if (hostEl.isConnected && (!shapeSel || shapeSel.value === 'circle')) setModalGovernorate(cd);
-              });
-            }
-          } else {
-            setModalGovernorate('');
-          }
+        if (activeBoundaryItem && activeBoundaryItem.corridor) {
+          setModalGovernorate(activeBoundaryItem.corridor);
           return;
         }
-        if (zt === 'polygon') {
-          if (polyPts.length > 0) {
-            const det = resolveGovernorateForPolygonPoints(polyPts);
-            setModalGovernorate(det.code);
-            if (det.outsideLebanon && !det.code && det.sampleLat != null) {
-              maybeReverseGeocodeGovernorate(det.sampleLat, det.sampleLng, cd => {
-                if (hostEl.isConnected && shapeSel && shapeSel.value === 'polygon') setModalGovernorate(cd);
-              });
-            }
-            return;
-          }
-          const parsedGj = gjInp && gjInp.value ? parseZoneGeoJson(gjInp.value) : null;
-          if (parsedGj) {
-            const det = resolveGovernorateForGeoJson(parsedGj);
-            setModalGovernorate(det.code);
-          } else {
-            setModalGovernorate('');
-          }
+        const parsedGj = gjInp && gjInp.value ? parseZoneGeoJson(gjInp.value) : null;
+        const clat = cLatInp && cLatInp.value !== '' ? parseFloat(cLatInp.value) : null;
+        const clng = cLngInp && cLngInp.value !== '' ? parseFloat(cLngInp.value) : null;
+        if (parsedGj || (clat != null && clng != null && Number.isFinite(clat) && Number.isFinite(clng))) {
+          const det = resolveGovernorate({ zoneType: 'boundary', geojson: parsedGj, lat: clat, lng: clng, name: (regNameInp && regNameInp.value) || '' }, SEED);
+          setModalGovernorate(det.code);
+          return;
         }
+        const typedCandidate = ((mapSearchInp && mapSearchInp.value) || (regNameInp && regNameInp.value) || '').trim();
+        const typedHit = typedCandidate ? findAtlasRegionByName(typedCandidate, SEED) : null;
+        setModalGovernorate(typedHit && typedHit.corridor ? typedHit.corridor : '');
       };
 
       const countSitesInside = (gj, cLat, cLng, radKm, mode) => {
@@ -3645,6 +4132,7 @@
 
       const syncToolbarAndStatus = () => {
         const zt = (shapeSel && shapeSel.value) || 'boundary';
+        syncRegionModeFields();
         if (radWrap) radWrap.hidden = zt !== 'circle';
         if (radSlider) radSlider.hidden = zt !== 'circle';
         if (quickStrip) quickStrip.hidden = zt !== 'boundary';
@@ -3724,15 +4212,13 @@
       const applyPickedAtlasRegion = (hit) => {
         if (!hit) return;
         activeBoundaryItem = hit;
+        if (shapeSel && shapeSel.value !== 'boundary') setSelectValAndSync(shapeSel, 'boundary');
+        syncRegionModeFields();
         if (mapSearchInp) mapSearchInp.value = hit.name;
-        if (regNameInp) {
-          regNameInp.value = hit.name;
-          regNameInp.dispatchEvent(new Event('change', { bubbles: true }));
-        }
+        setFrozenRegionValue(hit.name, true);
         if (autoCodeInp) autoCodeInp.value = hit.code || deriveRegionCode(hit.name);
         const detGov = resolveGovernorate({ zoneType: 'boundary', geojson: hit.geojson, lat: hit.lat, lng: hit.lng, corridor: hit.corridor, name: hit.name }, SEED);
         setModalGovernorate(detGov.code || hit.corridor || '');
-        if (shapeSel && shapeSel.value !== 'boundary') setSelectValAndSync(shapeSel, 'boundary');
         if (cLatInp) cLatInp.value = hit.lat != null ? String(hit.lat) : '';
         if (cLngInp) cLngInp.value = hit.lng != null ? String(hit.lng) : '';
         if (gjInp) gjInp.value = hit.geojson ? JSON.stringify(hit.geojson) : '';
@@ -3747,7 +4233,7 @@
       };
 
       if (mapSearchInp) {
-        attachMapRegionSearchInput(mapSearchInp, {
+        mapSearchCtl = attachMapRegionSearchInput(mapSearchInp, {
           SEED,
           showPopularOnClick: true,
           decorateWithIcon: true,
@@ -3755,6 +4241,7 @@
           onClear: () => {
             activeBoundaryItem = null;
             if (!shapeSel || shapeSel.value === 'boundary') {
+              setFrozenRegionValue('', true);
               if (gjInp) gjInp.value = '';
               if (cLatInp) cLatInp.value = '';
               if (cLngInp) cLngInp.value = '';
@@ -3763,23 +4250,24 @@
             redraw();
           }
         });
-        mapSearchInp.addEventListener('input', () => {
+        mapSearchInp.addEventListener('focus', () => {
           if (!shapeSel || shapeSel.value === 'boundary') {
-            if (activeBoundaryItem && norm(mapSearchInp.value) !== norm(activeBoundaryItem.name)) activeBoundaryItem = null;
-            syncModalGovernorate();
+            syncRegionModeFields();
+            const q = String(mapSearchInp.value || '').trim();
+            if (q && regNameInp && regNameInp.value !== q) {
+              const hit = findAtlasRegionByName(q, SEED);
+              setFrozenRegionValue(hit ? hit.name : q, true);
+            }
           }
         });
-      }
-      if (regNameInp) {
-        attachMapRegionSearchInput(regNameInp, {
-          SEED,
-          showPopularOnClick: false,
-          decorateWithIcon: false,
-          shouldOpen: () => !shapeSel || shapeSel.value === 'boundary',
-          onSelectRegion: applyPickedAtlasRegion
-        });
-        regNameInp.addEventListener('input', () => {
-          if (!shapeSel || shapeSel.value === 'boundary') syncModalGovernorate();
+        mapSearchInp.addEventListener('input', () => {
+          if (!shapeSel || shapeSel.value === 'boundary') {
+            const rawQ = String(mapSearchInp.value || '').trim();
+            if (activeBoundaryItem && norm(rawQ) !== norm(activeBoundaryItem.name)) activeBoundaryItem = null;
+            const hit = rawQ ? findAtlasRegionByName(rawQ, SEED) : null;
+            setFrozenRegionValue(hit ? hit.name : rawQ, true);
+            syncModalGovernorate();
+          }
         });
       }
       hostEl.querySelectorAll('[data-pick-map-region]').forEach(chip => {
@@ -3792,18 +4280,36 @@
         shapeSel.addEventListener('change', () => {
           closeAllGeoPlaceMenus();
           const zt = shapeSel.value || 'boundary';
-          if (zt === 'polygon' && polyPts.length === 0 && gjInp && gjInp.value) {
-            polyPts = extractEditablePolyRing(gjInp.value, 20);
-            polyLocked = polyPts.length >= 3;
-          } else if (zt === 'circle') {
-            if (gjInp) gjInp.value = '';
+          if (zt === 'circle' || zt === 'polygon') {
+            if (convertingBoundaryToPoly && zt === 'polygon' && gjInp && gjInp.value) {
+              polyPts = extractEditablePolyRing(gjInp.value, 20);
+              polyLocked = polyPts.length >= 3;
+            } else {
+              if (regNameInp && regNameInp.dataset.fromMapSearch === '1') {
+                setFrozenRegionValue('', false);
+              }
+              activeBoundaryItem = null;
+              if (mapSearchInp) mapSearchInp.value = '';
+              hostEl.querySelectorAll('[data-pick-map-region]').forEach(ch => ch.classList.remove('active'));
+              if (zt === 'circle') {
+                if (gjInp) gjInp.value = '';
+              } else if (zt === 'polygon' && !convertingBoundaryToPoly) {
+                if (polyPts.length === 0 && gjInp) gjInp.value = '';
+              }
+            }
+          } else if (zt === 'boundary') {
+            const searchQ = String((mapSearchInp && mapSearchInp.value) || '').trim();
+            const hit = (activeBoundaryItem && activeBoundaryItem.name ? activeBoundaryItem : null) || (searchQ ? findAtlasRegionByName(searchQ, SEED) : null);
+            setFrozenRegionValue(hit ? hit.name : searchQ, true);
           }
+          convertingBoundaryToPoly = false;
           redraw();
         });
       }
       if (editCornersBtn) {
         editCornersBtn.addEventListener('click', () => {
           if (gjInp && gjInp.value) {
+            convertingBoundaryToPoly = true;
             polyPts = extractEditablePolyRing(gjInp.value, 20);
             polyLocked = true;
             if (shapeSel) setSelectValAndSync(shapeSel, 'polygon');
@@ -3848,6 +4354,9 @@
           polyLocked = false;
           activeBoundaryItem = null;
           if (mapSearchInp) mapSearchInp.value = '';
+          if (!shapeSel || shapeSel.value === 'boundary') {
+            setFrozenRegionValue('', true);
+          }
           if (gjInp) gjInp.value = '';
           if (cLatInp) cLatInp.value = '';
           if (cLngInp) cLngInp.value = '';
@@ -4305,6 +4814,11 @@
     roadAdjustedKm,
     isPointInRegion,
     findContainingRegion,
+    resolveRegionRecordOrAtlas,
+    resolvePlaceLocation,
+    isPointInsideNamedRegion,
+    validateSiteInsideRegion,
+    ensureRegionInSeed,
     estimateLegKm,
     setPairKmOverride,
     getUnifiedSiteStats,

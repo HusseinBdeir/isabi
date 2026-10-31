@@ -4139,16 +4139,16 @@
   };
 
   const COL_FRIENDLY_LABELS = {
-    name: 'Name / Code',
-    plate_no: 'Plate No.',
+    name: 'Name',
+    plate_no: 'Plate Number',
     type: 'Type',
     Type: 'Type',
     ownership: 'Ownership',
     Ownership: 'Ownership',
     capacity: 'Capacity (m³)',
-    supplier: 'Supplier / Owner',
+    supplier: 'Supplier',
     Supplier: 'Supplier',
-    supplier_role: 'Role / Type',
+    supplier_role: 'Role',
     trucks_list: 'Owned Trucks',
     drivers_list: 'Linked Drivers',
     haul_loads: 'Haul Loads',
@@ -4167,8 +4167,8 @@
     rule_type: 'Rule Type',
     customer: 'Customer',
     Customer: 'Customer',
-    product: 'Product / Grade',
-    Product: 'Product / Grade',
+    product: 'Product',
+    Product: 'Product',
     site: 'Site',
     Site: 'Site',
     region: 'Region',
@@ -4428,7 +4428,7 @@
       { key: 'payroll_month', label: 'Payroll Month' },
       { key: 'staff', label: 'Staff Member' },
       { key: 'method', label: 'Method' },
-      { key: 'month_earnings', label: 'Month Paid / Earned', kind: 'numeric' },
+      { key: 'month_earnings', label: 'Month Earned', kind: 'numeric' },
       { key: 'sal_status_lbl', label: 'Month Status' },
       { key: 'amount', label: 'Amount ($)', kind: 'numeric' }
     ],
@@ -4468,7 +4468,7 @@
       { key: 'company', label: 'Company' },
       { key: 'staff', label: 'Staff Member' },
       { key: 'site', label: 'Posted Site' },
-      { key: 'equipment', label: 'Machine / Unit' },
+      { key: 'equipment', label: 'Equipment' },
       { key: 'proof_label', label: 'Work Proof' },
       { key: 'earned_usd', label: 'Earned ($)', kind: 'numeric' }
     ],
@@ -4513,7 +4513,7 @@
     cf_moves: [
       { key: 'company', label: 'Company' },
       { key: 'dir', label: 'Direction' },
-      { key: 'cat', label: 'Stream / Category' },
+      { key: 'cat', label: 'Category' },
       { key: 'party', label: 'Counterparty' },
       { key: 'method', label: 'Method' },
       { key: 'in_usd', label: 'Cash In ($)', kind: 'numeric' },
@@ -7204,12 +7204,34 @@
       const catStr = [s.category, s.category1, s.category2, s.category3].concat(Array.isArray(s.categories) ? s.categories : []).filter(Boolean).join(', ');
       if (s.is_truck_owner || Number(s.trucks_count || 0) > 0 || /hauler|truck\s*owner|transport/i.test(catStr)) out.push(s.name);
     });
+    (SEED.records.customers || []).forEach(c => {
+      if (c && (c.is_truck_owner || Number(c.trucks_count || 0) > 0 || (Array.isArray(c.trucks) && c.trucks.length > 0))) out.push(c.name);
+    });
     (SEED.records.equipment || []).forEach(e => { if (e.supplier) out.push(e.supplier); });
     (SEED.records.drivers || []).forEach(d => { if (d.truck_owner) out.push(d.truck_owner); });
     SEED.records.raw_purchases.forEach(r => { if (r.truck_owner) out.push(r.truck_owner); });
     SEED.records.sales_tickets.forEach(r => { if (r.truck_owner) out.push(r.truck_owner); });
     fIdx._lists.truckOwners = uniqSorted(out, fIdx.truckOwner);
     return fIdx._lists.truckOwners;
+  }
+  let _ownerTargetRev = -1;
+  let _ownerSupSet = null;
+  let _ownerCustSet = null;
+  let _ownerCustEqSet = null;
+  function resolveTruckOwnerTarget(ownerName, row) {
+    if (!ownerName) return 'suppliers';
+    if (row && /^customer/i.test(String(row.ownership || '').trim())) return 'customers';
+    const rev = (SEED._customRev || 0) * 100000 + ((SEED.records.equipment && SEED.records.equipment.length) || 0) + ((SEED.records.customers && SEED.records.customers.length) || 0);
+    if (_ownerTargetRev !== rev || !_ownerSupSet) {
+      _ownerSupSet = new Set((SEED.records.suppliers || []).map(s => normOwnerName(s && s.name)).filter(Boolean));
+      _ownerCustSet = new Set((SEED.records.customers || []).map(c => normOwnerName(c && c.name)).filter(Boolean));
+      _ownerCustEqSet = new Set((SEED.records.equipment || []).filter(e => e && /^customer/i.test(String(e.ownership || '').trim())).map(e => normOwnerName(e.supplier)).filter(Boolean));
+      _ownerTargetRev = rev;
+    }
+    const o = normOwnerName(ownerName);
+    if (!o) return 'suppliers';
+    if (_ownerCustSet.has(o) && (!_ownerSupSet.has(o) || _ownerCustEqSet.has(o))) return 'customers';
+    return 'suppliers';
   }
   function trucksForOwner(ownerName, company, isCompanyFleet) {
     if (isCompanyFleet) {
@@ -7234,7 +7256,9 @@
     const sup = (SEED.records.suppliers || []).find(s => normOwnerName(s.name) === o);
     const fromSup = (sup && Array.isArray(sup.trucks)) ? sup.trucks.filter(isTruckUnit) : [];
     const fromTx = (idx.txTrucksByOwner.get(o) || []).filter(isTruckUnit);
-    return uniqSorted(fromEq.concat(fromSup, fromTx), getFreqIndex().truck);
+    const cust = (SEED.records.customers || []).find(c => normOwnerName(c.name) === o);
+    const fromCust = (cust && Array.isArray(cust.trucks)) ? cust.trucks.filter(isTruckUnit) : [];
+    return uniqSorted(fromEq.concat(fromSup, fromCust, fromTx), getFreqIndex().truck);
   }
   function driversForOwner(ownerName, company, isCompanyFleet, activeTruckRow) {
     let list = [];
@@ -7253,6 +7277,8 @@
       const fromDrv = (SEED.records.drivers || []).filter(d => normOwnerName(d.truck_owner) === o).map(d => d.name || d.driver);
       const sup = (SEED.records.suppliers || []).find(s => normOwnerName(s.name) === o);
       const fromSup = (sup && Array.isArray(sup.drivers)) ? sup.drivers : [];
+      const cust = (SEED.records.customers || []).find(c => normOwnerName(c.name) === o);
+      const fromCust = (cust && Array.isArray(cust.drivers)) ? cust.drivers : [];
       const fromEq = (SEED.records.equipment || []).filter(e => normOwnerName(e.supplier) === o && e.default_driver).map(e => e.default_driver);
       const fromCoEq = (SEED.records.company_equipment || []).filter(e => normOwnerName(e.supplier) === o && e.default_driver).map(e => e.default_driver);
       const fromTx = idx.txDriversByOwner.get(o) || [];
@@ -7261,7 +7287,7 @@
       const defDrv = (activeTruckRow && activeTruckRow.default_driver && (!activeTruckRow.supplier || normOwnerName(activeTruckRow.supplier) === o))
         ? [activeTruckRow.default_driver]
         : [];
-      list = uniqSorted(fromDrv.concat(fromSup, fromEq, fromCoEq, fromTx, selfDrv, defDrv), getFreqIndex().driver);
+      list = uniqSorted(fromDrv.concat(fromSup, fromCust, fromEq, fromCoEq, fromTx, selfDrv, defDrv), getFreqIndex().driver);
     }
     // Always place the selected Truck's Default Driver first in the filtered list so it is chosen first
     if (activeTruckRow && activeTruckRow.default_driver && (!isCompanyFleet || isOwnUnit(activeTruckRow, company))) {
@@ -13379,7 +13405,7 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${th('sprod', 'Product / Grade', 'Product')}${th('sprod', 'Family', 'Material Family')}${th('sprod', 'UoM', 'UoM')}${th('sprod', 'Loads', 'loads', 'r')}
+                  ${th('sprod', 'Product', 'Product')}${th('sprod', 'Family', 'Material Family')}${th('sprod', 'UoM', 'UoM')}${th('sprod', 'Loads', 'loads', 'r')}
                   ${th('sprod', 'Qty (m³)', 'qty_sold', 'r')}${th('sprod', 'Tons Sold', 'tons_sold', 'r')}${th('sprod', 'List Price', 'list_price', 'r')}${showTaxCols ? `${th('sprod', 'Avg Net', 'avg_price_net', 'r')}${th('sprod', 'Avg TTC', 'avg_price_ttc', 'r')}` : th('sprod', 'Avg Price', 'avg_price_ttc', 'r')}${th('sprod', 'Total Sales ($)', 'sales_ttc', 'r')}
                 </tr>
               </thead>
@@ -15029,8 +15055,8 @@
           <table class="ledger-table" id="dieselTankMovementsTable">
             <thead>
               <tr>
-                ${th('dtankmv', 'Date', 'date')}${th('dtankmv', 'Stream', 'kind')}${th('dtankmv', 'Ref / Ticket', 'ref')}${th('dtankmv', 'Co.', 'company')}
-                ${th('dtankmv', 'Unit / Buyer / Supplier', 'party')}${th('dtankmv', 'Driver / Notes', 'detail')}
+                ${th('dtankmv', 'Date', 'date')}${th('dtankmv', 'Stream', 'kind')}${th('dtankmv', 'Reference', 'ref')}${th('dtankmv', 'Co.', 'company')}
+                ${th('dtankmv', 'Counterparty', 'party')}${th('dtankmv', 'Notes', 'detail')}
                 ${th('dtankmv', 'In (+L)', 'litres', 'r')}${th('dtankmv', 'Out (-L)', 'deltaL', 'r')}${th('dtankmv', 'Amount ($)', 'amountUsd', 'r')}
                 ${th('dtankmv', 'Remaining in Tank (L)', 'tank_after', 'r')}
               </tr>
@@ -15096,7 +15122,7 @@
               <table class="ledger-table" id="dieselTankSoldTable">
                 <thead>
                   <tr>
-                    ${th('dtanksold', 'Customer / Buyer', 'buyer')}${th('dtanksold', 'Co.', 'companies')}${th('dtanksold', 'Tickets', 'tickets', 'r')}
+                    ${th('dtanksold', 'Customer', 'buyer')}${th('dtanksold', 'Co.', 'companies')}${th('dtanksold', 'Tickets', 'tickets', 'r')}
                     ${th('dtanksold', 'Sold (L)', 'litres', 'r')}${th('dtanksold', 'Sold ($)', 'amountUsd', 'r')}${th('dtanksold', 'Avg $/L', 'avgPriceUsd', 'r')}
                     ${th('dtanksold', 'Share %', 'sharePct', 'r')}${th('dtanksold', 'Last Sale', 'lastDate')}
                   </tr>
@@ -15234,7 +15260,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('fueleff', 'Equipment / Plate', 'Equipment')}${th('fueleff', 'Type', 'Type')}${th('fueleff', 'Ownership', 'Ownership')}${th('fueleff', 'Fills', 'fills', 'r')}
+                ${th('fueleff', 'Equipment', 'Equipment')}${th('fueleff', 'Type', 'Type')}${th('fueleff', 'Ownership', 'Ownership')}${th('fueleff', 'Fills', 'fills', 'r')}
                 ${th('fueleff', 'Diesel (L)', 'diesel_litres', 'r')}${th('fueleff', 'Lubricants (L)', 'lube_litres', 'r')}${th('fueleff', 'Total (L)', 'total_litres', 'r')}
                 ${th('fueleff', 'Km Run', 'km_run', 'r')}${th('fueleff', 'L / 100 km', 'l_per_100km', 'r')}${th('fueleff', 'Guard Flags', 'flag_count', 'r')}
               </tr>
@@ -16189,7 +16215,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('equip', 'Equipment / Plate', 'Equipment')}${th('equip', 'Type', 'Type')}${th('equip', 'Ownership', 'Ownership')}${th('equip', 'Trips', 'trips', 'r')}${th('equip', 'Sales Loads', 'loads', 'r')}${th('equip', 'Raw Loads', 'raw_loads', 'r')}
+                ${th('equip', 'Equipment', 'Equipment')}${th('equip', 'Type', 'Type')}${th('equip', 'Ownership', 'Ownership')}${th('equip', 'Trips', 'trips', 'r')}${th('equip', 'Sales Loads', 'loads', 'r')}${th('equip', 'Raw Loads', 'raw_loads', 'r')}
                 ${th('equip', 'Diesel (L)', 'diesel_litres', 'r')}${th('equip', 'Km Run', 'km_run', 'r')}${th('equip', 'Running ($)', 'running_cost', 'r')}${th('equip', 'Driver ($)', 'driver_cost', 'r')}${th('equip', 'Total Cost', 'total_cost', 'r')}${th('equip', '$/Ton', 'cost_per_ton', 'r')}
               </tr>
             </thead>
@@ -16244,7 +16270,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('coeq', 'Equipment / Plate', 'equipment')}${th('coeq', 'Co.', 'company')}${th('coeq', 'Ownership', 'ownership')}${th('coeq', 'Status', 'status')}
+                ${th('coeq', 'Equipment', 'equipment')}${th('coeq', 'Co.', 'company')}${th('coeq', 'Ownership', 'ownership')}${th('coeq', 'Status', 'status')}
                 ${th('coeq', 'Default Driver', 'default_driver')}${th('coeq', 'Day Operator', 'day_operator')}${th('coeq', 'Site', 'site')}${th('coeq', 'Start Date', 'start_date')}${th('coeq', 'End Date', 'end_date')}
               </tr>
             </thead>
@@ -16649,7 +16675,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('oilsched', 'Equipment', 'equipment')}${th('oilsched', 'Co.', 'company')}${th('oilsched', 'Oil / Service Type', 'oil_type')}${th('oilsched', 'Last Change', 'last_date')}
+                ${th('oilsched', 'Equipment', 'equipment')}${th('oilsched', 'Co.', 'company')}${th('oilsched', 'Oil Type', 'oil_type')}${th('oilsched', 'Last Change', 'last_date')}
                 ${th('oilsched', 'Hours Worked', 'hrsWorked', 'r')}${th('oilsched', 'Distance (km)', 'kmDriven', 'r')}${th('oilsched', 'Time Elapsed', 'daysElapsed', 'r')}${th('oilsched', 'Next Change Status', 'rank')}${canPostOil ? '<th>Action</th>' : ''}
               </tr>
             </thead>
@@ -16715,7 +16741,7 @@
             <thead>
               <tr>
                 ${th('parts', 'Ref', 'name')}${th('parts', 'Date', 'date')}${th('parts', 'Co.', 'company')}${th('parts', 'Unit', 'equipment')}
-                ${th('parts', 'Piece / Part', 'part_name')}${th('parts', 'Qty', 'qty', 'r')}${th('parts', 'Condition', 'condition')}
+                ${th('parts', 'Part', 'part_name')}${th('parts', 'Qty', 'qty', 'r')}${th('parts', 'Condition', 'condition')}
                 ${th('parts', 'Disposition & Custody', 'removed_disposition')}${th('parts', 'Pre-Notice', 'prior_defect_notified')}${th('parts', 'Net Cash ($)', 'new_part_cost', 'r')}
               </tr>
             </thead>
@@ -16779,7 +16805,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('uhealth', 'Unit / Plate', 'equipment')}${th('uhealth', 'Co.', 'company')}${th('uhealth', 'Category', 'type')}${th('uhealth', 'Driver / Operator', 'driver')}
+                ${th('uhealth', 'Equipment', 'equipment')}${th('uhealth', 'Co.', 'company')}${th('uhealth', 'Category', 'type')}${th('uhealth', 'Driver', 'driver')}
                 ${th('uhealth', 'Live Health Status', 'severityRank')}${th('uhealth', 'Open Warnings', 'openCount', 'r')}${th('uhealth', 'Parts Logged', 'partCount', 'r')}${th('uhealth', 'Spare/Repair ($)', 'expTotal', 'r')}${canPostMaint ? '<th>Quick Log</th>' : ''}
               </tr>
             </thead>
@@ -16825,7 +16851,7 @@
             <thead>
               <tr>
                 ${th('eqexp', 'Date', 'date')}${th('eqexp', 'Voucher', 'name')}${th('eqexp', 'Co.', 'company')}${th('eqexp', 'Unit', 'equipment')}
-                ${th('eqexp', 'Category / Subcategory', 'category')}${th('eqexp', 'Supplier / Workshop', 'supplier')}${th('eqexp', 'Amount ($)', 'amount', 'r')}${canPostMaint ? '<th>Custody</th>' : ''}
+                ${th('eqexp', 'Category', 'category')}${th('eqexp', 'Supplier', 'supplier')}${th('eqexp', 'Amount ($)', 'amount', 'r')}${canPostMaint ? '<th>Custody</th>' : ''}
               </tr>
             </thead>
             <tbody>
@@ -17289,7 +17315,7 @@
             <thead>
               ${isCommView ? `
               <tr>
-                ${th('pricing', 'Co.', 'company')}${th('pricing', 'Plant Owner', 'supplier')}${th('pricing', 'Product / Grade', 'product')}${th('pricing', 'Unit', 'unit')}${th('pricing', 'Commission Rate ($)', 'unit_price', 'r')}${th('pricing', 'Start', 'start_date')}${th('pricing', 'End', 'end_date')}<th>Status</th>
+                ${th('pricing', 'Co.', 'company')}${th('pricing', 'Plant Owner', 'supplier')}${th('pricing', 'Product', 'product')}${th('pricing', 'Unit', 'unit')}${th('pricing', 'Commission Rate ($)', 'unit_price', 'r')}${th('pricing', 'Start', 'start_date')}${th('pricing', 'End', 'end_date')}<th>Status</th>
               </tr>
               ` : `
               <tr>
@@ -17458,7 +17484,7 @@
               <table class="ledger-table">
                 <thead>
                   <tr>
-                    ${th('pcommprod', 'Product / Grade', 'product')}${th('pcommprod', 'Co.', 'company')}${th('pcommprod', 'Plant Owner', 'owner')}${th('pcommprod', 'UoM', 'uom')}
+                    ${th('pcommprod', 'Product', 'product')}${th('pcommprod', 'Co.', 'company')}${th('pcommprod', 'Plant Owner', 'owner')}${th('pcommprod', 'UoM', 'uom')}
                     ${th('pcommprod', 'Comm. Rate', 'active_rate', 'r')}${th('pcommprod', 'Loads', 'loads', 'r')}${th('pcommprod', 'Qty Sold', 'qty_sold', 'r')}
                     ${th('pcommprod', 'List Price', 'list_price', 'r')}${th('pcommprod', 'Agreed Corridor', 'min_price', 'r')}${th('pcommprod', 'Realized Net', 'realised_price', 'r')}${th('pcommprod', 'Net After Comm.', 'net_after_comm', 'r')}${th('pcommprod', 'Commission Earned ($)', 'comm_due', 'r')}
                   </tr>
@@ -17609,7 +17635,7 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${th('pbench', 'Product / Grade', 'Product')}${th('pbench', 'UoM', 'UoM')}${th('pbench', 'Rules', 'rulesCount', 'r')}${th('pbench', 'Loads', 'loads', 'r')}
+                  ${th('pbench', 'Product', 'Product')}${th('pbench', 'UoM', 'UoM')}${th('pbench', 'Rules', 'rulesCount', 'r')}${th('pbench', 'Loads', 'loads', 'r')}
                   ${th('pbench', 'Agreed Corridor ($)', 'lowest', 'r')}${th('pbench', 'Agreed Avg ($)', 'agreed', 'r')}${th('pbench', 'List Price ($)', 'list_price', 'r')}
                   ${th('pbench', 'Realized Net ($)', 'avg_price_net', 'r')}${th('pbench', 'Realized TTC ($)', 'avg_price_ttc', 'r')}${th('pbench', 'Sales TTC ($)', 'sales_ttc', 'r')}
                 </tr>
@@ -17710,7 +17736,7 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${th('pbelow', 'Customer', 'customer')}${th('pbelow', 'Product / Grade', 'product')}${th('pbelow', 'Qty Sold', 'qty_sold', 'r')}
+                  ${th('pbelow', 'Customer', 'customer')}${th('pbelow', 'Product', 'product')}${th('pbelow', 'Qty Sold', 'qty_sold', 'r')}
                   ${th('pbelow', 'Agreed ($)', 'agreed_price', 'r')}${th('pbelow', 'Last Sold ($)', 'last_sold_price', 'r')}${th('pbelow', 'Spread ($/u)', 'spread', 'r')}${th('pbelow', 'Shortfall ($)', 'shortfall', 'r')}
                 </tr>
               </thead>
@@ -17881,7 +17907,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('raw_pricing', 'Co.', 'company')}${th('raw_pricing', 'Rule Type', 'rule_type')}${th('raw_pricing', 'Site Owner / Hauler', 'supplier')}${th('raw_pricing', 'Source Site', 'site')}${th('raw_pricing', 'Material', 'product')}
+                ${th('raw_pricing', 'Co.', 'company')}${th('raw_pricing', 'Rule Type', 'rule_type')}${th('raw_pricing', 'Supplier', 'supplier')}${th('raw_pricing', 'Source Site', 'site')}${th('raw_pricing', 'Material', 'product')}
                 ${th('raw_pricing', 'Pricing Unit', 'unit')}${th('raw_pricing', 'Material Price ($)', 'unit_price', 'r')}${th('raw_pricing', 'Transportation Price ($)', 'trans_unit_price', 'r')}${th('raw_pricing', 'Start', 'start_date')}${th('raw_pricing', 'End', 'end_date')}<th>Status</th>
               </tr>
             </thead>
@@ -17942,7 +17968,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('prawtrans', 'Hauler / Truck Owner', 'truck_owner')}${th('prawtrans', 'Co.', 'company')}${th('prawtrans', 'Source Site', 'site')}${th('prawtrans', 'Basis', 'basis')}
+                ${th('prawtrans', 'Truck Owner', 'truck_owner')}${th('prawtrans', 'Co.', 'company')}${th('prawtrans', 'Source Site', 'site')}${th('prawtrans', 'Basis', 'basis')}
                 ${th('prawtrans', 'Agreed ($)', 'agreed_rate', 'r')}${th('prawtrans', 'Agreement End', 'end_date')}${th('prawtrans', 'Last Haul ($)', 'last_rate', 'r')}
                 ${th('prawtrans', 'Period Avg ($)', 'avg_rate', 'r')}${th('prawtrans', 'Agreed − Last', 'agreed_minus_last', 'r')}${th('prawtrans', 'Loads', 'loads', 'r')}${th('prawtrans', 'Haulage Cost ($)', 'haul_cost', 'r')}
               </tr>
@@ -18825,7 +18851,7 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${th('sups', 'Supplier / Counterparty', 'Supplier')}${th('sups', 'Role', 'role')}${th('sups', 'IVA', 'IVA')}${th('sups', 'Raw Loads', 'raw_loads', 'r')}${hasApRange ? th('sups', 'Opening AP', 'opening_ap', 'r') : ''}${th('sups', 'Mat. Leg', 'ap_material', 'r')}${th('sups', 'Haul Leg', 'ap_haulage', 'r')}
+                  ${th('sups', 'Supplier', 'Supplier')}${th('sups', 'Role', 'role')}${th('sups', 'IVA', 'IVA')}${th('sups', 'Raw Loads', 'raw_loads', 'r')}${hasApRange ? th('sups', 'Opening AP', 'opening_ap', 'r') : ''}${th('sups', 'Mat. Leg', 'ap_material', 'r')}${th('sups', 'Haul Leg', 'ap_haulage', 'r')}
                   ${th('sups', 'Exp. Leg', 'ap_expense', 'r')}${th('sups', 'Cash Spend', 'cash_expense', 'r')}${th('sups', 'Total Credit', 'ap_on_credit', 'r')}${th('sups', 'Settled ($)', 'ap_settled', 'r')}${th('sups', 'Net AP ($)', 'ap_balance', 'r')}
                 </tr>
               </thead>
@@ -19352,7 +19378,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('whitems', 'Stored Item / Part', 'item_name')}${th('whitems', 'Category', 'category')}${th('whitems', 'Warehouse Location', 'location')}
+                ${th('whitems', 'Item', 'item_name')}${th('whitems', 'Category', 'category')}${th('whitems', 'Warehouse Location', 'location')}
                 ${th('whitems', 'Stocked In (+)', 'stockedInQty', 'r')}${th('whitems', 'Used Out (-)', 'usedInRepairsQty', 'r')}${th('whitems', 'On-Hand Qty', 'onHandQty', 'r')}
                 ${th('whitems', 'Avg Cost ($)', 'avgUnitCost', 'r')}${th('whitems', 'Stock Value ($)', 'onHandValue', 'r')}<th>Used In Repairs</th>${hasWhActions ? '<th>Quick Action</th>' : ''}
               </tr>
@@ -19417,7 +19443,7 @@
             <thead>
               <tr>
                 ${th('whmoves', 'Date', 'date')}${th('whmoves', 'Ref', 'ref')}${th('whmoves', 'Co.', 'company')}${th('whmoves', 'Movement', 'movement_type')}
-                ${th('whmoves', 'Item / Part', 'item_name')}${th('whmoves', 'Equipment / Location', 'equipment')}${th('whmoves', 'Qty (+IN / -OUT)', 'signedQty', 'r')}${th('whmoves', 'Balance After', 'balanceAfter', 'r')}${th('whmoves', 'Value ($)', 'total_cost', 'r')}
+                ${th('whmoves', 'Item', 'item_name')}${th('whmoves', 'Destination', 'equipment')}${th('whmoves', 'Qty (+IN / -OUT)', 'signedQty', 'r')}${th('whmoves', 'Balance After', 'balanceAfter', 'r')}${th('whmoves', 'Value ($)', 'total_cost', 'r')}
               </tr>
             </thead>
             <tbody>
@@ -21744,7 +21770,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('pay_drv_ot', 'Driver / Staff', 'driver')}${th('pay_drv_ot', 'Co.', 'company')}${th('pay_drv_ot', 'Payroll Status', 'hasContract')}${th('pay_drv_ot', 'Regions', 'regionsStr')}
+                ${th('pay_drv_ot', 'Driver', 'driver')}${th('pay_drv_ot', 'Co.', 'company')}${th('pay_drv_ot', 'Payroll Status', 'hasContract')}${th('pay_drv_ot', 'Regions', 'regionsStr')}
                 ${th('pay_drv_ot', 'Sales OT Trips', 'sales_trips', 'r')}${th('pay_drv_ot', 'Quarry OT Trips', 'raw_trips', 'r')}${th('pay_drv_ot', 'Total OT Trips', 'total_trips', 'r')}
                 ${th('pay_drv_ot', 'Sales OT ($)', 'sales_ot_usd', 'r')}${th('pay_drv_ot', 'Quarry OT ($)', 'raw_ot_usd', 'r')}${th('pay_drv_ot', 'Total Driver OT ($)', 'total_ot_usd', 'r')}${th('pay_drv_ot', 'In Staff Payroll ($)', 'in_payroll_usd', 'r')}
               </tr>
@@ -22482,7 +22508,7 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  ${th('pay_site_daily', 'Date', 'date')}${th('pay_site_daily', 'Staff Member', 'staff')}${th('pay_site_daily', 'Co.', 'company')}${th('pay_site_daily', 'Posted Site', 'site')}${th('pay_site_daily', 'Machine / Unit', 'equipment')}
+                  ${th('pay_site_daily', 'Date', 'date')}${th('pay_site_daily', 'Staff Member', 'staff')}${th('pay_site_daily', 'Co.', 'company')}${th('pay_site_daily', 'Posted Site', 'site')}${th('pay_site_daily', 'Equipment', 'equipment')}
                   ${th('pay_site_daily', 'Work Verification', 'proof_label')}${th('pay_site_daily', 'Operational Work Evidence', 'total_loads')}
                   ${th('pay_site_daily', 'Daily Rate', 'daily_usd', 'r')}${th('pay_site_daily', 'Earned ($)', 'earned_usd', 'r')}
                   ${showDayTallyCol ? '<th class="r">Day Tally</th>' : ''}
@@ -22815,7 +22841,7 @@
         ${renderColFilterBar('pay_sal')}
         <div class="table-wrap">
           <table class="ledger-table">
-            <thead><tr>${th('pay_sal', 'Date', 'date')}${th('pay_sal', 'Payroll Month', 'payroll_month')}${th('pay_sal', 'Co.', 'company')}${th('pay_sal', 'Staff Member', 'staff')}${th('pay_sal', 'Method', 'method')}${th('pay_sal', 'Month Paid / Earned', 'month_earnings')}${th('pay_sal', 'Month Status', 'sal_status_lbl')}${th('pay_sal', 'Amount ($)', 'amount', 'r')}</tr></thead>
+            <thead><tr>${th('pay_sal', 'Date', 'date')}${th('pay_sal', 'Payroll Month', 'payroll_month')}${th('pay_sal', 'Co.', 'company')}${th('pay_sal', 'Staff Member', 'staff')}${th('pay_sal', 'Method', 'method')}${th('pay_sal', 'Month Earned', 'month_earnings')}${th('pay_sal', 'Month Status', 'sal_status_lbl')}${th('pay_sal', 'Amount ($)', 'amount', 'r')}</tr></thead>
             <tbody>
               ${shownSal.map(s => {
                 const rowSalUsd = round2(salaryVoucherUsd895(s, fxRate));
@@ -26139,8 +26165,8 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('soa', 'Date', 'date')}${th('soa', 'Co.', 'company')}${th('soa', 'Voucher / Document', 'doc')}${th('soa', 'GL Code', 'code')}${th('soa', 'Account', 'account')}
-                ${th('soa', 'Counterparty / Detail', 'detail')}${th('soa', 'Description', 'desc')}${th('soa', 'Debit ($)', 'debit', 'r')}${th('soa', 'Credit ($)', 'credit', 'r')}
+                ${th('soa', 'Date', 'date')}${th('soa', 'Co.', 'company')}${th('soa', 'Voucher', 'doc')}${th('soa', 'GL Code', 'code')}${th('soa', 'Account', 'account')}
+                ${th('soa', 'Counterparty', 'detail')}${th('soa', 'Description', 'desc')}${th('soa', 'Debit ($)', 'debit', 'r')}${th('soa', 'Credit ($)', 'credit', 'r')}
               </tr>
             </thead>
             <tbody>
@@ -26913,8 +26939,8 @@
                 ${th('ext_entries', 'Co.', 'company')}
                 ${th('ext_entries', 'Kind', 'kind')}
                 ${th('ext_entries', 'Direction', 'direction')}
-                ${th('ext_entries', 'Counterparty / Stakeholder', 'counterparty')}
-                ${th('ext_entries', 'Notes / Reference', 'notes')}
+                ${th('ext_entries', 'Counterparty', 'counterparty')}
+                ${th('ext_entries', 'Notes', 'notes')}
                 ${th('ext_entries', 'In ($)', 'usd_amount', 'r')}
                 ${th('ext_entries', 'Out ($)', 'usd_amount', 'r')}
                 ${th('ext_entries', 'LBP (LL)', 'lbp_amount', 'r')}
@@ -26964,7 +26990,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('ext_parties', 'Counterparty / Stakeholder', 'counterparty')}
+                ${th('ext_parties', 'Counterparty', 'counterparty')}
                 ${th('ext_parties', 'Kind', 'kind')}
                 ${th('ext_parties', 'Entries', 'entries_cnt', 'r')}
                 ${th('ext_parties', 'Cash In ($)', 'in_usd', 'r')}
@@ -27123,7 +27149,7 @@
                 ${th('fx_conv', 'USD Change ($)', 'usd_delta', 'r')}
                 ${th('fx_conv', 'LBP Change (LL)', 'lbp_delta', 'r')}
                 ${th('fx_conv', 'Exchange Rate (LL/$)', 'exchange_rate', 'r')}
-                ${th('fx_conv', 'Reference / Notes', 'notes')}
+                ${th('fx_conv', 'Notes', 'notes')}
               </tr>
             </thead>
             <tbody>
@@ -27293,7 +27319,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('tr_loans', 'Loan / Facility', 'name')}${th('tr_loans', 'Co.', 'company')}${th('tr_loans', 'Counterparty', 'counterparty')}
+                ${th('tr_loans', 'Loan', 'name')}${th('tr_loans', 'Co.', 'company')}${th('tr_loans', 'Counterparty', 'counterparty')}
                 ${th('tr_loans', 'Direction', 'direction')}${th('tr_loans', 'Principal ($)', 'principal', 'r')}${th('tr_loans', 'Settled ($)', 'settled_amount', 'r')}${th('tr_loans', 'Start Date', 'start_date')}
               </tr>
             </thead>
@@ -27334,7 +27360,7 @@
               <thead>
                 <tr>
                   ${th('tr_moves', 'Date', 'date')}${th('tr_moves', 'Co.', 'company')}${th('tr_moves', 'Type', 'kind')}
-                  ${th('tr_moves', 'Counterparty / Loan', 'party')}${th('tr_moves', 'Method', 'method')}${th('tr_moves', 'USD ($)', 'usd_amount', 'r')}
+                  ${th('tr_moves', 'Counterparty', 'party')}${th('tr_moves', 'Method', 'method')}${th('tr_moves', 'USD ($)', 'usd_amount', 'r')}
                 </tr>
               </thead>
               <tbody>
@@ -34289,6 +34315,8 @@
             const on = b.getAttribute('data-site-cat') === cat;
             b.classList.toggle('active', on);
             b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            const chk = b.querySelector('.site-cat-check');
+            if (chk) chk.textContent = on ? '✓ Selected' : 'Select';
           });
         }
         setFieldVisible('wrap_site_supplier', !isCust);
@@ -34303,6 +34331,80 @@
         const mTitle = $('modalTitle');
         if (mTitle && !STATE.editingPendingExpenseId) {
           mTitle.textContent = isCust ? 'New Customer Delivery Site (All BUs)' : 'New Supplier / Quarry Site (All BUs)';
+        }
+        const siteInp = $('f_site');
+        const regInp = $('f_region');
+        const latInp = $('f_lat');
+        const lngInp = $('f_lng');
+        const bannerEl = $('siteRegionConsistencyBanner');
+        const regHintEl = $('hint_site_region');
+        const nameHintEl = $('hint_site_name');
+        const placeHit = (window.MFG_GEO && typeof window.MFG_GEO.resolvePlaceLocation === 'function' && siteInp && siteInp.value)
+          ? window.MFG_GEO.resolvePlaceLocation(siteInp.value, SEED)
+          : null;
+        if (placeHit && regInp && (!regInp.value.trim() || regInp.dataset.autoFromPlace === '1')) {
+          regInp.value = placeHit.region;
+          regInp.dataset.autoFromPlace = '1';
+        }
+        const curReg = regInp ? String(regInp.value || '').trim() : '';
+        const regObj = (window.MFG_GEO && typeof window.MFG_GEO.resolveRegionRecordOrAtlas === 'function' && curReg)
+          ? window.MFG_GEO.resolveRegionRecordOrAtlas(curReg, SEED)
+          : null;
+        if (siteInp) {
+          siteInp.placeholder = curReg ? `Site name inside ${curReg}...` : 'Site name inside selected region...';
+        }
+        if (latInp && lngInp) {
+          const phLat = placeHit && (!curReg || norm(curReg) === norm(placeHit.region)) ? placeHit.lat : (regObj ? regObj.center_lat : null);
+          const phLng = placeHit && (!curReg || norm(curReg) === norm(placeHit.region)) ? placeHit.lng : (regObj ? regObj.center_lng : null);
+          latInp.placeholder = phLat != null && Number.isFinite(Number(phLat)) ? Number(phLat).toFixed(5) : 'Auto from map / region';
+          lngInp.placeholder = phLng != null && Number.isFinite(Number(phLng)) ? Number(phLng).toFixed(5) : 'Auto from map / region';
+        }
+        if (regHintEl) {
+          if (regObj) {
+            const govTxt = regObj.governorate && norm(regObj.governorate) !== norm(regObj.name) ? ` (${regObj.governorate})` : '';
+            regHintEl.textContent = `Region ${regObj.name}${govTxt} active · sites created here must be located inside ${regObj.name}.`;
+          } else {
+            regHintEl.textContent = 'Select the geographic Region first or click inside a zone on the map.';
+          }
+        }
+        if (window.MFG_GEO && typeof window.MFG_GEO.validateSiteInsideRegion === 'function') {
+          const hasLatLng = latInp && lngInp && latInp.value.trim() !== '' && lngInp.value.trim() !== '';
+          const geoCheck = window.MFG_GEO.validateSiteInsideRegion({
+            siteName: siteInp ? siteInp.value : '',
+            regionName: curReg,
+            lat: hasLatLng ? Number(latInp.value) : null,
+            lng: hasLatLng ? Number(lngInp.value) : null
+          }, SEED);
+          if (bannerEl) {
+            if (!geoCheck.ok && (geoCheck.code === 'name_region_mismatch' || geoCheck.code === 'coord_region_mismatch')) {
+              bannerEl.hidden = false;
+              bannerEl.className = 'form-field span-3 site-geo-banner is-crit';
+              bannerEl.innerHTML = `
+                <span>⚠ ${esc(geoCheck.reason)}</span>
+                <span class="site-geo-banner-actions">
+                  ${geoCheck.expectedRegion ? `<button type="button" class="site-geo-fix-btn" data-fix-site-region="${esc(geoCheck.expectedRegion)}">Switch Region to ${esc(geoCheck.expectedRegion)}</button>` : ''}
+                  ${geoCheck.code === 'coord_region_mismatch' && regObj ? `<button type="button" class="site-geo-fix-btn" data-snap-site-region="1">Snap Pin Inside ${esc(regObj.name)}</button>` : ''}
+                </span>
+              `;
+              if (nameHintEl && geoCheck.code === 'name_region_mismatch') {
+                nameHintEl.textContent = geoCheck.reason;
+              }
+            } else if (geoCheck.ok && curReg && siteInp && siteInp.value.trim()) {
+              bannerEl.hidden = false;
+              bannerEl.className = 'form-field span-3 site-geo-banner is-ok';
+              const govPart = geoCheck.governorate && norm(geoCheck.governorate) !== norm(geoCheck.region || curReg) ? ` (${esc(geoCheck.governorate)})` : '';
+              bannerEl.innerHTML = `<span>✓ Geographic Containment Verified: <b>${esc(siteInp.value.trim())}</b> is inside Region <b>${esc(geoCheck.region || curReg)}</b>${govPart} · GPS ${Number(geoCheck.lat).toFixed(4)}, ${Number(geoCheck.lng).toFixed(4)}</span>`;
+              if (nameHintEl) nameHintEl.textContent = `Verified inside ${geoCheck.region || curReg}.`;
+            } else {
+              bannerEl.hidden = true;
+              bannerEl.innerHTML = '';
+              if (nameHintEl) nameHintEl.textContent = curReg ? `Must be located inside ${curReg}.` : 'Must be located inside the selected Region.';
+            }
+          }
+        }
+        const mapCanvas = host ? host.querySelector('#modalSiteMapCanvas') : $('modalSiteMapCanvas');
+        if (mapCanvas && typeof mapCanvas._refreshSiteOverlay === 'function') {
+          mapCanvas._refreshSiteOverlay();
         }
         syncUniversalMainDupHint('f_site', 'sites', isCust ? 'Customer Delivery Site' : 'Supplier / Quarry Site', { siteCategory: cat });
         return {};
@@ -34448,6 +34550,24 @@
         setFieldVisible('wrap_eq_supplier', hasSup);
         if (!hasCap && $('f_capacity') && $('f_capacity').value !== '0') $('f_capacity').value = '0';
         if (!hasSup && $('f_supplier') && $('f_supplier').value) $('f_supplier').value = '';
+        const isCustOwn = /^customer/i.test(own);
+        if (hasSup) {
+          const dlSup = $('dl_suppliers');
+          if (dlSup) {
+            const cPool = customerNames();
+            const sPool = uniqSorted(truckOwnerNames().concat(supplierNames()), getFreqIndex().truckOwner);
+            const seen = new Set();
+            const pool = [];
+            (isCustOwn ? cPool.concat(sPool) : sPool.concat(cPool)).forEach(v => {
+              const k = norm(v);
+              if (k && !seen.has(k)) { seen.add(k); pool.push(v); }
+            });
+            dlSup.innerHTML = pool.map(v => `<option value="${esc(v)}">`).join('');
+          }
+          if ($('f_supplier')) {
+            $('f_supplier').placeholder = isCustOwn ? 'Select or type customer or truck owner...' : 'Select or type truck owner...';
+          }
+        }
 
         const curTruck = val('f_truck');
         const tRow = curTruck ? equipInfo(curTruck) : null;
@@ -34467,6 +34587,7 @@
           }
         }
         const curSup = hasSup ? val('f_supplier') : company;
+        setHint('hint_eq_supplier', hasSup && curSup && resolveTruckOwnerTarget(curSup, { ownership: own }) === 'customers' ? `Customer truck linked to ${curSup}` : '', 'ok');
         if (curSup !== FORM_UI.lastSupplier) {
           FORM_UI.lastSupplier = curSup;
           if (!FORM_UI.driverManual && curSup && hasSup) {
@@ -36868,6 +36989,46 @@
       });
     });
 
+    if (STATE.modalForm === 'site') {
+      const regInp = $('f_region');
+      if (regInp) {
+        const clearAutoFromPlace = () => { regInp.dataset.autoFromPlace = ''; };
+        regInp.addEventListener('input', clearAutoFromPlace);
+        regInp.addEventListener('change', clearAutoFromPlace);
+      }
+      const bannerEl = $('siteRegionConsistencyBanner');
+      if (bannerEl) {
+        bannerEl.addEventListener('click', ev => {
+          const fixBtn = ev.target && ev.target.closest ? ev.target.closest('[data-fix-site-region]') : null;
+          if (fixBtn) {
+            ev.preventDefault();
+            const targetReg = fixBtn.getAttribute('data-fix-site-region') || '';
+            if (targetReg && $('f_region')) {
+              $('f_region').value = targetReg;
+              $('f_region').dataset.autoFromPlace = '';
+              $('f_region').dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            recalcForm();
+            return;
+          }
+          const snapBtn = ev.target && ev.target.closest ? ev.target.closest('[data-snap-site-region]') : null;
+          if (snapBtn) {
+            ev.preventDefault();
+            const curReg = val('f_region');
+            const regObj = (window.MFG_GEO && typeof window.MFG_GEO.resolveRegionRecordOrAtlas === 'function' && curReg)
+              ? window.MFG_GEO.resolveRegionRecordOrAtlas(curReg, SEED)
+              : null;
+            if (regObj && $('f_lat') && $('f_lng')) {
+              $('f_lat').value = String(regObj.center_lat);
+              $('f_lng').value = String(regObj.center_lng);
+              $('f_lat').dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            recalcForm();
+          }
+        });
+      }
+    }
+
     body.querySelectorAll('[data-log-mode]').forEach(btn => {
       btn.addEventListener('click', ev => {
         ev.preventDefault();
@@ -38048,12 +38209,38 @@
         const dup = findUniversalDuplicate('sites', nm, { siteCategory: siteCat });
         if (dup) addErr('f_site', `${catLbl} "${universalMainValue('sites', dup) || nm}" already exists. Duplicate site names in the same category are not allowed.`);
       }
-      const siteLat = val('f_lat') !== '' ? num('f_lat') : null;
-      const siteLng = val('f_lng') !== '' ? num('f_lng') : null;
+      let siteLat = val('f_lat') !== '' ? num('f_lat') : null;
+      let siteLng = val('f_lng') !== '' ? num('f_lng') : null;
       let siteReg = val('f_region');
       if (!siteReg && siteLat != null && siteLng != null && window.MFG_GEO && typeof window.MFG_GEO.findContainingRegion === 'function') {
         const hitReg = window.MFG_GEO.findContainingRegion(siteLat, siteLng, SEED);
-        if (hitReg) siteReg = hitReg.name;
+        if (hitReg && hitReg.name) siteReg = hitReg.name;
+      }
+      if (!siteReg && nm && window.MFG_GEO && typeof window.MFG_GEO.resolvePlaceLocation === 'function') {
+        const pHit = window.MFG_GEO.resolvePlaceLocation(nm, SEED);
+        if (pHit && pHit.region) siteReg = pHit.region;
+      }
+      if (!siteReg) {
+        addErr('f_region', 'Region is required. Select a Region or click inside a zone on the map.');
+      } else if (window.MFG_GEO && typeof window.MFG_GEO.validateSiteInsideRegion === 'function') {
+        const geoCheck = window.MFG_GEO.validateSiteInsideRegion({
+          siteName: nm,
+          regionName: siteReg,
+          lat: siteLat,
+          lng: siteLng
+        }, SEED);
+        if (!geoCheck.ok) {
+          addErr(geoCheck.field || 'f_region', geoCheck.reason);
+        } else {
+          siteReg = geoCheck.region || siteReg;
+          if (siteLat == null || siteLng == null) {
+            siteLat = geoCheck.lat;
+            siteLng = geoCheck.lng;
+          }
+          if (typeof window.MFG_GEO.ensureRegionInSeed === 'function') {
+            window.MFG_GEO.ensureRegionInSeed(siteReg, SEED, STATE);
+          }
+        }
       }
       record = {
         ...base,
@@ -38067,9 +38254,9 @@
         is_jv: siteCat === 'supplier' ? !!($('f_isjv') && $('f_isjv').checked) : false
       };
     } else if (f === 'equipment' || f === 'companyequipment') {
-      const nm = val('f_truck');
+      const nm = val('f_truck') || val('f_plateno');
       const pl = val('f_plateno') || nm;
-      if (!nm) addErr('f_truck', 'Unit Code / Plate Identifier is required.');
+      if (!nm) addErr('f_truck', 'Unit Code is required.');
       else if (f === 'equipment') {
         const dup = findUniversalDuplicate('equipment', nm);
         if (dup) addErr('f_truck', `Equipment / Truck "${universalMainValue('equipment', dup) || nm}" already exists in the Universal Equipment Registry. Duplicate unit codes/plates are not allowed.`);
@@ -41405,7 +41592,10 @@
     } else if (key === 'raw_purchases') {
       addSiteQv(row.site, 'raw');
       addSupplierQv(row.site_owner, 'SITE OWNER');
-      if (row.truck_owner && row.truck_owner !== row.site_owner) addSupplierQv(row.truck_owner, 'HAULER');
+      if (row.truck_owner && row.truck_owner !== row.site_owner) {
+        if (resolveTruckOwnerTarget(row.truck_owner) === 'customers') addCustomerQv(row.truck_owner);
+        else addSupplierQv(row.truck_owner, 'HAULER');
+      }
       addTruckQv(row.truck, row.driver);
     } else if (key === 'fuel_intakes') {
       addTruckQv(row.equipment, row.driver);
@@ -41430,19 +41620,32 @@
       if (row.supplier) addSupplierQv(row.supplier, 'VENDOR');
       if (row.equipment) addTruckQv(row.equipment, null);
     } else if (key === 'equipment') {
-      if (row.supplier) addSupplierQv(row.supplier, 'TRUCK OWNER');
+      if (row.supplier) {
+        if (resolveTruckOwnerTarget(row.supplier, row) === 'customers') addCustomerQv(row.supplier);
+        else addSupplierQv(row.supplier, 'TRUCK OWNER');
+      }
       if (row.default_driver) addDriverQv(row.default_driver, 'DEFAULT DRIVER');
     } else if (key === 'company_equipment') {
       addTruckQv(row.equipment, row.default_driver);
-      if (row.supplier) addSupplierQv(row.supplier, 'OWNER');
+      if (row.supplier) {
+        if (resolveTruckOwnerTarget(row.supplier, row) === 'customers') addCustomerQv(row.supplier);
+        else addSupplierQv(row.supplier, 'OWNER');
+      }
       if (row.default_driver) addDriverQv(row.default_driver, 'DEFAULT DRIVER');
       if (row.site) addSiteQv(row.site, 'raw');
     } else if (key === 'drivers' || key === 'company_drivers') {
       const drvName = row.driver || row.name;
       const dObj = driverInfo(drvName) || row;
-      if (dObj.truck_owner) addSupplierQv(dObj.truck_owner, 'TRUCK OWNER');
+      if (dObj.truck_owner) {
+        if (resolveTruckOwnerTarget(dObj.truck_owner) === 'customers') addCustomerQv(dObj.truck_owner);
+        else addSupplierQv(dObj.truck_owner, 'TRUCK OWNER');
+      }
       const dEqs = (SEED.records.equipment || []).filter(e => norm(e.default_driver) === norm(drvName));
       dEqs.slice(0, 2).forEach(eq => addTruckQv(eq.name, drvName));
+    } else if (key === 'customers') {
+      const cName = row.name || row.Customer;
+      const cEqs = (SEED.records.equipment || []).filter(e => normOwnerName(e.supplier) === normOwnerName(cName));
+      cEqs.slice(0, 2).forEach(eq => addTruckQv(eq.name, eq.default_driver));
     } else if (key === 'suppliers') {
       const sName = row.name || row.Supplier;
       const sEqs = (SEED.records.equipment || []).filter(e => normOwnerName(e.supplier) === normOwnerName(sName));
@@ -41530,6 +41733,10 @@
       addGrid('sg_c_rules', `Price Agreements (${name})`, 'Price Rules', 'Price Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.customer) === norm(name) && !isCommRule(r)), ['company', 'rule_type', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
       addGrid('sg_c_cred', `Credit Terms & Limits (${name})`, 'Credit Terms', 'Credit Terms', 'credit_terms', (rec.credit_terms || []).filter(c => norm(c.customer) === norm(name)), ['name', 'company', 'credit_days', 'credit_limit', 'start_date', 'end_date', 'notes'], 'credit_limit');
       addGrid('sg_c_vat', `VAT 11% Tax Invoices (${name})`, 'VAT Invoices', 'VAT Invoices', 'vat_invoices', (rec.vat_invoices || []).filter(v => norm(v.customer) === norm(name)), ['invoice_no', 'date', 'company', 'start_date', 'end_date', 'net_amount', 'vat_amount', 'total_ttc'], 'total_ttc');
+      const custEqs = (rec.equipment || []).filter(e => normOwnerName(e.supplier) === normOwnerName(name));
+      const custDrvs = (rec.drivers || []).filter(d => normOwnerName(d.truck_owner) === normOwnerName(name));
+      if (custEqs.length) addGrid('sg_c_eq', `Registered Trucks & Equipment (${name})`, 'Trucks', 'Trucks & Equipment', 'equipment', custEqs, ['name', 'plate_no', 'type', 'ownership', 'capacity', 'default_driver'], 'capacity');
+      if (custDrvs.length) addGrid('sg_c_drv', `Registered Drivers (${name})`, 'Drivers', 'Drivers', 'drivers', custDrvs, ['name', 'truck', 'phone', 'truck_owner', 'notes'], null);
     }
     else if (key === 'suppliers') {
       const name = row.name || row.Supplier;
@@ -42330,13 +42537,13 @@
       equipment: [
         { key: 'effective_from', label: 'Effective From Date', type: 'date', sec: 2, getVal: () => todayISO(), drawerOnly: true },
         { key: 'effective_to', label: 'Effective To Date (Blank = Permanent)', type: 'date', sec: 2, getVal: () => '', drawerOnly: true },
-        { key: 'name', label: 'Unit Code / Callsign *', type: 'text', sec: 1 },
-        { key: 'plate_no', label: 'License Plate No.', type: 'text', sec: 2, getVal: r => r.plate_no ?? (targetEqRow && targetEqRow.plate_no) ?? '' },
+        { key: 'name', label: 'Unit Code *', type: 'text', sec: 1 },
+        { key: 'plate_no', label: 'Plate Number', type: 'text', sec: 2, getVal: r => r.plate_no ?? (targetEqRow && targetEqRow.plate_no) ?? '' },
         { key: 'type', label: 'Equipment Category *', type: 'select', options: ['Truck', 'Mixer', 'Wheel Loader', 'Excavator', 'Bulldozer', 'Crusher', 'Generator', 'Vehicle', 'Plant', 'Other'], sec: 1 },
-        { key: 'ownership', label: 'Ownership *', type: 'select', options: [['Own', 'Company Owned'], ['Third Party', 'Third-Party Hauler'], ['Rented', 'Rented']], sec: 2 },
+        { key: 'ownership', label: 'Ownership *', type: 'select', options: [['Own', 'Company Owned'], ['Third Party', 'Third-Party Hauler'], ['Customer', 'Customer Truck'], ['Rented', 'Rented']], sec: 2 },
         { key: 'capacity', label: 'Box Capacity (m³)', type: 'number', step: '0.5', min: '0', sec: 2, getVal: r => r.capacity ?? (targetEqRow && targetEqRow.capacity) ?? '' },
-        { key: 'supplier', label: 'Truck Owner (Supplier)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2, getVal: r => r.supplier ?? (targetEqRow && targetEqRow.supplier) ?? '' },
-        { key: 'default_driver', label: 'Active / Default Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2, getVal: r => r.default_driver ?? (targetEqRow && targetEqRow.default_driver) ?? '' },
+        { key: 'supplier', label: 'Truck Owner', type: 'combo', dl: 'dl_insp_suppliers', sec: 2, getVal: r => r.supplier ?? (targetEqRow && targetEqRow.supplier) ?? '' },
+        { key: 'default_driver', label: 'Active Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2, getVal: r => r.default_driver ?? (targetEqRow && targetEqRow.default_driver) ?? '' },
         { key: 'model', label: 'Make & Model', type: 'text', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
@@ -42344,10 +42551,10 @@
         { key: 'effective_from', label: 'Effective From Date', type: 'date', sec: 2, getVal: () => todayISO(), drawerOnly: true },
         { key: 'effective_to', label: 'Effective To Date (Blank = Permanent)', type: 'date', sec: 2, getVal: () => '', drawerOnly: true },
         { key: 'equipment', label: 'Equipment / Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
-        { key: 'ownership', label: 'Ownership *', type: 'select', options: [['Own', 'Company Owned'], ['Third Party', 'Third-Party Hauler'], ['Rented', 'Rented']], sec: 2 },
+        { key: 'ownership', label: 'Ownership *', type: 'select', options: [['Own', 'Company Owned'], ['Third Party', 'Third-Party Hauler'], ['Customer', 'Customer Truck'], ['Rented', 'Rented']], sec: 2 },
         { key: 'status', label: 'Operational Status *', type: 'select', options: ['Active', 'Under repair', 'Defect — Needs Part', 'Idle', 'Sold / retired'], sec: 1 },
         { key: 'capacity', label: 'Box Capacity (m³)', type: 'number', step: '0.5', min: '0', sec: 2, getVal: r => r.capacity ?? (targetEqRow && targetEqRow.capacity) ?? '' },
-        { key: 'supplier', label: 'Truck Owner (Supplier)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2, getVal: r => r.supplier ?? (targetEqRow && targetEqRow.supplier) ?? '' },
+        { key: 'supplier', label: 'Truck Owner', type: 'combo', dl: 'dl_insp_suppliers', sec: 2, getVal: r => r.supplier ?? (targetEqRow && targetEqRow.supplier) ?? '' },
         { key: 'default_driver', label: 'Default Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2, getVal: r => r.default_driver ?? (targetEqRow && targetEqRow.default_driver) ?? '' },
         { key: 'day_operator', label: 'Day Shift Operator', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
         { key: 'night_operator', label: 'Night Shift Operator', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
@@ -42823,7 +43030,7 @@
       const v = valOverride !== undefined ? valOverride : (fDef && typeof fDef.getVal === 'function' ? fDef.getVal(row) : row[k]);
       const formatted = inspectorValue(k, v);
       const isEmpty = formatted === '—';
-      const lkTarget = (k === 'origin_ticket_no') ? (row.origin_ticket_kind === 'raw' ? 'raw_purchases' : 'sales_tickets') : ((k === 'type' && key !== 'products') ? null : (k === 'linked_part_log' && /^REP-/i.test(String(v || '')) ? 'equipment_repairs' : INSPECT_LOOKUP_FIELD_TARGET[k]));
+      const lkTarget = (k === 'origin_ticket_no') ? (row.origin_ticket_kind === 'raw' ? 'raw_purchases' : 'sales_tickets') : ((k === 'type' && key !== 'products') ? null : (k === 'linked_part_log' && /^REP-/i.test(String(v || '')) ? 'equipment_repairs' : ((k === 'truck_owner' || (k === 'supplier' && (key === 'equipment' || key === 'company_equipment'))) ? resolveTruckOwnerTarget(v, row) : INSPECT_LOOKUP_FIELD_TARGET[k])));
       const canLink = lkTarget && lkTarget !== key && v != null && v !== '' && !isEmpty;
       const roLabels = key === 'gl_accounts' ? {
         code: 'GL Code', name: 'GL Account', pcg_class: 'CoA Class', automation_mode: 'Automation Mode',
@@ -42909,7 +43116,7 @@
                       if (isMoney && v != null && v !== '') txt = fmtUSD(v, 2);
                       else if (isNum && v != null && v !== '') txt = fmtNum(v, /qty|capacity|percentage/.test(c) ? 2 : 0);
                       else if (/date/.test(c) && v) txt = fmtDateDMY(v);
-                      const lk = (c === 'linked_part_log' && /^REP-/i.test(String(v || ''))) ? 'equipment_repairs' : INSPECT_LOOKUP_FIELD_TARGET[c];
+                      const lk = (c === 'linked_part_log' && /^REP-/i.test(String(v || ''))) ? 'equipment_repairs' : ((c === 'truck_owner' || (c === 'supplier' && (sg.targetKey === 'equipment' || sg.targetKey === 'company_equipment'))) ? resolveTruckOwnerTarget(v, r) : INSPECT_LOOKUP_FIELD_TARGET[c]);
                       const cellHtml = (lk && lk !== sg.targetKey && v != null && v !== '' && txt !== '—')
                         ? `<span class="rel-link" data-rel-key="${esc(lk)}" data-rel-val="${esc(v)}">${esc(txt)}<span class="rel-arr">↗</span></span>`
                         : esc(txt);
@@ -43015,7 +43222,14 @@
         .concat(((SEED.records && SEED.records.sites) || []).map(s => s.region))
         .concat(((SEED.records && SEED.records.customers) || []).map(c => c.address || c.region))
         .concat(((SEED.records && SEED.records.suppliers) || []).map(s => s.location || s.region))
-        .concat(['Beirut', 'Mount Lebanon', 'South Lebanon', 'Nabatieh', 'Bekaa', 'North Lebanon', 'Chouf', 'Saida', 'Tyre', 'Baabda', 'Metn', 'Keserwan', 'Aley'])
+        .concat([
+          'Beirut', 'Mount Lebanon', 'South Lebanon', 'Nabatieh', 'Bekaa', 'North Lebanon',
+          'Chouf', 'Saida', 'Tyre', 'Baabda', 'Metn', 'Keserwan', 'Aley', 'Jbeil', 'Batroun', 'Chekka',
+          'Tripoli', 'Koura', 'Zgharta', 'Akkar', 'Zahle', 'Chtaura', 'West Bekaa', 'Rachaiya',
+          'Baalbek', 'Hermel', 'Jezzine', 'Bint Jbeil', 'Marjayoun', 'Hasbaya', 'Jounieh', 'Zouk Mosbeh',
+          'Dbayeh', 'Antelias', 'Zalka', 'Broummana', 'Choueifat', 'Khaldeh', 'Damour', 'Sin El Fil',
+          'Hazmieh', 'Hadath', 'Ghaziyeh', 'Sarafand', 'Dekwaneh', 'Jiyeh', 'Sibline', 'Borj Hammoud', 'Aawkar', 'Halat'
+        ])
     );
     const inspSubcats = uniqSorted(
       ((SEED.records && SEED.records.expense_subcategories) || []).map(sc => sc.name)
@@ -43040,7 +43254,7 @@
               ? domainProductMetaItems('comm', inspRowCo)
               : (isSalesInsp ? domainProductMetaItems('sales', inspRowCo) : domainProductMetaItems('', inspRowCo))));
     const inspSiteNames = siteNames(isRawInsp ? 'raw' : (isSalesInsp ? 'sales' : undefined));
-    const inspSupplierNames = supplierNames(isRawInsp ? 'raw_owner' : (key === 'expenses' ? 'expense' : undefined));
+    const inspSupplierNames = (key === 'equipment' || key === 'company_equipment' || key === 'drivers' || key === 'company_drivers') ? uniqSorted(truckOwnerNames().concat(supplierNames(), customerNames())) : supplierNames(isRawInsp ? 'raw_owner' : (key === 'expenses' ? 'expense' : undefined));
     const inspParts = uniqSorted(
       ((SEED.records && SEED.records.part_movements) || []).map(p => p.part_name)
         .concat(((SEED.records && SEED.records.equipment_defects) || []).map(d => d.part_name))
@@ -43305,7 +43519,7 @@
                 <input type="date" id="insp_tw_end" value="">
               </div>
               <div class="form-field">
-                <label for="insp_tw_own">Truck Owner (Supplier)</label>
+                <label for="insp_tw_own">Truck Owner</label>
                 <input type="text" id="insp_tw_own" list="dl_insp_suppliers" value="${esc(targetEqRow.supplier || '')}" placeholder="e.g. Hussein Bdeir, Karim Bdeir, WTC" autocomplete="off">
               </div>
               <div class="form-field">
@@ -43345,7 +43559,7 @@
                       <td class="mono">${esc(w.s || '2024-01-01')}</td>
                       <td class="mono">${esc(w.e || 'Open')}</td>
                       <td class="r"><strong>${fmtNum(w.cap, 1)} m³</strong></td>
-                      <td>${w.own ? relLink('suppliers', w.own, w.own, true) : '—'}</td>
+                      <td>${w.own ? relLink(resolveTruckOwnerTarget(w.own, targetEqRow), w.own, w.own, true) : '—'}</td>
                       <td>${w.drv ? relLink('drivers', w.drv, w.drv) : '—'}</td>
                       <td>${w.cust || w.site ? `<span class="badge badge-brass">${esc(scopeLbl)}</span>` : `<span class="mu">${esc(scopeLbl)}</span>`}</td>
                       <td><span class="badge ${isOpen ? 'badge-ok' : 'badge-neutral'}">${isOpen ? 'Active' : 'Historical'}</span></td>
@@ -43894,6 +44108,26 @@
           if (dup) {
             toast(`Duplicate ${key === 'sites' ? formatSiteCategoryLabel(candidate) : UNIVERSAL_MAIN_SPEC[key].label} "${mainVal}" already exists · modification blocked.`, 'err');
             return;
+          }
+          if (key === 'sites' && window.MFG_GEO && typeof window.MFG_GEO.validateSiteInsideRegion === 'function') {
+            const checkCoords = ('latitude' in pendingUpdates) || ('longitude' in pendingUpdates) || !('region' in pendingUpdates);
+            const geoCheck = window.MFG_GEO.validateSiteInsideRegion({
+              siteName: candidate.name,
+              regionName: candidate.region,
+              lat: checkCoords ? candidate.latitude : null,
+              lng: checkCoords ? candidate.longitude : null
+            }, SEED);
+            if (!geoCheck.ok) {
+              toast(geoCheck.reason, 'err');
+              return;
+            }
+            if ('region' in pendingUpdates && !('latitude' in pendingUpdates) && !('longitude' in pendingUpdates)) {
+              pendingUpdates.latitude = geoCheck.lat;
+              pendingUpdates.longitude = geoCheck.lng;
+            }
+            if (typeof window.MFG_GEO.ensureRegionInSeed === 'function' && candidate.region) {
+              window.MFG_GEO.ensureRegionInSeed(candidate.region, SEED, STATE);
+            }
           }
         }
         const origRowSnap = Object.assign({}, row);
@@ -44746,6 +44980,11 @@
       const k = norm(d.name || d.driver);
       if (k && !drvByName.has(k)) drvByName.set(k, d);
     });
+    const custByName = new Map();
+    (SEED.records.customers || []).forEach(c => {
+      const k = norm(c.name);
+      if (k && !custByName.has(k)) custByName.set(k, c);
+    });
     const supByName = new Map();
     (SEED.records.suppliers || []).forEach(s => {
       const k = norm(s.name);
@@ -44780,7 +45019,10 @@
         }
       }
       if (!isOwn && e.supplier) {
-        const sup = supByName.get(norm(e.supplier));
+        const isCustOwn = /^customer/i.test(e.ownership || '');
+        const supMatch = supByName.get(norm(e.supplier));
+        const custMatch = custByName.get(norm(e.supplier));
+        const sup = (isCustOwn && custMatch) ? custMatch : (supMatch || custMatch);
         if (sup) {
           if (!Array.isArray(sup.trucks)) sup.trucks = [];
           if (!sup.trucks.some(t => norm(t) === norm(e.name))) sup.trucks.push(e.name);
@@ -44837,7 +45079,7 @@
       const dName = d.name || d.driver;
       if (!dName) return;
       if (d.truck_owner) {
-        const sup = supByName.get(norm(d.truck_owner));
+        const sup = supByName.get(norm(d.truck_owner)) || custByName.get(norm(d.truck_owner));
         if (sup) {
           if (!Array.isArray(sup.drivers)) sup.drivers = [];
           if (!sup.drivers.some(dn => norm(dn) === norm(dName))) sup.drivers.push(dName);
