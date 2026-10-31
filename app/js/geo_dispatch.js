@@ -2999,9 +2999,11 @@
     const nowIso = new Date().toISOString();
 
     const sites = (SEED.records && SEED.records.sites) || [];
-    let row = (explicitSiteId && sites.find(s => s && !s.voided && String(s.id || '') === explicitSiteId))
-      || (normCat && sites.find(s => s && !s.voided && norm(s.name) === nk && resolveGeoSiteCat(s) === normCat))
-      || (!normCat ? sites.find(s => s && !s.voided && norm(s.name) === nk) : null);
+    const customSites = (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.sites)) ? STATE.customRecords.sites : [];
+    const pool = sites.concat(customSites);
+    let row = (explicitSiteId && pool.find(s => s && !s.voided && String(s.id || '') === explicitSiteId))
+      || (normCat && pool.find(s => s && !s.voided && norm(s.name) === nk && resolveGeoSiteCat(s) === normCat))
+      || (!normCat ? pool.find(s => s && !s.voided && norm(s.name) === nk) : null);
     const effCat = normCat || (row ? resolveGeoSiteCat(row) : 'supplier');
 
     GEO_STORE.sites[`${effCat}:${nk}`] = { name: cleanName, site_category: effCat, latitude: nLat, longitude: nLng, region, updated_at: nowIso };
