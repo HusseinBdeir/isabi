@@ -4592,7 +4592,7 @@
         </div>
 
         <!-- 5-Domain Grouped Analytical Navigation Deck -->
-        <div class="pbi-page-strip" role="tablist" aria-label="Analytics &amp; Insights Pages">
+        <div class="pbi-page-strip ${pbiCatalogCollapsed ? 'is-collapsed' : ''} ${domainGroups.length < 5 ? 'has-filtered-pod' : ''}" role="tablist" aria-label="Analytics &amp; Insights Pages">
           ${domainGroups.map(grp => `
             <div class="pbi-domain-pod ${grp.pages.some(p => p.id === activePageId) ? 'is-active-pod' : ''}" data-pbi-domain="${esc(grp.name)}">
               <div class="pbi-domain-pod-hdr" data-pbi-domain-jump="${esc(grp.pages[0].id)}">
@@ -4603,7 +4603,7 @@
                 ${grp.pages.map(p => `
                   <button type="button" class="pbi-page-tab ${p.id === activePageId ? 'active' : ''}" data-pbi-page="${esc(p.id)}" role="tab" aria-selected="${p.id === activePageId}">
                     <span class="pbi-page-num">${esc(p.num)}</span>
-                    <span>${esc(p.label)}</span>
+                    <span class="pbi-page-lbl">${esc(p.label)}</span>
                   </button>
                 `).join('')}
               </div>
@@ -4612,7 +4612,7 @@
         </div>
 
         <!-- Page-Specific Slicer Tray -->
-        <div class="pbi-slicer-wrap">
+        <div class="pbi-slicer-wrap ${pbiSlicersCollapsed ? 'is-collapsed' : ''}">
           <div class="pbi-slicer-meta sr-only">
             <span>Page ${esc(activePage.num)} Slicers · <b>${esc(activePage.label)}</b></span>
             <span>Period: <b>${esc(activeRange ? activeRange.label : 'All-Time (2024–2030)')}</b> · Basis: <b>${STATE.basis === 'rep' ? 'Reporting Date' : 'Transaction Date'}</b></span>
@@ -8183,6 +8183,38 @@
     document.addEventListener('click', e => {
       const t = e.target;
       if (!t || typeof t.closest !== 'function') return;
+
+      // 0. Toggle Pages Catalog or Filters drawer in #pbi
+      const toggleCat = t.closest('#pbiToggleCatalogBtn');
+      if (toggleCat) {
+        const hdr = toggleCat.closest('.pbi-studio-hdr');
+        const strip = hdr && hdr.querySelector('.pbi-page-strip');
+        if (strip) {
+          const nextCollapsed = !strip.classList.contains('is-collapsed');
+          strip.classList.toggle('is-collapsed', nextCollapsed);
+          toggleCat.classList.toggle('active', !nextCollapsed);
+          const caret = toggleCat.querySelector('.pbi-dt-caret');
+          if (caret) caret.textContent = nextCollapsed ? '▸' : '▾';
+          window.__pbiCatalogCollapsed = nextCollapsed;
+          if (window.STATE) window.STATE.pbiCatalogCollapsed = nextCollapsed;
+        }
+        return;
+      }
+      const toggleSlicers = t.closest('#pbiToggleSlicersBtn');
+      if (toggleSlicers) {
+        const hdr = toggleSlicers.closest('.pbi-studio-hdr');
+        const wrap = hdr && hdr.querySelector('.pbi-slicer-wrap');
+        if (wrap) {
+          const nextCollapsed = !wrap.classList.contains('is-collapsed');
+          wrap.classList.toggle('is-collapsed', nextCollapsed);
+          toggleSlicers.classList.toggle('active', !nextCollapsed);
+          const caret = toggleSlicers.querySelector('.pbi-dt-caret');
+          if (caret) caret.textContent = nextCollapsed ? '▸' : '▾';
+          window.__pbiSlicersCollapsed = nextCollapsed;
+          if (window.STATE) window.STATE.pbiSlicersCollapsed = nextCollapsed;
+        }
+        return;
+      }
 
       // 1. Prev / Next page stepper or domain pod header jump
       const stepBtn = t.closest('[data-pbi-step-target], [data-pbi-domain-jump]');

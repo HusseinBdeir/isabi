@@ -1262,7 +1262,6 @@
       }
     });
 
-    const L = CO_LEGAL[ctx.co] || CO_LEGAL.WTC;
     return `
       <div class="rdl-param-bar ${ctx.rdl.paramsOpen ? '' : 'collapsed'}" id="rdlParamBar">
         <div class="rdl-param-fields">
@@ -1271,10 +1270,6 @@
             <button type="button" class="rdl-view-btn" id="rdlViewReportBtn">View report</button>
             <button type="button" class="rdl-reset-btn" id="rdlResetParamsBtn" aria-label="Reset report parameters to defaults">Reset</button>
           </div>
-        </div>
-        <div class="rdl-param-meta">
-          <span class="rdl-param-scope-badge">${esc(L.short)} · ${ctx.basis === 'rep' ? 'Rep Date' : 'Tx Date'}</span>
-          <span class="rdl-param-search-tip">Type any name, # or date in the selector to filter</span>
         </div>
       </div>
     `;
@@ -3134,7 +3129,7 @@
     return filtered.length ? filtered : RDL_CATALOG;
   }
 
-  const RDL_GROUP_ORDER = ['Digest', 'Statements', 'General Ledger', 'Tax & Recon', 'Documents', 'Registers', 'Counterparties'];
+  const RDL_GROUP_ORDER = ['Digest', 'Statements', 'General Ledger', 'Registers', 'Tax & Recon', 'Counterparties', 'Documents'];
 
   function renderStatementsView(SEED, STATE) {
     const ctx = buildRdlContext(SEED, STATE);
@@ -3142,7 +3137,6 @@
     const activeId = String(STATE.activeStatement || '01').padStart(2, '0');
     const meta = catalog.find(x => x.id === activeId) || catalog[0];
     STATE.activeStatement = meta.id;
-    const L = CO_LEGAL[ctx.co] || CO_LEGAL.WTC;
     const q = (ctx.rdl.search || '').trim().toLowerCase();
     const visibleCats = RDL_CATEGORIES.filter(c => c === 'All' || catalog.some(r => r.cat === c));
     const cat = visibleCats.includes(ctx.rdl.cat) ? ctx.rdl.cat : 'All';
@@ -3154,6 +3148,7 @@
     });
 
     const orderedGroups = RDL_GROUP_ORDER.filter(c => catalog.some(r => r.cat === c));
+    const isFilteredDeck = Boolean(q || cat !== 'All' || orderedGroups.length < 7);
 
     return `
       <div class="rdl-suite-wrap">
@@ -3171,13 +3166,13 @@
             </div>
             <div class="rdl-tb-right">
               <div class="rdl-search-wrap">
-                <input type="search" class="rdl-search-input" id="rdlSearchInput" placeholder="Search ${catalog.length} reports..." value="${esc(ctx.rdl.search || '')}" aria-label="Filter ${catalog.length} reports" />
+                <input type="search" class="rdl-search-input" id="rdlSearchInput" placeholder="Filter ${catalog.length} reports..." value="${esc(ctx.rdl.search || '')}" aria-label="Filter ${catalog.length} reports" />
               </div>
               <button type="button" class="rdl-tb-btn rdl-catalog-toggle ${!catalogCollapsed ? 'active' : ''}" id="rdlToggleCatalogBtn" aria-label="Toggle report catalog">
-                ${catalogCollapsed ? '▷' : '▽'} Catalog (${catalog.length})
+                <span class="rdl-tb-caret">${catalogCollapsed ? '▸' : '▾'}</span> Catalog (${catalog.length})
               </button>
               <button type="button" class="rdl-tb-btn rdl-param-toggle ${ctx.rdl.paramsOpen ? 'active' : ''}" id="rdlToggleParamsBtn">
-                ${ctx.rdl.paramsOpen ? '▽' : '▷'} Parameters
+                <span class="rdl-tb-caret">${ctx.rdl.paramsOpen ? '▾' : '▸'}</span> Parameters
               </button>
               <span class="rdl-tb-divider"></span>
               <button type="button" class="rdl-tb-btn" id="printStmtBtn" aria-label="Print or Save as PDF">${ic('printer')} Print / PDF</button>
@@ -3186,7 +3181,7 @@
           </div>
 
           <div class="rdl-tab-bar no-print ${catalogCollapsed ? 'is-collapsed' : ''}" role="tablist" aria-label="${catalog.length} Paginated Reports">
-            <div class="rdl-cats" role="tablist" aria-label="Report categories">
+            <div class="rdl-cats sr-only" role="tablist" aria-label="Report categories">
               <span class="rdl-cats-lbl">DOMAIN FILTER</span>
               ${visibleCats.map(c => `
                 <button type="button" class="rdl-cat-btn ${cat === c ? 'active' : ''}" data-rdl-cat="${esc(c)}">
@@ -3196,7 +3191,7 @@
               `).join('')}
             </div>
 
-            <div class="rdl-grouped-pods">
+            <div class="rdl-grouped-pods ${isFilteredDeck ? 'has-filtered-pod' : ''}">
               ${orderedGroups.map(grpCat => {
                 const grpItems = catalog.filter(r => r.cat === grpCat);
                 const hasActive = grpItems.some(r => r.id === meta.id);
@@ -3332,6 +3327,11 @@
           const tabBar = root.querySelector('.rdl-tab-bar');
           if (tabBar) tabBar.classList.remove('is-collapsed');
         }
+        const podsWrap = root.querySelector('.rdl-grouped-pods');
+        if (podsWrap) {
+          const totalPods = root.querySelectorAll('.rdl-group-pod').length;
+          podsWrap.classList.toggle('has-filtered-pod', Boolean(q || cat !== 'All' || totalPods < 7));
+        }
         root.querySelectorAll('.rdl-tab[data-stmt]').forEach(tab => {
           const r = RDL_CATALOG.find(x => x.id === tab.dataset.stmt);
           if (!r) return;
@@ -3400,7 +3400,7 @@
         const catalog = getVisibleRdlCatalog(STATE);
         ctx.rdl.catalogCollapsed = !ctx.rdl.catalogCollapsed;
         toggleCatalogBtn.classList.toggle('active', !ctx.rdl.catalogCollapsed);
-        toggleCatalogBtn.innerHTML = `${ctx.rdl.catalogCollapsed ? '▷' : '▽'} Catalog (${catalog.length})`;
+        toggleCatalogBtn.innerHTML = `<span class="rdl-tb-caret">${ctx.rdl.catalogCollapsed ? '▸' : '▾'}</span> Catalog (${catalog.length})`;
         const tabBar = root.querySelector('.rdl-tab-bar');
         if (tabBar) tabBar.classList.toggle('is-collapsed', Boolean(ctx.rdl.catalogCollapsed));
       });
@@ -3412,7 +3412,7 @@
       toggleParamsBtn.addEventListener('click', () => {
         ctx.rdl.paramsOpen = !ctx.rdl.paramsOpen;
         toggleParamsBtn.classList.toggle('active', ctx.rdl.paramsOpen);
-        toggleParamsBtn.innerHTML = `${ctx.rdl.paramsOpen ? '▽' : '▷'} Parameters`;
+        toggleParamsBtn.innerHTML = `<span class="rdl-tb-caret">${ctx.rdl.paramsOpen ? '▾' : '▸'}</span> Parameters`;
         const bar = root.querySelector('#rdlParamBar');
         if (bar) bar.classList.toggle('collapsed', !ctx.rdl.paramsOpen);
       });
