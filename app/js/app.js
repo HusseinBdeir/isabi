@@ -31625,7 +31625,7 @@
       const initShowEq = Boolean(pendEditRow || expEqVal);
       return cockpitHtml + `
         ${adminHeaderHtml}
-        ${pendEditRow ? `<div class="exp-complete-pending-banner" id="expCompletePendingBanner"><span>${ic('lock')} Delivery fields on <b>${esc(pendEditRow.name || pendEditRow.id)}</b> are locked. Enter the final supplier invoice <b>Amount ($)</b>${!expRefVal ? ' and <b>Reference / Invoice</b>' : ''} below.</span></div>` : ''}
+        ${pendEditRow ? `<div class="exp-complete-pending-banner" id="expCompletePendingBanner"><span>${ic('lock')} Delivery fields on <b>${esc(pendEditRow.name || pendEditRow.id)}</b> are locked. Enter the final supplier invoice <b>Amount ($)</b>${!expRefVal ? ' and <b>Reference</b>' : ''} below.</span></div>` : ''}
         <input type="hidden" id="f_price_pending" value="0">
         <input type="hidden" id="f_for_equipment" value="${expEqVal ? '1' : '0'}">
         <input type="hidden" id="f_store_warehouse" value="0">
@@ -31652,7 +31652,7 @@
             hint: '',
             afterHtml: pendEditRow ? '' : `<div class="exp-price-mode-bar" id="expPriceModePills" role="group" aria-label="Invoice price availability"><button type="button" class="uom-qpill active" data-exp-price-mode="priced">Enter Price ($)</button><button type="button" class="uom-qpill" data-exp-price-mode="pending">Price Pending ($0)</button></div>`
           })}
-          ${fld('Reference / Invoice', inp('f_reference', 'text', expRefVal, pendEditRow ? 'placeholder="Enter supplier invoice #..."' : ''), { id: 'wrap_f_reference' })}
+          ${fld('Reference', inp('f_reference', 'text', expRefVal, pendEditRow ? 'placeholder="Enter supplier invoice #..."' : ''), { id: 'wrap_f_reference' })}
           ${expNotesField}
         </div>
         ${pendEditRow ? '' : `
@@ -46010,7 +46010,7 @@
         { key: 'equipment', label: 'Equipment (cost centre)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'qty', label: 'Quantity', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'amount', label: 'Amount ($) *', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'reference', label: 'Reference / Invoice', type: 'text', sec: 3 },
+        { key: 'reference', label: 'Reference', type: 'text', sec: 3 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true },
         { key: 'price_pending', label: 'Awaiting Invoice Price ($0 Pending)', type: 'bool', sec: 3, getVal: r => Boolean(isPendingPriceExpense(r)) }
       ],
