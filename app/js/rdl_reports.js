@@ -3600,13 +3600,19 @@
         };
 
         inp.addEventListener('focus', () => enterSearchMode(false));
+        let openedOnMousedown = false;
         inp.addEventListener('mousedown', () => {
           clearTimeout(blurTimer);
+          openedOnMousedown = menu.hidden;
         });
         inp.addEventListener('click', () => {
           clearTimeout(blurTimer);
-          const hasSelection = typeof inp.selectionStart === 'number' && typeof inp.selectionEnd === 'number' && inp.selectionEnd > inp.selectionStart;
-          if (hasSelection) {
+          const justOpened = openedOnMousedown;
+          openedOnMousedown = false;
+          const selLen = (typeof inp.selectionStart === 'number' && typeof inp.selectionEnd === 'number')
+            ? (inp.selectionEnd - inp.selectionStart)
+            : 0;
+          if (selLen >= 2 || (selLen > 0 && !justOpened)) {
             if (!menu.hidden) {
               menu.hidden = true;
               wrap.classList.remove('open');

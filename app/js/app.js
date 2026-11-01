@@ -36105,24 +36105,35 @@
           if (trType === 'loan' || trType === 'loan_settlement') {
             // Compute open loan balances by side (Company lends vs Company borrows) for the selected counterparty
             let cpLentPrincipal = 0, cpLentSettled = 0, cpBorrowPrincipal = 0, cpBorrowSettled = 0;
-            if (cpStem) {
-              const seenLIds = new Set();
-              const allLoans = ((STATE.customRecords && STATE.customRecords.loans) || []).concat((SEED.records && SEED.records.loans) || []);
-              allLoans.forEach(r => {
-                if (!r || r.voided || isSelfEditingRow(r, 'loans')) return;
-                if (r.id && seenLIds.has(String(r.id))) return;
-                if (r.id) seenLIds.add(String(r.id));
-                const isB = /^company\s+borrows$/i.test(String(r.direction || '')) ||
-                  (r.borrower && norm(r.borrower) === norm(r.company) && norm(r.lender || r.counterparty || '') !== norm(r.company));
-                const pName = isB ? (r.lender || r.counterparty || r.borrower || '') : (r.borrower || r.counterparty || r.lender || '');
-                const pStem = normStaffStem(pName) || norm(pName);
-                if (pStem !== cpStem && norm(pName) !== norm(cp)) return;
-                const pr = Math.abs(Number(r.principal || r.amount || 0));
-                const st = Math.abs(Number(r.settled_amount || 0));
-                if (isB) { cpBorrowPrincipal += pr; cpBorrowSettled += st; }
-                else { cpLentPrincipal += pr; cpLentSettled += st; }
-              });
-            }
+            const tgtLoanVal = val('f_target_loan');
+            let targetLoanMeta = null;
+            const seenLIds = new Set();
+            const allLoans = ((STATE.customRecords && STATE.customRecords.loans) || []).concat((SEED.records && SEED.records.loans) || []);
+            allLoans.forEach(r => {
+              if (!r || r.voided || isSelfEditingRow(r, 'loans')) return;
+              if (r.id && seenLIds.has(String(r.id))) return;
+              if (r.id) seenLIds.add(String(r.id));
+              const isB = /^company\s+borrows$/i.test(String(r.direction || '')) ||
+                (r.borrower && norm(r.borrower) === norm(r.company) && norm(r.lender || r.counterparty || '') !== norm(r.company));
+              const pName = isB ? (r.lender || r.counterparty || r.borrower || '') : (r.borrower || r.counterparty || r.lender || '');
+              const pStem = normStaffStem(pName) || norm(pName);
+              const pr = Math.abs(Number(r.principal || r.amount || 0));
+              const st = Math.abs(Number(r.settled_amount || 0));
+              if (tgtLoanVal && norm(r.name || '') === norm(tgtLoanVal)) {
+                targetLoanMeta = {
+                  name: r.name || tgtLoanVal,
+                  date: r.start_date || r.date || '',
+                  party: pName || cp || 'Counterparty',
+                  side: isB ? 'Company borrows' : 'Company lends',
+                  principal: round2(pr),
+                  settled: round2(st),
+                  openAmt: Math.max(0, round2(pr - st))
+                };
+              }
+              if (!cpStem || (pStem !== cpStem && norm(pName) !== norm(cp))) return;
+              if (isB) { cpBorrowPrincipal += pr; cpBorrowSettled += st; }
+              else { cpLentPrincipal += pr; cpLentSettled += st; }
+            });
             const openLent = Math.max(0, round2(cpLentPrincipal - cpLentSettled));
             const openBorrowed = Math.max(0, round2(cpBorrowPrincipal - cpBorrowSettled));
 
@@ -36162,12 +36173,46 @@
                 btn.setAttribute('aria-selected', isAct ? 'true' : 'false');
               });
             }
+
+            const flowLends = $('loanSideFlowLends');
+            if (flowLends) {
+              flowLends.innerHTML = trType === 'loan_settlement'
+                ? `<span class="loan-flow-node">Borrower</span><span class="loan-flow-pill is-in">+$ Cash Inflow</span><span class="loan-flow-node">Company Till</span>`
+                : `<span class="loan-flow-node">Company Till</span><span class="loan-flow-pill is-out">-$ Cash Outflow</span><span class="loan-flow-node">Borrower</span>`;
+            }
+            const subLends = $('loanSideSubLends');
+            if (subLends) {
+              subLends.textContent = trType === 'loan_settlement'
+                ? 'Borrower pays back what they owe us (Cash Inflow to Till)'
+                : 'Staff, partner, or entity borrows from us (Owed to Company)';
+            }
+            const flowBorrows = $('loanSideFlowBorrows');
+            if (flowBorrows) {
+              flowBorrows.innerHTML = trType === 'loan_settlement'
+                ? `<span class="loan-flow-node">Company Till</span><span class="loan-flow-pill is-out">-$ Cash Outflow</span><span class="loan-flow-node">Lender</span>`
+                : `<span class="loan-flow-node">Lender</span><span class="loan-flow-pill is-in">+$ Cash Inflow</span><span class="loan-flow-node">Company Till</span>`;
+            }
+            const subBorrows = $('loanSideSubBorrows');
+            if (subBorrows) {
+              subBorrows.textContent = trType === 'loan_settlement'
+                ? 'Company repays lender for a borrowed loan (Cash Outflow)'
+                : 'Partner, bank, or entity lends to us (Company Owes Lender)';
+            }
+
             const impactBadge = $('loanCashImpactBadge');
             if (impactBadge) {
               impactBadge.className = 'badge ' + (cashDir === 'Inflow' ? 'badge-ok' : 'badge-warn');
               impactBadge.textContent = trType === 'loan_settlement'
                 ? (isBorrowSide ? 'Cash Outflow · Company Repays Lender' : 'Cash Inflow · Borrower Settles Loan')
                 : (isBorrowSide ? 'Cash Inflow · Company Receives Loan' : 'Cash Outflow · Company Gives Loan');
+            }
+            const helperTxt = $('loanModeHelperText');
+            if (helperTxt) {
+              helperTxt.textContent = targetLoanMeta
+                ? `Settling ${targetLoanMeta.name} (${targetLoanMeta.party}) · Open Balance ${fmtUSD(targetLoanMeta.openAmt, 2)}`
+                : (trType === 'loan_settlement'
+                    ? 'Click any open loan in the table below to auto-fill party, direction, and settlement balance.'
+                    : 'Opening a new loan · or click any row in the Open Loans Portfolio below to settle an existing loan.');
             }
             const cpLbl = $('lbl_tr_cp');
             if (cpLbl) {
@@ -36178,6 +36223,9 @@
 
             const loanSubWrap = $('paLoanSubgridWrap');
             if (loanSubWrap && window.MFG_FORMS && typeof window.MFG_FORMS.renderOpenLoansSubgrid === 'function') {
+              const wasSearchFocused = document.activeElement && document.activeElement.id === 'openLoansSearchInput';
+              const prevSelStart = wasSearchFocused ? document.activeElement.selectionStart : null;
+              const prevSelEnd = wasSearchFocused ? document.activeElement.selectionEnd : null;
               loanSubWrap.innerHTML = window.MFG_FORMS.renderOpenLoansSubgrid(
                 { SEED, STATE },
                 val('f_company') || defaultEntryCompany(),
@@ -36185,18 +36233,114 @@
                 trType,
                 loanSide,
                 thisPay,
-                val('f_target_loan'),
-                FORM_UI.openLoanTab
+                tgtLoanVal,
+                FORM_UI.openLoanTab,
+                FORM_UI.openLoanSearch || ''
               );
+              if (wasSearchFocused) {
+                const newSInp = $('openLoansSearchInput');
+                if (newSInp) {
+                  try {
+                    newSInp.focus({ preventScroll: true });
+                    if (prevSelStart != null && prevSelEnd != null) newSInp.setSelectionRange(prevSelStart, prevSelEnd);
+                  } catch (_) {}
+                }
+              }
+              const subEl = $('openLoansCloseSubgrid');
+              if (subEl) {
+                const totCnt = Number(subEl.getAttribute('data-open-total-count') || 0);
+                const lCnt = Number(subEl.getAttribute('data-open-lent-count') || 0);
+                const lUsd = Number(subEl.getAttribute('data-open-lent-usd') || 0);
+                const bCnt = Number(subEl.getAttribute('data-open-borrowed-count') || 0);
+                const bUsd = Number(subEl.getAttribute('data-open-borrowed-usd') || 0);
+                if ($('loanSettleOpenCountBadge')) $('loanSettleOpenCountBadge').textContent = `${totCnt} Open`;
+                if ($('loanSideBadgeLends')) $('loanSideBadgeLends').textContent = `${lCnt} Open · ${fmtUSD(lUsd, 0)}`;
+                if ($('loanSideBadgeBorrows')) $('loanSideBadgeBorrows').textContent = `${bCnt} Open · ${fmtUSD(bUsd, 0)}`;
+              }
             }
 
             const rawOpenBefore = loanPos ? round2(loanPos.principal - loanPos.settled) : 0;
             const sideOpenBefore = isBorrowSide ? openBorrowed : openLent;
-            const openBefore = sideOpenBefore > 0 ? sideOpenBefore : (rawOpenBefore > 0 ? rawOpenBefore : round2(openLent + openBorrowed));
+            const openBefore = targetLoanMeta
+              ? targetLoanMeta.openAmt
+              : (sideOpenBefore > 0 ? sideOpenBefore : (rawOpenBefore > 0 ? rawOpenBefore : round2(openLent + openBorrowed)));
             const afterOut = trType === 'loan_settlement'
               ? round2(openBefore - thisPay)
               : round2(openBefore + thisPay);
-            const isOverRepay = trType === 'loan_settlement' && (loanPos || openBefore > 0) && afterOut < -0.01;
+            const isOverRepay = trType === 'loan_settlement' && (targetLoanMeta || loanPos || openBefore > 0) && afterOut < -0.01;
+
+            const wbCard = $('selectedLoanSettleCard');
+            if (wbCard) {
+              if (trType === 'loan_settlement' && (targetLoanMeta || (cp && openBefore > 0.01))) {
+                const wbPrinc = targetLoanMeta ? targetLoanMeta.principal : (isBorrowSide ? cpBorrowPrincipal : cpLentPrincipal) || openBefore;
+                const wbPriorSettled = targetLoanMeta ? targetLoanMeta.settled : Math.max(0, round2(wbPrinc - openBefore));
+                const wbOpen = targetLoanMeta ? targetLoanMeta.openAmt : openBefore;
+                const wbNow = Math.max(0, round2(thisPay));
+                const wbRem = Math.max(0, round2(wbOpen - wbNow));
+                const priorPct = wbPrinc > 0 ? Math.min(100, (wbPriorSettled / wbPrinc) * 100) : 0;
+                const nowPct = wbPrinc > 0 ? Math.min(Math.max(0, 100 - priorPct), (wbNow / wbPrinc) * 100) : 0;
+                const isFullClose = wbOpen > 0.01 && Math.abs(wbOpen - wbNow) <= 0.01;
+                wbCard.hidden = false;
+                wbCard.innerHTML = `
+                  <div class="loan-wb-top">
+                    <div class="loan-wb-title-group">
+                      <span class="loan-wb-tag ${isBorrowSide ? 'is-borrow' : 'is-lend'}">${isBorrowSide ? 'We Repay Lender (Outflow)' : 'Borrower Settles Us (Inflow)'}</span>
+                      <strong class="loan-wb-title">${targetLoanMeta ? `Voucher ${esc(targetLoanMeta.name)} · ${esc(targetLoanMeta.party)}` : `${esc((loanPos && loanPos.name) || cp)} · Open Balance Settlement`}</strong>
+                      ${targetLoanMeta && targetLoanMeta.date ? `<span class="loan-wb-date mono">${esc(targetLoanMeta.date)}</span>` : ''}
+                      ${isFullClose ? `<span class="badge badge-ok">✓ Closes in Full ($0.00 Left)</span>` : ''}
+                    </div>
+                    <div class="loan-wb-actions">
+                      <span class="loan-wb-pct-lbl">Quick Settle:</span>
+                      ${[100, 75, 50, 25].map(pct => {
+                        const pAmt = round2((wbOpen * pct) / 100);
+                        const isCur = Math.abs(wbNow - pAmt) <= 0.01;
+                        return `<button type="button" class="loan-pct-pill ${isCur ? 'active' : ''}" data-loan-settle-pct="${pct}" data-loan-open-base="${wbOpen.toFixed(2)}">${pct === 100 ? `Full (${fmtUSD(pAmt, 2)})` : `${pct}% (${fmtUSD(pAmt, 2)})`}</button>`;
+                      }).join('')}
+                      ${targetLoanMeta ? `<button type="button" class="loan-unlink-btn" data-clear-target-loan="1" title="Unlink specific loan voucher">× Unlink</button>` : ''}
+                    </div>
+                  </div>
+                  <div class="loan-settle-prog-track" title="Prior Paid: ${fmtUSD(wbPriorSettled, 2)} · Settling Now: ${fmtUSD(wbNow, 2)} · Remaining: ${fmtUSD(wbRem, 2)}">
+                    <span class="loan-prog-seg is-prior" style="width:${priorPct.toFixed(1)}%"></span>
+                    <span class="loan-prog-seg is-now" style="width:${nowPct.toFixed(1)}%"></span>
+                  </div>
+                  <div class="loan-wb-metrics">
+                    <span><small>Original Principal</small><b class="mono">${fmtUSD(wbPrinc, 2)}</b></span>
+                    <span><small>Previously Paid</small><b class="mono">${fmtUSD(wbPriorSettled, 2)}</b></span>
+                    <span><small>Open Before</small><b class="mono">${fmtUSD(wbOpen, 2)}</b></span>
+                    <span><small>Settling Now</small><b class="mono is-accent">${fmtUSD(wbNow, 2)}</b></span>
+                    <span><small>Remaining After</small><b class="mono ${isFullClose ? 'is-ok' : ''}">${afterOut < -0.01 ? 'Overpaid +' + fmtUSD(Math.abs(afterOut), 2) : fmtUSD(wbRem, 2)}</b></span>
+                  </div>
+                `;
+              } else {
+                wbCard.hidden = true;
+                wbCard.innerHTML = '';
+              }
+            }
+
+            const usdQuickBar = $('loanUsdQuickBar');
+            if (usdQuickBar) {
+              const curUsdVal = num('f_usd');
+              if (trType === 'loan_settlement' && openBefore > 0.01) {
+                const presets = [
+                  { label: `Full (${fmtUSD(openBefore, 2)})`, val: openBefore.toFixed(2) },
+                  { label: `50% (${fmtUSD(round2(openBefore * 0.5), 2)})`, val: round2(openBefore * 0.5).toFixed(2) },
+                  { label: `25% (${fmtUSD(round2(openBefore * 0.25), 2)})`, val: round2(openBefore * 0.25).toFixed(2) },
+                  { label: '$100', val: '100' },
+                  { label: '$500', val: '500' }
+                ];
+                usdQuickBar.innerHTML = presets.map(p => {
+                  const isAct = curUsdVal > 0 && Math.abs(curUsdVal - Number(p.val)) <= 0.01;
+                  return `<button type="button" class="loan-usd-chip ${isAct ? 'active' : ''}" data-loan-usd-preset="${p.val}">${p.label}</button>`;
+                }).join('');
+              } else {
+                const stdAmts = [50, 100, 200, 500, 1000, 5000];
+                usdQuickBar.innerHTML = stdAmts.map(a => {
+                  const isAct = curUsdVal > 0 && Math.abs(curUsdVal - a) <= 0.01;
+                  return `<button type="button" class="loan-usd-chip ${isAct ? 'active' : ''}" data-loan-usd-preset="${a}">$${fmtNum(a, 0)}</button>`;
+                }).join('');
+              }
+            }
+
             if (trStrip) {
               if (!cp) {
                 trStrip.hidden = true;
@@ -36232,9 +36376,9 @@
               : (isBorrowSide ? 'Borrowed Now' : 'Loan Given Now');
             if ($('lbl_tr_c3')) $('lbl_tr_c3').textContent = 'Loan Balance After';
             if ($('lbl_tr_c4')) $('lbl_tr_c4').textContent = 'Treasury Leg';
-            setText('calc_tr_c1', cp ? fmtUSD(openBefore, 2) : '—');
+            setText('calc_tr_c1', (cp || targetLoanMeta) ? fmtUSD(openBefore, 2) : '—');
             setText('calc_tr_c2', fmtUSD(thisPay, 2));
-            setText('calc_tr_c3', cp ? (afterOut < -0.01 ? `Overpaid +${fmtUSD(Math.abs(afterOut), 2)}` : fmtUSD(Math.max(0, afterOut), 2)) : '—');
+            setText('calc_tr_c3', (cp || targetLoanMeta) ? (afterOut < -0.01 ? `Overpaid +${fmtUSD(Math.abs(afterOut), 2)}` : fmtUSD(Math.max(0, afterOut), 2)) : '—');
             setText('calc_tr_c4', trType === 'loan_settlement'
               ? (isBorrowSide ? 'Settle Borrowed Loan (Outflow)' : 'Settle Lent Loan (Inflow)')
               : (isBorrowSide ? 'Company Borrows (Inflow)' : 'Company Lends (Outflow)'));
@@ -36760,17 +36904,65 @@
           const jvS = Math.max(1, Math.min(99, round2(num('f_jv_share') || 50)));
           const jvCo = val('f_jv_company') || val('f_company') || defaultEntryCompany() || 'WTC';
           const supVal = val('f_supplier');
+          const dlJvEl = $('dl_jv_partners');
+          if (dlJvEl && dlJvEl.dataset.excludedOwner !== norm(supVal)) {
+            dlJvEl.dataset.excludedOwner = norm(supVal);
+            const rec = (SEED && SEED.records) || {};
+            const isBu = v => /^(wtc|bbconstruction|bbc|lions\s*transport|lions)$/i.test(String(v || '').trim());
+            const exKey = norm(supVal);
+            const seen = new Set();
+            const jvSitesByPartner = new Map();
+            const addRef = (pRaw, sName, pct) => {
+              const p = String(pRaw || '').trim();
+              if (!p || isBu(p)) return;
+              const k = norm(p);
+              if (exKey && k === exKey) return;
+              if (!jvSitesByPartner.has(k)) jvSitesByPartner.set(k, { name: p, sites: new Set(), pct: Number(pct) || 50 });
+              const entry = jvSitesByPartner.get(k);
+              if (sName) entry.sites.add(String(sName).trim());
+              if (Number(pct) > 0) entry.pct = Number(pct);
+            };
+            addRef('Assaf', 'Jiyeh JV', 50);
+            addRef('Assaf', 'Halat JV', 50);
+            (rec.jv_partnerships || []).forEach(j => { if (j && !j.voided) addRef(j.partner || j.counterparty, j.site, j.percentage ?? j.share_pct); });
+            (rec.jv_distributions || []).forEach(j => { if (j && !j.voided) addRef(j.partner || j.counterparty, j.site, 50); });
+            (rec.sites || []).forEach(s => { if (s && !s.voided && s.jv_partner) addRef(s.jv_partner, s.name, s.jv_share || 50); });
+            const items = [];
+            jvSitesByPartner.forEach((info, k) => {
+              seen.add(k);
+              const sList = Array.from(info.sites).slice(0, 2).join(', ');
+              items.push([info.name, `Active JV Partner${sList ? ' · ' + sList : ''} (${info.pct}%)`]);
+            });
+            const rawSupSet = new Set();
+            (rec.suppliers || []).forEach(s => {
+              if (!s || s.voided || !s.name) return;
+              const catStr = [s.category, s.category1, s.category2, s.category3].filter(Boolean).join(' ');
+              if (/raw\s*material|quarry|site|assaf/i.test(catStr) || /assaf/i.test(s.name)) rawSupSet.add(norm(s.name));
+            });
+            (rec.raw_purchases || []).forEach(r => { if (r && r.site_owner) rawSupSet.add(norm(r.site_owner)); });
+            const t2 = [], t3 = [];
+            (supplierNames() || []).forEach(v => {
+              const s = String(v || '').trim();
+              const k = norm(s);
+              if (!s || seen.has(k) || isBu(s) || (exKey && k === exKey)) return;
+              seen.add(k);
+              if (rawSupSet.has(k)) t2.push([s, 'Quarry / Raw Material Counterparty']);
+              else t3.push([s, 'Registered Counterparty']);
+            });
+            dlJvEl.innerHTML = items.concat(t2, t3).map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+          }
           const sameAsOwner = Boolean(supVal && val('f_jv_partner') && norm(supVal) === norm(val('f_jv_partner')));
           setHint(
             'hint_site_jv_partner',
             sameAsOwner
-              ? `Note: "${val('f_jv_partner')}" is also set as Default Site Owner above · normally JV Partner is separate from the quarry landowner.`
+              ? `Same as Default Site Owner above · pick a separate JV partner`
               : (supVal
-                ? `Site Owner (AP Leg 1): ${supVal} · JV Profit Partner: ${val('f_jv_partner') || 'Select partner'}`
-                : 'Profit-sharing JV partner on this quarry site (separate from Default Site Owner).'),
+                ? `Site Owner: ${supVal} · JV Partner: ${val('f_jv_partner') || 'Select partner'}`
+                : 'Profit-sharing partner (distinct from Site Owner)'),
             sameAsOwner ? 'warn' : (val('f_jv_partner') ? 'ok' : '')
           );
           setHint('hint_site_jv_share', `${jvP}: ${jvS}% · ${jvCo}: ${round2(100 - jvS)}%`, 'ok');
+          setHint('hint_site_jv_company', `${jvCo} holds the remaining ${round2(100 - jvS)}% share`, '');
         }
         const mTitle = $('modalTitle');
         if (mTitle && !STATE.editingPendingExpenseId) {
@@ -38432,6 +38624,31 @@
     return true;
   }
 
+  function absorbCurrentPointerRelease(ev) {
+    if (!ev || !ev.isTrusted || ev.type !== 'mousedown') return;
+    let timer = null;
+    const cleanup = () => {
+      window.removeEventListener('mouseup', onUp, true);
+      window.removeEventListener('click', onClick, true);
+      window.removeEventListener('mousedown', cleanup, true);
+      clearTimeout(timer);
+    };
+    const onUp = e => {
+      e.stopPropagation();
+      clearTimeout(timer);
+      timer = setTimeout(cleanup, 45);
+    };
+    const onClick = e => {
+      e.preventDefault();
+      e.stopPropagation();
+      cleanup();
+    };
+    timer = setTimeout(cleanup, 600);
+    window.addEventListener('mouseup', onUp, true);
+    window.addEventListener('click', onClick, true);
+    window.addEventListener('mousedown', cleanup, true);
+  }
+
   function wireModalSuggestions(body) {
     if (!body) return;
     const closeAll = exceptMenu => {
@@ -38500,6 +38717,9 @@
 
       const wrap = document.createElement('div');
       wrap.className = 'pa-suggest-wrap';
+      wrap.addEventListener('mousedown', ev => {
+        if (ev.target === wrap) ev.preventDefault();
+      });
       el.parentNode.insertBefore(wrap, el);
       wrap.appendChild(el);
 
@@ -38655,9 +38875,13 @@
 
         const moreBtn = menu.querySelector('[data-suggest-next]');
         if (moreBtn) {
+          let moreHandled = false;
           const onNextPage = ev => {
             ev.preventDefault();
             ev.stopPropagation();
+            if (moreHandled) return;
+            moreHandled = true;
+            absorbCurrentPointerRelease(ev);
             clearTimeout(blurTimer);
             pageOffset = (sliceStart + MAX_SHOW >= filtered.length) ? 0 : (sliceStart + MAX_SHOW);
             renderMenu(showAllOnEmpty, ignoreExactCurrent, true);
@@ -38667,9 +38891,13 @@
         }
 
         menu.querySelectorAll('.pa-suggest-item').forEach(row => {
+          let rowHandled = false;
           const onPickRow = ev => {
             ev.preventDefault();
             ev.stopPropagation();
+            if (rowHandled) return;
+            rowHandled = true;
+            absorbCurrentPointerRelease(ev);
             const idx = Number(row.getAttribute('data-suggest-idx'));
             if (currentMatches[idx] != null) choose(currentMatches[idx].value);
           };
@@ -38694,13 +38922,19 @@
         if (choosing || window.__mfgSuppressAutoFocusMenu) return;
         renderMenu(true, true);
       });
+      let openedOnMousedown = false;
       el.addEventListener('mousedown', () => {
         clearTimeout(blurTimer);
+        openedOnMousedown = menu.hidden;
       });
       el.addEventListener('click', () => {
         clearTimeout(blurTimer);
-        const hasSelection = typeof el.selectionStart === 'number' && typeof el.selectionEnd === 'number' && el.selectionEnd > el.selectionStart;
-        if (hasSelection) {
+        const justOpened = openedOnMousedown;
+        openedOnMousedown = false;
+        const selLen = (typeof el.selectionStart === 'number' && typeof el.selectionEnd === 'number')
+          ? (el.selectionEnd - el.selectionStart)
+          : 0;
+        if (selLen >= 2 || (selLen > 0 && !justOpened)) {
           if (!menu.hidden) closeOwnMenu();
           return;
         }
@@ -38708,13 +38942,19 @@
           renderMenu(true, true);
         }
       });
-      let lastClearTs = 0;
+      let clearPointerDown = false;
       const onClearActivate = ev => {
+        if (ev.type === 'mousedown' && ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
-        const nowTs = Date.now();
-        if (nowTs - lastClearTs < 180) return;
-        lastClearTs = nowTs;
+        if (ev.type === 'mousedown') {
+          clearPointerDown = true;
+          const resetClearDown = () => { setTimeout(() => { clearPointerDown = false; }, 0); };
+          window.addEventListener('mouseup', resetClearDown, { once: true, capture: true });
+        } else if (ev.type === 'click' && clearPointerDown) {
+          clearPointerDown = false;
+          return;
+        }
         clearTimeout(blurTimer);
         if (el.disabled || el.readOnly || (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id))) return;
         choosing = true;
@@ -38741,13 +38981,19 @@
       clearBtn.addEventListener('mousedown', onClearActivate);
       clearBtn.addEventListener('click', onClearActivate);
 
-      let lastCaretToggleTs = 0;
+      let caretPointerDown = false;
       const onCaretActivate = ev => {
+        if (ev.type === 'mousedown' && ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
-        const nowTs = Date.now();
-        if (nowTs - lastCaretToggleTs < 220) return;
-        lastCaretToggleTs = nowTs;
+        if (ev.type === 'mousedown') {
+          caretPointerDown = true;
+          const resetCaretDown = () => { setTimeout(() => { caretPointerDown = false; }, 0); };
+          window.addEventListener('mouseup', resetCaretDown, { once: true, capture: true });
+        } else if (ev.type === 'click' && caretPointerDown) {
+          caretPointerDown = false;
+          return;
+        }
         clearTimeout(blurTimer);
         if (el.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(el.id)) {
           openAdminUnlockPrompt(el.id);
@@ -38903,13 +39149,19 @@
         }
       };
 
-      let lastSelClearTs = 0;
+      let selClearPointerDown = false;
       const onSelClearActivate = ev => {
+        if (ev.type === 'mousedown' && ev.button !== 0) return;
         ev.preventDefault();
         ev.stopPropagation();
-        const nowTs = Date.now();
-        if (nowTs - lastSelClearTs < 180) return;
-        lastSelClearTs = nowTs;
+        if (ev.type === 'mousedown') {
+          selClearPointerDown = true;
+          const resetSelClearDown = () => { setTimeout(() => { selClearPointerDown = false; }, 0); };
+          window.addEventListener('mouseup', resetSelClearDown, { once: true, capture: true });
+        } else if (ev.type === 'click' && selClearPointerDown) {
+          selClearPointerDown = false;
+          return;
+        }
         if (selEl.disabled || (selEl.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(selEl.id))) return;
         if (!hasResetEmptyOption()) return;
         chooseOption('');
@@ -38972,9 +39224,13 @@
             : '');
 
           rowsBox.querySelectorAll('.pa-suggest-item').forEach(row => {
+            let optHandled = false;
             const onPickOpt = ev => {
               ev.preventDefault();
               ev.stopPropagation();
+              if (optHandled) return;
+              optHandled = true;
+              absorbCurrentPointerRelease(ev);
               const idx = Number(row.getAttribute('data-suggest-idx'));
               if (currentMatches[idx] != null) chooseOption(currentMatches[idx].value);
             };
@@ -39024,13 +39280,19 @@
         }
       };
 
-      let lastSelToggleTs = 0;
+      let selTogglePointerDown = false;
       const toggleSelectMenu = ev => {
         if (ev.target && (ev.target.closest('.pa-suggest-menu') || ev.target.closest('.pa-suggest-clear'))) return;
+        if (ev.type === 'mousedown' && ev.button !== 0) return;
         ev.preventDefault();
-        const nowTs = Date.now();
-        if (nowTs - lastSelToggleTs < 220) return;
-        lastSelToggleTs = nowTs;
+        if (ev.type === 'mousedown') {
+          selTogglePointerDown = true;
+          const resetSelToggleDown = () => { setTimeout(() => { selTogglePointerDown = false; }, 0); };
+          window.addEventListener('mouseup', resetSelToggleDown, { once: true, capture: true });
+        } else if (ev.type === 'click' && selTogglePointerDown) {
+          selTogglePointerDown = false;
+          return;
+        }
         if (selEl.dataset.policyLockedNow === '1' && !isFieldAdminUnlocked(selEl.id)) {
           openAdminUnlockPrompt(selEl.id);
           return;
@@ -39151,9 +39413,12 @@
             `;
           }).join('');
           rowsBox.querySelectorAll('[data-ms-opt]').forEach(row => {
+            let msOptHandled = false;
             const onToggle = ev => {
               ev.preventDefault();
               ev.stopPropagation();
+              if (msOptHandled) return;
+              msOptHandled = true;
               toggleCategoryValue(row.getAttribute('data-ms-opt'));
             };
             row.addEventListener('mousedown', onToggle);
@@ -39168,16 +39433,28 @@
         supMsTrig.setAttribute('aria-expanded', 'true');
       };
 
-      supMsTrig.addEventListener('mousedown', ev => {
+      let supMsPointerDown = false;
+      const onSupMsTrigToggle = ev => {
         if (ev.target && ev.target.closest('[data-ms-rm]')) return;
+        if (ev.type === 'mousedown' && ev.button !== 0) return;
         ev.preventDefault();
+        if (ev.type === 'mousedown') {
+          supMsPointerDown = true;
+          const resetSupMsDown = () => { setTimeout(() => { supMsPointerDown = false; }, 0); };
+          window.addEventListener('mouseup', resetSupMsDown, { once: true, capture: true });
+        } else if (ev.type === 'click' && supMsPointerDown) {
+          supMsPointerDown = false;
+          return;
+        }
         if (!supMsMenu.hidden) {
           closeAll(null);
           supMsTrig.setAttribute('aria-expanded', 'false');
         } else {
           openSupMultiMenu();
         }
-      });
+      };
+      supMsTrig.addEventListener('mousedown', onSupMsTrigToggle);
+      supMsTrig.addEventListener('click', onSupMsTrigToggle);
       supMsTrig.addEventListener('keydown', ev => {
         if (ev.key === 'ArrowDown' || ev.key === 'Enter' || ev.key === ' ') {
           ev.preventDefault();
@@ -39222,7 +39499,7 @@
     FORM_UI.originMiniMapOpen = false; FORM_UI.originMapTarget = 'dest'; FORM_UI.originKmEditOpen = false;
     FORM_UI.ticketDisposition = 'standard'; FORM_UI.returnWtcSubMode = 'pair'; FORM_UI.returnRtKmManual = false; FORM_UI.lastDispMode = 'standard';
     FORM_UI.convPrimarySide = ''; FORM_UI.convRateFromAmounts = false;
-    FORM_UI.openLoanTab = ''; FORM_UI.lastLoanCp = '';
+    FORM_UI.openLoanTab = ''; FORM_UI.lastLoanCp = ''; FORM_UI.openLoanSearch = '';
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
       window.MFG_GEO.cleanupTicketOriginMiniMap();
     }
@@ -39672,6 +39949,39 @@
           recalcForm();
           return;
         }
+        const clearTargetLoanBtn = ev.target && ev.target.closest ? ev.target.closest('[data-clear-target-loan]') : null;
+        if (clearTargetLoanBtn) {
+          ev.preventDefault();
+          if ($('f_target_loan')) $('f_target_loan').value = '';
+          recalcForm();
+          return;
+        }
+        const loanSettlePctBtn = ev.target && ev.target.closest ? ev.target.closest('[data-loan-settle-pct]') : null;
+        if (loanSettlePctBtn) {
+          ev.preventDefault();
+          const pct = Number(loanSettlePctBtn.getAttribute('data-loan-settle-pct') || 100);
+          const openBase = Number(loanSettlePctBtn.getAttribute('data-loan-open-base') || 0);
+          if (openBase > 0 && pct > 0 && $('f_usd')) {
+            const nextAmt = round2((openBase * pct) / 100);
+            $('f_usd').value = nextAmt.toFixed(2);
+            if ($('f_lbp')) $('f_lbp').value = '';
+            $('f_usd').dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          recalcForm();
+          return;
+        }
+        const loanUsdPresetBtn = ev.target && ev.target.closest ? ev.target.closest('[data-loan-usd-preset]') : null;
+        if (loanUsdPresetBtn) {
+          ev.preventDefault();
+          const pVal = loanUsdPresetBtn.getAttribute('data-loan-usd-preset') || '';
+          if (pVal && $('f_usd')) {
+            $('f_usd').value = pVal;
+            if ($('f_lbp')) $('f_lbp').value = '';
+            $('f_usd').dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          recalcForm();
+          return;
+        }
         const pickOpenLoanBtn = ev.target && ev.target.closest ? ev.target.closest('[data-pick-open-loan]') : null;
         if (pickOpenLoanBtn) {
           ev.preventDefault();
@@ -39690,6 +40000,10 @@
             $('f_usd').value = lOpen;
             if ($('f_lbp')) $('f_lbp').value = '';
           }
+          if (lName && $('f_reference') && (!$('f_reference').value || $('f_reference').dataset.autoFromLoan === '1')) {
+            $('f_reference').value = lName;
+            $('f_reference').dataset.autoFromLoan = '1';
+          }
           recalcForm();
           return;
         }
@@ -39706,6 +40020,12 @@
             targetEl.dispatchEvent(new Event('input', { bubbles: true }));
             targetEl.dispatchEvent(new Event('change', { bubbles: true }));
           }
+          recalcForm();
+        }
+      });
+      body.addEventListener('input', ev => {
+        if (ev.target && ev.target.id === 'openLoansSearchInput') {
+          FORM_UI.openLoanSearch = ev.target.value || '';
           recalcForm();
         }
       });
@@ -46152,8 +46472,8 @@
         { key: 'supplier', label: 'Default Site Owner (Supplier)', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
         { key: 'customer', label: 'Linked Customer', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
         { key: 'is_jv', label: 'JV 50/50 Partnership Site', type: 'bool', sec: 2 },
-        { key: 'jv_partner', label: 'JV Partner (Apart from Site Owner)', type: 'combo', dl: 'dl_insp_counterparties', sec: 2, getVal: r => r.is_jv ? (r.jv_partner || 'Assaf') : (r.jv_partner || '') },
-        { key: 'jv_share', label: 'JV Partner Share (%)', type: 'number', step: '0.5', min: '0', max: '100', sec: 3, getVal: r => r.is_jv ? (r.jv_share || 50) : (r.jv_share ?? '') },
+        { key: 'jv_partner', label: 'JV Partner', type: 'combo', dl: 'dl_insp_counterparties', sec: 2, getVal: r => r.is_jv ? (r.jv_partner || 'Assaf') : (r.jv_partner || '') },
+        { key: 'jv_share', label: 'Partner Share (%)', type: 'number', step: '0.5', min: '0', max: '100', sec: 3, getVal: r => r.is_jv ? (r.jv_share || 50) : (r.jv_share ?? '') },
         { key: 'latitude', label: 'GPS Latitude', type: 'number', step: '0.000001', sec: 2 },
         { key: 'longitude', label: 'GPS Longitude', type: 'number', step: '0.000001', sec: 2 },
         { key: 'notes', label: 'Notes / Directions', type: 'text', sec: 3, span: true }
@@ -46902,28 +47222,61 @@
     backdropEl.dataset.backdropGuardWired = '1';
     let downOnBackdrop = null;
     let upOnBackdrop = null;
+    let downHadOpenMenu = false;
+    let resetTimer = null;
+    const resetState = () => {
+      clearTimeout(resetTimer);
+      resetTimer = null;
+      downOnBackdrop = null;
+      upOnBackdrop = null;
+      downHadOpenMenu = false;
+    };
+    const isPointInsideCard = e => {
+      const card = backdropEl.querySelector('.modal-card');
+      if (!card) return false;
+      if (e && e.target && card.contains(e.target)) return true;
+      if (e && e.isTrusted && typeof e.clientX === 'number' && typeof e.clientY === 'number' && (e.clientX !== 0 || e.clientY !== 0)) {
+        const r = card.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0 && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+          return true;
+        }
+      }
+      return false;
+    };
+    const hasOpenDropdownMenu = () => Boolean(
+      backdropEl.querySelector('.pa-suggest-menu:not([hidden]), .pa-select-menu:not([hidden]), .geo-place-menu:not([hidden]), #supCategoryMenu:not([hidden]), .rdl-combo-menu:not([hidden])')
+    );
     const onDown = e => {
       if (e.button != null && e.button !== 0) return;
-      downOnBackdrop = (e.target === backdropEl);
+      clearTimeout(resetTimer);
+      downHadOpenMenu = hasOpenDropdownMenu();
+      downOnBackdrop = (e.target === backdropEl) && !isPointInsideCard(e) && !downHadOpenMenu;
       upOnBackdrop = null;
     };
     const onUp = e => {
       if (e.button != null && e.button !== 0) return;
-      upOnBackdrop = (e.target === backdropEl);
-      setTimeout(() => { downOnBackdrop = null; upOnBackdrop = null; }, 0);
+      clearTimeout(resetTimer);
+      upOnBackdrop = (e.target === backdropEl) && !isPointInsideCard(e) && !downHadOpenMenu;
+      resetTimer = setTimeout(resetState, 160);
     };
     backdropEl.addEventListener('pointerdown', onDown, true);
     backdropEl.addEventListener('mousedown', onDown, true);
     backdropEl.addEventListener('pointerup', onUp, true);
     backdropEl.addEventListener('mouseup', onUp, true);
     document.addEventListener('mouseup', () => {
-      setTimeout(() => { downOnBackdrop = null; upOnBackdrop = null; }, 0);
+      clearTimeout(resetTimer);
+      resetTimer = setTimeout(resetState, 160);
     }, true);
     backdropEl.addEventListener('click', e => {
       const hadPointerCycle = downOnBackdrop !== null || upOnBackdrop !== null;
-      const shouldClose = (e.target === backdropEl) && (!hadPointerCycle || (downOnBackdrop === true && upOnBackdrop !== false));
-      downOnBackdrop = null;
-      upOnBackdrop = null;
+      const isPointerClick = Boolean(e.isTrusted && e.detail > 0);
+      const shouldClose = (e.target === backdropEl)
+        && !isPointInsideCard(e)
+        && !downHadOpenMenu
+        && (isPointerClick
+          ? (downOnBackdrop === true && upOnBackdrop === true)
+          : (!hadPointerCycle || (downOnBackdrop === true && upOnBackdrop !== false)));
+      resetState();
       if (shouldClose) closeFn();
     });
   }
@@ -52285,6 +52638,8 @@
 
     const newBtn = $('newEntryBtn');
     if (newBtn) newBtn.hidden = !canEnterAny(user);
+    const mNewBtn = $('mobileNewEntryBtn');
+    if (mNewBtn) mNewBtn.hidden = !canEnterAny(user);
 
     const avEl = $('railUserAvatar'), nmEl = $('railUserName'), rlEl = $('activeRoleBadge'), scEl = $('railRlsScope');
     if (avEl) avEl.textContent = getInitials(user.full_name);
@@ -55520,9 +55875,7 @@
       modal.className = 'modal-backdrop kiosk-submodal-backdrop';
       modal.setAttribute('role', 'dialog');
       modal.setAttribute('aria-modal', 'true');
-      modal.addEventListener('click', e => {
-        if (e.target === modal) closeStaffFaceEnrolModal();
-      });
+      wireBackdropDismiss(modal, closeStaffFaceEnrolModal);
       document.body.appendChild(modal);
     }
 
@@ -55722,9 +56075,7 @@
       modal.className = 'modal-backdrop kiosk-submodal-backdrop';
       modal.setAttribute('role', 'dialog');
       modal.setAttribute('aria-modal', 'true');
-      modal.addEventListener('click', e => {
-        if (e.target === modal) closeStaffScheduleModal();
-      });
+      wireBackdropDismiss(modal, closeStaffScheduleModal);
       document.body.appendChild(modal);
     }
 
@@ -56341,9 +56692,7 @@
       modal.className = 'modal-backdrop kiosk-submodal-backdrop';
       modal.setAttribute('role', 'dialog');
       modal.setAttribute('aria-modal', 'true');
-      modal.addEventListener('click', e => {
-        if (e.target === modal) closeShiftTypeModal();
-      });
+      wireBackdropDismiss(modal, closeShiftTypeModal);
       document.body.appendChild(modal);
     }
 
@@ -61634,8 +61983,10 @@
     if (mobileThemeBtn) mobileThemeBtn.addEventListener('click', toggleTheme);
 
     const newTicketBtn = $('newEntryBtn');
+    const mobileNewEntryBtn = $('mobileNewEntryBtn');
     const mobileDockEntryBtn = $('mobileDockEntryBtn');
     if (newTicketBtn) newTicketBtn.addEventListener('click', () => openEntryModal(contextFormForView(STATE.view)));
+    if (mobileNewEntryBtn) mobileNewEntryBtn.addEventListener('click', () => openEntryModal(contextFormForView(STATE.view)));
     if (mobileDockEntryBtn) mobileDockEntryBtn.addEventListener('click', () => openEntryModal(contextFormForView(STATE.view)));
     const closeEntryBtn = $('closeModalBtn');
     if (closeEntryBtn) closeEntryBtn.addEventListener('click', () => closeEntryModal());

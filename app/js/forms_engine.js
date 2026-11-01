@@ -534,10 +534,11 @@
   }
 
   // ==================== OPEN LOANS CLOSING SUBGRID (BOTH SIDES: COMPANY LENDS & COMPANY BORROWS) ====================
-  function renderOpenLoansSubgrid(ctx, company, counterparty, trType, loanSide, settleUsd, targetLoanName, sideTab) {
+  function renderOpenLoansSubgrid(ctx, company, counterparty, trType, loanSide, settleUsd, targetLoanName, sideTab, searchQuery) {
     const rec = getRecords(ctx);
     const coNorm = norm(company || 'WTC');
     const cpNorm = norm(counterparty || '');
+    const qNorm = norm(searchQuery || '');
     const fx = getActiveFxRate();
     const isSettling = trType === 'loan_settlement';
     const activeTab = sideTab || (isSettling ? (/borrow/i.test(String(loanSide || '')) ? 'borrows' : 'lends') : 'all');
@@ -602,7 +603,10 @@
     const cpFiltered = cpNorm
       ? byTab.filter(item => norm(item.party).includes(cpNorm) || norm(item.name).includes(cpNorm))
       : byTab;
-    const displayRows = cpFiltered.slice(0, 40);
+    const searchFiltered = qNorm
+      ? cpFiltered.filter(item => norm(item.party).includes(qNorm) || norm(item.name).includes(qNorm) || norm(item.date).includes(qNorm))
+      : cpFiltered;
+    const displayRows = searchFiltered.slice(0, 40);
 
     let remAlloc = isSettling ? Math.max(0, Number(settleUsd) || 0) : 0;
     const tgtNorm = norm(targetLoanName || '');
@@ -617,61 +621,81 @@
       }
       const remAfter = round2(Math.max(0, item.openAmt - allocNow));
       const isClosingFull = allocNow > 0 && remAfter <= 0.01;
+      const paidPct = item.principal > 0 ? Math.min(100, Math.round(((item.settled + allocNow) / item.principal) * 100)) : 0;
+      const basePaidPct = item.principal > 0 ? Math.min(100, Math.round((item.settled / item.principal) * 100)) : 0;
       const sideBadge = item.side === 'Company borrows'
-        ? `<span class="badge badge-warn">Company Borrows · We Owe</span>`
-        : `<span class="badge badge-brass">Company Lends · Owed to Us</span>`;
+        ? `<span class="loan-side-tag is-borrow" title="Company borrowed from lender · Cash Outflow when settling">We Borrow · We Owe</span>`
+        : `<span class="loan-side-tag is-lend" title="Company lent to borrower · Cash Inflow when settling">We Lend · Owed to Us</span>`;
       const statusHtml = allocNow > 0
         ? (isClosingFull
-            ? `<span class="badge badge-ok">CLOSES IN FULL ($0.00)</span>`
+            ? `<span class="badge badge-ok">✓ Closes in Full ($0.00)</span>`
             : `<span class="badge badge-brass">-${fmtUsd(allocNow)} · ${fmtUsd(remAfter)} Left</span>`)
-        : `<span class="badge badge-neutral">Open (${fmtUsd(item.openAmt)})</span>`;
+        : `<span class="loan-open-cap">Open · ${100 - basePaidPct}% unpaid</span>`;
       return `
-        <tr class="${isTarget || allocNow > 0 ? 'subgrid-row-active' : ''}" data-pick-open-loan="${esc(item.id)}" data-loan-name="${esc(item.name)}" data-loan-party="${esc(item.party)}" data-loan-side="${esc(item.side)}" data-loan-open="${item.openAmt.toFixed(2)}" style="cursor:pointer">
-          <td class="mono">${esc(item.date || '—')}</td>
-          <td class="mono"><strong>${esc(item.name)}</strong></td>
+        <tr class="loan-subgrid-row ${isTarget ? 'subgrid-row-active is-selected-loan' : (allocNow > 0 ? 'subgrid-row-active' : '')}" data-pick-open-loan="${esc(item.id)}" data-loan-name="${esc(item.name)}" data-loan-party="${esc(item.party)}" data-loan-side="${esc(item.side)}" data-loan-open="${item.openAmt.toFixed(2)}" data-loan-principal="${item.principal.toFixed(2)}" data-loan-settled="${item.settled.toFixed(2)}">
+          <td>
+            <div class="loan-cell-date">${esc(item.date || 'N/A')}</div>
+            <div class="loan-cell-ref mono" title="${esc(item.name)}">${esc(item.name)}</div>
+          </td>
+          <td>
+            <div class="loan-cell-party">${esc(item.party)}</div>
+          </td>
           <td>${sideBadge}</td>
-          <td><strong>${esc(item.party)}</strong></td>
-          <td class="r">${fmtUsd(item.principal)}</td>
-          <td class="r">${fmtUsd(item.settled)}</td>
-          <td class="r"><strong>${fmtUsd(item.openAmt)}</strong></td>
-          <td>${statusHtml}</td>
           <td class="r">
-            <button type="button" class="btn btn-sm ${isTarget ? 'btn-primary' : ''}" data-pick-open-loan="${esc(item.id)}" data-loan-name="${esc(item.name)}" data-loan-party="${esc(item.party)}" data-loan-side="${esc(item.side)}" data-loan-open="${item.openAmt.toFixed(2)}">
-              ${isTarget ? '✓ Closing (' + fmtUsd(item.openAmt) + ')' : 'Close / Settle (' + fmtUsd(item.openAmt) + ')'}
+            <div class="loan-cell-princ mono">${fmtUsd(item.principal)}</div>
+            <div class="loan-cell-paid">${item.settled > 0.01 ? `Paid ${fmtUsd(item.settled)}` : 'No prior payments'}</div>
+            <div class="loan-mini-bar"><span style="width:${paidPct}%"></span></div>
+          </td>
+          <td class="r">
+            <div class="loan-cell-open mono">${fmtUsd(item.openAmt)}</div>
+            <div class="loan-cell-status">${statusHtml}</div>
+          </td>
+          <td class="r">
+            <button type="button" class="loan-pick-btn ${isTarget ? 'is-active' : ''}" data-pick-open-loan="${esc(item.id)}" data-loan-name="${esc(item.name)}" data-loan-party="${esc(item.party)}" data-loan-side="${esc(item.side)}" data-loan-open="${item.openAmt.toFixed(2)}" data-loan-principal="${item.principal.toFixed(2)}" data-loan-settled="${item.settled.toFixed(2)}">
+              ${isTarget ? '✓ Settling (' + fmtUsd(item.openAmt) + ')' : 'Settle ' + fmtUsd(item.openAmt)}
             </button>
           </td>
         </tr>
       `;
-    }).join('') : `<tr><td colspan="9" style="text-align:center;padding:14px;color:var(--ink-soft)">No open loans match the current filter${counterparty ? ` for "${esc(counterparty)}"` : ''}.</td></tr>`;
+    }).join('') : `<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--ink-soft)">No open loans match the current filter${counterparty ? ` for "${esc(counterparty)}"` : ''}${searchQuery ? ` matching "${esc(searchQuery)}"` : ''}.</td></tr>`;
 
     return `
-      <div class="pa-subgrid" id="openLoansCloseSubgrid" style="margin-top:10px">
-        <div class="pa-subgrid-hdr" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <strong>OPEN LOANS TO CLOSE · CLICK ANY LOAN TO SETTLE</strong>
-            <div class="chip-bar" style="gap:4px">
-              <button type="button" class="filter-chip ${activeTab === 'all' ? 'active' : ''}" data-open-loan-tab="all">All Open (${openAll.length} · ${fmtUsd(openLentUsd + openBorrowedUsd)})</button>
-              <button type="button" class="filter-chip ${activeTab === 'lends' ? 'active' : ''}" data-open-loan-tab="lends">Company Lends · Owed to Us (${openLentCount} · ${fmtUsd(openLentUsd)})</button>
-              <button type="button" class="filter-chip ${activeTab === 'borrows' ? 'active' : ''}" data-open-loan-tab="borrows">Company Borrows · We Owe (${openBorrowedCount} · ${fmtUsd(openBorrowedUsd)})</button>
+      <div class="pa-subgrid loan-open-subgrid" id="openLoansCloseSubgrid" style="margin-top:12px" data-open-total-count="${openAll.length}" data-open-lent-count="${openLentCount}" data-open-lent-usd="${openLentUsd.toFixed(2)}" data-open-borrowed-count="${openBorrowedCount}" data-open-borrowed-usd="${openBorrowedUsd.toFixed(2)}">
+        <div class="loan-subgrid-toolbar">
+          <div class="loan-subgrid-head-left">
+            <div class="loan-subgrid-title-row">
+              <span class="loan-subgrid-kicker">OPEN LOANS PORTFOLIO · CLICK ANY ROW TO SETTLE</span>
+              ${counterparty ? `<button type="button" class="att-preset-pill" data-clear-loan-cp="1">Party: ${esc(counterparty)} · × Show All</button>` : `<span class="loan-subgrid-count">Showing ${displayRows.length} of ${searchFiltered.length} open loans in ${esc(company || 'WTC')}</span>`}
+            </div>
+            <div class="loan-subgrid-tabs" role="tablist">
+              <button type="button" class="filter-chip loan-subgrid-tab ${activeTab === 'all' ? 'active' : ''}" data-open-loan-tab="all">
+                <span>All Open</span>
+                <b>${openAll.length} · ${fmtUsd(openLentUsd + openBorrowedUsd)}</b>
+              </button>
+              <button type="button" class="filter-chip loan-subgrid-tab ${activeTab === 'lends' ? 'active' : ''}" data-open-loan-tab="lends">
+                <span>Company Lends · Owed to Us</span>
+                <b>${openLentCount} · ${fmtUsd(openLentUsd)}</b>
+              </button>
+              <button type="button" class="filter-chip loan-subgrid-tab ${activeTab === 'borrows' ? 'active' : ''}" data-open-loan-tab="borrows">
+                <span>Company Borrows · We Owe</span>
+                <b>${openBorrowedCount} · ${fmtUsd(openBorrowedUsd)}</b>
+              </button>
             </div>
           </div>
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            ${counterparty ? `<button type="button" class="att-preset-pill" data-clear-loan-cp="1">Filtered: ${esc(counterparty)} · × Show All</button>` : `<span style="font-size:11.5px;color:var(--ink-soft)">Showing ${displayRows.length} of ${cpFiltered.length} open loans in ${esc(company || 'WTC')}</span>`}
+          <div class="loan-subgrid-search-wrap">
+            <input type="search" id="openLoansSearchInput" class="loan-subgrid-search" value="${esc(searchQuery || '')}" placeholder="Filter open loans by name or ref..." autocomplete="off">
           </div>
         </div>
-        <div class="table-wrap" style="max-height:210px;overflow:auto">
-          <table class="ledger-table">
+        <div class="table-wrap loan-subgrid-table-wrap">
+          <table class="ledger-table loan-subgrid-table">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Loan Ref</th>
-                <th>Loan Side</th>
+                <th>Date &amp; Loan Ref</th>
                 <th>Borrower / Lender</th>
-                <th class="r">Principal</th>
-                <th class="r">Settled</th>
+                <th>Loan Side</th>
+                <th class="r">Principal &amp; Paid</th>
                 <th class="r">Open Balance</th>
-                <th>Settlement Preview</th>
-                <th class="r">Action</th>
+                <th class="r">Quick Action</th>
               </tr>
             </thead>
             <tbody>${rowsHtml}</tbody>
@@ -1094,6 +1118,62 @@
       `;
     }
 
+    const buildJvPartnerMetaItems = (excludeOwner = '') => {
+      const seen = new Set();
+      const exKey = String(excludeOwner || '').trim().toLowerCase();
+      const isBu = v => /^(wtc|bbconstruction|bbc|lions\s*transport|lions)$/i.test(String(v || '').trim());
+      const jvSitesByPartner = new Map();
+      const addJvSiteRef = (pRaw, siteName, pct) => {
+        const p = String(pRaw || '').trim();
+        if (!p || isBu(p)) return;
+        const k = p.toLowerCase();
+        if (exKey && k === exKey) return;
+        if (!jvSitesByPartner.has(k)) jvSitesByPartner.set(k, { name: p, sites: new Set(), pct: Number(pct) || 50 });
+        const entry = jvSitesByPartner.get(k);
+        if (siteName) entry.sites.add(String(siteName).trim());
+        if (Number(pct) > 0) entry.pct = Number(pct);
+      };
+      addJvSiteRef('Assaf', 'Jiyeh JV', 50);
+      addJvSiteRef('Assaf', 'Halat JV', 50);
+      ((rec.jv_partnerships || [])).forEach(j => {
+        if (j && !j.voided) addJvSiteRef(j.partner || j.counterparty, j.site, j.percentage ?? j.share_pct);
+      });
+      ((rec.jv_distributions || [])).forEach(j => {
+        if (j && !j.voided) addJvSiteRef(j.partner || j.counterparty, j.site, 50);
+      });
+      ((rec.sites || [])).forEach(s => {
+        if (s && !s.voided && s.jv_partner) addJvSiteRef(s.jv_partner, s.name, s.jv_share || 50);
+      });
+      const tier1 = [];
+      jvSitesByPartner.forEach((info, k) => {
+        seen.add(k);
+        const siteList = Array.from(info.sites).slice(0, 2).join(', ');
+        tier1.push([info.name, `Active JV Partner${siteList ? ' · ' + siteList : ''} (${info.pct}%)`]);
+      });
+      const rawSupSet = new Set();
+      ((rec.suppliers || [])).forEach(s => {
+        if (!s || s.voided || !s.name) return;
+        const catStr = [s.category, s.category1, s.category2, s.category3].filter(Boolean).join(' ');
+        if (/raw\s*material|quarry|site|assaf/i.test(catStr) || /assaf/i.test(s.name)) {
+          rawSupSet.add(String(s.name).trim().toLowerCase());
+        }
+      });
+      ((rec.raw_purchases || [])).forEach(r => {
+        if (r && r.site_owner) rawSupSet.add(String(r.site_owner).trim().toLowerCase());
+      });
+      const tier2 = [];
+      const tier3 = [];
+      (supNames || []).forEach(v => {
+        const s = String(v || '').trim();
+        const k = s.toLowerCase();
+        if (!s || seen.has(k) || isBu(s) || (exKey && k === exKey)) return;
+        seen.add(k);
+        if (rawSupSet.has(k)) tier2.push([s, 'Quarry / Raw Material Counterparty']);
+        else tier3.push([s, 'Registered Counterparty']);
+      });
+      return tier1.concat(tier2, tier3);
+    };
+
     if (fType === 'site') {
       const st = (ctx && ctx.STATE) || {};
       const activeSitesTblVw = (st.tableViews && st.tableViews.sites) || '';
@@ -1109,23 +1189,7 @@
         return Boolean(s.supplier || s.is_jv || !s.customer);
       }).length;
       const custSiteCount = Math.max(0, activeSites.length - suppSiteCount);
-      const jvPartnerNames = (() => {
-        const seen = new Set();
-        const out = [];
-        const addP = v => {
-          const s = String(v || '').trim();
-          const k = s.toLowerCase();
-          if (!s || seen.has(k) || /^(wtc|bbconstruction|bbc|lions\s*transport|lions)$/i.test(s)) return;
-          seen.add(k);
-          out.push(s);
-        };
-        addP('Assaf');
-        ((rec.jv_partnerships || [])).forEach(j => { if (j && !j.voided) addP(j.partner || j.counterparty); });
-        ((rec.jv_distributions || [])).forEach(j => { if (j && !j.voided) addP(j.partner || j.counterparty); });
-        ((rec.sites || [])).forEach(s => { if (s && !s.voided && s.jv_partner) addP(s.jv_partner); });
-        (supNames || []).forEach(addP);
-        return out;
-      })();
+      const jvPartnerMetaItems = buildJvPartnerMetaItems();
       return `
         <div class="form-grid-3">
           <div class="form-field span-3" id="siteCategoryDeck">
@@ -1179,19 +1243,19 @@
           })}
           ${fld('Linked Customer', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_site_customer', hidden: !isCustSite })}
           <div class="site-jv-partner-row span-3" id="wrap_site_jv_details" hidden>
-            ${fld('JV Partner (Apart from Site Owner) *', inp('f_jv_partner', 'text', '', 'list="dl_jv_partners" placeholder="Select or type JV partner (e.g. Assaf)..."') + dl('dl_jv_partners', jvPartnerNames), {
+            ${fld('JV Partner *', inp('f_jv_partner', 'text', '', 'list="dl_jv_partners" placeholder="Select or type JV partner..."') + dlMeta('dl_jv_partners', jvPartnerMetaItems), {
               id: 'wrap_site_jv_partner',
-              hint: 'Profit-sharing JV partner on this quarry site (separate from Default Site Owner).',
+              hint: 'Profit-sharing partner (distinct from Site Owner)',
               hintId: 'hint_site_jv_partner'
             })}
-            ${fld('JV Partner Share (%) *', inp('f_jv_share', 'number', '50', 'step="0.5" min="1" max="99"'), {
+            ${fld('Partner Share (%) *', inp('f_jv_share', 'number', '50', 'step="0.5" min="1" max="99"'), {
               id: 'wrap_site_jv_share',
               hint: `Partner: 50% · ${company || 'WTC'}: 50%`,
               hintId: 'hint_site_jv_share'
             })}
-            ${fld('JV Operating Company (BU)', sel('f_jv_company', comps, company || 'WTC'), {
+            ${fld('Operating Company (BU)', sel('f_jv_company', comps, company || 'WTC'), {
               id: 'wrap_site_jv_company',
-              hint: 'Operating BU that shares the quarry output with the JV Partner.',
+              hint: `${company || 'WTC'} holds the remaining 50% share`,
               hintId: 'hint_site_jv_company'
             })}
           </div>
@@ -1975,24 +2039,77 @@
 
     if (fType === 'treasury') {
       const loanBorrowerNames = uniqSorted((rec.loans || []).map(l => l.counterparty || l.lender || l.name).concat((rec.loan_settlements || []).map(s => s.counterparty || s.loan)).concat(staffNames), fIdx && fIdx.counterparty);
+      const initSubgridHtml = renderOpenLoansSubgrid(ctx, company, '', 'loan', 'Company lends', 0, '', 'all', '');
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
-          <div class="pa-ticket-disp-bar" id="loanModeBar" style="grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <span class="pa-disp-title" style="font-weight:700">1. Action:</span>
-              <div class="pa-disp-pills" id="loanActionPills">
-                <button type="button" class="pa-disp-pill active" data-loan-action="loan">+ Open New Loan</button>
-                <button type="button" class="pa-disp-pill" data-loan-action="loan_settlement">✓ Close / Settle Open Loan</button>
+          <div class="loan-cockpit-deck" id="loanModeBar" style="grid-column:1 / -1">
+            <div class="loan-cockpit-cols">
+              <div class="loan-cockpit-col">
+                <div class="loan-cockpit-step-hdr">
+                  <span class="loan-step-num">1</span>
+                  <span class="loan-step-title">Select Transaction Action</span>
+                </div>
+                <div class="loan-action-grid" id="loanActionPills" role="tablist">
+                  <button type="button" class="loan-action-card active" data-loan-action="loan" aria-selected="true">
+                    <span class="loan-card-icon is-open" aria-hidden="true">+</span>
+                    <span class="loan-card-copy">
+                      <span class="loan-card-title-row">
+                        <strong class="loan-card-title">Open New Loan</strong>
+                      </span>
+                      <span class="loan-card-sub">Disburse a new advance or record a new borrowing</span>
+                    </span>
+                  </button>
+                  <button type="button" class="loan-action-card" data-loan-action="loan_settlement" aria-selected="false">
+                    <span class="loan-card-icon is-settle" aria-hidden="true">✓</span>
+                    <span class="loan-card-copy">
+                      <span class="loan-card-title-row">
+                        <strong class="loan-card-title">Close / Settle Open Loan</strong>
+                        <span class="loan-card-pill" id="loanSettleOpenCountBadge">Open Portfolio</span>
+                      </span>
+                      <span class="loan-card-sub">Collect repayment or pay down an existing open balance</span>
+                    </span>
+                  </button>
+                </div>
               </div>
-              <span class="pa-disp-title" style="font-weight:700;margin-left:6px">2. Loan Side:</span>
-              <div class="pa-disp-pills" id="loanSidePills">
-                <button type="button" class="pa-disp-pill active" data-loan-side="Company lends">Company Lends (We Lend)</button>
-                <button type="button" class="pa-disp-pill" data-loan-side="Company borrows">Company Borrows (We Borrow)</button>
+              <div class="loan-cockpit-col">
+                <div class="loan-cockpit-step-hdr">
+                  <span class="loan-step-num">2</span>
+                  <span class="loan-step-title">Select Loan Side &amp; Cash Flow Direction</span>
+                </div>
+                <div class="loan-side-grid" id="loanSidePills" role="tablist">
+                  <button type="button" class="loan-side-card active" data-loan-side="Company lends" aria-selected="true">
+                    <div class="loan-side-top">
+                      <strong class="loan-card-title">Company Lends (We Lend)</strong>
+                      <span class="loan-side-count-pill" id="loanSideBadgeLends">Owed to Us</span>
+                    </div>
+                    <div class="loan-flow-strip" id="loanSideFlowLends">
+                      <span class="loan-flow-node">Company Till</span>
+                      <span class="loan-flow-pill is-out">-$ Cash Outflow</span>
+                      <span class="loan-flow-node">Borrower</span>
+                    </div>
+                    <div class="loan-card-sub" id="loanSideSubLends">Staff, partner, or entity borrows from us (Owed to Company)</div>
+                  </button>
+                  <button type="button" class="loan-side-card" data-loan-side="Company borrows" aria-selected="false">
+                    <div class="loan-side-top">
+                      <strong class="loan-card-title">Company Borrows (We Borrow)</strong>
+                      <span class="loan-side-count-pill" id="loanSideBadgeBorrows">We Owe</span>
+                    </div>
+                    <div class="loan-flow-strip" id="loanSideFlowBorrows">
+                      <span class="loan-flow-node">Lender</span>
+                      <span class="loan-flow-pill is-in">+$ Cash Inflow</span>
+                      <span class="loan-flow-node">Company Till</span>
+                    </div>
+                    <div class="loan-card-sub" id="loanSideSubBorrows">Partner, bank, or entity lends to us (Company Owes Lender)</div>
+                  </button>
+                </div>
               </div>
             </div>
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-              <span class="badge badge-warn" id="loanCashImpactBadge">Cash Outflow · Paid to Borrower</span>
+            <div class="loan-cockpit-statusbar">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span class="badge badge-warn" id="loanCashImpactBadge">Cash Outflow · Company Gives Loan</span>
+                <span class="loan-statusbar-hint" id="loanModeHelperText">Tip: Click any open loan row in the table below to auto-fill and settle it in 1 click.</span>
+              </div>
             </div>
           </div>
           <select id="f_trtype" data-native-select="1" hidden>
@@ -2005,18 +2122,19 @@
           </select>
           <input type="hidden" id="f_direction" value="Outflow">
           <input type="hidden" id="f_target_loan" value="">
+          <div id="selectedLoanSettleCard" class="loan-settle-workbench" hidden style="grid-column:1 / -1"></div>
           ${companyField}
           ${lockedDateField('Transaction Date *')}
           ${collapsibleRepDateField()}
           ${fld('<span id="lbl_tr_cp">Borrower (Receiving Loan) *</span>', inp('f_counterparty', 'text', '', 'list="dl_loan_parties" placeholder="Select or type borrower, staff, or lender..."') + dl('dl_loan_parties', loanBorrowerNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
-          ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '' })}
-          ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0"'), { id: 'wrap_tr_lbp' })}
+          ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '', afterHtml: '<div class="loan-usd-quick-bar" id="loanUsdQuickBar"></div>' })}
+          ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'), { id: 'wrap_tr_lbp' })}
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
-          ${fld('Reference', inp('f_reference', 'text', 'placeholder="Optional voucher or loan ref..."'))}
-          ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+          ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Optional voucher or loan ref..."'))}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional settlement or loan remarks..."'), { span: true })}
         </div>
         <div id="trLiveContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
-        <div id="paLoanSubgridWrap">${renderOpenLoansSubgrid(ctx, company, '', 'loan', 'Company lends', 0, '', 'all')}</div>
+        <div id="paLoanSubgridWrap">${initSubgridHtml}</div>
         <div class="live-calc" id="trLiveCalc">
           <div><small id="lbl_tr_c1">Open Loan Before</small><b id="calc_tr_c1">—</b></div>
           <div><small id="lbl_tr_c2">Loan Given Now</small><b id="calc_tr_c2">$0.00</b></div>
@@ -2110,6 +2228,7 @@
     const jvSiteItems = (helpers && typeof helpers.siteMetaItems === 'function')
       ? helpers.siteMetaItems('jv')
       : helpers.siteNames('jv').map(n => [n, '']);
+    const jvPartnerMetaItems = buildJvPartnerMetaItems();
     return `
       ${adminHeaderHtml}
       <div class="form-grid-3">
@@ -2118,7 +2237,7 @@
         ${collapsibleRepDateField()}
         ${fld('JV Entry Type *', sel('f_jvtype', [['distribution', 'JV Profit / Cash Distribution'], ['partnership', 'New JV Site Partnership Setup']], 'distribution'))}
         ${fld('JV Site *', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type JV site..."') + dlMeta('dl_sites', jvSiteItems), { hintId: 'hint_jv_site', hint: '' })}
-        ${fld('JV Partner *', inp('f_counterparty', 'text', '', 'list="dl_suppliers" placeholder="Select or type JV partner..."') + dl('dl_suppliers', supNames))}
+        ${fld('JV Partner *', inp('f_counterparty', 'text', '', 'list="dl_jv_partners" placeholder="Select or type JV partner..."') + dlMeta('dl_jv_partners', jvPartnerMetaItems))}
         <div id="jvLiveContextStrip" class="att-contract-strip" hidden></div>
         ${fld('Partner Share (%)', inp('f_share', 'number', '50', 'step="0.5" min="0" max="100"'), { id: 'wrap_jv_share', hidden: true })}
         ${fld('Distribution Amount ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_jv_amount', hintId: 'hint_jv_amount', hint: '' })}

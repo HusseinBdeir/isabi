@@ -640,6 +640,7 @@
   font-weight: 700;
 }
 .site-jv-partner-row {
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px 12px;
@@ -1042,12 +1043,14 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
 
 /* Modal Inline Map Picker (Region & Site Forms) & Map-Safe Dropdown Overlap */
 #entryModal .form-field,
+#entryModal .site-jv-partner-row,
 #inspModifyDrawer .form-field,
 .geo-tool-drawer,
 .geo-tool-field {
   position: relative;
 }
 #entryModal .form-field:focus-within,
+#entryModal .site-jv-partner-row:focus-within,
 #inspModifyDrawer .form-field:focus-within,
 .geo-tool-drawer:focus-within,
 .geo-tool-field:focus-within {
@@ -1056,6 +1059,8 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
 #entryModal .form-field:has(.pa-select-wrap.open),
 #entryModal .form-field:has(.pa-suggest-wrap.open),
 #entryModal .form-field:has(.geo-place-search-wrap.open),
+#entryModal .site-jv-partner-row:has(.pa-select-wrap.open),
+#entryModal .site-jv-partner-row:has(.pa-suggest-wrap.open),
 #inspModifyDrawer .form-field:has(.pa-select-wrap.open),
 #inspModifyDrawer .form-field:has(.pa-suggest-wrap.open),
 .geo-tool-drawer:has(.geo-place-search-wrap.open),

@@ -723,7 +723,35 @@
     menu.className = 'geo-place-menu';
     menu.setAttribute('role', 'listbox');
     menu.hidden = true;
+    menu.addEventListener('mousedown', ev => {
+      if (!ev.target || !ev.target.closest('input')) ev.preventDefault();
+    });
     wrap.appendChild(menu);
+
+    const absorbGeoPointerRelease = ev => {
+      if (!ev || !ev.isTrusted || ev.type !== 'mousedown') return;
+      let timer = null;
+      const cleanup = () => {
+        window.removeEventListener('mouseup', onUp, true);
+        window.removeEventListener('click', onClick, true);
+        window.removeEventListener('mousedown', cleanup, true);
+        clearTimeout(timer);
+      };
+      const onUp = e => {
+        e.stopPropagation();
+        clearTimeout(timer);
+        timer = setTimeout(cleanup, 45);
+      };
+      const onClick = e => {
+        e.preventDefault();
+        e.stopPropagation();
+        cleanup();
+      };
+      timer = setTimeout(cleanup, 600);
+      window.addEventListener('mouseup', onUp, true);
+      window.addEventListener('click', onClick, true);
+      window.addEventListener('mousedown', cleanup, true);
+    };
 
     let items = [];
     let activeIdx = -1;
@@ -798,6 +826,7 @@
           ev.stopPropagation();
           if (handled) return;
           handled = true;
+          absorbGeoPointerRelease(ev);
           clearTimeout(blurTimer);
           pickItem(Number(btn.getAttribute('data-geo-place-idx')));
         };
@@ -868,9 +897,19 @@
         if (!wrap.contains(document.activeElement)) closeMenu();
       }, 140);
     });
+    let clearPointerDown = false;
     const onClearClick = ev => {
+      if (ev.type === 'mousedown' && ev.button !== 0) return;
       ev.preventDefault();
       ev.stopPropagation();
+      if (ev.type === 'mousedown') {
+        clearPointerDown = true;
+        const resetClear = () => { setTimeout(() => { clearPointerDown = false; }, 0); };
+        window.addEventListener('mouseup', resetClear, { once: true, capture: true });
+      } else if (ev.type === 'click' && clearPointerDown) {
+        clearPointerDown = false;
+        return;
+      }
       inputEl.value = '';
       syncClear();
       if (typeof opts.onClear === 'function') opts.onClear();
@@ -883,15 +922,14 @@
     const onOutsideEvt = ev => {
       if (!wrap.isConnected) {
         document.removeEventListener('mousedown', onOutsideEvt, true);
-        document.removeEventListener('click', onOutsideEvt, true);
         return;
       }
       if (!menu.hidden && !wrap.contains(ev.target)) {
+        if (ev.target && ev.target.closest && ev.target.closest('#f_region, #geoDrawRegionInp')) return;
         closeMenu();
       }
     };
     document.addEventListener('mousedown', onOutsideEvt, true);
-    document.addEventListener('click', onOutsideEvt, true);
 
     return { closeMenu, syncClear, runQuery };
   }

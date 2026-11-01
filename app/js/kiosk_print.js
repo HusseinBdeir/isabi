@@ -1046,19 +1046,25 @@
     } else {
       let downOnBackdrop = null;
       let upOnBackdrop = null;
+      let resetTimer = null;
       modal.addEventListener('mousedown', e => {
         if (e.button != null && e.button !== 0) return;
+        clearTimeout(resetTimer);
         downOnBackdrop = (e.target === modal);
         upOnBackdrop = null;
       }, true);
       modal.addEventListener('mouseup', e => {
         if (e.button != null && e.button !== 0) return;
+        clearTimeout(resetTimer);
         upOnBackdrop = (e.target === modal);
-        setTimeout(() => { downOnBackdrop = null; upOnBackdrop = null; }, 0);
+        resetTimer = setTimeout(() => { downOnBackdrop = null; upOnBackdrop = null; }, 160);
       }, true);
       modal.addEventListener('click', e => {
+        clearTimeout(resetTimer);
         const hadPointerCycle = downOnBackdrop !== null || upOnBackdrop !== null;
-        const shouldClose = (e.target === modal) && (!hadPointerCycle || (downOnBackdrop === true && upOnBackdrop !== false));
+        const isPointerClick = Boolean(e.isTrusted && e.detail > 0);
+        const shouldClose = (e.target === modal)
+          && (isPointerClick ? (downOnBackdrop === true && upOnBackdrop === true) : (!hadPointerCycle || (downOnBackdrop === true && upOnBackdrop !== false)));
         downOnBackdrop = null;
         upOnBackdrop = null;
         if (shouldClose) closeThermalModal();
