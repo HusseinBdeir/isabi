@@ -32345,6 +32345,8 @@
         }
       });
     }
+    picked.forEach((item, idx) => { item.freqRank = idx + 1; });
+    picked.sort((a, b) => a.amount - b.amount);
     return picked;
   }
   window.__mfgGetFrequentFxConversionPresets = getFrequentFxConversionPresets;
@@ -35479,7 +35481,7 @@
             const scopeSig = `${norm(curCoForPreset)}|${curDirForPreset}|${freqPresets.map(p => `${p.amount}:${p.count}`).join(',')}`;
             if (qBar.getAttribute('data-freq-sig') !== scopeSig) {
               qBar.setAttribute('data-freq-sig', scopeSig);
-              qBar.innerHTML = freqPresets.map(p => `<button type="button" class="att-preset-pill" data-conv-usd-preset="${esc(p.amount)}" data-conv-freq="${esc(p.count || 0)}">${esc(p.label)}</button>`).join('');
+              qBar.innerHTML = freqPresets.map(p => `<button type="button" class="att-preset-pill" data-conv-usd-preset="${esc(p.amount)}" data-conv-freq="${esc(p.count || 0)}" data-conv-freq-rank="${esc(p.freqRank || 0)}">${esc(p.label)}</button>`).join('');
             }
             qBar.querySelectorAll('[data-conv-usd-preset]').forEach(btn => {
               const pv = Number(btn.getAttribute('data-conv-usd-preset') || 0);

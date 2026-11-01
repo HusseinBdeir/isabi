@@ -2032,8 +2032,8 @@
         ? helpers.getFrequentFxConversionPresets(company, 'USD to LBP', 5)
         : ((typeof window !== 'undefined' && typeof window.__mfgGetFrequentFxConversionPresets === 'function')
             ? window.__mfgGetFrequentFxConversionPresets(company, 'USD to LBP', 5)
-            : [{ amount: 20, label: '$20', count: 0 }, { amount: 5, label: '$5', count: 0 }, { amount: 10, label: '$10', count: 0 }, { amount: 2, label: '$2', count: 0 }, { amount: 100, label: '$100', count: 0 }]);
-      const quickBtnsHtml = freqPresets.map(p => `<button type="button" class="att-preset-pill" data-conv-usd-preset="${esc(p.amount)}" data-conv-freq="${esc(p.count || 0)}">${esc(p.label)}</button>`).join('');
+            : [{ amount: 2, label: '$2', count: 0, freqRank: 4 }, { amount: 5, label: '$5', count: 0, freqRank: 2 }, { amount: 10, label: '$10', count: 0, freqRank: 3 }, { amount: 20, label: '$20', count: 0, freqRank: 1 }, { amount: 100, label: '$100', count: 0, freqRank: 5 }]);
+      const quickBtnsHtml = freqPresets.map(p => `<button type="button" class="att-preset-pill" data-conv-usd-preset="${esc(p.amount)}" data-conv-freq="${esc(p.count || 0)}" data-conv-freq-rank="${esc(p.freqRank || 0)}">${esc(p.label)}</button>`).join('');
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
