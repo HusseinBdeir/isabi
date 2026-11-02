@@ -660,30 +660,30 @@
     }).join('') : `<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--ink-soft)">No open loans match the current filter${counterparty ? ` for "${esc(counterparty)}"` : ''}${searchQuery ? ` matching "${esc(searchQuery)}"` : ''}.</td></tr>`;
 
     return `
-      <div class="pa-subgrid loan-open-subgrid" id="openLoansCloseSubgrid" style="margin-top:12px" data-open-total-count="${openAll.length}" data-open-lent-count="${openLentCount}" data-open-lent-usd="${openLentUsd.toFixed(2)}" data-open-borrowed-count="${openBorrowedCount}" data-open-borrowed-usd="${openBorrowedUsd.toFixed(2)}">
+      <div class="pa-subgrid loan-open-subgrid" id="openLoansCloseSubgrid" data-open-total-count="${openAll.length}" data-open-lent-count="${openLentCount}" data-open-lent-usd="${openLentUsd.toFixed(2)}" data-open-borrowed-count="${openBorrowedCount}" data-open-borrowed-usd="${openBorrowedUsd.toFixed(2)}">
         <div class="loan-subgrid-toolbar">
           <div class="loan-subgrid-head-left">
             <div class="loan-subgrid-title-row">
-              <span class="loan-subgrid-kicker">OPEN LOANS PORTFOLIO · CLICK ANY ROW TO SETTLE</span>
-              ${counterparty ? `<button type="button" class="att-preset-pill" data-clear-loan-cp="1">Party: ${esc(counterparty)} · × Show All</button>` : `<span class="loan-subgrid-count">Showing ${displayRows.length} of ${searchFiltered.length} open loans in ${esc(company || 'WTC')}</span>`}
+              <span class="loan-subgrid-kicker">1. PICK AN OPEN LOAN TO SETTLE</span>
+              ${counterparty ? `<button type="button" class="att-preset-pill" data-clear-loan-cp="1">Filtered: ${esc(counterparty)} · × Show All</button>` : `<span class="loan-subgrid-count">Showing ${displayRows.length} of ${searchFiltered.length} open loans</span>`}
             </div>
             <div class="loan-subgrid-tabs" role="tablist">
+              <button type="button" class="filter-chip loan-subgrid-tab ${activeTab === 'lends' ? 'active' : ''}" data-open-loan-tab="lends">
+                <span>Loans Owed to Us (We Lent)</span>
+                <b>${openLentCount} · ${fmtUsd(openLentUsd)}</b>
+              </button>
+              <button type="button" class="filter-chip loan-subgrid-tab ${activeTab === 'borrows' ? 'active' : ''}" data-open-loan-tab="borrows">
+                <span>Loans We Owe (We Borrowed)</span>
+                <b>${openBorrowedCount} · ${fmtUsd(openBorrowedUsd)}</b>
+              </button>
               <button type="button" class="filter-chip loan-subgrid-tab ${activeTab === 'all' ? 'active' : ''}" data-open-loan-tab="all">
                 <span>All Open</span>
                 <b>${openAll.length} · ${fmtUsd(openLentUsd + openBorrowedUsd)}</b>
               </button>
-              <button type="button" class="filter-chip loan-subgrid-tab ${activeTab === 'lends' ? 'active' : ''}" data-open-loan-tab="lends">
-                <span>Company Lends · Owed to Us</span>
-                <b>${openLentCount} · ${fmtUsd(openLentUsd)}</b>
-              </button>
-              <button type="button" class="filter-chip loan-subgrid-tab ${activeTab === 'borrows' ? 'active' : ''}" data-open-loan-tab="borrows">
-                <span>Company Borrows · We Owe</span>
-                <b>${openBorrowedCount} · ${fmtUsd(openBorrowedUsd)}</b>
-              </button>
             </div>
           </div>
           <div class="loan-subgrid-search-wrap">
-            <input type="search" id="openLoansSearchInput" class="loan-subgrid-search" value="${esc(searchQuery || '')}" placeholder="Filter open loans by name or ref..." autocomplete="off">
+            <input type="search" id="openLoansSearchInput" class="loan-subgrid-search" value="${esc(searchQuery || '')}" placeholder="Search borrower, lender, or loan ref..." autocomplete="off">
           </div>
         </div>
         <div class="table-wrap loan-subgrid-table-wrap">
@@ -2044,71 +2044,44 @@
         ${adminHeaderHtml}
         <div class="form-grid-3">
           <div class="loan-cockpit-deck" id="loanModeBar" style="grid-column:1 / -1">
-            <div class="loan-cockpit-cols">
-              <div class="loan-cockpit-col">
-                <div class="loan-cockpit-step-hdr">
-                  <span class="loan-step-num">1</span>
-                  <span class="loan-step-title">Select Transaction Action</span>
-                </div>
-                <div class="loan-action-grid" id="loanActionPills" role="tablist">
-                  <button type="button" class="loan-action-card active" data-loan-action="loan" aria-selected="true">
-                    <span class="loan-card-icon is-open" aria-hidden="true">+</span>
-                    <span class="loan-card-copy">
-                      <span class="loan-card-title-row">
-                        <strong class="loan-card-title">Open New Loan</strong>
-                      </span>
-                      <span class="loan-card-sub">Disburse a new advance or record a new borrowing</span>
-                    </span>
-                  </button>
-                  <button type="button" class="loan-action-card" data-loan-action="loan_settlement" aria-selected="false">
-                    <span class="loan-card-icon is-settle" aria-hidden="true">✓</span>
-                    <span class="loan-card-copy">
-                      <span class="loan-card-title-row">
-                        <strong class="loan-card-title">Close / Settle Open Loan</strong>
-                        <span class="loan-card-pill" id="loanSettleOpenCountBadge">Open Portfolio</span>
-                      </span>
-                      <span class="loan-card-sub">Collect repayment or pay down an existing open balance</span>
-                    </span>
-                  </button>
-                </div>
-              </div>
-              <div class="loan-cockpit-col">
-                <div class="loan-cockpit-step-hdr">
-                  <span class="loan-step-num">2</span>
-                  <span class="loan-step-title">Select Loan Side &amp; Cash Flow Direction</span>
-                </div>
-                <div class="loan-side-grid" id="loanSidePills" role="tablist">
-                  <button type="button" class="loan-side-card active" data-loan-side="Company lends" aria-selected="true">
-                    <div class="loan-side-top">
-                      <strong class="loan-card-title">Company Lends (We Lend)</strong>
-                      <span class="loan-side-count-pill" id="loanSideBadgeLends">Owed to Us</span>
-                    </div>
-                    <div class="loan-flow-strip" id="loanSideFlowLends">
-                      <span class="loan-flow-node">Company Till</span>
-                      <span class="loan-flow-pill is-out">-$ Cash Outflow</span>
-                      <span class="loan-flow-node">Borrower</span>
-                    </div>
-                    <div class="loan-card-sub" id="loanSideSubLends">Staff, partner, or entity borrows from us (Owed to Company)</div>
-                  </button>
-                  <button type="button" class="loan-side-card" data-loan-side="Company borrows" aria-selected="false">
-                    <div class="loan-side-top">
-                      <strong class="loan-card-title">Company Borrows (We Borrow)</strong>
-                      <span class="loan-side-count-pill" id="loanSideBadgeBorrows">We Owe</span>
-                    </div>
-                    <div class="loan-flow-strip" id="loanSideFlowBorrows">
-                      <span class="loan-flow-node">Lender</span>
-                      <span class="loan-flow-pill is-in">+$ Cash Inflow</span>
-                      <span class="loan-flow-node">Company Till</span>
-                    </div>
-                    <div class="loan-card-sub" id="loanSideSubBorrows">Partner, bank, or entity lends to us (Company Owes Lender)</div>
-                  </button>
-                </div>
-              </div>
+            <div class="loan-mode-switcher" id="loanActionPills" role="tablist">
+              <button type="button" class="loan-action-card active" data-loan-action="loan" aria-selected="true">
+                <span class="loan-card-icon is-open" aria-hidden="true">+</span>
+                <span class="loan-card-copy">
+                  <span class="loan-card-title-row">
+                    <strong class="loan-card-title">Open New Loan</strong>
+                  </span>
+                  <span class="loan-card-sub">Record a new loan given or borrowed</span>
+                </span>
+              </button>
+              <button type="button" class="loan-action-card" data-loan-action="loan_settlement" aria-selected="false">
+                <span class="loan-card-icon is-settle" aria-hidden="true">✓</span>
+                <span class="loan-card-copy">
+                  <span class="loan-card-title-row">
+                    <strong class="loan-card-title">Settle Open Loan</strong>
+                    <span class="loan-card-pill" id="loanSettleOpenCountBadge">Open Loans</span>
+                  </span>
+                  <span class="loan-card-sub">Pick an existing open loan to collect or pay back</span>
+                </span>
+              </button>
             </div>
-            <div class="loan-cockpit-statusbar">
-              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <span class="badge badge-warn" id="loanCashImpactBadge">Cash Outflow · Company Gives Loan</span>
-                <span class="loan-statusbar-hint" id="loanModeHelperText">Tip: Click any open loan row in the table below to auto-fill and settle it in 1 click.</span>
+            <div class="loan-new-side-deck" id="loanNewSideDeck">
+              <div class="loan-side-section-lbl">Which type of new loan are you recording?</div>
+              <div class="loan-side-grid" id="loanSidePills" role="tablist">
+                <button type="button" class="loan-side-card active" data-loan-side="Company lends" aria-selected="true">
+                  <div class="loan-side-top">
+                    <strong class="loan-card-title">We Lend Money</strong>
+                    <span class="loan-flow-pill is-out" id="loanSideFlowLends">Cash Out (-$)</span>
+                  </div>
+                  <div class="loan-card-sub" id="loanSideSubLends">Company gives a loan or advance to a Borrower (They owe us)</div>
+                </button>
+                <button type="button" class="loan-side-card" data-loan-side="Company borrows" aria-selected="false">
+                  <div class="loan-side-top">
+                    <strong class="loan-card-title">We Borrow Money</strong>
+                    <span class="loan-flow-pill is-in" id="loanSideFlowBorrows">Cash In (+$)</span>
+                  </div>
+                  <div class="loan-card-sub" id="loanSideSubBorrows">Company receives a loan from a Lender (We owe them)</div>
+                </button>
               </div>
             </div>
           </div>
@@ -2122,19 +2095,19 @@
           </select>
           <input type="hidden" id="f_direction" value="Outflow">
           <input type="hidden" id="f_target_loan" value="">
+          <div id="paLoanSubgridWrap" hidden style="grid-column:1 / -1">${initSubgridHtml}</div>
           <div id="selectedLoanSettleCard" class="loan-settle-workbench" hidden style="grid-column:1 / -1"></div>
+          <div id="trLiveContextStrip" class="att-contract-strip" hidden style="grid-column:1 / -1"></div>
           ${companyField}
           ${lockedDateField('Transaction Date *')}
           ${collapsibleRepDateField()}
-          ${fld('<span id="lbl_tr_cp">Borrower (Receiving Loan) *</span>', inp('f_counterparty', 'text', '', 'list="dl_loan_parties" placeholder="Select or type borrower, staff, or lender..."') + dl('dl_loan_parties', loanBorrowerNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
+          ${fld('<span id="lbl_tr_cp">Borrower (Receiving Loan) *</span>', inp('f_counterparty', 'text', '', 'list="dl_loan_parties" placeholder="Select or type borrower receiving the loan..."') + dl('dl_loan_parties', loanBorrowerNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
           ${fld('USD Amount ($)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_tr_usd', hintId: 'hint_tr_usd', hint: '', afterHtml: '<div class="loan-usd-quick-bar" id="loanUsdQuickBar"></div>' })}
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'), { id: 'wrap_tr_lbp' })}
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
           ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Optional voucher or loan ref..."'))}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional settlement or loan remarks..."'), { span: true })}
         </div>
-        <div id="trLiveContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
-        <div id="paLoanSubgridWrap">${initSubgridHtml}</div>
         <div class="live-calc" id="trLiveCalc">
           <div><small id="lbl_tr_c1">Open Loan Before</small><b id="calc_tr_c1">—</b></div>
           <div><small id="lbl_tr_c2">Loan Given Now</small><b id="calc_tr_c2">$0.00</b></div>

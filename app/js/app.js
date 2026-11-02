@@ -36174,55 +36174,43 @@
               });
             }
 
+            const sideDeck = $('loanNewSideDeck');
+            if (sideDeck) {
+              sideDeck.hidden = (trType === 'loan_settlement');
+            }
             const flowLends = $('loanSideFlowLends');
             if (flowLends) {
-              flowLends.innerHTML = trType === 'loan_settlement'
-                ? `<span class="loan-flow-node">Borrower</span><span class="loan-flow-pill is-in">+$ Cash Inflow</span><span class="loan-flow-node">Company Till</span>`
-                : `<span class="loan-flow-node">Company Till</span><span class="loan-flow-pill is-out">-$ Cash Outflow</span><span class="loan-flow-node">Borrower</span>`;
+              flowLends.textContent = 'Cash Out (-$)';
             }
             const subLends = $('loanSideSubLends');
             if (subLends) {
-              subLends.textContent = trType === 'loan_settlement'
-                ? 'Borrower pays back what they owe us (Cash Inflow to Till)'
-                : 'Staff, partner, or entity borrows from us (Owed to Company)';
+              subLends.textContent = 'Company gives a loan or advance to a Borrower (They owe us)';
             }
             const flowBorrows = $('loanSideFlowBorrows');
             if (flowBorrows) {
-              flowBorrows.innerHTML = trType === 'loan_settlement'
-                ? `<span class="loan-flow-node">Company Till</span><span class="loan-flow-pill is-out">-$ Cash Outflow</span><span class="loan-flow-node">Lender</span>`
-                : `<span class="loan-flow-node">Lender</span><span class="loan-flow-pill is-in">+$ Cash Inflow</span><span class="loan-flow-node">Company Till</span>`;
+              flowBorrows.textContent = 'Cash In (+$)';
             }
             const subBorrows = $('loanSideSubBorrows');
             if (subBorrows) {
-              subBorrows.textContent = trType === 'loan_settlement'
-                ? 'Company repays lender for a borrowed loan (Cash Outflow)'
-                : 'Partner, bank, or entity lends to us (Company Owes Lender)';
+              subBorrows.textContent = 'Company receives a loan from a Lender (We owe them)';
             }
 
-            const impactBadge = $('loanCashImpactBadge');
-            if (impactBadge) {
-              impactBadge.className = 'badge ' + (cashDir === 'Inflow' ? 'badge-ok' : 'badge-warn');
-              impactBadge.textContent = trType === 'loan_settlement'
-                ? (isBorrowSide ? 'Cash Outflow · Company Repays Lender' : 'Cash Inflow · Borrower Settles Loan')
-                : (isBorrowSide ? 'Cash Inflow · Company Receives Loan' : 'Cash Outflow · Company Gives Loan');
-            }
-            const helperTxt = $('loanModeHelperText');
-            if (helperTxt) {
-              helperTxt.textContent = targetLoanMeta
-                ? `Settling ${targetLoanMeta.name} (${targetLoanMeta.party}) · Open Balance ${fmtUSD(targetLoanMeta.openAmt, 2)}`
-                : (trType === 'loan_settlement'
-                    ? 'Click any open loan in the table below to auto-fill party, direction, and settlement balance.'
-                    : 'Opening a new loan · or click any row in the Open Loans Portfolio below to settle an existing loan.');
-            }
             const cpLbl = $('lbl_tr_cp');
             if (cpLbl) {
               cpLbl.textContent = trType === 'loan_settlement'
-                ? (isBorrowSide ? 'Lender (Being Settled) *' : 'Borrower (Settling Loan) *')
-                : (isBorrowSide ? 'Lender (Lending to Company) *' : 'Borrower (Receiving Loan) *');
+                ? (isBorrowSide ? 'Lender (Being Paid Back) *' : 'Borrower (Paying Us Back) *')
+                : (isBorrowSide ? 'Lender (Giving Loan) *' : 'Borrower (Receiving Loan) *');
+            }
+            const cpInp = $('f_counterparty');
+            if (cpInp) {
+              cpInp.placeholder = trType === 'loan_settlement'
+                ? (isBorrowSide ? 'Click an open loan above or type lender...' : 'Click an open loan above or type borrower...')
+                : (isBorrowSide ? 'Select or type lender giving the loan...' : 'Select or type borrower receiving the loan...');
             }
 
             const loanSubWrap = $('paLoanSubgridWrap');
             if (loanSubWrap && window.MFG_FORMS && typeof window.MFG_FORMS.renderOpenLoansSubgrid === 'function') {
+              loanSubWrap.hidden = (trType !== 'loan_settlement');
               const wasSearchFocused = document.activeElement && document.activeElement.id === 'openLoansSearchInput';
               const prevSelStart = wasSearchFocused ? document.activeElement.selectionStart : null;
               const prevSelEnd = wasSearchFocused ? document.activeElement.selectionEnd : null;
@@ -36234,10 +36222,10 @@
                 loanSide,
                 thisPay,
                 tgtLoanVal,
-                FORM_UI.openLoanTab,
+                FORM_UI.openLoanTab || 'all',
                 FORM_UI.openLoanSearch || ''
               );
-              if (wasSearchFocused) {
+              if (wasSearchFocused && !loanSubWrap.hidden) {
                 const newSInp = $('openLoansSearchInput');
                 if (newSInp) {
                   try {
@@ -36249,13 +36237,9 @@
               const subEl = $('openLoansCloseSubgrid');
               if (subEl) {
                 const totCnt = Number(subEl.getAttribute('data-open-total-count') || 0);
-                const lCnt = Number(subEl.getAttribute('data-open-lent-count') || 0);
                 const lUsd = Number(subEl.getAttribute('data-open-lent-usd') || 0);
-                const bCnt = Number(subEl.getAttribute('data-open-borrowed-count') || 0);
                 const bUsd = Number(subEl.getAttribute('data-open-borrowed-usd') || 0);
-                if ($('loanSettleOpenCountBadge')) $('loanSettleOpenCountBadge').textContent = `${totCnt} Open`;
-                if ($('loanSideBadgeLends')) $('loanSideBadgeLends').textContent = `${lCnt} Open · ${fmtUSD(lUsd, 0)}`;
-                if ($('loanSideBadgeBorrows')) $('loanSideBadgeBorrows').textContent = `${bCnt} Open · ${fmtUSD(bUsd, 0)}`;
+                if ($('loanSettleOpenCountBadge')) $('loanSettleOpenCountBadge').textContent = `${totCnt} Open · ${fmtUSD(lUsd + bUsd, 0)}`;
               }
             }
 
@@ -36284,19 +36268,20 @@
                 wbCard.innerHTML = `
                   <div class="loan-wb-top">
                     <div class="loan-wb-title-group">
-                      <span class="loan-wb-tag ${isBorrowSide ? 'is-borrow' : 'is-lend'}">${isBorrowSide ? 'We Repay Lender (Outflow)' : 'Borrower Settles Us (Inflow)'}</span>
-                      <strong class="loan-wb-title">${targetLoanMeta ? `Voucher ${esc(targetLoanMeta.name)} · ${esc(targetLoanMeta.party)}` : `${esc((loanPos && loanPos.name) || cp)} · Open Balance Settlement`}</strong>
+                      <span class="loan-wb-step-kicker">2. SETTLEMENT PAYMENT</span>
+                      <span class="loan-wb-tag ${isBorrowSide ? 'is-borrow' : 'is-lend'}">${isBorrowSide ? 'We Pay Back Lender · Cash Out (-$)' : 'Borrower Pays Us Back · Cash In (+$)'}</span>
+                      <strong class="loan-wb-title">${targetLoanMeta ? `${esc(targetLoanMeta.name)} · ${esc(targetLoanMeta.party)}` : `${esc((loanPos && loanPos.name) || cp)} · Open Loan Balance`}</strong>
                       ${targetLoanMeta && targetLoanMeta.date ? `<span class="loan-wb-date mono">${esc(targetLoanMeta.date)}</span>` : ''}
                       ${isFullClose ? `<span class="badge badge-ok">✓ Closes in Full ($0.00 Left)</span>` : ''}
                     </div>
                     <div class="loan-wb-actions">
-                      <span class="loan-wb-pct-lbl">Quick Settle:</span>
+                      <span class="loan-wb-pct-lbl">Quick Amount:</span>
                       ${[100, 75, 50, 25].map(pct => {
                         const pAmt = round2((wbOpen * pct) / 100);
                         const isCur = Math.abs(wbNow - pAmt) <= 0.01;
                         return `<button type="button" class="loan-pct-pill ${isCur ? 'active' : ''}" data-loan-settle-pct="${pct}" data-loan-open-base="${wbOpen.toFixed(2)}">${pct === 100 ? `Full (${fmtUSD(pAmt, 2)})` : `${pct}% (${fmtUSD(pAmt, 2)})`}</button>`;
                       }).join('')}
-                      ${targetLoanMeta ? `<button type="button" class="loan-unlink-btn" data-clear-target-loan="1" title="Unlink specific loan voucher">× Unlink</button>` : ''}
+                      ${targetLoanMeta ? `<button type="button" class="loan-unlink-btn" data-clear-target-loan="1" title="Clear selected loan">× Change Loan</button>` : ''}
                     </div>
                   </div>
                   <div class="loan-settle-prog-track" title="Prior Paid: ${fmtUSD(wbPriorSettled, 2)} · Settling Now: ${fmtUSD(wbNow, 2)} · Remaining: ${fmtUSD(wbRem, 2)}">
@@ -36309,6 +36294,14 @@
                     <span><small>Open Before</small><b class="mono">${fmtUSD(wbOpen, 2)}</b></span>
                     <span><small>Settling Now</small><b class="mono is-accent">${fmtUSD(wbNow, 2)}</b></span>
                     <span><small>Remaining After</small><b class="mono ${isFullClose ? 'is-ok' : ''}">${afterOut < -0.01 ? 'Overpaid +' + fmtUSD(Math.abs(afterOut), 2) : fmtUSD(wbRem, 2)}</b></span>
+                  </div>
+                `;
+              } else if (trType === 'loan_settlement') {
+                wbCard.hidden = false;
+                wbCard.innerHTML = `
+                  <div class="loan-wb-empty-prompt">
+                    <span class="loan-wb-step-kicker">2. SETTLEMENT PAYMENT DETAILS</span>
+                    <span>Click <b>Settle</b> on any open loan row in the table above to auto-fill the borrower/lender, open balance, and reference below.</span>
                   </div>
                 `;
               } else {
@@ -36342,7 +36335,7 @@
             }
 
             if (trStrip) {
-              if (!cp) {
+              if (!cp || (trType === 'loan_settlement' && targetLoanMeta)) {
                 trStrip.hidden = true;
                 trStrip.innerHTML = '';
               } else {
@@ -39917,7 +39910,15 @@
           ev.preventDefault();
           const nextAct = loanActBtn.getAttribute('data-loan-action') || 'loan';
           if ($('f_trtype')) $('f_trtype').value = nextAct;
-          if (nextAct === 'loan' && $('f_target_loan')) $('f_target_loan').value = '';
+          if (nextAct === 'loan') {
+            if ($('f_target_loan')) $('f_target_loan').value = '';
+            if ($('f_reference') && $('f_reference').dataset.autoFromLoan === '1') {
+              $('f_reference').value = '';
+              delete $('f_reference').dataset.autoFromLoan;
+            }
+          } else if (nextAct === 'loan_settlement') {
+            if (!FORM_UI.openLoanTab) FORM_UI.openLoanTab = 'all';
+          }
           recalcForm();
           return;
         }

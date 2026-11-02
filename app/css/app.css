@@ -25888,54 +25888,37 @@ select[data-locked-by-item="1"]:disabled {
   color: var(--ink-soft);
 }
 
-/* ==================== INTERACTIVE LOAN & SETTLEMENT COCKPIT (v19.6.50) ==================== */
+/* ==================== INTERACTIVE LOAN & SETTLEMENT COCKPIT (v19.6.53) ==================== */
 .loan-cockpit-deck {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--brass) 32%, var(--line));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--brass-tint) 38%, var(--surface)) 0%, var(--surface) 100%);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
-.loan-cockpit-cols {
+.loan-mode-switcher {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.18fr);
-  gap: 12px;
-  align-items: stretch;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
-.loan-cockpit-col {
+.loan-new-side-deck {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  min-width: 0;
+  padding: 11px 13px;
+  border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--brass) 28%, var(--line));
+  background: color-mix(in srgb, var(--surface-2) 45%, var(--surface));
 }
 
-.loan-cockpit-step-hdr {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+.loan-new-side-deck[hidden],
+#paLoanSubgridWrap[hidden],
+.loan-settle-workbench[hidden] {
+  display: none !important;
 }
 
-.loan-step-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 19px;
-  height: 19px;
-  border-radius: 999px;
-  background: var(--brass);
-  color: #fff;
-  font-size: 10.5px;
-  font-weight: 800;
-  flex-shrink: 0;
-}
-
-.loan-step-title {
+.loan-side-section-lbl {
   font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
@@ -25943,12 +25926,10 @@ select[data-locked-by-item="1"]:disabled {
   color: var(--ink-soft);
 }
 
-.loan-action-grid,
 .loan-side-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  flex: 1;
+  gap: 10px;
 }
 
 .loan-action-card,
@@ -25959,22 +25940,22 @@ select[data-locked-by-item="1"]:disabled {
   flex-direction: column;
   justify-content: space-between;
   gap: 6px;
-  padding: 10px 11px;
+  padding: 11px 13px;
   border-radius: 10px;
   border: 1.5px solid var(--line);
   background: var(--surface);
   color: var(--ink);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
   min-width: 0;
 }
 
 .loan-action-card {
   flex-direction: row;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-start;
-  gap: 9px;
+  gap: 11px;
 }
 
 .loan-action-card:hover,
@@ -25987,15 +25968,15 @@ select[data-locked-by-item="1"]:disabled {
 .loan-side-card.active {
   border-color: var(--brass);
   background: color-mix(in srgb, var(--brass-tint) 58%, var(--surface));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brass) 20%, transparent), 0 3px 10px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--brass) 20%, transparent), 0 3px 10px rgba(15, 23, 42, 0.05);
 }
 
 .loan-card-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 8px;
   font-size: 14px;
   font-weight: 900;
@@ -26024,24 +26005,23 @@ select[data-locked-by-item="1"]:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .loan-card-title {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 800;
   color: var(--ink);
   line-height: 1.25;
 }
 
-.loan-card-pill,
-.loan-side-count-pill {
+.loan-card-pill {
   display: inline-flex;
   align-items: center;
-  padding: 1.5px 7px;
+  padding: 2px 8px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 800;
   background: var(--surface-2);
   color: var(--ink-soft);
@@ -26049,43 +26029,24 @@ select[data-locked-by-item="1"]:disabled {
   white-space: nowrap;
 }
 
-.loan-action-card.active .loan-card-pill,
-.loan-side-card.active .loan-side-count-pill {
+.loan-action-card.active .loan-card-pill {
   background: color-mix(in srgb, var(--brass) 18%, var(--surface));
   color: var(--brass-ink, var(--ink));
   border-color: color-mix(in srgb, var(--brass) 45%, var(--line));
 }
 
 .loan-card-sub {
-  font-size: 11px;
-  line-height: 1.32;
+  font-size: 11.5px;
+  line-height: 1.35;
   color: var(--ink-soft);
-}
-
-.loan-flow-strip {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-wrap: wrap;
-  padding: 4px 7px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--surface-2) 78%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
-}
-
-.loan-flow-node {
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--ink);
-  white-space: nowrap;
 }
 
 .loan-flow-pill {
   display: inline-flex;
   align-items: center;
-  padding: 1px 6px;
+  padding: 2px 8px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 800;
   white-space: nowrap;
 }
@@ -26102,19 +26063,21 @@ select[data-locked-by-item="1"]:disabled {
   border: 1px solid color-mix(in srgb, #10b981 40%, transparent);
 }
 
-.loan-cockpit-statusbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed color-mix(in srgb, var(--brass) 30%, var(--line));
+.loan-wb-step-kicker {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--brass);
 }
 
-.loan-statusbar-hint {
-  font-size: 11.5px;
+.loan-wb-empty-prompt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
   color: var(--ink-soft);
-  font-weight: 500;
 }
 
 /* Selected Loan Settlement Workbench */
@@ -26408,7 +26371,7 @@ select[data-locked-by-item="1"]:disabled {
 }
 
 .loan-subgrid-table-wrap {
-  max-height: 235px;
+  max-height: 200px;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -26582,10 +26545,7 @@ select[data-locked-by-item="1"]:disabled {
 }
 
 @media (max-width: 768px) {
-  .loan-cockpit-cols {
-    grid-template-columns: 1fr;
-  }
-  .loan-action-grid,
+  .loan-mode-switcher,
   .loan-side-grid {
     grid-template-columns: 1fr;
   }
