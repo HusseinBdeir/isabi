@@ -8230,7 +8230,59 @@
     }
     return best;
   }
-  function appendOrUpdateTruckWindow(eq, winSpec) {
+  function isOwnFleetOwnerName(ownName, company) {
+    const n = norm(ownName);
+    if (!n) return false;
+    return n === 'wtc' || n === 'bbconstruction' || n === 'lions transport' || (company ? n === norm(company) : false);
+  }
+  function syncEquipmentBaselineFromWindows(eq) {
+    if (!eq || !Array.isArray(eq.adj_windows) || !eq.adj_windows.length) return;
+    const today = todayISO();
+    const genWins = eq.adj_windows.filter(w => w && !w.cust && !w.site);
+    if (!genWins.length) return;
+    const activeGen = genWins.filter(w => (!w.s || String(w.s) <= today) && (!w.e || String(w.e) >= today));
+    const openGen = activeGen.filter(w => !w.e);
+    const chosen = (openGen.length ? openGen[openGen.length - 1] : (activeGen.length ? activeGen[activeGen.length - 1] : genWins[genWins.length - 1])) || null;
+    if (!chosen) return;
+    if (Number(chosen.cap) > 0) eq.capacity = Number(chosen.cap);
+    if (chosen.own !== undefined) {
+      eq.supplier = isOwnFleetOwnerName(chosen.own, eq.company) ? '' : String(chosen.own || '').trim();
+    }
+    if (chosen.drv) eq.default_driver = chosen.drv;
+    if (chosen.drv && SEED && SEED.records && Array.isArray(SEED.records.drivers)) {
+      const isOwn = isOwnFleetOwnerName(chosen.own, eq.company) || /^own/i.test(String(eq.ownership || ''));
+      const nextOwner = isOwn ? '' : (chosen.own || eq.supplier || '');
+      const drvNorm = norm(chosen.drv);
+      const seedDrv = SEED.records.drivers.find(x => x && !x.voided && norm(x.name || x.driver) === drvNorm);
+      if (seedDrv && nextOwner) seedDrv.truck_owner = nextOwner;
+      if (STATE && STATE.customRecords && Array.isArray(STATE.customRecords.drivers)) {
+        const custDrv = STATE.customRecords.drivers.find(x => x && !x.voided && norm(x.name || x.driver) === drvNorm);
+        if (custDrv && nextOwner) custDrv.truck_owner = nextOwner;
+      }
+    }
+  }
+  function removeTruckWindowAt(eq, idx) {
+    if (!eq || !Array.isArray(eq.adj_windows) || idx < 0 || idx >= eq.adj_windows.length) return null;
+    const removed = eq.adj_windows.splice(idx, 1)[0];
+    if (removed && !removed.cust && !removed.site && removed.s) {
+      const prevEnd = prevDayISO(String(removed.s).slice(0, 10));
+      const remCo = norm(removed.co);
+      const hasOtherSameStart = eq.adj_windows.some(w => w && !w.cust && !w.site && (!remCo || !w.co || norm(w.co) === remCo) && String(w.s || '') >= String(removed.s));
+      if (prevEnd && !hasOtherSameStart) {
+        eq.adj_windows.forEach(w => {
+          if (!w || w.cust || w.site) return;
+          if ((!remCo || !w.co || norm(w.co) === remCo) && String(w.e || '') === prevEnd) {
+            w.e = '';
+          }
+        });
+      }
+    }
+    syncEquipmentBaselineFromWindows(eq);
+    _WIN_REV++;
+    _FLEET_IDX = null;
+    return removed;
+  }
+  function appendOrUpdateTruckWindow(eq, winSpec, editIdx = -1) {
     if (!eq || !winSpec) return null;
     if (!Array.isArray(eq.adj_windows)) eq.adj_windows = [];
     const s = String(winSpec.s || todayISO()).slice(0, 10);
@@ -8244,9 +8296,21 @@
     const cust = String(winSpec.cust || '').trim();
     const site = String(winSpec.site || '').trim();
     const isGeneral = !cust && !site;
+    const hasExplicitEditIdx = typeof editIdx === 'number' && editIdx >= 0 && editIdx < eq.adj_windows.length;
+    const explicitTarget = hasExplicitEditIdx ? eq.adj_windows[editIdx] : null;
+    const existing = explicitTarget || eq.adj_windows.find(w => {
+      if (!w) return false;
+      if (norm(w.co) !== norm(co)) return false;
+      if (norm(w.cust) !== norm(cust) || norm(w.site) !== norm(site)) return false;
+      if (String(w.s || '') !== s) return false;
+      const wSide = (w.side || 'both') === 'all' ? 'both' : (w.side || 'both');
+      const sideCompat = wSide === side || side === 'both' || wSide === 'both';
+      if (!sideCompat) return false;
+      return (e ? (String(w.e || '') === e || !w.e) : true);
+    });
     if (isGeneral && e) {
-      const hasOpenBaseline = eq.adj_windows.some(w => w && !w.cust && !w.site && !w.e);
-      if (!hasOpenBaseline && (eq.default_driver || eq.supplier || Number(eq.capacity) > 0)) {
+      const hasOpenBaseline = eq.adj_windows.some(w => w && w !== existing && !w.cust && !w.site && !w.e);
+      if (!hasOpenBaseline && !existing && (eq.default_driver || eq.supplier || Number(eq.capacity) > 0)) {
         const baseWin = { co: co || eq.company || 'WTC', side: 'both', s: '2024-01-01', e: '', cap: Number(eq.capacity || 0) };
         if (eq.supplier) baseWin.own = eq.supplier;
         if (eq.default_driver) baseWin.drv = eq.default_driver;
@@ -8255,7 +8319,7 @@
     } else if (isGeneral && !e) {
       const prevEnd = prevDayISO(s);
       eq.adj_windows.forEach(w => {
-        if (!w || w.cust || w.site) return;
+        if (!w || w === existing || w.cust || w.site) return;
         const sameCo = !co || !w.co || norm(w.co) === norm(co);
         const wSide = w.side || 'both';
         const sameSide = side === 'both' || wSide === 'both' || wSide === 'all' || wSide === side;
@@ -8264,20 +8328,21 @@
         }
       });
     }
-    const existing = eq.adj_windows.find(w =>
-      w && norm(w.co) === norm(co) && ((w.side || 'both') === 'all' ? 'both' : (w.side || 'both')) === side &&
-      String(w.s || '') === s && (e ? String(w.e || '') === e : !w.e) &&
-      norm(w.cust) === norm(cust) && norm(w.site) === norm(site)
-    );
     let targetWin;
     if (existing) {
+      existing.co = co || existing.co || 'WTC';
+      existing.side = side;
+      existing.s = s;
       existing.e = e;
       if (cap > 0 || existing.cap == null) existing.cap = cap;
       if (own) existing.own = own; else delete existing.own;
       if (drv) existing.drv = drv; else delete existing.drv;
+      if (cust) existing.cust = cust; else delete existing.cust;
+      if (site) existing.site = site; else delete existing.site;
+      existing._userWin = true;
       targetWin = existing;
     } else {
-      targetWin = { co: co || 'WTC', side, s, e, cap };
+      targetWin = { co: co || 'WTC', side, s, e, cap, _userWin: true };
       if (own) targetWin.own = own;
       if (drv) targetWin.drv = drv;
       if (cust) targetWin.cust = cust;
@@ -8285,15 +8350,168 @@
       eq.adj_windows.push(targetWin);
     }
     eq.adj_windows.sort((a, b) => String(a.s || '').localeCompare(String(b.s || '')) || String(a.e || '9999-12-31').localeCompare(String(b.e || '9999-12-31')));
-    const today = todayISO();
-    if (isGeneral && !e && (!s || s <= today)) {
-      if (cap > 0) eq.capacity = cap;
-      if (own && norm(own) !== 'wtc' && norm(own) !== 'bbconstruction') eq.supplier = own;
-      if (drv) eq.default_driver = drv;
-    }
+    syncEquipmentBaselineFromWindows(eq);
     _WIN_REV++;
     _FLEET_IDX = null;
+    if (winSpec.backfillTickets !== false) {
+      backfillTruckWindowToTickets(eq, targetWin, { persistCustom: Boolean(winSpec.persistTicketBackfill) });
+    }
     return targetWin;
+  }
+  function backfillTruckWindowToTickets(eq, targetWin, opts = {}) {
+    if (!eq || !targetWin || !SEED || !SEED.records) return { sales: 0, raw: 0, fuel: 0, total: 0 };
+    const eqNameNorm = norm(eq.name || eq.equipment);
+    const eqPlateNorm = norm(eq.plate_no);
+    if (!eqNameNorm && !eqPlateNorm) return { sales: 0, raw: 0, fuel: 0, total: 0 };
+    const matchUnit = u => {
+      const un = norm(u);
+      return Boolean(un && (un === eqNameNorm || (eqPlateNorm && un === eqPlateNorm)));
+    };
+    const wSide = (targetWin.side || 'both') === 'all' ? 'both' : (targetWin.side || 'both');
+    const wCoNorm = norm(targetWin.co);
+    const wStart = String(targetWin.s || '');
+    const wEnd = String(targetWin.e || '');
+    const wCustNorm = norm(targetWin.cust);
+    const wSiteNorm = norm(targetWin.site);
+    const persistCustom = opts.persistCustom !== false && !window.__fastInspectorModifyTest;
+    let salesCnt = 0, rawCnt = 0, fuelCnt = 0;
+
+    const touchTicketInCustom = (tk, row) => {
+      if (!persistCustom || !row || !row.id) return;
+      if (!Array.isArray(STATE.customRecords[tk])) STATE.customRecords[tk] = [];
+      const idx = STATE.customRecords[tk].findIndex(x => x && String(x.id) === String(row.id));
+      if (idx >= 0) Object.assign(STATE.customRecords[tk][idx], row);
+      else STATE.customRecords[tk].unshift(Object.assign({}, row));
+      postRecordToLocalApi(tk, row);
+    };
+
+    if (wSide === 'both' || wSide === 'sales') {
+      const salesList = Array.isArray(SEED.records.sales_tickets) ? SEED.records.sales_tickets : [];
+      salesList.forEach(r => {
+        if (!r || r.voided || !matchUnit(r.truck)) return;
+        const dt = String(r.date || '').slice(0, 10);
+        if (!dt) return;
+        if (wCoNorm && norm(r.company || 'WTC') !== wCoNorm) return;
+        if (wStart && dt < wStart) return;
+        if (wEnd && dt > wEnd) return;
+        if (wCustNorm && norm(r.customer) !== wCustNorm) return;
+        if (wSiteNorm && norm(r.site) !== wSiteNorm) return;
+        const effWin = resolveTruckWindow(eq, r.company || 'WTC', dt, { side: 'sales', customer: r.customer, site: r.site });
+        if (effWin && effWin !== targetWin) return;
+        let rowChanged = false;
+        if (targetWin.own) {
+          const isOwn = isOwnFleetOwnerName(targetWin.own, r.company || 'WTC');
+          const isExPlant = /^ex[- ]?plant$/i.test(String(r.sale_type || '').trim());
+          const isCustTrk = /^customer\s+truck$/i.test(String(r.transport_by || '').trim()) && !r.truck_owner && !wCustNorm;
+          if (!isExPlant && !isCustTrk) {
+            const nextTrBy = isOwn ? 'Company fleet' : 'Third-party truck';
+            const nextOwn = isOwn ? '' : targetWin.own;
+            if (String(r.transport_by || '') !== nextTrBy) { r.transport_by = nextTrBy; rowChanged = true; }
+            if (String(r.truck_owner || '') !== nextOwn) { r.truck_owner = nextOwn; rowChanged = true; }
+          }
+        }
+        if (targetWin.drv && String(r.driver || '') !== targetWin.drv) {
+          r.driver = targetWin.drv;
+          rowChanged = true;
+        }
+        if (rowChanged) {
+          salesCnt++;
+          touchTicketInCustom('sales_tickets', r);
+        }
+      });
+      if (salesCnt > 0 && SEED._tableRev) SEED._tableRev.sales_tickets = (SEED._tableRev.sales_tickets || 0) + 1;
+    }
+
+    if (wSide === 'both' || wSide === 'raw') {
+      const rawList = Array.isArray(SEED.records.raw_purchases) ? SEED.records.raw_purchases : [];
+      rawList.forEach(r => {
+        if (!r || r.voided || !matchUnit(r.truck)) return;
+        const dt = String(r.date || '').slice(0, 10);
+        if (!dt) return;
+        if (wCoNorm && norm(r.company || 'WTC') !== wCoNorm) return;
+        if (wStart && dt < wStart) return;
+        if (wEnd && dt > wEnd) return;
+        if (wSiteNorm && norm(r.site) !== wSiteNorm) return;
+        const effWin = resolveTruckWindow(eq, r.company || 'WTC', dt, { side: 'raw', site: r.site });
+        if (effWin && effWin !== targetWin) return;
+        let rowChanged = false;
+        if (targetWin.own) {
+          const isOwn = isOwnFleetOwnerName(targetWin.own, r.company || 'WTC');
+          const nextTrBy = isOwn ? 'Company fleet' : 'Third-party truck';
+          const nextOwn = isOwn ? '' : targetWin.own;
+          if (String(r.transport_by || '') !== nextTrBy) { r.transport_by = nextTrBy; rowChanged = true; }
+          if (String(r.truck_owner || '') !== nextOwn) { r.truck_owner = nextOwn; rowChanged = true; }
+        }
+        if (targetWin.drv && String(r.driver || '') !== targetWin.drv) {
+          r.driver = targetWin.drv;
+          rowChanged = true;
+        }
+        if (rowChanged) {
+          rawCnt++;
+          touchTicketInCustom('raw_purchases', r);
+        }
+      });
+      if (rawCnt > 0 && SEED._tableRev) SEED._tableRev.raw_purchases = (SEED._tableRev.raw_purchases || 0) + 1;
+    }
+
+    if (wSide === 'both' || wSide === 'fuel') {
+      const fuelList = Array.isArray(SEED.records.fuel_intakes) ? SEED.records.fuel_intakes : [];
+      fuelList.forEach(r => {
+        if (!r || r.voided || !matchUnit(r.equipment || r.truck)) return;
+        const dt = String(r.date || '').slice(0, 10);
+        if (!dt) return;
+        if (wCoNorm && norm(r.company || 'WTC') !== wCoNorm) return;
+        if (wStart && dt < wStart) return;
+        if (wEnd && dt > wEnd) return;
+        const effWin = resolveTruckWindow(eq, r.company || 'WTC', dt, { side: 'fuel' });
+        if (effWin && effWin !== targetWin) return;
+        if (targetWin.drv && String(r.driver || '') !== targetWin.drv) {
+          r.driver = targetWin.drv;
+          fuelCnt++;
+          touchTicketInCustom('fuel_intakes', r);
+        }
+      });
+      if (fuelCnt > 0 && SEED._tableRev) SEED._tableRev.fuel_intakes = (SEED._tableRev.fuel_intakes || 0) + 1;
+    }
+
+    const total = salesCnt + rawCnt + fuelCnt;
+    if (total > 0) {
+      _WIN_REV++;
+      _FLEET_IDX = null;
+      SEED._customRev = (SEED._customRev || 0) + 1;
+    }
+    return { sales: salesCnt, raw: rawCnt, fuel: fuelCnt, total };
+  }
+  function applyUserEquipmentWindowsToTickets() {
+    if (!SEED || !STATE || !STATE.customRecords || !Array.isArray(STATE.customRecords.equipment)) return;
+    STATE.customRecords.equipment.forEach(customEq => {
+      if (!customEq || customEq.voided || !Array.isArray(customEq.adj_windows)) return;
+      // Heal orphaned single-window baseline that was auto-closed on 2024-01-01 when a subsequent window was deleted
+      if (customEq.adj_windows.length === 1) {
+        const w0 = customEq.adj_windows[0];
+        if (w0 && !w0.cust && !w0.site && w0.s === '2024-01-01' && w0.e && w0.e >= '2026-10-30' && !w0._explicitEnd) {
+          w0.e = '';
+        }
+      }
+      const seedEq = (SEED.records && Array.isArray(SEED.records.equipment))
+        ? SEED.records.equipment.find(x => x && (String(x.id) === String(customEq.id) || norm(x.name) === norm(customEq.name)))
+        : null;
+      if (seedEq && Array.isArray(seedEq.adj_windows) && seedEq.adj_windows.length === 1) {
+        const sw0 = seedEq.adj_windows[0];
+        if (sw0 && !sw0.cust && !sw0.site && sw0.s === '2024-01-01' && sw0.e && sw0.e >= '2026-10-30' && !sw0._explicitEnd) {
+          sw0.e = '';
+        }
+      }
+      if (!SEED._recordsReady) return;
+      const eqRef = seedEq || customEq;
+      if (Array.isArray(eqRef.adj_windows)) {
+        eqRef.adj_windows.forEach(w => {
+          if (w && w._userWin) {
+            backfillTruckWindowToTickets(eqRef, w, { persistCustom: false });
+          }
+        });
+      }
+    });
   }
   function equipInfo(name, company, isCoFleet, winOpts) {
     const n = norm(name);
@@ -16208,16 +16426,39 @@
     { id: 'itm_020', name: 'Welding Electrodes (7018 Box)', item_name: 'Welding Electrodes (7018 Box)', category: 'Tools & Garage', uom: 'Box', default_cost: 28, default_location: 'WTC Main Warehouse', min_stock: 3 }
   ];
 
+  function isTransportRentalItemName(rawName, catRaw) {
+    const k = norm(rawName);
+    if (!k) return true;
+    if (/^(lodar|crane|ec210cl|silo|moto|none|-)$/i.test(k)) return true;
+    if (/transport/i.test(String(catRaw || '')) && /^(lodar|crane|winch|loader|excavator|flatbed)$/i.test(k)) return true;
+    return false;
+  }
+
+  function normalizeItemCatalogCategory(catRaw, rawName) {
+    const c = String(catRaw || '').trim();
+    if (['Spare Parts', 'Oils & Lubricants', 'Tools & Garage', 'Plant Consumables'].includes(c)) return c;
+    const nm = String(rawName || '').trim();
+    if (/15w|hydraul|oil|fluid|atf|grease|lubric/i.test(nm) || /oil|lubric/i.test(c)) return 'Oils & Lubricants';
+    if (/tool|weld|electrode|oxygen|cutting|disc|glove|torch|camera|projector|gps/i.test(nm) || /tool|garage/i.test(c)) return 'Tools & Garage';
+    if (/paint|consum|clean|office|water|pipe|cable|bulb|lamp/i.test(nm) || /office|facility/i.test(c)) return 'Plant Consumables';
+    return 'Spare Parts';
+  }
+
   function ensureItemsCatalogSeeded() {
     if (!SEED || !SEED.records) return [];
     if (!Array.isArray(SEED.records.items)) SEED.records.items = [];
+    const customItems = (STATE.customRecords && Array.isArray(STATE.customRecords.items)) ? STATE.customRecords.items : [];
+    const rev = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${(SEED.records.expense_items || []).length}|${(SEED.records.warehouse_movements || []).length}|${customItems.length}`;
+    if (SEED._itemsCatalogSeededRev === rev && SEED.records.items.length >= CANONICAL_ITEMS_SEED.length) {
+      return SEED.records.items;
+    }
     const byKey = new Map();
     SEED.records.items.forEach(r => {
       if (!r || r.voided) return;
       const nm = String(r.name || r.item_name || '').trim();
       if (nm) byKey.set(norm(nm), r);
     });
-    (STATE.customRecords && Array.isArray(STATE.customRecords.items) ? STATE.customRecords.items : []).forEach(r => {
+    customItems.forEach(r => {
       if (!r || r.voided) return;
       const nm = String(r.name || r.item_name || '').trim();
       if (nm && !byKey.has(norm(nm))) {
@@ -16233,22 +16474,42 @@
         byKey.set(k, clone);
       }
     });
+    const histCostAgg = new Map();
+    (SEED.records.expense_items || []).forEach(r => {
+      if (!r || r.voided || !r.item_name || isTransportRentalItemName(r.item_name, r.category)) return;
+      const k = norm(r.item_name);
+      const q = Math.max(0, Number(r.qty != null ? r.qty : 1));
+      const tot = Math.max(0, Number(r.line_total != null ? r.line_total : (q * Number(r.unit_cost || 0))));
+      if (!(q > 0) || !(tot > 0)) return;
+      const cur = histCostAgg.get(k) || { qty: 0, usd: 0 };
+      cur.qty += q;
+      cur.usd += tot;
+      histCostAgg.set(k, cur);
+    });
     const autoInferFromRow = (rawName, uomRaw, catRaw, costRaw, locRaw, minRaw) => {
       const nm = String(rawName || '').trim();
-      if (!nm) return;
+      if (!nm || isTransportRentalItemName(nm, catRaw)) return;
       const k = norm(nm);
-      if (byKey.has(k)) return;
-      const inferredUom = uomRaw || (/15w|hydraul|oil|fluid|atf|coolant/i.test(nm) ? 'Litre' : (/grease/i.test(nm) ? 'kg' : (/\bset\b/i.test(nm) ? 'Set' : (/\bbox\b/i.test(nm) ? 'Box' : 'Piece'))));
-      const inferredCat = catRaw && ['Spare Parts', 'Oils & Lubricants', 'Tools & Garage', 'Plant Consumables'].includes(catRaw)
-        ? catRaw
-        : (/15w|hydraul|oil|fluid|atf|grease|lubric/i.test(nm) ? 'Oils & Lubricants' : (/tool|weld|electrode|disc|glove/i.test(nm) ? 'Tools & Garage' : 'Spare Parts'));
+      if (byKey.has(k)) {
+        const ex = byKey.get(k);
+        if (!(Number(ex.default_cost || 0) > 0)) {
+          const hc = histCostAgg.get(k);
+          if (hc && hc.qty > 0) ex.default_cost = round2(hc.usd / hc.qty);
+          else if (Number(costRaw || 0) > 0) ex.default_cost = round2(Number(costRaw));
+        }
+        return;
+      }
+      const inferredUom = uomRaw || (/15w|hydraul|oil|fluid|atf|coolant/i.test(nm) ? 'Litre' : (/grease/i.test(nm) ? 'kg' : (/\bset\b|bolts|hardware|kit|knives|lining/i.test(nm) ? 'Set' : (/\bbox\b|electrodes/i.test(nm) ? 'Box' : 'Piece'))));
+      const inferredCat = normalizeItemCatalogCategory(catRaw, nm);
+      const hc = histCostAgg.get(k);
+      const effCost = Number(costRaw || 0) > 0 ? round2(Number(costRaw)) : (hc && hc.qty > 0 ? round2(hc.usd / hc.qty) : 0);
       const newRec = {
         id: 'itm_auto_' + (byKey.size + 1),
         name: nm,
         item_name: nm,
         category: inferredCat,
         uom: inferredUom,
-        default_cost: Number(costRaw || 0) > 0 ? round2(Number(costRaw)) : 0,
+        default_cost: effCost,
         default_location: locRaw || 'WTC Main Warehouse',
         min_stock: Number(minRaw || 0) > 0 ? Number(minRaw) : 0,
         source: 'seed',
@@ -16261,11 +16522,12 @@
       if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, r.category, r.unit_cost, r.warehouse_location || r.location, r.min_stock);
     });
     (SEED.records.expense_items || []).forEach(r => {
-      if (r && !r.voided && r.item_name && !r.historical_consumed) autoInferFromRow(r.item_name, r.uom, r.category, r.unit_cost, r.warehouse_location, 0);
+      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, r.category, r.unit_cost, r.warehouse_location, 0);
     });
     (SEED.records.repair_items || []).forEach(r => {
       if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, 'Spare Parts', r.unit_cost, 'WTC Main Warehouse', 0);
     });
+    SEED._itemsCatalogSeededRev = rev;
     return SEED.records.items;
   }
 
@@ -22433,7 +22695,9 @@
       } else if (/^extra/i.test(attType)) {
         shiftBasisLbl = /lbp/i.test(attType) ? `LBP Bonus (${fxShortLbl})` : 'USD Bonus';
       } else if (/^half\s*day$/i.test(attType) && a.no_out_rule === 'half_day') {
-        shiftBasisLbl = 'Missing OUT = Half Day (0.5d)';
+        shiftBasisLbl = a.single_punch_type === 'only_out' || (!a.in_time && a.out_time)
+          ? 'Only OUT (No IN) = Half Day (0.5d)'
+          : 'Only IN (No OUT) = Half Day (0.5d)';
       } else if (/^half\s*day$/i.test(attType) && Number(a.raw_late_min || 0) > 0) {
         shiftBasisLbl = a.penalty_summary || `Late ${Number(a.raw_late_min)}m = Half Day (0.5d)`;
       } else if (/^half\s*day$/i.test(attType) && workedH === 0) {
@@ -38283,11 +38547,11 @@
     const activeTodayDrv = (activeToday && activeToday.default_driver) || targetEq.default_driver || '—';
 
     logWrap.innerHTML = `
-      <div class="pa-subgrid-box" id="eqDriverLogBox">
+      <div class="pa-subgrid-box" id="eqDriverLogBox" data-edit-modal-win-idx="">
         <div class="pa-subgrid-hdr">
           <div>
             <strong>📋 3. Equipment Driver Assignment Log (Start Date → End Date) · ${esc(targetEq.name)}</strong>
-            <span class="pa-subgrid-sub">Log a temporary substitute driver (set both Start Date &amp; End Date when regular driver is absent) or a permanent change (leave End Date blank). Sales, Raw, Lubricant &amp; Diesel tickets lock strictly to the active driver for their date.</span>
+            <span class="pa-subgrid-sub">Log a temporary substitute driver (set both Start Date &amp; End Date when regular driver is absent) or a permanent change (leave End Date blank). Click any row below (or its Edit button) to update an existing entry in-place.</span>
           </div>
           <span class="badge badge-ok">Active (${esc(today)}): ${esc(activeTodayDrv)}</span>
         </div>
@@ -38313,8 +38577,9 @@
               <label for="f_log_driver">Active / Substitute Driver *</label>
               <input type="text" id="f_log_driver" list="dl_drivers" value="${esc(targetEq.default_driver || '')}" placeholder="Select or type active / substitute driver...">
             </div>
-            <div class="form-field" style="display:flex;align-items:flex-end">
-              <button type="button" class="btn btn-primary" id="btnLogEquipDriver" style="width:100%">+ Log Driver Assignment</button>
+            <div class="form-field" style="display:flex;align-items:flex-end;gap:6px">
+              <button type="button" class="btn btn-primary" id="btnLogEquipDriver" style="flex:1">+ Log Driver Assignment</button>
+              <button type="button" class="btn" id="btnCancelLogEquipDriver" hidden>Cancel</button>
             </div>
           </div>
         ` : ''}
@@ -38332,7 +38597,7 @@
                 const isOpen = !w.e || String(w.e) >= today;
                 const sideLbl = w.side === 'sales' ? 'Sales' : (w.side === 'raw' ? 'Raw & Trans' : (w.side === 'fuel' ? 'Diesel & Lub.' : 'All Tables'));
                 return `
-                  <tr>
+                  <tr data-modal-tw-row-idx="${origIdx}" style="cursor:pointer" title="Click to edit this log entry">
                     <td>${coBadge(w.co || 'WTC')}</td>
                     <td><span class="badge badge-info">${esc(sideLbl)}</span></td>
                     <td class="mono">${esc(w.s || '2024-01-01')}</td>
@@ -38341,7 +38606,7 @@
                     <td>${esc(w.own || targetEq.supplier || '—')}</td>
                     <td class="r">${Number(w.cap) > 0 ? `${fmtNum(w.cap, 1)} m³` : '—'}</td>
                     <td><span class="badge ${isSub ? 'badge-brass' : (isOpen ? 'badge-ok' : 'badge-neutral')}">${isSub ? 'Substitute' : (isOpen ? 'Active' : 'Historical')}</span></td>
-                    ${canModifyData() ? `<td class="r"><button type="button" class="btn btn-sm" data-del-modal-tw-idx="${origIdx}" title="Remove window">✕</button></td>` : ''}
+                    ${canModifyData() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-modal-tw-idx="${origIdx}" title="Edit log entry">Edit</button> <button type="button" class="btn btn-sm" data-del-modal-tw-idx="${origIdx}" title="Remove window">✕</button></td>` : ''}
                   </tr>
                 `;
               }).join('') : `
@@ -38364,7 +38629,50 @@
     `;
 
     wireModalSuggestions(logWrap);
+    const logBox = $('eqDriverLogBox');
     const logBtn = $('btnLogEquipDriver');
+    const cancelLogBtn = $('btnCancelLogEquipDriver');
+    const startModalWinEdit = idx => {
+      if (!canModifyData() || !logBox || !Array.isArray(targetEq.adj_windows)) return;
+      const w = targetEq.adj_windows[idx];
+      if (!w) return;
+      logBox.dataset.editModalWinIdx = String(idx);
+      if ($('f_log_co')) $('f_log_co').value = w.co || defCo;
+      if ($('f_log_start')) $('f_log_start').value = w.s || '2024-01-01';
+      if ($('f_log_end')) $('f_log_end').value = w.e || '';
+      if ($('f_log_driver')) $('f_log_driver').value = w.drv || targetEq.default_driver || '';
+      if (logBtn) logBtn.textContent = '✓ Update Assignment';
+      if (cancelLogBtn) cancelLogBtn.hidden = false;
+      logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => {
+        tr.style.background = Number(tr.getAttribute('data-modal-tw-row-idx')) === idx ? 'rgba(200,157,84,0.14)' : '';
+      });
+    };
+    if (cancelLogBtn) {
+      cancelLogBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        if (logBox) logBox.dataset.editModalWinIdx = '';
+        if ($('f_log_co')) $('f_log_co').value = defCo;
+        if ($('f_log_start')) $('f_log_start').value = today;
+        if ($('f_log_end')) $('f_log_end').value = '';
+        if ($('f_log_driver')) $('f_log_driver').value = targetEq.default_driver || '';
+        if (logBtn) logBtn.textContent = '+ Log Driver Assignment';
+        cancelLogBtn.hidden = true;
+        logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => { tr.style.background = ''; });
+      });
+    }
+    logWrap.querySelectorAll('[data-edit-modal-tw-idx]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        startModalWinEdit(Number(btn.getAttribute('data-edit-modal-tw-idx')));
+      });
+    });
+    logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => {
+      tr.addEventListener('click', ev => {
+        if (ev.target && ev.target.closest('button, a, [data-rel-key]')) return;
+        startModalWinEdit(Number(tr.getAttribute('data-modal-tw-row-idx')));
+      });
+    });
     if (logBtn) {
       logBtn.addEventListener('click', ev => {
         ev.preventDefault();
@@ -38375,22 +38683,29 @@
         const logCo = val('f_log_co') || defCo;
         if (!drvVal) { toast('Enter the Active / Substitute Driver name to log.', 'err'); return; }
         if (eVal && eVal < sVal) { toast('End Date cannot be before Start Date.', 'err'); return; }
+        const rawEditIdx = logBox && logBox.dataset.editModalWinIdx !== '' ? Number(logBox.dataset.editModalWinIdx) : -1;
+        const editWin = (rawEditIdx >= 0 && Array.isArray(targetEq.adj_windows)) ? targetEq.adj_windows[rawEditIdx] : null;
         appendOrUpdateTruckWindow(targetEq, {
           co: logCo,
-          side: 'both',
+          side: (editWin && editWin.side) || 'both',
           s: sVal,
           e: eVal,
-          cap: Number(targetEq.capacity || 0),
-          own: targetEq.supplier || '',
-          drv: drvVal
-        });
+          cap: Number((editWin && editWin.cap) || targetEq.capacity || 0),
+          own: (editWin && editWin.own) || targetEq.supplier || '',
+          drv: drvVal,
+          cust: (editWin && editWin.cust) || '',
+          site: (editWin && editWin.site) || '',
+          persistTicketBackfill: true
+        }, rawEditIdx);
         if (!eVal && $('f_driver')) $('f_driver').value = drvVal;
         persistEquipmentLogMutation(targetEq);
         logWrap.dataset.logKey = '';
         renderModalEquipDriverLog(curTruck, company);
-        toast(eVal
-          ? `✓ Substitute driver "${drvVal}" logged on ${targetEq.name} (${sVal} → ${eVal})`
-          : `✓ Active driver "${drvVal}" logged on ${targetEq.name} (from ${sVal} · Open)`, 'ok');
+        toast(rawEditIdx >= 0
+          ? `✓ Updated driver assignment "${drvVal}" on ${targetEq.name} (${sVal} → ${eVal || 'Open'})`
+          : (eVal
+              ? `✓ Substitute driver "${drvVal}" logged on ${targetEq.name} (${sVal} → ${eVal})`
+              : `✓ Active driver "${drvVal}" logged on ${targetEq.name} (from ${sVal} · Open)`), 'ok');
       });
     }
     logWrap.querySelectorAll('[data-del-modal-tw-idx]').forEach(btn => {
@@ -38400,7 +38715,7 @@
         if (!canModifyData() || !Array.isArray(targetEq.adj_windows)) return;
         const idx = Number(btn.getAttribute('data-del-modal-tw-idx'));
         if (idx >= 0 && idx < targetEq.adj_windows.length) {
-          targetEq.adj_windows.splice(idx, 1);
+          removeTruckWindowAt(targetEq, idx);
           persistEquipmentLogMutation(targetEq);
           logWrap.dataset.logKey = '';
           renderModalEquipDriverLog(curTruck, company);
@@ -41839,10 +42154,27 @@
       const effFrom = val('f_effdate') || date;
       const effEnd = val('f_effend') || '';
       if (effEnd && effEnd < effFrom) addErr('f_effend', 'Effective To Date cannot be before Effective From Date.');
-      const initWin = (eqCap > 0 || val('f_driver') || val('f_supplier'))
-        ? [{ co: company || 'WTC', side: 'both', s: effFrom, e: effEnd, cap: eqCap, ...(val('f_supplier') ? { own: val('f_supplier') } : {}), ...(val('f_driver') ? { drv: val('f_driver') } : {}) }]
+      const existingEqForWin = (editCtx && editCtx.orig && Array.isArray(editCtx.orig.adj_windows))
+        ? editCtx.orig
+        : (nm ? (getFleetIndex().eqByName.get(norm(nm)) || null) : null);
+      let nextWins = existingEqForWin && Array.isArray(existingEqForWin.adj_windows)
+        ? existingEqForWin.adj_windows.map(w => Object.assign({}, w))
         : [];
-      record = { ...base, name: nm, equipment: nm, plate_no: pl, type: val('f_category') || 'Truck', capacity: eqCap, ownership: val('f_ownership') || 'Owned', supplier: val('f_supplier'), default_driver: val('f_driver'), model: val('f_model'), adj_windows: initWin };
+      if (eqCap > 0 || val('f_driver') || val('f_supplier')) {
+        const tmpEq = { name: nm, plate_no: pl, company: company || 'WTC', capacity: eqCap, supplier: val('f_supplier'), default_driver: val('f_driver'), adj_windows: nextWins };
+        appendOrUpdateTruckWindow(tmpEq, {
+          co: company || 'WTC',
+          side: 'both',
+          s: effFrom,
+          e: effEnd,
+          cap: eqCap,
+          own: val('f_supplier') || '',
+          drv: val('f_driver') || '',
+          persistTicketBackfill: true
+        });
+        nextWins = tmpEq.adj_windows;
+      }
+      record = { ...base, name: nm, equipment: nm, plate_no: pl, type: val('f_category') || 'Truck', capacity: eqCap, ownership: val('f_ownership') || 'Owned', supplier: val('f_supplier'), default_driver: val('f_driver'), model: val('f_model'), adj_windows: nextWins };
     } else if (f === 'driver') {
       const nm = val('f_driver');
       if (!nm) addErr('f_driver', 'Driver Name is required.');
@@ -44582,6 +44914,13 @@
       setModalControlVal('f_int_days', row.interval_days != null ? row.interval_days : 90);
       setModalControlVal('f_amount', row.cost_usd != null ? row.cost_usd : '');
       FORM_UI.lastOilType = val('f_oil_type');
+    } else if (form === 'item') {
+      setModalControlVal('f_name', row.name || row.item_name || '');
+      setModalControlVal('f_category', row.category || 'Spare Parts');
+      setModalControlVal('f_uom', row.uom || 'Piece');
+      setModalControlVal('f_unitprice', row.default_cost != null && Number(row.default_cost) > 0 ? row.default_cost : '');
+      setModalControlVal('f_location', row.default_location || 'WTC Main Warehouse');
+      setModalControlVal('f_min_stock', row.min_stock != null ? row.min_stock : 0);
     }
 
     // Sync FORM_UI.last* trackers to hydrated values so initial recalcForm() never overwrites saved values with defaults
@@ -44617,6 +44956,7 @@
       case 'settlements': return 'settlement';
       case 'expenses': return 'expense';
       case 'warehouse_movements': return 'warehousestock';
+      case 'items': return 'item';
       case 'fuel_intakes': return 'fuel';
       case 'fuel_malfunctions': return 'malfunction';
       case 'equipment_defects': return 'defect';
@@ -44980,6 +45320,18 @@
         text: `Warehouse Shelf Adjustment ${row.name} (${mvLbl}): ${isOut ? '-' : '+'}${fmtNum(row.qty || 1, 2)} ${row.uom || 'Unit'} of ${row.item_name || '-'}  |  Unit Cost: ${fmtUSD(row.unit_cost || 0, 2)} · Total: ${fmtUSD(row.total_cost || 0, 2)}  |  Shelf: ${row.warehouse_location || row.location || 'Main Warehouse'}`
       };
     }
+    if (key === 'items' || key === 'expense_items') {
+      const itName = String(row.item_name || row.name || '').trim();
+      const catRec = resolveCatalogItem(itName) || row;
+      const lockedUom = (catRec && catRec.uom) || row.uom || 'Piece';
+      const whItem = getWarehouseIndex(row.company).byKey[norm(itName)] || null;
+      const balQty = whItem ? Number(whItem.onHandQty || 0) : 0;
+      return {
+        tone: balQty > 0 ? 'ok' : 'info',
+        text: `${key === 'items' ? 'Universal Catalog Item' : 'Expense Item Ticket'}: ${itName || '-'}  |  Locked Unit (UoM): ${lockedUom}  |  Category: ${(catRec && catRec.category) || row.category || 'Spare Parts'}  |  Live Warehouse On-Hand: ${fmtNum(balQty, balQty % 1 ? 2 : 0)} ${lockedUom}`
+      };
+    }
+
     if (key === 'part_movements') {
       const preOk = Boolean(row.prior_defect_notified || row.defect_ref);
       const netCost = round2(Number(row.new_part_cost || 0) + Number(row.repair_cost || 0) - Number(row.sale_proceeds || 0));
@@ -45314,6 +45666,29 @@
           { lbl: 'ADJUSTMENT QUANTITY', tag: (row.uom || 'PIECE').toUpperCase(), tone: isOut ? 'warn' : 'good', val: `${isOut ? '-' : '+'}${fmtNum(row.qty || 1, 2)} ${row.uom || 'Piece'}`, sub1: `Unit Cost: ${fmtUSD(row.unit_cost || 0, 2)}`, sub2: `Total Value: ${fmtUSD(row.total_cost || 0, 2)}`, pct: 80 },
           { lbl: 'LIVE WAREHOUSE BALANCE', tag: balQty > 0 ? 'IN STOCK' : 'DEPLETED', tone: balQty > 0 ? 'good' : 'warn', val: whItem ? `${fmtNum(balQty, 2)} ${whItem.uom || 'Piece'}` : '0', sub1: whItem ? `Stocked In: ${fmtNum(whItem.stockedInQty || 0, 2)} · Repairs Out: ${fmtNum(whItem.usedInRepairsQty || 0, 2)}` : 'Item summary', sub2: whItem ? `Avg Cost: ${fmtUSD(whItem.avgUnitCost || 0, 2)}` : '-', pct: 75 },
           { lbl: 'RECORD ORIGIN', tag: isOut ? 'SHELF DEDUCTION' : 'SHELF ADDITION', tone: 'info', val: mvLbl, sub1: `Repair Link: ${row.repair_ref || '-'}`, sub2: `Expense Link: ${row.expense_ref || '-'}`, pct: 90 }
+        ]
+      };
+    }
+
+    if (key === 'items' || key === 'expense_items') {
+      const itName = String(row.item_name || row.name || '').trim();
+      const catRec = resolveCatalogItem(itName) || row;
+      const lockedUom = (catRec && catRec.uom) || row.uom || 'Piece';
+      const whItem = getWarehouseIndex(row.company).byKey[norm(itName)] || null;
+      const balQty = whItem ? Number(whItem.onHandQty || 0) : 0;
+      const expLines = (SEED.records.expense_items || []).filter(ei => ei && !ei.voided && norm(ei.item_name) === norm(itName));
+      const totQtyBought = round2(expLines.reduce((a, ei) => a + Number(ei.qty || 1), 0));
+      const totUsdBought = round2(expLines.reduce((a, ei) => a + Number(ei.line_total != null ? ei.line_total : Number(ei.qty || 1) * Number(ei.unit_cost || 0)), 0));
+      const avgUnit = totQtyBought > 0 ? round2(totUsdBought / totQtyBought) : Number((catRec && catRec.default_cost) || row.unit_cost || 0);
+      return {
+        bu: key === 'items' ? 'UNIVERSAL CATALOG' : bu,
+        title: itName || title,
+        pill: `${lockedUom} (Locked UoM)`,
+        cards: [
+          { lbl: 'CATALOG ITEM & LOCKED UOM', tag: `LOCKED: ${lockedUom.toUpperCase()}`, tone: 'good', val: itName || '-', sub1: `Category: ${(catRec && catRec.category) || row.category || 'Spare Parts'}`, sub2: `Default Shelf: ${(catRec && catRec.default_location) || 'WTC Main Warehouse'}`, pct: 95 },
+          { lbl: 'PURCHASE HISTORY & SPEND', tag: `${fmtNum(expLines.length)} TICKETS`, tone: 'info', val: fmtUSD(totUsdBought, 2), sub1: `Total Purchased: ${fmtNum(totQtyBought, totQtyBought % 1 ? 2 : 0)} ${lockedUom}`, sub2: `Avg Unit Cost: ${fmtUSD(avgUnit, 2)} / ${lockedUom}`, pct: 85 },
+          { lbl: 'LIVE WAREHOUSE BALANCE', tag: balQty > 0 ? 'IN STOCK' : 'CATALOG READY', tone: balQty > 0 ? 'good' : 'info', val: `${fmtNum(balQty, balQty % 1 ? 2 : 0)} ${lockedUom}`, sub1: whItem ? `Stocked In: ${fmtNum(whItem.stockedInQty || 0, 2)} · Used Out: ${fmtNum((whItem.usedInRepairsQty || 0) + (whItem.usedInOilQty || 0), 2)}` : `Min Stock Alert: ${fmtNum((catRec && catRec.min_stock) || 0)} ${lockedUom}`, sub2: whItem ? `Stock Value: ${fmtUSD(whItem.onHandValue || 0, 2)}` : `Default Cost: ${fmtUSD((catRec && catRec.default_cost) || 0, 2)}`, pct: 80 },
+          { lbl: key === 'expense_items' ? 'TICKET ALLOCATION' : 'EQUIPMENT & REPAIR USAGE', tag: key === 'expense_items' ? (String(row.allocation_mode || 'same_equipment').toUpperCase().slice(0, 16)) : '360° TRACKED', tone: 'info', val: key === 'expense_items' ? (row.target_equipment || row.warehouse_location || 'Equipment') : `${fmtNum(new Set(expLines.map(x => x.target_equipment).filter(Boolean)).size)} Units`, sub1: key === 'expense_items' ? `Line: ${fmtNum(row.qty || 1, 2)} ${lockedUom} × ${fmtUSD(row.unit_cost || 0, 2)} = ${fmtUSD(row.line_total || 0, 2)}` : `Used across ${fmtNum(new Set(expLines.map(x => x.supplier).filter(Boolean)).size)} suppliers`, sub2: key === 'expense_items' ? `Parent Voucher: ${row.expense_ref || '-'}` : `Locked UoM enforced on all tickets`, pct: 90 }
         ]
       };
     }
@@ -47598,11 +47973,11 @@
       ` : ''}
 
       ${isEquipInspect ? `
-        <div class="pa-subgrid-box" id="subgrid_truck_windows" style="margin-bottom:14px">
+        <div class="pa-subgrid-box" id="subgrid_truck_windows" data-edit-tw-idx="" style="margin-bottom:14px">
           <div class="pa-subgrid-hdr">
             <div>
               <strong>${ic('ruler')} Equipment Driver &amp; Capacity Log (Start Date → End Date)</strong>
-              <span class="pa-subgrid-sub">Active driver is strictly locked onto Sales, Raw Material, Lubricant &amp; Diesel tickets matching the ticket date. Set End Date for a 1-day or bounded absence substitute; leave End Date blank for a permanent change.</span>
+              <span class="pa-subgrid-sub">Active driver &amp; truck owner lock onto Sales, Raw Material, Lubricant &amp; Diesel tickets matching the ticket date. Click any log row (or its Edit button) to update an existing entry in-place, or set a new Start Date for a new window.</span>
             </div>
             <span class="badge badge-brass">${fmtNum(eqWindows.length)} Window${eqWindows.length === 1 ? '' : 's'}</span>
           </div>
@@ -47654,6 +48029,7 @@
                 <div style="display:flex;gap:6px">
                   <input type="text" id="insp_tw_site" list="dl_insp_sites" value="" placeholder="All sites (or type site name)..." style="flex:1" autocomplete="off">
                   <button type="button" class="btn btn-primary" id="inspAddTruckWinBtn" style="white-space:nowrap">+ Add Log Entry</button>
+                  <button type="button" class="btn" id="inspCancelTruckWinEditBtn" style="white-space:nowrap" hidden>Cancel</button>
                 </div>
               </div>
             </div>
@@ -47668,11 +48044,13 @@
               <tbody>
                 ${eqWindows.length ? eqWindows.slice().reverse().map((w, rIdx) => {
                   const origIdx = eqWindows.length - 1 - rIdx;
-                  const isOpen = !w.e || String(w.e) >= SEED_DATE;
+                  const todayNow = todayISO();
+                  const isSub = Boolean(w.e && (!w.s || String(w.s) <= todayNow) && String(w.e) >= todayNow);
+                  const isOpen = !w.e || String(w.e) >= todayNow;
                   const sideLbl = w.side === 'sales' ? 'Sales' : (w.side === 'raw' ? 'Raw & Trans' : (w.side === 'fuel' ? 'Diesel & Lub.' : 'All Tables'));
                   const scopeLbl = [w.cust ? `Client: ${w.cust}` : '', w.site ? `Site: ${w.site}` : ''].filter(Boolean).join(' · ') || 'General (All)';
                   return `
-                    <tr>
+                    <tr data-insp-tw-row-idx="${origIdx}" style="cursor:pointer" title="Click to edit this log entry">
                       <td>${coBadge(w.co || 'WTC')}</td>
                       <td><span class="badge badge-info">${esc(sideLbl)}</span></td>
                       <td class="mono">${esc(w.s || '2024-01-01')}</td>
@@ -47681,8 +48059,8 @@
                       <td>${w.own ? relLink(resolveTruckOwnerTarget(w.own, targetEqRow), w.own, w.own, true) : '—'}</td>
                       <td>${w.drv ? relLink('drivers', w.drv, w.drv) : '—'}</td>
                       <td>${w.cust || w.site ? `<span class="badge badge-brass">${esc(scopeLbl)}</span>` : `<span class="mu">${esc(scopeLbl)}</span>`}</td>
-                      <td><span class="badge ${isOpen ? 'badge-ok' : 'badge-neutral'}">${isOpen ? 'Active' : 'Historical'}</span></td>
-                      ${canModifyData() ? `<td class="r"><button type="button" class="btn btn-sm" data-del-tw-idx="${origIdx}" title="Remove window">✕</button></td>` : ''}
+                      <td><span class="badge ${isSub ? 'badge-brass' : (isOpen ? 'badge-ok' : 'badge-neutral')}">${isSub ? 'Substitute' : (isOpen ? 'Active' : 'Historical')}</span></td>
+                      ${canModifyData() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-tw-idx="${origIdx}" title="Edit log entry">Edit</button> <button type="button" class="btn btn-sm" data-del-tw-idx="${origIdx}" title="Remove window">✕</button></td>` : ''}
                     </tr>
                   `;
                 }).join('') : `<tr><td colspan="${canModifyData() ? 10 : 9}" class="mu" style="text-align:center;padding:14px">No dated adjustment windows recorded — using default capacity (${fmtNum(targetEqRow && targetEqRow.capacity, 1)} m³).</td></tr>`}
@@ -48662,7 +49040,8 @@
             e: effToDate,
             cap: 'capacity' in pendingUpdates ? pendingUpdates.capacity : targetEqRow.capacity,
             own: 'supplier' in pendingUpdates ? pendingUpdates.supplier : targetEqRow.supplier,
-            drv: 'default_driver' in pendingUpdates ? pendingUpdates.default_driver : targetEqRow.default_driver
+            drv: 'default_driver' in pendingUpdates ? pendingUpdates.default_driver : targetEqRow.default_driver,
+            persistTicketBackfill: true
           });
           if (targetEqRow !== row) {
             if (!Array.isArray(STATE.customRecords.equipment)) STATE.customRecords.equipment = [];
@@ -48689,7 +49068,54 @@
       });
     }
 
+    const twBox = $('subgrid_truck_windows');
     const addTwBtn = $('inspAddTruckWinBtn');
+    const cancelTwBtn = $('inspCancelTruckWinEditBtn');
+    const startInspWinEdit = idx => {
+      if (!canModifyData() || !twBox || !targetEqRow || !Array.isArray(targetEqRow.adj_windows)) return;
+      const w = targetEqRow.adj_windows[idx];
+      if (!w) return;
+      twBox.dataset.editTwIdx = String(idx);
+      if ($('insp_tw_co')) $('insp_tw_co').value = w.co || row.company || 'WTC';
+      if ($('insp_tw_side')) $('insp_tw_side').value = (w.side === 'all' || !w.side) ? 'both' : w.side;
+      if ($('insp_tw_cap')) $('insp_tw_cap').value = String(Number(w.cap != null ? w.cap : (targetEqRow.capacity || 0)));
+      if ($('insp_tw_start')) $('insp_tw_start').value = w.s || '2024-01-01';
+      if ($('insp_tw_end')) $('insp_tw_end').value = w.e || '';
+      if ($('insp_tw_own')) $('insp_tw_own').value = w.own != null ? w.own : (targetEqRow.supplier || '');
+      if ($('insp_tw_drv')) $('insp_tw_drv').value = w.drv != null ? w.drv : (targetEqRow.default_driver || '');
+      if ($('insp_tw_cust')) $('insp_tw_cust').value = w.cust || '';
+      if ($('insp_tw_site')) $('insp_tw_site').value = w.site || '';
+      if (addTwBtn) addTwBtn.textContent = '✓ Update Log Entry';
+      if (cancelTwBtn) cancelTwBtn.hidden = false;
+      bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => {
+        tr.style.background = Number(tr.getAttribute('data-insp-tw-row-idx')) === idx ? 'rgba(200,157,84,0.14)' : '';
+      });
+    };
+    if (cancelTwBtn) {
+      cancelTwBtn.addEventListener('click', () => {
+        if (twBox) twBox.dataset.editTwIdx = '';
+        if ($('insp_tw_co')) $('insp_tw_co').value = row.company === 'BBConstruction' ? 'BBConstruction' : (row.company === 'Lions Transport' ? 'Lions Transport' : 'WTC');
+        if ($('insp_tw_side')) $('insp_tw_side').value = 'both';
+        if ($('insp_tw_cap')) $('insp_tw_cap').value = String(Number(targetEqRow.capacity || 0));
+        if ($('insp_tw_start')) $('insp_tw_start').value = todayISO();
+        if ($('insp_tw_end')) $('insp_tw_end').value = '';
+        if ($('insp_tw_own')) $('insp_tw_own').value = targetEqRow.supplier || '';
+        if ($('insp_tw_drv')) $('insp_tw_drv').value = targetEqRow.default_driver || '';
+        if ($('insp_tw_cust')) $('insp_tw_cust').value = '';
+        if ($('insp_tw_site')) $('insp_tw_site').value = '';
+        if (addTwBtn) addTwBtn.textContent = '+ Add Log Entry';
+        cancelTwBtn.hidden = true;
+        bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => { tr.style.background = ''; });
+      });
+    }
+    bodyEl.querySelectorAll('[data-edit-tw-idx]').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      startInspWinEdit(Number(btn.getAttribute('data-edit-tw-idx')));
+    }));
+    bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => tr.addEventListener('click', e => {
+      if (e.target && e.target.closest('button, a, [data-rel-key]')) return;
+      startInspWinEdit(Number(tr.getAttribute('data-insp-tw-row-idx')));
+    }));
     if (addTwBtn && targetEqRow) {
       addTwBtn.addEventListener('click', () => {
         if (!canModifyData()) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
@@ -48701,7 +49127,8 @@
         if (isTruckCat && !(capVal > 0) && !drvVal) { toast('Enter Truck Capacity (m³) or Active Driver.', 'err'); return; }
         if (!isTruckCat && !drvVal && !(capVal > 0)) { toast('Select the Active / Substitute Driver to log.', 'err'); return; }
         if (eVal && eVal < sVal) { toast('End Date cannot be before Start Date.', 'err'); return; }
-        appendOrUpdateTruckWindow(targetEqRow, {
+        const rawEditIdx = twBox && twBox.dataset.editTwIdx !== '' ? Number(twBox.dataset.editTwIdx) : -1;
+        const savedWin = appendOrUpdateTruckWindow(targetEqRow, {
           co: ($('insp_tw_co') && $('insp_tw_co').value) || 'WTC',
           side: ($('insp_tw_side') && $('insp_tw_side').value) || 'both',
           s: sVal,
@@ -48710,9 +49137,16 @@
           own: ($('insp_tw_own') && $('insp_tw_own').value) || '',
           drv: drvVal,
           cust: ($('insp_tw_cust') && $('insp_tw_cust').value) || '',
-          site: ($('insp_tw_site') && $('insp_tw_site').value) || ''
-        });
-        if (targetEqRow !== row && targetEqRow.capacity) row.capacity = targetEqRow.capacity;
+          site: ($('insp_tw_site') && $('insp_tw_site').value) || '',
+          backfillTickets: false
+        }, rawEditIdx);
+        if (savedWin && eVal) savedWin._explicitEnd = true;
+        const bf = backfillTruckWindowToTickets(targetEqRow, savedWin, { persistCustom: true });
+        if (targetEqRow !== row) {
+          if (targetEqRow.capacity) row.capacity = targetEqRow.capacity;
+          if (targetEqRow.supplier !== undefined) row.supplier = targetEqRow.supplier;
+          if (targetEqRow.default_driver) row.default_driver = targetEqRow.default_driver;
+        }
         if (!Array.isArray(STATE.customRecords.equipment)) STATE.customRecords.equipment = [];
         const eqIdx = STATE.customRecords.equipment.findIndex(x => String(x.id) === String(targetEqRow.id));
         if (eqIdx >= 0) Object.assign(STATE.customRecords.equipment[eqIdx], targetEqRow);
@@ -48720,7 +49154,8 @@
         applyCustomRecordsToSeed();
         saveLocalAuthAndRecords();
         renderApp();
-        toast(`✓ Logged equipment assignment (${drvVal || (fmtNum(capVal, 1) + ' m³')} · ${sVal} → ${eVal || 'Open'})`);
+        const bfMsg = bf && bf.total > 0 ? ` · Backfilled ${bf.total} ticket${bf.total === 1 ? '' : 's'}` : '';
+        toast(`✓ ${rawEditIdx >= 0 ? 'Updated' : 'Logged'} equipment assignment (${drvVal || (fmtNum(capVal, 1) + ' m³')} · ${sVal} → ${eVal || 'Open'})${bfMsg}`);
         showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab });
       });
     }
@@ -48730,9 +49165,7 @@
       if (!canModifyData() || !targetEqRow || !Array.isArray(targetEqRow.adj_windows)) return;
       const idx = Number(btn.getAttribute('data-del-tw-idx'));
       if (idx >= 0 && idx < targetEqRow.adj_windows.length) {
-        targetEqRow.adj_windows.splice(idx, 1);
-        _WIN_REV++;
-        _FLEET_IDX = null;
+        removeTruckWindowAt(targetEqRow, idx);
         if (!Array.isArray(STATE.customRecords.equipment)) STATE.customRecords.equipment = [];
         const eqIdx = STATE.customRecords.equipment.findIndex(x => String(x.id) === String(targetEqRow.id));
         if (eqIdx >= 0) Object.assign(STATE.customRecords.equipment[eqIdx], targetEqRow);
@@ -49126,6 +49559,7 @@
     });
 
     enrichGlobalRateTables();
+    applyUserEquipmentWindowsToTickets();
     if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
       window.MFG_GEO.hydrateSeedGeo(SEED);
     }
@@ -53846,7 +54280,9 @@
       custom_end: '16:00',
       custom_days: [1, 2, 3, 4, 5, 6],
       grace_min: 10,
-      early_leave_grace_min: 5,
+      early_leave_grace_min: (raw && !raw.reset_default && raw.early_leave_grace_min != null)
+        ? raw.early_leave_grace_min
+        : ((raw && !raw.reset_default && raw.grace_min != null) ? raw.grace_min : 10),
       late_when: 'both',
       late_count_from: 'shift_start',
       late_penalty_mode: 'exact_hours',
@@ -53862,8 +54298,8 @@
       updated_at: ''
     }, raw && !raw.reset_default ? raw : {});
     base.grace_min = Math.max(0, Math.min(120, Number(base.grace_min != null ? base.grace_min : 10)));
-    base.early_leave_grace_min = Math.max(0, Math.min(120, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : 5)));
-    base.late_when = ['both', 'arrival_only', 'short_hours'].includes(base.late_when) ? base.late_when : 'both';
+    base.early_leave_grace_min = Math.max(0, Math.min(120, Number(base.early_leave_grace_min != null ? base.early_leave_grace_min : base.grace_min)));
+    base.late_when = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(base.late_when) ? base.late_when : 'both';
     base.late_count_from = ['shift_start', 'after_grace'].includes(base.late_count_from) ? base.late_count_from : 'shift_start';
     base.late_penalty_mode = ['exact_hours', 'multiplier', 'round_hour', 'tiered_half_day', 'half_day_any', 'none'].includes(base.late_penalty_mode)
       ? base.late_penalty_mode
@@ -53899,8 +54335,12 @@
       updated_at: nowIso
     });
     next.grace_min = Math.max(0, Math.min(120, Number(next.grace_min != null ? next.grace_min : 10)));
-    next.early_leave_grace_min = Math.max(0, Math.min(120, Number(next.early_leave_grace_min != null ? next.early_leave_grace_min : 5)));
-    next.late_when = ['both', 'arrival_only', 'short_hours'].includes(next.late_when) ? next.late_when : 'both';
+    if (patch.grace_min != null && patch.early_leave_grace_min == null) {
+      next.early_leave_grace_min = next.grace_min;
+    } else {
+      next.early_leave_grace_min = Math.max(0, Math.min(120, Number(next.early_leave_grace_min != null ? next.early_leave_grace_min : next.grace_min)));
+    }
+    next.late_when = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(next.late_when) ? next.late_when : 'both';
     next.late_count_from = ['shift_start', 'after_grace'].includes(next.late_count_from) ? next.late_count_from : 'shift_start';
     next.late_penalty_mode = ['exact_hours', 'multiplier', 'round_hour', 'tiered_half_day', 'half_day_any', 'none'].includes(next.late_penalty_mode)
       ? next.late_penalty_mode
@@ -54230,10 +54670,14 @@
     const rule = getStaffWorkRule(staffName, company);
     const shift = resolveStaffShiftForDate(staffName, company, dStr);
     const graceMin = Math.max(0, Number(shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10)));
-    const earlyGraceMin = Math.max(0, Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : 5));
+    const earlyGraceMin = Math.max(0, Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : graceMin));
     const schedStartMin = parseClockMinutes(shift.start_time) ?? 480;
-    const cutoffTime = formatMinutesAsClockTime(schedStartMin + graceMin);
-    const lateWhen = rule.late_when || 'both';
+    const schedEndRaw = parseClockMinutes(shift.end_time) ?? 960;
+    const schedEndMin = schedEndRaw <= schedStartMin ? (schedEndRaw + 1440) : schedEndRaw;
+    const inCutoffTime = formatMinutesAsClockTime(schedStartMin + graceMin);
+    const outCutoffTime = formatMinutesAsClockTime(schedEndMin - earlyGraceMin);
+    const cutoffTime = inCutoffTime;
+    const lateWhen = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(rule.late_when) ? rule.late_when : 'both';
     const countFrom = rule.late_count_from || 'shift_start';
     const penaltyMode = rule.late_penalty_mode || 'exact_hours';
     const mult = Number(rule.late_multiplier || 1.5);
@@ -54241,13 +54685,14 @@
     const noOutRule = rule.no_clock_out_rule || 'half_day';
 
     const whenLabels = {
-      both: 'IN + Early OUT',
-      arrival_only: 'Clock-IN Only',
-      short_hours: 'Shift Shortfall'
+      both: 'IN Late + OUT Early',
+      arrival_only: 'Clock-IN Late Only',
+      early_out_only: 'Clock-OUT Early Only',
+      short_hours: 'Shift Hours Shortfall'
     };
     const countFromLabels = {
-      shift_start: 'From Shift Start',
-      after_grace: 'After Grace'
+      shift_start: 'From Shift Start/End',
+      after_grace: 'After Tolerance'
     };
     let penaltyLabel = 'Exact Hours (1x)';
     let penaltyShort = '1x Hours';
@@ -54274,31 +54719,43 @@
       tone = 'muted';
     }
 
-    let noOutLabel = 'No OUT = Half Day (0.5d)';
-    let noOutShort = 'No OUT: 0.5d';
+    let noOutLabel = 'Only IN/OUT = Half Day (0.5d)';
+    let noOutShort = 'Only IN/OUT: 0.5d';
     let noOutTone = 'amber';
     if (noOutRule === 'full_absence') {
-      noOutLabel = 'No OUT = Absent (1.0d)';
-      noOutShort = 'No OUT: 1.0d';
+      noOutLabel = 'Only IN/OUT = Absent (1.0d)';
+      noOutShort = 'Only IN/OUT: 1.0d';
       noOutTone = 'rose';
     } else if (noOutRule === 'deduct_2h') {
-      noOutLabel = 'No OUT = -2.0h Late';
-      noOutShort = 'No OUT: -2h';
+      noOutLabel = 'Only IN/OUT = -2.0h Late';
+      noOutShort = 'Only IN/OUT: -2h';
       noOutTone = 'amber';
     } else if (noOutRule === 'auto_shift_end') {
-      noOutLabel = 'No OUT = Full Shift';
-      noOutShort = 'No OUT: Full';
+      noOutLabel = 'Only IN/OUT = Full Shift';
+      noOutShort = 'Only IN/OUT: Full';
       noOutTone = 'emerald';
     }
 
-    const toleranceBadge = graceMin === 0
-      ? `Strict 0m (>${shift.start_time})`
-      : `Grace ${graceMin}m (>${cutoffTime})`;
+    let cutoffSummary = `IN > ${inCutoffTime} · OUT < ${outCutoffTime}`;
+    if (lateWhen === 'arrival_only') {
+      cutoffSummary = `IN > ${inCutoffTime} (Start Only)`;
+    } else if (lateWhen === 'early_out_only') {
+      cutoffSummary = `OUT < ${outCutoffTime} (End Only)`;
+    } else if (lateWhen === 'short_hours') {
+      cutoffSummary = `Min ${fmtNum(shift.hours || 8, 1)}h (${graceMin}m tol.)`;
+    }
+
+    const toleranceBadge = graceMin === earlyGraceMin
+      ? (graceMin === 0 ? '0m Strict (IN & OUT)' : `${graceMin}m Tol. (IN & OUT)`)
+      : `IN ${graceMin}m / OUT ${earlyGraceMin}m`;
 
     return {
       graceMin,
       earlyGraceMin,
       cutoffTime,
+      inCutoffTime,
+      outCutoffTime,
+      cutoffSummary,
       toleranceBadge,
       lateWhen,
       whenLabel: whenLabels[lateWhen] || whenLabels.both,
@@ -54313,6 +54770,7 @@
       noOutLabel,
       noOutShort,
       noOutTone,
+      badgeLabel: `${penaltyShort} · ${noOutShort}`,
       badgeText: `${penaltyShort} · ${noOutShort}`,
       subText: `${toleranceBadge} · ${whenLabels[lateWhen] || whenLabels.both}`,
       tone
@@ -54337,16 +54795,17 @@
     const scheduledHours = round1(schedDurMin / 60);
 
     const graceMin = Math.max(0, Number(shift.grace_min != null ? shift.grace_min : (rule.grace_min != null ? rule.grace_min : 10)));
-    const earlyGraceMin = Math.max(0, Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : 5));
+    const earlyGraceMin = Math.max(0, Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : graceMin));
     const lateCutoffTime = formatMinutesAsClockTime(schedStartMin + graceMin);
-    const lateWhen = rule.late_when || 'both';
+    const earlyOutCutoffTime = formatMinutesAsClockTime(schedEndMin - earlyGraceMin);
+    const lateWhen = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(rule.late_when) ? rule.late_when : 'both';
     const countFrom = rule.late_count_from || 'shift_start';
     const penaltyMode = rule.late_penalty_mode || 'exact_hours';
     const mult = Number(rule.late_multiplier || 1.5);
     const hdAfterMin = Number(rule.late_half_day_after_min || 60);
     const noOutRule = rule.no_clock_out_rule || 'half_day';
 
-    const computePenaltyFromRawMin = (rawMin, hasMissingOut) => {
+    const computePenaltyFromRawMin = (rawMin, hasSingleIncompletePunch, singlePunchType = '') => {
       const cleanRawMin = Math.max(0, Math.round(Number(rawMin || 0)));
       const rawLateHours = round1(cleanRawMin / 60);
       let billableLateHours = 0;
@@ -54391,30 +54850,37 @@
       }
 
       let noOutPenaltyText = '';
-      if (hasMissingOut && shift.isWorkday) {
+      if (hasSingleIncompletePunch && shift.isWorkday) {
+        const singleLbl = singlePunchType === 'only_out'
+          ? 'Only Clock-OUT (No IN)'
+          : (singlePunchType === 'only_in' ? 'Only Clock-IN (No OUT)' : 'Only Clock-IN or OUT');
+        const lateDetail = cleanRawMin > 0
+          ? (singlePunchType === 'only_out' ? `Left Early ${cleanRawMin}m` : `Arrived Late ${cleanRawMin}m`)
+          : '';
         if (noOutRule === 'half_day') {
           penaltyLeaveDays = Math.max(penaltyLeaveDays, 0.5);
           penaltyStatus = penaltyLeaveDays >= 1 ? 'Absence' : 'Half Day';
-          noOutPenaltyText = 'Missing Clock-OUT = Half Day (0.5d)';
-          penaltySummary = cleanRawMin > 0
-            ? `${noOutPenaltyText} · Arrived Late ${cleanRawMin}m`
+          noOutPenaltyText = `${singleLbl} = Half Day (0.5d)`;
+          penaltySummary = lateDetail
+            ? `${noOutPenaltyText} · ${lateDetail}`
             : noOutPenaltyText;
         } else if (noOutRule === 'full_absence') {
           penaltyLeaveDays = 1.0;
           penaltyStatus = 'Absence';
-          noOutPenaltyText = 'Missing Clock-OUT = Full Absence (1.0d)';
-          penaltySummary = cleanRawMin > 0
-            ? `${noOutPenaltyText} · Arrived Late ${cleanRawMin}m`
+          noOutPenaltyText = `${singleLbl} = Full Absence (1.0d)`;
+          penaltySummary = lateDetail
+            ? `${noOutPenaltyText} · ${lateDetail}`
             : noOutPenaltyText;
         } else if (noOutRule === 'deduct_2h') {
           billableLateHours = round1(billableLateHours + 2.0);
           penaltyStatus = 'Lateness';
-          noOutPenaltyText = 'Missing Clock-OUT = +2.0h Lateness';
-          penaltySummary = cleanRawMin > 0
-            ? `Late ${cleanRawMin}m + Missing OUT (+2.0h) = -${fmtNum(billableLateHours, 1)}h`
-            : `Missing Clock-OUT = -2.0h Lateness`;
+          noOutPenaltyText = `${singleLbl} = +2.0h Lateness`;
+          penaltySummary = lateDetail
+            ? `${lateDetail} + ${singleLbl} (+2.0h) = -${fmtNum(billableLateHours, 1)}h`
+            : `${singleLbl} = -2.0h Lateness`;
         } else if (noOutRule === 'auto_shift_end') {
-          noOutPenaltyText = 'Missing Clock-OUT = Auto Full Shift';
+          noOutPenaltyText = `${singleLbl} = Auto Full Shift`;
+          if (!lateDetail) penaltySummary = noOutPenaltyText;
         }
       }
 
@@ -54430,11 +54896,17 @@
     };
 
     const rawInMin = parseClockMinutes(inTime);
-    if (rawInMin == null) {
+    const rawOutMin = parseClockMinutes(outTime);
+
+    // Case A: Neither Clock-IN nor Clock-OUT
+    if (rawInMin == null && rawOutMin == null) {
       return {
         shift,
         rule,
+        hasIn: false,
         hasOut: false,
+        isSinglePunch: false,
+        singlePunchType: '',
         scheduledHours,
         workedHours: 0,
         regularHours: 0,
@@ -54446,10 +54918,11 @@
         shortfallMin: 0,
         penaltyLeaveDays: 0,
         penaltyStatus: 'Off Site',
-        penaltySummary: 'No Clock-IN',
+        penaltySummary: 'No Clock-IN or OUT',
         noOutRule,
         noOutPenaltyText: '',
         lateCutoffTime,
+        earlyOutCutoffTime,
         graceMin,
         earlyGraceMin,
         rawExtraHours: 0,
@@ -54459,6 +54932,76 @@
       };
     }
 
+    // Case B: Either/Or Single Incomplete Punch (Only Clock-IN without OUT, OR Only Clock-OUT without IN)
+    if (rawInMin == null || rawOutMin == null) {
+      const singlePunchType = rawInMin != null ? 'only_in' : 'only_out';
+      let arrivalLateMin = 0;
+      let earlyLeaveMin = 0;
+
+      if (singlePunchType === 'only_in') {
+        const actualInMin = (shift.overnight && rawInMin < 480 && schedStartMin >= 960 && (!opts.inSameCalendarDay))
+          ? (rawInMin + 1440)
+          : rawInMin;
+        const rawLateIn = shift.isWorkday ? Math.max(0, actualInMin - schedStartMin) : 0;
+        arrivalLateMin = rawLateIn > graceMin
+          ? (countFrom === 'after_grace' ? Math.max(0, rawLateIn - graceMin) : rawLateIn)
+          : 0;
+      } else {
+        const actualOutSingle = (shift.overnight && rawOutMin < 480 && schedStartMin >= 960)
+          ? (rawOutMin + 1440)
+          : rawOutMin;
+        const rawEarlyOut = shift.isWorkday ? Math.max(0, schedEndMin - actualOutSingle) : 0;
+        earlyLeaveMin = rawEarlyOut > earlyGraceMin
+          ? (countFrom === 'after_grace' ? Math.max(0, rawEarlyOut - earlyGraceMin) : rawEarlyOut)
+          : 0;
+      }
+
+      let effRawMinSingle = 0;
+      if (singlePunchType === 'only_in' && (lateWhen === 'both' || lateWhen === 'arrival_only')) {
+        effRawMinSingle = arrivalLateMin;
+      } else if (singlePunchType === 'only_out' && (lateWhen === 'both' || lateWhen === 'early_out_only')) {
+        effRawMinSingle = earlyLeaveMin;
+      }
+
+      const penSingle = computePenaltyFromRawMin(effRawMinSingle, true, singlePunchType);
+      const effWorkedSingle = noOutRule === 'half_day'
+        ? round1(scheduledHours * 0.5)
+        : (noOutRule === 'auto_shift_end' ? scheduledHours : 0);
+
+      return {
+        shift,
+        rule,
+        hasIn: rawInMin != null,
+        hasOut: rawOutMin != null,
+        isSinglePunch: true,
+        singlePunchType,
+        scheduledHours,
+        workedHours: effWorkedSingle,
+        regularHours: effWorkedSingle,
+        lateHours: penSingle.penaltyLeaveDays > 0 ? 0 : penSingle.billableLateHours,
+        rawLateHours: penSingle.rawLateHours,
+        rawLateMin: penSingle.rawLateMin,
+        billableLateHours: penSingle.billableLateHours,
+        arrivalLateMin,
+        earlyLeaveMin,
+        shortfallMin: 0,
+        penaltyLeaveDays: penSingle.penaltyLeaveDays,
+        penaltyStatus: penSingle.penaltyStatus,
+        penaltySummary: penSingle.penaltySummary,
+        noOutRule,
+        noOutPenaltyText: penSingle.noOutPenaltyText,
+        lateCutoffTime,
+        earlyOutCutoffTime,
+        graceMin,
+        earlyGraceMin,
+        rawExtraHours: 0,
+        overtimeHours: 0,
+        unapprovedOtHours: 0,
+        otReason: ''
+      };
+    }
+
+    // Case C: Both Clock-IN and Clock-OUT recorded
     const actualInMin = (shift.overnight && rawInMin < 480 && schedStartMin >= 960 && (!opts.inSameCalendarDay))
       ? (rawInMin + 1440)
       : rawInMin;
@@ -54466,42 +55009,6 @@
     const arrivalLateMin = rawLateIn > graceMin
       ? (countFrom === 'after_grace' ? Math.max(0, rawLateIn - graceMin) : rawLateIn)
       : 0;
-
-    const rawOutMin = parseClockMinutes(outTime);
-    if (rawOutMin == null) {
-      const effRawMinNoOut = lateWhen === 'short_hours' ? 0 : arrivalLateMin;
-      const penNoOut = computePenaltyFromRawMin(effRawMinNoOut, true);
-      const effWorkedNoOut = noOutRule === 'half_day'
-        ? round1(scheduledHours * 0.5)
-        : (noOutRule === 'auto_shift_end' ? scheduledHours : 0);
-      return {
-        shift,
-        rule,
-        hasOut: false,
-        scheduledHours,
-        workedHours: effWorkedNoOut,
-        regularHours: effWorkedNoOut,
-        lateHours: penNoOut.penaltyLeaveDays > 0 ? 0 : penNoOut.billableLateHours,
-        rawLateHours: penNoOut.rawLateHours,
-        rawLateMin: penNoOut.rawLateMin,
-        billableLateHours: penNoOut.billableLateHours,
-        arrivalLateMin,
-        earlyLeaveMin: 0,
-        shortfallMin: 0,
-        penaltyLeaveDays: penNoOut.penaltyLeaveDays,
-        penaltyStatus: penNoOut.penaltyStatus,
-        penaltySummary: penNoOut.penaltySummary,
-        noOutRule,
-        noOutPenaltyText: penNoOut.noOutPenaltyText,
-        lateCutoffTime,
-        graceMin,
-        earlyGraceMin,
-        rawExtraHours: 0,
-        overtimeHours: 0,
-        unapprovedOtHours: 0,
-        otReason: ''
-      };
-    }
 
     let actualOutMin = rawOutMin;
     if (opts.outDate && /^\d{4}-\d{2}-\d{2}$/.test(String(opts.outDate).slice(0, 10)) && String(opts.outDate).slice(0, 10) > dStr) {
@@ -54541,6 +55048,8 @@
     let effectiveRawLateMin = arrivalLateMin + earlyLeaveMin;
     if (lateWhen === 'arrival_only') {
       effectiveRawLateMin = arrivalLateMin;
+    } else if (lateWhen === 'early_out_only') {
+      effectiveRawLateMin = earlyLeaveMin;
     } else if (lateWhen === 'short_hours') {
       effectiveRawLateMin = shortfallMin;
     }
@@ -54594,7 +55103,10 @@
     return {
       shift,
       rule,
+      hasIn: true,
       hasOut: true,
+      isSinglePunch: false,
+      singlePunchType: '',
       isOvernight: actualOutMin >= 1440 && actualInMin < 1440,
       scheduledHours,
       workedHours,
@@ -54612,6 +55124,7 @@
       noOutRule,
       noOutPenaltyText: '',
       lateCutoffTime,
+      earlyOutCutoffTime,
       graceMin,
       earlyGraceMin,
       rawExtraHours,
@@ -54992,20 +55505,25 @@
       && !/^(extra|config)/i.test(String(a.type || a.status || ''))
     );
 
-    const inT = punch.direction === 'IN' ? punch.time : (punch.in_time || (attRec ? (attRec.in_time || attRec.check_in || '') : ''));
-    const outT = punch.direction === 'OUT' ? punch.time : '';
+    const inT = punch.direction === 'IN'
+      ? punch.time
+      : (punch.in_time || '');
+    const outT = punch.direction === 'OUT'
+      ? punch.time
+      : (punch.out_time || '');
     const evalRes = evaluateShiftPunchTiming(punch.staff, coName, shiftDateStr, inT, outT, {
       outDate: punch.date,
       inSameCalendarDay: shiftDateStr === String(punch.date || shiftDateStr).slice(0, 10)
     });
 
-    const workedH = punch.direction === 'OUT'
+    const isPairedBoth = Boolean(inT && outT);
+    const workedH = isPairedBoth
       ? (punch.paired_hours != null ? punch.paired_hours : evalRes.workedHours)
       : evalRes.workedHours;
-    const otH = punch.direction === 'OUT'
+    const otH = isPairedBoth
       ? (punch.overtime_hours != null ? punch.overtime_hours : evalRes.overtimeHours)
       : 0;
-    const unappOt = punch.direction === 'OUT'
+    const unappOt = isPairedBoth
       ? (punch.unapproved_ot_hours != null ? punch.unapproved_ot_hours : evalRes.unapprovedOtHours)
       : 0;
     const penLeaveDays = Number(evalRes.penaltyLeaveDays || 0);
@@ -55026,21 +55544,30 @@
         : (ltH > 0 ? ltH : workedH));
 
     // Synchronize live evaluation onto the punch object
-    punch.late_hours = punch.direction === 'IN' ? Number(evalRes.billableLateHours ?? evalRes.rawLateHours ?? ltH) : ltH;
+    punch.late_hours = !isPairedBoth ? Number(evalRes.billableLateHours ?? evalRes.rawLateHours ?? ltH) : ltH;
     punch.raw_late_hours = rawLtH;
     punch.raw_late_min = rawLtMin;
     punch.penalty_leave_days = penLeaveDays;
     punch.penalty_status = evalRes.penaltyStatus || effType;
     punch.penalty_summary = evalRes.penaltySummary || '';
-    punch.no_out_rule = punch.direction === 'IN' ? (evalRes.noOutRule || 'half_day') : '';
+    punch.no_out_rule = evalRes.isSinglePunch ? (evalRes.noOutRule || 'half_day') : '';
+    punch.single_punch_type = evalRes.singlePunchType || '';
     punch.late_cutoff = evalRes.lateCutoffTime || '';
-    if (punch.direction === 'OUT' && inT) {
+    punch.early_out_cutoff = evalRes.earlyOutCutoffTime || '';
+    if (isPairedBoth) {
       punch.paired_hours = workedH;
       punch.overtime_hours = otH;
       punch.unapproved_ot_hours = unappOt;
+    } else {
+      punch.paired_hours = null;
+      punch.overtime_hours = 0;
+      punch.unapproved_ot_hours = 0;
     }
 
-    const noteParts = [`Kiosk ${punch.method || 'PIN'} (${inT ? 'IN ' + inT : ''}${outT ? (inT ? ' · ' : '') + 'OUT ' + outT : ' · OUT Pending'})`];
+    const clockLabel = isPairedBoth
+      ? `IN ${inT} · OUT ${outT}`
+      : (inT ? `Only IN ${inT} · OUT Pending` : `Only OUT ${outT} · No IN`);
+    const noteParts = [`Kiosk ${punch.method || 'PIN'} (${clockLabel})`];
     noteParts.push(shiftObj.badgeLabel);
     if (evalRes.penaltySummary && evalRes.penaltySummary !== 'On Time') {
       noteParts.push(evalRes.penaltySummary);
@@ -55067,7 +55594,7 @@
         check_in: inT,
         check_out: outT,
         worked_hours: workedH,
-        regular_hours: evalRes.hasOut ? evalRes.regularHours : (workedH > 0 ? Math.min(schedH, workedH) : 0),
+        regular_hours: isPairedBoth ? evalRes.regularHours : (workedH > 0 ? Math.min(schedH, workedH) : 0),
         overtime_hours: otH,
         unapproved_ot_hours: unappOt,
         late_hours: ltH,
@@ -55075,8 +55602,10 @@
         raw_late_min: rawLtMin,
         leave_days: penLeaveDays,
         no_out_rule: punch.no_out_rule,
+        single_punch_type: punch.single_punch_type,
         penalty_summary: evalRes.penaltySummary || '',
         late_cutoff: evalRes.lateCutoffTime || '',
+        early_out_cutoff: evalRes.earlyOutCutoffTime || '',
         tally: effTally,
         source: 'app',
         entered_by: activeUser().full_name,
@@ -55092,7 +55621,7 @@
       attRec.out_time = outT;
       attRec.check_out = outT;
       attRec.worked_hours = workedH;
-      attRec.regular_hours = evalRes.hasOut ? evalRes.regularHours : (workedH > 0 ? Math.min(schedH, workedH) : 0);
+      attRec.regular_hours = isPairedBoth ? evalRes.regularHours : (workedH > 0 ? Math.min(schedH, workedH) : 0);
       attRec.overtime_hours = otH;
       attRec.unapproved_ot_hours = unappOt;
       attRec.late_hours = ltH;
@@ -55100,8 +55629,10 @@
       attRec.raw_late_min = rawLtMin;
       attRec.leave_days = penLeaveDays;
       attRec.no_out_rule = punch.no_out_rule;
+      attRec.single_punch_type = punch.single_punch_type;
       attRec.penalty_summary = evalRes.penaltySummary || '';
       attRec.late_cutoff = evalRes.lateCutoffTime || '';
+      attRec.early_out_cutoff = evalRes.earlyOutCutoffTime || '';
       attRec.type = effType;
       attRec.status = effType;
       attRec.tally = effTally;
@@ -55213,6 +55744,7 @@
 
     let shiftDate = dateStr;
     let inTimeRef = '';
+    let outTimeRef = '';
     let pairedHours = null;
     let overtimeHours = 0;
     let unapprovedOtHours = 0;
@@ -55222,10 +55754,12 @@
 
     if (direction === 'IN') {
       shiftDate = inferShiftDateForInPunch(staffName, coName, dateStr, timeStr);
+      inTimeRef = timeStr;
       evalCurrent = evaluateShiftPunchTiming(staffName, coName, shiftDate, timeStr, '', { inSameCalendarDay: shiftDate === dateStr });
       shiftMeta = evalCurrent.shift;
       lateHours = Number(evalCurrent.billableLateHours ?? evalCurrent.lateHours ?? 0);
     } else {
+      outTimeRef = timeStr;
       const openIn = (STATE.kioskPunches || []).find(p => {
         if (!p || p.voided || norm(p.staff) !== norm(staffName) || p.direction !== 'IN') return false;
         const pMs = Date.parse(p.iso || '') || 0;
@@ -55244,11 +55778,15 @@
         unapprovedOtHours = evalCurrent.unapprovedOtHours;
         lateHours = evalCurrent.lateHours;
       } else {
-        shiftMeta = resolveStaffShiftForDate(staffName, coName, dateStr);
-        pairedHours = shiftMeta.hours || 8.0;
+        // Either/Or Single Incomplete Punch: Staff clocked OUT without a prior Clock-IN
+        shiftDate = dateStr;
+        inTimeRef = '';
+        evalCurrent = evaluateShiftPunchTiming(staffName, coName, shiftDate, '', timeStr, { outDate: dateStr });
+        shiftMeta = evalCurrent.shift;
+        pairedHours = null;
         overtimeHours = 0;
         unapprovedOtHours = 0;
-        lateHours = 0;
+        lateHours = Number(evalCurrent.billableLateHours ?? evalCurrent.lateHours ?? 0);
       }
     }
 
@@ -55264,6 +55802,7 @@
       shift_id: shiftMeta ? shiftMeta.id : 'day_8_4',
       shift_label: shiftMeta ? shiftMeta.badgeLabel : 'Day · 08:00-16:00',
       in_time: direction === 'OUT' ? inTimeRef : timeStr,
+      out_time: direction === 'OUT' ? outTimeRef : '',
       time: timeStr,
       iso: punchDateObj.toISOString(),
       method: opts.method || 'PIN',
@@ -55278,8 +55817,10 @@
       penalty_leave_days: evalCurrent ? evalCurrent.penaltyLeaveDays : 0,
       penalty_status: evalCurrent ? evalCurrent.penaltyStatus : 'Present',
       penalty_summary: evalCurrent ? evalCurrent.penaltySummary : '',
-      no_out_rule: direction === 'IN' && evalCurrent ? evalCurrent.noOutRule : '',
+      no_out_rule: evalCurrent && evalCurrent.isSinglePunch ? evalCurrent.noOutRule : '',
+      single_punch_type: evalCurrent ? (evalCurrent.singlePunchType || '') : '',
       late_cutoff: evalCurrent ? evalCurrent.lateCutoffTime : '',
+      early_out_cutoff: evalCurrent ? evalCurrent.earlyOutCutoffTime : '',
       voided: false
     };
 
@@ -55289,10 +55830,13 @@
     STATE.kioskAttPin = '';
     STATE.kioskAttStaff = '';
     const attRec = syncAttendanceRecordFromPunch(punch);
+    const isSingleOutOnly = punch.direction === 'OUT' && !punch.in_time;
     const penSuffix = punch.penalty_leave_days >= 1
       ? ' · Full Absence (1.0d)'
       : (punch.penalty_leave_days >= 0.5
-        ? (punch.direction === 'IN' ? ' · Half Day (0.5d until Clock OUT)' : ' · Half Day (0.5d Late Penalty)')
+        ? (punch.direction === 'IN'
+          ? ' · Half Day (0.5d until Clock OUT)'
+          : (isSingleOutOnly ? ' · Only Clock-OUT (No IN) = Half Day (0.5d)' : ' · Half Day (0.5d Late Penalty)'))
         : (punch.late_hours > 0 ? ` · Late -${punch.late_hours}h` : ''));
     const otSummaryTxt = pairedHours != null
       ? (overtimeHours > 0
@@ -55324,12 +55868,18 @@
     const p = (STATE.kioskPunches || []).find(x => x && x.id === targetId) || (STATE.kioskPunches || [])[0];
     if (!p) return { ok: false, reason: 'not-found' };
     p.direction = p.direction === 'IN' ? 'OUT' : 'IN';
-    const sMeta = resolveStaffShiftForDate(p.staff, p.company, p.shift_date || p.date);
-    if (p.direction === 'OUT' && p.paired_hours == null) {
-      p.paired_hours = sMeta.hours || 8.0;
+    if (p.direction === 'OUT') {
+      // Single punch flipped to OUT -> Only Clock-OUT (No IN) unless paired with an earlier distinct IN punch
+      if (!p.in_time || p.in_time === p.time) {
+        p.in_time = '';
+      }
+      p.out_time = p.time;
+      p.paired_hours = null;
       p.overtime_hours = 0;
       p.unapproved_ot_hours = 0;
     } else if (p.direction === 'IN') {
+      p.in_time = p.time;
+      p.out_time = '';
       p.paired_hours = null;
       p.overtime_hours = 0;
       p.unapproved_ot_hours = 0;
