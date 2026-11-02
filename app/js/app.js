@@ -54736,14 +54736,7 @@
       noOutTone = 'emerald';
     }
 
-    let cutoffSummary = `IN > ${inCutoffTime} · OUT < ${outCutoffTime}`;
-    if (lateWhen === 'arrival_only') {
-      cutoffSummary = `IN > ${inCutoffTime} (Start Only)`;
-    } else if (lateWhen === 'early_out_only') {
-      cutoffSummary = `OUT < ${outCutoffTime} (End Only)`;
-    } else if (lateWhen === 'short_hours') {
-      cutoffSummary = `Min ${fmtNum(shift.hours || 8, 1)}h (${graceMin}m tol.)`;
-    }
+    const cutoffSummary = `IN > ${inCutoffTime} · OUT < ${outCutoffTime}`;
 
     const toleranceBadge = graceMin === earlyGraceMin
       ? (graceMin === 0 ? '0m Strict (IN & OUT)' : `${graceMin}m Tol. (IN & OUT)`)
@@ -56600,8 +56593,8 @@
     let draftCustomEnd = rule.custom_end || '16:00';
     let draftCustomName = rule.custom_name || 'Custom Shift';
     let draftGrace = Number(rule.grace_min != null ? rule.grace_min : 10);
-    let draftEarlyGrace = Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : 5);
-    let draftLateWhen = rule.late_when || 'both';
+    let draftEarlyGrace = Number(rule.early_leave_grace_min != null ? rule.early_leave_grace_min : draftGrace);
+    let draftLateWhen = ['both', 'arrival_only', 'early_out_only', 'short_hours'].includes(rule.late_when) ? rule.late_when : 'both';
     let draftLateCountFrom = rule.late_count_from || 'shift_start';
     let draftLatePenaltyMode = rule.late_penalty_mode || 'exact_hours';
     let draftLateMultiplier = Number(rule.late_multiplier != null ? rule.late_multiplier : 1.5);
@@ -56638,14 +56631,17 @@
         ? { start_time: draftCustomStart, end_time: draftCustomEnd }
         : (shiftTypes.find(t => t.id === draftShiftId) || shiftTypes[0] || { start_time: '08:00', end_time: '16:00' });
       const startMinVal = parseClockMinutes(curShiftObj.start_time) ?? 480;
+      const endMinRaw = parseClockMinutes(curShiftObj.end_time) ?? 960;
+      const endMinVal = endMinRaw <= startMinVal ? (endMinRaw + 1440) : endMinRaw;
       const cutoffClockLbl = formatMinutesAsClockTime(startMinVal + draftGrace);
+      const outCutoffClockLbl = formatMinutesAsClockTime(endMinVal - draftEarlyGrace);
 
       modal.innerHTML = `
         <div class="modal-card staff-sched-modal-card">
           <div class="modal-head">
             <div>
               <div class="modal-title">${ic('clock')} Shift, Lateness &amp; Overtime Rules · ${esc(entry.name)}</div>
-              <div class="modal-sub">${esc(entry.company)} · ${esc(entry.role)} · Configure shift timing, lateness tolerances &amp; punishments, missing clock-out rules, and overtime</div>
+              <div class="modal-sub">${esc(entry.company)} · ${esc(entry.role)} · Configure shift timing, tolerances (0, 5, 10, 15, 20, 30 min), single-punch rules, and overtime</div>
             </div>
             <button type="button" class="icon-btn" id="ssmCloseBtn" aria-label="Close">✕</button>
           </div>
@@ -56708,7 +56704,7 @@
                   </div>
                 </div>
                 <div class="ssm-grace-wrap">
-                  <label for="ssmGraceMin">Arrival Grace (min)</label>
+                  <label for="ssmGraceMin">Clock-IN Tol. (min)</label>
                   <input type="number" id="ssmGraceMin" min="0" max="120" step="5" value="${draftGrace}" style="width:74px">
                 </div>
               </div>
@@ -56718,41 +56714,49 @@
             <div class="ssm-section" id="ssmLatenessSection">
               <div class="ssm-sec-head">
                 <strong>2. Lateness Tolerance, When Lateness Occurs &amp; Punishment Rules</strong>
-                <span class="muted">Late arrival cutoff: <b class="mono">${esc(cutoffClockLbl)}</b> (${draftGrace}m grace after ${esc(curShiftObj.start_time)})</span>
+                <span class="muted">IN late after <b class="mono">${esc(cutoffClockLbl)}</b> (${draftGrace}m after ${esc(curShiftObj.start_time)}) · OUT early before <b class="mono">${esc(outCutoffClockLbl)}</b> (${draftEarlyGrace}m before ${esc(curShiftObj.end_time)})</span>
               </div>
 
               <div class="ssm-late-grid">
                 <div class="ssm-field">
-                  <label>Arrival Tolerance (Grace Minutes)</label>
+                  <label>Clock-IN Tolerance (Minutes after ${esc(curShiftObj.start_time)})</label>
                   <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-                    ${[0, 5, 10, 15, 30].map(gm => `
+                    ${[0, 5, 10, 15, 20, 30].map(gm => `
                       <button type="button" class="kiosk-qchip ${Number(draftGrace) === gm ? 'active' : ''}" data-ssm-grace-chip="${gm}">
-                        ${gm === 0 ? '0m Strict' : `${gm}m (> ${formatMinutesAsClockTime(startMinVal + gm)})`}
+                        ${gm} min
                       </button>
                     `).join('')}
                   </div>
                 </div>
 
                 <div class="ssm-field">
+                  <label>Clock-OUT Tolerance (Minutes before ${esc(curShiftObj.end_time)})</label>
+                  <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+                    ${[0, 5, 10, 15, 20, 30].map(gm => `
+                      <button type="button" class="kiosk-qchip ${Number(draftEarlyGrace) === gm ? 'active' : ''}" data-ssm-early-grace-chip="${gm}">
+                        ${gm} min
+                      </button>
+                    `).join('')}
+                    <input type="number" id="ssmEarlyGraceInput" min="0" max="120" step="5" value="${draftEarlyGrace}" style="width:64px;height:28px" aria-label="Clock-OUT Tolerance Minutes">
+                  </div>
+                </div>
+
+                <div class="ssm-field">
                   <label for="ssmLateWhenSelect">When Lateness Occurs</label>
                   <select id="ssmLateWhenSelect" class="kiosk-select" data-plain-options="1">
-                    <option value="both" ${draftLateWhen === 'both' ? 'selected' : ''}>Arrival Clock-IN (&gt;${esc(cutoffClockLbl)}) + Early Clock-OUT (&gt;${draftEarlyGrace}m early)</option>
-                    <option value="arrival_only" ${draftLateWhen === 'arrival_only' ? 'selected' : ''}>Arrival Clock-IN Only (Late after ${esc(cutoffClockLbl)})</option>
-                    <option value="short_hours" ${draftLateWhen === 'short_hours' ? 'selected' : ''}>Total Shift Hours Shortfall (Worked &lt; Scheduled Shift)</option>
+                    <option value="both" ${draftLateWhen === 'both' ? 'selected' : ''}>IN Late (&gt;${esc(cutoffClockLbl)}) + OUT Early (&lt;${esc(outCutoffClockLbl)})</option>
+                    <option value="arrival_only" ${draftLateWhen === 'arrival_only' ? 'selected' : ''}>Clock-IN Late Only (After ${esc(cutoffClockLbl)})</option>
+                    <option value="early_out_only" ${draftLateWhen === 'early_out_only' ? 'selected' : ''}>Clock-OUT Early Only (Before ${esc(outCutoffClockLbl)})</option>
+                    <option value="short_hours" ${draftLateWhen === 'short_hours' ? 'selected' : ''}>Shift Hours Shortfall (Worked &lt; Scheduled Shift)</option>
                   </select>
                 </div>
 
                 <div class="ssm-field">
-                  <label for="ssmLateCountFromSelect">How Late Minutes Are Counted</label>
+                  <label for="ssmLateCountFromSelect">How Late / Early Minutes Are Counted</label>
                   <select id="ssmLateCountFromSelect" class="kiosk-select" data-plain-options="1">
-                    <option value="shift_start" ${draftLateCountFrom === 'shift_start' ? 'selected' : ''}>From Shift Start (${esc(curShiftObj.start_time)}) once grace is exceeded</option>
-                    <option value="after_grace" ${draftLateCountFrom === 'after_grace' ? 'selected' : ''}>Only Minutes After Grace Cutoff (${esc(cutoffClockLbl)})</option>
+                    <option value="shift_start" ${draftLateCountFrom === 'shift_start' ? 'selected' : ''}>From Shift Start (${esc(curShiftObj.start_time)}) / End (${esc(curShiftObj.end_time)}) once tolerance is exceeded</option>
+                    <option value="after_grace" ${draftLateCountFrom === 'after_grace' ? 'selected' : ''}>Only Minutes Beyond Cutoff (&gt;${esc(cutoffClockLbl)} / &lt;${esc(outCutoffClockLbl)})</option>
                   </select>
-                </div>
-
-                <div class="ssm-field">
-                  <label for="ssmEarlyGraceInput">Early Leave Tolerance (min before ${esc(curShiftObj.end_time)})</label>
-                  <input type="number" id="ssmEarlyGraceInput" min="0" max="120" step="5" value="${draftEarlyGrace}" style="width:90px">
                 </div>
               </div>
 
@@ -56760,15 +56764,15 @@
               <div class="ot-mode-grid ssm-penalty-grid">
                 <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'exact_hours' ? 'active' : ''}" data-ssm-late-pen="exact_hours">
                   <div class="ot-mc-title"><span class="ot-dot sapphire"></span>Exact Hours (1x)</div>
-                  <div class="ot-mc-desc">Deduct exact late time at 1x hourly rate.</div>
+                  <div class="ot-mc-desc">Deduct exact late or early-out time at 1x hourly rate.</div>
                 </button>
                 <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'multiplier' ? 'active' : ''}" data-ssm-late-pen="multiplier">
                   <div class="ot-mc-title"><span class="ot-dot amber"></span>Multiplier (${fmtNum(draftLateMultiplier, 1)}x)</div>
-                  <div class="ot-mc-desc">Penalize late hours at 1.5x or 2.0x hourly rate.</div>
+                  <div class="ot-mc-desc">Penalize late or early-out hours at 1.5x or 2.0x hourly rate.</div>
                 </button>
                 <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'round_hour' ? 'active' : ''}" data-ssm-late-pen="round_hour">
                   <div class="ot-mc-title"><span class="ot-dot amber"></span>Round Up to Full Hour</div>
-                  <div class="ot-mc-desc">Any lateness beyond grace deducts at least 1 full hour.</div>
+                  <div class="ot-mc-desc">Any lateness beyond tolerance deducts at least 1 full hour.</div>
                 </button>
                 <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'tiered_half_day' ? 'active' : ''}" data-ssm-late-pen="tiered_half_day">
                   <div class="ot-mc-title"><span class="ot-dot rose"></span>Late &gt;= ${draftLateHalfDayMin}m = Half Day</div>
@@ -56776,7 +56780,7 @@
                 </button>
                 <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'half_day_any' ? 'active' : ''}" data-ssm-late-pen="half_day_any">
                   <div class="ot-mc-title"><span class="ot-dot rose"></span>Any Late = Half Day (0.5d)</div>
-                  <div class="ot-mc-desc">Any arrival after ${esc(cutoffClockLbl)} converts the shift to Half Day (0.5d).</div>
+                  <div class="ot-mc-desc">Any late arrival or early departure beyond tolerance converts the shift to Half Day (0.5d).</div>
                 </button>
                 <button type="button" class="ot-mode-card ${draftLatePenaltyMode === 'none' ? 'active' : ''}" data-ssm-late-pen="none">
                   <div class="ot-mc-title"><span class="ot-dot muted"></span>Track Only ($0)</div>
@@ -56812,23 +56816,23 @@
                 </div>
               ` : ''}
 
-              <div class="ssm-subhead-lbl" style="margin-top:6px">If Staff Clocks IN and Does Not Clock OUT (Missing Clock-OUT Rule)</div>
+              <div class="ssm-subhead-lbl" style="margin-top:6px">If Only Clock-IN or Only Clock-OUT (Single / Incomplete Punch Rule)</div>
               <div class="ot-mode-grid">
                 <button type="button" class="ot-mode-card ${draftNoClockOutRule === 'half_day' ? 'active' : ''}" data-ssm-no-out="half_day">
                   <div class="ot-mc-title"><span class="ot-dot amber"></span>Half Day (0.5d)</div>
-                  <div class="ot-mc-desc">Clocking IN without Clocking OUT counts as Half Day (0.5d deduction) until OUT is recorded.</div>
+                  <div class="ot-mc-desc">Only Clock-IN (missing OUT) or Only Clock-OUT (missing IN) counts as Half Day (0.5d deduction) until both punches are recorded.</div>
                 </button>
                 <button type="button" class="ot-mode-card ${draftNoClockOutRule === 'full_absence' ? 'active' : ''}" data-ssm-no-out="full_absence">
                   <div class="ot-mc-title"><span class="ot-dot rose"></span>Full Absence (1.0d)</div>
-                  <div class="ot-mc-desc">Incomplete punch without Clock-OUT counts as 1 full day unpaid absence.</div>
+                  <div class="ot-mc-desc">Only Clock-IN or Only Clock-OUT counts as 1 full day unpaid absence until both punches are recorded.</div>
                 </button>
                 <button type="button" class="ot-mode-card ${draftNoClockOutRule === 'deduct_2h' ? 'active' : ''}" data-ssm-no-out="deduct_2h">
                   <div class="ot-mc-title"><span class="ot-dot amber"></span>Deduct 2.0h Lateness</div>
-                  <div class="ot-mc-desc">Keep full day present but add a 2.0h missing clock-out lateness penalty.</div>
+                  <div class="ot-mc-desc">Keep full day present but add a 2.0h incomplete-punch lateness penalty.</div>
                 </button>
                 <button type="button" class="ot-mode-card ${draftNoClockOutRule === 'auto_shift_end' ? 'active' : ''}" data-ssm-no-out="auto_shift_end">
                   <div class="ot-mc-title"><span class="ot-dot emerald"></span>Assume Full Shift (0 Ded.)</div>
-                  <div class="ot-mc-desc">Credit scheduled shift hours with no missing clock-out penalty.</div>
+                  <div class="ot-mc-desc">Credit scheduled shift hours with no incomplete-punch penalty.</div>
                 </button>
               </div>
             </div>
@@ -57044,7 +57048,17 @@
       modal.querySelectorAll('[data-ssm-grace-chip]').forEach(btn => {
         btn.addEventListener('click', () => {
           syncLiveInputs();
+          const prevGrace = draftGrace;
           draftGrace = Number(btn.getAttribute('data-ssm-grace-chip') || 0);
+          if (draftEarlyGrace === prevGrace) draftEarlyGrace = draftGrace;
+          renderModalInner();
+        });
+      });
+
+      modal.querySelectorAll('[data-ssm-early-grace-chip]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          syncLiveInputs();
+          draftEarlyGrace = Number(btn.getAttribute('data-ssm-early-grace-chip') || 0);
           renderModalInner();
         });
       });
@@ -57660,42 +57674,57 @@
       const latePenFilter = STATE.kioskLatePenFilter || 'all';
       const lateTolFilter = STATE.kioskLateTolFilter || 'all';
       const lateWhenFilter = STATE.kioskLateWhenFilter || 'all';
+      const lateOtFilter = STATE.kioskLateOtFilter || 'all';
       const lateTodayFilter = STATE.kioskLateTodayFilter || 'all';
 
-      const matchesKioskLateFilters = s => {
+      const checkStaffFilterCriteria = (s, criteria = {}) => {
+        const penF = criteria.pen != null ? criteria.pen : latePenFilter;
+        const tolF = criteria.tol != null ? criteria.tol : lateTolFilter;
+        const whenF = criteria.when != null ? criteria.when : lateWhenFilter;
+        const otF = criteria.ot != null ? criteria.ot : lateOtFilter;
+        const todayF = criteria.today != null ? criteria.today : lateTodayFilter;
         const lt = s.lateDesc || describeStaffLatenessRule(s.name, s.company, todayISO());
-        if (latePenFilter !== 'all') {
-          if (latePenFilter === 'no_out_half_day' && lt.noOutRule !== 'half_day') return false;
-          if (latePenFilter === 'no_out_absent' && lt.noOutRule !== 'full_absence') return false;
-          if (latePenFilter === 'late_half_day' && lt.penaltyMode !== 'tiered_half_day' && lt.penaltyMode !== 'half_day_any') return false;
-          if (latePenFilter === 'escalated' && lt.penaltyMode !== 'multiplier' && lt.penaltyMode !== 'round_hour') return false;
-          if (latePenFilter === 'exact_hours' && lt.penaltyMode !== 'exact_hours') return false;
-          if (latePenFilter === 'none' && lt.penaltyMode !== 'none') return false;
+        const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, todayISO());
+        if (penF !== 'all') {
+          if (penF === 'no_out_half_day' && lt.noOutRule !== 'half_day') return false;
+          if (penF === 'no_out_absent' && lt.noOutRule !== 'full_absence') return false;
+          if (penF === 'late_half_day' && lt.penaltyMode !== 'tiered_half_day' && lt.penaltyMode !== 'half_day_any') return false;
+          if (penF === 'escalated' && lt.penaltyMode !== 'multiplier' && lt.penaltyMode !== 'round_hour') return false;
+          if (penF === 'exact_hours' && lt.penaltyMode !== 'exact_hours') return false;
+          if (penF === 'none' && lt.penaltyMode !== 'none') return false;
         }
-        if (lateTolFilter !== 'all') {
+        if (tolF !== 'all') {
+          const targetMin = Number(tolF);
           const gm = Number(lt.graceMin != null ? lt.graceMin : 10);
-          if (lateTolFilter === '0' && gm !== 0) return false;
-          if (lateTolFilter === '5' && gm !== 5) return false;
-          if (lateTolFilter === '10' && gm !== 10) return false;
-          if (lateTolFilter === '15_plus' && gm < 15) return false;
+          const egm = Number(lt.earlyGraceMin != null ? lt.earlyGraceMin : gm);
+          if (Number.isFinite(targetMin) && gm !== targetMin && egm !== targetMin) return false;
         }
-        if (lateWhenFilter !== 'all' && lt.lateWhen !== lateWhenFilter) {
+        if (whenF !== 'all' && lt.lateWhen !== whenF) {
           return false;
         }
-        if (lateTodayFilter !== 'all') {
+        if (otF !== 'all') {
+          const otMode = ot.mode || 'none';
+          if (otF === 'none' && otMode !== 'none') return false;
+          if (otF === 'allowed' && otMode === 'none') return false;
+          if (otF === 'date_range' && otMode !== 'date_range') return false;
+        }
+        if (todayF !== 'all') {
           const lp = latestByStaff.get(norm(s.name));
           const onNow = isPunchActiveOnSite(lp, nowMs);
           const outToday = !onNow && lp && lp.direction === 'OUT' && (lp.date === todayISO() || lp.shift_date === todayISO());
           const hasTodayPunch = onNow || outToday;
-          const isLateToday = hasTodayPunch && ((Number(lp.late_hours || 0) > 0) || (Number(lp.raw_late_min || 0) > 0) || (outToday && Number(lp.penalty_leave_days || 0) >= 0.5));
-          const isMissingOutHalfDay = onNow && (lt.noOutRule === 'half_day' || Number(lp.penalty_leave_days || 0) >= 0.5);
-          if (lateTodayFilter === 'missing_out_half_day' && !isMissingOutHalfDay) return false;
-          if (lateTodayFilter === 'late_today' && !isLateToday) return false;
-          if (lateTodayFilter === 'on_time_today' && (!hasTodayPunch || isLateToday)) return false;
-          if (lateTodayFilter === 'off_site' && hasTodayPunch) return false;
+          const isSinglePunchToday = onNow || (outToday && !lp.in_time);
+          const isLateToday = hasTodayPunch && ((Number(lp.late_hours || 0) > 0) || (Number(lp.raw_late_min || 0) > 0) || (Number(lp.early_out_min || 0) > 0) || (outToday && Number(lp.penalty_leave_days || 0) >= 0.5));
+          const isMissingOutHalfDay = isSinglePunchToday && (lt.noOutRule === 'half_day' || Number(lp.penalty_leave_days || 0) >= 0.5);
+          if (todayF === 'missing_out_half_day' && !isMissingOutHalfDay) return false;
+          if (todayF === 'late_today' && !isLateToday) return false;
+          if (todayF === 'on_time_today' && (!hasTodayPunch || isLateToday || isSinglePunchToday)) return false;
+          if (todayF === 'off_site' && hasTodayPunch) return false;
         }
         return true;
       };
+
+      const matchesKioskLateFilters = s => checkStaffFilterCriteria(s);
 
       const searchFilteredRoster = rosterQuery
         ? staffDir.filter(s =>
@@ -57705,22 +57734,27 @@
           || norm(s.shift && s.shift.name).includes(rosterQuery)
           || norm(s.lateDesc && s.lateDesc.badgeText).includes(rosterQuery)
           || norm(s.lateDesc && s.lateDesc.subText).includes(rosterQuery)
+          || norm(s.otDesc && s.otDesc.badgeText).includes(rosterQuery)
         )
         : staffDir;
       const filteredRoster = searchFilteredRoster.filter(matchesKioskLateFilters);
+      const countByCriteria = overrides => searchFilteredRoster.filter(s => checkStaffFilterCriteria(s, overrides)).length;
+
       const basePunches = feedFilter === 'onsite' ? onSiteList : punches.slice(0, 25);
       const feedRows = basePunches.filter(p => {
         if (rosterQuery && !(norm(p.staff).includes(rosterQuery) || norm(p.site).includes(rosterQuery) || norm(p.company).includes(rosterQuery) || norm(p.penalty_summary).includes(rosterQuery))) {
           return false;
         }
         if (lateTodayFilter === 'missing_out_half_day') {
-          return p.direction === 'IN' && (p.no_out_rule === 'half_day' || Number(p.penalty_leave_days || 0) >= 0.5 || !p.no_out_rule);
+          const isSingleP = p.direction === 'IN' || (p.direction === 'OUT' && !p.in_time);
+          return isSingleP && (p.no_out_rule === 'half_day' || Number(p.penalty_leave_days || 0) >= 0.5 || !p.no_out_rule);
         }
         if (lateTodayFilter === 'late_today') {
-          return Number(p.late_hours || 0) > 0 || Number(p.raw_late_min || 0) > 0 || (p.direction === 'OUT' && Number(p.penalty_leave_days || 0) >= 0.5);
+          return Number(p.late_hours || 0) > 0 || Number(p.raw_late_min || 0) > 0 || Number(p.early_out_min || 0) > 0 || (p.direction === 'OUT' && Number(p.penalty_leave_days || 0) >= 0.5);
         }
         if (lateTodayFilter === 'on_time_today') {
-          return Number(p.late_hours || 0) === 0 && Number(p.raw_late_min || 0) === 0;
+          const isSingleP = p.direction === 'IN' || (p.direction === 'OUT' && !p.in_time);
+          return !isSingleP && Number(p.late_hours || 0) === 0 && Number(p.raw_late_min || 0) === 0 && Number(p.early_out_min || 0) === 0;
         }
         return true;
       });
@@ -57744,40 +57778,45 @@
         return true;
       });
 
-      const hasActiveLateFilter = latePenFilter !== 'all' || lateTolFilter !== 'all' || lateWhenFilter !== 'all' || lateTodayFilter !== 'all';
+      const hasActiveLateFilter = latePenFilter !== 'all' || lateTolFilter !== 'all' || lateWhenFilter !== 'all' || lateOtFilter !== 'all' || lateTodayFilter !== 'all';
       const lateFilterBarHtml = !STATE.kioskLocked ? `
         <div class="kiosk-late-filter-bar" id="kioskLateFilterBar">
           <div class="sched-filter-group">
-            <span class="kiosk-bar-lbl">Punishment:</span>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'all' ? 'active' : ''}" data-late-pen-filter="all">All</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'no_out_half_day' ? 'active' : ''}" data-late-pen-filter="no_out_half_day">No OUT = Half Day (0.5d)</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'no_out_absent' ? 'active' : ''}" data-late-pen-filter="no_out_absent">No OUT = Absent (1d)</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'late_half_day' ? 'active' : ''}" data-late-pen-filter="late_half_day">Late = Half Day (0.5d)</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'escalated' ? 'active' : ''}" data-late-pen-filter="escalated">1.5x / Round 1h</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'exact_hours' ? 'active' : ''}" data-late-pen-filter="exact_hours">Exact Hours (1x)</button>
-            <button type="button" class="kiosk-qchip ${latePenFilter === 'none' ? 'active' : ''}" data-late-pen-filter="none">Track Only ($0)</button>
-          </div>
-          <div class="sched-filter-group">
-            <span class="kiosk-bar-lbl">Tolerance:</span>
-            <button type="button" class="kiosk-qchip ${lateTolFilter === 'all' ? 'active' : ''}" data-late-tol-filter="all">All Grace</button>
-            <button type="button" class="kiosk-qchip ${lateTolFilter === '0' ? 'active' : ''}" data-late-tol-filter="0">Strict 0m</button>
-            <button type="button" class="kiosk-qchip ${lateTolFilter === '5' ? 'active' : ''}" data-late-tol-filter="5">5m Grace</button>
-            <button type="button" class="kiosk-qchip ${lateTolFilter === '10' ? 'active' : ''}" data-late-tol-filter="10">10m Grace</button>
-            <button type="button" class="kiosk-qchip ${lateTolFilter === '15_plus' ? 'active' : ''}" data-late-tol-filter="15_plus">15m+ Grace</button>
+            <span class="kiosk-bar-lbl">Tolerance (IN &amp; OUT):</span>
+            <button type="button" class="kiosk-qchip ${lateTolFilter === 'all' ? 'active' : ''}" data-late-tol-filter="all">All (${fmtNum(countByCriteria({ tol: 'all' }))})</button>
+            ${[0, 5, 10, 15, 20, 30].map(m => `<button type="button" class="kiosk-qchip ${lateTolFilter === String(m) ? 'active' : ''}" data-late-tol-filter="${m}">${m}m (${fmtNum(countByCriteria({ tol: String(m) }))})</button>`).join('')}
           </div>
           <div class="sched-filter-group">
             <span class="kiosk-bar-lbl">When Late:</span>
             <button type="button" class="kiosk-qchip ${lateWhenFilter === 'all' ? 'active' : ''}" data-late-when-filter="all">All</button>
-            <button type="button" class="kiosk-qchip ${lateWhenFilter === 'both' ? 'active' : ''}" data-late-when-filter="both">IN + Early OUT</button>
-            <button type="button" class="kiosk-qchip ${lateWhenFilter === 'arrival_only' ? 'active' : ''}" data-late-when-filter="arrival_only">Clock-IN Only</button>
-            <button type="button" class="kiosk-qchip ${lateWhenFilter === 'short_hours' ? 'active' : ''}" data-late-when-filter="short_hours">Shift Shortfall</button>
+            <button type="button" class="kiosk-qchip ${lateWhenFilter === 'both' ? 'active' : ''}" data-late-when-filter="both">IN + OUT (${fmtNum(countByCriteria({ when: 'both' }))})</button>
+            <button type="button" class="kiosk-qchip ${lateWhenFilter === 'arrival_only' ? 'active' : ''}" data-late-when-filter="arrival_only">Clock-IN Only (${fmtNum(countByCriteria({ when: 'arrival_only' }))})</button>
+            <button type="button" class="kiosk-qchip ${lateWhenFilter === 'early_out_only' ? 'active' : ''}" data-late-when-filter="early_out_only">Clock-OUT Only (${fmtNum(countByCriteria({ when: 'early_out_only' }))})</button>
+            <button type="button" class="kiosk-qchip ${lateWhenFilter === 'short_hours' ? 'active' : ''}" data-late-when-filter="short_hours">Shift Hours (${fmtNum(countByCriteria({ when: 'short_hours' }))})</button>
+          </div>
+          <div class="sched-filter-group">
+            <span class="kiosk-bar-lbl">Punishment:</span>
+            <button type="button" class="kiosk-qchip ${latePenFilter === 'all' ? 'active' : ''}" data-late-pen-filter="all">All</button>
+            <button type="button" class="kiosk-qchip ${latePenFilter === 'no_out_half_day' ? 'active' : ''}" data-late-pen-filter="no_out_half_day">Only IN/OUT = 0.5d (${fmtNum(countByCriteria({ pen: 'no_out_half_day' }))})</button>
+            <button type="button" class="kiosk-qchip ${latePenFilter === 'no_out_absent' ? 'active' : ''}" data-late-pen-filter="no_out_absent">Only IN/OUT = 1d (${fmtNum(countByCriteria({ pen: 'no_out_absent' }))})</button>
+            <button type="button" class="kiosk-qchip ${latePenFilter === 'late_half_day' ? 'active' : ''}" data-late-pen-filter="late_half_day">Late = 0.5d (${fmtNum(countByCriteria({ pen: 'late_half_day' }))})</button>
+            <button type="button" class="kiosk-qchip ${latePenFilter === 'escalated' ? 'active' : ''}" data-late-pen-filter="escalated">1.5x / 2x / 1h (${fmtNum(countByCriteria({ pen: 'escalated' }))})</button>
+            <button type="button" class="kiosk-qchip ${latePenFilter === 'exact_hours' ? 'active' : ''}" data-late-pen-filter="exact_hours">Exact 1x (${fmtNum(countByCriteria({ pen: 'exact_hours' }))})</button>
+            <button type="button" class="kiosk-qchip ${latePenFilter === 'none' ? 'active' : ''}" data-late-pen-filter="none">Track $0 (${fmtNum(countByCriteria({ pen: 'none' }))})</button>
+          </div>
+          <div class="sched-filter-group">
+            <span class="kiosk-bar-lbl">Overtime:</span>
+            <button type="button" class="kiosk-qchip ${lateOtFilter === 'all' ? 'active' : ''}" data-late-ot-filter="all">All</button>
+            <button type="button" class="kiosk-qchip ${lateOtFilter === 'none' ? 'active' : ''}" data-late-ot-filter="none">No OT (${fmtNum(countByCriteria({ ot: 'none' }))})</button>
+            <button type="button" class="kiosk-qchip ${lateOtFilter === 'allowed' ? 'active' : ''}" data-late-ot-filter="allowed">OT Allowed (${fmtNum(countByCriteria({ ot: 'allowed' }))})</button>
+            <button type="button" class="kiosk-qchip ${lateOtFilter === 'date_range' ? 'active' : ''}" data-late-ot-filter="date_range">Date Pass (${fmtNum(countByCriteria({ ot: 'date_range' }))})</button>
           </div>
           <div class="sched-filter-group">
             <span class="kiosk-bar-lbl">Today:</span>
             <button type="button" class="kiosk-qchip ${lateTodayFilter === 'all' ? 'active' : ''}" data-late-today-filter="all">All</button>
-            <button type="button" class="kiosk-qchip ${lateTodayFilter === 'missing_out_half_day' ? 'active' : ''}" data-late-today-filter="missing_out_half_day">Missing OUT (Half Day)</button>
-            <button type="button" class="kiosk-qchip ${lateTodayFilter === 'late_today' ? 'active' : ''}" data-late-today-filter="late_today">Late Today</button>
-            <button type="button" class="kiosk-qchip ${lateTodayFilter === 'on_time_today' ? 'active' : ''}" data-late-today-filter="on_time_today">On Time</button>
+            <button type="button" class="kiosk-qchip ${lateTodayFilter === 'missing_out_half_day' ? 'active' : ''}" data-late-today-filter="missing_out_half_day">Only IN or OUT (0.5d) (${fmtNum(countByCriteria({ today: 'missing_out_half_day' }))})</button>
+            <button type="button" class="kiosk-qchip ${lateTodayFilter === 'late_today' ? 'active' : ''}" data-late-today-filter="late_today">Late / Early OUT (${fmtNum(countByCriteria({ today: 'late_today' }))})</button>
+            <button type="button" class="kiosk-qchip ${lateTodayFilter === 'on_time_today' ? 'active' : ''}" data-late-today-filter="on_time_today">On Time (${fmtNum(countByCriteria({ today: 'on_time_today' }))})</button>
             ${hasActiveLateFilter ? `<button type="button" class="kiosk-qchip" id="kioskClearLateFiltersBtn">Reset Filters</button>` : ''}
           </div>
         </div>
@@ -57811,7 +57850,7 @@
                 <div class="kiosk-lp-info">
                   <strong>${esc(lastPunch.staff)}</strong>
                   ${showCoCol ? coBadge(lastPunch.company) : ''}
-                  <span class="kiosk-lp-meta"><span class="mono">${lastPunch.direction === 'OUT' && lastPunch.in_time ? `IN ${esc(lastPunch.in_time)} · OUT ${esc(lastPunch.time)}` : `IN ${esc(lastPunch.time)}`}</span> · ${esc(fmtDateDMY(lastPunch.date))} · ${esc(lastPunch.site)} · ${esc(lastPunch.method)}${lastPunch.paired_hours != null ? ` · Worked ${fmtNum(lastPunch.paired_hours, 1)}h${lastPunch.overtime_hours > 0 ? ' (+' + fmtNum(lastPunch.overtime_hours, 1) + 'h OT)' : (lastPunch.unapproved_ot_hours > 0 ? ' (0h paid OT)' : '')}${lastPunch.penalty_leave_days >= 0.5 ? ' · Half Day (0.5d Late Penalty)' : (lastPunch.late_hours > 0 ? ' · Late -' + fmtNum(lastPunch.late_hours, 1) + 'h' : '')}` : `${lastPunch.no_out_rule === 'half_day' || !lastPunch.no_out_rule ? ' · Pending OUT (Half Day 0.5d until OUT)' : (lastPunch.no_out_rule === 'full_absence' ? ' · Pending OUT (1.0d Absent until OUT)' : '')}${lastPunch.raw_late_min > 0 ? ` · Arrived Late ${lastPunch.raw_late_min}m` : (lastPunch.late_hours > 0 ? ` · Late ${fmtNum(lastPunch.late_hours, 1)}h` : '')}`}</span>
+                  <span class="kiosk-lp-meta"><span class="mono">${lastPunch.direction === 'OUT' ? (lastPunch.in_time ? `IN ${esc(lastPunch.in_time)} · OUT ${esc(lastPunch.time)}` : `Only OUT ${esc(lastPunch.time)} (No IN)`) : `Only IN ${esc(lastPunch.time)}`}</span> · ${esc(fmtDateDMY(lastPunch.date))} · ${esc(lastPunch.site)} · ${esc(lastPunch.method)}${lastPunch.paired_hours != null ? ` · Worked ${fmtNum(lastPunch.paired_hours, 1)}h${lastPunch.overtime_hours > 0 ? ' (+' + fmtNum(lastPunch.overtime_hours, 1) + 'h OT)' : (lastPunch.unapproved_ot_hours > 0 ? ' (0h paid OT)' : '')}${lastPunch.penalty_leave_days >= 0.5 ? ' · Half Day (0.5d Late Penalty)' : (lastPunch.late_hours > 0 ? ' · Late -' + fmtNum(lastPunch.late_hours, 1) + 'h' : '')}` : ` · ${esc(lastPunch.penalty_summary || (lastPunch.no_out_rule === 'half_day' || !lastPunch.no_out_rule ? 'Only IN/OUT = Half Day (0.5d)' : (lastPunch.no_out_rule === 'full_absence' ? 'Only IN/OUT = Absent (1.0d)' : '')))}${lastPunch.raw_late_min > 0 ? ` · IN Late ${lastPunch.raw_late_min}m` : ''}${lastPunch.early_out_min > 0 ? ` · OUT Early ${lastPunch.early_out_min}m` : ''}${lastPunch.overtime_hours > 0 ? ` · +${fmtNum(lastPunch.overtime_hours, 1)}h OT` : ''}`}</span>
                 </div>
               </div>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -57853,7 +57892,9 @@
                       <p>${lastScan.reason === 'already-clocked-in-recent'
                         ? `Clocked IN ${lastScan.ageMin || 0} min ago for ${esc(lastScan.shiftLabel || 'Day · 08:00-16:00')}. Original ${esc(lastScan.punch.time)} arrival time kept.`
                         : (lastScan.punch.direction === 'OUT'
-                          ? `Shift ${esc(lastScan.shiftLabel || 'Day · 08:00-16:00')} · IN ${esc(lastScan.punch.in_time || '-')} to OUT ${esc(lastScan.punch.time)}${lastScan.punch.paired_hours != null ? ` (${fmtNum(lastScan.punch.paired_hours, 1)}h worked)` : ''}.`
+                          ? (lastScan.punch.in_time
+                            ? `Shift ${esc(lastScan.shiftLabel || 'Day · 08:00-16:00')} · IN ${esc(lastScan.punch.in_time)} to OUT ${esc(lastScan.punch.time)}${lastScan.punch.paired_hours != null ? ` (${fmtNum(lastScan.punch.paired_hours, 1)}h worked)` : ''}.`
+                            : `Shift ${esc(lastScan.shiftLabel || 'Day · 08:00-16:00')} · Only Clock-OUT at ${esc(lastScan.punch.time)} (Missing Clock-IN · ${esc(lastScan.punch.penalty_summary || 'Half Day 0.5d')}).`)
                           : `Shift ${esc(lastScan.shiftLabel || 'Day · 08:00-16:00')} · On site since ${esc(lastScan.punch.time)}${lastScan.punch.late_hours > 0 ? ` (Late ${fmtNum(lastScan.punch.late_hours, 1)}h)` : ' (On Time)'}.`)}</p>
                       <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
                         <button type="button" class="btn btn-primary kiosk-cam-start-btn" id="kioskAttCamToggleBtn">
@@ -57939,11 +57980,11 @@
           <div class="panel-card kiosk-att-feed-card" id="kioskAttFeedCard">
             <div class="panel-head kiosk-feed-head">
               <div class="panel-title">
-                <span>${ic('payroll')} ${feedFilter === 'schedule' ? 'Shift Types &amp; Weekly Staff Schedule' : (feedFilter === 'lateness' ? 'Lateness Tolerances, Missing Clock-OUT &amp; Punishment Rules' : 'Active Staff &amp; Daily Clock Log')}</span>
+                <span>${ic('payroll')} ${feedFilter === 'schedule' ? 'Shift Types &amp; Weekly Staff Schedule' : (feedFilter === 'lateness' ? 'Lateness Tolerances (IN &amp; OUT), Single-Punch &amp; Overtime Rules' : 'Active Staff &amp; Daily Clock Log')}</span>
                 <small class="kiosk-feed-sub">${esc(scopeTitleLabel)} · ${fmtNum(filteredRoster.length)} of ${fmtNum(staffDir.length)} Active Staff · Station: ${esc(STATE.kioskAttSite)}</small>
               </div>
               <div class="kiosk-feed-tools">
-                <input type="search" class="search-input kiosk-roster-search" id="kioskAttRosterSearch" placeholder="Search staff, role, shift, or penalty rule..." value="${esc(STATE.kioskAttRosterSearch || '')}">
+                <input type="search" class="search-input kiosk-roster-search" id="kioskAttRosterSearch" placeholder="Search staff, role, shift, overtime, or penalty rule..." value="${esc(STATE.kioskAttRosterSearch || '')}">
                 <div class="kiosk-seg-group" role="group" aria-label="Attendance View">
                   ${!STATE.kioskLocked ? `
                     <button type="button" class="kiosk-seg-btn ${feedFilter === 'roster' ? 'active' : ''}" data-tone="sapphire" data-att-feed-filter="roster">
@@ -58077,49 +58118,60 @@
               <div class="kiosk-late-workspace" id="kioskLatenessWorkspace">
                 <div class="late-policy-bulk-bar" id="kioskLateBulkPolicyBar">
                   <div class="lp-bulk-title">
-                    <strong>${ic('warn')} Bulk Lateness &amp; Missing Clock-OUT Policy</strong>
-                    <span class="muted">Set tolerance, when lateness occurs, and punishment for all ${fmtNum(filteredRoster.length)} filtered staff</span>
+                    <strong>${ic('warn')} Bulk Lateness, Tolerance, Single-Punch &amp; Overtime Policy</strong>
+                    <span class="muted">Apply tolerance (0–30m for IN &amp; OUT), when lateness occurs, punishment, single-punch rule, and overtime to all ${fmtNum(filteredRoster.length)} filtered staff</span>
                   </div>
                   <div class="lp-bulk-controls">
                     <div class="ssm-field">
-                      <label for="kioskBulkLateWhen">When Lateness Occurs</label>
-                      <select id="kioskBulkLateWhen" class="kiosk-select" data-plain-options="1">
-                        <option value="both">Arrival IN + Early OUT</option>
-                        <option value="arrival_only">Arrival Clock-IN Only</option>
-                        <option value="short_hours">Total Shift Shortfall</option>
+                      <label for="kioskBulkLateGrace">Tolerance (IN &amp; OUT)</label>
+                      <select id="kioskBulkLateGrace" class="kiosk-select" data-plain-options="1">
+                        <option value="0">0 min (Strict)</option>
+                        <option value="5">5 min</option>
+                        <option value="10" selected>10 min</option>
+                        <option value="15">15 min</option>
+                        <option value="20">20 min</option>
+                        <option value="30">30 min</option>
                       </select>
                     </div>
                     <div class="ssm-field">
-                      <label for="kioskBulkLateGrace">Tolerance (Grace)</label>
-                      <select id="kioskBulkLateGrace" class="kiosk-select" data-plain-options="1">
-                        <option value="0|shift_start">0m Strict (From Start)</option>
-                        <option value="5|shift_start">5m Grace (From Start)</option>
-                        <option value="10|shift_start" selected>10m Grace (From Start)</option>
-                        <option value="10|after_grace">10m Grace (After Grace Only)</option>
-                        <option value="15|shift_start">15m Grace (From Start)</option>
-                        <option value="30|shift_start">30m Grace (From Start)</option>
+                      <label for="kioskBulkLateWhen">When Lateness Occurs</label>
+                      <select id="kioskBulkLateWhen" class="kiosk-select" data-plain-options="1">
+                        <option value="both" selected>IN Late + OUT Early</option>
+                        <option value="arrival_only">Clock-IN Late Only</option>
+                        <option value="early_out_only">Clock-OUT Early Only</option>
+                        <option value="short_hours">Shift Hours Shortfall</option>
                       </select>
                     </div>
                     <div class="ssm-field">
                       <label for="kioskBulkLatePenalty">Lateness Punishment</label>
                       <select id="kioskBulkLatePenalty" class="kiosk-select" data-plain-options="1">
-                        <option value="exact_hours" selected>Exact Late Hours (1x)</option>
-                        <option value="multiplier_1.5">1.5x Rate Multiplier</option>
-                        <option value="multiplier_2">2.0x Rate Multiplier</option>
-                        <option value="round_hour">Round Up to Full Hour (1h)</option>
-                        <option value="tiered_30">Late &gt;= 30m = Half Day (0.5d)</option>
-                        <option value="tiered_60">Late &gt;= 60m = Half Day (0.5d)</option>
-                        <option value="half_day_any">Any Late &gt; Grace = Half Day (0.5d)</option>
-                        <option value="none">Track Only ($0 Deduction)</option>
+                        <option value="exact_hours" selected>Exact Hours (1x)</option>
+                        <option value="multiplier_1.5">1.5x Rate</option>
+                        <option value="multiplier_2">2.0x Rate</option>
+                        <option value="round_hour">Round Up 1h</option>
+                        <option value="tiered_30">&gt;=30m = Half Day</option>
+                        <option value="tiered_60">&gt;=60m = Half Day</option>
+                        <option value="half_day_any">Any Late = Half Day</option>
+                        <option value="none">Track Only ($0)</option>
                       </select>
                     </div>
                     <div class="ssm-field">
-                      <label for="kioskBulkNoOutRule">If Clocked IN &amp; No Clock-OUT</label>
+                      <label for="kioskBulkNoOutRule">If Only Clock-IN or OUT</label>
                       <select id="kioskBulkNoOutRule" class="kiosk-select" data-plain-options="1">
-                        <option value="half_day" selected>Half Day (0.5d Deduction)</option>
-                        <option value="full_absence">Full Absence (1.0d Deduction)</option>
-                        <option value="deduct_2h">Deduct 2.0h Lateness</option>
-                        <option value="auto_shift_end">Assume Full Shift (0 Ded.)</option>
+                        <option value="half_day" selected>Half Day (0.5d)</option>
+                        <option value="full_absence">Full Absence (1.0d)</option>
+                        <option value="deduct_2h">Deduct 2.0h Late</option>
+                        <option value="auto_shift_end">Full Shift (0 Ded.)</option>
+                      </select>
+                    </div>
+                    <div class="ssm-field">
+                      <label for="kioskBulkOtRule">Overtime Rule</label>
+                      <select id="kioskBulkOtRule" class="kiosk-select" data-plain-options="1">
+                        <option value="keep" selected>Keep Current OT</option>
+                        <option value="none">No Overtime (0h)</option>
+                        <option value="always">Anytime Open OT</option>
+                        <option value="max_2">Max 2.0h / Day</option>
+                        <option value="today_pass">Approve Today</option>
                       </select>
                     </div>
                     <button type="button" class="btn btn-primary" id="kioskBulkApplyLateBtn" style="align-self:flex-end">
@@ -58128,17 +58180,18 @@
                   </div>
                 </div>
 
-                <div class="table-wrap" style="max-height:360px">
+                <div class="table-wrap" style="max-height:460px">
                   <table class="ledger-table" id="kioskLatenessRulesTable">
                     <thead>
                       <tr>
                         <th>Staff Member</th>
                         ${showCoCol ? '<th>Co.</th>' : ''}
-                        <th>Shift &amp; Late Cutoff</th>
-                        <th>When Lateness Occurs</th>
-                        <th>Tolerance &amp; Grace</th>
+                        <th>Shift &amp; Cutoffs</th>
+                        <th>Tolerance (IN &amp; OUT)</th>
+                        <th>When Late Occurs</th>
                         <th>Lateness Punishment</th>
-                        <th>If Clocked IN &amp; No Clock-OUT</th>
+                        <th>Only IN or OUT (1 Punch)</th>
+                        <th>Overtime Rule</th>
                         <th>Today's Status &amp; Penalty</th>
                       </tr>
                     </thead>
@@ -58150,13 +58203,24 @@
                         const outToday = !onNow && lp && lp.direction === 'OUT' && (lp.date === todayISO() || lp.shift_date === todayISO());
                         const sh = s.shift || resolveStaffShiftForDate(s.name, s.company, todayISO());
                         const lt = s.lateDesc || describeStaffLatenessRule(s.name, s.company, todayISO());
-                        const graceComboVal = `${lt.graceMin}|${lt.countFrom}`;
+                        const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, todayISO());
+                        const ruleRow = getStaffWorkRule(s.name, s.company);
+                        const stdTolSteps = [0, 5, 10, 15, 20, 30];
+                        const curTol = Number(lt.graceMin != null ? lt.graceMin : 10);
+                        const tolSteps = stdTolSteps.includes(curTol) ? stdTolSteps : stdTolSteps.concat([curTol]).sort((a, b) => a - b);
                         let penComboVal = lt.penaltyMode;
                         if (lt.penaltyMode === 'multiplier') {
                           penComboVal = Number(lt.lateMultiplier) >= 2 ? 'multiplier_2' : 'multiplier_1.5';
                         } else if (lt.penaltyMode === 'tiered_half_day') {
                           penComboVal = Number(lt.lateHalfDayAfterMin) <= 30 ? 'tiered_30' : 'tiered_60';
                         }
+                        let otComboVal = 'none';
+                        if (ot.mode === 'always') otComboVal = 'always';
+                        else if (ot.mode === 'hours') otComboVal = 'max_2';
+                        else if (ot.mode === 'date_range') {
+                          otComboVal = (ot.pass && (ot.pass.start_date || ot.pass.from) === todayISO() && (ot.pass.end_date || ot.pass.to) === todayISO()) ? 'today_pass' : 'date_range';
+                        }
+                        const maxHoursCap = Number(ruleRow.ot_max_hours || 2);
                         return `
                           <tr>
                             <td>
@@ -58168,73 +58232,82 @@
                               <button type="button" class="kiosk-shift-pill" data-tone="${esc(sh.tone || 'amber')}" data-open-staff-sched="${esc(s.name)}">
                                 ${esc(sh.badgeLabel)}
                               </button>
-                              <div class="drv-sub mono">Late after <b>${esc(lt.cutoffTime)}</b></div>
+                              <div class="drv-sub mono">${esc(lt.cutoffSummary)}</div>
+                            </td>
+                            <td>
+                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="grace_min" aria-label="Tolerance minutes for ${esc(s.name)}">
+                                ${tolSteps.map(m => `<option value="${m}" ${curTol === m ? 'selected' : ''}>${m} min</option>`).join('')}
+                              </select>
+                              ${lt.earlyGraceMin !== lt.graceMin ? `<div class="drv-sub mono">IN ${lt.graceMin}m · OUT ${lt.earlyGraceMin}m</div>` : ''}
                             </td>
                             <td>
                               <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="late_when" aria-label="When lateness occurs for ${esc(s.name)}">
-                                <option value="both" ${lt.lateWhen === 'both' ? 'selected' : ''}>IN (&gt;${esc(lt.cutoffTime)}) + Early OUT</option>
-                                <option value="arrival_only" ${lt.lateWhen === 'arrival_only' ? 'selected' : ''}>Clock-IN Only (&gt;${esc(lt.cutoffTime)})</option>
-                                <option value="short_hours" ${lt.lateWhen === 'short_hours' ? 'selected' : ''}>Shift Hours Shortfall</option>
-                              </select>
-                            </td>
-                            <td>
-                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="grace_combo" aria-label="Lateness tolerance for ${esc(s.name)}">
-                                <option value="0|shift_start" ${graceComboVal === '0|shift_start' ? 'selected' : ''}>0m Strict (&gt;${esc(sh.start_time)})</option>
-                                <option value="5|shift_start" ${graceComboVal === '5|shift_start' ? 'selected' : ''}>5m Grace (From Start)</option>
-                                <option value="10|shift_start" ${graceComboVal === '10|shift_start' ? 'selected' : ''}>10m Grace (From Start)</option>
-                                <option value="10|after_grace" ${graceComboVal === '10|after_grace' ? 'selected' : ''}>10m Grace (After Cutoff)</option>
-                                <option value="15|shift_start" ${graceComboVal === '15|shift_start' ? 'selected' : ''}>15m Grace (From Start)</option>
-                                <option value="30|shift_start" ${graceComboVal === '30|shift_start' ? 'selected' : ''}>30m Grace (From Start)</option>
+                                <option value="both" ${lt.lateWhen === 'both' ? 'selected' : ''}>IN + OUT</option>
+                                <option value="arrival_only" ${lt.lateWhen === 'arrival_only' ? 'selected' : ''}>IN Only</option>
+                                <option value="early_out_only" ${lt.lateWhen === 'early_out_only' ? 'selected' : ''}>OUT Only</option>
+                                <option value="short_hours" ${lt.lateWhen === 'short_hours' ? 'selected' : ''}>Shift Hours</option>
                               </select>
                             </td>
                             <td>
                               <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="penalty_combo" aria-label="Lateness punishment for ${esc(s.name)}">
-                                <option value="exact_hours" ${penComboVal === 'exact_hours' ? 'selected' : ''}>Exact Hours (1x)</option>
-                                <option value="multiplier_1.5" ${penComboVal === 'multiplier_1.5' ? 'selected' : ''}>1.5x Rate Multiplier</option>
-                                <option value="multiplier_2" ${penComboVal === 'multiplier_2' ? 'selected' : ''}>2.0x Rate Multiplier</option>
-                                <option value="round_hour" ${penComboVal === 'round_hour' ? 'selected' : ''}>Round Up 1 Full Hour</option>
-                                <option value="tiered_30" ${penComboVal === 'tiered_30' ? 'selected' : ''}>Late &gt;= 30m = Half Day (0.5d)</option>
-                                <option value="tiered_60" ${penComboVal === 'tiered_60' ? 'selected' : ''}>Late &gt;= 60m = Half Day (0.5d)</option>
-                                <option value="half_day_any" ${penComboVal === 'half_day_any' ? 'selected' : ''}>Any Late = Half Day (0.5d)</option>
-                                <option value="none" ${penComboVal === 'none' ? 'selected' : ''}>Track Only ($0)</option>
+                                <option value="exact_hours" ${penComboVal === 'exact_hours' ? 'selected' : ''}>Exact 1x</option>
+                                <option value="multiplier_1.5" ${penComboVal === 'multiplier_1.5' ? 'selected' : ''}>1.5x Rate</option>
+                                <option value="multiplier_2" ${penComboVal === 'multiplier_2' ? 'selected' : ''}>2.0x Rate</option>
+                                <option value="round_hour" ${penComboVal === 'round_hour' ? 'selected' : ''}>Round 1h</option>
+                                <option value="tiered_30" ${penComboVal === 'tiered_30' ? 'selected' : ''}>&gt;=30m = 0.5d</option>
+                                <option value="tiered_60" ${penComboVal === 'tiered_60' ? 'selected' : ''}>&gt;=60m = 0.5d</option>
+                                <option value="half_day_any" ${penComboVal === 'half_day_any' ? 'selected' : ''}>Late = 0.5d</option>
+                                <option value="none" ${penComboVal === 'none' ? 'selected' : ''}>Track ($0)</option>
                               </select>
                             </td>
                             <td>
-                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="no_clock_out_rule" aria-label="Missing clock-out rule for ${esc(s.name)}">
+                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="no_clock_out_rule" aria-label="Single incomplete punch rule for ${esc(s.name)}">
                                 <option value="half_day" ${lt.noOutRule === 'half_day' ? 'selected' : ''}>Half Day (0.5d)</option>
-                                <option value="full_absence" ${lt.noOutRule === 'full_absence' ? 'selected' : ''}>Full Absence (1.0d)</option>
-                                <option value="deduct_2h" ${lt.noOutRule === 'deduct_2h' ? 'selected' : ''}>Deduct 2.0h Late</option>
-                                <option value="auto_shift_end" ${lt.noOutRule === 'auto_shift_end' ? 'selected' : ''}>Full Shift (0 Ded.)</option>
+                                <option value="full_absence" ${lt.noOutRule === 'full_absence' ? 'selected' : ''}>Absent (1.0d)</option>
+                                <option value="deduct_2h" ${lt.noOutRule === 'deduct_2h' ? 'selected' : ''}>Deduct 2.0h</option>
+                                <option value="auto_shift_end" ${lt.noOutRule === 'auto_shift_end' ? 'selected' : ''}>Full Shift</option>
                               </select>
+                            </td>
+                            <td>
+                              <select class="kiosk-select kiosk-inline-rule-select" data-plain-options="1" data-inline-late-staff="${esc(s.name)}" data-inline-late-field="ot_combo" aria-label="Overtime rule for ${esc(s.name)}">
+                                <option value="none" ${otComboVal === 'none' ? 'selected' : ''}>No Overtime</option>
+                                <option value="always" ${otComboVal === 'always' ? 'selected' : ''}>Open OT</option>
+                                <option value="max_2" ${otComboVal === 'max_2' ? 'selected' : ''}>Max ${fmtNum(maxHoursCap, 1)}h/d</option>
+                                <option value="today_pass" ${otComboVal === 'today_pass' ? 'selected' : ''}>Today Only</option>
+                                <option value="date_range" ${otComboVal === 'date_range' ? 'selected' : ''}>Date Pass</option>
+                              </select>
+                              <div class="drv-sub mono"><button type="button" class="kiosk-pin-edit-link" data-open-staff-ot="${esc(s.name)}">${esc(ot.badgeText)}</button></div>
                             </td>
                             <td>
                               <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
                                 <div>
                                   ${onNow
-                                    ? `<span class="badge ${lt.noOutRule === 'half_day' ? 'badge-warn' : (lt.noOutRule === 'full_absence' ? 'badge-err' : 'badge-ok')}">IN ${esc(lp.time)} · ${esc(lt.noOutShort)}</span><div class="drv-sub mono">${lp.raw_late_min > 0 ? `Late ${lp.raw_late_min}m (>${esc(lt.cutoffTime)})` : 'On Time Arrival'}</div>`
+                                    ? `<span class="badge ${lt.noOutRule === 'half_day' ? 'badge-warn' : (lt.noOutRule === 'full_absence' ? 'badge-err' : 'badge-ok')}">Only IN ${esc(lp.time)} (${lt.noOutRule === 'half_day' ? '0.5d' : (lt.noOutRule === 'full_absence' ? '1.0d' : 'Active')})</span><div class="drv-sub mono">${lp.raw_late_min > 0 ? `IN Late ${lp.raw_late_min}m (>${esc(lt.inCutoffTime)})` : 'On Time IN'}</div>`
                                     : (outToday
-                                      ? `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-err' : (lp.late_hours > 0 ? 'badge-warn' : 'badge-ok')}">IN ${esc(lp.in_time || '-')} · OUT ${esc(lp.time)}</span><div class="drv-sub mono">${lp.penalty_leave_days >= 0.5 ? 'Half Day (0.5d Penalty)' : (lp.late_hours > 0 ? `Late -${fmtNum(lp.late_hours, 1)}h` : 'Full Shift (0 Ded.)')}</div>`
-                                      : `<span class="kiosk-status-quiet">Off Site</span>`)}
+                                      ? (!lp.in_time
+                                        ? `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-warn' : 'badge-err'}">Only OUT ${esc(lp.time)} (${lp.penalty_leave_days >= 1 ? '1.0d' : (lp.penalty_leave_days >= 0.5 ? '0.5d' : 'No IN')})</span><div class="drv-sub mono">${lp.early_out_min > 0 ? `OUT Early ${lp.early_out_min}m (<${esc(lt.outCutoffTime)})` : 'Missing Clock-IN'}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, 1)}h OT` : ''}</div>`
+                                        : `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-err' : (lp.late_hours > 0 ? 'badge-warn' : 'badge-ok')}">IN ${esc(lp.in_time)} · OUT ${esc(lp.time)}</span><div class="drv-sub mono">${lp.penalty_leave_days >= 0.5 ? 'Half Day (0.5d Penalty)' : (lp.late_hours > 0 ? `Late -${fmtNum(lp.late_hours, 1)}h` : 'Full Shift (0 Ded.)')}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, 1)}h OT` : (lp.unapproved_ot_hours > 0 ? ' · 0h Paid OT' : '')}</div>`)
+                                      : `<span class="kiosk-status-quiet">Off Site</span><div class="drv-sub mono">${esc(ot.badgeText)}</div>`)}
                                 </div>
                                 <button type="button" class="btn kiosk-mini-btn" data-open-staff-late="${esc(s.name)}">Rules</button>
                               </div>
                             </td>
                           </tr>
                         `;
-                      }).join('') || emptyRow(showCoCol ? 8 : 7, 'No active staff match the selected lateness or punishment filter')}
+                      }).join('') || emptyRow(showCoCol ? 9 : 8, 'No active staff match the selected lateness, tolerance, overtime, or punishment filter')}
                     </tbody>
                   </table>
                 </div>
               </div>
             ` : `
-              <div class="table-wrap" style="max-height:340px">
+              <div class="table-wrap" style="max-height:420px">
                 ${feedFilter === 'roster' && !STATE.kioskLocked ? `
                   <table class="ledger-table" id="kioskAttFeedTable">
                     <thead>
                       <tr>
                         <th>Staff Member</th>
                         ${showCoCol ? '<th>Co.</th>' : ''}
-                        <th>Shift &amp; Timing</th>
+                        <th>Shift &amp; Cutoffs</th>
                         <th>Lateness &amp; Penalty Rule</th>
                         <th>Overtime Rule</th>
                         <th>Today's Clock IN / OUT</th>
@@ -58263,6 +58336,7 @@
                               <button type="button" class="kiosk-shift-pill" data-tone="${esc(sh.tone || 'amber')}" data-open-staff-sched="${esc(s.name)}">
                                 ${esc(sh.badgeLabel)}
                               </button>
+                              <div class="drv-sub mono">${esc(lt.cutoffSummary)}</div>
                             </td>
                             <td>
                               <button type="button" class="kiosk-late-pill" data-tone="${esc(lt.tone || 'sapphire')}" data-open-staff-late="${esc(s.name)}">
@@ -58277,9 +58351,11 @@
                             </td>
                             <td>
                               ${onNow
-                                ? `<span class="badge badge-ok">${ic('clock_in')} IN ${esc(lp.time)} · On Site</span><div class="drv-sub mono">OUT: Pending (${esc(lt.noOutShort)})${lp.raw_late_min > 0 ? ` · Late ${lp.raw_late_min}m (>${esc(lt.cutoffTime)})` : (lp.late_hours > 0 ? ` · Late ${fmtNum(lp.late_hours, 1)}h` : '')}</div>`
+                                ? `<span class="badge badge-ok">${ic('clock_in')} Only IN ${esc(lp.time)} · On Site</span><div class="drv-sub mono">Missing OUT (${esc(lt.noOutShort)})${lp.raw_late_min > 0 ? ` · IN Late ${lp.raw_late_min}m (>${esc(lt.inCutoffTime)})` : (lp.late_hours > 0 ? ` · Late ${fmtNum(lp.late_hours, 1)}h` : '')}</div>`
                                 : (outToday
-                                  ? `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-err' : 'badge-warn'}">${ic('clock_out')} IN ${esc(lp.in_time || '-')} · OUT ${esc(lp.time)}</span><div class="drv-sub mono">${lp.paired_hours != null ? `${fmtNum(lp.paired_hours, 1)}h worked` : ''}${lp.penalty_leave_days >= 0.5 ? ' · Half Day (0.5d Penalty)' : (lp.late_hours > 0 ? ` · Late -${fmtNum(lp.late_hours, 1)}h` : '')}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, 1)}h OT` : ''}</div>`
+                                  ? (!lp.in_time
+                                    ? `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-warn' : 'badge-err'}">${ic('clock_out')} Only OUT ${esc(lp.time)} (No IN)</span><div class="drv-sub mono">${esc(lt.noOutLabel)}${lp.early_out_min > 0 ? ` · OUT Early ${lp.early_out_min}m` : ''}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, 1)}h OT` : ''}</div>`
+                                    : `<span class="badge ${lp.penalty_leave_days >= 0.5 ? 'badge-err' : 'badge-warn'}">${ic('clock_out')} IN ${esc(lp.in_time)} · OUT ${esc(lp.time)}</span><div class="drv-sub mono">${lp.paired_hours != null ? `${fmtNum(lp.paired_hours, 1)}h worked` : ''}${lp.penalty_leave_days >= 0.5 ? ' · Half Day (0.5d Penalty)' : (lp.late_hours > 0 ? ` · Late -${fmtNum(lp.late_hours, 1)}h` : '')}${lp.overtime_hours > 0 ? ` · +${fmtNum(lp.overtime_hours, 1)}h OT` : ''}</div>`)
                                   : `<span class="kiosk-status-quiet">Off Site</span>`)}
                             </td>
                             <td>
@@ -58321,6 +58397,7 @@
                         <th>Status</th>
                         <th>Clock IN / OUT</th>
                         <th>Lateness / Penalty</th>
+                        <th>Overtime Rule</th>
                         <th>Method</th>
                         <th class="r">Worked / OT</th>
                         <th>Switch</th>
@@ -58328,29 +58405,37 @@
                     </thead>
                     <tbody>
                       ${feedRows.map(p => {
-                        const ltP = describeStaffLatenessRule(p.staff, p.company, p.shift_date || p.date || todayISO());
+                        const pDate = p.shift_date || p.date || todayISO();
+                        const ltP = describeStaffLatenessRule(p.staff, p.company, pDate);
+                        const otP = describeStaffOvertimeRule(p.staff, p.company, pDate);
+                        const isOutWithoutIn = p.direction === 'OUT' && !p.in_time;
                         const penSummary = p.penalty_summary
-                          || (p.direction === 'IN'
-                            ? `${ltP.noOutLabel}${p.raw_late_min > 0 ? ` · Late ${p.raw_late_min}m` : ''}`
+                          || (p.direction === 'IN' || isOutWithoutIn
+                            ? `${ltP.noOutLabel}${p.raw_late_min > 0 ? ` · Late ${p.raw_late_min}m` : ''}${p.early_out_min > 0 ? ` · Early OUT ${p.early_out_min}m` : ''}`
                             : (p.penalty_leave_days >= 0.5 ? 'Half Day (0.5d Penalty)' : (p.late_hours > 0 ? `Late -${fmtNum(p.late_hours, 1)}h` : 'On Time')));
                         return `
                           <tr>
                             <td><strong>${esc(p.staff)}</strong></td>
                             ${showCoCol ? `<td>${coBadge(p.company)}</td>` : ''}
                             <td><span class="kiosk-shift-tag">${esc(p.shift_label || 'Day · 08:00-16:00')}</span></td>
-                            <td><span class="badge ${p.direction === 'IN' ? 'badge-ok' : 'badge-warn'}">${p.direction === 'IN' ? 'IN · On Site' : 'OUT · Completed'}</span></td>
-                            <td class="mono">${p.direction === 'OUT' && p.in_time ? `IN ${esc(p.in_time)} · OUT ${esc(p.time)}` : `IN ${esc(p.time)}`} <small class="muted">${esc(fmtDateDMY(p.date))}</small></td>
+                            <td><span class="badge ${p.direction === 'IN' ? 'badge-ok' : (isOutWithoutIn ? 'badge-err' : 'badge-warn')}">${p.direction === 'IN' ? 'Only IN · On Site' : (isOutWithoutIn ? 'Only OUT · No IN' : 'IN & OUT · Completed')}</span></td>
+                            <td class="mono">${p.direction === 'OUT' ? (p.in_time ? `IN ${esc(p.in_time)} · OUT ${esc(p.time)}` : `Only OUT ${esc(p.time)} (No IN)`) : `Only IN ${esc(p.time)}`} <small class="muted">${esc(fmtDateDMY(p.date))}</small></td>
                             <td>
-                              <button type="button" class="kiosk-late-pill" data-tone="${p.penalty_leave_days >= 0.5 || (p.direction === 'IN' && ltP.noOutRule !== 'auto_shift_end') ? 'amber' : (p.late_hours > 0 ? 'rose' : 'emerald')}" data-open-staff-late="${esc(p.staff)}">
+                              <button type="button" class="kiosk-late-pill" data-tone="${p.penalty_leave_days >= 0.5 || ((p.direction === 'IN' || isOutWithoutIn) && ltP.noOutRule !== 'auto_shift_end') ? 'amber' : (p.late_hours > 0 ? 'rose' : 'emerald')}" data-open-staff-late="${esc(p.staff)}">
                                 ${esc(penSummary)}
                               </button>
                             </td>
+                            <td>
+                              <button type="button" class="kiosk-ot-pill" data-tone="${esc(otP.tone || 'muted')}" data-open-staff-ot="${esc(p.staff)}">
+                                ${esc(otP.badgeText)}
+                              </button>
+                            </td>
                             <td>${esc(p.method)}</td>
-                            <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, 1)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1)}h OT)` : (p.unapproved_ot_hours > 0 ? ' (0h OT)' : '')}` : (p.penalty_leave_days >= 0.5 ? '0.5d Half Day' : (p.late_hours > 0 ? `Late -${fmtNum(p.late_hours, 1)}h` : 'Active'))}</td>
+                            <td class="r mono">${p.paired_hours != null ? `${fmtNum(p.paired_hours, 1)}h${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1)}h OT)` : (p.unapproved_ot_hours > 0 ? ' (0h OT)' : '')}` : `${p.penalty_leave_days >= 0.5 ? '0.5d Half Day' : (p.late_hours > 0 ? `Late -${fmtNum(p.late_hours, 1)}h` : 'Active')}${p.overtime_hours > 0 ? ` (+${fmtNum(p.overtime_hours, 1)}h OT)` : ''}`}</td>
                             <td><button type="button" class="tkt-print-mini" data-flip-punch="${esc(p.id)}" aria-label="Switch IN / OUT direction">${ic('swap')}</button></td>
                           </tr>
                         `;
-                      }).join('') || emptyRow(showCoCol ? 9 : 8, feedFilter === 'onsite' ? 'No staff currently clocked in on site' : 'No punches recorded yet today. Clock in with Face ID, 4-digit PIN, or Active Staff')}
+                      }).join('') || emptyRow(showCoCol ? 10 : 9, feedFilter === 'onsite' ? 'No staff currently clocked in on site' : 'No punches recorded yet today. Clock in with Face ID, 4-digit PIN, or Active Staff')}
                     </tbody>
                   </table>
                 `}
@@ -58818,6 +58903,12 @@
           renderApp();
         });
       });
+      container.querySelectorAll('[data-late-ot-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          STATE.kioskLateOtFilter = btn.getAttribute('data-late-ot-filter') || 'all';
+          renderApp();
+        });
+      });
       container.querySelectorAll('[data-late-today-filter]').forEach(btn => {
         btn.addEventListener('click', () => {
           STATE.kioskLateTodayFilter = btn.getAttribute('data-late-today-filter') || 'all';
@@ -58828,6 +58919,7 @@
         STATE.kioskLatePenFilter = 'all';
         STATE.kioskLateTolFilter = 'all';
         STATE.kioskLateWhenFilter = 'all';
+        STATE.kioskLateOtFilter = 'all';
         STATE.kioskLateTodayFilter = 'all';
         renderApp();
       });
@@ -58843,10 +58935,26 @@
         return { late_penalty_mode: 'exact_hours', late_multiplier: 1.5 };
       };
       const parseGraceComboPatch = comboVal => {
-        const parts = String(comboVal || '10|shift_start').split('|');
+        const parts = String(comboVal != null ? comboVal : '10').split('|');
         const gm = Math.max(0, Math.min(180, Math.round(Number(parts[0] != null ? parts[0] : 10))));
         const cf = parts[1] === 'after_grace' ? 'after_grace' : 'shift_start';
-        return { grace_min: gm, late_count_from: cf };
+        return { grace_min: gm, early_leave_grace_min: gm, late_count_from: cf };
+      };
+      const buildOtComboPatchForStaff = (comboVal, stfName) => {
+        const cv = String(comboVal || 'none');
+        const curRule = getStaffWorkRule(stfName);
+        if (cv === 'always') return { ot_mode: 'always' };
+        if (cv === 'max_2') return { ot_mode: 'hours', ot_max_hours: Number(curRule.ot_max_hours || 2) };
+        if (cv === 'today_pass') {
+          const td = todayISO();
+          const existingPasses = Array.isArray(curRule.ot_passes) ? curRule.ot_passes.filter(p => !((p.start_date || p.from) === td && (p.end_date || p.to) === td)) : [];
+          existingPasses.unshift({ id: uid('otp'), start_date: td, end_date: td, max_hours: 0, note: 'Approved Today' });
+          return { ot_mode: 'date_range', ot_passes: existingPasses };
+        }
+        if (cv === 'date_range') {
+          return { ot_mode: 'date_range' };
+        }
+        return { ot_mode: 'none' };
       };
       container.querySelectorAll('[data-inline-late-staff]').forEach(sel => {
         sel.addEventListener('change', () => {
@@ -58854,19 +58962,30 @@
           const fld = sel.getAttribute('data-inline-late-field') || '';
           if (!stf || !fld) return;
           let patch = {};
+          let openOtModalAfter = false;
           if (fld === 'late_when') {
             patch = { late_when: sel.value || 'both' };
-          } else if (fld === 'grace_combo') {
+          } else if (fld === 'grace_min' || fld === 'grace_combo') {
             patch = parseGraceComboPatch(sel.value);
           } else if (fld === 'penalty_combo') {
             patch = parsePenaltyComboPatch(sel.value);
           } else if (fld === 'no_clock_out_rule') {
             patch = { no_clock_out_rule: sel.value || 'half_day' };
+          } else if (fld === 'ot_combo') {
+            patch = buildOtComboPatchForStaff(sel.value, stf);
+            if (sel.value === 'date_range') openOtModalAfter = true;
           }
           saveStaffWorkRule(stf, patch);
-          const ltUpd = describeStaffLatenessRule(stf, '', todayISO());
-          toast(`Updated lateness rule for ${stf} (${ltUpd.badgeLabel})`, 'ok');
-          renderApp();
+          if (fld === 'ot_combo') {
+            const otUpd = describeStaffOvertimeRule(stf, '', todayISO());
+            toast(`Updated overtime rule for ${stf} (${otUpd.badgeText})`, 'ok');
+            renderApp();
+            if (openOtModalAfter) openStaffScheduleModal(stf, { focusSection: 'ot' });
+          } else {
+            const ltUpd = describeStaffLatenessRule(stf, '', todayISO());
+            toast(`Updated lateness rule for ${stf} (${ltUpd.badgeLabel})`, 'ok');
+            renderApp();
+          }
         });
       });
       $('kioskBulkApplyLateBtn')?.addEventListener('click', () => {
@@ -58874,9 +58993,11 @@
         const gEl = $('kioskBulkLateGrace');
         const pEl = $('kioskBulkLatePenalty');
         const nEl = $('kioskBulkNoOutRule');
-        const bulkPatch = {
+        const oEl = $('kioskBulkOtRule');
+        const otBulkVal = oEl ? oEl.value : 'keep';
+        const baseBulkPatch = {
           late_when: wEl ? wEl.value : 'both',
-          ...parseGraceComboPatch(gEl ? gEl.value : '10|shift_start'),
+          ...parseGraceComboPatch(gEl ? gEl.value : '10'),
           ...parsePenaltyComboPatch(pEl ? pEl.value : 'exact_hours'),
           no_clock_out_rule: nEl ? nEl.value : 'half_day'
         };
@@ -58885,9 +59006,11 @@
         const latePenF = STATE.kioskLatePenFilter || 'all';
         const lateTolF = STATE.kioskLateTolFilter || 'all';
         const lateWhenF = STATE.kioskLateWhenFilter || 'all';
+        const lateOtF = STATE.kioskLateOtFilter || 'all';
         const targetStaff = dirList.filter(s => {
           if (q && !norm(`${s.name} ${s.role} ${s.company} ${s.shift && s.shift.label || ''}`).includes(q)) return false;
           const lt = s.lateDesc || describeStaffLatenessRule(s.name, s.company, todayISO());
+          const ot = s.otDesc || describeStaffOvertimeRule(s.name, s.company, todayISO());
           if (latePenF !== 'all') {
             if (latePenF === 'no_out_half_day' && lt.noOutRule !== 'half_day') return false;
             if (latePenF === 'no_out_absent' && lt.noOutRule !== 'full_absence') return false;
@@ -58897,16 +59020,27 @@
             if (latePenF === 'none' && lt.penaltyMode !== 'none') return false;
           }
           if (lateTolF !== 'all') {
-            if (lateTolF === '0' && lt.graceMin !== 0) return false;
-            if (lateTolF === '5' && lt.graceMin !== 5) return false;
-            if (lateTolF === '10' && lt.graceMin !== 10) return false;
-            if (lateTolF === '15_plus' && lt.graceMin < 15) return false;
+            const targetMin = Number(lateTolF);
+            const gm = Number(lt.graceMin != null ? lt.graceMin : 10);
+            const egm = Number(lt.earlyGraceMin != null ? lt.earlyGraceMin : gm);
+            if (Number.isFinite(targetMin) && gm !== targetMin && egm !== targetMin) return false;
           }
           if (lateWhenF !== 'all' && lt.lateWhen !== lateWhenF) return false;
+          if (lateOtF !== 'all') {
+            const otMode = ot.mode || 'none';
+            if (lateOtF === 'none' && otMode !== 'none') return false;
+            if (lateOtF === 'allowed' && otMode === 'none') return false;
+            if (lateOtF === 'date_range' && otMode !== 'date_range') return false;
+          }
           return true;
         });
-        targetStaff.forEach(s => saveStaffWorkRule(s.name, bulkPatch));
-        toast(`Applied lateness & missing clock-out rules to ${targetStaff.length} staff`, 'ok');
+        targetStaff.forEach(s => {
+          const staffPatch = otBulkVal && otBulkVal !== 'keep'
+            ? { ...baseBulkPatch, ...buildOtComboPatchForStaff(otBulkVal, s.name) }
+            : baseBulkPatch;
+          saveStaffWorkRule(s.name, staffPatch);
+        });
+        toast(`Applied lateness, tolerance & overtime rules to ${targetStaff.length} staff`, 'ok');
         renderApp();
       });
       container.querySelectorAll('[data-sched-cell-staff]').forEach(btn => {
