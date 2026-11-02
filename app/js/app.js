@@ -34895,8 +34895,8 @@
         const curRetTkt = normTicketNo(val('f_ticketno'));
         if (curRetTkt && FORM_UI.lastAutoFilledReturnTicket !== curRetTkt) {
           FORM_UI.lastAutoFilledReturnTicket = curRetTkt;
-          const matchedOut = (SEED.records.sales_tickets || []).find(r =>
-            r && !r.voided && !isRemovedSlip(r) && !isReturnTicket(r) &&
+          const matchedOut = ((STATE.customRecords && STATE.customRecords.sales_tickets) || []).concat((SEED.records && SEED.records.sales_tickets) || []).find(r =>
+            r && !r.voided && !isRemovedTicket(r) && !isReturnTicket(r) &&
             norm(r.company) === norm(company) &&
             normTicketNo(r.ticket_no) === curRetTkt
           );
@@ -35421,8 +35421,8 @@
         const curRetTkt = normTicketNo(val('f_ticketno'));
         if (curRetTkt && FORM_UI.lastAutoFilledReturnTicket !== curRetTkt) {
           FORM_UI.lastAutoFilledReturnTicket = curRetTkt;
-          const matchedOut = (SEED.records.raw_purchases || []).find(r =>
-            r && !r.voided && !isRemovedSlip(r) && !isReturnTicket(r) &&
+          const matchedOut = ((STATE.customRecords && STATE.customRecords.raw_purchases) || []).concat((SEED.records && SEED.records.raw_purchases) || []).find(r =>
+            r && !r.voided && !isRemovedTicket(r) && !isReturnTicket(r) &&
             norm(r.company) === norm(company) &&
             normTicketNo(r.ticket_no) === curRetTkt
           );
@@ -41121,8 +41121,11 @@
             if ($('f_return_rt_km')) $('f_return_rt_km').disabled = false;
             if ($('f_notes')) $('f_notes').disabled = false;
           }
-          if (nextDisp === 'return_wtc' && STATE.modalForm === 'sales' && $('f_saletype') && val('f_saletype') === 'Unregistered') {
-            $('f_saletype').value = 'Delivery';
+          if (nextDisp === 'return_wtc') {
+            FORM_UI.lastAutoFilledReturnTicket = '';
+            if (STATE.modalForm === 'sales' && $('f_saletype') && val('f_saletype') !== 'Delivery') {
+              $('f_saletype').value = 'Delivery';
+            }
           }
           recalcForm();
           return;
@@ -41214,7 +41217,7 @@
             setF('f_qty', srcRow.qty != null ? srcRow.qty : '');
             setF('f_discount', Number(srcRow.discount || 0).toFixed(2));
             if (rSide === 'sales') {
-              setF('f_saletype', srcRow.sale_type === 'Unregistered' ? 'Delivery' : (srcRow.sale_type || 'Delivery'));
+              setF('f_saletype', 'Delivery');
               setF('f_transportby', srcRow.transport_by || 'Company fleet');
               setF('f_customer', srcRow.customer || '');
               setF('f_unitprice', Number(srcRow.unit_price || 0).toFixed(2));
@@ -41229,6 +41232,7 @@
             if ($('f_notes') && !val('f_notes')) {
               $('f_notes').value = `Customer rejected load on #${srcRow.ticket_no} · returned to ${srcRow.company || 'WTC'}`;
             }
+            FORM_UI.lastAutoFilledReturnTicket = normTicketNo(srcRow.ticket_no || '');
             FORM_UI.lastCompany = val('f_company');
             FORM_UI.lastSaleType = val('f_saletype');
             FORM_UI.lastTransportBy = val('f_transportby');
@@ -42648,35 +42652,37 @@
         };
       } else {
         const isRetS = dispS.mode === 'return_wtc';
-        if (!c.product) addErr('f_product', 'Product is required.');
+        if (!c.product && !isRetS) addErr('f_product', 'Product is required.');
         if (!c.customer) addErr('f_customer', 'Customer is required.');
-        if (c.saleType === 'Delivery') {
-          if (!c.site) addErr('f_site', 'Destination site is required on a Delivery.');
-          if (!val('f_truck')) addErr('f_truck', 'Truck is required on a Delivery.');
+        if (c.saleType === 'Delivery' || isRetS) {
+          if (!c.site) addErr('f_site', isRetS ? 'Destination site is required for a return ticket.' : 'Destination site is required on a Delivery.');
+          if (!val('f_truck')) addErr('f_truck', isRetS ? 'Truck is required for a return ticket.' : 'Truck is required on a Delivery.');
           if (!val('f_driver') && !isRetS) addErr('f_driver', 'Driver is required on a Delivery.');
         }
-        if (!(c.qty > 0)) {
-          if (c.saleType === 'Pickup' && !val('f_truck') && $('f_qty') && $('f_qty').dataset.policyLockedNow === '1') {
-            addErr('f_truck', 'Truck is required to set load capacity (or unlock Quantity).');
+        if (!isRetS) {
+          if (!(c.qty > 0)) {
+            if (c.saleType === 'Pickup' && !val('f_truck') && $('f_qty') && $('f_qty').dataset.policyLockedNow === '1') {
+              addErr('f_truck', 'Truck is required to set load capacity (or unlock Quantity).');
+            }
+            addErr('f_qty', 'Quantity must be above zero.');
+          } else if (c.tonGuard && c.tonGuard.blocked) {
+            addErr('f_qty', c.tonGuard.hint);
           }
-          addErr('f_qty', 'Quantity must be above zero.');
-        } else if (c.tonGuard && c.tonGuard.blocked) {
-          addErr('f_qty', c.tonGuard.hint);
-        }
-        if (c.up < 0) addErr('f_unitprice', 'Unit price cannot be negative.');
-        else if (c.product && val('f_unitprice') === '') addErr('f_unitprice', 'Unit price is required.');
-        else if (c.product && val('f_unitprice') !== '' && c.up === 0 && !notes && dispS.mode !== 'return_wtc' && ticketSign({ method: val('f_method') }) !== 0 && !(editCtx && Number(editCtx.orig && editCtx.orig.unit_price || 0) === 0)) addErr('f_notes', 'A free ticket (unit price 0) needs a note.');
-        if (c.saleType !== 'Unregistered' && c.transportBy !== 'Company fleet' && val('f_truck') && val('f_truckowner')) {
-          const tRow = equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'sales', customer: c.customer, site: c.site });
-          if (tRow && tRow.supplier && norm(tRow.supplier) !== norm(val('f_truckowner')) && !isFieldAdminUnlocked('f_truckowner')) {
-            addErr('f_truckowner', `Truck ${val('f_truck')} is registered to ${tRow.supplier}, not ${val('f_truckowner')}.`);
+          if (c.up < 0) addErr('f_unitprice', 'Unit price cannot be negative.');
+          else if (c.product && val('f_unitprice') === '') addErr('f_unitprice', 'Unit price is required.');
+          else if (c.product && val('f_unitprice') !== '' && c.up === 0 && !notes && dispS.mode !== 'return_wtc' && ticketSign({ method: val('f_method') }) !== 0 && !(editCtx && Number(editCtx.orig && editCtx.orig.unit_price || 0) === 0)) addErr('f_notes', 'A free ticket (unit price 0) needs a note.');
+          if (c.saleType !== 'Unregistered' && c.transportBy !== 'Company fleet' && val('f_truck') && val('f_truckowner')) {
+            const tRow = equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'sales', customer: c.customer, site: c.site });
+            if (tRow && tRow.supplier && norm(tRow.supplier) !== norm(val('f_truckowner')) && !isFieldAdminUnlocked('f_truckowner')) {
+              addErr('f_truckowner', `Truck ${val('f_truck')} is registered to ${tRow.supplier}, not ${val('f_truckowner')}.`);
+            }
           }
+          const maxDiscPostPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
+          if (c.disc > c.mat && c.mat > 0) addErr('f_discount', 'Discount exceeds the material subtotal.');
+          if (isAlertRuleEnabled('G_DISCOUNT_WARN') && c.mat > 0 && c.disc > c.mat * (maxDiscPostPct / 100) && !notes) addErr('f_notes', `Discount above ${fmtNum(maxDiscPostPct, 0)}% of material needs a note.`);
         }
-        const maxDiscPostPct = getAlertParam('G_DISCOUNT_WARN', 'max_disc_pct', 20);
-        if (c.disc > c.mat && c.mat > 0) addErr('f_discount', 'Discount exceeds the material subtotal.');
-        if (isAlertRuleEnabled('G_DISCOUNT_WARN') && c.mat > 0 && c.disc > c.mat * (maxDiscPostPct / 100) && !notes) addErr('f_notes', `Discount above ${fmtNum(maxDiscPostPct, 0)}% of material needs a note.`);
         const origS = c.origin || syncOriginDispatchUI('sales', false);
-        if (origS.originType === 'site' && !origS.originSite) addErr('f_origin_site', 'Starting Site is required when Starting Point is Other Site.');
+        if (!isRetS && origS.originType === 'site' && !origS.originSite) addErr('f_origin_site', 'Starting Site is required when Starting Point is Other Site.');
         const baseMethS = val('f_method') || 'Credit';
         const retMethS = /^cash|^c\b/i.test(baseMethS) ? 'C Return' : 'CR Return';
         const effEstKm = isRetS ? dispS.oneWayKm : origS.estKm;
@@ -42695,45 +42701,66 @@
           ...(isRetS ? { return_to_wtc: true, ticket_disposition: 'return_wtc', return_round_trip_km: dispS.roundTripKm, round_trip_km: dispS.roundTripKm } : {})
         };
         const isPairedPostS = Boolean(isRetS && editCtx && editCtx.orig && !isReturnTicket(editCtx.orig) && dispS.subMode === 'pair');
+        const matchedOutS = isRetS ? (
+          isPairedPostS
+            ? editCtx.orig
+            : (!editCtx ? ((STATE.customRecords && STATE.customRecords.sales_tickets) || []).concat((SEED.records && SEED.records.sales_tickets) || []).find(r =>
+                r && !r.voided && !isRemovedTicket(r) && !isReturnTicket(r) &&
+                norm(r.company) === norm(company) &&
+                normTicketNo(r.ticket_no) === normTicketNo(ticket)
+              ) : null)
+        ) : null;
+        const effProdS = isRetS ? (c.product || (matchedOutS && matchedOutS.product) || 'Return') : c.product;
+        const effUomS = isRetS ? ((matchedOutS && matchedOutS.uom) || c.uom || 'm³') : c.uom;
+        const effQtyS = isRetS ? (matchedOutS ? Number(matchedOutS.qty || 0) : 0) : c.qty;
+        const effUpS = isRetS ? (matchedOutS ? Number(matchedOutS.unit_price || 0) : 0) : c.up;
+        const effMatS = isRetS ? (matchedOutS ? Number(matchedOutS.price ?? matchedOutS.mat_total ?? 0) : 0) : c.mat;
+        const effTpS = isRetS ? (matchedOutS ? Number(matchedOutS.trans_unit_price || 0) : 0) : c.tp;
+        const effTrS = isRetS ? (matchedOutS ? Number(matchedOutS.trans_price ?? matchedOutS.trans_total ?? 0) : 0) : c.tr;
+        const effTipS = isRetS ? (matchedOutS ? Number(matchedOutS.tip || 0) : 0) : (c.tip || 0);
+        const effDiscS = isRetS ? (matchedOutS ? Number(matchedOutS.discount || 0) : 0) : c.disc;
+        const effNetS = isRetS ? (matchedOutS ? Number(matchedOutS.total || 0) : 0) : c.net;
+        const effVatS = isRetS ? (matchedOutS ? Number(matchedOutS.vat || 0) : 0) : c.vat;
+        const effTtcS = isRetS ? (matchedOutS ? Number(matchedOutS.total_ttc ?? matchedOutS.total ?? 0) : 0) : c.ttc;
         record = {
           ...base,
           ...salesOriginFields,
           name: `${isRetS ? 'RET' : 'TKT'} ${date} ${c.customer} #${ticket}`,
           ticket_no: ticket,
           rep_date: repDate,
-          sale_type: c.saleType,
+          sale_type: isRetS ? 'Delivery' : c.saleType,
           transport_by: c.transportBy,
           customer: c.customer,
-          product: c.product,
+          product: effProdS,
           site: c.site,
           truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'),
           truck: val('f_truck'),
-          driver: c.saleType === 'Delivery' ? val('f_driver') : '',
-          uom: c.uom,
-          ton_factor: resolveProductTonFactor(c.prod, c.product) || 1,
-          qty: c.qty,
-          external_qty: val('f_extqty') ? num('f_extqty') : null,
-          unit_price: c.up,
-          price: c.mat,
-          tier: c.tier ? c.tier.tier : 0,
-          tier_adj: c.tierAdj || 0,
-          trans_unit_price: c.tp,
-          trans_price: c.tr,
-          trans_tier_adj: c.tierTrAdj || 0,
-          ...(c.matIsIndiff ? { mat_indiff: true } : {}),
-          ...(c.transIsIndiff ? { trans_indiff: true } : {}),
-          tip: c.tip || 0,
-          discount: c.disc,
-          total: c.net,
-          vat: c.vat,
-          total_ttc: c.ttc,
+          driver: (c.saleType === 'Delivery' || isRetS) ? val('f_driver') : '',
+          uom: effUomS,
+          ton_factor: resolveProductTonFactor(c.prod, effProdS) || 1,
+          qty: effQtyS,
+          external_qty: (!isRetS && val('f_extqty')) ? num('f_extqty') : null,
+          unit_price: effUpS,
+          price: effMatS,
+          tier: (!isRetS && c.tier) ? c.tier.tier : 0,
+          tier_adj: (!isRetS && c.tierAdj) || 0,
+          trans_unit_price: effTpS,
+          trans_price: effTrS,
+          trans_tier_adj: (!isRetS && c.tierTrAdj) || 0,
+          ...(!isRetS && c.matIsIndiff ? { mat_indiff: true } : {}),
+          ...(!isRetS && c.transIsIndiff ? { trans_indiff: true } : {}),
+          tip: effTipS,
+          discount: effDiscS,
+          total: effNetS,
+          vat: effVatS,
+          total_ttc: effTtcS,
           method: isRetS ? retMethS : baseMethS,
-          vat_invoice: c.vatReg ? val('f_vatinvoice') : '',
-          external_invoice: val('f_extinvoice'),
-          reference: val('f_reference'),
+          vat_invoice: (!isRetS && c.vatReg) ? val('f_vatinvoice') : '',
+          external_invoice: isRetS ? '' : val('f_extinvoice'),
+          reference: isRetS ? '' : val('f_reference'),
           time: val('f_time') || '12:00',
           overtime: !!($('f_overtime') && $('f_overtime').checked),
-          price_rule: c.rule ? c.rule.name : (c.up ? (FORM_UI.priceManual ? 'Manual' : 'List Price') : ''),
+          price_rule: isRetS ? '' : (c.rule ? c.rule.name : (c.up ? (FORM_UI.priceManual ? 'Manual' : 'List Price') : '')),
           notes: isRetS && !notes ? `Customer rejected load · returned to ${company} (${dispS.roundTripKm.toFixed(1)} km RT)` : notes,
           duplicate_confirmed: Boolean(isRetS || (dup && dup.warn)),
           ...(isPairedPostS ? { _post_as_paired_return: true, _pair_ow_km: dispS.oneWayKm, _pair_rt_km: dispS.roundTripKm } : {})
@@ -42813,28 +42840,30 @@
           };
         } else {
           const isRetR = dispR.mode === 'return_wtc';
-          if (!c.product) addErr('f_product', 'Raw material is required.');
+          if (!c.product && !isRetR) addErr('f_product', 'Raw material is required.');
           if (!c.site) addErr('f_site', 'Site is required.');
-          if (!(c.qty > 0)) {
-            if (!val('f_truck') && $('f_qty') && $('f_qty').dataset.policyLockedNow === '1') {
-              addErr('f_truck', 'Truck is required to set load capacity (or unlock Quantity).');
+          if (!isRetR) {
+            if (!(c.qty > 0)) {
+              if (!val('f_truck') && $('f_qty') && $('f_qty').dataset.policyLockedNow === '1') {
+                addErr('f_truck', 'Truck is required to set load capacity (or unlock Quantity).');
+              }
+              addErr('f_qty', 'Quantity must be above zero.');
+            } else if (c.tonGuard && c.tonGuard.blocked) {
+              addErr('f_qty', c.tonGuard.hint);
             }
-            addErr('f_qty', 'Quantity must be above zero.');
-          } else if (c.tonGuard && c.tonGuard.blocked) {
-            addErr('f_qty', c.tonGuard.hint);
+            if ((c.up > 0 || c.pricePending) && !c.owner) addErr('f_siteowner', 'Site owner (material payee) is required.');
           }
-          if ((c.up > 0 || c.pricePending) && !c.owner) addErr('f_siteowner', 'Site owner (material payee) is required.');
           if (!val('f_truck')) addErr('f_truck', 'Truck is required.');
           if (!val('f_driver') && !isRetR) addErr('f_driver', 'Active driver is required (assign in Equipment Log).');
-          if (c.transportBy !== 'Company fleet' && c.tp > 0 && !val('f_truckowner')) addErr('f_truckowner', 'Truck owner (haulage payee) is required for third-party haulage.');
-          if (c.transportBy !== 'Company fleet' && val('f_truck') && val('f_truckowner')) {
+          if (!isRetR && c.transportBy !== 'Company fleet' && c.tp > 0 && !val('f_truckowner')) addErr('f_truckowner', 'Truck owner (haulage payee) is required for third-party haulage.');
+          if (!isRetR && c.transportBy !== 'Company fleet' && val('f_truck') && val('f_truckowner')) {
             const tRow = equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'raw', site: c.site });
             if (tRow && tRow.supplier && norm(tRow.supplier) !== norm(val('f_truckowner')) && !isFieldAdminUnlocked('f_truckowner')) {
               addErr('f_truckowner', `Truck ${val('f_truck')} is registered to ${tRow.supplier}, not ${val('f_truckowner')}.`);
             }
           }
           const origR = c.origin || syncOriginDispatchUI('raw', false);
-          if (origR.originType === 'site' && !origR.originSite) addErr('f_origin_site', 'Starting Site is required when Starting Point is Other Site.');
+          if (!isRetR && origR.originType === 'site' && !origR.originSite) addErr('f_origin_site', 'Starting Site is required when Starting Point is Other Site.');
           const baseMethR = c.pricePending ? 'Credit' : (val('f_method') || 'Credit');
           const retMethR = /^cash|^c\b/i.test(baseMethR) ? 'C Return' : 'CR Return';
           const effEstKmR = isRetR ? dispR.oneWayKm : origR.estKm;
@@ -42852,40 +42881,58 @@
             ...(isRetR ? { return_to_wtc: true, ticket_disposition: 'return_wtc', return_round_trip_km: dispR.roundTripKm, round_trip_km: dispR.roundTripKm } : {})
           };
           const isPairedPostR = Boolean(isRetR && editCtx && editCtx.orig && !isReturnTicket(editCtx.orig) && dispR.subMode === 'pair');
+          const matchedOutR = isRetR ? (
+            isPairedPostR
+              ? editCtx.orig
+              : (!editCtx ? ((STATE.customRecords && STATE.customRecords.raw_purchases) || []).concat((SEED.records && SEED.records.raw_purchases) || []).find(r =>
+                  r && !r.voided && !isRemovedTicket(r) && !isReturnTicket(r) &&
+                  norm(r.company) === norm(company) &&
+                  normTicketNo(r.ticket_no) === normTicketNo(ticket)
+                ) : null)
+          ) : null;
+          const effProdR = isRetR ? (c.product || (matchedOutR && matchedOutR.product) || 'Return') : c.product;
+          const effUomR = isRetR ? ((matchedOutR && matchedOutR.uom) || c.uom || (c.prod ? c.prod.uom : 'm³')) : (c.uom || (c.prod ? c.prod.uom : 'm³'));
+          const effQtyR = isRetR ? (matchedOutR ? Number(matchedOutR.qty || 0) : 0) : c.qty;
+          const effDiscR = isRetR ? (matchedOutR ? Number(matchedOutR.discount || 0) : 0) : (c.disc || 0);
+          const effUpR = isRetR ? (matchedOutR ? Number(matchedOutR.unit_cost || 0) : 0) : (c.pricePending ? 0 : c.up);
+          const effMatR = isRetR ? (matchedOutR ? Number(matchedOutR.cost || 0) : 0) : (c.pricePending ? 0 : c.mat);
+          const effTpR = isRetR ? (matchedOutR ? Number(matchedOutR.trans_unit_cost || 0) : 0) : c.tp;
+          const effTrR = isRetR ? (matchedOutR ? Number(matchedOutR.trans_cost || 0) : 0) : c.tr;
+          const effTotR = isRetR ? (matchedOutR ? Number(matchedOutR.total || 0) : 0) : round2((c.pricePending ? 0 : c.mat) + c.tr);
           record = {
             ...base,
             ...rawOriginFields,
             name: `${isRetR ? 'RET RAW' : 'RAW'} ${date} ${c.site} #${ticket}`,
             ticket_no: ticket,
             rep_date: repDate,
-            product: c.product,
+            product: effProdR,
             site: c.site,
-            site_owner: c.owner,
+            site_owner: isRetR ? ((matchedOutR && matchedOutR.site_owner) || c.owner || '') : c.owner,
             transport_by: c.transportBy,
             truck_owner: c.transportBy === 'Company fleet' ? company : val('f_truckowner'),
             truck: val('f_truck'),
             driver: val('f_driver'),
-            uom: c.uom || (c.prod ? c.prod.uom : 'm³'),
-            ton_factor: resolveProductTonFactor(c.prod, c.product) || 1,
-            qty: c.qty,
-            discount: c.disc || 0,
-            unit_cost: c.pricePending ? 0 : c.up,
-            cost: c.pricePending ? 0 : c.mat,
-            ...(c.pricePending ? { price_pending: true } : {}),
-            trans_unit_cost: c.tp,
-            trans_cost: c.tr,
-            ...(c.matIsIndiff ? { mat_indiff: true } : {}),
-            ...(c.haulIsIndiff ? { trans_indiff: true } : {}),
-            ...(c.tierAdj ? { tier_adj: c.tierAdj } : {}),
-            ...(c.tierTrAdj ? { trans_tier_adj: c.tierTrAdj } : {}),
-            ...(c.haulRule ? { haul_rule: c.haulRule.name } : {}),
-            total: round2((c.pricePending ? 0 : c.mat) + c.tr),
+            uom: effUomR,
+            ton_factor: resolveProductTonFactor(c.prod, effProdR) || 1,
+            qty: effQtyR,
+            discount: effDiscR,
+            unit_cost: effUpR,
+            cost: effMatR,
+            ...(!isRetR && c.pricePending ? { price_pending: true } : {}),
+            trans_unit_cost: effTpR,
+            trans_cost: effTrR,
+            ...(!isRetR && c.matIsIndiff ? { mat_indiff: true } : {}),
+            ...(!isRetR && c.haulIsIndiff ? { trans_indiff: true } : {}),
+            ...(!isRetR && c.tierAdj ? { tier_adj: c.tierAdj } : {}),
+            ...(!isRetR && c.tierTrAdj ? { trans_tier_adj: c.tierTrAdj } : {}),
+            ...(!isRetR && c.haulRule ? { haul_rule: c.haulRule.name } : {}),
+            total: effTotR,
             method: isRetR ? retMethR : baseMethR,
-            external_invoice: val('f_extinvoice'),
-            reference: val('f_reference'),
+            external_invoice: isRetR ? '' : val('f_extinvoice'),
+            reference: isRetR ? '' : val('f_reference'),
             time: val('f_time') || '12:00',
             overtime: !!($('f_overtime') && $('f_overtime').checked),
-            price_rule: c.rule ? c.rule.name : '',
+            price_rule: isRetR ? '' : (c.rule ? c.rule.name : ''),
             notes: isRetR && !notes ? `Rejected load returned (${dispR.roundTripKm.toFixed(1)} km RT)` : notes,
             duplicate_confirmed: Boolean(isRetR || (dup && dup.warn)),
             ...(isPairedPostR ? { _post_as_paired_return: true, _pair_ow_km: dispR.oneWayKm, _pair_rt_km: dispR.roundTripKm } : {})
@@ -44132,7 +44179,8 @@
           'f_trucksize', 'f_wh_Cost', 'f_new_part_cost', 'f_repair_cost', 'f_sale_proceeds', 'f_out_parts', 'f_out_labor'
         ];
         const anyPriceDriverEdited = priceDriverIds.some(id => changedModalIds.has(id));
-        if (!anyPriceDriverEdited) {
+        const isDispZeroedEdit = Boolean(record.removed_slip || (record.return_to_wtc && !record._post_as_paired_return && !isReturnTicket(orig)));
+        if (!anyPriceDriverEdited && !isDispZeroedEdit) {
           ['unit_price', 'price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'total', 'vat', 'vat_amount', 'net_amount', 'total_ttc', 'amount', 'daily_usd', 'extra_usd', 'usd_amount', 'lbp_amount', 'fx_rate', 'exchange_rate', 'mat_indiff', 'trans_indiff'].forEach(k => {
             if (orig[k] !== undefined) record[k] = orig[k];
           });
