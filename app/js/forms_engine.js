@@ -38,17 +38,22 @@
   const MIN_DATE = '2024-01-01';
   const ic = (name, cls) => (typeof window !== 'undefined' && window.MFG_ICONS ? window.MFG_ICONS.svg(name, cls) : '');
 
+  // STANDING RULE (New-Entry Tab Parity — enforced by build/verify_mfg.mjs test 7z-33):
+  // Every + New Entry tab added to FORM_GROUPS MUST declare:
+  //   1. crKey   -> record table key registered in window.MFG_PBI.TABLE_CATALOG (#tables + hub subgrid)
+  //   2. hubView -> operational hub or Universal Registry view hosting its record table, + New button & charts
+  //   3. pbiPage -> native Dashboard page (p01..p20) or hub analytics row covering its metrics
   const FORM_GROUPS = [
     {
       id: 'sales',
       icon: 'sales',
       label: '1. Sales & Receivables',
       forms: [
-        { id: 'sales', label: 'Sales Ticket', badge: 'bhf_salesticket', crKey: 'sales_tickets', title: 'New Sales Ticket' },
-        { id: 'receipt', label: 'Customer Receipt (AR)', badge: 'bhf_customerreceipt', crKey: 'receipts', title: 'New Customer Settlement' },
-        { id: 'vatinvoice', label: 'VAT Invoice', badge: 'bhf_vatinvoice', crKey: 'vat_invoices', title: 'New VAT Invoice' },
-        { id: 'pricerule', label: 'Price Agreement', badge: 'bhf_pricerule', crKey: 'price_rules', title: 'New Price Agreement' },
-        { id: 'creditterm', label: 'Credit Terms', badge: 'bhf_creditterm', crKey: 'credit_terms', title: 'New Customer Credit Terms' }
+        { id: 'sales', label: 'Sales Ticket', badge: 'bhf_salesticket', crKey: 'sales_tickets', hubView: 'sales', pbiPage: 'p02_sales', title: 'New Sales Ticket' },
+        { id: 'receipt', label: 'Customer Receipt (AR)', badge: 'bhf_customerreceipt', crKey: 'receipts', hubView: 'customers', pbiPage: 'p06_ar', title: 'New Customer Settlement' },
+        { id: 'vatinvoice', label: 'VAT Invoice', badge: 'bhf_vatinvoice', crKey: 'vat_invoices', hubView: 'customers', pbiPage: 'p06_ar', title: 'New VAT Invoice' },
+        { id: 'pricerule', label: 'Price Agreement', badge: 'bhf_pricerule', crKey: 'price_rules', hubView: 'pricing', pbiPage: 'p03_pricing', title: 'New Price Agreement' },
+        { id: 'creditterm', label: 'Credit Terms', badge: 'bhf_creditterm', crKey: 'credit_terms', hubView: 'customers', pbiPage: 'p06_ar', title: 'New Customer Credit Terms' }
       ]
     },
     {
@@ -56,11 +61,11 @@
       icon: 'suppliers',
       label: '2. Purchases, Expenses & AP',
       forms: [
-        { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', title: 'New Raw Material Ticket' },
-        { id: 'expense', label: 'Expense (Cash / Credit)', badge: 'bhf_expense', crKey: 'expenses', title: 'New Expense' },
-        { id: 'warehousestock', label: 'Warehouse Shelf Adjust', badge: 'bhf_warehousemovement', crKey: 'warehouse_movements', title: 'Warehouse Shelf Stock & Adjustment' },
-        { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', title: 'New Supplier Settlement' },
-        { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', title: 'New Joint-Venture Entry' }
+        { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', hubView: 'raw', pbiPage: 'p04_quarry', title: 'New Raw Material Ticket' },
+        { id: 'expense', label: 'Expense (Cash / Credit)', badge: 'bhf_expense', crKey: 'expenses', hubView: 'expenses', pbiPage: 'p07_ap', title: 'New Expense' },
+        { id: 'warehousestock', label: 'Warehouse Shelf Adjust', badge: 'bhf_warehousemovement', crKey: 'warehouse_movements', hubView: 'warehouse', pbiPage: 'p07_ap', title: 'Warehouse Shelf Stock & Adjustment' },
+        { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', hubView: 'suppliers', pbiPage: 'p07_ap', title: 'New Supplier Settlement' },
+        { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', hubView: 'raw_jv', pbiPage: 'p04_quarry', title: 'New Joint-Venture Entry' }
       ]
     },
     {
@@ -68,14 +73,14 @@
       icon: 'fleet',
       label: '3. Fleet, Fuel & Maint.',
       forms: [
-        { id: 'fuel', label: 'Fuel & Lubricant Intake', badge: 'bhf_fuelintake', crKey: 'fuel_intakes', title: 'New Fuel & Lubricant Intake' },
-        { id: 'malfunction', label: 'Tank Malfunction / Discrepancy', badge: 'bhf_fuelmalfunction', crKey: 'fuel_malfunctions', title: 'New Tank Malfunction / Discrepancy' },
-        { id: 'companyequipment', label: 'Company Fleet Unit', badge: 'bhf_companyequipment', crKey: 'company_equipment', title: 'New Company Fleet Unit (BU Assignment)' },
-        { id: 'defect', label: 'Equipment Warning / Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', title: 'Report Equipment Warning / Issue' },
-        { id: 'repair', label: 'Equipment Repair', badge: 'bhf_equipmentrepair', crKey: 'equipment_repairs', title: 'New Equipment Repair (Warehouse / Outside)' },
-        { id: 'oillog', label: 'Oil & Service Log', badge: 'bhf_equipmentoillog', crKey: 'equipment_oil_logs', title: 'New Equipment Oil & Service Log' },
-        { id: 'partlog', label: 'Part Change & Custody', badge: 'bhf_partmovement', crKey: 'part_movements', title: 'Part Change, Removal & Disposition' },
-        { id: 'triprate', label: 'Overtime Trip Rate', badge: 'bhf_triprate', crKey: 'overtime_rates', title: 'New Overtime Trip Rate' }
+        { id: 'fuel', label: 'Fuel & Lubricant Intake', badge: 'bhf_fuelintake', crKey: 'fuel_intakes', hubView: 'fleet', pbiPage: 'p08_fleet', title: 'New Fuel & Lubricant Intake' },
+        { id: 'malfunction', label: 'Tank Malfunction / Discrepancy', badge: 'bhf_fuelmalfunction', crKey: 'fuel_malfunctions', hubView: 'fleet', pbiPage: 'p08_fleet', title: 'New Tank Malfunction / Discrepancy' },
+        { id: 'companyequipment', label: 'Company Fleet Unit', badge: 'bhf_companyequipment', crKey: 'company_equipment', hubView: 'fleet_equip', pbiPage: 'p08_fleet', title: 'New Company Fleet Unit (BU Assignment)' },
+        { id: 'defect', label: 'Equipment Warning / Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'Report Equipment Warning / Issue' },
+        { id: 'repair', label: 'Equipment Repair', badge: 'bhf_equipmentrepair', crKey: 'equipment_repairs', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'New Equipment Repair (Warehouse / Outside)' },
+        { id: 'oillog', label: 'Oil & Service Log', badge: 'bhf_equipmentoillog', crKey: 'equipment_oil_logs', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'New Equipment Oil & Service Log' },
+        { id: 'partlog', label: 'Part Change & Custody', badge: 'bhf_partmovement', crKey: 'part_movements', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'Part Change, Removal & Disposition' },
+        { id: 'triprate', label: 'Overtime Trip Rate', badge: 'bhf_triprate', crKey: 'overtime_rates', hubView: 'fleet_drivers', pbiPage: 'p08_fleet', title: 'New Overtime Trip Rate' }
       ]
     },
     {
@@ -83,11 +88,11 @@
       icon: 'payroll',
       label: '4. Payroll & Workforce',
       forms: [
-        { id: 'salary', label: 'Salary & Bonus', badge: 'bhf_salarypayment', crKey: 'salaries', title: 'New Salary Payment or Bonus' },
-        { id: 'attendance', label: 'Attendance', badge: 'bhf_attendance', crKey: 'attendance', title: 'New Staff Attendance' },
-        { id: 'employment', label: 'Employment Contract', badge: 'bhf_employment', crKey: 'employments', title: 'New Employment Contract' },
-        { id: 'freelance', label: 'Freelance Work', badge: 'bhf_freelancework', crKey: 'employments', title: 'New Freelance Work' },
-        { id: 'logistics', label: 'Site Transport', badge: 'bhf_logistics', crKey: 'logistics_allowances', title: 'New Site Transport' }
+        { id: 'salary', label: 'Salary & Bonus', badge: 'bhf_salarypayment', crKey: 'salaries', hubView: 'payroll', pbiPage: 'p12_payroll', title: 'New Salary Payment or Bonus' },
+        { id: 'attendance', label: 'Attendance', badge: 'bhf_attendance', crKey: 'attendance', hubView: 'payroll_attendance', pbiPage: 'p12_payroll', title: 'New Staff Attendance' },
+        { id: 'employment', label: 'Employment Contract', badge: 'bhf_employment', crKey: 'employments', hubView: 'payroll_contracts', pbiPage: 'p12_payroll', title: 'New Employment Contract' },
+        { id: 'freelance', label: 'Freelance Work', badge: 'bhf_freelancework', crKey: 'employments', hubView: 'payroll_contracts', pbiPage: 'p12_payroll', title: 'New Freelance Work' },
+        { id: 'logistics', label: 'Site Transport', badge: 'bhf_logistics', crKey: 'logistics_allowances', hubView: 'payroll_allowances', pbiPage: 'p12_payroll', title: 'New Site Transport' }
       ]
     },
     {
@@ -95,9 +100,9 @@
       icon: 'cashflow',
       label: '5. Cash Flow & Treasury',
       forms: [
-        { id: 'external', label: 'External Entry', badge: 'bhf_external', crKey: 'external_movements', title: 'New External Cash Entry' },
-        { id: 'treasury', label: 'Loan & Settlement', badge: 'bhf_loan', crKey: 'loans', title: 'New Loan or Settlement' },
-        { id: 'conversion', label: 'FX Conversion', badge: 'bhf_conversion', crKey: 'conversions', title: 'New FX Conversion (USD ↔ LBP)' }
+        { id: 'external', label: 'External Entry', badge: 'bhf_external', crKey: 'external_movements', hubView: 'external', pbiPage: 'p11_cash', title: 'New External Cash Entry' },
+        { id: 'treasury', label: 'Loan & Settlement', badge: 'bhf_loan', crKey: 'loans', hubView: 'ledger_treasury', pbiPage: 'p11_cash', title: 'New Loan or Settlement' },
+        { id: 'conversion', label: 'FX Conversion', badge: 'bhf_conversion', crKey: 'conversions', hubView: 'conversions', pbiPage: 'p11_cash', title: 'New FX Conversion (USD ↔ LBP)' }
       ]
     },
     {
@@ -106,18 +111,18 @@
       label: '6. Universal (All BUs)',
       universalGroup: true,
       forms: [
-        { id: 'customer', label: 'Customer', badge: 'bhf_customer', crKey: 'customers', title: 'New Customer (Universal Registry)', universal: true },
-        { id: 'supplier', label: 'Supplier / Hauler', badge: 'bhf_supplier', crKey: 'suppliers', title: 'New Supplier / Hauler (Universal Registry)', universal: true },
-        { id: 'product', label: 'Product / Grade', badge: 'bhf_product', crKey: 'products', title: 'New Product / Aggregate Grade (Universal Registry)', universal: true },
-        { id: 'item', label: 'Item / Spare Part', badge: 'bhf_item', crKey: 'items', title: 'New Item / Spare Part (Universal Catalog)', universal: true },
-        { id: 'expensecategory', label: 'Expense Category', badge: 'bhf_expensecategory', crKey: 'expense_categories', title: 'New Expense Category (Universal Registry)', universal: true },
-        { id: 'site', label: 'Site', badge: 'bhf_site', crKey: 'sites', title: 'New Site (Universal Registry)', universal: true },
-        { id: 'region', label: 'Region / Zone', badge: 'bhf_region', crKey: 'regions', title: 'New Region / Zone (Universal Registry)', universal: true },
-        { id: 'equipment', label: 'Equipment / Truck', badge: 'bhf_equipment', crKey: 'equipment', title: 'New Equipment / Truck (Universal Registry)', universal: true },
-        { id: 'driver', label: 'Driver / Operator', badge: 'bhf_driver', crKey: 'drivers', title: 'New Driver / Operator (Universal Registry)', universal: true },
-        { id: 'fxrate', label: 'FX Rate', badge: 'bhf_fxrate', crKey: 'fx_rates', title: 'New FX Rate (Universal Registry)', universal: true },
-        { id: 'vatrate', label: 'VAT Rate', badge: 'bhf_vatrate', crKey: 'vat_rates', title: 'New VAT Rate (Universal Registry)', universal: true },
-        { id: 'currency', label: 'Currency', badge: 'bhf_currency', crKey: 'currencies', title: 'New Currency (Universal Registry)', universal: true }
+        { id: 'customer', label: 'Customer', badge: 'bhf_customer', crKey: 'customers', hubView: 'reg_customers', pbiPage: 'p06_ar', title: 'New Customer (Universal Registry)', universal: true },
+        { id: 'supplier', label: 'Supplier / Hauler', badge: 'bhf_supplier', crKey: 'suppliers', hubView: 'reg_customers', pbiPage: 'p07_ap', title: 'New Supplier / Hauler (Universal Registry)', universal: true },
+        { id: 'product', label: 'Product / Grade', badge: 'bhf_product', crKey: 'products', hubView: 'reg_products', pbiPage: 'p02_sales', title: 'New Product / Aggregate Grade (Universal Registry)', universal: true },
+        { id: 'item', label: 'Item / Spare Part', badge: 'bhf_item', crKey: 'items', hubView: 'expenses', pbiPage: 'p07_ap', title: 'New Item / Spare Part (Universal Catalog)', universal: true },
+        { id: 'expensecategory', label: 'Expense Category', badge: 'bhf_expensecategory', crKey: 'expense_categories', hubView: 'reg_categories', pbiPage: 'p07_ap', title: 'New Expense Category (Universal Registry)', universal: true },
+        { id: 'site', label: 'Site', badge: 'bhf_site', crKey: 'sites', hubView: 'reg_sites', pbiPage: 'p04_quarry', title: 'New Site (Universal Registry)', universal: true },
+        { id: 'region', label: 'Region / Zone', badge: 'bhf_region', crKey: 'regions', hubView: 'reg_sites', pbiPage: 'p04_quarry', title: 'New Region / Zone (Universal Registry)', universal: true },
+        { id: 'equipment', label: 'Equipment / Truck', badge: 'bhf_equipment', crKey: 'equipment', hubView: 'reg_equipment', pbiPage: 'p08_fleet', title: 'New Equipment / Truck (Universal Registry)', universal: true },
+        { id: 'driver', label: 'Driver / Operator', badge: 'bhf_driver', crKey: 'drivers', hubView: 'reg_drivers', pbiPage: 'p08_fleet', title: 'New Driver / Operator (Universal Registry)', universal: true },
+        { id: 'fxrate', label: 'FX Rate', badge: 'bhf_fxrate', crKey: 'fx_rates', hubView: 'reg_fx_rates', pbiPage: 'p11_cash', title: 'New FX Rate (Universal Registry)', universal: true },
+        { id: 'vatrate', label: 'VAT Rate', badge: 'bhf_vatrate', crKey: 'vat_rates', hubView: 'reg_vat_rates', pbiPage: 'p06_ar', title: 'New VAT Rate (Universal Registry)', universal: true },
+        { id: 'currency', label: 'Currency', badge: 'bhf_currency', crKey: 'currencies', hubView: 'reg_fx_rates', pbiPage: 'p11_cash', title: 'New Currency (Universal Registry)', universal: true }
       ]
     }
   ];

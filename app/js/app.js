@@ -41128,10 +41128,10 @@
           ev.preventDefault();
           if ($('entryModal') && !$('entryModal').hidden) closeEntryModal(true);
           if (canViewView('sentinels')) {
-            setView('sentinels', { reset: false });
             STATE.salesPadFilter = 'books';
             STATE.shown.spad = PAGE;
-            renderApp();
+            if (STATE.view !== 'sentinels') setView('sentinels', { reset: false });
+            else renderApp();
             const panelEl = $('salesPadPanel');
             if (panelEl) {
               scrollWorkspaceTo(panelEl, 8);
@@ -41139,9 +41139,9 @@
               void panelEl.offsetWidth;
               panelEl.classList.add('sn-panel-flash');
             }
-          } else if (canViewView('pbi_dashboards')) {
+          } else if (canViewView('pbi')) {
             STATE.pbiPage = 'p18_tickets';
-            setView('pbi_dashboards');
+            setView('pbi');
           }
           return;
         }
@@ -61550,10 +61550,10 @@
       ev.preventDefault();
       ev.stopPropagation();
       if (canViewView('sentinels')) {
-        if (STATE.view !== 'sentinels') setView('sentinels', { reset: false });
         STATE.salesPadFilter = 'books';
         STATE.shown.spad = PAGE;
-        renderApp();
+        if (STATE.view !== 'sentinels') setView('sentinels', { reset: false });
+        else renderApp();
         const panelEl = $('salesPadPanel');
         if (panelEl) {
           scrollWorkspaceTo(panelEl, 8);
@@ -61561,9 +61561,9 @@
           void panelEl.offsetWidth;
           panelEl.classList.add('sn-panel-flash');
         }
-      } else if (canViewView('pbi_dashboards')) {
+      } else if (canViewView('pbi')) {
         STATE.pbiPage = 'p18_tickets';
-        setView('pbi_dashboards');
+        setView('pbi');
       }
     }));
     container.querySelectorAll('[data-vatinv-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.vatInvFilter = btn.getAttribute('data-vatinv-chip'); STATE.shown.vatinv = PAGE; const ws = $('workspace'); const y = ws ? ws.scrollTop : 0; renderApp(); if (ws) ws.scrollTop = y; }));
