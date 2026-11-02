@@ -32193,71 +32193,39 @@
         <div id="tktSeriesConnBar" class="tkt-series-conn-bar"></div>
         <div id="ticketDispBookGridDrawer" class="tkt-book-grid-drawer" hidden></div>
 
-        <div class="origin-site-drawer" id="ticketDispReturnDrawer" hidden style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-            <div>
-              <strong style="font-size:12.5px;color:var(--ink)" id="tktReturnHeadline">Customer Rejected Load · Truck Returns to Plant (Round-Trip KM Tracked)</strong>
-              <div style="font-size:11.5px;color:var(--ink-soft)" id="tktReturnSubline">Reverses commercial invoice &amp; material volume to $0.00 / 0 m³, keeps serial # in the 25-ticket book, and logs full Round-Trip KM (Plant to Site and back to Plant).</div>
+        <div class="origin-site-drawer" id="ticketDispReturnDrawer" hidden style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px">
+              <span style="color:var(--ink-soft)" id="tktReturnRouteText">Plant Hub to Site and back to Plant Hub</span>
+              <span style="color:var(--muted)">·</span>
+              <strong style="color:var(--brass)" id="tktReturnKmMathText">0.0 km × 2 = 0.0 km Round-Trip</strong>
+              <span id="tktReturnBookNetText" hidden></span>
             </div>
-            ${isEdit ? `
-            <div class="origin-mode-pills" id="tktReturnSubmodePills" role="group" aria-label="Return Posting Method">
-              <button type="button" class="origin-pill active" data-return-wtc-submode="pair">Post Paired Return Row (Recommended)</button>
-              <button type="button" class="origin-pill" data-return-wtc-submode="inplace">Convert Ticket In-Place</button>
-            </div>
-            ` : ''}
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:8px;align-items:center;background:var(--surface-2,rgba(180,140,70,0.08));padding:8px 10px;border-radius:8px;border:1px solid var(--line)">
-            <div>
-              <small style="display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;font-weight:700">Route &amp; Round-Trip Distance</small>
-              <strong style="font-size:12.5px" id="tktReturnRouteText">Plant Hub to Site and back to Plant Hub</strong>
-            </div>
-            <div>
-              <small style="display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;font-weight:700">One-Way vs Round-Trip KM</small>
-              <strong style="font-size:12.5px;color:var(--brass)" id="tktReturnKmMathText">2 x 0.0 km = 0.0 km RT</strong>
-            </div>
-            <div>
-              <small style="display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;font-weight:700">Exact Round-Trip KM Spent</small>
-              <div style="display:inline-flex;align-items:center;gap:6px;margin-top:2px">
-                <input type="number" id="f_return_rt_km" step="0.1" min="0" placeholder="RT km" style="width:92px;padding:4px 7px;font-size:12px">
-                <button type="button" class="geo-mini-btn" id="btnResetReturnRtKm">Auto 2x KM</button>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <label for="f_return_rt_km" style="font-size:11px;color:var(--muted);font-weight:600;margin:0">Round-Trip KM:</label>
+              <input type="number" id="f_return_rt_km" step="0.1" min="0" placeholder="RT km" style="width:82px;padding:3px 7px;font-size:12px">
+              <button type="button" class="geo-mini-btn" id="btnResetReturnRtKm">Auto 2x KM</button>
+              ${isEdit ? `
+              <div class="origin-mode-pills" id="tktReturnSubmodePills" role="group" aria-label="Return Posting Method">
+                <button type="button" class="origin-pill active" data-return-wtc-submode="pair">Post Paired Return</button>
+                <button type="button" class="origin-pill" data-return-wtc-submode="inplace">Convert In-Place</button>
               </div>
-            </div>
-            <div>
-              <small style="display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;font-weight:700">25-Ticket Book &amp; Net Ledger</small>
-              <strong style="font-size:12px" id="tktReturnBookNetText">Net $0.00 · 0 m³ · Serial Accounted</strong>
+              ` : ''}
             </div>
           </div>
-          <div id="tktReturnRecentTicketsWrap" style="margin-top:8px" hidden></div>
+          <div id="tktReturnRecentTicketsWrap" style="margin-top:6px" hidden></div>
         </div>
 
-        <div class="origin-site-drawer" id="ticketDispRemoveDrawer" hidden style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-            <div>
-              <strong style="font-size:12.5px;color:var(--ink)">Supervisor Ticket Removal · Spoiled / Mistake Paper Slip (0.0 KM)</strong>
-              <div style="font-size:11.5px;color:var(--ink-soft)">Reserves this physical ticket number inside its 25-ticket book so no false Skipped-Serial alert is triggered, while recording <b>$0.00</b>, <b>0 m³</b>, <b>0 loads</b>, and <b>0.0 km</b>.</div>
+        <div class="origin-site-drawer" id="ticketDispRemoveDrawer" hidden style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span style="font-size:11px;font-weight:700;color:var(--muted)">Quick Reason:</span>
+              <button type="button" class="uom-qpill" data-remove-reason="Written by mistake on physical pad">Written by mistake</button>
+              <button type="button" class="uom-qpill" data-remove-reason="Spoiled or torn paper slip">Spoiled paper slip</button>
+              <button type="button" class="uom-qpill" data-remove-reason="Cancelled before truck left plant">Cancelled before dispatch</button>
+              <button type="button" class="uom-qpill" data-remove-reason="Wrong pad or test entry">Wrong pad / test</button>
             </div>
-            <span class="badge badge-ok">${ic('shield')} Supervisor Authorized · ${esc(activeUser().full_name)}</span>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;background:var(--surface-2,rgba(100,116,139,0.08));padding:8px 10px;border-radius:8px;border:1px solid var(--line);margin-bottom:8px">
-            <div>
-              <small style="display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;font-weight:700">25-Ticket Pad Book Slot</small>
-              <strong style="font-size:12.5px" id="tktRemoveBookSlotText">Enter Ticket # below</strong>
-            </div>
-            <div>
-              <small style="display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;font-weight:700">Fleet Distance Spent</small>
-              <strong style="font-size:12.5px">0.0 km (Truck Did Not Leave Plant)</strong>
-            </div>
-            <div>
-              <small style="display:block;font-size:10.5px;color:var(--muted);text-transform:uppercase;font-weight:700">Commercial &amp; Volume Impact</small>
-              <strong style="font-size:12.5px">$0.00 · 0 m³ · 0 Loads</strong>
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-            <span style="font-size:11px;font-weight:700;color:var(--muted)">Quick Reason:</span>
-            <button type="button" class="uom-qpill" data-remove-reason="Written by mistake on physical pad">Written by mistake</button>
-            <button type="button" class="uom-qpill" data-remove-reason="Spoiled or torn paper slip">Spoiled paper slip</button>
-            <button type="button" class="uom-qpill" data-remove-reason="Cancelled before truck left plant">Cancelled before dispatch</button>
-            <button type="button" class="uom-qpill" data-remove-reason="Wrong pad or test entry">Wrong pad / test</button>
+            <span class="muted" style="font-size:11.5px" id="tktRemoveBookSlotText">0.0 km · $0.00 · 0 m³</span>
           </div>
         </div>
       </div>
@@ -32276,7 +32244,7 @@
     }
 
     if (!sCtx.rawNo) {
-      const seriesList = sCtx.activeSeries || [];
+      const seriesList = (FORM_UI.ticketDisposition && FORM_UI.ticketDisposition !== 'standard') ? [] : (sCtx.activeSeries || []);
       if (connBar) {
         if (seriesList.length > 0) {
           connBar.innerHTML = `
@@ -32568,75 +32536,84 @@
 
       const recWrap = $('tktReturnRecentTicketsWrap');
       if (recWrap) {
-        if (!isEdit) {
+        const curTkt = normTicketNo(rawNo);
+        if (!isEdit && curTkt) {
           const crKeyRec = side === 'raw' ? 'raw_purchases' : 'sales_tickets';
-          const pool = (SEED.records && SEED.records[crKeyRec]) || [];
-          const customPool = (STATE.customRecords && STATE.customRecords[crKeyRec]) || [];
-          const curTkt = normTicketNo(rawNo);
-          const candidates = [];
-          const seenRecIds = new Set();
-          const tryPushRec = r => {
-            if (!r || r.voided || r.company !== company || isRemovedTicket(r) || isReturnTicket(r)) return;
-            if (side === 'sales' && r.sale_type === 'Unregistered') return;
-            const rid = String(r.id || r.ticket_no || '');
-            if (rid && seenRecIds.has(rid)) return;
-            if (rid) seenRecIds.add(rid);
-            candidates.push(r);
-          };
-          if (curTkt) {
-            const exactMatch = pool.find(r => r && !r.voided && r.company === company && !isRemovedTicket(r) && !isReturnTicket(r) && normTicketNo(r.ticket_no) === curTkt);
-            if (exactMatch) tryPushRec(exactMatch);
-          }
-          for (let i = 0; i < Math.min(customPool.length, 12); i++) tryPushRec(customPool[i]);
-          for (let i = pool.length - 1; i >= Math.max(0, pool.length - 25); i--) tryPushRec(pool[i]);
-          for (let i = 0; i < Math.min(pool.length, 25); i++) tryPushRec(pool[i]);
-          candidates.sort((a, b) => {
-            const aMatch = curTkt && normTicketNo(a.ticket_no) === curTkt ? 1 : 0;
-            const bMatch = curTkt && normTicketNo(b.ticket_no) === curTkt ? 1 : 0;
-            if (aMatch !== bMatch) return bMatch - aMatch;
-            return String(b.date || '').localeCompare(String(a.date || '')) || (Number(String(b.ticket_no || '').replace(/\D/g, '')) - Number(String(a.ticket_no || '').replace(/\D/g, '')));
-          });
-          const recentList = candidates.slice(0, 6);
-          if (recentList.length > 0) {
+          const pool = ((STATE.customRecords && STATE.customRecords[crKeyRec]) || []).concat((SEED.records && SEED.records[crKeyRec]) || []);
+          const exactMatch = pool.find(r => r && !r.voided && r.company === company && !isRemovedTicket(r) && !isReturnTicket(r) && (side !== 'sales' || r.sale_type !== 'Unregistered') && normTicketNo(r.ticket_no) === curTkt);
+          if (exactMatch) {
             recWrap.hidden = false;
+            const pLbl = side === 'raw' ? (exactMatch.site || exactMatch.site_owner || '') : (exactMatch.customer || exactMatch.site || '');
             recWrap.innerHTML = `
-              <div style="font-size:11px;color:var(--muted);margin-bottom:4px"><b>Quick-Fill from Recent ${esc(company)} Outbound Ticket:</b> click a ticket below to auto-fill its serial #, site, truck &amp; load details for return to ${esc(company)}:</div>
-              <div style="display:flex;gap:6px;flex-wrap:wrap">
-                ${recentList.map(r => {
-                  const active = curTkt && normTicketNo(r.ticket_no) === curTkt;
-                  const pLbl = side === 'raw' ? (r.site || r.site_owner || '') : (r.customer || r.site || '');
-                  return `<button type="button" class="uom-qpill${active ? ' active' : ''}" data-pick-return-ticket="${esc(r.id)}" data-pick-return-side="${esc(side)}">#${esc(r.ticket_no)} · ${esc(pLbl)} · ${esc(r.product || '')}${r.truck ? ' (' + esc(r.truck) + ')' : ''}</button>`;
-                }).join('')}
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span style="font-size:11px;color:var(--muted)">Matched outbound ticket:</span>
+                <button type="button" class="uom-qpill active" data-pick-return-ticket="${esc(exactMatch.id)}" data-pick-return-side="${esc(side)}">#${esc(exactMatch.ticket_no)} · ${esc(pLbl)} · ${esc(exactMatch.product || '')}${exactMatch.truck ? ' (' + esc(exactMatch.truck) + ')' : ''}</button>
               </div>
             `;
           } else {
             recWrap.hidden = true;
+            recWrap.innerHTML = '';
           }
         } else {
           recWrap.hidden = true;
+          recWrap.innerHTML = '';
         }
+      }
+      if (siteName) {
+        setHint('hint_site', `Round-Trip: ${effRtKm.toFixed(1)} km (${effOwKm.toFixed(1)} km x 2 · ${fromHub} to ${siteName} and back)`, 'ok');
       }
     }
 
-    // Streamline fields when Remove Slip (0 KM) is active
+    // Streamline fields when Remove Slip (0 KM) or Return to Plant (2x KM) is active
     const isRemove = mode === 'remove_slip';
+    const isReturn = mode === 'return_wtc';
     const hideOnRemoveIds = side === 'sales'
-      ? ['wrap_f_time', 'wrap_f_saletype', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_customer', 'wrap_f_origin_bar', 'wrap_f_site', 'wrap_f_truck', 'wrap_f_truckowner', 'wrap_f_driver', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_extqty', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_tip', 'wrap_f_discount', 'wrap_f_total_usd', 'wrap_vatinvoice', 'wrap_f_extinvoice']
-      : ['wrap_f_time', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_site', 'wrap_f_siteowner', 'wrap_f_truck', 'wrap_f_truckowner', 'wrap_f_driver', 'wrap_f_discount', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_total_usd', 'wrap_f_method', 'wrap_f_extinvoice'];
+      ? ['wrap_f_time', 'wrap_f_saletype', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_customer', 'wrap_f_origin_bar', 'wrap_f_site', 'wrap_f_truck', 'wrap_f_truckowner', 'wrap_f_driver', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_extqty', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_tip', 'wrap_f_discount', 'wrap_f_total_usd', 'wrap_vatinvoice', 'wrap_f_extinvoice', 'wrap_f_reference']
+      : ['wrap_f_time', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_site', 'wrap_f_siteowner', 'wrap_f_truck', 'wrap_f_truckowner', 'wrap_f_driver', 'wrap_f_discount', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_total_usd', 'wrap_f_method', 'wrap_f_extinvoice', 'wrap_f_reference'];
+    const hideOnReturnIds = side === 'sales'
+      ? ['wrap_f_time', 'wrap_f_saletype', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_truckowner', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_extqty', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_tip', 'wrap_f_discount', 'wrap_f_total_usd', 'wrap_vatinvoice', 'wrap_f_extinvoice', 'wrap_f_reference']
+      : ['wrap_f_time', 'wrap_f_transportby', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_siteowner', 'wrap_f_truckowner', 'wrap_f_discount', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_total_usd', 'wrap_f_method', 'wrap_f_extinvoice', 'wrap_f_reference'];
+    const showOnReturnIds = side === 'sales'
+      ? ['wrap_f_date', 'wrap_f_ticketno', 'wrap_f_customer', 'wrap_f_site', 'wrap_f_truck', 'wrap_f_driver', 'wrap_f_notes']
+      : ['wrap_f_date', 'wrap_f_ticketno', 'wrap_f_site', 'wrap_f_truck', 'wrap_f_driver', 'wrap_f_notes'];
+
     if (isRemove) {
       hideOnRemoveIds.forEach(id => setFieldVisible(id, false));
+      ['wrap_f_date', 'wrap_f_ticketno', 'wrap_f_notes'].forEach(id => setFieldVisible(id, true));
       const sStrip = $('salesLiveContextStrip');
       if (sStrip) sStrip.hidden = true;
       const rStrip = $('rawLiveContextStrip');
       if (rStrip) rStrip.hidden = true;
-    } else if (FORM_UI.lastDispMode === 'remove_slip') {
-      // Restore base visibility when switching out of remove_slip
-      ['wrap_f_time', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_truck', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_discount', 'wrap_f_total_usd'].forEach(id => setFieldVisible(id, true));
+    } else if (isReturn) {
+      hideOnReturnIds.forEach(id => setFieldVisible(id, false));
+      showOnReturnIds.forEach(id => setFieldVisible(id, true));
+      const sStrip = $('salesLiveContextStrip');
+      if (sStrip) sStrip.hidden = true;
+      const rStrip = $('rawLiveContextStrip');
+      if (rStrip) rStrip.hidden = true;
+    } else if (FORM_UI.lastDispMode === 'remove_slip' || FORM_UI.lastDispMode === 'return_wtc') {
+      // Restore base visibility when switching back to standard
+      ['wrap_f_time', 'wrap_f_product', 'wrap_f_origin_bar', 'wrap_f_truck', 'wrap_f_method', 'wrap_f_qty', 'wrap_f_uom', 'wrap_f_unitprice', 'wrap_f_mat_total', 'wrap_f_discount', 'wrap_f_total_usd', 'wrap_f_reference'].forEach(id => setFieldVisible(id, true));
       if (side === 'sales') {
         ['wrap_f_saletype', 'wrap_f_customer', 'wrap_f_tip'].forEach(id => setFieldVisible(id, true));
       } else {
         ['wrap_f_transportby', 'wrap_f_site', 'wrap_f_siteowner', 'wrap_f_driver', 'wrap_f_transunitprice', 'wrap_f_trans_total', 'wrap_f_extinvoice'].forEach(id => setFieldVisible(id, true));
       }
+    }
+
+    const mBody = $('modalBody');
+    if (mBody) {
+      mBody.querySelectorAll('.pa-form-sec-hdr').forEach(hdr => {
+        hdr.hidden = (mode !== 'standard');
+      });
+      const liveCalcEl = mBody.querySelector('.live-calc');
+      if (liveCalcEl) liveCalcEl.hidden = (mode !== 'standard');
+    }
+    const notesInp = $('f_notes');
+    if (notesInp && !STATE.editingPendingRawId) {
+      notesInp.placeholder = isReturn
+        ? 'Reason for return / rejection (optional)'
+        : (isRemove ? 'Reason for removing slip (optional)' : 'Required for back-dated entries or discounts above 20%');
     }
     FORM_UI.lastDispMode = mode;
 
@@ -34203,18 +34180,21 @@
 
     const dlEq = $('dl_equip');
     const dlDrv = $('dl_drivers');
+    const isReturnDisp = FORM_UI.ticketDisposition === 'return_wtc';
     if (dlEq) {
       const fIdx = getFleetIndex();
-      const eqPoolKey = `${isCoFleet ? 1 : 0}|${company}|${winOpts ? winOpts.date || '' : ''}|${(FORM_UI.ownerManuallyPicked && truckOwner && !truckName) ? norm(truckOwner) : ''}|${fIdx.key}`;
+      const eqPoolKey = `${isReturnDisp ? 2 : (isCoFleet ? 1 : 0)}|${company}|${winOpts ? winOpts.date || '' : ''}|${(!isReturnDisp && FORM_UI.ownerManuallyPicked && truckOwner && !truckName) ? norm(truckOwner) : ''}|${fIdx.key}`;
       if (dlEq.dataset.poolKey !== eqPoolKey) {
         dlEq.dataset.poolKey = eqPoolKey;
         if (fIdx.dlEqHtmlCache.has(eqPoolKey)) {
           dlEq.innerHTML = fIdx.dlEqHtmlCache.get(eqPoolKey);
         } else {
-          const allowedTrucks = isCoFleet
-            ? trucksForOwner('', company, true)
-            : ((FORM_UI.ownerManuallyPicked && truckOwner && !truckName) ? trucksForOwner(truckOwner, company, false) : []);
-          const pool = isCoFleet ? allowedTrucks : (allowedTrucks.length ? allowedTrucks : truckNames());
+          const allowedTrucks = isReturnDisp
+            ? truckNames()
+            : (isCoFleet
+                ? trucksForOwner('', company, true)
+                : ((FORM_UI.ownerManuallyPicked && truckOwner && !truckName) ? trucksForOwner(truckOwner, company, false) : []));
+          const pool = isReturnDisp ? allowedTrucks : (isCoFleet ? allowedTrucks : (allowedTrucks.length ? allowedTrucks : truckNames()));
           const html = pool.map(v => truckOptionHtml(v, company, isCoFleet, winOpts)).join('');
           fIdx.dlEqHtmlCache.set(eqPoolKey, html);
           dlEq.innerHTML = html;
@@ -34909,6 +34889,42 @@
   function recalcSales() {
     syncOriginDispatchUI('sales', true);
     const company = val('f_company');
+    if (FORM_UI.ticketDisposition === 'return_wtc') {
+      if ($('f_saletype') && val('f_saletype') !== 'Delivery') $('f_saletype').value = 'Delivery';
+      if (!STATE.editingRecord) {
+        const curRetTkt = normTicketNo(val('f_ticketno'));
+        if (curRetTkt && FORM_UI.lastAutoFilledReturnTicket !== curRetTkt) {
+          FORM_UI.lastAutoFilledReturnTicket = curRetTkt;
+          const matchedOut = (SEED.records.sales_tickets || []).find(r =>
+            r && !r.voided && !isRemovedSlip(r) && !isReturnTicket(r) &&
+            norm(r.company) === norm(company) &&
+            normTicketNo(r.ticket_no) === curRetTkt
+          );
+          if (matchedOut) {
+            if ($('f_customer') && !val('f_customer') && matchedOut.customer) $('f_customer').value = matchedOut.customer;
+            if ($('f_site') && !val('f_site') && matchedOut.site) $('f_site').value = matchedOut.site;
+            if ($('f_truck') && !val('f_truck') && matchedOut.truck) $('f_truck').value = matchedOut.truck;
+            if ($('f_truckowner') && !val('f_truckowner') && matchedOut.truck_owner) $('f_truckowner').value = matchedOut.truck_owner;
+            if ($('f_driver') && !val('f_driver') && matchedOut.driver) { $('f_driver').value = matchedOut.driver; FORM_UI.driverManual = true; }
+            if ($('f_product') && !val('f_product') && matchedOut.product) $('f_product').value = matchedOut.product;
+            if ($('f_uom') && matchedOut.uom) { $('f_uom').value = matchedOut.uom; FORM_UI.uomManual = true; }
+            if ($('f_qty') && matchedOut.qty != null) { $('f_qty').value = String(matchedOut.qty); FORM_UI.qtyManual = true; }
+            if ($('f_unitprice') && matchedOut.unit_price != null) { $('f_unitprice').value = Number(matchedOut.unit_price || 0).toFixed(2); FORM_UI.priceManual = true; }
+            if ($('f_transunitprice') && matchedOut.trans_unit_price != null) { $('f_transunitprice').value = Number(matchedOut.trans_unit_price || 0).toFixed(2); FORM_UI.transManual = true; }
+            if ($('f_discount') && matchedOut.discount != null) $('f_discount').value = Number(matchedOut.discount || 0).toFixed(2);
+            if ($('f_tip') && matchedOut.tip != null) $('f_tip').value = Number(matchedOut.tip || 0).toFixed(2);
+            if ($('f_transportby') && matchedOut.transport_by) $('f_transportby').value = matchedOut.transport_by === 'Third-party truck' ? 'Third-party truck' : 'Company fleet';
+          }
+        } else if (!curRetTkt) {
+          FORM_UI.lastAutoFilledReturnTicket = '';
+        }
+      }
+      if (val('f_truck') && $('f_transportby')) {
+        const anyEq = equipInfo(val('f_truck'), company, false);
+        const nextTb = (anyEq && isOwnUnit(anyEq, company)) ? 'Company fleet' : (anyEq && anyEq.supplier ? 'Third-party truck' : (val('f_transportby') || 'Company fleet'));
+        if (val('f_transportby') !== nextTb) $('f_transportby').value = nextTb;
+      }
+    }
     const saleType = val('f_saletype') || 'Pickup';
     const isDelivery = saleType === 'Delivery';
     const isPickup = saleType === 'Pickup';
@@ -35400,6 +35416,40 @@
   function recalcRaw() {
     syncOriginDispatchUI('raw', true);
     const company = val('f_company');
+    if (FORM_UI.ticketDisposition === 'return_wtc') {
+      if (!STATE.editingRecord) {
+        const curRetTkt = normTicketNo(val('f_ticketno'));
+        if (curRetTkt && FORM_UI.lastAutoFilledReturnTicket !== curRetTkt) {
+          FORM_UI.lastAutoFilledReturnTicket = curRetTkt;
+          const matchedOut = (SEED.records.raw_purchases || []).find(r =>
+            r && !r.voided && !isRemovedSlip(r) && !isReturnTicket(r) &&
+            norm(r.company) === norm(company) &&
+            normTicketNo(r.ticket_no) === curRetTkt
+          );
+          if (matchedOut) {
+            if ($('f_site') && !val('f_site') && matchedOut.site) $('f_site').value = matchedOut.site;
+            if ($('f_siteowner') && !val('f_siteowner') && matchedOut.site_owner) $('f_siteowner').value = matchedOut.site_owner;
+            if ($('f_truck') && !val('f_truck') && matchedOut.truck) $('f_truck').value = matchedOut.truck;
+            if ($('f_truckowner') && !val('f_truckowner') && matchedOut.truck_owner) $('f_truckowner').value = matchedOut.truck_owner;
+            if ($('f_driver') && !val('f_driver') && matchedOut.driver) { $('f_driver').value = matchedOut.driver; FORM_UI.driverManual = true; }
+            if ($('f_product') && !val('f_product') && matchedOut.product) $('f_product').value = matchedOut.product;
+            if ($('f_uom') && matchedOut.uom) { $('f_uom').value = matchedOut.uom; FORM_UI.uomManual = true; }
+            if ($('f_qty') && matchedOut.qty != null) { $('f_qty').value = String(matchedOut.qty); FORM_UI.qtyManual = true; }
+            if ($('f_unitprice') && matchedOut.unit_cost != null) { $('f_unitprice').value = Number(matchedOut.unit_cost || 0).toFixed(2); FORM_UI.priceManual = true; }
+            if ($('f_transunitprice') && matchedOut.trans_unit_cost != null) { $('f_transunitprice').value = Number(matchedOut.trans_unit_cost || 0).toFixed(2); FORM_UI.transManual = true; }
+            if ($('f_discount') && matchedOut.discount != null) $('f_discount').value = Number(matchedOut.discount || 0).toFixed(2);
+            if ($('f_transportby') && matchedOut.transport_by) $('f_transportby').value = matchedOut.transport_by === 'Third-party truck' ? 'Third-party truck' : 'Company fleet';
+          }
+        } else if (!curRetTkt) {
+          FORM_UI.lastAutoFilledReturnTicket = '';
+        }
+      }
+      if (val('f_truck') && $('f_transportby')) {
+        const anyEq = equipInfo(val('f_truck'), company, false);
+        const nextTb = (anyEq && isOwnUnit(anyEq, company)) ? 'Company fleet' : (anyEq && anyEq.supplier ? 'Third-party truck' : (val('f_transportby') || 'Company fleet'));
+        if (val('f_transportby') !== nextTb) $('f_transportby').value = nextTb;
+      }
+    }
     const transportBy = val('f_transportby') || 'Company fleet';
     const isCoFleet = transportBy === 'Company fleet';
     const site = val('f_site'), product = val('f_product'), date = val('f_date');
@@ -40873,7 +40923,7 @@
     FORM_UI.wasPricePending = false; FORM_UI.methodBeforePending = '';
     FORM_UI.originMode = 'company'; FORM_UI.originBu = ''; FORM_UI.originPriorDisposition = 'keep'; FORM_UI.lastAutoFilledOriginTicket = '';
     FORM_UI.originMiniMapOpen = false; FORM_UI.originMapTarget = 'dest'; FORM_UI.originKmEditOpen = false;
-    FORM_UI.ticketDisposition = 'standard'; FORM_UI.returnWtcSubMode = 'pair'; FORM_UI.returnRtKmManual = false; FORM_UI.lastDispMode = 'standard'; FORM_UI.ticketBookGridOpen = false;
+    FORM_UI.ticketDisposition = 'standard'; FORM_UI.returnWtcSubMode = 'pair'; FORM_UI.returnRtKmManual = false; FORM_UI.lastDispMode = 'standard'; FORM_UI.ticketBookGridOpen = false; FORM_UI.lastAutoFilledReturnTicket = '';
     FORM_UI.convPrimarySide = ''; FORM_UI.convRateFromAmounts = false;
     FORM_UI.openLoanTab = ''; FORM_UI.lastLoanCp = ''; FORM_UI.openLoanSearch = '';
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
