@@ -1400,12 +1400,12 @@
     // 2 · Purchases, Expenses & Payables (7 BU-scoped)
     { key: 'raw_purchases', group: '2 · Purchases, Expenses & Payables', label: 'Raw Material Purchases', dvn: 'bhf_rawpurchase', form: 'raw', cols: ['date', 'rep_date', 'ticket_no', 'company', 'site', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'driver', 'product', 'qty', 'uom', 'unit_cost', 'cost', 'trans_cost', 'total'], relTables: ['sites', 'suppliers', 'price_rules', 'equipment', 'drivers', 'products', 'settlements'], views: [{ id: 'all', label: 'All Raw Purchases' }, { id: 'supplier_haul', label: 'Third-Party Haulage', fn: r => Number(r.trans_cost || 0) > 0 }, { id: 'company_haul', label: 'Company Fleet Haul', fn: r => /company/i.test(r.transport_by) }] },
     { key: 'expenses', group: '2 · Purchases, Expenses & Payables', label: 'General & Fleet Expenses', dvn: 'bhf_mfgexpense', form: 'expense', cols: ['date', 'rep_date', 'name', 'company', 'category', 'subcategory', 'item_summary', 'supplier', 'equipment', 'method', 'qty', 'amount', 'vat', 'total_ttc', 'invoice', 'reference', 'notes'], relTables: ['expense_items', 'expense_categories', 'expense_subcategories', 'suppliers', 'equipment', 'settlements'], views: [{ id: 'all', label: 'All Expenses' }, { id: 'pending_price', label: 'Pending Invoice Price ($0)', fn: r => Boolean(r.price_pending) }, { id: 'fleet', label: 'Equipment & Fleet Tagged', fn: r => Boolean(r.equipment || r.for_equipment) }, { id: 'overhead', label: 'Plant & General Overhead', fn: r => !r.equipment && !r.for_equipment }] },
-    { key: 'expense_items', group: '2 · Purchases, Expenses & Payables', navView: 'expenses', label: 'Expense Item Tickets', dvn: 'bhf_mfgexpenseitem', form: 'expense', cols: ['date', 'name', 'expense_ref', 'company', 'item_name', 'category', 'subcategory', 'allocation_mode', 'target_equipment', 'warehouse_location', 'qty', 'uom', 'unit_cost', 'line_total', 'supplier'], relTables: ['expenses', 'items', 'equipment', 'warehouse_movements', 'suppliers'], views: [
+    { key: 'expense_items', group: '2 · Purchases, Expenses & Payables', navView: 'expenses', label: 'Expense Item Tickets', dvn: 'bhf_mfgexpenseitem', form: 'expense', cols: ['date', 'expense_ref', 'company', 'item_name', 'category', 'allocation_mode', 'target_equipment', 'qty', 'uom', 'unit_cost', 'line_total', 'supplier'], relTables: ['expenses', 'items', 'equipment', 'warehouse_movements', 'suppliers'], views: [
       { id: 'all', label: 'All Expense Items' },
-      { id: 'warehouse', label: 'Stored in Warehouse', fn: r => /^warehouse$/i.test(r.allocation_mode || '') },
-      { id: 'same_eq', label: 'Same Equipment', fn: r => /^same_equipment$/i.test(r.allocation_mode || '') },
-      { id: 'diff_eq', label: 'Different Equipment', fn: r => /^different_equipment$/i.test(r.allocation_mode || '') },
-      { id: 'general', label: 'General / Non-Equipment', fn: r => /^general$/i.test(r.allocation_mode || '') }
+      { id: 'warehouse', label: 'Stored in Warehouse', fn: r => /warehouse|shelf/i.test(r.allocation_mode || r.disposition || '') },
+      { id: 'same_eq', label: 'For Equipment', fn: r => Boolean(r.target_equipment || r.equipment) && !/warehouse|shelf/i.test(r.allocation_mode || r.disposition || '') },
+      { id: 'diff_eq', label: 'Different Equipment Split', fn: r => /^different_equipment$/i.test(r.allocation_mode || '') },
+      { id: 'general', label: 'General / Non-Equipment', fn: r => !r.target_equipment && !r.equipment && !/warehouse|shelf/i.test(r.allocation_mode || r.disposition || '') }
     ] },
     { key: 'warehouse_movements', group: '2 · Purchases, Expenses & Payables', navView: 'warehouse', label: 'Warehouse Stock Movements', dvn: 'bhf_warehousemovement', form: 'warehousestock', cols: ['date', 'name', 'company', 'item_name', 'category', 'direction', 'movement_type', 'qty', 'uom', 'unit_cost', 'total_cost', 'warehouse_location', 'equipment', 'notes'], relTables: ['items', 'expense_items', 'equipment_repairs', 'repair_items', 'equipment'], views: [
       { id: 'all', label: 'All Stock Movements' },
@@ -1507,7 +1507,7 @@
       { id: 'iva', label: 'IVA / VAT Registered', fn: r => Boolean(r.iva || r.financial_no || r.mof_no) }
     ] },
     { key: 'products', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Products & Grades', singularLabel: 'Product / Grade', dvn: 'bhf_product', form: 'product', cols: ['name', 'type', 'uom', 'ton_factor', 'list_price', 'ticket_product', 'fuel_item', 'input_product', 'active_rules', 'sales_loads'], relTables: ['sales_tickets', 'raw_purchases', 'price_rules', 'fuel_intakes', 'product_types', 'uoms'], views: [{ id: 'all', label: 'All Products & Grades' }, { id: 'agg', label: 'Ticket / Aggregate Grades', fn: r => Boolean(r.ticket_product) }, { id: 'fuel', label: 'Fuel & Lube Items', fn: r => Boolean(r.fuel_item) }] },
-    { key: 'items', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Items & Spare Parts', singularLabel: 'Item / Spare Part', dvn: 'bhf_item', form: 'item', cols: ['name', 'category', 'uom', 'default_cost', 'default_location', 'min_stock', 'status', 'notes'], relTables: ['expense_items', 'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'uoms'], views: [{ id: 'all', label: 'All Items & Spare Parts' }, { id: 'parts', label: 'Spare Parts', fn: r => /spare|part/i.test(r.category || '') }, { id: 'oils', label: 'Oils & Lubricants', fn: r => /oil|lub/i.test(r.category || '') }, { id: 'tools', label: 'Tools & Consumables', fn: r => /tool|consum/i.test(r.category || '') }] },
+    { key: 'items', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Items & Spare Parts', singularLabel: 'Item / Spare Part', dvn: 'bhf_item', form: 'item', cols: ['name', 'category', 'uom', 'default_cost', 'tickets_count', 'total_spent', 'default_location', 'min_stock', 'status'], relTables: ['expense_items', 'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'uoms'], views: [{ id: 'all', label: 'All Items & Spare Parts' }, { id: 'parts', label: 'Spare Parts', fn: r => /spare|part/i.test(r.category || '') }, { id: 'oils', label: 'Oils & Lubricants', fn: r => /oil|lub/i.test(r.category || '') }, { id: 'tools', label: 'Tools & Consumables', fn: r => /tool|consum/i.test(r.category || '') }] },
     { key: 'product_types', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Product Types (Families)', singularLabel: 'Product / Grade', dvn: 'bhf_producttype', form: 'product', cols: ['name', 'code', 'products_count', 'sales_loads'], relTables: ['products', 'sales_tickets'], views: [{ id: 'all', label: 'All Product Families' }] },
     { key: 'uoms', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Units of Measure (UoM)', singularLabel: 'Product / Grade', dvn: 'bhf_uom', form: 'product', cols: ['name', 'code', 'products_count', 'tickets_count'], relTables: ['products', 'items', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Units of Measure' }] },
     { key: 'expense_categories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Categories', singularLabel: 'Expense Category', dvn: 'bhf_expensecategory', form: 'expensecategory', cols: ['name', 'cost_class', 'subcategories_count', 'expenses_count', 'total_spent'], relTables: ['expense_subcategories', 'expenses'], views: [
@@ -1706,6 +1706,8 @@
         return { key: 'sales_loads', dir: 'desc' };
       case 'products':
         return { key: vw === 'fuel' ? 'fuel_fills' : 'sales_loads', dir: 'desc' };
+      case 'items':
+        return { key: 'total_spent', dir: 'desc' };
       case 'uoms':
         return { key: 'tickets_count', dir: 'desc' };
       case 'employments':
@@ -2218,6 +2220,25 @@
       if (st) { st.payments_count++; st.total_paid = round2(st.total_paid + Number(sal.amount || sal.usd_amount || 0)); }
     });
 
+    rel.itemByName = {};
+    const initItem = () => ({ tickets_count: 0, qty_purchased: 0, total_spent: 0 });
+    (rec.items || []).forEach(it => {
+      ensure(rel.itemByName, it.name || it.item_name, initItem);
+    });
+    (rec.expense_items || []).forEach(ei => {
+      if (!ei || ei.voided) return;
+      const ie = ensure(rel.itemByName, ei.item_name || ei.name, initItem);
+      if (ie) {
+        ie.tickets_count++;
+        ie.qty_purchased = round2(ie.qty_purchased + Number(ei.qty || 0));
+        ie.total_spent = round2(ie.total_spent + Number(ei.line_total != null ? ei.line_total : (ei.total_cost || 0)));
+      }
+      if (ei.uom) {
+        const ue = ensure(rel.uomByName, ei.uom, () => ({ products_count: 0, tickets_count: 0 }));
+        if (ue) ue.tickets_count++;
+      }
+    });
+
     rel.loanSettledByCp = {};
     (rec.loan_settlements || []).forEach(ls => {
       const cp = cellValue(ls, 'loan') || ls.loan || '';
@@ -2351,6 +2372,18 @@
       if (c === 'jv_partner') return (sCat === 'supplier' && r.is_jv) ? (r.jv_partner || 'Assaf') : null;
       if (c === 'jv_share') return (sCat === 'supplier' && r.is_jv) ? `${Number(r.jv_share) > 0 ? Number(r.jv_share) : 50}%` : null;
     }
+    if (tableKey === 'expense_items') {
+      if (c === 'expense_ref') return r.expense_ref || r.expense_id || r.name || null;
+      if (c === 'target_equipment') return r.target_equipment || r.equipment || null;
+      if (c === 'line_total') return r.line_total != null ? r.line_total : (r.total_cost != null ? r.total_cost : round2(Number(r.qty || 1) * Number(r.unit_cost || 0)));
+      if (c === 'allocation_mode') {
+        const am = String(r.allocation_mode || r.disposition || '').trim();
+        if (/warehouse|shelf/i.test(am)) return 'Warehouse (+Stock)';
+        if (/different_equipment/i.test(am)) return 'Multi-Machine Split';
+        if (r.target_equipment || r.equipment || /same_equipment|equipment|mounted|consumed/i.test(am)) return 'Installed on Unit';
+        return am || 'Direct Use';
+      }
+    }
     if (c === 'cost_class') return deriveExpenseCostClass(r);
     if (r[c] != null && r[c] !== '') {
       if (Array.isArray(r[c])) return r[c].join(', ');
@@ -2424,6 +2457,11 @@
         if (c === 'ticket_product' || c === 'fuel_item' || c === 'input_product') return Boolean(r[c]);
         const pe = rel.prodByName[norm(r.name)];
         if (pe && pe[c] != null) return pe[c];
+      }
+      if (tableKey === 'items') {
+        const ie = rel.itemByName && rel.itemByName[norm(r.name || r.item_name)];
+        if (ie && ie[c] != null) return ie[c];
+        if (c === 'tickets_count' || c === 'total_spent') return 0;
       }
       if (tableKey === 'product_types') {
         const te = rel.typeByName[norm(r.name)];
@@ -5747,6 +5785,92 @@
           })}
         </div>
 
+        ${(() => {
+          const rawExpItems = filterRecords(rec.expense_items || [], { ignoreSearch: false }).filter(ei => ei && !ei.voided && !/^(?:\[?\d{3}\]|\b(?:Pickup|M3alem|Range|Jeep|Mercedes|Shacman|Renault|Poclain|Loder|VolVo|Volvo|DAF|Iveco|Man|MAN|Scania|Actros|Atego|Bobcat)\b)/i.test(String(ei.item_name || ei.name || '').trim()));
+          const itemMap = new Map();
+          const grpMap = new Map();
+          const catMap = new Map(((rec.items || [])).map(it => [norm(it.name || it.item_name), it]));
+          rawExpItems.forEach(ei => {
+            const nm = String(ei.item_name || ei.name || '').trim();
+            if (!nm) return;
+            const nk = norm(nm);
+            const catItem = catMap.get(nk);
+            const uom = (catItem && catItem.uom) || ei.uom || 'Piece';
+            const grp = (catItem && catItem.category) || (/oil|lub|grease|15w|68|90|atf/i.test(ei.category || nm) ? 'Oils & Lubricants' : (/tool|garage/i.test(ei.category || nm) ? 'Tools & Garage' : (/spare|part|filter|tyre|tire|belt|brake|clutch|pump|hose|sensor|battery/i.test(ei.category || nm) ? 'Spare Parts' : 'Plant Consumables')));
+            const amt = Number(ei.line_total != null ? ei.line_total : (ei.total_cost != null ? ei.total_cost : (Number(ei.qty || 1) * Number(ei.unit_cost || 0))));
+            const qty = Number(ei.qty || 1);
+            let cur = itemMap.get(nk);
+            if (!cur) {
+              cur = { item_name: (catItem && catItem.name) || nm, category: grp, uom, qty: 0, tickets: 0, total_usd: 0, label: `${(catItem && catItem.name) || nm} (${uom})`, sub: '' };
+              itemMap.set(nk, cur);
+            }
+            cur.qty = round2(cur.qty + qty);
+            cur.tickets += 1;
+            cur.total_usd = round2(cur.total_usd + amt);
+            cur.sub = `${grp} · ${fmtNum(cur.qty, cur.qty % 1 !== 0 ? 1 : 0)} ${uom} · ${fmtNum(cur.tickets)} tkts`;
+            let gCur = grpMap.get(grp);
+            if (!gCur) {
+              gCur = { category: grp, uom, tickets: 0, qty: 0, total_usd: 0, sub: '' };
+              grpMap.set(grp, gCur);
+            }
+            gCur.tickets += 1;
+            gCur.qty = round2(gCur.qty + qty);
+            gCur.total_usd = round2(gCur.total_usd + amt);
+            gCur.sub = `${fmtNum(gCur.tickets)} item tickets · Locked UoM (${uom})`;
+          });
+          const itemRows = Array.from(itemMap.values()).sort((a, b) => b.total_usd - a.total_usd);
+          const grpRows = Array.from(grpMap.values()).sort((a, b) => b.total_usd - a.total_usd);
+          const totItemSpend = itemRows.reduce((a, r) => a + r.total_usd, 0);
+          const totItemTkts = itemRows.reduce((a, r) => a + r.tickets, 0);
+          const topIt = itemRows[0];
+          return `
+        <div class="pbi-overview-bands">
+          ${kpiBand('3 · Items, Spare Parts & Oils Purchased (Locked UoM Catalog)', [
+            { label: 'Catalog Items Tracked', value: fmtNum((rec.items || []).length || itemRows.length), sub: fmtNum(itemRows.length) + ' active in period', tone: 'brass' },
+            { label: 'Itemized Expense Tickets', value: fmtNum(totItemTkts), sub: 'Linked to locked-UoM catalog' },
+            { label: 'Itemized Spend ($)', value: fmtUSD(totItemSpend, 0), sub: fmtPct(null, totItemSpend, k.expenses || totItemSpend) + ' of total expenses', tone: 'warn' },
+            { label: 'Top Purchased Item', value: topIt ? fmtUSD(topIt.total_usd, 0) : '$0', sub: topIt ? `${topIt.item_name} (${fmtNum(topIt.qty, 0)} ${topIt.uom})` : '—' }
+          ])}
+        </div>
+        <div class="pbi-grid-2">
+          ${pbiPanel('Top Purchased Items, Spare Parts & Oils ($)', buildHorizontalBarChart(itemRows.slice(0, 12), 'label', 'total_usd', v => fmtUSD(v, 0), {
+            subKey: 'sub',
+            maxItems: 10,
+            colorFn: r => /Oil/i.test(r.category) ? C.brass : (/Spare/i.test(r.category) ? C.navy : C.steel)
+          }), {
+            subtitle: 'Highest-spend catalog items, spare parts, tyres, filters, and lubricants with locked UoM quantities'
+          })}
+          ${pbiPanel('Itemized Spend by Item Group & Locked UoM ($)', buildHorizontalBarChart(grpRows, 'category', 'total_usd', v => fmtUSD(v, 0), {
+            subKey: 'sub',
+            maxItems: 6,
+            colorFn: r => /Oil/i.test(r.category) ? C.brass : (/Spare/i.test(r.category) ? C.navy : C.steel)
+          }), {
+            subtitle: 'Spend breakdown across Spare Parts (Piece/Set), Oils & Lubricants (Litre/kg), Tools, and Consumables'
+          })}
+        </div>
+        <div class="pbi-grid-1">
+          ${pbiTable('Items & Spare Parts Spend & Locked UoM Schedule', [
+            { label: 'Item / Part Name', key: 'item_name', bold: true },
+            { label: 'Item Category', key: 'category' },
+            { label: 'Locked UoM', key: 'uom' },
+            { label: 'Tickets', key: 'tickets', r: true, fmt: v => fmtNum(v) },
+            { label: 'Total Qty Purchased', key: 'qty', r: true, fmt: (v, r) => `${fmtNum(v, v % 1 !== 0 ? 1 : 0)} ${esc(r.uom || '')}` },
+            { label: 'Avg Unit Cost ($)', raw: r => r.qty > 0 ? (r.total_usd / r.qty) : 0, r: true, fmt: v => fmtUSD(v, 2) },
+            { label: 'Total Spend ($)', key: 'total_usd', r: true, bar: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` }
+          ], itemRows.slice(0, 40), {
+            subtitle: 'Click any item on Expenses & Overhead or Universal Catalog to inspect full purchase history and locked unit of measure',
+            unitLabel: 'catalog items',
+            foot: [
+              { v: `Total (${fmtNum(itemRows.length)} items)`, span: 3 },
+              { v: fmtNum(totItemTkts), r: true },
+              { v: '—', r: true },
+              { v: '—', r: true },
+              { v: fmtUSD(totItemSpend, 2), r: true }
+            ]
+          })}
+        </div>`;
+        })()}
+
         <div class="pbi-grid-2">
           ${movedRegisterBanner('General & Fleet Expenses Register + Cost-Class Analytics', 'Itemized expense vouchers and Production / OpEx / CapEx category breakdowns now live directly inside Expenses & Overhead.', 'expenses', 'Expenses & Overhead', 'costclass')}
           ${movedRegisterBanner('Supplier Settlements & 3-Leg Payable Ledger', 'Full supplier payment vouchers (Material, Haulage & Expense legs) live directly inside Suppliers & Payables.', 'suppliers', 'Suppliers & Payables', 'ap3leg')}
@@ -7863,7 +7987,9 @@
     else if (activePageId === 'p18_tickets') {
       const audit = typeof ctx.buildTicketSerialAudit === 'function'
         ? ctx.buildTicketSerialAudit()
-        : { skipped: [], duplicates: [], unnumbered: [], removed: [], returned: [], totalReturnedKm: 0, allExceptions: [] };
+        : { skipped: [], duplicates: [], unnumbered: [], removed: [], returned: [], books: [], totalReturnedKm: 0, allExceptions: [] };
+      const bookRows = (audit.books || []).slice();
+      const completeBooks = bookRows.filter(b => b.enteredCount === 25).length;
       const excRows = (sl.bookStatus === 'Duplicate Serials'
         ? audit.duplicates
         : (sl.bookStatus === 'Removed Slips'
@@ -7876,14 +8002,28 @@
 
       bodyHtml = `
         <div class="pbi-overview-bands">
-          ${kpiBand('1 · Weighbridge 25-Ticket Pad Hygiene, Removed Slips (0 KM) & Returned Loads (Round-Trip KM)', [
+          ${kpiBand('1 · Weighbridge 25-Ticket Pad Hygiene, 25-Ticket Books Count, Removed Slips (0 KM) & Returned Loads (Round-Trip KM)', [
+            { label: '25-Ticket Books Tracked', value: fmtNum(bookRows.length), sub: fmtNum(completeBooks) + ' complete (25/25) · ' + fmtNum(Math.max(0, bookRows.length - completeBooks)) + ' open', tone: 'good' },
             { label: 'Skipped Serial Gaps', value: fmtNum(audit.skipped.length), sub: fmtNum(totSkippedTickets) + ' skipped tickets in books', tone: 'warn' },
             { label: 'Duplicate Ticket Numbers', value: fmtNum(audit.duplicates.length || prSn.duplicate_ticket_numbers || 0), sub: 'Excludes paired returns', tone: 'warn' },
             { label: 'Removed Slips (In 25-Book)', value: fmtNum((audit.removed || []).length), sub: '0.0 km · $0 · Supervisor only', tone: 'good' },
             { label: 'Returned Loads to Plant', value: fmtNum((audit.returned || []).length), sub: fmtNum(audit.totalReturnedKm || 0, 1) + ' km Round-Trip (2x KM)', tone: 'brass' },
-            { label: 'Unnumbered Tickets', value: fmtNum(audit.unnumbered.length || prSn.unnumbered_tickets || 0), sub: 'Tickets missing serial #' },
             { label: 'Next Suggested Ticket #', value: (() => { const co = STATE.company === 'bbconstruction' ? 'BBConstruction' : 'WTC'; const n = ctx.nextTicketNo ? ctx.nextTicketNo(co, [rec.sales_tickets, rec.raw_purchases, rec.fuel_intakes]) : ''; return n ? '#' + n + ' · ' + co : 'Auto'; })(), sub: 'Follows latest dated ticket of pad', tone: 'brass' }
           ])}
+        </div>
+
+        <div class="pbi-grid-1">
+          ${pbiTable('25-Ticket Books Count Table (Tickets Used / 25, Stream Breakdown, Missing Gaps, Unused Slots & Last Ticket in Series)', [
+            { label: '25-Ticket Book', key: 'bookRangeLabel', mono: true, bold: true },
+            { label: 'Co.', key: 'company' },
+            { label: 'Pad Run', key: 'padRun', mono: true },
+            { label: 'Tickets Used / 25', key: 'enteredCount', r: true, fmt: (v, r) => `<b>${fmtNum(v)} / 25</b> <span class="muted">(${fmtNum(r.pctComplete || 0, 0)}%)</span>` },
+            { label: 'Stream Breakdown', key: 'salesCount', fmt: (v, r) => `${r.salesCount ? `Sales: <b>${r.salesCount}</b> ` : ''}${r.rawCount ? `Raw: <b>${r.rawCount}</b> ` : ''}${r.fuelCount ? `Fuel: <b>${r.fuelCount}</b> ` : ''}${r.removedCount ? `<span class="badge badge-neutral" style="font-size:10px">Removed: ${r.removedCount}</span> ` : ''}${r.returnedCount ? `<span class="badge badge-warn" style="font-size:10px">Return: ${r.returnedCount}</span>` : ''}` },
+            { label: 'Missing Gaps', key: 'missingLabel', fmt: (v, r) => r.missingCount > 0 ? `<span class="amber"><b>${r.missingCount}</b> (${esc(v)})</span>` : `<span class="emerald">0 Gaps</span>` },
+            { label: 'Unused Left', key: 'unusedCount', r: true, fmt: (v, r) => r.unusedCount > 0 ? `<b>${r.unusedCount}</b> (${esc(r.unusedRangeLabel)})` : '<span class="muted">0</span>' },
+            { label: 'Last Ticket & Next # in Series', key: 'lastTicketLabel', fmt: (v, r) => `<b>${esc(v)}</b> · ${esc(r.lastDateDMY || '')} · ${esc(r.lastParty || '')}${r.nextTicketNo ? ` · <span class="badge badge-brass" style="font-size:10px">Next #${r.nextTicketNo}</span>` : ''}` },
+            { label: 'Book Status', key: 'statusLabel', fmt: (v, r) => `<span class="badge badge-${r.statusTone || 'brass'}">${esc(v)}</span>` }
+          ], bookRows, { subtitle: 'One row per 25-ticket pad book run across Sales, Raw & Fuel streams', limit: 35, unitLabel: '25-ticket books' })}
         </div>
 
         <div class="pbi-grid-2">
@@ -8882,6 +9022,12 @@
   }
 
   const HUB_COL_LABELS = {
+    tickets_count: 'Tickets',
+    total_spent: 'Total Spent ($)',
+    expense_ref: 'Expense Voucher',
+    target_equipment: 'Target Equipment',
+    line_total: 'Line Total ($)',
+    allocation_mode: 'Destination',
     plate_no: 'Plate Number',
     supplier_role: 'Role',
     trucks_list: 'Owned Trucks',
@@ -9173,6 +9319,102 @@
           </table>
         </div>
       </div>
+
+      ${(() => {
+        if (!rows.length) return '';
+        let leftTitle = `${meta.label} · Top Records Breakdown`;
+        let leftRows = [];
+        let rightTitle = `${meta.label} · Classification & Group Split`;
+        let rightRows = [];
+        const addGrp = (map, k, val = 1, subLbl = 'records') => {
+          const keyLbl = String(k || 'Unspecified').trim() || 'Unspecified';
+          const cur = map.get(keyLbl) || { label: keyLbl, value: 0, count: 0 };
+          cur.value = round2(cur.value + Number(val || 0));
+          cur.count += 1;
+          cur.sub = `${fmtNum(cur.count)} ${subLbl}`;
+          map.set(keyLbl, cur);
+        };
+        const gMap = new Map();
+        if (meta.key === 'items') {
+          leftTitle = 'Top Catalog Items & Spare Parts by Total Spend ($)';
+          leftRows = rows.map(r => {
+            const spent = Number(cellValue(r, 'total_spent', 'items', rel) || 0);
+            const tkts = Number(cellValue(r, 'tickets_count', 'items', rel) || 0);
+            const uom = r.uom || 'Piece';
+            return { label: `${r.name} (${uom})`, value: spent || Number(r.default_cost || 0), sub: `${r.category || 'Spare Parts'} · ${fmtNum(tkts)} tickets · Locked UoM: ${uom}` };
+          }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+          rightTitle = 'Catalog Items by Category & Locked UoM Spend ($)';
+          rows.forEach(r => addGrp(gMap, `${r.category || 'Spare Parts'} (${r.uom || 'Piece'})`, Number(cellValue(r, 'total_spent', 'items', rel) || r.default_cost || 1), 'items'));
+          rightRows = Array.from(gMap.values()).sort((a, b) => b.value - a.value);
+        } else if (meta.key === 'products' || meta.key === 'product_types' || meta.key === 'uoms') {
+          leftTitle = `${meta.label} · Volume & Ticket Activity (Loads / Tickets)`;
+          leftRows = rows.map(r => {
+            const v = Number(cellValue(r, meta.key === 'uoms' ? 'tickets_count' : 'sales_loads', meta.key, rel) || 0);
+            return { label: r.name || '—', value: v, sub: `${r.type || r.uom || r.code || 'Universal'}` };
+          }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+          rightTitle = `${meta.label} · Family & Unit Distribution`;
+          rows.forEach(r => addGrp(gMap, r.type || r.uom || 'Standard', Number(cellValue(r, meta.key === 'uoms' ? 'products_count' : 'sales_loads', meta.key, rel) || 1), 'entries'));
+          rightRows = Array.from(gMap.values()).sort((a, b) => b.value - a.value);
+        } else if (meta.key === 'customers') {
+          leftTitle = 'Top Customers by Open AR Balance ($)';
+          leftRows = rows.map(r => ({ label: r.name, value: Number(cellValue(r, 'ar_balance', 'customers', rel) || 0), sub: `${fmtNum(cellValue(r, 'sales_loads', 'customers', rel) || 0)} loads` })).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+          rightTitle = 'Top Customers by Delivered Loads';
+          rightRows = rows.map(r => ({ label: r.name, value: Number(cellValue(r, 'sales_loads', 'customers', rel) || 0), sub: r.method || 'Credit' })).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+        } else if (meta.key === 'suppliers') {
+          leftTitle = 'Top Suppliers & Haulers by Open AP ($)';
+          leftRows = rows.map(r => ({ label: r.name, value: Number(cellValue(r, 'ap_balance', 'suppliers', rel) || 0), sub: String(cellValue(r, 'supplier_role', 'suppliers', rel) || 'Vendor') })).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+          rightTitle = 'Suppliers & Haulers by Role';
+          rows.forEach(r => addGrp(gMap, cellValue(r, 'supplier_role', 'suppliers', rel) || 'Vendor', 1, 'suppliers'));
+          rightRows = Array.from(gMap.values()).sort((a, b) => b.value - a.value);
+        } else if (meta.key === 'expense_categories' || meta.key === 'expense_subcategories') {
+          leftTitle = `Top ${meta.label} by Total Spend ($)`;
+          leftRows = rows.map(r => ({ label: r.name, value: Number(cellValue(r, 'total_spent', meta.key, rel) || 0), sub: `${fmtNum(cellValue(r, 'expenses_count', meta.key, rel) || 0)} vouchers` })).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+          rightTitle = `${meta.label} by Cost Class / Parent Category ($)`;
+          rows.forEach(r => addGrp(gMap, meta.key === 'expense_subcategories' ? (r.category || 'General') : deriveExpenseCostClass(r), Number(cellValue(r, 'total_spent', meta.key, rel) || 0), 'categories'));
+          rightRows = Array.from(gMap.values()).sort((a, b) => b.value - a.value);
+        } else if (meta.key === 'equipment' || meta.key === 'drivers') {
+          leftTitle = `Top ${meta.label} by Hauling Activity (Loads)`;
+          leftRows = rows.map(r => ({ label: r.name, value: Number(cellValue(r, 'loads_hauled', meta.key, rel) || 0), sub: r.type || r.truck_owner || 'Fleet' })).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+          rightTitle = `${meta.label} by Ownership / Category`;
+          rows.forEach(r => addGrp(gMap, meta.key === 'equipment' ? `${r.ownership || 'Own'} · ${r.type || 'Truck'}` : (r.truck_owner || 'Company Fleet'), 1, 'units'));
+          rightRows = Array.from(gMap.values()).sort((a, b) => b.value - a.value);
+        } else if (meta.key === 'sites' || meta.key === 'regions') {
+          leftTitle = `Top ${meta.label} by Load Volume`;
+          leftRows = rows.map(r => {
+            const v = Number(cellValue(r, 'sales_loads', meta.key, rel) || 0) + Number(cellValue(r, 'raw_loads', meta.key, rel) || 0);
+            return { label: r.name, value: v, sub: r.region || r.code || 'Region' };
+          }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+          rightTitle = `${meta.label} by Region / Classification`;
+          rows.forEach(r => addGrp(gMap, meta.key === 'sites' ? (r.region || 'Lebanon') : (r.zone_shape || 'Polygon Zone'), 1, 'locations'));
+          rightRows = Array.from(gMap.values()).sort((a, b) => b.value - a.value);
+        } else {
+          leftTitle = `${meta.label} · Registry Distribution`;
+          rows.slice(0, 10).forEach((r, idx) => leftRows.push({ label: r.name || r.code || `Record #${idx + 1}`, value: Number(r.rate || r.vat_percent || (10 - idx)), sub: r.status || r.pcg_class || 'Active' }));
+          rightTitle = `${meta.label} · Status & Class Summary`;
+          rows.forEach(r => addGrp(gMap, r.pcg_class || r.status || r.currency || 'Active', 1, 'records'));
+          rightRows = Array.from(gMap.values()).sort((a, b) => b.value - a.value);
+        }
+        if (!leftRows.length && !rightRows.length) return '';
+        const isMoneyLeft = /\$/.test(leftTitle);
+        const isMoneyRight = /\$/.test(rightTitle);
+        return `
+      <div class="pbi-grid-2" id="univRegChartsRow" style="margin-top:14px">
+        ${pbiPanel(leftTitle, buildHorizontalBarChart(leftRows, 'label', 'value', v => isMoneyLeft ? fmtUSD(v, 0) : fmtNum(v, 0), {
+          subKey: 'sub',
+          maxItems: 10,
+          color: C.navy
+        }), {
+          subtitle: 'Live cross-company analytics for ' + meta.label
+        })}
+        ${pbiPanel(rightTitle, buildHorizontalBarChart(rightRows, 'label', 'value', v => isMoneyRight ? fmtUSD(v, 0) : fmtNum(v, 0), {
+          subKey: 'sub',
+          maxItems: 10,
+          color: C.brass
+        }), {
+          subtitle: 'Universal registry breakdown across all business units'
+        })}
+      </div>`;
+      })()}
     `;
   }
 
@@ -10555,6 +10797,8 @@
   function renderExpensesVisualsSection(ctx) {
     const expMonths = (ctx && ctx.expMonths) || [];
     const catRows = (ctx && ctx.catRows) || [];
+    const topItems = (ctx && ctx.topItems) || [];
+    const itemGroupRows = (ctx && ctx.itemGroupRows) || [];
     return `
       <div class="pbi-grid-2" id="expensesChartsRow" style="margin-bottom:14px">
         ${pbiPanel('Monthly Operating Expenses · Cash vs. Credit Leg 3 AP ($)', buildComboChartSvg(expMonths, [
@@ -10579,6 +10823,103 @@
           colorFn: r => /Production/i.test(r.cost_class) ? C.navy : (/Capital/i.test(r.cost_class) ? C.brass : C.steel)
         }), {
           subtitle: 'Top operating, production (60/61), and capital (22) expense categories in the active period'
+        })}
+      </div>
+      ${(topItems.length || itemGroupRows.length) ? `
+      <div class="pbi-grid-2" id="expenseItemsChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('Top Purchased Items, Spare Parts & Oils ($)', buildHorizontalBarChart(topItems, 'label', 'total', v => fmtUSD(v, 0), {
+          subKey: 'sub',
+          maxItems: 10,
+          colorFn: r => /Oil/i.test(r.category) ? C.brass : (/Spare/i.test(r.category) ? C.navy : C.steel)
+        }), {
+          subtitle: 'Highest-spend items, spare parts, filters, tyres, and lubricants with locked UoM quantities'
+        })}
+        ${pbiPanel('Itemized Spend by Item Group & Locked UoM ($)', buildHorizontalBarChart(itemGroupRows, 'category', 'total', v => fmtUSD(v, 0), {
+          subKey: 'sub',
+          maxItems: 6,
+          colorFn: r => /Oil/i.test(r.category) ? C.brass : (/Spare/i.test(r.category) ? C.navy : C.steel)
+        }), {
+          subtitle: 'Spend breakdown across Spare Parts (Piece/Set), Oils & Lubricants (Litre/kg), Tools, and Consumables'
+        })}
+      </div>
+      ` : ''}
+    `;
+  }
+
+  function renderWarehouseVisualsSection(ctx) {
+    const stockItems = (ctx && ctx.stockItems) || [];
+    const catBreak = (ctx && ctx.catBreak) || [];
+    const topValRows = stockItems
+      .filter(it => Number(it.stock_value || 0) > 0 || Number(it.Purchased_Hist_USD || 0) > 0)
+      .map(it => ({
+        label: `${it.item_name} (${it.uom || 'Piece'})`,
+        value: Number(it.stock_value || 0) > 0 ? Number(it.stock_value || 0) : Number(it.Purchased_Hist_USD || 0),
+        category: it.category || 'Spare Parts',
+        sub: `${it.category || 'Spare Parts'} · On-Hand ${fmtNum(it.on_hand || 0, 1).replace(/\.0$/, '')} ${it.uom || 'Piece'}${Number(it.Purchased_Hist_Qty || 0) > 0 ? ` · Hist ${fmtNum(it.Purchased_Hist_Qty, 0)} ${it.uom || 'Piece'}` : ''}`
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+    return `
+      <div class="pbi-grid-2" id="warehouseChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('Top Warehouse Items & Spare Parts by Valuation / Spend ($)', buildHorizontalBarChart(topValRows, 'label', 'value', v => fmtUSD(v, 0), {
+          subKey: 'sub',
+          maxItems: 10,
+          colorFn: r => /Oil/i.test(r.category) ? C.brass : (/Spare/i.test(r.category) ? C.navy : C.steel)
+        }), {
+          subtitle: 'Shelf valuation and historical spend by item with locked unit of measure (Piece, Litre, Set, kg)'
+        })}
+        ${pbiPanel('Warehouse Catalog & Stock by Item Category ($)', buildHorizontalBarChart(catBreak, 'category', 'total', v => fmtUSD(v, 0), {
+          subKey: 'sub',
+          maxItems: 6,
+          colorFn: r => /Oil/i.test(r.category) ? C.brass : (/Spare/i.test(r.category) ? C.navy : C.steel)
+        }), {
+          subtitle: 'On-hand shelf value and catalog item count across Spare Parts, Oils & Lubricants, Tools, and Consumables'
+        })}
+      </div>
+    `;
+  }
+
+  function renderContractsVisualsSection(ctx) {
+    const empAll = (ctx && ctx.empAll) || [];
+    const otRates = (ctx && ctx.otRates) || [];
+    const fxRate = Number((ctx && ctx.fxRate) || 89500);
+    const activeEmps = empAll
+      .filter(e => e.status !== 'Ended')
+      .map(e => {
+        const mUsd = Number(e.salary_usd != null ? e.salary_usd : (Number(e.usd_amount || 0) + (Number(e.lbp_amount || 0) / fxRate)));
+        return {
+          staff: e.staff || e.name || '—',
+          salary_usd: round2(mUsd),
+          sub: `${e.company || 'WTC'} · ${e.type || 'Staff'} · ${e.working_days || 26}d × ${e.working_hours || 9}h`
+        };
+      })
+      .filter(e => e.salary_usd > 0)
+      .sort((a, b) => b.salary_usd - a.salary_usd)
+      .slice(0, 10);
+    const otChartRows = otRates
+      .map(r => ({
+        label: `${r.region || r.name || 'Region'} (${r.company || 'WTC'})`,
+        rate: Number(r.amount != null ? r.amount : r.usd_amount || 0),
+        sub: `${r.name || 'Trip Rate'} · Effective ${r.start_date || 'Open'}`
+      }))
+      .filter(r => r.rate > 0)
+      .sort((a, b) => b.rate - a.rate)
+      .slice(0, 10);
+    return `
+      <div class="pbi-grid-2" id="contractsChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('Monthly Base Compensation by Staff Contract ($)', buildHorizontalBarChart(activeEmps, 'staff', 'salary_usd', v => fmtUSD(v, 0), {
+          subKey: 'sub',
+          maxItems: 10,
+          color: C.navy
+        }), {
+          subtitle: 'Active staff contracts ranked by monthly base salary equivalent ($)'
+        })}
+        ${pbiPanel('Driver Trip & Night Overtime Rates by Region ($ / Trip)', buildHorizontalBarChart(otChartRows, 'label', 'rate', v => fmtUSD(v, 2), {
+          subKey: 'sub',
+          maxItems: 10,
+          color: C.brass
+        }), {
+          subtitle: 'Regional driver trip and night overtime rate schedule ($ per trip)'
         })}
       </div>
     `;
@@ -10647,6 +10988,8 @@
     renderJvVisualsSection,
     renderRawVisualsSection,
     renderExpensesVisualsSection,
+    renderWarehouseVisualsSection,
+    renderContractsVisualsSection,
     renderSuppliersVisualsSection
   };
 })();

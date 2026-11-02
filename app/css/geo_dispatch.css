@@ -2291,3 +2291,280 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
   color: var(--muted, #64748B) !important;
   font-weight: 500 !important;
 }
+
+/* =========================================================================
+   Weighbridge Series-Connected Ticket Counter & 25-Ticket Pad Book Drawer
+   ========================================================================= */
+.tkt-series-conn-bar {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line, #E6DEC8);
+}
+.tkt-series-conn-bar:empty {
+  display: none;
+}
+.tkt-series-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tkt-series-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tkt-series-lbl {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-soft, #475569);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.tkt-series-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tkt-series-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(180, 140, 70, 0.36);
+  background: var(--surface-2, #FAF6EC);
+  color: var(--ink, #1E293B);
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease, transform 0.12s ease;
+}
+.tkt-series-quick-btn:hover {
+  border-color: var(--brass, #B88728);
+  background: rgba(184, 135, 40, 0.12);
+}
+.tkt-sq-next {
+  font-weight: 800;
+  color: #8A5E0B;
+  background: rgba(184, 135, 40, 0.16);
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-family: var(--font-mono, monospace);
+}
+[data-theme="dark"] .tkt-sq-next {
+  color: #FCD34D;
+  background: rgba(245, 158, 11, 0.22);
+}
+.tkt-sq-meta {
+  color: var(--ink-soft, #475569);
+  font-size: 11px;
+}
+
+.tkt-series-connected-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--surface-2, #FAF6EC);
+  border: 1px solid rgba(180, 140, 70, 0.30);
+}
+.tkt-series-top-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tkt-series-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tkt-series-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.tkt-series-neighbor-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--ink, #1E293B);
+  padding-top: 4px;
+  border-top: 1px dotted var(--line, #E6DEC8);
+}
+.tkt-prev-series-item,
+.tkt-next-series-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.tkt-series-step-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line-strong, #D8CEB8);
+  background: var(--surface, #FFFDF9);
+  color: var(--ink, #1E293B);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tkt-series-step-btn:hover,
+.tkt-series-step-btn.active {
+  border-color: var(--brass, #B88728);
+  background: rgba(184, 135, 40, 0.14);
+  color: #7C550F;
+}
+[data-theme="dark"] .tkt-series-step-btn:hover,
+[data-theme="dark"] .tkt-series-step-btn.active {
+  color: #FCD34D;
+}
+.tkt-series-step-btn.is-fix {
+  border-color: #D97706;
+  background: rgba(217, 119, 6, 0.12);
+  color: #92400E;
+}
+[data-theme="dark"] .tkt-series-step-btn.is-fix {
+  color: #FDE68A;
+}
+
+.tkt-series-field-bar {
+  margin-top: 4px;
+}
+.tkt-series-field-bar:empty {
+  display: none;
+}
+.tkt-field-series-strip,
+.tkt-field-connected-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: var(--surface-2, #FAF6EC);
+  border: 1px solid var(--line, #E6DEC8);
+  font-size: 11px;
+}
+.tkt-field-series-lbl {
+  font-weight: 700;
+  color: var(--muted, #64748B);
+}
+.tkt-field-conn-main,
+.tkt-field-conn-steps {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.tkt-book-grid-drawer {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 9px;
+  background: var(--surface-2, #FAF6EC);
+  border: 1px solid rgba(180, 140, 70, 0.38);
+}
+.tkt-book-grid-drawer[hidden] {
+  display: none !important;
+}
+.tkt-book-grid-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.tkt-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 6px;
+}
+.tkt-slot-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--line, #E6DEC8);
+  background: var(--surface, #FFFDF9);
+  color: var(--ink, #1E293B);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, transform 0.1s ease;
+}
+.tkt-slot-cell:hover {
+  border-color: var(--brass, #B88728);
+}
+.tkt-slot-cell.status-entered {
+  border-color: rgba(5, 150, 105, 0.35);
+  background: rgba(5, 150, 105, 0.06);
+}
+.tkt-slot-cell.status-removed {
+  border-style: dashed;
+  background: rgba(100, 116, 139, 0.08);
+}
+.tkt-slot-cell.status-returned {
+  border-color: rgba(217, 119, 6, 0.40);
+  background: rgba(217, 119, 6, 0.08);
+}
+.tkt-slot-cell.status-missing_gap {
+  border-color: rgba(220, 38, 38, 0.42);
+  background: rgba(220, 38, 38, 0.06);
+}
+.tkt-slot-cell.is-current,
+.tkt-slot-cell.status-current_new {
+  border: 2px solid var(--brass, #B88728);
+  background: rgba(184, 135, 40, 0.14);
+}
+.tkt-slot-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 4px;
+}
+.tkt-slot-num {
+  font-family: var(--font-mono, monospace);
+  font-weight: 800;
+  font-size: 11.5px;
+}
+.tkt-slot-idx {
+  font-size: 10px;
+  color: var(--muted, #64748B);
+  font-weight: 700;
+}
+.tkt-slot-status {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink-soft, #475569);
+}
+.tkt-slot-party {
+  font-size: 10.5px;
+  color: var(--ink, #1E293B);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+

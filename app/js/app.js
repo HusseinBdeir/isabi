@@ -13081,8 +13081,10 @@
           rep_date: String(r.rep_date || r.date || '').slice(0, 10),
           party: r.customer || r.site_owner || r.site || r.equipment || r.truck || '-',
           product: r.product || r.item || (r.litres ? r.litres + ' L' : '-'),
+          qty: Number(r.qty ?? r.litres ?? 0),
+          uom: r.uom || (r.litres ? 'L' : 'm³'),
           site: r.site || '',
-          truck: r.truck || '',
+          truck: r.truck || r.equipment || '',
           driver: r.driver || '',
           method: r.method || '',
           notes: r.notes || '',
@@ -13134,6 +13136,7 @@
       const dupRows = [];
       const removedRows = [];
       const returnedRows = [];
+      const bookRows = [];
       const seenReturnSerials = new Set();
 
       for (const [, grp] of byGrp.entries()) {
@@ -13156,11 +13159,14 @@
             if (!runs.has(run)) runs.set(run, []);
             runs.get(run).push(r);
           }
-          for (const [, t] of runs.entries()) {
+          for (const [runIdx, t] of runs.entries()) {
             const be = bs + 24;
             const firstDate = t[0].date || '';
+            const lastDate = t[t.length - 1].date || firstDate;
+            const lastRepDate = t[t.length - 1].rep_date || lastDate;
             const co = t[0].company;
             const prefix = t[0].prefix;
+            const pfx = prefix ? prefix : '';
             const bookLbl = (prefix ? prefix + ' ' : '#') + bs + '-' + be + (firstDate ? ' · ' + fmtMY(firstDate) : '');
             const byNum = new Map();
             const byNumType = new Map();
@@ -13242,13 +13248,121 @@
               }
             }
             const nums = Array.from(byNum.keys()).sort((a, b) => a - b);
+            if (nums.length > 0) {
+              const emin = nums[0];
+              const emax = nums[nums.length - 1];
+              const firstRec = byNum.get(emin) || t[0];
+              const lastRec = byNum.get(emax) || t[t.length - 1];
+              let salesCount = 0, rawCount = 0, fuelCount = 0, removedCount = 0, returnedCount = 0;
+              for (let k = 0; k < nums.length; k++) {
+                const sr = byNum.get(nums[k]);
+                if (!sr) continue;
+                if (sr.docType === 'Sales') salesCount++;
+                else if (sr.docType === 'Raw') rawCount++;
+                else if (sr.docType === 'Fuel') fuelCount++;
+                if (sr.isRemoved) removedCount++;
+                if (sr.isReturned) returnedCount++;
+              }
+              const missingNumbers = [];
+              for (let sNum = bs; sNum <= emax; sNum++) {
+                if (!byNum.has(sNum)) missingNumbers.push(sNum);
+              }
+              const enteredCount = nums.length;
+              const missingCount = missingNumbers.length;
+              const unusedCount = Math.max(0, be - emax);
+              const domDocType = (salesCount >= rawCount && salesCount >= fuelCount)
+                ? 'Sales'
+                : (rawCount >= fuelCount ? 'Raw' : 'Fuel');
+              const nextSeqNum = emax < be ? (emax + 1) : (be + 1);
+              const nextTicketNoStr = `${pfx}${nextSeqNum}`;
+              const statusLabel = enteredCount >= 25
+                ? 'Complete (25/25)'
+                : (missingCount > 0 && unusedCount === 0
+                  ? `Gaps (${enteredCount}/25 · ${missingCount} missing)`
+                  : (missingCount > 0
+                    ? `In Use (${enteredCount}/25 · ${missingCount} gap${missingCount > 1 ? 's' : ''} · ${unusedCount} left)`
+                    : `In Use (${enteredCount}/25 · ${unusedCount} left)`));
+              const statusTone = enteredCount >= 25 ? 'ok' : (missingCount > 0 ? 'warn' : 'brass');
+              const streamParts = [];
+              if (salesCount > 0) streamParts.push(`Sales: ${salesCount}`);
+              if (rawCount > 0) streamParts.push(`Raw: ${rawCount}`);
+              if (fuelCount > 0) streamParts.push(`Fuel: ${fuelCount}`);
+              if (removedCount > 0) streamParts.push(`Removed: ${removedCount}`);
+              if (returnedCount > 0) streamParts.push(`Return: ${returnedCount}`);
+              const streamSummary = streamParts.join(' · ') || `${domDocType}: ${enteredCount}`;
+              const missingText = missingCount > 0
+                ? `#${missingNumbers.slice(0, 5).map(n => pfx + n).join(', #')}${missingCount > 5 ? ` (+${missingCount - 5} more)` : ''}`
+                : '0 gaps';
+              const unusedText = unusedCount > 0
+                ? `${unusedCount} left (#${pfx}${emax + 1}${emax + 1 < be ? '-' + pfx + be : ''})`
+                : '0 left (Full)';
+              const beforeTxt = `First #${firstRec.ticket_no} (${fmtDateDMY(firstDate)}) · Last #${lastRec.ticket_no} (${lastRec.docType} · ${lastRec.party} · ${fmtDateDMY(lastDate)})`;
+              const afterTxt = `Next #${nextTicketNoStr} · ${streamSummary} · ${missingText} · ${unusedText}`;
+              bookRows.push({
+                id: lastRec.id,
+                rkey: lastRec.rkey,
+                prevId: lastRec.id,
+                prevRkey: lastRec.rkey,
+                nextId: firstRec.id,
+                nextRkey: firstRec.rkey,
+                kind: 'book',
+                bookKey: `${co}|${prefix}|${bs}|${runIdx}`,
+                serialLabel: `#${pfx}${bs}-${pfx}${be}`,
+                kindLabel: statusLabel,
+                statusLabel,
+                statusTone,
+                num: bs,
+                bs,
+                be,
+                prefix,
+                company: co,
+                padRun: bookLbl,
+                bookRangeLabel: `#${pfx}${bs}-${pfx}${be}`,
+                firstDate,
+                lastDate,
+                date: lastDate || firstDate,
+                rep_date: lastRepDate || lastDate || firstDate,
+                emin,
+                emax,
+                firstRec,
+                lastRec,
+                firstTicketNo: firstRec.ticket_no,
+                lastTicketNo: lastRec.ticket_no,
+                lastTicketLabel: `#${lastRec.ticket_no}`,
+                lastDocType: lastRec.docType || 'Sales',
+                lastDateDMY: fmtDateDMY(lastRec.date),
+                lastParty: lastRec.party || '-',
+                lastProduct: lastRec.product || '',
+                nextSeqNum,
+                nextTicketNo: nextTicketNoStr,
+                enteredCount,
+                pctComplete: Math.round((enteredCount / 25) * 100),
+                salesCount,
+                rawCount,
+                fuelCount,
+                removedCount,
+                returnedCount,
+                missingNumbers,
+                missingCount,
+                missingText,
+                missingLabel: missingText,
+                unusedCount,
+                unusedText,
+                unusedRangeLabel: unusedText,
+                streamSummary,
+                domDocType,
+                beforeText: beforeTxt,
+                afterText: afterTxt,
+                count: enteredCount,
+                byNum
+              });
+            }
             if (nums.length < 3) continue;
             for (let i = 0; i < nums.length - 1; i++) {
               const a = nums[i], b = nums[i + 1];
               if (b - a > 1) {
                 const gapStart = a + 1, gapEnd = b - 1, gapCnt = gapEnd - gapStart + 1;
                 const prevRec = byNum.get(a), nextRec = byNum.get(b);
-                const pfx = prefix ? prefix : '';
                 skippedRows.push({
                   id: prevRec.id, rkey: prevRec.rkey,
                   kind: 'skipped',
@@ -13270,7 +13384,7 @@
           }
         }
       }
-      _ticketAuditCache = { rev, skippedRows, dupRows, unnumRows, removedRows, returnedRows };
+      _ticketAuditCache = { rev, skippedRows, dupRows, unnumRows, removedRows, returnedRows, bookRows };
     }
 
     const allowed = new Set(allowedCompanyNames());
@@ -13291,9 +13405,213 @@
     const unnumbered = _ticketAuditCache.unnumRows.filter(scopeRow);
     const removed = (_ticketAuditCache.removedRows || []).filter(scopeRow);
     const returned = (_ticketAuditCache.returnedRows || []).filter(scopeRow);
+    const books = (_ticketAuditCache.bookRows || []).filter(scopeRow);
     const totalReturnedKm = Math.round(returned.reduce((s, r) => s + Number(r.kmSpent || 0), 0) * 10) / 10;
     const allExceptions = skipped.concat(duplicates, unnumbered);
-    return { skipped, duplicates, unnumbered, removed, returned, totalReturnedKm, allExceptions };
+    return { skipped, duplicates, unnumbered, removed, returned, totalReturnedKm, allExceptions, books };
+  }
+
+  function resolveWeighbridgeSeriesContext(company, rawTicketNo, refDate, side) {
+    buildTicketSerialAudit();
+    const co = company || defaultEntryCompany();
+    const allBooks = (_ticketAuditCache && _ticketAuditCache.bookRows) || [];
+    const coBooks = allBooks.filter(b => b.company === co);
+    const targetDoc = side === 'raw' ? 'Raw' : (side === 'fuel' ? 'Fuel' : 'Sales');
+    const dayDiffAbs = (d1, d2) => (!d1 || !d2) ? 9999 : Math.abs(Math.round((new Date(d2 + 'T00:00:00Z') - new Date(d1 + 'T00:00:00Z')) / 86400000));
+
+    // Active weighbridge series for this company (sorted by latest date & stream match)
+    const sortedBooks = coBooks.slice().sort((a, b) => {
+      const da = String(a.lastDate || a.date || '');
+      const db = String(b.lastDate || b.date || '');
+      if (da !== db) return db.localeCompare(da);
+      const aMatch = a.domDocType === targetDoc ? 1 : 0;
+      const bMatch = b.domDocType === targetDoc ? 1 : 0;
+      if (aMatch !== bMatch) return bMatch - aMatch;
+      return b.emax - a.emax;
+    });
+    const activeSeries = [];
+    const seenBand = new Set();
+    // Pass 1: matching stream first; Pass 2: other streams on shared weighbridge pad
+    [true, false].forEach(matchStreamOnly => {
+      for (let i = 0; i < sortedBooks.length && activeSeries.length < 4; i++) {
+        const b = sortedBooks[i];
+        const isStreamMatch = (side === 'sales' && b.salesCount > 0) || (side === 'raw' && b.rawCount > 0) || (side === 'fuel' && b.fuelCount > 0);
+        if (matchStreamOnly && !isStreamMatch) continue;
+        if (!matchStreamOnly && isStreamMatch) continue;
+        const bandKey = `${b.prefix}|${Math.floor(b.bs / 200)}`;
+        if (seenBand.has(bandKey)) continue;
+        seenBand.add(bandKey);
+        activeSeries.push(b);
+      }
+    });
+
+    const rawNo = String(rawTicketNo == null ? '' : rawTicketNo).trim();
+    const m = rawNo.match(/^(.*?)(\d+)$/);
+    const prefix = m ? m[1].trim() : '';
+    const digits = m ? m[2] : '';
+    const num = digits ? parseInt(digits, 10) : null;
+    const isPadSerial = Boolean(num && num > 0 && num < 1000000 && digits.length <= 6);
+    if (!isPadSerial) {
+      return {
+        company: co, side, rawNo, isPadSerial: false, prefix, num,
+        bs: null, be: null, slotInBook: null, bookRangeLabel: '',
+        matchedBook: null, enteredInBook: 0, alreadyInBook: false, countAfterThis: 0,
+        missingInBook: [], unusedInBook: 25,
+        prevTicket: null, exactTicket: null, nextTicket: null,
+        isDirectNext: false, gapCount: 0, gapStart: null, gapEnd: null, bridgesGap: false,
+        slots: [], activeSeries, totalCompanyBooks: coBooks.length
+      };
+    }
+
+    const bs = Math.floor((num - 1) / 25) * 25 + 1;
+    const be = bs + 24;
+    const slotInBook = (num - bs) + 1;
+    const pfx = prefix ? prefix : '';
+    const bookRangeLabel = `#${pfx}${bs}-${pfx}${be}`;
+
+    // Match the best 25-ticket book run for (co, prefix, bs)
+    const candidates = coBooks.filter(b => b.bs === bs && b.prefix.toLowerCase() === prefix.toLowerCase());
+    let matchedBook = null;
+    if (candidates.length === 1) {
+      matchedBook = candidates[0];
+    } else if (candidates.length > 1) {
+      let bestScore = -1e9;
+      for (let i = 0; i < candidates.length; i++) {
+        const b = candidates[i];
+        let score = 0;
+        const dMin = Math.min(dayDiffAbs(refDate, b.firstDate), dayDiffAbs(refDate, b.lastDate));
+        if (dMin <= 60) score += (1000 - dMin);
+        if (b.byNum && (b.byNum.has(num - 1) || b.byNum.has(num) || b.byNum.has(num + 1))) score += 250;
+        if ((side === 'sales' && b.salesCount > 0) || (side === 'raw' && b.rawCount > 0) || (side === 'fuel' && b.fuelCount > 0)) score += 160;
+        score += b.enteredCount * 3;
+        if (b.lastDate) score += parseInt(b.lastDate.replace(/-/g, ''), 10) * 1e-6;
+        if (score > bestScore) {
+          bestScore = score;
+          matchedBook = b;
+        }
+      }
+    }
+
+    const byNum = (matchedBook && matchedBook.byNum) ? matchedBook.byNum : new Map();
+    const exactRec = byNum.get(num) || null;
+    const alreadyInBook = Boolean(exactRec);
+    const enteredInBook = matchedBook ? matchedBook.enteredCount : 0;
+    const countAfterThis = alreadyInBook ? enteredInBook : Math.min(25, enteredInBook + 1);
+
+    // Find previous ticket in this 25-ticket book (< num)
+    let prevRec = null;
+    let fromPrevBook = false;
+    for (let s = num - 1; s >= bs; s--) {
+      if (byNum.has(s)) {
+        prevRec = byNum.get(s);
+        break;
+      }
+    }
+    // If no ticket < num exists in this book (e.g., starting Slot 1/25 of a new book), check the immediately preceding book (bs - 25 .. bs - 1)
+    if (!prevRec && bs > 25) {
+      const prevBs = bs - 25;
+      const prevBookCands = coBooks
+        .filter(b => b.bs === prevBs && b.prefix.toLowerCase() === prefix.toLowerCase())
+        .sort((a, b) => String(b.lastDate || '').localeCompare(String(a.lastDate || '')));
+      if (prevBookCands.length > 0 && prevBookCands[0].lastRec) {
+        prevRec = prevBookCands[0].lastRec;
+        fromPrevBook = true;
+      }
+    }
+
+    // Find next ticket in this 25-ticket book (> num)
+    let nextRec = null;
+    for (let s = num + 1; s <= be; s++) {
+      if (byNum.has(s)) {
+        nextRec = byNum.get(s);
+        break;
+      }
+    }
+
+    const fmtTktSummary = (r, isPrevBook) => r ? ({
+      id: r.id,
+      rkey: r.rkey,
+      ticket_no: r.ticket_no,
+      num: r.num,
+      docType: r.docType,
+      dispBadge: r.isRemoved ? 'Removed' : (r.isReturned ? 'Returned' : 'Active'),
+      date: r.date,
+      dateDMY: fmtDateDMY(r.date),
+      party: r.party || '-',
+      product: r.product || '-',
+      qty: r.qty || 0,
+      uom: r.uom || 'm³',
+      truck: r.truck || '',
+      isRemoved: Boolean(r.isRemoved),
+      isReturned: Boolean(r.isReturned),
+      fromPrevBook: Boolean(isPrevBook)
+    }) : null;
+
+    const prevTicket = fmtTktSummary(prevRec, fromPrevBook);
+    const exactTicket = fmtTktSummary(exactRec, false);
+    const nextTicket = fmtTktSummary(nextRec, false);
+
+    const isDirectNext = Boolean(prevTicket && (num - prevTicket.num === 1));
+    const gapCount = prevTicket && (num - prevTicket.num > 1) ? (num - prevTicket.num - 1) : 0;
+    const gapStart = gapCount > 0 ? (prevTicket.num + 1) : null;
+    const gapEnd = gapCount > 0 ? (num - 1) : null;
+    const bridgesGap = Boolean(!alreadyInBook && prevTicket && nextTicket && num > prevTicket.num && num < nextTicket.num);
+
+    const maxEntered = matchedBook ? Math.max(matchedBook.emax, num) : num;
+    const missingInBook = [];
+    const slots = [];
+    for (let s = bs; s <= be; s++) {
+      const r = byNum.get(s) || null;
+      if (!r && s !== num && s < maxEntered) missingInBook.push(s);
+      let state = 'open';
+      if (s === num) state = r ? 'current-used' : 'current-new';
+      else if (r) state = r.isRemoved ? 'removed' : (r.isReturned ? 'returned' : 'used');
+      else if (s < maxEntered) state = 'missing';
+      const status = r
+        ? (r.isRemoved ? 'removed' : (r.isReturned ? 'returned' : 'entered'))
+        : (s === num ? 'current_new' : (s < maxEntered ? 'missing_gap' : 'open'));
+      slots.push({
+        slot: (s - bs) + 1,
+        slotIndex: (s - bs) + 1,
+        num: s,
+        ticketNo: `${pfx}${s}`,
+        isCurrent: s === num,
+        state,
+        status,
+        rec: fmtTktSummary(r, false)
+      });
+    }
+    const unusedInBook = Math.max(0, 25 - countAfterThis - missingInBook.length);
+
+    return {
+      company: co,
+      side,
+      rawNo,
+      isPadSerial: true,
+      prefix: pfx,
+      num,
+      bs,
+      be,
+      slotInBook,
+      bookRangeLabel,
+      matchedBook,
+      enteredInBook,
+      alreadyInBook,
+      countAfterThis,
+      missingInBook,
+      unusedInBook,
+      prevTicket,
+      exactTicket,
+      nextTicket,
+      isDirectNext,
+      gapCount,
+      gapStart,
+      gapEnd,
+      bridgesGap,
+      slots,
+      activeSeries,
+      totalCompanyBooks: coBooks.length
+    };
   }
 
   function renderTicketSerialAuditPanel() {
@@ -13301,8 +13619,10 @@
     const rawFilter = STATE.salesPadFilter || 'all';
     // Default to 'skipped' (Skipped in Pads) when 'all' or 'skipped' so the user immediately sees the skipped ticket serials and neighbors
     const activeFilter = rawFilter === 'all' ? 'skipped' : rawFilter;
+    const isBooksView = activeFilter === 'books';
     let pool = audit.skipped;
-    if (activeFilter === 'duplicates') pool = audit.duplicates;
+    if (isBooksView) pool = audit.books || [];
+    else if (activeFilter === 'duplicates') pool = audit.duplicates;
     else if (activeFilter === 'unnumbered') pool = audit.unnumbered;
     else if (activeFilter === 'removed') pool = audit.removed;
     else if (activeFilter === 'returned') pool = audit.returned;
@@ -13314,6 +13634,8 @@
     const shown = sorted.slice(0, shownCount('spad'));
     const totTickets = sorted.reduce((s, r) => s + Number(r.count || 0), 0);
     const totSkippedTickets = audit.skipped.reduce((s, r) => s + Number(r.count || 0), 0);
+    const booksList = audit.books || [];
+    const completeBooksCnt = booksList.filter(b => b.enteredCount >= 25).length;
     const padChip = (kKey, lbl) => `<button type="button" class="filter-chip ${activeFilter === kKey ? 'active' : ''}" data-salespad-chip="${esc(kKey)}">${lbl}</button>`;
     const nextWtc = nextTicketNo('WTC', [SEED.records.sales_tickets, SEED.records.raw_purchases, SEED.records.fuel_intakes]);
     const nextBbc = nextTicketNo('BBConstruction', [SEED.records.sales_tickets, SEED.records.raw_purchases, SEED.records.fuel_intakes]);
@@ -13321,27 +13643,65 @@
       ? `Next BBC Ticket #${esc(nextBbc || 'Auto')}`
       : `Next WTC Ticket #${esc(nextWtc || 'Auto')}${STATE.company === 'manufacturing-group' && nextBbc ? ` · BBC #${esc(nextBbc)}` : ''}`;
 
-    return `
-      <div class="panel-card" id="salesPadPanel" style="margin-bottom:14px">
-        <div class="panel-head">
-          <div class="panel-title"><span>WEIGHBRIDGE 25-TICKET BOOK AUDIT: SKIPPED, DUPLICATE, REMOVED (0 KM) &amp; RETURNED LOADS (${fmtNum(sorted.length)} ITEMS)</span></div>
-          <span class="panel-meta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <span class="badge badge-brass" title="Next sequential 25-ticket pad serial (excludes >6-digit external scale numbers)">${nextBadge}</span>
-            ${exportBtn('salesPadPanel', 'Ticket_Serial_Audit')}
-          </span>
+    const tableHtml = isBooksView ? (() => {
+      const totEnteredInBooks = sorted.reduce((s, b) => s + Number(b.enteredCount || 0), 0);
+      const totMissingInBooks = sorted.reduce((s, b) => s + Number(b.missingCount || 0), 0);
+      const totUnusedInBooks = sorted.reduce((s, b) => s + Number(b.unusedCount || 0), 0);
+      return `
+        <div class="table-wrap">
+          <table class="ledger-table" id="ticketBooksCountTable">
+            <thead>
+              <tr>
+                ${th('spad', '25-Ticket Book', 'bs')}${th('spad', 'Co.', 'company')}${th('spad', 'Dates (First - Last)', 'date')}
+                ${th('spad', 'Tickets Used / 25', 'enteredCount', 'r')}${th('spad', 'Stream Breakdown', 'streamSummary')}
+                ${th('spad', 'Missing (Gaps)', 'missingCount', 'r')}${th('spad', 'Unused Left', 'unusedCount', 'r')}
+                ${th('spad', 'Last Ticket in Series & Next #', 'lastTicketNo')}${th('spad', 'Book Status', 'statusLabel')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shown.map(b => {
+                const pct = Math.min(100, Math.round((b.enteredCount / 25) * 100));
+                const badgeCls = b.statusTone === 'ok' ? 'badge-ok' : (b.statusTone === 'warn' ? 'badge-warn' : 'badge-brass');
+                const barCol = b.statusTone === 'ok' ? '#1F7A4C' : (b.statusTone === 'warn' ? '#C96A22' : '#2356A8');
+                const dateRangeStr = b.firstDate && b.lastDate && b.firstDate !== b.lastDate
+                  ? `${fmtDateDMY(b.firstDate)} to ${fmtDateDMY(b.lastDate)}`
+                  : fmtDateDMY(b.lastDate || b.firstDate);
+                return `
+                  <tr class="rrow" data-rkey="${esc(b.rkey || 'sales_tickets')}" data-rid="${esc(b.id)}">
+                    <td class="mono"><strong>${esc(b.padRun)}</strong></td>
+                    <td>${coBadge(b.company)}</td>
+                    <td class="mono" style="font-size:11.5px">${esc(dateRangeStr)}</td>
+                    <td class="r mono">
+                      <strong>${fmtNum(b.enteredCount)} / 25</strong>
+                      <div style="width:72px;height:5px;background:var(--line);border-radius:999px;overflow:hidden;display:inline-block;vertical-align:middle;margin-left:6px"><i style="display:block;height:100%;width:${pct}%;background:${barCol}"></i></div>
+                    </td>
+                    <td style="font-size:11.5px;white-space:normal">${esc(b.streamSummary)}</td>
+                    <td class="r mono" style="font-size:11.5px">${b.missingCount > 0 ? `<span class="amber" title="${esc(b.missingText)}"><b>${fmtNum(b.missingCount)}</b> (${esc(b.missingText)})</span>` : '<span class="emerald">0</span>'}</td>
+                    <td class="r mono" style="font-size:11.5px">${b.unusedCount > 0 ? `<b>${fmtNum(b.unusedCount)}</b> <span style="color:var(--muted)">(#${esc(b.prefix)}${b.emax + 1}-${esc(b.prefix)}${b.be})</span>` : '<span style="color:var(--muted)">0 left</span>'}</td>
+                    <td style="font-size:11.5px;white-space:normal">
+                      <b>Last #${esc(b.lastTicketNo)}</b> (${esc(b.lastRec.docType)} · ${esc(b.lastRec.party)} · ${esc(b.lastRec.product)})
+                      · <span class="badge badge-brass" style="font-size:10px;padding:1px 6px">Next #${esc(b.nextTicketNo)}</span>
+                    </td>
+                    <td><span class="badge ${badgeCls}">${esc(b.statusLabel)}</span></td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(9, 'No 25-ticket weighbridge books in this scope')}
+              ${showMoreRow('spad', sorted.length, 9)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3"><b>TOTAL (${fmtNum(sorted.length)} 25-TICKET BOOKS · ${fmtNum(completeBooksCnt)} COMPLETE 25/25)</b></td>
+                <td class="r"><b>${fmtNum(totEnteredInBooks)} / ${fmtNum(sorted.length * 25)}</b></td>
+                <td><b>${fmtNum(totEnteredInBooks)} tickets recorded across books</b></td>
+                <td class="r"><b>${fmtNum(totMissingInBooks)}</b></td>
+                <td class="r"><b>${fmtNum(totUnusedInBooks)}</b></td>
+                <td colspan="2"><b>${esc(nextBadge)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
-        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
-          <div class="chip-bar">
-            ${padChip('skipped', `Skipped in Pads (${fmtNum(audit.skipped.length)} gaps · ${fmtNum(totSkippedTickets)} tickets)`)}
-            ${padChip('duplicates', `Duplicate Serials (${fmtNum(audit.duplicates.length)})`)}
-            ${padChip('removed', `Removed Slips · 0 KM (${fmtNum(audit.removed.length)})`)}
-            ${padChip('returned', `Returned Loads · ${fmtNum(audit.totalReturnedKm, 0)} km RT (${fmtNum(audit.returned.length)})`)}
-            ${padChip('unnumbered', `Unnumbered (${fmtNum(audit.unnumbered.length)})`)}
-            ${padChip('all_exc', `All Exceptions (${fmtNum(audit.allExceptions.length)})`)}
-            ${padChip('wtc', 'WTC')}
-            ${padChip('bbc', 'BBConstruction')}
-          </div>
-        </div>
+      `;
+    })() : `
         <div class="table-wrap">
           <table class="ledger-table">
             <thead>
@@ -13382,6 +13742,34 @@
             </tfoot>
           </table>
         </div>
+    `;
+
+    return `
+      <div class="panel-card" id="salesPadPanel" style="margin-bottom:14px">
+        <div class="panel-head">
+          <div class="panel-title"><span>${isBooksView
+            ? `WEIGHBRIDGE 25-TICKET BOOKS &amp; PAD TALLY TABLE (${fmtNum(sorted.length)} BOOKS · ${fmtNum(completeBooksCnt)} COMPLETE 25/25)`
+            : `WEIGHBRIDGE 25-TICKET BOOK AUDIT: SKIPPED, DUPLICATE, REMOVED (0 KM) &amp; RETURNED LOADS (${fmtNum(sorted.length)} ITEMS)`}</span></div>
+          <span class="panel-meta" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn ${isBooksView ? 'btn-brass' : 'btn-ghost-bar'}" data-salespad-chip="${isBooksView ? 'skipped' : 'books'}">${ic('tables')} ${isBooksView ? 'Skipped &amp; Exception Audit' : `25-Ticket Books Table (${fmtNum(booksList.length)})`}</button>
+            <span class="badge badge-brass" title="Next sequential 25-ticket pad serial (excludes >6-digit external scale numbers)">${nextBadge}</span>
+            ${exportBtn('salesPadPanel', isBooksView ? 'Weighbridge_25_Ticket_Books' : 'Ticket_Serial_Audit')}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${padChip('books', `25-Ticket Books & Count (${fmtNum(booksList.length)} books · ${fmtNum(completeBooksCnt)} full)`)}
+            ${padChip('skipped', `Skipped in Pads (${fmtNum(audit.skipped.length)} gaps · ${fmtNum(totSkippedTickets)} tickets)`)}
+            ${padChip('duplicates', `Duplicate Serials (${fmtNum(audit.duplicates.length)})`)}
+            ${padChip('removed', `Removed Slips · 0 KM (${fmtNum(audit.removed.length)})`)}
+            ${padChip('returned', `Returned Loads · ${fmtNum(audit.totalReturnedKm, 0)} km RT (${fmtNum(audit.returned.length)})`)}
+            ${padChip('unnumbered', `Unnumbered (${fmtNum(audit.unnumbered.length)})`)}
+            ${padChip('all_exc', `All Exceptions (${fmtNum(audit.allExceptions.length)})`)}
+            ${padChip('wtc', 'WTC')}
+            ${padChip('bbc', 'BBConstruction')}
+          </div>
+        </div>
+        ${tableHtml}
       </div>`;
   }
 
@@ -13902,14 +14290,14 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search ticket #, customer, product, site, truck, driver...')}
             <div class="chip-bar">
-              ${chip('all', `All (${base.length})`)}${chip('delivery', 'Delivery')}${chip('pickup', 'Pickup')}${chip('credit', 'Credit')}${chip('cash', 'Cash')}${showTaxCols ? chip('vat', 'VAT') : ''}${chip('overtime', 'Overtime')}${chip('returned_wtc', 'Returned to WTC')}${chip('removed_slip', 'Removed (0 KM)')}${chip('app', 'App-entered')}
+              ${chip('all', `All (${base.length})`)}${chip('delivery', 'Delivery')}${chip('pickup', 'Pickup')}${chip('credit', 'Credit')}${chip('cash', 'Cash')}${showTaxCols ? chip('vat', 'VAT') : ''}${chip('overtime', 'Overtime')}${chip('returned_wtc', 'Returned to WTC')}${chip('removed_slip', 'Removed (0 KM)')}${chip('app', 'App-entered')}<button type="button" class="filter-chip" data-open-ticket-books-table="1" title="Open Weighbridge 25-Ticket Books &amp; Pad Tally Table">${ic('tables')} 25-Ticket Books</button>
             </div>
           </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            ${canSwitchOffScope ? `<button type="button" class="btn ${offScopeOn ? 'btn-brass' : 'btn-ghost-bar'}" id="salesOfficialScopeBtn" title="Switch between complete operational books and official VAT-invoiced scope">${ic('shield')} ${offScopeOn ? 'Official Books' : 'All Books'}</button>` : ''}
-            ${canTax ? `<button type="button" class="btn ${showTaxCols ? 'btn-brass' : 'btn-ghost-bar'}" id="toggleSalesTaxBreakdownBtn" title="Show or hide Ex-VAT and VAT breakdown columns">${ic('sliders')} Tax Columns</button>` : ''}
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_customers" title="Open Master Customers &amp; Suppliers Registry">${ic('reg_customers')} Master Registry</button>
-            <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="sales" title="Open Touch Sales Dispatch Kiosk &amp; Bluetooth Thermal Printer">${ic('printer')} Sales Kiosk</button>
+          <div style="display:flex;gap:5px;flex-wrap:nowrap">
+            ${canSwitchOffScope ? `<button type="button" class="btn ${offScopeOn ? 'btn-brass' : 'btn-ghost-bar'}" id="salesOfficialScopeBtn">${ic('shield')} ${offScopeOn ? 'Official' : 'All Books'}</button>` : ''}
+            ${canTax ? `<button type="button" class="btn ${showTaxCols ? 'btn-brass' : 'btn-ghost-bar'}" id="toggleSalesTaxBreakdownBtn">${ic('sliders')} Tax</button>` : ''}
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_customers">${ic('reg_customers')} Registry</button>
+            <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="sales">${ic('printer')} Kiosk</button>
             ${exportBtn('salesPanel', 'Sales_Register')}
             ${canEnterForm('sales') ? '<button class="btn btn-primary" data-open-modal="sales">+ New Sales Ticket</button>' : ''}
           </div>
@@ -14705,13 +15093,13 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search ticket #, supplier, hauler, site, product...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('fleet', 'Company fleet')}${chip('third', 'Third-party')}${pendingRawCnt > 0 || STATE.chipFilter === 'pending_price' ? chip('pending_price', `Pending Price (${pendingRawCnt})`) : ''}${chip('returned_wtc', 'Returned Load')}${chip('removed_slip', 'Removed (0 KM)')}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('fleet', 'Company fleet')}${chip('third', 'Third-party')}${pendingRawCnt > 0 || STATE.chipFilter === 'pending_price' ? chip('pending_price', `Pending Price (${pendingRawCnt})`) : ''}${chip('returned_wtc', 'Returned Load')}${chip('removed_slip', 'Removed (0 KM)')}${chip('app', 'App-entered')}<button type="button" class="filter-chip" data-open-ticket-books-table="1" title="Open Weighbridge 25-Ticket Books &amp; Pad Tally Table">${ic('tables')} 25-Ticket Books</button></div>
           </div>
-          <div style="display:flex;gap:6px">
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="suppliers" title="Open Unified 3-Leg Suppliers &amp; Payables Sub-Ledger">${ic('suppliers')} Suppliers &amp; AP</button>
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw_pricing" title="Open Quarry Raw Material &amp; Haulage Rate Agreements">${ic('pricing')} Quarry &amp; Haulage Rates</button>
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_sites" title="Open Master Sites &amp; Regions Registry">${ic('reg_sites')} Sites &amp; Regions</button>
-            <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="raw" title="Open Touch Raw Material Receiving Kiosk &amp; Bluetooth Thermal Printer">${ic('printer')} Raw Kiosk</button>
+          <div style="display:flex;gap:5px;flex-wrap:nowrap">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="suppliers">${ic('suppliers')} AP</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="raw_pricing">${ic('pricing')} Rates</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_sites">${ic('reg_sites')} Sites</button>
+            <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="raw">${ic('printer')} Kiosk</button>
             ${exportBtn('rawPanel', 'Material_Transportation_Register')}
             ${canEnterForm('raw') ? '<button class="btn btn-primary" data-open-modal="raw">+ New Raw Receipt</button>' : ''}
           </div>
@@ -19971,14 +20359,17 @@
   // VIEW 09: EXPENSES & OVERHEAD
   // ==========================================================================
   function renderExpenses() {
+    ensureItemsCatalogSeeded();
     const k = getKPI();
     const base = filterRecords(SEED.records.expenses);
     const pendingPriceCnt = base.filter(isPendingPriceExpense).length;
     const storedWhCnt = base.filter(x => Boolean(x.stored_in_warehouse) && expenseSign(x) !== 0).length;
+    const withItemsCnt = base.filter(x => Boolean(x.item_summary) && expenseSign(x) !== 0).length;
     const expRows = sortRows(STATE.chipFilter === 'all' ? base : base.filter(x => {
       if (STATE.chipFilter === 'cash') return isCashExpense(x) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'credit') return isApCreditExpense(x) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'pending_price') return isPendingPriceExpense(x);
+      if (STATE.chipFilter === 'with_items') return Boolean(x.item_summary) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'fleet_exp') return Boolean(x.equipment) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'stored_wh') return Boolean(x.stored_in_warehouse) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'overhead_exp') return !x.equipment && !x.stored_in_warehouse && expenseSign(x) !== 0;
@@ -20051,6 +20442,157 @@
     const bbcEx = byCoExp.BBConstruction;
     const isGroupScope = STATE.company === 'manufacturing-group';
 
+    // Build Item & Spare Part Catalog spend summary + Itemized Expense Ticket ledger
+    const wh = getWarehouseIndex();
+    const whByItem = new Map((wh.items || []).map(w => [norm(w.item_name), w]));
+    const catalogMap = new Map();
+    (SEED.records.items || []).forEach(it => {
+      if (!it || it.voided) return;
+      const nm = String(it.name || it.item_name || '').trim();
+      const nk = norm(nm);
+      if (nk && !catalogMap.has(nk)) catalogMap.set(nk, it);
+    });
+
+    const expItemBase = filterRecords(SEED.records.expense_items || [], {
+      cols: ['id', 'expense_id', 'expense_ref', 'item_name', 'category', 'subcategory', 'supplier', 'equipment', 'target_equipment', 'method', 'uom', 'location', 'warehouse_location', 'disposition']
+    }).filter(r => r && !r.voided && !isTransportRentalItemName(r.item_name || r.name));
+
+    const itemSpendAggMap = new Map();
+    const itemGroupAggMap = new Map();
+    const ensureItemCatRow = (rawName, rawCat, rawUom, fallbackCost, fallbackLoc, fallbackMin) => {
+      const cleanName = String(rawName || '').trim();
+      const ik = norm(cleanName);
+      if (!ik) return null;
+      let cur = itemSpendAggMap.get(ik);
+      if (!cur) {
+        const catRec = catalogMap.get(ik);
+        const wRec = whByItem.get(ik);
+        const canonName = (catRec && (catRec.name || catRec.item_name)) || cleanName;
+        const lockedUom = (catRec && (catRec.uom || catRec.unit)) || rawUom || 'Piece';
+        const grp = (catRec && catRec.category) || normalizeItemCatalogCategory(rawCat, canonName);
+        cur = {
+          id: (catRec && catRec.id) || cleanName,
+          name: canonName,
+          category: grp,
+          uom: lockedUom,
+          location: (catRec && (catRec.default_location || catRec.location)) || (wRec && wRec.location) || fallbackLoc || 'Main Warehouse',
+          min_stock: Number((catRec && catRec.min_stock) || fallbackMin || 0),
+          default_cost: Number((catRec && (catRec.default_cost ?? catRec.unit_cost)) || fallbackCost || 0),
+          tickets: 0,
+          total_qty: 0,
+          fleet_qty: 0,
+          wh_qty: 0,
+          cash_usd: 0,
+          credit_usd: 0,
+          total_usd: 0,
+          avg_cost: Number((catRec && (catRec.default_cost ?? catRec.unit_cost)) || fallbackCost || 0),
+          on_hand_qty: wRec ? Number(wRec.onHandQty || 0) : 0,
+          on_hand_usd: wRec ? Number(wRec.onHandValue || 0) : 0,
+          last_date: ''
+        };
+        itemSpendAggMap.set(ik, cur);
+      }
+      return cur;
+    };
+
+    const qLower = String(STATE.search || '').trim().toLowerCase();
+    (SEED.records.items || []).forEach(it => {
+      if (!it || it.voided) return;
+      const nm = String(it.name || it.item_name || '').trim();
+      if (!nm || isTransportRentalItemName(nm)) return;
+      if (qLower && !`${nm} ${it.category || ''} ${it.uom || ''} ${it.default_location || ''}`.toLowerCase().includes(qLower)) return;
+      ensureItemCatRow(nm, it.category, it.uom || it.unit, it.default_cost ?? it.unit_cost, it.default_location || it.location, it.min_stock);
+    });
+
+    expItemBase.forEach(r => {
+      const nm = String(r.item_name || r.name || '').trim();
+      const row = ensureItemCatRow(nm, r.category, r.uom, r.unit_cost, r.warehouse_location || r.location, 0);
+      if (!row) return;
+      const qty = Math.max(0, Number(r.qty || 1));
+      const lineUsd = Number(r.line_total != null ? r.line_total : (r.total_cost != null ? r.total_cost : (r.amount || 0)));
+      const isWh = Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || ''));
+      const isEq = Boolean(r.target_equipment || r.equipment);
+      const isCr = isApCreditExpense(r);
+      row.tickets += 1;
+      row.total_qty = round2(row.total_qty + qty);
+      if (isEq) row.fleet_qty = round2(row.fleet_qty + qty);
+      if (isWh) row.wh_qty = round2(row.wh_qty + qty);
+      if (isCr) row.credit_usd = round2(row.credit_usd + lineUsd);
+      else row.cash_usd = round2(row.cash_usd + lineUsd);
+      row.total_usd = round2(row.total_usd + lineUsd);
+      if (row.total_qty > 0 && row.total_usd > 0) row.avg_cost = round2(row.total_usd / row.total_qty);
+      const dt = String(r.date || '');
+      if (dt > row.last_date) row.last_date = dt;
+
+      const gk = row.category || 'Spare Parts';
+      const gCur = itemGroupAggMap.get(gk) || { group: gk, uom_summary: row.uom, items_set: new Set(), tickets: 0, qty: 0, total_usd: 0, subLabel: '' };
+      gCur.items_set.add(norm(row.name));
+      gCur.tickets += 1;
+      gCur.qty = round2(gCur.qty + qty);
+      gCur.total_usd = round2(gCur.total_usd + lineUsd);
+      itemGroupAggMap.set(gk, gCur);
+    });
+
+    const expCatalogAll = Array.from(itemSpendAggMap.values());
+    const purchasedCatalogCnt = expCatalogAll.filter(r => r.tickets > 0).length;
+    const sparePartsCatCnt = expCatalogAll.filter(r => /spare|part/i.test(r.category)).length;
+    const oilsCatCnt = expCatalogAll.filter(r => /oil|lub/i.test(r.category)).length;
+    const toolsCatCnt = expCatalogAll.filter(r => /tool|consum/i.test(r.category)).length;
+    const inWhCatCnt = expCatalogAll.filter(r => r.on_hand_qty > 0.0001).length;
+    const itemCatChipKey = STATE.expItemCatFilter || 'all';
+    const itemCatChip = (key, label) => `<button type="button" class="filter-chip ${itemCatChipKey === key ? 'active' : ''}" data-exp-item-cat-chip="${esc(key)}">${label}</button>`;
+    const expCatalogFiltered = sortRows(expCatalogAll.filter(r => {
+      if (itemCatChipKey === 'purchased') return r.tickets > 0;
+      if (itemCatChipKey === 'spare_parts') return /spare|part/i.test(r.category);
+      if (itemCatChipKey === 'oils') return /oil|lub/i.test(r.category);
+      if (itemCatChipKey === 'tools') return /tool|consum/i.test(r.category);
+      if (itemCatChipKey === 'in_wh') return r.on_hand_qty > 0.0001;
+      return true;
+    }), 'exp_items_cat', 'total_usd', 'desc');
+    const shownExpCatalog = expCatalogFiltered.slice(0, shownCount('exp_items_cat'));
+    const sumCatTickets = expCatalogFiltered.reduce((a, r) => a + r.tickets, 0);
+    const sumCatQty = round2(expCatalogFiltered.reduce((a, r) => a + r.total_qty, 0));
+    const sumCatSpend = round2(expCatalogFiltered.reduce((a, r) => a + r.total_usd, 0));
+    const sumCatOnHand = round2(expCatalogFiltered.reduce((a, r) => a + r.on_hand_qty, 0));
+
+    const expItemFleetCnt = expItemBase.filter(r => Boolean(r.target_equipment || r.equipment)).length;
+    const expItemWhCnt = expItemBase.filter(r => Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || ''))).length;
+    const expItemOvCnt = expItemBase.filter(r => !(r.target_equipment || r.equipment) && !r.stored_in_warehouse && !/^warehouse$/i.test(String(r.allocation_mode || ''))).length;
+    const itemTktChipKey = STATE.expItemTktFilter || 'all';
+    const itemTktChip = (key, label) => `<button type="button" class="filter-chip ${itemTktChipKey === key ? 'active' : ''}" data-exp-item-tkt-chip="${esc(key)}">${label}</button>`;
+    const expItemFiltered = sortRows(expItemBase.filter(r => {
+      const isWh = Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || ''));
+      const isEq = Boolean(r.target_equipment || r.equipment);
+      if (itemTktChipKey === 'fleet') return isEq;
+      if (itemTktChipKey === 'warehouse') return isWh;
+      if (itemTktChipKey === 'overhead') return !isEq && !isWh;
+      if (itemTktChipKey === 'cash') return isCashExpense(r);
+      if (itemTktChipKey === 'credit') return isApCreditExpense(r);
+      return true;
+    }), 'exp_item_tkts', 'date', 'desc');
+    const shownExpItems = expItemFiltered.slice(0, shownCount('exp_item_tkts'));
+    const sumItemTktQty = round2(expItemFiltered.reduce((a, r) => a + Number(r.qty || 1), 0));
+    const sumItemTktUsd = round2(expItemFiltered.reduce((a, r) => a + Number(r.line_total != null ? r.line_total : (r.total_cost != null ? r.total_cost : (r.amount || 0))), 0));
+
+    const topItemsForChart = [...expCatalogAll]
+      .filter(r => r.total_usd > 0)
+      .sort((a, b) => b.total_usd - a.total_usd)
+      .slice(0, 10)
+      .map(r => ({
+        name: r.name,
+        category: r.category,
+        uom: r.uom,
+        subLabel: `${fmtNum(r.total_qty, r.total_qty % 1 ? 1 : 0)} ${r.uom} · ${fmtNum(r.tickets)} tkt${r.tickets === 1 ? '' : 's'}`,
+        total_usd: r.total_usd
+      }));
+    const itemGroupRowsForChart = Array.from(itemGroupAggMap.values())
+      .map(g => ({
+        group: g.group,
+        subLabel: `${fmtNum(g.items_set.size)} items · ${fmtNum(g.tickets)} tickets`,
+        total_usd: g.total_usd
+      }))
+      .sort((a, b) => b.total_usd - a.total_usd);
+
     const avgExp = expRows.length > 0 ? (sumExp / expRows.length) : 0;
     const cashExpPct = sumExp > 0 ? Math.max(0, Math.min(100, (sumCashExp / sumExp) * 100)) : 0;
     const expOfSalesPct = Number(k.net_sales || 0) > 0 ? ((sumExp / Number(k.net_sales || 1)) * 100) : 0;
@@ -20059,9 +20601,10 @@
     const uniqExpCats = new Set(expRows.map(x => x.category).filter(Boolean)).size;
     const uniqExpSups = new Set(expRows.map(x => x.supplier).filter(Boolean)).size;
     const topExpCat = expCatRows[0] || null;
+    const topItemRow = topItemsForChart[0] || null;
 
     const expVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderExpensesVisualsSection === 'function')
-      ? window.MFG_PBI.renderExpensesVisualsSection({ expMonths, catRows: expCatRows })
+      ? window.MFG_PBI.renderExpensesVisualsSection({ expMonths, catRows: expCatRows, topItems: topItemsForChart, itemGroupRows: itemGroupRowsForChart })
       : '';
 
     return `
@@ -20092,11 +20635,13 @@
             tone: 'emerald'
           })}
           ${insightCard({
-            label: 'Fleet & Plant Attribution',
-            badge: `${fmtNum(equipLinkedCount)} Unit-Tagged`,
-            val: `${equipLinkedPct.toFixed(1)}% <small>Direct Fleet</small>`,
-            pct: equipLinkedPct,
-            sub: `Direct equipment cost attribution across <b>${fmtNum(uniqExpSups)}</b> vendors`,
+            label: 'Items & Parts Catalog',
+            badge: `${fmtNum(expCatalogAll.length)} Items (Locked UoM)`,
+            badgeCls: 'brass',
+            val: `<span class="insight-drill" data-scroll-panel="expItemsCatalogPanel">${fmtUSD(sumCatSpend, 0)} <small>Item Spend</small></span>`,
+            valCls: 'brass',
+            pct: sumExp > 0 ? Math.min(100, (sumCatSpend / sumExp) * 100) : 100,
+            sub: `<b>${fmtNum(expItemBase.length)}</b> item tickets${topItemRow ? ` · Top: <b>${esc(topItemRow.name)}</b>` : ''} · <span class="insight-drill" data-scroll-panel="expItemsCatalogPanel">Catalog ↓</span>`,
             tone: 'steel'
           })}
           ${insightCard({
@@ -20120,19 +20665,20 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search category, subcategory, item, supplier, equipment, reference...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('pending_price', `Pending Price (${pendingPriceCnt})`)}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('stored_wh', `Stored in Warehouse (${storedWhCnt})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${chip('app', 'App-entered')}</div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('with_items', `With Items (${withItemsCnt})`)}${chip('pending_price', `Pending Price (${pendingPriceCnt})`)}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('stored_wh', `Stored in Warehouse (${storedWhCnt})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="warehouse">${ic('warehouse')} Warehouse</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="suppliers">${ic('suppliers')} Suppliers &amp; Payables</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_categories">${ic('reg_categories')} Expense Categories</button>
             ${exportBtn('expPanel', 'Expense_Register')}
+            ${canEnterForm('item') ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="item">${ic('plus')} New Item</button>` : ''}
             ${canEnterForm('expense') ? '<button class="btn btn-primary" data-open-modal="expense">+ New Expense</button>' : ''}
           </div>
         </div>
         ${isGroupScope ? `
         <div class="sales-entity-recon">
-          <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0" title="Click to filter to WTC only">
+          <div class="sales-recon-card" data-jump-co="wtc" role="button" tabindex="0">
             <div class="sales-recon-head"><span class="badge badge-brass">WTC</span><b>${fmtNum(wtcEx.n)} Vouchers</b><span class="sales-recon-act">Filter WTC Only</span></div>
             <div class="sales-recon-metrics">
               <span><small>Cash Exp.</small><b>${fmtUSD(wtcEx.cash, 2)}</b></span>
@@ -20140,7 +20686,7 @@
               <span><small>Total Expenses</small><b class="brass">${fmtUSD(wtcEx.tot, 2)}</b></span>
             </div>
           </div>
-          <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0" title="Click to filter to BBConstruction only">
+          <div class="sales-recon-card" data-jump-co="bbconstruction" role="button" tabindex="0">
             <div class="sales-recon-head"><span class="badge badge-info">BBConstruction</span><b>${fmtNum(bbcEx.n)} Vouchers</b><span class="sales-recon-act">Filter BBC Only</span></div>
             <div class="sales-recon-metrics">
               <span><small>Cash Exp.</small><b>${fmtUSD(bbcEx.cash, 2)}</b></span>
@@ -20170,7 +20716,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${th('expenses', 'Date', 'date')}${th('expenses', 'Co.', 'company')}${th('expenses', 'Category', 'category')}${th('expenses', 'Subcategory', 'subcategory')}${th('expenses', 'Supplier', 'supplier')}${th('expenses', 'Equipment', 'equipment')}${th('expenses', 'Method', 'method')}${th('expenses', 'Amount ($)', 'amount', 'r')}
+                ${th('expenses', 'Date', 'date')}${th('expenses', 'Co.', 'company')}${th('expenses', 'Category', 'category')}${th('expenses', 'Subcategory', 'subcategory')}${th('expenses', 'Item / Part', 'item_summary')}${th('expenses', 'Supplier', 'supplier')}${th('expenses', 'Equipment', 'equipment')}${th('expenses', 'Method', 'method')}${th('expenses', 'Amount ($)', 'amount', 'r')}
               </tr>
             </thead>
             <tbody>
@@ -20182,24 +20728,32 @@
                 const showQtyBadge = qtyVal > 0 && (isPend || isDieselRow || qtyVal !== 1);
                 const multiCnt = Number(x.item_count || 0);
                 const isStoredWh = Boolean(x.stored_in_warehouse);
+                const rawItemSum = String(x.item_summary || '').trim();
+                const primaryItem = rawItemSum ? rawItemSum.split(',')[0].replace(/\s*\([^)]*\)\s*$/, '').trim() : '';
+                const catItem = primaryItem ? catalogMap.get(norm(primaryItem)) : null;
+                const itemUom = (catItem && (catItem.uom || catItem.unit)) || (isDieselRow ? 'Litre' : 'Piece');
+                const itemCellHtml = rawItemSum
+                  ? `${multiCnt > 1 ? `<span class="badge badge-brass">${fmtNum(multiCnt)} Items</span> ` : ''}${relLink('items', primaryItem || rawItemSum, rawItemSum, true)}${multiCnt <= 1 && qtyVal > 0 ? ` <span class="badge badge-info">${fmtNum(qtyVal, qtyVal % 1 ? 2 : 0)} ${esc(itemUom)}</span>` : ''}`
+                  : (showQtyBadge ? `<span class="badge ${isPend ? 'badge-warn' : 'badge-info'}">${fmtNum(qtyVal, qtyVal % 1 ? 2 : 0)}${isDieselRow ? ' L' : ' qty'}</span>` : '<span class="mu">General</span>');
                 return `
                 <tr class="rrow" data-rkey="expenses" data-rid="${esc(x.id)}">
                   <td class="mono">${esc(recordDateDMY(x))}${appCell(x, 'expenses')}</td>
                   <td>${coBadge(x.company)}</td>
                   <td>${relLink('expense_categories', x.category, x.category, true)}</td>
-                  <td>${x.subcategory ? relLink('expense_subcategories', x.subcategory) : 'N/A'}${multiCnt > 1 ? ` <span class="badge badge-brass">${fmtNum(multiCnt)} Items</span>` : ''}${isStoredWh ? ` <span class="badge badge-ok">Warehouse (+Stock)</span>` : ''}${showQtyBadge && multiCnt <= 1 ? ` <span class="badge ${isPend ? 'badge-warn' : 'badge-info'}">${fmtNum(qtyVal, qtyVal % 1 ? 2 : 0)}${isDieselRow ? ' L' : ' qty'}</span>` : ''}${x.item_summary ? ` <span class="mu">· ${esc(x.item_summary)}</span>` : ''}${x.reference ? ` <span class="mu">· ${esc(x.reference)}</span>` : ''}</td>
+                  <td>${x.subcategory ? relLink('expense_subcategories', x.subcategory) : 'N/A'}${isStoredWh ? ` <span class="badge badge-ok">Warehouse (+Stock)</span>` : ''}${x.reference ? ` <span class="mu">· ${esc(x.reference)}</span>` : ''}</td>
+                  <td>${itemCellHtml}</td>
                   <td>${x.supplier ? relLink('suppliers', x.supplier) : 'N/A'}</td>
                   <td class="mono">${x.equipment ? relLink('equipment', x.equipment) : (isStoredWh ? '<span class="badge badge-ok">Warehouse</span>' : 'N/A')}</td>
                   <td>${methodBadge(x.method, sgn)}</td>
                   <td class="r">${isPend ? `<span class="badge badge-warn">Pending Price</span>${(canModifyData() || canEnterForm('expense')) ? ` <button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px;margin-left:4px" data-set-pending-price-id="${esc(x.id)}">Enter Price</button>` : ''}` : `<strong>${fmtUSD(sgn * Number(x.amount || 0), 2)}</strong>`}</td>
                 </tr>
               `;
-              }).join('') || emptyRow(8, periodEmptyMsg(SEED.records.expenses, 'expenses'))}
-              ${showMoreRow('expenses', expRows.length, 8)}
+              }).join('') || emptyRow(9, periodEmptyMsg(SEED.records.expenses, 'expenses'))}
+              ${showMoreRow('expenses', expRows.length, 9)}
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="7">
+                <td colspan="8">
                   <b>TOTAL (${fmtNum(expRows.length)} EXPENSES · Cash ${fmtUSD(sumCashExp, 2)} · Credit ${fmtUSD(sumCredExp, 2)})</b>
                 </td>
                 <td class="r"><b>${fmtUSD(sumExp, 2)}</b></td>
@@ -20211,7 +20765,7 @@
 
       ${expVisualsHtml}
 
-      <div class="panel-card" id="expCatPanel">
+      <div class="panel-card" id="expCatPanel" style="margin-bottom:14px">
         <div class="panel-head">
           <div class="panel-title"><span>EXPENSE BREAKDOWN BY CATEGORY &amp; COST CLASS (${fmtNum(expCatRows.length)} CATEGORIES)</span></div>
           <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
@@ -20260,6 +20814,144 @@
           </table>
         </div>
       </div>
+
+      <div class="panel-card" id="expItemsCatalogPanel" style="margin-bottom:14px">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="panel-title"><span>ITEMS &amp; SPARE PARTS CATALOG &amp; SPEND SUMMARY (${fmtNum(expCatalogFiltered.length)} ITEMS · LOCKED UNITS)</span></div>
+            <span class="ph-sub">Master catalog of purchased spare parts, filters, tires, oils, and tools with locked Unit of Measure (UoM), purchase spend, and live Warehouse stock</span>
+          </div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="warehouse">${ic('warehouse')} Warehouse</button>
+            <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="reg_products" data-univ-reg-key="items">Universal Catalog</button>
+            ${exportBtn('expItemsCatalogPanel', 'Items_Catalog_Spend_Summary')}
+            ${canEnterForm('item') ? `<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" data-open-modal="item">${ic('plus')} New Item</button>` : ''}
+            ${canEnterForm('expense') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11.5px" data-open-modal="expense">+ Buy Item (Expense)</button>' : ''}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${itemCatChip('all', `All Catalog Items (${expCatalogAll.length})`)}
+            ${itemCatChip('purchased', `Purchased in Period (${purchasedCatalogCnt})`)}
+            ${itemCatChip('spare_parts', `Spare Parts (${sparePartsCatCnt})`)}
+            ${itemCatChip('oils', `Oils & Lubricants (${oilsCatCnt})`)}
+            ${itemCatChip('tools', `Tools & Consumables (${toolsCatCnt})`)}
+            ${inWhCatCnt ? itemCatChip('in_wh', `In Warehouse Stock (${inWhCatCnt})`) : ''}
+          </div>
+        </div>
+        ${renderColFilterBar('exp_items_cat')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('exp_items_cat', 'Item / Part Name', 'name')}${th('exp_items_cat', 'Item Group', 'category')}${th('exp_items_cat', 'Locked Unit (UoM)', 'uom')}
+                ${th('exp_items_cat', 'Tickets', 'tickets', 'r')}${th('exp_items_cat', 'Qty Bought', 'total_qty', 'r')}${th('exp_items_cat', 'Avg Unit Cost ($)', 'avg_cost', 'r')}
+                ${th('exp_items_cat', 'On-Hand Stock', 'on_hand_qty', 'r')}${th('exp_items_cat', 'Total Spend ($)', 'total_usd', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownExpCatalog.map(it => {
+                const grpCls = /oil|lub/i.test(it.category) ? 'badge-info' : (/tool|consum/i.test(it.category) ? 'badge-neutral' : 'badge-brass');
+                return `
+                <tr class="rrow" data-rkey="items" data-rid="${esc(it.id)}">
+                  <td><strong>${relLink('items', it.name, it.name, true)}</strong></td>
+                  <td><span class="badge ${grpCls}">${esc(it.category)}</span></td>
+                  <td class="mono"><span class="badge badge-ok">${esc(it.uom)} · Locked</span></td>
+                  <td class="r">${fmtNum(it.tickets)}</td>
+                  <td class="r mono">${fmtNum(it.total_qty, it.total_qty % 1 ? 2 : 0)} ${esc(it.uom)}</td>
+                  <td class="r mono">${fmtUSD(it.avg_cost || it.default_cost || 0, 2)}</td>
+                  <td class="r mono">${it.on_hand_qty > 0.0001 ? `<span class="badge badge-ok">${fmtNum(it.on_hand_qty, it.on_hand_qty % 1 ? 2 : 0)} ${esc(it.uom)}</span>` : '<span class="mu">0</span>'}</td>
+                  <td class="r"><strong>${fmtUSD(it.total_usd, 2)}</strong></td>
+                </tr>`;
+              }).join('') || emptyRow(8, 'No catalog items match the active filter. Click "+ New Item" to register a spare part, filter, tire, or oil.')}
+              ${showMoreRow('exp_items_cat', expCatalogFiltered.length, 8)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3"><b>TOTAL (${fmtNum(expCatalogFiltered.length)} CATALOG ITEMS)</b></td>
+                <td class="r"><b>${fmtNum(sumCatTickets)}</b></td>
+                <td class="r"><b>${fmtNum(sumCatQty, sumCatQty % 1 ? 2 : 0)}</b></td>
+                <td></td>
+                <td class="r"><b>${fmtNum(sumCatOnHand, sumCatOnHand % 1 ? 2 : 0)}</b></td>
+                <td class="r"><b>${fmtUSD(sumCatSpend, 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel-card" id="expItemsTicketPanel">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="panel-title"><span>ITEMIZED EXPENSE TICKETS &amp; PART ALLOCATION LEDGER (${fmtNum(expItemFiltered.length)} ITEM TICKETS)</span></div>
+            <span class="ph-sub">Every single-item and multi-item expense ticket line with locked Unit of Measure, unit cost, and Equipment or Warehouse routing</span>
+          </div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${exportBtn('expItemsTicketPanel', 'Expense_Item_Tickets')}
+            ${canEnterForm('item') ? `<button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11.5px" data-open-modal="item">${ic('plus')} New Item</button>` : ''}
+            ${canEnterForm('expense') ? '<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" data-open-modal="expense">+ New Expense Ticket</button>' : ''}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${itemTktChip('all', `All Item Tickets (${expItemBase.length})`)}
+            ${itemTktChip('fleet', `For Equipment (${expItemFleetCnt})`)}
+            ${itemTktChip('warehouse', `Stored in Warehouse (${expItemWhCnt})`)}
+            ${itemTktChip('overhead', `Plant & General (${expItemOvCnt})`)}
+            ${itemTktChip('cash', 'Cash')}
+            ${itemTktChip('credit', 'Credit AP')}
+          </div>
+        </div>
+        ${renderColFilterBar('exp_item_tkts')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('exp_item_tkts', 'Date', 'date')}${th('exp_item_tkts', 'Co.', 'company')}${th('exp_item_tkts', 'Item / Part Name', 'item_name')}${th('exp_item_tkts', 'Group', 'category')}
+                ${th('exp_item_tkts', 'Supplier', 'supplier')}${th('exp_item_tkts', 'Destination / Equipment', 'equipment')}${th('exp_item_tkts', 'Qty & Unit', 'qty', 'r')}
+                ${th('exp_item_tkts', 'Unit Cost ($)', 'unit_cost', 'r')}${th('exp_item_tkts', 'Total ($)', 'total_cost', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownExpItems.map(r => {
+                const iname = String(r.item_name || r.name || 'Item').trim();
+                const catRec = catalogMap.get(norm(iname));
+                const lockedUom = (catRec && (catRec.uom || catRec.unit)) || r.uom || 'Piece';
+                const grp = (catRec && catRec.category) || normalizeItemCatalogCategory(r.category, iname);
+                const qty = Number(r.qty || 1);
+                const tot = Number(r.line_total != null ? r.line_total : (r.total_cost != null ? r.total_cost : (r.amount || 0)));
+                const uc = Number(r.unit_cost != null ? r.unit_cost : (qty > 0 ? tot / qty : tot));
+                const eqName = r.target_equipment || r.equipment || '';
+                const isWh = Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || ''));
+                const destHtml = isWh
+                  ? `<span class="badge badge-ok">Warehouse (+Stock)</span> <span class="mu">${esc(r.warehouse_location || r.location || 'Main Warehouse')}</span>`
+                  : (eqName ? relLink('equipment', eqName, eqName, true) : '<span class="mu">Plant &amp; General</span>');
+                return `
+                <tr class="rrow" data-rkey="expense_items" data-rid="${esc(r.id)}">
+                  <td class="mono">${esc(fmtDateDMY(r.date))}${appCell(r, 'expense_items')}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td><strong>${relLink('items', iname, iname, true)}</strong></td>
+                  <td>${esc(grp)}</td>
+                  <td>${r.supplier ? relLink('suppliers', r.supplier) : 'N/A'}</td>
+                  <td class="mono">${destHtml}</td>
+                  <td class="r mono"><strong>${fmtNum(qty, qty % 1 ? 2 : 0)}</strong> <span class="badge badge-info">${esc(lockedUom)}</span></td>
+                  <td class="r mono">${fmtUSD(uc, 2)}</td>
+                  <td class="r"><strong>${fmtUSD(tot, 2)}</strong></td>
+                </tr>`;
+              }).join('') || emptyRow(9, 'No itemized expense tickets match the active filter.')}
+              ${showMoreRow('exp_item_tkts', expItemFiltered.length, 9)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>TOTAL (${fmtNum(expItemFiltered.length)} ITEMIZED TICKET LINES)</b></td>
+                <td class="r"><b>${fmtNum(sumItemTktQty, sumItemTktQty % 1 ? 2 : 0)}</b></td>
+                <td></td>
+                <td class="r"><b>${fmtUSD(sumItemTktUsd, 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
     `;
   }
 
@@ -20267,6 +20959,7 @@
   // VIEW 09A: WAREHOUSE (STORED SPARE PARTS, OILS & REPAIR CONSUMPTION LEDGER)
   // ==========================================================================
   function renderWarehouse() {
+    ensureItemsCatalogSeeded();
     const wh = getWarehouseIndex();
     const q = String(STATE.search || '').trim().toLowerCase();
     const matchQ = vals => !q || vals.filter(Boolean).join(' ').toLowerCase().includes(q);
@@ -20308,6 +21001,40 @@
     }), 'whmoves', 'date', 'desc');
     const shownMoves = movesFiltered.slice(0, shownCount('whmoves'));
 
+    // Universal Items Catalog table on Warehouse (#warehouseCatalogPanel)
+    const whByItemKey = new Map((wh.items || []).map(w => [norm(w.item_name), w]));
+    const whCatBase = (SEED.records.items || []).filter(it => {
+      if (!it || it.voided) return false;
+      const nm = String(it.name || it.item_name || '').trim();
+      if (!nm || isTransportRentalItemName(nm)) return false;
+      return matchQ([nm, it.category, it.uom || it.unit, it.default_location || it.location, it.status]);
+    }).map(it => {
+      const nm = String(it.name || it.item_name || '').trim();
+      const wItem = whByItemKey.get(norm(nm));
+      return {
+        id: it.id || nm,
+        name: nm,
+        category: it.category || normalizeItemCatalogCategory('', nm),
+        uom: it.uom || it.unit || 'Piece',
+        default_cost: Number(it.default_cost ?? it.unit_cost ?? (wItem && wItem.avgUnitCost) ?? 0),
+        default_location: it.default_location || it.location || (wItem && wItem.location) || 'Main Warehouse',
+        min_stock: Number(it.min_stock || 0),
+        on_hand_qty: wItem ? Number(wItem.onHandQty || 0) : 0,
+        on_hand_val: wItem ? Number(wItem.onHandValue || 0) : 0,
+        status: it.status || 'Active'
+      };
+    });
+    const whCatChipKey = STATE.whCatFilter || 'all';
+    const whCatChip = (key, label) => `<button type="button" class="filter-chip ${whCatChipKey === key ? 'active' : ''}" data-wh-cat-chip="${esc(key)}">${label}</button>`;
+    const whCatFiltered = sortRows(whCatBase.filter(it => {
+      if (whCatChipKey === 'spare_parts') return /spare|part/i.test(it.category);
+      if (whCatChipKey === 'oils') return /oil|lub/i.test(it.category);
+      if (whCatChipKey === 'tools') return /tool|consum/i.test(it.category);
+      if (whCatChipKey === 'in_stock') return it.on_hand_qty > 0.0001;
+      return true;
+    }), 'whcatalog', 'default_cost', 'desc');
+    const shownWhCat = whCatFiltered.slice(0, shownCount('whcatalog'));
+
     const usedSkusCount = wh.items.filter(it => it.repairsUsedIn.length > 0 || it.usedInRepairsQty > 0).length;
     const totStockedIn = itemsFiltered.reduce((a, it) => a + Number(it.stockedInQty || 0), 0);
     const totUsedOut = itemsFiltered.reduce((a, it) => a + Number(it.usedInRepairsQty || 0) + Number(it.usedInOilQty || 0) + Number(it.adjustedOutQty || 0), 0);
@@ -20321,6 +21048,10 @@
     const canPostRep = canEnterForm('repair');
     const hasWhActions = canPostWh || canPostRep;
 
+    const whVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderWarehouseVisualsSection === 'function')
+      ? window.MFG_PBI.renderWarehouseVisualsSection({ wh, items: itemsFiltered, movements: movesFiltered, catalogItems: whCatBase })
+      : '';
+
     return `
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
@@ -20330,12 +21061,12 @@
         <div class="cockpit-pills insight-grid">
           ${insightCard({
             label: 'Stored SKUs in Stock',
-            badge: wh.lowStockCount > 0 ? `${fmtNum(wh.lowStockCount)} Reorder Alert` : `${fmtNum(wh.totalSkus)} Tracked SKUs`,
+            badge: wh.lowStockCount > 0 ? `${fmtNum(wh.lowStockCount)} Reorder Alert` : `${fmtNum(whCatBase.length)} Catalog Items`,
             badgeCls: wh.lowStockCount > 0 ? 'warn' : 'emerald',
             val: `${fmtNum(wh.totalSkusInStock)} <small>Active SKUs</small>`,
             valCls: 'emerald',
             pct: wh.totalSkus > 0 ? Math.min(100, Math.round((wh.totalSkusInStock / wh.totalSkus) * 100)) : 100,
-            sub: `Increases when expense items are stored · Decreases when used in repairs`,
+            sub: `<b>${fmtNum(whCatBase.length)}</b> catalog items with locked UoM · <span class="insight-drill" data-scroll-panel="warehouseCatalogPanel">Items Catalog ↓</span>`,
             tone: 'emerald'
           })}
           ${insightCard({
@@ -20413,7 +21144,7 @@
                   : '<span class="mu">Unused in repairs</span>';
                 return `
                   <tr class="${latestMv ? 'rrow' : ''}" ${latestMv ? `data-rkey="${esc(latestMv.rkey)}" data-rid="${esc(latestMv.id)}"` : ''}>
-                    <td><strong>${esc(it.item_name)}</strong> <span class="mu">(${esc(it.uom)})</span></td>
+                    <td><strong>${relLink('items', it.item_name, it.item_name, true)}</strong> <span class="mu">(${esc(it.uom)})</span></td>
                     <td>${esc(it.category || 'Spare Parts')}</td>
                     <td>${esc(it.location || 'Main Warehouse')}</td>
                     <td class="r mono" style="color:var(--good)">+${fmtNum(it.stockedInQty, it.stockedInQty % 1 ? 2 : 0)}</td>
@@ -20443,8 +21174,10 @@
         </div>
       </div>
 
+      ${whVisualsHtml}
+
       <!-- 2nd Panel: Chronological Warehouse Stock Movements (+IN / -OUT) -->
-      <div class="panel-card" id="warehouseMovesPanel">
+      <div class="panel-card" id="warehouseMovesPanel" style="margin-bottom:14px">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div class="panel-title"><span>WAREHOUSE STOCK MOVEMENTS LEDGER (${fmtNum(movesFiltered.length)} MOVEMENTS)</span></div>
           <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -20481,7 +21214,7 @@
                     <td class="mono">${refHtml}</td>
                     <td>${coBadge(m.company)}</td>
                     <td><span class="badge ${mvCls}">${esc(mvLbl)}</span></td>
-                    <td><strong>${esc(m.item_name)}</strong></td>
+                    <td><strong>${relLink('items', m.item_name, m.item_name, true)}</strong></td>
                     <td>${m.equipment ? relLink('equipment', m.equipment, m.equipment, true) : esc(m.location || 'Main Warehouse')}</td>
                     <td class="r mono" style="color:${isIn ? 'var(--good)' : 'var(--warn)'}"><strong>${isIn ? '+' : ''}${fmtNum(m.signedQty, m.signedQty % 1 ? 2 : 0)} ${esc(m.uom)}</strong></td>
                     <td class="r mono">${fmtNum(m.balanceAfter, m.balanceAfter % 1 ? 2 : 0)} ${esc(m.uom)}</td>
@@ -20497,6 +21230,68 @@
                 <td class="r"><b>${movesNetQty >= 0 ? '+' : ''}${fmtNum(movesNetQty, movesNetQty % 1 ? 2 : 0)}</b></td>
                 <td></td>
                 <td class="r"><b>${fmtUSD(movesGrossVal, 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- 3rd Panel: Universal Items & Spare Parts Catalog (Locked UoM & Reorder Thresholds) -->
+      <div class="panel-card" id="warehouseCatalogPanel">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="panel-title"><span>UNIVERSAL ITEMS &amp; SPARE PARTS CATALOG (${fmtNum(whCatFiltered.length)} ITEMS · LOCKED UOM)</span></div>
+            <span class="ph-sub">Master items registry with locked Unit of Measure (UoM), default shelf location, reorder alert threshold, and 1-click stock adjustment</span>
+          </div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${exportBtn('warehouseCatalogPanel', 'Warehouse_Items_Catalog')}
+            ${canEnterForm('item') ? `<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" data-open-modal="item">${ic('plus')} New Item (Catalog)</button>` : ''}
+            ${canPostWh ? `<button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11.5px" data-open-modal="warehousestock">${ic('warehouse')} Shelf Adjust (+/-)</button>` : ''}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${whCatChip('all', `All Catalog Items (${whCatBase.length})`)}
+            ${whCatChip('spare_parts', `Spare Parts (${whCatBase.filter(r => /spare|part/i.test(r.category)).length})`)}
+            ${whCatChip('oils', `Oils & Lubricants (${whCatBase.filter(r => /oil|lub/i.test(r.category)).length})`)}
+            ${whCatChip('tools', `Tools & Consumables (${whCatBase.filter(r => /tool|consum/i.test(r.category)).length})`)}
+            ${whCatChip('in_stock', `In Stock > 0 (${whCatBase.filter(r => r.on_hand_qty > 0.0001).length})`)}
+          </div>
+        </div>
+        ${renderColFilterBar('whcatalog')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('whcatalog', 'Item / Part Name', 'name')}${th('whcatalog', 'Item Group', 'category')}${th('whcatalog', 'Locked Unit (UoM)', 'uom')}
+                ${th('whcatalog', 'Default Shelf Location', 'default_location')}${th('whcatalog', 'Min Stock Alert', 'min_stock', 'r')}
+                ${th('whcatalog', 'Default / Avg Cost ($)', 'default_cost', 'r')}${th('whcatalog', 'Live On-Hand', 'on_hand_qty', 'r')}${th('whcatalog', 'Status', 'status')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownWhCat.map(it => {
+                const grpCls = /oil|lub/i.test(it.category) ? 'badge-info' : (/tool|consum/i.test(it.category) ? 'badge-neutral' : 'badge-brass');
+                return `
+                  <tr class="rrow" data-rkey="items" data-rid="${esc(it.id)}">
+                    <td><strong>${relLink('items', it.name, it.name, true)}</strong></td>
+                    <td><span class="badge ${grpCls}">${esc(it.category)}</span></td>
+                    <td class="mono"><span class="badge badge-ok">${esc(it.uom)} · Locked</span></td>
+                    <td>${esc(it.default_location)}</td>
+                    <td class="r mono">${it.min_stock > 0 ? `${fmtNum(it.min_stock)} ${esc(it.uom)}` : '0'}</td>
+                    <td class="r mono">${fmtUSD(it.default_cost, 2)}</td>
+                    <td class="r mono">${it.on_hand_qty > 0.0001 ? `<span class="badge badge-ok">${fmtNum(it.on_hand_qty, it.on_hand_qty % 1 ? 2 : 0)} ${esc(it.uom)}</span>` : '<span class="mu">0</span>'}</td>
+                    <td><span class="badge badge-ok">${esc(it.status)}</span></td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(8, 'No catalog items match the active filter.')}
+              ${showMoreRow('whcatalog', whCatFiltered.length, 8)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="5"><b>TOTAL (${fmtNum(whCatFiltered.length)} CATALOG ITEMS · LOCKED UOM)</b></td>
+                <td class="r"><b>Avg ${fmtUSD(whCatFiltered.length ? whCatFiltered.reduce((a, r) => a + r.default_cost, 0) / whCatFiltered.length : 0, 2)}</b></td>
+                <td class="r"><b>${fmtNum(whCatFiltered.reduce((a, r) => a + r.on_hand_qty, 0), 0)}</b></td>
+                <td></td>
               </tr>
             </tfoot>
           </table>
@@ -23744,6 +24539,20 @@
 
     if (subMode === 'contracts') {
       const reimbEmpCount = empAll.filter(e => empContractReimbUsd(e, fxRate) > 0 || empContractDedUsd(e, fxRate) > 0).length;
+      const flRowsAll = filterRecords(SEED.records.freelance_entries || []);
+      const flSorted = sortRows(flRowsAll, 'pay_fl', 'date', 'desc');
+      const flShown = flSorted.slice(0, shownCount('pay_fl'));
+      const totFlHrs = flRowsAll.reduce((a, f) => a + Number(f.hours || 0), 0);
+      const totFlOt = flRowsAll.reduce((a, f) => a + Number(f.extra_hours || 0), 0);
+      const totFlUsd = flRowsAll.reduce((a, f) => a + Number(f.total != null ? f.total : (Number(f.hours || 0) * Number(f.rate_usd || 0))), 0);
+      const contractsVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderContractsVisualsSection === 'function')
+        ? window.MFG_PBI.renderContractsVisualsSection({
+            empAll: filteredEmp,
+            otRates,
+            freelanceRows: flRowsAll,
+            fxRate
+          })
+        : '';
       return `
         ${bannerHtml}
         <div class="panel-card" id="payEmpPanel">
@@ -23762,6 +24571,7 @@
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_allowances">Site Transport (${fmtNum(logAll.length)})</button>
               ${exportBtn('payEmpPanel', 'Employment_Contracts')}
+              ${canEnterForm('freelance') ? '<button type="button" class="btn btn-brass" data-open-modal="freelance">+ Freelance / Daily</button>' : ''}
               ${canEnterForm('employment') ? '<button type="button" class="btn btn-primary" data-open-modal="employment">+ New Contract</button>' : ''}
             </div>
           </div>
@@ -23802,6 +24612,8 @@
           </div>
         </div>
 
+        ${contractsVisualsHtml}
+
         <div class="panel-card" id="payOtRatesPanel">
           <div class="panel-head">
             <div class="panel-title"><span>DRIVER TRIP &amp; NIGHT OVERTIME RATES BY REGION (${fmtNum(otRates.length)} RULES)</span></div>
@@ -23827,6 +24639,48 @@
                   <td colspan="3"><b>TOTAL (${fmtNum(otRates.length)} OVERTIME RULES)</b></td>
                   <td class="r"><b>Avg ${fmtUSD(otRates.length ? otRates.reduce((a, r) => a + Number(r.amount != null ? r.amount : r.usd_amount || 0), 0) / otRates.length : 0, 2)}</b></td>
                   <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel-card" id="payFreelancePanel">
+          <div class="panel-head">
+            <div class="panel-title"><span>FREELANCE &amp; DAILY WORK ENTRIES LEDGER (${fmtNum(flRowsAll.length)} ENTRIES)</span></div>
+            <span class="panel-meta">${exportBtn('payFreelancePanel', 'Freelance_Daily_Entries')} ${canEnterForm('freelance') ? '<button type="button" class="btn btn-primary" style="padding:3px 9px;font-size:11px" data-open-modal="freelance">+ Freelance / Daily</button>' : ''}</span>
+          </div>
+          ${renderColFilterBar('pay_fl')}
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead><tr>${th('pay_fl', 'Date', 'date')}${th('pay_fl', 'Voucher', 'name')}${th('pay_fl', 'Co.', 'company')}${th('pay_fl', 'Staff / Contractor', 'staff')}${th('pay_fl', 'Site', 'site')}${th('pay_fl', 'Hours / Days', 'hours', 'r')}${th('pay_fl', 'OT Hrs', 'extra_hours', 'r')}${th('pay_fl', 'Rate ($)', 'rate_usd', 'r')}${th('pay_fl', 'Total ($)', 'total', 'r')}${th('pay_fl', 'Notes', 'notes')}</tr></thead>
+              <tbody>
+                ${flShown.map(f => {
+                  const rowTot = Number(f.total != null ? f.total : (Number(f.hours || 0) * Number(f.rate_usd || 0)));
+                  return `
+                  <tr class="rrow" data-rkey="freelance_entries" data-rid="${esc(f.id || f.name)}">
+                    <td class="mono">${esc(recordDateDMY(f))}${appCell(f, 'freelance_entries')}</td>
+                    <td class="mono"><strong>${esc(f.name || f.id || '—')}</strong></td>
+                    <td>${coBadge(f.company || 'WTC')}</td>
+                    <td><strong>${relLink('employments', f.staff, f.staff, true)}</strong></td>
+                    <td>${f.site ? relLink('sites', f.site) : '—'}</td>
+                    <td class="r">${fmtNum(f.hours || 0, 1).replace(/\.0$/, '')}</td>
+                    <td class="r">${Number(f.extra_hours || 0) > 0 ? fmtNum(f.extra_hours, 1).replace(/\.0$/, '') : '—'}</td>
+                    <td class="r">${fmtUSD(f.rate_usd || 0, 2)}</td>
+                    <td class="r"><strong>${fmtUSD(rowTot, 2)}</strong></td>
+                    <td class="mu">${esc(f.notes || '—')}</td>
+                  </tr>`;
+                }).join('') || emptyRow(10, 'No freelance or daily work entries in selected scope — click "+ Freelance / Daily" to log casual or contractor work')}
+                ${showMoreRow('pay_fl', flRowsAll.length, 10)}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="5"><b>TOTAL (${fmtNum(flRowsAll.length)} FREELANCE ENTRIES)</b></td>
+                  <td class="r"><b>${fmtNum(totFlHrs, 1).replace(/\.0$/, '')}</b></td>
+                  <td class="r"><b>${fmtNum(totFlOt, 1).replace(/\.0$/, '')}</b></td>
+                  <td></td>
+                  <td class="r"><b>${fmtUSD(totFlUsd, 2)}</b></td>
+                  <td></td>
                 </tr>
               </tfoot>
             </table>
@@ -31334,8 +32188,10 @@
               </button>
             </div>
           </div>
-          <span class="badge badge-brass" id="tktDispBookSummaryBadge">25-Ticket Pad Active</span>
+          <span class="badge badge-brass" id="tktDispBookSummaryBadge" data-toggle-modal-book-grid="1" style="cursor:pointer" title="Click to inspect the 25-Ticket Pad Book &amp; Weighbridge Series Connection">25-Ticket Pad Active</span>
         </div>
+        <div id="tktSeriesConnBar" class="tkt-series-conn-bar"></div>
+        <div id="ticketDispBookGridDrawer" class="tkt-book-grid-drawer" hidden></div>
 
         <div class="origin-site-drawer" id="ticketDispReturnDrawer" hidden style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px">
@@ -31408,6 +32264,210 @@
     `;
   }
 
+  function syncTicketSeriesFieldBar(side, sCtx) {
+    const connBar = $('tktSeriesConnBar');
+    const fldBar = $('tktSeriesFieldBar');
+    const gridDrawer = $('ticketDispBookGridDrawer');
+    if (!sCtx) {
+      if (connBar) connBar.innerHTML = '';
+      if (fldBar) fldBar.innerHTML = '';
+      if (gridDrawer) { gridDrawer.hidden = true; gridDrawer.innerHTML = ''; }
+      return;
+    }
+
+    if (!sCtx.rawNo) {
+      const seriesList = sCtx.activeSeries || [];
+      if (connBar) {
+        if (seriesList.length > 0) {
+          connBar.innerHTML = `
+            <div class="tkt-series-row">
+              <div class="tkt-series-head">
+                <span class="tkt-series-lbl">${ic('check_circle')} Active ${esc(sCtx.company)} Weighbridge Pad Series (Click to continue sequence):</span>
+                <button type="button" class="tkt-series-step-btn" data-open-ticket-books-table="1">${ic('table')} 25-Ticket Books Table (${sCtx.totalCompanyBooks || 0})</button>
+              </div>
+              <div class="tkt-series-pills">
+                ${seriesList.map(ser => `
+                  <button type="button" class="tkt-series-quick-btn" data-pick-series-ticket="${esc(ser.nextTicketNo)}">
+                    <span class="tkt-sq-next">Next #${esc(ser.nextTicketNo)}</span>
+                    <span class="tkt-sq-meta">Book ${esc(ser.bookRangeLabel)} (${ser.enteredCount}/25 Used) · Prev #${esc(ser.lastTicketNo)} (${esc(ser.lastDocType)} · ${esc(ser.lastDateDMY)}) · <b>${esc(ser.lastParty)}</b>${ser.lastProduct ? ' · ' + esc(ser.lastProduct) : ''}</span>
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        } else {
+          connBar.innerHTML = '';
+        }
+      }
+      if (fldBar) {
+        if (seriesList.length > 0) {
+          fldBar.innerHTML = `
+            <div class="tkt-field-series-strip">
+              <span class="tkt-field-series-lbl">Continue Series:</span>
+              ${seriesList.slice(0, 3).map(ser => `
+                <button type="button" class="tkt-series-step-btn" data-pick-series-ticket="${esc(ser.nextTicketNo)}">
+                  Next #${esc(ser.nextTicketNo)} <small>(after #${esc(ser.lastTicketNo)} · ${ser.enteredCount}/25)</small>
+                </button>
+              `).join('')}
+              <button type="button" class="tkt-series-step-btn" data-open-ticket-books-table="1">${ic('table')} 25-Ticket Books (${sCtx.totalCompanyBooks || 0})</button>
+            </div>
+          `;
+        } else {
+          fldBar.innerHTML = '';
+        }
+      }
+      if (gridDrawer) {
+        gridDrawer.hidden = true;
+        gridDrawer.innerHTML = '';
+      }
+      return;
+    }
+
+    if (!sCtx.isPadSerial) {
+      if (connBar) {
+        connBar.innerHTML = `
+          <div class="tkt-series-row">
+            <span class="badge badge-neutral">External Reference #${esc(sCtx.rawNo)} (Outside 25-Ticket Pad Series)</span>
+            <button type="button" class="tkt-series-step-btn" data-open-ticket-books-table="1">${ic('table')} 25-Ticket Books Table (${sCtx.totalCompanyBooks || 0})</button>
+          </div>
+        `;
+      }
+      if (fldBar) fldBar.innerHTML = '';
+      if (gridDrawer) { gridDrawer.hidden = true; gridDrawer.innerHTML = ''; }
+      return;
+    }
+
+    const bookRangeLbl = `#${sCtx.prefix}${sCtx.bs}-${sCtx.prefix}${sCtx.be}`;
+    const countLbl = sCtx.alreadyInBook
+      ? `${sCtx.enteredInBook}/25 Used in Book`
+      : `${sCtx.enteredInBook}/25 Used (${sCtx.countAfterThis}/25 with #${sCtx.rawNo})`;
+
+    let connStatusHtml = '';
+    if (sCtx.bridgesGap && sCtx.prevTicket && sCtx.nextTicket) {
+      connStatusHtml = `<span class="badge badge-ok">Fills Skipped Slot #${esc(sCtx.rawNo)} (Between #${esc(sCtx.prevTicket.ticket_no)} &amp; #${esc(sCtx.nextTicket.ticket_no)})</span>`;
+    } else if (sCtx.isDirectNext && !sCtx.alreadyInBook && sCtx.prevTicket) {
+      connStatusHtml = `<span class="badge badge-ok">Weighbridge Connected (+1 after #${esc(sCtx.prevTicket.ticket_no)})</span>`;
+    } else if (sCtx.isDirectNext && sCtx.alreadyInBook && sCtx.prevTicket) {
+      connStatusHtml = `<span class="badge badge-brass">Connected Sequence (+1 after #${esc(sCtx.prevTicket.ticket_no)} · Slot ${sCtx.slotInBook}/25 Recorded)</span>`;
+    } else if (sCtx.gapCount > 0 && sCtx.prevTicket) {
+      const nextSeqNo = sCtx.prefix + String(sCtx.prevTicket.num + 1);
+      connStatusHtml = `
+        <span class="badge badge-warn">Gap of ${sCtx.gapCount} Ticket${sCtx.gapCount === 1 ? '' : 's'} (#${sCtx.gapStart}${sCtx.gapEnd > sCtx.gapStart ? '-#' + sCtx.gapEnd : ''} unentered after #${esc(sCtx.prevTicket.ticket_no)})</span>
+        <button type="button" class="tkt-series-step-btn is-fix" data-pick-series-ticket="${esc(nextSeqNo)}">Use Next #${esc(nextSeqNo)}</button>
+      `;
+    } else if (!sCtx.prevTicket && sCtx.slotInBook === 1) {
+      connStatusHtml = `<span class="badge badge-ok">Starts New 25-Ticket Book (${esc(bookRangeLbl)} · Slot 1/25)</span>`;
+    } else if (!sCtx.prevTicket) {
+      connStatusHtml = `<span class="badge badge-warn">Starts at Slot ${sCtx.slotInBook}/25 (Slots #${sCtx.bs}-#${sCtx.num - 1} not entered in this book)</span>`;
+    }
+
+    const prevTkt = sCtx.prevTicket;
+    const nextTkt = sCtx.nextTicket;
+    const prevDispBadge = String((prevTkt && prevTkt.dispBadge) || 'Active');
+    const prevDetailHtml = prevTkt
+      ? `<span class="tkt-prev-series-item"><b>Prev in Series: #${esc(prevTkt.ticket_no)}</b> <span class="badge ${prevDispBadge === 'Removed' ? 'badge-neutral' : (prevDispBadge.startsWith('Returned') ? 'badge-warn' : 'badge-ok')}" style="font-size:10px;padding:1px 6px">${esc(prevTkt.docType)}${prevDispBadge !== 'Active' ? ' · ' + esc(prevDispBadge) : ''}</span> · ${esc(prevTkt.dateDMY)} · <b>${esc(prevTkt.party)}</b>${prevTkt.product ? ' · ' + esc(prevTkt.product) : ''}${prevTkt.qty > 0 ? ' (' + fmtNum(prevTkt.qty, 1) + ' ' + esc(prevTkt.uom) + ')' : ''}${prevTkt.truck ? ' · Truck ' + esc(prevTkt.truck) : ''}</span>`
+      : `<span class="tkt-prev-series-item muted"><b>Prev in Series:</b> None recorded before #${esc(sCtx.rawNo)} in Book ${esc(bookRangeLbl)}</span>`;
+
+    const nextDetailHtml = nextTkt
+      ? `<span class="tkt-next-series-item"><b>Next in Series: #${esc(nextTkt.ticket_no)}</b> (${esc(nextTkt.docType)} · ${esc(nextTkt.dateDMY)} · <b>${esc(nextTkt.party)}</b>${nextTkt.product ? ' · ' + esc(nextTkt.product) : ''})</span>`
+      : '';
+
+    const prevStepNo = sCtx.num > 1 ? (sCtx.prefix + String(sCtx.num - 1)) : '';
+    const nextStepNo = sCtx.prefix + String(sCtx.num + 1);
+    const stepBtnsHtml = `
+      <div class="tkt-series-actions">
+        ${prevStepNo ? `<button type="button" class="tkt-series-step-btn" data-pick-series-ticket="${esc(prevStepNo)}">-1 (#${esc(prevStepNo)})</button>` : ''}
+        <button type="button" class="tkt-series-step-btn" data-pick-series-ticket="${esc(nextStepNo)}">+1 (#${esc(nextStepNo)})</button>
+        ${side !== 'fuel' ? `<button type="button" class="tkt-series-step-btn${FORM_UI.ticketBookGridOpen ? ' active' : ''}" data-toggle-modal-book-grid="1">${ic('table')} ${FORM_UI.ticketBookGridOpen ? 'Hide' : 'View'} 25-Book (${sCtx.enteredInBook}/25)</button>` : ''}
+        <button type="button" class="tkt-series-step-btn" data-open-ticket-books-table="1">${ic('check_circle')} 25-Ticket Books Table</button>
+      </div>
+    `;
+
+    if (connBar) {
+      connBar.innerHTML = `
+        <div class="tkt-series-connected-box">
+          <div class="tkt-series-top-line">
+            <div class="tkt-series-badges">
+              <span class="badge badge-brass">Book ${esc(bookRangeLbl)} · Slot ${sCtx.slotInBook}/25 (#${esc(sCtx.rawNo)})</span>
+              <span class="badge ${sCtx.enteredInBook === 25 ? 'badge-ok' : 'badge-brass'}">${esc(countLbl)}</span>
+              ${connStatusHtml}
+            </div>
+            ${stepBtnsHtml}
+          </div>
+          <div class="tkt-series-neighbor-line">
+            ${prevDetailHtml}
+            ${nextDetailHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    if (fldBar) {
+      fldBar.innerHTML = `
+        <div class="tkt-field-connected-strip">
+          <div class="tkt-field-conn-main">
+            <span class="badge badge-brass">Book ${esc(bookRangeLbl)} · Slot ${sCtx.slotInBook}/25 · ${esc(countLbl)}</span>
+            ${connStatusHtml}
+            ${prevDetailHtml}
+            ${nextDetailHtml}
+          </div>
+          <div class="tkt-field-conn-steps">
+            ${prevStepNo ? `<button type="button" class="tkt-series-step-btn" data-pick-series-ticket="${esc(prevStepNo)}">-1 (#${esc(prevStepNo)})</button>` : ''}
+            <button type="button" class="tkt-series-step-btn" data-pick-series-ticket="${esc(nextStepNo)}">+1 (#${esc(nextStepNo)})</button>
+            ${side !== 'fuel' ? `<button type="button" class="tkt-series-step-btn${FORM_UI.ticketBookGridOpen ? ' active' : ''}" data-toggle-modal-book-grid="1">${FORM_UI.ticketBookGridOpen ? 'Hide' : 'View'} 25-Book (${sCtx.enteredInBook}/25)</button>` : ''}
+            <button type="button" class="tkt-series-step-btn" data-open-ticket-books-table="1">25-Ticket Books</button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (gridDrawer) {
+      if (!FORM_UI.ticketBookGridOpen) {
+        gridDrawer.hidden = true;
+        gridDrawer.innerHTML = '';
+      } else {
+        gridDrawer.hidden = false;
+        gridDrawer.innerHTML = `
+          <div class="tkt-book-grid-head">
+            <div>
+              <strong>25-Ticket Pad Book ${esc(bookRangeLbl)} (${esc(sCtx.company)}) · ${sCtx.enteredInBook}/25 Tickets Recorded</strong>
+              <span class="muted" style="margin-left:8px;font-size:11.5px">Click any slot below to jump to that ticket # in this 25-ticket pad</span>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <button type="button" class="tkt-series-step-btn" data-open-ticket-books-table="1">${ic('table')} Open Full 25-Ticket Books Table</button>
+              <button type="button" class="tkt-series-step-btn" data-toggle-modal-book-grid="1">× Close Book Grid</button>
+            </div>
+          </div>
+          <div class="tkt-slot-grid">
+            ${(sCtx.slots || []).map(sl => {
+              const r = sl.rec;
+              const isCur = sl.num === sCtx.num;
+              const stLabel = sl.status === 'removed'
+                ? 'Removed (0 KM)'
+                : (sl.status === 'returned'
+                  ? 'Return (2x KM)'
+                  : (sl.status === 'entered'
+                    ? (r ? r.docType : 'Recorded')
+                    : (sl.status === 'current_new'
+                      ? 'Current Entry'
+                      : (sl.status === 'missing_gap' ? 'Skipped Gap' : 'Open Slot'))));
+              return `
+                <button type="button" class="tkt-slot-cell status-${esc(sl.status)}${isCur ? ' is-current' : ''}" data-pick-series-ticket="${esc(sCtx.prefix + String(sl.num))}">
+                  <div class="tkt-slot-top">
+                    <span class="tkt-slot-num">#${sl.num}</span>
+                    <span class="tkt-slot-idx">${sl.slotIndex}/25</span>
+                  </div>
+                  <div class="tkt-slot-status">${esc(stLabel)}</div>
+                  <div class="tkt-slot-party">${r ? esc(r.party || r.product || 'Recorded') : (isCur ? 'Typing now' : 'Available')}</div>
+                </button>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }
+    }
+  }
+
   function syncTicketDispositionUI(side, originObj) {
     const bar = $('wrap_f_ticket_disp_bar');
     if (!bar) return { mode: 'standard', subMode: 'pair', oneWayKm: 0, roundTripKm: 0 };
@@ -31437,17 +32497,22 @@
 
     const company = val('f_company') || defaultEntryCompany();
     const rawNo = val('f_ticketno');
-    const m = rawNo.match(/^(.*?)(\d+)$/);
-    const prefix = m ? m[1].trim() : '';
-    const digits = m ? m[2] : '';
-    const num = digits ? parseInt(digits, 10) : null;
-    const isPadSerial = Boolean(num && num > 0 && num < 1000000 && digits.length <= 6);
-    const bs = isPadSerial ? (Math.floor((num - 1) / 25) * 25 + 1) : null;
-    const be = bs != null ? (bs + 24) : null;
-    const slotInBook = bs != null ? ((num - bs) + 1) : null;
+    const effRefDate = (FORM_UI.showRepDate && val('f_repdate')) ? val('f_repdate') : val('f_date');
+    const sCtx = resolveWeighbridgeSeriesContext(company, rawNo, effRefDate, side);
+    const prefix = sCtx.prefix || '';
+    const isPadSerial = sCtx.isPadSerial;
+    const bs = sCtx.bs;
+    const be = sCtx.be;
+    const slotInBook = sCtx.slotInBook;
+    const bookCountShort = bs != null
+      ? (sCtx.alreadyInBook ? `${sCtx.enteredInBook}/25 in Book` : `${sCtx.enteredInBook}/25 (${sCtx.countAfterThis}/25 with #${rawNo})`)
+      : '';
+    const prevShort = bs != null && sCtx.prevTicket
+      ? ` · Prev #${sCtx.prevTicket.ticket_no}`
+      : '';
     const bookText = bs != null
-      ? `Book #${prefix}${bs}-${prefix}${be} · Slot ${slotInBook}/25 (#${rawNo})`
-      : (rawNo ? `Ticket #${rawNo} (External Ref)` : 'Enter Ticket # to verify 25-Ticket Book');
+      ? `Book #${prefix}${bs}-${prefix}${be} · Slot ${slotInBook}/25 (#${rawNo}) · ${bookCountShort}${prevShort}`
+      : (rawNo ? `Ticket #${rawNo} (External Ref)` : (sCtx.activeSeries && sCtx.activeSeries.length ? `25-Ticket Pad Active · Next #${sCtx.activeSeries[0].nextTicketNo} (${sCtx.activeSeries[0].enteredCount}/25 in Book ${sCtx.activeSeries[0].bookRangeLabel})` : '25-Ticket Pad Active'));
 
     const bookBadge = $('tktDispBookSummaryBadge');
     if (bookBadge) {
@@ -31455,7 +32520,7 @@
         ? (bs != null ? `${bookText} · Removed (0 KM)` : 'Remove Slip · 0 KM · Keep Serial in Book')
         : (mode === 'return_wtc'
           ? (bs != null ? `${bookText} · Returned (2x KM)` : 'Returned Load · Round-Trip 2x KM')
-          : (bs != null ? bookText : '25-Ticket Pad Active'));
+          : bookText);
       bookBadge.className = 'badge ' + (mode === 'remove_slip' ? 'badge-neutral' : (mode === 'return_wtc' ? 'badge-warn' : 'badge-brass'));
     }
 
@@ -31465,6 +32530,8 @@
         ? `${bookText} Accounted For`
         : (rawNo ? `Ticket #${rawNo} Accounted For` : 'Enter pad Ticket # below (e.g. 12504)');
     }
+
+    syncTicketSeriesFieldBar(side, sCtx);
 
     const orig = originObj || syncOriginDispatchUI(side, false);
     const siteName = val('f_site');
@@ -31661,7 +32728,7 @@
             ['Company fleet', 'Company fleet (Own Truck)'],
             ['Third-party truck', 'Third-party truck (Hauler)']
           ], 'Company fleet'), { id: 'wrap_f_transportby', hidden: true })}
-          ${fld('Ticket / Invoice No. *', inp('f_ticketno', 'text', '', 'inputmode="numeric" placeholder="Enter pad ticket no."'), { id: 'wrap_f_ticketno', hintId: 'hint_ticket', hint: '' })}
+          ${fld('Ticket / Invoice No. *', inp('f_ticketno', 'text', '', 'inputmode="numeric" placeholder="Enter pad ticket no."'), { id: 'wrap_f_ticketno', hintId: 'hint_ticket', hint: '', afterHtml: '<div id="tktSeriesFieldBar" class="tkt-series-field-bar"></div>' })}
           ${fld('Product / Aggregate Grade *', inp('f_product', 'text', '', 'list="dl_sales_prods" placeholder="Select or type grade..."') + dlMeta('dl_sales_prods', prodMetaItems), { id: 'wrap_f_product', hintId: 'hint_product', hint: '' })}
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', customerNames()), { id: 'wrap_f_customer', hintId: 'hint_customer', hint: '' })}
           ${renderOriginDispatchBarHtml(company, 'sales')}
@@ -31739,7 +32806,7 @@
           ${rawDateField}
           ${rawRepField}
           ${timeField(true)}
-          ${fld('Ticket # *', inp('f_ticketno', 'text', pendRawEditRow ? (pendRawEditRow.ticket_no || '') : '', 'inputmode="numeric" placeholder="Enter ticket no."'), { id: 'wrap_f_ticketno', ...(pendRawEditRow ? { lockField: 'f_ticketno', lockReason: 'Locked while entering final supplier invoice price' } : {}), hintId: 'hint_ticket', hint: '' })}
+          ${fld('Ticket # *', inp('f_ticketno', 'text', pendRawEditRow ? (pendRawEditRow.ticket_no || '') : '', 'inputmode="numeric" placeholder="Enter ticket no."'), { id: 'wrap_f_ticketno', ...(pendRawEditRow ? { lockField: 'f_ticketno', lockReason: 'Locked while entering final supplier invoice price' } : { afterHtml: '<div id="tktSeriesFieldBar" class="tkt-series-field-bar"></div>' }), hintId: 'hint_ticket', hint: '' })}
           ${fld('Transported By *', sel('f_transportby', [
             ['Company fleet', 'Company fleet (Own Truck)'],
             ['Third-party truck', 'Third-party truck (Hauler)']
@@ -31818,7 +32885,7 @@
           ${dateField}
           ${repDateField}
           ${fld('Fuel Type *', sel('f_fueltype', [['Diesel', 'Diesel (Plant Tank Issue)'], ['Lubricant', 'Lubricant / Hydraulic / Grease'], ['Petrol', 'Petrol / Gasoline']], 'Diesel'), { id: 'wrap_f_fueltype' })}
-          ${fld('Ticket #', inp('f_ticketno', 'text', '', 'inputmode="numeric" placeholder="Optional ticket no."'), { id: 'wrap_f_ticketno', hintId: 'hint_ticket', hint: '' })}
+          ${fld('Ticket #', inp('f_ticketno', 'text', '', 'inputmode="numeric" placeholder="Optional ticket no."'), { id: 'wrap_f_ticketno', hintId: 'hint_ticket', hint: '', afterHtml: '<div id="tktSeriesFieldBar" class="tkt-series-field-bar"></div>' })}
           ${fld('Lubricant / Item *', inp('f_item', 'text', 'Diesel', 'list="dl_fuel_items" placeholder="Select or type lubricant / grease..."') + dlMeta('dl_fuel_items', fuelProductMetaItems(company)), { id: 'wrap_f_item', hidden: true })}
           ${fld('Equipment / Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type equipment..."') + dl('dl_equip', equipmentNames()), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
           ${fld('Driver *', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Pick Equipment / Truck first..." readonly') + dl('dl_drivers', []), { id: 'wrap_f_driver', lockField: 'f_driver', lockReason: 'Locked to the active driver in the Equipment Log - update Equipment Log if absent or changed', hintId: 'hint_driver', hint: '' })}
@@ -34828,6 +35895,7 @@
       }
     }
     const effDate = (FORM_UI.repDateManual && val('f_repdate')) ? val('f_repdate') : date;
+    syncTicketSeriesFieldBar('fuel', resolveWeighbridgeSeriesContext(company, val('f_ticketno'), effDate || date, 'fuel'));
     const fuelType = val('f_fueltype') || 'Diesel';
     const isLubricant = fuelType === 'Lubricant';
     // Lubricant Item (f_item) is hidden when Fuel Type = Diesel or Petrol
@@ -39805,7 +40873,7 @@
     FORM_UI.wasPricePending = false; FORM_UI.methodBeforePending = '';
     FORM_UI.originMode = 'company'; FORM_UI.originBu = ''; FORM_UI.originPriorDisposition = 'keep'; FORM_UI.lastAutoFilledOriginTicket = '';
     FORM_UI.originMiniMapOpen = false; FORM_UI.originMapTarget = 'dest'; FORM_UI.originKmEditOpen = false;
-    FORM_UI.ticketDisposition = 'standard'; FORM_UI.returnWtcSubMode = 'pair'; FORM_UI.returnRtKmManual = false; FORM_UI.lastDispMode = 'standard';
+    FORM_UI.ticketDisposition = 'standard'; FORM_UI.returnWtcSubMode = 'pair'; FORM_UI.returnRtKmManual = false; FORM_UI.lastDispMode = 'standard'; FORM_UI.ticketBookGridOpen = false;
     FORM_UI.convPrimarySide = ''; FORM_UI.convRateFromAmounts = false;
     FORM_UI.openLoanTab = ''; FORM_UI.lastLoanCp = ''; FORM_UI.openLoanSearch = '';
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
@@ -40032,6 +41100,49 @@
             $('f_notes').dispatchEvent(new Event('input', { bubbles: true }));
           }
           recalcForm();
+          return;
+        }
+        const pickSeriesTktBtn = ev.target && ev.target.closest ? ev.target.closest('[data-pick-series-ticket]') : null;
+        if (pickSeriesTktBtn) {
+          ev.preventDefault();
+          const pickedNo = pickSeriesTktBtn.getAttribute('data-pick-series-ticket') || '';
+          const tInp = $('f_ticketno');
+          if (tInp && pickedNo && !tInp.disabled) {
+            tInp.value = pickedNo;
+            FORM_UI.ticketManual = true;
+            tInp.dispatchEvent(new Event('input', { bubbles: true }));
+            tInp.dispatchEvent(new Event('change', { bubbles: true }));
+            recalcForm();
+          }
+          return;
+        }
+        const toggleBookGridBtn = ev.target && ev.target.closest ? ev.target.closest('[data-toggle-modal-book-grid]') : null;
+        if (toggleBookGridBtn) {
+          ev.preventDefault();
+          FORM_UI.ticketBookGridOpen = !FORM_UI.ticketBookGridOpen;
+          recalcForm();
+          return;
+        }
+        const openBooksTblBtn = ev.target && ev.target.closest ? ev.target.closest('[data-open-ticket-books-table]') : null;
+        if (openBooksTblBtn) {
+          ev.preventDefault();
+          if ($('entryModal') && !$('entryModal').hidden) closeEntryModal(true);
+          if (canViewView('sentinels')) {
+            setView('sentinels', { reset: false });
+            STATE.salesPadFilter = 'books';
+            STATE.shown.spad = PAGE;
+            renderApp();
+            const panelEl = $('salesPadPanel');
+            if (panelEl) {
+              scrollWorkspaceTo(panelEl, 8);
+              panelEl.classList.remove('sn-panel-flash');
+              void panelEl.offsetWidth;
+              panelEl.classList.add('sn-panel-flash');
+            }
+          } else if (canViewView('pbi_dashboards')) {
+            STATE.pbiPage = 'p18_tickets';
+            setView('pbi_dashboards');
+          }
           return;
         }
         const pickRetTktBtn = ev.target && ev.target.closest ? ev.target.closest('[data-pick-return-ticket]') : null;
@@ -59364,6 +60475,7 @@
     if (themeMeta) themeMeta.setAttribute('content', STATE.theme === 'dark' ? '#090D16' : '#F8FAFC');
 
     applyUserRlsAndPermissions();
+    ensureItemsCatalogSeeded();
     const user = activeUser();
     const k = getKPI();
 
@@ -60434,6 +61546,26 @@
     container.querySelectorAll('[data-rawsup-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.rawSupFilter = btn.getAttribute('data-rawsup-chip'); STATE.shown.rawsup = PAGE; renderApp(); }));
     container.querySelectorAll('[data-saleshaul-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.salesHaulFilter = btn.getAttribute('data-saleshaul-chip'); STATE.shown.saleshaul = PAGE; renderApp(); }));
     container.querySelectorAll('[data-salespad-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.salesPadFilter = btn.getAttribute('data-salespad-chip'); STATE.shown.spad = PAGE; const ws = $('workspace'); const y = ws ? ws.scrollTop : 0; renderApp(); if (ws) ws.scrollTop = y; }));
+    container.querySelectorAll('[data-open-ticket-books-table]').forEach(btn => btn.addEventListener('click', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (canViewView('sentinels')) {
+        if (STATE.view !== 'sentinels') setView('sentinels', { reset: false });
+        STATE.salesPadFilter = 'books';
+        STATE.shown.spad = PAGE;
+        renderApp();
+        const panelEl = $('salesPadPanel');
+        if (panelEl) {
+          scrollWorkspaceTo(panelEl, 8);
+          panelEl.classList.remove('sn-panel-flash');
+          void panelEl.offsetWidth;
+          panelEl.classList.add('sn-panel-flash');
+        }
+      } else if (canViewView('pbi_dashboards')) {
+        STATE.pbiPage = 'p18_tickets';
+        setView('pbi_dashboards');
+      }
+    }));
     container.querySelectorAll('[data-vatinv-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.vatInvFilter = btn.getAttribute('data-vatinv-chip'); STATE.shown.vatinv = PAGE; const ws = $('workspace'); const y = ws ? ws.scrollTop : 0; renderApp(); if (ws) ws.scrollTop = y; }));
     container.querySelectorAll('[data-rawsite-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.rawSiteFilter = btn.getAttribute('data-rawsite-chip'); STATE.shown.sites = PAGE; renderApp(); }));
     container.querySelectorAll('[data-partdisp-chip]').forEach(btn => btn.addEventListener('click', () => {
@@ -60464,6 +61596,30 @@
     container.querySelectorAll('[data-wh-move-chip]').forEach(btn => btn.addEventListener('click', () => {
       STATE.whMoveFilter = btn.getAttribute('data-wh-move-chip') || 'all';
       STATE.shown.whmoves = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-exp-item-cat-chip]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.expItemCatFilter = btn.getAttribute('data-exp-item-cat-chip') || 'all';
+      STATE.shown.exp_items_cat = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-exp-item-tkt-chip]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.expItemTktFilter = btn.getAttribute('data-exp-item-tkt-chip') || 'all';
+      STATE.shown.exp_items_tkt = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-wh-cat-chip]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.whCatFilter = btn.getAttribute('data-wh-cat-chip') || 'all';
+      STATE.shown.whcat = PAGE;
       const ws = $('workspace');
       const y = ws ? ws.scrollTop : 0;
       renderApp();
