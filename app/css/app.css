@@ -14577,11 +14577,39 @@ table.ledger-table:has(#usersDirectoryTbody) .badge {
   margin-left: 0;
   flex-shrink: 0;
 }
-.tkt-cell-inline .tkt-ot-badge {
+.tkt-cell-inline .tkt-ot-badge,
+.tkt-cell-inline .tkt-ah-badge,
+.tkt-ot-badge.has-ico,
+.tkt-ah-badge.has-ico {
+  display: inline-flex;
+  align-items: center;
+  gap: 2.5px;
   padding: 1px 4.5px !important;
   font-size: 9.5px !important;
   line-height: 1.15 !important;
   flex-shrink: 0;
+  vertical-align: middle;
+}
+.tkt-ot-badge svg.ic,
+.tkt-ah-badge svg.ic {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  stroke-width: 2.1;
+}
+.rep-shift-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 3px;
+  color: var(--brass);
+  vertical-align: -1px;
+  cursor: help;
+}
+.rep-shift-ico svg.ic {
+  width: 11px;
+  height: 11px;
+  stroke-width: 2;
 }
 .tkt-print-mini {
   display: inline-flex;

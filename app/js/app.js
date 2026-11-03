@@ -5729,6 +5729,27 @@
       (canVoid() ? `<button type="button" class="void-btn" data-void="${esc(crKey)}" data-void-id="${esc(rid)}" title="Void / Delete this app entry (keeps a tombstone so other devices drop it too)">✕</button>` : '');
   }
 
+  function tktOtBadge(r) {
+    return r && r.overtime
+      ? `<span class="badge badge-warn tkt-ot-badge has-ico" data-ui-tip="Overtime shift load">${ic('overtime')}<span>OT</span></span>`
+      : '';
+  }
+
+  function tktAhBadge(r) {
+    const isAh = Boolean(r && (r.after_hours === true || r.after_hours === 1 || r.after_hours === '1' || r.after_hours === 'true'));
+    return isAh
+      ? `<span class="badge badge-info tkt-ah-badge has-ico" data-ui-tip="Logged via Yesterday's After-Hours">${ic('moon')}<span>AH</span></span>`
+      : '';
+  }
+
+  function repDateShiftBadge(r) {
+    if (!r || !r.date || !r.rep_date) return '';
+    const dTx = String(r.date).slice(0, 10);
+    const dRep = String(r.rep_date).slice(0, 10);
+    if (!dTx || !dRep || dTx === dRep) return '';
+    return `<span class="rep-shift-ico" data-ui-tip="Tx Date ${esc(fmtDateDMY(dTx))} · Reporting Date ${esc(fmtDateDMY(dRep))}">${ic('calendar')}</span>`;
+  }
+
   function appPill(crKey, amountKey, label) {
     const rows = filterRecords(STATE.customRecords[crKey], { ignoreSearch: true }).filter(isAppRecord);
     if (!rows.length) return '';
@@ -14545,8 +14566,8 @@
                 const matDisp = round2(ttcVal - trDisp);
                 return `
                 <tr class="rrow" data-rkey="sales_tickets" data-rid="${esc(r.id)}">
-                  <td class="mono">${esc(recordDateDMY(r))}${appCell(r, 'sales_tickets')}</td>
-                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${r.overtime ? '<span class="badge badge-warn tkt-ot-badge" title="Overtime load">OT</span>' : ''}${dispBadgeHtml}</span></td>
+                  <td class="mono">${esc(recordDateDMY(r))}${repDateShiftBadge(r)}${appCell(r, 'sales_tickets')}</td>
+                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispBadgeHtml}</span></td>
                   <td>${coBadge(r.company)}</td>
                   <td>${r.sale_type === 'Unregistered' ? '<span title="Unregistered">Unreg.<span class="sr-only">istered</span></span>' : esc(r.sale_type)}</td>
                   <td>${relLink('customers', r.customer, r.customer, true)}</td>
@@ -14712,12 +14733,15 @@
     const rawRevKey = `${SEED._customRev || 0}|${_WIN_REV}`;
     if (base._pendingRawKey !== rawRevKey) {
       base._pendingRawCnt = base.filter(isPendingPriceRaw).length;
+      base._otRawCnt = base.filter(r => !!(r && r.overtime)).length;
       base._pendingRawKey = rawRevKey;
     }
     const pendingRawCnt = base._pendingRawCnt;
+    const otRawBaseCnt = base._otRawCnt || 0;
     const rawChipPred = r => {
       if (STATE.chipFilter === 'fleet') return r.transport_by === 'Company fleet';
       if (STATE.chipFilter === 'third') return r.transport_by === 'Third-party truck';
+      if (STATE.chipFilter === 'overtime') return !!r.overtime;
       if (STATE.chipFilter === 'pending_price') return isPendingPriceRaw(r);
       if (STATE.chipFilter === 'returned_wtc') return isReturnTicket(r);
       if (STATE.chipFilter === 'removed_slip') return isRemovedTicket(r);
@@ -14739,7 +14763,7 @@
         WTC: { loads: 0, qty: 0, tons: 0, mat: 0, haul: 0, tot: 0, salesHaul: 0 },
         BBConstruction: { loads: 0, qty: 0, tons: 0, mat: 0, haul: 0, tot: 0, salesHaul: 0 }
       };
-      let _fleetRawLoads = 0, _thirdRawLoads = 0;
+      let _fleetRawLoads = 0, _thirdRawLoads = 0, _otRawLoads = 0;
       const _rawSiteMap = new Map();
       const _rawProdMap = new Map();
       const _rawHaulerSet = new Set();
@@ -14771,6 +14795,7 @@
         if (rSgn > 0) {
           if (r.transport_by === 'Company fleet') _fleetRawLoads += 1;
           else _thirdRawLoads += 1;
+          if (r.overtime) _otRawLoads += 1;
           if (r.site) _rawSiteMap.set(r.site, (_rawSiteMap.get(r.site) || 0) + 1);
           if (r.product) _rawProdMap.set(r.product, (_rawProdMap.get(r.product) || 0) + 1);
         }
@@ -14780,12 +14805,12 @@
       rAgg = {
         key: rawRevKey,
         sumQty: _sumQty, sumTons: _sumTons, sumMat: _sumMat, sumHaul: _sumHaul, sumTot: _sumTot,
-        byCo: _byCo, fleetRawLoads: _fleetRawLoads, thirdRawLoads: _thirdRawLoads,
+        byCo: _byCo, fleetRawLoads: _fleetRawLoads, thirdRawLoads: _thirdRawLoads, otRawLoads: _otRawLoads,
         rawSiteMap: _rawSiteMap, rawProdMap: _rawProdMap, rawHaulerSet: _rawHaulerSet, rawTruckSet: _rawTruckSet
       };
       Object.defineProperty(filteredRaw, '_rawAgg', { value: rAgg, configurable: true });
     }
-    const { sumQty, sumTons, sumMat, sumHaul, sumTot, byCo, fleetRawLoads, thirdRawLoads, rawSiteMap, rawProdMap, rawTruckSet } = rAgg;
+    const { sumQty, sumTons, sumMat, sumHaul, sumTot, byCo, fleetRawLoads, thirdRawLoads, otRawLoads, rawSiteMap, rawProdMap, rawTruckSet } = rAgg;
     const rawHaulerSet = new Set(rAgg.rawHaulerSet);
     const wtcR = byCo.WTC;
     const bbcR = byCo.BBConstruction;
@@ -15207,8 +15232,9 @@
           })}
           ${insightCard({
             label: 'Unit Landed Economics',
-            badge: `${fmtNum(rawTruckSet.size)} Active Trucks`,
-            badgeCls: 'good',
+            badge: otRawLoads > 0 ? `${fmtNum(otRawLoads)} OT · ${fmtNum(rawTruckSet.size)} Trucks` : `${fmtNum(rawTruckSet.size)} Active Trucks`,
+            badgeCls: otRawLoads > 0 ? 'warn' : 'good',
+            badgeChip: otRawLoads > 0 ? 'overtime' : '',
             val: `${fmtUSD(costPerTon, 2)} <small>/ ton</small>`,
             valCls: 'emerald',
             pct: thirdRawPct,
@@ -15223,7 +15249,7 @@
         <div class="table-toolbar">
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             ${searchBox('Search ticket #, supplier, hauler, site, product...')}
-            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('fleet', 'Company fleet')}${chip('third', 'Third-party')}${pendingRawCnt > 0 || STATE.chipFilter === 'pending_price' ? chip('pending_price', `Pending Price (${pendingRawCnt})`) : ''}${chip('returned_wtc', 'Returned Load')}${chip('removed_slip', 'Removed (0 KM)')}${chip('app', 'App-entered')}<button type="button" class="filter-chip" data-open-ticket-books-table="1" title="Open Weighbridge 25-Ticket Books &amp; Pad Tally Table">${ic('tables')} 25-Ticket Books</button></div>
+            <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('fleet', 'Company fleet')}${chip('third', 'Third-party')}${chip('overtime', otRawBaseCnt > 0 ? `Overtime (${otRawBaseCnt})` : 'Overtime')}${pendingRawCnt > 0 || STATE.chipFilter === 'pending_price' ? chip('pending_price', `Pending Price (${pendingRawCnt})`) : ''}${chip('returned_wtc', 'Returned Load')}${chip('removed_slip', 'Removed (0 KM)')}${chip('app', 'App-entered')}<button type="button" class="filter-chip" data-open-ticket-books-table="1" title="Open Weighbridge 25-Ticket Books &amp; Pad Tally Table">${ic('tables')} 25-Ticket Books</button></div>
           </div>
           <div style="display:flex;gap:5px;flex-wrap:nowrap">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="suppliers">${ic('suppliers')} AP</button>
@@ -15296,15 +15322,15 @@
                     : '');
                 return `
                 <tr class="rrow" data-rkey="raw_purchases" data-rid="${esc(r.id)}">
-                  <td class="mono">${esc(recordDateDMY(r))}${appCell(r, 'raw_purchases')}</td>
-                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '(no number)')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="raw" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Raw Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${dispBadgeHtml}</span></td>
+                  <td class="mono">${esc(recordDateDMY(r))}${repDateShiftBadge(r)}${appCell(r, 'raw_purchases')}</td>
+                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '(no number)')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="raw" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Raw Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispBadgeHtml}</span></td>
                   <td>${coBadge(r.company)}</td>
                   <td>${relLink('sites', r.site, r.site || '—', true)}</td>
                   <td>${r.site_owner ? relLink('suppliers', r.site_owner) : '—'}</td>
                   <td>${r.truck_owner ? relLink('suppliers', r.truck_owner) : esc(r.transport_by === 'Company fleet' ? 'Company fleet' : (r.transport_by || '—'))}</td>
                   <td>${relLink('products', r.product)}</td>
                   <td class="r">${fmtTicketQtyCell(r, rSgn, false)}</td>
-                  <td class="r">${isPendingPriceRaw(r) ? `<span class="badge badge-warn">Pending Price</span>${(canModifyData() || canEnterForm('raw')) ? ` <button type="button" class="btn btn-ghost-bar" style="padding:1px 6px;font-size:10.5px;margin-left:4px" data-set-pending-raw-price-id="${esc(r.id)}">Enter Price</button>` : ''}` : fmtUSD(rSgn * Number(r.cost || 0), 2)}</td>
+                  <td class="r">${isPendingPriceRaw(r) ? `<span class="badge badge-warn" style="display:inline-flex;align-items:center;gap:3px">${ic('clock')} Pending Price</span>${(canModifyData() || canEnterForm('raw')) ? ` <button type="button" class="btn btn-ghost-bar" style="padding:1px 6px;font-size:10.5px;margin-left:4px" data-set-pending-raw-price-id="${esc(r.id)}">Enter Price</button>` : ''}` : fmtUSD(rSgn * Number(r.cost || 0), 2)}</td>
                   <td class="r">${fmtUSD(rSgn * Number(r.trans_cost || 0), 2)}</td>
                   <td class="r"><strong>${fmtUSD(rSgn * Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0))), 2)}</strong></td>
                 </tr>
@@ -15352,10 +15378,18 @@
                 ${shownSalesHaul.map(r => {
                   const sgn = ticketSign(r);
                   const tp = sgn * Number(r.trans_price || 0);
+                  const isRemSh = isRemovedTicket(r);
+                  const isRetSh = isReturnTicket(r);
+                  const kmInfSh = (isRemSh || isRetSh) ? resolveTicketRouteKm(r, 'sales') : null;
+                  const dispShHtml = isRemSh
+                    ? `<span class="badge badge-neutral tkt-ot-badge" title="Spoiled / Mistake Slip · 0.0 km">Removed · 0 km</span>`
+                    : (isRetSh
+                      ? `<span class="badge badge-warn tkt-ot-badge" title="${esc(kmInfSh ? kmInfSh.label : 'Returned load')}">Return · ${kmInfSh ? fmtNum(kmInfSh.roundTripKm, 1) : '0.0'} km RT</span>`
+                      : '');
                   return `
                   <tr class="rrow" data-rkey="sales_tickets" data-rid="${esc(r.id)}">
-                    <td class="mono">${esc(recordDateDMY(r))}${appCell(r, 'sales_tickets')}</td>
-                    <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button></span></td>
+                    <td class="mono">${esc(recordDateDMY(r))}${repDateShiftBadge(r)}${appCell(r, 'sales_tickets')}</td>
+                    <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispShHtml}</span></td>
                     <td>${coBadge(r.company)}</td>
                     <td>${relLink('customers', r.customer, r.customer, true)}</td>
                     <td>${r.site ? relLink('sites', r.site) : '—'}</td>
@@ -16252,10 +16286,10 @@
                 const remVal = isDieselFill(f) && dtLedger.tankAfterById.has(f.id) ? dtLedger.tankAfterById.get(f.id) : null;
                 return `
                 <tr class="rrow" data-rkey="fuel_intakes" data-rid="${esc(f.id)}">
-                  <td class="mono">${esc(recordDateDMY(f))}${appCell(f, 'fuel_intakes')}</td>
+                  <td class="mono">${esc(recordDateDMY(f))}${repDateShiftBadge(f)}${appCell(f, 'fuel_intakes')}</td>
                   <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(f.ticket_no || '-')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="fuel" data-print-id="${esc(f.id)}" title="Bluetooth Thermal Print / Preview Fuel Slip #${esc(f.ticket_no || '')}">${ic('printer')}</button></span></td>
                   <td>${coBadge(f.company)}</td>
-                  <td class="mono">${relLink('equipment', f.equipment, f.equipment, true)}</td>
+                  <td class="mono">${relLink('equipment', f.equipment, f.equipment, true)}${renderEquipmentHealthBadge(f.equipment, f.company, true)}</td>
                   <td>${f.driver ? relLink('drivers', f.driver) : '-'}</td>
                   <td>${relLink('products', f.item || f.fuel_type || 'Diesel')}</td>
                   <td class="r"><strong>${!isDieselFill(f) && isGreaseFill(f) ? fmtNum(f.litres, 2) + ' kg' : fmtNum(f.litres, 1) + ' L'}</strong></td>
@@ -16415,7 +16449,7 @@
                 <tr class="rrow" data-rkey="${esc(mv.rkey)}" data-rid="${esc(mv.id)}">
                   <td class="mono">${esc(fmtDateDMY(mv.date))}${appCell(mv.rec, mv.rkey)}</td>
                   <td>${streamBadge}</td>
-                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(mv.ref || '-')}</strong>${printBtn}</span></td>
+                  <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(mv.ref || '-')}</strong>${printBtn}${mv.rkey === 'sales_tickets' ? tktOtBadge(mv.rec) : ''}</span></td>
                   <td>${coBadge(mv.company)}</td>
                   <td>${partyHtml}</td>
                   <td>${mv.driver && mv.rkey === 'fuel_intakes' ? relLink('drivers', mv.driver) : esc(mv.detail || '-')}</td>
@@ -17625,7 +17659,8 @@
   function renderEquipmentHealthBadge(unitName, coOpt, compact = false) {
     const h = getEquipmentHealth(unitName, coOpt);
     if (compact && h.severityRank >= 4) return '';
-    return `<span class="badge ${h.badgeCls}" style="margin-left:${compact ? '5px' : '0'};font-size:${compact ? '9.5px' : '10.5px'}" title="${esc(h.status)}${h.latestOpenDefect ? ' · ' + esc(h.latestOpenDefect.subsystem || '') + ': ' + esc(h.latestOpenDefect.description || '') : ''}">${esc(compact ? h.shortBadge : h.status)}</span>`;
+    const ico = h.severityRank <= 1 ? ic('warn') : (h.severityRank <= 3 ? ic('wrench') : '');
+    return `<span class="badge ${h.badgeCls}${ico ? ' tkt-ot-badge has-ico' : ''}" style="margin-left:${compact ? '5px' : '0'};font-size:${compact ? '9.5px' : '10.5px'}" title="${esc(h.status)}${h.latestOpenDefect ? ' · ' + esc(h.latestOpenDefect.subsystem || '') + ': ' + esc(h.latestOpenDefect.description || '') : ''}">${ico}<span>${esc(compact ? h.shortBadge : h.status)}</span></span>`;
   }
 
   function renderFleetEquipment() {
@@ -17730,7 +17765,7 @@
             <div class="chip-bar">${chip('all', `All Units (${equipBase.length})`)}${chip('own', `Own Fleet (${ownCount})`)}${chip('transporter', `Haulers (${transCount})`)}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('defects', `Defects (${equipWithDefectsCount})`)}${chip('cost', 'With Cost')}${chip('diesel', 'With Fuel')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;margin-left:auto;align-items:center">
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_maint">Defects &amp; Parts →</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_maint">${ic('fleet_maint')} Defects &amp; Parts</button>
             ${exportBtn('equipPanel', 'Equipment_Costs')}
             ${canEnterForm('companyequipment') ? '<button class="btn btn-primary" data-open-modal="companyequipment">+ New Company Fleet Unit</button>' : ''}
           </div>
@@ -18568,7 +18603,7 @@
           </div>
           <div style="display:flex;gap:6px">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Daily Machine Map</button>
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_drivers">Drivers Registry (All BUs) →</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_drivers">${ic('reg_drivers')} Drivers Registry (All BUs)</button>
             ${exportBtn('driversOtPanel', 'Drivers_Overtime')}
             ${canEnterForm('triprate') ? '<button class="btn btn-primary" data-open-modal="triprate">+ New Overtime Rate</button>' : ''}
           </div>
@@ -19930,7 +19965,7 @@
             <tbody>
               ${shown.map(r => `
                 <tr class="rrow" data-rkey="receipts" data-rid="${esc(r.id)}">
-                  <td class="mono">${esc(recordDateDMY(r))}${appCell(r, 'receipts')}</td>
+                  <td class="mono">${esc(recordDateDMY(r))}${repDateShiftBadge(r)}${appCell(r, 'receipts')}</td>
                   <td class="mono">${esc(r.name)}${r.reference ? ` <span class="mu">· ${esc(r.reference)}</span>` : ''}</td>
                   <td>${coBadge(r.company)}</td>
                   <td>${relLink('customers', r.customer, r.customer, true)}</td>
@@ -19962,7 +19997,7 @@
           <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${canTax ? `<button type="button" class="btn ${showTaxCols ? 'btn-brass' : 'btn-ghost-bar'}" style="padding:4px 9px;font-size:11px" id="custToggleTaxColsBtn">${ic('sliders')} Tax Columns</button>` : ''}
             ${canEnterForm('creditterm') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-modal="creditterm">+ Credit Term</button>' : ''}
-            <button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-nav-jump="reg_customers">Universal Customers Registry</button>
+            <button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-nav-jump="reg_customers">${ic('reg_customers')} Universal Customers Registry</button>
             ${exportBtn('custPanel', 'AR_Aging_SubLedger')}
           </span>
         </div>
@@ -20351,7 +20386,7 @@
             <tbody>
               ${shown.map(sp => `
                 <tr class="rrow" data-rkey="settlements" data-rid="${esc(sp.id)}">
-                  <td class="mono">${esc(recordDateDMY(sp))}${appCell(sp, 'settlements')}</td>
+                  <td class="mono">${esc(recordDateDMY(sp))}${repDateShiftBadge(sp)}${appCell(sp, 'settlements')}</td>
                   <td class="mono">${esc(sp.name)}${sp.reference ? ` <span class="mu">· ${esc(sp.reference)}</span>` : ''}</td>
                   <td>${coBadge(sp.company)}</td>
                   <td>${relLink('suppliers', sp.supplier, sp.supplier, true)}</td>
@@ -20871,15 +20906,15 @@
                   : (showQtyBadge ? `<span class="badge ${isPend ? 'badge-warn' : 'badge-info'}">${fmtNum(qtyVal, qtyVal % 1 ? 2 : 0)}${isDieselRow ? ' L' : ' qty'}</span>` : '<span class="mu">General</span>');
                 return `
                 <tr class="rrow" data-rkey="expenses" data-rid="${esc(x.id)}">
-                  <td class="mono">${esc(recordDateDMY(x))}${appCell(x, 'expenses')}</td>
+                  <td class="mono">${esc(recordDateDMY(x))}${repDateShiftBadge(x)}${appCell(x, 'expenses')}</td>
                   <td>${coBadge(x.company)}</td>
                   <td>${relLink('expense_categories', x.category, x.category, true)}</td>
-                  <td>${x.subcategory ? relLink('expense_subcategories', x.subcategory) : 'N/A'}${isStoredWh ? ` <span class="badge badge-ok">Warehouse (+Stock)</span>` : ''}${x.reference ? ` <span class="mu">· ${esc(x.reference)}</span>` : ''}</td>
+                  <td>${x.subcategory ? relLink('expense_subcategories', x.subcategory) : 'N/A'}${isStoredWh ? ` <span class="badge badge-ok" style="display:inline-flex;align-items:center;gap:3px">${ic('warehouse')} Warehouse (+Stock)</span>` : ''}${x.reference ? ` <span class="mu">· ${esc(x.reference)}</span>` : ''}</td>
                   <td>${itemCellHtml}</td>
                   <td>${x.supplier ? relLink('suppliers', x.supplier) : 'N/A'}</td>
-                  <td class="mono">${x.equipment ? relLink('equipment', x.equipment) : (isStoredWh ? '<span class="badge badge-ok">Warehouse</span>' : 'N/A')}</td>
+                  <td class="mono">${x.equipment ? relLink('equipment', x.equipment) : (isStoredWh ? `<span class="badge badge-ok" style="display:inline-flex;align-items:center;gap:3px">${ic('warehouse')} Warehouse</span>` : 'N/A')}</td>
                   <td>${methodBadge(x.method, sgn)}</td>
-                  <td class="r">${isPend ? `<span class="badge badge-warn">Pending Price</span>${(canModifyData() || canEnterForm('expense')) ? ` <button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px;margin-left:4px" data-set-pending-price-id="${esc(x.id)}">Enter Price</button>` : ''}` : `<strong>${fmtUSD(sgn * Number(x.amount || 0), 2)}</strong>`}</td>
+                  <td class="r">${isPend ? `<span class="badge badge-warn" style="display:inline-flex;align-items:center;gap:3px">${ic('clock')} Pending Price</span>${(canModifyData() || canEnterForm('expense')) ? ` <button type="button" class="btn btn-ghost-bar" style="padding:2px 7px;font-size:10.5px;margin-left:4px" data-set-pending-price-id="${esc(x.id)}">Enter Price</button>` : ''}` : `<strong>${fmtUSD(sgn * Number(x.amount || 0), 2)}</strong>`}</td>
                 </tr>
               `;
               }).join('') || emptyRow(9, periodEmptyMsg(SEED.records.expenses, 'expenses'))}
@@ -23763,7 +23798,7 @@
             <span class="ph-sub">Valued per dated regional trip rate ($5 / $7 / $10 / $14) through ${esc(fmtDateDMY(cm.effToDate))} · Contracted drivers are included in Driver OT ($) on Staff Payroll (${fmtUSD(totDriverInPayUsd, 2)})</span>
           </div>
           <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_drivers">Drivers &amp; Overtime</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_drivers">${ic('fleet_drivers')} Drivers &amp; Overtime</button>
             ${exportBtn('payDriverOtPanel', 'Driver_Night_Trip_Overtime')}
           </span>
         </div>
@@ -24730,7 +24765,7 @@
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_allowances">Site Transport (${fmtNum(logAll.length)})</button>
+              <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_allowances">${ic('payroll_allowances')} Site Transport (${fmtNum(logAll.length)})</button>
               ${exportBtn('payEmpPanel', 'Employment_Contracts')}
               ${canEnterForm('employment') ? '<button type="button" class="btn btn-ghost-bar" data-open-pending-salary="1">+ Pending-Salary Hire</button>' : ''}
               ${canEnterForm('freelance') ? '<button type="button" class="btn btn-brass" data-open-modal="freelance">+ Freelance / Daily</button>' : ''}
@@ -24871,7 +24906,7 @@
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="statements" data-stmt-jump="10">${ic('printer')} Payroll RDL (#10)</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant &amp; Machine Map</button>
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_attendance">Attendance (${fmtNum(attAll.length)}) →</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_attendance">${ic('payroll_attendance')} Attendance (${fmtNum(attAll.length)})</button>
             ${exportBtn('paySalPanel', 'Salary_Disbursements')}
             ${canEnterForm('salary') ? '<button type="button" class="btn btn-primary" data-open-modal="salary">+ Pay Salary</button>' : ''}
           </div>
@@ -27759,7 +27794,7 @@
                   ? relLink(r.partyRel, r.party, r.party, true)
                   : `<button type="button" class="cf-party-btn" data-cf-focus-party="${esc(r.party)}" title="Filter all cash entries for ${esc(r.party)}">${esc(r.party)}</button>`;
                 const refHtml = r.ticketId
-                  ? `<span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ref)}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.ticketId)}" title="Preview / Print Ticket ${esc(r.ref)}">${ic('printer')}</button></span> <span class="mu">· ${esc(r.method)}</span>`
+                  ? `<span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ref)}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.ticketId)}" title="Preview / Print Ticket ${esc(r.ref)}">${ic('printer')}</button>${tktOtBadge(r.raw)}</span> <span class="mu">· ${esc(r.method)}</span>`
                   : `${esc(r.ref)} <span class="mu">· ${esc(r.method)}</span>`;
                 return `
                 <tr class="rrow" data-rkey="${esc(r.rkey)}" data-rid="${esc(r.id)}">
@@ -29253,7 +29288,7 @@
           <div class="fx-ref-sub">Governed centrally by the Universal <b>Currency Exchange Rates</b> table across all Business Units. Physical FX vouchers below retain their own traded exchange rate.</div>
         </div>
         <div class="fx-ref-controls">
-          <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_fx_rates">Global Currencies &amp; VAT Rates</button>
+          <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_fx_rates">${ic('reg_fx_rates')} Global Currencies &amp; VAT Rates</button>
         </div>
       </div>
 
@@ -32472,7 +32507,7 @@
               return `
                 <button type="button" class="tkt-slot-cell status-${esc(sl.status)}${isCur ? ' is-current' : ''}" data-pick-series-ticket="${esc(sCtx.prefix + String(sl.num))}">
                   <div class="tkt-slot-top">
-                    <span class="tkt-slot-num">#${sl.num}</span>
+                    <span class="tkt-slot-num">#${sl.num}${r && r.rec && r.rec.overtime ? ` <span class="badge badge-warn tkt-ot-badge has-ico">${ic('overtime')}<span>OT</span></span>` : (r && r.overtime ? ` <span class="badge badge-warn tkt-ot-badge has-ico">${ic('overtime')}<span>OT</span></span>` : '')}</span>
                     <span class="tkt-slot-idx">${sl.slotIndex}/25</span>
                   </div>
                   <div class="tkt-slot-status">${esc(stLabel)}</div>
@@ -32725,7 +32760,7 @@
     const initOt = isOvertimeTime(initTime);
     const timeField = (initCoFleet = true) => fld('Dispatch Time *', inp('f_time', 'time', initTime), {
       id: 'wrap_f_time',
-      afterHtml: `<div class="repdate-bar time-ot-bar"><div id="wrap_f_overtime" class="ot-inline-wrap"${initCoFleet ? '' : ' hidden'}><input type="checkbox" id="f_overtime" ${initCoFleet && initOt ? 'checked' : ''} hidden><button type="button" class="repdate-toggle-btn overtime-toggle-btn${initCoFleet && initOt ? ' active is-overtime' : ''}" id="toggleOvertimeBtn" aria-pressed="${initCoFleet && initOt ? 'true' : 'false'}">${initOt ? `${ic('check_circle')} Overtime Registered (18:00–05:59) · × Clear` : `${ic('sun')} Day Shift (06:00–17:59) · + Overtime?`}</button></div><span class="hint" id="hint_time"></span></div>`
+      afterHtml: `<div class="repdate-bar time-ot-bar"><div id="wrap_f_overtime" class="ot-inline-wrap"${initCoFleet ? '' : ' hidden'}><input type="checkbox" id="f_overtime" ${initCoFleet && initOt ? 'checked' : ''} hidden><button type="button" class="repdate-toggle-btn overtime-toggle-btn${initCoFleet && initOt ? ' active is-overtime' : ''}" id="toggleOvertimeBtn" aria-pressed="${initCoFleet && initOt ? 'true' : 'false'}">${initOt ? `${ic('overtime')} Overtime Registered (18:00–05:59) · × Clear` : `${ic('sun')} Day Shift (06:00–17:59) · + Overtime?`}</button></div><span class="hint" id="hint_time"></span></div>`
     });
     const notesField = fld('Notes', inp('f_notes', 'text', '', 'placeholder="Required for back-dated entries or discounts above 20%"'), { id: 'wrap_f_notes', span: true });
     const cockpitHtml = '<div id="formCustomAlertBanner" class="form-custom-alert-banner" hidden></div>';
@@ -34212,8 +34247,8 @@
       otBtn.setAttribute('aria-pressed', isOt ? 'true' : 'false');
       if (isOt) {
         otBtn.innerHTML = otByTime
-          ? `${ic('check_circle')} Overtime Registered (18:00–05:59) · × Clear`
-          : `${ic('check_circle')} Overtime Registered (Manual) · × Clear`;
+          ? `${ic('overtime')} Overtime Registered (18:00–05:59) · × Clear`
+          : `${ic('overtime')} Overtime Registered (Manual) · × Clear`;
         otBtn.title = 'Overtime driver allowance is registered for this load — click to clear overtime';
       } else {
         otBtn.innerHTML = otByTime
@@ -49399,10 +49434,11 @@
                       else if (isNum && v != null && v !== '') txt = fmtNum(v, /qty|capacity|percentage/.test(c) ? 2 : 0);
                       else if (/date/.test(c) && v) txt = fmtDateDMY(v);
                       const lk = (c === 'linked_part_log' && /^REP-/i.test(String(v || ''))) ? 'equipment_repairs' : ((c === 'truck_owner' || (c === 'supplier' && (sg.targetKey === 'equipment' || sg.targetKey === 'company_equipment'))) ? resolveTruckOwnerTarget(v, r) : INSPECT_LOOKUP_FIELD_TARGET[c]);
+                      const sgOtHtml = (c === 'ticket_no' && (sg.targetKey === 'sales_tickets' || sg.targetKey === 'raw_purchases')) ? ` ${tktOtBadge(r)}` : '';
                       const cellHtml = (lk && lk !== sg.targetKey && v != null && v !== '' && txt !== '—')
                         ? `<span class="rel-link" data-rel-key="${esc(lk)}" data-rel-val="${esc(v)}">${esc(txt)}<span class="rel-arr">↗</span></span>`
                         : esc(txt);
-                      return `<td class="${isMoney || isNum ? 'r' : ''}${/date|ticket|invoice|plate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${cellHtml}</b>${appCell(r, sg.targetKey)}` : cellHtml}</td>`;
+                      return `<td class="${isMoney || isNum ? 'r' : ''}${/date|ticket|invoice|plate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${cellHtml}</b>${sgOtHtml}${appCell(r, sg.targetKey)}` : `${cellHtml}${sgOtHtml}`}</td>`;
                     }).join('')}
                   </tr>
                 `).join('')}
@@ -60859,7 +60895,7 @@
                     <tbody>
                       ${activeRecentRows.map(r => `
                         <tr class="rrow" data-rkey="${kMode === 'raw' ? 'raw_purchases' : (kMode === 'fuel' ? 'fuel_intakes' : 'sales_tickets')}" data-rid="${esc(r.id)}">
-                          <td class="mono"><strong>#${esc(r.ticket_no || '-')}</strong><div class="drv-sub">${esc(fmtDateDMY(r.date))}</div></td>
+                          <td class="mono"><span class="tkt-cell-inline"><strong>#${esc(r.ticket_no || '-')}</strong>${kMode !== 'fuel' ? `${tktOtBadge(r)}${tktAhBadge(r)}${kMode === 'raw' && isPendingPriceRaw(r) ? '<span class="badge badge-warn tkt-ot-badge">Pending $</span>' : ''}${isRemovedTicket(r) ? '<span class="badge badge-neutral tkt-ot-badge">0 km</span>' : (isReturnTicket(r) ? '<span class="badge badge-warn tkt-ot-badge">Return</span>' : '')}` : ''}</span><div class="drv-sub">${esc(fmtDateDMY(r.date))}</div></td>
                           <td class="kiosk-rec-name-cell">
                             <strong>${esc(kMode === 'raw' ? (r.site || r.site_owner) : (kMode === 'fuel' ? r.equipment : r.customer))}</strong>
                             <div class="drv-sub">${esc(kMode === 'raw' ? (r.product || '') : (kMode === 'fuel' ? (r.item || r.fuel_type || 'Diesel') : (r.product || '')))}</div>

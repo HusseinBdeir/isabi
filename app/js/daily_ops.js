@@ -1316,7 +1316,7 @@
       stream.push({
         rkey: 'sales_tickets', rid: s.id, company: s.company || 'WTC',
         group: 'sales', kindCls: sgn < 0 ? 'crit' : 'sales', kindLbl: sgn < 0 ? 'Return' : 'Sale',
-        isAfterHours: isAh, txDate: txDateOf(s), time: String(s.time || '').slice(0, 5),
+        isAfterHours: isAh, isOvertime: Boolean(s.overtime), txDate: txDateOf(s), time: String(s.time || '').slice(0, 5),
         ref: s.ticket_no ? `#${s.ticket_no}` : compactRef(s.name, s.id, 'S'),
         party: s.customer || 'Walk-in', detail: [s.product, s.site, s.method].filter(Boolean).join(' · '),
         qtyTxt, amount: amt, inflow: amt >= 0, tier: 2,
@@ -1331,7 +1331,7 @@
       stream.push({
         rkey: 'raw_purchases', rid: r.id, company: r.company || 'WTC',
         group: 'raw', kindCls: 'raw', kindLbl: 'Quarry',
-        isAfterHours: isAh, txDate: txDateOf(r), time: String(r.time || '').slice(0, 5),
+        isAfterHours: isAh, isOvertime: Boolean(r.overtime), isPendingPrice: Boolean(r.price_pending), txDate: txDateOf(r), time: String(r.time || '').slice(0, 5),
         ref: r.ticket_no ? `#${r.ticket_no}` : compactRef(r.name, r.id, 'R'),
         party: r.site_owner || r.truck_owner || r.site || 'Quarry', detail: [r.product, r.site, r.truck].filter(Boolean).join(' · '),
         qtyTxt, amount: amt, inflow: false, tier: 2,
@@ -1407,7 +1407,7 @@
       stream.push({
         rkey: 'expenses', rid: x.id, company: x.company || 'WTC',
         group: 'expenses', kindCls: 'exp', kindLbl: ctx.isPendingPriceExpense(x) ? 'Pending' : 'Expense',
-        isAfterHours: false, txDate: txDateOf(x), time: '',
+        isAfterHours: false, isPendingPrice: Boolean(ctx.isPendingPriceExpense(x)), txDate: txDateOf(x), time: '',
         ref: x.invoice ? `#${x.invoice}` : compactRef(x.reference || x.name, x.id, 'EX'),
         party: x.supplier || x.category || 'Expense', detail: [x.category, x.subcategory, x.equipment].filter(Boolean).join(' · '),
         qtyTxt: Number(x.qty || 0) > 1 ? `${ctx.fmtNum(Number(x.qty), 0)} qty` : (x.method || 'Cash'),
@@ -2801,7 +2801,7 @@
               <td class="dops-type-cell">
                 <span class="dops-kind ${row.kindCls}">${esc(row.kindLbl)}</span>
               </td>
-              <td class="dops-trunc">${!isSingleCo ? `${coBadge(row.company)} ` : ''}${row.isAfterHours ? `<span class="dops-ah-badge" data-ui-tip="Occurred on ${esc(fmtShortDay(row.txDate))} after accountants left · logged via Yesterday's After-Hours">${ic('moon')}After-Hours</span>` : ''}<strong>${esc(row.party)}</strong>${row.detail ? ` <span style="color:var(--muted)">· ${esc(row.detail)}</span>` : ''}</td>
+              <td class="dops-trunc">${!isSingleCo ? `${coBadge(row.company)} ` : ''}${row.isAfterHours ? `<span class="dops-ah-badge" data-ui-tip="Occurred on ${esc(fmtShortDay(row.txDate))} after accountants left · logged via Yesterday's After-Hours">${ic('moon')}After-Hours</span>` : ''}${row.isOvertime ? `<span class="dops-ot-badge" data-ui-tip="Overtime shift load">${ic('overtime')}OT</span>` : ''}${row.isPendingPrice ? `<span class="dops-pend-badge" data-ui-tip="Pending supplier invoice price">${ic('clock')}Pending $</span>` : ''}<strong>${esc(row.party)}</strong>${row.detail ? ` <span style="color:var(--muted)">· ${esc(row.detail)}</span>` : ''}</td>
               <td class="r dops-vol-cell">${esc(row.qtyTxt || '-')}</td>
               <td class="r dops-amt-cell">${row.amount == null ? '-' : `<strong style="color:${row.inflow ? 'var(--good)' : (row.amount < 0 ? 'var(--crit)' : 'var(--ink)')}">${fmtUSD(row.amount, 0)}</strong>`}</td>
             </tr>
