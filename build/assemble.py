@@ -1,4 +1,5 @@
 # Assembles index.html for ISABI Systems PWA and runs quality checks
+import datetime
 import os
 import subprocess
 import sys
@@ -20,9 +21,10 @@ HEAD = """<!DOCTYPE html>
   <title>ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI</title>
   <meta name="description" content="ISABI Systems builds custom operations and double-entry accounting systems, interactive executive dashboards, bilingual printable statements, offline-ready field kiosks, and Ask ISABI AI with tailored setup and simple per-seat pricing.">
   <meta name="author" content="Hussein Bdeir">
-  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
   <meta name="color-scheme" content="light dark">
   <link rel="canonical" href="https://isabisystems.com/">
+  <link rel="sitemap" type="application/xml" title="Sitemap" href="https://isabisystems.com/sitemap.xml">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="ISABI Systems">
   <meta property="og:locale" content="en_US">
@@ -41,10 +43,10 @@ HEAD = """<!DOCTYPE html>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
-  <link rel="manifest" href="manifest.json?v=6.12">
-  <link rel="icon" href="icon.svg?v=6.12" type="image/svg+xml" sizes="any">
-  <link rel="icon" href="favicon.ico?v=6.12" sizes="48x48 32x32 16x16">
-  <link rel="apple-touch-icon" href="icon-180.png?v=6.12">
+  <link rel="manifest" href="manifest.json?v=6.13">
+  <link rel="icon" href="icon.svg?v=6.13" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="favicon.ico?v=6.13" sizes="48x48 32x32 16x16">
+  <link rel="apple-touch-icon" href="icon-180.png?v=6.13">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap">
@@ -62,18 +64,29 @@ HEAD = """<!DOCTYPE html>
       } catch (e) {}
     })();
   </script>
+  <script type="application/ld+json">__WEBSITE_JSONLD__</script>
   <script type="application/ld+json">__ORG_JSONLD__</script>
   <script type="application/ld+json">__FAQ_JSONLD__</script>
 """
 
 import json as _json
+WEBSITE_JSONLD = _json.dumps({
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "@id": "https://isabisystems.com/#website",
+    "name": "ISABI Systems",
+    "alternateName": ["ISABI", "ISABI ERP", "isabisystems.com"],
+    "url": "https://isabisystems.com/",
+    "publisher": {"@id": "https://isabisystems.com/#org"},
+    "inLanguage": "en"
+}, ensure_ascii=False)
 ORG_JSONLD = _json.dumps({
     "@context": "https://schema.org",
     "@type": "ProfessionalService",
     "@id": "https://isabisystems.com/#org",
     "name": "ISABI Systems",
     "url": "https://isabisystems.com/",
-    "logo": "https://isabisystems.com/icon-512.png?v=6.12",
+    "logo": "https://isabisystems.com/icon-512.png?v=6.13",
     "image": "https://isabisystems.com/og-image.png",
     "slogan": "The ERP Your Group Actually Runs On",
     "description": "Custom enterprise ERP operations, double-entry financial accounting, interactive executive dashboards, bilingual printable statements, offline-ready field kiosks, and the Ask ISABI assistant with tailored setup and simple per-seat pricing.",
@@ -86,7 +99,32 @@ ORG_JSONLD = _json.dumps({
     "contactPoint": [{"@type": "ContactPoint", "contactType": "sales", "telephone": "+96170444955", "email": "hbdeir16@gmail.com", "availableLanguage": ["en"]}],
     "priceRange": "$3,000 to $11,000+ setup + $50 to $100/seat/mo"
 }, ensure_ascii=False)
-HEAD = HEAD.replace("__ORG_JSONLD__", ORG_JSONLD).replace("__FAQ_JSONLD__", FAQ_JSONLD)
+HEAD = HEAD.replace("__WEBSITE_JSONLD__", WEBSITE_JSONLD).replace("__ORG_JSONLD__", ORG_JSONLD).replace("__FAQ_JSONLD__", FAQ_JSONLD)
+
+ROBOTS_TXT = """User-agent: *
+Allow: /
+Disallow: /app/
+
+Sitemap: https://isabisystems.com/sitemap.xml
+"""
+
+
+def build_sitemap_xml(lastmod_iso: str) -> str:
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <url>
+    <loc>https://isabisystems.com/</loc>
+    <lastmod>{lastmod_iso}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://isabisystems.com/og-image.png</image:loc>
+      <image:title>ISABI Systems | The ERP Your Group Actually Runs On</image:title>
+    </image:image>
+  </url>
+</urlset>
+"""
 
 def main():
     full_html = f"{HEAD}<style>{CSS}</style>\n</head>\n<body>\n{BODY}\n<script>{JS}</script>\n</body>\n</html>\n"
@@ -101,6 +139,11 @@ def main():
         f.write(full_html)
     with open(os.path.join(ROOT, 'CNAME'), 'w', encoding='utf-8', newline='\n') as f:
         f.write('isabisystems.com\n')
+    with open(os.path.join(ROOT, 'robots.txt'), 'w', encoding='utf-8', newline='\n') as f:
+        f.write(ROBOTS_TXT)
+    today_iso = datetime.date.today().isoformat()
+    with open(os.path.join(ROOT, 'sitemap.xml'), 'w', encoding='utf-8', newline='\n') as f:
+        f.write(build_sitemap_xml(today_iso))
 
     # Check JS syntax with node --check
     tmp_js = os.path.join(ROOT, 'build', '_check_syntax.js')
@@ -131,7 +174,7 @@ def main():
     mirror_dir = os.path.join(os.path.expanduser('~'), 'OneDrive - BHFIRMS', 'System', 'System', 'ISABI', 'Website')
     if os.path.isdir(mirror_dir):
         import shutil
-        for mf in ('index.html', 'CNAME', 'sw.js', 'manifest.json', 'og-image.png', 'favicon.ico', 'icon.svg', 'icon-maskable.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'):
+        for mf in ('index.html', 'CNAME', 'robots.txt', 'sitemap.xml', 'sw.js', 'manifest.json', 'og-image.png', 'favicon.ico', 'icon.svg', 'icon-maskable.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'):
             msrc = os.path.join(ROOT, mf)
             if os.path.exists(msrc):
                 shutil.copy2(msrc, os.path.join(mirror_dir, mf))

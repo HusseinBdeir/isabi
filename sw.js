@@ -1,14 +1,14 @@
-const CACHE_NAME = 'isabi-systems-pwa-v6.12';
+const CACHE_NAME = 'isabi-systems-pwa-v6.13';
 const ASSETS = [
   './',
   './index.html',
-  './manifest.json?v=6.12',
-  './favicon.ico?v=6.12',
-  './icon.svg?v=6.12',
-  './icon-180.png?v=6.12',
-  './icon-192.png?v=6.12',
-  './icon-512.png?v=6.12',
-  './icon-512-maskable.png?v=6.12'
+  './manifest.json?v=6.13',
+  './favicon.ico?v=6.13',
+  './icon.svg?v=6.13',
+  './icon-180.png?v=6.13',
+  './icon-192.png?v=6.13',
+  './icon-512.png?v=6.13',
+  './icon-512-maskable.png?v=6.13'
 ];
 
 self.addEventListener('install', event => {
@@ -29,15 +29,23 @@ self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  // Delegate /app/ (ISABI Command Center PWA) and /api/ to their own service worker / network
-  if (url.pathname.includes('/app/') || url.pathname.endsWith('/app') || url.pathname.includes('/api/')) return;
+  // Delegate /app/ (ISABI Command Center PWA), /api/, and crawler index files to their own service worker / network
+  if (
+    url.pathname.includes('/app/') ||
+    url.pathname.endsWith('/app') ||
+    url.pathname.includes('/api/') ||
+    url.pathname.endsWith('/robots.txt') ||
+    url.pathname.endsWith('/sitemap.xml')
+  ) return;
 
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req, { cache: 'no-store' })
         .then(res => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy));
+          if (res && res.status === 200 && (res.headers.get('content-type') || '').includes('text/html')) {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy));
+          }
           return res;
         })
         .catch(() => caches.match('./index.html').then(r => r || caches.match('./')))

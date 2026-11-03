@@ -15,10 +15,11 @@ ART_DIR = os.environ.get('ISABI_ART_DIR') or os.path.join(tempfile.gettempdir(),
 def run_dom_and_screenshots():
     ud = tempfile.mkdtemp(prefix='isabi_edge_')
     try:
-        # 0. Verify 0 forbidden vendor reliance & 0 overspecified technical plumbing jargon in index.html & manifest.json
+        # 0. Verify 0 forbidden vendor reliance & 0 overspecified technical plumbing jargon in index.html, manifest.json, robots.txt & sitemap.xml
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        for fname in ('index.html', 'manifest.json'):
+        for fname in ('index.html', 'manifest.json', 'robots.txt', 'sitemap.xml'):
             fpath = os.path.join(repo_root, fname)
+            assert os.path.exists(fpath), f"Missing required file: {fname}"
             txt = open(fpath, 'r', encoding='utf-8').read()
             hits = re.findall(r'Power BI|Dataverse|Power Apps|Microsoft', txt, flags=re.IGNORECASE)
             assert not hits, f"Forbidden terms found in {fname}: {hits[:10]}"
@@ -29,6 +30,16 @@ def run_dom_and_screenshots():
             )
             assert not jargon, f"Overspecified technical jargon found in {fname}: {jargon[:10]}"
             print(f'[CLEAN] {fname}: 0 forbidden vendor terms & 0 technical plumbing jargon')
+
+        import xml.etree.ElementTree as ET
+        robots_txt = open(os.path.join(repo_root, 'robots.txt'), 'r', encoding='utf-8').read()
+        assert 'Allow: /' in robots_txt and 'Disallow: /app/' in robots_txt and 'Sitemap: https://isabisystems.com/sitemap.xml' in robots_txt, f"Invalid robots.txt: {robots_txt!r}"
+        sitemap_txt = open(os.path.join(repo_root, 'sitemap.xml'), 'r', encoding='utf-8').read()
+        ET.fromstring(sitemap_txt)
+        assert '<loc>https://isabisystems.com/</loc>' in sitemap_txt and '/app/' not in sitemap_txt, f"Invalid sitemap.xml: {sitemap_txt!r}"
+        cname_txt = open(os.path.join(repo_root, 'CNAME'), 'r', encoding='utf-8').read().strip()
+        assert cname_txt == 'isabisystems.com', f"Invalid CNAME: {cname_txt!r}"
+        print('[SEO] robots.txt, sitemap.xml (valid XML) & CNAME verified')
 
         # 1. Dump DOM at #industries hash to verify initial hash activation & rendering
         res = subprocess.run(
@@ -51,6 +62,8 @@ def run_dom_and_screenshots():
             ('FAQ panel rendered in Why ISABI', 'data-ing-panel="faq"'),
             ('FAQ JSON-LD present', '"@type": "FAQPage"'),
             ('Organization JSON-LD present', '"@type": "ProfessionalService"'),
+            ('WebSite JSON-LD present', '"@type": "WebSite"'),
+            ('Sitemap link tag present', 'rel="sitemap"'),
             ('Open Graph image tag', 'property="og:image"'),
             ('Dynamic sandbox period label', '(MTD)</option>'),
             ('Scroll reveal activated', '<html lang="en" data-theme="light" class="js-io">'),
