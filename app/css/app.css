@@ -22252,6 +22252,94 @@ table.ledger-table tbody td.td-databar {
   border-color: var(--brass-border);
 }
 
+.malf-scope-box {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.malf-scope-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.malf-scope-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 2px;
+}
+.malf-cat-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.malf-cat-pills .uom-qpill {
+  padding: 4px 10px;
+  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.malf-cat-pills .uom-qpill svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+.malf-quick-pills {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.malf-quick-chip {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-soft, var(--ink));
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.malf-quick-chip small {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.malf-quick-chip:hover {
+  border-color: var(--brass-border, var(--line-strong));
+  color: var(--ink);
+}
+.malf-quick-chip.active {
+  background: rgba(200, 157, 84, 0.14);
+  border-color: var(--brass, #C89D54);
+  color: var(--ink);
+  font-weight: 700;
+}
+:root[data-theme="dark"] .malf-quick-chip.active {
+  background: rgba(217, 165, 74, 0.18);
+  color: var(--brass, #D9A54A);
+}
+
 /* ============================================================================
    v11.1 — Tablet & Mobile Smart Entry Modal Ergonomics + iOS WebKit Input Fix
    ============================================================================ */

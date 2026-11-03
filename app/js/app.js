@@ -379,7 +379,7 @@
   };
   const CR_LABEL = {
     sales_tickets: 'sales ticket', raw_purchases: 'raw receipt', receipts: 'customer receipt',
-    fuel_intakes: 'fuel intake', fuel_malfunctions: 'tank malfunction', expenses: 'expense',
+    fuel_intakes: 'fuel intake', fuel_malfunctions: 'malfunction / discrepancy', expenses: 'expense',
     expense_items: 'expense item', recurring_expenses: 'recurring expense', warehouse_movements: 'warehouse movement', settlements: 'supplier settlement',
     price_rules: 'price agreement', vat_invoices: 'vat invoice', credit_terms: 'credit terms',
     customers: 'customer', suppliers: 'supplier', products: 'product', items: 'item / spare part',
@@ -7491,6 +7491,17 @@
       if (!r || r.voided) return;
       inc(item, r.oil_type, 2);
     });
+    (rec.fuel_malfunctions || []).forEach(r => {
+      if (!r || r.voided) return;
+      const itNm = String(r.item || 'Diesel').trim();
+      if (itNm) {
+        inc(productFuel, itNm, 2);
+        inc(item, itNm, 2);
+      }
+      if (r.equipment) inc(truck, r.equipment, 1);
+      if (r.driver) inc(driver, r.driver, 1);
+      if (r.warehouse_location) inc(warehouseLoc, r.warehouse_location, 1);
+    });
     partMovs.forEach(r => {
       if (!r || r.voided) return;
       inc(item, r.part_name, 2);
@@ -11300,7 +11311,7 @@
     for (let i = 0; i < malfArr.length; i++) {
       const m = malfArr[i];
       if (!m || m.voided) continue;
-      if (!/diesel|mazout/i.test(String(m.item || 'Diesel'))) continue;
+      if (!classifyMalfunctionItem(m.item || 'Diesel', m.category || '').isDiesel) continue;
       const l = round2(Number(m.litres || 0));
       if (!l) continue;
       const appRec = isAppRecord(m);
@@ -14307,22 +14318,28 @@
     const dtScoped = getDieselTankLedger();
     const hasDieselActivity = Boolean(dtScoped && (dtScoped.boughtL || dtScoped.consumedL || dtScoped.discrepancyL || dtScoped.soldL || dtScoped.closingTankL || resolveEffectiveModelKey(STATE.company) !== 'lionstransport'));
     const malfScopedRows = filterRecords(SEED.records.fuel_malfunctions || [], { ignoreSearch: true })
-      .filter(m => m && !m.voided && Number(m.litres || 0) !== 0)
+      .filter(m => m && !m.voided && Number(m.litres != null ? m.litres : (m.qty || 0)) !== 0)
       .slice()
-      .sort((a, b) => Math.abs(Number(b.litres || 0)) - Math.abs(Number(a.litres || 0)) || String(b.date || '').localeCompare(String(a.date || '')))
-      .map(m => ({
-        id: m.id,
-        rid: m.id,
-        rkey: 'fuel_malfunctions',
-        date: recordDate(m) || String(m.date || '').slice(0, 10),
-        company: m.company || 'WTC',
-        ticket_no: m.ticket_no || '-',
-        discrepancy_type: m.discrepancy_type || 'Malfunction',
-        equipment: m.equipment || '-',
-        litres: round2(Number(m.litres || 0)),
-        tank_delta_l: round2(-Number(m.litres || 0)),
-        notes: m.notes || m.driver || '-'
-      }));
+      .sort((a, b) => Math.abs(Number(b.litres != null ? b.litres : (b.qty || 0))) - Math.abs(Number(a.litres != null ? a.litres : (a.qty || 0))) || String(b.date || '').localeCompare(String(a.date || '')))
+      .map(m => {
+        const mCls = classifyMalfunctionItem(m.item || 'Diesel', m.category || '');
+        const qVal = round2(Number(m.litres != null ? m.litres : (m.qty || 0)));
+        return {
+          id: m.id,
+          rid: m.id,
+          rkey: 'fuel_malfunctions',
+          date: recordDate(m) || String(m.date || '').slice(0, 10),
+          company: m.company || 'WTC',
+          ticket_no: m.ticket_no || '-',
+          item: mCls.item,
+          uom: normalizeMalfUom(m.uom || mCls.uom || 'L'),
+          discrepancy_type: m.discrepancy_type || 'Malfunction',
+          equipment: m.equipment || '-',
+          litres: qVal,
+          tank_delta_l: round2(-qVal),
+          notes: m.notes || m.driver || '-'
+        };
+      });
     const liveFleet = Object.assign({}, baseFleet, {
       active_equipment: (mdl.equipment || []).length || baseFleet.active_equipment || 0,
       meter_readings_to_check: meterIssues.length,
@@ -15931,11 +15948,11 @@
           { label: 'Equipment', key: 'equipment', mono: true }, { label: 'Type', key: 'type' }, { label: 'Metric', key: 'metric' },
           { label: 'Value', key: 'value', r: true, fmt: num1 }, { label: 'Distance / Hours', key: 'distance_km', r: true, fmt: (v, r) => fmtNum(v != null ? v : r.hours, 0) }, { label: 'Diesel (L)', key: 'diesel_l', r: true, fmt: v => fmtNum(v, 0) }
         ], 'snFuel')}
-        ${miniTable('DIESEL TANK MALFUNCTIONS &amp; DISCREPANCIES (5% WATCHDOG)', fleet.malfunction_rows || [], [
+        ${miniTable('MALFUNCTIONS &amp; STOCK DISCREPANCIES (5% DIESEL WATCHDOG)', fleet.malfunction_rows || [], [
           { label: 'Date', key: 'date', mono: true }, { label: 'Ticket', key: 'ticket_no', mono: true }, { label: 'Co.', key: 'company' },
-          { label: 'Type', key: 'discrepancy_type' }, { label: 'Unit', key: 'equipment', mono: true },
-          { label: 'Discrepancy (L)', key: 'litres', r: true, fmt: v => `${Number(v || 0) > 0 ? '+' : ''}${fmtNum(v, 1)}` },
-          { label: 'Tank Impact (L)', key: 'tank_delta_l', r: true, fmt: v => `${Number(v || 0) > 0 ? '+' : ''}${fmtNum(v, 1)}` },
+          { label: 'Item', key: 'item' }, { label: 'Type', key: 'discrepancy_type' }, { label: 'Unit', key: 'equipment', mono: true },
+          { label: 'Discrepancy', key: 'litres', r: true, fmt: (v, r) => `${Number(v || 0) > 0 ? '+' : ''}${fmtNum(v, 1)} ${(r && r.uom) || 'L'}` },
+          { label: 'Stock / Tank Impact', key: 'tank_delta_l', r: true, fmt: (v, r) => `${Number(v || 0) > 0 ? '+' : ''}${fmtNum(v, 1)} ${(r && r.uom) || 'L'}` },
           { label: 'Notes', key: 'notes' }
         ], 'snMalfunction')}
         ${miniTable('DELIVERIES AWAITING SUPPLIER INVOICE PRICE ($0.00 PENDING)', fleet.pending_price_rows || [], [
@@ -18062,12 +18079,13 @@
             <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('diesel', `Diesel (${dieselBaseCount})`)}${chip('lube', `Lubricants (${lubeBaseCount})`)}${greaseBaseCount > 0 ? chip('grease', `Grease (${greaseBaseCount})`) : ''}${chip('flag', `Guard Flags (${flagged})`)}${chip('own', 'Own Fleet')}${chip('transporter', 'Haulers')}${chip('truck', 'Trucks')}${chip('machinery', 'Machinery')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button type="button" class="btn btn-ghost-bar" data-scroll-panel="dieselTankPanel" title="Jump to Diesel Consumption, Malfunctions, Sales &amp; Tank Remaining Ledger">Tank Ledger</button>
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_equipment" title="Open Master Equipment &amp; Drivers Registry">${ic('reg_equipment')} Master Fleet</button>
-            <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map" title="Open Daily Plant &amp; Machine Map">${ic('workforce_map')} Plant Map</button>
-            <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="fuel" title="Open Touch Fuel &amp; Lubricants Kiosk">${ic('fuel')} Fuel Kiosk</button>
+            <button type="button" class="btn btn-ghost-bar" data-scroll-panel="dieselTankPanel">Tank Ledger</button>
+            <button type="button" class="btn btn-ghost-bar" data-scroll-panel="malfunctionsRegPanel">Discrepancies</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_equipment">${ic('reg_equipment')} Master Fleet</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="workforce_map">${ic('workforce_map')} Plant Map</button>
+            <button type="button" class="btn btn-ghost-bar" data-kiosk-jump="fuel">${ic('fuel')} Fuel Kiosk</button>
             ${exportBtn('fuelPanel', 'Fuel_Intakes')}
-            ${canEnterForm('malfunction') ? '<button type="button" class="btn" data-open-diesel-malf="1" title="Log Tank Malfunction, Meter Variance or Dip Calibration">+ Malfunction</button>' : ''}
+            ${canEnterForm('malfunction') ? '<button type="button" class="btn" data-open-diesel-malf="1">+ Malfunction</button>' : ''}
             ${canEnterForm('fuel') ? '<button class="btn btn-primary" data-open-modal="fuel">+ New Fuel Ticket</button>' : ''}
           </div>
         </div>
@@ -18168,9 +18186,9 @@
               <button type="button" class="filter-chip ${dtMode === 'movements' ? 'active' : ''}" data-dtank-mode="movements">All Movements (${fmtNum(dtMovPoolByYm.length)})</button>
               <button type="button" class="filter-chip ${dtMode === 'counterparties' ? 'active' : ''}" data-dtank-mode="counterparties">Sold, Bought &amp; Malfunction Breakdown (${fmtNum(dtSoldRows.length + dtBoughtRows.length + dtDiscTypeRows.length)})</button>
             </span>
-            ${canEnterForm('malfunction') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-diesel-malf="1" title="Log Tank Malfunction, Meter Variance or Dip Calibration">+ Log Malfunction</button>' : ''}
-            ${canEnterForm('expense') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-diesel-bulk="1" title="Record Bulk Diesel Delivery into Tank">+ Bulk Refill</button>' : ''}
-            ${canEnterForm('sales') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-diesel-sale="1" title="Record Diesel Sale Ticket from Tank">+ Diesel Sale</button>' : ''}
+            ${canEnterForm('malfunction') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-diesel-malf="1">+ Log Malfunction</button>' : ''}
+            ${canEnterForm('expense') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-diesel-bulk="1">+ Bulk Refill</button>' : ''}
+            ${canEnterForm('sales') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-diesel-sale="1">+ Diesel Sale</button>' : ''}
             ${exportBtn('dieselTankPanel', dtMode === 'movements' ? 'Diesel_Tank_Movements' : (dtMode === 'counterparties' ? 'Diesel_Sold_Bought_Malfunctions' : 'Diesel_Monthly_Tank_Ledger'))}
           </span>
         </div>
@@ -18449,6 +18467,108 @@
         `)}
       </div>
 
+      ${(() => {
+        const malfScopedBase = filterRecords(SEED.records.fuel_malfunctions || []);
+        const malfDecorated = malfScopedBase.map(r => {
+          const cls = classifyMalfunctionItem(r.item || 'Diesel', r.category || '', r.company);
+          const q = round2(Number(r.litres != null ? r.litres : (r.qty || 0)));
+          const u = normalizeMalfUom(r.uom || cls.uom);
+          const domKey = cls.isDiesel ? 'diesel' : ((cls.isLubricant || cls.isGrease) ? 'lubricants' : (cls.isWarehouse ? 'warehouse' : 'materials'));
+          return Object.assign({}, r, {
+            _malfDom: domKey,
+            _malfCat: r.category || cls.category,
+            _malfItem: r.item || cls.item || 'Diesel',
+            _malfUom: u,
+            _malfQty: q,
+            _malfImpact: round2(-q)
+          });
+        });
+        const cntDieselMf = malfDecorated.filter(r => r._malfDom === 'diesel').length;
+        const cntLubeMf = malfDecorated.filter(r => r._malfDom === 'lubricants').length;
+        const cntWhMf = malfDecorated.filter(r => r._malfDom === 'warehouse').length;
+        const cntMatMf = malfDecorated.filter(r => r._malfDom === 'materials').length;
+        const malfChipKey = STATE.malfRegFilter || 'all';
+        const mfChip = (k, lbl) => `<button type="button" class="filter-chip ${malfChipKey === k ? 'active' : ''}" data-malf-reg-chip="${esc(k)}">${lbl}</button>`;
+        const malfFiltered = sortRows(malfDecorated.filter(r => {
+          if (malfChipKey === 'diesel') return r._malfDom === 'diesel';
+          if (malfChipKey === 'lubricants') return r._malfDom === 'lubricants';
+          if (malfChipKey === 'warehouse') return r._malfDom === 'warehouse';
+          if (malfChipKey === 'materials') return r._malfDom === 'materials';
+          return true;
+        }), 'malfreg', 'date', 'desc');
+        const shownMalf = malfFiltered.slice(0, shownCount('malfreg'));
+        const sumDieselMf = round2(malfFiltered.filter(r => r._malfDom === 'diesel').reduce((s, r) => s + r._malfQty, 0));
+        const sumLubeLMf = round2(malfFiltered.filter(r => r._malfDom === 'lubricants' && r._malfUom === 'L').reduce((s, r) => s + r._malfQty, 0));
+        const sumGreaseKgMf = round2(malfFiltered.filter(r => r._malfDom === 'lubricants' && r._malfUom === 'kg').reduce((s, r) => s + r._malfQty, 0));
+        const cntOtherMf = malfFiltered.filter(r => r._malfDom === 'warehouse' || r._malfDom === 'materials').length;
+        return `
+          <div class="panel-card" id="malfunctionsRegPanel" style="margin-bottom:14px">
+            <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+              <div>
+                <div class="panel-title"><span>MALFUNCTIONS, LEAKAGES &amp; STOCK DISCREPANCIES · ALL ITEMS (${fmtNum(malfFiltered.length)} ENTRIES)</span></div>
+                <span class="ph-sub">Unified physical variances, meter discrepancies, hose leaks &amp; calibrations across Fuel, Lubricants &amp; Grease, Spare Parts &amp; Materials</span>
+              </div>
+              <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                ${exportBtn('malfunctionsRegPanel', 'Malfunctions_And_Discrepancies')}
+                ${canEnterForm('malfunction') ? `<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-malf-cat="lubricants">${ic('droplet')} + Lube / Grease Variance</button>` : ''}
+                ${canEnterForm('malfunction') ? `<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-malf-cat="warehouse">${ic('warehouse')} + Spare / Shelf Variance</button>` : ''}
+                ${canEnterForm('malfunction') ? `<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-open-malf-cat="all">+ Log Malfunction</button>` : ''}
+              </span>
+            </div>
+            <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+              <div class="chip-bar">
+                ${mfChip('all', `All (${malfDecorated.length})`)}
+                ${mfChip('diesel', `Diesel (${cntDieselMf})`)}
+                ${mfChip('lubricants', `Lubricants &amp; Grease (${cntLubeMf})`)}
+                ${mfChip('warehouse', `Spare Parts &amp; Warehouse (${cntWhMf})`)}
+                ${mfChip('materials', `Materials &amp; Aggregates (${cntMatMf})`)}
+              </div>
+            </div>
+            ${renderColFilterBar('malfreg')}
+            <div class="table-wrap">
+              <table class="ledger-table" id="malfunctionsRegTable">
+                <thead>
+                  <tr>
+                    ${th('malfreg', 'Date', 'date')}${th('malfreg', 'Co.', 'company')}${th('malfreg', 'Domain', '_malfCat')}
+                    ${th('malfreg', 'Item / Material', '_malfItem')}${th('malfreg', 'Discrepancy Type', 'discrepancy_type')}
+                    ${th('malfreg', 'Variance (+Out / -In)', '_malfQty', 'r')}${th('malfreg', 'Stock / Tank Impact', '_malfImpact', 'r')}
+                    ${th('malfreg', 'Equipment / Slip', 'equipment')}${th('malfreg', 'Notes', 'notes')}
+                  </tr>
+                </thead>
+                <tbody>
+                  ${shownMalf.map(r => {
+                    const domBadge = r._malfDom === 'diesel' ? 'badge-info' : (r._malfDom === 'lubricants' ? 'badge-brass' : (r._malfDom === 'warehouse' ? 'badge-ok' : 'badge-neutral'));
+                    const qDec = r._malfQty % 1 ? 2 : (r._malfUom === 'L' || r._malfUom === 'kg' ? 1 : 0);
+                    const imp = r._malfImpact;
+                    const eqRef = [r.equipment, r.ticket_no ? '#' + r.ticket_no : ''].filter(Boolean).join(' · ') || '-';
+                    return `
+                      <tr class="rrow" data-rkey="fuel_malfunctions" data-rid="${esc(r.id)}">
+                        <td class="mono">${esc(fmtDateDMY(r.date))}</td>
+                        <td>${coBadge(r.company)}</td>
+                        <td><span class="badge ${domBadge}">${esc(r._malfCat)}</span></td>
+                        <td><strong>${esc(r._malfItem)}</strong></td>
+                        <td>${esc(r.discrepancy_type || 'Malfunction')}</td>
+                        <td class="r mono"><strong>${r._malfQty > 0 ? '+' : ''}${fmtNum(r._malfQty, qDec)} ${esc(r._malfUom)}</strong></td>
+                        <td class="r mono" style="color:${imp < 0 ? 'var(--warn)' : 'var(--good)'}"><strong>${imp > 0 ? '+' : ''}${fmtNum(imp, qDec)} ${esc(r._malfUom)}</strong></td>
+                        <td>${r.equipment ? relLink('equipment', r.equipment, eqRef, true) : esc(eqRef)}</td>
+                        <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis">${esc(String(r.notes || '').replace(/[—→]/g, '-') || '-')}</td>
+                      </tr>
+                    `;
+                  }).join('') || emptyRow(9, 'No malfunctions or stock discrepancies match the active filter.')}
+                  ${showMoreRow('malfreg', malfFiltered.length, 9)}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colspan="5"><b>TOTAL (${fmtNum(malfFiltered.length)} DISCREPANCY ENTRIES)</b></td>
+                    <td colspan="4" class="r mono"><b>Diesel: ${sumDieselMf > 0 ? '+' : ''}${fmtNum(sumDieselMf, 1)} L · Oils: ${sumLubeLMf > 0 ? '+' : ''}${fmtNum(sumLubeLMf, 1)} L · Grease: ${sumGreaseKgMf > 0 ? '+' : ''}${fmtNum(sumGreaseKgMf, 1)} kg${cntOtherMf > 0 ? ` · Parts &amp; Materials: ${fmtNum(cntOtherMf)} entries` : ''}</b></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        `;
+      })()}
+
       ${(window.MFG_PBI && typeof window.MFG_PBI.renderFuelVisualsSection === 'function')
         ? window.MFG_PBI.renderFuelVisualsSection({ months: getScopedMonthly(m.monthly, 14), topUnits: fuelEffAll })
         : ''}
@@ -18507,6 +18627,7 @@
       ${(window.MFG_PBI && typeof window.MFG_PBI.renderLubricationBenchmarksSection === 'function')
         ? window.MFG_PBI.renderLubricationBenchmarksSection({
             fuelRows: filterRecords(SEED.records.fuel_intakes, { ignoreSearch: true }),
+            malfRows: filterRecords(SEED.records.fuel_malfunctions || [], { ignoreSearch: true }),
             expRows: filterRecords(SEED.records.expenses || [], { ignoreSearch: true }),
             salesRows: filterRecords(SEED.records.sales_tickets || [], { ignoreSearch: true }),
             rawRows: filterRecords(SEED.records.raw_purchases || [], { ignoreSearch: true }),
@@ -19144,11 +19265,438 @@
     return (SEED.records.staff_members || []).find(r => r && !r.voided && norm(r.name || r.staff) === k) || null;
   }
 
+  function normalizeMalfUom(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return 'L';
+    if (/^(l|ltr|litre|litres|liter|liters)$/i.test(s)) return 'L';
+    if (/^(kg|kgs|kilo|kilos|kilogram|kilograms)$/i.test(s)) return 'kg';
+    if (/^(piece|pieces|pcs|pc|ea|each|unit|units)$/i.test(s)) return 'Piece';
+    if (/^(set|sets|kit|kits)$/i.test(s)) return 'Set';
+    if (/^(box|boxes|pack|packs)$/i.test(s)) return 'Box';
+    if (/^(m|mtr|metre|metres|meter|meters)$/i.test(s)) return 'm';
+    if (/^(m3|m³|cbm|cubic\s*m.*)$/i.test(s)) return 'm³';
+    if (/^(ton|tons|tonne|tonnes|mt|t)$/i.test(s)) return 'Ton';
+    if (/^(bag|bags|sack|sacks)$/i.test(s)) return 'Bag';
+    if (/^(truck|trucks|load|loads)$/i.test(s)) return 'Truck';
+    return s;
+  }
+
+  function classifyMalfunctionItem(itemRaw, catHintRaw) {
+    const nm = String(itemRaw || '').trim();
+    const k = norm(nm);
+    const hint = String(catHintRaw || '').trim();
+    const isSparePartOrTool = (nmStr, catStr, uomStr) => (
+      /\b(filter|hose|pump|seal|gasket|cylinder|valve|sensor|injector|nozzle|pipe|line|fitting|gun|nipple|gauge|switch|cap|strainer|cooler|radiator|belt|bearing|bushing|pin|bolt|kit|assembly|element|cartridge|tire|tyre|battery|pad|shoe|drum|disc|blade|tooth|teeth|liner|screen|mesh|roller|motor|alternator|starter)\b/i.test(String(nmStr || ''))
+      || /filter|hose|engine|powertrain|undercarriage|tire|tyre|electrical|tool|safety|body|cabin|brake|crush|screen|batching/i.test(String(catStr || ''))
+      || /^(piece|pieces|pcs|pc|set|sets|pair|m|metre|meter|roll)$/i.test(String(uomStr || '').trim())
+    );
+    if (!nm || /^(diesel|mazout|bulk\s*diesel)$/i.test(nm)) {
+      return {
+        item: nm && /^mazout$/i.test(nm) ? 'Diesel' : (nm || 'Diesel'),
+        domain: 'fuel',
+        category: 'Fuel',
+        uom: 'L',
+        uomLocked: true,
+        isDiesel: true,
+        isFuel: true,
+        isLubricant: false,
+        isGrease: false,
+        isWarehouse: false,
+        isMaterial: false,
+        whCanonicalName: ''
+      };
+    }
+    if (/^(petrol|gasoline|benzine|petrol\s*\/\s*gasoline)$/i.test(nm)) {
+      return {
+        item: 'Petrol / Gasoline',
+        domain: 'fuel',
+        category: 'Fuel',
+        uom: 'L',
+        uomLocked: true,
+        isDiesel: false,
+        isFuel: true,
+        isLubricant: false,
+        isGrease: false,
+        isWarehouse: false,
+        isMaterial: false,
+        whCanonicalName: ''
+      };
+    }
+    if (/adblue|fuel\s*additive/i.test(nm) && !isSparePartOrTool(nm, '', '')) {
+      return {
+        item: /^adblue$/i.test(nm) ? 'Fuel Additives & AdBlue' : nm,
+        domain: 'fuel',
+        category: 'Fuel',
+        uom: 'L',
+        uomLocked: true,
+        isDiesel: false,
+        isFuel: true,
+        isLubricant: false,
+        isGrease: false,
+        isWarehouse: false,
+        isMaterial: false,
+        whCanonicalName: 'Fuel Additives & AdBlue'
+      };
+    }
+    const lubeAliases = [
+      { re: /^(oil\s*68|hydraulic\s*oil\s*68|68\s*oil)$/i, item: nm, wh: 'Hydraulic Oil 68', uom: 'L', grease: false },
+      { re: /^(oil\s*15w[- ]?40|engine\s*oil\s*15w[- ]?40|15w[- ]?40)$/i, item: nm, wh: 'Engine Oil 15W-40', uom: 'L', grease: false },
+      { re: /^(grease|lithium\s*ep2\s*chassis\s*grease|chassis\s*grease|ep2\s*grease)$/i, item: nm, wh: 'Lithium EP2 Chassis Grease', uom: 'kg', grease: true },
+      { re: /^(oil\s*90|gear\s*\/\s*transmission\s*oil\s*90|gear\s*oil\s*90)$/i, item: nm, wh: 'Gear / Transmission Oil 90', uom: 'L', grease: false },
+      { re: /^(oil\s*atf\s*\/\s*gearbox|atf\s*\/\s*power\s*steering\s*fluid|oil\s*atf|atf\s*fluid)$/i, item: nm, wh: 'ATF / Power Steering Fluid', uom: 'L', grease: false }
+    ];
+    for (let i = 0; i < lubeAliases.length; i++) {
+      const al = lubeAliases[i];
+      if (al.re.test(nm)) {
+        return {
+          item: al.item,
+          domain: 'lubricants',
+          category: 'Oils & Lubricants',
+          uom: al.uom,
+          uomLocked: true,
+          isDiesel: false,
+          isFuel: false,
+          isLubricant: true,
+          isGrease: al.grease,
+          isWarehouse: false,
+          isMaterial: false,
+          whCanonicalName: al.wh
+        };
+      }
+    }
+
+    const catItem = resolveCatalogItem(nm);
+    if (catItem) {
+      const catStr = String(catItem.category || '').trim();
+      const canonNm = String(catItem.name || catItem.item_name || nm).trim();
+      const partLike = isSparePartOrTool(canonNm, catStr, catItem.uom);
+      if (/^fuel$/i.test(catStr) || (!partLike && /^(diesel|mazout|gasoline|petrol|benzine|fuel\s*additives.*|adblue.*)$/i.test(canonNm))) {
+        const isDsl = /diesel|mazout/i.test(canonNm);
+        return {
+          item: isDsl ? 'Diesel' : canonNm,
+          domain: 'fuel',
+          category: 'Fuel',
+          uom: normalizeMalfUom(catItem.uom || 'L'),
+          uomLocked: true,
+          isDiesel: isDsl,
+          isFuel: true,
+          isLubricant: false,
+          isGrease: false,
+          isWarehouse: false,
+          isMaterial: false,
+          whCanonicalName: isDsl ? '' : canonNm
+        };
+      }
+      if (/oil|lubric|grease/i.test(catStr) || (!partLike && /\b(hydraulic\s*oil|engine\s*oil|gear\s*oil|transmission\s*oil|15w[- ]?40|atf|power\s*steering\s*fluid|coolant|antifreeze|brake\s*fluid|chassis\s*grease|ep2\s*grease)\b/i.test(canonNm))) {
+        const isGr = /grease/i.test(canonNm) || /^kg$/i.test(String(catItem.uom || ''));
+        return {
+          item: canonNm,
+          domain: 'lubricants',
+          category: 'Oils & Lubricants',
+          uom: isGr ? 'kg' : normalizeMalfUom(catItem.uom || 'L'),
+          uomLocked: true,
+          isDiesel: false,
+          isFuel: false,
+          isLubricant: true,
+          isGrease: isGr,
+          isWarehouse: false,
+          isMaterial: false,
+          whCanonicalName: canonNm
+        };
+      }
+      return {
+        item: canonNm,
+        domain: 'warehouse',
+        category: catStr || 'Spare Parts',
+        uom: normalizeMalfUom(catItem.uom || 'Piece'),
+        uomLocked: true,
+        isDiesel: false,
+        isFuel: false,
+        isLubricant: false,
+        isGrease: false,
+        isWarehouse: true,
+        isMaterial: false,
+        whCanonicalName: canonNm
+      };
+    }
+
+    const prodRow = (SEED.records && Array.isArray(SEED.records.products))
+      ? SEED.records.products.find(p => p && !p.voided && norm(p.name) === k)
+      : null;
+    if (prodRow) {
+      if (/diesel|mazout/i.test(prodRow.name)) {
+        return {
+          item: 'Diesel',
+          domain: 'fuel',
+          category: 'Fuel',
+          uom: 'L',
+          uomLocked: true,
+          isDiesel: true,
+          isFuel: true,
+          isLubricant: false,
+          isGrease: false,
+          isWarehouse: false,
+          isMaterial: false,
+          whCanonicalName: ''
+        };
+      }
+      return {
+        item: String(prodRow.name).trim(),
+        domain: 'materials',
+        category: 'Materials & Aggregates',
+        uom: normalizeMalfUom(prodRow.uom || prodRow.unit || 'm³'),
+        uomLocked: true,
+        isDiesel: false,
+        isFuel: false,
+        isLubricant: false,
+        isGrease: false,
+        isWarehouse: false,
+        isMaterial: true,
+        whCanonicalName: ''
+      };
+    }
+
+    if (isSparePartOrTool(nm, '', '') && !/^(lubricants|materials|fuel)$/i.test(hint)) {
+      return {
+        item: nm,
+        domain: 'warehouse',
+        category: hint || 'Spare Parts',
+        uom: 'Piece',
+        uomLocked: false,
+        isDiesel: false,
+        isFuel: false,
+        isLubricant: false,
+        isGrease: false,
+        isWarehouse: true,
+        isMaterial: false,
+        whCanonicalName: nm
+      };
+    }
+
+    if (/lubric|oil|grease/i.test(hint) || /hydraul|15w|oil|grease|atf|coolant/i.test(nm)) {
+      const isGr = /grease/i.test(nm);
+      return {
+        item: nm,
+        domain: 'lubricants',
+        category: 'Oils & Lubricants',
+        uom: isGr ? 'kg' : 'L',
+        uomLocked: false,
+        isDiesel: false,
+        isFuel: false,
+        isLubricant: true,
+        isGrease: isGr,
+        isWarehouse: false,
+        isMaterial: false,
+        whCanonicalName: nm
+      };
+    }
+    if (/material|aggregat/i.test(hint) || /\b(sand|ramel|bahs|gravel|cement|sakher|bodra|subbase|tuff)\b/i.test(nm)) {
+      return {
+        item: nm,
+        domain: 'materials',
+        category: 'Materials & Aggregates',
+        uom: 'm³',
+        uomLocked: false,
+        isDiesel: false,
+        isFuel: false,
+        isLubricant: false,
+        isGrease: false,
+        isWarehouse: false,
+        isMaterial: true,
+        whCanonicalName: ''
+      };
+    }
+    if (/fuel/i.test(hint) || /fuel|diesel|petrol|gasoline/i.test(nm)) {
+      return {
+        item: nm,
+        domain: 'fuel',
+        category: 'Fuel',
+        uom: 'L',
+        uomLocked: false,
+        isDiesel: false,
+        isFuel: true,
+        isLubricant: false,
+        isGrease: false,
+        isWarehouse: false,
+        isMaterial: false,
+        whCanonicalName: ''
+      };
+    }
+    return {
+      item: nm,
+      domain: 'warehouse',
+      category: hint || 'Spare Parts',
+      uom: 'Piece',
+      uomLocked: false,
+      isDiesel: false,
+      isFuel: false,
+      isLubricant: false,
+      isGrease: false,
+      isWarehouse: true,
+      isMaterial: false,
+      whCanonicalName: nm
+    };
+  }
+
+  function malfunctionItemMeta(coOpt, catScope) {
+    ensureItemsCatalogSeeded();
+    const scope = String(catScope || 'all').toLowerCase();
+    const fIdx = getFreqIndex();
+    const wh = getWarehouseIndex(coOpt);
+    const whByKey = wh && wh.byItem ? wh.byItem : new Map();
+    const seen = new Set();
+    const entries = [];
+    let orderSeq = 0;
+
+    const scoreFor = (nm, whCanon) => {
+      const k = norm(nm);
+      const wk = whCanon ? norm(whCanon) : '';
+      let sc = (fIdx.productFuel.get(k) || 0) + (fIdx.item.get(k) || 0) + (fIdx.product.get(k) || 0);
+      if (wk && wk !== k) sc += (fIdx.item.get(wk) || 0) + (fIdx.productFuel.get(wk) || 0);
+      return sc;
+    };
+
+    const pushEntry = (nmRaw, dom, uom, detailLbl, whCanon) => {
+      const nm = String(nmRaw || '').trim();
+      const k = norm(nm);
+      if (!k || seen.has(k)) return;
+      if (scope !== 'all' && scope !== dom) return;
+      seen.add(k);
+      entries.push({
+        name: nm,
+        uom: normalizeMalfUom(uom),
+        meta: detailLbl,
+        domain: dom,
+        freq: scoreFor(nm, whCanon),
+        order: orderSeq++
+      });
+    };
+
+    // 1. Fuel & Diesel
+    pushEntry('Diesel', 'fuel', 'L', 'L · Bulk Plant Tank', '');
+    pushEntry('Petrol / Gasoline', 'fuel', 'L', 'L · Service Vehicles', '');
+    pushEntry('Fuel Additives & AdBlue', 'fuel', 'L', 'L · Exhaust & Fuel Treatment', 'Fuel Additives & AdBlue');
+
+    // 2. Core Plant Lubricants & Grease
+    const coreLubes = [
+      ['Oil 68', 'L', 'Hydraulic Oil 68', 'Hydraulic Systems'],
+      ['Oil 15W40', 'L', 'Engine Oil 15W-40', 'Diesel Engines'],
+      ['Grease', 'kg', 'Lithium EP2 Chassis Grease', 'Chassis & Loader Pins'],
+      ['Oil 90', 'L', 'Gear / Transmission Oil 90', 'Axles & Differentials'],
+      ['Oil ATF / Gearbox', 'L', 'ATF / Power Steering Fluid', 'Gearbox & Steering']
+    ];
+    coreLubes.forEach(([nm, u, whNm, desc]) => {
+      const wRow = whByKey.get(norm(whNm)) || whByKey.get(norm(nm));
+      const stockTag = wRow && wRow.onHandQty > 0 ? ` · Shelf ${fmtNum(wRow.onHandQty, wRow.onHandQty % 1 ? 1 : 0)} ${u}` : '';
+      pushEntry(nm, 'lubricants', u, `${u} · ${desc}${stockTag}`, whNm);
+    });
+
+    // 3. Warehouse & Universal Items Catalog (Oils, Spare Parts, Tools, Consumables)
+    const whItems = (wh && Array.isArray(wh.items)) ? wh.items : [];
+    whItems.forEach(w => {
+      if (!w || !w.item_name || isTransportRentalItemName(w.item_name, w.category)) return;
+      const cls = classifyMalfunctionItem(w.item_name, w.category);
+      const u = normalizeMalfUom(w.uom || cls.uom);
+      const onHandStr = w.onHandQty > 0 ? `In Stock: ${fmtNum(w.onHandQty, w.onHandQty % 1 ? 1 : 0)} ${u}` : `${w.category || cls.category}`;
+      pushEntry(w.item_name, cls.domain, u, `${u} · ${onHandStr}`, cls.whCanonicalName);
+    });
+    (SEED.records.items || []).forEach(it => {
+      if (!it || it.voided) return;
+      const nm = String(it.name || it.item_name || '').trim();
+      if (!nm || isTransportRentalItemName(nm, it.category)) return;
+      const cls = classifyMalfunctionItem(nm, it.category);
+      const u = normalizeMalfUom(it.uom || cls.uom);
+      const wRow = whByKey.get(norm(nm));
+      const meta = wRow && wRow.onHandQty > 0
+        ? `${u} · In Stock: ${fmtNum(wRow.onHandQty, wRow.onHandQty % 1 ? 1 : 0)} ${u}`
+        : `${u} · ${it.category || cls.category}`;
+      pushEntry(nm, cls.domain, u, meta, cls.whCanonicalName);
+    });
+
+    // 4. Materials & Aggregates (SEED.records.products)
+    (SEED.records.products || []).forEach(p => {
+      if (!p || p.voided || !p.name || /diesel|mazout/i.test(p.name)) return;
+      const u = normalizeMalfUom(p.uom || p.unit || 'm³');
+      pushEntry(p.name, 'materials', u, `${u} · Materials & Aggregates`, '');
+    });
+
+    // 5. Historical custom items recorded in fuel_malfunctions
+    (SEED.records.fuel_malfunctions || []).forEach(r => {
+      if (!r || r.voided || !r.item) return;
+      const cls = classifyMalfunctionItem(r.item, r.category);
+      const u = normalizeMalfUom(r.uom || cls.uom);
+      pushEntry(r.item, cls.domain, u, `${u} · ${cls.category}`, cls.whCanonicalName);
+    });
+
+    entries.sort((a, b) => (b.freq - a.freq) || (a.order - b.order));
+    return entries.map(e => [e.name, e.meta]);
+  }
+
+  function getMalfunctionQuickItems(coOpt, catScope, limit) {
+    const maxN = Number(limit) > 0 ? Number(limit) : 6;
+    const scope = String(catScope || 'all').toLowerCase();
+    const picked = [];
+    const seen = new Set();
+    const addPick = nm => {
+      const k = norm(nm);
+      if (!k || seen.has(k) || picked.length >= maxN) return;
+      const cls = classifyMalfunctionItem(nm);
+      const canonK = cls.whCanonicalName ? norm(cls.whCanonicalName) : '';
+      if (canonK && seen.has(canonK)) return;
+      seen.add(k);
+      if (canonK) seen.add(canonK);
+      picked.push([nm, cls.uom]);
+    };
+    if (scope === 'all') {
+      // Surface balanced cross-domain top items sorted by frequency descending so Fuel + Lubricants + Grease + Parts are 1 click away
+      const metaAll = malfunctionItemMeta(coOpt, 'all');
+      metaAll.slice(0, Math.max(3, maxN - 3)).forEach(([nm]) => addPick(nm));
+      const topLube = malfunctionItemMeta(coOpt, 'lubricants');
+      topLube.slice(0, 2).forEach(([nm]) => addPick(nm));
+      addPick('Grease');
+      const topWh = malfunctionItemMeta(coOpt, 'warehouse');
+      if (topWh.length) addPick(topWh[0][0]);
+      metaAll.forEach(([nm]) => addPick(nm));
+      return picked.slice(0, maxN);
+    }
+    const scopedList = malfunctionItemMeta(coOpt, scope);
+    if (scope === 'lubricants') {
+      // Prefer succinct plant names (Oil 68, Oil 15W40, Grease, Oil 90, Oil ATF / Gearbox) and guarantee Grease (kg) is 1-click reachable
+      const shortAliasByCanon = new Map([
+        [norm('Hydraulic Oil 68'), 'Oil 68'],
+        [norm('Engine Oil 15W-40'), 'Oil 15W40'],
+        [norm('Lithium EP2 Chassis Grease'), 'Grease'],
+        [norm('Gear / Transmission Oil 90'), 'Oil 90'],
+        [norm('ATF / Power Steering Fluid'), 'Oil ATF / Gearbox']
+      ]);
+      scopedList.slice(0, Math.max(1, maxN - 1)).forEach(([nm]) => {
+        const cls = classifyMalfunctionItem(nm);
+        const canonK = norm(cls.whCanonicalName || nm);
+        addPick(shortAliasByCanon.get(canonK) || nm);
+      });
+      addPick('Grease');
+      scopedList.forEach(([nm]) => {
+        const cls = classifyMalfunctionItem(nm);
+        const canonK = norm(cls.whCanonicalName || nm);
+        addPick(shortAliasByCanon.get(canonK) || nm);
+      });
+      return picked.slice(0, maxN);
+    }
+    scopedList.forEach(([nm]) => addPick(nm));
+    return picked.slice(0, maxN);
+  }
+  window.__mfgMalfunctionHelpers = {
+    normalizeMalfUom,
+    classifyMalfunctionItem,
+    malfunctionItemMeta,
+    getMalfunctionQuickItems
+  };
+
   let _WAREHOUSE_IDX = null;
   function getWarehouseIndex(coOpt) {
     ensureItemsCatalogSeeded();
     const scopeCo = coOpt ? String(coOpt).trim() : '';
-    const revKey = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${(SEED.records.items || []).length}|${scopeCo || STATE.company}|${allowedCompanyNames().join(',')}`;
+    const revKey = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${(SEED.records.items || []).length}|${(SEED.records.fuel_malfunctions || []).length}|${scopeCo || STATE.company}|${allowedCompanyNames().join(',')}`;
     if (!scopeCo && _WAREHOUSE_IDX && _WAREHOUSE_IDX.revKey === revKey) return _WAREHOUSE_IDX;
 
     const allowedCos = allowedCompanyNames();
@@ -19380,6 +19928,62 @@
       rawMovements.push(mv);
     });
 
+    // 5. -OUT / +IN from Malfunctions & Stock Discrepancies (Spare Parts, Tools, Consumables & Stocked Lubricants)
+    (SEED.records.fuel_malfunctions || []).forEach(r => {
+      if (!matchScope(r)) return;
+      const cls = classifyMalfunctionItem(r.item || 'Diesel', r.category || '');
+      if (cls.isDiesel || cls.isFuel || cls.isMaterial) return;
+      const signedVal = round2(Number(r.litres != null ? r.litres : (r.qty || 0)));
+      const absQty = Math.abs(signedVal);
+      if (!(absQty > 0)) return;
+      const canonName = cls.whCanonicalName || cls.item || String(r.item || '').trim();
+      const existingShelf = byItem.get(norm(canonName)) || byItem.get(norm(r.item || ''));
+      // Unstocked bulk lube-bay oils/grease stay in the Lubrication & Leak Audit without fabricating negative shelf rows;
+      // stocked shelf oils/grease AND all Warehouse Spare Parts/Tools/Consumables reconcile directly on the shelf ledger.
+      if ((cls.isLubricant || cls.isGrease) && signedVal > 0 && (!existingShelf || !(existingShelf.stockedInQty > 0))) {
+        return;
+      }
+      const uomClean = normalizeMalfUom(r.uom || cls.uom);
+      const locVal = r.warehouse_location || (existingShelf && existingShelf.location) || defaultWarehouseLocationForCompany(r.company);
+      const it = existingShelf || ensureItem(canonName, { category: cls.category, uom: uomClean, location: locVal, company: r.company });
+      if (!it) return;
+      const dir = signedVal < 0 ? 'IN' : 'OUT';
+      const uCost = it.stockedInQty > 0
+        ? round2(it.stockedInCostUsd / it.stockedInQty)
+        : Number(it.avgUnitCost || 0);
+      const totCost = round2(absQty * uCost);
+      if (dir === 'IN') {
+        it.stockedInQty = round2(it.stockedInQty + absQty);
+        it.stockedInCostUsd = round2(it.stockedInCostUsd + totCost);
+      } else {
+        it.adjustedOutQty = round2(it.adjustedOutQty + absQty);
+      }
+      const dt = String(r.date || '').slice(0, 10);
+      if (dt > it.lastDate) it.lastDate = dt;
+      const mv = {
+        id: r.id || r.name,
+        rkey: 'fuel_malfunctions',
+        date: dt,
+        company: r.company || 'WTC',
+        item_name: it.item_name,
+        category: cls.category || it.category,
+        direction: dir,
+        movement_type: r.discrepancy_type || (dir === 'IN' ? 'Discrepancy Surplus' : 'Malfunction / Loss'),
+        qty: absQty,
+        signedQty: dir === 'IN' ? absQty : -absQty,
+        uom: uomClean || it.uom,
+        unit_cost: round2(uCost),
+        total_cost: totCost,
+        location: locVal || it.location,
+        equipment: r.equipment || '',
+        counterparty: r.driver || '',
+        ref: r.ticket_no || r.name || r.id || '',
+        notes: r.notes || ''
+      };
+      it.movements.push(mv);
+      rawMovements.push(mv);
+    });
+
     let totalSkusInStock = 0;
     let totalUnitsOnHand = 0;
     let totalValueUsd = 0;
@@ -19449,6 +20053,7 @@
 
   function formatWarehouseMovementLabel(moveTypeRaw, dirRaw, rkey) {
     const m = String(moveTypeRaw || '').trim();
+    if (rkey === 'fuel_malfunctions') return /^IN$/i.test(String(dirRaw || '')) ? 'Discrepancy Surplus (+IN)' : 'Malfunction / Loss (-OUT)';
     if (rkey === 'expense_items' || /Expense Stored|Purchase Stored/i.test(m)) return 'Bought & Stored (+IN)';
     if (rkey === 'repair_items' || /Used in Repair/i.test(m)) return 'Used in Repair (-OUT)';
     if (rkey === 'equipment_oil_logs' || /Oil Change|Oil Service/i.test(m)) return 'Used in Oil Service (-OUT)';
@@ -23392,10 +23997,12 @@
     const movesInCnt = movesScoped.filter(m => m.direction === 'IN').length;
     const movesEqCnt = movesScoped.filter(m => m.rkey === 'repair_items' || m.rkey === 'equipment_oil_logs' || /Repair|Oil/i.test(m.movement_type || '')).length;
     const movesAdjCnt = movesScoped.filter(m => m.rkey === 'warehouse_movements').length;
+    const movesMalfCnt = movesScoped.filter(m => m.rkey === 'fuel_malfunctions').length;
     const movesFiltered = sortRows(movesScoped.filter(m => {
       if (mChipKey === 'in') return m.direction === 'IN';
       if (mChipKey === 'repairs') return m.rkey === 'repair_items' || m.rkey === 'equipment_oil_logs' || /Repair|Oil/i.test(m.movement_type || '');
       if (mChipKey === 'adjust') return m.rkey === 'warehouse_movements';
+      if (mChipKey === 'malf') return m.rkey === 'fuel_malfunctions';
       return true;
     }), 'whmoves', 'date', 'desc');
     const shownMoves = movesFiltered.slice(0, shownCount('whmoves'));
@@ -23518,6 +24125,7 @@
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_maint">${ic('repair')} Repairs</button>
             ${exportBtn('warehouseStockPanel', 'Warehouse_Stored_Items')}
             ${canEnterForm('item') ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="item">${ic('plus')} New Item (Catalog)</button>` : ''}
+            ${canEnterForm('malfunction') ? `<button type="button" class="btn btn-ghost-bar" data-open-malf-cat="warehouse">${ic('warn')} + Malfunction</button>` : ''}
             ${canPostWh ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="warehousestock">${ic('warehouse')} Shelf Adjust (+/-)</button>` : ''}
             ${canPostRep ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="repair">${ic('repair')} + Use in Repair</button>` : ''}
             ${canPostExp ? `<button type="button" class="btn btn-primary" data-open-modal="expense" data-prefill-storewh="1">+ Buy &amp; Store Item</button>` : ''}
@@ -23585,6 +24193,7 @@
               ${mChip('in', `+ Stored In (${movesInCnt})`)}
               ${mChip('repairs', `- Used on Equipment (${movesEqCnt})`)}
               ${mChip('adjust', `Shelf Adjustments (${movesAdjCnt})`)}
+              ${mChip('malf', `Discrepancies (${movesMalfCnt})`)}
             </div>
             ${exportBtn('warehouseMovesPanel', 'Warehouse_Movements_Ledger')}
           </span>
@@ -23606,7 +24215,11 @@
                   ? relLink('equipment_repairs', m.ref, m.ref, true)
                   : (m.rkey === 'expense_items' && m.ref
                       ? relLink('expenses', m.ref, m.ref, true)
-                      : (m.rkey === 'equipment_oil_logs' && m.ref ? relLink('equipment_oil_logs', m.ref, m.ref, true) : `<strong>${esc(m.ref || m.id)}</strong>`));
+                      : (m.rkey === 'equipment_oil_logs' && m.ref
+                          ? relLink('equipment_oil_logs', m.ref, m.ref, true)
+                          : (m.rkey === 'fuel_malfunctions'
+                              ? relLink('fuel_malfunctions', m.id, m.ref || m.id, true)
+                              : `<strong>${esc(m.ref || m.id)}</strong>`)));
                 return `
                   <tr class="rrow" data-rkey="${esc(m.rkey)}" data-rid="${esc(m.id)}">
                     <td class="mono">${esc(fmtDateDMY(m.date))}</td>
@@ -34192,7 +34805,7 @@
     raw: 'New Raw Material Ticket',
     receipt: 'New Customer Settlement',
     fuel: 'New Fuel & Lubricant Intake',
-    malfunction: 'New Tank Malfunction / Discrepancy',
+    malfunction: 'New Malfunction / Discrepancy',
     expense: 'New Expense',
     warehousestock: 'Warehouse Shelf Stock & Adjustment',
     settlement: 'New Supplier Settlement',
@@ -35304,7 +35917,7 @@
 
     if (window.MFG_FORMS && !['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement'].includes(fType)) {
       return cockpitHtml + window.MFG_FORMS.renderExtendedFormBody(fType, { SEED, STATE }, {
-        allowedCompanyNames, defaultEntryCompany, customerNames, supplierNames, siteNames, equipmentNames, driverNames, getFreqIndex, uniqSorted, domainProductMetaItems, resolveStaffShiftForDate, getFrequentFxConversionPresets
+        allowedCompanyNames, defaultEntryCompany, customerNames, supplierNames, siteNames, equipmentNames, driverNames, getFreqIndex, uniqSorted, domainProductMetaItems, resolveStaffShiftForDate, getFrequentFxConversionPresets, malfunctionItemMeta, getMalfunctionQuickItems
       });
     }
 
@@ -42756,18 +43369,95 @@
     return { supplier, category: catNow, subcategory: subNow, item: purpose, frequency: freq, usd: usdVal, lbp: lbpVal, amount: cycleUsd, metrics: m };
   }
 
+  function syncMalfunctionScopeDom(catScope, keepCurrentItem) {
+    const scope = String(catScope || 'all').toLowerCase();
+    FORM_UI.malfCatScope = scope;
+    const coName = val('f_company') || defaultEntryCompany();
+    const catBar = $('malfCategoryBar');
+    if (catBar) {
+      catBar.querySelectorAll('[data-malf-cat]').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-malf-cat') === scope);
+      });
+    }
+    const metaItems = malfunctionItemMeta(coName, scope);
+    const dlEl = $('dl_malf_items');
+    if (dlEl) {
+      dlEl.innerHTML = metaItems.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}></option>`).join('');
+    }
+    const quickBar = $('malfQuickItemsBar');
+    if (quickBar) {
+      const quickItems = getMalfunctionQuickItems(coName, scope, 6);
+      const curVal = val('f_malf_item') || 'Diesel';
+      quickBar.innerHTML = quickItems.map(([nm, u]) => `<button type="button" class="malf-quick-chip ${norm(nm) === norm(curVal) ? 'active' : ''}" data-malf-quick-item="${esc(nm)}">${esc(nm)} <small>${esc(u)}</small></button>`).join('');
+    }
+    const itemInp = $('f_malf_item');
+    if (!keepCurrentItem && itemInp && scope !== 'all' && metaItems.length) {
+      const curCls = classifyMalfunctionItem(itemInp.value || 'Diesel');
+      if (curCls.domain !== scope) {
+        itemInp.value = metaItems[0][0];
+        FORM_UI.lastMalfItem = '';
+        FORM_UI.malfUomManual = false;
+      }
+    }
+  }
+
   function recalcMalfunction() {
     const coName = val('f_company') || defaultEntryCompany();
     const coKey = COMPANY_KEY_BY_NAME[coName] || 'wtc';
     const dt = val('f_date') || todayISO();
     const repDt = val('f_repdate') || dt;
+    if (coName !== FORM_UI.lastMalfCo) {
+      FORM_UI.lastMalfCo = coName;
+      syncMalfunctionScopeDom(FORM_UI.malfCatScope || 'all', true);
+    }
+    const rawItem = val('f_malf_item');
+    const cls = classifyMalfunctionItem(rawItem || 'Diesel', FORM_UI.malfCatScope && FORM_UI.malfCatScope !== 'all' ? FORM_UI.malfCatScope : '');
+    if (rawItem !== FORM_UI.lastMalfItem) {
+      FORM_UI.lastMalfItem = rawItem;
+      if (rawItem && (cls.uomLocked || !FORM_UI.malfUomManual) && $('f_malf_uom')) {
+        $('f_malf_uom').value = cls.uom;
+        FORM_UI.malfUomManual = false;
+      }
+    }
+    const quickBar = $('malfQuickItemsBar');
+    if (quickBar) {
+      const activeNorm = norm(rawItem || 'Diesel');
+      quickBar.querySelectorAll('[data-malf-quick-item]').forEach(btn => {
+        btn.classList.toggle('active', norm(btn.getAttribute('data-malf-quick-item')) === activeNorm);
+      });
+    }
+    const shouldLockUom = Boolean((rawItem || 'Diesel') && cls.uomLocked);
+    applyFieldLockState('f_malf_uom', shouldLockUom, shouldLockUom ? `Locked to ${cls.item} catalog UoM (${cls.uom})` : 'Custom item - select Unit (UoM)');
+    if (shouldLockUom && !isFieldAdminUnlocked('f_malf_uom') && $('f_malf_uom') && $('f_malf_uom').value !== cls.uom) {
+      $('f_malf_uom').value = cls.uom;
+    }
+    const effUom = normalizeMalfUom(val('f_malf_uom') || cls.uom || 'L');
+    setText('lbl_malf_qty', effUom === 'L' ? 'Quantity (Litres L) *' : `Quantity (${effUom}) *`);
+    setHint('hint_malf_uom', shouldLockUom && !isFieldAdminUnlocked('f_malf_uom') ? `Locked to ${cls.uom} for ${cls.item}` : `Unit (${effUom})`, '');
+    if (cls.isDiesel) {
+      setHint('hint_malf_item', 'Fuel & Diesel · Bulk Plant Tank (L)', '');
+    } else if (cls.isFuel) {
+      setHint('hint_malf_item', `Fuel & Additives · Discrepancy Ledger (${effUom})`, '');
+    } else if (cls.isLubricant) {
+      setHint('hint_malf_item', `${cls.isGrease ? 'Grease & Chassis Lubrication' : 'Lubricants & Hydraulic Oils'} · Tracked in Leak & Lube Audit (${effUom})`, '');
+    } else if (cls.isWarehouse) {
+      setHint('hint_malf_item', `${cls.category || 'Spare Parts'} · Reconciles Warehouse Shelf Stock (${effUom})`, '');
+    } else {
+      setHint('hint_malf_item', `Materials & Aggregates · Stockpile Discrepancy (${effUom})`, '');
+    }
+
     const discType = val('f_disctype') || 'Malfunction';
-    const isWash = /^wash$/i.test(discType);
-    if ($('sec_malf_wash')) $('sec_malf_wash').hidden = !isWash;
-    setFieldVisible('wrap_malf_ticketno', isWash);
-    setFieldVisible('wrap_malf_truck', isWash);
-    setFieldVisible('wrap_malf_driver', isWash);
-    if (!isWash) {
+    const showRefEquip = /^(wash|leakage\s*\/\s*spill|damaged\s*\/\s*expired)$/i.test(discType);
+    if ($('sec_malf_wash')) $('sec_malf_wash').hidden = !showRefEquip;
+    if ($('lbl_sec_malf_wash')) {
+      $('lbl_sec_malf_wash').textContent = /^wash$/i.test(discType)
+        ? '2. Wash Ticket, Equipment & Driver'
+        : '2. Reference, Equipment & Operator';
+    }
+    setFieldVisible('wrap_malf_ticketno', showRefEquip);
+    setFieldVisible('wrap_malf_truck', showRefEquip);
+    setFieldVisible('wrap_malf_driver', showRefEquip);
+    if (!showRefEquip) {
       if ($('f_ticketno') && $('f_ticketno').value) $('f_ticketno').value = '';
       if ($('f_truck') && $('f_truck').value) $('f_truck').value = '';
       if ($('f_driver') && $('f_driver').value) $('f_driver').value = '';
@@ -42786,47 +43476,177 @@
         }
       }
     }
+
     const rawQty = num('f_qty');
-    const signedLitres = round2(Number(rawQty || 0));
-    const absQty = Math.abs(signedLitres);
-    const tankDelta = round2(-signedLitres);
-    const dtAll = getDieselTankLedger(coKey, null);
-    const tankBefore = dtAll ? Number(dtAll.closingTankL || 0) : 0;
-    const tankAfter = round2(tankBefore + tankDelta);
-
-    const effDate = STATE.basis === 'tx' ? dt : (repDt || dt);
-    const ym = String(effDate || '').slice(0, 7);
-    const mRange = /^\d{4}-\d{2}$/.test(ym) ? { from: ym + '-01', to: ym + '-31' } : null;
-    const dtMo = getDieselTankLedger(coKey, mRange);
-    const isMalfType = /^malfunction$/i.test(discType);
-    const isConfigType = /^configuration$/i.test(discType);
-    const projMalfAbs = round2((dtMo ? Number(dtMo.malfAbsL || 0) : 0) + (isMalfType ? absQty : 0));
-    const projMalfNet = round2((dtMo ? Number(dtMo.malfNetL || 0) : 0) + (isMalfType ? signedLitres : 0));
-    const projOtherOut = round2((dtMo ? Number(dtMo.otherDiscOutL || 0) : 0) + (!isMalfType && !isConfigType && signedLitres > 0 ? signedLitres : 0));
-    const projWatch = _evalDieselMalfunctionWatchdog(dtMo ? dtMo.consumedL : 0, projOtherOut, projMalfNet, projMalfAbs);
-
-    setText('calc_malf_before', `${fmtNum(tankBefore, 1)} L`);
-    setText('calc_malf_delta', `${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L`);
-    setText('calc_malf_after', `${fmtNum(tankAfter, 1)} L`);
-    setText('calc_malf_pct', `${projWatch.malfunctionPct.toFixed(1)}%`);
-
-    const pmRule = '+ deducts from tank (used / shortage) · − adds to tank (surplus)';
-    setHint('hint_malf_qty', absQty > 0
-      ? `${signedLitres > 0 ? '+' : '−'}${fmtNum(absQty, 1)} L ${signedLitres > 0 ? 'deducts from' : 'adds to'} tank (${fmtNum(tankBefore, 1)} L -> ${fmtNum(tankAfter, 1)} L) · ${pmRule}`
-      : pmRule, absQty > 0 ? (tankAfter < 0 ? 'warn' : 'ok') : '');
-
+    const signedQty = round2(Number(rawQty || 0));
+    const absQty = Math.abs(signedQty);
+    const delta = round2(-signedQty);
+    const editOrig = (STATE.editingRecord && STATE.editingRecord.crKey === 'fuel_malfunctions' && STATE.editingRecord.orig)
+      ? STATE.editingRecord.orig
+      : null;
     const banner = $('malfLiveAlertBanner');
-    if (banner) {
-      if (projWatch.malfunctionAlert && (absQty > 0 || (dtMo && dtMo.malfunctionAlert))) {
-        banner.hidden = false;
-        banner.className = 'att-contract-strip is-warn';
-        banner.innerHTML = `
-          <div>
-            <strong>5% Diesel Malfunction Watchdog (${projWatch.malfunctionPct.toFixed(1)}% &ge; ${projWatch.malfunctionThresholdPct.toFixed(1)}%):</strong>
-            ${esc(_formatMonthYmLabel(ym))} gross malfunction volume for <b>${esc(coName)}</b> ${absQty > 0 ? 'reaches' : 'is'} <b>${fmtNum(projMalfAbs, 1)} L</b> against <b>${fmtNum(projWatch.companyDieselUsedL, 1)} L</b> total company diesel used.
-          </div>
-        `;
+
+    if (cls.isDiesel) {
+      const dtAll = getDieselTankLedger(coKey, null);
+      const editDieselBack = (editOrig && /^(diesel|mazout|bulk\s*diesel)$/i.test(String(editOrig.item || 'Diesel').trim()) && norm(editOrig.company) === norm(coName))
+        ? Number(editOrig.litres != null ? editOrig.litres : (editOrig.qty || 0))
+        : 0;
+      const tankBefore = round2((dtAll ? Number(dtAll.closingTankL || 0) : 0) + editDieselBack);
+      const tankAfter = round2(tankBefore + delta);
+
+      const effDate = STATE.basis === 'tx' ? dt : (repDt || dt);
+      const ym = String(effDate || '').slice(0, 7);
+      const mRange = /^\d{4}-\d{2}$/.test(ym) ? { from: ym + '-01', to: ym + '-31' } : null;
+      const dtMo = getDieselTankLedger(coKey, mRange);
+      const isMalfType = /^malfunction$/i.test(discType);
+      const isConfigType = /^configuration$/i.test(discType);
+      const editMoSame = editOrig && String((STATE.basis === 'tx' ? editOrig.date : (editOrig.rep_date || editOrig.date)) || '').slice(0, 7) === ym && editDieselBack !== 0;
+      const editOrigMalfAbs = (editMoSame && /^malfunction$/i.test(String(editOrig.discrepancy_type || ''))) ? Math.abs(editDieselBack) : 0;
+      const editOrigMalfNet = (editMoSame && /^malfunction$/i.test(String(editOrig.discrepancy_type || ''))) ? editDieselBack : 0;
+      const editOrigOtherOut = (editMoSame && !/^malfunction|configuration$/i.test(String(editOrig.discrepancy_type || '')) && editDieselBack > 0) ? editDieselBack : 0;
+      const projMalfAbs = round2(Math.max(0, (dtMo ? Number(dtMo.malfAbsL || 0) : 0) - editOrigMalfAbs) + (isMalfType ? absQty : 0));
+      const projMalfNet = round2((dtMo ? Number(dtMo.malfNetL || 0) : 0) - editOrigMalfNet + (isMalfType ? signedQty : 0));
+      const projOtherOut = round2(Math.max(0, (dtMo ? Number(dtMo.otherDiscOutL || 0) : 0) - editOrigOtherOut) + (!isMalfType && !isConfigType && signedQty > 0 ? signedQty : 0));
+      const projWatch = _evalDieselMalfunctionWatchdog(dtMo ? dtMo.consumedL : 0, projOtherOut, projMalfNet, projMalfAbs);
+
+      setText('lbl_malf_c1', 'Tank Before Entry');
+      setText('lbl_malf_c2', 'Tank Impact');
+      setText('lbl_malf_c3', 'Tank After Entry');
+      setText('lbl_malf_c4', 'Month Malfunction % (5% Watchdog)');
+      setText('calc_malf_before', `${fmtNum(tankBefore, 1)} L`);
+      setText('calc_malf_delta', `${delta > 0 ? '+' : ''}${fmtNum(delta, 1)} L`);
+      setText('calc_malf_after', `${fmtNum(tankAfter, 1)} L`);
+      setText('calc_malf_pct', `${projWatch.malfunctionPct.toFixed(1)}%`);
+
+      const pmRule = '+ deducts from tank (used / shortage) · − adds to tank (surplus)';
+      setHint('hint_malf_qty', absQty > 0
+        ? `${signedQty > 0 ? '+' : '−'}${fmtNum(absQty, 1)} L ${signedQty > 0 ? 'deducts from' : 'adds to'} tank (${fmtNum(tankBefore, 1)} L -> ${fmtNum(tankAfter, 1)} L) · ${pmRule}`
+        : pmRule, absQty > 0 ? (tankAfter < 0 ? 'warn' : 'ok') : '');
+
+      if (banner) {
+        if (projWatch.malfunctionAlert && (absQty > 0 || (dtMo && dtMo.malfunctionAlert))) {
+          banner.hidden = false;
+          banner.className = 'att-contract-strip is-warn';
+          banner.innerHTML = `
+            <div>
+              <strong>5% Diesel Malfunction Watchdog (${projWatch.malfunctionPct.toFixed(1)}% &ge; ${projWatch.malfunctionThresholdPct.toFixed(1)}%):</strong>
+              ${esc(_formatMonthYmLabel(ym))} gross malfunction volume for <b>${esc(coName)}</b> ${absQty > 0 ? 'reaches' : 'is'} <b>${fmtNum(projMalfAbs, 1)} L</b> against <b>${fmtNum(projWatch.companyDieselUsedL, 1)} L</b> total company diesel used.
+            </div>
+          `;
+        } else {
+          banner.hidden = true;
+          banner.innerHTML = '';
+        }
+      }
+      commonDateChecks([]);
+      renderAdminLockBar();
+      return { coName, item: cls.item, uom: effUom, signedLitres: signedQty, tankDelta: delta, tankAfter, projWatch };
+    }
+
+    const whIdx = getWarehouseIndex(coName);
+    const whCanon = cls.whCanonicalName || cls.item || rawItem || '';
+    const whRow = (whIdx && whIdx.byItem) ? (whIdx.byItem.get(norm(whCanon)) || whIdx.byItem.get(norm(rawItem || ''))) : null;
+    const tracksShelf = Boolean(cls.isWarehouse || (whRow && whRow.stockedInQty > 0));
+    const dec = effUom === 'Piece' || effUom === 'Set' || effUom === 'Box' || effUom === 'Bag' || effUom === 'Truck'
+      ? (absQty % 1 ? 2 : 0)
+      : (effUom === 'kg' ? 2 : 1);
+
+    let afterBalance = 0;
+    if (tracksShelf) {
+      let shelfBefore = whRow ? Number(whRow.onHandQty || 0) : 0;
+      if (editOrig && norm(editOrig.company) === norm(coName)) {
+        const origCls = classifyMalfunctionItem(editOrig.item || 'Diesel', editOrig.category || '');
+        if (norm(origCls.whCanonicalName || origCls.item) === norm(whCanon)) {
+          const origSigned = Number(editOrig.litres != null ? editOrig.litres : (editOrig.qty || 0));
+          shelfBefore = round2(shelfBefore + origSigned);
+        }
+      }
+      const shelfAfter = round2(shelfBefore + delta);
+      afterBalance = shelfAfter;
+      const catItem = resolveCatalogItem(whCanon) || resolveCatalogItem(rawItem || '');
+      const uCost = (whRow && whRow.avgUnitCost > 0) ? whRow.avgUnitCost : (catItem && Number(catItem.default_cost) > 0 ? Number(catItem.default_cost) : 0);
+      const estVal = round2(absQty * uCost);
+
+      setText('lbl_malf_c1', 'Shelf Stock Before');
+      setText('lbl_malf_c2', 'Shelf Impact');
+      setText('lbl_malf_c3', 'Shelf Stock After');
+      setText('lbl_malf_c4', 'Est. Variance Value');
+      setText('calc_malf_before', `${fmtNum(shelfBefore, shelfBefore % 1 ? 2 : 0)} ${effUom}`);
+      setText('calc_malf_delta', `${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${effUom}`);
+      setText('calc_malf_after', `${fmtNum(shelfAfter, shelfAfter % 1 ? 2 : 0)} ${effUom}`);
+      setText('calc_malf_pct', uCost > 0 ? fmtUSD(estVal, 2) : `${cls.category || 'Shelf'}`);
+
+      const shelfRule = `+ deducts from shelf stock (loss / shortage) · − adds to shelf stock (surplus)`;
+      setHint('hint_malf_qty', absQty > 0
+        ? `${signedQty > 0 ? '+' : '−'}${fmtNum(absQty, dec)} ${effUom} ${signedQty > 0 ? 'deducts from' : 'adds to'} shelf (${fmtNum(shelfBefore, shelfBefore % 1 ? 2 : 0)} ${effUom} to ${fmtNum(shelfAfter, shelfAfter % 1 ? 2 : 0)} ${effUom}) · ${shelfRule}`
+        : shelfRule, absQty > 0 ? (shelfAfter < -0.0001 ? 'warn' : 'ok') : '');
+
+      if (banner) {
+        if (signedQty > 0 && shelfAfter < -0.0001) {
+          banner.hidden = false;
+          banner.className = 'att-contract-strip is-warn';
+          banner.innerHTML = `<div><strong>Shelf Stock Warning:</strong> Deducting <b>${fmtNum(absQty, dec)} ${esc(effUom)}</b> of <b>${esc(cls.item)}</b> exceeds current recorded shelf stock (<b>${fmtNum(shelfBefore, shelfBefore % 1 ? 2 : 0)} ${esc(effUom)}</b> in ${esc(coName)}).</div>`;
+        } else {
+          banner.hidden = true;
+          banner.innerHTML = '';
+        }
+      }
+    } else {
+      const effDate = STATE.basis === 'tx' ? dt : (repDt || dt);
+      const ym = String(effDate || '').slice(0, 7);
+      const itemNorm = norm(cls.item || rawItem || '');
+      const whNorm = cls.whCanonicalName ? norm(cls.whCanonicalName) : '';
+      const sameItem = nm => {
+        const nk = norm(nm || '');
+        return nk && (nk === itemNorm || (whNorm && nk === whNorm));
+      };
+      let moDispensed = 0;
+      (SEED.records.fuel_logs || SEED.records.fuel_intakes || []).forEach(fl => {
+        if (!fl || fl.voided || norm(fl.company) !== norm(coName)) return;
+        const fdt = String((STATE.basis === 'tx' ? fl.date : (fl.rep_date || fl.date)) || '').slice(0, 7);
+        if (fdt === ym && sameItem(fl.item)) {
+          moDispensed += Math.abs(Number(fl.litres != null ? fl.litres : (fl.qty || 0)));
+        }
+      });
+      let moPrevVar = 0;
+      (SEED.records.fuel_malfunctions || []).forEach(mf => {
+        if (!mf || mf.voided || norm(mf.company) !== norm(coName)) return;
+        if (editOrig && String(mf.id) === String(editOrig.id)) return;
+        const mdt = String((STATE.basis === 'tx' ? mf.date : (mf.rep_date || mf.date)) || '').slice(0, 7);
+        if (mdt === ym && sameItem(mf.item)) {
+          moPrevVar += Number(mf.litres != null ? mf.litres : (mf.qty || 0));
+        }
+      });
+      const moAfterVar = round2(moPrevVar + signedQty);
+      afterBalance = moAfterVar;
+      const sharePct = moDispensed > 0 ? (Math.max(0, moAfterVar) / moDispensed) * 100 : 0;
+
+      if (cls.isLubricant) {
+        setText('lbl_malf_c1', 'Month Dispensed');
+        setText('lbl_malf_c2', 'Variance Impact');
+        setText('lbl_malf_c3', 'Month Net Discrepancy');
+        setText('lbl_malf_c4', moDispensed > 0 ? 'Variance vs Dispensed' : 'Audit Scope');
+        setText('calc_malf_before', `${fmtNum(moDispensed, dec)} ${effUom}`);
+        setText('calc_malf_delta', `${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${effUom}`);
+        setText('calc_malf_after', `${moAfterVar > 0 ? '+' : ''}${fmtNum(moAfterVar, dec)} ${effUom}`);
+        setText('calc_malf_pct', moDispensed > 0 ? `${sharePct.toFixed(1)}%` : (cls.isGrease ? 'Grease Audit' : 'Lube Audit'));
       } else {
+        setText('lbl_malf_c1', 'Item Domain');
+        setText('lbl_malf_c2', 'Ledger Impact');
+        setText('lbl_malf_c3', 'Month Net Discrepancy');
+        setText('lbl_malf_c4', 'Unit of Measure');
+        setText('calc_malf_before', cls.category || 'Inventory');
+        setText('calc_malf_delta', `${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${effUom}`);
+        setText('calc_malf_after', `${moAfterVar > 0 ? '+' : ''}${fmtNum(moAfterVar, dec)} ${effUom}`);
+        setText('calc_malf_pct', effUom);
+      }
+
+      const genRule = `+ logs shortage / leak / loss (${effUom}) · − logs surplus / recovery (${effUom})`;
+      setHint('hint_malf_qty', absQty > 0
+        ? `${signedQty > 0 ? '+' : '−'}${fmtNum(absQty, dec)} ${effUom} ${signedQty > 0 ? 'logged as shortage / loss' : 'logged as surplus / recovery'} · ${genRule}`
+        : genRule, absQty > 0 ? 'ok' : '');
+
+      if (banner) {
         banner.hidden = true;
         banner.innerHTML = '';
       }
@@ -42834,7 +43654,7 @@
 
     commonDateChecks([]);
     renderAdminLockBar();
-    return { coName, signedLitres, tankDelta, tankAfter, projWatch };
+    return { coName, item: cls.item, uom: effUom, signedLitres: signedQty, tankDelta: delta, tankAfter: afterBalance, projWatch: null };
   }
 
   function recalcForm(skipPostSync = false) {
@@ -44170,6 +44990,7 @@
     FORM_UI.ticketDisposition = 'standard'; FORM_UI.returnWtcSubMode = 'pair'; FORM_UI.returnRtKmManual = false; FORM_UI.lastDispMode = 'standard'; FORM_UI.ticketSeriesTabOpen = false; FORM_UI.ticketBookGridOpen = false; FORM_UI.lastAutoFilledReturnTicket = '';
     FORM_UI.convPrimarySide = ''; FORM_UI.convRateFromAmounts = false;
     FORM_UI.openLoanTab = ''; FORM_UI.lastLoanCp = ''; FORM_UI.openLoanSearch = '';
+    FORM_UI.malfCatScope = 'all'; FORM_UI.lastMalfItem = val('f_malf_item'); FORM_UI.lastMalfCo = val('f_company'); FORM_UI.malfUomManual = false;
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
       window.MFG_GEO.cleanupTicketOriginMiniMap();
     }
@@ -44214,6 +45035,28 @@
     if (!body.dataset.quickFillWired) {
       body.dataset.quickFillWired = '1';
       body.addEventListener('click', ev => {
+        const malfCatBtn = ev.target && ev.target.closest ? ev.target.closest('[data-malf-cat]') : null;
+        if (malfCatBtn) {
+          ev.preventDefault();
+          const nextCat = malfCatBtn.getAttribute('data-malf-cat') || 'all';
+          syncMalfunctionScopeDom(nextCat, false);
+          recalcForm();
+          return;
+        }
+        const malfQuickBtn = ev.target && ev.target.closest ? ev.target.closest('[data-malf-quick-item]') : null;
+        if (malfQuickBtn) {
+          ev.preventDefault();
+          const pickedItem = malfQuickBtn.getAttribute('data-malf-quick-item') || '';
+          const itemInp = $('f_malf_item');
+          if (itemInp && pickedItem) {
+            itemInp.value = pickedItem;
+            FORM_UI.malfUomManual = false;
+            itemInp.dispatchEvent(new Event('input', { bubbles: true }));
+            itemInp.dispatchEvent(new Event('change', { bubbles: true }));
+            recalcForm();
+          }
+          return;
+        }
         const origModeBtn = ev.target && ev.target.closest ? ev.target.closest('[data-origin-mode]') : null;
         if (origModeBtn) {
           ev.preventDefault();
@@ -45544,7 +46387,8 @@
           if (fid === 'f_unitprice') FORM_UI.priceManual = false;
           if (fid === 'f_transunitprice') FORM_UI.transManual = false;
           if (fid === 'f_method') FORM_UI.methodManual = false;
-          if (fid === 'f_uom') FORM_UI.uomManual = false;
+            if (fid === 'f_uom') FORM_UI.uomManual = false;
+          if (fid === 'f_malf_uom') FORM_UI.malfUomManual = false;
           if (fid === 'f_metertype') FORM_UI.meterTypeManual = false;
           if (fid === 'f_qty') FORM_UI.qtyManual = false;
           if (fid === 'f_driver') FORM_UI.driverManual = false;
@@ -45656,6 +46500,9 @@
         if (el.id === 'f_uom' && (isFieldAdminUnlocked('f_uom') || el.dataset.policyLockedNow !== '1')) {
           FORM_UI.uomManual = true;
           if (!isFieldAdminUnlocked('f_qty') || isAutoEditUnlockedField('f_qty')) FORM_UI.qtyManual = false;
+        }
+        if (el.id === 'f_malf_uom' && (isFieldAdminUnlocked('f_malf_uom') || el.dataset.policyLockedNow !== '1')) {
+          FORM_UI.malfUomManual = true;
         }
         if (el.id === 'f_metertype' && (isFieldAdminUnlocked('f_metertype') || el.dataset.policyLockedNow !== '1')) FORM_UI.meterTypeManual = true;
         if (el.id === 'f_qty') { FORM_UI.qtyManual = !!el.value; FORM_UI.greaseAutoPreset = false; }
@@ -47375,27 +48222,47 @@
         resolve_defect: Boolean(defRef && $('f_resolve_defect') && $('f_resolve_defect').checked)
       };
     } else if (f === 'malfunction') {
+      const rawItem = val('f_malf_item');
+      if (!rawItem) addErr('f_malf_item', 'Select or type the item, lubricant, spare part, or material.');
+      const cls = classifyMalfunctionItem(rawItem || 'Diesel', FORM_UI.malfCatScope && FORM_UI.malfCatScope !== 'all' ? FORM_UI.malfCatScope : '');
+      const itemClean = rawItem ? (cls.uomLocked ? cls.item : rawItem.trim()) : 'Diesel';
+      const uomClean = (cls.uomLocked && !isFieldAdminUnlocked('f_malf_uom'))
+        ? cls.uom
+        : normalizeMalfUom(val('f_malf_uom') || cls.uom || 'L');
       const discType = val('f_disctype') || 'Malfunction';
-      const isWash = /^wash$/i.test(discType);
+      const showRefEquip = /^(wash|leakage\s*\/\s*spill|damaged\s*\/\s*expired)$/i.test(discType);
       const rawQty = num('f_qty');
-      const signedLitres = round2(Number(rawQty || 0));
-      const absQty = Math.abs(signedLitres);
-      const ticket = isWash ? val('f_ticketno') : '';
-      const equip = isWash ? val('f_truck') : '';
-      const driver = isWash ? val('f_driver') : '';
-      if (!(absQty > 0)) addErr('f_qty', 'Enter a non-zero quantity in Litres (+ deducts from tank, − adds to tank).');
-      if (absQty >= 1000 && !notes) addErr('f_notes', 'Please explain any malfunction or discrepancy of 1,000 L or more in Reason / Audit Notes.');
+      const signedQty = round2(Number(rawQty || 0));
+      const absQty = Math.abs(signedQty);
+      const ticket = showRefEquip ? val('f_ticketno') : '';
+      const rawEquip = showRefEquip ? val('f_truck') : '';
+      const equip = rawEquip ? (resolveCanonicalEquipmentName(rawEquip, company, false, null, false) || rawEquip) : '';
+      const driver = showRefEquip ? val('f_driver') : '';
+      if (!(absQty > 0)) {
+        addErr('f_qty', cls.isDiesel
+          ? 'Enter a non-zero quantity in Litres (+ deducts from tank, − adds to tank).'
+          : `Enter a non-zero discrepancy quantity in ${uomClean} (+ shortage / loss, − surplus).`);
+      }
+      if (cls.isDiesel && absQty >= 1000 && !notes) {
+        addErr('f_notes', 'Please explain any malfunction or discrepancy of 1,000 L or more in Reason / Audit Notes.');
+      }
       crKey = 'fuel_malfunctions';
       record = {
         ...base,
-        name: `MALF ${date} ${discType}${ticket ? ' #' + ticket : ''}`,
+        name: cls.isDiesel
+          ? `MALF ${date} ${discType}${ticket ? ' #' + ticket : ''}`
+          : `MALF ${date} ${itemClean} · ${discType}${ticket ? ' #' + ticket : ''}`,
         ticket_no: ticket,
         rep_date: repDate,
-        item: 'Diesel',
+        category: cls.category,
+        item: itemClean,
+        uom: uomClean,
         discrepancy_type: discType,
-        litres: signedLitres,
+        litres: signedQty,
+        qty: signedQty,
         equipment: equip,
-        driver
+        driver,
+        warehouse_location: (cls.isWarehouse || cls.isLubricant) ? defaultWarehouseLocationForCompany(company) : ''
       };
     } else if (f === 'warehousestock') {
       const whDir = val('f_wh_dir') || 'IN';
@@ -48345,7 +49212,7 @@
   }
 
   function getMalfunctionSaveWatchdogHit(record) {
-    if (!record) return null;
+    if (!record || !/^(diesel|mazout|bulk\s*diesel)$/i.test(String(record.item || 'Diesel').trim())) return null;
     const coKey = COMPANY_KEY_BY_NAME[record.company] || 'wtc';
     const dtActive = getDieselTankLedger(coKey);
     if (dtActive && dtActive.malfunctionAlert) {
@@ -48860,6 +49727,13 @@
       if (pfCo && $('f_company') && allowedCompanyNames().includes(pfCo)) {
         $('f_company').value = pfCo;
       }
+      if (prefill.malfCat && form === 'malfunction') {
+        syncMalfunctionScopeDom(prefill.malfCat, Boolean(prefill.malfItem || prefill.item));
+      }
+      if ((prefill.malfItem || prefill.item) && $('f_malf_item')) {
+        $('f_malf_item').value = String(prefill.malfItem || prefill.item);
+        FORM_UI.lastMalfItem = '';
+      }
       if (prefill.disctype && $('f_disctype')) $('f_disctype').value = prefill.disctype;
       if (prefill.qty != null && $('f_qty')) $('f_qty').value = String(prefill.qty);
       if (prefill.ticket && $('f_ticketno')) $('f_ticketno').value = prefill.ticket;
@@ -48880,6 +49754,9 @@
         if ($('f_uom')) {
           $('f_uom').value = prefill.uom;
           FORM_UI.uomManual = true;
+        } else if ($('f_malf_uom')) {
+          $('f_malf_uom').value = prefill.uom;
+          FORM_UI.malfUomManual = true;
         } else if ($('f_exp_uom')) {
           $('f_exp_uom').value = prefill.uom;
         }
@@ -49597,8 +50474,20 @@
       setModalControlVal('f_share', row.share_pct != null ? row.share_pct : (row.percentage != null ? row.percentage : 50));
       setModalControlVal('f_amount', row.amount != null ? row.amount : (row.total != null ? row.total : ''));
     } else if (form === 'malfunction') {
-      setModalControlVal('f_disctype', row.discrepancy_type || 'Malfunction');
-      setModalControlVal('f_qty', row.litres != null ? row.litres : '');
+      const mItem = String(row.item || 'Diesel').trim() || 'Diesel';
+      const mCls = classifyMalfunctionItem(mItem, row.category || '');
+      syncMalfunctionScopeDom('all', true);
+      setModalControlVal('f_malf_item', mItem);
+      FORM_UI.lastMalfItem = mItem;
+      const mUom = normalizeMalfUom(row.uom || mCls.uom || 'L');
+      setModalControlVal('f_malf_uom', mUom);
+      if (!mCls.uomLocked) FORM_UI.malfUomManual = true;
+      const rawDisc = String(row.discrepancy_type || 'Malfunction').trim();
+      const effDisc = ((!row.discrepancy_type || /^malfunction$/i.test(rawDisc)) && (row.equipment || row.ticket_no || row.driver))
+        ? 'Leakage / Spill'
+        : rawDisc;
+      setModalControlVal('f_disctype', effDisc);
+      setModalControlVal('f_qty', row.litres != null ? row.litres : (row.qty != null ? row.qty : ''));
       setModalControlVal('f_ticketno', row.ticket_no || '');
       setModalControlVal('f_truck', row.equipment || '');
       setModalControlVal('f_driver', row.driver || '');
@@ -49894,7 +50783,7 @@
   // ==========================================================================
   const INSPECT_LABELS = {
     sales_tickets: 'Sales Ticket', raw_purchases: 'Raw Material Ticket', fuel_intakes: 'Fuel Intake',
-    fuel_malfunctions: 'Tank Malfunction / Discrepancy',
+    fuel_malfunctions: 'Malfunction / Discrepancy',
     expenses: 'General / Fleet Expense', recurring_expenses: 'Recurring Expense Schedule', receipts: 'Customer Receipt (AR)', settlements: 'Supplier Settlement (AP)',
     salaries: 'Salary Payment', price_rules: 'Price & Commission Agreement', credit_terms: 'Customer Credit Policy',
     vat_invoices: 'VAT Tax Invoice', customers: 'Customer 360° Master', suppliers: 'Supplier & Hauler 360° Master',
@@ -50295,15 +51184,28 @@
       };
     }
     if (key === 'fuel_malfunctions') {
-      const lit = round2(Number(row.litres || 0));
-      const tankDelta = round2(-lit);
+      const mCls = classifyMalfunctionItem(row.item || 'Diesel', row.category || '');
+      const mUom = normalizeMalfUom(row.uom || mCls.uom || 'L');
+      const qty = round2(Number(row.litres != null ? row.litres : (row.qty || 0)));
+      const delta = round2(-qty);
+      const dec = /^(Piece|Set|Box|Bag|Truck)$/i.test(mUom) && Number.isInteger(qty) ? 0 : 1;
       const coKey = COMPANY_KEY_BY_NAME[row.company] || 'wtc';
-      const dtAll = getDieselTankLedger(coKey, null);
       const ym = String((STATE.basis === 'tx' ? row.date : (row.rep_date || row.date)) || '').slice(0, 7);
-      const dtMo = /^\d{4}-\d{2}$/.test(ym) ? getDieselTankLedger(coKey, { from: ym + '-01', to: ym + '-31' }) : dtAll;
+      if (mCls.isDiesel) {
+        const dtAll = getDieselTankLedger(coKey, null);
+        const dtMo = /^\d{4}-\d{2}$/.test(ym) ? getDieselTankLedger(coKey, { from: ym + '-01', to: ym + '-31' }) : dtAll;
+        return {
+          tone: dtMo && dtMo.malfunctionAlert ? (dtMo.malfunctionSeverity === 'crit' ? 'crit' : 'warn') : 'info',
+          text: `Tank Discrepancy (${row.discrepancy_type || 'Malfunction'}): ${qty >= 0 ? 'Shortage / Outflow' : 'Surplus / Over-Read'} ${qty > 0 ? '+' : ''}${fmtNum(qty, 1)} L (Tank Impact ${delta > 0 ? '+' : ''}${fmtNum(delta, 1)} L)  |  Live ${row.company || 'WTC'} Tank: ${fmtNum(dtAll ? dtAll.closingTankL : 0, 1)} L  |  ${_formatMonthYmLabel(ym)} Malfunction Share: ${dtMo ? dtMo.malfunctionPct.toFixed(1) : '0.0'}% (${dtMo && dtMo.malfunctionAlert ? '>=' + dtMo.malfunctionThresholdPct.toFixed(1) + '% WATCHDOG ALERT' : '<5.0% OK'})`
+        };
+      }
+      const whRec = getWarehouseIndex(row.company || 'WTC').byKey[norm(mCls.item)] || null;
+      const shelfTxt = whRec
+        ? `Live Warehouse Shelf: ${fmtNum(whRec.onHandQty || 0, dec)} ${mUom} (${fmtUSD(whRec.onHandValue || 0, 2)})`
+        : `Domain: ${mCls.category} (${mUom})`;
       return {
-        tone: dtMo && dtMo.malfunctionAlert ? (dtMo.malfunctionSeverity === 'crit' ? 'crit' : 'warn') : 'info',
-        text: `Tank Discrepancy (${row.discrepancy_type || 'Malfunction'}): ${lit >= 0 ? 'Shortage / Outflow' : 'Surplus / Over-Read'} ${lit > 0 ? '+' : ''}${fmtNum(lit, 1)} L (Tank Impact ${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L)  |  Live ${row.company || 'WTC'} Tank: ${fmtNum(dtAll ? dtAll.closingTankL : 0, 1)} L  |  ${_formatMonthYmLabel(ym)} Malfunction Share: ${dtMo ? dtMo.malfunctionPct.toFixed(1) : '0.0'}% (${dtMo && dtMo.malfunctionAlert ? '>=' + dtMo.malfunctionThresholdPct.toFixed(1) + '% WATCHDOG ALERT' : '<5.0% OK'})`
+        tone: qty > 0 ? 'warn' : 'info',
+        text: `${mCls.category} Discrepancy · ${mCls.item} (${row.discrepancy_type || 'Malfunction'}): ${qty >= 0 ? 'Shortage / Loss' : 'Surplus / Gain'} ${qty > 0 ? '+' : ''}${fmtNum(qty, dec)} ${mUom} (Stock Impact ${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${mUom})  |  ${shelfTxt}${row.equipment ? '  |  Unit: ' + row.equipment : ''}`
       };
     }
     return {
@@ -50557,21 +51459,40 @@
     }
 
     if (key === 'fuel_malfunctions') {
-      const lit = round2(Number(row.litres || 0));
-      const tankDelta = round2(-lit);
+      const mCls = classifyMalfunctionItem(row.item || 'Diesel', row.category || '');
+      const mUom = normalizeMalfUom(row.uom || mCls.uom || 'L');
+      const qty = round2(Number(row.litres != null ? row.litres : (row.qty || 0)));
+      const delta = round2(-qty);
+      const dec = /^(Piece|Set|Box|Bag|Truck)$/i.test(mUom) && Number.isInteger(qty) ? 0 : 1;
       const coKey = COMPANY_KEY_BY_NAME[row.company] || 'wtc';
-      const dtAll = getDieselTankLedger(coKey, null);
       const ym = String((STATE.basis === 'tx' ? row.date : (row.rep_date || row.date)) || '').slice(0, 7);
-      const dtMo = /^\d{4}-\d{2}$/.test(ym) ? getDieselTankLedger(coKey, { from: ym + '-01', to: ym + '-31' }) : dtAll;
+      if (mCls.isDiesel) {
+        const dtAll = getDieselTankLedger(coKey, null);
+        const dtMo = /^\d{4}-\d{2}$/.test(ym) ? getDieselTankLedger(coKey, { from: ym + '-01', to: ym + '-31' }) : dtAll;
+        return {
+          bu,
+          title,
+          pill: `${delta > 0 ? '+' : ''}${fmtNum(delta, 1)} L Tank`,
+          cards: [
+            { lbl: 'DISCREPANCY VOLUME', tag: (row.discrepancy_type || 'MALFUNCTION').toUpperCase(), tone: qty > 0 ? 'warn' : 'good', val: `${qty > 0 ? '+' : ''}${fmtNum(qty, 1)} L`, sub1: qty >= 0 ? 'Tank Shortage / Outflow (-Tank)' : 'Tank Surplus / Over-Read (+Tank)', sub2: `Invoice / Slip: ${row.ticket_no ? '#' + row.ticket_no : '-'}`, pct: 80 },
+            { lbl: 'LIVE TANK RECONCILIATION', tag: (dtAll && dtAll.closingTankL < 0) ? 'DEFICIT' : 'RECONCILED', tone: (dtAll && dtAll.closingTankL < 0) ? 'crit' : 'good', val: `${fmtNum(dtAll ? dtAll.closingTankL : 0, 1)} L`, sub1: `Entry Impact: ${delta > 0 ? '+' : ''}${fmtNum(delta, 1)} L`, sub2: `All-Time Disc: ${fmtNum(dtAll ? dtAll.discrepancyL : 0, 1)} L`, pct: 75 },
+            { lbl: '5% MALFUNCTION WATCHDOG', tag: dtMo && dtMo.malfunctionAlert ? 'ALERT >= 5%' : 'WITHIN 5%', tone: dtMo && dtMo.malfunctionAlert ? (dtMo.malfunctionSeverity === 'crit' ? 'crit' : 'warn') : 'good', val: `${dtMo ? dtMo.malfunctionPct.toFixed(1) : '0.0'}%`, sub1: `${_formatMonthYmLabel(ym)} Gross Malf: ${fmtNum(dtMo ? dtMo.malfAbsL : 0, 1)} L`, sub2: `Company Used: ${fmtNum(dtMo ? dtMo.companyDieselUsedL : 0, 1)} L`, pct: Math.min(100, Math.max(15, Math.round((dtMo ? dtMo.malfunctionPct : 0) * 10))) },
+            { lbl: 'UNIT & AUDIT SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: row.equipment || 'Plant Tank', sub1: `Driver: ${row.driver || '-'}`, sub2: `Tx: ${row.date || '-'} · Rep: ${row.rep_date || row.date || '-'}`, pct: 90 }
+          ]
+        };
+      }
+      const whRec = getWarehouseIndex(row.company || 'WTC').byKey[norm(mCls.item)] || null;
+      const unitCost = whRec ? Number(whRec.avgUnitCost || 0) : Number(mCls.unitCost || 0);
+      const estUsd = round2(Math.abs(qty) * unitCost);
       return {
         bu,
-        title,
-        pill: `${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L Tank`,
+        title: `${INSPECT_LABELS[key]} · ${mCls.item}`,
+        pill: `${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${mUom} ${whRec ? 'Shelf' : mCls.category}`,
         cards: [
-          { lbl: 'DISCREPANCY VOLUME', tag: (row.discrepancy_type || 'MALFUNCTION').toUpperCase(), tone: lit > 0 ? 'warn' : 'good', val: `${lit > 0 ? '+' : ''}${fmtNum(lit, 1)} L`, sub1: lit >= 0 ? 'Tank Shortage / Outflow (-Tank)' : 'Tank Surplus / Over-Read (+Tank)', sub2: `Invoice / Slip: ${row.ticket_no ? '#' + row.ticket_no : '—'}`, pct: 80 },
-          { lbl: 'LIVE TANK RECONCILIATION', tag: (dtAll && dtAll.closingTankL < 0) ? 'DEFICIT' : 'RECONCILED', tone: (dtAll && dtAll.closingTankL < 0) ? 'crit' : 'good', val: `${fmtNum(dtAll ? dtAll.closingTankL : 0, 1)} L`, sub1: `Entry Impact: ${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L`, sub2: `All-Time Disc: ${fmtNum(dtAll ? dtAll.discrepancyL : 0, 1)} L`, pct: 75 },
-          { lbl: '5% MALFUNCTION WATCHDOG', tag: dtMo && dtMo.malfunctionAlert ? 'ALERT >= 5%' : 'WITHIN 5%', tone: dtMo && dtMo.malfunctionAlert ? (dtMo.malfunctionSeverity === 'crit' ? 'crit' : 'warn') : 'good', val: `${dtMo ? dtMo.malfunctionPct.toFixed(1) : '0.0'}%`, sub1: `${_formatMonthYmLabel(ym)} Gross Malf: ${fmtNum(dtMo ? dtMo.malfAbsL : 0, 1)} L`, sub2: `Company Used: ${fmtNum(dtMo ? dtMo.companyDieselUsedL : 0, 1)} L`, pct: Math.min(100, Math.max(15, Math.round((dtMo ? dtMo.malfunctionPct : 0) * 10))) },
-          { lbl: 'UNIT & AUDIT SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: row.equipment || 'Plant Tank', sub1: `Driver: ${row.driver || '—'}`, sub2: `Tx: ${row.date || '—'} · Rep: ${row.rep_date || row.date || '—'}`, pct: 90 }
+          { lbl: 'DISCREPANCY QUANTITY', tag: (row.discrepancy_type || 'MALFUNCTION').toUpperCase(), tone: qty > 0 ? 'warn' : 'good', val: `${qty > 0 ? '+' : ''}${fmtNum(qty, dec)} ${mUom}`, sub1: qty >= 0 ? 'Shortage / Loss (-Stock)' : 'Surplus / Gain (+Stock)', sub2: `Ref / Slip: ${row.ticket_no ? '#' + row.ticket_no : '-'}`, pct: 80 },
+          { lbl: whRec ? 'LIVE SHELF RECONCILIATION' : 'ESTIMATED VARIANCE VALUE', tag: whRec ? ((whRec.onHandQty || 0) < 0 ? 'DEFICIT' : 'RECONCILED') : mCls.category.toUpperCase(), tone: whRec && (whRec.onHandQty || 0) < 0 ? 'crit' : 'good', val: whRec ? `${fmtNum(whRec.onHandQty || 0, dec)} ${mUom}` : (estUsd > 0 ? fmtUSD(estUsd, 2) : `${fmtNum(Math.abs(qty), dec)} ${mUom}`), sub1: `Stock Impact: ${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${mUom}`, sub2: unitCost > 0 ? `Est. Value: ${fmtUSD(estUsd, 2)} (@ ${fmtUSD(unitCost, 2)}/${mUom})` : `Tracked in ${mCls.category} ledger`, pct: 75 },
+          { lbl: 'DOMAIN & ITEM UOM', tag: mCls.uomLocked ? `LOCKED: ${mUom.toUpperCase()}` : mUom.toUpperCase(), tone: 'info', val: mCls.item, sub1: `Category: ${mCls.category}`, sub2: `Location: ${row.warehouse_location || (whRec && whRec.location) || ((row.company || 'WTC') + ' Plant')}`, pct: 85 },
+          { lbl: 'UNIT & AUDIT SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: row.equipment || (whRec ? 'Warehouse Shelf' : 'Plant Bay'), sub1: `Driver / Tech: ${row.driver || '-'}`, sub2: `Tx: ${row.date || '-'} · Rep: ${row.rep_date || row.date || '-'}`, pct: 90 }
         ]
       };
     }
@@ -50837,6 +51758,26 @@
       addTruckQv(row.equipment, null);
       if (row.vendor_or_buyer) addSupplierQv(row.vendor_or_buyer, 'WORKSHOP / BUYER');
     } else if (key === 'fuel_malfunctions') {
+      if (row.item && !classifyMalfunctionItem(row.item, row.category).isDiesel) {
+        const catIt = resolveCatalogItem(row.item);
+        if (catIt) {
+          const whIt = getWarehouseIndex(row.company).byKey[norm(row.item)] || null;
+          cards.push({
+            tag: 'QUICK VIEW · CATALOG ITEM',
+            targetKey: 'items',
+            targetVal: catIt.name || row.item,
+            title: catIt.name || row.item,
+            kvs: [
+              ['Category / UoM', `${catIt.category || 'Spare Parts'} · ${catIt.uom || 'Piece'}`],
+              ['Live On-Hand', whIt ? `${fmtNum(whIt.onHandQty || 0, 2)} ${catIt.uom || 'Piece'}` : `0 ${catIt.uom || 'Piece'}`],
+              ['Avg Unit Cost', fmtUSD((whIt && whIt.avgUnitCost) || catIt.default_cost || 0, 2)],
+              ['Shelf Location', (whIt && whIt.location) || catIt.default_location || 'Main Warehouse']
+            ]
+          });
+        } else {
+          addProductQv(row.item);
+        }
+      }
       if (row.equipment) addTruckQv(row.equipment, row.driver);
       if (row.driver) addDriverQv(row.driver, 'DRIVER / OPERATOR');
     }
@@ -51126,7 +52067,7 @@
     else if (key === 'fuel_malfunctions') {
       const ym = String(row.rep_date || row.date || '').slice(0, 7);
       const sibMalfs = (rec.fuel_malfunctions || []).filter(m => String(m.id) !== String(row.id) && (!row.company || norm(m.company) === norm(row.company)) && (!ym || String(m.rep_date || m.date || '').slice(0, 7) === ym));
-      addGrid('sg_malf_sib', `Tank Malfunctions & Discrepancies (${_formatMonthYmLabel(ym)})`, 'Month Malfunctions', 'Tank Recon', 'fuel_malfunctions', sibMalfs, ['date', 'rep_date', 'ticket_no', 'company', 'discrepancy_type', 'litres', 'equipment', 'driver', 'notes'], 'litres');
+      addGrid('sg_malf_sib', `Malfunctions & Stock Discrepancies (${_formatMonthYmLabel(ym)})`, 'Month Malfunctions', 'Variance Log', 'fuel_malfunctions', sibMalfs, ['date', 'rep_date', 'ticket_no', 'company', 'category', 'item', 'discrepancy_type', 'litres', 'uom', 'equipment', 'driver', 'notes'], 'litres');
       if (row.equipment) {
         addGrid('sg_malf_fuel', `Fuel & Meter Readings for ${row.equipment}`, 'Unit Fuel History', 'Meter Series', 'fuel_intakes', (rec.fuel_intakes || []).filter(f => norm(f.equipment) === norm(row.equipment)), ['date', 'ticket_no', 'company', 'equipment', 'driver', 'item', 'litres', 'odometer', 'hours'], 'litres');
       }
@@ -51594,8 +52535,10 @@
       fuel_malfunctions: [
         { key: 'date', label: 'Transaction Date *', type: 'date', sec: 1 },
         { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
-        { key: 'discrepancy_type', label: 'Discrepancy Type *', type: 'select', options: ['Malfunction', 'Wash', 'Ghassanieh', 'Configuration'], sec: 2 },
-        { key: 'litres', label: 'Quantity (Litres L · + deducts / − adds) *', type: 'number', step: '0.1', sec: 3 },
+        { key: 'item', label: 'Item / Material *', type: 'combo', dl: 'dl_insp_malf_items', sec: 1, getVal: r => r.item || 'Diesel' },
+        { key: 'discrepancy_type', label: 'Discrepancy Type *', type: 'select', options: ['Malfunction', 'Leakage / Spill', 'Configuration', 'Damaged / Expired', 'Wash', 'Ghassanieh'], sec: 2 },
+        { key: 'litres', label: 'Quantity (+ shortage / - surplus) *', type: 'number', step: '0.05', sec: 3, getVal: r => r.litres != null ? r.litres : (r.qty ?? 0) },
+        { key: 'uom', label: 'Unit (UoM) *', type: 'select', options: ['L', 'kg', 'Piece', 'Set', 'Box', 'm', 'm³', 'Ton', 'Bag', 'Truck'], sec: 3, getVal: r => normalizeMalfUom(r.uom || classifyMalfunctionItem(r.item || 'Diesel', r.category || '').uom) },
         { key: 'ticket_no', label: 'Invoice / Ticket No.', type: 'text', sec: 1 },
         { key: 'equipment', label: 'Equipment / Unit (Optional)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'driver', label: 'Driver / Operator (Optional)', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
@@ -52333,10 +53276,13 @@
       hidden.add('month_earnings');
     }
     if (key === 'fuel_intakes') { hidden.add('location'); }
-    if (key === 'fuel_malfunctions' && !/^wash$/i.test(String((row && row.discrepancy_type) || ''))) {
-      if (!row || !row.ticket_no) hidden.add('ticket_no');
-      if (!row || !row.equipment) hidden.add('equipment');
-      if (!row || !row.driver) hidden.add('driver');
+    if (key === 'fuel_malfunctions') {
+      hidden.add('qty');
+      if (!/^(wash|leakage|damaged)/i.test(String((row && row.discrepancy_type) || ''))) {
+        if (!row || !row.ticket_no) hidden.add('ticket_no');
+        if (!row || !row.equipment) hidden.add('equipment');
+        if (!row || !row.driver) hidden.add('driver');
+      }
     }
     if (key === 'price_rules') {
       hidden.add('name');
@@ -52440,7 +53386,7 @@
       const v = valOverride !== undefined ? valOverride : (fDef && typeof fDef.getVal === 'function' ? fDef.getVal(row) : row[k]);
       const formatted = inspectorValue(k, v);
       const isEmpty = formatted === '—';
-      const lkTarget = (k === 'origin_ticket_no') ? (row.origin_ticket_kind === 'raw' ? 'raw_purchases' : 'sales_tickets') : ((k === 'type' && key !== 'products') || (k === 'item' && key === 'recurring_expenses') ? null : (k === 'linked_part_log' && /^REP-/i.test(String(v || '')) ? 'equipment_repairs' : ((k === 'truck_owner' || (k === 'supplier' && (key === 'equipment' || key === 'company_equipment'))) ? resolveTruckOwnerTarget(v, row) : INSPECT_LOOKUP_FIELD_TARGET[k])));
+      const lkTarget = (k === 'origin_ticket_no') ? (row.origin_ticket_kind === 'raw' ? 'raw_purchases' : 'sales_tickets') : ((k === 'type' && key !== 'products') || (k === 'item' && key === 'recurring_expenses') || (k === 'category' && key === 'fuel_malfunctions') ? null : (k === 'item' && key === 'fuel_malfunctions' ? (resolveCatalogItem(v) ? 'items' : 'products') : (k === 'linked_part_log' && /^REP-/i.test(String(v || '')) ? 'equipment_repairs' : ((k === 'truck_owner' || (k === 'supplier' && (key === 'equipment' || key === 'company_equipment'))) ? resolveTruckOwnerTarget(v, row) : INSPECT_LOOKUP_FIELD_TARGET[k]))));
       const canLink = lkTarget && lkTarget !== key && v != null && v !== '' && !isEmpty;
       const roLabels = key === 'gl_accounts' ? {
         code: 'GL Code', name: 'GL Account', pcg_class: 'CoA Class', automation_mode: 'Automation Mode',
@@ -52526,7 +53472,7 @@
                       if (isMoney && v != null && v !== '') txt = fmtUSD(v, 2);
                       else if (isNum && v != null && v !== '') txt = fmtNum(v, /qty|capacity|percentage/.test(c) ? 2 : 0);
                       else if (/date/.test(c) && v) txt = fmtDateDMY(v);
-                      const lk = (c === 'item' && sg.targetKey === 'recurring_expenses') ? null : ((c === 'linked_part_log' && /^REP-/i.test(String(v || ''))) ? 'equipment_repairs' : ((c === 'truck_owner' || (c === 'supplier' && (sg.targetKey === 'equipment' || sg.targetKey === 'company_equipment'))) ? resolveTruckOwnerTarget(v, r) : INSPECT_LOOKUP_FIELD_TARGET[c]));
+                      const lk = (c === 'item' && sg.targetKey === 'recurring_expenses') || (c === 'category' && sg.targetKey === 'fuel_malfunctions') ? null : (c === 'item' && sg.targetKey === 'fuel_malfunctions' ? (resolveCatalogItem(v) ? 'items' : 'products') : ((c === 'linked_part_log' && /^REP-/i.test(String(v || ''))) ? 'equipment_repairs' : ((c === 'truck_owner' || (c === 'supplier' && (sg.targetKey === 'equipment' || sg.targetKey === 'company_equipment'))) ? resolveTruckOwnerTarget(v, r) : INSPECT_LOOKUP_FIELD_TARGET[c])));
                       const sgOtHtml = (c === 'ticket_no' && (sg.targetKey === 'sales_tickets' || sg.targetKey === 'raw_purchases')) ? ` ${tktOtBadge(r)}` : '';
                       const cellHtml = (lk && lk !== sg.targetKey && v != null && v !== '' && txt !== '—')
                         ? `<span class="rel-link" data-rel-key="${esc(lk)}" data-rel-val="${esc(v)}">${esc(txt)}<span class="rel-arr">↗</span></span>`
@@ -53729,6 +54675,7 @@
         <datalist id="dl_insp_counterparties">${inspCounterparties.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_parts">${inspParts.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_locations">${inspPartLocs.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+        <datalist id="dl_insp_malf_items">${malfunctionItemMeta(row.company || '', 'all').map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('')}</datalist>
       </div>
 
       <!-- Top Command Bar & Relational Breadcrumb Trail -->
@@ -54370,17 +55317,29 @@
           html = `<span>Monthly Equivalent: <b>${fmtUSD(effMo, 2)}</b></span>${isPendingSalaryEmployment(row) && effMo > 0 ? `<span>Status: <b style="color:var(--ok)">✓ Clears Pending Salary · Retroactive from ${esc(row.start_date || 'Start')}</b></span>` : ''}`;
         }
       } else if (key === 'fuel_malfunctions') {
+        const mItem = getModVal('item') || row.item || 'Diesel';
+        const mCls = classifyMalfunctionItem(mItem, row.category || '');
+        const uomEl = $('insp_edit_uom');
+        if (uomEl) {
+          const itemEl = $('insp_edit_item');
+          if (mCls.uomLocked || (itemEl && itemEl.dataset.userEdited === '1' && uomEl.dataset.userEdited !== '1')) {
+            uomEl.value = mCls.uom;
+          }
+          uomEl.disabled = Boolean(mCls.uomLocked);
+        }
+        const mUom = normalizeMalfUom((uomEl && uomEl.value) || row.uom || mCls.uom || 'L');
         const mLit = getModNum('litres');
         const mType = getModVal('discrepancy_type') || row.discrepancy_type || 'Malfunction';
-        const isWashMod = /^wash$/i.test(mType);
+        const showUnitFields = /^(wash|leakage|damaged)/i.test(mType);
         ['ticket_no', 'equipment', 'driver'].forEach(fk => {
           const el = $('insp_edit_' + fk);
           const wrap = el && el.closest('.form-field');
           const hasOrig = Boolean(row && String(row[fk] || '').trim());
-          if (wrap) wrap.hidden = !isWashMod && !hasOrig;
+          if (wrap) wrap.hidden = !showUnitFields && !hasOrig;
         });
-        const tankDelta = round2(-mLit);
-        html = `<span>Type: <b>${esc(mType)}</b></span><span>Quantity: <b>${mLit > 0 ? '+' : ''}${fmtNum(mLit, 1)} L</b></span><span>Tank Impact: <b>${tankDelta > 0 ? '+' : ''}${fmtNum(tankDelta, 1)} L (${mLit >= 0 ? '+ deducts from tank' : '− adds to tank'})</b></span>`;
+        const delta = round2(-mLit);
+        const dec = /^(Piece|Set|Box|Bag|Truck)$/i.test(mUom) && Number.isInteger(mLit) ? 0 : 1;
+        html = `<span>Item: <b>${esc(mCls.item)} (${esc(mCls.category)})</b></span><span>Type: <b>${esc(mType)}</b></span><span>Quantity: <b>${mLit > 0 ? '+' : ''}${fmtNum(mLit, dec)} ${esc(mUom)}</b></span><span>${mCls.isDiesel ? 'Tank Impact' : 'Stock Impact'}: <b>${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${esc(mUom)} (${mLit >= 0 ? '+ deducts' : '- adds'})</b></span>`;
       } else if (key === 'sites') {
         const mCat = getModVal('site_category') === 'customer' ? 'customer' : 'supplier';
         const isCustSite = mCat === 'customer';
@@ -55093,13 +56052,19 @@
             }
           }
         } else if (key === 'fuel_malfunctions') {
-          row.litres = round2(Number(row.litres || 0));
-          if ('discrepancy_type' in pendingUpdates && !/^wash$/i.test(String(row.discrepancy_type || ''))) {
+          const mCls = classifyMalfunctionItem(row.item || 'Diesel', row.category || '');
+          row.item = mCls.item;
+          row.category = mCls.category;
+          row.uom = mCls.uomLocked ? mCls.uom : normalizeMalfUom(row.uom || mCls.uom || 'L');
+          row.litres = round2(Number(row.litres != null ? row.litres : (row.qty || 0)));
+          row.qty = row.litres;
+          if ('discrepancy_type' in pendingUpdates && !/^(wash|leakage|damaged)/i.test(String(row.discrepancy_type || ''))) {
             row.ticket_no = '';
             row.equipment = '';
             row.driver = '';
           }
-          row.name = `MALF ${row.date || ''} ${row.discrepancy_type || 'Malfunction'}${row.ticket_no ? ' #' + row.ticket_no : ''}`;
+          const itemSuffix = mCls.isDiesel ? '' : ` · ${mCls.item}`;
+          row.name = `MALF ${row.date || ''} ${row.discrepancy_type || 'Malfunction'}${itemSuffix}${row.ticket_no ? ' #' + row.ticket_no : ''}`;
         } else if (key === 'sites') {
           if ('site_category' in pendingUpdates) {
             const effCat = resolveSiteCategory(row);
@@ -60159,21 +61124,24 @@
     if (kMode === 'fuel') {
       if (STATE.kioskFuelSubmode === 'malfunction') {
         const discType = val('f_disctype') || 'Malfunction';
-        const isWash = /^wash$/i.test(discType);
+        const showUnit = /^(wash|leakage|damaged)/i.test(discType);
         const signed = round2(num('f_qty') || 0);
+        const mCls = classifyMalfunctionItem(val('f_malf_item') || 'Diesel');
+        const mUom = normalizeMalfUom(val('f_malf_uom') || mCls.uom || 'L');
         return {
           id: 'DRAFT-FUEL-MALF',
           company,
           date,
           rep_date: repDate,
           time,
-          ticket_no: (isWash && val('f_ticketno')) || 'TANK-MALF',
+          ticket_no: (showUnit && val('f_ticketno')) || 'MALF-VAR',
           fuel_type: discType,
-          item: `Diesel (${signed >= 0 ? 'Shortage -Tank' : 'Surplus +Tank'})`,
-          equipment: (isWash && val('f_truck')) || 'Main Plant Tank',
-          driver: (isWash && val('f_driver')) || 'Tank Reconciliation',
+          item: `${mCls.item} (${signed >= 0 ? 'Shortage -Stock' : 'Surplus +Stock'})`,
+          equipment: (showUnit && val('f_truck')) || (mCls.isDiesel ? 'Main Plant Tank' : mCls.category),
+          driver: (showUnit && val('f_driver')) || 'Variance Reconciliation',
           litres: signed,
-          location: 'Main Plant Tank',
+          uom: mUom,
+          location: mCls.isDiesel ? 'Main Plant Tank' : `${company} Warehouse`,
           entered_by: who.full_name,
           notes
         };
@@ -63973,8 +64941,8 @@
       stationBarHtml = `
         <div class="kiosk-station-bar">
           <div class="kiosk-printer-grp">
-            <span class="kiosk-bar-lbl">${ic('warn')} Tank Variance Desk</span>
-            <span class="muted" style="font-size:11.8px">Record physical dip calibrations, meter discrepancies, or wash allocations</span>
+            <span class="kiosk-bar-lbl">${ic('warn')} Stock &amp; Tank Variance Desk</span>
+            <span class="muted" style="font-size:11.8px">Record diesel tank dips, lubricant &amp; grease leaks, spare part shelf variances, or aggregate discrepancies</span>
           </div>
         </div>
       `;
@@ -64064,7 +65032,7 @@
             <span class="kiosk-quick-lbl">Fuel Operation:</span>
             <button type="button" class="kiosk-qchip ${fSub === 'dispense' ? 'active' : ''}" data-kiosk-fuel-sub="dispense">${ic('fuel')} Dispense to Unit</button>
             <button type="button" class="kiosk-qchip ${fSub === 'refill' ? 'active' : ''}" data-kiosk-fuel-sub="refill">${ic('droplet')} Bulk Tank Refill / Oils</button>
-            <button type="button" class="kiosk-qchip ${fSub === 'malfunction' ? 'active' : ''}" data-kiosk-fuel-sub="malfunction">${ic('warn')} Tank Variance / Dip</button>
+            <button type="button" class="kiosk-qchip ${fSub === 'malfunction' ? 'active' : ''}" data-kiosk-fuel-sub="malfunction">${ic('warn')} Malfunction / Variance</button>
           </div>
           ${fSub === 'dispense' ? `
             <div class="kiosk-quick-group">
@@ -64080,9 +65048,20 @@
             </div>
           ` : (fSub === 'malfunction' ? `
             <div class="kiosk-quick-group">
+              <span class="kiosk-quick-lbl">1-Tap Item:</span>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_malf_item" data-kiosk-preset-val="Diesel">${ic('fuel')} Diesel (L)</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_malf_item" data-kiosk-preset-val="Oil 68">${ic('droplet')} Oil 68 (L)</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_malf_item" data-kiosk-preset-val="Oil 15W40">${ic('droplet')} Oil 15W40 (L)</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_malf_item" data-kiosk-preset-val="Grease">${ic('droplet')} Grease (kg)</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_malf_item" data-kiosk-preset-val="Oil 90">${ic('droplet')} Oil 90 (L)</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_malf_item" data-kiosk-preset-val="Petrol / Gasoline">${ic('fuel')} Petrol (L)</button>
+            </div>
+            <div class="kiosk-quick-group">
               <span class="kiosk-quick-lbl">Discrepancy Type:</span>
               <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_disctype" data-kiosk-preset-val="Malfunction">Malfunction</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_disctype" data-kiosk-preset-val="Leakage / Spill">Leakage / Spill</button>
               <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_disctype" data-kiosk-preset-val="Configuration">Configuration / Dip</button>
+              <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_disctype" data-kiosk-preset-val="Damaged / Expired">Damaged</button>
               <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_disctype" data-kiosk-preset-val="Wash">Wash</button>
               <button type="button" class="kiosk-qchip" data-kiosk-preset-field="f_disctype" data-kiosk-preset-val="Ghassanieh">Ghassanieh</button>
             </div>
@@ -64965,7 +65944,7 @@
         fuel: fSub === 'refill'
           ? 'Bulk Fuel Tank Refill & Lubricant Purchase'
           : (fSub === 'malfunction'
-            ? 'Tank Variance & Physical Dip Calibration'
+            ? 'Malfunction, Leakage & Stock Variance'
             : 'Fuel, Diesel & Lubricant Dispense')
       };
       const showThermalPane = !(kMode === 'fuel' && fSub === 'malfunction');
@@ -64997,7 +65976,7 @@
                   </button>
                 ` : `
                   <button type="button" class="btn btn-primary kiosk-big-print-btn" id="kioskPostOnlyBtn">
-                    ${ic('check_circle')} Post Tank Variance
+                    ${ic('check_circle')} Post Discrepancy / Variance
                   </button>
                 `}
               </div>
@@ -67923,7 +68902,35 @@
       btn.addEventListener('click', ev => {
         ev.stopPropagation();
         const targetCo = btn.getAttribute('data-malf-co') || (COMPANY_BU_MATCH[STATE.company] || '');
-        openEntryModal('malfunction', targetCo ? { co: targetCo } : null);
+        const opts = {};
+        if (targetCo) opts.co = targetCo;
+        if (STATE.view === 'fleet' && STATE.chipFilter === 'lube') {
+          opts.malfCat = 'lubricants';
+        } else if (STATE.view === 'fleet' && STATE.chipFilter === 'grease') {
+          opts.malfCat = 'lubricants';
+          opts.malfItem = 'Grease';
+        }
+        openEntryModal('malfunction', Object.keys(opts).length ? opts : null);
+      });
+    });
+    container.querySelectorAll('[data-open-malf-cat]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const targetCo = btn.getAttribute('data-malf-co') || (COMPANY_BU_MATCH[STATE.company] || '');
+        const malfCat = btn.getAttribute('data-open-malf-cat') || 'all';
+        const malfItem = btn.getAttribute('data-open-malf-item') || '';
+        const opts = { malfCat };
+        if (targetCo) opts.co = targetCo;
+        if (malfItem) opts.malfItem = malfItem;
+        openEntryModal('malfunction', opts);
+      });
+    });
+    container.querySelectorAll('[data-malf-reg-chip]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        STATE.malfRegFilter = btn.getAttribute('data-malf-reg-chip') || 'all';
+        STATE.shown.malfreg = PAGE;
+        renderApp();
       });
     });
     container.querySelectorAll('[data-open-diesel-sale]').forEach(btn => {

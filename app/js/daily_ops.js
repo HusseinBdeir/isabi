@@ -1441,13 +1441,17 @@
       });
     });
     dayMalfs.forEach(mf => {
+      const mfItem = String(mf.item || 'Diesel').trim() || 'Diesel';
+      const mfUom = String(mf.uom || (/grease|تشحيم|مشحمة/i.test(mfItem) ? 'kg' : 'L')).trim() || 'L';
+      const mfQty = Number(mf.litres != null ? mf.litres : (mf.qty || 0));
+      const isDieselMf = /diesel|mazout/i.test(mfItem);
       stream.push({
         rkey: 'fuel_malfunctions', rid: mf.id, company: mf.company || 'WTC',
-        group: 'fuel_maint', kindCls: 'maint', kindLbl: 'Tank Var',
+        group: 'fuel_maint', kindCls: 'maint', kindLbl: isDieselMf ? 'Tank Var' : 'Stock Var',
         isAfterHours: false, txDate: targetDate, time: '',
         ref: mf.ticket_no ? `#${mf.ticket_no}` : compactRef(mf.name, mf.id, 'MF'),
-        party: mf.discrepancy_type || 'Malfunction', detail: safeNotes(ctx, mf.notes) || mf.equipment || 'Diesel Tank',
-        qtyTxt: `${ctx.fmtNum(Number(mf.litres || 0), 0)} L`, amount: null, inflow: false, tier: 5,
+        party: `${mfItem} · ${mf.discrepancy_type || 'Malfunction'}`, detail: safeNotes(ctx, mf.notes) || mf.equipment || (isDieselMf ? 'Diesel Tank' : (mf.category || 'Inventory')),
+        qtyTxt: `${ctx.fmtNum(mfQty, mfQty % 1 ? 1 : 0)} ${mfUom}`, amount: null, inflow: false, tier: 5,
         sortKey: '90_' + String(mf.id || '')
       });
     });
@@ -2534,14 +2538,20 @@
               </tr>
             </thead>
             <tbody>
-              ${dm.dayMalfs.map(mf => `
+              ${dm.dayMalfs.map(mf => {
+                const mfItem = String(mf.item || 'Diesel').trim() || 'Diesel';
+                const mfUom = String(mf.uom || (/grease|تشحيم|مشحمة/i.test(mfItem) ? 'kg' : 'L')).trim() || 'L';
+                const mfQty = Number(mf.litres != null ? mf.litres : (mf.qty || 0));
+                const isDieselMf = /diesel|mazout/i.test(mfItem);
+                return `
                 <tr class="rrow" data-rkey="fuel_malfunctions" data-rid="${esc(String(mf.id || ''))}">
-                  <td><span class="dops-kind crit">Tank Var</span></td>
-                  <td><strong>${esc(mf.discrepancy_type || 'Tank')}</strong></td>
-                  <td class="dops-trunc">${esc(safeNotes(ctx, mf.notes) || mf.equipment || '-')}</td>
-                  <td class="r"><strong style="color:var(--crit)">${fmtNum(mf.litres || 0, 0)} L</strong></td>
+                  <td><span class="dops-kind crit">${isDieselMf ? 'Tank Var' : 'Stock Var'}</span></td>
+                  <td><strong>${esc(mfItem)} · ${esc(mf.discrepancy_type || 'Malfunction')}</strong></td>
+                  <td class="dops-trunc">${esc(safeNotes(ctx, mf.notes) || mf.equipment || (mf.category || '-'))}</td>
+                  <td class="r"><strong style="color:${mfQty < 0 ? 'var(--good)' : 'var(--crit)'}">${fmtNum(mfQty, mfQty % 1 ? 1 : 0)} ${esc(mfUom)}</strong></td>
                 </tr>
-              `).join('')}
+              `;
+              }).join('')}
               ${dm.dayOilLogs.map(ol => `
                 <tr class="rrow" data-rkey="equipment_oil_logs" data-rid="${esc(String(ol.id || ''))}">
                   <td><span class="dops-kind maint">Oil Log</span></td>

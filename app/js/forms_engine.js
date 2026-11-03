@@ -84,7 +84,7 @@
       label: '3. Fleet, Fuel & Maint.',
       forms: [
         { id: 'fuel', label: 'Fuel & Lubricant Intake', badge: 'bhf_fuelintake', crKey: 'fuel_intakes', hubView: 'fleet', pbiPage: 'p08_fleet', title: 'New Fuel & Lubricant Intake' },
-        { id: 'malfunction', label: 'Tank Malfunction / Discrepancy', badge: 'bhf_fuelmalfunction', crKey: 'fuel_malfunctions', hubView: 'fleet', pbiPage: 'p08_fleet', title: 'New Tank Malfunction / Discrepancy' },
+        { id: 'malfunction', label: 'Malfunction / Discrepancy', badge: 'bhf_fuelmalfunction', crKey: 'fuel_malfunctions', hubView: 'fleet', pbiPage: 'p08_fleet', title: 'New Malfunction / Discrepancy' },
         { id: 'companyequipment', label: 'Company Fleet Unit', badge: 'bhf_companyequipment', crKey: 'company_equipment', hubView: 'fleet_equip', pbiPage: 'p08_fleet', title: 'New Company Fleet Unit (BU Assignment)' },
         { id: 'defect', label: 'Equipment Warning / Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'Report Equipment Warning / Issue' },
         { id: 'repair', label: 'Equipment Repair', badge: 'bhf_equipmentrepair', crKey: 'equipment_repairs', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'New Equipment Repair (Warehouse / Outside)' },
@@ -2329,32 +2329,71 @@
     }
 
     if (fType === 'malfunction') {
+      const malfMetaItems = (helpers && typeof helpers.malfunctionItemMeta === 'function')
+        ? helpers.malfunctionItemMeta(company, 'all')
+        : [['Diesel', 'L · Bulk Plant Tank'], ['Oil 68', 'L · Hydraulic Oil'], ['Oil 15W40', 'L · Engine Oil'], ['Grease', 'kg · Chassis & Pins'], ['Oil 90', 'L · Gear Oil'], ['Petrol / Gasoline', 'L · Vehicles']];
+      const malfQuickItems = (helpers && typeof helpers.getMalfunctionQuickItems === 'function')
+        ? helpers.getMalfunctionQuickItems(company, 'all', 6)
+        : [['Diesel', 'L'], ['Oil 68', 'L'], ['Oil 15W40', 'L'], ['Grease', 'kg'], ['Oil 90', 'L'], ['Petrol / Gasoline', 'L']];
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
-          ${secHdr('1. Tank Discrepancy, Dates & Classification')}
+          ${secHdr('1. Item, Dates & Discrepancy Classification')}
+          <div class="malf-scope-box" id="wrap_malf_scope">
+            <div class="malf-scope-row">
+              <span class="malf-scope-lbl">Domain</span>
+              <div class="malf-cat-pills" id="malfCategoryBar" role="tablist" aria-label="Malfunction domain">
+                <button type="button" class="uom-qpill active" data-malf-cat="all">All Items</button>
+                <button type="button" class="uom-qpill" data-malf-cat="fuel">${ic('fuel')} Fuel &amp; Diesel</button>
+                <button type="button" class="uom-qpill" data-malf-cat="lubricants">${ic('droplet')} Lubricants &amp; Grease</button>
+                <button type="button" class="uom-qpill" data-malf-cat="warehouse">${ic('warehouse')} Spare Parts &amp; Warehouse</button>
+                <button type="button" class="uom-qpill" data-malf-cat="materials">${ic('raw')} Materials &amp; Aggregates</button>
+              </div>
+            </div>
+            <div class="malf-scope-row" id="malfQuickRow">
+              <span class="malf-scope-lbl">Frequent</span>
+              <div class="malf-quick-pills" id="malfQuickItemsBar">
+                ${malfQuickItems.map(([nm, u], idx) => `<button type="button" class="malf-quick-chip ${idx === 0 ? 'active' : ''}" data-malf-quick-item="${esc(nm)}">${esc(nm)} <small>${esc(u)}</small></button>`).join('')}
+              </div>
+            </div>
+          </div>
           ${companyField}
           ${lockedDateField('Transaction Date *')}
           ${collapsibleRepDateField()}
+          ${fld('Item / Material *', inp('f_malf_item', 'text', 'Diesel', 'list="dl_malf_items" placeholder="Select fuel, lubricant, grease, part, or aggregate..."') + dlMeta('dl_malf_items', malfMetaItems), { id: 'wrap_malf_item', hintId: 'hint_malf_item', hint: 'Fuel & Diesel · Bulk Plant Tank (L)' })}
           ${fld('Discrepancy Type *', sel('f_disctype', [
             ['Malfunction', 'Malfunction (Meter / Physical Variance)'],
+            ['Leakage / Spill', 'Leakage / Spill (Hose, Seal or Drum Loss)'],
+            ['Configuration', 'Configuration (Dip / Count Calibration)'],
+            ['Damaged / Expired', 'Damaged / Expired / Spoiled Stock'],
             ['Wash', 'Wash (Equipment Cleaning)'],
-            ['Ghassanieh', 'Ghassanieh (House / Generator Supply)'],
-            ['Configuration', 'Configuration (Tank Dip Calibration)']
+            ['Ghassanieh', 'Ghassanieh (House / Generator Supply)']
           ], 'Malfunction'), { id: 'wrap_malf_type' })}
-          ${fld('Quantity (Litres L) *', inp('f_qty', 'number', '', 'step="0.1" placeholder="e.g. 50 or -50"'), { id: 'wrap_malf_qty', hintId: 'hint_malf_qty', hint: '+ deducts from tank (used / shortage) · − adds to tank (surplus)' })}
-          <div class="pa-form-sec-hdr" id="sec_malf_wash" hidden><span>2. Wash Ticket, Equipment &amp; Driver</span></div>
-          ${fld('Ticket No.', inp('f_ticketno', 'text', '', 'placeholder="Optional wash slip or ticket #..."'), { id: 'wrap_malf_ticketno', hidden: true })}
-          ${fld('Equipment', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional unit..."') + dl('dl_equip', equipNames), { id: 'wrap_malf_truck', hidden: true })}
-          ${fld('Driver', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Optional driver..."') + dl('dl_drivers', driverNames), { id: 'wrap_malf_driver', hidden: true })}
-          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Explain meter variance, dip calibration, or wash note..."'), { id: 'wrap_malf_notes', span: true })}
+          ${fld('<span id="lbl_malf_qty">Quantity (Litres L) *</span>', inp('f_qty', 'number', '', 'step="0.05" placeholder="e.g. 50 or -50"'), { id: 'wrap_malf_qty', hintId: 'hint_malf_qty', hint: '+ deducts from tank (used / shortage) · − adds to tank (surplus)' })}
+          ${fld('Unit (UoM) *', sel('f_malf_uom', [
+            ['L', 'Litres (L)'],
+            ['kg', 'Kilograms (kg)'],
+            ['Piece', 'Pieces (Piece)'],
+            ['Set', 'Sets (Set)'],
+            ['Box', 'Boxes (Box)'],
+            ['m', 'Metres (m)'],
+            ['m³', 'Cubic Metres (m³)'],
+            ['Ton', 'Metric Tons (Ton)'],
+            ['Bag', 'Bags (Bag)'],
+            ['Truck', 'Truck Loads (Truck)']
+          ], 'L'), { id: 'wrap_malf_uom', lockField: 'f_malf_uom', lockReason: 'Locked to catalog item UoM; unlocks automatically for custom items', hintId: 'hint_malf_uom', hint: 'Locked to item UoM' })}
+          <div class="pa-form-sec-hdr" id="sec_malf_wash" hidden><span id="lbl_sec_malf_wash">2. Reference, Equipment &amp; Operator</span></div>
+          ${fld('Ticket / Slip No.', inp('f_ticketno', 'text', '', 'placeholder="Optional slip, voucher, or ticket #..."'), { id: 'wrap_malf_ticketno', hidden: true })}
+          ${fld('Equipment / Unit', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional leaking or serviced unit..."') + dl('dl_equip', equipNames), { id: 'wrap_malf_truck', hidden: true })}
+          ${fld('Driver / Operator', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Optional driver or mechanic..."') + dl('dl_drivers', driverNames), { id: 'wrap_malf_driver', hidden: true })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Explain variance, leak source, dip calibration, or count note..."'), { id: 'wrap_malf_notes', span: true })}
         </div>
         <div id="malfLiveAlertBanner" class="att-contract-strip" hidden></div>
         <div class="live-calc" id="malfLiveCalc">
-          <div><small>Tank Before Entry</small><b id="calc_malf_before">—</b></div>
-          <div><small>Tank Impact</small><b id="calc_malf_delta">0.0 L</b></div>
-          <div><small>Tank After Entry</small><b id="calc_malf_after">—</b></div>
-          <div><small>Month Malfunction % (5% Watchdog)</small><b id="calc_malf_pct">0.0%</b></div>
+          <div><small id="lbl_malf_c1">Tank Before Entry</small><b id="calc_malf_before">0.0 L</b></div>
+          <div><small id="lbl_malf_c2">Tank Impact</small><b id="calc_malf_delta">0.0 L</b></div>
+          <div><small id="lbl_malf_c3">Tank After Entry</small><b id="calc_malf_after">0.0 L</b></div>
+          <div><small id="lbl_malf_c4">Month Malfunction % (5% Watchdog)</small><b id="calc_malf_pct">0.0%</b></div>
         </div>
       `;
     }
