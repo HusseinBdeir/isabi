@@ -70054,7 +70054,7 @@
     const snapEl = $('railRlsScope');
     if (snapEl) snapEl.removeAttribute('title');
     const showcaseHref = (IS_LOCAL && !location.pathname.includes('/app/')) ? '/showcase/' : '../';
-    ['authShowcaseLink', 'railShowcaseLink', 'railClientSiteLink'].forEach(id => {
+    ['authShowcaseLink', 'railShowcaseLink'].forEach(id => {
       const el = $(id);
       if (el) el.setAttribute('href', showcaseHref);
     });

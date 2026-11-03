@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.90';
+const SHELL_CACHE = 'isabi-mfg-v19.6.91';
 const DATA_CACHE = 'isabi-mfg-data-v1';
 
 // Lightweight UI shell (~500 KB gz). Heavy seed JSONs (1.7 MB gz) and Face ID models (8.2 MB gz)
@@ -6,30 +6,30 @@ const DATA_CACHE = 'isabi-mfg-data-v1';
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.90',
-  './css/geo_dispatch.css?v=19.6.90',
-  './css/daily_ops.css?v=19.6.90',
-  './css/ask_isabi.css?v=19.6.90',
-  './js/face.js?v=19.6.90',
-  './js/endpoints.js?v=19.6.90',
-  './js/seed_manifest.js?v=19.6.90',
-  './js/icons.js?v=19.6.90',
-  './js/geo_dispatch.js?v=19.6.90',
-  './js/forms_engine.js?v=19.6.90',
-  './js/pbi_pages.js?v=19.6.90',
-  './js/rdl_reports.js?v=19.6.90',
-  './js/kiosk_print.js?v=19.6.90',
-  './js/table_columns.js?v=19.6.90',
-  './js/daily_ops.js?v=19.6.90',
-  './js/ask_isabi.js?v=19.6.90',
-  './js/app.js?v=19.6.90',
-  './manifest.json?v=19.6.90',
-  './favicon.ico?v=19.6.90',
-  './icon.svg?v=19.6.90',
-  './icon-180.png?v=19.6.90',
-  './icon-192.png?v=19.6.90',
-  './icon-512.png?v=19.6.90',
-  './icon-512-maskable.png?v=19.6.90'
+  './css/app.css?v=19.6.91',
+  './css/geo_dispatch.css?v=19.6.91',
+  './css/daily_ops.css?v=19.6.91',
+  './css/ask_isabi.css?v=19.6.91',
+  './js/face.js?v=19.6.91',
+  './js/endpoints.js?v=19.6.91',
+  './js/seed_manifest.js?v=19.6.91',
+  './js/icons.js?v=19.6.91',
+  './js/geo_dispatch.js?v=19.6.91',
+  './js/forms_engine.js?v=19.6.91',
+  './js/pbi_pages.js?v=19.6.91',
+  './js/rdl_reports.js?v=19.6.91',
+  './js/kiosk_print.js?v=19.6.91',
+  './js/table_columns.js?v=19.6.91',
+  './js/daily_ops.js?v=19.6.91',
+  './js/ask_isabi.js?v=19.6.91',
+  './js/app.js?v=19.6.91',
+  './manifest.json?v=19.6.91',
+  './favicon.ico?v=19.6.91',
+  './icon.svg?v=19.6.91',
+  './icon-180.png?v=19.6.91',
+  './icon-192.png?v=19.6.91',
+  './icon-512.png?v=19.6.91',
+  './icon-512-maskable.png?v=19.6.91'
 ];
 
 const VENDOR_ASSETS = [
