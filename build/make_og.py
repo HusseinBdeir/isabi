@@ -22,8 +22,8 @@ HTML = f"""<!doctype html>
     --badge-bg-2: #EFE7D6;
     --badge-stroke: #C4913A;
     --badge-inner-stroke: rgba(184, 130, 40, 0.18);
-    --badge-ii: #281D15;
-    --badge-rule: #B88228;
+    --badge-ii: #FAF6EE;
+    --badge-rule: #D9A54A;
     --wm-ink: #FAF6EE;
     --wm-sys: #E6DEC8;
     --wm-rule: #D9A54A;
@@ -37,7 +37,7 @@ HTML = f"""<!doctype html>
            linear-gradient(90deg, rgba(250,246,238,0.035) 1px, transparent 1px); background-size: 60px 60px; }}
   .card {{ position: absolute; inset: 0; padding: 64px 72px; display: flex; flex-direction: column; justify-content: space-between; }}
   .brand {{ display: flex; align-items: center; gap: 18px; color: #FAF6EE; }}
-  .brand svg.brand-badge {{ width: 64px; height: 64px; border-radius: 14px; box-shadow: 0 4px 18px rgba(0,0,0,0.35); }}
+  .brand svg.brand-badge {{ width: 58px; height: 58px; background: transparent; box-shadow: none; }}
   .brand svg.brand-badge .badge-outer {{ stroke: var(--badge-stroke); }}
   .brand svg.brand-badge .badge-inner {{ stroke: var(--badge-inner-stroke); }}
   .brand svg.brand-badge .badge-ii {{ fill: var(--badge-ii); }}

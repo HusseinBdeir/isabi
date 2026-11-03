@@ -28,12 +28,11 @@ ICONS = {
     # 2. Official ISABI / Ask ISABI Rev 10 "II" Double-Rule Badge
     "ai": (
         '<svg class="ic ic-isabi" viewBox="0 0 120 120" width="1em" height="1em" aria-hidden="true">'
-        '<rect x="2" y="2" width="116" height="116" rx="25" fill="var(--badge-bg-mid, #F6EFE0)" stroke="var(--badge-stroke, #C4913A)" stroke-width="4"/>'
-        '<g transform="translate(39.52,77.62) scale(0.74)">'
+        '<g transform="translate(27.73,87.77) scale(1.16)">'
         '<g fill="var(--badge-ii, #281D15)"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/>'
         '<path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g>'
-        '<g fill="var(--badge-rule, #B88228)"><rect x="0" y="9.5" width="55.66" height="3.4"/>'
-        '<rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>'
+        '<g fill="var(--badge-rule, #B88228)"><rect x="-3" y="9.5" width="61.66" height="3.8" rx="0.8"/>'
+        '<rect x="-3" y="17.5" width="61.66" height="3.8" rx="0.8"/></g></g></svg>'
     ),
 
     # Bare ISABI II mark (adapts to button/tab text color + brass double rule)

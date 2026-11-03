@@ -3,15 +3,11 @@ from part_faq import FAQ_HTML
 from part_icons import ICONS
 
 def badge_svg(uid="og"):
-    gid = f"isabiBg_{uid}"
     return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="brand-badge" role="img" aria-label="ISABI Systems Badge">'
-        f'<defs><linearGradient id="{gid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" style="stop-color:var(--badge-bg-1,#FCF9F2)"/><stop offset="100%" style="stop-color:var(--badge-bg-2,#EFE7D6)"/></linearGradient></defs>'
-        f'<rect x="2" y="2" width="116" height="116" rx="25" fill="url(#{gid})" class="badge-outer" stroke="#C4913A" stroke-width="3"/>'
-        '<rect x="6.5" y="6.5" width="107" height="107" rx="21" fill="none" class="badge-inner" stroke="rgba(184,130,40,0.18)" stroke-width="1"/>'
-        '<g transform="translate(39.52,77.62) scale(0.74)">'
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" class="brand-badge" role="img" aria-label="ISABI Systems Mark">'
+        '<g transform="translate(27.73,87.77) scale(1.16)">'
         '<g class="badge-ii" fill="#281D15"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g>'
-        '<g class="badge-rule" fill="#B88228"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g>'
+        '<g class="badge-rule" fill="#B88228"><rect x="-3" y="9.5" width="61.66" height="3.6" rx="0.8"/><rect x="-3" y="17.5" width="61.66" height="3.6" rx="0.8"/></g>'
         '</g></svg>'
     )
 

@@ -391,11 +391,13 @@ button {
 }
 
 .brand-badge {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(40, 29, 21, 0.10);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .brand-badge .badge-outer,
@@ -1466,10 +1468,11 @@ button {
 }
 
 .hlc-brand svg.brand-badge {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  box-shadow: 0 2px 6px rgba(40, 29, 21, 0.10);
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .hlc-brand span {
@@ -6412,7 +6415,6 @@ svg.ic {
 }
 
 svg.ic-isabi {
-  border-radius: 3.5px;
   width: 1.08em;
   height: 1.08em;
   vertical-align: -0.17em;
