@@ -1,4 +1,4 @@
-# Renders og-image.png (1200x630) for WhatsApp / LinkedIn / social link previews via headless browser
+# Renders og-image.png (1200x630) for WhatsApp / LinkedIn / social link previews via headless browser (Palette C1)
 import os
 import shutil
 import subprocess
@@ -13,29 +13,47 @@ EDGE = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 OUT = os.path.join(ROOT, 'og-image.png')
 
 HTML = f"""<!doctype html>
-<html><head><meta charset="utf-8">
+<html data-theme="dark"><head><meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,700;125,800&family=Instrument+Sans:wght@400;500;600&display=block">
 <style>
+  :root {{
+    --badge-bg-1: #FCF9F2;
+    --badge-bg-2: #EFE7D6;
+    --badge-stroke: #C4913A;
+    --badge-inner-stroke: rgba(184, 130, 40, 0.18);
+    --badge-ii: #281D15;
+    --badge-rule: #B88228;
+    --wm-ink: #FAF6EE;
+    --wm-sys: #E6DEC8;
+    --wm-rule: #D9A54A;
+  }}
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  html, body {{ width: 1200px; height: 630px; overflow: hidden; background: #0B1730; }}
-  body {{ font-family: "Instrument Sans", Arial, sans-serif; color: #F4F2EE; position: relative; }}
-  .glow {{ position: absolute; right: -180px; top: -220px; width: 720px; height: 720px; border-radius: 50%;
-           background: radial-gradient(closest-side, rgba(217,165,74,0.16), rgba(217,165,74,0)); }}
-  .grid {{ position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
-           linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px); background-size: 60px 60px; }}
+  html, body {{ width: 1200px; height: 630px; overflow: hidden; background: #1C1510; }}
+  body {{ font-family: "Instrument Sans", Arial, sans-serif; color: #FAF6EE; position: relative; }}
+  .glow {{ position: absolute; right: -180px; top: -220px; width: 760px; height: 760px; border-radius: 50%;
+           background: radial-gradient(closest-side, rgba(217,165,74,0.20), rgba(217,165,74,0)); }}
+  .grid {{ position: absolute; inset: 0; background-image: linear-gradient(rgba(250,246,238,0.035) 1px, transparent 1px),
+           linear-gradient(90deg, rgba(250,246,238,0.035) 1px, transparent 1px); background-size: 60px 60px; }}
   .card {{ position: absolute; inset: 0; padding: 64px 72px; display: flex; flex-direction: column; justify-content: space-between; }}
-  .brand {{ display: flex; align-items: center; gap: 18px; color: #F4F2EE; }}
-  .brand svg.brand-badge {{ width: 64px; height: 64px; border-radius: 14px; }}
-  .brand svg.brand-wordmark {{ height: 56px; width: auto; --brass: #D9A54A; }}
-  h1 {{ font-family: "Archivo", Arial, sans-serif; font-weight: 800; font-size: 76px; line-height: 1.02; letter-spacing: -0.01em; max-width: 900px; }}
+  .brand {{ display: flex; align-items: center; gap: 18px; color: #FAF6EE; }}
+  .brand svg.brand-badge {{ width: 64px; height: 64px; border-radius: 14px; box-shadow: 0 4px 18px rgba(0,0,0,0.35); }}
+  .brand svg.brand-badge .badge-outer {{ stroke: var(--badge-stroke); }}
+  .brand svg.brand-badge .badge-inner {{ stroke: var(--badge-inner-stroke); }}
+  .brand svg.brand-badge .badge-ii {{ fill: var(--badge-ii); }}
+  .brand svg.brand-badge .badge-rule {{ fill: var(--badge-rule); }}
+  .brand svg.brand-wordmark {{ height: 56px; width: auto; }}
+  .brand svg.brand-wordmark .wm-word {{ fill: var(--wm-ink); }}
+  .brand svg.brand-wordmark .wm-rule {{ fill: var(--wm-rule); }}
+  .brand svg.brand-wordmark .wm-sys {{ fill: var(--wm-sys); }}
+  h1 {{ font-family: "Archivo", Arial, sans-serif; font-weight: 800; font-size: 76px; line-height: 1.02; letter-spacing: -0.01em; max-width: 900px; color: #FAF6EE; }}
   h1 b {{ color: #D9A54A; font-weight: 800; }}
-  p {{ font-size: 26px; line-height: 1.4; color: #B9C5D8; max-width: 920px; margin-top: 22px; }}
+  p {{ font-size: 26px; line-height: 1.4; color: #D9CFC0; max-width: 920px; margin-top: 22px; }}
   .chips {{ display: flex; gap: 12px; flex-wrap: wrap; }}
   .chip {{ font-family: "Archivo", Arial, sans-serif; font-weight: 700; font-size: 17px; letter-spacing: 0.06em; text-transform: uppercase;
-           padding: 12px 18px; border: 1px solid rgba(217,165,74,0.45); border-radius: 999px; color: #E9D7B0; background: rgba(217,165,74,0.10); }}
+           padding: 12px 18px; border: 1px solid rgba(217,165,74,0.48); border-radius: 999px; color: #F0E2C4; background: rgba(217,165,74,0.11); }}
   .rule {{ position: absolute; left: 72px; right: 72px; bottom: 44px; border-top: 1.5px solid #D9A54A; border-bottom: 1.5px solid #D9A54A; height: 7px; }}
-  .url {{ position: absolute; right: 72px; bottom: 60px; font-size: 18px; color: #9FB0C7; letter-spacing: 0.04em; }}
+  .url {{ position: absolute; right: 72px; bottom: 60px; font-size: 18px; color: #C7B9A5; letter-spacing: 0.04em; }}
 </style></head>
 <body>
   <div class="glow"></div><div class="grid"></div>

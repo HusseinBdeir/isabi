@@ -33057,11 +33057,11 @@
           <div class="system-showcase-lead">
             <div class="system-showcase-crest" aria-hidden="true">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="-9.5 -78.8 74.66 109.7" width="22" height="22" focusable="false">
-                <g fill="#F4F2EE">
+                <g fill="currentColor">
                   <path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/>
                   <path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/>
                 </g>
-                <g fill="#D9A54A">
+                <g fill="var(--badge-rule, #B88228)">
                   <rect x="0" y="9.5" width="55.66" height="3.4"/>
                   <rect x="0" y="17.5" width="55.66" height="3.4"/>
                 </g>

@@ -19,6 +19,16 @@ CSS = r"""
   --brass-ink: #0B1730;
   --brass-tint: rgba(201, 146, 52, 0.10);
   --brass-border: rgba(201, 146, 52, 0.34);
+  --badge-bg-1: #FCF9F2;
+  --badge-bg-2: #EFE7D6;
+  --badge-bg-mid: #F6EFE0;
+  --badge-stroke: #C4913A;
+  --badge-inner-stroke: rgba(184, 130, 40, 0.18);
+  --badge-ii: #281D15;
+  --badge-rule: #B88228;
+  --wm-ink: #281D15;
+  --wm-sys: #4A3628;
+  --wm-rule: #B88228;
   --steel: #2563EB;
   --steel-tint: rgba(37, 99, 235, 0.08);
   --good: #16803C;
@@ -112,6 +122,16 @@ CSS = r"""
   --brass-ink: #0B1730;
   --brass-tint: rgba(217, 165, 74, 0.12);
   --brass-border: rgba(217, 165, 74, 0.38);
+  --badge-bg-1: #281F18;
+  --badge-bg-2: #1B140F;
+  --badge-bg-mid: #221A14;
+  --badge-stroke: rgba(217, 165, 74, 0.55);
+  --badge-inner-stroke: rgba(217, 165, 74, 0.12);
+  --badge-ii: #FAF6EE;
+  --badge-rule: #D9A54A;
+  --wm-ink: #FAF6EE;
+  --wm-sys: #E6DEC8;
+  --wm-rule: #D9A54A;
   --steel: #4F8FD6;
   --steel-tint: rgba(79, 143, 214, 0.14);
   --good: #3DB36A;
@@ -183,6 +203,16 @@ CSS = r"""
 }
 
 .sandbox-wrap[data-sbox-theme="light"] {
+  --badge-bg-1: #FCF9F2;
+  --badge-bg-2: #EFE7D6;
+  --badge-bg-mid: #F6EFE0;
+  --badge-stroke: #C4913A;
+  --badge-inner-stroke: rgba(184, 130, 40, 0.18);
+  --badge-ii: #281D15;
+  --badge-rule: #B88228;
+  --wm-ink: #281D15;
+  --wm-sys: #4A3628;
+  --wm-rule: #B88228;
   --m-bg: #EEEDE9;
   --m-surface: #FFFFFF;
   --m-ink: #0F1E38;
@@ -218,6 +248,16 @@ CSS = r"""
 }
 
 .sandbox-wrap[data-sbox-theme="dark"] {
+  --badge-bg-1: #281F18;
+  --badge-bg-2: #1B140F;
+  --badge-bg-mid: #221A14;
+  --badge-stroke: rgba(217, 165, 74, 0.55);
+  --badge-inner-stroke: rgba(217, 165, 74, 0.12);
+  --badge-ii: #FAF6EE;
+  --badge-rule: #D9A54A;
+  --wm-ink: #FAF6EE;
+  --wm-sys: #E6DEC8;
+  --wm-rule: #D9A54A;
   --m-bg: #0E1A2E;
   --m-surface: #152238;
   --m-ink: #E9ECF2;
@@ -355,13 +395,45 @@ button {
   height: 36px;
   border-radius: 8px;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 8px rgba(40, 29, 21, 0.10);
+}
+
+.brand-badge .badge-outer,
+.sbox-mini-badge .badge-outer {
+  stroke: var(--badge-stroke, #C4913A);
+}
+
+.brand-badge .badge-inner,
+.sbox-mini-badge .badge-inner {
+  stroke: var(--badge-inner-stroke, rgba(184, 130, 40, 0.18));
+}
+
+.brand-badge .badge-ii,
+.sbox-mini-badge .badge-ii {
+  fill: var(--badge-ii, #281D15);
+}
+
+.brand-badge .badge-rule,
+.sbox-mini-badge .badge-rule {
+  fill: var(--badge-rule, #B88228);
 }
 
 .brand-wordmark {
   height: 31px;
   width: auto;
   display: block;
+}
+
+.brand-wordmark .wm-word {
+  fill: var(--wm-ink, #281D15);
+}
+
+.brand-wordmark .wm-rule {
+  fill: var(--wm-rule, #B88228);
+}
+
+.brand-wordmark .wm-sys {
+  fill: var(--wm-sys, #4A3628);
 }
 
 .main-nav {
@@ -545,8 +617,8 @@ button {
 }
 
 .ask-isabi-trigger {
-  background: linear-gradient(180deg, #FFFFFF 0%, #F7F8FB 100%);
-  color: var(--ink);
+  background: linear-gradient(180deg, #FFFFFF 0%, #FAF7F0 100%);
+  color: var(--wm-ink, #281D15);
   border: 1px solid var(--brass-border);
   padding: 7px 12px;
   border-radius: 8px;
@@ -555,24 +627,24 @@ button {
   gap: 7px;
   font-weight: 700;
   font-size: 13px;
-  box-shadow: 0 2px 6px rgba(14, 29, 54, 0.05);
+  box-shadow: 0 2px 6px rgba(40, 29, 21, 0.06);
   white-space: nowrap;
 }
 
 :root[data-theme="dark"] .ask-isabi-trigger {
-  background: #081124;
-  color: #F4F2EE;
-  border-color: var(--brass);
+  background: #221A14;
+  color: #FAF6EE;
+  border-color: rgba(217, 165, 74, 0.55);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
 }
 
 .ask-isabi-trigger:hover {
-  background: linear-gradient(180deg, #FFFFFF 0%, #EEF2F8 100%);
+  background: linear-gradient(180deg, #FCF9F2 0%, #F3ECDD 100%);
   border-color: var(--brass);
 }
 
 :root[data-theme="dark"] .ask-isabi-trigger:hover {
-  background: #14264C;
+  background: #30241B;
   border-color: var(--brass-strong);
 }
 
@@ -1397,7 +1469,7 @@ button {
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  box-shadow: 0 2px 6px rgba(11, 23, 48, 0.16);
+  box-shadow: 0 2px 6px rgba(40, 29, 21, 0.10);
 }
 
 .hlc-brand span {

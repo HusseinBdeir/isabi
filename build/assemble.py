@@ -55,7 +55,7 @@ HEAD = """<!DOCTYPE html>
         var t = localStorage.getItem('isabi.theme.v2') === 'dark' ? 'dark' : 'light';
         d.setAttribute('data-theme', t);
         var m = document.querySelector('meta[name="theme-color"]');
-        if (m) m.setAttribute('content', t === 'dark' ? '#0B1730' : '#FAF9F6');
+        if (m) m.setAttribute('content', t === 'dark' ? '#1B140F' : '#FAF9F6');
         if (window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)) {
           d.classList.add('ios-standalone');
         }
@@ -129,12 +129,10 @@ def main():
     mirror_dir = os.path.join(os.path.expanduser('~'), 'OneDrive - BHFIRMS', 'System', 'System', 'ISABI', 'Website')
     if os.path.isdir(mirror_dir):
         import shutil
-        shutil.copy2(OUT_HTML, os.path.join(mirror_dir, 'index.html'))
-        shutil.copy2(os.path.join(ROOT, 'sw.js'), os.path.join(mirror_dir, 'sw.js'))
-        shutil.copy2(os.path.join(ROOT, 'manifest.json'), os.path.join(mirror_dir, 'manifest.json'))
-        og_png = os.path.join(ROOT, 'og-image.png')
-        if os.path.exists(og_png):
-            shutil.copy2(og_png, os.path.join(mirror_dir, 'og-image.png'))
+        for mf in ('index.html', 'sw.js', 'manifest.json', 'og-image.png', 'favicon.ico', 'icon.svg', 'icon-maskable.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'):
+            msrc = os.path.join(ROOT, mf)
+            if os.path.exists(msrc):
+                shutil.copy2(msrc, os.path.join(mirror_dir, mf))
 
     print(f"OK: Generated {OUT_HTML} ({len(full_html):,} bytes, JS syntax verified, 0 em-dashes/arrows)")
 

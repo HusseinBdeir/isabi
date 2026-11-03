@@ -28,11 +28,11 @@ ICONS = {
     # 2. Official ISABI / Ask ISABI Rev 10 "II" Double-Rule Badge
     "ai": (
         '<svg class="ic ic-isabi" viewBox="0 0 120 120" width="1em" height="1em" aria-hidden="true">'
-        '<rect width="120" height="120" rx="26" fill="#0B1730"/>'
+        '<rect x="2" y="2" width="116" height="116" rx="25" fill="var(--badge-bg-mid, #F6EFE0)" stroke="var(--badge-stroke, #C4913A)" stroke-width="4"/>'
         '<g transform="translate(39.52,77.62) scale(0.74)">'
-        '<g fill="#F4F2EE"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/>'
+        '<g fill="var(--badge-ii, #281D15)"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/>'
         '<path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g>'
-        '<g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="3.4"/>'
+        '<g fill="var(--badge-rule, #B88228)"><rect x="0" y="9.5" width="55.66" height="3.4"/>'
         '<rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>'
     ),
 
@@ -41,7 +41,7 @@ ICONS = {
         '<svg class="ic ic-isabi-mark" viewBox="-9.5 -78.8 74.66 109.7" width="1em" height="1em" aria-hidden="true">'
         '<g fill="currentColor"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/>'
         '<path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g>'
-        '<g fill="#D9A54A"><rect x="0" y="9.5" width="55.66" height="4.2"/>'
+        '<g fill="var(--wm-rule, #B88228)"><rect x="0" y="9.5" width="55.66" height="4.2"/>'
         '<rect x="0" y="18.5" width="55.66" height="4.2"/></g></svg>'
     ),
 
