@@ -2262,7 +2262,7 @@
           ${fld('End Date (Blank = Open)', inp('f_enddate', 'date', ''), { id: 'wrap_recur_end' })}
           ${fld('Supplier / Vendor *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_f_supplier', hintId: 'hint_supplier', hint: '' })}
           ${fld('Category *', inp('f_category', 'text', '', 'list="dl_categories" placeholder="Select or type category..."') + dl('dl_categories', expCats), { id: 'wrap_f_category' })}
-          ${fld('Subcategory *', inp('f_subcategory', 'text', '', 'list="dl_subcats" placeholder="Select or type subcategory..."') + dl('dl_subcats', expSubcats), { id: 'wrap_f_subcategory', hintId: 'hint_subcat', hint: '' })}
+          ${fld('Subcategory', inp('f_subcategory', 'text', '', 'list="dl_subcats" placeholder="Select or type subcategory..."') + dl('dl_subcats', expSubcats), { id: 'wrap_f_subcategory', hintId: 'hint_subcat', hint: '' })}
           <div id="recurContextStrip" class="att-contract-strip" hidden></div>
           ${fld('Recurring Item / Purpose *', inp('f_item_purpose', 'text', '', 'list="dl_recur_purposes" placeholder="e.g. Rent, Internet, Security, Tips, Telephone..."') + dl('dl_recur_purposes', purposeHints), { id: 'wrap_f_item_purpose' })}
           ${fld('Billing Cycle *', sel('f_frequency', [['Monthly', 'Monthly'], ['Quarterly', 'Quarterly'], ['Annual', 'Annual'], ['Weekly', 'Weekly']], 'Monthly'), { id: 'wrap_f_frequency' })}

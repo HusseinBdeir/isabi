@@ -5019,8 +5019,15 @@
       if (allowedCos && r.company && !allowedCos.includes(r.company)) return false;
       if (offScope && !isOfficialRecord(r, effTk)) return false;
       if (range) {
-        const d = recordDateFor(r, basis);
-        if (d && (d < range.from || d > range.to)) return false;
+        if (tk === 'recurring_expenses' || effTk === 'recurring_expenses' || (r.start_date && r.frequency !== undefined)) {
+          const s = String(r.start_date || r.date || '').slice(0, 10);
+          const e = String(r.end_date || '').slice(0, 10);
+          if (range.to && s && s > range.to) return false;
+          if (range.from && e && e < range.from) return false;
+        } else {
+          const d = recordDateFor(r, basis);
+          if (d && (d < range.from || d > range.to)) return false;
+        }
       }
       if (qTokens.length) {
         let hay = null;
@@ -5948,6 +5955,7 @@
     if ('customer' in r && ('record_ticket' in r || 'vat_invoice' in r || ('amount' in r && !('sale_type' in r)))) return 'receipts';
     if ('site_owner' in r || 'trans_cost' in r) return 'raw_purchases';
     if ('payable_leg' in r || 'raw_ticket' in r || 'expense_record' in r) return 'settlements';
+    if ('frequency' in r && 'start_date' in r) return 'recurring_expenses';
     if ('category' in r && 'subcategory' in r) return 'expenses';
     return '';
   }
@@ -5957,6 +5965,7 @@
     if (tk === 'vat_invoices') return Number(r.net_amount || 0) > 0 || Number(r.vat_amount || 0) > 0 || Number(r.total_ttc || 0) > 0 || Number(r.tickets_count || 0) > 0;
     if (tk === 'receipts') return Boolean(r.vat_invoice || /^(VAT|VATRent)$/i.test(String(r.method || '').trim()) || isOfficialCustomerName(r.customer));
     if (tk === 'expenses') return Boolean(Math.abs(Number(r.vat || 0)) > 0 || /^(IVA|VAT|VAT Dis|Cash VAT Dis)$/i.test(String(r.method || '').trim()) || (r.invoice && r.invoice !== '-' && isOfficialSupplierName(r.supplier)));
+    if (tk === 'recurring_expenses') return Boolean(!r.supplier || isOfficialSupplierName(r.supplier));
     if (tk === 'raw_purchases') return Boolean(isOfficialSupplierName(r.site_owner) || isOfficialSupplierName(r.truck_owner));
     if (tk === 'settlements') return Boolean(isOfficialSupplierName(r.supplier));
     if (tk === 'customers') return Boolean(r.vat_registered === true || r.vat_registered === 'Yes' || isOfficialCustomerName(r.name || r.Customer));
@@ -9850,9 +9859,12 @@
         savedRow._explicitEnd = false;
         savedRow._auto_closed_by_id = nextPeer.id;
         if (crKey === 'employments') savedRow.status = 'Ended';
+        else if (crKey === 'recurring_expenses') savedRow.status = capEnd < todayISO() ? 'Ended' : 'In Force';
       }
     } else if (crKey === 'employments' && (!savedRow.end_date || !String(savedRow.end_date).trim())) {
       savedRow.status = 'Current';
+    } else if (crKey === 'recurring_expenses' && (!savedRow.end_date || !String(savedRow.end_date).trim())) {
+      savedRow.status = 'In Force';
     }
 
     if (crKey === 'logistics_allowances' && Number(savedRow.daily_usd) > 0 && savedRow.start_date && savedRow.end_date && savedRow.log_mode !== 'single') {
@@ -22224,6 +22236,7 @@
       : todayISO();
     const recurAllScoped = filterRecords(SEED.records.recurring_expenses || [], {
       ignorePeriod: true,
+      tableKey: 'recurring_expenses',
       cols: ['company', 'supplier', 'category', 'subcategory', 'item', 'frequency', 'status', 'notes']
     }).filter(r => {
       if (!r || r.voided) return false;
@@ -22255,7 +22268,11 @@
       return true;
     }), 'recur_exp', 'start_date', 'desc');
     const shownRecur = recurFiltered.slice(0, shownCount('recur_exp'));
-    const sumRecurMonthlyActive = round2(recurFiltered.filter(r => r._isInForce).reduce((a, r) => a + r._monthlyEq, 0));
+    const recurFilteredInForceCnt = recurFiltered.filter(r => r._isInForce).length;
+    const sumRecurMonthlyActive = round2(recurAllScoped.filter(r => r._isInForce).reduce((a, r) => a + r._monthlyEq, 0));
+    const sumRecurDisplayedRate = recurChipKey === 'ended'
+      ? round2(recurFiltered.reduce((a, r) => a + Number(r.amount || 0), 0))
+      : round2(recurFiltered.filter(r => r._isInForce).reduce((a, r) => a + r._monthlyEq, 0));
     const sumRecurCycles = recurFiltered.reduce((a, r) => a + r._cycles, 0);
     const sumRecurAccrued = round2(recurFiltered.reduce((a, r) => a + r._accrued, 0));
 
@@ -22560,8 +22577,8 @@
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="6"><b>TOTAL (${fmtNum(recurFiltered.length)} SCHEDULES · ${fmtNum(recurInForceCnt)} IN FORCE)</b></td>
-                <td class="r"><b>${fmtUSD(sumRecurMonthlyActive, 2)}</b></td>
+                <td colspan="6"><b>${recurChipKey === 'ended' ? `TOTAL (${fmtNum(recurFiltered.length)} ENDED SCHEDULES)` : `TOTAL (${fmtNum(recurFiltered.length)} SCHEDULES · ${fmtNum(recurFilteredInForceCnt)} IN FORCE)`}</b></td>
+                <td class="r"><b>${fmtUSD(sumRecurDisplayedRate, 2)}</b></td>
                 <td class="r"><b>${fmtNum(sumRecurCycles)}</b></td>
                 <td class="r"><b>${fmtUSD(sumRecurAccrued, 2)}</b></td>
               </tr>
@@ -68769,7 +68786,7 @@
     if (!SEED) return false;
     if (!_demoSanitizeBackup) {
       const recSnap = {};
-      const recKeys = ['customers', 'suppliers', 'sites', 'drivers', 'employments', 'salaries', 'sales_tickets', 'receipts', 'vat_invoices', 'price_rules', 'credit_terms', 'raw_purchases', 'expenses', 'settlements', 'company_drivers', 'company_equipment', 'attendance'];
+      const recKeys = ['customers', 'suppliers', 'sites', 'drivers', 'employments', 'salaries', 'sales_tickets', 'receipts', 'vat_invoices', 'price_rules', 'credit_terms', 'raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'company_drivers', 'company_equipment', 'attendance'];
       recKeys.forEach(k => {
         if (SEED.records && Array.isArray(SEED.records[k]) && SEED.records[k].length) {
           recSnap[k] = SEED.records[k].map(r => Object.assign({}, r));
@@ -68781,7 +68798,7 @@
         demoVisitor: STATE.demoVisitor
       };
     } else if (_demoSanitizeBackup.recSnap && SEED.records) {
-      ['customers', 'suppliers', 'sites', 'drivers', 'employments', 'salaries', 'sales_tickets', 'receipts', 'vat_invoices', 'price_rules', 'credit_terms', 'raw_purchases', 'expenses', 'settlements', 'company_drivers', 'company_equipment', 'attendance'].forEach(k => {
+      ['customers', 'suppliers', 'sites', 'drivers', 'employments', 'salaries', 'sales_tickets', 'receipts', 'vat_invoices', 'price_rules', 'credit_terms', 'raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'company_drivers', 'company_equipment', 'attendance'].forEach(k => {
         if (!_demoSanitizeBackup.recSnap[k] && Array.isArray(SEED.records[k]) && SEED.records[k].length) {
           _demoSanitizeBackup.recSnap[k] = SEED.records[k].map(r => Object.assign({}, r));
         }
@@ -68888,6 +68905,13 @@
       if (r.driver) r.driver = mapPerson(r.driver);
     });
     (rec.expenses || []).forEach(x => { if (x && x.supplier) x.supplier = mapSupp(x.supplier); });
+    (rec.recurring_expenses || []).forEach(rx => {
+      if (!rx) return;
+      if (rx.supplier) {
+        rx.supplier = mapSupp(rx.supplier);
+        if (rx.name) rx.name = `RECUR ${rx.start_date || rx.date || ''} ${rx.supplier}${rx.wb_index ? ' #' + rx.wb_index : ''}`;
+      }
+    });
     (rec.settlements || []).forEach(sp => { if (sp && sp.supplier) sp.supplier = mapSupp(sp.supplier); });
 
     Object.values(SEED.models || {}).forEach(m => {

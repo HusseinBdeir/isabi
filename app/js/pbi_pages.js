@@ -28,6 +28,11 @@
     return String(v == null ? '' : v).trim().toLowerCase();
   }
 
+  function localTodayPbi() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
   function isArSettlingRecpt(r) {
     if (!r || r.voided) return false;
     const mth = String(r.method || '').trim();
@@ -1416,8 +1421,8 @@
     ] },
     { key: 'recurring_expenses', group: '2 · Purchases, Expenses & Payables', navView: 'expenses', label: 'Recurring Expenses', singularLabel: 'Recurring Expense', dvn: 'bhf_recurringexpense', form: 'recurringexpense', cols: ['supplier', 'company', 'category', 'subcategory', 'item', 'frequency', 'amount', 'start_date', 'end_date', 'status', 'notes'], relTables: ['suppliers', 'expense_categories', 'expense_subcategories', 'expenses', 'settlements'], views: [
       { id: 'all', label: 'All Recurring Schedules' },
-      { id: 'in_force', label: 'In Force (Active)', fn: r => !r.end_date || String(r.end_date) >= new Date().toISOString().slice(0, 10) },
-      { id: 'ended', label: 'Ended Schedules', fn: r => Boolean(r.end_date && String(r.end_date) < new Date().toISOString().slice(0, 10)) }
+      { id: 'in_force', label: 'In Force (Active)', fn: r => !r.end_date || String(r.end_date).slice(0, 10) >= localTodayPbi() },
+      { id: 'ended', label: 'Ended Schedules', fn: r => Boolean(r.end_date && String(r.end_date).slice(0, 10) < localTodayPbi()) }
     ] },
     { key: 'warehouse_movements', group: '2 · Purchases, Expenses & Payables', navView: 'warehouse', label: 'Warehouse Stock Movements', dvn: 'bhf_warehousemovement', form: 'warehousestock', cols: ['date', 'name', 'company', 'item_name', 'category', 'direction', 'movement_type', 'qty', 'uom', 'unit_cost', 'total_cost', 'warehouse_location', 'equipment', 'notes'], relTables: ['items', 'expense_items', 'equipment_repairs', 'repair_items', 'equipment'], views: [
       { id: 'all', label: 'All Stock Movements' },
@@ -2431,6 +2436,10 @@
         if (r.target_equipment || r.equipment || /same_equipment|equipment|mounted|consumed/i.test(am)) return 'Installed on Unit';
         return am || 'Direct Use';
       }
+    }
+    if (tableKey === 'recurring_expenses' && c === 'status') {
+      const endIso = String(r.end_date || '').slice(0, 10);
+      return (!endIso || endIso >= localTodayPbi()) ? 'In Force' : 'Ended';
     }
     if (c === 'cost_class') return deriveExpenseCostClass(r);
     if (r[c] != null && r[c] !== '') {
@@ -5928,20 +5937,37 @@
         })()}
 
         ${(() => {
+          const todayIsoLocal = localTodayPbi();
+          const cutoffIso = (activeRange && activeRange.to && activeRange.to < todayIsoLocal) ? activeRange.to : todayIsoLocal;
           const allRecur = filterRecords(rec.recurring_expenses || [], {
             ignorePeriod: true,
+            tableKey: 'recurring_expenses',
             cols: ['company', 'supplier', 'category', 'subcategory', 'item', 'frequency', 'status', 'notes']
-          }).filter(r => r && !r.voided);
+          }).filter(r => {
+            if (!r || r.voided) return false;
+            if (activeRange && (activeRange.from || activeRange.to)) {
+              const s = String(r.start_date || r.date || '').slice(0, 10);
+              const e = String(r.end_date || '').slice(0, 10);
+              if (activeRange.to && s && s > activeRange.to) return false;
+              if (activeRange.from && e && e < activeRange.from) return false;
+            }
+            if (hasAnySlicer) {
+              if (!matchCommon(r)) return false;
+              if (sl.category && norm(r.category) !== norm(sl.category)) return false;
+              if (sl.costClass && norm(catClassMap.get(norm(r.category)) || 'Operating Expense') !== norm(sl.costClass)) return false;
+            }
+            return true;
+          });
           if (!allRecur.length) return '';
-          const cutoffIso = new Date().toISOString().slice(0, 10);
           const calcCycles = (r) => {
             const s = String(r.start_date || r.date || '').slice(0, 10);
-            const e = String(r.end_date || cutoffIso).slice(0, 10);
-            const cap = e < cutoffIso ? e : cutoffIso;
+            const endIso = String(r.end_date || '').slice(0, 10);
+            const cap = (endIso && endIso < cutoffIso) ? endIso : cutoffIso;
             if (!s || cap < s) return 0;
             const [sy, sm, sd] = s.split('-').map(Number);
             const [ey, em, ed] = cap.split('-').map(Number);
-            const months = Math.max(1, (ey - sy) * 12 + (em - sm) + ((ed - sd) >= 14 ? 1 : 0));
+            const addCurrent = endIso ? ((ed - sd) >= 14 ? 1 : 0) : (ed >= sd ? 1 : 0);
+            const months = Math.max(1, (ey - sy) * 12 + (em - sm) + addCurrent);
             const fq = String(r.frequency || 'Monthly').toLowerCase();
             if (fq.startsWith('quarter')) return Math.max(1, Math.round(months / 3));
             if (fq.startsWith('annu') || fq.startsWith('year')) return Math.max(1, Math.round(months / 12));
@@ -5949,18 +5975,19 @@
             return months;
           };
           const recurEnriched = allRecur.map(r => {
-            const amt = Number(r.amount || 0);
+            const amt = round2(Number(r.amount || 0));
             const fq = String(r.frequency || 'Monthly');
             const fqL = fq.toLowerCase();
-            const monthlyEq = fqL.startsWith('quarter') ? (amt / 3) : (fqL.startsWith('annu') ? (amt / 12) : (fqL.startsWith('week') ? (amt * (52 / 12)) : amt));
-            const isActive = !r.end_date || String(r.end_date) >= cutoffIso;
+            const monthlyEq = fqL.startsWith('quarter') ? round2(amt / 3) : ((fqL.startsWith('annu') || fqL.startsWith('year')) ? round2(amt / 12) : (fqL.startsWith('week') ? round2(amt * (52 / 12)) : amt));
+            const endIso = String(r.end_date || '').slice(0, 10);
+            const isActive = !endIso || endIso >= cutoffIso;
             const cycles = calcCycles(r);
-            const accrued = Math.round(cycles * amt * 100) / 100;
+            const accrued = round2(cycles * amt);
             return {
               ...r,
               isActive,
               statusLbl: isActive ? 'In Force' : 'Ended',
-              endLbl: r.end_date ? fmtDateDMY(r.end_date) : 'Open',
+              endLbl: endIso ? fmtDateDMY(endIso) : 'Open',
               startLbl: fmtDateDMY(r.start_date || r.date || ''),
               monthlyEq,
               cycles,
@@ -5968,8 +5995,8 @@
             };
           }).sort((a, b) => (b.isActive - a.isActive) || (b.monthlyEq - a.monthlyEq));
           const activeSchedules = recurEnriched.filter(r => r.isActive);
-          const monthlyRunRate = activeSchedules.reduce((s, r) => s + r.monthlyEq, 0);
-          const totalAccrued = recurEnriched.reduce((s, r) => s + r.accrued, 0);
+          const monthlyRunRate = round2(activeSchedules.reduce((s, r) => s + r.monthlyEq, 0));
+          const totalAccrued = round2(recurEnriched.reduce((s, r) => s + r.accrued, 0));
           const topActive = activeSchedules[0] || recurEnriched[0];
           return `
         <div class="pbi-overview-bands">
@@ -5993,6 +6020,7 @@
             { label: 'Cycle Rate ($)', key: 'amount', r: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
             { label: 'Accrued ($)', key: 'accrued', r: true, bar: true, fmt: v => fmtUSD(v, 2) }
           ], recurEnriched, {
+            rkey: 'recurring_expenses',
             subtitle: 'Standing vendor agreements seeded from SharePoint Recurring Expenses · manage or add schedules on Expenses & Overhead',
             unitLabel: 'recurring schedules',
             foot: [
