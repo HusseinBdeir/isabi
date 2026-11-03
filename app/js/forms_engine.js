@@ -130,6 +130,7 @@
         { id: 'region', label: 'Region / Zone', badge: 'bhf_region', crKey: 'regions', hubView: 'reg_sites', pbiPage: 'p04_quarry', title: 'New Region / Zone (Universal Registry)', universal: true },
         { id: 'equipment', label: 'Equipment / Truck', badge: 'bhf_equipment', crKey: 'equipment', hubView: 'reg_equipment', pbiPage: 'p08_fleet', title: 'New Equipment / Truck (Universal Registry)', universal: true },
         { id: 'driver', label: 'Driver / Operator', badge: 'bhf_driver', crKey: 'drivers', hubView: 'reg_drivers', pbiPage: 'p08_fleet', title: 'New Driver / Operator (Universal Registry)', universal: true },
+        { id: 'staff', label: 'Staff', badge: 'bhf_staffmember', crKey: 'staff_members', hubView: 'reg_staff', pbiPage: 'p12_payroll', title: 'New Staff Member (Universal Registry)', universal: true },
         { id: 'fxrate', label: 'FX Rate', badge: 'bhf_fxrate', crKey: 'fx_rates', hubView: 'reg_fx_rates', pbiPage: 'p11_cash', title: 'New FX Rate (Universal Registry)', universal: true },
         { id: 'vatrate', label: 'VAT Rate', badge: 'bhf_vatrate', crKey: 'vat_rates', hubView: 'reg_vat_rates', pbiPage: 'p06_ar', title: 'New VAT Rate (Universal Registry)', universal: true },
         { id: 'currency', label: 'Currency', badge: 'bhf_currency', crKey: 'currencies', hubView: 'reg_fx_rates', pbiPage: 'p11_cash', title: 'New Currency (Universal Registry)', universal: true }
@@ -835,8 +836,16 @@
     const siteNames = helpers.siteNames();
     const equipNames = helpers.equipmentNames();
     const driverNames = helpers.driverNames();
-    const staffNames = uniqSorted((rec.employments || []).map(e => e.staff || e.name).concat((rec.salaries || []).map(s => s.staff)), fIdx && fIdx.staff);
-    const roleNames = uniqSorted(['Driver', 'Plant Operator', 'Crusher Operator', 'Loader Operator', 'Mechanic', 'Electrician', 'Weighbridge Clerk', 'Site Supervisor', 'Guard', 'General Labour'].concat((rec.employments || []).map(e => e.role)).concat((rec.freelance_sheets || []).map(f => f.role)), fIdx && fIdx.role);
+    const staffNames = uniqSorted(
+      (rec.staff_members || []).filter(s => s && !s.voided).map(s => s.name || s.staff)
+        .concat((rec.employments || []).filter(e => e && !e.voided).map(e => e.staff || e.name))
+        .concat((rec.salaries || []).filter(s => s && !s.voided).map(s => s.staff))
+        .concat((rec.attendance || []).filter(a => a && !a.voided).map(a => a.staff))
+        .concat((rec.freelance_entries || []).filter(f => f && !f.voided).map(f => f.staff))
+        .concat((rec.logistics_allowances || []).filter(l => l && !l.voided).map(l => l.staff)),
+      fIdx && fIdx.staff
+    );
+    const roleNames = uniqSorted(['Driver', 'Plant Operator', 'Crusher Operator', 'Loader Operator', 'Mechanic', 'Electrician', 'Weighbridge Clerk', 'Site Supervisor', 'Guard', 'General Labour'].concat((rec.employments || []).map(e => e.role)).concat((rec.staff_members || []).map(s => s && s.role)).concat((rec.freelance_sheets || []).map(f => f.role)), fIdx && fIdx.role);
     const counterpartyNames = uniqSorted(['Bdeir Holding', 'WTC', 'BBConstruction', 'Lions Transport', 'Cash Till', 'Bank Audi', 'Blom Bank'].concat((rec.loans || []).map(l => l.lender || l.counterparty || l.name)).concat((rec.external_movements || []).map(x => x.counterparty || x.name)).concat(supNames), fIdx && fIdx.counterparty);
     const regNames = uniqSorted((rec.regions || []).map(r => r.name).concat([
       'Beirut', 'Mount Lebanon', 'South Lebanon', 'Bekaa', 'North Lebanon', 'Nabatieh',
@@ -859,8 +868,16 @@
         empByStaff[sn] = e;
       }
     });
+    const staffMasterByNorm = {};
+    (rec.staff_members || []).forEach(sm => {
+      if (!sm || sm.voided) return;
+      const sk = norm(sm.name || sm.staff);
+      if (sk && !staffMasterByNorm[sk]) staffMasterByNorm[sk] = sm;
+    });
     const staffMetaItems = staffNames.map(n => {
-      const e = empByStaff[norm(n)];
+      const nk = norm(n);
+      const e = empByStaff[nk];
+      const sm = staffMasterByNorm[nk];
       const coForShift = (e && e.company) || company;
       const sh = (fType === 'attendance' && helpers && typeof helpers.resolveStaffShiftForDate === 'function')
         ? helpers.resolveStaffShiftForDate(n, coForShift, today)
@@ -868,11 +885,15 @@
       const parts = [];
       if (sh && sh.badgeLabel && sh.id !== 'off') parts.push(sh.badgeLabel);
       if (e) {
-        if (e.role || e.position) parts.push(e.role || e.position);
+        if (e.role || e.position || (sm && sm.role)) parts.push(e.role || e.position || sm.role);
         const baseNet = round2(Number(e.salary_usd || e.amount || 0) + Number(e.reimbursement || 0) - Number(e.deduction || 0));
         if (e.salary_pending && fType !== 'attendance') parts.push('Salary Pending ($0)');
         else if (baseNet > 0 && fType !== 'attendance') parts.push(`${fmtUsd(baseNet)}/mo`);
         if (e.company) parts.push(e.company);
+      } else if (sm) {
+        if (sm.role) parts.push(sm.role);
+        else if (sm.worker_category) parts.push(sm.worker_category);
+        parts.push('Universal Staff');
       }
       return [n, parts.join(' · ')];
     });
@@ -1829,6 +1850,27 @@
           <div class="form-field check-field"><input type="checkbox" id="f_iscompanydriver"><label for="f_iscompanydriver">Company Fleet Driver (WTC / BBC / Lions Payroll)</label></div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
+      `;
+    }
+
+    if (fType === 'staff') {
+      return `
+        <div class="form-grid-3">
+          ${secHdr('1. Staff Identity & Trade (Universal Registry · All BUs)')}
+          ${fld('Staff Name *', inp('f_staff', 'text', '', 'placeholder="Full staff member name"'))}
+          ${fld('Default Role / Trade', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type role / trade..."') + dl('dl_roles', roleNames))}
+          ${fld('Worker Category', sel('f_emp_cat', [
+            ['Salaried Staff', 'Salaried Staff'],
+            ['Daily / Freelance', 'Daily / Freelance'],
+            ['Driver / Operator', 'Driver / Operator'],
+            ['Management & Admin', 'Management & Admin']
+          ], 'Salaried Staff'))}
+          ${fld('Phone', inp('f_phone', 'text', '', 'placeholder="+961 ..."'))}
+          ${fld('Default Equipment / Unit', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional assigned truck or machine..."') + dl('dl_equip', equipNames))}
+          ${fld('ID / NSSF / Permit #', inp('f_reference', 'text', '', 'placeholder="Civil ID, NSSF or work permit #..."'))}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Skills, shift notes or emergency contact..."'), { span: true })}
+        </div>
+        <div class="calc-strip" id="staffUnivContextStrip" hidden></div>
       `;
     }
 
