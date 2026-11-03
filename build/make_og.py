@@ -65,8 +65,8 @@ HTML = f"""<!doctype html>
     </div>
     <div class="chips">
       <span class="chip">Tailored Setup + Per-Seat</span>
-      <span class="chip">1 to 2 Weeks to Go-Live</span>
-      <span class="chip">Works With Your Accountant</span>
+      <span class="chip">Custom-Built in 1 to 2 Weeks</span>
+      <span class="chip">Smooth Migration &amp; Full Ownership</span>
       <span class="chip">Field Kiosks &amp; Cited AI</span>
     </div>
   </div>

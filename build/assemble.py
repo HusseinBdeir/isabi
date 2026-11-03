@@ -43,10 +43,10 @@ HEAD = """<!DOCTYPE html>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
-  <link rel="manifest" href="manifest.json?v=6.13">
-  <link rel="icon" href="icon.svg?v=6.13" type="image/svg+xml" sizes="any">
-  <link rel="icon" href="favicon.ico?v=6.13" sizes="48x48 32x32 16x16">
-  <link rel="apple-touch-icon" href="icon-180.png?v=6.13">
+  <link rel="manifest" href="manifest.json?v=6.14">
+  <link rel="icon" href="icon.svg?v=6.14" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="favicon.ico?v=6.14" sizes="48x48 32x32 16x16">
+  <link rel="apple-touch-icon" href="icon-180.png?v=6.14">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap">
@@ -86,7 +86,7 @@ ORG_JSONLD = _json.dumps({
     "@id": "https://isabisystems.com/#org",
     "name": "ISABI Systems",
     "url": "https://isabisystems.com/",
-    "logo": "https://isabisystems.com/icon-512.png?v=6.13",
+    "logo": "https://isabisystems.com/icon-512.png?v=6.14",
     "image": "https://isabisystems.com/og-image.png",
     "slogan": "The ERP Your Group Actually Runs On",
     "description": "Custom enterprise ERP operations, double-entry financial accounting, interactive executive dashboards, bilingual printable statements, offline-ready field kiosks, and the Ask ISABI assistant with tailored setup and simple per-seat pricing.",

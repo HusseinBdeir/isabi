@@ -63,7 +63,7 @@ BODY = f"""
           <div class="eyebrow">{ICONS["ai_mark"]} Tailored Enterprise ERP · Live in 1 to 2 Weeks</div>
           <h1 class="hero-title">The ERP Your Group<br><span class="brass-text">Actually Runs On</span>.</h1>
           <p class="hero-lead">
-            Custom daily operations, double-entry accounting, live executive dashboards, field kiosks, and cited AI, tailored around how your business works.
+            Custom daily operations, double-entry accounting, live executive dashboards, field kiosks, and cited AI, tailored to how your business operates.
           </p>
           <div class="hero-cta-row">
             <a href="#sandbox" class="btn btn-brass">{ICONS["erp"]} Explore Live Demo</a>
@@ -82,15 +82,15 @@ BODY = f"""
           <div class="hero-proof-item">
             <span class="hp-check">{ICONS["check"]}</span>
             <div>
-              <b>100% Built Around You in 1 to 2 Weeks</b>
-              <small>Shaped around your exact branches, approvals, daily operations, and chart of accounts.</small>
+              <b>Custom-Built for Your Business in 1 to 2 Weeks</b>
+              <small>Configured for your exact branches, approvals, daily workflows, and chart of accounts.</small>
             </div>
           </div>
           <div class="hero-proof-item">
             <span class="hp-check">{ICONS["check"]}</span>
             <div>
-              <b>Works With Your Accountant · 100% Your Data</b>
-              <small>Runs smoothly alongside your current accounting software while keeping every record 100% yours.</small>
+              <b>Smooth Migration &amp; Full Data Ownership</b>
+              <small>We import your spreadsheets, match balances alongside your existing books, and let you export anytime.</small>
             </div>
           </div>
         </div>
@@ -548,10 +548,10 @@ BODY = f"""
         </div>
 
         <div class="pricing-trust-bar">
-          <span>{ICONS["check"]} <b>From $3,000 Setup</b> · Tailored Around Your Workflow</span>
+          <span>{ICONS["check"]} <b>From $3,000 Setup</b> · Custom-Built for Your Business</span>
           <span>{ICONS["check"]} <b>$50 to $100 / Seat / Mo</b> · Simple Per-User Pricing</span>
-          <span>{ICONS["check"]} <b>Accountant-Ready</b> · Verified Side-by-Side Before Go-Live</span>
-          <span>{ICONS["check"]} <b>100% Data Ownership</b> · Direct Principal Delivery</span>
+          <span>{ICONS["check"]} <b>Side-by-Side Cutover</b> · Verified Balances Before Go-Live</span>
+          <span>{ICONS["check"]} <b>Full Data Ownership</b> · Direct Principal Delivery</span>
         </div>
       </div>
 

@@ -1,14 +1,14 @@
-const CACHE_NAME = 'isabi-systems-pwa-v6.13';
+const CACHE_NAME = 'isabi-systems-pwa-v6.14';
 const ASSETS = [
   './',
   './index.html',
-  './manifest.json?v=6.13',
-  './favicon.ico?v=6.13',
-  './icon.svg?v=6.13',
-  './icon-180.png?v=6.13',
-  './icon-192.png?v=6.13',
-  './icon-512.png?v=6.13',
-  './icon-512-maskable.png?v=6.13'
+  './manifest.json?v=6.14',
+  './favicon.ico?v=6.14',
+  './icon.svg?v=6.14',
+  './icon-180.png?v=6.14',
+  './icon-192.png?v=6.14',
+  './icon-512.png?v=6.14',
+  './icon-512-maskable.png?v=6.14'
 ];
 
 self.addEventListener('install', event => {

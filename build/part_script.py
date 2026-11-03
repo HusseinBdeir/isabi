@@ -650,7 +650,7 @@ JS = r"""
     {
       id: 'bridge', cat: 'finance', emoji: ICONS.scale, tone: 'tone-teal',
       name: 'Accountant Book Bridge', sub: 'Side-by-Side Accounting Sync',
-      kicker: 'Safe Transition · Works With Your Accountant',
+      kicker: 'Safe Transition · Side-by-Side Balance Verification',
       desc: 'Runs alongside your existing accounting software during onboarding and compares every account line-by-line until every balance matches cleanly.',
       bullets: [
         ICONS.sync + ' Imports monthly trial balances from legacy accounting registers',
