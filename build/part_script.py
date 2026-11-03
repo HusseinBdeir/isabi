@@ -19,7 +19,7 @@ JS = r"""
   const DAY_TOKENS = { D0: dayLabel(0), D1: dayLabel(1) };
 
   const BADGE_MINI_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="34" height="34" class="sbox-mini-badge" style="border-radius:7px;flex-shrink:0"><defs><linearGradient id="isabiBgSboxMini" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" style="stop-color:var(--badge-bg-1,#FCF9F2)"/><stop offset="100%" style="stop-color:var(--badge-bg-2,#EFE7D6)"/></linearGradient></defs><rect x="2" y="2" width="116" height="116" rx="25" fill="url(#isabiBgSboxMini)" class="badge-outer" stroke="#C4913A" stroke-width="3"/><rect x="6.5" y="6.5" width="107" height="107" rx="21" fill="none" class="badge-inner" stroke="rgba(184,130,40,0.18)" stroke-width="1"/><g transform="translate(39.52,77.62) scale(0.74)"><g class="badge-ii" fill="#281D15"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g class="badge-rule" fill="#B88228"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></g></svg>';
-  const RAIL_MARK_SVG = '<svg viewBox="-9.5 -78.8 74.66 109.7" height="22"><g fill="var(--wm-ink, #281D15)"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="var(--wm-rule, #B88228)"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>';
+  const RAIL_MARK_SVG = '<svg viewBox="-9.5 -78.8 74.66 109.7" height="22"><g fill="currentColor"><path transform="translate(-8.45,0)" d="M8.45 0V-68.75H28.81V0Z"/><path transform="translate(-10.45,0)" d="M45.75 0V-68.75H66.11V0Z"/></g><g fill="var(--badge-rule,#B88228)"><rect x="0" y="9.5" width="55.66" height="3.4"/><rect x="0" y="17.5" width="55.66" height="3.4"/></g></svg>';
   const ICONS = __ICONS_JSON__;
 
   // ---------------- 8 INDUSTRY BLUEPRINTS ----------------
@@ -2342,7 +2342,7 @@ JS = r"""
   function detectQueryLanguage(cleanQ) {
     if (/[\u0600-\u06FF]/.test(cleanQ)) return 'ar';
     const low = cleanQ.toLowerCase();
-    if (/\b(bonjour|salut|bonsoir|comment\s+ca\s+va|comment\s+ça\s+va|comment\s+allez|combien|coute|coûte|prix|merci|comptabilit|entreprise|logiciel|système|systeme|société|societe|pouvez-vous|nous\s+avons|est-ce\s+que|où|liban|délai|delai|facture|caisse|pointage|filiale|recette|besoin)\b/i.test(low)) {
+    if (/\b(bonjour|salut|bonsoir|comment\s+ca\s+va|comment\s+ça\s+va|comment\s+allez|combien|coute|coûte|prix|merci|comptabilit|entreprise|logiciel|système|systeme|société|societe|pouvez-vous|nous\s+avons|est-ce\s+que)\b/i.test(low)) {
       return 'fr';
     }
     return 'en';
@@ -2369,7 +2369,6 @@ JS = r"""
         return {
           q: cleanQ,
           lang: 'ar',
-          instantLocal: true,
           conversational: true,
           title: 'مرحباً بك · الذكاء التشغيلي والمالي لنظام ISABI',
           answer: `أهلاً بك! أنا بخير، شكراً لسؤالك. أتمنى أن يكون يومك موفقاً.`,
@@ -2381,22 +2380,7 @@ JS = r"""
           ]
         };
       }
-      if (/^(شكرا|شكراً|يسلمو|ممتاز|رائع|تمام|حسناً|حسنا|طيب)[\s!.,؟?]*$/.test(cleanQ)) {
-        return {
-          q: cleanQ,
-          lang: 'ar',
-          instantLocal: true,
-          conversational: true,
-          title: 'في خدمتك دائماً',
-          answer: `على الرحب والسعة! يمكنك في أي وقت التواصل مباشرة مع حسين بدير عبر واتساب على الرقم <b>+961 70 444 955</b>.`,
-          promptText: `هل هناك أي تفصيل آخر تود الاستفسار عنه؟`,
-          followUps: [
-            'ما هي خطوات التنفيذ خلال الأسبوعين الأولين؟',
-            'كم تكلفة النظام المتكامل لعدة فروع؟'
-          ]
-        };
-      }
-      if (/(سعر|تكلفة|اسعار|أسعار|بكم|كم\s+يكلف|ميزانية|عرض\s+سعر|باقات|اشتراك)/.test(cleanQ)) {
+      if (/(سعر|تكلفة|اسعار|أسعار|بكم|كم\s+يكلف|ميزانية|عرض\s+سعر|باقات)/.test(cleanQ)) {
         return {
           q: cleanQ,
           lang: 'ar',
@@ -2411,55 +2395,12 @@ JS = r"""
           ]
         };
       }
-      if (/(أين|اين|موقع|لبنان|بيروت|عنوان|تواصل|واتساب|هاتف|رقم|حسين)/.test(cleanQ)) {
-        return {
-          q: cleanQ,
-          lang: 'ar',
-          conversational: true,
-          title: 'المقر والتواصل المباشر',
-          answer: `مقرنا في <b>لبنان</b> بقيادة المؤسس ومهندس الأنظمة الرئيسي <b>حسين بدير</b>، ونخدم الشركات والمجموعات القابضة في لبنان والشرق الأوسط وحول العالم. يمكنك مراسلتنا مباشرة عبر واتساب على <b>+961 70 444 955</b>.`,
-          promptText: `في أي بلد تعمل شركتكم، وما نوع النظام الذي تبحثون عنه؟`,
-          followUps: [
-            'كم تكلفة النظام المتكامل لعدة فروع؟',
-            'ما هي خطوات التنفيذ خلال الأسبوعين الأولين؟'
-          ]
-        };
-      }
-      if (/(محاسب|مطابقة|دولفين|بيمز|ضريبة|قيود|دفتر|مزدوج)/.test(cleanQ)) {
-        return {
-          q: cleanQ,
-          lang: 'ar',
-          conversational: true,
-          title: 'التكامل المحاسبي والمطابقة الصفرية',
-          answer: `لا يحتاج محاسبكم إلى تغيير برنامجه الحالي؛ يعمل نظام ISABI جنباً إلى جنب مع برامج المحاسبة المعتمدة بعملات متعددة (الدولار والليرة واليورو والدرهم)، ويتحقق من كل قيد حتى تتطابق الدفاتر بفارق <b>0.00</b>.`,
-          promptText: `هل تود رؤية مثال عملي على كشوفات الحسابات والقيود اليومية؟`,
-          followUps: [
-            'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
-            'كم تكلفة النظام المتكامل لعدة فروع؟'
-          ]
-        };
-      }
-      if (/(خطوات|وقت|مدة|أسبوع|اسبوع|متى|تنفيذ|تسليم)/.test(cleanQ)) {
-        return {
-          q: cleanQ,
-          lang: 'ar',
-          conversational: true,
-          title: 'التسليم خلال أسبوع إلى أسبوعين',
-          answer: `نسلم النظام المخصص بالكامل خلال <b>أسبوع إلى أسبوعين</b>: في الأيام الأولى نصمم شاشات الإدخال وشجرة الحسابات وصلاحيات الموظفين، ثم نربط لوحات القيادة والكشوفات المطبوعة ونستورد بياناتكم السابقة حتى التطابق الكامل.`,
-          promptText: `هل تود تسعير نطاق عمل مخصص لشركتك الآن؟`,
-          actionCfg: state.cfgInd,
-          followUps: [
-            'كم تكلفة النظام المتكامل لعدة فروع؟',
-            'كيف تتطابق قيود ISABI مع برنامج المحاسبة الحالي لدينا؟'
-          ]
-        };
-      }
       return {
         q: cleanQ,
         lang: 'ar',
         conversational: true,
         title: 'استشارة تشغيلية ومحاسبية مخصصة · ISABI',
-        answer: `نعم، نصمم النظام خصيصاً لطريقة عمل شركتكم شاملاً شاشات العمليات والمستودعات والمرفقات ولوحات القيادة والكشوفات المطبوعة خلال <b>أسبوع إلى أسبوعين</b>، مع ملكية كاملة لبياناتكم ومطابقة يومية مع برنامج المحاسبة المعتمد لديكم.`,
+        answer: `نعم، نصمم النظام خصيصاً لطريقة عمل شركتكم بتكلفة تأسيس ميسرة واشتراك شهري بسيط لكل مستخدم، خلال أسبوع إلى أسبوعين، مع مطابقة يومية بنسبة 100% مع برنامج المحاسبة المعتمد لديكم.`,
         promptText: `هل تود إخباري بالمزيد عن قطاع عملكم وعدد الفروع، أو تجربة سؤال آخر؟`,
         actionCfg: state.cfgInd,
         followUps: [
@@ -2471,11 +2412,10 @@ JS = r"""
 
     // 0a-FR. French language handler (two-bubble natural human conversation)
     if (lang === 'fr') {
-      if (/(bonjour|salut|bonsoir|comment\s+ca\s+va|comment\s+ça\s+va|comment\s+allez|ça\s+va|ca\s+va)/i.test(low) && !/(combien|coute|coûte|prix|tarif|budget|devis)/i.test(low)) {
+      if (/(bonjour|salut|bonsoir|comment\s+ca\s+va|comment\s+ça\s+va|comment\s+allez|ça\s+va|ca\s+va)/i.test(low)) {
         return {
           q: cleanQ,
           lang: 'fr',
-          instantLocal: true,
           conversational: true,
           title: 'Bienvenue · Intelligence Système ISABI',
           answer: `Bonjour ! Je vais très bien, merci. J'espère que tout va bien de votre côté.`,
@@ -2487,26 +2427,10 @@ JS = r"""
           ]
         };
       }
-      if (/^(merci(\s+beaucoup)?|super|parfait|d'accord|tres\s+bien|très\s+bien|au\s+revoir)[\s!.,?]*$/i.test(cleanQ)) {
-        return {
-          q: cleanQ,
-          lang: 'fr',
-          instantLocal: true,
-          conversational: true,
-          title: 'À Votre Service',
-          answer: `Avec plaisir ! Vous pouvez joindre directement Hussein Bdeir sur WhatsApp au <b>+961 70 444 955</b> à tout moment.`,
-          promptText: `Souhaitez-vous vérifier autre chose sur la page ?`,
-          followUps: [
-            'Combien coûte un système complet multi-filiales ?',
-            'Peut-on garder notre logiciel comptable actuel en parallèle ?'
-          ]
-        };
-      }
       if (/(combien|coute|coûte|prix|tarif|budget|devis)/i.test(low)) {
         return {
           q: cleanQ,
           lang: 'fr',
-          instantLocal: true,
           conversational: true,
           title: 'Investissement Transparent & Périmètre Configuré',
           answer: `Un système pour une entité unique démarre à <b>$3,000</b> de mise en place (+<b>$50/utilisateur/mois</b>), un déploiement multi-filiales avec IA à <b>$5,600</b> (+<b>$80/utilisateur/mois</b>), et un groupe holding à <b>$11,000+</b> (+<b>$100/utilisateur/mois</b>). Selon votre configuration actuelle (${escapeHtml(cfg.industry)} · ${escapeHtml(cfg.scale)}), comptez environ <b>${escapeHtml(cfg.range)}</b> avec une mise en service en <b>1 à 2 semaines</b>.`,
@@ -2518,40 +2442,12 @@ JS = r"""
           ]
         };
       }
-      if (/(comptable|comptabilit|parallèle|parallele|dolphin|pims|tva)/i.test(low)) {
-        return {
-          q: cleanQ,
-          lang: 'fr',
-          conversational: true,
-          title: 'Compatibilité Comptable & Multi-Devises',
-          answer: `Votre expert-comptable garde son logiciel actuel (Dolphin, PIMS, QuickBooks ou SAP). ISABI fonctionne en parallèle en USD, EUR, AED et LBP avec un contrôle automatique ligne par ligne jusqu'à un écart de <b>0.00</b>.`,
-          promptText: `Souhaitez-vous voir un exemple d'extrait de compte ou estimer le budget pour votre société ?`,
-          followUps: [
-            'Combien coûte un système complet multi-filiales ?',
-            'Analyze the ' + sbox.groupTitle + ' dashboard numbers'
-          ]
-        };
-      }
-      if (/(où|liban|beyrouth|contact|whatsapp|hussein|délai|delai|semaine)/i.test(low)) {
-        return {
-          q: cleanQ,
-          lang: 'fr',
-          conversational: true,
-          title: 'Présence & Mise en Service Rapide',
-          answer: `ISABI Systems est basé au <b>Liban</b> et dirigé par <b>Hussein Bdeir</b>, accompagnant des entreprises au Moyen-Orient et à l'international avec une mise en production complète en <b>1 à 2 semaines</b> (WhatsApp : <b>+961 70 444 955</b>).`,
-          promptText: `Où est située votre activité et combien d'entités gérez-vous ?`,
-          followUps: [
-            'Combien coûte un système complet multi-filiales ?',
-            'Peut-on garder notre logiciel comptable actuel en parallèle ?'
-          ]
-        };
-      }
       return {
         q: cleanQ,
         lang: 'fr',
         conversational: true,
         title: 'Système Sur Mesure · ISABI Systems',
-        answer: `Tout à fait. Plutôt que de vous imposer un modèle figé, nous construisons vos écrans opérationnels, la gestion de stock, les pièces jointes, vos contrôles comptables et vos tableaux de bord sur mesure en <b>1 à 2 semaines</b>.`,
+        answer: `Tout à fait. Plutôt que de vous imposer un modèle figé, nous construisons vos écrans opérationnels, vos contrôles comptables et vos tableaux de bord sur mesure avec des frais d'installation réduits et un tarif simple par utilisateur en <b>1 à 2 semaines</b>.`,
         promptText: `Dans quel secteur d'activité êtes-vous, ou quelle autre question souhaitez-vous me poser ?`,
         actionCfg: state.cfgInd,
         followUps: [
@@ -2566,7 +2462,6 @@ JS = r"""
         low.includes('how are you')) {
       return {
         q: cleanQ,
-        instantLocal: true,
         conversational: true,
         title: 'Operational Status',
         answer: `I am doing great, thank you for asking! Hope your week is going well.`,
@@ -2583,7 +2478,6 @@ JS = r"""
     if (/^(i'm\s+(good|well|great|fine|doing\s+well)|im\s+(good|well|great|fine)|doing\s+(well|good|great)|good\s+thanks|all\s+good|fine\s+thanks|not\s+bad|pretty\s+good)[\s!.,?]*$/i.test(cleanQ)) {
       return {
         q: cleanQ,
-        instantLocal: true,
         conversational: true,
         title: 'Welcome',
         answer: `Glad to hear it!`,
@@ -2600,7 +2494,6 @@ JS = r"""
     if (/^(hi|hello|hey|hola|salam|marhaba|ahlan|good\s+(morning|afternoon|evening|day)|greetings|yo|hi\s+there|hello\s+there|hey\s+there|test|testing)[\s!.,?]*$/i.test(cleanQ)) {
       return {
         q: cleanQ,
-        instantLocal: true,
         conversational: true,
         title: 'Welcome · Native System Intelligence',
         answer: `Hello! Good to have you here. I'm <b>ISABI</b>.`,
@@ -2617,7 +2510,6 @@ JS = r"""
     if (low.includes('who are you') || low.includes('what are you') || low.includes('what can you do') || low.includes('what do you do') || low === 'help' || low.includes('help me') || low.includes('how do you work') || low.includes('what is ask isabi')) {
       return {
         q: cleanQ,
-        instantLocal: true,
         conversational: true,
         title: 'About Ask ISABI',
         answer: `I'm <b>ISABI</b>, the assistant and audit watchdog built into every ISABI Systems workspace. Inside our clients' systems, I help owners and accountants check balances, trace vouchers, and flag anomalies in plain language.`,
@@ -2634,7 +2526,6 @@ JS = r"""
     if (/^(thanks|thank\s+you|thx|ty|great|awesome|cool|nice|perfect|got\s+it|understood|ok|okay|bye|goodbye)[\s!.,?]*$/i.test(cleanQ)) {
       return {
         q: cleanQ,
-        instantLocal: true,
         conversational: true,
         title: 'At Your Service',
         answer: `You're very welcome! Anytime you want to talk directly with Hussein, you can reach him on WhatsApp at <b>+961 70 444 955</b>.`,
@@ -2651,15 +2542,15 @@ JS = r"""
     if (/^(yes|yeah|yep|sure|please|tell\s+me\s+more|elaborate|go\s+ahead|more\s+details|explain\s+more|next)[\s!.,?]*$/i.test(cleanQ)) {
       const prev = state.aiHistory.length ? state.aiHistory[state.aiHistory.length - 1] : null;
       if (prev && prev.followUps && prev.followUps.length) {
-        return Object.assign({ instantLocal: true }, resolveAskIsabi(prev.followUps[0]), { q: cleanQ });
+        return resolveAskIsabi(prev.followUps[0]);
       }
-      return Object.assign({ instantLocal: true }, buildJournalAudit(state.sboxInd || 'holding', cleanQ));
+      return buildJournalAudit(state.sboxInd || 'holding', cleanQ);
     }
 
     // 1. Check exact match with the 4 preset prompts
     for (let i = 0; i < AI_PROMPTS.length; i++) {
       if (AI_PROMPTS[i].q.toLowerCase() === low) {
-        const copy = Object.assign({}, AI_PROMPTS[i], { q: cleanQ, instantLocal: true });
+        const copy = Object.assign({}, AI_PROMPTS[i], { q: cleanQ });
         copy.followUps = AI_PROMPTS.filter((_, idx) => idx !== i).slice(0, 2).map(p => p.q);
         copy.followUps.push('Analyze the ' + sbox.groupTitle + ' dashboard numbers');
         return copy;
@@ -2670,146 +2561,20 @@ JS = r"""
     if (low.startsWith('provide an executive action plan for:')) {
       const alertTitle = cleanQ.replace(/^provide an executive action plan for:\s*/i, '').trim();
       const drill = buildAlertDrilldown(alertTitle);
-      if (drill) return Object.assign({ q: cleanQ, instantLocal: true }, drill);
+      if (drill) return Object.assign({ q: cleanQ }, drill);
     }
     for (const k of Object.keys(SANDBOX_DATA)) {
       for (const a of SANDBOX_DATA[k].alerts) {
         if (low.includes(a[1].toLowerCase())) {
           const drill = buildAlertDrilldown(a[1]);
-          if (drill) return Object.assign({ q: cleanQ, instantLocal: true }, drill);
+          if (drill) return Object.assign({ q: cleanQ }, drill);
         }
       }
     }
 
-    // 2b. Explicit Blueprint or Sandbox Dashboard Button / Command
-    const matchedIndObj = detectIndustryFromQuery(low);
-    if ((low.startsWith('show the ') && low.includes('blueprint')) || (matchedIndObj && low.includes('blueprint'))) {
-      return Object.assign({ instantLocal: true }, buildBlueprintResponse(matchedIndObj || INDUSTRIES[0], cleanQ));
-    }
-    if (low.startsWith('analyze the ') && low.includes('dashboard')) {
-      const targetSboxKey = matchedIndObj ? matchedIndObj.sandboxKey : state.sboxInd;
-      return Object.assign({ instantLocal: true }, buildDashboardBriefing(targetSboxKey, cleanQ));
-    }
-
-    // 2c. Specific Functional & Operational Domain Handlers (conversational two-bubble replies)
-    if (/\b(attach|attachment|attachments|document|documents|upload|scan|scans|pdf|photo|photos|file|files|paperwork)\b/i.test(low)) {
-      return {
-        q: cleanQ,
-        conversational: true,
-        title: 'Document Vault & Voucher Attachments',
-        answer: `Yes. Staff can attach supplier bills, signed delivery tickets, contracts, or photos directly onto any entry, customer, or asset record and preview them anytime from the 360° Record View.`,
-        promptText: `Would you also like supervisor approval stamps on bills before they post, or missing-attachment alerts?`,
-        followUps: [
-          'How do approval rules and audit watchdogs work?',
-          'What would a complete multi-branch system cost and include?',
-          'Analyze the ' + sbox.groupTitle + ' dashboard numbers'
-        ]
-      };
-    }
-    if (/\b(recipe|recipes|kitchen|menu|ingredient|ingredients|dish|dishes|food\s+cost|wastage|yield)\b/i.test(low)) {
-      return {
-        q: cleanQ,
-        conversational: true,
-        title: 'Recipes, Kitchen Stock & Cost Control',
-        answer: `Yes. ISABI tracks item-by-item recipes, deducts ingredients from central kitchen and branch stock as sales happen, calculates live cost per dish, and flags abnormal wastage or supplier price jumps automatically.`,
-        promptText: `Do you also need offline cashier tills at the branches or inter-branch kitchen transfers?`,
-        actionInd: 'hospitality',
-        followUps: [
-          'Show the Hospitality & Resorts blueprint',
-          'Show the Custom Offline POS Till blueprint',
-          'What would a complete multi-branch system cost and include?'
-        ]
-      };
-    }
-    if (/\b(inventory|warehouse|warehouses|stock|reorder|shortage|consumable|consumables|spare\s+parts?)\b/i.test(low)) {
-      return {
-        q: cleanQ,
-        conversational: true,
-        title: 'Warehouse Stock & Catalog Controls',
-        answer: `Yes. Every item in your catalog locks its unit of measure across purchases, warehouse stock-in/stock-out, and maintenance issues, with live balances by location and automatic low-stock threshold alerts.`,
-        promptText: `Are you tracking spare parts and consumables, retail stock, or raw production materials?`,
-        followUps: [
-          'How do approval rules and audit watchdogs work?',
-          'Show the Auto & Equipment Trading blueprint',
-          'What would a complete multi-branch system cost and include?'
-        ]
-      };
-    }
-    if (/\b(consolidat|intercompany|inter-company|t24|eliminat|discrepanc|who\s+is\s+right|compare\s+books)\b/i.test(low)) {
-      return {
-        q: cleanQ,
-        conversational: true,
-        title: 'Multi-Entity Consolidation & Parallel Reconciliation',
-        answer: `Yes. ISABI consolidates unlimited entities in real time while keeping each branch isolated, and compares your operational entries against legacy or core accounting exports line-by-line so you immediately see which side is missing or mismatched down to $0.00.`,
-        promptText: `How many entities or external systems are you reconciling across right now?`,
-        actionInd: 'holding',
-        followUps: [
-          'How does dual-entry reconciliation work with our existing accountant software?',
-          'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
-          'What would a complete multi-branch system cost and include?'
-        ]
-      };
-    }
-    if (/\b(approv|maker|checker|backdat|void|delete|audit\s+trail|fraud|tamper|threshold|watchdog|watchdogs|alert|alerts)\b/i.test(low)) {
-      return {
-        q: cleanQ,
-        conversational: true,
-        title: 'Guided Controls & Automatic Audit Watchdogs',
-        answer: `Every workspace locks past dates against silent backdating, logs two-step voids with user and timestamp history, and runs 21+ live audit watchdogs (plus custom threshold alerts you can tune yourself) across pricing, missing ticket numbers, fuel burn, and overdue balances.`,
-        promptText: `Which operational risk matters most for your team right now: pricing overrides, cash control, or stock and fuel leakage?`,
-        followUps: [
-          'Why did receivables past 60 days increase this month?',
-          'How does Ask ISABI treat confidential figures?',
-          'What would a complete multi-branch system cost and include?'
-        ]
-      };
-    }
-    if (/\b(payroll|salary|salaries|shift|shifts|lateness|overtime|advance|advances|hr|leave)\b/i.test(low) && !low.includes('blueprint')) {
-      return {
-        q: cleanQ,
-        conversational: true,
-        title: 'Payroll, Shifts, Lateness & Attendance',
-        answer: `ISABI links live photo-proof face and PIN clock-ins directly to shift schedules, configurable lateness tolerances, overtime rules, salary advances, and monthly staff statements so payroll closes without manual spreadsheet tallying.`,
-        promptText: `Would you like to inspect the Attendance Kiosk blueprint or see how multi-branch staff permissions work?`,
-        followUps: [
-          'Show the Face & PIN Attendance Kiosk blueprint',
-          'What would a complete multi-branch system cost and include?',
-          'What happens in the first two weeks?'
-        ]
-      };
-    }
-    if (/\b(cheque|cheques|check|checks|pdc|bank|banks|loan|loans|till|drawer|exchange\s+rate|fx)\b/i.test(low)) {
-      return {
-        q: cleanQ,
-        conversational: true,
-        title: 'Multi-Currency Cashbooks, Banks, PDCs & Loans',
-        answer: `Yes. ISABI manages daily USD, LBP, EUR, and AED cash tills, bank accounts, post-dated cheque schedules, partner loans, and currency conversions with automatic exchange-rate corridor guards against entry typos.`,
-        promptText: `Would you like to test multi-currency switching in the Live Sandbox or discuss your treasury workflow?`,
-        followUps: [
-          'Analyze the ' + sbox.groupTitle + ' dashboard numbers',
-          'How does dual-entry reconciliation work with our existing accountant software?',
-          'What would a complete multi-branch system cost and include?'
-        ]
-      };
-    }
-    if (/\b(mobile|iphone|ios|android|tablet|ipad|mac|windows|host|hosting|server|backup|backups|export|training|support|modify|after\s+go-live)\b/i.test(low)) {
-      return {
-        q: cleanQ,
-        conversational: true,
-        title: 'Any-Device Access, Data Backups & Direct Support',
-        answer: `ISABI works on any iPhone, Android phone, tablet, Mac, or Windows PC with instant updates, automated encrypted backups, one-click Excel and A4 PDF exports, and direct ongoing support and screen adjustments from Hussein Bdeir as your operations evolve.`,
-        promptText: `Would you like to launch the interactive portal demo or estimate a build for your team?`,
-        actionCfg: state.cfgInd,
-        followUps: [
-          'What happens in the first two weeks?',
-          'Who owns the system and the data?',
-          'What would a complete multi-branch system cost and include?'
-        ]
-      };
-    }
-
     // 3. Sandbox Dashboard Analysis ("Analyze the ... dashboard numbers" or KPI/dashboard questions)
-    if (low.includes('analyze') || low.includes('dashboard') || low.includes('sandbox') || low.includes('kpi') || low.includes('performance') || low.includes('action items') || low.includes('summary') || low.includes('revenue') || low.includes('margin') || low.includes('entities')) {
+    const matchedIndObj = detectIndustryFromQuery(low);
+    if (low.includes('analyze') || low.includes('dashboard') || low.includes('sandbox') || low.includes('kpi') || low.includes('performance') || low.includes('action items') || low.includes('summary') || low.includes('revenue') || low.includes('margin') || low.includes('entities') || low.includes('cash')) {
       const targetSboxKey = matchedIndObj ? matchedIndObj.sandboxKey : state.sboxInd;
       return buildDashboardBriefing(targetSboxKey, cleanQ);
     }
@@ -3315,14 +3080,14 @@ JS = r"""
 
   function buildGeminiSystemPrompt(lang) {
     return [
-      'You are ISABI, the warm, sharp human conversational assistant on the ISABI Systems website (https://husseinbdeir.github.io/isabi/).',
-      'Company & Direct Principal Leadership: ISABI Systems is founded and led directly by Hussein Bdeir (Principal Systems Architect), based in Lebanon and serving owner-led companies and multi-entity holding groups across Lebanon, the Middle East, and worldwide. Direct WhatsApp: +961 70 444 955. Email: hbdeir16@gmail.com. Never invent regional branch offices or fictional staff counts.',
-      'What this website shows: Visitors can explore our 8 live industry ERP blueprints, test real multi-currency double-entry numbers in the Live Sandbox, launch the full interactive Command Center portal demo, or configure a custom quote in the Scope Configurator.',
-      'What we build: Custom operational and financial ERP workspaces tailored around how each business runs, including guided daily entry forms, document attachments, warehouse stock controls, double-entry general ledgers (Class 1 to 7), interactive executive dashboards (Year/Month/Week/Day), bilingual printable A4 statements, automatic audit watchdogs, and offline-ready field kiosks (live photo-proof face sign-in and wireless thermal receipt printing) delivered in 1 to 2 weeks.',
+      'You are ISABI, the warm, human conversational assistant on the ISABI Systems website (https://husseinbdeir.github.io/isabi/).',
+      'Company & Location: ISABI Systems is founded and led by Hussein Bdeir (Principal Systems Architect), based in Lebanon and serving owner-led companies and multi-entity holding groups across Lebanon, the Middle East, and worldwide. Direct WhatsApp: +961 70 444 955. Email: hbdeir16@gmail.com.',
+      'What this website shows: Visitors can explore our 8 live industry ERP blueprints, test real multi-currency double-entry numbers in the Live Sandbox, calculate time savings in the ROI Estimator, or configure a custom quote in the Scope Configurator.',
+      'What we build: Custom operational & financial ERP workspaces tailored around how each business runs, including guided daily entry forms, double-entry general ledgers (Class 1 to 7), interactive executive dashboards (Year/Month/Week/Day), bilingual printable A4 statements, automatic audit watchdogs, and offline-ready field kiosks (live photo-proof face sign-in & wireless thermal receipt printing) delivered in 1 to 2 weeks.',
       '8 live blueprints: Hospitality & Resorts, Auto & Heavy Equipment Trading, Concrete & Manufacturing, Real Estate Portfolio, Insurance Brokerage, Multi-Entity Holding, Custom Offline POS Till, Face & PIN Attendance Kiosk.',
-      'Pricing & Ownership: Single-Entity Foundation from $3,000 one-time custom setup + $50/seat/month (1 week); Multi-Entity & AI Suite from $5,600 custom setup + $80/seat/month (1 to 2 weeks); Enterprise Holding Group from $11,000+ custom setup + $100/seat/month (2 weeks); $0 extra per field kiosk. Clients own 100% of their records and data. Runs side-by-side with existing accounting software (Dolphin, PIMS, QuickBooks, SAP) to 0.00 variance.',
+      'Pricing & Ownership: Single-Entity Foundation from $3,000 one-time custom setup + $50/seat/month (1 week); Multi-Entity & AI Suite from $5,600 custom setup + $80/seat/month (1 to 2 weeks); Enterprise Holding Group from $11,000+ custom setup + $100/seat/month (2 weeks). Clients own 100% of their records and data. Runs side-by-side with existing accounting software (Dolphin, PIMS, QuickBooks, SAP) to 0.00 variance.',
       'Focus on business features & outcomes: Focus strictly on what business owners, CFOs, and operators experience. Do NOT overspecify internal technical plumbing (never mention database engines, math internals, printer protocols, or software acronyms).',
-      'Tone & Formatting rules: Speak like a friendly, sharp, natural human in a live chat. Answer the visitor\'s exact question directly instead of giving generic sales copy. NEVER use em-dashes or unicode arrows. Reply in the same language as the user (Detected language: ' + lang + ').',
+      'Tone & Formatting rules: Speak like a friendly, sharp, natural human in a live chat. NEVER sound like a corporate brochure or dump walls of text. NEVER use em-dashes or unicode arrows. Reply in the same language as the user (Detected language: ' + lang + ').',
       'You ALWAYS reply in TWO short chat bubbles: (1) "answer": 1 to 2 natural, direct sentences answering what the user asked; (2) "promptText": 1 short, natural follow-up question inviting the user to continue the conversation.',
       'Return ONLY valid JSON: {"conversational": true, "title": "Short heading", "answer": "1-2 sentence natural human reply", "promptText": "1-sentence natural follow-up question", "headers": [], "rows": [], "total": [], "followUps": ["Short option 1", "Short option 2", "Short option 3"]}. Leave headers/rows/total empty [] unless the user explicitly asks for a numerical table.'
     ].join('\n');
@@ -3333,190 +3098,88 @@ JS = r"""
     const cm = CURR_MULT[state.sboxCurr] || CURR_MULT.USD;
     const pm = PERIOD_MULT[state.sboxPeriod] || PERIOD_MULT.mtd;
     const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$6,800 to $8,200 + $80/seat/mo', weeks: '1 to 2 Weeks' };
+    const recent = state.aiHistory.slice(-4).map(h => 'User: ' + h.q + '\nISABI: ' + String(h.answer || '').replace(/<[^>]+>/g, '')).join('\n\n');
     return [
       'Active Live Sandbox Context: ' + sbox.groupTitle + ' | Currency: ' + cm.sym + ' | Period: ' + pm.label,
       'Active Scope Configurator: ' + cfg.industry + ' | Scale: ' + cfg.scale + ' | Estimate: ' + cfg.range + ' (' + cfg.weeks + ')',
+      recent ? ('Recent Conversation:\n' + recent) : '',
       'Visitor Question: ' + qText
-    ].filter(Boolean).join('\n');
-  }
-
-  function buildConversationMessages(cleanQ, lang) {
-    const msgs = [{ role: 'system', content: buildGeminiSystemPrompt(lang) }];
-    const recent = state.aiHistory.slice(-4);
-    for (let i = 0; i < recent.length; i++) {
-      const h = recent[i];
-      if (!h || !h.q) continue;
-      msgs.push({ role: 'user', content: String(h.q) });
-      msgs.push({
-        role: 'assistant',
-        content: JSON.stringify({
-          conversational: true,
-          title: String(h.title || 'ISABI'),
-          answer: String(h.answer || '').replace(/<[^>]+>/g, ''),
-          promptText: String(h.promptText || ''),
-          followUps: Array.isArray(h.followUps) ? h.followUps.slice(0, 3) : []
-        })
-      });
-    }
-    msgs.push({ role: 'user', content: buildGeminiUserPrompt(cleanQ) });
-    return msgs;
-  }
-
-  function sanitizeCleanText(str) {
-    return String(str || '')
-      .replace(/[\u2014\u2013]/g, '-')
-      .replace(/[\u2190-\u21FF\u25B8]/g, 'to')
-      .trim();
+    ].filter(Boolean).join('\n\n');
   }
 
   function parseCloudAiReply(rawReply, cleanQ, lang, fallbackResp) {
     try {
-      let cleaned = String(rawReply || '').replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-      const firstBrace = cleaned.indexOf('{');
-      const lastBrace = cleaned.lastIndexOf('}');
-      if (firstBrace >= 0 && lastBrace > firstBrace) {
-        cleaned = cleaned.slice(firstBrace, lastBrace + 1);
-      }
+      const cleaned = String(rawReply || '').replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
       const obj = JSON.parse(cleaned);
-      if (!obj || !obj.answer) return null;
+      if (!obj || !obj.answer) return fallbackResp;
       const hasTable = Array.isArray(obj.headers) && obj.headers.length && Array.isArray(obj.rows) && obj.rows.length;
       return {
         q: cleanQ,
         lang: lang,
         conversational: obj.conversational !== undefined ? Boolean(obj.conversational) : !hasTable,
-        title: sanitizeCleanText(obj.title || fallbackResp.title || 'System Intelligence'),
-        answer: sanitizeCleanText(obj.answer),
-        promptText: obj.promptText ? sanitizeCleanText(obj.promptText) : fallbackResp.promptText,
-        bullets: Array.isArray(obj.bullets) ? obj.bullets.map(b => sanitizeCleanText(b)) : [],
-        headers: hasTable ? obj.headers.map(h => sanitizeCleanText(h)) : undefined,
-        rows: hasTable ? obj.rows.map(r => Array.isArray(r) ? r.map(c => sanitizeCleanText(c)) : []) : undefined,
-        total: Array.isArray(obj.total) && obj.total.length ? obj.total.map(t => sanitizeCleanText(t)) : undefined,
-        citation: sanitizeCleanText(obj.citation || fallbackResp.citation || 'ISABI Systems'),
+        title: String(obj.title || fallbackResp.title || 'System Intelligence').replace(/[\u2014\u2192]/g, '-'),
+        answer: String(obj.answer).replace(/[\u2014\u2192]/g, '-'),
+        promptText: obj.promptText ? String(obj.promptText).replace(/[\u2014\u2192]/g, '-') : fallbackResp.promptText,
+        bullets: Array.isArray(obj.bullets) ? obj.bullets.map(b => String(b).replace(/[\u2014\u2192]/g, '-')) : [],
+        headers: hasTable ? obj.headers : undefined,
+        rows: hasTable ? obj.rows : undefined,
+        total: Array.isArray(obj.total) && obj.total.length ? obj.total : undefined,
+        citation: String(obj.citation || fallbackResp.citation || 'ISABI Systems').replace(/[\u2014\u2192]/g, '-'),
         actionInd: obj.actionInd || fallbackResp.actionInd,
         actionCfg: obj.actionCfg || fallbackResp.actionCfg,
-        followUps: Array.isArray(obj.followUps) && obj.followUps.length
-          ? obj.followUps.slice(0, 3).map(f => sanitizeCleanText(f)).filter(Boolean)
-          : (fallbackResp.followUps || [])
+        followUps: Array.isArray(obj.followUps) && obj.followUps.length ? obj.followUps.slice(0, 3) : (fallbackResp.followUps || [])
       };
     } catch (e) {
-      return null;
-    }
-  }
-
-  function logAskQuestionAsync(cleanQ, lang, replyTitle) {
-    if (navigator.webdriver || window.__ISABI_SYNC_TEST) return;
-    let flowUrl = '';
-    let flowKey = '';
-    try {
-      flowUrl = atob(ASK_FLOW_U_B64);
-      flowKey = atob(ASK_FLOW_K_B64);
-    } catch (e) {
-      return;
-    }
-    if (!flowUrl || !flowUrl.startsWith('http')) return;
-    const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$6,800 to $8,200 + $80/seat/mo', weeks: '1 to 2 Weeks' };
-    fetch(flowUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-      body: JSON.stringify({
-        key: flowKey,
-        op: 'log',
-        surface: 'showcase',
-        mode: 'instant_local',
-        q: cleanQ,
-        lang: lang,
-        industry: state.sboxInd || 'holding',
-        currency: state.sboxCurr || 'USD',
-        period: state.sboxPeriod || 'mtd',
-        scale: cfg.scale || '',
-        range: cfg.range || '',
-        replyTitle: replyTitle || ''
-      })
-    }).catch(() => {});
-  }
-
-  async function callDirectClientLlm(messages, cleanQ, lang, fallbackResp) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 9500);
-    try {
-      const res = await fetch('https://text.pollinations.ai/openai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'openai-fast',
-          reasoning_effort: 'low',
-          response_format: { type: 'json_object' },
-          messages: messages
-        }),
-        signal: ctrl.signal
-      });
-      clearTimeout(timer);
-      if (!res.ok) return null;
-      const data = await res.json();
-      const raw = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-      if (raw) return parseCloudAiReply(raw, cleanQ, lang, fallbackResp);
-      return null;
-    } catch (e) {
-      clearTimeout(timer);
-      return null;
+      return fallbackResp;
     }
   }
 
   async function callAskIsabiCloud(cleanQ, lang, fallbackResp) {
-    if (navigator.webdriver || window.__ISABI_SYNC_TEST) return fallbackResp;
-    const messages = buildConversationMessages(cleanQ, lang);
+    if (navigator.webdriver) return fallbackResp;
     let flowUrl = '';
     let flowKey = '';
     try {
       flowUrl = atob(ASK_FLOW_U_B64);
       flowKey = atob(ASK_FLOW_K_B64);
     } catch (e) {
-      flowUrl = '';
+      return fallbackResp;
     }
+    if (!flowUrl || !flowUrl.startsWith('http')) return fallbackResp;
 
-    if (flowUrl && flowUrl.startsWith('http')) {
-      const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$6,800 to $8,200 + $80/seat/mo', weeks: '1 to 2 Weeks' };
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 10000);
-      try {
-        const res = await fetch(flowUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: JSON.stringify({
-            key: flowKey,
-            op: 'ask',
-            surface: 'showcase',
-            q: cleanQ,
-            lang: lang,
-            industry: state.sboxInd || 'holding',
-            currency: state.sboxCurr || 'USD',
-            period: state.sboxPeriod || 'mtd',
-            scale: cfg.scale || '',
-            range: cfg.range || '',
-            replyTitle: fallbackResp.title || '',
-            systemPrompt: buildGeminiSystemPrompt(lang),
-            userPrompt: buildGeminiUserPrompt(cleanQ),
-            messages: messages
-          }),
-          signal: ctrl.signal
-        });
-        clearTimeout(timer);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.mode === 'gemini_cloud' && data.rawReply) {
-            const parsed = parseCloudAiReply(data.rawReply, cleanQ, lang, fallbackResp);
-            if (parsed) return parsed;
-          }
-        }
-      } catch (e) {
-        clearTimeout(timer);
+    const cfg = state.lastCfgSummary || { industry: state.cfgInd, scale: state.cfgScaleLabel, range: '$12,300 to $15,000', weeks: '1 to 2 Weeks' };
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 14000);
+    try {
+      const res = await fetch(flowUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+        body: JSON.stringify({
+          key: flowKey,
+          op: 'ask',
+          q: cleanQ,
+          lang: lang,
+          industry: state.sboxInd || 'holding',
+          currency: state.sboxCurr || 'USD',
+          period: state.sboxPeriod || 'mtd',
+          scale: cfg.scale || '',
+          range: cfg.range || '',
+          replyTitle: fallbackResp.title || '',
+          systemPrompt: buildGeminiSystemPrompt(lang),
+          userPrompt: buildGeminiUserPrompt(cleanQ)
+        }),
+        signal: ctrl.signal
+      });
+      clearTimeout(timer);
+      if (!res.ok) return fallbackResp;
+      const data = await res.json();
+      if (data && data.mode === 'gemini_cloud' && data.rawReply) {
+        return parseCloudAiReply(data.rawReply, cleanQ, lang, fallbackResp);
       }
+      return fallbackResp;
+    } catch (e) {
+      clearTimeout(timer);
+      return fallbackResp;
     }
-
-    // Lane 2: Direct browser client-IP completion (separate IP window from server flow)
-    const directParsed = await callDirectClientLlm(messages, cleanQ, lang, fallbackResp);
-    if (directParsed) return directParsed;
-    return fallbackResp;
   }
 
   function renderAiSection(idx = 0, isInitialLoad = false) {
@@ -3557,7 +3220,7 @@ JS = r"""
       if (backdrop) backdrop.hidden = false;
     }
 
-    // In headless tests or synchronous preset button clicks, resolve immediately
+    // In headless tests or preset chip clicks, resolve immediately
     if (navigator.webdriver || window.__ISABI_SYNC_TEST || !fromInputSubmit) {
       state.aiPendingQ = null;
       state.aiTypingFollowup = false;
@@ -3574,9 +3237,9 @@ JS = r"""
     state.aiTypingFollowup = false;
     renderAiThreads(true);
 
-    // Greetings, preset prompts & explicit sandbox/blueprint commands resolve in 240ms without consuming Cloud LLM quota
-    if (localResp.instantLocal) {
-      logAskQuestionAsync(clean, lang, localResp.title);
+    const hasLocalTable = Boolean(localResp.headers && localResp.headers.length);
+    if (hasLocalTable) {
+      callAskIsabiCloud(clean, lang, localResp);
       setTimeout(() => {
         if (!state.aiPendingQ || state.aiPendingQ.q !== clean) return;
         state.aiPendingQ = null;
@@ -3588,11 +3251,11 @@ JS = r"""
           state.aiTypingFollowup = false;
           renderAiThreads(true);
         }, 420);
-      }, 240);
+      }, 280);
       return;
     }
 
-    const minDelay = new Promise(r => setTimeout(r, 300));
+    const minDelay = new Promise(r => setTimeout(r, 320));
     Promise.all([callAskIsabiCloud(clean, lang, localResp), minDelay]).then(([finalResp]) => {
       if (!state.aiPendingQ || state.aiPendingQ.q !== clean) return;
       state.aiPendingQ = null;
@@ -3761,7 +3424,7 @@ JS = r"""
     }
     const metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) {
-      metaTheme.setAttribute('content', mode === 'light' ? '#FAF9F6' : '#1B140F');
+      metaTheme.setAttribute('content', mode === 'light' ? '#F4F2EE' : '#1B140F');
     }
   }
 
@@ -4097,7 +3760,7 @@ JS = r"""
 
       const aiAskBtn = e.target.closest('[data-ai-ask]');
       if (aiAskBtn) {
-        askIsabiQuestion(aiAskBtn.dataset.aiAsk, false, true);
+        askIsabiQuestion(aiAskBtn.dataset.aiAsk, false);
         return;
       }
 
