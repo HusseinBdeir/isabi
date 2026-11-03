@@ -36325,7 +36325,7 @@
     const isReturnDisp = FORM_UI.ticketDisposition === 'return_wtc';
     if (dlEq) {
       const fIdx = getFleetIndex();
-      const eqPoolKey = `${isReturnDisp ? 2 : (isCoFleet ? 1 : 0)}|${company}|${winOpts ? winOpts.date || '' : ''}|${(!isReturnDisp && FORM_UI.ownerManuallyPicked && truckOwner && !truckName) ? norm(truckOwner) : ''}|${fIdx.key}`;
+      const eqPoolKey = `${isReturnDisp ? 2 : (isCoFleet ? 1 : 0)}|${company}|${winKey}|${(!isReturnDisp && FORM_UI.ownerManuallyPicked && truckOwner && !truckName) ? norm(truckOwner) : ''}|${fIdx.key}`;
       if (dlEq.dataset.poolKey !== eqPoolKey) {
         dlEq.dataset.poolKey = eqPoolKey;
         if (fIdx.dlEqHtmlCache.has(eqPoolKey)) {
@@ -54642,25 +54642,76 @@
       }
     });
     const absorbedTopupIds = new Set([
-      'se-mvv17h23-a0xmpb',
-      'sa-mvv0cz3d-dveznr',
-      'sa-mvv02ty6-81tyly',
-      'tr-mvv16nfi-ddb5ij',
-      'tr-mvv0chgq-eys9ij',
-      'tr-mvv01txc-6khllv',
-      'tr-mvuziyf2-fyx29t'
+      'se-mvv17h23-a0xmpb', 'sa-mvv0cz3d-dveznr', 'sa-mvv02ty6-81tyly', 'tr-mvv16nfi-ddb5ij', 'tr-mvv0chgq-eys9ij', 'tr-mvv01txc-6khllv', 'tr-mvuziyf2-fyx29t',
+      'sa-mvw3fhwm-dinfao', 'sa-mvw3e4x9-krt2uj', 'sa-mvw3dc0w-ng151r', 'sa-mvw3bgq1-xt1bah', 'sa-mvw3032e-qybb8n', 'sa-mvw2sk57-urdmz6', 'sa-mvw2q9k7-iud5yg', 'sa-mvw2o6bu-unu9h4',
+      'sa-mvw2mezr-pqub47', 'sa-mvw2l33q-r1s1rr', 'sa-mvw2jqzp-tqa6ek', 'sa-mvw2hdgj-5qx1gr', 'sa-mvw2g83z-7fp3dg', 'sa-mvw4bk14-67xt1y', 'sa-mvw4acde-swwg1d', 'sa-mvw5c93s-28iv77',
+      'sa-mvw5xcuu-59ea2o', 'sa-mvw6hv05-2xq8c4', 'sa-mvyzy1wo-i59sux', 'sa-mvyzwuj2-ob2zgp', 'sa-mvz0eim4-5e3xwz', 'sa-mvz05o3t-0a9r89', 'sa-mvz046w4-f0cxjs', 'sa-mvz02v9h-fw2ynq',
+      'sa-mvz01slk-6lxqyu', 'sa-mvz0ynj2-fji9hz', 'sa-mvz0w1o4-bnvozq', 'sa-mvz0upno-uejabe', 'sa-mvz0smak-6v15y4', 'sa-mvz2a46k-f3d0xu', 'sa-mvz24sje-90fo2d', 'sa-mvz22nho-tdbjpv',
+      'sa-mvz210b8-z9knv0', 'sa-mvz1xaim-oyfccj', 'sa-mvz1wfol-ihuw2c', 'sa-mvz1vlbc-3sthj1', 'sa-mvz1ukfq-m2xlkl', 'sa-mvz1t8x8-ew0bkg', 'sa-mvz1r4rj-sp6x8w', 'sa-mvz1m8o3-w8pyyo',
+      'sa-mvz1kgve-udxd9u', 'sa-mvz1ioqj-cupqn7', 'sa-mvz1h911-yavepl', 'sa-mvz1alzm-9ps6x3', 'sa-mw0djnom-ybnnkh', 'sa-mw0depro-dlgmda', 'sa-mw0dc9vb-qqvoye', 'sa-mw0dbf7u-6w5lng',
+      'sa-mw0dadvd-vnwx26', 'sa-mw0d89qa-u7ybpo', 'sa-mw0d6kck-an7jx0', 'sa-mw0d5jii-of5oab', 'sa-mw0d4nzm-5rxziz', 'sa-mw0d3ja9-0csb71', 'sa-mw0d2mwf-mep17m', 'sa-mw0d0ink-hnhyav',
+      'sa-mw0czd4k-h720dj', 'sa-mw0cxopr-cdw6wh', 'sa-mw0cw8vq-pgk4xi', 'sa-mw0hqkj6-7arpk9', 'sa-mw0r8cp0-7ojhcz', 'ra-mvw9ci2z-5wil9v', 'ra-mvw9dt4x-8dinkj', 'ra-mvw9eq6c-zzhdm5',
+      'ra-mvw9fpgx-lnl29l', 'ra-mvw9gnqt-hub9ma', 'ra-mvw9htqy-9mk4qt', 'ra-mvw9jqhp-ssqk5h', 'ra-mvw9ira0-4ys2sh', 'ra-mvw9mlcl-snneik', 'ra-mvw9luw1-b8md2v', 'ra-mvw9ku2j-q6xwcv',
+      'ra-mvw9ox25-36y76z', 'ra-mvw9o3do-va3g1b', 'ra-mvw9nb91-a7wg9t', 'ra-mvw9yfil-km51pq', 'ra-mvw9xkk0-7cmkby', 'ra-mvw9ww1r-d9bd2b', 'ra-mvw9w6lr-j5r5en', 'ra-mvw9vaia-0t1igu',
+      'ra-mvw9u5oz-79s6ca', 'ra-mvw9ta0u-7mkzdu', 'ra-mvw9sj3n-gz05ml', 'ra-mvw9rijr-e48la3', 'ra-mvw9qmjy-rtcai8', 'ra-mvw9plxc-0k33dw', 'ra-mvz3gloe-vqdetl', 'ra-mvz3kma1-9djgqc',
+      'ra-mvz3j89b-xqkvzv', 'ra-mvz3oazf-r2p8ki', 'ra-mvz3n5tu-u0m5jc', 'ra-mvz3lodx-9smc2m', 'ra-mvz8q0aj-af0j62', 'ra-mvz8s1hw-wswk4a', 'ra-mvz8we86-wof8p1', 'ra-mvz8v2wp-5avvzw',
+      'ra-mvz8tyhn-m6q6p3', 'ra-mvz8z1xu-ar8knl', 'ra-mvz8xbio-mq65qw', 'ra-mvz901x2-25rvee', 'ra-mvz933gp-wcqbgk', 'ra-mvz91yeh-6kchpb', 'ra-mvz9110h-ny9ozy', 'ra-mvz9a4dl-tqxlgl',
+      'ra-mvz9clab-qg6mg9', 'ra-mvz9dlx1-4z8agp', 'ra-mvz9h1ea-jsxn8u', 'ra-mvz9gcd2-pg85jj', 'ra-mvz9fhdv-z8i9ya', 'ra-mvz9ejy8-iaydrn', 'ra-mvz9l6qo-f3kz34', 'ra-mvz9kajg-sx8hl2',
+      'ra-mvz9jdly-ztkd2e', 'ra-mvz9irnx-ffo6zv', 'ra-mvz9hqp4-dh0ilk', 'ra-mvz9nem1-oncw33', 'ra-mvz9m24w-iqsup9', 're-mvw3fxqf-ijttek', 're-mvw4ldol-a6rqmm', 're-mvw5xscv-yv57ei',
+      're-mvw9psk5-vp3gko', 're-mvz0t6o3-9hvdrw', 're-mvz8kgxr-jufchb', 're-mw0d782h-adihei', 're-mw0miz6n-1y22l8', 're-mw0oy5m7-cph81z', 'fu-mvw6pntz-7dbmid', 'fu-mvw6oxkv-x5s8ma',
+      'fu-mvw6nxk4-oxa4s3', 'fu-mvw6n7s1-cbvlbf', 'fu-mvw6r7r5-fovqer', 'fu-mvw6xhwx-9fcnmt', 'fu-mvw6wpgm-4l2dcx', 'fu-mvw6vwp9-g2drbt', 'fu-mvw6uc5s-uuucug', 'fu-mvw6s913-pbrk7n',
+      'fu-mvw6zmns-jn7ivx', 'fu-mvw6z6t3-ry6sp3', 'fu-mvyzq1ux-g4ye2o', 'fu-mvyzpf88-cud8uc', 'fu-mvyzo65k-2cb0gk', 'fu-mvyznlp1-z89okw', 'fu-mvyzn0iw-bhhsqg', 'fu-mvyzmjfz-xhi6ey',
+      'fu-mvyzlvqg-boewl6', 'fu-mvyzldlu-26lg2m', 'fu-mvyzkny1-r3y5kh', 'fu-mvyzk39n-oknliz', 'fu-mvyzj5en-ippkar', 'fu-mvyziict-hnvtyt', 'fu-mvyzhvfb-ulrfni', 'fu-mvyzh1is-hp2ilh',
+      'fu-mvyzg8l5-yo5zmb', 'fu-mvz6kk2v-0jznjm', 'fu-mvz6jvkg-vnkist', 'fu-mvz6jdxr-raatix', 'fu-mvz6iqor-6ty6jr', 'fu-mvz6hxps-3ct37i', 'fu-mw0f7jwf-l4069o', 'fu-mw0f7175-cma3bp',
+      'fu-mw0h6mm3-r4qr4h', 'fu-mw0h5zis-6u3ajl', 'fu-mw0huzo2-ejto4o', 'fu-mw0htrwp-t0pbnl', 'fu-mw0i7hra-f4bg7y', 'fu-mw0i6y6e-eml0w9', 'fu-mw0i49pf-g9kwgc', 'fu-mw0i3eyv-c2dbgs',
+      'fu-mw0i2fec-dhdy7j', 'fu-mw0i1lnk-kxmaa0', 'fu-mw0i0oq2-l6lx99', 'fu-mw0hzryf-r98p5p', 'fu-mw0hyico-dfn97l', 'fu-mw0p6swk-g834xs', 'fu-mw0p5n03-frbjcg', 'fu-mw0p4oxb-td834u',
+      'fu-mw0p8z31-anza06', 'fu-mw0p8g3c-vpewq6', 'fu-mw0p7rma-ede50y', 'fu-mw0pcier-fusm81', 'fu-mw0pbtn0-z5ypjc', 'fu-mw0pbdd3-wm6v9u', 'fu-mw0paiqa-tvppzg', 'fu-mw0p9m4j-ub5kqa',
+      'ma-mvz6pck6-xq92rq', 'ex-mvw5ark4-ymk6ot', 'ex-mvw52s22-0e9803', 'ex-mvw64vne-ojxlgu', 'ex-mvw67kaf-l7yrph', 'ex-mvw6lvxa-ovdo4n', 'ex-mvw73abs-3a7cv6', 'ex-mvw7bxju-rucxvk',
+      'ex-mvw73vcq-799t1l', 'ex-mvz32ze2-l1ytix', 'ex-mvz32bw0-ua6sv1', 'ex-mvz4ri2e-7bkqof', 'ex-mvz6cwkm-5vihov', 'ex-mvzbadz0-m2hdvo', 'ex-mvzb9qq2-bd7nhp', 'ex-mvzb7avk-idrhic',
+      'ex-mvzaqj3n-xfyox1', 'ex-mvzbfa39-h7ibs2', 'ex-mw0flohg-3ya31u', 'ex-mw0fgik6-pwv56q', 'ex-mw0ixz1x-12bos3', 'ex-mw0hcmtr-hucbkm', 'ex-mw0h8h89-fzjmk0', 'ex-mw0ox0hm-uf53ki',
+      'ex-mw0otmlk-yjth0l', 'ei-mw0g7psa-6exvie', 'ei-mvw5eb0n-xl5u0s', 'ei-mvw5dpxx-r8jdhr', 'ei-mvw64vnf-83ul7j', 'ei-mvw6mn60-e69a6d', 'ei-mvw73abs-noikle', 'ei-mvw7bxju-7gbcq1',
+      'ei-mvz4ri2h-me5eeq', 'ei-mvz6cwkp-gci054', 'ei-mvzbadz1-mkukmm', 'ei-mvzb9qq2-mu2f73', 'ei-mvzb7avl-tuwxwb', 'ei-mvzaqj3n-1ayrre', 'ei-mvzbfa39-5hkdsn', 'ei-mw0floht-9bbmr4',
+      'ei-mw0ixz3g-1z45jw', 'ei-mw0hcmui-n5j1dd', 'ei-mw0h8h9l-n28c0j', 'ei-mw0ox0hn-w0yylm', 'ei-mw0otmln-36z61d', 'ex-mvw73vcq-799t1l-i1', 'ex-mvw67kaf-l7yrph-i1', 'se-mvw6x67x-y6poyi',
+      'se-mvw7d34y-94zmyt', 'se-mvw9r14l-73y4e1', 'se-mvz1v4pg-1rpp6q', 'se-mw0oc6z0-lli2dr', 'pr-mw0g2vs5-qsux83', 'pr-mw0g2b8o-pns2qw', 'pr-mw0mh7er-iowb8s', 'cu-mvw3p8tf-ds7kgj',
+      'cu-mvz0g3t1-7ysuns', 'si-mvqk8r5m-odhzyb', 'eq-mvw6gy8t-m1i41b', 'dr-mvzaz0hn-29pe39', 'dr-mw0hecuk-d2s0zv', 'sa-mvw9haye-0f6cf1', 'sa-mw0lg6ha-ktd9r7', 'sa-mw0kkeqc-uklo5m',
+      'at-mvw9k8y2-zj1dhe', 'at-mvw9405o-2m6y5r', 'at-mvway79y-hc93bc', 'at-mvwaxno5-rpfih5', 'at-mvwax2xg-5hv6uk', 'at-mvwavfgq-cqykgt', 'at-mvwauvq1-ej8uep', 'at-mvwb17bg-rgdzmc',
+      'at-mvwb0k2s-4hzkrz', 'at-mvwazrbr-8y56nr', 'at-mvwb4aet-43od1a', 'at-mvwb3uvu-obnsrq', 'at-mw0lndcl-cy8b2e', 'at-mw0lmbfx-igkdum', 'at-mw0llerf-8yjzb0', 'at-mw0lkg8e-3ejx61',
+      'at-mw0ljmet-l6akbf', 'at-mw0lig34-4n188h', 'at-mw0mpieh-x48s55', 'at-mw0nelm0-psqsio', 'at-mw0ndtn6-9w2oe1', 'at-mw0nciuu-5ry01t', 'at-mw0nblrl-2zbwpk', 'at-mw0nb3mg-nz7vn2',
+      'at-mw0nacof-xme5f4', 'at-mw0na019-ji3wxq', 'at-mw0n8f4t-3oziag', 'at-mw0n7s6s-zgw75g', 'at-mw0n74z5-6b0qzv', 'at-mw0n6ggv-cdklfo', 'at-mw0n5ust-uzcv33', 'at-mw0n458y-kq7td0',
+      'at-mw0mzatr-cpddvh', 'at-mw0ms8xz-870j4b', 'at-mw0q07el-f2jzfm', 'at-mw0pzro8-u51lo7', 'at-mw0pxypg-e9sj7x', 'at-mw0qxqsb-o2r5zh', 'at-mw0q3894-j6vnqr', 'at-mw0q2wrb-d175xv',
+      'at-mw0q2885-bp2lsv', 'at-mw0q1uqm-bax04m', 'at-mw0q1bwk-5ndyri', 'at-mw0q0n5l-qwf04r', 'em-mvv0v6kl-0c3pi8', 'em-mw0hio9k-p3fvua', 'em-mw0hh9qc-sua97x', 'tr-mvw4j3fw-wnnt1u',
+      'tr-mvw4m6r8-40epgp', 'tr-mvw5u5ve-6ubx4e', 'tr-mvw6qlbw-tc2pxf', 'tr-mvw7cl2n-xf7feo', 'tr-mvw875j0-41hllr', 'tr-mvw86r14-nmoy42', 'tr-mvw867mx-c5i8ok', 'tr-mvw85l29-pb8r84',
+      'tr-mvw9p1cy-b9m8j3', 'ex-mvz11hmx-a4c77a', 'ex-mvz1q18j-3gny66', 'ex-mvz1sfft-qfnou7', 'ex-mvz1t5ym-a0izzj', 'ex-mvz1ult5-fd2imh', 'ex-mvz4puti-2b0edm', 'ex-mvzbhx7z-7j2u4s',
+      'ex-mvzb8dij-iq1mlo', 'ex-mvzb7xdr-9lhiti', 'ex-mvzb5yen-s165jx', 'ex-mvzb5ir2-j0rj77', 'ex-mw0f1487-23sg60', 'ex-mw0exj0l-4f5rdc', 'ex-mw0m3lrk-imaw52', 'ex-mw0m2pk8-2001vm',
+      'ex-mw0klyfg-svlzz1', 'ex-mw0mepa3-by7h2n', 'ex-mw0opjxl-z18d72', 'ex-mw0obebc-sl9p1w', 'ex-mw0ozuoq-0vz5sf', 'ex-mw0r9ql9-f94234', 'tr-mvz6b2ok-z5yovb', 'tr-mvw72ink-ycj73w'
+    ]);
+    const bakedUuidOverrideIds = new Set([
+      '93d121e7-a3ae-f111-aaab-7ced8d71a5fc',
+      '78d021e7-a3ae-f111-aaab-7ced8d71a5fc',
+      'ce93e6cc-41a8-f111-aaab-6045bde141dc',
+      '84671f72-40a8-f111-aaab-70a8a52b3dd4',
+      'b019258a-40a8-f111-aaab-70a8a52b3dd4',
+      '500b1d9c-40a8-f111-aaab-70a8a52b3dd4'
     ]);
     Object.keys(STATE.customRecords || {}).forEach(k => {
       const arr = STATE.customRecords && STATE.customRecords[k];
       if (!Array.isArray(arr) || !arr.length) return;
+      const filtered = [];
       arr.forEach(r => {
-        if (r && !r.voided && absorbedTopupIds.has(String(r.id || ''))) {
+        const rid = String((r && r.id) || '');
+        if (r && !r.voided && bakedUuidOverrideIds.has(rid)) {
+          removedAny = true;
+          return;
+        }
+        if (r && !r.voided && absorbedTopupIds.has(rid)) {
           r.voided = true;
-          r.voided_by = 'system-topup-20261030';
-          r.voided_at = '2026-10-30T19:15:00Z';
+          r.voided_by = 'system-topup-20261103';
+          r.voided_at = '2026-11-03T19:24:00Z';
           removedAny = true;
         }
+        filtered.push(r);
       });
+      if (filtered.length !== arr.length) STATE.customRecords[k] = filtered;
     });
     if (SEED._recordsReady) {
       const posRe = /^(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+$/;
