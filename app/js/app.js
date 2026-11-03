@@ -9573,11 +9573,12 @@
     return { startIso, endIso, isInForce, status, freq, amount: amt, monthlyEqUsd, elapsedCycles, accruedUsd };
   }
 
-  // ── Chronological Effective-Date Series & Universal Backfill Engine ──
-  // Applies to all effective-dated relational log/agreement tables:
+  // ── Chronological Effective-Date Series, Intentional Gap Fallback & Universal Backfill Engine ──
+  // Applies to all present effective-dated relational log/agreement tables:
   //   price_rules, employments, logistics_allowances, recurring_expenses, overtime_rates, credit_terms,
   //   fx_rates, vat_rates, company_equipment, company_drivers
-  // plus equipment.adj_windows (handled via appendOrUpdateTruckWindow + backfillTruckWindowToTickets).
+  // plus equipment.adj_windows (handled via appendOrUpdateTruckWindow + backfillTruckWindowToTickets)
+  // AND automatically detects & governs ALL future (49th+) effective-dated tables added to TABLE_CATALOG or SEED.records!
   const EFFECTIVE_SERIES_TABLES = new Set([
     'price_rules',
     'employments',
@@ -9591,10 +9592,85 @@
     'company_drivers',
   ]);
 
+  const NON_CHRONO_SERIES_TABLES = new Set([
+    'vat_invoices', 'loans', 'sales_tickets', 'raw_purchases', 'expenses', 'settlements',
+    'receipts', 'salaries', 'attendance', 'fuel_intakes', 'fuel_malfunctions', 'conversions',
+    'external_movements', 'loan_settlements', 'jv_distributions', 'jv_partnerships',
+    'freelance_entries', 'warehouse_movements', 'part_movements', 'equipment_defects',
+    'equipment_repairs', 'equipment_oil_logs', 'repair_items', 'expense_items',
+    'journal_lines', 'daily_totals', 'customers', 'suppliers', 'products', 'items',
+    'product_types', 'uoms', 'expense_categories', 'expense_subcategories', 'sites',
+    'regions', 'equipment', 'drivers', 'currencies', 'gl_accounts',
+  ]);
+
+  const CUSTOM_CHRONO_SPECS = new Map();
+  function registerChronoSeriesSpec(crKey, spec) {
+    if (!crKey || !spec) return;
+    CUSTOM_CHRONO_SPECS.set(String(crKey), spec);
+  }
+  function unregisterChronoSeriesSpec(crKey) {
+    if (!crKey) return;
+    CUSTOM_CHRONO_SPECS.delete(String(crKey));
+  }
+  function getCatalogChronoEntry(crKey) {
+    const catList = window.MFG_PBI && Array.isArray(window.MFG_PBI.TABLE_CATALOG) ? window.MFG_PBI.TABLE_CATALOG : null;
+    return catList ? (catList.find(t => t && t.key === crKey) || null) : null;
+  }
+
+  function isEffectiveSeriesTable(crKey, sampleRow) {
+    if (!crKey || NON_CHRONO_SERIES_TABLES.has(crKey)) return false;
+    if (EFFECTIVE_SERIES_TABLES.has(crKey) || CUSTOM_CHRONO_SPECS.has(crKey)) return true;
+    const cat = getCatalogChronoEntry(crKey);
+    if (cat) {
+      if (cat.chronoSeries === false) return false;
+      if (cat.chronoSeries === true || cat.chronoSpec || cat.chronoBackfill || Array.isArray(cat.seriesKeys)) return true;
+      const cols = Array.isArray(cat.cols) ? cat.cols : [];
+      if (cols.includes('start_date') && (cols.includes('end_date') || cols.includes('effective_to')) && !cols.includes('invoice_no') && !cols.includes('ticket_no')) {
+        return true;
+      }
+    }
+    const probe = (sampleRow && typeof sampleRow === 'object')
+      ? sampleRow
+      : (((SEED.records && Array.isArray(SEED.records[crKey]) ? SEED.records[crKey] : []).find(r => r && !r.voided)) || null);
+    if (probe && 'start_date' in probe && ('end_date' in probe || 'effective_to' in probe) && !('invoice_no' in probe) && !('ticket_no' in probe)) {
+      return true;
+    }
+    return false;
+  }
+
+  const AUTO_SERIES_DIM_KEYS = [
+    'rule_type', 'scope', 'staff', 'employee', 'driver', 'customer', 'client', 'tenant',
+    'supplier', 'vendor', 'partner', 'agent', 'broker', 'insurer', 'property', 'chalet',
+    'room', 'unit_no', 'lease', 'policy', 'equipment', 'truck', 'machine', 'product',
+    'item', 'item_name', 'site', 'location', 'warehouse_location', 'region', 'currency',
+    'category', 'subcategory',
+  ];
+
+  function inferChronologicalSeriesKeys(crKey, a, b) {
+    const customSpec = CUSTOM_CHRONO_SPECS.get(crKey);
+    if (customSpec && Array.isArray(customSpec.seriesKeys) && customSpec.seriesKeys.length) return customSpec.seriesKeys;
+    const cat = getCatalogChronoEntry(crKey);
+    const catSpec = cat && (cat.chronoSpec || cat);
+    if (catSpec && Array.isArray(catSpec.seriesKeys) && catSpec.seriesKeys.length) return catSpec.seriesKeys;
+    const r1 = a || {}, r2 = b || {};
+    const keys = AUTO_SERIES_DIM_KEYS.filter(k =>
+      (r1[k] != null && String(r1[k]).trim() !== '') || (r2[k] != null && String(r2[k]).trim() !== '')
+    );
+    if (('property' in r1 || 'building' in r1 || 'property' in r2 || 'building' in r2)
+      && ((r1.unit != null && String(r1.unit).trim() !== '') || (r2.unit != null && String(r2.unit).trim() !== ''))) {
+      keys.push('unit');
+    }
+    return keys;
+  }
+
   function isSameChronologicalSeries(crKey, a, b) {
     if (!a || !b || a.voided || b.voided) return false;
     const coA = norm(a.company || ''), coB = norm(b.company || '');
     if (coA && coB && coA !== coB) return false;
+    const customSpec = CUSTOM_CHRONO_SPECS.get(crKey);
+    if (customSpec && typeof customSpec.isSameSeries === 'function') {
+      return Boolean(customSpec.isSameSeries(a, b));
+    }
     switch (crKey) {
       case 'price_rules':
         return norm(a.rule_type || '') === norm(b.rule_type || '')
@@ -9605,7 +9681,9 @@
           && norm(a.truck || '') === norm(b.truck || '')
           && Number(a.min_qty || 0) === Number(b.min_qty || 0);
       case 'employments':
+        return norm(a.staff || '') === norm(b.staff || '');
       case 'logistics_allowances':
+        if (a.log_mode === 'single' || b.log_mode === 'single') return false;
         return norm(a.staff || '') === norm(b.staff || '');
       case 'recurring_expenses':
         return norm(a.company || 'WTC') === norm(b.company || 'WTC')
@@ -9625,13 +9703,27 @@
       case 'company_drivers':
         return norm(a.driver || '') === norm(b.driver || '')
           && norm(a.equipment || '') === norm(b.equipment || '');
-      default:
-        return false;
+      default: {
+        if (!isEffectiveSeriesTable(crKey, a || b)) return false;
+        const dims = inferChronologicalSeriesKeys(crKey, a, b);
+        return dims.every(k => norm(a[k] || '') === norm(b[k] || ''));
+      }
     }
   }
 
+  function _rowEndIso(r) {
+    if (!r) return '';
+    return String(r.end_date || r.effective_to || '').slice(0, 10);
+  }
+
+  function _setRowEndIso(r, isoStr) {
+    if (!r) return;
+    r.end_date = isoStr || '';
+    if ('effective_to' in r) r.effective_to = isoStr || '';
+  }
+
   function getChronologicalSeriesPeers(crKey, row, excludeId) {
-    if (!EFFECTIVE_SERIES_TABLES.has(crKey) || !row) return [];
+    if (!row || !isEffectiveSeriesTable(crKey, row)) return [];
     const list = (SEED.records && SEED.records[crKey]) || [];
     const exId = excludeId != null ? String(excludeId) : (row.id != null ? String(row.id) : '');
     return list
@@ -9639,7 +9731,45 @@
       .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
   }
 
-  // Validates chronological ordering for any effective-dated log/agreement row:
+  function getChronologicalSeriesBounds(crKey, candidate, editOrig) {
+    if (!candidate || !isEffectiveSeriesTable(crKey, candidate || editOrig)) {
+      return { minStart: '', maxStart: '', maxEnd: '', prevPeer: null, nextPeer: null };
+    }
+    const exId = (editOrig && editOrig.id) || candidate.id || '';
+    const peers = getChronologicalSeriesPeers(crKey, candidate, exId);
+    if (!peers.length) return { minStart: '', maxStart: '', maxEnd: '', prevPeer: null, nextPeer: null };
+    if (!editOrig) {
+      const latestPrev = peers[peers.length - 1];
+      const ps = String(latestPrev.start_date || '').slice(0, 10);
+      const pe = latestPrev._explicitEnd ? _rowEndIso(latestPrev) : '';
+      const minAfter = (pe && pe > ps) ? pe : ps;
+      return {
+        minStart: minAfter ? nextDayISO(minAfter) : '',
+        maxStart: '',
+        maxEnd: '',
+        prevPeer: latestPrev,
+        nextPeer: null,
+      };
+    }
+    const origStart = String(editOrig.start_date || candidate.start_date || '').slice(0, 10);
+    let prevPeer = null, nextPeer = null;
+    for (let i = 0; i < peers.length; i++) {
+      const ps = String(peers[i].start_date || '').slice(0, 10);
+      if (ps < origStart) prevPeer = peers[i];
+      else if (ps > origStart && !nextPeer) nextPeer = peers[i];
+    }
+    let minStart = '';
+    if (prevPeer) {
+      const ps = String(prevPeer.start_date || '').slice(0, 10);
+      const pe = prevPeer._explicitEnd ? _rowEndIso(prevPeer) : '';
+      const minAfter = (pe && pe > ps) ? pe : ps;
+      if (minAfter) minStart = nextDayISO(minAfter);
+    }
+    const maxStart = nextPeer ? prevDayISO(String(nextPeer.start_date || '').slice(0, 10)) : '';
+    return { minStart, maxStart, maxEnd: maxStart, prevPeer, nextPeer };
+  }
+
+  // Validates chronological ordering for any present or future effective-dated log/agreement row:
   //   1) End Date cannot precede Start Date.
   //   2) When adding a new row (no editOrig): Start Date must be strictly AFTER the latest
   //      existing peer's Start Date (and strictly after its explicit End Date if _explicitEnd).
@@ -9647,9 +9777,9 @@
   //      Start Date (or explicit End Date) and the next peer's Start Date; End Date (if set)
   //      must precede the next peer's Start Date.
   function validateChronologicalSeriesEntry(crKey, candidate, editOrig) {
-    if (!EFFECTIVE_SERIES_TABLES.has(crKey) || !candidate) return { ok: true };
+    if (!candidate || !isEffectiveSeriesTable(crKey, candidate || editOrig)) return { ok: true };
     const candStart = String(candidate.start_date || '').slice(0, 10);
-    const candEnd = String(candidate.end_date || '').slice(0, 10);
+    const candEnd = _rowEndIso(candidate);
     if (!candStart) return { ok: true };
     if (candEnd && candEnd < candStart) {
       return { ok: false, reason: `End Date (${candEnd}) cannot be before Start Date (${candStart}).` };
@@ -9661,7 +9791,7 @@
     if (!editOrig) {
       const latestPrev = peers[peers.length - 1];
       const prevStart = String(latestPrev.start_date || '').slice(0, 10);
-      const prevEnd = latestPrev._explicitEnd && latestPrev.end_date ? String(latestPrev.end_date).slice(0, 10) : '';
+      const prevEnd = latestPrev._explicitEnd ? _rowEndIso(latestPrev) : '';
       const minAfter = (prevEnd && prevEnd > prevStart) ? prevEnd : prevStart;
       if (candStart === prevStart) {
         return {
@@ -9680,7 +9810,7 @@
 
     // Editing an existing log entry in the series: find its chronological position via editOrig.start_date
     const origStart = String(editOrig.start_date || candStart).slice(0, 10);
-    const origEnd = String(editOrig.end_date || '').slice(0, 10);
+    const origEnd = _rowEndIso(editOrig);
     if (candStart === origStart && candEnd === origEnd && isSameChronologicalSeries(crKey, candidate, editOrig)) {
       return { ok: true };
     }
@@ -9692,7 +9822,7 @@
     }
     if (prevPeer) {
       const prevStart = String(prevPeer.start_date || '').slice(0, 10);
-      const prevExpEnd = prevPeer._explicitEnd && prevPeer.end_date ? String(prevPeer.end_date).slice(0, 10) : '';
+      const prevExpEnd = prevPeer._explicitEnd ? _rowEndIso(prevPeer) : '';
       const minAfter = (prevExpEnd && prevExpEnd > prevStart) ? prevExpEnd : prevStart;
       if (candStart === prevStart) {
         return {
@@ -9752,6 +9882,32 @@
     return { schedDays, paidDays: schedDays };
   }
 
+  function _applyAutoCloseStatus(crKey, row) {
+    if (!row) return;
+    const endIso = _rowEndIso(row);
+    if (crKey === 'employments') {
+      if (!row._prev_status) row._prev_status = row.status || 'Current';
+      row.status = 'Ended';
+    } else if (crKey === 'recurring_expenses') {
+      if (!row._prev_status) row._prev_status = row.status || 'In Force';
+      row.status = (endIso && endIso >= todayISO()) ? 'In Force' : 'Ended';
+    } else if (typeof row.status === 'string' && /^(active|in\s*force|current)$/i.test(row.status.trim())) {
+      if (!row._prev_status) row._prev_status = row.status;
+      row.status = 'Ended';
+    }
+  }
+
+  function _applyReopenStatus(crKey, row) {
+    if (!row) return;
+    if (crKey === 'employments') {
+      row.status = row._prev_status || 'Current';
+    } else if (crKey === 'recurring_expenses') {
+      row.status = row._prev_status || 'In Force';
+    } else if (typeof row.status === 'string' && /^(ended|closed|historical)$/i.test(row.status.trim())) {
+      row.status = row._prev_status || 'Active';
+    }
+  }
+
   // Synchronizes adjacent rows in the same effective-dated series when `savedRow` is added or edited:
   //   - Marks `savedRow._explicitEnd` when user explicitly sets/clears `end_date`.
   //   - If `savedRow` has a predecessor `prevPeer`:
@@ -9763,7 +9919,7 @@
   //   - If `savedRow` has a successor `nextPeer` and `savedRow.end_date` is blank (Open), caps
   //     `savedRow.end_date = prevDayISO(nextPeer.start_date)` (`_explicitEnd = false`).
   function syncChronologicalSeriesNeighbors(crKey, savedRow, editOrig, extraApiPosts) {
-    if (!EFFECTIVE_SERIES_TABLES.has(crKey) || !savedRow || !savedRow.start_date) return [];
+    if (!savedRow || !savedRow.start_date || !isEffectiveSeriesTable(crKey, savedRow)) return [];
     const syncSelfToCustom = () => {
       if (!savedRow || !savedRow.id) return;
       if (Array.isArray(STATE.customRecords[crKey])) {
@@ -9775,16 +9931,21 @@
         if (rIdx >= 0) Object.assign(SEED.records[crKey][rIdx], savedRow);
       }
     };
-    if (editOrig && String(savedRow.end_date || '') === String(editOrig.end_date || '')) {
+    const savedEndIso = _rowEndIso(savedRow);
+    const origEndIso = editOrig ? _rowEndIso(editOrig) : '';
+    if ('effective_to' in savedRow && savedEndIso !== String(savedRow.effective_to || '').slice(0, 10)) {
+      savedRow.effective_to = savedEndIso;
+    }
+    if (editOrig && savedEndIso === origEndIso) {
       if (editOrig._explicitEnd !== undefined && savedRow._explicitEnd === undefined) savedRow._explicitEnd = Boolean(editOrig._explicitEnd);
       if (editOrig._auto_closed_by_id !== undefined && savedRow._auto_closed_by_id === undefined) savedRow._auto_closed_by_id = editOrig._auto_closed_by_id;
       if (editOrig._auto_closed_prev_id !== undefined && savedRow._auto_closed_prev_id === undefined) savedRow._auto_closed_prev_id = editOrig._auto_closed_prev_id;
     }
     const newStart = String(savedRow.start_date).slice(0, 10);
     const origStart = editOrig && editOrig.start_date ? String(editOrig.start_date).slice(0, 10) : newStart;
-    if (editOrig && newStart === origStart && String(savedRow.end_date || '') === String(editOrig.end_date || '') && isSameChronologicalSeries(crKey, savedRow, editOrig)) {
-      if (crKey === 'logistics_allowances' && Number(savedRow.daily_usd) > 0 && savedRow.start_date && savedRow.end_date && savedRow.log_mode !== 'single') {
-        const w = countPaidDaysInWindow(savedRow.start_date, savedRow.end_date, savedRow);
+    if (editOrig && newStart === origStart && savedEndIso === origEndIso && isSameChronologicalSeries(crKey, savedRow, editOrig)) {
+      if (crKey === 'logistics_allowances' && Number(savedRow.daily_usd) > 0 && savedRow.start_date && savedEndIso && savedRow.log_mode !== 'single') {
+        const w = countPaidDaysInWindow(savedRow.start_date, savedEndIso, savedRow);
         if (w && w.paidDays > 0) savedRow.amount = round2(Number(savedRow.daily_usd) * w.paidDays);
       }
       if (crKey === 'fx_rates' || crKey === 'vat_rates') enrichGlobalRateTables();
@@ -9792,9 +9953,9 @@
       return [];
     }
     if (!editOrig) {
-      savedRow._explicitEnd = Boolean(savedRow.end_date && String(savedRow.end_date).trim());
-    } else if (String(savedRow.end_date || '') !== String(editOrig.end_date || '')) {
-      savedRow._explicitEnd = Boolean(savedRow.end_date && String(savedRow.end_date).trim());
+      savedRow._explicitEnd = Boolean(savedEndIso);
+    } else if (savedEndIso !== origEndIso) {
+      savedRow._explicitEnd = Boolean(savedEndIso);
       if (savedRow._explicitEnd) delete savedRow._auto_closed_by_id;
     }
 
@@ -9817,32 +9978,27 @@
 
     const touchedPeers = [];
     if (prevPeer) {
+      const prevCurEnd = _rowEndIso(prevPeer);
       const expectedAutoEnd = prevDayISO(newStart);
       const prevAutoEndFromOrig = prevDayISO(origStart);
-      const wasOpen = !prevPeer.end_date || !String(prevPeer.end_date).trim();
+      const wasOpen = !prevCurEnd;
       const wasAutoClosedByThis = prevPeer._auto_closed_by_id === savedRow.id
         || (savedRow._auto_closed_prev_id && String(savedRow._auto_closed_prev_id) === String(prevPeer.id))
-        || (!prevPeer._explicitEnd && prevPeer.end_date && (
-          String(prevPeer.end_date).slice(0, 10) === prevAutoEndFromOrig
-          || String(prevPeer.end_date).slice(0, 10) >= newStart
+        || (!prevPeer._explicitEnd && prevCurEnd && (
+          prevCurEnd === prevAutoEndFromOrig
+          || prevCurEnd >= newStart
         ));
-      const overlapsNew = Boolean(prevPeer.end_date && String(prevPeer.end_date).slice(0, 10) >= newStart);
+      const overlapsNew = Boolean(prevCurEnd && prevCurEnd >= newStart);
       if ((wasOpen || wasAutoClosedByThis || overlapsNew) && expectedAutoEnd >= String(prevPeer.start_date).slice(0, 10)) {
-        if (prevPeer.end_date !== expectedAutoEnd || prevPeer._auto_closed_by_id !== savedRow.id) {
-          if (prevPeer._prev_end_date === undefined) prevPeer._prev_end_date = prevPeer.end_date || '';
-          prevPeer.end_date = expectedAutoEnd;
+        if (prevCurEnd !== expectedAutoEnd || prevPeer._auto_closed_by_id !== savedRow.id) {
+          if (prevPeer._prev_end_date === undefined) prevPeer._prev_end_date = prevCurEnd || '';
+          _setRowEndIso(prevPeer, expectedAutoEnd);
           prevPeer._explicitEnd = false;
           prevPeer._auto_closed_by_id = savedRow.id;
           savedRow._auto_closed_prev_id = String(prevPeer.id || '');
-          if (crKey === 'employments') {
-            if (!prevPeer._prev_status) prevPeer._prev_status = prevPeer.status || 'Current';
-            prevPeer.status = 'Ended';
-          } else if (crKey === 'recurring_expenses') {
-            if (!prevPeer._prev_status) prevPeer._prev_status = prevPeer.status || 'In Force';
-            prevPeer.status = 'Ended';
-          }
+          _applyAutoCloseStatus(crKey, prevPeer);
           if (crKey === 'logistics_allowances' && Number(prevPeer.daily_usd) > 0 && prevPeer.log_mode !== 'single') {
-            const w = countPaidDaysInWindow(prevPeer.start_date, prevPeer.end_date, prevPeer);
+            const w = countPaidDaysInWindow(prevPeer.start_date, expectedAutoEnd, prevPeer);
             if (w && w.paidDays > 0) prevPeer.amount = round2(Number(prevPeer.daily_usd) * w.paidDays);
           }
           touchedPeers.push(prevPeer);
@@ -9854,21 +10010,18 @@
     if (nextPeer) {
       const nextStart = String(nextPeer.start_date).slice(0, 10);
       const capEnd = prevDayISO(nextStart);
-      if ((!savedRow.end_date || !String(savedRow.end_date).trim()) && capEnd >= newStart) {
-        savedRow.end_date = capEnd;
+      if (!_rowEndIso(savedRow) && capEnd >= newStart) {
+        _setRowEndIso(savedRow, capEnd);
         savedRow._explicitEnd = false;
         savedRow._auto_closed_by_id = nextPeer.id;
-        if (crKey === 'employments') savedRow.status = 'Ended';
-        else if (crKey === 'recurring_expenses') savedRow.status = capEnd < todayISO() ? 'Ended' : 'In Force';
+        _applyAutoCloseStatus(crKey, savedRow);
       }
-    } else if (crKey === 'employments' && (!savedRow.end_date || !String(savedRow.end_date).trim())) {
-      savedRow.status = 'Current';
-    } else if (crKey === 'recurring_expenses' && (!savedRow.end_date || !String(savedRow.end_date).trim())) {
-      savedRow.status = 'In Force';
+    } else if (!_rowEndIso(savedRow)) {
+      _applyReopenStatus(crKey, savedRow);
     }
 
-    if (crKey === 'logistics_allowances' && Number(savedRow.daily_usd) > 0 && savedRow.start_date && savedRow.end_date && savedRow.log_mode !== 'single') {
-      const w = countPaidDaysInWindow(savedRow.start_date, savedRow.end_date, savedRow);
+    if (crKey === 'logistics_allowances' && Number(savedRow.daily_usd) > 0 && savedRow.start_date && _rowEndIso(savedRow) && savedRow.log_mode !== 'single') {
+      const w = countPaidDaysInWindow(savedRow.start_date, _rowEndIso(savedRow), savedRow);
       if (w && w.paidDays > 0) savedRow.amount = round2(Number(savedRow.daily_usd) * w.paidDays);
     }
     if (crKey === 'fx_rates' || crKey === 'vat_rates') enrichGlobalRateTables();
@@ -9877,7 +10030,7 @@
   }
 
   function reopenChronologicalSeriesOnVoid(crKey, voidedRow, extraApiPosts) {
-    if (!EFFECTIVE_SERIES_TABLES.has(crKey) || !voidedRow) return [];
+    if (!voidedRow || !isEffectiveSeriesTable(crKey, voidedRow)) return [];
     const list = (SEED.records && SEED.records[crKey]) || [];
     const vStart = String(voidedRow.start_date || '').slice(0, 10);
     const vPrevDay = vStart ? prevDayISO(vStart) : '';
@@ -9889,21 +10042,20 @@
       const matchedById = r._auto_closed_by_id === voidedRow.id
         || (voidedRow._auto_closed_prev_id && String(voidedRow._auto_closed_prev_id) === String(r.id));
       if (!matchedById && !isSameChronologicalSeries(crKey, voidedRow, r)) return;
-      const matchedByDate = !matchedById && !r._explicitEnd && vPrevDay && String(r.end_date || '').slice(0, 10) === vPrevDay && isSameChronologicalSeries(crKey, voidedRow, r);
+      const matchedByDate = !matchedById && !r._explicitEnd && vPrevDay && _rowEndIso(r) === vPrevDay && isSameChronologicalSeries(crKey, voidedRow, r);
       if (matchedById || matchedByDate) {
         if (nextPeer) {
-          r.end_date = prevDayISO(String(nextPeer.start_date).slice(0, 10));
+          _setRowEndIso(r, prevDayISO(String(nextPeer.start_date).slice(0, 10)));
           r._auto_closed_by_id = nextPeer.id;
           r._explicitEnd = false;
         } else {
-          r.end_date = '';
+          _setRowEndIso(r, '');
           delete r._auto_closed_by_id;
           r._explicitEnd = false;
-          if (crKey === 'employments') r.status = r._prev_status || 'Current';
-          else if (crKey === 'recurring_expenses') r.status = r._prev_status || 'In Force';
+          _applyReopenStatus(crKey, r);
         }
-        if (crKey === 'logistics_allowances' && Number(r.daily_usd) > 0 && r.start_date && r.end_date && r.log_mode !== 'single') {
-          const w = countPaidDaysInWindow(r.start_date, r.end_date, r);
+        if (crKey === 'logistics_allowances' && Number(r.daily_usd) > 0 && r.start_date && _rowEndIso(r) && r.log_mode !== 'single') {
+          const w = countPaidDaysInWindow(r.start_date, _rowEndIso(r), r);
           if (w && w.paidDays > 0) r.amount = round2(Number(r.daily_usd) * w.paidDays);
         }
         reopened.push(r);
@@ -10429,14 +10581,186 @@
           rangeTo: (eNew || '9999-12-31') > eOld ? (eNew || '9999-12-31') : eOld,
           capChanged: Boolean(editOrig && Number(editOrig.capacity || 0) !== Number(ref.capacity || 0)),
         });
-        if (Array.isArray(extraApiPosts)) {
-          extraApiPosts.push(['equipment', eq]);
-        }
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push(['equipment', eq]);
         return bf;
       }
     }
-    return null;
+    return runDeclarativeChronoBackfill(crKey, savedRow, editOrig, extraApiPosts);
   }
+
+  // Resolves the active effective-dated log/agreement row in `crKey` matching `queryRow` on `txDate`.
+  // During an intentional gap `(prevPeer.end_date, nextPeer.start_date)` where no entry covers `txDate`,
+  // returns `null` so callers seamlessly fall back to catalog/list/baseline defaults!
+  function resolveEffectiveSeriesRow(crKey, queryRow, txDate) {
+    if (!crKey || !queryRow) return null;
+    const d = String(txDate || todayISO()).slice(0, 10);
+    const list = (SEED.records && SEED.records[crKey]) || [];
+    let best = null, bestStart = '';
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i];
+      if (!r || r.voided || !r.start_date) continue;
+      if (!isSameChronologicalSeries(crKey, queryRow, r)) continue;
+      const s = String(r.start_date).slice(0, 10);
+      const e = _rowEndIso(r);
+      if (s <= d && (!e || e >= d)) {
+        if (!best || s >= bestStart) {
+          best = r;
+          bestStart = s;
+        }
+      }
+    }
+    return best;
+  }
+
+  // Universal declarative backfill engine for any future (49th+) effective-dated table declaring
+  // `chronoBackfill` on `TABLE_CATALOG` or via `window.MFG_CHRONO.registerSpec(crKey, { backfill })`:
+  //   - Backfills matching historical records in `targetTable` across the affected `[rangeFrom, rangeTo]` window.
+  //   - Applies `valueMap` (`{ [logField]: targetField }`) inside active windows `[start_date, end_date]`.
+  //   - Automatically falls back to `spec.fallback` (function, `{ catalogTable, matchKey, catalogMatchKey, valueMap }`,
+  //     or literal fallback object) during intentional gaps `(E_old, S_new)` or when an agreement is voided!
+  function runDeclarativeChronoBackfill(crKey, savedRow, editOrig, extraApiPosts) {
+    const ref = savedRow || editOrig;
+    if (!ref || window.__fastInspectorModifyTest) return null;
+    const customSpec = CUSTOM_CHRONO_SPECS.get(crKey);
+    const cat = getCatalogChronoEntry(crKey);
+    const rawBf = (customSpec && (customSpec.backfill || customSpec.chronoBackfill))
+      || (cat && (cat.chronoBackfill || (cat.chronoSpec && cat.chronoSpec.backfill)))
+      || null;
+    if (!rawBf) return null;
+    const specs = Array.isArray(rawBf) ? rawBf : [rawBf];
+    const s1 = savedRow && savedRow.start_date ? String(savedRow.start_date).slice(0, 10) : '9999-12-31';
+    const s2 = editOrig && editOrig.start_date ? String(editOrig.start_date).slice(0, 10) : s1;
+    const e1 = savedRow ? (_rowEndIso(savedRow) || '9999-12-31') : '9999-12-31';
+    const e2 = editOrig ? (_rowEndIso(editOrig) || '9999-12-31') : '9999-12-31';
+    const rangeFrom = s1 < s2 ? s1 : s2;
+    const rangeTo = e1 > e2 ? e1 : e2;
+
+    let totalUpdated = 0;
+    specs.forEach(spec => {
+      if (!spec || !spec.targetTable) return;
+      const targetTable = String(spec.targetTable);
+      const tRows = (SEED.records && SEED.records[targetTable]) || [];
+      if (!Array.isArray(tRows) || !tRows.length) return;
+      const dateField = spec.dateField || 'rep_date';
+      const inferredDims = inferChronologicalSeriesKeys(crKey, ref, ref);
+      const matchPairs = [];
+      if (Array.isArray(spec.matchKeys) && spec.matchKeys.length) {
+        spec.matchKeys.forEach(mk => {
+          if (typeof mk === 'string') matchPairs.push([mk, mk]);
+          else if (Array.isArray(mk) && mk.length >= 2) matchPairs.push([mk[0], mk[1]]);
+        });
+      } else if (spec.matchKeys && typeof spec.matchKeys === 'object') {
+        Object.entries(spec.matchKeys).forEach(([lk, tk]) => matchPairs.push([lk, tk]));
+      } else {
+        inferredDims.forEach(k => matchPairs.push([k, k]));
+      }
+      const valueMap = (spec.valueMap && typeof spec.valueMap === 'object')
+        ? spec.valueMap
+        : { unit_price: 'unit_price' };
+
+      let tblUpdated = 0;
+      for (let i = 0; i < tRows.length; i++) {
+        const tr = tRows[i];
+        if (!tr || tr.voided) continue;
+        if (ref.company && tr.company && norm(ref.company) !== norm(tr.company)) continue;
+        const d = String(tr[dateField] || tr.date || tr.start_date || '').slice(0, 10);
+        if (!d || d < rangeFrom || d > rangeTo) continue;
+        let matches = true;
+        for (let m = 0; m < matchPairs.length; m++) {
+          const [lk, tk] = matchPairs[m];
+          if (ref[lk] != null && String(ref[lk]).trim() !== '' && norm(ref[lk]) !== norm(tr[tk] || '')) {
+            matches = false;
+            break;
+          }
+        }
+        if (!matches) continue;
+
+        const queryProbe = { company: tr.company || ref.company || '' };
+        matchPairs.forEach(([lk, tk]) => { queryProbe[lk] = tr[tk]; });
+        const activeLog = resolveEffectiveSeriesRow(crKey, queryProbe, d);
+
+        let nextVals = null;
+        if (activeLog) {
+          nextVals = {};
+          Object.entries(valueMap).forEach(([lk, tk]) => {
+            if (activeLog[lk] !== undefined) nextVals[tk] = activeLog[lk];
+          });
+          if (spec.ruleRefField) nextVals[spec.ruleRefField] = activeLog.name || activeLog.id || '';
+        } else if (spec.fallback) {
+          if (typeof spec.fallback === 'function') {
+            nextVals = spec.fallback(tr, SEED);
+          } else if (spec.fallback.catalogTable) {
+            const fbSpec = spec.fallback;
+            const catPool = (SEED.records && SEED.records[fbSpec.catalogTable]) || [];
+            const catMatchCol = fbSpec.catalogMatchKey || 'name';
+            const trMatchVal = norm(tr[fbSpec.matchKey || 'product'] || '');
+            const catRow = trMatchVal ? catPool.find(c => c && !c.voided && norm(c[catMatchCol] || '') === trMatchVal) : null;
+            if (catRow) {
+              nextVals = {};
+              const fbMap = fbSpec.valueMap || { list_price: 'unit_price' };
+              Object.entries(fbMap).forEach(([ck, tk]) => {
+                if (catRow[ck] !== undefined) nextVals[tk] = catRow[ck];
+              });
+              if (spec.ruleRefField && fbSpec.ruleLabel) nextVals[spec.ruleRefField] = fbSpec.ruleLabel;
+            }
+          } else if (typeof spec.fallback === 'object') {
+            nextVals = Object.assign({}, spec.fallback);
+          }
+        }
+        if (!nextVals) continue;
+
+        const origSnap = Object.assign({}, tr);
+        const changedSet = new Set();
+        Object.entries(nextVals).forEach(([tk, nv]) => {
+          const prevV = tr[tk];
+          const diff = (typeof nv === 'number' || typeof prevV === 'number')
+            ? Math.abs(Number(prevV || 0) - Number(nv || 0)) > 1e-6
+            : String(prevV ?? '') !== String(nv ?? '');
+          if (diff) {
+            tr[tk] = nv;
+            changedSet.add(tk);
+          }
+        });
+        if (!changedSet.size) continue;
+
+        if (typeof spec.recalcRow === 'function') {
+          spec.recalcRow(tr, activeLog, origSnap);
+        } else {
+          resolveUniversalFutureTableCalc(origSnap, tr, changedSet, getLbpFxRate(d));
+          if ('total_ttc' in tr && 'total' in tr) {
+            tr.total_ttc = round2(Number(tr.total || 0) + Number(tr.vat || 0));
+          }
+        }
+        tblUpdated++;
+        totalUpdated++;
+        if (!Array.isArray(STATE.customRecords[targetTable])) STATE.customRecords[targetTable] = [];
+        const cIdx = STATE.customRecords[targetTable].findIndex(x => x && String(x.id) === String(tr.id));
+        if (cIdx >= 0) Object.assign(STATE.customRecords[targetTable][cIdx], tr);
+        else STATE.customRecords[targetTable].unshift(Object.assign({}, tr));
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push([targetTable, tr]);
+      }
+      if (tblUpdated > 0 && SEED._tableRev) {
+        SEED._tableRev[targetTable] = (SEED._tableRev[targetTable] || 0) + 1;
+      }
+    });
+    if (totalUpdated > 0) SEED._customRev = (SEED._customRev || 0) + 1;
+    return { totalUpdated };
+  }
+
+  window.MFG_CHRONO = {
+    isEffectiveSeriesTable,
+    inferSeriesKeys: inferChronologicalSeriesKeys,
+    isSameSeries: isSameChronologicalSeries,
+    getPeers: getChronologicalSeriesPeers,
+    getBounds: getChronologicalSeriesBounds,
+    validate: validateChronologicalSeriesEntry,
+    syncNeighbors: syncChronologicalSeriesNeighbors,
+    reopenOnVoid: reopenChronologicalSeriesOnVoid,
+    resolveActive: resolveEffectiveSeriesRow,
+    backfill: backfillEffectiveLogChange,
+    registerSpec: registerChronoSeriesSpec,
+    unregisterSpec: unregisterChronoSeriesSpec,
+  };
 
   let _arrUidSeq = 1;
   const _arrUidWM = new WeakMap();
@@ -46560,14 +46884,14 @@
         }
       }
     }
-    if (record && EFFECTIVE_SERIES_TABLES.has(crKey) && errors.length === 0) {
+    if (record && isEffectiveSeriesTable(crKey, record) && errors.length === 0) {
       const pendSalOrig = (!editCtx && STATE.editingPendingSalaryId && crKey === 'employments')
         ? findEmploymentRecordById(STATE.editingPendingSalaryId)
         : null;
       const editOrig = (editCtx && editCtx.crKey === crKey && editCtx.orig) ? editCtx.orig : pendSalOrig;
       const datesChanged = !editOrig
         || String(record.start_date || '') !== String(editOrig.start_date || '')
-        || String(record.end_date || '') !== String(editOrig.end_date || '');
+        || _rowEndIso(record) !== _rowEndIso(editOrig);
       if (datesChanged) {
         const chronoChk = validateChronologicalSeriesEntry(crKey, record, editOrig);
         if (!chronoChk.ok) {
@@ -47223,11 +47547,12 @@
       const editOrigModal = (isEditingExisting && editCtx && editCtx.crKey === crKey && editCtx.orig)
         ? editCtx.orig
         : pendSalOrigSnap;
-      if (EFFECTIVE_SERIES_TABLES.has(crKey) && record.start_date) {
+      const isEffModalTbl = isEffectiveSeriesTable(crKey, record);
+      if (isEffModalTbl && record.start_date) {
         syncChronologicalSeriesNeighbors(crKey, record, editOrigModal, extraApiPosts);
       }
       applyCustomRecordsToSeed();
-      if (EFFECTIVE_SERIES_TABLES.has(crKey) || crKey === 'products') {
+      if (isEffModalTbl || crKey === 'products') {
         backfillEffectiveLogChange(crKey, record, editOrigModal, extraApiPosts);
         applyCustomRecordsToSeed();
       }
@@ -47348,11 +47673,12 @@
     }
     applyCustomRecordsToSeed();
     const restoredRow = r || archivedSeed;
-    if (restoredRow && EFFECTIVE_SERIES_TABLES.has(crKey) && restoredRow.start_date) {
+    const isEffRestoredTbl = restoredRow ? isEffectiveSeriesTable(crKey, restoredRow) : false;
+    if (restoredRow && isEffRestoredTbl && restoredRow.start_date) {
       syncChronologicalSeriesNeighbors(crKey, restoredRow, null, extraRestorePosts);
       applyCustomRecordsToSeed();
     }
-    if (restoredRow && (EFFECTIVE_SERIES_TABLES.has(crKey) || crKey === 'products')) {
+    if (restoredRow && (isEffRestoredTbl || crKey === 'products')) {
       backfillEffectiveLogChange(crKey, restoredRow, null, extraRestorePosts);
       applyCustomRecordsToSeed();
     }
@@ -47459,11 +47785,12 @@
       });
     }
     const voidedTarget = r || seedRow;
-    if (voidedTarget && EFFECTIVE_SERIES_TABLES.has(crKey)) {
+    const isEffVoidTbl = voidedTarget ? isEffectiveSeriesTable(crKey, voidedTarget) : false;
+    if (voidedTarget && isEffVoidTbl) {
       reopenChronologicalSeriesOnVoid(crKey, voidedTarget, extraVoidPosts);
     }
     applyCustomRecordsToSeed();
-    if (voidedTarget && (EFFECTIVE_SERIES_TABLES.has(crKey) || crKey === 'products')) {
+    if (voidedTarget && (isEffVoidTbl || crKey === 'products')) {
       backfillEffectiveLogChange(crKey, null, voidedTarget, extraVoidPosts);
       applyCustomRecordsToSeed();
     }
@@ -53257,6 +53584,29 @@
         const mJvPct = isJvMod ? (getModNum('jv_share') || row.jv_share || 50) : 0;
         html = `<span>Category: <b>${esc(formatSiteCategoryLabel(mCat))}</b></span><span>Region: <b>${esc(mReg)}</b></span><span>${isCustSite ? 'Linked Customer' : 'Site Owner'}: <b>${esc(mParty)}</b></span>${isJvMod ? `<span>JV Partner: <b>${esc(mJvPart)} (${mJvPct}%)</b></span>` : ''}`;
       }
+      if (modDrawer && isEffectiveSeriesTable(key, row)) {
+        const modCand = Object.assign({}, row);
+        modDrawer.querySelectorAll('[data-mod-field]').forEach(inp => {
+          const fk = inp.getAttribute('data-mod-field');
+          if (fk && fk !== 'effective_from' && fk !== 'effective_to') modCand[fk] = inp.value;
+        });
+        const bounds = getChronologicalSeriesBounds(key, modCand, row);
+        const sInpMod = $('insp_edit_start_date');
+        if (sInpMod) {
+          if (bounds.minStart) sInpMod.setAttribute('min', bounds.minStart);
+          else sInpMod.removeAttribute('min');
+          if (bounds.maxStart) sInpMod.setAttribute('max', bounds.maxStart);
+          else sInpMod.removeAttribute('max');
+        }
+        const eInpMod = $('insp_edit_end_date') || $('insp_edit_effective_to');
+        if (eInpMod) {
+          const curModS = String((sInpMod && sInpMod.value) || row.start_date || '').slice(0, 10);
+          if (curModS) eInpMod.setAttribute('min', curModS);
+          else eInpMod.removeAttribute('min');
+          if (bounds.maxEnd) eInpMod.setAttribute('max', bounds.maxEnd);
+          else eInpMod.removeAttribute('max');
+        }
+      }
       modLiveCalcEl.innerHTML = html;
       modLiveCalcEl.hidden = !html;
     };
@@ -53405,12 +53755,12 @@
           return;
         }
         const candStartDt = String((pendingUpdates.start_date !== undefined ? pendingUpdates.start_date : row.start_date) || '').slice(0, 10);
-        const candEndDt = String((pendingUpdates.end_date !== undefined ? pendingUpdates.end_date : row.end_date) || '').slice(0, 10);
+        const candEndDt = String((pendingUpdates.end_date !== undefined ? pendingUpdates.end_date : (pendingUpdates.effective_to !== undefined ? pendingUpdates.effective_to : (row.end_date || row.effective_to))) || '').slice(0, 10);
         if (candStartDt && candEndDt && candEndDt < candStartDt) {
           toast('End Date cannot be before Start Date.', 'err');
           return;
         }
-        if (!window.__fastInspectorModifyTest && EFFECTIVE_SERIES_TABLES.has(key) && ('start_date' in pendingUpdates || 'end_date' in pendingUpdates)) {
+        if (!window.__fastInspectorModifyTest && isEffectiveSeriesTable(key, row) && ('start_date' in pendingUpdates || 'end_date' in pendingUpdates || 'effective_to' in pendingUpdates)) {
           const chronoChk = validateChronologicalSeriesEntry(key, Object.assign({}, row, pendingUpdates), row);
           if (!chronoChk.ok) {
             toast(chronoChk.reason, 'err');
@@ -53989,11 +54339,12 @@
         else STATE.customRecords[key].unshift(Object.assign({}, row));
         if (!window.__fastInspectorModifyTest) {
           const inspExtraPosts = [];
-          if (EFFECTIVE_SERIES_TABLES.has(key) && row.start_date) {
+          const isEffInspTbl = isEffectiveSeriesTable(key, row);
+          if (isEffInspTbl && row.start_date) {
             syncChronologicalSeriesNeighbors(key, row, origRowSnap, inspExtraPosts);
           }
           applyCustomRecordsToSeed();
-          if (EFFECTIVE_SERIES_TABLES.has(key) || key === 'products') {
+          if (isEffInspTbl || key === 'products') {
             backfillEffectiveLogChange(key, row, origRowSnap, inspExtraPosts);
             applyCustomRecordsToSeed();
           }

@@ -1393,13 +1393,17 @@
     p20_recon:      { id: 'p20_recon',      view: 'statements',      modSec: 'recon',      short: 'Statement Recon',    targetLabel: 'Statements & Reports' }
   };
 
-  // STANDING RULES FOR ALL PRESENT & FUTURE TABLES IN TABLE_CATALOG (enforced by build/verify_mfg.mjs 7z-33, 7z-freq & SVG icon gates):
+  // STANDING RULES FOR ALL PRESENT & FUTURE TABLES IN TABLE_CATALOG (enforced by build/verify_mfg.mjs 7z-33, 7z-freq, 7z-chrono & SVG icon gates):
   //   1. Frequency-First Search & Comboboxes (7z-freq): Every new table added to SEED.records / TABLE_CATALOG is automatically
   //      indexed by getFreqIndex() (window.MFG_FREQ / fIdx.forCol). All search boxes, column filter popovers (#colFilterPopover),
   //      comboboxes (.pa-suggest / .rdl-combo), filterable selects, and 360° Modify Drawer lookups MUST rank options strictly by
   //      operational usage frequency descending (exact.concat(freqOrdered) when typing — NEVER alphabetical localeCompare or startsWith override).
   //   2. Semantic Status Icons & New-Entry Parity (7z-33): Pair operational status/timing/audit flags with 24x24 vector SVGs (js/icons.js)
   //      and wire inline + New button, row-click Edit Mode / 360° Inspector, hub charts, and pbiPage analytics coverage.
+  //   3. Chronological Effective-Date Logs, Gap Fallback & Edit Backfill (7z-chrono / window.MFG_CHRONO): Any present or future table
+  //      with start_date + end_date/effective_to is automatically governed by isEffectiveSeriesTable() (in-place edit, Start Date > prior
+  //      entry guard, Open predecessor auto-close at prevDayISO(S_new), intentional gap preservation when _explicitEnd = true, default/List
+  //      Price fallback during gaps, and declarative chronoBackfill onto dependent transaction tables on add/edit/void/restore).
   // All 48 Relational Tables organized into 5 BU-Scoped Operational Domains + Dedicated 6 · Universal (All BUs) Shared Master Group
   const TABLE_CATALOG = [
     // 1 · Sales, Pricing & Receivables (5 BU-scoped)

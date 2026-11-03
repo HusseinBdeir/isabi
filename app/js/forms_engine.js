@@ -38,7 +38,7 @@
   const MIN_DATE = '2024-01-01';
   const ic = (name, cls) => (typeof window !== 'undefined' && window.MFG_ICONS ? window.MFG_ICONS.svg(name, cls) : '');
 
-  // STANDING RULES FOR ALL PRESENT & FUTURE TABLES / FORMS (enforced by build/verify_mfg.mjs 7z-33 & 7z-freq):
+  // STANDING RULES FOR ALL PRESENT & FUTURE TABLES / FORMS (enforced by build/verify_mfg.mjs 7z-33, 7z-freq & 7z-chrono):
   // A. New-Entry Tab Parity (7z-33): Every + New Entry tab added to FORM_GROUPS MUST declare:
   //   1. crKey   -> record table key registered in window.MFG_PBI.TABLE_CATALOG (#tables + hub subgrid)
   //   2. hubView -> operational hub or Universal Registry view hosting its record table, + New button & charts
@@ -47,6 +47,11 @@
   //   Every combobox (dl / .pa-suggest), filterable <select> (.pa-select-filter), catalog lookup, and search box
   //   for any present or future table MUST rank options by operational usage frequency descending via uniqSorted(..., fIdx.<domain>)
   //   or fIdx.forCol(colKey), preserving exact.concat(freqOrdered) on typed queries (never localeCompare / never startsWith override).
+  // C. Chronological Effective-Date Logs, Gap Fallback & Universal Edit Backfill (7z-chrono / window.MFG_CHRONO):
+  //   Every effective-dated log, agreement, schedule, rate, or assignment form/subgrid (start_date + end_date/effective_to)
+  //   MUST support in-place editing, block Start Date <= prior entry's Start Date (or explicit End Date), auto-close Open
+  //   predecessors at prevDayISO(S_new) while preserving intentional gaps (_explicitEnd), fall back to baseline/List Price
+  //   during intentional gaps, and retroactively backfill affected historical records on add/edit/void/restore.
   const FORM_GROUPS = [
     {
       id: 'sales',
