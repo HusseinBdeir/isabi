@@ -70,7 +70,7 @@ HTML = f"""<!doctype html>
       <span class="chip">Field Kiosks &amp; Cited AI</span>
     </div>
   </div>
-  <div class="url">husseinbdeir.github.io/isabi</div>
+  <div class="url">isabisystems.com</div>
   <div class="rule"></div>
 </body></html>
 """

@@ -22,29 +22,29 @@ HEAD = """<!DOCTYPE html>
   <meta name="author" content="Hussein Bdeir">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <meta name="color-scheme" content="light dark">
-  <link rel="canonical" href="https://husseinbdeir.github.io/isabi/">
+  <link rel="canonical" href="https://isabisystems.com/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="ISABI Systems">
   <meta property="og:locale" content="en_US">
-  <meta property="og:url" content="https://husseinbdeir.github.io/isabi/">
+  <meta property="og:url" content="https://isabisystems.com/">
   <meta property="og:title" content="ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI">
   <meta property="og:description" content="The ERP Your Group Actually Runs On. Custom operations, double-entry accounting, executive dashboards, printable statements, field kiosks, and Ask ISABI AI, live in 1 to 2 weeks with tailored setup and simple per-seat pricing.">
-  <meta property="og:image" content="https://husseinbdeir.github.io/isabi/og-image.png">
+  <meta property="og:image" content="https://isabisystems.com/og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="ISABI Systems. The ERP Your Group Actually Runs On.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="ISABI Systems | Custom Enterprise ERP, Executive Dashboards and Cited AI">
   <meta name="twitter:description" content="Custom operations, double-entry accounting, executive dashboards, printable statements, offline-ready field kiosks, and Ask ISABI AI with tailored setup and simple per-seat pricing.">
-  <meta name="twitter:image" content="https://husseinbdeir.github.io/isabi/og-image.png">
+  <meta name="twitter:image" content="https://isabisystems.com/og-image.png">
   <meta name="theme-color" content="#FAF9F6">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ISABI Systems">
-  <link rel="manifest" href="manifest.json?v=6.11">
-  <link rel="icon" href="icon.svg?v=6.11" type="image/svg+xml" sizes="any">
-  <link rel="icon" href="favicon.ico?v=6.11" sizes="48x48 32x32 16x16">
-  <link rel="apple-touch-icon" href="icon-180.png?v=6.11">
+  <link rel="manifest" href="manifest.json?v=6.12">
+  <link rel="icon" href="icon.svg?v=6.12" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="favicon.ico?v=6.12" sizes="48x48 32x32 16x16">
+  <link rel="apple-touch-icon" href="icon-180.png?v=6.12">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap">
@@ -70,11 +70,11 @@ import json as _json
 ORG_JSONLD = _json.dumps({
     "@context": "https://schema.org",
     "@type": "ProfessionalService",
-    "@id": "https://husseinbdeir.github.io/isabi/#org",
+    "@id": "https://isabisystems.com/#org",
     "name": "ISABI Systems",
-    "url": "https://husseinbdeir.github.io/isabi/",
-    "logo": "https://husseinbdeir.github.io/isabi/icon-512.png?v=6.11",
-    "image": "https://husseinbdeir.github.io/isabi/og-image.png",
+    "url": "https://isabisystems.com/",
+    "logo": "https://isabisystems.com/icon-512.png?v=6.12",
+    "image": "https://isabisystems.com/og-image.png",
     "slogan": "The ERP Your Group Actually Runs On",
     "description": "Custom enterprise ERP operations, double-entry financial accounting, interactive executive dashboards, bilingual printable statements, offline-ready field kiosks, and the Ask ISABI assistant with tailored setup and simple per-seat pricing.",
     "email": "hbdeir16@gmail.com",
@@ -99,6 +99,8 @@ def main():
 
     with open(OUT_HTML, 'w', encoding='utf-8', newline='\n') as f:
         f.write(full_html)
+    with open(os.path.join(ROOT, 'CNAME'), 'w', encoding='utf-8', newline='\n') as f:
+        f.write('isabisystems.com\n')
 
     # Check JS syntax with node --check
     tmp_js = os.path.join(ROOT, 'build', '_check_syntax.js')
@@ -129,7 +131,7 @@ def main():
     mirror_dir = os.path.join(os.path.expanduser('~'), 'OneDrive - BHFIRMS', 'System', 'System', 'ISABI', 'Website')
     if os.path.isdir(mirror_dir):
         import shutil
-        for mf in ('index.html', 'sw.js', 'manifest.json', 'og-image.png', 'favicon.ico', 'icon.svg', 'icon-maskable.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'):
+        for mf in ('index.html', 'CNAME', 'sw.js', 'manifest.json', 'og-image.png', 'favicon.ico', 'icon.svg', 'icon-maskable.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-512-maskable.png'):
             msrc = os.path.join(ROOT, mf)
             if os.path.exists(msrc):
                 shutil.copy2(msrc, os.path.join(mirror_dir, mf))

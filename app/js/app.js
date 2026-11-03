@@ -33844,11 +33844,15 @@
                 </div>
               </div>
               <div class="system-showcase-sub">Explore the public ISABI Systems overview, interactive multi-industry ERP and executive analytics blueprints, live sandbox tours, and tailored setup + per-seat plans.</div>
+              <div class="system-showcase-links">
+                <span class="sys-link-pill"><strong>Client Website:</strong> <a href="${esc(showcaseHref)}" class="sys-link-url">isabisystems.com</a> <button type="button" class="sys-link-copy-btn" data-copy-isabi-url="https://isabisystems.com/">Copy</button></span>
+                <span class="sys-link-pill"><strong>ISABI App:</strong> <a href="./" class="sys-link-url">isabisystems.com/app</a> <button type="button" class="sys-link-copy-btn" data-copy-isabi-url="https://isabisystems.com/app/">Copy</button></span>
+              </div>
             </div>
           </div>
           <a href="${esc(showcaseHref)}" class="btn system-showcase-btn" id="railShowcaseLink" aria-label="Public Showcase">
             <i class="nav-ico" aria-hidden="true">${ic('showcase')}</i>
-            <span>Public Showcase</span>
+            <span>Client Website</span>
           </a>
         </div>
       </div>
@@ -58955,7 +58959,7 @@
     const sysBar = $('railSystemBar');
     if (sysBar) {
       let anySysVisible = false;
-      sysBar.querySelectorAll('.rail-sys-btn').forEach(btn => {
+      sysBar.querySelectorAll('button.rail-sys-btn[data-hub]').forEach(btn => {
         const hubId = btn.getAttribute('data-hub') || btn.getAttribute('data-view');
         const vis = canViewHub(hubId, user);
         btn.hidden = !vis;
@@ -65470,7 +65474,7 @@
       if (canonicalLbl) btn.setAttribute('aria-label', canonicalLbl);
       btn.removeAttribute('title');
     });
-    document.querySelectorAll('#railSystemBar .rail-sys-btn').forEach(btn => {
+    document.querySelectorAll('#railSystemBar button.rail-sys-btn[data-hub]').forEach(btn => {
       const hubId = btn.getAttribute('data-hub') || btn.getAttribute('data-view');
       const v = btn.getAttribute('data-view') || hubId;
       const hubDef = getHubDef(hubId);
@@ -67987,9 +67991,19 @@
     const snapEl = $('railRlsScope');
     if (snapEl) snapEl.removeAttribute('title');
     const showcaseHref = (IS_LOCAL && !location.pathname.includes('/app/')) ? '/showcase/' : '../';
-    ['authShowcaseLink', 'railShowcaseLink'].forEach(id => {
+    ['authShowcaseLink', 'railShowcaseLink', 'railClientSiteLink'].forEach(id => {
       const el = $(id);
       if (el) el.setAttribute('href', showcaseHref);
+    });
+    document.addEventListener('click', e => {
+      const copyBtn = e.target && typeof e.target.closest === 'function' ? e.target.closest('[data-copy-isabi-url]') : null;
+      if (!copyBtn) return;
+      const urlToCopy = copyBtn.getAttribute('data-copy-isabi-url') || '';
+      if (!urlToCopy) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(urlToCopy).catch(() => {});
+      }
+      toast('Copied link: ' + urlToCopy, 'good');
     });
 
     // Mobile ↔ desktop titles follow the viewport (debounced; never while a form is open)
@@ -68343,7 +68357,7 @@
         return;
       }
       const navBtn = rawTarget.closest('#sidebarNav button.nav-item');
-      const sysBtn = !navBtn ? rawTarget.closest('#railSystemBar button.rail-sys-btn') : null;
+      const sysBtn = !navBtn ? rawTarget.closest('#railSystemBar .rail-sys-btn') : null;
       let textEl = null;
       let anchorEl = null;
       let fullText = '';
@@ -68488,7 +68502,7 @@
     }
     window.addEventListener('scroll', hideAllChartTooltips, { passive: true });
 
-    document.querySelectorAll('#sidebarNav .nav-item, #railSystemBar .rail-sys-btn').forEach(btn => btn.addEventListener('click', () => clickHub(btn.getAttribute('data-hub') || btn.getAttribute('data-view'))));
+    document.querySelectorAll('#sidebarNav .nav-item, #railSystemBar button.rail-sys-btn[data-hub]').forEach(btn => btn.addEventListener('click', () => clickHub(btn.getAttribute('data-hub') || btn.getAttribute('data-view'))));
     document.querySelectorAll('#mobileBottomDock [data-dock-view]').forEach(btn => btn.addEventListener('click', () => {
       const dv = btn.getAttribute('data-dock-view');
       const u = activeUser();

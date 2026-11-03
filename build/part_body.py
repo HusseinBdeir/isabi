@@ -823,6 +823,7 @@ BODY = f"""
           Custom operations, double-entry accounting, live dashboards, printable statements, field kiosks, and cited AI with tailored setup and simple per-seat plans.
         </p>
         <div class="ftr-contact">
+          <b>{ICONS["cloud"]} Client Website:</b> <a href="https://isabisystems.com/">isabisystems.com</a> · <b>{ICONS["lock"]} ISABI App:</b> <a href="app/">isabisystems.com/app</a><br>
           <b>{ICONS["wa"]} Direct WhatsApp:</b> <a href="https://wa.me/96170444955" target="_blank" rel="noopener">+961 70 444 955</a><br>
           <b>{ICONS["mail"]} Direct Email:</b> <a href="mailto:hbdeir16@gmail.com">hbdeir16@gmail.com</a>
         </div>

@@ -1,5 +1,5 @@
 """sync_app.py — Syncs the ISABI Command Center PWA bundle (from bhfirms/mfg-web) into bhfirms/isabi/app/.
-Ensures https://husseinbdeir.github.io/isabi/app/ serves the exact verified Command Center assets.
+Ensures https://isabisystems.com/app/ serves the exact verified Command Center assets.
 """
 import os
 import shutil
