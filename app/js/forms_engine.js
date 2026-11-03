@@ -860,7 +860,8 @@
       if (e) {
         if (e.role || e.position) parts.push(e.role || e.position);
         const baseNet = round2(Number(e.salary_usd || e.amount || 0) + Number(e.reimbursement || 0) - Number(e.deduction || 0));
-        if (baseNet > 0 && fType !== 'attendance') parts.push(`${fmtUsd(baseNet)}/mo`);
+        if (e.salary_pending && fType !== 'attendance') parts.push('Salary Pending ($0)');
+        else if (baseNet > 0 && fType !== 'attendance') parts.push(`${fmtUsd(baseNet)}/mo`);
         if (e.company) parts.push(e.company);
       }
       return [n, parts.join(' · ')];
@@ -1899,46 +1900,81 @@
 
     if (fType === 'freelance' || fType === 'employment') {
       const isContract = fType === 'employment';
+      const pendSalId = String((ctx && ctx.STATE && ctx.STATE.editingPendingSalaryId) || '').trim();
+      const allEmpsPool = (((ctx && ctx.STATE && ctx.STATE.customRecords && ctx.STATE.customRecords.employments) || []).concat(rec.employments || []));
+      const pendSalRow = pendSalId ? (allEmpsPool.find(r => r && !r.voided && String(r.id) === pendSalId) || null) : null;
+      const empCoVal = pendSalRow ? (pendSalRow.company || company) : company;
+      const empCoOpts = comps.includes(empCoVal) ? comps : [empCoVal].concat(comps);
+      const empCompanyField = pendSalRow
+        ? fld('Company (BU) *', sel('f_company', empCoOpts, empCoVal), { id: 'wrap_f_company', hidden: isSingleBuScope, lockField: 'f_company', lockReason: 'Locked to the company recorded on onboarding' })
+        : companyField;
+      const empStartVal = pendSalRow ? String(pendSalRow.start_date || pendSalRow.date || today).slice(0, 10) : today;
+      const empEndVal = pendSalRow ? String(pendSalRow.end_date || '').slice(0, 10) : '';
+      const empStaffVal = pendSalRow ? String(pendSalRow.staff || '') : '';
+      const empRoleVal = pendSalRow ? String(pendSalRow.role || '') : '';
+      const empPayVal = pendSalRow
+        ? (pendSalRow.pay_type || (/Daily/i.test(String(pendSalRow.type || '')) ? 'Daily' : (isContract ? 'Monthly' : 'Daily')))
+        : (isContract ? 'Monthly' : 'Daily');
+      const empWorkDaysVal = pendSalRow ? String(pendSalRow.working_days || (/Daily/i.test(empPayVal) ? 26 : 30)) : '30';
+      const empWorkHoursVal = pendSalRow ? String(pendSalRow.working_hours || 8) : '8';
+      const empAmtVal = (pendSalRow && Number(pendSalRow.base_salary || pendSalRow.salary_usd || pendSalRow.daily_rate || pendSalRow.amount || 0) > 0)
+        ? String(pendSalRow.base_salary || pendSalRow.salary_usd || pendSalRow.daily_rate || pendSalRow.amount)
+        : '';
+      const empNotesVal = pendSalRow ? String(pendSalRow.notes || '') : '';
+      const amtLbl = isContract
+        ? `<span id="lbl_emp_amount">${/Daily/i.test(empPayVal) ? 'Daily Rate ($) *' : 'Base Salary ($) *'}</span>`
+        : '<span id="lbl_emp_amount">Amount ($) *</span>';
+      const amtInputHtml = `<div class="exp-amt-input-wrap" id="empAmtInputWrap">${inp('f_amount', 'number', empAmtVal, `step="0.01" min="0" inputmode="decimal" placeholder="${pendSalRow ? 'Enter final agreed amount...' : '0.00'}"`)}<button type="button" class="exp-switch-priced-btn" id="empSwitchToPricedBtn" data-emp-salary-mode="priced" hidden>${ic('dollar')} Enter ${isContract ? 'Salary' : 'Rate'}</button></div>`;
+      const salaryModePillsHtml = pendSalRow ? '' : `<div class="exp-price-mode-bar" id="empSalaryModePills" role="group" aria-label="Salary availability"><button type="button" class="uom-qpill active" data-emp-salary-mode="priced">${isContract ? 'Enter Salary ($)' : 'Enter Rate ($)'}</button><button type="button" class="uom-qpill" data-emp-salary-mode="pending">Salary Pending ($0)</button></div>`;
+      const pendingBannerHtml = pendSalRow
+        ? `<div class="exp-complete-pending-banner" id="empCompletePendingBanner"><span>${ic('lock')} Onboarding &amp; schedule fields on <b>${esc(empStaffVal || pendSalRow.name || pendSalRow.id)}</b> (${esc(pendSalRow.name || pendSalRow.id)}) are locked. Enter the final agreed <b>${isContract ? (/Daily/i.test(empPayVal) ? 'Daily Rate ($)' : 'Base Salary ($)') : 'Amount ($)'}</b> below.</span></div>`
+        : '';
       if (isContract) {
         return `
+          ${adminHeaderHtml}
+          ${pendingBannerHtml}
+          <input type="hidden" id="f_salary_pending" value="0">
           <div class="form-grid-3">
-            ${companyField}
-            ${fld('Start Date *', inp('f_date', 'date', today))}
-            ${fld('End Date', inp('f_enddate', 'date', ''), { id: 'wrap_emp_enddate' })}
-            ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
-            ${fld('Role', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type role..."') + dl('dl_roles', roleNames), { id: 'wrap_emp_role' })}
-            ${fld('Pay Basis', sel('f_paytype', [['Monthly', 'Monthly'], ['Daily', 'Daily']], 'Monthly'), { id: 'wrap_emp_paytype' })}
+            ${empCompanyField}
+            ${fld('Start Date *', inp('f_date', 'date', empStartVal, pendSalRow ? 'readonly' : ''), pendSalRow ? { id: 'wrap_f_date', lockField: 'f_date', lockReason: 'Locked to the start date recorded on onboarding' } : { id: 'wrap_f_date' })}
+            ${fld('End Date', inp('f_enddate', 'date', empEndVal, pendSalRow ? 'readonly' : ''), pendSalRow ? { id: 'wrap_emp_enddate', lockField: 'f_enddate', lockReason: 'Locked to the end date recorded on onboarding' } : { id: 'wrap_emp_enddate' })}
+            ${fld('Staff *', inp('f_staff', 'text', empStaffVal, `list="dl_staff" placeholder="Select or type staff..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_staff', staffMetaItems), pendSalRow ? { id: 'wrap_emp_staff', lockField: 'f_staff', lockReason: 'Locked to the onboarded staff member', hintId: 'hint_emp_staff', hint: '' } : { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
+            ${fld('Role', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dl('dl_roles', roleNames), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
+            ${fld('Pay Basis', sel('f_paytype', [['Monthly', 'Monthly'], ['Daily', 'Daily']], empPayVal), pendSalRow ? { id: 'wrap_emp_paytype', lockField: 'f_paytype', lockReason: 'Locked to the pay basis recorded on onboarding' } : { id: 'wrap_emp_paytype' })}
             <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
             <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
-            ${fld('Base Salary ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_emp_amount' })}
-            ${fld('Work Days / Mo', inp('f_workdays', 'number', '30', 'step="1" min="1" max="31"'), { id: 'wrap_emp_workdays' })}
-            ${fld('Hours / Day', inp('f_workhours', 'number', '8', 'step="0.5" min="1" max="24"'), { id: 'wrap_emp_workhours' })}
-            ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+            ${fld(amtLbl, amtInputHtml, { id: 'wrap_emp_amount', hintId: 'hint_emp_salary', hint: '', afterHtml: salaryModePillsHtml })}
+            ${fld('Work Days / Mo', inp('f_workdays', 'number', empWorkDaysVal, `step="1" min="1" max="31"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_workdays', lockField: 'f_workdays', lockReason: 'Locked to the contracted schedule recorded on onboarding' } : { id: 'wrap_emp_workdays' })}
+            ${fld('Hours / Day', inp('f_workhours', 'number', empWorkHoursVal, `step="0.5" min="1" max="24"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_workhours', lockField: 'f_workhours', lockReason: 'Locked to the contracted daily hours recorded on onboarding' } : { id: 'wrap_emp_workhours' })}
+            ${fld('Notes', inp('f_notes', 'text', empNotesVal, pendSalRow ? 'placeholder="Optional salary agreement note..."' : ''), { span: true })}
           </div>
           <div class="live-calc" id="empLiveCalc">
             <div><small>Contract</small><b id="calc_emp_prior">Select Staff</b></div>
-            <div><small>Pay Basis</small><b id="calc_emp_basis">Monthly</b></div>
-            <div><small>Daily / Hourly</small><b id="calc_emp_rates">—</b></div>
+            <div><small>Pay Basis</small><b id="calc_emp_basis">${esc(empPayVal)}</b></div>
+            <div><small>Daily / Hourly</small><b id="calc_emp_rates">-</b></div>
             <div><small>Monthly Salary</small><b id="calc_emp_total">$0.00</b></div>
           </div>
         `;
       }
       return `
+        ${adminHeaderHtml}
+        ${pendingBannerHtml}
+        <input type="hidden" id="f_salary_pending" value="0">
         <div class="form-grid-3">
-          ${companyField}
-          ${fld('Work Date *', inp('f_date', 'date', today))}
-          ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
+          ${empCompanyField}
+          ${fld('Work Date *', inp('f_date', 'date', empStartVal, pendSalRow ? 'readonly' : ''), pendSalRow ? { id: 'wrap_f_date', lockField: 'f_date', lockReason: 'Locked to the work date recorded on onboarding' } : { id: 'wrap_f_date' })}
+          ${fld('Staff *', inp('f_staff', 'text', empStaffVal, `list="dl_staff" placeholder="Select or type staff..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_staff', staffMetaItems), pendSalRow ? { id: 'wrap_emp_staff', lockField: 'f_staff', lockReason: 'Locked to the onboarded worker', hintId: 'hint_emp_staff', hint: '' } : { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
           <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
           <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
-          ${fld('Role', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type role..."') + dl('dl_roles', roleNames), { id: 'wrap_emp_role' })}
-          ${fld('Pay Basis', sel('f_paytype', [['Daily', 'Daily'], ['Lump Sum', 'Lump Sum']], 'Daily'), { id: 'wrap_emp_paytype' })}
-          ${fld('Amount ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0"'), { id: 'wrap_emp_amount' })}
-          ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
+          ${fld('Role', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dl('dl_roles', roleNames), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
+          ${fld('Pay Basis', sel('f_paytype', [['Daily', 'Daily'], ['Lump Sum', 'Lump Sum']], empPayVal), pendSalRow ? { id: 'wrap_emp_paytype', lockField: 'f_paytype', lockReason: 'Locked to the pay basis recorded on onboarding' } : { id: 'wrap_emp_paytype' })}
+          ${fld(amtLbl, amtInputHtml, { id: 'wrap_emp_amount', hintId: 'hint_emp_salary', hint: '', afterHtml: salaryModePillsHtml })}
+          ${fld('Notes', inp('f_notes', 'text', empNotesVal, pendSalRow ? 'placeholder="Optional rate agreement note..."' : ''), { span: true })}
         </div>
         <div class="live-calc" id="empLiveCalc">
           <div><small>Status</small><b id="calc_emp_prior">Select Staff</b></div>
-          <div><small>Pay Basis</small><b id="calc_emp_basis">Daily</b></div>
-          <div><small>Daily / Hourly</small><b id="calc_emp_rates">—</b></div>
+          <div><small>Pay Basis</small><b id="calc_emp_basis">${esc(empPayVal)}</b></div>
+          <div><small>Daily / Hourly</small><b id="calc_emp_rates">-</b></div>
           <div><small>Amount</small><b id="calc_emp_total">$0.00</b></div>
         </div>
       `;

@@ -226,6 +226,7 @@
     kioskSchedWeekOffset: 0,
     kioskLastPunch: null,
     editingRecord: null,
+    editingPendingSalaryId: '',
     activeUserIdx: 0,
     authed: false,
     saving: false,
@@ -1160,18 +1161,18 @@
     return Number(p.amount || 0);
   }
   function empContractMonthlyUsd(e, fxOverride) {
-    if (!e) return 0;
+    if (!e || e.salary_pending) return 0;
     const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate(e.end_date || SEED_DATE, 'LBP');
     const uSal = Number(e.salary_usd || 0) || ((!e.salary_lbp && Number(e.daily_rate || 0)) ? (Number(e.daily_rate || 0) * (Number(e.working_days || 26) || 26)) : 0);
     return round2(uSal + (Number(e.salary_lbp || 0) / fxRate));
   }
   function empContractReimbUsd(e, fxOverride) {
-    if (!e) return 0;
+    if (!e || e.salary_pending) return 0;
     const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate(e.end_date || SEED_DATE, 'LBP');
     return round2(Number(e.reimbursement || 0) + (Number(e.reimbursement_lbp || 0) / fxRate));
   }
   function empContractDedUsd(e, fxOverride) {
-    if (!e) return 0;
+    if (!e || e.salary_pending) return 0;
     const fxRate = fxOverride > 0 ? fxOverride : getLbpFxRate(e.end_date || SEED_DATE, 'LBP');
     return round2(Number(e.deduction || 0) + (Number(e.deduction_lbp || 0) / fxRate));
   }
@@ -1998,6 +1999,33 @@
     }
     closeRecordInspector();
     openEntryModal('raw', { completePendingRawId: String(row.id) });
+  }
+  function isPendingSalaryEmployment(e) {
+    return Boolean(e && !e.voided && e.salary_pending);
+  }
+  function findEmploymentRecordById(empId) {
+    const q = String(empId == null ? '' : empId).trim();
+    if (!q) return null;
+    const cList = (STATE.customRecords && Array.isArray(STATE.customRecords.employments)) ? STATE.customRecords.employments : [];
+    const cHit = cList.find(x => x && !x.voided && String(x.id) === q);
+    if (cHit) return cHit;
+    const sList = (SEED && SEED.records && Array.isArray(SEED.records.employments)) ? SEED.records.employments : [];
+    const sHit = sList.find(x => x && !x.voided && String(x.id) === q);
+    if (sHit) return sHit;
+    const qNorm = norm(q);
+    return cList.find(x => isPendingSalaryEmployment(x) && norm(x.staff) === qNorm)
+      || sList.find(x => isPendingSalaryEmployment(x) && norm(x.staff) === qNorm)
+      || null;
+  }
+  function openPendingSalaryModal(empId) {
+    const row = findEmploymentRecordById(empId);
+    if (!row) {
+      toast('Employment contract not found', 'err');
+      return;
+    }
+    const formKey = /^freelance/i.test(String(row.type || '')) ? 'freelance' : 'employment';
+    closeRecordInspector();
+    openEntryModal(formKey, { completePendingSalaryId: String(row.id) });
   }
 
   // m18a RECEIPTS_BASE & SETTLE_BASE
@@ -6576,6 +6604,86 @@
     `;
   }
 
+  function getScopedPendingSalaryEmployments(opts) {
+    const list = filterRecords(
+      (SEED && SEED.records && SEED.records.employments) || [],
+      Object.assign({ ignorePeriod: true, ignoreSearch: true }, opts || {})
+    ).filter(isPendingSalaryEmployment);
+    const rows = list.slice().sort((a, b) => String(b.start_date || b.date || '').localeCompare(String(a.start_date || a.date || '')));
+    return { rows, count: rows.length };
+  }
+
+  function getPendingSalaryExceptionBadge(u, targetView) {
+    const allowed = targetView
+      ? canViewView(targetView, u)
+      : (canViewView('payroll_contracts', u) || canViewView('payroll', u));
+    if (!allowed) return null;
+    const pend = getScopedPendingSalaryEmployments({ ignoreSearch: true });
+    return pend.count > 0 ? { text: `${fmtNum(pend.count)} Pending`, cls: 'warn' } : null;
+  }
+
+  function renderPendingSalaryQueuePanel(pendRows) {
+    const rows = Array.isArray(pendRows) ? pendRows : [];
+    const canEdit = canModifyData() || canEnterForm('employment') || canEnterForm('freelance');
+    const canAdd = canEnterForm('employment');
+    if (!rows.length) {
+      return `
+        <div class="pending-price-queue-card" id="pendingSalaryQueuePanel" style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px;border-left:3px solid var(--brass)">
+          <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+            <div class="panel-title"><span>${ic('clock')} STAFF AWAITING SALARY ASSIGNMENT (0 PENDING)</span></div>
+            <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${canAdd ? `<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11px" data-open-pending-salary="1">+ Pending-Salary Hire</button>` : ''}
+              <button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11px" data-chip="all">Show All</button>
+            </span>
+          </div>
+          <div style="padding:12px 16px;font-size:12.5px;color:var(--ink-2);line-height:1.5">
+            No staff contracts are awaiting salary assignment in this company scope. When a worker starts before management finalizes their pay, onboard them via <b>+ New Contract · Salary Pending ($0)</b>; attendance, kiosk punches, and site transport run immediately at $0.00 base until the final salary is entered.
+          </div>
+        </div>
+      `;
+    }
+    return `
+      <div class="pending-price-queue-card" id="pendingSalaryQueuePanel" style="background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:14px;border-left:4px solid var(--warn)">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div class="panel-title"><span>${ic('clock')} STAFF AWAITING SALARY ASSIGNMENT (${fmtNum(rows.length)} PENDING)</span></div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <span class="mu" style="font-size:11.5px">Active on roster &amp; kiosk at $0.00 base/OT until final salary is entered (retroactive from Start Date)</span>
+            ${canAdd ? `<button type="button" class="btn btn-ghost-bar" style="padding:4px 9px;font-size:11px" data-open-pending-salary="1">+ Pending-Salary Hire</button>` : ''}
+            ${exportBtn('pendingSalaryQueuePanel', 'Pending_Salary_Contracts')}
+          </span>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Start Date</th><th>Contract</th><th>Co.</th><th>Staff Member</th><th>Role / Basis</th><th class="r">Schedule</th><th>End Date</th><th class="r">Salary Status</th>${canEdit ? '<th class="r">Action</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(e => {
+                const basisLbl = [e.role || '', e.pay_type || e.type || 'Monthly'].filter(Boolean).join(' · ');
+                const schedLbl = `${fmtNum(e.working_days || 30, 0)}d × ${fmtNum(e.working_hours || 8, 0)}h`;
+                return `
+                  <tr class="rrow" data-rkey="employments" data-rid="${esc(e.id)}">
+                    <td class="mono">${esc(fmtDateDMY(e.start_date || e.date))}${appCell(e, 'employments')}</td>
+                    <td class="mono"><strong>${esc(e.name || e.id)}</strong></td>
+                    <td>${coBadge(e.company)}</td>
+                    <td><strong>${esc(e.staff || '-')}</strong></td>
+                    <td>${esc(basisLbl)}</td>
+                    <td class="r mono">${esc(schedLbl)}</td>
+                    <td class="mono">${esc(e.end_date ? fmtDateDMY(e.end_date) : 'Open')}</td>
+                    <td class="r"><span class="badge badge-warn">Pending Salary ($0.00)</span></td>
+                    ${canEdit ? `<td class="r"><button type="button" class="btn btn-primary" style="padding:3px 9px;font-size:11px" data-set-pending-salary-id="${esc(e.id)}" data-ui-tip="Open contract and enter final salary or daily rate">${ic('dollar')} Enter Final Salary</button></td>` : ''}
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   function getLedgerExceptionBadge(u, k) {
     if (!canViewView('ledger', u)) return null;
     if (k && k.tb_check != null && Math.abs(Number(k.tb_check)) >= 0.005) {
@@ -6588,6 +6696,7 @@
     if (hubId === 'overview') return getSentinelExceptionBadge(u, sentinelsOpen);
     if (hubId === 'raw') return getPendingPriceExceptionBadge(u);
     if (hubId === 'fleet') return getFleetExceptionBadge(u) || getDieselExceptionBadge(u);
+    if (hubId === 'payroll') return getPendingSalaryExceptionBadge(u) || getWorkforceMapExceptionBadge(u);
     if (hubId === 'ledger') return getLedgerExceptionBadge(u, k);
     return null;
   }
@@ -6657,7 +6766,7 @@
         { view: 'workforce_map', label: 'Daily Plant & Machine Map', icon: 'workforce_map', badgeFn: u => getWorkforceMapExceptionBadge(u) },
         { view: 'payroll_attendance', label: 'Attendance & Overtime', icon: 'payroll_attendance' },
         { view: 'payroll_allowances', label: 'Site Transport', icon: 'payroll_allowances' },
-        { view: 'payroll_contracts', label: 'Contracts & OT Rates', icon: 'payroll_contracts' }
+        { view: 'payroll_contracts', label: 'Contracts & OT Rates', icon: 'payroll_contracts', badgeFn: u => getPendingSalaryExceptionBadge(u, 'payroll_contracts') }
       ]
     },
     {
@@ -8967,7 +9076,11 @@
   // - > 1 day and <= 30 days (up to a month before): ACCEPTED with yellow warning (status = 'warn')
   // - > 30 days (more than a month before): ACCEPTED with no warning (status = 'ok')
   function isSelfEditingRow(row, expectedCrKey) {
-    if (!row || !STATE.editingRecord || !STATE.editingRecord.id) return false;
+    if (!row) return false;
+    if ((!expectedCrKey || expectedCrKey === 'employments') && STATE.editingPendingSalaryId && String(row.id) === String(STATE.editingPendingSalaryId)) {
+      return true;
+    }
+    if (!STATE.editingRecord || !STATE.editingRecord.id) return false;
     if (expectedCrKey && STATE.editingRecord.crKey !== expectedCrKey) return false;
     return String(row.id) === String(STATE.editingRecord.id);
   }
@@ -12622,7 +12735,8 @@
       incomplete_ticket_books: new Set(padAudit.skipped.map(x => `${x.company}|${x.padRun}`)).size,
       missing_tickets_in_books: padAudit.skipped.reduce((s, x) => s + Number(x.count || 0), 0),
       unmatched_salary_payments_usd: liveUnmatchedTotalUsd,
-      unmatched_salary_by_staff: liveUnmatchedStaff
+      unmatched_salary_by_staff: liveUnmatchedStaff,
+      pending_salary_contracts: empsScoped.filter(isPendingSalaryEmployment).length
     });
 
     // 3. Live Date-Basis Parity > N Days & Unlinked VAT Invoices (S8)
@@ -12860,17 +12974,18 @@
 
     const unmatched = Number(pricing.unmatched_salary_payments_usd || 0);
     const unmatchedStaffCnt = (pricing.unmatched_salary_by_staff || []).length;
+    const pendSalCnt = Number(pricing.pending_salary_contracts || 0);
     const s7MinUnm = getAlertParam('S7', 'min_unmatched_usd', 0);
     rawItems.push({
       id: 'S7',
       code: 'Rule #19 · Payroll Contracts', title: 'Salary Payments Without an Employment Contract',
-      detail: `${fmtUSD(unmatched, 2)} paid across ${fmtNum(unmatchedStaffCnt)} staff without an active contract for that month · ${fmtUSD(fleet.unallocated_driver_payroll_usd || 0, 0)} driver payroll unallocated (${fmtNum(fleet.unallocated_driver_months_count || 0)} months).`,
-      severity: unmatched > s7MinUnm ? 'warn' : 'ok',
-      badge: unmatched > s7MinUnm ? fmtUSD(unmatched, 0) + ' UNMATCHED' : 'MATCHED',
+      detail: `${fmtUSD(unmatched, 2)} paid across ${fmtNum(unmatchedStaffCnt)} staff without an active contract for that month · ${fmtUSD(fleet.unallocated_driver_payroll_usd || 0, 0)} driver payroll unallocated (${fmtNum(fleet.unallocated_driver_months_count || 0)} months)${pendSalCnt > 0 ? ` · ${fmtNum(pendSalCnt)} active contract${pendSalCnt === 1 ? '' : 's'} awaiting final salary ($0.00)` : ''}.`,
+      severity: (unmatched > s7MinUnm || pendSalCnt > 0) ? 'warn' : 'ok',
+      badge: unmatched > s7MinUnm ? fmtUSD(unmatched, 0) + ' UNMATCHED' : (pendSalCnt > 0 ? fmtNum(pendSalCnt) + ' SALARY PENDING' : 'MATCHED'),
       company: scope,
       rawMetric: round2(unmatched),
-      rawSecondary: unmatchedStaffCnt,
-      scrollPanel: 'snPayroll', navView: 'payroll_contracts', navLabel: 'Open Contracts'
+      rawSecondary: unmatchedStaffCnt + pendSalCnt,
+      scrollPanel: unmatched > s7MinUnm ? 'snPayroll' : (pendSalCnt > 0 ? 'pendingSalaryQueuePanel' : 'snPayroll'), navView: 'payroll_contracts', navLabel: 'Open Contracts'
     });
 
     const anomalies = Number(parity.date_basis_anomalies_gt_31d_count || 0);
@@ -21374,7 +21489,7 @@
   function getStaffContractProfile(staffName, company, onDate) {
     const k = norm(staffName);
     const def = {
-      hasContract: false, staff: staffName || '', company: company || 'WTC',
+      hasContract: false, salaryPending: false, contractId: '', staff: staffName || '', company: company || 'WTC',
       type: 'Monthly', status: 'No Contract', role: '',
       monthlySalary: 0, dailyRateInput: 0,
       workingDays: 30, workingHours: 8, otMultiplier: 1.0, lateMultiplier: 1.0,
@@ -21412,19 +21527,22 @@
       return String(b.start_date || '').localeCompare(String(a.start_date || ''));
     });
     const best = sorted[0];
+    const isPendSal = isPendingSalaryEmployment(best);
     const fxRate = getLbpFxRate();
     const wDays = Number(best.working_days || 0) > 0 ? Number(best.working_days) : 30;
     const wHrs = Number(best.working_hours || best.shift_hours || 0) > 0 ? Number(best.working_hours || best.shift_hours) : 8;
-    const dRateIn = Number(best.daily_rate || 0);
-    const mSalRaw = (Number(best.salary_usd || best.base_salary || 0) + (Number(best.salary_lbp || 0) / fxRate)) || (dRateIn > 0 ? round2(dRateIn * wDays) : 0);
+    const dRateIn = isPendSal ? 0 : Number(best.daily_rate || 0);
+    const mSalRaw = isPendSal ? 0 : ((Number(best.salary_usd || best.base_salary || 0) + (Number(best.salary_lbp || 0) / fxRate)) || (dRateIn > 0 ? round2(dRateIn * wDays) : 0));
     const extDays = Number(best.extended || 0);
-    const mSal = mSalRaw + (extDays && wDays > 0 ? (extDays * (mSalRaw / wDays)) : 0);
+    const mSal = isPendSal ? 0 : (mSalRaw + (extDays && wDays > 0 ? (extDays * (mSalRaw / wDays)) : 0));
     const otMult = Number(best.overtime_multiplier || 0) > 0 ? Number(best.overtime_multiplier) : 1.0;
     const ltMult = Number(best.lateness_multiplier || 0) > 0 ? Number(best.lateness_multiplier) : 1.0;
-    const dailyRate = dRateIn > 0 ? dRateIn : (mSal > 0 ? (mSal / wDays) : 25);
-    const hourlyRate = mSal > 0 ? (mSal / (wDays * wHrs)) : (dailyRate / wHrs);
+    const dailyRate = isPendSal ? 0 : (dRateIn > 0 ? dRateIn : (mSal > 0 ? (mSal / wDays) : 25));
+    const hourlyRate = isPendSal ? 0 : (mSal > 0 ? (mSal / (wDays * wHrs)) : (dailyRate / wHrs));
     const outProf = {
       hasContract: true,
+      salaryPending: isPendSal,
+      contractId: String(best.id || ''),
       staff: best.staff || staffName,
       company: best.company || company || 'WTC',
       contractCompany: best.company || 'WTC',
@@ -22099,7 +22217,9 @@
           ot_logs: 0,
           late_logs: 0,
           active_months: 0,
-          hasContract: prof.hasContract
+          hasContract: prof.hasContract,
+          salary_pending: Boolean(prof.salaryPending),
+          pending_emp_id: prof.salaryPending ? (prof.contractId || '') : ''
         });
       }
       return staffMap.get(key);
@@ -22177,6 +22297,9 @@
       const s = ensureStaff(e.staff, e.company);
       s.hasContract = true;
       if (e.type) s.type = e.type;
+      if (isPendingSalaryEmployment(e) && !s.pending_emp_id) {
+        s.pending_emp_id = String(e.id || '');
+      }
       const coNorm = norm(e.company || s.company || 'WTC');
       const sk = norm(e.staff || '(Unassigned)');
       const cStart = String(e.start_date || '2025-01-01').slice(0, 10);
@@ -22269,23 +22392,30 @@
         let salLbpRaw = 0;
         effCList.forEach(item => {
           const ce = item.contract;
+          const cePend = isPendingSalaryEmployment(ce);
           const share = totActDays > 0 ? (item.actDays / totActDays) : 1;
-          const uSal = Number(ce.salary_usd || 0) || ((!ce.salary_lbp && Number(ce.daily_rate || 0)) ? (Number(ce.daily_rate || 0) * (Number(ce.working_days || 26) || 26)) : 0);
-          const lSal = Number(ce.salary_lbp || 0);
+          const uSal = cePend ? 0 : (Number(ce.salary_usd || 0) || ((!ce.salary_lbp && Number(ce.daily_rate || 0)) ? (Number(ce.daily_rate || 0) * (Number(ce.working_days || 26) || 26)) : 0));
+          const lSal = cePend ? 0 : Number(ce.salary_lbp || 0);
           salUsdRaw += uSal * share;
           salLbpRaw += lSal * share;
         });
+
+        const primPend = isPendingSalaryEmployment(prim);
+        if (primPend && (!prim.end_date || String(prim.end_date).slice(0, 10) >= effSiteCutoff)) {
+          s.salary_pending = true;
+          if (!s.pending_emp_id && prim.id) s.pending_emp_id = String(prim.id);
+        }
 
         const mFx = getLbpFxRate(effCList[0].effMEnd || `${ym}-28`, 'LBP');
         const salUsdExt = salUsdRaw + (extDays && wDays > 0 ? extDays * (salUsdRaw / wDays) : 0);
         const salLbpExt = salLbpRaw + (extDays && wDays > 0 ? extDays * (salLbpRaw / wDays) : 0);
         const mBase = salUsdExt + (salLbpExt / mFx);
 
-        const reimbU = Number(prim.reimbursement || 0);
-        const reimbL = Number(prim.reimbursement_lbp || 0);
+        const reimbU = primPend ? 0 : Number(prim.reimbursement || 0);
+        const reimbL = primPend ? 0 : Number(prim.reimbursement_lbp || 0);
         const mReimb = reimbU + (reimbL / mFx);
-        const dedRateU = Number(prim.deduction || 0);
-        const dedRateL = Number(prim.deduction_lbp || 0);
+        const dedRateU = primPend ? 0 : Number(prim.deduction || 0);
+        const dedRateL = primPend ? 0 : Number(prim.deduction_lbp || 0);
         const dedRate = dedRateU + (dedRateL / mFx);
 
         // Cumulative annual vacation entitlement (granted in January) vs taken VacAbsence + ConfigVacAbs
@@ -23320,6 +23450,8 @@
       nextYmLabel: nextYmLbl,
       nextMonthLabel: nextYmLbl,
       prevMonth: prevYmVal,
+      salaryPending: Boolean(prof.salaryPending),
+      pendingContractId: prof.salaryPending ? (prof.contractId || '') : '',
       baseSalary,
       reimbursement,
       contractDed,
@@ -23740,6 +23872,11 @@
         s.sal_status_cls = 'badge-brass';
         s.sal_status_tip = `Paid on ${String(s.date || '').slice(0, 10)} in advance for ${pos.ymLabel} · Contract Base: ${fmtUSD(pos.baseNet, 2)}`;
         s.is_advance_sal = true;
+      } else if (pos.salaryPending) {
+        s.sal_status_lbl = 'Advance (Salary Pending)';
+        s.sal_status_cls = 'badge-warn';
+        s.sal_status_tip = `Active contract has Salary Pending ($0.00) · Paid as advance (${fmtUSD(cumPaid, 2)}) until final salary is entered`;
+        s.is_advance_sal = true;
       } else if (cumPaid > pos.monthNetEarned + 1) {
         const over = round2(cumPaid - pos.monthNetEarned);
         s.sal_status_lbl = `Advance +${fmtUSD(over, 0)}`;
@@ -23778,6 +23915,7 @@
     const filteredEmpBase = subMode === 'contracts'
       ? (STATE.chipFilter === 'all' ? empAll : empAll.filter(e => {
           const ended = e.status === 'Ended' || (e.end_date && String(e.end_date) < today);
+          if (STATE.chipFilter === 'pending_salary') return isPendingSalaryEmployment(e);
           if (STATE.chipFilter === 'active_emp') return !ended;
           if (STATE.chipFilter === 'ended_emp') return ended;
           if (STATE.chipFilter === 'freelance_emp') return /free|daily/i.test(String(e.type || ''));
@@ -24557,6 +24695,8 @@
     }
 
     if (subMode === 'contracts') {
+      const pendingSalaryRows = empAll.filter(isPendingSalaryEmployment);
+      const canSetPendingSal = canModifyData() || canEnterForm('employment') || canEnterForm('freelance');
       const reimbEmpCount = empAll.filter(e => empContractReimbUsd(e, fxRate) > 0 || empContractDedUsd(e, fxRate) > 0).length;
       const flRowsAll = filterRecords(SEED.records.freelance_entries || []);
       const flSorted = sortRows(flRowsAll, 'pay_fl', 'date', 'desc');
@@ -24574,6 +24714,7 @@
         : '';
       return `
         ${bannerHtml}
+        ${(pendingSalaryRows.length > 0 || STATE.chipFilter === 'pending_salary') ? renderPendingSalaryQueuePanel(pendingSalaryRows) : ''}
         <div class="panel-card" id="payEmpPanel">
           <div class="table-toolbar">
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -24581,6 +24722,7 @@
               <div class="chip-bar">
                 ${chip('all', `All (${empAll.length})`)}
                 ${chip('active_emp', `Current (${activeEmpCount})`)}
+                ${chip('pending_salary', `Pending Salary (${pendingSalaryRows.length})`)}
                 ${chip('ended_emp', `Ended (${empAll.length - activeEmpCount})`)}
                 ${chip('freelance_emp', `Freelance (${empAll.filter(e => /free|daily/i.test(String(e.type || ''))).length})`)}
                 ${reimbEmpCount ? chip('reimb_emp', `With Reimb/Ded (${reimbEmpCount})`) : ''}
@@ -24590,6 +24732,7 @@
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button type="button" class="btn btn-ghost-bar" data-nav-jump="payroll_allowances">Site Transport (${fmtNum(logAll.length)})</button>
               ${exportBtn('payEmpPanel', 'Employment_Contracts')}
+              ${canEnterForm('employment') ? '<button type="button" class="btn btn-ghost-bar" data-open-pending-salary="1">+ Pending-Salary Hire</button>' : ''}
               ${canEnterForm('freelance') ? '<button type="button" class="btn btn-brass" data-open-modal="freelance">+ Freelance / Daily</button>' : ''}
               ${canEnterForm('employment') ? '<button type="button" class="btn btn-primary" data-open-modal="employment">+ New Contract</button>' : ''}
             </div>
@@ -24601,6 +24744,7 @@
               <tbody>
                 ${shownEmp.map(e => {
                   const ended = e.status === 'Ended' || (e.end_date && String(e.end_date) < today);
+                  const isPend = isPendingSalaryEmployment(e);
                   return `
                   <tr class="rrow ${ended ? 'pbi-row-amber' : ''}" data-rkey="employments" data-rid="${esc(e.id)}">
                     <td><strong>${esc(e.staff)}</strong>${appCell(e, 'employments')}</td>
@@ -24612,7 +24756,7 @@
                     <td class="r">${fmtNum(e.working_days || 26, 0)}d</td>
                     <td class="r">${fmtNum(e.working_hours || 9, 0)}h</td>
                     <td class="r">${fmtNum(e.overtime_multiplier || 1.5, 1)}×</td>
-                    <td class="r"><strong>${fmtUSD(empContractMonthlyUsd(e, fxRate), 2)}</strong></td>
+                    <td class="r">${isPend ? `<span class="badge badge-warn">Pending ($0.00)</span>${canSetPendingSal ? ` <button type="button" class="btn btn-primary" style="padding:2px 8px;font-size:10.5px;margin-left:4px" data-set-pending-salary-id="${esc(e.id)}">$ Enter Salary</button>` : ''}` : `<strong>${fmtUSD(empContractMonthlyUsd(e, fxRate), 2)}</strong>`}</td>
                     <td class="r">${empContractReimbUsd(e, fxRate) ? fmtUSD(empContractReimbUsd(e, fxRate), 2) : '—'}</td>
                     <td class="r">${empContractDedUsd(e, fxRate) ? fmtUSD(empContractDedUsd(e, fxRate), 2) : '—'}</td>
                   </tr>`;
@@ -24830,12 +24974,13 @@
             <tbody>
               ${shownStaff.map(r => {
                 const lbpNote = (r.earnings_lbp || r.paid_lbp) ? `USD Rem: ${fmtUSD(r.rem_usd, 2)} · LBP Earn: ${fmtNum(r.earnings_lbp, 0)} LL · LBP Paid: ${fmtNum(r.paid_lbp, 0)} LL · LBP Rem: ${fmtNum(r.rem_lbp, 0)} LL ÷ ${fmtNum(fxRate, 0)} = ${fmtSignedUSD(round2(r.rem_lbp / fxRate), 2)}` : '';
+                const canSetRegPend = (canModifyData() || canEnterForm('employment') || canEnterForm('freelance')) && Boolean(r.pending_emp_id);
                 return `
-                <tr class="rrow ${!r.is_active ? 'pbi-row-amber' : ''}" data-rkey="employments" data-rid="${esc(r.staff)}">
-                  <td>${relLink('employments', r.staff, r.staff, true)}${!r.hasContract ? ' <span class="badge badge-warn" data-ui-tip="Salary payment without an employment contract">No contract</span>' : ''}</td>
+                <tr class="rrow ${!r.is_active ? 'pbi-row-amber' : ''}" data-rkey="employments" data-rid="${esc(r.salary_pending && r.pending_emp_id ? r.pending_emp_id : r.staff)}">
+                  <td>${relLink('employments', r.staff, r.staff, true)}${!r.hasContract ? ' <span class="badge badge-warn" data-ui-tip="Salary payment without an employment contract">No contract</span>' : (r.salary_pending ? ` <span class="badge badge-warn" data-ui-tip="Active contract awaiting final salary assignment ($0.00)">Pending Salary</span>${canSetRegPend ? ` <button type="button" class="btn btn-primary" style="padding:1px 7px;font-size:10.5px;margin-left:4px" data-set-pending-salary-id="${esc(r.pending_emp_id)}">$ Enter Salary</button>` : ''}` : '')}</td>
                   <td>${coBadge(r.company)}</td>
                   <td><span class="badge ${r.is_active ? 'badge-ok' : 'badge-warn'}">${esc(r.status)}</span></td>
-                  <td class="r"${r.active_months ? ` data-ui-tip="${esc(`${r.active_months} active contract months${r.vac_rem ? ` · Rem Vacation: ${fmtNum(r.vac_rem, 1)}d` : ''}`)}"` : ''}>${fmtUSD(r.base, 2)}</td>
+                  <td class="r"${r.active_months ? ` data-ui-tip="${esc(`${r.active_months} active contract months${r.vac_rem ? ` · Rem Vacation: ${fmtNum(r.vac_rem, 1)}d` : ''}`)}"` : ''}>${r.salary_pending && r.base === 0 ? '<span class="badge badge-warn">Pending ($0.00)</span>' : fmtUSD(r.base, 2)}</td>
                   <td class="r">${r.ot_hrs ? fmtNum(r.ot_hrs, 1) : '-'}</td>
                   <td class="r">${r.att_ot_pay ? fmtUSD(r.att_ot_pay, 2) : '-'}</td>
                   <td class="r"${r.trip_ot_cnt ? ` data-ui-tip="${esc(`${fmtNum(r.trip_ot_cnt, 0)} night OT trips (${fmtNum(r.sales_ot_trips || 0, 0)} Sales · ${fmtNum(r.raw_ot_trips || 0, 0)} Quarry)`)}"` : ''}>${r.trip_ot_pay ? fmtUSD(r.trip_ot_pay, 2) : '-'}</td>
@@ -33955,8 +34100,10 @@
         FORM_UI.driverManual = false;
         FORM_UI.afterHoursYesterday = false;
         if ($('f_date')) {
-          const pendRow = STATE.editingPendingExpenseId ? findExpenseRecordById(STATE.editingPendingExpenseId) : null;
-          $('f_date').value = (pendRow && pendRow.date) || todayISO();
+          const pendRow = STATE.editingPendingExpenseId
+            ? findExpenseRecordById(STATE.editingPendingExpenseId)
+            : (STATE.editingPendingSalaryId ? findEmploymentRecordById(STATE.editingPendingSalaryId) : null);
+          $('f_date').value = (pendRow && (pendRow.date || pendRow.start_date)) || todayISO();
         }
         box.hidden = true;
         recalcForm();
@@ -34038,7 +34185,7 @@
     }
     FORM_UI.lastDate = d;
     const backdateDays = getAlertParam('G_BACKDATE_NOTE', 'backdate_warn_days', 30);
-    const skipLockedPendBackdate = Boolean(STATE.editingPendingExpenseId && !isFieldAdminUnlocked('f_date'));
+    const skipLockedPendBackdate = Boolean((STATE.editingPendingExpenseId || STATE.editingPendingSalaryId) && !isFieldAdminUnlocked('f_date'));
     if (d > today) setHint('hint_date', 'Future dates are blocked', 'crit');
     else if (d < MIN_DATE) setHint('hint_date', 'Before the books opened (' + MIN_DATE + ')', 'crit');
     else if (!skipLockedPendBackdate && isAlertRuleEnabled('G_BACKDATE_NOTE') && daysBetween(d, today) > backdateDays) { setHint('hint_date', 'Back-dated ' + daysBetween(d, today) + ' days — add a note', 'warn'); warnings.push('backdated'); }
@@ -37194,6 +37341,11 @@
               statusTag = `<span class="badge badge-warn">No Active Contract on File</span>`;
               statusCls = 'is-warn';
               statusFoot = effThisPay > 0 ? `Uncontracted Payment (${fmtUSD(effThisPay, 2)})` : 'No Active Contract';
+            } else if (pos.salaryPending) {
+              const canEnterPendSal = (canModifyData() || canEnterForm('employment') || canEnterForm('freelance')) && Boolean(pos.pendingContractId);
+              statusTag = `<span class="badge badge-warn">Salary Pending ($0.00 Base)</span>${canEnterPendSal ? ` <button type="button" class="att-preset-pill" data-set-pending-salary-id="${esc(pos.pendingContractId)}">Enter Final Salary First</button>` : ''}`;
+              statusCls = 'is-warn';
+              statusFoot = effThisPay > 0 ? `Advance (${fmtUSD(effThisPay, 2)} · Salary Pending)` : 'Salary Pending ($0.00)';
             } else if (pos.isFutureMonth) {
               statusTag = effThisPay > 0
                 ? `<span class="badge badge-warn">Advance Payment · Future Month (${esc(pos.monthLabel)}) · Advancing ${fmtUSD(effThisPay, 2)}</span>`
@@ -37226,9 +37378,11 @@
             }
 
             setHint('hint_sal_staff', pos.hasContract
-              ? `${prof.role || 'Staff'} (${prof.company || curCo}${pos.contractInOtherBu ? ' — switch BU or cross-BU pay' : ''}) · Base ${fmtUSD(pos.baseNet, 2)}/mo`
+              ? (pos.salaryPending
+                ? `${prof.role || 'Staff'} (${prof.company || curCo}) · Active contract with Salary Pending ($0.00 until assigned)`
+                : `${prof.role || 'Staff'} (${prof.company || curCo}${pos.contractInOtherBu ? ' — switch BU or cross-BU pay' : ''}) · Base ${fmtUSD(pos.baseNet, 2)}/mo`)
               : `No active employment contract in ${curCo}`,
-              pos.contractInOtherBu ? 'warn' : (pos.hasContract ? 'ok' : 'warn'));
+              (pos.contractInOtherBu || pos.salaryPending) ? 'warn' : (pos.hasContract ? 'ok' : 'warn'));
 
             if (!isBonus && pos.isFutureMonth) {
               if (effThisPay > 0) {
@@ -38872,16 +39026,17 @@
             cardEl.hidden = true;
             cardEl.innerHTML = '';
           } else if (prof.hasContract) {
+            const canSetAttPend = Boolean(prof.salaryPending && prof.contractId && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance')));
             cardEl.hidden = false;
-            cardEl.className = 'att-contract-strip' + (existingLeaveRow && attMode === 'leave' ? ' is-warn' : '');
+            cardEl.className = 'att-contract-strip' + ((existingLeaveRow && attMode === 'leave') || prof.salaryPending ? ' is-warn' : '');
             cardEl.innerHTML = `
-              <div><strong>${esc(prof.staff)}</strong> <span class="badge ${prof.status === 'Current' ? 'badge-ok' : 'badge-warn'}">${esc(prof.status)}</span> ${dupWarnHtml}</div>
+              <div><strong>${esc(prof.staff)}</strong> <span class="badge ${prof.status === 'Current' || prof.status === 'Active' ? 'badge-ok' : 'badge-warn'}">${esc(prof.status)}</span>${prof.salaryPending ? ` <span class="badge badge-warn">Salary Pending ($0.00)</span>${canSetAttPend ? ` <button type="button" class="att-preset-pill" data-set-pending-salary-id="${esc(prof.contractId)}">Enter Final Salary</button>` : ''}` : ''} ${dupWarnHtml}</div>
               <div class="att-contract-metrics">
-                <span><small>Monthly</small><b>${fmtUSD(prof.monthlySalary, 0)}</b></span>
+                <span><small>Monthly</small><b>${prof.salaryPending ? 'Pending ($0)' : fmtUSD(prof.monthlySalary, 0)}</b></span>
                 <span><small>Schedule</small><b>${attShiftWin ? esc(attShiftWin.badgeLabel) : `${prof.workingDays}d × ${fmtNum(prof.workingHours, 1)}h`}</b></span>
                 <span><small>OT Policy</small><b>${hasStaffRule && staffOtCfg ? esc(staffOtCfg.badgeText) : 'Contract Rate'}</b></span>
-                <span><small>OT Rate</small><b>${fmtUSD(prof.otHourlyRate, 2)}/hr (${prof.otMultiplier}×)</b></span>
-                <span><small>Daily</small><b>${fmtUSD(prof.dailyRate, 2)}/d</b></span>
+                <span><small>OT Rate</small><b>${prof.salaryPending ? '$0.00/hr (Pending)' : `${fmtUSD(prof.otHourlyRate, 2)}/hr (${prof.otMultiplier}×)`}</b></span>
+                <span><small>Daily</small><b>${prof.salaryPending ? '$0.00/d (Pending)' : `${fmtUSD(prof.dailyRate, 2)}/d`}</b></span>
               </div>
             `;
           } else {
@@ -39056,6 +39211,28 @@
       }
       if (STATE.modalForm === 'employment' || STATE.modalForm === 'freelance') {
         const isContract = STATE.modalForm === 'employment';
+        const pendSalEditRow = STATE.editingPendingSalaryId ? findEmploymentRecordById(STATE.editingPendingSalaryId) : null;
+        if (pendSalEditRow) {
+          applyFieldLockState('f_company', true, 'Locked to the company entity recorded on the contract');
+          applyFieldLockState('f_date', true, 'Locked to the start date recorded on the contract');
+          if (isContract) applyFieldLockState('f_enddate', true, 'Locked to the end date recorded on the contract');
+          applyFieldLockState('f_staff', true, 'Locked to the staff member recorded on the contract');
+          applyFieldLockState('f_role', true, 'Locked to the role recorded on the contract');
+          applyFieldLockState('f_paytype', true, 'Locked to the pay basis recorded on the contract');
+          if (isContract) {
+            applyFieldLockState('f_workdays', true, 'Locked to the scheduled working days recorded on the contract');
+            applyFieldLockState('f_workhours', true, 'Locked to the shift hours recorded on the contract');
+          }
+          if (!isFieldAdminUnlocked('f_company') && $('f_company')) $('f_company').value = pendSalEditRow.company || 'WTC';
+          if (!isFieldAdminUnlocked('f_date') && $('f_date')) $('f_date').value = String(pendSalEditRow.start_date || pendSalEditRow.date || todayISO()).slice(0, 10);
+          if (isContract && !isFieldAdminUnlocked('f_enddate') && $('f_enddate')) $('f_enddate').value = String(pendSalEditRow.end_date || '').slice(0, 10);
+          if (!isFieldAdminUnlocked('f_staff') && $('f_staff')) $('f_staff').value = pendSalEditRow.staff || '';
+          if (!isFieldAdminUnlocked('f_role') && $('f_role')) $('f_role').value = pendSalEditRow.role || '';
+          if (!isFieldAdminUnlocked('f_paytype') && $('f_paytype')) $('f_paytype').value = pendSalEditRow.pay_type || (/Daily/i.test(String(pendSalEditRow.type || '')) ? 'Daily' : 'Monthly');
+          if (isContract && !isFieldAdminUnlocked('f_workdays') && $('f_workdays')) $('f_workdays').value = String(pendSalEditRow.working_days || 30);
+          if (isContract && !isFieldAdminUnlocked('f_workhours') && $('f_workhours')) $('f_workhours').value = String(pendSalEditRow.working_hours || 8);
+        }
+        const salaryPending = !pendSalEditRow && val('f_salary_pending') === '1';
         const curStaff = val('f_staff');
         const curCo = val('f_company') || defaultEntryCompany();
         const txDate = val('f_date') || todayISO();
@@ -39063,8 +39240,34 @@
         const prof = getStaffContractProfile(curStaff, curCo, txDate);
         const eqInfo = resolveStaffEquipmentSitesInfo(curStaff, curCo, txDate);
         const payBasis = val('f_paytype') || (isContract ? 'Monthly' : 'Daily');
-        const amt = num('f_amount');
-        if (curStaff !== FORM_UI.lastAttStaff) {
+        const lblAmtEl = $('lbl_emp_amount');
+        if (lblAmtEl) {
+          lblAmtEl.textContent = salaryPending
+            ? 'Salary Pending ($0)'
+            : (isContract ? (/Daily/i.test(payBasis) ? 'Daily Rate ($) *' : 'Base Salary ($) *') : 'Amount ($) *');
+        }
+        const modePills = $('empSalaryModePills');
+        if (modePills) {
+          modePills.querySelectorAll('[data-emp-salary-mode]').forEach(btn => {
+            btn.classList.toggle('active', btn.getAttribute('data-emp-salary-mode') === (salaryPending ? 'pending' : 'priced'));
+          });
+        }
+        const amtWrap = $('empAmtInputWrap');
+        if (amtWrap) amtWrap.classList.toggle('is-pending', salaryPending);
+        const swBtn = $('empSwitchToPricedBtn');
+        if (swBtn) swBtn.hidden = !salaryPending;
+        const amtEl = $('f_amount');
+        if (amtEl) {
+          if (salaryPending) {
+            amtEl.readOnly = true;
+            if (amtEl.value !== '0.00' && amtEl.value !== '0') amtEl.value = '0.00';
+          } else if (amtEl.readOnly) {
+            amtEl.readOnly = false;
+            if (amtEl.value === '0.00' || amtEl.value === '0') amtEl.value = '';
+          }
+        }
+        const amt = salaryPending ? 0 : num('f_amount');
+        if (!pendSalEditRow && curStaff !== FORM_UI.lastAttStaff) {
           FORM_UI.lastAttStaff = curStaff;
           const roleEl = $('f_role');
           if (roleEl) {
@@ -39111,33 +39314,34 @@
           : null;
         const empStrip = $('empStaffContextStrip');
         if (empStrip) {
-          if (!curStaff) {
+          if (!curStaff || pendSalEditRow) {
             empStrip.hidden = true;
             empStrip.innerHTML = '';
           } else if (prof.hasContract) {
-            const diffBase = amt > 0 && payBasis === 'Monthly' ? round2(amt - prof.monthlySalary) : null;
+            const diffBase = amt > 0 && payBasis === 'Monthly' && !prof.salaryPending ? round2(amt - prof.monthlySalary) : null;
             empStrip.hidden = false;
             empStrip.className = 'att-contract-strip' + (sameDayDup ? ' is-warn' : '');
             empStrip.innerHTML = `
               <div>
                 <strong>${esc(prof.staff)}</strong>
-                <span class="badge ${prof.status === 'Current' ? 'badge-ok' : 'badge-neutral'}">${esc(prof.status)} Contract (${esc(prof.company || curCo)})</span>
+                <span class="badge ${prof.status === 'Current' || prof.status === 'Active' ? 'badge-ok' : 'badge-neutral'}">${esc(prof.status)} Contract (${esc(prof.company || curCo)})</span>
+                ${prof.salaryPending ? '<span class="badge badge-warn">Salary Pending ($0.00)</span>' : ''}
                 ${diffBase != null && Math.abs(diffBase) > 0.01 ? `<span class="badge ${diffBase > 0 ? 'badge-info' : 'badge-warn'}">${diffBase > 0 ? '+' : ''}${fmtUSD(diffBase, 2)} vs Current Base</span>` : ''}
                 ${sameDayDup ? `<span class="badge badge-warn">Duplicate Start Date (${esc(fmtDateDMY(txDate))})</span>` : ''}
                 ${!sameDayDup && openPriorEmp ? `<span class="badge badge-info">Auto-closes prior open contract (since ${esc(fmtDateDMY(openPriorEmp.start_date))})</span>` : ''}
                 ${!sameDayDup && nextNewerEmp ? `<span class="badge badge-info">Auto-caps before ${esc(fmtDateDMY(nextNewerEmp.start_date))}</span>` : ''}
               </div>
               <div class="att-contract-metrics">
-                <span><small>Current Base</small><b>${fmtUSD(prof.monthlySalary, 2)}/mo</b></span>
+                <span><small>Current Base</small><b>${prof.salaryPending ? 'Pending ($0)' : `${fmtUSD(prof.monthlySalary, 2)}/mo`}</b></span>
                 ${prof.reimbursement > 0 ? `<span><small>Reimb.</small><b>+${fmtUSD(prof.reimbursement, 2)}</b></span>` : ''}
                 <span><small>Schedule</small><b>${prof.workingDays}d × ${fmtNum(prof.workingHours, 1)}h</b></span>
-                <span><small>Hourly / OT</small><b>${fmtUSD(prof.hourlyRate, 2)} / ${fmtUSD(prof.otHourlyRate, 2)}</b></span>
+                <span><small>Hourly / OT</small><b>${prof.salaryPending ? '$0.00 / $0.00' : `${fmtUSD(prof.hourlyRate, 2)} / ${fmtUSD(prof.otHourlyRate, 2)}`}</b></span>
               </div>
             `;
           } else {
             empStrip.hidden = false;
             empStrip.className = 'att-contract-strip';
-            empStrip.innerHTML = `<span><b>${esc(curStaff)}</b> has no existing contract on file in ${esc(curCo)} · this entry establishes their ${isContract ? 'active contract' : 'freelance work log'}.</span>`;
+            empStrip.innerHTML = `<span><b>${esc(curStaff)}</b> has no existing contract on file in ${esc(curCo)} · this entry establishes their ${isContract ? 'active contract' : 'freelance work log'}${salaryPending ? ' with <b>Salary Pending ($0.00)</b>' : ''}.</span>`;
           }
         }
         const wDays = isContract ? Math.max(1, num('f_workdays') || (prof.workingDays || 30)) : (prof.workingDays || 26);
@@ -39145,12 +39349,21 @@
         const impDaily = payBasis === 'Monthly' ? (amt / wDays) : amt;
         const impHourly = impDaily / wHours;
         const impMonthly = payBasis === 'Monthly' ? amt : (payBasis === 'Daily' ? amt * wDays : amt);
-        setHint('hint_emp_staff', curStaff && prof.hasContract ? `${prof.status} contract: ${fmtUSD(prof.monthlySalary, 2)}/mo${prof.role ? ' · ' + prof.role : ''}` : '', 'ok');
-        setText('calc_emp_prior', !curStaff ? 'Select Staff' : (prof.hasContract ? `${fmtUSD(prof.monthlySalary, 0)}/mo (${prof.status})` : 'New Staff'));
-        setText('calc_emp_basis', payBasis === 'Monthly' ? 'Monthly' : (payBasis === 'Daily' ? 'Daily' : 'Lump Sum'));
-        setText('calc_emp_rates', amt > 0 ? `${fmtUSD(impDaily, 2)}/d · ${fmtUSD(impHourly, 2)}/hr` : '-');
-        setText('calc_emp_total', fmtUSD(isContract ? impMonthly : amt, 2));
-        return { curStaff, payBasis, amt };
+        setHint(
+          'hint_emp_salary',
+          salaryPending
+            ? 'Active immediately on roster & kiosk at $0.00 base/OT · queued in Pending Salary until finalized'
+            : (pendSalEditRow && amt > 0
+              ? `Retroactively recalculates base, shift OT & absence deductions from ${fmtDateDMY(txDate)}`
+              : ''),
+          salaryPending ? 'warn' : (pendSalEditRow && amt > 0 ? 'ok' : '')
+        );
+        setHint('hint_emp_staff', curStaff && prof.hasContract ? `${prof.status} contract: ${prof.salaryPending ? 'Salary Pending ($0)' : `${fmtUSD(prof.monthlySalary, 2)}/mo`}${prof.role ? ' · ' + prof.role : ''}` : '', 'ok');
+        setText('calc_emp_prior', pendSalEditRow ? 'Pending ($0)' : (!curStaff ? 'Select Staff' : (prof.hasContract ? (prof.salaryPending ? 'Pending ($0)' : `${fmtUSD(prof.monthlySalary, 0)}/mo (${prof.status})`) : 'New Staff')));
+        setText('calc_emp_basis', salaryPending ? `${payBasis} · Pending` : (payBasis === 'Monthly' ? 'Monthly' : (payBasis === 'Daily' ? 'Daily' : 'Lump Sum')));
+        setText('calc_emp_rates', salaryPending ? '$0.00/d · $0.00/hr' : (amt > 0 ? `${fmtUSD(impDaily, 2)}/d · ${fmtUSD(impHourly, 2)}/hr` : '-'));
+        setText('calc_emp_total', salaryPending ? 'Pending ($0.00)' : fmtUSD(isContract ? impMonthly : amt, 2));
+        return { curStaff, payBasis, amt, salaryPending };
       }
       if (STATE.modalForm === 'triprate') {
         const curCo = val('f_company') || defaultEntryCompany();
@@ -41480,6 +41693,17 @@
           }
           return;
         }
+        const setPendSalBtn = ev.target && ev.target.closest ? ev.target.closest('[data-set-pending-salary-id]') : null;
+        if (setPendSalBtn) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const empId = setPendSalBtn.getAttribute('data-set-pending-salary-id') || '';
+          if (empId) {
+            closeEntryModal(true);
+            openPendingSalaryModal(empId);
+          }
+          return;
+        }
         const convPresetBtn = ev.target && ev.target.closest ? ev.target.closest('[data-conv-usd-preset]') : null;
         if (convPresetBtn) {
           ev.preventDefault();
@@ -41932,6 +42156,19 @@
         recalcForm();
         if (mode === 'priced' && $('f_unitprice') && !($('f_unitprice').readOnly)) {
           try { $('f_unitprice').focus(); } catch (_) {}
+        }
+      });
+    });
+    body.querySelectorAll('[data-emp-salary-mode]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        const mode = btn.getAttribute('data-emp-salary-mode') || 'priced';
+        if ($('f_salary_pending')) $('f_salary_pending').value = mode === 'pending' ? '1' : '0';
+        recalcForm();
+        if (mode === 'priced' && $('f_amount') && !($('f_amount').readOnly)) {
+          try { $('f_amount').focus(); } catch (_) {}
+        } else if (mode === 'pending' && $('f_staff') && !($('f_staff').value)) {
+          try { $('f_staff').focus(); } catch (_) {}
         }
       });
     });
@@ -42471,9 +42708,11 @@
           if (fid === 'f_date' && $('f_date')) {
             const pendRow = STATE.editingPendingExpenseId
               ? findExpenseRecordById(STATE.editingPendingExpenseId)
-              : (STATE.editingPendingRawId ? findRawPurchaseRecordById(STATE.editingPendingRawId) : null);
+              : (STATE.editingPendingRawId
+                ? findRawPurchaseRecordById(STATE.editingPendingRawId)
+                : (STATE.editingPendingSalaryId ? findEmploymentRecordById(STATE.editingPendingSalaryId) : null));
             FORM_UI.afterHoursYesterday = false;
-            $('f_date').value = (pendRow && pendRow.date) || todayISO();
+            $('f_date').value = (pendRow && (pendRow.date || pendRow.start_date)) || todayISO();
           }
           recalcForm();
           toast('Field re-locked to policy rule', 'ok');
@@ -42626,9 +42865,9 @@
     if (window.MFG_GEO && (STATE.modalForm === 'site' || STATE.modalForm === 'region')) {
       window.MFG_GEO.wireModalSiteOrRegionMap(body, STATE.modalForm, SEED);
     }
-    if (autoFocus && (STATE.editingPendingExpenseId || STATE.editingPendingRawId || window.matchMedia('(min-width: 861px)').matches)) {
-      const first = STATE.editingPendingExpenseId
-        ? ($('f_amount') || body.querySelector('#f_reference'))
+    if (autoFocus && (STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId || window.matchMedia('(min-width: 861px)').matches)) {
+      const first = (STATE.editingPendingExpenseId || STATE.editingPendingSalaryId)
+        ? ($('f_amount') || body.querySelector('#f_reference, #f_notes'))
         : (STATE.editingPendingRawId
           ? ($('f_unitprice') || body.querySelector('#f_extinvoice'))
           : (STATE.modalForm === 'site'
@@ -42781,8 +43020,8 @@
     if (needsDate) {
       const bdDaysLimit = getAlertParam('G_BACKDATE_NOTE', 'backdate_warn_days', 30);
       const repGapLimit = getAlertParam('G_REPDATE_GAP', 'repdate_warn_days', 60);
-      const skipLockedPendBackdate = Boolean(((STATE.editingPendingExpenseId || STATE.editingPendingRawId) && !isFieldAdminUnlocked('f_date')) || (editCtx && date === origEditDate));
-      const skipLockedPendRepdate = Boolean(((STATE.editingPendingExpenseId || STATE.editingPendingRawId) && !isFieldAdminUnlocked('f_repdate')) || (editCtx && repDate === origEditRepDate && date === origEditDate));
+      const skipLockedPendBackdate = Boolean(((STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId) && !isFieldAdminUnlocked('f_date')) || (editCtx && date === origEditDate));
+      const skipLockedPendRepdate = Boolean(((STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId) && !isFieldAdminUnlocked('f_repdate')) || (editCtx && repDate === origEditRepDate && date === origEditDate));
       if (!val('f_date')) addErr('f_date', 'Date is required.');
       else if (date > today && !/^pricerule/.test(f) && f !== 'logistics' && !(editCtx && date === origEditDate)) addErr('f_date', 'Future dates are not allowed.');
       else if (date < MIN_DATE && !(editCtx && date === origEditDate)) addErr('f_date', 'Date is before the books opened (' + MIN_DATE + ').');
@@ -43892,9 +44131,16 @@
         };
       }
     } else if (f === 'freelance' || f === 'employment') {
-      const st = val('f_staff'), amt = round2(num('f_amount'));
+      const pendSalEditRow = STATE.editingPendingSalaryId ? findEmploymentRecordById(STATE.editingPendingSalaryId) : null;
+      const salaryPending = !pendSalEditRow && val('f_salary_pending') === '1';
+      const st = val('f_staff');
+      const amt = salaryPending ? 0 : round2(num('f_amount'));
       if (!st) addErr('f_staff', 'Staff is required.');
-      if (!(amt > 0)) addErr('f_amount', f === 'employment' ? 'Base Salary > 0 is required.' : 'Amount > 0 is required.');
+      if (pendSalEditRow) {
+        if (!(amt > 0)) addErr('f_amount', f === 'employment' ? 'Enter the final salary or daily rate above zero.' : 'Enter the final freelance rate above zero.');
+      } else if (!salaryPending && !(amt > 0)) {
+        addErr('f_amount', f === 'employment' ? 'Base Salary > 0 is required (or choose Salary Pending).' : 'Amount > 0 is required (or choose Salary Pending).');
+      }
       const payType = val('f_paytype');
       if (f === 'employment') {
         const endDate = val('f_enddate');
@@ -43911,30 +44157,78 @@
         }
         const wDays = Math.max(1, Math.round(num('f_workdays') || (/Daily/i.test(payType) ? 26 : 30)));
         const wHours = Math.max(1, round2(num('f_workhours') || 8));
-        const empSlug = String(st || 'STAFF').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 14) || 'STAFF';
-        const empSeq = String((((SEED.records && SEED.records.employments) || []).filter(e => e && norm(e.staff) === norm(st)).length) + 1).padStart(3, '0');
         const effStatus = (endDate && endDate < todayISO()) ? 'Ended' : 'Current';
-        record = {
-          ...base,
-          name: `EMPL-${date.replace(/-/g, '')}-${empSlug}-${empSeq}`,
+        if (pendSalEditRow) {
+          record = Object.assign({}, pendSalEditRow, {
+            company,
+            date,
+            rep_date: repDate,
+            staff: st,
+            role: val('f_role'),
+            pay_type: payType,
+            type: /Daily/i.test(payType) ? 'Daily' : (pendSalEditRow.type || 'Staff'),
+            salary_usd: /Monthly/i.test(payType) ? amt : 0,
+            daily_rate: /Daily/i.test(payType) ? amt : round2(amt / wDays),
+            working_days: wDays,
+            working_hours: wHours,
+            base_salary: amt,
+            amount: amt,
+            salary_pending: false,
+            start_date: date,
+            end_date: endDate || '',
+            status: effStatus,
+            notes,
+            modified_by: who.email,
+            modified_at: new Date().toISOString(),
+            ...(adminOverrides.length ? { admin_overrides: adminOverrides } : {})
+          });
+        } else {
+          const empSlug = String(st || 'STAFF').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 14) || 'STAFF';
+          const empSeq = String((((SEED.records && SEED.records.employments) || []).filter(e => e && norm(e.staff) === norm(st)).length) + 1).padStart(3, '0');
+          record = {
+            ...base,
+            name: `EMPL-${date.replace(/-/g, '')}-${empSlug}-${empSeq}`,
+            staff: st,
+            role: val('f_role'),
+            pay_type: payType,
+            type: /Daily/i.test(payType) ? 'Daily' : 'Staff',
+            salary_usd: salaryPending ? 0 : (/Monthly/i.test(payType) ? amt : 0),
+            daily_rate: salaryPending ? 0 : (/Daily/i.test(payType) ? amt : round2(amt / wDays)),
+            working_days: wDays,
+            working_hours: wHours,
+            overtime_multiplier: 1,
+            lateness_multiplier: 1,
+            base_salary: salaryPending ? 0 : amt,
+            amount: salaryPending ? 0 : amt,
+            salary_pending: Boolean(salaryPending),
+            start_date: date,
+            end_date: endDate || '',
+            status: effStatus
+          };
+        }
+      } else if (pendSalEditRow) {
+        record = Object.assign({}, pendSalEditRow, {
+          company,
+          date,
+          rep_date: repDate,
           staff: st,
           role: val('f_role'),
           pay_type: payType,
-          type: /Daily/i.test(payType) ? 'Daily' : 'Staff',
-          salary_usd: /Monthly/i.test(payType) ? amt : 0,
-          daily_rate: /Daily/i.test(payType) ? amt : round2(amt / wDays),
-          working_days: wDays,
-          working_hours: wHours,
-          overtime_multiplier: 1,
-          lateness_multiplier: 1,
+          type: 'Freelance',
+          salary_usd: 0,
+          daily_rate: /Daily/i.test(payType) ? amt : 0,
           base_salary: amt,
           amount: amt,
+          salary_pending: false,
           start_date: date,
-          end_date: endDate || '',
-          status: effStatus
-        };
+          status: pendSalEditRow.status || 'Active',
+          notes,
+          modified_by: who.email,
+          modified_at: new Date().toISOString(),
+          ...(adminOverrides.length ? { admin_overrides: adminOverrides } : {})
+        });
       } else {
-        record = { ...base, name: `FRL ${st}`, staff: st, role: val('f_role'), pay_type: payType, type: 'Freelance', salary_usd: 0, daily_rate: /Daily/i.test(payType) ? amt : 0, base_salary: amt, amount: amt, start_date: date, status: 'Active' };
+        record = { ...base, name: `FRL ${st}`, staff: st, role: val('f_role'), pay_type: payType, type: 'Freelance', salary_usd: 0, daily_rate: salaryPending ? 0 : (/Daily/i.test(payType) ? amt : 0), base_salary: salaryPending ? 0 : amt, amount: salaryPending ? 0 : amt, salary_pending: Boolean(salaryPending), start_date: date, status: 'Active' };
       }
     } else if (f === 'logistics') {
       const st = val('f_staff');
@@ -44406,7 +44700,8 @@
           'f_saletype', 'f_transportby', 'f_customer', 'f_supplier', 'f_product', 'f_site', 'f_owner', 'f_truckowner',
           'f_amount', 'f_vat', 'f_usd', 'f_lbp', 'f_fxrate', 'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours',
           'f_late_hours', 'f_leave_days', 'f_share', 'f_qty1', 'f_adj1', 'f_transadj1', 'f_qty2', 'f_adj2', 'f_transadj2',
-          'f_trucksize', 'f_wh_Cost', 'f_new_part_cost', 'f_repair_cost', 'f_sale_proceeds', 'f_out_parts', 'f_out_labor'
+          'f_trucksize', 'f_wh_Cost', 'f_new_part_cost', 'f_repair_cost', 'f_sale_proceeds', 'f_out_parts', 'f_out_labor',
+          'f_salary_pending', 'f_paytype', 'f_workdays', 'f_workhours'
         ];
         const anyPriceDriverEdited = priceDriverIds.some(id => changedModalIds.has(id));
         const isDispZeroedEdit = Boolean(record.removed_slip || (record.return_to_wtc && !record._post_as_paired_return && !isReturnTicket(orig)));
@@ -44554,7 +44849,11 @@
     const editCtx = STATE.editingRecord;
     const isEditingExisting = Boolean(editCtx && editCtx.id);
     const keepOpenNextDay = Boolean(!isEditingExisting && evOrOpts && typeof evOrOpts === 'object' && evOrOpts.nextDay && STATE.modalForm === 'attendance');
-    const isUpdatingPending = Boolean((STATE.editingPendingExpenseId && STATE.modalForm === 'expense') || (STATE.editingPendingRawId && STATE.modalForm === 'raw'));
+    const isUpdatingPending = Boolean(
+      (STATE.editingPendingExpenseId && STATE.modalForm === 'expense')
+      || (STATE.editingPendingRawId && STATE.modalForm === 'raw')
+      || (STATE.editingPendingSalaryId && (STATE.modalForm === 'employment' || STATE.modalForm === 'freelance'))
+    );
     const isSupTicketAction = Boolean(isEditingExisting && (STATE.modalForm === 'sales' || STATE.modalForm === 'raw') && (FORM_UI.ticketDisposition === 'remove_slip' || FORM_UI.ticketDisposition === 'return_wtc') && canVoid());
     if (!(isEditingExisting ? (canModifyData() || isSupTicketAction) : (isUpdatingPending ? (canModifyData() || canEnterForm(STATE.modalForm)) : canEnterForm(STATE.modalForm)))) {
       toast(isEditingExisting ? 'Your seat cannot modify existing records' : 'Your seat cannot post this entry', 'err');
@@ -44657,7 +44956,10 @@
           if (cIdx >= 0) Object.assign(STATE.customRecords[crKey][cIdx], record);
           else STATE.customRecords[crKey].unshift(Object.assign({}, record));
         }
-      } else if (isUpdatingPending && (crKey === 'expenses' || crKey === 'raw_purchases')) {
+      } else if (isUpdatingPending && (crKey === 'expenses' || crKey === 'raw_purchases' || crKey === 'employments')) {
+        if (crKey === 'employments' && STATE.editingPendingSalaryId) {
+          record._pend_sal_orig = Object.assign({}, findEmploymentRecordById(STATE.editingPendingSalaryId) || {});
+        }
         const sArr = (SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [];
         sArr.forEach(r => {
           if (r && String(r.id) === String(record.id)) Object.assign(r, record);
@@ -44958,7 +45260,15 @@
           }
         }
       }
-      const editStartUnchanged = isEditingExisting && String(record.start_date || '').slice(0, 10) === String((editCtx && editCtx.orig && editCtx.orig.start_date) || '').slice(0, 10);
+      const pendSalOrigSnap = record._pend_sal_orig || null;
+      delete record._pend_sal_orig;
+      if (pendSalOrigSnap && crKey === 'employments') {
+        const sArrClean = (SEED.records && Array.isArray(SEED.records.employments)) ? SEED.records.employments : [];
+        sArrClean.forEach(r => { if (r && r._pend_sal_orig) delete r._pend_sal_orig; });
+        (STATE.customRecords.employments || []).forEach(r => { if (r && r._pend_sal_orig) delete r._pend_sal_orig; });
+      }
+      const editStartUnchanged = (isEditingExisting && String(record.start_date || '').slice(0, 10) === String((editCtx && editCtx.orig && editCtx.orig.start_date) || '').slice(0, 10))
+        || Boolean(pendSalOrigSnap && String(record.start_date || '').slice(0, 10) === String(pendSalOrigSnap.start_date || '').slice(0, 10));
       if (!editStartUnchanged && crKey === 'price_rules' && /^commission$/i.test(String(record.rule_type || '')) && record.product && record.start_date) {
         const dt = new Date(record.start_date + 'T00:00:00Z');
         if (!isNaN(dt.getTime())) {
@@ -45048,6 +45358,20 @@
         }
       }
       applyCustomRecordsToSeed();
+      if (crKey === 'employments' && record && record.staff && !window.__fastInspectorModifyTest) {
+        const stNorm = norm(record.staff);
+        const sFrom = String(record.start_date || record.date || '').slice(0, 10);
+        const sTo = String(record.end_date || '9999-12-31').slice(0, 10) || '9999-12-31';
+        const targetHrs = Number(record.working_hours || 0) > 0 ? Number(record.working_hours) : 8;
+        ((SEED.records && SEED.records.attendance) || []).forEach(a => {
+          if (!a || a.voided || norm(a.staff || '') !== stNorm) return;
+          const ad = String(a.date || '').slice(0, 10);
+          if (ad && ad >= sFrom && ad <= sTo && Number(a.scheduled_hours || 0) !== targetHrs) {
+            a.scheduled_hours = targetHrs;
+            extraApiPosts.push(['attendance', a]);
+          }
+        });
+      }
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
       STATE.saving = false;
       if (keepOpenNextDay) {
@@ -45079,6 +45403,8 @@
         toast(`Malfunction posted (${record.name}) · ⚠️ High Diesel Malfunction Alert (${malfHit.scopeLbl}): ${malfHit.hit.malfunctionPct.toFixed(1)}% of company diesel used (${fmtNum(malfHit.hit.malfAbsL, 0)} L / ${fmtNum(malfHit.hit.companyDieselUsedL, 0)} L >= ${malfHit.hit.malfunctionThresholdPct.toFixed(1)}% threshold)`, 'warn');
       } else if (isUpdatingPending && crKey === 'expenses') {
         toast(`Final price saved (${fmtUSD(record.amount, 2)}) · ${record.name}`, 'ok');
+      } else if (isUpdatingPending && crKey === 'employments') {
+        toast(`Final salary saved (${fmtUSD(record.amount, 2)}) · ${record.staff || record.name}`, 'ok');
       } else if (isEditingExisting) {
         toast(`${(CR_LABEL[crKey] || 'Record').replace(/^./, ch => ch.toUpperCase())} updated · ${record.name}`, 'ok');
       } else {
@@ -45295,9 +45621,13 @@
     const pendingRawTargetId = (!editTargetRow && prefill && typeof prefill === 'object' && prefill.completePendingRawId)
       ? String(prefill.completePendingRawId).trim()
       : '';
+    const pendingSalTargetId = (!editTargetRow && prefill && typeof prefill === 'object' && prefill.completePendingSalaryId)
+      ? String(prefill.completePendingSalaryId).trim()
+      : '';
     const pendingExpRow = (form === 'expense' && pendingTargetId) ? findExpenseRecordById(pendingTargetId) : null;
     const pendingRawRow = (form === 'raw' && pendingRawTargetId) ? findRawPurchaseRecordById(pendingRawTargetId) : null;
-    const pendingTargetRow = pendingExpRow || pendingRawRow;
+    const pendingSalRow = ((form === 'employment' || form === 'freelance') && pendingSalTargetId) ? findEmploymentRecordById(pendingSalTargetId) : null;
+    const pendingTargetRow = pendingExpRow || pendingRawRow || pendingSalRow;
     if (!editTargetRow && !(pendingTargetRow ? (canModifyData() || canEnterForm(form)) : canEnterForm(form))) {
       toast('Your seat has no entry rights for this form', 'err');
       return;
@@ -45307,6 +45637,7 @@
       : null;
     STATE.editingPendingExpenseId = pendingExpRow ? String(pendingExpRow.id) : '';
     STATE.editingPendingRawId = pendingRawRow ? String(pendingRawRow.id) : '';
+    STATE.editingPendingSalaryId = pendingSalRow ? String(pendingSalRow.id) : '';
     const kBody = $('kioskFormBody');
     if (kBody) kBody.innerHTML = ''; // Prevent duplicate #f_* IDs while #entryModal is open
     STATE.modalForm = form;
@@ -45348,23 +45679,25 @@
           : String(editTargetRow.invoice_no || editTargetRow.name || editTargetRow.id || '').replace(/[—→]/g, '-');
         title.textContent = 'Edit ' + cleanBaseTitle + (recIdent ? ' · ' + recIdent : '');
       } else {
-        title.textContent = pendingTargetRow
-          ? ('Enter Final Price · ' + (pendingTargetRow.name || pendingTargetRow.id))
-          : (preselectExt
-            ? 'New External Treasury Entry'
-            : (preselectConv
-              ? 'New Currency Conversion (USD ↔ LBP)'
-              : (preselectRawPrice
-                ? 'New Raw Material Site Agreement'
-                : (preselectHaulPrice
-                  ? 'New Quarry Haulage Agreement'
-                  : (preselectCommPrice ? 'New Sales Commission Agreement' : FORM_TITLES[form])))));
+        title.textContent = pendingSalRow
+          ? ('Enter Final Salary · ' + (pendingSalRow.staff || pendingSalRow.name || pendingSalRow.id))
+          : (pendingTargetRow
+            ? ('Enter Final Price · ' + (pendingTargetRow.name || pendingTargetRow.id))
+            : (preselectExt
+              ? 'New External Treasury Entry'
+              : (preselectConv
+                ? 'New Currency Conversion (USD ↔ LBP)'
+                : (preselectRawPrice
+                  ? 'New Raw Material Site Agreement'
+                  : (preselectHaulPrice
+                    ? 'New Quarry Haulage Agreement'
+                    : (preselectCommPrice ? 'New Sales Commission Agreement' : FORM_TITLES[form]))))));
       }
     }
     const openInspBtn = $('modalOpenInspectorBtn');
     if (openInspBtn) {
       if (activeRowForHeader) {
-        const inspCrKey = editTargetRow ? editTargetCrKey : (pendingRawRow ? 'raw_purchases' : 'expenses');
+        const inspCrKey = editTargetRow ? editTargetCrKey : (pendingSalRow ? 'employments' : (pendingRawRow ? 'raw_purchases' : 'expenses'));
         const inspRowId = String(activeRowForHeader.id);
         openInspBtn.hidden = false;
         openInspBtn.onclick = () => {
@@ -45436,10 +45769,12 @@
           : (canVoidCurrent && isTicketEdit
             ? `Supervisor seat (<b>${esc(activeUser().role)}</b>) · use <b>Remove Slip (0 KM)</b> or <b>Return Load (2x KM)</b> to update this ticket`
             : `Read-only seat (<b>${esc(activeUser().role)}</b>) · click <b>360° Details</b> above for full audit breakdown`))
-        : (pendingTargetRow
-          ? `Updating voucher <b>${esc(pendingTargetRow.name || pendingTargetRow.id)}</b> as <b>${esc(activeUser().full_name)}</b> · delivery fields stay locked`
-          : `Posting as <b>${esc(activeUser().full_name)}</b> · stored on this device, the cloud ledger${HAS_LOCAL_API ? ' and SQLite' : ''}`);
-      const saveBtnLbl = editTargetRow ? 'Save Changes' : (pendingTargetRow ? 'Save Final Price' : 'Post to Cloud Ledger');
+        : (pendingSalRow
+          ? `Updating contract <b>${esc(pendingSalRow.name || pendingSalRow.staff || pendingSalRow.id)}</b> as <b>${esc(activeUser().full_name)}</b> · onboarding fields stay locked`
+          : (pendingTargetRow
+            ? `Updating voucher <b>${esc(pendingTargetRow.name || pendingTargetRow.id)}</b> as <b>${esc(activeUser().full_name)}</b> · delivery fields stay locked`
+            : `Posting as <b>${esc(activeUser().full_name)}</b> · stored on this device, the cloud ledger${HAS_LOCAL_API ? ' and SQLite' : ''}`));
+      const saveBtnLbl = editTargetRow ? 'Save Changes' : (pendingSalRow ? 'Save Final Salary' : (pendingTargetRow ? 'Save Final Price' : 'Post to Cloud Ledger'));
       const nextDayBtnHtml = (!editTargetRow && !pendingTargetRow && form === 'attendance')
         ? `<button type="button" class="btn-ghost-bar" id="dynSaveNextDayModalBtn" title="Post this attendance day and step Reporting Date (Set Date) forward by 1 day for the same staff member">Post &amp; Next Day (+1d)</button>`
         : '';
@@ -45618,6 +45953,10 @@
         $('f_raw_price_pending').value = '1';
         recalcForm();
       }
+      if (prefill.salaryPending && $('f_salary_pending')) {
+        $('f_salary_pending').value = '1';
+        recalcForm();
+      }
       if (prefill.eq && $('f_truck')) {
         if ($('f_for_equipment')) $('f_for_equipment').value = '1';
         if ($('f_store_warehouse')) $('f_store_warehouse').value = '0';
@@ -45750,6 +46089,7 @@
     STATE.editingRecord = null;
     STATE.editingPendingExpenseId = '';
     STATE.editingPendingRawId = '';
+    STATE.editingPendingSalaryId = '';
     const openInspBtn = $('modalOpenInspectorBtn');
     if (openInspBtn) { openInspBtn.hidden = true; openInspBtn.onclick = null; }
     const printThermalBtn = $('modalPrintThermalBtn');
@@ -46192,7 +46532,9 @@
       setModalControlVal('f_role', row.role || '');
       const payBasis = row.pay_type || (/Daily/i.test(String(row.type || '')) ? 'Daily' : 'Monthly');
       setModalControlVal('f_paytype', payBasis);
-      const baseAmt = row.base_salary != null ? row.base_salary : (row.salary_usd || row.daily_rate || row.amount || '');
+      const isPend = isPendingSalaryEmployment(row);
+      setModalControlVal('f_salary_pending', isPend ? '1' : '0');
+      const baseAmt = isPend ? '0.00' : (row.base_salary != null ? row.base_salary : (row.salary_usd || row.daily_rate || row.amount || ''));
       setModalControlVal('f_amount', baseAmt);
       if (form === 'employment') {
         setModalControlVal('f_enddate', String(row.end_date || '').slice(0, 10));
@@ -46509,6 +46851,10 @@
     }
     if (targetKey === 'raw_purchases' && isPendingPriceRaw(targetRow)) {
       openPendingRawPriceModal(targetRow.id);
+      return;
+    }
+    if (targetKey === 'employments' && isPendingSalaryEmployment(targetRow)) {
+      openPendingSalaryModal(targetRow.id);
       return;
     }
     const formType = resolveFormTypeForEditableRecord(targetKey, targetRow);
@@ -46857,6 +47203,12 @@
       };
     }
     if (key === 'employments') {
+      if (isPendingSalaryEmployment(row)) {
+        return {
+          tone: 'warn',
+          text: `PENDING SALARY ASSIGNMENT: ${row.staff || 'Staff'} (${row.role || row.type || 'Staff'} · ${row.company || 'WTC'}) is active on the roster & attendance kiosk from ${row.start_date || row.date || 'Start'} at $0.00 base/OT · Click "Enter Final Salary" once management sets their pay to retroactively calculate earnings from Start Date.`
+        };
+      }
       const stName = row.staff || row.name || '';
       const eqInfo = stName ? resolveStaffEquipmentSitesInfo(stName, row.company || '', row.start_date || todayISO()) : null;
       const eqTxt = eqInfo && eqInfo.hasConnection
@@ -47227,13 +47579,14 @@
       : row.unit_price;
     const primaryMoney = row.total_ttc ?? row.total ?? row.amount ?? row.usd_amount ?? prMoney ?? row.salary_usd ?? row.principal ?? row.credit_limit ?? row.list_price;
     const isPendExp = (key === 'expenses' && isPendingPriceExpense(row)) || (key === 'raw_purchases' && isPendingPriceRaw(row));
+    const isPendSal = key === 'employments' && isPendingSalaryEmployment(row);
     const isDieselExp = key === 'expenses' && isBulkDieselExpense(row);
     return {
       bu,
       title,
-      pill: isPendExp ? 'PENDING PRICE ($0.00)' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : `${fmtNum(totalRel)} Linked Rows`),
+      pill: isPendExp ? 'PENDING PRICE ($0.00)' : (isPendSal ? 'PENDING SALARY ($0.00)' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : `${fmtNum(totalRel)} Linked Rows`)),
       cards: [
-        { lbl: 'PRIMARY RECORD VALUE', tag: isPendExp ? 'PENDING PRICE' : (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18), tone: isPendExp ? 'warn' : 'good', val: isPendExp ? `${fmtNum(row.qty || 1, 0)}${isDieselExp ? ' L ($0.00)' : ' Qty ($0.00)'}` : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : (row.name || row.ticket_no || String(row.id).slice(0, 10))), sub1: isPendExp ? `Vendor: ${row.supplier || '—'} · Awaiting Invoice` : `Entity: ${INSPECT_LABELS[key] || key}`, sub2: `Company Scope: ${row.company || 'Shared / Root BU'}`, pct: 82 },
+        { lbl: 'PRIMARY RECORD VALUE', tag: isPendExp ? 'PENDING PRICE' : (isPendSal ? 'PENDING SALARY' : (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18)), tone: (isPendExp || isPendSal) ? 'warn' : 'good', val: isPendExp ? `${fmtNum(row.qty || 1, 0)}${isDieselExp ? ' L ($0.00)' : ' Qty ($0.00)'}` : (isPendSal ? 'Pending ($0.00)' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : (row.name || row.ticket_no || String(row.id).slice(0, 10)))), sub1: isPendExp ? `Vendor: ${row.supplier || '—'} · Awaiting Invoice` : (isPendSal ? `Staff: ${row.staff || '-'} · Awaiting Salary` : `Entity: ${INSPECT_LABELS[key] || key}`), sub2: `Company Scope: ${row.company || 'Shared / Root BU'}`, pct: 82 },
         { lbl: 'CONNECTED SUBGRIDS', tag: `${subgrids.length} TABLES`, tone: 'info', val: `${fmtNum(totalRel)} Rows`, sub1: subgrids.slice(0, 2).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Direct master record', sub2: subgrids.slice(2, 4).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Click any row below to inspect', pct: Math.min(100, Math.max(25, totalRel * 5)) },
         { lbl: 'EFFECTIVE DATES & TIMELINE', tag: row.end_date ? 'DATED' : 'ACTIVE', tone: row.end_date && String(row.end_date) < SEED_DATE ? 'warn' : 'good', val: String(row.date || row.start_date || SEED_DATE).slice(0, 10), sub1: `Rep / Start: ${row.rep_date || row.start_date || row.date || '—'}`, sub2: `End Date: ${row.end_date || 'Open / Current'}`, pct: 75 },
         { lbl: 'AUDIT & LEDGER SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: isAppRecord(row) ? 'App Entry' : 'Synced Book', sub1: isAppRecord(row) ? `Posted by ${row.entered_by || 'User'}` : `Snapshot ${SEED_DATE}`, sub2: `Double-Entry SOA Verified`, pct: 100 }
@@ -48393,6 +48746,7 @@
         { key: 'phone', label: 'Phone', type: 'tel', sec: 1, placeholder: '+961 ...' },
         { key: 'salary_usd', label: 'Base Salary ($)', type: 'number', step: '10', min: '0', sec: 3 },
         { key: 'daily_rate', label: 'Daily Rate ($)', type: 'number', step: '1', min: '0', sec: 3 },
+        { key: 'salary_pending', label: 'Awaiting Salary Assignment ($0 Pending)', type: 'bool', sec: 3, getVal: r => Boolean(isPendingSalaryEmployment(r)) },
         { key: 'working_days', label: 'Working Days / Month', type: 'number', step: '1', min: '1', sec: 3 },
         { key: 'working_hours', label: 'Working Hours / Day', type: 'number', step: '0.5', min: '1', sec: 3 },
         { key: 'overtime_multiplier', label: 'Overtime Multiplier (×)', type: 'number', step: '0.1', min: '0', sec: 3 },
@@ -48761,7 +49115,7 @@
       'usd_amount', 'lbp_amount', 'fx_rate', 'exchange_rate', 'net_amount', 'vat_amount', 'vat_percent', 'vat_fx_rate',
       'amount', 'cost', 'price', 'trans_cost', 'trans_price', 'total', 'total_ttc', 'line_total', 'total_cost', 'total_cost_usd',
       'new_part_cost', 'repair_cost', 'sale_proceeds', 'warehouse_parts_usd', 'outside_parts_usd', 'external_labor_usd',
-      'principal', 'interest_rate', 'percentage', 'difference', 'credit_days', 'credit_limit', 'price_pending',
+      'principal', 'interest_rate', 'percentage', 'difference', 'credit_days', 'credit_limit', 'price_pending', 'salary_pending',
       'company', 'customer', 'supplier', 'product', 'site', 'site_owner',
       'transport_by', 'truck_owner', 'sale_type', 'uom', 'unit', 'rate_per', 'rule_type'
     ]);
@@ -49330,6 +49684,7 @@
         <div class="pa-cmd-actions">
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
           ${((key === 'expenses' && isPendingPriceExpense(row) && (canModifyData() || canEnterForm('expense'))) || (key === 'raw_purchases' && isPendingPriceRaw(row) && (canModifyData() || canEnterForm('raw')))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Price</button>` : ''}
+          ${(key === 'employments' && isPendingSalaryEmployment(row) && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance'))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Salary</button>` : ''}
           ${canModifyData() ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} Modify Record</button>` : ''}
           ${isEquipInspect && canEnterForm('defect') ? `<button type="button" class="pa-cmd-btn" id="inspReportDefectBtn">${ic('warn')} + Report Warning</button>` : ''}
           ${isEquipInspect && canEnterForm('repair') ? `<button type="button" class="pa-cmd-btn" id="inspLogRepairBtn">${ic('repair')} + Log Repair</button>` : ''}
@@ -49908,6 +50263,21 @@
         } else {
           html = `<span>Total Amount: <b>${fmtUSD(mAmt, 2)}</b></span><span>Method: <b>${esc(dispMethod)}</b></span>${isFuel && mQty > 0 && mAmt > 0 ? `<span>Implied Rate: <b>${fmtUSD(mAmt / mQty, 3)} / L (${fmtNum(mQty, 0)} L)</b></span>` : ''}`;
         }
+      } else if (key === 'employments') {
+        const mSal = getModNum('salary_usd');
+        const mDaily = getModNum('daily_rate');
+        const mDays = getModNum('working_days') || Number(row.working_days || 30) || 30;
+        const pendSel = $('insp_edit_salary_pending');
+        if ((mSal > 0 || mDaily > 0) && pendSel && pendSel.value === 'Yes' && pendSel.dataset.userEdited !== '1') {
+          pendSel.value = 'No';
+        }
+        const stillPend = pendSel ? pendSel.value === 'Yes' : ((mSal === 0 && mDaily === 0) && isPendingSalaryEmployment(row));
+        if (stillPend) {
+          html = `<span>Schedule: <b>${fmtNum(mDays, 0)}d</b></span><span>Status: <b style="color:var(--warn)">Salary Pending ($0.00 Base &amp; OT)</b></span>`;
+        } else {
+          const effMo = mSal > 0 ? mSal : round2(mDaily * mDays);
+          html = `<span>Monthly Equivalent: <b>${fmtUSD(effMo, 2)}</b></span>${isPendingSalaryEmployment(row) && effMo > 0 ? `<span>Status: <b style="color:var(--ok)">✓ Clears Pending Salary · Retroactive from ${esc(row.start_date || 'Start')}</b></span>` : ''}`;
+        }
       } else if (key === 'fuel_malfunctions') {
         const mLit = getModNum('litres');
         const mType = getModVal('discrepancy_type') || row.discrepancy_type || 'Malfunction';
@@ -49982,7 +50352,8 @@
     const setPriceBtn = $('inspSetInvoicePriceBtn');
     if (setPriceBtn) {
       setPriceBtn.addEventListener('click', () => {
-        if (key === 'raw_purchases') openPendingRawPriceModal(row.id);
+        if (key === 'employments') openPendingSalaryModal(row.id);
+        else if (key === 'raw_purchases') openPendingRawPriceModal(row.id);
         else openPendingExpensePriceModal(row.id);
       });
     }
@@ -50061,7 +50432,7 @@
           }
 
           const isUserEdited = inp.dataset.userEdited === '1';
-          const isAutoSyncedField = (fk === 'overtime' || fk === 'price_pending');
+          const isAutoSyncedField = (fk === 'overtime' || fk === 'price_pending' || fk === 'salary_pending');
           if (!isUserEdited && !isAutoSyncedField) return;
 
           let nextVal;
@@ -50561,6 +50932,29 @@
               STATE.customRecords.expense_items.unshift(newLi);
               if (SEED.records && Array.isArray(SEED.records.expense_items)) SEED.records.expense_items.unshift(Object.assign({}, newLi));
               postRecordToLocalApi('expense_items', newLi);
+            }
+          }
+        } else if (key === 'employments') {
+          const sUsd = round2(Number(row.salary_usd || 0));
+          const dRate = round2(Number(row.daily_rate || 0));
+          const wDays = Math.max(1, Number(row.working_days || 30) || 30);
+          if ((sUsd > 0 || dRate > 0) && row.salary_pending && !('salary_pending' in pendingUpdates && pendingUpdates.salary_pending === true)) {
+            row.salary_pending = false;
+            changedCount++;
+          } else if ('salary_pending' in pendingUpdates && row.salary_pending) {
+            row.salary_usd = 0;
+            row.daily_rate = 0;
+            row.base_salary = 0;
+            row.amount = 0;
+          }
+          if (!row.salary_pending) {
+            if ('salary_usd' in pendingUpdates && !('daily_rate' in pendingUpdates) && sUsd > 0) {
+              row.daily_rate = round2(sUsd / wDays);
+            }
+            const effBase = sUsd > 0 ? sUsd : dRate;
+            if ('salary_usd' in pendingUpdates || 'daily_rate' in pendingUpdates || 'salary_pending' in pendingUpdates) {
+              row.base_salary = effBase;
+              row.amount = effBase;
             }
           }
         } else if (key === 'fuel_malfunctions') {
@@ -61430,6 +61824,7 @@
     setExceptionPill('navCountOverview', getHubExceptionBadge('overview', user, k, sentinelsOpen));
     setExceptionPill('navCountRaw', getHubExceptionBadge('raw', user, k, sentinelsOpen));
     setExceptionPill('navCountFleet', getHubExceptionBadge('fleet', user, k, sentinelsOpen));
+    setExceptionPill('navCountPayroll', getPendingSalaryExceptionBadge(user));
     setExceptionPill('navCountTB', getHubExceptionBadge('ledger', user, k, sentinelsOpen));
 
     if (window.innerWidth <= 860) renderMobileSubnav(user, k, sentinelsOpen);
@@ -63299,6 +63694,19 @@
         if (rawId) openPendingRawPriceModal(rawId);
       });
     });
+    container.querySelectorAll('[data-open-pending-salary]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        openEntryModal('employment', { salaryPending: true });
+      });
+    });
+    container.querySelectorAll('[data-set-pending-salary-id]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const empId = btn.getAttribute('data-set-pending-salary-id') || '';
+        if (empId) openPendingSalaryModal(empId);
+      });
+    });
     container.querySelectorAll('[data-jump-pending-expenses]').forEach(btn => {
       btn.addEventListener('click', ev => {
         ev.stopPropagation();
@@ -65075,6 +65483,10 @@
     };
     window.__openModalForm = (fid, prefill) => openEntryModal(fid, prefill);
     window.__openEntryModalForRecord = (crKey, id) => openEntryModalForRecord(crKey, id);
+    window.__openPendingSalaryModal = id => openPendingSalaryModal(id);
+    window.__getStaffContractProfile = (staff, co, dt) => getStaffContractProfile(staff, co, dt);
+    window.__computeStaffPayrollRegister = opts => computeStaffPayrollRegister(opts);
+    window.__computeStaffMonthPayrollPosition = (staff, co, ym, tx) => computeStaffMonthPayrollPosition(staff, co, ym, tx);
     window.__openRecordFromTableRow = (crKey, id, trEl) => openRecordFromTableRow(crKey, id, trEl);
     window.__openInspector = (crKey, id, opts) => showRecordInspector(crKey, id, opts);
     window.__getInspectorTableKeys = () => Object.keys(INSPECT_LABELS);

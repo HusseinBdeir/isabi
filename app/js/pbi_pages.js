@@ -1474,7 +1474,7 @@
       { id: 'leave', label: 'Absence & Leave', fn: r => Number(r.leave_days || 0) !== 0 || /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(r.type || r.status || '') },
       { id: 'extra', label: 'Extra & Config', fn: r => /^(?:extra|config)/i.test(r.type || r.status || '') }
     ] },
-    { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'working_days', 'working_hours', 'overtime_multiplier', 'reimbursement', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'freelance', label: 'Freelance / Daily', fn: r => /free|daily/i.test(r.type || '') }] },
+    { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'working_days', 'working_hours', 'overtime_multiplier', 'reimbursement', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'pending_salary', label: 'Pending Salary ($0)', fn: r => Boolean(r && !r.voided && r.salary_pending) }, { id: 'freelance', label: 'Freelance / Daily', fn: r => /free|daily/i.test(r.type || '') }] },
     { key: 'freelance_entries', group: '4 · Payroll, Attendance & Workforce', label: 'Freelance Work Entries', dvn: 'bhf_mfgfreelance', form: 'freelance', cols: ['date', 'company', 'staff', 'hours', 'extra_hours', 'rate_usd', 'total', 'notes'], relTables: ['employments', 'salaries'], views: [{ id: 'all', label: 'All Freelance Entries' }] },
     { key: 'logistics_allowances', group: '4 · Payroll, Attendance & Workforce', navView: 'payroll_allowances', label: 'Site Transport', dvn: 'bhf_mfglogistics', form: 'logistics', cols: ['name', 'company', 'staff', 'site', 'equipment', 'daily_usd', 'lbp_amount', 'working_days', 'start_date', 'end_date'], relTables: ['employments', 'sites', 'equipment', 'attendance', 'salaries'], views: [
       { id: 'all', label: 'All Site Transport' },
@@ -6902,7 +6902,7 @@
             { label: 'Freelancer / Staff', key: 'staff', bold: true },
             { label: 'Co.', key: 'company' },
             { label: 'Type', key: 'type' },
-            { label: 'Daily / Shift Rate ($)', raw: r => r.daily_rate || r.salary_usd || 0, r: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
+            { label: 'Daily / Shift Rate ($)', raw: r => r.salary_pending ? -1 : (r.daily_rate || r.salary_usd || 0), r: true, fmt: v => v === -1 ? '<span class="badge badge-warn">Pending ($0.00)</span>' : `<b>${fmtUSD(v, 2)}</b>` },
             { label: 'Start', key: 'start_date', mono: true }
           ], freelanceContractStaff, { emptyMsg: 'No Freelance-type contracts filtered', unitLabel: 'contracts' })}
         </div>
@@ -10884,7 +10884,7 @@
     const otRates = (ctx && ctx.otRates) || [];
     const fxRate = Number((ctx && ctx.fxRate) || 89500);
     const activeEmps = empAll
-      .filter(e => e.status !== 'Ended')
+      .filter(e => e.status !== 'Ended' && !e.salary_pending)
       .map(e => {
         const mUsd = Number(e.salary_usd != null ? e.salary_usd : (Number(e.usd_amount || 0) + (Number(e.lbp_amount || 0) / fxRate)));
         return {
