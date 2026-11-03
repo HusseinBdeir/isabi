@@ -7982,6 +7982,21 @@
       }))
       .sort((a, b) => (catFreq.get(norm(b.category)) || 0) - (catFreq.get(norm(a.category)) || 0) || a.category.localeCompare(b.category));
   }
+  function isExpenseSubcategoryOrCategoryName(nm) {
+    const k = norm(nm);
+    if (!k) return false;
+    const cats = (typeof FORM_UI !== 'undefined' && FORM_UI && FORM_UI.catCache)
+      ? FORM_UI.catCache
+      : expenseCategories();
+    for (let i = 0; i < cats.length; i++) {
+      const c = cats[i];
+      if (norm(c.category) === k) return true;
+      if (Array.isArray(c.subs) && c.subs.some(s => norm(s) === k)) return true;
+    }
+    if (((SEED.records && SEED.records.expense_categories) || []).some(c => c && !c.voided && norm(c.name || c.category) === k)) return true;
+    if (((SEED.records && SEED.records.expense_subcategories) || []).some(sc => sc && !sc.voided && norm(sc.name || sc.subcategory) === k)) return true;
+    return false;
+  }
   function compareProductByDomain(nameA, nameB, side, company, fIdx) {
     fIdx = fIdx || getFreqIndex();
     const ka = norm(nameA), kb = norm(nameB);
@@ -33023,7 +33038,7 @@
     otManual: false, ticketManual: false, qtyManual: false, repDateManual: false, showRepDate: false, afterHoursYesterday: false,
     ownerManuallyPicked: false, driverManual: false, postAttempted: false,
     stagedOwnerDrivers: [], expItems: [], repairItems: [],
-    lastCompany: '', lastDate: '', lastCategory: null, catCache: null,
+    lastCompany: '', lastDate: '', lastCategory: null, lastSubcategory: '', initialSubcategory: '', expItem0Manual: false, catCache: null,
     lastTruck: '', lastExpTruck: '', lastWhItem: '', lastOilUnit: '', lastOilType: '',
     lastTruckOwner: '', lastSaleType: '', lastTransportBy: '',
     lastSite: '', lastSiteOwner: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastRuleType: '', lastPrCoSide: '',
@@ -33218,7 +33233,7 @@
       ['general', 'Not for Equipment']
     ];
     ensureItemsCatalogSeeded();
-    const quickCatalogSample = (SEED.records.items || []).filter(r => r && !r.voided).slice(0, 7);
+    const quickCatalogSample = (SEED.records.items || []).filter(r => r && !r.voided && !isExpenseSubcategoryOrCategoryName(r.name || r.item_name)).slice(0, 7);
     wrap.innerHTML = `
       <div class="exp-item-cards-list">
         ${items.map((it, idx) => {
@@ -36348,7 +36363,7 @@
       const forEq = !storeWh && (val('f_for_equipment') === '1' || anyLineSameEq);
       const useItemTickets = Boolean(forEq || storeWh);
       if (useItemTickets && (!Array.isArray(FORM_UI.expItems) || FORM_UI.expItems.length === 0)) {
-        const initNm = val('f_exp_item_name') || '';
+        const initNm = val('f_exp_item_name') || (!storeWh ? val('f_subcategory') : '') || '';
         const catIt = resolveCatalogItem(initNm);
         const initQ = num('f_qty') || 1;
         const initAmt = num('f_amount');
@@ -36359,7 +36374,7 @@
           target_equipment: '',
           warehouse_location: val('f_exp_wh_loc') || defaultWarehouseLocationForCompany(expCoNow),
           qty: initQ,
-          uom: (catIt && catIt.uom) || val('f_exp_uom') || (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'),
+          uom: (catIt && catIt.uom) || val('f_exp_uom') || (/^fuel|oil/i.test(val('f_category')) || /diesel|mazout|gasoline|benzine|adblue/i.test(initNm) ? 'Litre' : 'Piece'),
           unit_cost: initUc
         }];
         renderExpenseItemsBuilderRows();
@@ -36593,6 +36608,30 @@
       if (subEl) subEl.placeholder = !catNow ? 'Pick Category first...' : (hit && hit.subs.length ? `${hit.subs.length} subcategories under ${catNow}` : 'Subcategory...');
     }
     const subNow = val('f_subcategory');
+    if (!pendEditRow && Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length === 1) {
+      const t0 = FORM_UI.expItems[0];
+      const t0Mode = t0.allocation_mode || 'same_equipment';
+      const subChanged = subNow !== FORM_UI.lastSubcategory;
+      if (t0Mode !== 'warehouse' && !FORM_UI.expItem0Manual) {
+        const curItNm = String(t0.item_name || '').trim();
+        const nmInp0 = $('f_exi_name_0');
+        if (
+          nmInp0 !== document.activeElement &&
+          ((subChanged && (!curItNm || norm(curItNm) === norm(FORM_UI.lastSubcategory) || norm(curItNm) === norm(FORM_UI.initialSubcategory) || isExpenseSubcategoryOrCategoryName(curItNm) || /^fuel$/i.test(catNow))) ||
+           (!curItNm && subNow))
+        ) {
+          t0.item_name = subNow || '';
+          const catIt = t0.item_name ? resolveCatalogItem(t0.item_name) : null;
+          t0.uom = (catIt && catIt.uom) || (/^fuel|oil/i.test(catNow) || /diesel|mazout|gasoline|benzine|adblue/i.test(subNow) ? 'Litre' : (t0.uom || 'Piece'));
+          if (nmInp0) nmInp0.value = t0.item_name;
+          const uSel0 = $('f_exi_uom_0');
+          if (uSel0) uSel0.value = t0.uom;
+          syncExpenseItemStockHints(val('f_company') || defaultEntryCompany());
+          syncExpenseItemsSummaryUI();
+        }
+      }
+    }
+    FORM_UI.lastSubcategory = subNow;
     const isFuelDiesel = /^diesel$|^mazout$/i.test(subNow) || (/^fuel$/i.test(catNow) && (!subNow || /diesel|mazout/i.test(subNow)));
     setText('lbl_exp_qty', isFuelDiesel ? 'Quantity (Litres L) *' : (pricePending ? 'Quantity Received *' : 'Quantity'));
     setText('lbl_exp_amount', pricePending ? 'Amount ($)' : 'Amount ($) *');
@@ -40909,7 +40948,7 @@
       ? [{ item_name: '', source: 'warehouse', qty: 1, uom: 'Piece', unit_cost: '', costManual: false }]
       : [];
     FORM_UI.adminUnlocked = {}; FORM_UI.unlockTargetField = ''; FORM_UI.unlockNote = '';
-    FORM_UI.lastCompany = val('f_company'); FORM_UI.lastDate = val('f_date'); FORM_UI.lastCategory = null; FORM_UI.catCache = null;
+    FORM_UI.lastCompany = val('f_company'); FORM_UI.lastDate = val('f_date'); FORM_UI.lastCategory = null; FORM_UI.lastSubcategory = val('f_subcategory'); FORM_UI.initialSubcategory = val('f_subcategory'); FORM_UI.expItem0Manual = false; FORM_UI.catCache = null;
     FORM_UI.lastTruck = val('f_truck'); FORM_UI.lastExpTruck = val('f_truck'); FORM_UI.lastWhItem = ''; FORM_UI.lastOilUnit = ''; FORM_UI.lastOilType = '';
     FORM_UI.lastTruckOwner = val('f_truckowner');
     FORM_UI.lastSaleType = val('f_saletype'); FORM_UI.lastTransportBy = val('f_transportby');
@@ -41979,6 +42018,7 @@
               if (locInp) locInp.value = defLoc;
             }
             if (idx === 0) {
+              FORM_UI.expItem0Manual = Boolean(String(rowObj.item_name || '').trim() && norm(rowObj.item_name) !== norm(val('f_subcategory')));
               expItemsWrap.querySelectorAll('[data-exi-quick-item]').forEach(chip => {
                 chip.classList.toggle('active', norm(chip.getAttribute('data-exi-quick-item')) === norm(rowObj.item_name));
               });
@@ -42000,6 +42040,9 @@
           const rowObj = FORM_UI.expItems[idx];
           if (rowObj && qName) {
             rowObj.item_name = qName;
+            if (idx === 0) {
+              FORM_UI.expItem0Manual = Boolean(norm(qName) !== norm(val('f_subcategory')));
+            }
             const catItem = resolveCatalogItem(qName);
             const whRow = getWarehouseIndex(val('f_company') || defaultEntryCompany()).byKey[norm(qName)];
             if (catItem && catItem.uom) rowObj.uom = catItem.uom;
@@ -42991,7 +43034,16 @@
             const rawNm = String(it.item_name || '').trim();
             const mode = it.allocation_mode || 'same_equipment';
             const isSingleNonWh = FORM_UI.expItems.length === 1 && mode !== 'warehouse';
-            const nm = rawNm || (isSingleNonWh ? (val('f_exp_item_name') || val('f_subcategory') || val('f_category')) : '');
+            const subVal = val('f_subcategory');
+            const shouldSyncSingleToSub = isSingleNonWh && Boolean(subVal) && !FORM_UI.expItem0Manual && (
+              !rawNm ||
+              norm(rawNm) === norm(FORM_UI.initialSubcategory) ||
+              isExpenseSubcategoryOrCategoryName(rawNm) ||
+              /^fuel$/i.test(val('f_category'))
+            );
+            const nm = shouldSyncSingleToSub
+              ? subVal
+              : (rawNm || (isSingleNonWh ? (val('f_exp_item_name') || subVal || val('f_category')) : ''));
             const q = Number(it.qty) || 0;
             const ucRaw = Number(it.unit_cost) || 0;
             const uc = (FORM_UI.expItems.length === 1 && !(ucRaw > 0) && c.amount > 0)
@@ -44615,7 +44667,7 @@
       if (crKey === 'expenses' && stagedExpenseItems.length) {
         if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
         stagedExpenseItems.forEach((it, li) => {
-          if (it.item_name) {
+          if (it.item_name && (it.allocation_mode === 'warehouse' || !isExpenseSubcategoryOrCategoryName(it.item_name))) {
             const newCatItem = ensureItemInCatalog(it.item_name, it.uom || 'Piece', it.category || record.category || 'Spare Parts', it.unit_cost || 0, it.warehouse_location || 'WTC Main Warehouse', 0);
             if (newCatItem && newCatItem.id) extraApiPosts.push(['items', newCatItem]);
           }
@@ -45625,8 +45677,7 @@
         'f_driver',
         'f_truckowner',
         'f_siteowner',
-        'f_metertype',
-        'f_subcategory'
+        'f_metertype'
       ].forEach(fid => {
         if ($(fid)) FORM_UI.adminUnlocked[fid] = true;
       });
@@ -45804,6 +45855,9 @@
       setModalControlVal('f_method', row.method || 'Cash');
       setModalControlVal('f_category', row.category || '');
       setModalControlVal('f_subcategory', row.subcategory || '');
+      FORM_UI.initialSubcategory = row.subcategory || '';
+      FORM_UI.lastSubcategory = row.subcategory || '';
+      FORM_UI.expItem0Manual = false;
       setModalControlVal('f_supplier', row.supplier || '');
       setModalControlVal('f_truck', row.equipment || '');
       setModalControlVal('f_qty', row.qty != null ? row.qty : 1);
@@ -45822,15 +45876,24 @@
         const isWhOnly = childItems.length === 1 && childItems[0].allocation_mode === 'warehouse';
         if ($('f_store_warehouse')) $('f_store_warehouse').value = isWhOnly ? '1' : '0';
         if ($('f_for_equipment')) $('f_for_equipment').value = (!isWhOnly && (row.equipment || row.for_equipment || childItems.some(it => it.allocation_mode !== 'warehouse'))) ? '1' : '0';
-        FORM_UI.expItems = childItems.map(it => {
-          const catIt = it.item_name ? resolveCatalogItem(it.item_name) : null;
+        FORM_UI.expItems = childItems.map((it, idx) => {
+          let effItemNm = String(it.item_name || '').trim();
+          const itMode = it.allocation_mode || 'same_equipment';
+          if (childItems.length === 1 && idx === 0 && itMode !== 'warehouse') {
+            if (row.subcategory && (!effItemNm || ((isExpenseSubcategoryOrCategoryName(effItemNm) || /^fuel$/i.test(row.category || '')) && norm(effItemNm) !== norm(row.subcategory)))) {
+              effItemNm = row.subcategory;
+            } else if (effItemNm && norm(effItemNm) !== norm(row.subcategory || '') && !isExpenseSubcategoryOrCategoryName(effItemNm) && !/^fuel$/i.test(row.category || '')) {
+              FORM_UI.expItem0Manual = true;
+            }
+          }
+          const catIt = effItemNm ? resolveCatalogItem(effItemNm) : null;
           return {
-            item_name: it.item_name || '',
-            allocation_mode: it.allocation_mode || 'same_equipment',
+            item_name: effItemNm,
+            allocation_mode: itMode,
             target_equipment: it.target_equipment || '',
             warehouse_location: it.warehouse_location || defaultWarehouseLocationForCompany(rowCo || defaultEntryCompany()),
             qty: Number(it.qty) || 1,
-            uom: (catIt && catIt.uom) || it.uom || 'Piece',
+            uom: (catIt && catIt.uom) || it.uom || (/^fuel|oil/i.test(row.category || '') ? 'Litre' : 'Piece'),
             unit_cost: it.unit_cost != null ? it.unit_cost : 0
           };
         });
@@ -50189,6 +50252,46 @@
             row.amount = 0;
             row.method = 'Credit';
           }
+          if ('subcategory' in pendingUpdates || 'category' in pendingUpdates || 'equipment' in pendingUpdates || 'qty' in pendingUpdates || 'amount' in pendingUpdates) {
+            if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
+            const seenModEi = new Set();
+            const linkedItems = STATE.customRecords.expense_items
+              .concat((SEED.records && SEED.records.expense_items) || [])
+              .filter(it => {
+                if (!it || it.voided || String(it.expense_id || '') !== String(row.id)) return false;
+                if (it.id && seenModEi.has(String(it.id))) return false;
+                if (it.id) seenModEi.add(String(it.id));
+                return true;
+              });
+            if (linkedItems.length === 1 && (linkedItems[0].allocation_mode || 'same_equipment') !== 'warehouse') {
+              const li0 = linkedItems[0];
+              const oldSub = String(origRowSnap.subcategory || '').trim();
+              const oldCat = String(origRowSnap.category || '').trim();
+              if ('category' in pendingUpdates && row.category) li0.category = row.category;
+              if ('subcategory' in pendingUpdates) li0.subcategory = row.subcategory || '';
+              if (row.subcategory && (!li0.item_name || norm(li0.item_name) === norm(oldSub) || norm(li0.item_name) === norm(oldCat) || isExpenseSubcategoryOrCategoryName(li0.item_name) || /^fuel$/i.test(row.category || ''))) {
+                li0.item_name = row.subcategory;
+                li0.name = `${row.name || ('EXP ' + (row.date || ''))} · L1 · ${li0.item_name}`;
+              }
+              if ('equipment' in pendingUpdates && (li0.allocation_mode || 'same_equipment') === 'same_equipment') {
+                li0.target_equipment = row.equipment || '';
+              }
+              if ('qty' in pendingUpdates && Number(row.qty) > 0) {
+                li0.qty = round2(Number(row.qty));
+              }
+              if ('qty' in pendingUpdates || 'amount' in pendingUpdates) {
+                const effQ = Number(li0.qty) || 1;
+                li0.line_total = row.price_pending ? 0 : round2(Number(row.amount || 0));
+                li0.unit_cost = row.price_pending ? 0 : (effQ > 0 ? round2(li0.line_total / effQ) : li0.line_total);
+              }
+              const destLbl = li0.allocation_mode === 'warehouse' ? 'Warehouse' : (li0.target_equipment || row.equipment || 'General');
+              row.item_summary = `${li0.qty || row.qty || 1}x ${li0.item_name} (${destLbl})`;
+              const ci = STATE.customRecords.expense_items.findIndex(x => x && String(x.id) === String(li0.id));
+              if (ci >= 0) Object.assign(STATE.customRecords.expense_items[ci], li0);
+              else STATE.customRecords.expense_items.unshift(Object.assign({}, li0));
+              postRecordToLocalApi('expense_items', li0);
+            }
+          }
         } else if (key === 'fuel_malfunctions') {
           row.litres = round2(Number(row.litres || 0));
           if ('discrepancy_type' in pendingUpdates && !/^wash$/i.test(String(row.discrepancy_type || ''))) {
@@ -50654,6 +50757,54 @@
         if (nextArr.length !== arr.length) {
           STATE.customRecords[k] = nextArr;
           removedAny = true;
+        }
+      });
+    }
+    if (STATE.customRecords) {
+      if (Array.isArray(STATE.customRecords.items) && STATE.customRecords.items.length) {
+        const canonItemSet = new Set(CANONICAL_ITEMS_SEED.map(x => norm(x.name || x.item_name)));
+        const beforeItemsLen = STATE.customRecords.items.length;
+        STATE.customRecords.items = STATE.customRecords.items.filter(it => {
+          if (!it) return false;
+          const nm = String(it.name || it.item_name || '').trim();
+          if (nm && !canonItemSet.has(norm(nm)) && isExpenseSubcategoryOrCategoryName(nm)) return false;
+          return true;
+        });
+        if (STATE.customRecords.items.length !== beforeItemsLen) {
+          removedAny = true;
+          if (SEED.records && Array.isArray(SEED.records.items)) {
+            SEED.records.items = SEED.records.items.filter(it => {
+              if (!it) return false;
+              const nm = String(it.name || it.item_name || '').trim();
+              if (it.source === 'app' && nm && !canonItemSet.has(norm(nm)) && isExpenseSubcategoryOrCategoryName(nm)) return false;
+              return true;
+            });
+          }
+        }
+      }
+      const expArr = Array.isArray(STATE.customRecords.expenses) ? STATE.customRecords.expenses : [];
+      const eiArr = Array.isArray(STATE.customRecords.expense_items) ? STATE.customRecords.expense_items : [];
+      expArr.forEach(ex => {
+        if (!ex || ex.voided) return;
+        if (Array.isArray(ex.admin_overrides) && !ex.price_pending && ex.admin_overrides.includes('f_subcategory')) {
+          ex.admin_overrides = ex.admin_overrides.filter(f => f !== 'f_subcategory');
+          if (!ex.admin_overrides.length) delete ex.admin_overrides;
+          removedAny = true;
+        }
+        const sub = String(ex.subcategory || '').trim();
+        if (!sub) return;
+        const activeEis = eiArr.filter(ei => ei && !ei.voided && String(ei.expense_id || '') === String(ex.id));
+        if (activeEis.length === 1 && (activeEis[0].allocation_mode || 'same_equipment') !== 'warehouse') {
+          const ei0 = activeEis[0];
+          const curNm = String(ei0.item_name || '').trim();
+          if (curNm && norm(curNm) !== norm(sub) && (isExpenseSubcategoryOrCategoryName(curNm) || /^fuel$/i.test(ex.category || ''))) {
+            ei0.item_name = sub;
+            ei0.subcategory = sub;
+            ei0.name = `${ex.name || ('EXP ' + (ex.date || ''))} · L1 · ${sub}`;
+            const destLbl = ei0.target_equipment || ex.equipment || 'General';
+            ex.item_summary = `${ei0.qty || ex.qty || 1}x ${sub} (${destLbl})`;
+            removedAny = true;
+          }
         }
       });
     }
