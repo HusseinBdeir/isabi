@@ -1410,13 +1410,13 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
   grid-column: 1 / -1;
   border: 1px solid rgba(8, 17, 36, 0.11);
   border-left: 3.5px solid #C89D54;
-  border-radius: 12px;
-  padding: 10px 13px;
+  border-radius: 10px;
+  padding: 7px 11px;
   background: linear-gradient(180deg, #FFFFFF 0%, #FAF8F4 100%);
   box-shadow: 0 2px 8px rgba(8, 17, 36, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 6px;
   transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 .origin-dispatch-card[data-active-mode="bu"] {
@@ -2295,13 +2295,38 @@ body:has(.modal-backdrop:not([hidden])) .geo-studio-deck .geo-place-menu {
 /* =========================================================================
    Weighbridge Series-Connected Ticket Counter & 25-Ticket Pad Book Drawer
    ========================================================================= */
+.tkt-pad-tab-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+}
+.tkt-pad-tab-btn:hover,
+.tkt-pad-tab-btn.is-open {
+  border-color: var(--brass, #B88728);
+  box-shadow: 0 1px 4px rgba(184, 135, 40, 0.18);
+}
+.tkt-pad-tab-btn[hidden] {
+  display: none !important;
+}
 .tkt-series-conn-bar {
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 6px;
+  padding-top: 6px;
   border-top: 1px dashed var(--line, #E6DEC8);
 }
-.tkt-series-conn-bar:empty {
-  display: none;
+.tkt-series-conn-bar[hidden],
+.tkt-series-conn-bar:empty,
+.tkt-series-field-bar[hidden],
+.tkt-series-field-bar:empty {
+  display: none !important;
 }
 .tkt-series-row {
   display: flex;
