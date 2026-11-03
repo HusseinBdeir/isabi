@@ -18921,31 +18921,41 @@
     };
   }
 
+  const ALL_EQUIP_CLASSES = ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Generator', 'Vehicle', 'Other'];
   const CANONICAL_ITEMS_SEED = [
-    { id: 'itm_001', name: 'Engine Oil 15W-40', item_name: 'Engine Oil 15W-40', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 4.5, default_location: 'WTC Main Warehouse', min_stock: 100 },
-    { id: 'itm_002', name: 'Hydraulic Oil 68', item_name: 'Hydraulic Oil 68', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 3.8, default_location: 'WTC Main Warehouse', min_stock: 100 },
-    { id: 'itm_003', name: 'Gear / Transmission Oil 90', item_name: 'Gear / Transmission Oil 90', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 5.0, default_location: 'WTC Main Warehouse', min_stock: 40 },
-    { id: 'itm_004', name: 'ATF / Power Steering Fluid', item_name: 'ATF / Power Steering Fluid', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 6.0, default_location: 'WTC Main Warehouse', min_stock: 20 },
-    { id: 'itm_005', name: 'Differential / Axle Oil 85W-140', item_name: 'Differential / Axle Oil 85W-140', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 5.5, default_location: 'WTC Main Warehouse', min_stock: 20 },
-    { id: 'itm_006', name: 'Lithium EP2 Chassis Grease', item_name: 'Lithium EP2 Chassis Grease', category: 'Oils & Lubricants', uom: 'kg', default_cost: 6.5, default_location: 'WTC Main Warehouse', min_stock: 15 },
-    { id: 'itm_007', name: 'Complete Filter Set (Oil + Fuel + Air)', item_name: 'Complete Filter Set (Oil + Fuel + Air)', category: 'Spare Parts', uom: 'Set', default_cost: 85, default_location: 'WTC Main Warehouse', min_stock: 2 },
-    { id: 'itm_008', name: 'Fuel Filter', item_name: 'Fuel Filter', category: 'Spare Parts', uom: 'Piece', default_cost: 22, default_location: 'WTC Main Warehouse', min_stock: 4 },
-    { id: 'itm_009', name: 'Engine Oil Filter', item_name: 'Engine Oil Filter', category: 'Spare Parts', uom: 'Piece', default_cost: 25, default_location: 'WTC Main Warehouse', min_stock: 4 },
-    { id: 'itm_010', name: 'Air Filter', item_name: 'Air Filter', category: 'Spare Parts', uom: 'Piece', default_cost: 38, default_location: 'WTC Main Warehouse', min_stock: 3 },
-    { id: 'itm_011', name: 'Bearing (Roulement)', item_name: 'Bearing (Roulement)', category: 'Spare Parts', uom: 'Piece', default_cost: 45, default_location: 'WTC Main Warehouse', min_stock: 4 },
-    { id: 'itm_012', name: 'Conveyor / Drive Belt', item_name: 'Conveyor / Drive Belt', category: 'Spare Parts', uom: 'Piece', default_cost: 65, default_location: 'WTC Main Warehouse', min_stock: 2 },
-    { id: 'itm_013', name: 'High-Pressure Hydraulic Hose', item_name: 'High-Pressure Hydraulic Hose', category: 'Spare Parts', uom: 'Piece', default_cost: 55, default_location: 'WTC Main Warehouse', min_stock: 3 },
-    { id: 'itm_014', name: 'Heavy-Duty Truck Battery', item_name: 'Heavy-Duty Truck Battery', category: 'Spare Parts', uom: 'Piece', default_cost: 165, default_location: 'WTC Main Warehouse', min_stock: 2 },
-    { id: 'itm_015', name: 'Heavy Truck / Loader Tire', item_name: 'Heavy Truck / Loader Tire', category: 'Spare Parts', uom: 'Piece', default_cost: 380, default_location: 'WTC Main Warehouse', min_stock: 2 },
-    { id: 'itm_016', name: 'Alternator (Dynamo)', item_name: 'Alternator (Dynamo)', category: 'Spare Parts', uom: 'Piece', default_cost: 185, default_location: 'WTC Main Warehouse', min_stock: 1 },
-    { id: 'itm_017', name: 'Starter Motor (March)', item_name: 'Starter Motor (March)', category: 'Spare Parts', uom: 'Piece', default_cost: 210, default_location: 'WTC Main Warehouse', min_stock: 1 },
-    { id: 'itm_018', name: 'Brake Lining & Shoe Set', item_name: 'Brake Lining & Shoe Set', category: 'Spare Parts', uom: 'Set', default_cost: 95, default_location: 'WTC Main Warehouse', min_stock: 2 },
-    { id: 'itm_019', name: 'Crusher Jaw / Manganese Plate Set', item_name: 'Crusher Jaw / Manganese Plate Set', category: 'Spare Parts', uom: 'Set', default_cost: 1450, default_location: 'WTC Main Warehouse', min_stock: 1 },
-    { id: 'itm_020', name: 'Welding Electrodes (7018 Box)', item_name: 'Welding Electrodes (7018 Box)', category: 'Tools & Garage', uom: 'Box', default_cost: 28, default_location: 'WTC Main Warehouse', min_stock: 3 },
-    { id: 'itm_021', name: 'Diesel', item_name: 'Diesel', category: 'Fuel', uom: 'Litre', default_cost: 0, default_location: 'WTC Main Warehouse', min_stock: 0 },
-    { id: 'itm_022', name: 'Petrol / Gasoline', item_name: 'Petrol / Gasoline', category: 'Fuel', uom: 'Litre', default_cost: 0, default_location: 'WTC Main Warehouse', min_stock: 0 },
-    { id: 'itm_023', name: 'Fuel Additives & AdBlue', item_name: 'Fuel Additives & AdBlue', category: 'Fuel', uom: 'Litre', default_cost: 0, default_location: 'WTC Main Warehouse', min_stock: 0 }
+    { id: 'itm_001', name: 'Engine Oil 15W-40', item_name: 'Engine Oil 15W-40', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 4.5, default_location: 'WTC Main Warehouse', min_stock: 100, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_002', name: 'Hydraulic Oil 68', item_name: 'Hydraulic Oil 68', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 3.8, default_location: 'WTC Main Warehouse', min_stock: 100, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Other'] },
+    { id: 'itm_003', name: 'Gear / Transmission Oil 90', item_name: 'Gear / Transmission Oil 90', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 5.0, default_location: 'WTC Main Warehouse', min_stock: 40, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Vehicle', 'Other'] },
+    { id: 'itm_004', name: 'ATF / Power Steering Fluid', item_name: 'ATF / Power Steering Fluid', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 6.0, default_location: 'WTC Main Warehouse', min_stock: 20, compatible_types: ['Truck', 'Wheel Loader', 'Vehicle'] },
+    { id: 'itm_005', name: 'Differential / Axle Oil 85W-140', item_name: 'Differential / Axle Oil 85W-140', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 5.5, default_location: 'WTC Main Warehouse', min_stock: 20, compatible_types: ['Truck', 'Wheel Loader', 'Vehicle'] },
+    { id: 'itm_006', name: 'Lithium EP2 Chassis Grease', item_name: 'Lithium EP2 Chassis Grease', category: 'Oils & Lubricants', uom: 'kg', default_cost: 6.5, default_location: 'WTC Main Warehouse', min_stock: 15, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Other'] },
+    { id: 'itm_007', name: 'Complete Filter Set (Oil + Fuel + Air)', item_name: 'Complete Filter Set (Oil + Fuel + Air)', category: 'Spare Parts', uom: 'Set', default_cost: 85, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_008', name: 'Fuel Filter', item_name: 'Fuel Filter', category: 'Spare Parts', uom: 'Piece', default_cost: 22, default_location: 'WTC Main Warehouse', min_stock: 4, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_009', name: 'Engine Oil Filter', item_name: 'Engine Oil Filter', category: 'Spare Parts', uom: 'Piece', default_cost: 25, default_location: 'WTC Main Warehouse', min_stock: 4, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_010', name: 'Air Filter', item_name: 'Air Filter', category: 'Spare Parts', uom: 'Piece', default_cost: 38, default_location: 'WTC Main Warehouse', min_stock: 3, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_011', name: 'Bearing (Roulement)', item_name: 'Bearing (Roulement)', category: 'Spare Parts', uom: 'Piece', default_cost: 45, default_location: 'WTC Main Warehouse', min_stock: 4, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_012', name: 'Conveyor / Drive Belt', item_name: 'Conveyor / Drive Belt', category: 'Spare Parts', uom: 'Piece', default_cost: 65, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_013', name: 'High-Pressure Hydraulic Hose', item_name: 'High-Pressure Hydraulic Hose', category: 'Spare Parts', uom: 'Piece', default_cost: 55, default_location: 'WTC Main Warehouse', min_stock: 3, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Other'] },
+    { id: 'itm_014', name: 'Heavy-Duty Truck Battery', item_name: 'Heavy-Duty Truck Battery', category: 'Spare Parts', uom: 'Piece', default_cost: 165, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_015', name: 'Heavy Truck / Loader Tire', item_name: 'Heavy Truck / Loader Tire', category: 'Spare Parts', uom: 'Piece', default_cost: 380, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ['Truck', 'Wheel Loader', 'Vehicle'] },
+    { id: 'itm_016', name: 'Alternator (Dynamo)', item_name: 'Alternator (Dynamo)', category: 'Spare Parts', uom: 'Piece', default_cost: 185, default_location: 'WTC Main Warehouse', min_stock: 1, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_017', name: 'Starter Motor (March)', item_name: 'Starter Motor (March)', category: 'Spare Parts', uom: 'Piece', default_cost: 210, default_location: 'WTC Main Warehouse', min_stock: 1, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_018', name: 'Brake Lining & Shoe Set', item_name: 'Brake Lining & Shoe Set', category: 'Spare Parts', uom: 'Set', default_cost: 95, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ['Truck', 'Wheel Loader', 'Vehicle'] },
+    { id: 'itm_019', name: 'Crusher Jaw / Manganese Plate Set', item_name: 'Crusher Jaw / Manganese Plate Set', category: 'Spare Parts', uom: 'Set', default_cost: 1450, default_location: 'WTC Main Warehouse', min_stock: 1, compatible_types: ['Plant'] },
+    { id: 'itm_020', name: 'Welding Electrodes (7018 Box)', item_name: 'Welding Electrodes (7018 Box)', category: 'Tools & Garage', uom: 'Box', default_cost: 28, default_location: 'WTC Main Warehouse', min_stock: 3, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_021', name: 'Diesel', item_name: 'Diesel', category: 'Fuel', uom: 'Litre', default_cost: 0, default_location: 'WTC Main Warehouse', min_stock: 0, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Generator', 'Vehicle', 'Other'] },
+    { id: 'itm_022', name: 'Petrol / Gasoline', item_name: 'Petrol / Gasoline', category: 'Fuel', uom: 'Litre', default_cost: 0, default_location: 'WTC Main Warehouse', min_stock: 0, compatible_types: ['Vehicle', 'Generator', 'Other'] },
+    { id: 'itm_023', name: 'Fuel Additives & AdBlue', item_name: 'Fuel Additives & AdBlue', category: 'Fuel', uom: 'Litre', default_cost: 0, default_location: 'WTC Main Warehouse', min_stock: 0, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Generator', 'Vehicle'] },
+    { id: 'itm_024', name: 'Coolant / Antifreeze', item_name: 'Coolant / Antifreeze', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 3.5, default_location: 'WTC Main Warehouse', min_stock: 20, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_025', name: 'Hydraulic Seal Kit', item_name: 'Hydraulic Seal Kit', category: 'Spare Parts', uom: 'Set', default_cost: 48, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Other'] },
+    { id: 'itm_026', name: 'Heavy Truck Clutch Kit (Plateau)', item_name: 'Heavy Truck Clutch Kit (Plateau)', category: 'Spare Parts', uom: 'Set', default_cost: 290, default_location: 'WTC Main Warehouse', min_stock: 1, compatible_types: ['Truck', 'Vehicle'] },
+    { id: 'itm_027', name: 'Heavy Tire Inner Tube', item_name: 'Heavy Tire Inner Tube', category: 'Spare Parts', uom: 'Piece', default_cost: 35, default_location: 'WTC Main Warehouse', min_stock: 3, compatible_types: ['Truck', 'Wheel Loader', 'Vehicle'] },
+    { id: 'itm_028', name: 'Crusher Screen Mesh', item_name: 'Crusher Screen Mesh', category: 'Spare Parts', uom: 'Piece', default_cost: 320, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ['Plant'] },
+    { id: 'itm_029', name: 'Conveyor Pulley / Idler Roller', item_name: 'Conveyor Pulley / Idler Roller', category: 'Spare Parts', uom: 'Piece', default_cost: 110, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ['Plant'] },
+    { id: 'itm_030', name: 'Oxygen Welding Cylinder', item_name: 'Oxygen Welding Cylinder', category: 'Tools & Garage', uom: 'Piece', default_cost: 18, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ALL_EQUIP_CLASSES },
+    { id: 'itm_031', name: 'Loader Bucket Tooth / Adapter', item_name: 'Loader Bucket Tooth / Adapter', category: 'Spare Parts', uom: 'Piece', default_cost: 38, default_location: 'WTC Main Warehouse', min_stock: 4, compatible_types: ['Wheel Loader', 'Excavator'] }
   ];
+  const CANONICAL_ITEM_KEYS = new Set(CANONICAL_ITEMS_SEED.map(r => norm(r.name)));
 
   function isTransportRentalItemName(rawName, catRaw) {
     const k = norm(rawName);
@@ -18955,13 +18965,28 @@
     return false;
   }
 
+  function isValidCatalogItemCandidate(rawName, catRaw) {
+    const nm = String(rawName || '').trim();
+    if (!nm) return false;
+    const k = norm(nm);
+    if (CANONICAL_ITEM_KEYS.has(k)) return true;
+    if (isTransportRentalItemName(nm, catRaw)) return false;
+    const catStr = String(catRaw || '').trim();
+    if (/transport|logistics|insurance|permits|taxes|administrative|rent|utilities|salaries|payroll/i.test(catStr)) return false;
+    if (typeof isExpenseSubcategoryOrCategoryName === 'function' && isExpenseSubcategoryOrCategoryName(nm)) return false;
+    if (typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(nm)) return false;
+    if (/^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(nm)) return false;
+    if (/^(oil|mechanical|electrical|traffic control|trans diesel|rubber|general|maintenance|repairs?|service|charge|control|accident|accountant|accompliment|moto|bh|b\.h|ac|ups|printer|camera|cameras|air condition|board cleaning|silo|ec210cl|winch|crane|lodar|ضريبة.*|سكر|غير|تلحيم|تشحيم|صيانة.*|خراطة.*|نصليح.*|تصليح.*|تركيب.*|غيار\s+.*|كبس\s+.*|change\s+.*)$/i.test(nm)) return false;
+    return true;
+  }
+
   function normalizeItemCatalogCategory(catRaw, rawName) {
     const c = String(catRaw || '').trim();
     if (['Spare Parts', 'Oils & Lubricants', 'Fuel', 'Tools & Garage', 'Plant Consumables'].includes(c)) return c;
     const nm = String(rawName || '').trim();
     if (/diesel|mazout|gasoline|petrol|benzine|adblue/i.test(nm) || /^fuel$/i.test(c)) return 'Fuel';
-    if (/15w|hydraul|oil|fluid|atf|grease|lubric/i.test(nm) || /oil|lubric/i.test(c)) return 'Oils & Lubricants';
-    if (/tool|weld|electrode|oxygen|cutting|disc|glove|torch|camera|projector|gps/i.test(nm) || /tool|garage/i.test(c)) return 'Tools & Garage';
+    if (/15w|hydraul\s*oil|gear.*oil|axle.*oil|engine\s*oil|fluid|\batf\b|grease|lubric|coolant|antifreeze/i.test(nm) || /oil|lubric/i.test(c)) return 'Oils & Lubricants';
+    if (/tool|weld|electrode|oxygen|cutting|disc|glove|torch|grease\s*gun/i.test(nm) || /tool|garage/i.test(c)) return 'Tools & Garage';
     if (/paint|consum|clean|office|water|pipe|cable|bulb|lamp/i.test(nm) || /office|facility/i.test(c)) return 'Plant Consumables';
     return 'Spare Parts';
   }
@@ -18970,15 +18995,27 @@
     if (!SEED || !SEED.records) return [];
     if (!Array.isArray(SEED.records.items)) SEED.records.items = [];
     const customItems = (STATE.customRecords && Array.isArray(STATE.customRecords.items)) ? STATE.customRecords.items : [];
-    const rev = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${(SEED.records.expense_items || []).length}|${(SEED.records.warehouse_movements || []).length}|${customItems.length}`;
+    const rev = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${(SEED.records.expense_items || []).length}|${(SEED.records.warehouse_movements || []).length}|${customItems.length}|v2`;
     if (SEED._itemsCatalogSeededRev === rev && SEED.records.items.length >= CANONICAL_ITEMS_SEED.length) {
       return SEED.records.items;
     }
-    const byKey = new Map();
-    SEED.records.items.forEach(r => {
-      if (!r || r.voided) return;
+    // Retain custom app-entered SKUs & valid existing rows while purging polluted historical subcategory/aggregate rows
+    const keptItems = SEED.records.items.filter(r => {
+      if (!r || r.voided) return false;
       const nm = String(r.name || r.item_name || '').trim();
-      if (nm) byKey.set(norm(nm), r);
+      if (!nm) return false;
+      if (r.source === 'app' || customItems.some(ci => ci && !ci.voided && norm(ci.name || ci.item_name) === norm(nm))) return true;
+      return isValidCatalogItemCandidate(nm, r.category);
+    });
+    SEED.records.items.length = 0;
+    const byKey = new Map();
+    keptItems.forEach(r => {
+      const nm = String(r.name || r.item_name || '').trim();
+      const k = norm(nm);
+      if (k && !byKey.has(k)) {
+        SEED.records.items.push(r);
+        byKey.set(k, r);
+      }
     });
     customItems.forEach(r => {
       if (!r || r.voided) return;
@@ -18994,11 +19031,15 @@
         const clone = Object.assign({ source: 'seed', voided: false }, seedRow);
         SEED.records.items.push(clone);
         byKey.set(k, clone);
+      } else {
+        const ex = byKey.get(k);
+        if (seedRow.uom && ex.source !== 'app') ex.uom = seedRow.uom;
+        if (seedRow.compatible_types && !ex.compatible_types) ex.compatible_types = seedRow.compatible_types;
       }
     });
     const histCostAgg = new Map();
     (SEED.records.expense_items || []).forEach(r => {
-      if (!r || r.voided || !r.item_name || isTransportRentalItemName(r.item_name, r.category)) return;
+      if (!r || r.voided || !r.item_name || !isValidCatalogItemCandidate(r.item_name, r.category)) return;
       const k = norm(r.item_name);
       const q = Math.max(0, Number(r.qty != null ? r.qty : 1));
       const tot = Math.max(0, Number(r.line_total != null ? r.line_total : (q * Number(r.unit_cost || 0))));
@@ -19008,9 +19049,11 @@
       cur.usd += tot;
       histCostAgg.set(k, cur);
     });
-    const autoInferFromRow = (rawName, uomRaw, catRaw, costRaw, locRaw, minRaw) => {
+    const autoInferFromRow = (rawName, uomRaw, catRaw, costRaw, locRaw, minRaw, isExplicitStockOrRepair = false) => {
       const nm = String(rawName || '').trim();
-      if (!nm || isTransportRentalItemName(nm, catRaw)) return;
+      if (!nm) return;
+      if (!isExplicitStockOrRepair && !isValidCatalogItemCandidate(nm, catRaw)) return;
+      if (isExplicitStockOrRepair && isTransportRentalItemName(nm, catRaw)) return;
       const k = norm(nm);
       if (byKey.has(k)) {
         const ex = byKey.get(k);
@@ -19021,7 +19064,7 @@
         }
         return;
       }
-      const inferredUom = uomRaw || (/15w|hydraul|oil|fluid|atf|coolant|diesel|mazout|gasoline|petrol|benzine|adblue/i.test(nm) ? 'Litre' : (/grease/i.test(nm) ? 'kg' : (/\bset\b|bolts|hardware|kit|knives|lining/i.test(nm) ? 'Set' : (/\bbox\b|electrodes/i.test(nm) ? 'Box' : 'Piece'))));
+      const inferredUom = uomRaw || (/15w|hydraul\s*oil|gear.*oil|engine\s*oil|fluid|\batf\b|coolant|diesel|mazout|gasoline|petrol|benzine|adblue/i.test(nm) ? 'Litre' : (/grease/i.test(nm) ? 'kg' : (/\bset\b|bolts|hardware|kit|knives|lining|clips/i.test(nm) ? 'Set' : (/\bbox\b|electrodes/i.test(nm) ? 'Box' : 'Piece'))));
       const inferredCat = normalizeItemCatalogCategory(catRaw, nm);
       const hc = histCostAgg.get(k);
       const effCost = Number(costRaw || 0) > 0 ? round2(Number(costRaw)) : (hc && hc.qty > 0 ? round2(hc.usd / hc.qty) : 0);
@@ -19041,13 +19084,13 @@
       byKey.set(k, newRec);
     };
     (SEED.records.warehouse_movements || []).forEach(r => {
-      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, r.category, r.unit_cost, r.warehouse_location || r.location, r.min_stock);
+      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, r.category, r.unit_cost, r.warehouse_location || r.location, r.min_stock, true);
     });
     (SEED.records.expense_items || []).forEach(r => {
-      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, r.category, r.unit_cost, r.warehouse_location, 0);
+      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, r.category, r.unit_cost, r.warehouse_location, 0, false);
     });
     (SEED.records.repair_items || []).forEach(r => {
-      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, 'Spare Parts', r.unit_cost, 'WTC Main Warehouse', 0);
+      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, 'Spare Parts', r.unit_cost, 'WTC Main Warehouse', 0, true);
     });
     SEED._itemsCatalogSeededRev = rev;
     return SEED.records.items;
@@ -19091,6 +19134,7 @@
       default_cost: Number(spec.default_cost || 0) > 0 ? round2(Number(spec.default_cost)) : 0,
       default_location: spec.default_location || 'WTC Main Warehouse',
       min_stock: Number(spec.min_stock || 0) > 0 ? Number(spec.min_stock) : 0,
+      ...(Array.isArray(spec.compatible_types) && spec.compatible_types.length > 0 ? { compatible_types: spec.compatible_types.slice() } : {}),
       notes: spec.notes || '',
       source: 'app',
       entered_by: who.full_name,
@@ -20072,14 +20116,132 @@
   function warehouseCatalogItemNames(coOpt) {
     ensureItemsCatalogSeeded();
     const wh = getWarehouseIndex(coOpt);
-    const names = wh.items.map(it => it.item_name);
-    (SEED.records.items || []).forEach(r => {
-      if (r && !r.voided && (r.name || r.item_name)) names.push(r.name || r.item_name);
+    const names = [];
+    wh.items.forEach(it => {
+      if (it && it.item_name && isValidCatalogItemCandidate(it.item_name, it.category)) names.push(it.item_name);
     });
-    (SEED.records.expense_items || []).forEach(r => {
-      if (r && !r.voided && r.item_name && !r.historical_consumed) names.push(r.item_name);
+    const customSet = new Set(
+      ((STATE.customRecords && Array.isArray(STATE.customRecords.items)) ? STATE.customRecords.items : [])
+        .filter(r => r && !r.voided && (r.name || r.item_name))
+        .map(r => norm(r.name || r.item_name))
+    );
+    (SEED.records.items || []).forEach(r => {
+      if (!r || r.voided) return;
+      const nm = String(r.name || r.item_name || '').trim();
+      if (!nm) return;
+      if (r.source === 'app' || customSet.has(norm(nm)) || isValidCatalogItemCandidate(nm, r.category)) {
+        names.push(nm);
+      }
     });
     return uniqSorted(names, getFreqIndex().item);
+  }
+
+  function resolveCompatibleTypesPreset(presetRaw) {
+    const p = String(presetRaw || 'all').trim().toLowerCase();
+    if (p === 'road') return ['Truck', 'Vehicle'];
+    if (p === 'mobile') return ['Truck', 'Wheel Loader', 'Excavator', 'Vehicle'];
+    if (p === 'plant') return ['Plant'];
+    if (p === 'generator') return ['Generator'];
+    return ALL_EQUIP_CLASSES.slice();
+  }
+
+  function resolveEquipmentUnitClass(equipmentName, company) {
+    const raw = String(equipmentName || '').trim();
+    if (!raw) return '';
+    const canon = (typeof resolveCanonicalEquipmentName === 'function')
+      ? (resolveCanonicalEquipmentName(raw, company || '', false, null, true) || raw)
+      : raw;
+    const info = (typeof equipInfo === 'function') ? equipInfo(canon, company || '') : null;
+    const t = String((info && info.type) || '').trim();
+    if (['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Generator', 'Vehicle', 'Other'].includes(t)) return t;
+    if (/crusher|maghsal|screen|plant|wash/i.test(canon)) return 'Plant';
+    if (/^pb\d|gen/i.test(canon)) return 'Generator';
+    if (/^mb\d|^e62|excav|poclain/i.test(canon)) return 'Excavator';
+    if (/^sb\d|bobcat|loader|رفش/i.test(canon)) return 'Wheel Loader';
+    if (/pickup|van|car|suv|moto/i.test(canon)) return 'Vehicle';
+    if (/^tb\d|truck|camion|danbar/i.test(canon)) return 'Truck';
+    return 'Other';
+  }
+
+  function isItemCompatibleWithEquipment(itemRec, eqClass) {
+    if (!itemRec || !eqClass || eqClass === 'Other') return true;
+    if (Array.isArray(itemRec.compatible_types) && itemRec.compatible_types.length > 0) {
+      return itemRec.compatible_types.includes(eqClass);
+    }
+    const nm = String(itemRec.name || itemRec.item_name || '').trim();
+    if (!nm) return false;
+    if (eqClass === 'Truck' || eqClass === 'Vehicle') {
+      if (/crusher|manganese|screen\s*mesh|polyurethane.*screen|vibrating\s*screen|conveyor\s*(pulley|idler|fastener)|pillow\s*block|sieve\s*-\s*dryer/i.test(nm)) return false;
+      if (eqClass === 'Truck' && /^petrol|gasoline/i.test(nm)) return false;
+      return true;
+    }
+    if (eqClass === 'Plant') {
+      if (/truck.*tire|tire\s*inner\s*tube|wheel\s*rim|brake\s*(lining|drum|shoe)|clutch\s*kit|power\s*steering|\batf\b|differential.*axle|دبرياج|دركسيون|فريم|قزاز|زجاج|مقص|كرسي\s*شوفور|petrol|gasoline|adblue/i.test(nm)) return false;
+      return true;
+    }
+    if (eqClass === 'Generator') {
+      if (/tire|wheel|brake|clutch|steering|\batf\b|differential|axle|hydraulic|grease|crusher|manganese|screen\s*mesh|conveyor|دبرياج|دركسيون|فريم|مقص|قزاز|زجاج/i.test(nm)) return false;
+      return true;
+    }
+    if (eqClass === 'Excavator') {
+      if (/truck.*tire|tire\s*inner\s*tube|wheel\s*rim|clutch\s*kit|brake\s*(lining|drum|shoe)|power\s*steering|\batf\b|crusher\s*(jaw|screen|wear)|manganese|screen\s*mesh|conveyor\s*(pulley|idler|fastener)|دبرياج|دركسيون|petrol|gasoline/i.test(nm)) return false;
+      return true;
+    }
+    if (eqClass === 'Wheel Loader') {
+      if (/clutch\s*kit|crusher\s*(jaw|screen|wear)|manganese|screen\s*mesh|conveyor\s*(pulley|idler|fastener)|دبرياج|petrol|gasoline/i.test(nm)) return false;
+      return true;
+    }
+    return true;
+  }
+
+  function isItemCompatibleWithExpenseCategory(itemRec, expCatRaw) {
+    const expCat = String(expCatRaw || '').trim();
+    if (!expCat || !itemRec) return true;
+    const itemCat = normalizeItemCatalogCategory(itemRec.category, itemRec.name || itemRec.item_name);
+    if (/^fuel$/i.test(expCat)) return itemCat === 'Fuel';
+    if (/^oils\s*&\s*lubricants$/i.test(expCat)) return itemCat === 'Oils & Lubricants';
+    if (/^tools\s*&\s*garage$/i.test(expCat)) return itemCat === 'Tools & Garage' || itemCat === 'Plant Consumables';
+    if (/^spare\s*parts$/i.test(expCat)) return itemCat === 'Spare Parts' || itemCat === 'Tools & Garage';
+    if (/^repairs\s*and\s*maintenance$|^capital\s*expenditures$/i.test(expCat)) {
+      return itemCat === 'Spare Parts' || itemCat === 'Oils & Lubricants' || itemCat === 'Tools & Garage';
+    }
+    return true;
+  }
+
+  function getScopedExpenseCatalogMeta(rowObj, coOpt, expCatOpt) {
+    ensureItemsCatalogSeeded();
+    const wh = getWarehouseIndex(coOpt);
+    const itemFreqMap = getFreqIndex().item;
+    const dest = rowObj ? normExpRowDest(rowObj.allocation_mode) : 'general';
+    const eqClass = (dest === 'equipment' && rowObj && rowObj.target_equipment)
+      ? resolveEquipmentUnitClass(rowObj.target_equipment, coOpt)
+      : '';
+    const expCat = expCatOpt !== undefined ? expCatOpt : (typeof val === 'function' ? val('f_category') : '');
+    const allNames = warehouseCatalogItemNames(coOpt);
+    return allNames
+      .filter(nm => {
+        const catDef = resolveCatalogItem(nm);
+        if (!catDef) return false;
+        if (dest === 'warehouse' && normalizeItemCatalogCategory(catDef.category, nm) === 'Fuel') return false;
+        if (!isItemCompatibleWithExpenseCategory(catDef, expCat)) return false;
+        if (eqClass && !isItemCompatibleWithEquipment(catDef, eqClass)) return false;
+        return true;
+      })
+      .map(nm => {
+        const k = norm(nm);
+        const it = wh.byKey[k];
+        const catDef = resolveCatalogItem(nm);
+        const uomLbl = (catDef && catDef.uom) || (it && it.uom) || 'Piece';
+        const onHand = it ? Number(it.onHandQty || 0) : 0;
+        const unitCost = (it && it.avgUnitCost > 0) ? it.avgUnitCost : (catDef && Number(catDef.default_cost) > 0 ? Number(catDef.default_cost) : 0);
+        const meta = it && onHand > 0.0001
+          ? `${uomLbl} (locked) · ${fmtNum(onHand, onHand % 1 ? 2 : 0)} on shelf${unitCost > 0 ? ' · ' + fmtUSD(unitCost, 2) : ''}`
+          : `${uomLbl} (locked)${unitCost > 0 ? ' · ' + fmtUSD(unitCost, 2) : ''}`;
+        const freq = itemFreqMap ? (itemFreqMap.get(k) || 0) : 0;
+        return { name: nm, freq, meta };
+      })
+      .sort((a, b) => b.freq - a.freq)
+      .map(x => [x.name, x.meta]);
   }
 
   function warehouseCatalogItemMeta(coOpt) {
@@ -20098,7 +20260,7 @@
         const meta = it && onHand > 0.0001
           ? `${fmtNum(onHand, onHand % 1 ? 2 : 0)} ${uomLbl} on shelf${unitCost > 0 ? ' · ' + fmtUSD(unitCost, 2) : ''}`
           : `${uomLbl}${unitCost > 0 ? ' · ' + fmtUSD(unitCost, 2) : ''} · 0 on shelf`;
-        const freq = (itemFreqMap ? (itemFreqMap.get(k) || 0) : 0) + (it ? Number(it.moveCount || 0) : 0);
+        const freq = itemFreqMap ? (itemFreqMap.get(k) || 0) : 0;
         return { name: nm, onHand, freq, meta };
       })
       .sort((a, b) => b.freq - a.freq)
@@ -36208,14 +36370,63 @@
                   <button type="button" class="exp-dest-pill ${expEqVal ? 'active' : ''}" data-exi-mode-pill="equipment" data-exi-row-idx="0">${ic('truck')} <span>Equipment</span></button>
                   <button type="button" class="exp-dest-pill is-wh" data-exi-mode-pill="warehouse" data-exi-row-idx="0">${ic('warehouse')} <span>Warehouse</span></button>
                 </div>
-                <span class="exp-items-head-title" id="expItemsModeBadge" hidden>Split Invoice</span>
+                <span class="exp-items-head-title" id="expItemsModeBadge" hidden>Invoice Lines</span>
+                <div class="exp-items-live-metrics" id="expItemsLiveMetrics" hidden></div>
                 <div class="exp-quick-item-bar" id="expHeaderQuickItems" role="group" aria-label="Quick pick catalog item" hidden></div>
               </div>
               <div class="exp-items-head-actions">
-                <div class="exp-items-live-metrics" id="expItemsLiveMetrics" hidden></div>
+                <button type="button" class="btn btn-ghost-bar exp-new-cat-btn" id="toggleQuickCatalogItemBtn" data-toggle-quick-cat="1" data-ui-tip="Register a new SKU and locked Unit in the Universal Items Catalog">${ic('plus')} <span>New Catalog Item</span></button>
                 <button type="button" class="btn btn-ghost-bar exp-items-clear-btn" id="clearExpItemsBtn" data-exi-clear-all="1" hidden>Single Line</button>
                 <button type="button" class="btn btn-brass exp-items-add-btn" id="addExpItemLineBtn">${ic('plus')} <span id="addExpItemBtnLbl">Split Invoice</span></button>
               </div>
+            </div>
+            <div class="exp-quick-cat-drawer" id="expQuickCatalogDrawer" hidden>
+              <div class="exp-qc-grid">
+                <div class="exp-qc-fld is-wide">
+                  <label for="exp_qc_name">New Catalog Item / Part *</label>
+                  <input type="text" id="exp_qc_name" placeholder="e.g. Hydraulic Return Filter, V-Belt B68..." autocomplete="off">
+                </div>
+                <div class="exp-qc-fld">
+                  <label for="exp_qc_cat">Item Category *</label>
+                  <select id="exp_qc_cat" data-native-select="1">
+                    <option value="Spare Parts">Spare Parts</option>
+                    <option value="Oils &amp; Lubricants">Oils &amp; Lubricants</option>
+                    <option value="Tools &amp; Garage">Tools &amp; Garage</option>
+                    <option value="Plant Consumables">Plant Consumables</option>
+                    <option value="Fuel">Fuel</option>
+                  </select>
+                </div>
+                <div class="exp-qc-fld">
+                  <label for="exp_qc_uom">Frozen Unit *</label>
+                  <select id="exp_qc_uom" data-native-select="1">
+                    <option value="Piece">Piece</option>
+                    <option value="Set">Set</option>
+                    <option value="Litre">Litre</option>
+                    <option value="kg">kg</option>
+                    <option value="Box">Box</option>
+                    <option value="m">m</option>
+                  </select>
+                </div>
+                <div class="exp-qc-fld">
+                  <label for="exp_qc_equip">Connected Units</label>
+                  <select id="exp_qc_equip" data-native-select="1">
+                    <option value="all">All Fleet &amp; Plant</option>
+                    <option value="road">Trucks &amp; Vehicles</option>
+                    <option value="mobile">Trucks, Loaders &amp; Excavators</option>
+                    <option value="plant">Crusher &amp; Stationary Plant</option>
+                    <option value="generator">Generators Only</option>
+                  </select>
+                </div>
+                <div class="exp-qc-fld is-cost">
+                  <label for="exp_qc_cost">Default $</label>
+                  <input type="number" id="exp_qc_cost" step="0.01" min="0" placeholder="0.00" inputmode="decimal">
+                </div>
+                <div class="exp-qc-actions">
+                  <button type="button" class="btn btn-brass exp-qc-save-btn" id="saveQuickCatalogItemBtn">Save &amp; Lock Unit</button>
+                  <button type="button" class="btn btn-ghost-bar exp-qc-cancel-btn" id="cancelQuickCatalogItemBtn">Cancel</button>
+                </div>
+              </div>
+              <span class="hint" id="exp_qc_hint"></span>
             </div>
             <div id="expItemsRowsWrap"></div>
           </div>`}
@@ -36309,7 +36520,7 @@
     return 'general';
   }
 
-  function getExpenseQuickCatalogItems(catRaw, subRaw) {
+  function getExpenseQuickCatalogItems(catRaw, subRaw, eqClass) {
     ensureItemsCatalogSeeded();
     const cat = String(catRaw || '').trim();
     const sub = String(subRaw || '').trim();
@@ -36323,6 +36534,7 @@
       const out = [];
       names.forEach(([nm, fallbackUom]) => {
         const hit = byKey.get(norm(nm));
+        if (eqClass && hit && !isItemCompatibleWithEquipment(hit, eqClass)) return;
         out.push({ name: hit ? (hit.name || hit.item_name) : nm, uom: (hit && hit.uom) || fallbackUom || 'Piece' });
       });
       return out;
@@ -36364,7 +36576,15 @@
         ['Starter Motor (March)', 'Piece']
       ]);
     }
-    if (/spare|repair|maint|hydraul|crusher/i.test(cat + ' ' + sub)) {
+    if (eqClass === 'Plant' || /crusher|screen/i.test(sub)) {
+      return pickNames([
+        ['Crusher Jaw / Manganese Plate Set', 'Set'],
+        ['Crusher Screen Mesh', 'Piece'],
+        ['Conveyor / Drive Belt', 'Piece'],
+        ['Bearing (Roulement)', 'Piece']
+      ]);
+    }
+    if (/spare|repair|maint|hydraul/i.test(cat + ' ' + sub)) {
       return pickNames([
         ['Fuel Filter', 'Piece'],
         ['Engine Oil Filter', 'Piece'],
@@ -36396,6 +36616,7 @@
     if (s === 'High-Pressure Hydraulic Hose') return 'Hydraulic Hose';
     if (s === 'Heavy-Duty Truck Battery') return 'Truck Battery';
     if (s === 'Heavy Truck / Loader Tire') return 'Truck / Loader Tire';
+    if (s === 'Crusher Jaw / Manganese Plate Set') return 'Manganese Jaw Set';
     return s;
   }
 
@@ -36416,7 +36637,10 @@
       qBar.innerHTML = '';
       return;
     }
-    const quickList = getExpenseQuickCatalogItems(val('f_category'), val('f_subcategory'));
+    const eqClass0 = (dest0 === 'equipment' && items[0].target_equipment)
+      ? resolveEquipmentUnitClass(items[0].target_equipment, val('f_company') || defaultEntryCompany())
+      : '';
+    const quickList = getExpenseQuickCatalogItems(val('f_category'), val('f_subcategory'), eqClass0);
     if (!quickList.length) {
       qBar.hidden = true;
       qBar.innerHTML = '';
@@ -36428,6 +36652,88 @@
       const isAct = curNm && norm(curNm) === norm(ci.name);
       return `<button type="button" class="exp-quick-item-chip${isAct ? ' active' : ''}" data-exi-quick-item="${esc(ci.name)}" data-exi-row-idx="0">${esc(shortCatalogQuickLabel(ci.name))} <em>${esc(shortUomTag(ci.uom))}</em></button>`;
     }).join('');
+  }
+
+  function buildExpenseRowItemPlaceholder(rowObj, coOpt, isMulti) {
+    const dest = rowObj ? normExpRowDest(rowObj.allocation_mode) : 'general';
+    if (dest === 'equipment') {
+      const u = String((rowObj && rowObj.target_equipment) || '').trim();
+      if (u) {
+        const cls = resolveEquipmentUnitClass(u, coOpt);
+        return cls && cls !== 'Other' ? `Connected items for ${u} (${cls})...` : `Connected items for ${u}...`;
+      }
+      return 'Select connected catalog item...';
+    }
+    if (dest === 'warehouse') return 'Select catalog item for shelf...';
+    return isMulti ? 'Description or catalog item...' : 'Optional detail or bulk item (e.g. Diesel)...';
+  }
+
+  function refreshExpenseRowItemDatalists(coOpt) {
+    const wrap = $('expItemsRowsWrap');
+    if (!wrap) return;
+    const effCo = coOpt || val('f_company') || defaultEntryCompany();
+    const expCat = val('f_category');
+    const items = Array.isArray(FORM_UI.expItems) ? FORM_UI.expItems : [];
+    const isMulti = items.length > 1;
+    items.forEach((it, idx) => {
+      const dlEl = document.getElementById('dl_exp_row_items_' + idx) || wrap.querySelector('#dl_exp_row_items_' + idx);
+      if (dlEl) {
+        const opts = getScopedExpenseCatalogMeta(it, effCo, expCat);
+        dlEl.innerHTML = opts.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
+      }
+      const nmInp = $('f_exi_name_' + idx);
+      if (nmInp) {
+        nmInp.placeholder = buildExpenseRowItemPlaceholder(it, effCo, isMulti);
+      }
+    });
+  }
+
+  function openQuickExpenseCatalogDrawer(prefillName, targetRowIdx) {
+    const drawer = $('expQuickCatalogDrawer');
+    if (!drawer) return;
+    const items = Array.isArray(FORM_UI.expItems) ? FORM_UI.expItems : [];
+    const rIdx = (targetRowIdx != null && items[targetRowIdx]) ? Number(targetRowIdx) : 0;
+    drawer.dataset.targetRowIdx = String(rIdx);
+    const nmInp = $('exp_qc_name');
+    const catSel = $('exp_qc_cat');
+    const uomSel = $('exp_qc_uom');
+    const eqSel = $('exp_qc_equip');
+    const costInp = $('exp_qc_cost');
+    const hintEl = $('exp_qc_hint');
+    if (hintEl) { hintEl.textContent = ''; hintEl.className = 'hint'; }
+    const rowObj = items[rIdx] || null;
+    const initNm = prefillName !== undefined
+      ? String(prefillName || '').trim()
+      : (rowObj && rowObj.item_name && !resolveCatalogItem(rowObj.item_name) ? String(rowObj.item_name).trim() : '');
+    if (nmInp) nmInp.value = initNm;
+    const curFormCat = val('f_category');
+    if (catSel) {
+      catSel.value = normalizeItemCatalogCategory(curFormCat, initNm || '');
+    }
+    if (uomSel) {
+      if (/^fuel|oil/i.test(curFormCat) || /oil|fluid|coolant|diesel|gasoline|adblue/i.test(initNm)) uomSel.value = 'Litre';
+      else if (/grease/i.test(initNm)) uomSel.value = 'kg';
+      else if (/\bset\b|kit|lining/i.test(initNm)) uomSel.value = 'Set';
+      else uomSel.value = 'Piece';
+    }
+    if (eqSel) {
+      const eqCls = (rowObj && normExpRowDest(rowObj.allocation_mode) === 'equipment' && rowObj.target_equipment)
+        ? resolveEquipmentUnitClass(rowObj.target_equipment, val('f_company') || defaultEntryCompany())
+        : '';
+      if (eqCls === 'Plant') eqSel.value = 'plant';
+      else if (eqCls === 'Generator') eqSel.value = 'generator';
+      else if (eqCls === 'Truck' || eqCls === 'Vehicle') eqSel.value = 'mobile';
+      else eqSel.value = 'all';
+    }
+    if (costInp) {
+      costInp.value = (rowObj && Number(rowObj.unit_cost) > 0) ? String(rowObj.unit_cost) : '';
+    }
+    drawer.hidden = false;
+    const toggleBtn = $('toggleQuickCatalogItemBtn');
+    if (toggleBtn) toggleBtn.classList.add('active');
+    if (nmInp) {
+      try { nmInp.focus({ preventScroll: true }); } catch (_) {}
+    }
   }
 
   function renderExpenseEquipQuickBar(company, activeUnit) {
@@ -36476,6 +36782,8 @@
     const isMulti = items.length > 1;
     const pricePending = val('f_price_pending') === '1';
     const singleDest = items.length === 1 ? normExpRowDest(items[0].allocation_mode) : 'general';
+    const expCatNow = val('f_category');
+    const expSubNow = val('f_subcategory');
     if (panelEl) {
       panelEl.classList.toggle('is-single-mode', !isMulti);
       panelEl.classList.toggle('is-multi-mode', isMulti);
@@ -36488,7 +36796,7 @@
     }
     if (modeBadge) {
       modeBadge.hidden = !isMulti;
-      modeBadge.textContent = isMulti ? `Split Invoice (${items.length} Lines)` : 'Single Line';
+      modeBadge.innerHTML = isMulti ? `Invoice Lines <em class="exp-lines-cnt">${items.length}</em>` : 'Single Line';
       modeBadge.classList.toggle('is-multi', isMulti);
     }
     if (addLbl) {
@@ -36508,10 +36816,17 @@
     let genLines = 0;
     items.forEach((it, idx) => {
       const dest = normExpRowDest(it.allocation_mode);
-      const catItem = resolveCatalogItem(it.item_name);
+      const rawNm = String(it.item_name || '').trim();
+      const catItem = rawNm ? resolveCatalogItem(rawNm) : null;
+      const isBulkFuelOverhead = dest === 'general' && (/^fuel$/i.test(expCatNow) || /diesel|mazout|gasoline|petrol|benzine|adblue/i.test(rawNm + ' ' + expSubNow));
       if (catItem && catItem.uom) {
         it.uom = catItem.uom;
+      } else if (isBulkFuelOverhead) {
+        it.uom = 'Litre';
+      } else if (!it.uom) {
+        it.uom = 'Piece';
       }
+      const isBoundUom = Boolean((catItem && catItem.uom) || isBulkFuelOverhead);
       const q = (it.qty !== '' && it.qty != null && isFinite(Number(it.qty))) ? Number(it.qty) : 0;
       const uc = pricePending ? 0 : (Number(it.unit_cost) || 0);
       const lt = round2(q * uc);
@@ -36523,24 +36838,26 @@
       if (wrap) {
         const uBox = wrap.querySelector(`[data-exi-uom-box="${idx}"]`);
         const uSel = wrap.querySelector(`#f_exi_uom_${idx}`);
-        const lockedNow = Boolean(catItem && catItem.uom);
-        if (uBox) uBox.classList.toggle('is-locked', lockedNow);
+        const uFrozen = wrap.querySelector(`[data-exi-uom-frozen="${idx}"]`);
+        const uTxt = wrap.querySelector(`[data-exi-uom-txt="${idx}"]`);
+        if (uBox) uBox.classList.toggle('is-locked', true);
         if (uSel) {
-          if (lockedNow) {
-            uSel.value = catItem.uom;
-            uSel.disabled = true;
-            uSel.setAttribute('data-locked-by-item', '1');
-          } else {
-            uSel.disabled = false;
-            uSel.removeAttribute('data-locked-by-item');
-          }
+          uSel.value = it.uom || 'Piece';
+          uSel.disabled = true;
+          uSel.setAttribute('data-locked-by-item', '1');
         }
-        const lockEl = wrap.querySelector(`[data-exi-uom-lock="${idx}"]`);
-        if (lockEl) {
-          const isBrandNewTyped = dest !== 'general' && !lockedNow && Boolean(String(it.item_name || '').trim());
-          lockEl.hidden = !isBrandNewTyped;
-          lockEl.textContent = isBrandNewTyped ? `New catalog item (${it.uom || 'Piece'})` : '';
-          lockEl.className = 'hint exp-new-item-note';
+        if (uFrozen) {
+          uFrozen.classList.toggle('is-bound', isBoundUom);
+          uFrozen.classList.toggle('is-awaiting', !isBoundUom);
+          uFrozen.setAttribute(
+            'data-ui-tip',
+            isBoundUom
+              ? `Frozen to Items Catalog (${it.uom || 'Piece'})`
+              : 'Unit is frozen and set automatically when a Catalog Item is selected'
+          );
+        }
+        if (uTxt) {
+          uTxt.textContent = (isBoundUom || rawNm) ? (it.uom || 'Piece') : 'Unit';
         }
         const cInp = wrap.querySelector(`#f_exi_cost_${idx}`);
         if (cInp) {
@@ -36565,16 +36882,16 @@
         metricsEl.innerHTML = '';
       } else {
         metricsEl.hidden = false;
-        const pills = [];
-        if (eqLines > 0) pills.push(`<span class="exp-metric-chip">Equipment: <b>${eqLines}</b></span>`);
-        if (whLines > 0) pills.push(`<span class="exp-metric-chip is-wh">Warehouse: <b>${whLines}</b></span>`);
-        if (genLines > 0) pills.push(`<span class="exp-metric-chip is-gen">Overhead: <b>${genLines}</b></span>`);
-        metricsEl.innerHTML = pills.join('');
+        const parts = [];
+        if (eqLines > 0) parts.push(`<span><b>${eqLines}</b> Equipment</span>`);
+        if (whLines > 0) parts.push(`<span class="is-wh"><b>${whLines}</b> Warehouse</span>`);
+        if (genLines > 0) parts.push(`<span><b>${genLines}</b> Overhead</span>`);
+        metricsEl.innerHTML = parts.join('<span class="exp-metrics-dot" aria-hidden="true">·</span>');
       }
     }
     if (footEl) {
       footEl.innerHTML = isMulti
-        ? `<span class="exp-rollup-meta"><b>${items.length}</b> split lines · Auto-summed in Total ($) below</span>`
+        ? `<span class="exp-rollup-meta">Subtotal (${items.length} lines) <strong>${pricePending ? 'Pending ($0.00)' : fmtUSD(sumAmt, 2)}</strong></span>`
         : '';
     }
   }
@@ -36582,14 +36899,40 @@
   function syncExpenseItemStockHints(company) {
     const wrap = $('expItemsRowsWrap');
     if (!wrap) return;
-    const whIdx = getWarehouseIndex(company || val('f_company') || defaultEntryCompany());
-    (FORM_UI.expItems || []).forEach((it, idx) => {
+    const effCo = company || val('f_company') || defaultEntryCompany();
+    const whIdx = getWarehouseIndex(effCo);
+    const items = Array.isArray(FORM_UI.expItems) ? FORM_UI.expItems : [];
+    const isMulti = items.length > 1;
+    items.forEach((it, idx) => {
       const hintEl = wrap.querySelector(`[data-exi-stock-hint="${idx}"]`);
       if (!hintEl) return;
       const dest = normExpRowDest(it.allocation_mode);
       const nm = String(it.item_name || '').trim();
       const q = Number(it.qty) || 1;
       const whRow = nm ? whIdx.byKey[norm(nm)] : null;
+      const catItem = nm ? resolveCatalogItem(nm) : null;
+      const nmInp = $('f_exi_name_' + idx);
+      if (dest !== 'general' && nm) {
+        const isLegacyEditUnmodified = Boolean(STATE.editingRecord && STATE.editingRecord.crKey === 'expenses' && !FORM_UI.expItem0Manual && !isMulti && idx === 0);
+        if (!catItem && !isLegacyEditUnmodified) {
+          if (FORM_UI.postAttempted || document.activeElement !== nmInp) {
+            hintEl.textContent = 'Select a connected Catalog Item (or click New Catalog Item)';
+            hintEl.className = 'hint ' + (FORM_UI.postAttempted ? 'crit' : 'warn');
+          } else {
+            hintEl.textContent = '';
+            hintEl.className = 'hint';
+          }
+          return;
+        }
+        if (dest === 'equipment' && catItem && it.target_equipment) {
+          const eqClass = resolveEquipmentUnitClass(it.target_equipment, effCo);
+          if (eqClass && !isItemCompatibleWithEquipment(catItem, eqClass)) {
+            hintEl.textContent = `Not connected to ${eqClass} unit ${it.target_equipment}`;
+            hintEl.className = 'hint ' + (FORM_UI.postAttempted ? 'crit' : 'warn');
+            return;
+          }
+        }
+      }
       if (dest !== 'warehouse') {
         if (dest === 'equipment' && nm && whRow && whRow.onHandQty > 0) {
           hintEl.textContent = `${fmtNum(whRow.onHandQty, whRow.onHandQty % 1 ? 2 : 0)} ${whRow.uom} available on Warehouse shelf`;
@@ -36609,7 +36952,7 @@
       const afterQ = round2(onHand + q);
       hintEl.textContent = whRow
         ? `Shelf: ${fmtNum(onHand, onHand % 1 ? 2 : 0)} to ${fmtNum(afterQ, afterQ % 1 ? 2 : 0)} ${whRow.uom} (+${fmtNum(q, q % 1 ? 2 : 0)})`
-        : `New shelf SKU (+${fmtNum(q, q % 1 ? 2 : 0)} ${it.uom || 'Piece'})`;
+        : `Adds +${fmtNum(q, q % 1 ? 2 : 0)} ${it.uom || 'Piece'} to shelf`;
       hintEl.className = 'hint ok';
     });
   }
@@ -36619,6 +36962,8 @@
     if (!wrap) return;
     const items = Array.isArray(FORM_UI.expItems) ? FORM_UI.expItems : [];
     const curCo = val('f_company') || defaultEntryCompany();
+    const expCatNow = val('f_category');
+    const expSubNow = val('f_subcategory');
     if (!items.length) {
       wrap.innerHTML = '';
       syncExpenseItemsSummaryUI();
@@ -36629,25 +36974,51 @@
     const defWhLoc = defaultWarehouseLocationForCompany(curCo);
     const uomOpts = ['Piece', 'Set', 'Litre', 'kg', 'Box', 'm'];
     const destOpts = [
-      ['general', 'General Overhead'],
+      ['general', 'Overhead'],
       ['equipment', 'Equipment'],
-      ['warehouse', 'Warehouse (+Stock)']
+      ['warehouse', 'Warehouse']
     ];
     ensureItemsCatalogSeeded();
+    const renderQtyUomCapsule = (it, idx, effUom, isBoundUom) => {
+      const hasNm = Boolean(String(it.item_name || '').trim());
+      const frozenTxt = (isBoundUom || hasNm) ? effUom : 'Unit';
+      const tipTxt = isBoundUom
+        ? `Frozen to Items Catalog (${effUom})`
+        : 'Unit is frozen and set automatically when a Catalog Item is selected';
+      return `
+        <div class="exp-qty-uom-capsule is-locked" data-exi-uom-box="${idx}">
+          <div class="exp-item-stepper">
+            <button type="button" class="exp-step-btn" data-exi-step-qty="-1" data-exi-row-idx="${idx}" aria-label="Decrease quantity">-</button>
+            <input type="number" id="f_exi_qty_${idx}" data-exi-idx="${idx}" data-exi-field="qty" step="0.01" min="0.01" inputmode="decimal" value="${esc(it.qty != null && it.qty !== '' ? it.qty : 1)}">
+            <button type="button" class="exp-step-btn" data-exi-step-qty="1" data-exi-row-idx="${idx}" aria-label="Increase quantity">+</button>
+          </div>
+          <span class="exp-uom-frozen ${isBoundUom ? 'is-bound' : 'is-awaiting'}" data-exi-uom-frozen="${idx}" data-ui-tip="${esc(tipTxt)}">
+            <i class="exp-uom-lock-svg" aria-hidden="true">${ic('lock')}</i>
+            <span class="exp-uom-frozen-txt" data-exi-uom-txt="${idx}">${esc(frozenTxt)}</span>
+          </span>
+          <select id="f_exi_uom_${idx}" class="exp-uom-sr-select" data-native-select="1" data-exi-idx="${idx}" data-exi-field="uom" data-plain-options="1" disabled data-locked-by-item="1" tabindex="-1" aria-hidden="true">${uomOpts.map(u => `<option value="${esc(u)}"${u === effUom ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select>
+        </div>
+      `;
+    };
     if (!isMulti) {
       const it = items[0];
       const dest = normExpRowDest(it.allocation_mode);
       it.allocation_mode = dest;
       const catItem = resolveCatalogItem(it.item_name);
+      const isBulkFuelOverhead = dest === 'general' && (/^fuel$/i.test(expCatNow) || /diesel|mazout|gasoline|petrol|benzine|adblue/i.test(String(it.item_name || '') + ' ' + expSubNow));
       if (catItem && catItem.uom) it.uom = catItem.uom;
+      else if (isBulkFuelOverhead) it.uom = 'Litre';
       const effUom = it.uom || 'Piece';
-      const isUomLocked = Boolean(catItem && catItem.uom);
+      const isBoundUom = Boolean((catItem && catItem.uom) || isBulkFuelOverhead);
+      const scopedOpts0 = getScopedExpenseCatalogMeta(it, curCo, expCatNow);
+      const dlHtml0 = `<datalist id="dl_exp_row_items_0">${scopedOpts0.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('')}</datalist>`;
+      const itemPh0 = buildExpenseRowItemPlaceholder(it, curCo, false);
       let firstColHtml = '';
       if (dest === 'equipment') {
         firstColHtml = `
           <div class="li-cell exp-item-cell-target">
             <div class="exp-fld-head">
-              <label class="exp-item-lbl" for="f_exi_eq_0" id="lbl_exp_equip">Equipment *</label>
+              <label class="exp-item-lbl" for="f_exi_eq_0" id="lbl_exp_equip">Equipment Unit *</label>
               <span class="hint exp-inline-equip-hint" id="hint_truck"></span>
             </div>
             <input type="text" id="f_exi_eq_0" data-exi-idx="0" data-exi-field="target_equipment" list="dl_equip" value="${esc(it.target_equipment || '')}" placeholder="Search or pick unit...">
@@ -36656,8 +37027,8 @@
       } else if (dest === 'warehouse') {
         firstColHtml = `
           <div class="li-cell exp-item-cell-target">
-            <label class="exp-item-lbl" for="f_exi_loc_0">Warehouse Shelf *</label>
-            <input type="text" id="f_exi_loc_0" data-exi-idx="0" data-exi-field="warehouse_location" list="dl_exp_wh_locs" value="${esc(it.warehouse_location || defWhLoc)}" placeholder="Warehouse shelf...">
+            <label class="exp-item-lbl" for="f_exi_loc_0">Warehouse Store *</label>
+            <input type="text" id="f_exi_loc_0" data-exi-idx="0" data-exi-field="warehouse_location" list="dl_exp_wh_locs" value="${esc(it.warehouse_location || defWhLoc)}" placeholder="Select store...">
           </div>`;
       }
       wrap.innerHTML = `
@@ -36667,24 +37038,14 @@
             <div class="exp-item-card-grid ${dest === 'general' ? 'is-single-gen' : 'is-single-4col'}">
               ${firstColHtml}
               <div class="li-cell exp-item-cell-name">
-                <label class="exp-item-lbl" for="f_exi_name_0">${dest === 'general' ? 'Item / Detail' : 'Item / Part *'}</label>
-                <input type="text" id="f_exi_name_0" data-exi-idx="0" data-exi-field="item_name" list="dl_exp_wh_items" value="${esc(it.item_name || '')}" placeholder="${dest === 'general' ? 'Optional detail or bulk item (e.g. Diesel)...' : 'Search catalog or type part...'}">
+                <label class="exp-item-lbl" for="f_exi_name_0">${dest === 'general' ? 'Item / Detail' : 'Catalog Item *'}</label>
+                <input type="text" id="f_exi_name_0" data-exi-idx="0" data-exi-field="item_name"${dest !== 'general' ? ' data-strict-catalog="1"' : ''} list="dl_exp_row_items_0" value="${esc(it.item_name || '')}" placeholder="${esc(itemPh0)}">
+                ${dlHtml0}
                 <span class="hint" data-exi-stock-hint="0"></span>
               </div>
               <div class="li-cell exp-item-cell-qty">
-                <label class="exp-item-lbl" for="f_exi_qty_0"><span id="lbl_exp_qty">${dest === 'general' ? 'Quantity &amp; Unit' : 'Quantity &amp; Unit *'}</span></label>
-                <div class="exp-item-qty-group">
-                  <div class="exp-item-stepper">
-                    <button type="button" class="exp-step-btn" data-exi-step-qty="-1" data-exi-row-idx="0" aria-label="Decrease quantity">-</button>
-                    <input type="number" id="f_exi_qty_0" data-exi-idx="0" data-exi-field="qty" step="0.01" min="0.01" inputmode="decimal" value="${esc(it.qty != null && it.qty !== '' ? it.qty : 1)}">
-                    <button type="button" class="exp-step-btn" data-exi-step-qty="1" data-exi-row-idx="0" aria-label="Increase quantity">+</button>
-                  </div>
-                  <div class="exp-uom-box${isUomLocked ? ' is-locked' : ''}" data-exi-uom-box="0">
-                    <select id="f_exi_uom_0" data-exi-idx="0" data-exi-field="uom" data-plain-options="1"${isUomLocked ? ' disabled data-locked-by-item="1"' : ''}>${uomOpts.map(u => `<option value="${esc(u)}"${u === effUom ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select>
-                    <span class="exp-uom-lock-ico" aria-hidden="true">${ic('lock')}</span>
-                  </div>
-                </div>
-                <span class="hint exp-new-item-note" data-exi-uom-lock="0" hidden></span>
+                <label class="exp-item-lbl" for="f_exi_qty_0"><span id="lbl_exp_qty">${dest === 'general' ? 'Quantity &amp; Frozen Unit' : 'Quantity &amp; Frozen Unit *'}</span></label>
+                ${renderQtyUomCapsule(it, 0, effUom, isBoundUom)}
                 ${dest === 'general' ? '<span class="hint" id="hint_qty"></span>' : ''}
               </div>
               <div class="li-cell exp-item-cell-cost">
@@ -36705,10 +37066,10 @@
       wrap.innerHTML = `
         <div class="exp-split-cols-hdr" aria-hidden="true">
           <span>#</span>
-          <span>Destination</span>
-          <span>Unit / Shelf *</span>
-          <span>Item / Part *</span>
-          <span>Quantity &amp; Unit *</span>
+          <span>Allocate To</span>
+          <span>Unit / Store *</span>
+          <span>Catalog Item *</span>
+          <span>Qty &amp; Frozen Unit *</span>
           <span>Unit Price (${pricePending ? 'Pending' : '$'})</span>
           <span class="is-right">Line Total</span>
         </div>
@@ -36717,55 +37078,48 @@
             const dest = normExpRowDest(it.allocation_mode);
             it.allocation_mode = dest;
             const catItem = resolveCatalogItem(it.item_name);
+            const isBulkFuelOverhead = dest === 'general' && (/^fuel$/i.test(expCatNow) || /diesel|mazout|gasoline|petrol|benzine|adblue/i.test(String(it.item_name || '') + ' ' + expSubNow));
             if (catItem && catItem.uom) it.uom = catItem.uom;
+            else if (isBulkFuelOverhead) it.uom = 'Litre';
             const effUom = it.uom || 'Piece';
-            const isUomLocked = Boolean(catItem && catItem.uom);
+            const isBoundUom = Boolean((catItem && catItem.uom) || isBulkFuelOverhead);
             const ucNum = it.unit_cost !== undefined && it.unit_cost !== '' ? Number(it.unit_cost) : 0;
             const lineTot = round2((Number(it.qty) || 0) * (pricePending ? 0 : ucNum));
+            const scopedOpts = getScopedExpenseCatalogMeta(it, curCo, expCatNow);
+            const dlHtml = `<datalist id="dl_exp_row_items_${idx}">${scopedOpts.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('')}</datalist>`;
+            const itemPh = buildExpenseRowItemPlaceholder(it, curCo, true);
             let targetHtml = '';
             if (dest === 'equipment') {
-              targetHtml = `<input type="text" id="f_exi_eq_${idx}" data-exi-idx="${idx}" data-exi-field="target_equipment" list="dl_equip" value="${esc(it.target_equipment || '')}" placeholder="Pick unit...">`;
+              targetHtml = `<input type="text" id="f_exi_eq_${idx}" data-exi-idx="${idx}" data-exi-field="target_equipment" list="dl_equip" value="${esc(it.target_equipment || '')}" placeholder="Select unit...">`;
             } else if (dest === 'warehouse') {
-              targetHtml = `<input type="text" id="f_exi_loc_${idx}" data-exi-idx="${idx}" data-exi-field="warehouse_location" list="dl_exp_wh_locs" value="${esc(it.warehouse_location || defWhLoc)}" placeholder="Warehouse shelf...">`;
-            } else {
-              targetHtml = `<div class="line-item-static-pill is-muted">Overhead</div>`;
+              targetHtml = `<input type="text" id="f_exi_loc_${idx}" data-exi-idx="${idx}" data-exi-field="warehouse_location" list="dl_exp_wh_locs" value="${esc(it.warehouse_location || defWhLoc)}" placeholder="Select store...">`;
             }
             return `
               <div class="line-item-row exp-item-card exp-split-row is-multi-card is-mode-${esc(dest)}" data-exi-row="${idx}">
                 <select id="f_exi_mode_${idx}" class="exp-item-mode-select-sr" data-native-select="1" data-exi-idx="${idx}" data-exi-field="allocation_mode" data-plain-options="1" aria-label="Destination">${destOpts.map(([ov, ol]) => `<option value="${esc(ov)}"${ov === dest ? ' selected' : ''}>${esc(ol)}</option>`).join('')}</select>
                 <div class="exp-split-cell-idx">
-                  <span class="exp-item-num-badge">#${String(idx + 1).padStart(2, '0')}</span>
+                  <span class="exp-row-idx-num">${String(idx + 1).padStart(2, '0')}</span>
                   <div class="exp-split-mob-actions">
-                    <span class="exp-item-tot-badge"><strong data-exi-tot="${idx}">${pricePending ? 'Pending' : fmtUSD(lineTot, 2)}</strong></span>
-                    <button type="button" class="exp-item-icon-btn" data-exi-dup="${idx}" data-ui-tip="Duplicate line" aria-label="Duplicate line">${ic('copy')}</button>
-                    <button type="button" class="line-item-del-btn" data-exi-remove="${idx}" data-ui-tip="Remove line" aria-label="Remove line">×</button>
+                    <strong class="exp-line-tot-val" data-exi-tot="${idx}">${pricePending ? 'Pending' : fmtUSD(lineTot, 2)}</strong>
+                    <button type="button" class="exp-row-ghost-btn" data-exi-dup="${idx}" data-ui-tip="Duplicate line" aria-label="Duplicate line">${ic('copy')}</button>
+                    <button type="button" class="exp-row-ghost-btn is-del" data-exi-remove="${idx}" data-ui-tip="Remove line" aria-label="Remove line">×</button>
                   </div>
                 </div>
                 <div class="exp-split-cell-dest" role="group" aria-label="Line ${idx + 1} destination">
-                  <button type="button" class="exp-item-rpill ${dest === 'equipment' ? 'active' : ''}" data-exi-mode-pill="equipment" data-exi-row-idx="${idx}">Equip</button>
-                  <button type="button" class="exp-item-rpill is-wh ${dest === 'warehouse' ? 'active' : ''}" data-exi-mode-pill="warehouse" data-exi-row-idx="${idx}">Stock</button>
-                  <button type="button" class="exp-item-rpill is-gen ${dest === 'general' ? 'active' : ''}" data-exi-mode-pill="general" data-exi-row-idx="${idx}">Gen</button>
+                  <button type="button" class="exp-item-rpill ${dest === 'equipment' ? 'active' : ''}" data-exi-mode-pill="equipment" data-exi-row-idx="${idx}">Equipment</button>
+                  <button type="button" class="exp-item-rpill is-wh ${dest === 'warehouse' ? 'active' : ''}" data-exi-mode-pill="warehouse" data-exi-row-idx="${idx}">Warehouse</button>
+                  <button type="button" class="exp-item-rpill is-gen ${dest === 'general' ? 'active' : ''}" data-exi-mode-pill="general" data-exi-row-idx="${idx}">Overhead</button>
                 </div>
-                <div class="li-cell exp-split-cell-target" data-mob-lbl="${dest === 'warehouse' ? 'Shelf *' : (dest === 'equipment' ? 'Unit *' : 'Scope')}">
+                <div class="li-cell exp-split-cell-target" data-mob-lbl="${dest === 'warehouse' ? 'Store *' : 'Equipment Unit *'}">
                   ${targetHtml}
                 </div>
-                <div class="li-cell exp-split-cell-name" data-mob-lbl="${dest === 'general' ? 'Item / Detail' : 'Item / Part *'}">
-                  <input type="text" id="f_exi_name_${idx}" data-exi-idx="${idx}" data-exi-field="item_name" list="dl_exp_wh_items" value="${esc(it.item_name || '')}" placeholder="${dest === 'general' ? 'Description or item...' : 'Catalog part or item...'}">
+                <div class="li-cell exp-split-cell-name" data-mob-lbl="${dest === 'general' ? 'Description / Item' : 'Catalog Item *'}">
+                  <input type="text" id="f_exi_name_${idx}" data-exi-idx="${idx}" data-exi-field="item_name"${dest !== 'general' ? ' data-strict-catalog="1"' : ''} list="dl_exp_row_items_${idx}" value="${esc(it.item_name || '')}" placeholder="${esc(itemPh)}">
+                  ${dlHtml}
                   <span class="hint" data-exi-stock-hint="${idx}"></span>
                 </div>
-                <div class="li-cell exp-split-cell-qty" data-mob-lbl="Qty &amp; Unit *">
-                  <div class="exp-item-qty-group">
-                    <div class="exp-item-stepper">
-                      <button type="button" class="exp-step-btn" data-exi-step-qty="-1" data-exi-row-idx="${idx}" aria-label="Decrease quantity">-</button>
-                      <input type="number" id="f_exi_qty_${idx}" data-exi-idx="${idx}" data-exi-field="qty" step="0.01" min="0.01" inputmode="decimal" value="${esc(it.qty != null && it.qty !== '' ? it.qty : 1)}">
-                      <button type="button" class="exp-step-btn" data-exi-step-qty="1" data-exi-row-idx="${idx}" aria-label="Increase quantity">+</button>
-                    </div>
-                    <div class="exp-uom-box${isUomLocked ? ' is-locked' : ''}" data-exi-uom-box="${idx}">
-                      <select id="f_exi_uom_${idx}" data-exi-idx="${idx}" data-exi-field="uom" data-plain-options="1"${isUomLocked ? ' disabled data-locked-by-item="1"' : ''}>${uomOpts.map(u => `<option value="${esc(u)}"${u === effUom ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select>
-                      <span class="exp-uom-lock-ico" aria-hidden="true">${ic('lock')}</span>
-                    </div>
-                  </div>
-                  <span class="hint exp-new-item-note" data-exi-uom-lock="${idx}" hidden></span>
+                <div class="li-cell exp-split-cell-qty" data-mob-lbl="Qty &amp; Frozen Unit *">
+                  ${renderQtyUomCapsule(it, idx, effUom, isBoundUom)}
                 </div>
                 <div class="li-cell exp-split-cell-cost" data-mob-lbl="Unit Price ($)">
                   <div class="exp-item-cost-wrap">
@@ -36774,9 +37128,11 @@
                   </div>
                 </div>
                 <div class="exp-split-cell-actions">
-                  <span class="exp-item-tot-badge"><strong data-exi-tot="${idx}">${pricePending ? 'Pending' : fmtUSD(lineTot, 2)}</strong></span>
-                  <button type="button" class="exp-item-icon-btn" data-exi-dup="${idx}" data-ui-tip="Duplicate line" aria-label="Duplicate line">${ic('copy')}</button>
-                  <button type="button" class="line-item-del-btn" data-exi-remove="${idx}" data-ui-tip="Remove line" aria-label="Remove line">×</button>
+                  <strong class="exp-line-tot-val" data-exi-tot="${idx}">${pricePending ? 'Pending' : fmtUSD(lineTot, 2)}</strong>
+                  <div class="exp-row-ghost-group">
+                    <button type="button" class="exp-row-ghost-btn" data-exi-dup="${idx}" data-ui-tip="Duplicate line" aria-label="Duplicate line">${ic('copy')}</button>
+                    <button type="button" class="exp-row-ghost-btn is-del" data-exi-remove="${idx}" data-ui-tip="Remove line" aria-label="Remove line">×</button>
+                  </div>
                 </div>
               </div>
             `;
@@ -36784,10 +37140,9 @@
         </div>
         <div class="exp-items-footer-bar">
           <div class="exp-items-quick-add-group">
-            <span class="exp-quick-add-lbl">Add line:</span>
-            <button type="button" class="exp-quick-add-pill" data-exi-add-mode="equipment">+ Equipment</button>
-            <button type="button" class="exp-quick-add-pill is-wh" data-exi-add-mode="warehouse">+ Warehouse</button>
-            <button type="button" class="exp-quick-add-pill" data-exi-add-mode="general">+ Overhead</button>
+            <button type="button" class="exp-quick-add-pill" data-exi-add-mode="equipment">${ic('plus')} <span>Equipment Line</span></button>
+            <button type="button" class="exp-quick-add-pill is-wh" data-exi-add-mode="warehouse">${ic('plus')} <span>Warehouse Line</span></button>
+            <button type="button" class="exp-quick-add-pill" data-exi-add-mode="general">${ic('plus')} <span>Overhead Line</span></button>
           </div>
           <div class="exp-items-rollup-summary" id="expItemsFooterSummary"></div>
         </div>
@@ -39906,13 +40261,16 @@
             }
           });
         }
+        refreshExpenseRowItemDatalists(expCoNow);
         FORM_UI.lastExpCompany = expCoNow;
       }
       if (!Array.isArray(FORM_UI.expItems) || FORM_UI.expItems.length === 0) {
         const initDest = val('f_store_warehouse') === '1'
           ? 'warehouse'
           : ((val('f_for_equipment') === '1' || Boolean(val('f_truck'))) ? 'equipment' : 'general');
-        const initNm = val('f_exp_item_name') || (initDest !== 'warehouse' ? val('f_subcategory') : '') || '';
+        const rawSubInit = val('f_subcategory');
+        const subAsCatalog = rawSubInit && resolveCatalogItem(rawSubInit) ? rawSubInit : '';
+        const initNm = val('f_exp_item_name') || (initDest === 'general' ? rawSubInit : subAsCatalog) || '';
         const catIt = initNm ? resolveCatalogItem(initNm) : null;
         const initQ = num('f_qty') || 1;
         const initAmt = num('f_amount');
@@ -40158,24 +40516,43 @@
       }
     }
     const subNow = val('f_subcategory');
+    if (!pendEditRow && FORM_UI.lastExpItemCat !== catNow) {
+      FORM_UI.lastExpItemCat = catNow;
+      refreshExpenseRowItemDatalists(val('f_company') || defaultEntryCompany());
+    }
     if (!pendEditRow && Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length === 1) {
       const t0 = FORM_UI.expItems[0];
       const t0Dest = normExpRowDest(t0.allocation_mode);
       const subChanged = !FORM_UI.hydrating && subNow !== FORM_UI.lastSubcategory;
+      const subCatItem = subNow ? resolveCatalogItem(subNow) : null;
       if (t0Dest !== 'warehouse' && !FORM_UI.expItem0Manual) {
         const curItNm = String(t0.item_name || '').trim();
         const nmInp0 = $('f_exi_name_0');
+        const allowSubSync = t0Dest === 'general' || Boolean(subCatItem);
         if (
           nmInp0 !== document.activeElement &&
+          allowSubSync &&
           ((subChanged && (!curItNm || norm(curItNm) === norm(FORM_UI.lastSubcategory) || norm(curItNm) === norm(FORM_UI.initialSubcategory) || isExpenseSubcategoryOrCategoryName(curItNm) || /^fuel$/i.test(catNow))) ||
            (!curItNm && subNow))
         ) {
-          t0.item_name = subNow || '';
+          t0.item_name = subCatItem ? (subCatItem.name || subCatItem.item_name) : (subNow || '');
           const catIt = t0.item_name ? resolveCatalogItem(t0.item_name) : null;
           t0.uom = (catIt && catIt.uom) || (/^fuel|oil/i.test(catNow) || /diesel|mazout|gasoline|benzine|adblue/i.test(subNow) ? 'Litre' : (t0.uom || 'Piece'));
           if (nmInp0) nmInp0.value = t0.item_name;
           const uSel0 = $('f_exi_uom_0');
           if (uSel0) uSel0.value = t0.uom;
+          syncExpenseItemStockHints(val('f_company') || defaultEntryCompany());
+          syncExpenseItemsSummaryUI();
+        } else if (
+          nmInp0 !== document.activeElement &&
+          t0Dest === 'equipment' &&
+          !STATE.editingRecord &&
+          curItNm &&
+          !resolveCatalogItem(curItNm) &&
+          isExpenseSubcategoryOrCategoryName(curItNm)
+        ) {
+          t0.item_name = '';
+          if (nmInp0) nmInp0.value = '';
           syncExpenseItemStockHints(val('f_company') || defaultEntryCompany());
           syncExpenseItemsSummaryUI();
         }
@@ -40257,7 +40634,7 @@
       } else {
         const whLines = FORM_UI.expItems.filter(it => normExpRowDest(it.allocation_mode) === 'warehouse').length;
         const eqLines = FORM_UI.expItems.filter(it => normExpRowDest(it.allocation_mode) === 'equipment').length;
-        setText('calc_gl', whLines > 0 && eqLines > 0 ? `${FORM_UI.expItems.length} Lines (${eqLines} Equip · ${whLines} Stock)` : (whLines > 0 ? `${FORM_UI.expItems.length} Lines (${whLines} Warehouse)` : `${FORM_UI.expItems.length} Split Lines`));
+        setText('calc_gl', whLines > 0 && eqLines > 0 ? `${FORM_UI.expItems.length} Lines (${eqLines} Equipment · ${whLines} Warehouse)` : (whLines > 0 ? `${FORM_UI.expItems.length} Lines (${whLines} Warehouse)` : `${FORM_UI.expItems.length} Split Lines`));
       }
     } else {
       setText('calc_gl', 'General Overhead');
@@ -44329,6 +44706,32 @@
           }
           filtered = exact.concat(freqOrdered);
         }
+        if (!filtered.length && el.dataset.strictCatalog === '1' && ql) {
+          currentMatches = [];
+          activeIdx = -1;
+          closeAll(menu);
+          syncMenuAlign();
+          menu.innerHTML = `<div class="pa-suggest-empty-cat"><span>No connected catalog item matches <b>"${esc(q)}"</b></span><button type="button" class="pa-suggest-reg-btn" data-suggest-register-item="${esc(q)}">+ Add to Items Catalog</button></div>`;
+          menu.hidden = false;
+          wrap.classList.add('open');
+          const regBtn = menu.querySelector('[data-suggest-register-item]');
+          if (regBtn) {
+            let regHandled = false;
+            const onOpenReg = ev => {
+              ev.preventDefault();
+              ev.stopPropagation();
+              if (regHandled) return;
+              regHandled = true;
+              clearTimeout(blurTimer);
+              const targetRowIdx = el.hasAttribute('data-exi-idx') ? Number(el.getAttribute('data-exi-idx')) : 0;
+              closeOwnMenu();
+              openQuickExpenseCatalogDrawer(q, targetRowIdx);
+            };
+            regBtn.addEventListener('mousedown', onOpenReg);
+            regBtn.addEventListener('click', onOpenReg);
+          }
+          return;
+        }
         if (!filtered.length || (!ignoreExactCurrent && filtered.length === 1 && filtered[0].value === q)) {
           closeOwnMenu();
           return;
@@ -46010,14 +46413,136 @@
       renderExpenseItemsBuilderRows();
       addExpItemBtn.addEventListener('click', ev => {
         ev.preventDefault();
+        if (FORM_UI.expItems.length === 1) {
+          const r0 = FORM_UI.expItems[0];
+          const isOverheadCat = /admin|office|rent|lease|tax|insur|utilit|bank|legal|subcontract/i.test(val('f_category'));
+          if (r0 && normExpRowDest(r0.allocation_mode) === 'general' && !r0.target_equipment && !FORM_UI.expItem0Manual && !isOverheadCat) {
+            r0.allocation_mode = 'equipment';
+            if (r0.item_name && !resolveCatalogItem(r0.item_name) && isExpenseSubcategoryOrCategoryName(r0.item_name)) {
+              r0.item_name = '';
+            }
+          }
+        }
         appendExpItemTicket();
         renderExpenseItemsBuilderRows();
         recalcForm();
         const newIdx = FORM_UI.expItems.length - 1;
-        const focusEl = (normExpRowDest(FORM_UI.expItems[newIdx].allocation_mode) === 'equipment' && !$('f_exi_eq_' + newIdx)?.value)
-          ? $('f_exi_eq_' + newIdx)
-          : $('f_exi_name_' + newIdx);
+        const focusEl = (normExpRowDest(FORM_UI.expItems[0]?.allocation_mode) === 'equipment' && !$('f_exi_eq_0')?.value)
+          ? $('f_exi_eq_0')
+          : ((normExpRowDest(FORM_UI.expItems[newIdx].allocation_mode) === 'equipment' && !$('f_exi_eq_' + newIdx)?.value)
+              ? $('f_exi_eq_' + newIdx)
+              : $('f_exi_name_' + newIdx));
         if (focusEl) { try { focusEl.focus(); } catch (_) {} }
+      });
+      const qcDrawer = $('expQuickCatalogDrawer');
+      const qcToggleBtn = $('toggleQuickCatalogItemBtn');
+      const qcCancelBtn = $('cancelQuickCatalogItemBtn');
+      const qcSaveBtn = $('saveQuickCatalogItemBtn');
+      const closeQuickCatalogDrawer = () => {
+        if (qcDrawer) qcDrawer.hidden = true;
+        if (qcToggleBtn) qcToggleBtn.classList.remove('active');
+        const hEl = $('exp_qc_hint');
+        if (hEl) { hEl.textContent = ''; hEl.className = 'hint'; }
+      };
+      const commitQuickCatalogItem = () => {
+        const rawNm = val('exp_qc_name');
+        const hEl = $('exp_qc_hint');
+        if (!rawNm) {
+          if (hEl) { hEl.textContent = 'Enter the new Item / Part name.'; hEl.className = 'hint crit'; }
+          try { $('exp_qc_name')?.focus(); } catch (_) {}
+          return;
+        }
+        if ((typeof isAggregateMaterialProduct === 'function' && isAggregateMaterialProduct(rawNm)) || /^(sand|asphalt|gravel|gabbro|limestone|subbase|concrete|cement|soil|0-\d+.*|بحص.*|رمل.*|ترابة.*)$/i.test(norm(rawNm))) {
+          if (hEl) { hEl.textContent = 'Quarry aggregate products belong in Raw Material / Sales Tickets, not the Spare Parts & Items Catalog.'; hEl.className = 'hint crit'; }
+          return;
+        }
+        if (typeof isExpenseSubcategoryOrCategoryName === 'function' && isExpenseSubcategoryOrCategoryName(rawNm) && !CANONICAL_ITEM_KEYS.has(norm(rawNm))) {
+          if (hEl) { hEl.textContent = 'Enter a specific physical item or part name rather than an expense category/subcategory.'; hEl.className = 'hint crit'; }
+          return;
+        }
+        const catVal = val('exp_qc_cat') || 'Spare Parts';
+        const uomVal = val('exp_qc_uom') || 'Piece';
+        const eqPreset = val('exp_qc_equip') || 'all';
+        const defCost = num('exp_qc_cost');
+        const curCo = val('f_company') || defaultEntryCompany();
+        const defLoc = defaultWarehouseLocationForCompany(curCo);
+        let catRec = resolveCatalogItem(rawNm);
+        if (!catRec) {
+          catRec = ensureItemInCatalog({
+            name: rawNm,
+            category: catVal,
+            uom: uomVal,
+            default_cost: defCost > 0 ? round2(defCost) : 0,
+            default_location: defLoc,
+            compatible_types: resolveCompatibleTypesPreset(eqPreset)
+          });
+          if (catRec) {
+            applyCustomRecordsToSeed();
+            saveLocalAuthAndRecords();
+            postRecordToLocalApi('items', catRec);
+          }
+        }
+        const effRec = catRec || resolveCatalogItem(rawNm);
+        const rIdx = Number((qcDrawer && qcDrawer.dataset.targetRowIdx) || 0);
+        const targetRow = FORM_UI.expItems[rIdx] || FORM_UI.expItems[0];
+        if (targetRow && effRec) {
+          targetRow.item_name = effRec.name || effRec.item_name || rawNm;
+          targetRow.uom = effRec.uom || uomVal;
+          if (defCost > 0 && !(Number(targetRow.unit_cost) > 0)) {
+            targetRow.unit_cost = round2(defCost);
+          } else if (Number(effRec.default_cost) > 0 && !(Number(targetRow.unit_cost) > 0)) {
+            targetRow.unit_cost = round2(Number(effRec.default_cost));
+          }
+          if (rIdx === 0) FORM_UI.expItem0Manual = true;
+          if (!val('f_category') && $('f_category')) {
+            $('f_category').value = catVal === 'Plant Consumables' ? 'Tools & Garage' : catVal;
+          }
+        }
+        closeQuickCatalogDrawer();
+        renderExpenseItemsBuilderRows();
+        recalcForm();
+        const nextFocus = $('f_exi_qty_' + rIdx) || $('f_exi_cost_' + rIdx);
+        if (nextFocus) { try { nextFocus.focus({ preventScroll: true }); } catch (_) {} }
+      };
+      if (qcToggleBtn) {
+        qcToggleBtn.addEventListener('click', ev => {
+          ev.preventDefault();
+          if (qcDrawer && !qcDrawer.hidden) {
+            closeQuickCatalogDrawer();
+          } else {
+            const rowsNow = Array.isArray(FORM_UI.expItems) ? FORM_UI.expItems : [];
+            let bestIdx = rowsNow.findIndex(r => !r || !String(r.item_name || '').trim() || !resolveCatalogItem(r.item_name));
+            if (bestIdx < 0) bestIdx = Math.max(0, rowsNow.length - 1);
+            openQuickExpenseCatalogDrawer(undefined, bestIdx);
+          }
+        });
+      }
+      if (qcCancelBtn) {
+        qcCancelBtn.addEventListener('click', ev => {
+          ev.preventDefault();
+          closeQuickCatalogDrawer();
+        });
+      }
+      if (qcSaveBtn) {
+        qcSaveBtn.addEventListener('click', ev => {
+          ev.preventDefault();
+          commitQuickCatalogItem();
+        });
+      }
+      ['exp_qc_name', 'exp_qc_cost'].forEach(qid => {
+        const qEl = $(qid);
+        if (qEl) {
+          qEl.addEventListener('keydown', ev => {
+            if (ev.key === 'Enter') {
+              ev.preventDefault();
+              ev.stopPropagation();
+              commitQuickCatalogItem();
+            } else if (ev.key === 'Escape') {
+              ev.preventDefault();
+              closeQuickCatalogDrawer();
+            }
+          });
+        }
       });
       const clearAllBtn = $('clearExpItemsBtn');
       if (clearAllBtn) {
@@ -46050,6 +46575,7 @@
         const rowObj = FORM_UI.expItems[idx];
         if (!rowObj || !field) return;
         const prevVal = rowObj[field];
+        const expCoCur = val('f_company') || defaultEntryCompany();
         if (field === 'qty' || field === 'unit_cost') {
           rowObj[field] = t.value === '' ? '' : Number(t.value);
         } else {
@@ -46062,33 +46588,47 @@
             renderExpenseItemsBuilderRows();
           }
         } else {
-          if (field === 'target_equipment' && ev.type === 'change' && rowObj.target_equipment) {
-            const canon = resolveCanonicalEquipmentName(rowObj.target_equipment, val('f_company') || defaultEntryCompany(), false, null, true);
-            if (canon && canon !== rowObj.target_equipment) {
-              rowObj.target_equipment = canon;
-              t.value = canon;
+          if (field === 'target_equipment') {
+            if (ev.type === 'change' && rowObj.target_equipment) {
+              const canon = resolveCanonicalEquipmentName(rowObj.target_equipment, expCoCur, false, null, true);
+              if (canon && canon !== rowObj.target_equipment) {
+                rowObj.target_equipment = canon;
+                t.value = canon;
+              }
             }
+            if (ev.type === 'change' && rowObj.target_equipment && rowObj.item_name) {
+              const catEx = resolveCatalogItem(rowObj.item_name);
+              const eqCls = resolveEquipmentUnitClass(rowObj.target_equipment, expCoCur);
+              if (catEx && eqCls && !isItemCompatibleWithEquipment(catEx, eqCls)) {
+                rowObj.item_name = '';
+                const nmInp = $('f_exi_name_' + idx);
+                if (nmInp) nmInp.value = '';
+              }
+            }
+            refreshExpenseRowItemDatalists(expCoCur);
+            syncExpenseItemStockHints(expCoCur);
           }
           if (field === 'item_name') {
             const catItem = rowObj.item_name ? resolveCatalogItem(rowObj.item_name) : null;
-            const whRow = rowObj.item_name ? getWarehouseIndex(val('f_company') || defaultEntryCompany()).byKey[norm(rowObj.item_name)] : null;
+            const whRow = rowObj.item_name ? getWarehouseIndex(expCoCur).byKey[norm(rowObj.item_name)] : null;
             const lockedUom = (catItem && catItem.uom) || (whRow && whRow.uom) || '';
             const uSel = $('f_exi_uom_' + idx);
             if (lockedUom) {
               rowObj.uom = lockedUom;
-              if (uSel) {
-                uSel.value = lockedUom;
-                uSel.disabled = true;
-                uSel.setAttribute('data-locked-by-item', '1');
-              }
-            } else if (uSel) {
-              uSel.disabled = false;
-              uSel.removeAttribute('data-locked-by-item');
+            }
+            if (uSel) {
+              uSel.value = rowObj.uom || 'Piece';
+              uSel.disabled = true;
+              uSel.setAttribute('data-locked-by-item', '1');
             }
             if (catItem && Number(catItem.default_cost) > 0 && (rowObj.unit_cost === '' || rowObj.unit_cost == null)) {
               rowObj.unit_cost = round2(Number(catItem.default_cost));
               const cInp = $('f_exi_cost_' + idx);
               if (cInp) cInp.value = String(rowObj.unit_cost);
+            }
+            if (catItem && !val('f_category') && $('f_category')) {
+              const mappedCat = catItem.category === 'Plant Consumables' ? 'Tools & Garage' : (catItem.category || 'Spare Parts');
+              $('f_category').value = mappedCat;
             }
             const defLoc = (whRow && whRow.location) || (catItem && catItem.default_location) || '';
             if (normExpRowDest(rowObj.allocation_mode) === 'warehouse' && defLoc) {
@@ -46102,7 +46642,7 @@
                 chip.classList.toggle('active', norm(chip.getAttribute('data-exi-quick-item')) === norm(rowObj.item_name));
               });
             }
-            syncExpenseItemStockHints(val('f_company') || defaultEntryCompany());
+            syncExpenseItemStockHints(expCoCur);
           }
           syncExpenseItemsSummaryUI();
         }
@@ -46117,10 +46657,21 @@
           const u = quickEqBtn.getAttribute('data-exp-quick-eq') || '';
           const row0 = FORM_UI.expItems && FORM_UI.expItems[0];
           if (row0 && u) {
+            const expCoCur = val('f_company') || defaultEntryCompany();
             row0.allocation_mode = 'equipment';
             row0.target_equipment = u;
             const eqInp0 = $('f_exi_eq_0');
             if (eqInp0) eqInp0.value = u;
+            if (row0.item_name) {
+              const catEx = resolveCatalogItem(row0.item_name);
+              const eqCls = resolveEquipmentUnitClass(u, expCoCur);
+              if (catEx && eqCls && !isItemCompatibleWithEquipment(catEx, eqCls)) {
+                row0.item_name = '';
+                const nmInp0 = $('f_exi_name_0');
+                if (nmInp0) nmInp0.value = '';
+              }
+            }
+            refreshExpenseRowItemDatalists(expCoCur);
             recalcForm();
           }
           return;
@@ -46175,7 +46726,7 @@
             rowObj.allocation_mode = newMode;
             if (newMode === 'general') {
               rowObj.target_equipment = '';
-            } else if (newMode === 'warehouse' && idx === 0 && !FORM_UI.expItem0Manual && norm(rowObj.item_name || '') === norm(val('f_subcategory'))) {
+            } else if (!FORM_UI.expItem0Manual && rowObj.item_name && !resolveCatalogItem(rowObj.item_name) && isExpenseSubcategoryOrCategoryName(rowObj.item_name)) {
               rowObj.item_name = '';
             }
             renderExpenseItemsBuilderRows();
@@ -47138,20 +47689,26 @@
         const isSingleOverhead = rowsNow.length === 1 && normExpRowDest(rowsNow[0].allocation_mode) === 'general';
         let stagedItems = [];
         if (rowsNow.length > 0 && !isSingleOverhead) {
+          const isPhysicalItemCat = /^fuel$|^oils\s*&\s*lubricants$|^spare\s*parts$|^tools\s*&\s*garage$/i.test(val('f_category'));
+          const isLegacyUnmodifiedEdit = Boolean(STATE.editingRecord && STATE.editingRecord.crKey === 'expenses' && !FORM_UI.expItem0Manual && rowsNow.length === 1);
           rowsNow.forEach((it, idx) => {
             const rawNm = String(it.item_name || '').trim();
             const dest = normExpRowDest(it.allocation_mode);
             const isSingleEquip = rowsNow.length === 1 && dest === 'equipment';
             const subVal = val('f_subcategory');
-            const shouldSyncSingleToSub = isSingleEquip && Boolean(subVal) && !FORM_UI.expItem0Manual && (
+            const subCatItem = subVal ? resolveCatalogItem(subVal) : null;
+            const shouldSyncSingleToSub = isSingleEquip && Boolean(subCatItem) && !FORM_UI.expItem0Manual && (
               !rawNm ||
               norm(rawNm) === norm(FORM_UI.initialSubcategory) ||
               isExpenseSubcategoryOrCategoryName(rawNm) ||
               /^fuel$/i.test(val('f_category'))
             );
+            const mustBeCatalog = dest === 'warehouse' ||
+              (rowsNow.length > 1 && dest !== 'general') ||
+              (isSingleEquip && (Boolean(rawNm) || (isPhysicalItemCat && !isLegacyUnmodifiedEdit)));
             const nm = shouldSyncSingleToSub
-              ? subVal
-              : (rawNm || (isSingleEquip ? (val('f_exp_item_name') || subVal || val('f_category')) : (dest === 'general' ? (subVal || val('f_category')) : '')));
+              ? (subCatItem.name || subCatItem.item_name)
+              : (rawNm || (mustBeCatalog ? '' : (isSingleEquip ? (val('f_exp_item_name') || subVal || val('f_category')) : (dest === 'general' ? (subVal || val('f_category')) : ''))));
             const q = Number(it.qty) || 0;
             const ucRaw = Number(it.unit_cost) || 0;
             const uc = (rowsNow.length === 1 && !(ucRaw > 0) && c.amount > 0)
@@ -47160,13 +47717,22 @@
             const rawRowEq = String(it.target_equipment || '').trim();
             const rowEq = rawRowEq ? resolveCanonicalEquipmentName(rawRowEq, company, false, null, false) : '';
             const whLoc = String(it.warehouse_location || defWhLocSave).trim() || defWhLocSave;
-            if (!nm) addErr('f_exi_name_' + idx, dest === 'warehouse' ? 'Enter the Item / Part Name to store in Warehouse.' : `Line ${idx + 1}: Item / Part Name is required.`);
+            const catIt = nm ? resolveCatalogItem(nm) : null;
+            if (!nm) {
+              addErr('f_exi_name_' + idx, dest === 'warehouse' ? 'Select a Catalog Item to store in Warehouse.' : `Line ${idx + 1}: Select a connected Catalog Item.`);
+            } else if (mustBeCatalog && !isLegacyUnmodifiedEdit && !catIt) {
+              addErr('f_exi_name_' + idx, `Line ${idx + 1}: "${nm}" is not in the Items Catalog. Select a connected catalog item (or click New Catalog Item).`);
+            } else if (dest === 'equipment' && rowEq && catIt) {
+              const eqClass = resolveEquipmentUnitClass(rowEq, company);
+              if (eqClass && !isItemCompatibleWithEquipment(catIt, eqClass)) {
+                addErr('f_exi_name_' + idx, `Line ${idx + 1}: "${catIt.name || nm}" is not connected to ${eqClass} unit ${rowEq}.`);
+              }
+            }
             if (!(q > 0)) addErr('f_exi_qty_' + idx, `Line ${idx + 1}: Quantity must be above zero.`);
             if (!c.pricePending && !(uc >= 0)) addErr('f_exi_cost_' + idx, `Line ${idx + 1}: Unit price cannot be negative.`);
             if (dest === 'equipment' && !rowEq) {
               addErr('f_exi_eq_' + idx, `Line ${idx + 1}: Select the Equipment unit.`);
             }
-            const catIt = nm ? resolveCatalogItem(nm) : null;
             const lockedUom = (catIt && catIt.uom) ? catIt.uom : (it.uom || (/^fuel|oil/i.test(val('f_category')) ? 'Litre' : 'Piece'));
             const effUnitCost = c.pricePending ? 0 : round2(uc);
             const savedAllocMode = dest === 'warehouse'
@@ -47175,7 +47741,7 @@
                   ? ((!firstEqUnit || norm(rowEq) === norm(firstEqUnit)) ? 'same_equipment' : 'different_equipment')
                   : 'general');
             stagedItems.push({
-              item_name: nm,
+              item_name: catIt ? (catIt.name || catIt.item_name) : nm,
               category: val('f_category'),
               subcategory: val('f_subcategory'),
               qty: round2(q || 1),
@@ -48940,7 +49506,7 @@
       if (crKey === 'expenses' && stagedExpenseItems.length) {
         if (!Array.isArray(STATE.customRecords.expense_items)) STATE.customRecords.expense_items = [];
         stagedExpenseItems.forEach((it, li) => {
-          if (it.item_name && (it.allocation_mode === 'warehouse' || !isExpenseSubcategoryOrCategoryName(it.item_name))) {
+          if (it.item_name && it.allocation_mode !== 'general' && isValidCatalogItemCandidate(it.item_name, it.category || record.category)) {
             const newCatItem = ensureItemInCatalog(it.item_name, it.uom || 'Piece', it.category || record.category || 'Spare Parts', it.unit_cost || 0, it.warehouse_location || 'WTC Main Warehouse', 0);
             if (newCatItem && newCatItem.id) extraApiPosts.push(['items', newCatItem]);
           }
