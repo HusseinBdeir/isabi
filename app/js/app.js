@@ -58913,98 +58913,15 @@
   }
 
   // ==========================================================================
-  // ASK ISABI COPILOT ANSWERS (DATA-DRIVEN, WORD-BOUNDARY INTENTS)
+  // ASK ISABI COPILOT BRIDGE (DELEGATES TO js/ask_isabi.js HYBRID ENGINE)
   // ==========================================================================
   function answerAskIsabi(qRaw) {
-    const q = ' ' + String(qRaw || '').toLowerCase() + ' ';
-    const has = re => re.test(q);
-    const g = (SEED.models['manufacturing-group'] || {}).periods || {};
-    const gk = g[STATE.period] || g.all || {};
-    const w = ((SEED.models.wtc || {}).periods || {})[STATE.period] || ((SEED.models.wtc || {}).periods || {}).all || {};
-    const b = ((SEED.models.bbconstruction || {}).periods || {})[STATE.period] || ((SEED.models.bbconstruction || {}).periods || {}).all || {};
-    const scope = `${COMPANY_LABELS[STATE.company].split('(')[0].trim()} · ${gk.label || 'All-Time'}`;
+    if (window.MFG_ASK && typeof window.MFG_ASK.answer === 'function') {
+      return window.MFG_ASK.answer(qRaw);
+    }
     const k = getKPI();
-    const { fleet, pricing } = sentinelSlice();
-
-    if (has(/\b(margin|gm|p&l|profit|compare|revenue|bbconstruction|wtc)\b/)) {
-      return `<strong>P&amp;L — WTC vs BBConstruction (${esc(gk.label || 'All-Time')}):</strong><br>
-        • <strong>WTC</strong>: Sales TTC ${fmtUSD(w.sales_ttc, 0)} on ${fmtNum(w.loads)} loads · net ${fmtUSD(w.net_sales, 0)} · raw cost ${fmtUSD(w.raw_cost, 0)} (${fmtNum(w.raw_loads)} loads) · gross margin ${fmtUSD(w.gross_margin, 0)} (<strong>${fmtPct(w.gm_pct, w.gross_margin, w.net_sales)}</strong>) · operating cash profit <strong>${fmtUSD(w.operating_profit, 0)}</strong> (${fmtPct(w.op_margin_pct, w.operating_profit, w.net_sales)}).<br>
-        • <strong>BBConstruction</strong>: Sales TTC ${fmtUSD(b.sales_ttc, 0)} on ${fmtNum(b.loads)} loads · net ${fmtUSD(b.net_sales, 0)} · raw cost ${fmtUSD(b.raw_cost, 0)} (${fmtNum(b.raw_loads)} loads) · gross margin ${fmtUSD(b.gross_margin, 0)} (<strong>${fmtPct(b.gm_pct, b.gross_margin, b.net_sales)}</strong>) · operating cash profit <strong>${fmtUSD(b.operating_profit, 0)}</strong> (${fmtPct(b.op_margin_pct, b.operating_profit, b.net_sales)}).<br>
-        • BBConstruction's higher GM comes from more own / JV pit material (lower third-party site royalties); its operating margin is thinner because expenses and payroll weigh more against a smaller top line.`;
-    }
-    if (has(/\b(ar|overdue|receivable|receivables|customer|customers|credit hold|dso)\b/)) {
-      const topC = ((SEED.models[STATE.company] || SEED.models['manufacturing-group'] || {}).customers || []).slice(0, 5).map(c => `${esc(c.Customer)} (${fmtUSD(c.ar_balance, 0)}${Number(c.ar_60_plus || 0) > 0 ? ', ' + fmtUSD(c.ar_60_plus, 0) + ' past 60d' : ''})`).join(', ');
-      return `<strong>FIFO Accounts Receivable — ${esc(scope)}:</strong><br>
-        • Open AR <strong>${fmtUSD(k.ar_balance, 2)}</strong> (WTC ${fmtUSD(w.ar_balance, 2)} · BBConstruction ${fmtUSD(b.ar_balance, 2)}) · overdue &gt;30d ${fmtUSD(k.ar_overdue, 0)} · past 60 days <strong>${fmtUSD(k.ar_60_plus, 0)}</strong> · DSO ${fmtNum(k.dso_days, 0)} days.<br>
-        • Aging: current ${fmtUSD(k.ar_current, 0)} · 1–10d ${fmtUSD(k.ar_1_10, 0)} · 11–30d ${fmtUSD(k.ar_11_30, 0)} · 31–60d ${fmtUSD(k.ar_31_60, 0)} · 60+ ${fmtUSD(k.ar_60_plus, 0)}. VAT-registered customers carry 11% inside their balance (m249).<br>
-        • Largest balances: ${topC || '—'}. Credit hold candidates = anything past 60 days with no receipt this month.`;
-    }
-    if (has(/\b(ap|leg|legs|quarry|quarries|site|sites|supplier|suppliers|hauler|payable|payables)\b/)) {
-      return `<strong>3-Leg Accounts Payable (m192) — ${esc(scope)}:</strong><br>
-        1. <strong>Material leg ${fmtUSD(k.ap_material, 0)}</strong> owed to site owners.<br>
-        2. <strong>Haulage leg ${fmtUSD(k.ap_haulage, 0)}</strong> owed to truck owners ($0 on company-fleet loads).<br>
-        3. <strong>Supplies &amp; services leg ${fmtUSD(k.ap_expense, 0)}</strong> from credit expenses.<br>
-        Settlements paid ${fmtUSD(k.settlements_paid, 0)} · net open AP <strong>${fmtUSD(k.ap_balance, 0)}</strong>${Number(k.ap_balance || 0) < 0 ? ' (negative = prepayments / advances exceed open legs)' : ''}.`;
-    }
-    if (has(/\b(diesel|tank|fuel|litre|litres|consumption|malfunction)\b/)) {
-      const dtByCo = computeDieselTank().byCo || {};
-      const wf = dtByCo.WTC || {};
-      const bf = dtByCo.BBConstruction || {};
-      const dtScoped = getDieselTankLedger();
-      return `<strong>Diesel Tank &amp; Malfunction Reconciliation:</strong><br>
-        • <strong>WTC</strong>: purchased ${fmtNum(wf.bought, 0)} L minus issued ${fmtNum(wf.issued, 0)} L minus malfunction/discrepancy ${fmtNum(wf.discrepancy || 0, 0)} L minus sold ${fmtNum(wf.sold, 0)} L = <code class="mono">${fmtNum(wf.balance, 0)} L</code> remaining in tank.<br>
-        • <strong>BBConstruction</strong>: purchased ${fmtNum(bf.bought, 0)} L minus issued ${fmtNum(bf.issued, 0)} L minus malfunction/discrepancy ${fmtNum(bf.discrepancy || 0, 0)} L minus sold ${fmtNum(bf.sold, 0)} L = <code class="mono">${fmtNum(bf.balance, 0)} L</code> (negative because historical bulk diesel invoices were booked under General Expenses instead of Fuel Purchases).<br>
-        • <strong>5% Malfunction Watchdog (${esc(scope)})</strong>: gross malfunction ${fmtNum(dtScoped.malfAbsL, 1)} L vs ${fmtNum(dtScoped.companyDieselUsedL, 1)} L company diesel used = <strong>${dtScoped.malfunctionPct.toFixed(1)}%</strong> (${dtScoped.malfunctionAlert ? 'ALERT >= ' + dtScoped.malfunctionThresholdPct.toFixed(1) + '% threshold' : 'OK < ' + dtScoped.malfunctionThresholdPct.toFixed(1) + '% threshold'}).<br>
-        • Period issued ${fmtNum(k.diesel_litres, 0)} L · discrepancy ${fmtNum(k.diesel_discrepancy || 0, 0)} L · sold ${fmtNum(k.diesel_sold, 0)} L · fleet cost per ton hauled ${fmtUSD(k.cost_per_ton, 2)} · ${fmtNum((fleet.consumption_outliers || []).length)} consumption outliers flagged.`;
-    }
-    if (has(/\b(cash|till|drawer|cashflow|lbp|pounds)\b/)) {
-      return `<strong>Cash Flow &amp; Physical Till — ${esc(scope)}:</strong><br>
-        • <strong>Live Cash in Till</strong>: USD <strong>${fmtUSD(k.cash_till_usd, 2)}</strong> · LBP <strong>${fmtLBP(k.cash_till_lbp)}</strong> (Combined <strong>${fmtUSD(k.cash_till, 2)}</strong> @ ${fmtNum(k.rate_lbp || 89500, 0)} LL/$).<br>
-        • <strong>WTC</strong>: ${fmtUSD(w.cash_till_usd, 2)} &amp; ${fmtLBP(w.cash_till_lbp)} · <strong>BBConstruction</strong>: ${fmtUSD(b.cash_till_usd, 2)} &amp; ${fmtLBP(b.cash_till_lbp)}.<br>
-        • Selected period cash flow: In ${fmtUSD(k.cash_inflow, 2)} − Out ${fmtUSD(k.cash_outflow, 2)} = Net <strong>${fmtUSD(k.net_cash_flow, 2)}</strong>. Entry users can verify drawer cash anytime on <em>Cash Flow &amp; Till</em>.`;
-    }
-    if (has(/\b(trial|balance|coa|ledger|gl|tie|tied)\b/)) {
-      const tb = Number(k.tb_check || 0);
-      return `<strong>Lebanese CoA Double-Entry Trial Balance — ${esc(scope)}:</strong><br>
-        • Variance <strong>${fmtUSD(tb, 2)}</strong> ${Math.abs(tb) < 0.005 ? '— every SOA journal leg across Class 4 (receivables / payables / VAT), Class 5 (cash & till), Class 6 (raw material, haulage, payroll, expenses) and Class 7 (sales) ties.' : '— open the General Ledger and the Sentinels page: the books do not tie for this scope.'}<br>
-        • Output VAT 11% ${fmtUSD(k.sales_vat, 2)} · VAT receivable ${fmtUSD(k.vat_receivable, 2)} · cash till ${fmtUSD(k.cash_till, 2)}.`;
-    }
-    if (has(/\b(price|prices|pricing|agreement|agreements|below|commission)\b/)) {
-      return `<strong>Price Agreements — ${esc(scope)}:</strong><br>
-        • ${fmtNum(pricing.active_agreements || k.active_agreements)} active agreements · ${fmtUSD(pricing.sales_below_agreed_usd || 0, 0)} sold below the agreed price across ${fmtNum(pricing.below_agreed_pairs_count || 0)} customer × product pairs · ${fmtNum(pricing.lapsed_agreement_pairs_count || 0)} pairs trading on lapsed agreements.<br>
-        • Weighted agreed price ${fmtUSD(pricing.weighted_agreed_price_usd || 0, 2)} vs actual average ${fmtUSD(pricing.actual_avg_price_usd || 0, 2)} · commission due ${fmtUSD(k.commission_due, 0)}.`;
-    }
-    if (has(/\b(overtime|driver|drivers|payroll|salary|salaries)\b/)) {
-      return `<strong>Workforce — ${esc(scope)}:</strong><br>
-        • Salaries paid ${fmtUSD(k.salaries_paid, 0)} · overtime bonus due ${fmtUSD(k.overtime_bonus, 0)} (sales ${fmtUSD(fleet.sales_overtime_bonus_usd || 0, 0)} + raw ${fmtUSD(fleet.raw_overtime_bonus_usd || 0, 0)} all-time) · ${fmtUSD(pricing.unmatched_salary_payments_usd || 0, 0)} paid without a contract.<br>
-        • Overtime = a company-fleet load dispatched outside the 06:00–17:59 day shift (m48 / m93); third-party loads never earn the allowance.`;
-    }
-    if (has(/\b(defect|defects|part|parts|spare|spares|maintenance|workshop|broken|custody)\b/)) {
-      const mIdx = getMaintIndex();
-      const allowedCos = allowedCompanyNames();
-      const openDefs = mIdx.openDefects.filter(d => !d.company || allowedCos.includes(d.company));
-      const parts = mIdx.parts.filter(p => !p.company || allowedCos.includes(p.company));
-      const storedCnt = parts.filter(p => /^Stored/i.test(p.removed_disposition || '')).length;
-      const wsCnt = parts.filter(p => /^In Maintenance/i.test(p.removed_disposition || '')).length;
-      const soldCnt = parts.filter(p => /^Sold/i.test(p.removed_disposition || '')).length;
-      const proceeds = parts.reduce((a, p) => a + Number(p.sale_proceeds || 0), 0);
-      const unnotified = parts.filter(p => !p.prior_defect_notified && !p.defect_ref).length;
-      return `<strong>Equipment Defects &amp; Parts Custody — ${esc(scope)}:</strong><br>
-        • <strong>Open Defects</strong>: <strong>${fmtNum(openDefs.length)}</strong> (${fmtNum(openDefs.filter(d => /^Critical/i.test(d.severity || '')).length)} critical · ${fmtNum(openDefs.filter(d => /Awaiting Part/i.test(d.status || '')).length)} awaiting part).<br>
-        • <strong>Part Custody (${fmtNum(parts.length)} logged)</strong>: ${fmtNum(storedCnt)} stored in warehouse · ${fmtNum(wsCnt)} in maintenance / workshop · ${fmtNum(soldCnt)} sold (${fmtUSD(proceeds, 2)} proceeds).<br>
-        • <strong>Pre-Defect Governance</strong>: ${unnotified === 0 ? '100% of part changes had a prior defect notification.' : fmtNum(unnotified) + ' unnotified emergency part change(s) flagged in AI Sentinel S10.'} Open <em>Fleet &amp; Diesel → Defects &amp; Parts</em> to log or update custody.`;
-    }
-    if (has(/\b(team|biometric|face id|access|architecture|seat|seats|security|rls)\b/)) {
-      const n = STATE.users.length;
-      const faceCnt = STATE.users.filter(userHasFaceId).length;
-      return `<strong>Multi-Device Team Access, Face ID &amp; Row-Level Security:</strong><br>
-        • <strong>${n} active team seats</strong> synchronize across phones, tablets, and laptops over the Cloud Relay (<code class="mono">${esc(CLOUD_DOC_KEY)}</code>) with relational SQLite (<code class="mono">data/mfg.db</code>) and PostgreSQL (<code class="mono">data/schema_postgres.sql</code>) storage.<br>
-        • <strong>${faceCnt} / ${n} seats enrolled</strong> in 128-D neural Face ID liveness authentication with Business-Unit Row-Level Security across entities.`;
-    }
-    return `<strong>${esc(scope)} at a glance:</strong><br>
-      • Revenue (TTC) <strong>${fmtUSD(k.sales_ttc, 2)}</strong> across <strong>${fmtNum(k.loads)} loads</strong> (${fmtNum(k.tons_sold, 0)} t) · gross margin ${fmtUSD(k.gross_margin, 0)} · operating cash profit ${fmtUSD(k.operating_profit, 0)}.<br>
-      • Open AR ${fmtUSD(k.ar_balance, 0)} · open AP ${fmtUSD(k.ap_balance, 0)} · till ${fmtUSD(k.cash_till, 2)} · diesel in tank ${fmtNum(k.diesel_in_tank, 0)} L.<br>
-      Ask about <em>margin</em>, <em>AR</em>, <em>AP legs</em>, <em>diesel</em>, <em>trial balance</em>, <em>pricing</em>, <em>overtime</em> or <em>team seats</em>.`;
+    const scope = `${String(COMPANY_LABELS[STATE.company] || 'Selected Entities').split('(')[0].trim()} · ${k.label || 'All-Time'}`;
+    return `<strong>${esc(scope)} Summary:</strong><br>Sales ${fmtUSD(k.sales_ttc, 2)} across ${fmtNum(k.loads)} loads · Gross Margin ${fmtUSD(k.gross_margin, 0)} · Operating Profit ${fmtUSD(k.operating_profit, 0)}.`;
   }
 
   // ==========================================================================
@@ -65049,6 +64966,7 @@
 
     const aiScope = $('aiDrawerScope');
     if (aiScope) aiScope.textContent = `${String(coFullLbl).split('(')[0].trim()} · USD · ${k.label || 'All-Time'}`;
+    if (window.MFG_ASK && typeof window.MFG_ASK.syncScope === 'function') window.MFG_ASK.syncScope();
 
     const activeHubId = VIEW_TO_HUB[STATE.view] || 'overview';
     document.querySelectorAll('#sidebarNav .nav-item').forEach(btn => {
@@ -68393,44 +68311,57 @@
     if (modal) wireBackdropDismiss(modal, closeEntryModal);
     document.querySelectorAll('#modalTabs .modal-tab').forEach(btn => btn.addEventListener('click', () => openEntryModal(btn.getAttribute('data-form'))));
 
-    // Ask ISABI slide-over drawer
-    const openAskBtn = $('askIsabiBtn');
-    const mobileAskBtn = $('mobileAskIsabiBtn');
-    const closeAskBtn = $('closeAiDrawerBtn');
-    const resetAskBtn = $('resetAiThreadBtn');
+    // Ask ISABI slide-over drawer (Hybrid Live-SQL + Cloud LLM Engine in js/ask_isabi.js)
     const askDrawer = $('aiDrawer');
-    const askLog = $('aiMessages');
-    const askInput = $('aiInput');
-    const askForm = $('aiForm');
-    const defaultPrompt = 'Compare WTC vs BBConstruction revenue, margin, and operating profit';
-
-    function pushAskMessage(qText) {
-      if (!qText || !askLog) return;
-      const uBubble = document.createElement('div');
-      uBubble.className = 'ai-msg-user';
-      uBubble.textContent = qText;
-      askLog.appendChild(uBubble);
-      const bBubble = document.createElement('div');
-      bBubble.className = 'ai-msg-bot';
-      bBubble.innerHTML = answerAskIsabi(qText);
-      askLog.appendChild(bBubble);
-      askLog.scrollTop = askLog.scrollHeight;
-    }
-    const openDrawer = () => {
-      if (!askDrawer) return;
-      closeRail();
-      askDrawer.classList.add('open');
-      askDrawer.setAttribute('aria-hidden', 'false');
-      if (askLog && !askLog.children.length) pushAskMessage(defaultPrompt);
-      if (askInput && window.matchMedia('(min-width: 861px)').matches) setTimeout(() => askInput.focus(), 200);
+    const closeDrawer = () => {
+      if (window.MFG_ASK && typeof window.MFG_ASK.close === 'function') {
+        window.MFG_ASK.close();
+      } else if (askDrawer) {
+        askDrawer.classList.remove('open');
+        askDrawer.setAttribute('aria-hidden', 'true');
+      }
     };
-    const closeDrawer = () => { if (askDrawer) { askDrawer.classList.remove('open'); askDrawer.setAttribute('aria-hidden', 'true'); } };
-    if (openAskBtn) openAskBtn.addEventListener('click', openDrawer);
-    if (mobileAskBtn) mobileAskBtn.addEventListener('click', openDrawer);
-    if (closeAskBtn) closeAskBtn.addEventListener('click', closeDrawer);
-    if (resetAskBtn && askLog) resetAskBtn.addEventListener('click', () => { askLog.innerHTML = ''; pushAskMessage(defaultPrompt); });
-    document.querySelectorAll('#aiChips .ai-pill-btn').forEach(chip => chip.addEventListener('click', () => pushAskMessage(chip.getAttribute('data-prompt') || chip.textContent)));
-    if (askForm && askInput) askForm.addEventListener('submit', e => { e.preventDefault(); if (askInput.value.trim()) { pushAskMessage(askInput.value.trim()); askInput.value = ''; } });
+    if (window.MFG_ASK && typeof window.MFG_ASK.init === 'function') {
+      window.MFG_ASK.init({
+        STATE,
+        SEED,
+        COMPANY_LABELS,
+        COMPANY_BU_MATCH,
+        SEED_DATE,
+        MFG_FX: window.MFG_FX,
+        getLbpFxRate,
+        activeUser,
+        allowedCompanyNames,
+        getCompanyCatalog,
+        getKPI,
+        getModel,
+        filterRecords,
+        periodRange,
+        todayISO,
+        ticketSign,
+        ticketTons,
+        ticketMeters,
+        expenseSign,
+        isApCreditExpense,
+        isPendingPriceExpense,
+        sentinelSlice,
+        buildSentinelItems,
+        computeDieselTank,
+        getDieselTankLedger,
+        canSeeTaxBreakdown,
+        canViewHub,
+        canViewView,
+        userHasFaceId,
+        setView,
+        openEntryModal,
+        showRecordInspector,
+        closeRail,
+        fmtUSD,
+        fmtLBP,
+        fmtNum,
+        esc
+      });
+    }
 
     // Keyboard: Escape closes the innermost open popover / drawer / modal / rail; Ctrl+K focuses search
     document.addEventListener('keydown', e => {

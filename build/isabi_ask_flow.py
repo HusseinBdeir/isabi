@@ -310,6 +310,7 @@ def clientdata(key, store_id):
                                 "runAfter": {"Gemini_Raw_Text": ["Succeeded"]},
                                 "inputs": {
                                     "ts": "@utcNow()",
+                                    "surface": "@coalesce(outputs('Parse_Body')?['surface'], 'showcase')",
                                     "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
                                     "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
                                     "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
@@ -405,9 +406,23 @@ def clientdata(key, store_id):
                                 ]
                             },
                             "actions": {
+                                "Default_Messages": {
+                                    "type": "Compose",
+                                    "runAfter": {},
+                                    "inputs": [
+                                        {
+                                            "role": "system",
+                                            "content": "@coalesce(outputs('Parse_Body')?['systemPrompt'], 'You are ISABI, the warm, human conversational assistant for ISABI Systems.')",
+                                        },
+                                        {
+                                            "role": "user",
+                                            "content": "@coalesce(outputs('Parse_Body')?['userPrompt'], string(outputs('Parse_Body')?['q']))",
+                                        },
+                                    ],
+                                },
                                 "Call_Cloud_LLM": {
                                     "type": "Http",
-                                    "runAfter": {},
+                                    "runAfter": {"Default_Messages": ["Succeeded"]},
                                     "inputs": {
                                         "method": "POST",
                                         "uri": "https://text.pollinations.ai/openai",
@@ -415,18 +430,10 @@ def clientdata(key, store_id):
                                             "Content-Type": "application/json",
                                         },
                                         "body": {
-                                            "model": "openai",
+                                            "model": "openai-fast",
+                                            "reasoning_effort": "low",
                                             "response_format": {"type": "json_object"},
-                                            "messages": [
-                                                {
-                                                    "role": "system",
-                                                    "content": "@coalesce(outputs('Parse_Body')?['systemPrompt'], 'You are ISABI, the warm, human conversational assistant for ISABI Systems.')",
-                                                },
-                                                {
-                                                    "role": "user",
-                                                    "content": "@coalesce(outputs('Parse_Body')?['userPrompt'], string(outputs('Parse_Body')?['q']))",
-                                                },
-                                            ],
+                                            "messages": "@coalesce(outputs('Parse_Body')?['messages'], outputs('Default_Messages'))",
                                         },
                                         "retryPolicy": {"type": "none"},
                                     },
@@ -453,6 +460,7 @@ def clientdata(key, store_id):
                                             "runAfter": {"Cloud_LLM_Text": ["Succeeded"]},
                                             "inputs": {
                                                 "ts": "@utcNow()",
+                                                "surface": "@coalesce(outputs('Parse_Body')?['surface'], 'showcase')",
                                                 "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
                                                 "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
                                                 "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
@@ -499,6 +507,7 @@ def clientdata(key, store_id):
                                                 "runAfter": {},
                                                 "inputs": {
                                                     "ts": "@utcNow()",
+                                                    "surface": "@coalesce(outputs('Parse_Body')?['surface'], 'showcase')",
                                                     "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
                                                     "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
                                                     "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",
@@ -507,7 +516,8 @@ def clientdata(key, store_id):
                                                     "scale": "@coalesce(outputs('Parse_Body')?['scale'], '')",
                                                     "range": "@coalesce(outputs('Parse_Body')?['range'], '')",
                                                     "replyTitle": "@coalesce(outputs('Parse_Body')?['replyTitle'], '')",
-                                                    "mode": "logged_only",
+                                                    "llmStatus": "@outputs('Call_Cloud_LLM')?['statusCode']",
+                                                    "mode": "rate_limited",
                                                 },
                                             },
                                             "New_Logs_Fallback": {
@@ -530,7 +540,8 @@ def clientdata(key, store_id):
                                                 200,
                                                 {
                                                     "ok": True,
-                                                    "mode": "logged_only",
+                                                    "mode": "rate_limited",
+                                                    "llmStatus": "@outputs('Call_Cloud_LLM')?['statusCode']",
                                                     "serverTime": "@utcNow()",
                                                 },
                                                 {"Save_Store_Fallback": ["Succeeded", "Failed"]},
@@ -546,6 +557,7 @@ def clientdata(key, store_id):
                                         "runAfter": {},
                                         "inputs": {
                                             "ts": "@utcNow()",
+                                            "surface": "@coalesce(outputs('Parse_Body')?['surface'], 'showcase')",
                                             "q": "@coalesce(outputs('Parse_Body')?['q'], '')",
                                             "lang": "@coalesce(outputs('Parse_Body')?['lang'], 'en')",
                                             "industry": "@coalesce(outputs('Parse_Body')?['industry'], '')",

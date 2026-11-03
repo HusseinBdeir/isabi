@@ -232,6 +232,7 @@ document.addEventListener('DOMContentLoaded', function() {
     inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     var afterInlineCount = document.querySelectorAll('#ai-inline-thread .ai-msg-bot').length;
     var afterInlineText = document.getElementById('ai-inline-thread').textContent;
+    var followupBubbleCountAfterInline = document.querySelectorAll('#ai-inline-thread .ai-msg-followup').length;
 
     // 3. Switch sandbox to Trading + EUR + QTD, then click Sandbox Ask ISABI button
     var trdBtn = document.querySelector('[data-sbox-ind="trading"]');
@@ -257,12 +258,25 @@ document.addEventListener('DOMContentLoaded', function() {
     if (followChip) followChip.click();
     var countBeforeReset = document.querySelectorAll('#ai-drawer-thread .ai-msg-bot').length;
 
-    // 6. Click Reset in drawer
+    // 6. Click Reset in drawer, then verify expanded domain handlers (attachments, recipes, multi-entity consolidation) & zero em-dashes
     document.getElementById('ai-drawer-reset').click();
     var botAfterReset = document.querySelectorAll('#ai-drawer-thread .ai-msg-bot').length;
     var userAfterReset = document.querySelectorAll('#ai-drawer-thread .ai-msg-user').length;
     var inlineUserAfterReset = document.querySelectorAll('#ai-inline-thread .ai-msg-user').length;
     var resetDrawerText = document.getElementById('ai-drawer-thread').textContent;
+
+    inlineInp.value = 'Can staff attach supplier invoice photos and weighbridge slips?';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var attachReplyText = document.getElementById('ai-inline-thread').textContent;
+
+    inlineInp.value = 'How do kitchen recipes and waste tracking work?';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var recipeReplyText = document.getElementById('ai-inline-thread').textContent;
+
+    inlineInp.value = 'How does multi-company consolidation tie the books?';
+    inlineForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    var consolReplyText = document.getElementById('ai-inline-thread').textContent;
+    document.getElementById('ai-inline-reset').click();
 
     out.aiTest = {
       initDrawerUsers: initDrawerUsers,
@@ -282,7 +296,11 @@ document.addEventListener('DOMContentLoaded', function() {
       botAfterReset: botAfterReset,
       userAfterReset: userAfterReset,
       inlineUserAfterReset: inlineUserAfterReset,
-      hasResetWelcome: resetDrawerText.indexOf('Welcome. I am ISABI') !== -1
+      hasResetWelcome: resetDrawerText.indexOf('Welcome. I am ISABI') !== -1,
+      hasAttachIntent: attachReplyText.indexOf('360° Record View') !== -1 && attachReplyText.indexOf('Enterprise Ownership') === -1,
+      hasRecipeIntent: recipeReplyText.indexOf('item-by-item recipes') !== -1,
+      hasConsolIntent: consolReplyText.indexOf('consolidates unlimited entities in real time') !== -1,
+      zeroAiForbidden: !/[\u2014\u2013\u2192]/.test(attachReplyText + ' ' + recipeReplyText + ' ' + consolReplyText)
     };
 
     // Interactive Tabs & Simulators + Secondary Tab Height Checks
@@ -528,6 +546,10 @@ document.addEventListener('DOMContentLoaded', function() {
         assert ai['hasAlertDrilldown'] is True, "Sandbox alert button click did not render alert drilldown"
         assert ai['countBeforeReset'] == 8, f"Expected 8 messages in thread before reset, got {ai['countBeforeReset']}"
         assert ai['botAfterReset'] == 1 and ai['userAfterReset'] == 0 and ai['inlineUserAfterReset'] == 0 and ai['hasResetWelcome'] is True, f"Reset did not restore clean welcome state: {ai}"
+        assert ai['hasAttachIntent'] is True, f"Attachments semantic handler did not match cleanly: {ai}"
+        assert ai['hasRecipeIntent'] is True, f"Recipes semantic handler did not match cleanly: {ai}"
+        assert ai['hasConsolIntent'] is True, f"Consolidation semantic handler did not match cleanly: {ai}"
+        assert ai['zeroAiForbidden'] is True, f"Forbidden em-dash/arrow found in AI replies: {ai}"
 
         v4 = d_desk['v4Test']
         assert 'Offline POS Till' in v4['spotTitle'], f"Expected 'Offline POS Till' in spotlight title, got {v4['spotTitle']}"
