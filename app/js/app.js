@@ -348,7 +348,7 @@
 
   // App-entered record pools (localStorage + cloud relay) → server table + SEED list
   const CR_KEYS = [
-    'sales_tickets', 'raw_purchases', 'receipts', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'expense_items', 'warehouse_movements', 'settlements',
+    'sales_tickets', 'raw_purchases', 'receipts', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'expense_items', 'recurring_expenses', 'warehouse_movements', 'settlements',
     'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products', 'items',
     'product_types', 'uoms', 'sites', 'regions', 'equipment', 'company_equipment',
     'equipment_defects', 'equipment_repairs', 'repair_items', 'equipment_oil_logs', 'part_movements',
@@ -361,7 +361,7 @@
   const CR_TABLE = {
     sales_tickets: 'sales_tickets', raw_purchases: 'raw_purchases', receipts: 'customer_receipts',
     fuel_intakes: 'fuel_intakes', fuel_malfunctions: 'fuel_malfunctions', expenses: 'expenses',
-    expense_items: 'expense_items', warehouse_movements: 'warehouse_movements', settlements: 'supplier_payments',
+    expense_items: 'expense_items', recurring_expenses: 'recurring_expenses', warehouse_movements: 'warehouse_movements', settlements: 'supplier_payments',
     price_rules: 'price_rules', vat_invoices: 'vat_invoices', credit_terms: 'credit_terms',
     customers: 'customers', suppliers: 'suppliers', products: 'products', items: 'items',
     product_types: 'product_types', uoms: 'uoms', sites: 'sites', regions: 'regions',
@@ -380,7 +380,7 @@
   const CR_LABEL = {
     sales_tickets: 'sales ticket', raw_purchases: 'raw receipt', receipts: 'customer receipt',
     fuel_intakes: 'fuel intake', fuel_malfunctions: 'tank malfunction', expenses: 'expense',
-    expense_items: 'expense item', warehouse_movements: 'warehouse movement', settlements: 'supplier settlement',
+    expense_items: 'expense item', recurring_expenses: 'recurring expense', warehouse_movements: 'warehouse movement', settlements: 'supplier settlement',
     price_rules: 'price agreement', vat_invoices: 'vat invoice', credit_terms: 'credit terms',
     customers: 'customer', suppliers: 'supplier', products: 'product', items: 'item / spare part',
     product_types: 'product family', uoms: 'unit of measure', sites: 'site', regions: 'region',
@@ -829,7 +829,12 @@
       for (let i = 0; i < list.length; i++) {
         const cur = list[i];
         const nxt = list[i + 1] || null;
-        cur.effective_to = nxt ? prevDayISO(nxt.start_date) : 'Open';
+        const autoEnd = nxt ? prevDayISO(nxt.start_date) : 'Open';
+        const explicitEnd = (cur._explicitEnd && cur.end_date && /^\d{4}-\d{2}-\d{2}$/.test(String(cur.end_date).slice(0, 10)))
+          ? String(cur.end_date).slice(0, 10)
+          : '';
+        cur.effective_to = (explicitEnd && (autoEnd === 'Open' || explicitEnd < autoEnd)) ? explicitEnd : autoEnd;
+        if (!cur._explicitEnd) cur.end_date = cur.effective_to === 'Open' ? '' : cur.effective_to;
         cur.status = cur.start_date > refDate
           ? 'Scheduled'
           : ((cur.effective_to === 'Open' || cur.effective_to >= refDate) ? 'Current' : 'Historical');
@@ -852,7 +857,12 @@
     for (let i = 0; i < activeVat.length; i++) {
       const cur = activeVat[i];
       const nxt = activeVat[i + 1] || null;
-      cur.effective_to = nxt ? prevDayISO(nxt.start_date) : 'Open';
+      const autoEnd = nxt ? prevDayISO(nxt.start_date) : 'Open';
+      const explicitEnd = (cur._explicitEnd && cur.end_date && /^\d{4}-\d{2}-\d{2}$/.test(String(cur.end_date).slice(0, 10)))
+        ? String(cur.end_date).slice(0, 10)
+        : '';
+      cur.effective_to = (explicitEnd && (autoEnd === 'Open' || explicitEnd < autoEnd)) ? explicitEnd : autoEnd;
+      if (!cur._explicitEnd) cur.end_date = cur.effective_to === 'Open' ? '' : cur.effective_to;
       cur.status = cur.start_date > refDate
         ? 'Scheduled'
         : ((cur.effective_to === 'Open' || cur.effective_to >= refDate) ? 'Current' : 'Historical');
@@ -1068,9 +1078,13 @@
     let chosen = null;
     for (let i = list.length - 1; i >= 0; i--) {
       const sd = String(list[i].start_date || list[i].date || '');
-      if (sd <= refDt) { chosen = list[i]; break; }
+      const ed = (list[i]._explicitEnd && list[i].end_date) ? String(list[i].end_date).slice(0, 10) : '';
+      if (sd <= refDt && (!ed || ed >= refDt)) { chosen = list[i]; break; }
     }
-    return chosen || list[0];
+    if (chosen) return chosen;
+    const earliest = list[0];
+    if (earliest && earliest._explicitEnd && earliest.end_date && String(earliest.end_date).slice(0, 10) < refDt) return null;
+    return earliest;
   }
 
   function getLbpFxRate(dateStr, currency = 'LBP') {
@@ -1134,9 +1148,13 @@
     let chosen = null;
     for (let i = list.length - 1; i >= 0; i--) {
       const sd = String(list[i].start_date || list[i].date || '');
-      if (sd <= refDt) { chosen = list[i]; break; }
+      const ed = (list[i]._explicitEnd && list[i].end_date) ? String(list[i].end_date).slice(0, 10) : '';
+      if (sd <= refDt && (!ed || ed >= refDt)) { chosen = list[i]; break; }
     }
-    return chosen || list[0];
+    if (chosen) return chosen;
+    const earliest = list[0];
+    if (earliest && earliest._explicitEnd && earliest.end_date && String(earliest.end_date).slice(0, 10) < refDt) return null;
+    return earliest;
   }
 
   function getVatPct(dateStr) {
@@ -6400,7 +6418,7 @@
       const p = getEffectivePermissions(u);
       if (['sales', 'raw', 'fuel', 'malfunction'].includes(form)) return !!p.rights.enter_dispatch;
       if (['defect', 'partlog', 'repair', 'oillog'].includes(form)) return !!(p.rights.enter_dispatch || p.rights.enter_master);
-      if (['receipt', 'expense', 'warehousestock', 'settlement'].includes(form)) return !!p.rights.enter_accounting;
+      if (['receipt', 'expense', 'recurringexpense', 'warehousestock', 'settlement'].includes(form)) return !!p.rights.enter_accounting;
       if (['pricerule', 'vatinvoice', 'creditterm', 'customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver', 'salary', 'employment', 'freelance', 'allowance', 'logistics', 'overtimerate', 'triprate', 'attendance', 'fxrate', 'vatrate', 'currency'].includes(form)) return !!(p.rights.enter_master || p.rights.enter_payroll_jv);
       if (['treasury', 'external', 'extmovement', 'loan', 'loansettlement', 'conversion'].includes(form)) return !!(p.rights.enter_payroll_jv || p.rights.enter_accounting);
       if (['jv', 'jvpartnership', 'jvdistribution'].includes(form)) return !!p.rights.enter_payroll_jv;
@@ -6415,7 +6433,7 @@
     }
     if (/Entry/i.test(role)) {
       return [
-        'sales', 'raw', 'receipt', 'fuel', 'malfunction', 'expense', 'warehousestock', 'settlement',
+        'sales', 'raw', 'receipt', 'fuel', 'malfunction', 'expense', 'recurringexpense', 'warehousestock', 'settlement',
         'defect', 'repair', 'oillog', 'partlog', 'pricerule',
         'customer', 'supplier', 'product', 'item', 'expensecategory', 'site', 'region', 'equipment', 'companyequipment', 'driver',
         'salary', 'attendance', 'employment', 'freelance', 'allowance', 'logistics', 'triprate', 'overtimerate',
@@ -6695,7 +6713,7 @@
                     <td class="mono">${esc(fmtDateDMY(e.start_date || e.date))}${appCell(e, 'employments')}</td>
                     <td class="mono"><strong>${esc(e.name || e.id)}</strong></td>
                     <td>${coBadge(e.company)}</td>
-                    <td><strong>${esc(e.staff || '-')}</strong></td>
+                    <td><strong>${esc(e.staff || '—')}</strong></td>
                     <td>${esc(basisLbl)}</td>
                     <td class="r mono">${esc(schedLbl)}</td>
                     <td class="mono">${esc(e.end_date ? fmtDateDMY(e.end_date) : 'Open')}</td>
@@ -7349,46 +7367,41 @@
     (rec.sites || []).forEach(s => { if (s && s.region) inc(region, s.region, 1); });
 
     const item = new Map();
-    const warehouseLoc = new Map();
+    const warehouseLoc = new Map([['wtc main warehouse', 40], ['bbconstruction spare store', 30], ['lions garage store', 20], ['crusher site store', 10]]);
     const supCategory = new Map();
-    const company = new Map();
-    ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'].forEach((loc, i) => inc(warehouseLoc, loc, 4 - i));
+    const company = new Map([['wtc', 3], ['bbconstruction', 2], ['lions transport', 1]]);
+
     expItems.forEach(r => {
       if (!r || r.voided) return;
-      inc(item, r.item_name || r.name, r.historical_consumed ? 1 : 4);
-      inc(warehouseLoc, r.warehouse_location, 3);
-      inc(uom, r.uom, 1);
-      inc(company, r.company, 1);
+      inc(item, r.item_name, 2);
+      inc(warehouseLoc, r.warehouse_location, 1);
     });
     whMovs.forEach(r => {
       if (!r || r.voided) return;
-      inc(item, r.item_name || r.name, 4);
-      inc(warehouseLoc, r.location || r.warehouse_location, 4);
-      inc(uom, r.uom, 1);
-      inc(company, r.company, 1);
+      inc(item, r.item_name, 2);
+      inc(warehouseLoc, r.location, 2);
     });
     repItems.forEach(r => {
       if (!r || r.voided) return;
-      inc(item, r.item_name || r.part_name || r.name, 4);
-      inc(uom, r.uom, 1);
+      inc(item, r.item_name, 2);
     });
     oilLogs.forEach(r => {
       if (!r || r.voided) return;
-      inc(item, r.oil_type || r.item_name, 3);
+      inc(item, r.oil_type, 2);
     });
     partMovs.forEach(r => {
       if (!r || r.voided) return;
-      inc(item, r.part_name || r.item_name, 3);
+      inc(item, r.part_name, 2);
       inc(warehouseLoc, r.storage_location, 2);
     });
     eqDefs.forEach(r => {
       if (!r || r.voided) return;
-      inc(item, r.part_name, 2);
+      inc(item, r.part_name, 1);
     });
     itemsCat.forEach(r => {
       if (!r || r.voided) return;
-      inc(item, r.name || r.item_name, 1);
-      inc(warehouseLoc, r.warehouse_location, 1);
+      inc(item, r.name || r.item_name, 0.5);
+      inc(warehouseLoc, r.warehouse_location, 0.5);
     });
     (rec.suppliers || []).forEach(s => {
       if (!s || s.voided) return;
@@ -8429,6 +8442,120 @@
     const dtObj = new Date(Date.UTC(y, m - 1, d - 1));
     return dtObj.toISOString().slice(0, 10);
   }
+  function nextDayISO(dateStr) {
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))) return '';
+    const [y, m, d] = String(dateStr).split('-').map(Number);
+    const dtObj = new Date(Date.UTC(y, m - 1, d + 1));
+    return dtObj.toISOString().slice(0, 10);
+  }
+  function ensureEquipmentInitBaseline(eq) {
+    if (!eq || typeof eq !== 'object') return null;
+    if (!eq._initBaseline) {
+      const firstGen = Array.isArray(eq.adj_windows)
+        ? eq.adj_windows.find(w => w && !w.cust && !w.site && (!w.s || String(w.s) === '2024-01-01'))
+        : null;
+      eq._initBaseline = {
+        cap: Number(eq.capacity || (firstGen && firstGen.cap) || 0),
+        own: String(eq.supplier || (firstGen && firstGen.own) || '').trim(),
+        drv: String(eq.default_driver || (firstGen && firstGen.drv) || '').trim()
+      };
+    }
+    return eq._initBaseline;
+  }
+  function getTruckWindowScopePeers(eq, winSpec, excludeIdx = -1) {
+    if (!eq || !Array.isArray(eq.adj_windows)) return [];
+    const coN = norm((winSpec && winSpec.co) || eq.company || 'WTC');
+    const custN = norm(winSpec && winSpec.cust);
+    const siteN = norm(winSpec && winSpec.site);
+    const rawSide = String((winSpec && winSpec.side) || 'both').trim() || 'both';
+    const side = rawSide === 'all' ? 'both' : rawSide;
+    const out = [];
+    for (let i = 0; i < eq.adj_windows.length; i++) {
+      if (i === excludeIdx) continue;
+      const w = eq.adj_windows[i];
+      if (!w) continue;
+      const sameCo = !coN || !w.co || norm(w.co) === coN;
+      if (!sameCo) continue;
+      if (norm(w.cust) !== custN || norm(w.site) !== siteN) continue;
+      const wSide = (w.side || 'both') === 'all' ? 'both' : (w.side || 'both');
+      const sameSide = side === 'both' || wSide === 'both' || wSide === side;
+      if (!sameSide) continue;
+      out.push({ w, idx: i, s: String(w.s || '2024-01-01').slice(0, 10), e: String(w.e || '').slice(0, 10) });
+    }
+    out.sort((a, b) => a.s.localeCompare(b.s) || String(a.e || '9999-12-31').localeCompare(String(b.e || '9999-12-31')));
+    return out;
+  }
+  function getTruckWindowBounds(eq, winSpec, editIdx = -1) {
+    if (!eq || !Array.isArray(eq.adj_windows)) return { minStart: '', maxStart: '', prevPeer: null, nextPeer: null };
+    if (editIdx >= 0 && editIdx < eq.adj_windows.length) {
+      const allPeers = getTruckWindowScopePeers(eq, winSpec, -1);
+      const pos = allPeers.findIndex(p => p.idx === editIdx);
+      const prevPeer = pos > 0 ? allPeers[pos - 1].w : null;
+      const nextPeer = (pos >= 0 && pos < allPeers.length - 1) ? allPeers[pos + 1].w : null;
+      const prevRef = prevPeer
+        ? ((prevPeer._explicitEnd && prevPeer.e && String(prevPeer.e) > String(prevPeer.s || '2024-01-01')) ? String(prevPeer.e).slice(0, 10) : String(prevPeer.s || '2024-01-01').slice(0, 10))
+        : '';
+      const minStart = prevRef ? nextDayISO(prevRef) : '';
+      const maxStart = (nextPeer && nextPeer.s) ? prevDayISO(String(nextPeer.s).slice(0, 10)) : '';
+      return { minStart, maxStart, prevPeer, nextPeer };
+    }
+    const peers = getTruckWindowScopePeers(eq, winSpec, -1);
+    const latestPrev = peers.length ? peers[peers.length - 1].w : null;
+    if (!latestPrev) return { minStart: '', maxStart: '', prevPeer: null, nextPeer: null };
+    const prevRef = (latestPrev._explicitEnd && latestPrev.e && String(latestPrev.e) > String(latestPrev.s || '2024-01-01'))
+      ? String(latestPrev.e).slice(0, 10)
+      : String(latestPrev.s || '2024-01-01').slice(0, 10);
+    return { minStart: prevRef ? nextDayISO(prevRef) : '', maxStart: '', prevPeer: latestPrev, nextPeer: null };
+  }
+  function getTruckWindowMinStart(eq, winSpec, editIdx = -1) {
+    return getTruckWindowBounds(eq, winSpec, editIdx).minStart;
+  }
+  function validateTruckWindowChronology(eq, winSpec, editIdx = -1) {
+    if (!eq || !winSpec) return { ok: true };
+    const s = String(winSpec.s || todayISO()).slice(0, 10);
+    const e = String(winSpec.e || '').slice(0, 10);
+    if (e && e < s) {
+      return { ok: false, field: 'end', reason: 'End Date cannot be before Start Date.' };
+    }
+    const bounds = getTruckWindowBounds(eq, winSpec, editIdx);
+    const unitLbl = eq.name || eq.equipment || 'this unit';
+    if (editIdx < 0) {
+      if (bounds.prevPeer) {
+        const prevS = String(bounds.prevPeer.s || '2024-01-01').slice(0, 10);
+        const prevExpE = (bounds.prevPeer._explicitEnd && bounds.prevPeer.e) ? String(bounds.prevPeer.e).slice(0, 10) : '';
+        if (s === prevS) {
+          return { ok: false, field: 'start', reason: `A log entry for ${unitLbl} already starts on ${fmtDateDMY(prevS)}. Click that row to edit it, or pick a Start Date after ${fmtDateDMY(prevS)}.` };
+        }
+        if (s < prevS) {
+          return { ok: false, field: 'start', reason: `New log Start Date (${fmtDateDMY(s)}) cannot be before the previous log's Start Date (${fmtDateDMY(prevS)}).` };
+        }
+        if (prevExpE && s <= prevExpE) {
+          return { ok: false, field: 'start', reason: `New log Start Date (${fmtDateDMY(s)}) must be after the previous log's End Date (${fmtDateDMY(prevExpE)}).` };
+        }
+      }
+    } else {
+      if (bounds.prevPeer) {
+        const prevS = String(bounds.prevPeer.s || '2024-01-01').slice(0, 10);
+        const prevExpE = (bounds.prevPeer._explicitEnd && bounds.prevPeer.e) ? String(bounds.prevPeer.e).slice(0, 10) : '';
+        if (s <= prevS) {
+          return { ok: false, field: 'start', reason: `Log Start Date (${fmtDateDMY(s)}) must be after the preceding log's Start Date (${fmtDateDMY(prevS)}).` };
+        }
+        if (prevExpE && s <= prevExpE) {
+          return { ok: false, field: 'start', reason: `Log Start Date (${fmtDateDMY(s)}) must be after the preceding log's End Date (${fmtDateDMY(prevExpE)}).` };
+        }
+      }
+      if (bounds.nextPeer) {
+        const nextS = String(bounds.nextPeer.s || '').slice(0, 10);
+        if (nextS && s >= nextS) {
+          return { ok: false, field: 'start', reason: `Log Start Date (${fmtDateDMY(s)}) must be before the next log's Start Date (${fmtDateDMY(nextS)}).` };
+        }
+        if (nextS && e && e >= nextS) {
+          return { ok: false, field: 'end', reason: `Log End Date (${fmtDateDMY(e)}) must be before the next log's Start Date (${fmtDateDMY(nextS)}).` };
+        }
+      }
+    }
+    return { ok: true };
+  }
   function resolveTruckWindow(eq, company, date, opts = {}) {
     if (!eq || !Array.isArray(eq.adj_windows) || !eq.adj_windows.length) return null;
     const refDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(String(date))) ? String(date) : '';
@@ -8470,6 +8597,7 @@
   }
   function syncEquipmentBaselineFromWindows(eq) {
     if (!eq || !Array.isArray(eq.adj_windows) || !eq.adj_windows.length) return;
+    ensureEquipmentInitBaseline(eq);
     const today = todayISO();
     const genWins = eq.adj_windows.filter(w => w && !w.cust && !w.site);
     if (!genWins.length) return;
@@ -8494,30 +8622,50 @@
       }
     }
   }
-  function removeTruckWindowAt(eq, idx) {
+  function removeTruckWindowAt(eq, idx, opts = {}) {
     if (!eq || !Array.isArray(eq.adj_windows) || idx < 0 || idx >= eq.adj_windows.length) return null;
+    ensureEquipmentInitBaseline(eq);
+    const removedCapSet = new Set(
+      [Number(eq.capacity || 0), Number((eq._initBaseline && eq._initBaseline.cap) || 0), ...eq.adj_windows.map(w => Number((w && w.cap) || 0))].filter(v => v > 0)
+    );
+    const allPeersBefore = getTruckWindowScopePeers(eq, eq.adj_windows[idx], -1);
+    const posBefore = allPeersBefore.findIndex(p => p.idx === idx);
+    const prevPeer = posBefore > 0 ? allPeersBefore[posBefore - 1].w : null;
+    const nextPeer = (posBefore >= 0 && posBefore < allPeersBefore.length - 1) ? allPeersBefore[posBefore + 1].w : null;
     const removed = eq.adj_windows.splice(idx, 1)[0];
-    if (removed && !removed.cust && !removed.site && removed.s) {
+    if (removed && removed.s) {
       const prevEnd = prevDayISO(String(removed.s).slice(0, 10));
-      const remCo = norm(removed.co);
-      const hasOtherSameStart = eq.adj_windows.some(w => w && !w.cust && !w.site && (!remCo || !w.co || norm(w.co) === remCo) && String(w.s || '') >= String(removed.s));
-      if (prevEnd && !hasOtherSameStart) {
-        eq.adj_windows.forEach(w => {
-          if (!w || w.cust || w.site) return;
-          if ((!remCo || !w.co || norm(w.co) === remCo) && String(w.e || '') === prevEnd) {
-            w.e = '';
-          }
-        });
+      if (prevPeer && (prevPeer._autoClosedByNext || (!prevPeer._explicitEnd && String(prevPeer.e || '') === prevEnd))) {
+        if (nextPeer && nextPeer.s) {
+          prevPeer.e = prevDayISO(String(nextPeer.s).slice(0, 10));
+          prevPeer._autoClosedByNext = true;
+        } else {
+          prevPeer.e = '';
+          delete prevPeer._autoClosedByNext;
+        }
       }
     }
     syncEquipmentBaselineFromWindows(eq);
     _WIN_REV++;
     _FLEET_IDX = null;
+    if (removed && opts.backfillTickets !== false) {
+      backfillTruckWindowToTickets(eq, removed, {
+        persistCustom: opts.persistCustom !== false,
+        rangeFrom: String(removed.s || '2024-01-01').slice(0, 10),
+        rangeTo: String(removed.e || '9999-12-31').slice(0, 10) || '9999-12-31',
+        syncCapFromSet: removedCapSet
+      });
+    }
     return removed;
   }
   function appendOrUpdateTruckWindow(eq, winSpec, editIdx = -1) {
     if (!eq || !winSpec) return null;
+    ensureEquipmentInitBaseline(eq);
     if (!Array.isArray(eq.adj_windows)) eq.adj_windows = [];
+    const preSyncCap = Number(eq.capacity || 0);
+    const knownPrevCaps = new Set(
+      [preSyncCap, Number((eq._initBaseline && eq._initBaseline.cap) || 0), ...eq.adj_windows.map(w => Number((w && w.cap) || 0))].filter(v => v > 0)
+    );
     const s = String(winSpec.s || todayISO()).slice(0, 10);
     const e = String(winSpec.e || '').slice(0, 10);
     const co = String(winSpec.co || '').trim();
@@ -8541,32 +8689,77 @@
       if (!sideCompat) return false;
       return (e ? (String(w.e || '') === e || !w.e) : true);
     });
-    if (isGeneral && e) {
+    const oldSnap = existing ? {
+      s: String(existing.s || '2024-01-01').slice(0, 10),
+      e: String(existing.e || '').slice(0, 10),
+      cap: Number(existing.cap || 0),
+      own: String(existing.own || ''),
+      drv: String(existing.drv || ''),
+      _explicitEnd: Boolean(existing._explicitEnd),
+      _autoClosedByNext: Boolean(existing._autoClosedByNext)
+    } : null;
+
+    const effEditIdx = existing ? eq.adj_windows.indexOf(existing) : -1;
+    const bounds = getTruckWindowBounds(eq, { co, side, cust, site }, effEditIdx);
+    const prevPeer = bounds.prevPeer;
+    const nextPeer = bounds.nextPeer;
+    let prevPeerOldE = prevPeer ? String(prevPeer.e || '').slice(0, 10) : '';
+
+    if (isGeneral && e && !existing) {
       const hasOpenBaseline = eq.adj_windows.some(w => w && w !== existing && !w.cust && !w.site && !w.e);
-      if (!hasOpenBaseline && !existing && (eq.default_driver || eq.supplier || Number(eq.capacity) > 0)) {
+      if (!hasOpenBaseline && !prevPeer && (eq.default_driver || eq.supplier || Number(eq.capacity) > 0)) {
         const baseWin = { co: co || eq.company || 'WTC', side: 'both', s: '2024-01-01', e: '', cap: Number(eq.capacity || 0) };
         if (eq.supplier) baseWin.own = eq.supplier;
         if (eq.default_driver) baseWin.drv = eq.default_driver;
         eq.adj_windows.push(baseWin);
       }
-    } else if (isGeneral && !e) {
-      const prevEnd = prevDayISO(s);
+    }
+
+    const prevEnd = prevDayISO(s);
+    if (prevPeer && prevEnd && String(prevPeer.s || '2024-01-01').slice(0, 10) < s) {
+      const wasAutoClosed = Boolean(
+        prevPeer._autoClosedByNext ||
+        (!prevPeer._explicitEnd && (!prevPeer.e || (oldSnap && String(prevPeer.e) === prevDayISO(oldSnap.s)) || String(prevPeer.e) >= s))
+      );
+      if (wasAutoClosed) {
+        prevPeer.e = prevEnd;
+        prevPeer._autoClosedByNext = true;
+        delete prevPeer._explicitEnd;
+      }
+    } else if (isGeneral && !e && !existing) {
       eq.adj_windows.forEach(w => {
         if (!w || w === existing || w.cust || w.site) return;
         const sameCo = !co || !w.co || norm(w.co) === norm(co);
         const wSide = w.side || 'both';
         const sameSide = side === 'both' || wSide === 'both' || wSide === 'all' || wSide === side;
-        if (sameCo && sameSide && (!w.e || w.e >= s) && (!w.s || w.s < s)) {
+        if (sameCo && sameSide && !w._explicitEnd && (!w.e || w.e >= s) && (!w.s || w.s < s)) {
           w.e = prevEnd;
+          w._autoClosedByNext = true;
         }
       });
     }
+
+    let effEnd = e;
+    let isExplicitEnd = Boolean(e);
+    let isAutoClosedByNext = false;
+    if (!e && nextPeer && nextPeer.s && String(nextPeer.s).slice(0, 10) > s) {
+      effEnd = prevDayISO(String(nextPeer.s).slice(0, 10));
+      isExplicitEnd = false;
+      isAutoClosedByNext = true;
+    } else if (e && nextPeer && nextPeer.s && e === prevDayISO(String(nextPeer.s).slice(0, 10)) && oldSnap && oldSnap._autoClosedByNext && e === oldSnap.e && !winSpec._forceExplicitEnd) {
+      isExplicitEnd = false;
+      isAutoClosedByNext = true;
+    }
+
     let targetWin;
     if (existing) {
       existing.co = co || existing.co || 'WTC';
       existing.side = side;
       existing.s = s;
-      existing.e = e;
+      existing.e = effEnd;
+      if (isExplicitEnd) { existing._explicitEnd = true; delete existing._autoClosedByNext; }
+      else if (isAutoClosedByNext) { existing._autoClosedByNext = true; delete existing._explicitEnd; }
+      else { delete existing._explicitEnd; delete existing._autoClosedByNext; }
       if (cap > 0 || existing.cap == null) existing.cap = cap;
       if (own) existing.own = own; else delete existing.own;
       if (drv) existing.drv = drv; else delete existing.drv;
@@ -8575,7 +8768,9 @@
       existing._userWin = true;
       targetWin = existing;
     } else {
-      targetWin = { co: co || 'WTC', side, s, e, cap, _userWin: true };
+      targetWin = { co: co || 'WTC', side, s, e: effEnd, cap, _userWin: true };
+      if (isExplicitEnd) targetWin._explicitEnd = true;
+      else if (isAutoClosedByNext) targetWin._autoClosedByNext = true;
       if (own) targetWin.own = own;
       if (drv) targetWin.drv = drv;
       if (cust) targetWin.cust = cust;
@@ -8587,12 +8782,34 @@
     _WIN_REV++;
     _FLEET_IDX = null;
     if (winSpec.backfillTickets !== false) {
-      backfillTruckWindowToTickets(eq, targetWin, { persistCustom: Boolean(winSpec.persistTicketBackfill) });
+      const dateCandidatesFrom = [s];
+      const dateCandidatesTo = [effEnd || '9999-12-31'];
+      if (oldSnap) {
+        if (oldSnap.s) dateCandidatesFrom.push(oldSnap.s);
+        dateCandidatesTo.push(oldSnap.e || '9999-12-31');
+      }
+      if (prevPeer && String(prevPeer.e || '') !== prevPeerOldE) {
+        if (prevPeerOldE) { dateCandidatesFrom.push(prevPeerOldE); dateCandidatesTo.push(prevPeerOldE); }
+        if (prevPeer.e) { dateCandidatesFrom.push(String(prevPeer.e)); dateCandidatesTo.push(String(prevPeer.e)); }
+      }
+      dateCandidatesFrom.sort();
+      dateCandidatesTo.sort();
+      const priorRefCap = oldSnap ? Number(oldSnap.cap || 0) : Number((prevPeer && prevPeer.cap) || preSyncCap || 0);
+      const capChanged = Boolean(Number(cap || 0) > 0 && priorRefCap > 0 && Math.abs(priorRefCap - Number(cap)) > 1e-6);
+      targetWin._lastBackfill = backfillTruckWindowToTickets(eq, targetWin, {
+        persistCustom: Boolean(winSpec.persistTicketBackfill),
+        rangeFrom: dateCandidatesFrom[0] || s,
+        rangeTo: dateCandidatesTo[dateCandidatesTo.length - 1] || '9999-12-31',
+        capChanged,
+        syncCapFromSet: knownPrevCaps,
+        oldCap: priorRefCap || null
+      });
     }
     return targetWin;
   }
   function backfillTruckWindowToTickets(eq, targetWin, opts = {}) {
     if (!eq || !targetWin || !SEED || !SEED.records) return { sales: 0, raw: 0, fuel: 0, total: 0 };
+    ensureEquipmentInitBaseline(eq);
     const eqNameNorm = norm(eq.name || eq.equipment);
     const eqPlateNorm = norm(eq.plate_no);
     if (!eqNameNorm && !eqPlateNorm) return { sales: 0, raw: 0, fuel: 0, total: 0 };
@@ -8602,11 +8819,13 @@
     };
     const wSide = (targetWin.side || 'both') === 'all' ? 'both' : (targetWin.side || 'both');
     const wCoNorm = norm(targetWin.co);
-    const wStart = String(targetWin.s || '');
-    const wEnd = String(targetWin.e || '');
+    const wStart = String(opts.rangeFrom != null ? opts.rangeFrom : (targetWin.s || '')).slice(0, 10);
+    const rawWEnd = String(opts.rangeTo != null ? opts.rangeTo : (targetWin.e || '')).slice(0, 10);
+    const wEnd = rawWEnd === '9999-12-31' ? '' : rawWEnd;
     const wCustNorm = norm(targetWin.cust);
     const wSiteNorm = norm(targetWin.site);
     const persistCustom = opts.persistCustom !== false && !window.__fastInspectorModifyTest;
+    const baseFallback = eq._initBaseline || { cap: Number(eq.capacity || 0), own: String(eq.supplier || '').trim(), drv: String(eq.default_driver || '').trim() };
     let salesCnt = 0, rawCnt = 0, fuelCnt = 0;
 
     const touchTicketInCustom = (tk, row) => {
@@ -8630,22 +8849,39 @@
         if (wCustNorm && norm(r.customer) !== wCustNorm) return;
         if (wSiteNorm && norm(r.site) !== wSiteNorm) return;
         const effWin = resolveTruckWindow(eq, r.company || 'WTC', dt, { side: 'sales', customer: r.customer, site: r.site });
-        if (effWin && effWin !== targetWin) return;
+        const effOwn = effWin ? (effWin.own || '') : (baseFallback.own || '');
+        const effDrv = effWin ? (effWin.drv || '') : (baseFallback.drv || '');
+        const effCap = effWin && Number(effWin.cap) > 0 ? Number(effWin.cap) : Number(baseFallback.cap || 0);
         let rowChanged = false;
-        if (targetWin.own) {
-          const isOwn = isOwnFleetOwnerName(targetWin.own, r.company || 'WTC');
+        if (effOwn || (effWin === null && baseFallback.own !== undefined)) {
+          const isOwn = !effOwn ? /^own/i.test(String(eq.ownership || '')) : isOwnFleetOwnerName(effOwn, r.company || 'WTC');
           const isExPlant = /^ex[- ]?plant$/i.test(String(r.sale_type || '').trim());
           const isCustTrk = /^customer\s+truck$/i.test(String(r.transport_by || '').trim()) && !r.truck_owner && !wCustNorm;
-          if (!isExPlant && !isCustTrk) {
+          if (!isExPlant && !isCustTrk && (effOwn || isOwn)) {
             const nextTrBy = isOwn ? 'Company fleet' : 'Third-party truck';
-            const nextOwn = isOwn ? '' : targetWin.own;
+            const nextOwn = isOwn ? '' : effOwn;
             if (String(r.transport_by || '') !== nextTrBy) { r.transport_by = nextTrBy; rowChanged = true; }
             if (String(r.truck_owner || '') !== nextOwn) { r.truck_owner = nextOwn; rowChanged = true; }
           }
         }
-        if (targetWin.drv && String(r.driver || '') !== targetWin.drv) {
-          r.driver = targetWin.drv;
+        if (effDrv && String(r.driver || '') !== effDrv) {
+          r.driver = effDrv;
           rowChanged = true;
+        }
+        const curQty = Number(r.qty || 0);
+        const matchesPriorCap = Boolean(opts.capChanged || (opts.syncCapFromSet instanceof Set && Array.from(opts.syncCapFromSet).some(pc => Math.abs(pc - curQty) < 1e-6)));
+        if (matchesPriorCap && effCap > 0 && /^m/i.test(String(r.uom || 'm³')) && !r.removed_slip && !isReturnTicket(r)) {
+          const agrSize = resolveAgreementTruckSize({ side: 'sales', company: r.company || 'WTC', customer: r.customer, site: r.site, product: r.product, date: dt, truckRow: eq });
+          if (!agrSize && Math.abs(curQty - effCap) > 1e-6) {
+            r.qty = effCap;
+            if (!r.mat_indiff) r.price = round2(effCap * Number(r.unit_price || 0) - Math.abs(Number(r.discount || 0)));
+            if (String(r.sale_type || 'Delivery') === 'Delivery' && !r.trans_indiff) r.trans_price = round2(effCap * Number(r.trans_unit_price || 0));
+            r.total = round2(Number(r.price || 0) + Number(r.trans_price || 0));
+            const wasTax = Math.abs(Number(r.vat || 0)) > 0.005 || Boolean(r.vat_invoice);
+            r.vat = wasTax ? round2(r.total * getVatFraction(dt)) : 0;
+            r.total_ttc = round2(r.total + r.vat);
+            rowChanged = true;
+          }
         }
         if (rowChanged) {
           salesCnt++;
@@ -8666,18 +8902,34 @@
         if (wEnd && dt > wEnd) return;
         if (wSiteNorm && norm(r.site) !== wSiteNorm) return;
         const effWin = resolveTruckWindow(eq, r.company || 'WTC', dt, { side: 'raw', site: r.site });
-        if (effWin && effWin !== targetWin) return;
+        const effOwn = effWin ? (effWin.own || '') : (baseFallback.own || '');
+        const effDrv = effWin ? (effWin.drv || '') : (baseFallback.drv || '');
+        const effCap = effWin && Number(effWin.cap) > 0 ? Number(effWin.cap) : Number(baseFallback.cap || 0);
         let rowChanged = false;
-        if (targetWin.own) {
-          const isOwn = isOwnFleetOwnerName(targetWin.own, r.company || 'WTC');
-          const nextTrBy = isOwn ? 'Company fleet' : 'Third-party truck';
-          const nextOwn = isOwn ? '' : targetWin.own;
-          if (String(r.transport_by || '') !== nextTrBy) { r.transport_by = nextTrBy; rowChanged = true; }
-          if (String(r.truck_owner || '') !== nextOwn) { r.truck_owner = nextOwn; rowChanged = true; }
+        if (effOwn || (effWin === null && baseFallback.own !== undefined)) {
+          const isOwn = !effOwn ? /^own/i.test(String(eq.ownership || '')) : isOwnFleetOwnerName(effOwn, r.company || 'WTC');
+          if (effOwn || isOwn) {
+            const nextTrBy = isOwn ? 'Company fleet' : 'Third-party truck';
+            const nextOwn = isOwn ? '' : effOwn;
+            if (String(r.transport_by || '') !== nextTrBy) { r.transport_by = nextTrBy; rowChanged = true; }
+            if (String(r.truck_owner || '') !== nextOwn) { r.truck_owner = nextOwn; rowChanged = true; }
+          }
         }
-        if (targetWin.drv && String(r.driver || '') !== targetWin.drv) {
-          r.driver = targetWin.drv;
+        if (effDrv && String(r.driver || '') !== effDrv) {
+          r.driver = effDrv;
           rowChanged = true;
+        }
+        const curRawQty = Number(r.qty || 0);
+        const matchesRawPriorCap = Boolean(opts.capChanged || (opts.syncCapFromSet instanceof Set && Array.from(opts.syncCapFromSet).some(pc => Math.abs(pc - curRawQty) < 1e-6)));
+        if (matchesRawPriorCap && effCap > 0 && /^m/i.test(String(r.uom || 'm³')) && !r.removed_slip && !isReturnTicket(r)) {
+          const agrSize = resolveAgreementTruckSize({ side: 'raw', company: r.company || 'WTC', site: r.site, product: r.product, siteOwner: r.site_owner, truckOwner: r.truck_owner, date: dt, truckRow: eq });
+          if (!agrSize && Math.abs(curRawQty - effCap) > 1e-6) {
+            r.qty = effCap;
+            if (!r.mat_indiff && Number(r.unit_cost || 0) > 0) r.cost = round2(effCap * Number(r.unit_cost || 0));
+            if (!r.trans_indiff && Number(r.trans_unit_cost || 0) > 0) r.trans_cost = round2(effCap * Number(r.trans_unit_cost || 0));
+            r.total = round2(Number(r.cost || 0) + Number(r.trans_cost || 0));
+            rowChanged = true;
+          }
         }
         if (rowChanged) {
           rawCnt++;
@@ -8697,9 +8949,9 @@
         if (wStart && dt < wStart) return;
         if (wEnd && dt > wEnd) return;
         const effWin = resolveTruckWindow(eq, r.company || 'WTC', dt, { side: 'fuel' });
-        if (effWin && effWin !== targetWin) return;
-        if (targetWin.drv && String(r.driver || '') !== targetWin.drv) {
-          r.driver = targetWin.drv;
+        const effDrv = effWin ? (effWin.drv || '') : (baseFallback.drv || '');
+        if (effDrv && String(r.driver || '') !== effDrv) {
+          r.driver = effDrv;
           fuelCnt++;
           touchTicketInCustom('fuel_intakes', r);
         }
@@ -8928,11 +9180,17 @@
     if (info && info.phone) parts.push(info.phone);
     return `<option value="${esc(v)}"${parts.length ? ` data-meta="${esc(parts.join(' · '))}"` : ''}>`;
   }
-  function creditTermsForCustomer(name) {
+  function creditTermsForCustomer(name, dateStr) {
     const n = norm(name);
     if (!n) return null;
-    return (SEED.records.credit_terms || []).find(ct => norm(ct.customer) === n && !ct.end_date) ||
-           (SEED.records.credit_terms || []).find(ct => norm(ct.customer) === n) || null;
+    const refDt = (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(String(dateStr).slice(0, 10))) ? String(dateStr).slice(0, 10) : todayISO();
+    const list = ((SEED.records && SEED.records.credit_terms) || [])
+      .filter(ct => ct && !ct.voided && norm(ct.customer) === n)
+      .slice()
+      .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    return list.find(ct => (!ct.start_date || String(ct.start_date) <= refDt) && (!ct.end_date || String(ct.end_date) >= refDt)) ||
+           list.find(ct => !ct.end_date) ||
+           list[0] || null;
   }
   function activeRulesCountFor(field, name, side) {
     const n = norm(name);
@@ -8978,7 +9236,12 @@
   }
   function listPrice(name) {
     const n = norm(name);
-    for (const m of Object.values(SEED.models)) {
+    if (!n) return null;
+    if (SEED && SEED.records && Array.isArray(SEED.records.products)) {
+      const rp = SEED.records.products.find(x => x && !x.voided && norm(x.name || x.Product) === n);
+      if (rp && rp.list_price != null && Number(rp.list_price) > 0) return Number(rp.list_price);
+    }
+    for (const m of Object.values((SEED && SEED.models) || {})) {
       const p = (m.products || []).find(x => norm(x.Product) === n);
       if (p && p.list_price != null) return Number(p.list_price);
     }
@@ -9044,7 +9307,8 @@
     const date = q.date || todayISO();
     const types = q.types || null;
     let best = null, bestScore = -1;
-    SEED.records.price_rules.forEach(r => {
+    (SEED.records.price_rules || []).forEach(r => {
+      if (!r || r.voided) return;
       if (q.company && r.company && r.company !== q.company) return;
       if (types && r.rule_type && !types.includes(r.rule_type)) return;
       if (c) { if (!r.customer || norm(r.customer) !== c) return; }
@@ -9119,6 +9383,898 @@
   }
   function ownFleetNames(company) {
     return uniqSorted(SEED.records.equipment.filter(e => /^own/i.test(e.ownership || '')).map(e => e.name));
+  }
+
+  function computeRecurringExpenseMetrics(r, asOfIso) {
+    const cutoff = String(asOfIso || todayISO()).slice(0, 10);
+    const startIso = String((r && (r.start_date || r.date)) || '').slice(0, 10);
+    const endIso = String((r && r.end_date) || '').slice(0, 10);
+    const isInForce = !endIso || endIso >= cutoff;
+    const status = isInForce ? 'In Force' : 'Ended';
+    const amt = round2(Number((r && r.amount) || 0));
+    const freq = String((r && r.frequency) || 'Monthly').trim() || 'Monthly';
+    const fqL = freq.toLowerCase();
+    const monthlyEqUsd = fqL.startsWith('quarter')
+      ? round2(amt / 3)
+      : (fqL.startsWith('annu') || fqL.startsWith('year')
+        ? round2(amt / 12)
+        : (fqL.startsWith('week') ? round2(amt * (52 / 12)) : amt));
+    const capEnd = (endIso && endIso < cutoff) ? endIso : cutoff;
+    let elapsedCycles = 0;
+    if (startIso && capEnd >= startIso) {
+      const [sy, sm, sd] = startIso.split('-').map(Number);
+      const [ey, em, ed] = capEnd.split('-').map(Number);
+      const addCurrent = endIso ? ((ed - sd) >= 14 ? 1 : 0) : (ed >= sd ? 1 : 0);
+      const months = Math.max(1, (ey - sy) * 12 + (em - sm) + addCurrent);
+      if (fqL.startsWith('quarter')) elapsedCycles = Math.max(1, Math.round(months / 3));
+      else if (fqL.startsWith('annu') || fqL.startsWith('year')) elapsedCycles = Math.max(1, Math.round(months / 12));
+      else if (fqL.startsWith('week')) elapsedCycles = Math.max(1, Math.round(months * (52 / 12)));
+      else elapsedCycles = months;
+    }
+    const accruedUsd = round2(elapsedCycles * amt);
+    return { startIso, endIso, isInForce, status, freq, amount: amt, monthlyEqUsd, elapsedCycles, accruedUsd };
+  }
+
+  // ── Chronological Effective-Date Series & Universal Backfill Engine ──
+  // Applies to all effective-dated relational log/agreement tables:
+  //   price_rules, employments, logistics_allowances, recurring_expenses, overtime_rates, credit_terms,
+  //   fx_rates, vat_rates, company_equipment, company_drivers
+  // plus equipment.adj_windows (handled via appendOrUpdateTruckWindow + backfillTruckWindowToTickets).
+  const EFFECTIVE_SERIES_TABLES = new Set([
+    'price_rules',
+    'employments',
+    'logistics_allowances',
+    'recurring_expenses',
+    'overtime_rates',
+    'credit_terms',
+    'fx_rates',
+    'vat_rates',
+    'company_equipment',
+    'company_drivers',
+  ]);
+
+  function isSameChronologicalSeries(crKey, a, b) {
+    if (!a || !b || a.voided || b.voided) return false;
+    const coA = norm(a.company || ''), coB = norm(b.company || '');
+    if (coA && coB && coA !== coB) return false;
+    switch (crKey) {
+      case 'price_rules':
+        return norm(a.rule_type || '') === norm(b.rule_type || '')
+          && norm(a.customer || '') === norm(b.customer || '')
+          && norm(a.supplier || '') === norm(b.supplier || '')
+          && norm(a.site || '') === norm(b.site || '')
+          && norm(a.product || '') === norm(b.product || '')
+          && norm(a.truck || '') === norm(b.truck || '')
+          && Number(a.min_qty || 0) === Number(b.min_qty || 0);
+      case 'employments':
+      case 'logistics_allowances':
+        return norm(a.staff || '') === norm(b.staff || '');
+      case 'recurring_expenses':
+        return norm(a.company || 'WTC') === norm(b.company || 'WTC')
+          && norm(a.supplier || '') === norm(b.supplier || '')
+          && norm(a.item || a.subcategory || a.category || '') === norm(b.item || b.subcategory || b.category || '');
+      case 'overtime_rates':
+        return norm(a.region || '') === norm(b.region || '')
+          && norm(a.site || '') === norm(b.site || '');
+      case 'credit_terms':
+        return norm(a.customer || '') === norm(b.customer || '');
+      case 'fx_rates':
+        return norm(a.currency || 'LBP') === norm(b.currency || 'LBP');
+      case 'vat_rates':
+        return true;
+      case 'company_equipment':
+        return norm(a.equipment || '') === norm(b.equipment || '');
+      case 'company_drivers':
+        return norm(a.driver || '') === norm(b.driver || '')
+          && norm(a.equipment || '') === norm(b.equipment || '');
+      default:
+        return false;
+    }
+  }
+
+  function getChronologicalSeriesPeers(crKey, row, excludeId) {
+    if (!EFFECTIVE_SERIES_TABLES.has(crKey) || !row) return [];
+    const list = (SEED.records && SEED.records[crKey]) || [];
+    const exId = excludeId != null ? String(excludeId) : (row.id != null ? String(row.id) : '');
+    return list
+      .filter(r => r && !r.voided && String(r.id || '') !== exId && r.start_date && isSameChronologicalSeries(crKey, row, r))
+      .sort((a, b) => String(a.start_date || '').localeCompare(String(b.start_date || '')));
+  }
+
+  // Validates chronological ordering for any effective-dated log/agreement row:
+  //   1) End Date cannot precede Start Date.
+  //   2) When adding a new row (no editOrig): Start Date must be strictly AFTER the latest
+  //      existing peer's Start Date (and strictly after its explicit End Date if _explicitEnd).
+  //   3) When editing an existing row: Start Date must stay strictly between the previous peer's
+  //      Start Date (or explicit End Date) and the next peer's Start Date; End Date (if set)
+  //      must precede the next peer's Start Date.
+  function validateChronologicalSeriesEntry(crKey, candidate, editOrig) {
+    if (!EFFECTIVE_SERIES_TABLES.has(crKey) || !candidate) return { ok: true };
+    const candStart = String(candidate.start_date || '').slice(0, 10);
+    const candEnd = String(candidate.end_date || '').slice(0, 10);
+    if (!candStart) return { ok: true };
+    if (candEnd && candEnd < candStart) {
+      return { ok: false, reason: `End Date (${candEnd}) cannot be before Start Date (${candStart}).` };
+    }
+    const exId = (editOrig && editOrig.id) || candidate.id || '';
+    const peers = getChronologicalSeriesPeers(crKey, candidate, exId);
+    if (!peers.length) return { ok: true };
+
+    if (!editOrig) {
+      const latestPrev = peers[peers.length - 1];
+      const prevStart = String(latestPrev.start_date || '').slice(0, 10);
+      const prevEnd = latestPrev._explicitEnd && latestPrev.end_date ? String(latestPrev.end_date).slice(0, 10) : '';
+      const minAfter = (prevEnd && prevEnd > prevStart) ? prevEnd : prevStart;
+      if (candStart === prevStart) {
+        return {
+          ok: false,
+          reason: `An agreement in this series already starts on ${candStart}. Edit the existing entry or choose a Start Date after ${minAfter}.`,
+        };
+      }
+      if (candStart <= minAfter) {
+        return {
+          ok: false,
+          reason: `New log Start Date (${candStart}) cannot be on or before the previous log date (${minAfter}). Choose a Start Date after ${minAfter}.`,
+        };
+      }
+      return { ok: true };
+    }
+
+    // Editing an existing log entry in the series: find its chronological position via editOrig.start_date
+    const origStart = String(editOrig.start_date || candStart).slice(0, 10);
+    const origEnd = String(editOrig.end_date || '').slice(0, 10);
+    if (candStart === origStart && candEnd === origEnd && isSameChronologicalSeries(crKey, candidate, editOrig)) {
+      return { ok: true };
+    }
+    let prevPeer = null, nextPeer = null;
+    for (let i = 0; i < peers.length; i++) {
+      const ps = String(peers[i].start_date || '').slice(0, 10);
+      if (ps < origStart) prevPeer = peers[i];
+      else if (ps > origStart && !nextPeer) nextPeer = peers[i];
+    }
+    if (prevPeer) {
+      const prevStart = String(prevPeer.start_date || '').slice(0, 10);
+      const prevExpEnd = prevPeer._explicitEnd && prevPeer.end_date ? String(prevPeer.end_date).slice(0, 10) : '';
+      const minAfter = (prevExpEnd && prevExpEnd > prevStart) ? prevExpEnd : prevStart;
+      if (candStart === prevStart) {
+        return {
+          ok: false,
+          reason: `Another log entry in this series already starts on ${candStart}. Choose a Start Date after ${minAfter}.`,
+        };
+      }
+      if (candStart <= minAfter) {
+        return {
+          ok: false,
+          reason: `Start Date (${candStart}) cannot be on or before the previous log entry (${minAfter}).`,
+        };
+      }
+    }
+    if (nextPeer) {
+      const nextStart = String(nextPeer.start_date || '').slice(0, 10);
+      if (candStart >= nextStart) {
+        return {
+          ok: false,
+          reason: `Start Date (${candStart}) must remain before the next log entry's Start Date (${nextStart}).`,
+        };
+      }
+      if (candEnd && candEnd >= nextStart) {
+        return {
+          ok: false,
+          reason: `End Date (${candEnd}) cannot overlap the next log entry starting ${nextStart} (max ${prevDayISO(nextStart)}).`,
+        };
+      }
+    }
+    return { ok: true };
+  }
+
+  function countPaidDaysInWindow(s, e, row) {
+    const startIso = String(s || '').slice(0, 10);
+    const endIso = String(e || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startIso) || !/^\d{4}-\d{2}-\d{2}$/.test(endIso) || startIso > endIso) {
+      return { schedDays: 0, paidDays: 0 };
+    }
+    const dowKeys = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const ticked = new Set();
+    if (row) {
+      dowKeys.forEach((k, idx) => {
+        if (row[k] === true || (row[k] === undefined && idx >= 1 && idx <= 6)) ticked.add(idx);
+      });
+    }
+    if (ticked.size === 0) [1, 2, 3, 4, 5, 6].forEach(i => ticked.add(i));
+    const [sy, sm, sd] = startIso.split('-').map(Number);
+    const [ey, em, ed] = endIso.split('-').map(Number);
+    const curDt = new Date(Date.UTC(sy, sm - 1, sd));
+    const endMs = Date.UTC(ey, em - 1, ed);
+    let schedDays = 0, guard = 0;
+    while (curDt.getTime() <= endMs && guard < 400) {
+      guard++;
+      if (ticked.has(curDt.getUTCDay())) schedDays += 1;
+      curDt.setUTCDate(curDt.getUTCDate() + 1);
+    }
+    return { schedDays, paidDays: schedDays };
+  }
+
+  // Synchronizes adjacent rows in the same effective-dated series when `savedRow` is added or edited:
+  //   - Marks `savedRow._explicitEnd` when user explicitly sets/clears `end_date`.
+  //   - If `savedRow` has a predecessor `prevPeer`:
+  //       • If `prevPeer` was Open (`!prevPeer.end_date`) or was auto-closed (`!prevPeer._explicitEnd`
+  //         or `prevPeer._auto_closed_by_id === savedRow.id`), sets `prevPeer.end_date = prevDayISO(savedRow.start_date)`
+  //         so moving `savedRow.start_date` forward or backward never leaves an accidental gap or overlap.
+  //       • If `prevPeer` has an explicit `end_date < prevDayISO(savedRow.start_date)`, preserves that
+  //         intentional gap (`prevPeer._explicitEnd = true`) untouched!
+  //   - If `savedRow` has a successor `nextPeer` and `savedRow.end_date` is blank (Open), caps
+  //     `savedRow.end_date = prevDayISO(nextPeer.start_date)` (`_explicitEnd = false`).
+  function syncChronologicalSeriesNeighbors(crKey, savedRow, editOrig, extraApiPosts) {
+    if (!EFFECTIVE_SERIES_TABLES.has(crKey) || !savedRow || !savedRow.start_date) return [];
+    const syncSelfToCustom = () => {
+      if (!savedRow || !savedRow.id) return;
+      if (Array.isArray(STATE.customRecords[crKey])) {
+        const sIdx = STATE.customRecords[crKey].findIndex(x => x && String(x.id) === String(savedRow.id));
+        if (sIdx >= 0) Object.assign(STATE.customRecords[crKey][sIdx], savedRow);
+      }
+      if (SEED.records && Array.isArray(SEED.records[crKey])) {
+        const rIdx = SEED.records[crKey].findIndex(x => x && String(x.id) === String(savedRow.id));
+        if (rIdx >= 0) Object.assign(SEED.records[crKey][rIdx], savedRow);
+      }
+    };
+    if (editOrig && String(savedRow.end_date || '') === String(editOrig.end_date || '')) {
+      if (editOrig._explicitEnd !== undefined && savedRow._explicitEnd === undefined) savedRow._explicitEnd = Boolean(editOrig._explicitEnd);
+      if (editOrig._auto_closed_by_id !== undefined && savedRow._auto_closed_by_id === undefined) savedRow._auto_closed_by_id = editOrig._auto_closed_by_id;
+      if (editOrig._auto_closed_prev_id !== undefined && savedRow._auto_closed_prev_id === undefined) savedRow._auto_closed_prev_id = editOrig._auto_closed_prev_id;
+    }
+    const newStart = String(savedRow.start_date).slice(0, 10);
+    const origStart = editOrig && editOrig.start_date ? String(editOrig.start_date).slice(0, 10) : newStart;
+    if (editOrig && newStart === origStart && String(savedRow.end_date || '') === String(editOrig.end_date || '') && isSameChronologicalSeries(crKey, savedRow, editOrig)) {
+      if (crKey === 'logistics_allowances' && Number(savedRow.daily_usd) > 0 && savedRow.start_date && savedRow.end_date && savedRow.log_mode !== 'single') {
+        const w = countPaidDaysInWindow(savedRow.start_date, savedRow.end_date, savedRow);
+        if (w && w.paidDays > 0) savedRow.amount = round2(Number(savedRow.daily_usd) * w.paidDays);
+      }
+      if (crKey === 'fx_rates' || crKey === 'vat_rates') enrichGlobalRateTables();
+      syncSelfToCustom();
+      return [];
+    }
+    if (!editOrig) {
+      savedRow._explicitEnd = Boolean(savedRow.end_date && String(savedRow.end_date).trim());
+    } else if (String(savedRow.end_date || '') !== String(editOrig.end_date || '')) {
+      savedRow._explicitEnd = Boolean(savedRow.end_date && String(savedRow.end_date).trim());
+      if (savedRow._explicitEnd) delete savedRow._auto_closed_by_id;
+    }
+
+    const peers = getChronologicalSeriesPeers(crKey, savedRow, savedRow.id);
+    let prevPeer = null, nextPeer = null;
+    for (let i = 0; i < peers.length; i++) {
+      const ps = String(peers[i].start_date || '').slice(0, 10);
+      if (ps < newStart) prevPeer = peers[i];
+      else if (ps > newStart && !nextPeer) nextPeer = peers[i];
+    }
+
+    const syncPeerToCustom = (tk, peerRow) => {
+      if (!peerRow || !peerRow.id) return;
+      if (!Array.isArray(STATE.customRecords[tk])) STATE.customRecords[tk] = [];
+      const cIdx = STATE.customRecords[tk].findIndex(x => x && String(x.id) === String(peerRow.id));
+      if (cIdx >= 0) Object.assign(STATE.customRecords[tk][cIdx], peerRow);
+      else STATE.customRecords[tk].push(Object.assign({}, peerRow));
+      if (Array.isArray(extraApiPosts)) extraApiPosts.push([tk, peerRow]);
+    };
+
+    const touchedPeers = [];
+    if (prevPeer) {
+      const expectedAutoEnd = prevDayISO(newStart);
+      const prevAutoEndFromOrig = prevDayISO(origStart);
+      const wasOpen = !prevPeer.end_date || !String(prevPeer.end_date).trim();
+      const wasAutoClosedByThis = prevPeer._auto_closed_by_id === savedRow.id
+        || (savedRow._auto_closed_prev_id && String(savedRow._auto_closed_prev_id) === String(prevPeer.id))
+        || (!prevPeer._explicitEnd && prevPeer.end_date && (
+          String(prevPeer.end_date).slice(0, 10) === prevAutoEndFromOrig
+          || String(prevPeer.end_date).slice(0, 10) >= newStart
+        ));
+      const overlapsNew = Boolean(prevPeer.end_date && String(prevPeer.end_date).slice(0, 10) >= newStart);
+      if ((wasOpen || wasAutoClosedByThis || overlapsNew) && expectedAutoEnd >= String(prevPeer.start_date).slice(0, 10)) {
+        if (prevPeer.end_date !== expectedAutoEnd || prevPeer._auto_closed_by_id !== savedRow.id) {
+          if (prevPeer._prev_end_date === undefined) prevPeer._prev_end_date = prevPeer.end_date || '';
+          prevPeer.end_date = expectedAutoEnd;
+          prevPeer._explicitEnd = false;
+          prevPeer._auto_closed_by_id = savedRow.id;
+          savedRow._auto_closed_prev_id = String(prevPeer.id || '');
+          if (crKey === 'employments') {
+            if (!prevPeer._prev_status) prevPeer._prev_status = prevPeer.status || 'Current';
+            prevPeer.status = 'Ended';
+          } else if (crKey === 'recurring_expenses') {
+            if (!prevPeer._prev_status) prevPeer._prev_status = prevPeer.status || 'In Force';
+            prevPeer.status = 'Ended';
+          }
+          if (crKey === 'logistics_allowances' && Number(prevPeer.daily_usd) > 0 && prevPeer.log_mode !== 'single') {
+            const w = countPaidDaysInWindow(prevPeer.start_date, prevPeer.end_date, prevPeer);
+            if (w && w.paidDays > 0) prevPeer.amount = round2(Number(prevPeer.daily_usd) * w.paidDays);
+          }
+          touchedPeers.push(prevPeer);
+          syncPeerToCustom(crKey, prevPeer);
+        }
+      }
+    }
+
+    if (nextPeer) {
+      const nextStart = String(nextPeer.start_date).slice(0, 10);
+      const capEnd = prevDayISO(nextStart);
+      if ((!savedRow.end_date || !String(savedRow.end_date).trim()) && capEnd >= newStart) {
+        savedRow.end_date = capEnd;
+        savedRow._explicitEnd = false;
+        savedRow._auto_closed_by_id = nextPeer.id;
+        if (crKey === 'employments') savedRow.status = 'Ended';
+      }
+    } else if (crKey === 'employments' && (!savedRow.end_date || !String(savedRow.end_date).trim())) {
+      savedRow.status = 'Current';
+    }
+
+    if (crKey === 'logistics_allowances' && Number(savedRow.daily_usd) > 0 && savedRow.start_date && savedRow.end_date && savedRow.log_mode !== 'single') {
+      const w = countPaidDaysInWindow(savedRow.start_date, savedRow.end_date, savedRow);
+      if (w && w.paidDays > 0) savedRow.amount = round2(Number(savedRow.daily_usd) * w.paidDays);
+    }
+    if (crKey === 'fx_rates' || crKey === 'vat_rates') enrichGlobalRateTables();
+    syncSelfToCustom();
+    return touchedPeers;
+  }
+
+  function reopenChronologicalSeriesOnVoid(crKey, voidedRow, extraApiPosts) {
+    if (!EFFECTIVE_SERIES_TABLES.has(crKey) || !voidedRow) return [];
+    const list = (SEED.records && SEED.records[crKey]) || [];
+    const vStart = String(voidedRow.start_date || '').slice(0, 10);
+    const vPrevDay = vStart ? prevDayISO(vStart) : '';
+    const peers = getChronologicalSeriesPeers(crKey, voidedRow, voidedRow.id);
+    const nextPeer = peers.find(p => String(p.start_date || '').slice(0, 10) > vStart) || null;
+    const reopened = [];
+    list.forEach(r => {
+      if (!r || r.voided || r.id === voidedRow.id) return;
+      const matchedById = r._auto_closed_by_id === voidedRow.id
+        || (voidedRow._auto_closed_prev_id && String(voidedRow._auto_closed_prev_id) === String(r.id));
+      if (!matchedById && !isSameChronologicalSeries(crKey, voidedRow, r)) return;
+      const matchedByDate = !matchedById && !r._explicitEnd && vPrevDay && String(r.end_date || '').slice(0, 10) === vPrevDay && isSameChronologicalSeries(crKey, voidedRow, r);
+      if (matchedById || matchedByDate) {
+        if (nextPeer) {
+          r.end_date = prevDayISO(String(nextPeer.start_date).slice(0, 10));
+          r._auto_closed_by_id = nextPeer.id;
+          r._explicitEnd = false;
+        } else {
+          r.end_date = '';
+          delete r._auto_closed_by_id;
+          r._explicitEnd = false;
+          if (crKey === 'employments') r.status = r._prev_status || 'Current';
+          else if (crKey === 'recurring_expenses') r.status = r._prev_status || 'In Force';
+        }
+        if (crKey === 'logistics_allowances' && Number(r.daily_usd) > 0 && r.start_date && r.end_date && r.log_mode !== 'single') {
+          const w = countPaidDaysInWindow(r.start_date, r.end_date, r);
+          if (w && w.paidDays > 0) r.amount = round2(Number(r.daily_usd) * w.paidDays);
+        }
+        reopened.push(r);
+        if (!Array.isArray(STATE.customRecords[crKey])) STATE.customRecords[crKey] = [];
+        const cIdx = STATE.customRecords[crKey].findIndex(x => x && String(x.id) === String(r.id));
+        if (cIdx >= 0) Object.assign(STATE.customRecords[crKey][cIdx], r);
+        else STATE.customRecords[crKey].push(Object.assign({}, r));
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push([crKey, r]);
+      }
+    });
+    if (crKey === 'fx_rates' || crKey === 'vat_rates') enrichGlobalRateTables();
+    return reopened;
+  }
+
+  // Re-evaluates and backfills `sales_tickets` and `raw_purchases` across the surgical date range
+  // affected by adding, editing, voiding, or restoring a `price_rules` row:
+  //   - Sales Tickets inside an active customer agreement use that agreement's rate (`unit_price`, `trans_unit_price`, or `truck_size`).
+  //   - Sales Tickets inside an intentional gap `(oldRule.end_date, newRule.start_date)` where no customer
+  //     agreement is open automatically fall back to the Product's **List Price** (`listPriceRule` / `listPrice`)!
+  //   - Raw Purchases re-evaluate `findRule` for `Purchase Price (Site)` / `Purchase Price (Supplier)` and `Transport Price (Site)`.
+  function backfillPriceRuleToTickets(ruleRow, origRow, extraApiPosts, opts) {
+    if (!ruleRow && !origRow) return { salesUpdated: 0, rawUpdated: 0, totalUpdated: 0 };
+    if (window.__fastInspectorModifyTest) return { salesUpdated: 0, rawUpdated: 0, totalUpdated: 0 };
+    const ref = ruleRow || origRow;
+    const rt = String(ref.rule_type || '');
+    const isListRule = /^List Price$/i.test(rt);
+    const isSalesSide = isListRule || /Sales|Haulage \(Customer Site\)/i.test(rt);
+    const isRawSide = /Purchase Price|Transport Price \(Site\)/i.test(rt);
+
+    const ruleMatVal = r => r ? Number(r.unit_price ?? r.price ?? r.indiff_price ?? r.rate ?? 0) : 0;
+    const ruleTransVal = r => r ? Number(r.trans_unit_price ?? r.trans_price ?? r.trans_indiff_price ?? 0) : 0;
+
+    // Determine the exact surgical date range [rangeFrom, rangeTo] whose effective rule changed:
+    const newS = ruleRow && !ruleRow.voided ? String(ruleRow.start_date || '1900-01-01').slice(0, 10) : '';
+    const newE = ruleRow && !ruleRow.voided ? (ruleRow.end_date ? String(ruleRow.end_date).slice(0, 10) : '9999-12-31') : '';
+    const oldS = origRow ? String(origRow.start_date || '1900-01-01').slice(0, 10) : '';
+    const oldE = origRow ? (origRow.end_date ? String(origRow.end_date).slice(0, 10) : '9999-12-31') : '';
+
+    let rangeFrom = '1900-01-01', rangeTo = '9999-12-31';
+    if (origRow && ruleRow && !ruleRow.voided) {
+      const rateOrScopeChanged = ruleMatVal(ruleRow) !== ruleMatVal(origRow)
+        || ruleTransVal(ruleRow) !== ruleTransVal(origRow)
+        || Number(ruleRow.truck_size || 0) !== Number(origRow.truck_size || 0)
+        || norm(ruleRow.unit || '') !== norm(origRow.unit || '')
+        || norm(ruleRow.rate_per || '') !== norm(origRow.rate_per || '')
+        || norm(ruleRow.customer || '') !== norm(origRow.customer || '')
+        || norm(ruleRow.supplier || '') !== norm(origRow.supplier || '')
+        || norm(ruleRow.site || '') !== norm(origRow.site || '')
+        || norm(ruleRow.product || '') !== norm(origRow.product || '')
+        || norm(ruleRow.truck || '') !== norm(origRow.truck || '');
+      if (!rateOrScopeChanged && oldS === newS && oldE === newE) {
+        return { salesUpdated: 0, rawUpdated: 0, totalUpdated: 0 };
+      } else if (!rateOrScopeChanged && oldS === newS && oldE !== newE) {
+        // Only End Date changed: affected dates are between min(oldE, newE) and max(oldE, newE)
+        rangeFrom = oldE < newE ? oldE : newE;
+        rangeTo = oldE > newE ? oldE : newE;
+      } else if (!rateOrScopeChanged && oldE === newE && oldS !== newS) {
+        // Only Start Date changed: affected dates are between min(oldS, newS) and max(oldS, newS)
+        rangeFrom = oldS < newS ? oldS : newS;
+        rangeTo = oldS > newS ? oldS : newS;
+      } else {
+        rangeFrom = oldS < newS ? oldS : newS;
+        rangeTo = oldE > newE ? oldE : newE;
+      }
+    } else if (ruleRow && !ruleRow.voided) {
+      rangeFrom = newS;
+      rangeTo = newE;
+    } else if (origRow) {
+      rangeFrom = oldS;
+      rangeTo = oldE;
+    }
+
+    const matchCo = (tCo) => {
+      const c1 = norm(ruleRow && ruleRow.company || ''), c2 = norm(origRow && origRow.company || '');
+      const tc = norm(tCo || '');
+      if (!c1 && !c2) return true;
+      return tc === c1 || tc === c2;
+    };
+    const matchField = (tVal, field) => {
+      const v1 = norm(ruleRow && ruleRow[field] || ''), v2 = norm(origRow && origRow[field] || '');
+      if (!v1 && !v2) return true;
+      const tv = norm(tVal || '');
+      return (v1 && tv === v1) || (v2 && tv === v2);
+    };
+    const matchTruck = (tTruck) => {
+      const tr1 = norm(ruleRow && ruleRow.truck || ''), tr2 = norm(origRow && origRow.truck || '');
+      if (!tr1 && !tr2) return true;
+      const tk = norm(tTruck || '');
+      if (!tk) return false;
+      return (tr1 && tk === tr1) || (tr2 && tk === tr2);
+    };
+
+    const touchTicketInCustom = (tk, row) => {
+      if (!row || !row.id) return;
+      if (!Array.isArray(STATE.customRecords[tk])) STATE.customRecords[tk] = [];
+      const idx = STATE.customRecords[tk].findIndex(x => x && String(x.id) === String(row.id));
+      if (idx >= 0) Object.assign(STATE.customRecords[tk][idx], row);
+      else STATE.customRecords[tk].unshift(Object.assign({}, row));
+      if (Array.isArray(extraApiPosts)) extraApiPosts.push([tk, row]);
+      else postRecordToLocalApi(tk, row);
+    };
+
+    let salesUpdated = 0, rawUpdated = 0;
+
+    if (isSalesSide) {
+      const salesRows = (SEED.records && SEED.records.sales_tickets) || [];
+      for (let i = 0; i < salesRows.length; i++) {
+        const s = salesRows[i];
+        if (!s || s.voided || s.removed_slip || isReturnTicket(s)) continue;
+        const d = String(s.rep_date || s.date || '').slice(0, 10);
+        if (!d || d < rangeFrom || d > rangeTo) continue;
+        if (!matchCo(s.company)) continue;
+        if (!isListRule && !matchField(s.customer, 'customer')) continue;
+        if (!isListRule && !matchField(s.site, 'site')) continue;
+        if (!matchField(s.product, 'product')) continue;
+        if (!matchTruck(s.truck)) continue;
+
+        const saleType = String(s.sale_type || 'Delivery');
+        if (saleType === 'Unregistered') continue;
+        const isPickup = saleType === 'Pickup';
+        const isDelivery = saleType === 'Delivery';
+        const wantType = isPickup ? 'Sales (Pickup)' : 'Sales (Delivery)';
+        let rowChanged = false;
+
+        // 1) Truck size agreement (`truck_size > 0` on rule)
+        if ((Number(ruleRow && ruleRow.truck_size) > 0) || (Number(origRow && origRow.truck_size) > 0)) {
+          const trkRow = s.truck ? equipInfo(s.truck, s.company || 'WTC', false, { date: d, side: 'sales', customer: s.customer, site: s.site }) : null;
+          const tsMatch = resolveAgreementTruckSize({
+            company: s.company || 'WTC',
+            side: 'sales',
+            customer: s.customer,
+            site: isDelivery ? s.site : '',
+            product: s.product,
+            truckOwner: s.truck_owner || '',
+            truckRow: trkRow,
+            date: d,
+          });
+          const effCap = tsMatch && tsMatch.size > 0
+            ? tsMatch.size
+            : (trkRow && Number(trkRow.capacity) > 0 ? Number(trkRow.capacity) : 0);
+          if (effCap > 0 && /^m/i.test(String(s.uom || 'm³')) && Math.abs(Number(s.qty || 0) - effCap) > 1e-6) {
+            s.qty = effCap;
+            rowChanged = true;
+          }
+        }
+
+        // 2) Material Sales Price (`Sales (Delivery)`, `Sales (Pickup)`, or `List Price` fallback during gaps!)
+        if (isListRule || /^Sales/i.test(rt)) {
+          let activeSalesRule = (s.customer && s.product)
+            ? findRule({ company: s.company, customer: s.customer, product: s.product, site: isDelivery ? s.site : '', date: d, types: [wantType], requireProduct: true })
+            : null;
+          if (!activeSalesRule && s.customer && s.product) {
+            const anyRule = findRule({ company: s.company, customer: s.customer, product: s.product, site: isDelivery ? s.site : '', date: d, types: [wantType] });
+            if (anyRule && (Number(anyRule.unit_price || anyRule.price || 0) > 0 || ruleIndiffPrice(anyRule) != null)) activeSalesRule = anyRule;
+          }
+          const lpObj = s.product ? listPriceRule(s.company, s.product, d) : null;
+          const fallbackLp = lpObj ? Number(lpObj.unit_price ?? lpObj.price ?? lpObj.rate ?? 0) : (s.product ? listPrice(s.product) : null);
+
+          let targetUp = null;
+          let targetRuleName = s.price_rule || '';
+          let matFlat = Boolean(s.mat_indiff);
+          if (activeSalesRule) {
+            matFlat = isMatIndiffRule(activeSalesRule);
+            const rawRate = matFlat
+              ? Number(ruleIndiffPrice(activeSalesRule) || 0)
+              : Number(activeSalesRule.unit_price ?? activeSalesRule.price ?? activeSalesRule.rate ?? 0);
+            if (rawRate > 0) {
+              targetUp = rawRate;
+              targetRuleName = activeSalesRule.name || targetRuleName;
+            }
+          } else if (fallbackLp != null && fallbackLp > 0) {
+            // Intentional gap between customer agreements -> fall back to Product List Price!
+            matFlat = false;
+            targetUp = Number(fallbackLp);
+            targetRuleName = lpObj && lpObj.name ? lpObj.name : 'List Price';
+          }
+          if (targetUp != null && (Math.abs(Number(s.unit_price || 0) - targetUp) > 1e-4 || Boolean(s.mat_indiff) !== matFlat)) {
+            s.unit_price = targetUp;
+            s.mat_indiff = matFlat;
+            s.price_rule = targetRuleName;
+            rowChanged = true;
+          } else if (targetRuleName && s.price_rule !== targetRuleName && !activeSalesRule && fallbackLp != null) {
+            s.price_rule = targetRuleName;
+            rowChanged = true;
+          }
+        }
+
+        // 3) Delivery Transportation / Haulage (Customer Site)
+        if (isDelivery && (/^Sales \(Delivery\)$/i.test(rt) || /^Haulage \(Customer Site\)$/i.test(rt))) {
+          const dRule = findRule({ company: s.company, customer: s.customer, product: s.product, site: s.site, date: d, types: ['Sales (Delivery)'] });
+          const hRule = findRule({ company: s.company, customer: s.customer, supplier: s.truck_owner, product: s.product, site: s.site, date: d, types: ['Haulage (Customer Site)'] });
+          const activeTrRule = (dRule && (Number(dRule.trans_unit_price || dRule.trans_price || 0) > 0 || ruleTransIndiffPrice(dRule) != null))
+            ? dRule
+            : hRule;
+          if (activeTrRule) {
+            const trFlat = isTransIndiffRule(activeTrRule);
+            const rawTr = trFlat
+              ? Number(ruleTransIndiffPrice(activeTrRule) || 0)
+              : Number(activeTrRule.trans_unit_price ?? activeTrRule.trans_price ?? activeTrRule.unit_price ?? activeTrRule.rate ?? 0);
+            if (rawTr >= 0 && (Math.abs(Number(s.trans_unit_price || 0) - rawTr) > 1e-4 || Boolean(s.trans_indiff) !== trFlat)) {
+              s.trans_unit_price = rawTr;
+              s.trans_indiff = trFlat;
+              rowChanged = true;
+            }
+          }
+        }
+
+        if (rowChanged) {
+          const qty = Number(s.qty || 0);
+          const up = Number(s.unit_price || 0);
+          const tp = isDelivery ? Number(s.trans_unit_price || 0) : 0;
+          const disc = Math.abs(Number(s.discount || 0));
+          const tierAdj = Number(s.tier_adj || 0);
+          const transTierAdj = isDelivery ? Number(s.trans_tier_adj || 0) : 0;
+          s.price = s.mat_indiff ? round2(up - disc) : round2(qty * up + tierAdj - disc);
+          s.trans_price = isDelivery ? (s.trans_indiff ? round2(tp) : round2(qty * tp + transTierAdj)) : 0;
+          s.total = round2(Number(s.price || 0) + Number(s.trans_price || 0));
+          const custObj = s.customer ? customerInfo(s.customer) : null;
+          const wasTax = Math.abs(Number(s.vat || 0)) > 0.005 || Boolean(s.vat_invoice) || Boolean(custObj && custObj['VAT Registered'] === 'Yes');
+          s.vat = (wasTax && ticketSign(s) !== 0) ? round2(s.total * getVatFraction(d)) : 0;
+          s.total_ttc = round2(s.total + s.vat);
+          salesUpdated++;
+          touchTicketInCustom('sales_tickets', s);
+        }
+      }
+      if (salesUpdated > 0 && SEED._tableRev) SEED._tableRev.sales_tickets = (SEED._tableRev.sales_tickets || 0) + 1;
+    }
+
+    if (isRawSide) {
+      const rawRows = (SEED.records && SEED.records.raw_purchases) || [];
+      for (let i = 0; i < rawRows.length; i++) {
+        const r = rawRows[i];
+        if (!r || r.voided || r.removed_slip || isReturnTicket(r)) continue;
+        const d = String(r.rep_date || r.date || '').slice(0, 10);
+        if (!d || d < rangeFrom || d > rangeTo) continue;
+        if (!matchCo(r.company)) continue;
+        if (!matchField(r.site, 'site')) continue;
+        if (!matchField(r.product, 'product')) continue;
+        if (!matchTruck(r.truck)) continue;
+        if ((ruleRow && ruleRow.supplier) || (origRow && origRow.supplier)) {
+          const matchMatSup = matchField(r.site_owner, 'supplier');
+          const matchTrSup = matchField(r.truck_owner, 'supplier');
+          if (!matchMatSup && !matchTrSup) continue;
+        }
+
+        let rowChanged = false;
+        let qty = Number(r.qty || 0);
+        const isCoFleet = /^company/i.test(String(r.transport_by || ''));
+
+        if ((Number(ruleRow && ruleRow.truck_size) > 0) || (Number(origRow && origRow.truck_size) > 0)) {
+          const trkRow = r.truck ? equipInfo(r.truck, r.company || 'WTC', false, { date: d, side: 'raw', site: r.site }) : null;
+          const tsMatch = resolveAgreementTruckSize({
+            company: r.company || 'WTC',
+            side: 'raw',
+            site: r.site,
+            siteOwner: r.site_owner,
+            truckOwner: r.truck_owner,
+            product: r.product,
+            truckRow: trkRow,
+            date: d,
+          });
+          const effCap = tsMatch && tsMatch.size > 0
+            ? tsMatch.size
+            : (trkRow && Number(trkRow.capacity) > 0 ? Number(trkRow.capacity) : 0);
+          if (effCap > 0 && /^m/i.test(String(r.uom || 'm³')) && Math.abs(qty - effCap) > 1e-6) {
+            r.qty = effCap;
+            qty = effCap;
+            rowChanged = true;
+          }
+        }
+
+        if (/Purchase Price/i.test(rt)) {
+          const pRule = findRule({
+            company: r.company,
+            supplier: r.site_owner,
+            site: r.site,
+            product: r.product,
+            date: d,
+            types: ['Purchase Price (Site)', 'Purchase Price (Supplier)'],
+          });
+          if (pRule) {
+            const matFlat = isMatIndiffRule(pRule);
+            const pRate = matFlat
+              ? Number(ruleIndiffPrice(pRule) || 0)
+              : Number(pRule.unit_price ?? pRule.price ?? pRule.rate ?? 0);
+            if (pRate >= 0 && (Math.abs(Number(r.unit_cost || 0) - pRate) > 1e-4 || Boolean(r.mat_indiff) !== matFlat)) {
+              r.unit_cost = pRate;
+              r.mat_indiff = matFlat;
+              r.price_rule = pRule.name || r.price_rule || '';
+              rowChanged = true;
+            }
+          }
+        }
+
+        if (!isCoFleet && /Transport Price \(Site\)/i.test(rt)) {
+          const tRule = findRule({
+            company: r.company,
+            supplier: r.truck_owner,
+            site: r.site,
+            product: r.product,
+            date: d,
+            types: ['Transport Price (Site)'],
+          });
+          if (tRule) {
+            const trFlat = isTransIndiffRule(tRule);
+            const tRate = trFlat
+              ? Number(ruleTransIndiffPrice(tRule) || 0)
+              : Number(tRule.trans_unit_price ?? tRule.trans_price ?? tRule.unit_price ?? tRule.price ?? tRule.rate ?? 0);
+            if (tRate >= 0 && (Math.abs(Number(r.trans_unit_cost || 0) - tRate) > 1e-4 || Boolean(r.trans_indiff) !== trFlat)) {
+              r.trans_unit_cost = tRate;
+              r.trans_indiff = trFlat;
+              r.haul_rule = tRule.name || r.haul_rule || '';
+              rowChanged = true;
+            }
+          }
+        }
+
+        if (rowChanged) {
+          const disc = Math.abs(Number(r.discount || 0));
+          const uc = Number(r.unit_cost || 0);
+          const tuc = isCoFleet ? 0 : Number(r.trans_unit_cost || 0);
+          r.cost = r.mat_indiff ? round2(uc - disc) : round2(qty * uc + Number(r.tier_adj || 0) - disc);
+          r.trans_cost = isCoFleet ? 0 : (r.trans_indiff ? round2(tuc) : round2(qty * tuc + Number(r.trans_tier_adj || 0)));
+          r.total = round2(Number(r.cost || 0) + Number(r.trans_cost || 0));
+          rawUpdated++;
+          touchTicketInCustom('raw_purchases', r);
+        }
+      }
+      if (rawUpdated > 0 && SEED._tableRev) SEED._tableRev.raw_purchases = (SEED._tableRev.raw_purchases || 0) + 1;
+    }
+
+    if (salesUpdated + rawUpdated > 0) {
+      SEED._customRev = (SEED._customRev || 0) + 1;
+    }
+    return { salesUpdated, rawUpdated, totalUpdated: salesUpdated + rawUpdated };
+  }
+
+  // When a product's `list_price` is edited on `products`, backfill any `sales_tickets` for that product
+  // that are using List Price (i.e. inside a gap or without a custom customer `Sales` rule).
+  function backfillProductListPriceToTickets(prodRow, origRow, extraApiPosts) {
+    if (!prodRow || !prodRow.name || window.__fastInspectorModifyTest) return { salesUpdated: 0 };
+    const newLp = Number(prodRow.list_price || 0);
+    const oldLp = origRow ? Number(origRow.list_price || 0) : newLp;
+    if (!(newLp > 0) || (origRow && round2(newLp) === round2(oldLp))) return { salesUpdated: 0 };
+    const pN = norm(prodRow.name);
+    const salesRows = (SEED.records && SEED.records.sales_tickets) || [];
+    let salesUpdated = 0;
+    for (let i = 0; i < salesRows.length; i++) {
+      const s = salesRows[i];
+      if (!s || s.voided || s.removed_slip || isReturnTicket(s) || norm(s.product || '') !== pN) continue;
+      const saleType = String(s.sale_type || 'Delivery');
+      if (saleType === 'Unregistered') continue;
+      const isPickup = saleType === 'Pickup';
+      const isDelivery = saleType === 'Delivery';
+      const wantType = isPickup ? 'Sales (Pickup)' : 'Sales (Delivery)';
+      const d = String(s.rep_date || s.date || '').slice(0, 10);
+      const activeSalesRule = (s.customer && s.product)
+        ? findRule({ company: s.company, customer: s.customer, product: s.product, site: isDelivery ? s.site : '', date: d, types: [wantType] })
+        : null;
+      if (!activeSalesRule && Math.abs(Number(s.unit_price || 0) - newLp) > 1e-4) {
+        s.unit_price = newLp;
+        const qty = Number(s.qty || 0);
+        const disc = Math.abs(Number(s.discount || 0));
+        s.price = s.mat_indiff ? round2(newLp - disc) : round2(qty * newLp + Number(s.tier_adj || 0) - disc);
+        s.total = round2(Number(s.price || 0) + Number(s.trans_price || 0));
+        const custObj = s.customer ? customerInfo(s.customer) : null;
+        const wasTax = Math.abs(Number(s.vat || 0)) > 0.005 || Boolean(s.vat_invoice) || Boolean(custObj && custObj['VAT Registered'] === 'Yes');
+        s.vat = (wasTax && ticketSign(s) !== 0) ? round2(s.total * getVatFraction(d)) : 0;
+        s.total_ttc = round2(s.total + s.vat);
+        s.price_rule = 'List Price';
+        salesUpdated++;
+        if (!Array.isArray(STATE.customRecords.sales_tickets)) STATE.customRecords.sales_tickets = [];
+        const cIdx = STATE.customRecords.sales_tickets.findIndex(x => x && String(x.id) === String(s.id));
+        if (cIdx >= 0) Object.assign(STATE.customRecords.sales_tickets[cIdx], s);
+        else STATE.customRecords.sales_tickets.unshift(Object.assign({}, s));
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push(['sales_tickets', s]);
+      }
+    }
+    if (salesUpdated > 0) {
+      if (SEED._tableRev) SEED._tableRev.sales_tickets = (SEED._tableRev.sales_tickets || 0) + 1;
+      SEED._customRev = (SEED._customRev || 0) + 1;
+    }
+    return { salesUpdated };
+  }
+
+  function backfillEmploymentToAttendance(empRow, origRow, extraApiPosts) {
+    const ref = empRow || origRow;
+    if (!ref || !ref.staff || window.__fastInspectorModifyTest) return { attUpdated: 0 };
+    const stN = norm(ref.staff);
+    const s1 = empRow && empRow.start_date ? String(empRow.start_date).slice(0, 10) : '9999-12-31';
+    const s2 = origRow && origRow.start_date ? String(origRow.start_date).slice(0, 10) : s1;
+    const e1 = empRow && empRow.end_date ? String(empRow.end_date).slice(0, 10) : '9999-12-31';
+    const e2 = origRow && origRow.end_date ? String(origRow.end_date).slice(0, 10) : '9999-12-31';
+    const rangeFrom = s1 < s2 ? s1 : s2;
+    const rangeTo = e1 > e2 ? e1 : e2;
+    const emps = ((SEED.records && SEED.records.employments) || [])
+      .filter(e => e && !e.voided && norm(e.staff || '') === stN && e.start_date)
+      .sort((a, b) => String(b.start_date || '').localeCompare(String(a.start_date || '')));
+    const attRows = (SEED.records && SEED.records.attendance) || [];
+    let attUpdated = 0;
+    for (let i = 0; i < attRows.length; i++) {
+      const a = attRows[i];
+      if (!a || a.voided || norm(a.staff || '') !== stN) continue;
+      const d = String(a.date || '').slice(0, 10);
+      if (!d || d < rangeFrom || d > rangeTo) continue;
+      const activeEmp = emps.find(e => String(e.start_date).slice(0, 10) <= d && (!e.end_date || String(e.end_date).slice(0, 10) >= d)) || null;
+      const targetHrs = activeEmp && Number(activeEmp.working_hours || activeEmp.daily_hours) > 0 ? Number(activeEmp.working_hours || activeEmp.daily_hours) : 12;
+      if (Number(a.scheduled_hours || 0) !== targetHrs) {
+        a.scheduled_hours = targetHrs;
+        attUpdated++;
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push(['attendance', a]);
+      }
+    }
+    return { attUpdated };
+  }
+
+  function backfillCreditTermsToCustomer(ctRow, extraApiPosts) {
+    if (!ctRow || !ctRow.customer || window.__fastInspectorModifyTest) return { custUpdated: 0 };
+    const cN = norm(ctRow.customer);
+    const activeCt = creditTermsForCustomer(ctRow.customer, ctRow.company, todayISO()) || ctRow;
+    const custs = (SEED.records && SEED.records.customers) || [];
+    let custUpdated = 0;
+    custs.forEach(c => {
+      if (!c || c.voided || norm(c.name || '') !== cN) return;
+      if (ctRow.company && c.company && norm(c.company) !== norm(ctRow.company)) return;
+      let changed = false;
+      if (activeCt.credit_days != null && Number(c.credit_days || 0) !== Number(activeCt.credit_days || 0)) {
+        c.credit_days = Number(activeCt.credit_days || 0);
+        changed = true;
+      }
+      if (activeCt.payment_days != null && Number(c.payment_days || 0) !== Number(activeCt.payment_days || 0)) {
+        c.payment_days = Number(activeCt.payment_days || 0);
+        changed = true;
+      }
+      if (activeCt.credit_limit != null && Number(c.credit_limit || 0) !== Number(activeCt.credit_limit || 0)) {
+        c.credit_limit = Number(activeCt.credit_limit || 0);
+        changed = true;
+      }
+      if (changed) {
+        custUpdated++;
+        if (Array.isArray(extraApiPosts)) extraApiPosts.push(['customers', c]);
+      }
+    });
+    return { custUpdated };
+  }
+
+  function backfillEffectiveLogChange(crKey, savedRow, editOrig, extraApiPosts, opts) {
+    if (!crKey || window.__fastInspectorModifyTest) return null;
+    if (crKey === 'price_rules') {
+      return backfillPriceRuleToTickets(savedRow, editOrig, extraApiPosts, opts);
+    }
+    if (crKey === 'products') {
+      return backfillProductListPriceToTickets(savedRow, editOrig, extraApiPosts);
+    }
+    if (crKey === 'employments') {
+      return backfillEmploymentToAttendance(savedRow, editOrig, extraApiPosts);
+    }
+    if (crKey === 'credit_terms') {
+      return backfillCreditTermsToCustomer(savedRow || editOrig, extraApiPosts);
+    }
+    if (crKey === 'fx_rates') {
+      enrichGlobalRateTables();
+      return { fxUpdated: 1 };
+    }
+    if (crKey === 'vat_rates') {
+      enrichGlobalRateTables();
+      const s1 = savedRow && savedRow.start_date ? String(savedRow.start_date).slice(0, 10) : '9999-12-31';
+      const s2 = editOrig && editOrig.start_date ? String(editOrig.start_date).slice(0, 10) : s1;
+      const e1 = savedRow && savedRow.end_date ? String(savedRow.end_date).slice(0, 10) : '9999-12-31';
+      const e2 = editOrig && editOrig.end_date ? String(editOrig.end_date).slice(0, 10) : '9999-12-31';
+      const rangeFrom = s1 < s2 ? s1 : s2;
+      const rangeTo = e1 > e2 ? e1 : e2;
+      const salesRows = (SEED.records && SEED.records.sales_tickets) || [];
+      let vatUpdated = 0;
+      for (let i = 0; i < salesRows.length; i++) {
+        const s = salesRows[i];
+        if (!s || s.voided || s.removed_slip) continue;
+        const d = String(s.rep_date || s.date || '').slice(0, 10);
+        if (!d || d < rangeFrom || d > rangeTo) continue;
+        const wasTax = Math.abs(Number(s.vat || 0)) > 0.005 || Boolean(s.vat_invoice);
+        if (!wasTax || ticketSign(s) === 0) continue;
+        const nextVat = round2(Number(s.total || 0) * getVatFraction(d));
+        if (Math.abs(Number(s.vat || 0) - nextVat) > 0.005) {
+          s.vat = nextVat;
+          s.total_ttc = round2(Number(s.total || 0) + nextVat);
+          vatUpdated++;
+          if (!Array.isArray(STATE.customRecords.sales_tickets)) STATE.customRecords.sales_tickets = [];
+          const cIdx = STATE.customRecords.sales_tickets.findIndex(x => x && String(x.id) === String(s.id));
+          if (cIdx >= 0) Object.assign(STATE.customRecords.sales_tickets[cIdx], s);
+          else STATE.customRecords.sales_tickets.unshift(Object.assign({}, s));
+          if (Array.isArray(extraApiPosts)) extraApiPosts.push(['sales_tickets', s]);
+        }
+      }
+      if (vatUpdated > 0 && SEED._tableRev) SEED._tableRev.sales_tickets = (SEED._tableRev.sales_tickets || 0) + 1;
+      return { vatUpdated };
+    }
+    if (crKey === 'company_equipment') {
+      const ref = savedRow || editOrig;
+      if (!ref || !ref.equipment) return null;
+      const eq = ((SEED.records && SEED.records.equipment) || []).find(e => e && !e.voided && norm(e.name) === norm(ref.equipment));
+      if (eq) {
+        const sNew = (savedRow && !savedRow.voided ? savedRow.start_date : (editOrig && editOrig.start_date)) || todayISO();
+        const eNew = (savedRow && !savedRow.voided ? (savedRow.end_date || '') : (editOrig && editOrig.end_date || ''));
+        const sOld = (editOrig && editOrig.start_date) ? String(editOrig.start_date).slice(0, 10) : sNew;
+        const eOld = (editOrig && editOrig.end_date) ? String(editOrig.end_date).slice(0, 10) : (eNew || '9999-12-31');
+        const wPayload = {
+          co: ref.company || eq.company || 'WTC',
+          s: sNew,
+          e: eNew,
+          cap: Number(ref.capacity || eq.capacity || 0),
+          own: ref.supplier || eq.supplier || '',
+          drv: ref.default_driver || eq.default_driver || '',
+          cust: '',
+          site: '',
+          side: 'both',
+        };
+        if (savedRow && !savedRow.voided) {
+          appendOrUpdateTruckWindow(eq, wPayload);
+        }
+        const bf = backfillTruckWindowToTickets(eq, wPayload, {
+          persistCustom: true,
+          rangeFrom: sOld < sNew ? sOld : sNew,
+          rangeTo: (eNew || '9999-12-31') > eOld ? (eNew || '9999-12-31') : eOld,
+          capChanged: Boolean(editOrig && Number(editOrig.capacity || 0) !== Number(ref.capacity || 0)),
+        });
+        if (Array.isArray(extraApiPosts)) {
+          extraApiPosts.push(['equipment', eq]);
+        }
+        return bf;
+      }
+    }
+    return null;
   }
 
   let _arrUidSeq = 1;
@@ -11706,44 +12862,44 @@
 
   function getCustomAlertTargetOptions(targetKind) {
     const fIdx = getFreqIndex();
-    const uniqSort = (arr, freqMap) => uniqSorted((arr || []).map(x => String(x || '').trim()).filter(x => x && !/^\d+$/.test(x)), freqMap);
+    const cleanFreqSort = (arr, freqMap) => uniqSorted(arr.map(x => String(x || '').trim()).filter(x => x && !/^\d+$/.test(x)), freqMap);
     if (targetKind === 'expense_cat') {
       const cats = [];
       (SEED.records.expense_categories || []).forEach(c => { if (c && c.name) cats.push(c.name); });
       (SEED.records.expenses || []).forEach(r => { if (r && r.category) cats.push(r.category); });
-      return { label: 'Expense Category (Optional)', placeholder: 'All Expense Categories', options: uniqSort(cats, fIdx.category) };
+      return { label: 'Expense Category (Optional)', placeholder: 'All Expense Categories', options: cleanFreqSort(cats, fIdx.category) };
     }
     if (targetKind === 'customer') {
       const arr = [];
       (SEED.records.customers || []).forEach(c => { if (c && c.name) arr.push(c.name); });
       (SEED.records.sales_tickets || []).forEach(r => { if (r && r.customer) arr.push(r.customer); });
-      return { label: 'Specific Customer (Optional)', placeholder: 'All Customers', options: uniqSort(arr, fIdx.customer) };
+      return { label: 'Specific Customer (Optional)', placeholder: 'All Customers', options: cleanFreqSort(arr, fIdx.customer) };
     }
     if (targetKind === 'supplier') {
       const arr = [];
       (SEED.records.suppliers || []).forEach(s => { if (s && s.name) arr.push(s.name); });
-      return { label: 'Specific Supplier / Haulier (Optional)', placeholder: 'All Suppliers & Hauliers', options: uniqSort(arr, fIdx.supplier) };
+      return { label: 'Specific Supplier / Haulier (Optional)', placeholder: 'All Suppliers & Hauliers', options: cleanFreqSort(arr, fIdx.supplier) };
     }
     if (targetKind === 'product') {
       const arr = [];
       (SEED.records.products || []).forEach(p => { if (p && p.name) arr.push(p.name); });
-      return { label: 'Specific Product / Grade (Optional)', placeholder: 'All Products & Grades', options: uniqSort(arr, fIdx.product) };
+      return { label: 'Specific Product / Grade (Optional)', placeholder: 'All Products & Grades', options: cleanFreqSort(arr, fIdx.product) };
     }
     if (targetKind === 'site') {
       const arr = [];
       (SEED.records.sites || []).forEach(s => { if (s && s.name) arr.push(s.name); });
-      return { label: 'Quarry / Source Site (Optional)', placeholder: 'All Quarry & JV Sites', options: uniqSort(arr, fIdx.site) };
+      return { label: 'Quarry / Source Site (Optional)', placeholder: 'All Quarry & JV Sites', options: cleanFreqSort(arr, fIdx.site) };
     }
     if (targetKind === 'equipment') {
       const arr = [];
       (SEED.records.equipment || []).forEach(e => { if (e && e.name) arr.push(e.name); });
-      return { label: 'Specific Truck / Machine (Optional)', placeholder: 'All Fleet & Plant Units', options: uniqSort(arr, fIdx.truck) };
+      return { label: 'Specific Truck / Machine (Optional)', placeholder: 'All Fleet & Plant Units', options: cleanFreqSort(arr, fIdx.truck) };
     }
     if (targetKind === 'staff') {
       const arr = [];
       (SEED.records.employments || []).forEach(e => { if (e && e.staff) arr.push(e.staff); });
       (SEED.records.salaries || []).forEach(s => { if (s && s.staff) arr.push(s.staff); });
-      return { label: 'Specific Staff Member (Optional)', placeholder: 'All Staff Members', options: uniqSort(arr, fIdx.staff) };
+      return { label: 'Specific Staff Member (Optional)', placeholder: 'All Staff Members', options: cleanFreqSort(arr, fIdx.staff) };
     }
     return { label: 'Specific Scope', placeholder: 'Entire Selected Entity', options: [] };
   }
@@ -13279,9 +14435,27 @@
         <div class="table-wrap"><table class="ledger-table">
           <thead><tr>${cols.map(c => `<th class="${c.r ? 'r' : ''}">${c.label}</th>`).join('')}</tr></thead>
           <tbody>${list.slice(0, 60).map(r => {
-            const rk = r && r.rkey ? String(r.rkey) : '';
-            const rid = r && (r.rid != null || r.id != null) ? String(r.rid != null ? r.rid : r.id) : '';
-            const trAttr = (rk && rid) ? ` class="rrow" data-rkey="${esc(rk)}" data-rid="${esc(rid)}" title="Click to open 360° Record Inspector"` : '';
+            let rk = r && r.rkey ? String(r.rkey) : '';
+            let rid = r && (r.rid != null || r.id != null) ? String(r.rid != null ? r.rid : r.id) : '';
+            if ((panelId === 'snBelow' || panelId === 'snLapsed') && r && r.customer) {
+              rk = 'customers';
+              rid = String((customerInfo(r.customer) || {}).id || r.customer);
+            } else if (panelId === 'snPayroll' && r && r.staff) {
+              rk = 'employments';
+              rid = String(r.staff);
+            } else if (!rk || !rid) {
+              if (panelId === 'snOverdueAr' && r && r.customer) { rk = 'customers'; rid = String(r.customer); }
+              else if (panelId === 'snFuel' && r && r.equipment) { rk = 'equipment'; rid = String(r.equipment); }
+              else if (panelId === 'snVat' && r && (r.invoiceno || r.invoice)) { rk = 'vat_invoices'; rid = String(r.invoiceno || r.invoice); }
+            }
+            const extraRowAttrs = [
+              r && r.customer ? `data-row-cust="${esc(String(r.customer))}"` : '',
+              r && r.product ? `data-row-prod="${esc(String(r.product))}"` : '',
+              r && r.equipment ? `data-row-eq="${esc(String(r.equipment))}"` : '',
+              r && r.staff ? `data-row-staff="${esc(String(r.staff))}"` : '',
+              r && (r.company || r.bu) ? `data-row-co="${esc(String(r.company || r.bu))}"` : ''
+            ].filter(Boolean).join(' ');
+            const trAttr = (rk && rid) ? ` class="rrow" data-rkey="${esc(rk)}" data-rid="${esc(rid)}"${extraRowAttrs ? ' ' + extraRowAttrs : ''} title="Click to inspect row details"` : '';
             return `<tr${trAttr}>${cols.map(c => `<td class="${c.r ? 'r' : ''}${c.mono ? ' mono' : ''}">${c.fmt ? c.fmt(r[c.key], r) : esc(/date/i.test(c.key || '') ? fmtDateDMY(r[c.key]) : (r[c.key] == null ? '-' : r[c.key]))}</td>`).join('')}</tr>`;
           }).join('') || emptyRow(cols.length, 'Nothing flagged')}</tbody>
           ${footHtml}
@@ -13350,6 +14524,7 @@
           if (r.isRemoved) continue;
           unnumRows.push({
             id: r.id, rkey: r.rkey,
+            wbAuditKey: `wb_unnum_${r.rkey}_${r.id}`,
             kind: 'unnumbered',
             kindLabel: `Unnumbered · ${r.docType}`,
             serialLabel: '(No ticket #)',
@@ -13362,6 +14537,7 @@
             afterText: `${r.product}`,
             prevId: r.id, prevRkey: r.rkey,
             nextId: '', nextRkey: '',
+            recObj: r,
             count: 1
           });
           continue;
@@ -13408,6 +14584,7 @@
             const co = t[0].company;
             const prefix = t[0].prefix;
             const pfx = prefix ? prefix : '';
+            const bookKey = `${co}|${prefix}|${bs}|${runIdx}`;
             const bookLbl = (prefix ? prefix + ' ' : '#') + bs + '-' + be + (firstDate ? ' · ' + fmtMY(firstDate) : '');
             const byNum = new Map();
             const byNumType = new Map();
@@ -13422,6 +14599,8 @@
                 const slotIdx = ((r.num - bs) + 1);
                 removedRows.push({
                   id: r.id, rkey: r.rkey,
+                  wbAuditKey: `wb_rem_${r.rkey}_${r.id}`,
+                  bookKey, bs, be, prefix: pfx, slotIdx,
                   kind: 'removed',
                   kindLabel: `Removed Slip · 0 KM (${r.docType})`,
                   serialLabel: '#' + r.ticket_no,
@@ -13435,6 +14614,7 @@
                   prevId: r.id, prevRkey: r.rkey,
                   nextId: r.id, nextRkey: r.rkey,
                   kmSpent: 0,
+                  recObj: r,
                   count: 1
                 });
               } else if (r.isReturned) {
@@ -13444,6 +14624,9 @@
                   const kmInf = resolveTicketRouteKm(r.rawRec, r.docType === 'Raw' ? 'raw' : 'sales');
                   returnedRows.push({
                     id: r.id, rkey: r.rkey,
+                    wbAuditKey: `wb_ret_${r.rkey}_${r.id}`,
+                    bookKey, bs, be, prefix: pfx, slotIdx: ((r.num - bs) + 1),
+                    oneWayKm: kmInf.oneWayKm, roundTripKm: kmInf.roundTripKm,
                     kind: 'returned',
                     kindLabel: `Returned to ${co} · ${fmtNum(kmInf.roundTripKm, 1)} km RT`,
                     serialLabel: '#' + r.ticket_no,
@@ -13457,6 +14640,7 @@
                     prevId: r.id, prevRkey: r.rkey,
                     nextId: r.id, nextRkey: r.rkey,
                     kmSpent: kmInf.roundTripKm,
+                    recObj: r,
                     count: 1
                   });
                 }
@@ -13472,6 +14656,9 @@
                 const first = effList[0], last = effList[effList.length - 1];
                 dupRows.push({
                   id: last.id, rkey: last.rkey,
+                  wbAuditKey: `wb_dup_${bookKey}_${first.num}_${first.docType}`,
+                  bookKey, bs, be, prefix: pfx, slotIdx: ((first.num - bs) + 1),
+                  dupList: effList.slice(),
                   kind: 'duplicate',
                   kindLabel: `Duplicate (${effList.length}× ${first.docType})`,
                   serialLabel: '#' + first.ticket_no,
@@ -13547,7 +14734,8 @@
                 nextId: firstRec.id,
                 nextRkey: firstRec.rkey,
                 kind: 'book',
-                bookKey: `${co}|${prefix}|${bs}|${runIdx}`,
+                bookKey,
+                wbAuditKey: `wb_book_${bookKey}`,
                 serialLabel: `#${pfx}${bs}-${pfx}${be}`,
                 kindLabel: statusLabel,
                 statusLabel,
@@ -13606,6 +14794,10 @@
                 const prevRec = byNum.get(a), nextRec = byNum.get(b);
                 skippedRows.push({
                   id: prevRec.id, rkey: prevRec.rkey,
+                  wbAuditKey: `wb_skip_${bookKey}_${gapStart}_${gapEnd}`,
+                  bookKey, bs, be, prefix: pfx,
+                  gapStart, gapEnd, gapCnt,
+                  prevRec, nextRec,
                   kind: 'skipped',
                   kindLabel: `Skipped (${gapCnt})`,
                   serialLabel: gapCnt === 1 ? `#${pfx}${gapStart}` : `#${pfx}${gapStart}–${pfx}${gapEnd}`,
@@ -13625,7 +14817,18 @@
           }
         }
       }
-      _ticketAuditCache = { rev, skippedRows, dupRows, unnumRows, removedRows, returnedRows, bookRows };
+      const byAuditKey = new Map();
+      const bookByKey = new Map();
+      bookRows.forEach(b => {
+        if (b.bookKey) bookByKey.set(b.bookKey, b);
+        if (b.wbAuditKey) byAuditKey.set(b.wbAuditKey, b);
+      });
+      [skippedRows, dupRows, unnumRows, removedRows, returnedRows].forEach(arr => {
+        arr.forEach(item => {
+          if (item.wbAuditKey) byAuditKey.set(item.wbAuditKey, item);
+        });
+      });
+      _ticketAuditCache = { rev, skippedRows, dupRows, unnumRows, removedRows, returnedRows, bookRows, byAuditKey, bookByKey };
     }
 
     const allowed = new Set(allowedCompanyNames());
@@ -13908,7 +15111,7 @@
                   ? `${fmtDateDMY(b.firstDate)} to ${fmtDateDMY(b.lastDate)}`
                   : fmtDateDMY(b.lastDate || b.firstDate);
                 return `
-                  <tr class="rrow" data-rkey="${esc(b.rkey || 'sales_tickets')}" data-rid="${esc(b.id)}">
+                  <tr class="rrow" data-rkey="${esc(b.rkey || 'sales_tickets')}" data-rid="${esc(b.id)}" data-wb-audit-key="${esc(b.wbAuditKey || '')}">
                     <td class="mono"><strong>${esc(b.padRun)}</strong></td>
                     <td>${coBadge(b.company)}</td>
                     <td class="mono" style="font-size:11.5px">${esc(dateRangeStr)}</td>
@@ -13961,7 +15164,7 @@
                       ? 'badge-neutral'
                       : (r.kind === 'returned' ? 'badge-brass' : 'badge-warn')));
                 return `
-                  <tr class="rrow" data-rkey="${esc(r.prevRkey || 'sales_tickets')}" data-rid="${esc(r.prevId || r.id)}">
+                  <tr class="rrow" data-rkey="${esc(r.prevRkey || 'sales_tickets')}" data-rid="${esc(r.prevId || r.id)}" data-wb-audit-key="${esc(r.wbAuditKey || '')}">
                     <td class="mono"><strong>${esc(r.serialLabel)}</strong></td>
                     <td><span class="badge ${badgeCls}">${esc(r.kindLabel)}</span></td>
                     <td>${coBadge(r.company)}</td>
@@ -17564,7 +18767,7 @@
   function warehouseCatalogItemMeta(coOpt) {
     ensureItemsCatalogSeeded();
     const wh = getWarehouseIndex(coOpt);
-    const itemFreq = getFreqIndex().item;
+    const itemFreqMap = getFreqIndex().item;
     const allNames = warehouseCatalogItemNames(coOpt);
     return allNames
       .map(nm => {
@@ -17577,7 +18780,7 @@
         const meta = it && onHand > 0.0001
           ? `${fmtNum(onHand, onHand % 1 ? 2 : 0)} ${uomLbl} on shelf${unitCost > 0 ? ' · ' + fmtUSD(unitCost, 2) : ''}`
           : `${uomLbl}${unitCost > 0 ? ' · ' + fmtUSD(unitCost, 2) : ''} · 0 on shelf`;
-        const freq = (itemFreq ? (itemFreq.get(k) || 0) : 0) + (it ? Number(it.moveCount || 0) * 3 : 0);
+        const freq = (itemFreqMap ? (itemFreqMap.get(k) || 0) : 0) + (it ? Number(it.moveCount || 0) : 0);
         return { name: nm, onHand, freq, meta };
       })
       .sort((a, b) => b.freq - a.freq)
@@ -20865,8 +22068,95 @@
     const topExpCat = expCatRows[0] || null;
     const topItemRow = topItemsForChart[0] || null;
 
+    // Standing Recurring Expense Schedules (seeded from SharePoint Expenses/ERecurring_Data + live app entries)
+    const activePeriodRange = periodRange(STATE.period);
+    const recurCutoffIso = (activePeriodRange && activePeriodRange.to && activePeriodRange.to < todayISO())
+      ? activePeriodRange.to
+      : todayISO();
+    const recurAllScoped = filterRecords(SEED.records.recurring_expenses || [], {
+      ignorePeriod: true,
+      cols: ['company', 'supplier', 'category', 'subcategory', 'item', 'frequency', 'status', 'notes']
+    }).filter(r => {
+      if (!r || r.voided) return false;
+      if (activePeriodRange && (activePeriodRange.from || activePeriodRange.to)) {
+        const s = String(r.start_date || r.date || '').slice(0, 10);
+        const e = String(r.end_date || '').slice(0, 10);
+        if (activePeriodRange.to && s && s > activePeriodRange.to) return false;
+        if (activePeriodRange.from && e && e < activePeriodRange.from) return false;
+      }
+      return true;
+    }).map(r => {
+      const m = computeRecurringExpenseMetrics(r, recurCutoffIso);
+      return {
+        ...r,
+        _isInForce: m.isInForce,
+        status: m.status,
+        _cycles: m.elapsedCycles,
+        _monthlyEq: m.monthlyEqUsd,
+        _accrued: m.accruedUsd
+      };
+    });
+    const recurInForceCnt = recurAllScoped.filter(r => r._isInForce).length;
+    const recurEndedCnt = recurAllScoped.length - recurInForceCnt;
+    const recurChipKey = STATE.recurExpFilter || 'all';
+    const recurChip = (key, label) => `<button type="button" class="filter-chip ${recurChipKey === key ? 'active' : ''}" data-recur-exp-chip="${esc(key)}">${label}</button>`;
+    const recurFiltered = sortRows(recurAllScoped.filter(r => {
+      if (recurChipKey === 'in_force') return r._isInForce;
+      if (recurChipKey === 'ended') return !r._isInForce;
+      return true;
+    }), 'recur_exp', 'start_date', 'desc');
+    const shownRecur = recurFiltered.slice(0, shownCount('recur_exp'));
+    const sumRecurMonthlyActive = round2(recurFiltered.filter(r => r._isInForce).reduce((a, r) => a + r._monthlyEq, 0));
+    const sumRecurCycles = recurFiltered.reduce((a, r) => a + r._cycles, 0);
+    const sumRecurAccrued = round2(recurFiltered.reduce((a, r) => a + r._accrued, 0));
+
+    const recurSupAgg = new Map();
+    const recurCatAgg = new Map();
+    recurAllScoped.forEach(r => {
+      const supName = String(r.supplier || 'Unassigned').trim();
+      const sk = norm(supName);
+      const sc = recurSupAgg.get(sk) || { label: supName, activeMonthly: 0, accrued: 0, schedules: 0, active: false, sub: '' };
+      sc.schedules += 1;
+      sc.accrued = round2(sc.accrued + r._accrued);
+      if (r._isInForce) {
+        sc.active = true;
+        sc.activeMonthly = round2(sc.activeMonthly + r._monthlyEq);
+      }
+      recurSupAgg.set(sk, sc);
+
+      const catName = String(r.category || 'General Overhead').trim();
+      const ck = norm(catName);
+      const cc = recurCatAgg.get(ck) || { category: catName, activeMonthly: 0, accrued: 0, schedules: 0, activeCount: 0, sub: '' };
+      cc.schedules += 1;
+      cc.accrued = round2(cc.accrued + r._accrued);
+      if (r._isInForce) {
+        cc.activeCount += 1;
+        cc.activeMonthly = round2(cc.activeMonthly + r._monthlyEq);
+      }
+      recurCatAgg.set(ck, cc);
+    });
+    const recurBySupForChart = Array.from(recurSupAgg.values())
+      .map(s => ({
+        ...s,
+        sub: s.active ? `${fmtUSD(s.activeMonthly, 0)}/mo active · ${s.schedules} sched` : `Ended · ${s.schedules} sched`
+      }))
+      .sort((a, b) => (b.active - a.active) || (b.accrued - a.accrued));
+    const recurByCatForChart = Array.from(recurCatAgg.values())
+      .map(c => ({
+        ...c,
+        sub: c.activeCount > 0 ? `${fmtUSD(c.activeMonthly, 0)}/mo active · ${c.schedules} sched` : `Ended · ${c.schedules} sched`
+      }))
+      .sort((a, b) => b.accrued - a.accrued);
+
     const expVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderExpensesVisualsSection === 'function')
-      ? window.MFG_PBI.renderExpensesVisualsSection({ expMonths, catRows: expCatRows, topItems: topItemsForChart, itemGroupRows: itemGroupRowsForChart })
+      ? window.MFG_PBI.renderExpensesVisualsSection({
+        expMonths,
+        catRows: expCatRows,
+        topItems: topItemsForChart,
+        itemGroupRows: itemGroupRowsForChart,
+        recurBySup: recurBySupForChart,
+        recurByCat: recurByCatForChart
+      })
       : '';
 
     return `
@@ -20935,6 +22225,7 @@
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_categories">${ic('reg_categories')} Expense Categories</button>
             ${exportBtn('expPanel', 'Expense_Register')}
             ${canEnterForm('item') ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="item">${ic('plus')} New Item</button>` : ''}
+            ${canEnterForm('recurringexpense') ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="recurringexpense">${ic('plus')} Recurring Schedule</button>` : ''}
             ${canEnterForm('expense') ? '<button class="btn btn-primary" data-open-modal="expense">+ New Expense</button>' : ''}
           </div>
         </div>
@@ -21071,6 +22362,59 @@
                 <td class="r"><b>${fmtUSD(sumCredExp, 2)}</b></td>
                 <td class="r"><b>${fmtUSD(sumExp, 2)}</b></td>
                 <td class="r"><b>100.0%</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel-card" id="recurringExpPanel" style="margin-bottom:14px">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="panel-title"><span>STANDING RECURRING EXPENSE SCHEDULES (${fmtNum(recurFiltered.length)} SCHEDULES · ${fmtNum(recurInForceCnt)} IN FORCE · ${fmtUSD(sumRecurMonthlyActive, 2)}/MO)</span></div>
+            <span class="ph-sub">Standing rent, internet, telecom, security, and road-allowance agreements from the Recurring Expense register with chronological auto-closure</span>
+          </div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${exportBtn('recurringExpPanel', 'Recurring_Expense_Schedules')}
+            ${canEnterForm('recurringexpense') ? `<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" data-open-modal="recurringexpense">${ic('plus')} New Recurring Expense</button>` : ''}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${recurChip('all', `All Schedules (${recurAllScoped.length})`)}
+            ${recurChip('in_force', `In Force (${recurInForceCnt})`)}
+            ${recurChip('ended', `Ended (${recurEndedCnt})`)}
+          </div>
+        </div>
+        ${renderColFilterBar('recur_exp')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('recur_exp', 'Start Date', 'start_date')}${th('recur_exp', 'End Date', 'end_date')}${th('recur_exp', 'Co.', 'company')}${th('recur_exp', 'Supplier', 'supplier')}${th('recur_exp', 'Category & Purpose', 'category')}${th('recur_exp', 'Status', 'status')}${th('recur_exp', 'Rate ($)', 'amount', 'r')}${th('recur_exp', 'Cycles', '_cycles', 'r')}${th('recur_exp', 'Accrued ($)', '_accrued', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownRecur.map(r => `
+                <tr class="rrow" data-rkey="recurring_expenses" data-rid="${esc(r.id)}">
+                  <td class="mono">${esc(fmtDateDMY(r.start_date || r.date))}${appCell(r, 'recurring_expenses')}</td>
+                  <td class="mono">${r.end_date ? esc(fmtDateDMY(r.end_date)) : '<span class="badge badge-ok">Open</span>'}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td>${r.supplier ? relLink('suppliers', r.supplier, r.supplier, true) : 'N/A'}</td>
+                  <td>${r.category ? relLink('expense_categories', r.category, r.category, true) : 'N/A'}${r.item ? ` <span class="mu">·</span> <strong>${esc(r.item)}</strong>` : ''}${r.equipment ? ` <span class="mu">·</span> ${relLink('equipment', r.equipment)}` : ''}${r.notes ? ` <span class="mu">· ${esc(r.notes)}</span>` : ''}</td>
+                  <td><span class="badge ${r._isInForce ? 'badge-ok' : 'badge-neutral'}">${esc(r.status)}</span> <span class="mu">${esc(r.frequency || 'Monthly')}</span></td>
+                  <td class="r mono"><strong>${fmtUSD(r.amount || 0, 2)}</strong></td>
+                  <td class="r mono">${fmtNum(r._cycles)}</td>
+                  <td class="r"><strong>${fmtUSD(r._accrued, 2)}</strong></td>
+                </tr>`).join('') || emptyRow(9, 'No recurring expense schedules match the active filter.')}
+              ${showMoreRow('recur_exp', recurFiltered.length, 9)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>TOTAL (${fmtNum(recurFiltered.length)} SCHEDULES · ${fmtNum(recurInForceCnt)} IN FORCE)</b></td>
+                <td class="r"><b>${fmtUSD(sumRecurMonthlyActive, 2)}</b></td>
+                <td class="r"><b>${fmtNum(sumRecurCycles)}</b></td>
+                <td class="r"><b>${fmtUSD(sumRecurAccrued, 2)}</b></td>
               </tr>
             </tfoot>
           </table>
@@ -21686,12 +23030,12 @@
       workingHours: wHrs,
       otMultiplier: otMult,
       lateMultiplier: ltMult,
-      reimbursement: Number(best.reimbursement || 0) + (Number(best.reimbursement_lbp || 0) / fxRate),
-      deduction: Number(best.deduction || 0) + (Number(best.deduction_lbp || 0) / fxRate),
+      reimbursement: isPendSal ? 0 : (Number(best.reimbursement || 0) + (Number(best.reimbursement_lbp || 0) / fxRate)),
+      deduction: isPendSal ? 0 : (Number(best.deduction || 0) + (Number(best.deduction_lbp || 0) / fxRate)),
       dailyRate,
       hourlyRate,
-      otHourlyRate: hourlyRate * otMult,
-      lateHourlyRate: hourlyRate * ltMult
+      otHourlyRate: isPendSal ? 0 : (hourlyRate * otMult),
+      lateHourlyRate: isPendSal ? 0 : (hourlyRate * ltMult)
     };
     if (payIdx.profCache) {
       if (payIdx.profCache.size > 4096) payIdx.profCache.clear();
@@ -31763,6 +33107,7 @@
   const FORM_CR_KEY = Object.assign({
     sales: 'sales_tickets', raw: 'raw_purchases', receipt: 'receipts',
     fuel: 'fuel_intakes', malfunction: 'fuel_malfunctions', expense: 'expenses',
+    recurringexpense: 'recurring_expenses',
     warehousestock: 'warehouse_movements', settlement: 'settlements',
     repair: 'equipment_repairs', oillog: 'equipment_oil_logs', item: 'items'
   }, (window.MFG_FORMS && window.MFG_FORMS.FORM_CR_KEY) || {});
@@ -33106,9 +34451,8 @@
             afterHtml: `<div class="repdate-bar"><span class="hint" id="hint_repdate"></span></div>`
           })
         : repDateField;
-      const expNotesField = pendEditRow
-        ? fld('Notes', inp('f_notes', 'text', expNotesVal, 'placeholder="Optional invoice or pricing note..."'), { id: 'wrap_f_notes', span: true })
-        : notesField;
+      const initShowEq = Boolean(pendEditRow || expEqVal);
+      const expNotesField = fld('Notes', inp('f_notes', 'text', expNotesVal, 'placeholder="Optional invoice or approval note (required if back-dated)..."'), { id: 'wrap_f_notes', span: !initShowEq });
       const whItemsMeta = pendEditRow ? [] : warehouseCatalogItemMeta(expCoVal);
       const whLocsList = uniqSorted(
         ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store']
@@ -33118,7 +34462,6 @@
         getFreqIndex().warehouseLoc
       );
       const defExpWhLoc = defaultWarehouseLocationForCompany(expCoVal);
-      const initShowEq = Boolean(pendEditRow || expEqVal);
       return cockpitHtml + `
         ${adminHeaderHtml}
         ${pendEditRow ? `<div class="exp-complete-pending-banner" id="expCompletePendingBanner"><span>${ic('lock')} Delivery fields on <b>${esc(pendEditRow.name || pendEditRow.id)}</b> are locked. Enter the final supplier invoice <b>Amount ($)</b>${!expRefVal ? ' and <b>Reference</b>' : ''} below.</span></div>` : ''}
@@ -35546,7 +36889,27 @@
         if (lp != null) {
           upEl.value = lp.toFixed(2);
           setText('lbl_pricelock', 'LIST PRICE');
-          setHint('hint_price', (crossType ? `No ${wantType} agreement (customer has ${crossType.rule_type} at ${fmtUSD(crossType.unit_price ?? ruleAnyIndiffPrice(crossType), 2)}) — ` : 'No customer agreement — ') + (lpRule ? 'List Price agreement' : 'model list price') + (lpConv && lpConv.converted ? ' · ' + lpConv.note : ''), 'warn');
+          let gapHintPrefix = crossType
+            ? `No ${wantType} agreement (customer has ${crossType.rule_type} at ${fmtUSD(crossType.unit_price ?? ruleAnyIndiffPrice(crossType), 2)}) — `
+            : 'No customer agreement — ';
+          if (!crossType && customer && product && effDate) {
+            const cN = norm(customer), pN = norm(product), sN = isDelivery ? norm(site) : '';
+            const custRules = ((SEED.records && SEED.records.price_rules) || []).filter(r =>
+              r && !r.voided && norm(r.customer) === cN && (!r.company || r.company === company)
+              && (!r.rule_type || r.rule_type === wantType)
+              && (!r.product || norm(r.product) === pN)
+              && (!r.site || (sN && norm(r.site) === sN))
+            );
+            const endedPrior = custRules.filter(r => r.end_date && String(r.end_date) < effDate).sort((a, b) => String(b.end_date).localeCompare(String(a.end_date)))[0];
+            const upcomingNext = custRules.filter(r => r.start_date && String(r.start_date) > effDate).sort((a, b) => String(a.start_date).localeCompare(String(b.start_date)))[0];
+            if (endedPrior || upcomingNext) {
+              const parts = [];
+              if (endedPrior) parts.push(`ended ${endedPrior.end_date}`);
+              if (upcomingNext) parts.push(`next starts ${upcomingNext.start_date}`);
+              gapHintPrefix = `Agreement gap (${parts.join(' · ')}) - fallback to `;
+            }
+          }
+          setHint('hint_price', gapHintPrefix + (lpRule ? 'List Price agreement' : 'model list price') + (lpConv && lpConv.converted ? ' · ' + lpConv.note : ''), 'warn');
         } else {
           upEl.value = '';
           setText('lbl_pricelock', 'LOCKED');
@@ -40047,10 +41410,127 @@
         case 'fuel': return recalcFuel();
         case 'malfunction': return recalcMalfunction();
         case 'expense': return recalcExpense();
+        case 'recurringexpense': return recalcRecurringExpense();
         case 'settlement': return recalcSettlement();
         default: return {};
       }
     } catch (e) { console.error('recalc', e); return {}; }
+  }
+
+  function recalcRecurringExpense() {
+    const coName = val('f_company') || defaultEntryCompany();
+    const startDt = val('f_date') || todayISO();
+    const endDt = val('f_enddate') || '';
+    const supplier = val('f_supplier');
+    const freq = val('f_frequency') || 'Monthly';
+    const cats = FORM_UI.catCache || (FORM_UI.catCache = expenseCategories());
+
+    if (!FORM_UI.hydrating && supplier && supplier !== FORM_UI.lastSupplier) {
+      FORM_UI.lastSupplier = supplier;
+      if (!val('f_category')) {
+        const priorRecur = ((SEED.records && SEED.records.recurring_expenses) || []).find(r => r && !r.voided && norm(r.supplier) === norm(supplier));
+        const priorExp = !priorRecur ? ((SEED.records && SEED.records.expenses) || []).find(r => r && !r.voided && norm(r.supplier) === norm(supplier) && r.category) : null;
+        const hitRow = priorRecur || priorExp;
+        if (hitRow && hitRow.category && $('f_category')) {
+          $('f_category').value = hitRow.category;
+          FORM_UI.lastCategory = '';
+          if (hitRow.subcategory && $('f_subcategory') && !val('f_subcategory')) $('f_subcategory').value = hitRow.subcategory;
+          if (priorRecur && priorRecur.item && $('f_item_purpose') && !val('f_item_purpose')) $('f_item_purpose').value = priorRecur.item;
+        }
+      }
+    }
+
+    let catNow = val('f_category');
+    const subEl = $('f_subcategory');
+    const rawSubVal = subEl ? String(subEl.value || '').trim() : '';
+    const subChangedEarly = !FORM_UI.hydrating && rawSubVal !== FORM_UI.lastSubcategory;
+    const catChangedEarly = !FORM_UI.hydrating && catNow !== FORM_UI.lastCategory;
+    if (subChangedEarly && !catChangedEarly && rawSubVal) {
+      const curCatHit = cats.find(c => c.category === catNow);
+      const inCurCat = curCatHit && curCatHit.subs.some(s => norm(s) === norm(rawSubVal));
+      if (!inCurCat) {
+        const parentCatHit = cats.find(c => c.subs.some(s => norm(s) === norm(rawSubVal)));
+        if (parentCatHit && $('f_category')) {
+          $('f_category').value = parentCatHit.category;
+          catNow = parentCatHit.category;
+          const exactSub = parentCatHit.subs.find(s => norm(s) === norm(rawSubVal));
+          if (exactSub && subEl && subEl.value !== exactSub) subEl.value = exactSub;
+        }
+      }
+    }
+    const subLocked = applyFieldLockState('f_subcategory', !catNow, !catNow
+      ? 'Pick a Category first to unlock Subcategory'
+      : `Unlocked · filtered to ${catNow} subcategories`);
+    const dlSub = $('dl_subcats');
+    if (dlSub && (FORM_UI.lastCategory !== catNow || dlSub.dataset.catKey !== catNow)) {
+      const catChanged = !FORM_UI.hydrating && FORM_UI.lastCategory !== '' && FORM_UI.lastCategory !== catNow;
+      FORM_UI.lastCategory = catNow;
+      dlSub.dataset.catKey = catNow;
+      const hit = cats.find(c => c.category === catNow);
+      const subs = hit && hit.subs.length ? hit.subs : uniqSorted(cats.flatMap(c => c.subs));
+      dlSub.innerHTML = subs.map(s => `<option value="${esc(s)}">`).join('');
+      if (!FORM_UI.hydrating && subEl && subEl.value && catChanged) {
+        if (!catNow || !hit || (hit.subs.length && !hit.subs.some(s => norm(s) === norm(subEl.value)))) {
+          subEl.value = '';
+        }
+      }
+    }
+    const subNow = val('f_subcategory');
+    if (!FORM_UI.hydrating && subNow && subNow !== FORM_UI.lastSubcategory && $('f_item_purpose') && !val('f_item_purpose')) {
+      $('f_item_purpose').value = subNow;
+    }
+    FORM_UI.lastSubcategory = subNow;
+    setHint('hint_subcat', subLocked ? 'Pick a Category first' : (catNow ? `Scoped to ${catNow}` : 'Admin override active'), '');
+
+    const supMeta = supplier ? supplierInfo(supplier) : null;
+    setHint('hint_supplier', supplier ? (supMeta ? 'Registered vendor' : 'New vendor · will auto-link on save') : '', supplier ? (supMeta ? 'ok' : 'warn') : '');
+    if (endDt && startDt && endDt < startDt) {
+      setHint('hint_recur_dates', 'End Date cannot precede Start Date', 'crit');
+    } else {
+      setHint('hint_recur_dates', endDt ? `Fixed window (${fmtDateDMY(startDt)} to ${fmtDateDMY(endDt)})` : 'Open-ended standing schedule', endDt ? '' : 'ok');
+    }
+
+    const fx = getLbpFxRate(startDt);
+    const usdEl = $('f_usd');
+    const lbpEl = $('f_lbp');
+    const amtEl = $('f_amount');
+    const usdVal = num('f_usd');
+    const lbpVal = num('f_lbp');
+    const editOrig = STATE.editingRecord && STATE.editingRecord.crKey === 'recurring_expenses' ? STATE.editingRecord.orig : null;
+    const usdUnchanged = Boolean(editOrig && usdEl && usdEl.dataset.initVal !== undefined && String(usdEl.value) === usdEl.dataset.initVal && lbpEl && String(lbpEl.value) === (lbpEl.dataset.initVal || ''));
+    let cycleUsd = round2(usdVal + (fx > 0 ? lbpVal / fx : 0));
+    if (isFieldAdminUnlocked('f_amount') && !isAutoEditUnlockedField('f_amount')) {
+      cycleUsd = round2(num('f_amount'));
+    } else if (usdUnchanged && editOrig && editOrig.amount != null) {
+      cycleUsd = round2(Number(editOrig.amount) || 0);
+      if (amtEl && document.activeElement !== amtEl) amtEl.value = cycleUsd > 0 ? cycleUsd.toFixed(2) : '';
+    } else if (amtEl && document.activeElement !== amtEl) {
+      amtEl.value = cycleUsd > 0 ? cycleUsd.toFixed(2) : '';
+    }
+
+    const purpose = val('f_item_purpose') || subNow || catNow || '';
+    const strip = $('recurContextStrip');
+    if (strip) {
+      const cand = { company: coName, supplier, category: catNow, subcategory: subNow, item: purpose, start_date: startDt, end_date: endDt };
+      const peers = (supplier && catNow) ? getChronologicalSeriesPeers('recurring_expenses', cand, editOrig && editOrig.id) : [];
+      const openPrev = peers.filter(p => String(p.start_date || '') < startDt && (!p.end_date || String(p.end_date) >= startDt)).pop();
+      if (openPrev) {
+        strip.hidden = false;
+        strip.innerHTML = `${ic('info')} <span>Prior schedule for <b>${esc(supplier)} · ${esc(purpose || catNow)}</b> (${fmtUSD(openPrev.amount || 0, 2)} / ${esc(openPrev.frequency || 'Monthly')} since ${esc(fmtDateDMY(openPrev.start_date))}) will auto-close on <b>${esc(fmtDateDMY(prevDayISO(startDt)))}</b>.</span>`;
+      } else {
+        strip.hidden = true;
+        strip.innerHTML = '';
+      }
+    }
+
+    const m = computeRecurringExpenseMetrics({ start_date: startDt, end_date: endDt, frequency: freq, amount: cycleUsd });
+    const unitShort = /^quarter/i.test(freq) ? 'qtr' : (/^annu/i.test(freq) ? 'yr' : (/^week/i.test(freq) ? 'wk' : 'mo'));
+    setText('calc_recur_rate', `${fmtUSD(cycleUsd, 2)} / ${unitShort}`);
+    setText('calc_recur_status', `${m.status} · ${endDt ? fmtDateDMY(endDt) : 'Open'}`);
+    setText('calc_recur_cycles', `${fmtNum(m.elapsedCycles)} ${m.elapsedCycles === 1 ? 'cycle' : 'cycles'}`);
+    setText('calc_recur_accrued', fmtUSD(m.accruedUsd, 2));
+    renderAdminLockBar();
+    return { supplier, category: catNow, subcategory: subNow, item: purpose, frequency: freq, usd: usdVal, lbp: lbpVal, amount: cycleUsd, metrics: m };
   }
 
   function recalcMalfunction() {
@@ -40184,6 +41664,8 @@
 
     const wins = Array.isArray(targetEq.adj_windows) ? targetEq.adj_windows : [];
     const today = todayISO();
+    const minAddStart = getTruckWindowMinStart(targetEq, { co: defCo, side: 'both', cust: '', site: '' }, -1);
+    const defAddStart = (minAddStart && minAddStart > today) ? minAddStart : today;
     const activeToday = equipInfo(targetEq.name, defCo, false, { date: today, side: 'fuel' });
     const activeTodayDrv = (activeToday && activeToday.default_driver) || targetEq.default_driver || '—';
 
@@ -40191,7 +41673,7 @@
       <div class="pa-subgrid-box" id="eqDriverLogBox" data-edit-modal-win-idx="">
         <div class="pa-subgrid-hdr">
           <div>
-            <strong>📋 3. Equipment Driver Assignment Log (Start Date → End Date) · ${esc(targetEq.name)}</strong>
+            <strong>📋 3. Equipment Driver Assignment Log (Start Date to End Date) · ${esc(targetEq.name)}</strong>
             <span class="pa-subgrid-sub">Log a temporary substitute driver (set both Start Date &amp; End Date when regular driver is absent) or a permanent change (leave End Date blank). Click any row below (or its Edit button) to update an existing entry in-place.</span>
           </div>
           <span class="badge badge-ok">Active (${esc(today)}): ${esc(activeTodayDrv)}</span>
@@ -40208,7 +41690,7 @@
             </div>
             <div class="form-field">
               <label for="f_log_start">Start Date *</label>
-              <input type="date" id="f_log_start" value="${esc(today)}">
+              <input type="date" id="f_log_start" value="${esc(defAddStart)}"${minAddStart ? ` min="${esc(minAddStart)}"` : ''}>
             </div>
             <div class="form-field">
               <label for="f_log_end">End Date (Blank = Permanent · Set for Substitute)</label>
@@ -40238,16 +41720,16 @@
                 const isOpen = !w.e || String(w.e) >= today;
                 const sideLbl = w.side === 'sales' ? 'Sales' : (w.side === 'raw' ? 'Raw & Trans' : (w.side === 'fuel' ? 'Diesel & Lub.' : 'All Tables'));
                 return `
-                  <tr data-modal-tw-row-idx="${origIdx}" style="cursor:pointer" title="Click to edit this log entry">
+                  <tr data-modal-tw-row-idx="${origIdx}" style="cursor:pointer" aria-label="Click to edit this log entry">
                     <td>${coBadge(w.co || 'WTC')}</td>
                     <td><span class="badge badge-info">${esc(sideLbl)}</span></td>
                     <td class="mono">${esc(w.s || '2024-01-01')}</td>
                     <td class="mono">${esc(w.e || 'Open')}</td>
-                    <td><strong>${esc(w.drv || targetEq.default_driver || '—')}</strong></td>
-                    <td>${esc(w.own || targetEq.supplier || '—')}</td>
-                    <td class="r">${Number(w.cap) > 0 ? `${fmtNum(w.cap, 1)} m³` : '—'}</td>
+                    <td><strong>${esc(w.drv || targetEq.default_driver || '-')}</strong></td>
+                    <td>${esc(w.own || targetEq.supplier || '-')}</td>
+                    <td class="r">${Number(w.cap) > 0 ? `${fmtNum(w.cap, 1)} m³` : '-'}</td>
                     <td><span class="badge ${isSub ? 'badge-brass' : (isOpen ? 'badge-ok' : 'badge-neutral')}">${isSub ? 'Substitute' : (isOpen ? 'Active' : 'Historical')}</span></td>
-                    ${canModifyData() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-modal-tw-idx="${origIdx}" title="Edit log entry">Edit</button> <button type="button" class="btn btn-sm" data-del-modal-tw-idx="${origIdx}" title="Remove window">✕</button></td>` : ''}
+                    ${canModifyData() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-modal-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button> <button type="button" class="btn btn-sm" data-del-modal-tw-idx="${origIdx}" aria-label="Remove window">✕</button></td>` : ''}
                   </tr>
                 `;
               }).join('') : `
@@ -40256,9 +41738,9 @@
                   <td><span class="badge badge-info">All Tables</span></td>
                   <td class="mono">2024-01-01</td>
                   <td class="mono">Open</td>
-                  <td><strong>${esc(targetEq.default_driver || '—')}</strong></td>
-                  <td>${esc(targetEq.supplier || '—')}</td>
-                  <td class="r">${Number(targetEq.capacity) > 0 ? `${fmtNum(targetEq.capacity, 1)} m³` : '—'}</td>
+                  <td><strong>${esc(targetEq.default_driver || '-')}</strong></td>
+                  <td>${esc(targetEq.supplier || '-')}</td>
+                  <td class="r">${Number(targetEq.capacity) > 0 ? `${fmtNum(targetEq.capacity, 1)} m³` : '-'}</td>
                   <td><span class="badge badge-ok">Baseline</span></td>
                   ${canModifyData() ? '<td></td>' : ''}
                 </tr>
@@ -40279,7 +41761,12 @@
       if (!w) return;
       logBox.dataset.editModalWinIdx = String(idx);
       if ($('f_log_co')) $('f_log_co').value = w.co || defCo;
-      if ($('f_log_start')) $('f_log_start').value = w.s || '2024-01-01';
+      if ($('f_log_start')) {
+        const minEditS = getTruckWindowMinStart(targetEq, w, idx);
+        if (minEditS) $('f_log_start').setAttribute('min', minEditS);
+        else $('f_log_start').removeAttribute('min');
+        $('f_log_start').value = w.s || '2024-01-01';
+      }
       if ($('f_log_end')) $('f_log_end').value = w.e || '';
       if ($('f_log_driver')) $('f_log_driver').value = w.drv || targetEq.default_driver || '';
       if (logBtn) logBtn.textContent = '✓ Update Assignment';
@@ -40293,7 +41780,11 @@
         ev.preventDefault();
         if (logBox) logBox.dataset.editModalWinIdx = '';
         if ($('f_log_co')) $('f_log_co').value = defCo;
-        if ($('f_log_start')) $('f_log_start').value = today;
+        if ($('f_log_start')) {
+          if (minAddStart) $('f_log_start').setAttribute('min', minAddStart);
+          else $('f_log_start').removeAttribute('min');
+          $('f_log_start').value = defAddStart;
+        }
         if ($('f_log_end')) $('f_log_end').value = '';
         if ($('f_log_driver')) $('f_log_driver').value = targetEq.default_driver || '';
         if (logBtn) logBtn.textContent = '+ Log Driver Assignment';
@@ -40324,9 +41815,9 @@
         const logCo = val('f_log_co') || defCo;
         if (!drvVal) { toast('Enter the Active / Substitute Driver name to log.', 'err'); return; }
         if (eVal && eVal < sVal) { toast('End Date cannot be before Start Date.', 'err'); return; }
-        const rawEditIdx = logBox && logBox.dataset.editModalWinIdx !== '' ? Number(logBox.dataset.editModalWinIdx) : -1;
+        const rawEditIdx = (logBox && logBox.dataset.editModalWinIdx != null && logBox.dataset.editModalWinIdx !== '') ? Number(logBox.dataset.editModalWinIdx) : -1;
         const editWin = (rawEditIdx >= 0 && Array.isArray(targetEq.adj_windows)) ? targetEq.adj_windows[rawEditIdx] : null;
-        appendOrUpdateTruckWindow(targetEq, {
+        const winSpec = {
           co: logCo,
           side: (editWin && editWin.side) || 'both',
           s: sVal,
@@ -40337,15 +41828,21 @@
           cust: (editWin && editWin.cust) || '',
           site: (editWin && editWin.site) || '',
           persistTicketBackfill: true
-        }, rawEditIdx);
+        };
+        const chk = validateTruckWindowChronology(targetEq, winSpec, rawEditIdx);
+        if (!chk.ok) {
+          toast(chk.reason, 'err');
+          return;
+        }
+        appendOrUpdateTruckWindow(targetEq, winSpec, rawEditIdx);
         if (!eVal && $('f_driver')) $('f_driver').value = drvVal;
         persistEquipmentLogMutation(targetEq);
         logWrap.dataset.logKey = '';
         renderModalEquipDriverLog(curTruck, company);
         toast(rawEditIdx >= 0
-          ? `✓ Updated driver assignment "${drvVal}" on ${targetEq.name} (${sVal} → ${eVal || 'Open'})`
+          ? `✓ Updated driver assignment "${drvVal}" on ${targetEq.name} (${sVal} to ${eVal || 'Open'})`
           : (eVal
-              ? `✓ Substitute driver "${drvVal}" logged on ${targetEq.name} (${sVal} → ${eVal})`
+              ? `✓ Substitute driver "${drvVal}" logged on ${targetEq.name} (${sVal} to ${eVal})`
               : `✓ Active driver "${drvVal}" logged on ${targetEq.name} (from ${sVal} · Open)`), 'ok');
       });
     }
@@ -43158,7 +44655,7 @@
       const skipLockedPendBackdate = Boolean(((STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId) && !isFieldAdminUnlocked('f_date')) || (editCtx && date === origEditDate));
       const skipLockedPendRepdate = Boolean(((STATE.editingPendingExpenseId || STATE.editingPendingRawId || STATE.editingPendingSalaryId) && !isFieldAdminUnlocked('f_repdate')) || (editCtx && repDate === origEditRepDate && date === origEditDate));
       if (!val('f_date')) addErr('f_date', 'Date is required.');
-      else if (date > today && !/^pricerule/.test(f) && f !== 'logistics' && !(editCtx && date === origEditDate)) addErr('f_date', 'Future dates are not allowed.');
+      else if (date > today && !/^pricerule/.test(f) && f !== 'logistics' && f !== 'recurringexpense' && !(editCtx && date === origEditDate)) addErr('f_date', 'Future dates are not allowed.');
       else if (date < MIN_DATE && !(editCtx && date === origEditDate)) addErr('f_date', 'Date is before the books opened (' + MIN_DATE + ').');
       else if (!skipLockedPendBackdate && isAlertRuleEnabled('G_BACKDATE_NOTE') && daysBetween(date, today) > bdDaysLimit && !notes && ['sales', 'raw', 'receipt', 'fuel', 'expense', 'settlement'].includes(f)) addErr('f_notes', `Back-dated more than ${fmtNum(bdDaysLimit, 0)} days — add a note explaining why.`);
       if (!skipLockedPendRepdate && isAlertRuleEnabled('G_REPDATE_GAP') && val('f_repdate') && Math.abs(daysBetween(date, repDate)) > repGapLimit && !notes) addErr('f_notes', `Reporting Date is more than ${fmtNum(repGapLimit, 0)} days from Transaction Date — add a note explaining why.`);
@@ -44419,6 +45916,56 @@
         daily_usd: amt,
         amount: isSingle ? amt : round2(amt * winDays)
       };
+    } else if (f === 'recurringexpense') {
+      const sup = val('f_supplier');
+      const cat = val('f_category');
+      const sub = val('f_subcategory');
+      const itemPurpose = val('f_item_purpose') || sub || cat;
+      const freq = val('f_frequency') || 'Monthly';
+      const endDate = val('f_enddate') || '';
+      const eqVal = val('f_truck') || '';
+      const usdVal = round2(num('f_usd'));
+      const lbpVal = Math.round(num('f_lbp'));
+      const amt = round2(c && c.amount != null ? c.amount : num('f_amount'));
+      if (!sup) addErr('f_supplier', 'Supplier / Vendor is required.');
+      if (!cat) addErr('f_category', 'Category is required.');
+      if (!itemPurpose) addErr('f_item_purpose', 'Recurring Item / Purpose is required.');
+      if (!(amt > 0)) addErr('f_usd', 'Cycle Rate > $0.00 is required (enter USD or LBP amount).');
+      if (endDate && endDate < date) addErr('f_enddate', 'End Date cannot be before Start Date.');
+      const sameDayRecur = sup && cat && ((SEED.records && SEED.records.recurring_expenses) || []).find(r =>
+        r && !r.voided
+        && !isSelfEditingRow(r, 'recurring_expenses')
+        && norm(r.company || 'WTC') === norm(company)
+        && norm(r.supplier) === norm(sup)
+        && norm(r.category) === norm(cat)
+        && norm(r.subcategory || '') === norm(sub)
+        && norm(r.item || '') === norm(itemPurpose)
+        && String(r.start_date || '').slice(0, 10) === date
+      );
+      if (sameDayRecur) {
+        addErr('f_date', `A recurring schedule for ${sup} (${itemPurpose}) already starts on ${fmtDateDMY(date)}. Modify the existing schedule or pick a later Start Date.`);
+      }
+      const effStatus = (endDate && endDate < today) ? 'Ended' : 'In Force';
+      crKey = 'recurring_expenses';
+      record = {
+        ...base,
+        name: `RECUR ${date} ${sup} (${itemPurpose})`,
+        rep_date: date,
+        start_date: date,
+        end_date: endDate,
+        supplier: sup,
+        category: cat,
+        subcategory: sub,
+        item: itemPurpose,
+        frequency: freq,
+        equipment: eqVal,
+        currency: (lbpVal > 0 && !(usdVal > 0)) ? 'LBP' : 'USD',
+        usd_amount: usdVal > 0 ? usdVal : (lbpVal > 0 ? 0 : amt),
+        lbp_amount: lbpVal,
+        amount: amt,
+        method: 'Credit',
+        status: effStatus
+      };
     } else if (f === 'triprate') {
       const siteVal = val('f_site');
       const sObj = siteVal ? siteInfo(siteVal) : null;
@@ -44844,6 +46391,21 @@
           ['unit_price', 'price', 'indiff_price', 'trans_unit_price', 'trans_indiff_price', 'trans_price', 'unit_cost', 'cost', 'trans_unit_cost', 'trans_cost', 'total', 'vat', 'vat_amount', 'net_amount', 'total_ttc', 'amount', 'daily_usd', 'extra_usd', 'usd_amount', 'lbp_amount', 'fx_rate', 'exchange_rate', 'mat_indiff', 'trans_indiff'].forEach(k => {
             if (orig[k] !== undefined) record[k] = orig[k];
           });
+        }
+      }
+    }
+    if (record && EFFECTIVE_SERIES_TABLES.has(crKey) && errors.length === 0) {
+      const pendSalOrig = (!editCtx && STATE.editingPendingSalaryId && crKey === 'employments')
+        ? findEmploymentRecordById(STATE.editingPendingSalaryId)
+        : null;
+      const editOrig = (editCtx && editCtx.crKey === crKey && editCtx.orig) ? editCtx.orig : pendSalOrig;
+      const datesChanged = !editOrig
+        || String(record.start_date || '') !== String(editOrig.start_date || '')
+        || String(record.end_date || '') !== String(editOrig.end_date || '');
+      if (datesChanged) {
+        const chronoChk = validateChronologicalSeriesEntry(crKey, record, editOrig);
+        if (!chronoChk.ok) {
+          addErr('f_date', chronoChk.reason);
         }
       }
     }
@@ -45492,20 +47054,16 @@
           }
         }
       }
+      const editOrigModal = (isEditingExisting && editCtx && editCtx.crKey === crKey && editCtx.orig)
+        ? editCtx.orig
+        : pendSalOrigSnap;
+      if (EFFECTIVE_SERIES_TABLES.has(crKey) && record.start_date) {
+        syncChronologicalSeriesNeighbors(crKey, record, editOrigModal, extraApiPosts);
+      }
       applyCustomRecordsToSeed();
-      if (crKey === 'employments' && record && record.staff && !window.__fastInspectorModifyTest) {
-        const stNorm = norm(record.staff);
-        const sFrom = String(record.start_date || record.date || '').slice(0, 10);
-        const sTo = String(record.end_date || '9999-12-31').slice(0, 10) || '9999-12-31';
-        const targetHrs = Number(record.working_hours || 0) > 0 ? Number(record.working_hours) : 8;
-        ((SEED.records && SEED.records.attendance) || []).forEach(a => {
-          if (!a || a.voided || norm(a.staff || '') !== stNorm) return;
-          const ad = String(a.date || '').slice(0, 10);
-          if (ad && ad >= sFrom && ad <= sTo && Number(a.scheduled_hours || 0) !== targetHrs) {
-            a.scheduled_hours = targetHrs;
-            extraApiPosts.push(['attendance', a]);
-          }
-        });
+      if (EFFECTIVE_SERIES_TABLES.has(crKey) || crKey === 'products') {
+        backfillEffectiveLogChange(crKey, record, editOrigModal, extraApiPosts);
+        applyCustomRecordsToSeed();
       }
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
       STATE.saving = false;
@@ -45623,6 +47181,15 @@
       });
     }
     applyCustomRecordsToSeed();
+    const restoredRow = r || archivedSeed;
+    if (restoredRow && EFFECTIVE_SERIES_TABLES.has(crKey) && restoredRow.start_date) {
+      syncChronologicalSeriesNeighbors(crKey, restoredRow, null, extraRestorePosts);
+      applyCustomRecordsToSeed();
+    }
+    if (restoredRow && (EFFECTIVE_SERIES_TABLES.has(crKey) || crKey === 'products')) {
+      backfillEffectiveLogChange(crKey, restoredRow, null, extraRestorePosts);
+      applyCustomRecordsToSeed();
+    }
     saveLocalAuthAndRecords();
     renderApp();
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || (archivedSeed && (archivedSeed.name || archivedSeed.ticket_no)) || q;
@@ -45725,7 +47292,15 @@
         }
       });
     }
+    const voidedTarget = r || seedRow;
+    if (voidedTarget && EFFECTIVE_SERIES_TABLES.has(crKey)) {
+      reopenChronologicalSeriesOnVoid(crKey, voidedTarget, extraVoidPosts);
+    }
     applyCustomRecordsToSeed();
+    if (voidedTarget && (EFFECTIVE_SERIES_TABLES.has(crKey) || crKey === 'products')) {
+      backfillEffectiveLogChange(crKey, null, voidedTarget, extraVoidPosts);
+      applyCustomRecordsToSeed();
+    }
     saveLocalAuthAndRecords();
     renderApp();
     const label = (r && (r.name || r.ticket_no || r.invoice_no || r.staff || r.driver || r.equipment)) || q;
@@ -46272,12 +47847,16 @@
     '#payStaffRegPanel',
     '#payAttStaffSumPanel',
     '#paySiteStaffPanel',
+    '#payUnmatchedPanel',
     '#wfDailyRosterPanel',
+    '#wfMachineAuditPanel',
     '#payDriverOtPanel',
     '#lubricationBenchPanel',
     '#warehouseStockPanel',
     '#unitHealthPanel',
     '#driversOtPanel',
+    '#commissionProductPanel',
+    '#apLegBridgePanel',
     '[id^="sn"]'
   ].join(', ');
 
@@ -46580,6 +48159,27 @@
       FORM_UI.lastExpTruck = val('f_truck');
       FORM_UI.lastExpStoreItem = val('f_exp_item_name');
       FORM_UI.methodManual = true;
+    } else if (form === 'recurringexpense') {
+      const startIso = String(row.start_date || row.date || '').slice(0, 10);
+      if (startIso && $('f_date')) {
+        $('f_date').removeAttribute('min');
+        $('f_date').removeAttribute('max');
+        setModalControlVal('f_date', startIso);
+      }
+      setModalControlVal('f_enddate', String(row.end_date || '').slice(0, 10));
+      setModalControlVal('f_supplier', row.supplier || '');
+      setModalControlVal('f_category', row.category || '');
+      setModalControlVal('f_subcategory', row.subcategory || '');
+      FORM_UI.initialSubcategory = row.subcategory || '';
+      FORM_UI.lastSubcategory = row.subcategory || '';
+      setModalControlVal('f_item_purpose', row.item || '');
+      setModalControlVal('f_frequency', row.frequency || 'Monthly');
+      setModalControlVal('f_truck', row.equipment || '');
+      const lbpV = row.lbp_amount != null ? Number(row.lbp_amount) : 0;
+      const usdV = row.usd_amount != null ? Number(row.usd_amount) : (lbpV > 0 ? 0 : Number(row.amount || 0));
+      setModalControlVal('f_usd', usdV > 0 ? usdV : '');
+      setModalControlVal('f_lbp', lbpV > 0 ? lbpV : '');
+      setModalControlVal('f_amount', fmtEditRate(row.amount));
     } else if (form === 'pricerule' || form === 'pricerule_raw' || form === 'pricerule_haul' || form === 'pricerule_comm') {
       const rt = row.rule_type || 'Sales (Delivery)';
       setModalControlVal('f_ruletype', rt);
@@ -46905,6 +48505,7 @@
       case 'credit_terms': return 'creditterm';
       case 'settlements': return 'settlement';
       case 'expenses': return 'expense';
+      case 'recurring_expenses': return 'recurringexpense';
       case 'warehouse_movements': return 'warehousestock';
       case 'items': return 'item';
       case 'fuel_intakes': return 'fuel';
@@ -46945,7 +48546,7 @@
   function shouldOpenEntryFormOnRowClick(crKey, row, id, trEl) {
     if (!crKey || !row || !row.id) return false;
     if (INSPECTOR_ONLY_CR_KEYS.has(crKey)) return false;
-    if (STATE.view === 'dashboards' || STATE.view === 'sentinels' || STATE.view === 'tables') return false;
+    if (STATE.view === 'pbi' || STATE.view === 'dashboards' || STATE.view === 'sentinels' || STATE.view === 'tables') return false;
     if (trEl && typeof trEl.closest === 'function') {
       if (trEl.hasAttribute('data-dops-summary')) return false;
       if (trEl.closest(INSPECTOR_ONLY_PANEL_SELECTOR)) return false;
@@ -47002,6 +48603,11 @@
   }
 
   function openRecordFromTableRow(crKey, id, trEl) {
+    const wbAuditKey = trEl && trEl.getAttribute ? String(trEl.getAttribute('data-wb-audit-key') || '').trim() : '';
+    if (wbAuditKey) {
+      showWeighbridgeAuditInspector(wbAuditKey, trEl);
+      return;
+    }
     if (!crKey || id == null || id === '') return;
     let checkKey = crKey;
     let checkId = id;
@@ -47017,6 +48623,14 @@
       openEntryModalForRecord(checkKey, checkId);
       return;
     }
+    const isMasterRegistryRow = !trEl || !trEl.closest || Boolean(trEl.closest('#tablesHubPanel, #univRegPanel, #custPanel, #supPanel, #glAutoPanel, #inspectorBody'));
+    if (!isMasterRegistryRow && row) {
+      const tableContext = resolveTableRowContext(trEl, crKey, id, row);
+      if (tableContext) {
+        showRecordInspector(crKey, id, { tableContext });
+        return;
+      }
+    }
     showRecordInspector(crKey, id);
   }
 
@@ -47027,7 +48641,7 @@
   const INSPECT_LABELS = {
     sales_tickets: 'Sales Ticket', raw_purchases: 'Raw Material Ticket', fuel_intakes: 'Fuel Intake',
     fuel_malfunctions: 'Tank Malfunction / Discrepancy',
-    expenses: 'General / Fleet Expense', receipts: 'Customer Receipt (AR)', settlements: 'Supplier Settlement (AP)',
+    expenses: 'General / Fleet Expense', recurring_expenses: 'Recurring Expense Schedule', receipts: 'Customer Receipt (AR)', settlements: 'Supplier Settlement (AP)',
     salaries: 'Salary Payment', price_rules: 'Price & Commission Agreement', credit_terms: 'Customer Credit Policy',
     vat_invoices: 'VAT Tax Invoice', customers: 'Customer 360° Master', suppliers: 'Supplier & Hauler 360° Master',
     products: 'Product & Aggregate Grade', product_types: 'Product Family', uoms: 'Unit of Measure',
@@ -47051,7 +48665,7 @@
   const INSPECT_DVN = {
     sales_tickets: 'bhf_salesticket', raw_purchases: 'bhf_rawpurchase', fuel_intakes: 'bhf_fuelintake',
     fuel_malfunctions: 'bhf_fuelmalfunction',
-    expenses: 'bhf_mfgexpense', receipts: 'bhf_mfgcustomerreceipt', settlements: 'bhf_mfgsupplierpayment',
+    expenses: 'bhf_mfgexpense', recurring_expenses: 'bhf_recurringexpense', receipts: 'bhf_mfgcustomerreceipt', settlements: 'bhf_mfgsupplierpayment',
     salaries: 'bhf_mfgsalary', price_rules: 'bhf_pricerule', credit_terms: 'bhf_creditterm',
     vat_invoices: 'bhf_vatinvoice', customers: 'bhf_customer', suppliers: 'bhf_supplier',
     products: 'bhf_product', product_types: 'bhf_producttype', uoms: 'bhf_uom',
@@ -47721,7 +49335,7 @@
       title,
       pill: isPendExp ? 'PENDING PRICE ($0.00)' : (isPendSal ? 'PENDING SALARY ($0.00)' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : `${fmtNum(totalRel)} Linked Rows`)),
       cards: [
-        { lbl: 'PRIMARY RECORD VALUE', tag: isPendExp ? 'PENDING PRICE' : (isPendSal ? 'PENDING SALARY' : (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18)), tone: (isPendExp || isPendSal) ? 'warn' : 'good', val: isPendExp ? `${fmtNum(row.qty || 1, 0)}${isDieselExp ? ' L ($0.00)' : ' Qty ($0.00)'}` : (isPendSal ? 'Pending ($0.00)' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : (row.name || row.ticket_no || String(row.id).slice(0, 10)))), sub1: isPendExp ? `Vendor: ${row.supplier || '—'} · Awaiting Invoice` : (isPendSal ? `Staff: ${row.staff || '-'} · Awaiting Salary` : `Entity: ${INSPECT_LABELS[key] || key}`), sub2: `Company Scope: ${row.company || 'Shared / Root BU'}`, pct: 82 },
+        { lbl: 'PRIMARY RECORD VALUE', tag: isPendExp ? 'PENDING PRICE' : (isPendSal ? 'PENDING SALARY' : (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18)), tone: (isPendExp || isPendSal) ? 'warn' : 'good', val: isPendExp ? `${fmtNum(row.qty || 1, 0)}${isDieselExp ? ' L ($0.00)' : ' Qty ($0.00)'}` : (isPendSal ? 'Pending ($0.00)' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : (row.name || row.ticket_no || String(row.id).slice(0, 10)))), sub1: isPendExp ? `Vendor: ${row.supplier || '—'} · Awaiting Invoice` : (isPendSal ? `Staff: ${row.staff || '—'} · Awaiting Salary` : `Entity: ${INSPECT_LABELS[key] || key}`), sub2: `Company Scope: ${row.company || 'Shared / Root BU'}`, pct: 82 },
         { lbl: 'CONNECTED SUBGRIDS', tag: `${subgrids.length} TABLES`, tone: 'info', val: `${fmtNum(totalRel)} Rows`, sub1: subgrids.slice(0, 2).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Direct master record', sub2: subgrids.slice(2, 4).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Click any row below to inspect', pct: Math.min(100, Math.max(25, totalRel * 5)) },
         { lbl: 'EFFECTIVE DATES & TIMELINE', tag: row.end_date ? 'DATED' : 'ACTIVE', tone: row.end_date && String(row.end_date) < SEED_DATE ? 'warn' : 'good', val: String(row.date || row.start_date || SEED_DATE).slice(0, 10), sub1: `Rep / Start: ${row.rep_date || row.start_date || row.date || '—'}`, sub2: `End Date: ${row.end_date || 'Open / Current'}`, pct: 75 },
         { lbl: 'AUDIT & LEDGER SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: isAppRecord(row) ? 'App Entry' : 'Synced Book', sub1: isAppRecord(row) ? `Posted by ${row.entered_by || 'User'}` : `Snapshot ${SEED_DATE}`, sub2: `Double-Entry SOA Verified`, pct: 100 }
@@ -47878,7 +49492,7 @@
       addCustomerQv(row.customer);
     } else if (key === 'settlements') {
       addSupplierQv(row.supplier, 'SUPPLIER');
-    } else if (key === 'expenses') {
+    } else if (key === 'expenses' || key === 'recurring_expenses') {
       if (row.supplier) addSupplierQv(row.supplier, 'VENDOR');
       if (row.equipment) addTruckQv(row.equipment, null);
     } else if (key === 'equipment') {
@@ -47937,7 +49551,7 @@
       if (scoped.length > 1) {
         const viewId = targetKey ? ('tbl_' + targetKey) : '';
         const hasDate = Array.isArray(cols) && cols.includes('date');
-        const hasStartDate = !hasDate && (targetKey === 'employments' || targetKey === 'logistics_allowances') && Array.isArray(cols) && cols.includes('start_date');
+        const hasStartDate = !hasDate && (targetKey === 'employments' || targetKey === 'logistics_allowances' || targetKey === 'recurring_expenses') && Array.isArray(cols) && cols.includes('start_date');
         scoped.sort((a, b) => {
           if (hasDate) {
             const da = recordDate(a), db = recordDate(b);
@@ -47991,7 +49605,7 @@
     else if (key === 'customers') {
       const name = row.name || row.Customer;
       addGrid('sg_c_sales', `Sales Tickets & Deliveries (${name})`, 'Sales Tickets', 'Sales Tickets', 'sales_tickets', (rec.sales_tickets || []).filter(t => norm(t.customer) === norm(name)), ['date', 'ticket_no', 'company', 'sale_type', 'product', 'site', 'truck', 'qty', 'unit_price', 'vat', 'total_ttc', 'method'], 'total_ttc');
-      addGrid('sg_c_rcpts', `Customer Receipts — FIFO Applied (${name})`, 'AR Receipts', 'AR Receipts', 'receipts', (rec.receipts || []).filter(r => norm(r.customer) === norm(name)), ['date', 'name', 'company', 'method', 'amount', 'discount', 'vat_invoice', 'reference'], 'amount');
+      addGrid('sg_c_rcpts', `Customer Receipts · FIFO Applied (${name})`, 'AR Receipts', 'AR Receipts', 'receipts', (rec.receipts || []).filter(r => norm(r.customer) === norm(name)), ['date', 'name', 'company', 'method', 'amount', 'discount', 'vat_invoice', 'reference'], 'amount');
       addGrid('sg_c_rules', `Price Agreements (${name})`, 'Price Rules', 'Price Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.customer) === norm(name) && !isCommRule(r)), ['company', 'rule_type', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
       addGrid('sg_c_cred', `Credit Terms & Limits (${name})`, 'Credit Terms', 'Credit Terms', 'credit_terms', (rec.credit_terms || []).filter(c => norm(c.customer) === norm(name)), ['name', 'company', 'credit_days', 'credit_limit', 'start_date', 'end_date', 'notes'], 'credit_limit');
       addGrid('sg_c_vat', `VAT 11% Tax Invoices (${name})`, 'VAT Invoices', 'VAT Invoices', 'vat_invoices', (rec.vat_invoices || []).filter(v => norm(v.customer) === norm(name)), ['invoice_no', 'date', 'company', 'start_date', 'end_date', 'net_amount', 'vat_amount', 'total_ttc'], 'total_ttc');
@@ -48005,6 +49619,10 @@
       addGrid('sg_s_mat', `Leg 1 · Raw Material Purchases (${name})`, 'Raw Loads', 'Site Owner Leg', 'raw_purchases', (rec.raw_purchases || []).filter(r => norm(r.site_owner || r.truck_owner) === norm(name) && (r.site_owner || Number(r.cost || 0) !== 0)), ['date', 'ticket_no', 'company', 'site', 'product', 'truck', 'qty', 'unit_cost', 'cost', 'total'], 'cost');
       addGrid('sg_s_haul', `Leg 2 · Haulage Loads (${name})`, 'Haulage Loads', 'Truck Owner Leg', 'raw_purchases', (rec.raw_purchases || []).filter(r => norm(r.truck_owner) === norm(name) && (Number(r.trans_cost || 0) !== 0 || r.transport_by !== 'Company fleet')), ['date', 'ticket_no', 'company', 'site', 'site_owner', 'truck', 'driver', 'qty', 'trans_cost', 'total'], 'trans_cost');
       addGrid('sg_s_exp', `Leg 3 · General & Fleet Expenses (${name})`, 'Expenses', 'Expense Leg', 'expenses', (rec.expenses || []).filter(x => norm(x.supplier) === norm(name)), ['date', 'name', 'company', 'category', 'subcategory', 'equipment', 'method', 'amount', 'reference'], 'amount');
+      const supRecur = (rec.recurring_expenses || []).filter(x => norm(x.supplier) === norm(name));
+      if (supRecur.length) {
+        addGrid('sg_s_recur', `Standing Recurring Expense Schedules (${name})`, 'Recurring Schedules', 'Standing Agreements', 'recurring_expenses', supRecur, ['company', 'category', 'subcategory', 'item', 'frequency', 'amount', 'start_date', 'end_date', 'status'], 'amount');
+      }
       addGrid('sg_s_pay', `Supplier AP Settlements (${name})`, 'Settlements', 'Settlements', 'settlements', (rec.settlements || []).filter(s => norm(s.supplier) === norm(name)), ['date', 'name', 'company', 'method', 'amount', 'discount', 'raw_ticket', 'expense_record', 'reference'], 'amount');
       const commVouchersForSup = (rec.receipts || []).filter(r => norm(r.customer) === norm(name) && ['Rent', 'VATRent', 'RentConfig'].includes(String(r.method || '').trim()));
       if (commVouchersForSup.length) {
@@ -48047,6 +49665,10 @@
         addGrid('sg_st_rules', `Quarry & Haulage Agreements at ${name}`, 'Quarry Rules', 'Quarry Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.site) === norm(name) && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim())), ['company', 'rule_type', 'supplier', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
         addGrid('sg_st_raw', `Raw Material Loads from ${name}`, 'Raw Loads', 'Raw Loads', 'raw_purchases', (rec.raw_purchases || []).filter(t => norm(t.site) === norm(name)), ['date', 'ticket_no', 'company', 'site_owner', 'truck_owner', 'truck', 'product', 'qty', 'cost', 'trans_cost', 'total'], 'total');
         addGrid('sg_st_jv', `JV Partnerships & Profit Split (${name})`, 'JV Partners', 'JV Partners', 'jv_partnerships', (rec.jv_partnerships || []).filter(j => norm(j.site) === norm(name)), ['name', 'company', 'partner', 'percentage', 'notes'], 'percentage');
+        const siteJvDists = (rec.jv_distributions || []).filter(d => norm(d.site) === norm(name));
+        if (siteJvDists.length) {
+          addGrid('sg_st_jv_dist', `JV Profit & Stock Distributions (${name})`, 'JV Distributions', 'JV Distributions', 'jv_distributions', siteJvDists, ['date', 'company', 'site', 'partner', 'basis', 'amount', 'total'], 'total');
+        }
         addGrid('sg_st_log', `Site Transport (${name})`, 'Site Transport', 'Site Transport', 'logistics_allowances', (rec.logistics_allowances || []).filter(l => norm(l.site) === norm(name)), ['name', 'company', 'staff', 'equipment', 'daily_usd', 'working_days', 'start_date', 'end_date'], 'daily_usd');
       }
     }
@@ -48163,6 +49785,20 @@
         ? (norm(x.subcategory) === norm(row.name) && (!row.category || norm(x.category) === norm(row.category)))
         : norm(x.category) === norm(cat));
       addGrid('sg_ec_exp', `Expense Vouchers (${row.subcategory || cat})`, 'Expense Vouchers', 'Expense Vouchers', 'expenses', matchExps, ['date', 'name', 'company', 'category', 'subcategory', 'supplier', 'equipment', 'method', 'amount', 'reference'], 'amount');
+      const matchRecur = (rec.recurring_expenses || []).filter(x => key === 'expense_subcategories'
+        ? (norm(x.subcategory) === norm(row.name) && (!row.category || norm(x.category) === norm(row.category)))
+        : norm(x.category) === norm(cat));
+      if (matchRecur.length) {
+        addGrid('sg_ec_recur', `Recurring Expense Schedules (${row.subcategory || cat})`, 'Recurring Schedules', 'Standing Agreements', 'recurring_expenses', matchRecur, ['supplier', 'company', 'category', 'subcategory', 'item', 'frequency', 'amount', 'start_date', 'end_date', 'status'], 'amount');
+      }
+    }
+    else if (key === 'recurring_expenses') {
+      const sup = row.supplier;
+      if (sup) {
+        addGrid('sg_rec_sib', `All Recurring Schedules for ${sup}`, 'Vendor Schedules', 'Chronological Series', 'recurring_expenses', (rec.recurring_expenses || []).filter(r => norm(r.supplier) === norm(sup)), ['company', 'category', 'subcategory', 'item', 'frequency', 'amount', 'start_date', 'end_date', 'status'], 'amount');
+        addGrid('sg_rec_exp', `Recorded Expense Vouchers (${sup})`, 'Expense Vouchers', 'Posted Vouchers', 'expenses', (rec.expenses || []).filter(x => norm(x.supplier) === norm(sup)), ['date', 'name', 'company', 'category', 'subcategory', 'method', 'amount', 'reference'], 'amount');
+        addGrid('sg_rec_pay', `Supplier AP Settlements (${sup})`, 'AP Settlements', 'Settlements', 'settlements', (rec.settlements || []).filter(s => norm(s.supplier) === norm(sup)), ['date', 'name', 'company', 'method', 'amount', 'discount', 'reference'], 'amount');
+      }
     }
     else if (key === 'receipts' || key === 'credit_terms' || key === 'vat_invoices') {
       const cust = row.customer;
@@ -48670,6 +50306,18 @@
         { key: 'reference', label: 'Reference', type: 'text', sec: 3 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true },
         { key: 'price_pending', label: 'Awaiting Invoice Price ($0 Pending)', type: 'bool', sec: 3, getVal: r => Boolean(isPendingPriceExpense(r)) }
+      ],
+      recurring_expenses: [
+        { key: 'start_date', label: 'Start Date *', type: 'date', sec: 1, getVal: r => r.start_date || r.date || '' },
+        { key: 'end_date', label: 'End Date (Blank = Open)', type: 'date', sec: 1, getVal: r => r.end_date || '' },
+        { key: 'supplier', label: 'Supplier / Vendor *', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
+        { key: 'category', label: 'Category *', type: 'select', options: expCatOpts, sec: 2 },
+        { key: 'subcategory', label: 'Subcategory', type: 'combo', dl: 'dl_insp_subcategories', sec: 2 },
+        { key: 'item', label: 'Recurring Item / Purpose *', type: 'text', sec: 2 },
+        { key: 'frequency', label: 'Billing Cycle *', type: 'select', options: ['Monthly', 'Quarterly', 'Annual', 'Weekly'], sec: 2, getVal: r => r.frequency || 'Monthly' },
+        { key: 'equipment', label: 'Equipment (Optional)', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
+        { key: 'amount', label: 'Cycle Rate ($) *', type: 'number', step: '0.01', min: '0', sec: 3 },
+        { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       receipts: [
         { key: 'date', label: 'Receipt Date *', type: 'date', sec: 1 },
@@ -49447,7 +51095,7 @@
       const v = valOverride !== undefined ? valOverride : (fDef && typeof fDef.getVal === 'function' ? fDef.getVal(row) : row[k]);
       const formatted = inspectorValue(k, v);
       const isEmpty = formatted === '—';
-      const lkTarget = (k === 'origin_ticket_no') ? (row.origin_ticket_kind === 'raw' ? 'raw_purchases' : 'sales_tickets') : ((k === 'type' && key !== 'products') ? null : (k === 'linked_part_log' && /^REP-/i.test(String(v || '')) ? 'equipment_repairs' : ((k === 'truck_owner' || (k === 'supplier' && (key === 'equipment' || key === 'company_equipment'))) ? resolveTruckOwnerTarget(v, row) : INSPECT_LOOKUP_FIELD_TARGET[k])));
+      const lkTarget = (k === 'origin_ticket_no') ? (row.origin_ticket_kind === 'raw' ? 'raw_purchases' : 'sales_tickets') : ((k === 'type' && key !== 'products') || (k === 'item' && key === 'recurring_expenses') ? null : (k === 'linked_part_log' && /^REP-/i.test(String(v || '')) ? 'equipment_repairs' : ((k === 'truck_owner' || (k === 'supplier' && (key === 'equipment' || key === 'company_equipment'))) ? resolveTruckOwnerTarget(v, row) : INSPECT_LOOKUP_FIELD_TARGET[k])));
       const canLink = lkTarget && lkTarget !== key && v != null && v !== '' && !isEmpty;
       const roLabels = key === 'gl_accounts' ? {
         code: 'GL Code', name: 'GL Account', pcg_class: 'CoA Class', automation_mode: 'Automation Mode',
@@ -49533,7 +51181,7 @@
                       if (isMoney && v != null && v !== '') txt = fmtUSD(v, 2);
                       else if (isNum && v != null && v !== '') txt = fmtNum(v, /qty|capacity|percentage/.test(c) ? 2 : 0);
                       else if (/date/.test(c) && v) txt = fmtDateDMY(v);
-                      const lk = (c === 'linked_part_log' && /^REP-/i.test(String(v || ''))) ? 'equipment_repairs' : ((c === 'truck_owner' || (c === 'supplier' && (sg.targetKey === 'equipment' || sg.targetKey === 'company_equipment'))) ? resolveTruckOwnerTarget(v, r) : INSPECT_LOOKUP_FIELD_TARGET[c]);
+                      const lk = (c === 'item' && sg.targetKey === 'recurring_expenses') ? null : ((c === 'linked_part_log' && /^REP-/i.test(String(v || ''))) ? 'equipment_repairs' : ((c === 'truck_owner' || (c === 'supplier' && (sg.targetKey === 'equipment' || sg.targetKey === 'company_equipment'))) ? resolveTruckOwnerTarget(v, r) : INSPECT_LOOKUP_FIELD_TARGET[c]));
                       const sgOtHtml = (c === 'ticket_no' && (sg.targetKey === 'sales_tickets' || sg.targetKey === 'raw_purchases')) ? ` ${tktOtBadge(r)}` : '';
                       const cellHtml = (lk && lk !== sg.targetKey && v != null && v !== '' && txt !== '—')
                         ? `<span class="rel-link" data-rel-key="${esc(lk)}" data-rel-val="${esc(v)}">${esc(txt)}<span class="rel-arr">↗</span></span>`
@@ -49621,9 +51269,908 @@
   }
   window.__mfgWireBackdropDismiss = wireBackdropDismiss;
 
+  function ensureRecordInspectorModal() {
+    let panel = $('recordInspector');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'recordInspector';
+      panel.className = 'modal-backdrop';
+      panel.innerHTML = '<div class="modal-card inspector-card" role="dialog" aria-modal="true" aria-labelledby="inspectorTitle"><div class="modal-header"><div><span class="modal-eyebrow" id="inspectorEyebrow"></span><h2 id="inspectorTitle"></h2></div><button type="button" class="modal-close-btn" id="inspectorCloseBtn" aria-label="Close">✕</button></div><div class="modal-body" id="inspectorBody"></div></div>';
+      document.body.appendChild(panel);
+      wireBackdropDismiss(panel, closeRecordInspector);
+      $('inspectorCloseBtn').addEventListener('click', closeRecordInspector);
+    }
+    return panel;
+  }
+
+  function canRemoveWeighbridgeTicket() {
+    return canVoid();
+  }
+
+  function launchWeighbridgeGapEntry(stream, ticketNo, dateIso, company, dispMode) {
+    const formKey = stream === 'raw' ? 'raw' : 'sales';
+    const cleanNo = ticketNo != null ? String(ticketNo).replace(/^#/, '').trim() : '';
+    const cleanDate = dateIso ? String(dateIso).slice(0, 10) : '';
+    closeRecordInspector();
+    openEntryModal(formKey, { co: company || '', ticket: cleanNo });
+    if (cleanDate && $('f_date')) {
+      if (canModifyData() || canVoid()) {
+        FORM_UI.adminUnlocked['f_date'] = true;
+        FORM_UI.adminUnlocked['f_repdate'] = true;
+        $('f_date').removeAttribute('min');
+        $('f_date').removeAttribute('max');
+      }
+      setModalControlVal('f_date', cleanDate);
+      FORM_UI.lastDate = cleanDate;
+      if ($('f_repdate')) {
+        $('f_repdate').removeAttribute('min');
+        $('f_repdate').removeAttribute('max');
+        setModalControlVal('f_repdate', cleanDate);
+      }
+    }
+    if (cleanNo && $('f_ticketno')) {
+      setModalControlVal('f_ticketno', cleanNo);
+      FORM_UI.ticketManual = true;
+    }
+    if (dispMode === 'removed' && canVoid()) {
+      FORM_UI.ticketDisposition = 'remove_slip';
+      if ($('f_notes')) $('f_notes').disabled = false;
+    } else if (dispMode === 'returned') {
+      FORM_UI.ticketDisposition = 'return_wtc';
+      if ($('f_return_rt_km')) $('f_return_rt_km').disabled = false;
+      if ($('f_notes')) $('f_notes').disabled = false;
+    }
+    recalcForm();
+  }
+
+  function showWeighbridgeAuditInspector(wbAuditKey, trEl) {
+    buildTicketSerialAudit();
+    const cache = _ticketAuditCache || {};
+    const item = cache.byAuditKey ? cache.byAuditKey.get(wbAuditKey) : null;
+    if (!item) {
+      const fallbackRk = trEl && trEl.getAttribute ? trEl.getAttribute('data-rkey') : '';
+      const fallbackRid = trEl && trEl.getAttribute ? trEl.getAttribute('data-rid') : '';
+      if (fallbackRk && fallbackRid) showRecordInspector(fallbackRk, fallbackRid);
+      return;
+    }
+    const book = (item.kind === 'book')
+      ? item
+      : ((item.bookKey && cache.bookByKey) ? cache.bookByKey.get(item.bookKey) : null);
+    const co = item.company || (book && book.company) || 'WTC';
+    const pfx = (item.prefix != null ? item.prefix : (book && book.prefix)) || '';
+    const bs = item.bs || (book && book.bs) || 1;
+    const be = item.be || (book && book.be) || (bs + 24);
+    const bookRangeLbl = (book && book.bookRangeLabel) || `#${pfx}${bs}-${pfx}${be}`;
+    const cleanSerialLbl = String(item.serialLabel || '').replace(/[—–]/g, '-');
+
+    STATE.inspectorHistory = [];
+    const panel = ensureRecordInspectorModal();
+
+    let eyebrowTxt = `WEIGHBRIDGE 25-TICKET BOOK AUDIT · ${co.toUpperCase()}`;
+    let titleTxt = `${cleanSerialLbl} · ${item.padRun || bookRangeLbl}`;
+    let bannerTone = 'amber';
+    let bannerTxt = '';
+    let cockpitTitle = `Weighbridge Book ${bookRangeLbl} · ${cleanSerialLbl}`;
+    let cockpitPill = book ? `${book.enteredCount} / 25 Used` : `${item.count || 1} Ticket${Number(item.count || 1) === 1 ? '' : 's'}`;
+    let cards = [];
+
+    const prevRec = item.prevRec || (book && book.firstRec) || null;
+    const nextRec = item.nextRec || (book && book.lastRec) || null;
+    const firstGapNo = item.kind === 'skipped'
+      ? `${pfx}${item.gapStart}`
+      : (book && book.missingNumbers && book.missingNumbers.length ? `${pfx}${book.missingNumbers[0]}` : (book ? book.nextTicketNo : ''));
+
+    if (item.kind === 'skipped') {
+      eyebrowTxt = `WEIGHBRIDGE 25-TICKET BOOK AUDIT · MISSING SERIAL GAP · ${co.toUpperCase()}`;
+      titleTxt = `Missing Ticket ${cleanSerialLbl} (${item.count} Skipped in Book ${bookRangeLbl})`;
+      bannerTone = 'amber';
+      bannerTxt = `Book ${bookRangeLbl} has ${item.count} unrecorded serial${item.count === 1 ? '' : 's'} (${cleanSerialLbl}) between #${prevRec ? prevRec.ticket_no : '-'} (${prevRec ? prevRec.docType + ' · ' + prevRec.party : '-'}) and #${nextRec ? nextRec.ticket_no : '-'} (${nextRec ? nextRec.docType + ' · ' + nextRec.party : '-'}). Enter the missing ticket below or mark a spoiled slip as Removed (0 KM) to close the gap.`;
+      const slotFrom = (item.gapStart - bs) + 1;
+      const slotTo = (item.gapEnd - bs) + 1;
+      cards = [
+        {
+          lbl: 'MISSING SERIALS IN PAD',
+          tag: `${item.count} SKIPPED`,
+          tone: 'amber',
+          val: cleanSerialLbl,
+          sub1: `Book ${bookRangeLbl} · Slot${item.count > 1 ? 's' : ''} ${slotFrom}${slotTo > slotFrom ? '-' + slotTo : ''} of 25`,
+          sub2: `Pad Run: ${item.padRun || bookRangeLbl}`,
+          pct: Math.min(100, Math.max(18, item.count * 20))
+        },
+        {
+          lbl: 'ENTERED BEFORE GAP',
+          tag: prevRec ? fmtDateDMY(prevRec.date) : 'BEFORE',
+          tone: 'good',
+          val: prevRec ? `#${prevRec.ticket_no} · ${prevRec.docType}` : '-',
+          sub1: prevRec ? `${prevRec.party} · ${prevRec.product}` : item.beforeText,
+          sub2: prevRec ? `Qty: ${fmtNum(prevRec.qty, 1)} ${prevRec.uom}${prevRec.truck ? ' · Truck ' + prevRec.truck : ''}` : 'Preceding ticket in series',
+          pct: 100
+        },
+        {
+          lbl: 'ENTERED AFTER GAP',
+          tag: nextRec ? fmtDateDMY(nextRec.date) : 'AFTER',
+          tone: 'good',
+          val: nextRec ? `#${nextRec.ticket_no} · ${nextRec.docType}` : '-',
+          sub1: nextRec ? `${nextRec.party} · ${nextRec.product}` : item.afterText,
+          sub2: nextRec ? `Qty: ${fmtNum(nextRec.qty, 1)} ${nextRec.uom}${nextRec.truck ? ' · Truck ' + nextRec.truck : ''}` : 'Following ticket in series',
+          pct: 100
+        },
+        {
+          lbl: '25-TICKET BOOK TALLY',
+          tag: book ? book.statusLabel : 'PAD TALLY',
+          tone: book && book.missingCount === 0 ? 'good' : 'brass',
+          val: book ? `${book.enteredCount} / 25 Used` : `${25 - item.count} / 25`,
+          sub1: book ? book.streamSummary : co,
+          sub2: book ? `Missing in Book: ${book.missingCount} · Unused Left: ${book.unusedCount}` : `${item.count} missing in gap`,
+          pct: book ? book.pctComplete : 85
+        }
+      ];
+    } else if (item.kind === 'book') {
+      eyebrowTxt = `WEIGHBRIDGE 25-TICKET BOOK AUDIT · 25-SLOT PAD SUMMARY · ${co.toUpperCase()}`;
+      titleTxt = `25-Ticket Book ${bookRangeLbl} (${item.enteredCount} / 25 Used · ${item.statusLabel})`;
+      bannerTone = item.missingCount > 0 ? 'amber' : 'good';
+      bannerTxt = `Weighbridge Book ${bookRangeLbl} (${co}): ${item.enteredCount} of 25 slots recorded (${item.streamSummary}). ${item.missingCount > 0 ? `Missing serials: ${item.missingText}.` : 'Zero missing serial gaps.'} Last recorded ticket is #${item.lastTicketNo} (${item.lastDocType} · ${item.lastParty}); next sequential ticket is #${item.nextTicketNo}.`;
+      cards = [
+        {
+          lbl: 'TICKETS USED IN BOOK',
+          tag: `${item.pctComplete}% FULL`,
+          tone: item.enteredCount >= 25 ? 'good' : 'brass',
+          val: `${item.enteredCount} / 25`,
+          sub1: `Book ${bookRangeLbl} (${co})`,
+          sub2: `Dates: ${fmtDateDMY(item.firstDate)} to ${fmtDateDMY(item.lastDate)}`,
+          pct: item.pctComplete
+        },
+        {
+          lbl: 'STREAM BREAKDOWN',
+          tag: `${item.domDocType.toUpperCase()} SERIES`,
+          tone: 'good',
+          val: item.streamSummary,
+          sub1: `Sales: ${item.salesCount} · Raw: ${item.rawCount} · Fuel: ${item.fuelCount}`,
+          sub2: `Removed (0 KM): ${item.removedCount} · Returned (2x KM): ${item.returnedCount}`,
+          pct: 90
+        },
+        {
+          lbl: 'MISSING SERIAL GAPS',
+          tag: item.missingCount > 0 ? `${item.missingCount} MISSING` : 'ZERO GAPS',
+          tone: item.missingCount > 0 ? 'amber' : 'good',
+          val: item.missingCount > 0 ? `${item.missingCount} Missing` : '0 Gaps',
+          sub1: item.missingText,
+          sub2: `Unused Tail Slots: ${item.unusedText}`,
+          pct: item.missingCount > 0 ? Math.min(100, item.missingCount * 15) : 100
+        },
+        {
+          lbl: 'LAST & NEXT TICKET #',
+          tag: `NEXT #${item.nextTicketNo}`,
+          tone: 'brass',
+          val: `Last #${item.lastTicketNo}`,
+          sub1: `${item.lastDocType} · ${item.lastParty} (${item.lastDateDMY})`,
+          sub2: `Product: ${item.lastProduct || '-'}`,
+          pct: 100
+        }
+      ];
+    } else if (item.kind === 'duplicate') {
+      const dupList = item.dupList || [];
+      const d0 = dupList[0] || null;
+      const d1 = dupList[1] || dupList[dupList.length - 1] || null;
+      eyebrowTxt = `WEIGHBRIDGE 25-TICKET BOOK AUDIT · DUPLICATE SERIAL CONFLICT · ${co.toUpperCase()}`;
+      titleTxt = `Duplicate Ticket ${cleanSerialLbl} (${item.count} Entries Sharing Serial in ${item.padRun || bookRangeLbl})`;
+      bannerTone = 'bad';
+      bannerTxt = `Serial ${cleanSerialLbl} is assigned to ${item.count} active ${d0 ? d0.docType : ''} records in Book ${bookRangeLbl}. Inspect the conflicting entries side by side below to re-number a mistyped slip or void a duplicate entry.`;
+      cards = [
+        {
+          lbl: 'DUPLICATE SERIAL #',
+          tag: `${item.count} ENTRIES`,
+          tone: 'bad',
+          val: cleanSerialLbl,
+          sub1: `Book ${bookRangeLbl} · Slot ${item.slotIdx || '-'} of 25`,
+          sub2: `Shared across ${item.count} active ${d0 ? d0.docType : ''} records`,
+          pct: 100
+        },
+        {
+          lbl: '1ST RECORDED ENTRY',
+          tag: d0 ? fmtDateDMY(d0.date) : '1ST ENTRY',
+          tone: 'brass',
+          val: d0 ? `${d0.party}` : item.beforeText,
+          sub1: d0 ? `${d0.docType} · ${d0.product} · ${fmtNum(d0.qty, 1)} ${d0.uom}` : item.beforeText,
+          sub2: d0 ? `Site: ${d0.site || 'Plant'} · Truck: ${d0.truck || '-'}` : '-',
+          pct: 100
+        },
+        {
+          lbl: '2ND+ CONFLICTING ENTRY',
+          tag: d1 ? fmtDateDMY(d1.date) : 'CONFLICT',
+          tone: 'bad',
+          val: d1 ? `${d1.party}` : item.afterText,
+          sub1: d1 ? `${d1.docType} · ${d1.product} · ${fmtNum(d1.qty, 1)} ${d1.uom}` : item.afterText,
+          sub2: d1 ? `Site: ${d1.site || 'Plant'} · Truck: ${d1.truck || '-'}` : '-',
+          pct: 100
+        },
+        {
+          lbl: '25-TICKET BOOK TALLY',
+          tag: book ? book.statusLabel : co,
+          tone: 'brass',
+          val: book ? `${book.enteredCount} / 25 Used` : `${item.count} Duplicates`,
+          sub1: book ? book.streamSummary : item.padRun,
+          sub2: book ? `Missing in Book: ${book.missingCount} · Unused: ${book.unusedCount}` : 'Click Edit on either row below',
+          pct: book ? book.pctComplete : 85
+        }
+      ];
+    } else {
+      const rObj = item.recObj || null;
+      const isRem = item.kind === 'removed';
+      const isRet = item.kind === 'returned';
+      eyebrowTxt = `WEIGHBRIDGE 25-TICKET BOOK AUDIT · ${isRem ? 'REMOVED SLIP (0 KM)' : (isRet ? 'RETURNED LOAD (2X KM)' : 'UNNUMBERED TICKET')} · ${co.toUpperCase()}`;
+      titleTxt = `${isRem ? 'Removed Slip' : (isRet ? 'Returned Load' : 'Unnumbered Ticket')} ${cleanSerialLbl} (${item.padRun || bookRangeLbl})`;
+      bannerTone = isRem ? 'good' : 'brass';
+      bannerTxt = isRem
+        ? `Ticket ${cleanSerialLbl} is logged as a Supervisor Removed Slip (Spoiled / Mistake): Slot ${item.slotIdx || '-'}/25 in Book ${bookRangeLbl} is accounted for with $0.00 billing, 0 m³ volume, and 0.0 km fleet distance.`
+        : (isRet
+          ? `Ticket ${cleanSerialLbl} is logged as a Rejected Load Returned to ${co}: Slot ${item.slotIdx || '-'}/25 in Book ${bookRangeLbl} is accounted for with net $0.00 / 0 m³ and ${fmtNum(item.kmSpent || 0, 1)} km round-trip haulage distance (2x ${fmtNum(item.oneWayKm || 0, 1)} km).`
+          : `This ${rObj ? rObj.docType : ''} record on ${fmtDateDMY(item.date)} has no weighbridge ticket number assigned. Click Edit Ticket below to assign its 25-book serial number.`);
+      cards = [
+        {
+          lbl: 'TICKET & BOOK SLOT',
+          tag: isRem ? 'REMOVED · 0 KM' : (isRet ? 'RETURNED · 2X KM' : 'UNNUMBERED'),
+          tone: isRem ? 'good' : (isRet ? 'brass' : 'amber'),
+          val: cleanSerialLbl,
+          sub1: `Book ${bookRangeLbl} · Slot ${item.slotIdx || '-'} of 25`,
+          sub2: `Date: ${fmtDateDMY(item.date)} · Co: ${co}`,
+          pct: 100
+        },
+        {
+          lbl: 'FLEET KM & ROUTE IMPACT',
+          tag: isRem ? 'TRUCK NEVER LEFT' : (isRet ? 'ROUND-TRIP (2X)' : 'STANDARD'),
+          tone: isRem ? 'good' : 'brass',
+          val: `${fmtNum(item.kmSpent || 0, 1)} km`,
+          sub1: isRem ? '0.0 km spent (Spoiled / Mistake Slip)' : (isRet ? `${fmtNum(item.oneWayKm || 0, 1)} km x 2 (${co} to ${rObj && rObj.site ? rObj.site : 'Site'} and back)` : item.beforeText),
+          sub2: `Truck: ${(rObj && rObj.truck) || 'None'}${rObj && rObj.driver ? ' · Driver: ' + rObj.driver : ''}`,
+          pct: isRet ? 100 : 25
+        },
+        {
+          lbl: 'NET VOLUME & BILLING',
+          tag: isRem || isRet ? 'ZERO BILLING' : 'RECORDED',
+          tone: 'good',
+          val: isRem || isRet ? '$0.00 · 0 m³' : (rObj ? `${fmtNum(rObj.qty, 1)} ${rObj.uom}` : '-'),
+          sub1: rObj ? `${rObj.docType} · ${rObj.party} · ${rObj.product}` : item.beforeText,
+          sub2: rObj && rObj.notes ? `Notes: ${rObj.notes}` : 'Accounted in 25-ticket book',
+          pct: 100
+        },
+        {
+          lbl: '25-TICKET BOOK TALLY',
+          tag: book ? book.statusLabel : co,
+          tone: 'good',
+          val: book ? `${book.enteredCount} / 25 Used` : '1 / 1',
+          sub1: book ? book.streamSummary : item.padRun,
+          sub2: book ? `Missing in Book: ${book.missingCount} · Unused: ${book.unusedCount}` : 'Serial preserved in book',
+          pct: book ? book.pctComplete : 100
+        }
+      ];
+    }
+
+    $('inspectorEyebrow').textContent = eyebrowTxt;
+    $('inspectorTitle').textContent = titleTxt;
+
+    // Build 3-column Neighbor & Gap Resolution Bridge for skipped gaps
+    let contextSectionHtml = '';
+    if (item.kind === 'skipped') {
+      const gapNums = [];
+      for (let gn = item.gapStart; gn <= item.gapEnd && gapNums.length < 8; gn++) gapNums.push(gn);
+      const renderNeighborCard = (lbl, badgeTxt, rec) => {
+        if (!rec) return `<div class="pa-qv-card"><div class="pa-qv-card-top"><span class="pa-qv-card-lbl">${esc(lbl)}</span></div><div class="pa-qv-card-title"><span>Not Recorded</span></div></div>`;
+        return `
+          <div class="pa-qv-card">
+            <div class="pa-qv-card-top">
+              <span class="pa-qv-card-lbl">${esc(lbl)}</span>
+              <span class="badge badge-ok">${esc(badgeTxt)}</span>
+            </div>
+            <div class="pa-qv-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+              <span>#${esc(rec.ticket_no)} · ${esc(rec.docType)}</span>
+              <span class="mono" style="font-size:12px;color:var(--muted)">${esc(fmtDateDMY(rec.date))}</span>
+            </div>
+            <div class="pa-qv-kv-grid">
+              <div class="pa-qv-kv"><small>COUNTERPARTY</small><b>${esc(rec.party || '-')}</b></div>
+              <div class="pa-qv-kv"><small>SITE / ROUTE</small><b>${esc(rec.site || 'Plant / Pickup')}</b></div>
+              <div class="pa-qv-kv"><small>PRODUCT &amp; QTY</small><b>${esc(rec.product || '-')} (${fmtNum(rec.qty, 1)} ${esc(rec.uom || 'm³')})</b></div>
+              <div class="pa-qv-kv"><small>TRUCK &amp; DRIVER</small><b>${esc((rec.truck || '-') + (rec.driver ? ' · ' + rec.driver : ''))}</b></div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+              <button type="button" class="pa-cmd-btn btn-brass" data-wb-edit-rec-key="${esc(rec.rkey)}" data-wb-edit-rec-id="${esc(rec.id)}">${ic('edit')} Edit #${esc(rec.ticket_no)}</button>
+              <button type="button" class="pa-cmd-btn" data-wb-open-rec-key="${esc(rec.rkey)}" data-wb-open-rec-id="${esc(rec.id)}">Open Ticket 360° ↗</button>
+            </div>
+          </div>
+        `;
+      };
+      contextSectionHtml = `
+        <div class="pa-subgrid-box" id="wbGapBridgeBox" style="margin-bottom:14px">
+          <div class="pa-subgrid-hdr">
+            <div>
+              <strong>Weighbridge Serial Sequence &amp; Missing Gap Resolution (${esc(cleanSerialLbl)})</strong>
+              <span class="pa-subgrid-sub">Compare the ticket immediately before (#${esc(prevRec ? prevRec.ticket_no : '-')}) and immediately after (#${esc(nextRec ? nextRec.ticket_no : '-')}) to see why ${esc(cleanSerialLbl)} was skipped, or record/remove the missing slip directly.</span>
+            </div>
+            <span class="badge badge-warn">${fmtNum(item.count)} Missing Serial${item.count === 1 ? '' : 's'}</span>
+          </div>
+          <div class="pa-qv-grid" style="padding:12px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))">
+            ${renderNeighborCard(`1. ENTERED BEFORE GAP (SLOT ${(item.gapStart - bs)}/25)`, 'RECORDED', prevRec)}
+            <div class="pa-qv-card" style="border-color:rgba(201,106,34,0.45);background:rgba(201,106,34,0.05)">
+              <div class="pa-qv-card-top">
+                <span class="pa-qv-card-lbl">2. MISSING IN PAD (${esc(cleanSerialLbl)})</span>
+                <span class="badge badge-warn">UNRECORDED GAP</span>
+              </div>
+              <div class="pa-qv-card-title">
+                <span>Resolve ${fmtNum(item.count)} Skipped Serial${item.count === 1 ? '' : 's'}</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+                ${gapNums.map(gn => {
+                  const fullNo = `${pfx}${gn}`;
+                  const slotN = (gn - bs) + 1;
+                  return `
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:6px 8px;border:1px dashed var(--line);border-radius:8px;background:var(--bg-card, rgba(255,255,255,0.5))">
+                      <span class="mono" style="font-size:12px"><b>#${esc(fullNo)}</b> <small class="mu">(Slot ${slotN}/25)</small></span>
+                      <div style="display:flex;gap:5px;flex-wrap:wrap">
+                        <button type="button" class="pa-cmd-btn btn-primary" style="padding:3px 8px;font-size:11px" data-wb-enter-stream="sales" data-wb-enter-no="${esc(fullNo)}" data-wb-enter-date="${esc(item.date || '')}" data-wb-enter-co="${esc(co)}">+ Sales #${esc(fullNo)}</button>
+                        <button type="button" class="pa-cmd-btn btn-brass" style="padding:3px 8px;font-size:11px" data-wb-enter-stream="raw" data-wb-enter-no="${esc(fullNo)}" data-wb-enter-date="${esc(item.date || '')}" data-wb-enter-co="${esc(co)}">+ Raw #${esc(fullNo)}</button>
+                        ${canRemoveWeighbridgeTicket() ? `<button type="button" class="pa-cmd-btn" style="padding:3px 8px;font-size:11px" data-wb-enter-stream="${prevRec && prevRec.docType === 'Raw' ? 'raw' : 'sales'}" data-wb-enter-no="${esc(fullNo)}" data-wb-enter-date="${esc(item.date || '')}" data-wb-enter-co="${esc(co)}" data-wb-enter-disp="removed">Remove · 0 KM</button>` : ''}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+                ${item.count > gapNums.length ? `<div class="mu" style="font-size:11px">+ ${fmtNum(item.count - gapNums.length)} additional missing serials in this gap (see full 25-slot table below).</div>` : ''}
+              </div>
+            </div>
+            ${renderNeighborCard(`3. ENTERED AFTER GAP (SLOT ${(item.gapEnd - bs) + 2}/25)`, 'RECORDED', nextRec)}
+          </div>
+        </div>
+      `;
+    } else if (item.kind === 'duplicate') {
+      const dupList = item.dupList || [];
+      contextSectionHtml = `
+        <div class="pa-subgrid-box" id="wbDupConflictBox" style="margin-bottom:14px">
+          <div class="pa-subgrid-hdr">
+            <div>
+              <strong>Conflicting Tickets Sharing Serial ${esc(cleanSerialLbl)} (${fmtNum(dupList.length)} Entries)</strong>
+              <span class="pa-subgrid-sub">Compare the duplicate tickets below. Click Edit Ticket to correct a mistyped serial number, or Void / Delete if entered twice by mistake.</span>
+            </div>
+            <span class="badge badge-err">${fmtNum(dupList.length)} Conflicting Rows</span>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Entry</th><th>Serial #</th><th>Stream</th><th>Co.</th><th>Date</th><th>Counterparty</th><th>Site</th><th>Product</th><th class="r">Qty</th><th>Truck / Driver</th><th class="r">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${dupList.map((d, idx) => `
+                  <tr class="rrow" data-wb-slot-rkey="${esc(d.rkey)}" data-wb-slot-rid="${esc(d.id)}">
+                    <td><span class="badge ${idx === 0 ? 'badge-brass' : 'badge-err'}">#${idx + 1}</span></td>
+                    <td class="mono"><strong>#${esc(d.ticket_no)}</strong></td>
+                    <td>${esc(d.docType)}</td>
+                    <td>${coBadge(d.company)}</td>
+                    <td class="mono">${esc(fmtDateDMY(d.date))}</td>
+                    <td><strong>${esc(d.party || '-')}</strong></td>
+                    <td>${esc(d.site || 'Plant')}</td>
+                    <td>${esc(d.product || '-')}</td>
+                    <td class="r mono">${fmtNum(d.qty, 1)} ${esc(d.uom || 'm³')}</td>
+                    <td>${esc((d.truck || '-') + (d.driver ? ' · ' + d.driver : ''))}</td>
+                    <td class="r" style="white-space:nowrap">
+                      <button type="button" class="pa-cmd-btn btn-brass" style="padding:2px 8px;font-size:11px" data-wb-edit-rec-key="${esc(d.rkey)}" data-wb-edit-rec-id="${esc(d.id)}">${ic('edit')} Edit</button>
+                      <button type="button" class="pa-cmd-btn" style="padding:2px 8px;font-size:11px" data-wb-open-rec-key="${esc(d.rkey)}" data-wb-open-rec-id="${esc(d.id)}">360° ↗</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    } else if (item.kind === 'removed' || item.kind === 'returned' || item.kind === 'unnumbered') {
+      const rObj = item.recObj || {};
+      contextSectionHtml = `
+        <div class="pa-subgrid-box" id="wbDispositionBox" style="margin-bottom:14px">
+          <div class="pa-subgrid-hdr">
+            <div>
+              <strong>Weighbridge Ticket Disposition &amp; Route Audit (${esc(cleanSerialLbl)})</strong>
+              <span class="pa-subgrid-sub">Focused weighbridge audit details for this ${esc(item.kindLabel)} slip without unrelated financial clutter.</span>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button type="button" class="pa-cmd-btn btn-brass" data-wb-edit-rec-key="${esc(item.rkey)}" data-wb-edit-rec-id="${esc(item.id)}">${ic('edit')} Edit Ticket</button>
+              <button type="button" class="pa-cmd-btn" data-wb-open-rec-key="${esc(item.rkey)}" data-wb-open-rec-id="${esc(item.id)}">Open Full Ticket 360° ↗</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Serial #</th><th>Disposition</th><th>Stream</th><th>Date</th><th>Counterparty</th><th>Site</th><th>Product</th><th class="r">Fleet KM</th><th>Truck / Driver</th><th>Audit Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="mono"><strong>${esc(cleanSerialLbl)}</strong></td>
+                  <td><span class="badge ${item.kind === 'removed' ? 'badge-ok' : (item.kind === 'returned' ? 'badge-brass' : 'badge-warn')}">${esc(item.kindLabel)}</span></td>
+                  <td>${esc(rObj.docType || '-')}</td>
+                  <td class="mono">${esc(fmtDateDMY(item.date))}</td>
+                  <td><strong>${esc(rObj.party || '-')}</strong></td>
+                  <td>${esc(rObj.site || 'Plant')}</td>
+                  <td>${esc(rObj.product || '-')}</td>
+                  <td class="r mono"><strong>${fmtNum(item.kmSpent || 0, 1)} km</strong></td>
+                  <td>${esc((rObj.truck || '-') + (rObj.driver ? ' · ' + rObj.driver : ''))}</td>
+                  <td>${esc(rObj.notes || item.afterText || '-')}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // Build 25-Slot Book Grid & 25-Slot Table whenever a 25-ticket book is associated
+    let bookGridAndTableHtml = '';
+    if (book && book.byNum) {
+      const slotCells = [];
+      const slotRows = [];
+      const maxEntered = book.emax || bs;
+      for (let sNum = bs; sNum <= be; sNum++) {
+        const slotIdx = (sNum - bs) + 1;
+        const fullNo = `${pfx}${sNum}`;
+        const sRec = book.byNum.get(sNum) || null;
+        const isHighlighted = (item.kind === 'skipped' && sNum >= item.gapStart && sNum <= item.gapEnd)
+          || ((item.kind === 'duplicate' || item.kind === 'removed' || item.kind === 'returned') && item.num === sNum);
+        let statusLbl = 'Unused Left';
+        let badgeCls = 'badge-neutral';
+        let cellBorder = '1px dashed var(--line)';
+        let cellBg = 'transparent';
+        if (sRec) {
+          if (sRec.isRemoved) {
+            statusLbl = 'Removed · 0 KM';
+            badgeCls = 'badge-neutral';
+            cellBorder = '1px solid var(--line)';
+            cellBg = 'rgba(120,130,145,0.08)';
+          } else if (sRec.isReturned) {
+            statusLbl = 'Returned · 2x KM';
+            badgeCls = 'badge-brass';
+            cellBorder = '1px solid rgba(196,154,69,0.45)';
+            cellBg = 'rgba(196,154,69,0.09)';
+          } else {
+            statusLbl = `Entered · ${sRec.docType}`;
+            badgeCls = 'badge-ok';
+            cellBorder = '1px solid rgba(31,122,76,0.35)';
+            cellBg = 'rgba(31,122,76,0.06)';
+          }
+        } else if (sNum < maxEntered) {
+          statusLbl = 'Missing Gap';
+          badgeCls = 'badge-warn';
+          cellBorder = '1px solid rgba(201,106,34,0.55)';
+          cellBg = 'rgba(201,106,34,0.10)';
+        }
+        if (isHighlighted) {
+          cellBorder = '2px solid #C96A22';
+          cellBg = 'rgba(201,106,34,0.16)';
+        }
+        const shortParty = sRec ? String(sRec.party || sRec.docType || '').slice(0, 18) : (sNum < maxEntered ? 'MISSING GAP' : 'Unused Slot');
+        slotCells.push(`
+          <button type="button" class="wb-slot-pill" style="text-align:left;padding:7px 9px;border-radius:8px;border:${cellBorder};background:${cellBg};cursor:pointer;display:flex;flex-direction:column;gap:2px" ${sRec ? `data-wb-edit-rec-key="${esc(sRec.rkey)}" data-wb-edit-rec-id="${esc(sRec.id)}"` : `data-wb-enter-stream="${book.domDocType === 'Raw' ? 'raw' : 'sales'}" data-wb-enter-no="${esc(fullNo)}" data-wb-enter-date="${esc(item.date || book.lastDate || '')}" data-wb-enter-co="${esc(co)}"`}>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:4px">
+              <span class="mono" style="font-size:11.5px;font-weight:700">#${esc(fullNo)}</span>
+              <span style="font-size:10px;color:var(--muted)">${slotIdx}/25</span>
+            </div>
+            <div style="font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:${sRec ? 'var(--text)' : (sNum < maxEntered ? '#C96A22' : 'var(--muted)')};font-weight:${isHighlighted || (!sRec && sNum < maxEntered) ? '700' : '500'}">${esc(shortParty)}</div>
+          </button>
+        `);
+        slotRows.push(`
+          <tr class="${sRec ? 'rrow' : ''} ${isHighlighted ? 'pbi-row-amber' : ''}" ${sRec ? `data-wb-slot-rkey="${esc(sRec.rkey)}" data-wb-slot-rid="${esc(sRec.id)}"` : ''}>
+            <td class="mono">${slotIdx} / 25</td>
+            <td class="mono"><strong>#${esc(fullNo)}</strong></td>
+            <td><span class="badge ${badgeCls}">${esc(statusLbl)}</span></td>
+            <td>${esc(sRec ? sRec.docType : '-')}</td>
+            <td class="mono">${esc(sRec ? fmtDateDMY(sRec.date) : '-')}</td>
+            <td><strong>${esc(sRec ? sRec.party : (sNum < maxEntered ? 'Unrecorded Serial Gap' : 'Open / Unused Slot'))}</strong></td>
+            <td>${esc(sRec ? (sRec.site || 'Plant') : '-')}</td>
+            <td>${esc(sRec ? sRec.product : '-')}</td>
+            <td class="r mono">${sRec ? `${fmtNum(sRec.qty, 1)} ${esc(sRec.uom || 'm³')}` : '-'}</td>
+            <td>${esc(sRec ? ((sRec.truck || '-') + (sRec.driver ? ' · ' + sRec.driver : '')) : '-')}</td>
+            <td class="r" style="white-space:nowrap">
+              ${sRec ? `
+                <button type="button" class="pa-cmd-btn btn-brass" style="padding:2px 8px;font-size:11px" data-wb-edit-rec-key="${esc(sRec.rkey)}" data-wb-edit-rec-id="${esc(sRec.id)}">${ic('edit')} Edit</button>
+                <button type="button" class="pa-cmd-btn" style="padding:2px 8px;font-size:11px" data-wb-open-rec-key="${esc(sRec.rkey)}" data-wb-open-rec-id="${esc(sRec.id)}">360° ↗</button>
+              ` : `
+                <button type="button" class="pa-cmd-btn btn-primary" style="padding:2px 8px;font-size:11px" data-wb-enter-stream="sales" data-wb-enter-no="${esc(fullNo)}" data-wb-enter-date="${esc(item.date || book.lastDate || '')}" data-wb-enter-co="${esc(co)}">+ Sales</button>
+                <button type="button" class="pa-cmd-btn btn-brass" style="padding:2px 8px;font-size:11px" data-wb-enter-stream="raw" data-wb-enter-no="${esc(fullNo)}" data-wb-enter-date="${esc(item.date || book.lastDate || '')}" data-wb-enter-co="${esc(co)}">+ Raw</button>
+                ${canRemoveWeighbridgeTicket() ? `<button type="button" class="pa-cmd-btn" style="padding:2px 8px;font-size:11px" data-wb-enter-stream="sales" data-wb-enter-no="${esc(fullNo)}" data-wb-enter-date="${esc(item.date || book.lastDate || '')}" data-wb-enter-co="${esc(co)}" data-wb-enter-disp="removed">0 KM</button>` : ''}
+              `}
+            </td>
+          </tr>
+        `);
+      }
+      bookGridAndTableHtml = `
+        <div class="pa-subgrid-box" id="wbBookPadGridBox" style="margin-bottom:14px">
+          <div class="pa-subgrid-hdr">
+            <div>
+              <strong>25-Ticket Book Visual Pad Map (${esc(bookRangeLbl)} · ${fmtNum(book.enteredCount)} / 25 Used)</strong>
+              <span class="pa-subgrid-sub">Click any recorded slot to edit that ticket, or click any missing/unused slot to record or remove that serial number.</span>
+            </div>
+            <span class="badge ${book.missingCount > 0 ? 'badge-warn' : 'badge-ok'}">${esc(book.statusLabel)}</span>
+          </div>
+          <div style="padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(135px,1fr));gap:8px">
+            ${slotCells.join('')}
+          </div>
+        </div>
+        <div class="pa-subgrid-box" id="wbBookSlotsTableBox">
+          <div class="pa-subgrid-hdr">
+            <div>
+              <strong>All 25 Serial Slots in Book ${esc(bookRangeLbl)} (${esc(co)})</strong>
+              <span class="pa-subgrid-sub">${esc(book.streamSummary)} · ${fmtNum(book.missingCount)} missing gap${book.missingCount === 1 ? '' : 's'} · ${fmtNum(book.unusedCount)} unused left</span>
+            </div>
+            <input type="search" class="pa-sg-search" data-sg-filter="wb_book_slots" placeholder="Filter 25 slots in book...">
+          </div>
+          <div class="table-wrap" style="max-height:420px;overflow:auto">
+            <table class="ledger-table" id="wbBookSlotsTable">
+              <thead>
+                <tr>
+                  <th>Slot</th><th>Serial #</th><th>Slot Status</th><th>Stream</th><th>Date</th><th>Counterparty</th><th>Site</th><th>Product</th><th class="r">Qty</th><th>Truck / Driver</th><th class="r">Action</th>
+                </tr>
+              </thead>
+              <tbody data-sg-tbody="wb_book_slots">
+                ${slotRows.join('')}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="8"><b>BOOK ${esc(bookRangeLbl)}</b></td>
+                  <td class="r mono"><b>${fmtNum(book.enteredCount)} / 25</b></td>
+                  <td colspan="2" class="r"><b>Next: #${esc(book.nextTicketNo)}</b></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const bodyEl = $('inspectorBody');
+    bodyEl.innerHTML = `
+      <div class="pa-cmd-bar">
+        <div class="pa-breadcrumbs">
+          <span class="pa-crumb-btn">Weighbridge 25-Ticket Book Audit</span>
+          <span class="pa-crumb-sep">›</span>
+          <span class="pa-crumb-btn">${esc(bookRangeLbl)}</span>
+          <span class="pa-crumb-sep">›</span>
+          <span class="pa-crumb-btn current">${esc(cleanSerialLbl)}</span>
+        </div>
+        <div class="pa-cmd-actions">
+          ${firstGapNo ? `<button type="button" class="pa-cmd-btn btn-primary" id="wbCmdEnterSalesBtn" data-wb-enter-stream="sales" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}">+ Enter Sales #${esc(firstGapNo)}</button>` : ''}
+          ${firstGapNo ? `<button type="button" class="pa-cmd-btn btn-brass" id="wbCmdEnterRawBtn" data-wb-enter-stream="raw" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}">+ Enter Raw #${esc(firstGapNo)}</button>` : ''}
+          ${firstGapNo && canRemoveWeighbridgeTicket() ? `<button type="button" class="pa-cmd-btn" id="wbCmdRemoveSlipBtn" data-wb-enter-stream="sales" data-wb-enter-no="${esc(firstGapNo)}" data-wb-enter-date="${esc(item.date || (book && book.lastDate) || '')}" data-wb-enter-co="${esc(co)}" data-wb-enter-disp="removed">Remove Slip · 0 KM (#${esc(firstGapNo)})</button>` : ''}
+          ${prevRec ? `<button type="button" class="pa-cmd-btn" data-wb-open-rec-key="${esc(prevRec.rkey)}" data-wb-open-rec-id="${esc(prevRec.id)}">Open #${esc(prevRec.ticket_no)} (Before)</button>` : ''}
+          ${nextRec && (!prevRec || String(nextRec.id) !== String(prevRec.id)) ? `<button type="button" class="pa-cmd-btn" data-wb-open-rec-key="${esc(nextRec.rkey)}" data-wb-open-rec-id="${esc(nextRec.id)}">Open #${esc(nextRec.ticket_no)} (After)</button>` : ''}
+          <button type="button" class="pa-cmd-btn" id="inspPrintBtn">${ic('printer')} Print Audit</button>
+        </div>
+      </div>
+
+      <div class="pa-rec-banner ${esc(bannerTone)}" id="inspLiveBanner">
+        <span class="pa-rec-banner-ico">${ic('info')}</span>
+        <span>${esc(bannerTxt)}</span>
+      </div>
+
+      <div class="pa-rec-cockpit" id="inspCockpit">
+        <div class="pa-rec-cockpit-top">
+          <div class="pa-rec-cockpit-title">
+            <span class="pa-rec-bu-pill">${esc(co)}</span>
+            <span>${esc(cockpitTitle)}</span>
+          </div>
+          <span class="pa-rec-val-pill">${esc(cockpitPill)}</span>
+        </div>
+        <div class="pa-rec-cockpit-cards">
+          ${cards.map(c => `
+            <div class="pa-rec-kcard">
+              <div>
+                <div class="pa-rec-kcard-hdr">
+                  <span class="pa-rec-kcard-lbl">${esc(c.lbl)}</span>
+                  <span class="pa-rec-kcard-tag ${esc(c.tone)}">${esc(c.tag)}</span>
+                </div>
+                <div class="pa-rec-kcard-val">${esc(c.val)}</div>
+                <div class="pa-rec-kcard-sub">${esc(c.sub1)}</div>
+                <div class="pa-rec-kcard-sub">${esc(c.sub2)}</div>
+              </div>
+              <div class="pa-rec-kcard-bar"><i class="${esc(c.tone)}" style="width:${Math.min(100, Math.max(12, Number(c.pct || 75)))}%"></i></div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      ${contextSectionHtml}
+      ${bookGridAndTableHtml}
+
+      <div class="modal-foot">
+        <span class="form-note">Weighbridge 25-Ticket Book &amp; Serial Audit Inspector · Click any slot to edit or record a ticket in ${esc(bookRangeLbl)}.</span>
+        <div>
+          <button type="button" class="btn btn-brass" id="inspectorDoneBtn">Close</button>
+        </div>
+      </div>
+    `;
+
+    $('inspectorDoneBtn').addEventListener('click', closeRecordInspector);
+    const prBtn = $('inspPrintBtn');
+    if (prBtn) prBtn.addEventListener('click', () => window.print());
+
+    bodyEl.querySelectorAll('[data-wb-enter-stream]').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      launchWeighbridgeGapEntry(
+        btn.getAttribute('data-wb-enter-stream'),
+        btn.getAttribute('data-wb-enter-no'),
+        btn.getAttribute('data-wb-enter-date'),
+        btn.getAttribute('data-wb-enter-co'),
+        btn.getAttribute('data-wb-enter-disp') || ''
+      );
+    }));
+
+    bodyEl.querySelectorAll('[data-wb-edit-rec-key]').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      openEntryModalForRecord(btn.getAttribute('data-wb-edit-rec-key'), btn.getAttribute('data-wb-edit-rec-id'));
+    }));
+
+    bodyEl.querySelectorAll('[data-wb-open-rec-key]').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      showRecordInspector(btn.getAttribute('data-wb-open-rec-key'), btn.getAttribute('data-wb-open-rec-id'), { full360: true });
+    }));
+
+    bodyEl.querySelectorAll('tr.rrow[data-wb-slot-rkey]').forEach(tr => tr.addEventListener('click', e => {
+      if (e.target && e.target.closest('button, a, input')) return;
+      openEntryModalForRecord(tr.getAttribute('data-wb-slot-rkey'), tr.getAttribute('data-wb-slot-rid'));
+    }));
+
+    bodyEl.querySelectorAll('[data-sg-filter]').forEach(inp => inp.addEventListener('input', e => {
+      const sgId = inp.getAttribute('data-sg-filter');
+      const q = norm(e.target.value);
+      const tbody = bodyEl.querySelector(`[data-sg-tbody="${sgId}"]`);
+      if (!tbody) return;
+      tbody.querySelectorAll('tr').forEach(tr => {
+        tr.hidden = Boolean(q && !norm(tr.innerText).includes(q));
+      });
+    }));
+
+    panel.hidden = false;
+    bodyEl.scrollTop = 0;
+    document.body.classList.add('modal-open');
+    if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
+      window.MFG_TABLE_COLS.enhanceAllTables(bodyEl);
+    }
+  }
+
+  function resolveTableRowContext(trEl, crKey, id, row) {
+    if (!trEl || !trEl.closest) return null;
+    const tbl = trEl.closest('table');
+    if (!tbl) return null;
+    const panelEl = trEl.closest('.panel-card, .pbi-card, .pbi-visual-card, .card');
+    const panelId = (panelEl && panelEl.id) ? String(panelEl.id) : ((tbl && tbl.id) ? String(tbl.id) : '');
+    let rawTitle = '';
+    if (panelEl) {
+      const titleNode = panelEl.querySelector('.panel-title span, .panel-title, .pbi-card-title, .pbi-visual-title, h3, h4');
+      if (titleNode) rawTitle = String(titleNode.textContent || '').trim();
+    }
+    const tableTitle = (rawTitle || INSPECT_LABELS[crKey] || 'Table Breakdown')
+      .replace(/[—→]/g, '·')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const thEls = Array.from(tbl.querySelectorAll('thead tr:first-child th'));
+    const tdEls = Array.from(trEl.querySelectorAll('td'));
+    const cells = [];
+    for (let i = 0; i < tdEls.length; i++) {
+      const lbl = String((thEls[i] && thEls[i].textContent) || `Col ${i + 1}`)
+        .replace(/[▲▼↕]/g, '')
+        .replace(/[—→]/g, '-')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const val = String(tdEls[i].textContent || '')
+        .replace(/[—→]/g, '-')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!lbl || /^action|^edit$/i.test(lbl)) continue;
+      cells.push({ label: lbl, value: val || '-' });
+    }
+    if (!cells.length) return null;
+
+    const findCellVal = rx => {
+      const hit = cells.find(c => rx.test(c.label));
+      return hit && hit.value && hit.value !== '-' ? hit.value : '';
+    };
+    const filterCustomer = (trEl.getAttribute('data-row-cust') || findCellVal(/^(customer|client|buyer)$/i) || '').trim();
+    const filterProduct = (trEl.getAttribute('data-row-prod') || findCellVal(/^(product|grade|material|aggregate)$/i) || '').trim();
+    const filterSite = (trEl.getAttribute('data-row-site') || findCellVal(/^(site|delivery site|source site|quarry)$/i) || '').trim();
+    const filterEquipment = (trEl.getAttribute('data-row-eq') || findCellVal(/^(equipment|unit|truck|machine|machine \/ unit)$/i) || '').trim();
+    const filterStaff = (trEl.getAttribute('data-row-staff') || findCellVal(/^(staff|employee|staff member)$/i) || '').trim();
+    const filterCompany = (trEl.getAttribute('data-row-co') || findCellVal(/^(co\.?|company|bu)$/i) || row.company || '').trim();
+
+    const primarySubject = row.name || row.ticket_no || row.invoice_no || row.staff || row.driver || row.equipment || String(id);
+    const subjectParts = [primarySubject];
+    if (filterProduct && norm(filterProduct) !== norm(primarySubject) && !/^\(/.test(filterProduct)) subjectParts.push(filterProduct);
+    if (filterSite && norm(filterSite) !== norm(primarySubject) && !/^\(/.test(filterSite)) subjectParts.push(filterSite);
+    const subjectTitle = `${subjectParts.join(' · ')} (${tableTitle})`;
+
+    // Build 4-card cockpit directly from the clicked table row's columns
+    const metricCells = cells.filter(c => norm(c.value) !== norm(primarySubject));
+    const cardSource = (metricCells.length >= 3 ? metricCells : cells).slice(0, 4);
+    while (cardSource.length < 4) {
+      cardSource.push({
+        label: cardSource.length === 1 ? 'Table Source' : (cardSource.length === 2 ? 'Entity Type' : 'Company Scope'),
+        value: cardSource.length === 1 ? tableTitle : (cardSource.length === 2 ? (INSPECT_LABELS[crKey] || crKey) : (filterCompany || COMPANY_LABELS[STATE.company] || 'WTC'))
+      });
+    }
+    const cockpitCards = cardSource.map((c, idx) => {
+      const isAlertCol = /shortfall|overdue|gap|discrepancy|unmatched|outlier|below|lapsed|cost/i.test(c.label);
+      return {
+        lbl: c.label.toUpperCase(),
+        tag: idx === 0 ? 'ROW METRIC' : (isAlertCol ? 'FLAGGED' : 'TABLE VALUE'),
+        tone: isAlertCol ? 'amber' : (idx === 0 ? 'brass' : 'good'),
+        val: c.value,
+        sub1: `From: ${tableTitle}`,
+        sub2: `Subject: ${subjectParts.join(' · ')}`,
+        pct: isAlertCol ? 85 : 100
+      };
+    });
+
+    // Determine domain-scoped subgrid IDs (matching buildInspectorSubgrids IDs) so only relevant breakdown tables appear
+    let allowedSgIds = null;
+    if (panelId === 'snBelow' || panelId === 'snLapsed' || panelId === 'belowAgreedPanel' || panelId === 'pricingBelowPanel') {
+      allowedSgIds = ['sg_c_sales', 'sg_c_rules', 'sg_p_sales', 'sg_p_rules'];
+    } else if (panelId === 'listPricePanel') {
+      allowedSgIds = ['sg_p_rules', 'sg_p_sales'];
+    } else if (panelId === 'deliveryTransCompPanel') {
+      allowedSgIds = ['sg_c_sales', 'sg_c_rules', 'sg_st_sales', 'sg_st_rules'];
+    } else if (panelId === 'commissionProductPanel' || panelId === 'commissionLedgerPanel') {
+      allowedSgIds = ['sg_pr_sales', 'sg_pr_comm_rcpt', 'sg_p_sales', 'sg_p_rules', 'sg_s_comm_rcpt', 'sg_s_rules'];
+    } else if (panelId === 'snOverdueAr') {
+      allowedSgIds = ['sg_c_sales', 'sg_c_rcpts', 'sg_c_vat', 'sg_c_cred'];
+    } else if (panelId === 'snVat') {
+      allowedSgIds = ['sg_ar_sales', 'sg_ar_rcpt'];
+    } else if (panelId === 'snFuel' || panelId === 'fuelEffPanel') {
+      allowedSgIds = ['sg_eq_fuel', 'sg_fi_log'];
+    } else if (panelId === 'lubricationBenchPanel' || panelId === 'oilSchedulePanel') {
+      allowedSgIds = ['sg_eq_oil', 'sg_eq_fuel', 'sg_m_oil'];
+    } else if (panelId === 'unitHealthPanel' || panelId === 'snFleetParts' || panelId === 'fleetPartsExpPanel' || panelId === 'partsLifecyclePanel') {
+      allowedSgIds = ['sg_eq_defects', 'sg_eq_repairs', 'sg_eq_oil', 'sg_eq_parts', 'sg_eq_exp', 'sg_m_defects', 'sg_m_repairs', 'sg_m_oil', 'sg_m_parts', 'sg_m_exp', 'sg_rep_items'];
+    } else if (panelId === 'snWorkforce' || panelId === 'wfMachineAuditPanel' || panelId === 'wfDailyRosterPanel') {
+      allowedSgIds = ['sg_eq_fuel', 'sg_eq_oil', 'sg_eq_sales', 'sg_eq_raw', 'sg_w_att', 'sg_w_emp', 'sg_d_sales', 'sg_d_raw', 'sg_d_fuel'];
+    } else if (panelId === 'warehouseStockPanel' || panelId === 'warehouseCatalogPanel') {
+      allowedSgIds = ['sg_wh_moves', 'sg_wh_repitems', 'sg_wh_expitems'];
+    } else if (panelId === 'expItemsCatalogPanel' || panelId === 'expItemsTicketPanel') {
+      allowedSgIds = ['sg_wh_expitems', 'sg_wh_moves', 'sg_wh_repitems', 'sg_exp_items'];
+    } else if (panelId === 'expCatPanel') {
+      allowedSgIds = ['sg_ec_sub', 'sg_ec_exp', 'sg_ec_recur'];
+    } else if (panelId === 'driversOtPanel' || panelId === 'payDriverOtPanel') {
+      allowedSgIds = ['sg_d_sales', 'sg_d_raw', 'sg_r_ot'];
+    } else if (panelId === 'snPayroll' || panelId === 'payUnmatchedPanel') {
+      allowedSgIds = ['sg_w_sal', 'sg_w_emp'];
+    } else if (panelId === 'payAttStaffSumPanel') {
+      allowedSgIds = ['sg_w_att'];
+    } else if (panelId === 'paySiteStaffPanel') {
+      allowedSgIds = ['sg_w_log', 'sg_w_att'];
+    } else if (panelId === 'payStaffRegPanel') {
+      allowedSgIds = ['sg_w_emp', 'sg_w_sal', 'sg_w_att', 'sg_w_log', 'sg_w_fl'];
+    } else if (panelId === 'salesProdPanel') {
+      allowedSgIds = ['sg_p_sales', 'sg_p_rules'];
+    } else if (panelId === 'salesSitePanel') {
+      allowedSgIds = ['sg_st_sales', 'sg_st_rules'];
+    } else if (panelId === 'sitesPanel') {
+      allowedSgIds = ['sg_st_raw', 'sg_st_rules', 'sg_st_jv', 'sg_st_jv_dist'];
+    } else if (panelId === 'jvSitesEntPanel' || panelId === 'jvPartPanel') {
+      allowedSgIds = ['sg_st_jv', 'sg_st_jv_dist', 'sg_st_raw', 'sg_jv_dist'];
+    } else if (panelId === 'rawSupPanel' || panelId === 'apLegBridgePanel') {
+      allowedSgIds = ['sg_s_mat', 'sg_s_haul', 'sg_s_exp', 'sg_s_pay', 'sg_s_rules'];
+    } else if (panelId === 'rawTransPriceCompPanel') {
+      allowedSgIds = ['sg_s_haul', 'sg_s_rules', 'sg_st_raw', 'sg_st_rules'];
+    } else if (panelId === 'rawMatPriceCompPanel') {
+      allowedSgIds = ['sg_st_raw', 'sg_st_rules', 'sg_s_mat', 'sg_s_rules'];
+    } else if (panelId === 'snMalfunction') {
+      allowedSgIds = ['sg_malf_sib', 'sg_malf_fuel'];
+    } else if (panelId === 'snDates' || panelId === 'snPendingPrice' || panelId === 'snCustomAlerts') {
+      allowedSgIds = [];
+    } else {
+      // Automatic domain scoping for any present or future summary/dashboard/audit table based on table heading
+      if (/fuel|diesel|tank|pump|litre|l\s*\/\s*100/i.test(tableTitle)) {
+        allowedSgIds = ['sg_eq_fuel', 'sg_fi_log', 'sg_d_fuel', 'sg_malf_sib', 'sg_malf_fuel'];
+      } else if (/lubric|lube|oil|grease|hydraul|preventive/i.test(tableTitle)) {
+        allowedSgIds = ['sg_eq_oil', 'sg_m_oil', 'sg_eq_fuel'];
+      } else if (/defect|warning|repair|maint|part\b|health|workshop/i.test(tableTitle)) {
+        allowedSgIds = ['sg_eq_defects', 'sg_eq_repairs', 'sg_eq_oil', 'sg_eq_parts', 'sg_eq_exp', 'sg_m_defects', 'sg_m_repairs', 'sg_m_oil', 'sg_m_parts', 'sg_rep_items'];
+      } else if (/warehouse|stock|inventory/i.test(tableTitle)) {
+        allowedSgIds = ['sg_wh_moves', 'sg_wh_repitems', 'sg_wh_expitems'];
+      } else if (/commission/i.test(tableTitle)) {
+        allowedSgIds = ['sg_pr_sales', 'sg_pr_comm_rcpt', 'sg_s_comm_rcpt', 'sg_s_rules', 'sg_p_sales'];
+      } else if (/below[-\s]*agreed|lapsed|price|corridor|tariff|rate\s+comparison/i.test(tableTitle)) {
+        allowedSgIds = ['sg_c_sales', 'sg_c_rules', 'sg_p_rules', 'sg_p_sales', 'sg_st_rules', 'sg_st_sales', 'sg_st_raw', 'sg_s_rules', 'sg_s_haul', 'sg_s_mat', 'sg_pr_sales', 'sg_pr_raw'];
+      } else if (/receivable|overdue|\bar\b|credit\s+limit|vat\s+invoice/i.test(tableTitle)) {
+        allowedSgIds = ['sg_c_sales', 'sg_c_rcpts', 'sg_c_vat', 'sg_c_cred', 'sg_ar_sales', 'sg_ar_rcpt'];
+      } else if (/payable|\bap\b|3-leg|settlement/i.test(tableTitle)) {
+        allowedSgIds = ['sg_s_mat', 'sg_s_haul', 'sg_s_exp', 'sg_s_pay', 'sg_ap_raw', 'sg_ap_set'];
+      } else if (/attendance|clock|roster|absent/i.test(tableTitle)) {
+        allowedSgIds = ['sg_w_att', 'sg_w_emp'];
+      } else if (/salary|payroll|unmatched|wage|freelance/i.test(tableTitle)) {
+        allowedSgIds = ['sg_w_sal', 'sg_w_emp', 'sg_w_fl', 'sg_w_att'];
+      } else if (/overtime|driver|trip/i.test(tableTitle)) {
+        allowedSgIds = ['sg_d_sales', 'sg_d_raw', 'sg_w_att', 'sg_r_ot'];
+      } else if (/\bjv\b|partner|entitlement/i.test(tableTitle)) {
+        allowedSgIds = ['sg_st_jv', 'sg_st_jv_dist', 'sg_st_raw', 'sg_jv_dist'];
+      } else if (/sales|revenue|grade|delivery/i.test(tableTitle)) {
+        allowedSgIds = ['sg_c_sales', 'sg_c_rules', 'sg_p_sales', 'sg_p_rules', 'sg_st_sales', 'sg_st_rules', 'sg_eq_sales', 'sg_d_sales'];
+      } else if (/quarry|raw\s+material|haulage/i.test(tableTitle)) {
+        allowedSgIds = ['sg_s_mat', 'sg_s_haul', 'sg_s_rules', 'sg_st_raw', 'sg_st_rules', 'sg_p_raw', 'sg_eq_raw', 'sg_d_raw'];
+      }
+    }
+
+    const filterSubgrids = rawSubgrids => {
+      let list = Array.isArray(rawSubgrids) ? rawSubgrids.slice() : [];
+      if (Array.isArray(allowedSgIds)) {
+        if (allowedSgIds.length === 0) return [];
+        const filtered = list.filter(sg => allowedSgIds.includes(sg.id));
+        if (filtered.length > 0) list = filtered;
+      }
+      const pNorm = (filterProduct && !/^\(/.test(filterProduct)) ? norm(filterProduct) : '';
+      const sNorm = (filterSite && !/^\(/.test(filterSite)) ? norm(filterSite) : '';
+      if (pNorm && (crKey === 'customers' || crKey === 'sites' || crKey === 'suppliers')) {
+        list = list.map(sg => {
+          if (['sg_c_sales', 'sg_c_rules', 'sg_st_raw', 'sg_st_sales', 'sg_st_rules', 'sg_s_mat', 'sg_s_rules'].includes(sg.id)) {
+            const matchingRows = (sg.rows || []).filter(r => !r.product || norm(r.product) === pNorm);
+            const exactRows = (sg.rows || []).filter(r => norm(r.product) === pNorm);
+            const picked = exactRows.length > 0 ? exactRows : matchingRows;
+            if (picked.length > 0) {
+              return Object.assign({}, sg, {
+                title: `${sg.title} · Filtered to ${filterProduct} (${fmtNum(picked.length)})`,
+                shortLabel: `${sg.shortLabel} (${filterProduct})`,
+                rows: picked
+              });
+            }
+          }
+          return sg;
+        });
+      }
+      if (sNorm && (crKey === 'customers' || crKey === 'suppliers')) {
+        list = list.map(sg => {
+          if (['sg_c_sales', 'sg_c_rules', 'sg_s_haul', 'sg_s_mat', 'sg_s_rules'].includes(sg.id)) {
+            const exactRows = (sg.rows || []).filter(r => norm(r.site) === sNorm);
+            if (exactRows.length > 0) {
+              return Object.assign({}, sg, {
+                title: `${sg.title} · Filtered to ${filterSite} (${fmtNum(exactRows.length)})`,
+                shortLabel: `${sg.shortLabel} (${filterSite})`,
+                rows: exactRows
+              });
+            }
+          }
+          return sg;
+        });
+      }
+      return list;
+    };
+
+    const kvSummary = cells.slice(0, 6).map(c => `${c.label}: ${c.value}`).join(' · ');
+    const bannerText = `${tableTitle} · ${kvSummary}. Showing focused breakdown for this table row; click "Open Full 360° Profile" above if you need the full entity master form.`;
+
+    return {
+      panelId,
+      tableTitle,
+      subjectTitle,
+      company: filterCompany || row.company || 'WTC',
+      filterCustomer,
+      filterProduct,
+      filterSite,
+      filterEquipment,
+      filterStaff,
+      cells,
+      bannerTone: /snBelow|snLapsed|snOverdueAr|snFuel|snDates|snPayroll|snFleetParts|snWorkforce|belowAgreedPanel|pricingBelowPanel/.test(panelId) ? 'amber' : '',
+      bannerText,
+      cockpit: {
+        bu: filterCompany || row.company || 'WTC',
+        title: `${subjectParts.join(' · ')} · ${tableTitle}`,
+        pill: (cells[cells.length - 1] && cells[cells.length - 1].value) || primarySubject,
+        cards: cockpitCards
+      },
+      filterSubgrids
+    };
+  }
+
   function showRecordInspector(key, idOrName, opts = {}) {
     const row = resolveInspectorRecord(key, idOrName);
     if (!row) { toast('Record not found in this snapshot', 'err'); return; }
+    const tc = (!opts.full360 && opts.tableContext) ? opts.tableContext : null;
 
     if (!STATE.inspectorHistory) STATE.inspectorHistory = [];
     const recTitle = row.ticket_no ? `#${row.ticket_no}` : (row.name || row.invoice_no || row.staff || row.driver || row.equipment || String(idOrName));
@@ -49653,15 +52200,21 @@
 
     const app = isAppRecord(row);
     const isAhRow = row && (row.after_hours === true || row.after_hours === 1 || row.after_hours === '1' || row.after_hours === 'true');
-    $('inspectorEyebrow').textContent = `RECORD INSPECTOR · ${(INSPECT_LABELS[key] || key).toUpperCase()} · ${app ? 'ENTERED IN WEB APP' : 'CLOUD LEDGER ' + SEED_DATE}${isAhRow ? " · YESTERDAY'S AFTER-HOURS" : ''}`;
-    $('inspectorTitle').textContent = row.name || row.ticket_no || row.invoice_no || row.staff || String(idOrName);
+    if (tc) {
+      $('inspectorEyebrow').textContent = `TABLE ROW DETAILS · ${tc.tableTitle.toUpperCase()} · ${(tc.company || row.company || 'WTC').toUpperCase()}`;
+      $('inspectorTitle').textContent = tc.subjectTitle;
+    } else {
+      $('inspectorEyebrow').textContent = `RECORD INSPECTOR · ${(INSPECT_LABELS[key] || key).toUpperCase()} · ${app ? 'ENTERED IN WEB APP' : 'CLOUD LEDGER ' + SEED_DATE}${isAhRow ? " · YESTERDAY'S AFTER-HOURS" : ''}`;
+      $('inspectorTitle').textContent = row.name || row.ticket_no || row.invoice_no || row.staff || String(idOrName);
+    }
 
     const fastMod = Boolean(window.__fastInspectorModifyTest);
-    const banner = fastMod ? { tone: '', text: '' } : buildInspectorLiveBanner(key, row);
-    const cockpit = fastMod ? { bu: 'WTC', title: '', pill: '', cards: [] } : buildInspectorCockpit(key, row);
-    const qvCards = fastMod ? [] : buildInspectorQuickViews(key, row);
-    const sections = fastMod ? [] : buildInspectorSections(key, row);
-    const subgrids = fastMod ? [] : buildInspectorSubgrids(key, row);
+    const banner = fastMod ? { tone: '', text: '' } : (tc ? { tone: tc.bannerTone || '', text: tc.bannerText } : buildInspectorLiveBanner(key, row));
+    const cockpit = fastMod ? { bu: 'WTC', title: '', pill: '', cards: [] } : (tc ? tc.cockpit : buildInspectorCockpit(key, row));
+    const qvCards = (fastMod || tc) ? [] : buildInspectorQuickViews(key, row);
+    const sections = (fastMod || tc) ? [] : buildInspectorSections(key, row);
+    const rawSubgrids = fastMod ? [] : buildInspectorSubgrids(key, row);
+    const subgrids = tc ? tc.filterSubgrids(rawSubgrids) : rawSubgrids;
     const totalRelRows = subgrids.reduce((a, sg) => a + sg.rows.length, 0);
     const isEquipInspect = key === 'equipment' || key === 'company_equipment';
     const targetEqRow = isEquipInspect
@@ -49669,7 +52222,7 @@
       : null;
     const eqWindows = (targetEqRow && Array.isArray(targetEqRow.adj_windows)) ? targetEqRow.adj_windows : [];
     const editSchema = getInspectorEditableSchema(key, row, targetEqRow);
-    const fIdxInsp = getFreqIndex();
+    const inspFreqIdx = getFreqIndex();
     const inspRegions = uniqSorted(
       ((SEED.records && SEED.records.regions) || []).map(r => r.name)
         .concat(((SEED.records && SEED.records.sites) || []).map(s => s.region))
@@ -49683,19 +52236,19 @@
           'Dbayeh', 'Antelias', 'Zalka', 'Broummana', 'Choueifat', 'Khaldeh', 'Damour', 'Sin El Fil',
           'Hazmieh', 'Hadath', 'Ghaziyeh', 'Sarafand', 'Dekwaneh', 'Jiyeh', 'Sibline', 'Borj Hammoud', 'Aawkar', 'Halat'
         ]),
-      fIdxInsp.region
+      inspFreqIdx.region
     );
     const inspSubcats = uniqSorted(
       ((SEED.records && SEED.records.expense_subcategories) || []).map(sc => sc.name)
         .concat(((SEED.records && SEED.records.expenses) || []).map(x => x.subcategory)),
-      fIdxInsp.subcategory
+      inspFreqIdx.subcategory
     );
     const inspCounterparties = uniqSorted(
       ((SEED.records && SEED.records.loans) || []).map(l => l.counterparty || l.lender || l.name)
         .concat(((SEED.records && SEED.records.external_movements) || []).map(x => x.counterparty))
         .concat(((SEED.records && SEED.records.jv_partnerships) || []).map(j => j.partner))
         .concat(supplierNames(), customerNames()),
-      fIdxInsp.counterparty
+      inspFreqIdx.counterparty
     );
     const inspRuleType = String((row && row.rule_type) || '').trim();
     const isRawInsp = key === 'raw_purchases' || (key === 'price_rules' && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(inspRuleType));
@@ -49710,18 +52263,19 @@
               ? domainProductMetaItems('comm', inspRowCo)
               : (isSalesInsp ? domainProductMetaItems('sales', inspRowCo) : domainProductMetaItems('', inspRowCo))));
     const inspSiteNames = siteNames(isRawInsp ? 'raw' : (isSalesInsp ? 'sales' : undefined));
-    const inspSupplierNames = (key === 'equipment' || key === 'company_equipment' || key === 'drivers' || key === 'company_drivers') ? uniqSorted(truckOwnerNames().concat(supplierNames(), customerNames()), fIdxInsp.truckOwner) : supplierNames(isRawInsp ? 'raw_owner' : (key === 'expenses' ? 'expense' : undefined));
+    const inspSupplierNames = (key === 'equipment' || key === 'company_equipment' || key === 'drivers' || key === 'company_drivers') ? uniqSorted(truckOwnerNames().concat(supplierNames(), customerNames()), inspFreqIdx.truckOwner) : supplierNames(isRawInsp ? 'raw_owner' : (key === 'expenses' ? 'expense' : undefined));
     const inspParts = uniqSorted(
-      ((SEED.records && SEED.records.items) || []).filter(x => x && !x.voided).map(x => x.name || x.item_name)
-        .concat(((SEED.records && SEED.records.part_movements) || []).map(p => p.part_name))
+      ((SEED.records && SEED.records.part_movements) || []).map(p => p.part_name)
         .concat(((SEED.records && SEED.records.equipment_defects) || []).map(d => d.part_name))
+        .concat(((SEED.records && SEED.records.items) || []).filter(x => x && !x.voided).map(x => x.name || x.item_name))
         .concat(['Tire 315/80 R22.5', 'Tire 13R22.5', 'Brake Lining & Drum Set', 'Clutch Disc & Pressure Plate', 'Hydraulic Hoist Cylinder', 'Alternator 24V', 'Starter Motor 24V', 'Battery 12V 200Ah', 'Radiator & Water Pump', 'Turbocharger', 'Fuel Injector Set', 'Leaf Spring Pack', 'Crusher Jaw Plate', 'Conveyor Belt Roller']),
-      fIdxInsp.item
+      inspFreqIdx.item
     );
     const inspPartLocs = uniqSorted(
       ((SEED.records && SEED.records.part_movements) || []).map(p => p.storage_location)
+        .concat(((SEED.records && SEED.records.warehouse_movements) || []).map(r => r && r.location))
         .concat(['WTC Main Spare Parts Room', 'BBConstruction Spare Parts Store', 'Lions Garage Shelf A', 'Tire Rack — Plant Yard', 'External Workshop / Rebuild Shop', 'Scrap Yard Bin']),
-      fIdxInsp.warehouseLoc
+      inspFreqIdx.warehouseLoc
     );
 
     const renderModFieldHtml = (fDef) => {
@@ -49825,6 +52379,7 @@
           `).join('')}
         </div>
         <div class="pa-cmd-actions">
+          ${tc ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspOpenFull360Btn">Open Full 360° Profile ↗</button>` : ''}
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
           ${((key === 'expenses' && isPendingPriceExpense(row) && (canModifyData() || canEnterForm('expense'))) || (key === 'raw_purchases' && isPendingPriceRaw(row) && (canModifyData() || canEnterForm('raw')))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Price</button>` : ''}
           ${(key === 'employments' && isPendingSalaryEmployment(row) && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance'))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Salary</button>` : ''}
@@ -49873,9 +52428,14 @@
 
       <!-- Power Apps Form Tabs (General | Related + Subgrid Quick-Jump Tabs) -->
       <div class="pa-rec-tabs">
-        <button type="button" class="pa-rec-tab ${activeTab === 'general' ? 'active' : ''}" data-insp-tab="general">General <em>Form &amp; Cockpit</em></button>
-        <button type="button" class="pa-rec-tab ${activeTab === 'related' ? 'active' : ''}" data-insp-tab="related">Related Tables <em>${fmtNum(totalRelRows)} rows</em></button>
-        ${isEquipInspect ? `<button type="button" class="pa-rec-tab" data-insp-scroll-sg="truck_windows">Truck Size Windows <em>${fmtNum(eqWindows.length)}</em></button>` : ''}
+        ${tc ? `
+          <button type="button" class="pa-rec-tab active" data-insp-tab="general">Table Row Breakdown <em>${fmtNum(tc.cells.length)} metrics</em></button>
+          <button type="button" class="pa-rec-tab" id="inspTabSwitchFull360Btn">Full 360° Master Profile ↗</button>
+        ` : `
+          <button type="button" class="pa-rec-tab ${activeTab === 'general' ? 'active' : ''}" data-insp-tab="general">General <em>Form &amp; Cockpit</em></button>
+          <button type="button" class="pa-rec-tab ${activeTab === 'related' ? 'active' : ''}" data-insp-tab="related">Related Tables <em>${fmtNum(totalRelRows)} rows</em></button>
+          ${isEquipInspect ? `<button type="button" class="pa-rec-tab" data-insp-scroll-sg="truck_windows">Truck Size Windows <em>${fmtNum(eqWindows.length)}</em></button>` : ''}
+        `}
         ${subgrids.map(sg => `<button type="button" class="pa-rec-tab" data-insp-scroll-sg="${esc(sg.id)}">${esc(sg.shortLabel)} <em>${fmtNum(sg.rows.length)}</em></button>`).join('')}
       </div>
 
@@ -49906,7 +52466,27 @@
         </div>
       </div>
 
-      ${activeTab === 'general' ? `
+      ${tc ? `
+        <div class="pa-subgrid-box" id="inspTableRowSnapshot" style="margin-bottom:14px">
+          <div class="pa-subgrid-hdr">
+            <div>
+              <strong>Clicked Row Values · ${esc(tc.tableTitle)}</strong>
+              <span class="pa-subgrid-sub">Exact metrics from the selected row in ${esc(tc.tableTitle)}${subgrids.length ? ' · Scoped breakdown records shown below' : ''}.</span>
+            </div>
+            <span class="badge badge-brass">${fmtNum(tc.cells.length)} Columns</span>
+          </div>
+          <div style="padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px">
+            ${tc.cells.map(c => `
+              <div class="pa-qv-kv" style="padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg-card, rgba(255,255,255,0.4))">
+                <small style="display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em">${esc(c.label)}</small>
+                <b style="display:block;font-size:13px;margin-top:3px">${esc(c.value)}</b>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      ${!tc && activeTab === 'general' ? `
         <!-- Locked Quick-View Cards (qv_customer, qv_truck, qv_site, qv_supplier) -->
         ${qvCards.length ? `
           <div class="pa-qv-grid">
@@ -49943,11 +52523,11 @@
         </div>
       ` : ''}
 
-      ${isEquipInspect ? `
+      ${!tc && isEquipInspect ? `
         <div class="pa-subgrid-box" id="subgrid_truck_windows" data-edit-tw-idx="" style="margin-bottom:14px">
           <div class="pa-subgrid-hdr">
             <div>
-              <strong>${ic('ruler')} Equipment Driver &amp; Capacity Log (Start Date → End Date)</strong>
+              <strong>${ic('ruler')} Equipment Driver &amp; Capacity Log (Start Date to End Date)</strong>
               <span class="pa-subgrid-sub">Active driver &amp; truck owner lock onto Sales, Raw Material, Lubricant &amp; Diesel tickets matching the ticket date. Click any log row (or its Edit button) to update an existing entry in-place, or set a new Start Date for a new window.</span>
             </div>
             <span class="badge badge-brass">${fmtNum(eqWindows.length)} Window${eqWindows.length === 1 ? '' : 's'}</span>
@@ -50021,17 +52601,17 @@
                   const sideLbl = w.side === 'sales' ? 'Sales' : (w.side === 'raw' ? 'Raw & Trans' : (w.side === 'fuel' ? 'Diesel & Lub.' : 'All Tables'));
                   const scopeLbl = [w.cust ? `Client: ${w.cust}` : '', w.site ? `Site: ${w.site}` : ''].filter(Boolean).join(' · ') || 'General (All)';
                   return `
-                    <tr data-insp-tw-row-idx="${origIdx}" style="cursor:pointer" title="Click to edit this log entry">
+                    <tr data-insp-tw-row-idx="${origIdx}" style="cursor:pointer" aria-label="Click to edit this log entry">
                       <td>${coBadge(w.co || 'WTC')}</td>
                       <td><span class="badge badge-info">${esc(sideLbl)}</span></td>
                       <td class="mono">${esc(w.s || '2024-01-01')}</td>
                       <td class="mono">${esc(w.e || 'Open')}</td>
                       <td class="r"><strong>${fmtNum(w.cap, 1)} m³</strong></td>
-                      <td>${w.own ? relLink(resolveTruckOwnerTarget(w.own, targetEqRow), w.own, w.own, true) : '—'}</td>
-                      <td>${w.drv ? relLink('drivers', w.drv, w.drv) : '—'}</td>
+                      <td>${w.own ? relLink(resolveTruckOwnerTarget(w.own, targetEqRow), w.own, w.own, true) : '-'}</td>
+                      <td>${w.drv ? relLink('drivers', w.drv, w.drv) : '-'}</td>
                       <td>${w.cust || w.site ? `<span class="badge badge-brass">${esc(scopeLbl)}</span>` : `<span class="mu">${esc(scopeLbl)}</span>`}</td>
                       <td><span class="badge ${isSub ? 'badge-brass' : (isOpen ? 'badge-ok' : 'badge-neutral')}">${isSub ? 'Substitute' : (isOpen ? 'Active' : 'Historical')}</span></td>
-                      ${canModifyData() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-tw-idx="${origIdx}" title="Edit log entry">Edit</button> <button type="button" class="btn btn-sm" data-del-tw-idx="${origIdx}" title="Remove window">✕</button></td>` : ''}
+                      ${canModifyData() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button> <button type="button" class="btn btn-sm" data-del-tw-idx="${origIdx}" aria-label="Remove window">✕</button></td>` : ''}
                     </tr>
                   `;
                 }).join('') : `<tr><td colspan="${canModifyData() ? 10 : 9}" class="mu" style="text-align:center;padding:14px">No dated adjustment windows recorded — using default capacity (${fmtNum(targetEqRow && targetEqRow.capacity, 1)} m³).</td></tr>`}
@@ -50056,6 +52636,12 @@
     `;
 
     $('inspectorDoneBtn').addEventListener('click', closeRecordInspector);
+    ['inspOpenFull360Btn', 'inspTabSwitchFull360Btn'].forEach(btnId => {
+      const b = $(btnId);
+      if (b) b.addEventListener('click', () => {
+        showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, full360: true });
+      });
+    });
     const wireInspectorVoidBtn = (btn, defaultHtml) => {
       if (!btn) return;
       btn.addEventListener('click', () => {
@@ -50619,6 +53205,13 @@
           toast('End Date cannot be before Start Date.', 'err');
           return;
         }
+        if (!window.__fastInspectorModifyTest && EFFECTIVE_SERIES_TABLES.has(key) && ('start_date' in pendingUpdates || 'end_date' in pendingUpdates)) {
+          const chronoChk = validateChronologicalSeriesEntry(key, Object.assign({}, row, pendingUpdates), row);
+          if (!chronoChk.ok) {
+            toast(chronoChk.reason, 'err');
+            return;
+          }
+        }
         if (UNIVERSAL_MAIN_SPEC[key]) {
           const candidate = Object.assign({}, row, pendingUpdates);
           const mainVal = universalMainValue(key, candidate);
@@ -50854,6 +53447,19 @@
             if (du > 0 && !('amount' in pendingUpdates)) {
               row.amount = round2(dc * du);
             }
+          }
+        } else if (key === 'recurring_expenses') {
+          row.start_date = String(row.start_date || row.date || todayISO()).slice(0, 10);
+          row.date = row.start_date;
+          row.rep_date = row.start_date;
+          row.end_date = row.end_date ? String(row.end_date).slice(0, 10) : '';
+          row.amount = round2(Number(row.amount || 0));
+          if (String(row.currency || 'USD').toUpperCase() !== 'LBP') {
+            row.usd_amount = row.amount;
+          }
+          row.status = (!row.end_date || row.end_date >= todayISO()) ? 'In Force' : 'Ended';
+          if (row.supplier) {
+            row.name = `RECUR ${row.start_date} ${row.supplier} (${row.item || row.subcategory || row.category || 'Schedule'})`;
           }
         } else if (key === 'freelance_entries') {
           if (('hours' in pendingUpdates || 'extra_hours' in pendingUpdates || 'rate_usd' in pendingUpdates) && !('total' in pendingUpdates)) {
@@ -51177,10 +53783,19 @@
         if (cIdx >= 0) Object.assign(STATE.customRecords[key][cIdx], row);
         else STATE.customRecords[key].unshift(Object.assign({}, row));
         if (!window.__fastInspectorModifyTest) {
+          const inspExtraPosts = [];
+          if (EFFECTIVE_SERIES_TABLES.has(key) && row.start_date) {
+            syncChronologicalSeriesNeighbors(key, row, origRowSnap, inspExtraPosts);
+          }
           applyCustomRecordsToSeed();
+          if (EFFECTIVE_SERIES_TABLES.has(key) || key === 'products') {
+            backfillEffectiveLogChange(key, row, origRowSnap, inspExtraPosts);
+            applyCustomRecordsToSeed();
+          }
           saveLocalAuthAndRecords();
           renderApp();
           postRecordToLocalApi(key, row);
+          inspExtraPosts.forEach(([ek, er]) => postRecordToLocalApi(ek, er));
           syncWithCloud(true);
           toast(changedCount ? `✓ Record modified (${changedCount} field${changedCount === 1 ? '' : 's'} updated)` : '✓ Record saved');
           showRecordInspector(key, row.id || row.name || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab });
@@ -51191,6 +53806,30 @@
     const twBox = $('subgrid_truck_windows');
     const addTwBtn = $('inspAddTruckWinBtn');
     const cancelTwBtn = $('inspCancelTruckWinEditBtn');
+    const syncInspTwStartMin = (editIdxOverride) => {
+      const sInp = $('insp_tw_start');
+      if (!sInp || !targetEqRow) return;
+      const eIdx = editIdxOverride !== undefined
+        ? editIdxOverride
+        : ((twBox && twBox.dataset.editTwIdx != null && twBox.dataset.editTwIdx !== '') ? Number(twBox.dataset.editTwIdx) : -1);
+      const minS = getTruckWindowMinStart(targetEqRow, {
+        co: ($('insp_tw_co') && $('insp_tw_co').value) || row.company || 'WTC',
+        side: ($('insp_tw_side') && $('insp_tw_side').value) || 'both',
+        cust: ($('insp_tw_cust') && $('insp_tw_cust').value) || '',
+        site: ($('insp_tw_site') && $('insp_tw_site').value) || '',
+      }, eIdx);
+      if (minS) {
+        sInp.setAttribute('min', minS);
+        if (eIdx < 0 && sInp.value && sInp.value < minS) sInp.value = minS;
+      } else {
+        sInp.removeAttribute('min');
+      }
+    };
+    syncInspTwStartMin(-1);
+    ['insp_tw_co', 'insp_tw_side', 'insp_tw_cust', 'insp_tw_site'].forEach(fid => {
+      const el = $(fid);
+      if (el) el.addEventListener('change', () => syncInspTwStartMin());
+    });
     const startInspWinEdit = idx => {
       if (!canModifyData() || !twBox || !targetEqRow || !Array.isArray(targetEqRow.adj_windows)) return;
       const w = targetEqRow.adj_windows[idx];
@@ -51205,6 +53844,7 @@
       if ($('insp_tw_drv')) $('insp_tw_drv').value = w.drv != null ? w.drv : (targetEqRow.default_driver || '');
       if ($('insp_tw_cust')) $('insp_tw_cust').value = w.cust || '';
       if ($('insp_tw_site')) $('insp_tw_site').value = w.site || '';
+      syncInspTwStartMin(idx);
       if (addTwBtn) addTwBtn.textContent = '✓ Update Log Entry';
       if (cancelTwBtn) cancelTwBtn.hidden = false;
       bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => {
@@ -51223,12 +53863,13 @@
         if ($('insp_tw_drv')) $('insp_tw_drv').value = targetEqRow.default_driver || '';
         if ($('insp_tw_cust')) $('insp_tw_cust').value = '';
         if ($('insp_tw_site')) $('insp_tw_site').value = '';
+        syncInspTwStartMin(-1);
         if (addTwBtn) addTwBtn.textContent = '+ Add Log Entry';
         cancelTwBtn.hidden = true;
         bodyEl.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => { tr.style.background = ''; });
       });
     }
-    bodyEl.querySelectorAll('[data-edit-tw-idx]').forEach(btn => btn.addEventListener('click', e => {
+    bodyEl.querySelectorAll('button[data-edit-tw-idx]').forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
       startInspWinEdit(Number(btn.getAttribute('data-edit-tw-idx')));
     }));
@@ -51247,8 +53888,8 @@
         if (isTruckCat && !(capVal > 0) && !drvVal) { toast('Enter Truck Capacity (m³) or Active Driver.', 'err'); return; }
         if (!isTruckCat && !drvVal && !(capVal > 0)) { toast('Select the Active / Substitute Driver to log.', 'err'); return; }
         if (eVal && eVal < sVal) { toast('End Date cannot be before Start Date.', 'err'); return; }
-        const rawEditIdx = twBox && twBox.dataset.editTwIdx !== '' ? Number(twBox.dataset.editTwIdx) : -1;
-        const savedWin = appendOrUpdateTruckWindow(targetEqRow, {
+        const rawEditIdx = (twBox && twBox.dataset.editTwIdx != null && twBox.dataset.editTwIdx !== '') ? Number(twBox.dataset.editTwIdx) : -1;
+        const winSpec = {
           co: ($('insp_tw_co') && $('insp_tw_co').value) || 'WTC',
           side: ($('insp_tw_side') && $('insp_tw_side').value) || 'both',
           s: sVal,
@@ -51258,10 +53899,15 @@
           drv: drvVal,
           cust: ($('insp_tw_cust') && $('insp_tw_cust').value) || '',
           site: ($('insp_tw_site') && $('insp_tw_site').value) || '',
-          backfillTickets: false
-        }, rawEditIdx);
-        if (savedWin && eVal) savedWin._explicitEnd = true;
-        const bf = backfillTruckWindowToTickets(targetEqRow, savedWin, { persistCustom: true });
+          persistTicketBackfill: true
+        };
+        const chk = validateTruckWindowChronology(targetEqRow, winSpec, rawEditIdx);
+        if (!chk.ok) {
+          toast(chk.reason, 'err');
+          return;
+        }
+        const savedWin = appendOrUpdateTruckWindow(targetEqRow, winSpec, rawEditIdx);
+        const bf = (savedWin && savedWin._lastBackfill) || { total: 0 };
         if (targetEqRow !== row) {
           if (targetEqRow.capacity) row.capacity = targetEqRow.capacity;
           if (targetEqRow.supplier !== undefined) row.supplier = targetEqRow.supplier;
@@ -51275,7 +53921,7 @@
         saveLocalAuthAndRecords();
         renderApp();
         const bfMsg = bf && bf.total > 0 ? ` · Backfilled ${bf.total} ticket${bf.total === 1 ? '' : 's'}` : '';
-        toast(`✓ ${rawEditIdx >= 0 ? 'Updated' : 'Logged'} equipment assignment (${drvVal || (fmtNum(capVal, 1) + ' m³')} · ${sVal} → ${eVal || 'Open'})${bfMsg}`);
+        toast(`✓ ${rawEditIdx >= 0 ? 'Updated' : 'Logged'} equipment assignment (${drvVal || (fmtNum(capVal, 1) + ' m³')} · ${sVal} to ${eVal || 'Open'})${bfMsg}`);
         showRecordInspector(key, row.id || idOrName, { fromCrumbIdx: STATE.inspectorHistory.length - 1, tab: activeTab });
       });
     }
@@ -55496,17 +58142,19 @@
     const emEl = $('authEmailInput');
     const rawFilter = (!resolveSelectedAuthUser() && emEl) ? norm(emEl.value) : '';
     const disPin = String(FACE_STATE.disambiguatePin || '').trim();
-    const seatFreq = new Map();
+    const sessFreq = new Map();
     (STATE.sessions || []).forEach(s => {
-      if (s && s.email) {
-        const ek = norm(s.email);
-        seatFreq.set(ek, (seatFreq.get(ek) || 0) + 1);
-      }
+      if (!s) return;
+      const ek = norm(s.email || s.user_email || '');
+      const nk = norm(s.user_name || s.full_name || '');
+      if (ek) sessFreq.set(ek, (sessFreq.get(ek) || 0) + 1);
+      if (nk) sessFreq.set(nk, (sessFreq.get(nk) || 0) + 1);
     });
-    const activeSeats = STATE.users
-      .filter(u => u.status !== 'Suspended')
-      .slice()
-      .sort((a, b) => (seatFreq.get(norm(b.email)) || 0) - (seatFreq.get(norm(a.email)) || 0));
+    const activeSeats = STATE.users.filter(u => u.status !== 'Suspended').slice().sort((a, b) => {
+      const fa = (sessFreq.get(norm(a.email)) || 0) + (sessFreq.get(norm(a.full_name)) || 0);
+      const fb = (sessFreq.get(norm(b.email)) || 0) + (sessFreq.get(norm(b.full_name)) || 0);
+      return fb - fa;
+    });
     const filtered = activeSeats.filter(u => {
       if (disPin && String(u.pin_code || '1111').trim() !== disPin) return false;
       if (!rawFilter) return true;
@@ -57717,17 +60365,19 @@
     });
 
     // 3. Remaining Active Contract Employees ($0 ERP login seat required)
-    const punchFreq = new Map();
+    const staffFreqMap = getFreqIndex().staff;
+    const punchFreqMap = new Map();
     (STATE.kioskPunches || []).forEach(p => {
-      const pk = norm(p && (p.staff || p.user));
-      if (pk) punchFreq.set(pk, (punchFreq.get(pk) || 0) + 2);
+      if (p && !p.voided && p.staff) {
+        const pk = norm(p.staff);
+        if (pk) punchFreqMap.set(pk, (punchFreqMap.get(pk) || 0) + 1);
+      }
     });
-    const staffFreq = getFreqIndex().staff;
     activeEmps
       .slice()
       .sort((a, b) => {
-        const fb = (punchFreq.get(b.k) || 0) + (staffFreq ? (staffFreq.get(b.k) || 0) : 0);
-        const fa = (punchFreq.get(a.k) || 0) + (staffFreq ? (staffFreq.get(a.k) || 0) : 0);
+        const fa = (punchFreqMap.get(a.k) || 0) * 5 + (staffFreqMap ? (staffFreqMap.get(a.k) || 0) : 0);
+        const fb = (punchFreqMap.get(b.k) || 0) * 5 + (staffFreqMap ? (staffFreqMap.get(b.k) || 0) : 0);
         return fb - fa;
       })
       .forEach(({ emp, nm, k, empCo }) => {
@@ -63019,6 +65669,14 @@
       renderApp();
       if (ws) ws.scrollTop = y;
     }));
+    container.querySelectorAll('[data-recur-exp-chip]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.recurExpFilter = btn.getAttribute('data-recur-exp-chip') || 'all';
+      STATE.shown.recur_exp = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
     container.querySelectorAll('[data-wh-cat-chip]').forEach(btn => btn.addEventListener('click', () => {
       STATE.whCatFilter = btn.getAttribute('data-wh-cat-chip') || 'all';
       STATE.shown.whcat = PAGE;
@@ -64595,17 +67253,19 @@
         }
 
         if (!navigator.webdriver && !window.__MFG_HEADLESS_TEST && cleaned.length >= 4 && Date.now() >= loginLockUntil) {
-          const seatFreq = new Map();
+          const sessFreq = new Map();
     (STATE.sessions || []).forEach(s => {
-      if (s && s.email) {
-        const ek = norm(s.email);
-        seatFreq.set(ek, (seatFreq.get(ek) || 0) + 1);
-      }
+      if (!s) return;
+      const ek = norm(s.email || s.user_email || '');
+      const nk = norm(s.user_name || s.full_name || '');
+      if (ek) sessFreq.set(ek, (sessFreq.get(ek) || 0) + 1);
+      if (nk) sessFreq.set(nk, (sessFreq.get(nk) || 0) + 1);
     });
-    const activeSeats = STATE.users
-      .filter(u => u.status !== 'Suspended')
-      .slice()
-      .sort((a, b) => (seatFreq.get(norm(b.email)) || 0) - (seatFreq.get(norm(a.email)) || 0));
+    const activeSeats = STATE.users.filter(u => u.status !== 'Suspended').slice().sort((a, b) => {
+      const fa = (sessFreq.get(norm(a.email)) || 0) + (sessFreq.get(norm(a.full_name)) || 0);
+      const fb = (sessFreq.get(norm(b.email)) || 0) + (sessFreq.get(norm(b.full_name)) || 0);
+      return fb - fa;
+    });
           const targetEmail = norm(resolveUiSubmitEmail());
           if (targetEmail) {
             const targetSeat = activeSeats.find(u => norm(u.email) === targetEmail);

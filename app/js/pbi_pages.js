@@ -1397,15 +1397,20 @@
     { key: 'price_rules', group: '1 · Sales, Pricing & Receivables', label: 'Price & Commission Agreements', dvn: 'bhf_pricerule', form: 'pricerule', cols: ['company', 'rule_type', 'customer', 'supplier', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'total1', 'qty2', 'adj2', 'total2', 'start_date', 'end_date', 'matched_tickets'], relTables: ['customers', 'suppliers', 'products', 'sites', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'Sales & Commission Agreements', fn: r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '') }, { id: 'active', label: 'Active Sales Agreements', fn: r => !r.end_date && !/^(Purchase Price \(Site\)|Transport Price \(Site\)|Commission)$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'sales', label: 'Customer Delivery & Pickup', fn: r => /sale|pickup|deliv/i.test(r.rule_type || '') && !/^commission$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'customer', 'product', 'site', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'list', label: 'List Prices', fn: r => /list/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'commission', label: 'Commission Rules', fn: r => /^commission$/i.test(r.rule_type || ''), cols: ['company', 'supplier', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_all', label: 'Raw & Site Haulage Agreements', fn: r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_active', label: 'Active Raw & Haulage', fn: r => !r.end_date && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''), cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_purch', label: 'Site Material Cost Rules', fn: r => r.rule_type === 'Purchase Price (Site)', cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'unit_price', 'start_date', 'end_date', 'matched_tickets'] }, { id: 'raw_haul', label: 'Site Haulage Rate Rules', fn: r => r.rule_type === 'Transport Price (Site)', cols: ['company', 'rule_type', 'supplier', 'site', 'product', 'unit', 'trans_unit_price', 'start_date', 'end_date', 'matched_tickets'] }] },
     { key: 'credit_terms', group: '1 · Sales, Pricing & Receivables', label: 'Customer Credit Terms', dvn: 'bhf_creditterm', form: 'creditterm', cols: ['name', 'company', 'customer', 'credit_days', 'credit_limit', 'ar_balance', 'start_date', 'end_date', 'notes'], relTables: ['customers', 'sales_tickets', 'receipts'], views: [{ id: 'all', label: 'All Credit Terms' }, { id: 'active', label: 'Active Policies', fn: r => !r.end_date }] },
 
-    // 2 · Purchases, Expenses & Payables (7 BU-scoped)
+    // 2 · Purchases, Expenses & Payables (8 BU-scoped)
     { key: 'raw_purchases', group: '2 · Purchases, Expenses & Payables', label: 'Raw Material Purchases', dvn: 'bhf_rawpurchase', form: 'raw', cols: ['date', 'rep_date', 'ticket_no', 'company', 'site', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'driver', 'overtime', 'product', 'qty', 'uom', 'unit_cost', 'cost', 'trans_cost', 'total'], relTables: ['sites', 'suppliers', 'price_rules', 'equipment', 'drivers', 'products', 'settlements'], views: [{ id: 'all', label: 'All Raw Purchases' }, { id: 'supplier_haul', label: 'Third-Party Haulage', fn: r => Number(r.trans_cost || 0) > 0 }, { id: 'company_haul', label: 'Company Fleet Haul', fn: r => /company/i.test(r.transport_by) }, { id: 'overtime', label: 'Overtime Loads', fn: r => Boolean(r.overtime) }] },
-    { key: 'expenses', group: '2 · Purchases, Expenses & Payables', label: 'General & Fleet Expenses', dvn: 'bhf_mfgexpense', form: 'expense', cols: ['date', 'rep_date', 'name', 'company', 'category', 'subcategory', 'item_summary', 'supplier', 'equipment', 'method', 'qty', 'amount', 'vat', 'total_ttc', 'invoice', 'reference', 'notes'], relTables: ['expense_items', 'expense_categories', 'expense_subcategories', 'suppliers', 'equipment', 'settlements'], views: [{ id: 'all', label: 'All Expenses' }, { id: 'pending_price', label: 'Pending Invoice Price ($0)', fn: r => Boolean(r.price_pending) }, { id: 'fleet', label: 'Equipment & Fleet Tagged', fn: r => Boolean(r.equipment || r.for_equipment) }, { id: 'overhead', label: 'Plant & General Overhead', fn: r => !r.equipment && !r.for_equipment }] },
+    { key: 'expenses', group: '2 · Purchases, Expenses & Payables', label: 'General & Fleet Expenses', dvn: 'bhf_mfgexpense', form: 'expense', cols: ['date', 'rep_date', 'name', 'company', 'category', 'subcategory', 'item_summary', 'supplier', 'equipment', 'method', 'qty', 'amount', 'vat', 'total_ttc', 'invoice', 'reference', 'notes'], relTables: ['expense_items', 'recurring_expenses', 'expense_categories', 'expense_subcategories', 'suppliers', 'equipment', 'settlements'], views: [{ id: 'all', label: 'All Expenses' }, { id: 'pending_price', label: 'Pending Invoice Price ($0)', fn: r => Boolean(r.price_pending) }, { id: 'fleet', label: 'Equipment & Fleet Tagged', fn: r => Boolean(r.equipment || r.for_equipment) }, { id: 'overhead', label: 'Plant & General Overhead', fn: r => !r.equipment && !r.for_equipment }] },
     { key: 'expense_items', group: '2 · Purchases, Expenses & Payables', navView: 'expenses', label: 'Expense Item Tickets', dvn: 'bhf_mfgexpenseitem', form: 'expense', cols: ['date', 'expense_ref', 'company', 'item_name', 'category', 'allocation_mode', 'target_equipment', 'qty', 'uom', 'unit_cost', 'line_total', 'supplier'], relTables: ['expenses', 'items', 'equipment', 'warehouse_movements', 'suppliers'], views: [
       { id: 'all', label: 'All Expense Items' },
       { id: 'warehouse', label: 'Stored in Warehouse', fn: r => /warehouse|shelf/i.test(r.allocation_mode || r.disposition || '') },
       { id: 'same_eq', label: 'For Equipment', fn: r => Boolean(r.target_equipment || r.equipment) && !/warehouse|shelf/i.test(r.allocation_mode || r.disposition || '') },
       { id: 'diff_eq', label: 'Different Equipment Split', fn: r => /^different_equipment$/i.test(r.allocation_mode || '') },
       { id: 'general', label: 'General / Non-Equipment', fn: r => !r.target_equipment && !r.equipment && !/warehouse|shelf/i.test(r.allocation_mode || r.disposition || '') }
+    ] },
+    { key: 'recurring_expenses', group: '2 · Purchases, Expenses & Payables', navView: 'expenses', label: 'Recurring Expenses', singularLabel: 'Recurring Expense', dvn: 'bhf_recurringexpense', form: 'recurringexpense', cols: ['supplier', 'company', 'category', 'subcategory', 'item', 'frequency', 'amount', 'start_date', 'end_date', 'status', 'notes'], relTables: ['suppliers', 'expense_categories', 'expense_subcategories', 'expenses', 'settlements'], views: [
+      { id: 'all', label: 'All Recurring Schedules' },
+      { id: 'in_force', label: 'In Force (Active)', fn: r => !r.end_date || String(r.end_date) >= new Date().toISOString().slice(0, 10) },
+      { id: 'ended', label: 'Ended Schedules', fn: r => Boolean(r.end_date && String(r.end_date) < new Date().toISOString().slice(0, 10)) }
     ] },
     { key: 'warehouse_movements', group: '2 · Purchases, Expenses & Payables', navView: 'warehouse', label: 'Warehouse Stock Movements', dvn: 'bhf_warehousemovement', form: 'warehousestock', cols: ['date', 'name', 'company', 'item_name', 'category', 'direction', 'movement_type', 'qty', 'uom', 'unit_cost', 'total_cost', 'warehouse_location', 'equipment', 'notes'], relTables: ['items', 'expense_items', 'equipment_repairs', 'repair_items', 'equipment'], views: [
       { id: 'all', label: 'All Stock Movements' },
@@ -1498,7 +1503,7 @@
 
     // 6 · Universal (All BUs) — 11 Shared Master Registries (Zero BU Binding)
     { key: 'customers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_customers', label: 'Customers Registry', singularLabel: 'Customer', dvn: 'bhf_customer', form: 'customer', cols: ['name', 'method', 'vat_registered', 'mof_no', 'phone', 'address', 'credit_days', 'credit_limit', 'active_rules', 'sales_loads', 'ar_balance'], relTables: ['sales_tickets', 'receipts', 'price_rules', 'credit_terms', 'vat_invoices'], views: [{ id: 'all', label: 'All Customers' }, { id: 'open_ar', label: 'Open AR Balance > $0', fn: (r, rel) => ((rel.custByName[norm(r.name)] || {}).ar_balance || 0) > 1 }, { id: 'vat', label: 'VAT Registered (MOF)', fn: r => Boolean(r.vat_registered || r.mof_no) }] },
-    { key: 'suppliers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_suppliers', label: 'Suppliers & Haulers', singularLabel: 'Supplier / Hauler', dvn: 'bhf_supplier', form: 'supplier', cols: ['name', 'supplier_role', 'method', 'trucks_list', 'drivers_list', 'haul_loads', 'raw_loads', 'expenses_count', 'active_rules', 'iva', 'ap_balance'], relTables: ['raw_purchases', 'expenses', 'settlements', 'price_rules', 'equipment', 'drivers', 'sites'], views: [
+    { key: 'suppliers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_suppliers', label: 'Suppliers & Haulers', singularLabel: 'Supplier / Hauler', dvn: 'bhf_supplier', form: 'supplier', cols: ['name', 'supplier_role', 'method', 'trucks_list', 'drivers_list', 'haul_loads', 'raw_loads', 'expenses_count', 'active_rules', 'iva', 'ap_balance'], relTables: ['raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'price_rules', 'equipment', 'drivers', 'sites'], views: [
       { id: 'all', label: 'All Suppliers & Haulers' },
       { id: 'haulers', label: 'Truck Owners / Haulers', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; return Boolean(r.is_truck_owner || Number(r.trucks_count || 0) > 0 || (se && (se.is_hauler || se.trucks.size > 0 || se.haul_loads > 0))); } },
       { id: 'quarries', label: 'Material & Site Suppliers', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; return Boolean((se && (se.is_quarry || se.raw_loads > 0 || se.sites.size > 0)) || /Quarry|Site|Raw Material/i.test(r.category || r.category1 || '')); } },
@@ -1510,13 +1515,13 @@
     { key: 'items', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Items & Spare Parts', singularLabel: 'Item / Spare Part', dvn: 'bhf_item', form: 'item', cols: ['name', 'category', 'uom', 'default_cost', 'tickets_count', 'total_spent', 'default_location', 'min_stock', 'status'], relTables: ['expense_items', 'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'uoms'], views: [{ id: 'all', label: 'All Items & Spare Parts' }, { id: 'parts', label: 'Spare Parts', fn: r => /spare|part/i.test(r.category || '') }, { id: 'oils', label: 'Oils & Lubricants', fn: r => /oil|lub/i.test(r.category || '') }, { id: 'tools', label: 'Tools & Consumables', fn: r => /tool|consum/i.test(r.category || '') }] },
     { key: 'product_types', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Product Types (Families)', singularLabel: 'Product / Grade', dvn: 'bhf_producttype', form: 'product', cols: ['name', 'code', 'products_count', 'sales_loads'], relTables: ['products', 'sales_tickets'], views: [{ id: 'all', label: 'All Product Families' }] },
     { key: 'uoms', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Units of Measure (UoM)', singularLabel: 'Product / Grade', dvn: 'bhf_uom', form: 'product', cols: ['name', 'code', 'products_count', 'tickets_count'], relTables: ['products', 'items', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Units of Measure' }] },
-    { key: 'expense_categories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Categories', singularLabel: 'Expense Category', dvn: 'bhf_expensecategory', form: 'expensecategory', cols: ['name', 'cost_class', 'subcategories_count', 'expenses_count', 'total_spent'], relTables: ['expense_subcategories', 'expenses'], views: [
+    { key: 'expense_categories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Categories', singularLabel: 'Expense Category', dvn: 'bhf_expensecategory', form: 'expensecategory', cols: ['name', 'cost_class', 'subcategories_count', 'expenses_count', 'total_spent'], relTables: ['expense_subcategories', 'expenses', 'recurring_expenses'], views: [
       { id: 'all', label: 'All Expense Categories' },
       { id: 'prod', label: 'Production Cost', fn: r => deriveExpenseCostClass(r) === 'Production Cost' },
       { id: 'opex', label: 'Operating Expense', fn: r => deriveExpenseCostClass(r) === 'Operating Expense' },
       { id: 'capex', label: 'Capital Expenditure', fn: r => deriveExpenseCostClass(r) === 'Capital Expenditure' }
     ] },
-    { key: 'expense_subcategories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Subcategories', singularLabel: 'Expense Subcategory', dvn: 'bhf_expensesubcategory', form: 'expensecategory', cols: ['name', 'category', 'expenses_count', 'total_spent'], relTables: ['expense_categories', 'expenses'], views: [{ id: 'all', label: 'All Expense Subcategories' }] },
+    { key: 'expense_subcategories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Subcategories', singularLabel: 'Expense Subcategory', dvn: 'bhf_expensesubcategory', form: 'expensecategory', cols: ['name', 'category', 'expenses_count', 'total_spent'], relTables: ['expense_categories', 'expenses', 'recurring_expenses'], views: [{ id: 'all', label: 'All Expense Subcategories' }] },
     { key: 'sites', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_sites', label: 'Sites', singularLabel: 'Site', dvn: 'bhf_site', form: 'site', cols: ['name', 'site_category', 'region', 'linked_party', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'], relTables: ['regions', 'suppliers', 'customers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [
       { id: 'all', label: 'All Sites', cols: ['name', 'site_category', 'region', 'linked_party', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'] },
       { id: 'source', label: 'Supplier / Quarry Sites', fn: r => resolveSiteCategoryPbi(r) === 'supplier', cols: ['name', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads'] },
@@ -1712,7 +1717,7 @@
     return `<span class="badge ${isCust ? 'badge-info' : 'badge-brass'}">${esc(isCust ? 'Customer Delivery' : 'Supplier / Quarry')}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|linked_party|jv_partner|jv_share|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|status|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|linked_party|jv_partner|jv_share|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|status|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -1805,7 +1810,7 @@
     }
     const rec = (SEED && SEED.records) || {};
     const tr = (SEED && SEED._tableRev) || {};
-    const stamp = `${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.salaries || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
+    const stamp = `${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
     if (_hubRelCache && _hubRelStamp === stamp) return _hubRelCache;
     _hubRelStamp = stamp;
     const rel = {
@@ -3389,7 +3394,14 @@
                 opts.rowNavy && opts.rowNavy(r) ? 'pbi-row-navy' : '',
                 (opts.rkey || r.rkey) && r.id ? 'rrow' : ''
               ].filter(Boolean).join(' ');
-              const rowAttrs = (opts.rkey || r.rkey) && r.id ? `data-rkey="${esc(opts.rkey || r.rkey)}" data-rid="${esc(r.id)}"` : '';
+              const extraPbiAttrs = [
+                r && r.wbAuditKey ? `data-wb-audit-key="${esc(String(r.wbAuditKey))}"` : '',
+                r && r.customer ? `data-row-cust="${esc(String(r.customer))}"` : '',
+                r && r.product ? `data-row-prod="${esc(String(r.product))}"` : '',
+                r && r.equipment ? `data-row-eq="${esc(String(r.equipment))}"` : '',
+                r && r.staff ? `data-row-staff="${esc(String(r.staff))}"` : ''
+              ].filter(Boolean).join(' ');
+              const rowAttrs = (opts.rkey || r.rkey) && r.id ? `data-rkey="${esc(opts.rkey || r.rkey)}" data-rid="${esc(r.id)}"${extraPbiAttrs ? ' ' + extraPbiAttrs : ''}` : '';
               return `<tr class="${rowClass}" ${rowAttrs}>${cols.map((c, ci) => {
                 const rawVal = typeof c.raw === 'function' ? c.raw(r, absIdx) : (c.key ? r[c.key] : null);
                 const numVal = Number(rawVal || 0);
@@ -3555,7 +3567,7 @@
         ];
       case 'p17_jv':
         return [
-          { key: 'site', label: 'JV Site', opts: data.jvSiteOpts },
+          { key: 'site', label: 'JV Site', opts: data.jvSiteOpts || ['Jiyeh JV', 'Halat JV', 'Nahr Ibrahim JV'] },
           { key: 'partner', label: 'JV Partner', opts: ['Assaf', 'WTC', 'Partner 50%'] },
           { key: 'jvBasis', label: 'Distribution Basis', opts: ['Stock', 'Revenue', 'Profit', 'Cash'] }
         ];
@@ -5903,6 +5915,84 @@
               { v: '—', r: true },
               { v: '—', r: true },
               { v: fmtUSD(totItemSpend, 2), r: true }
+            ]
+          })}
+        </div>`;
+        })()}
+
+        ${(() => {
+          const allRecur = filterRecords(rec.recurring_expenses || [], {
+            ignorePeriod: true,
+            cols: ['company', 'supplier', 'category', 'subcategory', 'item', 'frequency', 'status', 'notes']
+          }).filter(r => r && !r.voided);
+          if (!allRecur.length) return '';
+          const cutoffIso = new Date().toISOString().slice(0, 10);
+          const calcCycles = (r) => {
+            const s = String(r.start_date || r.date || '').slice(0, 10);
+            const e = String(r.end_date || cutoffIso).slice(0, 10);
+            const cap = e < cutoffIso ? e : cutoffIso;
+            if (!s || cap < s) return 0;
+            const [sy, sm, sd] = s.split('-').map(Number);
+            const [ey, em, ed] = cap.split('-').map(Number);
+            const months = Math.max(1, (ey - sy) * 12 + (em - sm) + ((ed - sd) >= 14 ? 1 : 0));
+            const fq = String(r.frequency || 'Monthly').toLowerCase();
+            if (fq.startsWith('quarter')) return Math.max(1, Math.round(months / 3));
+            if (fq.startsWith('annu') || fq.startsWith('year')) return Math.max(1, Math.round(months / 12));
+            if (fq.startsWith('week')) return Math.max(1, Math.round(months * (52 / 12)));
+            return months;
+          };
+          const recurEnriched = allRecur.map(r => {
+            const amt = Number(r.amount || 0);
+            const fq = String(r.frequency || 'Monthly');
+            const fqL = fq.toLowerCase();
+            const monthlyEq = fqL.startsWith('quarter') ? (amt / 3) : (fqL.startsWith('annu') ? (amt / 12) : (fqL.startsWith('week') ? (amt * (52 / 12)) : amt));
+            const isActive = !r.end_date || String(r.end_date) >= cutoffIso;
+            const cycles = calcCycles(r);
+            const accrued = Math.round(cycles * amt * 100) / 100;
+            return {
+              ...r,
+              isActive,
+              statusLbl: isActive ? 'In Force' : 'Ended',
+              endLbl: r.end_date ? fmtDateDMY(r.end_date) : 'Open',
+              startLbl: fmtDateDMY(r.start_date || r.date || ''),
+              monthlyEq,
+              cycles,
+              accrued
+            };
+          }).sort((a, b) => (b.isActive - a.isActive) || (b.monthlyEq - a.monthlyEq));
+          const activeSchedules = recurEnriched.filter(r => r.isActive);
+          const monthlyRunRate = activeSchedules.reduce((s, r) => s + r.monthlyEq, 0);
+          const totalAccrued = recurEnriched.reduce((s, r) => s + r.accrued, 0);
+          const topActive = activeSchedules[0] || recurEnriched[0];
+          return `
+        <div class="pbi-overview-bands">
+          ${kpiBand('4 · Standing Recurring Expense Schedules (Rent, Telecom, Security & Retainers)', [
+            { label: 'Active Monthly Run-Rate ($/mo)', value: fmtUSD(monthlyRunRate, 0), sub: `${fmtNum(activeSchedules.length)} In Force · ${fmtNum(recurEnriched.length - activeSchedules.length)} Ended`, tone: 'brass' },
+            { label: 'Annualized Commitment ($/yr)', value: fmtUSD(monthlyRunRate * 12, 0), sub: 'Projected 12-month standing run-rate' },
+            { label: 'Cumulative Schedule Accrued ($)', value: fmtUSD(totalAccrued, 0), sub: `${fmtNum(recurEnriched.length)} historical & active schedules`, tone: 'warn' },
+            { label: 'Top Standing Commitment', value: topActive ? fmtUSD(topActive.monthlyEq, 0) + '/mo' : '$0', sub: topActive ? `${topActive.supplier} (${topActive.item || topActive.subcategory || topActive.category})` : 'N/A' }
+          ])}
+        </div>
+        <div class="pbi-grid-1">
+          ${pbiTable('Standing Recurring Expense Schedules & Accrued Run-Rate', [
+            { label: 'Vendor / Landlord', key: 'supplier', bold: true },
+            { label: 'Category', key: 'category' },
+            { label: 'Purpose / Item', key: 'item' },
+            { label: 'Cycle', key: 'frequency' },
+            { label: 'Start Date', key: 'startLbl', mono: true },
+            { label: 'End Date', key: 'endLbl', mono: true },
+            { label: 'Status', key: 'statusLbl', fmt: v => v === 'In Force' ? '<span class="badge badge-ok">In Force</span>' : '<span class="badge badge-neutral">Ended</span>' },
+            { label: 'Cycles', key: 'cycles', r: true, fmt: v => fmtNum(v) },
+            { label: 'Cycle Rate ($)', key: 'amount', r: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
+            { label: 'Accrued ($)', key: 'accrued', r: true, bar: true, fmt: v => fmtUSD(v, 2) }
+          ], recurEnriched, {
+            subtitle: 'Standing vendor agreements seeded from SharePoint Recurring Expenses · manage or add schedules on Expenses & Overhead',
+            unitLabel: 'recurring schedules',
+            foot: [
+              { v: `Total (${fmtNum(recurEnriched.length)} schedules · ${fmtNum(activeSchedules.length)} In Force)`, span: 7 },
+              { v: fmtNum(recurEnriched.reduce((s, r) => s + r.cycles, 0)), r: true },
+              { v: fmtUSD(monthlyRunRate, 2) + '/mo', r: true },
+              { v: fmtUSD(totalAccrued, 2), r: true }
             ]
           })}
         </div>`;
@@ -8963,11 +9053,12 @@
                     else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
                     else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
+                    else if (meta.key === 'recurring_expenses' && c === 'end_date' && !v) cell = 'Open';
                     else if (/date/.test(c) && v) cell = fmtDateDMY(v);
 
                     const lkTarget = c === 'linked_party'
                       ? (resolveSiteCategoryPbi(r) === 'customer' ? 'customers' : 'suppliers')
-                      : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : HUB_LOOKUP_TARGETS[c]);
+                      : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : (meta.key === 'recurring_expenses' && c === 'item' ? null : HUB_LOOKUP_TARGETS[c]));
                     const isLookup = lkTarget && lkTarget !== meta.key && v != null && v !== '' && cell !== '—';
                     const signedHtml = (isSignedUsd || isSignedLbp) && v != null && v !== ''
                       ? `<strong style="color:${Number(v) >= 0 ? 'var(--good)' : 'var(--crit)'}">${esc(cell)}</strong>`
@@ -9284,11 +9375,12 @@
                     else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
                     else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
+                    else if (meta.key === 'recurring_expenses' && c === 'end_date' && !v) cell = 'Open';
                     else if (/date/.test(c) && v) cell = fmtDateDMY(v);
 
                     const lkTarget = c === 'linked_party'
                       ? (resolveSiteCategoryPbi(r) === 'customer' ? 'customers' : 'suppliers')
-                      : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : HUB_LOOKUP_TARGETS[c]);
+                      : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : (meta.key === 'recurring_expenses' && c === 'item' ? null : HUB_LOOKUP_TARGETS[c]));
                     const isLookup = lkTarget && lkTarget !== meta.key && v != null && v !== '' && cell !== '—';
                     const innerHtml = isLookup
                       ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
@@ -10877,6 +10969,24 @@
           colorFn: r => /Oil/i.test(r.category) ? C.brass : (/Spare/i.test(r.category) ? C.navy : C.steel)
         }), {
           subtitle: 'Spend breakdown across Spare Parts (Piece/Set), Oils & Lubricants (Litre/kg), Tools, and Consumables'
+        })}
+      </div>
+      ` : ''}
+      ${(((ctx && ctx.recurBySup) || []).length || ((ctx && ctx.recurByCat) || []).length) ? `
+      <div class="pbi-grid-2" id="recurringExpensesChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('Standing Recurring Commitments by Vendor ($ Accrued & Active Run-Rate)', buildHorizontalBarChart((ctx && ctx.recurBySup) || [], 'label', 'accrued', v => fmtUSD(v, 0), {
+          subKey: 'sub',
+          maxItems: 8,
+          colorFn: r => r.active ? C.brass : C.steel
+        }), {
+          subtitle: 'Cumulative schedule accrual by vendor with active monthly run-rate highlighted in warm brass'
+        })}
+        ${pbiPanel('Recurring Schedules by Category ($ Accrued)', buildHorizontalBarChart((ctx && ctx.recurByCat) || [], 'category', 'accrued', v => fmtUSD(v, 0), {
+          subKey: 'sub',
+          maxItems: 8,
+          colorFn: r => r.activeCount > 0 ? C.navy : C.steel
+        }), {
+          subtitle: 'Standing lease, telecom, security, and site tip schedules grouped by expense category'
         })}
       </div>
       ` : ''}

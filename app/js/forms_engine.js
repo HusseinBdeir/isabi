@@ -63,6 +63,7 @@
       forms: [
         { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', hubView: 'raw', pbiPage: 'p04_quarry', title: 'New Raw Material Ticket' },
         { id: 'expense', label: 'Expense (Cash / Credit)', badge: 'bhf_expense', crKey: 'expenses', hubView: 'expenses', pbiPage: 'p07_ap', title: 'New Expense' },
+        { id: 'recurringexpense', label: 'Recurring Expense', badge: 'bhf_recurringexpense', crKey: 'recurring_expenses', hubView: 'expenses', pbiPage: 'p07_ap', title: 'New Recurring Expense Schedule' },
         { id: 'warehousestock', label: 'Warehouse Shelf Adjust', badge: 'bhf_warehousemovement', crKey: 'warehouse_movements', hubView: 'warehouse', pbiPage: 'p07_ap', title: 'Warehouse Shelf Stock & Adjustment' },
         { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', hubView: 'suppliers', pbiPage: 'p07_ap', title: 'New Supplier Settlement' },
         { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', hubView: 'raw_jv', pbiPage: 'p04_quarry', title: 'New Joint-Venture Entry' }
@@ -1452,8 +1453,7 @@
         ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store']
           .concat((rec.part_movements || []).map(p => p && p.storage_location))
           .concat(siteNames)
-          .concat(equipNames),
-        fIdx && fIdx.warehouseLoc
+          .concat(equipNames)
       );
       const vendorsAndBuyers = uniqSorted(supNames.concat(custNames));
 
@@ -1622,7 +1622,7 @@
           const meta = onHand > 0.0001
             ? `${onHand} ${b.uom} on shelf${avg > 0 ? ' · ' + fmtUsd(avg) : ''}`
             : (b ? `0 ${b.uom} on shelf` : '');
-          const freq = (itemFreqMap ? (itemFreqMap.get(k) || 0) : 0) + (b ? Math.round((b.inQty || 0) + (b.outQty || 0)) : 0);
+          const freq = (itemFreqMap ? (itemFreqMap.get(k) || 0) : 0) + (b && (b.inQty > 0 || b.outQty > 0) ? 1 : 0);
           return { name: nm, onHand, freq, meta };
         })
         .sort((a, b) => b.freq - a.freq)
@@ -1975,7 +1975,7 @@
           <div class="live-calc" id="empLiveCalc">
             <div><small>Contract</small><b id="calc_emp_prior">Select Staff</b></div>
             <div><small>Pay Basis</small><b id="calc_emp_basis">${esc(empPayVal)}</b></div>
-            <div><small>Daily / Hourly</small><b id="calc_emp_rates">-</b></div>
+            <div><small>Daily / Hourly</small><b id="calc_emp_rates">—</b></div>
             <div><small>Monthly Salary</small><b id="calc_emp_total">$0.00</b></div>
           </div>
         `;
@@ -1998,7 +1998,7 @@
         <div class="live-calc" id="empLiveCalc">
           <div><small>Status</small><b id="calc_emp_prior">Select Staff</b></div>
           <div><small>Pay Basis</small><b id="calc_emp_basis">${esc(empPayVal)}</b></div>
-          <div><small>Daily / Hourly</small><b id="calc_emp_rates">-</b></div>
+          <div><small>Daily / Hourly</small><b id="calc_emp_rates">—</b></div>
           <div><small>Amount</small><b id="calc_emp_total">$0.00</b></div>
         </div>
       `;
@@ -2227,6 +2227,37 @@
           <div><small id="lbl_tr_c2">LBP Drawer Delta</small><b id="calc_tr_c2">+0 LL</b></div>
           <div><small id="lbl_tr_c3">Effective FX Rate</small><b id="calc_tr_c3">${fmtFxRateLbl(initFx)} LL / $</b></div>
           <div><small id="lbl_tr_c4">Conversion Leg</small><b id="calc_tr_c4">USD to LBP</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'recurringexpense') {
+      const expCats = uniqSorted((rec.expense_categories || []).map(c => c && c.name).concat((rec.expenses || []).map(e => e && e.category)), fIdx && fIdx.expCategory);
+      const expSubcats = uniqSorted((rec.expense_subcategories || []).map(s => s && s.name).concat((rec.expenses || []).map(e => e && e.subcategory)), fIdx && fIdx.expSubcategory);
+      const purposeHints = uniqSorted(['Rent', 'Internet', 'Telephone', 'Security', 'Tips', 'Retainer', 'Subscription', 'Lease', 'Insurance'].concat((rec.recurring_expenses || []).map(r => r && r.item)));
+      return `
+        ${adminHeaderHtml}
+        <div class="form-grid-3">
+          ${companyField}
+          ${fld('Start Date *', inp('f_date', 'date', today), { id: 'wrap_recur_start', hintId: 'hint_recur_dates', hint: '' })}
+          ${fld('End Date (Blank = Open)', inp('f_enddate', 'date', ''), { id: 'wrap_recur_end' })}
+          ${fld('Supplier / Vendor *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_f_supplier', hintId: 'hint_supplier', hint: '' })}
+          ${fld('Category *', inp('f_category', 'text', '', 'list="dl_categories" placeholder="Select or type category..."') + dl('dl_categories', expCats), { id: 'wrap_f_category' })}
+          ${fld('Subcategory *', inp('f_subcategory', 'text', '', 'list="dl_subcats" placeholder="Select or type subcategory..."') + dl('dl_subcats', expSubcats), { id: 'wrap_f_subcategory', hintId: 'hint_subcat', hint: '' })}
+          <div id="recurContextStrip" class="att-contract-strip" hidden></div>
+          ${fld('Recurring Item / Purpose *', inp('f_item_purpose', 'text', '', 'list="dl_recur_purposes" placeholder="e.g. Rent, Internet, Security, Tips, Telephone..."') + dl('dl_recur_purposes', purposeHints), { id: 'wrap_f_item_purpose' })}
+          ${fld('Billing Cycle *', sel('f_frequency', [['Monthly', 'Monthly'], ['Quarterly', 'Quarterly'], ['Annual', 'Annual'], ['Weekly', 'Weekly']], 'Monthly'), { id: 'wrap_f_frequency' })}
+          ${fld('Equipment (Optional)', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="None (Plant / General Overhead)"') + dl('dl_equip', equipNames), { id: 'wrap_f_truck' })}
+          ${fld('USD Amount ($ / cycle)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_recur_usd' })}
+          ${fld('LBP Amount (L.L. / cycle)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'), { id: 'wrap_recur_lbp' })}
+          ${fld(`Cycle Rate USD (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP / ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional contract reference, landlord, or billing note..."'), { span: true })}
+        </div>
+        <div class="live-calc" id="recurLiveCalc">
+          <div><small>Cycle Rate</small><b id="calc_recur_rate">$0.00 / mo</b></div>
+          <div><small>Schedule Status</small><b id="calc_recur_status">In Force · Open</b></div>
+          <div><small>Elapsed Cycles</small><b id="calc_recur_cycles">1 cycle</b></div>
+          <div><small>Total Accrued</small><b id="calc_recur_accrued">$0.00</b></div>
         </div>
       `;
     }
