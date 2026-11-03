@@ -12,7 +12,7 @@
       if (location.hostname === 'husseinbdeir.github.io' && /^\/mfg-web(\/|$)/.test(location.pathname) && !/[?&]noredirect=1\b/.test(location.search)) {
         location.replace('https://husseinbdeir.github.io/isabi/app/' + (location.search || '') + (location.hash || ''));
       }
-      window.__MFG_SHELL_VER = '19.6.84';
+      window.__MFG_SHELL_VER = '19.6.85';
       var t = localStorage.getItem('isabi_mfg_theme');
       if (t === 'dark' || t === 'light') { document.documentElement.setAttribute('data-theme', t); var tm = document.querySelector('meta[name="theme-color"]'); if (tm) tm.setAttribute('content', t === 'dark' ? '#1B140F' : '#F4F2EE'); }
       var rw = parseInt(localStorage.getItem('isabi_mfg_rail_width'), 10);
@@ -32,17 +32,17 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Command Center">
-  <link rel="manifest" href="manifest.json?v=19.6.84">
-  <link rel="icon" href="icon.svg?v=19.6.84" type="image/svg+xml" sizes="any">
-  <link rel="icon" href="favicon.ico?v=19.6.84" sizes="48x48 32x32 16x16">
-  <link rel="apple-touch-icon" href="icon-180.png?v=19.6.84">
+  <link rel="manifest" href="manifest.json?v=19.6.85">
+  <link rel="icon" href="icon.svg?v=19.6.85" type="image/svg+xml" sizes="any">
+  <link rel="icon" href="favicon.ico?v=19.6.85" sizes="48x48 32x32 16x16">
+  <link rel="apple-touch-icon" href="icon-180.png?v=19.6.85">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,600;112,700;125,800&family=Instrument+Sans:wght@400;500;600;700&display=swap"></noscript>
-  <link rel="stylesheet" href="css/app.css?v=19.6.84">
-  <link rel="stylesheet" href="css/geo_dispatch.css?v=19.6.84">
-  <link rel="stylesheet" href="css/daily_ops.css?v=19.6.84">
-  <link rel="stylesheet" href="css/ask_isabi.css?v=19.6.84">
+  <link rel="stylesheet" href="css/app.css?v=19.6.85">
+  <link rel="stylesheet" href="css/geo_dispatch.css?v=19.6.85">
+  <link rel="stylesheet" href="css/daily_ops.css?v=19.6.85">
+  <link rel="stylesheet" href="css/ask_isabi.css?v=19.6.85">
 </head>
 <body class="locked">
   <div class="app-shell" id="appShell">
@@ -81,6 +81,11 @@
           <span>Executive Overview</span>
           <em class="nav-pill" id="navCountOverview" hidden></em>
         </button>
+        <button type="button" class="nav-item" data-hub="sentinels" data-view="sentinels" aria-label="Sentinels &amp; Alerts">
+          <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21.5s7.5-3.8 7.5-9.5V5.4L12 2.5 4.5 5.4V12c0 5.7 7.5 9.5 7.5 9.5z"/><path d="m8.8 12 2.2 2.2 4.4-4.5"/></svg></i>
+          <span>Sentinels &amp; Alerts</span>
+          <em class="nav-pill" id="navCountSentinels" hidden></em>
+        </button>
         <button type="button" class="nav-item" data-hub="reports" data-view="pbi" aria-label="Dashboards &amp; Reports">
           <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3.5" width="18" height="17" rx="2"/><line x1="7.5" y1="16.5" x2="7.5" y2="11.5"/><line x1="12" y1="16.5" x2="12" y2="8"/><line x1="16.5" y1="16.5" x2="16.5" y2="10"/></svg></i>
           <span>Dashboards &amp; Reports</span>
@@ -91,17 +96,26 @@
           <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.8" y="5" width="12.7" height="11" rx="1.5"/><path d="M14.5 8.5h4.2l3.1 3.6V16h-7.3V8.5z"/><circle cx="6.2" cy="18" r="2.2"/><circle cx="18" cy="18" r="2.2"/></svg></i>
           <span>Sales &amp; Receivables</span>
         </button>
-        <button type="button" class="nav-item" data-hub="raw" data-view="raw" aria-label="Purchases, Expenses &amp; Payables">
-          <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2.8 2.5 7.6 12 12.4 21.5 7.6 12 2.8"/><polyline points="2.5 12.2 12 17 21.5 12.2"/><polyline points="2.5 16.8 12 21.6 21.5 16.8"/></svg></i>
-          <span>Purchases, Expenses &amp; Payables</span>
+        <button type="button" class="nav-item" data-hub="raw" data-view="raw" aria-label="Quarry, Haulage &amp; JVs">
+          <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2.5 19.5 6.3-11.2 4.2 6.4 3.3-4.9 5.2 9.7H2.5z"/><path d="m11.2 9.8 2.1-3.3 4.2 6.5"/></svg></i>
+          <span>Quarry, Haulage &amp; JVs</span>
           <em class="nav-pill" id="navCountRaw" hidden></em>
+        </button>
+        <button type="button" class="nav-item" data-hub="expenses" data-view="expenses" aria-label="Expenses &amp; Payables">
+          <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3h13v18l-2.2-1.6-2.1 1.6-2.2-1.6-2.2 1.6-2.1-1.6L5.5 21V3z"/><line x1="9" y1="8.2" x2="15" y2="8.2"/><line x1="9" y1="12.2" x2="15" y2="12.2"/><line x1="9" y1="16" x2="12.5" y2="16"/></svg></i>
+          <span>Expenses &amp; Payables</span>
+          <em class="nav-pill" id="navCountExpenses" hidden></em>
         </button>
 
         <div class="grp">Plant, Fleet &amp; Workforce</div>
-        <button type="button" class="nav-item" data-hub="fleet" data-view="fleet" aria-label="Fleet, Fuel &amp; Drivers">
+        <button type="button" class="nav-item" data-hub="fleet" data-view="fleet" aria-label="Fleet &amp; Maintenance">
           <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3.5" width="10" height="17" rx="1.8"/><line x1="2.5" y1="20.5" x2="15.7" y2="20.5"/><rect x="6.5" y="6.2" width="5" height="3.8" rx="0.6"/><path d="M14 8.5h2.5a2 2 0 0 1 2 2v5a1.8 1.8 0 0 0 3.6 0V9.5l-2.4-2.8"/></svg></i>
-          <span>Fleet, Fuel &amp; Drivers</span>
+          <span>Fleet &amp; Maintenance</span>
           <em class="nav-pill" id="navCountFleet" hidden></em>
+        </button>
+        <button type="button" class="nav-item" data-hub="warehouse" data-view="warehouse" aria-label="Warehouse &amp; Parts">
+          <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20.5V9l9-5.5L21 9v11.5"/><path d="M3 20.5h18"/><rect x="7.5" y="12.5" width="4" height="4" rx="0.6"/><rect x="12.5" y="12.5" width="4" height="4" rx="0.6"/><rect x="10" y="8.5" width="4" height="4" rx="0.6"/></svg></i>
+          <span>Warehouse &amp; Parts</span>
         </button>
         <button type="button" class="nav-item" data-hub="payroll" data-view="payroll" aria-label="Payroll &amp; Workforce">
           <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.5 21v-1.8a3.8 3.8 0 0 0-3.8-3.8H6.8A3.8 3.8 0 0 0 3 19.2V21"/><circle cx="9.8" cy="7.5" r="3.6"/><path d="M21 21v-1.8a3.6 3.6 0 0 0-2.7-3.5"/><path d="M15.7 4.1a3.6 3.6 0 0 1 0 6.9"/></svg></i>
@@ -120,14 +134,14 @@
           <em class="nav-pill" id="navCountTB" hidden></em>
         </button>
 
-        <div class="grp grp-univ">Universal · All BUs</div>
+        <div class="grp grp-univ">Shared · All Entities</div>
         <button type="button" class="nav-item" data-hub="univ_parties" data-view="reg_customers" aria-label="Counterparties &amp; Sites">
           <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20.5h18"/><path d="M4.5 20.5V7.5L12 4v16.5"/><path d="M12 10h7.5v10.5"/><line x1="7.8" y1="10.5" x2="9.2" y2="10.5"/><line x1="7.8" y1="14" x2="9.2" y2="14"/><line x1="15" y1="13.5" x2="16.4" y2="13.5"/><line x1="15" y1="16.8" x2="16.4" y2="16.8"/></svg></i>
           <span>Counterparties &amp; Sites</span>
         </button>
-        <button type="button" class="nav-item" data-hub="univ_catalog" data-view="reg_products" aria-label="Products &amp; Categories">
+        <button type="button" class="nav-item" data-hub="univ_catalog" data-view="reg_products" aria-label="Catalog &amp; Categories">
           <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8.2 12 3.2 3 8.2v7.6l9 5 9-5V8.2z"/><polyline points="3.3 8.4 12 13.2 20.7 8.4"/><line x1="12" y1="20.8" x2="12" y2="13.2"/><line x1="7.5" y1="5.7" x2="16.5" y2="10.7"/></svg></i>
-          <span>Products &amp; Categories</span>
+          <span>Catalog &amp; Categories</span>
         </button>
         <button type="button" class="nav-item" data-hub="univ_fleet" data-view="reg_equipment" aria-label="Equipment &amp; Drivers">
           <i class="nav-ico" aria-hidden="true"><svg class="ic" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.8" y="6" width="12.2" height="9.8" rx="1.5"/><path d="M14 9.2h4l3.2 3.4v3.2H14V9.2z"/><circle cx="6" cy="18" r="2.1"/><circle cx="17.8" cy="18" r="2.1"/></svg></i>
@@ -490,7 +504,7 @@
           <div class="auth-face-side">
             <div class="auth-face-card" id="authFaceCard" hidden>
               <div class="auth-face-card-av">
-                <img id="authFaceCardImg" src="icon.svg?v=19.6.84" alt="">
+                <img id="authFaceCardImg" src="icon.svg?v=19.6.85" alt="">
                 <span class="auth-face-card-check">✓</span>
               </div>
               <div class="auth-face-card-body">
@@ -567,19 +581,19 @@
   <!-- Toast Notification -->
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script defer src="js/face.js?v=19.6.84"></script>
-  <script defer src="js/endpoints.js?v=19.6.84"></script>
-  <script defer src="js/seed_manifest.js?v=19.6.84"></script>
-  <script defer src="js/icons.js?v=19.6.84"></script>
-  <script defer src="js/geo_dispatch.js?v=19.6.84"></script>
-  <script defer src="js/forms_engine.js?v=19.6.84"></script>
-  <script defer src="js/pbi_pages.js?v=19.6.84"></script>
-  <script defer src="js/rdl_reports.js?v=19.6.84"></script>
-  <script defer src="js/kiosk_print.js?v=19.6.84"></script>
-  <script defer src="js/table_columns.js?v=19.6.84"></script>
-  <script defer src="js/daily_ops.js?v=19.6.84"></script>
-  <script defer src="js/ask_isabi.js?v=19.6.84"></script>
-  <script defer src="js/app.js?v=19.6.84"></script>
+  <script defer src="js/face.js?v=19.6.85"></script>
+  <script defer src="js/endpoints.js?v=19.6.85"></script>
+  <script defer src="js/seed_manifest.js?v=19.6.85"></script>
+  <script defer src="js/icons.js?v=19.6.85"></script>
+  <script defer src="js/geo_dispatch.js?v=19.6.85"></script>
+  <script defer src="js/forms_engine.js?v=19.6.85"></script>
+  <script defer src="js/pbi_pages.js?v=19.6.85"></script>
+  <script defer src="js/rdl_reports.js?v=19.6.85"></script>
+  <script defer src="js/kiosk_print.js?v=19.6.85"></script>
+  <script defer src="js/table_columns.js?v=19.6.85"></script>
+  <script defer src="js/daily_ops.js?v=19.6.85"></script>
+  <script defer src="js/ask_isabi.js?v=19.6.85"></script>
+  <script defer src="js/app.js?v=19.6.85"></script>
   <script>
     window.addEventListener('load', () => {
       // Load Google Fonts after window.load so webfont fetches never spin Chrome's tab loading indicator

@@ -838,8 +838,8 @@
     if (/\b(expense|expenses|overhead|spending|cost\s+breakdown|recurring\s+expense|price\s+pending|pending\s+price|petty)\b/i.test(low) ||
         /(مصاريف|مصروف|نفقات|فئات المصاريف)/.test(cleanQ) ||
         /\b(dépense|depense|dépenses|depenses|frais|charges)\b/i.test(low)) {
-      if (!canHub('raw', user)) {
-        return buildRestrictedReply(cleanQ, lang, 'Purchases & Expenses');
+      if (!canHub('expenses', user)) {
+        return buildRestrictedReply(cleanQ, lang, 'Expenses & Payables');
       }
       const expRows = scopedRows('expenses', scope);
       const recSched = scopedRows('recurring_expenses', scope, { ignorePeriod: true });
@@ -868,6 +868,7 @@
         promptText: 'Would you like to open Expenses & Overhead or post a new expense voucher?',
         actions: [
           { type: 'view', view: 'expenses', label: 'Open Expenses' },
+          ...(canView('recurring_expenses', user) ? [{ type: 'view', view: 'recurring_expenses', label: 'Recurring Schedules' }] : []),
           { type: 'form', form: 'expense', label: '+ New Expense' }
         ],
         followUps: [
@@ -882,6 +883,7 @@
     if (/\b(warehouse|inventory|stock|items\s+catalog|spare\s+part|spare\s+parts|consumable|consumables|filters?|oils?\s+stock)\b/i.test(low) ||
         /(مستودع|مخزون|قطع غيار|أصناف)/.test(cleanQ) ||
         /\b(entrepôt|entrepot|stock|pièces|pieces)\b/i.test(low)) {
+      if (!canHub('warehouse', user)) return buildRestrictedReply(cleanQ, lang, 'Warehouse & Parts');
       const itemsReg = (_ctx.SEED.records.items || []).filter(r => r && !r.voided);
       const moves = scopedRows('warehouse_movements', scope, { ignorePeriod: true });
       let inCnt = 0, outCnt = 0;
@@ -907,6 +909,7 @@
         promptText: 'Would you like to open the Warehouse hub or log a stock movement?',
         actions: [
           { type: 'view', view: 'warehouse', label: 'Open Warehouse' },
+          ...(canView('warehouse_parts', user) ? [{ type: 'view', view: 'warehouse_parts', label: 'Parts & Item Usage' }] : []),
           { type: 'form', form: 'warehousestock', label: '+ Warehouse Stock' }
         ],
         followUps: [
@@ -957,7 +960,7 @@
     if (/\b(ap|payable|payables|quarry|quarries|raw\s+material|haulage|hauler|haulers|settlement|settlements|supplier\s+balance|suppliers\s+owed)\b/i.test(low) ||
         /(ذمم\s*دائنة|موردين|مقالع|كسارات|نقليات)/.test(cleanQ) ||
         /\b(fournisseur|fournisseurs|dettes?\s+fournisseurs|carrière|carriere)\b/i.test(low)) {
-      if (!canHub('raw', user)) return buildRestrictedReply(cleanQ, lang, 'Purchases & Payables');
+      if (!canHub('raw', user) && !canHub('expenses', user)) return buildRestrictedReply(cleanQ, lang, 'Quarry & Payables');
       const win = computeWindowSummary(scope);
       const k = win.k;
       const model = (_ctx.getModel ? _ctx.getModel(scope.coKey) : {}) || {};
@@ -1634,7 +1637,7 @@
         { label: 'Daily Operations', prompt: 'Show today\'s daily operations' },
         { label: 'Entity Sales & Profit', prompt: 'Compare entity sales & operating profit' },
         ...(canHub('sales', user) ? [{ label: 'Overdue AR', prompt: 'Show top overdue AR customers and credit risk' }] : []),
-        ...(canHub('raw', user) ? [{ label: 'Expenses & AP', prompt: 'Show top expense categories and pending prices' }] : []),
+        ...(canHub('expenses', user) ? [{ label: 'Expenses & AP', prompt: 'Show top expense categories and pending prices' }] : []),
         ...(canHub('fleet', user) ? [{ label: 'Diesel & Repairs', prompt: 'Explain the diesel tank reconciliation variance across entities' }] : []),
         ...(canView('ledger', user) ? [{ label: 'Trial Balance', prompt: 'Verify the double-entry trial balance' }] : [])
       ];

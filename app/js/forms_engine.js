@@ -72,7 +72,7 @@
       forms: [
         { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', hubView: 'raw', pbiPage: 'p04_quarry', title: 'New Raw Material Ticket' },
         { id: 'expense', label: 'Expense (Cash / Credit)', badge: 'bhf_expense', crKey: 'expenses', hubView: 'expenses', pbiPage: 'p07_ap', title: 'New Expense' },
-        { id: 'recurringexpense', label: 'Recurring Expense', badge: 'bhf_recurringexpense', crKey: 'recurring_expenses', hubView: 'expenses', pbiPage: 'p07_ap', title: 'New Recurring Expense Schedule' },
+        { id: 'recurringexpense', label: 'Recurring Expense', badge: 'bhf_recurringexpense', crKey: 'recurring_expenses', hubView: 'recurring_expenses', pbiPage: 'p07_ap', title: 'New Recurring Expense Schedule' },
         { id: 'warehousestock', label: 'Warehouse Shelf Adjust', badge: 'bhf_warehousemovement', crKey: 'warehouse_movements', hubView: 'warehouse', pbiPage: 'p07_ap', title: 'Warehouse Shelf Stock & Adjustment' },
         { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', hubView: 'suppliers', pbiPage: 'p07_ap', title: 'New Supplier Settlement' },
         { id: 'jv', label: 'JV Partnership & Dist.', badge: 'bhf_jvdistribution', crKey: 'jv_distributions', hubView: 'raw_jv', pbiPage: 'p04_quarry', title: 'New Joint-Venture Entry' }
@@ -124,7 +124,7 @@
         { id: 'customer', label: 'Customer', badge: 'bhf_customer', crKey: 'customers', hubView: 'reg_customers', pbiPage: 'p06_ar', title: 'New Customer (Universal Registry)', universal: true },
         { id: 'supplier', label: 'Supplier / Hauler', badge: 'bhf_supplier', crKey: 'suppliers', hubView: 'reg_customers', pbiPage: 'p07_ap', title: 'New Supplier / Hauler (Universal Registry)', universal: true },
         { id: 'product', label: 'Product / Grade', badge: 'bhf_product', crKey: 'products', hubView: 'reg_products', pbiPage: 'p02_sales', title: 'New Product / Aggregate Grade (Universal Registry)', universal: true },
-        { id: 'item', label: 'Item / Spare Part', badge: 'bhf_item', crKey: 'items', hubView: 'expenses', pbiPage: 'p07_ap', title: 'New Item / Spare Part (Universal Catalog)', universal: true },
+        { id: 'item', label: 'Item / Spare Part', badge: 'bhf_item', crKey: 'items', hubView: 'reg_items', pbiPage: 'p07_ap', title: 'New Item / Spare Part (Universal Catalog)', universal: true },
         { id: 'expensecategory', label: 'Expense Category', badge: 'bhf_expensecategory', crKey: 'expense_categories', hubView: 'reg_categories', pbiPage: 'p07_ap', title: 'New Expense Category (Universal Registry)', universal: true },
         { id: 'site', label: 'Site', badge: 'bhf_site', crKey: 'sites', hubView: 'reg_sites', pbiPage: 'p04_quarry', title: 'New Site (Universal Registry)', universal: true },
         { id: 'region', label: 'Region / Zone', badge: 'bhf_region', crKey: 'regions', hubView: 'reg_sites', pbiPage: 'p04_quarry', title: 'New Region / Zone (Universal Registry)', universal: true },

@@ -6481,6 +6481,7 @@
     reg_sites: 'sites',
     reg_regions: 'regions',
     reg_products: 'products',
+    reg_items: 'items',
     reg_customers: 'customers',
     reg_suppliers: 'suppliers',
     reg_categories: 'expense_categories',
@@ -6492,7 +6493,8 @@
   const UNIV_REGISTRY_GROUPS = {
     reg_customers: ['customers', 'suppliers'],
     reg_suppliers: ['customers', 'suppliers'],
-    reg_products: ['products', 'items', 'product_types', 'uoms'],
+    reg_products: ['products', 'product_types', 'uoms'],
+    reg_items: ['items', 'uoms'],
     reg_categories: ['expense_categories', 'expense_subcategories'],
     reg_sites: ['sites', 'regions'],
     reg_regions: ['sites', 'regions'],
@@ -6505,16 +6507,18 @@
 
   const HUB_TITLES = {
     overview: 'Executive Overview',
+    sentinels: 'Sentinels & Alerts',
     reports: 'Dashboards & Reports',
     sales: 'Sales & Receivables',
-    raw: 'Purchases, Expenses & Payables',
-    expenses: 'Purchases, Expenses & Payables',
-    fleet: 'Fleet, Fuel & Drivers',
+    raw: 'Quarry, Haulage & JVs',
+    expenses: 'Expenses & Payables',
+    fleet: 'Fleet & Maintenance',
+    warehouse: 'Warehouse & Parts',
     payroll: 'Payroll & Workforce',
     cashflow: 'Cash Flow & Treasury',
     ledger: 'General Ledger & COA',
     univ_parties: 'Counterparties & Sites',
-    univ_catalog: 'Products & Categories',
+    univ_catalog: 'Catalog & Categories',
     univ_fleet: 'Equipment & Drivers',
     univ_rates: 'Currencies & VAT',
     tables: 'All Tables & Registers',
@@ -6551,8 +6555,31 @@
   function getWorkforceMapExceptionBadge(u) {
     if (!canViewView('workforce_map', u)) return null;
     const wf = buildWorkforceMapData({ auditOnly: true });
-    const ghostCnt = wf ? Number(wf.absentGhostCount || 0) : 0;
+    if (!wf) return null;
+    const dayKey = (STATE.view === 'workforce_map' && STATE.wfMapDate && /^\d{4}-\d{2}-\d{2}$/.test(STATE.wfMapDate))
+      ? STATE.wfMapDate
+      : wf.latestOpDate;
+    const dayAnoms = (wf.anomsByDate && dayKey && wf.anomsByDate.get(dayKey)) || [];
+    const ghostCnt = dayAnoms.filter(a => a.anomalyCode === 'absent_no_sub' || a.anomalyCode === 'absent_with_sub').length;
     return ghostCnt > 0 ? { text: `${fmtNum(ghostCnt)} Alert${ghostCnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
+  }
+
+  function getScopedPendingPriceRaw(opts) {
+    const filterOpts = opts || { ignoreSearch: true };
+    const rows = filterRecords((SEED && SEED.records && SEED.records.raw_purchases) || [], filterOpts)
+      .filter(isPendingPriceRaw)
+      .slice()
+      .sort((a, b) => String(recordDate(b) || b.date || '').localeCompare(String(recordDate(a) || a.date || '')));
+    return { rows, count: rows.length };
+  }
+
+  function getPendingRawPriceExceptionBadge(u, targetView) {
+    const allowed = targetView
+      ? canViewView(targetView, u)
+      : canViewView('raw', u);
+    if (!allowed) return null;
+    const pend = getScopedPendingPriceRaw({ ignoreSearch: true });
+    return pend.count > 0 ? { text: `${fmtNum(pend.count)} Pending`, cls: 'warn' } : null;
   }
 
   function getScopedPendingPriceExpenses(opts) {
@@ -6747,8 +6774,9 @@
   }
 
   function getHubExceptionBadge(hubId, u, k, sentinelsOpen) {
-    if (hubId === 'overview') return getSentinelExceptionBadge(u, sentinelsOpen);
-    if (hubId === 'raw') return getPendingPriceExceptionBadge(u);
+    if (hubId === 'sentinels') return getSentinelExceptionBadge(u, sentinelsOpen);
+    if (hubId === 'raw') return getPendingRawPriceExceptionBadge(u);
+    if (hubId === 'expenses') return getPendingPriceExceptionBadge(u);
     if (hubId === 'fleet') return getFleetExceptionBadge(u) || getDieselExceptionBadge(u);
     if (hubId === 'payroll') return getPendingSalaryExceptionBadge(u) || getWorkforceMapExceptionBadge(u);
     if (hubId === 'ledger') return getLedgerExceptionBadge(u, k);
@@ -6763,7 +6791,14 @@
       tabs: [
         { view: 'overview', label: 'Executive Overview', icon: 'overview' },
         { view: 'daily_ops', label: 'Daily Operations', icon: 'daily_ops' },
-        { view: 'entities', label: 'Entity Comparison', icon: 'entities' },
+        { view: 'entities', label: 'Entity Comparison', icon: 'entities' }
+      ]
+    },
+    {
+      id: 'sentinels',
+      title: HUB_TITLES.sentinels,
+      group: 'exec',
+      tabs: [
         { view: 'sentinels', label: 'AI Sentinels & Audit', icon: 'sentinels', badgeFn: (u, _k, sn) => getSentinelExceptionBadge(u, sn) },
         { view: 'alert_rules', label: 'Alerts & Thresholds', icon: 'alert_rules' }
       ]
@@ -6792,12 +6827,19 @@
       title: HUB_TITLES.raw,
       group: 'commercial',
       tabs: [
-        { view: 'raw', match: ['raw', 'raw_analytics'], label: 'Quarry & Haulage', icon: 'raw' },
-        { view: 'expenses', match: ['expenses', 'expenses_analytics'], label: 'Expenses & Overhead', icon: 'expenses', badgeFn: u => getPendingPriceExceptionBadge(u, 'expenses') },
-        { view: 'warehouse', label: 'Warehouse', icon: 'warehouse' },
-        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers' },
+        { view: 'raw', match: ['raw', 'raw_analytics'], label: 'Quarry & Haulage', icon: 'raw', badgeFn: u => getPendingRawPriceExceptionBadge(u, 'raw') },
         { view: 'raw_pricing', label: 'Quarry & Haulage Rates', icon: 'pricing' },
         { view: 'raw_jv', match: ['raw_jv', 'jv'], label: 'JV & Partnerships', icon: 'raw_jv' }
+      ]
+    },
+    {
+      id: 'expenses',
+      title: HUB_TITLES.expenses,
+      group: 'commercial',
+      tabs: [
+        { view: 'expenses', match: ['expenses', 'expenses_analytics'], label: 'Expenses & Overhead', icon: 'expenses', badgeFn: u => getPendingPriceExceptionBadge(u, 'expenses') },
+        { view: 'recurring_expenses', label: 'Recurring Schedules', icon: 'recurring_expenses' },
+        { view: 'suppliers', match: ['suppliers', 'ap'], label: 'Suppliers & Payables', icon: 'suppliers' }
       ]
     },
     {
@@ -6809,6 +6851,15 @@
         { view: 'fleet_equip', label: 'Fleet & Running Costs', icon: 'fleet_equip' },
         { view: 'fleet_maint', label: 'Repairs, Warnings & Oil Logs', icon: 'fleet_maint', badgeFn: u => getFleetExceptionBadge(u) },
         { view: 'fleet_drivers', match: ['fleet_drivers', 'fleet_analytics'], label: 'Drivers & Overtime', icon: 'fleet_drivers' }
+      ]
+    },
+    {
+      id: 'warehouse',
+      title: HUB_TITLES.warehouse,
+      group: 'plant',
+      tabs: [
+        { view: 'warehouse', label: 'Warehouse Stock & Moves', icon: 'warehouse' },
+        { view: 'warehouse_parts', label: 'Parts & Item Usage', icon: 'warehouse_parts' }
       ]
     },
     {
@@ -6860,7 +6911,8 @@
       group: 'universal',
       universal: true,
       tabs: [
-        { view: 'reg_products', label: 'Products & Catalog', icon: 'reg_products', universal: true },
+        { view: 'reg_products', label: 'Products & Grades', icon: 'reg_products', universal: true },
+        { view: 'reg_items', label: 'Items & Spare Parts', icon: 'reg_items', universal: true },
         { view: 'reg_categories', label: 'Expense Categories', icon: 'reg_categories', universal: true }
       ]
     },
@@ -6930,10 +6982,11 @@
     if (view === 'raw_pricing') return canViewView('raw', u) && (canViewView('pricing', u) || canAccessTable('price_rules', u));
     if (view === 'raw_analytics') return canViewView('raw', u) && (canAccessPbiPage('p08_stock', u) || canAccessPbiPage('p07_ap', u));
     if (view === 'raw_jv' || view === 'jv') return canViewView('raw', u) && (canAccessTable('jv_partnerships', u) || canAccessTable('jv_distributions', u) || canAccessPbiPage('p17_jv', u));
+    if (view === 'recurring_expenses') return canViewView('expenses', u);
     if (view === 'fleet_equip' || view === 'fleet_maint' || view === 'fleet_drivers') return canViewView('fleet', u);
     if (view === 'fleet_analytics') return canViewView('fleet', u) && (canAccessPbiPage('p11_drivers', u) || canAccessPbiPage('p09_fuel', u) || canAccessPbiPage('p10_fleet', u));
     if (view === 'cashflow_analytics') return canViewView('cashflow', u) && canAccessPbiPage('p14_cashflow', u);
-    if (view === 'warehouse') return canViewView('expenses', u) || canViewView('raw', u);
+    if (view === 'warehouse' || view === 'warehouse_parts') return canViewView('fleet', u) || canViewView('expenses', u) || canViewView('raw', u);
     if (view === 'expenses_analytics') return canViewView('expenses', u) && canAccessPbiPage('p07_ap', u);
     if (view === 'workforce_map' || view === 'payroll_attendance' || view === 'payroll_allowances' || view === 'payroll_contracts') return canViewView('payroll', u);
     if (view === 'alert_rules') return canViewView('sentinels', u);
@@ -6982,19 +7035,20 @@
 
   function canViewHub(hubId, u) {
     u = u || activeUser();
-    if (hubId === 'expenses') hubId = 'raw';
     if (hubId === 'master') hubId = 'univ_parties';
     const h = getHubDef(hubId);
     if (!h) return canViewView(hubId, u);
+    if (hubId === 'sentinels') return canViewView('sentinels', u);
     if (hubId === 'reports') return canViewView('pbi', u) || canViewView('statements', u);
-    if (hubId === 'raw') return canViewView('raw', u) || canViewView('expenses', u) || canViewView('suppliers', u);
+    if (hubId === 'raw') return canViewView('raw', u);
+    if (hubId === 'expenses') return canViewView('expenses', u) || canViewView('suppliers', u);
     if (hubId === 'fleet') return canViewView('fleet', u);
+    if (hubId === 'warehouse') return canViewView('warehouse', u);
     return h.tabs.some(t => canViewView(t.view, u));
   }
 
   function resolveHubView(hubId, u) {
     u = u || activeUser();
-    if (hubId === 'expenses') hubId = 'raw';
     if (hubId === 'master') hubId = 'univ_parties';
     const h = getHubDef(hubId);
     if (!h) return canViewView(hubId, u) ? hubId : defaultViewFor(u);
@@ -22404,99 +22458,12 @@
     const topExpCat = expCatRows[0] || null;
     const topItemRow = topItemsForChart[0] || null;
 
-    // Standing Recurring Expense Schedules (seeded from SharePoint Expenses/ERecurring_Data + live app entries)
-    const activePeriodRange = periodRange(STATE.period);
-    const recurCutoffIso = (activePeriodRange && activePeriodRange.to && activePeriodRange.to < todayISO())
-      ? activePeriodRange.to
-      : todayISO();
-    const recurAllScoped = filterRecords(SEED.records.recurring_expenses || [], {
-      ignorePeriod: true,
-      tableKey: 'recurring_expenses',
-      cols: ['company', 'supplier', 'category', 'subcategory', 'item', 'frequency', 'status', 'notes']
-    }).filter(r => {
-      if (!r || r.voided) return false;
-      if (activePeriodRange && (activePeriodRange.from || activePeriodRange.to)) {
-        const s = String(r.start_date || r.date || '').slice(0, 10);
-        const e = String(r.end_date || '').slice(0, 10);
-        if (activePeriodRange.to && s && s > activePeriodRange.to) return false;
-        if (activePeriodRange.from && e && e < activePeriodRange.from) return false;
-      }
-      return true;
-    }).map(r => {
-      const m = computeRecurringExpenseMetrics(r, recurCutoffIso);
-      return {
-        ...r,
-        _isInForce: m.isInForce,
-        status: m.status,
-        _cycles: m.elapsedCycles,
-        _monthlyEq: m.monthlyEqUsd,
-        _accrued: m.accruedUsd
-      };
-    });
-    const recurInForceCnt = recurAllScoped.filter(r => r._isInForce).length;
-    const recurEndedCnt = recurAllScoped.length - recurInForceCnt;
-    const recurChipKey = STATE.recurExpFilter || 'all';
-    const recurChip = (key, label) => `<button type="button" class="filter-chip ${recurChipKey === key ? 'active' : ''}" data-recur-exp-chip="${esc(key)}">${label}</button>`;
-    const recurFiltered = sortRows(recurAllScoped.filter(r => {
-      if (recurChipKey === 'in_force') return r._isInForce;
-      if (recurChipKey === 'ended') return !r._isInForce;
-      return true;
-    }), 'recur_exp', 'start_date', 'desc');
-    const shownRecur = recurFiltered.slice(0, shownCount('recur_exp'));
-    const recurFilteredInForceCnt = recurFiltered.filter(r => r._isInForce).length;
-    const sumRecurMonthlyActive = round2(recurAllScoped.filter(r => r._isInForce).reduce((a, r) => a + r._monthlyEq, 0));
-    const sumRecurDisplayedRate = recurChipKey === 'ended'
-      ? round2(recurFiltered.reduce((a, r) => a + Number(r.amount || 0), 0))
-      : round2(recurFiltered.filter(r => r._isInForce).reduce((a, r) => a + r._monthlyEq, 0));
-    const sumRecurCycles = recurFiltered.reduce((a, r) => a + r._cycles, 0);
-    const sumRecurAccrued = round2(recurFiltered.reduce((a, r) => a + r._accrued, 0));
-
-    const recurSupAgg = new Map();
-    const recurCatAgg = new Map();
-    recurAllScoped.forEach(r => {
-      const supName = String(r.supplier || 'Unassigned').trim();
-      const sk = norm(supName);
-      const sc = recurSupAgg.get(sk) || { label: supName, activeMonthly: 0, accrued: 0, schedules: 0, active: false, sub: '' };
-      sc.schedules += 1;
-      sc.accrued = round2(sc.accrued + r._accrued);
-      if (r._isInForce) {
-        sc.active = true;
-        sc.activeMonthly = round2(sc.activeMonthly + r._monthlyEq);
-      }
-      recurSupAgg.set(sk, sc);
-
-      const catName = String(r.category || 'General Overhead').trim();
-      const ck = norm(catName);
-      const cc = recurCatAgg.get(ck) || { category: catName, activeMonthly: 0, accrued: 0, schedules: 0, activeCount: 0, sub: '' };
-      cc.schedules += 1;
-      cc.accrued = round2(cc.accrued + r._accrued);
-      if (r._isInForce) {
-        cc.activeCount += 1;
-        cc.activeMonthly = round2(cc.activeMonthly + r._monthlyEq);
-      }
-      recurCatAgg.set(ck, cc);
-    });
-    const recurBySupForChart = Array.from(recurSupAgg.values())
-      .map(s => ({
-        ...s,
-        sub: s.active ? `${fmtUSD(s.activeMonthly, 0)}/mo active · ${s.schedules} sched` : `Ended · ${s.schedules} sched`
-      }))
-      .sort((a, b) => (b.active - a.active) || (b.accrued - a.accrued));
-    const recurByCatForChart = Array.from(recurCatAgg.values())
-      .map(c => ({
-        ...c,
-        sub: c.activeCount > 0 ? `${fmtUSD(c.activeMonthly, 0)}/mo active · ${c.schedules} sched` : `Ended · ${c.schedules} sched`
-      }))
-      .sort((a, b) => b.accrued - a.accrued);
-
     const expVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderExpensesVisualsSection === 'function')
       ? window.MFG_PBI.renderExpensesVisualsSection({
         expMonths,
         catRows: expCatRows,
         topItems: topItemsForChart,
-        itemGroupRows: itemGroupRowsForChart,
-        recurBySup: recurBySupForChart,
-        recurByCat: recurByCatForChart
+        itemGroupRows: itemGroupRowsForChart
       })
       : '';
 
@@ -22561,6 +22528,7 @@
             <div class="chip-bar">${chip('all', `All (${base.length})`)}${chip('cash', 'Cash')}${chip('credit', 'Credit')}${chip('with_items', `With Items (${withItemsCnt})`)}${chip('pending_price', `Pending Price (${pendingPriceCnt})`)}${chip('fleet_exp', `Direct Fleet (${base.filter(x => Boolean(x.equipment)).length})`)}${chip('stored_wh', `Stored in Warehouse (${storedWhCnt})`)}${chip('overhead_exp', 'Plant & Admin Overhead')}${chip('app', 'App-entered')}</div>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="recurring_expenses">${ic('recurring_expenses')} Recurring Schedules</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="warehouse">${ic('warehouse')} Warehouse</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="suppliers">${ic('suppliers')} Suppliers &amp; Payables</button>
             <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_categories">${ic('reg_categories')} Expense Categories</button>
@@ -22709,59 +22677,6 @@
         </div>
       </div>
 
-      <div class="panel-card" id="recurringExpPanel" style="margin-bottom:14px">
-        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
-          <div>
-            <div class="panel-title"><span>STANDING RECURRING EXPENSE SCHEDULES (${fmtNum(recurFiltered.length)} SCHEDULES · ${fmtNum(recurInForceCnt)} IN FORCE · ${fmtUSD(sumRecurMonthlyActive, 2)}/MO)</span></div>
-            <span class="ph-sub">Standing rent, internet, telecom, security, and road-allowance agreements from the Recurring Expense register with chronological auto-closure</span>
-          </div>
-          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            ${exportBtn('recurringExpPanel', 'Recurring_Expense_Schedules')}
-            ${canEnterForm('recurringexpense') ? `<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" data-open-modal="recurringexpense">${ic('plus')} New Recurring Expense</button>` : ''}
-          </span>
-        </div>
-        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
-          <div class="chip-bar">
-            ${recurChip('all', `All Schedules (${recurAllScoped.length})`)}
-            ${recurChip('in_force', `In Force (${recurInForceCnt})`)}
-            ${recurChip('ended', `Ended (${recurEndedCnt})`)}
-          </div>
-        </div>
-        ${renderColFilterBar('recur_exp')}
-        <div class="table-wrap">
-          <table class="ledger-table">
-            <thead>
-              <tr>
-                ${th('recur_exp', 'Start Date', 'start_date')}${th('recur_exp', 'End Date', 'end_date')}${th('recur_exp', 'Co.', 'company')}${th('recur_exp', 'Supplier', 'supplier')}${th('recur_exp', 'Category & Purpose', 'category')}${th('recur_exp', 'Status', 'status')}${th('recur_exp', 'Rate ($)', 'amount', 'r')}${th('recur_exp', 'Cycles', '_cycles', 'r')}${th('recur_exp', 'Accrued ($)', '_accrued', 'r')}
-              </tr>
-            </thead>
-            <tbody>
-              ${shownRecur.map(r => `
-                <tr class="rrow" data-rkey="recurring_expenses" data-rid="${esc(r.id)}">
-                  <td class="mono">${esc(fmtDateDMY(r.start_date || r.date))}${appCell(r, 'recurring_expenses')}</td>
-                  <td class="mono">${r.end_date ? esc(fmtDateDMY(r.end_date)) : '<span class="badge badge-ok">Open</span>'}</td>
-                  <td>${coBadge(r.company)}</td>
-                  <td>${r.supplier ? relLink('suppliers', r.supplier, r.supplier, true) : 'N/A'}</td>
-                  <td>${r.category ? relLink('expense_categories', r.category, r.category, true) : 'N/A'}${r.item ? ` <span class="mu">·</span> <strong>${esc(r.item)}</strong>` : ''}${r.equipment ? ` <span class="mu">·</span> ${relLink('equipment', r.equipment)}` : ''}${r.notes ? ` <span class="mu">· ${esc(r.notes)}</span>` : ''}</td>
-                  <td><span class="badge ${r._isInForce ? 'badge-ok' : 'badge-neutral'}">${esc(r.status)}</span> <span class="mu">${esc(r.frequency || 'Monthly')}</span></td>
-                  <td class="r mono"><strong>${fmtUSD(r.amount || 0, 2)}</strong></td>
-                  <td class="r mono">${fmtNum(r._cycles)}</td>
-                  <td class="r"><strong>${fmtUSD(r._accrued, 2)}</strong></td>
-                </tr>`).join('') || emptyRow(9, 'No recurring expense schedules match the active filter.')}
-              ${showMoreRow('recur_exp', recurFiltered.length, 9)}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="6"><b>${recurChipKey === 'ended' ? `TOTAL (${fmtNum(recurFiltered.length)} ENDED SCHEDULES)` : `TOTAL (${fmtNum(recurFiltered.length)} SCHEDULES · ${fmtNum(recurFilteredInForceCnt)} IN FORCE)`}</b></td>
-                <td class="r"><b>${fmtUSD(sumRecurDisplayedRate, 2)}</b></td>
-                <td class="r"><b>${fmtNum(sumRecurCycles)}</b></td>
-                <td class="r"><b>${fmtUSD(sumRecurAccrued, 2)}</b></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-
       <div class="panel-card" id="expItemsCatalogPanel" style="margin-bottom:14px">
         <div class="panel-head" style="flex-wrap:wrap;gap:8px">
           <div>
@@ -22770,7 +22685,7 @@
           </div>
           <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="warehouse">${ic('warehouse')} Warehouse</button>
-            <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="reg_products" data-univ-reg-key="items">Universal Catalog</button>
+            <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="reg_items">${ic('reg_items')} Items &amp; Spare Parts</button>
             ${exportBtn('expItemsCatalogPanel', 'Items_Catalog_Spend_Summary')}
             ${canEnterForm('item') ? `<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" data-open-modal="item">${ic('plus')} New Item</button>` : ''}
             ${canEnterForm('expense') ? '<button type="button" class="btn btn-ghost-bar" style="padding:4px 10px;font-size:11.5px" data-open-modal="expense">+ Buy Item (Expense)</button>' : ''}
@@ -22903,7 +22818,221 @@
   }
 
   // ==========================================================================
-  // VIEW 09A: WAREHOUSE (STORED SPARE PARTS, OILS & REPAIR CONSUMPTION LEDGER)
+  // VIEW 08B: RECURRING SCHEDULES (STANDING RENT, TELECOM & ROAD ALLOWANCES)
+  // ==========================================================================
+  function renderRecurringExpenses() {
+    const activePeriodRange = periodRange(STATE.period);
+    const recurCutoffIso = (activePeriodRange && activePeriodRange.to && activePeriodRange.to < todayISO())
+      ? activePeriodRange.to
+      : todayISO();
+    const recurAllScoped = filterRecords(SEED.records.recurring_expenses || [], {
+      ignorePeriod: true,
+      tableKey: 'recurring_expenses',
+      cols: ['company', 'supplier', 'category', 'subcategory', 'item', 'frequency', 'status', 'notes']
+    }).filter(r => {
+      if (!r || r.voided) return false;
+      if (activePeriodRange && (activePeriodRange.from || activePeriodRange.to)) {
+        const s = String(r.start_date || r.date || '').slice(0, 10);
+        const e = String(r.end_date || '').slice(0, 10);
+        if (activePeriodRange.to && s && s > activePeriodRange.to) return false;
+        if (activePeriodRange.from && e && e < activePeriodRange.from) return false;
+      }
+      return true;
+    }).map(r => {
+      const m = computeRecurringExpenseMetrics(r, recurCutoffIso);
+      return {
+        ...r,
+        _isInForce: m.isInForce,
+        status: m.status,
+        _cycles: m.elapsedCycles,
+        _monthlyEq: m.monthlyEqUsd,
+        _accrued: m.accruedUsd
+      };
+    });
+
+    const recurInForceCnt = recurAllScoped.filter(r => r._isInForce).length;
+    const recurEndedCnt = recurAllScoped.length - recurInForceCnt;
+    const recurChipKey = STATE.recurExpFilter || 'all';
+    const recurChip = (key, label) => `<button type="button" class="filter-chip ${recurChipKey === key ? 'active' : ''}" data-recur-exp-chip="${esc(key)}">${label}</button>`;
+    const recurFiltered = sortRows(recurAllScoped.filter(r => {
+      if (recurChipKey === 'in_force') return r._isInForce;
+      if (recurChipKey === 'ended') return !r._isInForce;
+      return true;
+    }), 'recur_exp', 'start_date', 'desc');
+    const shownRecur = recurFiltered.slice(0, shownCount('recur_exp'));
+    const recurFilteredInForceCnt = recurFiltered.filter(r => r._isInForce).length;
+    const sumRecurMonthlyActive = round2(recurAllScoped.filter(r => r._isInForce).reduce((a, r) => a + r._monthlyEq, 0));
+    const sumRecurDisplayedRate = recurChipKey === 'ended'
+      ? round2(recurFiltered.reduce((a, r) => a + Number(r.amount || 0), 0))
+      : round2(recurFiltered.filter(r => r._isInForce).reduce((a, r) => a + r._monthlyEq, 0));
+    const sumRecurCycles = recurFiltered.reduce((a, r) => a + r._cycles, 0);
+    const sumRecurAccrued = round2(recurFiltered.reduce((a, r) => a + r._accrued, 0));
+    const sumAllAccrued = round2(recurAllScoped.reduce((a, r) => a + r._accrued, 0));
+
+    const recurSupAgg = new Map();
+    const recurCatAgg = new Map();
+    recurAllScoped.forEach(r => {
+      const supName = String(r.supplier || 'Unassigned').trim();
+      const sk = norm(supName);
+      const sc = recurSupAgg.get(sk) || { label: supName, activeMonthly: 0, accrued: 0, schedules: 0, active: false, sub: '' };
+      sc.schedules += 1;
+      sc.accrued = round2(sc.accrued + r._accrued);
+      if (r._isInForce) {
+        sc.active = true;
+        sc.activeMonthly = round2(sc.activeMonthly + r._monthlyEq);
+      }
+      recurSupAgg.set(sk, sc);
+
+      const catName = String(r.category || 'General Overhead').trim();
+      const ck = norm(catName);
+      const cc = recurCatAgg.get(ck) || { category: catName, activeMonthly: 0, accrued: 0, schedules: 0, activeCount: 0, sub: '' };
+      cc.schedules += 1;
+      cc.accrued = round2(cc.accrued + r._accrued);
+      if (r._isInForce) {
+        cc.activeCount += 1;
+        cc.activeMonthly = round2(cc.activeMonthly + r._monthlyEq);
+      }
+      recurCatAgg.set(ck, cc);
+    });
+    const recurBySupForChart = Array.from(recurSupAgg.values())
+      .map(s => ({
+        ...s,
+        sub: s.active ? `${fmtUSD(s.activeMonthly, 0)}/mo active · ${s.schedules} sched` : `Ended · ${s.schedules} sched`
+      }))
+      .sort((a, b) => (b.active - a.active) || (b.accrued - a.accrued));
+    const recurByCatForChart = Array.from(recurCatAgg.values())
+      .map(c => ({
+        ...c,
+        sub: c.activeCount > 0 ? `${fmtUSD(c.activeMonthly, 0)}/mo active · ${c.schedules} sched` : `Ended · ${c.schedules} sched`
+      }))
+      .sort((a, b) => b.accrued - a.accrued);
+
+    const topRecurSup = recurBySupForChart[0] || null;
+    const recurVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderRecurringExpensesVisualsSection === 'function')
+      ? window.MFG_PBI.renderRecurringExpensesVisualsSection({
+        recurBySup: recurBySupForChart,
+        recurByCat: recurByCatForChart
+      })
+      : '';
+
+    return `
+      <div class="cockpit-banner has-insights">
+        <div class="cockpit-title-block sr-only">
+          <div class="cockpit-eyebrow">STANDING VENDOR AGREEMENTS &amp; SCHEDULED OVERHEAD</div>
+          <div class="cockpit-title">Recurring Schedules</div>
+        </div>
+        <div class="cockpit-pills insight-grid">
+          ${insightCard({
+            label: 'Active Monthly Run-Rate',
+            badge: `${fmtNum(recurInForceCnt)} In Force`,
+            badgeCls: 'emerald',
+            val: `${fmtUSD(sumRecurMonthlyActive, 2)} <small>/ mo</small>`,
+            valCls: 'emerald',
+            pct: recurAllScoped.length > 0 ? Math.min(100, Math.round((recurInForceCnt / recurAllScoped.length) * 100)) : 100,
+            sub: `<b>${fmtNum(recurInForceCnt)}</b> open agreements · <b>${fmtNum(recurEndedCnt)}</b> ended schedules`,
+            tone: 'emerald'
+          })}
+          ${insightCard({
+            label: 'Annualized Commitment',
+            badge: `${fmtNum(recurAllScoped.length)} Total Schedules`,
+            badgeCls: 'brass',
+            val: `${fmtUSD(sumRecurMonthlyActive * 12, 0)} <small>/ yr</small>`,
+            valCls: 'brass',
+            pct: 100,
+            sub: `Projected 12-month standing commitment across active vendor agreements`,
+            tone: 'brass'
+          })}
+          ${insightCard({
+            label: 'Cumulative Accrued',
+            badge: `${fmtNum(recurAllScoped.reduce((a, r) => a + r._cycles, 0))} Cycles`,
+            badgeCls: 'brass',
+            val: fmtUSD(sumAllAccrued, 0),
+            valCls: 'brass',
+            pct: 85,
+            sub: `Accrued automatically into Credit Leg 3 supplier payables through ${esc(fmtDateDMY(recurCutoffIso))}`,
+            tone: 'steel'
+          })}
+          ${insightCard({
+            label: 'Top Standing Vendor',
+            badge: topRecurSup ? esc(topRecurSup.label) : `${fmtNum(recurBySupForChart.length)} Vendors`,
+            badgeCls: 'amber',
+            val: topRecurSup
+              ? (topRecurSup.active ? `${fmtUSD(topRecurSup.activeMonthly, 0)} <small>/ mo</small>` : fmtUSD(topRecurSup.accrued, 0))
+              : '$0',
+            valCls: 'amber',
+            sub: topRecurSup
+              ? `<b>${fmtUSD(topRecurSup.accrued, 0)}</b> cumulative · <b>${fmtNum(recurBySupForChart.length)}</b> recurring vendors`
+              : `No recurring vendor schedules in this entity scope`,
+            tone: 'amber'
+          })}
+          ${appPill('recurring_expenses', 'amount', 'schedules')}
+        </div>
+      </div>
+
+      <div class="panel-card" id="recurringExpPanel" style="margin-bottom:14px">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="panel-title"><span>STANDING RECURRING EXPENSE SCHEDULES (${fmtNum(recurFiltered.length)} SCHEDULES · ${fmtNum(recurInForceCnt)} IN FORCE · ${fmtUSD(sumRecurMonthlyActive, 2)}/MO)</span></div>
+            <span class="ph-sub">Standing rent, internet, telecom, security, and road-allowance agreements from the Recurring Expense register with chronological auto-closure</span>
+          </div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="expenses">${ic('expenses')} Expenses &amp; Overhead</button>
+            <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="suppliers">${ic('suppliers')} Suppliers &amp; Payables</button>
+            ${exportBtn('recurringExpPanel', 'Recurring_Expense_Schedules')}
+            ${canEnterForm('recurringexpense') ? `<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" data-open-modal="recurringexpense">${ic('plus')} New Recurring Expense</button>` : ''}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search supplier, category, purpose, cycle, notes...')}
+            <div class="chip-bar">
+              ${recurChip('all', `All Schedules (${recurAllScoped.length})`)}
+              ${recurChip('in_force', `In Force (${recurInForceCnt})`)}
+              ${recurChip('ended', `Ended (${recurEndedCnt})`)}
+            </div>
+          </div>
+        </div>
+        ${renderColFilterBar('recur_exp')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('recur_exp', 'Start Date', 'start_date')}${th('recur_exp', 'End Date', 'end_date')}${th('recur_exp', 'Co.', 'company')}${th('recur_exp', 'Supplier', 'supplier')}${th('recur_exp', 'Category & Purpose', 'category')}${th('recur_exp', 'Status', 'status')}${th('recur_exp', 'Rate ($)', 'amount', 'r')}${th('recur_exp', 'Cycles', '_cycles', 'r')}${th('recur_exp', 'Accrued ($)', '_accrued', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownRecur.map(r => `
+                <tr class="rrow" data-rkey="recurring_expenses" data-rid="${esc(r.id)}">
+                  <td class="mono">${esc(fmtDateDMY(r.start_date || r.date))}${appCell(r, 'recurring_expenses')}</td>
+                  <td class="mono">${r.end_date ? esc(fmtDateDMY(r.end_date)) : '<span class="badge badge-ok">Open</span>'}</td>
+                  <td>${coBadge(r.company)}</td>
+                  <td>${r.supplier ? relLink('suppliers', r.supplier, r.supplier, true) : 'N/A'}</td>
+                  <td>${r.category ? relLink('expense_categories', r.category, r.category, true) : 'N/A'}${r.item ? ` <span class="mu">·</span> <strong>${esc(r.item)}</strong>` : ''}${r.equipment ? ` <span class="mu">·</span> ${relLink('equipment', r.equipment)}` : ''}${r.notes ? ` <span class="mu">· ${esc(r.notes)}</span>` : ''}</td>
+                  <td><span class="badge ${r._isInForce ? 'badge-ok' : 'badge-neutral'}">${esc(r.status)}</span> <span class="mu">${esc(r.frequency || 'Monthly')}</span></td>
+                  <td class="r mono"><strong>${fmtUSD(r.amount || 0, 2)}</strong></td>
+                  <td class="r mono">${fmtNum(r._cycles)}</td>
+                  <td class="r"><strong>${fmtUSD(r._accrued, 2)}</strong></td>
+                </tr>`).join('') || emptyRow(9, 'No recurring expense schedules match the active filter.')}
+              ${showMoreRow('recur_exp', recurFiltered.length, 9)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>${recurChipKey === 'ended' ? `TOTAL (${fmtNum(recurFiltered.length)} ENDED SCHEDULES)` : `TOTAL (${fmtNum(recurFiltered.length)} SCHEDULES · ${fmtNum(recurFilteredInForceCnt)} IN FORCE)`}</b></td>
+                <td class="r"><b>${fmtUSD(sumRecurDisplayedRate, 2)}</b></td>
+                <td class="r"><b>${fmtNum(sumRecurCycles)}</b></td>
+                <td class="r"><b>${fmtUSD(sumRecurAccrued, 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      ${recurVisualsHtml}
+    `;
+  }
+
+  // ==========================================================================
+  // VIEW 09A: WAREHOUSE STOCK & MOVES (STORED SPARE PARTS, OILS & MOVEMENTS)
   // ==========================================================================
   function renderWarehouse() {
     ensureItemsCatalogSeeded();
@@ -23003,7 +23132,7 @@
       <div class="cockpit-banner has-insights">
         <div class="cockpit-title-block sr-only">
           <div class="cockpit-eyebrow">STORED SPARE PARTS, OILS, LIVE ON-HAND BALANCES &amp; REPAIR CONSUMPTION</div>
-          <div class="cockpit-title">Warehouse</div>
+          <div class="cockpit-title">Warehouse Stock &amp; Moves</div>
         </div>
         <div class="cockpit-pills insight-grid">
           ${insightCard({
@@ -23239,6 +23368,303 @@
                 <td class="r"><b>Avg ${fmtUSD(whCatFiltered.length ? whCatFiltered.reduce((a, r) => a + r.default_cost, 0) / whCatFiltered.length : 0, 2)}</b></td>
                 <td class="r"><b>${fmtNum(whCatFiltered.reduce((a, r) => a + r.on_hand_qty, 0), 0)}</b></td>
                 <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  // ==========================================================================
+  // VIEW 09B: PARTS & ITEM USAGE (WORKSHOP REPAIR PARTS + PURCHASED ROUTING)
+  // ==========================================================================
+  function renderWarehouseParts() {
+    ensureItemsCatalogSeeded();
+    const catalogMap = new Map();
+    (SEED.records.items || []).forEach(it => {
+      if (!it || it.voided) return;
+      const nm = String(it.name || it.item_name || '').trim();
+      const nk = norm(nm);
+      if (nk && !catalogMap.has(nk)) catalogMap.set(nk, it);
+    });
+
+    const repItemsBase = filterRecords(SEED.records.repair_items || [], {
+      tableKey: 'repair_items',
+      cols: ['id', 'repair_ref', 'company', 'equipment', 'item_name', 'source', 'uom', 'warehouse_location', 'supplier']
+    }).filter(r => r && !r.voided);
+
+    const repFromWhCnt = repItemsBase.filter(r => /^warehouse$/i.test(String(r.source || ''))).length;
+    const repOutsideCnt = repItemsBase.length - repFromWhCnt;
+    const repPartChipKey = STATE.whRepPartFilter || 'all';
+    const repPartChip = (key, label) => `<button type="button" class="filter-chip ${repPartChipKey === key ? 'active' : ''}" data-wh-rep-part-chip="${esc(key)}">${label}</button>`;
+    const repItemsFiltered = sortRows(repItemsBase.filter(r => {
+      if (repPartChipKey === 'warehouse') return /^warehouse$/i.test(String(r.source || ''));
+      if (repPartChipKey === 'outside') return !/^warehouse$/i.test(String(r.source || ''));
+      return true;
+    }), 'wh_rep_parts', 'date', 'desc');
+    const shownRepItems = repItemsFiltered.slice(0, shownCount('wh_rep_parts'));
+    const sumRepQty = round2(repItemsFiltered.reduce((a, r) => a + Math.abs(Number(r.qty || 1)), 0));
+    const sumRepUsd = round2(repItemsFiltered.reduce((a, r) => a + Number(r.line_total != null ? r.line_total : (Number(r.qty || 1) * Number(r.unit_cost || 0))), 0));
+
+    const expItemsBase = filterRecords(SEED.records.expense_items || [], {
+      tableKey: 'expense_items',
+      cols: ['id', 'expense_id', 'expense_ref', 'item_name', 'category', 'subcategory', 'supplier', 'equipment', 'target_equipment', 'method', 'uom', 'location', 'warehouse_location', 'disposition']
+    }).filter(r => r && !r.voided && !isTransportRentalItemName(r.item_name || r.name));
+
+    const expWhCnt = expItemsBase.filter(r => Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || ''))).length;
+    const expEqCnt = expItemsBase.filter(r => Boolean(r.target_equipment || r.equipment) && !(Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || '')))).length;
+    const expGenCnt = expItemsBase.length - expWhCnt - expEqCnt;
+    const expTktChipKey = STATE.expItemTktFilter || 'all';
+    const expTktChip = (key, label) => `<button type="button" class="filter-chip ${expTktChipKey === key ? 'active' : ''}" data-exp-item-tkt-chip="${esc(key)}">${label}</button>`;
+    const expItemsFiltered = sortRows(expItemsBase.filter(r => {
+      const isWh = Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || ''));
+      const isEq = Boolean(r.target_equipment || r.equipment);
+      if (expTktChipKey === 'warehouse') return isWh;
+      if (expTktChipKey === 'fleet') return isEq && !isWh;
+      if (expTktChipKey === 'overhead') return !isEq && !isWh;
+      return true;
+    }), 'wh_exp_parts', 'date', 'desc');
+    const shownExpItems = expItemsFiltered.slice(0, shownCount('wh_exp_parts'));
+    const sumExpQty = round2(expItemsFiltered.reduce((a, r) => a + Number(r.qty || 1), 0));
+    const sumExpUsd = round2(expItemsFiltered.reduce((a, r) => a + Number(r.line_total != null ? r.line_total : (r.total_cost != null ? r.total_cost : (r.amount || 0))), 0));
+
+    const partAgg = new Map();
+    const bumpPart = (rawName, rawCat, rawUom, qty, usd, sourceTag) => {
+      const nm = String(rawName || '').trim();
+      const nk = norm(nm);
+      if (!nk) return;
+      const catRec = catalogMap.get(nk);
+      const canon = (catRec && (catRec.name || catRec.item_name)) || nm;
+      const uom = (catRec && (catRec.uom || catRec.unit)) || rawUom || 'Piece';
+      const cat = (catRec && catRec.category) || normalizeItemCatalogCategory(rawCat, canon);
+      const cur = partAgg.get(nk) || { label: `${canon} (${uom})`, name: canon, category: cat, uom, qty: 0, total: 0, lines: 0, sourceTag };
+      cur.qty = round2(cur.qty + Math.max(0, Number(qty || 0)));
+      cur.total = round2(cur.total + Math.max(0, Number(usd || 0)));
+      cur.lines += 1;
+      partAgg.set(nk, cur);
+    };
+    let whStoredSpend = 0, directEqSpend = 0, workshopRepSpend = 0, plantGenSpend = 0;
+    repItemsBase.forEach(r => {
+      const usd = Number(r.line_total != null ? r.line_total : (Number(r.qty || 1) * Number(r.unit_cost || 0)));
+      workshopRepSpend = round2(workshopRepSpend + usd);
+      bumpPart(r.item_name, 'Spare Parts', r.uom, r.qty || 1, usd, /^warehouse$/i.test(String(r.source || '')) ? 'Warehouse' : 'Outside');
+    });
+    expItemsBase.forEach(r => {
+      const usd = Number(r.line_total != null ? r.line_total : (r.total_cost != null ? r.total_cost : (r.amount || 0)));
+      const isWh = Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || ''));
+      const isEq = Boolean(r.target_equipment || r.equipment);
+      if (isWh) whStoredSpend = round2(whStoredSpend + usd);
+      else if (isEq) directEqSpend = round2(directEqSpend + usd);
+      else plantGenSpend = round2(plantGenSpend + usd);
+      bumpPart(r.item_name || r.name, r.category, r.uom, r.qty || 1, usd, isWh ? 'Warehouse' : 'Direct');
+    });
+
+    const topPartRows = Array.from(partAgg.values())
+      .filter(p => p.total > 0 || p.qty > 0)
+      .map(p => ({
+        ...p,
+        sub: `${p.category} · ${fmtNum(p.qty, p.qty % 1 ? 1 : 0)} ${p.uom} · ${fmtNum(p.lines)} line${p.lines === 1 ? '' : 's'}`
+      }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+
+    const routeRows = [
+      { label: 'Direct to Equipment', total: directEqSpend, sub: `${fmtNum(expEqCnt)} itemized expense lines` },
+      { label: 'Stored in Warehouse', total: whStoredSpend, sub: `${fmtNum(expWhCnt)} shelf intake lines` },
+      { label: 'Workshop Repairs Issued', total: workshopRepSpend, sub: `${fmtNum(repItemsBase.length)} repair part lines` },
+      { label: 'Plant & General Consumables', total: plantGenSpend, sub: `${fmtNum(expGenCnt)} general lines` }
+    ].filter(r => r.total > 0 || r.label === 'Workshop Repairs Issued').sort((a, b) => b.total - a.total);
+
+    const uniqEquipRepaired = new Set(repItemsBase.map(r => r.equipment).filter(Boolean).concat(expItemsBase.map(r => r.target_equipment || r.equipment).filter(Boolean))).size;
+    const totalAllLines = repItemsBase.length + expItemsBase.length;
+    const totalCombinedSpend = round2(workshopRepSpend + whStoredSpend + directEqSpend + plantGenSpend);
+    const partsVisualsHtml = (window.MFG_PBI && typeof window.MFG_PBI.renderWarehousePartsVisualsSection === 'function')
+      ? window.MFG_PBI.renderWarehousePartsVisualsSection({ topPartRows, routeRows })
+      : '';
+
+    return `
+      <div class="cockpit-banner has-insights">
+        <div class="cockpit-title-block sr-only">
+          <div class="cockpit-eyebrow">WORKSHOP REPAIR PARTS ISSUED &amp; ITEMIZED PURCHASE ROUTING</div>
+          <div class="cockpit-title">Parts &amp; Item Usage</div>
+        </div>
+        <div class="cockpit-pills insight-grid">
+          ${insightCard({
+            label: 'Workshop Repair Parts',
+            badge: `${fmtNum(repFromWhCnt)} Shelf · ${fmtNum(repOutsideCnt)} Outside`,
+            badgeCls: 'brass',
+            val: `${fmtNum(repItemsBase.length)} <small>Part Lines</small>`,
+            valCls: 'brass',
+            pct: totalAllLines > 0 ? Math.max(12, Math.round((repItemsBase.length / totalAllLines) * 100)) : 100,
+            sub: `<b>${fmtUSD(workshopRepSpend, 2)}</b> issued across workshop equipment repairs`,
+            tone: 'brass'
+          })}
+          ${insightCard({
+            label: 'Purchased Item Lines',
+            badge: `${fmtNum(expWhCnt)} Stored in Warehouse`,
+            badgeCls: 'emerald',
+            val: fmtUSD(whStoredSpend + directEqSpend + plantGenSpend, 0),
+            valCls: 'emerald',
+            pct: 90,
+            sub: `<b>${fmtNum(expItemsBase.length)}</b> itemized purchase lines · Direct Fleet <b>${fmtUSD(directEqSpend, 0)}</b>`,
+            tone: 'emerald'
+          })}
+          ${insightCard({
+            label: 'Machines & Units Served',
+            badge: `${fmtNum(partAgg.size)} Distinct SKUs`,
+            badgeCls: 'brass',
+            val: `${fmtNum(uniqEquipRepaired)} <small>Units</small>`,
+            valCls: 'brass',
+            pct: 85,
+            sub: `Trucks, loaders, crushers &amp; generators receiving parts or lubricants`,
+            tone: 'steel'
+          })}
+          ${insightCard({
+            label: 'Combined Parts & Oils',
+            badge: topPartRows[0] ? esc(topPartRows[0].name) : 'Locked UoM',
+            badgeCls: 'amber',
+            val: fmtUSD(totalCombinedSpend, 0),
+            valCls: 'amber',
+            sub: `<span class="insight-drill" data-nav-jump="reg_items">Open Shared Items &amp; Spare Parts Catalog</span>`,
+            tone: 'amber'
+          })}
+          ${appPill('repair_items', 'line_total', 'repair parts')}
+        </div>
+      </div>
+
+      <div class="panel-card" id="whRepairPartsPanel" style="margin-bottom:14px">
+        <div class="table-toolbar">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search part name, equipment unit, repair ticket, shelf location, supplier...')}
+            <div class="chip-bar">
+              ${repPartChip('all', `All Repair Parts (${repItemsBase.length})`)}
+              ${repPartChip('warehouse', `From Warehouse (${repFromWhCnt})`)}
+              ${repPartChip('outside', `Purchased Outside (${repOutsideCnt})`)}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;margin-left:auto;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="warehouse">${ic('warehouse')} Stock &amp; Moves</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="fleet_maint">${ic('repair')} Repairs &amp; Warnings</button>
+            <button type="button" class="btn btn-ghost-bar" data-nav-jump="reg_items">${ic('reg_items')} Items Catalog</button>
+            ${exportBtn('whRepairPartsPanel', 'Workshop_Repair_Parts_Used')}
+            ${canEnterForm('item') ? `<button type="button" class="btn btn-ghost-bar" data-open-modal="item">${ic('plus')} New Item</button>` : ''}
+            ${canEnterForm('repair') ? `<button type="button" class="btn btn-primary" data-open-modal="repair">${ic('repair')} + Log Repair &amp; Parts</button>` : ''}
+          </div>
+        </div>
+        ${renderColFilterBar('wh_rep_parts')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('wh_rep_parts', 'Date', 'date')}${th('wh_rep_parts', 'Repair Ref', 'repair_ref')}${th('wh_rep_parts', 'Co.', 'company')}${th('wh_rep_parts', 'Equipment', 'equipment')}
+                ${th('wh_rep_parts', 'Part / Item', 'item_name')}${th('wh_rep_parts', 'Source', 'source')}${th('wh_rep_parts', 'Qty & UoM', 'qty', 'r')}
+                ${th('wh_rep_parts', 'Unit Cost ($)', 'unit_cost', 'r')}${th('wh_rep_parts', 'Line Total ($)', 'line_total', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownRepItems.map(r => {
+                const isWh = /^warehouse$/i.test(String(r.source || ''));
+                const qty = Math.abs(Number(r.qty || 1));
+                const uom = r.uom || 'Piece';
+                const tot = Number(r.line_total != null ? r.line_total : (qty * Number(r.unit_cost || 0)));
+                const uc = Number(r.unit_cost != null ? r.unit_cost : (qty > 0 ? tot / qty : 0));
+                return `
+                  <tr class="rrow" data-rkey="repair_items" data-rid="${esc(r.id)}">
+                    <td class="mono">${esc(fmtDateDMY(r.date))}${appCell(r, 'repair_items')}</td>
+                    <td class="mono">${r.repair_ref ? relLink('equipment_repairs', r.repair_ref, r.repair_ref, true) : esc(r.name || r.id)}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td class="mono">${r.equipment ? relLink('equipment', r.equipment, r.equipment, true) : 'N/A'}</td>
+                    <td><strong>${relLink('items', r.item_name, r.item_name, true)}</strong></td>
+                    <td><span class="badge ${isWh ? 'badge-ok' : 'badge-brass'}">${isWh ? 'Warehouse (-Stock)' : 'Purchased Outside'}</span>${r.supplier && !isWh ? ` <span class="mu">· ${esc(r.supplier)}</span>` : ''}</td>
+                    <td class="r mono"><strong>${fmtNum(qty, qty % 1 ? 2 : 0)}</strong> <span class="badge badge-info">${esc(uom)}</span></td>
+                    <td class="r mono">${fmtUSD(uc, 2)}</td>
+                    <td class="r mono"><strong>${fmtUSD(tot, 2)}</strong></td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(9, 'No workshop repair part lines recorded in this period. Click "+ Log Repair & Parts" when issuing warehouse spares or outside parts onto an equipment unit.')}
+              ${showMoreRow('wh_rep_parts', repItemsFiltered.length, 9)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>TOTAL (${fmtNum(repItemsFiltered.length)} REPAIR PART LINES · ${fmtNum(repFromWhCnt)} SHELF · ${fmtNum(repOutsideCnt)} OUTSIDE)</b></td>
+                <td class="r"><b>${fmtNum(sumRepQty, sumRepQty % 1 ? 2 : 0)}</b></td>
+                <td></td>
+                <td class="r"><b>${fmtUSD(sumRepUsd, 2)}</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      ${partsVisualsHtml}
+
+      <div class="panel-card" id="whExpensePartsPanel">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="panel-title"><span>PURCHASED PARTS, OILS &amp; CONSUMABLES ROUTING (${fmtNum(expItemsFiltered.length)} ITEM TICKET LINES)</span></div>
+            <span class="ph-sub">Every itemized supplier purchase routed directly to an equipment unit, into Warehouse stock, or to general plant operations</span>
+          </div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="expenses">${ic('expenses')} Expenses &amp; Overhead</button>
+            ${exportBtn('whExpensePartsPanel', 'Purchased_Parts_Routing')}
+            ${canEnterForm('expense') ? '<button type="button" class="btn btn-primary" style="padding:4px 10px;font-size:11.5px" data-open-modal="expense">+ Buy Part / Oil (Expense)</button>' : ''}
+          </span>
+        </div>
+        <div class="table-toolbar" style="padding-top:6px;padding-bottom:6px">
+          <div class="chip-bar">
+            ${expTktChip('all', `All Purchased Lines (${expItemsBase.length})`)}
+            ${expTktChip('fleet', `Direct to Equipment (${expEqCnt})`)}
+            ${expTktChip('warehouse', `Stored in Warehouse (${expWhCnt})`)}
+            ${expTktChip('overhead', `Plant & General (${expGenCnt})`)}
+          </div>
+        </div>
+        ${renderColFilterBar('wh_exp_parts')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('wh_exp_parts', 'Date', 'date')}${th('wh_exp_parts', 'Co.', 'company')}${th('wh_exp_parts', 'Item / Part Name', 'item_name')}${th('wh_exp_parts', 'Group', 'category')}
+                ${th('wh_exp_parts', 'Supplier', 'supplier')}${th('wh_exp_parts', 'Routing / Equipment', 'equipment')}${th('wh_exp_parts', 'Qty & UoM', 'qty', 'r')}
+                ${th('wh_exp_parts', 'Unit Cost ($)', 'unit_cost', 'r')}${th('wh_exp_parts', 'Total ($)', 'total_cost', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownExpItems.map(r => {
+                const iname = String(r.item_name || r.name || 'Item').trim();
+                const catRec = catalogMap.get(norm(iname));
+                const lockedUom = (catRec && (catRec.uom || catRec.unit)) || r.uom || 'Piece';
+                const grp = (catRec && catRec.category) || normalizeItemCatalogCategory(r.category, iname);
+                const qty = Number(r.qty || 1);
+                const tot = Number(r.line_total != null ? r.line_total : (r.total_cost != null ? r.total_cost : (r.amount || 0)));
+                const uc = Number(r.unit_cost != null ? r.unit_cost : (qty > 0 ? tot / qty : tot));
+                const eqName = r.target_equipment || r.equipment || '';
+                const isWh = Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || ''));
+                const destHtml = isWh
+                  ? `<span class="badge badge-ok">Warehouse (+Stock)</span> <span class="mu">${esc(r.warehouse_location || r.location || 'Main Warehouse')}</span>`
+                  : (eqName ? relLink('equipment', eqName, eqName, true) : '<span class="mu">Plant &amp; General</span>');
+                return `
+                  <tr class="rrow" data-rkey="expense_items" data-rid="${esc(r.id)}">
+                    <td class="mono">${esc(fmtDateDMY(r.date))}${appCell(r, 'expense_items')}</td>
+                    <td>${coBadge(r.company)}</td>
+                    <td><strong>${relLink('items', iname, iname, true)}</strong></td>
+                    <td>${esc(grp)}</td>
+                    <td>${r.supplier ? relLink('suppliers', r.supplier) : 'N/A'}</td>
+                    <td class="mono">${destHtml}</td>
+                    <td class="r mono"><strong>${fmtNum(qty, qty % 1 ? 2 : 0)}</strong> <span class="badge badge-info">${esc(lockedUom)}</span></td>
+                    <td class="r mono">${fmtUSD(uc, 2)}</td>
+                    <td class="r"><strong>${fmtUSD(tot, 2)}</strong></td>
+                  </tr>
+                `;
+              }).join('') || emptyRow(9, 'No itemized purchase lines match the active filter.')}
+              ${showMoreRow('wh_exp_parts', expItemsFiltered.length, 9)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="6"><b>TOTAL (${fmtNum(expItemsFiltered.length)} PURCHASED ITEM LINES)</b></td>
+                <td class="r"><b>${fmtNum(sumExpQty, sumExpQty % 1 ? 2 : 0)}</b></td>
+                <td></td>
+                <td class="r"><b>${fmtUSD(sumExpUsd, 2)}</b></td>
               </tr>
             </tfoot>
           </table>
@@ -58094,7 +58520,9 @@
     ap: 'Suppliers & Payables',
     expenses: 'Expenses & Overhead',
     expenses_analytics: 'Expenses & Overhead',
-    warehouse: 'Warehouse',
+    recurring_expenses: 'Recurring Schedules',
+    warehouse: 'Warehouse Stock & Moves',
+    warehouse_parts: 'Parts & Item Usage',
     payroll: 'Payroll & Workforce',
     workforce_map: 'Daily Plant & Machine Map',
     payroll_attendance: 'Attendance & Overtime',
@@ -58111,6 +58539,7 @@
     reg_sites: 'Sites',
     reg_regions: 'Regions & Zones',
     reg_products: 'Products & Grades',
+    reg_items: 'Items & Spare Parts',
     reg_customers: 'Customers Registry',
     reg_suppliers: 'Suppliers & Haulers',
     reg_categories: 'Expense Categories',
@@ -58153,7 +58582,9 @@
     ap: 'Suppliers & Payables',
     expenses: 'Expenses & Overhead',
     expenses_analytics: 'Expenses & Overhead',
-    warehouse: 'Warehouse',
+    recurring_expenses: 'Recurring Schedules',
+    warehouse: 'Warehouse Stock & Moves',
+    warehouse_parts: 'Parts & Item Usage',
     payroll: 'Payroll & Workforce',
     workforce_map: 'Daily Plant & Machine Map',
     payroll_attendance: 'Attendance & Overtime',
@@ -58170,6 +58601,7 @@
     reg_sites: 'Sites',
     reg_regions: 'Regions & Zones',
     reg_products: 'Products & Grades',
+    reg_items: 'Items & Spare Parts',
     reg_customers: 'Customers Registry',
     reg_suppliers: 'Suppliers & Haulers',
     reg_categories: 'Expense Categories',
@@ -58988,6 +59420,7 @@
     }
     const map = {
       kiosks: 'sales', sales: 'sales', sales_vat: 'vatinvoice', sales_analytics: 'sales',
+      sentinels: 'defect', alert_rules: 'defect',
       raw: 'raw', raw_pricing: 'pricerule_raw', raw_analytics: 'raw', raw_jv: 'jv', jv: 'jv',
       fleet: 'fuel', fleet_equip: 'companyequipment', fleet_maint: 'defect', fleet_drivers: 'triprate', fleet_analytics: 'triprate',
       pricing: 'pricerule',
@@ -58995,12 +59428,13 @@
       external: 'external', conversions: 'conversion',
       customers: 'receipt', ar: 'receipt',
       suppliers: 'settlement', ap: 'settlement',
-      expenses: 'expense', expenses_analytics: 'expense', warehouse: 'warehousestock',
+      expenses: 'expense', expenses_analytics: 'expense', recurring_expenses: 'recurringexpense',
+      warehouse: 'warehousestock', warehouse_parts: 'repair',
       payroll: 'salary', workforce_map: 'attendance', payroll_attendance: 'attendance', payroll_allowances: 'logistics', payroll_contracts: 'employment', payroll_analytics: 'salary',
       ledger: 'treasury', gl: 'treasury', ledger_treasury: 'treasury',
       tables: 'pricerule',
       reg_equipment: 'equipment', reg_drivers: 'driver', reg_sites: 'site', reg_regions: 'region',
-      reg_products: 'product', reg_customers: 'customer', reg_suppliers: 'supplier', reg_categories: 'expensecategory',
+      reg_products: 'product', reg_items: 'item', reg_customers: 'customer', reg_suppliers: 'supplier', reg_categories: 'expensecategory',
       reg_fx_rates: 'fxrate', reg_currencies: 'currency', reg_vat_rates: 'vatrate'
     };
     let preferred = map[view] || 'sales';
@@ -59050,11 +59484,11 @@
         dEntry.hidden = false;
         const formLabels = {
           sales: 'Post Ticket', raw: 'Post Raw', fuel: 'Log Fuel', malfunction: 'Log Malfunction', receipt: 'Post Receipt',
-          settlement: 'Settle AP', expense: 'Post Expense', warehousestock: 'Warehouse Stock', salary: 'Pay Salary',
+          settlement: 'Settle AP', expense: 'Post Expense', recurringexpense: 'Recurring Sched', warehousestock: 'Warehouse Stock', salary: 'Pay Salary',
           vatinvoice: 'Post VAT Inv', attendance: 'Log Attendance', logistics: 'Site Transport', employment: 'New Contract',
           treasury: 'Loan / Settle', external: 'External Entry', conversion: 'FX Conversion', pricerule: 'New Agreement', pricerule_raw: 'New Site Rate',
           jv: 'Post JV Entry', defect: 'Report Warning', repair: 'Log Repair', oillog: 'Log Oil', partlog: 'Log Part', companyequipment: 'Assign Unit',
-          customer: 'New Customer', supplier: 'New Supplier', product: 'New Product', expensecategory: 'New Category',
+          customer: 'New Customer', supplier: 'New Supplier', product: 'New Product', item: 'New Item', expensecategory: 'New Category',
           site: 'New Site', region: 'New Region', equipment: 'New Equipment', driver: 'New Driver',
           fxrate: 'New FX Rate', vatrate: 'New VAT Rate', currency: 'New Currency'
         };
@@ -65077,9 +65511,11 @@
       }
     };
     setExceptionPill('navCountOverview', getHubExceptionBadge('overview', user, k, sentinelsOpen));
+    setExceptionPill('navCountSentinels', getHubExceptionBadge('sentinels', user, k, sentinelsOpen));
     setExceptionPill('navCountRaw', getHubExceptionBadge('raw', user, k, sentinelsOpen));
+    setExceptionPill('navCountExpenses', getHubExceptionBadge('expenses', user, k, sentinelsOpen));
     setExceptionPill('navCountFleet', getHubExceptionBadge('fleet', user, k, sentinelsOpen));
-    setExceptionPill('navCountPayroll', getPendingSalaryExceptionBadge(user));
+    setExceptionPill('navCountPayroll', getHubExceptionBadge('payroll', user, k, sentinelsOpen));
     setExceptionPill('navCountTB', getHubExceptionBadge('ledger', user, k, sentinelsOpen));
 
     if (window.innerWidth <= 860) renderMobileSubnav(user, k, sentinelsOpen);
@@ -65123,7 +65559,9 @@
       case 'ap': wsHtml = renderAP(); break;
       case 'expenses_analytics':
       case 'expenses': wsHtml = renderExpenses(); break;
+      case 'recurring_expenses': wsHtml = renderRecurringExpenses(); break;
       case 'warehouse': wsHtml = renderWarehouse(); break;
+      case 'warehouse_parts': wsHtml = renderWarehouseParts(); break;
       case 'payroll':
       case 'payroll_analytics': wsHtml = renderPayroll('main'); break;
       case 'workforce_map': wsHtml = renderWorkforceMap(); break;
@@ -65140,6 +65578,7 @@
       case 'reg_sites':
       case 'reg_regions':
       case 'reg_products':
+      case 'reg_items':
       case 'reg_customers':
       case 'reg_suppliers':
       case 'reg_categories':
@@ -66106,6 +66545,16 @@
     container.querySelectorAll('[data-exp-item-tkt-chip]').forEach(btn => btn.addEventListener('click', () => {
       STATE.expItemTktFilter = btn.getAttribute('data-exp-item-tkt-chip') || 'all';
       STATE.shown.exp_items_tkt = PAGE;
+      STATE.shown.exp_item_tkts = PAGE;
+      STATE.shown.wh_exp_parts = PAGE;
+      const ws = $('workspace');
+      const y = ws ? ws.scrollTop : 0;
+      renderApp();
+      if (ws) ws.scrollTop = y;
+    }));
+    container.querySelectorAll('[data-wh-rep-part-chip]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.whRepPartFilter = btn.getAttribute('data-wh-rep-part-chip') || 'all';
+      STATE.shown.wh_rep_parts = PAGE;
       const ws = $('workspace');
       const y = ws ? ws.scrollTop : 0;
       renderApp();
@@ -67469,7 +67918,6 @@
   }
 
   function clickHub(hubId) {
-    if (hubId === 'expenses') hubId = 'raw';
     if (hubId === 'master') hubId = 'univ_parties';
     const u = activeUser();
     const target = resolveHubView(hubId, u);

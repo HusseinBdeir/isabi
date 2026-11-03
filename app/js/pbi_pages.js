@@ -1423,7 +1423,7 @@
       { id: 'diff_eq', label: 'Different Equipment Split', fn: r => /^different_equipment$/i.test(r.allocation_mode || '') },
       { id: 'general', label: 'General / Non-Equipment', fn: r => !r.target_equipment && !r.equipment && !/warehouse|shelf/i.test(r.allocation_mode || r.disposition || '') }
     ] },
-    { key: 'recurring_expenses', group: '2 · Purchases, Expenses & Payables', navView: 'expenses', label: 'Recurring Expenses', singularLabel: 'Recurring Expense', dvn: 'bhf_recurringexpense', form: 'recurringexpense', cols: ['supplier', 'company', 'category', 'subcategory', 'item', 'frequency', 'amount', 'start_date', 'end_date', 'status', 'notes'], relTables: ['suppliers', 'expense_categories', 'expense_subcategories', 'expenses', 'settlements'], views: [
+    { key: 'recurring_expenses', group: '2 · Purchases, Expenses & Payables', navView: 'recurring_expenses', label: 'Recurring Expenses', singularLabel: 'Recurring Expense', dvn: 'bhf_recurringexpense', form: 'recurringexpense', cols: ['supplier', 'company', 'category', 'subcategory', 'item', 'frequency', 'amount', 'start_date', 'end_date', 'status', 'notes'], relTables: ['suppliers', 'expense_categories', 'expense_subcategories', 'expenses', 'settlements'], views: [
       { id: 'all', label: 'All Recurring Schedules' },
       { id: 'in_force', label: 'In Force (Active)', fn: r => !r.end_date || String(r.end_date).slice(0, 10) >= localTodayPbi() },
       { id: 'ended', label: 'Ended Schedules', fn: r => Boolean(r.end_date && String(r.end_date).slice(0, 10) < localTodayPbi()) }
@@ -1528,7 +1528,7 @@
       { id: 'iva', label: 'IVA / VAT Registered', fn: r => Boolean(r.iva || r.financial_no || r.mof_no) }
     ] },
     { key: 'products', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Products & Grades', singularLabel: 'Product / Grade', dvn: 'bhf_product', form: 'product', cols: ['name', 'type', 'uom', 'ton_factor', 'list_price', 'ticket_product', 'fuel_item', 'input_product', 'active_rules', 'sales_loads'], relTables: ['sales_tickets', 'raw_purchases', 'price_rules', 'fuel_intakes', 'product_types', 'uoms'], views: [{ id: 'all', label: 'All Products & Grades' }, { id: 'agg', label: 'Ticket / Aggregate Grades', fn: r => Boolean(r.ticket_product) }, { id: 'fuel', label: 'Fuel & Lube Items', fn: r => Boolean(r.fuel_item) }] },
-    { key: 'items', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Items & Spare Parts', singularLabel: 'Item / Spare Part', dvn: 'bhf_item', form: 'item', cols: ['name', 'category', 'uom', 'default_cost', 'tickets_count', 'total_spent', 'default_location', 'min_stock', 'status'], relTables: ['expense_items', 'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'uoms'], views: [{ id: 'all', label: 'All Items & Spare Parts' }, { id: 'parts', label: 'Spare Parts', fn: r => /spare|part/i.test(r.category || '') }, { id: 'oils', label: 'Oils & Lubricants', fn: r => /oil|lub/i.test(r.category || '') }, { id: 'tools', label: 'Tools & Consumables', fn: r => /tool|consum/i.test(r.category || '') }] },
+    { key: 'items', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_items', label: 'Items & Spare Parts', singularLabel: 'Item / Spare Part', dvn: 'bhf_item', form: 'item', cols: ['name', 'category', 'uom', 'default_cost', 'tickets_count', 'total_spent', 'default_location', 'min_stock', 'status'], relTables: ['expense_items', 'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'uoms'], views: [{ id: 'all', label: 'All Items & Spare Parts' }, { id: 'parts', label: 'Spare Parts', fn: r => /spare|part/i.test(r.category || '') }, { id: 'oils', label: 'Oils & Lubricants', fn: r => /oil|lub/i.test(r.category || '') }, { id: 'tools', label: 'Tools & Consumables', fn: r => /tool|consum/i.test(r.category || '') }] },
     { key: 'product_types', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Product Types (Families)', singularLabel: 'Product / Grade', dvn: 'bhf_producttype', form: 'product', cols: ['name', 'code', 'products_count', 'sales_loads'], relTables: ['products', 'sales_tickets'], views: [{ id: 'all', label: 'All Product Families' }] },
     { key: 'uoms', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Units of Measure (UoM)', singularLabel: 'Product / Grade', dvn: 'bhf_uom', form: 'product', cols: ['name', 'code', 'products_count', 'tickets_count'], relTables: ['products', 'items', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Units of Measure' }] },
     { key: 'expense_categories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Categories', singularLabel: 'Expense Category', dvn: 'bhf_expensecategory', form: 'expensecategory', cols: ['name', 'cost_class', 'subcategories_count', 'expenses_count', 'total_spent'], relTables: ['expense_subcategories', 'expenses', 'recurring_expenses'], views: [
@@ -6025,7 +6025,7 @@
             { label: 'Accrued ($)', key: 'accrued', r: true, bar: true, fmt: v => fmtUSD(v, 2) }
           ], recurEnriched, {
             rkey: 'recurring_expenses',
-            subtitle: 'Standing vendor agreements seeded from SharePoint Recurring Expenses · manage or add schedules on Expenses & Overhead',
+            subtitle: 'Standing vendor agreements seeded from SharePoint Recurring Expenses · manage or add schedules on Recurring Schedules',
             unitLabel: 'recurring schedules',
             foot: [
               { v: `Total (${fmtNum(recurEnriched.length)} schedules · ${fmtNum(activeSchedules.length)} In Force)`, span: 7 },
@@ -9350,7 +9350,7 @@
           <div class="pa-hub-rel-strip">
             ${groupTabsMeta.length > 1 ? `
               <div class="pa-hub-views"${views.length > 1 ? ' style="flex:1 1 100%;padding-bottom:6px;margin-bottom:2px;border-bottom:1px dashed var(--line)"' : ''}>
-                <span class="pa-hub-lbl">Registries (All BUs):</span>
+                <span class="pa-hub-lbl">Shared Registries:</span>
                 ${groupTabsMeta.map(gt => {
                   const gCnt = chipCounts.byKey[gt.key] != null ? chipCounts.byKey[gt.key] : ((SEED.records && SEED.records[gt.key]) || []).length;
                   return `<button type="button" class="filter-chip ${gt.key === meta.key ? 'active' : ''}" data-univ-reg-key="${esc(gt.key)}" ${gt.navView ? `data-univ-nav-view="${esc(gt.navView)}"` : ''}>${esc(gt.label)} <span class="mono" style="opacity:.75">(${fmtNum(gCnt)})</span></button>`;
@@ -11011,16 +11011,23 @@
         })}
       </div>
       ` : ''}
-      ${(((ctx && ctx.recurBySup) || []).length || ((ctx && ctx.recurByCat) || []).length) ? `
+    `;
+  }
+
+  function renderRecurringExpensesVisualsSection(ctx) {
+    const bySup = (ctx && ctx.recurBySup) || [];
+    const byCat = (ctx && ctx.recurByCat) || [];
+    if (!bySup.length && !byCat.length) return '';
+    return `
       <div class="pbi-grid-2" id="recurringExpensesChartsRow" style="margin-bottom:14px">
-        ${pbiPanel('Standing Recurring Commitments by Vendor ($ Accrued & Active Run-Rate)', buildHorizontalBarChart((ctx && ctx.recurBySup) || [], 'label', 'accrued', v => fmtUSD(v, 0), {
+        ${pbiPanel('Standing Recurring Commitments by Vendor ($ Accrued & Active Run-Rate)', buildHorizontalBarChart(bySup, 'label', 'accrued', v => fmtUSD(v, 0), {
           subKey: 'sub',
           maxItems: 8,
           colorFn: r => r.active ? C.brass : C.steel
         }), {
           subtitle: 'Cumulative schedule accrual by vendor with active monthly run-rate highlighted in warm brass'
         })}
-        ${pbiPanel('Recurring Schedules by Category ($ Accrued)', buildHorizontalBarChart((ctx && ctx.recurByCat) || [], 'category', 'accrued', v => fmtUSD(v, 0), {
+        ${pbiPanel('Recurring Schedules by Category ($ Accrued)', buildHorizontalBarChart(byCat, 'category', 'accrued', v => fmtUSD(v, 0), {
           subKey: 'sub',
           maxItems: 8,
           colorFn: r => r.activeCount > 0 ? C.navy : C.steel
@@ -11028,7 +11035,29 @@
           subtitle: 'Standing lease, telecom, security, and site tip schedules grouped by expense category'
         })}
       </div>
-      ` : ''}
+    `;
+  }
+
+  function renderWarehousePartsVisualsSection(ctx) {
+    const topParts = (ctx && ctx.topParts) || [];
+    const routeBreak = (ctx && ctx.routeBreak) || [];
+    return `
+      <div class="pbi-grid-2" id="whPartsUsageChartsRow" style="margin-bottom:14px">
+        ${pbiPanel('Top Consumed & Issued Spare Parts, Tyres & Oils ($)', buildHorizontalBarChart(topParts, 'label', 'total', v => fmtUSD(v, 0), {
+          subKey: 'sub',
+          maxItems: 10,
+          colorFn: r => /Oil/i.test(r.category) ? C.brass : (/Spare/i.test(r.category) ? C.navy : C.steel)
+        }), {
+          subtitle: 'Combined workshop repair parts issued and purchased equipment/warehouse items with locked UoM'
+        })}
+        ${pbiPanel('Parts & Item Routing Breakdown · Shelf vs. Direct Fleet vs. Repairs ($)', buildHorizontalBarChart(routeBreak, 'label', 'total', v => fmtUSD(v, 0), {
+          subKey: 'sub',
+          maxItems: 6,
+          colorFn: r => /Warehouse/i.test(r.label) ? C.brass : (/Repair|Fleet/i.test(r.label) ? C.navy : C.steel)
+        }), {
+          subtitle: 'Spend routing across Warehouse Shelf Stock (+IN), Direct Equipment Allocation, and Workshop Repairs'
+        })}
+      </div>
     `;
   }
 
@@ -11174,7 +11203,9 @@
     renderJvVisualsSection,
     renderRawVisualsSection,
     renderExpensesVisualsSection,
+    renderRecurringExpensesVisualsSection,
     renderWarehouseVisualsSection,
+    renderWarehousePartsVisualsSection,
     renderContractsVisualsSection,
     renderSuppliersVisualsSection
   };
