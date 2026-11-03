@@ -633,7 +633,8 @@
       });
 
       const _rdlCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-      const uniq = arr => {
+      const fIdx = typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null;
+      const uniq = (arr, fallbackFreqMap) => {
         const counts = new Map();
         const out = [];
         for (const x of (arr || [])) {
@@ -644,18 +645,28 @@
           if (!counts.has(k)) out.push(s);
           counts.set(k, (counts.get(k) || 0) + 1);
         }
-        return out.sort((a, b) => (counts.get(b.toLowerCase()) || 0) - (counts.get(a.toLowerCase()) || 0) || _rdlCollator.compare(a, b));
+        const fbMap = fallbackFreqMap || (fIdx && fIdx.any) || null;
+        return out.sort((a, b) => {
+          const ka = a.toLowerCase(), kb = b.toLowerCase();
+          const ca = counts.get(ka) || 0, cb = counts.get(kb) || 0;
+          if (cb !== ca) return cb - ca;
+          if (fbMap) {
+            const fa = fbMap.get(ka) || 0, fb = fbMap.get(kb) || 0;
+            if (fb !== fa) return fb - fa;
+          }
+          return 0;
+        });
       };
 
-      const customers = uniq([...salesAll.map(r => r.customer), ...receiptLedgerAll.map(r => r.customer)]);
-      const products = uniq(salesAll.filter(r => !r.is_receipt_row).map(r => r.product));
-      const sites = uniq(salesAll.filter(r => !r.is_receipt_row).map(r => r.site));
-      const suppliers = uniq([...apRmLegsAll.map(r => r.supplier), ...expAll.map(r => r.supplier), ...settlementLedgerAll.map(r => r.supplier)]);
-      const categories = uniq(expAll.map(r => r.category));
-      const staff = uniq(payAll.map(r => r.staff));
+      const customers = uniq([...salesAll.map(r => r.customer), ...receiptLedgerAll.map(r => r.customer)], fIdx && fIdx.customer);
+      const products = uniq(salesAll.filter(r => !r.is_receipt_row).map(r => r.product), fIdx && fIdx.productSales);
+      const sites = uniq(salesAll.filter(r => !r.is_receipt_row).map(r => r.site), fIdx && fIdx.site);
+      const suppliers = uniq([...apRmLegsAll.map(r => r.supplier), ...expAll.map(r => r.supplier), ...settlementLedgerAll.map(r => r.supplier)], fIdx && fIdx.supplier);
+      const categories = uniq(expAll.map(r => r.category), fIdx && fIdx.category);
+      const staff = uniq(payAll.map(r => r.staff), fIdx && fIdx.staff);
       const equipTypes = uniq(fuelAll.map(r => r.equip_type));
-      const equipments = uniq([...fuelAll.map(r => r.equip), ...salesAll.map(r => r.truck)]);
-      const drivers = uniq([...salesAll.map(r => r.driver), ...fuelAll.map(r => r.driver), ...rmAll.map(r => r.driver)]);
+      const equipments = uniq([...fuelAll.map(r => r.equip), ...salesAll.map(r => r.truck)], fIdx && fIdx.truck);
+      const drivers = uniq([...salesAll.map(r => r.driver), ...fuelAll.map(r => r.driver), ...rmAll.map(r => r.driver)], fIdx && fIdx.driver);
 
       // Pre-index salesAll by vat_inv and customer in one O(N) pass for O(1) VAT invoice grouping
       const salesByVatInv = new Map();
@@ -1043,6 +1054,13 @@
     };
 
     if (k === 'account') {
+      const jes = ctx._allJes || buildJournalEntries(ctx, '9999-12-31');
+      const acctFreq = new Map();
+      jes.forEach(j => {
+        const ac = j && (j.acct_code || j.acct);
+        if (ac) acctFreq.set(String(ac), (acctFreq.get(String(ac)) || 0) + 1);
+      });
+      const rankedCoa = COA_ACCOUNTS.slice().sort((a, b) => (acctFreq.get(String(b.code)) || 0) - (acctFreq.get(String(a.code)) || 0));
       const opts = [{
         value: 'ALL',
         code: 'ALL',
@@ -1051,7 +1069,7 @@
         label: `All Accounts (${COA_ACCOUNTS.length})`,
         q: 'all accounts coa'
       }];
-      COA_ACCOUNTS.forEach(a => {
+      rankedCoa.forEach(a => {
         opts.push({
           value: a.code,
           code: a.code,
@@ -1064,7 +1082,14 @@
       return { label: 'Account', wide: true, placeholder: 'Search account code or name…', badge: `${COA_ACCOUNTS.length} accounts`, options: opts };
     }
     if (k === 'subAccount') {
-      const subPool = p.account === '411' ? ctx.customers : (p.account === '401' ? ctx.suppliers : (p.account === '421' ? ctx.staff : [...new Set([...ctx.customers, ...ctx.suppliers])]));
+      const _rdlCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+      const fIdx = typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null;
+      const combinedPool = [...new Set([...ctx.customers, ...ctx.suppliers])].sort((a, b) => {
+        const fa = fIdx && fIdx.any ? (fIdx.any.get(a.toLowerCase()) || 0) : 0;
+        const fb = fIdx && fIdx.any ? (fIdx.any.get(b.toLowerCase()) || 0) : 0;
+        return fb - fa;
+      });
+      const subPool = p.account === '411' ? ctx.customers : (p.account === '401' ? ctx.suppliers : (p.account === '421' ? ctx.staff : combinedPool));
       return { label: 'Sub-account(s)', wide: false, placeholder: 'Search counterparty name…', badge: `${fmtNum(subPool.length)} parties`, options: makeSimpleList(subPool, `All Sub-accounts (${subPool.length})`, 'Sub-account') };
     }
     if (k === 'customer') {
@@ -3513,9 +3538,8 @@
           if (!tokens.length) {
             filtered = cfg.options;
           } else {
-            const starts = [];
-            const contains = [];
-            const firstTok = tokens[0];
+            const exact = [];
+            const freqOrdered = [];
             for (let i = 0; i < cfg.options.length; i++) {
               const o = cfg.options[i];
               let ok = true;
@@ -3525,13 +3549,13 @@
               if (!ok) continue;
               const mainLow = (o.main || '').toLowerCase();
               const codeLow = (o.code || '').toLowerCase();
-              if (mainLow.startsWith(firstTok) || codeLow.startsWith(firstTok) || codeLow === '#' + firstTok) {
-                starts.push(o);
+              if (mainLow === ql || codeLow === ql || codeLow === '#' + ql) {
+                exact.push(o);
               } else {
-                contains.push(o);
+                freqOrdered.push(o);
               }
             }
-            filtered = starts.concat(contains);
+            filtered = exact.concat(freqOrdered);
           }
 
           const MAX_SHOW = 45;

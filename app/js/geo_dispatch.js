@@ -535,39 +535,101 @@
 
   let _nomTimer = null;
   let _nomAbort = null;
+  let _regFreqCache = null;
+
+  function getRegionOperationalFreqMap(SEED) {
+    const rec = (SEED && SEED.records) || (typeof window !== 'undefined' && window.MFG_SEED && window.MFG_SEED.records) || {};
+    const sales = rec.sales_tickets || [];
+    const raws = rec.raw_purchases || [];
+    const sites = rec.sites || [];
+    const overs = rec.overtime_rates || [];
+    const regs = rec.regions || [];
+    const cacheKey = `${sales.length}:${raws.length}:${sites.length}:${overs.length}:${regs.length}:${(SEED && SEED._customRev) || 0}`;
+    if (_regFreqCache && _regFreqCache.key === cacheKey) return _regFreqCache.map;
+
+    const map = new Map();
+    const add = (val, w = 1) => {
+      const k = norm(val);
+      if (k) map.set(k, (map.get(k) || 0) + w);
+    };
+    const siteReg = new Map();
+    sites.forEach(s => {
+      if (!s || s.voided) return;
+      const rk = norm(s.region || s.geo_zone);
+      if (rk) {
+        add(rk, 3);
+        if (s.name) siteReg.set(norm(s.name), rk);
+      }
+    });
+    sales.forEach(r => {
+      if (!r || r.voided) return;
+      const rk = norm(r.region) || (r.site ? siteReg.get(norm(r.site)) : '');
+      if (rk) add(rk, 1);
+    });
+    raws.forEach(r => {
+      if (!r || r.voided) return;
+      const rk = norm(r.region) || (r.site ? siteReg.get(norm(r.site)) : '');
+      if (rk) add(rk, 1);
+    });
+    overs.forEach(o => {
+      if (o && !o.voided && o.region) add(o.region, 2);
+    });
+    getAllCompanyHubs(SEED).forEach(h => {
+      if (h && h.region) add(h.region, 5);
+    });
+    const fIdx = typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null;
+    if (fIdx && fIdx.region) {
+      fIdx.region.forEach((v, k) => add(k, v));
+    }
+    _regFreqCache = { key: cacheKey, map };
+    return map;
+  }
 
   function searchMapRegionBoundaries(query, opts = {}) {
     const { SEED, limit = 9, onRemoteResults } = opts;
     const q = norm(query);
     const atlas = getFullBoundaryAtlas();
+    const regFreq = getRegionOperationalFreqMap(SEED);
+    const atlasFreqOf = (it) => {
+      let best = regFreq.get(norm(it.name)) || 0;
+      (it.aliases || []).forEach(a => {
+        const af = regFreq.get(norm(a)) || 0;
+        if (af > best) best = af;
+      });
+      return best;
+    };
     let localHits = [];
 
     if (!q) {
-      const featured = ['Beirut', 'Saida', 'Metn', 'Keserwan', 'Chouf', 'Baabda', 'Aley', 'Tripoli', 'Zahle', 'Tyre', 'Jbeil', 'Nabatieh'];
-      featured.forEach(fn => {
-        const hit = atlas.find(x => norm(x.name) === norm(fn));
-        if (hit) localHits.push(enrichAtlasItem(hit, SEED));
-      });
-      return localHits.slice(0, limit);
+      const defaultPriority = ['Beirut', 'Saida', 'Metn', 'Keserwan', 'Chouf', 'Baabda', 'Aley', 'Tripoli', 'Zahle', 'Tyre', 'Jbeil', 'Nabatieh'];
+      const prioMap = new Map(defaultPriority.map((nm, i) => [norm(nm), defaultPriority.length - i]));
+      const ranked = atlas.map((it, idx) => ({
+        it,
+        freq: atlasFreqOf(it),
+        prio: prioMap.get(norm(it.name)) || 0,
+        idx
+      }));
+      ranked.sort((a, b) => (b.freq - a.freq) || (b.prio - a.prio) || (a.idx - b.idx));
+      localHits = ranked.slice(0, limit).map(x => enrichAtlasItem(x.it, SEED));
+      return localHits;
     }
 
-    const scored = [];
-    atlas.forEach(it => {
+    const matched = [];
+    atlas.forEach((it, idx) => {
       const n = norm(it.name);
       const aliases = (it.aliases || []).map(norm);
       const corr = norm(it.corridorLabel || corridorLabel(it.corridor));
-      let score = 0;
-      if (n === q) score = 1000;
-      else if (aliases.some(a => a === q)) score = 960;
-      else if (n.startsWith(q)) score = 840;
-      else if (aliases.some(a => a.startsWith(q))) score = 780;
-      else if (n.includes(q)) score = 620;
-      else if (aliases.some(a => a.includes(q))) score = 560;
-      else if (corr.includes(q)) score = 340;
-      if (score > 0) scored.push({ score, item: enrichAtlasItem(it, SEED) });
+      const isExact = (n === q || aliases.some(a => a === q)) ? 1 : 0;
+      const isDirect = (isExact || n.includes(q) || aliases.some(a => a.includes(q))) ? 1 : 0;
+      const isCorr = !isDirect && corr.includes(q) ? 1 : 0;
+      if (isDirect || isCorr) {
+        const enriched = enrichAtlasItem(it, SEED);
+        const freq = atlasFreqOf(it) * 10 + Number(enriched.sitesInside || 0);
+        matched.push({ isExact, isDirect, freq, idx, item: enriched });
+      }
     });
-    scored.sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name));
-    localHits = scored.slice(0, limit).map(x => x.item);
+    matched.sort((a, b) => (b.isExact - a.isExact) || (b.isDirect - a.isDirect) || (b.freq - a.freq) || (a.idx - b.idx));
+    localHits = matched.slice(0, limit).map(x => x.item);
 
     // Merge cached remote Nominatim GeoJSON hits if already fetched for this query
     if (_remoteAtlasCache.has(q)) {
@@ -1881,7 +1943,7 @@
       if (e) { e.raw += 1; e.total += 1; }
     });
 
-    const list = Array.from(map.values()).sort((a, b) => (b.total - a.total) || a.name.localeCompare(b.name));
+    const list = Array.from(map.values()).sort((a, b) => b.total - a.total);
     _siteStatsCache = { rev, list, byNorm: map };
     return _siteStatsCache;
   }
@@ -2245,15 +2307,14 @@
     });
 
     const q = norm(STUDIO.regionSearch);
-    const sortedRegions = regions.slice().sort((a, b) => {
-      const aBu = (busByReg.get(norm(a.name)) || []).length;
-      const bBu = (busByReg.get(norm(b.name)) || []).length;
-      if (aBu !== bBu) return bBu - aBu;
-      const aCnt = sitesByReg.get(norm(a.name)) || 0;
-      const bCnt = sitesByReg.get(norm(b.name)) || 0;
-      if (aCnt !== bCnt) return bCnt - aCnt;
-      return String(a.name || '').localeCompare(String(b.name || ''));
-    }).filter(r => !q || norm(r.name).includes(q) || (busByReg.get(norm(r.name)) || []).some(b => norm(b).includes(q)));
+    const regFreq = getRegionOperationalFreqMap(SEED);
+    const freqRegions = regions.slice().sort((a, b) => {
+      const ak = norm(a.name), bk = norm(b.name);
+      const aFreq = (regFreq.get(ak) || 0) + (sitesByReg.get(ak) || 0) * 2 + (busByReg.get(ak) || []).length * 5;
+      const bFreq = (regFreq.get(bk) || 0) + (sitesByReg.get(bk) || 0) * 2 + (busByReg.get(bk) || []).length * 5;
+      return bFreq - aFreq;
+    });
+    const sortedRegions = freqRegions.filter(r => !q || norm(r.name).includes(q) || (busByReg.get(norm(r.name)) || []).some(b => norm(b).includes(q)));
 
     // Build distance endpoint options
     const distOptionsHtml = (selectedVal) => {
@@ -2286,7 +2347,7 @@
     if (!STUDIO.collapsed && STUDIO.mode === 'search') {
       const sd = STUDIO.searchDraft;
       const sdGov = sd ? resolveGovernorate({ zoneType: 'boundary', geojson: sd.geojson, lat: sd.lat, lng: sd.lng, corridor: sd.corridor, name: sd.name }, SEED) : { label: '' };
-      const quickCities = ['Beirut', 'Saida', 'Metn', 'Keserwan', 'Chouf', 'Tripoli', 'Zahle', 'Tyre'];
+      const quickCities = ['Beirut', 'Saida', 'Metn', 'Keserwan', 'Chouf', 'Tripoli', 'Zahle', 'Tyre'].slice().sort((a, b) => (regFreq.get(norm(b)) || 0) - (regFreq.get(norm(a)) || 0));
       let sdInside = 0;
       if (sd && sd.geojson) {
         ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
@@ -2333,7 +2394,7 @@
           <div class="geo-tool-fields">
             <label class="geo-tool-field">Region Name
               <input type="text" id="geoDrawRegionInp" list="dl_geo_draw_regions" value="${esc(STUDIO.drawRegionName || STUDIO.selectedRegion)}" placeholder="Select or type new region...">
-              <datalist id="dl_geo_draw_regions">${regions.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
+              <datalist id="dl_geo_draw_regions">${freqRegions.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
             </label>
             <label class="geo-tool-field">Radius (km)
               <input type="number" id="geoCircleRadiusInp" step="0.1" min="0.2" max="50" value="${esc(STUDIO.circleRadiusKm)}" style="width:68px">
@@ -2365,7 +2426,7 @@
           <div class="geo-tool-fields">
             <label class="geo-tool-field">Region Name
               <input type="text" id="geoDrawRegionInp" list="dl_geo_draw_regions" value="${esc(STUDIO.drawRegionName || STUDIO.selectedRegion)}" placeholder="Select or type new region...">
-              <datalist id="dl_geo_draw_regions">${regions.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
+              <datalist id="dl_geo_draw_regions">${freqRegions.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
             </label>
             <span class="geo-live-inside-pill" id="geoLiveInsideCountPill"${STUDIO.polyPoints.length >= 3 ? '' : ' hidden'}>${polyInsideSites} ${polyInsideSites === 1 ? 'Site' : 'Sites'} inside</span>
             <span class="geo-tool-hint" id="geoPolyPtsLbl">${STUDIO.polyPoints.length === 0 ? 'Click map to place Corner 1' : (STUDIO.polyPoints.length < 3 ? `Corners: <b>${STUDIO.polyPoints.length}</b> (click ${3 - STUDIO.polyPoints.length} more to form boundary)` : (STUDIO.polyLocked ? `Boundary locked (<b>${STUDIO.polyPoints.length}</b> corners · drag any corner or midpoint to refine)` : `Corners: <b>${STUDIO.polyPoints.length}</b> · Click green Corner 1 or Finish Shape to lock`))}</span>
@@ -2382,11 +2443,18 @@
     } else if (!STUDIO.collapsed && STUDIO.mode === 'pin') {
       const isBuPin = STUDIO.pinTargetType === 'bu';
       const pinCat = STUDIO.pinSiteCategory === 'customer' ? 'customer' : 'supplier';
+      const fIdxPin = typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null;
+      const siteFreqMap = fIdxPin ? (pinCat === 'customer' ? fIdxPin.siteSales : fIdxPin.siteRaw) : null;
       const catSiteNames = Array.from(new Set(
         ((SEED && SEED.records && SEED.records.sites) || [])
           .filter(s => s && !s.voided && s.name && resolveGeoSiteCat(s) === pinCat)
           .map(s => s.name)
-      ));
+      )).sort((a, b) => {
+        const ak = norm(a), bk = norm(b);
+        const sa = siteFreqMap ? (siteFreqMap.get(ak) || 0) : ((siteStats.byName.get(ak) || {}).total || 0);
+        const sb = siteFreqMap ? (siteFreqMap.get(bk) || 0) : ((siteStats.byName.get(bk) || {}).total || 0);
+        return sb - sa;
+      });
       toolDrawerHtml = `
         <div class="geo-tool-drawer" id="geoToolDrawer">
           <div class="geo-tool-fields">
@@ -2419,7 +2487,7 @@
             </label>
             <label class="geo-tool-field">Zone
               <input type="text" id="geoPinRegionInp" list="dl_geo_draw_regions" value="${esc(STUDIO.pinRegion)}" placeholder="Auto from map zone" style="width:136px">
-              <datalist id="dl_geo_draw_regions">${regions.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
+              <datalist id="dl_geo_draw_regions">${freqRegions.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
             </label>
           </div>
           <div style="display:flex;gap:6px;align-items:center">

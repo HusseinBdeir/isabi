@@ -2606,7 +2606,7 @@
       const la = localCounts.get(ka) || 0;
       const lb = localCounts.get(kb) || 0;
       if (lb !== la) return lb - la;
-      return a < b ? -1 : (a > b ? 1 : 0);
+      return 0;
     });
   }
 
@@ -3555,7 +3555,7 @@
         ];
       case 'p17_jv':
         return [
-          { key: 'site', label: 'JV Site', opts: ['Halat JV', 'Jiyeh JV', 'Nahr Ibrahim JV'] },
+          { key: 'site', label: 'JV Site', opts: data.jvSiteOpts },
           { key: 'partner', label: 'JV Partner', opts: ['Assaf', 'WTC', 'Partner 50%'] },
           { key: 'jvBasis', label: 'Distribution Basis', opts: ['Stock', 'Revenue', 'Profit', 'Cash'] }
         ];
@@ -4596,7 +4596,8 @@
         get catOpts() { return getSlicerPool('cat', () => uniq((rec.expense_categories || []).map(c => c.name).concat((rec.expenses || []).map(x => x.category)), fIdx && fIdx.category)); },
         get subcatOpts() { return getSlicerPool('subcat', () => uniq((rec.expense_subcategories || []).map(c => c.name), fIdx && fIdx.subcategory)); },
         get regOpts() { return getSlicerPool('reg', () => uniq((rec.regions || []).map(r => r.name).concat((rec.overtime_rates || []).map(o => o.region)), fIdx && fIdx.region)); },
-        get cpOpts() { return getSlicerPool('cp', () => uniq((rec.external_movements || []).map(x => cellValue(x, 'counterparty')).concat((rec.loans || []).map(l => cellValue(l, 'counterparty'))), fIdx && fIdx.counterparty)); }
+        get cpOpts() { return getSlicerPool('cp', () => uniq((rec.external_movements || []).map(x => cellValue(x, 'counterparty')).concat((rec.loans || []).map(l => cellValue(l, 'counterparty'))), fIdx && fIdx.counterparty)); },
+        get jvSiteOpts() { return getSlicerPool('jv_site', () => uniq(['Jiyeh JV', 'Halat JV', 'Nahr Ibrahim JV'].concat((rec.jv_partnerships || []).map(j => j && j.site)).concat((rec.jv_distributions || []).map(j => j && j.site)), fIdx && fIdx.site)); }
       };
 
       const pageSlicerDefs = buildPageSlicerDefs(activePageId, slicerPools);

@@ -225,7 +225,7 @@
       const la = localCounts.get(ka) || 0;
       const lb = localCounts.get(kb) || 0;
       if (lb !== la) return lb - la;
-      return a.localeCompare(b);
+      return 0;
     });
   }
 
@@ -1045,7 +1045,13 @@
     }
 
     if (fType === 'item') {
-      const whLocations = ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'];
+      const whLocations = uniqSorted(
+        ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store']
+          .concat((rec.warehouse_movements || []).map(r => r && r.location))
+          .concat((rec.expense_items || []).map(r => r && r.warehouse_location))
+          .concat((rec.items || []).map(r => r && r.warehouse_location)),
+        fIdx && fIdx.warehouseLoc
+      );
       return `
         <div class="form-grid-3">
           ${secHdr('1. Item / Spare Part Master Identity & Locked Unit (Universal Catalog · All BUs)')}
@@ -1436,11 +1442,19 @@
       const staffAndDrivers = uniqSorted(driverNames.concat(staffNames));
       const partNames = uniqSorted(
         (rec.products || []).filter(p => p && String(p.product_type || '').toLowerCase() === 'part').map(p => p.name)
+          .concat((rec.items || []).filter(x => x && !x.voided).map(x => x.name || x.item_name))
           .concat((rec.part_movements || []).map(p => p && p.part_name))
           .concat((rec.equipment_defects || []).map(d => d && d.part_name))
-          .concat(['Dynamo / Alternator', 'Starter Motor (March)', 'Hydraulic Pump', 'Brake Pads & Drum', 'Tyre 315/80R22.5', 'Oil Filter', 'Air Filter', 'Fuel Filter', 'Water Pump / Radiator', 'Battery 180Ah', 'Clutch Plate & Disc', 'Gearbox Bearing', 'Crusher Jaw Plate', 'Screen Mesh', 'Hydraulic Hose'])
+          .concat(['Dynamo / Alternator', 'Starter Motor (March)', 'Hydraulic Pump', 'Brake Pads & Drum', 'Tyre 315/80R22.5', 'Oil Filter', 'Air Filter', 'Fuel Filter', 'Water Pump / Radiator', 'Battery 180Ah', 'Clutch Plate & Disc', 'Gearbox Bearing', 'Crusher Jaw Plate', 'Screen Mesh', 'Hydraulic Hose']),
+        fIdx && fIdx.item
       );
-      const partLocations = uniqSorted(['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'].concat(siteNames).concat(equipNames));
+      const partLocations = uniqSorted(
+        ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store']
+          .concat((rec.part_movements || []).map(p => p && p.storage_location))
+          .concat(siteNames)
+          .concat(equipNames),
+        fIdx && fIdx.warehouseLoc
+      );
       const vendorsAndBuyers = uniqSorted(supNames.concat(custNames));
 
       if (fType === 'defect') {
@@ -1591,29 +1605,39 @@
         const q = Math.abs(Number(r.qty != null ? r.qty : 1));
         if (b && q > 0) b.outQty = round2(b.outQty + q);
       });
+      const itemFreqMap = (fIdx && fIdx.item) || null;
       const baseCatalog = uniqSorted(
         Object.values(balByKey).map(x => x.name)
           .concat((rec.items || []).filter(x => x && !x.voided).map(x => x.name || x.item_name))
           .concat((rec.expense_items || []).map(x => x && x.item_name))
-          .concat(['Engine Oil 15W-40', 'Hydraulic Oil 68', 'Gear / Transmission Oil 90', 'Fuel Filter', 'Engine Oil Filter', 'Air Filter', 'Bearing (Roulement)', 'Conveyor / Drive Belt', 'High-Pressure Hydraulic Hose', 'Heavy-Duty Truck Battery', 'Heavy Truck / Loader Tire', 'Alternator (Dynamo)', 'Starter Motor (March)'])
+          .concat(['Engine Oil 15W-40', 'Hydraulic Oil 68', 'Gear / Transmission Oil 90', 'Fuel Filter', 'Engine Oil Filter', 'Air Filter', 'Bearing (Roulement)', 'Conveyor / Drive Belt', 'High-Pressure Hydraulic Hose', 'Heavy-Duty Truck Battery', 'Heavy Truck / Loader Tire', 'Alternator (Dynamo)', 'Starter Motor (March)']),
+        itemFreqMap
       );
       return baseCatalog
         .map(nm => {
-          const b = balByKey[norm(nm)];
+          const k = norm(nm);
+          const b = balByKey[k];
           const onHand = b ? round2(b.inQty - b.outQty) : 0;
           const avg = b && b.inQty > 0 ? round2(b.inVal / b.inQty) : 0;
           const meta = onHand > 0.0001
             ? `${onHand} ${b.uom} on shelf${avg > 0 ? ' · ' + fmtUsd(avg) : ''}`
             : (b ? `0 ${b.uom} on shelf` : '');
-          return { name: nm, onHand, meta };
+          const freq = (itemFreqMap ? (itemFreqMap.get(k) || 0) : 0) + (b ? Math.round((b.inQty || 0) + (b.outQty || 0)) : 0);
+          return { name: nm, onHand, freq, meta };
         })
-        .sort((a, b) => (b.onHand > 0.0001 ? 1 : 0) - (a.onHand > 0.0001 ? 1 : 0) || a.name.localeCompare(b.name))
+        .sort((a, b) => b.freq - a.freq)
         .map(x => [x.name, x.meta]);
     };
 
     if (fType === 'warehousestock') {
       const whItemMeta = buildWhCatalogMeta(company);
-      const whLocations = ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'];
+      const whLocations = uniqSorted(
+        ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store']
+          .concat((rec.warehouse_movements || []).map(r => r && r.location))
+          .concat((rec.expense_items || []).map(r => r && r.warehouse_location))
+          .concat((rec.items || []).map(r => r && r.warehouse_location)),
+        fIdx && fIdx.warehouseLoc
+      );
       const defWhLoc = /bbconstruction|bbc/i.test(company || '')
         ? 'BBConstruction Spare Store'
         : (/lions/i.test(company || '') ? 'Lions Garage Store' : 'WTC Main Warehouse');

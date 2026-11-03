@@ -514,6 +514,12 @@
     (STATE.users || []).forEach(u => {
       String((u && u.companies) || '').split(/[,;|]+/).map(s => s.trim()).filter(Boolean).forEach(pushCo);
     });
+    if (SEED && SEED.records && typeof window.MFG_FREQ === 'function') {
+      const coFreq = window.MFG_FREQ().company;
+      if (coFreq && coFreq.size) {
+        out.sort((a, b) => (coFreq.get(norm(b.name)) || 0) - (coFreq.get(norm(a.name)) || 0));
+      }
+    }
     return out;
   }
 
@@ -7154,7 +7160,14 @@
     const loans = rec.loans || [];
     const extMovs = rec.external_movements || [];
     const overs = rec.overtime_rates || [];
-    const key = `${sales.length}:${raws.length}:${exps.length}:${rcpts.length}:${settles.length}:${fuels.length}:${sals.length}:${rules.length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.fuel_intakes||0}:${tr.salaries||0}:${tr.attendance||0}:${tr.employments||0}:${tr.freelance_sheets||0}:${tr.price_rules||0}:${tr.loans||0}:${tr.external_movements||0}:${tr.overtime_rates||0}:${tr.sites||0}:${tr.customers||0}:${tr.suppliers||0}:${tr.equipment||0}:${tr.drivers||0}:${_WIN_REV}`;
+    const expItems = rec.expense_items || [];
+    const whMovs = rec.warehouse_movements || [];
+    const repItems = rec.repair_items || [];
+    const oilLogs = rec.equipment_oil_logs || [];
+    const partMovs = rec.part_movements || [];
+    const eqDefs = rec.equipment_defects || [];
+    const itemsCat = rec.items || [];
+    const key = `${sales.length}:${raws.length}:${exps.length}:${rcpts.length}:${settles.length}:${fuels.length}:${sals.length}:${rules.length}:${expItems.length}:${whMovs.length}:${repItems.length}:${oilLogs.length}:${partMovs.length}:${eqDefs.length}:${itemsCat.length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.fuel_intakes||0}:${tr.salaries||0}:${tr.attendance||0}:${tr.employments||0}:${tr.freelance_sheets||0}:${tr.price_rules||0}:${tr.loans||0}:${tr.external_movements||0}:${tr.overtime_rates||0}:${tr.expense_items||0}:${tr.warehouse_movements||0}:${tr.repair_items||0}:${tr.equipment_oil_logs||0}:${tr.part_movements||0}:${tr.equipment_defects||0}:${tr.items||0}:${tr.sites||0}:${tr.customers||0}:${tr.suppliers||0}:${tr.equipment||0}:${tr.drivers||0}:${_WIN_REV}`;
     if (_FREQ_IDX && _FREQ_IDX.key === key) return _FREQ_IDX;
 
     const inc = (map, val, w = 1) => {
@@ -7335,8 +7348,83 @@
     overs.forEach(o => { if (o) inc(region, o.region, 2); });
     (rec.sites || []).forEach(s => { if (s && s.region) inc(region, s.region, 1); });
 
+    const item = new Map();
+    const warehouseLoc = new Map();
+    const supCategory = new Map();
+    const company = new Map();
+    ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'].forEach((loc, i) => inc(warehouseLoc, loc, 4 - i));
+    expItems.forEach(r => {
+      if (!r || r.voided) return;
+      inc(item, r.item_name || r.name, r.historical_consumed ? 1 : 4);
+      inc(warehouseLoc, r.warehouse_location, 3);
+      inc(uom, r.uom, 1);
+      inc(company, r.company, 1);
+    });
+    whMovs.forEach(r => {
+      if (!r || r.voided) return;
+      inc(item, r.item_name || r.name, 4);
+      inc(warehouseLoc, r.location || r.warehouse_location, 4);
+      inc(uom, r.uom, 1);
+      inc(company, r.company, 1);
+    });
+    repItems.forEach(r => {
+      if (!r || r.voided) return;
+      inc(item, r.item_name || r.part_name || r.name, 4);
+      inc(uom, r.uom, 1);
+    });
+    oilLogs.forEach(r => {
+      if (!r || r.voided) return;
+      inc(item, r.oil_type || r.item_name, 3);
+    });
+    partMovs.forEach(r => {
+      if (!r || r.voided) return;
+      inc(item, r.part_name || r.item_name, 3);
+      inc(warehouseLoc, r.storage_location, 2);
+    });
+    eqDefs.forEach(r => {
+      if (!r || r.voided) return;
+      inc(item, r.part_name, 2);
+    });
+    itemsCat.forEach(r => {
+      if (!r || r.voided) return;
+      inc(item, r.name || r.item_name, 1);
+      inc(warehouseLoc, r.warehouse_location, 1);
+    });
+    (rec.suppliers || []).forEach(s => {
+      if (!s || s.voided) return;
+      [s.category, s.category1, s.category2, s.category3, s.type, s.role].forEach(rawC => {
+        String(rawC || '').split(/\s*[,;|]\s*/).forEach(c => {
+          if (!c) return;
+          const nc = typeof normalizeSupplierCategory === 'function' ? normalizeSupplierCategory(c) : c.trim();
+          inc(supCategory, nc || c.trim(), 2);
+        });
+      });
+    });
+    raws.forEach(r => {
+      if (!r || r.voided) return;
+      if (r.site_owner) inc(supCategory, 'Site & Raw Materials', 1);
+      if (r.truck_owner && !/company/i.test(r.transport_by || '')) inc(supCategory, 'Hauler / Truck Owner', 1);
+    });
+    exps.forEach(r => {
+      if (!r || r.voided || !r.category) return;
+      const nc = typeof normalizeSupplierCategory === 'function' ? normalizeSupplierCategory(r.category) : r.category;
+      if (nc) inc(supCategory, nc, 1);
+    });
+    ['WTC', 'BBConstruction', 'Lions Transport'].forEach((coNm, i) => {
+      inc(company, coNm, 3 - i);
+      inc(company, coNm.replace(/\s+/g, '-'), 3 - i);
+    });
+    [sales, raws, exps, rcpts, settles, fuels, sals, atts, emps, rules, loans, extMovs, overs, rec.equipment || [], rec.drivers || [], rec.company_equipment || [], rec.company_drivers || []].forEach(tbl => {
+      (tbl || []).forEach(r => {
+        if (r && !r.voided && r.company) {
+          inc(company, r.company, 1);
+          if (/\s/.test(r.company)) inc(company, String(r.company).replace(/\s+/g, '-'), 1);
+        }
+      });
+    });
+
     const any = new Map();
-    [product, customer, supplier, truckOwner, site, truck, driver, staff, category, subcategory, uom, fuelLoc, role, counterparty, region].forEach(m => {
+    [product, customer, supplier, truckOwner, site, truck, driver, staff, category, subcategory, uom, fuelLoc, role, counterparty, region, item, warehouseLoc].forEach(m => {
       m.forEach((v, k) => {
         if (v > (any.get(k) || 0)) any.set(k, v);
       });
@@ -7348,7 +7436,7 @@
       productRawRules, productRawRulesByCo, productCommRules, productCommRulesByCo,
       productFuel, productFuelByCo, product, customer, supplier, siteOwner, supplierExpense,
       truckOwner, siteSales, siteRaw, site, truck, driver, staff, category, subcategory,
-      uom, fuelLoc, role, counterparty, region, any
+      uom, fuelLoc, role, counterparty, region, item, warehouseLoc, supCategory, company, any
     };
     if (typeof window !== 'undefined') window.MFG_FREQ = getFreqIndex;
     return _FREQ_IDX;
@@ -7386,11 +7474,11 @@
         const lb = localCounts.get(kb) || 0;
         if (lb !== la) return lb - la;
       }
-      return a < b ? -1 : (a > b ? 1 : 0);
+      return 0;
     });
   }
-  let _FLEET_IDX = null;
-  let _WIN_REV = 0;
+  var _FLEET_IDX = null;
+  var _WIN_REV = 0;
   function getFleetIndex() {
     const eqs = SEED.records.equipment || [];
     const sales = SEED.records.sales_tickets || [];
@@ -11617,43 +11705,45 @@
   }
 
   function getCustomAlertTargetOptions(targetKind) {
-    const uniqSort = arr => Array.from(new Set(arr.map(x => String(x || '').trim()).filter(x => x && !/^\d+$/.test(x)))).sort((a, b) => a.localeCompare(b));
+    const fIdx = getFreqIndex();
+    const uniqSort = (arr, freqMap) => uniqSorted((arr || []).map(x => String(x || '').trim()).filter(x => x && !/^\d+$/.test(x)), freqMap);
     if (targetKind === 'expense_cat') {
       const cats = [];
       (SEED.records.expense_categories || []).forEach(c => { if (c && c.name) cats.push(c.name); });
       (SEED.records.expenses || []).forEach(r => { if (r && r.category) cats.push(r.category); });
-      return { label: 'Expense Category (Optional)', placeholder: 'All Expense Categories', options: uniqSort(cats) };
+      return { label: 'Expense Category (Optional)', placeholder: 'All Expense Categories', options: uniqSort(cats, fIdx.category) };
     }
     if (targetKind === 'customer') {
       const arr = [];
       (SEED.records.customers || []).forEach(c => { if (c && c.name) arr.push(c.name); });
-      return { label: 'Specific Customer (Optional)', placeholder: 'All Customers', options: uniqSort(arr) };
+      (SEED.records.sales_tickets || []).forEach(r => { if (r && r.customer) arr.push(r.customer); });
+      return { label: 'Specific Customer (Optional)', placeholder: 'All Customers', options: uniqSort(arr, fIdx.customer) };
     }
     if (targetKind === 'supplier') {
       const arr = [];
       (SEED.records.suppliers || []).forEach(s => { if (s && s.name) arr.push(s.name); });
-      return { label: 'Specific Supplier / Haulier (Optional)', placeholder: 'All Suppliers & Hauliers', options: uniqSort(arr) };
+      return { label: 'Specific Supplier / Haulier (Optional)', placeholder: 'All Suppliers & Hauliers', options: uniqSort(arr, fIdx.supplier) };
     }
     if (targetKind === 'product') {
       const arr = [];
       (SEED.records.products || []).forEach(p => { if (p && p.name) arr.push(p.name); });
-      return { label: 'Specific Product / Grade (Optional)', placeholder: 'All Products & Grades', options: uniqSort(arr) };
+      return { label: 'Specific Product / Grade (Optional)', placeholder: 'All Products & Grades', options: uniqSort(arr, fIdx.product) };
     }
     if (targetKind === 'site') {
       const arr = [];
       (SEED.records.sites || []).forEach(s => { if (s && s.name) arr.push(s.name); });
-      return { label: 'Quarry / Source Site (Optional)', placeholder: 'All Quarry & JV Sites', options: uniqSort(arr) };
+      return { label: 'Quarry / Source Site (Optional)', placeholder: 'All Quarry & JV Sites', options: uniqSort(arr, fIdx.site) };
     }
     if (targetKind === 'equipment') {
       const arr = [];
       (SEED.records.equipment || []).forEach(e => { if (e && e.name) arr.push(e.name); });
-      return { label: 'Specific Truck / Machine (Optional)', placeholder: 'All Fleet & Plant Units', options: uniqSort(arr) };
+      return { label: 'Specific Truck / Machine (Optional)', placeholder: 'All Fleet & Plant Units', options: uniqSort(arr, fIdx.truck) };
     }
     if (targetKind === 'staff') {
       const arr = [];
       (SEED.records.employments || []).forEach(e => { if (e && e.staff) arr.push(e.staff); });
       (SEED.records.salaries || []).forEach(s => { if (s && s.staff) arr.push(s.staff); });
-      return { label: 'Specific Staff Member (Optional)', placeholder: 'All Staff Members', options: uniqSort(arr) };
+      return { label: 'Specific Staff Member (Optional)', placeholder: 'All Staff Members', options: uniqSort(arr, fIdx.staff) };
     }
     return { label: 'Specific Scope', placeholder: 'Entire Selected Entity', options: [] };
   }
@@ -17468,16 +17558,18 @@
     (SEED.records.expense_items || []).forEach(r => {
       if (r && !r.voided && r.item_name && !r.historical_consumed) names.push(r.item_name);
     });
-    return uniqSorted(names);
+    return uniqSorted(names, getFreqIndex().item);
   }
 
   function warehouseCatalogItemMeta(coOpt) {
     ensureItemsCatalogSeeded();
     const wh = getWarehouseIndex(coOpt);
+    const itemFreq = getFreqIndex().item;
     const allNames = warehouseCatalogItemNames(coOpt);
     return allNames
       .map(nm => {
-        const it = wh.byKey[norm(nm)];
+        const k = norm(nm);
+        const it = wh.byKey[k];
         const catDef = resolveCatalogItem(nm);
         const uomLbl = (catDef && catDef.uom) || (it && it.uom) || 'Piece';
         const onHand = it ? Number(it.onHandQty || 0) : 0;
@@ -17485,9 +17577,10 @@
         const meta = it && onHand > 0.0001
           ? `${fmtNum(onHand, onHand % 1 ? 2 : 0)} ${uomLbl} on shelf${unitCost > 0 ? ' · ' + fmtUSD(unitCost, 2) : ''}`
           : `${uomLbl}${unitCost > 0 ? ' · ' + fmtUSD(unitCost, 2) : ''} · 0 on shelf`;
-        return { name: nm, onHand, meta };
+        const freq = (itemFreq ? (itemFreq.get(k) || 0) : 0) + (it ? Number(it.moveCount || 0) * 3 : 0);
+        return { name: nm, onHand, freq, meta };
       })
-      .sort((a, b) => (b.onHand > 0.0001 ? 1 : 0) - (a.onHand > 0.0001 ? 1 : 0) || a.name.localeCompare(b.name))
+      .sort((a, b) => b.freq - a.freq)
       .map(x => [x.name, x.meta]);
   }
 
@@ -33017,7 +33110,13 @@
         ? fld('Notes', inp('f_notes', 'text', expNotesVal, 'placeholder="Optional invoice or pricing note..."'), { id: 'wrap_f_notes', span: true })
         : notesField;
       const whItemsMeta = pendEditRow ? [] : warehouseCatalogItemMeta(expCoVal);
-      const whLocsList = ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store'];
+      const whLocsList = uniqSorted(
+        ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store']
+          .concat((SEED.records.warehouse_movements || []).map(r => r && r.location))
+          .concat((SEED.records.expense_items || []).map(r => r && r.warehouse_location))
+          .concat((SEED.records.items || []).map(r => r && r.warehouse_location)),
+        getFreqIndex().warehouseLoc
+      );
       const defExpWhLoc = defaultWarehouseLocationForCompany(expCoVal);
       const initShowEq = Boolean(pendEditRow || expEqVal);
       return cockpitHtml + `
@@ -40311,7 +40410,9 @@
   }
 
   function getSupplierCategoryCatalog() {
-    return SUPPLIER_CATEGORIES.map(c => ({ value: c, label: c, core: true }));
+    const scMap = getFreqIndex().supCategory;
+    const ranked = SUPPLIER_CATEGORIES.slice().sort((a, b) => (scMap ? (scMap.get(norm(b)) || 0) - (scMap.get(norm(a)) || 0) : 0));
+    return ranked.map(c => ({ value: c, label: c, core: true }));
   }
 
   function syncSupplierCategoryUI() {
@@ -40678,16 +40779,15 @@
           filtered = all;
           highlightQuery = '';
         } else {
-          const starts = [];
-          const contains = [];
+          const exact = [];
+          const freqOrdered = [];
           for (const item of all) {
             const il = item.value.toLowerCase();
             const ml = (item.meta || '').toLowerCase();
-            const metaToks = ml.split(' · ').map(s => s.trim());
-            if (il.startsWith(ql) || metaToks.some(t => t.startsWith(ql))) starts.push(item);
-            else if (il.includes(ql) || ml.includes(ql)) contains.push(item);
+            if (il === ql) exact.push(item);
+            else if (il.includes(ql) || ml.includes(ql)) freqOrdered.push(item);
           }
-          filtered = starts.concat(contains);
+          filtered = exact.concat(freqOrdered);
         }
         if (!filtered.length || (!ignoreExactCurrent && filtered.length === 1 && filtered[0].value === q)) {
           closeOwnMenu();
@@ -41040,15 +41140,15 @@
           const ql = q.toLowerCase();
           let filtered = allOpts;
           if (ql) {
-            const starts = [];
-            const contains = [];
+            const exact = [];
+            const freqOrdered = [];
             for (const o of allOpts) {
               const rl = o.raw.toLowerCase();
               const ll = o.label.toLowerCase();
-              if (ll.startsWith(ql) || rl.startsWith(ql)) starts.push(o);
-              else if (rl.includes(ql)) contains.push(o);
+              if (ll === ql) exact.push(o);
+              else if (rl.includes(ql)) freqOrdered.push(o);
             }
-            filtered = starts.concat(contains);
+            filtered = exact.concat(freqOrdered);
           }
           let sliceStart = 0;
           if (!ql && filtered.length > MAX_SHOW) {
@@ -49569,6 +49669,7 @@
       : null;
     const eqWindows = (targetEqRow && Array.isArray(targetEqRow.adj_windows)) ? targetEqRow.adj_windows : [];
     const editSchema = getInspectorEditableSchema(key, row, targetEqRow);
+    const fIdxInsp = getFreqIndex();
     const inspRegions = uniqSorted(
       ((SEED.records && SEED.records.regions) || []).map(r => r.name)
         .concat(((SEED.records && SEED.records.sites) || []).map(s => s.region))
@@ -49581,17 +49682,20 @@
           'Baalbek', 'Hermel', 'Jezzine', 'Bint Jbeil', 'Marjayoun', 'Hasbaya', 'Jounieh', 'Zouk Mosbeh',
           'Dbayeh', 'Antelias', 'Zalka', 'Broummana', 'Choueifat', 'Khaldeh', 'Damour', 'Sin El Fil',
           'Hazmieh', 'Hadath', 'Ghaziyeh', 'Sarafand', 'Dekwaneh', 'Jiyeh', 'Sibline', 'Borj Hammoud', 'Aawkar', 'Halat'
-        ])
+        ]),
+      fIdxInsp.region
     );
     const inspSubcats = uniqSorted(
       ((SEED.records && SEED.records.expense_subcategories) || []).map(sc => sc.name)
-        .concat(((SEED.records && SEED.records.expenses) || []).map(x => x.subcategory))
+        .concat(((SEED.records && SEED.records.expenses) || []).map(x => x.subcategory)),
+      fIdxInsp.subcategory
     );
     const inspCounterparties = uniqSorted(
       ((SEED.records && SEED.records.loans) || []).map(l => l.counterparty || l.lender || l.name)
         .concat(((SEED.records && SEED.records.external_movements) || []).map(x => x.counterparty))
         .concat(((SEED.records && SEED.records.jv_partnerships) || []).map(j => j.partner))
-        .concat(supplierNames(), customerNames())
+        .concat(supplierNames(), customerNames()),
+      fIdxInsp.counterparty
     );
     const inspRuleType = String((row && row.rule_type) || '').trim();
     const isRawInsp = key === 'raw_purchases' || (key === 'price_rules' && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(inspRuleType));
@@ -49606,15 +49710,18 @@
               ? domainProductMetaItems('comm', inspRowCo)
               : (isSalesInsp ? domainProductMetaItems('sales', inspRowCo) : domainProductMetaItems('', inspRowCo))));
     const inspSiteNames = siteNames(isRawInsp ? 'raw' : (isSalesInsp ? 'sales' : undefined));
-    const inspSupplierNames = (key === 'equipment' || key === 'company_equipment' || key === 'drivers' || key === 'company_drivers') ? uniqSorted(truckOwnerNames().concat(supplierNames(), customerNames())) : supplierNames(isRawInsp ? 'raw_owner' : (key === 'expenses' ? 'expense' : undefined));
+    const inspSupplierNames = (key === 'equipment' || key === 'company_equipment' || key === 'drivers' || key === 'company_drivers') ? uniqSorted(truckOwnerNames().concat(supplierNames(), customerNames()), fIdxInsp.truckOwner) : supplierNames(isRawInsp ? 'raw_owner' : (key === 'expenses' ? 'expense' : undefined));
     const inspParts = uniqSorted(
-      ((SEED.records && SEED.records.part_movements) || []).map(p => p.part_name)
+      ((SEED.records && SEED.records.items) || []).filter(x => x && !x.voided).map(x => x.name || x.item_name)
+        .concat(((SEED.records && SEED.records.part_movements) || []).map(p => p.part_name))
         .concat(((SEED.records && SEED.records.equipment_defects) || []).map(d => d.part_name))
-        .concat(['Tire 315/80 R22.5', 'Tire 13R22.5', 'Brake Lining & Drum Set', 'Clutch Disc & Pressure Plate', 'Hydraulic Hoist Cylinder', 'Alternator 24V', 'Starter Motor 24V', 'Battery 12V 200Ah', 'Radiator & Water Pump', 'Turbocharger', 'Fuel Injector Set', 'Leaf Spring Pack', 'Crusher Jaw Plate', 'Conveyor Belt Roller'])
+        .concat(['Tire 315/80 R22.5', 'Tire 13R22.5', 'Brake Lining & Drum Set', 'Clutch Disc & Pressure Plate', 'Hydraulic Hoist Cylinder', 'Alternator 24V', 'Starter Motor 24V', 'Battery 12V 200Ah', 'Radiator & Water Pump', 'Turbocharger', 'Fuel Injector Set', 'Leaf Spring Pack', 'Crusher Jaw Plate', 'Conveyor Belt Roller']),
+      fIdxInsp.item
     );
     const inspPartLocs = uniqSorted(
       ((SEED.records && SEED.records.part_movements) || []).map(p => p.storage_location)
-        .concat(['WTC Main Spare Parts Room', 'BBConstruction Spare Parts Store', 'Lions Garage Shelf A', 'Tire Rack — Plant Yard', 'External Workshop / Rebuild Shop', 'Scrap Yard Bin'])
+        .concat(['WTC Main Spare Parts Room', 'BBConstruction Spare Parts Store', 'Lions Garage Shelf A', 'Tire Rack — Plant Yard', 'External Workshop / Rebuild Shop', 'Scrap Yard Bin']),
+      fIdxInsp.warehouseLoc
     );
 
     const renderModFieldHtml = (fDef) => {
@@ -55389,7 +55496,17 @@
     const emEl = $('authEmailInput');
     const rawFilter = (!resolveSelectedAuthUser() && emEl) ? norm(emEl.value) : '';
     const disPin = String(FACE_STATE.disambiguatePin || '').trim();
-    const activeSeats = STATE.users.filter(u => u.status !== 'Suspended');
+    const seatFreq = new Map();
+    (STATE.sessions || []).forEach(s => {
+      if (s && s.email) {
+        const ek = norm(s.email);
+        seatFreq.set(ek, (seatFreq.get(ek) || 0) + 1);
+      }
+    });
+    const activeSeats = STATE.users
+      .filter(u => u.status !== 'Suspended')
+      .slice()
+      .sort((a, b) => (seatFreq.get(norm(b.email)) || 0) - (seatFreq.get(norm(a.email)) || 0));
     const filtered = activeSeats.filter(u => {
       if (disPin && String(u.pin_code || '1111').trim() !== disPin) return false;
       if (!rawFilter) return true;
@@ -57600,9 +57717,19 @@
     });
 
     // 3. Remaining Active Contract Employees ($0 ERP login seat required)
+    const punchFreq = new Map();
+    (STATE.kioskPunches || []).forEach(p => {
+      const pk = norm(p && (p.staff || p.user));
+      if (pk) punchFreq.set(pk, (punchFreq.get(pk) || 0) + 2);
+    });
+    const staffFreq = getFreqIndex().staff;
     activeEmps
       .slice()
-      .sort((a, b) => a.nm.localeCompare(b.nm))
+      .sort((a, b) => {
+        const fb = (punchFreq.get(b.k) || 0) + (staffFreq ? (staffFreq.get(b.k) || 0) : 0);
+        const fa = (punchFreq.get(a.k) || 0) + (staffFreq ? (staffFreq.get(a.k) || 0) : 0);
+        return fb - fa;
+      })
       .forEach(({ emp, nm, k, empCo }) => {
         if (seen.has(k)) return;
         seen.add(k);
@@ -64468,7 +64595,17 @@
         }
 
         if (!navigator.webdriver && !window.__MFG_HEADLESS_TEST && cleaned.length >= 4 && Date.now() >= loginLockUntil) {
-          const activeSeats = STATE.users.filter(u => u.status !== 'Suspended');
+          const seatFreq = new Map();
+    (STATE.sessions || []).forEach(s => {
+      if (s && s.email) {
+        const ek = norm(s.email);
+        seatFreq.set(ek, (seatFreq.get(ek) || 0) + 1);
+      }
+    });
+    const activeSeats = STATE.users
+      .filter(u => u.status !== 'Suspended')
+      .slice()
+      .sort((a, b) => (seatFreq.get(norm(b.email)) || 0) - (seatFreq.get(norm(a.email)) || 0));
           const targetEmail = norm(resolveUiSubmitEmail());
           if (targetEmail) {
             const targetSeat = activeSeats.find(u => norm(u.email) === targetEmail);
