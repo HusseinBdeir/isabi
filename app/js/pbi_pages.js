@@ -1388,7 +1388,14 @@
     p20_recon:      { id: 'p20_recon',      view: 'statements',      modSec: 'recon',      short: 'Statement Recon',    targetLabel: 'Statements & Reports' }
   };
 
-  // All 37 Relational Tables organized into 5 BU-Scoped Operational Domains + Dedicated 6 · Universal (All BUs) Shared Master Group
+  // STANDING RULES FOR ALL PRESENT & FUTURE TABLES IN TABLE_CATALOG (enforced by build/verify_mfg.mjs 7z-33, 7z-freq & SVG icon gates):
+  //   1. Frequency-First Search & Comboboxes (7z-freq): Every new table added to SEED.records / TABLE_CATALOG is automatically
+  //      indexed by getFreqIndex() (window.MFG_FREQ / fIdx.forCol). All search boxes, column filter popovers (#colFilterPopover),
+  //      comboboxes (.pa-suggest / .rdl-combo), filterable selects, and 360° Modify Drawer lookups MUST rank options strictly by
+  //      operational usage frequency descending (exact.concat(freqOrdered) when typing — NEVER alphabetical localeCompare or startsWith override).
+  //   2. Semantic Status Icons & New-Entry Parity (7z-33): Pair operational status/timing/audit flags with 24x24 vector SVGs (js/icons.js)
+  //      and wire inline + New button, row-click Edit Mode / 360° Inspector, hub charts, and pbiPage analytics coverage.
+  // All 48 Relational Tables organized into 5 BU-Scoped Operational Domains + Dedicated 6 · Universal (All BUs) Shared Master Group
   const TABLE_CATALOG = [
     // 1 · Sales, Pricing & Receivables (5 BU-scoped)
     { key: 'sales_tickets', group: '1 · Sales, Pricing & Receivables', label: 'Sales Tickets', dvn: 'bhf_salesticket', form: 'sales', cols: ['date', 'rep_date', 'ticket_no', 'company', 'sale_type', 'customer', 'product', 'site', 'truck', 'driver', 'overtime', 'qty', 'uom', 'unit_price', 'price', 'trans_price', 'vat', 'total_ttc', 'method'], relTables: ['customers', 'price_rules', 'products', 'sites', 'equipment', 'drivers', 'receipts', 'vat_invoices'], views: [{ id: 'all', label: 'All Sales Tickets' }, { id: 'delivery', label: 'Delivery Loads', fn: r => /deliv/i.test(r.sale_type) }, { id: 'pickup', label: 'Pick-up (Material Only)', fn: r => /pick/i.test(r.sale_type) }, { id: 'overtime', label: 'Overtime Loads', fn: r => Boolean(r.overtime) }, { id: 'credit', label: 'Credit / Account', fn: r => !/cash/i.test(r.method) }, { id: 'iva', label: 'IVA / VAT 11%', fn: r => r.iva || Number(r.vat || 0) > 0 }] },

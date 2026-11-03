@@ -2086,7 +2086,7 @@
       if (aHit !== bHit) return aHit ? -1 : 1;
       const aScore = side === 'raw' ? (a.raw * 100000 + a.total) : (side === 'sales' ? (a.sales * 100000 + a.total) : a.total);
       const bScore = side === 'raw' ? (b.raw * 100000 + b.total) : (side === 'sales' ? (b.sales * 100000 + b.total) : b.total);
-      return (bScore - aScore) || a.name.localeCompare(b.name);
+      return (bScore - aScore) || 0;
     });
 
     return rows.map(s => {

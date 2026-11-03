@@ -5416,7 +5416,18 @@
       counts.set(disp, (counts.get(disp) || 0) + 1);
     }
     const entries = Array.from(counts.entries());
-    entries.sort((a, b) => b[1] - a[1] || _NUM_COLLATOR.compare(a[0], b[0]));
+    const colFreqMap = (typeof getFreqIndex === 'function' && getFreqIndex().forCol)
+      ? getFreqIndex().forCol(colKey)
+      : null;
+    entries.sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      if (colFreqMap) {
+        const fa = colFreqMap.get(norm(a[0])) || 0;
+        const fb = colFreqMap.get(norm(b[0])) || 0;
+        if (fb !== fa) return fb - fa;
+      }
+      return 0;
+    });
     const opts = [];
     if (emptyCnt > 0 && nonEmptyCnt > 0) {
       opts.push({ v: '__nonempty__', l: `✦ Has ${getColLabel(colKey)} (${fmtNum(nonEmptyCnt)})` });
@@ -5634,21 +5645,35 @@
     });
 
     const listBox = document.getElementById('cfPopValuesList');
+    const origOptBtns = listBox ? Array.from(listBox.querySelectorAll('.cf-pop-opt')) : [];
     const customInp = document.getElementById('cfpSearchInput');
     const applyBtn = document.getElementById('cfpApplyBtn');
     if (customInp) {
       customInp.addEventListener('input', () => {
         if (!listBox) return;
         const q = customInp.value.trim().toLowerCase();
+        const qNorm = norm(q);
         const isExpr = /^(>=|<=|!=|>|<|=|-?\d+(\.\d+)?\s*\.\.)/.test(q);
-        listBox.querySelectorAll('.cf-pop-opt').forEach(optBtn => {
+        const exactBtns = [];
+        const freqBtns = [];
+        origOptBtns.forEach(optBtn => {
           if (!q || isExpr) {
             optBtn.hidden = false;
+            freqBtns.push(optBtn);
             return;
           }
-          const txt = (optBtn.textContent || '').toLowerCase();
-          optBtn.hidden = !txt.includes(q);
+          const rawVal = String(optBtn.getAttribute('data-cf-pop-val') || '');
+          const lblTxt = ((optBtn.querySelector('.cf-pop-opt-lbl') && optBtn.querySelector('.cf-pop-opt-lbl').textContent) || rawVal).toLowerCase();
+          const matched = lblTxt.includes(q) || rawVal.toLowerCase().includes(q);
+          optBtn.hidden = !matched;
+          if (matched) {
+            if (qNorm && norm(rawVal) === qNorm) exactBtns.push(optBtn);
+            else freqBtns.push(optBtn);
+          } else {
+            freqBtns.push(optBtn);
+          }
         });
+        exactBtns.concat(freqBtns).forEach(btn => listBox.appendChild(btn));
       });
       customInp.addEventListener('keydown', e => {
         if (e.key === 'Enter') {
@@ -7185,7 +7210,15 @@
     const partMovs = rec.part_movements || [];
     const eqDefs = rec.equipment_defects || [];
     const itemsCat = rec.items || [];
-    const key = `${sales.length}:${raws.length}:${exps.length}:${rcpts.length}:${settles.length}:${fuels.length}:${sals.length}:${rules.length}:${expItems.length}:${whMovs.length}:${repItems.length}:${oilLogs.length}:${partMovs.length}:${eqDefs.length}:${itemsCat.length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.fuel_intakes||0}:${tr.salaries||0}:${tr.attendance||0}:${tr.employments||0}:${tr.freelance_sheets||0}:${tr.price_rules||0}:${tr.loans||0}:${tr.external_movements||0}:${tr.overtime_rates||0}:${tr.expense_items||0}:${tr.warehouse_movements||0}:${tr.repair_items||0}:${tr.equipment_oil_logs||0}:${tr.part_movements||0}:${tr.equipment_defects||0}:${tr.items||0}:${tr.sites||0}:${tr.customers||0}:${tr.suppliers||0}:${tr.equipment||0}:${tr.drivers||0}:${_WIN_REV}`;
+    const allRecKeys = Object.keys(rec);
+    let dynKey = `${_WIN_REV}:${SEED && (SEED._customRev || 0)}`;
+    for (let ki = 0; ki < allRecKeys.length; ki++) {
+      const tk = allRecKeys[ki];
+      if (tk === 'journal_lines' || tk === 'daily_totals') continue;
+      const arr = rec[tk];
+      dynKey += `|${tk}:${Array.isArray(arr) ? arr.length : 0}:${tr[tk] || 0}`;
+    }
+    const key = dynKey;
     if (_FREQ_IDX && _FREQ_IDX.key === key) return _FREQ_IDX;
 
     const inc = (map, val, w = 1) => {
@@ -7436,12 +7469,122 @@
       });
     });
 
+    // Universal Future-Table Auto-Indexer: automatically indexes every non-explicit present & future (49th+) table
+    // in SEED.records into domain frequency maps + per-column byCol + global any, so newly added tables inherit
+    // 100% frequency-first search, combobox, column filter, and 360° Modify Drawer ranking with zero manual wiring.
+    const _EXPLICIT_FREQ_TABLES = new Set([
+      'sales_tickets', 'raw_purchases', 'expenses', 'receipts', 'settlements',
+      'fuel_intakes', 'salaries', 'attendance', 'employments', 'freelance_sheets',
+      'price_rules', 'loans', 'external_movements', 'overtime_rates', 'expense_items',
+      'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'part_movements',
+      'equipment_defects', 'items', 'suppliers', 'sites', 'journal_lines', 'daily_totals'
+    ]);
+    const _MASTER_DEF_TABLES = new Set([
+      'customers', 'products', 'product_types', 'uoms', 'expense_categories',
+      'expense_subcategories', 'regions', 'equipment', 'drivers', 'currencies',
+      'fx_rates', 'vat_rates', 'gl_accounts'
+    ]);
+    const _AUTO_SKIP_COLS = new Set([
+      'id', 'name', 'code', 'ticket_no', 'invoice_no', 'invoice', 'voucher', 'expense_ref', 'repair_ref',
+      'defect_ref', 'record_ticket', 'raw_ticket', 'expense_record', 'linked_part_log',
+      'date', 'rep_date', 'start_date', 'end_date', 'effective_from', 'effective_to', 'time', 'payroll_month',
+      'notes', 'description', 'reference', 'item_summary', 'items_summary', 'debit_rule', 'credit_rule',
+      'phone', 'contact', 'email', 'mof_no', 'financial_no', 'latitude', 'longitude',
+      'source', 'entered_by', 'entered_by_email', 'entered_at', 'modified_by', 'modified_at',
+      'voided', 'voided_by', 'voided_at', 'adj_windows'
+    ]);
+    const byCol = new Map();
+    const incCol = (colKey, val, w = 1) => {
+      if (!colKey || val == null || val === '') return;
+      const s = String(val).trim();
+      if (!s || s === '—' || /^-?\d+(\.\d+)?$/.test(s)) return;
+      const vk = norm(s);
+      if (!vk) return;
+      let sub = byCol.get(colKey);
+      if (!sub) {
+        sub = new Map();
+        byCol.set(colKey, sub);
+      }
+      sub.set(vk, (sub.get(vk) || 0) + w);
+    };
+    for (let ki = 0; ki < allRecKeys.length; ki++) {
+      const tk = allRecKeys[ki];
+      if (_EXPLICIT_FREQ_TABLES.has(tk)) continue;
+      const tbl = rec[tk];
+      if (!Array.isArray(tbl) || !tbl.length) continue;
+      const wTbl = _MASTER_DEF_TABLES.has(tk) ? 0.25 : 1;
+      for (let ri = 0; ri < tbl.length; ri++) {
+        const r = tbl[ri];
+        if (!r || r.voided) continue;
+        if (r.company) {
+          inc(company, r.company, wTbl);
+          if (/\s/.test(r.company)) inc(company, String(r.company).replace(/\s+/g, '-'), wTbl);
+        }
+        if (r.customer || r.client || r.buyer) inc(customer, r.customer || r.client || r.buyer, wTbl);
+        if (r.supplier || r.vendor || r.hauler) {
+          const sv = r.supplier || r.vendor || r.hauler;
+          inc(supplier, sv, wTbl);
+          if (tk === 'recurring_expenses') inc(supplierExpense, sv, 2);
+        }
+        if (r.site_owner) { inc(siteOwner, r.site_owner, wTbl); inc(supplier, r.site_owner, wTbl); }
+        if (r.truck_owner) { inc(truckOwner, r.truck_owner, wTbl); inc(supplier, r.truck_owner, wTbl); }
+        if (r.product || r.grade || r.material) inc(product, r.product || r.grade || r.material, wTbl);
+        if (r.site || r.quarry || r.destination_site || r.source_site) inc(site, r.site || r.quarry || r.destination_site || r.source_site, wTbl);
+        if (r.region || r.zone) inc(region, r.region || r.zone, wTbl);
+        if (r.truck || r.equipment || r.target_equipment || r.default_truck) incTruck(r.truck || r.equipment || r.target_equipment || r.default_truck, wTbl);
+        if (r.driver || r.operator || r.default_driver) inc(driver, r.driver || r.operator || r.default_driver, wTbl);
+        if (r.staff || r.employee || r.approved_by) inc(staff, r.staff || r.employee || r.approved_by, wTbl);
+        if (r.category) inc(category, r.category, wTbl);
+        if (r.subcategory) inc(subcategory, r.subcategory, wTbl);
+        if (r.uom || r.unit) inc(uom, r.uom || r.unit, wTbl);
+        if (r.item_name || r.part_name || r.oil_type) inc(item, r.item_name || r.part_name || r.oil_type, wTbl);
+        if (r.warehouse_location || r.storage_location) inc(warehouseLoc, r.warehouse_location || r.storage_location, wTbl);
+        if (r.counterparty || r.partner || r.lender || r.vendor_or_buyer) inc(counterparty, r.counterparty || r.partner || r.lender || r.vendor_or_buyer, wTbl);
+        if (r.role) inc(role, r.role, wTbl);
+        const rKeys = Object.keys(r);
+        for (let ci = 0; ci < rKeys.length; ci++) {
+          const ck = rKeys[ci];
+          if (_AUTO_SKIP_COLS.has(ck) || /(^|_)(id|date|dt|time|url|hash)$/i.test(ck)) continue;
+          const cv = r[ck];
+          if (typeof cv === 'string' && cv.length > 0 && cv.length <= 120) incCol(ck, cv, wTbl);
+        }
+      }
+    }
+
     const any = new Map();
     [product, customer, supplier, truckOwner, site, truck, driver, staff, category, subcategory, uom, fuelLoc, role, counterparty, region, item, warehouseLoc].forEach(m => {
       m.forEach((v, k) => {
         if (v > (any.get(k) || 0)) any.set(k, v);
       });
     });
+    byCol.forEach(m => {
+      m.forEach((v, k) => {
+        if (v > (any.get(k) || 0)) any.set(k, v);
+      });
+    });
+
+    const _COL_DOMAIN_MAP = {
+      customer, client: customer, buyer: customer,
+      supplier, vendor: supplier, hauler: supplier, site_owner: siteOwner,
+      truck_owner: truckOwner, owner: truckOwner,
+      product, grade: product, material: product,
+      site, quarry: site, destination_site: site, source_site: site,
+      region, zone: region, location: warehouseLoc,
+      truck, equipment: truck, target_equipment: truck, default_truck: truck,
+      driver, operator: driver, default_driver: driver,
+      staff, employee: staff, approved_by: staff,
+      category, subcategory,
+      uom, unit: uom,
+      item_name: item, part_name: item, oil_type: item,
+      warehouse_location: warehouseLoc, storage_location: warehouseLoc,
+      counterparty, partner: counterparty, lender: counterparty, vendor_or_buyer: counterparty,
+      role, company
+    };
+    const forCol = colKey => {
+      const ck = String(colKey || '').trim();
+      if (!ck) return any;
+      return _COL_DOMAIN_MAP[ck] || byCol.get(ck) || any;
+    };
 
     _FREQ_IDX = {
       key, productSales, productRaw, productSalesTickets, productRawTickets,
@@ -7449,7 +7592,9 @@
       productRawRules, productRawRulesByCo, productCommRules, productCommRulesByCo,
       productFuel, productFuelByCo, product, customer, supplier, siteOwner, supplierExpense,
       truckOwner, siteSales, siteRaw, site, truck, driver, staff, category, subcategory,
-      uom, fuelLoc, role, counterparty, region, item, warehouseLoc, supCategory, company, any
+      expCategory: category, expSubcategory: subcategory,
+      uom, fuelLoc, role, counterparty, region, item, warehouseLoc, supCategory, company,
+      byCol, forCol, any, _indexedTableCount: allRecKeys.length
     };
     if (typeof window !== 'undefined') window.MFG_FREQ = getFreqIndex;
     return _FREQ_IDX;
@@ -8202,6 +8347,11 @@
       if (!map.has(x.category)) map.set(x.category, new Set());
       if (x.subcategory) map.get(x.category).add(x.subcategory);
     });
+    ((SEED.records && SEED.records.recurring_expenses) || []).forEach(x => {
+      if (!x || x.voided || !x.category) return;
+      if (!map.has(x.category)) map.set(x.category, new Set());
+      if (x.subcategory) map.get(x.category).add(x.subcategory);
+    });
     ['Fuel', 'Oils & Lubricants', 'Spare Parts', 'Repairs and Maintenance', 'Tools & Garage', 'Transport & Site Logistics', 'Staff & Social Security', 'Utilities & Telecom', 'Office & Facility', 'Insurance, Permits & Taxes', 'Capital Expenditures'].forEach(c => { if (!map.has(c)) map.set(c, new Set()); });
     const fIdx = getFreqIndex();
     const catFreq = fIdx.category;
@@ -8209,9 +8359,9 @@
     return Array.from(map.entries())
       .map(([c, subs]) => ({
         category: c,
-        subs: Array.from(subs).sort((a, b) => (subFreq.get(norm(b)) || 0) - (subFreq.get(norm(a)) || 0) || a.localeCompare(b))
+        subs: Array.from(subs).sort((a, b) => (subFreq.get(norm(b)) || 0) - (subFreq.get(norm(a)) || 0) || 0)
       }))
-      .sort((a, b) => (catFreq.get(norm(b.category)) || 0) - (catFreq.get(norm(a.category)) || 0) || a.category.localeCompare(b.category));
+      .sort((a, b) => (catFreq.get(norm(b.category)) || 0) - (catFreq.get(norm(a.category)) || 0) || 0);
   }
   function isExpenseSubcategoryOrCategoryName(nm) {
     const k = norm(nm);
@@ -8234,13 +8384,14 @@
     const coKey = (company && !/all|group|manufacturing/i.test(String(company))) ? norm(company) : '';
     const mapGet = (m, k) => (m && k ? (m.get(k) || 0) : 0);
     const mapCoGet = (mByCo, ck, k) => (mByCo && ck && k && mByCo.has(ck) ? (mByCo.get(ck).get(k) || 0) : 0);
+    const freqTieBreak = () => (mapGet(fIdx.product, kb) - mapGet(fIdx.product, ka)) || (mapGet(fIdx.any, kb) - mapGet(fIdx.any, ka)) || 0;
 
     if (side === 'fuel') {
       const fCoA = mapCoGet(fIdx.productFuelByCo, coKey, ka), fCoB = mapCoGet(fIdx.productFuelByCo, coKey, kb);
       if (fCoB !== fCoA) return fCoB - fCoA;
       const fAllA = mapGet(fIdx.productFuel, ka), fAllB = mapGet(fIdx.productFuel, kb);
       if (fAllB !== fAllA) return fAllB - fAllA;
-      return String(nameA).localeCompare(String(nameB));
+      return freqTieBreak();
     }
 
     if (side === 'raw') {
@@ -8258,7 +8409,7 @@
       const pureOppA = (domA === 0 && rAllA === 0 && oppA > 0) ? 1 : 0;
       const pureOppB = (domB === 0 && rAllB === 0 && oppB > 0) ? 1 : 0;
       if (pureOppA !== pureOppB) return pureOppA - pureOppB;
-      return String(nameA).localeCompare(String(nameB));
+      return freqTieBreak();
     }
 
     if (side === 'sales' || side === 'comm') {
@@ -8284,12 +8435,10 @@
       const pureOppA = (domA === 0 && rAllA === 0 && oppA > 0) ? 1 : 0;
       const pureOppB = (domB === 0 && rAllB === 0 && oppB > 0) ? 1 : 0;
       if (pureOppA !== pureOppB) return pureOppA - pureOppB;
-      return String(nameA).localeCompare(String(nameB));
+      return freqTieBreak();
     }
 
-    const ca = mapGet(fIdx.product, ka), cb = mapGet(fIdx.product, kb);
-    if (cb !== ca) return cb - ca;
-    return String(nameA).localeCompare(String(nameB));
+    return freqTieBreak();
   }
 
   function productList(materialOnly, side, company) {
@@ -41667,7 +41816,7 @@
     const minAddStart = getTruckWindowMinStart(targetEq, { co: defCo, side: 'both', cust: '', site: '' }, -1);
     const defAddStart = (minAddStart && minAddStart > today) ? minAddStart : today;
     const activeToday = equipInfo(targetEq.name, defCo, false, { date: today, side: 'fuel' });
-    const activeTodayDrv = (activeToday && activeToday.default_driver) || targetEq.default_driver || '—';
+    const activeTodayDrv = (activeToday && activeToday.default_driver) || targetEq.default_driver || '-';
 
     logWrap.innerHTML = `
       <div class="pa-subgrid-box" id="eqDriverLogBox" data-edit-modal-win-idx="">
@@ -50788,18 +50937,30 @@
     return schemas[key] || buildFallbackInspectorEditableSchema(key, row);
   }
 
-  // Auto-introspects any present or future (47th+) table row so 100% of fields are safely editable without data loss
+  // Auto-introspects any present or future (49th+) table row so 100% of fields are safely editable without data loss,
+  // automatically attaching frequency-ranked comboboxes (dlMap + dynamic per-column SEED.records frequency options).
   function buildFallbackInspectorEditableSchema(key, rec) {
     const r = rec || {};
     const auditSkip = new Set(['id', 'source', 'entered_by', 'entered_by_email', 'entered_at', 'modified_by', 'modified_at', 'voided', 'voided_by', 'voided_at']);
+    const freeTextCols = new Set(['name', 'code', 'ticket_no', 'invoice_no', 'invoice', 'voucher', 'reference', 'description', 'phone', 'contact', 'email', 'mof_no', 'financial_no', 'address']);
     const dlMap = {
-      customer: 'dl_insp_customers', supplier: 'dl_insp_suppliers', site_owner: 'dl_insp_suppliers',
-      truck_owner: 'dl_insp_suppliers', owner: 'dl_insp_suppliers', product: 'dl_insp_products',
-      site: 'dl_insp_sites', region: 'dl_insp_regions', truck: 'dl_insp_equip',
-      default_truck: 'dl_insp_equip', equipment: 'dl_insp_equip', driver: 'dl_insp_drivers',
-      staff: 'dl_insp_staff', employee: 'dl_insp_staff', subcategory: 'dl_insp_subcategories',
-      counterparty: 'dl_insp_counterparties', partner: 'dl_insp_counterparties'
+      customer: 'dl_insp_customers', client: 'dl_insp_customers', buyer: 'dl_insp_customers',
+      supplier: 'dl_insp_suppliers', vendor: 'dl_insp_suppliers', hauler: 'dl_insp_suppliers',
+      site_owner: 'dl_insp_suppliers', truck_owner: 'dl_insp_suppliers', owner: 'dl_insp_suppliers',
+      product: 'dl_insp_products', grade: 'dl_insp_products', material: 'dl_insp_products',
+      site: 'dl_insp_sites', quarry: 'dl_insp_sites', destination_site: 'dl_insp_sites', source_site: 'dl_insp_sites',
+      region: 'dl_insp_regions', zone: 'dl_insp_regions',
+      truck: 'dl_insp_equip', default_truck: 'dl_insp_equip', equipment: 'dl_insp_equip', target_equipment: 'dl_insp_equip',
+      driver: 'dl_insp_drivers', operator: 'dl_insp_drivers', default_driver: 'dl_insp_drivers',
+      staff: 'dl_insp_staff', employee: 'dl_insp_staff', approved_by: 'dl_insp_staff',
+      category: 'dl_insp_categories', subcategory: 'dl_insp_subcategories',
+      uom: 'dl_insp_uoms', unit: 'dl_insp_uoms',
+      item_name: 'dl_insp_parts', part_name: 'dl_insp_parts', oil_type: 'dl_insp_parts',
+      warehouse_location: 'dl_insp_locations', storage_location: 'dl_insp_locations',
+      counterparty: 'dl_insp_counterparties', partner: 'dl_insp_counterparties', lender: 'dl_insp_counterparties', vendor_or_buyer: 'dl_insp_counterparties'
     };
+    const fIdx = typeof getFreqIndex === 'function' ? getFreqIndex() : null;
+    const tblPool = (SEED && SEED.records && Array.isArray(SEED.records[key])) ? SEED.records[key] : [];
     const fields = [];
     const seen = new Set();
     const addF = f => { if (!seen.has(f.key)) { seen.add(f.key); fields.push(f); } };
@@ -50823,6 +50984,16 @@
         addF({ key: k, label: lbl, type: 'time', sec: 1 });
       } else if (dlMap[k]) {
         addF({ key: k, label: lbl, type: 'combo', dl: dlMap[k], sec: 2 });
+      } else if (typeof v === 'string' && !freeTextCols.has(k) && tblPool.length >= 2) {
+        const dynOpts = uniqSorted(
+          tblPool.filter(x => x && !x.voided && typeof x[k] === 'string' && x[k].length <= 80).map(x => x[k]),
+          fIdx && fIdx.forCol ? fIdx.forCol(k) : undefined
+        ).slice(0, 120);
+        if (dynOpts.length >= 2) {
+          addF({ key: k, label: lbl, type: 'combo', dl: 'dl_insp_dyn_' + k, dynOptions: dynOpts, sec: 2 });
+        } else {
+          addF({ key: k, label: lbl, type: 'text', sec: 2 });
+        }
       } else {
         addF({ key: k, label: lbl, type: 'text', sec: 2 });
       }
@@ -52238,10 +52409,22 @@
         ]),
       inspFreqIdx.region
     );
+    const inspCategories = uniqSorted(
+      ((SEED.records && SEED.records.expense_categories) || []).map(c => c.name)
+        .concat(((SEED.records && SEED.records.expenses) || []).map(x => x.category))
+        .concat(((SEED.records && SEED.records.recurring_expenses) || []).map(x => x.category)),
+      inspFreqIdx.category
+    );
     const inspSubcats = uniqSorted(
       ((SEED.records && SEED.records.expense_subcategories) || []).map(sc => sc.name)
-        .concat(((SEED.records && SEED.records.expenses) || []).map(x => x.subcategory)),
+        .concat(((SEED.records && SEED.records.expenses) || []).map(x => x.subcategory))
+        .concat(((SEED.records && SEED.records.recurring_expenses) || []).map(x => x.subcategory)),
       inspFreqIdx.subcategory
+    );
+    const inspUoms = uniqSorted(
+      ['m³', 'Ton', 'Truck', 'Litre', 'Piece', 'Unit', 'Bag', 'Set', 'Pair', 'Meter', 'Kg']
+        .concat(((SEED.records && SEED.records.uoms) || []).map(u => u.name || u.code)),
+      inspFreqIdx.uom
     );
     const inspCounterparties = uniqSorted(
       ((SEED.records && SEED.records.loans) || []).map(l => l.counterparty || l.lender || l.name)
@@ -52317,10 +52500,13 @@
       }
       if (fDef.type === 'combo') {
         const initCombo = String(rawCur == null ? '' : rawCur);
+        const dynDlHtml = Array.isArray(fDef.dynOptions) && fDef.dynOptions.length
+          ? `<datalist id="${esc(fDef.dl || '')}">${fDef.dynOptions.map(v => `<option value="${esc(v)}">`).join('')}</datalist>`
+          : '';
         return `
           <div class="form-field${spanCls}">
             <label for="insp_edit_${esc(f)}">${esc(lbl)}</label>
-            <input type="text" id="insp_edit_${esc(f)}" list="${esc(fDef.dl || '')}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="combo" data-init-val="${esc(initCombo)}" value="${esc(initCombo)}" placeholder="${esc(fDef.placeholder || 'Select or type...')}" autocomplete="off">
+            <input type="text" id="insp_edit_${esc(f)}" list="${esc(fDef.dl || '')}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="combo" data-init-val="${esc(initCombo)}" value="${esc(initCombo)}" placeholder="${esc(fDef.placeholder || 'Select or type...')}" autocomplete="off">${dynDlHtml}
           </div>
         `;
       }
@@ -52363,7 +52549,9 @@
         <datalist id="dl_insp_equip">${equipmentNames().map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_drivers">${driverNames().map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_staff">${staffNames().map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+        <datalist id="dl_insp_categories">${inspCategories.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_subcategories">${inspSubcats.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+        <datalist id="dl_insp_uoms">${inspUoms.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_counterparties">${inspCounterparties.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_parts">${inspParts.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
         <datalist id="dl_insp_locations">${inspPartLocs.map(v => `<option value="${esc(v)}">`).join('')}</datalist>
@@ -52614,7 +52802,7 @@
                       ${canModifyData() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button> <button type="button" class="btn btn-sm" data-del-tw-idx="${origIdx}" aria-label="Remove window">✕</button></td>` : ''}
                     </tr>
                   `;
-                }).join('') : `<tr><td colspan="${canModifyData() ? 10 : 9}" class="mu" style="text-align:center;padding:14px">No dated adjustment windows recorded — using default capacity (${fmtNum(targetEqRow && targetEqRow.capacity, 1)} m³).</td></tr>`}
+                }).join('') : `<tr><td colspan="${canModifyData() ? 10 : 9}" class="mu" style="text-align:center;padding:14px">No dated adjustment windows recorded - using default capacity (${fmtNum(targetEqRow && targetEqRow.capacity, 1)} m³).</td></tr>`}
               </tbody>
             </table>
           </div>

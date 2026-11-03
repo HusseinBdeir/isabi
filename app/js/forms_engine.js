@@ -38,11 +38,15 @@
   const MIN_DATE = '2024-01-01';
   const ic = (name, cls) => (typeof window !== 'undefined' && window.MFG_ICONS ? window.MFG_ICONS.svg(name, cls) : '');
 
-  // STANDING RULE (New-Entry Tab Parity — enforced by build/verify_mfg.mjs test 7z-33):
-  // Every + New Entry tab added to FORM_GROUPS MUST declare:
+  // STANDING RULES FOR ALL PRESENT & FUTURE TABLES / FORMS (enforced by build/verify_mfg.mjs 7z-33 & 7z-freq):
+  // A. New-Entry Tab Parity (7z-33): Every + New Entry tab added to FORM_GROUPS MUST declare:
   //   1. crKey   -> record table key registered in window.MFG_PBI.TABLE_CATALOG (#tables + hub subgrid)
   //   2. hubView -> operational hub or Universal Registry view hosting its record table, + New button & charts
   //   3. pbiPage -> native Dashboard page (p01..p20) or hub analytics row covering its metrics
+  // B. Universal Frequency-First Search & Comboboxes (7z-freq — ZERO alphabetical ordering):
+  //   Every combobox (dl / .pa-suggest), filterable <select> (.pa-select-filter), catalog lookup, and search box
+  //   for any present or future table MUST rank options by operational usage frequency descending via uniqSorted(..., fIdx.<domain>)
+  //   or fIdx.forCol(colKey), preserving exact.concat(freqOrdered) on typed queries (never localeCompare / never startsWith override).
   const FORM_GROUPS = [
     {
       id: 'sales',
@@ -1453,7 +1457,8 @@
         ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store']
           .concat((rec.part_movements || []).map(p => p && p.storage_location))
           .concat(siteNames)
-          .concat(equipNames)
+          .concat(equipNames),
+        fIdx && fIdx.warehouseLoc
       );
       const vendorsAndBuyers = uniqSorted(supNames.concat(custNames));
 
@@ -2232,9 +2237,23 @@
     }
 
     if (fType === 'recurringexpense') {
-      const expCats = uniqSorted((rec.expense_categories || []).map(c => c && c.name).concat((rec.expenses || []).map(e => e && e.category)), fIdx && fIdx.expCategory);
-      const expSubcats = uniqSorted((rec.expense_subcategories || []).map(s => s && s.name).concat((rec.expenses || []).map(e => e && e.subcategory)), fIdx && fIdx.expSubcategory);
-      const purposeHints = uniqSorted(['Rent', 'Internet', 'Telephone', 'Security', 'Tips', 'Retainer', 'Subscription', 'Lease', 'Insurance'].concat((rec.recurring_expenses || []).map(r => r && r.item)));
+      const expCats = uniqSorted(
+        (rec.expense_categories || []).map(c => c && c.name)
+          .concat((rec.expenses || []).map(e => e && e.category))
+          .concat((rec.recurring_expenses || []).map(r => r && r.category)),
+        fIdx && fIdx.category
+      );
+      const expSubcats = uniqSorted(
+        (rec.expense_subcategories || []).map(s => s && s.name)
+          .concat((rec.expenses || []).map(e => e && e.subcategory))
+          .concat((rec.recurring_expenses || []).map(r => r && r.subcategory)),
+        fIdx && fIdx.subcategory
+      );
+      const purposeHints = uniqSorted(
+        (rec.recurring_expenses || []).map(r => r && r.item)
+          .concat(['Rent', 'Internet', 'Telephone', 'Security', 'Tips', 'Retainer', 'Subscription', 'Lease', 'Insurance']),
+        fIdx && fIdx.forCol ? fIdx.forCol('item') : undefined
+      );
       return `
         ${adminHeaderHtml}
         <div class="form-grid-3">
