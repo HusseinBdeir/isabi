@@ -1540,6 +1540,7 @@ a.system-showcase-btn .nav-ico {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   overscroll-behavior-y: contain;
   background: var(--bg);
   padding: 0 0 28px;
@@ -2302,7 +2303,7 @@ table.m-grid tfoot tr td {
   background: var(--brass);
   color: #0B1730;
   border-color: var(--brass);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 /* ==================== PRINTABLE A4 STATEMENT SHEET ==================== */
@@ -2570,6 +2571,7 @@ table.m-grid tfoot tr td {
   width: min(740px, 100%);
   max-height: 90dvh;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   box-shadow: var(--shadow-lg);
 }
 
@@ -2660,7 +2662,7 @@ table.m-grid tfoot tr td {
   background: var(--brass);
   color: #0B1730;
   border-color: var(--brass);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .modal-body {
@@ -4548,11 +4550,11 @@ html.sw-resuming body.locked .app-shell { pointer-events: auto; user-select: aut
    v4.0 — 20-PAGE POWER BI STUDIO + 24-FORM POWER APPS AUTOMATION ENGINE
    ============================================================================ */
 .modal-card { width: min(880px, 100%); }
-@media (min-width: 1025px) {
-  #entryModal .modal-card { width: min(980px, calc(100vw - 32px)); }
+@media (min-width: 981px) {
+  #entryModal .modal-card { width: min(1080px, calc(100vw - 28px)); }
 }
-@media (min-width: 1041px) {
-  #entryModal .modal-card:has(.exp-items-cockpit) { width: min(1080px, calc(100vw - 32px)); }
+@media (min-width: 1025px) {
+  #entryModal .modal-card { width: min(1080px, calc(100vw - 32px)); }
 }
 .pa-modal-groups {
   display: flex;
@@ -4604,7 +4606,7 @@ html.sw-resuming body.locked .app-shell { pointer-events: auto; user-select: aut
 .pa-modal-subtabs .modal-tab {
   padding: 5.5px 11px;
   font-size: 11.6px;
-  font-weight: 560;
+  font-weight: 600;
   gap: 5px;
   border-radius: 6px;
   border: 1px solid transparent;
@@ -4623,7 +4625,7 @@ html.sw-resuming body.locked .app-shell { pointer-events: auto; user-select: aut
 .pa-modal-subtabs .modal-tab.active {
   background: var(--surface);
   color: var(--ink);
-  font-weight: 700;
+  font-weight: 600;
   border-color: color-mix(in srgb, var(--brass) 44%, var(--line));
   box-shadow: inset 0 -2px 0 var(--brass), 0 1px 2px rgba(15, 23, 42, 0.05);
 }
@@ -5202,7 +5204,7 @@ html.sw-resuming body.locked .app-shell { pointer-events: auto; user-select: aut
   background: linear-gradient(180deg, #C69034 0%, #B37E24 100%);
   color: #FFFFFF;
   border-color: #A67320;
-  font-weight: 700;
+  font-weight: 600;
   box-shadow: 0 2px 6px rgba(184, 136, 59, 0.28);
 }
 :root[data-theme="dark"] .pbi-page-tab.active {
@@ -7715,6 +7717,7 @@ table.ledger-table tfoot tr td:last-child {
 #recordInspector .modal-body {
   padding: 14px 18px 18px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   flex: 1;
   min-height: 0;
 }
@@ -19422,7 +19425,7 @@ svg .cf-chart-bar:hover .cf-bar-hit {
   background: transparent;
   color: var(--muted);
   font-size: 11.4px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
   flex-shrink: 0;
@@ -19446,7 +19449,7 @@ svg .cf-chart-bar:hover .cf-bar-hit {
   color: var(--ink);
   border-color: transparent;
   border-bottom: 2px solid var(--brass);
-  font-weight: 700;
+  font-weight: 600;
   box-shadow: none;
 }
 .hub-subtab.active svg.ic,
@@ -19837,7 +19840,7 @@ svg .cf-chart-bar:hover .cf-bar-hit {
     border-radius: 4px;
     padding: 3.5px 7.5px;
     font-size: 11px;
-    font-weight: 500;
+    font-weight: 600;
     background: transparent;
     color: var(--muted);
     white-space: nowrap;
@@ -19850,7 +19853,7 @@ svg .cf-chart-bar:hover .cf-bar-hit {
   .table-toolbar .filter-chip.active {
     background: var(--surface);
     color: var(--ink);
-    font-weight: 700;
+    font-weight: 600;
     box-shadow: 0 1px 2px rgba(15, 30, 56, 0.08);
   }
   :root[data-theme="dark"] .table-toolbar .filter-chip.active {
@@ -22070,7 +22073,7 @@ table.ledger-table tbody td.td-databar {
   .table-toolbar .filter-chip {
     padding: 3.5px 8.5px;
     font-size: 11.1px;
-    font-weight: 500;
+    font-weight: 600;
     border-radius: 5px;
     border: 1px solid transparent;
     background: transparent;
@@ -22089,7 +22092,7 @@ table.ledger-table tbody td.td-databar {
     background: var(--surface);
     color: var(--ink);
     border-color: var(--line-strong);
-    font-weight: 700;
+    font-weight: 600;
     box-shadow: 0 1px 2px rgba(15, 30, 56, 0.07);
   }
   :root[data-theme="dark"] .table-toolbar .filter-chip.active {
@@ -22186,13 +22189,13 @@ table.ledger-table tbody td.td-databar {
     color: var(--muted);
     padding: 4px 9px;
     font-size: 11.5px;
-    font-weight: 500;
+    font-weight: 600;
   }
   .table-toolbar .filter-chip.active {
     background: var(--surface);
     color: var(--ink);
     border-color: var(--line-strong);
-    font-weight: 700;
+    font-weight: 600;
     box-shadow: 0 1px 2px rgba(15, 30, 56, 0.08);
   }
   :root[data-theme="dark"] .table-toolbar .filter-chip.active {
@@ -22533,6 +22536,7 @@ table.ledger-table tbody td.td-databar {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+    scrollbar-gutter: stable;
     -webkit-overflow-scrolling: touch;
   }
   .modal-foot {

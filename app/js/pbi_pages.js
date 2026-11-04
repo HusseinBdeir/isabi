@@ -1504,7 +1504,13 @@
       { id: 'leave', label: 'Absence & Leave', fn: r => Number(r.leave_days || 0) !== 0 || /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(r.type || r.status || '') },
       { id: 'extra', label: 'Extra & Config', fn: r => /^(?:extra|config)/i.test(r.type || r.status || '') }
     ] },
-    { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'working_days', 'working_hours', 'vacation_days', 'overtime_multiplier', 'reimbursement', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'pending_salary', label: 'Pending Salary ($0)', fn: r => Boolean(r && !r.voided && r.salary_pending) }, { id: 'freelance', label: 'Freelance / Daily', fn: r => /free|daily/i.test(r.type || '') }] },
+    { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'working_days', 'working_hours', 'vacation_days', 'overtime_multiplier', 'reimbursement', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['staff_members', 'staff_roles', 'staff_assignments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'pending_salary', label: 'Pending Salary ($0)', fn: r => Boolean(r && !r.voided && r.salary_pending) }, { id: 'freelance', label: 'Freelance & Daily', fn: r => /free|daily/i.test(r.type || '') }] },
+    { key: 'staff_assignments', group: '4 · Payroll, Attendance & Workforce', navView: 'payroll_contracts', label: 'Staff Role & Equipment Log', singularLabel: 'Role & Equipment Assignment', dvn: 'bhf_staffassignment', form: 'staffassignment', chronoSeries: true, seriesKeys: ['staff'], cols: ['name', 'company', 'staff', 'role', 'role_category', 'equipment', 'status', 'start_date', 'end_date', 'notes'], relTables: ['staff_members', 'staff_roles', 'employments', 'equipment'], views: [
+      { id: 'all', label: 'All Assignments' },
+      { id: 'active', label: 'Current Active', fn: r => !r.end_date || String(r.end_date).slice(0, 10) >= localTodayPbi() },
+      { id: 'historical', label: 'Historical Windows', fn: r => Boolean(r.end_date && String(r.end_date).slice(0, 10) < localTodayPbi()) },
+      { id: 'with_equipment', label: 'With Equipment', fn: r => Boolean(r && r.equipment) }
+    ] },
     { key: 'freelance_entries', group: '4 · Payroll, Attendance & Workforce', label: 'Freelance Work Entries', dvn: 'bhf_mfgfreelance', form: 'freelance', cols: ['date', 'company', 'staff', 'hours', 'extra_hours', 'rate_usd', 'total', 'notes'], relTables: ['employments', 'salaries'], views: [{ id: 'all', label: 'All Freelance Entries' }] },
     { key: 'logistics_allowances', group: '4 · Payroll, Attendance & Workforce', navView: 'payroll_allowances', label: 'Site Transport', dvn: 'bhf_mfglogistics', form: 'logistics', cols: ['name', 'company', 'staff', 'site', 'equipment', 'daily_usd', 'lbp_amount', 'working_days', 'start_date', 'end_date'], relTables: ['employments', 'sites', 'equipment', 'attendance', 'salaries'], views: [
       { id: 'all', label: 'All Site Transport' },
@@ -1528,18 +1534,18 @@
 
     // 6 · Universal (All BUs) — 11 Shared Master Registries (Zero BU Binding)
     { key: 'customers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_customers', label: 'Customers Registry', singularLabel: 'Customer', dvn: 'bhf_customer', form: 'customer', cols: ['name', 'method', 'vat_registered', 'mof_no', 'phone', 'address', 'credit_days', 'credit_limit', 'active_rules', 'sales_loads', 'ar_balance'], relTables: ['sales_tickets', 'receipts', 'price_rules', 'credit_terms', 'vat_invoices'], views: [{ id: 'all', label: 'All Customers' }, { id: 'open_ar', label: 'Open AR Balance > $0', fn: (r, rel) => ((rel.custByName[norm(r.name)] || {}).ar_balance || 0) > 1 }, { id: 'vat', label: 'VAT Registered (MOF)', fn: r => Boolean(r.vat_registered || r.mof_no) }] },
-    { key: 'suppliers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_suppliers', label: 'Suppliers & Haulers', singularLabel: 'Supplier / Hauler', dvn: 'bhf_supplier', form: 'supplier', cols: ['name', 'supplier_role', 'method', 'trucks_list', 'drivers_list', 'haul_loads', 'raw_loads', 'expenses_count', 'active_rules', 'iva', 'ap_balance'], relTables: ['raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'price_rules', 'equipment', 'drivers', 'sites'], views: [
+    { key: 'suppliers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_suppliers', label: 'Suppliers & Haulers', singularLabel: 'Supplier', dvn: 'bhf_supplier', form: 'supplier', cols: ['name', 'supplier_role', 'method', 'trucks_list', 'drivers_list', 'haul_loads', 'raw_loads', 'expenses_count', 'active_rules', 'iva', 'ap_balance'], relTables: ['raw_purchases', 'expenses', 'recurring_expenses', 'settlements', 'price_rules', 'equipment', 'drivers', 'sites'], views: [
       { id: 'all', label: 'All Suppliers & Haulers' },
-      { id: 'haulers', label: 'Truck Owners / Haulers', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; return Boolean(r.is_truck_owner || Number(r.trucks_count || 0) > 0 || (se && (se.is_hauler || se.trucks.size > 0 || se.haul_loads > 0))); } },
+      { id: 'haulers', label: 'Truck Owners & Haulers', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; return Boolean(r.is_truck_owner || Number(r.trucks_count || 0) > 0 || (se && (se.is_hauler || se.trucks.size > 0 || se.haul_loads > 0))); } },
       { id: 'quarries', label: 'Material & Site Suppliers', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; return Boolean((se && (se.is_quarry || se.raw_loads > 0 || se.sites.size > 0)) || /Quarry|Site|Raw Material/i.test(r.category || r.category1 || '')); } },
       { id: 'vendors', label: 'Expense & Parts Vendors', fn: (r, rel) => { const se = rel && rel.suppByName[norm(r.name)]; const isH = Boolean(r.is_truck_owner || Number(r.trucks_count || 0) > 0 || (se && (se.is_hauler || se.trucks.size > 0 || se.haul_loads > 0))); const isQ = Boolean((se && (se.is_quarry || se.raw_loads > 0 || se.sites.size > 0)) || /Quarry|Site|Raw Material/i.test(r.category || r.category1 || '')); return Boolean((se && (se.is_expense || se.expenses_count > 0)) || (!isH && !isQ)); } },
       { id: 'open_ap', label: 'Open AP Balance > $0', fn: (r, rel) => ((rel.suppByName[norm(r.name)] || {}).ap_balance || 0) > 1 },
-      { id: 'iva', label: 'IVA / VAT Registered', fn: r => Boolean(r.iva || r.financial_no || r.mof_no) }
+      { id: 'iva', label: 'IVA & VAT Registered', fn: r => Boolean(r.iva || r.financial_no || r.mof_no) }
     ] },
-    { key: 'products', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Products & Grades', singularLabel: 'Product / Grade', dvn: 'bhf_product', form: 'product', cols: ['name', 'type', 'uom', 'ton_factor', 'list_price', 'ticket_product', 'fuel_item', 'input_product', 'active_rules', 'sales_loads'], relTables: ['sales_tickets', 'raw_purchases', 'price_rules', 'fuel_intakes', 'product_types', 'uoms'], views: [{ id: 'all', label: 'All Products & Grades' }, { id: 'agg', label: 'Ticket / Aggregate Grades', fn: r => Boolean(r.ticket_product) }, { id: 'fuel', label: 'Fuel & Lube Items', fn: r => Boolean(r.fuel_item) }] },
-    { key: 'items', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_items', label: 'Items & Spare Parts', singularLabel: 'Item / Spare Part', dvn: 'bhf_item', form: 'item', cols: ['name', 'category', 'uom', 'default_cost', 'tickets_count', 'total_spent', 'default_location', 'min_stock', 'status'], relTables: ['expense_items', 'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'uoms'], views: [{ id: 'all', label: 'All Items & Spare Parts' }, { id: 'parts', label: 'Spare Parts', fn: r => /spare|part/i.test(r.category || '') }, { id: 'oils', label: 'Oils & Lubricants', fn: r => /oil|lub/i.test(r.category || '') }, { id: 'tools', label: 'Tools & Consumables', fn: r => /tool|consum/i.test(r.category || '') }] },
-    { key: 'product_types', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Product Types (Families)', singularLabel: 'Product / Grade', dvn: 'bhf_producttype', form: 'product', cols: ['name', 'code', 'products_count', 'sales_loads'], relTables: ['products', 'sales_tickets'], views: [{ id: 'all', label: 'All Product Families' }] },
-    { key: 'uoms', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Units of Measure (UoM)', singularLabel: 'Product / Grade', dvn: 'bhf_uom', form: 'product', cols: ['name', 'code', 'products_count', 'tickets_count'], relTables: ['products', 'items', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Units of Measure' }] },
+    { key: 'products', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Products & Grades', singularLabel: 'Product', dvn: 'bhf_product', form: 'product', cols: ['name', 'type', 'uom', 'ton_factor', 'list_price', 'ticket_product', 'fuel_item', 'input_product', 'active_rules', 'sales_loads'], relTables: ['sales_tickets', 'raw_purchases', 'price_rules', 'fuel_intakes', 'product_types', 'uoms'], views: [{ id: 'all', label: 'All Products & Grades' }, { id: 'agg', label: 'Aggregate Grades', fn: r => Boolean(r.ticket_product) }, { id: 'fuel', label: 'Fuel & Lube Items', fn: r => Boolean(r.fuel_item) }] },
+    { key: 'items', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_items', label: 'Items & Spare Parts', singularLabel: 'Item', dvn: 'bhf_item', form: 'item', cols: ['name', 'category', 'uom', 'default_cost', 'tickets_count', 'total_spent', 'default_location', 'min_stock', 'status'], relTables: ['expense_items', 'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'uoms'], views: [{ id: 'all', label: 'All Items & Spare Parts' }, { id: 'parts', label: 'Spare Parts', fn: r => /spare|part/i.test(r.category || '') }, { id: 'oils', label: 'Oils & Lubricants', fn: r => /oil|lub/i.test(r.category || '') }, { id: 'tools', label: 'Tools & Consumables', fn: r => /tool|consum/i.test(r.category || '') }] },
+    { key: 'product_types', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Product Types (Families)', singularLabel: 'Product', dvn: 'bhf_producttype', form: 'product', cols: ['name', 'code', 'products_count', 'sales_loads'], relTables: ['products', 'sales_tickets'], views: [{ id: 'all', label: 'All Product Families' }] },
+    { key: 'uoms', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Units of Measure (UoM)', singularLabel: 'Product', dvn: 'bhf_uom', form: 'product', cols: ['name', 'code', 'products_count', 'tickets_count'], relTables: ['products', 'items', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Units of Measure' }] },
     { key: 'expense_categories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Categories', singularLabel: 'Expense Category', dvn: 'bhf_expensecategory', form: 'expensecategory', cols: ['name', 'cost_class', 'subcategories_count', 'expenses_count', 'total_spent'], relTables: ['expense_subcategories', 'expenses', 'recurring_expenses'], views: [
       { id: 'all', label: 'All Expense Categories' },
       { id: 'prod', label: 'Production Cost', fn: r => deriveExpenseCostClass(r) === 'Production Cost' },
@@ -1554,15 +1560,23 @@
       { id: 'jv', label: 'JV 50/50 Sites', fn: r => resolveSiteCategoryPbi(r) === 'supplier' && Boolean(r.is_jv), cols: ['name', 'region', 'supplier', 'jv_partner', 'jv_share', 'is_jv', 'gps_status', 'active_rules', 'raw_loads'] },
       { id: 'gps', label: 'Verified GPS Pin', fn: r => r.latitude != null && r.longitude != null, cols: ['name', 'site_category', 'region', 'linked_party', 'latitude', 'longitude', 'raw_loads', 'sales_loads'] }
     ] },
-    { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region / Zone', dvn: 'bhf_region', form: 'region', cols: ['name', 'code', 'zone_shape', 'distance_km', 'sites_count', 'overtime_rate', 'sales_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
-    { key: 'equipment', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', singularLabel: 'Equipment / Truck', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
-    { key: 'drivers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', singularLabel: 'Driver / Operator', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] },
-    { key: 'staff_members', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_staff', label: 'Staff Members', singularLabel: 'Staff Member', dvn: 'bhf_staffmember', form: 'staff', cols: ['name', 'role', 'companies_list', 'contracts_count', 'active_salary_usd', 'salary_status', 'attendance_days', 'payments_count', 'total_paid', 'phone'], relTables: ['employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'loans'], views: [
+    { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region', dvn: 'bhf_region', form: 'region', cols: ['name', 'code', 'zone_shape', 'distance_km', 'sites_count', 'overtime_rate', 'sales_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
+    { key: 'equipment', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', singularLabel: 'Equipment', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
+    { key: 'drivers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', singularLabel: 'Driver', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] },
+    { key: 'staff_members', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_staff', label: 'Staff Members', singularLabel: 'Staff Member', dvn: 'bhf_staffmember', form: 'staff', cols: ['name', 'role', 'role_category', 'default_equipment', 'companies_list', 'contracts_count', 'active_salary_usd', 'salary_status', 'attendance_days', 'total_paid', 'phone'], relTables: ['staff_roles', 'staff_assignments', 'employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'loans'], views: [
       { id: 'all', label: 'All Staff Members' },
       { id: 'active_contracts', label: 'Active Contracted', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Number(sr.active_contracts_count || 0) > 0; } },
       { id: 'pending_salary', label: 'Pending Salary ($0)', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Boolean(sr.has_pending_salary); } },
-      { id: 'drivers_ops', label: 'Drivers & Operators', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Boolean(sr.is_driver_op || /driver|operat|loader|excavat|crusher|truck/i.test(String(r.role || r.worker_category || sr.role || ''))); } },
+      { id: 'drivers_ops', label: 'Drivers & Operators', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Boolean(sr.is_driver_op || /driver|operat|loader|excavat|crusher|truck/i.test(String(r.role || r.role_category || r.worker_category || sr.role || ''))); } },
       { id: 'uncontracted', label: 'Registry Only (No Contract)', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Number(sr.contracts_count || 0) === 0; } }
+    ] },
+    { key: 'staff_roles', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_roles', label: 'Staff Roles', singularLabel: 'Staff Role', dvn: 'bhf_staffrole', form: 'staffrole', cols: ['name', 'role_category', 'pay_basis', 'operates_equipment', 'staff_count', 'active_assignments_count', 'contracts_count', 'notes'], relTables: ['staff_members', 'staff_assignments', 'employments'], views: [
+      { id: 'all', label: 'All Staff Roles' },
+      { id: 'fleet_drivers', label: 'Fleet & Drivers', fn: r => /fleet|driver/i.test(r.role_category || r.category || '') },
+      { id: 'plant_prod', label: 'Plant & Production', fn: r => /plant|prod/i.test(r.role_category || r.category || '') },
+      { id: 'maint_workshop', label: 'Maintenance & Workshop', fn: r => /maint|workshop/i.test(r.role_category || r.category || '') },
+      { id: 'site_ops', label: 'Site & Operations', fn: r => /site|operat/i.test(r.role_category || r.category || '') },
+      { id: 'mgmt_admin', label: 'Management & Admin', fn: r => /manag|admin/i.test(r.role_category || r.category || '') }
     ] },
     { key: 'fx_rates', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_fx_rates', label: 'Currency Exchange Rates', singularLabel: 'FX Rate', dvn: 'bhf_fxrate', form: 'fxrate', cols: ['name', 'currency', 'rate', 'start_date', 'effective_to', 'status', 'notes'], relTables: ['currencies', 'conversions'], views: [{ id: 'all', label: 'All Exchange Rates' }, { id: 'current', label: 'Current Active Rates', fn: r => r.status === 'Current' }, { id: 'historical', label: 'Historical Windows', fn: r => r.status === 'Historical' }] },
     { key: 'vat_rates', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_vat_rates', label: 'VAT Rates', singularLabel: 'VAT Rate', dvn: 'bhf_vatrate', form: 'vatrate', cols: ['name', 'start_date', 'effective_to', 'vat_percent', 'vat_fx_rate', 'status', 'notes'], relTables: ['vat_invoices', 'fx_rates'], views: [{ id: 'all', label: 'All Statutory VAT Windows' }, { id: 'current', label: 'Current Active Rate', fn: r => r.status === 'Current' }] },
@@ -1598,6 +1612,7 @@
     default_driver: 'drivers',
     day_operator: 'drivers',
     night_operator: 'drivers',
+    role: 'staff_roles',
     staff: 'employments',
     vat_invoice: 'vat_invoices',
     category: 'expense_categories',
@@ -1752,7 +1767,32 @@
       }
       return `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('payroll_contracts')}<span>${esc(cell)}</span></span>`;
     }
+    if (c === 'role_category' && cell && cell !== '—' && cell !== '-') {
+      if (/fleet|driver/i.test(cell)) return `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('truck')}<span>${esc(cell)}</span></span>`;
+      if (/plant|prod/i.test(cell)) return `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('plant')}<span>${esc(cell)}</span></span>`;
+      if (/maint|workshop/i.test(cell)) return `<span class="badge badge-warn tkt-ot-badge has-ico">${pbiIcon('wrench')}<span>${esc(cell)}</span></span>`;
+      if (/manag|admin/i.test(cell)) return `<span class="badge badge-ok tkt-ot-badge has-ico">${pbiIcon('users')}<span>${esc(cell)}</span></span>`;
+      if (/freelance|subcontract/i.test(cell)) return `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('payroll')}<span>${esc(cell)}</span></span>`;
+      return `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('pin')}<span>${esc(cell)}</span></span>`;
+    }
+    if (c === 'operates_equipment' && cell && cell !== '—') {
+      const usesEq = /^yes$/i.test(String(v || cell).trim()) || v === true || v === 1;
+      return usesEq
+        ? `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('truck')}<span>Yes</span></span>`
+        : '<span class="muted">No</span>';
+    }
     return null;
+  }
+
+  function inferRoleCatPbi(roleRaw) {
+    const s = String(roleRaw || '').trim();
+    if (!s) return 'Site & Operations';
+    if (/driver|chauffeur|mixer|tipper|dispatch/i.test(s)) return 'Fleet & Drivers';
+    if (/crusher|loader|excavat|bulldozer|plant|weighbridge|quality|batch/i.test(s)) return 'Plant & Production';
+    if (/mechanic|electric|weld|workshop|lubric|repair|garage/i.test(s)) return 'Maintenance & Workshop';
+    if (/manager|accountant|cashier|admin|hr|director|clerk\b.*office/i.test(s)) return 'Management & Admin';
+    if (/freelance|subcontract/i.test(s)) return 'Freelance & Subcontract';
+    return 'Site & Operations';
   }
 
   function formatSiteCategoryHtml(catTxt) {
@@ -1762,7 +1802,7 @@
     return `<span class="badge ${isCust ? 'badge-info' : 'badge-brass'}">${esc(isCust ? 'Customer Delivery' : 'Supplier / Quarry')}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|linked_party|jv_partner|jv_share|working_days|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|linked_party|jv_partner|jv_share|working_days|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -1787,6 +1827,10 @@
         return { key: 'loads_hauled', dir: 'desc' };
       case 'staff_members':
         return { key: vw === 'pending_salary' ? 'contracts_count' : 'total_paid', dir: 'desc' };
+      case 'staff_roles':
+        return { key: 'staff_count', dir: 'desc' };
+      case 'staff_assignments':
+        return { key: 'start_date', dir: 'desc' };
       case 'sites':
         return { key: vw === 'delivery' ? 'sales_loads' : 'raw_loads', dir: 'desc' };
       case 'regions':
@@ -1857,13 +1901,13 @@
     }
     const rec = (SEED && SEED.records) || {};
     const tr = (SEED && SEED._tableRev) || {};
-    const stamp = `${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
+    const stamp = `${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.staff_roles || []).length}:${(rec.staff_assignments || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.staff_roles||0}:${tr.staff_assignments||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
     if (_hubRelCache && _hubRelStamp === stamp) return _hubRelCache;
     _hubRelStamp = stamp;
     const rel = {
       custByName: {}, suppByName: {}, prodByName: {}, typeByName: {}, uomByName: {},
       siteByName: {}, siteByCatKey: {}, regByName: {}, equipByName: {}, drvByName: {}, catByName: {},
-      subcatByName: {}, subcatByKey: {}, staffByName: {}, vatInvByNo: {}, loanByName: {}
+      subcatByName: {}, subcatByKey: {}, staffByName: {}, roleByName: {}, vatInvByNo: {}, loanByName: {}
     };
     const subcatKey = (cat, sub) => `${norm(cat)}|${norm(sub)}`;
     const ensure = (map, k, init) => { const nk = norm(k); if (!nk) return null; if (!map[nk]) map[nk] = init(); return map[nk]; };
@@ -1914,9 +1958,19 @@
       payments_count: 0,
       total_paid: 0,
       role: '',
+      active_role: '',
+      active_assign_start: '',
+      role_category: '',
       phone: '',
       default_equipment: '',
+      active_equipment: '',
       is_driver_op: false
+    });
+    const initRole = () => ({
+      category: '',
+      staff: new Set(),
+      active_assignments_count: 0,
+      contracts_count: 0
     });
 
     // Seed from Manufacturing Group consolidated model + fallback semantic_model summaries, then overlay canonical hydrated AR/AP
@@ -2315,23 +2369,69 @@
     });
 
     const seedDateIso = String((SEED && SEED.meta && SEED.meta.as_of) || '2026-11-03').slice(0, 10);
+    (rec.staff_roles || []).forEach(sr => {
+      if (!sr || sr.voided) return;
+      const re = ensure(rel.roleByName, sr.name || sr.role, initRole);
+      if (re && (sr.role_category || sr.category)) re.category = sr.role_category || sr.category;
+    });
     (rec.staff_members || []).forEach(sm => {
       if (!sm || sm.voided) return;
-      const st = ensure(rel.staffByName, sm.name || sm.staff, initStaff);
+      const sName = sm.name || sm.staff;
+      const st = ensure(rel.staffByName, sName, initStaff);
       if (st) {
         if (sm.role && !st.role) st.role = sm.role;
+        if (sm.role_category && !st.role_category) st.role_category = sm.role_category;
         if (sm.phone && !st.phone) st.phone = sm.phone;
         if (sm.default_equipment && !st.default_equipment) st.default_equipment = sm.default_equipment;
-        if (/driver|operat/i.test(String(sm.worker_category || sm.role || ''))) st.is_driver_op = true;
+        if (/driver|operat/i.test(String(sm.role_category || sm.worker_category || sm.role || ''))) st.is_driver_op = true;
+      }
+      if (sm.role && sName) {
+        const re = ensure(rel.roleByName, sm.role, initRole);
+        if (re) re.staff.add(norm(sName));
+      }
+    });
+    (rec.staff_assignments || []).forEach(sa => {
+      if (!sa || sa.voided) return;
+      const sName = sa.staff || sa.name;
+      const st = ensure(rel.staffByName, sName, initStaff);
+      const ended = sa.status === 'Ended' || Boolean(sa.end_date && String(sa.end_date).slice(0, 10) < seedDateIso);
+      const sStart = String(sa.start_date || sa.date || '').slice(0, 10);
+      if (st) {
+        if (sa.company) st.companies.add(sa.company);
+        if (!ended && (!st.active_assign_start || sStart >= st.active_assign_start)) {
+          st.active_assign_start = sStart;
+          if (sa.role) st.active_role = sa.role;
+          if (sa.role_category) st.role_category = sa.role_category;
+          st.active_equipment = sa.equipment || '';
+        } else if (!st.role && sa.role) {
+          st.role = sa.role;
+        }
+        if (/driver|operat|loader|excavat|crusher|truck/i.test(String(sa.role || sa.role_category || ''))) st.is_driver_op = true;
+      }
+      if (sa.role) {
+        const re = ensure(rel.roleByName, sa.role, initRole);
+        if (re) {
+          if (sa.role_category && !re.category) re.category = sa.role_category;
+          if (sName) re.staff.add(norm(sName));
+          if (!ended) re.active_assignments_count++;
+        }
       }
     });
     (rec.employments || []).forEach(emp => {
       if (!emp || emp.voided) return;
-      const st = ensure(rel.staffByName, emp.staff || emp.name, initStaff);
+      const sName = emp.staff || emp.name;
+      const st = ensure(rel.staffByName, sName, initStaff);
       if (!st) return;
       st.contracts_count++;
       if (emp.company) st.companies.add(emp.company);
-      if (emp.role) st.role = emp.role;
+      if (emp.role) {
+        st.role = emp.role;
+        const re = ensure(rel.roleByName, emp.role, initRole);
+        if (re) {
+          re.contracts_count++;
+          if (sName) re.staff.add(norm(sName));
+        }
+      }
       const ended = emp.status === 'Ended' || Boolean(emp.end_date && String(emp.end_date).slice(0, 10) < seedDateIso);
       if (!ended) {
         st.active_contracts_count++;
@@ -2603,6 +2703,21 @@
       if (r.raw_ticket) return '1 · Quarry';
       return '3 · Expense';
     }
+    if (tableKey === 'staff_assignments') {
+      if (c === 'status') {
+        const endIso = String(r.end_date || '').slice(0, 10);
+        return (!endIso || endIso >= localTodayPbi()) ? 'Active' : 'Ended';
+      }
+      if (c === 'role_category') {
+        const re = rel && rel.roleByName && rel.roleByName[norm(r.role)];
+        return r.role_category || (re && re.category) || inferRoleCatPbi(r.role);
+      }
+    }
+    if (tableKey === 'staff_roles') {
+      if (c === 'role_category') return r.role_category || r.category || inferRoleCatPbi(r.name || r.role);
+      if (c === 'pay_basis') return r.pay_basis || 'Monthly';
+      if (c === 'operates_equipment') return r.operates_equipment != null && r.operates_equipment !== '' ? r.operates_equipment : (/driver|operat|loader|excavat|bulldozer|crusher/i.test(String(r.name || r.role || '')) ? 'Yes' : 'No');
+    }
     if (c === 'cost_class') return deriveExpenseCostClass(r);
     if (r[c] != null && r[c] !== '') {
       if (Array.isArray(r[c])) return r[c].join(', ');
@@ -2736,12 +2851,21 @@
         const st = rel.staffByName[norm(r.staff || r.name)];
         if (st && st[c] != null) return st[c];
       }
+      if (tableKey === 'staff_roles') {
+        const re = rel.roleByName && rel.roleByName[norm(r.name || r.role)];
+        if (c === 'staff_count') return re ? re.staff.size : 0;
+        if (c === 'active_assignments_count') return re ? re.active_assignments_count : 0;
+        if (c === 'contracts_count') return re ? re.contracts_count : 0;
+      }
       if (tableKey === 'staff_members') {
         const st = rel.staffByName[norm(r.name || r.staff)];
+        const effRole = (st && st.active_role) || r.role || (st && st.role) || 'Staff';
+        const re = rel.roleByName && rel.roleByName[norm(effRole)];
         if (c === 'name') return r.name || r.staff || '';
-        if (c === 'role') return r.role || (st && st.role) || r.worker_category || 'Staff';
+        if (c === 'role') return effRole;
+        if (c === 'role_category') return (re && re.category) || (st && st.role_category) || r.role_category || inferRoleCatPbi(effRole);
         if (c === 'phone') return r.phone || (st && st.phone) || null;
-        if (c === 'default_equipment') return r.default_equipment || (st && st.default_equipment) || null;
+        if (c === 'default_equipment') return (st && st.active_equipment) || r.default_equipment || (st && st.default_equipment) || null;
         if (st && st[c] != null) return st[c];
         if (c === 'contracts_count' || c === 'active_salary_usd' || c === 'attendance_days' || c === 'payments_count' || c === 'total_paid') return 0;
         if (c === 'companies_list') return 'All BUs (Ready)';
@@ -9277,12 +9401,12 @@
                     else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
                     else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
-                    else if (meta.key === 'recurring_expenses' && c === 'end_date' && !v) cell = 'Open';
+                    else if ((meta.key === 'recurring_expenses' || meta.key === 'staff_assignments') && c === 'end_date' && !v) cell = 'Open';
                     else if (/date/.test(c) && v) cell = fmtDateDMY(v);
 
                     const lkTarget = c === 'linked_party'
                       ? (resolveSiteCategoryPbi(r) === 'customer' ? 'customers' : 'suppliers')
-                      : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : (meta.key === 'recurring_expenses' && c === 'item' ? null : HUB_LOOKUP_TARGETS[c]));
+                      : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : ((meta.key === 'recurring_expenses' && c === 'item') || (meta.key === 'currencies' && c === 'role') ? null : HUB_LOOKUP_TARGETS[c]));
                     const isLookup = lkTarget && lkTarget !== meta.key && v != null && v !== '' && cell !== '—';
                     const signedHtml = (isSignedUsd || isSignedLbp) && v != null && v !== ''
                       ? `<strong style="color:${Number(v) >= 0 ? 'var(--good)' : 'var(--crit)'}">${esc(cell)}</strong>`
@@ -9375,8 +9499,14 @@
 
   const HUB_COL_LABELS = {
     contracts_count: 'Contracts',
-    vacation_days: 'Vac Days/Yr',
+    vacation_days: 'Vac Days',
     payable_leg: 'Payable Leg',
+    staff_count: 'Assigned Staff',
+    active_assignments_count: 'Active Logs',
+    role_category: 'Role Category',
+    pay_basis: 'Default Pay Basis',
+    operates_equipment: 'Operates Equipment',
+    default_equipment: 'Assigned Equipment',
     active_salary_usd: 'Active Rate ($)',
     salary_status: 'Pay Status',
     attendance_days: 'Att. Logs',
@@ -9479,10 +9609,12 @@
       if (tableKey === 'equipment') return 'Unit Code';
       if (tableKey === 'drivers') return 'Driver Name';
       if (tableKey === 'staff_members') return 'Staff Member';
+      if (tableKey === 'staff_roles') return 'Staff Role';
+      if (tableKey === 'staff_assignments') return 'Assignment Ref';
       if (tableKey === 'customers') return 'Customer';
       if (tableKey === 'sites') return 'Site';
       if (tableKey === 'products') return 'Product';
-      if (tableKey === 'items') return 'Item / Part Name';
+      if (tableKey === 'items') return 'Item Name';
     }
     if (HUB_COL_LABELS[c]) return HUB_COL_LABELS[c];
     return String(c || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -9608,12 +9740,12 @@
                     else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
                     else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
                     else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
-                    else if (meta.key === 'recurring_expenses' && c === 'end_date' && !v) cell = 'Open';
+                    else if ((meta.key === 'recurring_expenses' || meta.key === 'staff_assignments') && c === 'end_date' && !v) cell = 'Open';
                     else if (/date/.test(c) && v) cell = fmtDateDMY(v);
 
                     const lkTarget = c === 'linked_party'
                       ? (resolveSiteCategoryPbi(r) === 'customer' ? 'customers' : 'suppliers')
-                      : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : (meta.key === 'recurring_expenses' && c === 'item' ? null : HUB_LOOKUP_TARGETS[c]));
+                      : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : ((meta.key === 'recurring_expenses' && c === 'item') || (meta.key === 'currencies' && c === 'role') ? null : HUB_LOOKUP_TARGETS[c]));
                     const isLookup = lkTarget && lkTarget !== meta.key && v != null && v !== '' && cell !== '—';
                     const innerHtml = isLookup
                       ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
@@ -9747,8 +9879,22 @@
             const rate = Number(cellValue(r, 'active_salary_usd', 'staff_members', rel) || 0);
             return { label: r.name || r.staff, value: paid > 0 ? paid : rate, sub: `${cellValue(r, 'role', 'staff_members', rel) || 'Staff'} · ${cellValue(r, 'companies_list', 'staff_members', rel) || 'All BUs'}` };
           }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
-          rightTitle = 'Staff Registry by Pay Status & Trade';
+          rightTitle = 'Staff Registry by Pay Status';
           rows.forEach(r => addGrp(gMap, cellValue(r, 'salary_status', 'staff_members', rel) || 'Active Contract', 1, 'staff'));
+          rightRows = Array.from(gMap.values()).sort((a, b) => b.value - a.value);
+        } else if (meta.key === 'staff_roles') {
+          leftTitle = 'Staff Roles by Assigned Workforce Headcount';
+          leftRows = rows.map(r => {
+            const cnt = Number(cellValue(r, 'staff_count', 'staff_roles', rel) || 0);
+            const cat = cellValue(r, 'role_category', 'staff_roles', rel) || 'Site & Operations';
+            return { label: r.name || r.role, value: Math.max(1, cnt), sub: `${cat} · ${fmtNum(cnt)} staff` };
+          }).sort((a, b) => b.value - a.value).slice(0, 10);
+          rightTitle = 'Staff Headcount by Linked Role Category';
+          rows.forEach(r => {
+            const cat = cellValue(r, 'role_category', 'staff_roles', rel) || 'Site & Operations';
+            const cnt = Math.max(1, Number(cellValue(r, 'staff_count', 'staff_roles', rel) || 0));
+            addGrp(gMap, cat, cnt, 'roles');
+          });
           rightRows = Array.from(gMap.values()).sort((a, b) => b.value - a.value);
         } else if (meta.key === 'sites' || meta.key === 'regions') {
           leftTitle = `Top ${meta.label} by Load Volume`;

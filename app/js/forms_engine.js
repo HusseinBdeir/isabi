@@ -71,7 +71,7 @@
       label: '2. Purchases, Expenses & AP',
       forms: [
         { id: 'raw', label: 'Raw Material Ticket', badge: 'bhf_rawpurchase', crKey: 'raw_purchases', hubView: 'raw', pbiPage: 'p04_quarry', title: 'New Raw Material Ticket' },
-        { id: 'expense', label: 'Expense (Cash / Credit)', badge: 'bhf_expense', crKey: 'expenses', hubView: 'expenses', pbiPage: 'p07_ap', title: 'New Expense' },
+        { id: 'expense', label: 'Expense', badge: 'bhf_expense', crKey: 'expenses', hubView: 'expenses', pbiPage: 'p07_ap', title: 'New Expense' },
         { id: 'recurringexpense', label: 'Recurring Expense', badge: 'bhf_recurringexpense', crKey: 'recurring_expenses', hubView: 'recurring_expenses', pbiPage: 'p07_ap', title: 'New Recurring Expense Schedule' },
         { id: 'warehousestock', label: 'Warehouse Shelf Adjust', badge: 'bhf_warehousemovement', crKey: 'warehouse_movements', hubView: 'warehouse', pbiPage: 'p07_ap', title: 'Warehouse Shelf Stock & Adjustment' },
         { id: 'settlement', label: 'Supplier Settlement (AP)', badge: 'bhf_supplierpayment', crKey: 'settlements', hubView: 'suppliers', pbiPage: 'p07_ap', title: 'New Supplier Settlement' },
@@ -84,10 +84,10 @@
       label: '3. Fleet, Fuel & Maint.',
       forms: [
         { id: 'fuel', label: 'Fuel & Lubricant Intake', badge: 'bhf_fuelintake', crKey: 'fuel_intakes', hubView: 'fleet', pbiPage: 'p08_fleet', title: 'New Fuel & Lubricant Intake' },
-        { id: 'malfunction', label: 'Malfunction / Discrepancy', badge: 'bhf_fuelmalfunction', crKey: 'fuel_malfunctions', hubView: 'fleet', pbiPage: 'p08_fleet', title: 'New Malfunction / Discrepancy' },
+        { id: 'malfunction', label: 'Stock Discrepancy', badge: 'bhf_fuelmalfunction', crKey: 'fuel_malfunctions', hubView: 'fleet', pbiPage: 'p08_fleet', title: 'New Stock Discrepancy' },
         { id: 'companyequipment', label: 'Company Fleet Unit', badge: 'bhf_companyequipment', crKey: 'company_equipment', hubView: 'fleet_equip', pbiPage: 'p08_fleet', title: 'New Company Fleet Unit (BU Assignment)' },
-        { id: 'defect', label: 'Equipment Warning / Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'Report Equipment Warning / Issue' },
-        { id: 'repair', label: 'Equipment Repair', badge: 'bhf_equipmentrepair', crKey: 'equipment_repairs', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'New Equipment Repair (Warehouse / Outside)' },
+        { id: 'defect', label: 'Equipment Defect', badge: 'bhf_equipmentdefect', crKey: 'equipment_defects', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'Report Equipment Defect' },
+        { id: 'repair', label: 'Equipment Repair', badge: 'bhf_equipmentrepair', crKey: 'equipment_repairs', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'New Equipment Repair' },
         { id: 'oillog', label: 'Oil & Service Log', badge: 'bhf_equipmentoillog', crKey: 'equipment_oil_logs', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'New Equipment Oil & Service Log' },
         { id: 'partlog', label: 'Part Change & Custody', badge: 'bhf_partmovement', crKey: 'part_movements', hubView: 'fleet_maint', pbiPage: 'p08_fleet', title: 'Part Change, Removal & Disposition' },
         { id: 'triprate', label: 'Overtime Trip Rate', badge: 'bhf_triprate', crKey: 'overtime_rates', hubView: 'fleet_drivers', pbiPage: 'p08_fleet', title: 'New Overtime Trip Rate' }
@@ -101,6 +101,7 @@
         { id: 'salary', label: 'Salary & Bonus', badge: 'bhf_salarypayment', crKey: 'salaries', hubView: 'payroll', pbiPage: 'p12_payroll', title: 'New Salary Payment or Bonus' },
         { id: 'attendance', label: 'Attendance', badge: 'bhf_attendance', crKey: 'attendance', hubView: 'payroll_attendance', pbiPage: 'p12_payroll', title: 'New Staff Attendance' },
         { id: 'employment', label: 'Employment Contract', badge: 'bhf_employment', crKey: 'employments', hubView: 'payroll_contracts', pbiPage: 'p12_payroll', title: 'New Employment Contract' },
+        { id: 'staffassignment', label: 'Role & Equipment Log', badge: 'bhf_staffassignment', crKey: 'staff_assignments', hubView: 'payroll_contracts', pbiPage: 'p12_payroll', title: 'New Staff Role & Equipment Assignment' },
         { id: 'freelance', label: 'Freelance Work', badge: 'bhf_freelancework', crKey: 'employments', hubView: 'payroll_contracts', pbiPage: 'p12_payroll', title: 'New Freelance Work' },
         { id: 'logistics', label: 'Site Transport', badge: 'bhf_logistics', crKey: 'logistics_allowances', hubView: 'payroll_allowances', pbiPage: 'p12_payroll', title: 'New Site Transport' }
       ]
@@ -112,7 +113,7 @@
       forms: [
         { id: 'external', label: 'External Entry', badge: 'bhf_external', crKey: 'external_movements', hubView: 'external', pbiPage: 'p11_cash', title: 'New External Cash Entry' },
         { id: 'treasury', label: 'Loan & Settlement', badge: 'bhf_loan', crKey: 'loans', hubView: 'ledger_treasury', pbiPage: 'p11_cash', title: 'New Loan or Settlement' },
-        { id: 'conversion', label: 'FX Conversion', badge: 'bhf_conversion', crKey: 'conversions', hubView: 'conversions', pbiPage: 'p11_cash', title: 'New FX Conversion (USD ↔ LBP)' }
+        { id: 'conversion', label: 'FX Conversion', badge: 'bhf_conversion', crKey: 'conversions', hubView: 'conversions', pbiPage: 'p11_cash', title: 'New FX Conversion (USD to LBP)' }
       ]
     },
     {
@@ -122,15 +123,16 @@
       universalGroup: true,
       forms: [
         { id: 'customer', label: 'Customer', badge: 'bhf_customer', crKey: 'customers', hubView: 'reg_customers', pbiPage: 'p06_ar', title: 'New Customer (Universal Registry)', universal: true },
-        { id: 'supplier', label: 'Supplier / Hauler', badge: 'bhf_supplier', crKey: 'suppliers', hubView: 'reg_customers', pbiPage: 'p07_ap', title: 'New Supplier / Hauler (Universal Registry)', universal: true },
-        { id: 'product', label: 'Product / Grade', badge: 'bhf_product', crKey: 'products', hubView: 'reg_products', pbiPage: 'p02_sales', title: 'New Product / Aggregate Grade (Universal Registry)', universal: true },
-        { id: 'item', label: 'Item / Spare Part', badge: 'bhf_item', crKey: 'items', hubView: 'reg_items', pbiPage: 'p07_ap', title: 'New Item / Spare Part (Universal Catalog)', universal: true },
+        { id: 'supplier', label: 'Supplier', badge: 'bhf_supplier', crKey: 'suppliers', hubView: 'reg_customers', pbiPage: 'p07_ap', title: 'New Supplier (Universal Registry)', universal: true },
+        { id: 'product', label: 'Product', badge: 'bhf_product', crKey: 'products', hubView: 'reg_products', pbiPage: 'p02_sales', title: 'New Product (Universal Registry)', universal: true },
+        { id: 'item', label: 'Item', badge: 'bhf_item', crKey: 'items', hubView: 'reg_items', pbiPage: 'p07_ap', title: 'New Catalog Item (Universal Registry)', universal: true },
         { id: 'expensecategory', label: 'Expense Category', badge: 'bhf_expensecategory', crKey: 'expense_categories', hubView: 'reg_categories', pbiPage: 'p07_ap', title: 'New Expense Category (Universal Registry)', universal: true },
         { id: 'site', label: 'Site', badge: 'bhf_site', crKey: 'sites', hubView: 'reg_sites', pbiPage: 'p04_quarry', title: 'New Site (Universal Registry)', universal: true },
-        { id: 'region', label: 'Region / Zone', badge: 'bhf_region', crKey: 'regions', hubView: 'reg_sites', pbiPage: 'p04_quarry', title: 'New Region / Zone (Universal Registry)', universal: true },
-        { id: 'equipment', label: 'Equipment / Truck', badge: 'bhf_equipment', crKey: 'equipment', hubView: 'reg_equipment', pbiPage: 'p08_fleet', title: 'New Equipment / Truck (Universal Registry)', universal: true },
-        { id: 'driver', label: 'Driver / Operator', badge: 'bhf_driver', crKey: 'drivers', hubView: 'reg_drivers', pbiPage: 'p08_fleet', title: 'New Driver / Operator (Universal Registry)', universal: true },
+        { id: 'region', label: 'Region', badge: 'bhf_region', crKey: 'regions', hubView: 'reg_sites', pbiPage: 'p04_quarry', title: 'New Region (Universal Registry)', universal: true },
+        { id: 'equipment', label: 'Equipment', badge: 'bhf_equipment', crKey: 'equipment', hubView: 'reg_equipment', pbiPage: 'p08_fleet', title: 'New Equipment (Universal Registry)', universal: true },
+        { id: 'driver', label: 'Driver', badge: 'bhf_driver', crKey: 'drivers', hubView: 'reg_drivers', pbiPage: 'p08_fleet', title: 'New Driver (Universal Registry)', universal: true },
         { id: 'staff', label: 'Staff', badge: 'bhf_staffmember', crKey: 'staff_members', hubView: 'reg_staff', pbiPage: 'p12_payroll', title: 'New Staff Member (Universal Registry)', universal: true },
+        { id: 'staffrole', label: 'Staff Role', badge: 'bhf_staffrole', crKey: 'staff_roles', hubView: 'reg_roles', pbiPage: 'p12_payroll', title: 'New Staff Role (Universal Registry)', universal: true },
         { id: 'fxrate', label: 'FX Rate', badge: 'bhf_fxrate', crKey: 'fx_rates', hubView: 'reg_fx_rates', pbiPage: 'p11_cash', title: 'New FX Rate (Universal Registry)', universal: true },
         { id: 'vatrate', label: 'VAT Rate', badge: 'bhf_vatrate', crKey: 'vat_rates', hubView: 'reg_vat_rates', pbiPage: 'p06_ar', title: 'New VAT Rate (Universal Registry)', universal: true },
         { id: 'currency', label: 'Currency', badge: 'bhf_currency', crKey: 'currencies', hubView: 'reg_fx_rates', pbiPage: 'p11_cash', title: 'New Currency (Universal Registry)', universal: true }
@@ -855,7 +857,46 @@
         .concat((rec.logistics_allowances || []).filter(l => l && !l.voided).map(l => l.staff)),
       fIdx && fIdx.staff
     );
-    const roleNames = uniqSorted(['Driver', 'Plant Operator', 'Crusher Operator', 'Loader Operator', 'Mechanic', 'Electrician', 'Weighbridge Clerk', 'Site Supervisor', 'Guard', 'General Labour'].concat((rec.employments || []).map(e => e.role)).concat((rec.staff_members || []).map(s => s && s.role)).concat((rec.freelance_sheets || []).map(f => f.role)), fIdx && fIdx.role);
+    const inferRoleCatLocal = rn => {
+      const s = String(rn || '').trim();
+      if (!s) return '';
+      if (/driver|chauffeur|mixer|tipper|dispatch/i.test(s)) return 'Fleet & Drivers';
+      if (/crusher|loader|excavat|bulldozer|plant|weighbridge|quality|batch/i.test(s)) return 'Plant & Production';
+      if (/mechanic|electric|weld|workshop|lubric|repair|garage/i.test(s)) return 'Maintenance & Workshop';
+      if (/manager|accountant|cashier|admin|hr|director|clerk\b.*office/i.test(s)) return 'Management & Admin';
+      if (/freelance|subcontract/i.test(s)) return 'Freelance & Subcontract';
+      return 'Site & Operations';
+    };
+    const roleCatByNorm = {};
+    (rec.staff_roles || []).forEach(sr => {
+      if (!sr || sr.voided) return;
+      const rk = norm(sr.name || sr.role);
+      if (rk && sr.category) roleCatByNorm[rk] = sr.category;
+    });
+    const resolveRoleCat = rn => {
+      const rk = norm(rn);
+      if (!rk) return '';
+      return roleCatByNorm[rk] || inferRoleCatLocal(rn);
+    };
+    const roleNames = uniqSorted(
+      (rec.staff_roles || []).filter(r => r && !r.voided).map(r => r.name || r.role)
+        .concat(['Driver', 'Plant Operator', 'Crusher Operator', 'Loader Operator', 'Excavator Operator', 'Mechanic', 'Electrician', 'Weighbridge Clerk', 'Site Supervisor', 'Guard', 'General Labour', 'Accountant', 'Operations Manager'])
+        .concat((rec.staff_assignments || []).filter(a => a && !a.voided).map(a => a.role))
+        .concat((rec.employments || []).filter(e => e && !e.voided).map(e => e.role))
+        .concat((rec.staff_members || []).filter(s => s && !s.voided).map(s => s.role)),
+      fIdx && fIdx.role
+    );
+    const roleMetaItems = roleNames.map(rn => [rn, resolveRoleCat(rn)]);
+    const roleCatNames = uniqSorted(
+      ['Fleet & Drivers', 'Plant & Production', 'Maintenance & Workshop', 'Site & Operations', 'Management & Admin', 'Freelance & Subcontract']
+        .concat((rec.staff_roles || []).filter(r => r && !r.voided).map(r => r.category)),
+      (fIdx && fIdx.forCol ? fIdx.forCol('role_category') : undefined)
+    );
+    const frozenRoleCatField = (valStr = '') => fld('Role Category', inp('f_emp_cat', 'text', valStr, 'readonly tabindex="-1" aria-readonly="true" class="pa-locked-input" placeholder="Auto-filled from selected Role"'), {
+      id: 'wrap_role_cat',
+      cls: 'is-policy-locked is-role-cat-frozen',
+      labelRightHtml: `<span class="pa-lock-pill locked" data-role-cat-frozen="1" data-ui-tip="Automatically linked to the selected Role" style="pointer-events:none;cursor:default">${ic('lock')} <span class="lp-short">Locked</span><span class="sr-only"> LOCKED</span></span>`
+    });
     const counterpartyNames = uniqSorted(['Bdeir Holding', 'WTC', 'BBConstruction', 'Lions Transport', 'Cash Till', 'Bank Audi', 'Blom Bank'].concat((rec.loans || []).map(l => l.lender || l.counterparty || l.name)).concat((rec.external_movements || []).map(x => x.counterparty || x.name)).concat(supNames), fIdx && fIdx.counterparty);
     const regNames = uniqSorted((rec.regions || []).map(r => r.name).concat([
       'Beirut', 'Mount Lebanon', 'South Lebanon', 'Bekaa', 'North Lebanon', 'Nabatieh',
@@ -1032,8 +1073,8 @@
     if (fType === 'supplier') {
       return `
         <div class="form-grid-3">
-          ${secHdr('1. Supplier / Hauler Identity (Universal Registry · All BUs)')}
-          ${fld('Supplier / Hauler Name *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier, hauler, or vendor name..."') + dl('dl_suppliers', supNames))}
+          ${secHdr('1. Supplier Identity (Universal Registry · All BUs)')}
+          ${fld('Supplier Name *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier, hauler, or vendor name..."') + dl('dl_suppliers', supNames))}
           <div class="form-field" id="wrap_f_category">
             <label for="supCategoryTrigger"><span class="pa-fld-lbl">Category *</span></label>
             <div class="pa-suggest-wrap pa-multiselect-wrap" id="supCategoryMultiWrap">
@@ -1095,9 +1136,9 @@
       );
       return `
         <div class="form-grid-3">
-          ${secHdr('1. Item / Spare Part Identity & Permanently Frozen Unit (Shared Catalog)')}
-          ${fld('Item / Part Name *', inp('f_item_name', 'text', '', 'placeholder="e.g. Fuel Filter, Hydraulic Oil 68, Drive Belt..."'), { id: 'wrap_f_item_name', hintId: 'hint_item_name', hint: 'Canonical item name shared across Expenses, Warehouse & Equipment Repairs.' })}
-          ${fld('Catalog Category *', sel('f_item_cat', [
+          ${secHdr('1. Catalog Item Identity & Locked Unit (Universal Catalog · All BUs)')}
+          ${fld('Item Name *', inp('f_item_name', 'text', '', 'placeholder="e.g. Fuel Filter, Hydraulic Oil 68, Drive Belt..."'), { id: 'wrap_f_item_name', hintId: 'hint_item_name', hint: 'Canonical item name shared across Expenses, Warehouse & Equipment Repairs.' })}
+          ${fld('Item Category *', sel('f_item_cat', [
             ['Spare Parts', 'Spare Parts'],
             ['Oils & Lubricants', 'Oils & Lubricants'],
             ['Tools & Garage', 'Tools & Garage'],
@@ -1142,7 +1183,7 @@
     if (fType === 'product') {
       return `
         <div class="form-grid-3">
-          ${fld('Product / Grade Name *', inp('f_product', 'text', '', 'placeholder="e.g. Sand 0-4mm, Gravel 10-20mm"'))}
+          ${fld('Product Name *', inp('f_product', 'text', '', 'placeholder="e.g. Sand 0-4mm, Gravel 10-20mm"'))}
           ${fld('Default Unit (UoM) *', sel('f_uom', uoms, 'm³'))}
           ${fld('Product Type *', sel('f_prodtype', [['Material', 'Material (Aggregate / Concrete / Block)'], ['Fuel', 'Fuel (Diesel)'], ['Lubricant', 'Lubricant / Oil'], ['Service', 'Service / Transport'], ['Part', 'Spare Part']], 'Material'))}
           ${fld('Ton Conversion Factor (1 m³ = X Tons)', inp('f_tonfactor', 'number', '1.50', 'step="0.01" min="0.1"'))}
@@ -1463,7 +1504,7 @@
       const isCo = fType === 'companyequipment';
       return `
         <div class="form-grid-3">
-          ${secHdr(isCo ? '1. Company Fleet Unit Assignment (BU-Specific)' : '1. Truck / Equipment Identity & Capacity (Universal Registry · All BUs)')}
+          ${secHdr(isCo ? '1. Company Fleet Unit Assignment (BU-Specific)' : '1. Equipment Identity & Capacity (Universal Registry · All BUs)')}
           ${isCo ? companyField : ''}
           ${fld('Unit Code *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="e.g. TB1 or 353387"') + dl('dl_equip', equipNames))}
           ${fld('Plate Number', inp('f_plateno', 'text', '', 'placeholder="e.g. 360676 (optional if entered above)"'))}
@@ -1520,14 +1561,14 @@
             ${companyField}
             ${lockedDateField('Reported Date *')}
             ${collapsibleRepDateField()}
-            ${fld('Equipment / Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select truck, mixer, loader, crusher..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
-            ${fld('Reported By (Driver / Staff)', inp('f_reported_by', 'text', '', 'list="dl_staff_drivers" placeholder="Select driver, operator, or mechanic..."') + dl('dl_staff_drivers', staffAndDrivers))}
-            ${fld('Meter Reading (km / h)', inp('f_meter', 'number', '', 'step="1" min="0" placeholder="Optional km or hours"'))}
+            ${fld('Equipment *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select truck, mixer, loader, crusher..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
+            ${fld('Reported By', inp('f_reported_by', 'text', '', 'list="dl_staff_drivers" placeholder="Select driver, operator, or mechanic..."') + dl('dl_staff_drivers', staffAndDrivers))}
+            ${fld('Meter Reading (km or h)', inp('f_meter', 'number', '', 'step="1" min="0" placeholder="Optional km or hours"'))}
             <div id="qv_truck_defect" class="span-3" style="grid-column:1 / -1"></div>
-            ${secHdr('2. Affected Equipment Part, Warning Label (Mild / Grave) & Status')}
+            ${secHdr('2. Affected Part, Warning Level & Status')}
             ${fld('Affected Subsystem *', sel('f_subsystem', subsystems, 'Engine & Powertrain'))}
             ${fld('Affected Equipment Part *', inp('f_part_name', 'text', '', 'list="dl_part_names" placeholder="e.g. Hydraulic Pump, Alternator, Brake Drum..."') + dl('dl_part_names', partNames), { id: 'wrap_f_part_name' })}
-            ${fld('Warning Label (Mild / Grave) *', sel('f_severity', [
+            ${fld('Warning Level *', sel('f_severity', [
               ['Mild - Monitor & Schedule Repair', 'Mild - Monitor & Schedule Repair'],
               ['Grave - Serious Issue / Do Not Dispatch', 'Grave - Serious Issue / Do Not Dispatch']
             ], 'Mild - Monitor & Schedule Repair'), {
@@ -1542,8 +1583,8 @@
               ['Closed - Inspected OK', 'Closed - Inspected OK']
             ], 'Open - Warning Active'))}
             <div class="form-field check-field" style="grid-column:span 2"><input type="checkbox" id="f_sync_unit_status"><label for="f_sync_unit_status">Flag unit Fleet Status as "Under repair" until resolved</label></div>
-            ${fld('Issue / Warning Description *', inp('f_description', 'text', '', 'placeholder="Describe symptom, leak, noise, warning light, or worn component..."'), { span: true })}
-            ${fld('Notes / Action Plan', inp('f_notes', 'text', '', 'placeholder="Parts to check in warehouse, vendor inspection, or target repair date..."'), { span: true })}
+            ${fld('Issue Description *', inp('f_description', 'text', '', 'placeholder="Describe symptom, leak, noise, warning light, or worn component..."'), { span: true })}
+            ${fld('Action Plan & Notes', inp('f_notes', 'text', '', 'placeholder="Parts to check in warehouse, vendor inspection, or target repair date..."'), { span: true })}
           </div>
           <div class="live-calc">
             <div><small>Warning Level</small><b id="calc_def_health">Mild Warning</b></div>
@@ -1557,14 +1598,14 @@
       return `
         ${adminHeaderHtml}
         <div id="partPreDefectBanner" class="pa-rec-banner info" style="margin-bottom:12px">
-          ${ic('info')} Select an <b>Equipment / Truck</b> unit below to check whether a defect was reported beforehand.
+          ${ic('info')} Select an <b>Equipment</b> unit below to check whether a defect was reported beforehand.
         </div>
         <div class="form-grid-3">
           ${secHdr('1. Unit, Pre-Defect Verification & Part Piece Identity')}
           ${companyField}
           ${lockedDateField('Action Date *')}
           ${collapsibleRepDateField()}
-          ${fld('Equipment / Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select truck, mixer, loader, crusher..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
+          ${fld('Equipment *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select truck, mixer, loader, crusher..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
           ${fld('Prior Reported Defect (Pre-Notification)', sel('f_defect_ref', [['', 'No Prior Defect Report (Emergency / Unnotified Change)']], ''), { id: 'wrap_f_defect_ref', hintId: 'hint_defect_ref', hint: '' })}
           ${fld('Action Type *', sel('f_action_type', [
             ['Part Replaced (Old Removed + New Installed)', 'Part Replaced (Old Removed + New Installed)'],
@@ -1574,11 +1615,11 @@
             ['Used / Scrap Part Sold', 'Used / Scrap Part Sold'],
             ['Part Scrapped / Discarded', 'Part Scrapped / Discarded']
           ], 'Part Replaced (Old Removed + New Installed)'))}
-          ${fld('Part / Piece Name *', inp('f_part_name', 'text', '', 'list="dl_part_names" placeholder="e.g. Dynamo, Starter Motor, Hydraulic Pump..."') + dl('dl_part_names', partNames))}
-          ${fld('Part Code / Serial / Brand', inp('f_part_serial', 'text', '', 'placeholder="Optional OEM / serial / brand"'))}
+          ${fld('Part Name *', inp('f_part_name', 'text', '', 'list="dl_part_names" placeholder="e.g. Dynamo, Starter Motor, Hydraulic Pump..."') + dl('dl_part_names', partNames))}
+          ${fld('Part Code or Brand', inp('f_part_serial', 'text', '', 'placeholder="Optional OEM code, serial, or brand"'))}
           ${fld('Subsystem *', sel('f_subsystem', subsystems, 'Engine & Powertrain'))}
-          ${secHdr('2. Removed / Tracked Piece Custody, Disposition & Financials')}
-          ${fld('Pieces / Qty *', inp('f_qty', 'number', '1', 'step="1" min="1"'))}
+          ${secHdr('2. Piece Custody, Disposition & Financials')}
+          ${fld('Quantity *', inp('f_qty', 'number', '1', 'step="1" min="1"'))}
           ${fld('Piece Condition *', sel('f_condition', [
             ['Repairable / Rebuildable', 'Repairable / Rebuildable'],
             ['Reusable Spare (Working)', 'Reusable Spare (Working)'],
@@ -1586,20 +1627,20 @@
             ['Worn / Scrap Metal', 'Worn / Scrap Metal'],
             ['Damaged / Burnt Out', 'Damaged / Burnt Out']
           ], 'Repairable / Rebuildable'))}
-          ${fld('Piece Custody / Disposition *', sel('f_disposition', [
+          ${fld('Custody Disposition *', sel('f_disposition', [
             ['Stored in Warehouse / Spare Stock', 'Stored in Warehouse / Spare Stock'],
             ['In Maintenance / At Workshop', 'In Maintenance / At Workshop'],
             ['Sold (Used / Scrap)', 'Sold (Used / Scrap)'],
             ['Installed / Mounted on Unit', 'Installed / Mounted on Unit'],
             ['Scrapped / Discarded', 'Scrapped / Discarded']
           ], 'Stored in Warehouse / Spare Stock'))}
-          ${fld('Warehouse Store / Target Unit', inp('f_location', 'text', 'WTC Main Warehouse', 'list="dl_part_locations" placeholder="Select store, site, or target truck..."') + dl('dl_part_locations', partLocations), { id: 'wrap_part_loc', hintId: 'hint_part_loc', hint: '' })}
-          ${fld('Workshop Vendor / Buyer', inp('f_vendor_buyer', 'text', '', 'list="dl_suppliers_buyers" placeholder="Select workshop vendor or scrap buyer..."') + dl('dl_suppliers_buyers', vendorsAndBuyers), { id: 'wrap_part_party', hintId: 'hint_part_party', hint: '' })}
-          ${fld('Supervisor / Approved By', inp('f_approved_by', 'text', '', 'list="dl_staff" placeholder="Select supervisor / approver..."') + dl('dl_staff', staffNames))}
+          ${fld('Target Store or Unit', inp('f_location', 'text', 'WTC Main Warehouse', 'list="dl_part_locations" placeholder="Select store, site, or target truck..."') + dl('dl_part_locations', partLocations), { id: 'wrap_part_loc', hintId: 'hint_part_loc', hint: '' })}
+          ${fld('Workshop or Buyer', inp('f_vendor_buyer', 'text', '', 'list="dl_suppliers_buyers" placeholder="Select workshop vendor or scrap buyer..."') + dl('dl_suppliers_buyers', vendorsAndBuyers), { id: 'wrap_part_party', hintId: 'hint_part_party', hint: '' })}
+          ${fld('Approved By', inp('f_approved_by', 'text', '', 'list="dl_staff" placeholder="Select supervisor or approver..."') + dl('dl_staff', staffNames))}
           ${fld('New Replacement Part Cost ($)', inp('f_new_cost', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_part_newcost' })}
           ${fld('Workshop Rebuild Cost ($)', inp('f_repair_cost', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_part_repcost' })}
-          ${fld('Used / Scrap Sale Proceeds ($)', inp('f_sale_proceeds', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_part_sale' })}
-          <div class="form-field check-field span-3" id="wrap_resolve_defect" hidden><input type="checkbox" id="f_resolve_defect" checked><label for="f_resolve_defect">Mark linked prior defect report as "Resolved — Part Changed"</label></div>
+          ${fld('Scrap Sale Proceeds ($)', inp('f_sale_proceeds', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_part_sale' })}
+          <div class="form-field check-field span-3" id="wrap_resolve_defect" hidden><input type="checkbox" id="f_resolve_defect" checked><label for="f_resolve_defect">Mark linked prior defect report as "Resolved - Part Changed"</label></div>
           ${fld('Notes & Custody Details', inp('f_notes', 'text', '', 'placeholder="Shelf bin, workshop job card #, buyer receipt #, or mounting notes..."'), { span: true })}
         </div>
         <div class="live-calc">
@@ -1726,7 +1767,7 @@
             ['Spare Part Returned', 'Unused / Salvaged Spare Returned (Back to Shelf)'],
             ['Count Surplus (+)', 'Physical Count Surplus (+Found on Shelf)']
           ], 'Existing / Opening Stock'), { id: 'wrap_f_wh_move_type', hintId: 'hint_wh_reason', hint: 'Items already owned on your shelves before or outside supplier bills' })}
-          ${fld('Item / Part Name *', inp('f_item_name', 'text', '', 'list="dl_wh_items_modal" placeholder="Select or type spare part, filter, belt, oil..."') + dlMeta('dl_wh_items_modal', whItemMeta), { id: 'wrap_f_item_name', hintId: 'hint_wh_item', hint: '' })}
+          ${fld('Item Name *', inp('f_item_name', 'text', '', 'list="dl_wh_items_modal" placeholder="Select or type spare part, filter, belt, oil..."') + dlMeta('dl_wh_items_modal', whItemMeta), { id: 'wrap_f_item_name', hintId: 'hint_wh_item', hint: '' })}
           ${fld('Quantity *', inp('f_qty', 'number', '1', 'step="0.01" min="0.01" inputmode="decimal"'), { id: 'wrap_f_qty', hintId: 'hint_qty', hint: 'Defaults to 1' })}
           ${fld('Unit *', sel('f_uom', [['Piece', 'Piece'], ['Set', 'Set'], ['Litre', 'Litre'], ['kg', 'kg'], ['Box', 'Box'], ['m', 'm']], 'Piece'), { id: 'wrap_f_uom', lockField: 'f_uom', lockReason: 'Locked to Unit (UoM) defined on the Items table', hintId: 'hint_wh_uom', hint: 'Locked to Items table when an existing catalog item is selected' })}
           ${fld('Item Category *', sel('f_category', [
@@ -1770,9 +1811,9 @@
           ${companyField}
           ${lockedDateField('Repair Date *')}
           ${collapsibleRepDateField()}
-          ${fld('Equipment / Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select truck, mixer, loader, crusher..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
+          ${fld('Equipment *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select truck, mixer, loader, crusher..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
           ${fld('Subsystem *', sel('f_subsystem', subsystems, 'Engine & Powertrain'))}
-          ${fld('Meter Reading (hrs / km)', inp('f_meter', 'number', '', 'step="1" min="0" placeholder="Optional hours or km"'))}
+          ${fld('Meter Reading (hrs or km)', inp('f_meter', 'number', '', 'step="1" min="0" placeholder="Optional hours or km"'))}
           ${fld('Repair Source *', sel('f_repair_source', [
             ['Warehouse Only', 'Warehouse Only (Deducts Stored Stock)'],
             ['Outside Only', 'Outside Only (External Parts / Workshop)'],
@@ -1797,11 +1838,11 @@
           <div id="repairItemsRowsWrap"></div>
         </div>
         <div class="form-grid-3" style="margin-top:10px">
-          ${secHdr('3. External Workshop / Mechanic Labor & Notes')}
-          ${fld('External Workshop / Mechanic Labor ($)', inp('f_labor_cost', 'number', '0', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_f_labor_cost' })}
-          ${fld('External Workshop / Supplier', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Optional outside workshop or parts vendor..."') + dl('dl_suppliers', supNames), { id: 'wrap_f_supplier' })}
+          ${secHdr('3. External Labor & Notes')}
+          ${fld('External Labor Cost ($)', inp('f_labor_cost', 'number', '0', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_f_labor_cost' })}
+          ${fld('External Workshop', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Optional outside workshop or parts vendor..."') + dl('dl_suppliers', supNames), { id: 'wrap_f_supplier' })}
           ${fld('Repair Status *', sel('f_status', [['Completed', 'Completed'], ['In Progress', 'In Progress / Awaiting Part']], 'Completed'))}
-          ${fld('Work Performed / Notes', inp('f_notes', 'text', '', 'placeholder="Describe repair work performed, mechanic name, or warranty note..."'), { span: true })}
+          ${fld('Work Performed', inp('f_notes', 'text', '', 'placeholder="Describe repair work performed, mechanic name, or warranty note..."'), { span: true })}
         </div>
         <div class="live-calc">
           <div><small>Repair Source</small><b id="calc_rep_src">Warehouse Only</b></div>
@@ -1825,12 +1866,12 @@
         ${adminHeaderHtml}
         <div id="qv_truck_oil" style="margin-bottom:8px"></div>
         <div class="form-grid-3">
-          ${secHdr('1. Equipment Unit & Oil / Preventive Service Entry', 'Track oil changes and next service thresholds by Hours worked, Km driven, or Days elapsed')}
+          ${secHdr('1. Equipment & Preventive Oil Service', 'Track oil changes and next service thresholds by Hours worked, Km driven, or Days elapsed')}
           ${companyField}
           ${lockedDateField('Service Date *')}
           ${collapsibleRepDateField()}
-          ${fld('Equipment / Truck *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select truck, mixer, loader, generator..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
-          ${fld('Oil / Service Type *', sel('f_oil_type', oilTypes, 'Engine Oil 15W-40'), { id: 'wrap_f_oil_type' })}
+          ${fld('Equipment *', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select truck, mixer, loader, generator..."') + dl('dl_equip', equipNames), { id: 'wrap_f_truck', hintId: 'hint_truck', hint: '' })}
+          ${fld('Service Type *', sel('f_oil_type', oilTypes, 'Engine Oil 15W-40'), { id: 'wrap_f_oil_type' })}
           ${fld('Service Action *', sel('f_service_action', [
             ['Full Change', 'Full Oil Change (Resets Schedule)'],
             ['Top-Up', 'Top-Up Only (Keep Schedule)']
@@ -1866,12 +1907,12 @@
     if (fType === 'driver') {
       return `
         <div class="form-grid-3">
-          ${secHdr('1. Driver / Operator Identity & Truck Assignment (Universal Registry · All BUs)')}
+          ${secHdr('1. Driver Identity & Truck Assignment (Universal Registry · All BUs)')}
           ${fld('Driver *', inp('f_driver', 'text', '', 'placeholder="Driver name"'))}
           ${fld('Default Truck Plate', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type truck plate..."') + dl('dl_equip', equipNames))}
           ${fld('Truck Owner', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Auto-filled from Truck Plate (or select truck owner)..."') + dl('dl_suppliers', truckOwnerPool), { id: 'wrap_drv_supplier' })}
           ${fld('Phone', inp('f_phone', 'text', '', 'placeholder="+961 ..."'))}
-          <div class="form-field check-field"><input type="checkbox" id="f_iscompanydriver"><label for="f_iscompanydriver">Company Fleet Driver (WTC / BBC / Lions Payroll)</label></div>
+          <div class="form-field check-field"><input type="checkbox" id="f_iscompanydriver"><label for="f_iscompanydriver">Company Fleet Driver (WTC, BBC &amp; Lions Payroll)</label></div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
         </div>
       `;
@@ -1880,21 +1921,62 @@
     if (fType === 'staff') {
       return `
         <div class="form-grid-3">
-          ${secHdr('1. Staff Identity & Trade (Universal Registry · All BUs)')}
+          ${secHdr('1. Staff Identity (Universal Registry · All BUs)')}
           ${fld('Staff Name *', inp('f_staff', 'text', '', 'placeholder="Full staff member name"'))}
-          ${fld('Default Role / Trade', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type role / trade..."') + dl('dl_roles', roleNames))}
-          ${fld('Worker Category', sel('f_emp_cat', [
-            ['Salaried Staff', 'Salaried Staff'],
-            ['Daily / Freelance', 'Daily / Freelance'],
-            ['Driver / Operator', 'Driver / Operator'],
-            ['Management & Admin', 'Management & Admin']
-          ], 'Salaried Staff'))}
           ${fld('Phone', inp('f_phone', 'text', '', 'placeholder="+961 ..."'))}
-          ${fld('Default Equipment / Unit', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional assigned truck or machine..."') + dl('dl_equip', equipNames))}
-          ${fld('ID / NSSF / Permit #', inp('f_reference', 'text', '', 'placeholder="Civil ID, NSSF or work permit #..."'))}
-          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Skills, shift notes or emergency contact..."'), { span: true })}
+          ${fld('Civil ID or Permit #', inp('f_reference', 'text', '', 'placeholder="Civil ID, NSSF or work permit #..."'))}
+          ${secHdr('2. Initial Role & Equipment Assignment (Logged by Effective Date)', 'Future role, equipment, and contract changes are tracked chronologically in Role & Equipment Log and Employment Contract')}
+          ${fld('Effective Start Date', inp('f_assign_start', 'date', today), { id: 'wrap_staff_assign_start' })}
+          ${fld('Role', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type staff role..."') + dlMeta('dl_roles', roleMetaItems), { id: 'wrap_staff_role', hintId: 'hint_staff_role', hint: '' })}
+          ${frozenRoleCatField('')}
+          ${fld('Assigned Equipment', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional assigned truck or machine..."') + dl('dl_equip', equipNames), { id: 'wrap_staff_truck' })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Skills, shift notes or emergency contact..."'), { span2: true })}
         </div>
         <div class="calc-strip" id="staffUnivContextStrip" hidden></div>
+      `;
+    }
+
+    if (fType === 'staffrole') {
+      return `
+        <div class="form-grid-3">
+          ${secHdr('1. Staff Role & Linked Category (Universal Registry · All BUs)', 'Shared across all entities; selecting this Role automatically locks Role Category on staff profiles, logs, and contracts')}
+          ${fld('Role Name *', inp('f_role_name', 'text', '', 'placeholder="e.g. Crusher Operator, Fleet Driver, Mechanic..."'), { id: 'wrap_role_name', hintId: 'hint_role_name', hint: '' })}
+          ${fld('Role Category *', inp('f_role_cat', 'text', 'Fleet & Drivers', 'list="dl_role_cats" placeholder="Select or type category..."') + dl('dl_role_cats', roleCatNames), { id: 'wrap_role_cat_master', hintId: 'hint_role_cat', hint: 'Automatically fills and locks Role Category whenever this Role is selected' })}
+          ${fld('Default Pay Basis *', sel('f_role_pay_basis', [['Monthly', 'Monthly Salary'], ['Daily', 'Daily Rate']], 'Monthly'), { id: 'wrap_role_pay_basis' })}
+          ${fld('Operates Equipment', sel('f_role_uses_equip', [['No', 'No'], ['Yes', 'Yes (Truck or Machine)']], 'No'), { id: 'wrap_role_uses_equip' })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Responsibilities, shift scope, or licensing notes..."'), { span2: true })}
+        </div>
+        <div class="calc-strip" id="staffRoleUnivContextStrip" hidden></div>
+        <div class="live-calc" id="staffRoleLiveCalc">
+          <div><small>Registry Scope</small><b id="calc_srole_scope">All BUs (Universal)</b></div>
+          <div><small>Linked Category</small><b id="calc_srole_cat">Fleet &amp; Drivers</b></div>
+          <div><small>Default Pay Basis</small><b id="calc_srole_pay">Monthly</b></div>
+          <div><small>Operates Equipment</small><b id="calc_srole_eq">No</b></div>
+        </div>
+      `;
+    }
+
+    if (fType === 'staffassignment') {
+      return `
+        ${adminHeaderHtml}
+        <div class="form-grid-3">
+          ${secHdr('1. Effective-Dated Role & Equipment Assignment', 'Logs role and machine changes over time; prior Open assignment closes automatically on Start Date minus 1 day')}
+          ${companyField}
+          ${fld('Start Date *', inp('f_date', 'date', today), { id: 'wrap_sa_startdate', hintId: 'hint_sa_dates', hint: '' })}
+          ${fld('End Date (Blank = Open)', inp('f_enddate', 'date', ''), { id: 'wrap_sa_enddate' })}
+          ${fld('Staff *', inp('f_staff', 'text', '', 'list="dl_staff" placeholder="Select or type staff..."') + dlMeta('dl_staff', staffMetaItems), { id: 'wrap_sa_staff', hintId: 'hint_sa_staff', hint: '' })}
+          ${fld('Role *', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type role..."') + dlMeta('dl_roles', roleMetaItems), { id: 'wrap_sa_role', hintId: 'hint_sa_role', hint: '' })}
+          ${frozenRoleCatField('')}
+          <div id="staffAssignContextStrip" class="att-contract-strip" hidden></div>
+          ${fld('Assigned Equipment', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional assigned truck, loader, crusher..."') + dl('dl_equip', equipNames), { id: 'wrap_sa_equip' })}
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Reason for role or machine transfer, shift change, or site note..."'), { id: 'wrap_sa_notes', span2: true })}
+        </div>
+        <div class="live-calc" id="staffAssignLiveCalc">
+          <div><small>Prior Assignment</small><b id="calc_sa_prior">Select Staff</b></div>
+          <div><small>Role Category</small><b id="calc_sa_cat">-</b></div>
+          <div><small>Assigned Equipment</small><b id="calc_sa_equip">Unassigned</b></div>
+          <div><small>Effective Window</small><b id="calc_sa_win">Open</b></div>
+        </div>
       `;
     }
 
@@ -2043,20 +2125,21 @@
             ${fld('Start Date *', inp('f_date', 'date', empStartVal, pendSalRow ? 'readonly' : ''), pendSalRow ? { id: 'wrap_f_date', lockField: 'f_date', lockReason: 'Locked to the start date recorded on onboarding' } : { id: 'wrap_f_date' })}
             ${fld('End Date', inp('f_enddate', 'date', empEndVal, pendSalRow ? 'readonly' : ''), pendSalRow ? { id: 'wrap_emp_enddate', lockField: 'f_enddate', lockReason: 'Locked to the end date recorded on onboarding' } : { id: 'wrap_emp_enddate' })}
             ${fld('Staff *', inp('f_staff', 'text', empStaffVal, `list="dl_staff" placeholder="Select or type staff..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_staff', staffMetaItems), pendSalRow ? { id: 'wrap_emp_staff', lockField: 'f_staff', lockReason: 'Locked to the onboarded staff member', hintId: 'hint_emp_staff', hint: '' } : { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
-            ${fld('Role', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dl('dl_roles', roleNames), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
+            ${fld('Role', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_roles', roleMetaItems), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
+            ${frozenRoleCatField(resolveRoleCat(empRoleVal))}
             ${fld('Pay Basis', sel('f_paytype', [['Monthly', 'Monthly'], ['Daily', 'Daily']], empPayVal), pendSalRow ? { id: 'wrap_emp_paytype', lockField: 'f_paytype', lockReason: 'Locked to the pay basis recorded on onboarding' } : { id: 'wrap_emp_paytype' })}
             <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
             <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
             ${fld(amtLbl, amtInputHtml, { id: 'wrap_emp_amount', hintId: 'hint_emp_salary', hint: '', afterHtml: salaryModePillsHtml })}
-            ${fld('Work Days / Mo', inp('f_workdays', 'number', empWorkDaysVal, `step="1" min="1" max="31"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_workdays', lockField: 'f_workdays', lockReason: 'Locked to the contracted schedule recorded on onboarding' } : { id: 'wrap_emp_workdays' })}
-            ${fld('Hours / Day', inp('f_workhours', 'number', empWorkHoursVal, `step="0.5" min="1" max="24"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_workhours', lockField: 'f_workhours', lockReason: 'Locked to the contracted daily hours recorded on onboarding' } : { id: 'wrap_emp_workhours' })}
-            ${fld('Vacation Days / Yr', inp('f_vacdays', 'number', empVacDaysVal, `step="0.5" min="0" max="60"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_vacdays', lockField: 'f_vacdays', lockReason: 'Locked to the annual vacation allowance recorded on onboarding' } : { id: 'wrap_emp_vacdays' })}
+            ${fld('Work Days per Month', inp('f_workdays', 'number', empWorkDaysVal, `step="1" min="1" max="31"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_workdays', lockField: 'f_workdays', lockReason: 'Locked to the contracted schedule recorded on onboarding' } : { id: 'wrap_emp_workdays' })}
+            ${fld('Hours per Day', inp('f_workhours', 'number', empWorkHoursVal, `step="0.5" min="1" max="24"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_workhours', lockField: 'f_workhours', lockReason: 'Locked to the contracted daily hours recorded on onboarding' } : { id: 'wrap_emp_workhours' })}
+            ${fld('Vacation Days per Year', inp('f_vacdays', 'number', empVacDaysVal, `step="0.5" min="0" max="60"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_vacdays', lockField: 'f_vacdays', lockReason: 'Locked to the annual vacation allowance recorded on onboarding' } : { id: 'wrap_emp_vacdays' })}
             ${fld('Notes', inp('f_notes', 'text', empNotesVal, pendSalRow ? 'placeholder="Optional salary agreement note..."' : ''), { span: true })}
           </div>
           <div class="live-calc" id="empLiveCalc">
             <div><small>Contract</small><b id="calc_emp_prior">Select Staff</b></div>
             <div><small>Pay Basis</small><b id="calc_emp_basis">${esc(empPayVal)}</b></div>
-            <div><small>Daily / Hourly</small><b id="calc_emp_rates">—</b></div>
+            <div><small>Daily &amp; Hourly</small><b id="calc_emp_rates">-</b></div>
             <div><small>Monthly Salary</small><b id="calc_emp_total">$0.00</b></div>
           </div>
         `;
@@ -2071,7 +2154,8 @@
           ${fld('Staff *', inp('f_staff', 'text', empStaffVal, `list="dl_staff" placeholder="Select or type staff..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_staff', staffMetaItems), pendSalRow ? { id: 'wrap_emp_staff', lockField: 'f_staff', lockReason: 'Locked to the onboarded worker', hintId: 'hint_emp_staff', hint: '' } : { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
           <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
           <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
-          ${fld('Role', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dl('dl_roles', roleNames), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
+          ${fld('Role', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_roles', roleMetaItems), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
+          ${frozenRoleCatField(resolveRoleCat(empRoleVal))}
           ${fld('Pay Basis', sel('f_paytype', [['Daily', 'Daily'], ['Lump Sum', 'Lump Sum']], empPayVal), pendSalRow ? { id: 'wrap_emp_paytype', lockField: 'f_paytype', lockReason: 'Locked to the pay basis recorded on onboarding' } : { id: 'wrap_emp_paytype' })}
           ${fld(amtLbl, amtInputHtml, { id: 'wrap_emp_amount', hintId: 'hint_emp_salary', hint: '', afterHtml: salaryModePillsHtml })}
           ${fld('Notes', inp('f_notes', 'text', empNotesVal, pendSalRow ? 'placeholder="Optional rate agreement note..."' : ''), { span: true })}
@@ -2079,7 +2163,7 @@
         <div class="live-calc" id="empLiveCalc">
           <div><small>Status</small><b id="calc_emp_prior">Select Staff</b></div>
           <div><small>Pay Basis</small><b id="calc_emp_basis">${esc(empPayVal)}</b></div>
-          <div><small>Daily / Hourly</small><b id="calc_emp_rates">—</b></div>
+          <div><small>Daily &amp; Hourly</small><b id="calc_emp_rates">-</b></div>
           <div><small>Amount</small><b id="calc_emp_total">$0.00</b></div>
         </div>
       `;
@@ -2164,7 +2248,7 @@
           ${companyField}
           ${lockedDateField('Transaction Date *')}
           ${collapsibleRepDateField()}
-          ${fld('Stakeholder / Counterparty *', inp('f_counterparty', 'text', '', 'list="dl_ext_parties" placeholder="Select or type stakeholder or entity..."') + dl('dl_ext_parties', externalPartyNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
+          ${fld('Counterparty *', inp('f_counterparty', 'text', '', 'list="dl_ext_parties" placeholder="Select or type stakeholder or entity..."') + dl('dl_ext_parties', externalPartyNames), { id: 'wrap_tr_cp', hintId: 'hint_tr_cp', hint: '' })}
           <div id="trLiveContextStrip" class="att-contract-strip" hidden></div>
           ${fld('Cash Direction *', sel('f_direction', [['Inflow', 'Cash Inflow (Received)'], ['Outflow', 'Cash Outflow (Paid)']], 'Inflow'), { id: 'wrap_tr_dir' })}
           ${fld('Entry Kind *', sel('f_ext_kind', [['External', 'External (Partner / Sister Co.)'], ['Extended', 'Extended (Reserve / Special)']], 'External'), { id: 'wrap_ext_kind' })}
@@ -2336,11 +2420,11 @@
           ${companyField}
           ${fld('Start Date *', inp('f_date', 'date', today), { id: 'wrap_recur_start', hintId: 'hint_recur_dates', hint: '' })}
           ${fld('End Date (Blank = Open)', inp('f_enddate', 'date', ''), { id: 'wrap_recur_end' })}
-          ${fld('Supplier / Vendor *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_f_supplier', hintId: 'hint_supplier', hint: '' })}
+          ${fld('Supplier *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), { id: 'wrap_f_supplier', hintId: 'hint_supplier', hint: '' })}
           ${fld('Category *', inp('f_category', 'text', '', 'list="dl_categories" placeholder="Select or type category..."') + dl('dl_categories', expCats), { id: 'wrap_f_category' })}
           ${fld('Subcategory', inp('f_subcategory', 'text', '', 'list="dl_subcats" placeholder="Select or type subcategory..."') + dl('dl_subcats', expSubcats), { id: 'wrap_f_subcategory', hintId: 'hint_subcat', hint: '' })}
           <div id="recurContextStrip" class="att-contract-strip" hidden></div>
-          ${fld('Recurring Item / Purpose *', inp('f_item_purpose', 'text', '', 'list="dl_recur_purposes" placeholder="e.g. Rent, Internet, Security, Tips, Telephone..."') + dl('dl_recur_purposes', purposeHints), { id: 'wrap_f_item_purpose' })}
+          ${fld('Recurring Item *', inp('f_item_purpose', 'text', '', 'list="dl_recur_purposes" placeholder="e.g. Rent, Internet, Security, Tips, Telephone..."') + dl('dl_recur_purposes', purposeHints), { id: 'wrap_f_item_purpose' })}
           ${fld('Billing Cycle *', sel('f_frequency', [['Monthly', 'Monthly'], ['Quarterly', 'Quarterly'], ['Annual', 'Annual'], ['Weekly', 'Weekly']], 'Monthly'), { id: 'wrap_f_frequency' })}
           ${fld('Equipment (Optional)', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="None (Plant / General Overhead)"') + dl('dl_equip', equipNames), { id: 'wrap_f_truck' })}
           ${fld('USD Amount ($ / cycle)', inp('f_usd', 'number', '', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_recur_usd' })}
@@ -2389,7 +2473,7 @@
           ${companyField}
           ${lockedDateField('Transaction Date *')}
           ${collapsibleRepDateField()}
-          ${fld('Item / Material *', inp('f_malf_item', 'text', 'Diesel', 'list="dl_malf_items" placeholder="Select fuel, lubricant, grease, part, or aggregate..."') + dlMeta('dl_malf_items', malfMetaItems), { id: 'wrap_malf_item', hintId: 'hint_malf_item', hint: 'Fuel & Diesel · Bulk Plant Tank (L)' })}
+          ${fld('Material or Item *', inp('f_malf_item', 'text', 'Diesel', 'list="dl_malf_items" placeholder="Select fuel, lubricant, grease, part, or aggregate..."') + dlMeta('dl_malf_items', malfMetaItems), { id: 'wrap_malf_item', hintId: 'hint_malf_item', hint: 'Fuel & Diesel · Bulk Plant Tank (L)' })}
           ${fld('Discrepancy Type *', sel('f_disctype', [
             ['Malfunction', 'Malfunction (Meter / Physical Variance)'],
             ['Leakage / Spill', 'Leakage / Spill (Hose, Seal or Drum Loss)'],
@@ -2412,9 +2496,9 @@
             ['Truck', 'Truck Loads (Truck)']
           ], 'L'), { id: 'wrap_malf_uom', lockField: 'f_malf_uom', lockReason: 'Locked to catalog item UoM; unlocks automatically for custom items', hintId: 'hint_malf_uom', hint: 'Locked to item UoM' })}
           <div class="pa-form-sec-hdr" id="sec_malf_wash" hidden><span id="lbl_sec_malf_wash">2. Reference, Equipment &amp; Operator</span></div>
-          ${fld('Ticket / Slip No.', inp('f_ticketno', 'text', '', 'placeholder="Optional slip, voucher, or ticket #..."'), { id: 'wrap_malf_ticketno', hidden: true })}
-          ${fld('Equipment / Unit', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional leaking or serviced unit..."') + dl('dl_equip', equipNames), { id: 'wrap_malf_truck', hidden: true })}
-          ${fld('Driver / Operator', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Optional driver or mechanic..."') + dl('dl_drivers', driverNames), { id: 'wrap_malf_driver', hidden: true })}
+          ${fld('Ticket No.', inp('f_ticketno', 'text', '', 'placeholder="Optional slip, voucher, or ticket #..."'), { id: 'wrap_malf_ticketno', hidden: true })}
+          ${fld('Equipment', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional leaking or serviced unit..."') + dl('dl_equip', equipNames), { id: 'wrap_malf_truck', hidden: true })}
+          ${fld('Driver', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Optional driver or mechanic..."') + dl('dl_drivers', driverNames), { id: 'wrap_malf_driver', hidden: true })}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Explain variance, leak source, dip calibration, or count note..."'), { id: 'wrap_malf_notes', span: true })}
         </div>
         <div id="malfLiveAlertBanner" class="att-contract-strip" hidden></div>
