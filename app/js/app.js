@@ -59766,13 +59766,27 @@
       'ex-mvzb8dij-iq1mlo', 'ex-mvzb7xdr-9lhiti', 'ex-mvzb5yen-s165jx', 'ex-mvzb5ir2-j0rj77', 'ex-mw0f1487-23sg60', 'ex-mw0exj0l-4f5rdc', 'ex-mw0m3lrk-imaw52', 'ex-mw0m2pk8-2001vm',
       'ex-mw0klyfg-svlzz1', 'ex-mw0mepa3-by7h2n', 'ex-mw0opjxl-z18d72', 'ex-mw0obebc-sl9p1w', 'ex-mw0ozuoq-0vz5sf', 'ex-mw0r9ql9-f94234', 'tr-mvz6b2ok-z5yovb', 'tr-mvw72ink-ycj73w'
     ]);
+    const absorbedTopup20261104Ids = new Set([
+      'sa-mw1tpxlt-g75cta', 'sa-mw1tp1zs-x37ibf', 'sa-mw1to6l0-l2x8yg', 'sa-mw1tkibt-mwh8rq', 'sa-mw1thhze-rllmdi', 'sa-mw1tgjvl-mitm5o', 'sa-mw1tfoic-qw4m5u', 'sa-mw1teqyi-cich4z',
+      'sa-mw1tcju6-687254', 'sa-mw1tbj1p-jtluke', 'sa-mw1t8s63-3mz13o', 'sa-mw1t894t-csww9l', 'sa-mw1t5v80-bnktao', 'sa-mw1z462x-xlnwh7', 'ra-mw1t7rrb-ase423', 'ra-mw1t9lxp-6zhwk8',
+      'ra-mw1tjlfs-1qg7qy', 'ra-mw1tigty-ksd5vp', 'ra-mw1tl4av-nr9p71', 'ra-mw1tkdti-co28mz', 'ra-mw1w3lwh-8elcj7', 'ra-mw1w2kap-idjrql', 'ra-mw1w1le6-hh8hxb', 'ra-mw1w0hz2-m1o409',
+      'ra-mw1vzkek-n3st5v', 'ra-mw1vyngb-6tti4e', 'ra-mw1vxbof-7zc9jr', 'ra-mw1vw6jz-c2gew4', 'ra-mw1vvdc7-9ushes', 'ra-mw1vtuh7-0lcyzd', 'ra-mw1vs5ij-mxo8iw', 'ra-mw1vqrs7-oe1488',
+      'ra-mw1vpbu2-b5udc8', 'ra-mw1wzl5d-d6ue29', 'ra-mw1wypls-z81ya8', 'ra-mw1wq306-l37hr1', 're-mw239xed-f1g1a4', 'fu-mw2482z4-xs3fcs', 'fu-mw247erl-cy5mcw', 'fu-mw246ygr-86fomg',
+      'fu-mw246ed7-xaogq9', 'fu-mw245q0e-jkun9v', 'fu-mw245cg6-ckxsx6', 'fu-mw244mks-lzlnca', 'fu-mw24482u-0f7az0', 'fu-mw243kph-nj6mpc', 'fu-mw242v0x-77hakr', 'fu-mw2429s8-c1skcv',
+      'fu-mw241pyo-pqc2xw', 'fu-mw240zs0-qeawi5', 'ex-mw1y3rnq-et00m9', 'ex-mw1z6moi-t3rcvh', 'ex-mw26vi74-xn4gu0', 'ex-mw26ts03-pi06l3', 'ei-mw1y3roz-l4dwce', 'ei-mw24lueo-ormtt5',
+      'ei-mw26vi75-hm4bqe', 'ei-mw26ts06-2rheoz', 'eq-mw1umqbt-xplmmx', 'eq-mw1te0xl-eun6ub', 'sa-mw26n7mx-uyaq3b', 'at-mw2612ht-6nf801', 'at-mw25zhd9-hexjw5', 'at-mw25y59s-eezj7c',
+      'at-mw2652ts-s7o1ly', 'at-mw26414z-w9xhv9', 'ex-mw1xznvy-46g622', 'ex-mw1xyo9h-e5hd9j', 'ex-mw20t151-twzrpx', 'ex-mw20urbw-93ve9p', 'ex-mw20u7tk-uj1nrh', 'ex-mw23d6sc-xw35ji',
+      'ex-mw26od15-f1gzcr', 'ex-mw26m71h-z3z7bm'
+    ]);
     const bakedUuidOverrideIds = new Set([
       '93d121e7-a3ae-f111-aaab-7ced8d71a5fc',
       '78d021e7-a3ae-f111-aaab-7ced8d71a5fc',
       'ce93e6cc-41a8-f111-aaab-6045bde141dc',
+      'd7d021e7-a3ae-f111-aaab-7ced8d71a5fc',
       '84671f72-40a8-f111-aaab-70a8a52b3dd4',
       'b019258a-40a8-f111-aaab-70a8a52b3dd4',
-      '500b1d9c-40a8-f111-aaab-70a8a52b3dd4'
+      '500b1d9c-40a8-f111-aaab-70a8a52b3dd4',
+      'ex5-i1'
     ]);
     Object.keys(STATE.customRecords || {}).forEach(k => {
       const arr = STATE.customRecords && STATE.customRecords[k];
@@ -59790,12 +59804,18 @@
           r.voided_at = '2026-11-03T19:24:00Z';
           removedAny = true;
         }
+        if (r && !r.voided && absorbedTopup20261104Ids.has(rid)) {
+          r.voided = true;
+          r.voided_by = 'system-topup-20261104';
+          r.voided_at = '2026-11-04T15:11:48Z';
+          removedAny = true;
+        }
         filtered.push(r);
       });
       if (filtered.length !== arr.length) STATE.customRecords[k] = filtered;
     });
     if (SEED._recordsReady) {
-      const posRe = /^(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+$/;
+      const posRe = /^(?:st|rp|fi|ex|exi|oil|rc|sp|sa|at|em|ls|cv|dt)\d+(?:-i\d+)?$/;
       CR_KEYS.forEach(k => {
         const arr = STATE.customRecords && STATE.customRecords[k];
         const seedArr = SEED.records && SEED.records[k];
