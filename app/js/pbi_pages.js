@@ -1504,7 +1504,7 @@
       { id: 'leave', label: 'Absence & Leave', fn: r => Number(r.leave_days || 0) !== 0 || /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(r.type || r.status || '') },
       { id: 'extra', label: 'Extra & Config', fn: r => /^(?:extra|config)/i.test(r.type || r.status || '') }
     ] },
-    { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'working_days', 'working_hours', 'vacation_days', 'overtime_multiplier', 'reimbursement', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['staff_members', 'staff_roles', 'staff_assignments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'pending_salary', label: 'Pending Salary ($0)', fn: r => Boolean(r && !r.voided && r.salary_pending) }, { id: 'freelance', label: 'Freelance & Daily', fn: r => /free|daily/i.test(r.type || '') }] },
+    { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'reimbursement', 'package_usd', 'daily_rate', 'working_days', 'working_hours', 'vacation_days', 'overtime_multiplier', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['staff_members', 'staff_roles', 'staff_assignments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'pending_salary', label: 'Pending Salary ($0)', fn: r => Boolean(r && !r.voided && r.salary_pending) }, { id: 'freelance', label: 'Freelance & Daily', fn: r => /free|daily/i.test(r.type || '') }] },
     { key: 'staff_assignments', group: '4 · Payroll, Attendance & Workforce', navView: 'payroll_contracts', label: 'Staff Role & Equipment Log', singularLabel: 'Role & Equipment Assignment', dvn: 'bhf_staffassignment', form: 'staffassignment', chronoSeries: true, seriesKeys: ['staff'], cols: ['name', 'company', 'staff', 'role', 'role_category', 'equipment', 'status', 'start_date', 'end_date', 'notes'], relTables: ['staff_members', 'staff_roles', 'employments', 'equipment'], views: [
       { id: 'all', label: 'All Assignments' },
       { id: 'active', label: 'Current Active', fn: r => !r.end_date || String(r.end_date).slice(0, 10) >= localTodayPbi() },
@@ -1560,7 +1560,7 @@
       { id: 'jv', label: 'JV 50/50 Sites', fn: r => resolveSiteCategoryPbi(r) === 'supplier' && Boolean(r.is_jv), cols: ['name', 'region', 'supplier', 'jv_partner', 'jv_share', 'is_jv', 'gps_status', 'active_rules', 'raw_loads'] },
       { id: 'gps', label: 'Verified GPS Pin', fn: r => r.latitude != null && r.longitude != null, cols: ['name', 'site_category', 'region', 'linked_party', 'latitude', 'longitude', 'raw_loads', 'sales_loads'] }
     ] },
-    { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region', dvn: 'bhf_region', form: 'region', cols: ['name', 'code', 'zone_shape', 'distance_km', 'sites_count', 'overtime_rate', 'sales_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
+    { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region', dvn: 'bhf_region', form: 'region', cols: ['name', 'sites_count', 'corridor', 'zone_shape', 'distance_km', 'overtime_rate', 'total_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
     { key: 'equipment', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', singularLabel: 'Equipment', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
     { key: 'drivers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', singularLabel: 'Driver', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] },
     { key: 'staff_members', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_staff', label: 'Staff Members', singularLabel: 'Staff Member', dvn: 'bhf_staffmember', form: 'staff', cols: ['name', 'role', 'role_category', 'default_equipment', 'companies_list', 'contracts_count', 'active_salary_usd', 'salary_status', 'attendance_days', 'total_paid', 'phone'], relTables: ['staff_roles', 'staff_assignments', 'employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'loans'], views: [
@@ -1834,6 +1834,7 @@
       case 'sites':
         return { key: vw === 'delivery' ? 'sales_loads' : 'raw_loads', dir: 'desc' };
       case 'regions':
+        return { key: 'sites_count', dir: 'desc' };
       case 'product_types':
         return { key: 'sales_loads', dir: 'desc' };
       case 'products':
@@ -1901,7 +1902,7 @@
     }
     const rec = (SEED && SEED.records) || {};
     const tr = (SEED && SEED._tableRev) || {};
-    const stamp = `${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.staff_roles || []).length}:${(rec.staff_assignments || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.staff_roles||0}:${tr.staff_assignments||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
+    const stamp = `${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.staff_roles || []).length}:${(rec.staff_assignments || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.regions || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.regions||0}:${tr.overtime_rates||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.staff_roles||0}:${tr.staff_assignments||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
     if (_hubRelCache && _hubRelStamp === stamp) return _hubRelCache;
     _hubRelStamp = stamp;
     const rel = {
@@ -1942,7 +1943,7 @@
     const initType = () => ({ products_count: 0, sales_loads: 0 });
     const initUom = () => ({ products_count: 0, tickets_count: 0 });
     const initSite = () => ({ active_rules: 0, sales_loads: 0, raw_loads: 0 });
-    const initReg = () => ({ sites_count: 0, overtime_rate: null, sales_loads: 0 });
+    const initReg = () => ({ sites_count: 0, sites: [], overtime_rate: null, sales_loads: 0, raw_loads: 0, total_loads: 0 });
     const initEquip = () => ({ companies: new Set(), loads_hauled: 0, fuel_fills: 0 });
     const initDrv = () => ({ trucks: new Set(), companies: new Set(), loads_hauled: 0, fuel_fills: 0 });
     const initCat = () => ({ subcategories_count: 0, expenses_count: 0, total_spent: 0 });
@@ -2149,14 +2150,19 @@
     });
 
     const siteRegMap = {};
-    (rec.regions || []).forEach(rg => { ensure(rel.regByName, rg.name, initReg); });
+    (rec.regions || []).forEach(rg => { if (rg && !rg.voided) ensure(rel.regByName, rg.name, initReg); });
     (rec.sites || []).forEach(s => {
+      if (!s || s.voided) return;
       const sCat = resolveSiteCategoryPbi(s);
       ensure(rel.siteByName, s.name, initSite);
       ensureSiteCat(sCat, s.name);
-      if (s.name && s.region) siteRegMap[norm(s.name)] = s.region;
-      const re = ensure(rel.regByName, s.region, initReg);
-      if (re) re.sites_count++;
+      const effReg = s.region || s.geo_zone || '';
+      if (s.name && effReg) siteRegMap[norm(s.name)] = effReg;
+      const re = ensure(rel.regByName, effReg, initReg);
+      if (re) {
+        re.sites_count++;
+        re.sites.push(s);
+      }
       if (sCat === 'supplier' && s.supplier) {
         const se = ensure(rel.suppByName, s.supplier, initSupp);
         if (se) { se.is_quarry = true; if (s.name) se.sites.add(s.name); }
@@ -2254,7 +2260,7 @@
         const sReg = siteRegMap[sNorm];
         if (sReg) {
           const re = ensure(rel.regByName, sReg, initReg);
-          if (re) re.sales_loads++;
+          if (re) { re.sales_loads++; re.total_loads++; }
         }
       }
       const ee = ensure(rel.equipByName, t.truck, initEquip);
@@ -2284,6 +2290,11 @@
         const ck = `supplier|${sNorm}`;
         const ss = rel.siteByCatKey[ck] || (rel.siteByCatKey[ck] = { active_rules: 0, sales_loads: 0, raw_loads: 0 });
         ss.raw_loads++;
+        const rReg = t.region || siteRegMap[sNorm] || '';
+        if (rReg) {
+          const re = ensure(rel.regByName, rReg, initReg);
+          if (re) { re.raw_loads++; re.total_loads++; }
+        }
       }
       const ee = ensure(rel.equipByName, t.truck, initEquip);
       if (ee) { ee.loads_hauled++; if (t.company) ee.companies.add(t.company); }
@@ -2437,10 +2448,15 @@
         st.active_contracts_count++;
         if (emp.salary_pending) st.has_pending_salary = true;
         if (/free|daily/i.test(String(emp.type || emp.pay_type || ''))) st.has_daily_contract = true;
-        const mUsd = (window.MFG_FX && typeof window.MFG_FX.contractMonthlyUsd === 'function')
+        const mBaseUsd = (window.MFG_FX && typeof window.MFG_FX.contractMonthlyUsd === 'function')
           ? Number(window.MFG_FX.contractMonthlyUsd(emp) || 0)
           : Number(emp.salary_usd || emp.daily_rate || emp.amount || 0);
-        st.active_salary_usd = round2(st.active_salary_usd + mUsd);
+        const mReimbUsd = (window.MFG_FX && typeof window.MFG_FX.contractReimbUsd === 'function')
+          ? Number(window.MFG_FX.contractReimbUsd(emp) || 0)
+          : Number(emp.reimbursement || 0);
+        st.active_base_usd = round2((st.active_base_usd || 0) + mBaseUsd);
+        st.active_reimb_usd = round2((st.active_reimb_usd || 0) + mReimbUsd);
+        st.active_salary_usd = round2(st.active_salary_usd + mBaseUsd + mReimbUsd);
       }
       if (/driver|operat|loader|excavat|crusher|truck/i.test(String(emp.role || ''))) st.is_driver_op = true;
     });
@@ -2654,6 +2670,7 @@
     if (tableKey === 'employments' && window.MFG_FX) {
       if (c === 'salary_usd' && typeof window.MFG_FX.contractMonthlyUsd === 'function') return window.MFG_FX.contractMonthlyUsd(r);
       if (c === 'reimbursement' && typeof window.MFG_FX.contractReimbUsd === 'function') return window.MFG_FX.contractReimbUsd(r);
+      if (c === 'package_usd' && typeof window.MFG_FX.contractPackageUsd === 'function') return window.MFG_FX.contractPackageUsd(r);
       if (c === 'deduction' && typeof window.MFG_FX.contractDedUsd === 'function') return window.MFG_FX.contractDedUsd(r);
     }
     if (tableKey === 'logistics_allowances' && c === 'daily_usd' && window.MFG_FX && typeof window.MFG_FX.siteDailyUsd === 'function') {
@@ -2665,6 +2682,7 @@
     }
     if (tableKey === 'sites') {
       const sCat = resolveSiteCategoryPbi(r);
+      if (c === 'region') return r.region || r.geo_zone || null;
       if (c === 'site_category') return sCat === 'customer' ? 'Customer Delivery Site' : 'Supplier / Quarry Site';
       if (c === 'linked_party') return sCat === 'customer' ? (r.customer || null) : (r.supplier || null);
       if (c === 'supplier') return sCat === 'supplier' ? (r.supplier || null) : null;
@@ -2672,6 +2690,11 @@
       if (c === 'is_jv') return sCat === 'supplier' ? Boolean(r.is_jv) : false;
       if (c === 'jv_partner') return (sCat === 'supplier' && r.is_jv) ? (r.jv_partner || 'Assaf') : null;
       if (c === 'jv_share') return (sCat === 'supplier' && r.is_jv) ? `${Number(r.jv_share) > 0 ? Number(r.jv_share) : 50}%` : null;
+    }
+    if (tableKey === 'regions' && c === 'corridor') {
+      return (window.MFG_GEO && typeof window.MFG_GEO.corridorLabel === 'function' && r.corridor)
+        ? window.MFG_GEO.corridorLabel(r.corridor)
+        : (r.corridor || null);
     }
     if (tableKey === 'expense_items') {
       if (c === 'expense_ref') return r.expense_ref || r.expense_id || r.name || null;
@@ -7101,7 +7124,9 @@
       const totRecAbsDays = staffPayrollRows.reduce((a, r) => a + (r.rec_absent_days != null ? r.rec_absent_days : r.absent_days), 0);
       const totAbsDays = staffPayrollRows.reduce((a, r) => a + r.absent_days, 0);
       const totAbsDed = staffPayrollRows.reduce((a, r) => a + r.abs_ded, 0);
-      const totExtrasReimb = staffPayrollRows.reduce((a, r) => a + (r.extras || 0) + (r.reimb || 0), 0);
+      const totReimb = staffPayrollRows.reduce((a, r) => a + (r.reimb || 0), 0);
+      const totExtras = staffPayrollRows.reduce((a, r) => a + (r.extras || 0), 0);
+      const totExtrasReimb = totReimb + totExtras;
       const totDed = staffPayrollRows.reduce((a, r) => a + r.ded, 0);
       const totSiteAcc = staffPayrollRows.reduce((a, r) => a + r.site_allow, 0);
       const totSitePaid = staffPayrollRows.reduce((a, r) => a + r.site_paid, 0);
@@ -7154,10 +7179,10 @@
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Payroll Earnings, Base Salaries, Overtime & Disbursements', [
             { label: 'Staff on payroll', value: fmtNum(staffPayrollRows.length), sub: fmtNum(empRows.length) + ' employment contracts' },
-            { label: 'Base salaries', value: fmtUSD(totBase, 0), sub: 'Contracted monthly + daily base' },
+            { label: 'Base & transp. reimb.', value: fmtUSD(totBase + totReimb, 0), sub: `Base ${fmtUSD(totBase, 0)} + Reimb. ${fmtUSD(totReimb, 0)}` },
             { label: 'Overtime pay', value: fmtUSD(totOtPay, 0), sub: `Shift ${fmtUSD(totAttOtPay, 0)} + Driver ${fmtUSD(totTripOtPay, 0)}` },
             { label: 'Site transport', value: fmtUSD(totSiteAcc, 0), sub: 'Included inside Earnings' },
-            { label: 'Total earnings', value: fmtUSD(totEarn, 0), sub: 'Base + OT + Site Transport - Ded', tone: 'brass' },
+            { label: 'Total earnings', value: fmtUSD(totEarn, 0), sub: 'Base + Reimb + OT + Site - Ded', tone: 'brass' },
             { label: 'Paid (for period)', value: fmtUSD(totStaffPaid, 0), sub: `Advances after cutoff: ${fmtUSD(totAdvances, 0)}`, tone: 'good' }
           ])}
           ${kpiBand('2 · Remaining Payment, Advances, Hours & Contract Hygiene', [
@@ -7205,17 +7230,18 @@
           })}
         </div>
 
-        <!-- Full-width 17-column Payroll by staff member table -->
+        <!-- Full-width 18-column Payroll by staff member table -->
         <div class="pbi-grid-1">
-          ${pbiTable('Payroll by staff member · base, shift OT, driver OT, site transport, deductions, earnings, paid, remaining & advances', [
+          ${pbiTable('Payroll by staff member · base, transp./reimb., shift OT, driver OT, site transport, deductions, earnings, paid, remaining & advances', [
             { label: 'Staff', key: 'staff', bold: true },
             { label: 'Co.', key: 'company' },
             { label: 'Base', key: 'base', r: true, fmt: v => fmtUSD(v, 0) },
+            { label: 'Reimb.', key: 'reimb', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
             { label: 'OT hrs', key: 'ot_hrs', r: true, fmt: v => fmtNum(v, 1) },
             { label: 'Shift OT', key: 'att_ot_pay', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
             { label: 'Driver OT', key: 'trip_ot_pay', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
             { label: 'Site transp.', key: 'site_allow', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
-            { label: 'Extras/Reimb', key: 'extras', r: true, fmt: (_, r) => ((r.extras || 0) + (r.reimb || 0)) ? fmtUSD((r.extras || 0) + (r.reimb || 0), 0) : '-' },
+            { label: 'Extras', key: 'extras', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
             { label: 'Late hrs', key: 'late_hrs', r: true, fmt: v => fmtNum(v, 1) },
             { label: 'Lateness', key: 'late_ded', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' },
             { label: 'Absent Days', key: 'rec_absent_days', r: true, fmt: v => fmtNum(v, 0) },
@@ -7226,17 +7252,18 @@
             { label: 'Rem. ($)', key: 'balance', r: true, negRed: true, fmt: v => `<b>${fmtUSD(v, 2)}</b>` },
             { label: 'Advances', key: 'advances', r: true, fmt: v => v ? fmtUSD(v, 0) : '-' }
           ], staffPayrollRows, {
-            subtitle: 'Site transport & driver night-trip overtime are included inside Earnings · Post-cutoff payouts appear in Advances',
+            subtitle: 'Contract transportation/reimbursement, site transport & driver night-trip overtime are included inside Earnings · Post-cutoff payouts appear in Advances',
             rowAmber: r => !r.is_active,
             unitLabel: 'staff',
             foot: [
               { v: `Total (${staffPayrollRows.length} staff)`, span: 2 },
               { v: fmtUSD(totBase, 0), r: true },
+              { v: totReimb ? fmtUSD(totReimb, 0) : '-', r: true },
               { v: fmtNum(totOtHrs, 1), r: true },
               { v: fmtUSD(totAttOtPay, 0), r: true },
               { v: fmtUSD(totTripOtPay, 0), r: true },
               { v: fmtUSD(totSiteAcc, 0), r: true },
-              { v: totExtrasReimb ? fmtUSD(totExtrasReimb, 0) : '-', r: true },
+              { v: totExtras ? fmtUSD(totExtras, 0) : '-', r: true },
               { v: fmtNum(totLateHrs, 1), r: true },
               { v: totLateDed ? fmtUSD(totLateDed, 0) : '-', r: true },
               { v: fmtNum(totRecAbsDays, 0), r: true },
@@ -9377,7 +9404,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
+                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|deduction|balance|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
@@ -9390,7 +9417,7 @@
                     const isSignedUsd = !isBool && !nonNum && c === 'usd_delta';
                     const isSignedLbp = !isBool && !nonNum && c === 'lbp_delta';
                     const isLbp = !isBool && !nonNum && !isSignedLbp && /^lbp_|_lbp$/.test(c);
-                    const isMoney = !isBool && !nonNum && !isLbp && !isSignedLbp && /price|cost|amount|total|vat_amount|limit|salary|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(c) && !/rate$/.test(c);
+                    const isMoney = !isBool && !nonNum && !isLbp && !isSignedLbp && /price|cost|amount|total|vat_amount|limit|salary|reimbursement|package_usd|deduction|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(c) && !/rate$/.test(c);
                     const isNum = !isBool && !nonNum && !isMoney && !isLbp && !isSignedLbp && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
                     let cell = v == null || v === '' ? '—' : (isBool ? (v && v !== 0 ? 'Yes' : 'No') : String(v));
                     if (isSignedUsd && v != null && v !== '') cell = fmtSignedUSD(v, 2);
@@ -9433,13 +9460,13 @@
                     const isSU = !isBoolCol && col === 'usd_delta';
                     const isSL = !isBoolCol && col === 'lbp_delta';
                     const isL = !isBoolCol && !isSL && /^lbp_|_lbp$/.test(col);
-                    const isM = !isBoolCol && !isL && !isSL && /price|cost|amount|total|vat_amount|limit|salary|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(col) && !/rate$/.test(col);
+                    const isM = !isBoolCol && !isL && !isSL && /price|cost|amount|total|vat_amount|limit|salary|reimbursement|package_usd|deduction|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(col) && !/rate$/.test(col);
                     const isN = !isBoolCol && !isM && !isL && !isSL && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(col);
                     return { isM, isN, isL, isSU, isSL, num: isM || isN || isL || isSU || isSL };
                   };
                   const colSpecs = activeCols.map(c => {
                     const spec = isColNumeric(c);
-                    const isAvg = spec.num && c !== 'tank_remaining_litres' && /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
+                    const isAvg = spec.num && c !== 'tank_remaining_litres' && /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days|deduction/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
                     return { c, ...spec, isAvg, sum: 0, cnt: 0 };
                   });
                   let firstNum = colSpecs.findIndex((sp, idx) => idx > 0 && sp.num);
@@ -9508,6 +9535,9 @@
     operates_equipment: 'Operates Equipment',
     default_equipment: 'Assigned Equipment',
     active_salary_usd: 'Active Rate ($)',
+    package_usd: 'Total Monthly ($)',
+    reimbursement: 'Transp. / Reimb. ($)',
+    deduction: 'Absent Ded. ($/d)',
     salary_status: 'Pay Status',
     attendance_days: 'Att. Logs',
     payments_count: 'Pay Vouchers',
@@ -9544,6 +9574,9 @@
     jv_share: 'Partner Share',
     is_jv: 'JV 50/50',
     gps_status: 'GPS Pin',
+    sites_count: 'Sites Inside',
+    corridor: 'Governorate',
+    total_loads: 'Total Loads',
     zone_shape: 'Map Zone',
     distance_km: 'Ref KM (WTC)',
     usd_delta: 'USD Change ($)',
@@ -9613,6 +9646,7 @@
       if (tableKey === 'staff_assignments') return 'Assignment Ref';
       if (tableKey === 'customers') return 'Customer';
       if (tableKey === 'sites') return 'Site';
+      if (tableKey === 'regions') return 'Region';
       if (tableKey === 'products') return 'Product';
       if (tableKey === 'items') return 'Item Name';
     }
@@ -9638,9 +9672,301 @@
     return `<span class="badge ${cls}">${esc(m)}</span>`;
   }
 
+  // ==================== UNIFIED SITES & REGIONS DUAL-TABLE WORKSPACE ====================
+  function renderSitesAndRegionsDualView(ctx, rel) {
+    const { STATE, SEED, filterRecords, sortRows, th, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm } = ctx;
+    const regMeta = TABLE_CATALOG.find(t => t.key === 'regions');
+    const siteMeta = TABLE_CATALOG.find(t => t.key === 'sites');
+    const regCols = (regMeta && regMeta.cols) || ['name', 'sites_count', 'corridor', 'zone_shape', 'distance_km', 'overtime_rate', 'total_loads'];
+    const selReg = (window.MFG_GEO && window.MFG_GEO.STUDIO && window.MFG_GEO.STUDIO.selectedRegion) || '';
+
+    // 1. Regions & Zones Table (#regionsRegPanel)
+    const regRawList = (SEED.records && SEED.records.regions) || [];
+    const regBaseAll = filterRecords(regRawList, { cols: regCols, tableKey: 'regions', ignorePeriod: true, ignoreCompany: true, ignoreRls: true, ignoreSearch: true });
+    const regQ = norm(STATE.regionsSearch || '');
+    const regBase = regQ ? regBaseAll.filter(r => {
+      const rk = norm(r.name);
+      if (rk.includes(regQ)) return true;
+      const gov = norm(cellValue(r, 'corridor', 'regions', rel) || '');
+      if (gov.includes(regQ)) return true;
+      const shape = norm(cellValue(r, 'zone_shape', 'regions', rel) || '');
+      if (shape.includes(regQ)) return true;
+      const re = rel.regByName[rk];
+      return Boolean(re && Array.isArray(re.sites) && re.sites.some(s => norm(s.name).includes(regQ)));
+    }) : regBaseAll;
+    const regRows = sortRows(regBase, 'ureg_regions', 'sites_count', 'desc');
+    const regShown = regRows.slice(0, shownCount('ureg_regions'));
+
+    const renderGenericCell = (r, c, ci, tableKey) => {
+      const v = cellValue(r, c, tableKey, rel);
+      const nonNum = NON_NUMERIC_HUB_COLS.test(c);
+      const isBool = typeof v === 'boolean' || (/^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|iva$|overtime$)/.test(c) && (v === 0 || v === 1));
+      const isMoney = !isBool && !nonNum && /price|cost|amount|total|vat_amount|limit|salary|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate/.test(c) && !/rate$|total_loads/.test(c);
+      const isNum = !isBool && !nonNum && !isMoney && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|_km$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
+      let cell = v == null || v === '' ? '—' : (isBool ? (v && v !== 0 ? 'Yes' : 'No') : String(v));
+      if (isMoney && v != null && v !== '') cell = fmtUSD(v, 2);
+      else if (c === 'distance_km' && v != null && v !== '') cell = fmtNum(v, 1) + ' km';
+      else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
+      else if (/date/.test(c) && v) cell = fmtDateDMY(v);
+
+      const lkTarget = c === 'linked_party'
+        ? (resolveSiteCategoryPbi(r) === 'customer' ? 'customers' : 'suppliers')
+        : HUB_LOOKUP_TARGETS[c];
+      const isLookup = lkTarget && lkTarget !== tableKey && v != null && v !== '' && cell !== '—';
+      const innerHtml = isLookup
+        ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
+        : (formatHubSpecialCellHtml(c, v, cell) || (c === 'site_category' ? formatSiteCategoryHtml(cell) : esc(cell)));
+      return `<td class="${isMoney || isNum ? 'r' : ''}${/date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, tableKey)}` : innerHtml}</td>`;
+    };
+
+    const renderSubTfoot = (rowsArr, colsArr, tableKey) => {
+      const colSpecs = colsArr.map(c => {
+        if (NON_NUMERIC_HUB_COLS.test(c)) return { c, isM: false, isN: false, num: false, isAvg: false, sum: 0, cnt: 0 };
+        const isBoolCol = /^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|iva$|overtime$)/.test(c);
+        const isM = !isBoolCol && /price|cost|amount|total|vat_amount|limit|salary|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate/.test(c) && !/rate$|total_loads/.test(c);
+        const isN = !isBoolCol && !isM && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|_km$|odometer|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
+        const num = isM || isN;
+        const isAvg = num && /price|rate|_km$|factor|pct|percentage|vat_percent|precision|odometer/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent|total_loads)$/.test(c);
+        return { c, isM, isN, num, isAvg, sum: 0, cnt: 0 };
+      });
+      let firstNum = colSpecs.findIndex((sp, idx) => idx > 0 && sp.num);
+      if (firstNum < 0) firstNum = colsArr.length;
+      const leadSpan = Math.max(1, firstNum);
+      const evalCols = colSpecs.slice(leadSpan).filter(sp => sp.num);
+      if (evalCols.length && rowsArr.length) {
+        for (let ri = 0; ri < rowsArr.length; ri++) {
+          const r = rowsArr[ri];
+          for (let ei = 0; ei < evalCols.length; ei++) {
+            const sp = evalCols[ei];
+            const v = cellValue(r, sp.c, tableKey, rel);
+            if (v != null && v !== '' && typeof v !== 'boolean') {
+              const n = Number(v);
+              if (Number.isFinite(n)) { sp.sum += n; sp.cnt++; }
+            }
+          }
+        }
+      }
+      const out = [`<td colspan="${leadSpan}"><b>TOTAL (${fmtNum(rowsArr.length)} RECORDS)</b></td>`];
+      for (let ci = leadSpan; ci < colSpecs.length; ci++) {
+        const { c, isM: isMoney, isN: isNum, isAvg, sum, cnt } = colSpecs[ci];
+        if (!isMoney && !isNum) { out.push(`<td></td>`); continue; }
+        if (!cnt) { out.push(`<td class="r">—</td>`); continue; }
+        const val = isAvg ? (sum / cnt) : sum;
+        const txt = isMoney ? fmtUSD(val, 2) : (c === 'distance_km' ? fmtNum(val, 1) + ' km' : fmtNum(val, 0));
+        out.push(`<td class="r">${isAvg ? '<span class="tfoot-avg-tag">Avg </span>' : ''}<b>${txt}</b></td>`);
+      }
+      return out.join('');
+    };
+
+    // 2. Sites Table (#sitesRegPanel)
+    const siteRawList = (SEED.records && SEED.records.sites) || [];
+    const siteSearchCols = Array.from(new Set(siteMeta.cols.concat(['supplier', 'customer', 'site_category', 'linked_party'])));
+    const allSitesBase = filterRecords(siteRawList, { cols: siteSearchCols, tableKey: 'sites', ignorePeriod: true, ignoreCompany: true, ignoreRls: true });
+    const sitesRegFiltered = selReg === '__unassigned__'
+      ? allSitesBase.filter(s => !norm(s.region || s.geo_zone))
+      : (selReg ? allSitesBase.filter(s => norm(s.region || s.geo_zone) === norm(selReg)) : allSitesBase);
+    const siteViews = siteMeta.views || [{ id: 'all', label: 'All Sites' }];
+    const activeSiteViewId = (STATE.tableViews && STATE.tableViews.sites) || 'all';
+    const activeSiteView = siteViews.find(v => v.id === activeSiteViewId) || siteViews[0];
+    const activeSiteCols = (activeSiteView && Array.isArray(activeSiteView.cols) && activeSiteView.cols.length) ? activeSiteView.cols : siteMeta.cols;
+    const siteViewFiltered = activeSiteView && activeSiteView.fn ? sitesRegFiltered.filter(r => activeSiteView.fn(r, rel)) : sitesRegFiltered;
+    const siteDefSort = getHubTableDefaultSort(siteMeta, activeSiteView.id);
+    const siteRows = sortRows(siteViewFiltered, 'ureg_sites', siteDefSort.key, siteDefSort.dir);
+    const siteShown = siteRows.slice(0, shownCount('ureg_sites'));
+
+    // 3. Summary Analytics Charts
+    const regChartRows = regRows.map(r => {
+      const cnt = Number(cellValue(r, 'sites_count', 'regions', rel) || 0);
+      const lds = Number(cellValue(r, 'total_loads', 'regions', rel) || 0);
+      const gov = cellValue(r, 'corridor', 'regions', rel) || r.zone_shape || 'Region';
+      return { label: r.name, value: cnt, sub: `${gov} · ${fmtNum(lds)} loads` };
+    }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+
+    const siteChartRows = siteRows.map(r => {
+      const lds = Number(cellValue(r, 'sales_loads', 'sites', rel) || 0) + Number(cellValue(r, 'raw_loads', 'sites', rel) || 0);
+      const regLbl = cellValue(r, 'region', 'sites', rel) || 'Unassigned';
+      return { label: r.name, value: lds, sub: regLbl };
+    }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
+
+    return `
+      <div class="panel-card sites-regions-hub" id="univRegPanel">
+        ${window.MFG_GEO && typeof window.MFG_GEO.renderGeoStudioHtml === 'function'
+          ? window.MFG_GEO.renderGeoStudioHtml({ metaKey: 'sites', STATE, SEED, rel })
+          : ''}
+
+        <section class="srh-subpanel" id="regionsRegPanel" aria-label="Regions and Zones Table">
+          <div class="table-toolbar">
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+              <div>
+                <h3 class="panel-title" style="margin:0">Regions &amp; Zones (${fmtNum(regRows.length)})</h3>
+                <div class="srh-subtitle">Click a region's Sites pill to see all member sites inline and filter the Sites table below</div>
+              </div>
+              <input type="search" id="regionsSearchInput" class="search-input" value="${esc(STATE.regionsSearch || '')}" placeholder="Search regions, governorates, or sites..." autocomplete="off">
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              <button type="button" class="btn btn-ghost" id="toggleExpandAllRegionsBtn">${STATE.expandAllRegions ? 'Collapse All Sites' : 'Expand All Sites'}</button>
+              ${exportBtn('regionsRegPanel', 'regions')}
+              ${canEnterForm('region') ? `<button type="button" class="btn btn-primary" data-open-modal="region">+ New Region</button>` : ''}
+            </div>
+          </div>
+          ${typeof ctx.renderColFilterBar === 'function' ? ctx.renderColFilterBar('ureg_regions', regCols) : ''}
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  ${regCols.map(c => th('ureg_regions', hubColLabel(c, 'regions'), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|overtime_rate|_count$|_km$|loads/.test(c) ? 'r' : '')).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${regShown.map(r => {
+                  const rk = norm(r.name);
+                  const re = rel.regByName[rk] || { sites_count: 0, sites: [] };
+                  const memberSites = (re.sites || []).slice().sort((a, b) => {
+                    const sa = rel.siteByName[norm(a.name)] || {};
+                    const sb = rel.siteByName[norm(b.name)] || {};
+                    return ((sb.sales_loads || 0) + (sb.raw_loads || 0)) - ((sa.sales_loads || 0) + (sa.raw_loads || 0));
+                  });
+                  const cnt = memberSites.length;
+                  const explicitExp = Boolean(STATE.expandedRegions && STATE.expandedRegions[rk]);
+                  const isExp = Boolean((STATE.expandAllRegions && cnt > 0) || explicitExp || (selReg && selReg !== '__unassigned__' && norm(selReg) === rk));
+                  const previewNames = memberSites.slice(0, 3).map(ms => ms.name).join(', ');
+                  return `
+                    <tr class="rrow" data-rkey="regions" data-rid="${esc(r.id)}">
+                      ${regCols.map((c, ci) => {
+                        if (c === 'sites_count') {
+                          return `<td class="r">
+                            <div class="reg-sites-cell" style="justify-content:flex-end">
+                              ${cnt > 0 ? `<span class="reg-sites-inline-list">${esc(previewNames)}${cnt > 3 ? ` +${cnt - 3}` : ''}</span>` : ''}
+                              <button type="button" class="reg-sites-expand-pill${isExp ? ' active' : ''}${cnt === 0 ? ' is-zero' : ''}" data-reg-toggle-sites="${esc(r.name)}">${fmtNum(cnt)} ${cnt === 1 ? 'Site' : 'Sites'} ${isExp ? '▴' : '▾'}</button>
+                            </div>
+                          </td>`;
+                        }
+                        return renderGenericCell(r, c, ci, 'regions');
+                      }).join('')}
+                    </tr>
+                    ${isExp ? `
+                      <tr class="reg-expanded-sites-row" data-expanded-region="${esc(r.name)}">
+                        <td colspan="${regCols.length}">
+                          <div class="reg-expanded-sites-box">
+                            <div class="reg-expanded-sites-hdr">
+                              <span>Sites in ${esc(r.name)} (${fmtNum(cnt)})</span>
+                              ${canEnterForm('site') ? `<button type="button" class="btn btn-ghost" style="padding:3px 9px;font-size:0.74rem" data-open-modal="site" data-prefill-region="${esc(r.name)}">+ Add Site in ${esc(r.name)}</button>` : ''}
+                            </div>
+                            ${cnt > 0 ? `
+                              <div class="reg-expanded-sites-grid">
+                                ${memberSites.map(ms => {
+                                  const sCat = resolveSiteCategoryPbi(ms);
+                                  const isJv = sCat === 'supplier' && Boolean(ms.is_jv);
+                                  const catCls = isJv ? 'is-jv' : (sCat === 'customer' ? 'is-cust' : '');
+                                  const catLbl = isJv ? 'JV 50/50' : (sCat === 'customer' ? 'Delivery' : 'Quarry');
+                                  const se = rel.siteByName[norm(ms.name)] || {};
+                                  const sLoads = (se.sales_loads || 0) + (se.raw_loads || 0);
+                                  return `<button type="button" class="reg-exp-site-card" data-exp-inspect-site="${esc(ms.id)}">
+                                    <b>${esc(ms.name)}</b>
+                                    <span class="reg-exp-site-cat ${catCls}">${catLbl}</span>
+                                    ${sLoads > 0 ? `<span class="mono" style="font-size:0.7rem;color:var(--muted)">${fmtNum(sLoads)} loads</span>` : ''}
+                                  </button>`;
+                                }).join('')}
+                              </div>
+                            ` : `<div style="font-size:0.76rem;color:var(--muted)">No sites assigned to ${esc(r.name)} yet. Click "+ Add Site in ${esc(r.name)}" to assign one.</div>`}
+                          </div>
+                        </td>
+                      </tr>
+                    ` : ''}
+                  `;
+                }).join('') || emptyRow(regCols.length, 'No regions match the active search.')}
+                ${showMoreRow('ureg_regions', regRows.length, regCols.length)}
+              </tbody>
+              <tfoot>
+                <tr>${renderSubTfoot(regRows, regCols, 'regions')}</tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+
+        <section class="srh-subpanel" id="sitesRegPanel" aria-label="Sites Table">
+          ${selReg ? `
+            <div class="sites-region-filter-banner" id="sitesRegionFilterBanner">
+              <span><b>${selReg === '__unassigned__' ? 'Filtered to Sites Without Assigned Region' : `Filtered to Region: ${esc(selReg)}`}</b> (${fmtNum(siteRows.length)} of ${fmtNum(allSitesBase.length)} sites)</span>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                ${selReg !== '__unassigned__' && canEnterForm('site') ? `<button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:0.76rem" data-open-modal="site" data-prefill-region="${esc(selReg)}">+ Add Site in ${esc(selReg)}</button>` : ''}
+                <button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:0.76rem" id="clearRegionFilterBtn">Show All ${fmtNum(allSitesBase.length)} Sites</button>
+              </div>
+            </div>
+          ` : ''}
+
+          <div class="pa-hub-rel-strip" style="margin-bottom:10px">
+            <div class="pa-hub-views">
+              <span class="pa-hub-lbl">Views:</span>
+              ${siteViews.map(vw => {
+                const vCnt = vw.fn ? sitesRegFiltered.filter(r => vw.fn(r, rel)).length : sitesRegFiltered.length;
+                return `<button type="button" class="filter-chip ${vw.id === activeSiteView.id ? 'active' : ''}" data-tbl-view="${esc(vw.id)}" data-tbl-key="sites">${esc(vw.label)} <span class="mono" style="opacity:.75">(${fmtNum(vCnt)})</span></button>`;
+              }).join('')}
+            </div>
+          </div>
+
+          <div class="table-toolbar">
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+              <h3 class="panel-title" style="margin:0">Sites (${fmtNum(siteRows.length)})</h3>
+              ${searchBox('Search Sites...')}
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${exportBtn('sitesRegPanel', 'sites')}
+              ${canEnterForm('site') ? `<button type="button" class="btn btn-primary" data-open-modal="site"${selReg && selReg !== '__unassigned__' ? ` data-prefill-region="${esc(selReg)}"` : ''}>+ New Site</button>` : ''}
+            </div>
+          </div>
+          ${typeof ctx.renderColFilterBar === 'function' ? ctx.renderColFilterBar('ureg_sites', activeSiteCols) : ''}
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  ${activeSiteCols.map(c => th('ureg_sites', hubColLabel(c, 'sites'), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|_count$|loads|fills|rules|tickets|^lat|^long/.test(c) ? 'r' : '')).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${siteShown.map(r => `
+                  <tr class="rrow" data-rkey="sites" data-rid="${esc(r.id)}">
+                    ${activeSiteCols.map((c, ci) => renderGenericCell(r, c, ci, 'sites')).join('')}
+                  </tr>
+                `).join('') || emptyRow(activeSiteCols.length, selReg ? 'No sites match the selected region and view filter.' : 'No sites match the active filter.')}
+                ${showMoreRow('ureg_sites', siteRows.length, activeSiteCols.length)}
+              </tbody>
+              <tfoot>
+                <tr>${renderSubTfoot(siteRows, activeSiteCols, 'sites')}</tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      ${(regChartRows.length || siteChartRows.length) ? `
+        <div class="pbi-grid-2" id="univRegChartsRow" style="margin-top:14px">
+          ${pbiPanel('Regions Ranked by Sites Inside', buildHorizontalBarChart(regChartRows, 'label', 'value', v => fmtNum(v, 0) + (v === 1 ? ' site' : ' sites'), {
+            subKey: 'sub',
+            maxItems: 10,
+            color: C.navy
+          }), {
+            subtitle: 'Active operational sites grouped by region across all business units'
+          })}
+          ${pbiPanel('Top Operational Sites by Load Volume', buildHorizontalBarChart(siteChartRows, 'label', 'value', v => fmtNum(v, 0), {
+            subKey: 'sub',
+            maxItems: 10,
+            color: C.brass
+          }), {
+            subtitle: 'Combined quarry intake and customer delivery loads'
+          })}
+        </div>
+      ` : ''}
+    `;
+  }
+
   // ==================== DEDICATED UNIVERSAL REGISTRIES WORKSPACE RENDERER ====================
   function renderUniversalRegistriesView(ctx) {
     const { STATE, SEED, filterRecords, sortRows, th, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm } = ctx;
+    if (STATE && (STATE.view === 'reg_sites' || STATE.view === 'reg_regions')) {
+      const relDual = getHubRelIndex(SEED);
+      return renderSitesAndRegionsDualView(ctx, relDual);
+    }
     const allUniv = TABLE_CATALOG.filter(t => t.universal);
     const permittedUniv = typeof ctx.canAccessTable === 'function' ? allUniv.filter(t => ctx.canAccessTable(t.key)) : allUniv;
     const univPool = permittedUniv.length ? permittedUniv : allUniv;
@@ -11511,11 +11837,18 @@
     const activeEmps = empAll
       .filter(e => e.status !== 'Ended' && !e.salary_pending)
       .map(e => {
-        const mUsd = Number(e.salary_usd != null ? e.salary_usd : (Number(e.usd_amount || 0) + (Number(e.lbp_amount || 0) / fxRate)));
+        const baseUsd = (window.MFG_FX && typeof window.MFG_FX.contractMonthlyUsd === 'function')
+          ? Number(window.MFG_FX.contractMonthlyUsd(e, fxRate) || 0)
+          : Number(e.salary_usd != null ? e.salary_usd : (Number(e.usd_amount || 0) + (Number(e.lbp_amount || 0) / fxRate)));
+        const reimbUsd = (window.MFG_FX && typeof window.MFG_FX.contractReimbUsd === 'function')
+          ? Number(window.MFG_FX.contractReimbUsd(e, fxRate) || 0)
+          : Number(e.reimbursement || 0);
+        const pkgUsd = round2(baseUsd + reimbUsd);
+        const compNote = reimbUsd > 0 ? ` · ${fmtUSD(baseUsd, 0)} + ${fmtUSD(reimbUsd, 0)} reimb.` : '';
         return {
           staff: e.staff || e.name || '—',
-          salary_usd: round2(mUsd),
-          sub: `${e.company || 'WTC'} · ${e.type || 'Staff'} · ${e.working_days || 26}d × ${e.working_hours || 9}h`
+          salary_usd: pkgUsd,
+          sub: `${e.company || 'WTC'} · ${e.type || 'Staff'} · ${e.working_days || 26}d × ${e.working_hours || 9}h${compNote}`
         };
       })
       .filter(e => e.salary_usd > 0)
@@ -11532,12 +11865,12 @@
       .slice(0, 10);
     return `
       <div class="pbi-grid-2" id="contractsChartsRow" style="margin-bottom:14px">
-        ${pbiPanel('Monthly Base Compensation by Staff Contract ($)', buildHorizontalBarChart(activeEmps, 'staff', 'salary_usd', v => fmtUSD(v, 0), {
+        ${pbiPanel('Monthly Compensation by Staff Contract ($)', buildHorizontalBarChart(activeEmps, 'staff', 'salary_usd', v => fmtUSD(v, 0), {
           subKey: 'sub',
           maxItems: 10,
           color: C.navy
         }), {
-          subtitle: 'Active staff contracts ranked by monthly base salary equivalent ($)'
+          subtitle: 'Active staff contracts ranked by monthly compensation (base salary + transportation/reimbursement)'
         })}
         ${pbiPanel('Driver Trip & Night Overtime Rates by Region ($ / Trip)', buildHorizontalBarChart(otChartRows, 'label', 'rate', v => fmtUSD(v, 2), {
           subKey: 'sub',

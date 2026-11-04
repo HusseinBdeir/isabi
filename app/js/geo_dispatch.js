@@ -1479,6 +1479,17 @@
     const regObj = regionName ? resolveRegionRecordOrAtlas(regionName, SEED) : null;
 
     if (!regionName) {
+      if (p.allowMissingRegion) {
+        return {
+          ok: true,
+          code: 'optional_region',
+          region: '',
+          governorate: placeHit ? placeHit.governorate : '',
+          lat: hasCoords ? round5(lat) : null,
+          lng: hasCoords ? round5(lng) : null,
+          placeHit
+        };
+      }
       if (placeHit) {
         return {
           ok: false,
@@ -2279,15 +2290,27 @@
     const siteStats = getUnifiedSiteStats(SEED, STATE);
     const hubs = getAllCompanyHubs(SEED);
 
+    const activeSites = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => s && !s.voided && s.name);
     const mappedRegionsCnt = regions.filter(r => (r.zone_type === 'circle' && r.radius_km > 0) || Boolean(r.zone_geojson)).length;
-    const pinnedSitesCnt = ((SEED && SEED.records && SEED.records.sites) || []).filter(s => s && !s.voided && s.latitude != null && s.longitude != null).length;
+    const pinnedSitesCnt = activeSites.filter(s => s.latitude != null && s.longitude != null && s.latitude !== '' && s.longitude !== '').length;
 
-    // Count sites and BUs per region (including spatial containment!)
+    // Group member sites and BUs per region (including spatial containment!)
     const sitesByReg = new Map();
-    ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
-      if (!s || s.voided) return;
+    const sitesByRegList = new Map();
+    const unassignedSites = [];
+    const siteFreqScore = s => {
+      const st = siteStats.byNorm.get(norm(s.name));
+      return st ? (st.total || 0) : 0;
+    };
+    activeSites.slice().sort((a, b) => siteFreqScore(b) - siteFreqScore(a)).forEach(s => {
       const rk = norm(s.region || s.geo_zone);
-      if (rk) sitesByReg.set(rk, (sitesByReg.get(rk) || 0) + 1);
+      if (rk) {
+        sitesByReg.set(rk, (sitesByReg.get(rk) || 0) + 1);
+        if (!sitesByRegList.has(rk)) sitesByRegList.set(rk, []);
+        sitesByRegList.get(rk).push(s);
+      } else {
+        unassignedSites.push(s);
+      }
     });
     const busByReg = new Map();
     hubs.forEach(h => {
@@ -2314,7 +2337,13 @@
       const bFreq = (regFreq.get(bk) || 0) + (sitesByReg.get(bk) || 0) * 2 + (busByReg.get(bk) || []).length * 5;
       return bFreq - aFreq;
     });
-    const sortedRegions = freqRegions.filter(r => !q || norm(r.name).includes(q) || (busByReg.get(norm(r.name)) || []).some(b => norm(b).includes(q)));
+    const sortedRegions = freqRegions.filter(r => {
+      if (!q) return true;
+      const rk = norm(r.name);
+      if (rk.includes(q)) return true;
+      if ((busByReg.get(rk) || []).some(b => norm(b).includes(q))) return true;
+      return (sitesByRegList.get(rk) || []).some(s => norm(s.name).includes(q));
+    });
 
     // Build distance endpoint options
     const distOptionsHtml = (selectedVal) => {
@@ -2339,115 +2368,34 @@
     const kmEst = estimateLegKm(fromSpec, toSpec, SEED, { roundTripIfAnyBu: true });
     const hasOverride = GEO_STORE.pairKmOverrides[kmEst ? kmEst.pairKey : ''] != null;
 
-    const selRegObj = STUDIO.selectedRegion
+    const selRegObj = (STUDIO.selectedRegion && STUDIO.selectedRegion !== '__unassigned__')
       ? regions.find(r => norm(r.name) === norm(STUDIO.selectedRegion))
       : null;
 
+    const renderMemberSiteBtn = (s) => {
+      const siteCat = resolveGeoSiteCat(s);
+      const isJvSite = siteCat === 'supplier' && Boolean(s.is_jv || /\bjv\b/i.test(s.name || ''));
+      const dotCls = isJvSite ? 'dual' : (siteCat === 'supplier' ? 'raw' : 'sales');
+      const st = siteStats.byNorm.get(norm(s.name)) || { raw: 0, sales: 0, total: 0 };
+      const metaLbl = st.total > 0 ? `${st.total} ${st.total === 1 ? 'load' : 'loads'}` : (s.latitude != null && s.longitude != null ? 'Pinned' : 'Site');
+      return `
+        <button type="button" class="geo-reg-site-item" data-geo-inspect-site="${esc(s.id)}">
+          <span class="geo-dot ${dotCls}"></span>
+          <span class="geo-reg-site-name">${esc(s.name)}</span>
+          <span class="geo-reg-site-meta">${esc(metaLbl)}</span>
+        </button>
+      `;
+    };
+
     let toolDrawerHtml = '';
-    if (!STUDIO.collapsed && STUDIO.mode === 'search') {
-      const sd = STUDIO.searchDraft;
-      const sdGov = sd ? resolveGovernorate({ zoneType: 'boundary', geojson: sd.geojson, lat: sd.lat, lng: sd.lng, corridor: sd.corridor, name: sd.name }, SEED) : { label: '' };
-      const quickCities = ['Beirut', 'Saida', 'Metn', 'Keserwan', 'Chouf', 'Tripoli', 'Zahle', 'Tyre'].slice().sort((a, b) => (regFreq.get(norm(b)) || 0) - (regFreq.get(norm(a)) || 0));
-      let sdInside = 0;
-      if (sd && sd.geojson) {
-        ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
-          if (s && !s.voided && s.latitude != null && s.longitude != null && pointInGeoJson(Number(s.latitude), Number(s.longitude), sd.geojson)) sdInside++;
-        });
-      }
-      toolDrawerHtml = `
-        <div class="geo-tool-drawer" id="geoToolDrawer">
-          <div class="geo-tool-fields">
-            <label class="geo-tool-field">Region (Locked)
-              <input type="text" id="geoDrawRegionInp" class="geo-studio-gov-readout" value="${esc(sd ? sd.name : (STUDIO.drawRegionName || STUDIO.selectedRegion))}" placeholder="Locked to Search Map Region..." readonly tabindex="-1" aria-readonly="true" style="width:145px">
-            </label>
-            <label class="geo-tool-field" style="min-width:255px;flex:0 1 305px">Search Map Region
-              <input type="text" id="geoSearchRegionInp" value="${esc(sd ? sd.name : '')}" placeholder="Search Beirut, Saida, Tripoli, Metn, Zahle..." autocomplete="off">
-            </label>
-            <label class="geo-tool-field">Governorate (Locked)
-              <input type="text" id="geoStudioGovReadout" class="geo-studio-gov-readout" value="${esc(sdGov.label || '')}" placeholder="Auto-detected..." readonly tabindex="-1" aria-readonly="true">
-            </label>
-            <div class="geo-quick-region-strip">
-              ${quickCities.map(cn => `<button type="button" class="geo-quick-reg-chip${sd && norm(sd.name) === norm(cn) ? ' active' : ''}" data-studio-pick-atlas="${esc(cn)}">${esc(cn)}</button>`).join('')}
-            </div>
-            <span class="geo-live-inside-pill" id="geoLiveInsideCountPill"${sd && sd.geojson ? '' : ' hidden'}>${sdInside} ${sdInside === 1 ? 'Site' : 'Sites'} inside${sd && sd.wtcKm != null ? ` · ~${sd.wtcKm} km` : ''}</span>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            ${sd && sd.geojson ? `<button type="button" class="geo-collapse-btn" id="geoAdjustSearchCornersBtn">Adjust Corners</button>` : ''}
-            <button type="button" class="btn btn-primary" id="geoSaveZoneBtn">Save Map Region</button>
-            <button type="button" class="geo-collapse-btn" data-geo-mode="view">Cancel</button>
-          </div>
-        </div>
-      `;
-    } else if (!STUDIO.collapsed && STUDIO.mode === 'circle') {
-      const rPresets = [0.8, 1.5, 3, 5, 10, 15];
-      let liveInsideSites = 0;
-      if (STUDIO.circleCenter) {
-        const radKm = Math.max(0.2, Number(STUDIO.circleRadiusKm || 1.5));
-        ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
-          if (s && !s.voided && s.latitude != null && s.longitude != null && pointInCircle(Number(s.latitude), Number(s.longitude), STUDIO.circleCenter.lat, STUDIO.circleCenter.lng, radKm)) {
-            liveInsideSites++;
-          }
-        });
-      }
-      toolDrawerHtml = `
-        <div class="geo-tool-drawer" id="geoToolDrawer">
-          <div class="geo-tool-fields">
-            <label class="geo-tool-field">Region Name
-              <input type="text" id="geoDrawRegionInp" list="dl_geo_draw_regions" value="${esc(STUDIO.drawRegionName || STUDIO.selectedRegion)}" placeholder="Select or type new region...">
-              <datalist id="dl_geo_draw_regions">${freqRegions.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
-            </label>
-            <label class="geo-tool-field">Radius (km)
-              <input type="number" id="geoCircleRadiusInp" step="0.1" min="0.2" max="50" value="${esc(STUDIO.circleRadiusKm)}" style="width:68px">
-              <input type="range" id="geoCircleRadiusSlider" class="geo-radius-slider" min="0.3" max="25" step="0.1" value="${esc(Math.min(25, Math.max(0.3, Number(STUDIO.circleRadiusKm || 1.5))))}" aria-label="Circle Radius Slider">
-            </label>
-            <div class="geo-radius-pills">
-              ${rPresets.map(rk => `<button type="button" class="geo-r-pill${Number(STUDIO.circleRadiusKm) === rk ? ' active' : ''}" data-geo-radius-preset="${rk}">${rk} km</button>`).join('')}
-            </div>
-            <span class="geo-live-inside-pill" id="geoLiveInsideCountPill"${STUDIO.circleCenter ? '' : ' hidden'}>${liveInsideSites} ${liveInsideSites === 1 ? 'Site' : 'Sites'} inside</span>
-            <span class="geo-tool-hint" id="geoDraftCoordsLbl">${STUDIO.circleCenter ? `Center: ${STUDIO.circleCenter.lat}, ${STUDIO.circleCenter.lng} (drag pin to move)` : 'Click anywhere on the map to place circle center'}</span>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center">
-            <button type="button" class="btn btn-primary" id="geoSaveZoneBtn">Save Circle Zone</button>
-            <button type="button" class="geo-collapse-btn" data-geo-mode="view">Cancel</button>
-          </div>
-        </div>
-      `;
-    } else if (!STUDIO.collapsed && STUDIO.mode === 'polygon') {
-      let polyInsideSites = 0;
-      if (STUDIO.polyPoints.length >= 3) {
-        const ring = STUDIO.polyPoints.concat([[STUDIO.polyPoints[0][0], STUDIO.polyPoints[0][1]]]);
-        const gj = { type: 'Polygon', coordinates: [ring] };
-        ((SEED && SEED.records && SEED.records.sites) || []).forEach(s => {
-          if (s && !s.voided && s.latitude != null && s.longitude != null && pointInGeoJson(Number(s.latitude), Number(s.longitude), gj)) polyInsideSites++;
-        });
-      }
-      toolDrawerHtml = `
-        <div class="geo-tool-drawer" id="geoToolDrawer">
-          <div class="geo-tool-fields">
-            <label class="geo-tool-field">Region Name
-              <input type="text" id="geoDrawRegionInp" list="dl_geo_draw_regions" value="${esc(STUDIO.drawRegionName || STUDIO.selectedRegion)}" placeholder="Select or type new region...">
-              <datalist id="dl_geo_draw_regions">${freqRegions.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>
-            </label>
-            <span class="geo-live-inside-pill" id="geoLiveInsideCountPill"${STUDIO.polyPoints.length >= 3 ? '' : ' hidden'}>${polyInsideSites} ${polyInsideSites === 1 ? 'Site' : 'Sites'} inside</span>
-            <span class="geo-tool-hint" id="geoPolyPtsLbl">${STUDIO.polyPoints.length === 0 ? 'Click map to place Corner 1' : (STUDIO.polyPoints.length < 3 ? `Corners: <b>${STUDIO.polyPoints.length}</b> (click ${3 - STUDIO.polyPoints.length} more to form boundary)` : (STUDIO.polyLocked ? `Boundary locked (<b>${STUDIO.polyPoints.length}</b> corners · drag any corner or midpoint to refine)` : `Corners: <b>${STUDIO.polyPoints.length}</b> · Click green Corner 1 or Finish Shape to lock`))}</span>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <button type="button" class="geo-collapse-btn" id="geoUndoPtBtn">Undo Corner</button>
-            <button type="button" class="geo-collapse-btn" id="geoFinishPolyBtn"${STUDIO.polyPoints.length >= 3 ? '' : ' hidden'}>${STUDIO.polyLocked ? 'Add More Corners' : 'Finish Shape'}</button>
-            <button type="button" class="geo-collapse-btn" id="geoClearPtsBtn">Clear</button>
-            <button type="button" class="btn btn-primary" id="geoSaveZoneBtn">Save Polygon Zone</button>
-            <button type="button" class="geo-collapse-btn" data-geo-mode="view">Cancel</button>
-          </div>
-        </div>
-      `;
-    } else if (!STUDIO.collapsed && STUDIO.mode === 'pin') {
+    if (!STUDIO.collapsed && STUDIO.mode === 'pin') {
       const isBuPin = STUDIO.pinTargetType === 'bu';
       const pinCat = STUDIO.pinSiteCategory === 'customer' ? 'customer' : 'supplier';
       const fIdxPin = typeof window !== 'undefined' && typeof window.MFG_FREQ === 'function' ? window.MFG_FREQ() : null;
       const siteFreqMap = fIdxPin ? (pinCat === 'customer' ? fIdxPin.siteSales : fIdxPin.siteRaw) : null;
       const catSiteNames = Array.from(new Set(
-        ((SEED && SEED.records && SEED.records.sites) || [])
-          .filter(s => s && !s.voided && s.name && resolveGeoSiteCat(s) === pinCat)
+        activeSites
+          .filter(s => resolveGeoSiteCat(s) === pinCat)
           .map(s => s.name)
       )).sort((a, b) => {
         const ak = norm(a), bk = norm(b);
@@ -2498,28 +2446,35 @@
       `;
     }
 
+    const showUnassignedCard = unassignedSites.length > 0 && (!q || 'unassigned'.includes(q) || unassignedSites.some(s => norm(s.name).includes(q)));
+    const isUnassignedAct = STUDIO.selectedRegion === '__unassigned__';
+    const unassMatched = (q && !'unassigned'.includes(q)) ? unassignedSites.filter(s => norm(s.name).includes(q)) : unassignedSites;
+    const showUnassSub = (isUnassignedAct || Boolean(q && unassMatched.length > 0)) && unassMatched.length > 0;
+    const selRegMemberSites = selRegObj ? (sitesByRegList.get(norm(selRegObj.name)) || []) : [];
+    const selRegOt = selRegObj ? (otByReg.get(norm(selRegObj.name)) || selRegObj.driver_ot_rate || null) : null;
+
     return `
-      <section class="geo-studio-deck" id="geoMapStudioDeck" aria-label="Regions, Zones and Site Distance Map Studio">
+      <section class="geo-studio-deck" id="geoMapStudioDeck" aria-label="Regions and Sites Map">
         <div class="geo-studio-topbar">
           <div class="geo-studio-title-grp">
-            <h3 class="geo-studio-title">Interactive Regions, Zones &amp; KM Studio</h3>
+            <h3 class="geo-studio-title">Regions &amp; Sites Map</h3>
             <div class="geo-studio-kpis">
-              <span class="geo-kpi-pill is-bu">3 Company BUs Mapped (${hubs.map(h => `${esc(h.name)}: ${esc(h.region)}`).join(' · ')})</span>
-              <span class="geo-kpi-pill">${mappedRegionsCnt}/${regions.length} Region Zones</span>
-              <span class="geo-kpi-pill">${pinnedSitesCnt} Pinned Sites</span>
+              <span class="geo-kpi-pill">${regions.length} Regions (${mappedRegionsCnt} Mapped)</span>
+              <span class="geo-kpi-pill">${activeSites.length} Sites (${pinnedSitesCnt} Pinned)</span>
             </div>
           </div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="geo-studio-controls-right">
             ${!STUDIO.collapsed ? `
-              <div class="geo-mode-group" id="geoModeBar" role="group" aria-label="Map Studio Mode">
-                <button type="button" class="geo-mode-btn${STUDIO.mode === 'view' ? ' active' : ''}" data-geo-mode="view">View Zones</button>
-                <button type="button" class="geo-mode-btn${STUDIO.mode === 'search' ? ' active' : ''}" data-geo-mode="search">+ Search Region</button>
-                <button type="button" class="geo-mode-btn${STUDIO.mode === 'circle' ? ' active' : ''}" data-geo-mode="circle">+ Circle Zone</button>
-                <button type="button" class="geo-mode-btn${STUDIO.mode === 'polygon' ? ' active' : ''}" data-geo-mode="polygon">+ Polygon Zone</button>
-                <button type="button" class="geo-mode-btn${STUDIO.mode === 'pin' ? ' active' : ''}" data-geo-mode="pin">Pin Site / Company</button>
+              <div class="geo-pin-filters" id="geoPinFilterStrip" role="group" aria-label="Map Pin Filter">
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'all' ? ' active' : ''}" data-geo-pin-filter="all">All</button>
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'bu' ? ' active' : ''}" data-geo-pin-filter="bu"><span class="geo-dot bu"></span>Company Hubs (${hubs.length})</button>
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'raw' ? ' active' : ''}" data-geo-pin-filter="raw"><span class="geo-dot raw"></span>Quarry</button>
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'sales' ? ' active' : ''}" data-geo-pin-filter="sales"><span class="geo-dot sales"></span>Delivery</button>
+                <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'jv' ? ' active' : ''}" data-geo-pin-filter="jv"><span class="geo-dot dual"></span>JV 50/50</button>
               </div>
+              ${STUDIO.selectedRegion ? `<button type="button" class="geo-mini-btn" id="geoResetLebanonViewBtn">Reset View</button>` : ''}
             ` : ''}
-            <button type="button" class="geo-collapse-btn" id="geoToggleCollapseBtn">${STUDIO.collapsed ? 'Show Map Studio' : 'Hide Map'}</button>
+            <button type="button" class="geo-collapse-btn" id="geoToggleCollapseBtn">${STUDIO.collapsed ? 'Show Map' : 'Hide Map'}</button>
           </div>
         </div>
 
@@ -2529,61 +2484,76 @@
           <div class="geo-studio-body">
             <aside class="geo-regions-rail" id="geoRegionsRail">
               <div class="geo-rail-head">
-                <input type="search" class="geo-rail-search" id="geoRegionSearch" value="${esc(STUDIO.regionSearch)}" placeholder="Filter regions or Company BU...">
-                <div class="geo-bu-quick-row">
-                  ${hubs.map(h => `<button type="button" class="geo-bu-chip${norm(STUDIO.selectedRegion) === norm(h.region) ? ' active' : ''}" data-geo-jump-bu="${esc(h.name)}">${esc(h.name)} · ${esc(h.region)}</button>`).join('')}
-                </div>
+                <input type="search" class="geo-rail-search" id="geoRegionSearch" value="${esc(STUDIO.regionSearch)}" placeholder="Search regions or sites...">
               </div>
               <div class="geo-regions-list" id="geoRegionsList">
                 <button type="button" class="geo-reg-card${!STUDIO.selectedRegion ? ' active' : ''}" data-geo-region="">
                   <div class="geo-reg-card-top">
-                    <span class="geo-reg-name">All Lebanon Zones (Overview)</span>
-                    <span class="geo-reg-shape is-poly">${mappedRegionsCnt} Zones</span>
+                    <span class="geo-reg-name">All Regions (${regions.length})</span>
+                    <span class="geo-reg-shape is-poly">${activeSites.length} Sites</span>
                   </div>
                   <div class="geo-reg-card-sub">
-                    <span>Click any region below to zoom &amp; inspect</span>
+                    <span>Click any region to view its sites &amp; filter below</span>
                   </div>
                 </button>
                 ${sortedRegions.map(r => {
                   const rk = norm(r.name);
                   const isAct = norm(STUDIO.selectedRegion) === rk;
-                  const sCnt = sitesByReg.get(rk) || 0;
+                  const memberSites = sitesByRegList.get(rk) || [];
+                  const sCnt = memberSites.length;
+                  const matchedSites = (q && !rk.includes(q)) ? memberSites.filter(s => norm(s.name).includes(q)) : memberSites;
+                  const showSublist = (isAct || Boolean(q && matchedSites.length > 0)) && matchedSites.length > 0;
                   const buHits = busByReg.get(rk) || [];
                   const otRate = otByReg.get(rk) || r.driver_ot_rate || null;
                   const isCirc = r.zone_type === 'circle' && Number(r.radius_km) > 0;
                   const isBnd = r.zone_type === 'boundary' && Boolean(r.zone_geojson);
                   const isPoly = Boolean(r.zone_geojson) && !isBnd;
                   const shapeCls = isCirc ? 'is-circle' : (isBnd ? 'is-boundary' : (isPoly ? 'is-poly' : 'is-none'));
-                  const shapeTxt = isCirc ? `Circle ${round1(r.radius_km)} km` : (isBnd ? 'Map Region' : (isPoly ? 'Polygon' : 'Set Zone'));
+                  const shapeTxt = isCirc ? `Circle ${round1(r.radius_km)} km` : (isBnd ? 'Map Region' : (isPoly ? 'Polygon' : 'Unmapped'));
                   return `
-                    <button type="button" class="geo-reg-card${isAct ? ' active' : ''}" data-geo-region="${esc(r.name)}">
-                      <div class="geo-reg-card-top">
-                        <span class="geo-reg-name">${esc(r.name)}</span>
-                        <span class="geo-reg-shape ${shapeCls}">${esc(shapeTxt)}</span>
-                      </div>
-                      <div class="geo-reg-card-sub">
-                        ${buHits.map(b => `<span class="geo-reg-bu-tag">${esc(b)}</span>`).join('')}
-                        <span>${sCnt} ${sCnt === 1 ? 'Site' : 'Sites'}</span>
-                        ${otRate ? `<span>OT $${round2(otRate)}</span>` : ''}
-                      </div>
-                    </button>
+                    <div class="geo-reg-item-grp${showSublist ? ' is-expanded' : ''}">
+                      <button type="button" class="geo-reg-card${isAct ? ' active' : ''}" data-geo-region="${esc(r.name)}">
+                        <div class="geo-reg-card-top">
+                          <span class="geo-reg-name">${esc(r.name)}</span>
+                          <span class="geo-reg-shape ${shapeCls}">${esc(shapeTxt)}</span>
+                        </div>
+                        <div class="geo-reg-card-sub">
+                          ${buHits.map(b => `<span class="geo-reg-bu-tag">${esc(b)}</span>`).join('')}
+                          <span class="geo-reg-sites-cnt">${sCnt} ${sCnt === 1 ? 'Site' : 'Sites'}${sCnt > 0 ? (showSublist ? ' ?' : ' ?') : ''}</span>
+                          ${otRate ? `<span>OT $${round2(otRate)}</span>` : ''}
+                        </div>
+                      </button>
+                      ${showSublist ? `
+                        <div class="geo-reg-sites-sublist">
+                          ${matchedSites.map(renderMemberSiteBtn).join('')}
+                        </div>
+                      ` : ''}
+                    </div>
                   `;
                 }).join('')}
+                ${showUnassignedCard ? `
+                  <div class="geo-reg-item-grp${showUnassSub ? ' is-expanded' : ''}">
+                    <button type="button" class="geo-reg-card${isUnassignedAct ? ' active' : ''}" data-geo-region="__unassigned__">
+                      <div class="geo-reg-card-top">
+                        <span class="geo-reg-name">Unassigned Region</span>
+                        <span class="geo-reg-shape is-none">${unassignedSites.length} Sites</span>
+                      </div>
+                      <div class="geo-reg-card-sub">
+                        <span>Sites without an assigned region${showUnassSub ? ' ?' : ' ?'}</span>
+                      </div>
+                    </button>
+                    ${showUnassSub ? `
+                      <div class="geo-reg-sites-sublist">
+                        ${unassMatched.slice(0, 25).map(renderMemberSiteBtn).join('')}
+                        ${unassMatched.length > 25 ? `<div class="geo-reg-site-more">+${unassMatched.length - 25} more in Sites table below</div>` : ''}
+                      </div>
+                    ` : ''}
+                  </div>
+                ` : ''}
               </div>
             </aside>
 
             <div class="geo-map-stage">
-              <div class="geo-map-filter-strip" id="geoPinFilterStrip">
-                <div class="geo-pin-filters">
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'all' ? ' active' : ''}" data-geo-pin-filter="all">All Pins</button>
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'bu' ? ' active' : ''}" data-geo-pin-filter="bu"><span class="geo-dot bu"></span>Company BUs (3)</button>
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'jv' ? ' active' : ''}" data-geo-pin-filter="jv"><span class="geo-dot dual"></span>JV 50/50</button>
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'raw' ? ' active' : ''}" data-geo-pin-filter="raw"><span class="geo-dot raw"></span>Supplier / Quarry</button>
-                  <button type="button" class="geo-pin-chip${STUDIO.pinFilter === 'sales' ? ' active' : ''}" data-geo-pin-filter="sales"><span class="geo-dot sales"></span>Customer Delivery</button>
-                </div>
-                <button type="button" class="geo-mini-btn" id="geoResetLebanonViewBtn">Reset Lebanon View</button>
-              </div>
-
               ${selRegObj ? `
                 <div class="geo-focus-card" id="geoFocusCard">
                   <div class="geo-focus-card-hdr">
@@ -2595,17 +2565,29 @@
                       </button>
                     </span>
                   </div>
-                  <div style="color:var(--muted);line-height:1.4">
+                  <div class="geo-focus-meta">
                     ${selRegObj.corridor ? `<div><b>Governorate:</b> ${esc(corridorLabel(selRegObj.corridor))}</div>` : ''}
                     ${(busByReg.get(norm(selRegObj.name)) || []).length ? `<div><b>Company Hub:</b> ${esc((busByReg.get(norm(selRegObj.name)) || []).join(', '))}</div>` : ''}
-                    <div><b>Member Sites:</b> ${sitesByReg.get(norm(selRegObj.name)) || 0} registered</div>
-                    ${selRegObj.distance_km != null ? `<div><b>Ref Distance from WTC:</b> ${round1(selRegObj.distance_km)} km</div>` : ''}
+                    ${selRegObj.distance_km != null ? `<div><b>Distance from WTC:</b> ${round1(selRegObj.distance_km)} km</div>` : ''}
+                    ${selRegOt ? `<div><b>Driver OT:</b> $${round2(selRegOt)}</div>` : ''}
+                  </div>
+                  <div class="geo-focus-sites-sec">
+                    <div class="geo-focus-sites-lbl">Sites Inside (${selRegMemberSites.length}):</div>
+                    ${selRegMemberSites.length ? `
+                      <div class="geo-focus-sites-list">
+                        ${selRegMemberSites.slice(0, 10).map(ms => {
+                          const mCat = resolveGeoSiteCat(ms);
+                          const mJv = mCat === 'supplier' && Boolean(ms.is_jv || /\bjv\b/i.test(ms.name || ''));
+                          const mDot = mJv ? 'dual' : (mCat === 'supplier' ? 'raw' : 'sales');
+                          return `<button type="button" class="geo-focus-site-chip" data-geo-inspect-site="${esc(ms.id)}"><span class="geo-dot ${mDot}"></span>${esc(ms.name)}</button>`;
+                        }).join('')}
+                        ${selRegMemberSites.length > 10 ? `<span class="geo-focus-site-more">+${selRegMemberSites.length - 10} more below</span>` : ''}
+                      </div>
+                    ` : `<div class="geo-focus-sites-empty">No sites assigned yet</div>`}
                   </div>
                   <div class="geo-focus-actions">
-                    <button type="button" class="geo-mini-btn primary" data-geo-edit-search="${esc(selRegObj.name)}">Map Boundary</button>
-                    <button type="button" class="geo-mini-btn" data-geo-edit-circle="${esc(selRegObj.name)}">Set Circle</button>
-                    <button type="button" class="geo-mini-btn" data-geo-edit-poly="${esc(selRegObj.name)}">Draw Zone</button>
-                    <button type="button" class="geo-mini-btn" data-geo-filter-table-reg="${esc(selRegObj.name)}">Filter Table</button>
+                    <button type="button" class="geo-mini-btn primary" data-geo-open-reg-360="${esc(selRegObj.id)}">Region 360? &amp; Edit</button>
+                    <button type="button" class="geo-mini-btn" data-open-modal="site" data-prefill-region="${esc(selRegObj.name)}">+ Add Site Here</button>
                   </div>
                 </div>
               ` : ''}
@@ -2763,7 +2745,9 @@
         if (s.latitude == null || s.longitude == null || s.latitude === '' || s.longitude === '') return;
         const lat = Number(s.latitude), lng = Number(s.longitude);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-        if (selRegNorm && norm(s.region || s.geo_zone) !== selRegNorm) {
+        if (selRegNorm === '__unassigned__') {
+          if (norm(s.region || s.geo_zone)) return;
+        } else if (selRegNorm && norm(s.region || s.geo_zone) !== selRegNorm) {
           const selR = regions.find(r => norm(r.name) === selRegNorm);
           if (!selR || !isPointInRegion(lat, lng, selR)) return;
         }
@@ -3234,6 +3218,20 @@
         }
         STUDIO._userPanned = false;
         rerenderWorkspace();
+      });
+    });
+    deck.querySelectorAll('[data-geo-inspect-site]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const sid = btn.getAttribute('data-geo-inspect-site') || '';
+        if (sid && typeof ctx.openInspector === 'function') ctx.openInspector('sites', sid);
+      });
+    });
+    deck.querySelectorAll('[data-geo-open-reg-360]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const rid = btn.getAttribute('data-geo-open-reg-360') || '';
+        if (rid && typeof ctx.openInspector === 'function') ctx.openInspector('regions', rid);
       });
     });
     const focusCloseBtn = deck.querySelector('#geoFocusCloseBtn');
@@ -3980,11 +3978,14 @@
           const previewLng = hasExplicitPin ? rawLng : (placeHit ? placeHit.lng : (selRegObj ? selRegObj.center_lng : null));
 
           if (previewLat != null && previewLng != null && Number.isFinite(previewLat) && Number.isFinite(previewLng)) {
+            const inclTransInp = hostEl.querySelector('#f_includes_transport');
+            const allowOptReg = !isCust && Boolean(inclTransInp && inclTransInp.value === '1');
             const check = validateSiteInsideRegion({
               siteName: siteInp ? siteInp.value : '',
               regionName: selRegName,
               lat: hasExplicitPin ? rawLat : null,
-              lng: hasExplicitPin ? rawLng : null
+              lng: hasExplicitPin ? rawLng : null,
+              allowMissingRegion: allowOptReg
             }, SEED);
             const pinColor = (!check.ok && selRegName) ? '#DC2626' : accentColor;
             const badgeText = hasExplicitPin ? pinLabel : (placeHit ? placeHit.placeName : (selRegObj ? selRegObj.name + ' Center' : pinLabel));

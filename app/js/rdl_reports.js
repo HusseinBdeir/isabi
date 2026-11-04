@@ -2072,49 +2072,108 @@
       return true;
     }).sort((a, b) => rowDate(b, ctx.basis).localeCompare(rowDate(a, ctx.basis)));
 
-    const totBase = rows.reduce((s, r) => s + Number(r.base_usd || 0), 0);
-    const totNet = rows.reduce((s, r) => s + Number(r.net_usd || 0), 0);
+    const regCalc = (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function')
+      ? window.__mfgComputeStaffPayrollRegister({ activeRange: { from: p.from, to: p.to } })
+      : null;
+    const coLabelNorm = (ctx.co && ctx.co.key && ctx.co.key !== 'manufacturing-group' && !String(ctx.co.key).startsWith('industry:'))
+      ? String(ctx.co.short || ctx.co.name || '').trim().toLowerCase()
+      : '';
+    const staffEarnRows = ((regCalc && regCalc.staffRows) || []).filter(sr => {
+      if (!sr) return false;
+      if (coLabelNorm && String(sr.company || '').trim().toLowerCase() !== coLabelNorm) return false;
+      if (p.staff && p.staff !== 'ALL' && sr.staff !== p.staff) return false;
+      return Math.abs(sr.earnings || 0) > 0.005 || Math.abs(sr.paid || 0) > 0.005 || Math.abs(sr.reimb || 0) > 0.005;
+    });
+
+    const sumBase = staffEarnRows.reduce((s, r) => s + Number(r.base || 0), 0);
+    const sumReimb = staffEarnRows.reduce((s, r) => s + Number(r.reimb || 0), 0);
+    const sumOtSite = staffEarnRows.reduce((s, r) => s + Number(r.ot_pay || 0) + Number(r.site_allow || 0) + Number(r.extras || 0), 0);
+    const sumDedAll = staffEarnRows.reduce((s, r) => s + Number(r.late_ded || 0) + Number(r.abs_ded || 0) + Number(r.ded || 0), 0);
+    const sumEarned = staffEarnRows.reduce((s, r) => s + Number(r.earnings || 0), 0);
+    const sumPaidReg = staffEarnRows.reduce((s, r) => s + Number(r.paid || 0), 0);
+    const sumBalReg = staffEarnRows.reduce((s, r) => s + Number(r.balance || 0), 0);
+
     const totPaid = rows.reduce((s, r) => s + Number(r.paid_usd || 0), 0);
     const viewRows = rows.slice(0, 160);
 
+    const summaryHtml = staffEarnRows.length ? `
+      <div class="rdl-section-title" style="margin:6px 0 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#334155">1 · Staff Earnings, Transportation / Reimbursement &amp; Remaining Balance (${fmtNum(staffEarnRows.length, 0)} Staff)</div>
+      <table class="rdl-table" style="margin-bottom:14px">
+        <thead>
+          <tr>
+            <th>Staff Member</th>
+            <th>Co.</th>
+            <th class="num">Base ($)</th>
+            <th class="num">Transp. / Reimb. ($)</th>
+            <th class="num">OT, Site &amp; Extras ($)</th>
+            <th class="num">Deductions ($)</th>
+            <th class="num">Net Earned ($)</th>
+            <th class="num">Paid ($)</th>
+            <th class="num">Balance ($)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${staffEarnRows.slice(0, 120).map(sr => {
+            const otSite = Number(sr.ot_pay || 0) + Number(sr.site_allow || 0) + Number(sr.extras || 0);
+            const dedTot = Number(sr.late_ded || 0) + Number(sr.abs_ded || 0) + Number(sr.ded || 0);
+            return `
+            <tr>
+              <td class="bold">${esc(sr.staff || '-')}</td>
+              <td>${esc(sr.company || 'WTC')}</td>
+              <td class="num">${fmtUsd(sr.base || 0, 2)}</td>
+              <td class="num">${sr.reimb ? fmtUsd(sr.reimb, 2) : '-'}</td>
+              <td class="num">${Math.abs(otSite) > 0.005 ? fmtUsdSigned(otSite, 2) : '-'}</td>
+              <td class="num">${dedTot > 0.005 ? fmtUsd(dedTot, 2) : '-'}</td>
+              <td class="num bold">${fmtUsd(sr.earnings || 0, 2)}</td>
+              <td class="num">${fmtUsd(sr.paid || 0, 2)}</td>
+              <td class="num bold">${fmtUsdSigned(sr.balance || 0, 2)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+        <tfoot>
+          <tr class="rdl-total-row">
+            <td colspan="2">TOTAL STAFF PAYROLL SUMMARY (${fmtNum(staffEarnRows.length, 0)} staff)</td>
+            <td class="num">${fmtUsd(sumBase, 2)}</td>
+            <td class="num">${fmtUsd(sumReimb, 2)}</td>
+            <td class="num">${fmtUsdSigned(sumOtSite, 2)}</td>
+            <td class="num">${fmtUsd(sumDedAll, 2)}</td>
+            <td class="num">${fmtUsd(sumEarned, 2)}</td>
+            <td class="num">${fmtUsd(sumPaidReg, 2)}</td>
+            <td class="num">${fmtUsdSigned(sumBalReg, 2)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="rdl-section-title" style="margin:10px 0 6px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:#334155">2 · Salary Disbursement Vouchers (${fmtNum(rows.length, 0)} Entries)</div>
+    ` : '';
+
     return `
-      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Staff: ${p.staff === 'ALL' ? 'All Staff' : p.staff} · ${rows.length} payroll entries`)}
+      ${sheetHeaderHtml(meta, ctx.co, `Period ${p.from} to ${p.to} · Staff: ${p.staff === 'ALL' ? 'All Staff' : p.staff} · ${staffEarnRows.length} staff · ${rows.length} disbursement entries`)}
+      ${summaryHtml}
       <table class="rdl-table">
         <thead>
           <tr>
             <th>Date</th>
             <th>Staff Member</th>
-            <th>Role / Department</th>
-            <th>Pay Type</th>
-            <th class="num">Days / Hrs</th>
-            <th class="num">Base / Gross ($)</th>
-            <th class="num">Net Payable ($)</th>
+            <th>Payroll Period</th>
+            <th>Method</th>
             <th class="num">Disbursed ($)</th>
-            <th class="num">Balance ($)</th>
           </tr>
         </thead>
         <tbody>
           ${viewRows.map(r => `
             <tr>
               <td class="mono">${esc(rowDate(r, ctx.basis))}</td>
-              <td class="bold">${esc(r.staff || '—')}</td>
-              <td>${esc(r.role || '—')}</td>
-              <td>${esc(r.type || 'Monthly')}</td>
-              <td class="num">${fmtNum(r.days || r.hours || 0, 1)}</td>
-              <td class="num">${fmtUsd(r.base_usd, 2)}</td>
-              <td class="num bold">${fmtUsd(r.net_usd, 2)}</td>
-              <td class="num">${fmtUsd(r.paid_usd, 2)}</td>
-              <td class="num">${fmtUsd(r.balance_usd, 2)}</td>
+              <td class="bold">${esc(r.staff || '-')}</td>
+              <td>${esc(r.role || '-')}</td>
+              <td>${esc(r.type || 'Cash')}</td>
+              <td class="num bold">${fmtUsd(r.paid_usd, 2)}</td>
             </tr>
           `).join('')}
         </tbody>
         <tfoot>
           <tr class="rdl-total-row">
-            <td colspan="5">TOTAL PAYROLL REGISTER (${fmtNum(rows.length, 0)} entries)</td>
-            <td class="num">${fmtUsd(totBase, 2)}</td>
-            <td class="num">${fmtUsd(totNet, 2)}</td>
+            <td colspan="4">TOTAL SALARY DISBURSEMENTS (${fmtNum(rows.length, 0)} entries)</td>
             <td class="num">${fmtUsd(totPaid, 2)}</td>
-            <td class="num">${fmtUsd(totNet - totPaid, 2)}</td>
           </tr>
         </tfoot>
       </table>

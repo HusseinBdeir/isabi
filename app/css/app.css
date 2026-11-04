@@ -14337,36 +14337,36 @@ table.ledger-table:has(#usersDirectoryTbody) .badge {
   }
   #payStaffRegPanel table.ledger-table th,
   #payStaffRegPanel table.ledger-table td {
-    padding: 5.5px 2.3px;
-    font-size: 10.6px;
+    padding: 5.5px 1.8px;
+    font-size: 10.1px;
   }
   #payStaffRegPanel table.ledger-table thead th {
-    font-size: 8.5px;
+    font-size: 8px;
     letter-spacing: 0;
     line-height: 1.15;
     white-space: nowrap;
   }
   #payStaffRegPanel table.ledger-table thead th:nth-child(1),
   #payStaffRegPanel table.ledger-table tbody td:nth-child(1) {
-    width: 118px;
-    max-width: 134px;
+    width: 112px;
+    max-width: 128px;
   }
   #payStaffRegPanel table.ledger-table tbody td:nth-child(1) {
     white-space: normal;
     overflow-wrap: break-word;
   }
   #payStaffRegPanel table.ledger-table tbody td:nth-child(1) .badge {
-    font-size: 8.8px;
+    font-size: 8.6px;
     padding: 1px 4px;
   }
   #payStaffRegPanel table.ledger-table thead th:nth-child(2),
   #payStaffRegPanel table.ledger-table tbody td:nth-child(2) {
-    width: 34px;
+    width: 32px;
     white-space: nowrap;
   }
   #payStaffRegPanel table.ledger-table thead th:nth-child(3),
   #payStaffRegPanel table.ledger-table tbody td:nth-child(3) {
-    width: 45px;
+    width: 42px;
     white-space: nowrap;
   }
   #payStaffRegPanel table.ledger-table tbody td:not(.r) {
@@ -14374,8 +14374,8 @@ table.ledger-table:has(#usersDirectoryTbody) .badge {
     word-break: normal;
   }
   #payStaffRegPanel table.ledger-table tfoot tr td {
-    padding: 6px 2.3px;
-    font-size: 10.3px;
+    padding: 6px 1.8px;
+    font-size: 9.8px;
   }
   #paySalPanel table.ledger-table thead th,
   #paySalPanel table.ledger-table tbody td.sal-paid-earned-cell,
@@ -28336,7 +28336,493 @@ tr.kiosk-staff-row:focus-visible .kiosk-row-edit-hint {
   .loan-subgrid-table td:nth-child(6) { width: 23%; }
 }
 
+/* ==========================================================================
+   Dedicated Wall / Counter Kiosk Mode, Station Switcher & Policy Split (v19.6.98)
+   Palette C1: Warm Porcelain + Burnished Brass (zero dark-navy blocks in Light Mode)
+   ========================================================================== */
 
+html.kiosk-prelock #sidebar,
+html.kiosk-prelock #railResizer,
+html.kiosk-prelock .mobile-subnav,
+html.kiosk-prelock .mobile-bottom-dock,
+html.kiosk-prelock #railBackdrop,
+html.kiosk-prelock #askIsabiFab,
+html.kiosk-prelock header.top,
+html.kiosk-prelock #hubSubtabBar,
+body.kiosk-locked #sidebar,
+body.kiosk-locked #railResizer,
+body.kiosk-locked .mobile-subnav,
+body.kiosk-locked .mobile-bottom-dock,
+body.kiosk-locked #railBackdrop,
+body.kiosk-locked #askIsabiFab,
+body.kiosk-locked header.top,
+body.kiosk-locked #hubSubtabBar,
+body.kiosk-locked #kioskControlDeck {
+  display: none !important;
+}
 
+html.kiosk-prelock .app-shell,
+body.kiosk-locked .app-shell {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
 
+body.kiosk-locked #workspace {
+  padding: 8px 12px 10px !important;
+}
+
+/* Compact 46px Wall / Counter Station Header */
+.kiosk-wall-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 46px;
+  padding: 6px 12px;
+  margin: 0 0 8px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-bottom: 2px solid color-mix(in srgb, var(--brass) 38%, var(--line));
+  box-shadow: var(--shadow-sm);
+}
+.kwh-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.kiosk-wall-header .brand-badge-sm {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  display: block;
+}
+:root[data-theme="dark"] .kiosk-wall-header .badge-ii {
+  fill: #F5F1EA;
+}
+:root[data-theme="dark"] .kiosk-wall-header .badge-rule {
+  fill: #D9A54A;
+}
+.kwh-station-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 9px;
+  min-width: 0;
+}
+.kwh-station-name {
+  font-family: "Archivo", sans-serif;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+.kiosk-wall-role-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--brass-tint);
+  border: 1px solid var(--brass-border);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.kiosk-wall-role-pill svg {
+  width: 12px;
+  height: 12px;
+  color: var(--brass);
+}
+.kwh-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.kwh-clock {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  white-space: nowrap;
+}
+.kwh-clock-time {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.kwh-clock-date {
+  font-size: 11.4px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.kiosk-wall-admin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 11.8px;
+  font-weight: 700;
+}
+.kiosk-wall-admin-btn:hover {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+}
+@media (max-width: 520px) {
+  .kwh-clock-date {
+    display: none;
+  }
+  .kwh-station-name {
+    max-width: 155px;
+    font-size: 13px;
+  }
+}
+
+/* Ephemeral 5.5s Live Punch Confirmation Banner on Locked Wall Clock */
+.kiosk-wall-flash-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-left: 4px solid var(--good);
+  box-shadow: var(--shadow-sm);
+}
+.kiosk-wall-flash-banner.is-out {
+  border-left-color: #B45309;
+}
+.kwf-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-width: 0;
+}
+.kwf-info {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.kwf-meta {
+  font-size: 11.6px;
+  color: var(--muted);
+}
+.kwf-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Single-Screen Zero-Scroll Wall Attendance Sizing (Portrait & Landscape) */
+body.kiosk-locked .kiosk-att-shell.is-wall-mode {
+  padding: 0 !important;
+  gap: 8px;
+}
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .panel-head {
+  padding: 8px 12px;
+  min-height: 36px;
+}
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-cam-body,
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-pin-body {
+  padding: 10px 12px;
+  gap: 8px;
+  justify-content: center;
+}
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-cam-standby-card {
+  padding: 12px 16px;
+  gap: 5px;
+}
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-cam-standby-ico {
+  width: 36px;
+  height: 36px;
+}
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-cam-standby-card p {
+  font-size: 11.4px;
+  line-height: 1.35;
+}
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-status {
+  padding: 6px 10px;
+  font-size: 11.4px;
+}
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-pin-display-bar {
+  gap: 4px;
+  margin-bottom: 6px;
+}
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-pin-slot {
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+}
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-pin-hint {
+  font-size: 11.4px;
+  min-height: 16px;
+}
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-pin-pad {
+  gap: 7px;
+}
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-pad-key {
+  min-height: 42px;
+  padding: 5px 8px;
+  font-size: 16px;
+}
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-pad-key.aux,
+body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-pad-key.go {
+  font-size: 12px;
+}
+
+@media (max-width: 719px) {
+  body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 8px;
+  }
+  body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-viewport {
+    width: 100%;
+    max-width: 340px;
+    height: clamp(160px, 22dvh, 225px);
+    aspect-ratio: auto;
+  }
+  body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-pad-key {
+    min-height: 39px;
+  }
+}
+
+@media (min-width: 720px) {
+  body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px;
+  }
+}
+
+@media (min-width: 720px) and (max-height: 700px) {
+  body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-viewport {
+    width: 100%;
+    max-width: 370px;
+    height: clamp(175px, 34dvh, 235px);
+    aspect-ratio: auto;
+  }
+  body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-pad-key {
+    min-height: 39px;
+  }
+}
+
+/* Unlocked Kiosk Policy Split Bar & Payroll Policy Summary Card */
+.kiosk-policy-split-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 12px 16px;
+}
+.kps-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 240px;
+  flex: 1;
+}
+.kps-info strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.kps-info span {
+  font-size: 11.8px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.kps-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pay-policy-summary-card {
+  margin-bottom: 14px;
+}
+.pay-policy-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+.pay-policy-summary-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+/* PIN-Gated Kiosk Switcher & Station Admin Modal (#kioskStationAdminModal) */
+.ksa-modal-card {
+  width: min(760px, 95vw);
+  max-width: 760px;
+}
+.ksa-modal-card.ksa-pin-stage {
+  width: min(410px, 94vw);
+  max-width: 410px;
+}
+.ksa-pin-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 22px;
+}
+.ksa-pin-pad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-width: 310px;
+}
+.ksa-admin-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(74dvh, 660px);
+  overflow-y: auto;
+}
+.ksa-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.ksa-sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.ksa-sec-head strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.ksa-sec-head span {
+  font-size: 11.4px;
+  color: var(--muted);
+}
+.ksa-role-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+@media (max-width: 560px) {
+  .ksa-role-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.ksa-role-card {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 11px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+}
+.ksa-role-card:hover {
+  border-color: var(--brass);
+  background: color-mix(in srgb, var(--brass-tint) 45%, var(--surface));
+}
+.ksa-role-card.active {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+  box-shadow: inset 0 0 0 1px var(--brass);
+}
+.ksa-rc-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+}
+.ksa-rc-ico {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--brass);
+}
+.ksa-role-card.active .ksa-rc-ico {
+  background: var(--surface);
+  border-color: var(--brass-border);
+}
+.ksa-role-card strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.ksa-role-card span {
+  font-size: 11.4px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.ksa-backoffice-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 2px;
+}
+.ksa-config-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.ksa-cfg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.kiosk-submodal-backdrop .modal-foot.ksa-modal-foot {
+  flex-wrap: nowrap;
+  padding: 10px 14px;
+}
 

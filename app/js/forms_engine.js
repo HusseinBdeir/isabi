@@ -937,7 +937,10 @@
       if (sh && sh.badgeLabel && sh.id !== 'off') parts.push(sh.badgeLabel);
       if (e) {
         if (e.role || e.position || (sm && sm.role)) parts.push(e.role || e.position || sm.role);
-        const baseNet = round2(Number(e.salary_usd || e.amount || 0) + Number(e.reimbursement || 0) - Number(e.deduction || 0));
+        const fxHelper = (typeof window !== 'undefined' && window.MFG_FX) ? window.MFG_FX : null;
+        const baseNet = (fxHelper && typeof fxHelper.contractPackageUsd === 'function')
+          ? round2(fxHelper.contractPackageUsd(e))
+          : round2(Number(e.salary_usd || e.amount || 0) + Number(e.reimbursement || 0));
         if (e.salary_pending && fType !== 'attendance') parts.push('Salary Pending ($0)');
         else if (baseNet > 0 && fType !== 'attendance') parts.push(`${fmtUsd(baseNet)}/mo`);
         if (e.company) parts.push(e.company);
@@ -983,7 +986,14 @@
           ${fld(isRawForm ? 'Raw Material / Grade *' : 'Product / Grade *', inp('f_product', 'text', '', 'list="dl_pr_prods" placeholder="Select or type grade..."') + dlMeta('dl_pr_prods', prProdMetaItems), { id: 'wrap_pr_product' })}
           ${fld('Customer *', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_pr_customer', hidden: isCommForm || isRawForm })}
           ${fld(isCommForm ? 'Plant Owner / Beneficiary *' : (isRawForm ? 'Site Owner / Material Supplier *' : 'Supplier / Hauler *'), inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', prSupNames), { id: 'wrap_pr_supplier', hidden: !isCommForm && !isRawForm })}
-          ${fld(isRawForm ? 'Source Site *' : 'Delivery Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', prSiteItems), { id: 'wrap_pr_site', hidden: isCommForm })}
+          ${fld(isRawForm ? 'Source Site *' : 'Delivery Site', inp('f_site', 'text', '', 'list="dl_sites" placeholder="Select or type site..."') + dlMeta('dl_sites', prSiteItems), { id: 'wrap_pr_site', hidden: isCommForm, hintId: 'hint_pr_site', hint: '' })}
+          ${fld('Site Region *', inp('f_site_region', 'text', '', 'list="dl_pr_regions" placeholder="Select region for site haulage..."') + dl('dl_pr_regions', regNames), { id: 'wrap_pr_site_region', hidden: true, hintId: 'hint_pr_site_region', hint: 'Region and Site are both required when adding transportation with our trucks or associated 3rd-party haulers.' })}
+          <div class="form-field span-3 quarry-pr-bundled-bar" id="wrap_pr_incl_transport" ${isRawForm ? '' : 'hidden'}>
+            <label class="site-jv-toggle-pill quarry-bundled-toggle-pill" for="f_pr_incl_transport">
+              <input type="checkbox" id="f_pr_incl_transport">
+              <span class="site-jv-toggle-lbl"><b>Supplier Provides Material + Transportation (Bundled Delivered Price)</b> · Rate includes supplier delivery to plant; transport split unknown ($0 separate haulage · Region optional)</span>
+            </label>
+          </div>
           <div id="pr_comm_history_box" class="form-field span-3" ${isCommForm ? '' : 'hidden'} style="background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--brass);border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.45"></div>
           <div class="pa-form-sec-hdr"><span id="pr_sec2_hdr">${isCommForm ? '2. Commission Unit &amp; Rate' : '2. Pricing &amp; Volume Tiers'}</span></div>
           ${fld(isCommForm ? 'Commission Unit *' : 'Material Pricing Unit *', sel('f_uom', prUomOpts, 'm³'), { id: 'wrap_pr_uom', hintId: 'hint_pr_uom', hint: '' })}
@@ -1290,13 +1300,17 @@
         : 'supplier';
       const isCustSite = defSiteCat === 'customer';
       const activeSites = (rec.sites || []).filter(s => s && !s.voided);
-      const suppSiteCount = activeSites.filter(s => {
+      const suppSitesList = activeSites.filter(s => {
         const c = String(s.site_category || '').toLowerCase();
         if (c === 'supplier') return true;
         if (c === 'customer') return false;
         return Boolean(s.supplier || s.is_jv || !s.customer);
-      }).length;
+      });
+      const suppSiteCount = suppSitesList.length;
+      const bundledSiteCount = suppSitesList.filter(s => Boolean(s.includes_transport || s.haulage_mode === 'supplier_delivered')).length;
+      const separateSiteCount = Math.max(0, suppSiteCount - bundledSiteCount);
       const custSiteCount = Math.max(0, activeSites.length - suppSiteCount);
+      const defBundled = !isCustSite && activeSitesTblVw === 'bundled';
       const jvPartnerMetaItems = buildJvPartnerMetaItems();
       return `
         <div class="form-grid-3">
@@ -1336,12 +1350,52 @@
             </div>
             <input type="hidden" id="f_site_category" value="${defSiteCat}">
           </div>
-          ${fld('Region *', inp('f_region', 'text', '', 'list="dl_regions" placeholder="Select region or click map zone..."') + dl('dl_regions', regNames), {
-            hint: 'Select the geographic Region first or click inside a zone on the map.',
+          <div class="form-field span-3" id="quarryHaulageModeDeck"${isCustSite ? ' hidden' : ''}>
+            <label><span class="pa-fld-lbl">2. Quarry Transportation &amp; Pricing Basis *</span></label>
+            <div class="quarry-mode-deck" role="radiogroup" aria-label="Quarry Transportation Mode">
+              <button type="button" class="quarry-mode-card quarry-mode-separate${!defBundled ? ' active' : ''}" data-quarry-bundled="0" aria-pressed="${!defBundled ? 'true' : 'false'}">
+                <span class="quarry-mode-icon">${ic('truck')}</span>
+                <span class="quarry-mode-body">
+                  <span class="quarry-mode-title-row">
+                    <span class="quarry-mode-title">Ex-Quarry · Our Trucks or 3rd-Party Haulers</span>
+                    <span class="quarry-mode-count" id="quarryModeCountSep">${separateSiteCount} Sites</span>
+                  </span>
+                  <span class="quarry-mode-sub">Supplier provides raw material only; transported by our fleet or paid 3rd-party peers</span>
+                  <span class="quarry-mode-tags">
+                    <span class="quarry-mode-tag">Region * Required</span>
+                    <span class="quarry-mode-tag">Material + Haulage Tracked Separately</span>
+                  </span>
+                </span>
+                <span class="quarry-mode-check" aria-hidden="true">${!defBundled ? '✓ Selected' : 'Select'}</span>
+              </button>
+              <button type="button" class="quarry-mode-card quarry-mode-bundled${defBundled ? ' active' : ''}" data-quarry-bundled="1" aria-pressed="${defBundled ? 'true' : 'false'}">
+                <span class="quarry-mode-icon">${ic('box')}</span>
+                <span class="quarry-mode-body">
+                  <span class="quarry-mode-title-row">
+                    <span class="quarry-mode-title">Bundled · Supplier Provides Material + Transport</span>
+                    <span class="quarry-mode-count" id="quarryModeCountBundled">${bundledSiteCount} Sites</span>
+                  </span>
+                  <span class="quarry-mode-sub">Delivered to plant in supplier unit price; internal transport split is unknown ($0 separate haulage)</span>
+                  <span class="quarry-mode-tags">
+                    <span class="quarry-mode-tag is-opt">Region Optional</span>
+                    <span class="quarry-mode-tag is-brass">Includes Supplier Transport</span>
+                  </span>
+                </span>
+                <span class="quarry-mode-check" aria-hidden="true">${defBundled ? '✓ Selected' : 'Select'}</span>
+              </button>
+            </div>
+            <input type="hidden" id="f_includes_transport" value="${defBundled ? '1' : '0'}">
+          </div>
+          ${fld(defBundled ? 'Region (Optional · Supplier Delivers)' : 'Region *', inp('f_region', 'text', '', `list="dl_regions" placeholder="${defBundled ? 'Optional region (required only if we/3P haul)...' : 'Select region or click map zone...'}"`) + dl('dl_regions', regNames), {
+            id: 'wrap_site_region',
+            hint: defBundled
+              ? 'Optional while supplier delivers both material & transport. Required if our trucks or paid 3rd-party haulers ever transport from this site.'
+              : 'Select the geographic Region first or click inside a zone on the map.',
             hintId: 'hint_site_region'
           })}
-          ${fld('Site Name (Inside Region) *', inp('f_site', 'text', '', 'placeholder="Site name inside selected region..."'), {
-            hint: 'Must be located inside the selected Region.',
+          ${fld(defBundled ? 'Quarry / Supplier Site Name *' : 'Site Name (Inside Region) *', inp('f_site', 'text', '', `placeholder="${defBundled ? 'Supplier quarry or delivery source name...' : 'Site name inside selected region...'}"`), {
+            id: 'wrap_site_name',
+            hint: defBundled ? 'Bundled quarry source (material + transport included in supplier price).' : 'Must be located inside the selected Region.',
             hintId: 'hint_site_name'
           })}
           ${fld('Default Site Owner (Supplier)', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), {
@@ -2106,6 +2160,8 @@
       const empAmtVal = (pendSalRow && Number(pendSalRow.base_salary || pendSalRow.salary_usd || pendSalRow.daily_rate || pendSalRow.amount || 0) > 0)
         ? String(pendSalRow.base_salary || pendSalRow.salary_usd || pendSalRow.daily_rate || pendSalRow.amount)
         : '';
+      const empReimbVal = (pendSalRow && Number(pendSalRow.reimbursement || 0) > 0) ? String(pendSalRow.reimbursement) : '';
+      const empDedVal = (pendSalRow && Number(pendSalRow.deduction || 0) > 0) ? String(pendSalRow.deduction) : '';
       const empNotesVal = pendSalRow ? String(pendSalRow.notes || '') : '';
       const amtLbl = isContract
         ? `<span id="lbl_emp_amount">${/Daily/i.test(empPayVal) ? 'Daily Rate ($) *' : 'Base Salary ($) *'}</span>`
@@ -2131,6 +2187,8 @@
             <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
             <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
             ${fld(amtLbl, amtInputHtml, { id: 'wrap_emp_amount', hintId: 'hint_emp_salary', hint: '', afterHtml: salaryModePillsHtml })}
+            ${fld('Transp. / Reimb. ($/mo)', inp('f_reimb', 'number', empReimbVal, 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"'), { id: 'wrap_emp_reimb' })}
+            ${fld('Absent Reimb. Ded. ($/day)', inp('f_ded', 'number', empDedVal, 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"'), { id: 'wrap_emp_ded' })}
             ${fld('Work Days per Month', inp('f_workdays', 'number', empWorkDaysVal, `step="1" min="1" max="31"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_workdays', lockField: 'f_workdays', lockReason: 'Locked to the contracted schedule recorded on onboarding' } : { id: 'wrap_emp_workdays' })}
             ${fld('Hours per Day', inp('f_workhours', 'number', empWorkHoursVal, `step="0.5" min="1" max="24"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_workhours', lockField: 'f_workhours', lockReason: 'Locked to the contracted daily hours recorded on onboarding' } : { id: 'wrap_emp_workhours' })}
             ${fld('Vacation Days per Year', inp('f_vacdays', 'number', empVacDaysVal, `step="0.5" min="0" max="60"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_vacdays', lockField: 'f_vacdays', lockReason: 'Locked to the annual vacation allowance recorded on onboarding' } : { id: 'wrap_emp_vacdays' })}
@@ -2140,7 +2198,7 @@
             <div><small>Contract</small><b id="calc_emp_prior">Select Staff</b></div>
             <div><small>Pay Basis</small><b id="calc_emp_basis">${esc(empPayVal)}</b></div>
             <div><small>Daily &amp; Hourly</small><b id="calc_emp_rates">-</b></div>
-            <div><small>Monthly Salary</small><b id="calc_emp_total">$0.00</b></div>
+            <div><small>Monthly Package</small><b id="calc_emp_total">$0.00</b></div>
           </div>
         `;
       }
