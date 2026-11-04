@@ -600,6 +600,13 @@
       custStat = { mHit, loadsCnt, billed, collected, openAr, vol: Math.abs(billed) + Math.abs(openAr) + loadsCnt };
     }
 
+    const isAskBundledRaw = r => {
+      if (typeof window !== 'undefined' && window.MFG_QUARRY_SITE_MODE && typeof window.MFG_QUARRY_SITE_MODE.isBundledRawTicket === 'function') {
+        return Boolean(window.MFG_QUARRY_SITE_MODE.isBundledRawTicket(r));
+      }
+      return Boolean(r && (r.includes_transport === true || r.includes_transport === 1 || r.haulage_mode === 'supplier_delivered'));
+    };
+
     let supStat = null;
     if (bestSup) {
       const sNorm = norm(bestSup.name);
@@ -609,6 +616,8 @@
         norm(r.supplier) === sNorm ||
         norm(r.truck_owner) === sNorm
       );
+      const bundledSupRows = rRows.filter(isAskBundledRaw);
+      const bundledSupUsd = bundledSupRows.reduce((a, r) => a + Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0))), 0);
       const eRows = scopedRows('expenses', scope).filter(r => norm(r.supplier) === sNorm);
       const pRows = scopedRows('settlements', scope).filter(r => norm(r.supplier) === sNorm);
       const eSign = (_ctx && _ctx.expenseSign) || (() => 1);
@@ -624,14 +633,18 @@
       const expAmt = useModel && mSup.expenses != null ? Number(mSup.expenses) : expAmtRows;
       const paidAmt = useModel && mSup.settlements_paid != null ? Number(mSup.settlements_paid) : paidAmtRows;
       const openAp = mSup && mSup.ap_balance != null ? Number(mSup.ap_balance) : null;
-      supStat = { mSup, rawCnt, rawAmt, expCnt, expAmt, paidAmt, openAp, vol: Math.abs(rawAmt) + Math.abs(expAmt) + Math.abs(openAp || 0) + rawCnt };
+      supStat = { mSup, rawCnt, rawAmt, expCnt, expAmt, paidAmt, openAp, bundledCnt: bundledSupRows.length, bundledUsd: bundledSupUsd, vol: Math.abs(rawAmt) + Math.abs(expAmt) + Math.abs(openAp || 0) + rawCnt };
     }
 
     const preferSupplier = Boolean(bestSup && (!bestCust || explicitSup || (supStat.vol > custStat.vol && !explicitCust)));
     if (preferSupplier && supStat) {
-      const dualCustBullets = (bestCust && custStat && custStat.vol > 0)
-        ? [`Customer Ledger Also Active: <b>${fmtInt(custStat.loadsCnt)}</b> sales loads (<b>${fmtMoney(custStat.billed, 2)}</b>) · Open AR <b>${fmtMoney(custStat.openAr, 2)}</b>`]
-        : undefined;
+      const supBullets = [];
+      if (supStat.bundledCnt > 0) {
+        supBullets.push(`Bundled Delivery Basis: <b>${fmtInt(supStat.bundledCnt)}</b> loads (<b>${fmtMoney(supStat.bundledUsd, 2)}</b>) include supplier-provided raw material + transportation in one delivered price (internal transport split unknown).`);
+      }
+      if (bestCust && custStat && custStat.vol > 0) {
+        supBullets.push(`Customer Ledger Also Active: <b>${fmtInt(custStat.loadsCnt)}</b> sales loads (<b>${fmtMoney(custStat.billed, 2)}</b>) · Open AR <b>${fmtMoney(custStat.openAr, 2)}</b>`);
+      }
       return {
         q: cleanQ,
         lang: detectLang(cleanQ),
@@ -639,7 +652,7 @@
         topic: 'ap',
         title: `Supplier · ${cleanOut(bestSup.name)}`,
         answer: `In <b>${esc(scope.fullScopeLabel)}</b>, <b>${esc(bestSup.name)}</b> recorded <b>${fmtInt(supStat.rawCnt)}</b> quarry/haulage loads (<b>${fmtMoney(supStat.rawAmt, 2)}</b>), <b>${fmtInt(supStat.expCnt)}</b> expense vouchers (<b>${fmtMoney(supStat.expAmt, 2)}</b>), and settlements paid of <b>${fmtMoney(supStat.paidAmt, 2)}</b>${supStat.openAp != null ? ` (open AP balance: <b>${fmtMoney(supStat.openAp, 2)}</b>)` : ''}.`,
-        bullets: dualCustBullets,
+        bullets: supBullets.length ? supBullets : undefined,
         promptText: 'Would you like to open this supplier\'s 360° ledger or jump to Suppliers & Payables?',
         actions: [
           { type: 'inspect', crKey: 'suppliers', id: bestSup.id, label: `360° ${bestSup.name}` },
@@ -1265,6 +1278,15 @@
           ]
         };
       }
+      const isBundledRawAsk = r => {
+        if (typeof window !== 'undefined' && window.MFG_QUARRY_SITE_MODE && typeof window.MFG_QUARRY_SITE_MODE.isBundledRawTicket === 'function') {
+          return Boolean(window.MFG_QUARRY_SITE_MODE.isBundledRawTicket(r));
+        }
+        return Boolean(r && (r.includes_transport === true || r.includes_transport === 1 || r.haulage_mode === 'supplier_delivered'));
+      };
+      const scopedRawRows = scopedRows('raw_purchases', scope);
+      const bundledRawRows = scopedRawRows.filter(isBundledRawAsk);
+      const bundledRawUsd = bundledRawRows.reduce((a, r) => a + Number(r.total != null ? r.total : (Number(r.cost || 0) + Number(r.trans_cost || 0))), 0);
       const topS = (model.suppliers || [])
         .filter(s => Math.abs(Number(s.ap_balance || s.balance || 0)) > 1)
         .sort((a, b) => Number(b.ap_balance || b.balance || 0) - Number(a.ap_balance || a.balance || 0))
@@ -1272,6 +1294,13 @@
       const periodNetAp = Number(k.ap_material || 0) + Number(k.ap_haulage || 0) + Number(k.ap_expense || 0) - Number(k.ap_settled || k.settlements_paid || 0);
       const totLabel = scope.customDateOverride ? `Net Period AP Change (${scope.periodLabel})` : 'Net Open Accounts Payable';
       const totVal = scope.customDateOverride ? periodNetAp : Number(k.ap_balance || 0);
+      const apBullets = [];
+      if (topS.length) {
+        apBullets.push(`Largest open supplier balances: ${topS.map(s => `<b>${esc(cleanOut(s.Supplier || s.name))}</b> (${fmtMoney(s.ap_balance || s.balance || 0, 0)})`).join(', ')}`);
+      }
+      if (bundledRawRows.length > 0) {
+        apBullets.push(`Bundled Quarry Delivery Note: <b>${fmtInt(bundledRawRows.length)}</b> raw loads (<b>${fmtMoney(bundledRawUsd, 0)}</b>) come from quarry sites where the supplier provides both raw material and transportation in one delivered price; their internal transport split is unknown because neither our fleet nor paid 3rd-party haulers transport them.`);
+      }
       return {
         q: cleanQ,
         lang,
@@ -1281,13 +1310,13 @@
         answer: `For <b>${esc(scope.fullScopeLabel)}</b>, quarry and haulage intake totaled <b>${fmtInt(k.raw_loads)}</b> loads (<b>${fmtMoney(k.raw_cost, 0)}</b>), settlements paid totaled <b>${fmtMoney(k.settlements_paid, 0)}</b>, and cumulative open Accounts Payable stands at <b>${fmtMoney(k.ap_balance, 0)}</b>.`,
         headers: ['Payable Component', 'Scope', 'Amount (USD)'],
         rows: [
-          ['1. Quarry Material Leg', 'Owed to quarry / pit owners', fmtMoney(k.ap_material, 0)],
+          ['1. Quarry Material Leg', 'Owed to quarry / pit owners (incl. bundled Mat+Trans loads)', fmtMoney(k.ap_material, 0)],
           ['2. Third-Party Haulage Leg', 'Owed to external truck owners', fmtMoney(k.ap_haulage, 0)],
           ['3. Credit Expenses Leg', 'Unpaid supplier bills & parts', fmtMoney(k.ap_expense, 0)],
           ['Less: AP Settlements Paid', 'Cash & bank payments posted', '-' + fmtMoney(k.ap_settled || k.settlements_paid, 0)]
         ],
         total: [totLabel, fmtMoney(totVal, 0)],
-        bullets: topS.length ? [`Largest open supplier balances: ${topS.map(s => `<b>${esc(cleanOut(s.Supplier || s.name))}</b> (${fmtMoney(s.ap_balance || s.balance || 0, 0)})`).join(', ')}`] : [],
+        bullets: apBullets,
         promptText: 'Would you like to open Suppliers & Payables, Quarry & Haulage, or post a supplier settlement?',
         actions: [
           { type: 'view', view: 'suppliers', label: 'Suppliers & Payables' },

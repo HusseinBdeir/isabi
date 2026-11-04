@@ -1175,10 +1175,11 @@
         const mk = `${normKey(co)}|${normKey(site)}|${normKey(prod)}|${normKey(sOwner)}`;
         let mCur = matMap.get(mk);
         if (!mCur) {
-          mCur = { company: co, site, product: prod, site_owner: sOwner, uom, loads: 0, qty: 0, mat_cost: 0, last_date: '', last_uc: 0, last_mc: 0, last_qty: 0 };
+          mCur = { company: co, site, product: prod, site_owner: sOwner, uom, loads: 0, bundled_loads: 0, qty: 0, mat_cost: 0, last_date: '', last_uc: 0, last_mc: 0, last_qty: 0 };
           matMap.set(mk, mCur);
         }
         mCur.loads += 1;
+        if (isBundledRawTicketPbi(r)) mCur.bundled_loads += 1;
         mCur.qty += q;
         mCur.mat_cost += mc;
         if (dStr >= mCur.last_date) {
@@ -1275,14 +1276,46 @@
       return bestActive || bestEnded;
     };
 
+    const siteHaulAvgMap = new Map();
+    haulMap.forEach(h => {
+      const sk = `${normKey(h.company)}|${normKey(h.site)}`;
+      let cur = siteHaulAvgMap.get(sk);
+      if (!cur) {
+        cur = { haul_cost: 0, qty: 0, loads: 0 };
+        siteHaulAvgMap.set(sk, cur);
+      }
+      cur.haul_cost += Number(h.haul_cost || 0);
+      cur.qty += Number(h.qty || 0);
+      cur.loads += Number(h.loads || 0);
+    });
+    const sitesPool = Array.isArray(opts.sites)
+      ? opts.sites
+      : ((typeof window !== 'undefined' && window.SEED && window.SEED.records && window.SEED.records.sites) || []);
+    const supplierSiteByNorm = new Map();
+    sitesPool.forEach(s => {
+      if (s && !s.voided && s.name && resolveSiteCategoryPbi(s) === 'supplier') {
+        supplierSiteByNorm.set(normKey(s.name), s);
+      }
+    });
+
     const matRows = Array.from(matMap.values()).map(m => {
       const rule = findPurchaseRule(m.company, m.site, m.site_owner, m.product);
+      const siteRec = supplierSiteByNorm.get(normKey(m.site)) || null;
+      const isBundled = Boolean(
+        (rule && (rule.includes_transport === true || rule.includes_transport === 1)) ||
+        (siteRec && isBundledQuarrySitePbi(siteRec)) ||
+        (m.bundled_loads > 0 && m.bundled_loads * 2 >= Math.max(1, m.loads))
+      );
       const isFlat = Boolean((rule && isRuleFlatMat(rule)) || (m.last_qty > 1.5 && Math.abs(m.last_uc - m.last_mc) < 0.05));
       const agreed = rule
         ? roundFn(isFlat ? Number(rValOr(rule.indiff_price, rule.unit_price ?? rule.price)) : Number(rule.unit_price ?? rule.price ?? 0))
         : null;
       const lastRate = roundFn(isFlat ? m.last_mc : m.last_uc);
       const avgRate = roundFn(isFlat ? (m.loads > 0 ? m.mat_cost / m.loads : 0) : (m.qty > 0 ? m.mat_cost / m.qty : 0));
+      const hAgg = siteHaulAvgMap.get(`${normKey(m.company)}|${normKey(m.site)}`);
+      const knownHaulRate = (!isBundled && hAgg)
+        ? (isFlat ? (hAgg.loads > 0 ? roundFn(hAgg.haul_cost / hAgg.loads) : null) : (hAgg.qty > 0 ? roundFn(hAgg.haul_cost / hAgg.qty) : null))
+        : null;
       const endDate = rule && rule.end_date ? String(rule.end_date).slice(0, 10) : '';
       const isLapsed = Boolean(endDate && endDate < asAtDate);
       // Agreed - Last: negative means supplier billed MORE than the agreed purchase rate
@@ -1290,11 +1323,14 @@
       return {
         company: m.company,
         site: m.site,
-        site_owner: m.site_owner || (rule && rule.supplier) || '—',
+        site_owner: m.site_owner || (rule && rule.supplier) || '-',
         product: m.product,
         label: `${m.site} · ${m.product}`,
         basis: isFlat ? 'Per Truck Load' : `Per ${m.uom || 'm³'}`,
         is_flat: isFlat,
+        includes_transport: isBundled,
+        bundled_loads: m.bundled_loads,
+        known_haul_rate: knownHaulRate,
         rule_name: rule ? (rule.name || '') : '',
         agreed_rate: agreed != null && agreed > 0 ? agreed : null,
         end_date: endDate,
@@ -1350,6 +1386,7 @@
       overAgreedCount: overAgreedMatCount + overAgreedHaulCount,
       matUnitChartRows: matRows.filter(r => !r.is_flat && r.last_rate > 0 && r.last_rate < 100).slice(0, 8).map(r => ({
         ...r,
+        label: r.includes_transport ? `${r.label} (Mat+Trans)` : r.label,
         agreed_chart: r.agreed_rate != null ? r.agreed_rate : r.avg_rate
       })),
       haulFlatChartRows: haulRows.filter(r => r.is_flat && r.last_rate > 0).slice(0, 8).map(r => ({
@@ -1414,7 +1451,7 @@
     { key: 'credit_terms', group: '1 · Sales, Pricing & Receivables', label: 'Customer Credit Terms', dvn: 'bhf_creditterm', form: 'creditterm', cols: ['name', 'company', 'customer', 'credit_days', 'credit_limit', 'ar_balance', 'start_date', 'end_date', 'notes'], relTables: ['customers', 'sales_tickets', 'receipts'], views: [{ id: 'all', label: 'All Credit Terms' }, { id: 'active', label: 'Active Policies', fn: r => !r.end_date }] },
 
     // 2 · Purchases, Expenses & Payables (8 BU-scoped)
-    { key: 'raw_purchases', group: '2 · Purchases, Expenses & Payables', label: 'Raw Material Purchases', dvn: 'bhf_rawpurchase', form: 'raw', cols: ['date', 'rep_date', 'ticket_no', 'company', 'site', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'driver', 'overtime', 'product', 'qty', 'uom', 'unit_cost', 'cost', 'trans_cost', 'total'], relTables: ['sites', 'suppliers', 'price_rules', 'equipment', 'drivers', 'products', 'settlements'], views: [{ id: 'all', label: 'All Raw Purchases' }, { id: 'supplier_haul', label: 'Third-Party Haulage', fn: r => Number(r.trans_cost || 0) > 0 }, { id: 'company_haul', label: 'Company Fleet Haul', fn: r => /company/i.test(r.transport_by) }, { id: 'overtime', label: 'Overtime Loads', fn: r => Boolean(r.overtime) }] },
+    { key: 'raw_purchases', group: '2 · Purchases, Expenses & Payables', label: 'Raw Material Purchases', dvn: 'bhf_rawpurchase', form: 'raw', cols: ['date', 'rep_date', 'ticket_no', 'company', 'site', 'site_owner', 'transport_by', 'truck_owner', 'truck', 'driver', 'overtime', 'product', 'qty', 'uom', 'unit_cost', 'cost', 'trans_cost', 'total'], relTables: ['sites', 'suppliers', 'price_rules', 'equipment', 'drivers', 'products', 'settlements'], views: [{ id: 'all', label: 'All Raw Purchases' }, { id: 'bundled', label: 'Bundled (Mat + Trans)', fn: r => isBundledRawTicketPbi(r) }, { id: 'supplier_haul', label: 'Third-Party Haulage', fn: r => Number(r.trans_cost || 0) > 0 }, { id: 'company_haul', label: 'Company Fleet Haul', fn: r => /company/i.test(r.transport_by) && !isBundledRawTicketPbi(r) }, { id: 'overtime', label: 'Overtime Loads', fn: r => Boolean(r.overtime) }] },
     { key: 'expenses', group: '2 · Purchases, Expenses & Payables', label: 'General & Fleet Expenses', dvn: 'bhf_mfgexpense', form: 'expense', cols: ['date', 'rep_date', 'name', 'company', 'category', 'subcategory', 'item_summary', 'supplier', 'equipment', 'method', 'qty', 'amount', 'vat', 'total_ttc', 'invoice', 'reference', 'notes'], relTables: ['expense_items', 'recurring_expenses', 'expense_categories', 'expense_subcategories', 'suppliers', 'equipment', 'settlements'], views: [{ id: 'all', label: 'All Expenses' }, { id: 'pending_price', label: 'Pending Invoice Price ($0)', fn: r => Boolean(r.price_pending) }, { id: 'fleet', label: 'Equipment & Fleet Tagged', fn: r => Boolean(r.equipment || r.for_equipment) }, { id: 'overhead', label: 'Plant & General Overhead', fn: r => !r.equipment && !r.for_equipment }] },
     { key: 'expense_items', group: '2 · Purchases, Expenses & Payables', navView: 'expenses', label: 'Expense Item Tickets', dvn: 'bhf_mfgexpenseitem', form: 'expense', cols: ['date', 'expense_ref', 'company', 'item_name', 'category', 'allocation_mode', 'target_equipment', 'qty', 'uom', 'unit_cost', 'line_total', 'supplier'], relTables: ['expenses', 'items', 'equipment', 'warehouse_movements', 'suppliers'], views: [
       { id: 'all', label: 'All Expense Items' },
@@ -1553,9 +1590,10 @@
       { id: 'capex', label: 'Capital Expenditure', fn: r => deriveExpenseCostClass(r) === 'Capital Expenditure' }
     ] },
     { key: 'expense_subcategories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Subcategories', singularLabel: 'Expense Subcategory', dvn: 'bhf_expensesubcategory', form: 'expensecategory', cols: ['name', 'category', 'expenses_count', 'total_spent'], relTables: ['expense_categories', 'expenses', 'recurring_expenses'], views: [{ id: 'all', label: 'All Expense Subcategories' }] },
-    { key: 'sites', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_sites', label: 'Sites', singularLabel: 'Site', dvn: 'bhf_site', form: 'site', cols: ['name', 'site_category', 'region', 'linked_party', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'], relTables: ['regions', 'suppliers', 'customers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [
-      { id: 'all', label: 'All Sites', cols: ['name', 'site_category', 'region', 'linked_party', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'] },
-      { id: 'source', label: 'Supplier / Quarry Sites', fn: r => resolveSiteCategoryPbi(r) === 'supplier', cols: ['name', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads'] },
+    { key: 'sites', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_sites', label: 'Sites', singularLabel: 'Site', dvn: 'bhf_site', form: 'site', cols: ['name', 'site_category', 'supply_mode', 'region', 'linked_party', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'], relTables: ['regions', 'suppliers', 'customers', 'sales_tickets', 'raw_purchases', 'price_rules', 'jv_partnerships', 'logistics_allowances'], views: [
+      { id: 'all', label: 'All Sites', cols: ['name', 'site_category', 'supply_mode', 'region', 'linked_party', 'is_jv', 'gps_status', 'active_rules', 'raw_loads', 'sales_loads'] },
+      { id: 'source', label: 'Supplier / Quarry Sites', fn: r => resolveSiteCategoryPbi(r) === 'supplier', cols: ['name', 'supply_mode', 'region', 'supplier', 'is_jv', 'gps_status', 'latitude', 'longitude', 'active_rules', 'raw_loads'] },
+      { id: 'bundled', label: 'Bundled (Mat + Trans)', fn: r => resolveSiteCategoryPbi(r) === 'supplier' && isBundledQuarrySitePbi(r), cols: ['name', 'supply_mode', 'region', 'supplier', 'gps_status', 'active_rules', 'raw_loads'] },
       { id: 'delivery', label: 'Customer Delivery Sites', fn: r => resolveSiteCategoryPbi(r) === 'customer', cols: ['name', 'region', 'customer', 'gps_status', 'latitude', 'longitude', 'active_rules', 'sales_loads'] },
       { id: 'jv', label: 'JV 50/50 Sites', fn: r => resolveSiteCategoryPbi(r) === 'supplier' && Boolean(r.is_jv), cols: ['name', 'region', 'supplier', 'jv_partner', 'jv_share', 'is_jv', 'gps_status', 'active_rules', 'raw_loads'] },
       { id: 'gps', label: 'Verified GPS Pin', fn: r => r.latitude != null && r.longitude != null, cols: ['name', 'site_category', 'region', 'linked_party', 'latitude', 'longitude', 'raw_loads', 'sales_loads'] }
@@ -1722,13 +1760,48 @@
     return 'supplier';
   }
 
+  function isBundledQuarrySitePbi(r) {
+    if (typeof window !== 'undefined' && window.MFG_QUARRY_SITE_MODE && typeof window.MFG_QUARRY_SITE_MODE.isSupplierDeliveredSite === 'function') {
+      return Boolean(window.MFG_QUARRY_SITE_MODE.isSupplierDeliveredSite(r));
+    }
+    return Boolean(r && (r.includes_transport === true || r.includes_transport === 1 || r.haulage_mode === 'supplier_delivered'));
+  }
+
+  function isBundledRawTicketPbi(r) {
+    if (typeof window !== 'undefined' && window.MFG_QUARRY_SITE_MODE && typeof window.MFG_QUARRY_SITE_MODE.isBundledRawTicket === 'function') {
+      return Boolean(window.MFG_QUARRY_SITE_MODE.isBundledRawTicket(r));
+    }
+    return Boolean(r && (r.includes_transport === true || r.includes_transport === 1 || r.haulage_mode === 'supplier_delivered'));
+  }
+
   function pbiIcon(name) {
     return (typeof window !== 'undefined' && window.MFG_ICONS && typeof window.MFG_ICONS.svg === 'function')
       ? window.MFG_ICONS.svg(name)
       : '';
   }
 
-  function formatHubSpecialCellHtml(c, v, cell) {
+  function formatHubSpecialCellHtml(c, v, cell, r, tableKey) {
+    if (c === 'supply_mode') {
+      if (/Mat \+ Trans/i.test(String(v || cell))) {
+        return `<span class="quarry-landed-pill has-ico" data-ui-tip="Supplier provides raw material + transport in one delivered price; Region optional until hauled by own fleet or 3rd-party peers">${pbiIcon('truck')}<span>Mat + Trans</span></span>`;
+      }
+      if (/JV 50\/50/i.test(String(v || cell))) {
+        return `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('jv')}<span>JV 50/50</span></span>`;
+      }
+      if (/Customer Delivery/i.test(String(v || cell))) {
+        return `<span class="badge badge-info tkt-ot-badge has-ico">${pbiIcon('pin')}<span>Delivery</span></span>`;
+      }
+      return `<span class="badge badge-info tkt-ot-badge" data-ui-tip="Ex-Quarry material only; haulage in own trucks or 3rd-party peers tracked separately (Region + Site required)">Ex-Quarry</span>`;
+    }
+    if (c === 'region' && tableKey === 'sites' && (v == null || v === '') && r && resolveSiteCategoryPbi(r) === 'supplier' && isBundledQuarrySitePbi(r)) {
+      return `<span class="quarry-landed-pill" data-ui-tip="Region optional while supplier delivers material + transport; required if hauled in own trucks or 3rd-party peers">Optional (Bundled)</span>`;
+    }
+    if (c === 'trans_cost' && tableKey === 'raw_purchases' && !(Number(v || 0) > 0) && r && isBundledRawTicketPbi(r)) {
+      return `<span class="quarry-landed-pill" data-ui-tip="Supplier provides raw material + transport in one delivered price; internal transport split unknown">Incl. in Mat</span>`;
+    }
+    if (c === 'trans_unit_price' && tableKey === 'price_rules' && (v == null || v === '') && r && r.rule_type === 'Purchase Price (Site)' && (r.includes_transport === true || r.includes_transport === 1)) {
+      return `<span class="quarry-landed-pill" data-ui-tip="Bundled delivered quarry rate (material + supplier transport combined)">Incl. in Mat</span>`;
+    }
     if (c === 'overtime') {
       return (v && v !== 0 && v !== 'No')
         ? `<span class="badge badge-warn tkt-ot-badge has-ico" data-ui-tip="Overtime shift load">${pbiIcon('overtime')}<span>OT</span></span>`
@@ -1802,7 +1875,7 @@
     return `<span class="badge ${isCust ? 'badge-info' : 'badge-brass'}">${esc(isCust ? 'Customer Delivery' : 'Supplier / Quarry')}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|linked_party|jv_partner|jv_share|working_days|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|supply_mode|linked_party|jv_partner|jv_share|working_days|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|role_category|pay_basis|operates_equipment|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -2684,6 +2757,7 @@
       const sCat = resolveSiteCategoryPbi(r);
       if (c === 'region') return r.region || r.geo_zone || null;
       if (c === 'site_category') return sCat === 'customer' ? 'Customer Delivery Site' : 'Supplier / Quarry Site';
+      if (c === 'supply_mode') return sCat === 'customer' ? 'Customer Delivery' : (r.is_jv ? 'JV 50/50 Partner' : (isBundledQuarrySitePbi(r) ? 'Mat + Trans Included' : 'Ex-Quarry (Separate Haul)'));
       if (c === 'linked_party') return sCat === 'customer' ? (r.customer || null) : (r.supplier || null);
       if (c === 'supplier') return sCat === 'supplier' ? (r.supplier || null) : null;
       if (c === 'customer') return sCat === 'customer' ? (r.customer || null) : null;
@@ -6427,17 +6501,27 @@
         <div class="pbi-grid-2">
           ${(() => {
             const siteOwnerTally = new Map();
+            const siteMetaByNorm = new Map();
+            const siteBundledLoads = new Map();
             (rec.sites || []).forEach(rs => {
-              if (rs && rs.name && rs.supplier && resolveSiteCategoryPbi(rs) === 'supplier') {
+              if (rs && rs.name && resolveSiteCategoryPbi(rs) === 'supplier') {
                 const sk = norm(rs.name);
-                if (!siteOwnerTally.has(sk)) siteOwnerTally.set(sk, new Map([[String(rs.supplier).trim(), 0.01]]));
+                siteMetaByNorm.set(sk, rs);
+                if (rs.supplier && !siteOwnerTally.has(sk)) {
+                  siteOwnerTally.set(sk, new Map([[String(rs.supplier).trim(), 0.01]]));
+                }
               }
             });
             rawRows.forEach(r => {
-              if (!r || !r.site || !r.site_owner) return;
+              if (!r || !r.site) return;
               const sk = norm(r.site);
+              if (!sk) return;
+              if (isBundledRawTicketPbi(r)) {
+                siteBundledLoads.set(sk, (siteBundledLoads.get(sk) || 0) + 1);
+              }
+              if (!r.site_owner) return;
               const ow = String(r.site_owner).trim();
-              if (!sk || !ow) return;
+              if (!ow) return;
               if (!siteOwnerTally.has(sk)) siteOwnerTally.set(sk, new Map());
               const om = siteOwnerTally.get(sk);
               om.set(ow, (om.get(ow) || 0) + Math.max(1, Number(r.total || r.cost || 0)));
@@ -6454,8 +6538,15 @@
               .map(s => {
                 const qty = Number(s.raw_qty || 0);
                 const cost = Number(s.raw_cost || 0);
+                const sk = norm(s.Site || '');
+                const sm = siteMetaByNorm.get(sk);
+                const bLoads = siteBundledLoads.get(sk) || 0;
+                const totLoads = Number(s.raw_loads || 0);
+                const isBundled = Boolean((sm && isBundledQuarrySitePbi(sm)) || (bLoads > 0 && bLoads * 2 >= Math.max(1, totLoads)));
                 return Object.assign({}, s, {
                   siteOwner: resolveSiteOwner(s.Site),
+                  isBundled,
+                  supplyBasis: isBundled ? 'Mat+Trans' : 'Ex-Quarry',
                   avgRawPerM3: qty > 0 ? round2(cost / qty) : null
                 });
               })
@@ -6463,26 +6554,27 @@
 
             return pbiTable('Source sites · raw material intake & haulage cost', [
               { label: 'Source Site', key: 'Site', bold: true, fmt: (v, r) => `<b>${esc(v && v !== '(Unassigned Site)' ? v : '(Unassigned Source Site)')}</b>${siteJvMarker(r && (r.JV === 'Yes' || r.is_jv))}` },
-              { label: 'Site Owner', key: 'siteOwner', fmt: v => esc(v || '—') },
+              { label: 'Site Owner', key: 'siteOwner', fmt: v => esc(v || '-') },
+              { label: 'Supply Basis', key: 'supplyBasis', fmt: (v, r) => r && r.isBundled ? '<span class="quarry-landed-pill" data-ui-tip="Supplier provides raw material + transportation in one delivered price; internal transport split unknown">Mat+Trans</span>' : '<span class="muted">Ex-Quarry</span>' },
               { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: v => fmtNum(v) },
-              { label: 'Raw Qty (m³)', key: 'raw_qty', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '—' },
-              { label: 'Raw Tons', key: 'raw_tons', r: true, fmt: v => v > 0 ? fmtNum(v, 0) : '—' },
+              { label: 'Raw Qty (m³)', key: 'raw_qty', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '-' },
+              { label: 'Raw Tons', key: 'raw_tons', r: true, fmt: v => v > 0 ? fmtNum(v, 0) : '-' },
               { label: 'Material ($)', key: 'raw_mat_cost', r: true, fmt: v => fmtUSD(v, 0) },
-              { label: 'Haulage ($)', key: 'raw_haulage', r: true, fmt: v => fmtUSD(v, 0) },
+              { label: 'Haulage ($)', key: 'raw_haulage', r: true, fmt: (v, r) => (r && r.isBundled && !(Number(v || 0) > 0)) ? '<span class="quarry-landed-pill" data-ui-tip="Transportation is included inside Material ($); internal transport split unknown">Incl. in Mat</span>' : fmtUSD(v, 0) },
               { label: 'Total Raw Cost ($)', key: 'raw_cost', r: true, bar: 'brass', fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
               {
                 label: 'Avg $/m³',
                 key: 'avgRawPerM3',
                 r: true,
-                fmt: v => v != null ? fmtUSD(v, 2) : '—',
+                fmt: (v, r) => v != null ? (r && r.isBundled ? `<span data-ui-tip="Delivered rate (material + supplier transport combined; internal transport split unknown)">${fmtUSD(v, 2)}</span>` : fmtUSD(v, 2)) : '-',
                 foot: list => {
                   const tc = list.reduce((a, r) => a + Number(r.raw_cost || 0), 0);
                   const tq = list.reduce((a, r) => a + Number(r.raw_qty || 0), 0);
-                  return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(tc / tq, 2)}</b>` : '—';
+                  return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(tc / tq, 2)}</b>` : '-';
                 }
               }
             ], sourceSiteRows, {
-              subtitle: 'Quarry and excavation source sites ranked by total raw intake cost (Leg 1 material to site owner + Leg 2 haulage to truck owner); customer delivery sites are tracked separately under Sales & Receivables',
+              subtitle: 'Quarry and excavation source sites ranked by total raw intake cost (Leg 1 material + Leg 2 haulage); Mat+Trans sites include supplier-delivered transport inside Material ($) where internal transport split is unknown',
               unitLabel: 'source sites'
             });
           })()}
@@ -6672,17 +6764,27 @@
         <div class="pbi-grid-2">
           ${(() => {
             const siteOwnerTally = new Map();
+            const siteMetaByNorm = new Map();
+            const siteBundledLoads = new Map();
             (rec.sites || []).forEach(rs => {
-              if (rs && rs.name && rs.supplier && resolveSiteCategoryPbi(rs) === 'supplier') {
+              if (rs && rs.name && resolveSiteCategoryPbi(rs) === 'supplier') {
                 const sk = norm(rs.name);
-                if (!siteOwnerTally.has(sk)) siteOwnerTally.set(sk, new Map([[String(rs.supplier).trim(), 0.01]]));
+                siteMetaByNorm.set(sk, rs);
+                if (rs.supplier && !siteOwnerTally.has(sk)) {
+                  siteOwnerTally.set(sk, new Map([[String(rs.supplier).trim(), 0.01]]));
+                }
               }
             });
             rawRows.forEach(r => {
-              if (!r || !r.site || !r.site_owner) return;
+              if (!r || !r.site) return;
               const sk = norm(r.site);
+              if (!sk) return;
+              if (isBundledRawTicketPbi(r)) {
+                siteBundledLoads.set(sk, (siteBundledLoads.get(sk) || 0) + 1);
+              }
+              if (!r.site_owner) return;
               const ow = String(r.site_owner).trim();
-              if (!sk || !ow) return;
+              if (!ow) return;
               if (!siteOwnerTally.has(sk)) siteOwnerTally.set(sk, new Map());
               const om = siteOwnerTally.get(sk);
               om.set(ow, (om.get(ow) || 0) + Math.max(1, Number(r.total || r.cost || 0)));
@@ -6699,8 +6801,15 @@
               .map(s => {
                 const qty = Number(s.raw_qty || 0);
                 const cost = Number(s.raw_cost || 0);
+                const sk = norm(s.Site || '');
+                const sm = siteMetaByNorm.get(sk);
+                const bLoads = siteBundledLoads.get(sk) || 0;
+                const totLoads = Number(s.raw_loads || 0);
+                const isBundled = Boolean((sm && isBundledQuarrySitePbi(sm)) || (bLoads > 0 && bLoads * 2 >= Math.max(1, totLoads)));
                 return Object.assign({}, s, {
                   siteOwner: resolveSiteOwner(s.Site),
+                  isBundled,
+                  supplyBasis: isBundled ? 'Mat+Trans' : 'Ex-Quarry',
                   avgRawPerM3: qty > 0 ? round2(cost / qty) : null
                 });
               })
@@ -6708,26 +6817,27 @@
 
             return pbiTable('Source sites · raw material intake & haulage cost', [
               { label: 'Source Site', key: 'Site', bold: true, fmt: (v, r) => `<b>${esc(v && v !== '(Unassigned Site)' ? v : '(Unassigned Source Site)')}</b>${siteJvMarker(r && (r.JV === 'Yes' || r.is_jv))}` },
-              { label: 'Site Owner', key: 'siteOwner', fmt: v => esc(v || '—') },
+              { label: 'Site Owner', key: 'siteOwner', fmt: v => esc(v || '-') },
+              { label: 'Supply Basis', key: 'supplyBasis', fmt: (v, r) => r && r.isBundled ? '<span class="quarry-landed-pill" data-ui-tip="Supplier provides raw material + transportation in one delivered price; internal transport split unknown">Mat+Trans</span>' : '<span class="muted">Ex-Quarry</span>' },
               { label: 'Raw Loads', key: 'raw_loads', r: true, fmt: v => fmtNum(v) },
-              { label: 'Raw Qty (m³)', key: 'raw_qty', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '—' },
-              { label: 'Raw Tons', key: 'raw_tons', r: true, fmt: v => v > 0 ? fmtNum(v, 0) : '—' },
+              { label: 'Raw Qty (m³)', key: 'raw_qty', r: true, fmt: v => v > 0 ? `${fmtNum(v, 0)} m³` : '-' },
+              { label: 'Raw Tons', key: 'raw_tons', r: true, fmt: v => v > 0 ? fmtNum(v, 0) : '-' },
               { label: 'Material ($)', key: 'raw_mat_cost', r: true, fmt: v => fmtUSD(v, 0) },
-              { label: 'Haulage ($)', key: 'raw_haulage', r: true, fmt: v => fmtUSD(v, 0) },
+              { label: 'Haulage ($)', key: 'raw_haulage', r: true, fmt: (v, r) => (r && r.isBundled && !(Number(v || 0) > 0)) ? '<span class="quarry-landed-pill" data-ui-tip="Transportation is included inside Material ($); internal transport split unknown">Incl. in Mat</span>' : fmtUSD(v, 0) },
               { label: 'Total Raw Cost ($)', key: 'raw_cost', r: true, bar: 'brass', fmt: v => `<b>${fmtUSD(v, 0)}</b>` },
               {
                 label: 'Avg $/m³',
                 key: 'avgRawPerM3',
                 r: true,
-                fmt: v => v != null ? fmtUSD(v, 2) : '—',
+                fmt: (v, r) => v != null ? (r && r.isBundled ? `<span data-ui-tip="Delivered rate (material + supplier transport combined; internal transport split unknown)">${fmtUSD(v, 2)}</span>` : fmtUSD(v, 2)) : '-',
                 foot: list => {
                   const tc = list.reduce((a, r) => a + Number(r.raw_cost || 0), 0);
                   const tq = list.reduce((a, r) => a + Number(r.raw_qty || 0), 0);
-                  return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(tc / tq, 2)}</b>` : '—';
+                  return tq > 0 ? `<span class="tfoot-avg-tag">Avg </span><b>${fmtUSD(tc / tq, 2)}</b>` : '-';
                 }
               }
             ], sourceSiteRows, {
-              subtitle: 'Quarry and excavation source sites ranked by total raw intake cost (Leg 1 material to site owner + Leg 2 haulage to truck owner); customer delivery sites are tracked separately under Sales & Receivables',
+              subtitle: 'Quarry and excavation source sites ranked by total raw intake cost (Leg 1 material + Leg 2 haulage); Mat+Trans sites include supplier-delivered transport inside Material ($) where internal transport split is unknown',
               unitLabel: 'source sites'
             });
           })()}
@@ -9440,7 +9550,7 @@
                       : null;
                     const innerHtml = isLookup
                       ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-                      : (signedHtml || formatHubSpecialCellHtml(c, v, cell) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell)))))));
+                      : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, meta.key) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell)))))));
                     return `<td class="${isMoney || isNum || isLbp || isSignedLbp ? 'r' : ''}${/date|ticket|code|_no$|plate|version|_delta$|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
@@ -9569,6 +9679,7 @@
     truck_owner: 'Truck Owner',
     site_owner: 'Site Owner',
     site_category: 'Site Category',
+    supply_mode: 'Supply / Haulage',
     linked_party: 'Counterparty',
     jv_partner: 'JV Partner',
     jv_share: 'Partner Share',
@@ -9715,7 +9826,7 @@
       const isLookup = lkTarget && lkTarget !== tableKey && v != null && v !== '' && cell !== '—';
       const innerHtml = isLookup
         ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-        : (formatHubSpecialCellHtml(c, v, cell) || (c === 'site_category' ? formatSiteCategoryHtml(cell) : esc(cell)));
+        : (formatHubSpecialCellHtml(c, v, cell, r, tableKey) || (c === 'site_category' ? formatSiteCategoryHtml(cell) : esc(cell)));
       return `<td class="${isMoney || isNum ? 'r' : ''}${/date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, tableKey)}` : innerHtml}</td>`;
     };
 
@@ -9857,8 +9968,9 @@
                                 ${memberSites.map(ms => {
                                   const sCat = resolveSiteCategoryPbi(ms);
                                   const isJv = sCat === 'supplier' && Boolean(ms.is_jv);
+                                  const isBund = sCat === 'supplier' && !isJv && isBundledQuarrySitePbi(ms);
                                   const catCls = isJv ? 'is-jv' : (sCat === 'customer' ? 'is-cust' : '');
-                                  const catLbl = isJv ? 'JV 50/50' : (sCat === 'customer' ? 'Delivery' : 'Quarry');
+                                  const catLbl = isJv ? 'JV 50/50' : (sCat === 'customer' ? 'Delivery' : (isBund ? 'Quarry (Mat+Trans)' : 'Quarry'));
                                   const se = rel.siteByName[norm(ms.name)] || {};
                                   const sLoads = (se.sales_loads || 0) + (se.raw_loads || 0);
                                   return `<button type="button" class="reg-exp-site-card" data-exp-inspect-site="${esc(ms.id)}">
@@ -10075,7 +10187,7 @@
                     const isLookup = lkTarget && lkTarget !== meta.key && v != null && v !== '' && cell !== '—';
                     const innerHtml = isLookup
                       ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-                      : (formatHubSpecialCellHtml(c, v, cell) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell)))))));
+                      : (formatHubSpecialCellHtml(c, v, cell, r, meta.key) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell)))))));
                     return `<td class="${isMoney || isNum ? 'r' : ''}${/date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
@@ -10821,9 +10933,9 @@
           { label: 'Agreed', key: 'agreed_chart', color: C.slate },
           { label: 'Last Receipt', key: 'last_rate', color: C.navy },
           { label: 'Period Avg', key: 'avg_rate', color: C.brass }
-        ], { headRight: r => `${fmtNum(r.loads, 0)} loads` }), {
+        ], { headRight: r => r && r.includes_transport ? `${fmtNum(r.loads, 0)} loads · Mat+Trans` : `${fmtNum(r.loads, 0)} loads` }), {
           id: 'rawMatRateChart',
-          subtitle: 'Purchase Price (Site) agreement rate vs. last raw material intake unit cost and period average'
+          subtitle: 'Purchase Price (Site) agreement vs. last receipt and period average; (Mat+Trans) sites include supplier-delivered transport in one landed rate (internal transport split unknown)'
         })}
         ${pbiPanel(`Quarry Transportation Rate by Hauler & Site · Agreed vs. Last Haul (${haulBasis})`, buildClusteredBarChart(haulRows, 'label', [
           { label: 'Agreed', key: 'agreed_chart', color: C.slate },
@@ -11667,7 +11779,7 @@
           { label: 'Avg Selling Price ($/m³ ex-VAT)', key: 'avg_price_net', color: C.navy },
           { label: 'Avg Raw Cost / m³', key: 'avg_raw_cost', color: C.crit }
         ], { isMoney: true, decimals: 2 }), {
-          subtitle: 'Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw material intake cost',
+          subtitle: 'Monthly $/m³ spread between realised ex-VAT aggregate selling price and raw intake cost (including supplier-delivered Mat+Trans quarry loads)',
           legend: [
             { label: 'Selling Price ($/m³)', color: C.navy, line: true },
             { label: 'Raw Cost ($/m³)', color: C.crit, line: true }
@@ -11687,7 +11799,7 @@
           }
         }, { lineMax: 1 }), {
           id: 'pbiRawIntakeCostSplitChart',
-          subtitle: 'Site-owner material cost (Leg 1) vs subcontracted truck haulage (Leg 2) and monthly haulage share %',
+          subtitle: 'Site-owner material cost (Leg 1, incl. bundled supplier-delivered loads where internal transport split is unknown) vs 3rd-party haulage (Leg 2)',
           legend: [
             { label: 'Material (Leg 1)', color: C.navy },
             { label: '3rd-Party Haul (Leg 2)', color: C.crit },

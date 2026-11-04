@@ -1247,7 +1247,7 @@
     // Beirut
     { place: 'Beirut', region: 'Beirut', governorate: 'Beirut', lat: 33.8938, lng: 35.5018, aliases: ['beyrouth'] },
     { place: 'Hamra', region: 'Beirut', governorate: 'Beirut', lat: 33.8962, lng: 35.4832, aliases: ['ras beirut', 'verdun', 'raouche', 'ramlet el baida', 'ain el mreisseh', 'clemenceau'] },
-    { place: 'Achrafieh', region: 'Beirut', governorate: 'Beirut', lat: 33.8886, lng: 35.5208, aliases: ['ashrafieh', 'badaro', 'gemmayzeh', 'mar mikhael', 'sodeco', 'quarantina', 'karantina', 'downtown beirut', 'solidere', 'mazraa', 'tariq el jdideh'] },
+    { place: 'Achrafieh', region: 'Beirut', governorate: 'Beirut', lat: 33.8886, lng: 35.5208, aliases: ['ashrafieh', 'badaro', 'mathaf', 'gemmayzeh', 'mar mikhael', 'sodeco', 'quarantina', 'karantina', 'downtown beirut', 'solidere', 'mazraa', 'tariq el jdideh'] },
     // Metn (Mount Lebanon)
     { place: 'Metn', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8980, lng: 35.5950, aliases: ['el metn', 'matn'] },
     { place: 'Fanar', region: 'Metn', governorate: 'Mount Lebanon', lat: 33.8825, lng: 35.5658, aliases: ['al fanar', 'ain saade', 'mansourieh', 'beit mery', 'mkalles'] },
@@ -1268,7 +1268,7 @@
     { place: 'Jbeil', region: 'Jbeil', governorate: 'Mount Lebanon', lat: 34.1230, lng: 35.6519, aliases: ['byblos', 'amchit', 'blat', 'mastita', 'fidar', 'kartaba', 'annaya'] },
     { place: 'Halat', region: 'Jbeil', governorate: 'Mount Lebanon', lat: 34.0806, lng: 35.6478, aliases: ['nahr ibrahim'] },
     // Baabda (Mount Lebanon)
-    { place: 'Baabda', region: 'Baabda', governorate: 'Mount Lebanon', lat: 33.8339, lng: 35.5442, aliases: ['louaize', 'jamhour', 'yarze', 'kahale', 'araya', 'bsaba', 'furn el chebbak', 'chiyah', 'haret hreik', 'ghobeiry', 'bir hassan'] },
+    { place: 'Baabda', region: 'Baabda', governorate: 'Mount Lebanon', lat: 33.8339, lng: 35.5442, aliases: ['louaize', 'jamhour', 'yarze', 'kahale', 'araya', 'aaraya', 'bsaba', 'furn el chebbak', 'chiyah', 'haret hreik', 'ghobeiry', 'bir hassan'] },
     { place: 'Hazmieh', region: 'Baabda', governorate: 'Mount Lebanon', lat: 33.8548, lng: 35.5370, aliases: ['mar takla'] },
     { place: 'Hadath', region: 'Baabda', governorate: 'Mount Lebanon', lat: 33.8330, lng: 35.5240, aliases: ['laylakeh', 'baabda hadath'] },
     // Aley (Mount Lebanon)

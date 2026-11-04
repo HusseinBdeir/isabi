@@ -8702,6 +8702,26 @@
     return Boolean(s.includes_transport === true || s.includes_transport === 1 || s.includes_transport === '1' || s.haulage_mode === 'supplier_delivered');
   }
 
+  function effectiveSiteRegion(siteOrObj, fallbackSiteName) {
+    const sObj = (siteOrObj && typeof siteOrObj === 'object')
+      ? siteOrObj
+      : (siteOrObj ? siteInfo(siteOrObj, 'raw') : (fallbackSiteName ? siteInfo(fallbackSiteName, 'raw') : null));
+    const direct = String((sObj && (sObj.region || sObj.geo_zone)) || '').trim();
+    if (direct) return direct;
+    const nm = String(fallbackSiteName || (typeof siteOrObj === 'string' ? siteOrObj : (sObj && sObj.name)) || '').trim();
+    if (nm && !(sObj && isSupplierDeliveredSite(sObj)) && window.MFG_GEO) {
+      if (typeof window.MFG_GEO.resolvePlaceLocation === 'function') {
+        const pl = window.MFG_GEO.resolvePlaceLocation(nm, SEED);
+        if (pl && pl.region) return String(pl.region).trim();
+      }
+      if (typeof window.MFG_GEO.findAtlasRegionByName === 'function') {
+        const hit = window.MFG_GEO.findAtlasRegionByName(nm, SEED);
+        if (hit && (hit.region || hit.name)) return String(hit.region || hit.name).trim();
+      }
+    }
+    return '';
+  }
+
   function isBundledRawTicket(r) {
     if (!r || r.voided || isRemovedTicket(r) || isPendingPriceRaw(r)) return false;
     const tc = Math.abs(Number(r.trans_cost || 0));
@@ -8813,6 +8833,7 @@
       || STATE.customRecords.sites.find(s => s && !s.voided && norm(s.name) === sk && resolveSiteCategory(s) !== 'customer');
     if (target) {
       target.region = effReg;
+      target.geo_zone = effReg;
       if ((target.latitude == null || target.longitude == null) && geoRes && geoRes.ok && geoRes.lat != null && geoRes.lng != null) {
         target.latitude = geoRes.lat;
         target.longitude = geoRes.lng;
@@ -8836,6 +8857,7 @@
         rep_date: todayISO(),
         site_category: 'supplier',
         region: effReg,
+        geo_zone: effReg,
         supplier: String(supplierOpt || '').trim(),
         customer: '',
         includes_transport: false,
@@ -8870,6 +8892,7 @@
   if (typeof window !== 'undefined') {
     window.MFG_QUARRY_SITE_MODE = {
       isSupplierDeliveredSite,
+      effectiveSiteRegion,
       isBundledRawTicket,
       isBundledRawPriceRule,
       getSiteHaulageProfile,
@@ -8959,6 +8982,23 @@
     const preferCust = Boolean(STATE && (STATE.view === 'sales' || STATE.view === 'customers' || STATE.view === 'pricing' || (STATE.tableViews && STATE.tableViews.sites === 'delivery')));
     if (preferCust) return fIdx._siteByCustNorm.get(n) || fIdx._siteBySuppNorm.get(n) || null;
     return fIdx._siteBySuppNorm.get(n) || fIdx._siteByCustNorm.get(n) || null;
+  }
+  function regionNames() {
+    const fIdx = getFreqIndex();
+    if (!fIdx._lists) fIdx._lists = {};
+    if (fIdx._lists.regions) return fIdx._lists.regions;
+    const pool = ((SEED.records && SEED.records.regions) || []).filter(r => r && !r.voided && r.name).map(r => r.name)
+      .concat(((SEED.records && SEED.records.sites) || []).filter(s => s && !s.voided && s.region).map(s => s.region))
+      .concat([
+        'Beirut', 'Mount Lebanon', 'South Lebanon', 'Bekaa', 'North Lebanon', 'Nabatieh',
+        'Metn', 'Keserwan', 'Baabda', 'Aley', 'Chouf', 'Saida', 'Tyre', 'Jbeil', 'Batroun', 'Chekka',
+        'Tripoli', 'Koura', 'Zgharta', 'Akkar', 'Zahle', 'Chtaura', 'West Bekaa', 'Rachaiya',
+        'Baalbek', 'Hermel', 'Jezzine', 'Bint Jbeil', 'Marjayoun', 'Hasbaya', 'Jounieh', 'Zouk Mosbeh',
+        'Dbayeh', 'Antelias', 'Zalka', 'Broummana', 'Choueifat', 'Khaldeh', 'Damour', 'Sin El Fil',
+        'Hazmieh', 'Hadath', 'Ghaziyeh', 'Sarafand', 'Dekwaneh', 'Jiyeh', 'Sibline', 'Borj Hammoud', 'Aawkar', 'Halat'
+      ]);
+    fIdx._lists.regions = uniqSorted(pool, fIdx.region || (fIdx.forCol && fIdx.forCol('region')));
+    return fIdx._lists.regions;
   }
   function siteNames(side) {
     const fIdx = getFreqIndex();
@@ -23593,7 +23633,7 @@
         ${matBundledPairs > 0 ? `
         <div class="quarry-landed-callout" style="margin:10px 14px 4px">
           <div>
-            <strong>Why Bundled Quarry Sites Show Higher Material Rates:</strong> <b>${fmtNum(matBundledPairs)}</b> site × material pair${matBundledPairs === 1 ? '' : 's'} are marked <b>Mat+Trans Included</b> because the supplier provides both raw material and transportation in one delivered price (neither our fleet nor paid 3rd-party haulers haul the load, so the internal transport split is unknown). Compare their rate against the <b>Haul / Landed ($)</b> column of Ex-Quarry sites.
+            <strong>Why Bundled Quarry Sites Show Higher Material Rates:</strong> <b>${fmtNum(matBundledPairs)}</b> site × material pair${matBundledPairs === 1 ? '' : 's'} are marked <b>Mat+Trans</b> because the supplier provides both raw material and transportation in one delivered price (neither our fleet nor paid 3rd-party haulers haul the load, so the internal transport split is unknown). Compare their rate against the <b>Landed ($)</b> column of Ex-Quarry sites.
           </div>
         </div>` : ''}
         <div class="table-wrap">
@@ -23601,8 +23641,8 @@
             <thead>
               <tr>
                 ${th('prawmat', 'Source Site', 'site')}${th('prawmat', 'Co.', 'company')}${th('prawmat', 'Site Owner', 'site_owner')}${th('prawmat', 'Material', 'product')}${th('prawmat', 'Supply Basis', 'supply_basis')}${th('prawmat', 'Basis', 'basis')}
-                ${th('prawmat', 'Agreed ($)', 'agreed_rate', 'r')}${th('prawmat', 'Agreement End', 'end_date')}${th('prawmat', 'Last Cost ($)', 'last_rate', 'r')}
-                ${th('prawmat', 'Period Avg ($)', 'avg_rate', 'r')}${th('prawmat', 'Haul / Landed ($)', 'landed_rate', 'r')}${th('prawmat', 'Agreed − Last', 'agreed_minus_last', 'r')}${th('prawmat', 'Loads', 'loads', 'r')}${th('prawmat', 'Material Cost ($)', 'mat_cost', 'r')}
+                ${th('prawmat', 'Agreed ($)', 'agreed_rate', 'r')}${th('prawmat', 'Agr. End', 'end_date')}${th('prawmat', 'Last ($)', 'last_rate', 'r')}
+                ${th('prawmat', 'Avg ($)', 'avg_rate', 'r')}${th('prawmat', 'Landed ($)', 'landed_rate', 'r')}${th('prawmat', 'Agreed − Last', 'agreed_minus_last', 'r')}${th('prawmat', 'Loads', 'loads', 'r')}${th('prawmat', 'Mat Cost ($)', 'mat_cost', 'r')}
               </tr>
             </thead>
             <tbody>
@@ -23613,20 +23653,20 @@
                   <td>${r.site_owner && r.site_owner !== '—' ? relLink('suppliers', r.site_owner) : '—'}</td>
                   <td>${r.product && r.product !== '(Material)' ? relLink('products', r.product) : esc(r.product)}</td>
                   <td>${r.includes_transport
-                    ? '<span class="quarry-landed-pill is-bundled" data-ui-tip="Supplier provides both Raw Material and Transportation in one delivered price; internal haulage split unknown">Mat+Trans Included</span>'
-                    : '<span class="badge badge-neutral" data-ui-tip="Ex-Quarry material rate only; transportation is provided separately by our fleet or paid 3rd-party haulers">Ex-Quarry (Mat Only)</span>'}</td>
+                    ? '<span class="quarry-landed-pill is-bundled" data-ui-tip="Supplier provides both Raw Material and Transportation in one delivered price; internal haulage split unknown">Mat+Trans</span>'
+                    : '<span class="badge badge-neutral" data-ui-tip="Ex-Quarry material rate only; transportation is provided separately by our fleet or paid 3rd-party haulers">Ex-Quarry</span>'}</td>
                   <td class="mono"><span class="badge ${r.is_flat ? 'badge-brass' : 'badge-neutral'}">${esc(r.basis)}</span></td>
                   <td class="r">${r.agreed_rate != null ? `<strong>${fmtUSD(r.agreed_rate, 2)}</strong>` : '<span class="mu">No Rule</span>'}</td>
                   <td class="mono">${r.end_date ? `<span class="badge ${r.is_lapsed ? 'badge-warn' : 'badge-ok'}">${esc(fmtDateDMY(r.end_date))}</span>` : '<span class="mu">Open</span>'}</td>
                   <td class="r"><strong>${fmtUSD(r.last_rate, 2)}</strong></td>
                   <td class="r">${fmtUSD(r.avg_rate, 2)}</td>
                   <td class="r">${r.includes_transport
-                    ? `<span class="quarry-landed-pill is-bundled" data-ui-tip="Delivered rate already includes transportation; internal split unknown">${fmtUSD(r.avg_rate, 2)} · Incl.</span>`
+                    ? `<span class="quarry-landed-pill is-bundled" data-ui-tip="Delivered rate already includes transportation; internal split unknown">${fmtUSD(r.avg_rate, 2)} Incl.</span>`
                     : (r.known_haul_rate > 0
-                        ? `<span data-ui-tip="Ex-Quarry Material Avg (${fmtUSD(r.avg_rate, 2)}) + Separate 3rd-Party Haul Avg (${fmtUSD(r.known_haul_rate, 2)})"><strong>${fmtUSD(r.landed_rate, 2)}</strong> <small class="mu">(+${fmtUSD(r.known_haul_rate, 2)} Haul)</small></span>`
+                        ? `<span data-ui-tip="Ex-Quarry Material Avg (${fmtUSD(r.avg_rate, 2)}) + Separate 3rd-Party Haul Avg (${fmtUSD(r.known_haul_rate, 2)})"><strong>${fmtUSD(r.landed_rate, 2)}</strong> <small class="mu">(+${fmtUSD(r.known_haul_rate, 2)})</small></span>`
                         : (r.uses_own_fleet
                             ? '<span class="mu" data-ui-tip="Hauled by Company Fleet; internal diesel and driver cost tracked separately">+ Own Fleet</span>'
-                            : '<span class="mu">Separate Haul</span>'))}</td>
+                            : '<span class="mu">Separate</span>'))}</td>
                   <td class="r" ${r.agreed_minus_last != null && r.agreed_minus_last < -0.005 ? 'style="color:var(--crit);font-weight:700"' : ''}>${r.agreed_minus_last != null ? fmtUSD(r.agreed_minus_last, 2) : '—'}</td>
                   <td class="r">${fmtNum(r.loads, 0)}</td>
                   <td class="r"><strong>${fmtUSD(r.mat_cost, 0)}</strong></td>
@@ -23636,7 +23676,7 @@
             </tbody>
             <tfoot>
               <tr>
-                <td colspan="6"><b>TOTAL (${fmtNum(matCompRows.length)} SITE × MATERIAL PAIRS)</b></td>
+                <td colspan="6"><b>TOTAL (${fmtNum(matCompRows.length)})</b></td>
                 <td class="r">—</td>
                 <td></td>
                 <td class="r">—</td>
@@ -41030,7 +41070,7 @@
         $('f_raw_bundled').value = (sInfo && isSupplierDeliveredSite(sInfo)) ? '1' : '0';
       }
       if ($('f_site_region')) {
-        $('f_site_region').value = (sInfo && sInfo.region) ? String(sInfo.region) : '';
+        $('f_site_region').value = effectiveSiteRegion(sInfo, site);
       }
     }
 
@@ -41051,8 +41091,9 @@
     if (bundBanner) {
       if (isSuppDeliv && FORM_UI.ticketDisposition === 'standard') {
         bundBanner.hidden = false;
-        const regStateTxt = (sInfo && String(sInfo.region || '').trim())
-          ? `Region: ${esc(sInfo.region)}`
+        const effBundReg = effectiveSiteRegion(sInfo, site);
+        const regStateTxt = effBundReg
+          ? `Region: ${esc(effBundReg)}`
           : 'Region optional on supplier-delivered intake';
         bundBanner.innerHTML = `
           <div><strong>Supplier Provides Material + Transportation:</strong> Unit cost includes delivery to plant; internal transport split is unknown ($0.00 separate haulage leg).</div>
@@ -41089,7 +41130,7 @@
     setFieldVisible('wrap_f_transunitprice', is3PHauler);
     setFieldVisible('wrap_f_trans_total', is3PHauler);
 
-    const siteMissingRegion = Boolean(site) && !(sInfo && String(sInfo.region || '').trim());
+    const siteMissingRegion = Boolean(site) && !effectiveSiteRegion(sInfo, site);
     const needSiteRegionNow = !isSuppDeliv && FORM_UI.ticketDisposition === 'standard' && siteMissingRegion;
     setFieldVisible('wrap_f_site_region', needSiteRegionNow);
     if (needSiteRegionNow) {
@@ -43714,7 +43755,7 @@
               $('f_pr_incl_transport').checked = Boolean(sInf && isSupplierDeliveredSite(sInf));
             }
             if ($('f_site_region')) {
-              $('f_site_region').value = (sInf && sInf.region) ? String(sInf.region) : '';
+              $('f_site_region').value = effectiveSiteRegion(sInf, prSite);
             }
           } else if ($('f_site_region')) {
             $('f_site_region').value = '';
@@ -43799,7 +43840,7 @@
         const transIsM3 = hasTrans && /^m/i.test(ratePer);
         const anyLegIsM3 = !isList && !isComm && (matIsM3 || transIsM3);
         const prSiteObj = prSite ? siteInfo(prSite, isRawDomain ? 'raw' : 'sales') : null;
-        const prNeedSiteReg = Boolean(isTransSite && prSite && !(prSiteObj && String(prSiteObj.region || '').trim()));
+        const prNeedSiteReg = Boolean(isTransSite && prSite && !effectiveSiteRegion(prSiteObj, prSite));
 
         setFieldVisible('wrap_pr_ruletype', !isComm);
         setFieldVisible('wrap_pr_customer', showCustomer);
@@ -48088,8 +48129,8 @@
 
     const tbSelEl = $('f_transportby');
     if (tbSelEl) {
-      tbSelEl.addEventListener('change', ev => {
-        if (ev && ev.isTrusted) FORM_UI.transportByManual = true;
+      tbSelEl.addEventListener('change', () => {
+        if (!FORM_UI.hydrating) FORM_UI.transportByManual = true;
       });
     }
 
@@ -49683,8 +49724,9 @@
           const isRetR = dispR.mode === 'return_wtc';
           const isSuppDeliv = !isRetR && (val('f_raw_bundled') === '1' || c.transportBy === 'Supplier-delivered');
           const sObjR = c.site ? siteInfo(c.site, 'raw') : null;
-          const siteAlreadyHasReg = Boolean(sObjR && String(sObjR.region || '').trim());
-          const effSiteRegR = siteAlreadyHasReg ? String(sObjR.region).trim() : val('f_site_region');
+          const existSiteRegR = effectiveSiteRegion(sObjR, c.site);
+          const siteAlreadyHasReg = Boolean(existSiteRegR);
+          const effSiteRegR = siteAlreadyHasReg ? existSiteRegR : val('f_site_region');
           if (!c.product && !isRetR) addErr('f_product', 'Raw material is required.');
           if (!c.site) addErr('f_site', 'Site is required.');
           if (!isRetR && !isSuppDeliv && c.site && !effSiteRegR) {
@@ -50061,18 +50103,32 @@
       if (val('f_enddate') && val('f_enddate') < date) addErr('f_enddate', 'End Date cannot be before the Start Date.');
       if (/Sales/.test(rt) && !val('f_customer') && !(rt === 'Sales (Delivery)' && val('f_site') && tSizeV > 0)) addErr('f_customer', 'A Sales rule needs the Customer it is agreed with.');
       if (/Purchase|Transport/.test(rt) && !val('f_supplier') && !val('f_site')) addErr('f_supplier', 'A Purchase / Transport rule needs the Supplier or the Site.');
+      const prSiteVal = val('f_site');
+      const prSiteObj = prSiteVal ? siteInfo(prSiteVal, /Purchase|Transport/.test(rt) ? 'raw' : 'sales') : null;
+      const existPrSiteReg = effectiveSiteRegion(prSiteObj, prSiteVal);
+      const prSiteHasReg = Boolean(existPrSiteReg);
+      const effPrSiteReg = prSiteHasReg ? existPrSiteReg : val('f_site_region');
+      if (rt === 'Transport Price (Site)') {
+        if (!prSiteVal) {
+          addErr('f_site', 'Source Site is required when adding haulage transportation pricing.');
+        } else if (!effPrSiteReg) {
+          setFieldVisible('wrap_pr_site_region', true);
+          addErr('f_site_region', 'Region and Site must both be specified when adding transportation pricing for associated 3rd-party haulers.');
+        }
+      }
       if (rt === 'Commission') {
         if (!val('f_supplier')) addErr('f_supplier', 'A Commission rule needs the Plant Owner / Beneficiary.');
         if (!(up0 > 0)) addErr('f_unitprice', 'Commission rate ($ / unit) must be above zero.');
       }
+      const prInclTrans = rt === 'Purchase Price (Site)' && Boolean($('f_pr_incl_transport') && $('f_pr_incl_transport').checked);
       const autoCodeTag = rt === 'Commission' ? 'COMMISSION' : rt.slice(0, 5).toUpperCase();
       record = {
         ...base,
-        name: val('f_name') || `PRC-${date.replace(/-/g, '')}-${autoCodeTag}-${(prod || val('f_site') || val('f_customer') || 'RULE').toUpperCase().replace(/\s+/g, '')}-001`,
+        name: val('f_name') || `PRC-${date.replace(/-/g, '')}-${autoCodeTag}-${(prod || prSiteVal || val('f_customer') || 'RULE').toUpperCase().replace(/\s+/g, '')}-001`,
         rule_type: rt,
         customer: val('f_customer'),
         supplier: val('f_supplier'),
-        site: val('f_site'),
+        site: prSiteVal,
         product: prod,
         unit: effUnit,
         rate_per: effRatePer,
@@ -50081,6 +50137,7 @@
         trans_unit_price: effTp,
         indiff_price: effIndiff,
         trans_indiff_price: effTransIndiff,
+        includes_transport: prInclTrans,
         truck_size: tSizeV,
         truck: prTruck,
         qty1: q1v,
@@ -50092,7 +50149,8 @@
         total2: q2v != null && effUp ? round2(q2v * effUp + adj2v) : null,
         trans_adj2: tAdj2v,
         start_date: date,
-        end_date: val('f_enddate') || ''
+        end_date: val('f_enddate') || '',
+        ...(rt === 'Transport Price (Site)' && prSiteVal && !prSiteHasReg && effPrSiteReg ? { _assign_site_region: { site: prSiteVal, region: effPrSiteReg, supplier: val('f_supplier') || '' } } : {})
       };
     } else if (f === 'vatinvoice') {
       const inv = val('f_ticketno'), cust = val('f_customer'), net = round2(num('f_amount')), vat = round2(num('f_vat'));
@@ -50204,11 +50262,15 @@
     } else if (f === 'site') {
       const nm = val('f_site');
       const siteCat = val('f_site_category') === 'customer' ? 'customer' : 'supplier';
+      const isJvSite = siteCat === 'supplier' ? !!($('f_isjv') && $('f_isjv').checked) : false;
+      const inclTrans = siteCat === 'supplier' && !isJvSite && val('f_includes_transport') === '1';
       const catLbl = formatSiteCategoryLabel(siteCat);
       if (!nm) addErr('f_site', 'Site Name is required.');
       else {
         const dup = findUniversalDuplicate('sites', nm, { siteCategory: siteCat });
-        if (dup) addErr('f_site', `${catLbl} "${universalMainValue('sites', dup) || nm}" already exists. Duplicate site names in the same category are not allowed.`);
+        if (dup && !isSelfEditingRow(dup, 'sites')) {
+          addErr('f_site', `${catLbl} "${universalMainValue('sites', dup) || nm}" already exists. Duplicate site names in the same category are not allowed.`);
+        }
       }
       let siteLat = val('f_lat') !== '' ? num('f_lat') : null;
       let siteLng = val('f_lng') !== '' ? num('f_lng') : null;
@@ -50217,33 +50279,33 @@
         const hitReg = window.MFG_GEO.findContainingRegion(siteLat, siteLng, SEED);
         if (hitReg && hitReg.name) siteReg = hitReg.name;
       }
-      if (!siteReg && nm && window.MFG_GEO && typeof window.MFG_GEO.resolvePlaceLocation === 'function') {
+      if (!inclTrans && !siteReg && nm && window.MFG_GEO && typeof window.MFG_GEO.resolvePlaceLocation === 'function') {
         const pHit = window.MFG_GEO.resolvePlaceLocation(nm, SEED);
         if (pHit && pHit.region) siteReg = pHit.region;
       }
-      if (!siteReg) {
-        addErr('f_region', 'Region is required. Select a Region or click inside a zone on the map.');
+      if (!siteReg && !inclTrans) {
+        addErr('f_region', 'Region is required when hauling in our trucks or 3rd-party haulers (or select Bundled Supplier Material + Transport).');
       } else if (window.MFG_GEO && typeof window.MFG_GEO.validateSiteInsideRegion === 'function') {
         const geoCheck = window.MFG_GEO.validateSiteInsideRegion({
           siteName: nm,
           regionName: siteReg,
           lat: siteLat,
-          lng: siteLng
+          lng: siteLng,
+          allowMissingRegion: inclTrans
         }, SEED);
         if (!geoCheck.ok) {
           addErr(geoCheck.field || 'f_region', geoCheck.reason);
         } else {
-          siteReg = geoCheck.region || siteReg;
-          if (siteLat == null || siteLng == null) {
+          siteReg = geoCheck.region || siteReg || '';
+          if ((siteLat == null || siteLng == null) && geoCheck.lat != null && geoCheck.lng != null) {
             siteLat = geoCheck.lat;
             siteLng = geoCheck.lng;
           }
-          if (typeof window.MFG_GEO.ensureRegionInSeed === 'function') {
+          if (siteReg && typeof window.MFG_GEO.ensureRegionInSeed === 'function') {
             window.MFG_GEO.ensureRegionInSeed(siteReg, SEED, STATE);
           }
         }
       }
-      const isJvSite = siteCat === 'supplier' ? !!($('f_isjv') && $('f_isjv').checked) : false;
       const jvPartnerVal = isJvSite ? val('f_jv_partner') : '';
       const jvShareVal = isJvSite ? (num('f_jv_share') || 50) : 0;
       const jvCoVal = isJvSite ? (val('f_jv_company') || company || 'WTC') : '';
@@ -50259,7 +50321,9 @@
         ...base,
         name: nm,
         site_category: siteCat,
-        region: siteReg,
+        region: siteReg || '',
+        includes_transport: inclTrans,
+        haulage_mode: inclTrans ? 'supplier_delivered' : 'separate',
         supplier: siteCat === 'supplier' ? val('f_supplier') : '',
         customer: siteCat === 'customer' ? val('f_customer') : '',
         latitude: siteLat,
@@ -50906,10 +50970,12 @@
     } else if (f === 'triprate') {
       const siteVal = val('f_site');
       const sObj = siteVal ? siteInfo(siteVal) : null;
-      const regVal = val('f_region') || (sObj && sObj.region) || siteVal;
+      const existOtReg = effectiveSiteRegion(sObj, siteVal);
+      const sHasReg = Boolean(existOtReg);
+      const regVal = val('f_region') || existOtReg;
       const endDate = val('f_enddate');
       const amt = round2(num('f_amount'));
-      if (!regVal) addErr('f_region', 'Region (or Site) is required.');
+      if (!regVal) addErr('f_region', siteVal ? 'Region and Site must both be specified when setting driver trip / overtime haulage rates.' : 'Region (or Site with Region) is required.');
       if (!(amt > 0)) addErr('f_amount', 'Rate > 0 is required.');
       if (endDate && endDate < date) addErr('f_enddate', 'End Date cannot be before Start Date.');
       const sameDayOt = regVal && ((SEED.records && SEED.records.overtime_rates) || []).find(o =>
@@ -50924,7 +50990,18 @@
       }
       const regSlug = String(regVal || 'REG').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10) || 'REG';
       const nm = val('f_name') || `OT-${regSlug}-${date.slice(0, 7)}`;
-      record = { ...base, name: nm, site: siteVal, region: regVal, category: val('f_category') || 'Truck', rate_usd: amt, amount: amt, start_date: date, end_date: endDate || '' };
+      record = {
+        ...base,
+        name: nm,
+        site: siteVal,
+        region: regVal,
+        category: val('f_category') || 'Truck',
+        rate_usd: amt,
+        amount: amt,
+        start_date: date,
+        end_date: endDate || '',
+        ...(siteVal && !sHasReg && regVal ? { _assign_site_region: { site: siteVal, region: regVal, supplier: '' } } : {})
+      };
     } else if (f === 'treasury' || f === 'external' || f === 'conversion') {
       const trt = f === 'conversion' ? 'conversion' : (f === 'external' ? 'external' : (val('f_trtype') || 'loan'));
       if (trt === 'conversion') {
@@ -51336,7 +51413,7 @@
         });
         const priceDriverIds = [
           'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip',
-          'f_saletype', 'f_transportby', 'f_customer', 'f_supplier', 'f_product', 'f_site', 'f_owner', 'f_truckowner',
+          'f_saletype', 'f_transportby', 'f_raw_bundled', 'f_pr_incl_transport', 'f_customer', 'f_supplier', 'f_product', 'f_site', 'f_owner', 'f_truckowner',
           'f_amount', 'f_vat', 'f_usd', 'f_lbp', 'f_fxrate', 'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours',
           'f_late_hours', 'f_leave_days', 'f_share', 'f_qty1', 'f_adj1', 'f_transadj1', 'f_qty2', 'f_adj2', 'f_transadj2',
           'f_trucksize', 'f_wh_Cost', 'f_new_part_cost', 'f_repair_cost', 'f_sale_proceeds', 'f_out_parts', 'f_out_labor',
@@ -51543,12 +51620,17 @@
       const postAsPairedReturn = Boolean(record._post_as_paired_return);
       const pairOwKm = record._pair_ow_km;
       const pairRtKm = record._pair_rt_km;
+      const assignSiteReg = record._assign_site_region;
       delete record._staged_expense_items;
       delete record._staged_repair_items;
       delete record._post_as_paired_return;
       delete record._pair_ow_km;
       delete record._pair_rt_km;
+      delete record._assign_site_region;
       const preExtraApiPosts = [];
+      if (assignSiteReg && assignSiteReg.site && assignSiteReg.region) {
+        ensureSiteHasRegion(assignSiteReg.site, assignSiteReg.region, assignSiteReg.supplier, preExtraApiPosts);
+      }
       if (isEditingExisting && postAsPairedReturn && (crKey === 'sales_tickets' || crKey === 'raw_purchases')) {
         // Keep the original outbound ticket intact (with updated KM) and insert a new paired Return row sharing its serial #
         const sArr = (SEED.records && Array.isArray(SEED.records[crKey])) ? SEED.records[crKey] : [];
@@ -53093,7 +53175,12 @@
         ahBtn.classList.toggle('is-afterhours', isAh);
         ahBtn.setAttribute('aria-pressed', isAh ? 'true' : 'false');
       }
-      const trBy = row.transport_by || ((row.truck_owner && norm(row.truck_owner) !== norm(rowCo)) ? 'Third-party truck' : 'Company fleet');
+      const isBundRaw = isBundledRawTicket(row);
+      const trBy = isBundRaw
+        ? 'Company fleet'
+        : (row.transport_by === 'Third-party truck' || (!row.transport_by && row.truck_owner && norm(row.truck_owner) !== norm(rowCo)) ? 'Third-party truck' : 'Company fleet');
+      setModalControlVal('f_raw_bundled', isBundRaw ? '1' : '0');
+      FORM_UI.rawSupplyModeManual = true;
       setModalControlVal('f_ticketno', row.ticket_no || '');
       setModalControlVal('f_transportby', trBy);
       setModalControlVal('f_product', row.product || '');
@@ -53278,6 +53365,7 @@
       setModalControlVal('f_supplier', row.supplier || '');
       setModalControlVal('f_site', row.site || '');
       setModalControlVal('f_product', row.product || '');
+      if ($('f_pr_incl_transport')) setModalControlVal('f_pr_incl_transport', isBundledRawPriceRule(row));
       const normPrU = u => /^tons?$/i.test(String(u || '').trim()) ? 'Ton' : (/^truck$/i.test(String(u || '').trim()) ? 'Truck' : 'm³');
       const matUnit = isMatIndiffRule(row) ? 'Truck' : normPrU(row.unit || 'm³');
       const trUnit = isTransIndiffRule(row) ? 'Truck' : normPrU(row.rate_per || row.unit || 'm³');
@@ -53597,6 +53685,23 @@
       setModalControlVal('f_truck', row.equipment || '');
       setModalControlVal('f_date', String(row.start_date || row.date || todayISO()).slice(0, 10));
       setModalControlVal('f_enddate', String(row.end_date || '').slice(0, 10));
+    } else if (form === 'site') {
+      const sCat = siteRecordCategory(row);
+      const isJvS = sCat === 'supplier' && Boolean(row.is_jv || row.jv);
+      const inclTrS = sCat === 'supplier' && !isJvS && isSupplierDeliveredSite(row);
+      setModalControlVal('f_site_category', sCat);
+      setModalControlVal('f_includes_transport', inclTrS ? '1' : '0');
+      setModalControlVal('f_region', row.region || '');
+      if ($('f_region')) $('f_region').dataset.autoFromPlace = '0';
+      setModalControlVal('f_site', row.name || row.site || '');
+      setModalControlVal('f_supplier', row.supplier || '');
+      setModalControlVal('f_customer', row.customer || '');
+      setModalControlVal('f_isjv', isJvS);
+      setModalControlVal('f_jv_partner', row.jv_partner || '');
+      setModalControlVal('f_jv_share', row.jv_share != null && Number(row.jv_share) > 0 ? row.jv_share : 50);
+      if (row.jv_company && $('f_jv_company')) setModalControlVal('f_jv_company', row.jv_company);
+      if (row.latitude != null && row.latitude !== '') setModalControlVal('f_lat', row.latitude);
+      if (row.longitude != null && row.longitude !== '') setModalControlVal('f_lng', row.longitude);
     }
 
     // Sync FORM_UI.last* trackers to hydrated values so initial recalcForm() never overwrites saved values with defaults
@@ -53609,7 +53714,7 @@
     FORM_UI.lastProduct = val('f_product');
     FORM_UI.lastSite = val('f_site');
     FORM_UI.lastSaleType = val('f_saletype');
-    FORM_UI.lastTransportBy = val('f_transportby');
+    FORM_UI.lastTransportBy = (form === 'raw' && val('f_raw_bundled') === '1') ? 'Supplier-delivered' : val('f_transportby');
     FORM_UI.lastTruck = val('f_truck');
     FORM_UI.lastTruckOwner = val('f_truckowner');
     FORM_UI.lastSiteOwner = val('f_siteowner');
@@ -53944,6 +54049,13 @@
       const matRule = findRule({ company: row.company, supplier: row.site_owner, site: row.site, product: row.product, date: row.date });
       const eq = equipInfo(row.truck);
       const isPendR = isPendingPriceRaw(row);
+      const isBundledR = isBundledRawTicket(row);
+      if (isBundledR) {
+        return {
+          tone: isPendR ? 'warn' : 'info',
+          text: `Bundled Quarry Delivery (Material + Transport Included): ${isPendR ? 'PENDING INVOICE PRICE ($0.00)' : fmtUSD(row.cost, 2)} to ${row.site_owner || row.site || 'Site Owner'}${matRule ? ' (Agreed Delivered Rate)' : ''}  |  Haulage Leg: $0.00 separate (supplier provides transport · internal split unknown)  |  Total Payable: ${fmtUSD(row.total, 2)} USD`
+        };
+      }
       return {
         tone: isPendR ? 'warn' : 'info',
         text: `Two-Leg Material Split: Leg 1 Material ${isPendR ? 'PENDING INVOICE PRICE ($0.00)' : fmtUSD(row.cost, 2)} to ${row.site_owner || row.site || 'Site Owner'}${matRule ? ' (Agreed Rate)' : ''}  |  Leg 2 Haulage ${fmtUSD(row.trans_cost, 2)} to ${row.truck_owner || row.transport_by || 'Company Fleet'}${eq ? ' · Truck ' + eq.name : ''}  |  Total Payable: ${fmtUSD(row.total, 2)} USD`
@@ -53963,13 +54075,18 @@
       const isTransOnly = /^(Transport Price \(Site\)|Haulage \(Customer Site\))$/i.test(String(row.rule_type || '').trim());
       const isFlatMat = isMatIndiffRule(row);
       const isFlatTrans = isTransIndiffRule(row);
+      const isBundledPr = !isTransOnly && isBundledRawPriceRule(row);
       const matVal = isFlatMat ? Number(ruleIndiffPrice(row) || 0) : Number(row.unit_price ?? row.price ?? 0);
       const trVal = isFlatTrans ? Number(ruleTransIndiffPrice(row) || 0) : Number(row.trans_unit_price ?? row.trans_price ?? (isTransOnly ? (row.unit_price ?? row.price) : 0) ?? 0);
       const priceParts = [];
       if (!isTransOnly) {
-        priceParts.push(isFlatMat ? `Material Price: ${fmtUSD(matVal, 2)} / Truck Load` : `Material Unit Price: ${fmtUSD(matVal, 2)} / ${row.unit || 'm³'}`);
+        priceParts.push(isFlatMat
+          ? `${isBundledPr ? 'Delivered Price (Mat + Trans)' : 'Material Price'}: ${fmtUSD(matVal, 2)} / Truck Load`
+          : `${isBundledPr ? 'Delivered Unit Price (Mat + Trans)' : 'Material Unit Price'}: ${fmtUSD(matVal, 2)} / ${row.unit || 'm³'}`);
       }
-      if (isTransOnly || isFlatTrans || trVal > 0) {
+      if (isBundledPr) {
+        priceParts.push('Transport Included by Supplier (internal split unknown)');
+      } else if (isTransOnly || isFlatTrans || trVal > 0) {
         priceParts.push(isFlatTrans ? `Transportation Price: ${fmtUSD(trVal, 2)} / Truck Load` : `Transportation Unit Price: ${fmtUSD(trVal, 2)} / ${row.rate_per || row.unit || 'm³'}`);
       }
       const priceSummary = priceParts.join(' · ');
@@ -54065,14 +54182,18 @@
     }
     if (key === 'sites') {
       const isCustSite = resolveSiteCategory(row) === 'customer';
+      const isBundledSt = !isCustSite && isSupplierDeliveredSite(row);
       const rulesCnt = activeRulesCountFor('site', row.name, isCustSite ? 'sales' : 'raw');
       const gpsTxt = row.latitude != null ? `${row.latitude}, ${row.longitude}` : 'Pending coordinates';
-      const jvPartnerTxt = row.is_jv ? `Active JV (Partner: ${row.jv_partner || 'Assaf'} ${row.jv_share || 50}% · ${row.jv_company || 'WTC'} ${100 - (Number(row.jv_share) || 50)}%)` : 'Standard Quarry Site';
+      const jvPartnerTxt = row.is_jv
+        ? `Active JV (Partner: ${row.jv_partner || 'Assaf'} ${row.jv_share || 50}% · ${row.jv_company || 'WTC'} ${100 - (Number(row.jv_share) || 50)}%)`
+        : (isBundledSt ? 'Bundled (Supplier Provides Material + Transport · split unknown)' : 'Ex-Quarry (Separate Haulage)');
+      const regTxt = row.region || (isBundledSt ? 'Region Optional (Bundled)' : 'Lebanon');
       return {
         tone: 'info',
         text: isCustSite
           ? `Customer Delivery Site: ${row.name} (${row.region || 'Lebanon'})  |  Linked Customer: ${row.customer || 'Open Delivery'}  |  Active Sales Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
-          : `Supplier / Quarry Site: ${row.name} (${row.region || 'Lebanon'})  |  Default Site Owner: ${row.supplier || 'Open Source'}  |  JV 50/50 Status: ${jvPartnerTxt}  |  Active Quarry Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
+          : `Supplier / Quarry Site: ${row.name} (${regTxt})  |  Default Site Owner: ${row.supplier || 'Open Source'}  |  Supply Basis: ${jvPartnerTxt}  |  Active Quarry Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
       };
     }
     if (key === 'products') {
@@ -54328,13 +54449,14 @@
       const siSite = supplierInfo(row.site_owner) || {};
       const siHaul = supplierInfo(row.truck_owner) || {};
       const tot = Number(row.total != null ? row.total : (Number(row.cost || 0) + Number(row.trans_cost || 0)));
+      const isBundledR = isBundledRawTicket(row);
       return {
         bu, title, pill: fmtUSD(tot, 2),
         cards: [
-          { lbl: 'LEG 1 · RAW MATERIAL', tag: 'SITE OWNER', tone: 'good', val: fmtUSD(row.cost, 2), sub1: `Payee: ${row.site_owner || '—'} · Rate: ${fmtUSD(row.unit_cost, 2)}/${row.uom || 'm³'}`, sub2: `Site: ${row.site || '—'} · Open AP: ${fmtUSD(siSite.ap_balance || 0, 0)}`, pct: tot > 0 ? Math.round((Number(row.cost || 0) / tot) * 100) : 60 },
-          { lbl: 'LEG 2 · HAULAGE / FREIGHT', tag: /company/i.test(row.transport_by || '') ? 'OWN FLEET' : 'HAULER AP', tone: 'info', val: fmtUSD(row.trans_cost, 2), sub1: `Hauler: ${row.truck_owner || row.transport_by || '—'}`, sub2: `Truck: ${row.truck || '—'} · Hauler AP: ${fmtUSD(siHaul.ap_balance || 0, 0)}`, pct: tot > 0 ? Math.round((Number(row.trans_cost || 0) / tot) * 100) : 40 },
+          { lbl: isBundledR ? 'BUNDLED DELIVERED PRICE' : 'LEG 1 · RAW MATERIAL', tag: isBundledR ? 'MAT + TRANS' : 'SITE OWNER', tone: 'good', val: fmtUSD(row.cost, 2), sub1: `Payee: ${row.site_owner || '—'} · Rate: ${fmtUSD(row.unit_cost, 2)}/${row.uom || 'm³'}`, sub2: `Site: ${row.site || '—'} · Open AP: ${fmtUSD(siSite.ap_balance || 0, 0)}`, pct: tot > 0 ? Math.round((Number(row.cost || 0) / tot) * 100) : 60 },
+          { lbl: 'LEG 2 · HAULAGE / FREIGHT', tag: isBundledR ? 'INCL. IN MAT' : (/company/i.test(row.transport_by || '') ? 'OWN FLEET' : 'HAULER AP'), tone: 'info', val: isBundledR ? 'Incl. ($0.00)' : fmtUSD(row.trans_cost, 2), sub1: isBundledR ? 'Supplier provides transport' : `Hauler: ${row.truck_owner || row.transport_by || '—'}`, sub2: isBundledR ? 'Internal transport split unknown' : `Truck: ${row.truck || '—'} · Hauler AP: ${fmtUSD(siHaul.ap_balance || 0, 0)}`, pct: isBundledR ? 100 : (tot > 0 ? Math.round((Number(row.trans_cost || 0) / tot) * 100) : 40) },
           { lbl: 'INTAKE VOLUME & TONNAGE', tag: row.uom || 'M³', tone: 'good', val: `${fmtNum(row.qty, 2)} ${row.uom || 'm³'}`, sub1: `Estimated Weight: ${fmtNum(ticketTons(row), 1)} tons`, sub2: `Grade: ${row.product || 'Raw Aggregate'}`, pct: 80 },
-          { lbl: 'COMBINED LANDED COST', tag: '2-LEG SPLIT', tone: 'info', val: fmtUSD(tot, 2), sub1: `Landed Unit Cost: ${row.qty > 0 ? fmtUSD(tot / row.qty, 2) : '—'}/${row.uom || 'm³'}`, sub2: `Tx Date: ${row.date || '—'} · Rep Date: ${row.rep_date || row.date || '—'}`, pct: 90 }
+          { lbl: isBundledR ? 'DELIVERED LANDED COST' : 'COMBINED LANDED COST', tag: isBundledR ? 'BUNDLED SITE' : '2-LEG SPLIT', tone: 'info', val: fmtUSD(tot, 2), sub1: `Landed Unit Cost: ${row.qty > 0 ? fmtUSD(tot / row.qty, 2) : '—'}/${row.uom || 'm³'}`, sub2: `Tx Date: ${row.date || '—'} · Rep Date: ${row.rep_date || row.date || '—'}`, pct: 90 }
         ]
       };
     }
@@ -54710,6 +54832,7 @@
       const isCustSide = side === 'sales' || side === 'customer';
       const si = siteInfo(siteName, isCustSide ? 'sales' : (side ? 'raw' : undefined)) || {};
       const effCat = si && si.id ? resolveSiteCategory(si) : (isCustSide ? 'customer' : 'supplier');
+      const isBundledSt = effCat !== 'customer' && isSupplierDeliveredSite(si);
       cards.push({
         tag: effCat === 'customer' ? 'QUICK VIEW · CUSTOMER DELIVERY SITE' : 'QUICK VIEW · SUPPLIER / QUARRY SITE',
         targetKey: 'sites',
@@ -54724,9 +54847,9 @@
             ]
           : [
               ['Site Category', 'Supplier / Quarry Site'],
-              ['Region / Zone', si.region || 'Lebanon'],
+              ['Region / Zone', si.region || (isBundledSt ? 'Optional (Bundled)' : 'Lebanon')],
               ['Site Owner', si.supplier || row.site_owner || 'Open Source'],
-              ['JV / Quarry Rules', `${si.is_jv ? 'JV 50/50' : 'Standard'} · ${fmtNum(activeRulesCountFor('site', siteName, 'raw'))} rules`]
+              ['Supply / Rules', `${si.is_jv ? 'JV 50/50' : (isBundledSt ? 'Mat+Trans Included' : 'Ex-Quarry')} · ${fmtNum(activeRulesCountFor('site', siteName, 'raw'))} rules`]
             ]
       });
     };
@@ -55261,18 +55384,20 @@
     const site = getStr('site');
     const owner = getStr('site_owner');
     const product = getStr('product');
-    const transportBy = getStr('transport_by') || (origTransCost > 0 || origTuc > 0 ? 'Third-party truck' : 'Company fleet');
+    const transportBy = getStr('transport_by') || (isBundledRawTicket(base) ? 'Supplier-delivered' : (origTransCost > 0 || origTuc > 0 ? 'Third-party truck' : 'Company fleet'));
+    const isSuppDeliv = /^supplier[-\s]*delivered$/i.test(transportBy);
     const isCoFleet = /^company/i.test(transportBy);
-    const truckOwner = isCoFleet ? company : getStr('truck_owner');
+    const isZeroSeparateHaul = isCoFleet || isSuppDeliv;
+    const truckOwner = isCoFleet ? company : (isSuppDeliv ? '' : getStr('truck_owner'));
     const uom = getStr('uom') || 'm³';
     const isTruckUom = /^truck$/i.test(uom);
     const qty = getNum('qty');
     const uc = getNum('unit_cost');
-    const tuc = isCoFleet ? 0 : getNum('trans_unit_cost');
+    const tuc = isZeroSeparateHaul ? 0 : getNum('trans_unit_cost');
     const disc = getNum('discount');
 
     const matRule = (owner || site) && product ? findRule({ company, supplier: owner, site, product, date: effDate, types: ['Purchase Price (Site)'] }) : null;
-    const haulRule = !isCoFleet && (site || truckOwner) ? findRule({ company, supplier: truckOwner, site, product, date: effDate, types: ['Transport Price (Site)'] }) : null;
+    const haulRule = !isZeroSeparateHaul && (site || truckOwner) ? findRule({ company, supplier: truckOwner, site, product, date: effDate, types: ['Transport Price (Site)'] }) : null;
 
     const signedTicketLeg = (gross, d) => {
       const g = round2(gross);
@@ -55283,12 +55408,12 @@
     const storedMatFlat = origQty > 1.001 && Math.abs(origUc) > 1e-6 &&
       Math.abs(origCost - signedTicketLeg(origUc, origDisc)) <= 0.05 &&
       Math.abs(origCost - signedTicketLeg(origQty * origUc, origDisc)) > 0.50;
-    const storedTransFlat = !(/^company/i.test(String(base.transport_by || ''))) && origQty > 1.001 && Math.abs(origTuc) > 1e-6 &&
+    const storedTransFlat = !(/^company|^supplier[-\s]*delivered/i.test(String(base.transport_by || ''))) && origQty > 1.001 && Math.abs(origTuc) > 1e-6 &&
       Math.abs(origTransCost - round2(origTuc)) <= 0.05 &&
       Math.abs(origTransCost - round2(origQty * origTuc)) > 0.50;
 
     const matIsFlat = Boolean(isTruckUom || base.mat_indiff === true || isMatIndiffRule(matRule) || storedMatFlat);
-    const transIsFlat = Boolean(!isCoFleet && (isTruckUom || base.trans_indiff === true || isTransIndiffRule(haulRule) || storedTransFlat));
+    const transIsFlat = Boolean(!isZeroSeparateHaul && (isTruckUom || base.trans_indiff === true || isTransIndiffRule(haulRule) || storedTransFlat));
 
     const matEdited = wasEdited('qty') || wasEdited('uom') || wasEdited('unit_cost') || wasEdited('discount');
     const transEdited = wasEdited('qty') || wasEdited('uom') || wasEdited('trans_unit_cost') || wasEdited('transport_by');
@@ -55311,7 +55436,7 @@
     let transCost;
     if (!transEdited) {
       transCost = origTransCost;
-    } else if (isCoFleet) {
+    } else if (isZeroSeparateHaul) {
       transCost = 0;
     } else if (tuc === 0 && origTuc === 0 && Math.abs(origTransCost) > 0 && !wasEdited('trans_unit_cost')) {
       transCost = origTransCost;
@@ -55326,7 +55451,7 @@
     }
 
     const total = (!matEdited && !transEdited) ? origTotal : round2(cost + transCost);
-    return { cost, transCost, total, matIsFlat, transIsFlat, matEdited, transEdited, effDate };
+    return { cost, transCost, total, matIsFlat, transIsFlat, matEdited, transEdited, effDate, isSuppDeliv };
   }
 
   function resolveInspectorSalesTicketCalc(origRow, overrides = {}, editedSet = null) {
@@ -55605,7 +55730,7 @@
           { key: 'product', label: 'Raw Material Grade *', type: 'combo', dl: 'dl_insp_products', sec: 2 },
           { key: 'site', label: 'Source Site *', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
           { key: 'site_owner', label: 'Site Owner (Material Payee)', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
-          { key: 'transport_by', label: 'Transported By *', type: 'select', options: [['Company fleet', 'Company fleet (Own Truck)'], ['Third-party truck', 'Third-party truck (Hauler)']], sec: 2, getVal: r => r.transport_by || (Number(r.trans_cost || r.trans_unit_cost || 0) > 0 ? 'Third-party truck' : 'Company fleet') },
+          { key: 'transport_by', label: 'Transported By *', type: 'select', options: [['Company fleet', 'Company fleet (Own Truck)'], ['Third-party truck', 'Third-party truck (Hauler)'], ['Supplier-delivered', 'Supplier-delivered (Mat + Transport Included)']], sec: 2, getVal: r => isBundledRawTicket(r) ? 'Supplier-delivered' : (r.transport_by || (Number(r.trans_cost || r.trans_unit_cost || 0) > 0 ? 'Third-party truck' : 'Company fleet')) },
           { key: 'truck_owner', label: 'Truck Owner (Hauler Payee)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
           { key: 'truck', label: 'Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
           { key: 'driver', label: 'Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
@@ -55716,6 +55841,7 @@
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ] : (/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String((row && row.rule_type) || '').trim()) ? [
         { key: 'rule_type', label: 'Raw & Haulage Agreement Type *', type: 'select', options: ['Purchase Price (Site)', 'Transport Price (Site)'], sec: 1 },
+        { key: 'includes_transport', label: 'Supplier Provides Mat + Transport', type: 'bool', sec: 1, getVal: r => isBundledRawPriceRule(r) },
         { key: 'supplier', label: 'Site Owner / Hauler *', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
         { key: 'site', label: 'Source Site *', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
         { key: 'product', label: 'Raw Material / Grade', type: 'combo', dl: 'dl_insp_products', sec: 2 },
@@ -55805,8 +55931,9 @@
       ],
       sites: [
         { key: 'site_category', label: 'Site Category *', type: 'select', options: [['supplier', 'Supplier / Quarry Site'], ['customer', 'Customer Delivery Site']], sec: 1, getVal: r => resolveSiteCategory(r) },
+        { key: 'includes_transport', label: 'Supplier Provides Mat + Transport', type: 'bool', sec: 1, getVal: r => isSupplierDeliveredSite(r) },
         { key: 'name', label: 'Site Name *', type: 'text', sec: 1 },
-        { key: 'region', label: 'Region / Zone *', type: 'combo', dl: 'dl_insp_regions', sec: 2 },
+        { key: 'region', label: 'Region / Zone', type: 'combo', dl: 'dl_insp_regions', sec: 2 },
         { key: 'supplier', label: 'Default Site Owner (Supplier)', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
         { key: 'customer', label: 'Linked Customer', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
         { key: 'is_jv', label: 'JV 50/50 Partnership Site', type: 'bool', sec: 2 },
@@ -56343,15 +56470,19 @@
     if (key === 'warehouse_movements') { hidden.add('location'); hidden.add('target_equipment'); }
     if (key === 'customers') { hidden.add('region'); hidden.add('Customer'); hidden.add('Method'); hidden.add('VAT Registered'); }
     if (key === 'suppliers') { hidden.add('contact'); hidden.add('region'); hidden.add('financial_no'); hidden.add('Supplier'); hidden.add('Method'); hidden.add('IVA'); }
+    if (key === 'raw_purchases') { hidden.add('includes_transport'); }
     if (key === 'sites') {
       hidden.add('jv_company');
+      hidden.add('haulage_mode');
       if (resolveSiteCategory(row) === 'customer') {
         hidden.add('supplier');
         hidden.add('is_jv');
         hidden.add('jv_partner');
         hidden.add('jv_share');
+        hidden.add('includes_transport');
       } else {
         hidden.add('customer');
+        if (row.is_jv) hidden.add('includes_transport');
         if (!row.is_jv) {
           hidden.add('jv_partner');
           hidden.add('jv_share');
@@ -56432,10 +56563,13 @@
         hidden.add('trans_unit_price');
         hidden.add('truck_size');
         hidden.add('truck');
+        hidden.add('includes_transport');
       } else if (/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(rtTrim)) {
         hidden.add('customer');
+        if (isTransOnlyPr) hidden.add('includes_transport');
       } else {
         hidden.add('supplier');
+        hidden.add('includes_transport');
       }
       if (!hasMatPr) {
         hidden.add('unit');
@@ -58297,17 +58431,25 @@
         const otSel = $('insp_edit_overtime');
         const curTime = getModVal('time');
         const curDrv = getModVal('driver');
-        const origTrByDef = row.transport_by || (Number(row.trans_cost || row.trans_unit_cost || 0) > 0 ? 'Third-party truck' : 'Company fleet');
+        const origTrByDef = isBundledRawTicket(row) ? 'Supplier-delivered' : (row.transport_by || (Number(row.trans_cost || row.trans_unit_cost || 0) > 0 ? 'Third-party truck' : 'Company fleet'));
         const curTrBy = getModVal('transport_by') || origTrByDef;
+        const isModSuppDeliv = /^supplier[-\s]*delivered$/i.test(curTrBy);
         const effDtOt = getModVal('rep_date') || getModVal('date') || row.rep_date || row.date || '';
         if (otSel && otSel.dataset.userEdited !== '1' && (
           curTime !== String(row.time || '').trim() ||
           curDrv !== String(row.driver || '').trim() ||
           curTrBy !== String(origTrByDef).trim()
         )) {
-          const canOt = /^company/i.test(curTrBy) || isCompanyDriver(curDrv, row.company, effDtOt);
+          const canOt = !isModSuppDeliv && (/^company/i.test(curTrBy) || isCompanyDriver(curDrv, row.company, effDtOt));
           otSel.value = (canOt && isOvertimeTime(curTime)) ? 'Yes' : 'No';
         }
+        ['truck_owner', 'trans_unit_cost'].forEach(fk => {
+          const el = $('insp_edit_' + fk);
+          const wrap = el && el.closest('.form-field');
+          if (wrap) wrap.hidden = isModSuppDeliv;
+        });
+        const trkLbl = modDrawer.querySelector('label[for="insp_edit_truck"]');
+        if (trkLbl) trkLbl.textContent = isModSuppDeliv ? 'Supplier Truck (Optional)' : 'Truck *';
         const rc = resolveInspectorRawTicketCalc(row, {
           date: getModVal('date') || row.date,
           rep_date: getModVal('rep_date') || getModVal('date') || row.rep_date || row.date,
@@ -58323,10 +58465,14 @@
           discount: getModNum('discount')
         });
         const ucLbl = modDrawer.querySelector('label[for="insp_edit_unit_cost"]');
-        if (ucLbl) ucLbl.textContent = rc.matIsFlat ? 'Material Cost ($ / Load)' : 'Material Unit Cost ($)';
+        if (ucLbl) ucLbl.textContent = isModSuppDeliv
+          ? (rc.matIsFlat ? 'Delivered Cost (Mat + Trans / Load)' : 'Delivered Unit Cost (Mat + Trans)')
+          : (rc.matIsFlat ? 'Material Cost ($ / Load)' : 'Material Unit Cost ($)');
         const tucLbl = modDrawer.querySelector('label[for="insp_edit_trans_unit_cost"]');
         if (tucLbl) tucLbl.textContent = rc.transIsFlat ? 'Haulage Cost ($ / Load)' : 'Haulage Unit Cost ($)';
-        html = `<span>Material Leg${rc.matIsFlat ? ' (Flat / Load)' : ''}: <b>${fmtUSD(rc.cost, 2)}</b></span><span>Haulage Leg${rc.transIsFlat ? ' (Flat / Load)' : ''}: <b>${fmtUSD(rc.transCost, 2)}</b></span><span>Total Payable: <b>${fmtUSD(rc.total, 2)}</b></span>`;
+        html = isModSuppDeliv
+          ? `<span>Delivered (Mat + Trans)${rc.matIsFlat ? ' (Flat / Load)' : ''}: <b>${fmtUSD(rc.cost, 2)}</b></span><span>Haulage Leg: <b>Incl. in Mat ($0.00 · split unknown)</b></span><span>Total Payable: <b>${fmtUSD(rc.total, 2)}</b></span>`
+          : `<span>Material Leg${rc.matIsFlat ? ' (Flat / Load)' : ''}: <b>${fmtUSD(rc.cost, 2)}</b></span><span>Haulage Leg${rc.transIsFlat ? ' (Flat / Load)' : ''}: <b>${fmtUSD(rc.transCost, 2)}</b></span><span>Total Payable: <b>${fmtUSD(rc.total, 2)}</b></span>`;
       } else if (key === 'vat_invoices') {
         const net = getModNum('net_amount');
         const effViDate = getModVal('date') || row.date || todayISO();
@@ -58509,6 +58655,13 @@
           }
         }
         const isJvMod = !isCustSite && (getModVal('is_jv') === 'Yes' || getModVal('is_jv') === 'true' || (!getModVal('is_jv') && Boolean(row.is_jv)));
+        const inclTrEl = $('insp_edit_includes_transport');
+        if (inclTrEl && (isCustSite || isJvMod)) inclTrEl.value = 'No';
+        const isBundledMod = !isCustSite && !isJvMod && (getModVal('includes_transport') === 'Yes' || getModVal('includes_transport') === 'true' || (!getModVal('includes_transport') && isSupplierDeliveredSite(row)));
+        const inclTrWrap = inclTrEl && inclTrEl.closest('.form-field');
+        if (inclTrWrap) inclTrWrap.hidden = isCustSite || isJvMod;
+        const regLblMod = modDrawer.querySelector('label[for="insp_edit_region"]');
+        if (regLblMod) regLblMod.textContent = isBundledMod ? 'Region / Zone (Optional for Bundled)' : 'Region / Zone *';
         ['supplier', 'is_jv'].forEach(fk => {
           const el = $('insp_edit_' + fk);
           const wrap = el && el.closest('.form-field');
@@ -58522,11 +58675,11 @@
         const custEl = $('insp_edit_customer');
         const custWrap = custEl && custEl.closest('.form-field');
         if (custWrap) custWrap.hidden = !isCustSite;
-        const mReg = getModVal('region') || row.region || 'Lebanon';
+        const mReg = getModVal('region') || row.region || (isBundledMod ? 'Optional (Bundled)' : 'Lebanon');
         const mParty = isCustSite ? (getModVal('customer') || 'Open Delivery') : (getModVal('supplier') || 'Open Source');
         const mJvPart = isJvMod ? (getModVal('jv_partner') || row.jv_partner || 'Assaf') : '';
         const mJvPct = isJvMod ? (getModNum('jv_share') || row.jv_share || 50) : 0;
-        html = `<span>Category: <b>${esc(formatSiteCategoryLabel(mCat))}</b></span><span>Region: <b>${esc(mReg)}</b></span><span>${isCustSite ? 'Linked Customer' : 'Site Owner'}: <b>${esc(mParty)}</b></span>${isJvMod ? `<span>JV Partner: <b>${esc(mJvPart)} (${mJvPct}%)</b></span>` : ''}`;
+        html = `<span>Category: <b>${esc(formatSiteCategoryLabel(mCat))}</b></span>${!isCustSite ? `<span>Supply Basis: <b>${isBundledMod ? 'Mat + Trans Included (Split Unknown)' : 'Ex-Quarry (Separate Haul)'}</b></span>` : ''}<span>Region: <b>${esc(mReg)}</b></span><span>${isCustSite ? 'Linked Customer' : 'Site Owner'}: <b>${esc(mParty)}</b></span>${isJvMod ? `<span>JV Partner: <b>${esc(mJvPart)} (${mJvPct}%)</b></span>` : ''}`;
       }
       if (modDrawer && isEffectiveSeriesTable(key, row)) {
         const modCand = Object.assign({}, row);
@@ -58723,25 +58876,80 @@
             toast(`Duplicate ${key === 'sites' ? formatSiteCategoryLabel(candidate) : UNIVERSAL_MAIN_SPEC[key].label} "${mainVal}" already exists · modification blocked.`, 'err');
             return;
           }
-          if (key === 'sites' && window.MFG_GEO && typeof window.MFG_GEO.validateSiteInsideRegion === 'function') {
-            const checkCoords = ('latitude' in pendingUpdates) || ('longitude' in pendingUpdates) || !('region' in pendingUpdates);
-            const geoCheck = window.MFG_GEO.validateSiteInsideRegion({
-              siteName: candidate.name,
-              regionName: candidate.region,
-              lat: checkCoords ? candidate.latitude : null,
-              lng: checkCoords ? candidate.longitude : null
-            }, SEED);
-            if (!geoCheck.ok) {
-              toast(geoCheck.reason, 'err');
+          if (key === 'sites') {
+            const candCat = resolveSiteCategory(candidate);
+            const candBundled = candCat !== 'customer' && !candidate.is_jv && Boolean('includes_transport' in pendingUpdates ? pendingUpdates.includes_transport : isSupplierDeliveredSite(row));
+            if ('includes_transport' in pendingUpdates || 'site_category' in pendingUpdates || 'is_jv' in pendingUpdates) {
+              pendingUpdates.includes_transport = candBundled;
+              pendingUpdates.haulage_mode = candBundled ? 'supplier_delivered' : 'separate';
+            }
+            if (window.MFG_GEO && typeof window.MFG_GEO.validateSiteInsideRegion === 'function') {
+              const checkCoords = ('latitude' in pendingUpdates) || ('longitude' in pendingUpdates) || !('region' in pendingUpdates);
+              const geoCheck = window.MFG_GEO.validateSiteInsideRegion({
+                siteName: candidate.name,
+                regionName: candidate.region,
+                lat: checkCoords ? candidate.latitude : null,
+                lng: checkCoords ? candidate.longitude : null,
+                allowMissingRegion: candBundled
+              }, SEED);
+              if (!geoCheck.ok) {
+                toast(geoCheck.reason, 'err');
+                return;
+              }
+              if ('region' in pendingUpdates && candidate.region && !('latitude' in pendingUpdates) && !('longitude' in pendingUpdates) && geoCheck.lat != null) {
+                pendingUpdates.latitude = geoCheck.lat;
+                pendingUpdates.longitude = geoCheck.lng;
+              }
+              if (typeof window.MFG_GEO.ensureRegionInSeed === 'function' && candidate.region) {
+                window.MFG_GEO.ensureRegionInSeed(candidate.region, SEED, STATE);
+              }
+            } else if (!candBundled && !String(candidate.region || '').trim()) {
+              toast('Region / Zone is required for Customer Delivery Sites and Ex-Quarry Separate-Haulage Sites.', 'err');
               return;
             }
-            if ('region' in pendingUpdates && !('latitude' in pendingUpdates) && !('longitude' in pendingUpdates)) {
-              pendingUpdates.latitude = geoCheck.lat;
-              pendingUpdates.longitude = geoCheck.lng;
+          }
+        }
+        if (key === 'raw_purchases' && ('transport_by' in pendingUpdates || 'site' in pendingUpdates)) {
+          const candTrBy = ('transport_by' in pendingUpdates) ? pendingUpdates.transport_by : (isBundledRawTicket(row) ? 'Supplier-delivered' : (row.transport_by || 'Company fleet'));
+          const candSite = String(('site' in pendingUpdates ? pendingUpdates.site : row.site) || '').trim();
+          if (!/^supplier[-\s]*delivered$/i.test(String(candTrBy || ''))) {
+            if (!candSite) {
+              toast('Source Site is required when hauling raw material in your trucks or 3rd-party haulers.', 'err');
+              return;
             }
-            if (typeof window.MFG_GEO.ensureRegionInSeed === 'function' && candidate.region) {
-              window.MFG_GEO.ensureRegionInSeed(candidate.region, SEED, STATE);
+            const stRec = siteInfo(candSite, 'raw');
+            if (!effectiveSiteRegion(stRec, candSite)) {
+              toast(`Region & Site required: assign a Region on quarry site "${candSite}" before hauling in your trucks or 3rd-party peers.`, 'err');
+              return;
             }
+          }
+        }
+        if (key === 'price_rules' && ('rule_type' in pendingUpdates || 'site' in pendingUpdates)) {
+          const candRt = String(('rule_type' in pendingUpdates ? pendingUpdates.rule_type : row.rule_type) || '').trim();
+          const candSite = String(('site' in pendingUpdates ? pendingUpdates.site : row.site) || '').trim();
+          if (/^Transport Price \(Site\)$/i.test(candRt)) {
+            if (!candSite) {
+              toast('Source Site is required for a Transport Price (Site) haulage rule.', 'err');
+              return;
+            }
+            const stRec = siteInfo(candSite, 'raw');
+            if (!effectiveSiteRegion(stRec, candSite)) {
+              toast(`Region & Site required: assign a Region on quarry site "${candSite}" before adding a 3rd-party Transport Price (Site) rule.`, 'err');
+              return;
+            }
+          }
+        }
+        if (key === 'overtime_rates' && ('region' in pendingUpdates || 'site' in pendingUpdates)) {
+          const candSite = String(('site' in pendingUpdates ? pendingUpdates.site : row.site) || '').trim();
+          const candReg = String(('region' in pendingUpdates ? pendingUpdates.region : row.region) || '').trim();
+          if (candSite && !candReg) {
+            const stRec = siteInfo(candSite, 'raw') || siteInfo(candSite);
+            const resolvedReg = effectiveSiteRegion(stRec, candSite);
+            if (!resolvedReg) {
+              toast(`Region & Site required: specify a Region for site "${candSite}" when setting a driver trip/overtime rate.`, 'err');
+              return;
+            }
+            pendingUpdates.region = resolvedReg;
           }
         }
         if (key === 'conversions' && ('usd_amount' in pendingUpdates || 'lbp_amount' in pendingUpdates || 'exchange_rate' in pendingUpdates)) {
@@ -58879,6 +59087,13 @@
             else delete row.trans_indiff;
           }
         } else if (key === 'raw_purchases') {
+          if (/^supplier[-\s]*delivered$/i.test(String(row.transport_by || ''))) {
+            row.includes_transport = true;
+            row.trans_unit_cost = 0;
+            row.truck_owner = '';
+          } else if ('transport_by' in pendingUpdates) {
+            row.includes_transport = false;
+          }
           const rawCalc = resolveInspectorRawTicketCalc(origRowSnap, row, editedKeySet);
           row.cost = rawCalc.cost;
           row.trans_cost = rawCalc.transCost;
@@ -59008,6 +59223,11 @@
             row.total = round2(Number(row.amount || 0) + Number(row.difference || 0));
           }
         } else if (key === 'price_rules') {
+          if ('includes_transport' in pendingUpdates || 'rule_type' in pendingUpdates) {
+            if (!/^Purchase Price \(Site\)$/i.test(String(row.rule_type || '').trim())) {
+              row.includes_transport = false;
+            }
+          }
           const prRateFields = ['rule_type', 'unit', 'rate_per', 'unit_price', 'trans_unit_price', 'qty1', 'adj1', 'trans_adj1', 'qty2', 'adj2', 'trans_adj2'];
           if (prRateFields.some(k => k in pendingUpdates)) {
             const roundPr4 = v => { const n = Number(v || 0); return Number.isFinite(n) ? Number(n.toFixed(4)) : 0; };
@@ -72226,7 +72446,8 @@
       }
     }));
     container.querySelectorAll('[data-vatinv-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.vatInvFilter = btn.getAttribute('data-vatinv-chip'); STATE.shown.vatinv = PAGE; const ws = $('workspace'); const y = ws ? ws.scrollTop : 0; renderApp(); if (ws) ws.scrollTop = y; }));
-    container.querySelectorAll('[data-rawsite-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.rawSiteFilter = btn.getAttribute('data-rawsite-chip'); STATE.shown.sites = PAGE; renderApp(); }));
+    container.querySelectorAll('[data-rawsite-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.rawSiteFilter = btn.getAttribute('data-rawsite-chip') || 'all'; STATE.shown.sites = PAGE; const ws = $('workspace'); const y = ws ? ws.scrollTop : 0; renderApp(); if (ws) ws.scrollTop = y; }));
+    container.querySelectorAll('[data-rawmat-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.rawMatCompFilter = btn.getAttribute('data-rawmat-chip') || 'all'; STATE.shown.prawmat = PAGE; const ws = $('workspace'); const y = ws ? ws.scrollTop : 0; renderApp(); if (ws) ws.scrollTop = y; }));
     container.querySelectorAll('[data-partdisp-chip]').forEach(btn => btn.addEventListener('click', () => {
       STATE.partDispFilter = btn.getAttribute('data-partdisp-chip') || 'all';
       STATE.shown.parts_log = PAGE;

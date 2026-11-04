@@ -41,7 +41,7 @@ def sync_command_app() -> int:
     for fname in TOP_FILES:
         src = os.path.join(MFG_ROOT, fname)
         if os.path.isfile(src):
-            shutil.copy2(src, os.path.join(APP_OUT, fname))
+            shutil.copyfile(src, os.path.join(APP_OUT, fname))
             copied += 1
 
     for dname in SUB_DIRS:
@@ -54,7 +54,7 @@ def sync_command_app() -> int:
             target_root = dst_dir if rel == "." else os.path.join(dst_dir, rel)
             os.makedirs(target_root, exist_ok=True)
             for f in files:
-                shutil.copy2(os.path.join(root, f), os.path.join(target_root, f))
+                shutil.copyfile(os.path.join(root, f), os.path.join(target_root, f))
                 copied += 1
 
     # Remove retired monolithic seed_data.js if replaced by split seed_core.json + seed_records.json
