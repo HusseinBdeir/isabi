@@ -458,10 +458,22 @@
       if (norm(r.truck_owner) === sNorm) {
         const hc = Number(r.trans_cost || 0);
         if (hc > 0) {
-          allLegs.push({ date: r.date, ref: `RAW #${r.ticket_no || '—'}`, legType: 'haulage', leg: 'Leg 2 · Raw Haulage', detail: `${r.truck || ''} · ${r.product || ''}`, amount: hc });
+          allLegs.push({ date: r.date, ref: `RAW #${r.ticket_no || '-'}`, legType: 'haulage', leg: 'Leg 2 · Raw Haulage', detail: `${r.truck || ''} · ${r.product || ''}`, amount: hc });
         } else if (hc < 0) {
           priorCreditReturns += Math.abs(hc);
         }
+      }
+    });
+    (rec.sales_tickets || []).forEach(st => {
+      if (!st || st.voided || st.is_internal_sale || (company && st.company && st.company !== company)) return;
+      if (st.transport_by !== 'Third-party truck' || norm(st.truck_owner) !== sNorm) return;
+      const m = String(st.method || 'Credit').trim();
+      if (m !== 'Credit' && m !== 'CR Return' && m !== 'Credit Return') return;
+      const hc = Number(st.trans_price || 0);
+      if (m === 'Credit' && hc > 0) {
+        allLegs.push({ date: st.date, ref: `SALE #${st.ticket_no || '-'}`, legType: 'haulage', leg: 'Leg 2 · Sales Haulage', detail: `${st.truck || ''} · ${st.customer || ''}`, amount: hc });
+      } else if (hc !== 0) {
+        priorCreditReturns += Math.abs(hc);
       }
     });
     (rec.expenses || []).forEach(e => {
@@ -500,12 +512,10 @@
       return { ...l, origDue, openDue };
     });
 
-    const scopedAfterPrior = (!legFilter || legFilter === 'all')
+    const filteredByLeg = (!legFilter || legFilter === 'all')
       ? afterPriorAll
       : afterPriorAll.filter(l => l.legType === legFilter);
-    if (!scopedAfterPrior.length) {
-      return `<div class="pa-subgrid-empty">No payable legs matching the selected leg filter for <b>${esc(supplierName)}</b>.</div>`;
-    }
+    const scopedAfterPrior = filteredByLeg.length ? filteredByLeg : afterPriorAll;
     const openLegs = scopedAfterPrior.filter(l => l.openDue > 0.005);
     const displayLegs = openLegs.length ? openLegs.slice(0, 12) : scopedAfterPrior.slice(-12);
 
@@ -1894,6 +1904,7 @@
           ${fld('LBP Amount (L.L.)', inp('f_lbp', 'number', '', 'step="1000" min="0" placeholder="0"'))}
           ${fld(`Total USD Value (${fmtFxRateLbl(getActiveFxRate())} LL/$) *`, inp('f_amount', 'number', '', 'step="0.01" readonly class="pa-locked-input"'), { id: 'wrap_f_amount', lockField: 'f_amount', lockReason: `Locked to Dual-Currency FX formula (USD + LBP ÷ ${fmtFxRateLbl(getActiveFxRate())} LL/$)` })}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional payroll note, bonus reason, or voucher ref..."'), { span: true })}
+          <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
         </div>
         <div id="paSalSubgridWrap"></div>
         <div class="live-calc att-live-calc-compact" id="salLiveCalc">
@@ -1993,6 +2004,9 @@
         : (isContract ? 'Monthly' : 'Daily');
       const empWorkDaysVal = pendSalRow ? String(pendSalRow.working_days || (/Daily/i.test(empPayVal) ? 26 : 30)) : '30';
       const empWorkHoursVal = pendSalRow ? String(pendSalRow.working_hours || 8) : '8';
+      const empVacDaysVal = pendSalRow
+        ? String(pendSalRow.vacation_days != null ? pendSalRow.vacation_days : (/Daily/i.test(empPayVal) ? 0 : 15))
+        : (/Daily/i.test(empPayVal) ? '0' : '15');
       const empAmtVal = (pendSalRow && Number(pendSalRow.base_salary || pendSalRow.salary_usd || pendSalRow.daily_rate || pendSalRow.amount || 0) > 0)
         ? String(pendSalRow.base_salary || pendSalRow.salary_usd || pendSalRow.daily_rate || pendSalRow.amount)
         : '';
@@ -2022,6 +2036,7 @@
             ${fld(amtLbl, amtInputHtml, { id: 'wrap_emp_amount', hintId: 'hint_emp_salary', hint: '', afterHtml: salaryModePillsHtml })}
             ${fld('Work Days / Mo', inp('f_workdays', 'number', empWorkDaysVal, `step="1" min="1" max="31"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_workdays', lockField: 'f_workdays', lockReason: 'Locked to the contracted schedule recorded on onboarding' } : { id: 'wrap_emp_workdays' })}
             ${fld('Hours / Day', inp('f_workhours', 'number', empWorkHoursVal, `step="0.5" min="1" max="24"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_workhours', lockField: 'f_workhours', lockReason: 'Locked to the contracted daily hours recorded on onboarding' } : { id: 'wrap_emp_workhours' })}
+            ${fld('Vacation Days / Yr', inp('f_vacdays', 'number', empVacDaysVal, `step="0.5" min="0" max="60"${pendSalRow ? ' readonly' : ''}`), pendSalRow ? { id: 'wrap_emp_vacdays', lockField: 'f_vacdays', lockReason: 'Locked to the annual vacation allowance recorded on onboarding' } : { id: 'wrap_emp_vacdays' })}
             ${fld('Notes', inp('f_notes', 'text', empNotesVal, pendSalRow ? 'placeholder="Optional salary agreement note..."' : ''), { span: true })}
           </div>
           <div class="live-calc" id="empLiveCalc">

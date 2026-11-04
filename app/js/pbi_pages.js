@@ -1433,7 +1433,12 @@
       { id: 'in', label: 'Stock In (+)', fn: r => /^IN$/i.test(r.direction || '') },
       { id: 'out', label: 'Stock Out (-)', fn: r => /^OUT$/i.test(r.direction || '') }
     ] },
-    { key: 'settlements', group: '2 · Purchases, Expenses & Payables', label: 'Supplier Settlements (AP)', dvn: 'bhf_mfgsupplierpayment', form: 'settlement', cols: ['date', 'rep_date', 'name', 'company', 'supplier', 'payable_leg', 'method', 'kind', 'amount', 'discount', 'raw_ticket', 'expense_record', 'reference', 'notes'], relTables: ['suppliers', 'raw_purchases', 'expenses', 'price_rules'], views: [{ id: 'all', label: 'All Supplier Settlements' }, { id: 'raw_leg', label: 'Raw / Haulage Leg', fn: r => Boolean(r.raw_ticket) }, { id: 'exp_leg', label: 'Expense Leg', fn: r => Boolean(r.expense_record) }] },
+    { key: 'settlements', group: '2 · Purchases, Expenses & Payables', label: 'Supplier Settlements (AP)', dvn: 'bhf_mfgsupplierpayment', form: 'settlement', cols: ['date', 'rep_date', 'name', 'company', 'supplier', 'payable_leg', 'method', 'kind', 'amount', 'discount', 'raw_ticket', 'expense_record', 'reference', 'notes'], relTables: ['suppliers', 'raw_purchases', 'expenses', 'price_rules'], views: [
+      { id: 'all', label: 'All Supplier Settlements' },
+      { id: 'quarry_leg', label: '1 · Quarry Leg', fn: r => (r.payable_leg || '') === 'quarry' || (!r.payable_leg && Boolean(r.raw_ticket)) },
+      { id: 'trans_leg', label: '2 · Transportation Leg', fn: r => (r.payable_leg || '') === 'transportation' },
+      { id: 'exp_leg', label: '3 · Expense Leg', fn: r => (r.payable_leg || '') === 'expense' || (!r.payable_leg && Boolean(r.expense_record)) }
+    ] },
     { key: 'jv_partnerships', group: '2 · Purchases, Expenses & Payables', label: 'JV Site Partnerships', dvn: 'bhf_mfgjvpartnership', form: 'jv', cols: ['name', 'company', 'site', 'partner', 'percentage', 'distributions_total', 'notes'], relTables: ['sites', 'jv_distributions', 'raw_purchases'], views: [{ id: 'all', label: 'All JV Partnerships' }] },
     { key: 'jv_distributions', group: '2 · Purchases, Expenses & Payables', label: 'JV Profit Distributions', dvn: 'bhf_mfgjvdistribution', form: 'jv', cols: ['date', 'rep_date', 'company', 'site', 'partner', 'basis', 'amount', 'total', 'notes'], relTables: ['jv_partnerships', 'sites'], views: [{ id: 'all', label: 'All JV Distributions' }] },
 
@@ -1499,7 +1504,7 @@
       { id: 'leave', label: 'Absence & Leave', fn: r => Number(r.leave_days || 0) !== 0 || /Absence|VacAbsence|Sick|Leave|Unpaid/i.test(r.type || r.status || '') },
       { id: 'extra', label: 'Extra & Config', fn: r => /^(?:extra|config)/i.test(r.type || r.status || '') }
     ] },
-    { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'working_days', 'working_hours', 'overtime_multiplier', 'reimbursement', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'pending_salary', label: 'Pending Salary ($0)', fn: r => Boolean(r && !r.voided && r.salary_pending) }, { id: 'freelance', label: 'Freelance / Daily', fn: r => /free|daily/i.test(r.type || '') }] },
+    { key: 'employments', group: '4 · Payroll, Attendance & Workforce', label: 'Employment & Freelance Contracts', dvn: 'bhf_mfgemployment', form: 'employment', cols: ['name', 'company', 'staff', 'role', 'type', 'status', 'salary_usd', 'daily_rate', 'working_days', 'working_hours', 'vacation_days', 'overtime_multiplier', 'reimbursement', 'deduction', 'payments_count', 'total_paid', 'start_date', 'end_date'], relTables: ['salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'company_drivers'], views: [{ id: 'all', label: 'All Contracts' }, { id: 'active', label: 'Active Staff', fn: r => !/ended|inactive|terminated/i.test(r.status || '') && !r.end_date }, { id: 'pending_salary', label: 'Pending Salary ($0)', fn: r => Boolean(r && !r.voided && r.salary_pending) }, { id: 'freelance', label: 'Freelance / Daily', fn: r => /free|daily/i.test(r.type || '') }] },
     { key: 'freelance_entries', group: '4 · Payroll, Attendance & Workforce', label: 'Freelance Work Entries', dvn: 'bhf_mfgfreelance', form: 'freelance', cols: ['date', 'company', 'staff', 'hours', 'extra_hours', 'rate_usd', 'total', 'notes'], relTables: ['employments', 'salaries'], views: [{ id: 'all', label: 'All Freelance Entries' }] },
     { key: 'logistics_allowances', group: '4 · Payroll, Attendance & Workforce', navView: 'payroll_allowances', label: 'Site Transport', dvn: 'bhf_mfglogistics', form: 'logistics', cols: ['name', 'company', 'staff', 'site', 'equipment', 'daily_usd', 'lbp_amount', 'working_days', 'start_date', 'end_date'], relTables: ['employments', 'sites', 'equipment', 'attendance', 'salaries'], views: [
       { id: 'all', label: 'All Site Transport' },
@@ -1757,7 +1762,7 @@
     return `<span class="badge ${isCust ? 'badge-info' : 'badge-brass'}">${esc(isCust ? 'Customer Delivery' : 'Supplier / Quarry')}</span>`;
   }
 
-  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|linked_party|jv_partner|jv_share|working_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
+  const NON_NUMERIC_HUB_COLS = /^(code|pcg_class|automation_mode|source_module|debit_rule|credit_rule|cost_class|cost_bucket|site_category|linked_party|jv_partner|jv_share|working_days|vacation_days|assigned_trucks|companies_list|trucks_list|drivers_list|gps_status|supplier_role|payable_leg|in_time|out_time|check_in|check_out|shift_str|part_serial|defect_ref|linked_part_log|removed_disposition|action_type|severity|subsystem|condition|storage_location|vendor_or_buyer|effective_to|output_vat_account|input_vat_account|symbol|role|status|salary_status|worker_category|default_equipment|phone|reference|frequency|allocation_mode|warehouse_location|repair_source|oil_type|service_action|item_summary|items_summary|movement_type|expense_ref|repair_ref)$/i;
 
   function getHubTableDefaultSort(meta, activeViewId) {
     const k = (meta && meta.key) || '';
@@ -2583,6 +2588,20 @@
     if (tableKey === 'recurring_expenses' && c === 'status') {
       const endIso = String(r.end_date || '').slice(0, 10);
       return (!endIso || endIso >= localTodayPbi()) ? 'In Force' : 'Ended';
+    }
+    if (tableKey === 'employments' && c === 'vacation_days') {
+      return r.vacation_days != null && r.vacation_days !== ''
+        ? Number(r.vacation_days)
+        : (/Daily|Freelance/i.test(String(r.type || '')) ? 0 : 15);
+    }
+    if (c === 'payable_leg') {
+      const pl = String(r.payable_leg || '').toLowerCase();
+      if (pl === 'quarry') return '1 · Quarry';
+      if (pl === 'transportation') return '2 · Transportation';
+      if (pl === 'expense') return '3 · Expense';
+      if (r.expense_record) return '3 · Expense';
+      if (r.raw_ticket) return '1 · Quarry';
+      return '3 · Expense';
     }
     if (c === 'cost_class') return deriveExpenseCostClass(r);
     if (r[c] != null && r[c] !== '') {
@@ -9356,6 +9375,8 @@
 
   const HUB_COL_LABELS = {
     contracts_count: 'Contracts',
+    vacation_days: 'Vac Days/Yr',
+    payable_leg: 'Payable Leg',
     active_salary_usd: 'Active Rate ($)',
     salary_status: 'Pay Status',
     attendance_days: 'Att. Logs',

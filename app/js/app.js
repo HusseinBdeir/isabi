@@ -3305,20 +3305,43 @@
     return n === 'kareem bdeir' ? 'karim bdeir' : n;
   }
 
+  function getSupplierPayableLegsInfo(supplierName, companyName) {
+    const sn = normSupPayable(supplierName);
+    if (!sn) return { row: null, hasQ: false, hasT: false, hasE: false, activeLegs: [], quarryRem: 0, transRem: 0, expRem: 0 };
+    const targetCo = companyName
+      ? (norm(companyName) === 'bbconstruction' ? 'bbconstruction' : (norm(companyName) === 'lions transport' ? 'lionstransport' : (norm(companyName) === 'wtc' ? 'wtc' : STATE.company)))
+      : STATE.company;
+    const brk = computeThreeLegPayablesBreakdown({ company: targetCo, ignorePeriod: true });
+    const row = brk && brk.byNorm ? brk.byNorm.get(sn) : null;
+    if (!row) return { row: null, hasQ: false, hasT: false, hasE: false, activeLegs: [], quarryRem: 0, transRem: 0, expRem: 0 };
+    const hasQ = Math.abs(row.quarry_cr) > 0.005 || Math.abs(row.quarry_rem) > 0.005;
+    const hasT = Math.abs(row.trans_cr) > 0.005 || Math.abs(row.trans_rem) > 0.005;
+    const hasE = Math.abs(row.exp_cr_usd) > 0.005 || Math.abs(row.exp_rem_ttc) > 0.005 || Math.abs(row.exp_rem_lbp) > 1;
+    const activeLegs = [];
+    if (hasQ) activeLegs.push('quarry');
+    if (hasT) activeLegs.push('transportation');
+    if (hasE) activeLegs.push('expense');
+    return {
+      row,
+      hasQ,
+      hasT,
+      hasE,
+      activeLegs,
+      quarryRem: Number(row.quarry_rem || 0),
+      transRem: Number(row.trans_rem || 0),
+      expRem: Number(row.exp_rem_ttc || 0)
+    };
+  }
+
   function inferSettlementPayableLeg(supplierName, methodVal, companyName) {
     const mth = String(methodVal || 'Payment').trim();
     if (mth === 'VAT' || mth === 'VATConfig' || mth === 'IVA') return 'expense';
-    const sn = normSupPayable(supplierName);
-    if (!sn) return 'expense';
-    const brk = computeThreeLegPayablesBreakdown({ company: companyName ? (norm(companyName) === 'bbconstruction' ? 'bbconstruction' : (norm(companyName) === 'lions transport' ? 'lionstransport' : 'wtc')) : STATE.company, ignorePeriod: true });
-    const row = brk && brk.byNorm ? brk.byNorm.get(sn) : null;
+    const info = getSupplierPayableLegsInfo(supplierName, companyName);
+    const row = info.row;
     if (!row) return 'expense';
-    const hasQ = Math.abs(row.quarry_cr) > 0.005 || Math.abs(row.quarry_rem) > 0.005;
-    const hasT = Math.abs(row.trans_cr) > 0.005 || Math.abs(row.trans_rem) > 0.005;
-    const hasE = Math.abs(row.exp_cr_usd) > 0.005 || Math.abs(row.exp_rem_ttc) > 0.005;
-    if (hasQ && !hasT && !hasE) return 'quarry';
-    if (hasT && !hasQ && !hasE) return 'transportation';
-    if (hasE && !hasQ && !hasT) return 'expense';
+    if (info.hasQ && !info.hasT && !info.hasE) return 'quarry';
+    if (info.hasT && !info.hasQ && !info.hasE) return 'transportation';
+    if (info.hasE && !info.hasQ && !info.hasT) return 'expense';
     if (row.quarry_rem > 0.01 && row.quarry_rem >= row.trans_rem && row.quarry_rem >= row.exp_rem_ttc) return 'quarry';
     if (row.trans_rem > 0.01 && row.trans_rem >= row.exp_rem_ttc) return 'transportation';
     return 'expense';
@@ -3332,7 +3355,7 @@
     const basis = opts.basis || STATE.basis || 'rep';
     const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
     const rangeKey = range ? `${range.from || ''}:${range.to || ''}` : 'ALL';
-    const cacheKey = `${SEED._customRev || 0}|${_GLOBAL_RATES_REV}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.settlements || []).length}|${(recs.suppliers || []).length}|${targetCo}|${allowed.join(',')}|${offScope ? 1 : 0}|${basis}|${rangeKey}`;
+    const cacheKey = `${SEED._customRev || 0}|${_GLOBAL_RATES_REV}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.recurring_expenses || []).length}|${(recs.settlements || []).length}|${(recs.suppliers || []).length}|${targetCo}|${allowed.join(',')}|${offScope ? 1 : 0}|${basis}|${rangeKey}`;
     if (!opts._noMemo && _threeLegApCacheKey === cacheKey && _threeLegApCacheVal) return _threeLegApCacheVal;
 
     const isCoInScope = co => {
@@ -3492,7 +3515,11 @@
       if (!rRx) continue;
       const sIso = String(rx.start_date || '').slice(0, 10);
       const rawEnd = String(rx.end_date || '').slice(0, 10);
-      const eIso = /^\d{4}-\d{2}-\d{2}$/.test(rawEnd) ? rawEnd : (maxExpDateByCo[rx.company] || '2026-11-03');
+      const isAppRec = isAppRecord(rx);
+      const openCap = isAppRec
+        ? ((!maxExpDateByCo[rx.company] || todayISO() > maxExpDateByCo[rx.company]) ? todayISO() : maxExpDateByCo[rx.company])
+        : (maxExpDateByCo[rx.company] || '2026-11-03');
+      const eIso = /^\d{4}-\d{2}-\d{2}$/.test(rawEnd) ? rawEnd : openCap;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(sIso) || !/^\d{4}-\d{2}-\d{2}$/.test(eIso) || sIso > eIso) continue;
       const [sy, sm0, sd0] = sIso.split('-').map(Number);
       const [ey, em0] = eIso.split('-').map(Number);
@@ -3506,7 +3533,7 @@
         const dim = new Date(Date.UTC(y, mo, 0)).getUTCDate();
         const day = Math.min(sd0, dim);
         const dIso = `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        if (rx.company === 'BBConstruction' && dIso > '2024-04-05') continue;
+        if (rx.company === 'BBConstruction' && !isAppRec && dIso > '2024-04-05') continue;
         if (!inRange(dIso, dIso)) continue;
         const exV = iva ? (totV / 1.11) : totV;
         if (cur === 'USD') {
@@ -25233,7 +25260,7 @@
       hasContract: false, salaryPending: false, contractId: '', staff: staffName || '', company: company || 'WTC',
       type: 'Monthly', status: 'No Contract', role: '',
       monthlySalary: 0, dailyRateInput: 0,
-      workingDays: 30, workingHours: 8, otMultiplier: 1.0, lateMultiplier: 1.0,
+      workingDays: 30, workingHours: 8, vacationDays: 15, otMultiplier: 1.0, lateMultiplier: 1.0,
       reimbursement: 0, deduction: 0,
       dailyRate: 25, hourlyRate: round2(25 / 8), otHourlyRate: round2(25 / 8), lateHourlyRate: round2(25 / 8)
     };
@@ -25297,6 +25324,7 @@
       dailyRateInput: dRateIn,
       workingDays: wDays,
       workingHours: wHrs,
+      vacationDays: best.vacation_days != null ? Number(best.vacation_days) : (/Daily|Freelance/i.test(String(best.type || best.pay_type || '')) ? 0 : 15),
       otMultiplier: otMult,
       lateMultiplier: ltMult,
       reimbursement: isPendSal ? 0 : (Number(best.reimbursement || 0) + (Number(best.reimbursement_lbp || 0) / fxRate)),
@@ -28478,11 +28506,12 @@
           ${renderColFilterBar('pay_emp')}
           <div class="table-wrap">
             <table class="ledger-table">
-              <thead><tr>${th('pay_emp', 'Staff', 'staff')}${th('pay_emp', 'Co.', 'company')}${th('pay_emp', 'Type', 'type')}${th('pay_emp', 'Start', 'start_date')}${th('pay_emp', 'End', 'end_date')}${th('pay_emp', 'Status', 'status')}${th('pay_emp', 'Work Days', 'working_days', 'r')}${th('pay_emp', 'Hrs/Day', 'working_hours', 'r')}${th('pay_emp', 'OT ×', 'overtime_multiplier', 'r')}${th('pay_emp', 'Monthly ($)', 'salary_usd', 'r')}${th('pay_emp', 'Reimb. ($)', 'reimbursement', 'r')}${th('pay_emp', 'Ded. ($)', 'deduction', 'r')}</tr></thead>
+              <thead><tr>${th('pay_emp', 'Staff', 'staff')}${th('pay_emp', 'Co.', 'company')}${th('pay_emp', 'Type', 'type')}${th('pay_emp', 'Start', 'start_date')}${th('pay_emp', 'End', 'end_date')}${th('pay_emp', 'Status', 'status')}${th('pay_emp', 'Work Days', 'working_days', 'r')}${th('pay_emp', 'Hrs/Day', 'working_hours', 'r')}${th('pay_emp', 'Vac/Yr', 'vacation_days', 'r')}${th('pay_emp', 'OT ×', 'overtime_multiplier', 'r')}${th('pay_emp', 'Monthly ($)', 'salary_usd', 'r')}${th('pay_emp', 'Reimb. ($)', 'reimbursement', 'r')}${th('pay_emp', 'Ded. ($)', 'deduction', 'r')}</tr></thead>
               <tbody>
                 ${shownEmp.map(e => {
                   const ended = e.status === 'Ended' || (e.end_date && String(e.end_date) < today);
                   const isPend = isPendingSalaryEmployment(e);
+                  const vacVal = e.vacation_days != null ? Number(e.vacation_days) : (/Daily|Freelance/i.test(String(e.type || '')) ? 0 : 15);
                   return `
                   <tr class="rrow ${ended ? 'pbi-row-amber' : ''}" data-rkey="employments" data-rid="${esc(e.id)}">
                     <td><strong>${esc(e.staff)}</strong>${appCell(e, 'employments')}</td>
@@ -28493,17 +28522,18 @@
                     <td><span class="badge ${ended ? 'badge-warn' : 'badge-ok'}">${ended ? 'Ended' : (e.status || 'Current')}</span></td>
                     <td class="r">${fmtNum(e.working_days || 26, 0)}d</td>
                     <td class="r">${fmtNum(e.working_hours || 9, 0)}h</td>
+                    <td class="r">${fmtNum(vacVal, vacVal % 1 ? 1 : 0)}d</td>
                     <td class="r">${fmtNum(e.overtime_multiplier || 1.5, 1)}×</td>
                     <td class="r">${isPend ? `<span class="badge badge-warn">Pending ($0.00)</span>${canSetPendingSal ? ` <button type="button" class="btn btn-primary" style="padding:2px 8px;font-size:10.5px;margin-left:4px" data-set-pending-salary-id="${esc(e.id)}">$ Enter Salary</button>` : ''}` : `<strong>${fmtUSD(empContractMonthlyUsd(e, fxRate), 2)}</strong>`}</td>
                     <td class="r">${empContractReimbUsd(e, fxRate) ? fmtUSD(empContractReimbUsd(e, fxRate), 2) : '—'}</td>
                     <td class="r">${empContractDedUsd(e, fxRate) ? fmtUSD(empContractDedUsd(e, fxRate), 2) : '—'}</td>
                   </tr>`;
-                }).join('') || emptyRow(12, 'No contracts match filter')}
-                ${showMoreRow('pay_emp', filteredEmp.length, 12)}
+                }).join('') || emptyRow(13, 'No contracts match filter')}
+                ${showMoreRow('pay_emp', filteredEmp.length, 13)}
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="9"><b>TOTAL (${fmtNum(filteredEmp.length)} CONTRACTS · ${fmtNum(filteredEmp.filter(e => e.status !== 'Ended' && (!e.end_date || e.end_date >= today)).length)} CURRENT)</b></td>
+                  <td colspan="10"><b>TOTAL (${fmtNum(filteredEmp.length)} CONTRACTS · ${fmtNum(filteredEmp.filter(e => e.status !== 'Ended' && (!e.end_date || e.end_date >= today)).length)} CURRENT)</b></td>
                   <td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + empContractMonthlyUsd(e, fxRate), 0), 2)}</b></td>
                   <td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + empContractReimbUsd(e, fxRate), 0), 2)}</b></td>
                   <td class="r"><b>${fmtUSD(filteredEmp.reduce((a, e) => a + empContractDedUsd(e, fxRate), 0), 2)}</b></td>
@@ -36640,6 +36670,7 @@
           ${fld('Settlement Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'), { hintId: 'hint_disc', hint: 'Written off against the oldest ticket' })}
           ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer / receipt no."'))}
           ${notesField}
+          <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
         </div>
         <div id="rcptQuickContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
         <div id="paCustSubgridWrap"></div>
@@ -36847,6 +36878,7 @@
           </div>
           ${fld('Reference', inp('f_reference', 'text', expRefVal, pendEditRow ? 'placeholder="Enter supplier invoice #..."' : 'placeholder="Supplier invoice or slip #"'), { id: 'wrap_f_reference' })}
           ${expNotesField}
+          <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
         </div>
         <div id="expLiveContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
         <div class="live-calc">
@@ -36867,10 +36899,16 @@
         ${repDateField}
         ${fld('Supplier / Hauler *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supplierNames()), { hintId: 'hint_supplier', hint: '' })}
         ${fld('Payment Method *', sel('f_method', [['Payment', 'Payment'], ['Barter', 'Barter'], ['VAT', 'VAT 11% only'], ['IVA', 'IVA invoice (net + VAT)']], 'Payment'))}
+        ${fld('Payable Leg *', sel('f_payable_leg', [
+          ['quarry', '1 · Quarry (Material)'],
+          ['transportation', '2 · Transportation (Haulage)'],
+          ['expense', '3 · Expense (Bills & Overhead)']
+        ], 'expense'), { id: 'wrap_f_payable_leg', hintId: 'hint_payable_leg', hint: '' })}
         ${fld('Amount Paid ($) *', inp('f_amount', 'number', '', 'step="0.01" min="0.01" inputmode="decimal"'), { hintId: 'hint_amount', hint: '' })}
         ${fld('Difference / Discount ($)', inp('f_discount', 'number', '0.00', 'step="0.01" min="0" inputmode="decimal"'))}
         ${fld('Reference', inp('f_reference', 'text', '', 'placeholder="Cheque / transfer no."'))}
         ${notesField}
+        <div class="form-field check-field span-3" id="wrap_dupok" hidden><input type="checkbox" id="f_dupok"><label for="f_dupok" id="lbl_dupok">Confirm intentional second entry on the same date</label></div>
       </div>
       <div id="settleQuickContextStrip" class="att-contract-strip" hidden style="margin-top:8px"></div>
       <div id="paSupSubgridWrap"></div>
@@ -36887,12 +36925,12 @@
   const FORM_UI = {
     priceManual: false, transManual: false, methodManual: false, uomManual: false, meterTypeManual: false,
     otManual: false, ticketManual: false, qtyManual: false, repDateManual: false, showRepDate: false, afterHoursYesterday: false,
-    ownerManuallyPicked: false, driverManual: false, postAttempted: false,
+    ownerManuallyPicked: false, driverManual: false, settleLegManual: false, postAttempted: false,
     stagedOwnerDrivers: [], expItems: [], repairItems: [],
     lastCompany: '', lastDate: '', lastCategory: null, lastSubcategory: '', initialSubcategory: '', expItem0Manual: false, catCache: null,
     lastTruck: '', lastExpTruck: '', lastWhItem: '', lastOilUnit: '', lastOilType: '',
     lastTruckOwner: '', lastSaleType: '', lastTransportBy: '',
-    lastSite: '', lastSiteOwner: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastRuleType: '', lastPrCoSide: '',
+    lastSite: '', lastSiteOwner: '', lastProduct: '', lastCustomer: '', lastSupplier: '', lastSettleSupplier: '', lastDupSig: '', lastRuleType: '', lastPrCoSide: '',
     lastWinKey: '', lastFuelWinKey: '', lastFuelItem: '', greaseAutoPreset: false,
     adminUnlocked: {}, unlockTargetField: '', unlockNote: ''
   };
@@ -38285,6 +38323,154 @@
       setHint('hint_ticket', `Already used on ${hit.label} ${hit.row.ticket_no} dated ${hit.dateStr}${party ? ' · ' + party : ''} (${hit.ageDays} days ago — accepted)`, 'warn');
     } else {
       setHint('hint_ticket', '', '');
+    }
+    return hit;
+  }
+
+  function cleanVoucherRef(v) {
+    const s = String(v || '').trim();
+    return (!s || s === '-' || s === '—') ? '' : s;
+  }
+
+  function findSameDayVoucherDuplicate(formType, params = {}) {
+    const company = String(params.company || defaultEntryCompany()).trim();
+    const date = String(params.date || '').slice(0, 10);
+    const amount = round2(Number(params.amount || 0));
+    const discount = round2(Number(params.discount || 0));
+    const refNew = cleanVoucherRef(params.reference);
+    if (!date || !(amount > 0)) return null;
+    const recs = SEED.records || {};
+
+    if (formType === 'receipt') {
+      const custNorm = norm(params.customer || '');
+      if (!custNorm) return null;
+      const rows = recs.receipts || [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r.voided || isSelfEditingRow(r, 'receipts')) continue;
+        if (norm(r.company || 'WTC') !== norm(company) || String(r.date || '').slice(0, 10) !== date) continue;
+        if (norm(r.customer || '') !== custNorm) continue;
+        const refRow = cleanVoucherRef(r.reference);
+        const sameRef = Boolean(refNew && refRow && norm(refNew) === norm(refRow));
+        const bothUnnumbered = !refNew && !refRow;
+        if (sameRef || (bothUnnumbered && norm(r.method || 'Payment') === norm(params.method || 'Payment') && Math.abs(round2(Number(r.amount || 0)) - amount) < 0.005 && Math.abs(round2(Number(r.discount || 0)) - discount) < 0.005)) {
+          return {
+            row: r,
+            sameRef,
+            kindLabel: 'receipt',
+            summary: `${r.customer} · ${r.method || 'Payment'} · ${fmtUSD(r.amount || 0, 2)}${refRow ? ' · Ref ' + refRow : ''}`
+          };
+        }
+      }
+      return null;
+    }
+
+    if (formType === 'settlement') {
+      const supNorm = normSupPayable(params.supplier || '');
+      if (!supNorm) return null;
+      const mthNorm = norm(params.method || 'Payment');
+      const legNorm = norm(params.payableLeg || inferSettlementPayableLeg(params.supplier, params.method, company));
+      const rows = recs.settlements || [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r.voided || isSelfEditingRow(r, 'settlements')) continue;
+        if (norm(r.company || 'WTC') !== norm(company) || String(r.date || '').slice(0, 10) !== date) continue;
+        if (normSupPayable(r.supplier || '') !== supNorm) continue;
+        const refRow = cleanVoucherRef(r.reference);
+        const sameRef = Boolean(refNew && refRow && norm(refNew) === norm(refRow));
+        const bothUnnumbered = !refNew && !refRow;
+        const rLegNorm = norm(r.payable_leg || inferSettlementPayableLeg(r.supplier, r.method, r.company));
+        if (sameRef || (bothUnnumbered && norm(r.method || 'Payment') === mthNorm && rLegNorm === legNorm && Math.abs(round2(Number(r.amount || 0)) - amount) < 0.005 && Math.abs(round2(Number(r.discount || 0)) - discount) < 0.005)) {
+          return {
+            row: r,
+            sameRef,
+            kindLabel: 'settlement',
+            summary: `${r.supplier} · ${r.method || 'Payment'} · ${fmtUSD(r.amount || 0, 2)}${refRow ? ' · Ref ' + refRow : ''}`
+          };
+        }
+      }
+      return null;
+    }
+
+    if (formType === 'expense') {
+      if (params.pricePending) return null;
+      const supNorm = normSupPayable(params.supplier || '');
+      const catNorm = norm(params.category || '');
+      const subNorm = norm(params.subcategory || '');
+      const mthNorm = norm(params.method || 'Cash');
+      const pendId = String(STATE.editingPendingExpenseId || '');
+      const rows = recs.expenses || [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r.voided || r.price_pending || isSelfEditingRow(r, 'expenses')) continue;
+        if (pendId && String(r.id) === pendId) continue;
+        if (norm(r.company || 'WTC') !== norm(company) || String(r.date || '').slice(0, 10) !== date) continue;
+        if (normSupPayable(r.supplier || '') !== supNorm) continue;
+        const refRow = cleanVoucherRef(r.reference);
+        const sameRef = Boolean(refNew && refRow && norm(refNew) === norm(refRow) && (supNorm || catNorm));
+        const bothUnnumbered = !refNew && !refRow;
+        if (sameRef || (bothUnnumbered && norm(r.category || '') === catNorm && norm(r.subcategory || '') === subNorm && norm(r.method || 'Cash') === mthNorm && Math.abs(round2(Number(r.amount || 0)) - amount) < 0.005)) {
+          return {
+            row: r,
+            sameRef,
+            kindLabel: 'expense voucher',
+            summary: `${r.supplier || r.category || 'Expense'} · ${r.method || 'Cash'} · ${fmtUSD(r.amount || 0, 2)}${refRow ? ' · Ref ' + refRow : ''}`
+          };
+        }
+      }
+      return null;
+    }
+
+    if (formType === 'salary') {
+      if (params.salType === 'bonus') return null;
+      const stNorm = norm(params.staff || '');
+      if (!stNorm) return null;
+      const payMo = String(params.payrollMonth || date.slice(0, 7));
+      const mthNorm = norm(params.method || 'Cash');
+      const rows = recs.salaries || [];
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r.voided || isSelfEditingRow(r, 'salaries')) continue;
+        if (norm(r.company || 'WTC') !== norm(company) || String(r.date || '').slice(0, 10) !== date) continue;
+        if (norm(r.staff || '') !== stNorm) continue;
+        const rMo = String(r.payroll_month || String(r.date || '').slice(0, 7));
+        if (rMo === payMo && norm(r.method || 'Cash') === mthNorm && Math.abs(round2(Number(r.amount || 0)) - amount) < 0.005) {
+          return {
+            row: r,
+            sameRef: false,
+            kindLabel: 'salary payment',
+            summary: `${r.staff} · ${rMo} · ${r.method || 'Cash'} · ${fmtUSD(r.amount || 0, 2)}`
+          };
+        }
+      }
+      return null;
+    }
+    return null;
+  }
+
+  function syncVoucherDupBanner(formType, params = {}) {
+    const wrap = $('wrap_dupok');
+    const cb = $('f_dupok');
+    const lbl = $('lbl_dupok');
+    if (!wrap) return null;
+    const hit = findSameDayVoucherDuplicate(formType, params);
+    if (!hit) {
+      FORM_UI.lastDupSig = '';
+      wrap.hidden = true;
+      if (cb) cb.checked = false;
+      return null;
+    }
+    const sig = `${formType}|${hit.row.id}|${round2(Number(params.amount || 0))}|${cleanVoucherRef(params.reference)}`;
+    if (FORM_UI.lastDupSig !== sig) {
+      FORM_UI.lastDupSig = sig;
+      if (cb) cb.checked = false;
+    }
+    wrap.hidden = false;
+    if (lbl) {
+      const refNew = cleanVoucherRef(params.reference);
+      lbl.textContent = hit.sameRef
+        ? `Duplicate reference "${refNew}" already logged on ${params.date || ''} (${hit.summary}) - tick to confirm intentional entry`
+        : `Same-day duplicate ${hit.kindLabel} detected (${hit.summary}) - enter a distinct Reference or tick to confirm intentional second entry`;
     }
     return hit;
   }
@@ -40237,9 +40423,18 @@
         `;
       }
     }
+    const dupHit = syncVoucherDupBanner('receipt', {
+      company: val('f_company'),
+      date: val('f_date'),
+      customer,
+      method: val('f_method'),
+      amount,
+      discount: disc,
+      reference: val('f_reference')
+    });
     commonDateChecks([]);
     renderAdminLockBar();
-    return { customer, cust, before, amount, disc };
+    return { customer, cust, before, amount, disc, dupHit };
   }
 
   function recalcFuel() {
@@ -41078,24 +41273,68 @@
         `;
       }
     }
+    const dupHit = syncVoucherDupBanner('expense', {
+      company: val('f_company'),
+      date: val('f_date'),
+      supplier,
+      category: val('f_category'),
+      subcategory: val('f_subcategory'),
+      method,
+      amount,
+      pricePending,
+      reference: val('f_reference')
+    });
     commonDateChecks([]);
     renderAdminLockBar();
-    return { method, supplier, amount, qty, pricePending };
+    return { method, supplier, amount, qty, pricePending, dupHit };
   }
 
   function recalcSettlement() {
     const supplier = val('f_supplier');
+    const settleCo = val('f_company') || defaultEntryCompany();
+    const method = val('f_method') || 'Payment';
+    if (supplier !== FORM_UI.lastSettleSupplier) {
+      FORM_UI.lastSettleSupplier = supplier;
+      if (!STATE.editingRecord) FORM_UI.settleLegManual = false;
+    }
+    const legInfo = getSupplierPayableLegsInfo(supplier, settleCo);
+    const isVatMethod = /^(VAT|VATConfig|IVA)$/i.test(method);
+    const legEl = $('f_payable_leg');
+    if (legEl) {
+      if (isVatMethod) {
+        legEl.value = 'expense';
+      } else if (!FORM_UI.settleLegManual) {
+        legEl.value = inferSettlementPayableLeg(supplier, method, settleCo);
+      }
+    }
+    const payableLeg = isVatMethod ? 'expense' : (val('f_payable_leg') || inferSettlementPayableLeg(supplier, method, settleCo));
     const before = openApBalance(supplier);
     const amount = num('f_amount'), disc = num('f_discount');
     const totRelief = round2(amount + disc);
-    setHint('hint_supplier', supplier && before == null ? 'Not in the AP book — check the spelling' : '', supplier && before == null ? 'warn' : '');
-    setText('calc_before', before == null ? '—' : fmtUSD(before, 2));
+    setHint('hint_supplier', supplier && before == null && !legInfo.row ? 'Not in the AP book - check the spelling' : '', supplier && before == null && !legInfo.row ? 'warn' : '');
+    if (isVatMethod) {
+      setHint('hint_payable_leg', 'VAT and IVA settlements apply to Leg 3 (Expense VAT)', '');
+    } else if (supplier && legInfo.activeLegs.length >= 2) {
+      const parts = [];
+      if (legInfo.hasQ) parts.push(`Quarry ${fmtUSD(legInfo.quarryRem, 0)}`);
+      if (legInfo.hasT) parts.push(`Transport ${fmtUSD(legInfo.transRem, 0)}`);
+      if (legInfo.hasE) parts.push(`Expense ${fmtUSD(legInfo.expRem, 0)}`);
+      setHint('hint_payable_leg', FORM_UI.settleLegManual
+        ? `Multi-role supplier (${parts.join(' · ')}) - target leg confirmed`
+        : `Active in ${legInfo.activeLegs.length} legs (${parts.join(' · ')}) - verify target leg`, FORM_UI.settleLegManual ? 'ok' : 'warn');
+    } else if (supplier && legInfo.activeLegs.length === 1) {
+      setHint('hint_payable_leg', 'Auto-matched single active payable leg', 'ok');
+    } else {
+      setHint('hint_payable_leg', '', '');
+    }
+    setText('calc_before', before == null ? '-' : fmtUSD(before, 2));
     setText('calc_total', fmtUSD(totRelief, 2));
     const afterBal = before == null ? null : round2(before - totRelief);
-    setText('calc_after', afterBal == null ? '—' : (afterBal < -0.005 ? `Prepayment +${fmtUSD(Math.abs(afterBal), 2)}` : fmtUSD(afterBal, 2)));
-    setText('calc_alloc', /VAT|IVA/.test(val('f_method')) ? 'VAT leg only' : 'Oldest leg first');
+    setText('calc_after', afterBal == null ? '-' : (afterBal < -0.005 ? `Prepayment +${fmtUSD(Math.abs(afterBal), 2)}` : fmtUSD(afterBal, 2)));
+    setText('calc_alloc', isVatMethod ? '3 · Expense VAT leg' : (payableLeg === 'quarry' ? '1 · Quarry leg' : (payableLeg === 'transportation' ? '2 · Transportation leg' : '3 · Expense leg')));
     const sSub = $('paSupSubgridWrap');
-    if (sSub && window.MFG_FORMS) sSub.innerHTML = window.MFG_FORMS.renderSupplierOpenLegsSubgrid({ SEED, STATE }, val('f_company'), supplier, totRelief, 'all');
+    const subLegFilter = !supplier ? 'all' : (payableLeg === 'quarry' ? 'material' : (payableLeg === 'transportation' ? 'haulage' : 'expense'));
+    if (sSub && window.MFG_FORMS) sSub.innerHTML = window.MFG_FORMS.renderSupplierOpenLegsSubgrid({ SEED, STATE }, val('f_company'), supplier, totRelief, subLegFilter);
     if (before != null && totRelief > before + 0.005) setHint('hint_amount', `Exceeds the open balance by ${fmtUSD(totRelief - before, 2)} · posts a Supplier Advance / Prepayment`, 'warn');
     else setHint('hint_amount', amount <= 0 && val('f_amount') ? 'Must be above zero' : '', amount <= 0 && val('f_amount') ? 'crit' : '');
     const stStrip = $('settleQuickContextStrip');
@@ -41105,16 +41344,15 @@
         stStrip.innerHTML = '';
       } else {
         const si = supplierInfo(supplier) || {};
-        const settleCo = val('f_company') || defaultEntryCompany();
         const supPendRows = ((SEED.records && SEED.records.expenses) || []).filter(x => isPendingPriceExpense(x) && norm(x.supplier) === norm(supplier) && (!settleCo || norm(x.company) === norm(settleCo)));
         const supPendRawRows = ((SEED.records && SEED.records.raw_purchases) || []).filter(x => isPendingPriceRaw(x) && norm(x.site_owner) === norm(supplier) && (!settleCo || norm(x.company) === norm(settleCo)));
         const totalSupPendCnt = supPendRows.length + supPendRawRows.length;
         const supPendLitres = supPendRows.reduce((a, x) => a + (isBulkDieselExpense(x) ? Number(x.qty || 0) : 0), 0);
         const canSetSupPending = canModifyData() || canEnterForm('expense') || canEnterForm('raw');
         const openVal = Math.max(0, Number(before || 0));
-        const legMat = Math.max(0, Number(si.ap_material || 0));
-        const legHaul = Math.max(0, Number(si.ap_haulage || 0));
-        const legExp = Math.max(0, Number(si.ap_expense || 0));
+        const legMat = Math.max(0, legInfo.row ? Number(legInfo.quarryRem || 0) : Number(si.ap_material || 0));
+        const legHaul = Math.max(0, legInfo.row ? Number(legInfo.transRem || 0) : Number(si.ap_haulage || 0));
+        const legExp = Math.max(0, legInfo.row ? Number(legInfo.expRem || 0) : Number(si.ap_expense || 0));
         const isAdv = before != null && totRelief > openVal + 0.005;
         const isFull = before != null && openVal > 0 && Math.abs(totRelief - openVal) <= 0.01;
         const stBadge = isAdv
@@ -41131,23 +41369,33 @@
             <strong>${esc(supplier)}</strong> ${stBadge}
             ${totalSupPendCnt > 0 ? `<span class="badge badge-warn">${fmtNum(totalSupPendCnt)} Pending Price${supPendLitres > 0 ? ' (' + fmtNum(supPendLitres, 0) + ' L)' : ''} at $0.00</span>${canSetSupPending ? (supPendRows.length > 0 ? `<button type="button" class="att-preset-pill" data-set-pending-price-id="${esc(supPendRows[0].id)}">Enter Invoice Price First</button>` : `<button type="button" class="att-preset-pill" data-set-pending-raw-price-id="${esc(supPendRawRows[0].id)}">Enter Invoice Price First</button>`) : ''}` : ''}
             ${openVal > 0 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${openVal.toFixed(2)}">Pay Full Open AP (${fmtUSD(openVal, 2)})</button>` : ''}
-            ${legMat > 0 && Math.abs(legMat - openVal) > 1 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${legMat.toFixed(2)}">Material Leg (${fmtUSD(legMat, 0)})</button>` : ''}
-            ${legHaul > 0 && Math.abs(legHaul - openVal) > 1 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${legHaul.toFixed(2)}">Haulage Leg (${fmtUSD(legHaul, 0)})</button>` : ''}
-            ${legExp > 0 && Math.abs(legExp - openVal) > 1 ? `<button type="button" class="att-preset-pill" data-form-quickfill="f_amount" data-val="${legExp.toFixed(2)}">Expense Leg (${fmtUSD(legExp, 0)})</button>` : ''}
+            ${legMat > 0.01 && (legInfo.activeLegs.length >= 2 || Math.abs(legMat - openVal) > 1) ? `<button type="button" class="att-preset-pill${payableLeg === 'quarry' ? ' active' : ''}" data-form-quickfill="f_amount" data-settle-leg="quarry" data-val="${legMat.toFixed(2)}">Material Leg (${fmtUSD(legMat, 2)})</button>` : ''}
+            ${legHaul > 0.01 && (legInfo.activeLegs.length >= 2 || Math.abs(legHaul - openVal) > 1) ? `<button type="button" class="att-preset-pill${payableLeg === 'transportation' ? ' active' : ''}" data-form-quickfill="f_amount" data-settle-leg="transportation" data-val="${legHaul.toFixed(2)}">Haulage Leg (${fmtUSD(legHaul, 2)})</button>` : ''}
+            ${legExp > 0.01 && (legInfo.activeLegs.length >= 2 || Math.abs(legExp - openVal) > 1) ? `<button type="button" class="att-preset-pill${payableLeg === 'expense' ? ' active' : ''}" data-form-quickfill="f_amount" data-settle-leg="expense" data-val="${legExp.toFixed(2)}">Expense Leg (${fmtUSD(legExp, 2)})</button>` : ''}
           </div>
           <div class="att-contract-metrics">
             <span><small>Total Open AP</small><b>${before != null ? fmtUSD(before, 2) : '$0.00'}</b></span>
-            ${legMat > 0 ? `<span><small>Leg 1 Material</small><b>${fmtUSD(legMat, 0)}</b></span>` : ''}
-            ${legHaul > 0 ? `<span><small>Leg 2 Haulage</small><b>${fmtUSD(legHaul, 0)}</b></span>` : ''}
-            ${legExp > 0 ? `<span><small>Leg 3 Expenses</small><b>${fmtUSD(legExp, 0)}</b></span>` : ''}
-            <span><small>After Payment</small><b>${afterBal == null ? '—' : (afterBal < -0.005 ? 'Advance +' + fmtUSD(Math.abs(afterBal), 2) : fmtUSD(afterBal, 2) + ' Left')}</b></span>
+            ${legMat > 0 ? `<span><small>Leg 1 Quarry</small><b>${fmtUSD(legMat, 2)}</b></span>` : ''}
+            ${legHaul > 0 ? `<span><small>Leg 2 Transport</small><b>${fmtUSD(legHaul, 2)}</b></span>` : ''}
+            ${legExp > 0 ? `<span><small>Leg 3 Expenses</small><b>${fmtUSD(legExp, 2)}</b></span>` : ''}
+            <span><small>After Payment</small><b>${afterBal == null ? '-' : (afterBal < -0.005 ? 'Advance +' + fmtUSD(Math.abs(afterBal), 2) : fmtUSD(afterBal, 2) + ' Left')}</b></span>
           </div>
         `;
       }
     }
+    const dupHit = syncVoucherDupBanner('settlement', {
+      company: settleCo,
+      date: val('f_date'),
+      supplier,
+      method,
+      payableLeg,
+      amount,
+      discount: disc,
+      reference: val('f_reference')
+    });
     commonDateChecks([]);
     renderAdminLockBar();
-    return { supplier, before, amount, disc };
+    return { supplier, before, amount, disc, payableLeg, dupHit };
   }
 
   function recalcFormInner() {
@@ -41673,6 +41921,15 @@
               setText('calc_sal_status', statusFoot);
             }
           }
+          syncVoucherDupBanner('salary', {
+            company: curCo,
+            date: txDate,
+            staff: curStaff,
+            salType: isBonus ? 'bonus' : 'payment',
+            payrollMonth: payMonth,
+            method: val('f_method') || 'Cash',
+            amount: effThisPay
+          });
         }
 
         // 2. Live Site Allowance Strip & 4-Tile Footer (#logStaffContextStrip & #logLiveCalc)
@@ -43341,6 +43598,7 @@
           if (!isFieldAdminUnlocked('f_paytype') && $('f_paytype')) $('f_paytype').value = pendSalEditRow.pay_type || (/Daily/i.test(String(pendSalEditRow.type || '')) ? 'Daily' : 'Monthly');
           if (isContract && !isFieldAdminUnlocked('f_workdays') && $('f_workdays')) $('f_workdays').value = String(pendSalEditRow.working_days || 30);
           if (isContract && !isFieldAdminUnlocked('f_workhours') && $('f_workhours')) $('f_workhours').value = String(pendSalEditRow.working_hours || 8);
+          if (isContract && !isFieldAdminUnlocked('f_vacdays') && $('f_vacdays')) $('f_vacdays').value = String(pendSalEditRow.vacation_days != null ? pendSalEditRow.vacation_days : (/Daily/i.test(String(pendSalEditRow.pay_type || pendSalEditRow.type || '')) ? 0 : 15));
         }
         const salaryPending = !pendSalEditRow && val('f_salary_pending') === '1';
         const curStaff = val('f_staff');
@@ -43400,8 +43658,10 @@
           if (isContract && curStaff && prof.hasContract) {
             const wdEl = $('f_workdays');
             const whEl = $('f_workhours');
+            const vacEl = $('f_vacdays');
             if (wdEl && wdEl.dataset.userEdited !== '1') wdEl.value = String(prof.workingDays || 30);
             if (whEl && whEl.dataset.userEdited !== '1') whEl.value = String(prof.workingHours || 8);
+            if (vacEl && vacEl.dataset.userEdited !== '1') vacEl.value = String(prof.vacationDays != null ? prof.vacationDays : (/Daily/i.test(payBasis) ? 0 : 15));
           }
         }
         const eqBox = $('empEquipSiteBox');
@@ -43445,6 +43705,7 @@
                 <span><small>Current Base</small><b>${prof.salaryPending ? 'Pending ($0)' : `${fmtUSD(prof.monthlySalary, 2)}/mo`}</b></span>
                 ${prof.reimbursement > 0 ? `<span><small>Reimb.</small><b>+${fmtUSD(prof.reimbursement, 2)}</b></span>` : ''}
                 <span><small>Schedule</small><b>${prof.workingDays}d × ${fmtNum(prof.workingHours, 1)}h</b></span>
+                <span><small>Vacation</small><b>${fmtNum(prof.vacationDays != null ? prof.vacationDays : 15, 0)}d/yr</b></span>
                 <span><small>Hourly / OT</small><b>${prof.salaryPending ? '$0.00 / $0.00' : `${fmtUSD(prof.hourlyRate, 2)} / ${fmtUSD(prof.otHourlyRate, 2)}`}</b></span>
               </div>
             `;
@@ -45769,7 +46030,7 @@
     clearTimeout(modalFocusTimer);
     FORM_UI.priceManual = false; FORM_UI.transManual = false; FORM_UI.methodManual = false; FORM_UI.uomManual = false; FORM_UI.meterTypeManual = false;
     FORM_UI.otManual = false; FORM_UI.ticketManual = false; FORM_UI.qtyManual = false; FORM_UI.repDateManual = false; FORM_UI.showRepDate = false; FORM_UI.afterHoursYesterday = false;
-    FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; FORM_UI.postAttempted = false;
+    FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; FORM_UI.settleLegManual = false; FORM_UI.postAttempted = false;
     FORM_UI.stagedOwnerDrivers = [];
     FORM_UI.expItems = [];
     FORM_UI.repairItems = STATE.modalForm === 'repair'
@@ -45781,7 +46042,7 @@
     FORM_UI.lastTruckOwner = val('f_truckowner');
     FORM_UI.lastSaleType = val('f_saletype'); FORM_UI.lastTransportBy = val('f_transportby');
     FORM_UI.lastSite = val('f_site'); FORM_UI.lastSiteOwner = val('f_siteowner'); FORM_UI.lastProduct = val('f_product');
-    FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier'); FORM_UI.lastUom = val('f_uom') || ''; FORM_UI.lastPrCoSide = '';
+    FORM_UI.lastCustomer = val('f_customer'); FORM_UI.lastSupplier = val('f_supplier'); FORM_UI.lastSettleSupplier = val('f_supplier'); FORM_UI.lastDupSig = ''; FORM_UI.lastUom = val('f_uom') || ''; FORM_UI.lastPrCoSide = '';
     FORM_UI.lastWinKey = ''; FORM_UI.lastFuelWinKey = ''; FORM_UI.lastFuelItem = val('f_item'); FORM_UI.greaseAutoPreset = false;
     FORM_UI.defectRefPreset = false; FORM_UI.lastSeverity = ''; FORM_UI.lastDefectRef = '';
     FORM_UI.attPreset = 'regular'; FORM_UI.attClockManual = false;
@@ -46380,6 +46641,11 @@
           ev.preventDefault();
           const fid = qfBtn.getAttribute('data-form-quickfill');
           const valStr = qfBtn.getAttribute('data-val');
+          const settleLeg = qfBtn.getAttribute('data-settle-leg');
+          if (settleLeg && $('f_payable_leg')) {
+            $('f_payable_leg').value = settleLeg;
+            FORM_UI.settleLegManual = true;
+          }
           const targetEl = fid ? $(fid) : null;
           if (targetEl && valStr != null) {
             targetEl.value = valStr;
@@ -47468,6 +47734,12 @@
         if (el.id === 'f_time') FORM_UI.otManual = false;
         if (el.id === 'f_overtime') FORM_UI.otManual = true;
         if (el.id === 'f_staff') { FORM_UI.attClockManual = false; FORM_UI.lastAttShiftKey = ''; FORM_UI.lastAttTimeKey = ''; }
+        if (el.id === 'f_workdays' || el.id === 'f_workhours' || el.id === 'f_vacdays') { el.dataset.userEdited = '1'; }
+        if (el.id === 'f_paytype' && STATE.modalForm === 'employment' && $('f_vacdays') && $('f_vacdays').dataset.userEdited !== '1') {
+          $('f_vacdays').value = /Daily/i.test(val('f_paytype')) ? '0' : '15';
+        }
+        if (el.id === 'f_payable_leg') { FORM_UI.settleLegManual = true; }
+        if (STATE.modalForm === 'settlement' && el.id === 'f_company' && !STATE.editingRecord) { FORM_UI.settleLegManual = false; }
         if (el.id === 'f_ticketno') FORM_UI.ticketManual = !!el.value;
         // Selecting or clearing a truck resets manual quantity, meter type & driver so the unit's category, capacity and default driver populate first
         if (el.id === 'f_truck') { FORM_UI.qtyManual = false; FORM_UI.meterTypeManual = false; FORM_UI.ownerManuallyPicked = false; FORM_UI.driverManual = false; }
@@ -48043,7 +48315,13 @@
       if (!c.customer) addErr('f_customer', 'Customer is required.');
       if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero.');
       if (c.disc < 0) addErr('f_discount', 'Discount cannot be negative.');
-      record = { ...base, name: `RCPT ${date} ${c.customer}`, rep_date: repDate, customer: c.customer, method: val('f_method'), amount: round2(c.amount), discount: round2(c.disc), reference: val('f_reference'), ar_before: c.before };
+      const rcptDup = findSameDayVoucherDuplicate('receipt', { company, date, customer: c.customer, method: val('f_method'), amount: c.amount, discount: c.disc, reference: val('f_reference') });
+      if (rcptDup && !($('f_dupok') && $('f_dupok').checked)) {
+        addErr('f_dupok', rcptDup.sameRef
+          ? `Duplicate reference "${cleanVoucherRef(val('f_reference'))}" already logged on ${date} (${rcptDup.summary}). Change the reference or tick the confirmation box.`
+          : `Same-day duplicate receipt detected (${rcptDup.summary}). Add a distinct Reference or tick the confirmation box if intentional.`);
+      }
+      record = { ...base, name: `RCPT ${date} ${c.customer}`, rep_date: repDate, customer: c.customer, method: val('f_method'), amount: round2(c.amount), discount: round2(c.disc), reference: val('f_reference'), ar_before: c.before, ...(rcptDup ? { duplicate_confirmed: true } : {}) };
     } else if (f === 'fuel') {
       if (!c.equipment) addErr('f_truck', 'Equipment is required.');
       else if (c.type !== 'none' && !val('f_driver')) addErr('f_driver', 'Active driver is required (assign in Equipment Log).');
@@ -48218,13 +48496,51 @@
           _staged_expense_items: stagedItems
         };
       }
+      if (!c.pricePending && c.amount > 0) {
+        const expDup = findSameDayVoucherDuplicate('expense', {
+          company,
+          date,
+          supplier: c.supplier,
+          category: val('f_category'),
+          subcategory: val('f_subcategory'),
+          method: c.method,
+          amount: c.amount,
+          pricePending: false,
+          reference: val('f_reference')
+        });
+        if (expDup && !($('f_dupok') && $('f_dupok').checked)) {
+          addErr('f_dupok', expDup.sameRef
+            ? `Duplicate reference "${cleanVoucherRef(val('f_reference'))}" already logged on ${date} (${expDup.summary}). Change the reference or tick the confirmation box.`
+            : `Same-day duplicate expense voucher detected (${expDup.summary}). Add a distinct Reference or tick the confirmation box if intentional.`);
+        } else if (expDup && record) {
+          record.duplicate_confirmed = true;
+        }
+      }
     } else if (f === 'settlement') {
       if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
       if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero.');
       if (c.disc < 0) addErr('f_discount', 'Discount cannot be negative.');
-      const prevSettleLeg = (STATE.editingRecord && STATE.editingRecord.crKey === 'settlements' && STATE.editingRecord.row && STATE.editingRecord.row.payable_leg) || '';
-      const effSettleLeg = prevSettleLeg || inferSettlementPayableLeg(c.supplier, val('f_method'), company);
-      record = { ...base, name: `SETTLE ${date} ${c.supplier}`, rep_date: repDate, supplier: c.supplier, method: val('f_method'), payable_leg: effSettleLeg, amount: round2(c.amount), discount: round2(c.disc), reference: val('f_reference'), ap_before: c.before };
+      const settleMth = val('f_method');
+      const prevSettleLeg = (STATE.editingRecord && STATE.editingRecord.crKey === 'settlements' && STATE.editingRecord.orig && STATE.editingRecord.orig.payable_leg) || '';
+      const effSettleLeg = /^(VAT|VATConfig|IVA)$/i.test(settleMth)
+        ? 'expense'
+        : (val('f_payable_leg') || prevSettleLeg || inferSettlementPayableLeg(c.supplier, settleMth, company));
+      const settleDup = findSameDayVoucherDuplicate('settlement', {
+        company,
+        date,
+        supplier: c.supplier,
+        method: settleMth,
+        payableLeg: effSettleLeg,
+        amount: c.amount,
+        discount: c.disc,
+        reference: val('f_reference')
+      });
+      if (settleDup && !($('f_dupok') && $('f_dupok').checked)) {
+        addErr('f_dupok', settleDup.sameRef
+          ? `Duplicate reference "${cleanVoucherRef(val('f_reference'))}" already logged on ${date} (${settleDup.summary}). Change the reference or tick the confirmation box.`
+          : `Same-day duplicate settlement detected (${settleDup.summary}). Add a distinct Reference or tick the confirmation box if intentional.`);
+      }
+      record = { ...base, name: `SETTLE ${date} ${c.supplier}`, rep_date: repDate, supplier: c.supplier, method: settleMth, payable_leg: effSettleLeg, amount: round2(c.amount), discount: round2(c.disc), reference: val('f_reference'), ap_before: c.before, ...(settleDup ? { duplicate_confirmed: true } : {}) };
     } else if (f === 'pricerule' || f === 'pricerule_raw' || f === 'pricerule_haul' || f === 'pricerule_comm') {
       const prod = val('f_product'), rt = val('f_ruletype') || 'Sales (Delivery)';
       const isTransOnly = rt === 'Transport Price (Site)' || rt === 'Haulage (Customer Site)';
@@ -48696,7 +49012,21 @@
           tally: tallyVal
         };
       } else {
-        record = { ...base, name: `SAL ${val('f_paymonth') || date.slice(0, 7)} ${st}`, rep_date: repDate, payroll_month: val('f_paymonth') || date.slice(0, 7), staff: st, method: val('f_method') || 'Cash', usd_amount: round2(num('f_usd')), lbp_amount: round2(num('f_lbp')), amount: amt };
+        const payMoVal = val('f_paymonth') || date.slice(0, 7);
+        const salMthVal = val('f_method') || 'Cash';
+        const salDup = findSameDayVoucherDuplicate('salary', {
+          company,
+          date,
+          staff: st,
+          salType: 'payment',
+          payrollMonth: payMoVal,
+          method: salMthVal,
+          amount: amt
+        });
+        if (salDup && !($('f_dupok') && $('f_dupok').checked)) {
+          addErr('f_dupok', `Same-day duplicate salary payment detected (${salDup.summary}). Tick the confirmation box if this second voucher is intentional.`);
+        }
+        record = { ...base, name: `SAL ${payMoVal} ${st}`, rep_date: repDate, payroll_month: payMoVal, staff: st, method: salMthVal, usd_amount: round2(num('f_usd')), lbp_amount: round2(num('f_lbp')), amount: amt, ...(salDup ? { duplicate_confirmed: true } : {}) };
       }
     } else if (f === 'attendance') {
       const st = val('f_staff');
@@ -48833,6 +49163,8 @@
         }
         const wDays = Math.max(1, Math.round(num('f_workdays') || (/Daily/i.test(payType) ? 26 : 30)));
         const wHours = Math.max(1, round2(num('f_workhours') || 8));
+        const vacRaw = val('f_vacdays');
+        const vacDays = vacRaw !== '' ? Math.max(0, round2(num('f_vacdays'))) : (/Daily/i.test(payType) ? 0 : 15);
         const effStatus = (endDate && endDate < todayISO()) ? 'Ended' : 'Current';
         if (pendSalEditRow) {
           record = Object.assign({}, pendSalEditRow, {
@@ -48847,6 +49179,7 @@
             daily_rate: /Daily/i.test(payType) ? amt : round2(amt / wDays),
             working_days: wDays,
             working_hours: wHours,
+            vacation_days: vacDays,
             base_salary: amt,
             amount: amt,
             salary_pending: false,
@@ -48872,6 +49205,7 @@
             daily_rate: salaryPending ? 0 : (/Daily/i.test(payType) ? amt : round2(amt / wDays)),
             working_days: wDays,
             working_hours: wHours,
+            vacation_days: vacDays,
             overtime_multiplier: 1,
             lateness_multiplier: 1,
             base_salary: salaryPending ? 0 : amt,
@@ -51149,6 +51483,9 @@
     } else if (form === 'settlement') {
       setModalControlVal('f_supplier', row.supplier || '');
       setModalControlVal('f_method', row.method || 'Payment');
+      setModalControlVal('f_payable_leg', row.payable_leg || inferSettlementPayableLeg(row.supplier, row.method, row.company));
+      FORM_UI.settleLegManual = true;
+      FORM_UI.lastSettleSupplier = row.supplier || '';
       setModalControlVal('f_amount', row.amount != null ? row.amount : '');
       setModalControlVal('f_discount', row.discount != null ? Number(row.discount).toFixed(2) : '0.00');
       setModalControlVal('f_reference', row.reference || '');
@@ -51371,6 +51708,10 @@
         if ($('f_workhours')) {
           setModalControlVal('f_workhours', row.working_hours || 8);
           $('f_workhours').dataset.userEdited = '1';
+        }
+        if ($('f_vacdays')) {
+          setModalControlVal('f_vacdays', row.vacation_days != null ? row.vacation_days : (/Daily|Freelance/i.test(String(row.pay_type || row.type || '')) ? 0 : 15));
+          $('f_vacdays').dataset.userEdited = '1';
         }
       }
     } else if (form === 'logistics') {
@@ -52096,9 +52437,10 @@
         : 'No Equipment Assignment';
       const mContractUsd = empContractMonthlyUsd(row);
       const baseAmt = Number(row.daily_rate || row.amount || 0);
+      const vacAllowance = row.vacation_days != null ? Number(row.vacation_days) : (/Daily|Freelance/i.test(String(row.type || '')) ? 0 : 15);
       return {
         tone: 'info',
-        text: `Staff Contract · ${stName || 'Staff'} (${row.role || 'Staff'} · ${row.status || 'Current'}): ${(Number(row.salary_usd || 0) > 0 || Number(row.salary_lbp || 0) > 0) ? fmtUSD(mContractUsd, 2) + '/mo' : (baseAmt > 0 ? fmtUSD(baseAmt, 2) + '/d' : '-')}  |  ${eqTxt}`
+        text: `Staff Contract · ${stName || 'Staff'} (${row.role || 'Staff'} · ${row.status || 'Current'}): ${(Number(row.salary_usd || 0) > 0 || Number(row.salary_lbp || 0) > 0) ? fmtUSD(mContractUsd, 2) + '/mo' : (baseAmt > 0 ? fmtUSD(baseAmt, 2) + '/d' : '-')} · Vacation ${fmtNum(vacAllowance, vacAllowance % 1 ? 1 : 0)}d/yr  |  ${eqTxt}`
       };
     }
     if (key === 'attendance') {
@@ -53553,6 +53895,7 @@
         { key: 'date', label: 'Settlement Date *', type: 'date', sec: 1 },
         { key: 'rep_date', label: 'Reporting Date', type: 'date', sec: 1, getVal: r => r.rep_date || r.date || '' },
         { key: 'supplier', label: 'Supplier / Hauler *', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
+        { key: 'payable_leg', label: 'Payable Leg *', type: 'select', options: [['quarry', '1 · Quarry (Material)'], ['transportation', '2 · Transportation (Haulage)'], ['expense', '3 · Expense (Bills & Overhead)']], sec: 1, getVal: r => r.payable_leg || inferSettlementPayableLeg(r.supplier, r.method, r.company) },
         { key: 'method', label: 'Settlement Method *', type: 'select', options: ['Payment', 'Cash', 'Check', 'Bank Transfer', 'Barter', 'VAT', 'IVA', 'Config', 'VATConfig'], sec: 3 },
         { key: 'amount', label: 'Amount Paid ($) *', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'discount', label: 'Discount Received ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
@@ -53760,6 +54103,7 @@
         { key: 'salary_pending', label: 'Awaiting Salary Assignment ($0 Pending)', type: 'bool', sec: 3, getVal: r => Boolean(isPendingSalaryEmployment(r)) },
         { key: 'working_days', label: 'Working Days / Month', type: 'number', step: '1', min: '1', sec: 3 },
         { key: 'working_hours', label: 'Working Hours / Day', type: 'number', step: '0.5', min: '1', sec: 3 },
+        { key: 'vacation_days', label: 'Annual Vacation (Days / Yr)', type: 'number', step: '0.5', min: '0', sec: 3, getVal: r => r.vacation_days != null ? r.vacation_days : (/Daily|Freelance/i.test(String(r.type || '')) ? 0 : 15) },
         { key: 'overtime_multiplier', label: 'Overtime Multiplier (×)', type: 'number', step: '0.1', min: '0', sec: 3 },
         { key: 'reimbursement', label: 'Monthly Reimbursement ($)', type: 'number', step: '1', min: '0', sec: 3 },
         { key: 'deduction', label: 'Monthly Deduction ($)', type: 'number', step: '1', min: '0', sec: 3 },
