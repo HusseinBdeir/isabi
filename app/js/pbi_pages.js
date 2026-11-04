@@ -2592,7 +2592,7 @@
     if (tableKey === 'employments' && c === 'vacation_days') {
       return r.vacation_days != null && r.vacation_days !== ''
         ? Number(r.vacation_days)
-        : (/Daily|Freelance/i.test(String(r.type || '')) ? 0 : 15);
+        : 0;
     }
     if (c === 'payable_leg') {
       const pl = String(r.payable_leg || '').toLowerCase();

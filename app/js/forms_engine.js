@@ -2019,8 +2019,8 @@
       const empWorkDaysVal = pendSalRow ? String(pendSalRow.working_days || (/Daily/i.test(empPayVal) ? 26 : 30)) : '30';
       const empWorkHoursVal = pendSalRow ? String(pendSalRow.working_hours || 8) : '8';
       const empVacDaysVal = pendSalRow
-        ? String(pendSalRow.vacation_days != null ? pendSalRow.vacation_days : (/Daily/i.test(empPayVal) ? 0 : 15))
-        : (/Daily/i.test(empPayVal) ? '0' : '15');
+        ? String(pendSalRow.vacation_days != null ? pendSalRow.vacation_days : 0)
+        : '0';
       const empAmtVal = (pendSalRow && Number(pendSalRow.base_salary || pendSalRow.salary_usd || pendSalRow.daily_rate || pendSalRow.amount || 0) > 0)
         ? String(pendSalRow.base_salary || pendSalRow.salary_usd || pendSalRow.daily_rate || pendSalRow.amount)
         : '';

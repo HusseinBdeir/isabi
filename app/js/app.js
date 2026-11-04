@@ -25260,7 +25260,7 @@
       hasContract: false, salaryPending: false, contractId: '', staff: staffName || '', company: company || 'WTC',
       type: 'Monthly', status: 'No Contract', role: '',
       monthlySalary: 0, dailyRateInput: 0,
-      workingDays: 30, workingHours: 8, vacationDays: 15, otMultiplier: 1.0, lateMultiplier: 1.0,
+      workingDays: 30, workingHours: 8, vacationDays: 0, otMultiplier: 1.0, lateMultiplier: 1.0,
       reimbursement: 0, deduction: 0,
       dailyRate: 25, hourlyRate: round2(25 / 8), otHourlyRate: round2(25 / 8), lateHourlyRate: round2(25 / 8)
     };
@@ -25324,7 +25324,7 @@
       dailyRateInput: dRateIn,
       workingDays: wDays,
       workingHours: wHrs,
-      vacationDays: best.vacation_days != null ? Number(best.vacation_days) : (/Daily|Freelance/i.test(String(best.type || best.pay_type || '')) ? 0 : 15),
+      vacationDays: best.vacation_days != null ? Number(best.vacation_days) : 0,
       otMultiplier: otMult,
       lateMultiplier: ltMult,
       reimbursement: isPendSal ? 0 : (Number(best.reimbursement || 0) + (Number(best.reimbursement_lbp || 0) / fxRate)),
@@ -28511,7 +28511,7 @@
                 ${shownEmp.map(e => {
                   const ended = e.status === 'Ended' || (e.end_date && String(e.end_date) < today);
                   const isPend = isPendingSalaryEmployment(e);
-                  const vacVal = e.vacation_days != null ? Number(e.vacation_days) : (/Daily|Freelance/i.test(String(e.type || '')) ? 0 : 15);
+                  const vacVal = e.vacation_days != null ? Number(e.vacation_days) : 0;
                   return `
                   <tr class="rrow ${ended ? 'pbi-row-amber' : ''}" data-rkey="employments" data-rid="${esc(e.id)}">
                     <td><strong>${esc(e.staff)}</strong>${appCell(e, 'employments')}</td>
@@ -43717,7 +43717,7 @@
           if (!isFieldAdminUnlocked('f_paytype') && $('f_paytype')) $('f_paytype').value = pendSalEditRow.pay_type || (/Daily/i.test(String(pendSalEditRow.type || '')) ? 'Daily' : 'Monthly');
           if (isContract && !isFieldAdminUnlocked('f_workdays') && $('f_workdays')) $('f_workdays').value = String(pendSalEditRow.working_days || 30);
           if (isContract && !isFieldAdminUnlocked('f_workhours') && $('f_workhours')) $('f_workhours').value = String(pendSalEditRow.working_hours || 8);
-          if (isContract && !isFieldAdminUnlocked('f_vacdays') && $('f_vacdays')) $('f_vacdays').value = String(pendSalEditRow.vacation_days != null ? pendSalEditRow.vacation_days : (/Daily/i.test(String(pendSalEditRow.pay_type || pendSalEditRow.type || '')) ? 0 : 15));
+          if (isContract && !isFieldAdminUnlocked('f_vacdays') && $('f_vacdays')) $('f_vacdays').value = String(pendSalEditRow.vacation_days != null ? pendSalEditRow.vacation_days : 0);
         }
         const salaryPending = !pendSalEditRow && val('f_salary_pending') === '1';
         const curStaff = val('f_staff');
@@ -43780,7 +43780,10 @@
             const vacEl = $('f_vacdays');
             if (wdEl && wdEl.dataset.userEdited !== '1') wdEl.value = String(prof.workingDays || 30);
             if (whEl && whEl.dataset.userEdited !== '1') whEl.value = String(prof.workingHours || 8);
-            if (vacEl && vacEl.dataset.userEdited !== '1') vacEl.value = String(prof.vacationDays != null ? prof.vacationDays : (/Daily/i.test(payBasis) ? 0 : 15));
+            if (vacEl && vacEl.dataset.userEdited !== '1') vacEl.value = String(prof.vacationDays != null ? prof.vacationDays : 0);
+          } else if (isContract) {
+            const vacEl = $('f_vacdays');
+            if (vacEl && vacEl.dataset.userEdited !== '1') vacEl.value = '0';
           }
         }
         const eqBox = $('empEquipSiteBox');
@@ -43824,7 +43827,7 @@
                 <span><small>Current Base</small><b>${prof.salaryPending ? 'Pending ($0)' : `${fmtUSD(prof.monthlySalary, 2)}/mo`}</b></span>
                 ${prof.reimbursement > 0 ? `<span><small>Reimb.</small><b>+${fmtUSD(prof.reimbursement, 2)}</b></span>` : ''}
                 <span><small>Schedule</small><b>${prof.workingDays}d × ${fmtNum(prof.workingHours, 1)}h</b></span>
-                <span><small>Vacation</small><b>${fmtNum(prof.vacationDays != null ? prof.vacationDays : 15, 0)}d/yr</b></span>
+                <span><small>Vacation</small><b>${fmtNum(prof.vacationDays != null ? prof.vacationDays : 0, 0)}d/yr</b></span>
                 <span><small>Hourly / OT</small><b>${prof.salaryPending ? '$0.00 / $0.00' : `${fmtUSD(prof.hourlyRate, 2)} / ${fmtUSD(prof.otHourlyRate, 2)}`}</b></span>
               </div>
             `;
@@ -47925,7 +47928,7 @@
         if (el.id === 'f_staff') { FORM_UI.attClockManual = false; FORM_UI.lastAttShiftKey = ''; FORM_UI.lastAttTimeKey = ''; }
         if (el.id === 'f_workdays' || el.id === 'f_workhours' || el.id === 'f_vacdays') { el.dataset.userEdited = '1'; }
         if (el.id === 'f_paytype' && STATE.modalForm === 'employment' && $('f_vacdays') && $('f_vacdays').dataset.userEdited !== '1') {
-          $('f_vacdays').value = /Daily/i.test(val('f_paytype')) ? '0' : '15';
+          $('f_vacdays').value = '0';
         }
         if (el.id === 'f_payable_leg') { FORM_UI.settleLegManual = true; }
         if (STATE.modalForm === 'settlement' && el.id === 'f_company' && !STATE.editingRecord) { FORM_UI.settleLegManual = false; }
@@ -49355,7 +49358,7 @@
         const wDays = Math.max(1, Math.round(num('f_workdays') || (/Daily/i.test(payType) ? 26 : 30)));
         const wHours = Math.max(1, round2(num('f_workhours') || 8));
         const vacRaw = val('f_vacdays');
-        const vacDays = vacRaw !== '' ? Math.max(0, round2(num('f_vacdays'))) : (/Daily/i.test(payType) ? 0 : 15);
+        const vacDays = vacRaw !== '' ? Math.max(0, round2(num('f_vacdays'))) : 0;
         const effStatus = (endDate && endDate < todayISO()) ? 'Ended' : 'Current';
         if (pendSalEditRow) {
           record = Object.assign({}, pendSalEditRow, {
@@ -51901,7 +51904,7 @@
           $('f_workhours').dataset.userEdited = '1';
         }
         if ($('f_vacdays')) {
-          setModalControlVal('f_vacdays', row.vacation_days != null ? row.vacation_days : (/Daily|Freelance/i.test(String(row.pay_type || row.type || '')) ? 0 : 15));
+          setModalControlVal('f_vacdays', row.vacation_days != null ? row.vacation_days : 0);
           $('f_vacdays').dataset.userEdited = '1';
         }
       }
@@ -52630,7 +52633,7 @@
         : 'No Equipment Assignment';
       const mContractUsd = empContractMonthlyUsd(row);
       const baseAmt = Number(row.daily_rate || row.amount || 0);
-      const vacAllowance = row.vacation_days != null ? Number(row.vacation_days) : (/Daily|Freelance/i.test(String(row.type || '')) ? 0 : 15);
+      const vacAllowance = row.vacation_days != null ? Number(row.vacation_days) : 0;
       return {
         tone: 'info',
         text: `Staff Contract · ${stName || 'Staff'} (${row.role || 'Staff'} · ${row.status || 'Current'}): ${(Number(row.salary_usd || 0) > 0 || Number(row.salary_lbp || 0) > 0) ? fmtUSD(mContractUsd, 2) + '/mo' : (baseAmt > 0 ? fmtUSD(baseAmt, 2) + '/d' : '-')} · Vacation ${fmtNum(vacAllowance, vacAllowance % 1 ? 1 : 0)}d/yr  |  ${eqTxt}`
@@ -54296,7 +54299,7 @@
         { key: 'salary_pending', label: 'Awaiting Salary Assignment ($0 Pending)', type: 'bool', sec: 3, getVal: r => Boolean(isPendingSalaryEmployment(r)) },
         { key: 'working_days', label: 'Working Days / Month', type: 'number', step: '1', min: '1', sec: 3 },
         { key: 'working_hours', label: 'Working Hours / Day', type: 'number', step: '0.5', min: '1', sec: 3 },
-        { key: 'vacation_days', label: 'Annual Vacation (Days / Yr)', type: 'number', step: '0.5', min: '0', sec: 3, getVal: r => r.vacation_days != null ? r.vacation_days : (/Daily|Freelance/i.test(String(r.type || '')) ? 0 : 15) },
+        { key: 'vacation_days', label: 'Annual Vacation (Days / Yr)', type: 'number', step: '0.5', min: '0', sec: 3, getVal: r => r.vacation_days != null ? r.vacation_days : 0 },
         { key: 'overtime_multiplier', label: 'Overtime Multiplier (×)', type: 'number', step: '0.1', min: '0', sec: 3 },
         { key: 'reimbursement', label: 'Monthly Reimbursement ($)', type: 'number', step: '1', min: '0', sec: 3 },
         { key: 'deduction', label: 'Monthly Deduction ($)', type: 'number', step: '1', min: '0', sec: 3 },
