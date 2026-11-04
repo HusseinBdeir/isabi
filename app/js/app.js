@@ -21,7 +21,7 @@
   SEED.records = SEED.records || {};
   SEED.sentinels = SEED.sentinels || {};
   const SEED_RECORD_KEYS = [
-    'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'expense_items', 'warehouse_movements',
+    'sales_tickets', 'raw_purchases', 'fuel_intakes', 'fuel_malfunctions', 'expenses', 'recurring_expenses', 'expense_items', 'warehouse_movements',
     'receipts', 'settlements', 'salaries',
     'price_rules', 'vat_invoices', 'credit_terms', 'customers', 'suppliers', 'products', 'items', 'sites',
     'regions', 'uoms', 'product_types', 'equipment', 'company_equipment', 'equipment_defects',
@@ -138,7 +138,7 @@
     salesChartMode: 'payment',
     payrollCutoffMode: 'closed_month',
     allowancesCutoffMode: 'mtd',
-    payrollStaffStatus: 'active',
+    payrollStaffStatus: 'all',
     lbpFxRate: (!IS_AUTOMATED_TEST ? Number(localStorage.getItem('isabi_mfg_lbp_fx_rate_v1') || 0) : 0) || 89500,
     lbpFxUpdatedAt: (!IS_AUTOMATED_TEST ? (localStorage.getItem('isabi_mfg_lbp_fx_updated_v1') || '') : ''),
     commLedgerMode: 'monthly',
@@ -2134,7 +2134,7 @@
       const ck = norm(label);
       let cur = custByModel[mk].get(ck);
       if (!cur) {
-        cur = { displayName: label, loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, cash_sales_ttc: 0, receipts_cash: 0, ar_settled: 0, last_sale: '' };
+        cur = { displayName: label, loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_vat: 0, credit_sales_ttc: 0, cash_sales: 0, cash_sales_ttc: 0, receipts_cash: 0, ar_settled: 0, ar_settled_ex_vat: 0, ar_vat_settled: 0, last_sale: '' };
         custByModel[mk].set(ck, cur);
       }
       return cur;
@@ -2185,7 +2185,7 @@
         cur.net_sales += net;
         cur.sales_vat += vat;
         if (isCash) { cur.cash_sales += net; cur.cash_sales_ttc += ttc; }
-        else if (isCred) { cur.credit_sales += net; cur.credit_sales_ttc += ttc; }
+        else if (isCred) { cur.credit_sales += net; cur.credit_vat += vat; cur.credit_sales_ttc += ttc; }
         if (dTx && dTx > cur.last_sale) cur.last_sale = dTx;
       }
     }
@@ -2202,7 +2202,11 @@
       const mk = coToMk(r.company);
       for (const tMk of [mk, 'manufacturing-group']) {
         const cur = ensureCust(tMk, r.customer);
-        if (settlesAr) cur.ar_settled += amt;
+        if (settlesAr) {
+          cur.ar_settled += amt;
+          if (kd === 'VAT received') cur.ar_vat_settled += amt;
+          else cur.ar_settled_ex_vat += amt;
+        }
         if (isCashR) cur.receipts_cash += amt;
       }
     }
@@ -3043,6 +3047,8 @@
               receipts_cash: 0,
               receipts: 0,
               opening_ar: 0,
+              ar_rem_ex_vat: 0,
+              vat_receivable: 0,
               ar_balance: 0,
               ar_current: 0,
               ar_1_10: 0,
@@ -3058,7 +3064,9 @@
           const cashTtc = round2(st.cash_sales_ttc);
           const settled = round2(st.ar_settled);
           const cashRcpt = round2(st.receipts_cash);
-          const bal = round2(crTtc - settled);
+          const arRemEx = round2(st.credit_sales - st.ar_settled_ex_vat);
+          const vatRec = round2(st.credit_vat - st.ar_vat_settled);
+          const bal = round2((st.credit_sales + st.credit_vat) - (st.ar_settled_ex_vat + st.ar_vat_settled));
           const balDelta = round2(bal - Number(c.ar_balance || 0));
           const arCur = offScope ? Math.max(0, bal) : (Math.abs(balDelta) > 0.005 ? round2(Math.max(0, Number(c.ar_current || 0) + balDelta)) : Number(c.ar_current || 0));
           return Object.assign({}, c, {
@@ -3074,6 +3082,8 @@
             receipts_cash: cashRcpt,
             receipts: settled,
             opening_ar: 0,
+            ar_rem_ex_vat: arRemEx,
+            vat_receivable: vatRec,
             ar_current: arCur,
             ...(offScope ? { ar_1_10: 0, ar_11_30: 0, ar_31_60: 0, ar_1_60: 0, ar_60_plus: 0 } : {}),
             ar_balance: bal,
@@ -3087,7 +3097,9 @@
           const cashNet = round2(st.cash_sales);
           const cashTtc = round2(st.cash_sales_ttc);
           const settled = round2(st.ar_settled);
-          const bal = round2(crTtc - settled);
+          const arRemEx = round2(st.credit_sales - st.ar_settled_ex_vat);
+          const vatRec = round2(st.credit_vat - st.ar_vat_settled);
+          const bal = round2((st.credit_sales + st.credit_vat) - (st.ar_settled_ex_vat + st.ar_vat_settled));
           if (st.loads === 0 && Math.abs(st.sales_ttc) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(bal) <= 0.005) return;
           const ci = customerInfo(st.displayName) || {};
           out.push({
@@ -3110,7 +3122,8 @@
             ar_current: bal > 0 ? bal : 0,
             ar_1_60: 0,
             ar_60_plus: 0,
-            vat_receivable: 0,
+            ar_rem_ex_vat: arRemEx,
+            vat_receivable: vatRec,
             ar_balance: bal,
             last_sale: st.last_sale || ''
           });
@@ -3121,6 +3134,7 @@
         const crNet = round2(Number(c.credit_sales || 0));
         const crTtc = round2(c.sales_ttc != null ? (Number(c.sales_ttc || 0) - Number(c.cash_sales || 0)) : (c['VAT Registered'] === 'Yes' ? crNet * (1 + getVatFraction()) : crNet));
         const bal = round2(Number(c.ar_balance || 0));
+        const vatRec = round2(Number(c.vat_receivable || 0));
         const settled = round2(crTtc - bal);
         const cashRcpt = round2(Number(c.receipts != null ? c.receipts : settled));
         return Object.assign({}, c, {
@@ -3131,6 +3145,8 @@
           receipts_cash: cashRcpt,
           receipts: settled,
           opening_ar: 0,
+          ar_rem_ex_vat: round2(bal - vatRec),
+          vat_receivable: vatRec,
           ar_balance: bal
         });
       });
@@ -3141,7 +3157,7 @@
     const ensureCustPeriod = name => {
       const label = String(name || '').trim();
       const ck = norm(label);
-      if (!cMap.has(ck)) cMap.set(ck, { displayName: label, loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, cash_sales_ttc: 0, receipts: 0, ar_settled: 0, last_sale: '' });
+      if (!cMap.has(ck)) cMap.set(ck, { displayName: label, loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_vat: 0, credit_sales_ttc: 0, cash_sales: 0, cash_sales_ttc: 0, receipts: 0, ar_settled: 0, ar_settled_ex_vat: 0, ar_vat_settled: 0, last_sale: '' });
       return cMap.get(ck);
     };
     salesPool.forEach(s => {
@@ -3161,6 +3177,7 @@
         cur.cash_sales_ttc += ttc;
       } else if (isCreditSaleTicket(s)) {
         cur.credit_sales += net;
+        cur.credit_vat += vat;
         cur.credit_sales_ttc += ttc;
       }
       if (s.date && String(s.date) > cur.last_sale) cur.last_sale = String(s.date).slice(0, 10);
@@ -3170,8 +3187,11 @@
       if (!ck || !isArSettlingReceipt(r)) return;
       const cur = ensureCustPeriod(r.customer);
       const amt = Number(r.amount || 0) + Number(r.discount || 0);
+      const kd = receiptKind(r);
       cur.ar_settled += amt;
-      if (receiptKind(r) !== 'Excluded' && receiptKind(r) !== 'VAT received') cur.receipts += amt;
+      if (kd === 'VAT received') cur.ar_vat_settled += amt;
+      else cur.ar_settled_ex_vat += amt;
+      if (kd !== 'Excluded' && kd !== 'VAT received') cur.receipts += amt;
     });
     const postCustMap = new Map();
     if (range.to) {
@@ -3183,15 +3203,20 @@
         const sgn = ticketSign(s);
         if (sgn === 0) return;
         const ck = norm(s.customer);
-        const p = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
+        const p = postCustMap.get(ck) || { crTtc: 0, crEx: 0, crVat: 0, rcpt: 0, rcptEx: 0, rcptVat: 0 };
         p.crTtc += sgn * Number(s.total_ttc != null ? s.total_ttc : s.total || 0);
+        p.crEx += sgn * Number(s.total != null ? s.total : (Number(s.total_ttc || 0) - Number(s.vat || 0)));
+        p.crVat += sgn * Number(s.vat || 0);
         postCustMap.set(ck, p);
       });
       allRecCo.forEach(r => {
         if (!r.customer || !isArSettlingReceipt(r) || recDate(r) <= range.to) return;
         const ck = norm(r.customer);
-        const p = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
-        p.rcpt += Number(r.amount || 0) + Number(r.discount || 0);
+        const p = postCustMap.get(ck) || { crTtc: 0, crEx: 0, crVat: 0, rcpt: 0, rcptEx: 0, rcptVat: 0 };
+        const amt = Number(r.amount || 0) + Number(r.discount || 0);
+        p.rcpt += amt;
+        if (receiptKind(r) === 'VAT received') p.rcptVat += amt;
+        else p.rcptEx += amt;
         postCustMap.set(ck, p);
       });
     }
@@ -3199,11 +3224,16 @@
     const out = mdlCusts.map(c => {
       const ck = norm(c.Customer);
       if (ck) seenCustNorm.add(ck);
-      const st = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_sales_ttc: 0, cash_sales: 0, cash_sales_ttc: 0, receipts: 0, ar_settled: 0, last_sale: '' };
-      const post = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
+      const st = cMap.get(ck) || { loads: 0, sales_ttc: 0, net_sales: 0, sales_vat: 0, credit_sales: 0, credit_vat: 0, credit_sales_ttc: 0, cash_sales: 0, cash_sales_ttc: 0, receipts: 0, ar_settled: 0, ar_settled_ex_vat: 0, ar_vat_settled: 0, last_sale: '' };
+      const post = postCustMap.get(ck) || { crTtc: 0, crEx: 0, crVat: 0, rcpt: 0, rcptEx: 0, rcptVat: 0 };
       const crTtc = round2(st.credit_sales_ttc);
       const settled = round2(st.ar_settled);
-      const allTimeBal = canonMap ? (canonMap.has(ck) ? round2(canonMap.get(ck).credit_sales_ttc - canonMap.get(ck).ar_settled) : 0) : Number(c.ar_balance || 0);
+      const allSt = canonMap && canonMap.has(ck) ? canonMap.get(ck) : null;
+      const allTimeEx = allSt ? (allSt.credit_sales - allSt.ar_settled_ex_vat) : (Number(c.ar_balance || 0) - Number(c.vat_receivable || 0));
+      const allTimeVat = allSt ? (allSt.credit_vat - allSt.ar_vat_settled) : Number(c.vat_receivable || 0);
+      const arRemEx = round2(allTimeEx - post.crEx + post.rcptEx);
+      const vatRec = round2(allTimeVat - post.crVat + post.rcptVat);
+      const allTimeBal = allSt ? round2((allSt.credit_sales + allSt.credit_vat) - (allSt.ar_settled_ex_vat + allSt.ar_vat_settled)) : Number(c.ar_balance || 0);
       const bal = round2(allTimeBal - post.crTtc + post.rcpt);
       const openAr = round2(bal - crTtc + settled);
       return Object.assign({}, c, {
@@ -3219,6 +3249,8 @@
         receipts_cash: round2(st.receipts),
         receipts: settled,
         opening_ar: openAr,
+        ar_rem_ex_vat: arRemEx,
+        vat_receivable: vatRec,
         ar_balance: bal,
         last_sale: st.last_sale || c.last_sale
       });
@@ -3227,8 +3259,11 @@
       if (!ck || seenCustNorm.has(ck)) return;
       const crTtc = round2(st.credit_sales_ttc);
       const settled = round2(st.ar_settled);
-      const post = postCustMap.get(ck) || { crTtc: 0, rcpt: 0 };
-      const allTimeBal = canonMap && canonMap.has(ck) ? round2(canonMap.get(ck).credit_sales_ttc - canonMap.get(ck).ar_settled) : 0;
+      const post = postCustMap.get(ck) || { crTtc: 0, crEx: 0, crVat: 0, rcpt: 0, rcptEx: 0, rcptVat: 0 };
+      const allSt = canonMap && canonMap.has(ck) ? canonMap.get(ck) : null;
+      const arRemEx = round2((allSt ? (allSt.credit_sales - allSt.ar_settled_ex_vat) : 0) - post.crEx + post.rcptEx);
+      const vatRec = round2((allSt ? (allSt.credit_vat - allSt.ar_vat_settled) : 0) - post.crVat + post.rcptVat);
+      const allTimeBal = allSt ? round2((allSt.credit_sales + allSt.credit_vat) - (allSt.ar_settled_ex_vat + allSt.ar_vat_settled)) : 0;
       const bal = round2(allTimeBal - post.crTtc + post.rcpt);
       if (st.loads === 0 && Math.abs(st.sales_ttc) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(bal) <= 0.005) return;
       const openAr = round2(bal - crTtc + settled);
@@ -3253,13 +3288,347 @@
         ar_current: bal > 0 ? bal : 0,
         ar_1_60: 0,
         ar_60_plus: 0,
-        vat_receivable: 0,
+        ar_rem_ex_vat: arRemEx,
+        vat_receivable: vatRec,
         ar_balance: bal,
         last_sale: st.last_sale || ''
       });
     });
     return out;
   }
+
+  let _threeLegApCacheKey = '';
+  let _threeLegApCacheVal = null;
+
+  function normSupPayable(s) {
+    const n = norm(s);
+    return n === 'kareem bdeir' ? 'karim bdeir' : n;
+  }
+
+  function inferSettlementPayableLeg(supplierName, methodVal, companyName) {
+    const mth = String(methodVal || 'Payment').trim();
+    if (mth === 'VAT' || mth === 'VATConfig' || mth === 'IVA') return 'expense';
+    const sn = normSupPayable(supplierName);
+    if (!sn) return 'expense';
+    const brk = computeThreeLegPayablesBreakdown({ company: companyName ? (norm(companyName) === 'bbconstruction' ? 'bbconstruction' : (norm(companyName) === 'lions transport' ? 'lionstransport' : 'wtc')) : STATE.company, ignorePeriod: true });
+    const row = brk && brk.byNorm ? brk.byNorm.get(sn) : null;
+    if (!row) return 'expense';
+    const hasQ = Math.abs(row.quarry_cr) > 0.005 || Math.abs(row.quarry_rem) > 0.005;
+    const hasT = Math.abs(row.trans_cr) > 0.005 || Math.abs(row.trans_rem) > 0.005;
+    const hasE = Math.abs(row.exp_cr_usd) > 0.005 || Math.abs(row.exp_rem_ttc) > 0.005;
+    if (hasQ && !hasT && !hasE) return 'quarry';
+    if (hasT && !hasQ && !hasE) return 'transportation';
+    if (hasE && !hasQ && !hasT) return 'expense';
+    if (row.quarry_rem > 0.01 && row.quarry_rem >= row.trans_rem && row.quarry_rem >= row.exp_rem_ttc) return 'quarry';
+    if (row.trans_rem > 0.01 && row.trans_rem >= row.exp_rem_ttc) return 'transportation';
+    return 'expense';
+  }
+
+  function computeThreeLegPayablesBreakdown(opts = {}) {
+    const recs = SEED.records || {};
+    const targetCo = String(opts.company || STATE.company || 'manufacturing-group');
+    const allowed = allowedCompanyNames();
+    const offScope = isOfficialScopeActive();
+    const basis = opts.basis || STATE.basis || 'rep';
+    const range = opts.ignorePeriod ? null : (opts.range !== undefined ? opts.range : periodRange(STATE.period));
+    const rangeKey = range ? `${range.from || ''}:${range.to || ''}` : 'ALL';
+    const cacheKey = `${SEED._customRev || 0}|${_GLOBAL_RATES_REV}|${(recs.sales_tickets || []).length}|${(recs.raw_purchases || []).length}|${(recs.expenses || []).length}|${(recs.settlements || []).length}|${(recs.suppliers || []).length}|${targetCo}|${allowed.join(',')}|${offScope ? 1 : 0}|${basis}|${rangeKey}`;
+    if (!opts._noMemo && _threeLegApCacheKey === cacheKey && _threeLegApCacheVal) return _threeLegApCacheVal;
+
+    const isCoInScope = co => {
+      const c = String(co || 'WTC');
+      if (allowed.length && !allowed.includes(c)) return false;
+      if (targetCo === 'wtc') return c === 'WTC';
+      if (targetCo === 'bbconstruction') return c === 'BBConstruction';
+      if (targetCo === 'lionstransport') return c === 'Lions Transport';
+      if (targetCo === 'manufacturing-group') return c === 'WTC' || c === 'BBConstruction' || c === 'Lions Transport';
+      return norm(c) === norm(targetCo);
+    };
+    const inRange = (dTx, dRep) => {
+      if (!range) return true;
+      const d = String((basis === 'rep' ? (dRep || dTx) : dTx) || '').slice(0, 10);
+      if (!d) return false;
+      if (range.from && d < range.from) return false;
+      if (range.to && d > range.to) return false;
+      return true;
+    };
+
+    const supMeta = new Map();
+    (recs.suppliers || []).forEach(s => {
+      if (!s || !s.name) return;
+      supMeta.set(normSupPayable(s.name), s);
+    });
+    const isIva = (sn, co) => {
+      const sm = supMeta.get(sn);
+      if (!sm) return false;
+      if (co === 'WTC') return Boolean(sm.vat_wtc || (isAppRecord(sm) && sm.vat_wtc == null && sm.vat_bbc == null && sm.vat_registered));
+      if (co === 'BBConstruction') return Boolean(sm.vat_bbc || (isAppRecord(sm) && sm.vat_wtc == null && sm.vat_bbc == null && sm.vat_registered));
+      return Boolean(sm.vat_registered);
+    };
+    const vRate = (co, dIso) => {
+      const mk = co === 'BBConstruction' ? 'bbconstruction' : (co === 'Lions Transport' ? 'lionstransport' : 'wtc');
+      const wins = (SEED.models && SEED.models[mk] && SEED.models[mk].vat_adj) || [];
+      for (let i = 0; i < wins.length; i++) {
+        if (wins[i].s <= dIso && dIso <= wins[i].e) return Number(wins[i].rate || 89500);
+      }
+      return 89500;
+    };
+
+    const byNorm = new Map();
+    const ensureRow = rawName => {
+      const sn = normSupPayable(rawName);
+      if (!sn || sn === 'excluded' || sn === 'none' || sn === 'unspecified') return null;
+      let r = byNorm.get(sn);
+      if (!r) {
+        const sm = supMeta.get(sn);
+        r = {
+          key: sn,
+          supplier: (sm && sm.name) || String(rawName || '').trim(),
+          quarry_cr: 0,
+          quarry_pd: 0,
+          quarry_rem: 0,
+          trans_cr: 0,
+          trans_pd: 0,
+          trans_rem: 0,
+          exp_cr_usd: 0,
+          exp_ret_wtc_usd: 0,
+          exp_ret_other_usd: 0,
+          exp_pd_usd: 0,
+          exp_vat_cr_usd: 0,
+          exp_vat_pd_usd: 0,
+          exp_cr_lbp: 0,
+          exp_pd_lbp: 0,
+          exp_vat_cr_lbp: 0,
+          exp_vat_pd_lbp: 0,
+          exp_rem_usd: 0,
+          exp_vat_rem_usd: 0,
+          exp_rem_lbp: 0,
+          exp_rem_ttc: 0
+        };
+        byNorm.set(sn, r);
+      }
+      return r;
+    };
+
+    const raws = recs.raw_purchases || [];
+    for (let i = 0; i < raws.length; i++) {
+      const rp = raws[i];
+      if (!rp || rp.voided || !isCoInScope(rp.company)) continue;
+      if (offScope && !isOfficialRecord(rp, 'raw_purchases')) continue;
+      if (!inRange(rp.date, rp.rep_date)) continue;
+      const mth = String(rp.method || 'Credit').trim();
+      if (mth !== 'Credit' && mth !== 'CR Return' && mth !== 'Credit Return') continue;
+      if (norm(rp.product) === 'remove') continue;
+      const sgn = (mth === 'CR Return' || mth === 'Credit Return') ? -1 : 1;
+      const so = normSupPayable(rp.site_owner);
+      if (so && so !== 'excluded' && so !== 'none' && !(rp.company === 'WTC' && so === 'wtc')) {
+        const rSo = ensureRow(rp.site_owner);
+        if (rSo) rSo.quarry_cr += sgn * Number(rp.cost || 0);
+      }
+      const rawTo = rp.truck_owner || ((rp.company === 'WTC' && Number(rp.trans_cost || 0) !== 0) ? 'WTC' : '');
+      const to = normSupPayable(rawTo);
+      if (to && to !== 'excluded' && to !== 'none' && (rp.transport_by !== 'Company fleet' || Number(rp.trans_cost || 0) !== 0) && !(rp.company === 'BBConstruction' && to === 'bbconstruction')) {
+        const rTo = ensureRow(rawTo);
+        if (rTo) rTo.trans_cr += sgn * Number(rp.trans_cost || 0);
+      }
+    }
+
+    const sales = recs.sales_tickets || [];
+    for (let i = 0; i < sales.length; i++) {
+      const st = sales[i];
+      if (!st || st.voided || st.is_internal_sale || !isCoInScope(st.company)) continue;
+      if (offScope && !isOfficialRecord(st, 'sales_tickets')) continue;
+      if (!inRange(st.date, st.rep_date)) continue;
+      const mth = String(st.method || 'Credit').trim();
+      if ((mth !== 'Credit' && mth !== 'CR Return' && mth !== 'Credit Return') || st.transport_by !== 'Third-party truck') continue;
+      const to = normSupPayable(st.truck_owner);
+      if (to && to !== 'wtc' && to !== 'sibline' && to !== 'bbconstruction' && to !== 'excluded' && to !== 'none') {
+        const rTo = ensureRow(st.truck_owner);
+        if (rTo) rTo.trans_cr += ((mth === 'CR Return' || mth === 'Credit Return') ? -1 : 1) * Number(st.trans_price || 0);
+      }
+    }
+
+    const exps = recs.expenses || [];
+    const maxExpDateByCo = {};
+    for (let i = 0; i < exps.length; i++) {
+      const x = exps[i];
+      if (!x || x.voided || !isCoInScope(x.company)) continue;
+      if (x.date && (!maxExpDateByCo[x.company] || x.date > maxExpDateByCo[x.company])) {
+        maxExpDateByCo[x.company] = String(x.date).slice(0, 10);
+      }
+      if (offScope && !isOfficialRecord(x, 'expenses')) continue;
+      if (!inRange(x.date, x.rep_date)) continue;
+      const rEx = ensureRow(x.supplier);
+      if (!rEx) continue;
+      const sn = rEx.key;
+      const mth = String(x.method || 'Cash').trim();
+      const dRep = String(x.rep_date || x.date || '').slice(0, 10);
+      const iva = isIva(sn, x.company);
+      if (x.wb_lbp_credit != null && mth === 'Credit') {
+        const lbpAmt = Number(x.wb_lbp_credit || 0);
+        rEx.exp_cr_lbp += iva ? (lbpAmt / 1.11) : lbpAmt;
+        continue;
+      }
+      const ttcV = Number(x.wb_total_ttc != null ? x.wb_total_ttc : (x.amount || 0));
+      const exV = iva ? (ttcV / 1.11) : ttcV;
+      if (mth === 'Credit') {
+        rEx.exp_cr_usd += exV;
+        if (iva) {
+          const v = exV * 0.11;
+          rEx.exp_vat_cr_usd += v;
+          rEx.exp_vat_cr_lbp += v * vRate(x.company, dRep);
+        }
+      } else if (mth === 'CR Return' || mth === 'Credit Return') {
+        if (x.company === 'WTC') rEx.exp_ret_wtc_usd += exV;
+        else rEx.exp_ret_other_usd += exV;
+      }
+    }
+
+    const recExps = recs.recurring_expenses || [];
+    for (let i = 0; i < recExps.length; i++) {
+      const rx = recExps[i];
+      if (!rx || rx.voided || offScope || !isCoInScope(rx.company)) continue;
+      const rRx = ensureRow(rx.supplier);
+      if (!rRx) continue;
+      const sIso = String(rx.start_date || '').slice(0, 10);
+      const rawEnd = String(rx.end_date || '').slice(0, 10);
+      const eIso = /^\d{4}-\d{2}-\d{2}$/.test(rawEnd) ? rawEnd : (maxExpDateByCo[rx.company] || '2026-11-03');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(sIso) || !/^\d{4}-\d{2}-\d{2}$/.test(eIso) || sIso > eIso) continue;
+      const [sy, sm0, sd0] = sIso.split('-').map(Number);
+      const [ey, em0] = eIso.split('-').map(Number);
+      const nMonths = (ey - sy) * 12 + (em0 - sm0) + 1;
+      const iva = isIva(rRx.key, rx.company);
+      const totV = Number(rx.wb_total != null ? rx.wb_total : (rx.amount || 0));
+      const cur = String(rx.currency || 'USD').trim().toUpperCase();
+      for (let mIdx = 0; mIdx < nMonths; mIdx++) {
+        const y = sy + Math.floor((sm0 - 1 + mIdx) / 12);
+        const mo = ((sm0 - 1 + mIdx) % 12) + 1;
+        const dim = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+        const day = Math.min(sd0, dim);
+        const dIso = `${y}-${String(mo).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        if (rx.company === 'BBConstruction' && dIso > '2024-04-05') continue;
+        if (!inRange(dIso, dIso)) continue;
+        const exV = iva ? (totV / 1.11) : totV;
+        if (cur === 'USD') {
+          rRx.exp_cr_usd += exV;
+          if (iva) {
+            const v = exV * 0.11;
+            rRx.exp_vat_cr_usd += v;
+            rRx.exp_vat_cr_lbp += v * vRate(rx.company, dIso);
+          }
+        } else if (cur === 'LBP') {
+          rRx.exp_cr_lbp += exV;
+        }
+      }
+    }
+
+    const spays = recs.settlements || [];
+    for (let i = 0; i < spays.length; i++) {
+      const sp = spays[i];
+      if (!sp || sp.voided || !isCoInScope(sp.company)) continue;
+      if (offScope && !isOfficialRecord(sp, 'settlements')) continue;
+      if (!inRange(sp.date, sp.rep_date)) continue;
+      const rSp = ensureRow(sp.supplier);
+      if (!rSp) continue;
+      const mth = String(sp.method || 'Payment').trim();
+      const dRep = String(sp.rep_date || sp.date || '').slice(0, 10);
+      let leg = sp.payable_leg || '';
+      if (!leg) {
+        if (mth === 'VAT' || mth === 'VATConfig' || mth === 'IVA') leg = 'expense';
+        else if (Math.abs(rSp.quarry_cr) > 0.005 && Math.abs(rSp.trans_cr) <= 0.005 && Math.abs(rSp.exp_cr_usd) <= 0.005) leg = 'quarry';
+        else if (Math.abs(rSp.trans_cr) > 0.005 && Math.abs(rSp.quarry_cr) <= 0.005 && Math.abs(rSp.exp_cr_usd) <= 0.005) leg = 'transportation';
+        else leg = 'expense';
+      }
+      if (sp.wb_lbp_paid != null) {
+        if (leg === 'expense' && (mth === 'Payment' || mth === 'Config')) rSp.exp_pd_lbp += Number(sp.wb_lbp_paid || 0);
+        continue;
+      }
+      const totV = Number(sp.amount || 0) + Number(sp.discount || 0);
+      if (leg === 'quarry') {
+        if (mth === 'Payment' || mth === 'Barter' || mth === 'Config') rSp.quarry_pd += totV;
+      } else if (leg === 'transportation') {
+        if (mth === 'Payment' || mth === 'Barter' || mth === 'Config') rSp.trans_pd += totV;
+      } else {
+        if (mth === 'Payment' || mth === 'Barter' || mth === 'Config') rSp.exp_pd_usd += totV;
+        else if (mth === 'VAT' || mth === 'VATConfig') {
+          rSp.exp_vat_pd_usd += totV;
+          if (isIva(rSp.key, sp.company)) rSp.exp_vat_pd_lbp += totV * vRate(sp.company, dRep);
+        }
+      }
+    }
+
+    let totQuarryCr = 0, totQuarryPd = 0, totQuarryRem = 0;
+    let totTransCr = 0, totTransPd = 0, totTransRem = 0;
+    let totExpCrUsd = 0, totExpPdUsd = 0, totExpRemUsd = 0;
+    let totExpVatRemUsd = 0, totExpRemLbp = 0, totExpRemTtc = 0;
+    let quarryPayees = 0, transPayees = 0, expPayees = 0;
+
+    byNorm.forEach(r => {
+      const qRem = r.quarry_cr - r.quarry_pd;
+      const tRem = r.trans_cr - r.trans_pd;
+      const eRetAll = r.exp_ret_wtc_usd + r.exp_ret_other_usd;
+      const eRemU = (r.exp_cr_usd - eRetAll) - r.exp_pd_usd;
+      const eVatRemU = r.exp_vat_cr_usd - r.exp_vat_pd_usd;
+      const eRemL = (r.exp_cr_lbp + r.exp_vat_cr_lbp) - (r.exp_pd_lbp + r.exp_vat_pd_lbp);
+      const eRemTtc = (r.exp_cr_usd - r.exp_ret_other_usd + r.exp_vat_cr_usd) - (r.exp_pd_usd + r.exp_vat_pd_usd);
+
+      totQuarryCr += r.quarry_cr;
+      totQuarryPd += r.quarry_pd;
+      totQuarryRem += qRem;
+      totTransCr += r.trans_cr;
+      totTransPd += r.trans_pd;
+      totTransRem += tRem;
+      totExpCrUsd += (r.exp_cr_usd - r.exp_ret_other_usd + r.exp_vat_cr_usd);
+      totExpPdUsd += (r.exp_pd_usd + r.exp_vat_pd_usd);
+      totExpRemUsd += eRemU;
+      totExpVatRemUsd += eVatRemU;
+      totExpRemLbp += eRemL;
+      totExpRemTtc += eRemTtc;
+
+      if (Math.abs(r.quarry_cr) > 0.005 || Math.abs(r.quarry_pd) > 0.005) quarryPayees += 1;
+      if (Math.abs(r.trans_cr) > 0.005 || Math.abs(r.trans_pd) > 0.005) transPayees += 1;
+      if (Math.abs(r.exp_cr_usd) > 0.005 || Math.abs(r.exp_pd_usd) > 0.005 || Math.abs(eRemL) > 1) expPayees += 1;
+
+      r.quarry_cr = round2(r.quarry_cr);
+      r.quarry_pd = round2(r.quarry_pd);
+      r.quarry_rem = round2(qRem);
+      r.trans_cr = round2(r.trans_cr);
+      r.trans_pd = round2(r.trans_pd);
+      r.trans_rem = round2(tRem);
+      r.exp_rem_usd = round2(eRemU);
+      r.exp_vat_rem_usd = round2(eVatRemU);
+      r.exp_rem_lbp = Math.round(eRemL);
+      r.exp_rem_ttc = round2(eRemTtc);
+    });
+
+    const out = {
+      byNorm,
+      rows: Array.from(byNorm.values()),
+      totals: {
+        quarry_cr: round2(totQuarryCr),
+        quarry_pd: round2(totQuarryPd),
+        quarry_rem: round2(totQuarryRem),
+        quarry_payees: quarryPayees,
+        trans_cr: round2(totTransCr),
+        trans_pd: round2(totTransPd),
+        trans_rem: round2(totTransRem),
+        trans_payees: transPayees,
+        exp_cr_ttc: round2(totExpCrUsd),
+        exp_pd_ttc: round2(totExpPdUsd),
+        exp_rem_usd: round2(totExpRemUsd),
+        exp_vat_rem_usd: round2(totExpVatRemUsd),
+        exp_rem_lbp: Math.round(totExpRemLbp),
+        exp_rem_ttc: round2(totExpRemTtc),
+        exp_payees: expPayees
+      }
+    };
+    if (!opts._noMemo) {
+      _threeLegApCacheKey = cacheKey;
+      _threeLegApCacheVal = out;
+    }
+    return out;
+  }
+  window.__mfgComputeThreeLegPayables = computeThreeLegPayablesBreakdown;
 
   function getScopedModelSuppliers(mOverride) {
     const m = mOverride || getModel();
@@ -17082,16 +17451,24 @@
             sub: `Supplier Sites <b>${fmtUSD(sumHaul, 2)}</b> · Customer Sites <b>${fmtUSD(sumSalesHaul, 2)}</b>`,
             tone: 'steel'
           })}
-          ${insightCard({
-            label: 'Quarry & Haulage Net Open',
-            badge: `${fmtNum(openSupCnt)} Open A/Cs`,
-            badgeCls: supSumRem > 0 ? 'warn' : 'good',
-            val: `${fmtUSD(supSumRem, 0)}`,
-            valCls: supSumRem > 0 ? 'amber' : 'emerald',
-            pct: supSumCred > 0 ? Math.min(100, Math.round((supSumPaid / supSumCred) * 100)) : 100,
-            sub: `Credit <b>${fmtUSD(supSumCred, 0)}</b> minus Paid <b>${fmtUSD(supSumPaid, 0)}</b> across <b>${fmtNum(rawSupAll.length)}</b> counterparties`,
-            tone: supSumRem > 0 ? 'amber' : 'emerald'
-          })}
+          ${(() => {
+            const legBrk = computeThreeLegPayablesBreakdown();
+            const qRem = legBrk.totals.quarry_rem;
+            const tRem = legBrk.totals.trans_rem;
+            const qtRem = round2(qRem + tRem);
+            const qtCred = round2(legBrk.totals.quarry_cr + legBrk.totals.trans_cr);
+            const qtPaid = round2(legBrk.totals.quarry_pd + legBrk.totals.trans_pd);
+            return insightCard({
+              label: 'Quarry & Transport Remaining',
+              badge: `${fmtNum(legBrk.totals.quarry_payees + legBrk.totals.trans_payees)} Payees`,
+              badgeCls: qtRem > 0 ? 'warn' : 'good',
+              val: `${fmtUSD(qtRem, 2)}`,
+              valCls: qtRem > 0 ? 'amber' : 'emerald',
+              pct: qtCred > 0 ? Math.min(100, Math.round((qtPaid / qtCred) * 100)) : 100,
+              sub: `Quarry <b>${fmtUSD(qRem, 2)}</b> · Transport <b>${fmtUSD(tRem, 2)}</b>`,
+              tone: qtRem > 0 ? 'amber' : 'emerald'
+            });
+          })()}
           ${insightCard({
             label: 'Unit Landed Economics',
             badge: otRawLoads > 0 ? `${fmtNum(otRawLoads)} OT · ${fmtNum(rawTruckSet.size)} Trucks` : `${fmtNum(rawTruckSet.size)} Active Trucks`,
@@ -22653,15 +23030,22 @@
             sub: `Cash settled <b>${fmtUSD(sumAmt, 0)}</b> · Rebates &amp; disc. <b>${fmtUSD(sumDisc, 0)}</b>`,
             tone: 'steel'
           })}
-          ${insightCard({
-            label: 'Customer Credit Exposure',
-            badge: `${fmtNum(over60CustCount)} Overdue 60+`,
-            badgeCls: over60CustCount > 0 ? 'amber' : 'emerald',
-            val: `${fmtNum(openCustCount)} <small>Open A/Cs</small>`,
-            valCls: over60CustCount > 0 ? 'amber' : 'emerald',
-            sub: `Avg open balance <b>${fmtUSD(openCustCount ? (Number(k.ar_balance || 0) / openCustCount) : 0, 0)}</b> across <b>${fmtNum(custAll.length)}</b> accounts`,
-            tone: over60CustCount > 0 ? 'amber' : 'emerald'
-          })}
+          ${(() => {
+            const totArBal = round2(custAll.reduce((a, c) => a + Number(c.ar_balance || 0), 0));
+            const totVatRec = round2(custAll.reduce((a, c) => a + Number(c.vat_receivable || 0), 0));
+            const totArEx = round2(custAll.reduce((a, c) => a + Number(c.ar_rem_ex_vat != null ? c.ar_rem_ex_vat : (Number(c.ar_balance || 0) - Number(c.vat_receivable || 0))), 0));
+            return insightCard({
+              label: 'Customer Credit Exposure',
+              badge: `${fmtNum(over60CustCount)} Overdue 60+`,
+              badgeCls: over60CustCount > 0 ? 'amber' : 'emerald',
+              val: `${fmtUSD(totArBal, 2)}`,
+              valCls: over60CustCount > 0 ? 'amber' : 'emerald',
+              sub: canTax
+                ? `Ex-VAT <b>${fmtUSD(totArEx, 2)}</b> · VAT <b>${fmtUSD(totVatRec, 2)}</b> · <b>${fmtNum(openCustCount)}</b> open of <b>${fmtNum(custAll.length)}</b>`
+                : `<b>${fmtNum(openCustCount)}</b> open balances across <b>${fmtNum(custAll.length)}</b> customer accounts`,
+              tone: over60CustCount > 0 ? 'amber' : 'emerald'
+            });
+          })()}
           ${appPill('receipts', 'amount', 'receipts')}
         </div>
       </div>
@@ -22797,11 +23181,11 @@
                   <td class="r">${fmtUSD(c.credit_sales_ttc != null ? c.credit_sales_ttc : c.sales_ttc, 0)}</td>
                   ${showTaxCols ? `<td class="r">${Number(c.sales_vat || 0) > 0 ? fmtUSD(c.sales_vat, 0) : '—'}</td>` : ''}
                   <td class="r">${fmtUSD(c.ar_settled != null ? c.ar_settled : c.receipts, 0)}</td>
-                  ${showTaxCols ? `<td class="r">${Number(c.vat_receivable || 0) !== 0 ? fmtUSD(c.vat_receivable, 0) : '—'}</td>` : ''}
+                  ${showTaxCols ? `<td class="r">${Number(c.vat_receivable || 0) !== 0 ? fmtUSD(c.vat_receivable, 2) : '—'}</td>` : ''}
                   <td class="r">${fmtUSD(c.ar_current, 0)}</td>
                   <td class="r">${Number(c.ar_1_60 || 0) > 0 ? `<span style="color:var(--warn)">${fmtUSD(c.ar_1_60, 0)}</span>` : '—'}</td>
                   <td class="r">${Number(c.ar_60_plus || 0) > 0 ? `<span style="color:var(--crit)">${fmtUSD(c.ar_60_plus, 0)}</span>` : '—'}</td>
-                  <td class="r"><strong>${fmtUSD(c.ar_balance, 2)}</strong></td>
+                  <td class="r"${canTax ? ` data-ui-tip="${esc(`Ex-VAT Rem: ${fmtUSD(c.ar_rem_ex_vat != null ? c.ar_rem_ex_vat : (Number(c.ar_balance || 0) - Number(c.vat_receivable || 0)), 2)} · VAT Due: ${fmtUSD(c.vat_receivable || 0, 2)}`)}"` : ''}><strong>${fmtUSD(c.ar_balance, 2)}</strong></td>
                   <td class="mono">${esc(fmtDateDMY(c.last_sale))}</td>
                 </tr>
               `).join('') || emptyRow(custCols, q ? `No customers match "${STATE.search}".` : 'No customer balances for this entity')}
@@ -22814,7 +23198,7 @@
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.credit_sales_ttc != null ? c.credit_sales_ttc : (c.sales_ttc || 0)), 0), 0)}</b></td>
                 ${showTaxCols ? `<td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.sales_vat || 0), 0), 0)}</b></td>` : ''}
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_settled != null ? c.ar_settled : (c.receipts || 0)), 0), 0)}</b></td>
-                ${showTaxCols ? `<td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.vat_receivable || 0), 0), 0)}</b></td>` : ''}
+                ${showTaxCols ? `<td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.vat_receivable || 0), 0), 2)}</b></td>` : ''}
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_current || 0), 0), 0)}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_1_60 || 0), 0), 0)}</b></td>
                 <td class="r"><b>${fmtUSD(custs.reduce((a, c) => a + Number(c.ar_60_plus || 0), 0), 0)}</b></td>
@@ -22927,16 +23311,23 @@
     };
 
     const seenSupSet = new Set();
+    const legApBrk = computeThreeLegPayablesBreakdown();
     const supAll = [];
     getScopedModelSuppliers(m).forEach(s => {
       const sk = norm(s.Supplier);
+      const legRow = legApBrk.byNorm.get(normSupPayable(s.Supplier)) || null;
       const cashAmt = round2(cashExpBySup.get(sk) || 0);
       if (sk) seenSupSet.add(sk);
       const keep = !hasApRange || s.raw_loads > 0 || Math.abs(Number(s.ap_on_credit || 0)) > 0.005 || Math.abs(Number(s.ap_settled || s.settlements_paid || 0)) > 0.005 || Math.abs(Number(s.ap_balance || 0)) > 0.005 || Math.abs(Number(s.opening_ap || 0)) > 0.005 || Math.abs(cashAmt) > 0.005;
       if (!keep) return;
       supAll.push(Object.assign({}, s, {
         cash_expense: cashAmt,
-        role: deriveSupRole(s, cashAmt)
+        role: deriveSupRole(s, cashAmt),
+        quarry_rem: legRow ? legRow.quarry_rem : 0,
+        trans_rem: legRow ? legRow.trans_rem : 0,
+        exp_rem_usd: legRow ? legRow.exp_rem_usd : 0,
+        exp_rem_lbp: legRow ? legRow.exp_rem_lbp : 0,
+        exp_rem_ttc: legRow ? legRow.exp_rem_ttc : 0
       }));
     });
     cashExpBySup.forEach((rawCashAmt, sk) => {
@@ -22946,9 +23337,10 @@
       seenSupSet.add(sk);
       const dispName = cashExpLabelBySup.get(sk) || sk;
       const supObj = supplierInfo(dispName);
+      const legRow = legApBrk.byNorm.get(normSupPayable((supObj && supObj.name) || dispName)) || null;
       supAll.push({
         Supplier: (supObj && supObj.name) || dispName,
-        IVA: supObj && (supObj.iva || supObj.mof_no || supObj.financial_no) ? 'Yes' : 'No',
+        IVA: supObj && (supObj.vat_wtc || supObj.vat_bbc || supObj.iva || supObj.mof_no || supObj.financial_no) ? 'Yes' : 'No',
         role: 'Cash Vendor',
         raw_loads: 0,
         opening_ap: 0,
@@ -22959,7 +23351,12 @@
         ap_on_credit: 0,
         settlements_paid: 0,
         ap_settled: 0,
-        ap_balance: 0
+        ap_balance: 0,
+        quarry_rem: legRow ? legRow.quarry_rem : 0,
+        trans_rem: legRow ? legRow.trans_rem : 0,
+        exp_rem_usd: legRow ? legRow.exp_rem_usd : 0,
+        exp_rem_lbp: legRow ? legRow.exp_rem_lbp : 0,
+        exp_rem_ttc: legRow ? legRow.exp_rem_ttc : 0
       });
     });
 
@@ -23070,13 +23467,13 @@
             tone: 'emerald'
           })}
           ${insightCard({
-            label: '3-Leg Payable Mix',
-            badge: `Exp ${expLegPct.toFixed(0)}%`,
+            label: '3-Leg Remaining Payables',
+            badge: `Exp ${fmtUSD(legApBrk.totals.exp_rem_ttc, 0)}`,
             badgeCls: 'brass',
-            val: `Mat ${matLegPct.toFixed(0)}% · Haul ${haulLegPct.toFixed(0)}%`,
+            val: `Mat ${fmtUSD(legApBrk.totals.quarry_rem, 0)} · Trans ${fmtUSD(legApBrk.totals.trans_rem, 0)}`,
             valCls: 'brass',
             pct: matLegPct,
-            sub: `Material <b>${fmtUSD(supAll.length ? supMatSum : k.ap_material, 0)}</b> · Hauler <b>${fmtUSD(supAll.length ? supHaulSum : k.ap_haulage, 0)}</b> · Expense <b>${fmtUSD(supAll.length ? supExpSum : k.ap_expense, 0)}</b>`,
+            sub: `Quarry <b>${fmtUSD(legApBrk.totals.quarry_rem, 2)}</b> · Trans <b>${fmtUSD(legApBrk.totals.trans_rem, 2)}</b> · Exp <b>${fmtUSD(legApBrk.totals.exp_rem_usd, 2)}</b> + <b>${fmtNum(legApBrk.totals.exp_rem_lbp, 0)} LL</b>`,
             tone: 'brass'
           })}
           ${insightCard({
@@ -23224,7 +23621,7 @@
                     <td class="r">${s.cash_expense ? fmtUSD(s.cash_expense, 0) : '—'}</td>
                     <td class="r"><strong>${fmtUSD(s.ap_on_credit, 0)}</strong></td>
                     <td class="r">${fmtUSD(s.ap_settled != null ? s.ap_settled : s.settlements_paid, 0)}</td>
-                    <td class="r"><strong>${fmtUSD(s.ap_balance, 2)}</strong></td>
+                    <td class="r" data-ui-tip="${esc(`Quarry Rem: ${fmtUSD(s.quarry_rem || 0, 2)} · Transport Rem: ${fmtUSD(s.trans_rem || 0, 2)} · Expense Ex-VAT: ${fmtUSD(s.exp_rem_usd || 0, 2)} · IVA LBP: ${fmtNum(s.exp_rem_lbp || 0, 0)} LL · Expense Incl. VAT: ${fmtUSD(s.exp_rem_ttc || 0, 2)}`)}"><strong>${fmtUSD(s.ap_balance, 2)}</strong></td>
                   </tr>`;
                 }).join('') || emptyRow(supColCount, q ? `No counterparties match "${STATE.search}".` : 'No supplier or vendor balances for this entity')}
                 ${showMoreRow('sups', sups.length, supColCount)}
@@ -23249,14 +23646,14 @@
 
         <div class="panel-card" id="apLegBridgePanel">
           <div class="panel-head">
-            <div class="panel-title"><span>3-LEG ACCOUNTS PAYABLE ARCHITECTURE &amp; COUNTERPARTY ROLE SUMMARY</span></div>
+            <div class="panel-title"><span>3-LEG ACCOUNTS PAYABLE ARCHITECTURE &amp; REMAINING BALANCE BY LEG</span></div>
             <span class="panel-meta">${exportBtn('apLegBridgePanel', 'AP_3Leg_Architecture')}</span>
           </div>
           <div class="table-wrap">
             <table class="ledger-table">
               <thead>
                 <tr>
-                  <th>Payable Leg</th><th>Counterparty Role</th><th>Source Ledger</th><th class="r">Active Payees</th><th class="r">Credit Accrued ($)</th><th class="r">% Share</th>
+                  <th>Payable Leg</th><th>Counterparty Role</th><th>Source Ledger</th><th class="r">Active Payees</th><th class="r">Credit Accrued ($)</th><th class="r">Settled ($)</th><th class="r">Remaining ($)</th>
                 </tr>
               </thead>
               <tbody>
@@ -23264,33 +23661,37 @@
                   <td><span class="badge badge-brass">Leg 1 · Material</span></td>
                   <td>Quarry &amp; Site Owners</td>
                   <td><button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="raw">Quarry &amp; Haulage</button></td>
-                  <td class="r">${fmtNum(matLegSupSet.size)}</td>
-                  <td class="r"><strong>${fmtUSD(supAll.length ? supMatSum : k.ap_material, 2)}</strong></td>
-                  <td class="r">${matLegPct.toFixed(1)}%</td>
+                  <td class="r">${fmtNum(legApBrk.totals.quarry_payees || matLegSupSet.size)}</td>
+                  <td class="r">${fmtUSD(supAll.length ? supMatSum : k.ap_material, 2)}</td>
+                  <td class="r">${fmtUSD(legApBrk.totals.quarry_pd, 2)}</td>
+                  <td class="r"><strong>${fmtUSD(legApBrk.totals.quarry_rem, 2)}</strong></td>
                 </tr>
                 <tr>
                   <td><span class="badge badge-info">Leg 2 · Haulage</span></td>
                   <td>3rd-Party Truck Owners ($0 Own Fleet)</td>
                   <td><button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="raw">Quarry &amp; Haulage</button></td>
-                  <td class="r">${fmtNum(haulLegSupSet.size)}</td>
-                  <td class="r"><strong>${fmtUSD(supAll.length ? supHaulSum : k.ap_haulage, 2)}</strong></td>
-                  <td class="r">${haulLegPct.toFixed(1)}%</td>
+                  <td class="r">${fmtNum(legApBrk.totals.trans_payees || haulLegSupSet.size)}</td>
+                  <td class="r" data-ui-tip="${esc(`Raw + Customer Delivery 3rd-Party Credit: ${fmtUSD(legApBrk.totals.trans_cr, 2)}`)}">${fmtUSD(supAll.length ? supHaulSum : k.ap_haulage, 2)}</td>
+                  <td class="r">${fmtUSD(legApBrk.totals.trans_pd, 2)}</td>
+                  <td class="r"><strong>${fmtUSD(legApBrk.totals.trans_rem, 2)}</strong></td>
                 </tr>
                 <tr>
                   <td><span class="badge badge-ok">Leg 3 · Expenses</span></td>
                   <td>Parts, Maintenance &amp; Overhead Vendors</td>
                   <td><button type="button" class="btn btn-ghost-bar" style="padding:2px 8px;font-size:11px" data-nav-jump="expenses">Expenses &amp; Overhead</button></td>
-                  <td class="r">${fmtNum(expLegSupSet.size)}</td>
-                  <td class="r"><strong>${fmtUSD(supAll.length ? supExpSum : k.ap_expense, 2)}</strong></td>
-                  <td class="r">${expLegPct.toFixed(1)}%</td>
+                  <td class="r">${fmtNum(legApBrk.totals.exp_payees || expLegSupSet.size)}</td>
+                  <td class="r">${fmtUSD(supAll.length ? supExpSum : k.ap_expense, 2)}</td>
+                  <td class="r">${fmtUSD(legApBrk.totals.exp_pd_ttc, 2)}</td>
+                  <td class="r" data-ui-tip="${esc(`Ex-VAT USD: ${fmtUSD(legApBrk.totals.exp_rem_usd, 2)} · IVA LBP: ${fmtNum(legApBrk.totals.exp_rem_lbp, 0)} LL · Incl. VAT: ${fmtUSD(legApBrk.totals.exp_rem_ttc, 2)}`)}"><strong>${fmtUSD(legApBrk.totals.exp_rem_ttc, 2)}</strong></td>
                 </tr>
               </tbody>
               <tfoot>
                 <tr>
-                  <td colspan="3"><b>TOTAL 3-LEG AP ACCRUED · Settled ${fmtUSD(paidTot, 0)} · Net Open AP ${fmtUSD(netApTot, 2)}</b></td>
+                  <td colspan="3"><b>TOTAL 3-LEG AP · Settled ${fmtUSD(paidTot, 0)} · Net Open AP ${fmtUSD(netApTot, 2)}</b></td>
                   <td class="r"><b>${fmtNum(sups.length)}</b></td>
                   <td class="r"><b>${fmtUSD(supAll.length ? supOnCrSum : (Number(k.ap_material || 0) + Number(k.ap_haulage || 0) + Number(k.ap_expense || 0)), 2)}</b></td>
-                  <td class="r"><b>100.0%</b></td>
+                  <td class="r"><b>${fmtUSD(paidTot, 2)}</b></td>
+                  <td class="r"><b>${fmtUSD(netApTot, 2)}</b></td>
                 </tr>
               </tfoot>
             </table>
@@ -23573,17 +23974,20 @@
             sub: `Overhead intensity <b>${expOfSalesPct.toFixed(1)}%</b> of Net Sales · <b>${fmtNum(uniqExpCats)}</b> categories`,
             tone: 'brass'
           })}
-          ${insightCard({
-            label: 'Cash vs Credit Mix',
-            badge: pendingPriceCnt > 0 ? `${fmtNum(pendingPriceCnt)} Pending Price` : `${(100 - cashExpPct).toFixed(1)}% Credit`,
-            badgeCls: pendingPriceCnt > 0 ? 'warn' : 'emerald',
-            badgeChip: pendingPriceCnt > 0 ? 'pending_price' : '',
-            val: `${cashExpPct.toFixed(1)}% <small>Cash</small>`,
-            valCls: 'emerald',
-            pct: cashExpPct,
-            sub: `Cash <b>${fmtUSD(sumCashExp, 0)}</b> · Credit AP <b>${fmtUSD(sumCredExp, 0)}</b> · <span class="insight-drill ${STATE.chipFilter === 'pending_price' ? 'is-active' : ''}" data-chip="pending_price">Pending Price: <b>${fmtNum(pendingPriceCnt)}</b></span>`,
-            tone: 'emerald'
-          })}
+          ${(() => {
+            const expLegBrk = computeThreeLegPayablesBreakdown();
+            return insightCard({
+              label: 'Cash vs Credit & Supplier Rem.',
+              badge: pendingPriceCnt > 0 ? `${fmtNum(pendingPriceCnt)} Pending Price` : `Rem ${fmtUSD(expLegBrk.totals.exp_rem_ttc, 2)}`,
+              badgeCls: pendingPriceCnt > 0 ? 'warn' : 'emerald',
+              badgeChip: pendingPriceCnt > 0 ? 'pending_price' : '',
+              val: `${cashExpPct.toFixed(1)}% <small>Cash</small>`,
+              valCls: 'emerald',
+              pct: cashExpPct,
+              sub: `Rem Ex-VAT <b>${fmtUSD(expLegBrk.totals.exp_rem_usd, 2)}</b> · IVA <b>${fmtNum(expLegBrk.totals.exp_rem_lbp, 0)} LL</b> · <span class="insight-drill ${STATE.chipFilter === 'pending_price' ? 'is-active' : ''}" data-chip="pending_price">Pending: <b>${fmtNum(pendingPriceCnt)}</b></span>`,
+              tone: 'emerald'
+            });
+          })()}
           ${insightCard({
             label: 'Items & Parts Catalog',
             badge: `${fmtNum(expCatalogAll.length)} Items (Locked UoM)`,
@@ -25015,14 +25419,15 @@
     });
     const otRulesByCoReg = new Map();
     (recs.overtime_rates || []).forEach(or => {
-      if (!or || or.voided || !or.region) return;
-      const rk = `${norm(or.company || 'WTC')}|${norm(or.region)}`;
+      if (!or || or.voided) return;
+      const regKey = norm(or.region) || 'excluded';
+      const rk = `${norm(or.company || 'WTC')}|${regKey}`;
       if (!otRulesByCoReg.has(rk)) otRulesByCoReg.set(rk, []);
       otRulesByCoReg.get(rk).push({
         start: String(or.start_date || '2020-01-01').slice(0, 10),
         end: String(or.end_date || '2035-12-31').slice(0, 10),
         rate: Number(or.amount != null ? or.amount : or.usd_amount || 0),
-        region: or.region
+        region: or.region || 'Excluded'
       });
     });
     otRulesByCoReg.forEach(list => {
@@ -25136,8 +25541,7 @@
     const titleWords = s => String(s || '').trim().replace(/\b([a-z])/g, (_, ch) => ch.toUpperCase());
 
     const evalOtTicket = (t, isSale) => {
-      if (!t || t.voided || !(Number(t.overtime || 0) > 0)) return null;
-      if (isSale && saleTicketSign(t) <= 0) return null;
+      if (!t || t.voided || isRemovedTicket(t) || !(Number(t.overtime || 0) > 0)) return null;
       const d = String(t.date || '').slice(0, 10);
       const drvRaw = String(t.driver || '').trim();
       const drvN = norm(drvRaw);
@@ -25147,21 +25551,28 @@
       const tmS = String(t.time || '');
       const hrStr = tmS.includes(':') ? tmS.split(':')[0] : '';
       const hr = /^\d+$/.test(hrStr) ? parseInt(hrStr, 10) : 0;
-      const shiftDate = (d && hr >= 12) ? shiftIsoPlus1(d) : d;
+      const shiftDate = (d && hr >= 18) ? shiftIsoPlus1(d) : d;
       const repDate = String(t.rep_date || d).slice(0, 10);
       const isApp = isAppRecord(t);
       const hasCustomRep = Boolean(isApp && t.rep_date && repDate && repDate !== d);
-      const repShiftDate = hasCustomRep ? ((hr >= 12) ? shiftIsoPlus1(repDate) : repDate) : shiftDate;
+      const repShiftDate = hasCustomRep ? ((hr >= 18) ? shiftIsoPlus1(repDate) : repDate) : shiftDate;
+      const coMk = coN === 'bbconstruction' ? 'bbconstruction' : (coN === 'lions transport' ? 'lionstransport' : 'wtc');
+      const coSiteRegs = (SEED.models && SEED.models[coMk] && SEED.models[coMk].site_regions) || null;
       const siteN = t.site ? norm(t.site) : '';
-      const regN = (siteN && siteToReg.get(siteN)) || 'excluded';
-      const regLabel = (siteN && siteRegLabel.get(siteN)) || 'Default / Unmapped';
+      const isIntSale = Boolean(isSale && t.is_internal_sale);
+      const regN = (isIntSale || !siteN || siteN === 'excluded')
+        ? 'excluded'
+        : ((coSiteRegs && Object.prototype.hasOwnProperty.call(coSiteRegs, siteN))
+            ? (coSiteRegs[siteN] || '')
+            : (siteToReg.get(siteN) || ''));
+      if (!regN) return null;
+      const regLabel = regN === 'excluded' ? 'Default / Unmapped' : ((siteN && siteRegLabel.get(siteN)) || titleWords(regN));
       const rateDate = isSale ? repDate : (hasCustomRep ? repDate : shiftDate);
-      let rules = otRulesByCoReg.get(`${coN}|${regN}`);
-      if ((!rules || !rules.length) && siteN) rules = otRulesByCoReg.get(`${coN}|excluded`);
+      const rules = otRulesByCoReg.get(`${coN}|${regN}`);
       if (!rules || !rules.length) return null;
       let rate = 0;
       for (let i = 0; i < rules.length; i++) {
-        if (rules[i].start <= rateDate && rateDate <= rules[i].end) { rate = rules[i].rate; break; }
+        if (rules[i].start <= rateDate && rateDate <= rules[i].end) rate += rules[i].rate;
       }
       if (!(rate > 0)) return null;
       const cdList = drvToStaff.get(`${coN}|${drvN}`);
@@ -25202,11 +25613,11 @@
     const hasSiteUnits = siteUnitsSet.size > 0;
     const hasSiteSites = siteSitesSet.size > 0;
     const scanOtTicket = (t, isSale) => {
-      if (!t || t.voided) return;
-      if (isSale && saleTicketSign(t) <= 0) return;
+      if (!t || t.voided || isRemovedTicket(t)) return;
       const hasOt = Number(t.overtime || 0) > 0;
+      const validVol = !isSale || saleTicketSign(t) > 0;
       const d = String(t.date || '').slice(0, 10);
-      if (d && (hasSiteStaff || hasSiteUnits || (!isSale && hasSiteSites))) {
+      if (validVol && d && (hasSiteStaff || hasSiteUnits || (!isSale && hasSiteSites))) {
         const drvN = hasSiteStaff && t.driver ? norm(t.driver) : '';
         const unitN = hasSiteUnits && t.truck ? norm(t.truck) : '';
         const siteN = !isSale && hasSiteSites && t.site ? norm(t.site) : '';
@@ -25604,7 +26015,7 @@
       const tally = Number(a.tally != null ? a.tally : 0);
       const effAbsDate = String(a.set_date || aDate || '').slice(0, 10);
       const isSiteOff = /^site\s*off$/i.test(attType);
-      if (isSiteOff || (/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType) && a.pay_treatment !== 'paid') || /^vacabsence$|^paid\s*leave$/i.test(attType) || (a.pay_treatment === 'paid' && Number(a.leave_days || 0) > 0)) {
+      if (!a.no_site_deduct && (isSiteOff || (/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType) && a.pay_treatment !== 'paid') || /^vacabsence$|^paid\s*leave$/i.test(attType) || (a.pay_treatment === 'paid' && Number(a.leave_days || 0) > 0))) {
         const dCnt = isSiteOff
           ? (tally > 0 ? tally : 1)
           : (Number(a.leave_days || 0) > 0
@@ -25642,6 +26053,7 @@
       const cStart = String(e.start_date || '2025-01-01').slice(0, 10);
       const cEndRaw = String(e.end_date || '2030-12-31').slice(0, 10);
       const cEnd = (isPartialEndMonth && effToDate < cEndRaw) ? effToDate : cEndRaw;
+      if (cStart > cEnd) return;
       const startYm = cStart.slice(0, 7) > effStartYm ? cStart.slice(0, 7) : effStartYm;
       const endYm = cEnd.slice(0, 7) < effEndYm ? cEnd.slice(0, 7) : effEndYm;
       if (startYm > endYm) return;
@@ -25654,12 +26066,13 @@
         const ovStart = cStart > mStart ? cStart : mStart;
         const ovEnd = cEnd < effMEnd ? cEnd : effMEnd;
         if (ovStart <= ovEnd) {
-          const actDays = Math.max(0, daysBetween(ovStart, ovEnd) + 1);
-          if (actDays > 0) {
-            const gk = `${coNorm}|${sk}|${curYm}`;
-            if (!empGrid.has(gk)) empGrid.set(gk, []);
-            empGrid.get(gk).push({ contract: e, actDays, cStart, ovStart, ovEnd, mStart, effMEnd, daysInMonth });
-          }
+          const uStart = curYm === cStart.slice(0, 7) ? Math.max(0, Number(cStart.slice(8, 10)) - 1) : 0;
+          const uEnd = curYm === cEnd.slice(0, 7) ? Math.max(0, daysInMonth - Number(cEnd.slice(8, 10))) : 0;
+          const unatt = uStart + uEnd;
+          const actDays = Math.max(0, daysInMonth - unatt);
+          const gk = `${coNorm}|${sk}|${curYm}`;
+          if (!empGrid.has(gk)) empGrid.set(gk, []);
+          empGrid.get(gk).push({ contract: e, unatt, actDays, cStart, cEnd, ovStart, ovEnd, mStart, effMEnd, daysInMonth });
         }
         curYm = shiftYearMonth(curYm, 1);
       }
@@ -25680,82 +26093,14 @@
       let cumVacAbs = 0;
       let cumUnacc = 0;
       ymEntries.forEach(({ ym, gk, cList }) => {
-        let effCList = cList;
-        if (cList.length > 1) {
-          const isCurStatus = ce => /^(current|active)$/i.test(String((ce && ce.status) || '').trim()) ? 1 : 0;
-          const ranked = cList.slice().sort((a, b) =>
-            (isCurStatus(b.contract) - isCurStatus(a.contract))
-            || b.cStart.localeCompare(a.cStart)
-            || (Number(b.contract.salary_usd || 0) - Number(a.contract.salary_usd || 0))
-            || String(b.contract.name || '').localeCompare(String(a.contract.name || ''))
-            || String(b.contract.id || '').localeCompare(String(a.contract.id || ''))
-          );
-          const dayCounts = new Array(ranked.length).fill(0);
-          const [msY, msM, msD] = ranked[0].mStart.split('-').map(Number);
-          const [meY, meM, meD] = ranked[0].effMEnd.split('-').map(Number);
-          const curDay = new Date(Date.UTC(msY, msM - 1, msD));
-          const endDayMs = Date.UTC(meY, meM - 1, meD);
-          while (curDay.getTime() <= endDayMs) {
-            const iso = `${curDay.getUTCFullYear()}-${String(curDay.getUTCMonth() + 1).padStart(2, '0')}-${String(curDay.getUTCDate()).padStart(2, '0')}`;
-            for (let ci = 0; ci < ranked.length; ci++) {
-              if (ranked[ci].ovStart <= iso && iso <= ranked[ci].ovEnd) {
-                dayCounts[ci] += 1;
-                break;
-              }
-            }
-            curDay.setUTCDate(curDay.getUTCDate() + 1);
-          }
-          const deduped = [];
-          for (let ci = 0; ci < ranked.length; ci++) {
-            if (dayCounts[ci] > 0) deduped.push({ ...ranked[ci], actDays: dayCounts[ci] });
-          }
-          if (deduped.length) effCList = deduped;
-        }
-        effCList.sort((a, b) => (b.actDays - a.actDays) || b.cStart.localeCompare(a.cStart) || (Number(b.contract.salary_usd || 0) - Number(a.contract.salary_usd || 0)));
-        const daysInMonth = effCList[0].daysInMonth;
-        const totActDays = Math.min(daysInMonth, effCList.reduce((sum, x) => sum + x.actDays, 0));
-        const gapDays = Math.max(0, daysInMonth - totActDays);
+        const effCList = cList.slice().sort((a, b) => (b.actDays - a.actDays) || b.cStart.localeCompare(a.cStart) || (Number(b.contract.salary_usd || 0) - Number(a.contract.salary_usd || 0)));
         const prim = effCList[0].contract;
         const s = ensureStaff(prim.staff, prim.company);
         s.active_months += 1;
 
-        const wDays = Number(prim.working_days || 30) || 30;
-        const wHrs = Number(prim.working_hours || 8) || 8;
-        const otMult = Number(prim.overtime_multiplier != null ? prim.overtime_multiplier : 1) || 1;
-        const ltMult = Number(prim.lateness_multiplier != null ? prim.lateness_multiplier : 1) || 1;
-        const extDays = Number(prim.extended || 0);
-
-        let salUsdRaw = 0;
-        let salLbpRaw = 0;
-        effCList.forEach(item => {
-          const ce = item.contract;
-          const cePend = isPendingSalaryEmployment(ce);
-          const share = totActDays > 0 ? (item.actDays / totActDays) : 1;
-          const uSal = cePend ? 0 : (Number(ce.salary_usd || 0) || ((!ce.salary_lbp && Number(ce.daily_rate || 0)) ? (Number(ce.daily_rate || 0) * (Number(ce.working_days || 26) || 26)) : 0));
-          const lSal = cePend ? 0 : Number(ce.salary_lbp || 0);
-          salUsdRaw += uSal * share;
-          salLbpRaw += lSal * share;
-        });
-
-        const primPend = isPendingSalaryEmployment(prim);
-        if (primPend && (!prim.end_date || String(prim.end_date).slice(0, 10) >= effSiteCutoff)) {
-          s.salary_pending = true;
-          if (!s.pending_emp_id && prim.id) s.pending_emp_id = String(prim.id);
-        }
-
         const mFx = getLbpFxRate(effCList[0].effMEnd || `${ym}-28`, 'LBP');
-        const salUsdExt = salUsdRaw + (extDays && wDays > 0 ? extDays * (salUsdRaw / wDays) : 0);
-        const salLbpExt = salLbpRaw + (extDays && wDays > 0 ? extDays * (salLbpRaw / wDays) : 0);
-        const mBase = salUsdExt + (salLbpExt / mFx);
 
-        const reimbU = primPend ? 0 : Number(prim.reimbursement || 0);
-        const reimbL = primPend ? 0 : Number(prim.reimbursement_lbp || 0);
-        const mReimb = reimbU + (reimbL / mFx);
-        const dedRateU = primPend ? 0 : Number(prim.deduction || 0);
-        const dedRateL = primPend ? 0 : Number(prim.deduction_lbp || 0);
-        const dedRate = dedRateU + (dedRateL / mFx);
-
-        // Cumulative annual vacation entitlement (granted in January) vs taken VacAbsence + ConfigVacAbs
+        // Cumulative annual vacation entitlement (granted in January across active contracts) vs taken VacAbsence + ConfigVacAbs
         let vacInYm = 0;
         let cfgVacInYm = 0;
         (attByStaffYm.get(gk) || []).forEach(a => {
@@ -25766,42 +26111,71 @@
             vacInYm += Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tl > 0 ? tl : (a.source === 'app' ? 1 : 0));
           }
         });
-        const vacGranted = ym.endsWith('-01') ? Number(prim.vacation_days || 0) : 0;
+        const vacGranted = ym.endsWith('-01') ? effCList.reduce((acc, item) => acc + Number(item.contract.vacation_days || 0), 0) : 0;
         cumVac += vacGranted;
         const vacTaken = vacInYm + cfgVacInYm;
-        cumVacAbs += vacTaken;
-        const unaccVac = (cumVac - cumVacAbs < 0) ? Math.min(vacTaken, cumVacAbs - cumVac) : 0;
-        cumUnacc += unaccVac;
+        cumVacAbs += effCList.length * vacTaken;
+        const unaccVacEach = (cumVac - cumVacAbs < 0) ? Math.min(vacTaken, cumVacAbs - cumVac) : 0;
+        cumUnacc += effCList.length * unaccVacEach;
         s.vac_rem = round2(cumVac - (cumVacAbs - cumUnacc));
 
-        const dayRateU = wDays > 0 ? (salUsdExt / wDays) : 0;
-        const dayRateL = wDays > 0 ? (salLbpExt / wDays) : 0;
-        const dayRate = dayRateU + (dayRateL / mFx);
-        const hrRateU = (wDays * wHrs) > 0 ? (salUsdExt / (wDays * wHrs)) : 0;
-        const hrRateL = (wDays * wHrs) > 0 ? (salLbpExt / (wDays * wHrs)) : 0;
-        const hrRate = hrRateU + (hrRateL / mFx);
-
-        const gapAndUnaccAbsDed = (gapDays + unaccVac) * dayRate;
-        const gapDed = gapDays * dedRate;
-
-        s.base += mBase;
-        s.base_usd_only += salUsdExt;
-        s.base_lbp += salLbpExt;
-        s.reimb += mReimb;
-        s.gap_days += gapDays;
-        s.unacc_vac_days += unaccVac;
-        s.abs_ded += gapAndUnaccAbsDed;
-        s.ded += gapDed;
-        s.earnings_usd += (salUsdExt + reimbU - ((gapDays + unaccVac) * dayRateU) - (gapDays * dedRateU));
-        s.earnings_lbp += (salLbpExt + reimbL - ((gapDays + unaccVac) * dayRateL) - (gapDays * dedRateL));
-
-        monthContractMap.set(gk, { dayRate, dayRateU, dayRateL, hrRate, hrRateU, hrRateL, otMult, ltMult, dedRate, dedRateU, dedRateL, mBase, mReimb, gapDays, gapAbsDed: gapAndUnaccAbsDed, gapDed });
         const mb = ensureMonth(ym);
-        if (mb) mb.earnings_m += (mBase + mReimb - gapAndUnaccAbsDed - gapDed);
+        const contractRates = [];
+        effCList.forEach((item, idxItem) => {
+          const ce = item.contract;
+          const cePend = isPendingSalaryEmployment(ce);
+          if (cePend && (!ce.end_date || String(ce.end_date).slice(0, 10) >= effSiteCutoff)) {
+            s.salary_pending = true;
+            if (!s.pending_emp_id && ce.id) s.pending_emp_id = String(ce.id);
+          }
+          const wDays = Number(ce.working_days || 30) || 30;
+          const wHrs = Number(ce.working_hours || 8) || 8;
+          const otMult = Number(ce.overtime_multiplier != null ? ce.overtime_multiplier : 1) || 1;
+          const ltMult = Number(ce.lateness_multiplier != null ? ce.lateness_multiplier : 1) || 1;
+          const extDays = Number(ce.extended || 0);
+          const uSal = cePend ? 0 : (Number(ce.salary_usd || 0) || ((!ce.salary_lbp && Number(ce.daily_rate || 0)) ? (Number(ce.daily_rate || 0) * (Number(ce.working_days || 26) || 26)) : 0));
+          const lSal = cePend ? 0 : Number(ce.salary_lbp || 0);
+          const salUsdExt = uSal + (extDays && wDays > 0 ? extDays * (uSal / wDays) : 0);
+          const salLbpExt = lSal + (extDays && wDays > 0 ? extDays * (lSal / wDays) : 0);
+          const mBase = salUsdExt + (salLbpExt / mFx);
+          const reimbU = cePend ? 0 : Number(ce.reimbursement || 0);
+          const reimbL = cePend ? 0 : Number(ce.reimbursement_lbp || 0);
+          const mReimb = reimbU + (reimbL / mFx);
+          const dedRateU = cePend ? 0 : Number(ce.deduction || 0);
+          const dedRateL = cePend ? 0 : Number(ce.deduction_lbp || 0);
+          const dedRate = dedRateU + (dedRateL / mFx);
+          const dayRateU = wDays > 0 ? (salUsdExt / wDays) : 0;
+          const dayRateL = wDays > 0 ? (salLbpExt / wDays) : 0;
+          const dayRate = dayRateU + (dayRateL / mFx);
+          const hrRateU = (wDays * wHrs) > 0 ? (salUsdExt / (wDays * wHrs)) : 0;
+          const hrRateL = (wDays * wHrs) > 0 ? (salLbpExt / (wDays * wHrs)) : 0;
+          const hrRate = hrRateU + (hrRateL / mFx);
+
+          const gapDays = item.unatt;
+          const gapAndUnaccAbsDed = (gapDays + unaccVacEach) * dayRate;
+          const gapDed = gapDays * dedRate;
+
+          s.base += mBase;
+          s.base_usd_only += salUsdExt;
+          s.base_lbp += salLbpExt;
+          s.reimb += mReimb;
+          if (idxItem === 0) {
+            s.gap_days += gapDays;
+            s.unacc_vac_days += unaccVacEach;
+          }
+          s.abs_ded += gapAndUnaccAbsDed;
+          s.ded += gapDed;
+          s.earnings_usd += (salUsdExt + reimbU - ((gapDays + unaccVacEach) * dayRateU) - (gapDays * dedRateU));
+          s.earnings_lbp += (salLbpExt + reimbL - ((gapDays + unaccVacEach) * dayRateL) - (gapDays * dedRateL));
+          if (mb) mb.earnings_m += (mBase + mReimb - gapAndUnaccAbsDed - gapDed);
+
+          contractRates.push({ dayRate, dayRateU, dayRateL, hrRate, hrRateU, hrRateL, otMult, ltMult, dedRate, dedRateU, dedRateL });
+        });
+        monthContractMap.set(gk, contractRates);
       });
     });
 
-    // 2. Accrue attendance & Config opening balances using each month's contract rate
+    // 2. Accrue attendance & Config opening balances using each month's contract rate(s)
     attAll.forEach(a => {
       if (!a || a.voided) return;
       if (/^site\s*(?:present|off)$/i.test(String(a.type || a.status || '').trim())) return;
@@ -25811,14 +26185,7 @@
       const sk = norm(a.staff || '(Unassigned)');
       const ym = String(a.month || (a.date || '').slice(0, 7)).slice(0, 7);
       const gk = `${coNorm}|${sk}|${ym}`;
-      const mc = monthContractMap.get(gk);
-      let dayRate = 0, dayRateU = 0, dayRateL = 0, hrRate = 0, hrRateU = 0, hrRateL = 0, otMult = 1, ltMult = 1, dedRate = 0, dedRateU = 0, dedRateL = 0;
-      if (mc) {
-        dayRate = mc.dayRate; dayRateU = mc.dayRateU; dayRateL = mc.dayRateL;
-        hrRate = mc.hrRate; hrRateU = mc.hrRateU; hrRateL = mc.hrRateL;
-        otMult = mc.otMult; ltMult = mc.ltMult;
-        dedRate = mc.dedRate; dedRateU = mc.dedRateU; dedRateL = mc.dedRateL;
-      }
+      const mcList = monthContractMap.get(gk) || [];
 
       const attType = String(a.type || a.status || 'Present').trim();
       const tally = Number(a.tally != null ? a.tally : 0);
@@ -25849,12 +26216,20 @@
       s.late_hrs += ltH;
       if (ltH > 0) s.late_logs += 1;
 
-      const otPayRow = otH * hrRate * otMult;
-      const lateDedRow = ltH * hrRate * ltMult;
+      let otPayRow = 0, lateDedRow = 0, otPayU = 0, lateDedU = 0, otPayL = 0, lateDedL = 0;
+      for (let ci = 0; ci < mcList.length; ci++) {
+        const mc = mcList[ci];
+        otPayRow += otH * mc.hrRate * mc.otMult;
+        lateDedRow += ltH * mc.hrRate * mc.ltMult;
+        otPayU += otH * mc.hrRateU * mc.otMult;
+        lateDedU += ltH * mc.hrRateU * mc.ltMult;
+        otPayL += otH * mc.hrRateL * mc.otMult;
+        lateDedL += ltH * mc.hrRateL * mc.ltMult;
+      }
       s.att_ot_pay += otPayRow;
       s.late_ded += lateDedRow;
-      s.earnings_usd += (otH * hrRateU * otMult) - (ltH * hrRateU * ltMult);
-      s.earnings_lbp += (otH * hrRateL * otMult) - (ltH * hrRateL * ltMult);
+      s.earnings_usd += (otPayU - lateDedU);
+      s.earnings_lbp += (otPayL - lateDedL);
       if (mb) {
         mb.ot_hrs_m += otH;
         mb.late_hrs_m += ltH;
@@ -25865,28 +26240,46 @@
       if ((/^absence$|^absent$|^half\s*day$|unpaid/i.test(attType)) && a.pay_treatment !== 'paid') {
         const dCnt = Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (/^half\s*day$/i.test(attType) ? (tally > 0 ? tally : 0.5) : (tally > 0 ? tally : 1));
         s.rec_absent_days += dCnt;
-        const absDedRow = dCnt * dayRate;
-        const dedRow = dCnt * dedRate;
+        let absDedRow = 0, dedRow = 0, absU = 0, absL = 0;
+        for (let ci = 0; ci < mcList.length; ci++) {
+          const mc = mcList[ci];
+          absDedRow += dCnt * mc.dayRate;
+          dedRow += dCnt * mc.dedRate;
+          absU += (dCnt * mc.dayRateU) + (dCnt * mc.dedRateU);
+          absL += (dCnt * mc.dayRateL) + (dCnt * mc.dedRateL);
+        }
         s.abs_ded += absDedRow;
         s.ded += dedRow;
-        s.earnings_usd -= (dCnt * dayRateU) + (dCnt * dedRateU);
-        s.earnings_lbp -= (dCnt * dayRateL) + (dCnt * dedRateL);
+        s.earnings_usd -= absU;
+        s.earnings_lbp -= absL;
         if (mb) mb.earnings_m -= (absDedRow + dedRow);
       } else if (/^vacabsence$|^paid\s*leave$/i.test(attType) || (a.pay_treatment === 'paid' && Number(a.leave_days || 0) > 0)) {
         const vCnt = Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : (a.source === 'app' ? 1 : 0));
         s.vac_days += vCnt;
-        const dedRow = vCnt * dedRate;
+        let dedRow = 0, dedU = 0, dedL = 0;
+        for (let ci = 0; ci < mcList.length; ci++) {
+          const mc = mcList[ci];
+          dedRow += vCnt * mc.dedRate;
+          dedU += vCnt * mc.dedRateU;
+          dedL += vCnt * mc.dedRateL;
+        }
         s.ded += dedRow;
-        s.earnings_usd -= (vCnt * dedRateU);
-        s.earnings_lbp -= (vCnt * dedRateL);
+        s.earnings_usd -= dedU;
+        s.earnings_lbp -= dedL;
         if (mb) mb.earnings_m -= dedRow;
       } else if (/^sick/i.test(attType)) {
         const skCnt = Number(a.leave_days || 0) > 0 ? Number(a.leave_days) : (tally > 0 ? tally : 1);
         s.sick_days += skCnt;
-        const dedRow = skCnt * dedRate;
+        let dedRow = 0, dedU = 0, dedL = 0;
+        for (let ci = 0; ci < mcList.length; ci++) {
+          const mc = mcList[ci];
+          dedRow += skCnt * mc.dedRate;
+          dedU += skCnt * mc.dedRateU;
+          dedL += skCnt * mc.dedRateL;
+        }
         s.ded += dedRow;
-        s.earnings_usd -= (skCnt * dedRateU);
-        s.earnings_lbp -= (skCnt * dedRateL);
+        s.earnings_usd -= dedU;
+        s.earnings_lbp -= dedL;
         if (mb) mb.earnings_m -= dedRow;
       } else if (/^extra\s*usd$/i.test(attType)) {
         s.extras += tally;
@@ -25914,7 +26307,8 @@
       if (!inDrvWin && !inSalWin) return;
       const key = `${tr.coNorm}|${tr.sk}`;
       const gk = `${tr.coNorm}|${tr.sk}|${ym}`;
-      const inStaffPayroll = inSalWin && monthContractMap.has(gk);
+      const mcList = monthContractMap.get(gk);
+      const inStaffPayroll = Boolean(inSalWin && mcList && mcList.length);
 
       if (inDrvWin || inStaffPayroll) {
         if (!driverOtMap.has(key)) {
@@ -25949,20 +26343,21 @@
       }
 
       if (inStaffPayroll) {
+        const payTripUsd = tr.rate * mcList.length;
         const s = staffMap.get(key) || ensureStaff(tr.staff, tr.company);
-        s.trip_ot_pay += tr.rate;
+        s.trip_ot_pay += payTripUsd;
         s.trip_ot_cnt += 1;
         if (tr.is_sale) s.sales_ot_trips += 1;
         else s.raw_ot_trips += 1;
-        s.earnings_usd += tr.rate;
+        s.earnings_usd += payTripUsd;
         if (dr) {
           dr.hasContract = true;
-          dr.in_payroll_usd = round2(dr.in_payroll_usd + tr.rate);
+          dr.in_payroll_usd = round2(dr.in_payroll_usd + payTripUsd);
         }
         const mb = ensureMonth(ym);
         if (mb) {
-          mb.ot_pay += tr.rate;
-          mb.earnings_m += tr.rate;
+          mb.ot_pay += payTripUsd;
+          mb.earnings_m += payTripUsd;
         }
       }
     });
@@ -26858,7 +27253,7 @@
     const activeCnt = opts.activeCnt != null ? opts.activeCnt : allRows.filter(s => s && s.is_active).length;
     const allCnt = opts.allCnt != null ? opts.allCnt : allRows.length;
     const inactiveCnt = opts.inactiveCnt != null ? opts.inactiveCnt : Math.max(0, allCnt - activeCnt);
-    const stMode = STATE.payrollStaffStatus || 'active';
+    const stMode = STATE.payrollStaffStatus || 'all';
     const isPbi = Boolean(opts.isPbi);
     const actionsHtml = opts.actionsHtml ? String(opts.actionsHtml) : '';
 
@@ -26887,15 +27282,15 @@
         </div>
         <div class="payroll-bar-aux">
           <div class="payroll-status-pills" role="group" aria-label="Staff status filter">
+            <button type="button" class="payroll-status-pill ${stMode === 'all' ? 'active' : ''}" data-payroll-status="all">All <span class="psp-cnt">${fmtNum(allCnt)}</span></button>
             <button type="button" class="payroll-status-pill ${stMode === 'active' ? 'active' : ''}" data-payroll-status="active">Active <span class="psp-cnt">${fmtNum(activeCnt)}</span></button>
             <button type="button" class="payroll-status-pill ${stMode === 'inactive' ? 'active' : ''}" data-payroll-status="inactive">Inactive <span class="psp-cnt">${fmtNum(inactiveCnt)}</span></button>
-            <button type="button" class="payroll-status-pill ${stMode === 'all' ? 'active' : ''}" data-payroll-status="all">All <span class="psp-cnt">${fmtNum(allCnt)}</span></button>
           </div>${actionsHtml ? `<div class="payroll-bar-actions">${actionsHtml}</div>` : ''}
         </div>
       </div>`;
   }
   window.__mfgRenderPayrollCutoffBar = buildPayrollCutoffAndStatusBarHtml;
-  window.__mfgGetPayrollStaffStatus = () => STATE.payrollStaffStatus || 'active';
+  window.__mfgGetPayrollStaffStatus = () => STATE.payrollStaffStatus || 'all';
   const _attNormWeakMap = new WeakMap();
 
   function renderPayroll(subMode = 'main') {
@@ -26916,7 +27311,7 @@
       : {};
     const regData = computeStaffPayrollRegister(regOpts);
     const { staffRows, driverOtRows = [], siteStaffRowsBase, siteDailyRows = [], siteLogRows = [], salByStaffMap, payMonths, profOf, cutoffMeta } = regData;
-    const statusMode = STATE.payrollStaffStatus || 'active';
+    const statusMode = STATE.payrollStaffStatus || 'all';
     const activeStaffCnt = staffRows.filter(s => s.is_active).length;
     const inactiveStaffCnt = staffRows.length - activeStaffCnt;
     const allStaffCnt = staffRows.length;
@@ -27515,15 +27910,20 @@
           <div class="cockpit-title">${esc(heroTitle)}</div>
         </div>
         <div class="cockpit-pills insight-grid">
-          ${insightCard({
-            label: 'Avg Disbursed / Staff',
-            badge: `${fmtNum(filteredStaff.length)} Staff`,
-            badgeCls: 'brass',
-            val: `${fmtUSD(avgPaidPerStaff, 0)} <small>/ staff</small>`,
-            valCls: 'brass',
-            sub: `<b>${fmtNum(salAll.length)}</b> salary disbursements · Book total <b>${fmtUSD(k.salaries_paid, 0)}</b>`,
-            tone: 'brass'
-          })}
+          ${(() => {
+            const sumRemUsd = round2(filteredStaff.reduce((a, r) => a + Number(r.rem_usd || 0), 0));
+            const sumRemLbp = Math.round(filteredStaff.reduce((a, r) => a + Number(r.rem_lbp || 0), 0));
+            const sumRemNet = round2(filteredStaff.reduce((a, r) => a + Number(r.balance || 0), 0));
+            return insightCard({
+              label: 'Staff Remaining Payment',
+              badge: `${fmtNum(filteredStaff.length)} Staff`,
+              badgeCls: 'brass',
+              val: `${fmtUSD(sumRemNet, 2)}`,
+              valCls: 'brass',
+              sub: `USD Rem <b>${fmtUSD(sumRemUsd, 2)}</b> · LBP Rem <b>${fmtNum(sumRemLbp, 0)} LL</b> · Book paid <b>${fmtUSD(k.salaries_paid, 0)}</b>`,
+              tone: 'brass'
+            });
+          })()}
           ${insightCard({
             label: 'Contract Coverage',
             badge: `${fmtNum(activeEmpCount)} / ${fmtNum(empAll.length)} Contracts`,
@@ -47822,7 +48222,9 @@
       if (!c.supplier) addErr('f_supplier', 'Supplier is required.');
       if (!(c.amount > 0)) addErr('f_amount', 'Amount must be above zero.');
       if (c.disc < 0) addErr('f_discount', 'Discount cannot be negative.');
-      record = { ...base, name: `SETTLE ${date} ${c.supplier}`, rep_date: repDate, supplier: c.supplier, method: val('f_method'), amount: round2(c.amount), discount: round2(c.disc), reference: val('f_reference'), ap_before: c.before };
+      const prevSettleLeg = (STATE.editingRecord && STATE.editingRecord.crKey === 'settlements' && STATE.editingRecord.row && STATE.editingRecord.row.payable_leg) || '';
+      const effSettleLeg = prevSettleLeg || inferSettlementPayableLeg(c.supplier, val('f_method'), company);
+      record = { ...base, name: `SETTLE ${date} ${c.supplier}`, rep_date: repDate, supplier: c.supplier, method: val('f_method'), payable_leg: effSettleLeg, amount: round2(c.amount), discount: round2(c.disc), reference: val('f_reference'), ap_before: c.before };
     } else if (f === 'pricerule' || f === 'pricerule_raw' || f === 'pricerule_haul' || f === 'pricerule_comm') {
       const prod = val('f_product'), rt = val('f_ruletype') || 'Sales (Delivery)';
       const isTransOnly = rt === 'Transport Price (Site)' || rt === 'Haulage (Customer Site)';

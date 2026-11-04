@@ -5706,7 +5706,9 @@
     else if (activePageId === 'p06_ar') {
       const sumC = key => custRows.reduce((a, r) => a + Number(r[key] || 0), 0);
       const hasCustSlicer = Boolean(sl.customer || sl.iva || sl.creditOnly || sl.agingBucket || sl.search);
-      const arBal = hasCustSlicer ? sumC('ar_balance') : Number(k.ar_balance || 0);
+      const arBal = (hasCustSlicer || custRows.length) ? round2(sumC('ar_balance')) : Number(k.ar_balance || 0);
+      const arVatDue = round2(custRows.length ? sumC('vat_receivable') : Number(k.vat_receivable || 0));
+      const arRemEx = round2(custRows.length ? sumC('ar_rem_ex_vat') : (arBal - arVatDue));
       const arGross = hasCustSlicer ? sumC('ar_gross') : Number(k.ar_gross || k.ar_balance || 0);
       const arAdv = hasCustSlicer ? sumC('ar_advances') : Number(k.ar_advances || 0);
       const arCur = hasCustSlicer ? sumC('ar_current') : Number(k.ar_current || 0);
@@ -5787,21 +5789,21 @@
 
       bodyHtml = `
         <div class="pbi-overview-bands">
-          ${kpiBand('1 · Customer Receivables & FIFO Aging Position (VAT-Inclusive per m249)', [
+          ${kpiBand('1 · Customer Receivables & FIFO Aging Position', [
             { label: 'Customers owing', value: fmtNum(custOwingCount), sub: fmtNum(custRows.length) + ' total customers' },
-            { label: 'Open balance', value: fmtUSD(arBal, 0), sub: 'Net closing AR (Class 4111)', tone: 'brass' },
+            { label: 'Open balance', value: fmtUSD(arBal, 2), sub: 'Ex-VAT ' + fmtUSD(arRemEx, 2) + ' · VAT ' + fmtUSD(arVatDue, 2), tone: 'brass' },
             { label: 'Gross receivables', value: fmtUSD(arGross, 0), sub: 'Customers with debit balance' },
             { label: 'Customer advances', value: fmtUSD(Math.abs(onAcctSigned), 0), sub: 'Unapplied on-account credit', tone: 'good' },
-            { label: 'Past due (>30 days)', value: fmtUSD(arOver, 0), sub: '31–60d + 60+d buckets', tone: 'warn' },
+            { label: 'Past due (>30 days)', value: fmtUSD(arOver, 0), sub: '31 to 60d + 60+d buckets', tone: 'warn' },
             { label: 'Over 60 days', value: fmtUSD(ar60p, 0), sub: 'FIFO oldest unpaid tickets', tone: 'crit' }
           ])}
           ${kpiBand('2 · Credit Sales, Collections, DSO & Credit Limits', [
             { label: 'Credit sales', value: fmtUSD(crSalesCardVal, 0), sub: 'Ticketed TTC on account' },
             { label: 'Receipts', value: fmtUSD(rcptCardVal, 0), sub: 'Applied oldest ticket first', tone: 'good' },
-            { label: 'Collected %', value: fmtPct(collectedPct), sub: 'Receipts ÷ Credit sales' },
+            { label: 'Collected %', value: fmtPct(collectedPct), sub: 'Receipts / Credit sales' },
             { label: 'Avg days to collect', value: fmtNum(k.dso_days, 0) + ' d', sub: 'Days Sales Outstanding (DSO)' },
             { label: 'Customer credit limits', value: fmtUSD(totalCreditLimits, 0), sub: fmtNum(creditTerms.length) + ' credit term agreements' },
-            { label: 'VAT due (customers)', value: fmtUSD(hasCustSlicer ? sumC('vat_receivable') : k.vat_receivable, 0), sub: '11% inside open AR (m254)', tone: 'brass' }
+            { label: 'VAT due (customers)', value: fmtUSD(arVatDue, 2), sub: '11% VAT remaining in open AR', tone: 'brass' }
           ])}
         </div>
 
@@ -5932,14 +5934,18 @@
       const apHaulVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_haulage || 0), 0)) : k.ap_haulage;
       const apExpVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_expense || 0), 0)) : k.ap_expense;
       const apSetVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_settled != null ? r.ap_settled : (r.settlements_paid || 0)), 0)) : (k.ap_settled != null ? k.ap_settled : k.settlements_paid);
+      const legApPbi = (!hasAnySlicer && typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function')
+        ? window.__mfgComputeThreeLegPayables()
+        : null;
+      const legTotPbi = legApPbi && legApPbi.totals ? legApPbi.totals : null;
 
       bodyHtml = `
         <div class="pbi-overview-bands">
-          ${kpiBand('1 · 3-Leg Accounts Payable Engine (Material · Haulage · Supplies & Services — m192)', [
-            { label: 'Net Open AP Balance', value: fmtUSD(apBalVal, 0), sub: 'Class 4011 Supplier Liability', tone: 'brass' },
-            { label: 'Leg 1 · Raw Material', value: fmtUSD(apMatVal, 0), sub: 'Owed to site owners' },
-            { label: 'Leg 2 · 3rd-Party Haulage', value: fmtUSD(apHaulVal, 0), sub: '$0 on company-fleet loads' },
-            { label: 'Leg 3 · Credit Expenses', value: fmtUSD(apExpVal, 0), sub: 'Supplies, repairs & services' },
+          ${kpiBand('1 · 3-Leg Accounts Payable Engine (Material · Haulage · Supplies & Services)', [
+            { label: 'Net Open AP Balance', value: fmtUSD(apBalVal, 2), sub: legTotPbi ? ('Quarry ' + fmtUSD(legTotPbi.quarry_rem, 0) + ' · Trans ' + fmtUSD(legTotPbi.trans_rem, 0) + ' · Exp ' + fmtUSD(legTotPbi.exp_rem_ttc, 0)) : 'Class 4011 Supplier Liability', tone: 'brass' },
+            { label: 'Leg 1 · Raw Material', value: fmtUSD(apMatVal, 0), sub: legTotPbi ? ('Quarry Remaining: ' + fmtUSD(legTotPbi.quarry_rem, 2)) : 'Owed to site owners' },
+            { label: 'Leg 2 · 3rd-Party Haulage', value: fmtUSD(apHaulVal, 0), sub: legTotPbi ? ('Trans Remaining: ' + fmtUSD(legTotPbi.trans_rem, 2)) : '$0 on company-fleet loads' },
+            { label: 'Leg 3 · Credit Expenses', value: fmtUSD(apExpVal, 0), sub: legTotPbi ? ('Rem USD ' + fmtUSD(legTotPbi.exp_rem_usd, 2) + ' · Incl VAT ' + fmtUSD(legTotPbi.exp_rem_ttc, 2)) : 'Supplies, repairs & services' },
             { label: 'Supplier Settlements Paid', value: fmtUSD(apSetVal, 0), sub: 'Cash, check & bank wires', tone: 'good' },
             { label: 'Active Suppliers & Haulers', value: fmtNum(suppRows.length), sub: 'With ledger activity' }
           ])}
@@ -6209,12 +6215,16 @@
         : k.avg_raw_cost;
       const unitSpreadM3 = round2(Number(p08SellNet || 0) - Number(p08RawCostPerM3 || 0));
       const unitSpreadPct = Number(p08SellNet || 0) > 0 ? (unitSpreadM3 / Number(p08SellNet)) : 0;
+      const legApP08 = (!hasAnySlicer && typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function')
+        ? window.__mfgComputeThreeLegPayables()
+        : null;
+      const legTotP08 = legApP08 && legApP08.totals ? legApP08.totals : null;
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Raw Material Intake, Tonnage & Two-Leg Cost Split', [
             { label: 'Total Raw Cost', value: fmtUSD(sc(k.raw_cost), 0), sub: fmtNum(k.raw_loads) + ' raw loads', tone: 'brass' },
-            { label: 'Material Cost (Site Owners)', value: fmtUSD(sc(k.raw_mat_cost), 0), sub: fmtPct(null, k.raw_mat_cost, k.raw_cost) + ' of raw cost' },
-            { label: 'Haulage Cost (3rd-Party)', value: fmtUSD(sc(k.raw_haulage), 0), sub: fmtPct(null, k.raw_haulage, k.raw_cost) + ' of raw cost' },
+            { label: 'Material Cost (Site Owners)', value: fmtUSD(sc(k.raw_mat_cost), 0), sub: legTotP08 ? ('Quarry Rem: ' + fmtUSD(legTotP08.quarry_rem, 2) + ' · ' + fmtPct(null, k.raw_mat_cost, k.raw_cost)) : (fmtPct(null, k.raw_mat_cost, k.raw_cost) + ' of raw cost') },
+            { label: 'Haulage Cost (3rd-Party)', value: fmtUSD(sc(k.raw_haulage), 0), sub: legTotP08 ? ('Trans Rem: ' + fmtUSD(legTotP08.trans_rem, 2) + ' · ' + fmtPct(null, k.raw_haulage, k.raw_cost)) : (fmtPct(null, k.raw_haulage, k.raw_cost) + ' of raw cost') },
             { label: 'Raw Tons Purchased', value: fmtNum(k.raw_tons, 0) + ' t', sub: fmtNum(k.raw_qty, 0) + ' m³ purchased', tone: 'good' },
             { label: 'Avg Raw Cost / m³', value: fmtUSD(p08RawCostPerM3, 2), sub: 'Sell price: ' + fmtUSD(p08SellNet, 2) + '/m³' },
             { label: 'Aggregate Unit Spread', value: fmtUSD(unitSpreadM3, 2) + '/m³', sub: fmtPct(unitSpreadPct) + ' spread over raw cost', tone: unitSpreadM3 >= 0 ? 'good' : 'warn' }
@@ -6428,22 +6438,26 @@
       const apHaulVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_haulage || 0), 0)) : k.ap_haulage;
       const apExpVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_expense || 0), 0)) : k.ap_expense;
       const apSetVal = useSuppSums ? round2(suppRows.reduce((a, r) => a + Number(r.ap_settled != null ? r.ap_settled : (r.settlements_paid || 0)), 0)) : (k.ap_settled != null ? k.ap_settled : k.settlements_paid);
+      const legApP08Ap = (!hasAnySlicer && typeof window !== 'undefined' && typeof window.__mfgComputeThreeLegPayables === 'function')
+        ? window.__mfgComputeThreeLegPayables()
+        : null;
+      const legTotP08Ap = legApP08Ap && legApP08Ap.totals ? legApP08Ap.totals : null;
 
       bodyHtml = `
         <div class="pbi-overview-bands">
           ${kpiBand('1 · Raw Material Intake, Tonnage & Two-Leg Cost Split', [
             { label: 'Total Raw Cost', value: fmtUSD(sc(k.raw_cost), 0), sub: fmtNum(k.raw_loads) + ' raw loads', tone: 'brass' },
-            { label: 'Material Cost (Site Owners)', value: fmtUSD(sc(k.raw_mat_cost), 0), sub: fmtPct(null, k.raw_mat_cost, k.raw_cost) + ' of raw cost' },
-            { label: 'Haulage Cost (3rd-Party)', value: fmtUSD(sc(k.raw_haulage), 0), sub: fmtPct(null, k.raw_haulage, k.raw_cost) + ' of raw cost' },
+            { label: 'Material Cost (Site Owners)', value: fmtUSD(sc(k.raw_mat_cost), 0), sub: legTotP08Ap ? ('Quarry Rem: ' + fmtUSD(legTotP08Ap.quarry_rem, 2) + ' · ' + fmtPct(null, k.raw_mat_cost, k.raw_cost)) : (fmtPct(null, k.raw_mat_cost, k.raw_cost) + ' of raw cost') },
+            { label: 'Haulage Cost (3rd-Party)', value: fmtUSD(sc(k.raw_haulage), 0), sub: legTotP08Ap ? ('Trans Rem: ' + fmtUSD(legTotP08Ap.trans_rem, 2) + ' · ' + fmtPct(null, k.raw_haulage, k.raw_cost)) : (fmtPct(null, k.raw_haulage, k.raw_cost) + ' of raw cost') },
             { label: 'Raw Tons Purchased', value: fmtNum(k.raw_tons, 0) + ' t', sub: fmtNum(k.raw_qty, 0) + ' m³ purchased', tone: 'good' },
             { label: 'Avg Raw Cost / m³', value: fmtUSD(p08ApRawCostPerM3, 2), sub: 'Sell price: ' + fmtUSD(p08ApSellNet, 2) + '/m³' },
             { label: 'Aggregate Unit Spread', value: fmtUSD(p08ApSpreadM3, 2) + '/m³', sub: fmtPct(p08ApSpreadPct) + ' spread over raw cost', tone: p08ApSpreadM3 >= 0 ? 'good' : 'warn' }
           ])}
-          ${kpiBand('2 · 3-Leg Supplier & Hauler Payables (Accrual vs Settlement)', [
-            { label: 'Net Open AP Balance', value: fmtUSD(apBalVal, 0), sub: 'Class 4011 Supplier Liability', tone: 'brass' },
-            { label: 'Leg 1 · Raw Material', value: fmtUSD(apMatVal, 0), sub: 'Owed to site owners' },
-            { label: 'Leg 2 · 3rd-Party Haulage', value: fmtUSD(apHaulVal, 0), sub: '$0 on company-fleet loads' },
-            { label: 'Leg 3 · Credit Expenses', value: fmtUSD(apExpVal, 0), sub: 'Supplies, repairs & services' },
+          ${kpiBand('2 · 3-Leg Supplier & Hauler Payables (Credit vs Settlement)', [
+            { label: 'Net Open AP Balance', value: fmtUSD(apBalVal, 2), sub: legTotP08Ap ? ('Quarry ' + fmtUSD(legTotP08Ap.quarry_rem, 0) + ' · Trans ' + fmtUSD(legTotP08Ap.trans_rem, 0) + ' · Exp ' + fmtUSD(legTotP08Ap.exp_rem_ttc, 0)) : 'Class 4011 Supplier Liability', tone: 'brass' },
+            { label: 'Leg 1 · Raw Material', value: fmtUSD(apMatVal, 0), sub: legTotP08Ap ? ('Quarry Remaining: ' + fmtUSD(legTotP08Ap.quarry_rem, 2)) : 'Owed to site owners' },
+            { label: 'Leg 2 · 3rd-Party Haulage', value: fmtUSD(apHaulVal, 0), sub: legTotP08Ap ? ('Trans Remaining: ' + fmtUSD(legTotP08Ap.trans_rem, 2)) : '$0 on company-fleet loads' },
+            { label: 'Leg 3 · Credit Expenses', value: fmtUSD(apExpVal, 0), sub: legTotP08Ap ? ('Rem USD ' + fmtUSD(legTotP08Ap.exp_rem_usd, 2) + ' · Incl VAT ' + fmtUSD(legTotP08Ap.exp_rem_ttc, 2)) : 'Supplies, repairs & services' },
             { label: 'Supplier Settlements Paid', value: fmtUSD(apSetVal, 0), sub: 'Cash, check & bank wires', tone: 'good' },
             { label: 'Active Suppliers & Haulers', value: fmtNum(suppRows.length), sub: 'With ledger activity' }
           ])}
@@ -6921,7 +6935,7 @@
       const allPayrollRows = (regData.staffRows || []).slice();
       const pbiStaffStatus = (typeof window !== 'undefined' && typeof window.__mfgGetPayrollStaffStatus === 'function')
         ? window.__mfgGetPayrollStaffStatus()
-        : 'active';
+        : 'all';
       const staffPayrollRows = allPayrollRows
         .filter(s => pbiStaffStatus === 'all' ? true : (pbiStaffStatus === 'inactive' ? !s.is_active : Boolean(s.is_active)))
         .sort((a, b) => b.balance - a.balance || b.earnings - a.earnings || b.paid - a.paid);
@@ -6956,6 +6970,8 @@
       const totAdvances = staffPayrollRows.reduce((a, r) => a + (r.advances || 0), 0);
       const totPaid = Number(k.salaries_paid || totStaffPaid);
       const totBal = round2(totEarn - totStaffPaid);
+      const totRemUsd = round2(staffPayrollRows.reduce((a, r) => a + Number(r.rem_usd != null ? r.rem_usd : r.balance || 0), 0));
+      const totRemLbp = Math.round(staffPayrollRows.reduce((a, r) => a + Number(r.rem_lbp || 0), 0));
       const sickDays = staffPayrollRows.reduce((a, r) => a + (r.sick_days || 0), 0);
       const staffCostPct = Number(k.net_sales || 0) > 0 ? (totPaid / Number(k.net_sales)) : 0;
 
@@ -7002,7 +7018,7 @@
             { label: 'Paid (for period)', value: fmtUSD(totStaffPaid, 0), sub: `Advances after cutoff: ${fmtUSD(totAdvances, 0)}`, tone: 'good' }
           ])}
           ${kpiBand('2 · Remaining Payment, Advances, Hours & Contract Hygiene', [
-            { label: 'Remaining payment', value: fmtUSD(totBal, 0), sub: 'Earnings minus Paid', neg: true, tone: totBal < 0 ? 'crit' : 'brass' },
+            { label: 'Remaining payment', value: fmtUSD(totBal, 2), sub: 'USD ' + fmtUSD(totRemUsd, 2) + ' · LBP ' + fmtNum(totRemLbp, 0) + ' LL', neg: true, tone: totBal < 0 ? 'crit' : 'brass' },
             { label: 'Post-cutoff advances', value: fmtUSD(totAdvances, 0), sub: 'Future payroll-month payouts', tone: 'brass' },
             { label: 'Overtime hours', value: fmtNum(totOtHrs, 1) + ' h', sub: 'Logged on attendance sheets' },
             { label: 'Lateness hours', value: fmtNum(totLateHrs, 1) + ' h', sub: 'Deducted at hourly rate' },
