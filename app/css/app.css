@@ -14337,36 +14337,36 @@ table.ledger-table:has(#usersDirectoryTbody) .badge {
   }
   #payStaffRegPanel table.ledger-table th,
   #payStaffRegPanel table.ledger-table td {
-    padding: 5.5px 2.3px;
-    font-size: 10.6px;
+    padding: 5.5px 1.8px;
+    font-size: 10.1px;
   }
   #payStaffRegPanel table.ledger-table thead th {
-    font-size: 8.5px;
+    font-size: 8px;
     letter-spacing: 0;
     line-height: 1.15;
     white-space: nowrap;
   }
   #payStaffRegPanel table.ledger-table thead th:nth-child(1),
   #payStaffRegPanel table.ledger-table tbody td:nth-child(1) {
-    width: 118px;
-    max-width: 134px;
+    width: 112px;
+    max-width: 128px;
   }
   #payStaffRegPanel table.ledger-table tbody td:nth-child(1) {
     white-space: normal;
     overflow-wrap: break-word;
   }
   #payStaffRegPanel table.ledger-table tbody td:nth-child(1) .badge {
-    font-size: 8.8px;
+    font-size: 8.6px;
     padding: 1px 4px;
   }
   #payStaffRegPanel table.ledger-table thead th:nth-child(2),
   #payStaffRegPanel table.ledger-table tbody td:nth-child(2) {
-    width: 34px;
+    width: 32px;
     white-space: nowrap;
   }
   #payStaffRegPanel table.ledger-table thead th:nth-child(3),
   #payStaffRegPanel table.ledger-table tbody td:nth-child(3) {
-    width: 45px;
+    width: 42px;
     white-space: nowrap;
   }
   #payStaffRegPanel table.ledger-table tbody td:not(.r) {
@@ -14374,8 +14374,8 @@ table.ledger-table:has(#usersDirectoryTbody) .badge {
     word-break: normal;
   }
   #payStaffRegPanel table.ledger-table tfoot tr td {
-    padding: 6px 2.3px;
-    font-size: 10.3px;
+    padding: 6px 1.8px;
+    font-size: 9.8px;
   }
   #paySalPanel table.ledger-table thead th,
   #paySalPanel table.ledger-table tbody td.sal-paid-earned-cell,
@@ -28825,3 +28825,4 @@ body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-pad-key.go {
   flex-wrap: nowrap;
   padding: 10px 14px;
 }
+
