@@ -36764,9 +36764,10 @@
         getFreqIndex().warehouseLoc
       );
       const defExpWhLoc = defaultWarehouseLocationForCompany(expCoVal);
-      const expMethodLbl = pendEditRow
-        ? 'Payment Method *'
-        : `Payment Method * <span class="uom-quick-pills exp-method-pills" id="expMethodPills"><button type="button" class="uom-qpill${expMthVal === 'Cash' ? ' active' : ''}" data-exp-mth="Cash">Cash</button><button type="button" class="uom-qpill${expMthVal === 'Credit' ? ' active' : ''}" data-exp-mth="Credit">Credit</button></span>`;
+      const expMethodLbl = 'Payment Method *';
+      const expMethodCtl = pendEditRow
+        ? sel('f_method', expMthOpts, expMthVal)
+        : `<div class="exp-method-seg" id="expMethodPills" role="group" aria-label="Payment method"><button type="button" class="exp-mth-pill${expMthVal === 'Cash' ? ' active' : ''}" data-exp-mth="Cash">Cash</button><button type="button" class="exp-mth-pill${expMthVal === 'Credit' ? ' active' : ''}" data-exp-mth="Credit">Credit (AP)</button></div>` + sel('f_method', expMthOpts, expMthVal);
       const expSupplierLbl = pendEditRow
         ? 'Supplier / Vendor'
         : `Supplier / Vendor <span class="exp-sup-ap-pill" id="expSupplierApPill" hidden></span>`;
@@ -36781,7 +36782,7 @@
           ${expCompanyField}
           ${expDateField}
           ${expRepDateField}
-          ${fld(expMethodLbl, sel('f_method', expMthOpts, expMthVal), pendEditRow
+          ${fld(expMethodLbl, expMethodCtl, pendEditRow
             ? { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to Credit because unpriced deliveries are booked on Supplier AP; record subsequent cash or bank payment via Supplier Settlement' }
             : { id: 'wrap_f_method', lockField: 'f_method', lockReason: 'Locked to Credit while Price is Pending ($0.00 AP)' })}
           ${fld('Category *', inp('f_category', 'text', expCatVal, `list="dl_categories" placeholder="Select or type category..."${pendEditRow ? ' readonly' : ''}`) + dlMeta('dl_categories', cats.map(c => [c.category, c.subs && c.subs.length ? `${c.subs.length} subcats` : ''])), pendEditRow ? { id: 'wrap_f_category', lockField: 'f_category', lockReason: 'Locked to the category recorded on delivery' } : { id: 'wrap_f_category' })}
@@ -36806,19 +36807,29 @@
                 <div class="exp-quick-item-bar" id="expHeaderQuickItems" role="group" aria-label="Quick pick catalog item" hidden></div>
               </div>
               <div class="exp-items-head-actions">
-                <button type="button" class="btn btn-ghost-bar exp-new-cat-btn" id="toggleQuickCatalogItemBtn" data-toggle-quick-cat="1" data-ui-tip="Register a new SKU and locked Unit in the Universal Items Catalog">${ic('plus')} <span>New Catalog Item</span></button>
                 <button type="button" class="btn btn-ghost-bar exp-items-clear-btn" id="clearExpItemsBtn" data-exi-clear-all="1" hidden>Single Line</button>
                 <button type="button" class="btn btn-brass exp-items-add-btn" id="addExpItemLineBtn">${ic('plus')} <span id="addExpItemBtnLbl">Split Invoice</span></button>
               </div>
             </div>
             <div class="exp-quick-cat-drawer" id="expQuickCatalogDrawer" hidden>
+              <div class="exp-qc-head">
+                <div class="exp-qc-head-title">
+                  <i class="exp-qc-head-ico" aria-hidden="true">${ic('box')}</i>
+                  <strong>Register New Catalog Item</strong>
+                  <span class="exp-qc-target-pill" id="expQcTargetBadge">Shared Catalog</span>
+                </div>
+                <div class="exp-qc-head-right">
+                  <span class="exp-qc-lock-note">${ic('lock')} Unit freezes permanently</span>
+                  <button type="button" class="exp-qc-close-x" id="closeQuickCatalogHeadBtn" aria-label="Close catalog drawer">×</button>
+                </div>
+              </div>
               <div class="exp-qc-grid">
                 <div class="exp-qc-fld is-wide">
-                  <label for="exp_qc_name">New Catalog Item / Part *</label>
+                  <label for="exp_qc_name">Item / Part Name *</label>
                   <input type="text" id="exp_qc_name" placeholder="e.g. Hydraulic Return Filter, V-Belt B68..." autocomplete="off">
                 </div>
                 <div class="exp-qc-fld">
-                  <label for="exp_qc_cat">Item Category *</label>
+                  <label for="exp_qc_cat">Catalog Category *</label>
                   <select id="exp_qc_cat" data-native-select="1">
                     <option value="Spare Parts">Spare Parts</option>
                     <option value="Oils &amp; Lubricants">Oils &amp; Lubricants</option>
@@ -36838,23 +36849,39 @@
                     <option value="m">m</option>
                   </select>
                 </div>
-                <div class="exp-qc-fld">
-                  <label for="exp_qc_equip">Connected Units</label>
-                  <select id="exp_qc_equip" data-native-select="1">
+                <div class="exp-qc-fld is-cost">
+                  <label for="exp_qc_cost">Reference Price ($)</label>
+                  <div class="exp-item-cost-wrap">
+                    <span class="exp-cost-prefix">$</span>
+                    <input type="number" id="exp_qc_cost" step="0.01" min="0" placeholder="0.00" inputmode="decimal">
+                  </div>
+                </div>
+              </div>
+              <div class="exp-qc-foot">
+                <div class="exp-qc-compat-wrap">
+                  <span class="exp-qc-sublbl">Connected Equipment Units</span>
+                  <input type="hidden" id="exp_qc_compat_json" value="">
+                  <select id="exp_qc_equip" class="exp-uom-sr-select" data-native-select="1" tabindex="-1" aria-hidden="true">
                     <option value="all">All Fleet &amp; Plant</option>
                     <option value="road">Trucks &amp; Vehicles</option>
                     <option value="mobile">Trucks, Loaders &amp; Excavators</option>
                     <option value="plant">Crusher &amp; Stationary Plant</option>
                     <option value="generator">Generators Only</option>
+                    <option value="custom">Custom Selection</option>
                   </select>
-                </div>
-                <div class="exp-qc-fld is-cost">
-                  <label for="exp_qc_cost">Default $</label>
-                  <input type="number" id="exp_qc_cost" step="0.01" min="0" placeholder="0.00" inputmode="decimal">
+                  <div class="exp-qc-chip-row" id="expQcEquipChips" role="group" aria-label="Connected equipment classes">
+                    <button type="button" class="exp-qc-eq-chip active" data-qc-eq-chip="all">All Units</button>
+                    <button type="button" class="exp-qc-eq-chip" data-qc-eq-chip="Truck">Trucks</button>
+                    <button type="button" class="exp-qc-eq-chip" data-qc-eq-chip="Wheel Loader">Loaders</button>
+                    <button type="button" class="exp-qc-eq-chip" data-qc-eq-chip="Excavator">Excavators</button>
+                    <button type="button" class="exp-qc-eq-chip" data-qc-eq-chip="Plant">Plant &amp; Crusher</button>
+                    <button type="button" class="exp-qc-eq-chip" data-qc-eq-chip="Generator">Generators</button>
+                    <button type="button" class="exp-qc-eq-chip" data-qc-eq-chip="Vehicle">Vehicles</button>
+                  </div>
                 </div>
                 <div class="exp-qc-actions">
-                  <button type="button" class="btn btn-brass exp-qc-save-btn" id="saveQuickCatalogItemBtn">Save &amp; Lock Unit</button>
                   <button type="button" class="btn btn-ghost-bar exp-qc-cancel-btn" id="cancelQuickCatalogItemBtn">Cancel</button>
+                  <button type="button" class="btn btn-brass exp-qc-save-btn" id="saveQuickCatalogItemBtn">${ic('lock')} <span>Create &amp; Select</span></button>
                 </div>
               </div>
               <span class="hint" id="exp_qc_hint"></span>
@@ -37055,6 +37082,7 @@
     if (s === 'Heavy-Duty Truck Battery') return 'Truck Battery';
     if (s === 'Heavy Truck / Loader Tire') return 'Truck / Loader Tire';
     if (s === 'Crusher Jaw / Manganese Plate Set') return 'Manganese Jaw Set';
+    if (s === 'Conveyor / Drive Belt') return 'Drive Belt';
     return s;
   }
 
@@ -37078,7 +37106,7 @@
     const eqClass0 = (dest0 === 'equipment' && items[0].target_equipment)
       ? resolveEquipmentUnitClass(items[0].target_equipment, val('f_company') || defaultEntryCompany())
       : '';
-    const quickList = getExpenseQuickCatalogItems(val('f_category'), val('f_subcategory'), eqClass0);
+    const quickList = getExpenseQuickCatalogItems(val('f_category'), val('f_subcategory'), eqClass0).slice(0, 3);
     if (!quickList.length) {
       qBar.hidden = true;
       qBar.innerHTML = '';
@@ -37126,6 +37154,77 @@
     });
   }
 
+  const MAIN_EQUIP_CHIP_CLASSES = ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Generator', 'Vehicle'];
+
+  function syncEquipChipBarState(chipBarEl, hiddenJsonEl, presetSelEl, classesOrPreset) {
+    let selected = [];
+    if (Array.isArray(classesOrPreset)) {
+      selected = classesOrPreset.filter(c => MAIN_EQUIP_CHIP_CLASSES.includes(c));
+    } else {
+      const p = String(classesOrPreset || 'all').trim();
+      if (p && p !== 'all' && p !== 'custom') {
+        selected = resolveCompatibleTypesPreset(p).filter(c => MAIN_EQUIP_CHIP_CLASSES.includes(c));
+      }
+    }
+    const isAll = selected.length === 0 || selected.length >= MAIN_EQUIP_CHIP_CLASSES.length;
+    if (hiddenJsonEl) {
+      hiddenJsonEl.value = isAll ? '' : JSON.stringify(selected);
+    }
+    if (presetSelEl) {
+      if (isAll) presetSelEl.value = 'all';
+      else if (selected.length === 1 && selected[0] === 'Plant') presetSelEl.value = 'plant';
+      else if (selected.length === 1 && selected[0] === 'Generator') presetSelEl.value = 'generator';
+      else if (selected.length === 2 && selected.includes('Truck') && selected.includes('Vehicle')) presetSelEl.value = 'road';
+      else if (selected.length === 4 && ['Truck', 'Wheel Loader', 'Excavator', 'Vehicle'].every(k => selected.includes(k))) presetSelEl.value = 'mobile';
+      else presetSelEl.value = 'custom';
+    }
+    if (chipBarEl) {
+      chipBarEl.querySelectorAll('[data-qc-eq-chip], [data-item-compat-chip]').forEach(btn => {
+        const key = btn.getAttribute('data-qc-eq-chip') || btn.getAttribute('data-item-compat-chip') || '';
+        if (key === 'all') btn.classList.toggle('active', isAll);
+        else btn.classList.toggle('active', !isAll && selected.includes(key));
+      });
+    }
+  }
+
+  function readEquipChipBarTypes(hiddenJsonEl, presetSelEl) {
+    const rawJson = hiddenJsonEl ? String(hiddenJsonEl.value || '').trim() : '';
+    if (rawJson) {
+      try {
+        const parsed = JSON.parse(rawJson);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.length < MAIN_EQUIP_CHIP_CLASSES.length) {
+          return parsed;
+        }
+      } catch (_) {}
+    }
+    const preset = presetSelEl ? String(presetSelEl.value || 'all').trim() : 'all';
+    if (preset && preset !== 'all' && preset !== 'custom') {
+      return resolveCompatibleTypesPreset(preset);
+    }
+    return ALL_EQUIP_CLASSES.slice();
+  }
+
+  function toggleEquipChipSelection(chipVal, chipBarEl, hiddenJsonEl, presetSelEl) {
+    if (!chipVal || chipVal === 'all') {
+      syncEquipChipBarState(chipBarEl, hiddenJsonEl, presetSelEl, 'all');
+      return;
+    }
+    let cur = [];
+    const rawJson = hiddenJsonEl ? String(hiddenJsonEl.value || '').trim() : '';
+    if (rawJson) {
+      try {
+        const p = JSON.parse(rawJson);
+        if (Array.isArray(p)) cur = p.filter(c => MAIN_EQUIP_CHIP_CLASSES.includes(c));
+      } catch (_) {}
+    }
+    if (cur.includes(chipVal)) {
+      cur = cur.filter(c => c !== chipVal);
+    } else {
+      cur.push(chipVal);
+    }
+    syncEquipChipBarState(chipBarEl, hiddenJsonEl, presetSelEl, cur);
+  }
+
   function openQuickExpenseCatalogDrawer(prefillName, targetRowIdx) {
     const drawer = $('expQuickCatalogDrawer');
     if (!drawer) return;
@@ -37136,10 +37235,27 @@
     const catSel = $('exp_qc_cat');
     const uomSel = $('exp_qc_uom');
     const eqSel = $('exp_qc_equip');
+    const eqJson = $('exp_qc_compat_json');
+    const eqChips = $('expQcEquipChips');
+    const targetBadge = $('expQcTargetBadge');
     const costInp = $('exp_qc_cost');
     const hintEl = $('exp_qc_hint');
     if (hintEl) { hintEl.textContent = ''; hintEl.className = 'hint'; }
     const rowObj = items[rIdx] || null;
+    const rowDest = rowObj ? normExpRowDest(rowObj.allocation_mode) : 'general';
+    const curCo = val('f_company') || defaultEntryCompany();
+    const eqUnit = (rowObj && rowDest === 'equipment' && rowObj.target_equipment) ? String(rowObj.target_equipment).trim() : '';
+    const eqCls = eqUnit ? resolveEquipmentUnitClass(eqUnit, curCo) : '';
+    if (targetBadge) {
+      const lineTag = items.length > 1 ? `Line #${String(rIdx + 1).padStart(2, '0')}` : 'Current Line';
+      if (eqUnit) {
+        targetBadge.textContent = `${lineTag} · ${eqUnit}${eqCls && eqCls !== 'Other' ? ` (${eqCls})` : ''}`;
+      } else if (rowDest === 'warehouse') {
+        targetBadge.textContent = `${lineTag} · Warehouse`;
+      } else {
+        targetBadge.textContent = 'Shared Catalog';
+      }
+    }
     const initNm = prefillName !== undefined
       ? String(prefillName || '').trim()
       : (rowObj && rowObj.item_name && !resolveCatalogItem(rowObj.item_name) ? String(rowObj.item_name).trim() : '');
@@ -37154,14 +37270,10 @@
       else if (/\bset\b|kit|lining/i.test(initNm)) uomSel.value = 'Set';
       else uomSel.value = 'Piece';
     }
-    if (eqSel) {
-      const eqCls = (rowObj && normExpRowDest(rowObj.allocation_mode) === 'equipment' && rowObj.target_equipment)
-        ? resolveEquipmentUnitClass(rowObj.target_equipment, val('f_company') || defaultEntryCompany())
-        : '';
-      if (eqCls === 'Plant') eqSel.value = 'plant';
-      else if (eqCls === 'Generator') eqSel.value = 'generator';
-      else if (eqCls === 'Truck' || eqCls === 'Vehicle') eqSel.value = 'mobile';
-      else eqSel.value = 'all';
+    if (eqCls && MAIN_EQUIP_CHIP_CLASSES.includes(eqCls)) {
+      syncEquipChipBarState(eqChips, eqJson, eqSel, [eqCls]);
+    } else {
+      syncEquipChipBarState(eqChips, eqJson, eqSel, 'all');
     }
     if (costInp) {
       costInp.value = (rowObj && Number(rowObj.unit_cost) > 0) ? String(rowObj.unit_cost) : '';
@@ -37354,7 +37466,7 @@
         const isLegacyEditUnmodified = Boolean(STATE.editingRecord && STATE.editingRecord.crKey === 'expenses' && !FORM_UI.expItem0Manual && !isMulti && idx === 0);
         if (!catItem && !isLegacyEditUnmodified) {
           if (FORM_UI.postAttempted || document.activeElement !== nmInp) {
-            hintEl.textContent = 'Select a connected Catalog Item (or click New Catalog Item)';
+            hintEl.textContent = 'Select a connected Catalog Item (or click + New Item)';
             hintEl.className = 'hint ' + (FORM_UI.postAttempted ? 'crit' : 'warn');
           } else {
             hintEl.textContent = '';
@@ -37476,13 +37588,16 @@
             <div class="exp-item-card-grid ${dest === 'general' ? 'is-single-gen' : 'is-single-4col'}">
               ${firstColHtml}
               <div class="li-cell exp-item-cell-name">
-                <label class="exp-item-lbl" for="f_exi_name_0">${dest === 'general' ? 'Item / Detail' : 'Catalog Item *'}</label>
-                <input type="text" id="f_exi_name_0" data-exi-idx="0" data-exi-field="item_name"${dest !== 'general' ? ' data-strict-catalog="1"' : ''} list="dl_exp_row_items_0" value="${esc(it.item_name || '')}" placeholder="${esc(itemPh0)}">
+                <div class="exp-fld-head exp-cat-lbl-head">
+                  <label class="exp-item-lbl" for="f_exi_name_0">${dest === 'general' ? 'Item / Detail' : 'Catalog Item *'}</label>
+                  <button type="button" class="exp-inline-new-cat-link" id="toggleQuickCatalogItemBtn" data-toggle-quick-cat="1" data-target-row="0" data-ui-tip="Register a new item with a permanently frozen Unit">${ic('plus')} <span>New Item</span></button>
+                </div>
+                <input type="text" id="f_exi_name_0" data-exi-idx="0" data-exi-field="item_name" data-catalog-reg="1"${dest !== 'general' ? ' data-strict-catalog="1"' : ''} list="dl_exp_row_items_0" value="${esc(it.item_name || '')}" placeholder="${esc(itemPh0)}">
                 ${dlHtml0}
                 <span class="hint" data-exi-stock-hint="0"></span>
               </div>
               <div class="li-cell exp-item-cell-qty">
-                <label class="exp-item-lbl" for="f_exi_qty_0"><span id="lbl_exp_qty">${dest === 'general' ? 'Quantity &amp; Frozen Unit' : 'Quantity &amp; Frozen Unit *'}</span></label>
+                <label class="exp-item-lbl" for="f_exi_qty_0"><span id="lbl_exp_qty">${dest === 'general' ? 'Quantity &amp; Unit' : 'Quantity *'}</span></label>
                 ${renderQtyUomCapsule(it, 0, effUom, isBoundUom)}
                 ${dest === 'general' ? '<span class="hint" id="hint_qty"></span>' : ''}
               </div>
@@ -37501,15 +37616,17 @@
         renderExpenseEquipQuickBar(curCo, it.target_equipment || '');
       }
     } else {
+      const qcIsOpen = Boolean($('expQuickCatalogDrawer') && !$('expQuickCatalogDrawer').hidden);
       wrap.innerHTML = `
-        <div class="exp-split-cols-hdr" aria-hidden="true">
-          <span>#</span>
-          <span>Allocate To</span>
+        <div class="exp-split-cols-hdr">
+          <span class="is-center">#</span>
+          <span>Allocation</span>
           <span>Unit / Store *</span>
-          <span>Catalog Item *</span>
-          <span>Qty &amp; Frozen Unit *</span>
+          <span class="exp-col-hdr-cat"><span>Catalog Item *</span><button type="button" class="exp-inline-new-cat-link${qcIsOpen ? ' active' : ''}" id="toggleQuickCatalogItemBtn" data-toggle-quick-cat="1" data-ui-tip="Register a new item with a permanently frozen Unit">${ic('plus')} <span>New Item</span></button></span>
+          <span>Quantity *</span>
           <span>Unit Price (${pricePending ? 'Pending' : '$'})</span>
-          <span class="is-right">Line Total</span>
+          <span class="is-right">Amount</span>
+          <span class="exp-col-hdr-act" aria-hidden="true"></span>
         </div>
         <div class="exp-item-cards-list is-multi-list">
           ${items.map((it, idx) => {
@@ -37552,11 +37669,11 @@
                   ${targetHtml}
                 </div>
                 <div class="li-cell exp-split-cell-name" data-mob-lbl="${dest === 'general' ? 'Description / Item' : 'Catalog Item *'}">
-                  <input type="text" id="f_exi_name_${idx}" data-exi-idx="${idx}" data-exi-field="item_name"${dest !== 'general' ? ' data-strict-catalog="1"' : ''} list="dl_exp_row_items_${idx}" value="${esc(it.item_name || '')}" placeholder="${esc(itemPh)}">
+                  <input type="text" id="f_exi_name_${idx}" data-exi-idx="${idx}" data-exi-field="item_name" data-catalog-reg="1"${dest !== 'general' ? ' data-strict-catalog="1"' : ''} list="dl_exp_row_items_${idx}" value="${esc(it.item_name || '')}" placeholder="${esc(itemPh)}">
                   ${dlHtml}
                   <span class="hint" data-exi-stock-hint="${idx}"></span>
                 </div>
-                <div class="li-cell exp-split-cell-qty" data-mob-lbl="Qty &amp; Frozen Unit *">
+                <div class="li-cell exp-split-cell-qty" data-mob-lbl="Quantity *">
                   ${renderQtyUomCapsule(it, idx, effUom, isBoundUom)}
                 </div>
                 <div class="li-cell exp-split-cell-cost" data-mob-lbl="Unit Price ($)">
@@ -37565,8 +37682,10 @@
                     <input type="number" id="f_exi_cost_${idx}" data-exi-idx="${idx}" data-exi-field="unit_cost" step="0.01" min="0" inputmode="decimal" value="${esc(it.unit_cost !== undefined && it.unit_cost !== '' ? it.unit_cost : '')}" placeholder="${pricePending ? 'Pending' : '0.00'}"${pricePending ? ' readonly class="pa-locked-input"' : ''}>
                   </div>
                 </div>
-                <div class="exp-split-cell-actions">
+                <div class="exp-split-cell-amt">
                   <strong class="exp-line-tot-val" data-exi-tot="${idx}">${pricePending ? 'Pending' : fmtUSD(lineTot, 2)}</strong>
+                </div>
+                <div class="exp-split-cell-actions">
                   <div class="exp-row-ghost-group">
                     <button type="button" class="exp-row-ghost-btn" data-exi-dup="${idx}" data-ui-tip="Duplicate line" aria-label="Duplicate line">${ic('copy')}</button>
                     <button type="button" class="exp-row-ghost-btn is-del" data-exi-remove="${idx}" data-ui-tip="Remove line" aria-label="Remove line">×</button>
@@ -44267,12 +44386,17 @@
         ensureItemsCatalogSeeded();
         const itemName = val('f_item_name');
         const uom = val('f_uom') || 'Piece';
-        const cat = val('f_category') || 'Spare Parts';
-        const cost = num('f_unitprice');
+        const cat = val('f_item_cat') || val('f_category') || 'Spare Parts';
+        const cost = $('f_default_cost') ? num('f_default_cost') : num('f_unitprice');
+        const compatTypes = readEquipChipBarTypes($('f_item_compat'), null);
+        const compatLbl = compatTypes.length >= MAIN_EQUIP_CHIP_CLASSES.length
+          ? 'All Units'
+          : compatTypes.join(', ');
         syncUniversalMainDupHint('f_item_name', 'items', 'Item / Part');
-        setText('calc_item_name', itemName || '—');
-        setText('calc_item_uom', `${uom} (Locked on Tickets)`);
+        setText('calc_item_name', itemName || '-');
+        setText('calc_item_uom', `${uom} (Permanent)`);
         setText('calc_item_cat', cat);
+        setText('calc_item_compat', compatLbl);
         setText('calc_item_cost', fmtUSD(cost, 2));
         renderAdminLockBar();
         return {};
@@ -45313,6 +45437,15 @@
         try {
           const r = wrap.getBoundingClientRect();
           wrap.classList.toggle('menu-align-right', r.left > (window.innerWidth || 800) * 0.42);
+          const scrollBox = wrap.closest('#modalBody');
+          if (scrollBox) {
+            const sb = scrollBox.getBoundingClientRect();
+            const spaceBelow = sb.bottom - r.bottom;
+            const spaceAbove = r.top - sb.top;
+            wrap.classList.toggle('menu-drop-up', spaceBelow < 235 && spaceAbove > spaceBelow);
+          } else {
+            wrap.classList.remove('menu-drop-up');
+          }
         } catch (_) {}
       };
 
@@ -45367,37 +45500,41 @@
           }
           filtered = exact.concat(freqOrdered);
         }
-        if (!filtered.length && el.dataset.strictCatalog === '1' && ql) {
+        const isCatRegInput = el.dataset.strictCatalog === '1' || el.dataset.catalogReg === '1';
+        const wireSuggestCatReg = () => {
+          const regBtn = menu.querySelector('[data-suggest-register-item]');
+          if (!regBtn) return;
+          let regHandled = false;
+          const onOpenReg = ev => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (regHandled) return;
+            regHandled = true;
+            clearTimeout(blurTimer);
+            const prefillQ = regBtn.getAttribute('data-suggest-register-item') || '';
+            const targetRowIdx = el.hasAttribute('data-exi-idx') ? Number(el.getAttribute('data-exi-idx')) : 0;
+            closeOwnMenu();
+            openQuickExpenseCatalogDrawer(prefillQ, targetRowIdx);
+          };
+          regBtn.addEventListener('mousedown', onOpenReg);
+          regBtn.addEventListener('click', onOpenReg);
+        };
+        if (!filtered.length && isCatRegInput && ql) {
           currentMatches = [];
           activeIdx = -1;
           closeAll(menu);
           syncMenuAlign();
-          menu.innerHTML = `<div class="pa-suggest-empty-cat"><span>No connected catalog item matches <b>"${esc(q)}"</b></span><button type="button" class="pa-suggest-reg-btn" data-suggest-register-item="${esc(q)}">+ Add to Items Catalog</button></div>`;
+          menu.innerHTML = `<div class="pa-suggest-empty-cat"><span>No connected catalog item matches <b>"${esc(q)}"</b></span><button type="button" class="pa-suggest-reg-btn" data-suggest-register-item="${esc(q)}">+ Register in Catalog</button></div>`;
           menu.hidden = false;
           wrap.classList.add('open');
-          const regBtn = menu.querySelector('[data-suggest-register-item]');
-          if (regBtn) {
-            let regHandled = false;
-            const onOpenReg = ev => {
-              ev.preventDefault();
-              ev.stopPropagation();
-              if (regHandled) return;
-              regHandled = true;
-              clearTimeout(blurTimer);
-              const targetRowIdx = el.hasAttribute('data-exi-idx') ? Number(el.getAttribute('data-exi-idx')) : 0;
-              closeOwnMenu();
-              openQuickExpenseCatalogDrawer(q, targetRowIdx);
-            };
-            regBtn.addEventListener('mousedown', onOpenReg);
-            regBtn.addEventListener('click', onOpenReg);
-          }
+          wireSuggestCatReg();
           return;
         }
         if (!filtered.length || (!ignoreExactCurrent && filtered.length === 1 && filtered[0].value === q)) {
           closeOwnMenu();
           return;
         }
-        const MAX_SHOW = 7;
+        const MAX_SHOW = isCatRegInput ? 5 : 7;
         if (!keepPageOffset) pageOffset = 0;
         let sliceStart = pageOffset;
         if (!keepPageOffset && ignoreExactCurrent && exactHit && filtered.length > MAX_SHOW) {
@@ -45413,6 +45550,9 @@
         activeIdx = highlightQuery ? 0 : currentMatches.findIndex(it => it.value.toLowerCase() === ql);
         closeAll(menu);
         syncMenuAlign();
+        const catRegFooterHtml = isCatRegInput
+          ? `<div class="pa-suggest-cat-footer"><button type="button" class="pa-suggest-cat-foot-btn" data-suggest-register-item="${esc(q && !exactHit ? q : '')}"><span class="pa-scf-left"><i class="pa-scf-ico" aria-hidden="true">${ic('plus')}</i><span>${q && !exactHit ? `Register "${esc(q)}" as New Catalog Item` : 'Register New Catalog Item'}</span></span><span class="pa-scf-tag"><i aria-hidden="true">${ic('lock')}</i><span>Freezes Unit</span></span></button></div>`
+          : '';
         menu.innerHTML = currentMatches.map((item, i) => {
           const isSel = ql && item.value.toLowerCase() === ql;
           return `
@@ -45423,9 +45563,10 @@
           `;
         }).join('') + (filtered.length > MAX_SHOW
           ? `<div class="pa-suggest-more" data-suggest-next="1">${sliceStart > 0 ? `Showing ${sliceStart + 1}–${sliceStart + currentMatches.length}` : `Top ${MAX_SHOW}`} of ${filtered.length} options · Next ▸</div>`
-          : '');
+          : '') + catRegFooterHtml;
         menu.hidden = false;
         wrap.classList.add('open');
+        if (isCatRegInput) wireSuggestCatReg();
 
         const moreBtn = menu.querySelector('[data-suggest-next]');
         if (moreBtn) {
@@ -47101,12 +47242,14 @@
         if (focusEl) { try { focusEl.focus(); } catch (_) {} }
       });
       const qcDrawer = $('expQuickCatalogDrawer');
-      const qcToggleBtn = $('toggleQuickCatalogItemBtn');
       const qcCancelBtn = $('cancelQuickCatalogItemBtn');
+      const qcCloseHeadBtn = $('closeQuickCatalogHeadBtn');
       const qcSaveBtn = $('saveQuickCatalogItemBtn');
+      const qcEqSel = $('exp_qc_equip');
       const closeQuickCatalogDrawer = () => {
         if (qcDrawer) qcDrawer.hidden = true;
-        if (qcToggleBtn) qcToggleBtn.classList.remove('active');
+        const curToggle = $('toggleQuickCatalogItemBtn');
+        if (curToggle) curToggle.classList.remove('active');
         const hEl = $('exp_qc_hint');
         if (hEl) { hEl.textContent = ''; hEl.className = 'hint'; }
       };
@@ -47128,7 +47271,7 @@
         }
         const catVal = val('exp_qc_cat') || 'Spare Parts';
         const uomVal = val('exp_qc_uom') || 'Piece';
-        const eqPreset = val('exp_qc_equip') || 'all';
+        const compatTypes = readEquipChipBarTypes($('exp_qc_compat_json'), qcEqSel);
         const defCost = num('exp_qc_cost');
         const curCo = val('f_company') || defaultEntryCompany();
         const defLoc = defaultWarehouseLocationForCompany(curCo);
@@ -47140,7 +47283,7 @@
             uom: uomVal,
             default_cost: defCost > 0 ? round2(defCost) : 0,
             default_location: defLoc,
-            compatible_types: resolveCompatibleTypesPreset(eqPreset)
+            compatible_types: compatTypes
           });
           if (catRec) {
             applyCustomRecordsToSeed();
@@ -47170,21 +47313,39 @@
         const nextFocus = $('f_exi_qty_' + rIdx) || $('f_exi_cost_' + rIdx);
         if (nextFocus) { try { nextFocus.focus({ preventScroll: true }); } catch (_) {} }
       };
-      if (qcToggleBtn) {
-        qcToggleBtn.addEventListener('click', ev => {
-          ev.preventDefault();
-          if (qcDrawer && !qcDrawer.hidden) {
-            closeQuickCatalogDrawer();
+      if (qcEqSel) {
+        const onQcEqPreset = () => {
+          if (qcEqSel.value !== 'custom') {
+            syncEquipChipBarState($('expQcEquipChips'), $('exp_qc_compat_json'), qcEqSel, qcEqSel.value);
+          }
+        };
+        qcEqSel.addEventListener('change', onQcEqPreset);
+        qcEqSel.addEventListener('input', onQcEqPreset);
+      }
+      const qcNameInp = $('exp_qc_name');
+      if (qcNameInp) {
+        qcNameInp.addEventListener('input', () => {
+          const hEl = $('exp_qc_hint');
+          if (!hEl) return;
+          const typed = String(qcNameInp.value || '').trim();
+          const ex = typed ? resolveCatalogItem(typed) : null;
+          if (ex) {
+            hEl.textContent = `Already in Shared Catalog (${ex.uom || 'Piece'}) · Click Create & Select to apply it`;
+            hEl.className = 'hint ok';
           } else {
-            const rowsNow = Array.isArray(FORM_UI.expItems) ? FORM_UI.expItems : [];
-            let bestIdx = rowsNow.findIndex(r => !r || !String(r.item_name || '').trim() || !resolveCatalogItem(r.item_name));
-            if (bestIdx < 0) bestIdx = Math.max(0, rowsNow.length - 1);
-            openQuickExpenseCatalogDrawer(undefined, bestIdx);
+            hEl.textContent = '';
+            hEl.className = 'hint';
           }
         });
       }
       if (qcCancelBtn) {
         qcCancelBtn.addEventListener('click', ev => {
+          ev.preventDefault();
+          closeQuickCatalogDrawer();
+        });
+      }
+      if (qcCloseHeadBtn) {
+        qcCloseHeadBtn.addEventListener('click', ev => {
           ev.preventDefault();
           closeQuickCatalogDrawer();
         });
@@ -47317,6 +47478,26 @@
       expItemsWrap.addEventListener('input', syncExpItemRow);
       expItemsWrap.addEventListener('change', syncExpItemRow);
       (expItemsPanelEl || expItemsWrap).addEventListener('click', ev => {
+        const toggleQcBtn = ev.target && ev.target.closest ? ev.target.closest('[data-toggle-quick-cat]') : null;
+        if (toggleQcBtn) {
+          ev.preventDefault();
+          if (qcDrawer && !qcDrawer.hidden) {
+            closeQuickCatalogDrawer();
+          } else {
+            const rowsNow = Array.isArray(FORM_UI.expItems) ? FORM_UI.expItems : [];
+            const explicitRow = toggleQcBtn.hasAttribute('data-target-row') ? Number(toggleQcBtn.getAttribute('data-target-row')) : -1;
+            let bestIdx = (explicitRow >= 0 && rowsNow[explicitRow]) ? explicitRow : rowsNow.findIndex(r => !r || !String(r.item_name || '').trim() || !resolveCatalogItem(r.item_name));
+            if (bestIdx < 0) bestIdx = Math.max(0, rowsNow.length - 1);
+            openQuickExpenseCatalogDrawer(undefined, bestIdx);
+          }
+          return;
+        }
+        const qcEqChipBtn = ev.target && ev.target.closest ? ev.target.closest('[data-qc-eq-chip]') : null;
+        if (qcEqChipBtn) {
+          ev.preventDefault();
+          toggleEquipChipSelection(qcEqChipBtn.getAttribute('data-qc-eq-chip') || 'all', $('expQcEquipChips'), $('exp_qc_compat_json'), qcEqSel);
+          return;
+        }
         const quickEqBtn = ev.target && ev.target.closest ? ev.target.closest('[data-exp-quick-eq]') : null;
         if (quickEqBtn) {
           ev.preventDefault();
@@ -47450,6 +47631,14 @@
         }
       });
     }
+
+    body.querySelectorAll('[data-item-compat-chip]').forEach(btn => {
+      btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        toggleEquipChipSelection(btn.getAttribute('data-item-compat-chip') || 'all', $('itemCompatEquipBar'), $('f_item_compat'), null);
+        recalcForm();
+      });
+    });
 
     body.querySelectorAll('[data-def-sev-pill]').forEach(btn => {
       btn.addEventListener('click', ev => {
@@ -48705,16 +48894,18 @@
         const dup = findUniversalDuplicate('items', nm);
         if (dup) addErr('f_item_name', `Item "${universalMainValue('items', dup) || nm}" already exists in the Universal Items Registry. Duplicate names are not allowed.`);
       }
+      const compatTypes = readEquipChipBarTypes($('f_item_compat'), null);
       crKey = 'items';
       record = {
         ...base,
         name: nm,
         item_name: nm,
         uom: val('f_uom') || 'Piece',
-        category: val('f_category') || 'Spare Parts',
-        default_cost: round2(num('f_unitprice')),
-        default_location: val('f_location') || 'WTC Main Warehouse',
-        min_stock: Math.max(0, num('f_min_stock'))
+        category: val('f_item_cat') || val('f_category') || 'Spare Parts',
+        default_cost: round2($('f_default_cost') ? num('f_default_cost') : num('f_unitprice')),
+        default_location: val('f_wh_loc') || val('f_location') || 'WTC Main Warehouse',
+        min_stock: Math.max(0, num('f_min_stock')),
+        compatible_types: compatTypes
       };
     } else if (f === 'site') {
       const nm = val('f_site');
@@ -51895,12 +52086,14 @@
       setModalControlVal('f_amount', row.cost_usd != null ? row.cost_usd : '');
       FORM_UI.lastOilType = val('f_oil_type');
     } else if (form === 'item') {
-      setModalControlVal('f_name', row.name || row.item_name || '');
-      setModalControlVal('f_category', row.category || 'Spare Parts');
+      setModalControlVal('f_item_name', row.name || row.item_name || '');
+      setModalControlVal('f_item_cat', row.category || 'Spare Parts');
       setModalControlVal('f_uom', row.uom || 'Piece');
-      setModalControlVal('f_unitprice', row.default_cost != null && Number(row.default_cost) > 0 ? row.default_cost : '');
-      setModalControlVal('f_location', row.default_location || 'WTC Main Warehouse');
+      setModalControlVal('f_default_cost', row.default_cost != null && Number(row.default_cost) > 0 ? row.default_cost : '');
+      setModalControlVal('f_wh_loc', row.default_location || 'WTC Main Warehouse');
       setModalControlVal('f_min_stock', row.min_stock != null ? row.min_stock : 0);
+      setModalControlVal('f_notes', row.notes || '');
+      syncEquipChipBarState($('itemCompatEquipBar'), $('f_item_compat'), null, Array.isArray(row.compatible_types) && row.compatible_types.length ? row.compatible_types : 'all');
     } else if (form === 'staff') {
       setModalControlVal('f_staff', row.name || row.staff || '');
       setModalControlVal('f_role', row.role || '');

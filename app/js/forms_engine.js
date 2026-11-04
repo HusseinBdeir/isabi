@@ -1090,37 +1090,51 @@
         ['WTC Main Warehouse', 'BBConstruction Spare Store', 'Lions Garage Store', 'Crusher Site Store']
           .concat((rec.warehouse_movements || []).map(r => r && r.location))
           .concat((rec.expense_items || []).map(r => r && r.warehouse_location))
-          .concat((rec.items || []).map(r => r && r.warehouse_location)),
+          .concat((rec.items || []).map(r => r && (r.default_location || r.warehouse_location))),
         fIdx && fIdx.warehouseLoc
       );
       return `
         <div class="form-grid-3">
-          ${secHdr('1. Item / Spare Part Master Identity & Locked Unit (Universal Catalog · All BUs)')}
+          ${secHdr('1. Item / Spare Part Identity & Permanently Frozen Unit (Shared Catalog)')}
           ${fld('Item / Part Name *', inp('f_item_name', 'text', '', 'placeholder="e.g. Fuel Filter, Hydraulic Oil 68, Drive Belt..."'), { id: 'wrap_f_item_name', hintId: 'hint_item_name', hint: 'Canonical item name shared across Expenses, Warehouse & Equipment Repairs.' })}
-          ${fld('Item Category *', sel('f_item_cat', [
+          ${fld('Catalog Category *', sel('f_item_cat', [
             ['Spare Parts', 'Spare Parts'],
             ['Oils & Lubricants', 'Oils & Lubricants'],
             ['Tools & Garage', 'Tools & Garage'],
-            ['Plant Consumables', 'Plant Consumables']
+            ['Plant Consumables', 'Plant Consumables'],
+            ['Fuel', 'Fuel']
           ], 'Spare Parts'), { id: 'wrap_f_item_cat' })}
-          ${fld('Unit (UoM) *', sel('f_uom', [
+          ${fld('Frozen Unit (UoM) *', sel('f_uom', [
             ['Piece', 'Piece (pcs)'],
             ['Set', 'Set'],
             ['Litre', 'Litre (L)'],
             ['kg', 'Kilogram (kg)'],
             ['Box', 'Box'],
             ['m', 'Meter (m)']
-          ], 'Piece'), { id: 'wrap_f_uom', hintId: 'hint_item_uom', hint: 'Locks Unit automatically whenever this item is selected on Expense, Warehouse, or Repair tickets.' })}
-          ${fld('Default Unit Cost ($)', inp('f_default_cost', 'number', '0', 'step="0.01" min="0" placeholder="0.00"'), { id: 'wrap_f_default_cost' })}
-          ${fld('Default Warehouse Location', inp('f_wh_loc', 'text', 'WTC Main Warehouse', 'list="dl_item_wh_locs" placeholder="Default store or shelf..."') + dl('dl_item_wh_locs', whLocations), { id: 'wrap_f_wh_loc' })}
-          ${fld('Min Stock Reorder Alert', inp('f_min_stock', 'number', '0', 'step="1" min="0" placeholder="0"'), { id: 'wrap_f_min_stock' })}
-          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional OEM code, compatible trucks/machines, or storage note..."'), { span: true })}
+          ], 'Piece'), { id: 'wrap_f_uom', hintId: 'hint_item_uom', hint: 'Locks Unit permanently whenever this item is selected on Expense, Warehouse, or Repair entries.' })}
+          ${fld('Reference Unit Price ($)', inp('f_default_cost', 'number', '', 'step="0.01" min="0" inputmode="decimal" placeholder="0.00"'), { id: 'wrap_f_default_cost' })}
+          ${fld('Default Warehouse Store', inp('f_wh_loc', 'text', 'WTC Main Warehouse', 'list="dl_item_wh_locs" placeholder="Default store or shelf..."') + dl('dl_item_wh_locs', whLocations), { id: 'wrap_f_wh_loc' })}
+          ${fld('Min Reorder Alert Qty', inp('f_min_stock', 'number', '0', 'step="1" min="0" placeholder="0"'), { id: 'wrap_f_min_stock' })}
+          <div class="form-field span-3" id="wrap_f_item_compat">
+            <label>Connected Equipment Units <span class="exp-qc-lock-inline">(Controls which fleet or plant classes can use this item)</span></label>
+            <input type="hidden" id="f_item_compat" value="">
+            <div class="exp-qc-chip-row" id="itemCompatEquipBar" role="group" aria-label="Connected equipment classes">
+              <button type="button" class="exp-qc-eq-chip active" data-item-compat-chip="all">All Units</button>
+              <button type="button" class="exp-qc-eq-chip" data-item-compat-chip="Truck">Trucks</button>
+              <button type="button" class="exp-qc-eq-chip" data-item-compat-chip="Wheel Loader">Loaders</button>
+              <button type="button" class="exp-qc-eq-chip" data-item-compat-chip="Excavator">Excavators</button>
+              <button type="button" class="exp-qc-eq-chip" data-item-compat-chip="Plant">Plant &amp; Crusher</button>
+              <button type="button" class="exp-qc-eq-chip" data-item-compat-chip="Generator">Generators</button>
+              <button type="button" class="exp-qc-eq-chip" data-item-compat-chip="Vehicle">Vehicles</button>
+            </div>
+          </div>
+          ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Optional OEM part code, storage shelf, or supplier note..."'), { span: 3 })}
         </div>
         <div class="live-calc" id="itemCatalogLiveCalc">
-          <div><small>Catalog Scope</small><b id="calc_item_scope">All BUs (Universal)</b></div>
-          <div><small>Locked Unit (UoM)</small><b id="calc_item_uom">Piece</b></div>
-          <div><small>Category</small><b id="calc_item_cat">Spare Parts</b></div>
-          <div><small>Default Cost</small><b id="calc_item_cost">$0.00</b></div>
+          <div><small>Catalog Scope</small><b id="calc_item_scope">All Entities (Shared)</b></div>
+          <div><small>Frozen Unit</small><b id="calc_item_uom">Piece</b></div>
+          <div><small>Connected Units</small><b id="calc_item_compat">All Units</b></div>
+          <div><small>Reference Price</small><b id="calc_item_cost">$0.00</b></div>
         </div>
       `;
     }
