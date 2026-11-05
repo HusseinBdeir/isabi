@@ -3565,9 +3565,10 @@
       const sIso = String(rx.start_date || '').slice(0, 10);
       const rawEnd = String(rx.end_date || '').slice(0, 10);
       const isAppRec = isAppRecord(rx);
+      const seedCut = String((SEED && SEED.generated_at) || '').slice(0, 10);
       const openCap = isAppRec
         ? ((!maxExpDateByCo[rx.company] || todayISO() > maxExpDateByCo[rx.company]) ? todayISO() : maxExpDateByCo[rx.company])
-        : (maxWbExpDateByCo[rx.company] || maxExpDateByCo[rx.company] || '2026-11-04');
+        : (seedCut || maxWbExpDateByCo[rx.company] || maxExpDateByCo[rx.company] || '2026-11-04');
       const eIso = /^\d{4}-\d{2}-\d{2}$/.test(rawEnd) ? rawEnd : openCap;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(sIso) || !/^\d{4}-\d{2}-\d{2}$/.test(eIso) || sIso > eIso) continue;
       const [sy, sm0, sd0] = sIso.split('-').map(Number);
@@ -6997,9 +6998,12 @@
     PERM_CATALOG.statements.forEach(s => {
       if (perms.statements[s.id]) stmtCount += s.codes.length;
     });
-    const hubTotal = typeof HUB_CATALOG !== 'undefined' ? HUB_CATALOG.length : 11;
-    const hubCount = (typeof HUB_CATALOG !== 'undefined' && u)
-      ? HUB_CATALOG.filter(h => canViewHub(h.id, u)).length
+    const scopedHubs = typeof HUB_CATALOG !== 'undefined'
+      ? HUB_CATALOG.filter(h => getActiveIndustry(STATE.company) === 'Holding & Treasury' ? (!['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Holding & Treasury')) : !h.industry)
+      : [];
+    const hubTotal = scopedHubs.length || 11;
+    const hubCount = (scopedHubs.length && u)
+      ? scopedHubs.filter(h => canViewHub(h.id, u)).length
       : (perms.rights.read_fin ? hubTotal : 9);
     const allTblKeys = typeof TABLE_CATALOG !== 'undefined' ? Object.keys(TABLE_CATALOG) : [];
     const tableTotal = allTblKeys.length || 36;
@@ -7788,7 +7792,8 @@
   function canViewView(view, u) {
     u = u || activeUser();
     if (view === 'coa_classes' || view === 'gl_automation') return canViewView('ledger', u);
-    if (view === 'entities' || view === 'hld_consolidation' || view === 'hld_entities') return canAccessPbiPage('p02_companies', u) || canViewView('overview', u);
+    if (view === 'entities') return canAccessPbiPage('p02_companies', u);
+    if (view === 'hld_consolidation' || view === 'hld_entities') return canAccessPbiPage('p02_companies', u) || canViewView('overview', u);
     if (view === 'hld_interactions' || view === 'hld_open_recon' || view === 'hld_due_matrix') return canViewView('external', u) || canViewView('cashflow', u);
     if (view === 'hld_partners' || view === 'hld_distributions') return canViewView('raw_jv', u) || canViewView('external', u) || canViewView('cashflow', u);
     if (view === 'hld_loans' || view === 'hld_assets') return canViewView('ledger_treasury', u) || canViewView('cashflow', u);
@@ -13024,7 +13029,7 @@
     if (_dieselTankLedgerCache.has(lKey)) return _dieselTankLedgerCache.get(lKey);
 
     const perCo = {};
-    ['WTC', 'BBConstruction', 'Lions Transport'].forEach(co => {
+    Array.from(new Set(['WTC', 'BBConstruction', 'Lions Transport'].concat(cos || []))).forEach(co => {
       const coBase = idx.byCo[co] || {};
       perCo[co] = {
         openingL: 0, boughtL: 0, boughtUsd: 0, boughtCount: 0,
@@ -34511,6 +34516,1345 @@
     `;
   }
 
+  // ==========================================================================
+  // HOLDING & GROUP TREASURY ENGINE (h29 INTERCOMPANY PAIRING + 4 HUBS / 9 SUB-TABS)
+  // ==========================================================================
+  const _IC_CO_ALIASES = {
+    'wtc': 'WTC',
+    'world trading': 'WTC',
+    'world trading & construction': 'WTC',
+    'bbconstruction': 'BBConstruction',
+    'bbc': 'BBConstruction',
+    'b.b.c': 'BBConstruction',
+    'bb construction': 'BBConstruction',
+    'lions transport': 'Lions Transport',
+    'lions': 'Lions Transport',
+    'lion transport': 'Lions Transport',
+    'bdeir holding': 'Bdeir Holding',
+    'holding': 'Bdeir Holding',
+    'blanca': 'Blanca',
+    'blanca beach': 'Blanca',
+    'la una': 'La Una',
+    'palms': 'Palms',
+    'the palms': 'Palms',
+    'voile': 'Voile',
+    'platinum': 'Platinum',
+    'korri auto': 'Korri Auto',
+    'korri': 'Korri Auto',
+    'properties': 'Properties',
+    '4235': 'Properties'
+  };
+
+  function resolveSisterEntityName(rawParty) {
+    const s = String(rawParty || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!s) return null;
+    if (_IC_CO_ALIASES[s]) return _IC_CO_ALIASES[s];
+    const cat = getCompanyCatalog();
+    const hit = cat.find(c => c.name.toLowerCase() === s || c.key.toLowerCase() === s);
+    return hit ? hit.name : null;
+  }
+
+  let _icInteractionsCache = null;
+  let _icInteractionsSig = '';
+  function computeIntercompanyInteractions(opts = {}) {
+    const extList = (SEED && SEED.records && SEED.records.external_movements) || [];
+    const ignoreSearch = Boolean(opts.ignoreSearch);
+    const sig = `${(SEED && SEED._customRev) || 0}|${extList.length}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${isOfficialScopeActive() ? 1 : 0}|${ignoreSearch ? '' : STATE.search}|${(STATE.allowedCompanyNames || []).join(',')}`;
+    if (_icInteractionsCache && _icInteractionsSig === sig) return _icInteractionsCache;
+
+    const scoped = filterRecords(extList, {
+      ignoreCompany: true,
+      ignoreSearch,
+      basis: STATE.basis
+    });
+
+    const legs = [];
+    scoped.forEach(r => {
+      if (!r || r.voided) return;
+      const m = String(r.method || '').trim();
+      const tp = String(r.type || '').trim();
+      if (m === 'Config' || tp === 'Config' || m === 'Remove' || m === 'Adjusted') return;
+      const targetCo = resolveSisterEntityName(r.party || r.counterparty);
+      if (!targetCo || !r.company || targetCo === r.company) return;
+      const isOut = tp === 'Out' || (Number(r.out_usd || 0) > 0 && Number(r.in_usd || 0) === 0);
+      const usd = round2(isOut ? Number(r.out_usd || r.amount || 0) : Number(r.in_usd || r.amount || 0));
+      if (usd <= 0) return;
+      const d = String(recordDateFor(r, STATE.basis) || r.date || '').slice(0, 10);
+      const ms = d ? Date.parse(d + 'T00:00:00Z') : 0;
+      const fromCo = isOut ? r.company : targetCo;
+      const toCo = isOut ? targetCo : r.company;
+      const cur = String(r.currency || 'USD').toUpperCase();
+      legs.push({
+        id: String(r.id || ''),
+        row: r,
+        initiatorCo: r.company,
+        mirrorCo: targetCo,
+        side: isOut ? 'Out' : 'In',
+        fromCo,
+        toCo,
+        pairKey: `${fromCo} → ${toCo}`,
+        bilateralKey: [fromCo, toCo].sort().join(' ↔ '),
+        date: d,
+        ms,
+        usd,
+        cur,
+        method: m || 'Cash',
+        notes: cleanNotesText(r.notes) || '',
+        matched: false
+      });
+    });
+
+    legs.sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.id.localeCompare(b.id));
+
+    const interactions = [];
+    const THREE_DAYS_MS = 3 * 86400000;
+
+    // Group legs by directed (fromCo, toCo, cur)
+    const byDir = new Map();
+    legs.forEach(l => {
+      const k = `${l.fromCo}|${l.toCo}|${l.cur}`;
+      if (!byDir.has(k)) byDir.set(k, { outLegs: [], inLegs: [] });
+      const bucket = byDir.get(k);
+      if (l.side === 'Out') bucket.outLegs.push(l);
+      else bucket.inLegs.push(l);
+    });
+
+    let seq = 1;
+    const nextIcCode = () => `IC-${String(seq++).padStart(4, '0')}`;
+
+    byDir.forEach(({ outLegs, inLegs }) => {
+      // Rule 1: 1-to-1 exact match within ±3 days (|diff| <= $0.02)
+      outLegs.forEach(o => {
+        if (o.matched) return;
+        let best = null;
+        let bestDayGap = 999;
+        let bestUsdDiff = 999;
+        inLegs.forEach(inn => {
+          if (inn.matched) return;
+          const dayGap = (o.ms && inn.ms) ? Math.round(Math.abs(o.ms - inn.ms) / 86400000) : 999;
+          const usdDiff = Math.abs(o.usd - inn.usd);
+          if (dayGap <= 3 && usdDiff <= 0.02) {
+            if (dayGap < bestDayGap || (dayGap === bestDayGap && usdDiff < bestUsdDiff)) {
+              best = inn;
+              bestDayGap = dayGap;
+              bestUsdDiff = usdDiff;
+            }
+          }
+        });
+        if (best) {
+          o.matched = true;
+          best.matched = true;
+          const v = round2(o.usd - best.usd);
+          interactions.push({
+            code: nextIcCode(),
+            date: o.date <= best.date ? o.date : best.date,
+            mirrorDate: o.date <= best.date ? best.date : o.date,
+            dayGap: bestDayGap,
+            fromCo: o.fromCo,
+            toCo: o.toCo,
+            pairKey: o.pairKey,
+            bilateralKey: o.bilateralKey,
+            cur: o.cur,
+            outUsd: o.usd,
+            inUsd: best.usd,
+            usd: Math.max(o.usd, best.usd),
+            varianceUsd: v,
+            matchType: '1-to-1',
+            status: 'Reconciled',
+            pendingActionCo: '',
+            primaryRow: o.row,
+            mirrorRow: best.row,
+            legCount: 2,
+            method: o.method,
+            notes: o.notes || best.notes || `${o.fromCo} → ${o.toCo}`
+          });
+        }
+      });
+
+      // Rule 2: Split (1 to n, n=2..6) within ±3 days (|sum - target| <= $0.05)
+      const trySplitMatch = (singlePool, multiPool, singleIsOut) => {
+        singlePool.forEach(anchor => {
+          if (anchor.matched) return;
+          const cands = multiPool.filter(m => !m.matched && m.ms && anchor.ms && Math.abs(m.ms - anchor.ms) <= THREE_DAYS_MS && m.usd < anchor.usd + 0.05);
+          if (cands.length < 2) return;
+          let matchedGroup = null;
+          // Search subsets of size 2..Math.min(6, cands.length)
+          const limit = Math.min(cands.length, 10);
+          const dfs = (idx, chosen, sum) => {
+            if (matchedGroup) return;
+            if (chosen.length >= 2 && Math.abs(sum - anchor.usd) <= 0.05) {
+              matchedGroup = chosen.slice();
+              return;
+            }
+            if (chosen.length >= 6 || idx >= limit || sum > anchor.usd + 0.05) return;
+            for (let i = idx; i < limit; i++) {
+              chosen.push(cands[i]);
+              dfs(i + 1, chosen, sum + cands[i].usd);
+              chosen.pop();
+              if (matchedGroup) return;
+            }
+          };
+          dfs(0, [], 0);
+          if (matchedGroup) {
+            anchor.matched = true;
+            let grpSum = 0;
+            let maxGap = 0;
+            matchedGroup.forEach(m => {
+              m.matched = true;
+              grpSum += m.usd;
+              const g = Math.round(Math.abs(anchor.ms - m.ms) / 86400000);
+              if (g > maxGap) maxGap = g;
+            });
+            grpSum = round2(grpSum);
+            const outVal = singleIsOut ? anchor.usd : grpSum;
+            const inVal = singleIsOut ? grpSum : anchor.usd;
+            interactions.push({
+              code: nextIcCode(),
+              date: anchor.date,
+              mirrorDate: matchedGroup[matchedGroup.length - 1].date,
+              dayGap: maxGap,
+              fromCo: anchor.fromCo,
+              toCo: anchor.toCo,
+              pairKey: anchor.pairKey,
+              bilateralKey: anchor.bilateralKey,
+              cur: anchor.cur,
+              outUsd: outVal,
+              inUsd: inVal,
+              usd: Math.max(outVal, inVal),
+              varianceUsd: round2(outVal - inVal),
+              matchType: `Split (1 to ${matchedGroup.length})`,
+              status: 'Reconciled',
+              pendingActionCo: '',
+              primaryRow: anchor.row,
+              mirrorRow: matchedGroup[0].row,
+              legCount: 1 + matchedGroup.length,
+              method: anchor.method,
+              notes: `${anchor.notes || (anchor.fromCo + ' → ' + anchor.toCo)} (${matchedGroup.length} split legs)`
+            });
+          }
+        });
+      };
+      trySplitMatch(outLegs, inLegs, true);
+      trySplitMatch(inLegs, outLegs, false);
+
+      // Rule 3: Within $1.00 tolerance within ±3 days
+      outLegs.forEach(o => {
+        if (o.matched) return;
+        let best = null;
+        let bestDiff = 999;
+        inLegs.forEach(inn => {
+          if (inn.matched) return;
+          const dayGap = (o.ms && inn.ms) ? Math.round(Math.abs(o.ms - inn.ms) / 86400000) : 999;
+          const usdDiff = Math.abs(o.usd - inn.usd);
+          if (dayGap <= 3 && usdDiff <= 1.00 && usdDiff < bestDiff) {
+            best = inn;
+            bestDiff = usdDiff;
+          }
+        });
+        if (best) {
+          o.matched = true;
+          best.matched = true;
+          const dayGap = (o.ms && best.ms) ? Math.round(Math.abs(o.ms - best.ms) / 86400000) : 0;
+          interactions.push({
+            code: nextIcCode(),
+            date: o.date <= best.date ? o.date : best.date,
+            mirrorDate: o.date <= best.date ? best.date : o.date,
+            dayGap,
+            fromCo: o.fromCo,
+            toCo: o.toCo,
+            pairKey: o.pairKey,
+            bilateralKey: o.bilateralKey,
+            cur: o.cur,
+            outUsd: o.usd,
+            inUsd: best.usd,
+            usd: Math.max(o.usd, best.usd),
+            varianceUsd: round2(o.usd - best.usd),
+            matchType: 'Within $1.00',
+            status: 'Reconciled',
+            pendingActionCo: '',
+            primaryRow: o.row,
+            mirrorRow: best.row,
+            legCount: 2,
+            method: o.method,
+            notes: o.notes || best.notes || `${o.fromCo} → ${o.toCo}`
+          });
+        }
+      });
+
+      // Remaining unmatched legs -> Open Reconciliation Queue
+      outLegs.filter(o => !o.matched).forEach(o => {
+        interactions.push({
+          code: nextIcCode(),
+          date: o.date,
+          mirrorDate: '',
+          dayGap: null,
+          fromCo: o.fromCo,
+          toCo: o.toCo,
+          pairKey: o.pairKey,
+          bilateralKey: o.bilateralKey,
+          cur: o.cur,
+          outUsd: o.usd,
+          inUsd: 0,
+          usd: o.usd,
+          varianceUsd: o.usd,
+          matchType: 'Single (Unmatched)',
+          status: 'Open',
+          pendingActionCo: o.mirrorCo,
+          missingSide: 'In',
+          primaryRow: o.row,
+          mirrorRow: null,
+          legCount: 1,
+          method: o.method,
+          notes: o.notes || `${o.fromCo} booked Out; awaiting ${o.toCo} In`
+        });
+      });
+      inLegs.filter(inn => !inn.matched).forEach(inn => {
+        interactions.push({
+          code: nextIcCode(),
+          date: inn.date,
+          mirrorDate: '',
+          dayGap: null,
+          fromCo: inn.fromCo,
+          toCo: inn.toCo,
+          pairKey: inn.pairKey,
+          bilateralKey: inn.bilateralKey,
+          cur: inn.cur,
+          outUsd: 0,
+          inUsd: inn.usd,
+          usd: inn.usd,
+          varianceUsd: -inn.usd,
+          matchType: 'Single (Unmatched)',
+          status: 'Open',
+          pendingActionCo: inn.mirrorCo,
+          missingSide: 'Out',
+          primaryRow: inn.row,
+          mirrorRow: null,
+          legCount: 1,
+          method: inn.method,
+          notes: inn.notes || `${inn.toCo} booked In; awaiting ${inn.fromCo} Out`
+        });
+      });
+    });
+
+    interactions.sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.code.localeCompare(a.code));
+
+    const matchedRows = interactions.filter(x => x.status === 'Reconciled');
+    const openRows = interactions.filter(x => x.status === 'Open');
+    const totalMatchedUsd = round2(matchedRows.reduce((s, x) => s + x.usd, 0));
+    const totalOpenUsd = round2(openRows.reduce((s, x) => s + x.usd, 0));
+    const netImbalanceUsd = round2(interactions.reduce((s, x) => s + x.varianceUsd, 0));
+
+    const byPairMap = new Map();
+    const byPendingMap = new Map();
+    interactions.forEach(x => {
+      const pCur = byPairMap.get(x.pairKey) || {
+        pairKey: x.pairKey,
+        fromCo: x.fromCo,
+        toCo: x.toCo,
+        totalCount: 0,
+        matchedCount: 0,
+        openCount: 0,
+        outUsd: 0,
+        inUsd: 0,
+        matchedUsd: 0,
+        openUsd: 0,
+        netVarianceUsd: 0
+      };
+      pCur.totalCount += 1;
+      pCur.outUsd = round2(pCur.outUsd + x.outUsd);
+      pCur.inUsd = round2(pCur.inUsd + x.inUsd);
+      pCur.netVarianceUsd = round2(pCur.netVarianceUsd + x.varianceUsd);
+      if (x.status === 'Reconciled') {
+        pCur.matchedCount += 1;
+        pCur.matchedUsd = round2(pCur.matchedUsd + x.usd);
+      } else {
+        pCur.openCount += 1;
+        pCur.openUsd = round2(pCur.openUsd + x.usd);
+      }
+      byPairMap.set(x.pairKey, pCur);
+
+      if (x.status === 'Open' && x.pendingActionCo) {
+        const cCur = byPendingMap.get(x.pendingActionCo) || { company: x.pendingActionCo, count: 0, usd: 0, missingInUsd: 0, missingOutUsd: 0, rows: [] };
+        cCur.count += 1;
+        cCur.usd = round2(cCur.usd + x.usd);
+        if (x.missingSide === 'In') cCur.missingInUsd = round2(cCur.missingInUsd + x.usd);
+        else cCur.missingOutUsd = round2(cCur.missingOutUsd + x.usd);
+        cCur.rows.push(x);
+        byPendingMap.set(x.pendingActionCo, cCur);
+      }
+    });
+
+    const byPair = Array.from(byPairMap.values()).sort((a, b) => (b.matchedUsd + b.openUsd) - (a.matchedUsd + a.openUsd));
+    const byPendingCo = Array.from(byPendingMap.values()).sort((a, b) => b.usd - a.usd);
+    const totalCount = interactions.length;
+    const matchedCount = matchedRows.length;
+    const openCount = openRows.length;
+    const reconRatePct = totalCount > 0 ? round2((matchedCount / totalCount) * 100) : 100;
+
+    const res = {
+      interactions,
+      matchedRows,
+      openRows,
+      byPair,
+      byPendingCo,
+      totalCount,
+      matchedCount,
+      openCount,
+      reconRatePct,
+      totalMatchedUsd,
+      totalOpenUsd,
+      netImbalanceUsd
+    };
+    _icInteractionsSig = sig;
+    _icInteractionsCache = res;
+    return res;
+  }
+
+  function renderHoldingConsolidation(submode = 'main') {
+    const u = activeUser();
+    const kGroup = getKPI('manufacturing-group');
+    const kWtc = getKPI('wtc');
+    const kBbc = getKPI('bbconstruction');
+    const kLions = getKPI('lionstransport');
+    const icRes = computeIntercompanyInteractions({ ignoreSearch: true });
+    const hldExps = filterRecords(SEED.records.expenses || [], { company: 'bdeirholding', strictBu: true, ignoreSearch: true });
+    const hldExpTotal = round2(hldExps.reduce((s, x) => s + expenseSign(x) * Number(x.total || x.amount || 0), 0));
+
+    const entities = [
+      { key: 'wtc', name: 'WTC', sector: 'Concrete, Aggregates & Batching', k: kWtc },
+      { key: 'bbconstruction', name: 'BBConstruction', sector: 'Contracting & Aggregates', k: kBbc },
+      { key: 'lionstransport', name: 'Lions Transport', sector: 'Heavy Fleet & Haulage', k: kLions },
+      {
+        key: 'bdeirholding',
+        name: 'Bdeir Holding',
+        sector: 'Group Treasury, Shared Services & JV',
+        k: {
+          loads: icRes.totalCount,
+          sales_ttc: 0,
+          net_sales: 0,
+          raw_cost: 0,
+          gross_margin: 0,
+          expenses: hldExpTotal,
+          salaries: 0,
+          operating_profit: -hldExpTotal,
+          ar_balance: 0,
+          ap_balance: 0,
+          cash_till: 0
+        }
+      }
+    ];
+
+    const grossEntitySalesTtc = round2(kWtc.sales_ttc + kBbc.sales_ttc + kLions.sales_ttc);
+    const grossEntityNetSales = round2((kWtc.gross_sales || kWtc.net_sales) + (kBbc.gross_sales || kBbc.net_sales) + (kLions.gross_sales || kLions.net_sales));
+    const grossEntityMargin = round2(kWtc.gross_margin + kBbc.gross_margin + kLions.gross_margin);
+    const grossEntityOpProfit = round2(kWtc.operating_profit + kBbc.operating_profit + kLions.operating_profit - hldExpTotal);
+    const combinedCashTill = round2(kGroup.cash_till || 0);
+
+    // SVG horizontal comparison chart across entities
+    const maxRev = Math.max(1, kWtc.sales_ttc, kBbc.sales_ttc, kLions.sales_ttc, icRes.totalMatchedUsd);
+    const svgBars = [
+      { label: 'WTC Revenue (TTC)', val: kWtc.sales_ttc, op: kWtc.operating_profit, color: '#2563eb' },
+      { label: 'BBConstruction Revenue (TTC)', val: kBbc.sales_ttc, op: kBbc.operating_profit, color: '#0891b2' },
+      { label: 'Lions Transport Revenue', val: kLions.sales_ttc, op: kLions.operating_profit, color: '#d97706' },
+      { label: 'Intercompany Eliminated (h29)', val: icRes.totalMatchedUsd, op: -icRes.totalOpenUsd, color: '#059669' }
+    ];
+    const svgH = 188;
+    const chartSvg = `
+      <svg viewBox="0 0 760 ${svgH}" width="100%" height="${svgH}" role="img" aria-label="Group Consolidation & Entity Performance Chart" style="display:block;overflow:visible">
+        ${svgBars.map((b, idx) => {
+          const y = 18 + idx * 42;
+          const w = Math.max(6, Math.round((Math.max(0, b.val) / maxRev) * 420));
+          const opTxt = fmtSignedUSD(b.op, 0);
+          return `
+            <g transform="translate(0,${y})">
+              <text x="0" y="15" fill="var(--ink)" font-size="12" font-weight="600">${esc(b.label)}</text>
+              <rect x="210" y="2" width="420" height="20" rx="5" fill="var(--surface-2)" />
+              <rect x="210" y="2" width="${w}" height="20" rx="5" fill="${b.color}" />
+              <text x="640" y="16" fill="var(--ink)" font-size="12" font-weight="700" font-family="var(--font-mono)">${esc(fmtUSD(b.val, 0))}</text>
+              <text x="755" y="16" text-anchor="end" fill="var(--ink-2)" font-size="11" font-family="var(--font-mono)">${esc(opTxt)}</text>
+            </g>
+          `;
+        }).join('')}
+      </svg>
+    `;
+
+    const pnlRows = [
+      { line: 'Gross Billed Revenue (VAT Incl.)', wtc: kWtc.sales_ttc, bbc: kBbc.sales_ttc, lions: kLions.sales_ttc, hld: 0, elim: 0, cons: grossEntitySalesTtc, bold: true },
+      { line: 'Net Revenue Base (Ex-VAT)', wtc: kWtc.gross_sales || kWtc.net_sales, bbc: kBbc.gross_sales || kBbc.net_sales, lions: kLions.gross_sales || kLions.net_sales, hld: 0, elim: 0, cons: grossEntityNetSales, bold: false },
+      { line: 'Quarry, Raw Material & Haulage COGS', wtc: -kWtc.raw_cost, bbc: -kBbc.raw_cost, lions: -kLions.raw_cost, hld: 0, elim: 0, cons: -round2(kWtc.raw_cost + kBbc.raw_cost + kLions.raw_cost), bold: false },
+      { line: 'Gross Operating Margin', wtc: kWtc.gross_margin, bbc: kBbc.gross_margin, lions: kLions.gross_margin, hld: 0, elim: 0, cons: grossEntityMargin, bold: true },
+      { line: 'Plant, Fleet & Overhead Expenses', wtc: -kWtc.expenses, bbc: -kBbc.expenses, lions: -kLions.expenses, hld: -hldExpTotal, elim: 0, cons: -round2(kWtc.expenses + kBbc.expenses + kLions.expenses + hldExpTotal), bold: false },
+      { line: 'Payroll, Salaries & Site Transport', wtc: -kWtc.salaries, bbc: -kBbc.salaries, lions: -kLions.salaries, hld: 0, elim: 0, cons: -round2(kWtc.salaries + kBbc.salaries + kLions.salaries), bold: false },
+      { line: 'Consolidated Operating Profit (EBITDA)', wtc: kWtc.operating_profit, bbc: kBbc.operating_profit, lions: kLions.operating_profit, hld: -hldExpTotal, elim: 0, cons: grossEntityOpProfit, bold: true },
+      { line: 'Intercompany Treasury Transfers (Eliminated h29)', wtc: -(icRes.byPair.filter(p => p.fromCo === 'WTC').reduce((s, p) => s + p.outUsd, 0)), bbc: -(icRes.byPair.filter(p => p.fromCo === 'BBConstruction').reduce((s, p) => s + p.outUsd, 0)), lions: 0, hld: 0, elim: -icRes.totalMatchedUsd, cons: 0, bold: false }
+    ];
+
+    return `
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card" data-jump-view="hld_consolidation">
+          <div class="kpi-label">GROUP CONSOLIDATED REVENUE (TTC)</div>
+          <div class="kpi-val">${fmtUSD(grossEntitySalesTtc, 0)}</div>
+          <div class="kpi-sub">Ex-VAT Net: <b>${fmtUSD(grossEntityNetSales, 0)}</b> across ${fmtNum(kGroup.loads || 0)} loads</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_entities">
+          <div class="kpi-label">CONSOLIDATED GROSS MARGIN</div>
+          <div class="kpi-val">${fmtUSD(grossEntityMargin, 0)}</div>
+          <div class="kpi-sub">Margin Rate: <b>${grossEntityNetSales > 0 ? ((grossEntityMargin / grossEntityNetSales) * 100).toFixed(1) : '0.0'}%</b> of Ex-VAT</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_consolidation">
+          <div class="kpi-label">CONSOLIDATED OPERATING PROFIT</div>
+          <div class="kpi-val ${grossEntityOpProfit >= 0 ? 'good' : 'crit'}">${fmtSignedUSD(grossEntityOpProfit, 0)}</div>
+          <div class="kpi-sub">WTC ${fmtUSDk(kWtc.operating_profit)} · BBC ${fmtUSDk(kBbc.operating_profit)}</div>
+        </div>
+        <div class="kpi-card" data-jump-view="cashflow">
+          <div class="kpi-label">GROUP COMBINED CASH &amp; TILL</div>
+          <div class="kpi-val brass">${fmtUSD(combinedCashTill, 0)}</div>
+          <div class="kpi-sub">AR: <b>${fmtUSDk(kGroup.ar_balance)}</b> · AP: <b>${fmtUSDk(kGroup.ap_balance)}</b></div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_interactions">
+          <div class="kpi-label">INTERCOMPANY ELIMINATED (H29)</div>
+          <div class="kpi-val good">${fmtUSD(icRes.totalMatchedUsd, 0)}</div>
+          <div class="kpi-sub"><b>${fmtNum(icRes.matchedCount)}</b> matched pairs (${icRes.reconRatePct.toFixed(1)}% reconciled)</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_open_recon">
+          <div class="kpi-label">OPEN IC VARIANCE EXPOSURE</div>
+          <div class="kpi-val ${icRes.openCount > 0 ? 'warn' : 'good'}">${fmtUSD(icRes.totalOpenUsd, 0)}</div>
+          <div class="kpi-sub"><b>${fmtNum(icRes.openCount)}</b> unmatched single-sided legs</div>
+        </div>
+      </div>
+
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:10px">
+          <div class="panel-title"><span>${ic('hld_consolidation')} GROUP REVENUE, OPERATING PROFIT &amp; INTERCOMPANY ELIMINATION BRIDGE</span></div>
+          <span class="panel-meta">
+            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ Intercompany / External Entry</button>' : ''}
+          </span>
+        </div>
+        ${chartSvg}
+      </div>
+
+      ${submode === 'entities' ? `
+      <div class="panel-card" id="hldEntitiesScorecardPanel">
+        <div class="panel-head">
+          <div class="panel-title"><span>${ic('hld_entities')} SUBSIDIARY &amp; HOLDING ENTITY SCORECARDS (${entities.length} ENTITIES)</span></div>
+          <div style="display:flex;gap:6px;align-items:center">
+            ${exportBtn('hldEntitiesScorecardPanel', 'Holding_Subsidiary_Scorecards')}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Entity (BU)</th>
+                <th>Industry / Sector</th>
+                <th class="r">Loads / Entries</th>
+                <th class="r">Revenue TTC ($)</th>
+                <th class="r">Gross Margin ($)</th>
+                <th class="r">Expenses &amp; Payroll ($)</th>
+                <th class="r">Operating Profit ($)</th>
+                <th class="r">AR Balance ($)</th>
+                <th class="r">AP Balance ($)</th>
+                <th class="r">Workspace</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${entities.map(e => {
+                const opEx = round2(Number(e.k.expenses || 0) + Number(e.k.salaries || 0));
+                return `
+                  <tr class="rrow" data-jump-co="${esc(e.key)}">
+                    <td>${coBadge(e.name)} <strong>${esc(e.name)}</strong></td>
+                    <td>${esc(e.sector)}</td>
+                    <td class="r mono">${fmtNum(e.k.loads || 0)}</td>
+                    <td class="r mono">${fmtUSD(e.k.sales_ttc || 0, 2)}</td>
+                    <td class="r mono">${fmtUSD(e.k.gross_margin || 0, 2)}</td>
+                    <td class="r mono">${fmtUSD(opEx, 2)}</td>
+                    <td class="r mono ${Number(e.k.operating_profit || 0) >= 0 ? 'good' : 'crit'}"><strong>${fmtSignedUSD(e.k.operating_profit || 0, 2)}</strong></td>
+                    <td class="r mono">${fmtUSD(e.k.ar_balance || 0, 2)}</td>
+                    <td class="r mono">${fmtUSD(e.k.ap_balance || 0, 2)}</td>
+                    <td class="r"><button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-jump-co="${esc(e.key)}">Open Entity</button></td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="2"><strong>CONSOLIDATED GROUP TOTAL (${entities.length} ENTITIES)</strong></td>
+                <td class="r mono"><strong>${fmtNum(entities.reduce((s, e) => s + Number(e.k.loads || 0), 0))}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(grossEntitySalesTtc, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(grossEntityMargin, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(round2(kWtc.expenses + kBbc.expenses + kLions.expenses + kWtc.salaries + kBbc.salaries + kLions.salaries + hldExpTotal), 2)}</strong></td>
+                <td class="r mono"><strong>${fmtSignedUSD(grossEntityOpProfit, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(kGroup.ar_balance || 0, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(kGroup.ap_balance || 0, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+      ` : `
+      <div class="panel-card" id="hldConsolidatedPnlPanel">
+        <div class="panel-head">
+          <div class="panel-title"><span>${ic('hld_consolidation')} CONSOLIDATED GROUP P&amp;L &amp; INTERCOMPANY ELIMINATION SCHEDULE</span></div>
+          <div style="display:flex;gap:6px;align-items:center">
+            ${exportBtn('hldConsolidatedPnlPanel', 'Holding_Consolidated_PnL')}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Statement Line</th>
+                <th class="r">WTC ($)</th>
+                <th class="r">BBConstruction ($)</th>
+                <th class="r">Lions Transport ($)</th>
+                <th class="r">Bdeir Holding ($)</th>
+                <th class="r">IC Eliminations ($)</th>
+                <th class="r">Consolidated Group ($)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pnlRows.map(r => `
+                <tr class="${r.bold ? 'totals-row' : ''}">
+                  <td>${r.bold ? `<strong>${esc(r.line)}</strong>` : esc(r.line)}</td>
+                  <td class="r mono">${fmtSignedUSD(r.wtc, 2)}</td>
+                  <td class="r mono">${fmtSignedUSD(r.bbc, 2)}</td>
+                  <td class="r mono">${fmtSignedUSD(r.lions, 2)}</td>
+                  <td class="r mono">${fmtSignedUSD(r.hld, 2)}</td>
+                  <td class="r mono ${r.elim !== 0 ? 'good' : ''}">${fmtSignedUSD(r.elim, 2)}</td>
+                  <td class="r mono ${r.cons >= 0 ? 'good' : 'crit'}"><strong>${fmtSignedUSD(r.cons, 2)}</strong></td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td><strong>NET CONSOLIDATED OPERATING CONTRIBUTION</strong></td>
+                <td class="r mono"><strong>${fmtSignedUSD(kWtc.operating_profit, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtSignedUSD(kBbc.operating_profit, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtSignedUSD(kLions.operating_profit, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtSignedUSD(-hldExpTotal, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(0, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtSignedUSD(grossEntityOpProfit, 2)}</strong></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+      `}
+    `;
+  }
+
+  function renderHoldingInteractions(submode = 'main') {
+    const u = activeUser();
+    const icRes = computeIntercompanyInteractions({ ignoreSearch: false });
+    const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
+
+    const filteredRows = icRes.interactions.filter(x => {
+      if (STATE.chipFilter === 'reconciled') return x.status === 'Reconciled';
+      if (STATE.chipFilter === 'open') return x.status === 'Open';
+      if (STATE.chipFilter === '1to1') return x.matchType === '1-to-1';
+      if (STATE.chipFilter === 'split') return x.matchType.startsWith('Split');
+      if (STATE.chipFilter === 'tol1') return x.matchType === 'Within $1.00';
+      if (STATE.chipFilter === 'wtc_bbc') return x.bilateralKey.includes('BBConstruction') && x.bilateralKey.includes('WTC');
+      return true;
+    });
+
+    const maxPairUsd = Math.max(1, ...icRes.byPair.map(p => p.matchedUsd + p.openUsd));
+    const pairSvgH = Math.max(120, 32 + icRes.byPair.slice(0, 5).length * 36);
+    const pairChartSvg = `
+      <svg viewBox="0 0 760 ${pairSvgH}" width="100%" height="${pairSvgH}" role="img" aria-label="Intercompany Bilateral Reconciliation Chart" style="display:block;overflow:visible">
+        ${icRes.byPair.slice(0, 5).map((p, idx) => {
+          const y = 12 + idx * 34;
+          const mW = Math.round((p.matchedUsd / maxPairUsd) * 380);
+          const oW = Math.round((p.openUsd / maxPairUsd) * 380);
+          return `
+            <g transform="translate(0,${y})">
+              <text x="0" y="15" fill="var(--ink)" font-size="12" font-weight="600">${esc(p.pairKey)} (${fmtNum(p.totalCount)})</text>
+              <rect x="220" y="2" width="380" height="18" rx="4" fill="var(--surface-2)" />
+              <rect x="220" y="2" width="${mW}" height="18" rx="4" fill="#059669" />
+              ${oW > 0 ? `<rect x="${220 + mW}" y="2" width="${Math.max(4, oW)}" height="18" rx="4" fill="#d97706" />` : ''}
+              <text x="612" y="15" fill="var(--ink)" font-size="11.5" font-weight="700" font-family="var(--font-mono)">${esc(fmtUSD(p.matchedUsd, 0))} matched</text>
+              <text x="755" y="15" text-anchor="end" fill="${p.openUsd > 0 ? 'var(--warn)' : 'var(--ink-2)'}" font-size="11" font-family="var(--font-mono)">${p.openUsd > 0 ? esc(fmtUSD(p.openUsd, 0) + ' open') : '0 open'}</text>
+            </g>
+          `;
+        }).join('')}
+      </svg>
+    `;
+
+    const kpiHeader = `
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card" data-jump-view="hld_interactions">
+          <div class="kpi-label">TOTAL IC INTERACTIONS (H29)</div>
+          <div class="kpi-val">${fmtNum(icRes.totalCount)}</div>
+          <div class="kpi-sub">Across <b>${fmtNum(icRes.byPair.length)}</b> directed entity corridors</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_interactions">
+          <div class="kpi-label">RECONCILED PAIRS</div>
+          <div class="kpi-val good">${fmtNum(icRes.matchedCount)}</div>
+          <div class="kpi-sub">Rate: <b>${icRes.reconRatePct.toFixed(1)}%</b> auto-paired (±3d window)</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_interactions">
+          <div class="kpi-label">RECONCILED VOLUME ($)</div>
+          <div class="kpi-val">${fmtUSD(icRes.totalMatchedUsd, 0)}</div>
+          <div class="kpi-sub">Eliminated on Group Consolidation</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_open_recon">
+          <div class="kpi-label">OPEN UNMATCHED LEGS</div>
+          <div class="kpi-val ${icRes.openCount > 0 ? 'warn' : 'good'}">${fmtNum(icRes.openCount)}</div>
+          <div class="kpi-sub">Single-sided entries awaiting mirror</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_open_recon">
+          <div class="kpi-label">OPEN RECONCILIATION EXPOSURE</div>
+          <div class="kpi-val ${icRes.totalOpenUsd > 0 ? 'warn' : 'good'}">${fmtUSD(icRes.totalOpenUsd, 0)}</div>
+          <div class="kpi-sub">${icRes.byPendingCo.map(c => `${c.company}: ${fmtNum(c.count)}`).join(' · ') || 'All cleared'}</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_due_matrix">
+          <div class="kpi-label">NET BILATERAL IMBALANCE</div>
+          <div class="kpi-val ${Math.abs(icRes.netImbalanceUsd) > 1 ? 'warn' : 'good'}">${fmtSignedUSD(icRes.netImbalanceUsd, 0)}</div>
+          <div class="kpi-sub">Total Out minus Total In across group</div>
+        </div>
+      </div>
+
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:8px">
+          <div class="panel-title"><span>${ic('hld_interactions')} BILATERAL INTERCOMPANY CORRIDORS (MATCHED VS OPEN EXPOSURE)</span></div>
+          <span class="panel-meta">Rule 1: 1-to-1 (±3d) · Rule 2: Split 1-to-n (±3d) · Rule 3: Within $1.00</span>
+        </div>
+        ${pairChartSvg}
+      </div>
+    `;
+
+    if (submode === 'due_matrix') {
+      return `
+        ${kpiHeader}
+        <div class="panel-card" id="hldDueMatrixPanel">
+          <div class="panel-head">
+            <div class="panel-title"><span>${ic('hld_due_matrix')} BILATERAL DUE FROM / DUE TO MATRIX (${icRes.byPair.length} CORRIDORS)</span></div>
+            <div style="display:flex;gap:6px;align-items:center">
+              ${exportBtn('hldDueMatrixPanel', 'Holding_Intercompany_Due_Matrix')}
+              ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ Intercompany Entry</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>From Company (Sender)</th>
+                  <th>To Company (Receiver)</th>
+                  <th class="r">Total Interactions</th>
+                  <th class="r">Reconciled Pairs</th>
+                  <th class="r">Open Legs</th>
+                  <th class="r">Sender Out ($)</th>
+                  <th class="r">Receiver In ($)</th>
+                  <th class="r">Reconciled ($)</th>
+                  <th class="r">Open Variance ($)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${icRes.byPair.length ? icRes.byPair.map(p => `
+                  <tr>
+                    <td>${coBadge(p.fromCo)} <strong>${esc(p.fromCo)}</strong></td>
+                    <td>${coBadge(p.toCo)} <strong>${esc(p.toCo)}</strong></td>
+                    <td class="r mono">${fmtNum(p.totalCount)}</td>
+                    <td class="r mono good">${fmtNum(p.matchedCount)}</td>
+                    <td class="r mono ${p.openCount > 0 ? 'warn' : ''}">${fmtNum(p.openCount)}</td>
+                    <td class="r mono">${fmtUSD(p.outUsd, 2)}</td>
+                    <td class="r mono">${fmtUSD(p.inUsd, 2)}</td>
+                    <td class="r mono good"><strong>${fmtUSD(p.matchedUsd, 2)}</strong></td>
+                    <td class="r mono ${Math.abs(p.netVarianceUsd) > 1 ? 'warn' : ''}"><strong>${fmtSignedUSD(p.netVarianceUsd, 2)}</strong></td>
+                  </tr>
+                `).join('') : emptyRow(9, 'No intercompany corridors in selected period')}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="2"><strong>TOTAL BILATERAL CORRIDORS (${icRes.byPair.length})</strong></td>
+                  <td class="r mono"><strong>${fmtNum(icRes.totalCount)}</strong></td>
+                  <td class="r mono"><strong>${fmtNum(icRes.matchedCount)}</strong></td>
+                  <td class="r mono"><strong>${fmtNum(icRes.openCount)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(icRes.byPair.reduce((s, p) => s + p.outUsd, 0), 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(icRes.byPair.reduce((s, p) => s + p.inUsd, 0), 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(icRes.totalMatchedUsd, 2)}</strong></td>
+                  <td class="r mono"><strong>${fmtSignedUSD(icRes.netImbalanceUsd, 2)}</strong></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    if (submode === 'open_recon') {
+      const openList = icRes.openRows;
+      const shownOpen = openList.slice(0, shownCount('hld_open_recon'));
+      return `
+        ${kpiHeader}
+        <div class="sales-entity-recon" role="region" aria-label="Open Reconciliation by Pending Entity" style="margin-bottom:14px">
+          ${icRes.byPendingCo.map(c => `
+            <div class="sales-recon-card" data-no-auto-recon="1">
+              <div class="sales-recon-head"><span class="badge badge-warn">${esc(c.company)}</span><b>Awaiting Mirror Entry (${fmtNum(c.count)} Open)</b></div>
+              <div class="sales-recon-metrics">
+                <span><small>Missing In ($)</small><b class="good">${fmtUSD(c.missingInUsd, 0)}</b></span>
+                <span><small>Missing Out ($)</small><b class="crit">${fmtUSD(c.missingOutUsd, 0)}</b></span>
+                <span><small>Total Open Exposure ($)</small><b class="brass">${fmtUSD(c.usd, 0)}</b></span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="panel-card" id="hldOpenReconPanel">
+          <div class="panel-head">
+            <div class="panel-title"><span>${ic('hld_open_recon')} OPEN INTERCOMPANY RECONCILIATION QUEUE (${fmtNum(openList.length)} UNMATCHED)</span></div>
+            <div style="display:flex;gap:6px;align-items:center">
+              ${searchBox('Search unmatched date, company, notes...')}
+              ${exportBtn('hldOpenReconPanel', 'Holding_Open_Intercompany_Queue')}
+              ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ External Entry</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>IC Ref</th>
+                  <th>Date</th>
+                  <th>From Co.</th>
+                  <th>To Co.</th>
+                  <th>Pending Action By</th>
+                  <th>Missing Leg</th>
+                  <th class="r">Unmatched Amount ($)</th>
+                  <th>Notes</th>
+                  <th class="r">Reconcile Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownOpen.length ? shownOpen.map(x => {
+                  const r = x.primaryRow || {};
+                  const mirrorCoKey = COMPANY_KEY_BY_NAME[x.pendingActionCo] || slugCompanyKey(x.pendingActionCo);
+                  const counterPartyName = x.missingSide === 'In' ? x.fromCo : x.toCo;
+                  return `
+                    <tr class="rrow" data-rkey="external_movements" data-rid="${esc(r.id || '')}">
+                      <td class="mono"><strong>${esc(x.code)}</strong></td>
+                      <td class="mono">${esc(fmtDateDMY(x.date))}</td>
+                      <td>${coBadge(x.fromCo)}</td>
+                      <td>${coBadge(x.toCo)}</td>
+                      <td><span class="badge badge-warn">${esc(x.pendingActionCo)}</span></td>
+                      <td><span class="badge ${x.missingSide === 'In' ? 'badge-good' : 'badge-crit'}">Book ${esc(x.missingSide)} on ${esc(x.pendingActionCo)}</span></td>
+                      <td class="r mono"><strong>${fmtUSD(x.usd, 2)}</strong></td>
+                      <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc(x.notes || '—')}</td>
+                      <td class="r">
+                        <button type="button" class="btn btn-primary" style="padding:3px 9px;font-size:11px"
+                          data-book-mirror-ext="${esc(r.id || '')}"
+                          data-mirror-co="${esc(mirrorCoKey)}"
+                          data-mirror-type="${esc(x.missingSide)}"
+                          data-mirror-party="${esc(counterPartyName)}"
+                          data-mirror-usd="${esc(String(x.usd))}"
+                          data-mirror-date="${esc(x.date)}">
+                          + Book Mirror ${esc(x.missingSide)}
+                        </button>
+                      </td>
+                    </tr>
+                  `;
+                }).join('') : emptyRow(9, 'All intercompany transfers are 100% reconciled')}
+                ${showMoreRow('hld_open_recon', openList.length, 9)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="6"><strong>TOTAL OPEN RECONCILIATION QUEUE (${fmtNum(openList.length)} LEGS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(openList.reduce((s, x) => s + x.usd, 0), 2)}</strong></td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const shownMain = filteredRows.slice(0, shownCount('hld_interactions'));
+    const sumOut = round2(filteredRows.reduce((s, x) => s + x.outUsd, 0));
+    const sumIn = round2(filteredRows.reduce((s, x) => s + x.inUsd, 0));
+    const sumVar = round2(filteredRows.reduce((s, x) => s + x.varianceUsd, 0));
+
+    return `
+      ${kpiHeader}
+      <div class="panel-card" id="hldInteractionsPanel">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="panel-title"><span>${ic('hld_interactions')} INTERCOMPANY INTERACTIONS REGISTER (${fmtNum(filteredRows.length)})</span></div>
+            <div class="chip-bar">
+              ${chip('all', `All (${fmtNum(icRes.totalCount)})`)}
+              ${chip('reconciled', `Reconciled (${fmtNum(icRes.matchedCount)})`)}
+              ${chip('open', `Open (${fmtNum(icRes.openCount)})`)}
+              ${chip('1to1', '1-to-1')}
+              ${chip('split', 'Split (1 to n)')}
+              ${chip('tol1', 'Within $1.00')}
+              ${chip('wtc_bbc', 'WTC ↔ BBC')}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            ${searchBox('Search company, IC ref, notes...')}
+            ${exportBtn('hldInteractionsPanel', 'Holding_Intercompany_Interactions')}
+            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ External Entry</button>' : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>IC Ref</th>
+                <th>Date</th>
+                <th>From Co.</th>
+                <th>To Co.</th>
+                <th>Match Rule</th>
+                <th>Status</th>
+                <th class="r">Out ($)</th>
+                <th class="r">In ($)</th>
+                <th class="r">Variance ($)</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownMain.length ? shownMain.map(x => {
+                const r = x.primaryRow || {};
+                const stCls = x.status === 'Reconciled' ? 'badge-good' : 'badge-warn';
+                return `
+                  <tr class="rrow" data-rkey="external_movements" data-rid="${esc(r.id || '')}">
+                    <td class="mono"><strong>${esc(x.code)}</strong></td>
+                    <td class="mono">${esc(fmtDateDMY(x.date))}${x.dayGap ? ` <small class="mu">(+${x.dayGap}d)</small>` : ''}</td>
+                    <td>${coBadge(x.fromCo)}</td>
+                    <td>${coBadge(x.toCo)}</td>
+                    <td><span class="badge badge-info">${esc(x.matchType)}</span></td>
+                    <td><span class="badge ${stCls}">${esc(x.status)}</span></td>
+                    <td class="r mono">${fmtUSD(x.outUsd, 2)}</td>
+                    <td class="r mono">${fmtUSD(x.inUsd, 2)}</td>
+                    <td class="r mono ${Math.abs(x.varianceUsd) > 0.05 ? 'warn' : 'good'}"><strong>${fmtSignedUSD(x.varianceUsd, 2)}</strong></td>
+                    <td style="max-width:230px;overflow:hidden;text-overflow:ellipsis">${esc(x.notes || '—')}</td>
+                  </tr>
+                `;
+              }).join('') : emptyRow(10, 'No intercompany interactions match the current filter')}
+              ${showMoreRow('hld_interactions', filteredRows.length, 10)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="6"><strong>TOTAL INTERCOMPANY INTERACTIONS (${fmtNum(filteredRows.length)} ROWS)</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumOut, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(sumIn, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtSignedUSD(sumVar, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderHoldingPartners(submode = 'main') {
+    const u = activeUser();
+    const extList = filterRecords(SEED.records.external_movements || [], { ignoreCompany: true });
+    const jvRules = filterRecords(SEED.records.jv_partnerships || [], { ignoreCompany: true, ignorePeriod: true });
+    const jvDists = filterRecords(SEED.records.jv_distributions || [], { ignoreCompany: true });
+
+    // Non-intercompany partner & shareholder treasury movements
+    const partnerMoves = extList.filter(r => {
+      if (!r || r.voided) return false;
+      const m = String(r.method || '').trim();
+      if (m === 'Config' || m === 'Remove' || m === 'Adjusted') return false;
+      const sister = resolveSisterEntityName(r.party || r.counterparty);
+      return !sister;
+    });
+
+    const byPartnerMap = new Map();
+    let totInUsd = 0, totOutUsd = 0;
+    partnerMoves.forEach(r => {
+      const pName = String(r.party || r.counterparty || 'Unassigned Partner').trim();
+      const pk = norm(pName);
+      const cur = byPartnerMap.get(pk) || { partner: pName, count: 0, inUsd: 0, outUsd: 0, netUsd: 0, companies: new Set(), lastDate: '' };
+      const inU = Number(r.in_usd || (r.type === 'In' ? r.amount : 0) || 0);
+      const outU = Number(r.out_usd || (r.type === 'Out' ? r.amount : 0) || 0);
+      cur.count += 1;
+      cur.inUsd = round2(cur.inUsd + inU);
+      cur.outUsd = round2(cur.outUsd + outU);
+      cur.netUsd = round2(cur.inUsd - cur.outUsd);
+      if (r.company) cur.companies.add(r.company);
+      const d = String(r.date || '').slice(0, 10);
+      if (d > cur.lastDate) cur.lastDate = d;
+      byPartnerMap.set(pk, cur);
+      totInUsd = round2(totInUsd + inU);
+      totOutUsd = round2(totOutUsd + outU);
+    });
+
+    const partners = Array.from(byPartnerMap.values()).sort((a, b) => (b.inUsd + b.outUsd) - (a.inUsd + a.outUsd));
+    const totJvDistUsd = round2(jvDists.reduce((s, d) => s + Number(d.partner_share_usd || d.amount || d.total || 0), 0));
+
+    const topP = partners.slice(0, 5);
+    const maxPVal = Math.max(1, ...topP.map(p => Math.max(p.inUsd, p.outUsd)));
+    const pSvgH = Math.max(120, 28 + topP.length * 36);
+    const partnerChartSvg = `
+      <svg viewBox="0 0 760 ${pSvgH}" width="100%" height="${pSvgH}" role="img" aria-label="Partner Capital In vs Drawings Out Chart" style="display:block;overflow:visible">
+        ${topP.map((p, idx) => {
+          const y = 10 + idx * 34;
+          const inW = Math.round((p.inUsd / maxPVal) * 240);
+          const outW = Math.round((p.outUsd / maxPVal) * 240);
+          return `
+            <g transform="translate(0,${y})">
+              <text x="0" y="15" fill="var(--ink)" font-size="12" font-weight="600">${esc(p.partner.slice(0, 26))} (${fmtNum(p.count)})</text>
+              <rect x="210" y="3" width="${Math.max(3, inW)}" height="8" rx="3" fill="#059669" />
+              <rect x="210" y="13" width="${Math.max(3, outW)}" height="8" rx="3" fill="#dc2626" />
+              <text x="465" y="15" fill="var(--ink)" font-size="11.5" font-family="var(--font-mono)">In: ${esc(fmtUSD(p.inUsd, 0))} · Out: ${esc(fmtUSD(p.outUsd, 0))}</text>
+              <text x="755" y="15" text-anchor="end" fill="${p.netUsd >= 0 ? 'var(--good)' : 'var(--crit)'}" font-size="11.5" font-weight="700" font-family="var(--font-mono)">${esc(fmtSignedUSD(p.netUsd, 0))}</text>
+            </g>
+          `;
+        }).join('')}
+      </svg>
+    `;
+
+    const kpiHtml = `
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card" data-jump-view="hld_partners">
+          <div class="kpi-label">ACTIVE STAKEHOLDERS &amp; PARTNERS</div>
+          <div class="kpi-val">${fmtNum(partners.length)}</div>
+          <div class="kpi-sub">Across <b>${fmtNum(partnerMoves.length)}</b> external partner entries</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_partners">
+          <div class="kpi-label">PARTNER CAPITAL IN ($)</div>
+          <div class="kpi-val good">${fmtUSD(totInUsd, 0)}</div>
+          <div class="kpi-sub">Shareholder injections &amp; receipts</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_partners">
+          <div class="kpi-label">PARTNER DRAWINGS / OUT ($)</div>
+          <div class="kpi-val crit">${fmtUSD(totOutUsd, 0)}</div>
+          <div class="kpi-sub">Distributions, settlements &amp; drawings</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_partners">
+          <div class="kpi-label">NET PARTNER CURRENT A/C</div>
+          <div class="kpi-val brass">${fmtSignedUSD(totInUsd - totOutUsd, 0)}</div>
+          <div class="kpi-sub">Capital In minus Drawings Out</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_distributions">
+          <div class="kpi-label">JV PARTNERSHIP AGREEMENTS</div>
+          <div class="kpi-val">${fmtNum(jvRules.length)}</div>
+          <div class="kpi-sub">Active quarry, transport &amp; holding JVs</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_distributions">
+          <div class="kpi-label">JV PROFIT DISTRIBUTIONS</div>
+          <div class="kpi-val">${fmtUSD(totJvDistUsd, 0)}</div>
+          <div class="kpi-sub"><b>${fmtNum(jvDists.length)}</b> recorded profit-split settlements</div>
+        </div>
+      </div>
+
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:8px">
+          <div class="panel-title"><span>${ic('hld_partners')} PARTNER &amp; SHAREHOLDER CURRENT ACCOUNTS (CAPITAL IN VS DRAWINGS OUT)</span></div>
+          <span class="panel-meta">
+            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-ghost-bar" data-open-modal="external">+ Partner Entry</button>' : ''}
+            ${canEnterForm('jv', u) ? '<button type="button" class="btn btn-primary" data-open-modal="jv">+ JV Agreement / Split</button>' : ''}
+          </span>
+        </div>
+        ${partnerChartSvg}
+      </div>
+    `;
+
+    if (submode === 'distributions') {
+      return `
+        ${kpiHtml}
+        <div class="panel-card" id="hldJvAgreementsPanel" style="margin-bottom:14px">
+          <div class="panel-head">
+            <div class="panel-title"><span>${ic('hld_distributions')} JOINT VENTURE &amp; PROFIT-SPLIT AGREEMENTS (${fmtNum(jvRules.length)})</span></div>
+            <div style="display:flex;gap:6px;align-items:center">
+              ${exportBtn('hldJvAgreementsPanel', 'Holding_JV_Agreements')}
+              ${canEnterForm('jv', u) ? '<button type="button" class="btn btn-primary" data-open-modal="jv">+ New JV Partnership</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Agreement</th>
+                  <th>Co.</th>
+                  <th>Partner</th>
+                  <th>Scope / Product</th>
+                  <th class="r">Partner Share %</th>
+                  <th>Start Date</th>
+                  <th>End Date</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${jvRules.length ? jvRules.map(j => `
+                  <tr class="rrow" data-rkey="jv_partnerships" data-rid="${esc(j.id)}">
+                    <td class="mono"><strong>${esc(j.name || j.id)}</strong></td>
+                    <td>${coBadge(j.company)}</td>
+                    <td><strong>${esc(j.partner || j.supplier || '—')}</strong></td>
+                    <td>${esc(j.product || j.site || j.scope || 'All Operations')}</td>
+                    <td class="r mono"><strong>${fmtNum(Number(j.partner_pct || j.share_pct || 50), 1)}%</strong></td>
+                    <td class="mono">${esc(fmtDateDMY(j.start_date || j.date))}</td>
+                    <td class="mono">${esc(j.end_date ? fmtDateDMY(j.end_date) : 'Open')}</td>
+                    <td><span class="badge badge-good">${esc(j.status || 'Active')}</span></td>
+                  </tr>
+                `).join('') : emptyRow(8, 'No JV agreements registered')}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="4"><strong>TOTAL JV AGREEMENTS (${fmtNum(jvRules.length)})</strong></td>
+                  <td class="r mono"><strong>${jvRules.length ? fmtNum(jvRules.reduce((s, j) => s + Number(j.partner_pct || j.share_pct || 50), 0) / jvRules.length, 1) + '% avg' : '0.0%'}</strong></td>
+                  <td colspan="3"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const shownPartners = partners.slice(0, shownCount('hld_partners'));
+    return `
+      ${kpiHtml}
+      <div class="panel-card" id="hldPartnersTablePanel">
+        <div class="panel-head">
+          <div class="panel-title"><span>${ic('hld_partners')} PARTNER &amp; STAKEHOLDER CAPITAL LEDGER (${fmtNum(partners.length)} ACCOUNTS)</span></div>
+          <div style="display:flex;gap:6px;align-items:center">
+            ${searchBox('Search partner, stakeholder...')}
+            ${exportBtn('hldPartnersTablePanel', 'Holding_Partner_Capital_Ledger')}
+            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="external">+ Partner Entry</button>' : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Partner / Stakeholder</th>
+                <th>Entities Active</th>
+                <th class="r">Entries</th>
+                <th class="r">Capital In ($)</th>
+                <th class="r">Drawings / Out ($)</th>
+                <th class="r">Net Current A/C ($)</th>
+                <th>Last Activity</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownPartners.length ? shownPartners.map(p => `
+                <tr>
+                  <td><strong>${esc(p.partner)}</strong></td>
+                  <td>${Array.from(p.companies).map(c => coBadge(c)).join(' ')}</td>
+                  <td class="r mono">${fmtNum(p.count)}</td>
+                  <td class="r mono good">${fmtUSD(p.inUsd, 2)}</td>
+                  <td class="r mono crit">${fmtUSD(p.outUsd, 2)}</td>
+                  <td class="r mono ${p.netUsd >= 0 ? 'good' : 'crit'}"><strong>${fmtSignedUSD(p.netUsd, 2)}</strong></td>
+                  <td class="mono">${esc(fmtDateDMY(p.lastDate))}</td>
+                </tr>
+              `).join('') : emptyRow(7, 'No partner entries match the current filter')}
+              ${showMoreRow('hld_partners', partners.length, 7)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="2"><strong>TOTAL PARTNER ACCOUNTS (${fmtNum(partners.length)})</strong></td>
+                <td class="r mono"><strong>${fmtNum(partnerMoves.length)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(totInUsd, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtUSD(totOutUsd, 2)}</strong></td>
+                <td class="r mono"><strong>${fmtSignedUSD(totInUsd - totOutUsd, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderHoldingLoans(submode = 'main') {
+    const u = activeUser();
+    const loansList = filterRecords(SEED.records.loans || [], { ignoreCompany: true, ignorePeriod: true });
+    const settleList = filterRecords(SEED.records.loan_settlements || [], { ignoreCompany: true });
+    const allExps = filterRecords(SEED.records.expenses || [], { ignoreCompany: true });
+    const assetExps = allExps.filter(x => /capex|asset|land|building|equipment|vehicle|invest|legal|audit|holding/i.test(`${x.category || ''} ${x.subcategory || ''} ${x.notes || ''}`));
+
+    let givenUsd = 0, takenUsd = 0;
+    loansList.forEach(l => {
+      const amt = Number(l.principal_usd || l.amount_usd || l.amount || l.total || 0);
+      if (/taken|payable|borrow/i.test(String(l.side || l.type || l.direction || ''))) takenUsd = round2(takenUsd + amt);
+      else givenUsd = round2(givenUsd + amt);
+    });
+    const settledUsd = round2(settleList.reduce((s, x) => s + Number(x.amount_usd || x.amount || x.total || 0), 0));
+    const netLoanOut = round2(givenUsd - settledUsd);
+    const assetTotalUsd = round2(assetExps.reduce((s, x) => s + expenseSign(x) * Number(x.total || x.amount || 0), 0));
+
+    const chartRows = [
+      { label: 'Loans Given / Principal Disbursed', val: givenUsd, color: '#2563eb' },
+      { label: 'Loan Repayments & Settlements', val: settledUsd, color: '#059669' },
+      { label: 'Net Loan Principal Outstanding', val: Math.max(0, netLoanOut), color: '#d97706' },
+      { label: 'Capital, Asset & Strategic Outlays', val: Math.max(0, assetTotalUsd), color: '#7c3aed' }
+    ];
+    const maxChartVal = Math.max(1, ...chartRows.map(c => c.val));
+    const loanChartSvg = `
+      <svg viewBox="0 0 760 165" width="100%" height="165" role="img" aria-label="Loans, Settlements & Group Capital Exposure Chart" style="display:block;overflow:visible">
+        ${chartRows.map((c, idx) => {
+          const y = 12 + idx * 36;
+          const w = Math.max(4, Math.round((c.val / maxChartVal) * 410));
+          return `
+            <g transform="translate(0,${y})">
+              <text x="0" y="15" fill="var(--ink)" font-size="12" font-weight="600">${esc(c.label)}</text>
+              <rect x="235" y="2" width="410" height="18" rx="4" fill="var(--surface-2)" />
+              <rect x="235" y="2" width="${w}" height="18" rx="4" fill="${c.color}" />
+              <text x="658" y="15" fill="var(--ink)" font-size="12" font-weight="700" font-family="var(--font-mono)">${esc(fmtUSD(c.val, 0))}</text>
+            </g>
+          `;
+        }).join('')}
+      </svg>
+    `;
+
+    const kpiHtml = `
+      <div class="kpi-grid" style="margin-bottom:14px">
+        <div class="kpi-card" data-jump-view="hld_loans">
+          <div class="kpi-label">LOANS GIVEN (PRINCIPAL)</div>
+          <div class="kpi-val">${fmtUSD(givenUsd, 0)}</div>
+          <div class="kpi-sub">Across <b>${fmtNum(loansList.length)}</b> loan facilities</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_loans">
+          <div class="kpi-label">LOAN SETTLEMENTS &amp; REPAYMENTS</div>
+          <div class="kpi-val good">${fmtUSD(settledUsd, 0)}</div>
+          <div class="kpi-sub"><b>${fmtNum(settleList.length)}</b> recorded repayments</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_loans">
+          <div class="kpi-label">NET PRINCIPAL OUTSTANDING</div>
+          <div class="kpi-val brass">${fmtUSD(netLoanOut, 0)}</div>
+          <div class="kpi-sub">Principal Given minus Repayments</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_loans">
+          <div class="kpi-label">LOANS TAKEN / CREDIT LINES</div>
+          <div class="kpi-val">${fmtUSD(takenUsd, 0)}</div>
+          <div class="kpi-sub">External facilities &amp; partner credit</div>
+        </div>
+        <div class="kpi-card" data-jump-view="hld_assets">
+          <div class="kpi-label">CAPITAL &amp; ASSET OUTLAYS</div>
+          <div class="kpi-val">${fmtUSD(assetTotalUsd, 0)}</div>
+          <div class="kpi-sub"><b>${fmtNum(assetExps.length)}</b> capital/equipment/asset vouchers</div>
+        </div>
+        <div class="kpi-card" data-jump-view="ledger_treasury">
+          <div class="kpi-label">TREASURY &amp; LOAN LEDGER</div>
+          <div class="kpi-val">${fmtNum(loansList.length + settleList.length)}</div>
+          <div class="kpi-sub">Full double-entry SOA integration</div>
+        </div>
+      </div>
+
+      <div class="panel-card" style="margin-bottom:14px;padding:14px 16px">
+        <div class="panel-head" style="margin-bottom:8px">
+          <div class="panel-title"><span>${ic('hld_loans')} GROUP LOAN FACILITIES, REPAYMENTS &amp; CAPITAL OUTLAYS</span></div>
+          <span class="panel-meta">
+            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="treasury">+ Loan / Settlement</button>' : ''}
+          </span>
+        </div>
+        ${loanChartSvg}
+      </div>
+    `;
+
+    if (submode === 'assets') {
+      const shownAssets = assetExps.slice(0, shownCount('hld_assets'));
+      return `
+        ${kpiHtml}
+        <div class="panel-card" id="hldAssetsPanel">
+          <div class="panel-head">
+            <div class="panel-title"><span>${ic('hld_assets')} INVESTMENTS, CAPEX &amp; GROUP ASSET VOUCHERS (${fmtNum(assetExps.length)})</span></div>
+            <div style="display:flex;gap:6px;align-items:center">
+              ${searchBox('Search asset, supplier, category...')}
+              ${exportBtn('hldAssetsPanel', 'Holding_Group_Assets_Capex')}
+              ${canEnterForm('expense', u) ? '<button type="button" class="btn btn-primary" data-open-modal="expense">+ Capital / Asset Voucher</button>' : ''}
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Voucher</th>
+                  <th>Co.</th>
+                  <th>Category / Asset Class</th>
+                  <th>Supplier / Counterparty</th>
+                  <th class="r">Amount ($)</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${shownAssets.length ? shownAssets.map(x => `
+                  <tr class="rrow" data-rkey="expenses" data-rid="${esc(x.id)}">
+                    <td class="mono">${esc(recordDateDMY(x))}</td>
+                    <td class="mono"><strong>${esc(x.name || x.id)}</strong></td>
+                    <td>${coBadge(x.company)}</td>
+                    <td><strong>${esc([x.category, x.subcategory].filter(Boolean).join(' · ') || 'Capital Outlay')}</strong></td>
+                    <td>${esc(x.supplier || '—')}</td>
+                    <td class="r mono"><strong>${fmtUSD(Number(x.total || x.amount || 0), 2)}</strong></td>
+                    <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc(cleanNotesText(x.notes) || '—')}</td>
+                  </tr>
+                `).join('') : emptyRow(7, 'No capital or asset outlays in selected scope')}
+                ${showMoreRow('hld_assets', assetExps.length, 7)}
+              </tbody>
+              <tfoot>
+                <tr class="totals-row">
+                  <td colspan="5"><strong>TOTAL CAPITAL &amp; ASSET OUTLAYS (${fmtNum(assetExps.length)} VOUCHERS)</strong></td>
+                  <td class="r mono"><strong>${fmtUSD(assetTotalUsd, 2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    const shownLoans = loansList.slice(0, shownCount('hld_loans'));
+    return `
+      ${kpiHtml}
+      <div class="panel-card" id="hldLoansPanel">
+        <div class="panel-head">
+          <div class="panel-title"><span>${ic('hld_loans')} GROUP LOANS GIVEN / TAKEN &amp; FACILITY SCHEDULE (${fmtNum(loansList.length)})</span></div>
+          <div style="display:flex;gap:6px;align-items:center">
+            ${searchBox('Search borrower, lender, loan ref...')}
+            ${exportBtn('hldLoansPanel', 'Holding_Group_Loans')}
+            ${canEnterForm('treasury', u) ? '<button type="button" class="btn btn-primary" data-open-modal="treasury">+ Loan / Settlement</button>' : ''}
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Loan Ref</th>
+                <th>Co.</th>
+                <th>Counterparty</th>
+                <th>Direction</th>
+                <th class="r">Principal ($)</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shownLoans.length ? shownLoans.map(l => {
+                const amt = Number(l.principal_usd || l.amount_usd || l.amount || l.total || 0);
+                const dir = String(l.side || l.type || l.direction || 'Loan Given');
+                return `
+                  <tr class="rrow" data-rkey="loans" data-rid="${esc(l.id)}">
+                    <td class="mono">${esc(fmtDateDMY(l.date || l.start_date))}</td>
+                    <td class="mono"><strong>${esc(l.name || l.id)}</strong></td>
+                    <td>${coBadge(l.company)}</td>
+                    <td><strong>${esc(l.counterparty || l.party || l.borrower || '—')}</strong></td>
+                    <td><span class="badge badge-info">${esc(dir)}</span></td>
+                    <td class="r mono"><strong>${fmtUSD(amt, 2)}</strong></td>
+                    <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis">${esc(cleanNotesText(l.notes) || '—')}</td>
+                  </tr>
+                `;
+              }).join('') : emptyRow(7, 'No loans registered in current scope')}
+              ${showMoreRow('hld_loans', loansList.length, 7)}
+            </tbody>
+            <tfoot>
+              <tr class="totals-row">
+                <td colspan="5"><strong>TOTAL LOAN FACILITIES (${fmtNum(loansList.length)})</strong></td>
+                <td class="r mono"><strong>${fmtUSD(givenUsd + takenUsd, 2)}</strong></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   function renderHubAnalyticsView(modKey) {
     const title = VIEW_TITLES[modKey] || 'Module Analytics';
     return `
@@ -36098,7 +37442,9 @@
           : (m.unlockCount > 0 ? `${m.unlockCount}/${m.unlockTotal} No PIN` : 'Admin PIN Req')
       }
     ];
-    const hubs = (typeof HUB_CATALOG !== 'undefined' ? HUB_CATALOG : []).map(h => ({
+    const hubs = (typeof HUB_CATALOG !== 'undefined'
+      ? HUB_CATALOG.filter(h => getActiveIndustry(STATE.company) === 'Holding & Treasury' ? (!['sales', 'raw', 'fleet', 'warehouse'].includes(h.id) && (!h.industry || h.industry === 'Holding & Treasury')) : !h.industry)
+      : []).map(h => ({
       id: h.id,
       title: h.title,
       visible: canViewHub(h.id, previewUser)
@@ -36626,7 +37972,9 @@
       { key: 'Custom', label: 'Custom Role', icon: 'sliders' }
     ];
 
-    const hubVisibilityList = (typeof HUB_CATALOG !== 'undefined' ? HUB_CATALOG : []).map(h => ({
+    const hubVisibilityList = (typeof HUB_CATALOG !== 'undefined'
+      ? HUB_CATALOG.filter(h => getActiveIndustry(STATE.company) === 'Holding & Treasury' ? (!['sales', 'raw', 'fleet', 'warehouse'].includes(h.id)) : (!h.industry))
+      : []).map(h => ({
       id: h.id,
       title: h.title,
       visible: canViewHub(h.id, previewUser)
@@ -38538,8 +39886,12 @@
           : `Save Return to ${company} (${effRtKm.toFixed(1)} km RT)`;
         saveBtn.hidden = false;
       } else {
-        saveBtn.textContent = isEditingExisting ? 'Save Changes' : (STATE.editingPendingRawId ? 'Save Final Price' : 'Post to Cloud Ledger');
+        saveBtn.textContent = isEditingExisting ? 'Save Changes' : (STATE.editingPendingRawId ? 'Save Final Price' : 'Post');
         if (isEditingExisting && !canModifyRecord()) saveBtn.hidden = true;
+      }
+      const unsavedPostBtn = $('unsavedEntryPostBtn');
+      if (unsavedPostBtn && saveBtn.textContent) {
+        unsavedPostBtn.textContent = saveBtn.textContent;
       }
     }
 
@@ -61426,6 +62778,8 @@
           if (!posRe.test(rid)) return true;
           const sRow = seedById.get(rid);
           if (!sRow) return false;
+          if (r.name && sRow.name && String(r.name) !== String(sRow.name)) return false;
+          if (r.ticket_no && sRow.ticket_no && String(r.ticket_no) !== String(sRow.ticket_no)) return false;
           if (r.date && sRow.date && String(r.date) !== String(sRow.date)) return false;
           if (r.staff && sRow.staff && norm(r.staff) !== norm(sRow.staff)) return false;
           if (r.supplier && sRow.supplier && norm(r.supplier) !== norm(sRow.supplier)) return false;
@@ -64896,6 +66250,16 @@
     reg_fx_rates: 'Currency & FX Rates',
     reg_currencies: 'Currencies Registry',
     reg_vat_rates: 'VAT Rates',
+    // Holding & Group Treasury sub-views
+    hld_consolidation: 'Group Consolidation & P&L',
+    hld_entities: 'Subsidiary Scorecards',
+    hld_interactions: 'Intercompany Interactions (h29)',
+    hld_open_recon: 'Open Reconciliation Queue',
+    hld_due_matrix: 'Due From / Due To Matrix',
+    hld_partners: 'Partner Capital & Current A/C',
+    hld_distributions: 'Profit Splits & Drawings',
+    hld_loans: 'Loans Given / Taken & Interest',
+    hld_assets: 'Investments & Group Assets',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -64960,6 +66324,15 @@
     reg_fx_rates: 'Currency & FX Rates',
     reg_currencies: 'Currencies Registry',
     reg_vat_rates: 'VAT Rates',
+    hld_consolidation: 'Group Consolidation',
+    hld_entities: 'Subsidiary Scorecards',
+    hld_interactions: 'Intercompany (h29)',
+    hld_open_recon: 'Open Reconciliation',
+    hld_due_matrix: 'Due From / Due To',
+    hld_partners: 'Partners & Capital',
+    hld_distributions: 'Profit Splits',
+    hld_loans: 'Loans & Interest',
+    hld_assets: 'Group Assets',
     statements: 'Statements & Reports',
     users: 'Users & Security'
   };
@@ -64967,8 +66340,117 @@
     'manufacturing-group': 'All Group (WTC · BBC · Lions)',
     wtc: 'WTC (World Trading)',
     bbconstruction: 'BBConstruction',
-    lionstransport: 'Lions Transport'
+    lionstransport: 'Lions Transport',
+    bdeirholding: 'Bdeir Holding'
   };
+
+  // Dynamic Multi-Industry Sidebar Specification (Fixed Spine + Swappable Middle Operational Groups)
+  const INDUSTRY_SIDEBAR_SPEC = {
+    'Manufacturing': {
+      grp1: 'Commercial & Procurement',
+      grp2: 'Plant, Fleet & Workforce',
+      slots: [
+        { hub: 'sales', view: 'sales', label: 'Sales & Receivables', pillId: '' },
+        { hub: 'raw', view: 'raw', label: 'Quarry, Haulage & JVs', pillId: 'navCountRaw' },
+        { hub: 'fleet', view: 'fleet', label: 'Fleet & Maintenance', pillId: 'navCountFleet' },
+        { hub: 'warehouse', view: 'warehouse', label: 'Warehouse & Parts', pillId: '' }
+      ]
+    },
+    'Holding & Treasury': {
+      grp1: 'Group & Intercompany',
+      grp2: 'Capital, Partners & Workforce',
+      slots: [
+        { hub: 'hld_consolidation', view: 'hld_consolidation', label: 'Group Consolidation', pillId: '' },
+        { hub: 'hld_interactions', view: 'hld_interactions', label: 'Intercompany & Reconcil.', pillId: 'navCountRaw' },
+        { hub: 'hld_partners', view: 'hld_partners', label: 'Partners & Profit Splits', pillId: 'navCountFleet' },
+        { hub: 'hld_loans', view: 'hld_loans', label: 'Loans, Capital & Assets', pillId: '' }
+      ]
+    },
+    'Hospitality & Resorts': {
+      grp1: 'Resort & Guest Operations',
+      grp2: 'Commissary, Utilities & Staff',
+      slots: [
+        { hub: 'sales', view: 'sales', label: 'Sales & Receivables', pillId: '' },
+        { hub: 'raw', view: 'raw', label: 'Quarry, Haulage & JVs', pillId: 'navCountRaw' },
+        { hub: 'fleet', view: 'fleet', label: 'Fleet & Maintenance', pillId: 'navCountFleet' },
+        { hub: 'warehouse', view: 'warehouse', label: 'Warehouse & Parts', pillId: '' }
+      ]
+    },
+    'Automotive & Heavy Trading': {
+      grp1: 'Commercial & Dealership',
+      grp2: 'Inventory, Workshop & Staff',
+      slots: [
+        { hub: 'sales', view: 'sales', label: 'Sales & Receivables', pillId: '' },
+        { hub: 'raw', view: 'raw', label: 'Quarry, Haulage & JVs', pillId: 'navCountRaw' },
+        { hub: 'fleet', view: 'fleet', label: 'Fleet & Maintenance', pillId: 'navCountFleet' },
+        { hub: 'warehouse', view: 'warehouse', label: 'Warehouse & Parts', pillId: '' }
+      ]
+    },
+    'Real Estate & Property': {
+      grp1: 'Leasing, Sales & Billing',
+      grp2: 'Portfolio, Facilities & Staff',
+      slots: [
+        { hub: 'sales', view: 'sales', label: 'Sales & Receivables', pillId: '' },
+        { hub: 'raw', view: 'raw', label: 'Quarry, Haulage & JVs', pillId: 'navCountRaw' },
+        { hub: 'fleet', view: 'fleet', label: 'Fleet & Maintenance', pillId: 'navCountFleet' },
+        { hub: 'warehouse', view: 'warehouse', label: 'Warehouse & Parts', pillId: '' }
+      ]
+    },
+    'Insurance & Brokerage': {
+      grp1: 'Underwriting & Carrier Billing',
+      grp2: 'Claims, Fleet & Workforce',
+      slots: [
+        { hub: 'sales', view: 'sales', label: 'Sales & Receivables', pillId: '' },
+        { hub: 'raw', view: 'raw', label: 'Quarry, Haulage & JVs', pillId: 'navCountRaw' },
+        { hub: 'fleet', view: 'fleet', label: 'Fleet & Maintenance', pillId: 'navCountFleet' },
+        { hub: 'warehouse', view: 'warehouse', label: 'Warehouse & Parts', pillId: '' }
+      ]
+    }
+  };
+
+  function getActiveIndustry(coKey) {
+    const k = String(coKey || STATE.company || 'manufacturing-group');
+    if (k === 'manufacturing-group') return 'Manufacturing';
+    if (k === 'bdeirholding') return 'Holding & Treasury';
+    if (k.startsWith('industry:')) return k.slice(9) || 'Manufacturing';
+    if (COMPANY_INDUSTRY_BY_KEY[k]) return COMPANY_INDUSTRY_BY_KEY[k];
+    const cat = getCompanyCatalog();
+    const hit = cat.find(c => c.key === k || c.name.toLowerCase() === k.toLowerCase());
+    return (hit && hit.industry) || 'Manufacturing';
+  }
+
+  let _lastSyncedSidebarInd = 'Manufacturing';
+  function syncIndustrySidebarDom(indId) {
+    const effInd = (indId && INDUSTRY_SIDEBAR_SPEC[indId]) ? indId : (INDUSTRY_SIDEBAR_SPEC[getActiveIndustry(STATE.company)] ? getActiveIndustry(STATE.company) : 'Manufacturing');
+    const navEl = $('sidebarNav');
+    if (!navEl) return;
+    const spec = INDUSTRY_SIDEBAR_SPEC[effInd] || INDUSTRY_SIDEBAR_SPEC['Manufacturing'];
+    const grps = navEl.querySelectorAll('.grp');
+    if (grps[1] && grps[1].textContent !== spec.grp1) grps[1].textContent = spec.grp1;
+    if (grps[2] && grps[2].textContent !== spec.grp2) grps[2].textContent = spec.grp2;
+
+    // The 4 swappable operational hub buttons sit at indices 3, 4 (before expenses at 5) and 6, 7 (before payroll at 8)
+    const navBtns = navEl.querySelectorAll('button.nav-item');
+    const slotIndices = [3, 4, 6, 7];
+    slotIndices.forEach((btnIdx, slotIdx) => {
+      const btn = navBtns[btnIdx];
+      const slot = spec.slots[slotIdx];
+      if (!btn || !slot) return;
+      const prevHub = btn.getAttribute('data-hub');
+      if (prevHub !== slot.hub) {
+        btn.setAttribute('data-hub', slot.hub);
+        btn.setAttribute('data-view', slot.view);
+        btn.setAttribute('aria-label', slot.label);
+        const icoEl = btn.querySelector('.nav-ico');
+        if (icoEl && window.MFG_ICONS) {
+          icoEl.outerHTML = window.MFG_ICONS.nav(slot.view);
+        }
+        const lblSpan = btn.querySelector('span');
+        if (lblSpan) lblSpan.textContent = slot.label;
+      }
+    });
+    _lastSyncedSidebarInd = effInd;
+  }
 
   function getInitials(name) {
     return String(name || 'IS').split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0].toUpperCase()).join('');
@@ -64976,9 +66458,21 @@
 
   function selectCompanyScope(coKey, closePopover = true) {
     if (!coKey) return;
+    const prevInd = getActiveIndustry(STATE.company);
+    const nextInd = getActiveIndustry(coKey);
     STATE.company = coKey;
     STATE.shown = {};
     STATE.pbiTablePage = {};
+    if (prevInd !== nextInd) {
+      const prevSpec = INDUSTRY_SIDEBAR_SPEC[prevInd] || INDUSTRY_SIDEBAR_SPEC['Manufacturing'];
+      const nextSpec = INDUSTRY_SIDEBAR_SPEC[nextInd] || INDUSTRY_SIDEBAR_SPEC['Manufacturing'];
+      const curHub = VIEW_TO_HUB[STATE.view] || STATE.view;
+      const slotIdx = prevSpec.slots.findIndex(s => s.hub === curHub);
+      if (slotIdx >= 0 && nextSpec.slots[slotIdx]) {
+        STATE.view = nextSpec.slots[slotIdx].view;
+      }
+    }
+    syncIndustrySidebarDom(nextInd);
     saveFilterState();
     if (closePopover) {
       const switchEl = $('companySwitch');
@@ -65080,16 +66574,23 @@
     const q = searchInp ? String(searchInp.value || '').trim().toLowerCase() : '';
     const indFilter = STATE.companySwitchIndFilter || 'all';
 
+    const mfgAllowedCount = STATE.enterpriseScalePreview
+      ? allowedNames.length
+      : allowedNames.filter(n => !/^bdeir\s*holding$/i.test(n)).length;
+    const mfgCatalogCount = STATE.enterpriseScalePreview
+      ? catalog.length
+      : catalog.filter(c => c.key !== 'bdeirholding').length;
+
     let visibleBtnCount = 0;
     switchEl.querySelectorAll('.entity-btn').forEach(btn => {
       const key = btn.getAttribute('data-company') || '';
       const isAllowed = allowedCos.includes(key);
       if (key === 'manufacturing-group') {
-        btn.textContent = allowedNames.length >= catalog.length
-          ? `All Group (${allowedNames.length})`
-          : `All Assigned (${allowedNames.length})`;
+        btn.textContent = mfgAllowedCount >= mfgCatalogCount
+          ? `All Group (${mfgAllowedCount})`
+          : `All Assigned (${mfgAllowedCount})`;
         btn.setAttribute('data-ind', 'all');
-        btn.setAttribute('data-ind-tag', allowedIndCount > 1 ? `${allowedIndCount} Ind` : firstAllowedInd);
+        btn.setAttribute('data-ind-tag', STATE.enterpriseScalePreview && allowedIndCount > 1 ? `${allowedIndCount} Ind` : firstAllowedInd);
         btn.setAttribute('data-co-search', `all group assigned consolidated ${allowedNames.join(' ').toLowerCase()}`);
       } else if (key.startsWith('industry:')) {
         const indName = key.slice(9);
@@ -65124,21 +66625,22 @@
     const indTextEl = $('companySwitchIndText');
     const coTextEl = $('companySwitchCoText');
     let trigInd = firstAllowedInd;
-    let trigCo = `All Group (${allowedNames.length})`;
+    let trigCo = `All Group (${mfgAllowedCount})`;
     if (STATE.company === 'manufacturing-group') {
-      trigInd = allowedIndCount > 1 ? `All (${allowedIndCount} Ind)` : firstAllowedInd;
-      trigCo = allowedNames.length >= catalog.length
-        ? `All Group (${allowedNames.length})`
-        : `All Assigned (${allowedNames.length})`;
+      trigInd = (STATE.enterpriseScalePreview && allowedIndCount > 1) ? `All (${allowedIndCount} Ind)` : firstAllowedInd;
+      trigCo = mfgAllowedCount >= mfgCatalogCount
+        ? `All Group (${mfgAllowedCount})`
+        : `All Assigned (${mfgAllowedCount})`;
     } else if (String(STATE.company || '').startsWith('industry:')) {
       const indName = String(STATE.company).slice(9);
       const grp = allowedIndGroups.find(g => g.id === indName);
       const cnt = grp ? grp.permittedCos.length : 0;
-      trigInd = indName;
+      trigInd = indName === 'Holding & Treasury' ? 'Holding' : indName;
       trigCo = `All ${indName.split(' ')[0]} (${cnt})`;
     } else {
       const coMeta = catalog.find(c => c.key === STATE.company);
-      trigInd = (coMeta && coMeta.industry) || COMPANY_INDUSTRY_BY_KEY[STATE.company] || 'Manufacturing';
+      const rawInd = (coMeta && coMeta.industry) || COMPANY_INDUSTRY_BY_KEY[STATE.company] || 'Manufacturing';
+      trigInd = rawInd === 'Holding & Treasury' ? 'Holding' : rawInd;
       trigCo = (coMeta && coMeta.name) || COMPANY_BU_MATCH[STATE.company] || STATE.company;
     }
     if (indTextEl) { indTextEl.textContent = trigInd; indTextEl.setAttribute('data-ui-tip', trigInd); }
@@ -65289,14 +66791,17 @@
     STATE.canAccessRdlReport = r => canAccessRdlReport(r, user);
 
     if (!allowedCos.includes(STATE.company)) STATE.company = allowedCos[0];
+    syncIndustrySidebarDom(getActiveIndustry(STATE.company));
     syncCompanySwitchUi();
 
-    COMPANY_LABELS['manufacturing-group'] = allowedNames.length >= catalog.length
-      ? `All Manufacturing Group (${allowedNames.slice(0, 3).join(' · ')}${allowedNames.length > 3 ? ' +' + (allowedNames.length - 3) + ' more' : ''})`
-      : `Assigned Entities (${allowedNames.slice(0, 3).join(' · ')}${allowedNames.length > 3 ? ' +' + (allowedNames.length - 3) + ' more' : ''})`;
-    COMPANY_MOBILE_LABELS['manufacturing-group'] = allowedNames.length >= catalog.length
-      ? `All Group (${allowedNames.length})`
-      : `All Assigned (${allowedNames.length})`;
+    const mfgAllowed = STATE.enterpriseScalePreview ? allowedNames : allowedNames.filter(n => !/^bdeir\s*holding$/i.test(n));
+    const mfgCatLen = STATE.enterpriseScalePreview ? catalog.length : catalog.filter(c => c.key !== 'bdeirholding').length;
+    COMPANY_LABELS['manufacturing-group'] = mfgAllowed.length >= mfgCatLen
+      ? `All Manufacturing Group (${mfgAllowed.slice(0, 3).join(' · ')}${mfgAllowed.length > 3 ? ' +' + (mfgAllowed.length - 3) + ' more' : ''})`
+      : `Assigned Entities (${mfgAllowed.slice(0, 3).join(' · ')}${mfgAllowed.length > 3 ? ' +' + (mfgAllowed.length - 3) + ' more' : ''})`;
+    COMPANY_MOBILE_LABELS['manufacturing-group'] = mfgAllowed.length >= mfgCatLen
+      ? `All Group (${mfgAllowed.length})`
+      : `All Assigned (${mfgAllowed.length})`;
 
     document.querySelectorAll('#sidebarNav .nav-item').forEach(btn => {
       const hubId = btn.getAttribute('data-hub') || btn.getAttribute('data-view');
@@ -65796,6 +67301,8 @@
       expenses: 'expense', expenses_analytics: 'expense', recurring_expenses: 'recurringexpense',
       warehouse: 'warehousestock', warehouse_parts: 'repair',
       payroll: 'salary', workforce_map: 'attendance', payroll_attendance: 'attendance', payroll_allowances: 'logistics', payroll_contracts: 'employment', payroll_analytics: 'salary',
+      hld_consolidation: 'external', hld_entities: 'external', hld_interactions: 'external', hld_open_recon: 'external', hld_due_matrix: 'external',
+      hld_partners: 'jv', hld_distributions: 'jv', hld_loans: 'treasury', hld_assets: 'expense',
       ledger: 'treasury', gl: 'treasury', ledger_treasury: 'treasury',
       tables: 'pricerule',
       reg_equipment: 'equipment', reg_drivers: 'driver', reg_staff: 'staff', reg_roles: 'staffrole', reg_sites: 'site', reg_regions: 'region',
@@ -65824,7 +67331,13 @@
     const activeHub = getHubDef(activeHubId) || HUB_CATALOG[0];
     const group = (activeHub && activeHub.group) || 'exec';
 
+    const activeInd = getActiveIndustry(STATE.company);
+    const activeIndSpec = INDUSTRY_SIDEBAR_SPEC[activeInd] || INDUSTRY_SIDEBAR_SPEC['Manufacturing'];
+    const activeIndHubSet = new Set(activeIndSpec.slots.map(s => s.hub).concat(['expenses', 'payroll']));
     const hubsInGroup = HUB_CATALOG.filter(h => {
+      if (h.group === 'commercial' || h.group === 'plant') {
+        if (!activeIndHubSet.has(h.id)) return false;
+      }
       const sameDock = (group === 'commercial' || group === 'plant')
         ? (h.group === 'commercial' || h.group === 'plant')
         : ((group === 'books' || group === 'universal' || group === 'system' || group === 'master')
@@ -66167,7 +67680,26 @@
     }
   }
 
-  async function handleKioskAdminFaceDescriptor(det, opts = {}) {
+  function getKioskFacePoolWithAdminSeed() {
+    const pool = usableFaces(null, { includeKioskStaff: true });
+    const seed = DEFAULT_FACE_SEEDS && DEFAULT_FACE_SEEDS['husseinbdeir@bhfirms.com'];
+    if (seed && Array.isArray(seed.face_samples) && seed.face_samples.length) {
+      const hasOwner = pool.some(p => p && (norm(p.email) === 'husseinbdeir@bhfirms.com' || norm(p.name) === 'hussein bdeir') && Array.isArray(p.samples) && p.samples.length);
+      if (!hasOwner) {
+        pool.unshift({
+          id: 'u1',
+          email: 'husseinbdeir@bhfirms.com',
+          name: 'Hussein Bdeir',
+          role: 'Owner',
+          companies: 'WTC, BBConstruction, Lions Transport, Bdeir Holding',
+          samples: seed.face_samples.map(s => s.slice())
+        });
+      }
+    }
+    return pool;
+  }
+
+  function handleKioskAdminFaceDescriptor(det, opts = {}) {
     if (!det || !det.descriptor) {
       KIOSK_ADMIN_MODAL_STATE.missedFrames = (KIOSK_ADMIN_MODAL_STATE.missedFrames || 0) + 1;
       if (!opts.liveVideo || KIOSK_ADMIN_MODAL_STATE.missedFrames >= 3) {
@@ -66182,7 +67714,7 @@
       return { ok: false, reason: 'no-face' };
     }
     KIOSK_ADMIN_MODAL_STATE.missedFrames = 0;
-    const pool = usableFaces(null, { includeKioskStaff: true });
+    const pool = getKioskFacePoolWithAdminSeed();
     if (!pool.length || !window.Face) {
       KIOSK_ADMIN_MODAL_STATE.err = 'No Face ID profiles enrolled yet.';
       KIOSK_ADMIN_MODAL_STATE.statusText = KIOSK_ADMIN_MODAL_STATE.err;
@@ -66351,7 +67883,7 @@
         'ok'
       );
     }
-    return true;
+    return { ok: true, reason, locked: true, activeKiosk: targetKiosk };
   }
 
   function formatKioskWallClockNow() {
@@ -66425,7 +67957,7 @@
     if (!locked && STATE.kioskLocked) {
       let faceVerified = Boolean(KIOSK_ADMIN_MODAL_STATE.sessionActive && KIOSK_ADMIN_MODAL_STATE.unlocked);
       if (!faceVerified && Array.isArray(authArg) && authArg.length === 128 && window.Face) {
-        const pool = usableFaces(null, { includeKioskStaff: true });
+        const pool = getKioskFacePoolWithAdminSeed();
         const m = window.Face.match(authArg, pool);
         const thr = Number(STATE.faceSettings.threshold || 0.50);
         const dec = window.Face.decide(m, Object.assign({}, window.Face.CONFIG, { threshold: thr }), { faceSizeFrac: 0.26 });
@@ -69153,7 +70685,7 @@
     }
   }
 
-  async function handleKioskAttDescriptor(det, opts = {}) {
+  function handleKioskAttDescriptor(det, opts = {}) {
     if (!det || !det.descriptor) {
       KIOSK_ATT_STATE.missedFrames = (KIOSK_ATT_STATE.missedFrames || 0) + 1;
       if (!opts.liveVideo || KIOSK_ATT_STATE.missedFrames >= 3) {
@@ -69165,7 +70697,7 @@
       return { ok: false, reason: 'no-face' };
     }
     KIOSK_ATT_STATE.missedFrames = 0;
-    const pool = usableFaces(null, { includeKioskStaff: true });
+    const pool = getKioskFacePoolWithAdminSeed();
     if (!pool.length || !window.Face) {
       KIOSK_ATT_STATE.statusText = 'No Face ID profiles enrolled yet. Enrol staff in Station Admin.';
       KIOSK_ATT_STATE.statusCls = 'warn';
@@ -72976,10 +74508,7 @@
     const univPill = $('topbarUnivScopePill');
     const isGroupCo = !STATE.company || STATE.company === 'manufacturing-group';
     if (univPill) {
-      univPill.hidden = !isUnivView;
-      if (isUnivView) {
-        univPill.textContent = isGroupCo ? 'All BUs · Shared Registry' : `${coMobLbl} · Shared Registry`;
-      }
+      univPill.hidden = true;
     }
     if ((isKiosksView || isUnivView || isDailyOpsView) && _dateFacState.open) closeDateFacilitator();
     const univGroupKeys = isUnivView ? (UNIV_REGISTRY_GROUPS[STATE.view] || [UNIV_VIEW_TO_TABLE_KEY[STATE.view]]) : [];
@@ -73019,6 +74548,9 @@
     const aiScope = $('aiDrawerScope');
     if (aiScope) aiScope.textContent = `${String(coFullLbl).split('(')[0].trim()} · USD · ${k.label || 'All-Time'}`;
     if (window.MFG_ASK && typeof window.MFG_ASK.syncScope === 'function') window.MFG_ASK.syncScope();
+
+    const activeInd = getActiveIndustry(STATE.company);
+    syncIndustrySidebarDom(activeInd);
 
     const activeHubId = VIEW_TO_HUB[STATE.view] || 'overview';
     document.querySelectorAll('#sidebarNav .nav-item').forEach(btn => {
@@ -73077,11 +74609,13 @@
         el.hidden = true;
       }
     };
+    const slot1Hub = activeInd === 'Holding & Treasury' ? 'hld_interactions' : 'raw';
+    const slot2Hub = activeInd === 'Holding & Treasury' ? 'hld_partners' : 'fleet';
     setExceptionPill('navCountOverview', getHubExceptionBadge('overview', user, k, sentinelsOpen));
     setExceptionPill('navCountSentinels', getHubExceptionBadge('sentinels', user, k, sentinelsOpen));
-    setExceptionPill('navCountRaw', getHubExceptionBadge('raw', user, k, sentinelsOpen));
+    setExceptionPill('navCountRaw', getHubExceptionBadge(slot1Hub, user, k, sentinelsOpen));
     setExceptionPill('navCountExpenses', getHubExceptionBadge('expenses', user, k, sentinelsOpen));
-    setExceptionPill('navCountFleet', getHubExceptionBadge('fleet', user, k, sentinelsOpen));
+    setExceptionPill('navCountFleet', getHubExceptionBadge(slot2Hub, user, k, sentinelsOpen));
     setExceptionPill('navCountPayroll', getHubExceptionBadge('payroll', user, k, sentinelsOpen));
     setExceptionPill('navCountTB', getHubExceptionBadge('ledger', user, k, sentinelsOpen));
 
@@ -73095,6 +74629,15 @@
       case 'overview': wsHtml = renderOverview(); break;
       case 'daily_ops': wsHtml = window.MFG_DAILY_OPS ? window.MFG_DAILY_OPS.render({ STATE, SEED, COMPANY_LABELS, COMPANY_BU_MATCH, MIN_DATE, MAX_DATE, SEED_DATE, todayISO, yesterdayISO, allowedCompanyNames, getCompanyCatalog, getKPI, getDieselTankLedger, getLbpFxRate, convSignedDeltas, isMatIndiffRule, cleanNotesText, ticketSign, ticketMeters, ticketTons, isAggregateMaterialProduct, isCashSaleTicket, isCreditSaleTicket, ticketCommissionUsd, expenseKind, expenseSign, isApCreditExpense, isCashExpense, isPendingPriceExpense, isBulkDieselExpense, receiptKind, settlementKind, isDieselTankRefillIntake, coBadge, relLink, ic, esc, fmtUSD, fmtUSDk, fmtLBP, fmtNum, norm, round2 }) : renderOverview(); break;
       case 'entities': wsHtml = renderEntitiesComparison(); break;
+      case 'hld_consolidation': wsHtml = renderHoldingConsolidation('main'); break;
+      case 'hld_entities': wsHtml = renderHoldingConsolidation('entities'); break;
+      case 'hld_interactions': wsHtml = renderHoldingInteractions('main'); break;
+      case 'hld_open_recon': wsHtml = renderHoldingInteractions('open_recon'); break;
+      case 'hld_due_matrix': wsHtml = renderHoldingInteractions('due_matrix'); break;
+      case 'hld_partners': wsHtml = renderHoldingPartners('main'); break;
+      case 'hld_distributions': wsHtml = renderHoldingPartners('distributions'); break;
+      case 'hld_loans': wsHtml = renderHoldingLoans('main'); break;
+      case 'hld_assets': wsHtml = renderHoldingLoans('assets'); break;
       case 'pbi': wsHtml = window.MFG_PBI ? window.MFG_PBI.renderPbiStudio({ STATE, SEED, COMPANY_LABELS, STATEMENT_CATALOG, getModel, getKPI, filterRecords, buildSentinelItems, exportBtn, nextTicketNo, canEnterForm, canAccessPbiPage, allowedCompanyNames, SEED_DATE, MIN_DATE, MAX_DATE, periodRange, getDateGrainCatalog, getScopedMonthly, setDateFilter, ticketTons, ticketMeters, productMeters, isAggregateMaterialProduct, renderDateSegPillHtml, buildCashTillMoves, buildDailyTillSheetRows, buildTicketSerialAudit, searchBox, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, appCell, coBadge, relLink, ic }) : renderOverview(); break;
       case 'tables': syncGlAccountsRegistry(); ensureStaffMembersSeeded(); wsHtml = window.MFG_PBI ? window.MFG_PBI.renderTablesHub({ STATE, SEED, filterRecords, sortRows, th, renderColFilterBar, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm, canAccessTable, allowedCompanyNames, isAppRecord }) : renderOverview(); break;
       case 'sentinels': wsHtml = renderSentinels(); break;
@@ -73614,6 +75157,29 @@
         const defaultDir = !isDefaultDescSortKey(key) ? 'asc' : 'desc';
         STATE.sortBy[view] = { key, dir: cur.key === key ? (cur.dir === 'desc' ? 'asc' : 'desc') : defaultDir };
         renderApp();
+        return;
+      }
+
+      const bookMirrorBtn = t.closest('[data-book-mirror-ext]');
+      if (bookMirrorBtn && container.contains(bookMirrorBtn)) {
+        e.stopPropagation();
+        const mirrorCo = bookMirrorBtn.getAttribute('data-mirror-co') || 'wtc';
+        const mirrorType = bookMirrorBtn.getAttribute('data-mirror-type') || 'In';
+        const mirrorParty = bookMirrorBtn.getAttribute('data-mirror-party') || '';
+        const mirrorUsd = bookMirrorBtn.getAttribute('data-mirror-usd') || '';
+        const mirrorDate = bookMirrorBtn.getAttribute('data-mirror-date') || '';
+        openEntryModal('external', {
+          co: COMPANY_BU_MATCH[mirrorCo] || mirrorCo,
+          party: mirrorParty,
+          usd: mirrorUsd,
+          notes: `Intercompany mirror (${mirrorType}) for ${mirrorParty} (${mirrorDate})`
+        });
+        setTimeout(() => {
+          const tpEl = $('f_type');
+          if (tpEl) { tpEl.value = mirrorType; tpEl.dispatchEvent(new Event('change', { bubbles: true })); }
+          const dtEl = $('f_date');
+          if (dtEl && mirrorDate) { dtEl.value = mirrorDate; dtEl.dispatchEvent(new Event('change', { bubbles: true })); }
+        }, 30);
         return;
       }
 
@@ -77228,7 +78794,7 @@
       verifyAdminPin: pin => verifyKioskAdminPin(pin),
       expireAdminSession: (reason = 'inactivity') => expireKioskAdminSession(reason),
       getAdminInactivityTimeoutMs: () => KIOSK_ADMIN_INACTIVITY_MS,
-      getStationAdminState: () => Object.assign({}, KIOSK_ADMIN_MODAL_STATE),
+      getStationAdminState: () => Object.assign({}, KIOSK_ADMIN_MODAL_STATE, { adminSessionExpiresAt: KIOSK_ADMIN_MODAL_STATE.expiresAt }),
       clearFlashPunch: () => clearKioskFlashPunch(true)
     };
 
@@ -77707,6 +79273,7 @@
   }
   window.__applyPublicDemoSanitization = applyPublicDemoSanitization;
   window.__restorePublicDemoSanitization = restorePublicDemoSanitization;
+  window.MFG_HOLDING = { computeIntercompanyInteractions, getActiveIndustry, syncIndustrySidebarDom, selectCompanyScope, INDUSTRY_SIDEBAR_SPEC };
 
   let _seedHydrationPromise = null;
   function hydrateSeedData() {
