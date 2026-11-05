@@ -2052,7 +2052,7 @@
       return;
     }
     closeRecordInspector();
-    openEntryModal('expense', { completePendingId: String(row.id) });
+    openEntryModal('expense', { completePendingId: String(row.id) }, { forceSwitch: true });
   }
   function openPendingRawPriceModal(rawId) {
     const row = findRawPurchaseRecordById(rawId);
@@ -2061,7 +2061,7 @@
       return;
     }
     closeRecordInspector();
-    openEntryModal('raw', { completePendingRawId: String(row.id) });
+    openEntryModal('raw', { completePendingRawId: String(row.id) }, { forceSwitch: true });
   }
   function isPendingSalaryEmployment(e) {
     return Boolean(e && !e.voided && e.salary_pending);
@@ -2088,7 +2088,7 @@
     }
     const formKey = /^freelance/i.test(String(row.type || '')) ? 'freelance' : 'employment';
     closeRecordInspector();
-    openEntryModal(formKey, { completePendingSalaryId: String(row.id) });
+    openEntryModal(formKey, { completePendingSalaryId: String(row.id) }, { forceSwitch: true });
   }
 
   // m18a RECEIPTS_BASE & SETTLE_BASE
@@ -7217,7 +7217,7 @@
     payroll: 'Payroll & Workforce',
     // Holding & Group Treasury industry hubs
     hld_consolidation: 'Group Consolidation',
-    hld_interactions: 'Intercompany & Reconcil.',
+    hld_interactions: 'Intercompany Hub',
     hld_partners: 'Partners & Profit Splits',
     hld_loans: 'Loans, Capital & Assets',
     // Hospitality & Resorts industry hubs (Phase 2)
@@ -34572,18 +34572,23 @@
     scoped.forEach(r => {
       if (!r || r.voided) return;
       const m = String(r.method || '').trim();
-      const tp = String(r.type || '').trim();
-      if (m === 'Config' || tp === 'Config' || m === 'Remove' || m === 'Adjusted') return;
+      const flowStr = String(r.flow || r.type || '').trim();
+      if (m === 'Config' || /^config$/i.test(flowStr) || m === 'Remove' || m === 'Adjusted') return;
       const targetCo = resolveSisterEntityName(r.party || r.counterparty);
       if (!targetCo || !r.company || targetCo === r.company) return;
-      const isOut = tp === 'Out' || (Number(r.out_usd || 0) > 0 && Number(r.in_usd || 0) === 0);
-      const usd = round2(isOut ? Number(r.out_usd || r.amount || 0) : Number(r.in_usd || r.amount || 0));
+      const dirStr = String(r.direction || flowStr || '').trim();
+      const isOut = /^out|outflow|expense|withdraw|debit/i.test(dirStr) || (Number(r.out_usd || 0) > 0 && Number(r.in_usd || 0) === 0);
+      const lbpRaw = Number(r.lbp_amount || 0);
+      const usdRaw = lbpRaw
+        ? Number(r.usd_amount || (Math.abs(lbpRaw) / 89500) || 0)
+        : Number(r.usd_amount != null ? r.usd_amount : (isOut ? (r.out_usd || r.amount) : (r.in_usd || r.amount)) || 0);
+      const usd = round2(Math.abs(usdRaw));
       if (usd <= 0) return;
       const d = String(recordDateFor(r, STATE.basis) || r.date || '').slice(0, 10);
       const ms = d ? Date.parse(d + 'T00:00:00Z') : 0;
       const fromCo = isOut ? r.company : targetCo;
       const toCo = isOut ? targetCo : r.company;
-      const cur = String(r.currency || 'USD').toUpperCase();
+      const cur = Math.abs(lbpRaw) > 1 ? 'LBP' : String(r.currency || 'USD').toUpperCase();
       legs.push({
         id: String(r.id || ''),
         row: r,
@@ -34609,10 +34614,10 @@
     const interactions = [];
     const THREE_DAYS_MS = 3 * 86400000;
 
-    // Group legs by directed (fromCo, toCo, cur)
+    // Group legs by directed (fromCo, toCo)
     const byDir = new Map();
     legs.forEach(l => {
-      const k = `${l.fromCo}|${l.toCo}|${l.cur}`;
+      const k = `${l.fromCo}|${l.toCo}`;
       if (!byDir.has(k)) byDir.set(k, { outLegs: [], inLegs: [] });
       const bucket = byDir.get(k);
       if (l.side === 'Out') bucket.outLegs.push(l);
@@ -50482,6 +50487,10 @@
           ev.stopPropagation();
           const expId = setPendBtn.getAttribute('data-set-pending-price-id') || '';
           if (expId) {
+            if (isEntryModalDirty()) {
+              promptUnsavedEntrySwitch({ type: 'pending_expense', expId, label: 'Enter Final Price' });
+              return;
+            }
             closeEntryModal(true);
             openPendingExpensePriceModal(expId);
           }
@@ -50493,6 +50502,10 @@
           ev.stopPropagation();
           const rawId = setPendRawBtn.getAttribute('data-set-pending-raw-price-id') || '';
           if (rawId) {
+            if (isEntryModalDirty()) {
+              promptUnsavedEntrySwitch({ type: 'pending_raw', rawId, label: 'Enter Final Price' });
+              return;
+            }
             closeEntryModal(true);
             openPendingRawPriceModal(rawId);
           }
@@ -50504,6 +50517,10 @@
           ev.stopPropagation();
           const empId = setPendSalBtn.getAttribute('data-set-pending-salary-id') || '';
           if (empId) {
+            if (isEntryModalDirty()) {
+              promptUnsavedEntrySwitch({ type: 'pending_salary', empId, label: 'Enter Final Salary' });
+              return;
+            }
             closeEntryModal(true);
             openPendingSalaryModal(empId);
           }
@@ -51108,9 +51125,9 @@
         const curQty = num('f_qty') || 1;
         const curUom = val('f_uom') || 'Piece';
         if (target === 'expense_store') {
-          openEntryModal('expense', { co: curCo, item: curItem, qty: curQty, uom: curUom, storeWh: 1 });
+          openEntryModal('expense', { co: curCo, item: curItem, qty: curQty, uom: curUom, storeWh: 1 }, { forceSwitch: true });
         } else if (target === 'repair') {
-          openEntryModal('repair', { co: curCo, item: curItem, repSrc: 'Warehouse Only' });
+          openEntryModal('repair', { co: curCo, item: curItem, repSrc: 'Warehouse Only' }, { forceSwitch: true });
         }
       });
     });
@@ -54216,6 +54233,9 @@
 
   async function saveModalEntry(evOrOpts) {
     if (STATE.saving) return;
+    const afterSaveTarget = (evOrOpts && typeof evOrOpts === 'object' && evOrOpts.afterSaveTarget)
+      ? evOrOpts.afterSaveTarget
+      : (FORM_UI.pendingSwitchTarget || null);
     const editCtx = STATE.editingRecord;
     const isEditingExisting = Boolean(editCtx && editCtx.id);
     const keepOpenNextDay = Boolean(!isEditingExisting && evOrOpts && typeof evOrOpts === 'object' && evOrOpts.nextDay && STATE.modalForm === 'attendance');
@@ -54234,6 +54254,17 @@
       FORM_UI.postAttempted = true;
       recalcForm(true);
       syncFormValidationUI(fieldErrors, true);
+      if (afterSaveTarget) {
+        const promptEl = $('entryUnsavedPrompt');
+        const txtEl = $('entryUnsavedText');
+        if (promptEl && !promptEl.hidden) {
+          promptEl.classList.add('is-validation-needed');
+          if (txtEl) {
+            const firstErr = String(errors[0] || 'Complete required fields before posting').replace(/[—→]/g, '-');
+            txtEl.innerHTML = `Complete the highlighted required field${errors.length > 1 ? 's' : ''} (<b>${esc(firstErr)}</b>) to post, or click <b>Discard Changes</b> to switch.`;
+          }
+        }
+      }
       if (STATE.modalForm === 'conversion' || (STATE.modalForm === 'treasury' && val('f_trtype') === 'conversion')) {
         const fxG = evaluateCurrentModalFxConversionGuard();
         if (fxG && fxG.tier === 'locked' && !fxG.supervisorUnlocked) {
@@ -54247,6 +54278,7 @@
     }
     FORM_UI.postAttempted = false;
     syncFormValidationUI([], false);
+    hideEntryUnsavedPrompt();
 
     STATE.saving = true;
     const sBtn = $('dynSaveModalBtn');
@@ -54836,7 +54868,7 @@
       saveLocalAuthAndRecords();           // write-ahead: local first, network after
       STATE.saving = false;
       if (keepOpenNextDay) {
-        if (sBtn) { sBtn.disabled = false; sBtn.textContent = 'Post to Cloud Ledger'; }
+        if (sBtn) { sBtn.disabled = false; sBtn.textContent = 'Post'; }
         if (nBtn) { nBtn.disabled = false; }
         const rEl = $('f_repdate');
         if (rEl) {
@@ -54856,6 +54888,23 @@
         FORM_UI.lastAttShiftKey = '';
         FORM_UI.lastAttTimeKey = '';
         recalcForm();
+        FORM_UI.userInteracted = false;
+        FORM_UI.initialModalSig = getEntryModalStateSignature();
+      } else if (afterSaveTarget && afterSaveTarget.type && afterSaveTarget.type !== 'close') {
+        if (afterSaveTarget.type === 'form' && afterSaveTarget.formType) {
+          openEntryModal(afterSaveTarget.formType, afterSaveTarget.prefill || null, { forceSwitch: true });
+        } else if (afterSaveTarget.type === 'pending_expense' && afterSaveTarget.expId) {
+          closeEntryModal(true);
+          openPendingExpensePriceModal(afterSaveTarget.expId);
+        } else if (afterSaveTarget.type === 'pending_raw' && afterSaveTarget.rawId) {
+          closeEntryModal(true);
+          openPendingRawPriceModal(afterSaveTarget.rawId);
+        } else if (afterSaveTarget.type === 'pending_salary' && afterSaveTarget.empId) {
+          closeEntryModal(true);
+          openPendingSalaryModal(afterSaveTarget.empId);
+        } else {
+          closeEntryModal(true);
+        }
       } else {
         closeEntryModal(true);
       }
@@ -55084,7 +55133,187 @@
     syncWithCloud(true);
   }
 
-  function openEntryModal(formType, prefill = null) {
+  function getEntryModalStateSignature() {
+    const body = $('modalBody');
+    if (!body) return '';
+    const parts = [
+      String(STATE.modalForm || ''),
+      String(STATE.modalGroupOverride || ''),
+      String(FORM_UI.ticketDisposition || 'normal'),
+      String(Array.isArray(FORM_UI.supStagedDrivers) ? FORM_UI.supStagedDrivers.length : 0)
+    ];
+    body.querySelectorAll('input, select, textarea').forEach(el => {
+      if (!el.id && !el.name) return;
+      if (el.classList.contains('pa-select-filter') || el.classList.contains('co-multi-search') || el.id === 'openLoansSearchInput') return;
+      const key = el.id || el.name;
+      const v = el.type === 'checkbox' ? (el.checked ? '1' : '0') : String(el.value == null ? '' : el.value).trim();
+      parts.push(key + '=' + v);
+    });
+    return parts.join('|');
+  }
+
+  function isEntryModalDirty() {
+    const modal = $('entryModal');
+    if (!modal || modal.hidden) return false;
+    if (!FORM_UI.userInteracted || !FORM_UI.initialModalSig) return false;
+    return getEntryModalStateSignature() !== FORM_UI.initialModalSig;
+  }
+
+  function getEntryModalPrimarySaveLabel() {
+    const sBtn = $('dynSaveModalBtn');
+    if (sBtn && !sBtn.hidden && sBtn.textContent && sBtn.textContent.trim()) {
+      return sBtn.textContent.trim();
+    }
+    return STATE.editingRecord ? 'Save Changes' : 'Post';
+  }
+
+  function hideEntryUnsavedPrompt() {
+    FORM_UI.pendingSwitchTarget = null;
+    const promptEl = $('entryUnsavedPrompt');
+    if (promptEl) {
+      promptEl.hidden = true;
+      promptEl.classList.remove('is-validation-needed');
+    }
+    const tabsWrap = $('modalTabs');
+    if (tabsWrap) {
+      tabsWrap.querySelectorAll('.is-pending-target').forEach(b => b.classList.remove('is-pending-target'));
+    }
+  }
+
+  function promptUnsavedEntrySwitch(targetSpec) {
+    const promptEl = $('entryUnsavedPrompt');
+    const txtEl = $('entryUnsavedText');
+    const postBtn = $('unsavedEntryPostBtn');
+    const tabsWrap = $('modalTabs');
+    if (!promptEl) return false;
+    FORM_UI.pendingSwitchTarget = targetSpec || { type: 'close' };
+    promptEl.classList.remove('is-validation-needed');
+    if (tabsWrap) {
+      tabsWrap.querySelectorAll('.is-pending-target').forEach(b => b.classList.remove('is-pending-target'));
+      if (targetSpec && targetSpec.type === 'form') {
+        if (targetSpec.groupId) {
+          const gBtn = tabsWrap.querySelector(`[data-pa-group="${targetSpec.groupId}"]`);
+          if (gBtn && !gBtn.classList.contains('active')) gBtn.classList.add('is-pending-target');
+        }
+        if (targetSpec.formType) {
+          const tBtn = tabsWrap.querySelector(`.modal-tab[data-form="${targetSpec.formType}"]`);
+          if (tBtn && !tBtn.classList.contains('active')) tBtn.classList.add('is-pending-target');
+        }
+      }
+    }
+    const curTitleEl = $('modalTitle');
+    const curLabel = (curTitleEl && curTitleEl.textContent ? curTitleEl.textContent : (FORM_TITLES[STATE.modalForm] || 'current entry'))
+      .replace(/^New\s+/i, '')
+      .replace(/[—→]/g, '-')
+      .trim();
+    const saveLbl = getEntryModalPrimarySaveLabel();
+    if (postBtn) {
+      const sBtn = $('dynSaveModalBtn');
+      const canPost = Boolean(sBtn && !sBtn.hidden);
+      postBtn.hidden = !canPost;
+      postBtn.textContent = saveLbl;
+    }
+    if (txtEl) {
+      if (targetSpec && targetSpec.type === 'close') {
+        txtEl.innerHTML = `You have unsaved changes on <b>${esc(curLabel)}</b>. Would you like to <b>Discard Changes</b> or <b>${esc(saveLbl)}</b> before closing?`;
+      } else {
+        const rawTargetLbl = (targetSpec && targetSpec.label)
+          || (targetSpec && targetSpec.formType && FORM_TITLES[targetSpec.formType])
+          || 'another entry';
+        const cleanTargetLbl = String(rawTargetLbl).replace(/^New\s+/i, '').replace(/[—→]/g, '-').trim();
+        txtEl.innerHTML = `You have unsaved changes on <b>${esc(curLabel)}</b>. Would you like to <b>Discard Changes</b> or <b>${esc(saveLbl)}</b> before switching to <b>${esc(cleanTargetLbl)}</b>?`;
+      }
+    }
+    promptEl.hidden = false;
+    return true;
+  }
+
+  function executeDiscardAndSwitchEntry() {
+    const target = FORM_UI.pendingSwitchTarget;
+    hideEntryUnsavedPrompt();
+    FORM_UI.userInteracted = false;
+    FORM_UI.initialModalSig = '';
+    if (!target || target.type === 'close') {
+      closeEntryModal(true);
+      return;
+    }
+    if (target.type === 'form' && target.formType) {
+      openEntryModal(target.formType, target.prefill || null, { forceSwitch: true });
+      return;
+    }
+    if (target.type === 'pending_expense' && target.expId) {
+      closeEntryModal(true);
+      openPendingExpensePriceModal(target.expId);
+      return;
+    }
+    if (target.type === 'pending_raw' && target.rawId) {
+      closeEntryModal(true);
+      openPendingRawPriceModal(target.rawId);
+      return;
+    }
+    if (target.type === 'pending_salary' && target.empId) {
+      closeEntryModal(true);
+      openPendingSalaryModal(target.empId);
+      return;
+    }
+    closeEntryModal(true);
+  }
+
+  function wireEntryUnsavedPromptDom() {
+    const promptEl = $('entryUnsavedPrompt');
+    if (!promptEl || promptEl.dataset.unsavedWired) return;
+    promptEl.dataset.unsavedWired = '1';
+    const stayBtn = $('unsavedEntryStayBtn');
+    const discardBtn = $('unsavedEntryDiscardBtn');
+    const postBtn = $('unsavedEntryPostBtn');
+    if (stayBtn) {
+      stayBtn.addEventListener('click', () => {
+        hideEntryUnsavedPrompt();
+      });
+    }
+    if (discardBtn) {
+      discardBtn.addEventListener('click', () => {
+        executeDiscardAndSwitchEntry();
+      });
+    }
+    if (postBtn) {
+      postBtn.addEventListener('click', () => {
+        saveModalEntry({ afterSaveTarget: FORM_UI.pendingSwitchTarget || null });
+      });
+    }
+  }
+
+  function openEntryModal(formType, prefill = null, opts = null) {
+    wireEntryUnsavedPromptDom();
+    if (!(opts && opts.forceSwitch)) {
+      const modalCheck = $('entryModal');
+      if (modalCheck && !modalCheck.hidden && isEntryModalDirty()) {
+        const preRaw = formType === 'pricerule_raw';
+        const preHaul = formType === 'pricerule_haul';
+        const preComm = formType === 'pricerule_comm';
+        const nextResolved = (preRaw || preHaul || preComm) ? 'pricerule' : formType;
+        const nextForm = FORM_TITLES[nextResolved] ? nextResolved : 'sales';
+        const nextGrpOverride = (preRaw || preHaul) ? 'raw' : (preComm ? 'comm' : null);
+        if (!prefill && nextForm === STATE.modalForm && nextGrpOverride === STATE.modalGroupOverride) {
+          hideEntryUnsavedPrompt();
+          return;
+        }
+        const tabBtn = $('modalTabs') ? $('modalTabs').querySelector(`.modal-tab[data-form="${formType}"]`) : null;
+        const targetLabel = (opts && opts.label)
+          || (tabBtn && tabBtn.textContent ? tabBtn.textContent.trim() : '')
+          || FORM_TITLES[nextForm]
+          || nextForm;
+        promptUnsavedEntrySwitch({
+          type: 'form',
+          formType,
+          prefill,
+          groupId: (opts && opts.groupId) || '',
+          label: targetLabel
+        });
+        return;
+      }
+    }
+    hideEntryUnsavedPrompt();
     const preselectConv = false;
     const preselectExt = false;
     const preselectRawPrice = formType === 'pricerule_raw';
@@ -55224,16 +55453,23 @@
       tabsWrap.querySelectorAll('[data-pa-group]').forEach(gBtn => {
         gBtn.addEventListener('click', () => {
           const gid = gBtn.getAttribute('data-pa-group');
+          if (gBtn.classList.contains('active') && !editTargetRow && !pendingTargetRow) {
+            hideEntryUnsavedPrompt();
+            return;
+          }
           const grp = (window.MFG_FORMS.FORM_GROUPS || []).find(g => g.id === gid);
           const firstForm = grp && grp.forms.find(f => canEnterForm(f.id));
-          if (firstForm) openEntryModal(firstForm.id);
+          if (firstForm) openEntryModal(firstForm.id, null, { groupId: gid, label: firstForm.label || FORM_TITLES[firstForm.id] || firstForm.id });
         });
       });
       tabsWrap.querySelectorAll('.modal-tab[data-form]').forEach(tBtn => {
         tBtn.addEventListener('click', () => {
           const nextForm = tBtn.getAttribute('data-form');
-          if (editTargetRow && nextForm === form) return;
-          openEntryModal(nextForm);
+          if (tBtn.classList.contains('active') && !pendingTargetRow) {
+            hideEntryUnsavedPrompt();
+            return;
+          }
+          openEntryModal(nextForm, null, { label: (tBtn.textContent || '').trim() });
         });
       });
       requestAnimationFrame(() => {
@@ -55277,7 +55513,7 @@
           : (pendingTargetRow
             ? `Updating voucher <b>${esc(pendingTargetRow.name || pendingTargetRow.id)}</b> as <b>${esc(activeUser().full_name)}</b> · delivery fields stay locked`
             : `Posting as <b>${esc(activeUser().full_name)}</b> · stored on this device, the cloud ledger${HAS_LOCAL_API ? ' and SQLite' : ''}`));
-      const saveBtnLbl = editTargetRow ? 'Save Changes' : (pendingSalRow ? 'Save Final Salary' : (pendingTargetRow ? 'Save Final Price' : 'Post to Cloud Ledger'));
+      const saveBtnLbl = editTargetRow ? 'Save Changes' : (pendingSalRow ? 'Save Final Salary' : (pendingTargetRow ? 'Save Final Price' : 'Post'));
       const nextDayBtnHtml = (!editTargetRow && !pendingTargetRow && form === 'attendance')
         ? `<button type="button" class="btn-ghost-bar" id="dynSaveNextDayModalBtn" title="Post this attendance day and step Reporting Date (Set Date) forward by 1 day for the same staff member">Post &amp; Next Day (+1d)</button>`
         : '';
@@ -55308,7 +55544,7 @@
       const vBtn = $('modalVoidRecordBtn');
       const retQuickBtn = $('modalReturnWtcBtn');
       const remQuickBtn = $('modalRemoveSlipBtn');
-      if (cBtn) cBtn.addEventListener('click', () => closeEntryModal());
+      if (cBtn) cBtn.addEventListener('click', ev => closeEntryModal(false, ev));
       if (nBtn) nBtn.addEventListener('click', () => saveModalEntry({ nextDay: true }));
       if (sBtn) sBtn.addEventListener('click', saveModalEntry);
       if (retQuickBtn) {
@@ -55380,6 +55616,25 @@
             }
           }
         });
+      }
+      if (!body.dataset.dirtyTrackerWired) {
+        body.dataset.dirtyTrackerWired = '1';
+        const markDirtyInteraction = ev => {
+          if (FORM_UI.hydrating) return;
+          const t = ev && ev.target;
+          if (!t || !t.closest) return;
+          if (t.closest('.modal-foot')) return;
+          if (t.classList && (t.classList.contains('pa-select-filter') || t.classList.contains('co-multi-search') || t.id === 'openLoansSearchInput')) return;
+          if (ev.type === 'click') {
+            const actBtn = t.closest('button, .pa-suggest-item, .pa-select-opt, .pa-suggest-clear, [data-form-quickfill], [data-grease-preset], [data-set-uom], [data-origin-mode], [data-pick-origin-site], [data-site-cat], [data-quarry-bundled], [data-raw-supply-mode], [data-log-mode], [data-log-win], [data-log-dow-preset], [data-att-mode], [data-att-preset], [data-att-leave], [data-exp-price-mode], [data-exp-mth], [data-raw-price-mode], [data-emp-salary-mode], [data-wh-dir], [data-loan-action], [data-loan-side], [data-open-loan-tab], [data-clear-loan-cp], [data-clear-target-loan], [data-loan-settle-pct], [data-loan-usd-preset], [data-pick-open-loan], [data-conv-usd-preset], [data-malf-cat], [data-malf-quick-item], [data-exi-del], [data-rpi-del], [data-del-sup-drv], #toggleAfterHoursBtn, #toggleOvertimeBtn, #toggleRepDateBtn, #resetRepDateBtn, #addExpItemLineBtn, #addRepairItemLineBtn, #btnAddSupDriver');
+            if (!actBtn) return;
+            if (actBtn.classList && (actBtn.classList.contains('pa-suggest-caret') || actBtn.classList.contains('pa-select-trigger') || actBtn.classList.contains('pa-lock-pill'))) return;
+          }
+          FORM_UI.userInteracted = true;
+        };
+        body.addEventListener('input', markDirtyInteraction, true);
+        body.addEventListener('change', markDirtyInteraction, true);
+        body.addEventListener('click', markDirtyInteraction, true);
       }
       body.scrollTop = 0;
     }
@@ -55611,10 +55866,20 @@
       recalcForm();
     }
     if (modal && typeof stripNativeTitles === 'function') stripNativeTitles(modal);
+    FORM_UI.userInteracted = false;
+    FORM_UI.initialModalSig = getEntryModalStateSignature();
   }
 
-  function closeEntryModal(force) {
+  function closeEntryModal(force, ev) {
     if (STATE.saving && !force) return;
+    const isInteractiveClose = Boolean((ev && ev.isTrusted) || window.__MFG_TEST_UNSAVED_CLOSE);
+    if (!force && isInteractiveClose && isEntryModalDirty()) {
+      promptUnsavedEntrySwitch({ type: 'close' });
+      return;
+    }
+    hideEntryUnsavedPrompt();
+    FORM_UI.userInteracted = false;
+    FORM_UI.initialModalSig = '';
     if (window.MFG_GEO && typeof window.MFG_GEO.cleanupTicketOriginMiniMap === 'function') {
       window.MFG_GEO.cleanupTicketOriginMiniMap();
     }
@@ -56544,7 +56809,7 @@
       return;
     }
     closeRecordInspector();
-    openEntryModal(formType, { editRecord: { crKey: targetKey, row: targetRow } });
+    openEntryModal(formType, { editRecord: { crKey: targetKey, row: targetRow } }, { forceSwitch: true });
   }
 
   function openRecordFromTableRow(crKey, id, trEl) {
@@ -59536,7 +59801,7 @@
           ? (downOnBackdrop === true && upOnBackdrop === true)
           : (!hadPointerCycle || (downOnBackdrop === true && upOnBackdrop !== false)));
       resetState();
-      if (shouldClose) closeFn();
+      if (shouldClose) closeFn(false, e);
     });
   }
   window.__mfgWireBackdropDismiss = wireBackdropDismiss;
@@ -66362,7 +66627,7 @@
       grp2: 'Capital, Partners & Workforce',
       slots: [
         { hub: 'hld_consolidation', view: 'hld_consolidation', label: 'Group Consolidation', pillId: '' },
-        { hub: 'hld_interactions', view: 'hld_interactions', label: 'Intercompany & Reconcil.', pillId: 'navCountRaw' },
+        { hub: 'hld_interactions', view: 'hld_interactions', label: 'Intercompany Hub', pillId: 'navCountRaw' },
         { hub: 'hld_partners', view: 'hld_partners', label: 'Partners & Profit Splits', pillId: 'navCountFleet' },
         { hub: 'hld_loans', view: 'hld_loans', label: 'Loans, Capital & Assets', pillId: '' }
       ]
@@ -78363,7 +78628,7 @@
     if (mobileNewEntryBtn) mobileNewEntryBtn.addEventListener('click', () => openEntryModal(contextFormForView(STATE.view)));
     if (mobileDockEntryBtn) mobileDockEntryBtn.addEventListener('click', () => openEntryModal(contextFormForView(STATE.view)));
     const closeEntryBtn = $('closeModalBtn');
-    if (closeEntryBtn) closeEntryBtn.addEventListener('click', () => closeEntryModal());
+    if (closeEntryBtn) closeEntryBtn.addEventListener('click', ev => closeEntryModal(false, ev));
     const modal = $('entryModal');
     if (modal) wireBackdropDismiss(modal, closeEntryModal);
     document.querySelectorAll('#modalTabs .modal-tab').forEach(btn => btn.addEventListener('click', () => openEntryModal(btn.getAttribute('data-form'))));
@@ -78478,7 +78743,9 @@
         if (m && !m.hidden) {
           const unlockBox = $('paAdminUnlockBox');
           if (unlockBox && !unlockBox.hidden) { unlockBox.hidden = true; return; }
-          closeEntryModal();
+          const unsavedPrompt = $('entryUnsavedPrompt');
+          if (unsavedPrompt && !unsavedPrompt.hidden) { hideEntryUnsavedPrompt(); return; }
+          closeEntryModal(false, e);
           return;
         }
         if (askDrawer && askDrawer.classList.contains('open')) { closeDrawer(); return; }
@@ -78591,7 +78858,8 @@
       },
       selectSeatForEdit: (targetId, opts) => selectSeatForEdit(targetId, opts),
       saveSeatEditorForm: () => saveSeatEditorForm(),
-      openEntryModal: (fid, prefill) => openEntryModal(fid, prefill),
+      openEntryModal: (fid, prefill, opts) => openEntryModal(fid, prefill, opts || { forceSwitch: true }),
+      isEntryModalDirty: () => isEntryModalDirty(),
       getUserDirectoryScopeTier: emailOrUser => {
         const u = typeof emailOrUser === 'string'
           ? STATE.users.find(x => norm(x.email) === norm(emailOrUser) || String(x.id) === String(emailOrUser))
@@ -78812,7 +79080,7 @@
       setView: (view, opts) => setView(view, opts),
       setRailWidth: (w, persist) => setRailWidth(w, persist)
     };
-    window.__openModalForm = (fid, prefill) => openEntryModal(fid, prefill);
+    window.__openModalForm = (fid, prefill, opts) => openEntryModal(fid, prefill, opts || { forceSwitch: true });
     window.__openEntryModalForRecord = (crKey, id) => openEntryModalForRecord(crKey, id);
     window.__openPendingSalaryModal = id => openPendingSalaryModal(id);
     window.__getStaffContractProfile = (staff, co, dt) => getStaffContractProfile(staff, co, dt);

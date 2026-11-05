@@ -10776,17 +10776,11 @@
       <div class="panel-card" id="univRegPanel">
         ${groupTabsMeta.length > 1 ? `
           <div class="pa-univ-reg-deck">
-            <div class="pa-univ-deck-hdr">
-              <span class="pa-univ-deck-title">
-                <span class="pa-univ-deck-ico">${pbiIcon('tables')}</span>
-                <span class="pa-hub-lbl">Shared Registries:</span>
-              </span>
-            </div>
             <div class="pa-univ-reg-grid cols-${Math.min(3, groupTabsMeta.length)}">
               ${groupTabsMeta.map(gt => {
                 const gCnt = chipCounts.byKey[gt.key] != null ? chipCounts.byKey[gt.key] : ((SEED.records && SEED.records[gt.key]) || []).length;
                 const isAct = gt.key === meta.key;
-                const cardSpec = UNIV_REG_CARD_META[gt.key] || { icon: TABLE_ICON_MAP[gt.key] || gt.navView || 'tables', sub: 'Shared master registry' };
+                const cardSpec = UNIV_REG_CARD_META[gt.key] || { icon: TABLE_ICON_MAP[gt.key] || gt.navView || 'tables', sub: 'Master registry' };
                 return `<button type="button" class="filter-chip univ-reg-card ${isAct ? 'active' : ''}" data-univ-reg-key="${esc(gt.key)}" ${gt.navView ? `data-univ-nav-view="${esc(gt.navView)}"` : ''}>
                   <span class="urc-ico">${pbiIcon(cardSpec.icon)}</span>
                   <span class="urc-body">
