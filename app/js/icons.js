@@ -141,7 +141,33 @@
     box: s('<path d="M20.5 16V8a2 2 0 0 0-1-1.73l-6.5-3.75a2 2 0 0 0-2 0L4.5 6.27A2 2 0 0 0 3.5 8v8a2 2 0 0 0 1 1.73l6.5 3.75a2 2 0 0 0 2 0l6.5-3.75a2 2 0 0 0 1-1.73z"/><polyline points="3.8 7 12 11.8 20.2 7"/><line x1="12" y1="21.6" x2="12" y2="11.8"/>'),
     user_x: s('<path d="M16 21v-2a4 4 0 0 0-4-4H5.5a4 4 0 0 0-4 4v2"/><circle cx="8.8" cy="7.2" r="3.8"/><line x1="17.5" y1="8.5" x2="22.2" y2="13.2"/><line x1="22.2" y1="8.5" x2="17.5" y2="13.2"/>'),
     pin: s('<path d="M20 10c0 5.8-8 11.5-8 11.5S4 15.8 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="2.8"/>'),
-    globe: s('<circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 0 0 0 18 14 14 0 0 0 0-18z"/>')
+    globe: s('<circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 0 0 0 18 14 14 0 0 0 0-18z"/>'),
+    // Phase 1+ Multi-Industry Hub & Sub-Tab Icons (Holding, Hospitality, Trading, Real Estate, Insurance)
+    hld_consolidation: s('<rect x="3" y="3" width="7" height="7" rx="1.2"/><rect x="14" y="3" width="7" height="7" rx="1.2"/><rect x="8.5" y="14" width="7" height="7" rx="1.2"/><path d="M6.5 10v2.2h11V10"/><line x1="12" y1="12.2" x2="12" y2="14"/>'),
+    hld_entities: s('<rect x="3.5" y="4" width="7" height="16" rx="1"/><rect x="13.5" y="8" width="7" height="12" rx="1"/><line x1="6" y1="8" x2="8" y2="8"/><line x1="6" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="18" y2="12"/><line x1="16" y1="16" x2="18" y2="16"/>'),
+    hld_interactions: s('<polyline points="17 2.5 21 6.5 17 10.5"/><line x1="3" y1="6.5" x2="21" y2="6.5"/><polyline points="7 21.5 3 17.5 7 13.5"/><line x1="21" y1="17.5" x2="3" y2="17.5"/>'),
+    hld_open_recon: s('<circle cx="12" cy="12" r="8.8"/><polyline points="12 7.5 12 12 15.2 14"/>'),
+    hld_due_matrix: s('<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/>'),
+    hld_partners: s('<circle cx="8.5" cy="7.5" r="3.2"/><circle cx="16.5" cy="9" r="2.6"/><path d="M2.5 19.5c0-3 2.7-5.3 6-5.3s6 2.3 6 5.3"/><path d="M14.5 19.5c.3-2.2 2-3.8 4.4-3.8 1.4 0 2.6.6 3.1 1.6"/>'),
+    hld_distributions: s('<line x1="12" y1="2.5" x2="12" y2="21.5"/><path d="M16.5 6.5H9.8a3.1 3.1 0 0 0 0 6.2h4.4a3.1 3.1 0 0 1 0 6.2H6.5"/>'),
+    hld_loans: s('<path d="M3 10h18"/><path d="M4.5 10V18"/><path d="M9.5 10V18"/><path d="M14.5 10V18"/><path d="M19.5 10V18"/><polygon points="12 3 2 8 22 8 12 3"/><line x1="2" y1="20" x2="22" y2="20"/>'),
+    hld_assets: s('<path d="M20 10c0 5.8-8 11.5-8 11.5S4 15.8 4 10a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="2.8"/>'),
+    hsp_revenue: s('<path d="M3 18h18"/><path d="M5 18V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10"/><path d="M9 18v-4h6v4"/>'),
+    hsp_memberships: s('<rect x="2.5" y="5" width="19" height="14" rx="2"/><line x1="2.5" y1="10" x2="21.5" y2="10"/><line x1="6.5" y1="15" x2="11.5" y2="15"/>'),
+    hsp_stock: s('<path d="m12 3 8.5 4.8v8.4L12 21l-8.5-4.8V7.8L12 3z"/><path d="m3.5 7.8 8.5 4.8 8.5-4.8"/><line x1="12" y1="12.6" x2="12" y2="21"/>'),
+    hsp_energy: s('<polygon points="13 2 4 14 11.5 14 10.5 22 20 10 12.5 10 13 2"/>'),
+    trd_sales: s('<path d="M4 3h13l3 3v15l-2.5-1.6L15 21l-2.5-1.6L10 21l-2.5-1.6L5 21V4a1 1 0 0 1 1-1z"/><line x1="8" y1="8.5" x2="15" y2="8.5"/><line x1="8" y1="12.5" x2="15" y2="12.5"/>'),
+    trd_purchases: s('<path d="M3 7h18v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'),
+    trd_trucks: s('<rect x="1.5" y="5" width="13" height="11" rx="1.5"/><path d="M14.5 9h4.2l2.8 3.3V16h-7V9z"/><circle cx="6" cy="17.5" r="2.2"/><circle cx="17.5" cy="17.5" r="2.2"/>'),
+    trd_stock: s('<path d="m12 3 8.5 4.8v8.4L12 21l-8.5-4.8V7.8L12 3z"/><path d="m3.5 7.8 8.5 4.8 8.5-4.8"/><line x1="12" y1="12.6" x2="12" y2="21"/>'),
+    re_leases: s('<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5.5v-6h-5v6H4a1 1 0 0 1-1-1v-9.5z"/>'),
+    re_sales: s('<line x1="12" y1="2.5" x2="12" y2="21.5"/><path d="M16.5 6.5H9.8a3.1 3.1 0 0 0 0 6.2h4.4a3.1 3.1 0 0 1 0 6.2H6.5"/>'),
+    re_properties: s('<rect x="3.5" y="4" width="7" height="16" rx="1"/><rect x="13.5" y="8" width="7" height="12" rx="1"/><line x1="6" y1="8" x2="8" y2="8"/><line x1="6" y1="12" x2="8" y2="12"/>'),
+    re_workorders: s('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'),
+    ins_policies: s('<path d="M12 2.5 19.5 5.5v6c0 5-3.3 8.6-7.5 10-4.2-1.4-7.5-5-7.5-10v-6L12 2.5z"/><path d="m9 12.2 2 2 4.2-4.2"/>'),
+    ins_billing: s('<rect x="2.5" y="5" width="19" height="14" rx="2"/><line x1="2.5" y1="10" x2="21.5" y2="10"/><line x1="6.5" y1="15" x2="11.5" y2="15"/>'),
+    ins_claims: s('<circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12.5"/><circle cx="12" cy="16" r="0.8" fill="currentColor"/>'),
+    ins_catalogue: s('<rect x="3" y="3.5" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="20.5"/>')
   };
 
   function svg(name, extraCls) {

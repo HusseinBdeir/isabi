@@ -4173,10 +4173,145 @@ JS = r"""
       }
     });
 
+    // Mount File Attachment & Voice Recording controls on both Ask ISABI forms
+    function mountShowcaseAskTools(formId, inpId) {
+      const formEl = document.getElementById(formId);
+      const inpEl = document.getElementById(inpId);
+      if (!formEl || !inpEl || formEl.querySelector('.ai-composer-row')) return;
+      const submitBtn = formEl.querySelector('button[type="submit"]');
+      const attBar = document.createElement('div');
+      attBar.className = 'ai-attach-bar';
+      attBar.hidden = true;
+      const voiceBar = document.createElement('div');
+      voiceBar.className = 'ai-voice-bar';
+      voiceBar.hidden = true;
+      voiceBar.innerHTML = '<span>● Recording voice...</span><div class="ai-voice-langs"><button type="button" class="ai-voice-lang-btn active" data-vlang="en">EN</button><button type="button" class="ai-voice-lang-btn" data-vlang="ar">AR</button><button type="button" class="ai-voice-lang-btn" data-vlang="fr">FR</button><button type="button" class="ai-voice-lang-btn" data-vstop="1">Done</button></div>';
+      const row = document.createElement('div');
+      row.className = 'ai-composer-row';
+      const fileInp = document.createElement('input');
+      fileInp.type = 'file';
+      fileInp.multiple = true;
+      fileInp.accept = 'image/*,.pdf,.csv,.tsv,.txt,.json,.xls,.xlsx,.doc,.docx,audio/*';
+      fileInp.hidden = true;
+      const attBtn = document.createElement('button');
+      attBtn.type = 'button';
+      attBtn.className = 'ai-tool-btn';
+      attBtn.title = 'Attach file, spreadsheet, or image';
+      attBtn.setAttribute('aria-label', 'Attach file');
+      attBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+      const micBtn = document.createElement('button');
+      micBtn.type = 'button';
+      micBtn.className = 'ai-tool-btn';
+      micBtn.title = 'Record voice question (EN / AR / FR)';
+      micBtn.setAttribute('aria-label', 'Record voice');
+      micBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5 10.5a7 7 0 0 0 14 0"/><line x1="12" y1="17.5" x2="12" y2="21.5"/><line x1="8.5" y1="21.5" x2="15.5" y2="21.5"/></svg>';
+      row.appendChild(fileInp);
+      row.appendChild(attBtn);
+      row.appendChild(micBtn);
+      row.appendChild(inpEl);
+      if (submitBtn) row.appendChild(submitBtn);
+      formEl.appendChild(attBar);
+      formEl.appendChild(voiceBar);
+      formEl.appendChild(row);
+
+      let stagedFiles = [];
+      let recActive = false;
+      let vLang = 'en';
+      let speechRec = null;
+
+      function syncStaged() {
+        attBtn.classList.toggle('has-files', stagedFiles.length > 0);
+        attBar.hidden = stagedFiles.length === 0;
+        attBar.innerHTML = stagedFiles.map((f, idx) => `<span class="ai-att-chip">${escapeHtml(f.name)} (${Math.max(1, Math.round((f.size || 512) / 1024))} KB) <button type="button" class="ai-att-rm" data-rm-idx="${idx}" aria-label="Remove">✕</button></span>`).join('');
+      }
+
+      attBtn.addEventListener('click', () => fileInp.click());
+      fileInp.addEventListener('change', () => {
+        if (fileInp.files && fileInp.files.length) {
+          stagedFiles = stagedFiles.concat(Array.from(fileInp.files)).slice(0, 4);
+          syncStaged();
+          fileInp.value = '';
+        }
+      });
+      attBar.addEventListener('click', ev => {
+        const rm = ev.target.closest('[data-rm-idx]');
+        if (rm) {
+          stagedFiles.splice(Number(rm.getAttribute('data-rm-idx')), 1);
+          syncStaged();
+        }
+      });
+
+      function stopRec() {
+        recActive = false;
+        micBtn.classList.remove('is-recording');
+        voiceBar.hidden = true;
+        if (speechRec) {
+          try { speechRec.stop(); } catch (_) {}
+          speechRec = null;
+        }
+      }
+
+      micBtn.addEventListener('click', () => {
+        if (recActive) {
+          stopRec();
+          return;
+        }
+        recActive = true;
+        micBtn.classList.add('is-recording');
+        voiceBar.hidden = false;
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SR && !navigator.webdriver) {
+          try {
+            speechRec = new SR();
+            speechRec.lang = vLang === 'ar' ? 'ar-LB' : (vLang === 'fr' ? 'fr-FR' : 'en-US');
+            speechRec.continuous = true;
+            speechRec.interimResults = true;
+            speechRec.onresult = ev => {
+              let t = '';
+              for (let i = 0; i < ev.results.length; i++) {
+                if (ev.results[i][0]) t += ev.results[i][0].transcript + ' ';
+              }
+              if (t.trim()) inpEl.value = t.trim();
+            };
+            speechRec.start();
+          } catch (_) {}
+        }
+      });
+
+      voiceBar.addEventListener('click', ev => {
+        const lb = ev.target.closest('[data-vlang]');
+        if (lb) {
+          vLang = lb.getAttribute('data-vlang');
+          voiceBar.querySelectorAll('[data-vlang]').forEach(b => b.classList.toggle('active', b === lb));
+          if (recActive) {
+            stopRec();
+            micBtn.click();
+          }
+          return;
+        }
+        if (ev.target.closest('[data-vstop]')) stopRec();
+      });
+
+      formEl._consumeAttachments = () => {
+        if (recActive) stopRec();
+        const names = stagedFiles.map(f => f.name);
+        stagedFiles = [];
+        syncStaged();
+        return names;
+      };
+    }
+
+    mountShowcaseAskTools('ai-inline-form', 'ai-inline-input');
+    mountShowcaseAskTools('ai-drawer-form', 'ai-drawer-input');
+
     document.getElementById('ai-inline-form')?.addEventListener('submit', e => {
       e.preventDefault();
+      const formEl = document.getElementById('ai-inline-form');
       const inp = document.getElementById('ai-inline-input');
-      const q = (inp?.value || '').trim();
+      const atts = formEl && formEl._consumeAttachments ? formEl._consumeAttachments() : [];
+      let q = (inp?.value || '').trim();
+      if (!q && atts.length) q = `Attached ${atts.join(', ')}: how does ISABI import and reconcile spreadsheets and documents?`;
+      else if (q && atts.length) q = `[Attached: ${atts.join(', ')}] ${q}`;
       if (!q) return;
       askIsabiQuestion(q, false, true);
       inp.value = '';
@@ -4184,8 +4319,12 @@ JS = r"""
 
     document.getElementById('ai-drawer-form')?.addEventListener('submit', e => {
       e.preventDefault();
+      const formEl = document.getElementById('ai-drawer-form');
       const inp = document.getElementById('ai-drawer-input');
-      const q = (inp?.value || '').trim();
+      const atts = formEl && formEl._consumeAttachments ? formEl._consumeAttachments() : [];
+      let q = (inp?.value || '').trim();
+      if (!q && atts.length) q = `Attached ${atts.join(', ')}: how does ISABI import and reconcile spreadsheets and documents?`;
+      else if (q && atts.length) q = `[Attached: ${atts.join(', ')}] ${q}`;
       if (!q) return;
       askIsabiQuestion(q, false, true);
       inp.value = '';
