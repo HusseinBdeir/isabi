@@ -2681,14 +2681,19 @@ JS = r"""
       }
     }
 
-    // 2b. Explicit Blueprint or Sandbox Dashboard Button / Command
+    // 2b. Explicit Blueprint, Sandbox Dashboard, or Attached Screenshot Walkthrough
     const matchedIndObj = detectIndustryFromQuery(low);
     if ((low.startsWith('show the ') && low.includes('blueprint')) || (matchedIndObj && low.includes('blueprint'))) {
       return Object.assign({ instantLocal: true }, buildBlueprintResponse(matchedIndObj || INDUSTRIES[0], cleanQ));
     }
-    if (low.startsWith('analyze the ') && low.includes('dashboard')) {
+    if ((low.startsWith('analyze the ') && low.includes('dashboard')) ||
+        (/\b(screenshot|screen[ _-]?shot|understand|undersand|explain\s+this|what\s+is\s+this)\b/i.test(low)) ||
+        (/^\[attached:.*\.(?:png|jpe?g|webp|gif|bmp)\]/i.test(cleanQ))) {
       const targetSboxKey = matchedIndObj ? matchedIndObj.sandboxKey : state.sboxInd;
-      return Object.assign({ instantLocal: true }, buildDashboardBriefing(targetSboxKey, cleanQ));
+      const brief = buildDashboardBriefing(targetSboxKey, cleanQ);
+      return Object.assign({ instantLocal: true }, brief, {
+        title: 'Screen & Sandbox Guide · ' + sbox.groupTitle
+      });
     }
 
     // 2c. Specific Functional & Operational Domain Handlers (conversational two-bubble replies)
