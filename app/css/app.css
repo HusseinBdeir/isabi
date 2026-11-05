@@ -29763,17 +29763,37 @@ body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-status {
   }
 }
 
-/* Uniform height, frozen top tabs & pinned bottom footer across all 42 Smart Entry forms */
+/* Uniform height, frozen top tabs & natural-scroll bottom footer across all 42 Smart Entry forms */
+#entryModal.modal-backdrop {
+  padding: 8px 12px;
+}
 #entryModal .modal-card {
   display: flex;
   flex-direction: column;
-  height: min(88dvh, 860px);
-  min-height: min(88dvh, 860px);
-  max-height: min(88dvh, 860px);
+  width: min(1240px, calc(100vw - 24px));
+  height: min(94dvh, 940px);
+  min-height: min(94dvh, 940px);
+  max-height: min(94dvh, 940px);
   overflow: hidden;
 }
-#entryModal .modal-header,
-#entryModal .modal-tabs,
+#entryModal .modal-header {
+  padding: 12px 22px;
+  flex-shrink: 0;
+}
+#entryModal .modal-tabs {
+  padding: 8px 22px;
+  flex-shrink: 0;
+}
+#entryModal .pa-modal-groups {
+  gap: 5px;
+  padding-bottom: 6px;
+}
+#entryModal .pa-group-btn {
+  padding: 4.5px 9.5px;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
 #entryModal .entry-unsaved-prompt {
   flex-shrink: 0;
 }
@@ -29786,14 +29806,14 @@ body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-status {
   -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
-  padding: 20px 22px 0;
+  padding: 16px 22px 16px;
 }
 #entryModal .modal-body > * {
   flex-shrink: 0;
 }
 #entryModal .modal-body > :nth-last-child(2),
 #entryModal .modal-body > :not(.modal-foot):not([hidden]):nth-last-child(1 of :not(.modal-foot):not([hidden])) {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 #entryModal .form-grid-3:has(.pa-suggest-wrap.open),
 #entryModal .form-grid-3:has(.pa-select-wrap.open),
@@ -29804,32 +29824,50 @@ body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-status {
 }
 #entryModal .modal-foot {
   margin-top: auto;
-  position: sticky;
-  bottom: 0;
-  background: var(--surface);
-  padding: 14px 0 18px;
+  position: static;
+  bottom: auto;
+  background: transparent;
+  padding: 12px 0 0;
   border-top: 1px solid var(--line);
-  z-index: 6;
+  z-index: auto;
 }
 @media (max-width: 1024px) {
   #entryModal .modal-card {
-    height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
-    min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
-    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
+    width: min(100%, calc(100vw - 16px));
+    height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 12px);
+    min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 12px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 12px);
+  }
+  #entryModal .modal-foot {
+    position: static;
+    bottom: auto;
   }
 }
 @media (max-width: 768px) {
+  #entryModal.modal-backdrop {
+    padding: 0;
+  }
   #entryModal .modal-card {
+    width: 100%;
     height: calc(100dvh - var(--safe-top) - 6px);
     min-height: calc(100dvh - var(--safe-top) - 6px);
     max-height: calc(100dvh - var(--safe-top) - 6px);
   }
+  #entryModal .modal-header {
+    padding: 11px 14px;
+  }
+  #entryModal .modal-tabs {
+    padding: 7px 12px;
+  }
   #entryModal .modal-body {
-    padding: 12px 14px 0;
+    padding: 12px 14px calc(12px + var(--safe-bottom));
   }
   #entryModal .modal-foot {
-    margin: auto -14px 0;
-    padding: 10px 14px calc(12px + var(--safe-bottom));
+    position: static;
+    bottom: auto;
+    margin: auto 0 0;
+    padding: 10px 0 0;
+    background: transparent;
   }
 }
 
