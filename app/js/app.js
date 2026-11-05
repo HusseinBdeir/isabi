@@ -71,7 +71,7 @@
   const DEFAULT_VAT_RATE = 0.11;
   const DAY_SHIFT_FROM = 6 * 60;   // m48: Day shift 06:00–17:59, Night otherwise
   const DAY_SHIFT_TO = 17 * 60 + 59;
-  const PAGE = 50;
+  const PAGE = 65;
   const SEED_DATE = String(SEED.generated_at || '').slice(0, 10) || todayISO();
 
   const DEFAULT_FACE_SEEDS = {"husseinbdeir@bhfirms.com":{"face_samples":[[-0.169,0.0957,0.02447,-0.01083,-0.01605,-0.01265,-0.01285,0.01305,0.16293,-0.00247,0.18537,-0.02275,-0.18379,-0.11373,-0.06909,0.10834,-0.17215,-0.10265,-0.07492,-0.10408,0.03489,0.08958,-0.00587,0.01114,-0.21555,-0.31683,0.01363,-0.17853,-0.01956,-0.05454,0.02328,0.14697,-0.12245,-0.07951,0.08886,0.13959,0.0067,0.04685,0.16192,0.05852,-0.09861,0.03626,0.06709,0.4018,0.14416,0.02875,-0.02948,-0.00454,0.15126,-0.30128,0.06839,0.15788,0.06299,0.10197,0.13423,-0.13649,0.03105,0.1076,-0.21299,0.09067,0.0123,-0.00492,-0.01307,-0.07199,0.15052,0.07635,-0.13205,-0.0854,0.08478,-0.10627,-0.01638,0.07514,-0.12526,-0.17893,-0.27692,0.10839,0.40101,0.17221,-0.11297,0.00855,-0.05496,-0.06162,0.04983,0.00362,-0.09221,-0.02117,-0.02133,0.01959,0.15528,0.06835,-0.0789,0.19038,-0.01892,-0.00471,-0.00014,-0.02918,-0.10673,-0.01059,-0.15137,-0.01182,-0.0275,-0.14348,0.01075,0.07753,-0.19627,0.09342,0.0312,-0.00115,-0.02943,0.08622,-0.15597,0.01808,0.15895,-0.2389,0.22638,0.1809,0.13015,0.15414,0.10945,-0.04759,0.00936,0.0304,-0.07792,-0.08275,0.04394,-0.01365,0.01098,0.01834],[-0.16883,0.11814,0.04365,-0.02038,0.00713,-0.00028,-0.02288,0.02827,0.16317,-0.00154,0.17772,-0.02561,-0.19812,-0.10292,-0.06128,0.10394,-0.17322,-0.10372,-0.06128,-0.10099,0.05196,0.0925,-0.01254,0.01547,-0.20707,-0.32557,0.00773,-0.16595,-0.01849,-0.03388,0.00754,0.08677,-0.13169,-0.0855,0.07388,0.13358,0.01447,0.04532,0.14572,0.04454,-0.11175,0.02594,0.07797,0.39198,0.15203,0.03835,-0.04469,0.01417,0.13606,-0.30798,0.09889,0.15397,0.06891,0.09917,0.13286,-0.1549,0.0045,0.11117,-0.20167,0.0877,0.0002,0.00474,-0.01522,-0.07775,0.13716,0.09101,-0.13599,-0.10221,0.086,-0.11138,0.00148,0.06661,-0.11737,-0.1639,-0.28469,0.11272,0.39218,0.15187,-0.11556,0.01052,-0.05437,-0.05126,0.03835,-0.01077,-0.09355,0.00426,-0.02855,0.01945,0.14047,0.06783,-0.07891,0.18325,-0.03841,-0.00891,0.0245,0.00782,-0.11668,-0.01385,-0.16855,-0.01004,-0.01042,-0.16257,-0.0002,0.08176,-0.21665,0.09905,0.04033,-0.00109,-0.01817,0.09932,-0.16437,0.01131,0.18162,-0.22012,0.2204,0.17855,0.11216,0.16313,0.11424,-0.03651,0.00575,0.02879,-0.08728,-0.08903,0.02348,-0.01942,0.01964,0.03569],[-0.20894,0.10548,0.02186,-0.01977,-0.04278,0.009,-0.01835,-0.01417,0.17419,0.02172,0.14651,-0.03694,-0.19444,-0.07989,-0.06672,0.12507,-0.15574,-0.1193,-0.07285,-0.10925,0.01646,0.08559,0.02083,0.01445,-0.22809,-0.35378,0.00995,-0.15591,-0.04722,-0.03763,0.00407,0.15382,-0.15589,-0.0669,0.08981,0.10064,-0.00338,0.06001,0.18511,0.05248,-0.15067,0.04016,0.0796,0.3797,0.16924,0.03236,-0.02729,-0.01394,0.12585,-0.26301,0.07583,0.16929,0.04875,0.062,0.1085,-0.11279,-0.00308,0.08481,-0.17155,0.08064,0.03029,-0.0524,-0.01528,-0.07048,0.14284,0.07948,-0.09325,-0.10876,0.09438,-0.09127,-0.01037,0.06298,-0.12135,-0.20475,-0.27692,0.09712,0.39114,0.16025,-0.13054,0.0443,-0.0514,-0.04999,0.07614,0.02468,-0.09304,-0.00951,-0.01626,0.02426,0.20429,0.04415,-0.09147,0.20275,-0.01078,-0.00297,0.01234,-0.02056,-0.09363,-0.00199,-0.16573,-0.02137,-0.00863,-0.09881,0.03189,0.07979,-0.20869,0.09221,0.03797,0.00361,-0.04124,0.08623,-0.13687,-0.00318,0.14232,-0.2261,0.22805,0.16745,0.10177,0.16495,0.12146,-0.05324,0.03548,0.05331,-0.06618,-0.07041,0.09875,0.00438,0.05261,0.05105]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"},"zeinabrkein@bhfirms.com":{"face_samples":[[-0.10328,0.10045,0.17652,-0.03833,-0.07092,-0.0286,-0.06478,-0.0389,0.2221,-0.11399,0.20044,0.0083,-0.27256,0.14826,-0.07505,0.19771,-0.17022,-0.05534,-0.07734,-0.04771,0.07787,0.06499,0.00856,0.09388,-0.10165,-0.33878,-0.07043,-0.0979,-0.01774,-0.06689,-0.03801,0.05287,-0.08776,0.02529,0.09046,0.08112,0.01505,-0.08566,0.19665,0.04414,-0.20991,0.01726,0.07356,0.1951,0.17903,0.05901,0.02701,-0.14826,0.17081,-0.28203,-0.00611,0.14299,0.05302,0.11252,0.16911,-0.19131,0.04012,0.07891,-0.13802,-0.0069,0.01879,-0.04515,-0.00668,-0.07722,0.20532,0.09113,-0.14449,-0.07692,0.16105,-0.14169,-0.05954,0.07343,-0.10791,-0.14723,-0.1574,0.00914,0.46034,0.15426,-0.21104,0.07263,-0.06044,-0.08198,-0.00048,0.13373,-0.07406,0.02936,0.00052,-0.00671,0.2012,0.0057,0.10816,0.27258,0.00405,0.05987,0.02844,0.00791,-0.17171,-0.0571,-0.16043,-0.11868,-0.0226,-0.01543,0.00261,0.06213,-0.30311,0.12864,-0.05382,-0.08485,0.02222,0.08474,-0.05327,0.00078,0.16594,-0.24362,0.14203,0.15159,-0.00113,0.12178,0.02329,0.09272,0.00346,-0.01778,-0.1146,-0.08605,0.08754,-0.07504,-0.02181,-0.06106],[-0.15546,0.09958,0.12438,-0.08909,-0.12015,0.01572,-0.04119,-0.01384,0.14991,-0.03155,0.25053,-0.01989,-0.23157,0.04526,-0.04799,0.17158,-0.2087,-0.08665,-0.07207,-0.07561,0.07425,0.09425,0.00858,0.06681,-0.20201,-0.32389,-0.04405,-0.0957,0.05795,-0.11124,-0.05731,0.05933,-0.168,-0.0029,0.07261,0.05617,-0.07277,-0.09774,0.17703,0.09699,-0.20588,0.06548,0.08072,0.30269,0.19947,0.0312,0.00853,-0.14244,0.12433,-0.27528,0.01569,0.22335,0.01918,0.08816,0.06638,-0.1601,0.06536,0.09002,-0.24271,0.04138,0.06438,-0.06,-0.02406,-0.06464,0.18376,0.11776,-0.12489,-0.12958,0.14723,-0.08216,-0.02628,0.11263,-0.17226,-0.20441,-0.22492,0.05397,0.38441,0.12613,-0.14906,0.06537,-0.0543,-0.02111,0.04619,0.12563,-0.12733,0.00197,-0.04376,0.10541,0.15878,-0.0188,0.05326,0.27128,0.0542,-0.03021,0.06954,0.09385,-0.18735,-0.06092,-0.16284,-0.10296,0.03871,-0.05151,0.04215,0.14151,-0.23085,0.14306,-0.01309,-0.09234,-0.02499,-0.05212,-0.01096,-0.01852,0.10111,-0.22578,0.17332,0.17342,0.0724,0.1142,0.07246,0.01083,-0.04953,-0.01258,-0.09994,-0.00953,0.07428,-0.04545,0.0275,-0.04624],[-0.10264,0.11677,0.14248,-0.05085,-0.09557,-0.04947,-0.03037,-0.0885,0.17172,-0.12864,0.22292,-0.07374,-0.23499,0.05862,-0.09893,0.15847,-0.2038,-0.05618,-0.11123,-0.02175,0.07294,0.03421,0.03283,0.08376,-0.11342,-0.35171,-0.09612,-0.09475,0.07004,-0.00868,-0.06366,0.07502,-0.08494,-0.0329,0.08244,0.11595,-0.03841,-0.09261,0.18339,-0.02539,-0.2093,0.02156,0.0456,0.22281,0.20889,0.04794,0.03609,-0.18257,0.17969,-0.25351,0.00082,0.18459,0.07084,0.09425,0.1584,-0.15264,0.07248,0.15028,-0.18464,-0.02874,0.02653,-0.07302,0.05252,-0.07012,0.14033,0.05288,-0.14466,-0.06516,0.19743,-0.14817,0.01044,0.07885,-0.11429,-0.1854,-0.24795,0.00472,0.49713,0.19905,-0.13227,0.04636,-0.08981,-0.06809,0.04811,0.10874,-0.12448,-0.04259,-0.07608,0.02195,0.14953,-0.0439,0.07035,0.22668,0.01795,0.02063,0.02702,0.03778,-0.21332,-0.0162,-0.1496,-0.03789,-0.01655,-0.07219,0.00156,0.08554,-0.23739,0.09962,-0.03234,-0.08328,-0.0019,-0.02846,-0.07481,-0.01372,0.1631,-0.25433,0.09921,0.17323,0.0226,0.17518,0.08742,0.05428,-0.00768,-0.07531,-0.11616,-0.07333,0.08838,-0.03546,0.00183,-0.05362]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"}};
@@ -289,6 +289,7 @@
       }, saved, { sound: false });
     })()
   };
+  if (typeof window !== 'undefined') window.STATE = STATE;
 
   const FACE_POSES = [
     'Look straight at the camera',
@@ -5572,6 +5573,7 @@
       case 'products': return ['sales_loads', 'fuel_fills', 'active_rules', 'list_price'];
       case 'product_types': return ['sales_loads', 'products_count'];
       case 'uoms': return ['tickets_count', 'products_count'];
+      case 'staff_members': return ['rem_payment', 'total_earned', 'total_paid', 'active_salary_usd', 'contracts_count'];
       case 'employments': return ['salary_usd', 'daily_rate', 'total_paid', 'payments_count'];
       case 'logistics_allowances': return ['daily_usd', 'lbp_amount'];
       case 'price_rules': return ['matched_tickets', 'unit_price', 'trans_unit_price'];
@@ -6204,7 +6206,11 @@
     `;
   }
 
-  function shownCount(view) { return STATE.shown[view] || PAGE; }
+  function shownCount(view) {
+    const v = String(view || '');
+    const base = (v === 'pay_staff' || v === 'pay_emp' || v === 'univ_reg' || v.startsWith('ureg_') || v === 'tbl_staff_members' || v === 'tbl_employments') ? 150 : PAGE;
+    return STATE.shown[view] || base;
+  }
 
   function showMoreRow() {
     return '';
@@ -10373,7 +10379,7 @@
     }
     const txt = esc(label || v);
     const inner = bold ? `<strong>${txt}</strong>` : txt;
-    return `<span class="rel-link" data-rel-key="${esc(targetKey)}" data-rel-val="${esc(v)}" title="Click to open 360° Record · Shift+Click to filter table by ${esc(v)}">${inner}<span class="rel-arr">↗</span></span>`;
+    return `<span class="rel-link" data-rel-key="${esc(targetKey)}" data-rel-val="${esc(v)}" data-ui-tip="Click to open 360° Record · Shift+Click to filter table by ${esc(v)}">${inner}<span class="rel-arr">↗</span></span>`;
   }
   function coBadge(co) {
     const raw = String(co || '').trim();
@@ -10382,7 +10388,7 @@
     const short = isBbc ? 'BBC' : (isLt ? 'Lions' : (raw || 'WTC'));
     const cls = isBbc ? 'co-tbl-bbc' : (isLt ? 'co-tbl-lions' : 'co-tbl-wtc');
     return short !== raw
-      ? `<span class="badge badge-neutral co-tbl-badge ${cls}" title="${esc(raw)}">${esc(short)}<span class="sr-only"> ${esc(raw)}</span></span>`
+      ? `<span class="badge badge-neutral co-tbl-badge ${cls}" data-ui-tip="${esc(raw)}">${esc(short)}<span class="sr-only"> ${esc(raw)}</span></span>`
       : `<span class="badge badge-neutral co-tbl-badge ${cls}">${esc(raw)}</span>`;
   }
   function methodBadge(method, sgn) {
@@ -17364,7 +17370,7 @@
                   <td class="mono">${esc(recordDateDMY(r))}${repDateShiftBadge(r)}${appCell(r, 'sales_tickets')}</td>
                   <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispBadgeHtml}</span></td>
                   <td>${coBadge(r.company)}</td>
-                  <td>${r.sale_type === 'Unregistered' ? '<span class="has-sr-only" title="Unregistered">Unreg.<span class="sr-only">istered</span></span>' : esc(r.sale_type)}</td>
+                  <td>${r.sale_type === 'Unregistered' ? '<span class="has-sr-only" data-ui-tip="Unregistered">Unreg.<span class="sr-only">istered</span></span>' : esc(r.sale_type)}</td>
                   <td>${relLink('customers', r.customer, r.customer, true)}</td>
                   <td>${relLink('products', r.product)}</td>
                   <td>${r.site ? relLink('sites', r.site) : '—'}</td>
@@ -19918,37 +19924,41 @@
 
   const ALL_EQUIP_CLASSES = ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Generator', 'Vehicle', 'Other'];
   const CANONICAL_ITEMS_SEED = [
-    { id: 'itm_001', name: 'Engine Oil 15W-40', item_name: 'Engine Oil 15W-40', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 4.5, default_location: 'WTC Main Warehouse', min_stock: 100, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_002', name: 'Hydraulic Oil 68', item_name: 'Hydraulic Oil 68', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 3.8, default_location: 'WTC Main Warehouse', min_stock: 100, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Other'] },
-    { id: 'itm_003', name: 'Gear / Transmission Oil 90', item_name: 'Gear / Transmission Oil 90', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 5.0, default_location: 'WTC Main Warehouse', min_stock: 40, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Vehicle', 'Other'] },
-    { id: 'itm_004', name: 'ATF / Power Steering Fluid', item_name: 'ATF / Power Steering Fluid', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 6.0, default_location: 'WTC Main Warehouse', min_stock: 20, compatible_types: ['Truck', 'Wheel Loader', 'Vehicle'] },
-    { id: 'itm_005', name: 'Differential / Axle Oil 85W-140', item_name: 'Differential / Axle Oil 85W-140', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 5.5, default_location: 'WTC Main Warehouse', min_stock: 20, compatible_types: ['Truck', 'Wheel Loader', 'Vehicle'] },
-    { id: 'itm_006', name: 'Lithium EP2 Chassis Grease', item_name: 'Lithium EP2 Chassis Grease', category: 'Oils & Lubricants', uom: 'kg', default_cost: 6.5, default_location: 'WTC Main Warehouse', min_stock: 15, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Other'] },
-    { id: 'itm_007', name: 'Complete Filter Set (Oil + Fuel + Air)', item_name: 'Complete Filter Set (Oil + Fuel + Air)', category: 'Spare Parts', uom: 'Set', default_cost: 85, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_008', name: 'Fuel Filter', item_name: 'Fuel Filter', category: 'Spare Parts', uom: 'Piece', default_cost: 22, default_location: 'WTC Main Warehouse', min_stock: 4, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_009', name: 'Engine Oil Filter', item_name: 'Engine Oil Filter', category: 'Spare Parts', uom: 'Piece', default_cost: 25, default_location: 'WTC Main Warehouse', min_stock: 4, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_010', name: 'Air Filter', item_name: 'Air Filter', category: 'Spare Parts', uom: 'Piece', default_cost: 38, default_location: 'WTC Main Warehouse', min_stock: 3, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_011', name: 'Bearing (Roulement)', item_name: 'Bearing (Roulement)', category: 'Spare Parts', uom: 'Piece', default_cost: 45, default_location: 'WTC Main Warehouse', min_stock: 4, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_012', name: 'Conveyor / Drive Belt', item_name: 'Conveyor / Drive Belt', category: 'Spare Parts', uom: 'Piece', default_cost: 65, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_013', name: 'High-Pressure Hydraulic Hose', item_name: 'High-Pressure Hydraulic Hose', category: 'Spare Parts', uom: 'Piece', default_cost: 55, default_location: 'WTC Main Warehouse', min_stock: 3, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Other'] },
-    { id: 'itm_014', name: 'Heavy-Duty Truck Battery', item_name: 'Heavy-Duty Truck Battery', category: 'Spare Parts', uom: 'Piece', default_cost: 165, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_015', name: 'Heavy Truck / Loader Tire', item_name: 'Heavy Truck / Loader Tire', category: 'Spare Parts', uom: 'Piece', default_cost: 380, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ['Truck', 'Wheel Loader', 'Vehicle'] },
-    { id: 'itm_016', name: 'Alternator (Dynamo)', item_name: 'Alternator (Dynamo)', category: 'Spare Parts', uom: 'Piece', default_cost: 185, default_location: 'WTC Main Warehouse', min_stock: 1, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_017', name: 'Starter Motor (March)', item_name: 'Starter Motor (March)', category: 'Spare Parts', uom: 'Piece', default_cost: 210, default_location: 'WTC Main Warehouse', min_stock: 1, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_018', name: 'Brake Lining & Shoe Set', item_name: 'Brake Lining & Shoe Set', category: 'Spare Parts', uom: 'Set', default_cost: 95, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ['Truck', 'Wheel Loader', 'Vehicle'] },
-    { id: 'itm_019', name: 'Crusher Jaw / Manganese Plate Set', item_name: 'Crusher Jaw / Manganese Plate Set', category: 'Spare Parts', uom: 'Set', default_cost: 1450, default_location: 'WTC Main Warehouse', min_stock: 1, compatible_types: ['Plant'] },
-    { id: 'itm_020', name: 'Welding Electrodes (7018 Box)', item_name: 'Welding Electrodes (7018 Box)', category: 'Tools & Garage', uom: 'Box', default_cost: 28, default_location: 'WTC Main Warehouse', min_stock: 3, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_021', name: 'Diesel', item_name: 'Diesel', category: 'Fuel', uom: 'Litre', default_cost: 0, default_location: 'WTC Main Warehouse', min_stock: 0, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Generator', 'Vehicle', 'Other'] },
-    { id: 'itm_022', name: 'Petrol / Gasoline', item_name: 'Petrol / Gasoline', category: 'Fuel', uom: 'Litre', default_cost: 0, default_location: 'WTC Main Warehouse', min_stock: 0, compatible_types: ['Vehicle', 'Generator', 'Other'] },
-    { id: 'itm_023', name: 'Fuel Additives & AdBlue', item_name: 'Fuel Additives & AdBlue', category: 'Fuel', uom: 'Litre', default_cost: 0, default_location: 'WTC Main Warehouse', min_stock: 0, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Generator', 'Vehicle'] },
-    { id: 'itm_024', name: 'Coolant / Antifreeze', item_name: 'Coolant / Antifreeze', category: 'Oils & Lubricants', uom: 'Litre', default_cost: 3.5, default_location: 'WTC Main Warehouse', min_stock: 20, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_025', name: 'Hydraulic Seal Kit', item_name: 'Hydraulic Seal Kit', category: 'Spare Parts', uom: 'Set', default_cost: 48, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Other'] },
-    { id: 'itm_026', name: 'Heavy Truck Clutch Kit (Plateau)', item_name: 'Heavy Truck Clutch Kit (Plateau)', category: 'Spare Parts', uom: 'Set', default_cost: 290, default_location: 'WTC Main Warehouse', min_stock: 1, compatible_types: ['Truck', 'Vehicle'] },
-    { id: 'itm_027', name: 'Heavy Tire Inner Tube', item_name: 'Heavy Tire Inner Tube', category: 'Spare Parts', uom: 'Piece', default_cost: 35, default_location: 'WTC Main Warehouse', min_stock: 3, compatible_types: ['Truck', 'Wheel Loader', 'Vehicle'] },
-    { id: 'itm_028', name: 'Crusher Screen Mesh', item_name: 'Crusher Screen Mesh', category: 'Spare Parts', uom: 'Piece', default_cost: 320, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ['Plant'] },
-    { id: 'itm_029', name: 'Conveyor Pulley / Idler Roller', item_name: 'Conveyor Pulley / Idler Roller', category: 'Spare Parts', uom: 'Piece', default_cost: 110, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ['Plant'] },
-    { id: 'itm_030', name: 'Oxygen Welding Cylinder', item_name: 'Oxygen Welding Cylinder', category: 'Tools & Garage', uom: 'Piece', default_cost: 18, default_location: 'WTC Main Warehouse', min_stock: 2, compatible_types: ALL_EQUIP_CLASSES },
-    { id: 'itm_031', name: 'Loader Bucket Tooth / Adapter', item_name: 'Loader Bucket Tooth / Adapter', category: 'Spare Parts', uom: 'Piece', default_cost: 38, default_location: 'WTC Main Warehouse', min_stock: 4, compatible_types: ['Wheel Loader', 'Excavator'] }
+    { id: 'itm_001', name: 'Engine Oil 15W-40', item_name: 'Engine Oil 15W-40', category: 'Oils & Lubricants', subcategory: 'Engine Oil (15W-40)', uom: 'Litre', default_cost: 4.5, default_location: 'WTC Main Warehouse', min_stock: 100 },
+    { id: 'itm_002', name: 'Hydraulic Oil 68', item_name: 'Hydraulic Oil 68', category: 'Oils & Lubricants', subcategory: 'Hydraulic Oil (68)', uom: 'Litre', default_cost: 3.8, default_location: 'WTC Main Warehouse', min_stock: 100 },
+    { id: 'itm_003', name: 'Gear / Transmission Oil 90', item_name: 'Gear / Transmission Oil 90', category: 'Oils & Lubricants', subcategory: 'Gear & Transmission Oil (90 / ATF)', uom: 'Litre', default_cost: 5.0, default_location: 'WTC Main Warehouse', min_stock: 40 },
+    { id: 'itm_004', name: 'ATF / Power Steering Fluid', item_name: 'ATF / Power Steering Fluid', category: 'Oils & Lubricants', subcategory: 'Gear & Transmission Oil (90 / ATF)', uom: 'Litre', default_cost: 6.0, default_location: 'WTC Main Warehouse', min_stock: 20 },
+    { id: 'itm_005', name: 'Differential / Axle Oil 85W-140', item_name: 'Differential / Axle Oil 85W-140', category: 'Oils & Lubricants', subcategory: 'Gear & Transmission Oil (90 / ATF)', uom: 'Litre', default_cost: 5.5, default_location: 'WTC Main Warehouse', min_stock: 20 },
+    { id: 'itm_006', name: 'Lithium EP2 Chassis Grease', item_name: 'Lithium EP2 Chassis Grease', category: 'Oils & Lubricants', subcategory: 'Grease & Lubrication', uom: 'kg', default_cost: 6.5, default_location: 'WTC Main Warehouse', min_stock: 15 },
+    { id: 'itm_007', name: 'Complete Filter Set (Oil + Fuel + Air)', item_name: 'Complete Filter Set (Oil + Fuel + Air)', category: 'Spare Parts', subcategory: 'Filters (Oil, Fuel, Air, Hydraulic)', uom: 'Set', default_cost: 85, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_008', name: 'Fuel Filter', item_name: 'Fuel Filter', category: 'Spare Parts', subcategory: 'Filters (Oil, Fuel, Air, Hydraulic)', uom: 'Piece', default_cost: 22, default_location: 'WTC Main Warehouse', min_stock: 4 },
+    { id: 'itm_009', name: 'Engine Oil Filter', item_name: 'Engine Oil Filter', category: 'Spare Parts', subcategory: 'Filters (Oil, Fuel, Air, Hydraulic)', uom: 'Piece', default_cost: 25, default_location: 'WTC Main Warehouse', min_stock: 4 },
+    { id: 'itm_010', name: 'Air Filter', item_name: 'Air Filter', category: 'Spare Parts', subcategory: 'Filters (Oil, Fuel, Air, Hydraulic)', uom: 'Piece', default_cost: 38, default_location: 'WTC Main Warehouse', min_stock: 3 },
+    { id: 'itm_011', name: 'Bearing (Roulement)', item_name: 'Bearing (Roulement)', category: 'Spare Parts', subcategory: 'Bearings & Bushings', uom: 'Piece', default_cost: 45, default_location: 'WTC Main Warehouse', min_stock: 4 },
+    { id: 'itm_012', name: 'Conveyor / Drive Belt', item_name: 'Conveyor / Drive Belt', category: 'Spare Parts', subcategory: 'Conveyor Belts, Rollers & Pulleys', uom: 'Piece', default_cost: 65, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_013', name: 'High-Pressure Hydraulic Hose', item_name: 'High-Pressure Hydraulic Hose', category: 'Spare Parts', subcategory: 'Hydraulic Hoses, Pumps & Cylinders', uom: 'Piece', default_cost: 55, default_location: 'WTC Main Warehouse', min_stock: 3 },
+    { id: 'itm_014', name: 'Heavy-Duty Truck Battery', item_name: 'Heavy-Duty Truck Battery', category: 'Spare Parts', subcategory: 'Electrical, Batteries & Motors', uom: 'Piece', default_cost: 165, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_015', name: 'Heavy Truck / Loader Tire', item_name: 'Heavy Truck / Loader Tire', category: 'Spare Parts', subcategory: 'Tires, Tubes & Rims', uom: 'Piece', default_cost: 380, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_016', name: 'Alternator (Dynamo)', item_name: 'Alternator (Dynamo)', category: 'Spare Parts', subcategory: 'Electrical, Batteries & Motors', uom: 'Piece', default_cost: 185, default_location: 'WTC Main Warehouse', min_stock: 1 },
+    { id: 'itm_017', name: 'Starter Motor (March)', item_name: 'Starter Motor (March)', category: 'Spare Parts', subcategory: 'Electrical, Batteries & Motors', uom: 'Piece', default_cost: 210, default_location: 'WTC Main Warehouse', min_stock: 1 },
+    { id: 'itm_018', name: 'Brake Lining & Shoe Set', item_name: 'Brake Lining & Shoe Set', category: 'Spare Parts', subcategory: 'Brakes, Clutch & Drivetrain', uom: 'Set', default_cost: 95, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_019', name: 'Crusher Jaw / Manganese Plate Set', item_name: 'Crusher Jaw / Manganese Plate Set', category: 'Spare Parts', subcategory: 'Crusher & Screen Wear Parts', uom: 'Set', default_cost: 1450, default_location: 'WTC Main Warehouse', min_stock: 1 },
+    { id: 'itm_020', name: 'Welding Electrodes (7018 Box)', item_name: 'Welding Electrodes (7018 Box)', category: 'Tools & Garage', subcategory: 'Welding & Cutting Consumables', uom: 'Box', default_cost: 28, default_location: 'WTC Main Warehouse', min_stock: 3 },
+    { id: 'itm_021', name: 'Diesel', item_name: 'Diesel', category: 'Fuel', subcategory: 'Diesel', uom: 'Litre', default_cost: 0, default_location: 'WTC Main Warehouse', min_stock: 0 },
+    { id: 'itm_022', name: 'Petrol / Gasoline', item_name: 'Petrol / Gasoline', category: 'Fuel', subcategory: 'Gasoline (Benzine)', uom: 'Litre', default_cost: 0, default_location: 'WTC Main Warehouse', min_stock: 0 },
+    { id: 'itm_023', name: 'Fuel Additives & AdBlue', item_name: 'Fuel Additives & AdBlue', category: 'Fuel', subcategory: 'Fuel Additives & AdBlue', uom: 'Litre', default_cost: 0, default_location: 'WTC Main Warehouse', min_stock: 0 },
+    { id: 'itm_024', name: 'Coolant / Antifreeze', item_name: 'Coolant / Antifreeze', category: 'Oils & Lubricants', subcategory: 'Engine Oil (15W-40)', uom: 'Litre', default_cost: 3.5, default_location: 'WTC Main Warehouse', min_stock: 20 },
+    { id: 'itm_025', name: 'Hydraulic Seal Kit', item_name: 'Hydraulic Seal Kit', category: 'Spare Parts', subcategory: 'Hydraulic Hoses, Pumps & Cylinders', uom: 'Set', default_cost: 48, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_026', name: 'Heavy Truck Clutch Kit (Plateau)', item_name: 'Heavy Truck Clutch Kit (Plateau)', category: 'Spare Parts', subcategory: 'Brakes, Clutch & Drivetrain', uom: 'Set', default_cost: 290, default_location: 'WTC Main Warehouse', min_stock: 1 },
+    { id: 'itm_027', name: 'Heavy Tire Inner Tube', item_name: 'Heavy Tire Inner Tube', category: 'Spare Parts', subcategory: 'Tires, Tubes & Rims', uom: 'Piece', default_cost: 35, default_location: 'WTC Main Warehouse', min_stock: 3 },
+    { id: 'itm_028', name: 'Crusher Screen Mesh', item_name: 'Crusher Screen Mesh', category: 'Spare Parts', subcategory: 'Crusher & Screen Wear Parts', uom: 'Piece', default_cost: 320, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_029', name: 'Conveyor Pulley / Idler Roller', item_name: 'Conveyor Pulley / Idler Roller', category: 'Spare Parts', subcategory: 'Conveyor Belts, Rollers & Pulleys', uom: 'Piece', default_cost: 110, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_030', name: 'Oxygen Welding Cylinder', item_name: 'Oxygen Welding Cylinder', category: 'Tools & Garage', subcategory: 'Welding & Cutting Consumables', uom: 'Piece', default_cost: 18, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_031', name: 'Loader Bucket Tooth / Adapter', item_name: 'Loader Bucket Tooth / Adapter', category: 'Spare Parts', subcategory: 'Crusher & Screen Wear Parts', uom: 'Piece', default_cost: 38, default_location: 'WTC Main Warehouse', min_stock: 4 },
+    { id: 'itm_032', name: 'High-Tensile Bolts & Nuts Set', item_name: 'High-Tensile Bolts & Nuts Set', category: 'Spare Parts', subcategory: 'Bolts, Nuts, Pins & Fasteners', uom: 'Set', default_cost: 24, default_location: 'WTC Main Warehouse', min_stock: 5 },
+    { id: 'itm_033', name: 'Radiator & Cooling Hose Kit', item_name: 'Radiator & Cooling Hose Kit', category: 'Spare Parts', subcategory: 'Engine, Cooling & Mechanical Parts', uom: 'Set', default_cost: 75, default_location: 'WTC Main Warehouse', min_stock: 2 },
+    { id: 'itm_034', name: 'Heavy-Duty Cutting & Grinding Disc', item_name: 'Heavy-Duty Cutting & Grinding Disc', category: 'Tools & Garage', subcategory: 'Hand & Power Tools', uom: 'Piece', default_cost: 6, default_location: 'WTC Main Warehouse', min_stock: 10 },
+    { id: 'itm_035', name: 'Workshop Safety Gloves & PPE Set', item_name: 'Workshop Safety Gloves & PPE Set', category: 'Tools & Garage', subcategory: 'Safety Gear, PPE & Workshop Supplies', uom: 'Set', default_cost: 15, default_location: 'WTC Main Warehouse', min_stock: 5 }
   ];
   const CANONICAL_ITEM_KEYS = new Set(CANONICAL_ITEMS_SEED.map(r => norm(r.name)));
 
@@ -19986,15 +19996,49 @@
     return 'Spare Parts';
   }
 
+  function inferItemCatalogSubcategory(rawName, catRaw, subRaw) {
+    const sub = String(subRaw || '').trim();
+    if (sub && !/^(spare\s*parts|oils\s*&\s*lubricants|fuel|tools\s*&\s*garage|plant\s*consumables|repairs\s*and\s*maintenance)$/i.test(sub)) {
+      return sub;
+    }
+    const nm = String(rawName || '').trim();
+    const seedHit = CANONICAL_ITEMS_SEED.find(s => norm(s.name) === norm(nm));
+    if (seedHit && seedHit.subcategory) return seedHit.subcategory;
+    if (/^diesel$|mazout/i.test(nm)) return 'Diesel';
+    if (/gasoline|petrol|benzine/i.test(nm)) return 'Gasoline (Benzine)';
+    if (/adblue|fuel\s*additive/i.test(nm)) return 'Fuel Additives & AdBlue';
+    if (/15w|engine\s*oil|coolant|antifreeze/i.test(nm)) return 'Engine Oil (15W-40)';
+    if (/hydraul.*oil|\boil\s*68\b/i.test(nm)) return 'Hydraulic Oil (68)';
+    if (/gear.*oil|transmission.*oil|\batf\b|power\s*steering|differential|axle\s*oil|85w|\boil\s*90\b/i.test(nm)) return 'Gear & Transmission Oil (90 / ATF)';
+    if (/grease|تشحيم/i.test(nm)) return 'Grease & Lubrication';
+    if (/filter|فلتر|فلاتر/i.test(nm)) return 'Filters (Oil, Fuel, Air, Hydraulic)';
+    if (/tire|tyre|inner\s*tube|wheel\s*rim|كوتشوك|اطار|جنط/i.test(nm)) return 'Tires, Tubes & Rims';
+    if (/batter|alternat|starter|dynamo|march|sensor|wire|wiring|lamp|light|bulb|fuse|relay|بطارية|دينامو|مارش|لمبة|ضو/i.test(nm)) return 'Electrical, Batteries & Motors';
+    if (/brake|lining|shoe|clutch|plateau|drivetrain|cardan|gearbox|transmission|فريم|دبرياج|كردان|بلاطو/i.test(nm)) return 'Brakes, Clutch & Drivetrain';
+    if (/hydraul|hose|seal\s*kit|pump|cylinder|valve|نبريج|طرمبة|بستون/i.test(nm)) return 'Hydraulic Hoses, Pumps & Cylinders';
+    if (/conveyor|belt|roller|pulley|idler|fastener|قشاط|رولو/i.test(nm)) return 'Conveyor Belts, Rollers & Pulleys';
+    if (/bearing|roulement|bushing|pillow\s*block|رولمان|بوش/i.test(nm)) return 'Bearings & Bushings';
+    if (/crusher|manganese|screen\s*mesh|sieve|jaw|bucket\s*tooth|tooth|adapter|wear\s*plate|knives|غربال|منخل|سنان/i.test(nm)) return 'Crusher & Screen Wear Parts';
+    if (/bolt|nut|washer|screw|stud|pin|spring|clip|clamp|bracket|عزقة|برغي|بونط|ريصور/i.test(nm)) return 'Bolts, Nuts, Pins & Fasteners';
+    if (/weld|electrode|oxygen|cutting\s*consum|torch|حام|أوكسجين|تلحيم/i.test(nm)) return 'Welding & Cutting Consumables';
+    if (/wrench|spanner|hammer|pliers|drill|grinder|disc|jack|grease\s*gun|tool|عدة|مفتاح/i.test(nm)) return 'Hand & Power Tools';
+    if (/glove|helmet|vest|boot|goggle|mask|extinguisher|safety|ppe|كفوف/i.test(nm)) return 'Safety Gear, PPE & Workshop Supplies';
+    if (/radiator|water\s*pump|thermostat|gasket|piston|liner|injector|turbo|exhaust|muffler|engine|motor|ردياتير|اشكمان|تربو|بخاخ/i.test(nm)) return 'Engine, Cooling & Mechanical Parts';
+    const cat = normalizeItemCatalogCategory(catRaw, nm);
+    if (cat === 'Fuel') return 'Diesel';
+    if (cat === 'Oils & Lubricants') return 'Engine Oil (15W-40)';
+    if (cat === 'Tools & Garage' || cat === 'Plant Consumables') return 'Hand & Power Tools';
+    return 'Engine, Cooling & Mechanical Parts';
+  }
+
   function ensureItemsCatalogSeeded() {
     if (!SEED || !SEED.records) return [];
     if (!Array.isArray(SEED.records.items)) SEED.records.items = [];
     const customItems = (STATE.customRecords && Array.isArray(STATE.customRecords.items)) ? STATE.customRecords.items : [];
-    const rev = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${(SEED.records.expense_items || []).length}|${(SEED.records.warehouse_movements || []).length}|${customItems.length}|v2`;
+    const rev = `${SEED._customRev || 0}|${SEED._recordsReady ? 1 : 0}|${(SEED.records.expense_items || []).length}|${(SEED.records.warehouse_movements || []).length}|${customItems.length}|v3`;
     if (SEED._itemsCatalogSeededRev === rev && SEED.records.items.length >= CANONICAL_ITEMS_SEED.length) {
       return SEED.records.items;
     }
-    // Retain custom app-entered SKUs & valid existing rows while purging polluted historical subcategory/aggregate rows
     const keptItems = SEED.records.items.filter(r => {
       if (!r || r.voided) return false;
       const nm = String(r.name || r.item_name || '').trim();
@@ -20008,6 +20052,7 @@
       const nm = String(r.name || r.item_name || '').trim();
       const k = norm(nm);
       if (k && !byKey.has(k)) {
+        if (!r.subcategory) r.subcategory = inferItemCatalogSubcategory(nm, r.category, '');
         SEED.records.items.push(r);
         byKey.set(k, r);
       }
@@ -20016,6 +20061,7 @@
       if (!r || r.voided) return;
       const nm = String(r.name || r.item_name || '').trim();
       if (nm && !byKey.has(norm(nm))) {
+        if (!r.subcategory) r.subcategory = inferItemCatalogSubcategory(nm, r.category, '');
         SEED.records.items.push(r);
         byKey.set(norm(nm), r);
       }
@@ -20029,13 +20075,20 @@
       } else {
         const ex = byKey.get(k);
         if (seedRow.uom && ex.source !== 'app') ex.uom = seedRow.uom;
-        if (seedRow.compatible_types && !ex.compatible_types) ex.compatible_types = seedRow.compatible_types;
+        if (seedRow.subcategory && !ex.subcategory) ex.subcategory = seedRow.subcategory;
       }
     });
     const histCostAgg = new Map();
+    const histSubcatMap = new Map();
     (SEED.records.expense_items || []).forEach(r => {
       if (!r || r.voided || !r.item_name || !isValidCatalogItemCandidate(r.item_name, r.category)) return;
       const k = norm(r.item_name);
+      const subStr = String(r.subcategory || '').trim();
+      if (subStr) {
+        let sSet = histSubcatMap.get(k);
+        if (!sSet) { sSet = new Set(); histSubcatMap.set(k, sSet); }
+        sSet.add(subStr);
+      }
       const q = Math.max(0, Number(r.qty != null ? r.qty : 1));
       const tot = Math.max(0, Number(r.line_total != null ? r.line_total : (q * Number(r.unit_cost || 0))));
       if (!(q > 0) || !(tot > 0)) return;
@@ -20044,7 +20097,7 @@
       cur.usd += tot;
       histCostAgg.set(k, cur);
     });
-    const autoInferFromRow = (rawName, uomRaw, catRaw, costRaw, locRaw, minRaw, isExplicitStockOrRepair = false) => {
+    const autoInferFromRow = (rawName, uomRaw, catRaw, subRaw, costRaw, locRaw, minRaw, isExplicitStockOrRepair = false) => {
       const nm = String(rawName || '').trim();
       if (!nm) return;
       if (!isExplicitStockOrRepair && !isValidCatalogItemCandidate(nm, catRaw)) return;
@@ -20052,6 +20105,9 @@
       const k = norm(nm);
       if (byKey.has(k)) {
         const ex = byKey.get(k);
+        if (!ex.subcategory) {
+          ex.subcategory = inferItemCatalogSubcategory(nm, ex.category || catRaw, subRaw);
+        }
         if (!(Number(ex.default_cost || 0) > 0)) {
           const hc = histCostAgg.get(k);
           if (hc && hc.qty > 0) ex.default_cost = round2(hc.usd / hc.qty);
@@ -20061,6 +20117,7 @@
       }
       const inferredUom = uomRaw || (/15w|hydraul\s*oil|gear.*oil|engine\s*oil|fluid|\batf\b|coolant|diesel|mazout|gasoline|petrol|benzine|adblue/i.test(nm) ? 'Litre' : (/grease/i.test(nm) ? 'kg' : (/\bset\b|bolts|hardware|kit|knives|lining|clips/i.test(nm) ? 'Set' : (/\bbox\b|electrodes/i.test(nm) ? 'Box' : 'Piece'))));
       const inferredCat = normalizeItemCatalogCategory(catRaw, nm);
+      const inferredSub = inferItemCatalogSubcategory(nm, inferredCat, subRaw);
       const hc = histCostAgg.get(k);
       const effCost = Number(costRaw || 0) > 0 ? round2(Number(costRaw)) : (hc && hc.qty > 0 ? round2(hc.usd / hc.qty) : 0);
       const newRec = {
@@ -20068,6 +20125,7 @@
         name: nm,
         item_name: nm,
         category: inferredCat,
+        subcategory: inferredSub,
         uom: inferredUom,
         default_cost: effCost,
         default_location: locRaw || 'WTC Main Warehouse',
@@ -20079,13 +20137,23 @@
       byKey.set(k, newRec);
     };
     (SEED.records.warehouse_movements || []).forEach(r => {
-      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, r.category, r.unit_cost, r.warehouse_location || r.location, r.min_stock, true);
+      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, r.category, r.subcategory || '', r.unit_cost, r.warehouse_location || r.location, r.min_stock, true);
     });
     (SEED.records.expense_items || []).forEach(r => {
-      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, r.category, r.unit_cost, r.warehouse_location, 0, false);
+      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, r.category, r.subcategory || '', r.unit_cost, r.warehouse_location, 0, false);
     });
     (SEED.records.repair_items || []).forEach(r => {
-      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, 'Spare Parts', r.unit_cost, 'WTC Main Warehouse', 0, true);
+      if (r && !r.voided && r.item_name) autoInferFromRow(r.item_name, r.uom, 'Spare Parts', '', r.unit_cost, 'WTC Main Warehouse', 0, true);
+    });
+    SEED.records.items.forEach(it => {
+      if (!it || it.voided) return;
+      const k = norm(it.name || it.item_name);
+      if (!it.subcategory) it.subcategory = inferItemCatalogSubcategory(it.name || it.item_name, it.category, '');
+      const hSet = histSubcatMap.get(k);
+      const subs = new Set();
+      if (it.subcategory) subs.add(it.subcategory);
+      if (hSet) hSet.forEach(s => subs.add(s));
+      it._subcategories = Array.from(subs);
     });
     SEED._itemsCatalogSeededRev = rev;
     return SEED.records.items;
@@ -20118,18 +20186,30 @@
     const nm = String(spec.name || '').trim();
     if (!nm) return null;
     const existing = resolveCatalogItem(nm);
-    if (existing) return null;
+    if (existing) {
+      if (spec.subcategory) {
+        existing.subcategory = spec.subcategory;
+        if (!Array.isArray(existing._subcategories)) existing._subcategories = [];
+        if (!existing._subcategories.some(s => norm(s) === norm(spec.subcategory))) {
+          existing._subcategories.push(spec.subcategory);
+        }
+      }
+      return null;
+    }
     const who = activeUser();
+    const effCat = spec.category && ['Spare Parts', 'Oils & Lubricants', 'Fuel', 'Tools & Garage', 'Plant Consumables'].includes(spec.category) ? spec.category : normalizeItemCatalogCategory(spec.category, nm);
+    const effSub = String(spec.subcategory || '').trim() || inferItemCatalogSubcategory(nm, effCat, '');
     const itemRec = {
       id: uid('it'),
       name: nm,
       item_name: nm,
-      category: spec.category && ['Spare Parts', 'Oils & Lubricants', 'Fuel', 'Tools & Garage', 'Plant Consumables'].includes(spec.category) ? spec.category : 'Spare Parts',
+      category: effCat,
+      subcategory: effSub,
+      _subcategories: effSub ? [effSub] : [],
       uom: spec.uom || 'Piece',
       default_cost: Number(spec.default_cost || 0) > 0 ? round2(Number(spec.default_cost)) : 0,
       default_location: spec.default_location || 'WTC Main Warehouse',
       min_stock: Number(spec.min_stock || 0) > 0 ? Number(spec.min_stock) : 0,
-      ...(Array.isArray(spec.compatible_types) && spec.compatible_types.length > 0 ? { compatible_types: spec.compatible_types.slice() } : {}),
       notes: spec.notes || '',
       source: 'app',
       entered_by: who.full_name,
@@ -21602,34 +21682,7 @@
     return 'Other';
   }
 
-  function isItemCompatibleWithEquipment(itemRec, eqClass) {
-    if (!itemRec || !eqClass || eqClass === 'Other') return true;
-    if (Array.isArray(itemRec.compatible_types) && itemRec.compatible_types.length > 0) {
-      return itemRec.compatible_types.includes(eqClass);
-    }
-    const nm = String(itemRec.name || itemRec.item_name || '').trim();
-    if (!nm) return false;
-    if (eqClass === 'Truck' || eqClass === 'Vehicle') {
-      if (/crusher|manganese|screen\s*mesh|polyurethane.*screen|vibrating\s*screen|conveyor\s*(pulley|idler|fastener)|pillow\s*block|sieve\s*-\s*dryer/i.test(nm)) return false;
-      if (eqClass === 'Truck' && /^petrol|gasoline/i.test(nm)) return false;
-      return true;
-    }
-    if (eqClass === 'Plant') {
-      if (/truck.*tire|tire\s*inner\s*tube|wheel\s*rim|brake\s*(lining|drum|shoe)|clutch\s*kit|power\s*steering|\batf\b|differential.*axle|دبرياج|دركسيون|فريم|قزاز|زجاج|مقص|كرسي\s*شوفور|petrol|gasoline|adblue/i.test(nm)) return false;
-      return true;
-    }
-    if (eqClass === 'Generator') {
-      if (/tire|wheel|brake|clutch|steering|\batf\b|differential|axle|hydraulic|grease|crusher|manganese|screen\s*mesh|conveyor|دبرياج|دركسيون|فريم|مقص|قزاز|زجاج/i.test(nm)) return false;
-      return true;
-    }
-    if (eqClass === 'Excavator') {
-      if (/truck.*tire|tire\s*inner\s*tube|wheel\s*rim|clutch\s*kit|brake\s*(lining|drum|shoe)|power\s*steering|\batf\b|crusher\s*(jaw|screen|wear)|manganese|screen\s*mesh|conveyor\s*(pulley|idler|fastener)|دبرياج|دركسيون|petrol|gasoline/i.test(nm)) return false;
-      return true;
-    }
-    if (eqClass === 'Wheel Loader') {
-      if (/clutch\s*kit|crusher\s*(jaw|screen|wear)|manganese|screen\s*mesh|conveyor\s*(pulley|idler|fastener)|دبرياج|petrol|gasoline/i.test(nm)) return false;
-      return true;
-    }
+  function isItemCompatibleWithEquipment() {
     return true;
   }
 
@@ -21647,25 +21700,72 @@
     return true;
   }
 
-  function getScopedExpenseCatalogMeta(rowObj, coOpt, expCatOpt) {
+  function isItemCompatibleWithExpenseSubcategory(itemRec, expCatRaw, expSubRaw) {
+    if (!itemRec) return false;
+    const expSub = String(expSubRaw || '').trim();
+    const expCat = String(expCatRaw || '').trim();
+    if (!expSub) return isItemCompatibleWithExpenseCategory(itemRec, expCat);
+    const nm = String(itemRec.name || itemRec.item_name || '').trim();
+    const itemSub = String(itemRec.subcategory || inferItemCatalogSubcategory(nm, itemRec.category, '') || '').trim();
+    const histSubs = Array.isArray(itemRec._subcategories) ? itemRec._subcategories : [];
+    const subKey = norm(expSub);
+    if (norm(itemSub) === subKey || norm(nm) === subKey || histSubs.some(s => norm(s) === subKey)) {
+      return true;
+    }
+    if (/^diesel$/i.test(expSub)) return /^diesel$|mazout/i.test(nm) || norm(itemSub) === 'diesel';
+    if (/gasoline|benzine|petrol/i.test(expSub)) return /gasoline|benzine|petrol/i.test(nm) || /gasoline/i.test(itemSub);
+    if (/adblue|fuel\s*additive/i.test(expSub)) return /adblue|additive/i.test(nm) || /adblue/i.test(itemSub);
+    if (/engine\s*oil|15w/i.test(expSub)) return /15w|engine\s*oil|coolant|antifreeze/i.test(nm) || /engine\s*oil/i.test(itemSub);
+    if (/hydraulic\s*oil|\boil.*68\b/i.test(expSub)) return /hydraul.*oil|\boil\s*68\b/i.test(nm) || /hydraulic\s*oil/i.test(itemSub);
+    if (/gear.*transmission.*oil|90\s*\/\s*atf/i.test(expSub)) return /gear.*oil|transmission.*oil|\batf\b|power\s*steering|differential|axle\s*oil|85w|\boil\s*90\b/i.test(nm) || /gear.*transmission/i.test(itemSub);
+    if (/grease|lubrication/i.test(expSub)) return /grease|تشحيم/i.test(nm) || /grease/i.test(itemSub);
+    if (/filter/i.test(expSub)) return /filter|فلتر|فلاتر/i.test(nm) || /filter/i.test(itemSub);
+    if (/tire|tyre|tube|rim|vulcaniz/i.test(expSub)) return /tire|tyre|inner\s*tube|wheel\s*rim|كوتشوك|اطار|جنط/i.test(nm) || /tire/i.test(itemSub);
+    if (/electrical|batter|motor/i.test(expSub)) return /batter|alternat|starter|dynamo|march|sensor|wire|wiring|lamp|light|bulb|fuse|relay|بطارية|دينامو|مارش|لمبة|ضو/i.test(nm) || /electrical|batter/i.test(itemSub);
+    if (/brake|clutch|drivetrain/i.test(expSub)) return /brake|lining|shoe|clutch|plateau|drivetrain|cardan|gearbox|transmission|فريم|دبرياج|كردان|بلاطو/i.test(nm) || /brake|clutch/i.test(itemSub);
+    if (/hydraulic\s*hose|pumps?\s*&\s*cylinder/i.test(expSub)) return /hydraul.*(hose|seal|pump|cylinder|valve)|hose|seal\s*kit|نبريج|طرمبة|بستون/i.test(nm) || /hydraulic\s*hose/i.test(itemSub);
+    if (/conveyor|belt|roller|pulley/i.test(expSub)) return /conveyor|belt|roller|pulley|idler|fastener|قشاط|رولو/i.test(nm) || /conveyor/i.test(itemSub);
+    if (/bearing|bushing/i.test(expSub)) return /bearing|roulement|bushing|pillow\s*block|رولمان|بوش/i.test(nm) || /bearing/i.test(itemSub);
+    if (/crusher.*screen.*wear|wear\s*part/i.test(expSub)) return /crusher|manganese|screen\s*mesh|sieve|jaw|bucket\s*tooth|tooth|adapter|wear\s*plate|knives|غربال|منخل|سنان/i.test(nm) || /crusher.*wear/i.test(itemSub);
+    if (/bolt|nut|pin|fastener/i.test(expSub)) return /bolt|nut|washer|screw|stud|pin|spring|clip|clamp|bracket|عزقة|برغي|بونط|ريصور/i.test(nm) || /bolt|fastener/i.test(itemSub);
+    if (/engine,\s*cooling|mechanical\s*part/i.test(expSub)) return /coolant|antifreeze|radiator|water\s*pump|thermostat|gasket|piston|liner|injector|turbo|exhaust|muffler|engine|motor|ردياتير|اشكمان|تربو|بخاخ/i.test(nm) || /engine,\s*cooling/i.test(itemSub);
+    if (/welding|cutting\s*consumable|kharata|lathe/i.test(expSub)) return /weld|electrode|oxygen|cutting|torch|حام|أوكسجين|تلحيم/i.test(nm) || /welding/i.test(itemSub);
+    if (/hand\s*&\s*power\s*tool/i.test(expSub)) return /wrench|spanner|hammer|pliers|drill|grinder|disc|jack|grease\s*gun|tool|عدة|مفتاح/i.test(nm) || /hand\s*&\s*power\s*tool/i.test(itemSub);
+    if (/safety\s*gear|ppe|workshop\s*suppl/i.test(expSub)) return /glove|helmet|vest|boot|goggle|mask|extinguisher|safety|ppe|clean|rag|كفوف/i.test(nm) || /safety\s*gear/i.test(itemSub);
+    return false;
+  }
+
+  function getScopedExpenseCatalogMeta(rowObj, coOpt, expCatOpt, expSubOpt) {
     ensureItemsCatalogSeeded();
     const wh = getWarehouseIndex(coOpt);
     const itemFreqMap = getFreqIndex().item;
-    const dest = rowObj ? normExpRowDest(rowObj.allocation_mode) : 'general';
-    const eqClass = (dest === 'equipment' && rowObj && rowObj.target_equipment)
-      ? resolveEquipmentUnitClass(rowObj.target_equipment, coOpt)
-      : '';
     const expCat = expCatOpt !== undefined ? expCatOpt : (typeof val === 'function' ? val('f_category') : '');
+    const expSub = expSubOpt !== undefined ? expSubOpt : (typeof val === 'function' ? val('f_subcategory') : '');
     const allNames = warehouseCatalogItemNames(coOpt);
-    return allNames
-      .filter(nm => {
+    const validCatalogNames = allNames.filter(nm => Boolean(resolveCatalogItem(nm)));
+    let scopedNames = validCatalogNames;
+    if (expSub) {
+      const subMatches = validCatalogNames.filter(nm => {
         const catDef = resolveCatalogItem(nm);
-        if (!catDef) return false;
-        if (dest === 'warehouse' && normalizeItemCatalogCategory(catDef.category, nm) === 'Fuel') return false;
-        if (!isItemCompatibleWithExpenseCategory(catDef, expCat)) return false;
-        if (eqClass && !isItemCompatibleWithEquipment(catDef, eqClass)) return false;
-        return true;
-      })
+        return Boolean(catDef && isItemCompatibleWithExpenseSubcategory(catDef, expCat, expSub));
+      });
+      if (subMatches.length > 0) {
+        scopedNames = subMatches;
+      } else if (expCat) {
+        const catMatches = validCatalogNames.filter(nm => {
+          const catDef = resolveCatalogItem(nm);
+          return Boolean(catDef && isItemCompatibleWithExpenseCategory(catDef, expCat));
+        });
+        if (catMatches.length > 0) scopedNames = catMatches;
+      }
+    } else if (expCat) {
+      const catMatches = validCatalogNames.filter(nm => {
+        const catDef = resolveCatalogItem(nm);
+        return Boolean(catDef && isItemCompatibleWithExpenseCategory(catDef, expCat));
+      });
+      if (catMatches.length > 0) scopedNames = catMatches;
+    }
+    return scopedNames
       .map(nm => {
         const k = norm(nm);
         const it = wh.byKey[k];
@@ -25066,18 +25166,19 @@
         vat_rem: round2(r.exp_vat_rem_usd || 0)
       };
     });
-    const expSupRows = sortRows(applyColumnFilters(expSupRaw, 'exp_sup'), 'exp_sup', 'total_rem', 'desc');
+    const expSupRows = sortRows(applyColFiltersForView(expSupRaw, 'exp_sup'), 'exp_sup', 'total_rem', 'desc');
     const shownExpSup = expSupRows.slice(0, shownCount('exp_sup'));
+    const isExpSupUnfiltered = !qExpSup && expSupRows.length === expSupRaw.length && expLegBrk && expLegBrk.totals;
     const sumExpSupCrUsd = round2(expSupRows.reduce((a, r) => a + r.credit_usd, 0));
     const sumExpSupCrLbp = Math.round(expSupRows.reduce((a, r) => a + r.credit_lbp, 0));
     const sumExpSupPdUsd = round2(expSupRows.reduce((a, r) => a + r.payment_usd, 0));
     const sumExpSupPdLbp = Math.round(expSupRows.reduce((a, r) => a + r.payment_lbp, 0));
-    const sumExpSupRemUsd = round2(expSupRows.reduce((a, r) => a + r.rem_usd, 0));
-    const sumExpSupRemLbp = Math.round(expSupRows.reduce((a, r) => a + r.rem_lbp, 0));
-    const sumExpSupTotRem = round2(expSupRows.reduce((a, r) => a + r.total_rem, 0));
+    const sumExpSupRemUsd = isExpSupUnfiltered ? round2(expLegBrk.totals.exp_rem_usd) : round2(expSupRows.reduce((a, r) => a + r.rem_usd, 0));
+    const sumExpSupRemLbp = isExpSupUnfiltered ? Math.round(expLegBrk.totals.exp_rem_lbp) : Math.round(expSupRows.reduce((a, r) => a + r.rem_lbp, 0));
+    const sumExpSupTotRem = isExpSupUnfiltered ? round2(expLegBrk.totals.exp_rem_ttc) : round2(expSupRows.reduce((a, r) => a + r.total_rem, 0));
     const sumExpSupVatCr = round2(expSupRows.reduce((a, r) => a + r.vat_credit, 0));
     const sumExpSupVatPd = round2(expSupRows.reduce((a, r) => a + r.vat_payment, 0));
-    const sumExpSupVatRem = round2(expSupRows.reduce((a, r) => a + r.vat_rem, 0));
+    const sumExpSupVatRem = isExpSupUnfiltered ? round2(expLegBrk.totals.exp_vat_rem_usd) : round2(expSupRows.reduce((a, r) => a + r.vat_rem, 0));
     const wtcEx = byCoExp.WTC;
     const bbcEx = byCoExp.BBConstruction;
     const isGroupScope = STATE.company === 'manufacturing-group';
@@ -25357,6 +25458,71 @@
                 <td class="r"><b>${fmtUSD(sumCredExp, 2)}</b></td>
                 <td class="r"><b>${fmtUSD(sumExp, 2)}</b></td>
                 <td class="r"><b>100.0%</b></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel-card" id="expSupPanel" style="margin-bottom:14px">
+        <div class="panel-head" style="flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="panel-title"><span>EXPENSE SUPPLIERS · CREDIT, PAYMENTS, VAT &amp; REMAINING BALANCES (${fmtNum(expSupRows.length)} SUPPLIERS)</span></div>
+            <span class="ph-sub">Exact Ex-VAT Credit ($/LL), Payments ($/LL), Remaining Payment ($/LL), 11% VAT Credit/Payment/Rem, and Total Remaining TTC</span>
+          </div>
+          <span class="panel-meta" style="display:flex;gap:6px;align-items:center">
+            <button type="button" class="btn btn-ghost-bar" style="padding:3px 9px;font-size:11px" data-nav-jump="suppliers">Suppliers &amp; Payables</button>
+            ${exportBtn('expSupPanel', 'Expense_Suppliers_Balances')}
+          </span>
+        </div>
+        ${renderColFilterBar('exp_sup')}
+        <div class="table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${th('exp_sup', 'Supplier', 'supplier')}
+                ${th('exp_sup', 'Credit ($)', 'credit_usd', 'r')}
+                ${th('exp_sup', 'Credit (LL)', 'credit_lbp', 'r')}
+                ${th('exp_sup', 'Payment ($)', 'payment_usd', 'r')}
+                ${th('exp_sup', 'Payment (LL)', 'payment_lbp', 'r')}
+                ${th('exp_sup', 'Rem Payment ($)', 'rem_usd', 'r')}
+                ${th('exp_sup', 'Rem Payment (LL)', 'rem_lbp', 'r')}
+                ${th('exp_sup', 'Total Rem ($)', 'total_rem', 'r')}
+                ${th('exp_sup', 'VAT Credit ($)', 'vat_credit', 'r')}
+                ${th('exp_sup', 'VAT Payment ($)', 'vat_payment', 'r')}
+                ${th('exp_sup', 'VAT Rem ($)', 'vat_rem', 'r')}
+              </tr>
+            </thead>
+            <tbody>
+              ${shownExpSup.map(s => `
+                <tr class="rrow" data-rkey="suppliers" data-rid="${esc(s.supplier)}">
+                  <td><strong>${relLink('suppliers', s.supplier, s.supplier, true)}</strong></td>
+                  <td class="r mono">${fmtUSD(s.credit_usd, 2)}</td>
+                  <td class="r mono">${fmtLBP(s.credit_lbp)}</td>
+                  <td class="r mono">${fmtUSD(s.payment_usd, 2)}</td>
+                  <td class="r mono">${fmtLBP(s.payment_lbp)}</td>
+                  <td class="r mono ${s.rem_usd > 0.005 ? 'val-neg' : (s.rem_usd < -0.005 ? 'val-pos' : '')}"><strong>${fmtUSD(s.rem_usd, 2)}</strong></td>
+                  <td class="r mono">${fmtLBP(s.rem_lbp)}</td>
+                  <td class="r mono ${s.total_rem > 0.005 ? 'val-neg' : (s.total_rem < -0.005 ? 'val-pos' : '')}"><strong>${fmtUSD(s.total_rem, 2)}</strong></td>
+                  <td class="r mono">${fmtUSD(s.vat_credit, 2)}</td>
+                  <td class="r mono">${fmtUSD(s.vat_payment, 2)}</td>
+                  <td class="r mono">${fmtUSD(s.vat_rem, 2)}</td>
+                </tr>`).join('') || emptyRow(11, 'No expense supplier balances match the active filter.')}
+              ${showMoreRow('exp_sup', expSupRows.length, 11)}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td><b>TOTAL (${fmtNum(expSupRows.length)} SUPPLIERS)</b></td>
+                <td class="r"><b>${fmtUSD(sumExpSupCrUsd, 2)}</b></td>
+                <td class="r"><b>${fmtLBP(sumExpSupCrLbp)}</b></td>
+                <td class="r"><b>${fmtUSD(sumExpSupPdUsd, 2)}</b></td>
+                <td class="r"><b>${fmtLBP(sumExpSupPdLbp)}</b></td>
+                <td class="r"><b>${fmtUSD(sumExpSupRemUsd, 2)}</b></td>
+                <td class="r"><b>${fmtLBP(sumExpSupRemLbp)}</b></td>
+                <td class="r"><b>${fmtUSD(sumExpSupTotRem, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(sumExpSupVatCr, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(sumExpSupVatPd, 2)}</b></td>
+                <td class="r"><b>${fmtUSD(sumExpSupVatRem, 2)}</b></td>
               </tr>
             </tfoot>
           </table>
@@ -27017,17 +27183,18 @@
     };
 
     const ignoreSearchFlag = Boolean(opts.ignoreSearch);
+    const scopeCo = String(opts.company || STATE.company || 'manufacturing-group');
     const canMemoReg = !matchFn && !opts.empRows && !opts.logRows;
     const regCacheKey = canMemoReg
-      ? `${idx.rev}|${STATE.company}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${rawFrom}..${rawTo}|${isOpenEnd ? 1 : 0}|${STATE.basis}|${cutoffMode}|${ignoreSearchFlag ? '' : STATE.search.trim().toLowerCase()}|${fxRate}`
+      ? `${idx.rev}|${scopeCo}|${allowedCompanyNames().join(',')}|${isOfficialScopeActive() ? 'OFF' : 'ALL'}|${rawFrom}..${rawTo}|${isOpenEnd ? 1 : 0}|${STATE.basis}|${cutoffMode}|${ignoreSearchFlag ? '' : STATE.search.trim().toLowerCase()}|${fxRate}`
       : '';
     if (canMemoReg && idx.regCache.has(regCacheKey)) {
       return idx.regCache.get(regCacheKey);
     }
-    const empAll = opts.empRows || filterRecords(SEED.records.employments, { ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
-    const logAll = opts.logRows || filterRecords(SEED.records.logistics_allowances, { ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
+    const empAll = opts.empRows || filterRecords(SEED.records.employments, { company: scopeCo, ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
+    const logAll = opts.logRows || filterRecords(SEED.records.logistics_allowances, { company: scopeCo, ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
 
-    const salScopedBase = filterRecords(SEED.records.salaries, { ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
+    const salScopedBase = filterRecords(SEED.records.salaries, { company: scopeCo, ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
     const salPool = matchFn ? salScopedBase.filter(matchFn) : salScopedBase;
     let salAll = [];
     let salAdvanceRows = [];
@@ -27056,7 +27223,7 @@
       });
     }
 
-    const attScopedBase = filterRecords(SEED.records.attendance, { ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
+    const attScopedBase = filterRecords(SEED.records.attendance, { company: scopeCo, ignorePeriod: true, ignoreSearch: ignoreSearchFlag });
     const attPool = matchFn ? attScopedBase.filter(matchFn) : attScopedBase;
     const isPartialEndMonth = effEndYm === effToDate.slice(0, 7) && effToDate < getPayrollMonthBounds(effEndYm).mEnd;
     const attAll = attPool.filter(a => {
@@ -38142,6 +38309,11 @@
                     <option value="Fuel">Fuel</option>
                   </select>
                 </div>
+                <div class="exp-qc-fld is-subcat">
+                  <label for="exp_qc_subcat">Subcategory *</label>
+                  <input type="text" id="exp_qc_subcat" list="dl_qc_subcats" placeholder="Select or type subcategory..." autocomplete="off">
+                  <datalist id="dl_qc_subcats"></datalist>
+                </div>
                 <div class="exp-qc-fld">
                   <label for="exp_qc_uom">Frozen Unit *</label>
                   <select id="exp_qc_uom" data-native-select="1">
@@ -38162,27 +38334,7 @@
                 </div>
               </div>
               <div class="exp-qc-foot">
-                <div class="exp-qc-compat-wrap">
-                  <span class="exp-qc-sublbl">Connected Equipment Units</span>
-                  <input type="hidden" id="exp_qc_compat_json" value="">
-                  <select id="exp_qc_equip" class="exp-uom-sr-select" data-native-select="1" tabindex="-1" aria-hidden="true">
-                    <option value="all">All Fleet &amp; Plant</option>
-                    <option value="road">Trucks &amp; Vehicles</option>
-                    <option value="mobile">Trucks, Loaders &amp; Excavators</option>
-                    <option value="plant">Crusher &amp; Stationary Plant</option>
-                    <option value="generator">Generators Only</option>
-                    <option value="custom">Custom Selection</option>
-                  </select>
-                  <div class="exp-qc-chip-row" id="expQcEquipChips" role="group" aria-label="Connected equipment classes">
-                    <button type="button" class="exp-qc-eq-chip active" data-qc-eq-chip="all">All Units</button>
-                    <button type="button" class="exp-qc-eq-chip" data-qc-eq-chip="Truck">Trucks</button>
-                    <button type="button" class="exp-qc-eq-chip" data-qc-eq-chip="Wheel Loader">Loaders</button>
-                    <button type="button" class="exp-qc-eq-chip" data-qc-eq-chip="Excavator">Excavators</button>
-                    <button type="button" class="exp-qc-eq-chip" data-qc-eq-chip="Plant">Plant &amp; Crusher</button>
-                    <button type="button" class="exp-qc-eq-chip" data-qc-eq-chip="Generator">Generators</button>
-                    <button type="button" class="exp-qc-eq-chip" data-qc-eq-chip="Vehicle">Vehicles</button>
-                  </div>
-                </div>
+                <span class="exp-qc-sublbl" id="expQcSubcatNote">Shared across Equipment &amp; Warehouse under the selected Subcategory</span>
                 <div class="exp-qc-actions">
                   <button type="button" class="btn btn-ghost-bar exp-qc-cancel-btn" id="cancelQuickCatalogItemBtn">Cancel</button>
                   <button type="button" class="btn btn-brass exp-qc-save-btn" id="saveQuickCatalogItemBtn">${ic('lock')} <span>Create &amp; Select</span></button>
@@ -38289,7 +38441,7 @@
     return 'general';
   }
 
-  function getExpenseQuickCatalogItems(catRaw, subRaw, eqClass) {
+  function getExpenseQuickCatalogItems(catRaw, subRaw) {
     ensureItemsCatalogSeeded();
     const cat = String(catRaw || '').trim();
     const sub = String(subRaw || '').trim();
@@ -38303,11 +38455,19 @@
       const out = [];
       names.forEach(([nm, fallbackUom]) => {
         const hit = byKey.get(norm(nm));
-        if (eqClass && hit && !isItemCompatibleWithEquipment(hit, eqClass)) return;
         out.push({ name: hit ? (hit.name || hit.item_name) : nm, uom: (hit && hit.uom) || fallbackUom || 'Piece' });
       });
       return out;
     };
+    if (sub) {
+      const scoped = getScopedExpenseCatalogMeta(null, val('f_company') || defaultEntryCompany(), cat, sub);
+      if (scoped.length > 0 && scoped.length <= 8) {
+        return scoped.slice(0, 4).map(([nm]) => {
+          const hit = byKey.get(norm(nm));
+          return { name: nm, uom: (hit && hit.uom) || 'Piece' };
+        });
+      }
+    }
     if (/^fuel$/i.test(cat) || /diesel|mazout|gasoline|benzine|adblue/i.test(sub)) {
       return pickNames([
         ['Diesel', 'Litre'],
@@ -38334,8 +38494,7 @@
     if (/tire|tyre/i.test(sub)) {
       return pickNames([
         ['Heavy Truck / Loader Tire', 'Piece'],
-        ['Brake Lining & Shoe Set', 'Set'],
-        ['Bearing (Roulement)', 'Piece']
+        ['Heavy Tire Inner Tube', 'Piece']
       ]);
     }
     if (/batter|electr|alternat|starter/i.test(sub)) {
@@ -38345,12 +38504,11 @@
         ['Starter Motor (March)', 'Piece']
       ]);
     }
-    if (eqClass === 'Plant' || /crusher|screen/i.test(sub)) {
+    if (/crusher|screen/i.test(sub)) {
       return pickNames([
         ['Crusher Jaw / Manganese Plate Set', 'Set'],
         ['Crusher Screen Mesh', 'Piece'],
-        ['Conveyor / Drive Belt', 'Piece'],
-        ['Bearing (Roulement)', 'Piece']
+        ['Loader Bucket Tooth / Adapter', 'Piece']
       ]);
     }
     if (/spare|repair|maint|hydraul/i.test(cat + ' ' + sub)) {
@@ -38407,10 +38565,7 @@
       qBar.innerHTML = '';
       return;
     }
-    const eqClass0 = (dest0 === 'equipment' && items[0].target_equipment)
-      ? resolveEquipmentUnitClass(items[0].target_equipment, val('f_company') || defaultEntryCompany())
-      : '';
-    const quickList = getExpenseQuickCatalogItems(val('f_category'), val('f_subcategory'), eqClass0).slice(0, 3);
+    const quickList = getExpenseQuickCatalogItems(val('f_category'), val('f_subcategory')).slice(0, 3);
     if (!quickList.length) {
       qBar.hidden = true;
       qBar.innerHTML = '';
@@ -38426,16 +38581,14 @@
 
   function buildExpenseRowItemPlaceholder(rowObj, coOpt, isMulti) {
     const dest = rowObj ? normExpRowDest(rowObj.allocation_mode) : 'general';
-    if (dest === 'equipment') {
-      const u = String((rowObj && rowObj.target_equipment) || '').trim();
-      if (u) {
-        const cls = resolveEquipmentUnitClass(u, coOpt);
-        return cls && cls !== 'Other' ? `Connected items for ${u} (${cls})...` : `Connected items for ${u}...`;
-      }
-      return 'Select connected catalog item...';
+    if (dest === 'general') {
+      return isMulti ? 'Description or catalog item...' : 'Optional detail or bulk item (e.g. Diesel)...';
     }
-    if (dest === 'warehouse') return 'Select catalog item for shelf...';
-    return isMulti ? 'Description or catalog item...' : 'Optional detail or bulk item (e.g. Diesel)...';
+    const subNow = typeof val === 'function' ? val('f_subcategory') : '';
+    const catNow = typeof val === 'function' ? val('f_category') : '';
+    if (subNow) return `Select ${subNow} item...`;
+    if (catNow) return `Select ${catNow} item...`;
+    return 'Select catalog item...';
   }
 
   function refreshExpenseRowItemDatalists(coOpt) {
@@ -38443,12 +38596,13 @@
     if (!wrap) return;
     const effCo = coOpt || val('f_company') || defaultEntryCompany();
     const expCat = val('f_category');
+    const expSub = val('f_subcategory');
     const items = Array.isArray(FORM_UI.expItems) ? FORM_UI.expItems : [];
     const isMulti = items.length > 1;
     items.forEach((it, idx) => {
       const dlEl = document.getElementById('dl_exp_row_items_' + idx) || wrap.querySelector('#dl_exp_row_items_' + idx);
       if (dlEl) {
-        const opts = getScopedExpenseCatalogMeta(it, effCo, expCat);
+        const opts = getScopedExpenseCatalogMeta(it, effCo, expCat, expSub);
         dlEl.innerHTML = opts.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('');
       }
       const nmInp = $('f_exi_name_' + idx);
@@ -38458,75 +38612,17 @@
     });
   }
 
-  const MAIN_EQUIP_CHIP_CLASSES = ['Truck', 'Wheel Loader', 'Excavator', 'Plant', 'Generator', 'Vehicle'];
-
-  function syncEquipChipBarState(chipBarEl, hiddenJsonEl, presetSelEl, classesOrPreset) {
-    let selected = [];
-    if (Array.isArray(classesOrPreset)) {
-      selected = classesOrPreset.filter(c => MAIN_EQUIP_CHIP_CLASSES.includes(c));
-    } else {
-      const p = String(classesOrPreset || 'all').trim();
-      if (p && p !== 'all' && p !== 'custom') {
-        selected = resolveCompatibleTypesPreset(p).filter(c => MAIN_EQUIP_CHIP_CLASSES.includes(c));
-      }
-    }
-    const isAll = selected.length === 0 || selected.length >= MAIN_EQUIP_CHIP_CLASSES.length;
-    if (hiddenJsonEl) {
-      hiddenJsonEl.value = isAll ? '' : JSON.stringify(selected);
-    }
-    if (presetSelEl) {
-      if (isAll) presetSelEl.value = 'all';
-      else if (selected.length === 1 && selected[0] === 'Plant') presetSelEl.value = 'plant';
-      else if (selected.length === 1 && selected[0] === 'Generator') presetSelEl.value = 'generator';
-      else if (selected.length === 2 && selected.includes('Truck') && selected.includes('Vehicle')) presetSelEl.value = 'road';
-      else if (selected.length === 4 && ['Truck', 'Wheel Loader', 'Excavator', 'Vehicle'].every(k => selected.includes(k))) presetSelEl.value = 'mobile';
-      else presetSelEl.value = 'custom';
-    }
-    if (chipBarEl) {
-      chipBarEl.querySelectorAll('[data-qc-eq-chip], [data-item-compat-chip]').forEach(btn => {
-        const key = btn.getAttribute('data-qc-eq-chip') || btn.getAttribute('data-item-compat-chip') || '';
-        if (key === 'all') btn.classList.toggle('active', isAll);
-        else btn.classList.toggle('active', !isAll && selected.includes(key));
-      });
-    }
-  }
-
-  function readEquipChipBarTypes(hiddenJsonEl, presetSelEl) {
-    const rawJson = hiddenJsonEl ? String(hiddenJsonEl.value || '').trim() : '';
-    if (rawJson) {
-      try {
-        const parsed = JSON.parse(rawJson);
-        if (Array.isArray(parsed) && parsed.length > 0 && parsed.length < MAIN_EQUIP_CHIP_CLASSES.length) {
-          return parsed;
-        }
-      } catch (_) {}
-    }
-    const preset = presetSelEl ? String(presetSelEl.value || 'all').trim() : 'all';
-    if (preset && preset !== 'all' && preset !== 'custom') {
-      return resolveCompatibleTypesPreset(preset);
-    }
-    return ALL_EQUIP_CLASSES.slice();
-  }
-
-  function toggleEquipChipSelection(chipVal, chipBarEl, hiddenJsonEl, presetSelEl) {
-    if (!chipVal || chipVal === 'all') {
-      syncEquipChipBarState(chipBarEl, hiddenJsonEl, presetSelEl, 'all');
-      return;
-    }
-    let cur = [];
-    const rawJson = hiddenJsonEl ? String(hiddenJsonEl.value || '').trim() : '';
-    if (rawJson) {
-      try {
-        const p = JSON.parse(rawJson);
-        if (Array.isArray(p)) cur = p.filter(c => MAIN_EQUIP_CHIP_CLASSES.includes(c));
-      } catch (_) {}
-    }
-    if (cur.includes(chipVal)) {
-      cur = cur.filter(c => c !== chipVal);
-    } else {
-      cur.push(chipVal);
-    }
-    syncEquipChipBarState(chipBarEl, hiddenJsonEl, presetSelEl, cur);
+  function populateQuickCatalogSubcatDatalist(catVal) {
+    const dlEl = $('dl_qc_subcats');
+    if (!dlEl) return;
+    const cats = (typeof expenseCategories === 'function') ? expenseCategories() : [];
+    const effCat = String(catVal || '').trim() || 'Spare Parts';
+    const mapCat = effCat === 'Plant Consumables' ? 'Tools & Garage' : effCat;
+    const hit = cats.find(c => norm(c.category) === norm(mapCat));
+    const subs = hit && hit.subs.length
+      ? hit.subs
+      : uniqSorted(cats.flatMap(c => c.subs), getFreqIndex().subcategory);
+    dlEl.innerHTML = subs.map(s => `<option value="${esc(s)}">`).join('');
   }
 
   function openQuickExpenseCatalogDrawer(prefillName, targetRowIdx) {
@@ -38537,47 +38633,42 @@
     drawer.dataset.targetRowIdx = String(rIdx);
     const nmInp = $('exp_qc_name');
     const catSel = $('exp_qc_cat');
+    const subInp = $('exp_qc_subcat');
     const uomSel = $('exp_qc_uom');
-    const eqSel = $('exp_qc_equip');
-    const eqJson = $('exp_qc_compat_json');
-    const eqChips = $('expQcEquipChips');
     const targetBadge = $('expQcTargetBadge');
     const costInp = $('exp_qc_cost');
     const hintEl = $('exp_qc_hint');
     if (hintEl) { hintEl.textContent = ''; hintEl.className = 'hint'; }
     const rowObj = items[rIdx] || null;
-    const rowDest = rowObj ? normExpRowDest(rowObj.allocation_mode) : 'general';
-    const curCo = val('f_company') || defaultEntryCompany();
-    const eqUnit = (rowObj && rowDest === 'equipment' && rowObj.target_equipment) ? String(rowObj.target_equipment).trim() : '';
-    const eqCls = eqUnit ? resolveEquipmentUnitClass(eqUnit, curCo) : '';
-    if (targetBadge) {
-      const lineTag = items.length > 1 ? `Line #${String(rIdx + 1).padStart(2, '0')}` : 'Current Line';
-      if (eqUnit) {
-        targetBadge.textContent = `${lineTag} · ${eqUnit}${eqCls && eqCls !== 'Other' ? ` (${eqCls})` : ''}`;
-      } else if (rowDest === 'warehouse') {
-        targetBadge.textContent = `${lineTag} · Warehouse`;
-      } else {
-        targetBadge.textContent = 'Shared Catalog';
-      }
-    }
+    const curFormCat = val('f_category');
+    const curFormSub = val('f_subcategory');
     const initNm = prefillName !== undefined
       ? String(prefillName || '').trim()
       : (rowObj && rowObj.item_name && !resolveCatalogItem(rowObj.item_name) ? String(rowObj.item_name).trim() : '');
     if (nmInp) nmInp.value = initNm;
-    const curFormCat = val('f_category');
+    const effCat = normalizeItemCatalogCategory(curFormCat, initNm || '');
     if (catSel) {
-      catSel.value = normalizeItemCatalogCategory(curFormCat, initNm || '');
+      catSel.value = effCat;
+    }
+    populateQuickCatalogSubcatDatalist(effCat);
+    const effSub = curFormSub || (initNm ? inferItemCatalogSubcategory(initNm, effCat, '') : '');
+    if (subInp) {
+      subInp.value = effSub;
+    }
+    if (targetBadge) {
+      if (curFormSub) {
+        targetBadge.textContent = `${effCat} · ${curFormSub}`;
+      } else if (curFormCat) {
+        targetBadge.textContent = effCat;
+      } else {
+        targetBadge.textContent = 'Shared Catalog';
+      }
     }
     if (uomSel) {
       if (/^fuel|oil/i.test(curFormCat) || /oil|fluid|coolant|diesel|gasoline|adblue/i.test(initNm)) uomSel.value = 'Litre';
       else if (/grease/i.test(initNm)) uomSel.value = 'kg';
       else if (/\bset\b|kit|lining/i.test(initNm)) uomSel.value = 'Set';
       else uomSel.value = 'Piece';
-    }
-    if (eqCls && MAIN_EQUIP_CHIP_CLASSES.includes(eqCls)) {
-      syncEquipChipBarState(eqChips, eqJson, eqSel, [eqCls]);
-    } else {
-      syncEquipChipBarState(eqChips, eqJson, eqSel, 'all');
     }
     if (costInp) {
       costInp.value = (rowObj && Number(rowObj.unit_cost) > 0) ? String(rowObj.unit_cost) : '';
@@ -38770,21 +38861,13 @@
         const isLegacyEditUnmodified = Boolean(STATE.editingRecord && STATE.editingRecord.crKey === 'expenses' && !FORM_UI.expItem0Manual && !isMulti && idx === 0);
         if (!catItem && !isLegacyEditUnmodified) {
           if (FORM_UI.postAttempted || document.activeElement !== nmInp) {
-            hintEl.textContent = 'Select a connected Catalog Item (or click + New Item)';
+            hintEl.textContent = 'Select a Catalog Item (or click + New Item)';
             hintEl.className = 'hint ' + (FORM_UI.postAttempted ? 'crit' : 'warn');
           } else {
             hintEl.textContent = '';
             hintEl.className = 'hint';
           }
           return;
-        }
-        if (dest === 'equipment' && catItem && it.target_equipment) {
-          const eqClass = resolveEquipmentUnitClass(it.target_equipment, effCo);
-          if (eqClass && !isItemCompatibleWithEquipment(catItem, eqClass)) {
-            hintEl.textContent = `Not connected to ${eqClass} unit ${it.target_equipment}`;
-            hintEl.className = 'hint ' + (FORM_UI.postAttempted ? 'crit' : 'warn');
-            return;
-          }
         }
       }
       if (dest !== 'warehouse') {
@@ -38864,7 +38947,7 @@
       else if (isBulkFuelOverhead) it.uom = 'Litre';
       const effUom = it.uom || 'Piece';
       const isBoundUom = Boolean((catItem && catItem.uom) || isBulkFuelOverhead);
-      const scopedOpts0 = getScopedExpenseCatalogMeta(it, curCo, expCatNow);
+      const scopedOpts0 = getScopedExpenseCatalogMeta(it, curCo, expCatNow, expSubNow);
       const dlHtml0 = `<datalist id="dl_exp_row_items_0">${scopedOpts0.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('')}</datalist>`;
       const itemPh0 = buildExpenseRowItemPlaceholder(it, curCo, false);
       let firstColHtml = '';
@@ -38944,7 +39027,7 @@
             const isBoundUom = Boolean((catItem && catItem.uom) || isBulkFuelOverhead);
             const ucNum = it.unit_cost !== undefined && it.unit_cost !== '' ? Number(it.unit_cost) : 0;
             const lineTot = round2((Number(it.qty) || 0) * (pricePending ? 0 : ucNum));
-            const scopedOpts = getScopedExpenseCatalogMeta(it, curCo, expCatNow);
+            const scopedOpts = getScopedExpenseCatalogMeta(it, curCo, expCatNow, expSubNow);
             const dlHtml = `<datalist id="dl_exp_row_items_${idx}">${scopedOpts.map(([v, m]) => `<option value="${esc(v)}"${m ? ` data-meta="${esc(m)}"` : ''}>`).join('')}</datalist>`;
             const itemPh = buildExpenseRowItemPlaceholder(it, curCo, true);
             let targetHtml = '';
@@ -38952,6 +39035,8 @@
               targetHtml = `<input type="text" id="f_exi_eq_${idx}" data-exi-idx="${idx}" data-exi-field="target_equipment" list="dl_equip" value="${esc(it.target_equipment || '')}" placeholder="Select unit...">`;
             } else if (dest === 'warehouse') {
               targetHtml = `<input type="text" id="f_exi_loc_${idx}" data-exi-idx="${idx}" data-exi-field="warehouse_location" list="dl_exp_wh_locs" value="${esc(it.warehouse_location || defWhLoc)}" placeholder="Select store...">`;
+            } else {
+              targetHtml = `<input type="text" id="f_exi_gen_${idx}" class="pa-locked-input exp-gen-target-input" value="General Overhead" readonly tabindex="-1" aria-label="General Overhead">`;
             }
             return `
               <div class="line-item-row exp-item-card exp-split-row is-multi-card is-mode-${esc(dest)}" data-exi-row="${idx}">
@@ -42615,8 +42700,9 @@
       }
     }
     const subNow = val('f_subcategory');
-    if (!pendEditRow && FORM_UI.lastExpItemCat !== catNow) {
+    if (!pendEditRow && (FORM_UI.lastExpItemCat !== catNow || FORM_UI.lastExpItemSub !== subNow)) {
       FORM_UI.lastExpItemCat = catNow;
+      FORM_UI.lastExpItemSub = subNow;
       refreshExpenseRowItemDatalists(val('f_company') || defaultEntryCompany());
     }
     if (!pendEditRow && Array.isArray(FORM_UI.expItems) && FORM_UI.expItems.length === 1) {
@@ -42624,7 +42710,7 @@
       const t0Dest = normExpRowDest(t0.allocation_mode);
       const subChanged = !FORM_UI.hydrating && subNow !== FORM_UI.lastSubcategory;
       const subCatItem = subNow ? resolveCatalogItem(subNow) : null;
-      if (t0Dest !== 'warehouse' && !FORM_UI.expItem0Manual) {
+      if (!FORM_UI.expItem0Manual) {
         const curItNm = String(t0.item_name || '').trim();
         const nmInp0 = $('f_exi_name_0');
         const allowSubSync = t0Dest === 'general' || Boolean(subCatItem);
@@ -42644,7 +42730,7 @@
           syncExpenseItemsSummaryUI();
         } else if (
           nmInp0 !== document.activeElement &&
-          t0Dest === 'equipment' &&
+          t0Dest !== 'general' &&
           !STATE.editingRecord &&
           curItNm &&
           !resolveCatalogItem(curItNm) &&
@@ -44451,7 +44537,7 @@
         const inclTrans = !isJvSite && val('f_includes_transport') === '1';
         const haulDeck = $('quarryHaulageModeDeck');
         if (haulDeck) {
-          haulDeck.hidden = Boolean(isJvSite);
+          haulDeck.hidden = false;
           haulDeck.querySelectorAll('[data-quarry-bundled]').forEach(b => {
             const on = (b.getAttribute('data-quarry-bundled') === '1') === inclTrans;
             b.classList.toggle('active', on);
@@ -44460,6 +44546,7 @@
             if (chk) chk.textContent = on ? '✓ Selected' : 'Select';
           });
         }
+        if ($('f_region')) $('f_region').required = !inclTrans;
         const siteRegLbl = document.querySelector('#wrap_site_region .pa-fld-lbl');
         if (siteRegLbl) siteRegLbl.textContent = inclTrans ? 'Region (Optional · Supplier Delivers)' : 'Region *';
         const siteNameLbl = document.querySelector('#wrap_site_name .pa-fld-lbl');
@@ -44468,8 +44555,8 @@
         setFieldVisible('wrap_site_supplier', true);
         setFieldVisible('wrap_site_jv', !inclTrans);
         setFieldVisible('wrap_site_jv_details', isJvSite);
-        setFieldVisible('wrap_site_customer', !inclTrans && !isJvSite);
-        if (inclTrans || isJvSite) {
+        setFieldVisible('wrap_site_customer', !inclTrans);
+        if (inclTrans) {
           if ($('f_customer') && $('f_customer').value) $('f_customer').value = '';
         }
         if (!isJvSite && $('f_jv_partner') && $('f_jv_partner').value) {
@@ -45982,16 +46069,23 @@
         const itemName = val('f_item_name');
         const uom = val('f_uom') || 'Piece';
         const cat = val('f_item_cat') || val('f_category') || 'Spare Parts';
+        const dlSub = $('dl_item_subcats');
+        if (dlSub && dlSub.dataset.catKey !== cat) {
+          dlSub.dataset.catKey = cat;
+          const effCat = cat === 'Plant Consumables' ? 'Tools & Garage' : cat;
+          const subMap = (typeof EXPENSE_SUBCATEGORIES !== 'undefined' && EXPENSE_SUBCATEGORIES) ? EXPENSE_SUBCATEGORIES : {};
+          const rawSubs = (subMap[effCat] || subMap[cat] || []).slice();
+          const fIdx = getFreqIndex();
+          rawSubs.sort((a, b) => (fIdx.sub.get(norm(b)) || 0) - (fIdx.sub.get(norm(a)) || 0));
+          dlSub.innerHTML = rawSubs.map(s => `<option value="${esc(s)}">`).join('');
+        }
+        const subcat = val('f_item_subcat') || inferItemCatalogSubcategory(itemName, cat, '') || 'All Subcategories';
         const cost = $('f_default_cost') ? num('f_default_cost') : num('f_unitprice');
-        const compatTypes = readEquipChipBarTypes($('f_item_compat'), null);
-        const compatLbl = compatTypes.length >= MAIN_EQUIP_CHIP_CLASSES.length
-          ? 'All Units'
-          : compatTypes.join(', ');
         syncUniversalMainDupHint('f_item_name', 'items', 'Item / Part');
         setText('calc_item_name', itemName || '-');
         setText('calc_item_uom', `${uom} (Permanent)`);
         setText('calc_item_cat', cat);
-        setText('calc_item_compat', compatLbl);
+        setText('calc_item_subcat', subcat);
         setText('calc_item_cost', fmtUSD(cost, 2));
         renderAdminLockBar();
         return {};
@@ -46538,7 +46632,7 @@
                 const sideLbl = w.side === 'sales' ? 'Sales' : (w.side === 'raw' ? 'Raw & Trans' : (w.side === 'fuel' ? 'Diesel & Lub.' : 'All Tables'));
                 const wCo = w.co || 'WTC';
                 return `
-                  <tr data-modal-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${norm(wCo) !== norm(defCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to edit this log entry">
+                  <tr data-modal-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${canonTwBu(wCo) !== canonTwBu(defCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to edit this log entry">
                     <td>${coBadge(wCo)}</td>
                     <td><span class="badge badge-info">${esc(sideLbl)}</span></td>
                     <td class="mono">${esc(w.s || '2024-01-01')}</td>
@@ -46577,7 +46671,7 @@
       const selCo = ($('f_log_co') && $('f_log_co').value) || defCo;
       logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => {
         const rowCo = tr.getAttribute('data-tw-co') || 'WTC';
-        tr.hidden = norm(rowCo) !== norm(selCo);
+        tr.hidden = canonTwBu(rowCo) !== canonTwBu(selCo);
       });
     };
     if ($('f_log_co')) {
@@ -46596,7 +46690,7 @@
       const w = targetEq.adj_windows[idx];
       if (!w) return;
       logBox.dataset.editModalWinIdx = String(idx);
-      if ($('f_log_co')) $('f_log_co').value = w.co || defCo;
+      if ($('f_log_co')) $('f_log_co').value = canonTwBu(w.co || defCo);
       syncModalTwCoRows();
       if ($('f_log_start')) {
         const minEditS = getTruckWindowMinStart(targetEq, w, idx);
@@ -48458,6 +48552,7 @@
       btn.addEventListener('click', ev => {
         ev.preventDefault();
         const bund = btn.getAttribute('data-quarry-bundled') === '1' ? '1' : '0';
+        if (bund === '1' && $('f_isjv') && $('f_isjv').checked) $('f_isjv').checked = false;
         if ($('f_includes_transport')) $('f_includes_transport').value = bund;
         recalcForm();
       });
@@ -48911,7 +49006,8 @@
       const qcCancelBtn = $('cancelQuickCatalogItemBtn');
       const qcCloseHeadBtn = $('closeQuickCatalogHeadBtn');
       const qcSaveBtn = $('saveQuickCatalogItemBtn');
-      const qcEqSel = $('exp_qc_equip');
+      const qcCatSel = $('exp_qc_cat');
+      const qcSubInp = $('exp_qc_subcat');
       const closeQuickCatalogDrawer = () => {
         if (qcDrawer) qcDrawer.hidden = true;
         const curToggle = $('toggleQuickCatalogItemBtn');
@@ -48936,8 +49032,8 @@
           return;
         }
         const catVal = val('exp_qc_cat') || 'Spare Parts';
+        const subVal = val('exp_qc_subcat') || val('f_subcategory') || inferItemCatalogSubcategory(rawNm, catVal, '');
         const uomVal = val('exp_qc_uom') || 'Piece';
-        const compatTypes = readEquipChipBarTypes($('exp_qc_compat_json'), qcEqSel);
         const defCost = num('exp_qc_cost');
         const curCo = val('f_company') || defaultEntryCompany();
         const defLoc = defaultWarehouseLocationForCompany(curCo);
@@ -48946,15 +49042,21 @@
           catRec = ensureItemInCatalog({
             name: rawNm,
             category: catVal,
+            subcategory: subVal,
             uom: uomVal,
             default_cost: defCost > 0 ? round2(defCost) : 0,
-            default_location: defLoc,
-            compatible_types: compatTypes
+            default_location: defLoc
           });
           if (catRec) {
             applyCustomRecordsToSeed();
             saveLocalAuthAndRecords();
             postRecordToLocalApi('items', catRec);
+          }
+        } else if (subVal) {
+          catRec.subcategory = catRec.subcategory || subVal;
+          const prevSubs = Array.isArray(catRec._subcategories) ? catRec._subcategories : [];
+          if (!prevSubs.some(s => norm(s) === norm(subVal))) {
+            catRec._subcategories = [...prevSubs, subVal];
           }
         }
         const effRec = catRec || resolveCatalogItem(rawNm);
@@ -48972,6 +49074,9 @@
           if (!val('f_category') && $('f_category')) {
             $('f_category').value = catVal === 'Plant Consumables' ? 'Tools & Garage' : catVal;
           }
+          if (!val('f_subcategory') && subVal && $('f_subcategory')) {
+            $('f_subcategory').value = subVal;
+          }
         }
         closeQuickCatalogDrawer();
         renderExpenseItemsBuilderRows();
@@ -48979,14 +49084,23 @@
         const nextFocus = $('f_exi_qty_' + rIdx) || $('f_exi_cost_' + rIdx);
         if (nextFocus) { try { nextFocus.focus({ preventScroll: true }); } catch (_) {} }
       };
-      if (qcEqSel) {
-        const onQcEqPreset = () => {
-          if (qcEqSel.value !== 'custom') {
-            syncEquipChipBarState($('expQcEquipChips'), $('exp_qc_compat_json'), qcEqSel, qcEqSel.value);
+      if (qcCatSel) {
+        qcCatSel.addEventListener('change', () => {
+          populateQuickCatalogSubcatDatalist(qcCatSel.value);
+          const tBadge = $('expQcTargetBadge');
+          if (tBadge) {
+            const sNow = val('exp_qc_subcat') || val('f_subcategory');
+            tBadge.textContent = sNow ? `${qcCatSel.value} · ${sNow}` : qcCatSel.value;
           }
-        };
-        qcEqSel.addEventListener('change', onQcEqPreset);
-        qcEqSel.addEventListener('input', onQcEqPreset);
+        });
+      }
+      if (qcSubInp) {
+        qcSubInp.addEventListener('input', () => {
+          const tBadge = $('expQcTargetBadge');
+          const cNow = val('exp_qc_cat') || val('f_category') || 'Spare Parts';
+          const sNow = val('exp_qc_subcat');
+          if (tBadge) tBadge.textContent = sNow ? `${cNow} · ${sNow}` : cNow;
+        });
       }
       const qcNameInp = $('exp_qc_name');
       if (qcNameInp) {
@@ -49022,7 +49136,7 @@
           commitQuickCatalogItem();
         });
       }
-      ['exp_qc_name', 'exp_qc_cost'].forEach(qid => {
+      ['exp_qc_name', 'exp_qc_subcat', 'exp_qc_cost'].forEach(qid => {
         const qEl = $(qid);
         if (qEl) {
           qEl.addEventListener('keydown', ev => {
@@ -49089,15 +49203,6 @@
                 t.value = canon;
               }
             }
-            if (ev.type === 'change' && rowObj.target_equipment && rowObj.item_name) {
-              const catEx = resolveCatalogItem(rowObj.item_name);
-              const eqCls = resolveEquipmentUnitClass(rowObj.target_equipment, expCoCur);
-              if (catEx && eqCls && !isItemCompatibleWithEquipment(catEx, eqCls)) {
-                rowObj.item_name = '';
-                const nmInp = $('f_exi_name_' + idx);
-                if (nmInp) nmInp.value = '';
-              }
-            }
             refreshExpenseRowItemDatalists(expCoCur);
             syncExpenseItemStockHints(expCoCur);
           }
@@ -49122,6 +49227,9 @@
             if (catItem && !val('f_category') && $('f_category')) {
               const mappedCat = catItem.category === 'Plant Consumables' ? 'Tools & Garage' : (catItem.category || 'Spare Parts');
               $('f_category').value = mappedCat;
+            }
+            if (catItem && catItem.subcategory && !val('f_subcategory') && $('f_subcategory')) {
+              $('f_subcategory').value = catItem.subcategory;
             }
             const defLoc = (whRow && whRow.location) || (catItem && catItem.default_location) || '';
             if (normExpRowDest(rowObj.allocation_mode) === 'warehouse' && defLoc) {
@@ -49158,12 +49266,6 @@
           }
           return;
         }
-        const qcEqChipBtn = ev.target && ev.target.closest ? ev.target.closest('[data-qc-eq-chip]') : null;
-        if (qcEqChipBtn) {
-          ev.preventDefault();
-          toggleEquipChipSelection(qcEqChipBtn.getAttribute('data-qc-eq-chip') || 'all', $('expQcEquipChips'), $('exp_qc_compat_json'), qcEqSel);
-          return;
-        }
         const quickEqBtn = ev.target && ev.target.closest ? ev.target.closest('[data-exp-quick-eq]') : null;
         if (quickEqBtn) {
           ev.preventDefault();
@@ -49175,15 +49277,6 @@
             row0.target_equipment = u;
             const eqInp0 = $('f_exi_eq_0');
             if (eqInp0) eqInp0.value = u;
-            if (row0.item_name) {
-              const catEx = resolveCatalogItem(row0.item_name);
-              const eqCls = resolveEquipmentUnitClass(u, expCoCur);
-              if (catEx && eqCls && !isItemCompatibleWithEquipment(catEx, eqCls)) {
-                row0.item_name = '';
-                const nmInp0 = $('f_exi_name_0');
-                if (nmInp0) nmInp0.value = '';
-              }
-            }
             refreshExpenseRowItemDatalists(expCoCur);
             recalcForm();
           }
@@ -49297,14 +49390,6 @@
         }
       });
     }
-
-    body.querySelectorAll('[data-item-compat-chip]').forEach(btn => {
-      btn.addEventListener('click', ev => {
-        ev.preventDefault();
-        toggleEquipChipSelection(btn.getAttribute('data-item-compat-chip') || 'all', $('itemCompatEquipBar'), $('f_item_compat'), null);
-        recalcForm();
-      });
-    });
 
     body.querySelectorAll('[data-def-sev-pill]').forEach(btn => {
       btn.addEventListener('click', ev => {
@@ -50247,9 +50332,10 @@
             const rawNm = String(it.item_name || '').trim();
             const dest = normExpRowDest(it.allocation_mode);
             const isSingleEquip = rowsNow.length === 1 && dest === 'equipment';
+            const isSinglePhysical = rowsNow.length === 1 && (dest === 'equipment' || dest === 'warehouse');
             const subVal = val('f_subcategory');
             const subCatItem = subVal ? resolveCatalogItem(subVal) : null;
-            const shouldSyncSingleToSub = isSingleEquip && Boolean(subCatItem) && !FORM_UI.expItem0Manual && (
+            const shouldSyncSingleToSub = isSinglePhysical && Boolean(subCatItem) && !FORM_UI.expItem0Manual && (
               !rawNm ||
               norm(rawNm) === norm(FORM_UI.initialSubcategory) ||
               isExpenseSubcategoryOrCategoryName(rawNm) ||
@@ -50271,14 +50357,9 @@
             const whLoc = String(it.warehouse_location || defWhLocSave).trim() || defWhLocSave;
             const catIt = nm ? resolveCatalogItem(nm) : null;
             if (!nm) {
-              addErr('f_exi_name_' + idx, dest === 'warehouse' ? 'Select a Catalog Item to store in Warehouse.' : `Line ${idx + 1}: Select a connected Catalog Item.`);
+              addErr('f_exi_name_' + idx, dest === 'warehouse' ? 'Select a Catalog Item to store in Warehouse.' : `Line ${idx + 1}: Select a Catalog Item.`);
             } else if (mustBeCatalog && !isLegacyUnmodifiedEdit && !catIt) {
-              addErr('f_exi_name_' + idx, `Line ${idx + 1}: "${nm}" is not in the Items Catalog. Select a connected catalog item (or click New Catalog Item).`);
-            } else if (dest === 'equipment' && rowEq && catIt) {
-              const eqClass = resolveEquipmentUnitClass(rowEq, company);
-              if (eqClass && !isItemCompatibleWithEquipment(catIt, eqClass)) {
-                addErr('f_exi_name_' + idx, `Line ${idx + 1}: "${catIt.name || nm}" is not connected to ${eqClass} unit ${rowEq}.`);
-              }
+              addErr('f_exi_name_' + idx, `Line ${idx + 1}: "${nm}" is not in the Items Catalog. Select a catalog item (or click + New Item).`);
             }
             if (!(q > 0)) addErr('f_exi_qty_' + idx, `Line ${idx + 1}: Quantity must be above zero.`);
             if (!c.pricePending && !(uc >= 0)) addErr('f_exi_cost_' + idx, `Line ${idx + 1}: Unit price cannot be negative.`);
@@ -50597,18 +50678,19 @@
         const dup = findUniversalDuplicate('items', nm);
         if (dup) addErr('f_item_name', `Item "${universalMainValue('items', dup) || nm}" already exists in the Universal Items Registry. Duplicate names are not allowed.`);
       }
-      const compatTypes = readEquipChipBarTypes($('f_item_compat'), null);
+      const itemCat = val('f_item_cat') || val('f_category') || 'Spare Parts';
+      const itemSubcat = val('f_item_subcat') || inferItemCatalogSubcategory(nm, itemCat, '');
       crKey = 'items';
       record = {
         ...base,
         name: nm,
         item_name: nm,
         uom: val('f_uom') || 'Piece',
-        category: val('f_item_cat') || val('f_category') || 'Spare Parts',
+        category: itemCat,
+        subcategory: itemSubcat,
         default_cost: round2($('f_default_cost') ? num('f_default_cost') : num('f_unitprice')),
         default_location: val('f_wh_loc') || val('f_location') || 'WTC Main Warehouse',
-        min_stock: Math.max(0, num('f_min_stock')),
-        compatible_types: compatTypes
+        min_stock: Math.max(0, num('f_min_stock'))
       };
     } else if (f === 'site') {
       const nm = val('f_site');
@@ -50664,12 +50746,15 @@
         }
       }
       const supVal = val('f_supplier');
-      const custVal = (!inclTrans && !isJvSite) ? val('f_customer') : '';
+      const custVal = !inclTrans ? val('f_customer') : '';
       const jvPartnerVal = isJvSite ? val('f_jv_partner') : '';
       const jvShareVal = isJvSite ? (num('f_jv_share') || 50) : 0;
       const jvCoVal = isJvSite ? (val('f_jv_company') || company || 'WTC') : '';
       if ((inclTrans || isJvSite) && !supVal) {
         addErr('f_supplier', 'Default Site Owner (Supplier) is required for Bundled or JV Sites.');
+      }
+      if (!inclTrans && !isJvSite && !supVal && !custVal) {
+        addErr('f_supplier', 'Default Site Owner (Supplier) or Linked Customer is required.');
       }
       if (isJvSite) {
         if (!jvPartnerVal) {
@@ -54080,12 +54165,12 @@
     } else if (form === 'item') {
       setModalControlVal('f_item_name', row.name || row.item_name || '');
       setModalControlVal('f_item_cat', row.category || 'Spare Parts');
+      setModalControlVal('f_item_subcat', row.subcategory || inferItemCatalogSubcategory(row.name || row.item_name || '', row.category || 'Spare Parts', ''));
       setModalControlVal('f_uom', row.uom || 'Piece');
       setModalControlVal('f_default_cost', row.default_cost != null && Number(row.default_cost) > 0 ? row.default_cost : '');
       setModalControlVal('f_wh_loc', row.default_location || 'WTC Main Warehouse');
       setModalControlVal('f_min_stock', row.min_stock != null ? row.min_stock : 0);
       setModalControlVal('f_notes', row.notes || '');
-      syncEquipChipBarState($('itemCompatEquipBar'), $('f_item_compat'), null, Array.isArray(row.compatible_types) && row.compatible_types.length ? row.compatible_types : 'all');
     } else if (form === 'staff') {
       setModalControlVal('f_staff', row.name || row.staff || '');
       setModalControlVal('f_role', row.role || '');
@@ -54687,16 +54772,21 @@
       const pendEmp = empRows.find(isPendingSalaryEmployment);
       const cos = Array.from(new Set(empRows.map(e => e.company).concat(saRows.map(a => a.company)).filter(Boolean)));
       const salPaid = (SEED.records.salaries || []).filter(s => s && !s.voided && norm(s.staff) === sk).reduce((a, s) => a + Number(s.amount || 0), 0);
+      const payReg = computeStaffPayrollRegister({ company: STATE.company || 'manufacturing-group', ignoreSearch: true, activeRange: null, cutoffMode: STATE.payrollCutoffMode || 'closed_month' });
+      const stPayRows = (payReg && Array.isArray(payReg.staffRows)) ? payReg.staffRows.filter(sr => sr && norm(sr.staff) === sk) : [];
+      const totEarned = stPayRows.length ? round2(stPayRows.reduce((a, sr) => a + Number(sr.earnings || 0), 0)) : round2(salPaid);
+      const totPaid = stPayRows.length ? round2(stPayRows.reduce((a, sr) => a + Number(sr.paid || 0), 0)) : round2(salPaid);
+      const remPay = stPayRows.length ? round2(stPayRows.reduce((a, sr) => a + Number(sr.balance || 0), 0)) : 0;
       const roleLbl = row.role || row.role_category || row.worker_category || 'Staff';
       if (pendEmp) {
         return {
           tone: 'warn',
-          text: `Universal Staff Profile · ${stName || 'Staff'} (${roleLbl}): Active pending-salary contract on ${pendEmp.company || 'WTC'} ($0.00 base until finalized)  |  ${fmtNum(saRows.length)} Role & Equipment Log${saRows.length === 1 ? '' : 's'}  |  Total Paid Across BUs: ${fmtUSD(salPaid, 2)}`
+          text: `Universal Staff Profile · ${stName || 'Staff'} (${roleLbl}): Active pending-salary contract on ${pendEmp.company || 'WTC'} ($0.00 base until finalized)  |  ${fmtNum(saRows.length)} Role & Equipment Log${saRows.length === 1 ? '' : 's'}  |  Total Paid: ${fmtUSD(totPaid, 2)}  |  Remaining Payment: ${fmtUSD(remPay, 2)}`
         };
       }
       return {
-        tone: 'info',
-        text: `Universal Staff Profile · ${stName || 'Staff'} (${roleLbl}): Shared across all BUs${cos.length ? ' · Active in ' + cos.join(', ') : ' · Ready for company contract assignment'}  |  ${fmtNum(saRows.length)} Role & Equipment Log${saRows.length === 1 ? '' : 's'}  |  ${fmtNum(empRows.length)} Contract${empRows.length === 1 ? '' : 's'}  |  Total Paid: ${fmtUSD(salPaid, 2)}`
+        tone: remPay > 0.5 ? 'warn' : 'info',
+        text: `Universal Staff Profile · ${stName || 'Staff'} (${roleLbl}): Shared across all BUs${cos.length ? ' · Active in ' + cos.join(', ') : ' · Ready for company contract assignment'}  |  Total Earned: ${fmtUSD(totEarned, 2)}  |  Total Paid: ${fmtUSD(totPaid, 2)}  |  Remaining Payment: ${fmtUSD(remPay, 2)}`
       };
     }
     if (key === 'staff_roles') {
@@ -54826,9 +54916,17 @@
     };
   }
 
+  function canonTwBu(c) {
+    const s = String(c || '').trim().toLowerCase();
+    if (/^(bbc|bbconstruction)$/i.test(s)) return 'BBConstruction';
+    if (/^(lions|lions\s*transport)$/i.test(s)) return 'Lions Transport';
+    return 'WTC';
+  }
+
   // Build 4-Card Navy Executive Telemetry & Control Cockpit (Screenshot 2 bhf_mfgCockpit.htm m283 parity)
   function buildInspectorCockpit(key, row) {
-    const bu = row.company || COMPANY_BU_MATCH[STATE.company] || 'MFG';
+    const singleBuCockpit = COMPANY_BU_MATCH[STATE.company] || '';
+    const bu = singleBuCockpit || row.company || 'MFG';
     const isCommRow = key === 'price_rules' && isCommRule(row);
     const isQuarryPr = key === 'price_rules' && !isCommRow && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(row.rule_type || '').trim());
     const title = key === 'price_rules'
@@ -54922,7 +55020,7 @@
       const rules = (SEED.records.price_rules || []).filter(r => norm(r.customer) === norm(name));
       const arBal = Number(ci.ar_balance != null ? ci.ar_balance : 0);
       return {
-        bu: 'ALL BUs', title, pill: `AR ${fmtUSD(arBal, 2)}`,
+        bu: singleBuCockpit || 'ALL BUs', title, pill: `AR ${fmtUSD(arBal, 2)}`,
         cards: [
           { lbl: 'OPEN FIFO AR BALANCE', tag: Number(ci.ar_60_plus || 0) > 0 ? 'AGED 60+D' : 'ACTIVE AR', tone: Number(ci.ar_60_plus || 0) > 0 ? 'warn' : 'good', val: fmtUSD(arBal, 2), sub1: `Current: ${fmtUSD(ci.ar_current || 0, 0)} · 60+d: ${fmtUSD(ci.ar_60_plus || 0, 0)}`, sub2: `VAT Status: ${(row.vat_registered || ci['VAT Registered'] === 'Yes') ? '11% VAT' : 'Standard'}`, pct: 75 },
           { lbl: 'LIFETIME SALES & LOADS', tag: `${fmtNum(ci.loads || tickets.length)} LOADS`, tone: 'info', val: fmtUSD(ci.sales_ttc || tickets.reduce((a, t) => a + Number(t.total_ttc || 0), 0), 0), sub1: `${fmtNum(tickets.length)} tickets in register`, sub2: `Last Sale: ${ci.last_sale || (tickets[0] && tickets[0].date) || '—'}`, pct: 85 },
@@ -54940,12 +55038,15 @@
       const exps = (SEED.records.expenses || []).filter(x => norm(x.supplier) === norm(name));
       const spays = (SEED.records.settlements || []).filter(s => norm(s.supplier) === norm(name));
       const apBal = Number(si.ap_balance != null ? si.ap_balance : 0);
+      const expRemSub = Math.abs(Number(si.exp_vat_rem_usd || 0)) > 0.005
+        ? `Exp Rem: ${fmtUSD(si.exp_rem_usd || 0, 2)} Ex-VAT + ${fmtUSD(si.exp_vat_rem_usd || 0, 2)} VAT = ${fmtUSD(si.exp_rem_ttc || 0, 2)}`
+        : `Expense Leg: ${fmtUSD(si.ap_expense || 0, 0)} (Rem ${fmtUSD(si.exp_rem_ttc || 0, 2)})`;
       return {
-        bu: 'ALL BUs', title, pill: `AP ${fmtUSD(apBal, 2)}`,
+        bu: singleBuCockpit || 'ALL BUs', title, pill: `AP ${fmtUSD(apBal, 2)}`,
         cards: [
-          { lbl: 'NET 3-LEG AP BALANCE', tag: '3-LEG AP', tone: apBal > 0 ? 'warn' : 'good', val: fmtUSD(apBal, 2), sub1: `Mat: ${fmtUSD(si.ap_material || 0, 0)} · Haul: ${fmtUSD(si.ap_haulage || 0, 0)}`, sub2: `Expense Leg: ${fmtUSD(si.ap_expense || 0, 0)}`, pct: 75 },
+          { lbl: 'NET 3-LEG AP BALANCE', tag: '3-LEG AP', tone: apBal > 0 ? 'warn' : 'good', val: fmtUSD(apBal, 2), sub1: `Mat: ${fmtUSD(si.ap_material || 0, 0)} · Haul: ${fmtUSD(si.ap_haulage || 0, 0)}`, sub2: expRemSub, pct: 75 },
           { lbl: 'MATERIAL & HAULAGE LOADS', tag: `${fmtNum(matLoads.length + haulLoads.length)} TICKETS`, tone: 'info', val: fmtNum(si.raw_loads || (matLoads.length + haulLoads.length)), sub1: `As Site Owner: ${fmtNum(matLoads.length)} · As Hauler: ${fmtNum(haulLoads.length)}`, sub2: `Expenses Billed: ${fmtNum(exps.length)} vouchers`, pct: 80 },
-          { lbl: 'SETTLEMENTS DISBURSED', tag: `${fmtNum(spays.length)} PAYMENTS`, tone: 'good', val: fmtUSD(si.settlements_paid || spays.reduce((a, s) => a + Number(s.amount || 0), 0), 0), sub1: `${fmtNum(spays.length)} settlement vouchers in register`, sub2: `IVA Registered: ${row.iva || si.iva ? 'Yes' : 'No'}`, pct: 85 },
+          { lbl: 'SETTLEMENTS DISBURSED', tag: `${fmtNum(spays.length)} PAYMENTS`, tone: 'good', val: fmtUSD(si.ap_settled || si.settlements_paid || spays.reduce((a, s) => a + Number(s.amount || 0), 0), 0), sub1: `${fmtNum(spays.length)} settlement vouchers in register`, sub2: `IVA Registered: ${row.iva || si.iva ? 'Yes' : 'No'}`, pct: 85 },
           { lbl: 'FLEET & AGREEMENTS', tag: row.is_truck_owner ? 'HAULER FLEET' : 'VENDOR', tone: 'info', val: `${fmtNum(row.trucks_count || (row.trucks || []).length || 0)} Trucks`, sub1: `Drivers Linked: ${fmtNum((row.drivers || []).length)}`, sub2: `Active Price Rules: ${activeRulesCountFor('supplier', name)}`, pct: 70 }
         ]
       };
@@ -55044,7 +55145,7 @@
       const totUsdBought = round2(expLines.reduce((a, ei) => a + Number(ei.line_total != null ? ei.line_total : Number(ei.qty || 1) * Number(ei.unit_cost || 0)), 0));
       const avgUnit = totQtyBought > 0 ? round2(totUsdBought / totQtyBought) : Number((catRec && catRec.default_cost) || row.unit_cost || 0);
       return {
-        bu: key === 'items' ? 'UNIVERSAL CATALOG' : bu,
+        bu: key === 'items' ? (singleBuCockpit || 'UNIVERSAL CATALOG') : bu,
         title: itName || title,
         pill: `${lockedUom} (Locked UoM)`,
         cards: [
@@ -55141,19 +55242,25 @@
       const hasPend = activeEmps.some(isPendingSalaryEmployment);
       const activePkgUsd = round2(activeEmps.reduce((a, e) => a + empContractPackageUsd(e), 0));
       const activeReimbUsd = round2(activeEmps.reduce((a, e) => a + empContractReimbUsd(e), 0));
-      const totalPaid = round2(salRows.reduce((a, s) => a + Number(s.amount || 0), 0) + flRows.reduce((a, f) => a + Number(f.total != null ? f.total : (Number(f.hours || 0) * Number(f.rate_usd || 0))), 0));
+      const rawPaid = round2(salRows.reduce((a, s) => a + Number(s.amount || 0), 0));
+      const payReg = computeStaffPayrollRegister({ company: STATE.company || 'manufacturing-group', ignoreSearch: true, activeRange: null, cutoffMode: STATE.payrollCutoffMode || 'closed_month' });
+      const stPayRows = (payReg && Array.isArray(payReg.staffRows)) ? payReg.staffRows.filter(sr => sr && norm(sr.staff) === sk) : [];
+      const totalEarned = stPayRows.length ? round2(stPayRows.reduce((a, sr) => a + Number(sr.earnings || 0), 0)) : rawPaid;
+      const totalPaid = stPayRows.length ? round2(stPayRows.reduce((a, sr) => a + Number(sr.paid || 0), 0)) : rawPaid;
+      const remPay = stPayRows.length ? round2(stPayRows.reduce((a, sr) => a + Number(sr.balance || 0), 0)) : 0;
+      const totAdv = stPayRows.length ? round2(stPayRows.reduce((a, sr) => a + Number(sr.advances || 0), 0)) : 0;
       const cos = Array.from(new Set(empRows.map(e => e.company).concat(saRows.map(a => a.company), salRows.map(s => s.company), attRows.map(a => a.company)).filter(Boolean)));
       const otHrs = round2(attRows.reduce((a, r) => a + Number(r.overtime_hours || 0), 0));
       const rCat = row.role_category || row.worker_category || resolveRoleCategory(row.role, 'Site & Operations');
       return {
-        bu: 'ALL BUs',
+        bu: singleBuCockpit || 'ALL BUs',
         title: stName,
-        pill: hasPend ? 'PENDING SALARY ($0.00)' : (activeEmps.length ? (activePkgUsd > 0 ? `${fmtUSD(activePkgUsd, 2)} / MO` : 'ACTIVE STAFF') : (empRows.length ? 'ENDED CONTRACT' : 'NO CONTRACT')),
+        pill: hasPend ? 'PENDING SALARY ($0.00)' : (Math.abs(remPay) > 0.5 ? `REM ${fmtUSD(remPay, 2)}` : (activeEmps.length ? (activePkgUsd > 0 ? `${fmtUSD(activePkgUsd, 2)} / MO` : 'ACTIVE STAFF') : (empRows.length ? 'ENDED CONTRACT' : 'NO CONTRACT'))),
         cards: [
           { lbl: 'CURRENT ROLE & EQUIPMENT', tag: String(rCat || 'SITE & OPERATIONS').toUpperCase().slice(0, 20), tone: 'info', val: row.role || rCat || 'Staff Member', sub1: `Assigned Unit: ${row.default_equipment || 'Unassigned'} (${fmtNum(saRows.length)} log${saRows.length === 1 ? '' : 's'})`, sub2: `Phone: ${row.phone || 'Not set'}${row.reference ? ' · ID ' + row.reference : ''}`, pct: 90 },
           { lbl: 'COMPANY CONTRACTS', tag: hasPend ? 'PENDING ($0)' : `${fmtNum(activeEmps.length)} ACTIVE`, tone: hasPend ? 'warn' : (activeEmps.length ? 'good' : 'info'), val: activeEmps.length && activePkgUsd > 0 ? `${fmtUSD(activePkgUsd, 2)}/mo` : `${fmtNum(empRows.length)} Contract${empRows.length === 1 ? '' : 's'}`, sub1: activeEmps.length && activeReimbUsd > 0 ? `Base ${fmtUSD(round2(activePkgUsd - activeReimbUsd), 2)} + Transp./Reimb. ${fmtUSD(activeReimbUsd, 2)}` : (cos.length ? `Corporations: ${cos.join(', ')}` : 'Shared across all BUs'), sub2: activeEmps[0] ? `Latest: ${activeEmps[0].company || 'WTC'} (${fmtNum(empRows.length)} contract${empRows.length === 1 ? '' : 's'})` : 'Assign contract in Payroll & Workforce', pct: Math.min(100, Math.max(25, empRows.length * 35)) },
           { lbl: 'ATTENDANCE & OVERTIME', tag: `${fmtNum(attRows.length)} LOGS`, tone: 'info', val: `${fmtNum(attRows.length)} Days`, sub1: `Logged Overtime: ${fmtNum(otHrs, 1)} hrs`, sub2: `Freelance Entries: ${fmtNum(flRows.length)}`, pct: Math.min(100, Math.max(20, attRows.length)) },
-          { lbl: 'TOTAL PAID ACROSS BUS', tag: `${fmtNum(salRows.length)} VOUCHERS`, tone: totalPaid > 0 ? 'good' : 'info', val: fmtUSD(totalPaid, 2), sub1: `Salary Vouchers: ${fmtNum(salRows.length)}`, sub2: isAppRecord(row) ? `Registered by ${row.entered_by || 'User'}` : 'Synced Workforce Master', pct: totalPaid > 0 ? 95 : 35 }
+          { lbl: 'REMAINING PAYMENT & PAYROLL', tag: Math.abs(remPay) > 0.5 ? (remPay > 0 ? 'OPEN REMAINING' : 'OVERPAID / ADV') : (totalPaid > 0 ? 'SETTLED ($0)' : `${fmtNum(salRows.length)} VOUCHERS`), tone: remPay > 0.5 ? 'warn' : (totalPaid > 0 ? 'good' : 'info'), val: fmtUSD(remPay, 2), sub1: `Earned: ${fmtUSD(totalEarned, 2)} · Paid: ${fmtUSD(totalPaid, 2)}`, sub2: totAdv > 0 ? `Advances: ${fmtUSD(totAdv, 2)} · ${fmtNum(salRows.length)} vouchers` : `Salary Vouchers: ${fmtNum(salRows.length)}`, pct: totalEarned > 0 ? Math.min(100, Math.max(20, Math.round((totalPaid / totalEarned) * 100))) : 35 }
         ]
       };
     }
@@ -55168,7 +55275,7 @@
       const today = todayISO();
       const activeSa = saRows.filter(a => a.status !== 'Ended' && (!a.end_date || String(a.end_date).slice(0, 10) >= today));
       return {
-        bu: 'ALL BUs',
+        bu: singleBuCockpit || 'ALL BUs',
         title: rName,
         pill: rCat.toUpperCase(),
         cards: [
@@ -55447,7 +55554,7 @@
     const addGrid = (id, title, shortLabel, relBadge, targetKey, rows, cols, sumCol) => {
       if (!rows) return;
       if (targetKey && !canAccessTable(targetKey)) return;
-      const scoped = rows.filter(r => !r || (!r.voided && (!r.company || (singleBuScope ? norm(r.company) === norm(singleBuScope) : allowedCos.includes(r.company))))).slice();
+      const scoped = rows.filter(r => !r || (!r.voided && (!r.company || (singleBuScope ? canonTwBu(r.company) === canonTwBu(singleBuScope) : allowedCos.includes(r.company))))).slice();
       if (scoped.length > 1) {
         const viewId = targetKey ? ('tbl_' + targetKey) : '';
         const hasDate = Array.isArray(cols) && cols.includes('date');
@@ -56370,6 +56477,7 @@
       items: [
         { key: 'name', label: 'Item / Part Name *', type: 'text', sec: 1 },
         { key: 'category', label: 'Item Category *', type: 'select', options: ['Spare Parts', 'Oils & Lubricants', 'Fuel', 'Tools & Garage', 'Plant Consumables'], sec: 1 },
+        { key: 'subcategory', label: 'Subcategory', type: 'combo', dl: 'dl_insp_subcategories', sec: 1 },
         { key: 'uom', label: 'Locked Unit (UoM) *', type: 'select', options: ['Piece', 'Set', 'Litre', 'kg', 'Box', 'm'], sec: 2 },
         { key: 'default_cost', label: 'Default Unit Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'default_location', label: 'Default Warehouse Location', type: 'text', sec: 2 },
@@ -58236,7 +58344,7 @@
       : null;
     const eqWindows = (targetEqRow && Array.isArray(targetEqRow.adj_windows)) ? targetEqRow.adj_windows : [];
     const inspDefaultTwCo = COMPANY_BU_MATCH[STATE.company] || (row.company === 'BBConstruction' ? 'BBConstruction' : (row.company === 'Lions Transport' ? 'Lions Transport' : 'WTC'));
-    const eqScopedWinCount = eqWindows.filter(w => norm((w && w.co) || 'WTC') === norm(inspDefaultTwCo)).length;
+    const eqScopedWinCount = eqWindows.filter(w => canonTwBu((w && w.co) || 'WTC') === canonTwBu(inspDefaultTwCo)).length;
     const editSchema = getInspectorEditableSchema(key, row, targetEqRow);
     const inspFreqIdx = getFreqIndex();
     const inspRegions = uniqSorted(
@@ -58643,7 +58751,7 @@
                   const scopeLbl = [w.cust ? `Client: ${w.cust}` : '', w.site ? `Site: ${w.site}` : ''].filter(Boolean).join(' · ') || 'General (All)';
                   const wCo = w.co || 'WTC';
                   return `
-                    <tr data-insp-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${norm(wCo) !== norm(inspDefaultTwCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to edit this log entry">
+                    <tr data-insp-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${canonTwBu(wCo) !== canonTwBu(inspDefaultTwCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to edit this log entry">
                       <td>${coBadge(wCo)}</td>
                       <td><span class="badge badge-info">${esc(sideLbl)}</span></td>
                       <td class="mono">${esc(w.s || '2024-01-01')}</td>
@@ -59120,13 +59228,13 @@
         });
         const custEl = $('insp_edit_customer');
         const custWrap = custEl && custEl.closest('.form-field');
-        if (custWrap) custWrap.hidden = isBundledMod || isJvMod;
+        if (custWrap) custWrap.hidden = isBundledMod;
         const mReg = getModVal('region') || row.region || (isBundledMod ? 'Optional (Bundled)' : 'Lebanon');
         const mSup = getModVal('supplier') || '—';
-        const mCust = (!isBundledMod && !isJvMod) ? (getModVal('customer') || '—') : '—';
+        const mCust = !isBundledMod ? (getModVal('customer') || '—') : '—';
         const mJvPart = isJvMod ? (getModVal('jv_partner') || row.jv_partner || 'Assaf') : '';
         const mJvPct = isJvMod ? (getModNum('jv_share') || row.jv_share || 50) : 0;
-        html = `<span>Supply Basis: <b>${isBundledMod ? 'Mat + Trans Included (Split Unknown)' : (isJvMod ? 'JV 50/50 Site' : 'Standard Site (Separate Haul)')}</b></span><span>Region: <b>${esc(mReg)}</b></span><span>Site Owner: <b>${esc(mSup)}</b></span>${(!isBundledMod && !isJvMod) ? `<span>Linked Customer: <b>${esc(mCust)}</b></span>` : ''}${isJvMod ? `<span>JV Partner: <b>${esc(mJvPart)} (${mJvPct}%)</b></span>` : ''}`;
+        html = `<span>Supply Basis: <b>${isBundledMod ? 'Mat + Trans Included (Split Unknown)' : (isJvMod ? 'JV 50/50 Site' : 'Standard Site (Separate Haul)')}</b></span><span>Region: <b>${esc(mReg)}</b></span><span>Site Owner: <b>${esc(mSup)}</b></span>${!isBundledMod ? `<span>Linked Customer: <b>${esc(mCust)}</b></span>` : ''}${isJvMod ? `<span>JV Partner: <b>${esc(mJvPart)} (${mJvPct}%)</b></span>` : ''}`;
       }
       if (modDrawer && isEffectiveSeriesTable(key, row)) {
         const modCand = Object.assign({}, row);
@@ -59354,7 +59462,7 @@
               pendingUpdates.haulage_mode = candBundled ? 'supplier_delivered' : 'separate';
             }
             if (window.MFG_GEO && typeof window.MFG_GEO.validateSiteInsideRegion === 'function') {
-              const checkCoords = ('latitude' in pendingUpdates) || ('longitude' in pendingUpdates) || !('region' in pendingUpdates);
+              const checkCoords = ('latitude' in pendingUpdates) || ('longitude' in pendingUpdates);
               const geoCheck = window.MFG_GEO.validateSiteInsideRegion({
                 siteName: candidate.name,
                 regionName: candidate.region,
@@ -60048,7 +60156,7 @@
       let visCount = 0;
       twBox.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => {
         const rowCo = tr.getAttribute('data-tw-co') || 'WTC';
-        const match = norm(rowCo) === norm(selCo);
+        const match = canonTwBu(rowCo) === canonTwBu(selCo);
         tr.hidden = !match;
         if (match) visCount++;
       });
@@ -60088,7 +60196,7 @@
       const w = targetEqRow.adj_windows[idx];
       if (!w) return;
       twBox.dataset.editTwIdx = String(idx);
-      if ($('insp_tw_co')) $('insp_tw_co').value = w.co || inspDefaultTwCo;
+      if ($('insp_tw_co')) $('insp_tw_co').value = canonTwBu(w.co || inspDefaultTwCo);
       syncInspTwCoFilter();
       if ($('insp_tw_side')) $('insp_tw_side').value = (w.side === 'all' || !w.side) ? 'both' : w.side;
       if ($('insp_tw_cap')) $('insp_tw_cap').value = String(Number(w.cap != null ? w.cap : (targetEqRow.capacity || 0)));
@@ -60264,11 +60372,13 @@
     panel.hidden = false;
     bodyEl.scrollTop = 0;
     document.body.classList.add('modal-open');
+    if (typeof stripNativeTitles === 'function') stripNativeTitles(panel);
     if (!window.__fastInspectorModifyTest) {
       wireModalSuggestions(bodyEl);
       if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
         window.MFG_TABLE_COLS.enhanceAllTables(bodyEl);
       }
+      if (typeof stripNativeTitles === 'function') stripNativeTitles(panel);
     }
   }
 
@@ -64107,7 +64217,7 @@
     const catalog = getCompanyCatalog();
     const searchInpEarly = $('companySwitchSearch');
     const qEarly = searchInpEarly ? String(searchInpEarly.value || '').trim().toLowerCase() : '';
-    const uiSig = `${(user && user.id) || ''}|${allowedCos.join(',')}|${allowedNames.join(',')}|${catalog.length}|${STATE.company}|${STATE.companySwitchIndFilter || 'all'}|${qEarly}`;
+    const uiSig = `${(user && user.id) || ''}|${allowedCos.join(',')}|${allowedNames.join(',')}|${catalog.length}|${STATE.company}|${STATE.companySwitchIndFilter || 'all'}|${qEarly}|${Boolean(STATE.demoVisitor)}|${isOfficialScopeActive(user)}|${Boolean(STATE.enterpriseScalePreview)}`;
     if (_companySwitchUiSig === uiSig && switchEl.querySelector('.entity-btn')) return;
     _companySwitchUiSig = uiSig;
     const allowedNameSet = new Set(allowedNames.map(n => n.toLowerCase()));
@@ -64166,7 +64276,7 @@
           <em class="ep-ind-tab-cnt">${allowedNames.length}</em>
         </button>`
       ].concat(allowedIndGroups.map(g => `
-        <button type="button" class="ep-ind-tab ${STATE.companySwitchIndFilter === g.id ? 'active' : ''}" data-ep-ind="${esc(g.id)}" title="${esc(g.label)} (${g.permittedCos.length} permitted)">
+        <button type="button" class="ep-ind-tab ${STATE.companySwitchIndFilter === g.id ? 'active' : ''}" data-ep-ind="${esc(g.id)}" data-ui-tip="${esc(g.label)} (${g.permittedCos.length} permitted)">
           <span class="ep-ind-tab-name">${esc(g.label)}</span>
           <em class="ep-ind-tab-cnt">${g.permittedCos.length}</em>
         </button>
@@ -64247,8 +64357,8 @@
       trigInd = (coMeta && coMeta.industry) || COMPANY_INDUSTRY_BY_KEY[STATE.company] || 'Manufacturing';
       trigCo = (coMeta && coMeta.name) || COMPANY_BU_MATCH[STATE.company] || STATE.company;
     }
-    if (indTextEl) { indTextEl.textContent = trigInd; indTextEl.title = trigInd; }
-    if (coTextEl) { coTextEl.textContent = trigCo; coTextEl.title = trigCo; }
+    if (indTextEl) { indTextEl.textContent = trigInd; indTextEl.setAttribute('data-ui-tip', trigInd); }
+    if (coTextEl) { coTextEl.textContent = trigCo; coTextEl.setAttribute('data-ui-tip', trigCo); }
 
     const coHeadEl = $('companySwitchCoHead');
     if (coHeadEl) {
@@ -72045,11 +72155,14 @@
       wsHtml = subtabBarHtml + wsHtml;
     }
     if (_uiTipObserver) _uiTipObserver.disconnect();
-    setContainerHtmlPreservingActiveInput(container, wsHtml);
-    wireWorkspace(container, user);
-    stripNativeTitles(document);
-    if (_uiTipObserver && document.body) {
-      _uiTipObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
+    try {
+      setContainerHtmlPreservingActiveInput(container, wsHtml);
+      wireWorkspace(container, user);
+    } finally {
+      stripNativeTitles(document);
+      if (_uiTipObserver && document.body) {
+        _uiTipObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
+      }
     }
   }
 
@@ -72387,6 +72500,7 @@
         protoDot = document.createElement('u');
         protoDot.className = 'row-sel-dot';
         protoDot.setAttribute('data-row-sel', '1');
+        protoDot.textContent = '✓';
         enhanceVisualWorkspace._protoDot = protoDot;
       }
       for (let i = 0; i < rrows.length; i++) {
@@ -72399,7 +72513,7 @@
           if (firstTd.querySelector('.badge-app, .void-btn:not(.row-void-hover)')) {
             firstTd.classList.add('td-has-inline-act');
           }
-          firstTd.appendChild(protoDot.cloneNode(false));
+          firstTd.appendChild(protoDot.cloneNode(true));
         }
       }
     }

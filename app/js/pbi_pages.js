@@ -1604,7 +1604,7 @@
       { id: 'iva', label: 'IVA & VAT Registered', fn: r => Boolean(r.iva || r.financial_no || r.mof_no) }
     ] },
     { key: 'products', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Products & Grades', singularLabel: 'Product', dvn: 'bhf_product', form: 'product', cols: ['name', 'type', 'uom', 'ton_factor', 'list_price', 'ticket_product', 'fuel_item', 'input_product', 'active_rules', 'sales_loads'], relTables: ['sales_tickets', 'raw_purchases', 'price_rules', 'fuel_intakes', 'product_types', 'uoms'], views: [{ id: 'all', label: 'All Products & Grades' }, { id: 'agg', label: 'Aggregate Grades', fn: r => Boolean(r.ticket_product) }, { id: 'fuel', label: 'Fuel & Lube Items', fn: r => Boolean(r.fuel_item) }] },
-    { key: 'items', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_items', label: 'Items & Spare Parts', singularLabel: 'Item', dvn: 'bhf_item', form: 'item', cols: ['name', 'category', 'subcategory', 'uom', 'default_cost', 'tickets_count', 'total_spent', 'default_location', 'min_stock', 'status'], relTables: ['expense_items', 'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'expense_subcategories', 'uoms'], views: [{ id: 'all', label: 'All Items & Spare Parts' }, { id: 'parts', label: 'Spare Parts', fn: r => /spare|part/i.test(r.category || '') }, { id: 'oils', label: 'Oils & Lubricants', fn: r => /oil|lub/i.test(r.category || '') }, { id: 'tools', label: 'Tools & Consumables', fn: r => /tool|consum/i.test(r.category || '') }] },
+    { key: 'items', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_items', label: 'Items & Spare Parts', singularLabel: 'Item', dvn: 'bhf_item', form: 'item', cols: ['name', 'category', 'subcategory', 'uom', 'default_cost', 'tickets_count', 'total_spent', 'min_stock', 'status'], relTables: ['expense_items', 'warehouse_movements', 'repair_items', 'equipment_oil_logs', 'expense_subcategories', 'uoms'], views: [{ id: 'all', label: 'All Items & Spare Parts' }, { id: 'parts', label: 'Spare Parts', fn: r => /spare|part/i.test(r.category || '') }, { id: 'oils', label: 'Oils & Lubricants', fn: r => /oil|lub/i.test(r.category || '') }, { id: 'tools', label: 'Tools & Consumables', fn: r => /tool|consum/i.test(r.category || '') }] },
     { key: 'product_types', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Product Types (Families)', singularLabel: 'Product', dvn: 'bhf_producttype', form: 'product', cols: ['name', 'code', 'products_count', 'sales_loads'], relTables: ['products', 'sales_tickets'], views: [{ id: 'all', label: 'All Product Families' }] },
     { key: 'uoms', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_products', label: 'Units of Measure (UoM)', singularLabel: 'Product', dvn: 'bhf_uom', form: 'product', cols: ['name', 'code', 'products_count', 'tickets_count'], relTables: ['products', 'items', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Units of Measure' }] },
     { key: 'expense_categories', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_categories', label: 'Expense Categories', singularLabel: 'Expense Category', dvn: 'bhf_expensecategory', form: 'expensecategory', cols: ['name', 'cost_class', 'subcategories_count', 'expenses_count', 'total_spent'], relTables: ['expense_subcategories', 'expenses', 'recurring_expenses'], views: [
@@ -1625,8 +1625,9 @@
     { key: 'regions', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_regions', label: 'Regions & Zones', singularLabel: 'Region', dvn: 'bhf_region', form: 'region', cols: ['name', 'sites_count', 'corridor', 'zone_shape', 'distance_km', 'overtime_rate', 'total_loads'], relTables: ['sites', 'overtime_rates', 'sales_tickets', 'raw_purchases'], views: [{ id: 'all', label: 'All Regions & Zones' }] },
     { key: 'equipment', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_equipment', label: 'Equipment & Trucks', singularLabel: 'Equipment', dvn: 'bhf_equipment', form: 'equipment', cols: ['name', 'companies_list', 'plate_no', 'type', 'ownership', 'supplier', 'capacity', 'default_driver', 'loads_hauled', 'fuel_fills'], relTables: ['company_equipment', 'equipment_defects', 'part_movements', 'suppliers', 'drivers', 'sales_tickets', 'raw_purchases', 'fuel_intakes', 'expenses'], views: [{ id: 'all', label: 'All Trucks & Equipment' }, { id: 'trucks', label: 'Trucks Only', fn: r => /^truck$/i.test(r.type || 'Truck') }, { id: 'own', label: 'Company Fleet', fn: r => /company|own/i.test(r.ownership || '') }, { id: 'company_trucks', label: 'Company Trucks', fn: r => /company|own/i.test(r.ownership || '') && /^truck$/i.test(r.type || 'Truck') }, { id: 'machinery', label: 'Heavy Machinery & Plant', fn: r => /excavator|loader|bulldozer|generator|other/i.test(r.type || '') }, { id: 'vehicles', label: 'Vehicles & Pickups', fn: r => /vehicle/i.test(r.type || '') }, { id: 'third_party', label: 'Third-Party Haulers', fn: r => !/company|own/i.test(r.ownership || '') }] },
     { key: 'drivers', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_drivers', label: 'Drivers & Operators', singularLabel: 'Driver', dvn: 'bhf_driver', form: 'driver', cols: ['name', 'truck_owner', 'assigned_trucks', 'companies_list', 'phone', 'loads_hauled', 'fuel_fills'], relTables: ['company_drivers', 'equipment', 'suppliers', 'sales_tickets', 'raw_purchases', 'fuel_intakes'], views: [{ id: 'all', label: 'All Drivers & Operators' }] },
-    { key: 'staff_members', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_staff', label: 'Staff Members', singularLabel: 'Staff Member', dvn: 'bhf_staffmember', form: 'staff', cols: ['name', 'role', 'role_category', 'default_equipment', 'companies_list', 'contracts_count', 'active_salary_usd', 'salary_status', 'attendance_days', 'total_paid', 'phone'], relTables: ['staff_roles', 'staff_assignments', 'employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'loans'], views: [
+    { key: 'staff_members', group: '6 · Universal (All BUs)', universal: true, navView: 'reg_staff', label: 'Staff Members', singularLabel: 'Staff Member', dvn: 'bhf_staffmember', form: 'staff', cols: ['name', 'role', 'default_equipment', 'companies_list', 'contracts_count', 'active_salary_usd', 'salary_status', 'total_earned', 'total_paid', 'rem_payment'], relTables: ['staff_roles', 'staff_assignments', 'employments', 'salaries', 'attendance', 'logistics_allowances', 'freelance_entries', 'loans'], views: [
       { id: 'all', label: 'All Staff Members' },
+      { id: 'open_rem', label: 'Remaining Payment > $0', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Number(sr.rem_payment || 0) > 0.5; } },
       { id: 'active_contracts', label: 'Active Contracted', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Number(sr.active_contracts_count || 0) > 0; } },
       { id: 'pending_salary', label: 'Pending Salary ($0)', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Boolean(sr.has_pending_salary); } },
       { id: 'drivers_ops', label: 'Drivers & Operators', fn: (r, rel) => { const sr = (rel && rel.staffByName && rel.staffByName[norm(r.name || r.staff)]) || {}; return Boolean(sr.is_driver_op || /driver|operat|loader|excavat|crusher|truck/i.test(String(r.role || r.role_category || r.worker_category || sr.role || ''))); } },
@@ -1878,6 +1879,12 @@
         ? `<span class="badge badge-brass tkt-ot-badge has-ico">${pbiIcon('truck')}<span>Yes</span></span>`
         : '<span class="muted">No</span>';
     }
+    if (c === 'rem_payment' && tableKey === 'staff_members' && v != null && v !== '') {
+      const n = Number(v || 0);
+      if (Math.abs(n) > 0.005) {
+        return `<strong style="color:${n < 0 ? 'var(--crit)' : 'var(--ink)'}">${esc(cell)}</strong>`;
+      }
+    }
     return null;
   }
 
@@ -1923,7 +1930,7 @@
       case 'company_drivers':
         return { key: 'loads_hauled', dir: 'desc' };
       case 'staff_members':
-        return { key: vw === 'pending_salary' ? 'contracts_count' : 'total_paid', dir: 'desc' };
+        return { key: vw === 'pending_salary' ? 'contracts_count' : 'rem_payment', dir: 'desc' };
       case 'staff_roles':
         return { key: 'staff_count', dir: 'desc' };
       case 'staff_assignments':
@@ -2016,7 +2023,8 @@
     const rec = (SEED && SEED.records) || {};
     const tr = (SEED && SEED._tableRev) || {};
     const singleBu = getActiveSingleBuName();
-    const stamp = `${singleBu}|${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.staff_roles || []).length}:${(rec.staff_assignments || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.regions || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.regions||0}:${tr.overtime_rates||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.staff_roles||0}:${tr.staff_assignments||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
+    const payCutoffStamp = (_activePbiState && _activePbiState.payrollCutoffMode) || 'closed_month';
+    const stamp = `${singleBu}|${SEED && SEED._recordsReady ? 1 : 0}|${(SEED && SEED._customRev) || 0}|${payCutoffStamp}|${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.staff_roles || []).length}:${(rec.staff_assignments || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.regions || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.regions||0}:${tr.overtime_rates||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.staff_roles||0}:${tr.staff_assignments||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
     if (_hubRelCache && _hubRelStamp === stamp) return _hubRelCache;
     _hubRelStamp = stamp;
     const rel = {
@@ -2071,7 +2079,12 @@
       has_daily_contract: false,
       attendance_days: 0,
       payments_count: 0,
+      total_earned: 0,
       total_paid: 0,
+      rem_payment: 0,
+      advances: 0,
+      rem_usd: 0,
+      rem_lbp: 0,
       role: '',
       active_role: '',
       active_assign_start: '',
@@ -2666,13 +2679,44 @@
         if (drv.truck && !st.default_equipment) st.default_equipment = drv.truck;
       }
     });
+    if (typeof window !== 'undefined' && typeof window.__mfgComputeStaffPayrollRegister === 'function') {
+      const payTargetCo = singleBu === 'WTC' ? 'wtc' : (singleBu === 'BBConstruction' ? 'bbconstruction' : (singleBu === 'Lions Transport' ? 'lionstransport' : 'manufacturing-group'));
+      const payReg = window.__mfgComputeStaffPayrollRegister({
+        company: payTargetCo,
+        ignoreSearch: true,
+        activeRange: null,
+        cutoffMode: payCutoffStamp
+      });
+      if (payReg && Array.isArray(payReg.staffRows)) {
+        Object.values(rel.staffByName).forEach(st => {
+          st.total_earned = 0;
+          st.total_paid = 0;
+          st.rem_payment = 0;
+          st.advances = 0;
+          st.rem_usd = 0;
+          st.rem_lbp = 0;
+        });
+        payReg.staffRows.forEach(sr => {
+          if (!sr || !sr.staff) return;
+          const st = ensure(rel.staffByName, sr.staff, initStaff);
+          if (!st) return;
+          if (sr.company) st.companies.add(sr.company);
+          st.total_earned = round2((st.total_earned || 0) + Number(sr.earnings || 0));
+          st.total_paid = round2((st.total_paid || 0) + Number(sr.paid || 0));
+          st.rem_payment = round2((st.rem_payment || 0) + Number(sr.balance || 0));
+          st.advances = round2((st.advances || 0) + Number(sr.advances || 0));
+          st.rem_usd = round2((st.rem_usd || 0) + Number(sr.rem_usd || 0));
+          st.rem_lbp = Math.round((st.rem_lbp || 0) + Number(sr.rem_lbp || 0));
+        });
+      }
+    }
     Object.values(rel.staffByName).forEach(st => {
       st.companies_list = singleBu || Array.from(st.companies).join(', ') || 'All BUs (Ready)';
       st.salary_status = st.has_pending_salary
-        ? 'Pending Salary ($0)'
+        ? 'Pending ($0)'
         : (st.active_contracts_count > 0
-            ? (st.has_daily_contract && !(st.active_salary_usd > 0) ? 'Daily / Freelance' : 'Active Contract')
-            : (st.contracts_count > 0 ? 'Ended Contract' : (st.has_daily_contract ? 'Daily / Freelance' : 'No Active Contract')));
+            ? (st.has_daily_contract && !(st.active_salary_usd > 0) ? 'Daily / Freelance' : 'Active')
+            : (st.contracts_count > 0 ? 'Ended' : (st.has_daily_contract ? 'Daily / Freelance' : 'No Contract')));
     });
 
     rel.itemByName = {};
@@ -3050,9 +3094,9 @@
         if (c === 'phone') return r.phone || (st && st.phone) || null;
         if (c === 'default_equipment') return (st && st.active_equipment) || r.default_equipment || (st && st.default_equipment) || null;
         if (st && st[c] != null) return st[c];
-        if (c === 'contracts_count' || c === 'active_salary_usd' || c === 'attendance_days' || c === 'payments_count' || c === 'total_paid') return 0;
+        if (c === 'contracts_count' || c === 'active_salary_usd' || c === 'attendance_days' || c === 'payments_count' || c === 'total_earned' || c === 'total_paid' || c === 'rem_payment' || c === 'advances') return 0;
         if (c === 'companies_list') return getActiveSingleBuName() || 'All BUs (Ready)';
-        if (c === 'salary_status') return 'No Active Contract';
+        if (c === 'salary_status') return 'No Contract';
       }
       if (tableKey === 'vat_invoices' && c === 'tickets_count') {
         return rel.vatInvByNo[norm(r.invoice_no || r.name)] || 0;
@@ -9533,7 +9577,7 @@
     vat_rates: { icon: 'reg_vat_rates', sub: 'Statutory MoF VAT rate schedules' },
     equipment: { icon: 'reg_equipment', sub: 'Company fleet, haulers & machinery' },
     drivers: { icon: 'reg_drivers', sub: 'Drivers, assigned trucks & trips' },
-    staff_members: { icon: 'reg_staff', sub: 'Worker directory, contracts & payroll' },
+    staff_members: { icon: 'reg_staff', sub: 'Staff directory, earned, paid & remaining' },
     staff_roles: { icon: 'reg_roles', sub: 'Job roles, categories & eligibility' },
     sites: { icon: 'reg_sites', sub: 'Quarries, JV pits & delivery sites' },
     regions: { icon: 'reg_regions', sub: 'Delivery zones & trip distances' },
@@ -9676,7 +9720,7 @@
     const rlsScopedRaw = filterRecords(rawList, { ignorePeriod: true, ignoreSearch: true, ignoreCompany: isUniv, ignoreRls: isUniv });
     const searchCols = meta.key === 'sites'
       ? Array.from(new Set(meta.cols.concat(['supplier', 'customer', 'site_category', 'linked_party'])))
-      : meta.cols;
+      : (meta.key === 'staff_members' ? Array.from(new Set(meta.cols.concat(['role_category', 'phone', 'reference']))) : meta.cols);
     const baseFiltered = filterRecords(rawList, {
       cols: searchCols,
       tableKey: meta.key,
@@ -9865,7 +9909,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|deduction|balance|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
+                ${activeCols.map(c => th('tbl_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|deduction|balance|rem_payment|advances|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
@@ -9878,7 +9922,7 @@
                     const isSignedUsd = !isBool && !nonNum && c === 'usd_delta';
                     const isSignedLbp = !isBool && !nonNum && c === 'lbp_delta';
                     const isLbp = !isBool && !nonNum && !isSignedLbp && /^lbp_|_lbp$/.test(c);
-                    const isMoney = !isBool && !nonNum && !isLbp && !isSignedLbp && /price|cost|amount|total|vat_amount|limit|salary|reimbursement|package_usd|deduction|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(c) && !/rate$/.test(c);
+                    const isMoney = !isBool && !nonNum && !isLbp && !isSignedLbp && /price|cost|amount|total|vat_amount|limit|salary|reimbursement|package_usd|deduction|balance|rem_payment|advances|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(c) && !/rate$/.test(c);
                     const isNum = !isBool && !nonNum && !isMoney && !isLbp && !isSignedLbp && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
                     let cell = v == null || v === '' ? '—' : (isBool ? (v && v !== 0 ? 'Yes' : 'No') : String(v));
                     if (isSignedUsd && v != null && v !== '') cell = fmtSignedUSD(v, 2);
@@ -9921,13 +9965,13 @@
                     const isSU = !isBoolCol && col === 'usd_delta';
                     const isSL = !isBoolCol && col === 'lbp_delta';
                     const isL = !isBoolCol && !isSL && /^lbp_|_lbp$/.test(col);
-                    const isM = !isBoolCol && !isL && !isSL && /price|cost|amount|total|vat_amount|limit|salary|reimbursement|package_usd|deduction|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(col) && !/rate$/.test(col);
+                    const isM = !isBoolCol && !isL && !isSL && /price|cost|amount|total|vat_amount|limit|salary|reimbursement|package_usd|deduction|balance|rem_payment|advances|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(col) && !/rate$/.test(col);
                     const isN = !isBoolCol && !isM && !isL && !isSL && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(col);
                     return { isM, isN, isL, isSU, isSL, num: isM || isN || isL || isSU || isSL };
                   };
                   const colSpecs = activeCols.map(c => {
                     const spec = isColNumeric(c);
-                    const isAvg = spec.num && c !== 'tank_remaining_litres' && /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days|deduction/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
+                    const isAvg = spec.num && c !== 'tank_remaining_litres' && /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days|deduction/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_earned|total_paid|rem_payment|advances|total_spent)$/.test(c);
                     return { c, ...spec, isAvg, sum: 0, cnt: 0 };
                   });
                   let firstNum = colSpecs.findIndex((sp, idx) => idx > 0 && sp.num);
@@ -9994,15 +10038,18 @@
     role_category: 'Role Category',
     pay_basis: 'Default Pay Basis',
     operates_equipment: 'Operates Equipment',
-    default_equipment: 'Assigned Equipment',
+    default_equipment: 'Assigned Unit',
     active_salary_usd: 'Active Rate ($)',
     package_usd: 'Total Monthly ($)',
     reimbursement: 'Transp. / Reimb. ($)',
     deduction: 'Absent Ded. ($/d)',
-    salary_status: 'Pay Status',
+    salary_status: 'Status',
     attendance_days: 'Att. Logs',
     payments_count: 'Pay Vouchers',
+    total_earned: 'Total Earned ($)',
     total_paid: 'Total Paid ($)',
+    rem_payment: 'Rem. Payment ($)',
+    advances: 'Advances ($)',
     tickets_count: 'Tickets',
     total_spent: 'Total Spent ($)',
     expense_ref: 'Expense Voucher',
@@ -10699,7 +10746,7 @@
     const rawList = (SEED.records && SEED.records[meta.key]) || [];
     const searchCols = meta.key === 'sites'
       ? Array.from(new Set(meta.cols.concat(['supplier', 'customer', 'site_category', 'linked_party'])))
-      : meta.cols;
+      : (meta.key === 'staff_members' ? Array.from(new Set(meta.cols.concat(['role_category', 'phone', 'reference']))) : meta.cols);
     const baseFiltered = filterRecords(rawList, { cols: searchCols, tableKey: meta.key, ignorePeriod: true, ignoreCompany: true, ignoreRls: true });
     const views = meta.views || [{ id: 'all', label: 'All ' + meta.label }];
     const activeViewId = (STATE.tableViews && STATE.tableViews[meta.key]) || 'all';
@@ -10826,7 +10873,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                ${activeCols.map(c => th('ureg_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
+                ${activeCols.map(c => th('ureg_' + meta.key, hubColLabel(c, meta.key), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|balance|rem_payment|advances|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
               </tr>
             </thead>
             <tbody>
@@ -10836,7 +10883,7 @@
                     const v = cellValue(r, c, meta.key, rel);
                     const nonNum = NON_NUMERIC_HUB_COLS.test(c);
                     const isBool = typeof v === 'boolean' || (/^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|iva$|overtime$)/.test(c) && (v === 0 || v === 1));
-                    const isMoney = !isBool && !nonNum && /price|cost|amount|total|vat_amount|limit|salary|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate/.test(c) && !/rate$/.test(c);
+                    const isMoney = !isBool && !nonNum && /price|cost|amount|total|vat_amount|limit|salary|balance|rem_payment|advances|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate/.test(c) && !/rate$/.test(c);
                     const isNum = !isBool && !nonNum && !isMoney && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
                     let cell = v == null || v === '' ? '—' : (isBool ? (v && v !== 0 ? 'Yes' : 'No') : String(v));
                     if (isMoney && v != null && v !== '') cell = fmtUSD(v, 2);
@@ -10874,13 +10921,13 @@
                   const isColNumeric = col => {
                     if (NON_NUMERIC_HUB_COLS.test(col)) return { isM: false, isN: false, num: false };
                     const isBoolCol = /^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|iva$|overtime$)/.test(col);
-                    const isM = !isBoolCol && /price|cost|amount|total|vat_amount|limit|salary|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate/.test(col) && !/rate$/.test(col);
+                    const isM = !isBoolCol && /price|cost|amount|total|vat_amount|limit|salary|balance|rem_payment|advances|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate/.test(col) && !/rate$/.test(col);
                     const isN = !isBoolCol && !isM && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(col);
                     return { isM, isN, num: isM || isN };
                   };
                   const colSpecs = activeCols.map(c => {
                     const spec = isColNumeric(c);
-                    const isAvg = spec.num && /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
+                    const isAvg = spec.num && /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_earned|total_paid|rem_payment|advances|total_spent)$/.test(c);
                     return { c, ...spec, isAvg, sum: 0, cnt: 0 };
                   });
                   let firstNum = colSpecs.findIndex((sp, idx) => idx > 0 && sp.num);
@@ -10983,11 +11030,11 @@
           rows.forEach(r => addGrp(gMap, meta.key === 'equipment' ? `${r.ownership || 'Own'} · ${r.type || 'Truck'}` : (r.truck_owner || 'Company Fleet'), 1, 'units'));
           rightRows = Array.from(gMap.values()).sort((a, b) => b.value - a.value);
         } else if (meta.key === 'staff_members') {
-          leftTitle = 'Top Staff Members by Total Compensation Paid ($)';
+          leftTitle = 'Top Staff Members by Remaining Payment ($)';
           leftRows = rows.map(r => {
-            const paid = Number(cellValue(r, 'total_paid', 'staff_members', rel) || 0);
-            const rate = Number(cellValue(r, 'active_salary_usd', 'staff_members', rel) || 0);
-            return { label: r.name || r.staff, value: paid > 0 ? paid : rate, sub: `${cellValue(r, 'role', 'staff_members', rel) || 'Staff'} · ${cellValue(r, 'companies_list', 'staff_members', rel) || 'All BUs'}` };
+            const rem = Number(cellValue(r, 'rem_payment', 'staff_members', rel) || 0);
+            const earned = Number(cellValue(r, 'total_earned', 'staff_members', rel) || 0);
+            return { label: r.name || r.staff, value: rem > 0.01 ? rem : earned, sub: `${cellValue(r, 'role', 'staff_members', rel) || 'Staff'} · Earned ${fmtUSD(earned, 0)}` };
           }).filter(r => r.value > 0).sort((a, b) => b.value - a.value).slice(0, 10);
           rightTitle = 'Staff Registry by Pay Status';
           rows.forEach(r => addGrp(gMap, cellValue(r, 'salary_status', 'staff_members', rel) || 'Active Contract', 1, 'staff'));
