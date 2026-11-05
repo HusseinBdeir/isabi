@@ -29588,4 +29588,73 @@ body.kiosk-locked .kiosk-att-shell.is-wall-mode .kiosk-att-status {
   }
 }
 
+/* Uniform height, frozen top tabs & pinned bottom footer across all 42 Smart Entry forms */
+#entryModal .modal-card {
+  display: flex;
+  flex-direction: column;
+  height: min(88dvh, 860px);
+  min-height: min(88dvh, 860px);
+  max-height: min(88dvh, 860px);
+  overflow: hidden;
+}
+#entryModal .modal-header,
+#entryModal .modal-tabs,
+#entryModal .entry-unsaved-prompt {
+  flex-shrink: 0;
+}
+#entryModal .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px 0;
+}
+#entryModal .modal-body > * {
+  flex-shrink: 0;
+}
+#entryModal .modal-body > :nth-last-child(2),
+#entryModal .modal-body > :not(.modal-foot):not([hidden]):nth-last-child(1 of :not(.modal-foot):not([hidden])) {
+  margin-bottom: 16px;
+}
+#entryModal .form-grid-3:has(.pa-suggest-wrap.open),
+#entryModal .form-grid-3:has(.pa-select-wrap.open),
+#entryModal .form-grid:has(.pa-suggest-wrap.open),
+#entryModal .form-grid:has(.pa-select-wrap.open) {
+  position: relative;
+  z-index: 20;
+}
+#entryModal .modal-foot {
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+  padding: 14px 0 18px;
+  border-top: 1px solid var(--line);
+  z-index: 6;
+}
+@media (max-width: 1024px) {
+  #entryModal .modal-card {
+    height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
+    min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
+  }
+}
+@media (max-width: 768px) {
+  #entryModal .modal-card {
+    height: calc(100dvh - var(--safe-top) - 6px);
+    min-height: calc(100dvh - var(--safe-top) - 6px);
+    max-height: calc(100dvh - var(--safe-top) - 6px);
+  }
+  #entryModal .modal-body {
+    padding: 12px 14px 0;
+  }
+  #entryModal .modal-foot {
+    margin: auto -14px 0;
+    padding: 10px 14px calc(12px + var(--safe-bottom));
+  }
+}
 
