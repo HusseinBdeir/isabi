@@ -4004,7 +4004,7 @@ th.sortable i:empty { display: none; margin: 0; }
 .void-btn:hover, .void-btn.armed { border-color: var(--crit); color: var(--crit); background: var(--crit-bg); }
 .ledger-table tbody td:first-child { position: relative; }
 .void-btn.row-void-hover { display: none; position: absolute; right: 4px; top: 50%; transform: translateY(-50%); z-index: 3; margin-left: 0; background: var(--surface); box-shadow: 0 1px 4px rgba(11, 23, 48, 0.14); padding: 0 4.5px; }
-td:has(> u.row-sel-dot) > .void-btn.row-void-hover { right: 22px; }
+td.td-has-sel-dot > .void-btn.row-void-hover { right: 22px; }
 .ledger-table tbody tr:hover .void-btn.row-void-hover,
 .void-btn.row-void-hover.armed,
 .void-btn.row-void-hover:focus-visible { display: inline-flex; align-items: center; }
@@ -8280,14 +8280,184 @@ table.ledger-table tfoot tr td:last-child {
   color: #0B1730;
 }
 
-/* Connected Tables & System Views Strip on 34-Table Hub */
+/* ============================================================================
+   3-Tier Universal Registry Deck, Interactive Connected Tables Explorer &
+   Segmented Filter Views Bar (#univRegPanel, #tablesHubPanel, #sitesRegPanel)
+   ============================================================================ */
+.pa-univ-reg-deck {
+  padding: 11px 14px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+}
+.pa-univ-deck-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.pa-univ-deck-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pa-univ-deck-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--brass-tint);
+  color: var(--brass);
+  font-size: 12px;
+}
+.pa-univ-deck-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+.pa-univ-reg-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.pa-univ-reg-grid.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.filter-chip.univ-reg-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 11px;
+  width: 100%;
+  padding: 10px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  border-left: 3.5px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease, background 0.15s ease;
+}
+.filter-chip.univ-reg-card:hover {
+  border-color: var(--brass-border);
+  border-left-color: var(--brass);
+  box-shadow: 0 3px 10px rgba(15, 30, 56, 0.06);
+}
+.filter-chip.univ-reg-card.active {
+  background: var(--surface) !important;
+  color: var(--ink) !important;
+  border-color: var(--brass) !important;
+  border-left: 4px solid var(--brass) !important;
+  box-shadow: 0 4px 14px rgba(184, 130, 40, 0.14);
+}
+.urc-ico {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all 0.15s ease;
+}
+.filter-chip.univ-reg-card.active .urc-ico,
+.filter-chip.univ-reg-card:hover .urc-ico {
+  background: var(--brass-tint);
+  border-color: var(--brass-border);
+  color: var(--brass);
+}
+.urc-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.urc-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.urc-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.2;
+}
+.urc-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1.5px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+.filter-chip.univ-reg-card.active .urc-status-badge {
+  background: var(--brass);
+  color: #0B1730;
+  border-color: var(--brass);
+}
+.urc-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.urc-metric {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  padding-left: 8px;
+  border-left: 1px dashed var(--line);
+}
+.urc-cnt {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.15;
+}
+.filter-chip.univ-reg-card.active .urc-cnt {
+  color: var(--brass);
+}
+.urc-unit {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+/* Connected Tables Relational Strip & Inline Explorer Drawer */
 .pa-hub-rel-strip {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
-  padding: 9px 14px;
+  padding: 7px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+}
+.pa-hub-conns-bar {
+  display: block;
+  padding: 7px 14px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
 }
@@ -8297,13 +8467,372 @@ table.ledger-table tfoot tr td:last-child {
   gap: 6px;
   flex-wrap: wrap;
 }
+.pa-conn-hdr, .pa-views-hdr {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.pa-conn-ico, .pa-views-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  background: var(--brass-tint);
+  color: var(--brass);
+  font-size: 11px;
+}
+.pa-conn-chips {
+  display: contents;
+}
+.pa-conn-hint {
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-left: auto;
+  white-space: nowrap;
+}
 .pa-hub-lbl {
   font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-right: 1px;
+}
+.filter-chip.conn-table-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3.5px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 10.5px;
+  font-weight: 600;
+  transition: all 0.14s ease;
+}
+.filter-chip.conn-table-chip:hover {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+}
+.filter-chip.conn-table-chip.active {
+  background: var(--brass) !important;
+  color: #0B1730 !important;
+  border-color: var(--brass) !important;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(184, 130, 40, 0.18);
+}
+.conn-chip-ico {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12.5px;
+  color: var(--brass);
+}
+.filter-chip.conn-table-chip.active .conn-chip-ico {
+  color: #0B1730;
+}
+.conn-chip-cnt {
+  font-size: 10.5px;
+  opacity: 0.78;
+}
+.conn-chip-chev {
+  font-size: 10px;
+  opacity: 0.72;
+  margin-left: 1px;
+}
+.filter-chip.conn-back-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--brass);
+  background: var(--brass-tint);
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+/* Interactive Connected Table Explorer Drawer (#connTableExplorerCard) */
+.conn-table-explorer-card {
+  margin-top: 8px;
+  border: 1.5px solid var(--brass);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgba(15, 30, 56, 0.08);
+  overflow: hidden;
+}
+.cte-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--brass-tint);
+  border-bottom: 1px solid var(--brass-border);
+}
+.cte-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.cte-ico {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  background: var(--surface);
+  border: 1px solid var(--brass-border);
+  color: var(--brass);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.cte-title-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.cte-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.cte-rel-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: var(--surface);
+  border: 1px solid var(--brass-border);
+  color: var(--ink);
+}
+.cte-active-party-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--brass);
+  color: #0B1730;
+}
+.cte-clear-party-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #0B1730;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.cte-subtitle {
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.cte-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cte-search-input {
+  min-width: 190px;
+  max-width: 240px;
+  height: 30px;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+.cte-btn, .cte-close-btn {
+  padding: 5px 10px !important;
+  font-size: 11.5px !important;
+}
+.cte-filters-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+}
+.cte-party-strip, .cte-views-strip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.cte-sub-lbl {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: var(--muted);
   margin-right: 2px;
+}
+.cte-party-chip, .cte-view-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.cte-party-chip:hover, .cte-view-chip:hover {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+}
+.cte-party-chip.active, .cte-view-chip.active {
+  background: var(--brass);
+  color: #0B1730;
+  border-color: var(--brass);
+  font-weight: 700;
+}
+.cte-table-wrap {
+  max-height: 270px;
+  overflow-y: auto;
+}
+
+/* Unified Table Control Deck & Segmented Views Track */
+.pa-table-control-deck {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.pa-table-control-deck > .pa-hub-views {
+  padding: 7px 14px 4px;
+}
+.pa-table-control-deck > .table-toolbar {
+  border-bottom: 0;
+}
+@media (min-width: 1180px) {
+  .pa-table-control-deck.is-inline-deck {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 14px;
+    flex-wrap: wrap;
+  }
+  .pa-table-control-deck.is-inline-deck > .pa-hub-views {
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .pa-table-control-deck.is-inline-deck > .table-toolbar {
+    padding: 0;
+    flex: 1;
+    justify-content: flex-end;
+    min-width: 340px;
+  }
+}
+.pa-views-segmented-track {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.filter-chip.view-seg-btn {
+  border-radius: 6px !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: var(--muted) !important;
+  padding: 4px 10px !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  transition: all 0.13s ease;
+}
+.filter-chip.view-seg-btn:hover {
+  color: var(--ink) !important;
+  background: var(--surface) !important;
+}
+.filter-chip.view-seg-btn.active {
+  background: var(--brass) !important;
+  color: #0B1730 !important;
+  border-color: var(--brass) !important;
+  font-weight: 700 !important;
+  box-shadow: 0 1px 3px rgba(15, 30, 56, 0.14);
+}
+.view-seg-cnt {
+  opacity: 0.8;
+  font-size: 10.5px;
+}
+.view-lens-reset-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--brass-border);
+  background: var(--brass-tint);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.view-lens-reset-pill:hover {
+  background: var(--brass);
+  color: #0B1730;
+}
+
+/* Inline Interactive Count Pills inside Master Registry Rows */
+.reg-inline-conn-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 1px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: inherit;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.reg-inline-conn-pill:hover {
+  border-color: var(--brass);
+  background: var(--brass-tint);
+  color: var(--ink);
+}
+.reg-inline-conn-pill.active {
+  background: var(--brass);
+  color: #0B1730;
+  border-color: var(--brass);
+  font-weight: 700;
+}
+
+@media (max-width: 960px) {
+  .pa-univ-reg-grid,
+  .pa-univ-reg-grid.cols-3 {
+    grid-template-columns: 1fr;
+  }
+  .pa-conn-hint {
+    display: none;
+  }
 }
 
 @media (max-width: 860px) {
@@ -13759,8 +14288,11 @@ html[data-theme="dark"] .overtime-toggle-btn.is-overtime:hover {
   pointer-events: none !important;
 }
 
-span:has(> .sr-only),
-td:has(> .row-void-hover) {
+.co-tbl-badge,
+.rls-co-chip,
+.pa-lock-pill,
+.has-sr-only,
+.sentinel-meta-row {
   position: relative;
 }
 
@@ -14295,32 +14827,32 @@ table.ledger-table:has(#usersDirectoryTbody) .badge {
   }
 
   /* 10–12 columns (Raw Intake 11-col, Price Agreements 12-col, Sales by Product 10-col, Equipment 10-col) */
-  table.ledger-table:has(thead th:nth-child(10)) th,
-  table.ledger-table:has(thead th:nth-child(10)) td {
+  table.ledger-table.tbl-cols-10 th,
+  table.ledger-table.tbl-cols-10 td {
     padding: 6.5px 6px;
     font-size: 12px;
   }
-  table.ledger-table:has(thead th:nth-child(10)) th {
+  table.ledger-table.tbl-cols-10 th {
     font-size: 10.2px;
     letter-spacing: 0.02em;
     line-height: 1.18;
   }
-  table.ledger-table:has(thead th:nth-child(10)) tfoot tr td {
+  table.ledger-table.tbl-cols-10 tfoot tr td {
     padding: 7px 6px;
     font-size: 11.6px;
   }
-  table.ledger-table:has(thead th:nth-child(10)) th:first-child,
-  table.ledger-table:has(thead th:nth-child(10)) td:first-child {
+  table.ledger-table.tbl-cols-10 th:first-child,
+  table.ledger-table.tbl-cols-10 td:first-child {
     padding-left: 10px;
   }
-  table.ledger-table:has(thead th:nth-child(10)) th:last-child,
-  table.ledger-table:has(thead th:nth-child(10)) td:last-child {
+  table.ledger-table.tbl-cols-10 th:last-child,
+  table.ledger-table.tbl-cols-10 td:last-child {
     padding-right: 10px;
   }
 
   /* 13–15 columns (#salesPanel 15-col, #payStaffRegPanel 15-col, P04 Sales, P05 Pricing, P10 Fleet) */
-  table.ledger-table:has(thead th:nth-child(13)) th,
-  table.ledger-table:has(thead th:nth-child(13)) td {
+  table.ledger-table.tbl-cols-13 th,
+  table.ledger-table.tbl-cols-13 td {
     padding: 6px 4px;
     font-size: 11.6px;
   }
@@ -14433,13 +14965,13 @@ table.ledger-table:has(#usersDirectoryTbody) .badge {
     letter-spacing: 0.005em !important;
     padding: 6px 4px;
   }
-  table.ledger-table:has(thead th:nth-child(13)) th,
+  table.ledger-table.tbl-cols-13 th,
   #salesPanel table.ledger-table th {
     font-size: 9.8px;
     letter-spacing: 0.015em;
     line-height: 1.15;
   }
-  table.ledger-table:has(thead th:nth-child(13)) tfoot tr td {
+  table.ledger-table.tbl-cols-13 tfoot tr td {
     padding: 6.5px 4px;
     font-size: 11.2px;
   }
@@ -14447,66 +14979,66 @@ table.ledger-table:has(#usersDirectoryTbody) .badge {
     padding: 6.5px 3.2px;
     font-size: 10.9px;
   }
-  table.ledger-table:has(thead th:nth-child(13)) th:first-child,
-  table.ledger-table:has(thead th:nth-child(13)) td:first-child,
+  table.ledger-table.tbl-cols-13 th:first-child,
+  table.ledger-table.tbl-cols-13 td:first-child,
   #salesPanel table.ledger-table th:first-child,
   #salesPanel table.ledger-table td:first-child {
     padding-left: 8px;
   }
-  table.ledger-table:has(thead th:nth-child(13)) th:last-child,
-  table.ledger-table:has(thead th:nth-child(13)) td:last-child,
+  table.ledger-table.tbl-cols-13 th:last-child,
+  table.ledger-table.tbl-cols-13 td:last-child,
   #salesPanel table.ledger-table th:last-child,
   #salesPanel table.ledger-table td:last-child {
     padding-right: 8px;
   }
-  table.ledger-table:has(thead th:nth-child(13)) th.sortable i {
+  table.ledger-table.tbl-cols-13 th.sortable i {
     font-size: 8.5px;
     margin-left: 1px;
   }
-  table.ledger-table:has(thead th:nth-child(13)) .badge {
+  table.ledger-table.tbl-cols-13 .badge {
     padding: 2px 5px;
     font-size: 10px;
   }
 
   /* 16–20 columns (P06 AR 17-col, P12 Payroll 17-col, Tables Hub 16–20 col tables) */
-  table.ledger-table:has(thead th:nth-child(16)) th,
-  table.ledger-table:has(thead th:nth-child(16)) td {
+  table.ledger-table.tbl-cols-16 th,
+  table.ledger-table.tbl-cols-16 td {
     padding: 4.5px 2.5px;
     font-size: 10.2px;
   }
-  table.ledger-table:has(thead th:nth-child(16)) th {
+  table.ledger-table.tbl-cols-16 th {
     font-size: 8.8px;
     letter-spacing: 0;
     line-height: 1.1;
   }
-  table.ledger-table:has(thead th:nth-child(16)) tfoot tr td {
+  table.ledger-table.tbl-cols-16 tfoot tr td {
     padding: 5px 2.5px;
     font-size: 10px;
   }
-  table.ledger-table:has(thead th:nth-child(16)) td:not(.r) {
+  table.ledger-table.tbl-cols-16 td:not(.r) {
     overflow-wrap: anywhere;
   }
-  table.ledger-table:has(thead th:nth-child(16)) th:first-child,
-  table.ledger-table:has(thead th:nth-child(16)) td:first-child {
+  table.ledger-table.tbl-cols-16 th:first-child,
+  table.ledger-table.tbl-cols-16 td:first-child {
     padding-left: 6px;
   }
-  table.ledger-table:has(thead th:nth-child(16)) th:last-child,
-  table.ledger-table:has(thead th:nth-child(16)) td:last-child {
+  table.ledger-table.tbl-cols-16 th:last-child,
+  table.ledger-table.tbl-cols-16 td:last-child {
     padding-right: 6px;
   }
-  table.ledger-table:has(thead th:nth-child(16)) th.sortable i {
+  table.ledger-table.tbl-cols-16 th.sortable i {
     font-size: 7.5px;
     margin-left: 1px;
   }
-  table.ledger-table:has(thead th:nth-child(19)) th,
-  table.ledger-table:has(thead th:nth-child(19)) td {
+  table.ledger-table.tbl-cols-19 th,
+  table.ledger-table.tbl-cols-19 td {
     padding: 4px 2px;
     font-size: 9.5px;
   }
-  table.ledger-table:has(thead th:nth-child(19)) th {
+  table.ledger-table.tbl-cols-19 th {
     font-size: 8.2px;
   }
-  table.ledger-table:has(thead th:nth-child(19)) tfoot tr td {
+  table.ledger-table.tbl-cols-19 tfoot tr td {
     padding: 4.5px 2px;
     font-size: 9.3px;
   }
@@ -20421,7 +20953,7 @@ tr.rrow td:first-child {
   z-index: 3;
   box-shadow: 0 1px 3px rgba(11, 23, 48, 0.10);
 }
-.ledger-table tbody td:is(:first-child, .tbl-first-vis-cell):has(.badge-app, .void-btn:not(.row-void-hover)) u.row-sel-dot {
+.ledger-table tbody td.td-has-inline-act:is(:first-child, .tbl-first-vis-cell) u.row-sel-dot {
   position: static;
   right: auto;
   top: auto;

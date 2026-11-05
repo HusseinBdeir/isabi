@@ -71,7 +71,7 @@
   const DEFAULT_VAT_RATE = 0.11;
   const DAY_SHIFT_FROM = 6 * 60;   // m48: Day shift 06:00–17:59, Night otherwise
   const DAY_SHIFT_TO = 17 * 60 + 59;
-  const PAGE = 100;
+  const PAGE = 50;
   const SEED_DATE = String(SEED.generated_at || '').slice(0, 10) || todayISO();
 
   const DEFAULT_FACE_SEEDS = {"husseinbdeir@bhfirms.com":{"face_samples":[[-0.169,0.0957,0.02447,-0.01083,-0.01605,-0.01265,-0.01285,0.01305,0.16293,-0.00247,0.18537,-0.02275,-0.18379,-0.11373,-0.06909,0.10834,-0.17215,-0.10265,-0.07492,-0.10408,0.03489,0.08958,-0.00587,0.01114,-0.21555,-0.31683,0.01363,-0.17853,-0.01956,-0.05454,0.02328,0.14697,-0.12245,-0.07951,0.08886,0.13959,0.0067,0.04685,0.16192,0.05852,-0.09861,0.03626,0.06709,0.4018,0.14416,0.02875,-0.02948,-0.00454,0.15126,-0.30128,0.06839,0.15788,0.06299,0.10197,0.13423,-0.13649,0.03105,0.1076,-0.21299,0.09067,0.0123,-0.00492,-0.01307,-0.07199,0.15052,0.07635,-0.13205,-0.0854,0.08478,-0.10627,-0.01638,0.07514,-0.12526,-0.17893,-0.27692,0.10839,0.40101,0.17221,-0.11297,0.00855,-0.05496,-0.06162,0.04983,0.00362,-0.09221,-0.02117,-0.02133,0.01959,0.15528,0.06835,-0.0789,0.19038,-0.01892,-0.00471,-0.00014,-0.02918,-0.10673,-0.01059,-0.15137,-0.01182,-0.0275,-0.14348,0.01075,0.07753,-0.19627,0.09342,0.0312,-0.00115,-0.02943,0.08622,-0.15597,0.01808,0.15895,-0.2389,0.22638,0.1809,0.13015,0.15414,0.10945,-0.04759,0.00936,0.0304,-0.07792,-0.08275,0.04394,-0.01365,0.01098,0.01834],[-0.16883,0.11814,0.04365,-0.02038,0.00713,-0.00028,-0.02288,0.02827,0.16317,-0.00154,0.17772,-0.02561,-0.19812,-0.10292,-0.06128,0.10394,-0.17322,-0.10372,-0.06128,-0.10099,0.05196,0.0925,-0.01254,0.01547,-0.20707,-0.32557,0.00773,-0.16595,-0.01849,-0.03388,0.00754,0.08677,-0.13169,-0.0855,0.07388,0.13358,0.01447,0.04532,0.14572,0.04454,-0.11175,0.02594,0.07797,0.39198,0.15203,0.03835,-0.04469,0.01417,0.13606,-0.30798,0.09889,0.15397,0.06891,0.09917,0.13286,-0.1549,0.0045,0.11117,-0.20167,0.0877,0.0002,0.00474,-0.01522,-0.07775,0.13716,0.09101,-0.13599,-0.10221,0.086,-0.11138,0.00148,0.06661,-0.11737,-0.1639,-0.28469,0.11272,0.39218,0.15187,-0.11556,0.01052,-0.05437,-0.05126,0.03835,-0.01077,-0.09355,0.00426,-0.02855,0.01945,0.14047,0.06783,-0.07891,0.18325,-0.03841,-0.00891,0.0245,0.00782,-0.11668,-0.01385,-0.16855,-0.01004,-0.01042,-0.16257,-0.0002,0.08176,-0.21665,0.09905,0.04033,-0.00109,-0.01817,0.09932,-0.16437,0.01131,0.18162,-0.22012,0.2204,0.17855,0.11216,0.16313,0.11424,-0.03651,0.00575,0.02879,-0.08728,-0.08903,0.02348,-0.01942,0.01964,0.03569],[-0.20894,0.10548,0.02186,-0.01977,-0.04278,0.009,-0.01835,-0.01417,0.17419,0.02172,0.14651,-0.03694,-0.19444,-0.07989,-0.06672,0.12507,-0.15574,-0.1193,-0.07285,-0.10925,0.01646,0.08559,0.02083,0.01445,-0.22809,-0.35378,0.00995,-0.15591,-0.04722,-0.03763,0.00407,0.15382,-0.15589,-0.0669,0.08981,0.10064,-0.00338,0.06001,0.18511,0.05248,-0.15067,0.04016,0.0796,0.3797,0.16924,0.03236,-0.02729,-0.01394,0.12585,-0.26301,0.07583,0.16929,0.04875,0.062,0.1085,-0.11279,-0.00308,0.08481,-0.17155,0.08064,0.03029,-0.0524,-0.01528,-0.07048,0.14284,0.07948,-0.09325,-0.10876,0.09438,-0.09127,-0.01037,0.06298,-0.12135,-0.20475,-0.27692,0.09712,0.39114,0.16025,-0.13054,0.0443,-0.0514,-0.04999,0.07614,0.02468,-0.09304,-0.00951,-0.01626,0.02426,0.20429,0.04415,-0.09147,0.20275,-0.01078,-0.00297,0.01234,-0.02056,-0.09363,-0.00199,-0.16573,-0.02137,-0.00863,-0.09881,0.03189,0.07979,-0.20869,0.09221,0.03797,0.00361,-0.04124,0.08623,-0.13687,-0.00318,0.14232,-0.2261,0.22805,0.16745,0.10177,0.16495,0.12146,-0.05324,0.03548,0.05331,-0.06618,-0.07041,0.09875,0.00438,0.05261,0.05105]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"},"zeinabrkein@bhfirms.com":{"face_samples":[[-0.10328,0.10045,0.17652,-0.03833,-0.07092,-0.0286,-0.06478,-0.0389,0.2221,-0.11399,0.20044,0.0083,-0.27256,0.14826,-0.07505,0.19771,-0.17022,-0.05534,-0.07734,-0.04771,0.07787,0.06499,0.00856,0.09388,-0.10165,-0.33878,-0.07043,-0.0979,-0.01774,-0.06689,-0.03801,0.05287,-0.08776,0.02529,0.09046,0.08112,0.01505,-0.08566,0.19665,0.04414,-0.20991,0.01726,0.07356,0.1951,0.17903,0.05901,0.02701,-0.14826,0.17081,-0.28203,-0.00611,0.14299,0.05302,0.11252,0.16911,-0.19131,0.04012,0.07891,-0.13802,-0.0069,0.01879,-0.04515,-0.00668,-0.07722,0.20532,0.09113,-0.14449,-0.07692,0.16105,-0.14169,-0.05954,0.07343,-0.10791,-0.14723,-0.1574,0.00914,0.46034,0.15426,-0.21104,0.07263,-0.06044,-0.08198,-0.00048,0.13373,-0.07406,0.02936,0.00052,-0.00671,0.2012,0.0057,0.10816,0.27258,0.00405,0.05987,0.02844,0.00791,-0.17171,-0.0571,-0.16043,-0.11868,-0.0226,-0.01543,0.00261,0.06213,-0.30311,0.12864,-0.05382,-0.08485,0.02222,0.08474,-0.05327,0.00078,0.16594,-0.24362,0.14203,0.15159,-0.00113,0.12178,0.02329,0.09272,0.00346,-0.01778,-0.1146,-0.08605,0.08754,-0.07504,-0.02181,-0.06106],[-0.15546,0.09958,0.12438,-0.08909,-0.12015,0.01572,-0.04119,-0.01384,0.14991,-0.03155,0.25053,-0.01989,-0.23157,0.04526,-0.04799,0.17158,-0.2087,-0.08665,-0.07207,-0.07561,0.07425,0.09425,0.00858,0.06681,-0.20201,-0.32389,-0.04405,-0.0957,0.05795,-0.11124,-0.05731,0.05933,-0.168,-0.0029,0.07261,0.05617,-0.07277,-0.09774,0.17703,0.09699,-0.20588,0.06548,0.08072,0.30269,0.19947,0.0312,0.00853,-0.14244,0.12433,-0.27528,0.01569,0.22335,0.01918,0.08816,0.06638,-0.1601,0.06536,0.09002,-0.24271,0.04138,0.06438,-0.06,-0.02406,-0.06464,0.18376,0.11776,-0.12489,-0.12958,0.14723,-0.08216,-0.02628,0.11263,-0.17226,-0.20441,-0.22492,0.05397,0.38441,0.12613,-0.14906,0.06537,-0.0543,-0.02111,0.04619,0.12563,-0.12733,0.00197,-0.04376,0.10541,0.15878,-0.0188,0.05326,0.27128,0.0542,-0.03021,0.06954,0.09385,-0.18735,-0.06092,-0.16284,-0.10296,0.03871,-0.05151,0.04215,0.14151,-0.23085,0.14306,-0.01309,-0.09234,-0.02499,-0.05212,-0.01096,-0.01852,0.10111,-0.22578,0.17332,0.17342,0.0724,0.1142,0.07246,0.01083,-0.04953,-0.01258,-0.09994,-0.00953,0.07428,-0.04545,0.0275,-0.04624],[-0.10264,0.11677,0.14248,-0.05085,-0.09557,-0.04947,-0.03037,-0.0885,0.17172,-0.12864,0.22292,-0.07374,-0.23499,0.05862,-0.09893,0.15847,-0.2038,-0.05618,-0.11123,-0.02175,0.07294,0.03421,0.03283,0.08376,-0.11342,-0.35171,-0.09612,-0.09475,0.07004,-0.00868,-0.06366,0.07502,-0.08494,-0.0329,0.08244,0.11595,-0.03841,-0.09261,0.18339,-0.02539,-0.2093,0.02156,0.0456,0.22281,0.20889,0.04794,0.03609,-0.18257,0.17969,-0.25351,0.00082,0.18459,0.07084,0.09425,0.1584,-0.15264,0.07248,0.15028,-0.18464,-0.02874,0.02653,-0.07302,0.05252,-0.07012,0.14033,0.05288,-0.14466,-0.06516,0.19743,-0.14817,0.01044,0.07885,-0.11429,-0.1854,-0.24795,0.00472,0.49713,0.19905,-0.13227,0.04636,-0.08981,-0.06809,0.04811,0.10874,-0.12448,-0.04259,-0.07608,0.02195,0.14953,-0.0439,0.07035,0.22668,0.01795,0.02063,0.02702,0.03778,-0.21332,-0.0162,-0.1496,-0.03789,-0.01655,-0.07219,0.00156,0.08554,-0.23739,0.09962,-0.03234,-0.08328,-0.0019,-0.02846,-0.07481,-0.01372,0.1631,-0.25433,0.09921,0.17323,0.0226,0.17518,0.08742,0.05428,-0.00768,-0.07531,-0.11616,-0.07333,0.08838,-0.03546,0.00183,-0.05362]],"face_thumbs":[],"face_required":true,"face_updated_at":"2026-10-21T15:43:00.390Z"}};
@@ -487,7 +487,15 @@
     return list;
   }
 
+  let _companyCatalogCache = null;
+  let _companyCatalogSig = '';
   function getCompanyCatalog() {
+    const uPart = (STATE.users || []).map(u => `${(u && u.id) || ''}:${(u && u.companies) || ''}`).join(';');
+    const mfgCoLen = Array.isArray(window.MFG_COMPANIES) ? window.MFG_COMPANIES.length : 0;
+    const seedCoLen = (SEED && Array.isArray(SEED.companies)) ? SEED.companies.length : 0;
+    const epLen = (STATE.enterpriseScalePreview && Array.isArray(STATE.enterprisePreviewCompanies)) ? STATE.enterprisePreviewCompanies.length : 0;
+    const sig = `${(SEED && SEED._customRev) || 0}|${_WIN_REV}|${mfgCoLen}|${seedCoLen}|${epLen}|${uPart}`;
+    if (_companyCatalogCache && _companyCatalogSig === sig) return _companyCatalogCache;
     const out = [];
     const seen = new Set();
     const pushCo = (raw) => {
@@ -527,6 +535,8 @@
         out.sort((a, b) => (coFreq.get(norm(b.name)) || 0) - (coFreq.get(norm(a.name)) || 0));
       }
     }
+    _companyCatalogSig = sig;
+    _companyCatalogCache = out;
     return out;
   }
 
@@ -2092,7 +2102,7 @@
   function isApSettlingSettlement(sp) {
     if (!sp || sp.voided) return false;
     const m = String(sp.method || '').trim();
-    return !(m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'VAT' || m === 'VATConfig' || m === 'VAT Dis' || m === 'Cash VAT Dis' || m === 'IVA' || m === 'Commission' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent');
+    return !(m === 'JV Adjusted' || m === 'Remove' || m === 'Adjusted' || m === 'Free' || m === 'Cash Return' || m === 'Cash Discount' || m === 'Cash VAT Dis' || m === 'IVA' || m === 'Commission' || m === 'RentConfig' || m === 'Rent' || m === 'VATRent');
   }
 
   function resolveModelKeyFromObj(m) {
@@ -2240,12 +2250,12 @@
         if (hasMat) {
           const st = ensureSupp(tMk, matOwner);
           if (rSgn > 0) st.raw_loads += 1;
-          st.ap_material += costVal;
+          st.raw_mat_cost += costVal;
         }
         if (hasHaul) {
           const st = ensureSupp(tMk, haulOwner);
           if (!hasMat || norm(haulOwner) !== norm(matOwner)) st.raw_loads += 1;
-          st.ap_haulage += haulVal;
+          st.raw_haulage += haulVal;
         }
       }
     }
@@ -2265,26 +2275,33 @@
       for (const tMk of [mk, 'manufacturing-group']) {
         const st = ensureSupp(tMk, supName);
         st.expenses += amt;
-        if (isCr) st.ap_expense += amt;
         if (isCa) st.cash_expense += amt;
       }
     }
 
-    for (let i = 0; i < spays.length; i++) {
-      const sp = spays[i];
-      if (!sp || sp.voided || !sp.supplier || !isCoAllowed(sp.company)) continue;
-      if (offScope && !isOfficialRecord(sp, 'settlements')) continue;
-      const settlesAp = isApSettlingSettlement(sp);
-      const isPay = settlementKind(sp) === 'Payment';
-      if (!settlesAp && !isPay) continue;
-      const tot = Number(sp.amount || 0) + Number(sp.discount || 0);
-      const mk = coToMk(sp.company);
-      for (const tMk of [mk, 'manufacturing-group']) {
-        const st = ensureSupp(tMk, sp.supplier);
-        if (settlesAp) st.ap_settled += tot;
-        if (isPay) st.settlements_paid += tot;
-      }
-    }
+    MODEL_KEYS.forEach(mk => {
+      const legBrk = computeThreeLegPayablesBreakdown({ company: mk, ignorePeriod: true, _noMemo: true });
+      if (!legBrk || !legBrk.byNorm) return;
+      legBrk.byNorm.forEach((lr, sn) => {
+        const cur = ensureSupp(mk, lr.supplier || sn);
+        const apMat = round2(lr.quarry_cr || 0);
+        const apHaul = round2(lr.trans_cr || 0);
+        const apExp = round2((lr.exp_cr_usd || 0) - (lr.exp_ret_other_usd || 0) + (lr.exp_vat_cr_usd || 0));
+        const apSet = round2((lr.quarry_pd || 0) + (lr.trans_pd || 0) + (lr.exp_pd_usd || 0) + (lr.exp_vat_pd_usd || 0));
+        cur.ap_material = apMat;
+        cur.ap_haulage = apHaul;
+        cur.ap_expense = apExp;
+        cur.ap_settled = apSet;
+        cur.settlements_paid = apSet;
+        cur.quarry_rem = round2(lr.quarry_rem || 0);
+        cur.trans_rem = round2(lr.trans_rem || 0);
+        cur.exp_rem_usd = round2(lr.exp_rem_usd || 0);
+        cur.exp_vat_rem_usd = round2(lr.exp_vat_rem_usd || 0);
+        cur.exp_rem_lbp = Math.round(lr.exp_rem_lbp || 0);
+        cur.exp_rem_ttc = round2(lr.exp_rem_ttc || 0);
+        cur.ap_balance = round2(cur.quarry_rem + cur.trans_rem + cur.exp_rem_ttc);
+      });
+    });
 
     _canonCpCacheKey = cacheKey;
     _canonCpCacheVal = { hasSales, hasAp, custByModel, suppByModel, monthlyTxByModel, monthlyRepByModel };
@@ -3485,11 +3502,14 @@
 
     const exps = recs.expenses || [];
     const maxExpDateByCo = {};
+    const maxWbExpDateByCo = {};
     for (let i = 0; i < exps.length; i++) {
       const x = exps[i];
       if (!x || x.voided || !isCoInScope(x.company)) continue;
-      if (x.date && (!maxExpDateByCo[x.company] || x.date > maxExpDateByCo[x.company])) {
-        maxExpDateByCo[x.company] = String(x.date).slice(0, 10);
+      if (x.date) {
+        const d10 = String(x.date).slice(0, 10);
+        if (!maxExpDateByCo[x.company] || d10 > maxExpDateByCo[x.company]) maxExpDateByCo[x.company] = d10;
+        if (!isAppRecord(x) && (!maxWbExpDateByCo[x.company] || d10 > maxWbExpDateByCo[x.company])) maxWbExpDateByCo[x.company] = d10;
       }
       if (offScope && !isOfficialRecord(x, 'expenses')) continue;
       if (!inRange(x.date, x.rep_date)) continue;
@@ -3530,7 +3550,7 @@
       const isAppRec = isAppRecord(rx);
       const openCap = isAppRec
         ? ((!maxExpDateByCo[rx.company] || todayISO() > maxExpDateByCo[rx.company]) ? todayISO() : maxExpDateByCo[rx.company])
-        : (maxExpDateByCo[rx.company] || '2026-11-03');
+        : (maxWbExpDateByCo[rx.company] || maxExpDateByCo[rx.company] || '2026-11-04');
       const eIso = /^\d{4}-\d{2}-\d{2}$/.test(rawEnd) ? rawEnd : openCap;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(sIso) || !/^\d{4}-\d{2}-\d{2}$/.test(eIso) || sIso > eIso) continue;
       const [sy, sm0, sd0] = sIso.split('-').map(Number);
@@ -3671,7 +3691,7 @@
 
   function getScopedModelSuppliers(mOverride) {
     const m = mOverride || getModel();
-    const mdlSups = m.suppliers || [];
+    const mdlSups = (m.suppliers || []).filter(s => s && s.Supplier);
     const range = periodRange(STATE.period);
     const mk = resolveModelKeyFromObj(m);
     const isMfgModel = ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].includes(mk);
@@ -3681,25 +3701,27 @@
     if (!range) {
       if (canonMap) {
         const seenSupNorm = new Set();
-        const out = mdlSups.filter(s => !offScope || canonMap.has(norm(s.Supplier || '(Unassigned Supplier)')) || isOfficialSupplierName(s.Supplier)).map(s => {
+        const out = mdlSups.filter(s => !offScope || canonMap.has(normSupPayable(s.Supplier || '(Unassigned Supplier)')) || isOfficialSupplierName(s.Supplier)).map(s => {
           const sName = s.Supplier || '(Unassigned Supplier)';
-          const sk = norm(sName);
+          const sk = normSupPayable(sName);
           if (sk) seenSupNorm.add(sk);
           const st = canonMap.get(sk);
+          const rawMat = st ? round2(st.raw_mat_cost != null ? st.raw_mat_cost : st.ap_material) : 0;
+          const rawHaul = st ? round2(st.raw_haulage != null ? st.raw_haulage : st.ap_haulage) : 0;
           const mat = st ? round2(st.ap_material) : 0;
           const haul = st ? round2(st.ap_haulage) : 0;
           const exp = st ? round2(st.ap_expense) : 0;
           const onCr = round2(mat + haul + exp);
           const settled = st ? round2(st.ap_settled) : 0;
           const paid = st ? round2(st.settlements_paid) : 0;
-          const bal = round2(onCr - settled);
+          const bal = st && st.ap_balance != null ? round2(st.ap_balance) : round2(onCr - settled);
           return Object.assign({}, s, {
             Supplier: sName,
             IVA: s.IVA || 'No',
             raw_loads: st ? st.raw_loads : 0,
-            raw_mat_cost: mat,
-            raw_haulage: haul,
-            raw_cost: round2(mat + haul),
+            raw_mat_cost: rawMat,
+            raw_haulage: rawHaul,
+            raw_cost: round2(rawMat + rawHaul),
             ap_material: mat,
             ap_haulage: haul,
             ap_expense: exp,
@@ -3707,28 +3729,36 @@
             ap_on_credit: onCr,
             ap_settled: settled,
             settlements_paid: paid,
+            quarry_rem: st ? round2(st.quarry_rem || 0) : 0,
+            trans_rem: st ? round2(st.trans_rem || 0) : 0,
+            exp_rem_usd: st ? round2(st.exp_rem_usd || 0) : 0,
+            exp_vat_rem_usd: st ? round2(st.exp_vat_rem_usd || 0) : 0,
+            exp_rem_lbp: st ? Math.round(st.exp_rem_lbp || 0) : 0,
+            exp_rem_ttc: st ? round2(st.exp_rem_ttc || 0) : 0,
             opening_ap: 0,
             ap_balance: bal
           });
         });
         canonMap.forEach((st, sk) => {
           if (!sk || seenSupNorm.has(sk)) return;
+          const rawMat = round2(st.raw_mat_cost != null ? st.raw_mat_cost : st.ap_material);
+          const rawHaul = round2(st.raw_haulage != null ? st.raw_haulage : st.ap_haulage);
           const mat = round2(st.ap_material);
           const haul = round2(st.ap_haulage);
           const exp = round2(st.ap_expense);
           const onCr = round2(mat + haul + exp);
           const settled = round2(st.ap_settled);
           const paid = round2(st.settlements_paid);
-          const bal = round2(onCr - settled);
-          if (st.raw_loads === 0 && Math.abs(onCr) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(paid) <= 0.005) return;
+          const bal = st.ap_balance != null ? round2(st.ap_balance) : round2(onCr - settled);
+          if (st.raw_loads === 0 && Math.abs(onCr) <= 0.005 && Math.abs(settled) <= 0.005 && Math.abs(paid) <= 0.005 && Math.abs(bal) <= 0.005) return;
           const supInfo = String(st.displayName || '').startsWith('(') ? null : supplierInfo(st.displayName);
           out.push({
             Supplier: st.displayName || sk,
             IVA: supInfo && supInfo.iva ? 'Yes' : 'No',
             raw_loads: st.raw_loads,
-            raw_mat_cost: mat,
-            raw_haulage: haul,
-            raw_cost: round2(mat + haul),
+            raw_mat_cost: rawMat,
+            raw_haulage: rawHaul,
+            raw_cost: round2(rawMat + rawHaul),
             ap_material: mat,
             ap_haulage: haul,
             ap_expense: exp,
@@ -3736,6 +3766,12 @@
             ap_on_credit: onCr,
             ap_settled: settled,
             settlements_paid: paid,
+            quarry_rem: round2(st.quarry_rem || 0),
+            trans_rem: round2(st.trans_rem || 0),
+            exp_rem_usd: round2(st.exp_rem_usd || 0),
+            exp_vat_rem_usd: round2(st.exp_vat_rem_usd || 0),
+            exp_rem_lbp: Math.round(st.exp_rem_lbp || 0),
+            exp_rem_ttc: round2(st.exp_rem_ttc || 0),
             opening_ap: 0,
             ap_balance: bal
           });
@@ -5237,7 +5273,16 @@
       }
     }
     if (r[colKey] !== undefined && r[colKey] !== null && r[colKey] !== '') return r[colKey];
-    if (colKey in r && view && !view.startsWith('ureg_') && !view.startsWith('tbl_') && colKey !== 'category1' && colKey !== 'category' && colKey !== 'notes' && colKey !== 'uom' && colKey !== 'odometer' && colKey !== 'hours') return r[colKey];
+    if (view && !view.startsWith('ureg_') && !view.startsWith('tbl_')) {
+      if (colKey in r && colKey !== 'category1' && colKey !== 'category' && colKey !== 'notes' && colKey !== 'uom' && colKey !== 'odometer' && colKey !== 'hours') return r[colKey];
+      const tkFast = viewToTableKey(view);
+      if (
+        (tkFast === 'sales_tickets' || tkFast === 'raw_purchases' || tkFast === 'expenses' || tkFast === 'attendance' || tkFast === 'receipts' || tkFast === 'settlements' || tkFast === 'warehouse_movements' || tkFast === 'part_movements' || tkFast === 'equipment_defects' || tkFast === 'equipment_repairs' || tkFast === 'equipment_oil_logs' || tkFast === 'freelance_sheets' || tkFast === 'overtime_rates' || tkFast === 'jv_distributions' || tkFast === 'external_movements') &&
+        colKey !== 'set_date' && colKey !== 'tx_date' && colKey !== 'category1' && colKey !== 'category' && colKey !== 'notes' && colKey !== 'payable_leg' && colKey !== 'cost_class' && colKey !== 'counterparty' && colKey !== 'loan' && colKey !== 'direction' && colKey !== 'start_date' && colKey !== 'kind' && colKey !== 'total_ttc' && colKey !== 'vat' && colKey !== 'code' && colKey !== 'gps_status' && colKey !== 'supply_mode' && colKey !== 'uom' && colKey !== 'odometer' && colKey !== 'hours'
+      ) {
+        return r[colKey];
+      }
+    }
     if (window.MFG_PBI && typeof window.MFG_PBI.cellValue === 'function') {
       const tk = viewToTableKey(view);
       const rel = window.MFG_PBI.getHubRelIndex ? window.MFG_PBI.getHubRelIndex(SEED) : null;
@@ -6581,6 +6626,7 @@
       { id: 'enter_accounting', label: 'Enter Receipts, Expenses, Settlements & Pending Invoice Prices', sub: 'FIFO Customer Receipts, Cash/Credit Operating Expenses, Pending Supplier Invoice Prices & 3-Leg Supplier AP Settlements', badge: 'ENTER ACCT' },
       { id: 'enter_master', label: 'Enter Payroll, Workforce, Pricing Agreements & Universal Registries', sub: 'Monthly Salaries, Contracts, Freelance, Attendance, Site Transport & OT Rates + Universal Customers, Suppliers, Products, Sites, Equipment & Price Agreements', badge: 'ENTER MASTER' },
       { id: 'enter_payroll_jv', label: 'Enter Confidential Treasury, Partner Loans, FX & JV Splits', sub: 'Partner Loans, Loan Settlements, External Cash Movements, FX Conversions & 50/50 JV Vouchers', badge: 'ENTER TREASURY' },
+      { id: 'modify_text', label: 'Edit Words & Text Only (Numbers Locked to Supervisor)', sub: 'Edit names, drivers, truck owners, sites, categories, notes & dates on posted records while locking all quantities, capacities, prices & amounts to Supervisor', badge: 'EDIT WORDS ONLY' },
       { id: 'modify_data', label: 'Modify Posted Records (360° Inspector & Inline Edit)', sub: 'Edit posted quantities, unit prices, references & 5-state part custody via the 360° Modify Drawer', badge: 'MODIFY DATA' },
       { id: 'void_data', label: 'Void / Delete Posted Records (With 1-Click Undo)', sub: 'Void or delete records via multi-device cloud tombstones & instant 1-click Undo', badge: 'VOID DATA' },
       { id: 'manage_users', label: 'Administer Team Seats, Company RLS, Permissions & Face ID', sub: 'Create/edit login seats, PINs, Assigned Companies (RLS), custom role matrices & Face ID liveness policies', badge: 'ADMIN SEATS' }
@@ -6642,7 +6688,7 @@
       badgeCls: 'badge-ok',
       defaultAccess: 'full|full',
       summary: 'Complete access across every operational and financial hub, AI Sentinel, dashboard, and statement. Can create, modify, or void any record, override any locked field without a PIN, and manage user seats.',
-      rights: { read_ops: true, read_fin: true, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: true, modify_data: true, void_data: true, manage_users: true },
+      rights: { read_ops: true, read_fin: true, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: true, modify_text: true, modify_data: true, void_data: true, manage_users: true },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: true, unlock_method: true, unlock_fleet_cascade: true, unlock_site_owner: true, unlock_vat_serial: true, unlock_formula_totals: true },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: true },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: true }
@@ -6655,7 +6701,7 @@
       badgeCls: 'badge-ok',
       defaultAccess: 'full|full',
       summary: 'Full visibility across operational and financial hubs. Enters daily transactions, modifies or voids posted records, and overrides locked pricing or capacity fields without an Admin PIN, without altering user security.',
-      rights: { read_ops: true, read_fin: true, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: true, modify_data: true, void_data: true, manage_users: false },
+      rights: { read_ops: true, read_fin: true, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: true, modify_text: true, modify_data: true, void_data: true, manage_users: false },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: true, unlock_method: true, unlock_fleet_cascade: true, unlock_site_owner: true, unlock_vat_serial: true, unlock_formula_totals: true },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: true },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: true }
@@ -6668,7 +6714,7 @@
       badgeCls: 'badge-info',
       defaultAccess: 'full|full',
       summary: 'Monitors all hubs, AI Sentinels, executive dashboards, and printable statements without creating or editing daily entries. Can void erroneous records and authorize price or capacity overrides.',
-      rights: { read_ops: true, read_fin: true, enter_dispatch: false, enter_accounting: false, enter_master: false, enter_payroll_jv: false, modify_data: false, void_data: true, manage_users: false },
+      rights: { read_ops: true, read_fin: true, enter_dispatch: false, enter_accounting: false, enter_master: false, enter_payroll_jv: false, modify_text: false, modify_data: false, void_data: true, manage_users: false },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: true, unlock_method: true, unlock_fleet_cascade: true, unlock_site_owner: true, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: true },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: true }
@@ -6680,8 +6726,8 @@
       tierBadge: 'ENTRY OPERATOR',
       badgeCls: 'badge-brass',
       defaultAccess: 'partial|partial',
-      summary: 'Creates daily dispatch tickets, quarry intakes, fuel logs, expenses, payroll entries (salaries, attendance, site transport, and contracts), and cash till / treasury transactions (external entries, loans, loan settlements, and FX conversions), and adds pending supplier invoice prices on unpriced deliveries. Cannot void or overwrite posted quantities, hides General Ledger, and requires Admin PIN on locked fields.',
-      rights: { read_ops: true, read_fin: false, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: false, modify_data: false, void_data: false, manage_users: false },
+      summary: 'Creates daily dispatch tickets, quarry intakes, fuel logs, expenses, payroll entries (salaries, attendance, site transport, and contracts), and cash till / treasury transactions (external entries, loans, loan settlements, and FX conversions), edits words/text/assignments on posted records while locking all numbers to Supervisor, and adds pending supplier invoice prices on unpriced deliveries.',
+      rights: { read_ops: true, read_fin: false, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: false, modify_text: true, modify_data: false, void_data: false, manage_users: false },
       unlocks: { unlock_unit_price: false, unlock_trans_price: false, unlock_qty_cap: false, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: false, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: true, dash_financial_gl: false },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: false }
@@ -6694,7 +6740,7 @@
       badgeCls: 'badge-info',
       defaultAccess: 'partial|full',
       summary: 'Dedicated to Sales & Receivables, Customer Statements, Commercial Pricing, and 11% VAT Invoices. Hides Quarry Purchases, Fleet & Fuel, Payroll, and General Ledger.',
-      rights: { read_ops: true, read_fin: false, enter_dispatch: false, enter_accounting: true, enter_master: false, enter_payroll_jv: false, modify_data: false, void_data: false, manage_users: false },
+      rights: { read_ops: true, read_fin: false, enter_dispatch: false, enter_accounting: true, enter_master: false, enter_payroll_jv: false, modify_text: false, modify_data: false, void_data: false, manage_users: false },
       unlocks: { unlock_unit_price: false, unlock_trans_price: false, unlock_qty_cap: false, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: false, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: false, dash_expenses_vat: false, dash_payroll_hr: false, dash_financial_gl: false },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: true, stmt_financial_board: true }
@@ -6707,7 +6753,7 @@
       badgeCls: 'badge-brass',
       defaultAccess: 'custom|custom',
       summary: 'Tailored seat profile. Pick exact read/create/modify/void rights, specific locked form fields this user can override without an Admin PIN, and individual dashboard and statement suites.',
-      rights: { read_ops: true, read_fin: false, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: false, modify_data: true, void_data: true, manage_users: false },
+      rights: { read_ops: true, read_fin: false, enter_dispatch: true, enter_accounting: true, enter_master: true, enter_payroll_jv: false, modify_text: true, modify_data: true, void_data: true, manage_users: false },
       unlocks: { unlock_unit_price: true, unlock_trans_price: true, unlock_qty_cap: true, unlock_uom: false, unlock_method: false, unlock_fleet_cascade: true, unlock_site_owner: false, unlock_vat_serial: false, unlock_formula_totals: false },
       dashboards: { dash_overview: true, dash_commercial: true, dash_plant_fleet: true, dash_expenses_vat: true, dash_payroll_hr: false, dash_financial_gl: false },
       statements: { stmt_digest_ops: true, stmt_counterparty: true, stmt_vouchers: true, stmt_payroll: false, stmt_financial_board: false }
@@ -6778,10 +6824,13 @@
     PERM_CATALOG.rights.forEach(r => {
       if (isCustomRole && rawCustom.rights && r.id in rawCustom.rights) {
         rights[r.id] = !!rawCustom.rights[r.id];
+      } else if (r.id === 'modify_text' && rawCustom.rights && typeof rawCustom.rights.modify_text === 'boolean') {
+        rights[r.id] = !!rawCustom.rights.modify_text;
       } else {
         rights[r.id] = !!preset.rights[r.id];
       }
     });
+    if (rights.modify_data) rights.modify_text = true;
 
     const unlocks = {};
     PERM_CATALOG.unlocks.forEach(ul => {
@@ -6904,6 +6953,94 @@
     u = u || activeUser();
     return !!getEffectivePermissions(u).rights.modify_data;
   }
+  function canModifyTextOnly(u) {
+    u = u || activeUser();
+    const r = getEffectivePermissions(u).rights;
+    return !!(r.modify_text && !r.modify_data);
+  }
+  function canModifyRecord(u) {
+    u = u || activeUser();
+    const r = getEffectivePermissions(u).rights;
+    return !!(r.modify_data || r.modify_text);
+  }
+  const WORD_EDITABLE_ID_KEY_RE = /^(id|name|code|ticket_no|origin_ticket_no|invoice_no|invoice|external_invoice|vat_invoice|voucher|reference|phone|contact|mof_no|financial_no|plate_no|serial_no)$/i;
+  const WORD_LOCK_NUMERIC_KEY_RE = /^(qty|external_qty|capacity|truck_size|ton_factor|min_stock|qty1|qty2|hours|extra_hours|worked_hours|regular_hours|overtime_hours|late_hours|leave_days|tally|days_count|working_days|working_hours|vacation_days|overtime_multiplier|unit_price|trans_unit_price|price|trans_price|indiff_price|trans_indiff_price|unit_cost|trans_unit_cost|cost|trans_cost|amount|usd_amount|lbp_amount|usd_delta|lbp_delta|total|total_ttc|total1|total2|vat|net_amount|vat_amount|discount|tip|list_price|default_cost|adj1|trans_adj1|adj2|trans_adj2|salary_usd|daily_rate|base_salary|reimbursement|deduction|extra_usd|rate_usd|daily_usd|principal|interest_rate|exchange_rate|fx_rate|rate|vat_percent|vat_fx_rate|percentage|jv_share|difference|warehouse_parts_usd|outside_parts_usd|external_labor_usd|total_cost_usd|line_total|total_cost|new_part_cost|repair_cost|sale_proceeds|cost_usd|credit_days|credit_limit|litres|liters|odometer|meter_reading|hours_reading|odometer_km|interval_hours|interval_km|interval_days|latitude|longitude|radius_km|distance_km|est_km|est_round_trip_km|decimals|price_pending|salary_pending)$/i;
+  const WORD_LOCK_MODAL_ID_SET = new Set([
+    'f_qty', 'f_extqty', 'f_uom', 'f_rateper', 'f_unitprice', 'f_transunitprice', 'f_discount', 'f_tip',
+    'f_mat_total', 'f_trans_total', 'f_total_usd', 'f_amount', 'f_vat', 'f_net', 'f_total',
+    'f_usd', 'f_lbp', 'f_fxrate', 'f_rate', 'f_vatpct', 'f_vatfx',
+    'f_days', 'f_hours', 'f_sched_hours', 'f_worked_hours', 'f_ot_hours', 'f_late_hours', 'f_leave_days',
+    'f_share', 'f_qty1', 'f_adj1', 'f_transadj1', 'f_qty2', 'f_adj2', 'f_transadj2',
+    'f_trucksize', 'f_capacity', 'f_tonfactor', 'f_minstock', 'f_listprice', 'f_defaultcost',
+    'f_wh_cost', 'f_new_part_cost', 'f_repair_cost', 'f_sale_proceeds', 'f_out_parts', 'f_out_labor', 'f_new_cost',
+    'f_salary', 'f_dailyrate', 'f_reimb', 'f_deduction', 'f_workdays', 'f_workhours', 'f_vacdays', 'f_otmult',
+    'f_principal', 'f_interest', 'f_creditdays', 'f_creditlimit',
+    'f_litres', 'f_odometer', 'f_meter', 'f_interval_hrs', 'f_interval_km', 'f_interval_days',
+    'f_lat', 'f_lng', 'f_radius', 'f_distance_km', 'f_return_rt_km', 'f_decimals',
+    'f_price_pending', 'f_raw_price_pending', 'f_salary_pending'
+  ]);
+  function isNumericInspectorField(fKey, fDef, row) {
+    const k = String(fKey || '').trim();
+    if (!k || WORD_EDITABLE_ID_KEY_RE.test(k)) return false;
+    if (fDef && fDef.type === 'number') return true;
+    if (WORD_LOCK_NUMERIC_KEY_RE.test(k)) return true;
+    if (row && typeof row[k] === 'number') return true;
+    return false;
+  }
+  function enforceStrictNumericLockFromOrig(orig, updated) {
+    if (!orig || !updated) return updated;
+    Object.keys(orig).forEach(k => {
+      if (WORD_EDITABLE_ID_KEY_RE.test(k)) return;
+      if (typeof orig[k] === 'number' || WORD_LOCK_NUMERIC_KEY_RE.test(k) || k.endsWith('_indiff')) {
+        updated[k] = orig[k];
+      }
+    });
+    Object.keys(updated).forEach(k => {
+      if (WORD_EDITABLE_ID_KEY_RE.test(k)) return;
+      if (!(k in orig) && (typeof updated[k] === 'number' || WORD_LOCK_NUMERIC_KEY_RE.test(k))) {
+        delete updated[k];
+      }
+    });
+    return updated;
+  }
+  function isModalControlNumericLocked(el) {
+    if (!el) return false;
+    const id = String(el.id || '').trim();
+    if (id && WORD_EDITABLE_ID_KEY_RE.test(id.replace(/^f_/, ''))) return false;
+    if (el.type === 'number') return true;
+    if (id && WORD_LOCK_MODAL_ID_SET.has(id)) return true;
+    const expSubField = el.getAttribute && (el.getAttribute('data-exp-item-field') || el.getAttribute('data-rep-item-field'));
+    if (expSubField && /^(qty|unit_cost|uom)$/i.test(expSubField)) return true;
+    return false;
+  }
+  function applyWordOnlyModalNumberLocks(root) {
+    const host = root || $('modalBody') || $('entryModal');
+    if (!host || !STATE.editingRecord || !STATE.editingRecord.id || !canModifyTextOnly()) return false;
+    let restoredAny = false;
+    host.querySelectorAll('input, select, textarea').forEach(el => {
+      if (!isModalControlNumericLocked(el)) return;
+      if (el.dataset && el.dataset.initVal !== undefined && String(el.value ?? '') !== String(el.dataset.initVal)) {
+        el.value = el.dataset.initVal;
+        restoredAny = true;
+      }
+      el.readOnly = true;
+      el.disabled = true;
+      el.classList.add('pa-locked-input');
+      const wrap = el.closest && el.closest('.form-field');
+      const lbl = wrap && wrap.querySelector ? wrap.querySelector('label') : null;
+      if (lbl && !lbl.querySelector('.pa-lock-pill')) {
+        const pill = document.createElement('span');
+        pill.className = 'pa-lock-pill locked';
+        pill.setAttribute('data-word-only-sup-pill', '1');
+        pill.textContent = '🔒 Supervisor Only';
+        lbl.appendChild(pill);
+      }
+    });
+    host.querySelectorAll('#uomQuickPills button, #rawPriceModePills button, #expPriceModePills button, #salPendingModePills button, #addExpItemRowBtn, [data-del-exp-item], #addRepItemRowBtn, [data-del-rep-item], [data-form-quickfill], [data-sal-quick], [data-conv-usd-preset], [data-loan-settle-pct], [data-loan-usd-preset], #originEditKmBtn').forEach(btn => {
+      btn.disabled = true;
+    });
+    return restoredAny;
+  }
   function canUnlockField(fieldId, u) {
     u = u || activeUser();
     if (isAdminUser(u)) return true;
@@ -6930,8 +7067,8 @@
   };
 
   const UNIV_REGISTRY_GROUPS = {
-    reg_customers: ['customers', 'suppliers'],
-    reg_suppliers: ['customers', 'suppliers'],
+    reg_customers: ['customers', 'suppliers', 'staff_members'],
+    reg_suppliers: ['customers', 'suppliers', 'staff_members'],
     reg_products: ['products', 'product_types', 'uoms'],
     reg_items: ['items', 'uoms'],
     reg_categories: ['expense_categories', 'expense_subcategories'],
@@ -7005,13 +7142,26 @@
     return ghostCnt > 0 ? { text: `${fmtNum(ghostCnt)} Alert${ghostCnt === 1 ? '' : 's'}`, cls: 'warn' } : null;
   }
 
+  let _pendRawCache = null;
+  let _pendRawSig = '';
   function getScopedPendingPriceRaw(opts) {
+    const isDefaultIgnoreSearch = !opts || (Object.keys(opts).length === 1 && opts.ignoreSearch === true);
+    const rawArr = (SEED && SEED.records && SEED.records.raw_purchases) || [];
+    const sig = isDefaultIgnoreSearch
+      ? `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._tableRev && SEED._tableRev.raw_purchases) || 0}|${rawArr.length}|${_WIN_REV}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${isOfficialScopeActive() ? 1 : 0}|${(STATE.allowedCompanyNames || []).join(',')}`
+      : '';
+    if (isDefaultIgnoreSearch && _pendRawCache && _pendRawSig === sig) return _pendRawCache;
     const filterOpts = opts || { ignoreSearch: true };
-    const rows = filterRecords((SEED && SEED.records && SEED.records.raw_purchases) || [], filterOpts)
+    const rows = filterRecords(rawArr, filterOpts)
       .filter(isPendingPriceRaw)
       .slice()
       .sort((a, b) => String(recordDate(b) || b.date || '').localeCompare(String(recordDate(a) || a.date || '')));
-    return { rows, count: rows.length };
+    const res = { rows, count: rows.length };
+    if (isDefaultIgnoreSearch) {
+      _pendRawSig = sig;
+      _pendRawCache = res;
+    }
+    return res;
   }
 
   function getPendingRawPriceExceptionBadge(u, targetView) {
@@ -7023,9 +7173,17 @@
     return pend.count > 0 ? { text: `${fmtNum(pend.count)} Pending`, cls: 'warn' } : null;
   }
 
+  let _pendExpCache = null;
+  let _pendExpSig = '';
   function getScopedPendingPriceExpenses(opts) {
+    const isDefaultIgnoreSearch = !opts || (Object.keys(opts).length === 1 && opts.ignoreSearch === true);
+    const expArr = (SEED && SEED.records && SEED.records.expenses) || [];
+    const sig = isDefaultIgnoreSearch
+      ? `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._tableRev && SEED._tableRev.expenses) || 0}|${expArr.length}|${_WIN_REV}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${isOfficialScopeActive() ? 1 : 0}|${(STATE.allowedCompanyNames || []).join(',')}`
+      : '';
+    if (isDefaultIgnoreSearch && _pendExpCache && _pendExpSig === sig) return _pendExpCache;
     const filterOpts = opts || { ignoreSearch: true };
-    const rows = filterRecords((SEED && SEED.records && SEED.records.expenses) || [], filterOpts)
+    const rows = filterRecords(expArr, filterOpts)
       .filter(isPendingPriceExpense)
       .slice()
       .sort((a, b) => String(recordDate(b) || b.date || '').localeCompare(String(recordDate(a) || a.date || '')));
@@ -7048,7 +7206,12 @@
         bySup.set(sk, cur);
       }
     });
-    return { rows, count: rows.length, dieselCount, dieselLitres: round2(dieselLitres), bySup };
+    const res = { rows, count: rows.length, dieselCount, dieselLitres: round2(dieselLitres), bySup };
+    if (isDefaultIgnoreSearch) {
+      _pendExpSig = sig;
+      _pendExpCache = res;
+    }
+    return res;
   }
 
   function getPendingPriceExceptionBadge(u, targetView) {
@@ -7126,13 +7289,26 @@
     `;
   }
 
+  let _pendSalEmpCache = null;
+  let _pendSalEmpSig = '';
   function getScopedPendingSalaryEmployments(opts) {
+    const isDefaultIgnoreSearch = !opts || (Object.keys(opts).length === 1 && opts.ignoreSearch === true);
+    const empArr = (SEED && SEED.records && SEED.records.employments) || [];
+    const sig = isDefaultIgnoreSearch
+      ? `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._tableRev && SEED._tableRev.employments) || 0}|${empArr.length}|${_WIN_REV}|${STATE.company}|${isOfficialScopeActive() ? 1 : 0}|${(STATE.allowedCompanyNames || []).join(',')}`
+      : '';
+    if (isDefaultIgnoreSearch && _pendSalEmpCache && _pendSalEmpSig === sig) return _pendSalEmpCache;
     const list = filterRecords(
-      (SEED && SEED.records && SEED.records.employments) || [],
+      empArr,
       Object.assign({ ignorePeriod: true, ignoreSearch: true }, opts || {})
     ).filter(isPendingSalaryEmployment);
     const rows = list.slice().sort((a, b) => String(b.start_date || b.date || '').localeCompare(String(a.start_date || a.date || '')));
-    return { rows, count: rows.length };
+    const res = { rows, count: rows.length };
+    if (isDefaultIgnoreSearch) {
+      _pendSalEmpSig = sig;
+      _pendSalEmpCache = res;
+    }
+    return res;
   }
 
   function getPendingSalaryExceptionBadge(u, targetView) {
@@ -7673,6 +7849,25 @@
     }
     const rec = (SEED && SEED.records) || {};
     const tr = (SEED && SEED._tableRev) || {};
+    const curCustomRev = (SEED && SEED._customRev) || 0;
+    if (_FREQ_IDX && _FREQ_IDX._winRev === _WIN_REV && _FREQ_IDX._customRev === curCustomRev) {
+      const wKeys = _FREQ_IDX._watchedKeys;
+      const wLens = _FREQ_IDX._watchedLens;
+      const wRevs = _FREQ_IDX._watchedRevs;
+      let fastHit = true;
+      for (let ki = 0; ki < wKeys.length; ki++) {
+        const tk = wKeys[ki];
+        const arr = rec[tk];
+        const len = Array.isArray(arr) ? arr.length : 0;
+        if (len !== wLens[ki] || (tr[tk] || 0) !== wRevs[ki]) {
+          fastHit = false;
+          break;
+        }
+      }
+      if (fastHit && Object.keys(rec).length === _FREQ_IDX._totalRecKeyCount) {
+        return _FREQ_IDX;
+      }
+    }
     const sales = rec.sales_tickets || [];
     const raws = rec.raw_purchases || [];
     const exps = rec.expenses || [];
@@ -7695,12 +7890,20 @@
     const eqDefs = rec.equipment_defects || [];
     const itemsCat = rec.items || [];
     const allRecKeys = Object.keys(rec);
-    let dynKey = `${_WIN_REV}:${SEED && (SEED._customRev || 0)}`;
+    const watchedKeys = [];
+    const watchedLens = [];
+    const watchedRevs = [];
+    let dynKey = `${_WIN_REV}:${curCustomRev}`;
     for (let ki = 0; ki < allRecKeys.length; ki++) {
       const tk = allRecKeys[ki];
       if (tk === 'journal_lines' || tk === 'daily_totals') continue;
       const arr = rec[tk];
-      dynKey += `|${tk}:${Array.isArray(arr) ? arr.length : 0}:${tr[tk] || 0}`;
+      const len = Array.isArray(arr) ? arr.length : 0;
+      const revVal = tr[tk] || 0;
+      watchedKeys.push(tk);
+      watchedLens.push(len);
+      watchedRevs.push(revVal);
+      dynKey += `|${tk}:${len}:${revVal}`;
     }
     const key = dynKey;
     if (_FREQ_IDX && _FREQ_IDX.key === key) return _FREQ_IDX;
@@ -8093,6 +8296,14 @@
       uom, fuelLoc, role, counterparty, region, item, warehouseLoc, supCategory, company,
       byCol, forCol, any, _indexedTableCount: allRecKeys.length
     };
+    _FREQ_IDX._winRev = _WIN_REV;
+    _FREQ_IDX._customRev = curCustomRev;
+    _FREQ_IDX._totalRecKeyCount = allRecKeys.length;
+    _FREQ_IDX._watchedKeys = watchedKeys;
+    _FREQ_IDX._watchedLens = watchedLens;
+    _FREQ_IDX._watchedRevs = watchedRevs;
+    _FREQ_IDX._sitesLen = Array.isArray(rec.sites) ? rec.sites.length : 0;
+    _FREQ_IDX._sitesRev = tr.sites || 0;
     if (typeof window !== 'undefined') window.MFG_FREQ = getFreqIndex;
     return _FREQ_IDX;
   }
@@ -8449,6 +8660,13 @@
     return 'supplier';
   }
   function formatSiteCategoryLabel(s) {
+    if (s && typeof s === 'object') {
+      if (s.is_jv || s.jv) return 'JV 50/50 Site';
+      if (s.includes_transport || s.haulage_mode === 'supplier_delivered') return 'Bundled Raw Site (Mat + Trans)';
+      if (s.supplier && s.customer) return 'Quarry & Delivery Site';
+      if (s.customer && !s.supplier) return 'Customer Delivery Site';
+      if (s.supplier) return 'Supplier / Quarry Site';
+    }
     const cat = typeof s === 'string'
       ? (String(s).trim().toLowerCase() === 'customer' ? 'customer' : 'supplier')
       : resolveSiteCategory(s);
@@ -8512,77 +8730,56 @@
       return Array.from(m.values())[0] || '';
     };
 
-    const existingCustNorms = new Set();
+    // Unify sites by normalized name: merge any __cust or duplicate site records into one canonical record
+    const primaryByNorm = new Map();
+    const unifiedSites = [];
     recs.sites.forEach(s => {
-      if (!s || s.voided || !s.name) return;
-      if (String(s.id || '').endsWith('__cust') || (s.site_category === 'customer' && !s._seedCatAuto)) {
-        existingCustNorms.add(norm(s.name));
+      if (!s || !s.name) return;
+      const k = norm(s.name);
+      if (!k) return;
+      const isCustClone = String(s.id || '').endsWith('__cust');
+      const existing = primaryByNorm.get(k);
+      if (!existing) {
+        if (isCustClone) {
+          s.id = String(s.id).replace(/__cust$/, '');
+        }
+        primaryByNorm.set(k, s);
+        unifiedSites.push(s);
+      } else {
+        if (!existing.supplier && s.supplier) existing.supplier = s.supplier;
+        if (!existing.customer && s.customer) existing.customer = s.customer;
+        if (!existing.region && s.region) existing.region = s.region;
+        if (!existing.geo_zone && s.geo_zone) existing.geo_zone = s.geo_zone;
+        if (existing.latitude == null && s.latitude != null) existing.latitude = s.latitude;
+        if (existing.longitude == null && s.longitude != null) existing.longitude = s.longitude;
+        if (!existing.is_jv && s.is_jv) existing.is_jv = s.is_jv;
+        if (!existing.notes && s.notes) existing.notes = s.notes;
       }
     });
+    if (unifiedSites.length !== recs.sites.length) {
+      recs.sites.length = 0;
+      unifiedSites.forEach(s => recs.sites.push(s));
+    }
 
-    const stagedClones = [];
     recs.sites.forEach(s => {
       if (!s || !s.name) return;
       const k = norm(s.name);
       const soloCust = singleSalesCust(k);
-      if (String(s.id || '').endsWith('__cust')) {
-        s.site_category = 'customer';
-        s._seedCatAuto = true;
-        s.supplier = '';
-        s.is_jv = false;
-        if (!s.customer && soloCust) s.customer = soloCust;
-        existingCustNorms.add(k);
-        return;
+      const ms = msByNorm.get(k);
+      const salesLoads = Math.max(Number((ms && ms.loads) || 0), stLoadsByNorm.get(k) || 0);
+      const rawLoads = Math.max(Number((ms && ms.raw_loads) || 0), rawLoadsByNorm.get(k) || 0);
+      const inRaw = rawLoads > 0 || hasRawRuleByNorm.has(k);
+      const inSales = salesLoads > 0 || hasSalesRuleByNorm.has(k);
+      if (!s.customer && soloCust && s.source !== 'app') {
+        s.customer = soloCust;
       }
-      if (s.source !== 'app' && (!s.site_category || s._seedCatAuto)) {
-        const ms = msByNorm.get(k);
-        const salesLoads = Math.max(Number((ms && ms.loads) || 0), stLoadsByNorm.get(k) || 0);
-        const rawLoads = Math.max(Number((ms && ms.raw_loads) || 0), rawLoadsByNorm.get(k) || 0);
-        const inRaw = rawLoads > 0 || hasRawRuleByNorm.has(k);
-        const inSales = salesLoads > 0 || hasSalesRuleByNorm.has(k);
-        if (!s.is_jv && !inRaw && inSales) {
-          s.site_category = 'customer';
-          s._seedCatAuto = true;
-          s.supplier = '';
-          s.is_jv = false;
-          s.customer = s.customer || soloCust || '';
-          existingCustNorms.add(k);
-          return;
-        }
-        s.site_category = 'supplier';
+      if (!s.site_category || s._seedCatAuto) {
+        s.site_category = (!s.is_jv && !inRaw && inSales && !s.supplier) ? 'customer' : 'supplier';
         s._seedCatAuto = true;
-        s.customer = '';
-        if (!s.is_jv && inRaw && salesLoads > 0 && !existingCustNorms.has(k)) {
-          existingCustNorms.add(k);
-          stagedClones.push({
-            id: String(s.id || ('st_' + k)) + '__cust',
-            name: s.name,
-            site_category: 'customer',
-            _seedCatAuto: true,
-            region: s.region || '',
-            geo_zone: s.geo_zone || '',
-            supplier: '',
-            customer: soloCust || '',
-            latitude: s.latitude != null ? s.latitude : null,
-            longitude: s.longitude != null ? s.longitude : null,
-            is_jv: false
-          });
-        }
-        return;
-      }
-      const cat = resolveSiteCategory(s);
-      s.site_category = cat;
-      if (cat === 'customer') {
-        s.supplier = '';
-        s.is_jv = false;
       } else {
-        s.customer = '';
+        s.site_category = resolveSiteCategory(s);
       }
     });
-
-    if (stagedClones.length) {
-      stagedClones.forEach(cl => recs.sites.push(cl));
-    }
 
     const jvPartBySiteNorm = new Map();
     const isBuName = v => /^(wtc|bbconstruction|bbc|lions\s*transport|lions)$/i.test(String(v || '').trim());
@@ -8653,8 +8850,7 @@
     const bundledSeedSiteNorms = new Set();
     recs.sites.forEach(s => {
       if (!s || !s.name) return;
-      const cat = resolveSiteCategory(s);
-      if (cat === 'supplier' && (s.is_jv || s.jv)) {
+      if (s.is_jv || s.jv) {
         const jpMeta = jvPartBySiteNorm.get(norm(s.name));
         if (!s.jv_partner) s.jv_partner = (jpMeta && jpMeta.partner) || 'Assaf';
         if (!(Number(s.jv_share) > 0)) s.jv_share = (jpMeta && jpMeta.share) || 50;
@@ -8663,7 +8859,7 @@
           s.includes_transport = false;
           s.haulage_mode = 'separate';
         }
-      } else if (cat === 'supplier') {
+      } else {
         if (s.includes_transport === undefined && s.source !== 'app') {
           const st = rawStatBySite.get(norm(s.name));
           const isBundled = Boolean(
@@ -8679,8 +8875,6 @@
           s.haulage_mode = s.includes_transport ? 'supplier_delivered' : 'separate';
         }
         if (s.includes_transport) bundledSeedSiteNorms.add(norm(s.name));
-      } else {
-        if (s.includes_transport === undefined) s.includes_transport = false;
       }
     });
     (recs.price_rules || []).forEach(pr => {
@@ -8697,15 +8891,15 @@
 
   function isSupplierDeliveredSite(siteOrName) {
     if (!siteOrName) return false;
-    const s = typeof siteOrName === 'string' ? siteInfo(siteOrName, 'raw') : siteOrName;
-    if (!s || resolveSiteCategory(s) === 'customer' || s.is_jv || s.jv) return false;
+    const s = typeof siteOrName === 'string' ? siteInfo(siteOrName) : siteOrName;
+    if (!s || s.is_jv || s.jv) return false;
     return Boolean(s.includes_transport === true || s.includes_transport === 1 || s.includes_transport === '1' || s.haulage_mode === 'supplier_delivered');
   }
 
   function effectiveSiteRegion(siteOrObj, fallbackSiteName) {
     const sObj = (siteOrObj && typeof siteOrObj === 'object')
       ? siteOrObj
-      : (siteOrObj ? siteInfo(siteOrObj, 'raw') : (fallbackSiteName ? siteInfo(fallbackSiteName, 'raw') : null));
+      : (siteOrObj ? siteInfo(siteOrObj) : (fallbackSiteName ? siteInfo(fallbackSiteName) : null));
     const direct = String((sObj && (sObj.region || sObj.geo_zone)) || '').trim();
     if (direct) return direct;
     const nm = String(fallbackSiteName || (typeof siteOrObj === 'string' ? siteOrObj : (sObj && sObj.name)) || '').trim();
@@ -8731,7 +8925,7 @@
     if (r.includes_transport === false || r.transport_by === 'Company fleet') return false;
     if (_IS_OWN_BU_RE.test(String(r.truck_owner || '').trim())) return false;
     if (_QUARRY_NON_AGG_RE.test(String(r.product || '').trim())) return false;
-    const sObj = r.site ? siteInfo(r.site, 'raw') : null;
+    const sObj = r.site ? siteInfo(r.site) : null;
     if (sObj && (sObj.is_jv || sObj.jv)) return false;
     if (sObj && sObj.source === 'app' && sObj.includes_transport === false) return false;
     return Math.abs(Number(r.cost || 0)) > 0.004;
@@ -8790,7 +8984,7 @@
       });
       fIdx._quarrySiteProfile = pMap;
     }
-    const sObj = typeof siteOrName === 'string' ? siteInfo(siteOrName, 'raw') : siteOrName;
+    const sObj = typeof siteOrName === 'string' ? siteInfo(siteOrName) : siteOrName;
     const sk = norm(typeof siteOrName === 'string' ? siteOrName : (sObj && sObj.name));
     const st = sk ? (fIdx._quarrySiteProfile.get(sk) || { bundledLoads: 0, bundledMatCost: 0, bundledQty: 0, ownFleetLoads: 0, paidHaulLoads: 0, paidHaulCost: 0, separateMatCost: 0, separateQty: 0, hasTransRule: false, hasPurchRule: false }) : { bundledLoads: 0, bundledMatCost: 0, bundledQty: 0, ownFleetLoads: 0, paidHaulLoads: 0, paidHaulCost: 0, separateMatCost: 0, separateQty: 0, hasTransRule: false, hasPurchRule: false };
     const isJv = Boolean(sObj && (sObj.is_jv || sObj.jv));
@@ -8829,8 +9023,8 @@
     if (!Array.isArray(SEED.records.sites)) SEED.records.sites = [];
     if (!Array.isArray(STATE.customRecords.sites)) STATE.customRecords.sites = [];
     const sk = norm(sNm);
-    let target = SEED.records.sites.find(s => s && !s.voided && norm(s.name) === sk && resolveSiteCategory(s) !== 'customer')
-      || STATE.customRecords.sites.find(s => s && !s.voided && norm(s.name) === sk && resolveSiteCategory(s) !== 'customer');
+    let target = SEED.records.sites.find(s => s && !s.voided && norm(s.name) === sk)
+      || STATE.customRecords.sites.find(s => s && !s.voided && norm(s.name) === sk);
     if (target) {
       target.region = effReg;
       target.geo_zone = effReg;
@@ -8901,7 +9095,7 @@
   }
 
   function syncSiteJvPartnershipRecords(siteRow, extraApiPosts) {
-    if (!siteRow || !siteRow.name || resolveSiteCategory(siteRow) === 'customer' || !siteRow.is_jv) return;
+    if (!siteRow || !siteRow.name || !siteRow.is_jv) return;
     const partner = String(siteRow.jv_partner || 'Assaf').trim() || 'Assaf';
     const share = Math.max(1, Math.min(99, round2(Number(siteRow.jv_share) || 50)));
     const coShare = round2(100 - share);
@@ -8960,28 +9154,21 @@
   function siteInfo(name, side) {
     const n = norm(name);
     if (!n) return null;
-    const fIdx = getFreqIndex();
-    if (!fIdx._siteByNorm || !fIdx._siteByCustNorm || !fIdx._siteBySuppNorm) {
+    const sitesArr = (SEED && SEED.records && SEED.records.sites) || [];
+    const sRev = (SEED && SEED._tableRev && SEED._tableRev.sites) || 0;
+    const cRev = (SEED && SEED._customRev) || 0;
+    const fIdx = (_FREQ_IDX && _FREQ_IDX._winRev === _WIN_REV && _FREQ_IDX._customRev === cRev && _FREQ_IDX._sitesLen === sitesArr.length && _FREQ_IDX._sitesRev === sRev)
+      ? _FREQ_IDX
+      : getFreqIndex();
+    if (!fIdx._siteByNorm) {
       fIdx._siteByNorm = new Map();
-      fIdx._siteByCustNorm = new Map();
-      fIdx._siteBySuppNorm = new Map();
       (SEED.records.sites || []).forEach(s => {
         if (!s || !s.name || s.voided) return;
         const k = norm(s.name);
-        if (!k) return;
-        if (resolveSiteCategory(s) === 'customer') {
-          if (!fIdx._siteByCustNorm.has(k)) fIdx._siteByCustNorm.set(k, s);
-        } else {
-          if (!fIdx._siteBySuppNorm.has(k)) fIdx._siteBySuppNorm.set(k, s);
-        }
-        if (!fIdx._siteByNorm.has(k)) fIdx._siteByNorm.set(k, s);
+        if (k && !fIdx._siteByNorm.has(k)) fIdx._siteByNorm.set(k, s);
       });
     }
-    if (side === 'sales' || side === 'customer') return fIdx._siteByCustNorm.get(n) || null;
-    if (side === 'raw' || side === 'supplier' || side === 'jv') return fIdx._siteBySuppNorm.get(n) || null;
-    const preferCust = Boolean(STATE && (STATE.view === 'sales' || STATE.view === 'customers' || STATE.view === 'pricing' || (STATE.tableViews && STATE.tableViews.sites === 'delivery')));
-    if (preferCust) return fIdx._siteByCustNorm.get(n) || fIdx._siteBySuppNorm.get(n) || null;
-    return fIdx._siteBySuppNorm.get(n) || fIdx._siteByCustNorm.get(n) || null;
+    return fIdx._siteByNorm.get(n) || null;
   }
   function regionNames() {
     const fIdx = getFreqIndex();
@@ -9009,17 +9196,17 @@
     const sitesArr = (SEED.records.sites || []).filter(s => s && !s.voided && s.name);
     const rulesArr = (SEED.records.price_rules || []).filter(r => r && !r.voided && r.site);
     if (effSide === 'sales') {
-      const pool = sitesArr.filter(s => resolveSiteCategory(s) === 'customer').map(s => s.name)
+      const pool = sitesArr.filter(s => !isSupplierDeliveredSite(s)).map(s => s.name)
         .concat((SEED.records.sales_tickets || []).filter(r => r && !r.voided && r.site).map(r => r.site))
         .concat(rulesArr.filter(r => !/^(Purchase Price \(Site\)|Transport Price \(Site\)|Commission)$/i.test(String(r.rule_type || '').trim())).map(r => r.site));
       fIdx._lists[cKey] = uniqSorted(pool, fIdx.siteSales);
     } else if (effSide === 'raw') {
-      const pool = sitesArr.filter(s => resolveSiteCategory(s) === 'supplier').map(s => s.name)
+      const pool = sitesArr.map(s => s.name)
         .concat((SEED.records.raw_purchases || []).filter(r => r && !r.voided && r.site).map(r => r.site))
         .concat(rulesArr.filter(r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim())).map(r => r.site));
       fIdx._lists[cKey] = uniqSorted(pool, fIdx.siteRaw);
     } else if (effSide === 'jv') {
-      const pool = sitesArr.filter(s => resolveSiteCategory(s) === 'supplier' && (s.is_jv || /\bjv\b/i.test(s.name))).map(s => s.name)
+      const pool = sitesArr.filter(s => s.is_jv || /\bjv\b/i.test(s.name)).map(s => s.name)
         .concat((SEED.records.jv_partnerships || []).filter(r => r && !r.voided && r.site).map(r => r.site))
         .concat((SEED.records.jv_distributions || []).filter(r => r && !r.voided && r.site).map(r => r.site));
       fIdx._lists[cKey] = uniqSorted(pool, fIdx.siteRaw);
@@ -9048,9 +9235,9 @@
     const seen = new Set();
     const out = [];
     const fmt = (nm, st) => {
-      const sObj = effSide === 'sales' ? siteInfo(nm, 'sales') : (effSide === 'raw' || effSide === 'jv' ? siteInfo(nm, 'raw') : siteInfo(nm));
+      const sObj = siteInfo(nm);
       const reg = (sObj && sObj.region) || (st && st.region) || '';
-      const isSupBundled = Boolean(sObj && resolveSiteCategory(sObj) !== 'customer' && isSupplierDeliveredSite(sObj));
+      const isSupBundled = Boolean(sObj && isSupplierDeliveredSite(sObj));
       const parts = [];
       if (effSide === 'sales') {
         if (st && st.sales > 0) parts.push(`${st.sales} Sales loads`);
@@ -9355,7 +9542,7 @@
     const canon = ['wtc', 'bbconstruction', 'lionstransport', 'manufacturing-group'].includes(mkSup)
       ? getCanonicalCounterpartyRollups()
       : null;
-    const cs = canon && canon.hasAp && canon.suppByModel[mkSup] ? canon.suppByModel[mkSup].get(norm(name)) : null;
+    const cs = canon && canon.hasAp && canon.suppByModel[mkSup] ? canon.suppByModel[mkSup].get(normSupPayable(name)) : null;
     if (!dvn && !mdl && !cs) {
       fIdx._suppInfoMap.set(cacheKey, null);
       return null;
@@ -9393,7 +9580,13 @@
       res.ap_expense = round2(cs.ap_expense);
       res.ap_on_credit = round2(cs.ap_material + cs.ap_haulage + cs.ap_expense);
       res.ap_settled = round2(cs.ap_settled);
-      res.ap_balance = round2(res.ap_on_credit - res.ap_settled);
+      res.ap_balance = cs.ap_balance != null ? round2(cs.ap_balance) : round2(res.ap_on_credit - res.ap_settled);
+      res.quarry_rem = round2(cs.quarry_rem || 0);
+      res.trans_rem = round2(cs.trans_rem || 0);
+      res.exp_rem_usd = round2(cs.exp_rem_usd || 0);
+      res.exp_vat_rem_usd = round2(cs.exp_vat_rem_usd || 0);
+      res.exp_rem_lbp = Math.round(cs.exp_rem_lbp || 0);
+      res.exp_rem_ttc = round2(cs.exp_rem_ttc || 0);
       res.in_ap_book = true;
     }
     fIdx._suppInfoMap.set(cacheKey, res);
@@ -15743,7 +15936,7 @@
         <div class="panel-head"><div class="panel-title"><span>${title}</span></div><span class="panel-meta">${fmtNum(list.length)} rows${list.length ? ' · Click row to inspect ' + exportBtn(panelId, title.replace(/&amp;/g, 'and').replace(/&gt;/g, 'gt')) : ''}</span></div>
         <div class="table-wrap"><table class="ledger-table">
           <thead><tr>${cols.map(c => `<th class="${c.r ? 'r' : ''}">${c.label}</th>`).join('')}</tr></thead>
-          <tbody>${list.slice(0, 60).map(r => {
+          <tbody>${list.slice(0, 35).map(r => {
             let rk = r && r.rkey ? String(r.rkey) : '';
             let rid = r && (r.rid != null || r.id != null) ? String(r.rid != null ? r.rid : r.id) : '';
             if ((panelId === 'snBelow' || panelId === 'snLapsed') && r && r.customer) {
@@ -17171,7 +17364,7 @@
                   <td class="mono">${esc(recordDateDMY(r))}${repDateShiftBadge(r)}${appCell(r, 'sales_tickets')}</td>
                   <td class="mono"><span class="tkt-cell-inline"><strong class="tkt-no-num">${esc(r.ticket_no || '—')}</strong><button type="button" class="tkt-print-mini" data-print-ticket="sales" data-print-id="${esc(r.id)}" title="Bluetooth Thermal Print / Preview Ticket #${esc(r.ticket_no || '')}">${ic('printer')}</button>${tktOtBadge(r)}${tktAhBadge(r)}${dispBadgeHtml}</span></td>
                   <td>${coBadge(r.company)}</td>
-                  <td>${r.sale_type === 'Unregistered' ? '<span title="Unregistered">Unreg.<span class="sr-only">istered</span></span>' : esc(r.sale_type)}</td>
+                  <td>${r.sale_type === 'Unregistered' ? '<span class="has-sr-only" title="Unregistered">Unreg.<span class="sr-only">istered</span></span>' : esc(r.sale_type)}</td>
                   <td>${relLink('customers', r.customer, r.customer, true)}</td>
                   <td>${relLink('products', r.product)}</td>
                   <td>${r.site ? relLink('sites', r.site) : '—'}</td>
@@ -22467,6 +22660,8 @@
     `;
   }
 
+  let _fleetDrvAllCache = null;
+  let _fleetDrvAllSig = '';
   function renderFleetDrivers() {
     const k = getKPI();
     const m = getModel();
@@ -22474,70 +22669,76 @@
     const salesRows = filterRecords(SEED.records.sales_tickets, { ignoreSearch: true });
     const rawRows = filterRecords(SEED.records.raw_purchases, { ignoreSearch: true });
     const coDriversBase = filterRecords(SEED.records.company_drivers || [], { ignorePeriod: true });
-    const coDriverSet = new Set(coDriversBase.map(cd => norm(cd.driver)));
     const payIdx = _getPayrollIntelIndex();
-    const canonDrvName = new Map();
-    coDriversBase.forEach(cd => {
-      if (cd && cd.driver) canonDrvName.set(norm(cd.driver), cd.staff || cd.driver);
-    });
-    const drvMap = new Map();
-    const seenDrvTripSerial = new Set();
-    salesRows.forEach(t => {
-      if (isRemovedTicket(t)) return;
-      const dRaw = String(t.driver || '').trim();
-      const dk = norm(dRaw);
-      if (!dk || dk === 'remove') return;
-      const dName = canonDrvName.get(dk) || dRaw;
-      const isCoDrv = coDriverSet.has(dk) ? 'Yes' : 'No';
-      const cur = drvMap.get(dk) || { driver: dName, is_company: isCoDrv, trips: 0, sales_trips: 0, raw_trips: 0, fleet_trips: 0, ot_trips: 0, ot_bonus: 0, qty: 0, trucks: new Set() };
-      const sgn = saleTicketSign(t);
-      const tSerialKey = t.ticket_no ? `S|${norm(t.company)}|${dk}|${String(t.date || '').slice(0, 10)}|${normTicketNo(t.ticket_no)}` : '';
-      const isPairedDup = Boolean(tSerialKey && seenDrvTripSerial.has(tSerialKey));
-      if (tSerialKey) seenDrvTripSerial.add(tSerialKey);
-      if (!isPairedDup) {
-        cur.trips += 1;
-        cur.sales_trips += 1;
-        if (t.transport_by === 'Company fleet') cur.fleet_trips += 1;
-      }
-      if (t.overtime && sgn > 0) {
-        const otEv = payIdx.evalOtTicket ? payIdx.evalOtTicket(t, true) : null;
-        cur.ot_trips += 1;
-        cur.ot_bonus += otEv ? otEv.rate : 0;
-      }
-      cur.qty += sgn * Number(t.qty || 0);
-      if (t.truck) cur.trucks.add(t.truck);
-      drvMap.set(dk, cur);
-    });
-    rawRows.forEach(t => {
-      if (isRemovedTicket(t)) return;
-      const dRaw = String(t.driver || '').trim();
-      const dk = norm(dRaw);
-      if (!dk || dk === 'remove') return;
-      const dName = canonDrvName.get(dk) || dRaw;
-      const isCoDrv = coDriverSet.has(dk) ? 'Yes' : 'No';
-      const cur = drvMap.get(dk) || { driver: dName, is_company: isCoDrv, trips: 0, sales_trips: 0, raw_trips: 0, fleet_trips: 0, ot_trips: 0, ot_bonus: 0, qty: 0, trucks: new Set() };
-      const rSgn = rawSign(t);
-      const tSerialKey = t.ticket_no ? `R|${norm(t.company)}|${dk}|${String(t.date || '').slice(0, 10)}|${normTicketNo(t.ticket_no)}` : '';
-      const isPairedDup = Boolean(tSerialKey && seenDrvTripSerial.has(tSerialKey));
-      if (tSerialKey) seenDrvTripSerial.add(tSerialKey);
-      if (!isPairedDup) {
-        cur.trips += 1;
-        cur.raw_trips += 1;
-        if (t.transport_by === 'Company fleet') cur.fleet_trips += 1;
-      }
-      if (t.overtime && rSgn > 0) {
-        const otEv = payIdx.evalOtTicket ? payIdx.evalOtTicket(t, false) : null;
-        cur.ot_trips += 1;
-        cur.ot_bonus += otEv ? otEv.rate : 0;
-      }
-      cur.qty += rSgn * Number(t.qty || 0);
-      if (t.truck) cur.trucks.add(t.truck);
-      drvMap.set(dk, cur);
-    });
-    const drvAll = Array.from(drvMap.values()).map(d => ({
-      ...d,
-      trucksStr: Array.from(d.trucks).slice(0, 3).join(', ')
-    }));
+    const drvSig = `${(SEED && SEED._customRev) || 0}|${_WIN_REV}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.basis}|${isOfficialScopeActive() ? 1 : 0}|${salesRows.length}|${rawRows.length}|${coDriversBase.length}`;
+    let drvAll = (_fleetDrvAllCache && _fleetDrvAllSig === drvSig) ? _fleetDrvAllCache : null;
+    if (!drvAll) {
+      const coDriverSet = new Set(coDriversBase.map(cd => norm(cd.driver)));
+      const canonDrvName = new Map();
+      coDriversBase.forEach(cd => {
+        if (cd && cd.driver) canonDrvName.set(norm(cd.driver), cd.staff || cd.driver);
+      });
+      const drvMap = new Map();
+      const seenDrvTripSerial = new Set();
+      salesRows.forEach(t => {
+        if (isRemovedTicket(t)) return;
+        const dRaw = String(t.driver || '').trim();
+        const dk = norm(dRaw);
+        if (!dk || dk === 'remove') return;
+        const dName = canonDrvName.get(dk) || dRaw;
+        const isCoDrv = coDriverSet.has(dk) ? 'Yes' : 'No';
+        const cur = drvMap.get(dk) || { driver: dName, is_company: isCoDrv, trips: 0, sales_trips: 0, raw_trips: 0, fleet_trips: 0, ot_trips: 0, ot_bonus: 0, qty: 0, trucks: new Set() };
+        const sgn = saleTicketSign(t);
+        const tSerialKey = t.ticket_no ? `S|${norm(t.company)}|${dk}|${String(t.date || '').slice(0, 10)}|${normTicketNo(t.ticket_no)}` : '';
+        const isPairedDup = Boolean(tSerialKey && seenDrvTripSerial.has(tSerialKey));
+        if (tSerialKey) seenDrvTripSerial.add(tSerialKey);
+        if (!isPairedDup) {
+          cur.trips += 1;
+          cur.sales_trips += 1;
+          if (t.transport_by === 'Company fleet') cur.fleet_trips += 1;
+        }
+        if (t.overtime && sgn > 0) {
+          const otEv = payIdx.evalOtTicket ? payIdx.evalOtTicket(t, true) : null;
+          cur.ot_trips += 1;
+          cur.ot_bonus += otEv ? otEv.rate : 0;
+        }
+        cur.qty += sgn * Number(t.qty || 0);
+        if (t.truck) cur.trucks.add(t.truck);
+        drvMap.set(dk, cur);
+      });
+      rawRows.forEach(t => {
+        if (isRemovedTicket(t)) return;
+        const dRaw = String(t.driver || '').trim();
+        const dk = norm(dRaw);
+        if (!dk || dk === 'remove') return;
+        const dName = canonDrvName.get(dk) || dRaw;
+        const isCoDrv = coDriverSet.has(dk) ? 'Yes' : 'No';
+        const cur = drvMap.get(dk) || { driver: dName, is_company: isCoDrv, trips: 0, sales_trips: 0, raw_trips: 0, fleet_trips: 0, ot_trips: 0, ot_bonus: 0, qty: 0, trucks: new Set() };
+        const rSgn = rawSign(t);
+        const tSerialKey = t.ticket_no ? `R|${norm(t.company)}|${dk}|${String(t.date || '').slice(0, 10)}|${normTicketNo(t.ticket_no)}` : '';
+        const isPairedDup = Boolean(tSerialKey && seenDrvTripSerial.has(tSerialKey));
+        if (tSerialKey) seenDrvTripSerial.add(tSerialKey);
+        if (!isPairedDup) {
+          cur.trips += 1;
+          cur.raw_trips += 1;
+          if (t.transport_by === 'Company fleet') cur.fleet_trips += 1;
+        }
+        if (t.overtime && rSgn > 0) {
+          const otEv = payIdx.evalOtTicket ? payIdx.evalOtTicket(t, false) : null;
+          cur.ot_trips += 1;
+          cur.ot_bonus += otEv ? otEv.rate : 0;
+        }
+        cur.qty += rSgn * Number(t.qty || 0);
+        if (t.truck) cur.trucks.add(t.truck);
+        drvMap.set(dk, cur);
+      });
+      drvAll = Array.from(drvMap.values()).map(d => ({
+        ...d,
+        trucksStr: Array.from(d.trucks).slice(0, 3).join(', ')
+      }));
+      _fleetDrvAllSig = drvSig;
+      _fleetDrvAllCache = drvAll;
+    }
     const qDrv = STATE.search.trim().toLowerCase();
     const drvBase = drvAll.filter(d => !qDrv || `${d.driver} ${d.trucksStr} ${d.is_company}`.toLowerCase().includes(qDrv));
     const drvRows = sortRows(drvBase.filter(d => {
@@ -24611,13 +24812,21 @@
   // ==========================================================================
   // VIEW 09: EXPENSES & OVERHEAD
   // ==========================================================================
+  let _expViewAggCache = { key: '', val: null };
   function renderExpenses() {
     ensureItemsCatalogSeeded();
     const k = getKPI();
     const base = filterRecords(SEED.records.expenses);
-    const pendingPriceCnt = base.filter(isPendingPriceExpense).length;
-    const storedWhCnt = base.filter(x => Boolean(x.stored_in_warehouse) && expenseSign(x) !== 0).length;
-    const withItemsCnt = base.filter(x => Boolean(x.item_summary) && expenseSign(x) !== 0).length;
+    const hasExpColFilters = Boolean(STATE.colFilters && STATE.colFilters.expenses && Object.keys(STATE.colFilters.expenses).length);
+    const isDefaultExpAgg = !String(STATE.search || '').trim() && (STATE.chipFilter || 'all') === 'all' && !hasExpColFilters;
+    const expCacheKey = isDefaultExpAgg
+      ? `${(SEED && SEED._customRev) || 0}|${(SEED && SEED._tableRev && SEED._tableRev.expenses) || 0}|${STATE.company}|${STATE.period}|${STATE.dateFrom}|${STATE.dateTo}|${STATE.dateMode}|${STATE.officialBookScope ? 1 : 0}|${base.length}|${base[0] ? (base[0].id + ':' + base[0].amount + ':' + base[0].pending_price) : ''}|${base[base.length - 1] ? (base[base.length - 1].id + ':' + base[base.length - 1].amount + ':' + base[base.length - 1].pending_price) : ''}|${(SEED.records.expenses || []).length}|${(SEED.records.expense_items || []).length}|${(SEED.records.items || []).length}`
+      : '';
+    const cachedExpAgg = (expCacheKey && _expViewAggCache.key === expCacheKey) ? _expViewAggCache.val : null;
+
+    const pendingPriceCnt = cachedExpAgg ? cachedExpAgg.pendingPriceCnt : base.filter(isPendingPriceExpense).length;
+    const storedWhCnt = cachedExpAgg ? cachedExpAgg.storedWhCnt : base.filter(x => Boolean(x.stored_in_warehouse) && expenseSign(x) !== 0).length;
+    const withItemsCnt = cachedExpAgg ? cachedExpAgg.withItemsCnt : base.filter(x => Boolean(x.item_summary) && expenseSign(x) !== 0).length;
     const expRows = sortRows(STATE.chipFilter === 'all' ? base : base.filter(x => {
       if (STATE.chipFilter === 'cash') return isCashExpense(x) && expenseSign(x) !== 0;
       if (STATE.chipFilter === 'credit') return isApCreditExpense(x) && expenseSign(x) !== 0;
@@ -24632,166 +24841,246 @@
     const shownExp = expRows.slice(0, shownCount('expenses'));
     const chip = (key, label) => `<button type="button" class="filter-chip ${STATE.chipFilter === key ? 'active' : ''}" data-chip="${esc(key)}">${label}</button>`;
     let sumExp = 0, sumCashExp = 0, sumCredExp = 0;
-    const byCoExp = {
+    let byCoExp = {
       WTC: { n: 0, tot: 0, cash: 0, cred: 0 },
       BBConstruction: { n: 0, tot: 0, cash: 0, cred: 0 }
     };
-    const catMetaMap = new Map((SEED.records.expense_categories || []).map(c => [norm(c.name || c.category || ''), c]));
-    const catAggMap = new Map();
-    const expMonthAgg = new Map();
-    const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    expRows.forEach(r => {
-      const sgn = expenseSign(r);
-      if (sgn === 0) return;
-      const a = sgn * Number(r.amount || 0);
-      const isCr = isApCreditExpense(r);
-      const isCa = isCashExpense(r);
-      sumExp += a;
-      if (isCr) sumCredExp += a; else if (isCa) sumCashExp += a;
-      const b = byCoExp[r.company];
-      if (b) {
-        b.n += 1;
-        b.tot += a;
-        if (isCr) b.cred += a; else if (isCa) b.cash += a;
+    let catAggVals, expMonths, expItemBase, expCatalogAll, itemGroupAggMap, catalogMap;
+    let purchasedCatalogCnt = 0, sparePartsCatCnt = 0, oilsCatCnt = 0, toolsCatCnt = 0, inWhCatCnt = 0;
+    let expItemFleetCnt = 0, expItemWhCnt = 0, expItemOvCnt = 0;
+
+    if (cachedExpAgg) {
+      sumExp = cachedExpAgg.sumExp;
+      sumCashExp = cachedExpAgg.sumCashExp;
+      sumCredExp = cachedExpAgg.sumCredExp;
+      byCoExp = cachedExpAgg.byCoExp;
+      catAggVals = cachedExpAgg.catAggVals;
+      expMonths = cachedExpAgg.expMonths;
+      expItemBase = cachedExpAgg.expItemBase;
+      expCatalogAll = cachedExpAgg.expCatalogAll;
+      itemGroupAggMap = cachedExpAgg.itemGroupAggMap;
+      catalogMap = cachedExpAgg.catalogMap;
+      purchasedCatalogCnt = cachedExpAgg.purchasedCatalogCnt;
+      sparePartsCatCnt = cachedExpAgg.sparePartsCatCnt;
+      oilsCatCnt = cachedExpAgg.oilsCatCnt;
+      toolsCatCnt = cachedExpAgg.toolsCatCnt;
+      inWhCatCnt = cachedExpAgg.inWhCatCnt;
+      expItemFleetCnt = cachedExpAgg.expItemFleetCnt;
+      expItemWhCnt = cachedExpAgg.expItemWhCnt;
+      expItemOvCnt = cachedExpAgg.expItemOvCnt;
+    } else {
+      const catMetaMap = new Map((SEED.records.expense_categories || []).map(c => [norm(c.name || c.category || ''), c]));
+      const catAggMap = new Map();
+      const expMonthAgg = new Map();
+      const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      expRows.forEach(r => {
+        const sgn = expenseSign(r);
+        if (sgn === 0) return;
+        const a = sgn * Number(r.amount || 0);
+        const isCr = isApCreditExpense(r);
+        const isCa = isCashExpense(r);
+        sumExp += a;
+        if (isCr) sumCredExp += a; else if (isCa) sumCashExp += a;
+        const b = byCoExp[r.company];
+        if (b) {
+          b.n += 1;
+          b.tot += a;
+          if (isCr) b.cred += a; else if (isCa) b.cash += a;
+        }
+        const dt = recordDate(r);
+        const ym = dt ? dt.slice(0, 7) : '';
+        if (/^\d{4}-\d{2}$/.test(ym)) {
+          const mIdx = Math.max(0, Math.min(11, parseInt(ym.slice(5, 7), 10) - 1));
+          const cur = expMonthAgg.get(ym) || { ym, 'Year Month': `${MONTH_SHORT[mIdx]} ${ym.slice(0, 4)}`, cash_usd: 0, credit_usd: 0, vouchers: 0 };
+          if (isCr) cur.credit_usd = round2(cur.credit_usd + a);
+          else if (isCa) cur.cash_usd = round2(cur.cash_usd + a);
+          cur.vouchers += 1;
+          expMonthAgg.set(ym, cur);
+        }
+        const catName = String(r.category || 'Uncategorized').trim() || 'Uncategorized';
+        const ck = norm(catName);
+        if (!catAggMap.has(ck)) {
+          const cm = catMetaMap.get(ck);
+          const derivedCls = (window.MFG_PBI && typeof window.MFG_PBI.deriveExpenseCostClass === 'function')
+            ? window.MFG_PBI.deriveExpenseCostClass(cm || catName)
+            : ((cm && (cm.cost_class || cm.category1)) || r.cost_class || 'Operating Expense');
+          catAggMap.set(ck, {
+            id: (cm && cm.id) || catName,
+            category: catName,
+            cost_class: derivedCls,
+            vouchers: 0,
+            unit_tagged: 0,
+            cash: 0,
+            credit: 0,
+            total: 0
+          });
+        }
+        const cg = catAggMap.get(ck);
+        cg.vouchers += 1;
+        if (r.equipment) cg.unit_tagged += 1;
+        if (isCr) cg.credit += a; else if (isCa) cg.cash += a;
+        cg.total += a;
+      });
+      catAggVals = Array.from(catAggMap.values());
+      expMonths = Array.from(expMonthAgg.values()).sort((a, b) => a.ym.localeCompare(b.ym));
+
+      // Build Item & Spare Part Catalog spend summary + Itemized Expense Ticket ledger
+      const wh = getWarehouseIndex();
+      const whByItem = new Map((wh.items || []).map(w => [norm(w.item_name), w]));
+      catalogMap = new Map();
+      (SEED.records.items || []).forEach(it => {
+        if (!it || it.voided) return;
+        const nm = String(it.name || it.item_name || '').trim();
+        const nk = norm(nm);
+        if (nk && !catalogMap.has(nk)) catalogMap.set(nk, it);
+      });
+
+      expItemBase = filterRecords(SEED.records.expense_items || [], {
+        cols: ['id', 'expense_id', 'expense_ref', 'item_name', 'category', 'subcategory', 'supplier', 'equipment', 'target_equipment', 'method', 'uom', 'location', 'warehouse_location', 'disposition']
+      }).filter(r => r && !r.voided && !isTransportRentalItemName(r.item_name || r.name));
+
+      const itemSpendAggMap = new Map();
+      itemGroupAggMap = new Map();
+      const ensureItemCatRow = (rawName, rawCat, rawUom, fallbackCost, fallbackLoc, fallbackMin) => {
+        const cleanName = String(rawName || '').trim();
+        const ik = norm(cleanName);
+        if (!ik) return null;
+        let cur = itemSpendAggMap.get(ik);
+        if (!cur) {
+          const catRec = catalogMap.get(ik);
+          const wRec = whByItem.get(ik);
+          const canonName = (catRec && (catRec.name || catRec.item_name)) || cleanName;
+          const lockedUom = (catRec && (catRec.uom || catRec.unit)) || rawUom || 'Piece';
+          const grp = (catRec && catRec.category) || normalizeItemCatalogCategory(rawCat, canonName);
+          cur = {
+            id: (catRec && catRec.id) || cleanName,
+            name: canonName,
+            category: grp,
+            uom: lockedUom,
+            location: (catRec && (catRec.default_location || catRec.location)) || (wRec && wRec.location) || fallbackLoc || 'Main Warehouse',
+            min_stock: Number((catRec && catRec.min_stock) || fallbackMin || 0),
+            default_cost: Number((catRec && (catRec.default_cost ?? catRec.unit_cost)) || fallbackCost || 0),
+            tickets: 0,
+            total_qty: 0,
+            fleet_qty: 0,
+            wh_qty: 0,
+            cash_usd: 0,
+            credit_usd: 0,
+            total_usd: 0,
+            avg_cost: Number((catRec && (catRec.default_cost ?? catRec.unit_cost)) || fallbackCost || 0),
+            on_hand_qty: wRec ? Number(wRec.onHandQty || 0) : 0,
+            on_hand_usd: wRec ? Number(wRec.onHandValue || 0) : 0,
+            last_date: ''
+          };
+          itemSpendAggMap.set(ik, cur);
+        }
+        return cur;
+      };
+
+      const qLower = String(STATE.search || '').trim().toLowerCase();
+      (SEED.records.items || []).forEach(it => {
+        if (!it || it.voided) return;
+        const nm = String(it.name || it.item_name || '').trim();
+        if (!nm || isTransportRentalItemName(nm)) return;
+        if (qLower && !`${nm} ${it.category || ''} ${it.uom || ''} ${it.default_location || ''}`.toLowerCase().includes(qLower)) return;
+        ensureItemCatRow(nm, it.category, it.uom || it.unit, it.default_cost ?? it.unit_cost, it.default_location || it.location, it.min_stock);
+      });
+
+      expItemBase.forEach(r => {
+        const nm = String(r.item_name || r.name || '').trim();
+        const row = ensureItemCatRow(nm, r.category, r.uom, r.unit_cost, r.warehouse_location || r.location, 0);
+        if (!row) return;
+        const qty = Math.max(0, Number(r.qty || 1));
+        const lineUsd = Number(r.line_total != null ? r.line_total : (r.total_cost != null ? r.total_cost : (r.amount || 0)));
+        const isWh = Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || ''));
+        const isEq = Boolean(r.target_equipment || r.equipment);
+        const isCr = isApCreditExpense(r);
+        row.tickets += 1;
+        row.total_qty = round2(row.total_qty + qty);
+        if (isEq) row.fleet_qty = round2(row.fleet_qty + qty);
+        if (isWh) row.wh_qty = round2(row.wh_qty + qty);
+        if (isCr) row.credit_usd = round2(row.credit_usd + lineUsd);
+        else row.cash_usd = round2(row.cash_usd + lineUsd);
+        row.total_usd = round2(row.total_usd + lineUsd);
+        if (row.total_qty > 0 && row.total_usd > 0) row.avg_cost = round2(row.total_usd / row.total_qty);
+        const dt = String(r.date || '');
+        if (dt > row.last_date) row.last_date = dt;
+
+        const gk = row.category || 'Spare Parts';
+        const gCur = itemGroupAggMap.get(gk) || { group: gk, uom_summary: row.uom, items_set: new Set(), tickets: 0, qty: 0, total_usd: 0, subLabel: '' };
+        gCur.items_set.add(norm(row.name));
+        gCur.tickets += 1;
+        gCur.qty = round2(gCur.qty + qty);
+        gCur.total_usd = round2(gCur.total_usd + lineUsd);
+        itemGroupAggMap.set(gk, gCur);
+      });
+
+      expCatalogAll = Array.from(itemSpendAggMap.values());
+      purchasedCatalogCnt = expCatalogAll.filter(r => r.tickets > 0).length;
+      sparePartsCatCnt = expCatalogAll.filter(r => /spare|part/i.test(r.category)).length;
+      oilsCatCnt = expCatalogAll.filter(r => /oil|lub/i.test(r.category)).length;
+      toolsCatCnt = expCatalogAll.filter(r => /tool|consum/i.test(r.category)).length;
+      inWhCatCnt = expCatalogAll.filter(r => r.on_hand_qty > 0.0001).length;
+      expItemFleetCnt = expItemBase.filter(r => Boolean(r.target_equipment || r.equipment)).length;
+      expItemWhCnt = expItemBase.filter(r => Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || ''))).length;
+      expItemOvCnt = expItemBase.filter(r => !(r.target_equipment || r.equipment) && !r.stored_in_warehouse && !/^warehouse$/i.test(String(r.allocation_mode || ''))).length;
+
+      if (expCacheKey) {
+        _expViewAggCache = {
+          key: expCacheKey,
+          val: {
+            pendingPriceCnt, storedWhCnt, withItemsCnt,
+            sumExp, sumCashExp, sumCredExp, byCoExp,
+            catAggVals, expMonths, expItemBase, expCatalogAll, itemGroupAggMap, catalogMap,
+            purchasedCatalogCnt, sparePartsCatCnt, oilsCatCnt, toolsCatCnt, inWhCatCnt,
+            expItemFleetCnt, expItemWhCnt, expItemOvCnt
+          }
+        };
       }
-      const dt = recordDate(r);
-      const ym = dt ? dt.slice(0, 7) : '';
-      if (/^\d{4}-\d{2}$/.test(ym)) {
-        const mIdx = Math.max(0, Math.min(11, parseInt(ym.slice(5, 7), 10) - 1));
-        const cur = expMonthAgg.get(ym) || { ym, 'Year Month': `${MONTH_SHORT[mIdx]} ${ym.slice(0, 4)}`, cash_usd: 0, credit_usd: 0, vouchers: 0 };
-        if (isCr) cur.credit_usd = round2(cur.credit_usd + a);
-        else if (isCa) cur.cash_usd = round2(cur.cash_usd + a);
-        cur.vouchers += 1;
-        expMonthAgg.set(ym, cur);
-      }
-      const catName = String(r.category || 'Uncategorized').trim() || 'Uncategorized';
-      const ck = norm(catName);
-      if (!catAggMap.has(ck)) {
-        const cm = catMetaMap.get(ck);
-        const derivedCls = (window.MFG_PBI && typeof window.MFG_PBI.deriveExpenseCostClass === 'function')
-          ? window.MFG_PBI.deriveExpenseCostClass(cm || catName)
-          : ((cm && (cm.cost_class || cm.category1)) || r.cost_class || 'Operating Expense');
-        catAggMap.set(ck, {
-          id: (cm && cm.id) || catName,
-          category: catName,
-          cost_class: derivedCls,
-          vouchers: 0,
-          unit_tagged: 0,
-          cash: 0,
-          credit: 0,
-          total: 0
-        });
-      }
-      const cg = catAggMap.get(ck);
-      cg.vouchers += 1;
-      if (r.equipment) cg.unit_tagged += 1;
-      if (isCr) cg.credit += a; else if (isCa) cg.cash += a;
-      cg.total += a;
-    });
-    const expCatRows = sortRows(Array.from(catAggMap.values()), 'exp_cat', 'total', 'desc');
+    }
+    const expCatRows = sortRows(catAggVals.slice(), 'exp_cat', 'total', 'desc');
     const shownExpCat = expCatRows.slice(0, shownCount('exp_cat'));
-    const expMonths = Array.from(expMonthAgg.values()).sort((a, b) => a.ym.localeCompare(b.ym));
+    const expLegBrk = computeThreeLegPayablesBreakdown();
+    const qExpSup = norm(STATE.search || '');
+    const expSupRaw = (expLegBrk && expLegBrk.rows ? expLegBrk.rows : []).filter(r => {
+      const hasExp = Math.abs(r.exp_cr_usd || 0) > 0.005 || Math.abs(r.exp_pd_usd || 0) > 0.005 || Math.abs(r.exp_rem_ttc || 0) > 0.005 || Math.abs(r.exp_rem_lbp || 0) > 100;
+      if (!hasExp) return false;
+      if (qExpSup && !norm(r.supplier).includes(qExpSup)) return false;
+      return true;
+    }).map(r => {
+      const crUsd = round2((r.exp_cr_usd || 0) - (r.exp_ret_wtc_usd || 0) - (r.exp_ret_other_usd || 0));
+      const crLbp = Math.round((r.exp_cr_lbp || 0) + (r.exp_vat_cr_lbp || 0));
+      const pdUsd = round2(r.exp_pd_usd || 0);
+      const pdLbp = Math.round((r.exp_pd_lbp || 0) + (r.exp_vat_pd_lbp || 0));
+      return {
+        supplier: r.supplier,
+        credit_usd: crUsd,
+        credit_lbp: crLbp,
+        payment_usd: pdUsd,
+        payment_lbp: pdLbp,
+        rem_usd: round2(r.exp_rem_usd || 0),
+        rem_lbp: Math.round(r.exp_rem_lbp || 0),
+        total_rem: round2(r.exp_rem_ttc || 0),
+        vat_credit: round2(r.exp_vat_cr_usd || 0),
+        vat_payment: round2(r.exp_vat_pd_usd || 0),
+        vat_rem: round2(r.exp_vat_rem_usd || 0)
+      };
+    });
+    const expSupRows = sortRows(applyColumnFilters(expSupRaw, 'exp_sup'), 'exp_sup', 'total_rem', 'desc');
+    const shownExpSup = expSupRows.slice(0, shownCount('exp_sup'));
+    const sumExpSupCrUsd = round2(expSupRows.reduce((a, r) => a + r.credit_usd, 0));
+    const sumExpSupCrLbp = Math.round(expSupRows.reduce((a, r) => a + r.credit_lbp, 0));
+    const sumExpSupPdUsd = round2(expSupRows.reduce((a, r) => a + r.payment_usd, 0));
+    const sumExpSupPdLbp = Math.round(expSupRows.reduce((a, r) => a + r.payment_lbp, 0));
+    const sumExpSupRemUsd = round2(expSupRows.reduce((a, r) => a + r.rem_usd, 0));
+    const sumExpSupRemLbp = Math.round(expSupRows.reduce((a, r) => a + r.rem_lbp, 0));
+    const sumExpSupTotRem = round2(expSupRows.reduce((a, r) => a + r.total_rem, 0));
+    const sumExpSupVatCr = round2(expSupRows.reduce((a, r) => a + r.vat_credit, 0));
+    const sumExpSupVatPd = round2(expSupRows.reduce((a, r) => a + r.vat_payment, 0));
+    const sumExpSupVatRem = round2(expSupRows.reduce((a, r) => a + r.vat_rem, 0));
     const wtcEx = byCoExp.WTC;
     const bbcEx = byCoExp.BBConstruction;
     const isGroupScope = STATE.company === 'manufacturing-group';
-
-    // Build Item & Spare Part Catalog spend summary + Itemized Expense Ticket ledger
-    const wh = getWarehouseIndex();
-    const whByItem = new Map((wh.items || []).map(w => [norm(w.item_name), w]));
-    const catalogMap = new Map();
-    (SEED.records.items || []).forEach(it => {
-      if (!it || it.voided) return;
-      const nm = String(it.name || it.item_name || '').trim();
-      const nk = norm(nm);
-      if (nk && !catalogMap.has(nk)) catalogMap.set(nk, it);
-    });
-
-    const expItemBase = filterRecords(SEED.records.expense_items || [], {
-      cols: ['id', 'expense_id', 'expense_ref', 'item_name', 'category', 'subcategory', 'supplier', 'equipment', 'target_equipment', 'method', 'uom', 'location', 'warehouse_location', 'disposition']
-    }).filter(r => r && !r.voided && !isTransportRentalItemName(r.item_name || r.name));
-
-    const itemSpendAggMap = new Map();
-    const itemGroupAggMap = new Map();
-    const ensureItemCatRow = (rawName, rawCat, rawUom, fallbackCost, fallbackLoc, fallbackMin) => {
-      const cleanName = String(rawName || '').trim();
-      const ik = norm(cleanName);
-      if (!ik) return null;
-      let cur = itemSpendAggMap.get(ik);
-      if (!cur) {
-        const catRec = catalogMap.get(ik);
-        const wRec = whByItem.get(ik);
-        const canonName = (catRec && (catRec.name || catRec.item_name)) || cleanName;
-        const lockedUom = (catRec && (catRec.uom || catRec.unit)) || rawUom || 'Piece';
-        const grp = (catRec && catRec.category) || normalizeItemCatalogCategory(rawCat, canonName);
-        cur = {
-          id: (catRec && catRec.id) || cleanName,
-          name: canonName,
-          category: grp,
-          uom: lockedUom,
-          location: (catRec && (catRec.default_location || catRec.location)) || (wRec && wRec.location) || fallbackLoc || 'Main Warehouse',
-          min_stock: Number((catRec && catRec.min_stock) || fallbackMin || 0),
-          default_cost: Number((catRec && (catRec.default_cost ?? catRec.unit_cost)) || fallbackCost || 0),
-          tickets: 0,
-          total_qty: 0,
-          fleet_qty: 0,
-          wh_qty: 0,
-          cash_usd: 0,
-          credit_usd: 0,
-          total_usd: 0,
-          avg_cost: Number((catRec && (catRec.default_cost ?? catRec.unit_cost)) || fallbackCost || 0),
-          on_hand_qty: wRec ? Number(wRec.onHandQty || 0) : 0,
-          on_hand_usd: wRec ? Number(wRec.onHandValue || 0) : 0,
-          last_date: ''
-        };
-        itemSpendAggMap.set(ik, cur);
-      }
-      return cur;
-    };
-
-    const qLower = String(STATE.search || '').trim().toLowerCase();
-    (SEED.records.items || []).forEach(it => {
-      if (!it || it.voided) return;
-      const nm = String(it.name || it.item_name || '').trim();
-      if (!nm || isTransportRentalItemName(nm)) return;
-      if (qLower && !`${nm} ${it.category || ''} ${it.uom || ''} ${it.default_location || ''}`.toLowerCase().includes(qLower)) return;
-      ensureItemCatRow(nm, it.category, it.uom || it.unit, it.default_cost ?? it.unit_cost, it.default_location || it.location, it.min_stock);
-    });
-
-    expItemBase.forEach(r => {
-      const nm = String(r.item_name || r.name || '').trim();
-      const row = ensureItemCatRow(nm, r.category, r.uom, r.unit_cost, r.warehouse_location || r.location, 0);
-      if (!row) return;
-      const qty = Math.max(0, Number(r.qty || 1));
-      const lineUsd = Number(r.line_total != null ? r.line_total : (r.total_cost != null ? r.total_cost : (r.amount || 0)));
-      const isWh = Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || ''));
-      const isEq = Boolean(r.target_equipment || r.equipment);
-      const isCr = isApCreditExpense(r);
-      row.tickets += 1;
-      row.total_qty = round2(row.total_qty + qty);
-      if (isEq) row.fleet_qty = round2(row.fleet_qty + qty);
-      if (isWh) row.wh_qty = round2(row.wh_qty + qty);
-      if (isCr) row.credit_usd = round2(row.credit_usd + lineUsd);
-      else row.cash_usd = round2(row.cash_usd + lineUsd);
-      row.total_usd = round2(row.total_usd + lineUsd);
-      if (row.total_qty > 0 && row.total_usd > 0) row.avg_cost = round2(row.total_usd / row.total_qty);
-      const dt = String(r.date || '');
-      if (dt > row.last_date) row.last_date = dt;
-
-      const gk = row.category || 'Spare Parts';
-      const gCur = itemGroupAggMap.get(gk) || { group: gk, uom_summary: row.uom, items_set: new Set(), tickets: 0, qty: 0, total_usd: 0, subLabel: '' };
-      gCur.items_set.add(norm(row.name));
-      gCur.tickets += 1;
-      gCur.qty = round2(gCur.qty + qty);
-      gCur.total_usd = round2(gCur.total_usd + lineUsd);
-      itemGroupAggMap.set(gk, gCur);
-    });
-
-    const expCatalogAll = Array.from(itemSpendAggMap.values());
-    const purchasedCatalogCnt = expCatalogAll.filter(r => r.tickets > 0).length;
-    const sparePartsCatCnt = expCatalogAll.filter(r => /spare|part/i.test(r.category)).length;
-    const oilsCatCnt = expCatalogAll.filter(r => /oil|lub/i.test(r.category)).length;
-    const toolsCatCnt = expCatalogAll.filter(r => /tool|consum/i.test(r.category)).length;
-    const inWhCatCnt = expCatalogAll.filter(r => r.on_hand_qty > 0.0001).length;
     const itemCatChipKey = STATE.expItemCatFilter || 'all';
     const itemCatChip = (key, label) => `<button type="button" class="filter-chip ${itemCatChipKey === key ? 'active' : ''}" data-exp-item-cat-chip="${esc(key)}">${label}</button>`;
     const expCatalogFiltered = sortRows(expCatalogAll.filter(r => {
@@ -24807,10 +25096,6 @@
     const sumCatQty = round2(expCatalogFiltered.reduce((a, r) => a + r.total_qty, 0));
     const sumCatSpend = round2(expCatalogFiltered.reduce((a, r) => a + r.total_usd, 0));
     const sumCatOnHand = round2(expCatalogFiltered.reduce((a, r) => a + r.on_hand_qty, 0));
-
-    const expItemFleetCnt = expItemBase.filter(r => Boolean(r.target_equipment || r.equipment)).length;
-    const expItemWhCnt = expItemBase.filter(r => Boolean(r.stored_in_warehouse) || /^warehouse$/i.test(String(r.allocation_mode || '')) || /Warehouse/i.test(String(r.disposition || ''))).length;
-    const expItemOvCnt = expItemBase.filter(r => !(r.target_equipment || r.equipment) && !r.stored_in_warehouse && !/^warehouse$/i.test(String(r.allocation_mode || ''))).length;
     const itemTktChipKey = STATE.expItemTktFilter || 'all';
     const itemTktChip = (key, label) => `<button type="button" class="filter-chip ${itemTktChipKey === key ? 'active' : ''}" data-exp-item-tkt-chip="${esc(key)}">${label}</button>`;
     const expItemFiltered = sortRows(expItemBase.filter(r => {
@@ -24993,7 +25278,7 @@
                 const isStoredWh = Boolean(x.stored_in_warehouse);
                 const rawItemSum = String(x.item_summary || '').trim();
                 const primaryItem = rawItemSum ? rawItemSum.split(',')[0].replace(/\s*\([^)]*\)\s*$/, '').trim() : '';
-                const catItem = primaryItem ? catalogMap.get(norm(primaryItem)) : null;
+                const catItem = (primaryItem && catalogMap) ? catalogMap.get(norm(primaryItem)) : null;
                 const itemUom = (catItem && (catItem.uom || catItem.unit)) || (isDieselRow ? 'Litre' : 'Piece');
                 const itemCellHtml = rawItemSum
                   ? `${multiCnt > 1 ? `<span class="badge badge-brass">${fmtNum(multiCnt)} Items</span> ` : ''}${relLink('items', primaryItem || rawItemSum, rawItemSum, true)}${multiCnt <= 1 && qtyVal > 0 ? ` <span class="badge badge-info">${fmtNum(qtyVal, qtyVal % 1 ? 2 : 0)} ${esc(itemUom)}</span>` : ''}`
@@ -31495,7 +31780,7 @@
                           <div>${esc(an.whyText)}</div>
                           <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap">
                             <button type="button" class="btn btn-sm" data-rkey="${esc(an.rkey)}" data-rid="${esc(an.id)}" style="font-size:10.5px;padding:2px 7px">Inspect Ticket</button>
-                            ${canModifyData() ? `<button type="button" class="btn btn-sm btn-primary" data-open-eq-sub="${esc(mc.machine)}" data-sub-date="${esc(wf.targetDate)}" data-sub-co="${esc(ab.company)}" style="font-size:10.5px;padding:2px 8px">${ic('swap')} Log Substitute Driver</button>` : ''}
+                            ${canModifyRecord() ? `<button type="button" class="btn btn-sm btn-primary" data-open-eq-sub="${esc(mc.machine)}" data-sub-date="${esc(wf.targetDate)}" data-sub-co="${esc(ab.company)}" style="font-size:10.5px;padding:2px 8px">${ic('swap')} Log Substitute Driver</button>` : ''}
                           </div>
                         </div>
                       `).join('')}
@@ -31570,7 +31855,7 @@
                     </td>
                     <td style="white-space:normal;min-width:180px;max-width:300px;font-size:11.5px;line-height:1.35">${esc(a.whyText)}</td>
                     <td style="white-space:nowrap">
-                      ${canModifyData()
+                      ${canModifyRecord()
                         ? `<button type="button" class="btn btn-sm" data-open-eq-sub="${esc(a.equipment)}" data-sub-date="${esc(a.date)}" data-sub-co="${esc(a.company)}" style="font-size:10.5px;padding:3px 7px" title="Open Equipment Driver Assignment Log for ${esc(a.equipment)} on ${esc(fmtDateDMY(a.date))}">Log Sub</button>`
                         : `<span class="badge">Inspect</span>`}
                     </td>
@@ -35036,9 +35321,11 @@
       {
         key: 'modify',
         label: 'Modify & Pending Prices',
-        allowed: canPendingPrice,
-        partial: !perms.rights.modify_data && canPendingPrice,
-        state: perms.rights.modify_data ? 'Full Modify' : (canPendingPrice ? 'Pending Prices' : 'Locked')
+        allowed: !!(perms.rights.modify_data || perms.rights.modify_text || canPendingPrice),
+        partial: !perms.rights.modify_data && !!(perms.rights.modify_text || canPendingPrice),
+        state: perms.rights.modify_data
+          ? 'Full Modify'
+          : (perms.rights.modify_text ? 'Words Only (No Numbers)' : (canPendingPrice ? 'Pending Prices' : 'Locked'))
       },
       { key: 'void', label: 'Void / Delete Records', allowed: !!perms.rights.void_data, state: perms.rights.void_data ? 'Allowed' : 'Locked' },
       {
@@ -35113,8 +35400,10 @@
           ? '✓ Create · Modify · Void'
           : (perms.rights.modify_data
               ? '✓ Create & Modify'
-              : (perms.roleKey === 'Entry' ? '✓ Create · Payroll · Till · Pending Prices' : '✓ Create Only')))
-      : (perms.rights.void_data ? 'Read & Void Only' : 'Read-Only');
+              : (perms.rights.modify_text
+                  ? (perms.roleKey === 'Entry' ? '✓ Create · Edit Words Only (No Numbers)' : '✓ Create & Edit Words Only')
+                  : (perms.roleKey === 'Entry' ? '✓ Create · Payroll · Till · Pending Prices' : '✓ Create Only'))))
+      : (perms.rights.void_data ? 'Read & Void Only' : (perms.rights.modify_text ? 'Read & Edit Words Only' : 'Read-Only'));
     const unlockSummary = m.unlockCount === m.unlockTotal
       ? `✓ All ${m.unlockTotal} Overrides`
       : (m.unlockCount > 0 ? `${ic('unlock')} ${m.unlockCount}/${m.unlockTotal} Overrides` : `${ic('lock')} PIN Required`);
@@ -35811,6 +36100,7 @@
     const isSelfOwner = editUser && editIdx === STATE.activeUserIdx;
     const fSamples = editUser ? userFaceSamples(editUser) : [];
     const previewUser = getDraftSeatPreviewUser(editUser, curRole, curCompanies, curAccess);
+    const previewPerms = getEffectivePermissions(previewUser);
 
     return `
       <div class="panel-card seat-editor-card" id="seatEditorPanel" style="margin-bottom:16px;border-color:var(--brass)">
@@ -35918,6 +36208,15 @@
                 <select id="nu_book_scope">
                   <option value="all" ${curBookScope !== 'official' ? 'selected' : ''}>All Books (Complete Ledger)</option>
                   <option value="official" ${curBookScope === 'official' ? 'selected' : ''}>Official / Fiscal (11% VAT Only)</option>
+                </select>
+              </label>
+              <label class="seat-status-inline" for="nu_entry_edit_mode">
+                <span>Record Edit Mode:</span>
+                <select id="nu_entry_edit_mode" ${previewPerms.rights.modify_data ? 'disabled' : ''}>
+                  ${previewPerms.rights.modify_data
+                    ? '<option value="full" selected>Supervisor Full Edit (Words &amp; Numbers)</option>'
+                    : `<option value="words_only" ${previewPerms.rights.modify_text ? 'selected' : ''}>Words Only (Numbers Locked to Supervisor)</option>
+                       <option value="locked" ${!previewPerms.rights.modify_text ? 'selected' : ''}>Locked (New Entries &amp; Pending Prices Only)</option>`}
                 </select>
               </label>
               ${editUser ? `
@@ -37451,7 +37750,7 @@
         saveBtn.hidden = false;
       } else {
         saveBtn.textContent = isEditingExisting ? 'Save Changes' : (STATE.editingPendingRawId ? 'Save Final Price' : 'Post to Cloud Ledger');
-        if (isEditingExisting && !canModifyData()) saveBtn.hidden = true;
+        if (isEditingExisting && !canModifyRecord()) saveBtn.hidden = true;
       }
     }
 
@@ -39156,6 +39455,12 @@
   function openAdminUnlockPrompt(targetFieldId) {
     const box = $('paAdminUnlockBox');
     if (!box) return;
+    if (STATE.editingRecord && STATE.editingRecord.id && canModifyTextOnly() && /^(f_unitprice|f_transunitprice|f_qty|f_uom|f_mat_total|f_trans_total|f_total_usd|f_fxrate)$/.test(String(targetFieldId || ''))) {
+      box.hidden = true;
+      box.innerHTML = '';
+      toast('Numbers are locked to Supervisor on posted records · your seat can edit words & text only', 'err');
+      return;
+    }
     if (targetFieldId === 'f_fxrate') {
       const fxG = evaluateCurrentModalFxConversionGuard();
       if (fxG && fxG.frozen) {
@@ -44138,26 +44443,15 @@
         return {};
       }
       if (STATE.modalForm === 'site') {
-        const cat = val('f_site_category') === 'customer' ? 'customer' : 'supplier';
-        const isCust = cat === 'customer';
         const host = activeFormHost();
-        if (host) {
-          host.querySelectorAll('[data-site-cat]').forEach(b => {
-            const on = b.getAttribute('data-site-cat') === cat;
-            b.classList.toggle('active', on);
-            b.setAttribute('aria-pressed', on ? 'true' : 'false');
-            const chk = b.querySelector('.site-cat-check');
-            if (chk) chk.textContent = on ? '✓ Selected' : 'Select';
-          });
-        }
-        const isJvSite = !isCust && Boolean($('f_isjv') && $('f_isjv').checked);
-        if ((isCust || isJvSite) && $('f_includes_transport') && $('f_includes_transport').value !== '0') {
+        const isJvSite = Boolean($('f_isjv') && $('f_isjv').checked);
+        if (isJvSite && $('f_includes_transport') && $('f_includes_transport').value !== '0') {
           $('f_includes_transport').value = '0';
         }
-        const inclTrans = !isCust && !isJvSite && val('f_includes_transport') === '1';
+        const inclTrans = !isJvSite && val('f_includes_transport') === '1';
         const haulDeck = $('quarryHaulageModeDeck');
         if (haulDeck) {
-          haulDeck.hidden = Boolean(isCust || isJvSite);
+          haulDeck.hidden = Boolean(isJvSite);
           haulDeck.querySelectorAll('[data-quarry-bundled]').forEach(b => {
             const on = (b.getAttribute('data-quarry-bundled') === '1') === inclTrans;
             b.classList.toggle('active', on);
@@ -44171,17 +44465,15 @@
         const siteNameLbl = document.querySelector('#wrap_site_name .pa-fld-lbl');
         if (siteNameLbl) siteNameLbl.textContent = inclTrans ? 'Quarry / Supplier Site Name *' : 'Site Name (Inside Region) *';
 
-        setFieldVisible('wrap_site_supplier', !isCust);
-        setFieldVisible('wrap_site_jv', !isCust);
+        setFieldVisible('wrap_site_supplier', true);
+        setFieldVisible('wrap_site_jv', !inclTrans);
         setFieldVisible('wrap_site_jv_details', isJvSite);
-        setFieldVisible('wrap_site_customer', isCust);
-        if (isCust) {
-          if ($('f_supplier') && $('f_supplier').value) $('f_supplier').value = '';
-          if ($('f_isjv') && $('f_isjv').checked) $('f_isjv').checked = false;
-          if ($('f_jv_partner') && $('f_jv_partner').value) $('f_jv_partner').value = '';
-        } else {
+        setFieldVisible('wrap_site_customer', !inclTrans && !isJvSite);
+        if (inclTrans || isJvSite) {
           if ($('f_customer') && $('f_customer').value) $('f_customer').value = '';
-          if (!isJvSite && $('f_jv_partner') && $('f_jv_partner').value) $('f_jv_partner').value = '';
+        }
+        if (!isJvSite && $('f_jv_partner') && $('f_jv_partner').value) {
+          $('f_jv_partner').value = '';
         }
         if (isJvSite) {
           const jvP = val('f_jv_partner') || 'Partner';
@@ -44253,9 +44545,9 @@
         if (mTitle && !STATE.editingPendingExpenseId) {
           if (editingSiteRec) {
             const sLbl = String(val('f_site') || (editingSiteRec.orig && editingSiteRec.orig.name) || '').trim();
-            mTitle.textContent = `${isCust ? 'Edit Customer Delivery Site' : 'Edit Supplier / Quarry Site'}${sLbl ? ` · ${sLbl}` : ''}`;
+            mTitle.textContent = `Edit Site${sLbl ? ` · ${sLbl}` : ''}`;
           } else {
-            mTitle.textContent = isCust ? 'New Customer Delivery Site (All BUs)' : 'New Supplier / Quarry Site (All BUs)';
+            mTitle.textContent = 'New Site (All BUs)';
           }
         }
         const siteInp = $('f_site');
@@ -44350,7 +44642,7 @@
           mapCanvas._refreshSiteOverlay();
         }
         const siteEditId = (STATE.editingRecord && STATE.editingRecord.crKey === 'sites') ? STATE.editingRecord.id : '';
-        syncUniversalMainDupHint('f_site', 'sites', isCust ? 'Customer Delivery Site' : 'Supplier / Quarry Site', { siteCategory: cat, excludeId: siteEditId });
+        syncUniversalMainDupHint('f_site', 'sites', 'Site', { excludeId: siteEditId });
         return {};
       }
       if (STATE.modalForm === 'region') {
@@ -45021,9 +45313,10 @@
           const roleEl = $('f_role');
           if (roleEl) {
             const canAutoRole = !val('f_role') || (roleEl.dataset.autoFilledRole === '1' && val('f_role') === (roleEl.dataset.autoFilledRoleVal || ''));
+            const stMemRow = curStaff ? ((SEED.records && SEED.records.staff_members) || []).find(s => s && !s.voided && norm(s.name || s.staff) === norm(curStaff)) : null;
             const suggestedRole = (prof.hasContract && prof.role)
               ? prof.role
-              : (eqInfo.registeredUnits.some(u => u.fromDriverReg) ? 'Driver' : '');
+              : ((stMemRow && stMemRow.role) ? stMemRow.role : (eqInfo.registeredUnits.some(u => u.fromDriverReg) ? 'Driver' : ''));
             if (canAutoRole) {
               if (suggestedRole) {
                 roleEl.value = suggestedRole;
@@ -46122,7 +46415,19 @@
   }
 
   function recalcForm(skipPostSync = false) {
-    const res = recalcFormInner() || {};
+    if (!FORM_UI.hydrating && STATE.editingRecord && STATE.editingRecord.id && canModifyTextOnly()) {
+      FORM_UI.qtyManual = true;
+      FORM_UI.priceManual = true;
+      FORM_UI.transManual = true;
+      FORM_UI.uomManual = true;
+      FORM_UI.methodManual = true;
+    }
+    let res = recalcFormInner() || {};
+    if (!FORM_UI.hydrating && STATE.editingRecord && STATE.editingRecord.id && canModifyTextOnly()) {
+      if (applyWordOnlyModalNumberLocks()) {
+        res = recalcFormInner() || {};
+      }
+    }
     syncFormCustomAlertBanner(res);
     if (!skipPostSync) {
       if (FORM_UI.postAttempted) {
@@ -46175,6 +46480,7 @@
     const defAddStart = (minAddStart && minAddStart > today) ? minAddStart : today;
     const activeToday = equipInfo(targetEq.name, defCo, false, { date: today, side: 'fuel' });
     const activeTodayDrv = (activeToday && activeToday.default_driver) || targetEq.default_driver || '-';
+    const defLogOwner = (activeToday && activeToday.supplier) || targetEq.supplier || (/^(own|company)/i.test(targetEq.ownership || '') ? defCo : '');
 
     logWrap.innerHTML = `
       <div class="pa-subgrid-box" id="eqDriverLogBox" data-edit-modal-win-idx="">
@@ -46185,7 +46491,7 @@
           </div>
           <span class="badge badge-ok">Active (${esc(today)}): ${esc(activeTodayDrv)}</span>
         </div>
-        ${canModifyData() ? `
+        ${canModifyRecord() ? `
           <div class="form-grid-3" style="padding:10px 12px;background:rgba(196,154,69,0.06);border-bottom:1px solid var(--line)">
             <div class="form-field">
               <label for="f_log_co">Company / BU</label>
@@ -46203,7 +46509,11 @@
               <label for="f_log_end">End Date (Blank = Permanent · Set for Substitute)</label>
               <input type="date" id="f_log_end" value="">
             </div>
-            <div class="form-field" style="grid-column: span 2">
+            <div class="form-field">
+              <label for="f_log_owner">Truck Owner *</label>
+              <input type="text" id="f_log_owner" list="dl_truck_owners" value="${esc(defLogOwner)}" placeholder="Select or type truck owner...">
+            </div>
+            <div class="form-field">
               <label for="f_log_driver">Active / Substitute Driver *</label>
               <input type="text" id="f_log_driver" list="dl_drivers" value="${esc(targetEq.default_driver || '')}" placeholder="Select or type active / substitute driver...">
             </div>
@@ -46217,7 +46527,7 @@
           <table class="ledger-table">
             <thead>
               <tr>
-                <th>Co.</th><th>Scope</th><th>Start Date</th><th>End Date</th><th>Active Driver</th><th>Owner</th><th class="r">Size</th><th>Status</th>${canModifyData() ? '<th></th>' : ''}
+                <th>Co.</th><th>Scope</th><th>Start Date</th><th>End Date</th><th>Active Driver</th><th>Owner</th><th class="r">Size</th><th>Status</th>${canModifyRecord() ? '<th></th>' : ''}
               </tr>
             </thead>
             <tbody>
@@ -46226,17 +46536,18 @@
                 const isSub = Boolean(w.e && (!w.s || w.s <= today) && w.e >= today);
                 const isOpen = !w.e || String(w.e) >= today;
                 const sideLbl = w.side === 'sales' ? 'Sales' : (w.side === 'raw' ? 'Raw & Trans' : (w.side === 'fuel' ? 'Diesel & Lub.' : 'All Tables'));
+                const wCo = w.co || 'WTC';
                 return `
-                  <tr data-modal-tw-row-idx="${origIdx}" style="cursor:pointer" aria-label="Click to edit this log entry">
-                    <td>${coBadge(w.co || 'WTC')}</td>
+                  <tr data-modal-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${norm(wCo) !== norm(defCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to edit this log entry">
+                    <td>${coBadge(wCo)}</td>
                     <td><span class="badge badge-info">${esc(sideLbl)}</span></td>
                     <td class="mono">${esc(w.s || '2024-01-01')}</td>
                     <td class="mono">${esc(w.e || 'Open')}</td>
                     <td><strong>${esc(w.drv || targetEq.default_driver || '-')}</strong></td>
-                    <td>${esc(w.own || targetEq.supplier || '-')}</td>
+                    <td>${esc(w.own || targetEq.supplier || defLogOwner || '-')}</td>
                     <td class="r">${Number(w.cap) > 0 ? `${fmtNum(w.cap, 1)} m³` : '-'}</td>
                     <td><span class="badge ${isSub ? 'badge-brass' : (isOpen ? 'badge-ok' : 'badge-neutral')}">${isSub ? 'Substitute' : (isOpen ? 'Active' : 'Historical')}</span></td>
-                    ${canModifyData() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-modal-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button> <button type="button" class="btn btn-sm" data-del-modal-tw-idx="${origIdx}" aria-label="Remove window">✕</button></td>` : ''}
+                    ${canModifyRecord() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-modal-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button>${canModifyData() ? ` <button type="button" class="btn btn-sm" data-del-modal-tw-idx="${origIdx}" aria-label="Remove window">✕</button>` : ''}</td>` : ''}
                   </tr>
                 `;
               }).join('') : `
@@ -46246,10 +46557,10 @@
                   <td class="mono">2024-01-01</td>
                   <td class="mono">Open</td>
                   <td><strong>${esc(targetEq.default_driver || '-')}</strong></td>
-                  <td>${esc(targetEq.supplier || '-')}</td>
+                  <td>${esc(targetEq.supplier || defLogOwner || '-')}</td>
                   <td class="r">${Number(targetEq.capacity) > 0 ? `${fmtNum(targetEq.capacity, 1)} m³` : '-'}</td>
                   <td><span class="badge badge-ok">Baseline</span></td>
-                  ${canModifyData() ? '<td></td>' : ''}
+                  ${canModifyRecord() ? '<td></td>' : ''}
                 </tr>
               `}
             </tbody>
@@ -46262,12 +46573,31 @@
     const logBox = $('eqDriverLogBox');
     const logBtn = $('btnLogEquipDriver');
     const cancelLogBtn = $('btnCancelLogEquipDriver');
+    const syncModalTwCoRows = () => {
+      const selCo = ($('f_log_co') && $('f_log_co').value) || defCo;
+      logWrap.querySelectorAll('tr[data-modal-tw-row-idx]').forEach(tr => {
+        const rowCo = tr.getAttribute('data-tw-co') || 'WTC';
+        tr.hidden = norm(rowCo) !== norm(selCo);
+      });
+    };
+    if ($('f_log_co')) {
+      $('f_log_co').addEventListener('change', () => {
+        syncModalTwCoRows();
+        const curEditIdx = (logBox && logBox.dataset.editModalWinIdx != null && logBox.dataset.editModalWinIdx !== '') ? Number(logBox.dataset.editModalWinIdx) : -1;
+        const minS = getTruckWindowMinStart(targetEq, { co: $('f_log_co').value || defCo, side: 'both', cust: '', site: '' }, curEditIdx);
+        if ($('f_log_start')) {
+          if (minS) $('f_log_start').setAttribute('min', minS);
+          else $('f_log_start').removeAttribute('min');
+        }
+      });
+    }
     const startModalWinEdit = idx => {
-      if (!canModifyData() || !logBox || !Array.isArray(targetEq.adj_windows)) return;
+      if (!canModifyRecord() || !logBox || !Array.isArray(targetEq.adj_windows)) return;
       const w = targetEq.adj_windows[idx];
       if (!w) return;
       logBox.dataset.editModalWinIdx = String(idx);
       if ($('f_log_co')) $('f_log_co').value = w.co || defCo;
+      syncModalTwCoRows();
       if ($('f_log_start')) {
         const minEditS = getTruckWindowMinStart(targetEq, w, idx);
         if (minEditS) $('f_log_start').setAttribute('min', minEditS);
@@ -46275,6 +46605,7 @@
         $('f_log_start').value = w.s || '2024-01-01';
       }
       if ($('f_log_end')) $('f_log_end').value = w.e || '';
+      if ($('f_log_owner')) $('f_log_owner').value = w.own || targetEq.supplier || defLogOwner || '';
       if ($('f_log_driver')) $('f_log_driver').value = w.drv || targetEq.default_driver || '';
       if (logBtn) logBtn.textContent = '✓ Update Assignment';
       if (cancelLogBtn) cancelLogBtn.hidden = false;
@@ -46287,12 +46618,14 @@
         ev.preventDefault();
         if (logBox) logBox.dataset.editModalWinIdx = '';
         if ($('f_log_co')) $('f_log_co').value = defCo;
+        syncModalTwCoRows();
         if ($('f_log_start')) {
           if (minAddStart) $('f_log_start').setAttribute('min', minAddStart);
           else $('f_log_start').removeAttribute('min');
           $('f_log_start').value = defAddStart;
         }
         if ($('f_log_end')) $('f_log_end').value = '';
+        if ($('f_log_owner')) $('f_log_owner').value = defLogOwner || '';
         if ($('f_log_driver')) $('f_log_driver').value = targetEq.default_driver || '';
         if (logBtn) logBtn.textContent = '+ Log Driver Assignment';
         cancelLogBtn.hidden = true;
@@ -46315,11 +46648,13 @@
     if (logBtn) {
       logBtn.addEventListener('click', ev => {
         ev.preventDefault();
-        if (!canModifyData()) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
+        if (!canModifyRecord()) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
         const drvVal = val('f_log_driver');
+        const ownVal = val('f_log_owner');
         const sVal = val('f_log_start') || todayISO();
         const eVal = val('f_log_end') || '';
         const logCo = val('f_log_co') || defCo;
+        if (!ownVal) { toast('Enter the Truck Owner name to log.', 'err'); return; }
         if (!drvVal) { toast('Enter the Active / Substitute Driver name to log.', 'err'); return; }
         if (eVal && eVal < sVal) { toast('End Date cannot be before Start Date.', 'err'); return; }
         const rawEditIdx = (logBox && logBox.dataset.editModalWinIdx != null && logBox.dataset.editModalWinIdx !== '') ? Number(logBox.dataset.editModalWinIdx) : -1;
@@ -46330,7 +46665,7 @@
           s: sVal,
           e: eVal,
           cap: Number((editWin && editWin.cap) || targetEq.capacity || 0),
-          own: (editWin && editWin.own) || targetEq.supplier || '',
+          own: ownVal,
           drv: drvVal,
           cust: (editWin && editWin.cust) || '',
           site: (editWin && editWin.site) || '',
@@ -49335,7 +49670,7 @@
     items: { label: 'Item & Part', field: 'f_item_name', prop: 'name' },
     product_types: { label: 'Product Type', field: 'f_name', prop: 'name' },
     uoms: { label: 'Unit of Measure', field: 'f_name', prop: 'name' },
-    sites: { label: 'Site', field: 'f_site', prop: 'name', compositeProp: 'site_category' },
+    sites: { label: 'Site', field: 'f_site', prop: 'name' },
     regions: { label: 'Region', field: 'f_region', prop: 'name' },
     equipment: { label: 'Equipment & Truck', field: 'f_truck', prop: 'name', altField: 'f_plateno', altProp: 'plate_no' },
     drivers: { label: 'Driver', field: 'f_driver', prop: 'name' },
@@ -49366,7 +49701,6 @@
     if (!r) return '';
     const m = norm(universalMainValue(crKey, r));
     if (!m) return '';
-    if (crKey === 'sites') return resolveSiteCategory(r) + '|' + m;
     if (crKey === 'expense_subcategories') return norm(r.category) + '|' + m;
     if (crKey === 'fx_rates') return norm(r.currency || 'LBP') + '|' + m;
     return m;
@@ -49378,7 +49712,6 @@
     const qPlate = opts.plateNo ? norm(opts.plateNo) : '';
     const qCat = opts.category ? norm(opts.category) : '';
     const qCurr = opts.currency ? norm(opts.currency) : '';
-    const qSiteCat = opts.siteCategory ? (norm(opts.siteCategory) === 'customer' ? 'customer' : 'supplier') : '';
     if (!q && !qPlate) return null;
     const excludeId = opts.excludeId != null ? String(opts.excludeId) : '';
     const pool = [].concat(
@@ -49389,11 +49722,6 @@
       if (!r || r.voided) continue;
       if (excludeId && r.id != null && String(r.id) === excludeId) continue;
       const rMain = norm(universalMainValue(crKey, r));
-      if (crKey === 'sites') {
-        const effTargetCat = qSiteCat || 'supplier';
-        if (q && rMain === q && resolveSiteCategory(r) === effTargetCat) return r;
-        continue;
-      }
       if (crKey === 'expense_subcategories') {
         if (q && rMain === q && (!qCat || norm(r.category) === qCat)) return r;
         continue;
@@ -49565,9 +49893,14 @@
           if (c.up < 0) addErr('f_unitprice', 'Unit price cannot be negative.');
           else if (c.product && val('f_unitprice') === '') addErr('f_unitprice', 'Unit price is required.');
           else if (c.product && val('f_unitprice') !== '' && c.up === 0 && !notes && dispS.mode !== 'return_wtc' && ticketSign({ method: val('f_method') }) !== 0 && !(editCtx && Number(editCtx.orig && editCtx.orig.unit_price || 0) === 0)) addErr('f_notes', 'A free ticket (unit price 0) needs a note.');
-          if (c.saleType !== 'Unregistered' && c.transportBy !== 'Company fleet' && val('f_truck') && val('f_truckowner')) {
-            const tRow = equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'sales', customer: c.customer, site: c.site });
-            if (tRow && tRow.supplier && norm(tRow.supplier) !== norm(val('f_truckowner')) && !isFieldAdminUnlocked('f_truckowner')) {
+          if (c.saleType !== 'Unregistered' && c.transportBy !== 'Company fleet') {
+            const tRow = val('f_truck') ? equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'sales', customer: c.customer, site: c.site }) : null;
+            if (!val('f_truckowner') && tRow && tRow.supplier && $('f_truckowner')) {
+              $('f_truckowner').value = tRow.supplier;
+            }
+            if (c.saleType === 'Delivery' && c.transportBy === 'Third-party truck' && !val('f_truckowner')) {
+              addErr('f_truckowner', 'Truck owner (hauler) is required for third-party delivery.');
+            } else if (val('f_truck') && val('f_truckowner') && tRow && tRow.supplier && norm(tRow.supplier) !== norm(val('f_truckowner')) && !isFieldAdminUnlocked('f_truckowner')) {
               addErr('f_truckowner', `Truck ${val('f_truck')} is registered to ${tRow.supplier}, not ${val('f_truckowner')}.`);
             }
           }
@@ -49758,10 +50091,14 @@
           }
           if (!isSuppDeliv && !val('f_truck')) addErr('f_truck', 'Truck is required.');
           if (!isSuppDeliv && !val('f_driver') && !isRetR) addErr('f_driver', 'Active driver is required (assign in Equipment Log).');
-          if (!isRetR && !isSuppDeliv && c.transportBy !== 'Company fleet' && c.tp > 0 && !val('f_truckowner')) addErr('f_truckowner', 'Truck owner (haulage payee) is required for third-party haulage.');
-          if (!isRetR && !isSuppDeliv && c.transportBy !== 'Company fleet' && val('f_truck') && val('f_truckowner')) {
-            const tRow = equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'raw', site: c.site });
-            if (tRow && tRow.supplier && norm(tRow.supplier) !== norm(val('f_truckowner')) && !isFieldAdminUnlocked('f_truckowner')) {
+          if (!isRetR && !isSuppDeliv && c.transportBy !== 'Company fleet') {
+            const tRow = val('f_truck') ? equipInfo(val('f_truck'), company, false, { date: repDate || date, side: 'raw', site: c.site }) : null;
+            if (!val('f_truckowner') && tRow && tRow.supplier && $('f_truckowner')) {
+              $('f_truckowner').value = tRow.supplier;
+            }
+            if (!val('f_truckowner')) {
+              addErr('f_truckowner', 'Truck owner (haulage payee) is required for third-party haulage.');
+            } else if (val('f_truck') && tRow && tRow.supplier && norm(tRow.supplier) !== norm(val('f_truckowner')) && !isFieldAdminUnlocked('f_truckowner')) {
               addErr('f_truckowner', `Truck ${val('f_truck')} is registered to ${tRow.supplier}, not ${val('f_truckowner')}.`);
             }
           }
@@ -50245,12 +50582,14 @@
       };
     } else if (f === 'product') {
       const nm = val('f_product');
+      const tf = num('f_tonfactor');
       if (!nm) addErr('f_product', 'Product Name is required.');
       else {
         const dup = findUniversalDuplicate('products', nm);
         if (dup) addErr('f_product', `Product "${universalMainValue('products', dup) || nm}" already exists in the Universal Product Registry. Duplicate names are not allowed.`);
       }
-      record = { ...base, name: nm, uom: val('f_uom') || 'm³', type: val('f_prodtype') || 'Material', ton_factor: num('f_tonfactor') || 1, list_price: round2(num('f_unitprice')), ticket_product: !!($('f_ticketprod') && $('f_ticketprod').checked), fuel_item: !!($('f_fuelitem') && $('f_fuelitem').checked), input_product: !!($('f_inputprod') && $('f_inputprod').checked) };
+      if (!(tf > 0)) addErr('f_tonfactor', 'Ton Conversion Factor (> 0) is required.');
+      record = { ...base, name: nm, uom: val('f_uom') || 'm³', type: val('f_prodtype') || 'Material', ton_factor: tf || 1, list_price: round2(num('f_unitprice')), ticket_product: !!($('f_ticketprod') && $('f_ticketprod').checked), fuel_item: !!($('f_fuelitem') && $('f_fuelitem').checked), input_product: !!($('f_inputprod') && $('f_inputprod').checked) };
     } else if (f === 'item') {
       const nm = val('f_item_name');
       if (!nm) addErr('f_item_name', 'Item / Part Name is required.');
@@ -50273,15 +50612,13 @@
       };
     } else if (f === 'site') {
       const nm = val('f_site');
-      const siteCat = val('f_site_category') === 'customer' ? 'customer' : 'supplier';
-      const isJvSite = siteCat === 'supplier' ? !!($('f_isjv') && $('f_isjv').checked) : false;
-      const inclTrans = siteCat === 'supplier' && !isJvSite && val('f_includes_transport') === '1';
-      const catLbl = formatSiteCategoryLabel(siteCat);
+      const isJvSite = !!($('f_isjv') && $('f_isjv').checked);
+      const inclTrans = !isJvSite && val('f_includes_transport') === '1';
       if (!nm) addErr('f_site', 'Site Name is required.');
       else {
-        const dup = findUniversalDuplicate('sites', nm, { siteCategory: siteCat });
+        const dup = findUniversalDuplicate('sites', nm, { excludeId: (editCtx && editCtx.crKey === 'sites') ? editCtx.id : '' });
         if (dup && !isSelfEditingRow(dup, 'sites')) {
-          addErr('f_site', `${catLbl} "${universalMainValue('sites', dup) || nm}" already exists. Duplicate site names in the same category are not allowed.`);
+          addErr('f_site', `Site "${universalMainValue('sites', dup) || nm}" already exists in the Universal Sites Registry. Duplicate site names are not allowed.`);
         }
       }
       let siteLat = val('f_lat') !== '' ? num('f_lat') : null;
@@ -50326,9 +50663,14 @@
           }
         }
       }
+      const supVal = val('f_supplier');
+      const custVal = (!inclTrans && !isJvSite) ? val('f_customer') : '';
       const jvPartnerVal = isJvSite ? val('f_jv_partner') : '';
       const jvShareVal = isJvSite ? (num('f_jv_share') || 50) : 0;
       const jvCoVal = isJvSite ? (val('f_jv_company') || company || 'WTC') : '';
+      if ((inclTrans || isJvSite) && !supVal) {
+        addErr('f_supplier', 'Default Site Owner (Supplier) is required for Bundled or JV Sites.');
+      }
       if (isJvSite) {
         if (!jvPartnerVal) {
           addErr('f_jv_partner', 'JV Partner is required when Joint-Venture (JV) Site is checked (apart from Default Site Owner).');
@@ -50337,17 +50679,18 @@
           addErr('f_jv_share', 'JV Partner Share (%) must be between 1% and 99%.');
         }
       }
+      const effSiteCat = (!isJvSite && !inclTrans && custVal && !supVal) ? 'customer' : 'supplier';
       record = {
         ...base,
         name: nm,
-        site_category: siteCat,
+        site_category: effSiteCat,
         region: siteReg || '',
         geo_zone: siteReg || '',
         _pinCleared: pinClearedInEdit,
         includes_transport: inclTrans,
         haulage_mode: inclTrans ? 'supplier_delivered' : 'separate',
-        supplier: siteCat === 'supplier' ? val('f_supplier') : '',
-        customer: siteCat === 'customer' ? val('f_customer') : '',
+        supplier: supVal,
+        customer: custVal,
         latitude: siteLat,
         longitude: siteLng,
         is_jv: isJvSite,
@@ -50368,9 +50711,18 @@
         const dupCoEq = (SEED.records.company_equipment || []).find(x => x && !x.voided && norm(x.company) === norm(company) && norm(x.equipment || x.name) === norm(nm));
         if (dupCoEq) addErr('f_truck', `Equipment "${nm}" is already assigned to ${company}.`);
       }
+      const eqCat = val('f_category') || 'Truck';
+      const eqOwn = val('f_ownership') || (f === 'companyequipment' ? 'Owned' : 'Subcontractor');
+      const eqHasSup = eqOwn !== 'Owned';
+      const effEqOwner = eqHasSup ? val('f_supplier') : (val('f_supplier') || company || defaultEntryCompany() || 'WTC');
       const eqCap = num('f_capacity') || 0;
-      const effFrom = val('f_effdate') || date;
+      const effFromRaw = val('f_effdate');
+      const effFrom = effFromRaw || date;
       const effEnd = val('f_effend') || '';
+      if (!effEqOwner) addErr('f_supplier', 'Truck Owner is required.');
+      if (!val('f_driver')) addErr('f_driver', 'Active Driver is required.');
+      if (!effFromRaw) addErr('f_effdate', 'Effective From Date is required.');
+      if (/^(truck|mixer)/i.test(eqCat) && !(eqCap > 0)) addErr('f_capacity', 'Capacity (m³) > 0 is required.');
       if (effEnd && effEnd < effFrom) addErr('f_effend', 'Effective To Date cannot be before Effective From Date.');
       const existingEqForWin = (editCtx && editCtx.orig && Array.isArray(editCtx.orig.adj_windows))
         ? editCtx.orig
@@ -50378,42 +50730,53 @@
       let nextWins = existingEqForWin && Array.isArray(existingEqForWin.adj_windows)
         ? existingEqForWin.adj_windows.map(w => Object.assign({}, w))
         : [];
-      if (eqCap > 0 || val('f_driver') || val('f_supplier')) {
-        const tmpEq = { name: nm, plate_no: pl, company: company || 'WTC', capacity: eqCap, supplier: val('f_supplier'), default_driver: val('f_driver'), adj_windows: nextWins };
+      if (eqCap > 0 || val('f_driver') || effEqOwner) {
+        const tmpEq = { name: nm, plate_no: pl, company: company || 'WTC', capacity: eqCap, supplier: effEqOwner, default_driver: val('f_driver'), adj_windows: nextWins };
         appendOrUpdateTruckWindow(tmpEq, {
           co: company || 'WTC',
           side: 'both',
           s: effFrom,
           e: effEnd,
           cap: eqCap,
-          own: val('f_supplier') || '',
+          own: effEqOwner || '',
           drv: val('f_driver') || '',
           persistTicketBackfill: true
         });
         nextWins = tmpEq.adj_windows;
       }
-      record = { ...base, name: nm, equipment: nm, plate_no: pl, type: val('f_category') || 'Truck', capacity: eqCap, ownership: val('f_ownership') || 'Owned', supplier: val('f_supplier'), default_driver: val('f_driver'), model: val('f_model'), adj_windows: nextWins };
+      record = { ...base, name: nm, equipment: nm, plate_no: pl, type: eqCat, capacity: eqCap, ownership: eqOwn, supplier: effEqOwner, default_driver: val('f_driver'), model: val('f_model'), adj_windows: nextWins };
     } else if (f === 'driver') {
       const nm = val('f_driver');
+      const isCoDrv = !!($('f_iscompanydriver') && $('f_iscompanydriver').checked);
+      const drvTrk = val('f_truck');
+      let drvOwner = val('f_supplier');
+      if (!drvOwner && drvTrk) {
+        const trkEq = equipInfo(drvTrk, company || 'WTC');
+        if (trkEq && trkEq.supplier) drvOwner = trkEq.supplier;
+      }
       if (!nm) addErr('f_driver', 'Driver Name is required.');
       else {
         const dup = findUniversalDuplicate('drivers', nm);
         if (dup) addErr('f_driver', `Driver "${universalMainValue('drivers', dup) || nm}" already exists in the Universal Driver Registry. Duplicate names are not allowed.`);
       }
-      record = { ...base, name: nm, driver: nm, truck_owner: val('f_supplier'), truck: val('f_truck'), phone: val('f_phone'), is_company_driver: !!($('f_iscompanydriver') && $('f_iscompanydriver').checked) };
+      if (!isCoDrv && !drvOwner) addErr('f_supplier', 'Truck Owner is required.');
+      record = { ...base, name: nm, driver: nm, truck_owner: isCoDrv ? (drvOwner || company || defaultEntryCompany() || 'WTC') : drvOwner, truck: drvTrk, phone: val('f_phone'), is_company_driver: isCoDrv };
     } else if (f === 'staff') {
       crKey = 'staff_members';
       ensureStaffMembersSeeded();
       const nm = val('f_staff');
       const roleVal = val('f_role') || '';
       const roleCat = resolveRoleCategory(roleVal, roleVal ? '' : 'Site & Operations') || 'Site & Operations';
-      const assignStart = val('f_assign_start') || date;
+      const assignStartRaw = val('f_assign_start');
+      const assignStart = assignStartRaw || date;
       const exclId = (editCtx && editCtx.crKey === 'staff_members') ? editCtx.id : '';
       if (!nm) addErr('f_staff', 'Staff Name is required.');
       else {
         const dup = findUniversalDuplicate('staff_members', nm, { excludeId: exclId });
         if (dup) addErr('f_staff', `Staff "${universalMainValue('staff_members', dup) || nm}" already exists in the Universal Staff Registry. Duplicate names are not allowed.`);
       }
+      if (!roleVal) addErr('f_role', 'Role is required.');
+      if (!assignStartRaw) addErr('f_assign_start', 'Effective Start Date is required.');
       record = {
         ...base,
         name: nm,
@@ -50785,6 +51148,15 @@
         addErr('f_amount', f === 'employment' ? 'Base Salary > 0 is required (or choose Salary Pending).' : 'Amount > 0 is required (or choose Salary Pending).');
       }
       const payType = val('f_paytype');
+      if (!payType) addErr('f_paytype', 'Pay Basis is required.');
+      let empRoleVal = val('f_role');
+      if (!empRoleVal && st) {
+        const stMem = ((SEED.records && SEED.records.staff_members) || []).find(s => s && !s.voided && norm(s.name || s.staff) === norm(st));
+        const stEmp = ((SEED.records && SEED.records.employments) || []).find(e => e && !e.voided && norm(e.staff) === norm(st) && e.role);
+        empRoleVal = (stMem && stMem.role) || (stEmp && stEmp.role) || '';
+        if (empRoleVal && $('f_role')) $('f_role').value = empRoleVal;
+      }
+      if (!empRoleVal) addErr('f_role', 'Role is required.');
       if (f === 'employment') {
         const endDate = val('f_enddate');
         if (endDate && endDate < date) addErr('f_enddate', 'End Date cannot be before Start Date.');
@@ -51450,6 +51822,9 @@
           });
         }
       }
+      if (canModifyTextOnly()) {
+        enforceStrictNumericLockFromOrig(orig, record);
+      }
     }
     if (record && isEffectiveSeriesTable(crKey, record) && errors.length === 0) {
       const pendSalOrig = (!editCtx && STATE.editingPendingSalaryId && crKey === 'employments')
@@ -51609,7 +51984,7 @@
       || (STATE.editingPendingSalaryId && (STATE.modalForm === 'employment' || STATE.modalForm === 'freelance'))
     );
     const isSupTicketAction = Boolean(isEditingExisting && (STATE.modalForm === 'sales' || STATE.modalForm === 'raw') && (FORM_UI.ticketDisposition === 'remove_slip' || FORM_UI.ticketDisposition === 'return_wtc') && canVoid());
-    if (!(isEditingExisting ? (canModifyData() || isSupTicketAction) : (isUpdatingPending ? (canModifyData() || canEnterForm(STATE.modalForm)) : canEnterForm(STATE.modalForm)))) {
+    if (!(isEditingExisting ? (canModifyRecord() || isSupTicketAction) : (isUpdatingPending ? (canModifyData() || canEnterForm(STATE.modalForm)) : canEnterForm(STATE.modalForm)))) {
       toast(isEditingExisting ? 'Your seat cannot modify existing records' : 'Your seat cannot post this entry', 'err');
       return;
     }
@@ -52640,12 +53015,13 @@
       });
     }
     if (body) {
-      const seatCanSaveEdit = editTargetRow ? canModifyData() : true;
+      const seatCanSaveEdit = editTargetRow ? canModifyRecord() : true;
+      const isWordsOnlyEdit = Boolean(editTargetRow && canModifyTextOnly());
       const canVoidCurrent = Boolean(editTargetRow && !editTargetRow.voided && canVoid());
       const isTicketEdit = Boolean(editTargetRow && !editTargetRow.voided && (form === 'sales' || form === 'raw'));
       const footNoteHtml = editTargetRow
         ? (seatCanSaveEdit
-          ? `Editing <b>${esc(String(editTargetRow.name || editTargetRow.id).replace(/[—→]/g, '-'))}</b> as <b>${esc(activeUser().full_name)}</b> · updates ledger in place`
+          ? `Editing <b>${esc(String(editTargetRow.name || editTargetRow.id).replace(/[—→]/g, '-'))}</b> as <b>${esc(activeUser().full_name)}</b> · ${isWordsOnlyEdit ? 'words-only edit mode · numbers locked to Supervisor' : 'updates ledger in place'}`
           : (canVoidCurrent && isTicketEdit
             ? `Supervisor seat (<b>${esc(activeUser().role)}</b>) · use <b>Remove Slip (0 KM)</b> or <b>Return Load (2x KM)</b> to update this ticket`
             : `Read-only seat (<b>${esc(activeUser().role)}</b>) · click <b>360° Details</b> above for full audit breakdown`))
@@ -52788,10 +53164,12 @@
     wireModalLiveCalc((wasClosed || Boolean(pendingTargetRow)) && !editTargetRow);
     if (editTargetRow) {
       hydrateEntryModalFromRecord(form, editTargetCrKey, editTargetRow);
-      if (!canModifyData() && body) {
+      if (!canModifyRecord() && body) {
         body.querySelectorAll('input, select, textarea').forEach(el => {
           el.disabled = true;
         });
+      } else if (canModifyTextOnly() && body) {
+        applyWordOnlyModalNumberLocks(body);
       }
     } else if (prefill && typeof prefill === 'object') {
       const pfCo = prefill.co || prefill.company;
@@ -53095,22 +53473,33 @@
       return Math.abs(n - Number(n.toFixed(2))) > 1e-6 ? String(n) : n.toFixed(2);
     };
     const origOverrideSet = new Set(Array.isArray(row.admin_overrides) ? row.admin_overrides : []);
-    const seatCanEdit = canModifyData();
-    if (seatCanEdit) {
-      // Pre-unlock input policy locks on existing records while keeping computed total fields locked for live math
-      [
-        'f_date',
-        'f_repdate',
-        'f_unitprice',
-        'f_transunitprice',
-        'f_method',
-        'f_uom',
-        'f_qty',
-        'f_driver',
-        'f_truckowner',
-        'f_siteowner',
-        'f_metertype'
-      ].forEach(fid => {
+    const seatCanFullEdit = canModifyData();
+    const seatCanWordEdit = canModifyTextOnly();
+    if (seatCanFullEdit || seatCanWordEdit) {
+      // Pre-unlock input policy locks on existing records (only word/date fields for word-only editors; full input fields for supervisors)
+      const unlockFieldsForEdit = seatCanFullEdit
+        ? [
+            'f_date',
+            'f_repdate',
+            'f_unitprice',
+            'f_transunitprice',
+            'f_method',
+            'f_uom',
+            'f_qty',
+            'f_driver',
+            'f_truckowner',
+            'f_siteowner',
+            'f_metertype'
+          ]
+        : [
+            'f_date',
+            'f_repdate',
+            'f_driver',
+            'f_truckowner',
+            'f_siteowner',
+            'f_metertype'
+          ];
+      unlockFieldsForEdit.forEach(fid => {
         if ($(fid)) {
           FORM_UI.adminUnlocked[fid] = true;
           if (!origOverrideSet.has(fid)) {
@@ -53721,10 +54110,8 @@
       setModalControlVal('f_date', String(row.start_date || row.date || todayISO()).slice(0, 10));
       setModalControlVal('f_enddate', String(row.end_date || '').slice(0, 10));
     } else if (form === 'site') {
-      const sCat = resolveSiteCategory(row);
-      const isJvS = sCat === 'supplier' && Boolean(row.is_jv || row.jv);
-      const inclTrS = sCat === 'supplier' && !isJvS && isSupplierDeliveredSite(row);
-      setModalControlVal('f_site_category', sCat);
+      const isJvS = Boolean(row.is_jv || row.jv);
+      const inclTrS = !isJvS && isSupplierDeliveredSite(row);
       setModalControlVal('f_includes_transport', inclTrS ? '1' : '0');
       setModalControlVal('f_region', row.region || row.geo_zone || '');
       if ($('f_region')) $('f_region').dataset.autoFromPlace = '0';
@@ -54046,10 +54433,7 @@
     const list = (SEED.records[key] || []).concat(STATE.customRecords[key] || []);
     let hit = list.find(r => r && String(r.id) === q);
     if (!hit && key === 'sites') {
-      const preferCust = Boolean(STATE && (STATE.view === 'sales' || STATE.view === 'customers' || STATE.view === 'pricing' || (STATE.tableViews && STATE.tableViews.sites === 'delivery')));
-      const wantCat = preferCust ? 'customer' : 'supplier';
-      hit = list.find(r => r && !r.voided && norm(r.name) === nq && resolveSiteCategory(r) === wantCat) ||
-            list.find(r => r && !r.voided && norm(r.name) === nq);
+      hit = list.find(r => r && !r.voided && norm(r.name) === nq);
     }
     if (!hit) {
       hit = list.find(r => r && (norm(r.name) === nq || norm(r.code) === nq || norm(r.ticket_no) === nq || norm(r.invoice_no) === nq || norm(r.staff) === nq || norm(r.driver) === nq || norm(r.equipment) === nq || norm(r.plate_no) === nq));
@@ -54249,20 +54633,19 @@
       };
     }
     if (key === 'sites') {
-      const isCustSite = resolveSiteCategory(row) === 'customer';
-      const isBundledSt = !isCustSite && isSupplierDeliveredSite(row);
-      const rulesCnt = activeRulesCountFor('site', row.name, isCustSite ? 'sales' : 'raw');
+      const isBundledSt = isSupplierDeliveredSite(row);
+      const rulesCnt = activeRulesCountFor('site', row.name);
       const gpsTxt = row.latitude != null ? `${row.latitude}, ${row.longitude}` : 'Pending coordinates';
-      const jvPartnerTxt = row.is_jv
+      const supplyTxt = row.is_jv
         ? `Active JV (Partner: ${row.jv_partner || 'Assaf'} ${row.jv_share || 50}% · ${row.jv_company || 'WTC'} ${100 - (Number(row.jv_share) || 50)}%)`
-        : (isBundledSt ? 'Bundled (Supplier Provides Material + Transport · split unknown)' : 'Ex-Quarry (Separate Haulage)');
+        : (isBundledSt ? 'Bundled (Supplier Provides Material + Transport · split unknown)' : 'Standard Region Site (Separate Haulage)');
       const regTxt = row.region || (isBundledSt ? 'Region Optional (Bundled)' : 'Lebanon');
       const regPart = regTxt && norm(regTxt) !== norm(row.name) ? ` (${regTxt})` : (row.region ? ` (Zone: ${row.region})` : '');
+      const ownerPart = row.supplier ? `  |  Default Site Owner: ${row.supplier}` : '';
+      const custPart = row.customer ? `  |  Linked Customer: ${row.customer}` : '';
       return {
         tone: 'info',
-        text: isCustSite
-          ? `Customer Delivery Site: ${row.name}${regPart}  |  Linked Customer: ${row.customer || 'Open Delivery'}  |  Active Sales Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
-          : `Supplier / Quarry Site: ${row.name}${regPart}  |  Default Site Owner: ${row.supplier || 'Open Source'}  |  Supply Basis: ${jvPartnerTxt}  |  Active Quarry Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
+        text: `Site 360°: ${row.name}${regPart}${ownerPart}${custPart}  |  Supply Basis: ${supplyTxt}  |  Active Site Rules: ${rulesCnt}  |  GPS Pin: ${gpsTxt}`
       };
     }
     if (key === 'products') {
@@ -54834,7 +55217,7 @@
       title,
       pill: isPendExp ? 'PENDING PRICE ($0.00)' : (isPendSal ? 'PENDING SALARY ($0.00)' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : `${fmtNum(totalRel)} Linked Rows`)),
       cards: [
-        { lbl: key === 'employments' ? 'MONTHLY COMPENSATION' : 'PRIMARY RECORD VALUE', tag: isPendExp ? 'PENDING PRICE' : (isPendSal ? 'PENDING SALARY' : (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18)), tone: (isPendExp || isPendSal) ? 'warn' : 'good', val: isPendExp ? `${fmtNum(row.qty || 1, 0)}${isDieselExp ? ' L ($0.00)' : ' Qty ($0.00)'}` : (isPendSal ? 'Pending ($0.00)' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : (row.name || row.ticket_no || String(row.id).slice(0, 10)))), sub1: isPendExp ? `Vendor: ${row.supplier || '—'} · Awaiting Invoice` : (isPendSal ? `Staff: ${row.staff || '—'} · Awaiting Salary` : (key === 'employments' && empReimbMoney > 0 ? `Base ${fmtUSD(empContractMonthlyUsd(row), 2)} + Transp./Reimb. ${fmtUSD(empReimbMoney, 2)}` : `Entity: ${INSPECT_LABELS[key] || key}`)), sub2: `Company Scope: ${row.company || 'Shared / Root BU'}`, pct: 82 },
+        { lbl: key === 'employments' ? 'MONTHLY COMPENSATION' : 'PRIMARY RECORD VALUE', tag: isPendExp ? 'PENDING PRICE' : (isPendSal ? 'PENDING SALARY' : (INSPECT_LABELS[key] || key).toUpperCase().slice(0, 18)), tone: (isPendExp || isPendSal) ? 'warn' : 'good', val: isPendExp ? `${fmtNum(row.qty || 1, 0)}${isDieselExp ? ' L ($0.00)' : ' Qty ($0.00)'}` : (isPendSal ? 'Pending ($0.00)' : (primaryMoney != null ? fmtUSD(primaryMoney, 2) : (row.name || row.ticket_no || String(row.id).slice(0, 10)))), sub1: isPendExp ? `Vendor: ${row.supplier || '—'} · Awaiting Invoice` : (isPendSal ? `Staff: ${row.staff || '—'} · Awaiting Salary` : (key === 'employments' && empReimbMoney > 0 ? `Base ${fmtUSD(empContractMonthlyUsd(row), 2)} + Transp./Reimb. ${fmtUSD(empReimbMoney, 2)}` : `Entity: ${INSPECT_LABELS[key] || key}`)), sub2: `Company Scope: ${row.company || COMPANY_BU_MATCH[STATE.company] || 'Shared / Root BU'}`, pct: 82 },
         { lbl: 'CONNECTED SUBGRIDS', tag: `${subgrids.length} TABLES`, tone: 'info', val: `${fmtNum(totalRel)} Rows`, sub1: subgrids.slice(0, 2).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Direct master record', sub2: subgrids.slice(2, 4).map(s => `${s.shortLabel}: ${fmtNum(s.rows.length)}`).join(' · ') || 'Click any row below to inspect', pct: Math.min(100, Math.max(25, totalRel * 5)) },
         { lbl: 'EFFECTIVE DATES & TIMELINE', tag: row.end_date ? 'DATED' : 'ACTIVE', tone: row.end_date && String(row.end_date) < SEED_DATE ? 'warn' : 'good', val: String(row.date || row.start_date || SEED_DATE).slice(0, 10), sub1: `Rep / Start: ${row.rep_date || row.start_date || row.date || '—'}`, sub2: `End Date: ${row.end_date || 'Open / Current'}`, pct: 75 },
         { lbl: 'AUDIT & LEDGER SOURCE', tag: isAppRecord(row) ? 'WEB APP' : 'SQL LEDGER', tone: 'info', val: isAppRecord(row) ? 'App Entry' : 'Synced Book', sub1: isAppRecord(row) ? `Posted by ${row.entered_by || 'User'}` : `Snapshot ${SEED_DATE}`, sub2: `Double-Entry SOA Verified`, pct: 100 }
@@ -54899,27 +55282,19 @@
     const addSiteQv = (siteName, side) => {
       if (!siteName) return;
       const isCustSide = side === 'sales' || side === 'customer';
-      const si = siteInfo(siteName, isCustSide ? 'sales' : (side ? 'raw' : undefined)) || {};
-      const effCat = si && si.id ? resolveSiteCategory(si) : (isCustSide ? 'customer' : 'supplier');
-      const isBundledSt = effCat !== 'customer' && isSupplierDeliveredSite(si);
+      const si = siteInfo(siteName) || {};
+      const isBundledSt = isSupplierDeliveredSite(si);
       cards.push({
-        tag: effCat === 'customer' ? 'QUICK VIEW · CUSTOMER DELIVERY SITE' : 'QUICK VIEW · SUPPLIER / QUARRY SITE',
+        tag: 'QUICK VIEW · SITE',
         targetKey: 'sites',
         targetVal: (si && si.id) || siteName,
         title: siteName,
-        kvs: effCat === 'customer'
-          ? [
-              ['Site Category', 'Customer Delivery Site'],
-              ['Region / Zone', si.region || 'Lebanon'],
-              ['Linked Customer', si.customer || row.customer || 'Open Delivery'],
-              ['Active Sales Rules', fmtNum(activeRulesCountFor('site', siteName, 'sales'))]
-            ]
-          : [
-              ['Site Category', 'Supplier / Quarry Site'],
-              ['Region / Zone', si.region || (isBundledSt ? 'Optional (Bundled)' : 'Lebanon')],
-              ['Site Owner', si.supplier || row.site_owner || 'Open Source'],
-              ['Supply / Rules', `${si.is_jv ? 'JV 50/50' : (isBundledSt ? 'Mat+Trans Included' : 'Ex-Quarry')} · ${fmtNum(activeRulesCountFor('site', siteName, 'raw'))} rules`]
-            ]
+        kvs: [
+          ['Region / Zone', si.region || (isBundledSt ? 'Optional (Bundled)' : 'Lebanon')],
+          ['Site Owner', si.supplier || row.site_owner || '—'],
+          ['Linked Customer', si.customer || (isCustSide ? row.customer : '') || '—'],
+          ['Supply / Rules', `${si.is_jv ? 'JV 50/50' : (isBundledSt ? 'Mat+Trans Included' : 'Standard Site')} · ${fmtNum(activeRulesCountFor('site', siteName))} rules`]
+        ]
       });
     };
     const addProductQv = (prodName) => {
@@ -54983,11 +55358,8 @@
       if (row.product) addProductQv(row.product);
       if (row.site) addSiteQv(row.site, isRawRule ? 'raw' : 'sales');
     } else if (key === 'sites') {
-      if (resolveSiteCategory(row) === 'customer') {
-        if (row.customer) addCustomerQv(row.customer);
-      } else if (row.supplier) {
-        addSupplierQv(row.supplier, 'SITE OWNER');
-      }
+      if (row.supplier) addSupplierQv(row.supplier, 'SITE OWNER');
+      if (row.customer) addCustomerQv(row.customer);
     } else if (key === 'receipts' || key === 'credit_terms' || key === 'vat_invoices') {
       addCustomerQv(row.customer);
     } else if (key === 'settlements') {
@@ -55071,10 +55443,11 @@
     const subgrids = [];
     const rec = SEED.records || {};
     const allowedCos = allowedCompanyNames();
+    const singleBuScope = COMPANY_BU_MATCH[STATE.company] || (allowedCos.length === 1 ? allowedCos[0] : '');
     const addGrid = (id, title, shortLabel, relBadge, targetKey, rows, cols, sumCol) => {
       if (!rows) return;
       if (targetKey && !canAccessTable(targetKey)) return;
-      const scoped = rows.filter(r => !r || (!r.voided && (!r.company || allowedCos.includes(r.company)))).slice();
+      const scoped = rows.filter(r => !r || (!r.voided && (!r.company || (singleBuScope ? norm(r.company) === norm(singleBuScope) : allowedCos.includes(r.company))))).slice();
       if (scoped.length > 1) {
         const viewId = targetKey ? ('tbl_' + targetKey) : '';
         const hasDate = Array.isArray(cols) && cols.includes('date');
@@ -55184,20 +55557,33 @@
       const name = row.name || row.Site;
       if (key === 'regions') {
         if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') window.MFG_GEO.hydrateSeedGeo(SEED);
-        addGrid('sg_r_sites', `Sites in Region ${name}`, 'Sites', 'Sites', 'sites', (rec.sites || []).filter(s => s && !s.voided && norm(s.region || s.geo_zone) === norm(name)), ['name', 'site_category', 'region', 'supplier', 'customer', 'is_jv', 'latitude', 'longitude'], null);
+        addGrid('sg_r_sites', `Sites in Region ${name}`, 'Sites', 'Sites', 'sites', (rec.sites || []).filter(s => s && !s.voided && norm(s.region || s.geo_zone) === norm(name)), ['name', 'region', 'supplier', 'customer', 'is_jv', 'latitude', 'longitude'], null);
         addGrid('sg_r_ot', `Driver Trip & Overtime Rates (${name})`, 'Overtime Rates', 'Overtime Rates', 'overtime_rates', (rec.overtime_rates || []).filter(o => norm(o.region) === norm(name)), ['name', 'company', 'region', 'amount', 'start_date', 'end_date'], 'amount');
-      } else if (resolveSiteCategory(row) === 'customer') {
-        addGrid('sg_st_rules', `Sales & Delivery Agreements at ${name}`, 'Sales Rules', 'Sales Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.site) === norm(name) && !isCommRule(r) && !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim())), ['company', 'rule_type', 'customer', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
-        addGrid('sg_st_sales', `Sales Deliveries to ${name}`, 'Sales Deliveries', 'Sales Deliveries', 'sales_tickets', (rec.sales_tickets || []).filter(t => norm(t.site) === norm(name)), ['date', 'ticket_no', 'company', 'customer', 'product', 'truck', 'qty', 'trans_price', 'total_ttc'], 'total_ttc');
       } else {
-        addGrid('sg_st_rules', `Quarry & Haulage Agreements at ${name}`, 'Quarry Rules', 'Quarry Rules', 'price_rules', (rec.price_rules || []).filter(r => norm(r.site) === norm(name) && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim())), ['company', 'rule_type', 'supplier', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
-        addGrid('sg_st_raw', `Raw Material Loads from ${name}`, 'Raw Loads', 'Raw Loads', 'raw_purchases', (rec.raw_purchases || []).filter(t => norm(t.site) === norm(name)), ['date', 'ticket_no', 'company', 'site_owner', 'truck_owner', 'truck', 'product', 'qty', 'cost', 'trans_cost', 'total'], 'total');
-        addGrid('sg_st_jv', `JV Partnerships & Profit Split (${name})`, 'JV Partners', 'JV Partners', 'jv_partnerships', (rec.jv_partnerships || []).filter(j => norm(j.site) === norm(name)), ['name', 'company', 'partner', 'percentage', 'notes'], 'percentage');
+        const qRules = (rec.price_rules || []).filter(r => norm(r.site) === norm(name) && /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim()));
+        const sRules = (rec.price_rules || []).filter(r => norm(r.site) === norm(name) && !isCommRule(r) && !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(String(r.rule_type || '').trim()));
+        const rawLoads = (rec.raw_purchases || []).filter(t => norm(t.site) === norm(name));
+        const salesLoads = (rec.sales_tickets || []).filter(t => norm(t.site) === norm(name));
+        const jvParts = (rec.jv_partnerships || []).filter(j => norm(j.site) === norm(name));
         const siteJvDists = (rec.jv_distributions || []).filter(d => norm(d.site) === norm(name));
+        const siteLog = (rec.logistics_allowances || []).filter(l => norm(l.site) === norm(name));
+        if (qRules.length || rawLoads.length || row.supplier || row.is_jv || !row.customer) {
+          addGrid('sg_st_rules', `Quarry & Haulage Agreements at ${name}`, 'Quarry Rules', 'Quarry Rules', 'price_rules', qRules, ['company', 'rule_type', 'supplier', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
+          addGrid('sg_st_raw', `Raw Material Loads from ${name}`, 'Raw Loads', 'Raw Loads', 'raw_purchases', rawLoads, ['date', 'ticket_no', 'company', 'site_owner', 'truck_owner', 'truck', 'product', 'qty', 'cost', 'trans_cost', 'total'], 'total');
+        }
+        if (sRules.length || salesLoads.length || row.customer) {
+          addGrid('sg_st_srules', `Sales & Delivery Agreements at ${name}`, 'Sales Rules', 'Sales Rules', 'price_rules', sRules, ['company', 'rule_type', 'customer', 'product', 'unit', 'unit_price', 'trans_unit_price', 'start_date', 'end_date'], 'unit_price');
+          addGrid('sg_st_sales', `Sales Deliveries to ${name}`, 'Sales Deliveries', 'Sales Deliveries', 'sales_tickets', salesLoads, ['date', 'ticket_no', 'company', 'customer', 'product', 'truck', 'qty', 'trans_price', 'total_ttc'], 'total_ttc');
+        }
+        if (jvParts.length || row.is_jv || !row.customer) {
+          addGrid('sg_st_jv', `JV Partnerships & Profit Split (${name})`, 'JV Partners', 'JV Partners', 'jv_partnerships', jvParts, ['name', 'company', 'partner', 'percentage', 'notes'], 'percentage');
+        }
         if (siteJvDists.length) {
           addGrid('sg_st_jv_dist', `JV Profit & Stock Distributions (${name})`, 'JV Distributions', 'JV Distributions', 'jv_distributions', siteJvDists, ['date', 'company', 'site', 'partner', 'basis', 'amount', 'total'], 'total');
         }
-        addGrid('sg_st_log', `Site Transport (${name})`, 'Site Transport', 'Site Transport', 'logistics_allowances', (rec.logistics_allowances || []).filter(l => norm(l.site) === norm(name)), ['name', 'company', 'staff', 'equipment', 'daily_usd', 'working_days', 'start_date', 'end_date'], 'daily_usd');
+        if (siteLog.length || !row.customer) {
+          addGrid('sg_st_log', `Site Transport (${name})`, 'Site Transport', 'Site Transport', 'logistics_allowances', siteLog, ['name', 'company', 'staff', 'equipment', 'daily_usd', 'working_days', 'start_date', 'end_date'], 'daily_usd');
+        }
       }
     }
     else if (key === 'equipment' || key === 'company_equipment') {
@@ -55770,10 +56156,10 @@
           { key: 'transport_by', label: 'Transported By', type: 'select', options: [['Company fleet', 'Company fleet (Own Truck)'], ['Third-party truck', 'Third-party truck (Hauler)']], sec: 2, getVal: r => r.transport_by || 'Company fleet' },
           { key: 'customer', label: 'Customer *', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
           { key: 'product', label: 'Product / Grade *', type: 'combo', dl: 'dl_insp_products', sec: 2 },
-          { key: 'site', label: 'Destination Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
-          { key: 'truck_owner', label: 'Truck Owner (Hauler)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
+          { key: 'site', label: (row && (row.sale_type || 'Delivery') === 'Delivery') ? 'Destination Site *' : 'Destination Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
+          { key: 'truck_owner', label: (row && row.transport_by === 'Third-party truck') ? 'Truck Owner (Hauler) *' : 'Truck Owner (Hauler)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
           { key: 'truck', label: 'Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
-          { key: 'driver', label: 'Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
+          { key: 'driver', label: (row && (row.sale_type || 'Delivery') === 'Delivery') ? 'Driver *' : 'Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
           { key: 'qty', label: 'Quantity *', type: 'number', step: '0.01', min: '0', sec: 3 },
           { key: 'uom', label: 'Unit (UoM)', type: 'select', options: uomOpts, sec: 3, getVal: r => r.uom || 'm³' },
           { key: 'external_qty', label: 'Customer-Declared Qty', type: 'number', step: '0.01', min: '0', sec: 3 },
@@ -55798,11 +56184,11 @@
           { key: 'ticket_no', label: 'Ticket No. *', type: 'text', sec: 1 },
           { key: 'product', label: 'Raw Material Grade *', type: 'combo', dl: 'dl_insp_products', sec: 2 },
           { key: 'site', label: 'Source Site *', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
-          { key: 'site_owner', label: 'Site Owner (Material Payee)', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
+          { key: 'site_owner', label: 'Site Owner (Material Payee) *', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
           { key: 'transport_by', label: 'Transported By *', type: 'select', options: [['Company fleet', 'Company fleet (Own Truck)'], ['Third-party truck', 'Third-party truck (Hauler)'], ['Supplier-delivered', 'Supplier-delivered (Mat + Transport Included)']], sec: 2, getVal: r => isBundledRawTicket(r) ? 'Supplier-delivered' : (r.transport_by || (Number(r.trans_cost || r.trans_unit_cost || 0) > 0 ? 'Third-party truck' : 'Company fleet')) },
-          { key: 'truck_owner', label: 'Truck Owner (Hauler Payee)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
+          { key: 'truck_owner', label: (row && !isBundledRawTicket(row) && (row.transport_by === 'Third-party truck' || Number(row.trans_cost || row.trans_unit_cost || 0) > 0)) ? 'Truck Owner (Hauler Payee) *' : 'Truck Owner (Hauler Payee)', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
           { key: 'truck', label: 'Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
-          { key: 'driver', label: 'Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
+          { key: 'driver', label: (row && isBundledRawTicket(row)) ? 'Driver' : 'Driver *', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
           { key: 'qty', label: 'Quantity *', type: 'number', step: '0.01', min: '0', sec: 3 },
           { key: 'uom', label: 'Unit (UoM)', type: 'select', options: uomOpts, sec: 3, getVal: r => r.uom || 'm³' },
           { key: 'unit_cost', label: rpInitCalc && rpInitCalc.matIsFlat ? 'Material Cost ($ / Load)' : 'Material Unit Cost ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
@@ -55821,7 +56207,7 @@
         { key: 'fuel_type', label: 'Fuel / Fluid Type *', type: 'select', options: ['Diesel', 'Lubricant', 'Hydraulic Oil', 'Grease'], sec: 2 },
         { key: 'item', label: 'Specific Product / Grade', type: 'combo', dl: 'dl_insp_products', sec: 2 },
         { key: 'equipment', label: 'Equipment / Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
-        { key: 'driver', label: 'Operator / Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
+        { key: 'driver', label: 'Operator / Driver *', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
         { key: 'litres', label: 'Quantity (Litres) *', type: 'number', step: '0.1', min: '0', sec: 3 },
         { key: 'odometer', label: 'Odometer Reading (km)', type: 'number', step: '1', min: '0', sec: 3 },
         { key: 'hours', label: 'Engine Hours (hr)', type: 'number', step: '0.1', min: '0', sec: 3 },
@@ -55926,14 +56312,14 @@
         { key: 'qty2', label: 'Tier 2 Truck Size (m³)', type: 'number', step: '0.5', sec: 3 },
         { key: 'adj2', label: 'Tier 2 Material Adj ($)', type: 'number', step: '0.01', sec: 3 },
         { key: 'trans_adj2', label: 'Tier 2 Transportation Adj ($)', type: 'number', step: '0.01', sec: 3 },
-        { key: 'start_date', label: 'Effective Start Date', type: 'date', sec: 2 },
+        { key: 'start_date', label: 'Effective Start Date *', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Open)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ] : [
         { key: 'rule_type', label: 'Sales Agreement Type *', type: 'select', options: ['Sales (Delivery)', 'Sales (Pickup)', 'List Price'], sec: 1 },
-        { key: 'customer', label: 'Customer', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
-        { key: 'site', label: 'Delivery Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
-        { key: 'product', label: 'Product / Grade', type: 'combo', dl: 'dl_insp_products', sec: 2 },
+        { key: 'customer', label: (row && !/^List Price$/i.test(row.rule_type || '')) ? 'Customer *' : 'Customer', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
+        { key: 'site', label: (row && /^Sales \(Delivery\)$/i.test(row.rule_type || '')) ? 'Delivery Site *' : 'Delivery Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
+        { key: 'product', label: 'Product / Grade *', type: 'combo', dl: 'dl_insp_products', sec: 2 },
         { key: 'unit', label: 'Material Pricing Unit', type: 'select', options: prUnitOpts, sec: 3, getVal: r => isMatIndiffRule(r) ? 'Truck' : prNormUnit(r.unit || 'm³') },
         { key: 'rate_per', label: 'Transportation Pricing Unit', type: 'select', options: prUnitOpts, sec: 3, getVal: r => isTransIndiffRule(r) ? 'Truck' : prNormUnit(r.rate_per || 'm³') },
         { key: 'unit_price', label: prRowIsMatFlat ? 'Material Price ($)' : 'Material Unit Price ($)', type: 'number', step: '0.0001', sec: 3, getVal: r => isMatIndiffRule(r) ? (ruleIndiffPrice(r) ?? '') : (r.unit_price ?? r.price ?? '') },
@@ -55946,7 +56332,7 @@
         { key: 'qty2', label: 'Tier 2 Truck Size (m³)', type: 'number', step: '0.5', sec: 3 },
         { key: 'adj2', label: 'Tier 2 Material Adj ($)', type: 'number', step: '0.01', sec: 3 },
         { key: 'trans_adj2', label: 'Tier 2 Transportation Adj ($)', type: 'number', step: '0.01', sec: 3 },
-        { key: 'start_date', label: 'Effective Start Date', type: 'date', sec: 2 },
+        { key: 'start_date', label: 'Effective Start Date *', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Open)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ]),
@@ -55954,7 +56340,7 @@
         { key: 'customer', label: 'Customer *', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
         { key: 'credit_days', label: 'Credit Terms (Days) *', type: 'number', step: '1', min: '0', sec: 3 },
         { key: 'credit_limit', label: 'Credit Limit ($) *', type: 'number', step: '100', min: '0', sec: 3 },
-        { key: 'start_date', label: 'Effective Start Date', type: 'date', sec: 2 },
+        { key: 'start_date', label: 'Effective Start Date *', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Active)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
@@ -55974,7 +56360,7 @@
         { key: 'name', label: 'Product / Grade Name *', type: 'text', sec: 1 },
         { key: 'type', label: 'Product Family *', type: 'select', options: prodTypeOpts, sec: 2 },
         { key: 'uom', label: 'Default Unit (UoM) *', type: 'select', options: uomOpts, sec: 3 },
-        { key: 'ton_factor', label: 'Tonnage Factor (t / m³)', type: 'number', step: '0.05', min: '0', sec: 3 },
+        { key: 'ton_factor', label: 'Tonnage Factor (t / m³) *', type: 'number', step: '0.05', min: '0.01', sec: 3 },
         { key: 'list_price', label: 'Benchmark List Price ($)', type: 'number', step: '0.01', min: '0', sec: 3, getVal: r => r.list_price != null ? r.list_price : (listPrice(r.name) ?? '') },
         { key: 'ticket_product', label: 'Weighbridge Ticket Grade', type: 'bool', sec: 2 },
         { key: 'fuel_item', label: 'Fuel / Lubricant Item', type: 'bool', sec: 2 },
@@ -55999,10 +56385,9 @@
         { key: 'notes', label: 'Description / Notes', type: 'text', sec: 3, span: true }
       ],
       sites: [
-        { key: 'site_category', label: 'Site Category *', type: 'select', options: [['supplier', 'Supplier / Quarry Site'], ['customer', 'Customer Delivery Site']], sec: 1, getVal: r => resolveSiteCategory(r) },
         { key: 'includes_transport', label: 'Supplier Provides Mat + Transport', type: 'bool', sec: 1, getVal: r => isSupplierDeliveredSite(r) },
         { key: 'name', label: 'Site Name *', type: 'text', sec: 1 },
-        { key: 'region', label: 'Region / Zone', type: 'combo', dl: 'dl_insp_regions', sec: 2 },
+        { key: 'region', label: (row && isSupplierDeliveredSite(row)) ? 'Region / Zone (Optional for Bundled)' : 'Region / Zone *', type: 'combo', dl: 'dl_insp_regions', sec: 2 },
         { key: 'supplier', label: 'Default Site Owner (Supplier)', type: 'combo', dl: 'dl_insp_suppliers', sec: 1 },
         { key: 'customer', label: 'Linked Customer', type: 'combo', dl: 'dl_insp_customers', sec: 1 },
         { key: 'is_jv', label: 'JV 50/50 Partnership Site', type: 'bool', sec: 2 },
@@ -56017,27 +56402,27 @@
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       equipment: [
-        { key: 'effective_from', label: 'Effective From Date', type: 'date', sec: 2, getVal: () => todayISO(), drawerOnly: true },
+        { key: 'effective_from', label: 'Effective From Date *', type: 'date', sec: 2, getVal: () => todayISO(), drawerOnly: true },
         { key: 'effective_to', label: 'Effective To Date (Blank = Permanent)', type: 'date', sec: 2, getVal: () => '', drawerOnly: true },
         { key: 'name', label: 'Unit Code *', type: 'text', sec: 1 },
         { key: 'plate_no', label: 'Plate Number', type: 'text', sec: 2, getVal: r => r.plate_no ?? (targetEqRow && targetEqRow.plate_no) ?? '' },
         { key: 'type', label: 'Equipment Category *', type: 'select', options: ['Truck', 'Mixer', 'Wheel Loader', 'Excavator', 'Bulldozer', 'Crusher', 'Generator', 'Vehicle', 'Plant', 'Other'], sec: 1 },
         { key: 'ownership', label: 'Ownership *', type: 'select', options: [['Own', 'Company Owned'], ['Third Party', 'Third-Party Hauler'], ['Customer', 'Customer Truck'], ['Rented', 'Rented']], sec: 2 },
-        { key: 'capacity', label: 'Box Capacity (m³)', type: 'number', step: '0.5', min: '0', sec: 2, getVal: r => r.capacity ?? (targetEqRow && targetEqRow.capacity) ?? '' },
-        { key: 'supplier', label: 'Truck Owner', type: 'combo', dl: 'dl_insp_suppliers', sec: 2, getVal: r => r.supplier ?? (targetEqRow && targetEqRow.supplier) ?? '' },
-        { key: 'default_driver', label: 'Active Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2, getVal: r => r.default_driver ?? (targetEqRow && targetEqRow.default_driver) ?? '' },
+        { key: 'capacity', label: /^(truck|mixer)/i.test((row && row.type) || (targetEqRow && targetEqRow.type) || 'Truck') ? 'Box Capacity (m³) *' : 'Box Capacity (m³)', type: 'number', step: '0.5', min: '0', sec: 2, getVal: r => r.capacity ?? (targetEqRow && targetEqRow.capacity) ?? '' },
+        { key: 'supplier', label: 'Truck Owner *', type: 'combo', dl: 'dl_insp_suppliers', sec: 2, getVal: r => r.supplier ?? (targetEqRow && targetEqRow.supplier) ?? '' },
+        { key: 'default_driver', label: 'Active Driver *', type: 'combo', dl: 'dl_insp_drivers', sec: 2, getVal: r => r.default_driver ?? (targetEqRow && targetEqRow.default_driver) ?? '' },
         { key: 'model', label: 'Make & Model', type: 'text', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       company_equipment: [
-        { key: 'effective_from', label: 'Effective From Date', type: 'date', sec: 2, getVal: () => todayISO(), drawerOnly: true },
+        { key: 'effective_from', label: 'Effective From Date *', type: 'date', sec: 2, getVal: () => todayISO(), drawerOnly: true },
         { key: 'effective_to', label: 'Effective To Date (Blank = Permanent)', type: 'date', sec: 2, getVal: () => '', drawerOnly: true },
         { key: 'equipment', label: 'Equipment / Truck *', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'ownership', label: 'Ownership *', type: 'select', options: [['Own', 'Company Owned'], ['Third Party', 'Third-Party Hauler'], ['Customer', 'Customer Truck'], ['Rented', 'Rented']], sec: 2 },
         { key: 'status', label: 'Operational Status *', type: 'select', options: ['Active', 'Under repair', 'Defect - Needs Part', 'Idle', 'Sold / retired'], sec: 1 },
-        { key: 'capacity', label: 'Box Capacity (m³)', type: 'number', step: '0.5', min: '0', sec: 2, getVal: r => r.capacity ?? (targetEqRow && targetEqRow.capacity) ?? '' },
-        { key: 'supplier', label: 'Truck Owner', type: 'combo', dl: 'dl_insp_suppliers', sec: 2, getVal: r => r.supplier ?? (targetEqRow && targetEqRow.supplier) ?? '' },
-        { key: 'default_driver', label: 'Default Driver', type: 'combo', dl: 'dl_insp_drivers', sec: 2, getVal: r => r.default_driver ?? (targetEqRow && targetEqRow.default_driver) ?? '' },
+        { key: 'capacity', label: /^(truck|mixer)/i.test((row && row.type) || (targetEqRow && targetEqRow.type) || 'Truck') ? 'Box Capacity (m³) *' : 'Box Capacity (m³)', type: 'number', step: '0.5', min: '0', sec: 2, getVal: r => r.capacity ?? (targetEqRow && targetEqRow.capacity) ?? '' },
+        { key: 'supplier', label: 'Truck Owner *', type: 'combo', dl: 'dl_insp_suppliers', sec: 2, getVal: r => r.supplier ?? (targetEqRow && targetEqRow.supplier) ?? '' },
+        { key: 'default_driver', label: 'Default Driver *', type: 'combo', dl: 'dl_insp_drivers', sec: 2, getVal: r => r.default_driver ?? (targetEqRow && targetEqRow.default_driver) ?? '' },
         { key: 'day_operator', label: 'Day Shift Operator', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
         { key: 'night_operator', label: 'Night Shift Operator', type: 'combo', dl: 'dl_insp_drivers', sec: 2 },
         { key: 'site', label: 'Assigned Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
@@ -56048,7 +56433,7 @@
       drivers: [
         { key: 'name', label: 'Driver *', type: 'text', sec: 1, getVal: r => r.name || r.driver || '' },
         { key: 'phone', label: 'Phone', type: 'tel', sec: 1, placeholder: '+961 ...' },
-        { key: 'truck_owner', label: 'Truck Owner', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
+        { key: 'truck_owner', label: 'Truck Owner *', type: 'combo', dl: 'dl_insp_suppliers', sec: 2 },
         { key: 'truck', label: 'Default Truck', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'is_company_driver', label: 'Company Driver', type: 'bool', sec: 1 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
@@ -56056,13 +56441,13 @@
       company_drivers: [
         { key: 'driver', label: 'Driver *', type: 'combo', dl: 'dl_insp_drivers', sec: 1 },
         { key: 'staff', label: 'Staff', type: 'combo', dl: 'dl_insp_staff', sec: 1 },
-        { key: 'start_date', label: 'Start Date', type: 'date', sec: 2 },
+        { key: 'start_date', label: 'Start Date *', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Active)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       staff_members: [
         { key: 'name', label: 'Staff Name *', type: 'text', sec: 1, getVal: r => r.name || r.staff || '' },
-        { key: 'role', label: 'Role', type: 'combo', dl: 'dl_insp_roles', sec: 1, placeholder: 'Select or type role...' },
+        { key: 'role', label: 'Role *', type: 'combo', dl: 'dl_insp_roles', sec: 1, placeholder: 'Select or type role...' },
         { key: 'phone', label: 'Phone', type: 'tel', sec: 1, placeholder: '+961 ...' },
         { key: 'default_equipment', label: 'Assigned Equipment', type: 'combo', dl: 'dl_insp_equip', sec: 2 },
         { key: 'reference', label: 'Civil ID or Permit #', type: 'text', sec: 2 },
@@ -56071,7 +56456,7 @@
       staff_roles: [
         { key: 'name', label: 'Role Name *', type: 'text', sec: 1, getVal: r => r.name || r.role || '' },
         { key: 'role_category', label: 'Role Category *', type: 'select', options: ROLE_CATEGORIES, sec: 1, getVal: r => r.role_category || r.category || 'Site & Operations' },
-        { key: 'pay_basis', label: 'Default Pay Basis', type: 'select', options: ['Monthly', 'Daily'], sec: 2, getVal: r => r.pay_basis || 'Monthly' },
+        { key: 'pay_basis', label: 'Default Pay Basis *', type: 'select', options: ['Monthly', 'Daily'], sec: 2, getVal: r => r.pay_basis || 'Monthly' },
         { key: 'operates_equipment', label: 'Operates Equipment', type: 'select', options: ['No', 'Yes'], sec: 2, getVal: r => r.operates_equipment || 'No' },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
@@ -56096,7 +56481,7 @@
       ],
       employments: [
         { key: 'staff', label: 'Staff *', type: 'combo', dl: 'dl_insp_staff', sec: 1, getVal: r => r.staff || r.name || '' },
-        { key: 'role', label: 'Role', type: 'combo', dl: 'dl_insp_roles', sec: 1, placeholder: 'Select or type role...' },
+        { key: 'role', label: 'Role *', type: 'combo', dl: 'dl_insp_roles', sec: 1, placeholder: 'Select or type role...' },
         { key: 'type', label: 'Contract Type *', type: 'select', options: ['Staff', 'Freelance', 'Regular', 'Daily'], sec: 1 },
         { key: 'status', label: 'Status *', type: 'select', options: ['Current', 'Ended', 'Active', 'Inactive', 'Terminated'], sec: 1 },
         { key: 'phone', label: 'Phone', type: 'tel', sec: 1, placeholder: '+961 ...' },
@@ -56109,7 +56494,7 @@
         { key: 'overtime_multiplier', label: 'Overtime Multiplier (×)', type: 'number', step: '0.1', min: '0', sec: 3 },
         { key: 'reimbursement', label: 'Transp. / Reimbursement ($/mo)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'deduction', label: 'Absent Reimb. Deduction ($/day)', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'start_date', label: 'Start Date', type: 'date', sec: 2 },
+        { key: 'start_date', label: 'Start Date *', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Current)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
@@ -56149,16 +56534,16 @@
         { key: 'usd_amount', label: 'Daily USD ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
         { key: 'lbp_amount', label: 'Daily LBP (LL)', type: 'number', step: '1000', min: '0', sec: 3 },
         { key: 'amount', label: 'Window Total ($)', type: 'number', step: '0.01', min: '0', sec: 3 },
-        { key: 'start_date', label: 'Start Date', type: 'date', sec: 2 },
+        { key: 'start_date', label: 'Start Date *', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Open)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       overtime_rates: [
         { key: 'name', label: 'Rate Name *', type: 'text', sec: 1 },
-        { key: 'region', label: 'Region', type: 'combo', dl: 'dl_insp_regions', sec: 2 },
+        { key: 'region', label: 'Region *', type: 'combo', dl: 'dl_insp_regions', sec: 2 },
         { key: 'site', label: 'Site', type: 'combo', dl: 'dl_insp_sites', sec: 2 },
         { key: 'amount', label: 'Rate ($) *', type: 'number', step: '0.5', min: '0', sec: 3 },
-        { key: 'start_date', label: 'Start Date', type: 'date', sec: 2 },
+        { key: 'start_date', label: 'Start Date *', type: 'date', sec: 2 },
         { key: 'end_date', label: 'End Date (Blank = Active)', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
@@ -56180,7 +56565,7 @@
         { key: 'direction', label: 'Loan Direction *', type: 'select', options: ['Company borrows', 'Company lends', 'Inflow', 'Outflow'], sec: 1 },
         { key: 'principal', label: 'Principal Amount ($) *', type: 'number', step: '100', min: '0', sec: 3 },
         { key: 'interest_rate', label: 'Interest Rate (%)', type: 'number', step: '0.1', min: '0', sec: 3 },
-        { key: 'start_date', label: 'Start Date', type: 'date', sec: 2 },
+        { key: 'start_date', label: 'Start Date *', type: 'date', sec: 2 },
         { key: 'notes', label: 'Notes', type: 'text', sec: 3, span: true }
       ],
       loan_settlements: [
@@ -56348,7 +56733,7 @@
       vat_rates: [
         { key: 'start_date', label: 'Effective From Date *', type: 'date', sec: 1 },
         { key: 'vat_percent', label: 'VAT Rate (%) *', type: 'number', step: '0.1', min: '0', max: '100', sec: 3 },
-        { key: 'vat_fx_rate', label: 'MoF Official VAT FX Rate (LL / $1)', type: 'number', step: 'any', min: '1', sec: 3 },
+        { key: 'vat_fx_rate', label: 'MoF Official VAT FX Rate (LL / $1) *', type: 'number', step: 'any', min: '1', sec: 3 },
         { key: 'notes', label: 'Regulatory / MoF Circular Notes', type: 'text', sec: 3, span: true }
       ],
       gl_accounts: [
@@ -56710,7 +57095,8 @@
       if (!(ek in row)) { extraPairs.push([ek, ev]); totalCount++; }
     }
 
-    const canEdit = canModifyData();
+    const canEditFull = canModifyData();
+    const canEditWordOnly = canModifyTextOnly();
     const renderCell = (k, valOverride) => {
       const fDef = schemaByKey.get(k);
       const v = valOverride !== undefined ? valOverride : (fDef && typeof fDef.getVal === 'function' ? fDef.getVal(row) : row[k]);
@@ -56724,7 +57110,8 @@
         soa_legs: 'Posted SOA Legs', debit: 'Total Debit ($)', credit: 'Total Credit ($)', balance: 'Net Balance ($)'
       } : null;
       const lblText = fDef ? fDef.label.replace(/\s*\*$/, '') : ((roLabels && roLabels[k]) || k.replace(/_/g, ' '));
-      const editableAttr = (canEdit && fDef && valOverride === undefined) ? ` data-edit-field="${esc(k)}" title="Click to modify ${esc(lblText)}"` : '';
+      const canEditThisCell = canEditFull ? (fDef && valOverride === undefined) : (canEditWordOnly && fDef && valOverride === undefined && !isNumericInspectorField(k, fDef, row));
+      const editableAttr = canEditThisCell ? ` data-edit-field="${esc(k)}" title="Click to modify ${esc(lblText)}"` : '';
       const cellCls = `inspector-cell${editableAttr ? ' is-editable-cell' : ''}${isEmpty && editableAttr ? ' is-empty-cell' : ''}`;
       let valHtml;
       if (canLink) {
@@ -57848,6 +58235,8 @@
       ? (key === 'equipment' ? row : (getFleetIndex().eqByName.get(norm(row.equipment || row.name)) || row))
       : null;
     const eqWindows = (targetEqRow && Array.isArray(targetEqRow.adj_windows)) ? targetEqRow.adj_windows : [];
+    const inspDefaultTwCo = COMPANY_BU_MATCH[STATE.company] || (row.company === 'BBConstruction' ? 'BBConstruction' : (row.company === 'Lions Transport' ? 'Lions Transport' : 'WTC'));
+    const eqScopedWinCount = eqWindows.filter(w => norm((w && w.co) || 'WTC') === norm(inspDefaultTwCo)).length;
     const editSchema = getInspectorEditableSchema(key, row, targetEqRow);
     const inspFreqIdx = getFreqIndex();
     const inspRegions = uniqSorted(
@@ -57917,6 +58306,7 @@
       inspFreqIdx.warehouseLoc
     );
 
+    const isInspWordOnly = canModifyTextOnly();
     const renderModFieldHtml = (fDef) => {
       const f = fDef.key;
       const rawCur = typeof fDef.getVal === 'function'
@@ -57924,13 +58314,16 @@
         : (row[f] != null ? row[f] : (targetEqRow && targetEqRow[f] != null ? targetEqRow[f] : ''));
       const lbl = fDef.label || f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       const spanCls = fDef.span ? ' span-3' : '';
+      const isNumLocked = isInspWordOnly && isNumericInspectorField(f, fDef, row);
+      const lockBadgeHtml = isNumLocked ? `<span class="pa-lock-pill locked" style="margin-left:6px">🔒 Supervisor Only</span>` : '';
+      const lockCtrlAttr = isNumLocked ? ' disabled readonly class="pa-locked-input"' : '';
       if (fDef.type === 'bool') {
         const isYes = Boolean(rawCur === true || rawCur === 'Yes' || rawCur === 'true' || rawCur === 1);
         const initBool = isYes ? 'Yes' : 'No';
         return `
           <div class="form-field${spanCls}">
-            <label for="insp_edit_${esc(f)}">${esc(lbl)}</label>
-            <select id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="bool" data-init-val="${initBool}">
+            <label for="insp_edit_${esc(f)}">${esc(lbl)}${lockBadgeHtml}</label>
+            <select id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="bool" data-init-val="${initBool}"${lockCtrlAttr}>
               <option value="No" ${!isYes ? 'selected' : ''}>No</option>
               <option value="Yes" ${isYes ? 'selected' : ''}>Yes</option>
             </select>
@@ -57947,8 +58340,8 @@
         }
         return `
           <div class="form-field${spanCls}">
-            <label for="insp_edit_${esc(f)}">${esc(lbl)}</label>
-            <select id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="select" data-init-val="${esc(curStr)}">
+            <label for="insp_edit_${esc(f)}">${esc(lbl)}${lockBadgeHtml}</label>
+            <select id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="select" data-init-val="${esc(curStr)}"${lockCtrlAttr}>
               ${normOpts.map(([ov, ol]) => `<option value="${esc(ov)}" ${ov.toLowerCase() === curStr.toLowerCase() ? 'selected' : ''}>${esc(ol)}</option>`).join('')}
             </select>
           </div>
@@ -57961,8 +58354,8 @@
           : '';
         return `
           <div class="form-field${spanCls}">
-            <label for="insp_edit_${esc(f)}">${esc(lbl)}</label>
-            <input type="text" id="insp_edit_${esc(f)}" list="${esc(fDef.dl || '')}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="combo" data-init-val="${esc(initCombo)}" value="${esc(initCombo)}" placeholder="${esc(fDef.placeholder || 'Select or type...')}" autocomplete="off">${dynDlHtml}
+            <label for="insp_edit_${esc(f)}">${esc(lbl)}${lockBadgeHtml}</label>
+            <input type="text" id="insp_edit_${esc(f)}" list="${esc(fDef.dl || '')}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="combo" data-init-val="${esc(initCombo)}" value="${esc(initCombo)}" placeholder="${esc(fDef.placeholder || 'Select or type...')}" autocomplete="off"${lockCtrlAttr}>${dynDlHtml}
           </div>
         `;
       }
@@ -57972,8 +58365,8 @@
       const initValStr = String(rawCur == null ? '' : (inpType === 'date' ? String(rawCur).slice(0, 10) : (inpType === 'time' ? String(rawCur).slice(0, 5) : rawCur)));
       return `
         <div class="form-field${spanCls}">
-          <label for="insp_edit_${esc(f)}">${esc(lbl)}</label>
-          <input type="${inpType}"${stepAttr}${phAttr} id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="${esc(fDef.type || 'text')}" data-init-val="${esc(initValStr)}" value="${esc(initValStr)}" autocomplete="off">
+          <label for="insp_edit_${esc(f)}">${esc(lbl)}${lockBadgeHtml}</label>
+          <input type="${inpType}"${stepAttr}${phAttr} id="insp_edit_${esc(f)}" data-insp-edit-field="${esc(f)}" data-mod-field="${esc(f)}" data-mod-type="${esc(fDef.type || 'text')}" data-init-val="${esc(initValStr)}" value="${esc(initValStr)}" autocomplete="off"${lockCtrlAttr}>
         </div>
       `;
     };
@@ -58029,7 +58422,7 @@
           ${quickFilterCol && quickFilterVal ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspFilterCurrentTableBtn" data-qf-col="${esc(quickFilterCol)}" data-qf-val="${esc(quickFilterVal)}" title="Close 360° Inspector and filter the current register by ${esc(quickFilterVal)}">⚡ Filter Table by "${esc(quickFilterVal)}"</button>` : ''}
           ${((key === 'expenses' && isPendingPriceExpense(row) && (canModifyData() || canEnterForm('expense'))) || (key === 'raw_purchases' && isPendingPriceRaw(row) && (canModifyData() || canEnterForm('raw')))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Price</button>` : ''}
           ${(key === 'employments' && isPendingSalaryEmployment(row) && (canModifyData() || canEnterForm('employment') || canEnterForm('freelance'))) ? `<button type="button" class="pa-cmd-btn btn-primary" id="inspSetInvoicePriceBtn">${ic('dollar')} Enter Final Salary</button>` : ''}
-          ${canModifyData() ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} Modify Record</button>` : ''}
+          ${canModifyRecord() ? `<button type="button" class="pa-cmd-btn btn-brass" id="inspModifyRecordBtn">${ic('edit')} ${isInspWordOnly ? 'Modify Words' : 'Modify Record'}</button>` : ''}
           ${isEquipInspect && canEnterForm('defect') ? `<button type="button" class="pa-cmd-btn" id="inspReportDefectBtn">${ic('warn')} + Report Warning</button>` : ''}
           ${isEquipInspect && canEnterForm('repair') ? `<button type="button" class="pa-cmd-btn" id="inspLogRepairBtn">${ic('repair')} + Log Repair</button>` : ''}
           ${isEquipInspect && canEnterForm('oillog') ? `<button type="button" class="pa-cmd-btn" id="inspLogOilBtn">${ic('oillog')} + Log Oil</button>` : ''}
@@ -58047,14 +58440,14 @@
         </div>
       </div>
 
-      <!-- Inline Record Modification Drawer (Gated by Role Modify Data Permission) -->
+      <!-- Inline Record Modification Drawer (Gated by Role Modify Data / Words Permission) -->
       <div class="insp-modify-drawer" id="inspModifyDrawer" hidden>
         <div class="insp-modify-hdr">
           <div>
             <strong>${ic('edit')} Modify ${esc(INSPECT_LABELS[key] || key)} · ${esc(recTitle)}</strong>
-            <span class="insp-modify-sub">Authorized by ${esc(activeUser().role)} (${esc(activeUser().full_name)}) · Tip: click any field in the General form below to jump straight to it</span>
+            <span class="insp-modify-sub">Authorized by ${esc(activeUser().role)} (${esc(activeUser().full_name)}) · ${isInspWordOnly ? 'Words &amp; text editable · Numeric quantities, capacities, prices &amp; amounts locked to Supervisor' : 'Tip: click any field in the General form below to jump straight to it'}</span>
           </div>
-          <span class="badge badge-brass">MODIFY DATA PRIVILEGE VERIFIED</span>
+          <span class="badge badge-brass">${isInspWordOnly ? 'WORDS ONLY · NUMBERS LOCKED TO SUPERVISOR' : 'MODIFY DATA PRIVILEGE VERIFIED'}</span>
         </div>
         <div class="form-grid-3" style="margin-top:10px">
           ${editSchema.map(renderModFieldHtml).join('')}
@@ -58178,16 +58571,16 @@
               <strong>${ic('ruler')} Equipment Driver &amp; Capacity Log (Start Date to End Date)</strong>
               <span class="pa-subgrid-sub">Active driver &amp; truck owner lock onto Sales, Raw Material, Lubricant &amp; Diesel tickets matching the ticket date. Click any log row (or its Edit button) to update an existing entry in-place, or set a new Start Date for a new window.</span>
             </div>
-            <span class="badge badge-brass">${fmtNum(eqWindows.length)} Window${eqWindows.length === 1 ? '' : 's'}</span>
+            <span class="badge badge-brass" id="inspTwCountBadge">${fmtNum(eqScopedWinCount)} ${esc(inspDefaultTwCo)} Window${eqScopedWinCount === 1 ? '' : 's'}</span>
           </div>
-          ${canModifyData() ? `
+          ${canModifyRecord() ? `
             <div class="form-grid-3" style="padding:10px 12px;background:rgba(196,154,69,0.06);border-bottom:1px solid var(--line)">
               <div class="form-field">
                 <label for="insp_tw_co">Company / BU</label>
                 <select id="insp_tw_co">
-                  <option value="WTC" ${row.company === 'BBConstruction' ? '' : 'selected'}>WTC</option>
-                  <option value="BBConstruction" ${row.company === 'BBConstruction' ? 'selected' : ''}>BBConstruction</option>
-                  <option value="Lions Transport" ${row.company === 'Lions Transport' ? 'selected' : ''}>Lions Transport</option>
+                  <option value="WTC" ${inspDefaultTwCo === 'WTC' ? 'selected' : ''}>WTC</option>
+                  <option value="BBConstruction" ${inspDefaultTwCo === 'BBConstruction' ? 'selected' : ''}>BBConstruction</option>
+                  <option value="Lions Transport" ${inspDefaultTwCo === 'Lions Transport' ? 'selected' : ''}>Lions Transport</option>
                 </select>
               </div>
               <div class="form-field">
@@ -58200,8 +58593,8 @@
                 </select>
               </div>
               <div class="form-field">
-                <label for="insp_tw_cap">Truck Size / Capacity (m³)</label>
-                <input type="number" step="0.5" min="0" id="insp_tw_cap" value="${esc(Number(targetEqRow.capacity || 0))}">
+                <label for="insp_tw_cap">Truck Size / Capacity (m³)${/^(truck|mixer)/i.test((targetEqRow && targetEqRow.type) || 'Truck') ? ' *' : ''}${isInspWordOnly ? '<span class="pa-lock-pill locked" style="margin-left:6px">🔒 Supervisor Only</span>' : ''}</label>
+                <input type="number" step="0.5" min="0" id="insp_tw_cap" value="${esc(Number(targetEqRow.capacity || 0))}"${isInspWordOnly ? ' disabled readonly class="pa-locked-input"' : ''}>
               </div>
               <div class="form-field">
                 <label for="insp_tw_start">Start Date *</label>
@@ -58212,8 +58605,8 @@
                 <input type="date" id="insp_tw_end" value="">
               </div>
               <div class="form-field">
-                <label for="insp_tw_own">Truck Owner</label>
-                <input type="text" id="insp_tw_own" list="dl_insp_suppliers" value="${esc(targetEqRow.supplier || '')}" placeholder="e.g. Hussein Bdeir, Karim Bdeir, WTC" autocomplete="off">
+                <label for="insp_tw_own">Truck Owner *</label>
+                <input type="text" id="insp_tw_own" list="dl_insp_suppliers" value="${esc(targetEqRow.supplier || (/^(own|company)/i.test(targetEqRow.ownership || '') ? inspDefaultTwCo : ''))}" placeholder="e.g. Hussein Bdeir, Karim Bdeir, WTC" autocomplete="off">
               </div>
               <div class="form-field">
                 <label for="insp_tw_drv">Active / Substitute Driver *</label>
@@ -58237,7 +58630,7 @@
             <table class="ledger-table">
               <thead>
                 <tr>
-                  <th>Co.</th><th>Scope</th><th>Start Date</th><th>End Date</th><th class="r">Size (m³)</th><th>Truck Owner</th><th>Driver</th><th>Client / Site Scope</th><th>Status</th>${canModifyData() ? '<th></th>' : ''}
+                  <th>Co.</th><th>Scope</th><th>Start Date</th><th>End Date</th><th class="r">Size (m³)</th><th>Truck Owner</th><th>Driver</th><th>Client / Site Scope</th><th>Status</th>${canModifyRecord() ? '<th></th>' : ''}
                 </tr>
               </thead>
               <tbody>
@@ -58248,9 +58641,10 @@
                   const isOpen = !w.e || String(w.e) >= todayNow;
                   const sideLbl = w.side === 'sales' ? 'Sales' : (w.side === 'raw' ? 'Raw & Trans' : (w.side === 'fuel' ? 'Diesel & Lub.' : 'All Tables'));
                   const scopeLbl = [w.cust ? `Client: ${w.cust}` : '', w.site ? `Site: ${w.site}` : ''].filter(Boolean).join(' · ') || 'General (All)';
+                  const wCo = w.co || 'WTC';
                   return `
-                    <tr data-insp-tw-row-idx="${origIdx}" style="cursor:pointer" aria-label="Click to edit this log entry">
-                      <td>${coBadge(w.co || 'WTC')}</td>
+                    <tr data-insp-tw-row-idx="${origIdx}" data-tw-co="${esc(wCo)}"${norm(wCo) !== norm(inspDefaultTwCo) ? ' hidden' : ''} style="cursor:pointer" aria-label="Click to edit this log entry">
+                      <td>${coBadge(wCo)}</td>
                       <td><span class="badge badge-info">${esc(sideLbl)}</span></td>
                       <td class="mono">${esc(w.s || '2024-01-01')}</td>
                       <td class="mono">${esc(w.e || 'Open')}</td>
@@ -58259,10 +58653,10 @@
                       <td>${w.drv ? relLink('drivers', w.drv, w.drv) : '-'}</td>
                       <td>${w.cust || w.site ? `<span class="badge badge-brass">${esc(scopeLbl)}</span>` : `<span class="mu">${esc(scopeLbl)}</span>`}</td>
                       <td><span class="badge ${isSub ? 'badge-brass' : (isOpen ? 'badge-ok' : 'badge-neutral')}">${isSub ? 'Substitute' : (isOpen ? 'Active' : 'Historical')}</span></td>
-                      ${canModifyData() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button> <button type="button" class="btn btn-sm" data-del-tw-idx="${origIdx}" aria-label="Remove window">✕</button></td>` : ''}
+                      ${canModifyRecord() ? `<td class="r" style="white-space:nowrap"><button type="button" class="btn btn-sm" data-edit-tw-idx="${origIdx}" aria-label="Edit log entry">Edit</button>${canModifyData() ? ` <button type="button" class="btn btn-sm" data-del-tw-idx="${origIdx}" aria-label="Remove window">✕</button>` : ''}</td>` : ''}
                     </tr>
                   `;
-                }).join('') : `<tr><td colspan="${canModifyData() ? 10 : 9}" class="mu" style="text-align:center;padding:14px">No dated adjustment windows recorded - using default capacity (${fmtNum(targetEqRow && targetEqRow.capacity, 1)} m³).</td></tr>`}
+                }).join('') : `<tr><td colspan="${canModifyRecord() ? 10 : 9}" class="mu" style="text-align:center;padding:14px">No dated adjustment windows recorded - using default capacity (${fmtNum(targetEqRow && targetEqRow.capacity, 1)} m³).</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -58711,31 +59105,14 @@
         const dec = /^(Piece|Set|Box|Bag|Truck)$/i.test(mUom) && Number.isInteger(mLit) ? 0 : 1;
         html = `<span>Item: <b>${esc(mCls.item)} (${esc(mCls.category)})</b></span><span>Type: <b>${esc(mType)}</b></span><span>Quantity: <b>${mLit > 0 ? '+' : ''}${fmtNum(mLit, dec)} ${esc(mUom)}</b></span><span>${mCls.isDiesel ? 'Tank Impact' : 'Stock Impact'}: <b>${delta > 0 ? '+' : ''}${fmtNum(delta, dec)} ${esc(mUom)} (${mLit >= 0 ? '+ deducts' : '- adds'})</b></span>`;
       } else if (key === 'sites') {
-        const mCat = getModVal('site_category') === 'customer' ? 'customer' : 'supplier';
-        const isCustSite = mCat === 'customer';
-        const siteCatEdited = Boolean($('insp_edit_site_category') && $('insp_edit_site_category').dataset.userEdited === '1');
-        if (siteCatEdited) {
-          if (isCustSite) {
-            if ($('insp_edit_supplier')) $('insp_edit_supplier').value = '';
-            if ($('insp_edit_is_jv')) $('insp_edit_is_jv').value = 'No';
-            if ($('insp_edit_jv_partner')) $('insp_edit_jv_partner').value = '';
-          } else if ($('insp_edit_customer')) {
-            $('insp_edit_customer').value = '';
-          }
-        }
-        const isJvMod = !isCustSite && (getModVal('is_jv') === 'Yes' || getModVal('is_jv') === 'true' || (!getModVal('is_jv') && Boolean(row.is_jv)));
+        const isJvMod = (getModVal('is_jv') === 'Yes' || getModVal('is_jv') === 'true' || (!getModVal('is_jv') && Boolean(row.is_jv)));
         const inclTrEl = $('insp_edit_includes_transport');
-        if (inclTrEl && (isCustSite || isJvMod)) inclTrEl.value = 'No';
-        const isBundledMod = !isCustSite && !isJvMod && (getModVal('includes_transport') === 'Yes' || getModVal('includes_transport') === 'true' || (!getModVal('includes_transport') && isSupplierDeliveredSite(row)));
+        if (inclTrEl && isJvMod) inclTrEl.value = 'No';
+        const isBundledMod = !isJvMod && (getModVal('includes_transport') === 'Yes' || getModVal('includes_transport') === 'true' || (!getModVal('includes_transport') && isSupplierDeliveredSite(row)));
         const inclTrWrap = inclTrEl && inclTrEl.closest('.form-field');
-        if (inclTrWrap) inclTrWrap.hidden = isCustSite || isJvMod;
+        if (inclTrWrap) inclTrWrap.hidden = isJvMod;
         const regLblMod = modDrawer.querySelector('label[for="insp_edit_region"]');
         if (regLblMod) regLblMod.textContent = isBundledMod ? 'Region / Zone (Optional for Bundled)' : 'Region / Zone *';
-        ['supplier', 'is_jv'].forEach(fk => {
-          const el = $('insp_edit_' + fk);
-          const wrap = el && el.closest('.form-field');
-          if (wrap) wrap.hidden = isCustSite;
-        });
         ['jv_partner', 'jv_share'].forEach(fk => {
           const el = $('insp_edit_' + fk);
           const wrap = el && el.closest('.form-field');
@@ -58743,12 +59120,13 @@
         });
         const custEl = $('insp_edit_customer');
         const custWrap = custEl && custEl.closest('.form-field');
-        if (custWrap) custWrap.hidden = !isCustSite;
+        if (custWrap) custWrap.hidden = isBundledMod || isJvMod;
         const mReg = getModVal('region') || row.region || (isBundledMod ? 'Optional (Bundled)' : 'Lebanon');
-        const mParty = isCustSite ? (getModVal('customer') || 'Open Delivery') : (getModVal('supplier') || 'Open Source');
+        const mSup = getModVal('supplier') || '—';
+        const mCust = (!isBundledMod && !isJvMod) ? (getModVal('customer') || '—') : '—';
         const mJvPart = isJvMod ? (getModVal('jv_partner') || row.jv_partner || 'Assaf') : '';
         const mJvPct = isJvMod ? (getModNum('jv_share') || row.jv_share || 50) : 0;
-        html = `<span>Category: <b>${esc(formatSiteCategoryLabel(mCat))}</b></span>${!isCustSite ? `<span>Supply Basis: <b>${isBundledMod ? 'Mat + Trans Included (Split Unknown)' : 'Ex-Quarry (Separate Haul)'}</b></span>` : ''}<span>Region: <b>${esc(mReg)}</b></span><span>${isCustSite ? 'Linked Customer' : 'Site Owner'}: <b>${esc(mParty)}</b></span>${isJvMod ? `<span>JV Partner: <b>${esc(mJvPart)} (${mJvPct}%)</b></span>` : ''}`;
+        html = `<span>Supply Basis: <b>${isBundledMod ? 'Mat + Trans Included (Split Unknown)' : (isJvMod ? 'JV 50/50 Site' : 'Standard Site (Separate Haul)')}</b></span><span>Region: <b>${esc(mReg)}</b></span><span>Site Owner: <b>${esc(mSup)}</b></span>${(!isBundledMod && !isJvMod) ? `<span>Linked Customer: <b>${esc(mCust)}</b></span>` : ''}${isJvMod ? `<span>JV Partner: <b>${esc(mJvPart)} (${mJvPct}%)</b></span>` : ''}`;
       }
       if (modDrawer && isEffectiveSeriesTable(key, row)) {
         const modCand = Object.assign({}, row);
@@ -58778,10 +59156,10 @@
     };
 
     const openModifyDrawerAndFocus = (focusFieldKey) => {
-      if (!modDrawer || !canModifyData()) return;
+      if (!modDrawer || !canModifyRecord()) return;
       modDrawer.hidden = false;
       syncModifyLiveSummary();
-      const targetInp = focusFieldKey ? $('insp_edit_' + focusFieldKey) : modDrawer.querySelector('input:not([type="hidden"]), select');
+      const targetInp = focusFieldKey ? $('insp_edit_' + focusFieldKey) : modDrawer.querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled])');
       if (targetInp) {
         setTimeout(() => {
           try {
@@ -58807,7 +59185,7 @@
         else openPendingExpensePriceModal(row.id);
       });
     }
-    if (opts && opts.focusModifyField && modDrawer && canModifyData()) {
+    if (opts && opts.focusModifyField && modDrawer && canModifyRecord()) {
       openModifyDrawerAndFocus(opts.focusModifyField);
     }
     if (modBtn && modDrawer) {
@@ -58848,7 +59226,8 @@
     const saveModBtn = $('inspSaveModifyBtn');
     if (saveModBtn && modDrawer) {
       saveModBtn.addEventListener('click', () => {
-        if (!canModifyData()) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
+        if (!canModifyRecord()) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
+        const isSaveWordOnly = canModifyTextOnly();
         const schemaMap = new Map(editSchema.map(f => [f.key, f]));
         const pendingUpdates = {};
         let effFromDate = todayISO();
@@ -58860,6 +59239,7 @@
           const fk = inp.getAttribute('data-mod-field');
           if (!fk) return;
           const fDef = schemaMap.get(fk) || {};
+          if (isSaveWordOnly && isNumericInspectorField(fk, fDef, row)) return;
           if (fk === 'effective_from') {
             effFromDate = inp.value || todayISO();
             return;
@@ -58892,6 +59272,28 @@
             nextVal = nextRaw === '' ? null : (!Number.isNaN(Number(nextRaw)) ? Number(nextRaw) : nextRaw);
           } else {
             nextVal = nextRaw;
+          }
+
+          if (isUserEdited && /\*\s*$/.test(fDef.label || '') && (nextVal === '' || nextVal === null)) {
+            const curModBundled = key === 'sites' && (($('insp_edit_includes_transport') && $('insp_edit_includes_transport').value === 'Yes') || (!($('insp_edit_includes_transport')) && isSupplierDeliveredSite(row)));
+            const isCoDrvMod = key === 'drivers' && (($('insp_edit_is_company_driver') && $('insp_edit_is_company_driver').value === 'Yes') || (!($('insp_edit_is_company_driver')) && row.is_company_driver));
+            const isSuppDelivMod = key === 'raw_purchases' && /^supplier[-\s]*delivered$/i.test(($('insp_edit_transport_by') && $('insp_edit_transport_by').value) || row.transport_by || '');
+            const allowBlankCond =
+              (key === 'sites' && fk === 'region' && curModBundled) ||
+              (key === 'drivers' && fk === 'truck_owner' && isCoDrvMod) ||
+              (key === 'raw_purchases' && (fk === 'truck_owner' || fk === 'truck' || fk === 'driver') && isSuppDelivMod);
+            if (!allowBlankCond) {
+              validationError = `${String(fDef.label || fk).replace(/\s*\*\s*$/, '')} is required and cannot be cleared.`;
+              return;
+            }
+          }
+          if (isUserEdited && (key === 'products' && fk === 'ton_factor') && !(Number(nextVal) > 0)) {
+            validationError = 'Tonnage Factor (t / m³) must be greater than 0.';
+            return;
+          }
+          if (isUserEdited && (key === 'equipment' || key === 'company_equipment') && fk === 'capacity' && /^(truck|mixer)/i.test(($('insp_edit_type') && $('insp_edit_type').value) || row.type || (targetEqRow && targetEqRow.type) || 'Truck') && !(Number(nextVal) > 0)) {
+            validationError = 'Box Capacity (m³) must be greater than 0 for trucks and mixers.';
+            return;
           }
 
           let isDiff = false;
@@ -58940,15 +59342,14 @@
             toast(`${UNIVERSAL_MAIN_SPEC[key].label} Name cannot be blank.`, 'err');
             return;
           }
-          const dup = findUniversalDuplicate(key, mainVal, { excludeId: row.id, plateNo: candidate.plate_no, category: candidate.category, siteCategory: resolveSiteCategory(candidate) });
+          const dup = findUniversalDuplicate(key, mainVal, { excludeId: row.id, plateNo: candidate.plate_no, category: candidate.category });
           if (dup) {
-            toast(`Duplicate ${key === 'sites' ? formatSiteCategoryLabel(candidate) : UNIVERSAL_MAIN_SPEC[key].label} "${mainVal}" already exists · modification blocked.`, 'err');
+            toast(`Duplicate ${UNIVERSAL_MAIN_SPEC[key].label} "${mainVal}" already exists · modification blocked.`, 'err');
             return;
           }
           if (key === 'sites') {
-            const candCat = resolveSiteCategory(candidate);
-            const candBundled = candCat !== 'customer' && !candidate.is_jv && Boolean('includes_transport' in pendingUpdates ? pendingUpdates.includes_transport : isSupplierDeliveredSite(row));
-            if ('includes_transport' in pendingUpdates || 'site_category' in pendingUpdates || 'is_jv' in pendingUpdates) {
+            const candBundled = !candidate.is_jv && Boolean('includes_transport' in pendingUpdates ? pendingUpdates.includes_transport : isSupplierDeliveredSite(row));
+            if ('includes_transport' in pendingUpdates || 'is_jv' in pendingUpdates) {
               pendingUpdates.includes_transport = candBundled;
               pendingUpdates.haulage_mode = candBundled ? 'supplier_delivered' : 'separate';
             }
@@ -58973,7 +59374,7 @@
                 window.MFG_GEO.ensureRegionInSeed(candidate.region, SEED, STATE);
               }
             } else if (!candBundled && !String(candidate.region || '').trim()) {
-              toast('Region / Zone is required for Customer Delivery Sites and Ex-Quarry Separate-Haulage Sites.', 'err');
+              toast('Region / Zone is required for Standard Sites (unless Bundled Supplier Material + Transport is enabled).', 'err');
               return;
             }
           }
@@ -59557,29 +59958,18 @@
           const itemSuffix = mCls.isDiesel ? '' : ` · ${mCls.item}`;
           row.name = `MALF ${row.date || ''} ${row.discrepancy_type || 'Malfunction'}${itemSuffix}${row.ticket_no ? ' #' + row.ticket_no : ''}`;
         } else if (key === 'sites') {
-          if ('site_category' in pendingUpdates) {
-            const effCat = resolveSiteCategory(row);
-            row.site_category = effCat;
-            delete row._seedCatAuto;
-            if (effCat === 'customer') {
-              row.supplier = '';
-              row.is_jv = false;
-              row.jv_partner = '';
-            } else {
-              row.customer = '';
-            }
-          }
+          row.site_category = (!row.is_jv && !isSupplierDeliveredSite(row) && row.customer && !row.supplier) ? 'customer' : 'supplier';
           if ('is_jv' in pendingUpdates || 'jv_partner' in pendingUpdates || 'jv_share' in pendingUpdates) {
-            if (row.is_jv && resolveSiteCategory(row) === 'supplier') {
+            if (row.is_jv) {
               row.jv_partner = String(row.jv_partner || 'Assaf').trim() || 'Assaf';
               row.jv_share = Number(row.jv_share) > 0 ? Number(row.jv_share) : 50;
               syncSiteJvPartnershipRecords(row);
-            } else if (!row.is_jv) {
+            } else {
               row.jv_partner = '';
             }
           }
           if (window.MFG_GEO && row.latitude != null && row.longitude != null) {
-            window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: resolveSiteCategory(row), name: row.name, lat: row.latitude, lng: row.longitude, region: row.region }, { SEED, STATE });
+            window.MFG_GEO.persistLocationPin({ targetType: 'site', siteId: row.id, siteCategory: row.site_category, name: row.name, lat: row.latitude, lng: row.longitude, region: row.region }, { SEED, STATE });
           }
         } else if (key === 'repair_items' || key === 'expense_items') {
           if ('qty' in pendingUpdates || 'unit_cost' in pendingUpdates) {
@@ -59599,6 +59989,9 @@
 
         // Universal Post-Save Numeric Invariance Guard across all 46 current tables + any 47th+ future table
         enforceUneditedNumericInvariance(origRowSnap, row, editedKeySet);
+        if (isSaveWordOnly) {
+          enforceStrictNumericLockFromOrig(origRowSnap, row);
+        }
 
         if (isEquipInspect && targetEqRow && ('capacity' in pendingUpdates || 'supplier' in pendingUpdates || 'default_driver' in pendingUpdates || Boolean(effToDate))) {
           appendOrUpdateTruckWindow(targetEqRow, {
@@ -59649,6 +60042,19 @@
     const twBox = $('subgrid_truck_windows');
     const addTwBtn = $('inspAddTruckWinBtn');
     const cancelTwBtn = $('inspCancelTruckWinEditBtn');
+    const syncInspTwCoFilter = () => {
+      if (!twBox) return;
+      const selCo = ($('insp_tw_co') && $('insp_tw_co').value) || inspDefaultTwCo;
+      let visCount = 0;
+      twBox.querySelectorAll('tr[data-insp-tw-row-idx]').forEach(tr => {
+        const rowCo = tr.getAttribute('data-tw-co') || 'WTC';
+        const match = norm(rowCo) === norm(selCo);
+        tr.hidden = !match;
+        if (match) visCount++;
+      });
+      const badgeEl = $('inspTwCountBadge');
+      if (badgeEl) badgeEl.textContent = `${fmtNum(visCount)} ${selCo} Window${visCount === 1 ? '' : 's'}`;
+    };
     const syncInspTwStartMin = (editIdxOverride) => {
       const sInp = $('insp_tw_start');
       if (!sInp || !targetEqRow) return;
@@ -59656,7 +60062,7 @@
         ? editIdxOverride
         : ((twBox && twBox.dataset.editTwIdx != null && twBox.dataset.editTwIdx !== '') ? Number(twBox.dataset.editTwIdx) : -1);
       const minS = getTruckWindowMinStart(targetEqRow, {
-        co: ($('insp_tw_co') && $('insp_tw_co').value) || row.company || 'WTC',
+        co: ($('insp_tw_co') && $('insp_tw_co').value) || inspDefaultTwCo,
         side: ($('insp_tw_side') && $('insp_tw_side').value) || 'both',
         cust: ($('insp_tw_cust') && $('insp_tw_cust').value) || '',
         site: ($('insp_tw_site') && $('insp_tw_site').value) || '',
@@ -59668,17 +60074,22 @@
         sInp.removeAttribute('min');
       }
     };
+    syncInspTwCoFilter();
     syncInspTwStartMin(-1);
     ['insp_tw_co', 'insp_tw_side', 'insp_tw_cust', 'insp_tw_site'].forEach(fid => {
       const el = $(fid);
-      if (el) el.addEventListener('change', () => syncInspTwStartMin());
+      if (el) el.addEventListener('change', () => {
+        if (fid === 'insp_tw_co') syncInspTwCoFilter();
+        syncInspTwStartMin();
+      });
     });
     const startInspWinEdit = idx => {
-      if (!canModifyData() || !twBox || !targetEqRow || !Array.isArray(targetEqRow.adj_windows)) return;
+      if (!canModifyRecord() || !twBox || !targetEqRow || !Array.isArray(targetEqRow.adj_windows)) return;
       const w = targetEqRow.adj_windows[idx];
       if (!w) return;
       twBox.dataset.editTwIdx = String(idx);
-      if ($('insp_tw_co')) $('insp_tw_co').value = w.co || row.company || 'WTC';
+      if ($('insp_tw_co')) $('insp_tw_co').value = w.co || inspDefaultTwCo;
+      syncInspTwCoFilter();
       if ($('insp_tw_side')) $('insp_tw_side').value = (w.side === 'all' || !w.side) ? 'both' : w.side;
       if ($('insp_tw_cap')) $('insp_tw_cap').value = String(Number(w.cap != null ? w.cap : (targetEqRow.capacity || 0)));
       if ($('insp_tw_start')) $('insp_tw_start').value = w.s || '2024-01-01';
@@ -59697,7 +60108,8 @@
     if (cancelTwBtn) {
       cancelTwBtn.addEventListener('click', () => {
         if (twBox) twBox.dataset.editTwIdx = '';
-        if ($('insp_tw_co')) $('insp_tw_co').value = row.company === 'BBConstruction' ? 'BBConstruction' : (row.company === 'Lions Transport' ? 'Lions Transport' : 'WTC');
+        if ($('insp_tw_co')) $('insp_tw_co').value = inspDefaultTwCo;
+        syncInspTwCoFilter();
         if ($('insp_tw_side')) $('insp_tw_side').value = 'both';
         if ($('insp_tw_cap')) $('insp_tw_cap').value = String(Number(targetEqRow.capacity || 0));
         if ($('insp_tw_start')) $('insp_tw_start').value = todayISO();
@@ -59722,16 +60134,21 @@
     }));
     if (addTwBtn && targetEqRow) {
       addTwBtn.addEventListener('click', () => {
-        if (!canModifyData()) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
-        const capVal = Number(($('insp_tw_cap') && $('insp_tw_cap').value) || 0);
+        if (!canModifyRecord()) { toast('Your seat does not have Modify Existing Records permission', 'err'); return; }
+        const rawEditIdx = (twBox && twBox.dataset.editTwIdx != null && twBox.dataset.editTwIdx !== '') ? Number(twBox.dataset.editTwIdx) : -1;
+        const origEditWin = (rawEditIdx >= 0 && Array.isArray(targetEqRow.adj_windows)) ? targetEqRow.adj_windows[rawEditIdx] : null;
+        const capVal = canModifyData()
+          ? Number(($('insp_tw_cap') && $('insp_tw_cap').value) || 0)
+          : Number((origEditWin && origEditWin.cap != null ? origEditWin.cap : (targetEqRow.capacity || 0)));
         const sVal = ($('insp_tw_start') && $('insp_tw_start').value) || todayISO();
         const eVal = ($('insp_tw_end') && $('insp_tw_end').value) || '';
+        const ownVal = (($('insp_tw_own') && $('insp_tw_own').value) || '').trim();
         const drvVal = (($('insp_tw_drv') && $('insp_tw_drv').value) || '').trim();
         const isTruckCat = /^(truck|mixer)/i.test(targetEqRow.type || '');
-        if (isTruckCat && !(capVal > 0) && !drvVal) { toast('Enter Truck Capacity (m³) or Active Driver.', 'err'); return; }
-        if (!isTruckCat && !drvVal && !(capVal > 0)) { toast('Select the Active / Substitute Driver to log.', 'err'); return; }
+        if (!ownVal) { toast('Select or enter the Truck Owner.', 'err'); return; }
+        if (!drvVal) { toast('Select or enter the Active / Substitute Driver.', 'err'); return; }
+        if (isTruckCat && !(capVal > 0)) { toast('Enter Truck Capacity (m³) above 0.', 'err'); return; }
         if (eVal && eVal < sVal) { toast('End Date cannot be before Start Date.', 'err'); return; }
-        const rawEditIdx = (twBox && twBox.dataset.editTwIdx != null && twBox.dataset.editTwIdx !== '') ? Number(twBox.dataset.editTwIdx) : -1;
         const winSpec = {
           co: ($('insp_tw_co') && $('insp_tw_co').value) || 'WTC',
           side: ($('insp_tw_side') && $('insp_tw_side').value) || 'both',
@@ -61851,6 +62268,10 @@
         STATE.draftCustomPerms = cloneEffectivePermsToCustomDraft(u);
         STATE.showRolePermMatrix = opts.openPerms != null ? !!opts.openPerms : true;
       } else {
+        const parsedCp = parseUserCustomPerms(u.custom_perms);
+        if (parsedCp && parsedCp.rights && typeof parsedCp.rights.modify_text === 'boolean') {
+          STATE.draftCustomPerms = { rights: { modify_text: !!parsedCp.rights.modify_text } };
+        }
         STATE.showRolePermMatrix = !!opts.openPerms;
       }
     }
@@ -61917,13 +62338,26 @@
     const authModeRaw = val('nu_auth_mode');
     const authModeVal = (authModeRaw && authModeRaw !== 'inherit') ? normalizeAuthMode(authModeRaw, 'both') : '';
     const bookScopeVal = val('nu_book_scope') === 'official' ? 'official' : 'all';
+    const entryEditModeEl = $('nu_entry_edit_mode');
+    const entryTextOverride = (!isCustomRole && !ROLE_PRESETS[resolveCanonicalRoleKey(finalRole)]?.rights?.modify_data && (
+      (STATE.draftCustomPerms && STATE.draftCustomPerms.rights && typeof STATE.draftCustomPerms.rights.modify_text === 'boolean') ||
+      (entryEditModeEl && !entryEditModeEl.disabled)
+    ))
+      ? {
+          rights: {
+            modify_text: (STATE.draftCustomPerms && STATE.draftCustomPerms.rights && typeof STATE.draftCustomPerms.rights.modify_text === 'boolean')
+              ? !!STATE.draftCustomPerms.rights.modify_text
+              : (entryEditModeEl ? entryEditModeEl.value === 'words_only' : true)
+          }
+        }
+      : null;
     const customPermsObj = isCustomRole
       ? (STATE.draftCustomPerms || cloneEffectivePermsToCustomDraft(editUser || prev))
-      : {};
+      : (entryTextOverride || {});
     if (isCustomRole && isSelfOwner && customPermsObj.rights) {
       customPermsObj.rights.manage_users = true;
     }
-    const customPermsJson = isCustomRole ? JSON.stringify(customPermsObj) : '{}';
+    const customPermsJson = (isCustomRole || entryTextOverride) ? JSON.stringify(customPermsObj) : '{}';
     const nowIso = new Date().toISOString();
     const newUser = {
       id: existingIdx >= 0 ? prev.id : uid('u'),
@@ -61954,7 +62388,7 @@
     STATE.draftCompaniesOverride = null;
     STATE.draftAccessOverride = null;
     STATE.draftBookScopeOverride = '';
-    STATE.draftCustomPerms = isCustomRole ? customPermsObj : null;
+    STATE.draftCustomPerms = (isCustomRole || entryTextOverride) ? customPermsObj : null;
     saveLocalAuthAndRecords();
     applyUserRlsAndPermissions();
     updateSeatEditorDom();
@@ -62439,6 +62873,22 @@
         ? `${ic('shield')} Hide Matrix`
         : `${ic('sliders')} Customize`;
     }
+
+    const editModeEl = scope.querySelector('#nu_entry_edit_mode');
+    if (editModeEl) {
+      const canToggleWordMode = previewPerms.roleKey === 'Entry' || (previewPerms.roleKey === 'Custom' && !previewPerms.rights.modify_data);
+      editModeEl.disabled = !canToggleWordMode;
+      const modeVal = previewPerms.rights.modify_data ? 'full' : (previewPerms.rights.modify_text ? 'words_only' : 'locked');
+      if (modeVal === 'full') {
+        editModeEl.innerHTML = `<option value="full" selected>Supervisor Full Edit (Words &amp; Numbers)</option>`;
+      } else {
+        editModeEl.innerHTML = `
+          <option value="words_only" ${modeVal === 'words_only' ? 'selected' : ''}>Words Only (Numbers Locked to Supervisor)</option>
+          <option value="locked" ${modeVal === 'locked' ? 'selected' : ''}>Locked (New Entries &amp; Pending Prices Only)</option>
+        `;
+      }
+      editModeEl.value = modeVal;
+    }
   }
 
   function wireRolePermissionsMatrix(root) {
@@ -62563,7 +63013,16 @@
         const grp = cb.getAttribute('data-perm-cat') || cb.getAttribute('data-perm-group');
         const key = cb.getAttribute('data-perm-id') || cb.getAttribute('data-perm-key');
         if (!grp || !key) return;
-        if (!STATE.draftCustomPerms) {
+        const curCanonRole = resolveCanonicalRoleKey(roleEl ? roleEl.value : 'Entry');
+        if (grp === 'rights' && key === 'modify_text' && curCanonRole === 'Entry') {
+          STATE.draftCustomPerms = { rights: { modify_text: !!cb.checked } };
+          const editModeEl = root.querySelector('#nu_entry_edit_mode');
+          if (editModeEl) editModeEl.value = cb.checked ? 'words_only' : 'locked';
+          STATE.userFormDirty = true;
+          refreshRoleAndAccessMatrixUi(root);
+          return;
+        }
+        if (!STATE.draftCustomPerms || !STATE.draftCustomPerms.dashboards) {
           STATE.draftCustomPerms = cloneEffectivePermsToCustomDraft(getDraftSeatPreviewUser());
         }
         if (roleEl && roleEl.value !== 'Custom') roleEl.value = 'Custom';
@@ -62572,6 +63031,9 @@
         STATE.draftAccessOverride = 'custom|custom';
         if (!STATE.draftCustomPerms[grp]) STATE.draftCustomPerms[grp] = {};
         STATE.draftCustomPerms[grp][key] = !!cb.checked;
+        if (grp === 'rights' && key === 'modify_data' && cb.checked) {
+          STATE.draftCustomPerms.rights.modify_text = true;
+        }
         STATE.userFormDirty = true;
         refreshRoleAndAccessMatrixUi(root);
       });
@@ -62651,11 +63113,37 @@
         STATE.draftCompaniesOverride = null;
         STATE.draftAccessOverride = null;
         const cur = getEditingSeatUser();
-        STATE.draftCustomPerms = (cur && resolveCanonicalRoleKey(cur.role) === 'Custom')
-          ? cloneEffectivePermsToCustomDraft(cur)
-          : null;
+        const curRoleCanon = cur ? resolveCanonicalRoleKey(cur.role) : 'Entry';
+        if (cur && curRoleCanon === 'Custom') {
+          STATE.draftCustomPerms = cloneEffectivePermsToCustomDraft(cur);
+        } else if (cur && curRoleCanon === 'Entry') {
+          const curPerms = getEffectivePermissions(cur);
+          STATE.draftCustomPerms = { rights: { modify_text: !!curPerms.rights.modify_text } };
+        } else {
+          STATE.draftCustomPerms = null;
+        }
         updateSeatEditorDom();
         toast('Reverted unsaved field changes');
+      });
+    }
+    const entryEditModeEl = root.querySelector('#nu_entry_edit_mode');
+    if (entryEditModeEl) {
+      entryEditModeEl.addEventListener('change', () => {
+        const modeVal = entryEditModeEl.value;
+        const roleEl = root.querySelector('#nu_role');
+        const curCanon = resolveCanonicalRoleKey(roleEl ? roleEl.value : 'Entry');
+        const wantWordsOnly = modeVal === 'words_only';
+        if (curCanon === 'Entry') {
+          STATE.draftCustomPerms = { rights: { modify_text: wantWordsOnly } };
+        } else if (curCanon === 'Custom') {
+          if (!STATE.draftCustomPerms || !STATE.draftCustomPerms.dashboards) {
+            STATE.draftCustomPerms = cloneEffectivePermsToCustomDraft(getDraftSeatPreviewUser());
+          }
+          if (!STATE.draftCustomPerms.rights) STATE.draftCustomPerms.rights = {};
+          STATE.draftCustomPerms.rights.modify_text = wantWordsOnly;
+        }
+        STATE.userFormDirty = true;
+        refreshRoleAndAccessMatrixUi(root);
       });
     }
     const saveBtn = root.querySelector('#saveNewUserBtn');
@@ -63609,14 +64097,20 @@
     renderApp();
   }
 
+  let _companySwitchUiSig = '';
   function syncCompanySwitchUi() {
     const switchEl = $('companySwitch');
     if (!switchEl) return;
     const user = activeUser();
     const allowedCos = getAllowedCompanyKeys(user);
     const allowedNames = allowedCompanyNames(user);
-    const allowedNameSet = new Set(allowedNames.map(n => n.toLowerCase()));
     const catalog = getCompanyCatalog();
+    const searchInpEarly = $('companySwitchSearch');
+    const qEarly = searchInpEarly ? String(searchInpEarly.value || '').trim().toLowerCase() : '';
+    const uiSig = `${(user && user.id) || ''}|${allowedCos.join(',')}|${allowedNames.join(',')}|${catalog.length}|${STATE.company}|${STATE.companySwitchIndFilter || 'all'}|${qEarly}`;
+    if (_companySwitchUiSig === uiSig && switchEl.querySelector('.entity-btn')) return;
+    _companySwitchUiSig = uiSig;
+    const allowedNameSet = new Set(allowedNames.map(n => n.toLowerCase()));
     const indGroups = getIndustryGroups(catalog);
     const listEl = $('companySwitchList') || switchEl;
 
@@ -71342,7 +71836,13 @@
     document.body.classList.toggle('is-universal-view', isUnivView);
     document.body.classList.toggle('is-daily-ops-view', isDailyOpsView);
     const univPill = $('topbarUnivScopePill');
-    if (univPill) univPill.hidden = !isUnivView;
+    const isGroupCo = !STATE.company || STATE.company === 'manufacturing-group';
+    if (univPill) {
+      univPill.hidden = !isUnivView;
+      if (isUnivView) {
+        univPill.textContent = isGroupCo ? 'All BUs · Shared Registry' : `${coMobLbl} · Shared Registry`;
+      }
+    }
     if ((isKiosksView || isUnivView || isDailyOpsView) && _dateFacState.open) closeDateFacilitator();
     const univGroupKeys = isUnivView ? (UNIV_REGISTRY_GROUPS[STATE.view] || [UNIV_VIEW_TO_TABLE_KEY[STATE.view]]) : [];
     if (isUnivView && (!STATE.activeUnivRegKey || !univGroupKeys.includes(STATE.activeUnivRegKey))) {
@@ -71352,7 +71852,9 @@
     const effTopbarBasis = isTxLockedView ? 'tx' : STATE.basis;
     if (eyeEl) {
       const eyeTxt = isUnivView
-        ? (isMobileViewport ? 'All BUs · Universal Registry' : 'All Business Units (Universal Registry) · WTC · BBConstruction · Lions Transport')
+        ? (isGroupCo
+            ? (isMobileViewport ? 'All BUs · Universal Registry' : 'All Business Units (Universal Registry) · WTC · BBConstruction · Lions Transport')
+            : (isMobileViewport ? `${coMobLbl} · Universal Registry` : `${coFullLbl} · Universal Registry`))
         : isKiosksView
           ? (isMobileViewport ? `${coMobLbl} · Live Terminals` : `${coFullLbl} · Live Plant Terminals`)
           : isDailyOpsView
@@ -71879,23 +72381,306 @@
 
     // 3. Multi-row selection dots (.row-sel-dot) for Live Calculator Bar
     const rrows = container.querySelectorAll('tr.rrow[data-rid]');
-    for (let i = 0; i < rrows.length; i++) {
-      const tr = rrows[i];
-      if (tr._hasSelDot) continue;
-      const firstTd = tr.firstElementChild;
-      if (firstTd && firstTd.tagName === 'TD') {
-        tr._hasSelDot = true;
-        const dot = document.createElement('u');
-        dot.className = 'row-sel-dot';
-        dot.setAttribute('data-row-sel', '1');
-        dot.setAttribute('data-ui-tip', 'Select row for Live Calculator sum (or Shift/Ctrl+Click row)');
-        firstTd.appendChild(dot);
+    if (rrows.length) {
+      let protoDot = enhanceVisualWorkspace._protoDot;
+      if (!protoDot) {
+        protoDot = document.createElement('u');
+        protoDot.className = 'row-sel-dot';
+        protoDot.setAttribute('data-row-sel', '1');
+        enhanceVisualWorkspace._protoDot = protoDot;
+      }
+      for (let i = 0; i < rrows.length; i++) {
+        const tr = rrows[i];
+        if (tr._hasSelDot) continue;
+        const firstTd = tr.firstElementChild;
+        if (firstTd && firstTd.tagName === 'TD') {
+          tr._hasSelDot = true;
+          firstTd.classList.add('td-has-sel-dot');
+          if (firstTd.querySelector('.badge-app, .void-btn:not(.row-void-hover)')) {
+            firstTd.classList.add('td-has-inline-act');
+          }
+          firstTd.appendChild(protoDot.cloneNode(false));
+        }
       }
     }
     updateLiveSelectionBar(container);
   }
 
+  function wireWorkspaceDelegatedOnce(container) {
+    if (!container || container.dataset.wsDelegatedWired === '1') return;
+    container.dataset.wsDelegatedWired = '1';
+
+    container.addEventListener('change', e => {
+      const sel = e.target && typeof e.target.closest === 'function' ? e.target.closest('.cf-select[data-cf-view][data-cf-key]') : null;
+      if (!sel || !container.contains(sel)) return;
+      const view = sel.getAttribute('data-cf-view');
+      const key = sel.getAttribute('data-cf-key');
+      if (!STATE.colFilters) STATE.colFilters = {};
+      if (!STATE.colFilters[view]) STATE.colFilters[view] = {};
+      const val = String(sel.value || '').trim();
+      if (!val) delete STATE.colFilters[view][key];
+      else STATE.colFilters[view][key] = val;
+      STATE.shown = {};
+      renderApp();
+    });
+
+    container.addEventListener('click', e => {
+      const t = e.target;
+      if (!t || typeof t.closest !== 'function') return;
+
+      const printBtn = t.closest('[data-print-ticket]');
+      if (printBtn && container.contains(printBtn)) {
+        e.stopPropagation();
+        const docType = printBtn.getAttribute('data-print-ticket') || 'sales';
+        const id = printBtn.getAttribute('data-print-id') || printBtn.getAttribute('data-rid');
+        const priceMode = printBtn.getAttribute('data-print-mode') || '';
+        const poolKey = docType === 'raw' ? 'raw_purchases' : (docType === 'fuel' ? 'fuel_intakes' : 'sales_tickets');
+        const rec = resolveInspectorRecord(poolKey, id);
+        if (rec && window.MFG_PRINT) {
+          if (printBtn.hasAttribute('data-print-direct')) {
+            window.MFG_PRINT.printThermalTicket(rec, { docType, ...(priceMode ? { priceMode } : {}) });
+          } else {
+            window.MFG_PRINT.openThermalPreviewModal(rec, { docType, ...(priceMode ? { priceMode } : {}) });
+          }
+        }
+        return;
+      }
+
+      const voidBtn = t.closest('[data-void]');
+      if (voidBtn && container.contains(voidBtn)) {
+        e.stopPropagation();
+        if (voidBtn.dataset.armed === '1') { voidRecord(voidBtn.getAttribute('data-void'), voidBtn.getAttribute('data-void-id')); return; }
+        voidBtn.dataset.armed = '1';
+        voidBtn.textContent = 'Void?';
+        voidBtn.classList.add('armed');
+        setTimeout(() => { if (voidBtn.isConnected) { voidBtn.dataset.armed = ''; voidBtn.textContent = '✕'; voidBtn.classList.remove('armed'); } }, 4000);
+        return;
+      }
+
+      const thFilterBtn = t.closest('[data-th-filter-key]');
+      if (thFilterBtn && container.contains(thFilterBtn)) {
+        e.stopPropagation();
+        openColFilterPopover(thFilterBtn);
+        return;
+      }
+
+      const sortTh = t.closest('th.sortable');
+      if (sortTh && container.contains(sortTh)) {
+        if (t.closest('.th-filter-btn, .tbl-col-resizer, .tbl-th-tools')) return;
+        const view = sortTh.getAttribute('data-sort-view'), key = sortTh.getAttribute('data-sort-key');
+        const cur = STATE.sortBy[view] || _defaultSortBy[view] || {};
+        const defaultDir = !isDefaultDescSortKey(key) ? 'asc' : 'desc';
+        STATE.sortBy[view] = { key, dir: cur.key === key ? (cur.dir === 'desc' ? 'asc' : 'desc') : defaultDir };
+        renderApp();
+        return;
+      }
+
+      const openModalBtn = t.closest('[data-open-modal]');
+      if (openModalBtn && container.contains(openModalBtn)) {
+        e.stopPropagation();
+        const pf = {};
+        let hasPf = false;
+        ['co', 'eq', 'def', 'part', 'sub', 'disp', 'party', 'cost', 'notes', 'item', 'oil', 'repsrc', 'storewh', 'trtype', 'loanside', 'loan', 'usd', 'region'].forEach(k => {
+          const attr = 'data-prefill-' + k;
+          if (openModalBtn.hasAttribute(attr)) {
+            pf[k] = openModalBtn.getAttribute(attr) || '';
+            hasPf = true;
+          }
+        });
+        openEntryModal(openModalBtn.getAttribute('data-open-modal'), hasPf ? pf : null);
+        return;
+      }
+
+      const openLoanBtn = t.closest('[data-open-loan-hub-side]');
+      if (openLoanBtn && container.contains(openLoanBtn)) {
+        e.stopPropagation();
+        STATE.openLoanSideFilter = openLoanBtn.getAttribute('data-open-loan-hub-side') || 'all';
+        renderApp();
+        return;
+      }
+
+      const kioskJumpBtn = t.closest('[data-kiosk-jump]');
+      if (kioskJumpBtn && container.contains(kioskJumpBtn)) {
+        e.stopPropagation();
+        const targetKiosk = kioskJumpBtn.getAttribute('data-kiosk-jump') || 'sales';
+        const targetFeed = kioskJumpBtn.getAttribute('data-kiosk-feed') || '';
+        STATE.activeKiosk = targetKiosk;
+        if (targetFeed) {
+          STATE.kioskAttFeedFilter = targetFeed;
+          STATE.kioskAttSetupOpen = true;
+        }
+        setView('kiosks');
+        return;
+      }
+
+      const cfClearKeyBtn = t.closest('[data-cf-clear-key]');
+      if (cfClearKeyBtn && container.contains(cfClearKeyBtn)) {
+        e.stopPropagation();
+        const view = cfClearKeyBtn.getAttribute('data-cf-clear-view') || cfClearKeyBtn.getAttribute('data-cf-view');
+        const key = cfClearKeyBtn.getAttribute('data-cf-clear-key');
+        if (STATE.colFilters && STATE.colFilters[view]) {
+          delete STATE.colFilters[view][key];
+        }
+        STATE.shown = {};
+        renderApp();
+        return;
+      }
+
+      const cfClearAllBtn = t.closest('[data-cf-clear-all]');
+      if (cfClearAllBtn && container.contains(cfClearAllBtn)) {
+        e.stopPropagation();
+        const view = cfClearAllBtn.getAttribute('data-cf-clear-all');
+        if (STATE.colFilters) delete STATE.colFilters[view];
+        STATE.shown = {};
+        renderApp();
+        return;
+      }
+
+      const showMoreBtn = t.closest('[data-show-more]');
+      if (showMoreBtn && container.contains(showMoreBtn)) {
+        const v = showMoreBtn.getAttribute('data-show-more');
+        STATE.shown[v] = shownCount(v) + PAGE;
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+        return;
+      }
+
+      const exportCsvBtn = t.closest('[data-export-csv]');
+      if (exportCsvBtn && container.contains(exportCsvBtn)) {
+        const panel = $(exportCsvBtn.getAttribute('data-export-csv'));
+        const tables = panel ? Array.from(panel.querySelectorAll('table')) : [];
+        if (!tables.length) { toast('Nothing to export', 'err'); return; }
+        const csv = tables.map(tableToCsv).join('\r\n\r\n');
+        downloadCsv(`ISABI_MFG_${exportCsvBtn.getAttribute('data-export-name') || 'export'}_${STATE.company}_${STATE.period}_${todayISO()}.csv`, csv);
+        toast('CSV downloaded');
+        return;
+      }
+
+      const openAlertRuleBtn = t.closest('[data-open-alert-rule]');
+      if (openAlertRuleBtn && container.contains(openAlertRuleBtn)) {
+        if (!canViewView('alert_rules', activeUser())) return;
+        e.stopPropagation();
+        openAlertRuleTuner(openAlertRuleBtn.getAttribute('data-open-alert-rule') || '');
+        return;
+      }
+
+      const chipBtn = t.closest('[data-chip]');
+      if (chipBtn && container.contains(chipBtn)) {
+        STATE.chipFilter = chipBtn.getAttribute('data-chip');
+        STATE.shown = {};
+        renderApp();
+        return;
+      }
+
+      const insightChip = t.closest('[data-insight-chip]');
+      if (insightChip && container.contains(insightChip)) {
+        e.stopPropagation();
+        const targetChip = insightChip.getAttribute('data-insight-chip') || 'all';
+        STATE.chipFilter = STATE.chipFilter === targetChip ? 'all' : targetChip;
+        STATE.shown = {};
+        renderApp();
+        return;
+      }
+
+      const qcfEl = t.closest('[data-quick-col-filter]');
+      if (qcfEl && container.contains(qcfEl)) {
+        e.stopPropagation();
+        const view = qcfEl.getAttribute('data-quick-col-filter') || STATE.view;
+        const col = qcfEl.getAttribute('data-qcf-col');
+        const valStr = qcfEl.getAttribute('data-qcf-val') || '';
+        if (!view || !col || !valStr || valStr === '—') return;
+        if (!STATE.colFilters[view]) STATE.colFilters[view] = {};
+        if (STATE.colFilters[view][col] === valStr) {
+          delete STATE.colFilters[view][col];
+        } else {
+          STATE.colFilters[view][col] = valStr;
+        }
+        STATE.shown = {};
+        renderApp();
+        return;
+      }
+
+      const reconSlice = t.closest('.recon-metric-slice[data-recon-chip]');
+      if (reconSlice && container.contains(reconSlice)) {
+        e.stopPropagation();
+        const targetCo = reconSlice.getAttribute('data-recon-co');
+        const targetChip = reconSlice.getAttribute('data-recon-chip') || 'all';
+        if (targetCo && getAllowedCompanyKeys(activeUser()).includes(targetCo)) {
+          const sameCo = STATE.company === targetCo;
+          STATE.company = targetCo;
+          STATE.chipFilter = (sameCo && STATE.chipFilter === targetChip && targetChip !== 'all') ? 'all' : targetChip;
+        } else {
+          STATE.chipFilter = (STATE.chipFilter === targetChip && targetChip !== 'all') ? 'all' : targetChip;
+        }
+        STATE.shown = {};
+        STATE.pbiTablePage = {};
+        saveFilterState();
+        renderApp();
+        return;
+      }
+
+      const relEl = t.closest('[data-rel-key]');
+      if (relEl && container.contains(relEl)) {
+        e.stopPropagation();
+        const rk = relEl.getAttribute('data-rel-key');
+        const rv = relEl.getAttribute('data-rel-val');
+        if (!rk || !rv) return;
+        if (e.shiftKey || e.altKey) {
+          const relColMap = {
+            sales: { customers: 'customer', products: 'product', sites: 'site', equipment: 'truck', drivers: 'driver' },
+            raw: { sites: 'site', suppliers: 'site_owner', products: 'product', equipment: 'truck' },
+            fleet: { equipment: 'equipment', drivers: 'driver' },
+            pricing: { customers: 'customer', suppliers: 'supplier', products: 'product', sites: 'site' },
+            raw_pricing: { customers: 'customer', suppliers: 'supplier', products: 'product', sites: 'site' },
+            raw_jv: { sites: 'site', suppliers: 'partner' },
+            customers: { customers: 'customer' },
+            suppliers: { suppliers: 'supplier' },
+            expenses: { suppliers: 'supplier', equipment: 'equipment', expense_categories: 'category' }
+          };
+          const cfView = STATE.view === 'fleet' ? 'fuel' : (STATE.view === 'customers' ? 'receipts' : (STATE.view === 'suppliers' ? 'settle' : (STATE.view === 'raw_jv' ? 'jvdist' : STATE.view)));
+          const col = (relColMap[STATE.view] || {})[rk];
+          if (col && cfView) {
+            if (!STATE.colFilters[cfView]) STATE.colFilters[cfView] = {};
+            if (STATE.colFilters[cfView][col] === rv) {
+              delete STATE.colFilters[cfView][col];
+              toast(`Cleared ${getColLabel(col)} filter`);
+            } else {
+              STATE.colFilters[cfView][col] = rv;
+              toast(`Filtered by ${getColLabel(col)}: ${rv}`);
+            }
+            STATE.shown = {};
+            renderApp();
+            return;
+          }
+        }
+        showRecordInspector(rk, rv);
+        return;
+      }
+
+      const rrow = t.closest('tr.rrow[data-rid]');
+      if (rrow && container.contains(rrow)) {
+        const selDot = t.closest('[data-row-sel]');
+        if (selDot || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) {
+          if (!selDot && t.closest('[data-rel-key], button, a, input, select')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          rrow.classList.toggle('is-row-selected');
+          updateLiveSelectionBar(container);
+          return;
+        }
+        if (t.closest('[data-rel-key], button, a, input, select')) return;
+        const selObj = window.getSelection ? window.getSelection() : null;
+        const sel = (selObj && selObj.anchorNode && rrow.contains(selObj.anchorNode)) ? String(selObj) : '';
+        if (sel.length > 1) return;
+        openRecordFromTableRow(rrow.getAttribute('data-rkey'), rrow.getAttribute('data-rid'), rrow);
+      }
+    });
+  }
+
   function wireWorkspace(container, activeUserRow) {
+    wireWorkspaceDelegatedOnce(container);
     wireModalSuggestions(container);
     if (window.MFG_GEO && typeof window.MFG_GEO.wireGeoStudio === 'function') {
       window.MFG_GEO.wireGeoStudio(container, {
@@ -71921,44 +72706,51 @@
     const allowedNames = allowedCompanyNames(activeUserRow);
     const totalCatCount = getCompanyCatalog().length;
 
-    // Enforce RLS & permission consistency across entity recon cards, reset buttons & jump links
-    container.querySelectorAll('.sales-recon-card[data-jump-co]').forEach(card => {
-      const targetCo = card.getAttribute('data-jump-co');
-      if (targetCo && !allowedCos.includes(targetCo)) card.hidden = true;
-    });
-    container.querySelectorAll('.sales-recon-reset').forEach(btn => {
-      if (allowedNames.length < 2) {
-        btn.hidden = true;
-      } else {
-        btn.hidden = false;
-        btn.textContent = allowedNames.length >= totalCatCount
-          ? `Show All Group (${allowedNames.length})`
-          : `Show All Assigned (${allowedNames.length})`;
-      }
-    });
     enhanceVisualWorkspace(container, activeUserRow, allowedCos, allowedNames);
-    container.querySelectorAll('.tfoot-sub-split').forEach(el => {
-      if (!(allowedNames.includes('WTC') && allowedNames.includes('BBConstruction'))) {
-        el.hidden = true;
+
+    // Enforce RLS & permission consistency across entity recon cards, reset buttons & jump links in a single DOM pass
+    const canSplitWtcBbc = allowedNames.includes('WTC') && allowedNames.includes('BBConstruction');
+    const canViewPbi = canViewView('pbi', activeUserRow);
+    const canViewAlertRules = canViewView('alert_rules', activeUserRow);
+    container.querySelectorAll('.sales-recon-card[data-jump-co], .sales-recon-reset, .tfoot-sub-split, [data-nav-jump], [data-pbi-jump], [data-open-alert-rule]').forEach(el => {
+      if (el.classList.contains('sales-recon-card') && el.hasAttribute('data-jump-co')) {
+        const targetCo = el.getAttribute('data-jump-co');
+        if (targetCo && !allowedCos.includes(targetCo)) el.hidden = true;
       }
-    });
-    container.querySelectorAll('[data-nav-jump]').forEach(el => {
-      const targetView = el.getAttribute('data-nav-jump');
-      if (targetView && !canViewView(targetView, activeUserRow)) {
-        if (el.tagName === 'BUTTON' || el.classList.contains('btn') || el.classList.contains('btn-ghost-bar') || el.classList.contains('att-act')) {
+      if (el.classList.contains('sales-recon-reset')) {
+        if (allowedNames.length < 2) {
           el.hidden = true;
         } else {
-          el.removeAttribute('data-nav-jump');
-          el.removeAttribute('role');
-          el.removeAttribute('tabindex');
-          el.classList.remove('kpi-link');
+          el.hidden = false;
+          el.textContent = allowedNames.length >= totalCatCount
+            ? `Show All Group (${allowedNames.length})`
+            : `Show All Assigned (${allowedNames.length})`;
         }
       }
-    });
-    container.querySelectorAll('[data-pbi-jump]').forEach(el => {
-      const targetPbi = el.getAttribute('data-pbi-jump');
-      if (!canViewView('pbi', activeUserRow) || (targetPbi && !canAccessPbiPage(targetPbi, activeUserRow))) {
-        if (el.tagName === 'BUTTON' || el.classList.contains('btn')) el.hidden = true;
+      if (el.classList.contains('tfoot-sub-split') && !canSplitWtcBbc) {
+        el.hidden = true;
+      }
+      if (el.hasAttribute('data-nav-jump')) {
+        const targetView = el.getAttribute('data-nav-jump');
+        if (targetView && !canViewView(targetView, activeUserRow)) {
+          if (el.tagName === 'BUTTON' || el.classList.contains('btn') || el.classList.contains('btn-ghost-bar') || el.classList.contains('att-act')) {
+            el.hidden = true;
+          } else {
+            el.removeAttribute('data-nav-jump');
+            el.removeAttribute('role');
+            el.removeAttribute('tabindex');
+            el.classList.remove('kpi-link');
+          }
+        }
+      }
+      if (el.hasAttribute('data-pbi-jump')) {
+        const targetPbi = el.getAttribute('data-pbi-jump');
+        if (!canViewPbi || (targetPbi && !canAccessPbiPage(targetPbi, activeUserRow))) {
+          if (el.tagName === 'BUTTON' || el.classList.contains('btn')) el.hidden = true;
+        }
+      }
+      if (el.hasAttribute('data-open-alert-rule') && !canViewAlertRules) {
+        el.hidden = true;
       }
     });
     // Analytics & Insights 12-page tabs, embedded module analytics tabs & 34-table hub chips
@@ -72118,25 +72910,57 @@
         }, 160);
       });
     }
-    container.querySelectorAll('[data-table-key], [data-conn-table-key]').forEach(btn => btn.addEventListener('click', () => {
-      const targetKey = btn.getAttribute('data-table-key') || btn.getAttribute('data-conn-table-key');
-      const targetMeta = window.MFG_PBI && (window.MFG_PBI.TABLE_CATALOG || []).find(t => t.key === targetKey);
-      if (UNIV_VIEW_TO_TABLE_KEY[STATE.view] && targetMeta && targetMeta.universal) {
-        STATE.activeUnivRegKey = targetKey;
-        if (targetMeta.navView && VIEW_TITLES[targetMeta.navView]) {
-          STATE.view = targetMeta.navView;
-        } else {
-          const ownerView = Object.keys(UNIV_REGISTRY_GROUPS).find(vk => UNIV_REGISTRY_GROUPS[vk].includes(targetKey));
-          if (ownerView) STATE.view = ownerView;
-        }
-      } else {
-        STATE.activeTableKey = targetKey;
-        if (targetKey === 'price_rules' && btn.hasAttribute('data-table-key')) {
-          if (!STATE.tableViews) STATE.tableViews = {};
-          if (/^raw_/i.test(STATE.tableViews.price_rules || '')) STATE.tableViews.price_rules = 'all';
-        }
-        if (UNIV_VIEW_TO_TABLE_KEY[STATE.view]) STATE.view = 'tables';
+    container.querySelectorAll('[data-table-key]').forEach(btn => btn.addEventListener('click', () => {
+      const targetKey = btn.getAttribute('data-table-key');
+      if (!targetKey) return;
+      STATE.prevTableKey = '';
+      STATE.activeTableKey = targetKey;
+      if (targetKey === 'price_rules') {
+        if (!STATE.tableViews) STATE.tableViews = {};
+        if (/^raw_/i.test(STATE.tableViews.price_rules || '')) STATE.tableViews.price_rules = 'all';
       }
+      STATE.search = '';
+      STATE.shown = {};
+      renderApp();
+    }));
+    container.querySelectorAll('[data-conn-table-key]').forEach(btn => btn.addEventListener('click', () => {
+      const targetKey = btn.getAttribute('data-conn-table-key');
+      if (!targetKey) return;
+      if (btn.closest('#univRegPanel') || UNIV_VIEW_TO_TABLE_KEY[STATE.view]) {
+        if (STATE.univConnTableKey === targetKey && !STATE.univConnPartyFilter && !STATE.univConnSubRole) {
+          STATE.univConnTableKey = '';
+          STATE.univConnPartyFilter = '';
+          STATE.univConnSearch = '';
+          STATE.univConnView = '';
+          STATE.univConnSubRole = '';
+        } else {
+          STATE.univConnTableKey = targetKey;
+          STATE.univConnPartyFilter = '';
+          STATE.univConnSearch = '';
+          STATE.univConnView = '';
+          STATE.univConnSubRole = '';
+        }
+        renderApp();
+        return;
+      }
+      if (STATE.activeTableKey && STATE.activeTableKey !== targetKey) {
+        STATE.prevTableKey = STATE.activeTableKey;
+      }
+      const wasSupplier = STATE.activeTableKey === 'suppliers';
+      STATE.activeTableKey = targetKey;
+      if (targetKey === 'price_rules') {
+        if (!STATE.tableViews) STATE.tableViews = {};
+        STATE.tableViews.price_rules = wasSupplier ? 'raw_all' : 'all';
+      }
+      STATE.search = '';
+      STATE.shown = {};
+      renderApp();
+    }));
+    container.querySelectorAll('[data-back-table-key]').forEach(btn => btn.addEventListener('click', () => {
+      const backKey = btn.getAttribute('data-back-table-key');
+      if (!backKey) return;
+      STATE.activeTableKey = backKey;
+      STATE.prevTableKey = '';
       STATE.search = '';
       STATE.shown = {};
       renderApp();
@@ -72145,7 +72969,16 @@
       const uk = btn.getAttribute('data-univ-reg-key');
       const nv = btn.getAttribute('data-univ-nav-view');
       STATE.activeUnivRegKey = uk || 'equipment';
-      if (nv && VIEW_TITLES[nv]) STATE.view = nv;
+      STATE.univConnTableKey = '';
+      STATE.univConnPartyFilter = '';
+      STATE.univConnSearch = '';
+      STATE.univConnView = '';
+      STATE.univConnSubRole = '';
+      const curGroup = UNIV_REGISTRY_GROUPS[STATE.view] || [];
+      const nvGroup = nv ? (UNIV_REGISTRY_GROUPS[nv] || []) : [];
+      if (nv && VIEW_TITLES[nv] && VIEW_TO_HUB[nv] === VIEW_TO_HUB[STATE.view] && nvGroup.join(',') === curGroup.join(',')) {
+        STATE.view = nv;
+      }
       STATE.search = '';
       STATE.shown = {};
       renderApp();
@@ -72158,6 +72991,96 @@
       STATE.shown = {};
       renderApp();
     }));
+    container.querySelectorAll('[data-reset-tbl-view]').forEach(btn => btn.addEventListener('click', () => {
+      if (!STATE.tableViews) STATE.tableViews = {};
+      const tk = btn.getAttribute('data-reset-tbl-view') || STATE.activeTableKey || 'price_rules';
+      STATE.tableViews[tk] = (tk === 'price_rules' && /^raw_/i.test(STATE.tableViews.price_rules || '')) ? 'raw_all' : 'all';
+      STATE.shown = {};
+      renderApp();
+    }));
+    container.querySelectorAll('[data-close-conn-explorer]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.univConnTableKey = '';
+      STATE.univConnPartyFilter = '';
+      STATE.univConnSearch = '';
+      STATE.univConnView = '';
+      STATE.univConnSubRole = '';
+      renderApp();
+    }));
+    container.querySelectorAll('[data-conn-filter-party]').forEach(btn => btn.addEventListener('click', () => {
+      const pVal = btn.getAttribute('data-conn-filter-party') || '';
+      STATE.univConnPartyFilter = pVal;
+      if (!pVal) STATE.univConnSubRole = '';
+      if (STATE.shown && STATE.univConnTableKey) delete STATE.shown['conn_' + STATE.univConnTableKey];
+      renderApp();
+    }));
+    container.querySelectorAll('[data-conn-tbl-view]').forEach(btn => btn.addEventListener('click', () => {
+      STATE.univConnView = btn.getAttribute('data-conn-tbl-view') || 'all';
+      if (STATE.shown && STATE.univConnTableKey) delete STATE.shown['conn_' + STATE.univConnTableKey];
+      renderApp();
+    }));
+    container.querySelectorAll('[data-conn-jump-view]').forEach(btn => btn.addEventListener('click', () => {
+      const targetView = btn.getAttribute('data-conn-jump-view') || 'tables';
+      const targetTbl = btn.getAttribute('data-conn-jump-table') || '';
+      STATE.univConnTableKey = '';
+      STATE.univConnPartyFilter = '';
+      STATE.univConnSearch = '';
+      STATE.univConnView = '';
+      STATE.univConnSubRole = '';
+      if (targetView === 'tables' && targetTbl) {
+        STATE.prevTableKey = STATE.activeUnivRegKey || '';
+        STATE.activeTableKey = targetTbl;
+      } else if (UNIV_VIEW_TO_TABLE_KEY[targetView] && targetTbl) {
+        STATE.activeUnivRegKey = targetTbl;
+      }
+      setView(targetView);
+    }));
+    container.querySelectorAll('[data-inline-conn-table]').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const cTbl = btn.getAttribute('data-inline-conn-table') || '';
+      const cParty = btn.getAttribute('data-inline-conn-party') || '';
+      const cView = btn.getAttribute('data-inline-conn-view') || '';
+      const cSubRole = btn.getAttribute('data-inline-conn-subrole') || '';
+      if (!cTbl) return;
+      const isSameActive = STATE.univConnTableKey === cTbl &&
+        norm(STATE.univConnPartyFilter || '') === norm(cParty) &&
+        (STATE.univConnSubRole || '') === cSubRole;
+      if (isSameActive) {
+        STATE.univConnTableKey = '';
+        STATE.univConnPartyFilter = '';
+        STATE.univConnSearch = '';
+        STATE.univConnView = '';
+        STATE.univConnSubRole = '';
+      } else {
+        STATE.univConnTableKey = cTbl;
+        STATE.univConnPartyFilter = cParty;
+        STATE.univConnView = cView;
+        STATE.univConnSubRole = cSubRole;
+        STATE.univConnSearch = '';
+      }
+      renderApp();
+      const expCard = document.getElementById('connTableExplorerCard');
+      if (expCard && typeof expCard.scrollIntoView === 'function') {
+        try { expCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+      }
+    }));
+    const connSearchInput = $('connExplorerSearchInput');
+    if (connSearchInput && connSearchInput.dataset.searchInputWired !== '1') {
+      connSearchInput.dataset.searchInputWired = '1';
+      connSearchInput.addEventListener('input', e => {
+        STATE.univConnSearch = e.target.value;
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+          const wasFocused = document.activeElement === connSearchInput;
+          const pos = connSearchInput.selectionStart;
+          renderApp();
+          const next = $('connExplorerSearchInput');
+          if (wasFocused && next && document.activeElement !== next) {
+            next.focus({ preventScroll: true });
+            try { next.setSelectionRange(pos, pos); } catch (_) {}
+          }
+        }, 140);
+      });
+    }
     // Chart hover & mobile tap tooltip
     const chartWrap = $('execChartWrap');
     const chartTip = $('execChartTip');
@@ -72312,45 +73235,6 @@
       });
     }
 
-    container.querySelectorAll('[data-chip]').forEach(btn => btn.addEventListener('click', () => { STATE.chipFilter = btn.getAttribute('data-chip'); STATE.shown = {}; renderApp(); }));
-    container.querySelectorAll('[data-insight-chip]').forEach(el => el.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const targetChip = el.getAttribute('data-insight-chip') || 'all';
-      STATE.chipFilter = STATE.chipFilter === targetChip ? 'all' : targetChip;
-      STATE.shown = {};
-      renderApp();
-    }));
-    container.querySelectorAll('[data-quick-col-filter]').forEach(el => el.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const view = el.getAttribute('data-quick-col-filter') || STATE.view;
-      const col = el.getAttribute('data-qcf-col');
-      const valStr = el.getAttribute('data-qcf-val') || '';
-      if (!view || !col || !valStr || valStr === '—') return;
-      if (!STATE.colFilters[view]) STATE.colFilters[view] = {};
-      if (STATE.colFilters[view][col] === valStr) {
-        delete STATE.colFilters[view][col];
-      } else {
-        STATE.colFilters[view][col] = valStr;
-      }
-      STATE.shown = {};
-      renderApp();
-    }));
-    container.querySelectorAll('.recon-metric-slice[data-recon-chip]').forEach(el => el.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const targetCo = el.getAttribute('data-recon-co');
-      const targetChip = el.getAttribute('data-recon-chip') || 'all';
-      if (targetCo && getAllowedCompanyKeys(activeUserRow).includes(targetCo)) {
-        const sameCo = STATE.company === targetCo;
-        STATE.company = targetCo;
-        STATE.chipFilter = (sameCo && STATE.chipFilter === targetChip && targetChip !== 'all') ? 'all' : targetChip;
-      } else {
-        STATE.chipFilter = (STATE.chipFilter === targetChip && targetChip !== 'all') ? 'all' : targetChip;
-      }
-      STATE.shown = {};
-      STATE.pbiTablePage = {};
-      saveFilterState();
-      renderApp();
-    }));
     container.querySelectorAll('[data-cf-mode]').forEach(btn => btn.addEventListener('click', () => {
       const nextMode = btn.getAttribute('data-cf-mode') || 'entries';
       if (STATE.cfEntryMode !== nextMode) {
@@ -72712,467 +73596,459 @@
       jumpFromSentinelRule(card.getAttribute('data-sn-card') || '');
     }));
 
-    // Alerts & Thresholds (#alert_rules) + cross-view [data-open-alert-rule] deep-link
-    container.querySelectorAll('[data-open-alert-rule]').forEach(btn => {
-      if (!canViewView('alert_rules', activeUserRow)) {
-        btn.hidden = true;
-        return;
+    if (STATE.view === 'alert_rules') {
+      const arSearch = $('alertRulesSearchInput');
+      if (arSearch && arSearch.dataset.searchInputWired !== '1') {
+        arSearch.dataset.searchInputWired = '1';
+        arSearch.addEventListener('input', e => {
+          STATE.alertRulesSearch = e.target.value;
+          clearTimeout(searchTimer);
+          searchTimer = setTimeout(() => {
+            const wasFocused = document.activeElement === arSearch;
+            const pos = arSearch.selectionStart;
+            renderApp();
+            const next = $('alertRulesSearchInput');
+            if (wasFocused && next && document.activeElement !== next) {
+              next.focus({ preventScroll: true });
+              try { next.setSelectionRange(pos, pos); } catch (_) {}
+            }
+          }, 140);
+        });
       }
-      btn.addEventListener('click', ev => {
-        ev.stopPropagation();
-        openAlertRuleTuner(btn.getAttribute('data-open-alert-rule') || '');
-      });
-    });
-
-    const arSearch = $('alertRulesSearchInput');
-    if (arSearch && arSearch.dataset.searchInputWired !== '1') {
-      arSearch.dataset.searchInputWired = '1';
-      arSearch.addEventListener('input', e => {
-        STATE.alertRulesSearch = e.target.value;
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => {
-          const wasFocused = document.activeElement === arSearch;
-          const pos = arSearch.selectionStart;
+      const arDomainSel = $('alertRulesDomainSelect');
+      if (arDomainSel) {
+        arDomainSel.addEventListener('change', e => {
+          STATE.alertRulesDomain = e.target.value || 'all';
           renderApp();
-          const next = $('alertRulesSearchInput');
-          if (wasFocused && next && document.activeElement !== next) {
-            next.focus({ preventScroll: true });
-            try { next.setSelectionRange(pos, pos); } catch (_) {}
+        });
+      }
+      container.querySelectorAll('[data-ar-filter]').forEach(btn => btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        STATE.alertRulesFilter = btn.getAttribute('data-ar-filter') || 'all';
+        renderApp();
+      }));
+      const toggleCaBtn = $('toggleCustomAlertCreatorBtn');
+      if (toggleCaBtn) {
+        toggleCaBtn.addEventListener('click', () => {
+          STATE.alertRulesShowCreator = !STATE.alertRulesShowCreator;
+          renderApp();
+          if (STATE.alertRulesShowCreator) {
+            setTimeout(() => { const el = $('caName'); if (el) el.focus(); }, 20);
           }
-        }, 140);
-      });
-    }
-    const arDomainSel = $('alertRulesDomainSelect');
-    if (arDomainSel) {
-      arDomainSel.addEventListener('change', e => {
-        STATE.alertRulesDomain = e.target.value || 'all';
-        renderApp();
-      });
-    }
-    container.querySelectorAll('[data-ar-filter]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      STATE.alertRulesFilter = btn.getAttribute('data-ar-filter') || 'all';
-      renderApp();
-    }));
-    const toggleCaBtn = $('toggleCustomAlertCreatorBtn');
-    if (toggleCaBtn) {
-      toggleCaBtn.addEventListener('click', () => {
-        STATE.alertRulesShowCreator = !STATE.alertRulesShowCreator;
-        renderApp();
-        if (STATE.alertRulesShowCreator) {
-          setTimeout(() => { const el = $('caName'); if (el) el.focus(); }, 20);
-        }
-      });
-    }
-    const cancelCaBtn = $('cancelCustomAlertBtn');
-    if (cancelCaBtn) {
-      cancelCaBtn.addEventListener('click', () => {
-        STATE.alertRulesShowCreator = false;
-        renderApp();
-      });
-    }
-    const creatorCardEl = $('customAlertCreatorCard');
-    if (creatorCardEl) {
-      const refreshCaExplainBox = () => {
-        const expEl = $('caMetricExplainBox');
-        if (!expEl) return;
-        const mk = String(($('caMetric') && $('caMetric').value) || 'expense_usd');
-        const tv = String(($('caTarget') && $('caTarget').value) || '');
-        const ov = ($('caOp') && $('caOp').value) === '<' ? '<' : '>';
-        const thStr = $('caThreshold') ? $('caThreshold').value : '';
-        const cv = String(($('caCompany') && $('caCompany').value) || 'all');
-        expEl.innerHTML = buildCustomAlertExplainHtml(mk, tv, ov, thStr, cv);
-      };
-      const syncCaMetricDependents = repopulateTarget => {
-        const mk = String(($('caMetric') && $('caMetric').value) || 'expense_usd');
-        const spec = CUSTOM_ALERT_METRICS[mk] || CUSTOM_ALERT_METRICS.expense_usd;
-        const thLbl = $('caThresholdLabel');
-        if (thLbl) thLbl.textContent = `Threshold Value (${spec.unit}) *`;
-        if (repopulateTarget) {
-          const tSel = $('caTarget');
-          const tLbl = $('caTargetLabel');
-          const meta = getCustomAlertTargetOptions(spec.targetKind);
-          if (tLbl) tLbl.textContent = meta.label;
-          if (tSel) {
-            tSel.innerHTML = `<option value="">${esc(meta.placeholder)}</option>` +
-              meta.options.map(opt => `<option value="${esc(opt)}">${esc(opt)}</option>`).join('');
-            tSel.value = '';
-            tSel.disabled = spec.targetKind === 'none';
+        });
+      }
+      const cancelCaBtn = $('cancelCustomAlertBtn');
+      if (cancelCaBtn) {
+        cancelCaBtn.addEventListener('click', () => {
+          STATE.alertRulesShowCreator = false;
+          renderApp();
+        });
+      }
+      const creatorCardEl = $('customAlertCreatorCard');
+      if (creatorCardEl) {
+        const refreshCaExplainBox = () => {
+          const expEl = $('caMetricExplainBox');
+          if (!expEl) return;
+          const mk = String(($('caMetric') && $('caMetric').value) || 'expense_usd');
+          const tv = String(($('caTarget') && $('caTarget').value) || '');
+          const ov = ($('caOp') && $('caOp').value) === '<' ? '<' : '>';
+          const thStr = $('caThreshold') ? $('caThreshold').value : '';
+          const cv = String(($('caCompany') && $('caCompany').value) || 'all');
+          expEl.innerHTML = buildCustomAlertExplainHtml(mk, tv, ov, thStr, cv);
+        };
+        const syncCaMetricDependents = repopulateTarget => {
+          const mk = String(($('caMetric') && $('caMetric').value) || 'expense_usd');
+          const spec = CUSTOM_ALERT_METRICS[mk] || CUSTOM_ALERT_METRICS.expense_usd;
+          const thLbl = $('caThresholdLabel');
+          if (thLbl) thLbl.textContent = `Threshold Value (${spec.unit}) *`;
+          if (repopulateTarget) {
+            const tSel = $('caTarget');
+            const tLbl = $('caTargetLabel');
+            const meta = getCustomAlertTargetOptions(spec.targetKind);
+            if (tLbl) tLbl.textContent = meta.label;
+            if (tSel) {
+              tSel.innerHTML = `<option value="">${esc(meta.placeholder)}</option>` +
+                meta.options.map(opt => `<option value="${esc(opt)}">${esc(opt)}</option>`).join('');
+              tSel.value = '';
+              tSel.disabled = spec.targetKind === 'none';
+            }
           }
+          refreshCaExplainBox();
+        };
+        creatorCardEl.querySelectorAll('[data-ca-domain]').forEach(pill => {
+          pill.addEventListener('click', () => {
+            const domKey = pill.getAttribute('data-ca-domain') || 'all';
+            creatorCardEl.querySelectorAll('[data-ca-domain]').forEach(p => p.classList.toggle('active', p === pill));
+            const mSel = $('caMetric');
+            if (!mSel) return;
+            const prevVal = mSel.value;
+            const entries = Object.entries(CUSTOM_ALERT_METRICS).filter(([, mv]) => domKey === 'all' || mv.domainKey === domKey);
+            mSel.innerHTML = entries.map(([mk, mv]) => `<option value="${esc(mk)}">${esc(mv.label)}</option>`).join('');
+            const keepPrev = entries.some(([mk]) => mk === prevVal);
+            mSel.value = keepPrev ? prevVal : (entries[0] ? entries[0][0] : 'expense_usd');
+            syncCaMetricDependents(!keepPrev);
+          });
+        });
+        const caMetricEl = $('caMetric');
+        if (caMetricEl) caMetricEl.addEventListener('change', () => syncCaMetricDependents(true));
+        ['caTarget', 'caOp', 'caThreshold', 'caCompany'].forEach(fid => {
+          const el = $(fid);
+          if (!el) return;
+          el.addEventListener('input', refreshCaExplainBox);
+          el.addEventListener('change', refreshCaExplainBox);
+        });
+      }
+      const saveCaBtn = $('saveCustomAlertBtn');
+      if (saveCaBtn) {
+        saveCaBtn.addEventListener('click', () => {
+          if (!canReviewSentinels()) { toast('Only Owner or Supervisor seats may modify alerts', 'err'); return; }
+          const nameVal = String(($('caName') && $('caName').value) || '').trim().replace(/[—→]/g, '-');
+          const metricVal = String(($('caMetric') && $('caMetric').value) || 'expense_usd');
+          const spec = CUSTOM_ALERT_METRICS[metricVal] || CUSTOM_ALERT_METRICS.expense_usd;
+          const targetVal = String(($('caTarget') && $('caTarget').value) || '').trim().replace(/[—→]/g, '-');
+          const opVal = ($('caOp') && $('caOp').value) === '<' ? '<' : '>';
+          const rawThresh = $('caThreshold') ? parseFloat($('caThreshold').value) : NaN;
+          const modeVal = String(($('caMode') && $('caMode').value) || 'warn_and_audit');
+          const coVal = String(($('caCompany') && $('caCompany').value) || 'all');
+          const whyVal = String(($('caWhy') && $('caWhy').value) || '').trim().replace(/[—→]/g, '-');
+          if (!nameVal) { toast('Enter an Alert Name', 'err'); if ($('caName')) $('caName').focus(); return; }
+          if (!Number.isFinite(rawThresh) || (!spec.allowZeroOrNeg && rawThresh < 0)) { toast('Enter a valid numeric Threshold Value', 'err'); if ($('caThreshold')) $('caThreshold').focus(); return; }
+          if (!whyVal) { toast('Write a brief reason in "Why Am I Adding This Alert?" so you always remember why it exists', 'err'); if ($('caWhy')) $('caWhy').focus(); return; }
+          const st = ensureAlertRulesState();
+          const nextNum = st.custom.length + 1;
+          const seqCode = '#' + String(ALERT_RULE_CATALOG.length + getActiveCustomAlertRules().length + 1).padStart(2, '0');
+          const newRule = {
+            id: 'CA_' + Date.now().toString(36) + '_' + nextNum,
+            code: seqCode,
+            name: nameVal,
+            metric: metricVal,
+            target: targetVal,
+            op: opVal,
+            threshold: round2(rawThresh),
+            mode: modeVal,
+            company: coVal,
+            why: whyVal,
+            enabled: true,
+            created_by: String((activeUser() && activeUser().full_name) || 'Owner'),
+            updated_at: new Date().toISOString()
+          };
+          st.custom.push(newRule);
+          STATE.alertRulesShowCreator = false;
+          STATE.alertRulesFilter = 'all';
+          STATE.alertRulesDomain = 'all';
+          persistAlertRulesChange({}, [newRule]);
+          renderApp();
+          toast(`Custom alert ${seqCode} "${nameVal}" activated`, 'ok');
+        });
+      }
+      const resetAllArBtn = $('resetAllAlertRulesBtn');
+      if (resetAllArBtn) {
+        resetAllArBtn.addEventListener('click', () => {
+          if (!canReviewSentinels()) return;
+          const st = ensureAlertRulesState();
+          const nowIso = new Date().toISOString();
+          const resetMap = {};
+          ALERT_RULE_CATALOG.forEach(r => {
+            if (isAlertRuleCustomized(r.id)) {
+              const clean = { enabled: true, params: {}, why_note: '', updated_at: nowIso };
+              st.overrides[r.id] = clean;
+              resetMap[r.id] = clean;
+            }
+          });
+          persistAlertRulesChange(resetMap, []);
+          renderApp();
+          toast('All built-in thresholds restored to factory defaults', 'ok');
+        });
+      }
+      container.querySelectorAll('[data-ar-jump-form]').forEach(btn => btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const fm = btn.getAttribute('data-ar-jump-form');
+        if (fm && canEnterForm(fm)) openEntryModal(fm);
+      }));
+      container.querySelectorAll('[data-ar-jump-view]').forEach(btn => btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const vw = btn.getAttribute('data-ar-jump-view');
+        if (vw && canViewView(vw)) setView(vw);
+      }));
+      container.querySelectorAll('[data-ar-expand]').forEach(btn => btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const rid = btn.getAttribute('data-ar-expand') || '';
+        STATE.alertRulesExpanded = STATE.alertRulesExpanded === rid ? '' : rid;
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+      }));
+      container.querySelectorAll('[data-ar-row]').forEach(row => row.addEventListener('click', ev => {
+        if (ev.target && ev.target.closest('button, a, input, select')) return;
+        const rid = row.getAttribute('data-ar-row') || '';
+        STATE.alertRulesExpanded = STATE.alertRulesExpanded === rid ? '' : rid;
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+      }));
+      const refreshLiveRulePreview = rid => {
+        const def = ALERT_RULE_BY_ID.get(rid);
+        const prevEl = $('arLivePreview_' + rid);
+        if (!prevEl) return;
+        if (def) {
+          const draft = {};
+          def.params.forEach(p => {
+            const inpEl = $('arp_' + rid + '_' + p.key);
+            const v = inpEl ? parseFloat(inpEl.value) : p.def;
+            draft[p.key] = Number.isFinite(v) ? v : p.def;
+          });
+          prevEl.innerHTML = `<strong>Live Threshold Preview:</strong> <span>${esc(def.previewFn(draft))}</span>`;
+        } else {
+          const st = ensureAlertRulesState();
+          const cr = st.custom.find(c => c && c.id === rid);
+          if (!cr) return;
+          const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
+          const inpEl = $('arp_' + rid + '_threshold');
+          const v = inpEl && Number.isFinite(parseFloat(inpEl.value)) ? parseFloat(inpEl.value) : Number(cr.threshold || 0);
+          const fmtT = spec.unit === '$' ? fmtUSD(v, 0) : `${fmtNum(v, 1)} ${spec.unit}`;
+          prevEl.innerHTML = `<strong>Live Threshold Preview:</strong> <span>Triggers whenever ${esc(spec.label)} is ${cr.op === '<' ? 'below' : 'above'} ${esc(fmtT)}.</span>`;
         }
-        refreshCaExplainBox();
       };
-      creatorCardEl.querySelectorAll('[data-ca-domain]').forEach(pill => {
-        pill.addEventListener('click', () => {
-          const domKey = pill.getAttribute('data-ca-domain') || 'all';
-          creatorCardEl.querySelectorAll('[data-ca-domain]').forEach(p => p.classList.toggle('active', p === pill));
-          const mSel = $('caMetric');
-          if (!mSel) return;
-          const prevVal = mSel.value;
-          const entries = Object.entries(CUSTOM_ALERT_METRICS).filter(([, mv]) => domKey === 'all' || mv.domainKey === domKey);
-          mSel.innerHTML = entries.map(([mk, mv]) => `<option value="${esc(mk)}">${esc(mv.label)}</option>`).join('');
-          const keepPrev = entries.some(([mk]) => mk === prevVal);
-          mSel.value = keepPrev ? prevVal : (entries[0] ? entries[0][0] : 'expense_usd');
-          syncCaMetricDependents(!keepPrev);
+      container.querySelectorAll('[data-ar-param-input]').forEach(inpEl => {
+        inpEl.addEventListener('input', () => {
+          refreshLiveRulePreview(inpEl.getAttribute('data-ar-param-input') || '');
         });
       });
-      const caMetricEl = $('caMetric');
-      if (caMetricEl) caMetricEl.addEventListener('change', () => syncCaMetricDependents(true));
-      ['caTarget', 'caOp', 'caThreshold', 'caCompany'].forEach(fid => {
-        const el = $(fid);
-        if (!el) return;
-        el.addEventListener('input', refreshCaExplainBox);
-        el.addEventListener('change', refreshCaExplainBox);
-      });
-    }
-    const saveCaBtn = $('saveCustomAlertBtn');
-    if (saveCaBtn) {
-      saveCaBtn.addEventListener('click', () => {
-        if (!canReviewSentinels()) { toast('Only Owner or Supervisor seats may modify alerts', 'err'); return; }
-        const nameVal = String(($('caName') && $('caName').value) || '').trim().replace(/[—→]/g, '-');
-        const metricVal = String(($('caMetric') && $('caMetric').value) || 'expense_usd');
-        const spec = CUSTOM_ALERT_METRICS[metricVal] || CUSTOM_ALERT_METRICS.expense_usd;
-        const targetVal = String(($('caTarget') && $('caTarget').value) || '').trim().replace(/[—→]/g, '-');
-        const opVal = ($('caOp') && $('caOp').value) === '<' ? '<' : '>';
-        const rawThresh = $('caThreshold') ? parseFloat($('caThreshold').value) : NaN;
-        const modeVal = String(($('caMode') && $('caMode').value) || 'warn_and_audit');
-        const coVal = String(($('caCompany') && $('caCompany').value) || 'all');
-        const whyVal = String(($('caWhy') && $('caWhy').value) || '').trim().replace(/[—→]/g, '-');
-        if (!nameVal) { toast('Enter an Alert Name', 'err'); if ($('caName')) $('caName').focus(); return; }
-        if (!Number.isFinite(rawThresh) || (!spec.allowZeroOrNeg && rawThresh < 0)) { toast('Enter a valid numeric Threshold Value', 'err'); if ($('caThreshold')) $('caThreshold').focus(); return; }
-        if (!whyVal) { toast('Write a brief reason in "Why Am I Adding This Alert?" so you always remember why it exists', 'err'); if ($('caWhy')) $('caWhy').focus(); return; }
-        const st = ensureAlertRulesState();
-        const nextNum = st.custom.length + 1;
-        const seqCode = '#' + String(ALERT_RULE_CATALOG.length + getActiveCustomAlertRules().length + 1).padStart(2, '0');
-        const newRule = {
-          id: 'CA_' + Date.now().toString(36) + '_' + nextNum,
-          code: seqCode,
-          name: nameVal,
-          metric: metricVal,
-          target: targetVal,
-          op: opVal,
-          threshold: round2(rawThresh),
-          mode: modeVal,
-          company: coVal,
-          why: whyVal,
-          enabled: true,
-          created_by: String((activeUser() && activeUser().full_name) || 'Owner'),
-          updated_at: new Date().toISOString()
-        };
-        st.custom.push(newRule);
-        STATE.alertRulesShowCreator = false;
-        STATE.alertRulesFilter = 'all';
-        STATE.alertRulesDomain = 'all';
-        persistAlertRulesChange({}, [newRule]);
-        renderApp();
-        toast(`Custom alert ${seqCode} "${nameVal}" activated`, 'ok');
-      });
-    }
-    const resetAllArBtn = $('resetAllAlertRulesBtn');
-    if (resetAllArBtn) {
-      resetAllArBtn.addEventListener('click', () => {
+      container.querySelectorAll('[data-ar-step]').forEach(btn => btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const rid = btn.getAttribute('data-ar-rule') || '';
+        const pkey = btn.getAttribute('data-ar-key') || '';
+        const dir = Number(btn.getAttribute('data-ar-step') || 0);
+        const inpEl = $('arp_' + rid + '_' + pkey);
+        if (!inpEl) return;
+        const step = parseFloat(inpEl.step) || 1;
+        const min = inpEl.min !== '' ? parseFloat(inpEl.min) : -Infinity;
+        const max = inpEl.max !== '' ? parseFloat(inpEl.max) : Infinity;
+        const cur = Number.isFinite(parseFloat(inpEl.value)) ? parseFloat(inpEl.value) : 0;
+        const next = Math.min(max, Math.max(min, Math.round((cur + dir * step) * 10000) / 10000));
+        inpEl.value = String(next);
+        refreshLiveRulePreview(rid);
+      }));
+      container.querySelectorAll('[data-ar-toggle]').forEach(btn => btn.addEventListener('click', ev => {
+        ev.stopPropagation();
         if (!canReviewSentinels()) return;
+        const rid = btn.getAttribute('data-ar-toggle') || '';
+        const def = ALERT_RULE_BY_ID.get(rid);
         const st = ensureAlertRulesState();
         const nowIso = new Date().toISOString();
-        const resetMap = {};
-        ALERT_RULE_CATALOG.forEach(r => {
-          if (isAlertRuleCustomized(r.id)) {
-            const clean = { enabled: true, params: {}, why_note: '', updated_at: nowIso };
-            st.overrides[r.id] = clean;
-            resetMap[r.id] = clean;
-          }
-        });
-        persistAlertRulesChange(resetMap, []);
+        if (def) {
+          if (def.lockedActive) return;
+          const curOn = isAlertRuleEnabled(rid);
+          const ex = st.overrides[rid] || { params: {}, why_note: '' };
+          const nextRow = Object.assign({}, ex, { enabled: !curOn, updated_at: nowIso });
+          st.overrides[rid] = nextRow;
+          persistAlertRulesChange({ [rid]: nextRow }, []);
+          const ws = $('workspace');
+          const y = ws ? ws.scrollTop : 0;
+          renderApp();
+          if (ws) ws.scrollTop = y;
+          toast(`${def.code} ${!curOn ? 'resumed' : 'paused'}`, 'ok');
+        } else {
+          const cr = st.custom.find(c => c && c.id === rid);
+          if (!cr) return;
+          cr.enabled = cr.enabled === false;
+          cr.updated_at = nowIso;
+          persistAlertRulesChange({}, [cr]);
+          const ws = $('workspace');
+          const y = ws ? ws.scrollTop : 0;
+          renderApp();
+          if (ws) ws.scrollTop = y;
+          toast(`Custom alert "${cr.name}" ${cr.enabled ? 'resumed' : 'paused'}`, 'ok');
+        }
+      }));
+      container.querySelectorAll('[data-ar-reset]').forEach(btn => btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (!canReviewSentinels()) return;
+        const rid = btn.getAttribute('data-ar-reset') || '';
+        const def = ALERT_RULE_BY_ID.get(rid);
+        if (!def) return;
+        const st = ensureAlertRulesState();
+        const clean = { enabled: true, params: {}, why_note: '', updated_at: new Date().toISOString() };
+        st.overrides[rid] = clean;
+        persistAlertRulesChange({ [rid]: clean }, []);
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
         renderApp();
-        toast('All built-in thresholds restored to factory defaults', 'ok');
-      });
-    }
-    container.querySelectorAll('[data-ar-jump-form]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const fm = btn.getAttribute('data-ar-jump-form');
-      if (fm && canEnterForm(fm)) openEntryModal(fm);
-    }));
-    container.querySelectorAll('[data-ar-jump-view]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const vw = btn.getAttribute('data-ar-jump-view');
-      if (vw && canViewView(vw)) setView(vw);
-    }));
-    container.querySelectorAll('[data-ar-expand]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const rid = btn.getAttribute('data-ar-expand') || '';
-      STATE.alertRulesExpanded = STATE.alertRulesExpanded === rid ? '' : rid;
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
-      renderApp();
-      if (ws) ws.scrollTop = y;
-    }));
-    container.querySelectorAll('[data-ar-row]').forEach(row => row.addEventListener('click', ev => {
-      if (ev.target && ev.target.closest('button, a, input, select')) return;
-      const rid = row.getAttribute('data-ar-row') || '';
-      STATE.alertRulesExpanded = STATE.alertRulesExpanded === rid ? '' : rid;
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
-      renderApp();
-      if (ws) ws.scrollTop = y;
-    }));
-    const refreshLiveRulePreview = rid => {
-      const def = ALERT_RULE_BY_ID.get(rid);
-      const prevEl = $('arLivePreview_' + rid);
-      if (!prevEl) return;
-      if (def) {
-        const draft = {};
-        def.params.forEach(p => {
-          const inpEl = $('arp_' + rid + '_' + p.key);
-          const v = inpEl ? parseFloat(inpEl.value) : p.def;
-          draft[p.key] = Number.isFinite(v) ? v : p.def;
-        });
-        prevEl.innerHTML = `<strong>Live Threshold Preview:</strong> <span>${esc(def.previewFn(draft))}</span>`;
-      } else {
+        if (ws) ws.scrollTop = y;
+        toast(`Restored ${def.code} (${def.name}) to factory default`, 'ok');
+      }));
+      container.querySelectorAll('[data-ar-delete-custom]').forEach(btn => btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (!canReviewSentinels()) return;
+        const rid = btn.getAttribute('data-ar-delete-custom') || '';
         const st = ensureAlertRulesState();
         const cr = st.custom.find(c => c && c.id === rid);
         if (!cr) return;
-        const spec = CUSTOM_ALERT_METRICS[cr.metric] || CUSTOM_ALERT_METRICS.expense_usd;
-        const inpEl = $('arp_' + rid + '_threshold');
-        const v = inpEl && Number.isFinite(parseFloat(inpEl.value)) ? parseFloat(inpEl.value) : Number(cr.threshold || 0);
-        const fmtT = spec.unit === '$' ? fmtUSD(v, 0) : `${fmtNum(v, 1)} ${spec.unit}`;
-        prevEl.innerHTML = `<strong>Live Threshold Preview:</strong> <span>Triggers whenever ${esc(spec.label)} is ${cr.op === '<' ? 'below' : 'above'} ${esc(fmtT)}.</span>`;
-      }
-    };
-    container.querySelectorAll('[data-ar-param-input]').forEach(inpEl => {
-      inpEl.addEventListener('input', () => {
-        refreshLiveRulePreview(inpEl.getAttribute('data-ar-param-input') || '');
-      });
-    });
-    container.querySelectorAll('[data-ar-step]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const rid = btn.getAttribute('data-ar-rule') || '';
-      const pkey = btn.getAttribute('data-ar-key') || '';
-      const dir = Number(btn.getAttribute('data-ar-step') || 0);
-      const inpEl = $('arp_' + rid + '_' + pkey);
-      if (!inpEl) return;
-      const step = parseFloat(inpEl.step) || 1;
-      const min = inpEl.min !== '' ? parseFloat(inpEl.min) : -Infinity;
-      const max = inpEl.max !== '' ? parseFloat(inpEl.max) : Infinity;
-      const cur = Number.isFinite(parseFloat(inpEl.value)) ? parseFloat(inpEl.value) : 0;
-      const next = Math.min(max, Math.max(min, Math.round((cur + dir * step) * 10000) / 10000));
-      inpEl.value = String(next);
-      refreshLiveRulePreview(rid);
-    }));
-    container.querySelectorAll('[data-ar-toggle]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      if (!canReviewSentinels()) return;
-      const rid = btn.getAttribute('data-ar-toggle') || '';
-      const def = ALERT_RULE_BY_ID.get(rid);
-      const st = ensureAlertRulesState();
-      const nowIso = new Date().toISOString();
-      if (def) {
-        if (def.lockedActive) return;
-        const curOn = isAlertRuleEnabled(rid);
-        const ex = st.overrides[rid] || { params: {}, why_note: '' };
-        const nextRow = Object.assign({}, ex, { enabled: !curOn, updated_at: nowIso });
-        st.overrides[rid] = nextRow;
-        persistAlertRulesChange({ [rid]: nextRow }, []);
-        const ws = $('workspace');
-        const y = ws ? ws.scrollTop : 0;
-        renderApp();
-        if (ws) ws.scrollTop = y;
-        toast(`${def.code} ${!curOn ? 'resumed' : 'paused'}`, 'ok');
-      } else {
-        const cr = st.custom.find(c => c && c.id === rid);
-        if (!cr) return;
-        cr.enabled = cr.enabled === false;
-        cr.updated_at = nowIso;
+        cr.deleted = true;
+        cr.enabled = false;
+        cr.updated_at = new Date().toISOString();
+        if (STATE.alertRulesExpanded === rid) STATE.alertRulesExpanded = '';
         persistAlertRulesChange({}, [cr]);
         const ws = $('workspace');
         const y = ws ? ws.scrollTop : 0;
         renderApp();
         if (ws) ws.scrollTop = y;
-        toast(`Custom alert "${cr.name}" ${cr.enabled ? 'resumed' : 'paused'}`, 'ok');
-      }
-    }));
-    container.querySelectorAll('[data-ar-reset]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      if (!canReviewSentinels()) return;
-      const rid = btn.getAttribute('data-ar-reset') || '';
-      const def = ALERT_RULE_BY_ID.get(rid);
-      if (!def) return;
-      const st = ensureAlertRulesState();
-      const clean = { enabled: true, params: {}, why_note: '', updated_at: new Date().toISOString() };
-      st.overrides[rid] = clean;
-      persistAlertRulesChange({ [rid]: clean }, []);
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
-      renderApp();
-      if (ws) ws.scrollTop = y;
-      toast(`Restored ${def.code} (${def.name}) to factory default`, 'ok');
-    }));
-    container.querySelectorAll('[data-ar-delete-custom]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      if (!canReviewSentinels()) return;
-      const rid = btn.getAttribute('data-ar-delete-custom') || '';
-      const st = ensureAlertRulesState();
-      const cr = st.custom.find(c => c && c.id === rid);
-      if (!cr) return;
-      cr.deleted = true;
-      cr.enabled = false;
-      cr.updated_at = new Date().toISOString();
-      if (STATE.alertRulesExpanded === rid) STATE.alertRulesExpanded = '';
-      persistAlertRulesChange({}, [cr]);
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
-      renderApp();
-      if (ws) ws.scrollTop = y;
-      toast(`Deleted custom alert "${cr.name}"`, 'ok');
-    }));
-    container.querySelectorAll('[data-ar-save]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      if (!canReviewSentinels()) { toast('Only Owner or Supervisor seats may modify thresholds', 'err'); return; }
-      const rid = btn.getAttribute('data-ar-save') || '';
-      const def = ALERT_RULE_BY_ID.get(rid);
-      const st = ensureAlertRulesState();
-      const nowIso = new Date().toISOString();
-      const whyInp = $('arWhy_' + rid);
-      const whyVal = whyInp ? String(whyInp.value || '').trim().replace(/[—→]/g, '-') : '';
-      if (def) {
-        const paramsOut = {};
-        def.params.forEach(p => {
-          const inpEl = $('arp_' + rid + '_' + p.key);
-          const rawV = inpEl ? parseFloat(inpEl.value) : p.def;
-          const clamped = Number.isFinite(rawV) ? Math.min(p.max, Math.max(p.min, rawV)) : p.def;
-          paramsOut[p.key] = Math.round(clamped * 10000) / 10000;
-        });
-        const ex = st.overrides[rid] || {};
-        const nextRow = {
-          enabled: def.lockedActive ? true : (typeof ex.enabled === 'boolean' ? ex.enabled : true),
-          params: paramsOut,
-          why_note: (whyVal && whyVal !== def.why) ? whyVal : '',
-          updated_by: String((activeUser() && activeUser().full_name) || 'Owner'),
-          updated_at: nowIso
-        };
-        st.overrides[rid] = nextRow;
-        persistAlertRulesChange({ [rid]: nextRow }, []);
-        const ws = $('workspace');
-        const y = ws ? ws.scrollTop : 0;
-        renderApp();
-        if (ws) ws.scrollTop = y;
-        toast(`Saved thresholds for ${def.code} · ${def.name}`, 'ok');
-      } else {
-        const cr = st.custom.find(c => c && c.id === rid);
-        if (!cr) return;
-        const inpEl = $('arp_' + rid + '_threshold');
-        const rawV = inpEl ? parseFloat(inpEl.value) : Number(cr.threshold || 0);
-        if (Number.isFinite(rawV) && rawV >= 0) cr.threshold = round2(rawV);
-        if (whyVal) cr.why = whyVal;
-        cr.updated_at = nowIso;
-        persistAlertRulesChange({}, [cr]);
-        const ws = $('workspace');
-        const y = ws ? ws.scrollTop : 0;
-        renderApp();
-        if (ws) ws.scrollTop = y;
-        toast(`Updated custom alert "${cr.name}"`, 'ok');
-      }
-    }));
+        toast(`Deleted custom alert "${cr.name}"`, 'ok');
+      }));
+      container.querySelectorAll('[data-ar-save]').forEach(btn => btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (!canReviewSentinels()) { toast('Only Owner or Supervisor seats may modify thresholds', 'err'); return; }
+        const rid = btn.getAttribute('data-ar-save') || '';
+        const def = ALERT_RULE_BY_ID.get(rid);
+        const st = ensureAlertRulesState();
+        const nowIso = new Date().toISOString();
+        const whyInp = $('arWhy_' + rid);
+        const whyVal = whyInp ? String(whyInp.value || '').trim().replace(/[—→]/g, '-') : '';
+        if (def) {
+          const paramsOut = {};
+          def.params.forEach(p => {
+            const inpEl = $('arp_' + rid + '_' + p.key);
+            const rawV = inpEl ? parseFloat(inpEl.value) : p.def;
+            const clamped = Number.isFinite(rawV) ? Math.min(p.max, Math.max(p.min, rawV)) : p.def;
+            paramsOut[p.key] = Math.round(clamped * 10000) / 10000;
+          });
+          const ex = st.overrides[rid] || {};
+          const nextRow = {
+            enabled: def.lockedActive ? true : (typeof ex.enabled === 'boolean' ? ex.enabled : true),
+            params: paramsOut,
+            why_note: (whyVal && whyVal !== def.why) ? whyVal : '',
+            updated_by: String((activeUser() && activeUser().full_name) || 'Owner'),
+            updated_at: nowIso
+          };
+          st.overrides[rid] = nextRow;
+          persistAlertRulesChange({ [rid]: nextRow }, []);
+          const ws = $('workspace');
+          const y = ws ? ws.scrollTop : 0;
+          renderApp();
+          if (ws) ws.scrollTop = y;
+          toast(`Saved thresholds for ${def.code} · ${def.name}`, 'ok');
+        } else {
+          const cr = st.custom.find(c => c && c.id === rid);
+          if (!cr) return;
+          const inpEl = $('arp_' + rid + '_threshold');
+          const rawV = inpEl ? parseFloat(inpEl.value) : Number(cr.threshold || 0);
+          if (Number.isFinite(rawV) && rawV >= 0) cr.threshold = round2(rawV);
+          if (whyVal) cr.why = whyVal;
+          cr.updated_at = nowIso;
+          persistAlertRulesChange({}, [cr]);
+          const ws = $('workspace');
+          const y = ws ? ws.scrollTop : 0;
+          renderApp();
+          if (ws) ws.scrollTop = y;
+          toast(`Updated custom alert "${cr.name}"`, 'ok');
+        }
+      }));
+    }
 
     // Daily Plant & Machine Map (workforce_map) interactive controls
-    container.querySelectorAll('[data-wf-date]').forEach(btn => btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const dt = btn.getAttribute('data-wf-date') || '';
-      if (!dt) return;
-      STATE.wfMapDate = dt;
-      STATE.shown.wf_roster = PAGE;
-      const scrollMap = btn.getAttribute('data-wf-scroll-map') === '1';
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
-      renderApp();
-      if (scrollMap) {
-        const mp = $('wfDayCommandBar') || $('wfVisualMapPanel');
-        if (mp) scrollWorkspaceTo(mp, 6);
-      } else if (ws) {
-        ws.scrollTop = y;
-      }
-    }));
-    container.querySelectorAll('[data-wf-day-step]').forEach(btn => btn.addEventListener('click', () => {
-      const tgt = btn.getAttribute('data-wf-target') || '';
-      if (!tgt) return;
-      STATE.wfMapDate = tgt;
-      STATE.shown.wf_roster = PAGE;
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
-      renderApp();
-      if (ws) ws.scrollTop = y;
-    }));
-    const wfDateInp = $('wfMapDateInput');
-    if (wfDateInp) {
-      wfDateInp.addEventListener('change', e => {
-        if (e.target.value) {
-          STATE.wfMapDate = e.target.value;
-          STATE.shown.wf_roster = PAGE;
-          renderApp();
-        }
-      });
-    }
-    const wfAlertNextBtn = $('wfNextAlertDayBtn');
-    if (wfAlertNextBtn) {
-      wfAlertNextBtn.addEventListener('click', () => {
-        const wf = buildWorkforceMapData();
-        const list = (wf && wf.alertDatesDesc) || [];
-        if (!list.length) return;
-        const idx = list.indexOf(wf.targetDate);
-        STATE.wfMapDate = list[(idx + 1) % list.length];
+    if (STATE.view === 'workforce_map') {
+      container.querySelectorAll('[data-wf-date]').forEach(btn => btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const dt = btn.getAttribute('data-wf-date') || '';
+        if (!dt) return;
+        STATE.wfMapDate = dt;
         STATE.shown.wf_roster = PAGE;
+        const scrollMap = btn.getAttribute('data-wf-scroll-map') === '1';
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
         renderApp();
-      });
-    }
-    container.querySelectorAll('[data-wf-haulers]').forEach(btn => btn.addEventListener('click', () => {
-      STATE.wfIncludeHaulers = btn.getAttribute('data-wf-haulers') === '1';
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
-      renderApp();
-      if (ws) ws.scrollTop = y;
-    }));
-    container.querySelectorAll('[data-wf-zone]').forEach(el => el.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const z = el.getAttribute('data-wf-zone') || 'all';
-      STATE.wfZoneFilter = (z !== 'all' && STATE.wfZoneFilter === z && el.classList.contains('wf-prop-seg')) ? 'all' : z;
-      STATE.shown.wf_roster = PAGE;
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
-      renderApp();
-      if (ws) ws.scrollTop = y;
-    }));
-    container.querySelectorAll('[data-wf-audit-scope]').forEach(btn => btn.addEventListener('click', () => {
-      STATE.wfAuditScope = btn.getAttribute('data-wf-audit-scope') || 'period';
-      STATE.shown.wf_audit = PAGE;
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
-      renderApp();
-      if (ws) ws.scrollTop = y;
-    }));
-    container.querySelectorAll('[data-wf-audit-chip]').forEach(btn => btn.addEventListener('click', () => {
-      STATE.wfAuditFilter = btn.getAttribute('data-wf-audit-chip') || 'all';
-      STATE.shown.wf_audit = PAGE;
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
-      renderApp();
-      if (ws) ws.scrollTop = y;
-    }));
-    container.querySelectorAll('[data-wf-roster-scope]').forEach(btn => btn.addEventListener('click', () => {
-      STATE.wfRosterScope = btn.getAttribute('data-wf-roster-scope') || 'day';
-      STATE.shown.wf_roster = PAGE;
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
-      renderApp();
-      if (ws) ws.scrollTop = y;
-    }));
-    const wfIdleBtn = $('wfToggleIdleStaffBtn');
-    if (wfIdleBtn) {
-      wfIdleBtn.addEventListener('click', () => {
-        STATE.wfShowAllRosterStaff = !STATE.wfShowAllRosterStaff;
+        if (scrollMap) {
+          const mp = $('wfDayCommandBar') || $('wfVisualMapPanel');
+          if (mp) scrollWorkspaceTo(mp, 6);
+        } else if (ws) {
+          ws.scrollTop = y;
+        }
+      }));
+      container.querySelectorAll('[data-wf-day-step]').forEach(btn => btn.addEventListener('click', () => {
+        const tgt = btn.getAttribute('data-wf-target') || '';
+        if (!tgt) return;
+        STATE.wfMapDate = tgt;
+        STATE.shown.wf_roster = PAGE;
         const ws = $('workspace');
         const y = ws ? ws.scrollTop : 0;
         renderApp();
         if (ws) ws.scrollTop = y;
-      });
+      }));
+      const wfDateInp = $('wfMapDateInput');
+      if (wfDateInp) {
+        wfDateInp.addEventListener('change', e => {
+          if (e.target.value) {
+            STATE.wfMapDate = e.target.value;
+            STATE.shown.wf_roster = PAGE;
+            renderApp();
+          }
+        });
+      }
+      const wfAlertNextBtn = $('wfNextAlertDayBtn');
+      if (wfAlertNextBtn) {
+        wfAlertNextBtn.addEventListener('click', () => {
+          const wf = buildWorkforceMapData();
+          const list = (wf && wf.alertDatesDesc) || [];
+          if (!list.length) return;
+          const idx = list.indexOf(wf.targetDate);
+          STATE.wfMapDate = list[(idx + 1) % list.length];
+          STATE.shown.wf_roster = PAGE;
+          renderApp();
+        });
+      }
+      container.querySelectorAll('[data-wf-haulers]').forEach(btn => btn.addEventListener('click', () => {
+        STATE.wfIncludeHaulers = btn.getAttribute('data-wf-haulers') === '1';
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+      }));
+      container.querySelectorAll('[data-wf-zone]').forEach(el => el.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const z = el.getAttribute('data-wf-zone') || 'all';
+        STATE.wfZoneFilter = (z !== 'all' && STATE.wfZoneFilter === z && el.classList.contains('wf-prop-seg')) ? 'all' : z;
+        STATE.shown.wf_roster = PAGE;
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+      }));
+      container.querySelectorAll('[data-wf-audit-scope]').forEach(btn => btn.addEventListener('click', () => {
+        STATE.wfAuditScope = btn.getAttribute('data-wf-audit-scope') || 'period';
+        STATE.shown.wf_audit = PAGE;
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+      }));
+      container.querySelectorAll('[data-wf-audit-chip]').forEach(btn => btn.addEventListener('click', () => {
+        STATE.wfAuditFilter = btn.getAttribute('data-wf-audit-chip') || 'all';
+        STATE.shown.wf_audit = PAGE;
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+      }));
+      container.querySelectorAll('[data-wf-roster-scope]').forEach(btn => btn.addEventListener('click', () => {
+        STATE.wfRosterScope = btn.getAttribute('data-wf-roster-scope') || 'day';
+        STATE.shown.wf_roster = PAGE;
+        const ws = $('workspace');
+        const y = ws ? ws.scrollTop : 0;
+        renderApp();
+        if (ws) ws.scrollTop = y;
+      }));
+      const wfIdleBtn = $('wfToggleIdleStaffBtn');
+      if (wfIdleBtn) {
+        wfIdleBtn.addEventListener('click', () => {
+          STATE.wfShowAllRosterStaff = !STATE.wfShowAllRosterStaff;
+          const ws = $('workspace');
+          const y = ws ? ws.scrollTop : 0;
+          renderApp();
+          if (ws) ws.scrollTop = y;
+        });
+      }
     }
     container.querySelectorAll('[data-site-staff-drill]').forEach(btn => btn.addEventListener('click', ev => {
       ev.preventDefault();
@@ -73551,104 +74427,6 @@
       btn.addEventListener('click', go);
       if (btn.getAttribute('role') === 'button') btn.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
     });
-    // Clickable lookup pills inside any register or 34-Table Hub cell (normal click = 360° Record Inspector; Shift/Alt+Click = instant table filter)
-    container.querySelectorAll('[data-rel-key]').forEach(el => el.addEventListener('click', e => {
-      e.stopPropagation();
-      const rk = el.getAttribute('data-rel-key');
-      const rv = el.getAttribute('data-rel-val');
-      if (!rk || !rv) return;
-      if (e.shiftKey || e.altKey) {
-        const relColMap = {
-          sales: { customers: 'customer', products: 'product', sites: 'site', equipment: 'truck', drivers: 'driver' },
-          raw: { sites: 'site', suppliers: 'site_owner', products: 'product', equipment: 'truck' },
-          fleet: { equipment: 'equipment', drivers: 'driver' },
-          pricing: { customers: 'customer', suppliers: 'supplier', products: 'product', sites: 'site' },
-          raw_pricing: { customers: 'customer', suppliers: 'supplier', products: 'product', sites: 'site' },
-          raw_jv: { sites: 'site', suppliers: 'partner' },
-          customers: { customers: 'customer' },
-          suppliers: { suppliers: 'supplier' },
-          expenses: { suppliers: 'supplier', equipment: 'equipment', expense_categories: 'category' }
-        };
-        const cfView = STATE.view === 'fleet' ? 'fuel' : (STATE.view === 'customers' ? 'receipts' : (STATE.view === 'suppliers' ? 'settle' : (STATE.view === 'raw_jv' ? 'jvdist' : STATE.view)));
-        const col = (relColMap[STATE.view] || {})[rk];
-        if (col && cfView) {
-          if (!STATE.colFilters[cfView]) STATE.colFilters[cfView] = {};
-          if (STATE.colFilters[cfView][col] === rv) {
-            delete STATE.colFilters[cfView][col];
-            toast(`Cleared ${getColLabel(col)} filter`);
-          } else {
-            STATE.colFilters[cfView][col] = rv;
-            toast(`Filtered by ${getColLabel(col)}: ${rv}`);
-          }
-          STATE.shown = {};
-          renderApp();
-          return;
-        }
-      }
-      showRecordInspector(rk, rv);
-    }));
-    // Record inspector: click any register row to open its Power Apps 360° Record Form & Related Subgrids
-    // (or click .row-sel-dot / Shift+Click / Ctrl+Click to toggle row in Live Sum Calculator Bar)
-    container.querySelectorAll('tr.rrow[data-rid]').forEach(tr => tr.addEventListener('click', e => {
-      const selDot = e.target.closest('[data-row-sel]');
-      if (selDot || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) {
-        if (!selDot && e.target.closest('[data-rel-key], button, a, input, select')) return;
-        e.preventDefault();
-        e.stopPropagation();
-        tr.classList.toggle('is-row-selected');
-        updateLiveSelectionBar(container);
-        return;
-      }
-      if (e.target.closest('[data-rel-key], button, a, input, select')) return;
-      const selObj = window.getSelection ? window.getSelection() : null;
-      const sel = (selObj && selObj.anchorNode && tr.contains(selObj.anchorNode)) ? String(selObj) : '';
-      if (sel.length > 1) return; // the user is copying text inside the row, not opening the row
-      openRecordFromTableRow(tr.getAttribute('data-rkey'), tr.getAttribute('data-rid'), tr);
-    }));
-    container.querySelectorAll('[data-open-modal]').forEach(btn => btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const pf = {};
-      let hasPf = false;
-      ['co', 'eq', 'def', 'part', 'sub', 'disp', 'party', 'cost', 'notes', 'item', 'oil', 'repsrc', 'storewh', 'trtype', 'loanside', 'loan', 'usd', 'region'].forEach(k => {
-        const attr = 'data-prefill-' + k;
-        if (btn.hasAttribute(attr)) {
-          pf[k] = btn.getAttribute(attr) || '';
-          hasPf = true;
-        }
-      });
-      openEntryModal(btn.getAttribute('data-open-modal'), hasPf ? pf : null);
-    }));
-    container.querySelectorAll('[data-open-loan-hub-side]').forEach(btn => btn.addEventListener('click', e => {
-      e.stopPropagation();
-      STATE.openLoanSideFilter = btn.getAttribute('data-open-loan-hub-side') || 'all';
-      renderApp();
-    }));
-    container.querySelectorAll('[data-kiosk-jump]').forEach(btn => btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const targetKiosk = btn.getAttribute('data-kiosk-jump') || 'sales';
-      const targetFeed = btn.getAttribute('data-kiosk-feed') || '';
-      STATE.activeKiosk = targetKiosk;
-      if (targetFeed) {
-        STATE.kioskAttFeedFilter = targetFeed;
-        STATE.kioskAttSetupOpen = true;
-      }
-      setView('kiosks');
-    }));
-    container.querySelectorAll('[data-print-ticket]').forEach(btn => btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const docType = btn.getAttribute('data-print-ticket') || 'sales';
-      const id = btn.getAttribute('data-print-id') || btn.getAttribute('data-rid');
-      const priceMode = btn.getAttribute('data-print-mode') || '';
-      const poolKey = docType === 'raw' ? 'raw_purchases' : (docType === 'fuel' ? 'fuel_intakes' : 'sales_tickets');
-      const rec = resolveInspectorRecord(poolKey, id);
-      if (rec && window.MFG_PRINT) {
-        if (btn.hasAttribute('data-print-direct')) {
-          window.MFG_PRINT.printThermalTicket(rec, { docType, ...(priceMode ? { priceMode } : {}) });
-        } else {
-          window.MFG_PRINT.openThermalPreviewModal(rec, { docType, ...(priceMode ? { priceMode } : {}) });
-        }
-      }
-    }));
     if (STATE.view === 'kiosks') {
       wireKiosks(container);
     }
@@ -73698,54 +74476,6 @@
         renderApp();
       });
     }
-    container.querySelectorAll('th.sortable').forEach(h => h.addEventListener('click', e => {
-      if (e.target && e.target.closest('.th-filter-btn, .tbl-col-resizer, .tbl-th-tools')) return;
-      const view = h.getAttribute('data-sort-view'), key = h.getAttribute('data-sort-key');
-      const cur = STATE.sortBy[view] || _defaultSortBy[view] || {};
-      const defaultDir = !isDefaultDescSortKey(key) ? 'asc' : 'desc';
-      STATE.sortBy[view] = { key, dir: cur.key === key ? (cur.dir === 'desc' ? 'asc' : 'desc') : defaultDir };
-      renderApp();
-    }));
-    container.querySelectorAll('[data-th-filter-key]').forEach(btn => btn.addEventListener('click', e => {
-      e.stopPropagation();
-      openColFilterPopover(btn);
-    }));
-    container.querySelectorAll('.cf-select[data-cf-view][data-cf-key]').forEach(sel => sel.addEventListener('change', e => {
-      const view = sel.getAttribute('data-cf-view');
-      const key = sel.getAttribute('data-cf-key');
-      if (!STATE.colFilters) STATE.colFilters = {};
-      if (!STATE.colFilters[view]) STATE.colFilters[view] = {};
-      const val = String(e.target.value || '').trim();
-      if (!val) delete STATE.colFilters[view][key];
-      else STATE.colFilters[view][key] = val;
-      STATE.shown = {};
-      renderApp();
-    }));
-    container.querySelectorAll('[data-cf-clear-key]').forEach(btn => btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const view = btn.getAttribute('data-cf-clear-view') || btn.getAttribute('data-cf-view');
-      const key = btn.getAttribute('data-cf-clear-key');
-      if (STATE.colFilters && STATE.colFilters[view]) {
-        delete STATE.colFilters[view][key];
-      }
-      STATE.shown = {};
-      renderApp();
-    }));
-    container.querySelectorAll('[data-cf-clear-all]').forEach(btn => btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const view = btn.getAttribute('data-cf-clear-all');
-      if (STATE.colFilters) delete STATE.colFilters[view];
-      STATE.shown = {};
-      renderApp();
-    }));
-    container.querySelectorAll('[data-show-more]').forEach(btn => btn.addEventListener('click', () => {
-      const v = btn.getAttribute('data-show-more');
-      STATE.shown[v] = shownCount(v) + PAGE;
-      const ws = $('workspace');
-      const y = ws ? ws.scrollTop : 0;
-      renderApp();
-      if (ws) ws.scrollTop = y;
-    }));
     // Seamless infinite scroll inside .table-wrap (no "Show more" button required; totals in tfoot always sum 100% of matching rows)
     container.querySelectorAll('.table-wrap').forEach(wrap => {
       const thEl = wrap.querySelector('th[data-sort-view]');
@@ -73766,22 +74496,6 @@
         if (nextWrap) nextWrap.scrollTop = prevTop;
       }, { passive: true });
     });
-    container.querySelectorAll('[data-export-csv]').forEach(btn => btn.addEventListener('click', () => {
-      const panel = $(btn.getAttribute('data-export-csv'));
-      const tables = panel ? Array.from(panel.querySelectorAll('table')) : [];
-      if (!tables.length) { toast('Nothing to export', 'err'); return; }
-      const csv = tables.map(tableToCsv).join('\r\n\r\n');
-      downloadCsv(`ISABI_MFG_${btn.getAttribute('data-export-name') || 'export'}_${STATE.company}_${STATE.period}_${todayISO()}.csv`, csv);
-      toast('CSV downloaded');
-    }));
-    container.querySelectorAll('[data-void]').forEach(btn => btn.addEventListener('click', e => {
-      e.stopPropagation();
-      if (btn.dataset.armed === '1') { voidRecord(btn.getAttribute('data-void'), btn.getAttribute('data-void-id')); return; }
-      btn.dataset.armed = '1';
-      btn.textContent = 'Void?';
-      btn.classList.add('armed');
-      setTimeout(() => { if (btn.isConnected) { btn.dataset.armed = ''; btn.textContent = '✕'; btn.classList.remove('armed'); } }, 4000);
-    }));
 
     if (!(STATE.view === 'statements' && window.MFG_RDL)) {
       const printBtn = $('printStmtBtn');
@@ -73798,191 +74512,193 @@
     }
 
     // Users view (owner tools + Biometric Face ID Enrolment Studio)
-    if (STATE.view === 'users' && FACE_STATE.enrolCamActive && streamAlive()) {
-      const ev = $('enrolFaceVideo');
-      if (ev && ev.srcObject !== FACE_STATE.stream) {
-        ev.srcObject = FACE_STATE.stream;
-        ev.play().catch(() => {});
+    if (STATE.view === 'users') {
+      if (FACE_STATE.enrolCamActive && streamAlive()) {
+        const ev = $('enrolFaceVideo');
+        if (ev && ev.srcObject !== FACE_STATE.stream) {
+          ev.srcObject = FACE_STATE.stream;
+          ev.play().catch(() => {});
+        }
+        if (!FACE_STATE.enrolLoopTimer) {
+          FACE_STATE.enrolLoopTimer = setTimeout(enrolFaceTick, 150);
+        }
       }
-      if (!FACE_STATE.enrolLoopTimer) {
-        FACE_STATE.enrolLoopTimer = setTimeout(enrolFaceTick, 150);
-      }
-    }
-    wireEnrolPoseSlots($('enrolThumbStrip'));
-    wireEnrolPoseSlots($('enrolPoseStepper'));
-    wireSeatEditorActions($('seatEditorWrap') || container);
-    wireUsersDirectoryActions($('usersDirectoryTbody') || container);
+      wireEnrolPoseSlots($('enrolThumbStrip'));
+      wireEnrolPoseSlots($('enrolPoseStepper'));
+      wireSeatEditorActions($('seatEditorWrap') || container);
+      wireUsersDirectoryActions($('usersDirectoryTbody') || container);
 
-    const camPh = $('enrolCamPlaceholder');
-    if (camPh) camPh.addEventListener('click', () => { startEnrolCamera(); });
-    const enrolVid = $('enrolFaceVideo');
-    if (enrolVid) enrolVid.addEventListener('click', () => {
-      if (FACE_STATE.enrolCamActive && (FACE_STATE.enrolCaptures.length < 3 || FACE_STATE.enrolRetakeSlot != null)) {
-        captureEnrolDescriptor(null, '', FACE_STATE.enrolRetakeSlot);
-      }
-    });
+      const camPh = $('enrolCamPlaceholder');
+      if (camPh) camPh.addEventListener('click', () => { startEnrolCamera(); });
+      const enrolVid = $('enrolFaceVideo');
+      if (enrolVid) enrolVid.addEventListener('click', () => {
+        if (FACE_STATE.enrolCamActive && (FACE_STATE.enrolCaptures.length < 3 || FACE_STATE.enrolRetakeSlot != null)) {
+          captureEnrolDescriptor(null, '', FACE_STATE.enrolRetakeSlot);
+        }
+      });
 
-    const enrolSel = $('enrolUserSelect');
-    if (enrolSel) enrolSel.addEventListener('change', e => {
-      if (FACE_STATE.enrolCamActive) stopFaceCamera();
-      FACE_STATE.lastLiveEnrolDet = null;
-      FACE_STATE.lastLiveEnrolSnap = '';
-      FACE_STATE.enrolUserId = e.target.value;
-      const u = enrolTargetUser();
-      syncEnrolBufferFromUser(u, true);
-      updateEnrolStudioDom();
-    });
-    const stepEnrolTarget = dir => {
-      const sel = $('enrolUserSelect');
-      if (!sel || !sel.options || !sel.options.length) return;
-      if (FACE_STATE.enrolCamActive) stopFaceCamera();
-      FACE_STATE.lastLiveEnrolDet = null;
-      FACE_STATE.lastLiveEnrolSnap = '';
-      const idx = Math.max(0, sel.selectedIndex);
-      const nextIdx = (idx + dir + sel.options.length) % sel.options.length;
-      sel.selectedIndex = nextIdx;
-      FACE_STATE.enrolUserId = sel.options[nextIdx].value;
-      const u = enrolTargetUser();
-      syncEnrolBufferFromUser(u, true);
-      updateEnrolStudioDom();
-    };
-    const prevTargetBtn = $('enrolPrevUserBtn');
-    if (prevTargetBtn) prevTargetBtn.addEventListener('click', () => stepEnrolTarget(-1));
-    const nextTargetBtn = $('enrolNextUserBtn');
-    if (nextTargetBtn) nextTargetBtn.addEventListener('click', () => stepEnrolTarget(1));
-
-    const seatAuthSel = $('enrolSeatAuthModeSelect');
-    if (seatAuthSel) seatAuthSel.addEventListener('change', async e => {
-      const u = enrolTargetUser();
-      if (!u) return;
-      const v = String(e.target.value || 'inherit');
-      u.auth_mode = v === 'inherit' ? '' : normalizeAuthMode(v, 'both');
-      u.face_required = u.auth_mode ? (u.auth_mode === 'both' || u.auth_mode === 'face_only') : (getWorkspaceAuthMode() === 'both');
-      u.seat_updated_at = new Date().toISOString();
-      saveLocalAuthAndRecords();
-      updateSeatEditorDom();
-      updateEnrolStudioDom();
-      renderQuickSeatsInAuthGate();
-      updateAuthFaceUi();
-      toast(`Seat sign-in requirement for ${u.full_name}: ${seatAuthBadgeLabel(u)}`);
-      syncWithCloud(true);
-    });
-    const wsAuthSel = $('enrolAuthModeSelect');
-    if (wsAuthSel) wsAuthSel.addEventListener('change', e => {
-      const m = setWorkspaceAuthMode(e.target.value);
-      saveLocalAuthAndRecords();
-      updateSeatEditorDom();
-      updateEnrolStudioDom();
-      renderQuickSeatsInAuthGate();
-      updateAuthFaceUi();
-      const opt = AUTH_MODE_OPTIONS.find(o => o.value === m) || AUTH_MODE_OPTIONS[1];
-      toast(`Workspace sign-in requirement: ${opt.label}`);
-      syncWithCloud(true);
-    });
-    const liveModeSel = $('enrolLivenessModeSelect');
-    if (liveModeSel) liveModeSel.addEventListener('change', e => {
-      const v = String(e.target.value || 'blink_or_turn');
-      if (v === 'off') {
-        STATE.faceSettings.liveness = false;
-      } else {
-        STATE.faceSettings.liveness = true;
-        STATE.faceSettings.livenessMode = v;
-      }
-      saveLocalAuthAndRecords();
-      updateEnrolStudioDom();
-      updateAuthFaceUi();
-      const opt = LIVENESS_MODE_OPTIONS.find(o => o.value === v) || LIVENESS_MODE_OPTIONS[0];
-      toast(`Anti-screenshot liveness: ${opt.label}`);
-      syncWithCloud(true);
-    });
-    const framesSel = $('enrolConfirmFramesSelect');
-    if (framesSel) framesSel.addEventListener('change', e => {
-      STATE.faceSettings.confirmFrames = Math.max(3, Math.min(5, Number(e.target.value || 3)));
-      saveLocalAuthAndRecords();
-      updateEnrolStudioDom();
-      updateAuthFaceUi();
-      toast(`Multi-frame Face ID check: ${STATE.faceSettings.confirmFrames} consecutive frames required`);
-      syncWithCloud(true);
-    });
-    const req2faCb = $('enrolRequire2faCb');
-    if (req2faCb) req2faCb.addEventListener('change', e => {
-      setWorkspaceAuthMode(e.target.checked ? 'both' : 'either');
-      saveLocalAuthAndRecords();
-      updateSeatEditorDom();
-      updateEnrolStudioDom();
-      renderQuickSeatsInAuthGate();
-      updateAuthFaceUi();
-    });
-    const liveCb = $('enrolLivenessCb');
-    if (liveCb) liveCb.addEventListener('change', e => {
-      STATE.faceSettings.liveness = !!e.target.checked;
-      saveLocalAuthAndRecords();
-      updateEnrolStudioDom();
-      updateAuthFaceUi();
-    });
-    const startCamBtn = $('enrolStartCamBtn');
-    if (startCamBtn) startCamBtn.addEventListener('click', async e => {
-      e.stopPropagation();
-      if (FACE_STATE.enrolCamActive) {
-        stopFaceCamera();
-        FACE_STATE.enrolRetakeSlot = null;
-        FACE_STATE.enrolLiveMatch = null;
-        FACE_STATE.enrolStatusText = '';
-        FACE_STATE.enrolStatusCls = '';
+      const enrolSel = $('enrolUserSelect');
+      if (enrolSel) enrolSel.addEventListener('change', e => {
+        if (FACE_STATE.enrolCamActive) stopFaceCamera();
+        FACE_STATE.lastLiveEnrolDet = null;
+        FACE_STATE.lastLiveEnrolSnap = '';
+        FACE_STATE.enrolUserId = e.target.value;
+        const u = enrolTargetUser();
+        syncEnrolBufferFromUser(u, true);
         updateEnrolStudioDom();
-        return;
-      }
-      await startEnrolCamera();
-    });
-    const capBtn = $('enrolCaptureBtn');
-    if (capBtn) capBtn.addEventListener('click', async () => {
-      const capLen = FACE_STATE.enrolCaptures.length;
-      if (capLen >= 3 && FACE_STATE.enrolRetakeSlot == null) {
-        FACE_STATE.enrolCaptures = [];
-        FACE_STATE.enrolThumbs = [];
-        FACE_STATE.enrolRetakeSlot = null;
-        FACE_STATE.enrolLiveMatch = null;
-        FACE_STATE.enrolStatusText = '';
-        FACE_STATE.enrolStatusCls = '';
-        FACE_STATE.autoEnrolStreak = 0;
-        FACE_STATE.nextAutoEnrolAt = Date.now() + 750;
+      });
+      const stepEnrolTarget = dir => {
+        const sel = $('enrolUserSelect');
+        if (!sel || !sel.options || !sel.options.length) return;
+        if (FACE_STATE.enrolCamActive) stopFaceCamera();
+        FACE_STATE.lastLiveEnrolDet = null;
+        FACE_STATE.lastLiveEnrolSnap = '';
+        const idx = Math.max(0, sel.selectedIndex);
+        const nextIdx = (idx + dir + sel.options.length) % sel.options.length;
+        sel.selectedIndex = nextIdx;
+        FACE_STATE.enrolUserId = sel.options[nextIdx].value;
+        const u = enrolTargetUser();
+        syncEnrolBufferFromUser(u, true);
         updateEnrolStudioDom();
+      };
+      const prevTargetBtn = $('enrolPrevUserBtn');
+      if (prevTargetBtn) prevTargetBtn.addEventListener('click', () => stepEnrolTarget(-1));
+      const nextTargetBtn = $('enrolNextUserBtn');
+      if (nextTargetBtn) nextTargetBtn.addEventListener('click', () => stepEnrolTarget(1));
+
+      const seatAuthSel = $('enrolSeatAuthModeSelect');
+      if (seatAuthSel) seatAuthSel.addEventListener('change', async e => {
+        const u = enrolTargetUser();
+        if (!u) return;
+        const v = String(e.target.value || 'inherit');
+        u.auth_mode = v === 'inherit' ? '' : normalizeAuthMode(v, 'both');
+        u.face_required = u.auth_mode ? (u.auth_mode === 'both' || u.auth_mode === 'face_only') : (getWorkspaceAuthMode() === 'both');
+        u.seat_updated_at = new Date().toISOString();
+        saveLocalAuthAndRecords();
+        updateSeatEditorDom();
+        updateEnrolStudioDom();
+        renderQuickSeatsInAuthGate();
+        updateAuthFaceUi();
+        toast(`Seat sign-in requirement for ${u.full_name}: ${seatAuthBadgeLabel(u)}`);
+        syncWithCloud(true);
+      });
+      const wsAuthSel = $('enrolAuthModeSelect');
+      if (wsAuthSel) wsAuthSel.addEventListener('change', e => {
+        const m = setWorkspaceAuthMode(e.target.value);
+        saveLocalAuthAndRecords();
+        updateSeatEditorDom();
+        updateEnrolStudioDom();
+        renderQuickSeatsInAuthGate();
+        updateAuthFaceUi();
+        const opt = AUTH_MODE_OPTIONS.find(o => o.value === m) || AUTH_MODE_OPTIONS[1];
+        toast(`Workspace sign-in requirement: ${opt.label}`);
+        syncWithCloud(true);
+      });
+      const liveModeSel = $('enrolLivenessModeSelect');
+      if (liveModeSel) liveModeSel.addEventListener('change', e => {
+        const v = String(e.target.value || 'blink_or_turn');
+        if (v === 'off') {
+          STATE.faceSettings.liveness = false;
+        } else {
+          STATE.faceSettings.liveness = true;
+          STATE.faceSettings.livenessMode = v;
+        }
+        saveLocalAuthAndRecords();
+        updateEnrolStudioDom();
+        updateAuthFaceUi();
+        const opt = LIVENESS_MODE_OPTIONS.find(o => o.value === v) || LIVENESS_MODE_OPTIONS[0];
+        toast(`Anti-screenshot liveness: ${opt.label}`);
+        syncWithCloud(true);
+      });
+      const framesSel = $('enrolConfirmFramesSelect');
+      if (framesSel) framesSel.addEventListener('change', e => {
+        STATE.faceSettings.confirmFrames = Math.max(3, Math.min(5, Number(e.target.value || 3)));
+        saveLocalAuthAndRecords();
+        updateEnrolStudioDom();
+        updateAuthFaceUi();
+        toast(`Multi-frame Face ID check: ${STATE.faceSettings.confirmFrames} consecutive frames required`);
+        syncWithCloud(true);
+      });
+      const req2faCb = $('enrolRequire2faCb');
+      if (req2faCb) req2faCb.addEventListener('change', e => {
+        setWorkspaceAuthMode(e.target.checked ? 'both' : 'either');
+        saveLocalAuthAndRecords();
+        updateSeatEditorDom();
+        updateEnrolStudioDom();
+        renderQuickSeatsInAuthGate();
+        updateAuthFaceUi();
+      });
+      const liveCb = $('enrolLivenessCb');
+      if (liveCb) liveCb.addEventListener('change', e => {
+        STATE.faceSettings.liveness = !!e.target.checked;
+        saveLocalAuthAndRecords();
+        updateEnrolStudioDom();
+        updateAuthFaceUi();
+      });
+      const startCamBtn = $('enrolStartCamBtn');
+      if (startCamBtn) startCamBtn.addEventListener('click', async e => {
+        e.stopPropagation();
+        if (FACE_STATE.enrolCamActive) {
+          stopFaceCamera();
+          FACE_STATE.enrolRetakeSlot = null;
+          FACE_STATE.enrolLiveMatch = null;
+          FACE_STATE.enrolStatusText = '';
+          FACE_STATE.enrolStatusCls = '';
+          updateEnrolStudioDom();
+          return;
+        }
+        await startEnrolCamera();
+      });
+      const capBtn = $('enrolCaptureBtn');
+      if (capBtn) capBtn.addEventListener('click', async () => {
+        const capLen = FACE_STATE.enrolCaptures.length;
+        if (capLen >= 3 && FACE_STATE.enrolRetakeSlot == null) {
+          FACE_STATE.enrolCaptures = [];
+          FACE_STATE.enrolThumbs = [];
+          FACE_STATE.enrolRetakeSlot = null;
+          FACE_STATE.enrolLiveMatch = null;
+          FACE_STATE.enrolStatusText = '';
+          FACE_STATE.enrolStatusCls = '';
+          FACE_STATE.autoEnrolStreak = 0;
+          FACE_STATE.nextAutoEnrolAt = Date.now() + 750;
+          updateEnrolStudioDom();
+          if (!FACE_STATE.enrolCamActive || !streamAlive()) {
+            await startEnrolCamera();
+          }
+          return;
+        }
         if (!FACE_STATE.enrolCamActive || !streamAlive()) {
           await startEnrolCamera();
+          return;
         }
-        return;
-      }
-      if (!FACE_STATE.enrolCamActive || !streamAlive()) {
-        await startEnrolCamera();
-        return;
-      }
-      await captureEnrolDescriptor(null, '', FACE_STATE.enrolRetakeSlot);
-    });
-    const clearEnrolBtn = $('enrolClearBtn');
-    if (clearEnrolBtn) clearEnrolBtn.addEventListener('click', () => { clearFaceEnrolment(); });
+        await captureEnrolDescriptor(null, '', FACE_STATE.enrolRetakeSlot);
+      });
+      const clearEnrolBtn = $('enrolClearBtn');
+      if (clearEnrolBtn) clearEnrolBtn.addEventListener('click', () => { clearFaceEnrolment(); });
 
-    const addUserBtn = $('addWebUserBtn');
-    if (addUserBtn) addUserBtn.addEventListener('click', () => {
-      selectSeatForEdit('__new__', { scroll: true, focusName: true });
-    });
+      const addUserBtn = $('addWebUserBtn');
+      if (addUserBtn) addUserBtn.addEventListener('click', () => {
+        selectSeatForEdit('__new__', { scroll: true, focusName: true });
+      });
 
-    const syncNowBtn = $('syncCloudNowBtn');
-    if (syncNowBtn) syncNowBtn.addEventListener('click', async () => {
-      syncNowBtn.textContent = '↻ Syncing...';
-      syncNowBtn.disabled = true;
-      await syncWithCloud(true);
-      const b = $('syncCloudNowBtn');
-      if (b) { b.disabled = false; b.textContent = /Live/.test(STATE.cloudStatus) ? '✓ Cloud Synced' : '⚠ ' + STATE.cloudStatus.replace('● ', ''); setTimeout(() => { if (b.isConnected) b.textContent = '↻ Sync Cloud Now'; }, 2200); }
-      renderApp();
-    });
+      const syncNowBtn = $('syncCloudNowBtn');
+      if (syncNowBtn) syncNowBtn.addEventListener('click', async () => {
+        syncNowBtn.textContent = '↻ Syncing...';
+        syncNowBtn.disabled = true;
+        await syncWithCloud(true);
+        const b = $('syncCloudNowBtn');
+        if (b) { b.disabled = false; b.textContent = /Live/.test(STATE.cloudStatus) ? '✓ Cloud Synced' : '⚠ ' + STATE.cloudStatus.replace('● ', ''); setTimeout(() => { if (b.isConnected) b.textContent = '↻ Sync Cloud Now'; }, 2200); }
+        renderApp();
+      });
 
-    const saveSbBtn = $('saveSbCfgBtn');
-    if (saveSbBtn) saveSbBtn.addEventListener('click', () => {
-      STATE.supabaseCfg = { url: val('sb_url'), anonKey: val('sb_key') };
-      localStorage.setItem('isabi_mfg_supabase_cfg', JSON.stringify(STATE.supabaseCfg));
-      saveSbBtn.textContent = '✓ Saved';
-      setTimeout(() => { if (saveSbBtn.isConnected) saveSbBtn.textContent = 'Save'; }, 1500);
-    });
+      const saveSbBtn = $('saveSbCfgBtn');
+      if (saveSbBtn) saveSbBtn.addEventListener('click', () => {
+        STATE.supabaseCfg = { url: val('sb_url'), anonKey: val('sb_key') };
+        localStorage.setItem('isabi_mfg_supabase_cfg', JSON.stringify(STATE.supabaseCfg));
+        saveSbBtn.textContent = '✓ Saved';
+        setTimeout(() => { if (saveSbBtn.isConnected) saveSbBtn.textContent = 'Save'; }, 1500);
+      });
+    }
 
     if (window.MFG_TABLE_COLS && typeof window.MFG_TABLE_COLS.enhanceAllTables === 'function') {
       window.MFG_TABLE_COLS.enhanceAllTables(container, STATE);
@@ -75245,7 +75961,12 @@
       },
       performLogin: (email, pin, opts) => performLogin(email, pin, opts),
       openAuthGate: email => openAuthGate(email),
-      signOut: () => signOut()
+      signOut: () => signOut(),
+      canModifyData: u => canModifyData(u),
+      canModifyTextOnly: u => canModifyTextOnly(u),
+      canModifyRecord: u => canModifyRecord(u),
+      getEffectivePermissions: u => getEffectivePermissions(u || activeUser()),
+      selectSeatForEdit: (id, opts) => selectSeatForEdit(id, opts)
     };
 
     window.MFG_KIOSK_TEST = {

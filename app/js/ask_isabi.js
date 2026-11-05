@@ -2073,8 +2073,14 @@
     `;
   }
 
-  function syncHeaderAndChips() {
+  function syncHeaderAndChips(force = false) {
     if (!_ctx) return;
+    const askDrawer = document.getElementById('aiDrawer');
+    if (!force && (!askDrawer || !askDrawer.classList.contains('open'))) {
+      _chatState.scopeDirty = true;
+      return;
+    }
+    _chatState.scopeDirty = false;
     const user = getActiveUser();
     const scope = resolveQueryScope('', user);
 
@@ -2213,7 +2219,7 @@
     const askDrawer = document.getElementById('aiDrawer');
     if (!askDrawer) return;
     if (_ctx && typeof _ctx.closeRail === 'function') _ctx.closeRail();
-    syncHeaderAndChips();
+    syncHeaderAndChips(true);
     askDrawer.classList.add('open');
     askDrawer.setAttribute('aria-hidden', 'false');
     if (optionalPrompt) {
@@ -2239,13 +2245,13 @@
     _chatState.pending = null;
     _chatState.typingFollowup = false;
     _chatState.lastTurn = null;
-    syncHeaderAndChips();
+    syncHeaderAndChips(true);
     renderThread(false);
   }
 
   function init(ctx) {
     _ctx = ctx;
-    syncHeaderAndChips();
+    syncHeaderAndChips(true);
     if (_chatState.wired) return;
     _chatState.wired = true;
 

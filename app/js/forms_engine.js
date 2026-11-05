@@ -1196,7 +1196,7 @@
           ${fld('Product Name *', inp('f_product', 'text', '', 'placeholder="e.g. Sand 0-4mm, Gravel 10-20mm"'))}
           ${fld('Default Unit (UoM) *', sel('f_uom', uoms, 'm³'))}
           ${fld('Product Type *', sel('f_prodtype', [['Material', 'Material (Aggregate / Concrete / Block)'], ['Fuel', 'Fuel (Diesel)'], ['Lubricant', 'Lubricant / Oil'], ['Service', 'Service / Transport'], ['Part', 'Spare Part']], 'Material'))}
-          ${fld('Ton Conversion Factor (1 m³ = X Tons)', inp('f_tonfactor', 'number', '1.50', 'step="0.01" min="0.1"'))}
+          ${fld('Ton Conversion Factor (1 m³ = X Tons) *', inp('f_tonfactor', 'number', '1.50', 'step="0.01" min="0.1"'))}
           ${fld('Standard List Price ($)', inp('f_unitprice', 'number', '', 'step="0.01" min="0"'))}
           <div class="form-field check-field"><input type="checkbox" id="f_ticketprod" checked><label for="f_ticketprod">Show on Sales / Raw Material tickets</label></div>
           <div class="form-field check-field"><input type="checkbox" id="f_fuelitem"><label for="f_fuelitem">Show on Fuel & Lubricant Intake</label></div>
@@ -1295,72 +1295,24 @@
     if (fType === 'site') {
       const st = (ctx && ctx.STATE) || {};
       const activeSitesTblVw = (st.tableViews && st.tableViews.sites) || '';
-      const defSiteCat = (st.view === 'sales' || st.view === 'customers' || st.view === 'pricing' || activeSitesTblVw === 'delivery')
-        ? 'customer'
-        : 'supplier';
-      const isCustSite = defSiteCat === 'customer';
       const activeSites = (rec.sites || []).filter(s => s && !s.voided);
-      const suppSitesList = activeSites.filter(s => {
-        const c = String(s.site_category || '').toLowerCase();
-        if (c === 'supplier') return true;
-        if (c === 'customer') return false;
-        return Boolean(s.supplier || s.is_jv || !s.customer);
-      });
-      const suppSiteCount = suppSitesList.length;
-      const bundledSiteCount = suppSitesList.filter(s => Boolean(s.includes_transport || s.haulage_mode === 'supplier_delivered')).length;
-      const separateSiteCount = Math.max(0, suppSiteCount - bundledSiteCount);
-      const custSiteCount = Math.max(0, activeSites.length - suppSiteCount);
-      const defBundled = !isCustSite && activeSitesTblVw === 'bundled';
+      const bundledSiteCount = activeSites.filter(s => !s.is_jv && !s.jv && Boolean(s.includes_transport || s.haulage_mode === 'supplier_delivered')).length;
+      const separateSiteCount = Math.max(0, activeSites.length - bundledSiteCount);
+      const defBundled = activeSitesTblVw === 'bundled';
       const jvPartnerMetaItems = buildJvPartnerMetaItems();
       return `
         <div class="form-grid-3">
-          <div class="form-field span-3" id="siteCategoryDeck">
-            <label><span class="pa-fld-lbl">1. Select Site Category *</span></label>
-            <div class="site-cat-deck" role="radiogroup" aria-label="Site Category">
-              <button type="button" class="site-cat-card site-cat-supplier${!isCustSite ? ' active' : ''}" data-site-cat="supplier" aria-pressed="${!isCustSite ? 'true' : 'false'}">
-                <span class="site-cat-icon">${ic('raw')}</span>
-                <span class="site-cat-body">
-                  <span class="site-cat-title-row">
-                    <span class="site-cat-title">Supplier / Quarry Site</span>
-                    <span class="site-cat-count" id="siteCatCountSupp">${suppSiteCount} Quarry Sites</span>
-                  </span>
-                  <span class="site-cat-sub">Raw material origin, quarry, crusher or batching plant source</span>
-                  <span class="site-cat-tags">
-                    <span class="site-cat-tag">Links to Supplier &amp; JV</span>
-                    <span class="site-cat-tag">Purchase Tickets &amp; 3-Leg AP</span>
-                  </span>
-                </span>
-                <span class="site-cat-check" aria-hidden="true">${!isCustSite ? '✓ Selected' : 'Select'}</span>
-              </button>
-              <button type="button" class="site-cat-card site-cat-customer${isCustSite ? ' active' : ''}" data-site-cat="customer" aria-pressed="${isCustSite ? 'true' : 'false'}">
-                <span class="site-cat-icon">${ic('sales')}</span>
-                <span class="site-cat-body">
-                  <span class="site-cat-title-row">
-                    <span class="site-cat-title">Customer Delivery Site</span>
-                    <span class="site-cat-count" id="siteCatCountCust">${custSiteCount} Delivery Sites</span>
-                  </span>
-                  <span class="site-cat-sub">Customer project, jobsite or concrete / material delivery destination</span>
-                  <span class="site-cat-tags">
-                    <span class="site-cat-tag">Links to Customer</span>
-                    <span class="site-cat-tag">Sales Tickets &amp; Price Matrix</span>
-                  </span>
-                </span>
-                <span class="site-cat-check" aria-hidden="true">${isCustSite ? '✓ Selected' : 'Select'}</span>
-              </button>
-            </div>
-            <input type="hidden" id="f_site_category" value="${defSiteCat}">
-          </div>
-          <div class="form-field span-3" id="quarryHaulageModeDeck"${isCustSite ? ' hidden' : ''}>
-            <label><span class="pa-fld-lbl">2. Quarry Transportation &amp; Pricing Basis *</span></label>
+          <div class="form-field span-3" id="quarryHaulageModeDeck">
+            <label><span class="pa-fld-lbl">Site Location &amp; Transportation Basis *</span></label>
             <div class="quarry-mode-deck" role="radiogroup" aria-label="Quarry Transportation Mode">
               <button type="button" class="quarry-mode-card quarry-mode-separate${!defBundled ? ' active' : ''}" data-quarry-bundled="0" aria-pressed="${!defBundled ? 'true' : 'false'}">
                 <span class="quarry-mode-icon">${ic('truck')}</span>
                 <span class="quarry-mode-body">
                   <span class="quarry-mode-title-row">
-                    <span class="quarry-mode-title">Ex-Quarry · Our Trucks or 3rd-Party Haulers</span>
+                    <span class="quarry-mode-title">Standard Site · Known Region (Delivery &amp; Ex-Quarry Haul)</span>
                     <span class="quarry-mode-count" id="quarryModeCountSep">${separateSiteCount} Sites</span>
                   </span>
-                  <span class="quarry-mode-sub">Supplier provides raw material only; transported by our fleet or paid 3rd-party peers</span>
+                  <span class="quarry-mode-sub">Customer delivery destination or quarry source hauled by our fleet or paid 3rd-party peers</span>
                   <span class="quarry-mode-tags">
                     <span class="quarry-mode-tag">Region * Required</span>
                     <span class="quarry-mode-tag">Material + Haulage Tracked Separately</span>
@@ -1375,7 +1327,7 @@
                     <span class="quarry-mode-title">Bundled · Supplier Provides Material + Transport</span>
                     <span class="quarry-mode-count" id="quarryModeCountBundled">${bundledSiteCount} Sites</span>
                   </span>
-                  <span class="quarry-mode-sub">Delivered to plant in supplier unit price; internal transport split is unknown ($0 separate haulage)</span>
+                  <span class="quarry-mode-sub">Raw material delivered to plant in supplier unit price; region &amp; internal transport split unknown ($0 separate haulage)</span>
                   <span class="quarry-mode-tags">
                     <span class="quarry-mode-tag is-opt">Region Optional</span>
                     <span class="quarry-mode-tag is-brass">Includes Supplier Transport</span>
@@ -1395,15 +1347,21 @@
           })}
           ${fld(defBundled ? 'Quarry / Supplier Site Name *' : 'Site Name (Inside Region) *', inp('f_site', 'text', '', `placeholder="${defBundled ? 'Supplier quarry or delivery source name...' : 'Site name inside selected region...'}"`), {
             id: 'wrap_site_name',
+            cls: 'span-2',
             hint: defBundled ? 'Bundled quarry source (material + transport included in supplier price).' : 'Must be located inside the selected Region.',
             hintId: 'hint_site_name'
           })}
-          ${fld('Default Site Owner (Supplier)', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier..."') + dl('dl_suppliers', supNames), {
-            id: 'wrap_site_supplier',
-            hidden: isCustSite,
-            afterHtml: `<div class="site-jv-subbar" id="wrap_site_jv"${isCustSite ? ' hidden' : ''}><label class="site-jv-toggle-pill" for="f_isjv"><input type="checkbox" id="f_isjv"><span class="site-jv-toggle-lbl"><b>Joint-Venture (JV) Site</b> · 50/50 partner split</span></label></div>`
-          })}
-          ${fld('Linked Customer', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer..."') + dl('dl_customers', custNames), { id: 'wrap_site_customer', hidden: !isCustSite })}
+          <div class="form-field span-3" id="wrap_site_counterparties" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:0">
+            ${fld('Default Site Owner (Supplier)', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Select or type supplier (if quarry/source)..."') + dl('dl_suppliers', supNames), {
+              id: 'wrap_site_supplier',
+              afterHtml: `<div class="site-jv-subbar" id="wrap_site_jv"><label class="site-jv-toggle-pill" for="f_isjv"><input type="checkbox" id="f_isjv"><span class="site-jv-toggle-lbl"><b>Joint-Venture (JV) Site</b> · 50/50 partner split</span></label></div>`
+            })}
+            ${fld('Linked Customer (Optional)', inp('f_customer', 'text', '', 'list="dl_customers" placeholder="Select or type customer (if delivery site)..."') + dl('dl_customers', custNames), {
+              id: 'wrap_site_customer',
+              hidden: defBundled,
+              hint: 'Auto-fills Customer when this site is selected on a Sales Delivery ticket.'
+            })}
+          </div>
           <div class="site-jv-partner-row span-3" id="wrap_site_jv_details" hidden>
             ${fld('JV Partner *', inp('f_jv_partner', 'text', '', 'list="dl_jv_partners" placeholder="Select or type JV partner..."') + dlMeta('dl_jv_partners', jvPartnerMetaItems), {
               id: 'wrap_site_jv_partner',
@@ -1570,9 +1528,9 @@
           ${fld('Model', inp('f_model', 'text', '', 'placeholder="Mercedes, Volvo, Shacman, CAT"'))}
           ${secHdr('2. Owner & Active Driver Assignment')}
           ${fld('Ownership *', sel('f_ownership', isCo ? [['Owned', 'Company Owned Fleet'], ['Rented', 'Long-Term Rented']] : [['Subcontractor', 'Third-Party Hauler / Subcontractor'], ['Owned', 'Company Owned Fleet'], ['Customer', 'Customer Truck']], isCo ? 'Owned' : 'Subcontractor'))}
-          ${fld('Truck Owner', inp('f_supplier', 'text', isCo ? company : '', 'list="dl_suppliers" placeholder="Select or type truck owner..."') + dl('dl_suppliers', truckOwnerPool), { id: 'wrap_eq_supplier', hidden: isCo, hintId: 'hint_eq_supplier', hint: '' })}
-          ${fld('Active Driver', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Select active driver..."') + dl('dl_drivers', driverNames), { id: 'wrap_eq_driver', hintId: 'hint_eq_driver', hint: 'Strictly auto-populated and locked on Sales, Raw Material, Lubricant & Diesel tickets unless changed in the Equipment Log.' })}
-          ${fld('Effective From Date', inp('f_effdate', 'date', today), { id: 'wrap_eq_effdate' })}
+          ${fld('Truck Owner *', inp('f_supplier', 'text', isCo ? company : '', 'list="dl_suppliers" placeholder="Select or type truck owner..."') + dl('dl_suppliers', truckOwnerPool), { id: 'wrap_eq_supplier', hidden: isCo, hintId: 'hint_eq_supplier', hint: '' })}
+          ${fld('Active Driver *', inp('f_driver', 'text', '', 'list="dl_drivers" placeholder="Select active driver..."') + dl('dl_drivers', driverNames), { id: 'wrap_eq_driver', hintId: 'hint_eq_driver', hint: 'Strictly auto-populated and locked on Sales, Raw Material, Lubricant & Diesel tickets unless changed in the Equipment Log.' })}
+          ${fld('Effective From Date *', inp('f_effdate', 'date', today), { id: 'wrap_eq_effdate' })}
           ${fld('Effective To Date', inp('f_effend', 'date', ''), { id: 'wrap_eq_effend' })}
         </div>
         <div id="wrap_eq_driver_log" hidden style="margin-top:12px"></div>
@@ -1967,7 +1925,7 @@
           ${secHdr('1. Driver Identity & Truck Assignment (Universal Registry · All BUs)')}
           ${fld('Driver *', inp('f_driver', 'text', '', 'placeholder="Driver name"'))}
           ${fld('Default Truck Plate', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Select or type truck plate..."') + dl('dl_equip', equipNames))}
-          ${fld('Truck Owner', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Auto-filled from Truck Plate (or select truck owner)..."') + dl('dl_suppliers', truckOwnerPool), { id: 'wrap_drv_supplier' })}
+          ${fld('Truck Owner *', inp('f_supplier', 'text', '', 'list="dl_suppliers" placeholder="Auto-filled from Truck Plate (or select truck owner)..."') + dl('dl_suppliers', truckOwnerPool), { id: 'wrap_drv_supplier' })}
           ${fld('Phone', inp('f_phone', 'text', '', 'placeholder="+961 ..."'))}
           <div class="form-field check-field"><input type="checkbox" id="f_iscompanydriver"><label for="f_iscompanydriver">Company Fleet Driver (WTC, BBC &amp; Lions Payroll)</label></div>
           ${fld('Notes', inp('f_notes', 'text', ''), { span: true })}
@@ -1983,8 +1941,8 @@
           ${fld('Phone', inp('f_phone', 'text', '', 'placeholder="+961 ..."'))}
           ${fld('Civil ID or Permit #', inp('f_reference', 'text', '', 'placeholder="Civil ID, NSSF or work permit #..."'))}
           ${secHdr('2. Initial Role & Equipment Assignment (Logged by Effective Date)', 'Future role, equipment, and contract changes are tracked chronologically in Role & Equipment Log and Employment Contract')}
-          ${fld('Effective Start Date', inp('f_assign_start', 'date', today), { id: 'wrap_staff_assign_start' })}
-          ${fld('Role', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type staff role..."') + dlMeta('dl_roles', roleMetaItems), { id: 'wrap_staff_role', hintId: 'hint_staff_role', hint: '' })}
+          ${fld('Effective Start Date *', inp('f_assign_start', 'date', today), { id: 'wrap_staff_assign_start' })}
+          ${fld('Role *', inp('f_role', 'text', '', 'list="dl_roles" placeholder="Select or type staff role..."') + dlMeta('dl_roles', roleMetaItems), { id: 'wrap_staff_role', hintId: 'hint_staff_role', hint: '' })}
           ${frozenRoleCatField('')}
           ${fld('Assigned Equipment', inp('f_truck', 'text', '', 'list="dl_equip" placeholder="Optional assigned truck or machine..."') + dl('dl_equip', equipNames), { id: 'wrap_staff_truck' })}
           ${fld('Notes', inp('f_notes', 'text', '', 'placeholder="Skills, shift notes or emergency contact..."'), { span2: true })}
@@ -2184,9 +2142,9 @@
             ${fld('Start Date *', inp('f_date', 'date', empStartVal, pendSalRow ? 'readonly' : ''), pendSalRow ? { id: 'wrap_f_date', lockField: 'f_date', lockReason: 'Locked to the start date recorded on onboarding' } : { id: 'wrap_f_date' })}
             ${fld('End Date', inp('f_enddate', 'date', empEndVal, pendSalRow ? 'readonly' : ''), pendSalRow ? { id: 'wrap_emp_enddate', lockField: 'f_enddate', lockReason: 'Locked to the end date recorded on onboarding' } : { id: 'wrap_emp_enddate' })}
             ${fld('Staff *', inp('f_staff', 'text', empStaffVal, `list="dl_staff" placeholder="Select or type staff..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_staff', staffMetaItems), pendSalRow ? { id: 'wrap_emp_staff', lockField: 'f_staff', lockReason: 'Locked to the onboarded staff member', hintId: 'hint_emp_staff', hint: '' } : { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
-            ${fld('Role', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_roles', roleMetaItems), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
+            ${fld('Role *', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_roles', roleMetaItems), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
             ${frozenRoleCatField(resolveRoleCat(empRoleVal))}
-            ${fld('Pay Basis', sel('f_paytype', [['Monthly', 'Monthly'], ['Daily', 'Daily']], empPayVal), pendSalRow ? { id: 'wrap_emp_paytype', lockField: 'f_paytype', lockReason: 'Locked to the pay basis recorded on onboarding' } : { id: 'wrap_emp_paytype' })}
+            ${fld('Pay Basis *', sel('f_paytype', [['Monthly', 'Monthly'], ['Daily', 'Daily']], empPayVal), pendSalRow ? { id: 'wrap_emp_paytype', lockField: 'f_paytype', lockReason: 'Locked to the pay basis recorded on onboarding' } : { id: 'wrap_emp_paytype' })}
             <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
             <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
             ${fld(amtLbl, amtInputHtml, { id: 'wrap_emp_amount', hintId: 'hint_emp_salary', hint: '', afterHtml: salaryModePillsHtml })}
@@ -2215,9 +2173,9 @@
           ${fld('Staff *', inp('f_staff', 'text', empStaffVal, `list="dl_staff" placeholder="Select or type staff..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_staff', staffMetaItems), pendSalRow ? { id: 'wrap_emp_staff', lockField: 'f_staff', lockReason: 'Locked to the onboarded worker', hintId: 'hint_emp_staff', hint: '' } : { id: 'wrap_emp_staff', hintId: 'hint_emp_staff', hint: '' })}
           <div id="empStaffContextStrip" class="att-contract-strip" hidden></div>
           <div id="empEquipSiteBox" class="equip-site-readonly-box" role="region" aria-label="Connected Equipment and Sites Log" hidden></div>
-          ${fld('Role', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_roles', roleMetaItems), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
+          ${fld('Role *', inp('f_role', 'text', empRoleVal, `list="dl_roles" placeholder="Select or type role..."${pendSalRow ? ' readonly' : ''}`) + dlMeta('dl_roles', roleMetaItems), pendSalRow ? { id: 'wrap_emp_role', lockField: 'f_role', lockReason: 'Locked to the role recorded on onboarding' } : { id: 'wrap_emp_role' })}
           ${frozenRoleCatField(resolveRoleCat(empRoleVal))}
-          ${fld('Pay Basis', sel('f_paytype', [['Daily', 'Daily'], ['Lump Sum', 'Lump Sum']], empPayVal), pendSalRow ? { id: 'wrap_emp_paytype', lockField: 'f_paytype', lockReason: 'Locked to the pay basis recorded on onboarding' } : { id: 'wrap_emp_paytype' })}
+          ${fld('Pay Basis *', sel('f_paytype', [['Daily', 'Daily'], ['Lump Sum', 'Lump Sum']], empPayVal), pendSalRow ? { id: 'wrap_emp_paytype', lockField: 'f_paytype', lockReason: 'Locked to the pay basis recorded on onboarding' } : { id: 'wrap_emp_paytype' })}
           ${fld(amtLbl, amtInputHtml, { id: 'wrap_emp_amount', hintId: 'hint_emp_salary', hint: '', afterHtml: salaryModePillsHtml })}
           ${fld('Notes', inp('f_notes', 'text', empNotesVal, pendSalRow ? 'placeholder="Optional rate agreement note..."' : ''), { span: true })}
         </div>

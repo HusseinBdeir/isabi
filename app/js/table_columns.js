@@ -86,8 +86,8 @@
       'table.m-grid th.tbl-first-vis-cell, table.m-grid td.tbl-first-vis-cell { padding-left: 14px; }',
       'tr.rrow td.tbl-first-vis-cell { position: relative; }',
       '.ledger-table tbody td.tbl-first-vis-cell u.row-sel-dot { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); margin-left: 0; z-index: 3; box-shadow: 0 1px 3px rgba(11, 23, 48, 0.10); }',
-      '.ledger-table tbody td.tbl-first-vis-cell:has(.badge-app, .void-btn:not(.row-void-hover)) u.row-sel-dot { position: static; right: auto; top: auto; transform: none; margin-left: 4px; vertical-align: middle; box-shadow: none; }',
-      'td.tbl-first-vis-cell:has(> u.row-sel-dot) > .void-btn.row-void-hover { right: 22px; }',
+      '.ledger-table tbody td.tbl-first-vis-cell.td-has-inline-act u.row-sel-dot { position: static; right: auto; top: auto; transform: none; margin-left: 4px; vertical-align: middle; box-shadow: none; }',
+      'td.tbl-first-vis-cell.td-has-sel-dot > .void-btn.row-void-hover { right: 22px; }',
       '.tbl-col-auto-tag { font-size: 9.5px; font-weight: 600; opacity: 0.62; margin-left: 3px; }'
     ].join('\n');
     document.head.appendChild(stEl);
@@ -133,9 +133,11 @@
     const pp = String(stateObj.pbiPage || '');
     const st = String(stateObj.activeStatement || '');
     const tv = stateObj.tableViews ? JSON.stringify(stateObj.tableViews) : '';
+    const uck = String(stateObj.univConnTableKey || '');
+    const ucv = String(stateObj.univConnView || '');
     const taxBrk = stateObj.showSalesTaxBreakdown ? 'tax1' : 'tax0';
     const offBk = (stateObj._officialScopeActive || stateObj.officialBookScope) ? 'off1' : 'off0';
-    return [v, co, uk, tk, pp, st, tv, taxBrk, offBk].join('|');
+    return [v, co, uk, tk, pp, st, tv, uck, ucv, taxBrk, offBk].join('|');
   }
 
   function getOrCreateState(tableId, createIfMissing) {
@@ -312,6 +314,9 @@
         });
         const dot = tr.querySelector('u.row-sel-dot');
         if (dot) firstVisTd.appendChild(dot);
+        col0Td.classList.remove('td-has-sel-dot', 'td-has-inline-act');
+        firstVisTd.classList.toggle('td-has-sel-dot', Boolean(dot));
+        firstVisTd.classList.toggle('td-has-inline-act', Boolean(firstVisTd.querySelector('.badge-app, .void-btn:not(.row-void-hover)')));
       } else if (firstVisCol === 0 && col0Td) {
         let restoredAny = false;
         tr.querySelectorAll('[data-from-col0="1"]').forEach(el => {
@@ -320,7 +325,14 @@
           restoredAny = true;
         });
         const movedDot = tr.querySelector('td u.row-sel-dot');
-        if (movedDot && (movedDot.parentElement !== col0Td || restoredAny)) col0Td.appendChild(movedDot);
+        if (movedDot && (movedDot.parentElement !== col0Td || restoredAny)) {
+          if (movedDot.parentElement && movedDot.parentElement !== col0Td) {
+            movedDot.parentElement.classList.remove('td-has-sel-dot', 'td-has-inline-act');
+          }
+          col0Td.appendChild(movedDot);
+        }
+        col0Td.classList.toggle('td-has-sel-dot', Boolean(movedDot));
+        col0Td.classList.toggle('td-has-inline-act', Boolean(col0Td.querySelector('.badge-app, .void-btn:not(.row-void-hover)')));
       }
     });
   }
@@ -816,15 +828,29 @@
     if (prev && prev.classList.contains('table-toolbar')) {
       return { host: ensureToolbarActionSlot(prev), prepend: true };
     }
-    if (prev && prev.classList.contains('col-filter-bar') && prev.previousElementSibling && prev.previousElementSibling.classList.contains('table-toolbar')) {
-      const tb = prev.previousElementSibling;
-      return { host: ensureToolbarActionSlot(tb), prepend: true };
+    if (prev && prev.classList.contains('pa-table-control-deck')) {
+      const tb = prev.querySelector(':scope > .table-toolbar');
+      if (tb) return { host: ensureToolbarActionSlot(tb), prepend: true };
+    }
+    if (prev && prev.classList.contains('col-filter-bar') && prev.previousElementSibling) {
+      const prev2 = prev.previousElementSibling;
+      if (prev2.classList.contains('table-toolbar')) {
+        return { host: ensureToolbarActionSlot(prev2), prepend: true };
+      }
+      if (prev2.classList.contains('pa-table-control-deck')) {
+        const tb = prev2.querySelector(':scope > .table-toolbar');
+        if (tb) return { host: ensureToolbarActionSlot(tb), prepend: true };
+      }
     }
     const parentCard = wrap.parentElement;
     if (parentCard) {
-      const tb = parentCard.querySelector(':scope > .table-toolbar');
+      const tb = parentCard.querySelector(':scope > .table-toolbar, :scope > .pa-table-control-deck > .table-toolbar');
       if (tb) {
         return { host: ensureToolbarActionSlot(tb), prepend: true };
+      }
+      const cteRight = parentCard.querySelector(':scope > .cte-header > .cte-actions');
+      if (cteRight) {
+        return { host: cteRight, prepend: false };
       }
       const cutoffBar = parentCard.querySelector(':scope > .payroll-cutoff-bar:not(.is-pbi)');
       if (cutoffBar) {
@@ -873,6 +899,13 @@
     const headRow = table.querySelector('thead tr');
     if (!headRow) return;
     const ths = Array.from(headRow.children).filter(el => el.tagName === 'TH' || el.tagName === 'TD');
+    if (table.classList.contains('ledger-table')) {
+      const thCount = headRow.querySelectorAll(':scope > th').length;
+      table.classList.toggle('tbl-cols-10', thCount >= 10);
+      table.classList.toggle('tbl-cols-13', thCount >= 13);
+      table.classList.toggle('tbl-cols-16', thCount >= 16);
+      table.classList.toggle('tbl-cols-19', thCount >= 19);
+    }
     if (ths.length < 2) return;
 
     const tableId = getTableId(table, idx);

@@ -724,9 +724,13 @@
   }
 
   // Build Live Sales Commission Accrual, Per-Product Corridor, Monthly Ledger & Payout Vouchers (m18a / m18b / m256 parity)
+  const _salesCommCache = new Map();
   function buildSalesCommissionData(salesRows, receiptRows, settlementRows, priceRules, opts = {}) {
     const today = String(opts.today || '2026-10-26').slice(0, 10);
     const asAtDate = String(opts.asAtDate || today).slice(0, 10);
+    const seedRev = (typeof window !== 'undefined' && window.SEED && window.SEED._customRev) || 0;
+    const cKey = `${seedRev}|${asAtDate}|${opts.dateFrom || ''}|${opts.dateTo || ''}|${_pbiArrUid(salesRows)}:${(salesRows && salesRows.length) || 0}|${_pbiArrUid(receiptRows)}:${(receiptRows && receiptRows.length) || 0}|${_pbiArrUid(settlementRows)}:${(settlementRows && settlementRows.length) || 0}|${_pbiArrUid(priceRules)}:${(priceRules && priceRules.length) || 0}|${_pbiArrUid(opts.allGlobalRules)}:${(opts.allGlobalRules && opts.allGlobalRules.length) || 0}|${Array.isArray(opts.allowedCompanies) ? opts.allowedCompanies.join(',') : '*'}`;
+    if (_salesCommCache.has(cKey)) return _salesCommCache.get(cKey);
     const roundFn = v => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
     const isSaleMethod = mth => {
       const m = String(mth || 'Credit').trim();
@@ -1121,7 +1125,7 @@
       ? monthlyRows[monthlyRows.length - 1].cum_payable_ex_vat
       : roundFn(totalEarned - totalPaidExVat);
 
-    return {
+    const outComm = {
       rulesCount: commRules.length,
       activeRulesCount: commRules.filter(r => isRuleInForceAt(r, asAtDate)).length,
       productsCount: productRows.length,
@@ -1144,13 +1148,31 @@
       voucherRows,
       otherEntities
     };
+    if (_salesCommCache.size > 24) _salesCommCache.clear();
+    _salesCommCache.set(cKey, outComm);
+    return outComm;
   }
 
   // Build Quarry Raw Material Purchase (Site) & Site Transportation Rate Comparisons
+  const _quarryCompCache = new Map();
   function buildQuarryPricingComp(rawRows, priceRules, opts = {}) {
     const asAtDate = String(opts.asAtDate || opts.today || '2026-10-26').slice(0, 10);
+    const seedRev = (typeof window !== 'undefined' && window.SEED && window.SEED._customRev) || 0;
+    const sitesPoolArg = Array.isArray(opts.sites)
+      ? opts.sites
+      : ((typeof window !== 'undefined' && window.SEED && window.SEED.records && window.SEED.records.sites) || []);
+    const siteRev = (typeof window !== 'undefined' && window.SEED && window.SEED._tableRev && window.SEED.records && sitesPoolArg === window.SEED.records.sites) ? (window.SEED._tableRev.sites || 0) : 0;
+    const qKey = `${seedRev}|${siteRev}:${sitesPoolArg.length}|${asAtDate}|${_pbiArrUid(rawRows)}:${(rawRows && rawRows.length) || 0}|${_pbiArrUid(priceRules)}:${(priceRules && priceRules.length) || 0}`;
+    if (_quarryCompCache.has(qKey)) return _quarryCompCache.get(qKey);
     const roundFn = v => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
     const rules = (Array.isArray(priceRules) ? priceRules : []).filter(r => r && !r.voided);
+    const purchaseRules = [];
+    const siteTransRules = [];
+    for (let ri = 0; ri < rules.length; ri++) {
+      const r = rules[ri];
+      if (r.rule_type === 'Purchase Price (Site)') purchaseRules.push(r);
+      else if (r.rule_type === 'Transport Price (Site)') siteTransRules.push(r);
+    }
     const receipts = Array.isArray(rawRows) ? rawRows : [];
 
     const matMap = new Map();
@@ -1217,10 +1239,9 @@
       const sK = normKey(site), oK = normKey(sOwner), pK = normKey(prod);
       let bestActive = null, bestActiveScore = -1;
       let bestEnded = null, bestEndedScore = -1, bestEndedDate = '';
-      for (let i = 0; i < rules.length; i++) {
-        const r = rules[i];
+      for (let i = 0; i < purchaseRules.length; i++) {
+        const r = purchaseRules[i];
         if (co && r.company && r.company !== co) continue;
-        if (r.rule_type !== 'Purchase Price (Site)') continue;
         if (r.site && normKey(r.site) !== sK) continue;
         if (r.supplier && oK && normKey(r.supplier) !== oK) continue;
         if (!r.site && (!r.supplier || normKey(r.supplier) !== oK)) continue;
@@ -1249,10 +1270,9 @@
       const hK = normKey(hauler), sK = normKey(site);
       let bestActive = null, bestActiveScore = -1;
       let bestEnded = null, bestEndedScore = -1, bestEndedDate = '';
-      for (let i = 0; i < rules.length; i++) {
-        const r = rules[i];
+      for (let i = 0; i < siteTransRules.length; i++) {
+        const r = siteTransRules[i];
         if (co && r.company && r.company !== co) continue;
-        if (r.rule_type !== 'Transport Price (Site)') continue;
         if (r.site && normKey(r.site) !== sK) continue;
         if (r.supplier && normKey(r.supplier) !== hK) continue;
         if (!r.site && !r.supplier) continue;
@@ -1380,7 +1400,7 @@
     const overAgreedMatCount = matRows.filter(r => r.agreed_minus_last != null && r.agreed_minus_last < -0.005).length;
     const overAgreedHaulCount = haulRows.filter(r => r.agreed_minus_last != null && r.agreed_minus_last < -0.005).length;
 
-    return {
+    const outQuarry = {
       matRows,
       haulRows,
       overAgreedCount: overAgreedMatCount + overAgreedHaulCount,
@@ -1398,6 +1418,9 @@
         agreed_chart: r.agreed_rate != null ? r.agreed_rate : r.avg_rate
       }))
     };
+    if (_quarryCompCache.size > 24) _quarryCompCache.clear();
+    _quarryCompCache.set(qKey, outQuarry);
+    return outQuarry;
   }
   function rValOr(a, b) {
     return (a != null && a !== '' && Number(a) !== 0) ? a : (b || 0);
@@ -1969,13 +1992,30 @@
     if (_pbiCustSet.has(o) && (!_pbiSupSet.has(o) || _pbiCustEqSet.has(o))) return 'customers';
     return 'suppliers';
   }
+  function getActiveSingleBuName() {
+    const st = typeof window !== 'undefined' ? window.STATE : null;
+    if (!st) return '';
+    const co = String(st.company || '').trim().toLowerCase();
+    if (!co || co.startsWith('industry:')) return '';
+    if (co === 'manufacturing-group') {
+      if (Array.isArray(st.allowedCompanyNames) && st.allowedCompanyNames.length === 1) {
+        return String(st.allowedCompanyNames[0] || '').trim();
+      }
+      return '';
+    }
+    if (co === 'wtc') return 'WTC';
+    if (co === 'bbconstruction' || co === 'bbc') return 'BBConstruction';
+    if (co === 'lions' || co === 'lions-transport' || co === 'lionstransport') return 'Lions Transport';
+    return String(st.company || '').trim();
+  }
   function getHubRelIndex(SEED) {
     if (window.MFG_GEO && typeof window.MFG_GEO.hydrateSeedGeo === 'function') {
       window.MFG_GEO.hydrateSeedGeo(SEED);
     }
     const rec = (SEED && SEED.records) || {};
     const tr = (SEED && SEED._tableRev) || {};
-    const stamp = `${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.staff_roles || []).length}:${(rec.staff_assignments || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.regions || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.regions||0}:${tr.overtime_rates||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.staff_roles||0}:${tr.staff_assignments||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
+    const singleBu = getActiveSingleBuName();
+    const stamp = `${singleBu}|${(rec.sales_tickets || []).length}:${(rec.raw_purchases || []).length}:${(rec.expenses || []).length}:${(rec.recurring_expenses || []).length}:${(rec.salaries || []).length}:${(rec.employments || []).length}:${(rec.staff_members || []).length}:${(rec.staff_roles || []).length}:${(rec.staff_assignments || []).length}:${(rec.price_rules || []).length}:${(rec.receipts || []).length}:${(rec.settlements || []).length}:${(rec.sites || []).length}:${(rec.regions || []).length}:${(rec.equipment || []).length}:${(rec.drivers || []).length}:${tr.sales_tickets||0}:${tr.raw_purchases||0}:${tr.expenses||0}:${tr.recurring_expenses||0}:${tr.salaries||0}:${tr.price_rules||0}:${tr.receipts||0}:${tr.settlements||0}:${tr.sites||0}:${tr.regions||0}:${tr.overtime_rates||0}:${tr.equipment||0}:${tr.company_equipment||0}:${tr.drivers||0}:${tr.company_drivers||0}:${tr.staff_members||0}:${tr.staff_roles||0}:${tr.staff_assignments||0}:${tr.suppliers||0}:${tr.customers||0}:${tr.products||0}:${tr.expense_categories||0}:${tr.expense_subcategories||0}:${tr.employments||0}:${tr.attendance||0}:${tr.loans||0}:${tr.loan_settlements||0}:${tr.vat_invoices||0}:${tr.credit_terms||0}`;
     if (_hubRelCache && _hubRelStamp === stamp) return _hubRelCache;
     _hubRelStamp = stamp;
     const rel = {
@@ -2590,7 +2630,7 @@
       }
     });
     Object.values(rel.staffByName).forEach(st => {
-      st.companies_list = Array.from(st.companies).join(', ') || 'All BUs (Ready)';
+      st.companies_list = singleBu || Array.from(st.companies).join(', ') || 'All BUs (Ready)';
       st.salary_status = st.has_pending_salary
         ? 'Pending Salary ($0)'
         : (st.active_contracts_count > 0
@@ -2816,6 +2856,10 @@
       if (c === 'operates_equipment') return r.operates_equipment != null && r.operates_equipment !== '' ? r.operates_equipment : (/driver|operat|loader|excavat|bulldozer|crusher/i.test(String(r.name || r.role || '')) ? 'Yes' : 'No');
     }
     if (c === 'cost_class') return deriveExpenseCostClass(r);
+    if (c === 'companies_list') {
+      const sBu = getActiveSingleBuName();
+      if (sBu) return sBu;
+    }
     if (r[c] != null && r[c] !== '') {
       if (Array.isArray(r[c])) return r[c].join(', ');
       return r[c];
@@ -2921,7 +2965,7 @@
         }
         const ee = rel.equipByName[norm(r.equipment || r.name)];
         if (ee) {
-          if (c === 'companies_list') return Array.from(ee.companies).join(', ') || 'Shared';
+          if (c === 'companies_list') return getActiveSingleBuName() || Array.from(ee.companies).join(', ') || 'Shared';
           if (ee[c] != null) return ee[c];
         }
       }
@@ -2929,7 +2973,7 @@
         const de = rel.drvByName[norm(r.driver || r.name)];
         if (de) {
           if (c === 'assigned_trucks') return Array.from(de.trucks).join(', ') || '—';
-          if (c === 'companies_list') return Array.from(de.companies).join(', ') || '—';
+          if (c === 'companies_list') return getActiveSingleBuName() || Array.from(de.companies).join(', ') || '—';
           if (de[c] != null) return de[c];
         }
       }
@@ -2965,7 +3009,7 @@
         if (c === 'default_equipment') return (st && st.active_equipment) || r.default_equipment || (st && st.default_equipment) || null;
         if (st && st[c] != null) return st[c];
         if (c === 'contracts_count' || c === 'active_salary_usd' || c === 'attendance_days' || c === 'payments_count' || c === 'total_paid') return 0;
-        if (c === 'companies_list') return 'All BUs (Ready)';
+        if (c === 'companies_list') return getActiveSingleBuName() || 'All BUs (Ready)';
         if (c === 'salary_status') return 'No Active Contract';
       }
       if (tableKey === 'vat_invoices' && c === 'tickets_count') {
@@ -9337,6 +9381,202 @@
     return _hubChipCountsCacheVal;
   }
 
+  const TABLE_ICON_MAP = {
+    sales_tickets: 'sales',
+    receipts: 'receipt',
+    price_rules: 'pricing',
+    credit_terms: 'customers',
+    vat_invoices: 'sales_vat',
+    raw_purchases: 'raw',
+    expenses: 'expenses',
+    expense_items: 'reg_items',
+    recurring_expenses: 'recurring_expenses',
+    warehouse_movements: 'warehouse',
+    settlements: 'suppliers',
+    jv_partnerships: 'jv',
+    jv_distributions: 'jv',
+    fuel_intakes: 'fuel',
+    fuel_malfunctions: 'warn',
+    company_equipment: 'fleet_equip',
+    equipment_defects: 'warn',
+    equipment_repairs: 'repair',
+    repair_items: 'reg_items',
+    equipment_oil_logs: 'oillog',
+    part_movements: 'wrench',
+    company_drivers: 'fleet_drivers',
+    overtime_rates: 'overtime',
+    salaries: 'payroll',
+    attendance: 'payroll_attendance',
+    employments: 'payroll_contracts',
+    staff_assignments: 'staffassignment',
+    freelance_entries: 'payroll',
+    logistics_allowances: 'payroll_allowances',
+    external_movements: 'external',
+    loans: 'ledger_treasury',
+    loan_settlements: 'ledger_treasury',
+    conversions: 'conversions',
+    customers: 'reg_customers',
+    suppliers: 'reg_suppliers',
+    products: 'reg_products',
+    items: 'reg_items',
+    product_types: 'box',
+    uoms: 'ruler',
+    expense_categories: 'reg_categories',
+    expense_subcategories: 'expenses',
+    sites: 'reg_sites',
+    regions: 'reg_regions',
+    equipment: 'reg_equipment',
+    drivers: 'reg_drivers',
+    staff_members: 'reg_staff',
+    staff_roles: 'reg_roles',
+    fx_rates: 'reg_fx_rates',
+    vat_rates: 'reg_vat_rates',
+    currencies: 'reg_currencies',
+    gl_accounts: 'gl_automation'
+  };
+
+  const UNIV_REG_CARD_META = {
+    customers: { icon: 'reg_customers', sub: 'Client accounts, credit limits, VAT & AR balances' },
+    suppliers: { icon: 'reg_suppliers', sub: 'Material quarries, 3rd-party haulers & expense vendors' },
+    products: { icon: 'reg_products', sub: 'Commercial concrete, aggregate grades & fuel items' },
+    product_types: { icon: 'box', sub: 'Material families & product classification groups' },
+    uoms: { icon: 'ruler', sub: 'Standard weighing, volume & dispatch units (m³, Ton, Truck)' },
+    items: { icon: 'reg_items', sub: 'Spare parts, oils, lubricants & workshop consumables' },
+    expense_categories: { icon: 'reg_categories', sub: 'Primary cost buckets & production / OPEX / CAPEX class' },
+    expense_subcategories: { icon: 'expenses', sub: 'Detailed expense sub-classifications linked to categories' },
+    fx_rates: { icon: 'reg_fx_rates', sub: 'Effective-dated USD to LBP exchange rate windows' },
+    currencies: { icon: 'reg_currencies', sub: 'ISO currency definitions, symbols & active rates' },
+    vat_rates: { icon: 'reg_vat_rates', sub: 'Statutory MoF VAT rate schedules & LBP conversion rates' },
+    equipment: { icon: 'reg_equipment', sub: 'Company fleet, 3rd-party haulers & plant machinery' },
+    drivers: { icon: 'reg_drivers', sub: 'Company & hauler drivers, assigned trucks & trip history' },
+    staff_members: { icon: 'reg_staff', sub: 'Master worker directory, contracts, salaries & advances' },
+    staff_roles: { icon: 'reg_roles', sub: 'Standard job roles, role categories & equipment eligibility' },
+    sites: { icon: 'reg_sites', sub: 'Supplier quarries, JV pits & customer delivery sites' },
+    regions: { icon: 'reg_regions', sub: 'Geographic delivery zones, corridors & trip distances' },
+    gl_accounts: { icon: 'gl_automation', sub: 'Lebanese PCG Classes 1–7 & automated posting rules' }
+  };
+
+  const TABLE_HOME_VIEW_MAP = {
+    sales_tickets: { view: 'sales', label: 'Sales & Receivables' },
+    receipts: { view: 'customers', label: 'Customers & AR' },
+    credit_terms: { view: 'customers', label: 'Customers & AR' },
+    vat_invoices: { view: 'customers', label: 'Customers & AR' },
+    price_rules: { view: 'pricing', label: 'Commercial Pricing' },
+    raw_purchases: { view: 'raw', label: 'Quarry & Haulage' },
+    jv_partnerships: { view: 'raw_jv', label: 'JV & Partnerships' },
+    jv_distributions: { view: 'raw_jv', label: 'JV & Partnerships' },
+    expenses: { view: 'expenses', label: 'Expenses & Overhead' },
+    expense_items: { view: 'expenses', label: 'Expenses & Overhead' },
+    recurring_expenses: { view: 'recurring_expenses', label: 'Recurring Schedules' },
+    settlements: { view: 'suppliers', label: 'Suppliers & Payables' },
+    warehouse_movements: { view: 'warehouse', label: 'Warehouse Stock' },
+    fuel_intakes: { view: 'fleet', label: 'Fleet & Fuel' },
+    fuel_malfunctions: { view: 'fleet', label: 'Fleet & Fuel' },
+    company_equipment: { view: 'fleet_equip', label: 'Fleet Running Costs' },
+    equipment_defects: { view: 'fleet_maint', label: 'Repairs & Warnings' },
+    equipment_repairs: { view: 'fleet_maint', label: 'Repairs & Warnings' },
+    repair_items: { view: 'warehouse_parts', label: 'Parts & Item Usage' },
+    equipment_oil_logs: { view: 'fleet_maint', label: 'Repairs & Warnings' },
+    part_movements: { view: 'fleet_maint', label: 'Repairs & Warnings' },
+    company_drivers: { view: 'fleet_drivers', label: 'Drivers & Overtime' },
+    overtime_rates: { view: 'fleet_drivers', label: 'Drivers & Overtime' },
+    salaries: { view: 'payroll', label: 'Payroll & Workforce' },
+    attendance: { view: 'payroll_attendance', label: 'Attendance & Biometrics' },
+    employments: { view: 'payroll_contracts', label: 'Contracts & Assignments' },
+    staff_assignments: { view: 'payroll_contracts', label: 'Contracts & Assignments' },
+    freelance_entries: { view: 'payroll_contracts', label: 'Contracts & Assignments' },
+    logistics_allowances: { view: 'payroll_allowances', label: 'Site Transport' },
+    external_movements: { view: 'external', label: 'External Movements' },
+    loans: { view: 'ledger_treasury', label: 'Loans & Advances' },
+    loan_settlements: { view: 'ledger_treasury', label: 'Loans & Advances' },
+    conversions: { view: 'conversions', label: 'FX Conversions' }
+  };
+
+  function resolveInlineConnTableForCol(colKey, tableKey) {
+    if (colKey === 'sales_loads' && (tableKey === 'customers' || tableKey === 'products' || tableKey === 'product_types')) return { connKey: 'sales_tickets' };
+    if (colKey === 'active_rules' && (tableKey === 'customers' || tableKey === 'products')) return { connKey: 'price_rules', viewId: 'active' };
+    if (colKey === 'active_rules' && tableKey === 'suppliers') return { connKey: 'price_rules', viewId: 'raw_active' };
+    if (colKey === 'haul_loads' && tableKey === 'suppliers') return { connKey: 'raw_purchases', subRole: 'haul' };
+    if (colKey === 'raw_loads' && tableKey === 'suppliers') return { connKey: 'raw_purchases', subRole: 'raw' };
+    if (colKey === 'expenses_count' && (tableKey === 'suppliers' || tableKey === 'expense_categories' || tableKey === 'expense_subcategories')) return { connKey: 'expenses' };
+    if (colKey === 'tickets_count' && tableKey === 'items') return { connKey: 'expense_items' };
+    if (colKey === 'tickets_count' && tableKey === 'uoms') return { connKey: 'sales_tickets' };
+    if (colKey === 'loads_hauled' && (tableKey === 'equipment' || tableKey === 'drivers')) return { connKey: 'sales_tickets' };
+    if (colKey === 'fuel_fills' && (tableKey === 'equipment' || tableKey === 'drivers')) return { connKey: 'fuel_intakes' };
+    if (colKey === 'contracts_count' && (tableKey === 'staff_members' || tableKey === 'staff_roles')) return { connKey: 'employments' };
+    if (colKey === 'attendance_days' && tableKey === 'staff_members') return { connKey: 'attendance' };
+    if (colKey === 'staff_count' && tableKey === 'staff_roles') return { connKey: 'staff_members' };
+    if (colKey === 'active_assignments_count' && tableKey === 'staff_roles') return { connKey: 'staff_assignments', viewId: 'active' };
+    return null;
+  }
+
+  function getConnRowParents(r, parentKey, connKey, rel) {
+    if (!r) return [];
+    const out = [];
+    const pushVal = v => {
+      const s = String(v || '').trim();
+      if (s && s !== '—' && s !== '-') out.push(s);
+    };
+    if (parentKey === 'customers') {
+      pushVal(r.customer);
+      if (connKey === 'sites' && resolveSiteCategoryPbi(r) === 'customer') pushVal(r.linked_party || r.customer);
+    } else if (parentKey === 'suppliers') {
+      if (connKey === 'raw_purchases') {
+        pushVal(r.site_owner);
+        pushVal(r.truck_owner);
+        pushVal(r.supplier);
+      } else {
+        pushVal(r.supplier);
+        pushVal(r.truck_owner);
+        pushVal(r.site_owner);
+        pushVal(r.jv_partner);
+        pushVal(r.vendor_or_buyer);
+      }
+    } else if (parentKey === 'products') {
+      pushVal(r.product);
+      pushVal(r.item);
+      pushVal(r.input_product);
+    } else if (parentKey === 'product_types') {
+      pushVal(r.type);
+      const pName = norm(r.product || r.item || '');
+      if (pName && rel && rel.prodByName && rel.prodByName[pName]) pushVal(rel.prodByName[pName].type);
+    } else if (parentKey === 'uoms') {
+      pushVal(r.uom);
+      pushVal(r.unit);
+    } else if (parentKey === 'items') {
+      pushVal(r.item_name);
+      pushVal(r.item);
+      pushVal(r.oil_type);
+      pushVal(r.part_name);
+    } else if (parentKey === 'expense_categories') {
+      pushVal(r.category);
+    } else if (parentKey === 'expense_subcategories') {
+      pushVal(r.subcategory);
+    } else if (parentKey === 'equipment') {
+      pushVal(r.equipment);
+      pushVal(r.truck);
+      pushVal(r.target_equipment);
+      pushVal(r.default_equipment);
+      if (r.assigned_trucks) String(r.assigned_trucks).split(',').forEach(pushVal);
+    } else if (parentKey === 'drivers') {
+      pushVal(r.driver);
+      pushVal(r.default_driver);
+      pushVal(r.day_operator);
+      pushVal(r.night_operator);
+    } else if (parentKey === 'staff_members') {
+      pushVal(r.staff);
+      if (connKey === 'loans') pushVal(r.counterparty);
+      if (connKey === 'staff_roles') pushVal(r.name);
+    } else if (parentKey === 'staff_roles') {
+      pushVal(r.role);
+    } else if (parentKey === 'fx_rates' || parentKey === 'currencies') {
+      pushVal(r.currency);
+      pushVal(r.from_currency);
+      pushVal(r.to_currency);
+    }
+    return Array.from(new Set(out));
+  }
+
   function renderTablesHub(ctx) {
     const { STATE, SEED, filterRecords, sortRows, th, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm } = ctx;
     const catalog = typeof ctx.canAccessTable === 'function' ? TABLE_CATALOG.filter(t => ctx.canAccessTable(t.key)) : TABLE_CATALOG;
@@ -9464,27 +9704,34 @@
       </div>
 
       <div class="panel-card" id="tablesHubPanel">
-        <!-- Views & Connected Tables Relational Bar -->
-        ${(visibleViews.length > 1 || relTablesMeta.length) ? `
-          <div class="pa-hub-rel-strip">
-            ${visibleViews.length > 1 ? `
-              <div class="pa-hub-views">
-                <span class="pa-hub-lbl">Views:</span>
-                ${visibleViews.map(vw => {
-                  const vCnt = vw.fn ? baseFiltered.filter(r => vw.fn(r, rel)).length : baseFiltered.length;
-                  return `<button type="button" class="filter-chip ${vw.id === activeView.id ? 'active' : ''}" data-tbl-view="${esc(vw.id)}" data-tbl-key="${esc(meta.key)}">${esc(vw.label)} <span class="mono" style="opacity:.75">(${fmtNum(vCnt)})</span></button>`;
-                }).join('')}
-              </div>
-            ` : ''}
-            ${relTablesMeta.length ? `
-              <div class="pa-hub-conns">
+        <!-- Connected Tables Relational Strip -->
+        ${relTablesMeta.length ? `
+          <div class="pa-hub-rel-strip pa-hub-conns-bar">
+            <div class="pa-hub-conns">
+              <span class="pa-conn-hdr">
+                <span class="pa-conn-ico">${pbiIcon('link')}</span>
                 <span class="pa-hub-lbl">Connected Tables:</span>
+              </span>
+              <div class="pa-conn-chips">
+                ${STATE.prevTableKey && STATE.prevTableKey !== meta.key ? (() => {
+                  const prevMeta = tablePool.find(t => t.key === STATE.prevTableKey);
+                  return prevMeta ? `<button type="button" class="filter-chip conn-back-chip" data-back-table-key="${esc(prevMeta.key)}" data-ui-tip="Return to ${esc(prevMeta.label)}">← Back to ${esc(prevMeta.label)}</button>` : '';
+                })() : ''}
                 ${relTablesMeta.map(rt => {
-                  const rCnt = chipCounts.byKey[rt.key] != null ? chipCounts.byKey[rt.key] : 0;
-                  return `<button type="button" class="filter-chip" data-conn-table-key="${esc(rt.key)}" title="Jump to related table ${esc(rt.label)}">⇄ ${esc(rt.label)} <span class="mono" style="opacity:.7">(${fmtNum(rCnt)})</span></button>`;
+                  const isRawPr = meta.key === 'suppliers' && rt.key === 'price_rules';
+                  const rCnt = isRawPr
+                    ? (chipCounts.rawPrCnt != null ? chipCounts.rawPrCnt : 0)
+                    : (chipCounts.byKey[rt.key] != null ? chipCounts.byKey[rt.key] : 0);
+                  const rtLbl = isRawPr ? 'Raw & Haulage Agreements' : rt.label;
+                  const rtIco = TABLE_ICON_MAP[rt.key] || rt.navView || 'tables';
+                  return `<button type="button" class="filter-chip conn-table-chip" data-conn-table-key="${esc(rt.key)}" data-ui-tip="Switch to related table ${esc(rtLbl)}">
+                    <span class="conn-chip-ico">${pbiIcon(rtIco)}</span>
+                    <span class="conn-chip-lbl">⇄ ${esc(rtLbl)}</span>
+                    <span class="conn-chip-cnt mono">(${fmtNum(rCnt)})</span>
+                  </button>`;
                 }).join('')}
               </div>
-            ` : ''}
+            </div>
           </div>
         ` : ''}
 
@@ -9492,21 +9739,40 @@
           ? window.MFG_GEO.renderGeoStudioHtml({ metaKey: meta.key, STATE, SEED, rel })
           : ''}
 
-        <div class="table-toolbar">
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search ' + effLabel + '...')}
-          </div>
-          <div style="display:flex;gap:6px">
-            ${exportBtn('tablesHubPanel', meta.key)}
-            ${(() => {
-              const modalFormId = meta.key === 'price_rules'
-                ? (/^raw_/i.test(activeView.id) ? 'pricerule_raw' : (activeView.id === 'commission' ? 'pricerule_comm' : 'pricerule'))
-                : meta.form;
-              const modalBtnLbl = meta.key === 'price_rules'
-                ? (/^raw_/i.test(activeView.id) ? 'Raw & Haulage Agreement' : (activeView.id === 'commission' ? 'Commission Rule' : 'Sales Price Agreement'))
-                : (meta.singularLabel || meta.label.replace(/ies$/, 'y').replace(/s$/, ''));
-              return canEnterForm(modalFormId) ? `<button type="button" class="btn btn-primary" data-open-modal="${esc(modalFormId)}">+ New ${esc(modalBtnLbl)}</button>` : '';
-            })()}
+        <div class="pa-table-control-deck ${visibleViews.length > 1 && visibleViews.length <= 4 ? 'is-inline-deck' : ''}">
+          ${visibleViews.length > 1 ? `
+            <div class="pa-hub-views">
+              <span class="pa-views-hdr">
+                <span class="pa-views-ico">${pbiIcon('sliders')}</span>
+                <span class="pa-hub-lbl">Views:</span>
+              </span>
+              <div class="pa-views-segmented-track" role="tablist" aria-label="Table filter views">
+                ${visibleViews.map(vw => {
+                  const vCnt = vw.fn ? baseFiltered.filter(r => vw.fn(r, rel)).length : baseFiltered.length;
+                  return `<button type="button" class="filter-chip view-seg-btn ${vw.id === activeView.id ? 'active' : ''}" data-tbl-view="${esc(vw.id)}" data-tbl-key="${esc(meta.key)}">${esc(vw.label)} <span class="view-seg-cnt mono">(${fmtNum(vCnt)})</span></button>`;
+                }).join('')}
+              </div>
+              ${activeView.id !== 'all' && activeView.id !== 'raw_all' ? `
+                <button type="button" class="view-lens-reset-pill" data-reset-tbl-view="${esc(meta.key)}" data-ui-tip="Reset view filter to show all ${fmtNum(baseFiltered.length)} records">${fmtNum(rows.length)} of ${fmtNum(baseFiltered.length)} · ✕ Reset</button>
+              ` : ''}
+            </div>
+          ` : ''}
+          <div class="table-toolbar">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search ' + effLabel + '...')}
+            </div>
+            <div style="display:flex;gap:6px">
+              ${exportBtn('tablesHubPanel', meta.key)}
+              ${(() => {
+                const modalFormId = meta.key === 'price_rules'
+                  ? (/^raw_/i.test(activeView.id) ? 'pricerule_raw' : (activeView.id === 'commission' ? 'pricerule_comm' : 'pricerule'))
+                  : meta.form;
+                const modalBtnLbl = meta.key === 'price_rules'
+                  ? (/^raw_/i.test(activeView.id) ? 'Raw & Haulage Agreement' : (activeView.id === 'commission' ? 'Commission Rule' : 'Sales Price Agreement'))
+                  : (meta.singularLabel || meta.label.replace(/ies$/, 'y').replace(/s$/, ''));
+                return canEnterForm(modalFormId) ? `<button type="button" class="btn btn-primary" data-open-modal="${esc(modalFormId)}">+ New ${esc(modalBtnLbl)}</button>` : '';
+              })()}
+            </div>
           </div>
         </div>
         ${typeof ctx.renderColFilterBar === 'function' ? ctx.renderColFilterBar('tbl_' + meta.key, activeCols) : ''}
@@ -10033,24 +10299,31 @@
             </div>
           ` : ''}
 
-          <div class="pa-hub-rel-strip" style="margin-bottom:10px">
+          <div class="pa-table-control-deck">
             <div class="pa-hub-views">
-              <span class="pa-hub-lbl">Views:</span>
-              ${siteViews.map(vw => {
-                const vCnt = vw.fn ? sitesRegFiltered.filter(r => vw.fn(r, rel)).length : sitesRegFiltered.length;
-                return `<button type="button" class="filter-chip ${vw.id === activeSiteView.id ? 'active' : ''}" data-tbl-view="${esc(vw.id)}" data-tbl-key="sites">${esc(vw.label)} <span class="mono" style="opacity:.75">(${fmtNum(vCnt)})</span></button>`;
-              }).join('')}
+              <span class="pa-views-hdr">
+                <span class="pa-views-ico">${pbiIcon('sliders')}</span>
+                <span class="pa-hub-lbl">Views:</span>
+              </span>
+              <div class="pa-views-segmented-track" role="tablist" aria-label="Site filter views">
+                ${siteViews.map(vw => {
+                  const vCnt = vw.fn ? sitesRegFiltered.filter(r => vw.fn(r, rel)).length : sitesRegFiltered.length;
+                  return `<button type="button" class="filter-chip view-seg-btn ${vw.id === activeSiteView.id ? 'active' : ''}" data-tbl-view="${esc(vw.id)}" data-tbl-key="sites">${esc(vw.label)} <span class="view-seg-cnt mono">(${fmtNum(vCnt)})</span></button>`;
+                }).join('')}
+              </div>
+              ${activeSiteView.id !== 'all' ? `
+                <button type="button" class="view-lens-reset-pill" data-reset-tbl-view="sites" data-ui-tip="Reset view filter to show all ${fmtNum(sitesRegFiltered.length)} sites">${fmtNum(siteRows.length)} of ${fmtNum(sitesRegFiltered.length)} · ✕ Reset</button>
+              ` : ''}
             </div>
-          </div>
-
-          <div class="table-toolbar">
-            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-              <h3 class="panel-title" style="margin:0">Sites (${fmtNum(siteRows.length)})</h3>
-              ${searchBox('Search Sites...')}
-            </div>
-            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-              ${exportBtn('sitesRegPanel', 'sites')}
-              ${canEnterForm('site') ? `<button type="button" class="btn btn-primary" data-open-modal="site"${selReg && selReg !== '__unassigned__' ? ` data-prefill-region="${esc(selReg)}"` : ''}>+ New Site</button>` : ''}
+            <div class="table-toolbar">
+              <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                <h3 class="panel-title" style="margin:0">Sites (${fmtNum(siteRows.length)})</h3>
+                ${searchBox('Search Sites...')}
+              </div>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                ${exportBtn('sitesRegPanel', 'sites')}
+                ${canEnterForm('site') ? `<button type="button" class="btn btn-primary" data-open-modal="site"${selReg && selReg !== '__unassigned__' ? ` data-prefill-region="${esc(selReg)}"` : ''}>+ New Site</button>` : ''}
+              </div>
             </div>
           </div>
           ${typeof ctx.renderColFilterBar === 'function' ? ctx.renderColFilterBar('ureg_sites', activeSiteCols) : ''}
@@ -10098,6 +10371,248 @@
     `;
   }
 
+  function renderConnTableExplorerHtml(ctx, meta, rel, chipCounts, connKey) {
+    const { STATE, SEED, filterRecords, sortRows, th, shownCount, showMoreRow, emptyRow, appCell, canEnterForm } = ctx;
+    const connMeta = TABLE_CATALOG.find(t => t.key === connKey);
+    if (!connMeta) return '';
+    const isRawPr = meta.key === 'suppliers' && connKey === 'price_rules';
+    const connIsUniv = Boolean(connMeta.universal);
+    const connRawList = (SEED.records && SEED.records[connKey]) || [];
+    const rlsScoped = filterRecords(connRawList, { ignorePeriod: true, ignoreSearch: true, ignoreCompany: connIsUniv, ignoreRls: connIsUniv });
+    const domainScoped = connKey === 'price_rules'
+      ? (isRawPr
+          ? rlsScoped.filter(r => /^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || ''))
+          : rlsScoped.filter(r => !/^(Purchase Price \(Site\)|Transport Price \(Site\))$/i.test(r.rule_type || '')))
+      : rlsScoped;
+
+    const rawViews = connMeta.views || [{ id: 'all', label: 'All ' + connMeta.label }];
+    const connViews = connKey === 'price_rules'
+      ? (isRawPr ? rawViews.filter(v => /^raw_/i.test(v.id)) : rawViews.filter(v => !/^raw_/i.test(v.id)))
+      : ((connKey === 'sales_tickets' && !STATE._canSeeTaxBreakdown) ? rawViews.filter(v => v.id !== 'iva') : rawViews);
+    const defaultViewId = isRawPr ? 'raw_all' : ((connViews[0] && connViews[0].id) || 'all');
+    const activeConnViewId = STATE.univConnView || defaultViewId;
+    const activeConnView = connViews.find(v => v.id === activeConnViewId) || connViews[0] || { id: 'all', label: 'All ' + connMeta.label };
+    const connAfterView = activeConnView && activeConnView.fn ? domainScoped.filter(r => activeConnView.fn(r, rel)) : domainScoped;
+
+    const subRole = STATE.univConnSubRole || '';
+    const connRoleScoped = (meta.key === 'suppliers' && connKey === 'raw_purchases' && subRole)
+      ? connAfterView.filter(r => subRole === 'haul' ? Boolean(r.truck_owner) : Boolean(r.site_owner || r.supplier))
+      : connAfterView;
+
+    // Tally top parent master records by operational frequency descending (Hard Rule #11)
+    const partyCntMap = new Map();
+    for (let i = 0; i < connRoleScoped.length; i++) {
+      const row = connRoleScoped[i];
+      const pList = (meta.key === 'suppliers' && connKey === 'raw_purchases' && subRole)
+        ? [subRole === 'haul' ? row.truck_owner : (row.site_owner || row.supplier)].filter(Boolean)
+        : getConnRowParents(row, meta.key, connKey, rel);
+      for (let j = 0; j < pList.length; j++) {
+        const pName = String(pList[j] || '').trim();
+        const pk = norm(pName);
+        if (!pk) continue;
+        const cur = partyCntMap.get(pk);
+        if (cur) cur.count++;
+        else partyCntMap.set(pk, { name: pName, count: 1 });
+      }
+    }
+    const sortedParties = Array.from(partyCntMap.values()).sort((a, b) => b.count - a.count);
+    const topPartyChips = sortedParties.slice(0, 8);
+    const activePartyFilter = String(STATE.univConnPartyFilter || '').trim();
+    if (activePartyFilter && !topPartyChips.some(p => norm(p.name) === norm(activePartyFilter))) {
+      const exactP = partyCntMap.get(norm(activePartyFilter));
+      topPartyChips.push({ name: activePartyFilter, count: exactP ? exactP.count : 0 });
+    }
+
+    const partyFiltered = activePartyFilter
+      ? connRoleScoped.filter(r => {
+          const pList = (meta.key === 'suppliers' && connKey === 'raw_purchases' && subRole)
+            ? [subRole === 'haul' ? r.truck_owner : (r.site_owner || r.supplier)].filter(Boolean)
+            : getConnRowParents(r, meta.key, connKey, rel);
+          return pList.some(p => norm(p) === norm(activePartyFilter));
+        })
+      : connRoleScoped;
+
+    const q = norm(STATE.univConnSearch || '');
+    const rawActiveCols = (activeConnView && Array.isArray(activeConnView.cols) && activeConnView.cols.length) ? activeConnView.cols : connMeta.cols;
+    const taxColsVisibleOnHub = Boolean((STATE._canSeeTaxBreakdown && STATE.showSalesTaxBreakdown) || STATE._officialScopeActive || activeConnView.id === 'iva');
+    const connCols = (connKey === 'sales_tickets' && !taxColsVisibleOnHub)
+      ? rawActiveCols.filter(c => c !== 'vat')
+      : rawActiveCols;
+
+    const searchFiltered = q
+      ? partyFiltered.filter(r => connCols.some(c => norm(String(cellValue(r, c, connKey, rel) ?? '')).includes(q)))
+      : partyFiltered;
+
+    const defSort = getHubTableDefaultSort(connMeta, activeConnView.id);
+    const connRows = sortRows(searchFiltered, 'conn_' + connKey, defSort.key, defSort.dir);
+    const connLimit = (STATE.shown && STATE.shown['conn_' + connKey]) || 10;
+    const connShown = connRows.slice(0, connLimit);
+
+    const effConnLabel = isRawPr ? 'Raw & Haulage Agreements' : connMeta.label;
+    const connIco = TABLE_ICON_MAP[connKey] || connMeta.navView || 'tables';
+    const homeSpec = isRawPr
+      ? { view: 'raw_pricing', label: 'Quarry & Haulage Rates' }
+      : (TABLE_HOME_VIEW_MAP[connKey] || (connMeta.navView ? { view: connMeta.navView, label: connMeta.label } : { view: 'tables', label: 'All Tables' }));
+    const modalFormId = connKey === 'price_rules'
+      ? (isRawPr ? 'pricerule_raw' : (activeConnView.id === 'commission' ? 'pricerule_comm' : 'pricerule'))
+      : connMeta.form;
+    const modalBtnLbl = connKey === 'price_rules'
+      ? (isRawPr ? 'Raw & Haulage Agreement' : (activeConnView.id === 'commission' ? 'Commission Rule' : 'Sales Price Agreement'))
+      : (connMeta.singularLabel || connMeta.label.replace(/ies$/, 'y').replace(/s$/, ''));
+
+    return `
+      <div class="conn-table-explorer-card" id="connTableExplorerCard" data-active-conn-table="${esc(connKey)}">
+        <div class="cte-header">
+          <div class="cte-title-wrap">
+            <span class="cte-ico">${pbiIcon(connIco)}</span>
+            <div>
+              <div class="cte-title-row">
+                <h4 class="cte-title">${esc(effConnLabel)}</h4>
+                <span class="cte-rel-badge">Connected to ${esc(meta.label)} · ${fmtNum(connRows.length)} ${connRows.length === 1 ? 'record' : 'records'}</span>
+                ${activePartyFilter ? `
+                  <span class="cte-active-party-badge">
+                    <b>${esc(meta.singularLabel || 'Filter')}: ${esc(activePartyFilter)}</b>
+                    <button type="button" class="cte-clear-party-btn" data-conn-filter-party="" data-ui-tip="Show all ${fmtNum(connRoleScoped.length)} records">✕ All</button>
+                  </span>
+                ` : ''}
+              </div>
+              <div class="cte-subtitle">Click any row below to inspect or edit, or filter by ${esc((meta.singularLabel || meta.label).toLowerCase())}</div>
+            </div>
+          </div>
+          <div class="cte-actions">
+            <input type="search" id="connExplorerSearchInput" class="search-input cte-search-input" value="${esc(STATE.univConnSearch || '')}" placeholder="Search ${esc(effConnLabel)}..." autocomplete="off">
+            ${modalFormId && canEnterForm(modalFormId) ? `<button type="button" class="btn btn-primary cte-btn" data-open-modal="${esc(modalFormId)}">+ New ${esc(modalBtnLbl)}</button>` : ''}
+            <button type="button" class="btn btn-ghost cte-btn" data-conn-jump-view="${esc(homeSpec.view)}" data-conn-jump-table="${esc(connKey)}">Open in ${esc(homeSpec.label)} ↗</button>
+            <button type="button" class="btn btn-ghost cte-close-btn" id="closeConnExplorerBtn" data-close-conn-explorer="1" data-ui-tip="Close inline preview">✕ Close</button>
+          </div>
+        </div>
+
+        ${(topPartyChips.length > 0 || connViews.length > 1) ? `
+          <div class="cte-filters-bar">
+            ${topPartyChips.length > 0 ? `
+              <div class="cte-party-strip">
+                <span class="cte-sub-lbl">Filter by ${esc(meta.singularLabel || meta.label)}:</span>
+                <button type="button" class="cte-party-chip ${!activePartyFilter ? 'active' : ''}" data-conn-filter-party="">All <span class="mono">(${fmtNum(connRoleScoped.length)})</span></button>
+                ${topPartyChips.map(p => {
+                  const isPAct = norm(activePartyFilter) === norm(p.name);
+                  return `<button type="button" class="cte-party-chip ${isPAct ? 'active' : ''}" data-conn-filter-party="${esc(p.name)}">${esc(p.name)} <span class="mono">(${fmtNum(p.count)})</span></button>`;
+                }).join('')}
+              </div>
+            ` : ''}
+            ${connViews.length > 1 ? `
+              <div class="cte-views-strip">
+                <span class="cte-sub-lbl">Lens:</span>
+                ${connViews.map(vw => {
+                  const vCnt = vw.fn ? domainScoped.filter(r => vw.fn(r, rel)).length : domainScoped.length;
+                  return `<button type="button" class="cte-view-chip ${vw.id === activeConnView.id ? 'active' : ''}" data-conn-tbl-view="${esc(vw.id)}">${esc(vw.label)} <span class="mono">(${fmtNum(vCnt)})</span></button>`;
+                }).join('')}
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
+
+        <div class="table-wrap cte-table-wrap">
+          <table class="ledger-table">
+            <thead>
+              <tr>
+                ${connCols.map(c => th('conn_' + connKey, hubColLabel(c, connKey), c, !NON_NUMERIC_HUB_COLS.test(c) && /price|cost|amount|total|vat|limit|salary|reimbursement|package_usd|deduction|balance|^debit$|^credit$|qty|litres|capacity|factor|pct|days|hours|_count$|loads|fills|rules|tickets|_delta$|exchange_rate|proceeds|meter_reading|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c) ? 'r' : '')).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${connShown.map(r => `
+                <tr class="rrow" data-rkey="${esc(connKey)}" data-rid="${esc(r.id)}">
+                  ${connCols.map((c, ci) => {
+                    const v = cellValue(r, c, connKey, rel);
+                    const nonNum = NON_NUMERIC_HUB_COLS.test(c);
+                    const isBool = typeof v === 'boolean' || (/^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|prior_defect_notified|iva$|overtime$)/.test(c) && (v === 0 || v === 1));
+                    const isSignedUsd = !isBool && !nonNum && c === 'usd_delta';
+                    const isSignedLbp = !isBool && !nonNum && c === 'lbp_delta';
+                    const isLbp = !isBool && !nonNum && !isSignedLbp && /^lbp_|_lbp$/.test(c);
+                    const isMoney = !isBool && !nonNum && !isLbp && !isSignedLbp && /price|cost|amount|total|vat_amount|limit|salary|reimbursement|package_usd|deduction|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(c) && !/rate$/.test(c);
+                    const isNum = !isBool && !nonNum && !isMoney && !isLbp && !isSignedLbp && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|^lat|^long|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(c);
+                    let cell = v == null || v === '' ? '—' : (isBool ? (v && v !== 0 ? 'Yes' : 'No') : String(v));
+                    if (isSignedUsd && v != null && v !== '') cell = fmtSignedUSD(v, 2);
+                    else if (isSignedLbp && v != null && v !== '') cell = fmtSignedLBP(v);
+                    else if (isLbp && v != null && v !== '') cell = fmtNum(v, 0) + ' LL';
+                    else if (isMoney && v != null && v !== '') cell = fmtUSD(v, 2);
+                    else if (c === 'vat_percent' && v != null && v !== '') cell = fmtNum(v, 1) + '%';
+                    else if ((c === 'rate' || c === 'vat_fx_rate' || c === 'active_rate') && v != null && v !== '') cell = fmtNum(v, Number(v) % 1 !== 0 ? 1 : (Number(v) === 1 ? 2 : 0));
+                    else if (isNum && v != null && v !== '') cell = fmtNum(v, /factor|qty|capacity|lat|long|percentage|interest/.test(c) ? 2 : 0);
+                    else if (c === 'effective_to' && v) cell = v === 'Open' ? 'Open (Active)' : fmtDateDMY(v);
+                    else if ((connKey === 'recurring_expenses' || connKey === 'staff_assignments') && c === 'end_date' && !v) cell = 'Open';
+                    else if (/date/.test(c) && v) cell = fmtDateDMY(v);
+
+                    const lkTarget = c === 'linked_party'
+                      ? (resolveSiteCategoryPbi(r) === 'customer' ? 'customers' : 'suppliers')
+                      : ((c === 'truck_owner' || (c === 'supplier' && (connKey === 'equipment' || connKey === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : ((connKey === 'recurring_expenses' && c === 'item') || (connKey === 'currencies' && c === 'role') ? null : HUB_LOOKUP_TARGETS[c]));
+                    const isLookup = lkTarget && lkTarget !== connKey && v != null && v !== '' && cell !== '—';
+                    const signedHtml = (isSignedUsd || isSignedLbp) && v != null && v !== ''
+                      ? `<strong style="color:${Number(v) >= 0 ? 'var(--good)' : 'var(--crit)'}">${esc(cell)}</strong>`
+                      : null;
+                    const innerHtml = isLookup
+                      ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
+                      : (signedHtml || formatHubSpecialCellHtml(c, v, cell, r, connKey) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell)))))));
+                    return `<td class="${isMoney || isNum || isLbp || isSignedLbp ? 'r' : ''}${/date|ticket|code|_no$|plate|version|_delta$|exchange_rate/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, connKey)}` : innerHtml}</td>`;
+                  }).join('')}
+                </tr>
+              `).join('') || emptyRow(connCols.length, 'No connected records match the active filter.')}
+              ${showMoreRow('conn_' + connKey, connRows.length, connCols.length)}
+            </tbody>
+            <tfoot>
+              <tr>
+                ${(() => {
+                  const isColNumeric = col => {
+                    if (NON_NUMERIC_HUB_COLS.test(col)) return { isM: false, isN: false, num: false };
+                    const isBoolCol = /^(is_|vat_registered|external_invoice|customer_declared_qty|ticket_product|fuel_item|input_product|prior_defect_notified|iva$|overtime$)/.test(col);
+                    const isM = !isBoolCol && /price|cost|amount|total|vat_amount|limit|salary|reimbursement|package_usd|deduction|balance|^debit$|^credit$|adj|indiff|rate_usd|daily_usd|principal|^value$|previous_value|^change$|cash_in|cash_out|closing_till|overtime_rate|^usd_delta$|proceeds/.test(col) && !/rate$/.test(col);
+                    const isN = !isBoolCol && !isM && /qty|litres|capacity|factor|pct|percentage|days|hours|_count$|odometer|meter_reading|interest_rate|exchange_rate|loads|fills|rules|tickets|^rate$|vat_fx_rate|active_rate|vat_percent|^precision$/.test(col);
+                    return { isM, isN, num: isM || isN };
+                  };
+                  const colSpecs = connCols.map(c => {
+                    const spec = isColNumeric(c);
+                    const isAvg = spec.num && /price|rate|factor|pct|percentage|vat_percent|precision|odometer|closing_till|credit_days|deduction/.test(c) && !/^(total|amount|vat_amount|cost|trans_price|price|total_paid|total_spent)$/.test(c);
+                    return { c, ...spec, isAvg, sum: 0, cnt: 0 };
+                  });
+                  let firstNum = colSpecs.findIndex((sp, idx) => idx > 0 && sp.num);
+                  if (firstNum < 0) firstNum = connCols.length;
+                  const leadSpan = Math.max(1, firstNum);
+                  const evalCols = colSpecs.slice(leadSpan).filter(sp => sp.num);
+                  if (evalCols.length && connRows.length) {
+                    const isSalesTkt = connKey === 'sales_tickets';
+                    const isExpTbl = connKey === 'expenses';
+                    for (let ri = 0; ri < connRows.length; ri++) {
+                      const r = connRows[ri];
+                      const rowSgn = isSalesTkt ? saleTicketSign(r) : (isExpTbl ? hubExpenseSign(r) : 1);
+                      for (let ei = 0; ei < evalCols.length; ei++) {
+                        const sp = evalCols[ei];
+                        if (sp.isAvg && rowSgn === 0) continue;
+                        const v = cellValue(r, sp.c, connKey, rel);
+                        if (v != null && v !== '' && typeof v !== 'boolean') {
+                          const n = Number(v);
+                          if (Number.isFinite(n)) { sp.sum += sp.isAvg ? n : (n * rowSgn); sp.cnt++; }
+                        }
+                      }
+                    }
+                  }
+                  const out = [`<td colspan="${leadSpan}"><b>TOTAL (${fmtNum(connRows.length)} RECORDS)</b></td>`];
+                  for (let ci = leadSpan; ci < colSpecs.length; ci++) {
+                    const { c, isM: isMoney, isN: isNum, isAvg, sum, cnt } = colSpecs[ci];
+                    if (!isMoney && !isNum) { out.push(`<td></td>`); continue; }
+                    if (!cnt) { out.push(`<td class="r">—</td>`); continue; }
+                    const val = isAvg ? (sum / cnt) : sum;
+                    const txt = isMoney ? fmtUSD(val, 2) : (c === 'vat_percent' ? fmtNum(val, 1) + '%' : fmtNum(val, /factor|qty|capacity|percentage|interest/.test(c) ? 2 : 0));
+                    out.push(`<td class="r">${isAvg ? '<span class="tfoot-avg-tag">Avg </span>' : ''}<b>${txt}</b></td>`);
+                  }
+                  return out.join('');
+                })()}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
   // ==================== DEDICATED UNIVERSAL REGISTRIES WORKSPACE RENDERER ====================
   function renderUniversalRegistriesView(ctx) {
     const { STATE, SEED, filterRecords, sortRows, th, shownCount, showMoreRow, emptyRow, exportBtn, searchBox, appCell, canEnterForm } = ctx;
@@ -10115,7 +10630,7 @@
     const meta = univPool.find(t => t.key === activeKey) || univPool.find(t => groupKeys.includes(t.key)) || univPool[0];
     STATE.activeUnivRegKey = meta.key;
     const rel = getHubRelIndex(SEED);
-    const chipCounts = _getHubTableChipCounts(SEED, STATE, ctx, univPool);
+    const chipCounts = _getHubTableChipCounts(SEED, STATE, ctx, TABLE_CATALOG);
     const rawList = (SEED.records && SEED.records[meta.key]) || [];
     const searchCols = meta.key === 'sites'
       ? Array.from(new Set(meta.cols.concat(['supplier', 'customer', 'site_category', 'linked_party'])))
@@ -10129,42 +10644,85 @@
     const defSortSpec = getHubTableDefaultSort(meta, activeView.id);
     const rows = sortRows(filtered, 'ureg_' + meta.key, defSortSpec.key, defSortSpec.dir);
     const shown = rows.slice(0, shownCount('ureg_' + meta.key));
-    const relTablesMeta = (meta.relTables || []).map(rk => TABLE_CATALOG.find(t => t.key === rk)).filter(Boolean);
     const groupTabsMeta = groupKeys.length > 1
       ? groupKeys.map(gk => univPool.find(t => t.key === gk)).filter(Boolean)
       : [];
+    const relTablesMeta = (meta.relTables || [])
+      .filter(rk => !groupKeys.includes(rk))
+      .map(rk => TABLE_CATALOG.find(t => t.key === rk))
+      .filter(Boolean);
+    const activeConnKey = (STATE.univConnTableKey && relTablesMeta.some(rt => rt.key === STATE.univConnTableKey))
+      ? STATE.univConnTableKey
+      : '';
+    if (STATE.univConnTableKey && !activeConnKey) {
+      STATE.univConnTableKey = '';
+      STATE.univConnPartyFilter = '';
+      STATE.univConnSearch = '';
+      STATE.univConnView = '';
+      STATE.univConnSubRole = '';
+    }
 
     return `
       <div class="panel-card" id="univRegPanel">
-        ${(groupTabsMeta.length > 1 || views.length > 1 || relTablesMeta.length) ? `
-          <div class="pa-hub-rel-strip">
-            ${groupTabsMeta.length > 1 ? `
-              <div class="pa-hub-views"${views.length > 1 ? ' style="flex:1 1 100%;padding-bottom:6px;margin-bottom:2px;border-bottom:1px dashed var(--line)"' : ''}>
+        ${groupTabsMeta.length > 1 ? `
+          <div class="pa-univ-reg-deck">
+            <div class="pa-univ-deck-hdr">
+              <span class="pa-univ-deck-title">
+                <span class="pa-univ-deck-ico">${pbiIcon('tables')}</span>
                 <span class="pa-hub-lbl">Shared Registries:</span>
-                ${groupTabsMeta.map(gt => {
-                  const gCnt = chipCounts.byKey[gt.key] != null ? chipCounts.byKey[gt.key] : ((SEED.records && SEED.records[gt.key]) || []).length;
-                  return `<button type="button" class="filter-chip ${gt.key === meta.key ? 'active' : ''}" data-univ-reg-key="${esc(gt.key)}" ${gt.navView ? `data-univ-nav-view="${esc(gt.navView)}"` : ''}>${esc(gt.label)} <span class="mono" style="opacity:.75">(${fmtNum(gCnt)})</span></button>`;
-                }).join('')}
-              </div>
-            ` : ''}
-            ${views.length > 1 ? `
-              <div class="pa-hub-views">
-                <span class="pa-hub-lbl">Views:</span>
-                ${views.map(vw => {
-                  const vCnt = vw.fn ? baseFiltered.filter(r => vw.fn(r, rel)).length : baseFiltered.length;
-                  return `<button type="button" class="filter-chip ${vw.id === activeView.id ? 'active' : ''}" data-tbl-view="${esc(vw.id)}" data-tbl-key="${esc(meta.key)}">${esc(vw.label)} <span class="mono" style="opacity:.75">(${fmtNum(vCnt)})</span></button>`;
-                }).join('')}
-              </div>
-            ` : ''}
-            ${relTablesMeta.length ? `
-              <div class="pa-hub-conns">
+              </span>
+              <span class="pa-univ-deck-hint">Switch between master registries shared across all business units</span>
+            </div>
+            <div class="pa-univ-reg-grid cols-${Math.min(3, groupTabsMeta.length)}">
+              ${groupTabsMeta.map(gt => {
+                const gCnt = chipCounts.byKey[gt.key] != null ? chipCounts.byKey[gt.key] : ((SEED.records && SEED.records[gt.key]) || []).length;
+                const isAct = gt.key === meta.key;
+                const cardSpec = UNIV_REG_CARD_META[gt.key] || { icon: TABLE_ICON_MAP[gt.key] || gt.navView || 'tables', sub: 'Shared master registry across all business units' };
+                return `<button type="button" class="filter-chip univ-reg-card ${isAct ? 'active' : ''}" data-univ-reg-key="${esc(gt.key)}" ${gt.navView ? `data-univ-nav-view="${esc(gt.navView)}"` : ''}>
+                  <span class="urc-ico">${pbiIcon(cardSpec.icon)}</span>
+                  <span class="urc-body">
+                    <span class="urc-top">
+                      <span class="urc-title">${esc(gt.label)}</span>
+                      <span class="urc-status-badge">${isAct ? 'Active' : 'Switch ▸'}</span>
+                    </span>
+                    <span class="urc-sub">${esc(cardSpec.sub)}</span>
+                  </span>
+                  <span class="urc-metric">
+                    <span class="urc-cnt mono">(${fmtNum(gCnt)})</span>
+                    <span class="urc-unit">Records</span>
+                  </span>
+                </button>`;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${relTablesMeta.length ? `
+          <div class="pa-hub-rel-strip pa-hub-conns-bar">
+            <div class="pa-hub-conns">
+              <span class="pa-conn-hdr">
+                <span class="pa-conn-ico">${pbiIcon('link')}</span>
                 <span class="pa-hub-lbl">Connected Tables:</span>
+              </span>
+              <div class="pa-conn-chips">
                 ${relTablesMeta.map(rt => {
-                  const rCnt = chipCounts.byKey[rt.key] != null ? chipCounts.byKey[rt.key] : 0;
-                  return `<button type="button" class="filter-chip" data-conn-table-key="${esc(rt.key)}" title="Jump to related table ${esc(rt.label)}">⇄ ${esc(rt.label)} <span class="mono" style="opacity:.7">(${fmtNum(rCnt)})</span></button>`;
+                  const isRawPr = meta.key === 'suppliers' && rt.key === 'price_rules';
+                  const rCnt = isRawPr
+                    ? (chipCounts.rawPrCnt != null ? chipCounts.rawPrCnt : 0)
+                    : (chipCounts.byKey[rt.key] != null ? chipCounts.byKey[rt.key] : 0);
+                  const rtLbl = isRawPr ? 'Raw & Haulage Agreements' : rt.label;
+                  const isConnOpen = activeConnKey === rt.key;
+                  const rtIco = TABLE_ICON_MAP[rt.key] || rt.navView || 'tables';
+                  return `<button type="button" class="filter-chip conn-table-chip ${isConnOpen ? 'active' : ''}" data-conn-table-key="${esc(rt.key)}" data-ui-tip="${isConnOpen ? 'Click to close inline preview' : 'Click to preview ' + fmtNum(rCnt) + ' linked ' + esc(rtLbl) + ' records inline'}">
+                    <span class="conn-chip-ico">${pbiIcon(rtIco)}</span>
+                    <span class="conn-chip-lbl">${esc(rtLbl)}</span>
+                    <span class="conn-chip-cnt mono">(${fmtNum(rCnt)})</span>
+                    <span class="conn-chip-chev" aria-hidden="true">${isConnOpen ? '▴' : '▾'}</span>
+                  </button>`;
                 }).join('')}
               </div>
-            ` : ''}
+            </div>
+            ${activeConnKey ? renderConnTableExplorerHtml(ctx, meta, rel, chipCounts, activeConnKey) : ''}
           </div>
         ` : ''}
 
@@ -10172,13 +10730,32 @@
           ? window.MFG_GEO.renderGeoStudioHtml({ metaKey: meta.key, STATE, SEED, rel })
           : ''}
 
-        <div class="table-toolbar">
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            ${searchBox('Search ' + meta.label + '...')}
-          </div>
-          <div style="display:flex;gap:6px">
-            ${exportBtn('univRegPanel', meta.key)}
-            ${canEnterForm(meta.form) ? `<button type="button" class="btn btn-primary" data-open-modal="${esc(meta.form)}">+ New ${esc(meta.singularLabel || meta.label.replace(/ies$/, 'y').replace(/s$/, ''))}</button>` : ''}
+        <div class="pa-table-control-deck ${views.length > 1 && views.length <= 4 ? 'is-inline-deck' : ''}">
+          ${views.length > 1 ? `
+            <div class="pa-hub-views">
+              <span class="pa-views-hdr">
+                <span class="pa-views-ico">${pbiIcon('sliders')}</span>
+                <span class="pa-hub-lbl">Views:</span>
+              </span>
+              <div class="pa-views-segmented-track" role="tablist" aria-label="Registry filter views">
+                ${views.map(vw => {
+                  const vCnt = vw.fn ? baseFiltered.filter(r => vw.fn(r, rel)).length : baseFiltered.length;
+                  return `<button type="button" class="filter-chip view-seg-btn ${vw.id === activeView.id ? 'active' : ''}" data-tbl-view="${esc(vw.id)}" data-tbl-key="${esc(meta.key)}">${esc(vw.label)} <span class="view-seg-cnt mono">(${fmtNum(vCnt)})</span></button>`;
+                }).join('')}
+              </div>
+              ${activeView.id !== 'all' ? `
+                <button type="button" class="view-lens-reset-pill" data-reset-tbl-view="${esc(meta.key)}" data-ui-tip="Reset view filter to show all ${fmtNum(baseFiltered.length)} records">${fmtNum(rows.length)} of ${fmtNum(baseFiltered.length)} · ✕ Reset</button>
+              ` : ''}
+            </div>
+          ` : ''}
+          <div class="table-toolbar">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              ${searchBox('Search ' + meta.label + '...')}
+            </div>
+            <div style="display:flex;gap:6px">
+              ${exportBtn('univRegPanel', meta.key)}
+              ${canEnterForm(meta.form) ? `<button type="button" class="btn btn-primary" data-open-modal="${esc(meta.form)}">+ New ${esc(meta.singularLabel || meta.label.replace(/ies$/, 'y').replace(/s$/, ''))}</button>` : ''}
+            </div>
           </div>
         </div>
         ${typeof ctx.renderColFilterBar === 'function' ? ctx.renderColFilterBar('ureg_' + meta.key, activeCols) : ''}
@@ -10211,9 +10788,15 @@
                       ? (resolveSiteCategoryPbi(r) === 'customer' ? 'customers' : 'suppliers')
                       : ((c === 'truck_owner' || (c === 'supplier' && (meta.key === 'equipment' || meta.key === 'company_equipment'))) ? resolveTruckOwnerTargetPbi(v, r, SEED) : ((meta.key === 'recurring_expenses' && c === 'item') || (meta.key === 'currencies' && c === 'role') ? null : HUB_LOOKUP_TARGETS[c]));
                     const isLookup = lkTarget && lkTarget !== meta.key && v != null && v !== '' && cell !== '—';
+                    const inlineConnSpec = !isLookup && isNum && Number(v) > 0 ? resolveInlineConnTableForCol(c, meta.key) : null;
+                    const hasConnTarget = inlineConnSpec && relTablesMeta.some(rt => rt.key === inlineConnSpec.connKey);
+                    const partyKeyVal = hasConnTarget ? String(r.name || r.code || '').trim() : '';
+                    const isInlineConnActive = hasConnTarget && activeConnKey === inlineConnSpec.connKey && norm(STATE.univConnPartyFilter || '') === norm(partyKeyVal) && (!inlineConnSpec.subRole || STATE.univConnSubRole === inlineConnSpec.subRole);
                     const innerHtml = isLookup
                       ? `<span class="rel-link" data-rel-key="${esc(lkTarget)}" data-rel-val="${esc(v)}">${esc(cell)}<span class="rel-arr">↗</span></span>`
-                      : (formatHubSpecialCellHtml(c, v, cell, r, meta.key) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell)))))));
+                      : (hasConnTarget && partyKeyVal
+                          ? `<button type="button" class="reg-inline-conn-pill ${isInlineConnActive ? 'active' : ''}" data-inline-conn-table="${esc(inlineConnSpec.connKey)}" data-inline-conn-party="${esc(partyKeyVal)}"${inlineConnSpec.viewId ? ` data-inline-conn-view="${esc(inlineConnSpec.viewId)}"` : ''}${inlineConnSpec.subRole ? ` data-inline-conn-subrole="${esc(inlineConnSpec.subRole)}"` : ''} data-ui-tip="Preview ${esc(cell)} linked records for ${esc(partyKeyVal)}">${esc(cell)}</button>`
+                          : (formatHubSpecialCellHtml(c, v, cell, r, meta.key) || (c === 'company' ? shortCoHtml(cell) : (c === 'site_category' ? formatSiteCategoryHtml(cell) : (c === 'supplier_role' ? formatSupplierRoleHtml(cell) : (c === 'cost_class' ? formatCostClassHtml(cell) : (c === 'automation_mode' ? formatAutomationModeHtml(cell) : esc(cell))))))));
                     return `<td class="${isMoney || isNum ? 'r' : ''}${/date|effective_to|ticket|code|_no$|plate|version|^rate$|vat_fx_rate|active_rate|vat_percent/.test(c) ? ' mono' : ''}">${ci === 0 ? `<b>${innerHtml}</b>${appCell(r, meta.key)}` : innerHtml}</td>`;
                   }).join('')}
                 </tr>
