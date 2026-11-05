@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'isabi-mfg-v19.6.122';
+const SHELL_CACHE = 'isabi-mfg-v19.6.123';
 const DATA_CACHE = 'isabi-mfg-data-v1';
 
 // Lightweight UI shell (~500 KB gz). Heavy seed JSONs (1.7 MB gz) and Face ID models (8.2 MB gz)
@@ -6,32 +6,32 @@ const DATA_CACHE = 'isabi-mfg-data-v1';
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './css/app.css?v=19.6.122',
-  './css/geo_dispatch.css?v=19.6.122',
-  './css/daily_ops.css?v=19.6.122',
-  './css/ask_isabi.css?v=19.6.122',
-  './js/face.js?v=19.6.122',
-  './js/endpoints.js?v=19.6.122',
-  './js/seed_manifest.js?v=19.6.122',
-  './js/icons.js?v=19.6.122',
-  './js/geo_dispatch.js?v=19.6.122',
-  './js/forms_engine.js?v=19.6.122',
-  './js/pbi_pages.js?v=19.6.122',
-  './js/rdl_reports.js?v=19.6.122',
-  './js/kiosk_print.js?v=19.6.122',
-  './js/table_columns.js?v=19.6.122',
-  './js/daily_ops.js?v=19.6.122',
-  './js/ask_isabi.js?v=19.6.122',
-  './js/app.js?v=19.6.122',
-  './manifest.json?v=19.6.122',
-  './favicon.ico?v=19.6.122',
-  './favicon-dark.ico?v=19.6.122',
-  './icon.svg?v=19.6.122',
-  './icon-dark.svg?v=19.6.122',
-  './icon-180.png?v=19.6.122',
-  './icon-192.png?v=19.6.122',
-  './icon-512.png?v=19.6.122',
-  './icon-512-maskable.png?v=19.6.122'
+  './css/app.css?v=19.6.123',
+  './css/geo_dispatch.css?v=19.6.123',
+  './css/daily_ops.css?v=19.6.123',
+  './css/ask_isabi.css?v=19.6.123',
+  './js/face.js?v=19.6.123',
+  './js/endpoints.js?v=19.6.123',
+  './js/seed_manifest.js?v=19.6.123',
+  './js/icons.js?v=19.6.123',
+  './js/geo_dispatch.js?v=19.6.123',
+  './js/forms_engine.js?v=19.6.123',
+  './js/pbi_pages.js?v=19.6.123',
+  './js/rdl_reports.js?v=19.6.123',
+  './js/kiosk_print.js?v=19.6.123',
+  './js/table_columns.js?v=19.6.123',
+  './js/daily_ops.js?v=19.6.123',
+  './js/ask_isabi.js?v=19.6.123',
+  './js/app.js?v=19.6.123',
+  './manifest.json?v=19.6.123',
+  './favicon.ico?v=19.6.123',
+  './favicon-dark.ico?v=19.6.123',
+  './icon.svg?v=19.6.123',
+  './icon-dark.svg?v=19.6.123',
+  './icon-180.png?v=19.6.123',
+  './icon-192.png?v=19.6.123',
+  './icon-512.png?v=19.6.123',
+  './icon-512-maskable.png?v=19.6.123'
 ];
 
 const VENDOR_ASSETS = [

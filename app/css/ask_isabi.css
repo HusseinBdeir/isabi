@@ -3,6 +3,42 @@
    Gallery-Alabaster Light & Dark Theme Parity (Zero Dark-Navy Blocks in Light)
    ============================================================================ */
 
+#aiDrawer .ai-hdr-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+#aiDrawer .ai-console-title small#aiDrawerScope {
+  color: var(--brass);
+  font-weight: 600;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+#aiDrawer .ai-reset-btn {
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+
+#aiDrawer .ai-reset-btn:hover {
+  background: var(--brass-tint);
+  border-color: var(--brass);
+  color: var(--ink);
+}
+
 #aiDrawer .ai-msg-user {
   align-self: flex-end;
   background: var(--brass-tint);

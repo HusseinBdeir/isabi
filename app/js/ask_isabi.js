@@ -178,14 +178,15 @@
     const wantsAllEntities = isEntityComparisonPrompt(cleanQ) || matchedAliases.length > 1;
 
     if (wantsAllEntities) {
-      if (String(coKey).startsWith('industry:')) {
-        const ind = String(coKey).slice(9);
-        const indCos = catalog.filter(c => (c.industry || 'Manufacturing') === ind).map(c => c.name);
-        if (indCos.length) coNames = indCos.filter(n => !allowed.length || allowed.includes(n));
-      } else {
-        coKey = 'manufacturing-group';
-        coNames = allowed.slice();
-      }
+      const matchedCat = catalog.find(c => mapCompanyNameToKey(c.name) === coKey || norm(c.name) === norm(coKey));
+      const activeInd = String(coKey).startsWith('industry:')
+        ? String(coKey).slice(9)
+        : ((matchedCat && matchedCat.industry) || 'Manufacturing');
+      const indCos = catalog.filter(c => (c.industry || 'Manufacturing') === activeInd).map(c => c.name);
+      coKey = activeInd === 'Manufacturing' ? 'manufacturing-group' : `industry:${activeInd}`;
+      coNames = indCos.length
+        ? indCos.filter(n => !allowed.length || allowed.some(a => norm(a) === norm(n)))
+        : allowed.slice();
     } else if (mentionedCo) {
       if (!allowed.some(a => norm(a) === norm(mentionedCo.name))) {
         rlsBlockedCompany = mentionedCo.name;
@@ -3137,24 +3138,9 @@
     const k = (_ctx && typeof _ctx.getKPI === 'function') ? _ctx.getKPI(scope.coKey) : {};
     const tbOk = Math.abs(Number(k.tb_check || 0)) < 0.005;
 
-    const starterChips = [
-      'Give me an executive briefing & open alerts',
-      'Show today\'s daily operations',
-      'Compare entity sales & operating profit',
-      'Show top expense categories',
-      'Show overdue receivables'
-    ];
-
     return `
       <div class="ai-msg-bot ai-welcome-card">
-        <div class="ai-bot-eyebrow">ISABI COPILOT · LIVE RECORDS</div>
-        <p class="ai-bot-p">Welcome${firstName ? ', <b>' + esc(firstName) + '</b>' : ''}. Active scope is <b>${esc(scope.fullScopeLabel)}</b> (${tbOk ? 'books tied at <b>$0.00</b>' : 'review trial balance'} · <b>${fmtInt(openAlerts)}</b> open Sentinel ${openAlerts === 1 ? 'alert' : 'alerts'}).</p>
-      </div>
-      <div class="ai-msg-followup">
-        <div class="ai-followup-lead">Ask anything in English, العربية, or Français, record a voice note, or attach a file:</div>
-        <div class="ai-followup-chips">
-          ${starterChips.map(c => `<button type="button" class="ai-followup-chip" data-ask-chip="${esc(c)}">${esc(c)}</button>`).join('')}
-        </div>
+        <p class="ai-bot-p">Welcome${firstName ? ', <b>' + esc(firstName) + '</b>' : ''}. ${tbOk ? 'Books are tied at <b>$0.00</b>' : 'Trial balance requires review ($0.00 target)'} with <b>${fmtInt(openAlerts)}</b> open Sentinel ${openAlerts === 1 ? 'alert' : 'alerts'}. Ask anything in English, العربية, or Français, record a voice note, or attach a file.</p>
       </div>
     `;
   }
@@ -3276,13 +3262,13 @@
     const user = getActiveUser();
     const scope = resolveQueryScope('', user);
 
-    const hdrSub = document.querySelector('#aiDrawer .ai-console-title small');
-    if (hdrSub) {
-      hdrSub.textContent = `Live Copilot · ${scope.allowed.length ? scope.allowed.slice(0, 3).join(', ') : scope.scopeCoLabel}`;
-    }
     const hdrTitle = document.querySelector('#aiDrawer .ai-console-title b');
     if (hdrTitle) {
-      hdrTitle.textContent = 'Ask ISABI · Operational & Financial Intelligence';
+      hdrTitle.textContent = 'Ask ISABI';
+    }
+    const hdrSub = document.getElementById('aiDrawerScope') || document.querySelector('#aiDrawer .ai-console-title small');
+    if (hdrSub) {
+      hdrSub.textContent = `${scope.scopeCoLabel} · USD · ${scope.periodLabel}`;
     }
     const inp = document.getElementById('aiInput');
     if (inp) {
